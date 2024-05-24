@@ -23,21 +23,14 @@
 #include "cqm_object.h"
 
 /**
- * Prototype    : cqm_object_qpc_mpt_create
- * Description  : create QPC/MPT
- * Input        : void *ex_handle
- *		  u32 service_type
- *		  enum cqm_object_type object_type: must be mpt or ctx.
- *		  u32 object_size: unit is Byte
- *		  void *object_priv: private structure of the service layer,
- *				     it can be NULL.
- *		  u32 index: apply for the reserved qpn based on this value;
- *			     if automatic allocation is required,
- *			     please fill CQM_INDEX_INVALID.
- * Output       : None
- * Return Value : struct tag_cqm_qpc_mpt *
- * 1.Date         : 2016/2/16
- *   Modification : Created function
+ * cqm_object_qpc_mpt_create - create QPC/MPT
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: CQM service type
+ * @object_type: object type, must be MPT or CTX.
+ * @object_size: object size, unit is Byte
+ * @object_priv: private structure of the service layer, it can be NULL.
+ * @index: apply for the reserved qpn based on this value, if automatic allocation is required,
+ *         please fill CQM_INDEX_INVALID.
  */
 struct tag_cqm_qpc_mpt *cqm_object_qpc_mpt_create(void *ex_handle, u32 service_type,
 						  enum cqm_object_type object_type,
@@ -114,19 +107,14 @@ struct tag_cqm_qpc_mpt *cqm_object_qpc_mpt_create(void *ex_handle, u32 service_t
 EXPORT_SYMBOL(cqm_object_qpc_mpt_create);
 
 /**
- * Prototype    : cqm_object_recv_queue_create
- * Description  : when srq is used, create rq.
- * Input        : void *ex_handle
- *		  u32 service_type
- *		  enum cqm_object_type object_type
- *		  u32 init_rq_num
- *		  u32 container_size
- *		  u32 wqe_size
- *		  void *object_priv
- * Output       : None
- * Return Value : struct tag_cqm_queue *
- * 1.Date         : 2016/2/16
- *   Modification : Created function
+ * cqm_object_recv_queue_create - when srq is used, create rq
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: CQM service type
+ * @object_type: object type
+ * @init_rq_num: init RQ number
+ * @container_size: CQM queue container size
+ * @wqe_size: CQM WQE size
+ * @object_priv: RQ privite data
  */
 struct tag_cqm_queue *cqm_object_recv_queue_create(void *ex_handle, u32 service_type,
 						   enum cqm_object_type object_type,
@@ -233,13 +221,8 @@ err1:
 EXPORT_SYMBOL(cqm_object_recv_queue_create);
 
 /**
- * Prototype    : cqm_object_share_recv_queue_add_container
- * Description  : allocate new container for srq
- * Input        : struct tag_cqm_queue *common
- * Output       : None
- * Return Value : tail_container address
- * 1.Date         : 2016/2/14
- *   Modification : Created function
+ * cqm_object_share_recv_queue_add_container - allocate new container for srq
+ * @common: queue structure pointer
  */
 s32 cqm_object_share_recv_queue_add_container(struct tag_cqm_queue *common)
 {
@@ -305,18 +288,13 @@ static bool cqm_object_share_recv_queue_param_check(struct hinic3_hwdev *handle,
 }
 
 /**
- * Prototype    : cqm_object_share_recv_queue_create
- * Description  : create srq
- * Input        : void *ex_handle
- *		  u32 service_type
- *		  enum cqm_object_type object_type
- *		  u32 container_number
- *		  u32 container_size
- *		  u32 wqe_size
- * Output       : None
- * Return Value : struct tag_cqm_queue *
- * 1.Date         : 2016/2/1
- *   Modification : Created function
+ * cqm_object_share_recv_queue_create - create srq
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: CQM service type
+ * @object_type: object type
+ * @container_number: CQM queue container number
+ * @container_size: CQM queue container size
+ * @wqe_size: CQM WQE size
  */
 struct tag_cqm_queue *cqm_object_share_recv_queue_create(void *ex_handle, u32 service_type,
 							 enum cqm_object_type object_type,
@@ -379,22 +357,18 @@ struct tag_cqm_queue *cqm_object_share_recv_queue_create(void *ex_handle, u32 se
 EXPORT_SYMBOL(cqm_object_share_recv_queue_create);
 
 /**
- * Prototype    : cqm_object_fc_rq_create
- * Description  : RQ creation temporarily provided for the FC service.
- *		  Special requirement: The number of valid WQEs in the queue
- *		  must meet the number of transferred WQEs. Linkwqe can only be
- *		  filled at the end of the page. The actual valid number exceeds
- *		  the requirement. In this case, the service needs to be
- *		  informed of the additional number to be created.
- * Input        : void *ex_handle
- *		  u32 service_type
- *		  enum cqm_object_type object_type
- *		  u32 wqe_number: Number of valid WQEs
- *		  u32 wqe_size
- *		  void *object_priv
- * Output       : None
- * 1.Date         : 2016/3/1
- *   Modification : Created function
+ * cqm_object_fc_srq_create - RQ creation temporarily provided for the FC service.
+ *                            Special requirement: The number of valid WQEs in the queue
+ *                            must meet the number of transferred WQEs. Linkwqe can only be
+ *                            filled at the end of the page. The actual valid number exceeds
+ *                            the requirement. In this case, the service needs to be
+ *                            informed of the additional number to be created.
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: CQM service type
+ * @object_type: object type
+ * @wqe_number: number of valid WQEs
+ * @wqe_size: size of valid WQEs
+ * @object_priv: private structure of the service layer, it can be NULL
  */
 struct tag_cqm_queue *cqm_object_fc_srq_create(void *ex_handle, u32 service_type,
 					       enum cqm_object_type object_type,
@@ -533,20 +507,13 @@ static bool cqm_object_nonrdma_queue_param_check(struct hinic3_hwdev *handle, u3
 }
 
 /**
- * Prototype    : cqm_object_nonrdma_queue_create
- * Description  : create nonrdma queue
- * Input        : void *ex_handle
- *		  u32 service_type
- *		  enum cqm_object_type object_type: can be embedded RQ/SQ/CQ and
- *						    SRQ/SCQ.
- *		  u32 wqe_number: include link wqe
- *		  u32 wqe_size: fixed length, must be power of 2
- *		  void *object_priv: private structure of the service layer,
- *				     it can be NULL.
- * Output       : None
- * Return Value : struct tag_cqm_queue *
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_nonrdma_queue_create - create nonrdma queue
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: CQM service type
+ * @object_type: object type, can be embedded RQ/SQ/CQ and SRQ/SCQ
+ * @wqe_number: include link wqe
+ * @wqe_size: fixed length, must be power of 2
+ * @object_priv: private structure of the service layer, it can be NULL
  */
 struct tag_cqm_queue *cqm_object_nonrdma_queue_create(void *ex_handle, u32 service_type,
 						      enum cqm_object_type object_type,
@@ -650,21 +617,14 @@ static bool cqm_object_rdma_queue_param_check(struct hinic3_hwdev *handle, u32 s
 }
 
 /**
- * Prototype    : cqm_object_rdma_queue_create
- * Description  : create rdma queue
- * Input        : void *ex_handle
- *		  u32 service_type
- *		  enum cqm_object_type object_type: can be QP and SRQ/SCQ.
- *		  u32 object_size
- *		  void *object_priv: private structure of the service layer,
- *				     it can be NULL.
- *		  bool room_header_alloc: Whether to apply for queue room and
- *					  header space
- *		  u32 xid
- * Output       : None
- * Return Value : struct tag_cqm_queue *
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_rdma_queue_create - create rdma queue
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: CQM service type
+ * @object_type: object type, can be QP and SRQ/SCQ
+ * @object_size: object size
+ * @object_priv: private structure of the service layer, it can be NULL
+ * @room_header_alloc: Whether to apply for queue room and header space
+ * @xid: common index
  */
 struct tag_cqm_queue *cqm_object_rdma_queue_create(void *ex_handle, u32 service_type,
 						   enum cqm_object_type object_type,
@@ -737,17 +697,12 @@ struct tag_cqm_queue *cqm_object_rdma_queue_create(void *ex_handle, u32 service_
 EXPORT_SYMBOL(cqm_object_rdma_queue_create);
 
 /**
- * Prototype    : cqm_object_rdma_table_get
- * Description  : create mtt and rdmarc of the rdma service
- * Input        : void *ex_handle
- *		  u32 service_type
- *		  enum cqm_object_type object_type
- *		  u32 index_base: start of index
- *		  u32 index_number
- * Output       : None
- * Return Value : struct tag_cqm_mtt_rdmarc *
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_rdma_table_get - create mtt and rdmarc of the rdma service
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: CQM service type
+ * @object_type: object type
+ * @index_base: start of index
+ * @index_number: number of created
  */
 struct tag_cqm_mtt_rdmarc *cqm_object_rdma_table_get(void *ex_handle, u32 service_type,
 						     enum cqm_object_type object_type,
@@ -884,14 +839,9 @@ static s32 cqm_rdma_table_delete_ret(struct tag_cqm_object *object)
 }
 
 /**
- * Prototype    : cqm_object_delete
- * Description  : Deletes a created object. This function will be sleep and wait
- *		  for all operations on this object to be performed.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_delete - Deletes a created object. This function will be sleep and wait
+ *                     for all operations on this object to be performed.
+ * @object: CQM object
  */
 void cqm_object_delete(struct tag_cqm_object *object)
 {
@@ -952,17 +902,11 @@ void cqm_object_delete(struct tag_cqm_object *object)
 EXPORT_SYMBOL(cqm_object_delete);
 
 /**
- * Prototype    : cqm_object_offset_addr
- * Description  : Only the rdma table can be searched to obtain the PA and VA
- *		  at the specified offset of the object buffer.
- * Input        : struct tag_cqm_object *object
- *		  u32 offset: For a rdma table, the offset is the absolute index
- *			      number.
- *		  dma_addr_t *paddr: PA(physical address)
- * Output       : None
- * Return Value : u8 *
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_offset_addr - Only the rdma table can be searched to obtain the PA and VA
+ *                          at the specified offset of the object buffer.
+ * @object: CQM object
+ * @offset: For a rdma table, the offset is the absolute index number
+ * @paddr: physical address
  */
 u8 *cqm_object_offset_addr(struct tag_cqm_object *object, u32 offset, dma_addr_t *paddr)
 {
@@ -984,16 +928,11 @@ u8 *cqm_object_offset_addr(struct tag_cqm_object *object, u32 offset, dma_addr_t
 EXPORT_SYMBOL(cqm_object_offset_addr);
 
 /**
- * Prototype    : cqm_object_get
- * Description  : Obtain an object based on the index.
- * Input        : void *ex_handle
- *		  enum cqm_object_type object_type
- *		  u32 index: support qpn,mptn,scqn,srqn (n->number)
- *		  bool bh
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_get - Obtain an object based on the index
+ * @ex_handle: device pointer that represents the PF
+ * @object_type: object type
+ * @index: support qpn,mptn,scqn,srqn (n->number)
+ * @bh: barrier or not
  */
 struct tag_cqm_object *cqm_object_get(void *ex_handle, enum cqm_object_type object_type,
 				      u32 index, bool bh)
@@ -1038,14 +977,9 @@ struct tag_cqm_object *cqm_object_get(void *ex_handle, enum cqm_object_type obje
 EXPORT_SYMBOL(cqm_object_get);
 
 /**
- * Prototype    : cqm_object_put
- * Description  : This function must be called after the cqm_object_get
- *		  function. Otherwise, the object cannot be released.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_put - This function must be called after the cqm_object_get function.
+ *                  Otherwise, the object cannot be released.
+ * @object: CQM object
  */
 void cqm_object_put(struct tag_cqm_object *object)
 {
@@ -1058,14 +992,8 @@ void cqm_object_put(struct tag_cqm_object *object)
 EXPORT_SYMBOL(cqm_object_put);
 
 /**
- * Prototype    : cqm_object_funcid
- * Description  : Obtain the ID of the function to which the object belongs.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : If successful, the ID of the function will be returned.
- *		  If fail CQM_FAIL(-1) will be returned.
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_funcid - Obtain the ID of the function to which the object belongs
+ * @object: CQM object
  */
 s32 cqm_object_funcid(struct tag_cqm_object *object)
 {
@@ -1087,17 +1015,12 @@ s32 cqm_object_funcid(struct tag_cqm_object *object)
 EXPORT_SYMBOL(cqm_object_funcid);
 
 /**
- * Prototype    : cqm_object_resize_alloc_new
- * Description  : Currently this function is only used for RoCE.
- *		  The CQ buffer is ajusted, but the cqn and cqc remain
- *		  unchanged. This function allocates new buffer, but do not
- *		  release old buffer. The valid buffer is still old buffer.
- * Input        : struct tag_cqm_object *object
- *		  u32 object_size
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_resize_alloc_new - Currently this function is only used for RoCE. The CQ buffer
+ *                               is ajusted, but the cqn and cqc remain unchanged.
+ *                               This function allocates new buffer, but do not release old buffer.
+ *                               The valid buffer is still old buffer.
+ * @object: CQM object
+ * @object_size: new buffer size
  */
 s32 cqm_object_resize_alloc_new(struct tag_cqm_object *object, u32 object_size)
 {
@@ -1162,16 +1085,10 @@ s32 cqm_object_resize_alloc_new(struct tag_cqm_object *object, u32 object_size)
 EXPORT_SYMBOL(cqm_object_resize_alloc_new);
 
 /**
- * Prototype    : cqm_object_resize_free_new
- * Description  : Currently this function is only used for RoCE.
- *		  The CQ buffer is ajusted, but the cqn and cqc remain
- *		  unchanged. This function frees new buffer, and is used to deal
- *		  with exceptions.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_resize_free_new - Currently this function is only used for RoCE. The CQ buffer
+ *                              is ajusted, but the cqn and cqc remain unchanged. This function
+ *                              frees new buffer, and is used to deal with exceptions.
+ * @object: CQM object
  */
 void cqm_object_resize_free_new(struct tag_cqm_object *object)
 {
@@ -1212,16 +1129,10 @@ void cqm_object_resize_free_new(struct tag_cqm_object *object)
 EXPORT_SYMBOL(cqm_object_resize_free_new);
 
 /**
- * Prototype    : cqm_object_resize_free_old
- * Description  : Currently this function is only used for RoCE.
- *		  The CQ buffer is ajusted, but the cqn and cqc remain
- *		  unchanged. This function frees old buffer and switches the
- *		  valid buffer to new buffer.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_object_resize_free_old - Currently this function is only used for RoCE. The CQ buffer
+ *                              is ajusted, but the cqn and cqc remain unchanged. This function
+ *                              frees old buffer and switches the valid buffer to new buffer.
+ * @object: CQM object
  */
 void cqm_object_resize_free_old(struct tag_cqm_object *object)
 {
@@ -1259,13 +1170,8 @@ void cqm_object_resize_free_old(struct tag_cqm_object *object)
 EXPORT_SYMBOL(cqm_object_resize_free_old);
 
 /**
- * Prototype    : cqm_gid_base
- * Description  : Obtain the base virtual address of the gid table for FT
- *		  debug.
- * Input        : void *ex_handle
- * Output       : None
- * 1.Date       : 2015/9/8
- * Modification : Created function
+ * cqm_gid_base - Obtain the base virtual address of the gid table for FT debug
+ * @ex_handle: device pointer that represents the PF
  */
 void *cqm_gid_base(void *ex_handle)
 {
@@ -1302,14 +1208,8 @@ void *cqm_gid_base(void *ex_handle)
 }
 
 /**
- * Prototype    : cqm_timer_base
- * Description  : Obtain the base virtual address of the timer for live
- *		  migration.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : void
- * 1.Date         : 2020/5/21
- *   Modification : Created function
+ * cqm_timer_base - Obtain the base virtual address of the timer for live migration
+ * @ex_handle: device pointer that represents the PF
  */
 void *cqm_timer_base(void *ex_handle)
 {
@@ -1449,16 +1349,11 @@ static void cqm_clear_timer(void *ex_handle, u32 function_id, struct hinic3_hwde
 }
 
 /**
- * Prototype    : cqm_function_timer_clear
- * Description  : Clear the timer buffer based on the function ID.
- *		  The function ID starts from 0 and the timer buffer is arranged
- *		  in sequence by function ID.
- * Input        : void *ex_handle
- *		  u32 functionid
- * Output       : None
- * Return Value : void
- * 1.Date         : 2016/12/19
- *   Modification : Created function
+ * cqm_function_timer_clear - Clear the timer buffer based on the function ID.
+ *                            The function ID starts from 0 and the timer buffer is arranged
+ *                            in sequence by function ID.
+ * @ex_handle: device pointer that represents the PF
+ * @function_id: the function id of CQM timer
  */
 void cqm_function_timer_clear(void *ex_handle, u32 function_id)
 {
@@ -1502,16 +1397,9 @@ void cqm_function_timer_clear(void *ex_handle, u32 function_id)
 EXPORT_SYMBOL(cqm_function_timer_clear);
 
 /**
- * Prototype    : cqm_function_hash_buf_clear
- * Description  : clear hash buffer based on global function_id
- * Input        : void *ex_handle
- *		  s32 global_funcid
- * Output       : None
- * Return Value : None
- * 1.Date         : 2017/11/27
- *   Modification : Created function
- * 2.Date         : 2021/02/23
- *   Modification : Add para func_id; clear hash buf by func_id
+ * cqm_function_hash_buf_clear - clear hash buffer based on global function_id
+ * @ex_handle: device pointer that represents the PF
+ * @global_funcid: the function id of clear hash buf
  */
 void cqm_function_hash_buf_clear(void *ex_handle, s32 global_funcid)
 {
@@ -1600,65 +1488,3 @@ void cqm_srq_used_rq_container_delete(struct tag_cqm_object *object, u8 *contain
 	kfree((void *)addr);
 }
 EXPORT_SYMBOL(cqm_srq_used_rq_container_delete);
-
-s32 cqm_dtoe_share_recv_queue_create(void *ex_handle, u32 contex_size,
-				     u32 *index_count, u32 *index)
-{
-	struct hinic3_hwdev *handle = (struct hinic3_hwdev *)ex_handle;
-	struct tag_cqm_toe_private_capability *tow_own_cap = NULL;
-	struct tag_cqm_handle *cqm_handle = NULL;
-	struct tag_cqm_bitmap *bitmap = NULL;
-	u32 step;
-
-	if (unlikely(!ex_handle)) {
-		pr_err("[CQM]%s: ex_handle is null\n", __func__);
-		return CQM_FAIL;
-	}
-	if (unlikely(!index_count)) {
-		pr_err("[CQM]%s: index_count is null\n", __func__);
-		return CQM_FAIL;
-	}
-	if (unlikely(!index)) {
-		pr_err("[CQM]%s: index is null\n", __func__);
-		return CQM_FAIL;
-	}
-
-	cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);
-	tow_own_cap = &cqm_handle->toe_own_capability;
-
-	bitmap = &tow_own_cap->srqc_bitmap;
-	*index_count = (ALIGN(contex_size, tow_own_cap->toe_srqc_basic_size)) /
-		       tow_own_cap->toe_srqc_basic_size;
-	/* toe srqc number must align of 2 */
-	step = ALIGN(tow_own_cap->toe_srqc_number, 2);
-	*index = cqm_bitmap_alloc(bitmap, step, *index_count,
-				  cqm_handle->func_capability.xid_alloc_mode);
-	if (*index >= bitmap->max_num) {
-		cqm_err(handle->dev_hdl, "Srq create: queue index %u exceeds max_num %u\n",
-			*index, bitmap->max_num);
-		return CQM_FAIL;
-	}
-	*index += tow_own_cap->toe_srqc_start_id;
-
-	atomic_inc(&handle->hw_stats.cqm_stats.cqm_srq_create_cnt);
-
-	return CQM_SUCCESS;
-}
-EXPORT_SYMBOL(cqm_dtoe_share_recv_queue_create);
-
-void cqm_dtoe_free_srq_bitmap_index(void *ex_handle, u32 index_count, u32 index)
-{
-	struct hinic3_hwdev *handle = (struct hinic3_hwdev *)ex_handle;
-	struct tag_cqm_handle *cqm_handle = NULL;
-	struct tag_cqm_bitmap *bitmap = NULL;
-
-	if (unlikely(!ex_handle)) {
-		pr_err("[CQM]%s: ex_handle is null\n", __func__);
-		return;
-	}
-
-	cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);
-	bitmap = &cqm_handle->toe_own_capability.srqc_bitmap;
-	cqm_bitmap_free(bitmap, index, index_count);
-}
-EXPORT_SYMBOL(cqm_dtoe_free_srq_bitmap_index);

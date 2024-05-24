@@ -8,7 +8,7 @@
 #define BIG_ENDIAN	0x4321
 #endif
 
-#pragma pack(4)
+#pragma pack(push, 4)
 struct tag_roce_verbs_qpc_attr_chip {
 	/* DW0~1 */
 	union {
@@ -355,6 +355,6 @@ struct tag_roce_verbs_qpc_attr_chip {
 	} dw19;
 };
 
-#pragma pack()
+#pragma pack(pop)
 
 #endif /* ROCE_VERBS_ATTR_QPC_CHIP_H */

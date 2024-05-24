@@ -10,7 +10,7 @@
 #define BIG_ENDIAN	0x4321
 #endif
 
-#pragma pack(4)
+#pragma pack(push, 4)
 struct tag_roce_verbs_srq_cont_attr {
 	/* DW0 */
 	u32 head_gpa_h;
@@ -259,6 +259,6 @@ union tag_roce_verbs_arm_srq_info {
 #endif
 	} bs;
 };
-#pragma pack()
+#pragma pack(pop)
 
 #endif /* ROCE_VERBS_SRQ_ATTR_H */

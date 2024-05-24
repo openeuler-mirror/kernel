@@ -16,7 +16,7 @@ enum bond_group_id {
 	BOND_MAX_NUM,
 };
 
-#pragma pack(4)
+#pragma pack(push, 4)
 /**
  * bond per port statistics
  */
@@ -33,7 +33,7 @@ struct tag_bond_port_stat {
 	u64 tx_errors;
 };
 
-#pragma pack()
+#pragma pack(pop)
 
 /**
  * bond port attribute

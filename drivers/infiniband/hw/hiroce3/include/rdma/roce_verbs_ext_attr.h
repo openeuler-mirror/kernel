@@ -18,7 +18,7 @@ enum VERBS_ATTR_EXT_TYPE_E {
 
 #define ROCE_VERBS_SQP_WQE_SIZE (2)
 
-#pragma pack(4)
+#pragma pack(push, 4)
 
 struct tag_roce_verbs_sqp_attr {
 	/* DW0 */
@@ -43,6 +43,6 @@ struct tag_roce_verbs_sqp_attr {
 	} dw1;
 };
 
-#pragma pack()
+#pragma pack(pop)
 
 #endif /* ROCE_VERBS_EXT_ATTR_H */

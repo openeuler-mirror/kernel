@@ -6,6 +6,7 @@
 
 #include "hinic3_hw.h"
 #include "hmm_comp.h"
+#include "hmm_mr.h"
 
 static void hmm_roce_mpt_to_big_endian(struct roce_mpt_context *mpt_ctx)
 {

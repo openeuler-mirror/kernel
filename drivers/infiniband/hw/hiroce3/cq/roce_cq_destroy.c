@@ -47,20 +47,7 @@ static int roce3_check_cqc_data_state(struct roce3_device *rdev, const struct ro
 	return 0;
 }
 
-/*
- ****************************************************************************
- Prototype	: roce3_cq_hw2sw
- Description  : roce3_cq_hw2sw
- Input		: struct roce3_device *rdev
-				struct roce3_cq *cq
- Output	   : None
-
-  1.Date		 : 2015/5/27
-	Modification : Created function
-
-****************************************************************************
-*/
-int roce3_cq_hw2sw(struct roce3_device *rdev, struct roce3_cq *cq)
+static int roce3_cq_hw2sw(struct roce3_device *rdev, struct roce3_cq *cq)
 {
 	int ret;
 	struct tag_cqm_cmd_buf *cqm_cmd_inbuf = NULL;

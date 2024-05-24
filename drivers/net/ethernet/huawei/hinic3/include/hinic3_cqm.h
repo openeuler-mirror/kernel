@@ -293,18 +293,12 @@ s32 cqm3_lb_send_cmd_box(void *ex_handle, u8 mod, u8 cmd, u8 cos_id,
 s32 cqm3_lb_send_cmd_box_async(void *ex_handle, u8 mod, u8 cmd, u8 cos_id,
 			       struct tag_cqm_cmd_buf *buf_in, u16 channel);
 
-s32 cqm3_send_cmd_imm(void *ex_handle, u8 mod, u8 cmd,
-		      struct tag_cqm_cmd_buf *buf_in, u64 *out_param,
-		      u32 timeout, u16 channel);
-
 s32 cqm3_db_addr_alloc(void *ex_handle, void __iomem **db_addr, void __iomem **dwqe_addr);
 void cqm3_db_addr_free(void *ex_handle, const void __iomem *db_addr,
 		       void __iomem *dwqe_addr);
 
 void *cqm3_get_db_addr(void *ex_handle, u32 service_type);
 s32 cqm3_ring_hardware_db(void *ex_handle, u32 service_type, u8 db_count, u64 db);
-
-s32 cqm3_get_hardware_db_addr(void *ex_handle, u64 *addr, u32 service_type);
 
 s32 cqm_ring_hardware_db_fc(void *ex_handle, u32 service_type, u8 db_count, u8 pagenum, u64 db);
 s32 cqm3_ring_hardware_db_update_pri(void *ex_handle, u32 service_type, u8 db_count, u64 db);
@@ -354,11 +348,6 @@ void cqm3_object_delete(struct tag_cqm_object *object);
  * @retval u8 *buffer Virtual address at specified offset
  */
 u8 *cqm3_object_offset_addr(struct tag_cqm_object *object, u32 offset, dma_addr_t *paddr);
-
-s32 cqm3_dtoe_share_recv_queue_create(void *ex_handle, u32 contex_size,
-				      u32 *index_count, u32 *index);
-
-void cqm3_dtoe_free_srq_bitmap_index(void *ex_handle, u32 index_count, u32 index);
 
 #endif /* CQM_H */
 

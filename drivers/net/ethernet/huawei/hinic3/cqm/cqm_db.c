@@ -21,17 +21,12 @@
 #include "cqm_db.h"
 
 /**
- * Prototype    : cqm_db_addr_alloc
- * Description  : Apply for a page of hardware doorbell and dwqe.
- *		  The indexes are the same. The obtained addresses are physical
- *		  addresses. Each function has a maximum of 1K addresses(DB).
- * Input        : void *ex_handle
- *		  void __iomem **db_addr,
- *		  void __iomem **dwqe_addr
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_db_addr_alloc - Apply for a page of hardware doorbell and dwqe.
+ *                     The indexes are the same. The obtained addresses are physical
+ *                     addresses. Each function has a maximum of 1K addresses(DB).
+ * @ex_handle: device pointer that represents the PF
+ * @db_addr: doorbell address
+ * @dwqe_addr: DWQE address
  */
 s32 cqm_db_addr_alloc(void *ex_handle, void __iomem **db_addr,
 		      void __iomem **dwqe_addr)
@@ -62,18 +57,12 @@ s32 cqm_db_phy_addr_alloc(void *ex_handle, u64 *db_paddr, u64 *dwqe_addr)
 }
 
 /**
- * Prototype    : cqm_db_addr_free
- * Description  : Release a page of hardware doorbell and dwqe.
- * Input        : void *ex_handle
- *		  const void __iomem **db_addr,
- *		  void __iomem **dwqe_addr
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_db_addr_free - Release a page of hardware doorbell and dwqe
+ * @ex_handle: device pointer that represents the PF
+ * @db_addr: doorbell address
+ * @dwqe_addr: DWQE address
  */
-void cqm_db_addr_free(void *ex_handle, const void __iomem *db_addr,
-		      void __iomem *dwqe_addr)
+static void cqm_db_addr_free(void *ex_handle, const void __iomem *db_addr, void __iomem *dwqe_addr)
 {
 	struct hinic3_hwdev *handle = (struct hinic3_hwdev *)ex_handle;
 
@@ -112,13 +101,8 @@ static bool cqm_need_db_init(s32 service)
 }
 
 /**
- * Prototype    : cqm_db_init
- * Description  : Initialize the doorbell of the CQM.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/7/6
- *   Modification : Created function
+ * cqm_db_init - Initialize the doorbell of the CQM
+ * @ex_handle: device pointer that represents the PF
  */
 s32 cqm_db_init(void *ex_handle)
 {
@@ -173,13 +157,8 @@ s32 cqm_db_init(void *ex_handle)
 }
 
 /**
- * Prototype    : cqm_db_uninit
- * Description  : Deinitialize the doorbell of the CQM.
- * Input        : void *ex_handle
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/7/6
- *   Modification : Created function
+ * cqm_db_uninit - Deinitialize the doorbell of the CQM
+ * @ex_handle: device pointer that represents the PF
  */
 void cqm_db_uninit(void *ex_handle)
 {
@@ -203,14 +182,9 @@ void cqm_db_uninit(void *ex_handle)
 }
 
 /**
- * Prototype    : cqm_get_db_addr
- * Description  : Return hardware DB vaddr.
- * Input        : void *ex_handle
- *		  u32 service_type
- * Output       : None
- * Return Value : void *
- * 1.Date         : 2015/7/6
- *   Modification : Created function
+ * cqm_get_db_addr - Return hardware DB vaddr
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: CQM service type
  */
 void *cqm_get_db_addr(void *ex_handle, u32 service_type)
 {
@@ -230,50 +204,13 @@ void *cqm_get_db_addr(void *ex_handle, u32 service_type)
 }
 EXPORT_SYMBOL(cqm_get_db_addr);
 
-s32 cqm_get_hardware_db_addr(void *ex_handle, u64 *addr,
-			     enum hinic3_service_type service_type)
-{
-	struct tag_cqm_handle *cqm_handle = NULL;
-	struct tag_cqm_service *service = NULL;
-	struct hinic3_hwdev *handle = NULL;
-
-	if (unlikely(!ex_handle)) {
-		pr_err("[CQM]%s: ex_handle is null\n", __func__);
-		return CQM_FAIL;
-	}
-	if (unlikely(!addr)) {
-		pr_err("[CQM]%s: addr is null\n", __func__);
-		return CQM_FAIL;
-	}
-
-	if (service_type < SERVICE_T_NIC || service_type >= SERVICE_T_MAX) {
-		pr_err("%s service_type = %d state is error\n", __func__,
-		       service_type);
-		return CQM_FAIL;
-	}
-
-	handle = (struct hinic3_hwdev *)ex_handle;
-	cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);
-	service = &cqm_handle->service[service_type];
-
-	*addr = service->hardware_db_paddr;
-	return CQM_SUCCESS;
-}
-EXPORT_SYMBOL(cqm_get_hardware_db_addr);
-
 /**
- * Prototype    : cqm_ring_hardware_db
- * Description  : Ring hardware DB to chip.
- * Input        : void *ex_handle
- *		  u32 service_type: Each kernel-mode service is allocated a
- *				    hardware db page.
- *		  u8 db_count: The bit[7:0] of PI can't be store in 64-bit db.
- *		  u64 db: It contains the content of db, whitch is organized by
- *			  service, including big-endian conversion
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_ring_hardware_db - Ring hardware DB to chip
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: Each kernel-mode service is allocated a hardware db page
+ * @db_count: The bit[7:0] of PI can't be store in 64-bit db
+ * @db: It contains the content of db, whitch is organized by
+ *      service, including big-endian conversion.
  */
 s32 cqm_ring_hardware_db(void *ex_handle, u32 service_type, u8 db_count, u64 db)
 {
@@ -295,20 +232,13 @@ s32 cqm_ring_hardware_db(void *ex_handle, u32 service_type, u8 db_count, u64 db)
 EXPORT_SYMBOL(cqm_ring_hardware_db);
 
 /**
- * Prototype    : cqm_ring_hardware_db_fc  // Todo cqm_ring_fakevf_hardware_db
- * Description  : Ring fake vf hardware DB to chip.
- * Input        : void *ex_handle
- *		  u32 service_type: Each kernel-mode service is allocated a
- *				    hardware db page.
- *		  u8 db_count: The bit[7:0] of PI can't be store in 64-bit db.
- *		  u8 pagenum: Indicates the doorbell address offset of the fake
- *			      VFID.
- *		  u64 db: It contains the content of db, whitch is organized by
- *			  service, including big-endian conversion.
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_ring_hardware_db_fc - Ring fake vf hardware DB to chip
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: Each kernel-mode service is allocated a hardware db page
+ * @db_count: The bit[7:0] of PI can't be store in 64-bit db
+ * @pagenum: Indicates the doorbell address offset of the fake VFID
+ * @db: It contains the content of db, whitch is organized by
+ *      service, including big-endian conversion.
  */
 s32 cqm_ring_hardware_db_fc(void *ex_handle, u32 service_type, u8 db_count,
 			    u8 pagenum, u64 db)
@@ -333,18 +263,11 @@ s32 cqm_ring_hardware_db_fc(void *ex_handle, u32 service_type, u8 db_count,
 }
 
 /**
- * Prototype    : cqm_ring_direct_wqe_db  // Todo <--cqm_ring_direct_wqe_db_fc
- * Description  : Ring direct wqe hardware DB to chip.
- * Input        : void *ex_handle
- *		  u32 service_type: Each kernel-mode service is allocated a
- *				    hardware db page.
- *		  u8 db_count: The bit[7:0] of PI can't be store in 64-bit db.
- *		  void *direct_wqe: The content of direct_wqe.
- *		  u16 length: The length of direct_wqe.
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_ring_direct_wqe_db - Ring direct wqe hardware DB to chip
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: Each kernel-mode service is allocated a hardware db page
+ * @db_count: The bit[7:0] of PI can't be store in 64-bit db
+ * @direct_wqe: The content of direct_wqe
  */
 s32 cqm_ring_direct_wqe_db(void *ex_handle, u32 service_type, u8 db_count,
 			   void *direct_wqe)
@@ -403,21 +326,15 @@ s32 cqm_ring_direct_wqe_db_fc(void *ex_handle, u32 service_type,
 }
 
 /**
- * Prototype    : cqm_ring_hardware_db_update_pri
- * Description  : Provides the doorbell interface for the CQM to convert the PRI
- *		  to the CoS. The doorbell transmitted by the service must be
- *		  the host sequence. This interface converts the network
- *		  sequence.
- * Input        : void *ex_handle
- *		  u32 service_type: Each kernel-mode service is allocated a
- *				    hardware db page.
- *		  u8 db_count: The bit[7:0] of PI can't be store in 64-bit db.
- *		  u64 db: It contains the content of db, whitch is organized by
- *			  service, including big-endian conversion.
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2016/11/24
- *   Modification : Created function
+ * cqm_ring_hardware_db_update_pri - Provides the doorbell interface for the CQM to convert the PRI
+ *                                   to the CoS. The doorbell transmitted by the service must be
+ *                                   the host sequence. This interface converts the network
+ *                                   sequence.
+ * @ex_handle: device pointer that represents the PF
+ * @service_type: Each kernel-mode service is allocated a hardware db page
+ * @db_count: The bit[7:0] of PI can't be store in 64-bit db
+ * @db: It contains the content of db, whitch is organized by
+ *      service, including big-endian conversion.
  */
 s32 cqm_ring_hardware_db_update_pri(void *ex_handle, u32 service_type,
 				    u8 db_count, u64 db)
@@ -447,19 +364,12 @@ s32 cqm_ring_hardware_db_update_pri(void *ex_handle, u32 service_type,
 }
 
 /**
- * Prototype    : cqm_ring_software_db
- * Description  : Ring software db.
- * Input        : struct tag_cqm_object *object
- *		  u64 db_record: It contains the content of db, whitch is
- *				 organized by service, including big-endian
- *				 conversion. For RQ/SQ: This field is filled
- *				 with the doorbell_record area of queue_header.
- *				 For CQ: This field is filled with the value of
- *				 ci_record in queue_header.
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/5/5
- *   Modification : Created function
+ * cqm_ring_software_db - Ring software db
+ * @object: CQM object
+ * @db_record: It contains the content of db, whitch is organized by service,
+ *             including big-endian conversion. For RQ/SQ: This field is filled
+ *             with the doorbell_record area of queue_header. For CQ: This field
+ *             is filled with the value of ci_record in queue_header.
  */
 s32 cqm_ring_software_db(struct tag_cqm_object *object, u64 db_record)
 {
