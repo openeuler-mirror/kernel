@@ -6838,7 +6838,7 @@ find_idlest_group_cpu(struct sched_group *group, struct task_struct *p, int this
 		return cpumask_first(sched_group_span(group));
 
 	/* Traverse only the allowed CPUs */
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	for_each_cpu_and(i, sched_group_span(group), p->select_cpus) {
 #else
 	for_each_cpu_and(i, sched_group_span(group), p->cpus_ptr) {
@@ -6889,7 +6889,7 @@ static inline int find_idlest_cpu(struct sched_domain *sd, struct task_struct *p
 {
 	int new_cpu = cpu;
 
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	if (!cpumask_intersects(sched_domain_span(sd), p->select_cpus))
 #else
 	if (!cpumask_intersects(sched_domain_span(sd), p->cpus_ptr))
@@ -7020,7 +7020,7 @@ static int select_idle_core(struct task_struct *p, int core, struct cpumask *cpu
 		if (!available_idle_cpu(cpu)) {
 			idle = false;
 			if (*idle_cpu == -1) {
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 				if (sched_idle_cpu(cpu) && cpumask_test_cpu(cpu, p->select_cpus)) {
 #else
 				if (sched_idle_cpu(cpu) && cpumask_test_cpu(cpu, p->cpus_ptr)) {
@@ -7080,7 +7080,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 	if (!this_sd)
 		return -1;
 
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	cpumask_and(cpus, sched_domain_span(sd), p->select_cpus);
 #else
 	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
@@ -7248,7 +7248,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	lockdep_assert_irqs_disabled();
 
 	if ((available_idle_cpu(target) || sched_idle_cpu(target)) &&
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	    cpumask_test_cpu(target, p->select_cpus) &&
 #endif
 	    asym_fits_capacity(task_util, target)) {
@@ -7261,7 +7261,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	 */
 	if (prev != target && cpus_share_cache(prev, target) &&
 	    (available_idle_cpu(prev) || sched_idle_cpu(prev)) &&
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	    cpumask_test_cpu(prev, p->select_cpus) &&
 #endif
 	    asym_fits_capacity(task_util, prev)) {
@@ -7297,7 +7297,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    recent_used_cpu != target &&
 	    cpus_share_cache(recent_used_cpu, target) &&
 	    (available_idle_cpu(recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	    cpumask_test_cpu(p->recent_used_cpu, p->select_cpus) &&
 #else
 	    cpumask_test_cpu(p->recent_used_cpu, p->cpus_ptr) &&
@@ -7928,7 +7928,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 			new_cpu = prev_cpu;
 		}
 
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->select_cpus);
 #else
 		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->cpus_ptr);
@@ -7969,7 +7969,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		 */
 		if (want_affine && (tmp->flags & SD_WAKE_AFFINE) &&
 		    cpumask_test_cpu(prev_cpu, sched_domain_span(tmp))) {
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 			new_cpu = cpu;
 			if (cpu != prev_cpu &&
 			    cpumask_test_cpu(prev_cpu, p->select_cpus))
@@ -10845,7 +10845,7 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p, int this_cpu)
 		int local_group;
 
 		/* Skip over this group if it has no CPUs allowed */
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 		if (!cpumask_intersects(sched_group_span(group),
 					p->select_cpus))
 #else
