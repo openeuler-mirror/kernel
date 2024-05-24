@@ -1069,6 +1069,7 @@ endif #CGROUP_SCHED
 config QOS_SCHED_DYNAMIC_AFFINITY
 	bool "qos dynamic affinity"
 	depends on CPUSETS
+	depends on FAIR_CGROUP_SCHED
 	default n
 	help
 	 This feature lets you allocate preferred cpus to taskgroup. If enabled,
