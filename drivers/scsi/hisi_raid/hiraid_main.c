@@ -152,7 +152,7 @@ static struct workqueue_struct *work_queue;
 			__func__, ##__VA_ARGS__);	\
 } while (0)
 
-#define HIRAID_DRV_VERSION	"1.1.0.0"
+#define HIRAID_DRV_VERSION	"1.1.0.1"
 
 #define ADMIN_TIMEOUT		(admin_tmout * HZ)
 #define USRCMD_TIMEOUT		(180 * HZ)
@@ -750,14 +750,19 @@ static int hiraid_build_sgl(struct hiraid_dev *hdev, struct hiraid_scsi_io_cmd *
 }
 
 #define HIRAID_RW_FUA	BIT(14)
+#define RW_LENGTH_ZERO	(67)
 
 static int hiraid_setup_rw_cmd(struct hiraid_dev *hdev,
 				struct hiraid_scsi_rw_cmd *io_cmd,
-				struct scsi_cmnd *scmd)
+				struct scsi_cmnd *scmd,
+				struct hiraid_mapmange *mapbuf)
 {
+	u32 ret = 0;
 	u32 start_lba_lo, start_lba_hi;
 	u32 datalength = 0;
 	u16 control = 0;
+	struct scsi_device *sdev = scmd->device;
+	u32 buf_len = cpu_to_le32(scsi_bufflen(scmd));
 
 	start_lba_lo = 0;
 	start_lba_hi = 0;
@@ -766,12 +771,17 @@ static int hiraid_setup_rw_cmd(struct hiraid_dev *hdev,
 		io_cmd->opcode = HIRAID_CMD_WRITE;
 	} else if (scmd->sc_data_direction == DMA_FROM_DEVICE) {
 		io_cmd->opcode = HIRAID_CMD_READ;
+	} else if (scmd->sc_data_direction == DMA_NONE) {
+		ret = RW_LENGTH_ZERO;
 	} else {
 		dev_err(hdev->dev, "invalid RW_IO for unsupported data direction[%d]\n",
 			scmd->sc_data_direction);
 		WARN_ON(1);
 		return -EINVAL;
 	}
+
+	if (ret == RW_LENGTH_ZERO)
+		return ret;
 
 	/* 6-byte READ(0x08) or WRITE(0x0A) cdb */
 	if (scmd->cmd_len == 6) {
@@ -809,17 +819,30 @@ static int hiraid_setup_rw_cmd(struct hiraid_dev *hdev,
 			control |= HIRAID_RW_FUA;
 	}
 
-	if (unlikely(datalength > U16_MAX || datalength == 0)) {
+	if (unlikely(datalength > U16_MAX)) {
 		dev_err(hdev->dev, "invalid IO for illegal transfer data length[%u]\n", datalength);
 		WARN_ON(1);
 		return -EINVAL;
 	}
+
+	if (unlikely(datalength == 0))
+		return RW_LENGTH_ZERO;
 
 	io_cmd->slba = cpu_to_le64(((u64)start_lba_hi << 32) | start_lba_lo);
 	/* 0base for nlb */
 	io_cmd->nlb = cpu_to_le16((u16)(datalength - 1));
 	io_cmd->control = cpu_to_le16(control);
 
+	mapbuf->cdb_data_len = (u32)((io_cmd->nlb + 1) * sdev->sector_size);
+	if (mapbuf->cdb_data_len > buf_len) {
+		/* return DID_ERROR */
+		dev_err(hdev->dev, "error: buf len[0x%x] is smaller than actual length[0x%x] sectorsize[0x%x]\n",
+			buf_len, mapbuf->cdb_data_len, sdev->sector_size);
+		return -EINVAL;
+	} else if (mapbuf->cdb_data_len < buf_len) {
+		dev_warn(hdev->dev, "warn: buf_len[0x%x] cdb_data_len[0x%x] nlb[0x%x] sectorsize[0x%x]\n",
+			buf_len, mapbuf->cdb_data_len, io_cmd->nlb, sdev->sector_size);
+	}
 	return 0;
 }
 
@@ -849,13 +872,17 @@ static int hiraid_setup_nonrw_cmd(struct hiraid_dev *hdev,
 }
 
 static int hiraid_setup_io_cmd(struct hiraid_dev *hdev,
-				struct hiraid_scsi_io_cmd *io_cmd, struct scsi_cmnd *scmd)
+				struct hiraid_scsi_io_cmd *io_cmd, struct scsi_cmnd *scmd,
+				struct hiraid_mapmange *mapbuf)
 {
 	memcpy(io_cmd->common.cdb, scmd->cmnd, scmd->cmd_len);
 	io_cmd->common.cdb_len = scmd->cmd_len;
 
+	/* init cdb_data_len */
+	mapbuf->cdb_data_len = cpu_to_le32(scsi_bufflen(scmd));
+
 	if (hiraid_is_rw_scmd(scmd))
-		return hiraid_setup_rw_cmd(hdev, &io_cmd->rw, scmd);
+		return hiraid_setup_rw_cmd(hdev, &io_cmd->rw, scmd, mapbuf);
 	else
 		return hiraid_setup_nonrw_cmd(hdev, &io_cmd->nonrw, scmd);
 }
@@ -938,7 +965,12 @@ static int hiraid_io_map_data(struct hiraid_dev *hdev, struct hiraid_mapmange *m
 static void hiraid_check_status(struct hiraid_mapmange *mapbuf, struct scsi_cmnd *scmd,
 				struct hiraid_completion *cqe)
 {
-	scsi_set_resid(scmd, 0);
+	u32 datalength = cpu_to_le32(scsi_bufflen(scmd));
+
+	if (datalength > mapbuf->cdb_data_len)
+		scsi_set_resid(scmd, datalength - mapbuf->cdb_data_len);
+	else
+		scsi_set_resid(scmd, 0);
 
 	switch ((le16_to_cpu(cqe->status) >> 1) & 0x7f) {
 	case SENSE_STATE_OK:
@@ -1022,9 +1054,14 @@ static int hiraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	io_cmd.rw.hdid = cpu_to_le32(hostdata->hdid);
 	io_cmd.rw.cmd_id = cpu_to_le16(cid);
 
-	ret = hiraid_setup_io_cmd(hdev, &io_cmd, scmd);
+	ret = hiraid_setup_io_cmd(hdev, &io_cmd, scmd, mapbuf);
 	if (unlikely(ret)) {
-		set_host_byte(scmd, DID_ERROR);
+		if (ret == RW_LENGTH_ZERO) {
+			scsi_set_resid(scmd, scsi_bufflen(scmd));
+			set_host_byte(scmd, DID_OK);
+		} else {
+			set_host_byte(scmd, DID_ERROR);
+		}
 		scmd->scsi_done(scmd);
 		atomic_dec(&ioq->inflight);
 		return 0;
@@ -2541,11 +2578,11 @@ static int hiraid_bsg_buf_map(struct hiraid_dev *hdev, struct bsg_job *job,
 	if (unlikely(mapbuf->sge_cnt == 0))
 		goto out;
 
-	mapbuf->use_sgl = !hiraid_is_prp(hdev, mapbuf->sgl, mapbuf->sge_cnt);
-
 	ret = dma_map_sg_attrs(hdev->dev, mapbuf->sgl, mapbuf->sge_cnt, dma_dir, DMA_ATTR_NO_WARN);
 	if (!ret)
 		goto out;
+
+	mapbuf->use_sgl = !hiraid_is_prp(hdev, mapbuf->sgl, mapbuf->sge_cnt);
 
 	if ((mapbuf->use_sgl == (bool)true) && (bsg_req->msgcode == HIRAID_BSG_IOPTHRU) &&
 		(hdev->ctrl_info->pt_use_sgl != (bool)false)) {
@@ -3925,7 +3962,9 @@ static void hiraid_remove(struct pci_dev *pdev)
 
 static const struct pci_device_id hiraid_hw_card_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI_LOGIC, HIRAID_SERVER_DEVICE_HBA_DID) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI_LOGIC, HIRAID_SERVER_DEVICE_HBAS_DID) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI_LOGIC, HIRAID_SERVER_DEVICE_RAID_DID) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_HUAWEI_LOGIC, HIRAID_SERVER_DEVICE_RAIDS_DID) },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, hiraid_hw_card_ids);
