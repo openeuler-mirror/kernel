@@ -217,6 +217,9 @@ struct task_struct init_task
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	.prefer_cpus	= NULL,
 #endif
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	.rship		= NULL,
+#endif
 #ifdef CONFIG_SECCOMP_FILTER
 	.seccomp	= { .filter_count = ATOMIC_INIT(0) },
 #endif

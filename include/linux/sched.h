@@ -26,6 +26,7 @@
 #include <linux/resource.h>
 #include <linux/latencytop.h>
 #include <linux/sched/prio.h>
+#include <linux/sched/relationship.h>
 #include <linux/sched/types.h>
 #include <linux/signal_types.h>
 #include <linux/mm_types_task.h>
@@ -1468,7 +1469,11 @@ struct task_struct {
 #else
 	KABI_RESERVE(13)
 #endif
+#if defined(CONFIG_SCHED_TASK_RELATIONSHIP) && !defined(__GENKSYMS__)
+	KABI_USE(14, struct task_relationship *rship)
+#else
 	KABI_RESERVE(14)
+#endif
 	KABI_RESERVE(15)
 	KABI_RESERVE(16)
 	KABI_AUX_PTR(task_struct)

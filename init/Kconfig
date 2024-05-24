@@ -1081,6 +1081,16 @@ config QOS_SCHED_DYNAMIC_AFFINITY
 	 of taskgroup is below threshold setted, otherwise make taskgroup to use
 	 cpus allowed.
 
+config SCHED_TASK_RELATIONSHIP
+	bool "task relationship"
+	depends on NUMA_BALANCING
+	default n
+	help
+	 This feature enables the scheduler to identify tasks relationship by
+	 page fault, SPE, socket and other IPC method.
+
+	 If in doubt, say N.
+
 config UCLAMP_TASK_GROUP
 	bool "Utilization clamping per group of tasks"
 	depends on CGROUP_SCHED

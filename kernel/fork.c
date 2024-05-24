@@ -476,6 +476,8 @@ void free_task(struct task_struct *tsk)
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 	sched_grid_qos_free(tsk);
 #endif
+	if (task_relationship_used())
+		sched_relationship_free(tsk);
 	free_task_struct(tsk);
 }
 EXPORT_SYMBOL(free_task);
@@ -748,6 +750,7 @@ void __put_task_struct(struct task_struct *tsk)
 	io_uring_free(tsk);
 	cgroup_free(tsk);
 	task_numa_free(tsk, true);
+	task_relationship_free(tsk, false);
 	security_task_free(tsk);
 	exit_creds(tsk);
 	delayacct_tsk_free(tsk);
@@ -947,6 +950,10 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	tsk->prefer_cpus = NULL;
+#endif
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	tsk->rship = NULL;
 #endif
 
 	setup_thread_stack(tsk, orig);
@@ -2101,6 +2108,12 @@ static __latent_entropy struct task_struct *copy_process(
 	if (retval)
 		goto bad_fork_cleanup_count;
 #endif
+
+	if (task_relationship_used()) {
+		retval = sched_relationship_fork(p);
+		if (retval)
+			goto bad_fork_cleanup_count;
+	}
 
 	/*
 	 * If multiple threads are within copy_process(), then this check

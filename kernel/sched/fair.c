@@ -1086,6 +1086,11 @@ struct numa_group {
 	struct rcu_head rcu;
 	unsigned long total_faults;
 	unsigned long max_faults_cpu;
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	struct fault_array_info score_ordered[FAULT_NODES_MAX];
+	struct fault_array_info faults_ordered[FAULT_NODES_MAX];
+	nodemask_t preferred_nid;
+#endif
 	/*
 	 * Faults_cpu is used to decide whether memory should move
 	 * towards the CPU. As a consequence, these stats are weighted
@@ -2279,6 +2284,9 @@ static int preferred_group_nid(struct task_struct *p, int nid)
 {
 	nodemask_t nodes;
 	int dist;
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	struct numa_group *ng;
+#endif
 
 	/* Direct connections between all NUMA nodes. */
 	if (sched_numa_topology_type == NUMA_DIRECT)
@@ -2301,7 +2309,19 @@ static int preferred_group_nid(struct task_struct *p, int nid)
 				max_score = score;
 				max_node = node;
 			}
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+			if (task_relationship_used()) {
+				ng = deref_curr_numa_group(p);
+				if (ng) {
+					spin_lock_irq(&ng->lock);
+					numa_faults_update_and_sort(node, score,
+						ng->score_ordered);
+					spin_unlock_irq(&ng->lock);
+				}
+			}
+#endif
 		}
+
 		return max_node;
 	}
 
@@ -2451,6 +2471,17 @@ static void task_numa_placement(struct task_struct *p)
 			max_faults = group_faults;
 			max_nid = nid;
 		}
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+		if (task_relationship_used()) {
+			numa_faults_update_and_sort(nid, faults,
+				p->rship->faults.faults_ordered);
+
+			if (ng)
+				numa_faults_update_and_sort(nid, group_faults,
+					ng->faults_ordered);
+		}
+#endif
 	}
 
 	if (ng) {
@@ -2512,6 +2543,16 @@ static void task_numa_group(struct task_struct *p, int cpupid, int flags,
 
 		grp->nr_tasks++;
 		rcu_assign_pointer(p->numa_group, grp);
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+		if (task_relationship_used()) {
+			grp->preferred_nid = NODE_MASK_NONE;
+			for (i = 0; i < FAULT_NODES_MAX; i++) {
+				grp->faults_ordered[i].nid = -1;
+				grp->score_ordered[i].nid = -1;
+			}
+		}
+#endif
 	}
 
 	rcu_read_lock();
@@ -2623,6 +2664,15 @@ void task_numa_free(struct task_struct *p, bool final)
 		p->total_numa_faults = 0;
 		for (i = 0; i < NR_NUMA_HINT_FAULT_STATS * nr_node_ids; i++)
 			numa_faults[i] = 0;
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+		if (task_relationship_used()) {
+			for (i = 0; i < FAULT_NODES_MAX; i++) {
+				p->rship->faults.faults_ordered[i].nid = -1;
+				p->rship->faults.faults_ordered[i].val = 0;
+			}
+		}
+#endif
 	}
 }
 
@@ -13707,7 +13757,7 @@ void show_numa_stats(struct task_struct *p, struct seq_file *m)
 	struct numa_group *ng;
 
 	rcu_read_lock();
-	ng = rcu_dereference(p->numa_group);
+
 	for_each_online_node(node) {
 		if (p->numa_faults) {
 			tsf = p->numa_faults[task_faults_idx(NUMA_MEM, node, 0)];
@@ -13722,6 +13772,34 @@ void show_numa_stats(struct task_struct *p, struct seq_file *m)
 	rcu_read_unlock();
 }
 #endif /* CONFIG_NUMA_BALANCING */
+
+void sched_show_relationship(struct task_struct *p, struct seq_file *m)
+{
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	struct net_group *net_grp;
+	struct numa_group *ng;
+
+	if (!task_relationship_used())
+		return;
+
+	rcu_read_lock();
+
+	ng = rcu_dereference(p->numa_group);
+	if (ng) {
+		seq_printf(m, "numa group preferred nid %*pbl\n",
+			nodemask_pr_args(&ng->preferred_nid));
+	}
+
+	net_grp = rcu_dereference(p->rship->net_group);
+	if (net_grp) {
+		seq_printf(m, "net group gid %d preferred nid %*pbl\n",
+			net_grp->hdr.gid,
+			nodemask_pr_args(&net_grp->hdr.preferred_nid));
+	}
+
+	rcu_read_unlock();
+#endif
+}
 #endif /* CONFIG_SCHED_DEBUG */
 
 __init void init_sched_fair_class(void)
