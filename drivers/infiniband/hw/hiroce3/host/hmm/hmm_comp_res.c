@@ -6,6 +6,7 @@
 
 #include "hinic3_hw.h"
 #include "hmm_comp.h"
+#include "hmm_mr.h"
 
 int hmm_rdma_mpt_alloc(void *hwdev, struct rdma_mpt *mpt, u32 service_type)
 {

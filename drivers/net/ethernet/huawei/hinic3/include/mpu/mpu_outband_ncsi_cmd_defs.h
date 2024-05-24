@@ -4,7 +4,7 @@
 #ifndef MPU_OUTBAND_NCSI_CMD_DEFS_H
 #define MPU_OUTBAND_NCSI_CMD_DEFS_H
 
-#pragma pack(1)
+#pragma pack(push, 1)
 
 enum NCSI_RESPONSE_CODE_E {
 	COMMAND_COMPLETED = 0x00,	/**< command completed */
@@ -200,6 +200,6 @@ struct tg_g_ncsi_parameters {
 	u16 vlan_tag[VLAN_FL_MAX_ID];
 };
 
-#pragma pack()
+#pragma pack(pop)
 
 #endif

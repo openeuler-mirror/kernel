@@ -17,7 +17,7 @@
 #define ROCE_VERBS_SQ_WQEBB_SIZE (2)
 #define ROCE_VERBS_SQ_PI_VLD (1)
 
-#pragma pack(4)
+#pragma pack(push, 4)
 /* qpc_attr_com info ,12*4B */
 struct tag_roce_verbs_qpc_attr_com {
 	/* DW0 */
@@ -408,6 +408,6 @@ struct tag_roce_verbs_modify_ctx_info {
 	u32 mask;
 };
 
-#pragma pack()
+#pragma pack(pop)
 
 #endif /* ROCE_VERBS_ATTR_H */

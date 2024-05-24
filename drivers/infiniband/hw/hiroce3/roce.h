@@ -8,7 +8,6 @@
 #include <linux/io-mapping.h>
 #include <linux/list.h>
 #include <linux/cdev.h>
-#include <linux/version.h>
 
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_user_verbs.h>

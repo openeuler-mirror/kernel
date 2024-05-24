@@ -24,20 +24,13 @@
 #define srq_obj_intern_if_section
 
 /**
- * Prototype    : cqm_container_free
- * Description  : Only the container buffer is released. The buffer in the WQE
- *		  and fast link tables are not involved.
- *		  Containers can be released from head to tail, including head
- *		  and tail. This function does not modify the start and
- *		  end pointers of qinfo records.
- * Input        : u8 *srq_head_container
- *		  u8 *srq_tail_container: If it is NULL, it means to release
- *					  container from head to tail.
- *		  struct tag_cqm_queue *common
- * Output       : None
- * Return Value : void
- * 1.Date         : 2016/2/1
- *   Modification : Created function
+ * cqm_container_free - Only the container buffer is released. The buffer in the WQE
+ *                      and fast link tables are not involved. Containers can be released
+ *                      from head to tail, including head and tail. This function does not
+ *                      modify the start and end pointers of qinfo records.
+ * @srq_head_container: head pointer of the containers be released
+ * @srq_tail_container: If it is NULL, it means to release container from head to tail
+ * @common: CQM nonrdma queue info
  */
 void cqm_container_free(u8 *srq_head_container, u8 *srq_tail_container,
 			struct tag_cqm_queue *common)
@@ -111,16 +104,11 @@ void cqm_container_free(u8 *srq_head_container, u8 *srq_tail_container,
 }
 
 /**
- * Prototype    : cqm_container_create
- * Description  : Create a container for the RQ or SRQ, link it to the tail of
- *		  the queue, and update the tail container pointer of the queue.
- * Input        : struct tag_cqm_object *object
- *		  u8 **container_addr
- *		  bool link
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2016/2/16
- *   Modification : Created function
+ * cqm_container_create - Create a container for the RQ or SRQ, link it to the tail of the queue,
+ *                        and update the tail container pointer of the queue.
+ * @object: CQM object
+ * @container_addr: the pointer of container created
+ * @link: if the SRQ is not empty, update the linkwqe of the tail container
  */
 s32 cqm_container_create(struct tag_cqm_object *object, u8 **container_addr, bool link)
 {
@@ -216,13 +204,8 @@ map_fail:
 }
 
 /**
- * Prototype    : cqm_srq_container_init
- * Description  : Initialize the SRQ to create all containers and link them.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2016/2/3
- *   Modification : Created function
+ * cqm_srq_container_init - Initialize the SRQ to create all containers and link them
+ * @object: CQM object
  */
 static s32 cqm_srq_container_init(struct tag_cqm_object *object)
 {
@@ -268,13 +251,8 @@ static s32 cqm_srq_container_init(struct tag_cqm_object *object)
 }
 
 /**
- * Prototype    : cqm_share_recv_queue_create
- * Description  : Create SRQ(share receive queue)
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2016/1/27
- *   Modification : Created function
+ * cqm_share_recv_queue_create - Create SRQ(share receive queue)
+ * @object: CQM object
  */
 s32 cqm_share_recv_queue_create(struct tag_cqm_object *object)
 {
@@ -336,13 +314,8 @@ err1:
 }
 
 /**
- * Prototype    : cqm_srq_used_rq_delete
- * Description  : Delete RQ in TOE SRQ mode.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2016/5/19
- *   Modification : Created function
+ * cqm_srq_used_rq_delete - Delete RQ in TOE SRQ mode
+ * @object: CQM object
  */
 static void cqm_srq_used_rq_delete(const struct tag_cqm_object *object)
 {
@@ -394,15 +367,10 @@ static void cqm_srq_used_rq_delete(const struct tag_cqm_object *object)
 }
 
 /**
- * Prototype    : cqm_share_recv_queue_delete
- * Description  : The SRQ object is deleted. Delete only containers that are not
- *		  used by SRQ, that is, containers from the head to the tail.
- *		  The RQ releases containers that have been used by the RQ.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2016/2/2
- *   Modification : Created function
+ * cqm_share_recv_queue_delete - The SRQ object is deleted. Delete only containers that are not
+ *                               used by SRQ, that is, containers from the head to the tail.
+ *                               The RQ releases containers that have been used by the RQ.
+ * @object: CQM object
  */
 void cqm_share_recv_queue_delete(struct tag_cqm_object *object)
 {
@@ -444,14 +412,10 @@ void cqm_share_recv_queue_delete(struct tag_cqm_object *object)
 #define CQM_IDX_VALID_SHIFT  29
 
 /**
- * Prototype    : cqm_qpc_mpt_bitmap_alloc
- * Description  : Apply for index from the bitmap when creating QPC or MPT.
- * Input        : struct tag_cqm_object *object
- *		  struct tag_cqm_cla_table *cla_table
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_qpc_mpt_bitmap_alloc - Apply for index from the bitmap when creating QPC or MPT
+ * @object: CQM object
+ * @cla_table: CLA table entry
+ * @low2bit_align_en: enable alignment of the lower two bits
  */
 static s32 cqm_qpc_mpt_bitmap_alloc(struct tag_cqm_object *object,
 				    struct tag_cqm_cla_table *cla_table, bool low2bit_align_en)
@@ -511,13 +475,9 @@ static s32 cqm_qpc_mpt_bitmap_alloc(struct tag_cqm_object *object,
 }
 
 /**
- * Prototype    : cqm_qpc_mpt_create
- * Description  : Create QPC or MPT
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : s32
- * 1.Date   : 2015/4/15
- *   Modification : Created function
+ * cqm_qpc_mpt_create - Create QPC or MPT
+ * @object: CQM object
+ * @low2bit_align_en: enable alignment of the lower two bits
  */
 s32 cqm_qpc_mpt_create(struct tag_cqm_object *object, bool low2bit_align_en)
 {
@@ -610,13 +570,8 @@ err1:
 }
 
 /**
- * Prototype    : cqm_qpc_mpt_delete
- * Description  : Delete QPC or MPT.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_qpc_mpt_delete - Delete QPC or MPT
+ * @object: CQM object
  */
 void cqm_qpc_mpt_delete(struct tag_cqm_object *object)
 {
@@ -687,17 +642,14 @@ void cqm_qpc_mpt_delete(struct tag_cqm_object *object)
 }
 
 /**
- * Prototype    : cqm_linkwqe_fill
- * Description  : Used to organize the queue buffer of non-RDMA services and
- *		  fill the link wqe.
- * Input        : wqe_per_buf: Linkwqe is not included.
- *		  wqe_number: Linkwqe is not included.
- *		  tail: true - The linkwqe must be at the end of the page;
- *			false - The linkwqe can be not at the end of the page.
- * Output       : None
- * Return Value : void
- * 1.Date   : 2015/6/15
- *   Modification : Created function
+ * cqm_linkwqe_fill - Used to organize the queue buffer of non-RDMA services and fill the link wqe
+ * @buf: CQM queue buffer
+ * @wqe_per_buf: Linkwqe is not included
+ * @wqe_size: Linkwqe size
+ * @wqe_number: Linkwqe number
+ * @tail: true - The linkwqe must be at the end of the page;
+ *	  false - The linkwqe can be not at the end of the page.
+ * @link_mode: Link mode
  */
 static void cqm_linkwqe_fill(struct tag_cqm_buf *buf, u32 wqe_per_buf, u32 wqe_size,
 			     u32 wqe_number, bool tail, u8 link_mode)
@@ -877,13 +829,8 @@ static s32 cqm_nonrdma_queue_ctx_create(struct tag_cqm_object *object)
 }
 
 /**
- * Prototype    : cqm_nonrdma_queue_create
- * Description  : Create a queue for non-RDMA services.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_nonrdma_queue_create - Create a queue for non-RDMA services
+ * @object: CQM object
  */
 s32 cqm_nonrdma_queue_create(struct tag_cqm_object *object)
 {
@@ -984,13 +931,8 @@ err1:
 }
 
 /**
- * Prototype    : cqm_nonrdma_queue_delete
- * Description  : Delete the queues of non-RDMA services.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_nonrdma_queue_delete - Delete the queues of non-RDMA services
+ * @object: CQM object
  */
 void cqm_nonrdma_queue_delete(struct tag_cqm_object *object)
 {
@@ -1162,13 +1104,8 @@ static s32 cqm_rdma_queue_ctx_create(struct tag_cqm_object *object)
 }
 
 /**
- * Prototype    : cqm_rdma_queue_create
- * Description  : Create rdma queue.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : s32
- * 1.Date          : 2015/4/15
- *    Modification : Created function
+ * cqm_rdma_queue_create - Create rdma queue
+ * @object: CQM object
  */
 s32 cqm_rdma_queue_create(struct tag_cqm_object *object)
 {
@@ -1246,13 +1183,8 @@ err1:
 }
 
 /**
- * Prototype    : cqm_rdma_queue_delete
- * Description  : Create rdma queue.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_rdma_queue_delete - Create rdma queue
+ * @object: CQM object
  */
 void cqm_rdma_queue_delete(struct tag_cqm_object *object)
 {
@@ -1330,13 +1262,8 @@ void cqm_rdma_queue_delete(struct tag_cqm_object *object)
 }
 
 /**
- * Prototype    : cqm_rdma_table_create
- * Description  : Create RDMA-related entries.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : s32
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_rdma_table_create - Create RDMA-related entries
+ * @object: CQM object
  */
 s32 cqm_rdma_table_create(struct tag_cqm_object *object)
 {
@@ -1379,13 +1306,8 @@ s32 cqm_rdma_table_create(struct tag_cqm_object *object)
 }
 
 /**
- * Prototype    : cqm_rdma_table_create
- * Description  : Delete RDMA-related Entries.
- * Input        : struct tag_cqm_object *object
- * Output       : None
- * Return Value : void
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_rdma_table_delete - Delete RDMA-related Entries
+ * @object: CQM object
  */
 void cqm_rdma_table_delete(struct tag_cqm_object *object)
 {
@@ -1411,16 +1333,10 @@ void cqm_rdma_table_delete(struct tag_cqm_object *object)
 }
 
 /**
- * Prototype    : cqm_rdma_table_offset_addr
- * Description  : Obtain the address of the RDMA entry based on the offset.
- *		  The offset is the index.
- * Input        : struct tag_cqm_object *object
- *		  u32 offset
- *		  dma_addr_t *paddr
- * Output       : None
- * Return Value : u8 *
- * 1.Date         : 2015/4/15
- *   Modification : Created function
+ * cqm_rdma_table_offset_addr - Obtain the address of the RDMA entry based on the offset
+ * @object: CQM object
+ * @offset: The offset is the index
+ * @paddr: dma physical addr
  */
 u8 *cqm_rdma_table_offset_addr(struct tag_cqm_object *object, u32 offset, dma_addr_t *paddr)
 {

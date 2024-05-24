@@ -1090,7 +1090,7 @@ void free_cfg_mgmt(struct hinic3_hwdev *dev)
 }
 
 /**
- * hinic_set_vf_dev_cap - Set max queue num for VF
+ * hinic3_init_vf_dev_cap - Set max queue num for VF
  * @hwdev: the HW device for VF
  */
 int hinic3_init_vf_dev_cap(void *hwdev)

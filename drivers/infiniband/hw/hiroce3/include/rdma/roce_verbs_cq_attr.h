@@ -10,7 +10,7 @@
 #define BIG_ENDIAN	0x4321
 #endif
 
-#pragma pack(4)
+#pragma pack(push, 4)
 struct roce_verbs_cq_attr {
 	/* DW0 */
 	union {
@@ -191,6 +191,6 @@ struct tag_roce_verbs_modify_cq_info {
 	u32 max_cnt;
 	u32 timeout;
 };
-#pragma pack()
+#pragma pack(pop)
 
 #endif /* ROCE_VERBS_CQ_ATTR_H */

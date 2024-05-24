@@ -71,7 +71,7 @@ struct ib_ucontext {
 struct ib_umem_odp;
 
 struct hmm_umem *hmm_umem_get(struct device *device, unsigned long addr,
-	size_t size, int access, int dmasync);
+	size_t size, int access);
 
 void hmm_umem_release(struct hmm_umem *hmem);
 
