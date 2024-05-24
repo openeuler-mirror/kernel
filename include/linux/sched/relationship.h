@@ -45,6 +45,10 @@ struct bpf_relationship_get_args {
 	struct bpf_net_relationship net;
 };
 
+struct bpf_relationship_set_args {
+	nodemask_t preferred_node;
+};
+
 struct relationship_hdr {
 	refcount_t refcount;
 	spinlock_t lock;
@@ -161,6 +165,8 @@ extern void numa_faults_update_and_sort(int nid, int new,
 extern void task_tick_relationship(struct rq *rq, struct task_struct *curr);
 
 extern void task_preferred_node_work(struct callback_head *work);
+extern void
+sched_set_curr_preferred_node(struct bpf_relationship_set_args *args);
 
 DECLARE_STATIC_KEY_FALSE(__relationship_switch);
 static inline bool task_relationship_used(void)

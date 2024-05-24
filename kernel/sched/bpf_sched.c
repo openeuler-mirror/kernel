@@ -369,6 +369,24 @@ const struct bpf_func_proto bpf_get_task_relationship_stats_proto = {
 	.arg2_type	= ARG_CONST_MAP_PTR,
 	.arg3_type	= ARG_PTR_TO_MAP_VALUE_OR_NULL,
 };
+
+BPF_CALL_2(bpf_sched_set_curr_preferred_node,
+	   struct bpf_relationship_set_args *, args, int, len)
+{
+	if (!args || len != sizeof(*args))
+		return -EINVAL;
+
+	sched_set_curr_preferred_node(args);
+	return 0;
+}
+
+const struct bpf_func_proto bpf_sched_set_curr_preferred_node_proto = {
+	.func		= bpf_sched_set_curr_preferred_node,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg2_type	= ARG_CONST_SIZE,
+};
 #endif
 
 static const struct bpf_func_proto *
@@ -398,6 +416,8 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 #ifdef CONFIG_SCHED_TASK_RELATIONSHIP
 	case BPF_FUNC_get_task_relationship_stats:
 		return &bpf_get_task_relationship_stats_proto;
+	case BPF_FUNC_sched_set_curr_preferred_node:
+		return &bpf_sched_set_curr_preferred_node_proto;
 #endif
 	default:
 		return bpf_base_func_proto(func_id);

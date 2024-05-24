@@ -17,6 +17,7 @@
 
 #include <linux/bpf_topology.h>
 #include <linux/numa.h>
+#include <linux/sched/relationship.h>
 #include <linux/version.h>
 #include <uapi/linux/bpf.h>
 #include <bpf/bpf_helpers.h>
@@ -27,7 +28,7 @@
 #define INVALID_PTR		((void *)(0UL))
 #define getVal(P)							\
 	({								\
-		typeof(P) val = 0;					\
+		typeof(P) val;						\
 		bpf_probe_read_kernel(&val, sizeof(val), &(P));		\
 		val;							\
 	})
@@ -78,6 +79,13 @@ struct {
 	__type(value, struct bpf_cpumask_info);
 	__uint(max_entries, 1);
 } map_cpumask_info SEC(".maps");
+
+static struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__type(key, u32);
+	__type(value, struct bpf_relationship_get_args);
+	__uint(max_entries, 1);
+} map_rship_stats SEC(".maps");
 
 static __always_inline void
 libbpf_nodes_and(nodemask_t *dst, nodemask_t *src1, nodemask_t *src2)
@@ -613,5 +621,24 @@ static __always_inline  int libbpf_sched_se_tag_of(struct sched_entity *se)
 	}
 
 	return se_tag;
+}
+
+static __always_inline int
+libbpf_mem_preferred_nid(struct task_struct *tsk, nodemask_t *preferred_node)
+{
+	struct bpf_relationship_get_args *stats;
+	int key = 0;
+	int ret;
+
+	stats = bpf_map_lookup_elem(&map_rship_stats, &key);
+	if (!stats)
+		return NUMA_NO_NODE;
+
+	ret = bpf_get_task_relationship_stats(tsk, &map_rship_stats, stats);
+	if (ret)
+		return NUMA_NO_NODE;
+
+	*preferred_node = getVal(stats->mm.comm.preferred_node);
+	return 0;
 }
 #endif

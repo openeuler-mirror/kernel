@@ -3116,6 +3116,16 @@ void sched_get_mm_relationship(struct task_struct *tsk,
 	}
 #endif
 }
+
+void sched_set_curr_preferred_node(struct bpf_relationship_set_args *args)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct numa_group *grp = rcu_dereference_raw(current->numa_group);
+
+	grp->preferred_nid = args->preferred_node;
+	schedstat_inc(grp->nodes_switch_cnt);
+#endif
+}
 #endif
 
 #endif

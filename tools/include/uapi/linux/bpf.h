@@ -3908,6 +3908,12 @@ union bpf_attr {
  *		get relationship statistics of *tsk* and store in *stats*.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_set_curr_preferred_node(struct bpf_relationship_set_args *args, int len)
+ *	Description
+ *		set current task preferred node.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4082,6 +4088,7 @@ union bpf_attr {
 	FN(cpus_share_cache),		\
 	FN(nodemask_op),		\
 	FN(get_task_relationship_stats),\
+	FN(sched_set_curr_preferred_node),\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
