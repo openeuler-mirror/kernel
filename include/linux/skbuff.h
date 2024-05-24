@@ -924,7 +924,11 @@ struct sk_buff {
 	/* public: */
 
 	KABI_USE2(1, __u8 scm_io_uring:1, __u8 local_skb:1)
+#if IS_ENABLED(CONFIG_SCHED_TASK_RELATIONSHIP)
+	KABI_USE(2, struct sched_net_rship_skb *net_rship)
+#else
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 

@@ -138,6 +138,7 @@
 
 #include <net/tcp.h>
 #include <net/busy_poll.h>
+#include <net/net_rship.h>
 
 static DEFINE_MUTEX(proto_list_mutex);
 static LIST_HEAD(proto_list);
@@ -1677,11 +1678,17 @@ static void sock_copy(struct sock *nsk, const struct sock *osk)
 #ifdef CONFIG_SECURITY_NETWORK
 	void *sptr = nsk->sk_security;
 #endif
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	void *net_rship = nsk->net_rship;
+#endif
 	memcpy(nsk, osk, offsetof(struct sock, sk_dontcopy_begin));
 
 	memcpy(&nsk->sk_dontcopy_end, &osk->sk_dontcopy_end,
 	       prot->obj_size - offsetof(struct sock, sk_dontcopy_end));
 
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	nsk->net_rship = net_rship;
+#endif
 #ifdef CONFIG_SECURITY_NETWORK
 	nsk->sk_security = sptr;
 	security_sk_clone(osk, nsk);
@@ -1702,7 +1709,12 @@ static struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 		if (want_init_on_alloc(priority))
 			sk_prot_clear_nulls(sk, prot->obj_size);
 	} else
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+		sk = kmalloc(prot->obj_size + sizeof(struct sched_net_rship_sock),
+			     priority);
+#else
 		sk = kmalloc(prot->obj_size, priority);
+#endif
 
 	if (sk != NULL) {
 		if (security_sk_alloc(sk, family, priority))
@@ -1711,6 +1723,9 @@ static struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 		if (!try_module_get(prot->owner))
 			goto out_free_sec;
 		sk_tx_queue_clear(sk);
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+		net_rship_sock_init(sk, prot->obj_size);
+#endif
 	}
 
 	return sk;
@@ -2045,6 +2060,8 @@ void sk_setup_caps(struct sock *sk, struct dst_entry *dst)
 	}
 	sk->sk_gso_max_segs = max_segs;
 	sk_dst_set(sk, dst);
+
+	net_rship_sk_dst_set(sk, dst);
 }
 EXPORT_SYMBOL_GPL(sk_setup_caps);
 
@@ -3512,7 +3529,11 @@ int proto_register(struct proto *prot, int alloc_slab)
 
 	if (alloc_slab) {
 		prot->slab = kmem_cache_create_usercopy(prot->name,
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+					prot->obj_size + sizeof(struct sched_net_rship_sock), 0,
+#else
 					prot->obj_size, 0,
+#endif
 					SLAB_HWCACHE_ALIGN | SLAB_ACCOUNT |
 					prot->slab_flags,
 					prot->useroffset, prot->usersize,

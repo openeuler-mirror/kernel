@@ -1084,6 +1084,7 @@ config QOS_SCHED_DYNAMIC_AFFINITY
 config SCHED_TASK_RELATIONSHIP
 	bool "task relationship"
 	depends on NUMA_BALANCING
+	select BPF_NET_GLOBAL_PROG
 	default n
 	help
 	 This feature enables the scheduler to identify tasks relationship by

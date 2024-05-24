@@ -10755,6 +10755,30 @@ static int __init gnet_bpf_init(void)
 }
 late_initcall(gnet_bpf_init);
 
+#include <linux/sched/relationship.h>
+BPF_CALL_3(bpf_sched_net_rship_submit, void *, reqbuf, size_t, sz, u64, flags)
+{
+#if defined(CONFIG_SCHED_TASK_RELATIONSHIP)
+	struct net_relationship_req *req = reqbuf;
+
+	if (sz != sizeof(struct net_relationship_req))
+		return -EINVAL;
+
+	return sched_net_relationship_submit(req);
+#else
+	return 0;
+#endif
+}
+
+const struct bpf_func_proto bpf_sched_net_rship_submit_proto = {
+	.func	= bpf_sched_net_rship_submit,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_MEM,
+	.arg2_type	= ARG_CONST_SIZE,
+	.arg3_type	= ARG_ANYTHING,
+};
+
 static const struct bpf_func_proto *
 bpf_gnet_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
@@ -10763,6 +10787,8 @@ bpf_gnet_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_skb_event_output_proto;
 	case BPF_FUNC_sk_fullsock:
 		return &bpf_sk_fullsock_proto;
+	case BPF_FUNC_sched_net_rship_submit:
+		return &bpf_sched_net_rship_submit_proto;
 	default:
 		break;
 	}
@@ -10809,6 +10835,42 @@ static u32 bpf_gnet_convert_ctx_access(enum bpf_access_type type,
 		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, sk),
 				si->dst_reg, si->src_reg,
 				offsetof(struct bpf_gnet_ctx_kern, sk));
+		break;
+	case offsetof(struct bpf_gnet_ctx, numa_node):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, numa_node),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, numa_node));
+		break;
+	case offsetof(struct bpf_gnet_ctx, curr_tid):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, curr_tid),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, curr_tid));
+		break;
+	case offsetof(struct bpf_gnet_ctx, peer_tid):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, peer_tid),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, peer_tid));
+		break;
+	case offsetof(struct bpf_gnet_ctx, rxtx_bytes):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, rxtx_bytes),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, rxtx_bytes));
+		break;
+	case offsetof(struct bpf_gnet_ctx, rx_dev_idx):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, rx_dev_idx),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, rx_dev_idx));
+		break;
+	case offsetof(struct bpf_gnet_ctx, rx_dev_queue_idx):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, rx_dev_queue_idx),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, rx_dev_queue_idx));
+		break;
+	case offsetof(struct bpf_gnet_ctx, rx_dev_netns_cookie):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern,
+							rx_dev_netns_cookie),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, rx_dev_netns_cookie));
 		break;
 	}
 	return insn - insn_buf;

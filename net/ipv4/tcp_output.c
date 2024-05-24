@@ -39,6 +39,7 @@
 
 #include <net/tcp.h>
 #include <net/mptcp.h>
+#include <net/net_rship.h>
 
 #include <linux/compiler.h>
 #include <linux/gfp.h>
@@ -1195,6 +1196,8 @@ void tcp_wfree(struct sk_buff *skb)
 	 * Will be released by sk_free() from here or tcp_tasklet_func()
 	 */
 	WARN_ON(refcount_sub_and_test(skb->truesize - 1, &sk->sk_wmem_alloc));
+
+	net_rship_send_nic_node(sk, skb);
 
 	/* If this softirq is serviced by ksoftirqd, we are likely under stress.
 	 * Wait until our queues (qdisc + devices) are drained.

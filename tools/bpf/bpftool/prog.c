@@ -80,7 +80,10 @@ static const char * const attach_type_strings[] = {
 	[BPF_SK_SKB_STREAM_VERDICT] = "stream_verdict",
 	[BPF_SK_MSG_VERDICT] = "msg_verdict",
 	[BPF_FLOW_DISSECTOR] = "flow_dissector",
-	[BPF_GNET_RESERVE0] = "gnet_reserve0",
+	[BPF_GNET_TCP_RECVMSG] = "gnet_tcp_recvmsg",
+	[BPF_GNET_SK_DST_SET] = "gnet_sk_dst_set",
+	[BPF_GNET_RCV_NIC_NODE] = "gnet_rcv_nic_node",
+	[BPF_GNET_SEND_NIC_NODE] = "gnet_send_nic_node",
 	[__MAX_BPF_ATTACH_TYPE] = NULL,
 };
 

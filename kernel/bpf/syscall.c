@@ -3021,7 +3021,10 @@ attach_type_to_prog_type(enum bpf_attach_type attach_type)
 	case BPF_XDP:
 		return BPF_PROG_TYPE_XDP;
 #ifdef CONFIG_BPF_NET_GLOBAL_PROG
-	case BPF_GNET_RESERVE0:
+	case BPF_GNET_TCP_RECVMSG:
+	case BPF_GNET_SK_DST_SET:
+	case BPF_GNET_RCV_NIC_NODE:
+	case BPF_GNET_SEND_NIC_NODE:
 		return BPF_PROG_TYPE_NET_GLOBAL;
 #endif
 	default:
