@@ -3902,6 +3902,12 @@ union bpf_attr {
  *			set online nodes to nodemask_t *op->arg1*, 0 returned.
  *	Return
  *		View above.
+ *
+ * int bpf_get_task_relationship_stats(struct task_struct *tsk, struct bpf_map *map, struct bpf_relationship_get_args *stats)
+ *	Description
+ *		get relationship statistics of *tsk* and store in *stats*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4075,6 +4081,7 @@ union bpf_attr {
 	FN(cpumask_op),			\
 	FN(cpus_share_cache),		\
 	FN(nodemask_op),		\
+	FN(get_task_relationship_stats),\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

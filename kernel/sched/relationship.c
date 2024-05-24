@@ -344,6 +344,28 @@ void numa_faults_update_and_sort(int nid, int new,
 	sort(stats, nodes, sizeof(stats[0]), cmp_fault_stats, NULL);
 }
 
+void sched_get_relationship(struct task_struct *tsk,
+			    struct bpf_relationship_get_args *args)
+{
+	struct net_group *ngrp;
+
+	rcu_read_lock();
+
+	/* memory relationship */
+	sched_get_mm_relationship(tsk, args);
+
+	/* net relationship */
+	ngrp = rcu_dereference(tsk->rship->net_group);
+	if (ngrp) {
+		args->net.comm.gid = ngrp->hdr.gid;
+		args->net.comm.nr_tasks = ngrp->hdr.nr_tasks;
+		args->net.comm.preferred_node = ngrp->hdr.preferred_nid;
+		args->net.grp_rxtx_bytes = ngrp->rxtx_bytes;
+	}
+
+	rcu_read_unlock();
+}
+
 void task_relationship_free(struct task_struct *tsk, bool reset)
 {
 	if (!task_relationship_used())

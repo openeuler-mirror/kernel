@@ -3042,6 +3042,32 @@ static inline void update_scan_period(struct task_struct *p, int new_cpu)
 
 #endif /* CONFIG_NUMA_BALANCING */
 
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+
+#ifdef CONFIG_BPF_SCHED
+void sched_get_mm_relationship(struct task_struct *tsk,
+			       struct bpf_relationship_get_args *args)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct numa_group *grp;
+
+	grp = rcu_dereference(tsk->numa_group);
+	if (grp) {
+		args->mm.comm.gid = grp->gid;
+		args->mm.comm.nr_tasks = grp->nr_tasks;
+		args->mm.grp_total_faults = grp->total_faults;
+		args->mm.comm.preferred_node = grp->preferred_nid;
+		memcpy(args->mm.grp_faults_ordered, grp->faults_ordered,
+			sizeof(args->mm.grp_faults_ordered));
+		memcpy(args->mm.grp_score_ordered, grp->score_ordered,
+			sizeof(args->mm.grp_score_ordered));
+	}
+#endif
+}
+#endif
+
+#endif
+
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
 static __always_inline void
 adjust_rq_cfs_tasks(void (*list_op)(struct list_head *, struct list_head *),

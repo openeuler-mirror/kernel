@@ -20,6 +20,30 @@ struct fault_array_info {
 	unsigned long val;
 };
 
+struct relationship_comm {
+	int nr_tasks;
+	int gid;
+	nodemask_t preferred_node;
+};
+
+struct bpf_net_relationship {
+	struct relationship_comm comm;
+	unsigned long grp_rxtx_bytes;
+	unsigned long grp_remote_rxtx_bytes;
+};
+
+struct bpf_mm_relationship {
+	struct relationship_comm comm;
+	unsigned long grp_total_faults;
+	struct fault_array_info grp_faults_ordered[FAULT_NODES_MAX];
+	struct fault_array_info grp_score_ordered[FAULT_NODES_MAX];
+};
+
+struct bpf_relationship_get_args {
+	struct bpf_mm_relationship mm;
+	struct bpf_net_relationship net;
+};
+
 struct relationship_hdr {
 	refcount_t refcount;
 	spinlock_t lock;
@@ -103,6 +127,10 @@ extern void sched_relationship_free(struct task_struct *p);
 void task_relationship_free(struct task_struct *tsk, bool reset);
 extern bool task_relationship_supported(struct task_struct *tsk);
 extern int sched_net_relationship_submit(struct net_relationship_req *req);
+extern void sched_get_mm_relationship(struct task_struct *tsk,
+			       struct bpf_relationship_get_args *args);
+extern void sched_get_relationship(struct task_struct *tsk,
+				   struct bpf_relationship_get_args *args);
 extern void numa_faults_update_and_sort(int nid, int new,
 					  struct fault_array_info *stats);
 
