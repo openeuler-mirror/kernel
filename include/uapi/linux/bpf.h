@@ -3874,6 +3874,34 @@ union bpf_attr {
  *		check src_cpu whether share cache with dst_cpu.
  *	Return
  *		yes 1, no 0.
+ *
+ * int bpf_nodemask_op(struct nodemask_op_args *op, int len)
+ *	Description
+ *		A series of nodemask-related operations. Perform different
+ *		operations base on *op*->type. User also need fill other
+ *		*op* field base on *op*->type. *op*->type is one of them
+ *
+ *		**NODEMASK_EMPTY**
+ *			nodes_empty(op->arg1) returned.
+ *		**NODEMASK_NODE_ISSET**
+ *			node_isset(op->arg1, op->arg2) returned
+ *		**NODEMASK_NODES_CLEAR**
+ *			0 returned
+ *		**NODEMASK_NODE_CLEAR**
+ *			unset op->arg1 from op->arg2, 0 returned
+ *		**NODEMASK_NODE_SET**
+ *			set op->arg1 to op->arg2, 0 returned
+ *		**NODEMASK_WEIGHT**
+ *			nodes_weight(op->arg1) returned
+ *		**NODEMASK_NODELIST_PARSE**
+ *			str *op->arg1* to nodemask_t *op->arg2*,
+ *			0 on success, or a negative error in case of failure.
+ *		**NODEMASK_TO_CPUMASK**
+ *			nodemask_t *arg1* to cpumask_t *op->arg2*, 0 returned.
+ *		**NODEMASK_ONLINE**
+ *			set online nodes to nodemask_t *op->arg1*, 0 returned.
+ *	Return
+ *		View above.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4046,6 +4074,7 @@ union bpf_attr {
 	FN(sched_entity_to_tg),		\
 	FN(cpumask_op),			\
 	FN(cpus_share_cache),		\
+	FN(nodemask_op),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

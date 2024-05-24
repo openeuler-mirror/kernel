@@ -2378,6 +2378,28 @@ enum cpumask_op_type {
 	CPUMASK_CPULIST_PARSE
 };
 
+enum nodemask_op_type {
+	NODEMASK_EMPTY,
+	NODEMASK_NODE_ISSET,
+	NODEMASK_NODES_CLEAR,
+	NODEMASK_NODE_SET,
+	NODEMASK_NODE_CLEAR,
+	NODEMASK_NODELIST_PARSE,
+	NODEMASK_TO_CPUMASK,
+	NODEMASK_NODES_ANDNOT,
+	NODEMASK_NODES_AND,
+	NODEMASK_NODES_OR,
+	NODEMASK_WEIGHT,
+	NODEMASK_ONLINE
+};
+
+struct nodemask_op_args {
+	enum nodemask_op_type op_type;
+	void *arg1;
+	void *arg2;
+	void *arg3;
+};
+
 struct sched_migrate_ctx {
 	struct task_struct *task;
 	struct cpumask *select_idle_mask;

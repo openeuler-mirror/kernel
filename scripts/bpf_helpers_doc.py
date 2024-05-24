@@ -445,6 +445,7 @@ class PrinterHelpers(Printer):
             'struct sched_migrate_ctx',
             'struct sched_affine_ctx',
             'struct sched_migrate_node',
+            'struct nodemask_op_args',
     ]
     known_types = {
             '...',
@@ -498,6 +499,7 @@ class PrinterHelpers(Printer):
             'struct sched_migrate_ctx',
             'struct sched_affine_ctx',
             'struct sched_migrate_node',
+            'struct nodemask_op_args',
     }
     mapped_types = {
             'u8': '__u8',

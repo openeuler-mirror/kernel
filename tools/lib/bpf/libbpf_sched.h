@@ -16,6 +16,7 @@
 #define __LIBBPF_LIBSCHED_H
 
 #include <linux/bpf_topology.h>
+#include <linux/numa.h>
 #include <linux/version.h>
 #include <uapi/linux/bpf.h>
 #include <bpf/bpf_helpers.h>
@@ -77,6 +78,112 @@ struct {
 	__type(value, struct bpf_cpumask_info);
 	__uint(max_entries, 1);
 } map_cpumask_info SEC(".maps");
+
+static __always_inline void
+libbpf_nodes_and(nodemask_t *dst, nodemask_t *src1, nodemask_t *src2)
+{
+	struct nodemask_op_args op = {0};
+
+	op.op_type = NODEMASK_NODES_AND;
+	op.arg1 = dst;
+	op.arg2 = src1;
+	op.arg3 = src2;
+	bpf_nodemask_op(&op, sizeof(op));
+}
+
+static __always_inline void
+libbpf_nodes_andnot(nodemask_t *dst, nodemask_t *src1, nodemask_t *src2)
+{
+	struct nodemask_op_args op = {0};
+
+	op.op_type = NODEMASK_NODES_ANDNOT;
+	op.arg1 = dst;
+	op.arg2 = src1;
+	op.arg3 = src2;
+	bpf_nodemask_op(&op, sizeof(op));
+}
+
+static __always_inline void
+libbpf_nodes_or(nodemask_t *dst, nodemask_t *src1, nodemask_t *src2)
+{
+	struct nodemask_op_args op = {0};
+
+	op.op_type = NODEMASK_NODES_OR;
+	op.arg1 = dst;
+	op.arg2 = src1;
+	op.arg3 = src2;
+	bpf_nodemask_op(&op, sizeof(op));
+}
+
+static __always_inline void libbpf_node_set(int nid,
+					    nodemask_t *nodes)
+{
+	struct nodemask_op_args op = {0};
+
+	op.op_type = NODEMASK_NODE_SET;
+	op.arg1 = &nid;
+	op.arg2 = nodes;
+	op.arg3 = INVALID_PTR;
+	bpf_nodemask_op(&op, sizeof(op));
+}
+
+static __always_inline void libbpf_node_clear(int nid,
+					      nodemask_t *nodes)
+{
+	struct nodemask_op_args op = {0};
+
+	op.op_type = NODEMASK_NODE_CLEAR;
+	op.arg1 = &nid;
+	op.arg2 = nodes;
+	op.arg3 = INVALID_PTR;
+	bpf_nodemask_op(&op, sizeof(op));
+}
+
+static __always_inline long libbpf_node_isset(int nid,
+					      nodemask_t *nodes)
+{
+	struct nodemask_op_args op = {0};
+
+	op.op_type = NODEMASK_NODE_ISSET;
+	op.arg1 = &nid;
+	op.arg2 = nodes;
+	op.arg3 = INVALID_PTR;
+	return bpf_nodemask_op(&op, sizeof(op));
+}
+
+static __always_inline long libbpf_nodemask_empty(nodemask_t *nodes)
+{
+	struct nodemask_op_args op = {0};
+
+	op.op_type = NODEMASK_EMPTY;
+	op.arg1 = nodes;
+	op.arg2 = INVALID_PTR;
+	op.arg3 = INVALID_PTR;
+	return bpf_nodemask_op(&op, sizeof(op));
+}
+
+static __always_inline long libbpf_nodemask_to_cpumask(nodemask_t *nodes,
+						       struct cpumask *cpus)
+{
+	struct nodemask_op_args op = {0};
+
+	op.op_type = NODEMASK_TO_CPUMASK;
+	op.arg1 = nodes;
+	op.arg2 = cpus;
+	op.arg3 = INVALID_PTR;
+	return bpf_nodemask_op(&op, sizeof(op));
+}
+
+static __always_inline long libbpf_nodes_online(nodemask_t *nodes)
+{
+	struct nodemask_op_args op = {0};
+
+	op.op_type = NODEMASK_ONLINE;
+	op.arg1 = nodes;
+	op.arg2 = INVALID_PTR;
+	op.arg3 = INVALID_PTR;
+	return bpf_nodemask_op(&op, sizeof(op));
+}
 
 static __always_inline long libbpf_cpumask_copy(struct cpumask *dst,
 						struct cpumask *src)
