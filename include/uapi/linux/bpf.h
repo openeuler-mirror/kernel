@@ -201,6 +201,7 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_SK_LOOKUP,
 #ifndef __GENKSYMS__
 	BPF_PROG_TYPE_SCHED,
+	BPF_PROG_TYPE_NET_GLOBAL,
 #endif
 };
 
@@ -245,6 +246,7 @@ enum bpf_attach_type {
 	BPF_XDP,
 #ifndef __GENKSYMS__
 	BPF_SCHED,
+	BPF_GNET_RESERVE0,
 #endif
 	__MAX_BPF_ATTACH_TYPE
 };
@@ -5248,6 +5250,10 @@ enum {
 	BTF_F_NONAME	=	(1ULL << 1),
 	BTF_F_PTR_RAW	=	(1ULL << 2),
 	BTF_F_ZERO	=	(1ULL << 3),
+};
+
+struct bpf_gnet_ctx {
+	__bpf_md_ptr(struct bpf_sock *, sk);
 };
 
 #endif /* _UAPI__LINUX_BPF_H__ */

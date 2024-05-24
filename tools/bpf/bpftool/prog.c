@@ -65,6 +65,7 @@ const char * const prog_type_name[] = {
 	[BPF_PROG_TYPE_LSM]			= "lsm",
 	[BPF_PROG_TYPE_SK_LOOKUP]		= "sk_lookup",
 	[BPF_PROG_TYPE_SCHED]			= "sched",
+	[BPF_PROG_TYPE_NET_GLOBAL]		= "gnet",
 };
 
 const size_t prog_type_name_size = ARRAY_SIZE(prog_type_name);
@@ -79,6 +80,7 @@ static const char * const attach_type_strings[] = {
 	[BPF_SK_SKB_STREAM_VERDICT] = "stream_verdict",
 	[BPF_SK_MSG_VERDICT] = "msg_verdict",
 	[BPF_FLOW_DISSECTOR] = "flow_dissector",
+	[BPF_GNET_RESERVE0] = "gnet_reserve0",
 	[__MAX_BPF_ATTACH_TYPE] = NULL,
 };
 

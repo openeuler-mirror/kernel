@@ -470,6 +470,12 @@ config ETHTOOL_NETLINK
 	  netlink. It provides better extensibility and some new features,
 	  e.g. notification messages.
 
+config BPF_NET_GLOBAL_PROG
+	bool "Network global bpf prog type"
+	depends on NET
+	depends on BPF_SYSCALL
+	default n
+
 endif   # if NET
 
 # Used by archs to tell that they support BPF JIT compiler plus which flavour.

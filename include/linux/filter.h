@@ -1474,4 +1474,57 @@ static inline bool bpf_sk_lookup_run_v6(struct net *net, int protocol,
 }
 #endif /* IS_ENABLED(CONFIG_IPV6) */
 
+#ifdef CONFIG_BPF_NET_GLOBAL_PROG
+struct bpf_gnet_ctx_kern {
+	struct sock *sk;
+};
+
+enum gnet_bpf_attach_type {
+	GNET_BPF_ATTACH_TYPE_INVALID = -1,
+	GNET_RESERVE0 = 0,
+	MAX_GNET_BPF_ATTACH_TYPE
+};
+
+static inline enum gnet_bpf_attach_type
+to_gnet_bpf_attach_type(enum bpf_attach_type attach_type)
+{
+	switch (attach_type) {
+	GNET_ATYPE(GNET_RESERVE0);
+	case BPF_GNET_RESERVE0:
+		return GNET_RESERVE0;
+	default:
+	return GNET_BPF_ATTACH_TYPE_INVALID;
+	}
+}
+
+struct gnet_bpf {
+	struct bpf_prog __rcu *progs[MAX_GNET_BPF_ATTACH_TYPE];
+	u32 flags[MAX_GNET_BPF_ATTACH_TYPE];
+};
+
+extern struct static_key_false gnet_bpf_enabled_key[MAX_GNET_BPF_ATTACH_TYPE];
+#define gnet_bpf_enabled(atype) static_branch_unlikely(&gnet_bpf_enabled_key[atype])
+extern struct gnet_bpf gnet_bpf_progs;
+
+int gnet_bpf_prog_attach(const union bpf_attr *attr,
+			 enum bpf_prog_type ptype, struct bpf_prog *prog);
+int gnet_bpf_prog_detach(const union bpf_attr *attr, enum bpf_prog_type ptype);
+
+static inline void run_gnet_bpf(enum gnet_bpf_attach_type atype,
+				struct bpf_gnet_ctx_kern *ctx)
+{
+	struct bpf_prog *prog;
+
+	rcu_read_lock();
+	prog = rcu_dereference(gnet_bpf_progs.progs[atype]);
+	if (unlikely(!prog))
+		goto out;
+
+	bpf_prog_run_pin_on_cpu(prog, ctx);
+out:
+	rcu_read_unlock();
+}
+
+#endif
+
 #endif /* __LINUX_FILTER_H__ */
