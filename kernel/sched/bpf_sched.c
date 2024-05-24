@@ -346,6 +346,31 @@ static const struct bpf_func_proto bpf_cpus_share_cache_proto = {
 	.arg2_type	= ARG_ANYTHING,
 };
 
+#ifdef CONFIG_QOS_SCHED_NUMA_ICON
+BPF_CALL_3(bpf_get_node_stats, int, nid,
+	   struct bpf_node_stats *, ctx,
+	   int, len)
+{
+	if (len != sizeof(*ctx))
+		return -EINVAL;
+
+	if ((unsigned int)nid >= nr_node_ids)
+		return -EINVAL;
+
+	sched_get_node_load(nid, ctx);
+	return 0;
+}
+
+const struct bpf_func_proto bpf_get_node_stats_proto = {
+	.func		= bpf_get_node_stats,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+	.arg2_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+};
+#endif
+
 #ifdef CONFIG_SCHED_TASK_RELATIONSHIP
 BPF_CALL_3(bpf_get_task_relationship_stats, struct task_struct *, tsk,
 	   struct bpf_map *, map, struct bpf_relationship_get_args *, args)
@@ -413,6 +438,10 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_cpus_share_cache_proto;
 	case BPF_FUNC_nodemask_op:
 		return &bpf_nodemask_op_proto;
+#ifdef CONFIG_QOS_SCHED_NUMA_ICON
+	case BPF_FUNC_get_node_stats:
+		return &bpf_get_node_stats_proto;
+#endif
 #ifdef CONFIG_SCHED_TASK_RELATIONSHIP
 	case BPF_FUNC_get_task_relationship_stats:
 		return &bpf_get_task_relationship_stats_proto;

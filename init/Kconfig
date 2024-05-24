@@ -1091,6 +1091,19 @@ config SCHED_TASK_RELATIONSHIP
 
 	 If in doubt, say N.
 
+config QOS_SCHED_NUMA_ICON
+	bool "numa aware schedule"
+	depends on BPF_SCHED
+	depends on SCHED_TASK_RELATIONSHIP
+	default n
+	help
+	 This feature provides the NUMA Isolation and Consolidationthe
+	 Mechanisms based on ebpf and task relationship. If enabled, scheduler
+	 places related tasks on same numa node when the node has spare
+	 resource.
+
+	 If in doubt, say N.
+
 config UCLAMP_TASK_GROUP
 	bool "Utilization clamping per group of tasks"
 	depends on CGROUP_SCHED

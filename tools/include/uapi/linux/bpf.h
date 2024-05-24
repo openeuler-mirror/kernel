@@ -3914,6 +3914,12 @@ union bpf_attr {
  *		set current task preferred node.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_get_node_stats(int nid, struct bpf_node_stats *ctx, int len)
+ *	Description
+ *		get resource statistics of *nid* and store in *ctx*.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4089,6 +4095,7 @@ union bpf_attr {
 	FN(nodemask_op),		\
 	FN(get_task_relationship_stats),\
 	FN(sched_set_curr_preferred_node),\
+	FN(get_node_stats),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

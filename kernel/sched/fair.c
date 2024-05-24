@@ -3954,6 +3954,8 @@ static void attach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 
 	cfs_rq_util_change(cfs_rq, 0);
 
+	numa_load_change(cfs_rq);
+
 	trace_pelt_cfs_tp(cfs_rq);
 }
 
@@ -3983,6 +3985,8 @@ static void detach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	add_tg_cfs_propagate(cfs_rq, -se->avg.load_sum);
 
 	cfs_rq_util_change(cfs_rq, 0);
+
+	numa_load_change(cfs_rq);
 
 	trace_pelt_cfs_tp(cfs_rq);
 }
@@ -4024,6 +4028,7 @@ static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 
 	} else if (decayed) {
 		cfs_rq_util_change(cfs_rq, 0);
+		numa_load_change(cfs_rq);
 
 		if (flags & UPDATE_TG)
 			update_tg_load_avg(cfs_rq);
@@ -13286,6 +13291,8 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 	task_tick_core(rq, curr);
 
 	task_tick_relationship(rq, curr);
+
+	update_numa_capacity(rq);
 }
 
 /*
@@ -13868,6 +13875,7 @@ void sched_show_relationship(struct task_struct *p, struct seq_file *m)
 #ifdef CONFIG_SCHED_TASK_RELATIONSHIP
 	struct net_group *net_grp;
 	struct numa_group *ng;
+	int node;
 
 	if (!task_relationship_used())
 		return;
@@ -13889,6 +13897,10 @@ void sched_show_relationship(struct task_struct *p, struct seq_file *m)
 	}
 
 	rcu_read_unlock();
+
+	for_each_online_node(node) {
+		print_node_load_info(m, node);
+	}
 #endif
 }
 #endif /* CONFIG_SCHED_DEBUG */
@@ -13958,6 +13970,8 @@ __init void init_sched_fair_class(void)
 	for_each_possible_cpu(i)
 		INIT_LIST_HEAD(&per_cpu(qos_throttled_cfs_rq, i));
 #endif
+
+	init_sched_numa_icon();
 
 #ifdef CONFIG_SMP
 	open_softirq(SCHED_SOFTIRQ, run_rebalance_domains);

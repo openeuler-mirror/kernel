@@ -2360,6 +2360,21 @@ struct bpf_sched_cpu_stats {
 	KABI_RESERVE(4)
 };
 
+struct bpf_node_stats {
+	unsigned long util;
+	unsigned long compute_capacity;
+	unsigned int weight;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
+};
+
 struct cpumask_op_args {
 	unsigned int op_type;
 	void *arg1;

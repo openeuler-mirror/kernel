@@ -623,6 +623,30 @@ static __always_inline  int libbpf_sched_se_tag_of(struct sched_entity *se)
 	return se_tag;
 }
 
+static __always_inline unsigned long libbpf_node_cfs_util_of(int nid)
+{
+	struct bpf_node_stats stats = {0};
+
+	bpf_get_node_stats(nid, &stats, sizeof(stats));
+	return getVal(stats.util);
+}
+
+static __always_inline unsigned long libbpf_node_cfs_capacity_of(int nid)
+{
+	struct bpf_node_stats stats = {0};
+
+	bpf_get_node_stats(nid, &stats, sizeof(stats));
+	return getVal(stats.compute_capacity);
+}
+
+static __always_inline unsigned int libbpf_node_weight_of(int nid)
+{
+	struct bpf_node_stats stats = {0};
+
+	bpf_get_node_stats(nid, &stats, sizeof(stats));
+	return getVal(stats.weight);
+}
+
 static __always_inline int
 libbpf_mem_preferred_nid(struct task_struct *tsk, nodemask_t *preferred_node)
 {
