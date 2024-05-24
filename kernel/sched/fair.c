@@ -9486,8 +9486,22 @@ static
 int can_migrate_task(struct task_struct *p, struct lb_env *env)
 {
 	int tsk_cache_hot;
+#ifdef CONFIG_BPF_SCHED
+	struct sched_migrate_node migrate_node;
+	int ret;
+#endif
 
 	lockdep_assert_rq_held(env->src_rq);
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		migrate_node.src_cpu = env->src_cpu;
+		migrate_node.dst_cpu = env->dst_cpu;
+		ret = bpf_sched_cfs_can_migrate_task(p, &migrate_node);
+		if (ret > 0)
+			return ret - 1;
+	}
+#endif
 
 	/*
 	 * We do not migrate tasks that are:

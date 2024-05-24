@@ -2406,5 +2406,15 @@ struct sched_affine_ctx {
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };
+
+struct sched_migrate_node {
+	int src_cpu;
+	int dst_cpu;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+};
 #endif
 #endif
