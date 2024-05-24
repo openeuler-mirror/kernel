@@ -5,6 +5,7 @@
 #include <linux/nodemask.h>
 #include <linux/jump_label.h>
 #include <linux/refcount.h>
+#include <uapi/linux/sched_ctrl.h>
 
 #define FAULT_NODES_MAX 4
 
@@ -127,6 +128,12 @@ extern void sched_relationship_free(struct task_struct *p);
 void task_relationship_free(struct task_struct *tsk, bool reset);
 extern bool task_relationship_supported(struct task_struct *tsk);
 extern int sched_net_relationship_submit(struct net_relationship_req *req);
+extern void
+sctl_sched_get_net_relationship(struct task_struct *tsk,
+				struct sctl_net_relationship_info *info);
+extern void
+sctl_sched_get_mem_relationship(struct task_struct *tsk,
+				struct sctl_mem_relationship_info *info);
 extern void sched_get_mm_relationship(struct task_struct *tsk,
 			       struct bpf_relationship_get_args *args);
 extern void sched_get_relationship(struct task_struct *tsk,

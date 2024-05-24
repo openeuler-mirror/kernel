@@ -366,6 +366,37 @@ void sched_get_relationship(struct task_struct *tsk,
 	rcu_read_unlock();
 }
 
+void sctl_sched_get_net_relationship(struct task_struct *tsk,
+				     struct sctl_net_relationship_info *info)
+{
+	struct task_relationship *rship = tsk->rship;
+	struct net_group *grp;
+
+	memset(info, 0, sizeof(*info));
+	info->valid = true;
+	info->nic_nid = rship->nic_nid;
+	info->rx_dev_idx = rship->rx_dev_idx;
+	info->rx_dev_queue_idx = rship->rx_dev_queue_idx;
+	info->rx_dev_netns_cookie = rship->rx_dev_netns_cookie;
+	info->rxtx_remote_bytes = rship->rxtx_remote_bytes;
+	info->rxtx_bytes = rship->rxtx_bytes;
+
+	info->grp_hdr.gid = NO_RSHIP;
+
+	rcu_read_lock();
+
+	grp = rcu_dereference(rship->net_group);
+	if (grp) {
+		info->grp_hdr.gid = grp->hdr.gid;
+		info->grp_hdr.nr_tasks = grp->hdr.nr_tasks;
+		snprintf(info->grp_hdr.preferred_nid, SCTL_STR_MAX, "%*pbl",
+			nodemask_pr_args(&grp->hdr.preferred_nid));
+		info->grp_rxtx_bytes = grp->rxtx_bytes;
+	}
+
+	rcu_read_unlock();
+}
+
 void task_relationship_free(struct task_struct *tsk, bool reset)
 {
 	if (!task_relationship_used())

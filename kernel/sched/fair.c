@@ -3043,6 +3043,55 @@ static inline void update_scan_period(struct task_struct *p, int new_cpu)
 #endif /* CONFIG_NUMA_BALANCING */
 
 #ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+void sctl_sched_get_mem_relationship(struct task_struct *tsk,
+			       struct sctl_mem_relationship_info *info)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct task_relationship *rship = tsk->rship;
+	int nid, priv, cpu_idx, mem_idx;
+	struct numa_group *grp;
+
+	info->valid = false;
+	if (unlikely(!rship) || !tsk->numa_faults)
+		return;
+
+	memset(info, 0, sizeof(*info));
+	info->valid = true;
+	info->nodes_num = nr_node_ids;
+	info->grp_hdr.gid = NO_RSHIP;
+	info->total_faults = tsk->total_numa_faults;
+
+	rcu_read_lock();
+
+	grp = rcu_dereference(tsk->numa_group);
+	if (grp) {
+		info->grp_hdr.gid = grp->gid;
+		info->grp_hdr.nr_tasks = grp->nr_tasks;
+		snprintf(info->grp_hdr.preferred_nid, SCTL_STR_MAX, "%*pbl",
+			nodemask_pr_args(&grp->preferred_nid));
+	}
+
+	for_each_online_node(nid) {
+		if (nid >= SCTL_MAX_NUMNODES)
+			break;
+
+		for (priv = 0; priv < NR_NUMA_HINT_FAULT_TYPES; priv++) {
+			cpu_idx = task_faults_idx(NUMA_CPU, nid, priv);
+			mem_idx = task_faults_idx(NUMA_MEM, nid, priv);
+			info->faults[nid][priv] = tsk->numa_faults[mem_idx];
+			info->faults_cpu[nid][priv] = tsk->numa_faults[cpu_idx];
+
+			if (grp) {
+				info->grp_faults[nid][priv] = grp->faults[mem_idx];
+				info->grp_faults_cpu[nid][priv] = grp->faults_cpu[mem_idx];
+				info->grp_total_faults = grp->total_faults;
+			}
+		}
+	}
+
+	rcu_read_unlock();
+#endif
+}
 
 #ifdef CONFIG_BPF_SCHED
 void sched_get_mm_relationship(struct task_struct *tsk,
