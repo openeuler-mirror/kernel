@@ -516,7 +516,6 @@ void ne6xvf_free_all_cq_resources(struct ne6xvf_adapter *adapter);
 void ne6xvf_free_all_tx_resources(struct ne6xvf_adapter *adapter);
 void ne6xvf_free_all_rx_resources(struct ne6xvf_adapter *adapter);
 void ne6xvf_reset_interrupt_capability(struct ne6xvf_adapter *adapter);
-bool ne6x_alloc_rx_buffers(struct ne6x_ring *rx_ring, u16 cleaned_count);
 void ne6xvf_set_ethtool_ops(struct net_device *netdev);
 void ne6xvf_request_stats(struct ne6xvf_adapter *adapter);
 void ne6xvf_irq_enable(struct ne6xvf_adapter *adapter, bool flush);

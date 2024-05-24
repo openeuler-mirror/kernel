@@ -19,7 +19,7 @@
 		__data[__n] = cpu_to_be32(__data[__n]); \
 })
 
-void ext_toeplitz_key(const unsigned char *key, unsigned char *ext_key)
+static void ext_toeplitz_key(const unsigned char *key, unsigned char *ext_key)
 {
 	int i;
 
@@ -70,7 +70,7 @@ static u32 ne6x_dev_bitrev(u32 input, int bw)
 	return var;
 }
 
-void ne6x_dev_crc32_init(u32 poly, u32 *table)
+static void ne6x_dev_crc32_init(u32 poly, u32 *table)
 {
 	u32 c;
 	int i, j;
@@ -103,7 +103,7 @@ u32 ne6x_dev_crc32(const u8 *buf, u32 size)
 	return crc ^ 0xFFFFFFFF;
 }
 
-int ne6x_dev_spd_verify(struct ne6x_dev_eeprom_info *spd_info)
+static int ne6x_dev_spd_verify(struct ne6x_dev_eeprom_info *spd_info)
 {
 	if (be32_to_cpu(spd_info->spd_verify_value) ==
 	    ne6x_dev_crc32((const u8 *)spd_info, sizeof(*spd_info) - 4))
@@ -112,7 +112,7 @@ int ne6x_dev_spd_verify(struct ne6x_dev_eeprom_info *spd_info)
 	return -EINVAL;
 }
 
-int ne6x_dev_get_eeprom(struct ne6x_pf *pf)
+static int ne6x_dev_get_eeprom(struct ne6x_pf *pf)
 {
 	int retry = 3;
 
@@ -338,50 +338,6 @@ int ne6x_dev_get_sfp_status(struct ne6x_adapter *adpt, u8 *status)
 	return 0;
 }
 
-void ne6x_dev_update_status(struct ne6x_pf *pf, struct ne6x_port_info *port, bool is_up)
-{
-	u32 speed = NE6X_LINK_SPEED_25GB;
-	struct ne6x_phy_info  *phy = &port->phy;
-	struct ne6x_link_status *link = &phy->link_info;
-
-	if (!is_up) {
-		link->phy_type_low = NE6X_PHY_TYPE_UNKNOWN;
-		link->link_speed = speed;
-		link->link_info &= ~NE6X_AQ_LINK_UP;
-		phy->media_type = NE6X_MEDIA_UNKNOWN;
-		return;
-	}
-
-	link->link_info |= NE6X_AQ_LINK_UP;
-	switch (speed) {
-	case NE6X_LINK_SPEED_10GB:
-		link->phy_type_low = NE6X_PHY_TYPE_10GBASE;
-		link->link_speed   = NE6X_LINK_SPEED_10GB;
-		break;
-	case NE6X_LINK_SPEED_25GB:
-		link->phy_type_low = NE6X_PHY_TYPE_25GBASE;
-		link->link_speed   = NE6X_LINK_SPEED_25GB;
-		break;
-	case NE6X_LINK_SPEED_40GB:
-		link->phy_type_low = NE6X_PHY_TYPE_40GBASE;
-		link->link_speed   = NE6X_LINK_SPEED_40GB;
-		break;
-	case NE6X_LINK_SPEED_100GB:
-		link->phy_type_low = NE6X_PHY_TYPE_100GBASE;
-		link->link_speed   = NE6X_LINK_SPEED_100GB;
-		break;
-	case NE6X_LINK_SPEED_200GB:
-		link->phy_type_low = NE6X_PHY_TYPE_200GBASE;
-		link->link_speed   = NE6X_LINK_SPEED_200GB;
-		break;
-	default:
-		dev_warn(ne6x_pf_to_dev(pf), "Unrecognized link_speed (0x%x).\n", speed);
-		break;
-	}
-
-	phy->media_type = NE6X_MEDIA_FIBER;
-}
-
 int ne6x_dev_self_test_link(struct ne6x_adapter *adpt, int *verify)
 {
 	return ne6x_reg_talk_port(adpt->back, NE6X_MSG_PORT_LINK_STATUS, NE6X_TALK_GET,
@@ -391,12 +347,6 @@ int ne6x_dev_self_test_link(struct ne6x_adapter *adpt, int *verify)
 int ne6x_dev_reset_firmware(struct ne6x_adapter *adpt)
 {
 	return ne6x_reg_reset_firmware(adpt->back);
-}
-
-int ne6x_dev_get_speed(struct ne6x_adapter *adpt, u32 *speed)
-{
-	return ne6x_reg_talk_port(adpt->back, NE6X_MSG_PORT_SPEED, NE6X_TALK_GET,
-				  ADPT_LPORT(adpt), (void *)speed, sizeof(u32));
 }
 
 int ne6x_dev_set_speed(struct ne6x_adapter *adpt, u32 speed)
@@ -1043,7 +993,7 @@ int ne6x_dev_set_fec(struct ne6x_adapter *adpt, enum ne6x_fec_state fec)
 				  ADPT_LPORT(adpt), (void *)&fec, sizeof(int));
 }
 
-int ne6x_dev_set_mac_inloop(struct ne6x_adapter *adpt, int enable)
+static int ne6x_dev_set_mac_inloop(struct ne6x_adapter *adpt, int enable)
 {
 	return ne6x_reg_talk_port(adpt->back, NE6X_MSG_PORT_LOOPBACK, NE6X_TALK_SET,
 				  ADPT_LPORT(adpt), (void *)&enable, sizeof(int));
@@ -1094,7 +1044,7 @@ int ne6x_dev_set_led(struct ne6x_adapter *adpt, bool state)
 	return ne6x_reg_set_led(adpt->back, ADPT_LPORT(adpt), state);
 }
 
-void ne6x_dev_transform_vf_stat_format(u32 *stat_arr, struct vf_stat *stat)
+static void ne6x_dev_transform_vf_stat_format(u32 *stat_arr, struct vf_stat *stat)
 {
 	u32 start_pos = 0;
 
@@ -1309,8 +1259,8 @@ int ne6x_dev_test_reg(struct ne6x_adapter *adpt)
 
 #define NE6X_LOOP_TEST_TYPE 0x1234
 /* handle hook packet */
-int ne6x_dev_proto_recv(struct sk_buff *skb, struct net_device *dev,
-			struct packet_type *ptype, struct net_device *ndev)
+static int ne6x_dev_proto_recv(struct sk_buff *skb, struct net_device *dev,
+			       struct packet_type *ptype, struct net_device *ndev)
 {
 	struct ne6x_netdev_priv *np = netdev_priv(dev);
 	struct ne6x_adapter *adpt = np->adpt;
@@ -1325,7 +1275,7 @@ int ne6x_dev_proto_recv(struct sk_buff *skb, struct net_device *dev,
 }
 
 static u8 loop_dst_mac[8] = {0x00, 0x00, 0x00, 0x11, 0x11, 0x01};
-int ne6x_dev_proto_send(struct net_device *netdev, char *buf, int len)
+static int ne6x_dev_proto_send(struct net_device *netdev, char *buf, int len)
 {
 	struct sk_buff *skb;
 	u8 *pdata = NULL;

@@ -255,7 +255,7 @@ static void ne6x_irq_affinity_notify(struct irq_affinity_notify *notify, const c
 
 static void ne6x_irq_affinity_release(struct kref *ref) {}
 
-int ne6x_adpt_request_irq_msix(struct ne6x_adapter *adpt, char *basename)
+static int ne6x_adpt_request_irq_msix(struct ne6x_adapter *adpt, char *basename)
 {
 	int q_vectors = adpt->num_q_vectors;
 	struct ne6x_pf *pf = adpt->back;
@@ -337,7 +337,7 @@ static irqreturn_t ne6x_intr(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-int ne6x_adpt_request_irq_intx(struct ne6x_adapter *adpt, char *basename)
+static int ne6x_adpt_request_irq_intx(struct ne6x_adapter *adpt, char *basename)
 {
 	struct ne6x_q_vector *q_vector = adpt->q_vectors[0];
 	struct net_device *netdev = adpt->netdev;
@@ -604,7 +604,7 @@ void ne6x_free_link_irq(struct ne6x_pf *pf)
 	pf->link_int_irq_ready = false;
 }
 
-irqreturn_t ne6x_msix_clean_vf_mbx(int irq, void *data)
+static irqreturn_t ne6x_msix_clean_vf_mbx(int irq, void *data)
 {
 	struct ne6x_pf *pf = data;
 	struct ne6x_hw *hw = &pf->hw;
