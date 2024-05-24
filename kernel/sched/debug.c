@@ -1040,6 +1040,8 @@ void proc_sched_show_task(struct task_struct *p, struct pid_namespace *ns,
 	}
 
 	sched_show_numa(p, m);
+
+	sched_show_relationship(p, m);
 }
 
 void proc_sched_set_task(struct task_struct *p)

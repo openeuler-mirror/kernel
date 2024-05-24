@@ -1086,6 +1086,13 @@ struct numa_group {
 	struct rcu_head rcu;
 	unsigned long total_faults;
 	unsigned long max_faults_cpu;
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	struct fault_array_info score_ordered[FAULT_NODES_MAX];
+	struct fault_array_info faults_ordered[FAULT_NODES_MAX];
+	nodemask_t preferred_nid;
+	u64 node_stamp;
+	u64 nodes_switch_cnt;
+#endif
 	/*
 	 * Faults_cpu is used to decide whether memory should move
 	 * towards the CPU. As a consequence, these stats are weighted
@@ -2279,6 +2286,9 @@ static int preferred_group_nid(struct task_struct *p, int nid)
 {
 	nodemask_t nodes;
 	int dist;
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	struct numa_group *ng;
+#endif
 
 	/* Direct connections between all NUMA nodes. */
 	if (sched_numa_topology_type == NUMA_DIRECT)
@@ -2301,7 +2311,19 @@ static int preferred_group_nid(struct task_struct *p, int nid)
 				max_score = score;
 				max_node = node;
 			}
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+			if (task_relationship_used()) {
+				ng = deref_curr_numa_group(p);
+				if (ng) {
+					spin_lock_irq(&ng->lock);
+					numa_faults_update_and_sort(node, score,
+						ng->score_ordered);
+					spin_unlock_irq(&ng->lock);
+				}
+			}
+#endif
 		}
+
 		return max_node;
 	}
 
@@ -2451,6 +2473,17 @@ static void task_numa_placement(struct task_struct *p)
 			max_faults = group_faults;
 			max_nid = nid;
 		}
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+		if (task_relationship_used()) {
+			numa_faults_update_and_sort(nid, faults,
+				p->rship->faults.faults_ordered);
+
+			if (ng)
+				numa_faults_update_and_sort(nid, group_faults,
+					ng->faults_ordered);
+		}
+#endif
 	}
 
 	if (ng) {
@@ -2512,6 +2545,17 @@ static void task_numa_group(struct task_struct *p, int cpupid, int flags,
 
 		grp->nr_tasks++;
 		rcu_assign_pointer(p->numa_group, grp);
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+		if (task_relationship_used()) {
+			grp->preferred_nid = NODE_MASK_NONE;
+			grp->node_stamp = jiffies;
+			for (i = 0; i < FAULT_NODES_MAX; i++) {
+				grp->faults_ordered[i].nid = -1;
+				grp->score_ordered[i].nid = -1;
+			}
+		}
+#endif
 	}
 
 	rcu_read_lock();
@@ -2623,6 +2667,15 @@ void task_numa_free(struct task_struct *p, bool final)
 		p->total_numa_faults = 0;
 		for (i = 0; i < NR_NUMA_HINT_FAULT_STATS * nr_node_ids; i++)
 			numa_faults[i] = 0;
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+		if (task_relationship_used()) {
+			for (i = 0; i < FAULT_NODES_MAX; i++) {
+				p->rship->faults.faults_ordered[i].nid = -1;
+				p->rship->faults.faults_ordered[i].val = 0;
+			}
+		}
+#endif
 	}
 }
 
@@ -2991,6 +3044,91 @@ static inline void update_scan_period(struct task_struct *p, int new_cpu)
 }
 
 #endif /* CONFIG_NUMA_BALANCING */
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+void sctl_sched_get_mem_relationship(struct task_struct *tsk,
+			       struct sctl_mem_relationship_info *info)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct task_relationship *rship = tsk->rship;
+	int nid, priv, cpu_idx, mem_idx;
+	struct numa_group *grp;
+
+	info->valid = false;
+	if (unlikely(!rship) || !tsk->numa_faults)
+		return;
+
+	memset(info, 0, sizeof(*info));
+	info->valid = true;
+	info->nodes_num = nr_node_ids;
+	info->grp_hdr.gid = NO_RSHIP;
+	info->total_faults = tsk->total_numa_faults;
+
+	rcu_read_lock();
+
+	grp = rcu_dereference(tsk->numa_group);
+	if (grp) {
+		info->grp_hdr.gid = grp->gid;
+		info->grp_hdr.nr_tasks = grp->nr_tasks;
+		snprintf(info->grp_hdr.preferred_nid, SCTL_STR_MAX, "%*pbl",
+			nodemask_pr_args(&grp->preferred_nid));
+	}
+
+	for_each_online_node(nid) {
+		if (nid >= SCTL_MAX_NUMNODES)
+			break;
+
+		for (priv = 0; priv < NR_NUMA_HINT_FAULT_TYPES; priv++) {
+			cpu_idx = task_faults_idx(NUMA_CPU, nid, priv);
+			mem_idx = task_faults_idx(NUMA_MEM, nid, priv);
+			info->faults[nid][priv] = tsk->numa_faults[mem_idx];
+			info->faults_cpu[nid][priv] = tsk->numa_faults[cpu_idx];
+
+			if (grp) {
+				info->grp_faults[nid][priv] = grp->faults[mem_idx];
+				info->grp_faults_cpu[nid][priv] = grp->faults_cpu[mem_idx];
+				info->grp_total_faults = grp->total_faults;
+			}
+		}
+	}
+
+	rcu_read_unlock();
+#endif
+}
+
+#ifdef CONFIG_BPF_SCHED
+void sched_get_mm_relationship(struct task_struct *tsk,
+			       struct bpf_relationship_get_args *args)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct numa_group *grp;
+
+	grp = rcu_dereference(tsk->numa_group);
+	if (grp) {
+		args->mm.comm.gid = grp->gid;
+		args->mm.comm.nr_tasks = grp->nr_tasks;
+		args->mm.grp_total_faults = grp->total_faults;
+		args->mm.comm.preferred_node = grp->preferred_nid;
+		memcpy(args->mm.grp_faults_ordered, grp->faults_ordered,
+			sizeof(args->mm.grp_faults_ordered));
+		memcpy(args->mm.grp_score_ordered, grp->score_ordered,
+			sizeof(args->mm.grp_score_ordered));
+	}
+#endif
+}
+
+void sched_set_curr_preferred_node(struct bpf_relationship_set_args *args)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct numa_group *grp = rcu_dereference_raw(current->numa_group);
+
+	grp->preferred_nid = args->preferred_node;
+	schedstat_inc(grp->nodes_switch_cnt);
+#endif
+}
+#endif
+
+#endif
 
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
 static __always_inline void
@@ -3816,6 +3954,8 @@ static void attach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 
 	cfs_rq_util_change(cfs_rq, 0);
 
+	numa_load_change(cfs_rq);
+
 	trace_pelt_cfs_tp(cfs_rq);
 }
 
@@ -3845,6 +3985,8 @@ static void detach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	add_tg_cfs_propagate(cfs_rq, -se->avg.load_sum);
 
 	cfs_rq_util_change(cfs_rq, 0);
+
+	numa_load_change(cfs_rq);
 
 	trace_pelt_cfs_tp(cfs_rq);
 }
@@ -3886,6 +4028,7 @@ static inline void update_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 
 	} else if (decayed) {
 		cfs_rq_util_change(cfs_rq, 0);
+		numa_load_change(cfs_rq);
 
 		if (flags & UPDATE_TG)
 			update_tg_load_avg(cfs_rq);
@@ -6578,6 +6721,9 @@ dequeue_throttle:
 /* Working cpumask for: load_balance, load_balance_newidle. */
 DEFINE_PER_CPU(cpumask_var_t, load_balance_mask);
 DEFINE_PER_CPU(cpumask_var_t, select_idle_mask);
+#ifdef CONFIG_BPF_SCHED
+DEFINE_PER_CPU(cpumask_var_t, select_cpu_mask);
+#endif
 
 #ifdef CONFIG_NO_HZ_COMMON
 
@@ -6838,7 +6984,7 @@ find_idlest_group_cpu(struct sched_group *group, struct task_struct *p, int this
 		return cpumask_first(sched_group_span(group));
 
 	/* Traverse only the allowed CPUs */
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	for_each_cpu_and(i, sched_group_span(group), p->select_cpus) {
 #else
 	for_each_cpu_and(i, sched_group_span(group), p->cpus_ptr) {
@@ -6889,7 +7035,7 @@ static inline int find_idlest_cpu(struct sched_domain *sd, struct task_struct *p
 {
 	int new_cpu = cpu;
 
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	if (!cpumask_intersects(sched_domain_span(sd), p->select_cpus))
 #else
 	if (!cpumask_intersects(sched_domain_span(sd), p->cpus_ptr))
@@ -7020,7 +7166,7 @@ static int select_idle_core(struct task_struct *p, int core, struct cpumask *cpu
 		if (!available_idle_cpu(cpu)) {
 			idle = false;
 			if (*idle_cpu == -1) {
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 				if (sched_idle_cpu(cpu) && cpumask_test_cpu(cpu, p->select_cpus)) {
 #else
 				if (sched_idle_cpu(cpu) && cpumask_test_cpu(cpu, p->cpus_ptr)) {
@@ -7080,7 +7226,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 	if (!this_sd)
 		return -1;
 
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	cpumask_and(cpus, sched_domain_span(sd), p->select_cpus);
 #else
 	cpumask_and(cpus, sched_domain_span(sd), p->cpus_ptr);
@@ -7248,7 +7394,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	lockdep_assert_irqs_disabled();
 
 	if ((available_idle_cpu(target) || sched_idle_cpu(target)) &&
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	    cpumask_test_cpu(target, p->select_cpus) &&
 #endif
 	    asym_fits_capacity(task_util, target)) {
@@ -7261,7 +7407,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	 */
 	if (prev != target && cpus_share_cache(prev, target) &&
 	    (available_idle_cpu(prev) || sched_idle_cpu(prev)) &&
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	    cpumask_test_cpu(prev, p->select_cpus) &&
 #endif
 	    asym_fits_capacity(task_util, prev)) {
@@ -7297,7 +7443,7 @@ static int select_idle_sibling(struct task_struct *p, int prev, int target)
 	    recent_used_cpu != target &&
 	    cpus_share_cache(recent_used_cpu, target) &&
 	    (available_idle_cpu(recent_used_cpu) || sched_idle_cpu(recent_used_cpu)) &&
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	    cpumask_test_cpu(p->recent_used_cpu, p->select_cpus) &&
 #else
 	    cpumask_test_cpu(p->recent_used_cpu, p->cpus_ptr) &&
@@ -7897,7 +8043,6 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
 #ifdef CONFIG_BPF_SCHED
 	struct sched_migrate_ctx ctx;
-	cpumask_t *cpus_prev = NULL;
 	cpumask_t *cpus;
 	int ret;
 #endif
@@ -7912,8 +8057,11 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	 */
 	lockdep_assert_held(&p->pi_lock);
 
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 	p->select_cpus = p->cpus_ptr;
+#endif
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	if (dynamic_affinity_used() || smart_grid_used())
 		set_task_select_cpus(p, &idlest_cpu, sd_flag);
 #endif
@@ -7928,7 +8076,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 			new_cpu = prev_cpu;
 		}
 
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->select_cpus);
 #else
 		want_affine = !wake_wide(p) && cpumask_test_cpu(cpu, p->cpus_ptr);
@@ -7945,18 +8093,18 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		ctx.wake_flags = wake_flags;
 		ctx.want_affine = want_affine;
 		ctx.sd_flag = sd_flag;
-		ctx.select_idle_mask = this_cpu_cpumask_var_ptr(select_idle_mask);
+		ctx.select_idle_mask =
+			this_cpu_cpumask_var_ptr(select_cpu_mask);
 
 		ret = bpf_sched_cfs_select_rq(&ctx);
 		if (ret >= 0) {
 			rcu_read_unlock();
 			return ret;
 		} else if (ret != -1) {
-			cpus = this_cpu_cpumask_var_ptr(select_idle_mask);
-			if (cpumask_subset(cpus, p->cpus_ptr) &&
+			cpus = this_cpu_cpumask_var_ptr(select_cpu_mask);
+			if (cpumask_subset(cpus, p->select_cpus) &&
 			    !cpumask_empty(cpus)) {
-				cpus_prev = (void *)p->cpus_ptr;
-				p->cpus_ptr = cpus;
+				p->select_cpus = cpus;
 			}
 		}
 	}
@@ -7969,7 +8117,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 		 */
 		if (want_affine && (tmp->flags & SD_WAKE_AFFINE) &&
 		    cpumask_test_cpu(prev_cpu, sched_domain_span(tmp))) {
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 			new_cpu = cpu;
 			if (cpu != prev_cpu &&
 			    cpumask_test_cpu(prev_cpu, p->select_cpus))
@@ -8004,11 +8152,8 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	if (bpf_sched_enabled()) {
 		ctx.new_cpu = new_cpu;
 		ret = bpf_sched_cfs_select_rq_exit(&ctx);
-		if (ret >= 0)
-			new_cpu = ret;
-
-		if (cpus_prev)
-			p->cpus_ptr = cpus_prev;
+		if (ret > 0 && ret <= nr_cpu_ids)
+			new_cpu = ret - 1;
 	}
 #endif
 
@@ -9486,8 +9631,22 @@ static
 int can_migrate_task(struct task_struct *p, struct lb_env *env)
 {
 	int tsk_cache_hot;
+#ifdef CONFIG_BPF_SCHED
+	struct sched_migrate_node migrate_node;
+	int ret;
+#endif
 
 	lockdep_assert_rq_held(env->src_rq);
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled()) {
+		migrate_node.src_cpu = env->src_cpu;
+		migrate_node.dst_cpu = env->dst_cpu;
+		ret = bpf_sched_cfs_can_migrate_task(p, &migrate_node);
+		if (ret > 0)
+			return ret - 1;
+	}
+#endif
 
 	/*
 	 * We do not migrate tasks that are:
@@ -10845,7 +11004,7 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p, int this_cpu)
 		int local_group;
 
 		/* Skip over this group if it has no CPUs allowed */
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
 		if (!cpumask_intersects(sched_group_span(group),
 					p->select_cpus))
 #else
@@ -13130,6 +13289,10 @@ static void task_tick_fair(struct rq *rq, struct task_struct *curr, int queued)
 	update_overutilized_status(task_rq(curr));
 
 	task_tick_core(rq, curr);
+
+	task_tick_relationship(rq, curr);
+
+	update_numa_capacity(rq);
 }
 
 /*
@@ -13691,7 +13854,7 @@ void show_numa_stats(struct task_struct *p, struct seq_file *m)
 	struct numa_group *ng;
 
 	rcu_read_lock();
-	ng = rcu_dereference(p->numa_group);
+
 	for_each_online_node(node) {
 		if (p->numa_faults) {
 			tsf = p->numa_faults[task_faults_idx(NUMA_MEM, node, 0)];
@@ -13706,7 +13869,98 @@ void show_numa_stats(struct task_struct *p, struct seq_file *m)
 	rcu_read_unlock();
 }
 #endif /* CONFIG_NUMA_BALANCING */
+
+void sched_show_relationship(struct task_struct *p, struct seq_file *m)
+{
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	struct net_group *net_grp;
+	struct numa_group *ng;
+	int node;
+
+	if (!task_relationship_used())
+		return;
+
+	rcu_read_lock();
+
+	ng = rcu_dereference(p->numa_group);
+	if (ng) {
+		seq_printf(m, "numa group preferred nid %*pbl switch_cnt %llu\n",
+			nodemask_pr_args(&ng->preferred_nid),
+			ng->nodes_switch_cnt);
+	}
+
+	net_grp = rcu_dereference(p->rship->net_group);
+	if (net_grp) {
+		seq_printf(m, "net group gid %d preferred nid %*pbl\n",
+			net_grp->hdr.gid,
+			nodemask_pr_args(&net_grp->hdr.preferred_nid));
+	}
+
+	rcu_read_unlock();
+
+	for_each_online_node(node) {
+		print_node_load_info(m, node);
+	}
+#endif
+}
 #endif /* CONFIG_SCHED_DEBUG */
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+void task_preferred_node_work(struct callback_head *work)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct task_struct *curr = current;
+	struct numa_group *numa_grp;
+#ifdef CONFIG_BPF_SCHED
+	struct sched_preferred_node_ctx ctx = {0};
+#endif
+
+	work->next = work;
+
+#ifdef CONFIG_BPF_SCHED
+	numa_grp = deref_curr_numa_group(curr);
+	if (numa_grp) {
+
+		spin_lock_irq(&numa_grp->lock);
+		ctx.tsk = curr;
+		ctx.preferred_node = numa_grp->preferred_nid;
+		bpf_sched_cfs_change_preferred_node(&ctx);
+		spin_unlock_irq(&numa_grp->lock);
+	}
+#endif
+#endif
+}
+
+void task_tick_relationship(struct rq *rq, struct task_struct *curr)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	struct callback_head *work = &curr->rship->node_work;
+	struct numa_group *numa_grp;
+
+	if (!task_relationship_supported(curr))
+		return;
+
+	if (work->next != work)
+		return;
+
+	numa_grp = deref_curr_numa_group(curr);
+	if (!numa_grp || numa_grp->nr_tasks <= 1)
+		return;
+
+	spin_lock(&numa_grp->lock);
+
+	if (time_after(jiffies,
+	    (unsigned long)(numa_grp->node_stamp + msecs_to_jiffies(100)))) {
+		numa_grp->node_stamp = jiffies;
+		spin_unlock(&numa_grp->lock);
+		task_work_add(curr, &curr->rship->node_work, TWA_RESUME);
+		return;
+	}
+
+	spin_unlock(&numa_grp->lock);
+#endif
+}
+#endif
 
 __init void init_sched_fair_class(void)
 {
@@ -13716,6 +13970,8 @@ __init void init_sched_fair_class(void)
 	for_each_possible_cpu(i)
 		INIT_LIST_HEAD(&per_cpu(qos_throttled_cfs_rq, i));
 #endif
+
+	init_sched_numa_icon();
 
 #ifdef CONFIG_SMP
 	open_softirq(SCHED_SOFTIRQ, run_rebalance_domains);

@@ -260,6 +260,75 @@ static const struct bpf_func_proto bpf_cpumask_op_proto = {
 	.arg2_type	= ARG_CONST_SIZE,
 };
 
+BPF_CALL_2(bpf_nodemask_op, struct nodemask_op_args *, op, int, len)
+{
+	struct cpumask *cpumask;
+	nodemask_t mask;
+	int nid;
+
+	if (len != sizeof(*op) || !op->arg1)
+		return -EINVAL;
+
+	switch (op->op_type) {
+	case NODEMASK_EMPTY:
+		mask = *(nodemask_t *)op->arg1;
+		return nodes_empty(mask);
+	case NODEMASK_NODE_ISSET:
+		mask = *(nodemask_t *)op->arg2;
+		return node_isset(*(int *)op->arg1, mask);
+	case NODEMASK_NODES_CLEAR:
+		__nodes_clear((nodemask_t *)op->arg1, MAX_NUMNODES);
+		break;
+	case NODEMASK_NODE_CLEAR:
+		__node_clear(*(int *)op->arg1, (nodemask_t *)op->arg2);
+		break;
+	case NODEMASK_NODE_SET:
+		__node_set(*(int *)op->arg1, (nodemask_t *)op->arg2);
+		break;
+	case NODEMASK_NODES_AND:
+		__nodes_and((nodemask_t *)op->arg1, (nodemask_t *)op->arg2,
+			    (nodemask_t *)op->arg3, MAX_NUMNODES);
+		break;
+	case NODEMASK_NODES_ANDNOT:
+		__nodes_andnot((nodemask_t *)op->arg1, (nodemask_t *)op->arg2,
+			       (nodemask_t *)op->arg3, MAX_NUMNODES);
+		break;
+	case NODEMASK_NODES_OR:
+		__nodes_or((nodemask_t *)op->arg1, (nodemask_t *)op->arg2,
+			   (nodemask_t *)op->arg3, MAX_NUMNODES);
+		break;
+	case NODEMASK_WEIGHT:
+		mask = *(nodemask_t *)op->arg1;
+		return nodes_weight(mask);
+	case NODEMASK_NODELIST_PARSE:
+		return __nodelist_parse((const char *)op->arg1,
+					(nodemask_t *)op->arg2, MAX_NUMNODES);
+	case NODEMASK_TO_CPUMASK:
+		mask = *(nodemask_t *)op->arg1;
+		cpumask = (struct cpumask *)op->arg2;
+		cpumask_clear(cpumask);
+		for_each_node_mask(nid, mask) {
+			cpumask_or(cpumask, cpumask, cpumask_of_node(nid));
+		}
+		break;
+	case NODEMASK_ONLINE:
+		*(nodemask_t *)op->arg1 = node_online_map;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_nodemask_op_proto = {
+	.func		= bpf_nodemask_op,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_MEM,
+	.arg2_type	= ARG_CONST_SIZE,
+};
+
 BPF_CALL_2(bpf_cpus_share_cache, int, src_cpu, int, dst_cpu)
 {
 	if ((unsigned int)src_cpu >= nr_cpu_ids ||
@@ -276,6 +345,74 @@ static const struct bpf_func_proto bpf_cpus_share_cache_proto = {
 	.arg1_type	= ARG_ANYTHING,
 	.arg2_type	= ARG_ANYTHING,
 };
+
+#ifdef CONFIG_QOS_SCHED_NUMA_ICON
+BPF_CALL_3(bpf_get_node_stats, int, nid,
+	   struct bpf_node_stats *, ctx,
+	   int, len)
+{
+	if (len != sizeof(*ctx))
+		return -EINVAL;
+
+	if ((unsigned int)nid >= nr_node_ids)
+		return -EINVAL;
+
+	sched_get_node_load(nid, ctx);
+	return 0;
+}
+
+const struct bpf_func_proto bpf_get_node_stats_proto = {
+	.func		= bpf_get_node_stats,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+	.arg2_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+};
+#endif
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+BPF_CALL_3(bpf_get_task_relationship_stats, struct task_struct *, tsk,
+	   struct bpf_map *, map, struct bpf_relationship_get_args *, args)
+{
+	if (!task_relationship_supported(tsk))
+		return -EPERM;
+
+	if (!args)
+		return -EINVAL;
+
+	sched_get_relationship(tsk, args);
+	return 0;
+}
+
+const struct bpf_func_proto bpf_get_task_relationship_stats_proto = {
+	.func		= bpf_get_task_relationship_stats,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id	= &btf_sched_task_ids[0],
+	.arg2_type	= ARG_CONST_MAP_PTR,
+	.arg3_type	= ARG_PTR_TO_MAP_VALUE_OR_NULL,
+};
+
+BPF_CALL_2(bpf_sched_set_curr_preferred_node,
+	   struct bpf_relationship_set_args *, args, int, len)
+{
+	if (!args || len != sizeof(*args))
+		return -EINVAL;
+
+	sched_set_curr_preferred_node(args);
+	return 0;
+}
+
+const struct bpf_func_proto bpf_sched_set_curr_preferred_node_proto = {
+	.func		= bpf_sched_set_curr_preferred_node,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_UNINIT_MEM,
+	.arg2_type	= ARG_CONST_SIZE,
+};
+#endif
 
 static const struct bpf_func_proto *
 bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
@@ -299,6 +436,18 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_cpumask_op_proto;
 	case BPF_FUNC_cpus_share_cache:
 		return &bpf_cpus_share_cache_proto;
+	case BPF_FUNC_nodemask_op:
+		return &bpf_nodemask_op_proto;
+#ifdef CONFIG_QOS_SCHED_NUMA_ICON
+	case BPF_FUNC_get_node_stats:
+		return &bpf_get_node_stats_proto;
+#endif
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	case BPF_FUNC_get_task_relationship_stats:
+		return &bpf_get_task_relationship_stats_proto;
+	case BPF_FUNC_sched_set_curr_preferred_node:
+		return &bpf_sched_set_curr_preferred_node_proto;
+#endif
 	default:
 		return bpf_base_func_proto(func_id);
 	}

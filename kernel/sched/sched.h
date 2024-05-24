@@ -76,6 +76,8 @@
 
 #include "cpupri.h"
 #include "cpudeadline.h"
+#include "numa_icon.h"
+#include <uapi/linux/sched_ctrl.h>
 
 #include <trace/events/sched.h>
 

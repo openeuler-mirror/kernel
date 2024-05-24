@@ -1066,16 +1066,43 @@ config RT_GROUP_SCHED
 
 endif #CGROUP_SCHED
 
+config TASK_PLACEMENT_BY_CPU_RANGE
+	bool "variable cpu range for task placement"
+
 config QOS_SCHED_DYNAMIC_AFFINITY
 	bool "qos dynamic affinity"
 	depends on CPUSETS
 	depends on FAIR_CGROUP_SCHED
+	select TASK_PLACEMENT_BY_CPU_RANGE
 	default n
 	help
 	 This feature lets you allocate preferred cpus to taskgroup. If enabled,
 	 it will make taskgroup only to use preferred cpus when cpu utilization
 	 of taskgroup is below threshold setted, otherwise make taskgroup to use
 	 cpus allowed.
+
+config SCHED_TASK_RELATIONSHIP
+	bool "task relationship"
+	depends on NUMA_BALANCING
+	default n
+	help
+	 This feature enables the scheduler to identify tasks relationship by
+	 page fault, SPE, socket and other IPC method.
+
+	 If in doubt, say N.
+
+config QOS_SCHED_NUMA_ICON
+	bool "numa aware schedule"
+	depends on BPF_SCHED
+	depends on SCHED_TASK_RELATIONSHIP
+	default n
+	help
+	 This feature provides the NUMA Isolation and Consolidationthe
+	 Mechanisms based on ebpf and task relationship. If enabled, scheduler
+	 places related tasks on same numa node when the node has spare
+	 resource.
+
+	 If in doubt, say N.
 
 config UCLAMP_TASK_GROUP
 	bool "Utilization clamping per group of tasks"
@@ -1839,6 +1866,7 @@ config BPF_SCHED
 	bool "SCHED Instrumentation with BPF"
 	depends on BPF_EVENTS
 	depends on BPF_SYSCALL
+	select TASK_PLACEMENT_BY_CPU_RANGE
 	help
 	  Enables instrumentation of the sched hooks with eBPF programs for
 	  implementing dynamic scheduling policies.

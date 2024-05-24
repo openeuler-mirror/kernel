@@ -444,6 +444,12 @@ class PrinterHelpers(Printer):
             'struct cpumask_op_args',
             'struct sched_migrate_ctx',
             'struct sched_affine_ctx',
+            'struct sched_migrate_node',
+            'struct nodemask_op_args',
+            'struct bpf_relationship_get_args',
+            'struct bpf_relationship_set_args',
+            'struct sched_preferred_node_ctx',
+            'struct bpf_node_stats',
     ]
     known_types = {
             '...',
@@ -496,6 +502,12 @@ class PrinterHelpers(Printer):
             'struct cpumask_op_args',
             'struct sched_migrate_ctx',
             'struct sched_affine_ctx',
+            'struct sched_migrate_node',
+            'struct nodemask_op_args',
+            'struct bpf_relationship_get_args',
+            'struct bpf_relationship_set_args',
+            'struct sched_preferred_node_ctx',
+            'struct bpf_node_stats',
     }
     mapped_types = {
             'u8': '__u8',

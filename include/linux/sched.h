@@ -26,6 +26,7 @@
 #include <linux/resource.h>
 #include <linux/latencytop.h>
 #include <linux/sched/prio.h>
+#include <linux/sched/relationship.h>
 #include <linux/sched/types.h>
 #include <linux/signal_types.h>
 #include <linux/mm_types_task.h>
@@ -1437,11 +1438,15 @@ struct task_struct {
 	KABI_USE(7, void *pf_io_worker)
 #if defined(CONFIG_QOS_SCHED_DYNAMIC_AFFINITY) && !defined(__GENKSYMS__)
 	KABI_USE(8, cpumask_t *prefer_cpus)
-	KABI_USE(9, const cpumask_t *select_cpus)
 #else
 	KABI_RESERVE(8)
+#endif
+#if defined(CONFIG_TASK_PLACEMENT_BY_CPU_RANGE) && !defined(__GENKSYMS__)
+	KABI_USE(9, const cpumask_t *select_cpus)
+#else
 	KABI_RESERVE(9)
 #endif
+
 #if (defined(CONFIG_BCACHE) || defined(CONFIG_BCACHE_MODULE)) && defined(CONFIG_X86)
 	KABI_USE(10, unsigned int sequential_io)
 	KABI_USE(11, unsigned int sequential_io_avg)
@@ -1464,7 +1469,11 @@ struct task_struct {
 #else
 	KABI_RESERVE(13)
 #endif
+#if defined(CONFIG_SCHED_TASK_RELATIONSHIP) && !defined(__GENKSYMS__)
+	KABI_USE(14, struct task_relationship *rship)
+#else
 	KABI_RESERVE(14)
+#endif
 	KABI_RESERVE(15)
 	KABI_RESERVE(16)
 	KABI_AUX_PTR(task_struct)
@@ -2351,6 +2360,21 @@ struct bpf_sched_cpu_stats {
 	KABI_RESERVE(4)
 };
 
+struct bpf_node_stats {
+	unsigned long util;
+	unsigned long compute_capacity;
+	unsigned int weight;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+	KABI_RESERVE(5)
+	KABI_RESERVE(6)
+	KABI_RESERVE(7)
+	KABI_RESERVE(8)
+};
+
 struct cpumask_op_args {
 	unsigned int op_type;
 	void *arg1;
@@ -2372,6 +2396,28 @@ enum cpumask_op_type {
 	CPUMASK_NEXT_WRAP,
 	CPUMASK_NEXT_AND,
 	CPUMASK_CPULIST_PARSE
+};
+
+enum nodemask_op_type {
+	NODEMASK_EMPTY,
+	NODEMASK_NODE_ISSET,
+	NODEMASK_NODES_CLEAR,
+	NODEMASK_NODE_SET,
+	NODEMASK_NODE_CLEAR,
+	NODEMASK_NODELIST_PARSE,
+	NODEMASK_TO_CPUMASK,
+	NODEMASK_NODES_ANDNOT,
+	NODEMASK_NODES_AND,
+	NODEMASK_NODES_OR,
+	NODEMASK_WEIGHT,
+	NODEMASK_ONLINE
+};
+
+struct nodemask_op_args {
+	enum nodemask_op_type op_type;
+	void *arg1;
+	void *arg2;
+	void *arg3;
 };
 
 struct sched_migrate_ctx {
@@ -2396,6 +2442,16 @@ struct sched_affine_ctx {
 	int prev_cpu;
 	int curr_cpu;
 	int is_sync;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
+};
+
+struct sched_migrate_node {
+	int src_cpu;
+	int dst_cpu;
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)

@@ -38,6 +38,7 @@
 #include <linux/sched/coredump.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/numa_balancing.h>
+#include <linux/sched/relationship.h>
 #include <linux/sched/task.h>
 #include <linux/pagemap.h>
 #include <linux/perf_event.h>
@@ -1822,6 +1823,7 @@ static int bprm_execve(struct linux_binprm *bprm,
 	rseq_execve(current);
 	acct_update_integrals(current);
 	task_numa_free(current, false);
+	task_relationship_free(current, true);
 	return retval;
 
 out:
