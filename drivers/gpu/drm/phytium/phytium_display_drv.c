@@ -250,7 +250,7 @@ static int phytium_display_load(struct drm_device *dev, unsigned long flags)
 		goto failed_modeset_init;
 	}
 
-	if (priv->support_memory_type & MEMORY_TYPE_VRAM)
+	if (priv->support_memory_type & (MEMORY_TYPE_VRAM_WC | MEMORY_TYPE_VRAM_DEVICE))
 		priv->vram_hw_init(priv);
 
 	ret = drm_irq_install(dev, priv->irq);
@@ -281,8 +281,25 @@ static void phytium_display_unload(struct drm_device *dev)
 	drm_mode_config_cleanup(dev);
 }
 
+/* phytium display specific ioctls
+ * The device specific ioctl range is 0x40 to 0x79.
+ */
+#define DRM_PHYTIUM_VRAM_TYPE_DEVICE	0x0
+#define DRM_IOCTL_PHYTIUM_VRAM_TYPE_DEVICE	DRM_IO(DRM_COMMAND_BASE\
+	+ DRM_PHYTIUM_VRAM_TYPE_DEVICE)
+
+static int phytium_ioctl_check_vram_device(struct drm_device *dev, void *data,
+				struct drm_file *file_priv)
+{
+	struct phytium_display_private *priv = dev->dev_private;
+
+	return ((priv->support_memory_type == MEMORY_TYPE_VRAM_DEVICE) ? 1 : 0);
+}
+
 static const struct drm_ioctl_desc phytium_ioctls[] = {
 	/* for test, none so far */
+	DRM_IOCTL_DEF_DRV(PHYTIUM_VRAM_TYPE_DEVICE, phytium_ioctl_check_vram_device,
+						DRM_AUTH|DRM_UNLOCKED),
 };
 
 static const struct file_operations phytium_drm_driver_fops = {
@@ -382,7 +399,7 @@ static int phytium_display_pm_resume(struct drm_device *dev)
 	phytium_crtc_resume(dev);
 	phytium_gem_resume(dev);
 
-	if (priv->support_memory_type & MEMORY_TYPE_VRAM)
+	if (priv->support_memory_type & (MEMORY_TYPE_VRAM_WC | MEMORY_TYPE_VRAM_DEVICE))
 		priv->vram_hw_init(priv);
 
 	ret = drm_atomic_helper_resume(dev, dev->mode_config.suspend_state);

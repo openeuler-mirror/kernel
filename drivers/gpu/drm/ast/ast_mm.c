@@ -74,6 +74,52 @@ static u32 ast_get_vram_size(struct ast_private *ast)
 	return vram_size;
 }
 
+static int ast_driver_io_mem_reserve(struct ttm_bo_device *bdev,
+									struct ttm_resource *mem)
+{
+	struct drm_vram_mm *vmm = drm_vram_mm_of_bdev(bdev);
+	size_t bus_size = (size_t)mem->num_pages << PAGE_SHIFT;
+
+	switch (mem->mem_type) {
+	case TTM_PL_SYSTEM:     /* nothing to do */
+			break;
+	case TTM_PL_VRAM:
+			mem->bus.offset = (mem->start << PAGE_SHIFT) + vmm->vram_base;
+			mem->bus.is_iomem = true;
+
+			mem->placement = TTM_PL_FLAG_UNCACHED;
+			mem->bus.addr = ioremap(mem->bus.offset, bus_size);
+
+			if (!mem->bus.addr)
+				return -ENOMEM;
+
+			break;
+	default:
+			return -EINVAL;
+	}
+
+	return 0;
+}
+
+static bool ast_pci_host_is_5c01(struct pci_bus *bus)
+{
+	struct pci_bus *child = bus;
+	struct pci_dev *root = NULL;
+
+	while (child) {
+		if (child->parent->parent)
+			child = child->parent;
+		else
+			break;
+	}
+
+	root = child->self;
+
+	if ((root->vendor == 0x1db7) && (root->device == 0x5c01))
+		return true;
+	return false;
+}
+
 static void ast_mm_release(struct drm_device *dev, void *ptr)
 {
 	struct ast_private *ast = to_ast_private(dev);
@@ -86,6 +132,7 @@ static void ast_mm_release(struct drm_device *dev, void *ptr)
 int ast_mm_init(struct ast_private *ast)
 {
 	struct drm_device *dev = &ast->base;
+	struct pci_dev *pdev = to_pci_dev(dev->dev);
 	u32 vram_size;
 	int ret;
 
@@ -96,6 +143,13 @@ int ast_mm_init(struct ast_private *ast)
 	if (ret) {
 		drm_err(dev, "Error initializing VRAM MM; %d\n", ret);
 		return ret;
+	}
+
+	if (ast_pci_host_is_5c01(pdev->bus) && dev->vram_mm->bdev.driver) {
+		ast->is_5c01_device = true;
+		dev->vram_mm->bdev.driver->io_mem_reserve = ast_driver_io_mem_reserve;
+	} else {
+		ast->is_5c01_device = false;
 	}
 
 	arch_io_reserve_memtype_wc(pci_resource_start(dev->pdev, 0),

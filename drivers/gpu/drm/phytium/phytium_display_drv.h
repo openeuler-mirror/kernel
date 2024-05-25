@@ -49,9 +49,10 @@ enum phytium_mem_state_type {
 	PHYTIUM_MEM_STATE_TYPE_COUNT,
 };
 
-#define MEMORY_TYPE_VRAM		0x1
+#define MEMORY_TYPE_VRAM_WC		0x1
 #define MEMORY_TYPE_SYSTEM_CARVEOUT	0x2
 #define MEMORY_TYPE_SYSTEM_UNIFIED	0x4
+#define MEMORY_TYPE_VRAM_DEVICE		0x8
 
 #define IS_PLATFORM(priv, p) ((priv)->info.platform_mask & BIT(p))
 
