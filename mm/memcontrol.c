@@ -5886,6 +5886,39 @@ static ssize_t memory_ksm_write(struct kernfs_open_file *of, char *buf,
 
 	return nbytes;
 }
+
+static void memcg_attach_ksm(struct cgroup_taskset *tset)
+{
+	struct cgroup_subsys_state *css;
+	struct mem_cgroup *memcg;
+	struct task_struct *task;
+
+	cgroup_taskset_first(tset, &css);
+	memcg = mem_cgroup_from_css(css);
+	if (!READ_ONCE(memcg->auto_ksm_enabled))
+		return;
+
+	cgroup_taskset_for_each(task, css, tset) {
+		struct mm_struct *mm = get_task_mm(task);
+
+		if (!mm)
+			continue;
+
+		if (mmap_write_lock_killable(mm)) {
+			mmput(mm);
+			continue;
+		}
+
+		ksm_enable_merge_any(mm);
+
+		mmap_write_unlock(mm);
+		mmput(mm);
+	}
+}
+#else
+static inline void memcg_attach_ksm(struct cgroup_taskset *tset)
+{
+}
 #endif /* CONFIG_KSM */
 
 #ifdef CONFIG_CGROUP_V1_WRITEBACK
@@ -7373,6 +7406,12 @@ retry:
 	atomic_dec(&mc.from->moving_account);
 }
 
+static void mem_cgroup_attach(struct cgroup_taskset *tset)
+{
+	if (!cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		memcg_attach_ksm(tset);
+}
+
 static void mem_cgroup_move_task(void)
 {
 	if (mc.to) {
@@ -7386,6 +7425,9 @@ static int mem_cgroup_can_attach(struct cgroup_taskset *tset)
 	return 0;
 }
 static void mem_cgroup_cancel_attach(struct cgroup_taskset *tset)
+{
+}
+static void mem_cgroup_attach(struct cgroup_taskset *tset)
 {
 }
 static void mem_cgroup_move_task(void)
@@ -7651,6 +7693,7 @@ struct cgroup_subsys memory_cgrp_subsys = {
 	.css_rstat_flush = mem_cgroup_css_rstat_flush,
 	.can_attach = mem_cgroup_can_attach,
 	.cancel_attach = mem_cgroup_cancel_attach,
+	.attach = mem_cgroup_attach,
 	.post_attach = mem_cgroup_move_task,
 	.bind = mem_cgroup_bind,
 	.dfl_cftypes = memory_files,
