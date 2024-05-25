@@ -201,6 +201,7 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_SK_LOOKUP,
 #ifndef __GENKSYMS__
 	BPF_PROG_TYPE_SCHED,
+	BPF_PROG_TYPE_NET_GLOBAL,
 #endif
 };
 
@@ -245,6 +246,10 @@ enum bpf_attach_type {
 	BPF_XDP,
 #ifndef __GENKSYMS__
 	BPF_SCHED,
+	BPF_GNET_TCP_RECVMSG,
+	BPF_GNET_SK_DST_SET,
+	BPF_GNET_RCV_NIC_NODE,
+	BPF_GNET_SEND_NIC_NODE,
 #endif
 	__MAX_BPF_ATTACH_TYPE
 };
@@ -3920,6 +3925,12 @@ union bpf_attr {
  *		get resource statistics of *nid* and store in *ctx*.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_net_rship_submit(void *buf, size_t sz, u64 flags)
+ *	Description
+ *		update network's relationship to sched subsystem.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4096,6 +4107,7 @@ union bpf_attr {
 	FN(get_task_relationship_stats),\
 	FN(sched_set_curr_preferred_node),\
 	FN(get_node_stats),		\
+	FN(sched_net_rship_submit),	\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
@@ -5248,6 +5260,17 @@ enum {
 	BTF_F_NONAME	=	(1ULL << 1),
 	BTF_F_PTR_RAW	=	(1ULL << 2),
 	BTF_F_ZERO	=	(1ULL << 3),
+};
+
+struct bpf_gnet_ctx {
+	__bpf_md_ptr(struct bpf_sock *, sk);
+	int curr_tid;
+	int peer_tid;
+	int numa_node;
+	__u64 rxtx_bytes;
+	int rx_dev_idx;
+	int rx_dev_queue_idx;
+	__u64 rx_dev_netns_cookie;
 };
 
 #endif /* _UAPI__LINUX_BPF_H__ */

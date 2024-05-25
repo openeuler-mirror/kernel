@@ -81,6 +81,10 @@ BPF_PROG_TYPE(BPF_PROG_TYPE_LSM, lsm,
 BPF_PROG_TYPE(BPF_PROG_TYPE_SCHED, bpf_sched,
 	      void *, void *)
 #endif /* CONFIG_BPF_SCHED */
+#ifdef CONFIG_BPF_NET_GLOBAL_PROG
+BPF_PROG_TYPE(BPF_PROG_TYPE_NET_GLOBAL, bpf_gnet,
+	      struct bpf_gnet_ctx, struct bpf_gnet_ctx)
+#endif
 
 BPF_MAP_TYPE(BPF_MAP_TYPE_ARRAY, array_map_ops)
 BPF_MAP_TYPE(BPF_MAP_TYPE_PERCPU_ARRAY, percpu_array_map_ops)

@@ -21,6 +21,7 @@
 #include <net/net_ratelimit.h>
 #include <net/busy_poll.h>
 #include <net/pkt_sched.h>
+#include <net/net_rship.h>
 
 static int two = 2;
 static int three = 3;
@@ -44,6 +45,12 @@ EXPORT_SYMBOL(sysctl_fb_tunnels_only_for_init_net);
  */
 int sysctl_devconf_inherit_init_net __read_mostly;
 EXPORT_SYMBOL(sysctl_devconf_inherit_init_net);
+
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+unsigned long net_numa_rship_jiffies __read_mostly = HZ / 10; /* 100ms */
+static unsigned long net_numa_rship_ms_min = HZ / 10; /* 100ms */
+static unsigned long net_numa_rship_ms_max = 100 * HZ; /* 100s */
+#endif
 
 #ifdef CONFIG_RPS
 static int rps_sock_flow_sysctl(struct ctl_table *table, int write,
@@ -575,6 +582,17 @@ static struct ctl_table net_core_table[] = {
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ONE,
 	},
+#ifdef CONFIG_SCHED_TASK_RELATIONSHIP
+	{
+		.procname	= "numa_rship_ms",
+		.data		= &net_numa_rship_jiffies,
+		.maxlen		= sizeof(unsigned long),
+		.mode		= 0644,
+		.proc_handler	= proc_doulongvec_ms_jiffies_minmax,
+		.extra1         = &net_numa_rship_ms_min,
+		.extra2         = &net_numa_rship_ms_max,
+	},
+#endif
 	{ }
 };
 

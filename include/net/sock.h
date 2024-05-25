@@ -533,7 +533,11 @@ struct sock {
 #else
 	KABI_RESERVE(1)
 #endif
+#if IS_ENABLED(CONFIG_SCHED_TASK_RELATIONSHIP)
+	KABI_USE(2, struct sched_net_rship_sock *net_rship)
+#else
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)

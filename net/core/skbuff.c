@@ -71,6 +71,7 @@
 #include <net/mptcp.h>
 #include <net/page_pool.h>
 #include <net/tcp_ext.h>
+#include <net/net_rship.h>
 
 #include <linux/uaccess.h>
 #include <trace/events/skb.h>
@@ -254,6 +255,7 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 
 	skb_set_kcov_handle(skb, kcov_common_handle());
 
+	net_rship_skb_init_flags(skb, flags);
 out:
 	return skb;
 nodata:
@@ -289,6 +291,7 @@ static struct sk_buff *__build_skb_around(struct sk_buff *skb,
 
 	skb_set_kcov_handle(skb, kcov_common_handle());
 
+	net_rship_skb_init(skb);
 	return skb;
 }
 
@@ -485,6 +488,7 @@ struct sk_buff *__netdev_alloc_skb(struct net_device *dev, unsigned int len,
 skb_success:
 	skb_reserve(skb, NET_SKB_PAD);
 	skb->dev = dev;
+	net_rship_skb_record_dev_rxinfo(skb, dev);
 
 skb_fail:
 	return skb;
@@ -549,6 +553,7 @@ struct sk_buff *__napi_alloc_skb(struct napi_struct *napi, unsigned int len,
 skb_success:
 	skb_reserve(skb, NET_SKB_PAD + NET_IP_ALIGN);
 	skb->dev = napi->dev;
+	net_rship_skb_record_dev_rxinfo(skb, napi->dev);
 
 skb_fail:
 	return skb;
@@ -996,7 +1001,7 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #ifdef CONFIG_NET_SCHED
 	CHECK_SKB_FIELD(tc_index);
 #endif
-
+	net_rship_skb_clone(new, (void *)old);
 }
 
 /*
@@ -1476,6 +1481,7 @@ struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp_mask)
 			return NULL;
 
 		n->fclone = SKB_FCLONE_UNAVAILABLE;
+		net_rship_skb_init(n);
 	}
 
 	return __skb_clone(n, skb);
@@ -3428,6 +3434,7 @@ void skb_split(struct sk_buff *skb, struct sk_buff *skb1, const u32 len)
 		skb_split_inside_header(skb, skb1, len, pos);
 	else		/* Second chunk has no header, nothing to copy. */
 		skb_split_no_header(skb, skb1, len, pos);
+	net_rship_skb_clone(skb1, skb);
 }
 EXPORT_SYMBOL(skb_split);
 
@@ -4438,14 +4445,22 @@ static void skb_extensions_init(void) {}
 void __init skb_init(void)
 {
 	skbuff_head_cache = kmem_cache_create_usercopy("skbuff_head_cache",
+#if IS_ENABLED(CONFIG_SCHED_TASK_RELATIONSHIP)
+					      sizeof(struct sk_buff_net_rship),
+#else
 					      sizeof(struct sk_buff),
+#endif
 					      0,
 					      SLAB_HWCACHE_ALIGN|SLAB_PANIC,
 					      offsetof(struct sk_buff, cb),
 					      sizeof_field(struct sk_buff, cb),
 					      NULL);
 	skbuff_fclone_cache = kmem_cache_create("skbuff_fclone_cache",
+#if IS_ENABLED(CONFIG_SCHED_TASK_RELATIONSHIP)
+						sizeof(struct sk_buff_fclones_net_rship),
+#else
 						sizeof(struct sk_buff_fclones),
+#endif
 						0,
 						SLAB_HWCACHE_ALIGN|SLAB_PANIC,
 						NULL);

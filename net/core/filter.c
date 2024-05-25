@@ -4698,11 +4698,9 @@ static const struct bpf_func_proto bpf_get_socket_cookie_sock_ops_proto = {
 
 static u64 __bpf_get_netns_cookie(struct sock *sk)
 {
-#ifdef CONFIG_NET_NS
-	return __net_gen_cookie(sk ? sk->sk_net.net : &init_net);
-#else
-	return 0;
-#endif
+	const struct net *net = sk ? sock_net(sk) : &init_net;
+
+	return net->net_cookie;
 }
 
 BPF_CALL_1(bpf_get_netns_cookie_sock, struct sock *, ctx)
@@ -10684,3 +10682,213 @@ bpf_sk_base_func_proto(enum bpf_func_id func_id)
 
 	return func;
 }
+
+#ifdef CONFIG_BPF_NET_GLOBAL_PROG
+static DEFINE_MUTEX(gnet_bpf_mutex);
+struct gnet_bpf gnet_bpf_progs;
+EXPORT_SYMBOL(gnet_bpf_progs);
+struct static_key_false gnet_bpf_enabled_key[MAX_GNET_BPF_ATTACH_TYPE];
+EXPORT_SYMBOL(gnet_bpf_enabled_key);
+
+int gnet_bpf_prog_attach(const union bpf_attr *attr,
+			 enum bpf_prog_type ptype, struct bpf_prog *prog)
+{
+	enum gnet_bpf_attach_type atype;
+	struct bpf_prog *attached;
+	int ret = 0;
+
+	if (attr->attach_flags || attr->replace_bpf_fd)
+		return -EINVAL;
+
+	atype = to_gnet_bpf_attach_type(attr->attach_type);
+	if (atype < 0)
+		return -EINVAL;
+
+	mutex_lock(&gnet_bpf_mutex);
+	attached = gnet_bpf_progs.progs[atype];
+	if (attached == prog) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
+
+	rcu_assign_pointer(gnet_bpf_progs.progs[atype], prog);
+	gnet_bpf_progs.flags[atype] = attr->attach_flags;
+	if (attached)
+		bpf_prog_put(attached);
+	else
+		static_branch_inc(&gnet_bpf_enabled_key[atype]);
+
+out_unlock:
+	mutex_unlock(&gnet_bpf_mutex);
+	return ret;
+}
+
+int gnet_bpf_prog_detach(const union bpf_attr *attr, enum bpf_prog_type ptype)
+{
+	enum gnet_bpf_attach_type atype;
+	struct bpf_prog *attached;
+	int ret = 0;
+
+	atype = to_gnet_bpf_attach_type(attr->attach_type);
+	if (atype < 0)
+		return -EINVAL;
+
+	mutex_lock(&gnet_bpf_mutex);
+	attached = gnet_bpf_progs.progs[atype];
+	if (!attached) {
+		ret = -ENOENT;
+		goto out_unlock;
+	}
+
+	static_branch_dec(&gnet_bpf_enabled_key[atype]);
+	gnet_bpf_progs.flags[atype] = 0;
+	rcu_assign_pointer(gnet_bpf_progs.progs[atype], NULL);
+	bpf_prog_put(attached);
+out_unlock:
+	mutex_unlock(&gnet_bpf_mutex);
+	return ret;
+}
+
+static int __init gnet_bpf_init(void)
+{
+	return 0;
+}
+late_initcall(gnet_bpf_init);
+
+#include <linux/sched/relationship.h>
+BPF_CALL_3(bpf_sched_net_rship_submit, void *, reqbuf, size_t, sz, u64, flags)
+{
+#if defined(CONFIG_SCHED_TASK_RELATIONSHIP)
+	struct net_relationship_req *req = reqbuf;
+
+	if (sz != sizeof(struct net_relationship_req))
+		return -EINVAL;
+
+	return sched_net_relationship_submit(req);
+#else
+	return 0;
+#endif
+}
+
+const struct bpf_func_proto bpf_sched_net_rship_submit_proto = {
+	.func	= bpf_sched_net_rship_submit,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_MEM,
+	.arg2_type	= ARG_CONST_SIZE,
+	.arg3_type	= ARG_ANYTHING,
+};
+
+static const struct bpf_func_proto *
+bpf_gnet_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+{
+	switch (func_id) {
+	case BPF_FUNC_perf_event_output:
+		return &bpf_skb_event_output_proto;
+	case BPF_FUNC_sk_fullsock:
+		return &bpf_sk_fullsock_proto;
+	case BPF_FUNC_sched_net_rship_submit:
+		return &bpf_sched_net_rship_submit_proto;
+	default:
+		break;
+	}
+
+	return bpf_sk_base_func_proto(func_id);
+}
+
+static bool bpf_gnet_is_valid_access(int off, int size,
+				     enum bpf_access_type type,
+				     const struct bpf_prog *prog,
+				     struct bpf_insn_access_aux *info)
+{
+	if (off < 0 || off >= sizeof(struct bpf_gnet_ctx))
+		return false;
+
+	/* The verifier guarantees that size > 0. */
+	if (off % size != 0)
+		return false;
+
+	if (type == BPF_WRITE)
+		return false;
+
+	switch (off) {
+	case offsetof(struct bpf_gnet_ctx, sk):
+		if (size != sizeof(__u64))
+			return false;
+		info->reg_type = PTR_TO_SOCKET_OR_NULL;
+		break;
+	default:
+		break;
+	}
+	return true;
+}
+
+static u32 bpf_gnet_convert_ctx_access(enum bpf_access_type type,
+				       const struct bpf_insn *si,
+				       struct bpf_insn *insn_buf,
+				       struct bpf_prog *prog, u32 *target_size)
+{
+	struct bpf_insn *insn = insn_buf;
+
+	switch (si->off) {
+	case offsetof(struct bpf_gnet_ctx, sk):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, sk),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, sk));
+		break;
+	case offsetof(struct bpf_gnet_ctx, numa_node):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, numa_node),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, numa_node));
+		break;
+	case offsetof(struct bpf_gnet_ctx, curr_tid):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, curr_tid),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, curr_tid));
+		break;
+	case offsetof(struct bpf_gnet_ctx, peer_tid):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, peer_tid),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, peer_tid));
+		break;
+	case offsetof(struct bpf_gnet_ctx, rxtx_bytes):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, rxtx_bytes),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, rxtx_bytes));
+		break;
+	case offsetof(struct bpf_gnet_ctx, rx_dev_idx):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, rx_dev_idx),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, rx_dev_idx));
+		break;
+	case offsetof(struct bpf_gnet_ctx, rx_dev_queue_idx):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern, rx_dev_queue_idx),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, rx_dev_queue_idx));
+		break;
+	case offsetof(struct bpf_gnet_ctx, rx_dev_netns_cookie):
+		*insn++ = BPF_LDX_MEM(BPF_FIELD_SIZEOF(struct bpf_gnet_ctx_kern,
+							rx_dev_netns_cookie),
+				si->dst_reg, si->src_reg,
+				offsetof(struct bpf_gnet_ctx_kern, rx_dev_netns_cookie));
+		break;
+	}
+	return insn - insn_buf;
+}
+
+static int bpf_gnet_gen_prologue(struct bpf_insn *insn_buf, bool direct_write,
+				 const struct bpf_prog *prog)
+{
+	return 0;
+}
+
+const struct bpf_verifier_ops bpf_gnet_verifier_ops = {
+	.get_func_proto         = bpf_gnet_func_proto,
+	.is_valid_access        = bpf_gnet_is_valid_access,
+	.convert_ctx_access     = bpf_gnet_convert_ctx_access,
+	.gen_prologue           = bpf_gnet_gen_prologue,
+};
+
+const struct bpf_prog_ops bpf_gnet_prog_ops = {
+};
+#endif

@@ -8494,6 +8494,14 @@ static const struct bpf_sec_def section_defs[] = {
 	BPF_PROG_SEC("struct_ops",		BPF_PROG_TYPE_STRUCT_OPS),
 	BPF_EAPROG_SEC("sk_lookup/",		BPF_PROG_TYPE_SK_LOOKUP,
 						BPF_SK_LOOKUP),
+	BPF_EAPROG_SEC("gnet/tcp_recvmsg",	BPF_PROG_TYPE_NET_GLOBAL,
+						BPF_GNET_TCP_RECVMSG),
+	BPF_EAPROG_SEC("gnet/sk_dst_set",	BPF_PROG_TYPE_NET_GLOBAL,
+						BPF_GNET_SK_DST_SET),
+	BPF_EAPROG_SEC("gnet/rcv_nic_node",	BPF_PROG_TYPE_NET_GLOBAL,
+						BPF_GNET_RCV_NIC_NODE),
+	BPF_EAPROG_SEC("gnet/send_nic_node",	BPF_PROG_TYPE_NET_GLOBAL,
+						BPF_GNET_SEND_NIC_NODE),
 };
 
 #undef BPF_PROG_SEC_IMPL

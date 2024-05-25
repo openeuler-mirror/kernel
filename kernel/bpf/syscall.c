@@ -2107,6 +2107,9 @@ static bool is_net_admin_prog_type(enum bpf_prog_type prog_type)
 	case BPF_PROG_TYPE_CGROUP_SYSCTL:
 	case BPF_PROG_TYPE_SOCK_OPS:
 	case BPF_PROG_TYPE_EXT: /* extends any prog */
+#ifdef CONFIG_BPF_NET_GLOBAL_PROG
+	case BPF_PROG_TYPE_NET_GLOBAL:
+#endif
 		return true;
 	case BPF_PROG_TYPE_CGROUP_SKB:
 		/* always unpriv */
@@ -3017,6 +3020,13 @@ attach_type_to_prog_type(enum bpf_attach_type attach_type)
 		return BPF_PROG_TYPE_SK_LOOKUP;
 	case BPF_XDP:
 		return BPF_PROG_TYPE_XDP;
+#ifdef CONFIG_BPF_NET_GLOBAL_PROG
+	case BPF_GNET_TCP_RECVMSG:
+	case BPF_GNET_SK_DST_SET:
+	case BPF_GNET_RCV_NIC_NODE:
+	case BPF_GNET_SEND_NIC_NODE:
+		return BPF_PROG_TYPE_NET_GLOBAL;
+#endif
 	default:
 		return BPF_PROG_TYPE_UNSPEC;
 	}
@@ -3072,6 +3082,11 @@ static int bpf_prog_attach(const union bpf_attr *attr)
 	case BPF_PROG_TYPE_SOCK_OPS:
 		ret = cgroup_bpf_prog_attach(attr, ptype, prog);
 		break;
+#ifdef CONFIG_BPF_NET_GLOBAL_PROG
+	case BPF_PROG_TYPE_NET_GLOBAL:
+		ret = gnet_bpf_prog_attach(attr, ptype, prog);
+		break;
+#endif
 	default:
 		ret = -EINVAL;
 	}
@@ -3108,6 +3123,10 @@ static int bpf_prog_detach(const union bpf_attr *attr)
 	case BPF_PROG_TYPE_CGROUP_SYSCTL:
 	case BPF_PROG_TYPE_SOCK_OPS:
 		return cgroup_bpf_prog_detach(attr, ptype);
+#ifdef CONFIG_BPF_NET_GLOBAL_PROG
+	case BPF_PROG_TYPE_NET_GLOBAL:
+		return gnet_bpf_prog_detach(attr, ptype);
+#endif
 	default:
 		return -EINVAL;
 	}

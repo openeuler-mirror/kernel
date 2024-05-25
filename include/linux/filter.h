@@ -1474,4 +1474,72 @@ static inline bool bpf_sk_lookup_run_v6(struct net *net, int protocol,
 }
 #endif /* IS_ENABLED(CONFIG_IPV6) */
 
+#ifdef CONFIG_BPF_NET_GLOBAL_PROG
+struct bpf_gnet_ctx_kern {
+	struct sock *sk;
+	int curr_tid;
+	int peer_tid;
+	int numa_node;
+	__u64 rxtx_bytes;
+	int rx_dev_idx;
+	int rx_dev_queue_idx;
+	__u64 rx_dev_netns_cookie;
+};
+
+enum gnet_bpf_attach_type {
+	GNET_BPF_ATTACH_TYPE_INVALID = -1,
+	GNET_TCP_RECVMSG = 0,
+	GNET_SK_DST_SET,
+	GNET_RCV_NIC_NODE,
+	GNET_SEND_NIC_NODE,
+	MAX_GNET_BPF_ATTACH_TYPE
+};
+
+static inline enum gnet_bpf_attach_type
+to_gnet_bpf_attach_type(enum bpf_attach_type attach_type)
+{
+	switch (attach_type) {
+	case BPF_GNET_TCP_RECVMSG:
+		return GNET_TCP_RECVMSG;
+	case BPF_GNET_SK_DST_SET:
+		return GNET_SK_DST_SET;
+	case BPF_GNET_RCV_NIC_NODE:
+		return GNET_RCV_NIC_NODE;
+	case BPF_GNET_SEND_NIC_NODE:
+		return GNET_SEND_NIC_NODE;
+	default:
+	return GNET_BPF_ATTACH_TYPE_INVALID;
+	}
+}
+
+struct gnet_bpf {
+	struct bpf_prog __rcu *progs[MAX_GNET_BPF_ATTACH_TYPE];
+	u32 flags[MAX_GNET_BPF_ATTACH_TYPE];
+};
+
+extern struct static_key_false gnet_bpf_enabled_key[MAX_GNET_BPF_ATTACH_TYPE];
+#define gnet_bpf_enabled(atype) static_branch_unlikely(&gnet_bpf_enabled_key[atype])
+extern struct gnet_bpf gnet_bpf_progs;
+
+int gnet_bpf_prog_attach(const union bpf_attr *attr,
+			 enum bpf_prog_type ptype, struct bpf_prog *prog);
+int gnet_bpf_prog_detach(const union bpf_attr *attr, enum bpf_prog_type ptype);
+
+static inline void run_gnet_bpf(enum gnet_bpf_attach_type atype,
+				struct bpf_gnet_ctx_kern *ctx)
+{
+	struct bpf_prog *prog;
+
+	rcu_read_lock();
+	prog = rcu_dereference(gnet_bpf_progs.progs[atype]);
+	if (unlikely(!prog))
+		goto out;
+
+	bpf_prog_run_pin_on_cpu(prog, ctx);
+out:
+	rcu_read_unlock();
+}
+
+#endif
+
 #endif /* __LINUX_FILTER_H__ */

@@ -279,6 +279,7 @@
 #include <linux/uaccess.h>
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
+#include <net/net_rship.h>
 
 DEFINE_PER_CPU(unsigned int, tcp_orphan_count);
 EXPORT_PER_CPU_SYMBOL_GPL(tcp_orphan_count);
@@ -884,6 +885,7 @@ struct sk_buff *sk_stream_alloc_skb(struct sock *sk, int size, gfp_t gfp,
 			INIT_LIST_HEAD(&skb->tcp_tsorted_anchor);
 			skb_shinfo(skb)->tx_flags = 0;
 			memset(TCP_SKB_CB(skb), 0, sizeof(struct tcp_skb_cb));
+			net_rship_skb_clear(skb);
 			return skb;
 		}
 	}
@@ -1320,6 +1322,8 @@ new_segment:
 						  first_skb);
 			if (!skb)
 				goto wait_for_space;
+
+			net_rship_record_sendmsginfo(skb, sk);
 
 			process_backlog++;
 			skb->ip_summed = CHECKSUM_PARTIAL;
@@ -2366,6 +2370,8 @@ skip_copy:
 
 		if (used + offset < skb->len)
 			continue;
+
+		net_rship_tcp_recvmsg(sk, skb);
 
 		if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
 			goto found_fin_ok;
