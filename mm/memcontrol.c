@@ -5772,7 +5772,7 @@ static ssize_t memcg_high_async_ratio_write(struct kernfs_open_file *of,
 }
 
 #ifdef CONFIG_KSM
-static int memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
+static int __memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
 {
 	struct task_struct *task;
 	struct mm_struct *mm;
@@ -5806,6 +5806,27 @@ static int memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
 	return ret;
 }
 
+static int memcg_set_ksm_for_tasks(struct mem_cgroup *memcg, bool enable)
+{
+	struct mem_cgroup *iter;
+	int ret = 0;
+
+	for_each_mem_cgroup_tree(iter, memcg) {
+		if (READ_ONCE(iter->auto_ksm_enabled) == enable)
+			continue;
+
+		ret = __memcg_set_ksm_for_tasks(iter, enable);
+		if (ret) {
+			mem_cgroup_iter_break(memcg, iter);
+			break;
+		}
+
+		WRITE_ONCE(iter->auto_ksm_enabled, enable);
+	}
+
+	return ret;
+}
+
 static int memory_ksm_show(struct seq_file *m, void *v)
 {
 	unsigned long ksm_merging_pages = 0;
@@ -5833,6 +5854,7 @@ static int memory_ksm_show(struct seq_file *m, void *v)
 	}
 	css_task_iter_end(&it);
 
+	seq_printf(m, "auto ksm enabled: %d\n", READ_ONCE(memcg->auto_ksm_enabled));
 	seq_printf(m, "merge any tasks: %u\n", tasks);
 	seq_printf(m, "ksm_rmap_items %lu\n", ksm_rmap_items);
 	seq_printf(m, "ksm_merging_pages %lu\n", ksm_merging_pages);
@@ -5855,11 +5877,47 @@ static ssize_t memory_ksm_write(struct kernfs_open_file *of, char *buf,
 	if (err)
 		return err;
 
+	if (READ_ONCE(memcg->auto_ksm_enabled) == enable)
+		return nbytes;
+
 	err = memcg_set_ksm_for_tasks(memcg, enable);
 	if (err)
 		return err;
 
 	return nbytes;
+}
+
+static void memcg_attach_ksm(struct cgroup_taskset *tset)
+{
+	struct cgroup_subsys_state *css;
+	struct mem_cgroup *memcg;
+	struct task_struct *task;
+
+	cgroup_taskset_first(tset, &css);
+	memcg = mem_cgroup_from_css(css);
+	if (!READ_ONCE(memcg->auto_ksm_enabled))
+		return;
+
+	cgroup_taskset_for_each(task, css, tset) {
+		struct mm_struct *mm = get_task_mm(task);
+
+		if (!mm)
+			continue;
+
+		if (mmap_write_lock_killable(mm)) {
+			mmput(mm);
+			continue;
+		}
+
+		ksm_enable_merge_any(mm);
+
+		mmap_write_unlock(mm);
+		mmput(mm);
+	}
+}
+#else
+static inline void memcg_attach_ksm(struct cgroup_taskset *tset)
+{
 }
 #endif /* CONFIG_KSM */
 
@@ -6430,6 +6488,9 @@ mem_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	}
 
 	hugetlb_pool_inherit(memcg, parent);
+#ifdef CONFIG_KSM
+	memcg->auto_ksm_enabled = READ_ONCE(parent->auto_ksm_enabled);
+#endif
 
 	error = memcg_online_kmem(memcg);
 	if (error)
@@ -7345,6 +7406,12 @@ retry:
 	atomic_dec(&mc.from->moving_account);
 }
 
+static void mem_cgroup_attach(struct cgroup_taskset *tset)
+{
+	if (!cgroup_subsys_on_dfl(memory_cgrp_subsys))
+		memcg_attach_ksm(tset);
+}
+
 static void mem_cgroup_move_task(void)
 {
 	if (mc.to) {
@@ -7358,6 +7425,9 @@ static int mem_cgroup_can_attach(struct cgroup_taskset *tset)
 	return 0;
 }
 static void mem_cgroup_cancel_attach(struct cgroup_taskset *tset)
+{
+}
+static void mem_cgroup_attach(struct cgroup_taskset *tset)
 {
 }
 static void mem_cgroup_move_task(void)
@@ -7623,6 +7693,7 @@ struct cgroup_subsys memory_cgrp_subsys = {
 	.css_rstat_flush = mem_cgroup_css_rstat_flush,
 	.can_attach = mem_cgroup_can_attach,
 	.cancel_attach = mem_cgroup_cancel_attach,
+	.attach = mem_cgroup_attach,
 	.post_attach = mem_cgroup_move_task,
 	.bind = mem_cgroup_bind,
 	.dfl_cftypes = memory_files,
