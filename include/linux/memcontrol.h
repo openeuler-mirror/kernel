@@ -414,7 +414,11 @@ struct mem_cgroup {
 #else
 	KABI_RESERVE(7)
 #endif
+#ifdef CONFIG_KSM
+	KABI_USE(8, bool auto_ksm_enabled)
+#else
 	KABI_RESERVE(8)
+#endif
 
 	struct mem_cgroup_per_node *nodeinfo[0];
 	/* WARNING: nodeinfo must be the last member here */
