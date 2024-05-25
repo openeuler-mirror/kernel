@@ -3533,6 +3533,16 @@ static bool wp_can_reuse_anon_folio(struct folio *folio,
 				    struct vm_area_struct *vma)
 {
 	/*
+	 * We could currently only reuse a subpage of a large folio if no
+	 * other subpages of the large folios are still mapped. However,
+	 * let's just consistently not reuse subpages even if we could
+	 * reuse in that scenario, and give back a large folio a bit
+	 * sooner.
+	 */
+	if (folio_test_large(folio))
+		return false;
+
+	/*
 	 * We have to verify under folio lock: these early checks are
 	 * just an optimization to avoid locking the folio and freeing
 	 * the swapcache if there is little hope that we can reuse.
@@ -4333,8 +4343,8 @@ static struct folio *alloc_anon_folio(struct vm_fault *vmf)
 	 * for this vma. Then filter out the orders that can't be allocated over
 	 * the faulting address and still be fully contained in the vma.
 	 */
-	orders = thp_vma_allowable_orders(vma, vma->vm_flags, false, true, true,
-					  BIT(PMD_ORDER) - 1);
+	orders = thp_vma_allowable_orders(vma, vma->vm_flags,
+			TVA_IN_PF | TVA_ENFORCE_SYSFS, BIT(PMD_ORDER) - 1);
 	orders = thp_vma_suitable_orders(vma, vmf->address, orders);
 
 	if (!orders)
@@ -4807,7 +4817,8 @@ static int fault_around_bytes_set(void *data, u64 val)
 	 * The minimum value is 1 page, however this results in no fault-around
 	 * at all. See should_fault_around().
 	 */
-	fault_around_pages = max(rounddown_pow_of_two(val) >> PAGE_SHIFT, 1UL);
+	val = max(val, PAGE_SIZE);
+	fault_around_pages = rounddown_pow_of_two(val) >> PAGE_SHIFT;
 
 	return 0;
 }
@@ -5071,51 +5082,17 @@ int numa_migrate_prep(struct folio *folio, struct vm_area_struct *vma,
 }
 
 static void numa_rebuild_single_mapping(struct vm_fault *vmf, struct vm_area_struct *vma,
-					unsigned long fault_addr, pte_t *fault_pte,
 					bool writable)
 {
 	pte_t pte, old_pte;
 
-	old_pte = ptep_modify_prot_start(vma, fault_addr, fault_pte);
+	old_pte = ptep_modify_prot_start(vma, vmf->address, vmf->pte);
 	pte = pte_modify(old_pte, vma->vm_page_prot);
 	pte = pte_mkyoung(pte);
 	if (writable)
 		pte = pte_mkwrite(pte, vma);
-	ptep_modify_prot_commit(vma, fault_addr, fault_pte, old_pte, pte);
-	update_mmu_cache_range(vmf, vma, fault_addr, fault_pte, 1);
-}
-
-static void numa_rebuild_large_mapping(struct vm_fault *vmf, struct vm_area_struct *vma,
-				       struct folio *folio, pte_t fault_pte,
-				       bool ignore_writable, bool pte_write_upgrade)
-{
-	int nr = pte_pfn(fault_pte) - folio_pfn(folio);
-	unsigned long start = max(vmf->address - nr * PAGE_SIZE, vma->vm_start);
-	unsigned long end = min(vmf->address + (folio_nr_pages(folio) - nr) * PAGE_SIZE, vma->vm_end);
-	pte_t *start_ptep = vmf->pte - (vmf->address - start) / PAGE_SIZE;
-	unsigned long addr;
-
-	/* Restore all PTEs' mapping of the large folio */
-	for (addr = start; addr != end; start_ptep++, addr += PAGE_SIZE) {
-		pte_t ptent = ptep_get(start_ptep);
-		bool writable = false;
-
-		if (!pte_present(ptent) || !pte_protnone(ptent))
-			continue;
-
-		if (pfn_folio(pte_pfn(ptent)) != folio)
-			continue;
-
-		if (!ignore_writable) {
-			ptent = pte_modify(ptent, vma->vm_page_prot);
-			writable = pte_write(ptent);
-			if (!writable && pte_write_upgrade &&
-			    can_change_pte_writable(vma, addr, ptent))
-				writable = true;
-		}
-
-		numa_rebuild_single_mapping(vmf, vma, addr, start_ptep, writable);
-	}
+	ptep_modify_prot_commit(vma, vmf->address, vmf->pte, old_pte, pte);
+	update_mmu_cache_range(vmf, vma, vmf->address, vmf->pte, 1);
 }
 
 static vm_fault_t do_numa_page(struct vm_fault *vmf)
@@ -5123,26 +5100,25 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	struct vm_area_struct *vma = vmf->vma;
 	struct folio *folio = NULL;
 	int nid = NUMA_NO_NODE;
-	bool writable = false, ignore_writable = false;
-	bool pte_write_upgrade = vma_wants_manual_pte_write_upgrade(vma);
+	bool writable = false;
 	int last_cpupid;
 	int target_nid;
 	pte_t pte, old_pte;
-	int flags = 0, nr_pages;
+	int flags = 0;
 
 	/*
-	 * The "pte" at this point cannot be used safely without
-	 * validation through pte_unmap_same(). It's of NUMA type but
-	 * the pfn may be screwed if the read is non atomic.
+	 * The pte cannot be used safely until we verify, while holding the page
+	 * table lock, that its contents have not changed during fault handling.
 	 */
 	spin_lock(vmf->ptl);
-	if (unlikely(!pte_same(ptep_get(vmf->pte), vmf->orig_pte))) {
+	/* Read the live PTE from the page tables: */
+	old_pte = ptep_get(vmf->pte);
+
+	if (unlikely(!pte_same(old_pte, vmf->orig_pte))) {
 		pte_unmap_unlock(vmf->pte, vmf->ptl);
 		goto out;
 	}
 
-	/* Get the normal PTE  */
-	old_pte = ptep_get(vmf->pte);
 	pte = pte_modify(old_pte, vma->vm_page_prot);
 
 	/*
@@ -5150,12 +5126,16 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	 * is only valid while holding the PT lock.
 	 */
 	writable = pte_write(pte);
-	if (!writable && pte_write_upgrade &&
+	if (!writable && vma_wants_manual_pte_write_upgrade(vma) &&
 	    can_change_pte_writable(vma, vmf->address, pte))
 		writable = true;
 
 	folio = vm_normal_folio(vma, vmf->address, pte);
 	if (!folio || folio_is_zone_device(folio))
+		goto out_map;
+
+	/* TODO: handle PTE-mapped THP */
+	if (folio_test_large(folio))
 		goto out_map;
 
 	/*
@@ -5177,7 +5157,6 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 		flags |= TNF_SHARED;
 
 	nid = folio_nid(folio);
-	nr_pages = folio_nr_pages(folio);
 	/*
 	 * For memory tiering mode, cpupid of slow memory page is used
 	 * to record page access time.  So use default value.
@@ -5194,7 +5173,6 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 	}
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	writable = false;
-	ignore_writable = true;
 
 	/* Migrate to the requested node */
 	if (migrate_misplaced_folio(folio, vma, target_nid)) {
@@ -5215,19 +5193,14 @@ static vm_fault_t do_numa_page(struct vm_fault *vmf)
 
 out:
 	if (nid != NUMA_NO_NODE)
-		task_numa_fault(last_cpupid, nid, nr_pages, flags);
+		task_numa_fault(last_cpupid, nid, 1, flags);
 	return 0;
 out_map:
 	/*
 	 * Make it present again, depending on how arch implements
 	 * non-accessible ptes, some can allow access by kernel mode.
 	 */
-	if (folio && folio_test_large(folio))
-		numa_rebuild_large_mapping(vmf, vma, folio, pte, ignore_writable,
-					   pte_write_upgrade);
-	else
-		numa_rebuild_single_mapping(vmf, vma, vmf->address, vmf->pte,
-					    writable);
+	numa_rebuild_single_mapping(vmf, vma, writable);
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 	goto out;
 }
@@ -5434,7 +5407,8 @@ static vm_fault_t __handle_mm_fault(struct vm_area_struct *vma,
 		return VM_FAULT_OOM;
 retry_pud:
 	if (pud_none(*vmf.pud) &&
-	    thp_vma_allowable_order(vma, vm_flags, false, true, true, PUD_ORDER) &&
+	    thp_vma_allowable_order(vma, vm_flags,
+				TVA_IN_PF | TVA_ENFORCE_SYSFS, PUD_ORDER) &&
 	    !task_in_dynamic_pool(current)) {
 		ret = create_huge_pud(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
@@ -5469,7 +5443,8 @@ retry_pud:
 		goto retry_pud;
 
 	if (pmd_none(*vmf.pmd) &&
-	    thp_vma_allowable_order(vma, vm_flags, false, true, true, PMD_ORDER) &&
+	    thp_vma_allowable_order(vma, vm_flags,
+				TVA_IN_PF | TVA_ENFORCE_SYSFS, PMD_ORDER) &&
 	    !task_in_dynamic_pool(current)) {
 		ret = create_huge_pmd(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
