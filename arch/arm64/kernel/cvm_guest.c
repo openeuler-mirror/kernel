@@ -11,11 +11,13 @@
 #include <asm/cacheflush.h>
 #include <asm/set_memory.h>
 #include <asm/tlbflush.h>
+#include <asm/cvm_smc.h>
 
 #define CVM_PTE_NS_BIT   5
 #define CVM_PTE_NS_MASK  (1 << CVM_PTE_NS_BIT)
 
 static bool cvm_guest_enable __read_mostly;
+DEFINE_STATIC_KEY_FALSE_RO(cvm_tsi_present);
 
 /* please use 'cvm_guest=1' to enable cvm guest feature */
 static int __init setup_cvm_guest(char *str)
@@ -37,9 +39,35 @@ static int __init setup_cvm_guest(char *str)
 }
 early_param("cvm_guest", setup_cvm_guest);
 
+static bool tsi_version_matches(void)
+{
+	unsigned long ver = tsi_get_version();
+
+	if (ver == SMCCC_RET_NOT_SUPPORTED)
+		return false;
+
+	pr_info("RME: TSI version %lu.%lu advertised\n",
+		TSI_ABI_VERSION_GET_MAJOR(ver),
+		TSI_ABI_VERSION_GET_MINOR(ver));
+
+	return (ver >= TSI_ABI_VERSION &&
+		TSI_ABI_VERSION_GET_MAJOR(ver) == TSI_ABI_VERSION_MAJOR);
+}
+
+void __init cvm_tsi_init(void)
+{
+	if (!cvm_guest_enable)
+		return;
+
+	if (!tsi_version_matches())
+		return;
+
+	static_branch_enable(&cvm_tsi_present);
+}
+
 bool is_cvm_world(void)
 {
-	return cvm_guest_enable;
+	return cvm_guest_enable && static_branch_likely(&cvm_tsi_present);
 }
 
 static int change_page_range_cvm(pte_t *ptep, unsigned long addr, void *data)

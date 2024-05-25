@@ -23,6 +23,8 @@ static inline bool is_swiotlb_for_alloc(struct device *dev)
 
 extern void __init swiotlb_cvm_update_mem_attributes(void);
 
+extern void cvm_tsi_init(void);
+
 #else
 
 static inline int set_cvm_memory_encrypted(unsigned long addr, int numpages)
@@ -41,6 +43,8 @@ static inline bool is_cvm_world(void)
 }
 
 static inline void __init swiotlb_cvm_update_mem_attributes(void) {}
+
+static inline void cvm_tsi_init(void) {}
 
 #endif /* CONFIG_CVM_GUEST */
 #endif /* __CVM_GUEST_H */
