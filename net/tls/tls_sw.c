@@ -34,6 +34,7 @@
  * SOFTWARE.
  */
 
+#include <linux/bug.h>
 #include <linux/sched/signal.h>
 #include <linux/module.h>
 #include <crypto/aead.h>
@@ -42,6 +43,14 @@
 #include <net/tls.h>
 
 #define MAX_IV_SIZE	TLS_CIPHER_AES_GCM_128_IV_SIZE
+
+noinline void tls_err_abort(struct sock *sk, int err)
+{
+	WARN_ON_ONCE(err >= 0);
+	/* sk->sk_err should contain a positive error code. */
+	sk->sk_err = -err;
+	sk->sk_error_report(sk);
+}
 
 static int tls_do_decryption(struct sock *sk,
 			     struct scatterlist *sgin,
@@ -244,7 +253,7 @@ static int tls_push_record(struct sock *sk, int flags,
 	/* Only pass through MSG_DONTWAIT and MSG_NOSIGNAL flags */
 	rc = tls_push_sg(sk, tls_ctx, ctx->sg_encrypted_data, 0, flags);
 	if (rc < 0 && rc != -EAGAIN)
-		tls_err_abort(sk, EBADMSG);
+		tls_err_abort(sk, -EBADMSG);
 
 	tls_advance_record_sn(sk, &tls_ctx->tx);
 out_req:
@@ -911,7 +920,7 @@ int tls_sw_recvmsg(struct sock *sk,
 			err = decrypt_skb_update(sk, skb, &msg->msg_iter,
 						 &chunk, &zc);
 			if (err < 0) {
-				tls_err_abort(sk, EBADMSG);
+				tls_err_abort(sk, -EBADMSG);
 				goto recv_end;
 			}
 			ctx->decrypted = true;
@@ -991,7 +1000,7 @@ ssize_t tls_sw_splice_read(struct socket *sock,  loff_t *ppos,
 		err = decrypt_skb_update(sk, skb, NULL, &chunk, &zc);
 
 		if (err < 0) {
-			tls_err_abort(sk, EBADMSG);
+			tls_err_abort(sk, -EBADMSG);
 			goto splice_read_end;
 		}
 		ctx->decrypted = true;
