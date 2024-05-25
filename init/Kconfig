@@ -1072,7 +1072,7 @@ config TASK_PLACEMENT_BY_CPU_RANGE
 config QOS_SCHED_DYNAMIC_AFFINITY
 	bool "qos dynamic affinity"
 	depends on CPUSETS
-	depends on FAIR_CGROUP_SCHED
+	depends on FAIR_GROUP_SCHED
 	select TASK_PLACEMENT_BY_CPU_RANGE
 	default n
 	help
