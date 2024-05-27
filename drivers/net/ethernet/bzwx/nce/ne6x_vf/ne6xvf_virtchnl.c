@@ -4,9 +4,9 @@
 #include "ne6xvf.h"
 #include "ne6xvf_osdep.h"
 
-int ne6xvf_sdk_send_msg_to_pf(struct ne6xvf_hw *hw, enum virtchnl_ops v_opcode,
-			      enum virtchnl_status_code v_retval, u8 *msg, u16 msglen,
-			      void *cmd_details)
+static int ne6xvf_sdk_send_msg_to_pf(struct ne6xvf_hw *hw, enum virtchnl_ops v_opcode,
+				     enum virtchnl_status_code v_retval, u8 *msg, u16 msglen,
+				     void *cmd_details)
 {
 	union u_ne6x_mbx_snap_buffer_data mbx_buffer;
 
@@ -200,7 +200,7 @@ int ne6xvf_send_api_ver(struct ne6xvf_adapter *adapter)
  * Given a VF resource message from the PF, populate the hw struct
  * with appropriate information.
  **/
-void ne6xvf_vf_parse_hw_config(struct ne6xvf_hw *hw, struct virtchnl_vf_resource *msg)
+static void ne6xvf_vf_parse_hw_config(struct ne6xvf_hw *hw, struct virtchnl_vf_resource *msg)
 {
 	struct virtchnl_vsi_resource *vsi_res;
 	int i;

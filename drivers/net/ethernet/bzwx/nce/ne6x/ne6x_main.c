@@ -22,9 +22,6 @@
 #include "ne6x_netlink.h"
 #include "ne6x_interrupt.h"
 
-#define CREATE_TRACE_POINTS
-#include "ne6x_trace.h"
-
 #define SUMMARY "Chengdu BeiZhongWangXin Ethernet Connection N5/N6 Series Linux Driver"
 #define COPYRIGHT "Copyright(c) 2020 - 2023 Chengdu BeiZhongWangXin Technology Co., Ltd."
 
@@ -65,7 +62,7 @@ bool netif_is_ne6x(struct net_device *dev)
 	return dev && (dev->netdev_ops == &ne6x_netdev_ops);
 }
 
-int ne6x_hw_init(struct ne6x_hw *hw)
+static int ne6x_hw_init(struct ne6x_hw *hw)
 {
 	int cpu_num = num_online_cpus();
 
@@ -89,7 +86,7 @@ int ne6x_hw_init(struct ne6x_hw *hw)
 	return 0;
 }
 
-int ne6x_aq_get_phy_capabilities(struct ne6x_adapter *adpt, bool is_up, bool get_hw_stats)
+static int ne6x_aq_get_phy_capabilities(struct ne6x_adapter *adpt, bool is_up, bool get_hw_stats)
 {
 	struct ne6x_port_info *port_info = adpt->port_info;
 
@@ -141,7 +138,7 @@ int ne6x_aq_get_phy_capabilities(struct ne6x_adapter *adpt, bool is_up, bool get
 	return 0;
 }
 
-int ne6x_aq_get_vf_link_status(struct ne6x_adapter *adpt, bool is_up)
+static int ne6x_aq_get_vf_link_status(struct ne6x_adapter *adpt, bool is_up)
 {
 	struct ne6x_pf *pf = adpt->back;
 	struct ne6x_adapter *pf_adpt = pf->adpt[(adpt->port_info->lport >= pf->hw.pf_port) ?
@@ -213,7 +210,7 @@ static void ne6x_adpt_link_event(struct ne6x_adapter *adpt, bool link_up)
 	}
 }
 
-void ne6x_print_link_message(struct ne6x_adapter *adpt, bool isup)
+static void ne6x_print_link_message(struct ne6x_adapter *adpt, bool isup)
 {
 	char *speed = "Unknown ";
 	char *an = "False";
@@ -494,7 +491,7 @@ irqreturn_t ne6x_linkint_irq_handler(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-int ne6x_pf_init(struct ne6x_pf *pf)
+static int ne6x_pf_init(struct ne6x_pf *pf)
 {
 	pf->ctrl_adpt_idx = 0;
 	mutex_init(&pf->switch_mutex);
@@ -720,24 +717,7 @@ static void ne6x_napi_disable_all(struct ne6x_adapter *adpt)
 	}
 }
 
-static void ne6x_unmap_and_free_tx_resource(struct ne6x_ring *ring, struct ne6x_tx_buf *tx_buffer)
-{
-	if (tx_buffer->skb) {
-		dev_kfree_skb_any(tx_buffer->skb);
-		if (dma_unmap_len(tx_buffer, len))
-			dma_unmap_single(ring->dev, dma_unmap_addr(tx_buffer, dma),
-					 dma_unmap_len(tx_buffer, len), DMA_TO_DEVICE);
-	} else if (dma_unmap_len(tx_buffer, len)) {
-		dma_unmap_page(ring->dev, dma_unmap_addr(tx_buffer, dma),
-			       dma_unmap_len(tx_buffer, len), DMA_TO_DEVICE);
-	}
-
-	tx_buffer->next_to_watch = NULL;
-	tx_buffer->skb = NULL;
-	dma_unmap_len_set(tx_buffer, len, 0);
-}
-
-void ne6x_clean_tx_ring(struct ne6x_ring *tx_ring)
+static void ne6x_clean_tx_ring(struct ne6x_ring *tx_ring)
 {
 	unsigned long bi_size;
 	u16 i;
@@ -767,7 +747,7 @@ void ne6x_clean_tx_ring(struct ne6x_ring *tx_ring)
 	netdev_tx_reset_queue(txring_txq(tx_ring));
 }
 
-void ne6x_clean_rx_ring(struct ne6x_ring *rx_ring)
+static void ne6x_clean_rx_ring(struct ne6x_ring *rx_ring)
 {
 	unsigned long bi_size;
 	u16 i;
@@ -849,7 +829,7 @@ void ne6x_down(struct ne6x_adapter *adpt)
 	}
 }
 
-void ne6x_free_rx_resources(struct ne6x_ring *rx_ring)
+static void ne6x_free_rx_resources(struct ne6x_ring *rx_ring)
 {
 	ne6x_clean_rx_ring(rx_ring);
 	kfree(rx_ring->rx_buf);
@@ -874,7 +854,7 @@ static void ne6x_adpt_free_rx_resources(struct ne6x_adapter *adpt)
 	}
 }
 
-void ne6x_free_tx_resources(struct ne6x_ring *tx_ring)
+static void ne6x_free_tx_resources(struct ne6x_ring *tx_ring)
 {
 	ne6x_clean_tx_ring(tx_ring);
 	kfree(tx_ring->tx_buf);
@@ -886,7 +866,7 @@ void ne6x_free_tx_resources(struct ne6x_ring *tx_ring)
 	}
 }
 
-void ne6x_free_cq_resources(struct ne6x_ring *cq_ring)
+static void ne6x_free_cq_resources(struct ne6x_ring *cq_ring)
 {
 	ne6x_clean_cq_ring(cq_ring);
 	if (cq_ring->desc) {
@@ -1240,9 +1220,7 @@ static void ne6x_get_netdev_stats_struct(struct net_device *netdev, struct rtnl_
 
 void ne6x_update_pf_stats(struct ne6x_adapter *adpt)
 {
-	struct rtnl_link_stats64 *ons;
 	struct rtnl_link_stats64 *ns; /* netdev stats */
-	struct ne6x_eth_stats *oes;
 	struct ne6x_eth_stats *es; /* device's eth stats */
 	struct ne6x_ring *tx_ring;
 	struct ne6x_ring *rx_ring;
@@ -1251,8 +1229,6 @@ void ne6x_update_pf_stats(struct ne6x_adapter *adpt)
 	u64 bytes, packets;
 	unsigned int start;
 	struct vf_stat vf_stat;
-	u64 tx_linearize;
-	u64 tx_force_wb;
 	u64 rx_p, rx_b;
 	u64 tx_p, tx_b;
 	u64 tx_e, rx_e;
@@ -1263,9 +1239,7 @@ void ne6x_update_pf_stats(struct ne6x_adapter *adpt)
 		return;
 
 	ns = ne6x_get_adpt_stats_struct(adpt);
-	ons = &adpt->net_stats_offsets;
 	es = &adpt->eth_stats;
-	oes = &adpt->eth_stats_offsets;
 
 	rx_p = 0;
 	rx_b = 0;
@@ -1275,8 +1249,6 @@ void ne6x_update_pf_stats(struct ne6x_adapter *adpt)
 	tx_e = 0;
 	rx_c = 0;
 	rx_l = 0;
-	tx_force_wb = 0;
-	tx_linearize = 0;
 	tx_busy = 0;
 	tx_restart = 0;
 	rx_page = 0;
@@ -1297,7 +1269,6 @@ void ne6x_update_pf_stats(struct ne6x_adapter *adpt)
 		tx_p += packets;
 		tx_restart += tx_ring->tx_stats.restart_q;
 		tx_busy += tx_ring->tx_stats.tx_busy;
-		tx_linearize += tx_ring->tx_stats.tx_linearize;
 		tx_e += tx_ring->tx_stats.csum_err + tx_ring->tx_stats.tx_drop_addr +
 			tx_ring->tx_stats.tx_pcie_read_err;
 
@@ -1849,7 +1820,7 @@ out_err:
 	return features & ~(NETIF_F_CSUM_MASK | NETIF_F_GSO_MASK);
 }
 
-int ne6x_link_speed_to_rate(int link_speed)
+static int ne6x_link_speed_to_rate(int link_speed)
 {
 	switch (link_speed) {
 	case NE6X_LINK_SPEED_100GB:
@@ -2060,8 +2031,8 @@ int ne6x_adpt_del_vlan(struct ne6x_adapter *adpt, struct ne6x_vlan vlan)
 	return 0;
 }
 
-int ne6x_set_vf_port_vlan(struct net_device *netdev, int vf_id, u16 vlan_id,
-			  u8 qos, __be16 vlan_proto)
+static int ne6x_set_vf_port_vlan(struct net_device *netdev, int vf_id, u16 vlan_id,
+				 u8 qos, __be16 vlan_proto)
 {
 	struct ne6x_netdev_priv *np = netdev_priv(netdev);
 	struct ne6x_pf *pf = ne6x_netdev_to_pf(netdev);
@@ -2700,7 +2671,7 @@ int ne6x_adpt_register_netdev(struct ne6x_adapter *adpt)
 	return ret;
 }
 
-void ne6x_adjust_adpt_port_max_queue(struct ne6x_pf *pf)
+static void ne6x_adjust_adpt_port_max_queue(struct ne6x_pf *pf)
 {
 	int cpu_num = num_online_cpus();
 
@@ -2921,7 +2892,7 @@ free_adpt:
 	return 0;
 }
 
-int ne6x_adpt_release(struct ne6x_adapter *adpt)
+static int ne6x_adpt_release(struct ne6x_adapter *adpt)
 {
 	struct mac_addr_head *mc_head = &adpt->mc_mac_addr;
 	struct mac_addr_head *uc_head = &adpt->uc_mac_addr;
@@ -3079,7 +3050,7 @@ static struct pci_driver ne6x_driver = {
 	.sriov_configure = ne6x_sriov_configure,
 };
 
-int __init ne6x_init_module(void)
+static int __init ne6x_init_module(void)
 {
 	pr_info("%s: %s - version %s\n", ne6x_driver_name, ne6x_driver_string,
 		ne6x_driver_version_str);
@@ -3100,7 +3071,7 @@ int __init ne6x_init_module(void)
 
 module_init(ne6x_init_module);
 
-void __exit ne6x_exit_module(void)
+static void __exit ne6x_exit_module(void)
 {
 	pci_unregister_driver(&ne6x_driver);
 	destroy_workqueue(ne6x_wq);
