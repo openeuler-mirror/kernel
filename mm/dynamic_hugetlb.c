@@ -231,9 +231,6 @@ static void reclaim_pages_from_percpu_pool(struct dhugetlb_pool *hpool,
 	}
 }
 
-/* We only try 5 times to reclaim pages */
-#define	HPOOL_RECLAIM_RETRIES	5
-
 static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bool force_merge)
 {
 	struct huge_pages_pool *hpages_pool, *src_hpages_pool;
@@ -242,7 +239,8 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 	struct page *page, *next, *p;
 	struct percpu_pages_pool *percpu_pool;
 	bool need_migrate = false, need_initial = false;
-	int i, try;
+	bool tried_migrate, can_merge;
+	int i;
 	LIST_HEAD(wait_page_list);
 
 	lockdep_assert_held(&hpool->lock);
@@ -269,9 +267,11 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 		return -ENOMEM;
 
 	list_for_each_entry_safe(split_page, split_next, &hpages_pool->hugepage_splitlists, head_pages) {
-		try = 0;
+		tried_migrate = false;
 
 merge:
+		can_merge = true;
+
 		/*
 		 * If we are merging 4K page to 2M page, we need to get
 		 * lock of percpu pool sequentially and clear percpu pool.
@@ -290,8 +290,14 @@ merge:
 		for (i = 0; i < nr_pages; i+= block_size) {
 			p = pfn_to_page(split_page->start_pfn + i);
 			if (PagePool(p)) {
-				if (!need_migrate)
-					goto next;
+				/*
+				 * Some pages still in use, can't merge.
+				 * If don't need migration or have tried,
+				 * then skip merging these pages.
+				 */
+				can_merge = false;
+				if (!need_migrate || tried_migrate)
+					break;
 				else
 					goto migrate;
 			}
@@ -302,6 +308,9 @@ merge:
 			 * can unlock percpu pool.
 			 */
 			dhugetlb_percpu_pool_unlock_all(hpool);
+
+		if (!can_merge)
+			continue;
 
 		list_del(&split_page->head_pages);
 		hpages_pool->split_normal_pages--;
@@ -333,16 +342,8 @@ merge:
 		add_new_page_to_pool(hpool, page, hpages_pool_idx);
 		trace_dynamic_hugetlb_split_merge(hpool, page, DHUGETLB_MERGE, page_size(page));
 		return 0;
-next:
-		if (hpages_pool_idx == HUGE_PAGES_POOL_2M)
-			/* Unlock percpu pool before try next */
-			dhugetlb_percpu_pool_unlock_all(hpool);
-
-		continue;
 migrate:
-		/* page migration only used for HUGE_PAGES_POOL_2M */
-		if (try++ >= HPOOL_RECLAIM_RETRIES)
-			goto next;
+		tried_migrate = true;
 
 		/* Isolate free page first. */
 		INIT_LIST_HEAD(&wait_page_list);
