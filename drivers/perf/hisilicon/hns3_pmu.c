@@ -1558,7 +1558,7 @@ static int hns3_pmu_init_pmu(struct pci_dev *pdev, struct hns3_pmu *hns3_pmu)
 	ret = perf_pmu_register(&hns3_pmu->pmu, hns3_pmu->pmu.name, -1);
 	if (ret) {
 		pci_err(pdev, "failed to register perf PMU, ret = %d.\n", ret);
-		cpuhp_state_remove_instance(hns3_pmu_online, &hns3_pmu->node);
+		cpuhp_state_remove_instance_nocalls(hns3_pmu_online, &hns3_pmu->node);
 	}
 
 	return ret;
@@ -1569,7 +1569,7 @@ static void hns3_pmu_uninit_pmu(struct pci_dev *pdev)
 	struct hns3_pmu *hns3_pmu = pci_get_drvdata(pdev);
 
 	perf_pmu_unregister(&hns3_pmu->pmu);
-	cpuhp_state_remove_instance(hns3_pmu_online, &hns3_pmu->node);
+	cpuhp_state_remove_instance_nocalls(hns3_pmu_online, &hns3_pmu->node);
 }
 
 static int hns3_pmu_init_dev(struct pci_dev *pdev)
