@@ -393,32 +393,49 @@ migrate:
 
 static int hugetlb_pool_merge_all_pages(struct dhugetlb_pool *hpool)
 {
+	struct huge_pages_pool *hpages_pool;
 	int ret = 0;
 
 	lockdep_assert_held(&hpool->lock);
 
-	while (hpool->hpages_pool[HUGE_PAGES_POOL_2M].split_normal_pages) {
+	hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_2M];
+	while (hpages_pool->split_normal_pages) {
 		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_2M, true);
 		if (ret) {
-			pr_err("dynamic_hugetlb: some 4K pages are still in use, delete memcg: %s failed!\n",
+			pr_err("dynamic_hugetlb: %s: merge 4K failed!\n",
 				hpool->attach_memcg->css.cgroup->kn->name);
 			goto out;
 		}
 	}
-	while (hpool->hpages_pool[HUGE_PAGES_POOL_1G].split_normal_pages) {
-		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_1G, true);
-		if (ret) {
-			pr_err("dynamic_hugetlb: some 2M pages are still in use, delete memcg: %s failed!\n",
-				hpool->attach_memcg->css.cgroup->kn->name);
-			goto out;
-		}
-	}
-	if (hpool->hpages_pool[HUGE_PAGES_POOL_1G].used_huge_pages) {
+	if (hpages_pool->used_huge_pages || hpages_pool->resv_huge_pages) {
 		ret = -ENOMEM;
-		pr_err("dynamic_hugetlb: some 1G pages are still in use, delete memcg: %s failed!\n",
+		pr_err("dynamic_hugetlb: %s: 2M pages in use or resv\n",
 			hpool->attach_memcg->css.cgroup->kn->name);
 		goto out;
 	}
+	hpages_pool->free_normal_pages += hpages_pool->nr_huge_pages;
+	hpages_pool->nr_huge_pages = 0;
+	hpages_pool->free_huge_pages = 0;
+
+	hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_1G];
+	while (hpages_pool->split_normal_pages) {
+		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_1G, true);
+		if (ret) {
+			pr_err("dynamic_hugetlb: %s: merge 2M failed!\n",
+				hpool->attach_memcg->css.cgroup->kn->name);
+			goto out;
+		}
+	}
+	if (hpages_pool->used_huge_pages || hpages_pool->resv_huge_pages) {
+		ret = -ENOMEM;
+		pr_err("dynamic_hugetlb: %s: 1G pages in use or resv\n",
+			hpool->attach_memcg->css.cgroup->kn->name);
+		goto out;
+	}
+	hpages_pool->free_normal_pages += hpages_pool->nr_huge_pages;
+	hpages_pool->nr_huge_pages = 0;
+	hpages_pool->free_huge_pages = 0;
+
 out:
 	return ret;
 }
