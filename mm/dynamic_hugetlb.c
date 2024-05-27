@@ -272,18 +272,21 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 merge:
 		can_merge = true;
 
+		spin_unlock(&hpool->lock);
+		cond_resched();
 		/*
 		 * If we are merging 4K page to 2M page, we need to get
 		 * lock of percpu pool sequentially and clear percpu pool.
 		 */
 		if (hpages_pool_idx == HUGE_PAGES_POOL_2M) {
-			spin_unlock(&hpool->lock);
 			dhugetlb_lock_all(hpool);
 			for (i = 0; i < NR_PERCPU_POOL; i++) {
 				percpu_pool = &hpool->percpu_pool[i];
 				reclaim_pages_from_percpu_pool(hpool, percpu_pool,
 							       percpu_pool->free_pages);
 			}
+		} else {
+			spin_lock(&hpool->lock);
 		}
 
 		page = pfn_to_page(split_page->start_pfn);
@@ -360,12 +363,14 @@ migrate:
 
 		for (i = 0; i < nr_pages; i+= block_size) {
 			p = pfn_to_page(split_page->start_pfn + i);
-			if (PagePool(p))
+			if (PagePool(p)) {
+				cond_resched();
 				/*
 				 * TODO: fatal migration failures should bail
 				 * out
 				 */
 				do_migrate_range(page_to_pfn(p), page_to_pfn(p) + block_size);
+			}
 		}
 		spin_lock(&hpool->lock);
 
