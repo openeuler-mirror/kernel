@@ -7,6 +7,7 @@
 #include <linux/migrate.h>
 #include <linux/memblock.h>
 #include <linux/memory_hotplug.h>
+#include <linux/swap.h>
 #include <linux/dynamic_hugetlb.h>
 
 #include "internal.h"
@@ -365,6 +366,7 @@ migrate:
 			p = pfn_to_page(split_page->start_pfn + i);
 			if (PagePool(p)) {
 				cond_resched();
+				lru_add_drain_all();
 				/*
 				 * TODO: fatal migration failures should bail
 				 * out
