@@ -41,8 +41,10 @@ extern void tick_irq_enter(void);
 #  ifndef arch_needs_cpu
 #   define arch_needs_cpu() (0)
 #  endif
+extern bool support_cpu0_nohz_full;
 # else
 static inline void tick_irq_enter(void) { }
+#define support_cpu0_nohz_full 0
 #endif
 
 #if defined(CONFIG_GENERIC_CLOCKEVENTS_BROADCAST) && defined(CONFIG_TICK_ONESHOT)
