@@ -70,6 +70,7 @@ Currently, these files are in /proc/sys/vm:
 - stat_refresh
 - numa_stat
 - swappiness
+- swap_extension
 - unprivileged_userfaultfd
 - user_reserve_kbytes
 - vfs_cache_pressure
@@ -927,6 +928,16 @@ be 133 (x + 2x = 200, 2x = 133.33).
 At 0, the kernel will not initiate swap until the amount of free and
 file-backed pages is less than the high watermark in a zone.
 
+
+swap_extension
+==============
+
+This control is used for some swap extension feature. The default value is
+0. Now support one extension which is to disable global swap which can't
+acquired by swappiness.
+
+To disable global swap:
+	echo 1 > /proc/sys/vm/swap_extension
 
 unprivileged_userfaultfd
 ========================

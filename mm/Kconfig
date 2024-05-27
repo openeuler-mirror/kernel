@@ -568,6 +568,12 @@ config PAGE_CACHE_LIMIT
 
 	 if unsure, say N to disable the PAGE_CACHE_LIMIT.
 
+config SWAP_EXTENSION
+	bool "Support some swap extension feature"
+	depends on MMU && SYSCTL
+	default n
+	help
+	  Add a sysctl swap_extension to support some swap extension feature.
 config CMA
 	bool "Contiguous Memory Allocator"
 	depends on MMU

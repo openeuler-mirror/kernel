@@ -182,6 +182,27 @@ struct scan_control {
  */
 int vm_swappiness = 60;
 
+#ifdef CONFIG_SWAP_EXTENSION
+
+#define VM_GLOBAL_SWAP_DISABLE		1
+
+int vm_swap_extension;
+
+/*
+ * In global reclaim, set swappiness to 0 doesn't means swapout
+ * disabled, which is often misused by user.
+ */
+static bool should_disable_global_swap(void)
+{
+	return (vm_swap_extension & VM_GLOBAL_SWAP_DISABLE);
+}
+#else
+static bool should_disable_global_swap(void)
+{
+	return false;
+}
+#endif
+
 static void set_task_reclaim_state(struct task_struct *task,
 				   struct reclaim_state *rs)
 {
@@ -2486,6 +2507,15 @@ static void get_scan_count(struct lruvec *lruvec, struct scan_control *sc,
 	 * too expensive.
 	 */
 	if (cgroup_reclaim(sc) && !swappiness) {
+		scan_balance = SCAN_FILE;
+		goto out;
+	}
+
+	/*
+	 * In global reclaim, set swappiness to 0 doesn't means swapout
+	 * disabled, which is often misused by user.
+	 */
+	if (!cgroup_reclaim(sc) && should_disable_global_swap()) {
 		scan_balance = SCAN_FILE;
 		goto out;
 	}
