@@ -218,3 +218,16 @@ static int __init enhanced_isolcpus_setup(char *str)
 	return 0;
 }
 __setup("enhanced_isolcpus", enhanced_isolcpus_setup);
+
+void check_housekeeping_cpu_online(void)
+{
+	if (!support_cpu0_nohz_full)
+		return;
+	if (!housekeeping_flags)
+		return;
+	if (!cpumask_intersects(housekeeping_mask, cpu_online_mask)) {
+		pr_err("All the housekeeping CPUs are offline, please modify the kernel parameter !\n");
+		/* BUG() here, otherwise we may BUG() in sched_init_smp(). */
+		BUG();
+	}
+}
