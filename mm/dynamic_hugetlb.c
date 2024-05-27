@@ -30,7 +30,7 @@ static inline void dhugetlb_percpu_pool_lock_all(struct dhugetlb_pool *hpool)
 	int i;
 
 	for (i = 0; i < NR_PERCPU_POOL; i++)
-		spin_lock(&hpool->percpu_pool[i].lock);
+		spin_lock_nested(&hpool->percpu_pool[i].lock, i);
 }
 
 static inline void dhugetlb_percpu_pool_unlock_all(struct dhugetlb_pool *hpool)
@@ -55,6 +55,7 @@ static inline void dhugetlb_percpu_pool_unlock_all(struct dhugetlb_pool *hpool)
  */
 static inline void dhugetlb_lock_all(struct dhugetlb_pool *hpool)
 {
+	local_irq_disable();
 	dhugetlb_percpu_pool_lock_all(hpool);
 	spin_lock(&hpool->lock);
 }
@@ -65,6 +66,7 @@ static inline void dhugetlb_unlock_all(struct dhugetlb_pool *hpool)
 
 	spin_unlock(&hpool->lock);
 	dhugetlb_percpu_pool_unlock_all(hpool);
+	local_irq_enable();
 }
 
 #define hugepage_index(pfn)	((pfn) >> (PUD_SHIFT - PAGE_SHIFT))
@@ -273,7 +275,7 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 merge:
 		can_merge = true;
 
-		spin_unlock(&hpool->lock);
+		spin_unlock_irq(&hpool->lock);
 		cond_resched();
 		/*
 		 * If we are merging 4K page to 2M page, we need to get
@@ -287,7 +289,7 @@ merge:
 							       percpu_pool->free_pages);
 			}
 		} else {
-			spin_lock(&hpool->lock);
+			spin_lock_irq(&hpool->lock);
 		}
 
 		page = pfn_to_page(split_page->start_pfn);
@@ -374,7 +376,7 @@ migrate:
 				do_migrate_range(page_to_pfn(p), page_to_pfn(p) + block_size);
 			}
 		}
-		spin_lock(&hpool->lock);
+		spin_lock_irq(&hpool->lock);
 
 		/*
 		 * Move all isolate pages to src_hpages_pool and then try
@@ -733,7 +735,7 @@ int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_in
 	if (delta == 0)
 		return 0;
 
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	if (hstate_is_gigantic(h))
 		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_1G];
 	else
@@ -750,7 +752,7 @@ int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_in
 		trace_dynamic_hugetlb_acct_memory(hpool, hpages_pool->resv_huge_pages,
 						  DHUGETLB_UNRESV, huge_page_size(h));
 	}
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 
 	return ret;
 }
@@ -801,6 +803,7 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	struct hstate *h = page_hstate(page);
 	struct huge_pages_pool *hpages_pool;
 	struct dhugetlb_pool *hpool;
+	unsigned long flags;
 
 	hpool = find_hpool_by_dhugetlb_pagelist(page);
 
@@ -809,7 +812,7 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 		return;
 	}
 
-	spin_lock(&hpool->lock);
+	spin_lock_irqsave(&hpool->lock, flags);
 	/*
 	 * memory_failure will free the hwpoison hugepage, and then try to
 	 * dissolve it and free subpage to buddy system. Since the page in
@@ -835,7 +838,7 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	trace_dynamic_hugetlb_alloc_free(hpool, page, hpages_pool->free_huge_pages,
 					 DHUGETLB_FREE, huge_page_size(h));
 out:
-	spin_unlock(&hpool->lock);
+	spin_unlock_irqrestore(&hpool->lock, flags);
 	put_hpool(hpool);
 }
 
@@ -851,7 +854,7 @@ static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
 	if (!h)
 		return -ENOMEM;
 
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	spin_lock(&hugetlb_lock);
 	if (h->free_huge_pages_node[nid] - h->resv_huge_pages_node[nid] < nr_pages) {
 		ret = -ENOMEM;
@@ -877,7 +880,7 @@ static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
 
 out_unlock:
 	spin_unlock(&hugetlb_lock);
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 	return ret;
 }
 
@@ -983,15 +986,15 @@ int hugetlb_pool_destroy(struct cgroup *cgrp)
 	 */
 	mem_cgroup_force_empty(hpool->attach_memcg);
 
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	ret = hugetlb_pool_merge_all_pages(hpool);
 	if (ret) {
-		spin_unlock(&hpool->lock);
+		spin_unlock_irq(&hpool->lock);
 		return -ENOMEM;
 	}
 	ret = free_hugepage_to_hugetlb(hpool);
 	memcg->hpool = NULL;
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 	put_hpool(hpool);
 	return ret;
 }
@@ -1058,7 +1061,7 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 		return -EINVAL;
 
 	mutex_lock(&hpool->reserved_lock);
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	hpages_pool = &hpool->hpages_pool[hpages_pool_idx];
 	if (nr_pages > hpages_pool->nr_huge_pages) {
 		delta = nr_pages - hpages_pool->nr_huge_pages;
@@ -1092,7 +1095,7 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 		hpages_pool->free_huge_pages -= delta;
 		hpages_pool->free_normal_pages += delta;
 	}
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 	mutex_unlock(&hpool->reserved_lock);
 	put_hpool(hpool);
 	return 0;
