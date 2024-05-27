@@ -18,6 +18,9 @@
 #include <linux/compiler.h>
 #include <linux/cpumask.h>
 #include <linux/cpuhotplug.h>
+#ifndef __GENKSYMS__
+#include <linux/tick.h>
+#endif
 
 struct device;
 struct device_node;
@@ -163,7 +166,7 @@ static inline int suspend_disable_secondary_cpus(void)
 {
 	int cpu = 0;
 
-	if (IS_ENABLED(CONFIG_PM_SLEEP_SMP_NONZERO_CPU))
+	if (support_cpu0_nohz_full && IS_ENABLED(CONFIG_PM_SLEEP_SMP_NONZERO_CPU))
 		cpu = -1;
 
 	return freeze_secondary_cpus(cpu);

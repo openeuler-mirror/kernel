@@ -559,7 +559,7 @@ void __init tick_nohz_init(void)
 	}
 
 	if (IS_ENABLED(CONFIG_PM_SLEEP_SMP) &&
-			!IS_ENABLED(CONFIG_PM_SLEEP_SMP_NONZERO_CPU)) {
+			(!support_cpu0_nohz_full || !IS_ENABLED(CONFIG_PM_SLEEP_SMP_NONZERO_CPU))) {
 		cpu = smp_processor_id();
 
 		if (cpumask_test_cpu(cpu, tick_nohz_full_mask)) {
