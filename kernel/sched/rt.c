@@ -664,7 +664,8 @@ static void do_balance_runtime(struct rt_rq *rt_rq)
 		 * or __disable_runtime() below sets a specific rq to inf to
 		 * indicate its been disabled and disalow stealing.
 		 */
-		if (iter->rt_runtime == RUNTIME_INF)
+		if (iter->rt_runtime == RUNTIME_INF ||
+				iter->rt_runtime == RUNTIME_DISABLED)
 			goto next;
 
 		/*
@@ -735,7 +736,9 @@ static void __disable_runtime(struct rq *rq)
 			/*
 			 * Can't reclaim from ourselves or disabled runqueues.
 			 */
-			if (iter == rt_rq || iter->rt_runtime == RUNTIME_INF)
+			if (iter == rt_rq ||
+					iter->rt_runtime == RUNTIME_INF ||
+					iter->rt_runtime == RUNTIME_DISABLED)
 				continue;
 
 			raw_spin_lock(&iter->rt_runtime_lock);
@@ -761,10 +764,9 @@ static void __disable_runtime(struct rq *rq)
 		WARN_ON_ONCE(want);
 balanced:
 		/*
-		 * Disable all the borrow logic by pretending we have inf
-		 * runtime - in which case borrowing doesn't make sense.
+		 * Disable all the borrow logic by marking runtime disabled.
 		 */
-		rt_rq->rt_runtime = RUNTIME_INF;
+		rt_rq->rt_runtime = RUNTIME_DISABLED;
 		rt_rq->rt_throttled = 0;
 		raw_spin_unlock(&rt_rq->rt_runtime_lock);
 		raw_spin_unlock(&rt_b->rt_runtime_lock);
@@ -2555,7 +2557,8 @@ static int tg_set_rt_bandwidth(struct task_group *tg,
 		struct rt_rq *rt_rq = tg->rt_rq[i];
 
 		raw_spin_lock(&rt_rq->rt_runtime_lock);
-		rt_rq->rt_runtime = rt_runtime;
+		if (rt_rq->rt_runtime != RUNTIME_DISABLED)
+			rt_rq->rt_runtime = rt_runtime;
 		raw_spin_unlock(&rt_rq->rt_runtime_lock);
 	}
 	raw_spin_unlock_irq(&tg->rt_bandwidth.rt_runtime_lock);
