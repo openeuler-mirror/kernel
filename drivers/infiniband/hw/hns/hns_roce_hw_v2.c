@@ -41,6 +41,7 @@
 #include <rdma/ib_cache.h>
 #include <rdma/ib_umem.h>
 #include <rdma/uverbs_ioctl.h>
+#include <rdma/ib_verbs.h>
 
 #include "hnae3.h"
 #include "hclge_main.h"
@@ -7826,14 +7827,13 @@ int hns_roce_bond_uninit_client(struct hns_roce_bond_group *bond_grp,
 
 static void hns_roce_v2_reset_notify_user(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_v2_reset_state *state;
+	struct hns_roce_ucontext *uctx, *tmp;
 
-	state = (struct hns_roce_v2_reset_state *)hr_dev->reset_kaddr;
-
-	state->reset_state = HNS_ROCE_IS_RESETTING;
-	state->hw_ready = 0;
-	/* Ensure reset state was flushed in memory */
-	wmb();
+	mutex_lock(&hr_dev->uctx_list_mutex);
+	list_for_each_entry_safe(uctx, tmp, &hr_dev->uctx_list, list) {
+		rdma_user_mmap_disassociate(&uctx->ibucontext);
+	}
+	mutex_unlock(&hr_dev->uctx_list_mutex);
 }
 
 static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)

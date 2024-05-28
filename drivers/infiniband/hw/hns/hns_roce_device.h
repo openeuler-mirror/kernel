@@ -1126,7 +1126,7 @@ struct hns_roce_dev {
 	struct hns_roce_dev_debugfs dbgfs; /* debugfs for this dev */
 
 	struct list_head	uctx_list; /* list of all uctx on this dev */
-	spinlock_t		uctx_list_lock; /* protect @uctx_list */
+	struct mutex		uctx_list_mutex; /* protect @uctx_list */
 
 	struct hns_roce_uar     priv_uar;
 	const char		*irq_names[HNS_ROCE_MAX_IRQ_NUM];

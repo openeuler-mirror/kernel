@@ -287,13 +287,11 @@ static void dca_stats_dev_pool_in_seqfile(struct hns_roce_dev *hr_dev,
 	/* Write kernel DCA pool stats */
 	dca_print_pool_stats(&hr_dev->dca_ctx, 0, true, file);
 	/* Write user DCA pool stats */
-	spin_lock(&hr_dev->uctx_list_lock);
+	mutex_lock(&hr_dev->uctx_list_mutex);
 	list_for_each_entry_safe(uctx, tmp, &hr_dev->uctx_list, list) {
-		spin_unlock(&hr_dev->uctx_list_lock);
 		dca_print_pool_stats(&uctx->dca_ctx, uctx->pid, false, file);
-		spin_lock(&hr_dev->uctx_list_lock);
 	}
-	spin_unlock(&hr_dev->uctx_list_lock);
+	mutex_unlock(&hr_dev->uctx_list_mutex);
 }
 
 struct dca_qp_stats {
