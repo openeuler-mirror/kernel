@@ -1597,14 +1597,14 @@ void free_huge_page(struct page *page)
 	ClearHPageRestoreReserve(page);
 
 	if (dhugetlb_enabled && PagePool(page)) {
-		spin_lock(&hugetlb_lock);
+		spin_lock_irqsave(&hugetlb_lock, flags);
 		ClearHPageMigratable(page);
 		list_del(&page->lru);
 		hugetlb_cgroup_uncharge_page(hstate_index(h),
 					     pages_per_huge_page(h), page);
 		hugetlb_cgroup_uncharge_page_rsvd(hstate_index(h),
 						  pages_per_huge_page(h), page);
-		spin_unlock(&hugetlb_lock);
+		spin_unlock_irqrestore(&hugetlb_lock, flags);
 		free_huge_page_to_dhugetlb_pool(page, restore_reserve);
 		return;
 	}
