@@ -136,3 +136,25 @@ int klp_unwind_frame(struct task_struct *tsk, struct stackframe *frame)
 
 	return 0;
 }
+
+int klp_patch_text(u32 *dst, const u32 *src, int len)
+{
+	int i;
+	int ret;
+
+	if (len <= 0)
+		return -EINVAL;
+	/* skip breakpoint at first */
+	for (i = 1; i < len; i++) {
+		ret = patch_instruction((struct ppc_inst *)(dst + i),
+					ppc_inst(src[i]));
+		if (ret)
+			return ret;
+	}
+	/*
+	 * Avoid compile optimization, make sure that instructions
+	 * except first breakpoint has been patched.
+	 */
+	barrier();
+	return patch_instruction((struct ppc_inst *)dst, ppc_inst(src[0]));
+}

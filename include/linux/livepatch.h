@@ -239,9 +239,6 @@ struct klp_func_node {
 	void *brk_func;
 };
 
-struct klp_func_node *klp_find_func_node(const void *old_func);
-void klp_add_func_node(struct klp_func_node *func_node);
-void klp_del_func_node(struct klp_func_node *func_node);
 void *klp_get_brk_func(void *addr);
 
 static inline
@@ -258,6 +255,16 @@ int klp_compare_address(unsigned long pc, unsigned long func_addr,
 
 void arch_klp_init(void);
 int klp_module_delete_safety_check(struct module *mod);
+
+typedef int (*klp_add_func_t)(struct list_head *func_list,
+			       unsigned long func_addr, unsigned long func_size,
+			       const char *func_name, int force);
+
+struct walk_stackframe_args {
+	void *data;
+	int ret;
+	bool (*check_func)(void *data, int *ret, unsigned long pc);
+};
 
 #endif
 
@@ -309,7 +316,11 @@ static inline int klp_module_coming(struct module *mod) { return 0; }
 static inline void klp_module_going(struct module *mod) {}
 static inline bool klp_patch_pending(struct task_struct *task) { return false; }
 static inline void klp_update_patch_state(struct task_struct *task) {}
+#ifdef CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE
+void klp_copy_process(struct task_struct *child);
+#else
 static inline void klp_copy_process(struct task_struct *child) {}
+#endif
 static inline bool klp_have_reliable_stack(void) { return true; }
 
 #ifndef klp_smp_isb
@@ -352,5 +363,18 @@ int klp_apply_section_relocs(struct module *pmod, Elf_Shdr *sechdrs,
 }
 
 #endif /* CONFIG_LIVEPATCH */
+
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+void klp_lock(void);
+void klp_unlock(void);
+int klp_check_patched(unsigned long addr);
+#else /* !CONFIG_LIVEPATCH_ISOLATE_KPROBE */
+static inline void klp_lock(void) { }
+static inline void klp_unlock(void) { }
+static inline int klp_check_patched(unsigned long addr)
+{
+	return 0;
+}
+#endif /* CONFIG_LIVEPATCH_ISOLATE_KPROBE */
 
 #endif /* _LINUX_LIVEPATCH_H_ */

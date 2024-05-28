@@ -26,11 +26,6 @@ int arch_klp_patch_func(struct klp_func *func);
 void arch_klp_unpatch_func(struct klp_func *func);
 #endif
 
-#ifdef CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY
-int klp_check_calltrace(struct klp_patch *patch, int enable);
-#endif
-
-
 #if defined(CONFIG_LIVEPATCH_STOP_MACHINE_CONSISTENCY) || \
     defined(CONFIG_LIVEPATCH_WO_FTRACE)
 

@@ -35,7 +35,6 @@
 #include <linux/sched/debug.h>
 #include <linux/kallsyms.h>
 
-#define MAX_SIZE_TO_CHECK (LJMP_INSN_SIZE * sizeof(u32))
 #define CHECK_JUMP_RANGE LJMP_INSN_SIZE
 
 static inline bool offset_in_range(unsigned long pc, unsigned long addr,
@@ -57,288 +56,114 @@ static inline bool offset_in_range(unsigned long pc, unsigned long addr,
 		((le32_to_cpu(insn) & 0xfc000000) == 0x94000000) || \
 		((le32_to_cpu(insn) & 0xfefff800) == 0xd63f0800))
 
-struct klp_func_list {
-	struct klp_func_list *next;
-	unsigned long func_addr;
-	unsigned long func_size;
-	const char *func_name;
-	int force;
-};
-
-struct walk_stackframe_args {
-	int enable;
-	struct klp_func_list *check_funcs;
-	struct module *mod;
-	int ret;
-};
-
-static inline unsigned long klp_size_to_check(unsigned long func_size,
-		int force)
-{
-	unsigned long size = func_size;
-
-	if (force == KLP_STACK_OPTIMIZE && size > MAX_SIZE_TO_CHECK)
-		size = MAX_SIZE_TO_CHECK;
-	return size;
-}
-
-static bool check_jump_insn(unsigned long func_addr)
+bool arch_check_jump_insn(unsigned long func_addr)
 {
 	unsigned long i;
 	u32 *insn = (u32*)func_addr;
 
 	for (i = 0; i < CHECK_JUMP_RANGE; i++) {
-		if (is_jump_insn(*insn)) {
+		if (is_jump_insn(*insn))
 			return true;
-		}
 		insn++;
 	}
 	return false;
 }
 
-static int add_func_to_list(struct klp_func_list **funcs, struct klp_func_list **func,
-		unsigned long func_addr, unsigned long func_size, const char *func_name,
-		int force)
+static bool klp_check_jump_func(void *ws_args, unsigned long pc)
 {
-	if (*func == NULL) {
-		*funcs = (struct klp_func_list *)kzalloc(sizeof(**funcs), GFP_ATOMIC);
-		if (!(*funcs))
-			return -ENOMEM;
-		*func = *funcs;
+	struct walk_stackframe_args *args = ws_args;
+
+	return args->check_func(args->data, &args->ret, pc);
+}
+
+static int check_task_calltrace(struct task_struct *t,
+				struct walk_stackframe_args *args,
+				bool (*fn)(void *, unsigned long))
+{
+	struct stackframe frame;
+
+	/*
+	 * Handle the current carefully on each CPUs, we shouldn't
+	 * use saved FP and PC when backtrace current. It's difficult
+	 * to backtrack other CPU currents here. But fortunately,
+	 * all CPUs will stay in this function, so the current's
+	 * backtrace is so similar
+	 */
+	if (t == current) {
+		/* current on this CPU */
+		frame.fp = (unsigned long)__builtin_frame_address(0);
+		frame.pc = (unsigned long)check_task_calltrace;
 	} else {
-		(*func)->next = (struct klp_func_list *)kzalloc(sizeof(**funcs),
-				GFP_ATOMIC);
-		if (!(*func)->next)
-			return -ENOMEM;
-		*func = (*func)->next;
+		frame.fp = thread_saved_fp(t);
+		frame.pc = thread_saved_pc(t);
 	}
-	(*func)->func_addr = func_addr;
-	(*func)->func_size = func_size;
-	(*func)->func_name = func_name;
-	(*func)->force = force;
-	(*func)->next = NULL;
-	return 0;
-}
-
-static int klp_check_activeness_func(struct klp_patch *patch, int enable,
-		struct klp_func_list **check_funcs)
-{
-	int ret;
-	struct klp_object *obj;
-	struct klp_func *func;
-	unsigned long func_addr = 0;
-	unsigned long func_size;
-	struct klp_func_node *func_node;
-	struct klp_func_list *pcheck = NULL;
-
-	for (obj = patch->objs; obj->funcs; obj++) {
-		for (func = obj->funcs; func->old_name; func++) {
-			unsigned long old_func = (unsigned long)func->old_func;
-
-			if (enable) {
-				bool need_check_old = false;
-
-				if (func->patched || func->force == KLP_ENFORCEMENT)
-					continue;
-				/*
-				 * When enable, checking the currently
-				 * active functions.
-				 */
-				func_node = klp_find_func_node(func->old_func);
-				if (!func_node ||
-				    list_empty(&func_node->func_stack)) {
-					func_addr = old_func;
-					func_size = func->old_size;
-				} else {
-					/*
-					 * Previously patched function
-					 * [the active one]
-					 */
-					struct klp_func *prev;
-
-					prev = list_first_or_null_rcu(
-						&func_node->func_stack,
-						struct klp_func, stack_node);
-					func_addr = (unsigned long)prev->new_func;
-					func_size = prev->new_size;
-				}
-				/*
-				 * When preemption is disabled and the
-				 * replacement area does not contain a jump
-				 * instruction, the migration thread is
-				 * scheduled to run stop machine only after the
-				 * excution of instructions to be replaced is
-				 * complete.
-				 */
-				if (IS_ENABLED(CONFIG_PREEMPTION) ||
-				    (func->force == KLP_NORMAL_FORCE) ||
-				    check_jump_insn(func_addr)) {
-					ret = add_func_to_list(check_funcs, &pcheck,
-							func_addr, func_size,
-							func->old_name, func->force);
-					if (ret)
-						return ret;
-					need_check_old = (func_addr != old_func);
-				}
-				if (need_check_old) {
-					ret = add_func_to_list(check_funcs, &pcheck, old_func,
-						func->old_size, func->old_name, func->force);
-					if (ret)
-						return ret;
-				}
-			} else {
-				/*
-				 * When disable, check for the previously
-				 * patched function and the function itself
-				 * which to be unpatched.
-				 */
-				func_node = klp_find_func_node(func->old_func);
-				if (!func_node) {
-					return -EINVAL;
-				}
-#ifdef CONFIG_PREEMPTION
-				/*
-				 * No scheduling point in the replacement
-				 * instructions. Therefore, when preemption is
-				 * not enabled, atomic execution is performed
-				 * and these instructions will not appear on
-				 * the stack.
-				 */
-				if (list_is_singular(&func_node->func_stack)) {
-					func_addr = old_func;
-					func_size = func->old_size;
-				} else {
-					struct klp_func *prev;
-
-					prev = list_first_or_null_rcu(
-						&func_node->func_stack,
-						struct klp_func, stack_node);
-					func_addr = (unsigned long)prev->new_func;
-					func_size = prev->new_size;
-				}
-				ret = add_func_to_list(check_funcs, &pcheck,
-						func_addr, func_size,
-						func->old_name, 0);
-				if (ret)
-					return ret;
-				if (func_addr != old_func) {
-					ret = add_func_to_list(check_funcs, &pcheck, old_func,
-						func->old_size, func->old_name, 0);
-					if (ret)
-						return ret;
-				}
-#endif
-
-				func_addr = (unsigned long)func->new_func;
-				func_size = func->new_size;
-				ret = add_func_to_list(check_funcs, &pcheck,
-						func_addr, func_size,
-						func->old_name, 0);
-				if (ret)
-					return ret;
-			}
-		}
+	start_backtrace(&frame, frame.fp, frame.pc);
+	walk_stackframe(t, &frame, fn, args);
+	if (args->ret) {
+		pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
+		show_stack(t, NULL, KERN_INFO);
+		return args->ret;
 	}
 	return 0;
-}
-
-static bool check_func_list(struct klp_func_list *funcs, int *ret, unsigned long pc)
-{
-	while (funcs != NULL) {
-		*ret = klp_compare_address(pc, funcs->func_addr, funcs->func_name,
-				klp_size_to_check(funcs->func_size, funcs->force));
-		if (*ret) {
-			return false;
-		}
-		funcs = funcs->next;
-	}
-	return true;
-}
-
-static bool klp_check_jump_func(void *data, unsigned long pc)
-{
-	struct walk_stackframe_args *args = data;
-	struct klp_func_list *check_funcs = args->check_funcs;
-
-	return check_func_list(check_funcs, &args->ret, pc);
-}
-
-static void free_list(struct klp_func_list **funcs)
-{
-	struct klp_func_list *p;
-
-	while (*funcs != NULL) {
-		p = *funcs;
-		*funcs = (*funcs)->next;
-		kfree(p);
-	}
 }
 
 static int do_check_calltrace(struct walk_stackframe_args *args,
 			      bool (*fn)(void *, unsigned long))
 {
+	int ret;
 	struct task_struct *g, *t;
-	struct stackframe frame;
+	unsigned int cpu;
 
 	for_each_process_thread(g, t) {
-		/*
-		 * Handle the current carefully on each CPUs, we shouldn't
-		 * use saved FP and PC when backtrace current. It's difficult
-		 * to backtrack other CPU currents here. But fortunately,
-		 * all CPUs will stay in this function, so the current's
-		 * backtrace is so similar
-		 */
-		if (t == current) {
-			/* current on this CPU */
-			frame.fp = (unsigned long)__builtin_frame_address(0);
-			frame.pc = (unsigned long)do_check_calltrace;
-		} else if (klp_is_migration_thread(t->comm)) {
+		if (klp_is_migration_thread(t->comm))
 			continue;
-		} else {
-			frame.fp = thread_saved_fp(t);
-			frame.pc = thread_saved_pc(t);
-		}
-		start_backtrace(&frame, frame.fp, frame.pc);
-		walk_stackframe(t, &frame, fn, args);
-		if (args->ret) {
-			pr_info("PID: %d Comm: %.20s\n", t->pid, t->comm);
-			show_stack(t, NULL, KERN_INFO);
-			return args->ret;
-		}
+		ret = check_task_calltrace(t, args, fn);
+		if (ret)
+			return ret;
+	}
+	for_each_online_cpu(cpu) {
+		ret = check_task_calltrace(idle_task(cpu), args, fn);
+		if (ret)
+			return ret;
 	}
 	return 0;
 }
 
-int klp_check_calltrace(struct klp_patch *patch, int enable)
+#ifdef CONFIG_LIVEPATCH_BREAKPOINT_NO_STOP_MACHINE
+int arch_klp_check_task_calltrace(struct task_struct *t,
+				  bool (*check_func)(void *, int *, unsigned long),
+				  void *data)
 {
-	int ret = 0;
-	struct klp_func_list *check_funcs = NULL;
 	struct walk_stackframe_args args = {
-		.enable = enable,
-		.ret = 0
+		.data = data,
+		.ret = 0,
+		.check_func = check_func,
 	};
 
-	ret = klp_check_activeness_func(patch, enable, &check_funcs);
-	if (ret) {
-		pr_err("collect active functions failed, ret=%d\n", ret);
-		goto out;
-	}
-	if (!check_funcs)
-		goto out;
+	if (t == NULL)
+		return -EINVAL;
+	return check_task_calltrace(t, &args, klp_check_jump_func);
+}
+#endif
 
-	args.check_funcs = check_funcs;
-	ret = do_check_calltrace(&args, klp_check_jump_func);
-out:
-	free_list(&check_funcs);
-	return ret;
+int arch_klp_check_calltrace(bool (*check_func)(void *, int *, unsigned long), void *data)
+{
+	struct walk_stackframe_args args = {
+		.data = data,
+		.ret = 0,
+		.check_func = check_func,
+	};
+
+	return do_check_calltrace(&args, klp_check_jump_func);
 }
 
-static bool check_module_calltrace(void *data, unsigned long pc)
+static bool check_module_calltrace(void *ws_args, unsigned long pc)
 {
-	struct walk_stackframe_args *args = data;
+	struct walk_stackframe_args *args = ws_args;
+	struct module *mod = args->data;
 
-	if (within_module_core(pc, args->mod)) {
-		pr_err("module %s is in use!\n", args->mod->name);
+	if (within_module_core(pc, mod)) {
+		pr_err("module %s is in use!\n", mod->name);
 		args->ret = -EBUSY;
 		return false;
 	}
@@ -348,7 +173,7 @@ static bool check_module_calltrace(void *data, unsigned long pc)
 int arch_klp_module_check_calltrace(void *data)
 {
 	struct walk_stackframe_args args = {
-		.mod = (struct module *)data,
+		.data = data,
 		.ret = 0
 	};
 
@@ -410,6 +235,27 @@ long arch_klp_save_old_code(struct arch_klp_data *arch_data, void *old_func)
 	return ret;
 }
 
+static int klp_patch_text(u32 *dst, const u32 *src, int len)
+{
+	int i;
+	int ret;
+
+	if (len <= 0)
+		return -EINVAL;
+	/* skip breakpoint at first */
+	for (i = 1; i < len; i++) {
+		ret = aarch64_insn_patch_text_nosync(dst + i, src[i]);
+		if (ret)
+			return ret;
+	}
+	/*
+	 * Avoid compile optimization, make sure that instructions
+	 * except first breakpoint has been patched.
+	 */
+	barrier();
+	return aarch64_insn_patch_text_nosync(dst, src[0]);
+}
+
 static int do_patch(unsigned long pc, unsigned long new_addr)
 {
 	u32 insns[LJMP_INSN_SIZE];
@@ -418,26 +264,22 @@ static int do_patch(unsigned long pc, unsigned long new_addr)
 	if (offset_in_range(pc, new_addr, SZ_128M)) {
 		insns[0] = aarch64_insn_gen_branch_imm(pc, new_addr,
 						       AARCH64_INSN_BRANCH_NOLINK);
-		ret = aarch64_insn_patch_text_nosync((void *)pc, insns[0]);
+		ret = klp_patch_text((u32 *)pc, insns, 1);
 		if (ret) {
 			pr_err("patch instruction small range failed, ret=%d\n", ret);
 			return -EPERM;
 		}
 	} else {
 #ifdef CONFIG_ARM64_MODULE_PLTS
-		int i;
 
 		insns[0] = 0x92800010 | (((~new_addr) & 0xffff)) << 5;
 		insns[1] = 0xf2a00010 | (((new_addr >> 16) & 0xffff)) << 5;
 		insns[2] = 0xf2c00010 | (((new_addr >> 32) & 0xffff)) << 5;
 		insns[3] = 0xd61f0200;
-		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			ret = aarch64_insn_patch_text_nosync(((u32 *)pc) + i, insns[i]);
-			if (ret) {
-				pr_err("patch instruction %d large range failed, ret=%d\n",
-				       i, ret);
-				return -EPERM;
-			}
+		ret = klp_patch_text((u32 *)pc, insns, LJMP_INSN_SIZE);
+		if (ret) {
+			pr_err("patch instruction large range failed, ret=%d\n", ret);
+			return -EPERM;
 		}
 #else
 		/*
@@ -469,20 +311,16 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	struct klp_func_node *func_node;
 	struct klp_func *next_func;
 	unsigned long pc;
-	int i;
 	int ret;
 
 	func_node = func->func_node;
 	pc = (unsigned long)func_node->old_func;
 	list_del_rcu(&func->stack_node);
 	if (list_empty(&func_node->func_stack)) {
-		for (i = 0; i < LJMP_INSN_SIZE; i++) {
-			ret = aarch64_insn_patch_text_nosync(((u32 *)pc) + i,
-							     func_node->arch_data.old_insns[i]);
-			if (ret) {
-				pr_err("restore instruction %d failed, ret=%d\n", i, ret);
-				return;
-			}
+		ret = klp_patch_text((u32 *)pc, func_node->arch_data.old_insns, LJMP_INSN_SIZE);
+		if (ret) {
+			pr_err("restore instruction failed, ret=%d\n", ret);
+			return;
 		}
 	} else {
 		next_func = list_first_or_null_rcu(&func_node->func_stack,

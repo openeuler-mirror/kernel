@@ -42,7 +42,9 @@
 #include <asm/cacheflush.h>
 #include <asm/errno.h>
 #include <linux/uaccess.h>
-
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+#include <linux/livepatch.h>
+#endif
 #define KPROBE_HASH_BITS 6
 #define KPROBE_TABLE_SIZE (1 << KPROBE_HASH_BITS)
 
@@ -1646,10 +1648,17 @@ static int check_kprobe_address_safe(struct kprobe *p,
 	jump_label_lock();
 	preempt_disable();
 
-	/* Ensure it is not in reserved area nor out of text */
-	if (!(core_kernel_text((unsigned long) p->addr) ||
-	    is_module_text_address((unsigned long) p->addr)) ||
-	    in_gate_area_no_mm((unsigned long) p->addr) ||
+	/* Ensure the address is in a text area, and find a module if exists. */
+	*probed_mod = NULL;
+	if (!core_kernel_text((unsigned long) p->addr)) {
+		*probed_mod = __module_text_address((unsigned long) p->addr);
+		if (!(*probed_mod)) {
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+	/* Ensure it is not in reserved area. */
+	if (in_gate_area_no_mm((unsigned long) p->addr) ||
 	    within_kprobe_blacklist((unsigned long) p->addr) ||
 	    jump_label_text_reserved(p->addr, p->addr) ||
 	    static_call_text_reserved(p->addr, p->addr) ||
@@ -1659,8 +1668,7 @@ static int check_kprobe_address_safe(struct kprobe *p,
 		goto out;
 	}
 
-	/* Check if are we probing a module */
-	*probed_mod = __module_text_address((unsigned long) p->addr);
+	/* Get module refcount and reject __init functions for loaded modules. */
 	if (*probed_mod) {
 		/*
 		 * We must hold a refcount of the probed module while updating
@@ -1689,6 +1697,18 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+void kprobes_lock(void)
+{
+	mutex_lock(&kprobe_mutex);
+}
+
+void kprobes_unlock(void)
+{
+	mutex_unlock(&kprobe_mutex);
+}
+#endif
+
 int register_kprobe(struct kprobe *p)
 {
 	int ret;
@@ -1716,6 +1736,12 @@ int register_kprobe(struct kprobe *p)
 		return ret;
 
 	mutex_lock(&kprobe_mutex);
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+	klp_lock();
+	ret = klp_check_patched((unsigned long)p->addr);
+	if (ret)
+		goto out;
+#endif
 
 	old_p = get_kprobe(p->addr);
 	if (old_p) {
@@ -1749,6 +1775,9 @@ int register_kprobe(struct kprobe *p)
 	/* Try to optimize kprobe */
 	try_to_optimize_kprobe(p);
 out:
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+	klp_unlock();
+#endif
 	mutex_unlock(&kprobe_mutex);
 
 	if (probed_mod)
@@ -1954,6 +1983,29 @@ unsigned long __weak arch_deref_entry_point(void *entry)
 }
 
 #ifdef CONFIG_KRETPROBES
+
+unsigned long kretprobe_find_ret_addr(struct task_struct *tsk, void *fp)
+{
+	struct kretprobe_instance *ri = NULL;
+	struct hlist_head *head;
+	unsigned long flags;
+	kprobe_opcode_t *correct_ret_addr = NULL;
+
+	kretprobe_hash_lock(tsk, &head, &flags);
+	hlist_for_each_entry(ri, head, hlist) {
+		if (ri->task != tsk)
+			continue;
+		if (ri->fp != fp)
+			continue;
+		if (!is_kretprobe_trampoline((unsigned long)ri->ret_addr)) {
+			correct_ret_addr = ri->ret_addr;
+			break;
+		}
+	}
+	kretprobe_hash_unlock(tsk, &flags);
+	return (unsigned long)correct_ret_addr;
+}
+NOKPROBE_SYMBOL(kretprobe_find_ret_addr);
 
 unsigned long __kretprobe_trampoline_handler(struct pt_regs *regs,
 					     void *trampoline_address,
