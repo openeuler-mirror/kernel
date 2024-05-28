@@ -323,7 +323,7 @@ static void subflow_finish_connect(struct sock *sk, const struct sk_buff *skb)
 	} else if (subflow->request_join) {
 		u8 hmac[SHA256_DIGEST_SIZE];
 
-		if (!mp_opt.mp_join)
+		if (!(mp_opt.suboptions & OPTION_MPTCP_MPJ_SYNACK))
 			goto do_reset;
 
 		subflow->thmac = mp_opt.thmac;
@@ -542,6 +542,7 @@ static struct sock *subflow_syn_recv_sock(const struct sock *sk,
 	 * are not parsed
 	 */
 	mp_opt.mp_capable = 0;
+	mp_opt.suboptions = 0;
 
 	/* hopefully temporary handling for MP_JOIN+syncookie */
 	subflow_req = mptcp_subflow_rsk(req);
