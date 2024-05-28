@@ -838,6 +838,16 @@ static inline void mem_avoid_memmap(void) { }
 static inline void free_avoid_memmap(void) { }
 #endif
 
+#if defined(CONFIG_NOKASLR_MEM_RANGE) && defined(CONFIG_ARM64)
+#define CAL_SLOTS_NUMBER	 0
+#define CAL_SLOTS_PHYADDR	 1
+
+void efi_parse_option_nokaslr_ranges(char *str);
+unsigned long cal_slots_avoid_overlap(efi_memory_desc_t *md, unsigned long size, u8 cal_type,
+					  unsigned long align_shift, unsigned long target);
+#endif
+
+
 efi_status_t efi_setup_gop(struct screen_info *si, efi_guid_t *proto,
 			   unsigned long size);
 

@@ -79,6 +79,9 @@ static unsigned long get_boot_seed(void)
 /* Only supporting at most 4 unusable memmap regions with kaslr */
 #define MAX_MEMMAP_REGIONS	4
 
+#ifdef CONFIG_NOKASLR_MEM_RANGE
+#define MAX_MEM_NOKASLR_REGIONS	4
+#endif
 static bool memmap_too_large;
 
 
@@ -98,6 +101,10 @@ enum mem_avoid_index {
 	MEM_AVOID_BOOTPARAMS,
 	MEM_AVOID_MEMMAP_BEGIN,
 	MEM_AVOID_MEMMAP_END = MEM_AVOID_MEMMAP_BEGIN + MAX_MEMMAP_REGIONS - 1,
+#ifdef CONFIG_NOKASLR_MEM_RANGE
+	MEM_AVOID_MEM_NOKASLR_BEGIN,
+	MEM_AVOID_MEM_NOKASLR_END = MEM_AVOID_MEM_NOKASLR_BEGIN + MAX_MEM_NOKASLR_REGIONS - 1,
+#endif
 	MEM_AVOID_MAX,
 };
 
@@ -227,6 +234,39 @@ static void mem_avoid_memmap(enum parse_mode mode, char *str)
 		memmap_too_large = true;
 }
 
+#ifdef CONFIG_NOKASLR_MEM_RANGE
+static void mem_avoid_mem_nokaslr(char *str)
+{
+	int i = 0;
+
+	while (str && (i < MAX_MEM_NOKASLR_REGIONS)) {
+		char *oldstr;
+		u64 start, end;
+		char *k = strchr(str, ',');
+
+		if (k)
+			*k++ = 0;
+
+		oldstr = str;
+		start = memparse(str, &str);
+		if (str == oldstr || *str != '-') {
+			warn("Nokaslr values error.\n");
+			break;
+		}
+
+		end = memparse(str + 1, &str);
+		if (start >= end) {
+			warn("Nokaslr values error, start should be less than end.\n");
+			break;
+		}
+
+		mem_avoid[MEM_AVOID_MEM_NOKASLR_BEGIN + i].start = start;
+		mem_avoid[MEM_AVOID_MEM_NOKASLR_BEGIN + i].size = end - start;
+		str = k;
+		i++;
+	}
+}
+#endif
 /* Store the number of 1GB huge pages which users specified: */
 static unsigned long max_gb_huge_pages;
 
@@ -302,6 +342,10 @@ static void handle_mem_options(void)
 		} else if (!strcmp(param, "efi_fake_mem")) {
 			mem_avoid_memmap(PARSE_EFI, val);
 		}
+#ifdef CONFIG_NOKASLR_MEM_RANGE
+		else if (!strcmp(param, "nokaslr") && val)
+			mem_avoid_mem_nokaslr(val);
+#endif
 	}
 
 	free(tmp_cmdline);

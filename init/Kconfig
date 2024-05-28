@@ -2572,3 +2572,10 @@ config ARCH_HAS_SYNC_CORE_BEFORE_USERMODE
 # <asm/syscall_wrapper.h>.
 config ARCH_HAS_SYSCALL_WRAPPER
 	def_bool n
+
+config NOKASLR_MEM_RANGE
+	bool "Allow users to mark at most 4 memory regions as unavailable for kaslr"
+	default n
+	help
+	  Say y here and add kernel parameters as nokaslr=nn[KMG]-ss[KMG] to avoid kaslr
+	  place kernel image in such memory regions
