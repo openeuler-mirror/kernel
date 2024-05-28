@@ -6,6 +6,7 @@
 
 #include "ne6x.h"
 #include "ne6x_reg.h"
+#include "ne6x_dev.h"
 #include "ne6x_portmap.h"
 
 #define AXIA_MBUS_READ_MEMORY_COMMAND     0x07
@@ -460,12 +461,12 @@ static struct ne6x_reg_table_info table_info[] = {
 
 static u64 local_module_base;
 
-void ne6x_reg_lock(struct ne6x_pf *pf)
+static void ne6x_reg_lock(struct ne6x_pf *pf)
 {
 	mutex_lock(&pf->mbus_comm_mutex);
 }
 
-void ne6x_reg_unlock(struct ne6x_pf *pf)
+static void ne6x_reg_unlock(struct ne6x_pf *pf)
 {
 	mutex_unlock(&pf->mbus_comm_mutex);
 }
@@ -504,7 +505,7 @@ u64 ne6x_reg_pci_read(struct ne6x_pf *pf, u32 base_addr, u32 offset_addr)
 }
 
 #define BAR4_CSR_OFFSET 0x3C0
-u32 ne6x_reg_axi_read(struct ne6x_pf *pf, u32 offset)
+static u32 ne6x_reg_axi_read(struct ne6x_pf *pf, u32 offset)
 {
 	u64 reg_offset = offset & 0xFFFFFFFC;
 	u64 reg_value = 0x4000000000000000ULL + (reg_offset << 30);
@@ -518,7 +519,7 @@ u32 ne6x_reg_axi_read(struct ne6x_pf *pf, u32 offset)
 	return ne6x_reg_pci_read(pf, BAR4_CSR_OFFSET, 0x0) & 0xFFFFFFFFUL;
 }
 
-void ne6x_reg_axi_write(struct ne6x_pf *pf, u32 offset, u32 value)
+static void ne6x_reg_axi_write(struct ne6x_pf *pf, u32 offset, u32 value)
 {
 	u64 reg_offset = offset & 0xFFFFFFFC;
 	u64 reg_value = 0x4000000000000000ULL + (reg_offset << 30) + value;
@@ -527,7 +528,7 @@ void ne6x_reg_axi_write(struct ne6x_pf *pf, u32 offset, u32 value)
 	ne6x_reg_pci_write(pf, BAR4_CSR_OFFSET, 0x0, reg_value);
 }
 
-u32 _reg_apb_read(struct ne6x_pf *pf, u64 offset)
+static u32 _reg_apb_read(struct ne6x_pf *pf, u64 offset)
 {
 	u32 offset_l = 0x27A00000 | ((offset << 4) & 0xFFFF0);
 	u32 offset_h;
@@ -543,7 +544,7 @@ u32 _reg_apb_read(struct ne6x_pf *pf, u64 offset)
 	return data;
 }
 
-void _reg_apb_write(struct ne6x_pf *pf, u64 offset, u32 value)
+static void _reg_apb_write(struct ne6x_pf *pf, u64 offset, u32 value)
 {
 	u32 offset_l;
 	u32 offset_h;
@@ -558,7 +559,7 @@ void _reg_apb_write(struct ne6x_pf *pf, u64 offset, u32 value)
 }
 
 u32 NE6X_ACCESS_TIMEOUT = 9999;
-int _ne6x_reg_perform(struct ne6x_pf *pf, u32 *data, u32 *pbuf, u32 len, u32 retlen)
+static int _ne6x_reg_perform(struct ne6x_pf *pf, u32 *data, u32 *pbuf, u32 len, u32 retlen)
 {
 	struct axia_mbus_msg resp;
 	int timeout = 0, index = 0;
@@ -605,7 +606,7 @@ int _ne6x_reg_perform(struct ne6x_pf *pf, u32 *data, u32 *pbuf, u32 len, u32 ret
 	return 0;
 }
 
-int ne6x_reg_perform(struct ne6x_pf *pf, u32 *data, u32 *pbuf, u32 len, u32 retlen)
+static int ne6x_reg_perform(struct ne6x_pf *pf, u32 *data, u32 *pbuf, u32 len, u32 retlen)
 {
 	int status;
 
@@ -1055,54 +1056,6 @@ int ne6x_reg_send_bit(struct ne6x_pf *pf, u32 port, u32 mode)
 	return status;
 }
 
-int ne6x_reg_mem_read(struct ne6x_pf *pf, u32 addr, void *pbuf, u32 size)
-{
-	struct axia_mbus_msg *msg;
-	int status;
-
-	if (size > 1024)
-		size = 1024;
-
-	msg = kzalloc(520, GFP_KERNEL);
-	if (!msg)
-		return -ENOMEM;
-
-	msg->hdr.uint = 0;
-	msg->hdr.bits.opcode = AXIA_MBUS_READ_MEMORY_COMMAND;
-	msg->hdr.bits.data_len = 12;
-	msg->data[0] = addr;
-	msg->data[1] = size;
-
-	status = ne6x_reg_perform(pf, (u32 *)msg, (u32 *)pbuf, 3, size / 4);
-	kfree(msg);
-
-	return status;
-}
-
-int ne6x_reg_mem_write(struct ne6x_pf *pf, u32 addr, void *pbuf, u32 size)
-{
-	struct axia_mbus_msg *msg;
-	int status;
-
-	msg = kzalloc(520, GFP_KERNEL);
-	if (!msg)
-		return -ENOMEM;
-
-	if (size > 1024)
-		size = 1024;
-
-	msg->hdr.uint = 0;
-	msg->hdr.bits.opcode = AXIA_MBUS_WRITE_MEMORY_COMMAND;
-	msg->hdr.bits.data_len = 12 + (size / 4) * 4;
-	msg->data[0] = addr;
-	msg->data[1] = size;
-
-	status = ne6x_reg_perform(pf, (u32 *)msg, NULL, 3 + (size / 4), 0);
-	kfree(msg);
-
-	return status;
-}
-
 #define NE6X_FW_MAX_FRG_SIZE (4 * 1024)
 int ne6x_reg_upgrade_firmware(struct ne6x_pf *pf, u8 region, u8 *data, int size)
 {
@@ -1250,7 +1203,7 @@ int ne6x_reg_get_nic_state(struct ne6x_pf *pf, u32 *state)
 	return status;
 }
 
-int ne6x_reg_set_user_data_template(struct ne6x_pf *pf, enum np_user_data type, u32 data)
+static int ne6x_reg_set_user_data_template(struct ne6x_pf *pf, enum np_user_data type, u32 data)
 {
 	struct axia_mbus_msg *msg;
 	int status;
@@ -1271,7 +1224,7 @@ int ne6x_reg_set_user_data_template(struct ne6x_pf *pf, enum np_user_data type, 
 	return status;
 }
 
-int ne6x_reg_get_user_data_template(struct ne6x_pf *pf, enum np_user_data type, u32 *data)
+static int ne6x_reg_get_user_data_template(struct ne6x_pf *pf, enum np_user_data type, u32 *data)
 {
 	struct axia_mbus_msg *msg;
 	int status;
@@ -1388,7 +1341,7 @@ int ne6x_reg_get_dump_data_len(struct ne6x_pf *pf, u32 *size)
 	return status;
 }
 
-void ne6x_reg_send(struct ne6x_pf *pf, u32 cmd, u32 *data, u32 size)
+static void ne6x_reg_send(struct ne6x_pf *pf, u32 cmd, u32 *data, u32 size)
 {
 	struct axia_mbus_msg *msg;
 	u32 *msg_data;
@@ -1414,8 +1367,8 @@ void ne6x_reg_send(struct ne6x_pf *pf, u32 cmd, u32 *data, u32 size)
 	kfree(msg);
 }
 
-int ne6x_reg_polling(struct ne6x_pf *pf, u32 cmd, u32 *data, u32 buf_size,
-		     u32 *real_size)
+static int ne6x_reg_polling(struct ne6x_pf *pf, u32 cmd, u32 *data, u32 buf_size,
+			    u32 *real_size)
 {
 	int timeout = 0, offset = 0;
 	struct axia_mbus_msg resp;

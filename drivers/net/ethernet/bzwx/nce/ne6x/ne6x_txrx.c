@@ -4,7 +4,6 @@
 #include "ne6x.h"
 #include "ne6x_txrx.h"
 #include "ne6x_reg.h"
-#include "ne6x_trace.h"
 
 int ne6x_adpt_setup_tx_resources(struct ne6x_adapter *adpt)
 {

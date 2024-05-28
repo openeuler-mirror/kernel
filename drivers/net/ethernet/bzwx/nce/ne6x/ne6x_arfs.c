@@ -14,7 +14,8 @@ static void
 ne6x_arfs_update_active_fltr_cntrs(struct ne6x_adapter *adpt,
 				   struct ne6x_arfs_entry *entry, bool add);
 
-int ne6x_dev_add_fster_rules(struct ne6x_adapter *adpt, struct ne6x_fster_fltr *input, bool is_tun)
+static int ne6x_dev_add_fster_rules(struct ne6x_adapter *adpt, struct ne6x_fster_fltr *input,
+				    bool is_tun)
 {
 	u32 table_id = 0xffffffff;
 	struct ne6x_fster_table fster;
@@ -24,7 +25,7 @@ int ne6x_dev_add_fster_rules(struct ne6x_adapter *adpt, struct ne6x_fster_fltr *
 	struct device *dev;
 
 	dev = ne6x_pf_to_dev(adpt->back);
-	dev_info(dev, "add: vport: %d %x %x %x %x %d %d rxq_id：%d\n", adpt->vport,
+	dev_info(dev, "add: vport: %d %x %x %x %x %d %d rxq_id: %d\n", adpt->vport,
 		 input->ip.v4.dst_ip, input->ip.v4.src_ip, input->ip.v4.dst_port,
 		 input->ip.v4.src_port, input->ip.v4.pi, input->ip.v4.proto, input->q_index);
 
@@ -58,7 +59,8 @@ int ne6x_dev_add_fster_rules(struct ne6x_adapter *adpt, struct ne6x_fster_fltr *
 	return 0;
 }
 
-int ne6x_dev_del_fster_rules(struct ne6x_adapter *adpt, struct ne6x_fster_fltr *input, bool is_tun)
+static int ne6x_dev_del_fster_rules(struct ne6x_adapter *adpt, struct ne6x_fster_fltr *input,
+				    bool is_tun)
 {
 	struct ne6x_fster_table fster;
 	struct ne6x_fster_search_result result;
@@ -67,7 +69,7 @@ int ne6x_dev_del_fster_rules(struct ne6x_adapter *adpt, struct ne6x_fster_fltr *
 	struct device *dev;
 
 	dev = ne6x_pf_to_dev(adpt->back);
-	dev_info(dev, "del: vport: %d %x %x %x %x %d %d rxq_id：%d\n",
+	dev_info(dev, "del: vport: %d %x %x %x %x %d %d rxq_id: %d\n",
 		 adpt->vport, input->ip.v4.dst_ip, input->ip.v4.src_ip, input->ip.v4.dst_port,
 		 input->ip.v4.src_port, input->ip.v4.pi, input->ip.v4.proto, input->q_index);
 
@@ -163,7 +165,7 @@ ne6x_arfs_update_flow_rules(struct ne6x_adapter *adpt, u16 idx,
 	}
 }
 
-int ne6x_arfs_add_flow_rules(struct ne6x_adapter *adpt, struct hlist_head *add_list_head)
+static int ne6x_arfs_add_flow_rules(struct ne6x_adapter *adpt, struct hlist_head *add_list_head)
 {
 	struct ne6x_arfs_entry_ptr *ep;
 	struct hlist_node *n;
@@ -191,7 +193,7 @@ int ne6x_arfs_add_flow_rules(struct ne6x_adapter *adpt, struct hlist_head *add_l
 	return 0;
 }
 
-int ne6x_arfs_del_flow_rules(struct ne6x_adapter *adpt,  struct hlist_head *del_list_head)
+static int ne6x_arfs_del_flow_rules(struct ne6x_adapter *adpt,  struct hlist_head *del_list_head)
 {
 	struct ne6x_arfs_entry *e;
 	struct hlist_node *n;
@@ -394,7 +396,7 @@ void ne6x_free_cpu_rx_rmap(struct ne6x_adapter *adpt)
 	netdev->rx_cpu_rmap = NULL;
 }
 
-int ne6x_get_irq_num(struct ne6x_pf *pf, int idx)
+static int ne6x_get_irq_num(struct ne6x_pf *pf, int idx)
 {
 	if (!pf->msix_entries)
 		return -EINVAL;

@@ -67,7 +67,7 @@ const struct ne6x_debug_info ne6x_device_info[] = {
 	{0x1A21, "N6S100P2-PAGA", "100G"}, {0x1A2D, "N6S100P2-NAGA", "100G"},
 	{0x0221, "N6S100P2-NAGA", "100G"}, {0x0A21, "N6S100P2-PDGA", "100G"} };
 
-char *my_strtok(char *p_in_string, char *p_in_delimit, char **pp_out_ret)
+static char *my_strtok(char *p_in_string, char *p_in_delimit, char **pp_out_ret)
 {
 	static char *p_tmp;
 	char *p_strstr = NULL;
@@ -102,7 +102,7 @@ char *my_strtok(char *p_in_string, char *p_in_delimit, char **pp_out_ret)
 	return ret;
 }
 
-int my_isdigit(char in_char)
+static int my_isdigit(char in_char)
 {
 	if ((in_char >= '0') && (in_char <= '9'))
 		return 1;
@@ -110,7 +110,7 @@ int my_isdigit(char in_char)
 		return 0;
 }
 
-int my_atoi(char *p_in_string)
+static int my_atoi(char *p_in_string)
 {
 	int flag = 1;
 	int ret = 0;
@@ -139,7 +139,7 @@ int my_atoi(char *p_in_string)
 static struct dentry *ne6x_dbg_root;
 u8 *ne6x_dbg_get_fru_product_part(u8 *buffer, enum fru_product_part part, u8 *len);
 
-void ne6x_dbg_show_queue(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_queue(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_ring *ring;
 	struct ne6x_adapter *adpt;
@@ -231,7 +231,7 @@ void ne6x_dbg_show_queue(struct ne6x_pf *pf, char *cmd_buf, int count)
 	}
 }
 
-void ne6x_dbg_show_ring(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_ring(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	int i, j, k, l;
 	union ne6x_rx_desc *rx_desc;
@@ -311,7 +311,7 @@ void ne6x_dbg_show_ring(struct ne6x_pf *pf, char *cmd_buf, int count)
 	}
 }
 
-void ne6x_dbg_show_txtail(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_txtail(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	int i, j;
 	struct ne6x_adapter *adpt;
@@ -335,7 +335,7 @@ void ne6x_dbg_show_txtail(struct ne6x_pf *pf, char *cmd_buf, int count)
 	}
 }
 
-void ne6x_dbg_show_txq(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_txq(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_ring *ring;
 	struct ne6x_adapter *adpt;
@@ -360,7 +360,7 @@ void ne6x_dbg_show_txq(struct ne6x_pf *pf, char *cmd_buf, int count)
 	}
 }
 
-void ne6x_dbg_show_rxq(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_rxq(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_ring *ring;
 	struct ne6x_adapter *adpt;
@@ -385,7 +385,7 @@ void ne6x_dbg_show_rxq(struct ne6x_pf *pf, char *cmd_buf, int count)
 	}
 }
 
-void ne6x_dbg_show_cq(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_cq(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_ring *ring;
 	struct ne6x_adapter *adpt;
@@ -410,7 +410,7 @@ void ne6x_dbg_show_cq(struct ne6x_pf *pf, char *cmd_buf, int count)
 	}
 }
 
-void ne6x_dbg_clean_queue(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_clean_queue(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_ring *tx_ring;
 	struct ne6x_ring *rx_ring;
@@ -445,7 +445,7 @@ void ne6x_dbg_clean_queue(struct ne6x_pf *pf, char *cmd_buf, int count)
 	}
 }
 
-void ne6x_dbg_show_txring(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_txring(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_ring *tx_ring;
 	struct ne6x_adapter *adpt;
@@ -493,7 +493,7 @@ void ne6x_dbg_show_txring(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "\n");
 }
 
-void ne6x_dbg_show_rxring(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_rxring(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_ring *rx_ring;
 	struct ne6x_adapter *adpt;
@@ -541,7 +541,7 @@ void ne6x_dbg_show_rxring(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "\n");
 }
 
-void ne6x_dbg_show_cqring(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_cqring(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_ring *cq_ring;
 	struct ne6x_adapter *adpt;
@@ -584,7 +584,7 @@ void ne6x_dbg_show_cqring(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "\n");
 }
 
-void ne6x_dbg_show_txdesc_states(int adpt_num, int queue_num, struct ne6x_pf *pf)
+static void ne6x_dbg_show_txdesc_states(int adpt_num, int queue_num, struct ne6x_pf *pf)
 {
 	struct ne6x_tx_desc *tx_desc = NULL;
 	struct ne6x_ring *tx_ring = NULL;
@@ -651,7 +651,7 @@ void ne6x_dbg_show_txdesc_states(int adpt_num, int queue_num, struct ne6x_pf *pf
 	dev_info(&pf->pdev->dev, "\n");
 }
 
-void ne6x_dbg_show_rxdesc_states(int adpt_num, int queue_num, struct ne6x_pf *pf)
+static void ne6x_dbg_show_rxdesc_states(int adpt_num, int queue_num, struct ne6x_pf *pf)
 {
 	union ne6x_rx_desc *rx_desc = NULL;
 	struct ne6x_ring *rx_ring = NULL;
@@ -698,7 +698,7 @@ void ne6x_dbg_show_rxdesc_states(int adpt_num, int queue_num, struct ne6x_pf *pf
 	dev_info(&pf->pdev->dev, "\n");
 }
 
-void ne6x_dbg_show_cqdesc_states(int adpt_num, int queue_num, struct ne6x_pf *pf)
+static void ne6x_dbg_show_cqdesc_states(int adpt_num, int queue_num, struct ne6x_pf *pf)
 {
 	struct ne6x_cq_desc *cq_desc = NULL;
 	struct ne6x_ring *cq_ring = NULL;
@@ -754,7 +754,7 @@ void ne6x_dbg_show_cqdesc_states(int adpt_num, int queue_num, struct ne6x_pf *pf
 }
 
 #ifdef CONFIG_RFS_ACCEL
-void ne6x_dbg_show_arfs_cnt(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_arfs_cnt(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u8 idx = 0;
 	struct ne6x_adapter *pf_adpt;
@@ -780,7 +780,7 @@ void ne6x_dbg_show_arfs_cnt(struct ne6x_pf *pf, char *cmd_buf, int count)
 
 extern u32 ne6x_dev_crc32(const u8 *buf, u32 size);
 
-void ne6x_dbg_apb_read(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_apb_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u64 offset;
 	u32 value;
@@ -798,7 +798,7 @@ void ne6x_dbg_apb_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "offset = 0x%08X 0x%08X\n", addr, value);
 }
 
-void ne6x_dbg_apb_write(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_apb_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u64 offset;
 	u32 value;
@@ -816,7 +816,7 @@ void ne6x_dbg_apb_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "apb_write: 0x%llx = 0x%x\n", offset, value);
 }
 
-void ne6x_dbg_mem_read(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_mem_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	int index = 0, cnt;
 	u32 *reg_data;
@@ -855,9 +855,7 @@ void ne6x_dbg_mem_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 	kfree((void *)reg_data);
 }
 
-void ne6x_dbg_mem_write(struct ne6x_pf *pf, char *cmd_buf, int count) {}
-
-void ne6x_dbg_templ_help(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_templ_help(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	dev_info(&pf->pdev->dev, "HW_FEATURES		= 0\n");
 	dev_info(&pf->pdev->dev, "HW_FLAGS		= 1\n");
@@ -877,7 +875,7 @@ void ne6x_dbg_templ_help(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "CQ_SIZE		= 229\n");
 }
 
-void ne6x_dbg_templ_read(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_templ_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u32 vport;
 	u32 value;
@@ -894,7 +892,7 @@ void ne6x_dbg_templ_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "temp_read  0x%04X value 0x%08X\n", type, value);
 }
 
-void ne6x_dbg_templ_write(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_templ_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u32 vport;
 	u32 value;
@@ -911,7 +909,7 @@ void ne6x_dbg_templ_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "temp_write: 0x%04x = 0x%x\n", type, value);
 }
 
-void ne6x_dbg_soc_read(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_soc_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u32 value;
 	u32 addr;
@@ -927,7 +925,7 @@ void ne6x_dbg_soc_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "offset = 0x%08X 0x%08X\n", addr, value);
 }
 
-void ne6x_dbg_soc_write(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_soc_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u32 value;
 	u32 addr;
@@ -943,7 +941,7 @@ void ne6x_dbg_soc_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "soc_write: 0x%08X = 0x%08X\n", addr, value);
 }
 
-void ne6x_dbg_tab_read(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_tab_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	int array_index = 0, ret, index;
 	struct ne6x_debug_table *table_info;
@@ -1007,7 +1005,7 @@ void ne6x_dbg_tab_read(struct ne6x_pf *pf, char *cmd_buf, int count)
 	kfree(table_info);
 }
 
-void ne6x_dbg_set_mac_to_eeprom(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_set_mac_to_eeprom(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_dev_eeprom_info *psdk_spd_info = &pf->sdk_spd_info;
 	u8 mac_addr[6];
@@ -1051,7 +1049,7 @@ void ne6x_dbg_set_mac_to_eeprom(struct ne6x_pf *pf, char *cmd_buf, int count)
 		 (ret == 0) ? "set mac success!" : "set mac fail!");
 }
 
-void ne6x_dbg_get_mac(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_get_mac(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_dev_eeprom_info *psdk_spd_info = &pf->sdk_spd_info;
 	u8 mac_addr[6];
@@ -1082,67 +1080,7 @@ void ne6x_dbg_get_mac(struct ne6x_pf *pf, char *cmd_buf, int count)
 		 mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
 }
 
-void ne6x_dbg_set_dev_type_to_eeprom(struct ne6x_pf *pf, char *cmd_buf, int count)
-{
-	struct ne6x_dev_eeprom_info *psdk_spd_info = &pf->sdk_spd_info;
-	u8 *p_str_array[10] = {0};
-	int array_index = 0, ret;
-	u8 *p_in_string = NULL;
-	char *p_tmp_ret = NULL;
-	u16 dev_type = 0;
-
-	p_in_string = &cmd_buf[0];
-	while ((p_str_array[array_index] = my_strtok(p_in_string, PARA_KEY_STRING, &p_tmp_ret)) !=
-	       NULL) {
-		p_in_string = p_str_array[array_index] + strlen(p_str_array[array_index]) + 1;
-		array_index++;
-		if (array_index >= 10)
-			break;
-
-		if (!p_tmp_ret)
-			break;
-	}
-
-	if (array_index < 1) {
-		dev_warn(&pf->pdev->dev, "set_dev_type <devtype> (0xA003:2*25,0xA004:4*25)\n");
-		return;
-	}
-
-	if (!strncmp(p_str_array[0], "0x", 2)) {
-		dev_type = simple_strtoul(p_str_array[0], NULL, 16);
-	} else {
-		dev_warn(&pf->pdev->dev, "set_dev_type <devtype> (0xA003:2*25,0xA004:4*25)\n");
-		return;
-	}
-
-	if (dev_type != NE6000AI_2S_X16H_25G_N5 && dev_type != NE6000AI_2S_X16H_25G_N6) {
-		dev_warn(&pf->pdev->dev, "set_dev_type <devtype> (0xA003:2*25,0xA004:4*25)\n");
-		return;
-	}
-
-	psdk_spd_info->product_mode = cpu_to_be16(dev_type);
-	psdk_spd_info->is_pcie_exist = 0x1;
-
-	if (dev_type == NE6000AI_2S_X16H_25G_N5) {
-		psdk_spd_info->number_of_physical_controllers = 2;
-		psdk_spd_info->logic_port_to_phyical = cpu_to_be32(0x00000800);
-	} else if (dev_type == NE6000AI_2S_X16H_25G_N6) {
-		psdk_spd_info->number_of_physical_controllers = 2;
-		psdk_spd_info->logic_port_to_phyical = cpu_to_be32(0x00000100);
-	} else {
-		return;
-	}
-
-	psdk_spd_info->spd_verify_value =
-		cpu_to_be32(ne6x_dev_crc32((const u8 *)psdk_spd_info,
-					   sizeof(struct ne6x_dev_eeprom_info) - 4));
-	ret = ne6x_dev_write_eeprom(pf->adpt[0], 0x0, (u8 *)psdk_spd_info,
-				    sizeof(struct ne6x_dev_eeprom_info));
-	dev_info(&pf->pdev->dev, "%s: %s\n", __func__,
-		 (ret == 0) ? "write eeprom mac success!" : "write eeprom mac fail!");
-}
-
-void ne6x_dbg_tab_write(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_tab_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_debug_table *table_info;
 	int array_index = 0, ret, index;
@@ -1202,7 +1140,7 @@ void ne6x_dbg_tab_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "%s: %s\n", __func__, (ret == 0) ? "success!" : "timeout!");
 }
 
-void ne6x_dbg_tab_insert(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_tab_insert(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u8 *p_str_array[ARRAY_P_MAX_COUNT] = {0};
 	struct ne6x_debug_table *table_info;
@@ -1272,7 +1210,7 @@ void ne6x_dbg_tab_insert(struct ne6x_pf *pf, char *cmd_buf, int count)
 		 ((ret != -ETIMEDOUT) ? "fail!" : "timeout!"));
 }
 
-void ne6x_dbg_tab_delete(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_tab_delete(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	int array_index = 0, ret, index;
 	struct ne6x_debug_table *table_info;
@@ -1326,7 +1264,7 @@ void ne6x_dbg_tab_delete(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_info(&pf->pdev->dev, "%s: %s\n", __func__, (ret == 0) ? "success!" : "timeout!");
 }
 
-void ne6x_dbg_tab_search(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_tab_search(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_debug_table *table_info;
 	int array_index = 0, ret, index;
@@ -1398,7 +1336,7 @@ void ne6x_dbg_tab_search(struct ne6x_pf *pf, char *cmd_buf, int count)
 	kfree(table_info);
 }
 
-void ne6x_dbg_get_fru_info(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_get_fru_info(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct file *fp = NULL;
 	u8 *buffer;
@@ -1434,64 +1372,7 @@ void ne6x_dbg_get_fru_info(struct ne6x_pf *pf, char *cmd_buf, int count)
 	force_uaccess_end(fs);
 }
 
-u32 getparam(char *cmd_buf, u32 *param, int max_cnt)
-{
-	int ret, i, j, tmp, tmp1, tmp2, flag = 0;
-	u32 count = 0, cnt = 0, cnt_t = 0;
-	char *p = &cmd_buf[0];
-	char *char_offset;
-	u32 *offset;
-
-	offset = kzalloc((max_cnt + 1) * sizeof(u32), GFP_ATOMIC);
-	char_offset = kzalloc((max_cnt + 1) * sizeof(char), GFP_ATOMIC);
-	/* count the number */
-	for (i = 0; i < strlen(cmd_buf); i++) {
-		if (cmd_buf[i] == ',' || cmd_buf[i] == '-') {
-			count++;
-			if (cmd_buf[i] == ',') {
-				offset[count] = i + 1;
-				char_offset[count] = ',';
-			} else if (cmd_buf[i] == '-') {
-				offset[count] = i + 1;
-				char_offset[count] = '-';
-			}
-		}
-		if (cmd_buf[i] == ' ')
-			break;
-
-		if (count >= max_cnt)
-			break;
-	}
-
-	for (i = 0; i <= count; i++) {
-		ret = sscanf(p, "%i", &param[i + cnt_t]);
-		if (ret == 1) {
-			cnt++;
-			if (char_offset[cnt] == '-') {
-				flag++;
-				p = &cmd_buf[offset[cnt]];
-				ret = sscanf(p, "%i", &param[i + cnt_t + 1]);
-				tmp1 = param[i + cnt_t];
-				tmp2 = param[i + cnt_t + 1];
-				if (ret == 1) {
-					tmp = i + cnt_t;
-					for (j = 0; j <= tmp2 - tmp1; j++)
-						param[tmp + j] = tmp1 + j;
-				}
-				cnt_t += tmp2 - tmp1;
-
-				cnt++;
-			}
-			p = &cmd_buf[offset[cnt]];
-		}
-	}
-
-	kfree(offset);
-
-	return cnt + cnt_t - 2 * flag;
-}
-
-void ne6x_dbg_show_pcie_drop_counter(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_show_pcie_drop_counter(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	union ne6x_eth_recv_cnt eth_recv_cnt;
 	u64 __iomem *reg;
@@ -1502,7 +1383,7 @@ void ne6x_dbg_show_pcie_drop_counter(struct ne6x_pf *pf, char *cmd_buf, int coun
 		 + eth_recv_cnt.reg.csr_eth_rdq_drop_cnt);
 }
 
-void ne6x_dbg_clr_table(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_clr_table(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u32 table_id = 0, cnt;
 
@@ -1511,7 +1392,7 @@ void ne6x_dbg_clr_table(struct ne6x_pf *pf, char *cmd_buf, int count)
 		ne6x_reg_clear_table(pf, table_id);
 }
 
-void ne6x_dbg_set_hw_flag_eeprom(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_set_hw_flag_eeprom(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	struct ne6x_dev_eeprom_info *psdk_spd_info = &pf->sdk_spd_info;
 	int flag = 0;
@@ -1534,7 +1415,7 @@ void ne6x_dbg_set_hw_flag_eeprom(struct ne6x_pf *pf, char *cmd_buf, int count)
 		: "set hw_flag fail!");
 }
 
-void ne6x_dbg_erase_norflash(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_erase_norflash(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u32 offset;
 	u32 length;
@@ -1552,7 +1433,7 @@ void ne6x_dbg_erase_norflash(struct ne6x_pf *pf, char *cmd_buf, int count)
 	dev_err(&pf->pdev->dev, "norflash_erase fail.\n");
 }
 
-void ne6x_dbg_write_norflash(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_write_norflash(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u8 *ptemp_data = NULL;
 	u32 offset = 0;
@@ -1595,7 +1476,7 @@ pdata_memfree:
 	kfree(ptemp_data);
 }
 
-void ne6x_dbg_read_norflash(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_read_norflash(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u32 offset = 0;
 	u32 length = 0;
@@ -1622,7 +1503,7 @@ void ne6x_dbg_read_norflash(struct ne6x_pf *pf, char *cmd_buf, int count)
 	kfree(pdata);
 }
 
-void ne6x_dbg_meter_write(struct ne6x_pf *pf, char *cmd_buf, int count)
+static void ne6x_dbg_meter_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 {
 	u8 *p_str_array[ARRAY_P_MAX_COUNT] = {0};
 	u32 cir, type_num, type_flag = 0;
@@ -1722,7 +1603,7 @@ void ne6x_dbg_meter_write(struct ne6x_pf *pf, char *cmd_buf, int count)
 		 (ret == 0) ? "write meter success!" : "write meter fail!");
 }
 
-const struct ne6x_dbg_cmd_wr deg_cmd_wr[] = {
+static const struct ne6x_dbg_cmd_wr deg_cmd_wr[] = {
 	{"queue",               ne6x_dbg_show_queue},
 	{"ring",                ne6x_dbg_show_ring},
 	{"txq",                 ne6x_dbg_show_txq},
@@ -1739,7 +1620,6 @@ const struct ne6x_dbg_cmd_wr deg_cmd_wr[] = {
 	{"apb_read",            ne6x_dbg_apb_read},
 	{"apb_write",           ne6x_dbg_apb_write},
 	{"mem_read",            ne6x_dbg_mem_read},
-	{"mem_write",           ne6x_dbg_mem_write},
 	{"soc_read",            ne6x_dbg_soc_read},
 	{"soc_write",           ne6x_dbg_soc_write},
 	{"templ_help",          ne6x_dbg_templ_help},
@@ -1996,8 +1876,6 @@ u8 *ne6x_dbg_get_fru_product_part(u8 *buffer, enum fru_product_part part, u8 *le
 
 	return pt;
 }
-
-void ne6x_dbg_update_adpt_speed(struct ne6x_adapter *adpt, u32 speed, u32 lane_mode) {}
 
 /**
  * ne6x_dbg_command_write - write into command datum
