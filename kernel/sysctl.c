@@ -2958,6 +2958,17 @@ static struct ctl_table vm_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= &two_hundred,
 	},
+#ifdef CONFIG_SWAP_EXTENSION
+	{
+		.procname	= "swap_extension",
+		.data		= &vm_swap_extension,
+		.maxlen		= sizeof(vm_swap_extension),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+#endif
 #ifdef CONFIG_NUMA
 	{
 		.procname	= "numa_stat",
