@@ -38,6 +38,8 @@
  */
 static DEFINE_PER_CPU(struct tick_sched, tick_cpu_sched);
 
+bool support_cpu0_nohz_full;
+
 struct tick_sched *tick_get_tick_sched(int cpu)
 {
 	return &per_cpu(tick_cpu_sched, cpu);
@@ -557,7 +559,7 @@ void __init tick_nohz_init(void)
 	}
 
 	if (IS_ENABLED(CONFIG_PM_SLEEP_SMP) &&
-			!IS_ENABLED(CONFIG_PM_SLEEP_SMP_NONZERO_CPU)) {
+			(!support_cpu0_nohz_full || !IS_ENABLED(CONFIG_PM_SLEEP_SMP_NONZERO_CPU))) {
 		cpu = smp_processor_id();
 
 		if (cpumask_test_cpu(cpu, tick_nohz_full_mask)) {
@@ -1559,3 +1561,10 @@ int tick_check_oneshot_change(int allow_nohz)
 	tick_nohz_switch_to_nohz();
 	return 0;
 }
+
+static int __init support_cpu0_nohz_full_setup(char *str)
+{
+	support_cpu0_nohz_full = true;
+	return 0;
+}
+early_param("support_cpu0_nohz_full", support_cpu0_nohz_full_setup);

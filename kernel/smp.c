@@ -20,6 +20,7 @@
 #include <linux/cpu.h>
 #include <linux/sched.h>
 #include <linux/sched/idle.h>
+#include <linux/sched/isolation.h>
 #include <linux/hypervisor.h>
 #include <linux/sched/clock.h>
 #include <linux/nmi.h>
@@ -884,6 +885,9 @@ void __init smp_init(void)
 
 	/* Any cleanup work */
 	smp_cpus_done(setup_max_cpus);
+
+	/* Check whether there exists a housekeeping CPU online */
+	check_housekeeping_cpu_online();
 }
 
 /*
