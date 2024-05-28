@@ -1271,6 +1271,11 @@ config CGROUP_FILES
 	  This supports catching misbehaving processes and
 	  return EMFILE instead of ENOMEM for kernel memory limits.
 
+config CGROUP_V1_KILL
+	bool "Kill All Tasks In Cgroup"
+	default n
+	depends on CGROUPS
+
 endif # CGROUPS
 
 menuconfig NAMESPACES
