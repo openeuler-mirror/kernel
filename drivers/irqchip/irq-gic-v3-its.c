@@ -3208,6 +3208,7 @@ static int allocate_vpe_l1_table(void)
 	unsigned int psz = SZ_64K;
 	unsigned int np, epp, esz;
 	struct page *page;
+	bool indirect;
 
 	if (!gic_rdists->has_rvpeid)
 		return 0;
@@ -3242,10 +3243,12 @@ static int allocate_vpe_l1_table(void)
 
 	/* First probe the page size */
 	val = FIELD_PREP(GICR_VPROPBASER_4_1_PAGE_SIZE, GIC_PAGE_SIZE_64K);
+	val |= GICR_VPROPBASER_4_1_INDIRECT;
 	gicr_write_vpropbaser(val, vlpi_base + GICR_VPROPBASER);
 	val = gicr_read_vpropbaser(vlpi_base + GICR_VPROPBASER);
 	gpsz = FIELD_GET(GICR_VPROPBASER_4_1_PAGE_SIZE, val);
 	esz = FIELD_GET(GICR_VPROPBASER_4_1_ENTRY_SIZE, val);
+	indirect = !!(val & GICR_VPROPBASER_4_1_INDIRECT);
 
 	switch (gpsz) {
 	default:
@@ -3278,7 +3281,7 @@ static int allocate_vpe_l1_table(void)
 	 * If we need more than just a single L1 page, flag the table
 	 * as indirect and compute the number of required L1 pages.
 	 */
-	if (epp < ITS_MAX_VPEID) {
+	if (epp < ITS_MAX_VPEID && indirect) {
 		int nl2;
 
 		val |= GICR_VPROPBASER_4_1_INDIRECT;
@@ -3289,7 +3292,8 @@ static int allocate_vpe_l1_table(void)
 		/* Number of L1 pages to point to the L2 pages */
 		npg = DIV_ROUND_UP(nl2 * SZ_8, psz);
 	} else {
-		npg = 1;
+		npg = DIV_ROUND_UP(ITS_MAX_VPEID, epp);
+		npg = clamp_val(npg, 1, (GICR_VPROPBASER_4_1_SIZE + 1));
 	}
 
 	val |= FIELD_PREP(GICR_VPROPBASER_4_1_SIZE, npg - 1);
