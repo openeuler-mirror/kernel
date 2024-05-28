@@ -34,6 +34,8 @@ struct iova_rcache {
 	struct iova_cpu_rcache __percpu *cpu_rcaches;
 	struct iova_domain *iovad;
 	struct delayed_work work;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 struct iova_domain;
@@ -63,6 +65,8 @@ struct iova_fq {
 	struct iova_fq_entry entries[IOVA_FQ_SIZE];
 	unsigned head, tail;
 	spinlock_t lock;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
 };
 
 /* holds all the iova translations for a domain */
@@ -97,6 +101,10 @@ struct iova_domain {
 	atomic_t fq_timer_on;			/* 1 when timer is active, 0
 						   when not */
 	struct work_struct free_iova_work;
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 static inline unsigned long iova_size(struct iova *iova)
