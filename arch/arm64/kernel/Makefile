@@ -32,6 +32,9 @@ $(obj)/%.stub.o: $(obj)/%.o FORCE
 
 obj-$(CONFIG_AARCH32_EL0)			+= binfmt_elf32.o sys32.o signal32.o			\
 					   sys_compat.o
+ifdef CONFIG_CC_IS_CLANG
+CFLAGS_binfmt_elf32.o := $(call cc-disable-warning, macro-redefined)
+endif
 obj-$(CONFIG_AARCH32_EL0)			+= sigreturn32.o
 obj-$(CONFIG_KUSER_HELPERS)		+= kuser32.o
 obj-$(CONFIG_ARM64_ILP32)		+= binfmt_ilp32.o sys_ilp32.o 		\
