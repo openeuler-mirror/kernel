@@ -6041,6 +6041,7 @@ static ssize_t memcg_high_async_ratio_write(struct kernfs_open_file *of,
 
 static int wb_blkio_show(struct seq_file *m, void *v)
 {
+	struct kernfs_open_file *of = m->private;
 	char *path;
 	ino_t blkcg_id;
 	struct cgroup *blkcg_cgroup;
@@ -6054,22 +6055,18 @@ static int wb_blkio_show(struct seq_file *m, void *v)
 	if (!path)
 		return -ENOMEM;
 
-	rcu_read_lock();
-	blkcg_css = memcg->wb_blk_css;
-	if (!css_tryget_online(blkcg_css)) {
+	if (!cgroup_kn_lock_live(of->kn, false)) {
 		kfree(path);
-		rcu_read_unlock();
-
-		return -EINVAL;
+		return -ENODEV;
 	}
+	blkcg_css = memcg->wb_blk_css;
 	blkcg_cgroup = blkcg_css->cgroup;
 	blkcg_id = cgroup_ino(blkcg_cgroup);
 	cgroup_path(blkcg_cgroup, path, PATH_MAX);
+	cgroup_kn_unlock(of->kn);
 	seq_printf(m, "wb_blkio_path:%s\n", path);
 	seq_printf(m, "wb_blkio_ino:%lu\n", blkcg_id);
 	kfree(path);
-	css_put(blkcg_css);
-	rcu_read_unlock();
 
 	return 0;
 }
@@ -6092,24 +6089,23 @@ static ssize_t wb_blkio_write(struct kernfs_open_file *of, char *buf,
 	if (ret)
 		return ret;
 
-	rcu_read_lock();
+	if (!cgroup_kn_lock_live(of->kn, false))
+		return -ENODEV;
 	root = blkcg_root_css->cgroup->root;
 	blk_cgroup = __cgroup_get_from_id(root, cgrp_id);
 	if (IS_ERR(blk_cgroup)) {
-		rcu_read_unlock();
+		cgroup_kn_unlock(of->kn);
 		return -EINVAL;
 	}
 	blkcg_css = cgroup_tryget_css(blk_cgroup, &io_cgrp_subsys);
-	if (!blkcg_css) {
-		ret = -EINVAL;
+	if (!blkcg_css)
 		goto out_unlock;
-	}
 	wb_attach_memcg_to_blkcg(memcg_css, blkcg_css);
 	css_put(blkcg_css);
 
 out_unlock:
 	cgroup_put(blk_cgroup);
-	rcu_read_unlock();
+	cgroup_kn_unlock(of->kn);
 
 	return ret < 0 ? ret : nbytes;
 }

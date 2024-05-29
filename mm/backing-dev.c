@@ -578,8 +578,8 @@ static struct cgroup_subsys_state *cgwbv1_get_blkcss(struct mem_cgroup *memcg)
 	struct cgroup_subsys_state *blkcg_css;
 
 	rcu_read_lock();
-	blkcg_css = memcg->wb_blk_css;
-	if (!css_tryget_online(blkcg_css)) {
+	blkcg_css = READ_ONCE(memcg->wb_blk_css);
+	if (!blkcg_css || !css_tryget_online(blkcg_css)) {
 		blkcg_css = blkcg_root_css;
 		css_get(blkcg_css);
 	}
@@ -1180,6 +1180,7 @@ static void wb_kill_memcg(struct cgroup_subsys_state *memcg_css)
 
 	list_del_init(&memcg->memcg_node);
 	css_put(memcg->wb_blk_css);
+	memcg->wb_blk_css = NULL;
 }
 
 static void wb_kill_blkcg(struct cgroup_subsys_state *blkcg_css)
@@ -1220,6 +1221,8 @@ void wb_attach_memcg_to_blkcg(struct cgroup_subsys_state *memcg_css,
 
 	if (!cgroup1_writeback)
 		return;
+
+	lockdep_assert_held(&cgroup_mutex);
 
 	css_get(blkcg_css);
 	memcg->wb_blk_css = blkcg_css;
