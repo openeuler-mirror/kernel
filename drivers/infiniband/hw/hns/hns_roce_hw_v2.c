@@ -466,7 +466,7 @@ static int check_send_valid(struct hns_roce_dev *hr_dev,
 		ret = dca_attach_qp_buf(hr_dev, hr_qp);
 		if (unlikely(ret)) {
 			ibdev_err_ratelimited(ibdev,
-				  "failed to attach DCA for QP-%ld send!\n",
+				  "failed to attach DCA for QP-%lu send!\n",
 				  hr_qp->qpn);
 			return ret;
 		}
