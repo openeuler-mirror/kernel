@@ -35,6 +35,7 @@
 #include <asm/stacktrace.h>
 #include <asm/traps.h>
 #include <asm/unwind.h>
+#include <asm/sections.h>
 
 /* Dummy functions to avoid linker complaints */
 void __aeabi_unwind_cpp_pr0(void)
@@ -415,7 +416,7 @@ int unwind_frame(struct stackframe *frame)
 	if (!kernel_text_address(frame->pc))
 		return -URC_FAILURE;
 
-	idx = unwind_find_idx(frame->pc);
+	idx = unwind_find_idx(frame->ex_frame ? frame->pc : frame->pc - 1);
 	if (!idx) {
 		pr_warn("unwind: Index not found %08lx\n", frame->pc);
 		return -URC_FAILURE;
@@ -478,6 +479,7 @@ int unwind_frame(struct stackframe *frame)
 	frame->sp = ctrl.vrs[SP];
 	frame->lr = ctrl.vrs[LR];
 	frame->pc = ctrl.vrs[PC];
+	frame->ex_frame = in_entry_text(frame->pc);
 
 	return URC_OK;
 }
@@ -513,6 +515,7 @@ void unwind_backtrace(struct pt_regs *regs, struct task_struct *tsk,
 		frame.lr = 0;
 		frame.pc = thread_saved_pc(tsk);
 	}
+	frame.ex_frame = true;
 
 	while (1) {
 		int urc;

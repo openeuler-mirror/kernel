@@ -73,6 +73,7 @@ int notrace unwind_frame(struct stackframe *frame)
 void notrace walk_stackframe(struct stackframe *frame,
 		     int (*fn)(struct stackframe *, void *), void *data)
 {
+	frame->ex_frame = true;
 	while (1) {
 		int ret;
 

@@ -13,6 +13,7 @@ struct stackframe {
 	unsigned long sp;
 	unsigned long lr;
 	unsigned long pc;
+	bool ex_frame;
 };
 
 static __always_inline
