@@ -7388,7 +7388,7 @@ static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
 	struct hns_roce_port *pdata;
 	int ret;
 
-	if (hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP08)
+	if (hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP08 || hr_dev->is_vf)
 		return -EOPNOTSUPP;
 
 	if (port_num > hr_dev->caps.num_ports) {

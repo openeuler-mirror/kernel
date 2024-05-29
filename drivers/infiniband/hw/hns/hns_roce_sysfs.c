@@ -93,7 +93,6 @@ static ssize_t scc_attr_show(struct hns_roce_port *pdata,
 	struct hns_port_cc_attr *scc_attr =
 		container_of(attr, struct hns_port_cc_attr, port_attr);
 	struct hns_roce_scc_param *scc_param;
-	unsigned long exp_time;
 	__le32 val = 0;
 	int ret;
 
@@ -102,18 +101,6 @@ static ssize_t scc_attr_show(struct hns_roce_port *pdata,
 		return ret;
 
 	scc_param = &pdata->scc_param[scc_attr->algo_type];
-
-	/* Only HW param need be queried */
-	if (scc_attr->offset < offsetof(typeof(*scc_param), lifespan)) {
-		exp_time = scc_param->timestamp +
-			   msecs_to_jiffies(scc_param->lifespan);
-
-		if (time_is_before_eq_jiffies(exp_time)) {
-			scc_param->timestamp = jiffies;
-			pdata->hr_dev->hw->query_scc_param(pdata->hr_dev,
-					pdata->port_num, scc_attr->algo_type);
-		}
-	}
 
 	memcpy(&val, (void *)scc_param + scc_attr->offset, scc_attr->size);
 
