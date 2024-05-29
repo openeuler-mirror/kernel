@@ -7388,6 +7388,9 @@ static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
 	struct hns_roce_port *pdata;
 	int ret;
 
+	if (hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP08)
+		return -EOPNOTSUPP;
+
 	if (port_num > hr_dev->caps.num_ports) {
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 				      "invalid port num %u.\n", port_num);

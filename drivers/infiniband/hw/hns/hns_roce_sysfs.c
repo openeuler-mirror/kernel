@@ -26,6 +26,22 @@ static void scc_param_config_work(struct work_struct *work)
 				     scc_param->algo_type);
 }
 
+static void get_default_scc_param(struct hns_roce_dev *hr_dev,
+				  struct hns_roce_port *pdata)
+{
+	int ret;
+	int i;
+
+	for (i = 0; i < HNS_ROCE_SCC_ALGO_TOTAL; i++) {
+		pdata->scc_param[i].timestamp = jiffies;
+		ret = hr_dev->hw->query_scc_param(hr_dev, pdata->port_num, i);
+		if (ret && ret != -EOPNOTSUPP)
+			ibdev_warn_ratelimited(&hr_dev->ib_dev,
+				"failed to get default parameters of scc algo %d, ret = %d.\n",
+				i, ret);
+	}
+}
+
 static int alloc_scc_param(struct hns_roce_dev *hr_dev,
 			   struct hns_roce_port *pdata)
 {
@@ -39,7 +55,6 @@ static int alloc_scc_param(struct hns_roce_dev *hr_dev,
 
 	for (i = 0; i < HNS_ROCE_SCC_ALGO_TOTAL; i++) {
 		scc_param[i].algo_type = i;
-		scc_param[i].timestamp = jiffies;
 		scc_param[i].hr_dev = hr_dev;
 		scc_param[i].port_num = pdata->port_num;
 		INIT_DELAYED_WORK(&scc_param[i].scc_cfg_dwork,
@@ -47,6 +62,9 @@ static int alloc_scc_param(struct hns_roce_dev *hr_dev,
 	}
 
 	pdata->scc_param = scc_param;
+
+	get_default_scc_param(hr_dev, pdata);
+
 	return 0;
 }
 
