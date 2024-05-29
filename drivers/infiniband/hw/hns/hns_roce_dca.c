@@ -1529,6 +1529,11 @@ static int UVERBS_HANDLER(HNS_IB_METHOD_DCA_MEM_REG)(
 	if (ret)
 		return ret;
 
+	if (!init_attr.size)
+		return -EINVAL;
+
+	init_attr.size = hr_hw_page_align(init_attr.size);
+
 	mem = alloc_dca_mem(to_hr_dca_ctx(hr_dev, uctx));
 	if (!mem)
 		return -ENOMEM;
