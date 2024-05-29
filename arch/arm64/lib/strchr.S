@@ -18,7 +18,11 @@
  * Returns:
  *	x0 - address of first occurrence of 'c' or 0
  */
+#if defined(CONFIG_UEFI_KASLR_SKIP_MEMMAP) || defined(CONFIG_NOKASLR_MEM_RANGE)
 SYM_FUNC_START_WEAK_PI(strchr)
+#else
+SYM_FUNC_START_WEAK(strchr)
+#endif
 	and	w1, w1, #0xff
 1:	ldrb	w2, [x0], #1
 	cmp	w2, w1
@@ -28,5 +32,9 @@ SYM_FUNC_START_WEAK_PI(strchr)
 	cmp	w2, w1
 	csel	x0, x0, xzr, eq
 	ret
+#if defined(CONFIG_UEFI_KASLR_SKIP_MEMMAP) || defined(CONFIG_NOKASLR_MEM_RANGE)
 SYM_FUNC_END_PI(strchr)
+#else
+SYM_FUNC_END(strchr)
+#endif
 EXPORT_SYMBOL_NOKASAN(strchr)
