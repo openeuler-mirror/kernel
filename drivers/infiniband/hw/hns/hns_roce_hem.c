@@ -321,6 +321,7 @@ void hns_roce_free_hem(struct hns_roce_dev *hr_dev, struct hns_roce_hem *hem)
 		return;
 
 	list_for_each_entry_safe(chunk, tmp, &hem->chunk_list, list) {
+		list_del(&chunk->list);
 		for (i = 0; i < chunk->npages; ++i)
 			dma_free_coherent(hr_dev->dev,
 				   sg_dma_len(&chunk->mem[i]),
