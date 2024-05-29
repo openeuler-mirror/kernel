@@ -368,3 +368,11 @@ config IMA_PARSER_BINARY_PATH
 	default "/usr/bin/upload_digest_lists"
 	help
 	   This option defines the path of the parser binary.
+
+config IMA_FIX_OVERLAYFS_DETECTION
+	bool
+	default y
+	help
+	   This option enables the fix for overlayfs backing inode change
+	   detection. With this config enabled, IMA would be detecting
+	   backing inode changes through i_version of the backing inode.
