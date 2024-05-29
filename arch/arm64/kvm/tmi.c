@@ -4,6 +4,7 @@
  */
 #include <linux/arm-smccc.h>
 #include <asm/kvm_tmi.h>
+#include <asm/memory.h>
 
 u64 tmi_version(void)
 {
@@ -150,6 +151,16 @@ u64 tmi_mem_free(u64 pa, u64 numa_set, enum tmi_tmm_mem_type tmm_mem_type,
 	arm_smccc_1_1_smc(TMI_TMM_MEM_FREE, pa, numa_set, tmm_mem_type, tmm_map_size, &res);
 	return res.a1;
 }
+
+u64 tmi_mem_info_show(u64 mem_info_addr)
+{
+	struct arm_smccc_res res;
+	u64 pa_addr = __pa(mem_info_addr);
+
+	arm_smccc_1_1_smc(TMI_TMM_MEM_INFO_SHOW, pa_addr, &res);
+	return res.a1;
+}
+EXPORT_SYMBOL_GPL(tmi_mem_info_show);
 
 u64 tmi_ttt_map_range(u64 rd, u64 map_addr, u64 size, u64 cur_node, u64 target_node)
 {

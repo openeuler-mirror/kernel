@@ -217,7 +217,8 @@ struct tmi_tec_run {
 #define TMI_FNUM_VERSION			U(0x260)
 #define TMI_FNUM_MEM_ALLOC			U(0x261)
 #define TMI_FNUM_MEM_FREE			U(0x262)
-#define TMI_FNUM_DATA_CREATE			U(0x263)
+#define TMI_FNUM_MEM_INFO_SHOW			U(0x263)
+#define TMI_FNUM_DATA_CREATE			U(0x264)
 #define TMI_FNUM_DATA_DESTROY			U(0x265)
 #define TMI_FNUM_CVM_ACTIVATE			U(0x267)
 #define TMI_FNUM_CVM_CREATE			U(0x268)
@@ -256,6 +257,7 @@ struct tmi_tec_run {
 #define TMI_TMM_FEATURES			TMI_FID(SMC_64, TMI_FNUM_FEATURES)
 #define TMI_TMM_MEM_ALLOC			TMI_FID(SMC_64, TMI_FNUM_MEM_ALLOC)
 #define TMI_TMM_MEM_FREE			TMI_FID(SMC_64, TMI_FNUM_MEM_FREE)
+#define TMI_TMM_MEM_INFO_SHOW		TMI_FID(SMC_64, TMI_FNUM_MEM_INFO_SHOW)
 #define TMI_TMM_TTT_MAP_RANGE			TMI_FID(SMC_64, TMI_FNUM_TTT_MAP_RANGE)
 #define TMI_TMM_TTT_UNMAP_RANGE		TMI_FID(SMC_64, TMI_FNUM_TTT_UNMAP_RANGE)
 
@@ -365,6 +367,7 @@ u64 tmi_mem_alloc(u64 rd, u64 numa_set, enum tmi_tmm_mem_type tmm_mem_type,
 	enum tmi_tmm_map_size tmm_map_size);
 u64 tmi_mem_free(u64 pa, u64 numa_set, enum tmi_tmm_mem_type tmm_mem_type,
 	enum tmi_tmm_map_size tmm_map_size);
+u64 tmi_mem_info_show(u64 mem_info_addr);
 
 void kvm_cvm_vcpu_put(struct kvm_vcpu *vcpu);
 int kvm_load_user_data(struct kvm *kvm, unsigned long arg);
