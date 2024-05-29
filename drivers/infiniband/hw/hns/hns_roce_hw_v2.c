@@ -33,7 +33,6 @@
 #include <linux/acpi.h>
 #include <linux/etherdevice.h>
 #include <linux/interrupt.h>
-#include <linux/iopoll.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <net/addrconf.h>
@@ -1146,14 +1145,9 @@ static u32 hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 					unsigned long instance_stage,
 					unsigned long reset_stage)
 {
-#define HW_RESET_TIMEOUT_US 1000000
-#define HW_RESET_DELAY_US 1
-
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hnae3_handle *handle = priv->handle;
 	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
-	unsigned long val;
-	int ret;
 
 	/* When hardware reset is detected, we should stop sending mailbox&cmq&
 	 * doorbell to hardware. If now in .init_instance() function, we should
@@ -1166,10 +1160,7 @@ static u32 hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 	 */
 	hr_dev->dis_db = true;
 
-	ret = read_poll_timeout_atomic(ops->ae_dev_reset_cnt, val,
-				val > hr_dev->reset_cnt, HW_RESET_DELAY_US,
-				HW_RESET_TIMEOUT_US, false, handle);
-	if (!ret)
+	if (!ops->get_hw_reset_stat(handle))
 		hr_dev->is_reset = true;
 
 	if (!hr_dev->is_reset || reset_stage == HNS_ROCE_STATE_RST_INIT ||
