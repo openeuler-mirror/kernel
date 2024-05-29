@@ -12,7 +12,7 @@
 
 #define GRANULE_SIZE		4096
 
-#define NO_NUMA			-1
+#define NO_NUMA			0 /* numa bitmap */
 
 #define TMM_TTT_LEVEL_3 3
 
@@ -346,7 +346,7 @@ u64 tmi_version(void);
 u64 tmi_data_create(u64 data, u64 rd, u64 map_addr, u64 src, u64 level);
 u64 tmi_data_destroy(u64 rd, u64 map_addr, u64 level);
 u64 tmi_cvm_activate(u64 rd);
-u64 tmi_cvm_create(u64 rd, u64 params_ptr);
+u64 tmi_cvm_create(u64 rd, u64 params_ptr, u64 numa_set);
 u64 tmi_cvm_destroy(u64 rd);
 u64 tmi_tec_create(u64 tec, u64 rd, u64 mpidr, u64 params_ptr);
 u64 tmi_tec_destroy(u64 tec);
@@ -361,9 +361,9 @@ u64 tmi_features(u64 index);
 u64 tmi_ttt_map_range(u64 rd, u64 map_addr, u64 size, u64 cur_node, u64 target_node);
 u64 tmi_ttt_unmap_range(u64 rd, u64 map_addr, u64 size, u64 node_id);
 
-u64 tmi_mem_alloc(u64 rd, u64 numa_id, enum tmi_tmm_mem_type tmm_mem_type,
+u64 tmi_mem_alloc(u64 rd, u64 numa_set, enum tmi_tmm_mem_type tmm_mem_type,
 	enum tmi_tmm_map_size tmm_map_size);
-u64 tmi_mem_free(u64 pa, u64 numa_id, enum tmi_tmm_mem_type tmm_mem_type,
+u64 tmi_mem_free(u64 pa, u64 numa_set, enum tmi_tmm_mem_type tmm_mem_type,
 	enum tmi_tmm_map_size tmm_map_size);
 
 void kvm_cvm_vcpu_put(struct kvm_vcpu *vcpu);

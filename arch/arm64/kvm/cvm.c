@@ -129,12 +129,40 @@ static u32 kvm_pgd_pages(u32 ia_bits, u32 start_level)
 	return __kvm_pgd_page_idx(&pgt, -1ULL) + 1;
 }
 
+/*
+ * the configurable physical numa range in QEMU is 0-127,
+ * but in real scenarios, 0-63 is sufficient.
+ */
+static u64 kvm_get_host_numa_set_by_vcpu(u64 vcpu, struct kvm *kvm)
+{
+	int64_t i;
+	struct cvm *cvm = (struct cvm *)kvm->arch.cvm;
+	struct kvm_numa_info *numa_info = &cvm->numa_info;
+
+	for (i = 0; i < numa_info->numa_cnt && i < MAX_NUMA_NODE; i++) {
+		if (test_bit(vcpu, (unsigned long *)numa_info->numa_nodes[i].cpu_id))
+			return numa_info->numa_nodes[i].host_numa_nodes[0];
+	}
+	return NO_NUMA;
+}
+
+static u64 kvm_get_first_binded_numa_set(struct kvm *kvm)
+{
+	struct cvm *cvm = (struct cvm *)kvm->arch.cvm;
+	struct kvm_numa_info *numa_info = &cvm->numa_info;
+
+	if (numa_info->numa_cnt > 0)
+		return numa_info->numa_nodes[0].host_numa_nodes[0];
+	return NO_NUMA;
+}
+
 int kvm_arm_create_cvm(struct kvm *kvm)
 {
 	int ret;
 	struct kvm_pgtable *pgt = kvm->arch.mmu.pgt;
 	unsigned int pgd_sz;
 	struct cvm *cvm = (struct cvm *)kvm->arch.cvm;
+	u64 numa_set;
 
 	if (!kvm_is_cvm(kvm) || kvm_cvm_state(kvm) != CVM_STATE_NONE)
 		return 0;
@@ -155,7 +183,8 @@ int kvm_arm_create_cvm(struct kvm *kvm)
 	cvm->params->vmid = cvm->cvm_vmid;
 	cvm->params->ns_vtcr = kvm->arch.vtcr;
 	cvm->params->vttbr_el2 = kvm->arch.mmu.pgd_phys;
-	ret = tmi_cvm_create(cvm->rd, __pa(cvm->params));
+	numa_set = kvm_get_first_binded_numa_set(kvm);
+	ret = tmi_cvm_create(cvm->rd, __pa(cvm->params), numa_set);
 	if (!ret)
 		kvm_info("KVM creates cVM: %d\n", cvm->cvm_vmid);
 
@@ -168,6 +197,7 @@ int kvm_arm_create_cvm(struct kvm *kvm)
 int cvm_create_rd(struct kvm *kvm)
 {
 	struct cvm *cvm;
+	u64 numa_set;
 
 	if (!static_key_enabled(&kvm_cvm_is_available))
 		return -EFAULT;
@@ -181,8 +211,10 @@ int cvm_create_rd(struct kvm *kvm)
 	if (!kvm->arch.cvm)
 		return -ENOMEM;
 
+	/* get affine host numa set by default vcpu 0 */
+	numa_set = kvm_get_host_numa_set_by_vcpu(0, kvm);
 	cvm = (struct cvm *)kvm->arch.cvm;
-	cvm->rd = tmi_mem_alloc(cvm->rd, NO_NUMA, TMM_MEM_TYPE_RD, TMM_MEM_MAP_SIZE_MAX);
+	cvm->rd = tmi_mem_alloc(cvm->rd, numa_set, TMM_MEM_TYPE_RD, TMM_MEM_MAP_SIZE_MAX);
 	if (!cvm->rd) {
 		kfree(kvm->arch.cvm);
 		kvm->arch.cvm = NULL;
@@ -197,11 +229,13 @@ void kvm_free_rd(struct kvm *kvm)
 {
 	int ret;
 	struct cvm *cvm = (struct cvm *)kvm->arch.cvm;
+	u64 numa_set;
 
 	if (!cvm->rd)
 		return;
 
-	ret = tmi_mem_free(cvm->rd, NO_NUMA, TMM_MEM_TYPE_RD, TMM_MEM_MAP_SIZE_MAX);
+	numa_set = kvm_get_host_numa_set_by_vcpu(0, kvm);
+	ret = tmi_mem_free(cvm->rd, numa_set, TMM_MEM_TYPE_RD, TMM_MEM_MAP_SIZE_MAX);
 	if (ret)
 		kvm_err("tmi_mem_free for cvm rd failed: %d\n", cvm->cvm_vmid);
 	else
@@ -255,14 +289,15 @@ int kvm_cvm_create_ttt_levels(struct kvm *kvm, struct cvm *cvm,
 
 	while (level++ < max_level) {
 		phys_addr_t ttt;
+		u64 numa_set = kvm_get_first_binded_numa_set(kvm);
 
-		ttt = tmi_mem_alloc(cvm->rd, NO_NUMA,
+		ttt = tmi_mem_alloc(cvm->rd, numa_set,
 			TMM_MEM_TYPE_TTT, TMM_MEM_MAP_SIZE_MAX);
 		if (ttt == 0)
 			return -ENOMEM;
 
 		if (kvm_cvm_ttt_create(cvm, ipa, level, ttt)) {
-			(void)tmi_mem_free(ttt, NO_NUMA, TMM_MEM_TYPE_TTT, TMM_MEM_MAP_SIZE_MAX);
+			(void)tmi_mem_free(ttt, numa_set, TMM_MEM_TYPE_TTT, TMM_MEM_MAP_SIZE_MAX);
 			return -ENXIO;
 		}
 	}
@@ -381,10 +416,8 @@ static int kvm_sel2_map_protected_ipa(struct kvm_vcpu *vcpu)
 {
 	int ret = 0;
 	gpa_t gpa, gpa_data_end, gpa_end, data_size;
-	u64 i, map_size, dst_phys;
+	u64 i, map_size, dst_phys, numa_set;
 	u64 l2_granule = cvm_granule_size(2);	/* 2MB */
-	u64 numa_id = NO_NUMA;
-	int cur_numa_id;
 	struct cvm *cvm = (struct cvm *)vcpu->kvm->arch.cvm;
 	struct kvm_numa_info *numa_info;
 
@@ -400,12 +433,10 @@ static int kvm_sel2_map_protected_ipa(struct kvm_vcpu *vcpu)
 	gpa_data_end = round_up(gpa_data_end, l2_granule);
 	numa_info = &cvm->numa_info;
 
-	/* get the first binded numa id */
-	if (numa_info->numa_cnt > 0)
-		numa_id = numa_info->numa_nodes[0].host_numa_node;
+	numa_set = kvm_get_first_binded_numa_set(vcpu->kvm);
 	map_size = l2_granule;
 	do {
-		dst_phys = tmi_mem_alloc(cvm->rd, numa_id, TMM_MEM_TYPE_CVM_PA, map_size);
+		dst_phys = tmi_mem_alloc(cvm->rd, numa_set, TMM_MEM_TYPE_CVM_PA, map_size);
 		if (!dst_phys) {
 			ret = -ENOMEM;
 			kvm_err("[%s] call tmi_mem_alloc failed.\n", __func__);
@@ -420,30 +451,23 @@ static int kvm_sel2_map_protected_ipa(struct kvm_vcpu *vcpu)
 		gpa += map_size;
 	} while (gpa < gpa_data_end);
 
-	cur_numa_id = numa_node_id();
-	if (cur_numa_id < 0) {
-		ret = -EFAULT;
-		kvm_err("get current numa node fail\n");
-		goto out;
-	}
-
 	if (numa_info->numa_cnt > 0)
 		gpa_end = numa_info->numa_nodes[0].ipa_start + numa_info->numa_nodes[0].ipa_size;
 	/* Map gpa range to secure mem without copy data from host.
 	 * The cvm gpa map pages will free by destroy cvm.
 	 */
 	ret = tmi_ttt_map_range(cvm->rd, gpa_data_end,
-		gpa_end - gpa_data_end, cur_numa_id, numa_id);
+		gpa_end - gpa_data_end, numa_set, numa_set);
 	if (ret) {
 		kvm_err("tmi_ttt_map_range fail:%d.\n", ret);
 		goto out;
 	}
 
-	for (i = 1; i < numa_info->numa_cnt; i++) {
+	for (i = 1; i < numa_info->numa_cnt && i < MAX_NUMA_NODE; i++) {
 		struct kvm_numa_node *numa_node = &numa_info->numa_nodes[i];
 
 		ret = tmi_ttt_map_range(cvm->rd, numa_node->ipa_start,
-			numa_node->ipa_size, cur_numa_id, numa_node->host_numa_node);
+			numa_node->ipa_size, numa_set, numa_node->host_numa_nodes[0]);
 		if (ret) {
 			kvm_err("tmi_ttt_map_range fail:%d.\n", ret);
 			goto out;
@@ -459,7 +483,7 @@ int kvm_create_tec(struct kvm_vcpu *vcpu)
 	int i;
 	struct tmi_tec_params *params_ptr;
 	struct user_pt_regs *vcpu_regs = vcpu_gp_regs(vcpu);
-	uint64_t mpidr = kvm_vcpu_get_mpidr_aff(vcpu);
+	u64 mpidr = kvm_vcpu_get_mpidr_aff(vcpu);
 	struct cvm *cvm = (struct cvm *)vcpu->kvm->arch.cvm;
 	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
 
@@ -605,6 +629,7 @@ void kvm_destroy_tec(struct kvm_vcpu *vcpu)
 {
 	int ret = 0;
 	struct cvm_tec *tec = (struct cvm_tec *)vcpu->arch.tec;
+	u64 numa_set;
 
 	if (!vcpu_is_tec(vcpu))
 		return;
@@ -612,7 +637,8 @@ void kvm_destroy_tec(struct kvm_vcpu *vcpu)
 	if (tmi_tec_destroy(tec->tec) != 0)
 		kvm_err("%s vcpu id : %d failed!\n", __func__, vcpu->vcpu_id);
 
-	ret = tmi_mem_free(tec->tec, NO_NUMA, TMM_MEM_TYPE_TEC, TMM_MEM_MAP_SIZE_MAX);
+	numa_set = kvm_get_host_numa_set_by_vcpu(vcpu->vcpu_id, vcpu->kvm);
+	ret = tmi_mem_free(tec->tec, numa_set, TMM_MEM_TYPE_TEC, TMM_MEM_MAP_SIZE_MAX);
 	if (ret != 0)
 		kvm_err("tmi_mem_free for cvm tec failed\n");
 	tec->tec = 0;
@@ -623,7 +649,7 @@ void kvm_destroy_tec(struct kvm_vcpu *vcpu)
 
 static int tmi_check_version(void)
 {
-	uint64_t res;
+	u64 res;
 	int version_major;
 	int version_minor;
 
@@ -742,6 +768,7 @@ int kvm_arch_tec_init(struct kvm_vcpu *vcpu)
 	int ret = -ENOMEM;
 	struct cvm_tec *tec;
 	struct cvm *cvm = (struct cvm *)vcpu->kvm->arch.cvm;
+	u64 numa_set;
 
 	if (vcpu->arch.tec) {
 		kvm_err("tec already create.\n");
@@ -756,7 +783,8 @@ int kvm_arch_tec_init(struct kvm_vcpu *vcpu)
 	if (!tec->tec_run)
 		goto tec_free;
 
-	tec->tec = tmi_mem_alloc(cvm->rd, NO_NUMA, TMM_MEM_TYPE_TEC, TMM_MEM_MAP_SIZE_MAX);
+	numa_set = kvm_get_host_numa_set_by_vcpu(vcpu->vcpu_id, vcpu->kvm);
+	tec->tec = tmi_mem_alloc(cvm->rd, numa_set, TMM_MEM_TYPE_TEC, TMM_MEM_MAP_SIZE_MAX);
 	if (!tec->tec) {
 		kvm_err("KVM tmi_mem_alloc failed:%d\n", vcpu->vcpu_id);
 		goto tec_free;
