@@ -238,8 +238,10 @@ efi_status_t efi_parse_options(char const *cmdline)
 		} else if (!strcmp(param, "video") &&
 			   val && strstarts(val, "efifb:")) {
 			efi_parse_option_graphics(val + strlen("efifb:"));
+#ifdef CONFIG_UEFI_KASLR_SKIP_MEMMAP
 		} else if (!strcmp(param, "memmap") && val) {
 			efi_parse_option_memmap(val);
+#endif
 		} else if (!strcmp(param, "pbha")) {
 			efi_pbha = true;
 		}

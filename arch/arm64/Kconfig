@@ -2111,6 +2111,16 @@ config RANDOMIZE_MODULE_REGION_FULL
 	  a limited range that contains the [_stext, _etext] interval of the
 	  core kernel, so branch relocations are always in range.
 
+config UEFI_KASLR_SKIP_MEMMAP
+	bool "Skip the memmap address when randomize the kernel image"
+	depends on RANDOMIZE_BASE
+	default n
+	help
+	  In some cases we hopes to reserve memory by memmap for other
+	  features, the reserved memory may conflict with the kernel
+	  image, so we need skip the memmap reserved memory when randomize
+	  the kernel image to avoid it.
+
 config CC_HAVE_STACKPROTECTOR_SYSREG
 	def_bool $(cc-option,-mstack-protector-guard=sysreg -mstack-protector-guard-reg=sp_el0 -mstack-protector-guard-offset=0)
 

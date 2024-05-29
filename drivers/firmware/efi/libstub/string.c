@@ -114,6 +114,7 @@ long simple_strtol(const char *cp, char **endp, unsigned int base)
 	return simple_strtoull(cp, endp, base);
 }
 
+#if defined(CONFIG_UEFI_KASLR_SKIP_MEMMAP) || defined(CONFIG_NOKASLR_MEM_RANGE)
 #ifndef __HAVE_ARCH_STRCHR
 /**
  * strchr - Find the first occurrence of a character in a string
@@ -130,4 +131,5 @@ char *strchr(const char *s, int c)
 			return NULL;
 	return (char *)s;
 }
+#endif
 #endif

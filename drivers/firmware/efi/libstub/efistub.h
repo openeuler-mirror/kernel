@@ -828,14 +828,10 @@ efi_status_t efi_parse_options(char const *cmdline);
 
 void efi_parse_option_graphics(char *option);
 
-#ifdef CONFIG_ARM64
+#ifdef CONFIG_UEFI_KASLR_SKIP_MEMMAP
 void efi_parse_option_memmap(const char *str);
 void mem_avoid_memmap(void);
 void free_avoid_memmap(void);
-#else
-static inline void efi_parse_option_memmap(const char *str) { }
-static inline void mem_avoid_memmap(void) { }
-static inline void free_avoid_memmap(void) { }
 #endif
 
 #if defined(CONFIG_NOKASLR_MEM_RANGE) && defined(CONFIG_ARM64)
