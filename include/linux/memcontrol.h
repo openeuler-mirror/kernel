@@ -390,9 +390,8 @@ struct mem_cgroup {
 #if defined(CONFIG_DYNAMIC_HUGETLB) && defined(CONFIG_X86_64)
 	struct dhugetlb_pool *hpool;
 #endif
-#ifndef __GENKSYMS__
-	int high_async_ratio;
-	bool high_async_reclaim;
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
+	KABI_USE2(1, int high_async_ratio, bool high_async_reclaim)
 #else
 	KABI_RESERVE(1)
 #endif
@@ -1260,8 +1259,10 @@ static bool memcg_event_add(struct mem_cgroup *memcg,
 	if (!mem_cgroup_is_root(memcg))
 		return true;
 
+#ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
 	if (event == MEMCG_OOM_KILL && !cgroup_subsys_on_dfl(memory_cgrp_subsys))
 		return true;
+#endif
 
 	return false;
 }
@@ -1282,7 +1283,10 @@ static inline void memcg_memory_event(struct mem_cgroup *memcg,
 			cgroup_file_notify(&memcg->swap_events_file);
 		else
 			cgroup_file_notify(&memcg->events_file);
-
+#ifndef CONFIG_MEMCG_V1_THRESHOLD_QOS
+		if (!cgroup_subsys_on_dfl(memory_cgrp_subsys))
+			break;
+#endif
 		if (cgrp_dfl_root.flags & CGRP_ROOT_MEMORY_LOCAL_EVENTS)
 			break;
 	} while ((memcg = parent_mem_cgroup(memcg)) &&
