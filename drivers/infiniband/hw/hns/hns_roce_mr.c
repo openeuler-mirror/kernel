@@ -122,6 +122,7 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 	if (err) {
 		ibdev_err(ibdev, "failed to alloc pbl mtr, ret = %d.\n", err);
 		kvfree(mr->mtr_node);
+		mr->mtr_node = NULL;
 		return err;
 	}
 
@@ -138,6 +139,7 @@ static void free_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr)
 	} else {
 		hns_roce_mtr_destroy(hr_dev, &mr->pbl_mtr);
 		kvfree(mr->mtr_node);
+		mr->mtr_node = NULL;
 	}
 }
 

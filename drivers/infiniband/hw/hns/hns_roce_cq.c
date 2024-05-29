@@ -224,6 +224,7 @@ static int alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 	if (ret) {
 		ibdev_err(ibdev, "Failed to alloc CQ mtr, ret = %d\n", ret);
 		kvfree(hr_cq->mtr_node);
+		hr_cq->mtr_node = NULL;
 	}
 
 	return ret;
@@ -236,6 +237,7 @@ static void free_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 	} else {
 		hns_roce_mtr_destroy(hr_dev, &hr_cq->mtr);
 		kvfree(hr_cq->mtr_node);
+		hr_cq->mtr_node = NULL;
 	}
 }
 
