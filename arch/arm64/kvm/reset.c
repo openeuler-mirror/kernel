@@ -186,6 +186,12 @@ int kvm_arm_vcpu_finalize(struct kvm_vcpu *vcpu, int feature)
 			return -EPERM;
 
 		return kvm_vcpu_finalize_sve(vcpu);
+#ifdef CONFIG_CVM_HOST
+	case KVM_ARM_VCPU_TEC:
+		if (!kvm_is_cvm(vcpu->kvm))
+			return -EINVAL;
+		return kvm_finalize_vcpu_tec(vcpu);
+#endif
 	}
 
 	return -EINVAL;

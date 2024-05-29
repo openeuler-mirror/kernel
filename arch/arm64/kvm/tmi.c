@@ -14,11 +14,11 @@ u64 tmi_version(void)
 	return res.a1;
 }
 
-u64 tmi_data_create(u64 data, u64 rd, u64 map_addr, u64 src, u64 level)
+u64 tmi_data_create(u64 numa_set, u64 rd, u64 map_addr, u64 src, u64 level)
 {
 	struct arm_smccc_res res;
 
-	arm_smccc_1_1_smc(TMI_TMM_DATA_CREATE, data, rd, map_addr, src, level, &res);
+	arm_smccc_1_1_smc(TMI_TMM_DATA_CREATE, numa_set, rd, map_addr, src, level, &res);
 	return res.a1;
 }
 
@@ -38,11 +38,11 @@ u64 tmi_cvm_activate(u64 rd)
 	return res.a1;
 }
 
-u64 tmi_cvm_create(u64 rd, u64 params_ptr, u64 numa_set)
+u64 tmi_cvm_create(u64 params_ptr, u64 numa_set)
 {
 	struct arm_smccc_res res;
 
-	arm_smccc_1_1_smc(TMI_TMM_CVM_CREATE, rd, params_ptr, numa_set, &res);
+	arm_smccc_1_1_smc(TMI_TMM_CVM_CREATE, params_ptr, numa_set, &res);
 	return res.a1;
 }
 
@@ -54,11 +54,11 @@ u64 tmi_cvm_destroy(u64 rd)
 	return res.a1;
 }
 
-u64 tmi_tec_create(u64 tec, u64 rd, u64 mpidr, u64 params_ptr)
+u64 tmi_tec_create(u64 numa_set, u64 rd, u64 mpidr, u64 params_ptr)
 {
 	struct arm_smccc_res res;
 
-	arm_smccc_1_1_smc(TMI_TMM_TEC_CREATE, tec, rd, mpidr, params_ptr, &res);
+	arm_smccc_1_1_smc(TMI_TMM_TEC_CREATE, numa_set, rd, mpidr, params_ptr, &res);
 	return res.a1;
 }
 
@@ -78,19 +78,11 @@ u64 tmi_tec_enter(u64 tec, u64 run_ptr)
 	return res.a1;
 }
 
-u64 tmi_ttt_create(u64 ttt, u64 rd, u64 map_addr, u64 level)
+u64 tmi_ttt_create(u64 numa_set, u64 rd, u64 map_addr, u64 level)
 {
 	struct arm_smccc_res res;
 
-	arm_smccc_1_1_smc(TMI_TMM_TTT_CREATE, ttt, rd, map_addr, level, &res);
-	return res.a1;
-}
-
-u64 tmi_ttt_destroy(u64 ttt, u64 rd, u64 map_addr, u64 level)
-{
-	struct arm_smccc_res res;
-
-	arm_smccc_1_1_smc(TMI_TMM_TTT_DESTROY, ttt, rd, map_addr, level, &res);
+	arm_smccc_1_1_smc(TMI_TMM_TTT_CREATE, numa_set, rd, map_addr, level, &res);
 	return res.a1;
 }
 
@@ -131,24 +123,6 @@ u64 tmi_features(u64 index)
 	struct arm_smccc_res res;
 
 	arm_smccc_1_1_smc(TMI_TMM_FEATURES, index, &res);
-	return res.a1;
-}
-
-u64 tmi_mem_alloc(u64 rd, u64 numa_set, enum tmi_tmm_mem_type tmm_mem_type,
-	enum tmi_tmm_map_size tmm_map_size)
-{
-	struct arm_smccc_res res;
-
-	arm_smccc_1_1_smc(TMI_TMM_MEM_ALLOC, rd, numa_set, tmm_mem_type, tmm_map_size, &res);
-	return res.a1;
-}
-
-u64 tmi_mem_free(u64 pa, u64 numa_set, enum tmi_tmm_mem_type tmm_mem_type,
-	enum tmi_tmm_map_size tmm_map_size)
-{
-	struct arm_smccc_res res;
-
-	arm_smccc_1_1_smc(TMI_TMM_MEM_FREE, pa, numa_set, tmm_mem_type, tmm_map_size, &res);
 	return res.a1;
 }
 

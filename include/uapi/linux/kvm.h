@@ -1397,8 +1397,9 @@ struct kvm_numa_info {
 
 struct kvm_user_data {
 	__u64 loader_start;
+	__u64 image_end;
 	__u64 initrd_start;
-	__u64 initrd_size;
+	__u64 dtb_end;
 	__u64 ram_size;
 	struct kvm_numa_info numa_info;
 };

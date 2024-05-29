@@ -9,11 +9,13 @@
 #include <asm/kvm_asm.h>
 #include <asm/kvm_pgtable.h>
 #include <linux/virtio_ring.h>
+#include <asm/sysreg.h>
 
 #define GRANULE_SIZE		4096
 
 #define NO_NUMA			0 /* numa bitmap */
 
+#define TMM_TTT_LEVEL_2 2
 #define TMM_TTT_LEVEL_3 3
 
 #ifdef CONFIG_CVM_HOST_FVP_PLAT
@@ -35,17 +37,18 @@
 /* TMI error codes. */
 #define TMI_SUCCESS				0
 #define TMI_ERROR_INPUT			1
-#define TMI_ERROR_MEMORY			2
+#define TMI_ERROR_MEMORY		2
 #define TMI_ERROR_ALIAS			3
-#define TMI_ERROR_IN_USE			4
-#define TMI_ERROR_CVM_STATE			5
+#define TMI_ERROR_IN_USE		4
+#define TMI_ERROR_CVM_STATE		5
 #define TMI_ERROR_OWNER			6
-#define TMI_ERROR_TEC				7
-#define TMI_ERROR_TTT_WALK			8
-#define TMI_ERROR_TTT_ENTRY			9
-#define TMI_ERROR_NOT_SUPPORTED		10
-#define TMI_ERROR_INTERNAL			11
-#define TMI_ERROR_CVM_POWEROFF			12
+#define TMI_ERROR_TEC			7
+#define TMI_ERROR_TTT_WALK		8
+#define TMI_ERROR_TTT_ENTRY		9
+#define TMI_ERROR_NOT_SUPPORTED	10
+#define TMI_ERROR_INTERNAL		11
+#define TMI_ERROR_CVM_POWEROFF		12
+#define TMI_ERROR_TTT_CREATED		13
 
 #define TMI_RETURN_STATUS(ret)		((ret) & 0xFF)
 #define TMI_RETURN_INDEX(ret)		(((ret) >> 8) & 0xFF)
@@ -215,19 +218,16 @@ struct tmi_tec_run {
  * TMM.
  */
 #define TMI_FNUM_VERSION			U(0x260)
-#define TMI_FNUM_MEM_ALLOC			U(0x261)
-#define TMI_FNUM_MEM_FREE			U(0x262)
-#define TMI_FNUM_MEM_INFO_SHOW			U(0x263)
-#define TMI_FNUM_DATA_CREATE			U(0x264)
-#define TMI_FNUM_DATA_DESTROY			U(0x265)
-#define TMI_FNUM_CVM_ACTIVATE			U(0x267)
-#define TMI_FNUM_CVM_CREATE			U(0x268)
-#define TMI_FNUM_CVM_DESTROY			U(0x269)
+#define TMI_FNUM_MEM_INFO_SHOW			U(0x261)
+#define TMI_FNUM_DATA_CREATE			U(0x262)
+#define TMI_FNUM_DATA_DESTROY			U(0x263)
+#define TMI_FNUM_CVM_ACTIVATE			U(0x264)
+#define TMI_FNUM_CVM_CREATE			U(0x265)
+#define TMI_FNUM_CVM_DESTROY			U(0x266)
 #define TMI_FNUM_TEC_CREATE			U(0x27A)
 #define TMI_FNUM_TEC_DESTROY			U(0x27B)
 #define TMI_FNUM_TEC_ENTER			U(0x27C)
 #define TMI_FNUM_TTT_CREATE			U(0x27D)
-#define TMI_FNUM_TTT_DESTROY			U(0x27E)
 #define TMI_FNUM_TTT_MAP_UNPROTECTED		U(0x27F)
 #define TMI_FNUM_TTT_MAP_PROTECTED		U(0x280)
 #define TMI_FNUM_TTT_UNMAP_UNPROTECTED		U(0x282)
@@ -248,18 +248,15 @@ struct tmi_tec_run {
 #define TMI_TMM_TEC_DESTROY			TMI_FID(SMC_64, TMI_FNUM_TEC_DESTROY)
 #define TMI_TMM_TEC_ENTER			TMI_FID(SMC_64, TMI_FNUM_TEC_ENTER)
 #define TMI_TMM_TTT_CREATE			TMI_FID(SMC_64, TMI_FNUM_TTT_CREATE)
-#define TMI_TMM_TTT_DESTROY			TMI_FID(SMC_64, TMI_FNUM_TTT_DESTROY)
 #define TMI_TMM_TTT_MAP_UNPROTECTED		TMI_FID(SMC_64, TMI_FNUM_TTT_MAP_UNPROTECTED)
 #define TMI_TMM_TTT_MAP_PROTECTED		TMI_FID(SMC_64, TMI_FNUM_TTT_MAP_PROTECTED)
 #define TMI_TMM_TTT_UNMAP_UNPROTECTED		TMI_FID(SMC_64, TMI_FNUM_TTT_UNMAP_UNPROTECTED)
 #define TMI_TMM_TTT_UNMAP_PROTECTED		TMI_FID(SMC_64, TMI_FNUM_TTT_UNMAP_PROTECTED)
 #define TMI_TMM_PSCI_COMPLETE			TMI_FID(SMC_64, TMI_FNUM_PSCI_COMPLETE)
 #define TMI_TMM_FEATURES			TMI_FID(SMC_64, TMI_FNUM_FEATURES)
-#define TMI_TMM_MEM_ALLOC			TMI_FID(SMC_64, TMI_FNUM_MEM_ALLOC)
-#define TMI_TMM_MEM_FREE			TMI_FID(SMC_64, TMI_FNUM_MEM_FREE)
-#define TMI_TMM_MEM_INFO_SHOW		TMI_FID(SMC_64, TMI_FNUM_MEM_INFO_SHOW)
+#define TMI_TMM_MEM_INFO_SHOW			TMI_FID(SMC_64, TMI_FNUM_MEM_INFO_SHOW)
 #define TMI_TMM_TTT_MAP_RANGE			TMI_FID(SMC_64, TMI_FNUM_TTT_MAP_RANGE)
-#define TMI_TMM_TTT_UNMAP_RANGE		TMI_FID(SMC_64, TMI_FNUM_TTT_UNMAP_RANGE)
+#define TMI_TMM_TTT_UNMAP_RANGE			TMI_FID(SMC_64, TMI_FNUM_TTT_UNMAP_RANGE)
 
 #define TMI_ABI_VERSION_GET_MAJOR(_version) ((_version) >> 16)
 #define TMI_ABI_VERSION_GET_MINOR(_version) ((_version) & 0xFFFF)
@@ -267,11 +264,10 @@ struct tmi_tec_run {
 #define TMI_ABI_VERSION_MAJOR			U(0x0)
 
 /* KVM_CAP_ARM_TMM on VM fd */
-#define KVM_CAP_ARM_TMM_CONFIG_CVM_HOST	0
-#define KVM_CAP_ARM_TMM_CREATE_CVM		1
-#define KVM_CAP_ARM_TMM_INIT_IPA_CVM		2
-#define KVM_CAP_ARM_TMM_POPULATE_CVM		3
-#define KVM_CAP_ARM_TMM_ACTIVATE_CVM		4
+#define KVM_CAP_ARM_TMM_CONFIG_CVM_HOST		0
+#define KVM_CAP_ARM_TMM_CREATE_RD		1
+#define KVM_CAP_ARM_TMM_POPULATE_CVM		2
+#define KVM_CAP_ARM_TMM_ACTIVATE_CVM		3
 
 #define KVM_CAP_ARM_TMM_MEASUREMENT_ALGO_SHA256		0
 #define KVM_CAP_ARM_TMM_MEASUREMENT_ALGO_SHA512		1
@@ -279,11 +275,11 @@ struct tmi_tec_run {
 #define KVM_CAP_ARM_TMM_RPV_SIZE 64
 
 /* List of configuration items accepted for KVM_CAP_ARM_TMM_CONFIG_CVM_HOST */
-#define KVM_CAP_ARM_TMM_CFG_RPV			0
-#define KVM_CAP_ARM_TMM_CFG_HASH_ALGO			1
-#define KVM_CAP_ARM_TMM_CFG_SVE			2
-#define KVM_CAP_ARM_TMM_CFG_DBG			3
-#define KVM_CAP_ARM_TMM_CFG_PMU			4
+#define KVM_CAP_ARM_TMM_CFG_RPV					0
+#define KVM_CAP_ARM_TMM_CFG_HASH_ALGO				1
+#define KVM_CAP_ARM_TMM_CFG_SVE					2
+#define KVM_CAP_ARM_TMM_CFG_DBG					3
+#define KVM_CAP_ARM_TMM_CFG_PMU					4
 
 DECLARE_STATIC_KEY_FALSE(kvm_cvm_is_available);
 DECLARE_STATIC_KEY_FALSE(kvm_cvm_is_enable);
@@ -321,6 +317,16 @@ struct kvm_cap_arm_tmm_config_item {
 	};
 };
 
+#define KVM_ARM_TMM_POPULATE_FLAGS_MEASURE	(1U << 0)
+struct kvm_cap_arm_tmm_populate_region_args {
+	__u64 populate_ipa_base1;
+	__u64 populate_ipa_size1;
+	__u64 populate_ipa_base2;
+	__u64 populate_ipa_size2;
+	__u32 flags;
+	__u32 reserved[3];
+};
+
 enum tmi_tmm_mem_type {
 	TMM_MEM_TYPE_RD,
 	TMM_MEM_TYPE_TEC,
@@ -342,19 +348,26 @@ static inline bool tmm_is_addr_ttt_level_aligned(uint64_t addr, int level)
 	return (addr & mask) == 0;
 }
 
+#define ID_AA64PFR0_SEL2_MASK      ULL(0xf)
+
+static inline bool is_armv8_4_sel2_present(void)
+{
+	return ((read_sysreg(id_aa64pfr0_el1) >> ID_AA64PFR0_SEL2_SHIFT) &
+			ID_AA64PFR0_SEL2_MASK) == 1UL;
+}
+
 u64 phys_to_cvm_phys(u64 phys);
 
 u64 tmi_version(void);
 u64 tmi_data_create(u64 data, u64 rd, u64 map_addr, u64 src, u64 level);
 u64 tmi_data_destroy(u64 rd, u64 map_addr, u64 level);
 u64 tmi_cvm_activate(u64 rd);
-u64 tmi_cvm_create(u64 rd, u64 params_ptr, u64 numa_set);
+u64 tmi_cvm_create(u64 params_ptr, u64 numa_set);
 u64 tmi_cvm_destroy(u64 rd);
-u64 tmi_tec_create(u64 tec, u64 rd, u64 mpidr, u64 params_ptr);
+u64 tmi_tec_create(u64 numa_set, u64 rd, u64 mpidr, u64 params_ptr);
 u64 tmi_tec_destroy(u64 tec);
 u64 tmi_tec_enter(u64 tec, u64 run_ptr);
-u64 tmi_ttt_create(u64 ttt, u64 rd, u64 map_addr, u64 level);
-u64 tmi_ttt_destroy(u64 ttt, u64 rd, u64 map_addr, u64 level);
+u64 tmi_ttt_create(u64 numa_set, u64 rd, u64 map_addr, u64 level);
 u64 tmi_ttt_map_unprotected(u64 rd, u64 map_addr, u64 level, u64 ttte);
 u64 tmi_ttt_unmap_unprotected(u64 rd, u64 map_addr, u64 level, u64 ns);
 u64 tmi_ttt_unmap_protected(u64 rd, u64 map_addr, u64 level);
@@ -363,10 +376,6 @@ u64 tmi_features(u64 index);
 u64 tmi_ttt_map_range(u64 rd, u64 map_addr, u64 size, u64 cur_node, u64 target_node);
 u64 tmi_ttt_unmap_range(u64 rd, u64 map_addr, u64 size, u64 node_id);
 
-u64 tmi_mem_alloc(u64 rd, u64 numa_set, enum tmi_tmm_mem_type tmm_mem_type,
-	enum tmi_tmm_map_size tmm_map_size);
-u64 tmi_mem_free(u64 pa, u64 numa_set, enum tmi_tmm_mem_type tmm_mem_type,
-	enum tmi_tmm_map_size tmm_map_size);
 u64 tmi_mem_info_show(u64 mem_info_addr);
 
 void kvm_cvm_vcpu_put(struct kvm_vcpu *vcpu);
