@@ -166,6 +166,7 @@ struct nested_vmx {
 
 	bool change_vmcs01_virtual_apic_mode;
 	bool reload_vmcs01_apic_access_page;
+	bool update_vmcs01_cpu_dirty_logging;
 
 	/*
 	 * Enlightened VMCS has been enabled. It does not mean that L1 has to
@@ -186,7 +187,7 @@ struct nested_vmx {
 	 * Guest pages referred to in the vmcs02 with host-physical
 	 * pointers, so we must keep them pinned while L2 runs.
 	 */
-	struct page *apic_access_page;
+	struct kvm_host_map apic_access_page_map;
 	struct kvm_host_map virtual_apic_map;
 	struct kvm_host_map pi_desc_map;
 
@@ -405,6 +406,7 @@ int vmx_find_loadstore_msr_slot(struct vmx_msrs *m, u32 msr);
 void vmx_ept_load_pdptrs(struct kvm_vcpu *vcpu);
 void vmx_set_intercept_for_msr(struct kvm_vcpu *vcpu,
 	u32 msr, int type, bool value);
+void vmx_update_cpu_dirty_logging(struct kvm_vcpu *vcpu);
 
 static inline u8 vmx_get_rvi(void)
 {
@@ -480,6 +482,24 @@ static inline u32 vmx_vmexit_ctrl(void)
 
 u32 vmx_exec_control(struct vcpu_vmx *vmx);
 u32 vmx_pin_based_exec_ctrl(struct vcpu_vmx *vmx);
+
+static inline unsigned long vmx_l1_guest_owned_cr0_bits(void)
+{
+	unsigned long bits = KVM_POSSIBLE_CR0_GUEST_BITS;
+
+	/*
+	 * CR0.WP needs to be intercepted when KVM is shadowing legacy paging
+	 * in order to construct shadow PTEs with the correct protections.
+	 * Note!  CR0.WP technically can be passed through to the guest if
+	 * paging is disabled, but checking CR0.PG would generate a cyclical
+	 * dependency of sorts due to forcing the caller to ensure CR0 holds
+	 * the correct value prior to determining which CR0 bits can be owned
+	 * by L1.  Keep it simple and limit the optimization to EPT.
+	 */
+	if (!enable_ept)
+		bits &= ~X86_CR0_WP;
+	return bits;
+}
 
 static inline struct kvm_vmx *to_kvm_vmx(struct kvm *kvm)
 {

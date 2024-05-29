@@ -304,16 +304,17 @@ static void free_nested(struct kvm_vcpu *vcpu)
 	vmx->nested.cached_vmcs12 = NULL;
 	kfree(vmx->nested.cached_shadow_vmcs12);
 	vmx->nested.cached_shadow_vmcs12 = NULL;
-	/* Unpin physical memory we referred to in the vmcs02 */
-	if (vmx->nested.apic_access_page) {
-		kvm_release_page_clean(vmx->nested.apic_access_page);
-		vmx->nested.apic_access_page = NULL;
-	}
+	/*
+	 * Unpin physical memory we referred to in the vmcs02.  The APIC access
+	 * page's backing page (yeah, confusing) shouldn't actually be accessed,
+	 * and if it is written, the contents are irrelevant.
+	 */
+	kvm_vcpu_unmap(vcpu, &vmx->nested.apic_access_page_map, false);
 	kvm_vcpu_unmap(vcpu, &vmx->nested.virtual_apic_map, true);
 	kvm_vcpu_unmap(vcpu, &vmx->nested.pi_desc_map, true);
 	vmx->nested.pi_desc = NULL;
 
-	kvm_mmu_free_roots(vcpu, &vcpu->arch.guest_mmu, KVM_MMU_ROOTS_ALL);
+	kvm_mmu_free_roots(vcpu->kvm, &vcpu->arch.guest_mmu, KVM_MMU_ROOTS_ALL);
 
 	nested_release_evmcs(vcpu);
 
@@ -352,16 +353,23 @@ static void nested_ept_inject_page_fault(struct kvm_vcpu *vcpu,
 	vmcs12->guest_physical_address = fault->address;
 }
 
+static void nested_ept_new_eptp(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+	bool execonly = vmx->nested.msrs.ept_caps & VMX_EPT_EXECUTE_ONLY_BIT;
+	int ept_lpage_level = ept_caps_to_lpage_level(vmx->nested.msrs.ept_caps);
+
+	kvm_init_shadow_ept_mmu(vcpu, execonly, ept_lpage_level,
+				nested_ept_ad_enabled(vcpu),
+				nested_ept_get_eptp(vcpu));
+}
+
 static void nested_ept_init_mmu_context(struct kvm_vcpu *vcpu)
 {
 	WARN_ON(mmu_is_nested(vcpu));
 
 	vcpu->arch.mmu = &vcpu->arch.guest_mmu;
-	kvm_init_shadow_ept_mmu(vcpu,
-			to_vmx(vcpu)->nested.msrs.ept_caps &
-			VMX_EPT_EXECUTE_ONLY_BIT,
-			nested_ept_ad_enabled(vcpu),
-			nested_ept_get_eptp(vcpu));
+	nested_ept_new_eptp(vcpu);
 	vcpu->arch.mmu->get_guest_pgd     = nested_ept_get_eptp;
 	vcpu->arch.mmu->inject_page_fault = nested_ept_inject_page_fault;
 	vcpu->arch.mmu->get_pdptr         = kvm_pdptr_read;
@@ -1064,48 +1072,6 @@ static void prepare_vmx_msr_autostore_list(struct kvm_vcpu *vcpu,
 }
 
 /*
- * Returns true if the MMU needs to be sync'd on nested VM-Enter/VM-Exit.
- * tl;dr: the MMU needs a sync if L0 is using shadow paging and L1 didn't
- * enable VPID for L2 (implying it expects a TLB flush on VMX transitions).
- * Here's why.
- *
- * If EPT is enabled by L0 a sync is never needed:
- * - if it is disabled by L1, then L0 is not shadowing L1 or L2 PTEs, there
- *   cannot be unsync'd SPTEs for either L1 or L2.
- *
- * - if it is also enabled by L1, then L0 doesn't need to sync on VM-Enter
- *   VM-Enter as VM-Enter isn't required to invalidate guest-physical mappings
- *   (irrespective of VPID), i.e. L1 can't rely on the (virtual) CPU to flush
- *   stale guest-physical mappings for L2 from the TLB.  And as above, L0 isn't
- *   shadowing L1 PTEs so there are no unsync'd SPTEs to sync on VM-Exit.
- *
- * If EPT is disabled by L0:
- * - if VPID is enabled by L1 (for L2), the situation is similar to when L1
- *   enables EPT: L0 doesn't need to sync as VM-Enter and VM-Exit aren't
- *   required to invalidate linear mappings (EPT is disabled so there are
- *   no combined or guest-physical mappings), i.e. L1 can't rely on the
- *   (virtual) CPU to flush stale linear mappings for either L2 or itself (L1).
- *
- * - however if VPID is disabled by L1, then a sync is needed as L1 expects all
- *   linear mappings (EPT is disabled so there are no combined or guest-physical
- *   mappings) to be invalidated on both VM-Enter and VM-Exit.
- *
- * Note, this logic is subtly different than nested_has_guest_tlb_tag(), which
- * additionally checks that L2 has been assigned a VPID (when EPT is disabled).
- * Whether or not L2 has been assigned a VPID by L0 is irrelevant with respect
- * to L1's expectations, e.g. L0 needs to invalidate hardware TLB entries if L2
- * doesn't have a unique VPID to prevent reusing L1's entries (assuming L1 has
- * been assigned a VPID), but L0 doesn't need to do a MMU sync because L1
- * doesn't expect stale (virtual) TLB entries to be flushed, i.e. L1 doesn't
- * know that L0 will flush the TLB and so L1 will do INVVPID as needed to flush
- * stale TLB entries, at which point L0 will sync L2's MMU.
- */
-static bool nested_vmx_transition_mmu_sync(struct kvm_vcpu *vcpu)
-{
-	return !enable_ept && !nested_cpu_has_vpid(get_vmcs12(vcpu));
-}
-
-/*
  * Load guest's/host's cr3 at nested entry/exit.  @nested_ept is true if we are
  * emulating VM-Entry into a guest with EPT enabled.  On failure, the expected
  * Exit Qualification (for a VM-Entry consistency check VM-Exit) is assigned to
@@ -1131,26 +1097,14 @@ static int nested_vmx_load_cr3(struct kvm_vcpu *vcpu, unsigned long cr3, bool ne
 		}
 	}
 
-	/*
-	 * Unconditionally skip the TLB flush on fast CR3 switch, all TLB
-	 * flushes are handled by nested_vmx_transition_tlb_flush().
-	 */
-	if (!nested_ept) {
-		kvm_mmu_new_pgd(vcpu, cr3, true, true);
-
-		/*
-		 * A TLB flush on VM-Enter/VM-Exit flushes all linear mappings
-		 * across all PCIDs, i.e. all PGDs need to be synchronized.
-		 * See nested_vmx_transition_mmu_sync() for more details.
-		 */
-		if (nested_vmx_transition_mmu_sync(vcpu))
-			kvm_make_request(KVM_REQ_TLB_FLUSH_GUEST, vcpu);
-	}
-
 	vcpu->arch.cr3 = cr3;
 	kvm_register_mark_available(vcpu, VCPU_EXREG_CR3);
 
-	kvm_init_mmu(vcpu, false);
+	/* Re-initialize the MMU, e.g. to pick up CR4 MMU role changes. */
+	kvm_init_mmu(vcpu);
+
+	if (!nested_ept)
+		kvm_mmu_new_pgd(vcpu, cr3);
 
 	return 0;
 }
@@ -1183,17 +1137,28 @@ static void nested_vmx_transition_tlb_flush(struct kvm_vcpu *vcpu,
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 
 	/*
-	 * If VPID is disabled, linear and combined mappings are flushed on
-	 * VM-Enter/VM-Exit, and guest-physical mappings are valid only for
-	 * their associated EPTP.
+	 * If vmcs12 doesn't use VPID, L1 expects linear and combined mappings
+	 * for *all* contexts to be flushed on VM-Enter/VM-Exit, i.e. it's a
+	 * full TLB flush from the guest's perspective.  This is required even
+	 * if VPID is disabled in the host as KVM may need to synchronize the
+	 * MMU in response to the guest TLB flush.
+	 *
+	 * Note, using TLB_FLUSH_GUEST is correct even if nested EPT is in use.
+	 * EPT is a special snowflake, as guest-physical mappings aren't
+	 * flushed on VPID invalidations, including VM-Enter or VM-Exit with
+	 * VPID disabled.  As a result, KVM _never_ needs to sync nEPT
+	 * entries on VM-Enter because L1 can't rely on VM-Enter to flush
+	 * those mappings.
 	 */
-	if (!enable_vpid)
+	if (!nested_cpu_has_vpid(vmcs12)) {
+		kvm_make_request(KVM_REQ_TLB_FLUSH_GUEST, vcpu);
 		return;
+	}
+
+	/* L2 should never have a VPID if VPID is disabled. */
+	WARN_ON(!enable_vpid);
 
 	/*
-	 * If vmcs12 doesn't use VPID, L1 expects linear and combined mappings
-	 * for *all* contexts to be flushed on VM-Enter/VM-Exit.
-	 *
 	 * If VPID is enabled and used by vmc12, but L2 does not have a unique
 	 * TLB tag (ASID), i.e. EPT is disabled and KVM was unable to allocate
 	 * a VPID for L2, flush the current context as the effective ASID is
@@ -1205,13 +1170,12 @@ static void nested_vmx_transition_tlb_flush(struct kvm_vcpu *vcpu,
 	 *
 	 * If a TLB flush isn't required due to any of the above, and vpid12 is
 	 * changing then the new "virtual" VPID (vpid12) will reuse the same
-	 * "real" VPID (vpid02), and so needs to be sync'd.  There is no direct
+	 * "real" VPID (vpid02), and so needs to be flushed.  There's no direct
 	 * mapping between vpid02 and vpid12, vpid02 is per-vCPU and reused for
-	 * all nested vCPUs.
+	 * all nested vCPUs.  Remember, a flush on VM-Enter does not invalidate
+	 * guest-physical mappings, so there is no need to sync the nEPT MMU.
 	 */
-	if (!nested_cpu_has_vpid(vmcs12)) {
-		kvm_make_request(KVM_REQ_TLB_FLUSH, vcpu);
-	} else if (!nested_has_guest_tlb_tag(vcpu)) {
+	if (!nested_has_guest_tlb_tag(vcpu)) {
 		kvm_make_request(KVM_REQ_TLB_FLUSH_CURRENT, vcpu);
 	} else if (is_vmenter &&
 		   vmcs12->virtual_processor_id != vmx->nested.last_vpid) {
@@ -3159,27 +3123,14 @@ static bool nested_get_vmcs12_pages(struct kvm_vcpu *vcpu)
 	struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct kvm_host_map *map;
-	struct page *page;
-	u64 hpa;
 
 	if (nested_cpu_has2(vmcs12, SECONDARY_EXEC_VIRTUALIZE_APIC_ACCESSES)) {
-		/*
-		 * Translate L1 physical address to host physical
-		 * address for vmcs02. Keep the page pinned, so this
-		 * physical address remains valid. We keep a reference
-		 * to it so we can release it later.
-		 */
-		if (vmx->nested.apic_access_page) { /* shouldn't happen */
-			kvm_release_page_clean(vmx->nested.apic_access_page);
-			vmx->nested.apic_access_page = NULL;
-		}
-		page = kvm_vcpu_gpa_to_page(vcpu, vmcs12->apic_access_addr);
-		if (!is_error_page(page)) {
-			vmx->nested.apic_access_page = page;
-			hpa = page_to_phys(vmx->nested.apic_access_page);
-			vmcs_write64(APIC_ACCESS_ADDR, hpa);
+		map = &vmx->nested.apic_access_page_map;
+
+		if (!kvm_vcpu_map(vcpu, gpa_to_gfn(vmcs12->apic_access_addr), map)) {
+			vmcs_write64(APIC_ACCESS_ADDR, pfn_to_hpa(map->pfn));
 		} else {
-			pr_debug_ratelimited("%s: no backing 'struct page' for APIC-access address in vmcs12\n",
+			pr_debug_ratelimited("%s: no backing for APIC-access address in vmcs12\n",
 					     __func__);
 			vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
 			vcpu->run->internal.suberror =
@@ -4244,7 +4195,7 @@ static void load_vmcs12_host_state(struct kvm_vcpu *vcpu,
 	 * CR0_GUEST_HOST_MASK is already set in the original vmcs01
 	 * (KVM doesn't change it);
 	 */
-	vcpu->arch.cr0_guest_owned_bits = KVM_POSSIBLE_CR0_GUEST_BITS;
+	vcpu->arch.cr0_guest_owned_bits = vmx_l1_guest_owned_cr0_bits();
 	vmx_set_cr0(vcpu, vmcs12->host_cr0);
 
 	/* Same as above - no reason to call set_cr4_guest_host_mask().  */
@@ -4398,7 +4349,7 @@ static void nested_vmx_restore_host_state(struct kvm_vcpu *vcpu)
 	 */
 	vmx_set_efer(vcpu, nested_vmx_get_vmcs01_guest_efer(vmx));
 
-	vcpu->arch.cr0_guest_owned_bits = KVM_POSSIBLE_CR0_GUEST_BITS;
+	vcpu->arch.cr0_guest_owned_bits = vmx_l1_guest_owned_cr0_bits();
 	vmx_set_cr0(vcpu, vmcs_readl(CR0_READ_SHADOW));
 
 	vcpu->arch.cr4_guest_owned_bits = ~vmcs_readl(CR4_GUEST_HOST_MASK);
@@ -4589,11 +4540,13 @@ void nested_vmx_vmexit(struct kvm_vcpu *vcpu, u32 vm_exit_reason,
 		vmx_set_virtual_apic_mode(vcpu);
 	}
 
-	/* Unpin physical memory we referred to in vmcs02 */
-	if (vmx->nested.apic_access_page) {
-		kvm_release_page_clean(vmx->nested.apic_access_page);
-		vmx->nested.apic_access_page = NULL;
+	if (vmx->nested.update_vmcs01_cpu_dirty_logging) {
+		vmx->nested.update_vmcs01_cpu_dirty_logging = false;
+		vmx_update_cpu_dirty_logging(vcpu);
 	}
+
+	/* Unpin physical memory we referred to in vmcs02 */
+	kvm_vcpu_unmap(vcpu, &vmx->nested.apic_access_page_map, false);
 	kvm_vcpu_unmap(vcpu, &vmx->nested.virtual_apic_map, true);
 	kvm_vcpu_unmap(vcpu, &vmx->nested.pi_desc_map, true);
 	vmx->nested.pi_desc = NULL;
@@ -5022,7 +4975,7 @@ static inline void nested_release_vmcs12(struct kvm_vcpu *vcpu)
 				  vmx->nested.current_vmptr >> PAGE_SHIFT,
 				  vmx->nested.cached_vmcs12, 0, VMCS12_SIZE);
 
-	kvm_mmu_free_roots(vcpu, &vcpu->arch.guest_mmu, KVM_MMU_ROOTS_ALL);
+	kvm_mmu_free_roots(vcpu->kvm, &vcpu->arch.guest_mmu, KVM_MMU_ROOTS_ALL);
 
 	vmx->nested.current_vmptr = -1ull;
 }
@@ -5456,7 +5409,7 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 				VMXERR_INVALID_OPERAND_TO_INVEPT_INVVPID);
 
 		roots_to_free = 0;
-		if (nested_ept_root_matches(mmu->root_hpa, mmu->root_pgd,
+		if (nested_ept_root_matches(mmu->root.hpa, mmu->root.pgd,
 					    operand.eptp))
 			roots_to_free |= KVM_MMU_ROOT_CURRENT;
 
@@ -5476,7 +5429,7 @@ static int handle_invept(struct kvm_vcpu *vcpu)
 	}
 
 	if (roots_to_free)
-		kvm_mmu_free_roots(vcpu, mmu, roots_to_free);
+		kvm_mmu_free_roots(vcpu->kvm, mmu, roots_to_free);
 
 	return nested_vmx_succeed(vcpu);
 }
@@ -5555,8 +5508,8 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 
 	/*
 	 * Sync the shadow page tables if EPT is disabled, L1 is invalidating
-	 * linear mappings for L2 (tagged with L2's VPID).  Free all roots as
-	 * VPIDs are not tracked in the MMU role.
+	 * linear mappings for L2 (tagged with L2's VPID).  Free all guest
+	 * roots as VPIDs are not tracked in the MMU role.
 	 *
 	 * Note, this operates on root_mmu, not guest_mmu, as L1 and L2 share
 	 * an MMU when EPT is disabled.
@@ -5564,8 +5517,7 @@ static int handle_invvpid(struct kvm_vcpu *vcpu)
 	 * TODO: sync only the affected SPTEs for INVDIVIDUAL_ADDR.
 	 */
 	if (!enable_ept)
-		kvm_mmu_free_roots(vcpu, &vcpu->arch.root_mmu,
-				   KVM_MMU_ROOTS_ALL);
+		kvm_mmu_free_guest_mode_roots(vcpu->kvm, &vcpu->arch.root_mmu);
 
 	return nested_vmx_succeed(vcpu);
 }
@@ -5596,8 +5548,10 @@ static int nested_vmx_eptp_switching(struct kvm_vcpu *vcpu,
 			return 1;
 
 		vmcs12->ept_pointer = new_eptp;
+		nested_ept_new_eptp(vcpu);
 
-		kvm_make_request(KVM_REQ_MMU_RELOAD, vcpu);
+		if (!nested_cpu_has_vpid(vmcs12))
+			kvm_make_request(KVM_REQ_TLB_FLUSH_GUEST, vcpu);
 	}
 
 	return 0;
@@ -5620,6 +5574,16 @@ static int handle_vmfunc(struct kvm_vcpu *vcpu)
 	}
 
 	vmcs12 = get_vmcs12(vcpu);
+
+	/*
+	 * #UD on out-of-bounds function has priority over VM-Exit, and VMFUNC
+	 * is enabled in vmcs02 if and only if it's enabled in vmcs12.
+	 */
+	if (WARN_ON_ONCE((function > 63) || !nested_cpu_has_vmfunc(vmcs12))) {
+		kvm_queue_exception(vcpu, UD_VECTOR);
+		return 1;
+	}
+
 	if (!(vmcs12->vm_function_control & BIT_ULL(function)))
 		goto fail;
 

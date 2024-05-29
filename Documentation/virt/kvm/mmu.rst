@@ -161,7 +161,7 @@ Shadow pages contain the following information:
     If clear, this page corresponds to a guest page table denoted by the gfn
     field.
   role.quadrant:
-    When role.gpte_is_8_bytes=0, the guest uses 32-bit gptes while the host uses 64-bit
+    When role.has_4_byte_gpte=1, the guest uses 32-bit gptes while the host uses 64-bit
     sptes.  That means a guest page table contains more ptes than the host,
     so multiple shadow pages are needed to shadow one guest page.
     For first-level shadow pages, role.quadrant can be 0 or 1 and denotes the
@@ -177,11 +177,11 @@ Shadow pages contain the following information:
     The page is invalid and should not be used.  It is a root page that is
     currently pinned (by a cpu hardware register pointing to it); once it is
     unpinned it will be destroyed.
-  role.gpte_is_8_bytes:
-    Reflects the size of the guest PTE for which the page is valid, i.e. '1'
-    if 64-bit gptes are in use, '0' if 32-bit gptes are in use.
-  role.nxe:
-    Contains the value of efer.nxe for which the page is valid.
+  role.has_4_byte_gpte:
+    Reflects the size of the guest PTE for which the page is valid, i.e. '0'
+    if direct map or 64-bit gptes are in use, '1' if 32-bit gptes are in use.
+  role.efer_nx:
+    Contains the value of efer.nx for which the page is valid.
   role.cr0_wp:
     Contains the value of cr0.wp for which the page is valid.
   role.smep_andnot_wp:
@@ -192,9 +192,6 @@ Shadow pages contain the following information:
     Contains the value of cr4.smap && !cr0.wp for which the page is valid
     (pages for which this is true are different from other pages; see the
     treatment of cr0.wp=0 below).
-  role.ept_sp:
-    This is a virtual flag to denote a shadowed nested EPT page.  ept_sp
-    is true if "cr0_wp && smap_andnot_wp", an otherwise invalid combination.
   role.smm:
     Is 1 if the page is valid in system management mode.  This field
     determines which of the kvm_memslots array was used to build this
@@ -205,6 +202,10 @@ Shadow pages contain the following information:
     Is 1 if the MMU instance cannot use A/D bits.  EPT did not have A/D
     bits before Haswell; shadow EPT page tables also cannot use A/D bits
     if the L1 hypervisor does not enable them.
+  role.passthrough:
+    The page is not backed by a guest page table, but its first entry
+    points to one.  This is set if NPT uses 5-level page tables (host
+    CR4.LA57=1) and is shadowing L1's 4-level NPT (L1 CR4.LA57=1).
   gfn:
     Either the guest page table containing the translations shadowed by this
     page, or the base page frame for linear translations.  See role.direct.

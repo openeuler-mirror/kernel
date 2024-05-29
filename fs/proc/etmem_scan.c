@@ -43,7 +43,7 @@
 #endif
 
 # define kvm_arch_mmu_pointer(vcpu) (vcpu->arch.mmu)
-# define kvm_mmu_ad_disabled(mmu) (mmu->mmu_role.base.ad_disabled)
+# define kvm_mmu_ad_disabled(mmu) (mmu->root_role.ad_disabled)
 #endif /*CONFIG_X86_64*/
 
 #ifdef CONFIG_ARM64
@@ -561,7 +561,7 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 	}
 
 	mmu = kvm_arch_mmu_pointer(vcpu);
-	if (!VALID_PAGE(mmu->root_hpa)) {
+	if (!VALID_PAGE(mmu->root.hpa)) {
 		pic->gpa_to_hva = 0;
 		set_restart_gpa(TASK_SIZE, "NO-HPA");
 #ifdef KVM_HAVE_MMU_RWLOCK
@@ -572,10 +572,10 @@ static int ept_page_range(struct page_idle_ctrl *pic,
 		return -EINVAL;
 	}
 
-	ept_root = __va(mmu->root_hpa);
+	ept_root = __va(mmu->root.hpa);
 
 	/* Walk start at p4d when vm has 4 level table pages */
-	if (mmu->shadow_root_level != 4)
+	if (mmu->root_role.level != 4)
 		err = ept_pgd_range(pic, (pgd_t *)ept_root, addr, end, walk);
 	else
 		err = ept_p4d_range(pic, (p4d_t *)ept_root, addr, end, walk);
@@ -614,9 +614,9 @@ static int ept_idle_supports_cpu(struct kvm *kvm)
 		if (kvm_mmu_ad_disabled(mmu)) {
 			printk(KERN_NOTICE "CPU does not support EPT A/D bits tracking\n");
 			ret = -EINVAL;
-		} else if (mmu->shadow_root_level < 4 ||
-				(mmu->shadow_root_level == 5 && !pgtable_l5_enabled())) {
-			printk(KERN_NOTICE "Unsupported EPT level %d\n", mmu->shadow_root_level);
+		} else if (mmu->root_role.level < 4 ||
+				(mmu->root_role.level == 5 && !pgtable_l5_enabled())) {
+			printk(KERN_NOTICE "Unsupported EPT level %d\n", mmu->root_role.level);
 			ret = -EINVAL;
 		} else
 			ret = 0;
