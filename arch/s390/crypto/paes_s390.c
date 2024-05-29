@@ -483,10 +483,12 @@ static int ctr_paes_crypt(struct blkcipher_desc *desc, unsigned long modifier,
 	 * final block may be < AES_BLOCK_SIZE, copy only nbytes
 	 */
 	if (nbytes) {
+		memset(buf, 0, AES_BLOCK_SIZE);
+		memcpy(buf, walk->src.virt.addr, nbytes);
 		while (1) {
 			if (cpacf_kmctr(ctx->fc | modifier,
 					ctx->pk.protkey, buf,
-					walk->src.virt.addr, AES_BLOCK_SIZE,
+					buf, AES_BLOCK_SIZE,
 					walk->iv) == AES_BLOCK_SIZE)
 				break;
 			if (__ctr_paes_set_key(ctx) != 0)
