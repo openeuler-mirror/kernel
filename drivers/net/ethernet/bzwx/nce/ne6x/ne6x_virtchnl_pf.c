@@ -8,7 +8,7 @@
 #include "ne6x_txrx.h"
 #include "ne6x_interrupt.h"
 
-void ne6x_clear_vf_status(struct ne6x_vf *vf)
+static void ne6x_clear_vf_status(struct ne6x_vf *vf)
 {
 	struct ne6x_flowctrl flowctrl;
 
@@ -18,7 +18,7 @@ void ne6x_clear_vf_status(struct ne6x_vf *vf)
 	ne6x_dev_set_vf_bw(vf->adpt, 0);
 }
 
-void ne6x_mbx_deinit_snapshot(struct ne6x_hw *hw)
+static void ne6x_mbx_deinit_snapshot(struct ne6x_hw *hw)
 {
 	struct ne6x_mbx_snapshot *snap = &hw->mbx_snapshot;
 
@@ -27,7 +27,7 @@ void ne6x_mbx_deinit_snapshot(struct ne6x_hw *hw)
 	snap->mbx_vf.vfcntr_len = 0;
 }
 
-int ne6x_mbx_init_snapshot(struct ne6x_hw *hw, u16 vf_count)
+static int ne6x_mbx_init_snapshot(struct ne6x_hw *hw, u16 vf_count)
 {
 	struct ne6x_mbx_snapshot *snap = &hw->mbx_snapshot;
 
@@ -52,7 +52,7 @@ int ne6x_mbx_init_snapshot(struct ne6x_hw *hw, u16 vf_count)
 	return 0;
 }
 
-int ne6x_status_to_errno(int err)
+static int ne6x_status_to_errno(int err)
 {
 	if (err)
 		return -EINVAL;
@@ -60,7 +60,7 @@ int ne6x_status_to_errno(int err)
 	return 0;
 }
 
-void ne6x_set_vf_state_qs_dis(struct ne6x_vf *vf)
+static void ne6x_set_vf_state_qs_dis(struct ne6x_vf *vf)
 {
 	/* Clear Rx/Tx enabled queues flag */
 	if (test_bit(NE6X_VF_STATE_QS_ENA, vf->vf_states))
@@ -72,7 +72,7 @@ static void ne6x_dis_vf_qs(struct ne6x_vf *vf)
 	ne6x_set_vf_state_qs_dis(vf);
 }
 
-bool ne6x_is_reset_in_progress(unsigned long *state)
+static bool ne6x_is_reset_in_progress(unsigned long *state)
 {
 	return test_bit(NE6X_PF_RESET_REQUESTED, state) ||
 	       test_bit(NE6X_RESET_INTR_RECEIVED, state) ||
@@ -80,7 +80,7 @@ bool ne6x_is_reset_in_progress(unsigned long *state)
 	       test_bit(NE6X_GLOBAL_RESET_REQUESTED, state);
 }
 
-void ne6x_adpt_close_vf(struct ne6x_adapter *adpt, u16 vf_id)
+static void ne6x_adpt_close_vf(struct ne6x_adapter *adpt, u16 vf_id)
 {
 	if (!test_and_set_bit(NE6X_ADPT_DOWN, adpt->comm.state))
 		clear_bit(NE6X_ADPT_DOWN, adpt->comm.state);
@@ -160,7 +160,7 @@ free_adpt:
 	return 0;
 }
 
-int ne6x_adpt_release_vf(struct ne6x_adapter *adpt, u16 vf_id)
+static int ne6x_adpt_release_vf(struct ne6x_adapter *adpt, u16 vf_id)
 {
 	struct ne6x_pf *pf;
 
@@ -240,7 +240,7 @@ static int ne6x_sriov_free_msix_res(struct ne6x_pf *pf)
 	return 0;
 }
 
-void ne6x_free_vfs(struct ne6x_pf *pf)
+static void ne6x_free_vfs(struct ne6x_pf *pf)
 {
 	struct device *dev = ne6x_pf_to_dev(pf);
 	unsigned int tmp, i;
@@ -365,7 +365,7 @@ static void ne6x_vc_allowlist_opcodes(struct ne6x_vf *vf, const u32 *opcodes, si
 		set_bit(opcodes[i], vf->opcodes_allowlist);
 }
 
-void ne6x_vc_set_default_allowlist(struct ne6x_vf *vf)
+static void ne6x_vc_set_default_allowlist(struct ne6x_vf *vf)
 {
 	ne6x_vc_clear_allowlist(vf);
 	ne6x_vc_allowlist_opcodes(vf, default_allowlist_opcodes,
@@ -389,7 +389,7 @@ static void ne6x_set_dflt_settings_vfs(struct ne6x_pf *pf)
 	}
 }
 
-void ne6x_send_init_mbx_mesg(struct ne6x_pf *pf)
+static void ne6x_send_init_mbx_mesg(struct ne6x_pf *pf)
 {
 	struct ne6x_hw *hw = &pf->hw;
 	u64 reg_cfg;
@@ -484,7 +484,7 @@ unlock_pf:
 	return adpt;
 }
 
-struct ne6x_adapter *ne6x_adpt_setup_vf(struct ne6x_pf *pf, u16 vf_id, u16 num_vfs)
+static struct ne6x_adapter *ne6x_adpt_setup_vf(struct ne6x_pf *pf, u16 vf_id, u16 num_vfs)
 {
 	struct device *dev = ne6x_pf_to_dev(pf);
 	struct ne6x_adapter *adpt;
@@ -934,8 +934,8 @@ static int ne6x_validate_outer_vf_id(struct ne6x_pf *pf, u16 out_vf_id)
 	return 0;
 }
 
-int ne6x_sdk_send_msg_to_vf(struct ne6x_hw *hw, u16 vfid, u32 v_opcode,
-			    u32 v_retval, u8 *msg, u16 msglen)
+static int ne6x_sdk_send_msg_to_vf(struct ne6x_hw *hw, u16 vfid, u32 v_opcode,
+				   u32 v_retval, u8 *msg, u16 msglen)
 {
 	union u_ne6x_mbx_snap_buffer_data usnap;
 	struct ne6x_pf *pf = hw->back;
@@ -1316,7 +1316,7 @@ static bool ne6x_is_vf_link_up(struct ne6x_vf *vf)
 		return pi->phy.link_info.link_info & NE6X_AQ_LINK_UP;
 }
 
-u32 ne6x_conv_link_speed_to_virtchnl(bool adv_link_support, u16 link_speed)
+static u32 ne6x_conv_link_speed_to_virtchnl(bool adv_link_support, u16 link_speed)
 {
 	u32 speed;
 
@@ -1352,7 +1352,7 @@ static void ne6x_set_pfe_link(struct ne6x_vf *vf, struct virtchnl_pf_event *pfe,
 	pfe->link_speed = ne6x_conv_link_speed_to_virtchnl(true, ne6x_link_speed);
 }
 
-void ne6x_vc_notify_vf_link_state(struct ne6x_vf *vf)
+static void ne6x_vc_notify_vf_link_state(struct ne6x_vf *vf)
 {
 	struct virtchnl_pf_event pfe = {0};
 	struct ne6x_hw *hw = &vf->pf->hw;
@@ -1436,7 +1436,7 @@ static void ne6x_vc_notify_vf_trust_change(struct ne6x_vf *vf)
 				(u8 *)data, 2);
 }
 
-bool ne6x_reset_vf(struct ne6x_vf *vf, bool is_vflr)
+static bool ne6x_reset_vf(struct ne6x_vf *vf, bool is_vflr)
 {
 	struct ne6x_adapter *adpt;
 
@@ -2233,7 +2233,7 @@ static void ne6x_calc_token_for_bw(int max_tx_rate, int *time_inv, int *tocken)
 	}
 }
 
-int ne6x_set_vf_bw_for_max_vpnum(struct ne6x_pf *pf, int vf_id, int max_tx_rate)
+static int ne6x_set_vf_bw_for_max_vpnum(struct ne6x_pf *pf, int vf_id, int max_tx_rate)
 {
 	union ne6x_sq_meter_cfg0 sq_meter_cfg0;
 	union ne6x_sq_meter_cfg1 sq_meter_cfg1;

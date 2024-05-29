@@ -63,7 +63,7 @@ ssize_t ne6x_proc_tps_read(struct file *filp, char __user *buf, size_t count, lo
 	return len;
 }
 
-ssize_t ne6x_proc_i2c_read(struct file *filp, char __user *buf, size_t count, loff_t *ppos)
+static ssize_t ne6x_proc_i2c_read(struct file *filp, char __user *buf, size_t count, loff_t *ppos)
 {
 	struct device *dev = NULL;
 	struct ne6x_pf *pf = NULL;

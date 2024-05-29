@@ -472,5 +472,7 @@ int ne6x_setup_rx_descriptors(struct ne6x_ring *rx_ring);
 int ne6x_setup_cq_descriptors(struct ne6x_ring *cq_ring);
 int ne6x_setup_tg_descriptors(struct ne6x_ring *tg_ring);
 int ne6x_setup_tx_sgl(struct ne6x_ring *tx_ring);
+bool ne6x_alloc_rx_buffers(struct ne6x_ring *rx_ring, u16 cleaned_count);
+void ne6x_unmap_and_free_tx_resource(struct ne6x_ring *ring, struct ne6x_tx_buf *tx_buffer);
 
 #endif

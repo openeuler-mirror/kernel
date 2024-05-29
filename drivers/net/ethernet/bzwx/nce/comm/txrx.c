@@ -2,7 +2,6 @@
 /* Copyright(c) 2020 - 2023, Chengdu BeiZhongWangXin Technology Co., Ltd. */
 
 #include "txrx.h"
-#include "ne6x_trace.h"
 
 int ne6x_setup_tx_descriptors(struct ne6x_ring *tx_ring)
 {
@@ -145,25 +144,6 @@ int ne6x_setup_tx_sgl(struct ne6x_ring *tx_ring)
 	return 0;
 err:
 	return -ENOMEM;
-}
-
-static inline unsigned int ne6x_txd_use_count(unsigned int size)
-{
-	return ((size * 85) >> 20) + 1;
-}
-
-bool __ne6x_chk_linearize(struct sk_buff *skb);
-static inline bool ne6x_chk_linearize(struct sk_buff *skb, int count)
-{
-	/* Both TSO and single send will work if count is less than 8 */
-	if (likely(count < NE6X_MAX_BUFFER_TXD))
-		return false;
-
-	if (skb_is_gso(skb))
-		return __ne6x_chk_linearize(skb);
-
-	/* we can support up to 8 data buffers for a single send */
-	return count != NE6X_MAX_BUFFER_TXD;
 }
 
 int __ne6x_maybe_stop_tx(struct ne6x_ring *tx_ring, int size);
@@ -838,7 +818,6 @@ int ne6x_clean_rx_irq(struct ne6x_ring *rx_ring, int budget)
 		}
 
 		size = rx_desc->wb.pkt_len;
-		ne6x_trace(clean_rx_irq, rx_ring, rx_desc, skb);
 		rx_buffer = ne6x_get_rx_buffer(rx_ring, size);
 
 		/* retrieve a buffer from the ring */
@@ -866,15 +845,12 @@ int ne6x_clean_rx_irq(struct ne6x_ring *rx_ring, int budget)
 		}
 
 		ne6x_get_rx_head_info(skb, &rx_hdr);
-		ne6x_trace(rx_hdr, rx_ring, &rx_hdr);
 		pskb_trim(skb, skb->len - 16);
 		/* probably a little skewed due to removing CRC */
 		total_rx_bytes += skb->len;
 
 		/* populate checksum, VLAN, and protocol */
 		ne6x_process_skb_fields(rx_ring, rx_desc, skb, &rx_hdr);
-
-		ne6x_trace(clean_rx_irq_rx, rx_ring, rx_desc, skb);
 
 		ne6x_receive_skb(rx_ring, skb);
 		skb = NULL;
@@ -1144,7 +1120,7 @@ static inline void ne6x_fill_gso_sg(void *p, u16 offset, u16 len, struct ne6x_sg
 	sg->len = len;
 }
 
-int ne6x_fill_jumbo_sgl(struct ne6x_ring *tx_ring, struct sk_buff *skb)
+static int ne6x_fill_jumbo_sgl(struct ne6x_ring *tx_ring, struct sk_buff *skb)
 {
 	u16 sg_max_dlen = 0, dlen = 0, len = 0, offset = 0, send_dlen = 0, total_dlen = 0;
 	u16 subframe = 0, send_subframe = 0, sg_avail = 0, i = 0, j = 0;
@@ -1244,8 +1220,8 @@ err:
 	return -1;
 }
 
-void ne6x_fill_tx_desc(struct ne6x_tx_desc *tx_desc, u8 vp, dma_addr_t tag_dma,
-		       dma_addr_t dma, struct ne6x_sg_info *sg)
+static void ne6x_fill_tx_desc(struct ne6x_tx_desc *tx_desc, u8 vp, dma_addr_t tag_dma,
+			      dma_addr_t dma, struct ne6x_sg_info *sg)
 {
 	memset(tx_desc, 0, NE6X_TX_DESC_SIZE);
 	tx_desc->buffer_mop_addr = cpu_to_le64(dma);
@@ -1263,8 +1239,8 @@ void ne6x_fill_tx_desc(struct ne6x_tx_desc *tx_desc, u8 vp, dma_addr_t tag_dma,
 	}
 }
 
-void ne6x_fill_tx_priv_tag(struct ne6x_ring *tx_ring, struct ne6x_tx_tag *tx_tag,
-			   int mss, struct ne6x_sg_info *sg)
+static void ne6x_fill_tx_priv_tag(struct ne6x_ring *tx_ring, struct ne6x_tx_tag *tx_tag,
+				  int mss, struct ne6x_sg_info *sg)
 {
 	struct ne6x_adapt_comm *comm = (struct ne6x_adapt_comm *)tx_ring->adpt;
 
@@ -1278,8 +1254,8 @@ void ne6x_fill_tx_priv_tag(struct ne6x_ring *tx_ring, struct ne6x_tx_tag *tx_tag
 	tx_tag->tag_num = cpu_to_be16(tx_tag->tag_num);
 }
 
-void ne6x_xmit_jumbo(struct ne6x_ring *tx_ring, struct ne6x_tx_buf *first,
-		     struct ne6x_ring *tag_ring, struct ne6x_tx_tag *tx_tag)
+static void ne6x_xmit_jumbo(struct ne6x_ring *tx_ring, struct ne6x_tx_buf *first,
+			    struct ne6x_ring *tag_ring, struct ne6x_tx_tag *tx_tag)
 {
 	int j = 0;
 	struct ne6x_sg_list *sgl = tx_ring->sgl;
@@ -1314,7 +1290,6 @@ void ne6x_xmit_jumbo(struct ne6x_ring *tx_ring, struct ne6x_tx_buf *first,
 			tag_dma = tag_ring->dma + tag_ring->next_to_use * NE6X_TX_PRIV_TAG_SIZE;
 			tag_desc = NE6X_TX_TAG(tag_ring, tag_ring->next_to_use);
 			ne6x_fill_tx_priv_tag(tx_ring, tag_desc, sgl->mss, sg);
-			ne6x_trace(tx_map_jumbo_tag, tx_ring, tag_desc);
 			if (++tag_ring->next_to_use == tag_ring->count)
 				tag_ring->next_to_use = 0;
 		} else {
@@ -1323,7 +1298,6 @@ void ne6x_xmit_jumbo(struct ne6x_ring *tx_ring, struct ne6x_tx_buf *first,
 
 		tx_desc = NE6X_TX_DESC(tx_ring, i);
 		ne6x_fill_tx_desc(tx_desc, tx_ring->reg_idx, tag_dma, dma, sg);
-		ne6x_trace(tx_map_jumbo_desc, tx_ring, tx_desc);
 		if (++i == tx_ring->count)
 			i = 0;
 	}
@@ -1370,12 +1344,12 @@ dma_error:
 	tx_ring->next_to_use = i;
 }
 
-void ne6x_xmit_simple(struct ne6x_ring *tx_ring, struct ne6x_tx_buf *first,
-		      struct ne6x_ring *tag_ring, struct ne6x_tx_tag *tx_tag)
+static void ne6x_xmit_simple(struct ne6x_ring *tx_ring, struct ne6x_tx_buf *first,
+			     struct ne6x_ring *tag_ring, struct ne6x_tx_tag *tx_tag)
 {
 	struct sk_buff *skb = first->skb;
 	struct ne6x_adapt_comm *comm = (struct ne6x_adapt_comm *)tx_ring->adpt;
-	struct ne6x_tx_desc *tx_desc, *first_desc;
+	struct ne6x_tx_desc *tx_desc;
 	unsigned int size = skb_headlen(skb);
 	u32 i = tx_ring->next_to_use;
 	struct ne6x_tx_tag *ttx_desc;
@@ -1384,13 +1358,10 @@ void ne6x_xmit_simple(struct ne6x_ring *tx_ring, struct ne6x_tx_buf *first,
 	int send_len = 0;
 	skb_frag_t *frag;
 	dma_addr_t dma;
-	__le64 mss = 0;
 
 	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE);
 
-	first_desc = NE6X_TX_DESC(tx_ring, i);
 	tx_desc = NE6X_TX_DESC(tx_ring, i);
-	mss = tx_desc->mss;
 	tx_desc->sop_valid = 1;
 	tx_desc->eop_valid = 0;
 	tx_bi = first;
@@ -1432,7 +1403,7 @@ void ne6x_xmit_simple(struct ne6x_ring *tx_ring, struct ne6x_tx_buf *first,
 			tx_desc->eop_valid = 1u;
 			break;
 		}
-		ne6x_trace(tx_map_desc, tx_ring, tx_desc);
+
 		if (++i == tx_ring->count)
 			i = 0;
 
@@ -1507,8 +1478,6 @@ netdev_tx_t ne6x_xmit_frame_ring(struct sk_buff *skb, struct ne6x_ring *tx_ring,
 	prefetch(tx_tagx);
 	prefetch(skb->data);
 
-	ne6x_trace(xmit_frame_ring, skb, tx_ring);
-
 	if (!jumbo_frame) {
 		count = ne6x_xmit_descriptor_count(skb);
 	} else {
@@ -1559,7 +1528,6 @@ netdev_tx_t ne6x_xmit_frame_ring(struct sk_buff *skb, struct ne6x_ring *tx_ring,
 	return NETDEV_TX_OK;
 
 out_drop:
-	ne6x_trace(xmit_frame_ring_drop, first->skb, tx_ring);
 	ne6x_unmap_and_free_tx_resource(tx_ring, first);
 
 	return NETDEV_TX_OK;
