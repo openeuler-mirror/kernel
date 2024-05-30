@@ -16,7 +16,11 @@ struct inode;
 struct proc_ns_operations {
 	const char *name;
 	const char *real_ns_name;
+#ifdef CONFIG_KABI_RESERVE
 	u64 type;
+#else
+	int type;
+#endif
 	struct ns_common *(*get)(struct task_struct *task);
 	void (*put)(struct ns_common *ns);
 	int (*install)(struct nsset *nsset, struct ns_common *ns);
