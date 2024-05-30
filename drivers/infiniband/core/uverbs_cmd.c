@@ -3556,6 +3556,11 @@ int ib_uverbs_ex_create_flow(struct ib_uverbs_file *file,
 		goto err_free_attr;
 	}
 
+	if (!rdma_is_port_valid(uobj->context->device, cmd.flow_attr.port)) {
+		err = -EINVAL;
+		goto err_uobj;
+	}
+
 	qp = uobj_get_obj_read(qp, UVERBS_OBJECT_QP, cmd.qp_handle, file);
 	if (!qp) {
 		err = -EINVAL;
