@@ -145,6 +145,41 @@ static void set_default_csv2(struct kvm *kvm)
 		kvm->arch.pfr0_csv2 = 1;
 }
 
+static int kvm_create_cvm_vm(struct kvm *kvm)
+{
+	struct cvm *cvm;
+
+	if (!static_key_enabled(&kvm_cvm_is_available))
+		return -EFAULT;
+
+	if (kvm->arch.cvm) {
+		kvm_info("cvm already create.\n");
+		return 0;
+	}
+
+	kvm->arch.cvm = kzalloc(sizeof(struct cvm), GFP_KERNEL_ACCOUNT);
+	if (!kvm->arch.cvm)
+		return -ENOMEM;
+
+	cvm = (struct cvm *)kvm->arch.cvm;
+	cvm->is_cvm = true;
+	return 0;
+}
+
+static int kvm_init_cvm_vm(struct kvm *kvm)
+{
+	struct tmi_cvm_params *params;
+	struct cvm *cvm = (struct cvm *)kvm->arch.cvm;
+
+	params = kzalloc(PAGE_SIZE, GFP_KERNEL_ACCOUNT);
+	if (!params)
+		return -ENOMEM;
+
+	cvm->params = params;
+
+	return 0;
+}
+
 /**
  * kvm_arch_init_vm - initializes a VM data structure
  * @kvm:	pointer to the KVM struct
@@ -161,7 +196,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 
 #ifdef CONFIG_CVM_HOST
 	if (kvm_arm_cvm_type(type)) {
-		ret = cvm_create_rd(kvm);
+		ret = kvm_create_cvm_vm(kvm);
 		if (ret)
 			return ret;
 	}
@@ -170,7 +205,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	ret = kvm_arm_setup_stage2(kvm, type);
 	if (ret)
 #ifdef CONFIG_CVM_HOST
-		goto out_free_rd;
+		goto out_free_cvm;
 #else
 		return ret;
 #endif
@@ -178,11 +213,10 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	ret = kvm_init_stage2_mmu(kvm, &kvm->arch.mmu);
 	if (ret)
 #ifdef CONFIG_CVM_HOST
-		goto out_free_rd;
+		goto out_free_cvm;
 #else
 		return ret;
 #endif
-
 	ret = create_hyp_mappings(kvm, kvm + 1, PAGE_HYP);
 	if (ret)
 		goto out_free_stage2_pgd;
@@ -193,6 +227,7 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	kvm->arch.max_vcpus = kvm_arm_default_max_vcpus();
 
 	set_default_csv2(kvm);
+
 #ifdef CONFIG_CVM_HOST
 	if (kvm_arm_cvm_type(type)) {
 		ret = kvm_init_cvm_vm(kvm);
@@ -204,9 +239,11 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 	return ret;
 out_free_stage2_pgd:
 	kvm_free_stage2_pgd(&kvm->arch.mmu);
+
 #ifdef CONFIG_CVM_HOST
-out_free_rd:
-	kvm_free_rd(kvm);
+out_free_cvm:
+	kfree(kvm->arch.cvm);
+	kvm->arch.cvm = NULL;
 #endif
 	return ret;
 }
@@ -311,6 +348,10 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		break;
 #ifdef CONFIG_CVM_HOST
 	case KVM_CAP_ARM_TMM:
+		if (!is_armv8_4_sel2_present()) {
+			r = -ENXIO;
+			break;
+		}
 		r = static_key_enabled(&kvm_cvm_is_available);
 		break;
 #endif
@@ -407,14 +448,6 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	err = kvm_hisi_dvmbm_vcpu_init(vcpu);
 	if (err)
 		return err;
-#endif
-
-#ifdef CONFIG_CVM_HOST
-	if (kvm_is_cvm(vcpu->kvm)) {
-		err = kvm_arch_tec_init(vcpu);
-		if (err)
-			return err;
-	}
 #endif
 	return create_hyp_mappings(vcpu, vcpu + 1, PAGE_HYP);
 }
@@ -924,13 +957,6 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	ret = kvm_vcpu_first_run_init(vcpu);
 	if (ret)
 		return ret;
-#ifdef CONFIG_CVM_HOST
-	if (kvm_is_cvm(vcpu->kvm)) {
-		ret = kvm_arm_cvm_first_run(vcpu);
-		if (ret)
-			return ret;
-	}
-#endif
 	if (run->exit_reason == KVM_EXIT_MMIO) {
 		ret = kvm_handle_mmio_return(vcpu);
 		if (ret)
