@@ -586,6 +586,13 @@ xfs_alloc_fixup_trees(
 		nfbno2 = rbno + rlen;
 		nflen2 = (fbno + flen) - nfbno2;
 	}
+
+	/*
+	 * Record the potential maximum free length in advance.
+	 */
+	if (nfbno1 != NULLAGBLOCK || nfbno2 != NULLAGBLOCK)
+		cnt_cur->bc_ag.bc_free_longest = XFS_EXTLEN_MAX(nflen1, nflen2);
+
 	/*
 	 * Delete the entry from the by-size btree.
 	 */
@@ -2019,6 +2026,13 @@ xfs_free_ag_extent(
 	 * Now allocate and initialize a cursor for the by-size tree.
 	 */
 	cnt_cur = xfs_allocbt_init_cursor(mp, tp, agbp, pag, XFS_BTNUM_CNT);
+	/*
+	 * Record the potential maximum free length in advance.
+	 */
+	if (haveleft)
+		cnt_cur->bc_ag.bc_free_longest = ltlen;
+	if (haveright)
+		cnt_cur->bc_ag.bc_free_longest = gtlen;
 	/*
 	 * Have both left and right contiguous neighbors.
 	 * Merge all three into a single free block.
