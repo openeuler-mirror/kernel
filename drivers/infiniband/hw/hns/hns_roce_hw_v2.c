@@ -2419,9 +2419,10 @@ static void apply_func_caps(struct hns_roce_dev *hr_dev)
 		 * and userspace struct ibv_global_route are u8/uint8_t (0-255).
 		 */
 		caps->gid_table_len[0] = min_t(u32, MAX_GID_TBL_LEN,
-					caps->gmv_bt_num *
-					(HNS_HW_PAGE_SIZE / caps->gmv_entry_sz));
-		caps->gmv_entry_num = caps->gmv_bt_num * (PAGE_SIZE /
+					 caps->gmv_bt_num *
+					 (HNS_HW_PAGE_SIZE / caps->gmv_entry_sz));
+
+		caps->gmv_entry_num = caps->gmv_bt_num * (HNS_HW_PAGE_SIZE /
 							  caps->gmv_entry_sz);
 	} else {
 		u32 func_num = max_t(u32, 1, hr_dev->func_num);
@@ -3069,6 +3070,8 @@ static void free_mr_exit(struct hns_roce_dev *hr_dev)
 
 	free_mr_uninit_cq(hr_dev);
 	free_mr_uninit_pd(hr_dev);
+
+	mutex_destroy(&free_mr->mutex);
 }
 
 static int free_mr_alloc_res(struct hns_roce_dev *hr_dev)
@@ -3207,8 +3210,10 @@ static int free_mr_init(struct hns_roce_dev *hr_dev)
 	mutex_init(&free_mr->mutex);
 
 	ret = free_mr_alloc_res(hr_dev);
-	if (ret)
+	if (ret) {
+		mutex_destroy(&free_mr->mutex);
 		return ret;
+	}
 
 	ret = free_mr_modify_qp(hr_dev);
 	if (ret)
@@ -4191,8 +4196,9 @@ static void get_cqe_status(struct hns_roce_dev *hr_dev, struct hns_roce_qp *qp,
 		   wc->status == IB_WC_WR_FLUSH_ERR))
 		return;
 
-	ibdev_err(&hr_dev->ib_dev, "error cqe status 0x%x:\n", cqe_status);
-	print_hex_dump(KERN_ERR, "", DUMP_PREFIX_NONE, 16, 4, cqe,
+	ibdev_err_ratelimited(&hr_dev->ib_dev, "error cqe status 0x%x:\n",
+			      cqe_status);
+	print_hex_dump(KERN_DEBUG, "", DUMP_PREFIX_NONE, 16, 4, cqe,
 		       cq->cqe_size, false);
 	wc->vendor_err = hr_reg_read(cqe, CQE_SUB_STATUS);
 
@@ -6449,7 +6455,7 @@ static int hns_roce_v2_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
 			dev_info(hr_dev->dev,
 				 "cq_period(%u) reached the upper limit, adjusted to 65.\n",
 				 cq_period);
-			cq_period = HNS_ROCE_MAX_CQ_PERIOD;
+			cq_period = HNS_ROCE_MAX_CQ_PERIOD_HIP08;
 		}
 		cq_period *= HNS_ROCE_CLOCK_ADJUST;
 	}
