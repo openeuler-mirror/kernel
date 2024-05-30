@@ -241,7 +241,7 @@ figure_loop_size(struct loop_device *lo, loff_t offset, loff_t sizelimit)
 	set_capacity(lo->lo_disk, x);
 	bd_set_size(bdev, (loff_t)get_capacity(bdev->bd_disk) << 9);
 	/* let user-space know about the new size */
-	kobject_uevent(&disk_to_dev(bdev->bd_disk)->kobj, KOBJ_CHANGE);
+	kobject_uevent(&disk_to_dev(lo->lo_disk)->kobj, KOBJ_CHANGE);
 	return 0;
 }
 
@@ -1002,7 +1002,7 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
 	bd_set_size(bdev, size << 9);
 	loop_sysfs_init(lo);
 	/* let user-space know about the new size */
-	kobject_uevent(&disk_to_dev(bdev->bd_disk)->kobj, KOBJ_CHANGE);
+	kobject_uevent(&disk_to_dev(lo->lo_disk)->kobj, KOBJ_CHANGE);
 
 	set_blocksize(bdev, S_ISBLK(inode->i_mode) ?
 		      block_size(inode->i_bdev) : PAGE_SIZE);
@@ -1123,7 +1123,7 @@ static int __loop_clr_fd(struct loop_device *lo, bool release)
 	if (bdev) {
 		bd_set_size(bdev, 0);
 		/* let user-space know about this change */
-		kobject_uevent(&disk_to_dev(bdev->bd_disk)->kobj, KOBJ_CHANGE);
+		kobject_uevent(&disk_to_dev(lo->lo_disk)->kobj, KOBJ_CHANGE);
 	}
 	mapping_set_gfp_mask(filp->f_mapping, gfp);
 	/* This is safe: open() is still holding a reference. */
