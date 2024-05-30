@@ -107,6 +107,7 @@ struct mptcp_options_received {
 		family : 4,
 		echo : 1,
 		backup : 1;
+	u16	suboptions;
 	u32	token;
 	u32	nonce;
 	u64	thmac;
