@@ -684,7 +684,6 @@ int proc_cgroupstats_show(struct seq_file *m, void *v)
 	 */
 	mutex_lock(&cgroup_mutex);
 
-	for_each_subsys(ss, i)
 	for_each_subsys(ss, i) {
 		dead = percpu_ref_is_dying(&ss->root->cgrp.self.refcnt);
 		seq_printf(m, "%s\t%d\t%d\t%d\n",
