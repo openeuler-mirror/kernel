@@ -353,6 +353,7 @@ static int dpool_promote_gigantic_page(struct pages_pool *src_pool,
 
 	for (i = 0; i < nr_pages; i += block_size) {
 		subpage = pfn_to_page(spage->start_pfn + i);
+		__folio_clear_hugetlb(page_folio(subpage));
 		clear_compound_page(page_folio(subpage), PMD_ORDER);
 		__ClearPageDpool(subpage);
 		list_del(&subpage->lru);
