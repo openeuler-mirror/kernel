@@ -158,8 +158,10 @@ int kvm_arm_create_cvm(struct kvm *kvm)
 	if (!kvm_is_cvm(kvm) || kvm_cvm_state(kvm) != CVM_STATE_NONE)
 		return 0;
 
-	if (!cvm->params)
-		return -EFAULT;
+	if (!cvm->params) {
+		ret = -EFAULT;
+		goto out;
+	}
 
 	ret = cvm_vmid_reserve();
 	if (ret < 0)
@@ -184,12 +186,14 @@ int kvm_arm_create_cvm(struct kvm *kvm)
 	}
 
 	WRITE_ONCE(cvm->state, CVM_STATE_NEW);
-	kfree(cvm->params);
-	cvm->params = NULL;
-	return ret;
+	ret = 0;
 out:
 	kfree(cvm->params);
 	cvm->params = NULL;
+	if (ret < 0) {
+		kfree(cvm);
+		kvm->arch.cvm = NULL;
+	}
 	return ret;
 }
 
@@ -833,5 +837,40 @@ int kvm_cvm_vcpu_set_events(struct kvm_vcpu *vcpu,
 		((struct tmi_tec_run *)tec->tec_run)->tec_entry.flags
 						|= TEC_ENTRY_FLAG_INJECT_SEA;
 	}
+	return 0;
+}
+
+int kvm_create_cvm_vm(struct kvm *kvm)
+{
+	struct cvm *cvm;
+
+	if (!static_key_enabled(&kvm_cvm_is_available))
+		return -EFAULT;
+
+	if (kvm->arch.cvm) {
+		kvm_info("cvm already create.\n");
+		return 0;
+	}
+
+	kvm->arch.cvm = kzalloc(sizeof(struct cvm), GFP_KERNEL_ACCOUNT);
+	if (!kvm->arch.cvm)
+		return -ENOMEM;
+
+	cvm = (struct cvm *)kvm->arch.cvm;
+	cvm->is_cvm = true;
+	return 0;
+}
+
+int kvm_init_cvm_vm(struct kvm *kvm)
+{
+	struct tmi_cvm_params *params;
+	struct cvm *cvm = (struct cvm *)kvm->arch.cvm;
+
+	params = kzalloc(PAGE_SIZE, GFP_KERNEL_ACCOUNT);
+	if (!params)
+		return -ENOMEM;
+
+	cvm->params = params;
+
 	return 0;
 }

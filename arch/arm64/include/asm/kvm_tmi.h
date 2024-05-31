@@ -211,6 +211,9 @@ struct tmi_tec_run {
 
 #define U(_x) (_x##U)
 
+#define TMI_NO_MEASURE_CONTENT	U(0)
+#define TMI_MEASURE_CONTENT	U(1)
+
 /*
  * SMC_TMM_INIT_COMPLETE is the only function in the TMI that originates from
  * the CVM world and is handled by the SPMD. The remaining functions are
@@ -384,6 +387,8 @@ unsigned long cvm_psci_vcpu_affinity_info(struct kvm_vcpu *vcpu,
 	unsigned long target_affinity, unsigned long lowest_affinity_level);
 int kvm_cvm_vcpu_set_events(struct kvm_vcpu *vcpu,
 	bool serror_pending, bool ext_dabt_pending);
+int kvm_create_cvm_vm(struct kvm *kvm);
+int kvm_init_cvm_vm(struct kvm *kvm);
 
 #endif
 #endif
