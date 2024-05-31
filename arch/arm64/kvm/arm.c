@@ -145,41 +145,6 @@ static void set_default_csv2(struct kvm *kvm)
 		kvm->arch.pfr0_csv2 = 1;
 }
 
-static int kvm_create_cvm_vm(struct kvm *kvm)
-{
-	struct cvm *cvm;
-
-	if (!static_key_enabled(&kvm_cvm_is_available))
-		return -EFAULT;
-
-	if (kvm->arch.cvm) {
-		kvm_info("cvm already create.\n");
-		return 0;
-	}
-
-	kvm->arch.cvm = kzalloc(sizeof(struct cvm), GFP_KERNEL_ACCOUNT);
-	if (!kvm->arch.cvm)
-		return -ENOMEM;
-
-	cvm = (struct cvm *)kvm->arch.cvm;
-	cvm->is_cvm = true;
-	return 0;
-}
-
-static int kvm_init_cvm_vm(struct kvm *kvm)
-{
-	struct tmi_cvm_params *params;
-	struct cvm *cvm = (struct cvm *)kvm->arch.cvm;
-
-	params = kzalloc(PAGE_SIZE, GFP_KERNEL_ACCOUNT);
-	if (!params)
-		return -ENOMEM;
-
-	cvm->params = params;
-
-	return 0;
-}
-
 /**
  * kvm_arch_init_vm - initializes a VM data structure
  * @kvm:	pointer to the KVM struct
