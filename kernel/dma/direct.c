@@ -212,7 +212,7 @@ void *dma_direct_alloc(struct device *dev, size_t size,
 		err = set_memory_decrypted((unsigned long)ret,
 					   PFN_UP(size));
 		if (err)
-			goto out_free_pages;
+			goto out_leak_pages;
 	}
 
 	memset(ret, 0, size);
@@ -238,6 +238,8 @@ out_encrypt_pages:
 	}
 out_free_pages:
 	dma_free_contiguous(dev, page, size);
+	return NULL;
+out_leak_pages:
 	return NULL;
 }
 
@@ -301,13 +303,15 @@ struct page *dma_direct_alloc_pages(struct device *dev, size_t size,
 	ret = page_address(page);
 	if (force_dma_unencrypted(dev)) {
 		if (set_memory_decrypted((unsigned long)ret, PFN_UP(size)))
-			goto out_free_pages;
+			goto out_leak_pages;
 	}
 	memset(ret, 0, size);
 	*dma_handle = phys_to_dma_direct(dev, page_to_phys(page));
 	return page;
 out_free_pages:
 	dma_free_contiguous(dev, page, size);
+	return NULL;
+out_leak_pages:
 	return NULL;
 }
 
