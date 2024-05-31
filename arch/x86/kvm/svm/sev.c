@@ -3084,6 +3084,12 @@ void __init sev_hardware_setup(void)
 	if (!boot_cpu_has(X86_FEATURE_SEV_ES))
 		goto out;
 
+	if (!lbrv) {
+		WARN_ONCE(!boot_cpu_has(X86_FEATURE_LBRV),
+			  "LBRV must be present for SEV-ES support");
+		goto out;
+	}
+
 	if (is_x86_vendor_hygon() && hygon_csv_build >= 1810) {
 		/*
 		 * Ths ASIDs from 1 to max_sev_asid are available for hygon
