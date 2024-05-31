@@ -24,12 +24,9 @@
 
 enum sw64_irq_type {
 	INT_IPI		= 1,
- #if defined(CONFIG_SUBARCH_C3B)
-	INT_PC0		= 2,
-	INT_PC1		= 3,
-#elif defined(CONFIG_SUBARCH_C4)
-	INT_PC		= 2,
-#endif
+	INT_PC		= 2,	/* C4 PMI */
+	INT_PC0		= 2,	/* C3 PMI 0 */
+	INT_PC1		= 3,	/* C3 PMI 1 */
 	INT_INTx	= 5,
 	INT_MSI		= 6,
 	INT_MT		= 7,
