@@ -218,6 +218,7 @@ union xfs_btree_irec {
 /* Per-AG btree information. */
 struct xfs_btree_cur_ag {
 	struct xfs_perag		*pag;
+	xfs_extlen_t			bc_free_longest; /* the potential longest free extent */
 	union {
 		struct xfs_buf		*agbp;
 		struct xbtree_afakeroot	*afake;	/* for staging cursor */

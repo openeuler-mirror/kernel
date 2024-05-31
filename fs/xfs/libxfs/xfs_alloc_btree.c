@@ -146,7 +146,14 @@ xfs_allocbt_update_lastrec(
 			rrp = XFS_ALLOC_REC_ADDR(cur->bc_mp, block, numrecs);
 			len = rrp->ar_blockcount;
 		} else {
-			len = 0;
+			/*
+			 * Update in advance to prevent file creation failure
+			 * for concurrent processes even though there is no
+			 * numrec currently.
+			 * And there's no need to worry as the value that no
+			 * less than bc_free_longest will be inserted later.
+			 */
+			len = cpu_to_be32(cur->bc_ag.bc_free_longest);
 		}
 
 		break;
