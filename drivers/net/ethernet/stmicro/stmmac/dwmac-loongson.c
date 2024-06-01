@@ -11,21 +11,19 @@
 
 #define PCI_DEVICE_ID_LOONGSON_GMAC	0x7a03
 
-static int loongson_default_data(struct plat_stmmacenet_data *plat)
+static void loongson_default_data(struct plat_stmmacenet_data *plat)
 {
 	plat->clk_csr = 2;	/* clk_csr_i = 20-35MHz & MDC = clk_csr_i/16 */
 	plat->has_gmac = 1;
 	plat->force_sf_dma_mode = 1;
+
+	plat->mac_interface = PHY_INTERFACE_MODE_GMII;
 
 	/* Set default value for unicast filter entries */
 	plat->unicast_filter_entries = 1;
 
 	/* Set the maxmtu to a default of JUMBO_LEN */
 	plat->maxmtu = JUMBO_LEN;
-
-	/* Set default number of RX and TX queues to use */
-	plat->tx_queues_to_use = 1;
-	plat->rx_queues_to_use = 1;
 
 	/* Disable Priority config by default */
 	plat->tx_queues_cfg[0].use_prio = false;
@@ -41,6 +39,12 @@ static int loongson_default_data(struct plat_stmmacenet_data *plat)
 	plat->dma_cfg->pblx8 = true;
 
 	plat->multicast_filter_bins = 256;
+}
+
+static int loongson_gmac_data(struct plat_stmmacenet_data *plat)
+{
+	loongson_default_data(plat);
+
 	return 0;
 }
 
@@ -109,11 +113,10 @@ static int loongson_dwmac_probe(struct pci_dev *pdev, const struct pci_device_id
 	}
 
 	plat->phy_interface = phy_mode;
-	plat->mac_interface = PHY_INTERFACE_MODE_GMII;
 
 	pci_set_master(pdev);
 
-	loongson_default_data(plat);
+	loongson_gmac_data(plat);
 	pci_enable_msi(pdev);
 	memset(&res, 0, sizeof(res));
 	res.addr = pcim_iomap_table(pdev)[0];
@@ -137,6 +140,9 @@ static int loongson_dwmac_probe(struct pci_dev *pdev, const struct pci_device_id
 		ret = -ENODEV;
 		goto err_disable_msi;
 	}
+
+	plat->tx_queues_to_use = 1;
+	plat->rx_queues_to_use = 1;
 
 	ret = stmmac_dvr_probe(&pdev->dev, plat, &res);
 	if (ret)
