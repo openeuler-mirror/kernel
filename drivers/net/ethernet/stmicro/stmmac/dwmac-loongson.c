@@ -48,6 +48,8 @@ static int loongson_gmac_data(struct plat_stmmacenet_data *plat)
 {
 	loongson_default_data(plat);
 
+	plat->mdio_bus_data->phy_mask = 0;
+
 	return 0;
 }
 
