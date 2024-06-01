@@ -15,9 +15,6 @@ static int loongson_default_data(struct plat_stmmacenet_data *plat)
 	plat->has_gmac = 1;
 	plat->force_sf_dma_mode = 1;
 
-	/* Set default value for multicast hash bins */
-	plat->multicast_filter_bins = HASH_TABLE_SIZE;
-
 	/* Set default value for unicast filter entries */
 	plat->unicast_filter_entries = 1;
 
