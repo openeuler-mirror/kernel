@@ -10,6 +10,7 @@
 #include "stmmac.h"
 
 #define PCI_DEVICE_ID_LOONGSON_GMAC	0x7a03
+#define PCI_DEVICE_ID_LOONGSON_GNET	0x7a13
 
 struct stmmac_pci_info {
 	int (*setup)(struct pci_dev *pdev, struct plat_stmmacenet_data *plat);
@@ -178,6 +179,13 @@ static int loongson_dwmac_probe(struct pci_dev *pdev, const struct pci_device_id
 	plat->rx_queues_to_use = 1;
 
 	ret = loongson_dwmac_config_legacy(pdev, plat, &res, np);
+
+	/* GNET devices with dev revision 0x00 do not support manually
+	 * setting the speed to 1000.
+	 */
+	if (pdev->device == PCI_DEVICE_ID_LOONGSON_GNET &&
+	    pdev->revision == 0x00)
+		plat->flags |= STMMAC_FLAG_DISABLE_FORCE_1000;
 
 	ret = stmmac_dvr_probe(&pdev->dev, plat, &res);
 	if (ret)
