@@ -286,6 +286,12 @@ static int loongson_gnet_data(struct pci_dev *pdev,
 	plat->mdio_bus_data->phy_mask = ~(u32)BIT(2);
 	plat->fix_mac_speed = loongson_gnet_fix_speed;
 
+	/* GNET devices with dev revision 0x00 do not support manually
+	 * setting the speed to 1000.
+	 */
+	if (pdev->revision == 0x00)
+		plat->flags |= STMMAC_FLAG_DISABLE_FORCE_1000;
+
 	return 0;
 }
 
@@ -538,13 +544,6 @@ static int loongson_dwmac_probe(struct pci_dev *pdev, const struct pci_device_id
 		ret = loongson_dwmac_config_legacy(pdev, plat, &res, np);
 		break;
 	}
-
-	/* GNET devices with dev revision 0x00 do not support manually
-	 * setting the speed to 1000.
-	 */
-	if (pdev->device == PCI_DEVICE_ID_LOONGSON_GNET &&
-	    pdev->revision == 0x00)
-		plat->flags |= STMMAC_FLAG_DISABLE_FORCE_1000;
 
 	ret = stmmac_dvr_probe(&pdev->dev, plat, &res);
 	if (ret)
