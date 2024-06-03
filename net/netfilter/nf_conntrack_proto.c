@@ -340,14 +340,14 @@ bpf_getorigdst_impl(struct sock *sk, int optval, void *user, int *len, int dir)
 		}
 		memset(sin.sin_zero, 0, sizeof(sin.sin_zero));
 
-		pr_debug("SO_ORIGINAL_DST: %pI4 %u\n",
+		pr_debug("SO_ORIGINAL_DST: %pI4 %hu\n",
 			 &sin.sin_addr.s_addr, ntohs(sin.sin_port));
 		nf_ct_put(ct);
 
 		memcpy(user, &sin, sizeof(sin));
 		return 0;
 	}
-	pr_debug("SO_ORIGINAL_DST: Can't find %pI4/%u-%pI4/%u.\n",
+	pr_debug("SO_ORIGINAL_DST: Can't find %pI4/%hu-%pI4/%hu.\n",
 		 &tuple.src.u3.ip, ntohs(tuple.src.u.tcp.port),
 		 &tuple.dst.u3.ip, ntohs(tuple.dst.u.tcp.port));
 	return -ENOENT;
