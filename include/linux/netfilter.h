@@ -457,6 +457,7 @@ struct nf_ct_hook {
 	void (*destroy)(struct nf_conntrack *);
 	bool (*get_tuple_skb)(struct nf_conntrack_tuple *,
 			      const struct sk_buff *);
+	int (*confirm)(struct sk_buff *skb);
 
 	KABI_RESERVE(1)
 };
