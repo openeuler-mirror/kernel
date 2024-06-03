@@ -342,8 +342,10 @@ nf_ct_set(struct sk_buff *skb, struct nf_conn *ct, enum ip_conntrack_info info)
 #define MODULE_ALIAS_NFCT_HELPER(helper) \
         MODULE_ALIAS("nfct-helper-" helper)
 
+#ifdef CONFIG_EULER_SOCKETMAP
 typedef int (*bpf_getorigdst_opt_func)(struct sock *sk, int optname,
 				       void *optval, int *optlen, int dir);
 extern bpf_getorigdst_opt_func bpf_getorigdst_opt;
+#endif
 
 #endif /* _NF_CONNTRACK_H */

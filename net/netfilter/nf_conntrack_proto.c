@@ -292,8 +292,9 @@ getorigdst(struct sock *sk, int optval, void __user *user, int *len)
 	return -ENOENT;
 }
 
-static int
-bpf_getorigdst_impl(struct sock *sk, int optval, void *user, int *len, int dir)
+#ifdef CONFIG_EULER_SOCKETMAP
+static int bpf_getorigdst_impl(struct sock *sk, int optval, void *user,
+			       int *len, int dir)
 {
 	const struct inet_sock *inet = inet_sk(sk);
 	const struct nf_conntrack_tuple_hash *h;
@@ -340,18 +341,19 @@ bpf_getorigdst_impl(struct sock *sk, int optval, void *user, int *len, int dir)
 		}
 		memset(sin.sin_zero, 0, sizeof(sin.sin_zero));
 
-		pr_debug("SO_ORIGINAL_DST: %pI4 %u\n",
+		pr_debug("SO_ORIGINAL_DST: %pI4 %hu\n",
 			 &sin.sin_addr.s_addr, ntohs(sin.sin_port));
 		nf_ct_put(ct);
 
-		memcpy(user, &sin, sizeof(sin));
+		memcpy(user, (void *)&sin, sizeof(sin));
 		return 0;
 	}
-	pr_debug("SO_ORIGINAL_DST: Can't find %pI4/%u-%pI4/%u.\n",
+	pr_debug("SO_ORIGINAL_DST: Can't find %pI4/%hu-%pI4/%hu.\n",
 		 &tuple.src.u3.ip, ntohs(tuple.src.u.tcp.port),
 		 &tuple.dst.u3.ip, ntohs(tuple.dst.u.tcp.port));
 	return -ENOENT;
 }
+#endif
 
 static struct nf_sockopt_ops so_getorigdst = {
 	.pf		= PF_INET,
@@ -717,7 +719,9 @@ int nf_conntrack_proto_init(void)
 		goto cleanup_sockopt;
 #endif
 
+#ifdef CONFIG_EULER_SOCKETMAP
 	bpf_getorigdst_opt = bpf_getorigdst_impl;
+#endif
 
 	return ret;
 
@@ -730,7 +734,9 @@ cleanup_sockopt:
 
 void nf_conntrack_proto_fini(void)
 {
+#ifdef CONFIG_EULER_SOCKETMAP
 	bpf_getorigdst_opt = NULL;
+#endif
 
 	nf_unregister_sockopt(&so_getorigdst);
 #if IS_ENABLED(CONFIG_IPV6)

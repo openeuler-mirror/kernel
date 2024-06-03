@@ -5095,6 +5095,7 @@ static const struct bpf_func_proto bpf_sock_addr_setsockopt_proto = {
 	.arg5_type	= ARG_CONST_SIZE,
 };
 
+#ifdef CONFIG_EULER_SOCKETMAP
 BPF_CALL_1(bpf_get_sockops_uid_gid, struct bpf_sock_ops_kern *, bpf_sock)
 {
 	struct sock *sk = bpf_sock->sk;
@@ -5107,7 +5108,8 @@ BPF_CALL_1(bpf_get_sockops_uid_gid, struct bpf_sock_ops_kern *, bpf_sock)
 	uid = sock_net_uid(sock_net(sk), sk);
 	gid = sock_net_gid(sock_net(sk), sk);
 
-	return ((u64)from_kgid_munged(sock_net(sk)->user_ns, gid)) << 32 |
+	return ((u64)from_kgid_munged(sock_net(sk)->user_ns, gid)) <<
+		(BITS_PER_BYTE * sizeof(u32)) |
 		from_kuid_munged(sock_net(sk)->user_ns, uid);
 }
 
@@ -5164,6 +5166,7 @@ static const struct bpf_func_proto bpf_sk_original_addr_proto = {
 	.arg3_type	= ARG_PTR_TO_UNINIT_MEM,
 	.arg4_type	= ARG_CONST_SIZE,
 };
+#endif
 
 BPF_CALL_5(bpf_sock_addr_getsockopt, struct bpf_sock_addr_kern *, ctx,
 	   int, level, int, optname, char *, optval, int, optlen)
@@ -7469,10 +7472,12 @@ sock_ops_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sk_storage_delete_proto;
 	case BPF_FUNC_get_netns_cookie:
 		return &bpf_get_netns_cookie_sock_ops_proto;
+#ifdef CONFIG_EULER_SOCKETMAP
 	case BPF_FUNC_get_sockops_uid_gid:
 		return &bpf_get_sockops_uid_gid_proto;
 	case BPF_FUNC_sk_original_addr:
 		return &bpf_sk_original_addr_proto;
+#endif
 #ifdef CONFIG_INET
 	case BPF_FUNC_load_hdr_opt:
 		return &bpf_sock_ops_load_hdr_opt_proto;
@@ -7869,7 +7874,9 @@ static bool __sock_filter_check_attach_type(int off,
 	case bpf_ctx_range(struct bpf_sock, src_ip4):
 		switch (attach_type) {
 		case BPF_CGROUP_INET4_POST_BIND:
+#ifdef CONFIG_EULER_SOCKETMAP
 		case BPF_CGROUP_INET_SOCK_RELEASE:
+#endif
 			goto read_only;
 		default:
 			return false;
@@ -7885,7 +7892,9 @@ static bool __sock_filter_check_attach_type(int off,
 		switch (attach_type) {
 		case BPF_CGROUP_INET4_POST_BIND:
 		case BPF_CGROUP_INET6_POST_BIND:
+#ifdef CONFIG_EULER_SOCKETMAP
 		case BPF_CGROUP_INET_SOCK_RELEASE:
+#endif
 			goto read_only;
 		default:
 			return false;

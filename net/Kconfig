@@ -318,6 +318,16 @@ config BPF_STREAM_PARSER
 	  It can be used to enforce socket policy, implement socket redirects,
 	  etc.
 
+config EULER_SOCKETMAP
+	bool "enable EulerOS SOCKETMAP"
+	depends on INET
+	depends on BPF_SYSCALL
+	depends on CGROUP_BPF
+	select NET_SOCK_MSG
+	default n
+	help
+	  Enabling this support socket map in EulerOS.
+
 config NET_FLOW_LIMIT
 	bool
 	depends on RPS

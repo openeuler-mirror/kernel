@@ -525,7 +525,7 @@ struct sock {
 #endif
 	struct rcu_head		sk_rcu;
 
-#ifndef __GENKSYMS__
+#if defined(CONFIG_EULER_SOCKETMAP) && !defined(__GENKSYMS__)
 	union {
 		kgid_t	sk_gid;
 		u64	sk_gid_padding;
@@ -1985,7 +1985,9 @@ static inline void sock_graft(struct sock *sk, struct socket *parent)
 	parent->sk = sk;
 	sk_set_socket(sk, parent);
 	sk->sk_uid = SOCK_INODE(parent)->i_uid;
+#ifdef CONFIG_EULER_SOCKETMAP
 	sk->sk_gid = SOCK_INODE(parent)->i_gid;
+#endif
 	security_sock_graft(sk, parent);
 	write_unlock_bh(&sk->sk_callback_lock);
 }
@@ -1999,10 +2001,12 @@ static inline kuid_t sock_net_uid(const struct net *net, const struct sock *sk)
 	return sk ? sk->sk_uid : make_kuid(net->user_ns, 0);
 }
 
+#ifdef CONFIG_EULER_SOCKETMAP
 static inline kgid_t sock_net_gid(const struct net *net, const struct sock *sk)
 {
 	return sk ? sk->sk_gid : make_kgid(net->user_ns, 0);
 }
+#endif
 
 static inline u32 net_tx_rndhash(void)
 {

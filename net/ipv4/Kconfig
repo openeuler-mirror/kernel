@@ -757,6 +757,7 @@ config TCP_COMP
 	bool "TCP: Transport Layer Compression support"
 	depends on CRYPTO_ZSTD=y
 	select STREAM_PARSER
+	default n
 	help
           Enable kernel payload compression support for TCP protocol. This allows
           payload compression handling of the TCP protocol to be done in-kernel.
