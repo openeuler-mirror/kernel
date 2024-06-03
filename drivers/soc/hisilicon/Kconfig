@@ -54,4 +54,13 @@ config HISI_HBMDEV_ACLS
 
 	  If not sure say no.
 
+config HISI_L3T
+	tristate "Add support for l3t"
+	depends on ARM64 && ACPI
+	help
+	  Last Level Cache driver for platforms such Kunpeng 920. This provides
+	  interfaces to enable LLC cache lockdown.
+
+	  If not sure say no.
+
 endmenu
