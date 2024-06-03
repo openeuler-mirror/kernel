@@ -292,8 +292,8 @@ getorigdst(struct sock *sk, int optval, void __user *user, int *len)
 	return -ENOENT;
 }
 
-static int
-bpf_getorigdst_impl(struct sock *sk, int optval, void *user, int *len, int dir)
+static int bpf_getorigdst_impl(struct sock *sk, int optval, void *user,
+			       int *len, int dir)
 {
 	const struct inet_sock *inet = inet_sk(sk);
 	const struct nf_conntrack_tuple_hash *h;
