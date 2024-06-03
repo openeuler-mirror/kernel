@@ -63,4 +63,13 @@ config HISI_L3T
 
 	  If not sure say no.
 
+config HISI_L0
+	tristate "Add support L0 cache"
+	depends on ARM64 && HISI_L3T
+	help
+	  L0 driver for platforms such Kunpeng 920. This provides interfaces to
+	  for user to alloc and lock memory
+
+	  If not sure say no.
+
 endmenu
