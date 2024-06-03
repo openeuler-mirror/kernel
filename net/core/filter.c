@@ -5107,7 +5107,8 @@ BPF_CALL_1(bpf_get_sockops_uid_gid, struct bpf_sock_ops_kern *, bpf_sock)
 	uid = sock_net_uid(sock_net(sk), sk);
 	gid = sock_net_gid(sock_net(sk), sk);
 
-	return ((u64)from_kgid_munged(sock_net(sk)->user_ns, gid)) << 32 |
+	return ((u64)from_kgid_munged(sock_net(sk)->user_ns, gid)) <<
+		(BITS_PER_BYTE * sizeof(u32)) |
 		from_kuid_munged(sock_net(sk)->user_ns, uid);
 }
 
