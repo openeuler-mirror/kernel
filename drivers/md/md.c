@@ -4725,7 +4725,7 @@ static void stop_sync_thread(struct mddev *mddev)
 	mddev_unlock(mddev);
 }
 
-static void idle_sync_thread(struct mddev *mddev)
+void idle_sync_thread(struct mddev *mddev)
 {
 	int sync_seq = atomic_read(&mddev->sync_seq);
 
@@ -4741,8 +4741,9 @@ static void idle_sync_thread(struct mddev *mddev)
 
 	mutex_unlock(&mddev->sync_mutex);
 }
+EXPORT_SYMBOL_GPL(idle_sync_thread);
 
-static void frozen_sync_thread(struct mddev *mddev)
+void frozen_sync_thread(struct mddev *mddev)
 {
 	if (mutex_lock_interruptible(&mddev->sync_mutex))
 		return;
@@ -4755,6 +4756,7 @@ static void frozen_sync_thread(struct mddev *mddev)
 
 	mutex_unlock(&mddev->sync_mutex);
 }
+EXPORT_SYMBOL_GPL(frozen_sync_thread);
 
 static ssize_t
 action_store(struct mddev *mddev, const char *page, size_t len)
