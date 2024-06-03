@@ -7,6 +7,7 @@
 #include <linux/migrate.h>
 #include <linux/memblock.h>
 #include <linux/memory_hotplug.h>
+#include <linux/swap.h>
 #include <linux/dynamic_hugetlb.h>
 
 #include "internal.h"
@@ -18,6 +19,55 @@
 
 bool enable_dhugetlb = false;
 DEFINE_STATIC_KEY_FALSE(dhugetlb_enabled_key);
+
+/*
+ * Lock this to prevert any page allocation from percpu pool.
+ *
+ * Before we lock percpu_pool, must be sure hpool lock is released.
+ */
+static inline void dhugetlb_percpu_pool_lock_all(struct dhugetlb_pool *hpool)
+{
+	int i;
+
+	for (i = 0; i < NR_PERCPU_POOL; i++)
+		spin_lock_nested(&hpool->percpu_pool[i].lock, i);
+}
+
+static inline void dhugetlb_percpu_pool_unlock_all(struct dhugetlb_pool *hpool)
+{
+	int i;
+
+	for (i = NR_PERCPU_POOL - 1; i >= 0; i--)
+		spin_unlock(&hpool->percpu_pool[i].lock);
+}
+
+/*
+ * Lock all before r/w percpu_pool.
+ *
+ * Each percpu_pool lock is used to block page allocated/freed by others.
+ * The hpool lock is used to block page allocated/freed by percpu_pool.
+ *
+ * We need to lock all in following situation:
+ * a) when merging pages, we have to make sure no one can alloc page from
+     each pool.
+ * b) when get the accurate pagecount.
+ * hpool->lock & all percpu_pool lock must be released before this.
+ */
+static inline void dhugetlb_lock_all(struct dhugetlb_pool *hpool)
+{
+	local_irq_disable();
+	dhugetlb_percpu_pool_lock_all(hpool);
+	spin_lock(&hpool->lock);
+}
+
+static inline void dhugetlb_unlock_all(struct dhugetlb_pool *hpool)
+{
+	lockdep_assert_held(&hpool->lock);
+
+	spin_unlock(&hpool->lock);
+	dhugetlb_percpu_pool_unlock_all(hpool);
+	local_irq_enable();
+}
 
 #define hugepage_index(pfn)	((pfn) >> (PUD_SHIFT - PAGE_SHIFT))
 static void add_new_page_to_pool(struct dhugetlb_pool *hpool, struct page *page, int hpages_pool_idx)
@@ -184,9 +234,6 @@ static void reclaim_pages_from_percpu_pool(struct dhugetlb_pool *hpool,
 	}
 }
 
-/* We only try 5 times to reclaim pages */
-#define	HPOOL_RECLAIM_RETRIES	5
-
 static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bool force_merge)
 {
 	struct huge_pages_pool *hpages_pool, *src_hpages_pool;
@@ -195,7 +242,8 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 	struct page *page, *next, *p;
 	struct percpu_pages_pool *percpu_pool;
 	bool need_migrate = false, need_initial = false;
-	int i, try;
+	bool tried_migrate, can_merge;
+	int i;
 	LIST_HEAD(wait_page_list);
 
 	lockdep_assert_held(&hpool->lock);
@@ -222,43 +270,53 @@ static int hpool_merge_page(struct dhugetlb_pool *hpool, int hpages_pool_idx, bo
 		return -ENOMEM;
 
 	list_for_each_entry_safe(split_page, split_next, &hpages_pool->hugepage_splitlists, head_pages) {
-		try = 0;
+		tried_migrate = false;
 
 merge:
+		can_merge = true;
+
+		spin_unlock_irq(&hpool->lock);
+		cond_resched();
 		/*
 		 * If we are merging 4K page to 2M page, we need to get
 		 * lock of percpu pool sequentially and clear percpu pool.
 		 */
 		if (hpages_pool_idx == HUGE_PAGES_POOL_2M) {
-			spin_unlock(&hpool->lock);
-			for (i = 0; i < NR_PERCPU_POOL; i++)
-				spin_lock(&hpool->percpu_pool[i].lock);
-			spin_lock(&hpool->lock);
+			dhugetlb_lock_all(hpool);
 			for (i = 0; i < NR_PERCPU_POOL; i++) {
 				percpu_pool = &hpool->percpu_pool[i];
 				reclaim_pages_from_percpu_pool(hpool, percpu_pool,
 							       percpu_pool->free_pages);
 			}
+		} else {
+			spin_lock_irq(&hpool->lock);
 		}
 
 		page = pfn_to_page(split_page->start_pfn);
 		for (i = 0; i < nr_pages; i+= block_size) {
 			p = pfn_to_page(split_page->start_pfn + i);
 			if (PagePool(p)) {
-				if (!need_migrate)
-					goto next;
+				/*
+				 * Some pages still in use, can't merge.
+				 * If don't need migration or have tried,
+				 * then skip merging these pages.
+				 */
+				can_merge = false;
+				if (!need_migrate || tried_migrate)
+					break;
 				else
 					goto migrate;
 			}
 		}
-		if (hpages_pool_idx == HUGE_PAGES_POOL_2M) {
+		if (hpages_pool_idx == HUGE_PAGES_POOL_2M)
 			/*
 			 * All target 4K page are in src_hpages_pool, we
 			 * can unlock percpu pool.
 			 */
-			for (i = 0; i < NR_PERCPU_POOL; i++)
-				spin_unlock(&hpool->percpu_pool[i].lock);
-		}
+			dhugetlb_percpu_pool_unlock_all(hpool);
+
+		if (!can_merge)
+			continue;
 
 		list_del(&split_page->head_pages);
 		hpages_pool->split_normal_pages--;
@@ -290,17 +348,8 @@ merge:
 		add_new_page_to_pool(hpool, page, hpages_pool_idx);
 		trace_dynamic_hugetlb_split_merge(hpool, page, DHUGETLB_MERGE, page_size(page));
 		return 0;
-next:
-		if (hpages_pool_idx == HUGE_PAGES_POOL_2M) {
-			/* Unlock percpu pool before try next */
-			for (i = 0; i < NR_PERCPU_POOL; i++)
-				spin_unlock(&hpool->percpu_pool[i].lock);
-		}
-		continue;
 migrate:
-		/* page migration only used for HUGE_PAGES_POOL_2M */
-		if (try++ >= HPOOL_RECLAIM_RETRIES)
-			goto next;
+		tried_migrate = true;
 
 		/* Isolate free page first. */
 		INIT_LIST_HEAD(&wait_page_list);
@@ -313,20 +362,21 @@ migrate:
 		}
 
 		/* Unlock and try migration. */
-		for (i = 0; i < NR_PERCPU_POOL; i++)
-			spin_unlock(&hpool->percpu_pool[i].lock);
-		spin_unlock(&hpool->lock);
+		dhugetlb_unlock_all(hpool);
 
 		for (i = 0; i < nr_pages; i+= block_size) {
 			p = pfn_to_page(split_page->start_pfn + i);
-			if (PagePool(p))
+			if (PagePool(p)) {
+				cond_resched();
+				lru_add_drain_all();
 				/*
 				 * TODO: fatal migration failures should bail
 				 * out
 				 */
 				do_migrate_range(page_to_pfn(p), page_to_pfn(p) + block_size);
+			}
 		}
-		spin_lock(&hpool->lock);
+		spin_lock_irq(&hpool->lock);
 
 		/*
 		 * Move all isolate pages to src_hpages_pool and then try
@@ -343,32 +393,49 @@ migrate:
 
 static int hugetlb_pool_merge_all_pages(struct dhugetlb_pool *hpool)
 {
+	struct huge_pages_pool *hpages_pool;
 	int ret = 0;
 
 	lockdep_assert_held(&hpool->lock);
 
-	while (hpool->hpages_pool[HUGE_PAGES_POOL_2M].split_normal_pages) {
+	hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_2M];
+	while (hpages_pool->split_normal_pages) {
 		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_2M, true);
 		if (ret) {
-			pr_err("dynamic_hugetlb: some 4K pages are still in use, delete memcg: %s failed!\n",
+			pr_err("dynamic_hugetlb: %s: merge 4K failed!\n",
 				hpool->attach_memcg->css.cgroup->kn->name);
 			goto out;
 		}
 	}
-	while (hpool->hpages_pool[HUGE_PAGES_POOL_1G].split_normal_pages) {
-		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_1G, true);
-		if (ret) {
-			pr_err("dynamic_hugetlb: some 2M pages are still in use, delete memcg: %s failed!\n",
-				hpool->attach_memcg->css.cgroup->kn->name);
-			goto out;
-		}
-	}
-	if (hpool->hpages_pool[HUGE_PAGES_POOL_1G].used_huge_pages) {
+	if (hpages_pool->used_huge_pages || hpages_pool->resv_huge_pages) {
 		ret = -ENOMEM;
-		pr_err("dynamic_hugetlb: some 1G pages are still in use, delete memcg: %s failed!\n",
+		pr_err("dynamic_hugetlb: %s: 2M pages in use or resv\n",
 			hpool->attach_memcg->css.cgroup->kn->name);
 		goto out;
 	}
+	hpages_pool->free_normal_pages += hpages_pool->nr_huge_pages;
+	hpages_pool->nr_huge_pages = 0;
+	hpages_pool->free_huge_pages = 0;
+
+	hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_1G];
+	while (hpages_pool->split_normal_pages) {
+		ret = hpool_merge_page(hpool, HUGE_PAGES_POOL_1G, true);
+		if (ret) {
+			pr_err("dynamic_hugetlb: %s: merge 2M failed!\n",
+				hpool->attach_memcg->css.cgroup->kn->name);
+			goto out;
+		}
+	}
+	if (hpages_pool->used_huge_pages || hpages_pool->resv_huge_pages) {
+		ret = -ENOMEM;
+		pr_err("dynamic_hugetlb: %s: 1G pages in use or resv\n",
+			hpool->attach_memcg->css.cgroup->kn->name);
+		goto out;
+	}
+	hpages_pool->free_normal_pages += hpages_pool->nr_huge_pages;
+	hpages_pool->nr_huge_pages = 0;
+	hpages_pool->free_huge_pages = 0;
+
 out:
 	return ret;
 }
@@ -652,8 +719,9 @@ void link_hpool(struct hugetlbfs_inode_info *p, struct hstate *h)
 		p->hpool = find_hpool_by_task(current);
 		if (!get_hpool_unless_zero(p->hpool))
 			p->hpool = NULL;
-	} else
+	} else {
 		p->hpool = NULL;
+	}
 }
 
 void unlink_hpool(struct hugetlbfs_inode_info *p)
@@ -684,7 +752,7 @@ int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_in
 	if (delta == 0)
 		return 0;
 
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	if (hstate_is_gigantic(h))
 		hpages_pool = &hpool->hpages_pool[HUGE_PAGES_POOL_1G];
 	else
@@ -701,7 +769,7 @@ int dhugetlb_acct_memory(struct hstate *h, long delta, struct hugetlbfs_inode_in
 		trace_dynamic_hugetlb_acct_memory(hpool, hpages_pool->resv_huge_pages,
 						  DHUGETLB_UNRESV, huge_page_size(h));
 	}
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 
 	return ret;
 }
@@ -752,6 +820,7 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	struct hstate *h = page_hstate(page);
 	struct huge_pages_pool *hpages_pool;
 	struct dhugetlb_pool *hpool;
+	unsigned long flags;
 
 	hpool = find_hpool_by_dhugetlb_pagelist(page);
 
@@ -760,7 +829,7 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 		return;
 	}
 
-	spin_lock(&hpool->lock);
+	spin_lock_irqsave(&hpool->lock, flags);
 	/*
 	 * memory_failure will free the hwpoison hugepage, and then try to
 	 * dissolve it and free subpage to buddy system. Since the page in
@@ -786,7 +855,7 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	trace_dynamic_hugetlb_alloc_free(hpool, page, hpages_pool->free_huge_pages,
 					 DHUGETLB_FREE, huge_page_size(h));
 out:
-	spin_unlock(&hpool->lock);
+	spin_unlock_irqrestore(&hpool->lock, flags);
 	put_hpool(hpool);
 }
 
@@ -802,7 +871,7 @@ static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
 	if (!h)
 		return -ENOMEM;
 
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	spin_lock(&hugetlb_lock);
 	if (h->free_huge_pages_node[nid] - h->resv_huge_pages_node[nid] < nr_pages) {
 		ret = -ENOMEM;
@@ -828,7 +897,7 @@ static int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
 
 out_unlock:
 	spin_unlock(&hugetlb_lock);
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 	return ret;
 }
 
@@ -934,15 +1003,15 @@ int hugetlb_pool_destroy(struct cgroup *cgrp)
 	 */
 	mem_cgroup_force_empty(hpool->attach_memcg);
 
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	ret = hugetlb_pool_merge_all_pages(hpool);
 	if (ret) {
-		spin_unlock(&hpool->lock);
+		spin_unlock_irq(&hpool->lock);
 		return -ENOMEM;
 	}
 	ret = free_hugepage_to_hugetlb(hpool);
 	memcg->hpool = NULL;
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 	put_hpool(hpool);
 	return ret;
 }
@@ -1009,7 +1078,7 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 		return -EINVAL;
 
 	mutex_lock(&hpool->reserved_lock);
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	hpages_pool = &hpool->hpages_pool[hpages_pool_idx];
 	if (nr_pages > hpages_pool->nr_huge_pages) {
 		delta = nr_pages - hpages_pool->nr_huge_pages;
@@ -1043,7 +1112,7 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 		hpages_pool->free_huge_pages -= delta;
 		hpages_pool->free_normal_pages += delta;
 	}
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 	mutex_unlock(&hpool->reserved_lock);
 	put_hpool(hpool);
 	return 0;
@@ -1137,9 +1206,7 @@ int hugetlb_pool_info_show(struct seq_file *m, void *v)
 	if (!get_hpool_unless_zero(hpool))
 		return 0;
 
-	for (i = 0; i < NR_PERCPU_POOL; i++)
-		spin_lock(&hpool->percpu_pool[i].lock);
-	spin_lock(&hpool->lock);
+	dhugetlb_lock_all(hpool);
 
 	free_pages = hpool->hpages_pool[HUGE_PAGES_POOL_4K].free_normal_pages;
 	for (i = 0; i < NR_PERCPU_POOL; i++) {
@@ -1175,9 +1242,7 @@ int hugetlb_pool_info_show(struct seq_file *m, void *v)
 		   free_pages,
 		   used_pages);
 
-	spin_unlock(&hpool->lock);
-	for (i = NR_PERCPU_POOL - 1; i >= 0; i--)
-		spin_unlock(&hpool->percpu_pool[i].lock);
+	dhugetlb_unlock_all(hpool);
 	put_hpool(hpool);
 	return 0;
 }
@@ -1205,6 +1270,9 @@ void __init dynamic_hugetlb_init(void)
 
 static int __init dynamic_hugetlb_setup(char *s)
 {
+	if (!s)
+		return 0;
+
 	if (!strcmp(s, "on"))
 		enable_dhugetlb = true;
 	return 0;
