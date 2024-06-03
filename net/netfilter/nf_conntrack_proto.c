@@ -344,7 +344,7 @@ bpf_getorigdst_impl(struct sock *sk, int optval, void *user, int *len, int dir)
 			 &sin.sin_addr.s_addr, ntohs(sin.sin_port));
 		nf_ct_put(ct);
 
-		memcpy(user, &sin, sizeof(sin));
+		memcpy(user, (void *)&sin, sizeof(sin));
 		return 0;
 	}
 	pr_debug("SO_ORIGINAL_DST: Can't find %pI4/%hu-%pI4/%hu.\n",
