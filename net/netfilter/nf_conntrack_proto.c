@@ -292,6 +292,7 @@ getorigdst(struct sock *sk, int optval, void __user *user, int *len)
 	return -ENOENT;
 }
 
+#ifdef CONFIG_EULER_SOCKETMAP
 static int bpf_getorigdst_impl(struct sock *sk, int optval, void *user,
 			       int *len, int dir)
 {
@@ -352,6 +353,7 @@ static int bpf_getorigdst_impl(struct sock *sk, int optval, void *user,
 		 &tuple.dst.u3.ip, ntohs(tuple.dst.u.tcp.port));
 	return -ENOENT;
 }
+#endif
 
 static struct nf_sockopt_ops so_getorigdst = {
 	.pf		= PF_INET,
@@ -717,7 +719,9 @@ int nf_conntrack_proto_init(void)
 		goto cleanup_sockopt;
 #endif
 
+#ifdef CONFIG_EULER_SOCKETMAP
 	bpf_getorigdst_opt = bpf_getorigdst_impl;
+#endif
 
 	return ret;
 
@@ -730,7 +734,9 @@ cleanup_sockopt:
 
 void nf_conntrack_proto_fini(void)
 {
+#ifdef CONFIG_EULER_SOCKETMAP
 	bpf_getorigdst_opt = NULL;
+#endif
 
 	nf_unregister_sockopt(&so_getorigdst);
 #if IS_ENABLED(CONFIG_IPV6)

@@ -545,7 +545,9 @@ static int sockfs_setattr(struct dentry *dentry, struct iattr *iattr)
 
 		if (sock->sk) {
 			sock->sk->sk_uid = iattr->ia_uid;
+#ifdef CONFIG_EULER_SOCKETMAP
 			sock->sk->sk_gid = iattr->ia_gid;
+#endif
 		} else {
 			err = -ENOENT;
 		}
