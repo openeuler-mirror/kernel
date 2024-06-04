@@ -1018,18 +1018,17 @@ static int resctrl_group_rmdir_ctrl(struct kernfs_node *kn, struct resctrl_group
 	cpumask_or(tmpmask, tmpmask, &rdtgrp->cpu_mask);
 	update_closid_rmid(tmpmask, NULL);
 
-	rdtgrp->flags |= RDT_DELETED;
 	closid_free(rdtgrp->closid.intpartid);
 	rmid_free(rdtgrp->mon.rmid);
 
+	rdtgrp->flags |= RDT_DELETED;
+	list_del(&rdtgrp->resctrl_group_list);
+
+	kernfs_remove(rdtgrp->kn);
 	/*
 	 * Free all the child monitor group rmids.
 	 */
 	free_all_child_rdtgrp(rdtgrp);
-
-	list_del(&rdtgrp->resctrl_group_list);
-
-	kernfs_remove(rdtgrp->kn);
 
 	return 0;
 }
