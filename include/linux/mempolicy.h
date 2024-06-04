@@ -161,6 +161,10 @@ extern nodemask_t *policy_nodemask(gfp_t gfp, struct mempolicy *policy);
 
 extern unsigned int mempolicy_slab_node(void);
 
+int get_vma_policy_node(struct vm_area_struct *vma, unsigned long addr,
+			gfp_t gfp_flags, struct mempolicy **mpol,
+			nodemask_t **nodemask);
+
 extern enum zone_type policy_zone;
 
 static inline void check_highest_zone(enum zone_type k)

@@ -2198,6 +2198,29 @@ static inline unsigned interleave_nid(struct mempolicy *pol,
 		return interleave_nodes(pol);
 }
 
+/* get policy node for order-0 page */
+int get_vma_policy_node(struct vm_area_struct *vma, unsigned long addr,
+			gfp_t gfp_flags, struct mempolicy **mpol,
+			nodemask_t **nodemask)
+{
+	int nid, mode;
+
+	*mpol = get_vma_policy(vma, addr);
+	*nodemask = NULL;
+	mode = (*mpol)->mode;
+
+	if (unlikely(mode == MPOL_INTERLEAVE)) {
+		nid = interleave_nid(*mpol, vma, addr, PAGE_SHIFT);
+	} else {
+		nid = policy_node(gfp_flags, *mpol, numa_node_id());
+		if ((*mpol)->mode == MPOL_BIND || mode == MPOL_PREFERRED_MANY)
+			*nodemask = &(*mpol)->v.nodes;
+	}
+
+	return nid;
+}
+EXPORT_SYMBOL_GPL(get_vma_policy_node);
+
 #ifdef CONFIG_HUGETLBFS
 /*
  * huge_node(@vma, @addr, @gfp_flags, @mpol)
