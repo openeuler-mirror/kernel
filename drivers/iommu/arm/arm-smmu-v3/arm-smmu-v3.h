@@ -175,6 +175,8 @@
 #define ARM_SMMU_USER_CFG0		0xe00
 #define ARM_SMMU_USER_MPAM_EN		(1UL << 30)
 
+#define ARM_SMMU_USER_CFG1		0xe04
+
 #define ARM_SMMU_IDR6			0x190
 #define IDR6_LOG2NUMP			GENMASK(27, 24)
 #define IDR6_LOG2NUMQ			GENMASK(19, 16)
@@ -717,6 +719,7 @@ struct arm_smmu_device {
 #define ARM_SMMU_OPT_PAGE0_REGS_ONLY	(1 << 1)
 #define ARM_SMMU_OPT_MSIPOLL		(1 << 2)
 #define ARM_SMMU_OPT_SYNC_MAP		(1 << 3)
+#define ARM_SMMU_OPT_SYNC_BATCH		(1 << 4)
 	u32				options;
 
 	union {
