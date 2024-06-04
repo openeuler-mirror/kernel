@@ -92,6 +92,7 @@ static void free_iova_work_func(struct work_struct *work)
 		spin_lock_irqsave(&fq->lock, flags);
 		fq_ring_free(iovad, fq, cpu);
 		spin_unlock_irqrestore(&fq->lock, flags);
+		cond_resched();
 	}
 }
 
