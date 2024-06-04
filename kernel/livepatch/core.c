@@ -984,6 +984,33 @@ int __weak arch_klp_init_func(struct klp_object *obj, struct klp_func *func)
 {
 	return 0;
 }
+
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+unsigned long __weak arch_klp_fentry_range_size(void)
+{
+	return 0;
+}
+
+static unsigned long klp_ftrace_location(unsigned long func_addr,
+					 unsigned long func_size)
+{
+	unsigned long loc;
+	unsigned long range_size = arch_klp_fentry_range_size();
+
+	/*
+	 * When some arch not need to modify codes after fentry, they are no
+	 * need to override the weak arch_klp_fentry_range_size() which return
+	 * 0, so just return here.
+	 */
+	if (range_size == 0 || range_size > func_size)
+		return 0;
+	loc = ftrace_location_range(func_addr, func_addr + range_size);
+	if (WARN_ON(loc && (loc < func_addr || loc >= func_addr + range_size)))
+		loc = 0;
+	return loc;
+}
+#endif /* CONFIG_LIVEPATCH_ISOLATE_KPROBE */
+
 #endif
 
 static int klp_init_func(struct klp_object *obj, struct klp_func *func)
@@ -1089,15 +1116,16 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 		}
 #ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
 		old_func = (unsigned long)func->old_func;
-		ftrace_loc = ftrace_location_range(old_func, old_func + func->old_size - 1);
+		ftrace_loc = klp_ftrace_location(old_func, func->old_size);
 		if (ftrace_loc) {
-			if (WARN_ON(ftrace_loc < old_func ||
-			    ftrace_loc >= old_func + func->old_size - MCOUNT_INSN_SIZE)) {
-				pr_err("ftrace location for '%s' invalid", func->old_name);
-				return -EINVAL;
+			if (ftrace_loc >= old_func &&
+			    ftrace_loc < old_func + func->old_size - MCOUNT_INSN_SIZE) {
+				func->old_func = (void *)(ftrace_loc + MCOUNT_INSN_SIZE);
+				func->old_size -= ((unsigned long)func->old_func - old_func);
+			} else {
+				pr_warn("space not enough after ftrace location in '%s'\n",
+					func->old_name);
 			}
-			func->old_func = (void *)(ftrace_loc + MCOUNT_INSN_SIZE);
-			func->old_size -= ((unsigned long)func->old_func - old_func);
 		}
 #endif
 
