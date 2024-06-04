@@ -387,7 +387,7 @@ static int resctrl_get_tree(struct fs_context *fc)
 
 	if (resctrl_mon_capable) {
 		ret = mongroup_create_dir(resctrl_group_default.kn,
-					  NULL, "mon_groups",
+					  &resctrl_group_default, "mon_groups",
 					  &kn_mongrp);
 		if (ret)
 			goto out_info;
@@ -718,7 +718,7 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	uint files = 0;
 	int ret;
 
-	prdtgrp = resctrl_group_kn_lock_live(prgrp_kn);
+	prdtgrp = resctrl_group_kn_lock_live(parent_kn);
 	rdt_last_cmd_clear();
 	if (!prdtgrp) {
 		ret = -ENODEV;
@@ -807,7 +807,7 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	kernfs_activate(kn);
 
 	/*
-	 * The caller unlocks the prgrp_kn upon success.
+	 * The caller unlocks the parent_kn upon success.
 	 */
 	return 0;
 
@@ -824,7 +824,7 @@ out_free_closid:
 out_free_rdtgrp:
 	kfree(rdtgrp);
 out_unlock:
-	resctrl_group_kn_unlock(prgrp_kn);
+	resctrl_group_kn_unlock(parent_kn);
 	return ret;
 }
 
@@ -865,7 +865,7 @@ static int resctrl_group_mkdir_mon(struct kernfs_node *parent_kn,
 	 */
 	ret = resctrl_update_groups_config(prgrp);
 
-	resctrl_group_kn_unlock(prgrp_kn);
+	resctrl_group_kn_unlock(parent_kn);
 	return ret;
 }
 
@@ -899,7 +899,7 @@ static int resctrl_group_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 		 * Create an empty mon_groups directory to hold the subset
 		 * of tasks and cpus to monitor.
 		 */
-		ret = mongroup_create_dir(kn, NULL, "mon_groups", NULL);
+		ret = mongroup_create_dir(kn, rdtgrp, "mon_groups", NULL);
 		if (ret) {
 			rdt_last_cmd_puts("kernfs subdir error\n");
 			goto out_list_del;
@@ -913,7 +913,7 @@ out_list_del:
 out_common_fail:
 	mkdir_resctrl_prepare_clean(rdtgrp);
 out_unlock:
-	resctrl_group_kn_unlock(prgrp_kn);
+	resctrl_group_kn_unlock(parent_kn);
 	return ret;
 }
 
@@ -1072,7 +1072,8 @@ static int resctrl_group_rmdir(struct kernfs_node *kn)
 	 * If the resctrl_group is a mon group and parent directory
 	 * is a valid "mon_groups" directory, remove the mon group.
 	 */
-	if (rdtgrp->type == RDTCTRL_GROUP && parent_kn == resctrl_group_default.kn)
+	if (rdtgrp->type == RDTCTRL_GROUP && parent_kn == resctrl_group_default.kn &&
+	    rdtgrp != &resctrl_group_default)
 		ret = resctrl_group_rmdir_ctrl(kn, rdtgrp, tmpmask);
 	else if (rdtgrp->type == RDTMON_GROUP &&
 		 is_mon_groups(parent_kn, kn->name))
