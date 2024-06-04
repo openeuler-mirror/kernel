@@ -810,6 +810,8 @@ static void mkiss_close(struct tty_struct *tty)
 	kfree(ax->xbuff);
 
 	ax->tty = NULL;
+
+	free_netdev(ax->dev);
 }
 
 /* Perform I/O control on an active ax25 channel. */
