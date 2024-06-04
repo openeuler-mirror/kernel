@@ -1365,7 +1365,7 @@ int __resctrl_group_move_task(struct task_struct *tsk,
 	struct task_move_callback *callback;
 	int ret;
 
-	callback = kzalloc(sizeof(*callback), GFP_KERNEL);
+	callback = kzalloc(sizeof(*callback), GFP_NOWAIT);
 	if (!callback)
 		return -ENOMEM;
 	callback->work.func = move_myself;
