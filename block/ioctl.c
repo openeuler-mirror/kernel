@@ -122,7 +122,7 @@ static int blk_ioctl_discard(struct block_device *bdev, fmode_t mode,
 		unsigned long arg, unsigned long flags)
 {
 	uint64_t range[2];
-	uint64_t start, len;
+	uint64_t start, len, end;
 	struct request_queue *q = bdev_get_queue(bdev);
 	int err;
 
@@ -143,7 +143,8 @@ static int blk_ioctl_discard(struct block_device *bdev, fmode_t mode,
 	if (len & 511)
 		return -EINVAL;
 
-	if (start + len > i_size_read(bdev->bd_inode))
+	if (check_add_overflow(start, len, &end) ||
+	    end > i_size_read(bdev->bd_inode))
 		return -EINVAL;
 
 	err = truncate_bdev_range(bdev, mode, start, start + len - 1);
