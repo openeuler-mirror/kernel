@@ -992,7 +992,7 @@ static bool is_device_v100(const struct hinic3_lld_dev *lld_dev)
 	unsigned short ssdid = pdev->subsystem_device;
 
 	return (ssdid == HINIC3_DEV_SSID_2X25G) || (ssdid == HINIC3_DEV_SSID_4X25G) ||
-		(ssdid == HINIC3_DEV_SSID_2X100G);
+		(ssdid == HINIC3_DEV_SSID_2X100G) || (ssdid == HINIC3_DEV_SSID_2X100G_VF);
 }
 
 static int roce3_add_check(const struct hinic3_lld_dev *lld_dev)
