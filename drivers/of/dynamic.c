@@ -9,7 +9,6 @@
 
 #define pr_fmt(fmt)	"OF: " fmt
 
-#include <linux/device.h>
 #include <linux/of.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
