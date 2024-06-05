@@ -13,6 +13,7 @@
 #include <linux/of_irq.h>
 #include <linux/perf/arm_pmu.h>
 #include <linux/platform_device.h>
+#include <linux/mem_sampling.h>
 
 #include "spe-decoder/arm-spe-decoder.h"
 #include "spe-decoder/arm-spe-pkt-decoder.h"
@@ -30,6 +31,12 @@ static int spe_probe_status = SPE_INIT_FAIL;
 static enum cpuhp_state arm_spe_online;
 
 DEFINE_PER_CPU(struct arm_spe_buf, per_cpu_spe_buf);
+
+mem_sampling_cb_type arm_spe_sampling_cb;
+void arm_spe_record_capture_callback_register(mem_sampling_cb_type cb)
+{
+	arm_spe_sampling_cb = cb;
+}
 
 static inline int arm_spe_per_buffer_alloc(int cpu)
 {
@@ -376,6 +383,16 @@ static irqreturn_t arm_spe_irq_handler(int irq, void *dev)
 	case SPE_PMU_BUF_FAULT_ACT_OK:
 		spe_buf->nr_records = 0;
 		arm_spe_decode_buf(spe_buf->cur, spe_buf->size);
+
+		/*
+		 * Callback function processing record data.
+		 * Call one: arm_spe_sampling_cb - mem_sampling layer.
+		 * TODO: use per CPU workqueue to process data and reduce
+		 * interrupt processing time
+		 */
+		if (arm_spe_sampling_cb)
+			arm_spe_sampling_cb((struct mem_sampling_record *)spe_buf->record_base,
+						   spe_buf->nr_records);
 		break;
 
 	case SPE_PMU_BUF_FAULT_ACT_SPURIOUS:
@@ -663,7 +680,7 @@ static void arm_spe_sample_para_init(void)
 void arm_spe_record_enqueue(struct arm_spe_record *record)
 {
 	struct arm_spe_buf *spe_buf = this_cpu_ptr(&per_cpu_spe_buf);
-	struct arm_spe_record *record_tail;
+	struct mem_sampling_record *record_tail;
 
 	if (spe_buf->nr_records >= SPE_RECORD_BUFFER_MAX_RECORDS) {
 		pr_err("nr_records exceeded!\n");
@@ -672,7 +689,7 @@ void arm_spe_record_enqueue(struct arm_spe_record *record)
 
 	record_tail = spe_buf->record_base +
 			spe_buf->nr_records * SPE_RECORD_ENTRY_SIZE;
-	*record_tail = *(struct arm_spe_record *)record;
+	*record_tail = *(struct mem_sampling_record *)record;
 	spe_buf->nr_records++;
 
 }

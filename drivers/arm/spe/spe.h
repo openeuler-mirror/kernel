@@ -14,7 +14,7 @@
 #define SPE_SAMPLE_PERIOD		1024
 
 #define SPE_RECORD_BUFFER_MAX_RECORDS	(100)
-#define SPE_RECORD_ENTRY_SIZE		sizeof(struct arm_spe_record)
+#define SPE_RECORD_ENTRY_SIZE		sizeof(struct mem_sampling_record)
 
 #define SPE_PMU_FEAT_FILT_EVT		(1UL << 0)
 #define SPE_PMU_FEAT_FILT_TYP		(1UL << 1)
