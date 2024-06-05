@@ -244,4 +244,6 @@ source "drivers/ub/Kconfig"
 
 source "drivers/cpuinspect/Kconfig"
 
+source "drivers/arm/Kconfig"
+
 endmenu

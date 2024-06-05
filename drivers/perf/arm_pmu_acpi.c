@@ -124,7 +124,7 @@ arm_acpi_register_pmu_device(struct platform_device *pdev, u8 len,
 	return ret;
 }
 
-#if IS_ENABLED(CONFIG_ARM_SPE_PMU)
+#if IS_ENABLED(CONFIG_ARM_SPE_PMU) || IS_ENABLED(CONFIG_ARM_SPE_MEM_SAMPLING)
 static struct resource spe_resources[] = {
 	{
 		/* irq */
