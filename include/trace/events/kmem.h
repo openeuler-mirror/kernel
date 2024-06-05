@@ -8,6 +8,7 @@
 #include <linux/types.h>
 #include <linux/tracepoint.h>
 #include <trace/events/mmflags.h>
+#include <linux/mem_sampling.h>
 
 DECLARE_EVENT_CLASS(kmem_alloc,
 
@@ -363,6 +364,85 @@ TRACE_EVENT(rss_stat,
 		__entry->member,
 		__entry->size)
 	);
+
+#ifdef CONFIG_NUMABALANCING_MEM_SAMPLING
+TRACE_EVENT(mm_numa_migrating,
+
+	TP_PROTO(u64 vaddr, int page_nid, int target_nid,
+		int migrate_success),
+
+	TP_ARGS(vaddr, page_nid, target_nid, migrate_success),
+
+	TP_STRUCT__entry(
+		__field(u64, vaddr)
+		__field(int, page_nid)
+		__field(int, target_nid)
+		__field(int, migrate_success)
+	),
+
+	TP_fast_assign(
+		__entry->vaddr = vaddr;
+		__entry->page_nid = page_nid;
+		__entry->target_nid = target_nid;
+		__entry->migrate_success = !!(migrate_success);
+	),
+
+	TP_printk("vaddr=%llu page_nid=%d target_nid=%d migrate_success=%d",
+		__entry->vaddr, __entry->page_nid,
+		__entry->target_nid, __entry->migrate_success)
+);
+
+TRACE_EVENT(mm_mem_sampling_access_record,
+
+	TP_PROTO(u64 vaddr, u64 paddr, int cpuid, int pid),
+
+	TP_ARGS(vaddr, paddr, cpuid, pid),
+
+	TP_STRUCT__entry(
+		__field(u64, vaddr)
+		__field(u64, paddr)
+		__field(int, cpuid)
+		__field(int, pid)
+	),
+
+	TP_fast_assign(
+		__entry->vaddr = vaddr;
+		__entry->paddr = paddr;
+		__entry->cpuid = cpuid;
+		__entry->pid = pid;
+	),
+
+	TP_printk("vaddr=%llu paddr=%llu cpuid=%d pid=%d",
+		__entry->vaddr, __entry->paddr,
+		__entry->cpuid, __entry->pid)
+);
+#endif /* CONFIG_NUMABALANCING_MEM_SAMPLING */
+#ifdef CONFIG_ARM_SPE_MEM_SAMPLING
+TRACE_EVENT(spe_record,
+	TP_PROTO(struct mem_sampling_record *record, int cpuid),
+
+	TP_ARGS(record, cpuid),
+
+	TP_STRUCT__entry(
+		__field(u64, vaddr)
+		__field(u64, paddr)
+	__field(int, cpuid)
+		__field(int, pid)
+	),
+
+	TP_fast_assign(
+		__entry->vaddr = record->virt_addr;
+		__entry->paddr = record->phys_addr;
+	__entry->cpuid = cpuid;
+		__entry->pid = record->context_id;
+
+	),
+
+	TP_printk("vaddr=%llu paddr=%llu cpuid=%d pid=%d",
+		__entry->vaddr, __entry->paddr,
+		__entry->cpuid, __entry->pid)
+);
+#endif /* CONFIG_ARM_SPE_MEM_SAMPLING */
 #endif /* _TRACE_KMEM_H */
 
 /* This part must be outside protection */

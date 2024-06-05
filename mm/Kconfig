@@ -1014,6 +1014,30 @@ config EXTEND_HUGEPAGE_MAPPING
 	help
 	  Introduce vmalloc/vmap/remap interfaces that handle only hugepages.
 
+config MEM_SAMPLING
+	bool "Use hardware memory sampling for kernel features(NUMA, DAMON, etc.)"
+	default n
+	depends on ARM64
+	select ARM_SPE_MEM_SAMPLING if ARM64
+	help
+	  Memory sampling is primarily based on specific hardware capabilities,
+	  which enable hardware PMUs to sample memory access for use by kernel
+	  features. It requires at least one hardware pmu (e.g. ARM_SPE_MEM_SAMPLING) to
+	  be enabled.
+
+config NUMABALANCING_MEM_SAMPLING
+	bool "Use hardware memory samples for numa balancing"
+	depends on MEM_SAMPLING && NUMA_BALANCING
+	default n
+	help
+	  This feature relies on hardware sampling, and will use memory access
+	  information obtained from hardware sampling in the NUMA balancing
+	  policy instead of the native software PROT_NONE scheme. Turning on
+	  this feature may have a performance impact on some workloads, for
+	  example, lightweight memory access programs.
+
+	  if unsure, say N to disable the NUMABALANCING_MEM_SAMPLING.
+
 source "mm/damon/Kconfig"
 
 endmenu

@@ -195,3 +195,4 @@ obj-$(CONFIG_COUNTER)		+= counter/
 obj-$(CONFIG_MOST)		+= most/
 obj-$(CONFIG_ROH)		+= roh/
 obj-$(CONFIG_UB)      += ub/
+obj-$(CONFIG_ARM_SPE_MEM_SAMPLING)		+= arm/spe/
