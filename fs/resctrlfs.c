@@ -387,7 +387,7 @@ static int resctrl_get_tree(struct fs_context *fc)
 
 	if (resctrl_mon_capable) {
 		ret = mongroup_create_dir(resctrl_group_default.kn,
-					  NULL, "mon_groups",
+					  &resctrl_group_default, "mon_groups",
 					  &kn_mongrp);
 		if (ret)
 			goto out_info;
@@ -709,7 +709,6 @@ rmid_attach:
 }
 
 static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
-			     struct kernfs_node *prgrp_kn,
 			     const char *name, umode_t mode,
 			     enum rdt_group_type rtype, struct resctrl_group **r)
 {
@@ -718,7 +717,7 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	uint files = 0;
 	int ret;
 
-	prdtgrp = resctrl_group_kn_lock_live(prgrp_kn);
+	prdtgrp = resctrl_group_kn_lock_live(parent_kn);
 	rdt_last_cmd_clear();
 	if (!prdtgrp) {
 		ret = -ENODEV;
@@ -807,7 +806,7 @@ static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
 	kernfs_activate(kn);
 
 	/*
-	 * The caller unlocks the prgrp_kn upon success.
+	 * The caller unlocks the parent_kn upon success.
 	 */
 	return 0;
 
@@ -824,7 +823,7 @@ out_free_closid:
 out_free_rdtgrp:
 	kfree(rdtgrp);
 out_unlock:
-	resctrl_group_kn_unlock(prgrp_kn);
+	resctrl_group_kn_unlock(parent_kn);
 	return ret;
 }
 
@@ -840,14 +839,12 @@ static void mkdir_resctrl_prepare_clean(struct resctrl_group *rgrp)
  * to monitor a subset of tasks and cpus in its parent ctrl_mon group.
  */
 static int resctrl_group_mkdir_mon(struct kernfs_node *parent_kn,
-			      struct kernfs_node *prgrp_kn,
-			      const char *name,
-			      umode_t mode)
+			      const char *name, umode_t mode)
 {
 	struct resctrl_group *rdtgrp, *prgrp;
 	int ret;
 
-	ret = mkdir_resctrl_prepare(parent_kn, prgrp_kn, name, mode, RDTMON_GROUP,
+	ret = mkdir_resctrl_prepare(parent_kn, name, mode, RDTMON_GROUP,
 				&rdtgrp);
 	if (ret)
 		return ret;
@@ -865,7 +862,7 @@ static int resctrl_group_mkdir_mon(struct kernfs_node *parent_kn,
 	 */
 	ret = resctrl_update_groups_config(prgrp);
 
-	resctrl_group_kn_unlock(prgrp_kn);
+	resctrl_group_kn_unlock(parent_kn);
 	return ret;
 }
 
@@ -874,14 +871,13 @@ static int resctrl_group_mkdir_mon(struct kernfs_node *parent_kn,
  * to allocate and monitor resources.
  */
 static int resctrl_group_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
-				   struct kernfs_node *prgrp_kn,
 				   const char *name, umode_t mode)
 {
 	struct resctrl_group *rdtgrp;
 	struct kernfs_node *kn;
 	int ret;
 
-	ret = mkdir_resctrl_prepare(parent_kn, prgrp_kn, name, mode, RDTCTRL_GROUP,
+	ret = mkdir_resctrl_prepare(parent_kn, name, mode, RDTCTRL_GROUP,
 				&rdtgrp);
 	if (ret)
 		return ret;
@@ -899,7 +895,7 @@ static int resctrl_group_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 		 * Create an empty mon_groups directory to hold the subset
 		 * of tasks and cpus to monitor.
 		 */
-		ret = mongroup_create_dir(kn, NULL, "mon_groups", NULL);
+		ret = mongroup_create_dir(kn, rdtgrp, "mon_groups", NULL);
 		if (ret) {
 			rdt_last_cmd_puts("kernfs subdir error\n");
 			goto out_list_del;
@@ -913,7 +909,7 @@ out_list_del:
 out_common_fail:
 	mkdir_resctrl_prepare_clean(rdtgrp);
 out_unlock:
-	resctrl_group_kn_unlock(prgrp_kn);
+	resctrl_group_kn_unlock(parent_kn);
 	return ret;
 }
 
@@ -946,19 +942,19 @@ static int resctrl_group_mkdir(struct kernfs_node *parent_kn, const char *name,
 	 * subdirectory
 	 */
 	if (resctrl_alloc_capable && parent_kn == resctrl_group_default.kn)
-		return resctrl_group_mkdir_ctrl_mon(parent_kn, parent_kn, name, mode);
+		return resctrl_group_mkdir_ctrl_mon(parent_kn, name, mode);
 
 	/*
 	 * If RDT monitoring is supported and the parent directory is a valid
 	 * "mon_groups" directory, add a monitoring subdirectory.
 	 */
 	if (resctrl_mon_capable && is_mon_groups(parent_kn, name))
-		return resctrl_group_mkdir_mon(parent_kn, parent_kn->parent, name, mode);
+		return resctrl_group_mkdir_mon(parent_kn, name, mode);
 
 	return -EPERM;
 }
 
-static void resctrl_group_rm_mon(struct resctrl_group *rdtgrp,
+static int resctrl_group_rmdir_mon(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
 			      cpumask_var_t tmpmask)
 {
 	struct resctrl_group *prdtgrp = rdtgrp->mon.parent;
@@ -989,19 +985,14 @@ static void resctrl_group_rm_mon(struct resctrl_group *rdtgrp,
 	 */
 	WARN_ON(list_empty(&prdtgrp->mon.crdtgrp_list));
 	list_del(&rdtgrp->mon.crdtgrp_list);
-}
-
-static int resctrl_group_rmdir_mon(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
-			      cpumask_var_t tmpmask)
-{
-	resctrl_group_rm_mon(rdtgrp, tmpmask);
 
 	kernfs_remove(rdtgrp->kn);
 
 	return 0;
 }
 
-static void resctrl_group_rm_ctrl(struct resctrl_group *rdtgrp, cpumask_var_t tmpmask)
+static int resctrl_group_rmdir_ctrl(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
+			       cpumask_var_t tmpmask)
 {
 	int cpu;
 
@@ -1027,24 +1018,17 @@ static void resctrl_group_rm_ctrl(struct resctrl_group *rdtgrp, cpumask_var_t tm
 	cpumask_or(tmpmask, tmpmask, &rdtgrp->cpu_mask);
 	update_closid_rmid(tmpmask, NULL);
 
-	rdtgrp->flags |= RDT_DELETED;
 	closid_free(rdtgrp->closid.intpartid);
 	rmid_free(rdtgrp->mon.rmid);
 
+	rdtgrp->flags |= RDT_DELETED;
+	list_del(&rdtgrp->resctrl_group_list);
+
+	kernfs_remove(rdtgrp->kn);
 	/*
 	 * Free all the child monitor group rmids.
 	 */
 	free_all_child_rdtgrp(rdtgrp);
-
-	list_del(&rdtgrp->resctrl_group_list);
-}
-
-static int resctrl_group_rmdir_ctrl(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
-			       cpumask_var_t tmpmask)
-{
-	resctrl_group_rm_ctrl(rdtgrp, tmpmask);
-
-	kernfs_remove(rdtgrp->kn);
 
 	return 0;
 }
@@ -1072,7 +1056,8 @@ static int resctrl_group_rmdir(struct kernfs_node *kn)
 	 * If the resctrl_group is a mon group and parent directory
 	 * is a valid "mon_groups" directory, remove the mon group.
 	 */
-	if (rdtgrp->type == RDTCTRL_GROUP && parent_kn == resctrl_group_default.kn)
+	if (rdtgrp->type == RDTCTRL_GROUP && parent_kn == resctrl_group_default.kn &&
+	    rdtgrp != &resctrl_group_default)
 		ret = resctrl_group_rmdir_ctrl(kn, rdtgrp, tmpmask);
 	else if (rdtgrp->type == RDTMON_GROUP &&
 		 is_mon_groups(parent_kn, kn->name))

@@ -285,6 +285,7 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 			resctrl_cdp_mpamid_map_val(entry->closid.reqpartid,
 					cfg[i].conf_type, closid.reqpartid);
 			resctrl_dom_ctrl_config(cdp_both_ctrl, r, dom, &para);
+			cond_resched();
 		}
 	}
 }
@@ -658,6 +659,8 @@ int resctrl_group_mondata_show(struct seq_file *m, void *arg)
 				r->rid), type, md.u.mon);
 
 			usage += resctrl_dom_mon_data(r, d, md.priv);
+
+			cond_resched();
 		}
 	}
 
