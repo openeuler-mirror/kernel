@@ -27,6 +27,8 @@ struct mem_sampling_ops_struct mem_sampling_ops;
 
 #define MEM_SAMPLING_DISABLED		0x0
 #define MEM_SAMPLING_NORMAL		0x1
+#define NUMA_BALANCING_HW_DISABLED	0x0
+#define NUMA_BALANCING_HW_NORMAL	0x1
 
 static int mem_sampling_override __initdata;
 struct mem_sampling_record_cb_list_entry {
@@ -279,6 +281,49 @@ static inline enum mem_sampling_type_enum mem_sampling_get_type(void)
 
 DEFINE_STATIC_KEY_FALSE(sched_numabalancing_mem_sampling);
 
+#ifdef CONFIG_NUMABALANCING_MEM_SAMPLING
+
+static void set_numabalancing_mem_sampling_state(bool enabled)
+{
+	if (enabled) {
+		numa_balancing_mem_sampling_cb_register();
+		static_branch_enable(&sched_numabalancing_mem_sampling);
+	} else {
+		numa_balancing_mem_sampling_cb_unregister();
+		static_branch_disable(&sched_numabalancing_mem_sampling);
+	}
+}
+
+#ifdef CONFIG_PROC_SYSCTL
+int sysctl_numabalancing_mem_sampling(struct ctl_table *table, int write,
+				void *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table t;
+	int err;
+	int state = static_branch_likely(&sched_numabalancing_mem_sampling);
+
+	if (write && !capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	t = *table;
+	t.data = &state;
+	err = proc_dointvec_minmax(&t, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+
+	if (write && static_branch_likely(&mem_sampling_access_hints))
+		set_numabalancing_mem_sampling_state(state);
+
+	return err;
+}
+#endif
+#else
+static inline void set_numabalancing_mem_sampling_state(bool enabled)
+{
+
+}
+#endif
+
 static int sysctl_mem_sampling_mode;
 
 static void __set_mem_sampling_state(bool enabled)
@@ -298,6 +343,9 @@ static void set_mem_sampling_state(bool enabled)
 	else
 		sysctl_mem_sampling_mode = MEM_SAMPLING_DISABLED;
 	__set_mem_sampling_state(enabled);
+
+	if (!enabled)
+		set_numabalancing_mem_sampling_state(enabled);
 }
 
 #ifdef CONFIG_PROC_SYSCTL
@@ -332,6 +380,17 @@ static struct ctl_table ctl_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
+#ifdef CONFIG_NUMABALANCING_MEM_SAMPLING
+	{
+		.procname	= "numa_balancing_mem_sampling",
+		.data		= NULL, /* filled in by handler */
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_numabalancing_mem_sampling,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+#endif /* CONFIG_NUMABALANCING_MEM_SAMPLING */
 	{}
 };
 
