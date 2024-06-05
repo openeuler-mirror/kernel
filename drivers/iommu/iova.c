@@ -18,7 +18,7 @@
 
 static bool iova_rcache_insert(struct iova_domain *iovad,
 			       unsigned long pfn,
-			       unsigned long size);
+			       unsigned long size, int cpu);
 static unsigned long iova_rcache_get(struct iova_domain *iovad,
 				     unsigned long size,
 				     unsigned long limit_pfn);
@@ -77,7 +77,7 @@ static void free_iova_flush_queue(struct iova_domain *iovad)
 	iovad->entry_dtor = NULL;
 }
 
-static void fq_ring_free(struct iova_domain *iovad, struct iova_fq *fq);
+static void fq_ring_free(struct iova_domain *iovad, struct iova_fq *fq, int cpu);
 static void free_iova_work_func(struct work_struct *work)
 {
 	struct iova_domain *iovad;
@@ -90,8 +90,9 @@ static void free_iova_work_func(struct work_struct *work)
 
 		fq = per_cpu_ptr(iovad->fq, cpu);
 		spin_lock_irqsave(&fq->lock, flags);
-		fq_ring_free(iovad, fq);
+		fq_ring_free(iovad, fq, cpu);
 		spin_unlock_irqrestore(&fq->lock, flags);
+		cond_resched();
 	}
 }
 
@@ -459,6 +460,15 @@ retry:
 }
 EXPORT_SYMBOL_GPL(alloc_iova_fast);
 
+static void
+free_iova_fast_internal(struct iova_domain *iovad, unsigned long pfn, unsigned long size, int cpu)
+{
+	if (iova_rcache_insert(iovad, pfn, size, cpu))
+		return;
+
+	free_iova(iovad, pfn);
+}
+
 /**
  * free_iova_fast - free iova pfn range into rcache
  * @iovad: - iova domain in question.
@@ -470,12 +480,10 @@ EXPORT_SYMBOL_GPL(alloc_iova_fast);
 void
 free_iova_fast(struct iova_domain *iovad, unsigned long pfn, unsigned long size)
 {
-	if (iova_rcache_insert(iovad, pfn, size))
-		return;
-
-	free_iova(iovad, pfn);
+	free_iova_fast_internal(iovad, pfn, size, smp_processor_id());
 }
 EXPORT_SYMBOL_GPL(free_iova_fast);
+
 
 #define fq_ring_for_each(i, fq) \
 	for ((i) = (fq)->head; (i) != (fq)->tail; (i) = ((i) + 1) % IOVA_FQ_SIZE)
@@ -497,7 +505,7 @@ static inline unsigned fq_ring_add(struct iova_fq *fq)
 	return idx;
 }
 
-static void fq_ring_free(struct iova_domain *iovad, struct iova_fq *fq)
+static void fq_ring_free(struct iova_domain *iovad, struct iova_fq *fq, int cpu)
 {
 	u64 counter = atomic64_read(&iovad->fq_flush_finish_cnt);
 	unsigned idx;
@@ -512,9 +520,9 @@ static void fq_ring_free(struct iova_domain *iovad, struct iova_fq *fq)
 		if (iovad->entry_dtor)
 			iovad->entry_dtor(fq->entries[idx].data);
 
-		free_iova_fast(iovad,
+		free_iova_fast_internal(iovad,
 			       fq->entries[idx].iova_pfn,
-			       fq->entries[idx].pages);
+			       fq->entries[idx].pages, cpu);
 
 		fq->head = (fq->head + 1) % IOVA_FQ_SIZE;
 	}
@@ -565,6 +573,7 @@ void queue_iova(struct iova_domain *iovad,
 	struct iova_fq *fq = raw_cpu_ptr(iovad->fq);
 	unsigned long flags;
 	unsigned idx;
+	int cpu = smp_processor_id();
 
 	/*
 	 * Order against the IOMMU driver's pagetable update from unmapping
@@ -580,11 +589,11 @@ void queue_iova(struct iova_domain *iovad,
 	 * flushed out on another CPU. This makes the fq_full() check below less
 	 * likely to be true.
 	 */
-	fq_ring_free(iovad, fq);
+	fq_ring_free(iovad, fq, cpu);
 
 	if (fq_full(fq)) {
 		iova_domain_flush(iovad);
-		fq_ring_free(iovad, fq);
+		fq_ring_free(iovad, fq, cpu);
 	}
 
 	idx = fq_ring_add(fq);
@@ -957,13 +966,13 @@ static void init_iova_rcaches(struct iova_domain *iovad)
  */
 static bool __iova_rcache_insert(struct iova_domain *iovad,
 				 struct iova_rcache *rcache,
-				 unsigned long iova_pfn)
+				 unsigned long iova_pfn, int cpu)
 {
 	struct iova_cpu_rcache *cpu_rcache;
 	bool can_insert = false;
 	unsigned long flags;
 
-	cpu_rcache = raw_cpu_ptr(rcache->cpu_rcaches);
+	cpu_rcache = per_cpu_ptr(rcache->cpu_rcaches, cpu);
 	spin_lock_irqsave(&cpu_rcache->lock, flags);
 
 	if (!iova_magazine_full(cpu_rcache->loaded)) {
@@ -994,14 +1003,14 @@ static bool __iova_rcache_insert(struct iova_domain *iovad,
 }
 
 static bool iova_rcache_insert(struct iova_domain *iovad, unsigned long pfn,
-			       unsigned long size)
+			       unsigned long size, int cpu)
 {
 	unsigned int log_size = order_base_2(size);
 
 	if (log_size >= IOVA_RANGE_CACHE_MAX_SIZE)
 		return false;
 
-	return __iova_rcache_insert(iovad, &iovad->rcaches[log_size], pfn);
+	return __iova_rcache_insert(iovad, &iovad->rcaches[log_size], pfn, cpu);
 }
 
 /*
