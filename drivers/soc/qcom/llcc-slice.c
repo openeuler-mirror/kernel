@@ -283,6 +283,9 @@ int qcom_llcc_probe(struct platform_device *pdev,
 	void __iomem *base;
 	int ret, i;
 
+	if (!IS_ERR(drv_data))
+		return -EBUSY;
+
 	drv_data = devm_kzalloc(dev, sizeof(*drv_data), GFP_KERNEL);
 	if (!drv_data)
 		return -ENOMEM;
