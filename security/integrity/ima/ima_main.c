@@ -282,7 +282,11 @@ static int process_measurement(struct file *file, const struct cred *cred,
 			       u32 secid, char *buf, loff_t size, int mask,
 			       enum ima_hooks func)
 {
+#ifndef CONFIG_IMA_OVERLAYFS_DETECTION_BYPASS
 	struct inode *backing_inode, *inode = file_inode(file);
+#else
+	struct inode *inode = file_inode(file);
+#endif
 	struct integrity_iint_cache *iint = NULL;
 	struct ima_template_desc *template_desc = NULL;
 	char *pathbuf = NULL;
@@ -362,6 +366,7 @@ static int process_measurement(struct file *file, const struct cred *cred,
 		iint->measured_pcrs = 0;
 	}
 
+#ifndef CONFIG_IMA_OVERLAYFS_DETECTION_BYPASS
 	/* Detect and re-evaluate changes made to the backing file. */
 	backing_inode = d_real_inode(file_dentry(file));
 	if (backing_inode != inode &&
@@ -374,6 +379,7 @@ static int process_measurement(struct file *file, const struct cred *cred,
 			iint->measured_pcrs = 0;
 		}
 	}
+#endif
 
 	/* Determine if already appraised/measured based on bitmask
 	 * (IMA_MEASURE, IMA_MEASURED, IMA_XXXX_APPRAISE, IMA_XXXX_APPRAISED,
