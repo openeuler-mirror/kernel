@@ -309,6 +309,7 @@ void drm_sched_entity_fini(struct drm_sched_entity *entity)
 	 */
 	if (spsc_queue_peek(&entity->job_queue)) {
 		struct drm_sched_job *job;
+		struct dma_fence *f;
 		int r;
 
 		/* Park the kernel for a moment to make sure it isn't processing
@@ -325,6 +326,10 @@ void drm_sched_entity_fini(struct drm_sched_entity *entity)
 
 		while ((job = to_drm_sched_job(spsc_queue_pop(&entity->job_queue)))) {
 			struct drm_sched_fence *s_fence = job->s_fence;
+			/* Wait for all dependencies to avoid data corruptions */
+			while ((f = job->sched->ops->dependency(job, entity)))
+				dma_fence_wait(f, false);
+
 			drm_sched_fence_scheduled(s_fence);
 			dma_fence_set_error(&s_fence->finished, -ESRCH);
 
