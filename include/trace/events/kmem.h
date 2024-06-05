@@ -8,6 +8,7 @@
 #include <linux/types.h>
 #include <linux/tracepoint.h>
 #include <trace/events/mmflags.h>
+#include <linux/mem_sampling.h>
 
 DECLARE_EVENT_CLASS(kmem_alloc,
 
@@ -416,6 +417,32 @@ TRACE_EVENT(mm_mem_sampling_access_record,
 		__entry->cpuid, __entry->pid)
 );
 #endif /* CONFIG_NUMABALANCING_MEM_SAMPLING */
+#ifdef CONFIG_ARM_SPE_MEM_SAMPLING
+TRACE_EVENT(spe_record,
+	TP_PROTO(struct mem_sampling_record *record, int cpuid),
+
+	TP_ARGS(record, cpuid),
+
+	TP_STRUCT__entry(
+		__field(u64, vaddr)
+		__field(u64, paddr)
+	__field(int, cpuid)
+		__field(int, pid)
+	),
+
+	TP_fast_assign(
+		__entry->vaddr = record->virt_addr;
+		__entry->paddr = record->phys_addr;
+	__entry->cpuid = cpuid;
+		__entry->pid = record->context_id;
+
+	),
+
+	TP_printk("vaddr=%llu paddr=%llu cpuid=%d pid=%d",
+		__entry->vaddr, __entry->paddr,
+		__entry->cpuid, __entry->pid)
+);
+#endif /* CONFIG_ARM_SPE_MEM_SAMPLING */
 #endif /* _TRACE_KMEM_H */
 
 /* This part must be outside protection */
