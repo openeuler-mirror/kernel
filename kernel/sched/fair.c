@@ -30,6 +30,7 @@
 #endif
 #include <linux/sched/grid_qos.h>
 #include <linux/bpf_sched.h>
+#include <linux/mem_sampling.h>
 
 /*
  * Targeted preemption latency for CPU-bound tasks:
@@ -2967,6 +2968,16 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	struct callback_head *work = &curr->numa_work;
 	u64 period, now;
 
+#ifdef CONFIG_NUMABALANCING_MEM_SAMPLING
+	/*
+	 * If we are using access hints from hardware (like using
+	 * SPE), don't scan the address space.
+	 * Note that currently PMD-level page migration is not
+	 * supported.
+	 */
+	if (static_branch_unlikely(&sched_numabalancing_mem_sampling))
+		return;
+#endif
 	/*
 	 * We don't care about NUMA placement if we don't have memory.
 	 */

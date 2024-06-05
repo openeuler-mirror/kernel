@@ -12,6 +12,8 @@
 #ifndef __MEM_SAMPLING_H
 #define __MEM_SAMPLING_H
 
+DECLARE_STATIC_KEY_FALSE(sched_numabalancing_mem_sampling);
+
 enum mem_sampling_sample_type {
 	MEM_SAMPLING_L1D_ACCESS		= 1 << 0,
 	MEM_SAMPLING_L1D_MISS		= 1 << 1,

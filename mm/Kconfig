@@ -1025,6 +1025,19 @@ config MEM_SAMPLING
 	  features. It requires at least one hardware pmu (e.g. ARM_SPE_MEM_SAMPLING) to
 	  be enabled.
 
+config NUMABALANCING_MEM_SAMPLING
+	bool "Use hardware memory samples for numa balancing"
+	depends on MEM_SAMPLING && NUMA_BALANCING
+	default n
+	help
+	  This feature relies on hardware sampling, and will use memory access
+	  information obtained from hardware sampling in the NUMA balancing
+	  policy instead of the native software PROT_NONE scheme. Turning on
+	  this feature may have a performance impact on some workloads, for
+	  example, lightweight memory access programs.
+
+	  if unsure, say N to disable the NUMABALANCING_MEM_SAMPLING.
+
 source "mm/damon/Kconfig"
 
 endmenu
