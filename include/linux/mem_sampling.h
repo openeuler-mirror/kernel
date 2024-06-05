@@ -59,6 +59,15 @@ void mem_sampling_sched_in(struct task_struct *prev, struct task_struct *curr);
 static inline void mem_sampling_sched_in(struct task_struct *prev, struct task_struct *curr) { }
 #endif
 
+#ifdef CONFIG_MEM_SAMPLING
+bool mem_sampling_enabled(void);
+#else
+static inline bool mem_sampling_enabled(void)
+{
+	return false;
+}
+#endif
+
 /* invoked by specific mem_sampling */
 typedef void (*mem_sampling_cb_type)(struct mem_sampling_record *record_base,
 				     int n_records);

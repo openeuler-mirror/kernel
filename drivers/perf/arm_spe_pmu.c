@@ -33,6 +33,7 @@
 #include <linux/slab.h>
 #include <linux/smp.h>
 #include <linux/vmalloc.h>
+#include <linux/mem_sampling.h>
 
 #include <asm/barrier.h>
 #include <asm/cpufeature.h>
@@ -1198,6 +1199,11 @@ static int arm_spe_pmu_device_probe(struct platform_device *pdev)
 	int ret;
 	struct arm_spe_pmu *spe_pmu;
 	struct device *dev = &pdev->dev;
+
+	if (mem_sampling_enabled()) {
+		dev_warn_once(dev, "perf spe inaccessible. Try removing \"mem_sampling_on\" on the kernel command line\n");
+		return -EBUSY;
+	}
 
 	/*
 	 * If kernelspace is unmapped when running at EL0, then the SPE

@@ -4,7 +4,7 @@
 #
 config ARM_SPE_MEM_SAMPLING
 	bool "In-kernel SPE for driver for page access profiling"
-	depends on ARM64 && !ARM_SPE_PMU
+	depends on ARM64
         help
 	  Enable support for the ARMv8.2 Statistical Profiling Extension, which
 	  provides periodic sampling of operations in the CPU pipeline.

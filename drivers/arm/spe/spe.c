@@ -701,6 +701,15 @@ static int arm_spe_device_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 
 	/*
+	 * TODO: Find a clean way to disable SPE so that SPE
+	 * can be used for perf.
+	 */
+	if (!mem_sampling_enabled()) {
+		dev_warn_once(dev, "mem_sampling inaccessible. Try passing \"mem_sampling_on\" on the kernel command line\n");
+		return -EBUSY;
+	}
+
+	/*
 	 * If kernelspace is unmapped when running at EL0, then the SPE
 	 * buffer will fault and prematurely terminate the AUX session.
 	 */
@@ -784,10 +793,6 @@ static int __init arm_spe_init(void)
 
 static void __exit arm_spe_exit(void)
 {
-	/*
-	 * TODO: Find a clean way to disable SPE so that SPE
-	 * can be used for perf.
-	 */
 	platform_driver_unregister(&arm_spe_driver);
 	cpuhp_remove_multi_state(arm_spe_online);
 	arm_spe_buffer_free();

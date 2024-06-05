@@ -26,6 +26,8 @@
 
 struct mem_sampling_ops_struct mem_sampling_ops;
 
+static int mem_sampling;
+
 #define MEM_SAMPLING_DISABLED		0x0
 #define MEM_SAMPLING_NORMAL		0x1
 #define NUMA_BALANCING_HW_DISABLED	0x0
@@ -95,6 +97,12 @@ void mem_sampling_sched_in(struct task_struct *prev, struct task_struct *curr)
 	else
 		mem_sampling_ops.sampling_stop();
 }
+
+bool mem_sampling_enabled(void)
+{
+	return mem_sampling;
+}
+EXPORT_SYMBOL_GPL(mem_sampling_enabled);
 
 static void mem_sampling_process(struct mem_sampling_record *record_base, int nr_records)
 {
@@ -418,6 +426,14 @@ static void __init check_mem_sampling_enable(void)
 	else
 		set_mem_sampling_state(mem_sampling_default);
 }
+
+static int __init mem_sampling_setup(char *str)
+{
+	mem_sampling = 1;
+	return 1;
+
+}
+__setup("mem_sampling_on", mem_sampling_setup);
 
 static int __init mem_sampling_init(void)
 {
