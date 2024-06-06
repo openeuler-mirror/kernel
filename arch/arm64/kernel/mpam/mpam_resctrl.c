@@ -467,7 +467,7 @@ static u64 cache_rdmon(struct rdt_domain *d, void *md_priv)
 	 * We should judge if return is OK, it is possible affected
 	 * by NRDY bit.
 	 */
-	timeout = READ_ONCE(jiffies) + (1*SEC_CONVERSION);
+	timeout = READ_ONCE(jiffies) + msecs_to_jiffies(1000);
 	do {
 		if (time_after(READ_ONCE(jiffies), timeout)) {
 			err = -ETIMEDOUT;
@@ -508,7 +508,7 @@ static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv)
 	 * We should judge if return is OK, it is possible affected
 	 * by NRDY bit.
 	 */
-	timeout = READ_ONCE(jiffies) + (1*SEC_CONVERSION);
+	timeout = READ_ONCE(jiffies) + msecs_to_jiffies(1000);
 	do {
 		if (time_after(READ_ONCE(jiffies), timeout)) {
 			err = -ETIMEDOUT;
