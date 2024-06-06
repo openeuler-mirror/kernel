@@ -1390,7 +1390,7 @@ sunway_iommu_iova_to_phys(struct iommu_domain *dom, dma_addr_t iova)
 	unsigned long paddr, grn;
 	unsigned long is_last;
 
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return iova;
 
 	paddr = fetch_pte(sdomain, iova, PTE_LEVEL1_VAL);
@@ -1483,7 +1483,7 @@ sunway_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 
 	/* IOMMU v2 supports 42 bit mapped address width*/
 	if (iova >= MAX_IOVA_WIDTH) {
-		pr_err("IOMMU cannot map provided address: %lx\n", iova);
+		pr_err("Trying to unmap illegal IOVA : %lx\n", iova);
 		return -EFAULT;
 	}
 
