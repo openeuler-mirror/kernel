@@ -585,7 +585,6 @@ rmid_attach:
 }
 
 static int mkdir_resctrl_prepare(struct kernfs_node *parent_kn,
-			     struct kernfs_node *prgrp_kn,
 			     const char *name, umode_t mode,
 			     enum rdt_group_type rtype, struct resctrl_group **r)
 {
@@ -716,14 +715,12 @@ static void mkdir_resctrl_prepare_clean(struct resctrl_group *rgrp)
  * to monitor a subset of tasks and cpus in its parent ctrl_mon group.
  */
 static int resctrl_group_mkdir_mon(struct kernfs_node *parent_kn,
-			      struct kernfs_node *prgrp_kn,
-			      const char *name,
-			      umode_t mode)
+			      const char *name, umode_t mode)
 {
 	struct resctrl_group *rdtgrp, *prgrp;
 	int ret;
 
-	ret = mkdir_resctrl_prepare(parent_kn, prgrp_kn, name, mode, RDTMON_GROUP,
+	ret = mkdir_resctrl_prepare(parent_kn, name, mode, RDTMON_GROUP,
 				&rdtgrp);
 	if (ret)
 		return ret;
@@ -750,14 +747,13 @@ static int resctrl_group_mkdir_mon(struct kernfs_node *parent_kn,
  * to allocate and monitor resources.
  */
 static int resctrl_group_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
-				   struct kernfs_node *prgrp_kn,
 				   const char *name, umode_t mode)
 {
 	struct resctrl_group *rdtgrp;
 	struct kernfs_node *kn;
 	int ret;
 
-	ret = mkdir_resctrl_prepare(parent_kn, prgrp_kn, name, mode, RDTCTRL_GROUP,
+	ret = mkdir_resctrl_prepare(parent_kn, name, mode, RDTCTRL_GROUP,
 				&rdtgrp);
 	if (ret)
 		return ret;
@@ -822,14 +818,14 @@ static int resctrl_group_mkdir(struct kernfs_node *parent_kn, const char *name,
 	 * subdirectory
 	 */
 	if (resctrl_alloc_capable && parent_kn == resctrl_group_default.kn)
-		return resctrl_group_mkdir_ctrl_mon(parent_kn, parent_kn, name, mode);
+		return resctrl_group_mkdir_ctrl_mon(parent_kn, name, mode);
 
 	/*
 	 * If RDT monitoring is supported and the parent directory is a valid
 	 * "mon_groups" directory, add a monitoring subdirectory.
 	 */
 	if (resctrl_mon_capable && is_mon_groups(parent_kn, name))
-		return resctrl_group_mkdir_mon(parent_kn, parent_kn->parent, name, mode);
+		return resctrl_group_mkdir_mon(parent_kn, name, mode);
 
 	return -EPERM;
 }
