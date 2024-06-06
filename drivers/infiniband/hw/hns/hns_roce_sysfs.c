@@ -26,6 +26,22 @@ static void scc_param_config_work(struct work_struct *work)
 				     scc_param->algo_type);
 }
 
+static void get_default_scc_param(struct hns_roce_dev *hr_dev,
+				  struct hns_roce_port *pdata)
+{
+	int ret;
+	int i;
+
+	for (i = 0; i < HNS_ROCE_SCC_ALGO_TOTAL; i++) {
+		pdata->scc_param[i].timestamp = jiffies;
+		ret = hr_dev->hw->query_scc_param(hr_dev, pdata->port_num, i);
+		if (ret && ret != -EOPNOTSUPP)
+			ibdev_warn_ratelimited(&hr_dev->ib_dev,
+				"failed to get default parameters of scc algo %d, ret = %d.\n",
+				i, ret);
+	}
+}
+
 static int alloc_scc_param(struct hns_roce_dev *hr_dev,
 			   struct hns_roce_port *pdata)
 {
@@ -39,7 +55,6 @@ static int alloc_scc_param(struct hns_roce_dev *hr_dev,
 
 	for (i = 0; i < HNS_ROCE_SCC_ALGO_TOTAL; i++) {
 		scc_param[i].algo_type = i;
-		scc_param[i].timestamp = jiffies;
 		scc_param[i].hr_dev = hr_dev;
 		scc_param[i].port_num = pdata->port_num;
 		INIT_DELAYED_WORK(&scc_param[i].scc_cfg_dwork,
@@ -47,6 +62,9 @@ static int alloc_scc_param(struct hns_roce_dev *hr_dev,
 	}
 
 	pdata->scc_param = scc_param;
+
+	get_default_scc_param(hr_dev, pdata);
+
 	return 0;
 }
 
@@ -75,7 +93,6 @@ static ssize_t scc_attr_show(struct hns_roce_port *pdata,
 	struct hns_port_cc_attr *scc_attr =
 		container_of(attr, struct hns_port_cc_attr, port_attr);
 	struct hns_roce_scc_param *scc_param;
-	unsigned long exp_time;
 	__le32 val = 0;
 	int ret;
 
@@ -84,18 +101,6 @@ static ssize_t scc_attr_show(struct hns_roce_port *pdata,
 		return ret;
 
 	scc_param = &pdata->scc_param[scc_attr->algo_type];
-
-	/* Only HW param need be queried */
-	if (scc_attr->offset < offsetof(typeof(*scc_param), lifespan)) {
-		exp_time = scc_param->timestamp +
-			   msecs_to_jiffies(scc_param->lifespan);
-
-		if (time_is_before_eq_jiffies(exp_time)) {
-			scc_param->timestamp = jiffies;
-			pdata->hr_dev->hw->query_scc_param(pdata->hr_dev,
-					pdata->port_num, scc_attr->algo_type);
-		}
-	}
 
 	memcpy(&val, (void *)scc_param + scc_attr->offset, scc_attr->size);
 

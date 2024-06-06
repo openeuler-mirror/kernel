@@ -798,6 +798,7 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			ibdev_err(ibdev, "failed to enable DCA, ret = %d.\n",
 				  ret);
 			kvfree(hr_qp->mtr_node);
+			hr_qp->mtr_node = NULL;
 			return ret;
 		}
 
@@ -822,6 +823,7 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		if (dca_en)
 			hns_roce_disable_dca(hr_dev, hr_qp, udata);
 		kvfree(hr_qp->mtr_node);
+		hr_qp->mtr_node = NULL;
 	}
 
 	return ret;
@@ -835,6 +837,7 @@ static void free_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	} else {
 		hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
 		kvfree(hr_qp->mtr_node);
+		hr_qp->mtr_node = NULL;
 	}
 
 	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH)

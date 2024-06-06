@@ -162,8 +162,9 @@ static void free_srqc(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq)
 	ret = hns_roce_destroy_hw_ctx(hr_dev, HNS_ROCE_CMD_DESTROY_SRQ,
 				      srq->srqn);
 	if (ret)
-		dev_err(hr_dev->dev, "DESTROY_SRQ failed (%d) for SRQN %06lx\n",
-			ret, srq->srqn);
+		dev_err_ratelimited(hr_dev->dev,
+				    "DESTROY_SRQ failed (%d) for SRQN %06lx\n",
+				    ret, srq->srqn);
 	if (ret == -EBUSY)
 		srq->delayed_destroy_flag = true;
 
@@ -221,6 +222,7 @@ err_idx_mtr:
 	hns_roce_mtr_destroy(hr_dev, &idx_que->mtr);
 err_kvmalloc:
 	kvfree(idx_que->mtr_node);
+	idx_que->mtr_node = NULL;
 
 	return ret;
 }
@@ -236,6 +238,7 @@ static void free_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq)
 	} else {
 		hns_roce_mtr_destroy(hr_dev, &idx_que->mtr);
 		kvfree(idx_que->mtr_node);
+		idx_que->mtr_node = NULL;
 	}
 }
 
@@ -268,6 +271,7 @@ static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 		ibdev_err(ibdev,
 			  "failed to alloc SRQ buf mtr, ret = %d.\n", ret);
 		kvfree(srq->mtr_node);
+		srq->mtr_node = NULL;
 	}
 
 	return ret;
@@ -281,6 +285,7 @@ static void free_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 	} else {
 		hns_roce_mtr_destroy(hr_dev, &srq->buf_mtr);
 		kvfree(srq->mtr_node);
+		srq->mtr_node = NULL;
 	}
 }
 

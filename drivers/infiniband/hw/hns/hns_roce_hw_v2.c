@@ -33,7 +33,6 @@
 #include <linux/acpi.h>
 #include <linux/etherdevice.h>
 #include <linux/interrupt.h>
-#include <linux/iopoll.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <net/addrconf.h>
@@ -452,20 +451,22 @@ static int check_send_valid(struct hns_roce_dev *hr_dev,
 	if (unlikely(hr_qp->state == IB_QPS_RESET ||
 		     hr_qp->state == IB_QPS_INIT ||
 		     hr_qp->state == IB_QPS_RTR)) {
-		ibdev_err(ibdev, "failed to post WQE, QP state %u!\n",
-			  hr_qp->state);
+		ibdev_err_ratelimited(ibdev,
+				      "failed to post WQE, QP state %u!\n",
+				      hr_qp->state);
 		return -EINVAL;
 	} else if (unlikely(hr_dev->state >= HNS_ROCE_DEVICE_STATE_RST_DOWN)) {
-		ibdev_err(ibdev, "failed to post WQE, dev state %d!\n",
-			  hr_dev->state);
+		ibdev_err_ratelimited(ibdev,
+				      "failed to post WQE, dev state %d!\n",
+				      hr_dev->state);
 		return -EIO;
 	}
 
 	if (check_dca_attach_enable(hr_qp)) {
 		ret = dca_attach_qp_buf(hr_dev, hr_qp);
 		if (unlikely(ret)) {
-			ibdev_err(ibdev,
-				  "failed to attach DCA for QP-%ld send!\n",
+			ibdev_err_ratelimited(ibdev,
+				  "failed to attach DCA for QP-%lu send!\n",
 				  hr_qp->qpn);
 			return ret;
 		}
@@ -1146,14 +1147,9 @@ static u32 hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 					unsigned long instance_stage,
 					unsigned long reset_stage)
 {
-#define HW_RESET_TIMEOUT_US 1000000
-#define HW_RESET_DELAY_US 1
-
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hnae3_handle *handle = priv->handle;
 	const struct hnae3_ae_ops *ops = handle->ae_algo->ops;
-	unsigned long val;
-	int ret;
 
 	/* When hardware reset is detected, we should stop sending mailbox&cmq&
 	 * doorbell to hardware. If now in .init_instance() function, we should
@@ -1166,10 +1162,7 @@ static u32 hns_roce_v2_cmd_hw_resetting(struct hns_roce_dev *hr_dev,
 	 */
 	hr_dev->dis_db = true;
 
-	ret = read_poll_timeout_atomic(ops->ae_dev_reset_cnt, val,
-				val > hr_dev->reset_cnt, HW_RESET_DELAY_US,
-				HW_RESET_TIMEOUT_US, false, handle);
-	if (!ret)
+	if (!ops->get_hw_reset_stat(handle))
 		hr_dev->is_reset = true;
 
 	if (!hr_dev->is_reset || reset_stage == HNS_ROCE_STATE_RST_INIT ||
@@ -3827,8 +3820,9 @@ static int free_mr_post_send_lp_wqe(struct hns_roce_qp *hr_qp)
 
 	ret = hns_roce_v2_post_send(&hr_qp->ibqp, send_wr, &bad_wr);
 	if (ret) {
-		ibdev_err(ibdev, "failed to post wqe for free mr, ret = %d.\n",
-			  ret);
+		ibdev_err_ratelimited(ibdev,
+			"failed to post wqe for free mr, ret = %d.\n",
+			ret);
 		return ret;
 	}
 
@@ -3867,7 +3861,7 @@ static void free_mr_send_cmd_to_hw(struct hns_roce_dev *hr_dev)
 
 		ret = free_mr_post_send_lp_wqe(hr_qp);
 		if (ret) {
-			ibdev_err(ibdev,
+			ibdev_err_ratelimited(ibdev,
 				  "failed to send wqe (qp:0x%lx) for free mr, ret = %d.\n",
 				  hr_qp->qpn, ret);
 			break;
@@ -3880,14 +3874,14 @@ static void free_mr_send_cmd_to_hw(struct hns_roce_dev *hr_dev)
 	while (cqe_cnt) {
 		npolled = hns_roce_v2_poll_cq(&free_mr->rsv_cq->ib_cq, cqe_cnt, wc);
 		if (npolled < 0) {
-			ibdev_err(ibdev,
+			ibdev_err_ratelimited(ibdev,
 				  "failed to poll cqe for free mr, remain %d cqe.\n",
 				  cqe_cnt);
 			goto out;
 		}
 
 		if (time_after(jiffies, end)) {
-			ibdev_err(ibdev,
+			ibdev_err_ratelimited(ibdev,
 				  "failed to poll cqe for free mr and timeout, remain %d cqe.\n",
 				  cqe_cnt);
 			goto out;
@@ -5550,7 +5544,8 @@ static int hns_roce_v2_set_abs_fields(struct ib_qp *ibqp,
 	int ret = 0;
 
 	if (!check_qp_state(cur_state, new_state)) {
-		ibdev_err(&hr_dev->ib_dev, "Illegal state for QP!\n");
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+				      "Illegal state for QP!\n");
 		return -EINVAL;
 	}
 
@@ -5810,7 +5805,7 @@ static int hns_roce_v2_modify_qp(struct ib_qp *ibqp,
 	/* SW pass context to HW */
 	ret = hns_roce_v2_qp_modify(hr_dev, context, qpc_mask, hr_qp);
 	if (ret) {
-		ibdev_err(ibdev, "failed to modify QP, ret = %d.\n", ret);
+		ibdev_err_ratelimited(ibdev, "failed to modify QP, ret = %d.\n", ret);
 		goto out;
 	}
 
@@ -5995,7 +5990,9 @@ static int hns_roce_v2_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr,
 
 	ret = hns_roce_v2_query_qpc(hr_dev, hr_qp->qpn, &context);
 	if (ret) {
-		ibdev_err(ibdev, "failed to query QPC, ret = %d.\n", ret);
+		ibdev_err_ratelimited(ibdev,
+				      "failed to query QPC, ret = %d.\n",
+				      ret);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -6003,7 +6000,7 @@ static int hns_roce_v2_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr,
 	state = hr_reg_read(&context, QPC_QP_ST);
 	tmp_qp_state = to_ib_qp_st((enum hns_roce_v2_qp_state)state);
 	if (tmp_qp_state == -1) {
-		ibdev_err(ibdev, "Illegal ib_qp_state\n");
+		ibdev_err_ratelimited(ibdev, "Illegal ib_qp_state\n");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -6085,7 +6082,9 @@ static bool hns_roce_v2_chk_dca_buf_inactive(struct hns_roce_dev *hr_dev,
 
 	ret = hns_roce_v2_query_qpc(hr_dev, hr_qp->qpn, &context);
 	if (ret) {
-		ibdev_err(ibdev, "failed to query DCA QPC, ret = %d.\n", ret);
+		ibdev_err_ratelimited(ibdev,
+				      "failed to query DCA QPC, ret = %d.\n",
+				      ret);
 		return false;
 	}
 
@@ -6129,7 +6128,7 @@ int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 		ret = hns_roce_v2_modify_qp(&hr_qp->ibqp, NULL, 0,
 					    hr_qp->state, IB_QPS_RESET, udata);
 		if (ret)
-			ibdev_err(ibdev,
+			ibdev_err_ratelimited(ibdev,
 				  "failed to modify QP to RST, ret = %d.\n",
 				  ret);
 	}
@@ -6167,7 +6166,7 @@ int hns_roce_v2_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata)
 
 	ret = hns_roce_v2_destroy_qp_common(hr_dev, hr_qp, udata);
 	if (ret)
-		ibdev_err(&hr_dev->ib_dev,
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
 			  "failed to destroy QP, QPN = 0x%06lx, ret = %d.\n",
 			  hr_qp->qpn, ret);
 
@@ -6466,7 +6465,7 @@ static int hns_roce_v2_modify_cq(struct ib_cq *cq, u16 cq_count, u16 cq_period)
 				HNS_ROCE_CMD_MODIFY_CQC, hr_cq->cqn);
 	hns_roce_free_cmd_mailbox(hr_dev, mailbox);
 	if (ret)
-		ibdev_err(&hr_dev->ib_dev,
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
 			  "failed to process cmd when modifying CQ, ret = %d.\n",
 			  ret);
 
@@ -6492,9 +6491,9 @@ static int hns_roce_v2_query_cqc(struct hns_roce_dev *hr_dev, u32 cqn,
 	ret = hns_roce_cmd_mbox(hr_dev, 0, mailbox->dma,
 				HNS_ROCE_CMD_QUERY_CQC, cqn);
 	if (ret) {
-		ibdev_err(&hr_dev->ib_dev,
-			  "failed to process cmd when querying CQ, ret = %d.\n",
-			  ret);
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+			"failed to process cmd when querying CQ, ret = %d.\n",
+			ret);
 		goto err_mailbox;
 	}
 
@@ -7388,6 +7387,9 @@ static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
 	struct hns_roce_cmq_desc desc;
 	struct hns_roce_port *pdata;
 	int ret;
+
+	if (hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP08 || hr_dev->is_vf)
+		return -EOPNOTSUPP;
 
 	if (port_num > hr_dev->caps.num_ports) {
 		ibdev_err_ratelimited(&hr_dev->ib_dev,

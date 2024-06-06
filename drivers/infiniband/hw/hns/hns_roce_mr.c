@@ -122,6 +122,7 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 	if (err) {
 		ibdev_err(ibdev, "failed to alloc pbl mtr, ret = %d.\n", err);
 		kvfree(mr->mtr_node);
+		mr->mtr_node = NULL;
 		return err;
 	}
 
@@ -138,6 +139,7 @@ static void free_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr)
 	} else {
 		hns_roce_mtr_destroy(hr_dev, &mr->pbl_mtr);
 		kvfree(mr->mtr_node);
+		mr->mtr_node = NULL;
 	}
 }
 
@@ -151,7 +153,7 @@ static void hns_roce_mr_free(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr
 					      key_to_hw_index(mr->key) &
 					      (hr_dev->caps.num_mtpts - 1));
 		if (ret)
-			ibdev_warn(ibdev, "failed to destroy mpt, ret = %d.\n",
+			ibdev_warn_ratelimited(ibdev, "failed to destroy mpt, ret = %d.\n",
 				   ret);
 		if (ret == -EBUSY)
 			mr->delayed_destroy_flag = true;

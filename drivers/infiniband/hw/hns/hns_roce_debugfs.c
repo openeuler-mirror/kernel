@@ -353,19 +353,19 @@ static void dca_stats_dev_qp_in_seqfile(struct hns_roce_dev *hr_dev,
 	seq_printf(file, "%-10s %-10s %-10s %s\n", "QPN", "Size(kB)", "PID",
 		   "State");
 
-	xa_lock(&hr_dev->qp_table_xa);
+	xa_lock_irq(&hr_dev->qp_table_xa);
 	xa_for_each(&hr_dev->qp_table_xa, id, hr_qp) {
 		stats.total_size = 0;
 		dca_setup_qp_stats(hr_qp, &stats);
 		if (!stats.total_size)
 			continue;
 
-		xa_unlock(&hr_dev->qp_table_xa);
+		xa_unlock_irq(&hr_dev->qp_table_xa);
 		seq_printf(file, "%-10u %-10u %-10s %-s\n", stats.qpn,
 			   stats.total_size / KB, stats.name, stats.state);
-		xa_lock(&hr_dev->qp_table_xa);
+		xa_lock_irq(&hr_dev->qp_table_xa);
 	}
-	xa_unlock(&hr_dev->qp_table_xa);
+	xa_unlock_irq(&hr_dev->qp_table_xa);
 }
 
 static void dca_stats_ctx_qp_in_seqfile(struct hns_roce_dev *hr_dev,
@@ -391,11 +391,11 @@ static void dca_stats_ctx_qp_in_seqfile(struct hns_roce_dev *hr_dev,
 	dca_ctx_stats_qp(ctx, bitmap, nbits);
 	for_each_set_bit(qpn, bitmap, nbits) {
 		stats.total_size = 0;
-		xa_lock(&hr_dev->qp_table_xa);
+		xa_lock_irq(&hr_dev->qp_table_xa);
 		hr_qp = __hns_roce_qp_lookup(hr_dev, qpn);
 		if (hr_qp)
 			dca_setup_qp_stats(hr_qp, &stats);
-		xa_unlock(&hr_dev->qp_table_xa);
+		xa_unlock_irq(&hr_dev->qp_table_xa);
 		if (!stats.total_size)
 			continue;
 

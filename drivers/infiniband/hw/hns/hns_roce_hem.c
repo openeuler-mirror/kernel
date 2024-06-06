@@ -321,6 +321,7 @@ void hns_roce_free_hem(struct hns_roce_dev *hr_dev, struct hns_roce_hem *hem)
 		return;
 
 	list_for_each_entry_safe(chunk, tmp, &hem->chunk_list, list) {
+		list_del(&chunk->list);
 		for (i = 0; i < chunk->npages; ++i)
 			dma_free_coherent(hr_dev->dev,
 				   sg_dma_len(&chunk->mem[i]),
@@ -712,8 +713,9 @@ void hns_roce_table_put(struct hns_roce_dev *hr_dev,
 
 	ret = hr_dev->hw->clear_hem(hr_dev, table, obj, HEM_HOP_STEP_DIRECT);
 	if (ret)
-		dev_warn(dev, "failed to clear HEM base address, ret = %d.\n",
-			 ret);
+		dev_warn_ratelimited(dev,
+			"failed to clear HEM base address, ret = %d.\n",
+			ret);
 
 	hns_roce_free_hem(hr_dev, table->hem[i]);
 	table->hem[i] = NULL;
