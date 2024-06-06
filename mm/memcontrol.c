@@ -2424,7 +2424,7 @@ static void async_reclaim_high(struct mem_cgroup *memcg)
 	psi_memstall_enter(&pflags);
 	nr_pages = memcg_usage > safe_pages ? memcg_usage - safe_pages :
 		   MEMCG_CHARGE_BATCH;
-	try_to_free_mem_cgroup_pages(memcg, nr_pages, GFP_KERNEL, true);
+	try_to_free_mem_cgroup_pages(memcg, nr_pages, GFP_KERNEL, MEMCG_RECLAIM_MAY_SWAP);
 	psi_memstall_leave(&pflags);
 	WRITE_ONCE(memcg->high_async_reclaim, false);
 }
