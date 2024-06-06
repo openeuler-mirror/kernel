@@ -770,6 +770,9 @@ static int dm_resume(void *handle)
 
 	/* Do detection*/
 	list_for_each_entry(connector, &ddev->mode_config.connector_list, head) {
+		if (connector->connector_type == DRM_MODE_CONNECTOR_WRITEBACK)
+			continue;
+
 		aconnector = to_amdgpu_dm_connector(connector);
 
 		/*
