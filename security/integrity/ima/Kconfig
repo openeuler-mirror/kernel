@@ -368,4 +368,12 @@ config IMA_PARSER_BINARY_PATH
 	help
 	   This option defines the path of the parser binary.
 
+config IMA_OVERLAYFS_DETECTION_BYPASS
+	bool "Bypass overlayfs backing inode change detection"
+	default n
+	help
+	   This option enables user to bypass the overlayfs backing inode
+	   change detection, while the detection may causes performance
+	   regression. With this config enabled, IMA will not detect inode
+	   change through i_version of the backing inode.  If unsure, say N.
 endif
