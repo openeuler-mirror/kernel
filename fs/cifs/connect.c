@@ -455,6 +455,8 @@ cifs_reconnect(struct TCP_Server_Info *server)
 	spin_lock(&cifs_tcp_ses_lock);
 	list_for_each(tmp, &server->smb_ses_list) {
 		ses = list_entry(tmp, struct cifs_ses, smb_ses_list);
+		if (ses->status == CifsExiting)
+			continue;
 		ses->need_reconnect = true;
 		list_for_each(tmp2, &ses->tcon_list) {
 			tcon = list_entry(tmp2, struct cifs_tcon, tcon_list);
@@ -2814,34 +2816,6 @@ out:
 	return rc;
 }
 
-/**
- * cifs_free_ipc - helper to release the session IPC tcon
- *
- * Needs to be called everytime a session is destroyed
- */
-static int
-cifs_free_ipc(struct cifs_ses *ses)
-{
-	int rc = 0, xid;
-	struct cifs_tcon *tcon = ses->tcon_ipc;
-
-	if (tcon == NULL)
-		return 0;
-
-	if (ses->server->ops->tree_disconnect) {
-		xid = get_xid();
-		rc = ses->server->ops->tree_disconnect(xid, tcon);
-		free_xid(xid);
-	}
-
-	if (rc)
-		cifs_dbg(FYI, "failed to disconnect IPC tcon (rc=%d)\n", rc);
-
-	tconInfoFree(tcon);
-	ses->tcon_ipc = NULL;
-	return rc;
-}
-
 static struct cifs_ses *
 cifs_find_smb_ses(struct TCP_Server_Info *server, struct smb_vol *vol)
 {
@@ -2863,8 +2837,9 @@ cifs_find_smb_ses(struct TCP_Server_Info *server, struct smb_vol *vol)
 
 void cifs_put_smb_ses(struct cifs_ses *ses)
 {
-	unsigned int rc, xid;
+	unsigned int rc = 0, xid;
 	struct TCP_Server_Info *server = ses->server;
+	struct cifs_tcon *tcon = NULL;
 
 	cifs_dbg(FYI, "%s: ses_count=%d\n", __func__, ses->ses_count);
 
@@ -2881,10 +2856,23 @@ void cifs_put_smb_ses(struct cifs_ses *ses)
 	spin_lock(&GlobalMid_Lock);
 	if (ses->status == CifsGood)
 		ses->status = CifsExiting;
+	tcon = ses->tcon_ipc;
+	ses->tcon_ipc = NULL;
 	spin_unlock(&GlobalMid_Lock);
 	spin_unlock(&cifs_tcp_ses_lock);
 
-	cifs_free_ipc(ses);
+	if (tcon) {
+		if (ses->server->ops->tree_disconnect) {
+			xid = get_xid();
+			rc = ses->server->ops->tree_disconnect(xid, tcon);
+			free_xid(xid);
+		}
+
+		if (rc)
+			cifs_dbg(FYI, "failed to disconnect IPC tcon (rc=%d)\n", rc);
+
+		tconInfoFree(tcon);
+	}
 
 	if (ses->status == CifsExiting && server->ops->logoff) {
 		xid = get_xid();
