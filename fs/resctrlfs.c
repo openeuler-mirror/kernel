@@ -830,7 +830,7 @@ static int resctrl_group_mkdir(struct kernfs_node *parent_kn, const char *name,
 	return -EPERM;
 }
 
-static void resctrl_group_rm_mon(struct resctrl_group *rdtgrp,
+static int resctrl_group_rmdir_mon(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
 			      cpumask_var_t tmpmask)
 {
 	struct resctrl_group *prdtgrp = rdtgrp->mon.parent;
@@ -861,19 +861,14 @@ static void resctrl_group_rm_mon(struct resctrl_group *rdtgrp,
 	 */
 	WARN_ON(list_empty(&prdtgrp->mon.crdtgrp_list));
 	list_del(&rdtgrp->mon.crdtgrp_list);
-}
-
-static int resctrl_group_rmdir_mon(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
-			      cpumask_var_t tmpmask)
-{
-	resctrl_group_rm_mon(rdtgrp, tmpmask);
 
 	kernfs_remove(rdtgrp->kn);
 
 	return 0;
 }
 
-static void resctrl_group_rm_ctrl(struct resctrl_group *rdtgrp, cpumask_var_t tmpmask)
+static int resctrl_group_rmdir_ctrl(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
+			       cpumask_var_t tmpmask)
 {
 	int cpu;
 
@@ -909,12 +904,6 @@ static void resctrl_group_rm_ctrl(struct resctrl_group *rdtgrp, cpumask_var_t tm
 	free_all_child_rdtgrp(rdtgrp);
 
 	list_del(&rdtgrp->resctrl_group_list);
-}
-
-static int resctrl_group_rmdir_ctrl(struct kernfs_node *kn, struct resctrl_group *rdtgrp,
-			       cpumask_var_t tmpmask)
-{
-	resctrl_group_rm_ctrl(rdtgrp, tmpmask);
 
 	kernfs_remove(rdtgrp->kn);
 
