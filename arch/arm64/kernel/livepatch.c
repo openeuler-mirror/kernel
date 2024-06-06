@@ -330,3 +330,14 @@ void arch_klp_unpatch_func(struct klp_func *func)
 		do_patch(pc, (unsigned long)next_func->new_func);
 	}
 }
+
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+unsigned long arch_klp_fentry_range_size(void)
+{
+	/*
+	 * If first instruction is not 'bti', expect fentry exists
+	 * at second instruction otherwise third instruction.
+	 */
+	return 3 * AARCH64_INSN_SIZE;
+}
+#endif /* CONFIG_LIVEPATCH_ISOLATE_KPROBE */
