@@ -61,10 +61,10 @@ static void sdma_channel_init(struct hisi_sdma_channel *pchan)
 	u64 sq_addr = virt_to_phys(pchan->sq_base);
 	u64 cq_addr = virt_to_phys(pchan->cq_base);
 
-	writel(sq_addr & 0xFFFFFFFF, io_base  HISI_SDMA_CH_SQBASER_L_REG);
-	writel(sq_addr >> UPPER_SHIFT, io_base  HISI_SDMA_CH_SQBASER_H_REG);
-	writel(cq_addr & 0xFFFFFFFF, io_base  HISI_SDMA_CH_CQBASER_L_REG);
-	writel(cq_addr >> UPPER_SHIFT, io_base  HISI_SDMA_CH_CQBASER_H_REG);
+	writel(sq_addr & 0xFFFFFFFF, io_base + HISI_SDMA_CH_SQBASER_L_REG);
+	writel(sq_addr >> UPPER_SHIFT, io_base + HISI_SDMA_CH_SQBASER_H_REG);
+	writel(cq_addr & 0xFFFFFFFF, io_base + HISI_SDMA_CH_CQBASER_L_REG);
+	writel(cq_addr >> UPPER_SHIFT, io_base + HISI_SDMA_CH_CQBASER_H_REG);
 
 	sdma_channel_set_sq_size(pchan, HISI_SDMA_SQ_LENGTH - 1);
 	sdma_channel_set_cq_size(pchan, HISI_SDMA_CQ_LENGTH - 1);
@@ -98,7 +98,7 @@ static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
 	sdma_channel_set_pause(pchan);
 	while (!sdma_channel_is_paused(pchan)) {
 		mdelay(1);
-		if (i > HISI_SDMA_FSM_TIMEOUT) {
+		if (++i > HISI_SDMA_FSM_TIMEOUT) {
 			pr_warn("chn%u cannot get paused\n", pchan->idx);
 			return;
 		}
@@ -106,7 +106,7 @@ static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
 	i = 0;
 	while (!sdma_channel_is_quiescent(pchan)) {
 		mdelay(1);
-		if (i > HISI_SDMA_FSM_TIMEOUT) {
+		if (++i > HISI_SDMA_FSM_TIMEOUT) {
 			pr_warn("chn%u cannot get quiescent\n", pchan->idx);
 			return;
 		}
@@ -115,7 +115,7 @@ static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
 	sdma_channel_write_reset(pchan);
 	while (!sdma_channel_is_idle(pchan)) {
 		mdelay(1);
-		if (i > HISI_SDMA_FSM_TIMEOUT) {
+		if (++i > HISI_SDMA_FSM_TIMEOUT) {
 			pr_warn("chn%u cannot get idle\n", pchan->idx);
 			return;
 		}
@@ -131,7 +131,7 @@ static void sdma_free_all_sq_cq(struct hisi_sdma_device *psdma_dev)
 	sync_size = sizeof(struct hisi_sdma_queue_info);
 
 	for (i = psdma_dev->nr_channel - 1; i >= 0; i--) {
-		pchan = psdma_dev->channels  i;
+		pchan = psdma_dev->channels + i;
 		if (pchan->io_base)
 			sdma_channel_reset(pchan);
 		if (pchan->sq_base)
@@ -164,14 +164,14 @@ int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
 		return -ENOMEM;
 
 	for (i = 0; i < chn_num; i++) {
-		pchan = psdma_dev->channels  i;
+		pchan = psdma_dev->channels + i;
 		pchan->idx = i;
 		pchan->pdev = psdma_dev;
 
 		if (sdma_channel_alloc_sq_cq(pchan, psdma_dev->node_idx) == false)
 			goto err_out;
 
-		pchan->io_base = psdma_dev->io_base  i * HISI_SDMA_CHANNEL_IOMEM_SIZE;
+		pchan->io_base = psdma_dev->io_base + i * HISI_SDMA_CHANNEL_IOMEM_SIZE;
 
 		sdma_channel_disable(pchan);
 		sdma_channel_init(pchan);
@@ -222,7 +222,7 @@ static int sdma_device_add(struct hisi_sdma_device *psdma_dev)
 		goto out_err;
 	}
 
-	hisi_sdma_core_device.sdma_device_num;
+	hisi_sdma_core_device.sdma_device_num++;
 
 	return 0;
 
@@ -294,7 +294,7 @@ static int sdma_init_device_info(struct hisi_sdma_device *psdma_dev)
 		iounmap(psdma_dev->io_orig_base);
 		return -ENOMEM;
 	}
-	psdma_dev->io_base = psdma_dev->io_orig_base  HISI_SDMA_CH_OFFSET;
+	psdma_dev->io_base = psdma_dev->io_orig_base + HISI_SDMA_CH_OFFSET;
 	ret = sdma_init_channels(psdma_dev);
 	if (ret < 0) {
 		iounmap(psdma_dev->common_base);
@@ -454,10 +454,15 @@ static int __init sdma_driver_init(void)
 	if (ret)
 		goto unregister_chrdev;
 
+	if (sdma_authority_hash_init())
+		goto unregister_driver;
+
 	kfree(g_info);
 
 	return 0;
 
+unregister_driver:
+	platform_driver_unregister(&sdma_driver);
 unregister_chrdev:
 	unregister_chrdev_region(sdma_dev, HISI_SDMA_MAX_DEVS);
 destroy_class:
@@ -473,6 +478,7 @@ static void __exit sdma_driver_exit(void)
 {
 	dev_t devno;
 
+	sdma_authority_ht_free();
 	platform_driver_unregister(&sdma_driver);
 
 	devno = MKDEV(hisi_sdma_core_device.sdma_major, 0);
