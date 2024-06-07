@@ -13,6 +13,7 @@
 #include "sdma_reg.h"
 
 #define RW_R_R			0644
+#define SDMA_IRQ_NUM_MAX	512
 
 #define sdma_wmb() (asm volatile("dsb st" ::: "memory"))
 
@@ -50,7 +51,6 @@ struct hisi_sdma_channel {
  * @base_addr: SDMA I/O base phyisical address
  * @name: SDMA device name in the /dev directory
  */
-
 struct hisi_sdma_device {
 	u16 idx;
 	u16 node_idx;
@@ -72,6 +72,10 @@ struct hisi_sdma_device {
 	resource_size_t base_addr_size;
 	u64 common_base_addr;
 	resource_size_t common_base_addr_size;
+
+	int irq_cnt;
+	int base_vir_irq;
+	int irq[SDMA_IRQ_NUM_MAX];
 };
 
 struct hisi_sdma_core_device {
