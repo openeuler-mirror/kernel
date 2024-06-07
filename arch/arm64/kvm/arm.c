@@ -2060,12 +2060,11 @@ int kvm_arch_init(void *opaque)
 	probe_hisi_cpu_type();
 	kvm_ncsnp_support = hisi_ncsnp_supported();
 	kvm_dvmbm_support = hisi_dvmbm_supported();
+	if (kvm_dvmbm_support)
+		kvm_get_pg_cfg();
 #endif
 	kvm_info("KVM ncsnp %s\n", kvm_ncsnp_support ? "enabled" : "disabled");
 	kvm_info("KVM dvmbm %s\n", kvm_dvmbm_support ? "enabled" : "disabled");
-
-	if (kvm_dvmbm_support)
-		kvm_get_pg_cfg();
 
 	in_hyp_mode = is_kernel_in_hyp_mode();
 
