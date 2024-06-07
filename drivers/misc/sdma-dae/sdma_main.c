@@ -10,9 +10,177 @@
 
 #include "sdma_hal.h"
 
+#define UPPER_SHIFT		32
+#define MAX_INPUT_LENGTH	128
+
 struct ida fd_ida;
 struct hisi_sdma_core_device hisi_sdma_core_device = {0};
 static struct class *sdma_class;
+
+static bool sdma_channel_alloc_sq_cq(struct hisi_sdma_channel *pchan, u32 idx)
+{
+	int sync_size = sizeof(struct hisi_sdma_queue_info);
+	struct page *page_list;
+
+	if (idx >= HISI_SDMA_MAX_NODES) {
+		pr_err("SDMA device id overflow, probe sdma%u failed!\n", idx);
+		return false;
+	}
+	page_list = alloc_pages_node(idx, GFP_KERNEL | __GFP_ZERO, get_order(HISI_SDMA_SQ_SIZE));
+	if (!page_list) {
+		pr_err("channel%u: alloc sq page_list failed\n", pchan->idx);
+		return false;
+	}
+	pchan->sq_base = (struct hisi_sdma_sq_entry *)page_to_virt(page_list);
+
+	page_list = alloc_pages_node(idx, GFP_KERNEL | __GFP_ZERO, get_order(HISI_SDMA_CQ_SIZE));
+	if (!page_list) {
+		pr_err("channel%u: alloc cq page_list failed\n", pchan->idx);
+		return false;
+	}
+	pchan->cq_base = (struct hisi_sdma_cq_entry *)page_to_virt(page_list);
+
+	page_list = alloc_pages_node(idx, GFP_KERNEL | __GFP_ZERO, get_order(sync_size));
+	if (!page_list) {
+		pr_err("channel%u: alloc sync_info page_list failed\n", pchan->idx);
+		return false;
+	}
+	pchan->sync_info_base = (struct hisi_sdma_queue_info *)page_to_virt(page_list);
+	pchan->sync_info_base->cq_vld = 1;
+
+	return true;
+}
+
+static void sdma_channel_init(struct hisi_sdma_channel *pchan)
+{
+	void __iomem *io_base = pchan->io_base;
+	u64 sq_addr = virt_to_phys(pchan->sq_base);
+	u64 cq_addr = virt_to_phys(pchan->cq_base);
+
+	writel(sq_addr & 0xFFFFFFFF, io_base  HISI_SDMA_CH_SQBASER_L_REG);
+	writel(sq_addr >> UPPER_SHIFT, io_base  HISI_SDMA_CH_SQBASER_H_REG);
+	writel(cq_addr & 0xFFFFFFFF, io_base  HISI_SDMA_CH_CQBASER_L_REG);
+	writel(cq_addr >> UPPER_SHIFT, io_base  HISI_SDMA_CH_CQBASER_H_REG);
+
+	sdma_channel_set_sq_size(pchan, HISI_SDMA_SQ_LENGTH - 1);
+	sdma_channel_set_cq_size(pchan, HISI_SDMA_CQ_LENGTH - 1);
+	sdma_channel_set_sq_tail(pchan, 0);
+	sdma_channel_set_cq_head(pchan, 0);
+
+	sdma_channel_enable(pchan);
+}
+
+static void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan)
+{
+	u32 sq_head, sq_tail, cq_head, cq_tail;
+
+	sq_head = sdma_channel_get_sq_head(pchan);
+	sq_tail = sdma_channel_get_sq_tail(pchan);
+	cq_head = sdma_channel_get_cq_head(pchan);
+	cq_tail = sdma_channel_get_cq_tail(pchan);
+
+	if (sq_head != sq_tail)
+		sdma_channel_set_sq_tail(pchan, sq_head);
+
+	if (cq_head != cq_tail)
+		sdma_channel_set_cq_head(pchan, cq_tail);
+}
+
+static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
+{
+	int i = 0;
+
+	sdma_channel_reset_sq_cq(pchan);
+	sdma_channel_set_pause(pchan);
+	while (!sdma_channel_is_paused(pchan)) {
+		mdelay(1);
+		if (i > HISI_SDMA_FSM_TIMEOUT) {
+			pr_warn("chn%u cannot get paused\n", pchan->idx);
+			return;
+		}
+	}
+	i = 0;
+	while (!sdma_channel_is_quiescent(pchan)) {
+		mdelay(1);
+		if (i > HISI_SDMA_FSM_TIMEOUT) {
+			pr_warn("chn%u cannot get quiescent\n", pchan->idx);
+			return;
+		}
+	}
+	i = 0;
+	sdma_channel_write_reset(pchan);
+	while (!sdma_channel_is_idle(pchan)) {
+		mdelay(1);
+		if (i > HISI_SDMA_FSM_TIMEOUT) {
+			pr_warn("chn%u cannot get idle\n", pchan->idx);
+			return;
+		}
+	}
+}
+
+static void sdma_free_all_sq_cq(struct hisi_sdma_device *psdma_dev)
+{
+	struct hisi_sdma_channel *pchan;
+	int sync_size;
+	int i;
+
+	sync_size = sizeof(struct hisi_sdma_queue_info);
+
+	for (i = psdma_dev->nr_channel - 1; i >= 0; i--) {
+		pchan = psdma_dev->channels  i;
+		if (pchan->io_base)
+			sdma_channel_reset(pchan);
+		if (pchan->sq_base)
+			free_pages((uintptr_t)(void *)pchan->sq_base, get_order(HISI_SDMA_SQ_SIZE));
+		if (pchan->cq_base)
+			free_pages((uintptr_t)(void *)pchan->cq_base, get_order(HISI_SDMA_CQ_SIZE));
+		if (pchan->sync_info_base)
+			free_pages((uintptr_t)(void *)pchan->sync_info_base, get_order(sync_size));
+	}
+}
+
+void sdma_destroy_channels(struct hisi_sdma_device *psdma_dev)
+{
+	if (!psdma_dev || !psdma_dev->channels)
+		return;
+
+	sdma_free_all_sq_cq(psdma_dev);
+	kfree(psdma_dev->channels);
+}
+
+int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
+{
+	u32 chn_num = psdma_dev->nr_channel;
+	struct hisi_sdma_channel *pchan;
+	u32 i;
+
+	psdma_dev->channels = kcalloc_node(chn_num, sizeof(struct hisi_sdma_channel), GFP_KERNEL,
+					   psdma_dev->node_idx);
+	if (!psdma_dev->channels)
+		return -ENOMEM;
+
+	for (i = 0; i < chn_num; i++) {
+		pchan = psdma_dev->channels  i;
+		pchan->idx = i;
+		pchan->pdev = psdma_dev;
+
+		if (sdma_channel_alloc_sq_cq(pchan, psdma_dev->node_idx) == false)
+			goto err_out;
+
+		pchan->io_base = psdma_dev->io_base  i * HISI_SDMA_CHANNEL_IOMEM_SIZE;
+
+		sdma_channel_disable(pchan);
+		sdma_channel_init(pchan);
+	}
+
+	bitmap_set(psdma_dev->channel_map, 0, chn_num);
+
+	return 0;
+
+err_out:
+	sdma_destroy_channels(psdma_dev);
+	return -ENOMEM;
+}
 
 static int sdma_device_add(struct hisi_sdma_device *psdma_dev)
 {
@@ -45,7 +213,7 @@ static int sdma_device_add(struct hisi_sdma_device *psdma_dev)
 		goto out_err;
 	}
 
-	hisi_sdma_core_device.sdma_device_num++;
+	hisi_sdma_core_device.sdma_device_num;
 
 	return 0;
 
@@ -117,7 +285,13 @@ static int sdma_init_device_info(struct hisi_sdma_device *psdma_dev)
 		iounmap(psdma_dev->io_orig_base);
 		return -ENOMEM;
 	}
-	psdma_dev->io_base = psdma_dev->io_orig_base + HISI_SDMA_CH_OFFSET;
+	psdma_dev->io_base = psdma_dev->io_orig_base  HISI_SDMA_CH_OFFSET;
+	ret = sdma_init_channels(psdma_dev);
+	if (ret < 0) {
+		iounmap(psdma_dev->common_base);
+		iounmap(psdma_dev->io_orig_base);
+		return ret;
+	}
 
 	return 0;
 }
@@ -191,6 +365,7 @@ sva_device_shutdown:
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 deinit_device:
+	sdma_destroy_channels(psdma_dev);
 	iounmap(psdma_dev->common_base);
 	iounmap(psdma_dev->io_orig_base);
 free_dev:
@@ -207,6 +382,7 @@ static int sdma_device_remove(struct platform_device *pdev)
 	device_destroy(sdma_class, MKDEV(hisi_sdma_core_device.sdma_major, psdma_dev->idx));
 	cdev_del(&psdma_dev->cdev);
 
+	sdma_destroy_channels(psdma_dev);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 	iounmap(psdma_dev->io_orig_base);
