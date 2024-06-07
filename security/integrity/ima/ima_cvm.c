@@ -3,6 +3,7 @@
  * Copyright (C) 2024. Huawei Technologies Co., Ltd. All rights reserved.
  */
 #include <asm/cvm_smc.h>
+#include <asm/cvm_guest.h>
 #include "ima_cvm.h"
 
 static bool ima_tsi_cvm;
@@ -16,7 +17,7 @@ int __init ima_cvm_init(void)
 {
 	int rc = -ENODEV;
 
-	if (tsi_get_version() != SMCCC_RET_NOT_SUPPORTED) {
+	if (is_cvm_world() && tsi_get_version() != SMCCC_RET_NOT_SUPPORTED) {
 		ima_tsi_cvm = true;
 		rc = 0;
 	}
