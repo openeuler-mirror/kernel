@@ -9,6 +9,8 @@
 #include <linux/device.h>
 
 #include "sdma_hal.h"
+#include "sdma_irq.h"
+#include "sdma_auth.h"
 
 #define UPPER_SHIFT		32
 #define MAX_INPUT_LENGTH	128
@@ -259,6 +261,13 @@ static int of_sdma_collect_info(struct platform_device *pdev, struct hisi_sdma_d
 	psdma_dev->common_base_addr = res->start;
 	psdma_dev->common_base_addr_size = resource_size(res);
 
+	psdma_dev->irq_cnt = platform_irq_count(pdev);
+	if (psdma_dev->irq_cnt < 0) {
+		dev_err(&pdev->dev, "Get irq_cnt failed!\n");
+		return psdma_dev->irq_cnt;
+	}
+	dev_info(&pdev->dev, "get irq_cnt:%d\n", psdma_dev->irq_cnt);
+
 	return 0;
 }
 
@@ -301,6 +310,8 @@ static int sdma_init_device_info(struct hisi_sdma_device *psdma_dev)
 		iounmap(psdma_dev->io_orig_base);
 		return ret;
 	}
+
+	sdma_irq_init(psdma_dev);
 
 	return 0;
 }
@@ -374,6 +385,7 @@ sva_device_shutdown:
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 deinit_device:
+	sdma_irq_deinit(psdma_dev);
 	sdma_destroy_channels(psdma_dev);
 	iounmap(psdma_dev->common_base);
 	iounmap(psdma_dev->io_orig_base);
@@ -391,6 +403,7 @@ static int sdma_device_remove(struct platform_device *pdev)
 	device_destroy(sdma_class, MKDEV(hisi_sdma_core_device.sdma_major, psdma_dev->idx));
 	cdev_del(&psdma_dev->cdev);
 
+	sdma_irq_deinit(psdma_dev);
 	sdma_destroy_channels(psdma_dev);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
