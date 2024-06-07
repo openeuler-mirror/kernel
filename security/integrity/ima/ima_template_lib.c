@@ -26,7 +26,8 @@ enum data_formats {
 	DATA_FMT_DIGEST = 0,
 	DATA_FMT_DIGEST_WITH_ALGO,
 	DATA_FMT_STRING,
-	DATA_FMT_HEX
+	DATA_FMT_HEX,
+	DATA_FMT_UINT
 };
 
 static int ima_write_template_field_data(const void *data, const u32 datalen,
@@ -90,6 +91,35 @@ static void ima_show_template_data_ascii(struct seq_file *m,
 	case DATA_FMT_STRING:
 		seq_printf(m, "%s", buf_ptr);
 		break;
+	case DATA_FMT_UINT:
+		switch (field_data->len) {
+		case sizeof(u8):
+			seq_printf(m, "%u", *(u8 *)buf_ptr);
+			break;
+		case sizeof(u16):
+			if (ima_canonical_fmt)
+				seq_printf(m, "%u",
+					   le16_to_cpu(*(u16 *)buf_ptr));
+			else
+				seq_printf(m, "%u", *(u16 *)buf_ptr);
+			break;
+		case sizeof(u32):
+			if (ima_canonical_fmt)
+				seq_printf(m, "%u",
+					   le32_to_cpu(*(u32 *)buf_ptr));
+			else
+				seq_printf(m, "%u", *(u32 *)buf_ptr);
+			break;
+		case sizeof(u64):
+			if (ima_canonical_fmt)
+				seq_printf(m, "%llu",
+					   le64_to_cpu(*(u64 *)buf_ptr));
+			else
+				seq_printf(m, "%llu", *(u64 *)buf_ptr);
+			break;
+		default:
+			break;
+		}
 	default:
 		break;
 	}
@@ -163,6 +193,12 @@ void ima_show_template_buf(struct seq_file *m, enum ima_show_type show,
 			   struct ima_field_data *field_data)
 {
 	ima_show_template_field_data(m, show, DATA_FMT_HEX, field_data);
+}
+
+void ima_show_template_uint(struct seq_file *m, enum ima_show_type show,
+			    struct ima_field_data *field_data)
+{
+	ima_show_template_field_data(m, show, DATA_FMT_UINT, field_data);
 }
 
 /**
@@ -522,3 +558,48 @@ int ima_eventevmsig_init(struct ima_event_data *event_data,
 	return rc;
 }
 #endif
+
+static int ima_eventinodedac_init_common(struct ima_event_data *event_data,
+					 struct ima_field_data *field_data,
+					 bool get_uid)
+{
+	unsigned int id;
+
+	if (!event_data->file)
+		return 0;
+
+	if (get_uid)
+		id = i_uid_read(file_inode(event_data->file));
+	else
+		id = i_gid_read(file_inode(event_data->file));
+
+	if (ima_canonical_fmt) {
+		if (sizeof(id) == sizeof(u16))
+			id = cpu_to_le16(id);
+		else
+			id = cpu_to_le32(id);
+	}
+
+	return ima_write_template_field_data((void *)&id, sizeof(id),
+					     DATA_FMT_UINT, field_data);
+}
+
+/*
+ *  ima_eventinodeuid_init - include the inode UID as part of the template
+ *  data
+ */
+int ima_eventinodeuid_init(struct ima_event_data *event_data,
+			   struct ima_field_data *field_data)
+{
+	return ima_eventinodedac_init_common(event_data, field_data, true);
+}
+
+/*
+ *  ima_eventinodegid_init - include the inode GID as part of the template
+ *  data
+ */
+int ima_eventinodegid_init(struct ima_event_data *event_data,
+			   struct ima_field_data *field_data)
+{
+	return ima_eventinodedac_init_common(event_data, field_data, false);
+}
