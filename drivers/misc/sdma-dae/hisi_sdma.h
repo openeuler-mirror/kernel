@@ -28,8 +28,14 @@
 #define HISI_SDMA_CQ_SIZE			(HISI_SDMA_CQ_ENTRY_SIZE * HISI_SDMA_CQ_LENGTH)
 #define HISI_SDMA_REG_SIZE			4096
 #define HISI_SDMA_CH_OFFSET			(HISI_STARS_CHN_NUM * HISI_SDMA_REG_SIZE)
+#define HISI_SDMA_BYPASS_GROUP_MEMBER		32
 #define HISI_SDMA_DEVICE_NAME_MAX		20
+#define HISI_SDMA_READ_REG			1
+#define HISI_SDMA_WRITE_REG			2
 #define HISI_SDMA_MAX_ALLOC_SIZE		0x400000
+
+#define HISI_SDMA_CLR_NORMAL_SQE_CNT		1
+#define HISI_SDMA_CLR_ERR_SQE_CNT		2
 
 struct chn_ioe_info {
 	u32 ch_err_status;
@@ -112,6 +118,46 @@ struct hisi_sdma_share_chn {
 	bool   init_flag;
 };
 
+struct hisi_sdma_reg_info {
+	int chn;
+	int type;
+	u32 reg_value;
+};
+
+struct hisi_sdma_pid_info {
+	int num;
+	uintptr_t pid_list_addr;
+};
+
+typedef void (*sdma_task_callback)(int task_status, void *task_data);
+
+struct hisi_sdma_sqe_task {
+	u64 src_addr;
+	u64 dst_addr;
+	u32 src_process_id;
+	u32 dst_process_id;
+	u32 src_stride_len;
+	u32 dst_stride_len;
+	u32 stride_num;
+	u32 length;
+	u8 opcode;
+	u8 mpam_partid;
+	u8 pmg : 2;
+	u8 resvd1 : 6;
+	u8 qos : 4;
+	u8 resvd2 : 4;
+	sdma_task_callback task_cb;
+	void *task_data;
+	struct sdma_sqe_task *next_sqe;
+};
+
+struct hisi_sdma_task_info {
+	int chn;
+	u32 req_cnt;
+	u32 task_cnt;
+	uintptr_t task_addr;
+};
+
 typedef int (*sdma_ioctl_funcs)(struct file *file, unsigned long arg);
 struct hisi_sdma_ioctl_func_list {
 	unsigned int cmd;
@@ -122,7 +168,17 @@ struct hisi_sdma_ioctl_func_list {
 #define IOCTL_SDMA_GET_CHN		_IOR('s', 2, int)
 #define IOCTL_SDMA_PUT_CHN		_IOW('s', 3, int)
 #define IOCTL_SDMA_GET_STREAMID		_IOR('s', 4, u32)
-#define IOCTL_GET_SDMA_CHN_NUM		_IOR('s', 5, struct hisi_sdma_chn_num)
-#define IOCTL_SDMA_CHN_USED_REFCOUNT	_IOW('s', 6, struct hisi_sdma_share_chn)
+#define IOCTL_GET_SDMA_NUM		_IOR('s', 7, int)
+#define IOCTL_GET_NEAR_SDMAID		_IOR('s', 8, int)
+#define IOCTL_GET_SDMA_CHN_NUM		_IOR('s', 9, struct hisi_sdma_chn_num)
+#define IOCTL_SDMA_CHN_USED_REFCOUNT	_IOW('s', 11, struct hisi_sdma_share_chn)
+#define IOCTL_SDMA_ADD_AUTH_HT		_IOW('s', 12, struct hisi_sdma_pid_info)
+#define IOCTL_SDMA_SEND_TASK		_IOWR('s', 13, struct hisi_sdma_task_info)
+#define IOCTL_SDMA_SQ_HEAD_REG		_IOWR('s', 14, struct hisi_sdma_reg_info)
+#define IOCTL_SDMA_SQ_TAIL_REG		_IOWR('s', 15, struct hisi_sdma_reg_info)
+#define IOCTL_SDMA_CQ_HEAD_REG		_IOWR('s', 16, struct hisi_sdma_reg_info)
+#define IOCTL_SDMA_CQ_TAIL_REG		_IOWR('s', 17, struct hisi_sdma_reg_info)
+#define IOCTL_SDMA_DFX_REG		_IOWR('s', 18, struct hisi_sdma_reg_info)
+#define IOCTL_SDMA_SQE_CNT_REG		_IOW('s', 19, struct hisi_sdma_reg_info)
 
 #endif

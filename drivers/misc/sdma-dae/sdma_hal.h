@@ -12,7 +12,7 @@
 #include "hisi_sdma.h"
 #include "sdma_reg.h"
 
-+#define RW_R_R			0644
+#define RW_R_R			0644
 
 #define sdma_wmb() (asm volatile("dsb st" ::: "memory"))
 
@@ -46,7 +46,7 @@ struct hisi_sdma_channel {
  * @channels: Pointer to the hisi_sdma_channel structure
  * @channel_map: Bitmap indicating the usage of the SDMA channel
  * @io_orig_base: I/O base address after mapping
- * @io_base: io_orig_base  32 channel address offsets
+ * @io_base: io_orig_base + 32 channel address offsets
  * @base_addr: SDMA I/O base phyisical address
  * @name: SDMA device name in the /dev directory
  */
@@ -91,18 +91,18 @@ void sdma_info_sync_cdev(struct hisi_sdma_global_info *g_info);
 
 static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val, u32 mask)
 {
-	u32 reg_val = readl(pchan->io_base  reg);
+	u32 reg_val = readl(pchan->io_base + reg);
 
 	reg_val &= ~mask;
 	reg_val |= FIELD_PREP(mask, val);
 	sdma_wmb();
 
-	writel(reg_val, pchan->io_base  reg);
+	writel(reg_val, pchan->io_base + reg);
 }
 
 static inline u32 chn_get_val(struct hisi_sdma_channel *pchan, int reg, u32 mask)
 {
-	u32 reg_val = readl(pchan->io_base  reg);
+	u32 reg_val = readl(pchan->io_base + reg);
 
 	return FIELD_GET(mask, reg_val);
 }
@@ -193,5 +193,54 @@ static inline u32 sdma_channel_get_cq_head(struct hisi_sdma_channel *pchan)
 {
 	return chn_get_val(pchan, HISI_SDMA_CH_CQHDBR_REG, HISI_SDMA_U32_MSK);
 }
+
+static inline void sdma_channel_set_irq_mask(void __iomem *io_addr, u32 val)
+{
+	writel(val, io_addr + HISI_SDMA_CH_IRQ_CTRL_REG);
+}
+
+static inline u32 sdma_channel_get_err_status(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_IRQ_STATUS, HISI_SDMA_CHN_IRQ_STATUS_MSK);
+}
+
+static inline void sdma_channel_clear_ioe_status(void __iomem *io_addr)
+{
+	U_SDMAM_IRQ_STATUS reg_val = {0};
+
+	reg_val.bits.ch_ioe_status = 1;
+	writel(HISI_SDMA_U32_MSK, io_addr + HISI_SDMA_IRQ_STATUS);
+}
+
+static inline u32 sdma_channel_get_cqe_status(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_CH_CQE_STATUS_REG, HISI_SDMA_CHN_CQE_STATUS_MSK);
+}
+
+static inline u32 sdma_channel_get_cqe_sqeid(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_CH_CQE_STATUS_REG, HISI_SDMA_CHN_CQE_SQEID_MSK);
+}
+
+static inline void sdma_channel_clear_cqe_status(void __iomem *io_addr)
+{
+	writel(HISI_SDMA_U32_MSK, io_addr + HISI_SDMA_CH_CQE_STATUS_REG);
+}
+
+static inline u32 sdma_channel_get_dfx(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_CH_DFX_REG, HISI_SDMA_U32_MSK);
+}
+
+static inline void sdma_channel_clr_normal_sqe_cnt(struct hisi_sdma_channel *pchan)
+{
+	chn_set_val(pchan, HISI_SDMA_CH_DFX_REG, 0, HISI_SDMA_CHN_NORMAL_SQE_CNT_MSK);
+}
+
+static inline void sdma_channel_clr_err_sqe_cnt(struct hisi_sdma_channel *pchan)
+{
+	chn_set_val(pchan, HISI_SDMA_CH_DFX_REG, 0, HISI_SDMA_CHN_ERROR_SQE_CNT_MSK);
+}
+
 
 #endif
