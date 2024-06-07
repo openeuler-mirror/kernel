@@ -12,6 +12,8 @@
 #include "hisi_sdma.h"
 #include "sdma_reg.h"
 
++#define RW_R_R			0644
+
 #define sdma_wmb() (asm volatile("dsb st" ::: "memory"))
 
 /**
@@ -35,7 +37,6 @@ struct hisi_sdma_channel {
 	void __iomem *io_base;
 	u16 cnt_used;
 };
-
 
 /**
  * struct hisi_sdma_device - SDMA device structure
@@ -80,6 +81,7 @@ struct hisi_sdma_core_device {
 };
 
 struct hisi_sdma_global_info {
+	u32 *share_chns;
 	struct hisi_sdma_core_device *core_dev;
 	struct ida *fd_ida;
 };
@@ -93,6 +95,7 @@ static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val
 
 	reg_val &= ~mask;
 	reg_val |= FIELD_PREP(mask, val);
+	sdma_wmb();
 
 	writel(reg_val, pchan->io_base  reg);
 }
