@@ -13,6 +13,10 @@
 #define UPPER_SHIFT		32
 #define MAX_INPUT_LENGTH	128
 
+u32 share_chns = 16;
+module_param(share_chns, uint, RW_R_R);
+MODULE_PARM_DESC(share_chns, "num of share channels, 16 by default");
+
 struct ida fd_ida;
 struct hisi_sdma_core_device hisi_sdma_core_device = {0};
 static struct class *sdma_class;
@@ -174,6 +178,11 @@ int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
 	}
 
 	bitmap_set(psdma_dev->channel_map, 0, chn_num);
+	if (share_chns > chn_num) {
+		dev_warn(&psdma_dev->pdev->dev, "share_chns max val = %u!\n", chn_num);
+		share_chns = chn_num;
+	}
+	bitmap_set(psdma_dev->channel_map, 0, chn_num - share_chns);
 
 	return 0;
 
@@ -413,6 +422,7 @@ static void global_var_init(struct hisi_sdma_global_info *g_info)
 	ida_init(&fd_ida);
 
 	g_info->core_dev = &hisi_sdma_core_device;
+	g_info->share_chns = &share_chns;
 	g_info->fd_ida = &fd_ida;
 }
 

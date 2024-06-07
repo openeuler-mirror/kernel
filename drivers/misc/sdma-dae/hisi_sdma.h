@@ -37,6 +37,62 @@ struct chn_ioe_info {
 	u32 ch_cqe_status;
 };
 
+struct hisi_sdma_chn_num {
+	u32 total_chn_num;
+	u32 share_chn_num;
+};
+
+struct hisi_sdma_sq_entry {
+	__le32 opcode          : 8;
+	__le32 sssv            : 1;
+	__le32 dssv            : 1;
+	__le32 sns             : 1;
+	__le32 dns             : 1;
+	__le32 sro             : 1;
+	__le32 dro             : 1;
+	__le32 stride          : 2;
+	__le32 ie              : 1;
+	__le32 comp_en         : 1;
+	__le32 reserved0       : 14;
+
+	__le32 sqe_id          : 16;
+	__le32 mpam_partid     : 8;
+	__le32 mpamns          : 1;
+	__le32 pmg             : 2;
+	__le32 qos             : 4;
+	__le32 reserved1       : 1;
+
+	__le32 src_streamid    : 16;
+	__le32 src_substreamid : 16;
+	__le32 dst_streamid    : 16;
+	__le32 dst_substreamid : 16;
+
+	__le32 src_addr_l      : 32;
+	__le32 src_addr_h      : 32;
+	__le32 dst_addr_l      : 32;
+	__le32 dst_addr_h      : 32;
+
+	__le32 length_move     : 32;
+
+	__le32 src_stride_len  : 32;
+	__le32 dst_stride_len  : 32;
+	__le32 stride_num      : 32;
+	__le32 reserved2       : 32;
+	__le32 reserved3       : 32;
+	__le32 reserved4       : 32;
+	__le32 reserved5       : 32;
+};
+
+struct hisi_sdma_cq_entry {
+	__le32 reserved1;
+	__le32 reserved2;
+	__le32 sqhd      : 16;
+	__le32 sqe_id    : 16;
+	__le32 opcode    : 16;
+	__le32 vld       : 1;
+	__le32 status    : 15;
+};
+
 struct hisi_sdma_queue_info {
 	u32    sq_head;
 	u32    sq_tail;
@@ -51,6 +107,11 @@ struct hisi_sdma_queue_info {
 	struct chn_ioe_info ioe;
 };
 
+struct hisi_sdma_share_chn {
+	u16    chn_idx;
+	bool   init_flag;
+};
+
 typedef int (*sdma_ioctl_funcs)(struct file *file, unsigned long arg);
 struct hisi_sdma_ioctl_func_list {
 	unsigned int cmd;
@@ -58,6 +119,10 @@ struct hisi_sdma_ioctl_func_list {
 };
 
 #define IOCTL_SDMA_GET_PROCESS_ID	_IOR('s', 1, u32)
-#define IOCTL_SDMA_GET_STREAMID		_IOR('s', 2, u32)
+#define IOCTL_SDMA_GET_CHN		_IOR('s', 2, int)
+#define IOCTL_SDMA_PUT_CHN		_IOW('s', 3, int)
+#define IOCTL_SDMA_GET_STREAMID		_IOR('s', 4, u32)
+#define IOCTL_GET_SDMA_CHN_NUM		_IOR('s', 5, struct hisi_sdma_chn_num)
+#define IOCTL_SDMA_CHN_USED_REFCOUNT	_IOW('s', 6, struct hisi_sdma_share_chn)
 
 #endif
