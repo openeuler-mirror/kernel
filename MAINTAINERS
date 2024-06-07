@@ -19442,6 +19442,11 @@ L:	sdricohcs-devel@lists.sourceforge.net (subscribers-only)
 S:	Maintained
 F:	drivers/mmc/host/sdricoh_cs.c
 
+SDMA DRIVER
+M:	Xiaoxu Zeng <zengxiaoxu@huawei.com>
+S:	Maintained
+F:	drivers/misc/sdma-dae
+
 SECO BOARDS CEC DRIVER
 M:	Ettore Chimenti <ek5.chimenti@gmail.com>
 S:	Maintained
