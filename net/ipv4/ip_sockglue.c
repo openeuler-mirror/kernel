@@ -587,12 +587,14 @@ out:
 
 void __ip_sock_set_tos(struct sock *sk, int val)
 {
+	u8 old_tos = inet_sk(sk)->tos;
+
 	if (sk->sk_type == SOCK_STREAM) {
 		val &= ~INET_ECN_MASK;
-		val |= inet_sk(sk)->tos & INET_ECN_MASK;
+		val |= old_tos & INET_ECN_MASK;
 	}
-	if (inet_sk(sk)->tos != val) {
-		inet_sk(sk)->tos = val;
+	if (old_tos != val) {
+		WRITE_ONCE(inet_sk(sk)->tos, val);
 		WRITE_ONCE(sk->sk_priority, rt_tos2priority(val));
 		sk_dst_reset(sk);
 	}
@@ -1050,6 +1052,9 @@ int do_ip_setsockopt(struct sock *sk, int level, int optname,
 		return 0;
 	case IP_MTU_DISCOVER:
 		return ip_sock_set_mtu_discover(sk, val);
+	case IP_TOS:	/* This sets both TOS and Precedence */
+		ip_sock_set_tos(sk, val);
+		return 0;
 	}
 
 	err = 0;
@@ -1103,9 +1108,6 @@ int do_ip_setsockopt(struct sock *sk, int level, int optname,
 				inet_clear_bit(CHECKSUM, sk);
 			}
 		}
-		break;
-	case IP_TOS:	/* This sets both TOS and Precedence */
-		__ip_sock_set_tos(sk, val);
 		break;
 	case IP_UNICAST_IF:
 	{
@@ -1595,6 +1597,9 @@ int do_ip_getsockopt(struct sock *sk, int level, int optname,
 	case IP_MTU_DISCOVER:
 		val = READ_ONCE(inet->pmtudisc);
 		goto copyval;
+	case IP_TOS:
+		val = READ_ONCE(inet->tos);
+		goto copyval;
 	}
 
 	if (needs_rtnl)
@@ -1631,9 +1636,6 @@ int do_ip_getsockopt(struct sock *sk, int level, int optname,
 			return -EFAULT;
 		return 0;
 	}
-	case IP_TOS:
-		val = inet->tos;
-		break;
 	case IP_MTU:
 	{
 		struct dst_entry *dst;
