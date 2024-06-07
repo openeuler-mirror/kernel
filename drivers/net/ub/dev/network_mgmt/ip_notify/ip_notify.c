@@ -23,6 +23,11 @@
 static struct workqueue_struct *ip_notify_wq;
 static int initialized;
 
+u8 ub_dguid[UBL_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF,
+			 0xFF, 0xFF, 0xFF, 0xFF,
+			 0xFF, 0xFF, 0xFF, 0xFF,
+			 0xFF, 0xFF, 0x01, 0x02};
+
 static ssize_t good_ipv4_notify_tx_cnt_show(struct kobject *kobj,
 					    struct kobj_attribute *attr,
 					    char *buf)
@@ -383,7 +388,6 @@ struct sk_buff *ub_ipv4_create_ip_notify_pkt(struct net_device *ndev,
 	int tlen = ndev->needed_tailroom;
 	struct ip_notify_hdr *ipn_hdr_v4;
 	struct sk_buff *skb;
-	u8 dest_hw[UBL_ALEN];
 
 	skb = alloc_skb(ip_notify_hdr_len() + hlen + tlen, GFP_ATOMIC);
 	if (!skb)
@@ -396,12 +400,11 @@ struct sk_buff *ub_ipv4_create_ip_notify_pkt(struct net_device *ndev,
 	skb->dev = ndev;
 	skb->protocol = htons(ETH_P_UB);
 	src_hw = ndev->dev_addr;
-	memset(dest_hw, 0xff, UBL_ALEN);
 
 	/* fill the device header for the ipv4 notify frame */
 	ipn_hdr_v4->cfg = UB_NOIP_CFG_TYPE;
 	ipn_hdr_v4->protocol = htons(SUB_PROTOCOL_IP_NOTIFY);
-	memcpy(ipn_hdr_v4->dest_guid, dest_hw, UBL_ALEN);
+	memcpy(ipn_hdr_v4->dest_guid, ub_dguid, UBL_ALEN);
 	memcpy(ipn_hdr_v4->src_guid, ndev->dev_addr, UBL_ALEN);
 	ipn_hdr_v4->pdu.ver = UB_PROTO_IPV4 << VER_SHIFT_4; /* IPv4 */
 	ipn_hdr_v4->pdu.mask = netmask;
@@ -420,7 +423,6 @@ struct sk_buff *ub_ipv6_create_ip_notify_pkt(struct net_device *ndev,
 	int tlen = ndev->needed_tailroom;
 	struct ip_notify_hdr *ipn_hdr_v6;
 	struct sk_buff *skb;
-	u8 dest_hw[UBL_ALEN];
 
 	skb = alloc_skb(ip_notify_hdr_len() + hlen + tlen, GFP_ATOMIC);
 	if (!skb)
@@ -433,12 +435,11 @@ struct sk_buff *ub_ipv6_create_ip_notify_pkt(struct net_device *ndev,
 	skb->dev = ndev;
 	skb->protocol = htons(ETH_P_UB);
 	src_hw = ndev->dev_addr;
-	memset(dest_hw, 0xff, UBL_ALEN);
 
 	/* fill the device header for the ip notify frame */
 	ipn_hdr_v6->cfg = UB_NOIP_CFG_TYPE;
 	ipn_hdr_v6->protocol = htons(SUB_PROTOCOL_IP_NOTIFY);
-	memcpy(ipn_hdr_v6->dest_guid, dest_hw, UBL_ALEN);
+	memcpy(ipn_hdr_v6->dest_guid, ub_dguid, UBL_ALEN);
 	memcpy(ipn_hdr_v6->src_guid, ndev->dev_addr, UBL_ALEN);
 	ipn_hdr_v6->pdu.ver = UB_PROTO_IPV6 << VER_SHIFT_4; /* IPv6 */
 	ipn_hdr_v6->pdu.mask = netmask;
