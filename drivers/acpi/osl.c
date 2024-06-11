@@ -1188,7 +1188,6 @@ acpi_status acpi_hotplug_schedule(struct acpi_device *adev, u32 src)
 	}
 	return AE_OK;
 }
-EXPORT_SYMBOL_GPL(acpi_hotplug_schedule);
 
 bool acpi_queue_hotplug_work(struct work_struct *work)
 {

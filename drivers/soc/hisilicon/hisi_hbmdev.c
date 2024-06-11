@@ -264,30 +264,16 @@ static int memdev_power_on(struct acpi_device *adev)
 	return 0;
 }
 
-static int eject_device(struct acpi_device *acpi_device, void *not_used)
-{
-	acpi_object_type unused;
-	acpi_status status;
-
-	status = acpi_get_type(acpi_device->handle, &unused);
-	if (ACPI_FAILURE(status) || !acpi_device->flags.ejectable)
-		return -ENODEV;
-
-	get_device(&acpi_device->dev);
-	status = acpi_hotplug_schedule(acpi_device, ACPI_OST_EC_OSPM_EJECT);
-	if (ACPI_SUCCESS(status))
-		return 0;
-
-	put_device(&acpi_device->dev);
-	acpi_evaluate_ost(acpi_device->handle, ACPI_OST_EC_OSPM_EJECT,
-			  ACPI_OST_SC_NON_SPECIFIC_FAILURE, NULL);
-
-	return status == AE_NO_MEMORY ? -ENOMEM : -EAGAIN;
-}
-
 static int memdev_power_off(struct acpi_device *adev)
 {
-	return acpi_dev_for_each_child(adev, eject_device, NULL);
+	acpi_handle handle = adev->handle;
+	acpi_status status;
+
+	status = acpi_evaluate_object(handle, "_OFF", NULL, NULL);
+	if (ACPI_FAILURE(status)) {
+		return -ENODEV;
+	}
+	return 0;
 }
 
 static ssize_t state_store(struct device *dev, struct device_attribute *attr,
