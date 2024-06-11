@@ -1318,6 +1318,18 @@ config I2C_VIPERBOARD
 	  River Tech's viperboard.h for detailed meaning
 	  of the module parameters.
 
+config I2C_ZHAOXIN
+	tristate "Zhaoxin I2C controller driver"
+	depends on PCI && (CPU_SUP_CENTAUR || CPU_SUP_ZHAOXIN)
+	select I2C_ALGOBIT
+	default m
+	help
+	  If you say yes to this option, support will be included for the
+	  Zhaoxin I2C interface
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called i2c-zhaoxin.
+
 comment "Other I2C/SMBus bus drivers"
 
 config I2C_ACORN
