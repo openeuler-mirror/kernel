@@ -301,14 +301,16 @@ static ssize_t state_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_WO(state);
 
-static int hbmdev_find(struct acpi_device *adev, void *arg)
+static int hbmdev_setup(struct acpi_device *adev, void *arg)
 {
 	const char *hid = acpi_device_hid(adev);
 	bool *found = arg;
 
 	if (!strcmp(hid, ACPI_MEMORY_DEVICE_HID)) {
+		acpi_scan_lock_acquire();
+		adev->handler->hotplug.demand_offline = true;
+		acpi_scan_lock_release();
 		*found = true;
-		return -1;
 	}
 
 	return 0;
@@ -323,7 +325,7 @@ static bool has_hbmdev(struct device *dev)
 	if (strcmp(hid, ACPI_GENERIC_CONTAINER_DEVICE_HID))
 		return found;
 
-	acpi_dev_for_each_child(adev, hbmdev_find, &found);
+	acpi_dev_for_each_child(adev, hbmdev_setup, &found);
 
 	return found;
 }
