@@ -15,8 +15,6 @@
 #define RW_R_R			0644
 #define SDMA_IRQ_NUM_MAX	512
 
-#define sdma_wmb() (asm volatile("dsb st" ::: "memory"))
-
 /**
  * struct hisi_sdma_channel - Information about one channel in the SDMA device
  * @idx: SDMA channel's ID
@@ -99,7 +97,7 @@ static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val
 
 	reg_val &= ~mask;
 	reg_val |= FIELD_PREP(mask, val);
-	sdma_wmb();
+	asm volatile("dsb st" ::: "memory");
 
 	writel(reg_val, pchan->io_base + reg);
 }
@@ -148,7 +146,7 @@ static inline void sdma_channel_disable(struct hisi_sdma_channel *pchan)
 
 static inline void sdma_channel_set_sq_size(struct hisi_sdma_channel *pchan, u32 size)
 {
-	U_SDMAM_CH_REGS_SDMAM_CH_SQ_ATTR reg_val = {0};
+	union sdmam_ch_regs_sdmam_ch_sq_attr reg_val = {0};
 
 	reg_val.bits.sq_size = size;
 	reg_val.bits.sq_shareability = HISI_SDMA_CH_SQ_SHARE_ATTR;
@@ -159,7 +157,7 @@ static inline void sdma_channel_set_sq_size(struct hisi_sdma_channel *pchan, u32
 
 static inline void sdma_channel_set_cq_size(struct hisi_sdma_channel *pchan, u32 size)
 {
-	U_SDMAM_CH_REGS_SDMAM_CH_CQ_ATTR reg_val = {0};
+	union sdmam_ch_regs_sdmam_ch_cq_attr reg_val = {0};
 
 	reg_val.bits.cq_size = size;
 	reg_val.bits.cq_shareability = HISI_SDMA_CH_CQ_SHARE_ATTR;
@@ -210,7 +208,7 @@ static inline u32 sdma_channel_get_err_status(struct hisi_sdma_channel *pchan)
 
 static inline void sdma_channel_clear_ioe_status(void __iomem *io_addr)
 {
-	U_SDMAM_IRQ_STATUS reg_val = {0};
+	union sdmam_irq_status reg_val = {0};
 
 	reg_val.bits.ch_ioe_status = 1;
 	writel(HISI_SDMA_U32_MSK, io_addr + HISI_SDMA_IRQ_STATUS);
@@ -246,5 +244,36 @@ static inline void sdma_channel_clr_err_sqe_cnt(struct hisi_sdma_channel *pchan)
 	chn_set_val(pchan, HISI_SDMA_CH_DFX_REG, 0, HISI_SDMA_CHN_ERROR_SQE_CNT_MSK);
 }
 
+static inline void sdma_int_converge_dis(void __iomem *common_base)
+{
+	union sdmam_dfx_feature_en reg_val = {0};
+
+	reg_val.u32 = readl(common_base + HISI_SDMA_DFX_FEATURE_EN);
+	reg_val.bits.ch_int_converge_en = 1;
+	reg_val.bits.ch_int_group_converge_en = 0;
+	writel(reg_val.u32, common_base + HISI_SDMA_DFX_FEATURE_EN);
+}
+
+static inline void sdma_common_mpamid_cfg(void __iomem *common_base, struct hisi_sdma_mpamcfg *cfg)
+{
+	union sdmam_common_regs_dma_mpamid_cfg reg_val;
+
+	reg_val.u32 = readl(common_base + HISI_SDMA_DMA_MPAMID_CFG);
+	reg_val.bits.mpam_id_replace_en = cfg->mpamid_replace_en;
+	reg_val.bits.replace_mpam_partid = cfg->partid;
+	reg_val.bits.replace_mpam_pmg = cfg->pmg;
+	reg_val.bits.replace_qos = cfg->qos;
+	writel(reg_val.u32, common_base + HISI_SDMA_DMA_MPAMID_CFG);
+}
+
+static inline u32 sdma_channel_get_normal_sqe_cnt(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_CH_DFX_REG, HISI_SDMA_CHN_NORMAL_SQE_CNT_MSK);
+}
+
+static inline u32 sdma_channel_get_err_sqe_cnt(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_CH_DFX_REG, HISI_SDMA_CHN_ERROR_SQE_CNT_MSK);
+}
 
 #endif

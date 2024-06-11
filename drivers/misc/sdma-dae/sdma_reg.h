@@ -53,6 +53,50 @@
 #define HISI_SDMA_CH_CQ_SHARE_ATTR		0x1
 #define HISI_SDMA_CH_CQ_CACHE_ATTR		0x7
 
+/* Define the union U_SDMAM_IRQ_STATUS */
+union sdmam_irq_status {
+	/* Define the struct bits */
+	struct {
+		u32    rsv0                             : 16 ; /* [15:0] */
+		u32    ch_ioc_status                    : 1  ; /* [16] */
+		u32    ch_ioe_status                    : 1  ; /* [17] */
+		u32    rsv1                             : 2  ; /* [19:18] */
+		u32    ch_err_status                    : 8  ; /* [27:20] */
+		u32    rsv2                             : 4  ; /* [31:28] */
+		} bits;
+
+		/* Define an unsigned member */
+		u32    u32;
+};
+
+/* Define the union U_SDMAM_CH_SQ_ATTR */
+union sdmam_ch_regs_sdmam_ch_sq_attr {
+	/* Define the struct bits */
+	struct {
+		unsigned int    sq_size         : 16  ; /* [15:0] */
+		unsigned int    sq_cacheability : 3  ; /* [18:16] */
+		unsigned int    sq_shareability : 2  ; /* [20:19] */
+		unsigned int    rsv_12          : 11  ; /* [31:21] */
+	} bits;
+
+	/* Define an unsigned member */
+	unsigned int    u32;
+};
+
+/* Define the union U_SDMAM_CH_CQ_ATTR */
+union sdmam_ch_regs_sdmam_ch_cq_attr {
+	/* Define the struct bits */
+	struct {
+		unsigned int    cq_size         : 16  ; /* [15:0] */
+		unsigned int    cq_cacheability : 3  ; /* [18:16] */
+		unsigned int    cq_shareability : 2  ; /* [20:19] */
+		unsigned int    rsv_16          : 11  ; /* [31:21] */
+	} bits;
+
+	/* Define an unsigned member */
+	unsigned int    u32;
+};
+
 #endif
 
 #ifndef __HISI_SDMA_COMMON_REG_OFFSET_H__
@@ -64,5 +108,36 @@
 #define HISI_SDMA_DMA_MPAMID_CFG		0x50c
 #define HISI_SDMA_DFX_FEATURE_EN		0x544
 #define HISI_SDMA_ERR_STATUSL			0x2010
+
+/* Define the union U_SDMAM_DFX_FEATURE_EN */
+union sdmam_dfx_feature_en {
+	/* Define the struct bits */
+	struct {
+		u32    rsv0                             : 4  ; /* [3:0] */
+		u32    ch_int_converge_en               : 1  ; /* [4] */
+		u32    ch_int_group_converge_en         : 1  ; /* [5] */
+		u32    rsv1                             : 26 ; /* [31:6] */
+	} bits;
+
+	/* Define an unsigned member */
+	u32    u32;
+};
+
+/* Define the union U_DMA_MPAMID_CFG */
+union sdmam_common_regs_dma_mpamid_cfg {
+	/* Define the struct bits */
+	struct {
+		u32    replace_mpam_ns     : 1  ; /* [0] */
+		u32    replace_mpam_pmg    : 2  ; /* [2:1] */
+		u32    replace_mpam_partid : 8  ; /* [10:3] */
+		u32    replace_qos         : 4  ; /* [14:11] */
+		u32    mpam_id_replace_en  : 1  ; /* [15] */
+		u32    mpam_id_vf_en       : 1  ; /* [16] */
+		u32    rsv_15              : 15  ; /* [31:17] */
+	} bits;
+
+	/* Define an unsigned member */
+	u32    u32;
+};
 
 #endif

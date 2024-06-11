@@ -7,6 +7,7 @@
 #include <linux/sort.h>
 
 #include "sdma_hal.h"
+#include "sdma_umem.h"
 #include "sdma_auth.h"
 
 static struct hisi_sdma_global_info g_info;
@@ -92,6 +93,44 @@ static int ioctl_get_sdma_num(struct file *file, unsigned long arg)
 
 	if (copy_to_user((int __user *)(uintptr_t)arg, &num, sizeof(int)))
 		return -EFAULT;
+
+	return 0;
+}
+static int ioctl_sdma_unpin_umem(struct file *file, unsigned long arg)
+{
+	struct file_open_data *data = file->private_data;
+	u64 cookie;
+	int ret;
+
+	if (copy_from_user(&cookie, (u64 __user *)(uintptr_t)arg, sizeof(u64)))
+		return -EFAULT;
+
+	ret = sdma_umem_release(cookie);
+	if (ret)
+		dev_err(&data->psdma_dev->pdev->dev, "umem release fail!\n");
+
+	return ret;
+}
+
+static int ioctl_sdma_pin_umem(struct file *file, unsigned long arg)
+{
+	struct file_open_data *data = file->private_data;
+	struct hisi_sdma_umem_info umemInfo;
+	int ret;
+
+	if (copy_from_user(&umemInfo, (struct hisi_sdma_umem_info __user *)(uintptr_t)arg,
+			   sizeof(struct hisi_sdma_umem_info)))
+		return -EFAULT;
+
+	ret = sdma_umem_get((u64)umemInfo.vma, umemInfo.size, data->ida, &umemInfo.cookie);
+	if (ret < 0)
+		return ret;
+
+	if (copy_to_user((struct hisi_sdma_umem_info __user *)(uintptr_t)arg, &umemInfo,
+			 sizeof(struct hisi_sdma_umem_info))) {
+		sdma_umem_release(umemInfo.cookie);
+		return -EFAULT;
+	}
 
 	return 0;
 }
@@ -197,6 +236,7 @@ static int ioctl_sdma_put_chn(struct file *file, unsigned long arg)
 		if (c->chn_idx == idx) {
 			dev_dbg(dev, "sdma put chn %d\n", idx);
 			list_del(&c->chn_list);
+			kfree(c);
 			break;
 		}
 	}
@@ -282,6 +322,22 @@ static int ioctl_get_sdma_chn_num(struct file *file, unsigned long arg)
 	return 0;
 }
 
+static int ioctl_sdma_mpamcfg(struct file *file, unsigned long arg)
+{
+	struct file_open_data *data = file->private_data;
+	struct hisi_sdma_device *pdev = data->psdma_dev;
+	struct hisi_sdma_mpamcfg cfg;
+
+	if (copy_from_user(&cfg,
+			   (struct hisi_sdma_mpamcfg __user *)(uintptr_t)arg,
+			   sizeof(struct hisi_sdma_mpamcfg)))
+		return -EFAULT;
+
+	sdma_common_mpamid_cfg(pdev->common_base, &cfg);
+
+	return 0;
+}
+
 static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 {
 	struct file_open_data *data = file->private_data;
@@ -322,6 +378,7 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 			if (c->chn_idx == share_chn.chn_idx) {
 				dev_dbg(dev, "release share_chn%d\n", c->chn_idx);
 				list_del(&c->chn_list);
+				kfree(c);
 				break;
 			}
 		}
@@ -608,22 +665,25 @@ static int ioctl_sdma_sqe_cnt_reg(struct file *file, unsigned long arg)
 }
 
 struct hisi_sdma_ioctl_func_list g_ioctl_funcs[] = {
-	{IOCTL_SDMA_GET_PROCESS_ID,        ioctl_sdma_get_process_id},
-	{IOCTL_SDMA_GET_CHN,               ioctl_sdma_get_chn},
-	{IOCTL_SDMA_PUT_CHN,               ioctl_sdma_put_chn},
-	{IOCTL_SDMA_GET_STREAMID,          ioctl_sdma_get_streamid},
-	{IOCTL_GET_SDMA_NUM,               ioctl_get_sdma_num},
-	{IOCTL_GET_NEAR_SDMAID,            ioctl_get_near_sdmaid},
-	{IOCTL_GET_SDMA_CHN_NUM,           ioctl_get_sdma_chn_num},
-	{IOCTL_SDMA_CHN_USED_REFCOUNT,     ioctl_sdma_chn_used_refcount},
-	{IOCTL_SDMA_ADD_AUTH_HT,           ioctl_sdma_add_authority_ht},
-	{IOCTL_SDMA_SEND_TASK,             ioctl_sdma_send_task},
-	{IOCTL_SDMA_SQ_HEAD_REG,           ioctl_sdma_sq_head_reg},
-	{IOCTL_SDMA_SQ_TAIL_REG,           ioctl_sdma_sq_tail_reg},
-	{IOCTL_SDMA_CQ_HEAD_REG,           ioctl_sdma_cq_head_reg},
-	{IOCTL_SDMA_CQ_TAIL_REG,           ioctl_sdma_cq_tail_reg},
-	{IOCTL_SDMA_DFX_REG,               ioctl_sdma_dfx_reg},
-	{IOCTL_SDMA_SQE_CNT_REG,           ioctl_sdma_sqe_cnt_reg},
+	{IOCTL_SDMA_GET_PROCESS_ID,		ioctl_sdma_get_process_id},
+	{IOCTL_SDMA_GET_CHN,			ioctl_sdma_get_chn},
+	{IOCTL_SDMA_PUT_CHN,			ioctl_sdma_put_chn},
+	{IOCTL_SDMA_GET_STREAMID,		ioctl_sdma_get_streamid},
+	{IOCTL_SDMA_PIN_UMEM,			ioctl_sdma_pin_umem},
+	{IOCTL_SDMA_UNPIN_UMEM,			ioctl_sdma_unpin_umem},
+	{IOCTL_GET_SDMA_NUM,			ioctl_get_sdma_num},
+	{IOCTL_GET_NEAR_SDMAID,			ioctl_get_near_sdmaid},
+	{IOCTL_GET_SDMA_CHN_NUM,		ioctl_get_sdma_chn_num},
+	{IOCTL_SDMA_MPAMID_CFG,			ioctl_sdma_mpamcfg},
+	{IOCTL_SDMA_CHN_USED_REFCOUNT,		ioctl_sdma_chn_used_refcount},
+	{IOCTL_SDMA_ADD_AUTH_HT,		ioctl_sdma_add_authority_ht},
+	{IOCTL_SDMA_SEND_TASK,			ioctl_sdma_send_task},
+	{IOCTL_SDMA_SQ_HEAD_REG,		ioctl_sdma_sq_head_reg},
+	{IOCTL_SDMA_SQ_TAIL_REG,		ioctl_sdma_sq_tail_reg},
+	{IOCTL_SDMA_CQ_HEAD_REG,		ioctl_sdma_cq_head_reg},
+	{IOCTL_SDMA_CQ_TAIL_REG,		ioctl_sdma_cq_tail_reg},
+	{IOCTL_SDMA_DFX_REG,			ioctl_sdma_dfx_reg},
+	{IOCTL_SDMA_SQE_CNT_REG,		ioctl_sdma_sqe_cnt_reg},
 };
 
 static long sdma_dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -691,6 +751,7 @@ static int sdma_dev_release(struct inode *inode, struct file *file)
 		dev_dbg(dev, "release non_share_chn%d\n", c->chn_idx);
 		bitmap_set(pdev->channel_map, c->chn_idx - share_chns, 1);
 		list_del(&c->chn_list);
+		kfree(c);
 		pdev->nr_channel_used--;
 	}
 
@@ -705,6 +766,7 @@ static int sdma_dev_release(struct inode *inode, struct file *file)
 			pchannel->sync_info_base->lock_pid = 0;
 		}
 		list_del(&c->chn_list);
+		kfree(c);
 	}
 	spin_unlock(&pdev->channel_lock);
 
@@ -713,6 +775,8 @@ static int sdma_dev_release(struct inode *inode, struct file *file)
 		data->handle = NULL;
 	}
 
+	sdma_hash_free_entry(data->ida);
+	sdma_free_authority_ht_with_pid(pid);
 	ida_free(g_info.fd_ida, data->ida);
 
 	kfree(file->private_data);
