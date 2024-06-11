@@ -4,6 +4,7 @@
 #include <linux/slab.h>
 #include <linux/miscdevice.h>
 #include <linux/preempt.h>
+#include <asm/cvm_guest.h>
 #include <asm/cvm_smc.h>
 #include <asm/cvm_tsi.h>
 
@@ -16,20 +17,19 @@ struct attestation_token {
 
 static struct attestation_token token;
 
+static DEFINE_MUTEX(token_lock);
+
 static long tmm_tsi_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
-static int tmm_tsi_release(struct inode *inode, struct file *file);
 static ssize_t tmm_token_read(struct file *file, char __user *user_buffer,
 	size_t size, loff_t *offset);
 
 static int tmm_get_tsi_version(struct cvm_tsi_version __user *arg);
-static int tmm_get_attestation_token(struct cvm_attestation_cmd __user *arg,
-	struct attestation_token *attest_token);
+static int tmm_get_attestation_token(struct cvm_attestation_cmd __user *arg);
 static int tmm_get_device_cert(struct cca_device_cert __user *arg);
 
 static const struct file_operations tmm_tsi_fops = {
 	.owner          = THIS_MODULE,
 	.read           = tmm_token_read,
-	.release        = tmm_tsi_release,
 	.unlocked_ioctl = tmm_tsi_ioctl
 };
 
@@ -44,17 +44,19 @@ static int __init tmm_tsi_init(void)
 	unsigned long ver;
 	int ret;
 
-	ver = tsi_get_version();
-	if (ver == SMCCC_RET_NOT_SUPPORTED) {
-		pr_err("tmm_tsi: SMC return not supported!\n");
+	if (!is_cvm_world())
 		return -EIO;
-	}
 
 	ret = misc_register(&ioctl_dev);
 	if (ret) {
 		pr_err("tmm_tsi: misc device register failed (%d)!\n", ret);
 		return ret;
 	}
+
+	/* Allocate a large memory */
+	token.buf = kzalloc(GRANULE_SIZE * MAX_TOKEN_GRANULE_PAGE, GFP_KERNEL);
+	if (!token.buf)
+		return -ENOMEM;
 
 	pr_warn("tmm_tsi: module loaded (version %lu.%lu).\n",
 			TSI_ABI_VERSION_GET_MAJOR(ver),
@@ -65,8 +67,10 @@ static int __init tmm_tsi_init(void)
 
 static void __exit tmm_tsi_exit(void)
 {
-	if (token.buf != NULL)
+	if (token.buf != NULL) {
+		memset(token.buf, 0, GRANULE_SIZE * MAX_TOKEN_GRANULE_PAGE);
 		kfree(token.buf);
+	}
 	misc_deregister(&ioctl_dev);
 	pr_warn("tmm_tsi: module unloaded.\n");
 }
@@ -80,7 +84,7 @@ static long tmm_tsi_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		ret = tmm_get_tsi_version((struct cvm_tsi_version *)arg);
 		break;
 	case TMM_GET_ATTESTATION_TOKEN:
-		ret = tmm_get_attestation_token((struct cvm_attestation_cmd *)arg, &token);
+		ret = tmm_get_attestation_token((struct cvm_attestation_cmd *)arg);
 		break;
 	case TMM_GET_DEVICE_CERT:
 		ret = tmm_get_device_cert((struct cca_device_cert *)arg);
@@ -99,28 +103,25 @@ static ssize_t tmm_token_read(struct file *file, char __user *user_buffer,
 	int ret;
 	int to_copy;
 
-	if (*offset >= token.size)
+	mutex_lock(&token_lock);
+	if (*offset >= token.size) {
+		mutex_unlock(&token_lock);
 		return 0;
+	}
 
 	to_copy = min((int)size, (int)(token.size - *offset));
 	ret = copy_to_user(user_buffer, token.buf + *offset, to_copy);
 	if (ret) {
 		pr_err("tmm_tsi: copy token to user failed (%d)!\n", ret);
+		mutex_unlock(&token_lock);
 		return -1;
 	}
 
 	*offset += to_copy;
+	mutex_unlock(&token_lock);
 	return to_copy;
 }
 
-static int tmm_tsi_release(struct inode *inode, struct file *file)
-{
-	if (token.buf != NULL) {
-		memset(token.buf, 0, GRANULE_SIZE * MAX_TOKEN_GRANULE_PAGE);
-		kfree(token.buf);
-	}
-	return 0;
-}
 
 static int tmm_get_tsi_version(struct cvm_tsi_version __user *arg)
 {
@@ -141,65 +142,61 @@ static int tmm_get_tsi_version(struct cvm_tsi_version __user *arg)
 	return 0;
 }
 
-static int tmm_get_attestation_token(struct cvm_attestation_cmd __user *arg,
-	struct attestation_token *attest_token)
+static int tmm_get_attestation_token(struct cvm_attestation_cmd __user *arg)
 {
 	unsigned long ret;
-	struct cvm_attestation_cmd cmd = {0};
+	struct cvm_token_granule token_granule = {0};
+	unsigned char challenge[CHALLENGE_SIZE];
 
-	ret = copy_from_user(&(cmd.challenge), &(arg->challenge), sizeof(cmd.challenge));
+	ret = copy_from_user(challenge, &(arg->challenge), CHALLENGE_SIZE);
 	if (ret) {
 		pr_err("tmm_tsi: copy data from user failed (%lu)!\n", ret);
 		return -EFAULT;
 	}
 
-	/* Allocate a large memory */
-	attest_token->buf = kmalloc(GRANULE_SIZE * MAX_TOKEN_GRANULE_PAGE, GFP_KERNEL);
-	if (!attest_token->buf)
-		return -ENOMEM;
-	cmd.granule_head = attest_token->buf;
-	cmd.granule_ipa  = cmd.granule_head;
+	mutex_lock(&token_lock);
+	token_granule.head = token.buf;
+	token_granule.ipa  = token_granule.head;
 
-	/* preempt_disable(); */
-
-	ret = tsi_attestation_token_init(&cmd);
+	ret = tsi_attestation_token_init(challenge);
 	if (ret) {
 		pr_err("tmm_tsi: tsi call tsi_attestation_token_init failed (%lu)!\n", ret);
+		mutex_unlock(&token_lock);
 		return -EIO;
 	}
 
 	do { /* Retrieve one Granule of data per loop iteration */
-		cmd.granule_ipa = cmd.granule_head +
-			(unsigned long)(cmd.granule_count * GRANULE_SIZE);
-		cmd.offset = 0;
+		token_granule.ipa = token_granule.head +
+			(unsigned long)(token_granule.count * GRANULE_SIZE);
+		token_granule.offset = 0;
 
 		do { /* Retrieve sub-Granule chunk of data per loop iteration */
-			cmd.size = GRANULE_SIZE - cmd.offset;
-			ret = tsi_attestation_token_continue(&cmd);
-			cmd.offset += cmd.num_wr_bytes;
-		} while (ret == TSI_INCOMPLETE && cmd.offset < GRANULE_SIZE);
+			token_granule.size = GRANULE_SIZE - token_granule.offset;
+			ret = tsi_attestation_token_continue(&token_granule);
+			token_granule.offset += token_granule.num_wr_bytes;
+		} while (ret == TSI_INCOMPLETE && token_granule.offset < GRANULE_SIZE);
 
-		cmd.granule_count += 1;
-		if (cmd.granule_count >= MAX_TOKEN_GRANULE_PAGE && ret == TSI_INCOMPLETE) {
+		token_granule.count += 1;
+		if (token_granule.count >= MAX_TOKEN_GRANULE_PAGE && ret == TSI_INCOMPLETE) {
 			pr_err("tmm_tsi: macro MAX_TOKEN_GRANULE_PAGE (%d) is too small!\n",
 				MAX_TOKEN_GRANULE_PAGE);
+			mutex_unlock(&token_lock);
 			return -ENOMEM;
 		}
 
 	} while (ret == TSI_INCOMPLETE);
 
-	/* preempt_enable(); */
-
 	/* Send to user space the total size of the token */
-	cmd.granule_count = cmd.granule_count - 1;
-	cmd.token_size = (unsigned long)(GRANULE_SIZE * cmd.granule_count) + cmd.offset;
-	attest_token->size = cmd.token_size;
+	token_granule.count = token_granule.count - 1;
+	token.size = (unsigned long)(GRANULE_SIZE * token_granule.count) + token_granule.offset;
 
-	ret = copy_to_user(&(arg->token_size), &(cmd.token_size), sizeof(cmd.token_size));
+	ret = copy_to_user(&(arg->token_size), &(token.size), sizeof(token.size));
 	if (ret) {
 		pr_err("tmm_tsi: copy data to user failed (%lu)!\n", ret);
+		mutex_unlock(&token_lock);
 		return -EFAULT;
 	}
+	mutex_unlock(&token_lock);
 
 	return 0;
 }
@@ -211,7 +208,7 @@ static int tmm_get_device_cert(struct cca_device_cert __user *arg)
 	unsigned long device_cert_size;
 
 	device_cert_size = MAX_DEV_CERT_SIZE;
-	device_cert = kmalloc(device_cert_size, GFP_KERNEL);
+	device_cert = kzalloc(device_cert_size, GFP_KERNEL);
 	if (!device_cert)
 		return -ENOMEM;
 	ret = tsi_get_device_cert(device_cert, &device_cert_size);
