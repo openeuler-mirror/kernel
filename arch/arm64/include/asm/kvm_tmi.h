@@ -18,22 +18,6 @@
 #define TMM_TTT_LEVEL_2 2
 #define TMM_TTT_LEVEL_3 3
 
-#ifdef CONFIG_CVM_HOST_FVP_PLAT
-#define CVM_MEM_BASE	ULL(0x8800000000)	/* choose FVP platform to run cVM */
-#define VQ_NUM			3
-#else
-#define CVM_MEM_BASE	ULL(0x800000000)	/* choose qemu platform to run cVM */
-#define VQ_NUM			3
-#endif
-
-#define MEM_SEG_NUMS 2
-
-/* define in QEMU hw/arm/virt.c */
-#define VIRT_PCIE_MMIO			0x10000000			/* 256MB */
-#define VIRT_PCIE_MMIO_SIZE		0x1000000			/* 16MB */
-#define VIRT_HIGH_PCIE_ECAM		0x8000000000			/* 512GB */
-#define VIRT_HIGH_PCIE_ECAM_SIZE	0x12000000			/* 288MB */
-
 /* TMI error codes. */
 #define TMI_SUCCESS				0
 #define TMI_ERROR_INPUT			1
@@ -214,6 +198,8 @@ struct tmi_tec_run {
 #define TMI_NO_MEASURE_CONTENT	U(0)
 #define TMI_MEASURE_CONTENT	U(1)
 
+#define CVM_IPA_MAX_VAL  (1UL << 48)
+
 /*
  * SMC_TMM_INIT_COMPLETE is the only function in the TMI that originates from
  * the CVM world and is handled by the SPMD. The remaining functions are
@@ -264,7 +250,7 @@ struct tmi_tec_run {
 #define TMI_ABI_VERSION_GET_MAJOR(_version) ((_version) >> 16)
 #define TMI_ABI_VERSION_GET_MINOR(_version) ((_version) & 0xFFFF)
 
-#define TMI_ABI_VERSION_MAJOR			U(0x0)
+#define TMI_ABI_VERSION_MAJOR			U(0x1)
 
 /* KVM_CAP_ARM_TMM on VM fd */
 #define KVM_CAP_ARM_TMM_CONFIG_CVM_HOST		0
@@ -328,20 +314,6 @@ struct kvm_cap_arm_tmm_populate_region_args {
 	__u64 populate_ipa_size2;
 	__u32 flags;
 	__u32 reserved[3];
-};
-
-enum tmi_tmm_mem_type {
-	TMM_MEM_TYPE_RD,
-	TMM_MEM_TYPE_TEC,
-	TMM_MEM_TYPE_TTT,
-	TMM_MEM_TYPE_CVM_PA,
-};
-
-enum tmi_tmm_map_size {
-	TMM_MEM_MAP_SIZE_4K,
-	TMM_MEM_MAP_SIZE_2M,
-	TMM_MEM_MAP_SIZE_1G,
-	TMM_MEM_MAP_SIZE_MAX,
 };
 
 static inline bool tmm_is_addr_ttt_level_aligned(uint64_t addr, int level)

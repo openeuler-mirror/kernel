@@ -181,8 +181,9 @@ int kvm_arm_create_cvm(struct kvm *kvm)
 	memcpy(cvm->params->rpv, &cvm->cvm_vmid, sizeof(cvm->cvm_vmid));
 	cvm->rd = tmi_cvm_create(__pa(cvm->params), numa_set);
 	if (!cvm->rd) {
-		kvm_err("KVM creates cVM: %d\n", cvm->cvm_vmid);
+		kvm_err("KVM creates cVM failed: %d\n", cvm->cvm_vmid);
 		ret = -ENOMEM;
+		goto out;
 	}
 
 	WRITE_ONCE(cvm->state, CVM_STATE_NEW);
@@ -341,7 +342,7 @@ int kvm_cvm_populate_par_region(struct kvm *kvm, u64 numa_set,
 		 */
 		ipa = ALIGN_DOWN(ipa, map_size);
 
-		if (is_data_create_region(ipa_base, args)) {
+		if (is_data_create_region(ipa, args)) {
 			pfn = gfn_to_pfn_memslot(memslot, gpa_to_gfn(ipa));
 			if (is_error_pfn(pfn)) {
 				ret = -EFAULT;
@@ -602,6 +603,7 @@ static int kvm_populate_ram_region(struct kvm *kvm, u64 map_size,
 static int kvm_populate_ipa_cvm_range(struct kvm *kvm,
 				struct kvm_cap_arm_tmm_populate_region_args *args)
 {
+	struct cvm *cvm = (struct cvm *)kvm->arch.cvm;
 	u64 l2_granule = cvm_granule_size(TMM_TTT_LEVEL_2);
 	phys_addr_t ipa_base1, ipa_end2;
 
@@ -612,7 +614,10 @@ static int kvm_populate_ipa_cvm_range(struct kvm *kvm,
 		!IS_ALIGNED(args->populate_ipa_base2, PAGE_SIZE) ||
 		!IS_ALIGNED(args->populate_ipa_size2, PAGE_SIZE))
 		return -EINVAL;
-	if (args->populate_ipa_base2 < args->populate_ipa_base1 + args->populate_ipa_size1)
+
+	if (args->populate_ipa_base1 < cvm->loader_start ||
+		args->populate_ipa_base2 < args->populate_ipa_base1 + args->populate_ipa_size1 ||
+		cvm->dtb_end < args->populate_ipa_base2 + args->populate_ipa_size2)
 		return -EINVAL;
 
 	if (args->flags & ~TMI_MEASURE_CONTENT)
@@ -755,6 +760,26 @@ int kvm_init_tmm(void)
 	return 0;
 }
 
+static bool is_numa_ipa_range_valid(struct kvm_numa_info *numa_info)
+{
+	unsigned long i;
+	struct kvm_numa_node *numa_node, *prev_numa_node;
+
+	prev_numa_node = NULL;
+	for (i = 0; i < numa_info->numa_cnt; i++) {
+		numa_node = &numa_info->numa_nodes[i];
+		if (numa_node->ipa_start + numa_node->ipa_size < numa_node->ipa_start)
+			return false;
+		if (prev_numa_node &&
+			numa_node->ipa_start < prev_numa_node->ipa_start + prev_numa_node->ipa_size)
+			return false;
+		prev_numa_node = numa_node;
+	}
+	if (numa_node->ipa_start + numa_node->ipa_size > CVM_IPA_MAX_VAL)
+		return false;
+	return true;
+}
+
 int kvm_load_user_data(struct kvm *kvm, unsigned long arg)
 {
 	struct kvm_user_data user_data;
@@ -766,25 +791,33 @@ int kvm_load_user_data(struct kvm *kvm, unsigned long arg)
 		return -EFAULT;
 
 	if (copy_from_user(&user_data, argp, sizeof(user_data)))
-		return -EFAULT;
+		return -EINVAL;
 
 	numa_info = &user_data.numa_info;
 	if (numa_info->numa_cnt > MAX_NUMA_NODE)
-		return -EFAULT;
+		return -EINVAL;
 
 	if (numa_info->numa_cnt > 0) {
 		unsigned long i, total_size = 0;
 		struct kvm_numa_node *numa_node = &numa_info->numa_nodes[0];
 		unsigned long ipa_end = numa_node->ipa_start + numa_node->ipa_size;
 
+		if (!is_numa_ipa_range_valid(numa_info))
+			return -EINVAL;
 		if (user_data.loader_start < numa_node->ipa_start ||
 			user_data.dtb_end > ipa_end)
-			return -EFAULT;
+			return -EINVAL;
 		for (i = 0; i < numa_info->numa_cnt; i++)
 			total_size += numa_info->numa_nodes[i].ipa_size;
 		if (total_size != user_data.ram_size)
-			return -EFAULT;
+			return -EINVAL;
 	}
+
+	if (user_data.image_end <= user_data.loader_start ||
+		user_data.initrd_start < user_data.image_end ||
+		user_data.dtb_end < user_data.initrd_start ||
+		user_data.ram_size < user_data.dtb_end - user_data.loader_start)
+		return -EINVAL;
 
 	cvm->loader_start = user_data.loader_start;
 	cvm->image_end = user_data.image_end;
@@ -871,6 +904,7 @@ int kvm_init_cvm_vm(struct kvm *kvm)
 		return -ENOMEM;
 
 	cvm->params = params;
+	WRITE_ONCE(cvm->state, CVM_STATE_NONE);
 
 	return 0;
 }

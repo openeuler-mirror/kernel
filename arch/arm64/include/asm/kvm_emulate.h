@@ -571,7 +571,9 @@ static inline enum cvm_state kvm_cvm_state(struct kvm *kvm)
 {
 	struct cvm *cvm = kvm->arch.cvm;
 
-	return cvm && READ_ONCE(cvm->state);
+	if (!cvm)
+		return 0;
+	return READ_ONCE(cvm->state);
 }
 #endif
 #endif /* __ARM64_KVM_EMULATE_H__ */
