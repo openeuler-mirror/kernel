@@ -1436,13 +1436,13 @@ static int mmc_spi_probe(struct spi_device *spi)
 
 	status = mmc_add_host(mmc);
 	if (status != 0)
-		goto fail_add_host;
+		goto fail_glue_init;
 
 	if (host->pdata && host->pdata->flags & MMC_SPI_USE_CD_GPIO) {
 		status = mmc_gpio_request_cd(mmc, host->pdata->cd_gpio,
 					     host->pdata->cd_debounce);
 		if (status != 0)
-			goto fail_add_host;
+			goto fail_gpiod_request;
 
 		/* The platform has a CD GPIO signal that may support
 		 * interrupts, so let mmc_gpiod_request_cd_irq() decide
@@ -1457,7 +1457,7 @@ static int mmc_spi_probe(struct spi_device *spi)
 		has_ro = true;
 		status = mmc_gpio_request_ro(mmc, host->pdata->ro_gpio);
 		if (status != 0)
-			goto fail_add_host;
+			goto fail_gpiod_request;
 	}
 
 	dev_info(&spi->dev, "SD/MMC host %s%s%s%s%s\n",
@@ -1470,7 +1470,7 @@ static int mmc_spi_probe(struct spi_device *spi)
 				? ", cd polling" : "");
 	return 0;
 
-fail_add_host:
+fail_gpiod_request:
 	mmc_remove_host (mmc);
 fail_glue_init:
 	if (host->dma_dev)
