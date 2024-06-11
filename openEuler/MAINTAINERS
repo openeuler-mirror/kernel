@@ -263,6 +263,11 @@ F:	drivers/iommu/hisilicon
 F:	drivers/ubc
 F:	drivers/vfio/ubc
 
+SDMA DRIVER
+M:	Xiaoxu Zeng <zengxiaoxu@huawei.com>
+S:	Maintained
+F:	drivers/misc/sdma-dae
+
 VDPA DRIVER
 M:	jiangdongxu <jiangdongxu1@huawei.com>
 S:	Maintained
