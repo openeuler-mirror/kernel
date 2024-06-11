@@ -187,6 +187,9 @@ static int ceph_do_readpage(struct file *filp, struct page *page)
 	u64 off = page_offset(page);
 	u64 len = PAGE_SIZE;
 
+	if (ceph_inode_is_shutdown(inode))
+		return -EIO;
+
 	if (off >= i_size_read(inode)) {
 		zero_user_segment(page, 0, PAGE_SIZE);
 		SetPageUptodate(page);
@@ -460,6 +463,9 @@ static int ceph_readpages(struct file *file, struct address_space *mapping,
 	int rc = 0;
 	int max = 0;
 
+	if (ceph_inode_is_shutdown(inode))
+		return -EIO;
+
 	if (ceph_inode(inode)->i_inline_version != CEPH_INLINE_NONE)
 		return -EINVAL;
 
@@ -602,6 +608,9 @@ static int writepage_nounlock(struct page *page, struct writeback_control *wbc)
 	struct ceph_osd_request *req;
 
 	dout("writepage %p idx %lu\n", page, page->index);
+
+	if (ceph_inode_is_shutdown(inode))
+		return -EIO;
 
 	/* verify this is a writeable snap context */
 	snapc = page_snap_context(page);
@@ -1759,6 +1768,11 @@ int ceph_uninline_data(struct file *filp, struct page *locked_page)
 
 	dout("uninline_data %p %llx.%llx inline_version %llu\n",
 	     inode, ceph_vinop(inode), inline_version);
+
+	if (ceph_inode_is_shutdown(inode)) {
+		err = -EIO;
+		goto out;
+	}
 
 	if (inline_version == 1 || /* initial version, no data */
 	    inline_version == CEPH_INLINE_NONE)
