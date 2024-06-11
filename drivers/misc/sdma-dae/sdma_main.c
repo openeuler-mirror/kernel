@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <linux/acpi.h>
 #include <linux/bitmap.h>
-#include <linux/dma-iommu.h>
+#include <linux/iommu.h>
+#include <linux/interrupt.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/printk.h>
@@ -10,6 +11,7 @@
 
 #include "sdma_hal.h"
 #include "sdma_irq.h"
+#include "sdma_umem.h"
 #include "sdma_auth.h"
 
 #define UPPER_SHIFT		32
@@ -454,7 +456,7 @@ static int __init sdma_driver_init(void)
 
 	sdma_class = class_create(THIS_MODULE, "sdma");
 	if (IS_ERR(sdma_class)) {
-		pr_err("class_create() failed for sdma_class: %d\n", PTR_ERR(sdma_class));
+		pr_err("class_create() failed for sdma_class: %lu\n", PTR_ERR(sdma_class));
 		goto destroy_ida;
 	}
 	ret = alloc_chrdev_region(&sdma_dev, 0, HISI_SDMA_MAX_DEVS, "sdma");
@@ -467,13 +469,18 @@ static int __init sdma_driver_init(void)
 	if (ret)
 		goto unregister_chrdev;
 
-	if (sdma_authority_hash_init())
+	if (sdma_hash_init())
 		goto unregister_driver;
+
+	if (sdma_authority_hash_init())
+		goto umem_hash_free;
 
 	kfree(g_info);
 
 	return 0;
 
+umem_hash_free:
+	sdma_hash_free();
 unregister_driver:
 	platform_driver_unregister(&sdma_driver);
 unregister_chrdev:
@@ -492,6 +499,7 @@ static void __exit sdma_driver_exit(void)
 	dev_t devno;
 
 	sdma_authority_ht_free();
+	sdma_hash_free();
 	platform_driver_unregister(&sdma_driver);
 
 	devno = MKDEV(hisi_sdma_core_device.sdma_major, 0);
