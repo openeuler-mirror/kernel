@@ -42,12 +42,43 @@ static struct kmem_cache *filp_cachep __read_mostly;
 
 static struct percpu_counter nr_files __cacheline_aligned_in_smp;
 
+#ifdef CONFIG_FILE_MITIGATION_FALSE_SHARING
+struct file_wrap {
+	u64 pad[8];
+	struct file f;
+};
+
+#define GET_FILE_WRAP(fp) container_of(fp, struct file_wrap, f)
+#define FILE_SZ sizeof(struct file_wrap)
+#define FILE_ALIGN 128
+
+static inline struct file *kmem_cache_zalloc_file(void)
+{
+	struct file_wrap *fw;
+
+	fw = kmem_cache_zalloc(filp_cachep, GFP_KERNEL);
+	if (unlikely(!fw))
+		return NULL;
+
+	return &fw->f;
+}
+#else
+#define GET_FILE_WRAP(fp) fp
+#define FILE_SZ sizeof(struct file)
+#define FILE_ALIGN 0
+
+static inline struct file *kmem_cache_zalloc_file(void)
+{
+	return kmem_cache_zalloc(filp_cachep, GFP_KERNEL);
+}
+#endif
+
 static void file_free_rcu(struct rcu_head *head)
 {
 	struct file *f = container_of(head, struct file, f_u.fu_rcuhead);
 
 	put_cred(f->f_cred);
-	kmem_cache_free(filp_cachep, f);
+	kmem_cache_free(filp_cachep, GET_FILE_WRAP(f));
 }
 
 static inline void file_free(struct file *f)
@@ -98,7 +129,7 @@ static struct file *__alloc_file(int flags, const struct cred *cred)
 	struct file *f;
 	int error;
 
-	f = kmem_cache_zalloc(filp_cachep, GFP_KERNEL);
+	f = kmem_cache_zalloc_file();
 	if (unlikely(!f))
 		return ERR_PTR(-ENOMEM);
 
@@ -380,7 +411,7 @@ EXPORT_SYMBOL(__fput_sync);
 
 void __init files_init(void)
 {
-	filp_cachep = kmem_cache_create("filp", sizeof(struct file), 0,
+	filp_cachep = kmem_cache_create("filp", FILE_SZ, FILE_ALIGN,
 			SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT, NULL);
 	percpu_counter_init(&nr_files, 0, GFP_KERNEL);
 }
