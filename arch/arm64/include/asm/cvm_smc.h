@@ -124,30 +124,30 @@ static inline unsigned long tsi_measurement_read(struct cvm_measurement *cvm_mea
 	return res.a0;
 }
 
-static inline unsigned long tsi_attestation_token_init(struct cvm_attestation_cmd *attest_cmd)
+static inline unsigned long tsi_attestation_token_init(unsigned char *challenge)
 {
 	struct arm_smccc_res res;
-	unsigned char *challenge;
+	unsigned char *buf;
 
-	challenge = kmalloc(CHALLENGE_SIZE, GFP_KERNEL);
-	if (!challenge)
+	buf = kmalloc(CHALLENGE_SIZE, GFP_KERNEL);
+	if (!buf)
 		return -ENOMEM;
-	memcpy(challenge, attest_cmd->challenge, CHALLENGE_SIZE);
+	memcpy(buf, challenge, CHALLENGE_SIZE);
 
-	arm_smccc_1_1_smc(SMC_TSI_ATTESTATION_TOKEN_INIT, virt_to_phys(challenge), &res);
-	kfree(challenge);
+	arm_smccc_1_1_smc(SMC_TSI_ATTESTATION_TOKEN_INIT, virt_to_phys(buf), &res);
+	kfree(buf);
 
 	return res.a0;
 }
 
-static inline unsigned long tsi_attestation_token_continue(struct cvm_attestation_cmd *attest_cmd)
+static inline unsigned long tsi_attestation_token_continue(struct cvm_token_granule *token_granule)
 {
 	struct arm_smccc_res res;
 
-	arm_smccc_1_1_smc(SMC_TSI_ATTESTATION_TOKEN_CONTINUE, virt_to_phys(attest_cmd->granule_ipa),
-		attest_cmd->offset, attest_cmd->size, &res);
+	arm_smccc_1_1_smc(SMC_TSI_ATTESTATION_TOKEN_CONTINUE, virt_to_phys(token_granule->ipa),
+		token_granule->offset, token_granule->size, &res);
 
-	attest_cmd->num_wr_bytes = res.a1;
+	token_granule->num_wr_bytes = res.a1;
 
 	return res.a0;
 }

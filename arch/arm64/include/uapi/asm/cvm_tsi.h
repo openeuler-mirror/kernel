@@ -55,10 +55,13 @@ struct cvm_measurement_extend {
 
 struct cvm_attestation_cmd {
 	unsigned char challenge[CHALLENGE_SIZE]; /* input: challenge value */
-	unsigned long token_size; /* return: challenge value */
-	void *granule_head;
-	void *granule_ipa;  /* IPA of the Granule to which the token will be written */
-	unsigned long granule_count;
+	unsigned long token_size; /* return: token size */
+};
+
+struct cvm_token_granule {
+	void *head;
+	void *ipa;  /* IPA of the Granule to which the token will be written */
+	unsigned long count;
 	unsigned long offset; /* Offset within Granule to start of buffer in bytes */
 	unsigned long size;  /* Size of buffer in bytes */
 	unsigned long num_wr_bytes; /* Number of bytes written to buffer */
