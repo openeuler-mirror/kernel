@@ -2648,6 +2648,8 @@ static int mptcp_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	if (subflow->request_mptcp && mptcp_token_new_connect(ssock->sk))
 		mptcp_subflow_early_fallback(msk, subflow);
 
+	WRITE_ONCE(msk->write_seq, subflow->idsn);
+
 do_connect:
 	err = ssock->ops->connect(ssock, uaddr, addr_len, flags);
 	sock->state = ssock->state;
