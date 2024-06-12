@@ -90,7 +90,7 @@ static void __nf_queue_entry_init_physdevs(struct nf_queue_entry *entry)
 
 	nf_bridge = nf_bridge_info_get(skb);
 	if (nf_bridge) {
-		entry->physin = nf_bridge_get_physindev(skb);
+		entry->physin = nf_bridge_get_physindev(skb, entry->state.net);
 		entry->physout = nf_bridge_get_physoutdev(skb);
 	} else {
 		entry->physin = NULL;
