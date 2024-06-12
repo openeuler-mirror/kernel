@@ -2905,7 +2905,7 @@ static void its_free_tables(struct its_node *its)
 	for (i = 0; i < GITS_BASER_NR_REGS; i++) {
 		if (its->tables[i].base) {
 #ifdef CONFIG_CVM_GUEST
-			if (!is_cvm_world())
+			if (is_cvm_world())
 				its_free_shared_pages(its->tables[i].base,
 					its->tables[i].order);
 			else

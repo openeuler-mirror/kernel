@@ -8,7 +8,7 @@
 #include <uapi/linux/kvm.h>
 
 enum cvm_state {
-	CVM_STATE_NONE,
+	CVM_STATE_NONE = 1,
 	CVM_STATE_NEW,
 	CVM_STATE_ACTIVE,
 	CVM_STATE_DYING
