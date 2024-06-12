@@ -26,37 +26,6 @@ static const struct pci_device_id hns3_roh_pci_tbl[] = {
 };
 MODULE_DEVICE_TABLE(pci, hns3_roh_pci_tbl);
 
-static int hns3_roh_get_intr_cap(struct hns3_roh_device *hroh_dev)
-{
-	struct hns3_roh_get_intr_info *resp;
-	struct hns3_roh_desc desc;
-	int ret;
-
-	hns3_roh_cmdq_setup_basic_desc(&desc, HNS3_ROH_OPC_GET_INTR_INFO, true);
-
-	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1);
-	if (ret) {
-		dev_err(hroh_dev->dev, "failed to get intr info, ret = %d\n", ret);
-		return ret;
-	}
-
-	resp = (struct hns3_roh_get_intr_info *)desc.data;
-
-	hroh_dev->intr_info.vector_offset =
-		le16_to_cpu(resp->msixcap_localid_number_nic) +
-		le16_to_cpu(resp->pf_intr_vector_number_roce);
-	hroh_dev->intr_info.vector_num =
-		le16_to_cpu(resp->pf_intr_vector_number_roh);
-	if (hroh_dev->intr_info.vector_num < HNS3_ROH_MIN_VECTOR_NUM) {
-		dev_err(hroh_dev->dev,
-			"just %d intr resources, not enough(min: %d).\n",
-			hroh_dev->intr_info.vector_num, HNS3_ROH_MIN_VECTOR_NUM);
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 static void hns3_roh_unregister_device(struct hns3_roh_device *hroh_dev)
 {
 	hroh_dev->active = false;
@@ -167,12 +136,6 @@ static int hns3_roh_init_hw(struct hns3_roh_device *hroh_dev)
 		return ret;
 	}
 
-	ret = hroh_dev->hw->get_intr_cap(hroh_dev);
-	if (ret) {
-		dev_err(dev, "failed to get intr cap, ret = %d\n", ret);
-		goto err_free_cmdq;
-	}
-
 	ret = hns3_roh_init_irq(hroh_dev);
 	if (ret) {
 		dev_err(dev, "failed to init irq, ret = %d\n", ret);
@@ -242,10 +205,9 @@ static void hns3_roh_exit(struct hns3_roh_device *hroh_dev)
 static const struct hns3_roh_hw hns3_roh_hw = {
 	.cmdq_init = hns3_roh_cmdq_init,
 	.cmdq_exit = hns3_roh_cmdq_exit,
-	.get_intr_cap = hns3_roh_get_intr_cap,
 };
 
-static void hns3_roh_get_cfg_from_frame(struct hns3_roh_device *hroh_dev,
+static int hns3_roh_get_cfg_from_frame(struct hns3_roh_device *hroh_dev,
 					struct hnae3_handle *handle)
 {
 	hroh_dev->pdev = handle->pdev;
@@ -254,9 +216,20 @@ static void hns3_roh_get_cfg_from_frame(struct hns3_roh_device *hroh_dev,
 	hroh_dev->netdev = handle->rohinfo.netdev;
 	hroh_dev->reg_base = handle->rohinfo.roh_io_base;
 
+	hroh_dev->intr_info.vector_offset = handle->rohinfo.base_vector;
+	hroh_dev->intr_info.vector_num = handle->rohinfo.num_vectors;
+	if (hroh_dev->intr_info.vector_num < HNS3_ROH_MIN_VECTOR_NUM) {
+		dev_err(hroh_dev->dev,
+			"just %d intr resources, not enough(min: %d).\n",
+			hroh_dev->intr_info.vector_num, HNS3_ROH_MIN_VECTOR_NUM);
+		return -EINVAL;
+	}
+
 	hroh_dev->hw = &hns3_roh_hw;
 
 	hroh_dev->priv->handle = handle;
+
+	return 0;
 }
 
 static void hns3_roh_dfx_init(struct hns3_roh_device *hroh_dev);
@@ -277,7 +250,11 @@ static int __hns3_roh_init_instance(struct hnae3_handle *handle)
 		goto err_roh_alloc_device;
 	}
 
-	hns3_roh_get_cfg_from_frame(hroh_dev, handle);
+	ret = hns3_roh_get_cfg_from_frame(hroh_dev, handle);
+	if (ret) {
+		dev_err(hroh_dev->dev, "failed to get cfg from frame, ret = %d\n", ret);
+		goto err_kzalloc;
+	}
 
 	ret = hns3_roh_init(hroh_dev);
 	if (ret) {
@@ -444,32 +421,6 @@ static void hns3_roh_dfx_help(struct hns3_roh_device *hroh_dev)
 	dev_info(hroh_dev->dev, "dev info\n");
 }
 
-static void hns3_roh_dfx_get_vector_cap(struct hns3_roh_device *hroh_dev)
-{
-	u16 roce_vector_num, nic_vector_num, roh_vector_num;
-	struct hns3_roh_get_intr_info *resp;
-	struct device *dev = hroh_dev->dev;
-	struct hns3_roh_desc desc;
-	int ret;
-
-	hns3_roh_cmdq_setup_basic_desc(&desc, HNS3_ROH_OPC_GET_INTR_INFO, true);
-
-	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1);
-	if (ret)
-		dev_warn(hroh_dev->dev, "failed to get intr info, ret = %d\n", ret);
-
-	resp = (struct hns3_roh_get_intr_info *)desc.data;
-
-	nic_vector_num = le16_to_cpu(resp->msixcap_localid_number_nic);
-	roce_vector_num = le16_to_cpu(resp->pf_intr_vector_number_roce);
-	roh_vector_num = le16_to_cpu(resp->pf_intr_vector_number_roh);
-
-	dev_info(dev, "NIC vector num: %d\n", nic_vector_num);
-	dev_info(dev, "RoCE vector num: %d\n", roce_vector_num);
-	dev_info(dev, "ROH vector num: %d\n", roh_vector_num);
-	dev_info(dev, "ROH vector offset: %d\n", hroh_dev->intr_info.vector_offset);
-}
-
 static void hns3_roh_dfx_dump_dev_info(struct hns3_roh_device *hroh_dev)
 {
 	struct device *dev = hroh_dev->dev;
@@ -479,8 +430,9 @@ static void hns3_roh_dfx_dump_dev_info(struct hns3_roh_device *hroh_dev)
 	dev_info(dev, "Network device name: %s\n", netdev_name(hroh_dev->netdev));
 	dev_info(dev, "BAR2~3 base addr: 0x%llx\n", (u64)hroh_dev->reg_base);
 
-	dev_info(dev, "Base vector: %d\n", hroh_dev->intr_info.base_vecotr);
-	hns3_roh_dfx_get_vector_cap(hroh_dev);
+	dev_info(dev, "Base vector: %d\n", hroh_dev->intr_info.base_vector);
+	dev_info(dev, "ROH vector offset: %d\n", hroh_dev->intr_info.vector_offset);
+	dev_info(dev, "ROH vector num: %d\n", hroh_dev->intr_info.vector_num);
 
 	dev_info(dev, "ABN vector0 irq: %d\n", hroh_dev->abn_vector.vector_irq);
 	dev_info(dev, "ABN vector0 addr: 0x%llx\n", (u64)hroh_dev->abn_vector.addr);
