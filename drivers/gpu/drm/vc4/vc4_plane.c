@@ -1250,9 +1250,6 @@ static int vc4_prepare_fb(struct drm_plane *plane,
 
 	drm_gem_fb_prepare_fb(plane, state);
 
-	if (plane->state->fb == state->fb)
-		return 0;
-
 	ret = vc4_bo_inc_usecnt(bo);
 	if (ret)
 		return ret;
@@ -1265,7 +1262,7 @@ static void vc4_cleanup_fb(struct drm_plane *plane,
 {
 	struct vc4_bo *bo;
 
-	if (plane->state->fb == state->fb || !state->fb)
+	if (!state->fb)
 		return;
 
 	bo = to_vc4_bo(&drm_fb_cma_get_gem_obj(state->fb, 0)->base);
