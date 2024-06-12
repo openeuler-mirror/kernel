@@ -734,9 +734,9 @@ static void ice_set_dflt_vsi_ctx(struct ice_vsi_ctx *ctxt)
  * @vsi: the VSI being configured
  * @ctxt: VSI context structure
  */
-static void ice_vsi_setup_q_map(struct ice_vsi *vsi, struct ice_vsi_ctx *ctxt)
+static int ice_vsi_setup_q_map(struct ice_vsi *vsi, struct ice_vsi_ctx *ctxt)
 {
-	u16 offset = 0, qmap = 0, tx_count = 0;
+	u16 offset = 0, qmap = 0, tx_count = 0, rx_count = 0;
 	u16 qcount_tx = vsi->alloc_txq;
 	u16 qcount_rx = vsi->alloc_rxq;
 	u16 tx_numq_tc, rx_numq_tc;
@@ -829,11 +829,24 @@ static void ice_vsi_setup_q_map(struct ice_vsi *vsi, struct ice_vsi_ctx *ctxt)
 	 * at least 1)
 	 */
 	if (offset)
-		vsi->num_rxq = offset;
+		rx_count = offset;
 	else
-		vsi->num_rxq = qcount_rx;
+		rx_count = qcount_rx;
+
+	if (rx_count > vsi->alloc_rxq) {
+		dev_err(ice_pf_to_dev(vsi->back), "Trying to use more Rx queues (%u), than were allocated (%u)!\n",
+			vsi->num_rxq, vsi->alloc_rxq);
+		return -EINVAL;
+	}
+
+	if (tx_count > vsi->alloc_txq) {
+		dev_err(ice_pf_to_dev(vsi->back), "Trying to use more Tx queues (%u), than were allocated (%u)!\n",
+			vsi->num_txq, vsi->alloc_txq);
+		return -EINVAL;
+	}
 
 	vsi->num_txq = tx_count;
+	vsi->num_rxq = rx_count;
 
 	if (vsi->type == ICE_VSI_VF && vsi->num_txq != vsi->num_rxq) {
 		dev_dbg(ice_pf_to_dev(vsi->back), "VF VSI should have same number of Tx and Rx queues. Hence making them equal\n");
@@ -851,6 +864,8 @@ static void ice_vsi_setup_q_map(struct ice_vsi *vsi, struct ice_vsi_ctx *ctxt)
 	 */
 	ctxt->info.q_mapping[0] = cpu_to_le16(vsi->rxq_map[0]);
 	ctxt->info.q_mapping[1] = cpu_to_le16(vsi->num_rxq);
+
+	return 0;
 }
 
 /**
@@ -991,7 +1006,10 @@ static int ice_vsi_init(struct ice_vsi *vsi, bool init_vsi)
 	}
 
 	ctxt->info.sw_id = vsi->port_info->sw_id;
-	ice_vsi_setup_q_map(vsi, ctxt);
+	ret = ice_vsi_setup_q_map(vsi, ctxt);
+	if (ret)
+		goto out;
+
 	if (!init_vsi) /* means VSI being updated */
 		/* must to indicate which section of VSI context are
 		 * being modified
@@ -3043,6 +3061,7 @@ int ice_vsi_cfg_tc(struct ice_vsi *vsi, u8 ena_tc)
 {
 	u16 max_txqs[ICE_MAX_TRAFFIC_CLASS] = { 0 };
 	struct ice_pf *pf = vsi->back;
+	struct ice_tc_cfg old_tc_cfg;
 	struct ice_vsi_ctx *ctx;
 	enum ice_status status;
 	struct device *dev;
@@ -3059,6 +3078,7 @@ int ice_vsi_cfg_tc(struct ice_vsi *vsi, u8 ena_tc)
 		max_txqs[i] = vsi->alloc_txq;
 	}
 
+	memcpy(&old_tc_cfg, &vsi->tc_cfg, sizeof(old_tc_cfg));
 	vsi->tc_cfg.ena_tc = ena_tc;
 	vsi->tc_cfg.numtc = num_tc;
 
@@ -3069,7 +3089,11 @@ int ice_vsi_cfg_tc(struct ice_vsi *vsi, u8 ena_tc)
 	ctx->vf_num = 0;
 	ctx->info = vsi->info;
 
-	ice_vsi_setup_q_map(vsi, ctx);
+	ret = ice_vsi_setup_q_map(vsi, ctx);
+	if (ret) {
+		memcpy(&vsi->tc_cfg, &old_tc_cfg, sizeof(vsi->tc_cfg));
+		goto out;
+	}
 
 	/* must to indicate which section of VSI context are being modified */
 	ctx->info.valid_sections = cpu_to_le16(ICE_AQ_VSI_PROP_RXQ_MAP_VALID);
