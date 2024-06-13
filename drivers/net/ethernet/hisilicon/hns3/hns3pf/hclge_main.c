@@ -2606,6 +2606,9 @@ static int hclge_init_roh_base_info(struct hclge_vport *vport)
 	roh->rohinfo.netdev = nic->kinfo.netdev;
 	roh->rohinfo.roh_io_base = hdev->hw.hw.io_base;
 
+	roh->rohinfo.base_vector = hdev->num_nic_msi + hdev->num_roce_msi;
+	roh->rohinfo.num_vectors = hdev->num_roh_msi;
+
 	roh->pdev = nic->pdev;
 	roh->ae_algo = nic->ae_algo;
 
