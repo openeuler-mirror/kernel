@@ -174,7 +174,7 @@ void flush_ptlb_by_addr(struct sunway_iommu_domain *sdomain,
 		if (sdev_data->alias != sdev_data->devid) {
 			alias = sdev_data->alias;
 			bus_number = PCI_BUS_NUM(alias);
-			devfn = PCI_SLOT(alias) | PCI_FUNC(alias);
+			devfn = alias & 0xff;
 
 			address = (bus_number << 8)
 				| devfn | (flush_addr << 16);
@@ -386,7 +386,7 @@ set_entry_by_devid(u16 devid,
 	int node;
 
 	bus_number = PCI_BUS_NUM(devid);
-	devfn = PCI_SLOT(devid) | PCI_FUNC(devid);
+	devfn = devid & 0xff;
 
 	dte_l1 = iommu->iommu_dtbr + bus_number;
 	dte_l1_val = *dte_l1;
