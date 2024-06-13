@@ -690,10 +690,6 @@ lpfc_vport_delete(struct fc_vport *fc_vport)
 		ns_ndlp_referenced = true;
 	}
 
-	/* Remove FC host and then SCSI host with the vport */
-	fc_remove_host(shost);
-	scsi_remove_host(shost);
-
 	ndlp = lpfc_findnode_did(phba->pport, Fabric_DID);
 
 	/* In case of driver unload, we shall not perform fabric logo as the
@@ -795,6 +791,10 @@ lpfc_vport_delete(struct fc_vport *fc_vport)
 		lpfc_discovery_wait(vport);
 
 skip_logo:
+
+	/* Remove FC host and then SCSI host with the vport */
+	fc_remove_host(shost);
+	scsi_remove_host(shost);
 
 	/*
 	 * If the NameServer ndlp has been incremented to allow the DA_ID CT
