@@ -87,6 +87,7 @@ struct rdma_id_private {
 	bool			tos_set;
 	u8			reuseaddr;
 	u8			afonly;
+	u8			used_resolve_ip;
 	enum ib_gid_type	gid_type;
 
 	/*
