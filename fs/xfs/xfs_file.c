@@ -597,8 +597,8 @@ xfs_file_dio_aio_write(
 	 * the inode as necessary for EOF zeroing cases and fill out the new
 	 * inode size as appropriate.
 	 */
-	if ((iocb->ki_pos & mp->m_blockmask) ||
-	    ((iocb->ki_pos + count) & mp->m_blockmask)) {
+	if ((iocb->ki_pos & (XFS_FSB_TO_B(mp, xfs_get_extsz(ip)) - 1)) ||
+	    ((iocb->ki_pos + count) & (XFS_FSB_TO_B(mp, xfs_get_extsz(ip)) - 1))) {
 		unaligned_io = 1;
 
 		/*
