@@ -81,6 +81,7 @@ __setup("precise_iostat=", precise_iostat_setup);
  * For queue allocation
  */
 struct kmem_cache *blk_requestq_cachep;
+struct kmem_cache *queue_atomic_write_cachep;
 
 /*
  * Controlling structure to kblockd
@@ -433,6 +434,8 @@ static const struct {
 	[BLK_STS_ZONE_OPEN_RESOURCE]	= { -ETOOMANYREFS, "open zones exceeded" },
 	[BLK_STS_ZONE_ACTIVE_RESOURCE]	= { -EOVERFLOW, "active zones exceeded" },
 
+	[BLK_STS_INVAL]		= { -EINVAL,	"invalid" },
+
 	/* everything else not covered above: */
 	[BLK_STS_IOERR]		= { -EIO,	"I/O" },
 };
@@ -758,6 +761,7 @@ static void blk_timeout_work(struct work_struct *work)
 struct request_queue *blk_alloc_queue(int node_id)
 {
 	struct request_queue *q;
+	struct queue_atomic_write_limits *aw_limits;
 	int ret;
 
 	q = kmem_cache_alloc_node(blk_requestq_cachep,
@@ -765,10 +769,17 @@ struct request_queue *blk_alloc_queue(int node_id)
 	if (!q)
 		return NULL;
 
+	aw_limits = kmem_cache_alloc_node(queue_atomic_write_cachep,
+				GFP_KERNEL | __GFP_ZERO, node_id);
+	if (!aw_limits)
+		goto fail_q;
+
+	q->limits.aw_limits = aw_limits;
+
 	q->last_merge = NULL;
 
 	if (blk_alloc_queue_dispatch_async(q))
-		goto fail_q;
+		goto fail_aw;
 
 	q->id = ida_simple_get(&blk_queue_ida, 0, 0, GFP_KERNEL);
 	if (q->id < 0)
@@ -823,6 +834,7 @@ struct request_queue *blk_alloc_queue(int node_id)
 
 	blk_queue_dma_alignment(q, 511);
 	blk_set_default_limits(&q->limits);
+	blk_set_default_atomic_write_limits(&q->limits);
 	q->nr_requests = BLKDEV_MAX_RQ;
 
 	return q;
@@ -839,6 +851,8 @@ fail_id:
 	ida_simple_remove(&blk_queue_ida, q->id);
 fail_dispatch_async:
 	blk_free_queue_dispatch_async(q);
+fail_aw:
+	kmem_cache_free(queue_atomic_write_cachep, aw_limits);
 fail_q:
 	kmem_cache_free(blk_requestq_cachep, q);
 	return NULL;
@@ -1052,6 +1066,18 @@ static inline blk_status_t blk_check_zone_append(struct request_queue *q,
 	return BLK_STS_OK;
 }
 
+static blk_status_t blk_validate_atomic_write_op_size(struct request_queue *q,
+						 struct bio *bio)
+{
+	if (bio->bi_iter.bi_size > queue_atomic_write_unit_max_bytes(q))
+		return BLK_STS_INVAL;
+
+	if (bio->bi_iter.bi_size % queue_atomic_write_unit_min_bytes(q))
+		return BLK_STS_INVAL;
+
+	return BLK_STS_OK;
+}
+
 static noinline_for_stack bool submit_bio_checks(struct bio *bio)
 {
 	struct request_queue *q = bio->bi_disk->queue;
@@ -1132,6 +1158,13 @@ static noinline_for_stack bool submit_bio_checks(struct bio *bio)
 	case REQ_OP_WRITE_ZEROES:
 		if (!q->limits.max_write_zeroes_sectors)
 			goto not_supported;
+		break;
+	case REQ_OP_WRITE:
+		if (bio->bi_opf & REQ_ATOMIC) {
+			status = blk_validate_atomic_write_op_size(q, bio);
+			if (status != BLK_STS_OK)
+				goto end_io;
+		}
 		break;
 	default:
 		break;
@@ -1391,7 +1424,7 @@ EXPORT_SYMBOL(submit_bio);
 static blk_status_t blk_cloned_rq_check_limits(struct request_queue *q,
 				      struct request *rq)
 {
-	unsigned int max_sectors = blk_queue_get_max_sectors(q, req_op(rq));
+	unsigned int max_sectors = blk_queue_get_max_sectors_wrapper(rq);
 
 	if (blk_rq_sectors(rq) > max_sectors) {
 		/*
@@ -2138,6 +2171,8 @@ int __init blk_dev_init(void)
 
 	blk_requestq_cachep = kmem_cache_create("request_queue",
 			sizeof(struct request_queue), 0, SLAB_PANIC, NULL);
+	queue_atomic_write_cachep = kmem_cache_create("queue_atomic_write",
+			sizeof(struct queue_atomic_write_limits), 0, SLAB_PANIC, NULL);
 
 	blk_debugfs_root = debugfs_create_dir("block", NULL);
 

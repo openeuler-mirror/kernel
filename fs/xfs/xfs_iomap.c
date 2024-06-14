@@ -90,6 +90,7 @@ xfs_bmbt_to_iomap(
 {
 	struct xfs_mount	*mp = ip->i_mount;
 	struct xfs_buftarg	*target = xfs_inode_buftarg(ip);
+	xfs_extlen_t		extsz = xfs_get_extsz(ip);
 
 	if (unlikely(!xfs_valid_startblock(ip, imap->br_startblock)))
 		return xfs_alert_fsblock_zero(ip, imap);
@@ -120,6 +121,8 @@ xfs_bmbt_to_iomap(
 
 	iomap->validity_cookie = sequence_cookie;
 	iomap->page_ops = &xfs_iomap_page_ops;
+	if (extsz > 1)
+		iomap->extent_shift = ffs(extsz) - 1;
 	return 0;
 }
 
@@ -167,7 +170,9 @@ xfs_eof_alignment(
 		 * If mounted with the "-o swalloc" option the alignment is
 		 * increased from the strip unit size to the stripe width.
 		 */
-		if (mp->m_swidth && xfs_has_swalloc(mp))
+		if (xfs_inode_forcealign(ip))
+			align = xfs_get_extsz_hint(ip);
+		else if (mp->m_swidth && xfs_has_swalloc(mp))
 			align = mp->m_swidth;
 		else if (mp->m_dalign)
 			align = mp->m_dalign;
@@ -544,11 +549,19 @@ xfs_iomap_write_unwritten(
 	xfs_fsize_t	i_size;
 	uint		resblks;
 	int		error;
+	xfs_extlen_t	extsz = xfs_get_extsz(ip);
 
 	trace_xfs_unwritten_convert(ip, offset, count);
 
-	offset_fsb = XFS_B_TO_FSBT(mp, offset);
-	count_fsb = XFS_B_TO_FSB(mp, (xfs_ufsize_t)offset + count);
+	if (extsz > 1) {
+		xfs_extlen_t extsize_bytes = XFS_FSB_TO_B(mp, extsz);
+
+		offset_fsb = XFS_B_TO_FSBT(mp, round_down(offset, extsize_bytes));
+		count_fsb = XFS_B_TO_FSB(mp, round_up(offset + count, extsize_bytes));
+	} else {
+		offset_fsb = XFS_B_TO_FSBT(mp, offset);
+		count_fsb = XFS_B_TO_FSB(mp, (xfs_ufsize_t)offset + count);
+	}
 	count_fsb = (xfs_filblks_t)(count_fsb - offset_fsb);
 
 	/*

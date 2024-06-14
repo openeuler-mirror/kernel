@@ -1198,6 +1198,10 @@ xfs_flags2diflags2(
 		di_flags2 |= XFS_DIFLAG2_DAX;
 	if (xflags & FS_XFLAG_COWEXTSIZE)
 		di_flags2 |= XFS_DIFLAG2_COWEXTSIZE;
+	if (xflags & FS_XFLAG_FORCEALIGN)
+		di_flags2 |= XFS_DIFLAG2_FORCEALIGN;
+	if (xflags & FS_XFLAG_ATOMICWRITES)
+		di_flags2 |= XFS_DIFLAG2_ATOMICWRITES;
 
 	return di_flags2;
 }
@@ -1210,10 +1214,12 @@ xfs_ioctl_setattr_xflags(
 {
 	struct xfs_mount	*mp = ip->i_mount;
 	uint64_t		di_flags2;
+	bool			atomic_writes = fa->fsx_xflags & FS_XFLAG_ATOMICWRITES;
 
-	/* Can't change realtime flag if any extents are allocated. */
+	/* Can't change realtime or atomic flag if any extents are allocated. */
 	if ((ip->i_df.if_nextents || ip->i_delayed_blks) &&
-	    XFS_IS_REALTIME_INODE(ip) != (fa->fsx_xflags & FS_XFLAG_REALTIME))
+	    (XFS_IS_REALTIME_INODE(ip) != (fa->fsx_xflags & FS_XFLAG_REALTIME) ||
+	     atomic_writes != xfs_inode_atomicwrites(ip)))
 		return -EINVAL;
 
 	/* If realtime flag is set then must have realtime device */
@@ -1235,6 +1241,29 @@ xfs_ioctl_setattr_xflags(
 	di_flags2 = xfs_flags2diflags2(ip, fa->fsx_xflags);
 	if (di_flags2 && !xfs_has_v3inodes(mp))
 		return -EINVAL;
+
+	/*
+	 * Force-align requires a nonzero extent size hint and a zero cow
+	 * extent size hint.  It doesn't apply to realtime files.
+	 */
+	if (fa->fsx_xflags & FS_XFLAG_FORCEALIGN) {
+		if (!xfs_has_forcealign(mp))
+			return -EINVAL;
+		if (fa->fsx_xflags & FS_XFLAG_COWEXTSIZE)
+			return -EINVAL;
+		if (!(fa->fsx_xflags & (FS_XFLAG_EXTSIZE |
+					FS_XFLAG_EXTSZINHERIT)))
+			return -EINVAL;
+		if (fa->fsx_xflags & FS_XFLAG_REALTIME)
+			return -EINVAL;
+	}
+
+	if (atomic_writes) {
+		if (!xfs_has_atomicwrites(mp))
+			return -EINVAL;
+		if (!(fa->fsx_xflags & FS_XFLAG_FORCEALIGN))
+			return -EINVAL;
+	}
 
 	ip->i_d.di_flags = xfs_flags2diflags(ip, fa->fsx_xflags);
 	ip->i_d.di_flags2 = di_flags2;
@@ -1339,6 +1368,9 @@ xfs_ioctl_setattr_check_extsize(
 	struct xfs_mount	*mp = ip->i_mount;
 	xfs_extlen_t		size;
 	xfs_fsblock_t		extsize_fsb;
+	xfs_failaddr_t		failaddr;
+	uint16_t		new_diflags;
+	uint16_t		new_diflags2;
 
 	if (S_ISREG(VFS_I(ip)->i_mode) && ip->i_df.if_nextents &&
 	    ((ip->i_d.di_extsize << mp->m_sb.sb_blocklog) != fa->fsx_extsize))
@@ -1362,6 +1394,17 @@ xfs_ioctl_setattr_check_extsize(
 
 	if (fa->fsx_extsize % size)
 		return -EINVAL;
+
+	new_diflags = xfs_flags2diflags(ip, fa->fsx_xflags);
+	new_diflags2 = xfs_flags2diflags2(ip, fa->fsx_xflags);
+	if (new_diflags2 & XFS_DIFLAG2_FORCEALIGN) {
+		failaddr = xfs_inode_validate_forcealign(ip->i_mount,
+				VFS_I(ip)->i_mode, new_diflags,
+				XFS_B_TO_FSB(mp, fa->fsx_extsize),
+				XFS_B_TO_FSB(mp, fa->fsx_cowextsize));
+		if (failaddr)
+			return -EINVAL;
+	}
 
 	return 0;
 }
@@ -1606,6 +1649,10 @@ xfs_ioc_setxflags(
 	}
 
 	xfs_fill_fsxattr(ip, false, &old_fa);
+	fa.fsx_extsize = old_fa.fsx_extsize;
+	fa.fsx_cowextsize = old_fa.fsx_cowextsize;
+	fa.fsx_projid = old_fa.fsx_projid;
+	fa.fsx_nextents = old_fa.fsx_nextents;
 	error = vfs_ioc_fssetxattr_check(VFS_I(ip), &old_fa, &fa);
 	if (error) {
 		xfs_trans_cancel(tp);
@@ -2069,6 +2116,28 @@ xfs_fs_eofblocks_from_user(
 	return 0;
 }
 
+static int
+xfs_ioc_set_atomic_write(
+	struct xfs_inode	*ip)
+{
+	struct xfs_trans	*tp;
+	int			error;
+
+	tp = xfs_ioctl_setattr_get_trans(ip, NULL);
+	if (IS_ERR(tp)) {
+		error = PTR_ERR(tp);
+		goto out;
+	}
+
+	ip->i_d.di_flags2 |= XFS_DIFLAG2_ATOMICWRITES;
+
+	xfs_trans_ichgtime(tp, ip, XFS_ICHGTIME_CHG);
+	xfs_trans_log_inode(tp, ip, XFS_ILOG_CORE);
+	error = xfs_trans_commit(tp);
+out:
+	return error;
+}
+
 /*
  * Note: some of the ioctl's return positive numbers as a
  * byte count indicating success, such as readlink_by_handle.
@@ -2096,6 +2165,31 @@ xfs_file_ioctl(
 		return xfs_ioc_getlabel(mp, arg);
 	case FS_IOC_SETFSLABEL:
 		return xfs_ioc_setlabel(filp, mp, arg);
+	case FS_IOC_SETATOMIC:
+		if (!xfs_has_atomicwrites(mp))
+			return -1;
+		if (!S_ISREG(inode->i_mode))
+			return -1;
+		if (xfs_inode_atomicwrites(ip))
+			return 0;
+		if (!xfs_inode_forcealign(ip))
+			return -1;
+
+		xfs_ilock(ip, XFS_IOLOCK_EXCL | XFS_MMAPLOCK_EXCL);
+		error = xfs_ioc_set_atomic_write(ip);
+		xfs_iunlock(ip, XFS_IOLOCK_EXCL | XFS_MMAPLOCK_EXCL);
+		if (error) {
+			xfs_alert(mp, "%s: set ino 0x%llx atomic write fail!",
+					__func__, XFS_I(inode)->i_ino);
+			return -1;
+		} else {
+			struct xfs_buftarg      *target = xfs_inode_buftarg(ip);
+
+			if ((filp->f_flags & O_DIRECT) &&
+			    bdev_can_atomic_write(target->bt_bdev))
+				filp->f_mode |= FMODE_CAN_ATOMIC_WRITE;
+			return 0;
+		}
 	case XFS_IOC_ALLOCSP:
 	case XFS_IOC_FREESP:
 	case XFS_IOC_ALLOCSP64:

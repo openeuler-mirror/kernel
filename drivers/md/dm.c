@@ -2129,7 +2129,7 @@ EXPORT_SYMBOL_GPL(dm_get_queue_limits);
 int dm_setup_md_queue(struct mapped_device *md, struct dm_table *t)
 {
 	int r;
-	struct queue_limits limits;
+	struct queue_limits limits = {0};
 	enum dm_queue_mode type = dm_get_md_type(md);
 
 	switch (type) {
@@ -2382,7 +2382,7 @@ static void dm_queue_flush(struct mapped_device *md)
 struct dm_table *dm_swap_table(struct mapped_device *md, struct dm_table *table)
 {
 	struct dm_table *live_map = NULL, *map = ERR_PTR(-EINVAL);
-	struct queue_limits limits;
+	struct queue_limits limits = {0};
 	int r;
 
 	mutex_lock(&md->suspend_lock);

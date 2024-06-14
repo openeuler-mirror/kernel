@@ -69,6 +69,20 @@ xfs_get_extsz_hint(
 }
 
 /*
+ * Helper function to extract extent size. It will return a power-of-2,
+ * as forcealign requires this.
+ */
+xfs_extlen_t
+xfs_get_extsz(
+	struct xfs_inode	*ip)
+{
+	if (xfs_inode_forcealign(ip) && ip->i_d.di_extsize)
+		return ip->i_d.di_extsize;
+
+	return 1;
+}
+
+/*
  * Helper function to extract CoW extent size hint from inode.
  * Between the extent size hint and the CoW extent size hint, we
  * return the greater of the two.  If the value is zero (automatic),
@@ -643,6 +657,10 @@ _xfs_dic2xflags(
 			flags |= FS_XFLAG_DAX;
 		if (di_flags2 & XFS_DIFLAG2_COWEXTSIZE)
 			flags |= FS_XFLAG_COWEXTSIZE;
+		if (di_flags2 & XFS_DIFLAG2_FORCEALIGN)
+			flags |= FS_XFLAG_FORCEALIGN;
+		if (di_flags2 & XFS_DIFLAG2_ATOMICWRITES)
+			flags |= FS_XFLAG_ATOMICWRITES;
 	}
 
 	if (has_attr)
@@ -759,6 +777,18 @@ xfs_inode_inherit_flags2(
 	}
 	if (pip->i_d.di_flags2 & XFS_DIFLAG2_DAX)
 		ip->i_d.di_flags2 |= XFS_DIFLAG2_DAX;
+	if (pip->i_d.di_flags2 & XFS_DIFLAG2_FORCEALIGN)
+		ip->i_d.di_flags2 |= XFS_DIFLAG2_FORCEALIGN;
+
+	if (ip->i_d.di_flags2 & XFS_DIFLAG2_FORCEALIGN) {
+		xfs_failaddr_t		failaddr;
+
+		failaddr = xfs_inode_validate_forcealign(ip->i_mount,
+				VFS_I(ip)->i_mode, ip->i_d.di_flags, ip->i_d.di_extsize,
+				ip->i_d.di_cowextsize);
+		if (failaddr)
+			ip->i_d.di_flags2 &= ~XFS_DIFLAG2_FORCEALIGN;
+	}
 }
 
 /*

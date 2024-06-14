@@ -2956,7 +2956,7 @@ static int io_prep_rw(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 	kiocb->ki_pos = READ_ONCE(sqe->off);
 	kiocb->ki_hint = ki_hint_validate(file_write_hint(kiocb->ki_filp));
 	kiocb->ki_flags = iocb_flags(kiocb->ki_filp);
-	ret = kiocb_set_rw_flags(kiocb, READ_ONCE(sqe->rw_flags));
+	ret = kiocb_set_rw_flags(kiocb, READ_ONCE(sqe->rw_flags), rw);
 	if (unlikely(ret))
 		return ret;
 

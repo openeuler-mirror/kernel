@@ -3487,6 +3487,18 @@ xfs_bmap_btalloc(
 	args.fsbno = ap->blkno;
 	args.oinfo = XFS_RMAP_OINFO_SKIP_UPDATE;
 
+	/*
+	 * xfs_get_cowextsz_hint() returns extsz_hint for when forcealign is
+	 * set as forcealign and cowextsz_hint are mutually exclusive
+	 */
+	if (xfs_inode_forcealign(ap->ip) && align) {
+		args.alignment = align;
+		if (stripe_align == 0 || stripe_align % align)
+			stripe_align = align;
+	} else {
+		args.alignment = 1;
+	}
+
 	/* Trim the allocation back to the maximum an AG can fit. */
 	args.maxlen = min(ap->length, mp->m_ag_max_usable);
 	blen = 0;
@@ -3558,7 +3570,6 @@ xfs_bmap_btalloc(
 			atype = args.type;
 			tryagain = 1;
 			args.type = XFS_ALLOCTYPE_THIS_BNO;
-			args.alignment = 1;
 			/*
 			 * Compute the minlen+alignment for the
 			 * next case.  Set slop so that the value
@@ -3577,7 +3588,6 @@ xfs_bmap_btalloc(
 				args.minalignslop = 0;
 		}
 	} else {
-		args.alignment = 1;
 		args.minalignslop = 0;
 	}
 	args.postallocs = 1;
@@ -3604,7 +3614,9 @@ xfs_bmap_btalloc(
 		if ((error = xfs_alloc_vextent(&args)))
 			return error;
 	}
-	if (isaligned && args.fsbno == NULLFSBLOCK) {
+
+	if (isaligned && args.fsbno == NULLFSBLOCK &&
+		(args.alignment <= 1 || !xfs_inode_forcealign(ap->ip))) {
 		/*
 		 * allocation failed, so turn off alignment and
 		 * try again.
@@ -5276,6 +5288,12 @@ __xfs_bunmapi(
 	XFS_STATS_INC(mp, xs_blk_unmap);
 	isrt = (whichfork == XFS_DATA_FORK) && XFS_IS_REALTIME_INODE(ip);
 	end = start + len;
+	if (xfs_inode_forcealign(ip) && ip->i_d.di_extsize > 1
+			&& S_ISREG(VFS_I(ip)->i_mode)) {
+		start = roundup_64(start, ip->i_d.di_extsize);
+		end = rounddown_64(end, ip->i_d.di_extsize);
+		len  = end - start;
+	}
 
 	if (!xfs_iext_lookup_extent_before(ip, ifp, &end, &icur, &got)) {
 		*rlen = 0;
