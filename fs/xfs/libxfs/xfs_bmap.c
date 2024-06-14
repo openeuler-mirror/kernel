@@ -5288,6 +5288,12 @@ __xfs_bunmapi(
 	XFS_STATS_INC(mp, xs_blk_unmap);
 	isrt = (whichfork == XFS_DATA_FORK) && XFS_IS_REALTIME_INODE(ip);
 	end = start + len;
+	if (xfs_inode_forcealign(ip) && ip->i_d.di_extsize > 1
+			&& S_ISREG(VFS_I(ip)->i_mode)) {
+		start = roundup_64(start, ip->i_d.di_extsize);
+		end = rounddown_64(end, ip->i_d.di_extsize);
+		len  = end - start;
+	}
 
 	if (!xfs_iext_lookup_extent_before(ip, ifp, &end, &icur, &got)) {
 		*rlen = 0;
