@@ -58,7 +58,11 @@ void snd_hdac_stream_start(struct hdac_stream *azx_dev, bool fresh_start)
 	/* enable SIE */
 	snd_hdac_chip_updatel(bus, INTCTL, 0, 1 << azx_dev->index);
 	/* set DMA start and interrupt mask */
-	snd_hdac_stream_updateb(azx_dev, SD_CTL,
+	if (bus->hygon_dword_access)
+		snd_hdac_stream_updatel(azx_dev, SD_CTL,
+				0, SD_CTL_DMA_START | SD_INT_MASK);
+	else
+		snd_hdac_stream_updateb(azx_dev, SD_CTL,
 				0, SD_CTL_DMA_START | SD_INT_MASK);
 	azx_dev->running = true;
 }
@@ -70,8 +74,14 @@ EXPORT_SYMBOL_GPL(snd_hdac_stream_start);
  */
 void snd_hdac_stream_clear(struct hdac_stream *azx_dev)
 {
-	snd_hdac_stream_updateb(azx_dev, SD_CTL,
-				SD_CTL_DMA_START | SD_INT_MASK, 0);
+	struct hdac_bus *bus = azx_dev->bus;
+
+	if (bus->hygon_dword_access)
+		snd_hdac_stream_updatel(azx_dev, SD_CTL,
+					SD_CTL_DMA_START | SD_INT_MASK, 0);
+	else
+		snd_hdac_stream_updateb(azx_dev, SD_CTL,
+					SD_CTL_DMA_START | SD_INT_MASK, 0);
 	snd_hdac_stream_writeb(azx_dev, SD_STS, SD_INT_MASK); /* to be sure */
 	azx_dev->running = false;
 }
@@ -101,10 +111,15 @@ void snd_hdac_stream_reset(struct hdac_stream *azx_dev)
 {
 	unsigned char val;
 	int timeout;
+	struct hdac_bus *bus = azx_dev->bus;
 
 	snd_hdac_stream_clear(azx_dev);
 
-	snd_hdac_stream_updateb(azx_dev, SD_CTL, 0, SD_CTL_STREAM_RESET);
+	if (bus->hygon_dword_access)
+		snd_hdac_stream_updatel(azx_dev, SD_CTL, 0, SD_CTL_STREAM_RESET);
+	else
+		snd_hdac_stream_updateb(azx_dev, SD_CTL, 0, SD_CTL_STREAM_RESET);
+
 	udelay(3);
 	timeout = 300;
 	do {
@@ -114,7 +129,11 @@ void snd_hdac_stream_reset(struct hdac_stream *azx_dev)
 			break;
 	} while (--timeout);
 	val &= ~SD_CTL_STREAM_RESET;
-	snd_hdac_stream_writeb(azx_dev, SD_CTL, val);
+	if (bus->hygon_dword_access)
+		snd_hdac_stream_updatel(azx_dev, SD_CTL, SD_CTL_STREAM_RESET, 0);
+	else
+		snd_hdac_stream_writeb(azx_dev, SD_CTL, val);
+
 	udelay(3);
 
 	timeout = 300;
