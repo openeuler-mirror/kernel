@@ -1391,7 +1391,7 @@ EXPORT_SYMBOL(submit_bio);
 static blk_status_t blk_cloned_rq_check_limits(struct request_queue *q,
 				      struct request *rq)
 {
-	unsigned int max_sectors = blk_queue_get_max_sectors(q, req_op(rq));
+	unsigned int max_sectors = blk_queue_get_max_sectors_wrapper(rq);
 
 	if (blk_rq_sectors(rq) > max_sectors) {
 		/*

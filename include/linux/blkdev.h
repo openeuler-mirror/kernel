@@ -1107,6 +1107,15 @@ static inline unsigned int blk_queue_get_max_sectors(struct request_queue *q,
 	return q->limits.max_sectors;
 }
 
+static inline unsigned int blk_queue_get_max_sectors_wrapper(struct request *rq)
+{
+
+	struct request_queue *q = rq->q;
+	int op = req_op(rq);
+
+	return blk_queue_get_max_sectors(q, op);
+}
+
 /*
  * Return maximum size of a request at given offset. Only valid for
  * file system requests.
@@ -1141,10 +1150,10 @@ static inline unsigned int blk_rq_get_max_sectors(struct request *rq,
 	if (!q->limits.chunk_sectors ||
 	    req_op(rq) == REQ_OP_DISCARD ||
 	    req_op(rq) == REQ_OP_SECURE_ERASE)
-		return blk_queue_get_max_sectors(q, req_op(rq));
+		return blk_queue_get_max_sectors_wrapper(rq);
 
 	return min(blk_max_size_offset(q, offset, 0),
-			blk_queue_get_max_sectors(q, req_op(rq)));
+			blk_queue_get_max_sectors_wrapper(rq));
 }
 
 static inline unsigned int blk_rq_count_bios(struct request *rq)
