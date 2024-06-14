@@ -69,6 +69,20 @@ xfs_get_extsz_hint(
 }
 
 /*
+ * Helper function to extract extent size. It will return a power-of-2,
+ * as forcealign requires this.
+ */
+xfs_extlen_t
+xfs_get_extsz(
+	struct xfs_inode	*ip)
+{
+	if (xfs_inode_forcealign(ip) && ip->i_d.di_extsize)
+		return ip->i_d.di_extsize;
+
+	return 1;
+}
+
+/*
  * Helper function to extract CoW extent size hint from inode.
  * Between the extent size hint and the CoW extent size hint, we
  * return the greater of the two.  If the value is zero (automatic),

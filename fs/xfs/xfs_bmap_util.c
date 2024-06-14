@@ -654,6 +654,9 @@ xfs_free_eofblocks(
 	 * of the file.  If not, then there is nothing to do.
 	 */
 	end_fsb = XFS_B_TO_FSB(mp, (xfs_ufsize_t)XFS_ISIZE(ip));
+	/* Do not free blocks when forcing extent sizes */
+	if (xfs_get_extsz(ip) > 1)
+		end_fsb = roundup_64(end_fsb, xfs_get_extsz(ip));
 	last_fsb = XFS_B_TO_FSB(mp, mp->m_super->s_maxbytes);
 	if (last_fsb <= end_fsb)
 		return 0;
