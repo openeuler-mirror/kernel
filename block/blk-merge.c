@@ -195,7 +195,7 @@ static inline unsigned get_max_io_size(struct request_queue *q,
 	 * it may less than the bio size, which we cannot tolerate.
 	 */
 	if (bio->bi_opf & REQ_ATOMIC)
-		max_sectors = q->limits.atomic_write_max_sectors;
+		max_sectors = q->limits.aw_limits->atomic_write_max_sectors;
 	else
 		max_sectors = sectors;
 

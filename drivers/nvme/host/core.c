@@ -2052,10 +2052,14 @@ static void nvme_update_atomic_write_disk_info(struct nvme_ns *ns,
 		if (le16_to_cpu(id->nabspf))
 			boundary = (le16_to_cpu(id->nabspf) + 1) * bs;
 	}
-	lim->atomic_write_hw_max = atomic_bs;
-	lim->atomic_write_hw_boundary = boundary;
-	lim->atomic_write_hw_unit_min = bs;
-	lim->atomic_write_hw_unit_max = rounddown_pow_of_two(atomic_bs);
+
+	if (!lim->aw_limits)
+		return;
+
+	lim->aw_limits->atomic_write_hw_max = atomic_bs;
+	lim->aw_limits->atomic_write_hw_boundary = boundary;
+	lim->aw_limits->atomic_write_hw_unit_min = bs;
+	lim->aw_limits->atomic_write_hw_unit_max = rounddown_pow_of_two(atomic_bs);
 
 	blk_atomic_writes_update_limits(lim);
 }

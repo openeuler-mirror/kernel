@@ -624,7 +624,7 @@ static int validate_hardware_logical_block_alignment(struct dm_table *table,
 	unsigned short remaining = 0;
 
 	struct dm_target *ti;
-	struct queue_limits ti_limits;
+	struct queue_limits ti_limits = {0};
 	unsigned i;
 
 	/*
@@ -1482,7 +1482,7 @@ int dm_calculate_queue_limits(struct dm_table *table,
 			      struct queue_limits *limits)
 {
 	struct dm_target *ti;
-	struct queue_limits ti_limits;
+	struct queue_limits ti_limits = {0};
 	unsigned i;
 	enum blk_zoned_model zoned_model = BLK_ZONED_NONE;
 	unsigned int zone_sectors = 0;
@@ -1816,6 +1816,7 @@ void dm_table_set_restrictions(struct dm_table *t, struct request_queue *q,
 	/*
 	 * Copy table's limits to the DM device's request_queue
 	 */
+	limits->aw_limits = q->limits.aw_limits;
 	q->limits = *limits;
 
 	if (dm_table_supports_nowait(t))

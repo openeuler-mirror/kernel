@@ -63,6 +63,20 @@ void blk_set_default_limits(struct queue_limits *lim)
 }
 EXPORT_SYMBOL(blk_set_default_limits);
 
+void blk_set_default_atomic_write_limits(struct queue_limits *lim)
+{
+	if (lim->aw_limits) {
+		lim->aw_limits->atomic_write_hw_max = 0;
+		lim->aw_limits->atomic_write_max_sectors = 0;
+		lim->aw_limits->atomic_write_hw_boundary = 0;
+		lim->aw_limits->atomic_write_hw_unit_min = 0;
+		lim->aw_limits->atomic_write_unit_min = 0;
+		lim->aw_limits->atomic_write_hw_unit_max = 0;
+		lim->aw_limits->atomic_write_unit_max = 0;
+	}
+}
+EXPORT_SYMBOL(blk_set_default_atomic_write_limits);
+
 /**
  * blk_set_stacking_limits - set default limits for stacking devices
  * @lim:  the queue_limits structure to reset
@@ -153,13 +167,16 @@ void blk_atomic_writes_update_limits(struct queue_limits *limits)
 
 	unit_limit = rounddown_pow_of_two(unit_limit);
 
-	limits->atomic_write_max_sectors =
-		min(limits->atomic_write_hw_max >> SECTOR_SHIFT,
+	if (!limits->aw_limits)
+		return;
+
+	limits->aw_limits->atomic_write_max_sectors =
+		min(limits->aw_limits->atomic_write_hw_max >> SECTOR_SHIFT,
 			limits->max_hw_sectors);
-	limits->atomic_write_unit_min =
-		min(limits->atomic_write_hw_unit_min, unit_limit);
-	limits->atomic_write_unit_max =
-		min(limits->atomic_write_hw_unit_max, unit_limit);
+	limits->aw_limits->atomic_write_unit_min =
+		min(limits->aw_limits->atomic_write_hw_unit_min, unit_limit);
+	limits->aw_limits->atomic_write_unit_max =
+		min(limits->aw_limits->atomic_write_hw_unit_max, unit_limit);
 }
 
 EXPORT_SYMBOL(blk_atomic_writes_update_limits);

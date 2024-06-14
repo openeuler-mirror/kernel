@@ -822,6 +822,7 @@ static void blk_free_queue_rcu(struct rcu_head *rcu_head)
 					       rcu_head);
 
 	percpu_ref_exit(&q->q_usage_counter);
+	kmem_cache_free(queue_atomic_write_cachep, q->limits.aw_limits);
 	kmem_cache_free(blk_requestq_cachep, q);
 }
 
