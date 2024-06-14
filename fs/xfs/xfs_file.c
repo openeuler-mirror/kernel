@@ -586,6 +586,14 @@ xfs_file_dio_aio_write(
 	size_t			count = iov_iter_count(from);
 	struct xfs_buftarg      *target = xfs_inode_buftarg(ip);
 
+	if (iocb->ki_flags & IOCB_ATOMIC) {
+		if (!generic_atomic_write_valid(iocb->ki_pos, count,
+			i_blocksize(inode),
+			XFS_FSB_TO_B(mp, xfs_get_extsz(ip)))) {
+			return -EINVAL;
+		}
+	}
+
 	/* DIO must be aligned to device logical sector size */
 	if ((iocb->ki_pos | count) & target->bt_logical_sectormask)
 		return -EINVAL;
