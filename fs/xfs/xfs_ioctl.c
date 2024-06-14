@@ -1649,6 +1649,10 @@ xfs_ioc_setxflags(
 	}
 
 	xfs_fill_fsxattr(ip, false, &old_fa);
+	fa.fsx_extsize = old_fa.fsx_extsize;
+	fa.fsx_cowextsize = old_fa.fsx_cowextsize;
+	fa.fsx_projid = old_fa.fsx_projid;
+	fa.fsx_nextents = old_fa.fsx_nextents;
 	error = vfs_ioc_fssetxattr_check(VFS_I(ip), &old_fa, &fa);
 	if (error) {
 		xfs_trans_cancel(tp);
