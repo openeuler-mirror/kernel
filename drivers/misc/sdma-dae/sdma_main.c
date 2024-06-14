@@ -342,15 +342,23 @@ static int sdma_device_probe(struct platform_device *pdev)
 {
 	struct hisi_sdma_device *psdma_dev;
 	u32 device_num;
+	int node_id;
 	int ret;
 
 	device_num = hisi_sdma_core_device.sdma_device_num;
-	psdma_dev = kzalloc_node(sizeof(*psdma_dev), GFP_KERNEL, pdev->dev.numa_node);
+	if (!node_online(pdev->dev.numa_node)) {
+		pr_info("numa_node %d not online, register sdma%d failed\n", pdev->dev.numa_node,
+			device_num);
+		node_id = 0;
+	} else
+		node_id = pdev->dev.numa_node;
+
+	psdma_dev = kzalloc_node(sizeof(*psdma_dev), GFP_KERNEL, node_id);
 	if (!psdma_dev)
 		return -ENOMEM;
 
 	psdma_dev->idx = device_num;
-	psdma_dev->node_idx = pdev->dev.numa_node;
+	psdma_dev->node_idx = node_id;
 	ret = parse_sdma(psdma_dev, pdev);
 	if (ret < 0)
 		goto free_dev;

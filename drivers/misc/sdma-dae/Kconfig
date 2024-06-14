@@ -1,9 +1,9 @@
 config SDMA_DAE
-	tristate "DAE SDMA core support"
-	depends on ARM64
-	default m
+	tristate "SDMA-DAE driver for SDMA hardware"
+	depends on ARM64 && NUMA
+	default n
 	help
-	  Core support for DAE SDMA.
+	  Kernel driver of SDMA hardware.
 	  The driver depands on ARM64.
 	  To compile SDMA driver as module, choose m here.
 	  module will be called sdma_dae.
