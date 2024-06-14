@@ -2112,6 +2112,28 @@ xfs_fs_eofblocks_from_user(
 	return 0;
 }
 
+static int
+xfs_ioc_set_atomic_write(
+	struct xfs_inode	*ip)
+{
+	struct xfs_trans	*tp;
+	int			error;
+
+	tp = xfs_ioctl_setattr_get_trans(ip, NULL);
+	if (IS_ERR(tp)) {
+		error = PTR_ERR(tp);
+		goto out;
+	}
+
+	ip->i_d.di_flags2 |= XFS_DIFLAG2_ATOMICWRITES;
+
+	xfs_trans_ichgtime(tp, ip, XFS_ICHGTIME_CHG);
+	xfs_trans_log_inode(tp, ip, XFS_ILOG_CORE);
+	error = xfs_trans_commit(tp);
+out:
+	return error;
+}
+
 /*
  * Note: some of the ioctl's return positive numbers as a
  * byte count indicating success, such as readlink_by_handle.
@@ -2139,6 +2161,31 @@ xfs_file_ioctl(
 		return xfs_ioc_getlabel(mp, arg);
 	case FS_IOC_SETFSLABEL:
 		return xfs_ioc_setlabel(filp, mp, arg);
+	case FS_IOC_SETATOMIC:
+		if (!xfs_has_atomicwrites(mp))
+			return -1;
+		if (!S_ISREG(inode->i_mode))
+			return -1;
+		if (xfs_inode_atomicwrites(ip))
+			return 0;
+		if (!xfs_inode_forcealign(ip))
+			return -1;
+
+		xfs_ilock(ip, XFS_IOLOCK_EXCL | XFS_MMAPLOCK_EXCL);
+		error = xfs_ioc_set_atomic_write(ip);
+		xfs_iunlock(ip, XFS_IOLOCK_EXCL | XFS_MMAPLOCK_EXCL);
+		if (error) {
+			xfs_alert(mp, "%s: set ino 0x%llx atomic write fail!",
+					__func__, XFS_I(inode)->i_ino);
+			return -1;
+		} else {
+			struct xfs_buftarg      *target = xfs_inode_buftarg(ip);
+
+			if ((filp->f_flags & O_DIRECT) &&
+			    bdev_can_atomic_write(target->bt_bdev))
+				filp->f_mode |= FMODE_CAN_ATOMIC_WRITE;
+			return 0;
+		}
 	case XFS_IOC_ALLOCSP:
 	case XFS_IOC_FREESP:
 	case XFS_IOC_ALLOCSP64:
