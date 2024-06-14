@@ -1200,6 +1200,8 @@ xfs_flags2diflags2(
 		di_flags2 |= XFS_DIFLAG2_COWEXTSIZE;
 	if (xflags & FS_XFLAG_FORCEALIGN)
 		di_flags2 |= XFS_DIFLAG2_FORCEALIGN;
+	if (xflags & FS_XFLAG_ATOMICWRITES)
+		di_flags2 |= XFS_DIFLAG2_ATOMICWRITES;
 
 	return di_flags2;
 }
@@ -1212,10 +1214,12 @@ xfs_ioctl_setattr_xflags(
 {
 	struct xfs_mount	*mp = ip->i_mount;
 	uint64_t		di_flags2;
+	bool			atomic_writes = fa->fsx_xflags & FS_XFLAG_ATOMICWRITES;
 
-	/* Can't change realtime flag if any extents are allocated. */
+	/* Can't change realtime or atomic flag if any extents are allocated. */
 	if ((ip->i_df.if_nextents || ip->i_delayed_blks) &&
-	    XFS_IS_REALTIME_INODE(ip) != (fa->fsx_xflags & FS_XFLAG_REALTIME))
+	    (XFS_IS_REALTIME_INODE(ip) != (fa->fsx_xflags & FS_XFLAG_REALTIME) ||
+	     atomic_writes != xfs_inode_atomicwrites(ip)))
 		return -EINVAL;
 
 	/* If realtime flag is set then must have realtime device */
@@ -1251,6 +1255,13 @@ xfs_ioctl_setattr_xflags(
 					FS_XFLAG_EXTSZINHERIT)))
 			return -EINVAL;
 		if (fa->fsx_xflags & FS_XFLAG_REALTIME)
+			return -EINVAL;
+	}
+
+	if (atomic_writes) {
+		if (!xfs_has_atomicwrites(mp))
+			return -EINVAL;
+		if (!(fa->fsx_xflags & FS_XFLAG_FORCEALIGN))
 			return -EINVAL;
 	}
 

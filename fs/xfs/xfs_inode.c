@@ -659,6 +659,8 @@ _xfs_dic2xflags(
 			flags |= FS_XFLAG_COWEXTSIZE;
 		if (di_flags2 & XFS_DIFLAG2_FORCEALIGN)
 			flags |= FS_XFLAG_FORCEALIGN;
+		if (di_flags2 & XFS_DIFLAG2_ATOMICWRITES)
+			flags |= FS_XFLAG_ATOMICWRITES;
 	}
 
 	if (has_attr)
