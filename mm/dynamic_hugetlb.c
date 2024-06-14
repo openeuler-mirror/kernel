@@ -453,6 +453,7 @@ static void put_hpool(struct dhugetlb_pool *hpool)
 		return;
 	if (atomic_dec_and_test(&hpool->refcnt)) {
 		css_put(&hpool->attach_memcg->css);
+		synchronize_rcu();
 		kfree(hpool);
 	}
 }
@@ -469,9 +470,11 @@ static struct dhugetlb_pool *get_hpool_from_memcg(struct mem_cgroup *memcg)
 {
 	struct dhugetlb_pool *hpool;
 
+	rcu_read_lock();
 	hpool = memcg->hpool;
 	if (!get_hpool_unless_zero(hpool))
 		hpool = NULL;
+	rcu_read_unlock();
 
 	return hpool;
 }
@@ -479,15 +482,19 @@ static struct dhugetlb_pool *get_hpool_from_memcg(struct mem_cgroup *memcg)
 static struct dhugetlb_pool *get_hpool_from_task(struct task_struct *tsk)
 {
 	struct mem_cgroup *memcg;
+	struct dhugetlb_pool *hpool;
 
 	rcu_read_lock();
 	memcg = mem_cgroup_from_task(tsk);
+	if (!memcg || !css_tryget(&memcg->css)) {
+		rcu_read_unlock();
+		return NULL;
+	}
 	rcu_read_unlock();
 
-	if (!memcg)
-		return NULL;
-
-	return get_hpool_from_memcg(memcg);
+	hpool = get_hpool_from_memcg(memcg);
+	css_put(&memcg->css);
+	return hpool;
 }
 
 static int set_hpool_in_dhugetlb_pagelist(unsigned long idx, struct dhugetlb_pool *hpool)
