@@ -167,7 +167,9 @@ xfs_eof_alignment(
 		 * If mounted with the "-o swalloc" option the alignment is
 		 * increased from the strip unit size to the stripe width.
 		 */
-		if (mp->m_swidth && xfs_has_swalloc(mp))
+		if (xfs_inode_forcealign(ip))
+			align = xfs_get_extsz_hint(ip);
+		else if (mp->m_swidth && xfs_has_swalloc(mp))
 			align = mp->m_swidth;
 		else if (mp->m_dalign)
 			align = mp->m_dalign;
