@@ -209,6 +209,17 @@ config BLK_DEV_DUMPINFO
 	  Dump info when open an write opened block device exclusively
 	  or open an exclusive opened device for write
 
+config BLK_BIO_DISPATCH_ASYNC
+	bool "Dispatch bios asynchronously on specific cpus"
+	default n
+	help
+	In certain environments, specific CPUs handle a large number of
+	tasks and become bottlenecks, affecting overall system
+	performance. This commit introduces a new feature that enables
+	asynchronous I/O dispatch to designated CPUs, thereby relieving
+	the pressure on the busy CPUs.
+	If unsure, say N.
+
 menu "Partition Types"
 
 source "block/partitions/Kconfig"

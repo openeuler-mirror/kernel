@@ -288,6 +288,9 @@ QUEUE_SYSFS_BIT_FNS(nonrot, NONROT, 1);
 QUEUE_SYSFS_BIT_FNS(random, ADD_RANDOM, 0);
 QUEUE_SYSFS_BIT_FNS(iostats, IO_STAT, 0);
 QUEUE_SYSFS_BIT_FNS(stable_writes, STABLE_WRITES, 0);
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
+QUEUE_SYSFS_BIT_FNS(dispatch_async, DISPATCH_ASYNC, 0);
+#endif
 #undef QUEUE_SYSFS_BIT_FNS
 
 static ssize_t queue_zoned_show(struct request_queue *q, char *page)
@@ -619,6 +622,57 @@ QUEUE_RW_ENTRY(queue_iostats, "iostats");
 QUEUE_RW_ENTRY(queue_random, "add_random");
 QUEUE_RW_ENTRY(queue_stable_writes, "stable_writes");
 
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
+
+static ssize_t queue_dispatch_async_cpus_show(struct request_queue *q,
+					      char *page)
+{
+	return sprintf(page, "%*pb\n", nr_cpu_ids,
+		       cpumask_bits(q->dispatch_async_cpus));
+}
+
+static ssize_t queue_dispatch_async_cpus_store(struct request_queue *q,
+					       const char *page, size_t count)
+{
+	cpumask_var_t cpumask;
+	ssize_t ret;
+
+	if (!alloc_cpumask_var(&cpumask, GFP_KERNEL))
+		return -ENOMEM;
+
+	ret = bitmap_parse(page, count, cpumask_bits(cpumask),
+			   nr_cpumask_bits);
+	if (ret < 0)
+		goto out;
+
+	if (cpumask_empty(cpumask) ||
+	    !cpumask_subset(cpumask, cpu_online_mask)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	blk_mq_freeze_queue(q);
+	blk_mq_quiesce_queue(q);
+
+	cpumask_copy(q->dispatch_async_cpus, cpumask);
+
+	blk_mq_unquiesce_queue(q);
+	blk_mq_unfreeze_queue(q);
+	ret = count;
+out:
+	free_cpumask_var(cpumask);
+	return ret;
+}
+
+static struct queue_sysfs_entry queue_dispatch_async_cpus_entry = {
+	.attr = {.name = "dispatch_async_cpus", .mode = 0644 },
+	.show = queue_dispatch_async_cpus_show,
+	.store = queue_dispatch_async_cpus_store,
+};
+
+QUEUE_RW_ENTRY(queue_dispatch_async, "dispatch_async");
+#endif
+
 static struct attribute *queue_attrs[] = {
 	&queue_requests_entry.attr,
 	&queue_ra_entry.attr,
@@ -659,6 +713,10 @@ static struct attribute *queue_attrs[] = {
 	&queue_wb_lat_entry.attr,
 	&queue_poll_delay_entry.attr,
 	&queue_io_timeout_entry.attr,
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
+	&queue_dispatch_async_cpus_entry.attr,
+	&queue_dispatch_async_entry.attr,
+#endif
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 	&blk_throtl_sample_time_entry.attr,
 #endif
@@ -795,6 +853,7 @@ static void blk_release_queue(struct kobject *kobj)
 		blk_stat_remove_callback(q, q->poll_cb);
 	blk_stat_free_callback(q->poll_cb);
 
+	blk_free_queue_dispatch_async(q);
 	blk_free_queue_stats(q->stats);
 
 	blk_exit_queue(q);
