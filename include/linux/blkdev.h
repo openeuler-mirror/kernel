@@ -606,11 +606,12 @@ struct request_queue {
 
 #ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
 	/* used when QUEUE_FLAG_DISPATCH_ASYNC is set */
-	struct cpumask          *dispatch_async_cpus;
-	int __percpu            *last_dispatch_cpu;
-#endif
+	KABI_USE(1, struct cpumask *dispatch_async_cpus)
+	KABI_USE(2, int __percpu *last_dispatch_cpu)
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };
