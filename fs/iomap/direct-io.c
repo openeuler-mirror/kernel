@@ -234,6 +234,7 @@ static loff_t
 iomap_dio_bio_actor(struct inode *inode, loff_t pos, loff_t length,
 		struct iomap_dio *dio, struct iomap *iomap)
 {
+	bool is_atomic = dio->iocb->ki_flags & IOCB_ATOMIC;
 	unsigned int blkbits = blksize_bits(bdev_logical_block_size(iomap->bdev));
 	unsigned int zeroing_size, pad;
 	unsigned int align = iov_iter_alignment(dio->submit.iter);
@@ -323,8 +324,16 @@ iomap_dio_bio_actor(struct inode *inode, loff_t pos, loff_t length,
 		}
 
 		n = bio->bi_iter.bi_size;
+		if (is_atomic && (n != orig_count)) {
+			/* This bio should have covered the complete length */
+			ret = -EINVAL;
+			bio_put(bio);
+			goto out;
+		}
 		if (dio->flags & IOMAP_DIO_WRITE) {
 			bio->bi_opf = REQ_OP_WRITE | REQ_SYNC | REQ_IDLE;
+			if (is_atomic)
+				bio->bi_opf |= REQ_ATOMIC;
 			if (use_fua)
 				bio->bi_opf |= REQ_FUA;
 			else
