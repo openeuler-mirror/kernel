@@ -127,6 +127,43 @@ void blk_queue_bounce_limit(struct request_queue *q, u64 max_addr)
 }
 EXPORT_SYMBOL(blk_queue_bounce_limit);
 
+/*
+ * Returns max guaranteed bytes which we can fit in a bio.
+ *
+ * We always assume that we can fit in at least PAGE_SIZE in a segment, apart
+ * from first and last segments.
+ */
+static
+unsigned int blk_queue_max_guaranteed_bio(struct queue_limits *limits)
+{
+	unsigned int max_segments = min((u16)BIO_MAX_PAGES, limits->max_segments);
+	unsigned int length;
+
+	length = min(max_segments, 2U) * limits->logical_block_size;
+	if (max_segments > 2)
+		length += (max_segments - 2) * PAGE_SIZE;
+
+	return length;
+}
+
+void blk_atomic_writes_update_limits(struct queue_limits *limits)
+{
+	unsigned int unit_limit = min(limits->max_hw_sectors << SECTOR_SHIFT,
+					blk_queue_max_guaranteed_bio(limits));
+
+	unit_limit = rounddown_pow_of_two(unit_limit);
+
+	limits->atomic_write_max_sectors =
+		min(limits->atomic_write_hw_max >> SECTOR_SHIFT,
+			limits->max_hw_sectors);
+	limits->atomic_write_unit_min =
+		min(limits->atomic_write_hw_unit_min, unit_limit);
+	limits->atomic_write_unit_max =
+		min(limits->atomic_write_hw_unit_max, unit_limit);
+}
+
+EXPORT_SYMBOL(blk_atomic_writes_update_limits);
+
 /**
  * blk_queue_max_hw_sectors - set max sectors for a request for this queue
  * @q:  the request queue for the device
@@ -161,6 +198,9 @@ void blk_queue_max_hw_sectors(struct request_queue *q, unsigned int max_hw_secto
 	max_sectors = min_not_zero(max_hw_sectors, limits->max_dev_sectors);
 	max_sectors = min_t(unsigned int, max_sectors, BLK_DEF_MAX_SECTORS);
 	limits->max_sectors = max_sectors;
+
+	blk_atomic_writes_update_limits(limits);
+
 	q->backing_dev_info->io_pages = max_sectors >> (PAGE_SHIFT - 9);
 }
 EXPORT_SYMBOL(blk_queue_max_hw_sectors);
