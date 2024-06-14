@@ -603,8 +603,15 @@ struct request_queue {
 
 	KABI_REPLACE(unsigned long dtag_wait_time,
 		     struct blk_mq_tags *shared_sbitmap_tags)
+
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
+	/* used when QUEUE_FLAG_DISPATCH_ASYNC is set */
+	KABI_USE(1, struct cpumask *dispatch_async_cpus)
+	KABI_USE(2, int __percpu *last_dispatch_cpu)
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };
@@ -643,6 +650,8 @@ struct request_queue {
 #define QUEUE_FLAG_NOWAIT       29	/* device supports NOWAIT */
 /*at least one blk-mq hctx can't get driver tag */
 #define QUEUE_FLAG_HCTX_WAIT	30
+/* support to dispatch bio asynchronously */
+#define QUEUE_FLAG_DISPATCH_ASYNC 31
 
 #define QUEUE_FLAG_MQ_DEFAULT	((1 << QUEUE_FLAG_IO_STAT) |		\
 				 (1 << QUEUE_FLAG_SAME_COMP) |		\

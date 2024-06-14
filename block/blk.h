@@ -450,4 +450,11 @@ int bio_add_hw_page(struct request_queue *q, struct bio *bio,
 		struct page *page, unsigned int len, unsigned int offset,
 		unsigned int max_sectors, bool *same_page);
 
+#ifdef CONFIG_BLK_BIO_DISPATCH_ASYNC
+void blk_free_queue_dispatch_async(struct request_queue *q);
+#else
+static inline void blk_free_queue_dispatch_async(struct request_queue *q)
+{
+}
+#endif
 #endif /* BLK_INTERNAL_H */
