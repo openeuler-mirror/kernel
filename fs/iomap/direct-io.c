@@ -210,15 +210,22 @@ iomap_dio_zero(struct iomap_dio *dio, struct iomap *iomap, loff_t pos,
 	struct page *page = ZERO_PAGE(0);
 	int flags = REQ_SYNC | REQ_IDLE;
 	struct bio *bio;
+	unsigned size;
+	unsigned nr_pages = (len + PAGE_SIZE - 1) >> PAGE_SHIFT;
 
-	bio = bio_alloc(GFP_KERNEL, 1);
+	bio = bio_alloc(GFP_KERNEL, nr_pages);
 	bio_set_dev(bio, iomap->bdev);
 	bio->bi_iter.bi_sector = iomap_sector(iomap, pos);
 	bio->bi_private = dio;
 	bio->bi_end_io = iomap_dio_bio_end_io;
 
-	get_page(page);
-	__bio_add_page(bio, page, len, 0);
+	while (len > 0) {
+		size = len > PAGE_SIZE ? PAGE_SIZE : len;
+		get_page(page);
+		__bio_add_page(bio, page, size, 0);
+		len -= size;
+		pos += size;
+	}
 	bio_set_op_attrs(bio, REQ_OP_WRITE, flags);
 	iomap_dio_submit_bio(dio, iomap, bio, pos);
 }
@@ -228,7 +235,7 @@ iomap_dio_bio_actor(struct inode *inode, loff_t pos, loff_t length,
 		struct iomap_dio *dio, struct iomap *iomap)
 {
 	unsigned int blkbits = blksize_bits(bdev_logical_block_size(iomap->bdev));
-	unsigned int fs_block_size = i_blocksize(inode), pad;
+	unsigned int zeroing_size, pad;
 	unsigned int align = iov_iter_alignment(dio->submit.iter);
 	struct bio *bio;
 	bool need_zeroout = false;
@@ -236,6 +243,8 @@ iomap_dio_bio_actor(struct inode *inode, loff_t pos, loff_t length,
 	int nr_pages, ret = 0;
 	size_t copied = 0;
 	size_t orig_count;
+
+	zeroing_size = i_blocksize(inode) << iomap->extent_shift;
 
 	if ((pos | length | align) & ((1 << blkbits) - 1))
 		return -EINVAL;
@@ -280,7 +289,7 @@ iomap_dio_bio_actor(struct inode *inode, loff_t pos, loff_t length,
 
 	if (need_zeroout) {
 		/* zero out from the start of the block to the write offset */
-		pad = pos & (fs_block_size - 1);
+		pad = pos & (zeroing_size - 1);
 		if (pad)
 			iomap_dio_zero(dio, iomap, pos - pad, pad);
 	}
@@ -345,9 +354,9 @@ zero_tail:
 	if (need_zeroout ||
 	    ((dio->flags & IOMAP_DIO_WRITE) && pos >= i_size_read(inode))) {
 		/* zero out from the end of the write to the end of the block */
-		pad = pos & (fs_block_size - 1);
+		pad = pos & (zeroing_size - 1);
 		if (pad)
-			iomap_dio_zero(dio, iomap, pos, fs_block_size - pad);
+			iomap_dio_zero(dio, iomap, pos, zeroing_size - pad);
 	}
 out:
 	/* Undo iter limitation to current extent */
