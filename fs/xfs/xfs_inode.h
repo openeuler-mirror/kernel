@@ -268,6 +268,10 @@ static inline bool xfs_inode_has_bigtime(struct xfs_inode *ip)
 	return ip->i_d.di_flags2 & XFS_DIFLAG2_BIGTIME;
 }
 
+static inline bool xfs_inode_forcealign(struct xfs_inode *ip)
+{
+	return ip->i_d.di_flags2 & XFS_DIFLAG2_FORCEALIGN;
+}
 /*
  * Return the buftarg used for data allocations on a given inode.
  */

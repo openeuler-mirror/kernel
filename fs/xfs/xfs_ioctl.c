@@ -1198,6 +1198,8 @@ xfs_flags2diflags2(
 		di_flags2 |= XFS_DIFLAG2_DAX;
 	if (xflags & FS_XFLAG_COWEXTSIZE)
 		di_flags2 |= XFS_DIFLAG2_COWEXTSIZE;
+	if (xflags & FS_XFLAG_FORCEALIGN)
+		di_flags2 |= XFS_DIFLAG2_FORCEALIGN;
 
 	return di_flags2;
 }
@@ -1235,6 +1237,22 @@ xfs_ioctl_setattr_xflags(
 	di_flags2 = xfs_flags2diflags2(ip, fa->fsx_xflags);
 	if (di_flags2 && !xfs_has_v3inodes(mp))
 		return -EINVAL;
+
+	/*
+	 * Force-align requires a nonzero extent size hint and a zero cow
+	 * extent size hint.  It doesn't apply to realtime files.
+	 */
+	if (fa->fsx_xflags & FS_XFLAG_FORCEALIGN) {
+		if (!xfs_has_forcealign(mp))
+			return -EINVAL;
+		if (fa->fsx_xflags & FS_XFLAG_COWEXTSIZE)
+			return -EINVAL;
+		if (!(fa->fsx_xflags & (FS_XFLAG_EXTSIZE |
+					FS_XFLAG_EXTSZINHERIT)))
+			return -EINVAL;
+		if (fa->fsx_xflags & FS_XFLAG_REALTIME)
+			return -EINVAL;
+	}
 
 	ip->i_d.di_flags = xfs_flags2diflags(ip, fa->fsx_xflags);
 	ip->i_d.di_flags2 = di_flags2;
@@ -1339,6 +1357,9 @@ xfs_ioctl_setattr_check_extsize(
 	struct xfs_mount	*mp = ip->i_mount;
 	xfs_extlen_t		size;
 	xfs_fsblock_t		extsize_fsb;
+	xfs_failaddr_t		failaddr;
+	uint16_t		new_diflags;
+	uint16_t		new_diflags2;
 
 	if (S_ISREG(VFS_I(ip)->i_mode) && ip->i_df.if_nextents &&
 	    ((ip->i_d.di_extsize << mp->m_sb.sb_blocklog) != fa->fsx_extsize))
@@ -1362,6 +1383,17 @@ xfs_ioctl_setattr_check_extsize(
 
 	if (fa->fsx_extsize % size)
 		return -EINVAL;
+
+	new_diflags = xfs_flags2diflags(ip, fa->fsx_xflags);
+	new_diflags2 = xfs_flags2diflags2(ip, fa->fsx_xflags);
+	if (new_diflags2 & XFS_DIFLAG2_FORCEALIGN) {
+		failaddr = xfs_inode_validate_forcealign(ip->i_mount,
+				VFS_I(ip)->i_mode, new_diflags,
+				XFS_B_TO_FSB(mp, fa->fsx_extsize),
+				XFS_B_TO_FSB(mp, fa->fsx_cowextsize));
+		if (failaddr)
+			return -EINVAL;
+	}
 
 	return 0;
 }

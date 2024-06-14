@@ -1639,6 +1639,7 @@ xfs_fc_fill_super(
 			"DAX unsupported by block device. Turning off DAX.");
 			xfs_mount_set_dax_mode(mp, XFS_DAX_NEVER);
 		}
+
 		if (xfs_has_reflink(mp)) {
 			xfs_alert(mp,
 		"DAX and reflink cannot be used together!");
@@ -1656,6 +1657,10 @@ xfs_fc_fill_super(
 			mp->m_features &= ~XFS_FEAT_DISCARD;
 		}
 	}
+
+	if (xfs_has_forcealign(mp))
+		xfs_warn(mp,
+"EXPERIMENTAL forced data extent alignment feature in use. Use at your own risk!");
 
 	if (xfs_has_reflink(mp)) {
 		if (mp->m_sb.sb_rblocks) {
