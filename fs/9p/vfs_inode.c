@@ -376,15 +376,19 @@ void v9fs_evict_inode(struct inode *inode)
 {
 	struct v9fs_inode *v9inode = V9FS_I(inode);
 
-	truncate_inode_pages_final(&inode->i_data);
-	clear_inode(inode);
-	filemap_fdatawrite(&inode->i_data);
+	if (!is_bad_inode(inode)) {
+		truncate_inode_pages_final(&inode->i_data);
+		clear_inode(inode);
+		filemap_fdatawrite(&inode->i_data);
 
-	v9fs_cache_inode_put_cookie(inode);
-	/* clunk the fid stashed in writeback_fid */
-	if (v9inode->writeback_fid) {
-		p9_client_clunk(v9inode->writeback_fid);
-		v9inode->writeback_fid = NULL;
+		v9fs_cache_inode_put_cookie(inode);
+		/* clunk the fid stashed in writeback_fid */
+		if (v9inode->writeback_fid) {
+			p9_client_clunk(v9inode->writeback_fid);
+			v9inode->writeback_fid = NULL;
+		}
+	} else {
+		clear_inode(inode);
 	}
 }
 
