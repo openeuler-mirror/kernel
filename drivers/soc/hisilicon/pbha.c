@@ -17,8 +17,9 @@
 
 #define HBM_MODE_CACHE	1
 
-bool __ro_after_init pbha_bit0_enabled;
-bool __ro_after_init pbha_bit0_kernel_enabled;
+__ro_after_init DEFINE_STATIC_KEY_FALSE(pbha_bit0_enabled);
+__ro_after_init DEFINE_STATIC_KEY_FALSE(pbha_bit0_kernel_enabled);
+
 static bool pbha_enabled_phase_1;
 
 void __init early_pbha_bit0_init(void)
@@ -191,15 +192,15 @@ static int __init setup_pbha(char *str)
 		return 0;
 
 	if (strcmp(str, "enable") == 0) {
-		pbha_bit0_enabled = true;
-		pbha_bit0_kernel_enabled = true;
+		static_branch_enable(&pbha_bit0_enabled);
+		static_branch_enable(&pbha_bit0_kernel_enabled);
 	} else if (strcmp(str, "user") == 0) {
-		pbha_bit0_enabled = true;
+		static_branch_enable(&pbha_bit0_enabled);
 	}
 
-	if (pbha_bit0_enabled)
-		pr_info("pbha bit_0 enabled, kernel: %d\n",
-			pbha_bit0_kernel_enabled);
+	if (static_branch_likely(&pbha_bit0_enabled))
+		pr_info("pbha bit_0 enabled, kernel: %ld\n",
+			static_branch_likely(&pbha_bit0_kernel_enabled));
 
 	return 0;
 }
