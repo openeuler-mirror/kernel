@@ -4701,14 +4701,19 @@ out_kfree:
 struct dhugetlb_pool *get_dhugetlb_pool_from_memcg(struct mem_cgroup *memcg)
 {
 	struct mem_cgroup_extension *memcg_ext;
+	struct dhugetlb_pool *hpool;
 
 	if (!memcg)
 		return NULL;
 
+	rcu_read_lock();
 	memcg_ext = container_of(memcg, struct mem_cgroup_extension, memcg);
-	if (dhugetlb_pool_get(memcg_ext->hpool))
-		return memcg_ext->hpool;
-	return NULL;
+	hpool = memcg_ext->hpool;
+	if (!dhugetlb_pool_get(hpool))
+		hpool = NULL;
+	rcu_read_unlock();
+
+	return hpool;
 }
 
 static void set_dhugetlb_pool_to_memcg(struct mem_cgroup *memcg,
