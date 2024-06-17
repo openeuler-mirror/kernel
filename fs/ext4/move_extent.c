@@ -640,10 +640,16 @@ ext4_move_extents(struct file *o_filp, struct file *d_filp, __u64 orig_blk,
 	inode_dio_wait(donor_inode);
 
 	/* Fallback to buffer_head aops for inodes with buffered iomap aops */
-	if (ext4_test_inode_state(orig_inode, EXT4_STATE_BUFFERED_IOMAP))
-		ext4_disable_buffered_iomap_aops(orig_inode);
-	if (ext4_test_inode_state(donor_inode, EXT4_STATE_BUFFERED_IOMAP))
-		ext4_disable_buffered_iomap_aops(donor_inode);
+	if (ext4_test_inode_state(orig_inode, EXT4_STATE_BUFFERED_IOMAP)) {
+		ret = ext4_disable_buffered_iomap_aops(orig_inode);
+		if (ret)
+			goto out_unlock;
+	}
+	if (ext4_test_inode_state(donor_inode, EXT4_STATE_BUFFERED_IOMAP)) {
+		ret = ext4_disable_buffered_iomap_aops(donor_inode);
+		if (ret)
+			goto out_unlock;
+	}
 
 	/* Protect extent tree against block allocations via delalloc */
 	ext4_double_down_write_data_sem(orig_inode, donor_inode);
@@ -728,6 +734,7 @@ out:
 
 	ext4_free_ext_path(path);
 	ext4_double_up_write_data_sem(orig_inode, donor_inode);
+out_unlock:
 	unlock_two_nondirectories(orig_inode, donor_inode);
 
 	return ret;
