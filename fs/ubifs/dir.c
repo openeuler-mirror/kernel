@@ -1096,15 +1096,17 @@ static int ubifs_mknod(struct inode *dir, struct dentry *dentry,
 		goto out_fname;
 	}
 
+	err = ubifs_init_security(dir, inode, &dentry->d_name);
+	if (err) {
+		kfree(dev);
+		goto out_inode;
+	}
+
 	init_special_inode(inode, inode->i_mode, rdev);
 	inode->i_size = ubifs_inode(inode)->ui_size = devlen;
 	ui = ubifs_inode(inode);
 	ui->data = dev;
 	ui->data_len = devlen;
-
-	err = ubifs_init_security(dir, inode, &dentry->d_name);
-	if (err)
-		goto out_inode;
 
 	mutex_lock(&dir_ui->ui_mutex);
 	dir->i_size += sz_change;
@@ -1177,6 +1179,10 @@ static int ubifs_symlink(struct inode *dir, struct dentry *dentry,
 		goto out_fname;
 	}
 
+	err = ubifs_init_security(dir, inode, &dentry->d_name);
+	if (err)
+		goto out_inode;
+
 	ui = ubifs_inode(inode);
 	ui->data = kmalloc(disk_link.len, GFP_NOFS);
 	if (!ui->data) {
@@ -1201,10 +1207,6 @@ static int ubifs_symlink(struct inode *dir, struct dentry *dentry,
 	 */
 	ui->data_len = disk_link.len - 1;
 	inode->i_size = ubifs_inode(inode)->ui_size = disk_link.len - 1;
-
-	err = ubifs_init_security(dir, inode, &dentry->d_name);
-	if (err)
-		goto out_inode;
 
 	mutex_lock(&dir_ui->ui_mutex);
 	dir->i_size += sz_change;
