@@ -442,17 +442,18 @@ out:
 
 static bool get_hpool_unless_zero(struct dhugetlb_pool *hpool)
 {
-	if (!dhugetlb_enabled || !hpool)
+	if (!hpool)
 		return false;
 	return atomic_inc_not_zero(&hpool->refcnt);
 }
 
 static void put_hpool(struct dhugetlb_pool *hpool)
 {
-	if (!dhugetlb_enabled || !hpool)
+	if (!hpool)
 		return;
 	if (atomic_dec_and_test(&hpool->refcnt)) {
 		css_put(&hpool->attach_memcg->css);
+		synchronize_rcu();
 		kfree(hpool);
 	}
 }
@@ -464,6 +465,37 @@ struct dhugetlb_pagelist {
 
 static struct dhugetlb_pagelist *dhugetlb_pagelist_t;
 static DEFINE_RWLOCK(dhugetlb_pagelist_rwlock);
+
+static struct dhugetlb_pool *get_hpool_from_memcg(struct mem_cgroup *memcg)
+{
+	struct dhugetlb_pool *hpool;
+
+	rcu_read_lock();
+	hpool = memcg->hpool;
+	if (!get_hpool_unless_zero(hpool))
+		hpool = NULL;
+	rcu_read_unlock();
+
+	return hpool;
+}
+
+static struct dhugetlb_pool *get_hpool_from_task(struct task_struct *tsk)
+{
+	struct mem_cgroup *memcg;
+	struct dhugetlb_pool *hpool;
+
+	rcu_read_lock();
+	memcg = mem_cgroup_from_task(tsk);
+	if (!memcg || !css_tryget(&memcg->css)) {
+		rcu_read_unlock();
+		return NULL;
+	}
+	rcu_read_unlock();
+
+	hpool = get_hpool_from_memcg(memcg);
+	css_put(&memcg->css);
+	return hpool;
+}
 
 static int set_hpool_in_dhugetlb_pagelist(unsigned long idx, struct dhugetlb_pool *hpool)
 {
@@ -504,7 +536,7 @@ static int set_hpool_in_dhugetlb_pagelist(unsigned long idx, struct dhugetlb_poo
 	return 0;
 }
 
-static struct dhugetlb_pool *find_hpool_by_dhugetlb_pagelist(struct page *page)
+static struct dhugetlb_pool *get_hpool_from_pagelist(struct page *page)
 {
 	unsigned long idx = hugepage_index(page_to_pfn(page));
 	struct dhugetlb_pool *hpool = NULL;
@@ -513,6 +545,10 @@ static struct dhugetlb_pool *find_hpool_by_dhugetlb_pagelist(struct page *page)
 	if (idx < dhugetlb_pagelist_t->count)
 		hpool = dhugetlb_pagelist_t->hpool[idx];
 	read_unlock(&dhugetlb_pagelist_rwlock);
+
+	if (!get_hpool_unless_zero(hpool))
+		return NULL;
+
 	return hpool;
 }
 
@@ -523,27 +559,23 @@ bool page_belong_to_dynamic_hugetlb(struct page *page)
 	if (!dhugetlb_enabled)
 		return false;
 
-	hpool = find_hpool_by_dhugetlb_pagelist(page);
-	if (hpool)
-		return true;
-	return false;
+	hpool = get_hpool_from_pagelist(page);
+	put_hpool(hpool);
+
+	return !!hpool;
 }
 
 static struct dhugetlb_pool *find_hpool_by_task(struct task_struct *tsk)
 {
-	struct mem_cgroup *memcg;
+	struct dhugetlb_pool *hpool;
 
 	if (!dhugetlb_enabled)
 		return NULL;
 
-	rcu_read_lock();
-	memcg = mem_cgroup_from_task(tsk);
-	rcu_read_unlock();
+	hpool = get_hpool_from_task(tsk);
+	put_hpool(hpool);
 
-	if (!memcg)
-		return NULL;
-
-	return memcg->hpool;
+	return hpool;
 }
 
 int task_has_mem_in_hpool(struct task_struct *tsk)
@@ -583,9 +615,8 @@ static struct page *__alloc_page_from_dhugetlb_pool(void)
 	struct page *page = NULL;
 	unsigned long flags;
 
-	hpool = find_hpool_by_task(current);
-
-	if (!get_hpool_unless_zero(hpool))
+	hpool = get_hpool_from_task(current);
+	if (!hpool)
 		return NULL;
 
 	if (hpool->normal_pages_disabled)
@@ -655,9 +686,8 @@ static void __free_page_to_dhugetlb_pool(struct page *page)
 	struct dhugetlb_pool *hpool;
 	unsigned long flags;
 
-	hpool = find_hpool_by_dhugetlb_pagelist(page);
-
-	if (!get_hpool_unless_zero(hpool)) {
+	hpool = get_hpool_from_pagelist(page);
+	if (!hpool) {
 		pr_err("dhugetlb: free error: get hpool failed\n");
 		return;
 	}
@@ -715,13 +745,10 @@ void link_hpool(struct hugetlbfs_inode_info *p, struct hstate *h)
 		return;
 
 	size = huge_page_size(h);
-	if (size == PMD_SIZE || size == PUD_SIZE) {
-		p->hpool = find_hpool_by_task(current);
-		if (!get_hpool_unless_zero(p->hpool))
-			p->hpool = NULL;
-	} else {
+	if (size == PMD_SIZE || size == PUD_SIZE)
+		p->hpool = get_hpool_from_task(current);
+	else
 		p->hpool = NULL;
-	}
 }
 
 void unlink_hpool(struct hugetlbfs_inode_info *p)
@@ -822,9 +849,8 @@ void free_huge_page_to_dhugetlb_pool(struct page *page, bool restore_reserve)
 	struct dhugetlb_pool *hpool;
 	unsigned long flags;
 
-	hpool = find_hpool_by_dhugetlb_pagelist(page);
-
-	if (!get_hpool_unless_zero(hpool)) {
+	hpool = get_hpool_from_pagelist(page);
+	if (!hpool) {
 		pr_err("dhugetlb: free error: get hpool failed\n");
 		return;
 	}
@@ -1024,7 +1050,7 @@ static int hugetlb_pool_update(struct mem_cgroup *memcg,
 	int ret = -EINVAL;
 
 again:
-	hpool = memcg->hpool;
+	hpool = get_hpool_from_memcg(memcg);
 	if (!hpool) {
 		ret = hugetlb_pool_create(memcg, nid);
 		if (ret)
@@ -1032,8 +1058,6 @@ again:
 		new_create = true;
 		goto again;
 	}
-	if (!get_hpool_unless_zero(hpool))
-		return -EINVAL;
 
 	if (hpool->attach_memcg != memcg || hpool->nid != nid)
 		goto out;
@@ -1060,7 +1084,7 @@ bool dhugetlb_hide_files(struct cftype *cft)
 
 static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hpages_pool_idx)
 {
-	struct dhugetlb_pool *hpool = memcg->hpool;
+	struct dhugetlb_pool *hpool;
 	struct huge_pages_pool *hpages_pool;
 	unsigned long nr_pages;
 	unsigned long delta;
@@ -1074,7 +1098,8 @@ static ssize_t update_reserved_pages(struct mem_cgroup *memcg, char *buf, int hp
 	if (*endp != '\0')
 		return -EINVAL;
 
-	if (!get_hpool_unless_zero(hpool))
+	hpool = get_hpool_from_memcg(memcg);
+	if (!hpool)
 		return -EINVAL;
 
 	mutex_lock(&hpool->reserved_lock);
@@ -1138,14 +1163,20 @@ int normal_pages_disabled_write(struct cgroup_subsys_state *css,
 			       struct cftype *cft, u64 val)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
-	struct dhugetlb_pool *hpool = memcg->hpool;
+	struct dhugetlb_pool *hpool;
 
-	if (!dhugetlb_enabled || !hpool)
+	if (!dhugetlb_enabled)
 		return -EINVAL;
 	if (!((val == 0) || (val == 1)))
 		return -EINVAL;
 
+	hpool = get_hpool_from_memcg(memcg);
+	if (!hpool)
+		return -EINVAL;
+
 	hpool->normal_pages_disabled = val;
+
+	put_hpool(hpool);
 	return 0;
 }
 
@@ -1153,12 +1184,20 @@ u64 normal_pages_disabled_read(struct cgroup_subsys_state *css,
 			      struct cftype *cft)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
-	struct dhugetlb_pool *hpool = memcg->hpool;
+	struct dhugetlb_pool *hpool;
+	u64 val;
 
-	if (!dhugetlb_enabled || !hpool)
+	if (!dhugetlb_enabled)
 		return 0;
 
-	return hpool->normal_pages_disabled;
+	hpool = get_hpool_from_memcg(memcg);
+	if (!hpool)
+		return 0;
+
+	val = hpool->normal_pages_disabled;
+
+	put_hpool(hpool);
+	return val;
 }
 
 ssize_t write_hugepage_to_hpool(struct kernfs_open_file *of,
@@ -1190,21 +1229,18 @@ ssize_t write_hugepage_to_hpool(struct kernfs_open_file *of,
 int hugetlb_pool_info_show(struct seq_file *m, void *v)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(seq_css(m));
-	struct dhugetlb_pool *hpool = memcg ? memcg->hpool : NULL;
-	unsigned long free_pages;
-	long used_pages = 0;
+	struct dhugetlb_pool *hpool;
+	unsigned long free_pages = 0, used_pages = 0;
 	int i;
 
 	if (!dhugetlb_enabled)
 		return 0;
 
+	hpool = get_hpool_from_memcg(memcg);
 	if (!hpool) {
 		seq_printf(m, "Current hierarchial have not memory pool.\n");
 		return 0;
 	}
-
-	if (!get_hpool_unless_zero(hpool))
-		return 0;
 
 	dhugetlb_lock_all(hpool);
 
