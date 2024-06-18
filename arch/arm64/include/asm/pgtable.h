@@ -1038,6 +1038,12 @@ static inline pgprot_t arch_filter_pgprot(pgprot_t prot)
 	return PAGE_READONLY_EXEC;
 }
 
+#ifdef CONFIG_HUGETLB_PAGE_OPTIMIZE_VMEMMAP
+void vmemmap_update_pmd(unsigned long addr, pmd_t *pmdp, pte_t *ptep);
+#define vmemmap_update_pmd vmemmap_update_pmd
+void vmemmap_update_pte(unsigned long addr, pte_t *ptep, pte_t pte);
+#define vmemmap_update_pte vmemmap_update_pte
+#endif
 
 #endif /* !__ASSEMBLY__ */
 
