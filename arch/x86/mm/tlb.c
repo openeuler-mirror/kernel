@@ -318,7 +318,7 @@ void switch_mm(struct mm_struct *prev, struct mm_struct *next,
 
 static unsigned long mm_mangle_tif_spec_ib(struct task_struct *next)
 {
-	unsigned long next_tif = task_thread_info(next)->flags;
+	unsigned long next_tif = read_task_thread_flags(next);
 	unsigned long ibpb = (next_tif >> TIF_SPEC_IB) & LAST_USER_MM_IBPB;
 
 	return (unsigned long)next->mm | ibpb;
