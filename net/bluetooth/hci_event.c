@@ -729,6 +729,10 @@ static void hci_cc_read_buffer_size(struct hci_dev *hdev, struct sk_buff *skb)
 	if (rp->status)
 		return;
 
+	if (!__le16_to_cpu(rp->acl_mtu) ||
+	    !__le16_to_cpu(rp->acl_max_pkt))
+		return;
+
 	hdev->acl_mtu  = __le16_to_cpu(rp->acl_mtu);
 	hdev->sco_mtu  = rp->sco_mtu;
 	hdev->acl_pkts = __le16_to_cpu(rp->acl_max_pkt);
@@ -1016,6 +1020,10 @@ static void hci_cc_le_read_buffer_size(struct hci_dev *hdev,
 	BT_DBG("%s status 0x%2.2x", hdev->name, rp->status);
 
 	if (rp->status)
+		return;
+
+	if (__le16_to_cpu(rp->le_mtu) &&
+	    __le16_to_cpu(rp->le_mtu) < HCI_MIN_LE_MTU)
 		return;
 
 	hdev->le_mtu = __le16_to_cpu(rp->le_mtu);
