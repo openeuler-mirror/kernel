@@ -40,11 +40,12 @@ static inline uint8_t get_qp_bankid(uint64_t qpn)
 
 bool is_rc_jetty(struct udma_qp_attr *qp_attr)
 {
-	if (qp_attr->is_jetty && qp_attr->jetty &&
-	    qp_attr->tp_mode == UBCORE_TP_RC)
-		return true;
+	return (qp_attr->is_jetty && qp_attr->jetty && qp_attr->tp_mode == UBCORE_TP_RC);
+}
 
-	return false;
+bool is_rq_jetty(struct udma_qp_attr *qp_attr)
+{
+	return (qp_attr->is_jetty && qp_attr->jetty);
 }
 
 static void set_qpc_wqe_cnt(struct udma_qp *qp,
@@ -59,7 +60,7 @@ static void set_qpc_wqe_cnt(struct udma_qp *qp,
 	udma_reg_write(context, QPC_SQ_SHIFT, ilog2(qp->sq.wqe_cnt));
 	udma_reg_clear(context_mask, QPC_SQ_SHIFT);
 
-	if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+	if (is_rq_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
 	    !qp->qp_attr.jetty->dca_en) {
 		udma_reg_write(context, QPC_RQ_SHIFT, ilog2(qp->rq.wqe_cnt));
 		udma_reg_clear(context_mask, QPC_RQ_SHIFT);
@@ -150,7 +151,7 @@ static int config_qp_sq_buf(struct udma_dev *udma_device,
 		}
 	}
 
-	if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+	if (is_rq_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
 	    !qp->qp_attr.jetty->dca_en) {
 		count = config_qp_rq_buf(udma_device, qp, context, context_mask);
 		if (count)
@@ -352,7 +353,7 @@ static void edit_qpc_for_db(struct udma_qp_context *context, struct udma_qp_cont
 	if (qp->en_flags & HNS3_UDMA_QP_CAP_RQ_RECORD_DB) {
 		udma_reg_enable(context, QPC_RQ_RECORD_EN);
 		udma_reg_clear(context_mask, QPC_RQ_RECORD_EN);
-		if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+		if (is_rq_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
 		    !qp->qp_attr.jetty->dca_en) {
 			udma_reg_write(context, QPC_RQ_DB_RECORD_ADDR_L,
 				lower_32_bits(qp->qp_attr.jfr->db.dma) >>
@@ -376,7 +377,7 @@ static void edit_qpc_for_srqn(struct udma_qp *qp,
 			      struct udma_qp_context *context_mask)
 {
 	if (qp->qp_attr.jfr) {
-		if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+		if (is_rq_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
 		    !qp->qp_attr.jetty->dca_en)
 			return;
 		udma_reg_enable(context, QPC_SRQ_EN);
@@ -1075,10 +1076,10 @@ int fill_jfr_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 	}
 	qp_attr->cap.min_rnr_timer = jfr->jfr_cfg.min_rnr_timer;
 
-	if (is_rc_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
+	if (is_rq_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
 	    !qp_attr->jetty->dca_en) {
 		qp_attr->cap.max_recv_wr = jfr->jfr_cfg.depth;
-		qp_attr->cap.max_recv_sge = jfr->jfr_cfg.max_sge;
+		qp_attr->cap.max_recv_sge = udma_jfr->max_sge;
 	}
 
 	return 0;
@@ -1139,10 +1140,10 @@ int fill_jetty_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
 	qp_attr->cap.ack_timeout = jetty->jetty_cfg.err_timeout;
 	qp_attr->cap.rnr_retry = jetty->jetty_cfg.rnr_retry;
 
-	if (is_rc_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
+	if (is_rq_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
 	    !qp_attr->jetty->dca_en) {
 		qp_attr->cap.max_recv_wr = udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.depth;
-		qp_attr->cap.max_recv_sge = udma_jetty->udma_jfr->ubcore_jfr.jfr_cfg.max_sge;
+		qp_attr->cap.max_recv_sge = udma_jetty->udma_jfr->max_sge;
 	}
 
 	return 0;
@@ -1246,7 +1247,7 @@ static void set_ext_sge_param(struct udma_dev *udma_dev, uint32_t sq_wqe_cnt,
 
 static void set_rq_size(struct udma_dev *udma_dev, struct udma_qp *qp, struct udma_qp_cap *cap)
 {
-	if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+	if (is_rq_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
 	    !qp->qp_attr.jetty->dca_en) {
 		qp->rq.wqe_cnt = roundup_pow_of_two(cap->max_recv_wr);
 		qp->rq.max_gs = roundup_pow_of_two(cap->max_recv_sge);
@@ -1365,16 +1366,9 @@ static int alloc_qpn_with_bankid(struct udma_bank *bank, uint8_t bankid,
 {
 	int idx;
 
-	idx = ida_alloc_range(&bank->ida, bank->next, bank->max, GFP_KERNEL);
-	if (idx < 0) {
-		idx = ida_alloc_range(&bank->ida, bank->min, bank->max,
-				     GFP_KERNEL);
-		if (idx < 0)
-			return idx;
-	}
-
-	bank->next =
-		((uint32_t)idx + 1) > bank->max ? bank->min : (uint32_t)idx + 1;
+	idx = ida_alloc_range(&bank->ida, bank->min, bank->max, GFP_KERNEL);
+	if (idx < 0)
+		return idx;
 
 	/* the lower 3 bits is bankid */
 	*qpn = (idx << 3) | bankid;
@@ -1416,7 +1410,7 @@ void free_common_qpn(struct udma_dev *udma_dev, uint32_t qpn)
 	mutex_unlock(&qp_table->bank_mutex);
 }
 
-static int alloc_qpn(struct udma_dev *udma_dev, struct udma_qp *qp, bool is_target)
+static int alloc_qpn(struct udma_dev *udma_dev, struct udma_qp *qp)
 {
 	struct udma_qp_attr *attr = &qp->qp_attr;
 
@@ -1491,7 +1485,7 @@ static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
 	/* SQ WQE */
 	qp->sq.offset = 0;
 
-	buf_size = to_udma_hem_entries_size(qp->sq.wqe_cnt,
+	buf_size = to_hem_entries_size_by_page(qp->sq.wqe_cnt,
 					    qp->sq.wqe_shift);
 	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
 		buf_attr->region[idx].size = buf_size;
@@ -1502,7 +1496,7 @@ static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
 	/* extend SGE WQE in SQ */
 	qp->sge.offset = qp->buff_size;
 
-	buf_size = to_udma_hem_entries_size(qp->sge.sge_cnt,
+	buf_size = to_hem_entries_size_by_page(qp->sge.sge_cnt,
 					    qp->sge.sge_shift);
 	if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
 		buf_attr->region[idx].size = buf_size;
@@ -1511,12 +1505,12 @@ static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
 		qp->buff_size += buf_size;
 	}
 
-	if (is_rc_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
+	if (is_rq_jetty(&qp->qp_attr) && !qp->qp_attr.jetty->shared_jfr &&
 	    !qp->qp_attr.jetty->dca_en) {
 		/* RQ WQE */
 		qp->rq.offset = qp->buff_size;
 
-		buf_size = to_udma_hem_entries_size(qp->rq.wqe_cnt,
+		buf_size = to_hem_entries_size_by_page(qp->rq.wqe_cnt,
 						qp->rq.wqe_shift);
 		if (buf_size > 0 && idx < ARRAY_SIZE(buf_attr->region)) {
 			buf_attr->region[idx].size = buf_size;
@@ -1525,12 +1519,11 @@ static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
 			qp->buff_size += buf_size;
 		}
 	}
-
 	if (qp->buff_size < 1)
 		return -EINVAL;
 
 	buf_attr->region_count = idx;
-	buf_attr->page_shift = UDMA_HW_PAGE_SHIFT;
+	buf_attr->page_shift = PAGE_SHIFT;
 	buf_attr->mtt_only = dca_en;
 
 	return 0;
@@ -1808,7 +1801,7 @@ static void free_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)
 
 static void free_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp)
 {
-	if ((is_rc_jetty(&qp->qp_attr) &&
+	if ((is_rq_jetty(&qp->qp_attr) &&
 	    !(qp->en_flags & HNS3_UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) ||
 	    qp->no_free_wqe_buf)
 		return;
@@ -1820,7 +1813,7 @@ static void free_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp)
 
 static void free_wqe_buf(struct udma_dev *dev, struct udma_qp *qp)
 {
-	if ((is_rc_jetty(&qp->qp_attr) &&
+	if ((is_rq_jetty(&qp->qp_attr) &&
 	    !(qp->en_flags & HNS3_UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) ||
 	    qp->no_free_wqe_buf)
 		return;
@@ -1874,11 +1867,11 @@ static int udma_alloc_qp_sq(struct udma_dev *udma_dev, struct udma_qp *qp,
 	struct udma_qp_attr *qp_attr = &qp->qp_attr;
 	int ret = 0;
 
+	if (qp_attr->is_jetty && !qp_attr->jetty->shared_jfr && !qp_attr->jetty->dca_en)
+		qp->en_flags |= HNS3_UDMA_QP_CAP_RQ_RECORD_DB;
 	if (is_rc_jetty(qp_attr)) {
 		qp->sdb = qp_attr->jetty->rc_node.sdb;
 		qp->en_flags |= HNS3_UDMA_QP_CAP_SQ_RECORD_DB;
-		if (!qp_attr->jetty->shared_jfr && !qp_attr->jetty->dca_en)
-			qp->en_flags |= HNS3_UDMA_QP_CAP_RQ_RECORD_DB;
 		qp->dca_ctx = &qp_attr->jetty->rc_node.context->dca_ctx;
 		if (qp_attr->jetty->rc_node.buf_addr) {
 			qp->mtr = qp_attr->jetty->rc_node.mtr;
@@ -1946,7 +1939,7 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 		return ret;
 	}
 
-	ret = alloc_qpn(udma_dev, qp, !udata->uctx);
+	ret = alloc_qpn(udma_dev, qp);
 	if (ret) {
 		dev_err(dev, "failed to alloc QPN, ret = %d.\n", ret);
 		goto err_qpn;
@@ -2009,7 +2002,7 @@ err_copy:
 err_store:
 	free_qpc(udma_dev, qp);
 err_qpc:
-	if (udma_qp_need_alloc_sq(&qp->qp_attr) && !is_rc_jetty(qp_attr)) {
+	if (udma_qp_need_alloc_sq(&qp->qp_attr) && !is_rq_jetty(qp_attr)) {
 		free_qp_db(udma_dev, qp);
 		free_qp_wqe(udma_dev, qp);
 	}

@@ -524,3 +524,89 @@ void udma_unregister_cc_sysfs(struct udma_dev *udma_dev)
 	for (i = 0; i < udma_dev->caps.num_ports; i++)
 		udma_unregister_port_sysfs(udma_dev, i);
 }
+
+static ssize_t udma_num_qp_store(struct kobject *kobj,
+				 struct udma_num_qp *attr,
+				 const char *buf, size_t count)
+{
+	struct udma_num_qp_cmd *cmd;
+	struct udma_cmq_desc desc;
+	struct udma_dev *udma_dev;
+	int ret;
+
+	udma_dev = container_of(attr, struct udma_dev, num_qp);
+
+	cmd = (struct udma_num_qp_cmd *)desc.data;
+	if (kstrtou32(buf, 0, &cmd->num))
+		return -EINVAL;
+
+	if (((cmd->num & (cmd->num - 1)) != 0) ||
+	    ((cmd->num < UDMA_NUM_QP_MIN) && (cmd->num != 0)) ||
+	    (cmd->num > UDMA_NUM_QP_MAX))
+		goto error_value;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_NUM_QP_CFG, false);
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret)
+		goto error_cmdq;
+
+	return count;
+
+error_value:
+	dev_err(udma_dev->dev,
+		"invalid num(%d).\n it must be powers of 2 and between [8, 512K],0 is default.\n",
+		cmd->num);
+
+	return -EINVAL;
+
+error_cmdq:
+	dev_err(udma_dev->dev,
+		"fail to set num_qp(num:%d), ret = %d", cmd->num, ret);
+
+	return -EIO;
+}
+
+static ssize_t udma_num_qp_show(struct kobject *kobj, struct udma_num_qp *attr, char *buf)
+{
+	struct udma_num_qp_cmd *cmd;
+	struct udma_cmq_desc desc;
+	struct udma_dev *udma_dev;
+	int ret;
+
+	udma_dev = container_of(attr, struct udma_dev, num_qp);
+	udma_cmq_setup_basic_desc(&desc, UDMA_NUM_QP_CFG, true);
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret)
+		goto error_cmdq;
+
+	cmd = (struct udma_num_qp_cmd *)desc.data;
+
+	return sysfs_emit(buf, "%u\n", le32_to_cpu(cmd->num));
+
+error_cmdq:
+	dev_err(udma_dev->dev, "fail to get num_qp, ret = %d.\n", ret);
+
+	return -EIO;
+}
+
+int udma_register_num_qp_sysfs(struct udma_dev *udma_dev)
+{
+	int ret;
+
+	udma_dev->num_qp.attr.name = __stringify(num_qp);
+	udma_dev->num_qp.attr.mode = ATTR_RW_RONLY_RONLY;
+	udma_dev->num_qp.show = udma_num_qp_show;
+	udma_dev->num_qp.store = udma_num_qp_store;
+	ret = sysfs_create_file(&udma_dev->dev->kobj, &udma_dev->num_qp.attr);
+	if (ret) {
+		dev_err(udma_dev->dev, "fail to create num_qp sysfs, ret = %d.\n", ret);
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+void udma_unregister_num_qp_sysfs(struct udma_dev *udma_dev)
+{
+	sysfs_remove_file(&udma_dev->dev->kobj, &udma_dev->num_qp.attr);
+}

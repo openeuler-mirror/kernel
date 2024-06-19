@@ -33,6 +33,7 @@
 #define UDMA_MTU_VAL_1024 1024
 #define UDMA_MTU_VAL_2048 2048
 #define UDMA_MTU_VAL_4096 4096
+#define UDMA_DIRECT_WQE_MAX 524288
 
 struct udma_qp_context_ex {
 	uint32_t data[64];
@@ -360,6 +361,7 @@ enum {
 #define gen_qpn(high, mid, low) ((high) | (mid) | (low))
 
 bool is_rc_jetty(struct udma_qp_attr *qp_attr);
+bool is_rq_jetty(struct udma_qp_attr *qp_attr);
 int udma_modify_qp_common(struct udma_qp *qp,
 			  struct ubcore_tp_attr *attr,
 			  union ubcore_tp_attr_mask ubcore_mask,
