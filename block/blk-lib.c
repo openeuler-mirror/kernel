@@ -92,6 +92,14 @@ int __blkdev_issue_discard(struct block_device *bdev, sector_t sector,
 			req_sects = min_t(sector_t, nr_sects,
 					  granularity_aligned_lba - sector_mapped);
 
+		if (!req_sects) {
+			if (bio) {
+				bio_io_error(bio);
+				bio_put(bio);
+			}
+			return -EOPNOTSUPP;
+		}
+
 		WARN_ON_ONCE((req_sects << 9) > UINT_MAX);
 
 		bio = blk_next_bio(bio, 0, gfp_mask);
