@@ -3360,6 +3360,7 @@ void dhugetlb_pool_put(struct dhugetlb_pool *hpool)
 
 	if (atomic_dec_and_test(&hpool->refcnt)) {
 		css_put(&hpool->attach_memcg->css);
+		synchronize_rcu();
 		kfree(hpool);
 	}
 }
@@ -3500,9 +3501,14 @@ struct dhugetlb_pool *get_dhugetlb_pool_from_task(struct task_struct *tsk)
 
 	rcu_read_lock();
 	memcg = mem_cgroup_from_task(tsk);
+	if (!memcg || !css_tryget(&memcg->css)) {
+		rcu_read_unlock();
+		return NULL;
+	}
 	rcu_read_unlock();
 
 	hpool = get_dhugetlb_pool_from_memcg(memcg);
+	css_put(&memcg->css);
 
 	return hpool;
 }
