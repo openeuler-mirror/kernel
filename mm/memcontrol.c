@@ -2844,7 +2844,13 @@ done_restock:
 #ifdef CONFIG_MEMCG_V1_THRESHOLD_QOS
 		if (is_high_async_reclaim(memcg) && !mem_high) {
 			WRITE_ONCE(memcg->high_async_reclaim, true);
-			schedule_work(&memcg->high_work);
+#ifdef CONFIG_MEMCG_SWAP_QOS
+			if (static_branch_likely(&memcg_swap_qos_key))
+				schedule_work_on(smp_processor_id(),
+						 &memcg->high_work);
+			else
+#endif
+				schedule_work(&memcg->high_work);
 			break;
 		}
 #endif
