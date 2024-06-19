@@ -187,6 +187,9 @@ static int ceph_do_readpage(struct file *filp, struct page *page)
 	u64 off = page_offset(page);
 	u64 len = PAGE_SIZE;
 
+	if (ceph_inode_is_shutdown(inode))
+		return -EIO;
+
 	if (off >= i_size_read(inode)) {
 		zero_user_segment(page, 0, PAGE_SIZE);
 		SetPageUptodate(page);
@@ -460,6 +463,9 @@ static int ceph_readpages(struct file *file, struct address_space *mapping,
 	int rc = 0;
 	int max = 0;
 
+	if (ceph_inode_is_shutdown(inode))
+		return -EIO;
+
 	if (ceph_inode(inode)->i_inline_version != CEPH_INLINE_NONE)
 		return -EINVAL;
 
@@ -602,6 +608,9 @@ static int writepage_nounlock(struct page *page, struct writeback_control *wbc)
 	struct ceph_osd_request *req;
 
 	dout("writepage %p idx %lu\n", page, page->index);
+
+	if (ceph_inode_is_shutdown(inode))
+		return -EIO;
 
 	/* verify this is a writeable snap context */
 	snapc = page_snap_context(page);
@@ -832,7 +841,7 @@ static int ceph_writepages_start(struct address_space *mapping,
 	     wbc->sync_mode == WB_SYNC_NONE ? "NONE" :
 	     (wbc->sync_mode == WB_SYNC_ALL ? "ALL" : "HOLD"));
 
-	if (READ_ONCE(fsc->mount_state) == CEPH_MOUNT_SHUTDOWN) {
+	if (ceph_inode_is_shutdown(inode)) {
 		if (ci->i_wrbuffer_ref > 0) {
 			pr_warn_ratelimited(
 				"writepage_start %p %lld forced umount\n",
@@ -1253,12 +1262,12 @@ static struct ceph_snap_context *
 ceph_find_incompatible(struct page *page)
 {
 	struct inode *inode = page->mapping->host;
-	struct ceph_fs_client *fsc = ceph_inode_to_client(inode);
 	struct ceph_inode_info *ci = ceph_inode(inode);
 
-	if (READ_ONCE(fsc->mount_state) == CEPH_MOUNT_SHUTDOWN) {
-		dout(" page %p forced umount\n", page);
-		return ERR_PTR(-EIO);
+	if (ceph_inode_is_shutdown(inode)) {
+		dout(" page %p %llx:%llx is shutdown\n", page,
+		     ceph_vinop(inode));
+		return ERR_PTR(-ESTALE);
 	}
 
 	for (;;) {
@@ -1496,6 +1505,9 @@ static vm_fault_t ceph_filemap_fault(struct vm_fault *vmf)
 	sigset_t oldset;
 	vm_fault_t ret = VM_FAULT_SIGBUS;
 
+	if (ceph_inode_is_shutdown(inode))
+		return ret;
+
 	ceph_block_sigs(&oldset);
 
 	dout("filemap_fault %p %llx.%llx %llu~%zd trying to get caps\n",
@@ -1590,6 +1602,9 @@ static vm_fault_t ceph_page_mkwrite(struct vm_fault *vmf)
 	int want, got, err;
 	sigset_t oldset;
 	vm_fault_t ret = VM_FAULT_SIGBUS;
+
+	if (ceph_inode_is_shutdown(inode))
+		return ret;
 
 	prealloc_cf = ceph_alloc_cap_flush();
 	if (!prealloc_cf)
@@ -1753,6 +1768,11 @@ int ceph_uninline_data(struct file *filp, struct page *locked_page)
 
 	dout("uninline_data %p %llx.%llx inline_version %llu\n",
 	     inode, ceph_vinop(inode), inline_version);
+
+	if (ceph_inode_is_shutdown(inode)) {
+		err = -EIO;
+		goto out;
+	}
 
 	if (inline_version == 1 || /* initial version, no data */
 	    inline_version == CEPH_INLINE_NONE)
