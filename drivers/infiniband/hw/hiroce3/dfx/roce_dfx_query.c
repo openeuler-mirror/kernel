@@ -73,15 +73,13 @@ static int roce3_dfx_get_dev_algo(const struct roce3_dfx_query_inbuf *inbuf,
 	struct roce3_device *rdev, union roce3_dfx_query_outbuf *outbuf)
 {
 	u32 cc_algo;
-	struct roce3_ecn_ctx ecn_ctx;
 	u32 *algo_type = &outbuf->algo_type;
 
 	if (rdev == NULL) {
 		pr_err("[ROCE, ERR] %s: Failed to get roce device.\n", __func__);
 		return -EINVAL;
 	}
-	ecn_ctx = rdev->ecn_ctx;
-	cc_algo = ecn_ctx.cc_algo;
+	cc_algo = rdev->ecn_ctx.cc_algo;
 	*algo_type = cc_algo;
 
 	return 0;
