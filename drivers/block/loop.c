@@ -243,7 +243,7 @@ static void loop_set_size(struct loop_device *lo, loff_t size)
 	bd_set_nr_sectors(bdev, size);
 
 	if (!set_capacity_revalidate_and_notify(lo->lo_disk, size, false))
-		kobject_uevent(&disk_to_dev(bdev->bd_disk)->kobj, KOBJ_CHANGE);
+		kobject_uevent(&disk_to_dev(lo->lo_disk)->kobj, KOBJ_CHANGE);
 }
 
 static inline int
@@ -1250,7 +1250,7 @@ static int __loop_clr_fd(struct loop_device *lo, bool release)
 	if (bdev) {
 		bd_set_nr_sectors(bdev, 0);
 		/* let user-space know about this change */
-		kobject_uevent(&disk_to_dev(bdev->bd_disk)->kobj, KOBJ_CHANGE);
+		kobject_uevent(&disk_to_dev(lo->lo_disk)->kobj, KOBJ_CHANGE);
 	}
 	mapping_set_gfp_mask(filp->f_mapping, gfp);
 	/* This is safe: open() is still holding a reference. */
