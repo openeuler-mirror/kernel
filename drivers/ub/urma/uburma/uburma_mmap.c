@@ -49,11 +49,12 @@ void uburma_unmap_vma_pages(struct uburma_file *ufile)
 	lockdep_assert_held(&ufile->cleanup_rwsem);
 
 	while (1) {
+		mm = NULL;
 		mutex_lock(&ufile->umap_mutex);
 		list_for_each_entry_safe(priv, next_priv, &ufile->umaps_list, node) {
 			mm = priv->vma->vm_mm;
 			ret = mmget_not_zero(mm);
-			if (ret != 0) {
+			if (!ret) {
 				list_del_init(&priv->node);
 				mm = NULL;
 				continue;
