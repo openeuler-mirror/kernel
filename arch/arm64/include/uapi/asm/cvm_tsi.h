@@ -23,9 +23,10 @@
  * This macro needs to be updated accordingly if new algorithms are supported.
  */
 #define MAX_MEASUREMENT_SIZE       SHA512_SIZE
-#define MAX_DEV_CERT_SIZE          4096
+#define MAX_DEV_CERT_SIZE          (4096U)
 
-#define MAX_TOKEN_GRANULE_PAGE     (10U)
+#define GRANULE_SIZE               (4096U)
+#define MAX_TOKEN_GRANULE_COUNT    (2U)
 #define CHALLENGE_SIZE             (64U)
 
 struct cvm_attester {
@@ -55,6 +56,7 @@ struct cvm_measurement_extend {
 
 struct cvm_attestation_cmd {
 	unsigned char challenge[CHALLENGE_SIZE]; /* input: challenge value */
+	unsigned char token[GRANULE_SIZE * MAX_TOKEN_GRANULE_COUNT];
 	unsigned long token_size; /* return: token size */
 };
 

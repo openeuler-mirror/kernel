@@ -8,8 +8,6 @@
 #include <asm/cvm_smc.h>
 #include <asm/cvm_tsi.h>
 
-#define GRANULE_SIZE PAGE_SIZE
-
 struct attestation_token {
 	void *buf;
 	unsigned long size;
@@ -20,8 +18,6 @@ static struct attestation_token token;
 static DEFINE_MUTEX(token_lock);
 
 static long tmm_tsi_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
-static ssize_t tmm_token_read(struct file *file, char __user *user_buffer,
-	size_t size, loff_t *offset);
 
 static int tmm_get_tsi_version(struct cvm_tsi_version __user *arg);
 static int tmm_get_attestation_token(struct cvm_attestation_cmd __user *arg);
@@ -29,7 +25,6 @@ static int tmm_get_device_cert(struct cca_device_cert __user *arg);
 
 static const struct file_operations tmm_tsi_fops = {
 	.owner          = THIS_MODULE,
-	.read           = tmm_token_read,
 	.unlocked_ioctl = tmm_tsi_ioctl
 };
 
@@ -54,7 +49,7 @@ static int __init tmm_tsi_init(void)
 	}
 
 	/* Allocate a large memory */
-	token.buf = kzalloc(GRANULE_SIZE * MAX_TOKEN_GRANULE_PAGE, GFP_KERNEL);
+	token.buf = kzalloc(GRANULE_SIZE * MAX_TOKEN_GRANULE_COUNT, GFP_KERNEL);
 	if (!token.buf)
 		return -ENOMEM;
 
@@ -68,7 +63,7 @@ static int __init tmm_tsi_init(void)
 static void __exit tmm_tsi_exit(void)
 {
 	if (token.buf != NULL) {
-		memset(token.buf, 0, GRANULE_SIZE * MAX_TOKEN_GRANULE_PAGE);
+		memset(token.buf, 0, GRANULE_SIZE * MAX_TOKEN_GRANULE_COUNT);
 		kfree(token.buf);
 	}
 	misc_deregister(&ioctl_dev);
@@ -97,32 +92,6 @@ static long tmm_tsi_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 	return ret;
 }
 
-static ssize_t tmm_token_read(struct file *file, char __user *user_buffer,
-	size_t size, loff_t *offset)
-{
-	int ret;
-	int to_copy;
-
-	mutex_lock(&token_lock);
-	if (*offset >= token.size) {
-		mutex_unlock(&token_lock);
-		return 0;
-	}
-
-	to_copy = min((int)size, (int)(token.size - *offset));
-	ret = copy_to_user(user_buffer, token.buf + *offset, to_copy);
-	if (ret) {
-		pr_err("tmm_tsi: copy token to user failed (%d)!\n", ret);
-		mutex_unlock(&token_lock);
-		return -1;
-	}
-
-	*offset += to_copy;
-	mutex_unlock(&token_lock);
-	return to_copy;
-}
-
-
 static int tmm_get_tsi_version(struct cvm_tsi_version __user *arg)
 {
 	struct cvm_tsi_version ver_measured = {0};
@@ -150,7 +119,7 @@ static int tmm_get_attestation_token(struct cvm_attestation_cmd __user *arg)
 
 	ret = copy_from_user(challenge, &(arg->challenge), CHALLENGE_SIZE);
 	if (ret) {
-		pr_err("tmm_tsi: copy data from user failed (%lu)!\n", ret);
+		pr_err("tmm_tsi: copy challenge from user failed (%lu)!\n", ret);
 		return -EFAULT;
 	}
 
@@ -166,8 +135,13 @@ static int tmm_get_attestation_token(struct cvm_attestation_cmd __user *arg)
 	}
 
 	do { /* Retrieve one Granule of data per loop iteration */
-		token_granule.ipa = token_granule.head +
-			(unsigned long)(token_granule.count * GRANULE_SIZE);
+		if (token_granule.count + 1 > MAX_TOKEN_GRANULE_COUNT) {
+			pr_err("tmm_tsi: macro MAX_TOKEN_GRANULE_COUNT (%d) is too small!\n",
+				MAX_TOKEN_GRANULE_COUNT);
+			mutex_unlock(&token_lock);
+			return -ENOMEM;
+		}
+		token_granule.ipa = token_granule.head + (token_granule.count * GRANULE_SIZE);
 		token_granule.offset = 0;
 
 		do { /* Retrieve sub-Granule chunk of data per loop iteration */
@@ -176,23 +150,23 @@ static int tmm_get_attestation_token(struct cvm_attestation_cmd __user *arg)
 			token_granule.offset += token_granule.num_wr_bytes;
 		} while (ret == TSI_INCOMPLETE && token_granule.offset < GRANULE_SIZE);
 
-		token_granule.count += 1;
-		if (token_granule.count >= MAX_TOKEN_GRANULE_PAGE && ret == TSI_INCOMPLETE) {
-			pr_err("tmm_tsi: macro MAX_TOKEN_GRANULE_PAGE (%d) is too small!\n",
-				MAX_TOKEN_GRANULE_PAGE);
-			mutex_unlock(&token_lock);
-			return -ENOMEM;
-		}
+		token_granule.count++;
 
 	} while (ret == TSI_INCOMPLETE);
 
 	/* Send to user space the total size of the token */
-	token_granule.count = token_granule.count - 1;
-	token.size = (unsigned long)(GRANULE_SIZE * token_granule.count) + token_granule.offset;
+	token.size = (GRANULE_SIZE * (token_granule.count - 1)) + token_granule.offset;
 
 	ret = copy_to_user(&(arg->token_size), &(token.size), sizeof(token.size));
 	if (ret) {
-		pr_err("tmm_tsi: copy data to user failed (%lu)!\n", ret);
+		pr_err("tmm_tsi: copy token_size to user failed (%lu)!\n", ret);
+		mutex_unlock(&token_lock);
+		return -EFAULT;
+	}
+
+	ret = copy_to_user(arg->token, token.buf, token.size);
+	if (ret) {
+		pr_err("tmm_tsi: copy token to user failed (%lu)!\n", ret);
 		mutex_unlock(&token_lock);
 		return -EFAULT;
 	}
