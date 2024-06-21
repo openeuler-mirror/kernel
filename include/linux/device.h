@@ -567,7 +567,15 @@ struct device {
 	bool			dma_ops_bypass : 1;
 #endif
 	/* Use device_extended after all RESERVE fields used */
+#ifdef CONFIG_SPI_MASTER
+	/*
+	 * Reserved for struct spi_controller.
+	 * Used to avoid adding the same CS twice.
+	 */
+	KABI_USE(1, struct mutex *add_lock)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

@@ -472,12 +472,6 @@ static LIST_HEAD(spi_controller_list);
  */
 static DEFINE_MUTEX(board_lock);
 
-/*
- * Prevents addition of devices with same chip select and
- * addition of devices below an unregistering controller.
- */
-static DEFINE_MUTEX(spi_add_lock);
-
 /**
  * spi_alloc_device - Allocate a new SPI device
  * @ctlr: Controller to which device is connected
@@ -581,7 +575,7 @@ int spi_add_device(struct spi_device *spi)
 	 * chipselect **BEFORE** we call setup(), else we'll trash
 	 * its configuration.  Lock against concurrent add() calls.
 	 */
-	mutex_lock(&spi_add_lock);
+	mutex_lock(ctlr->dev.add_lock);
 
 	status = bus_for_each_dev(&spi_bus_type, NULL, spi, spi_dev_check);
 	if (status) {
@@ -625,7 +619,7 @@ int spi_add_device(struct spi_device *spi)
 	}
 
 done:
-	mutex_unlock(&spi_add_lock);
+	mutex_unlock(ctlr->dev.add_lock);
 	return status;
 }
 EXPORT_SYMBOL_GPL(spi_add_device);
@@ -2688,14 +2682,20 @@ int spi_register_controller(struct spi_controller *ctlr)
 	if (status)
 		return status;
 
+	ctlr->dev.add_lock = kmalloc(sizeof(struct mutex), GFP_KERNEL);
+	if (!ctlr->dev.add_lock)
+		return -ENOMEM;
+
 	if (ctlr->bus_num >= 0) {
 		/* devices with a fixed bus num must check-in with the num */
 		mutex_lock(&board_lock);
 		id = idr_alloc(&spi_master_idr, ctlr, ctlr->bus_num,
 			ctlr->bus_num + 1, GFP_KERNEL);
 		mutex_unlock(&board_lock);
-		if (WARN(id < 0, "couldn't get idr"))
-			return id == -ENOSPC ? -EBUSY : id;
+		if (WARN(id < 0, "couldn't get idr")) {
+			status = (id == -ENOSPC) ? -EBUSY : id;
+			goto free_add_lock;
+		}
 		ctlr->bus_num = id;
 	} else if (ctlr->dev.of_node) {
 		/* allocate dynamic bus number using Linux idr */
@@ -2706,8 +2706,10 @@ int spi_register_controller(struct spi_controller *ctlr)
 			id = idr_alloc(&spi_master_idr, ctlr, ctlr->bus_num,
 				       ctlr->bus_num + 1, GFP_KERNEL);
 			mutex_unlock(&board_lock);
-			if (WARN(id < 0, "couldn't get idr"))
-				return id == -ENOSPC ? -EBUSY : id;
+			if (WARN(id < 0, "couldn't get idr")) {
+				status = (id == -ENOSPC) ? -EBUSY : id;
+				goto free_add_lock;
+			}
 		}
 	}
 	if (ctlr->bus_num < 0) {
@@ -2721,8 +2723,11 @@ int spi_register_controller(struct spi_controller *ctlr)
 		id = idr_alloc(&spi_master_idr, ctlr, first_dynamic,
 			       0, GFP_KERNEL);
 		mutex_unlock(&board_lock);
-		if (WARN(id < 0, "couldn't get idr"))
-			return id;
+		if (WARN(id < 0, "couldn't get idr")) {
+			status = id;
+			goto free_add_lock;
+		}
+
 		ctlr->bus_num = id;
 	}
 	INIT_LIST_HEAD(&ctlr->queue);
@@ -2730,6 +2735,7 @@ int spi_register_controller(struct spi_controller *ctlr)
 	spin_lock_init(&ctlr->bus_lock_spinlock);
 	mutex_init(&ctlr->bus_lock_mutex);
 	mutex_init(&ctlr->io_mutex);
+	mutex_init(ctlr->dev.add_lock);
 	ctlr->bus_lock_flag = 0;
 	init_completion(&ctlr->xfer_completion);
 	if (!ctlr->max_dma_len)
@@ -2806,6 +2812,8 @@ free_bus_id:
 	mutex_lock(&board_lock);
 	idr_remove(&spi_master_idr, ctlr->bus_num);
 	mutex_unlock(&board_lock);
+free_add_lock:
+	kfree(ctlr->dev.add_lock);
 	return status;
 }
 EXPORT_SYMBOL_GPL(spi_register_controller);
@@ -2875,7 +2883,7 @@ void spi_unregister_controller(struct spi_controller *ctlr)
 
 	/* Prevent addition of new devices, unregister existing ones */
 	if (IS_ENABLED(CONFIG_SPI_DYNAMIC))
-		mutex_lock(&spi_add_lock);
+		mutex_lock(ctlr->dev.add_lock);
 
 	device_for_each_child(&ctlr->dev, NULL, __unregister);
 
@@ -2893,12 +2901,6 @@ void spi_unregister_controller(struct spi_controller *ctlr)
 
 	device_del(&ctlr->dev);
 
-	/* Release the last reference on the controller if its driver
-	 * has not yet been converted to devm_spi_alloc_master/slave().
-	 */
-	if (!ctlr->devm_allocated)
-		put_device(&ctlr->dev);
-
 	/* free bus id */
 	mutex_lock(&board_lock);
 	if (found == ctlr)
@@ -2906,7 +2908,15 @@ void spi_unregister_controller(struct spi_controller *ctlr)
 	mutex_unlock(&board_lock);
 
 	if (IS_ENABLED(CONFIG_SPI_DYNAMIC))
-		mutex_unlock(&spi_add_lock);
+		mutex_unlock(ctlr->dev.add_lock);
+
+	kfree(ctlr->dev.add_lock);
+
+	/* Release the last reference on the controller if its driver
+	 * has not yet been converted to devm_spi_alloc_master/slave().
+	 */
+	if (!ctlr->devm_allocated)
+		put_device(&ctlr->dev);
 }
 EXPORT_SYMBOL_GPL(spi_unregister_controller);
 
