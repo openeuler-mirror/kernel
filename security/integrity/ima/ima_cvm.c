@@ -66,7 +66,12 @@ int ima_cvm_extend(struct tpm_digest *digests_arg)
 	/* Use index 1 as CVM IMA slot */
 	cme.index = 1;
 	cme.size = hash_digest_size[ima_hash_algo];
-	memcpy(cme.value, digests_arg[ima_hash_algo_idx].digest, cme.size);
+
+	if (digests_arg)
+		memcpy(cme.value, digests_arg[ima_hash_algo_idx].digest,
+		       cme.size);
+	else
+		memset(cme.value, 0xff, cme.size);
 
 	return tsi_measurement_extend(&cme) == TSI_SUCCESS ? 0 : -EFAULT;
 }
