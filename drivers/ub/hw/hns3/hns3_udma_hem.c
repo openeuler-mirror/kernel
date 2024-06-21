@@ -1831,7 +1831,7 @@ static int mtr_map_bufs(struct udma_dev *udma_dev, struct udma_mtr *mtr,
 		npage = udma_get_kmem_bufs(udma_dev, pages, page_count,
 					   mtr->kmem, page_shift);
 	if (npage != page_count) {
-		dev_err(dev, "failed to get mtr page %d != %d.\n", npage,
+		dev_err(dev, "failed to get mtr page: get pages %d != need pages %d.\n", npage,
 			page_count);
 		ret = -ENOBUFS;
 		goto err_alloc_list;
@@ -1939,7 +1939,8 @@ int udma_mtr_create(struct udma_dev *udma_dev, struct udma_mtr *mtr,
 	/* Write buffer's dma address to MTT */
 	ret = mtr_map_bufs(udma_dev, mtr, buf_page_cnt, buf_page_shift);
 	if (ret)
-		dev_err(dev, "failed to map mtr bufs, ret = %d.\n", ret);
+		dev_err(dev, "failed to map mtr bufs, ret = %d. buf_page_cnt %d, buf_page_shift %d.\n",
+			ret, buf_page_cnt, buf_page_shift);
 	else
 		return 0;
 

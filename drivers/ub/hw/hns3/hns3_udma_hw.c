@@ -1792,16 +1792,24 @@ static int __udma_init_instance(struct hnae3_handle *handle)
 	if (ret) {
 		dev_err(udma_dev->dev,
 			"UDMA congest control init failed(%d)!\n", ret);
-		if (dfx_switch)
-			goto error_failed_scc_init;
-		goto error_failed_dfx_init;
+		goto error_failed_scc_init;
+	}
+
+	ret = udma_register_num_qp_sysfs(udma_dev);
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"UDMA num_qp sysfs init failed(%d)!\n", ret);
+		goto error_failed_num_qp_init;
 	}
 
 	udma_init_bank(udma_dev);
 	return 0;
 
+error_failed_num_qp_init:
+	udma_unregister_cc_sysfs(udma_dev);
 error_failed_scc_init:
-	udma_dfx_uninit(udma_dev);
+	if (dfx_switch)
+		udma_dfx_uninit(udma_dev);
 error_failed_dfx_init:
 	udma_hnae_client_exit(udma_dev);
 error_failed_get_cfg:
@@ -1820,6 +1828,7 @@ static void __udma_uninit_instance(struct hnae3_handle *handle,
 	if (!udma_dev)
 		return;
 
+	udma_unregister_num_qp_sysfs(udma_dev);
 	udma_unregister_cc_sysfs(udma_dev);
 	if (dfx_switch)
 		udma_dfx_uninit(handle->priv);

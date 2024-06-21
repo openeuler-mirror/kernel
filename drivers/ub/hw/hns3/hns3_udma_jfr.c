@@ -17,9 +17,10 @@
 #include "hns3_udma_hem.h"
 #include "hns3_udma_cmd.h"
 #include "hns3_udma_db.h"
+#include "hns3_udma_tp.h"
 #include "hns3_udma_jfc.h"
-#include "hns3_udma_dfx.h"
 #include "hns3_udma_jfr.h"
+#include "hns3_udma_dfx.h"
 
 static int init_jfr_cfg(struct udma_dev *dev, struct udma_jfr *jfr,
 			struct ubcore_jfr_cfg *cfg)
@@ -58,7 +59,7 @@ static int alloc_jfr_idx(struct udma_dev *dev, struct udma_jfr *jfr,
 
 	buf_attr.page_shift = PAGE_SHIFT;
 	buf_attr.region[0].size =
-		to_udma_hem_entries_size(jfr->wqe_cnt,
+		to_hem_entries_size_by_page(jfr->wqe_cnt,
 					 jfr->idx_que.entry_shift);
 	buf_attr.region[0].hopnum = dev->caps.idx_hop_num;
 	buf_attr.region_count = 1;
@@ -96,7 +97,7 @@ static int alloc_jfr_wqe_buf(struct udma_dev *dev,
 						  jfr->max_sge));
 
 	buf_attr.page_shift = PAGE_SHIFT;
-	buf_attr.region[0].size = to_udma_hem_entries_size(jfr->wqe_cnt,
+	buf_attr.region[0].size = to_hem_entries_size_by_page(jfr->wqe_cnt,
 							   jfr->wqe_shift);
 	buf_attr.region[0].hopnum = dev->caps.srqwqe_hop_num;
 	buf_attr.region_count = 1;
@@ -106,7 +107,8 @@ static int alloc_jfr_wqe_buf(struct udma_dev *dev,
 			      addr, !!udata);
 	if (ret)
 		dev_err(dev->dev,
-			"failed to alloc JFR buf mtr, ret = %d.\n", ret);
+			"failed to alloc JFR buf mtr, ret = %d. buf_size=0x%lx.\n",
+			ret, buf_attr.region[0].size);
 
 	return ret;
 }
@@ -123,7 +125,7 @@ static int alloc_jfr_wqe_buf_rq(struct udma_dev *dev,
 	int ret;
 
 	/* SQ WQE */
-	buf_size = to_udma_hem_entries_size(ucmd->sqe_cnt, ucmd->sqe_shift);
+	buf_size = to_hem_entries_size_by_page(ucmd->sqe_cnt, ucmd->sqe_shift);
 	if (buf_size > 0) {
 		buf_attr.region[idx].size = buf_size;
 		buf_attr.region[idx].hopnum = dev->caps.wqe_sq_hop_num;
@@ -132,7 +134,7 @@ static int alloc_jfr_wqe_buf_rq(struct udma_dev *dev,
 	}
 
 	/* extend SGE WQE in SQ */
-	buf_size = to_udma_hem_entries_size(ucmd->sge_cnt, ucmd->sge_shift);
+	buf_size = to_hem_entries_size_by_page(ucmd->sge_cnt, ucmd->sge_shift);
 	if (buf_size > 0) {
 		buf_attr.region[idx].size = buf_size;
 		buf_attr.region[idx].hopnum = dev->caps.wqe_sge_hop_num;
@@ -145,7 +147,7 @@ static int alloc_jfr_wqe_buf_rq(struct udma_dev *dev,
 	jfr->wqe_shift = ilog2(roundup_pow_of_two(UDMA_SGE_SIZE *
 						  jfr->max_sge));
 
-	buf_size = to_udma_hem_entries_size(jfr->wqe_cnt, jfr->wqe_shift);
+	buf_size = to_hem_entries_size_by_page(jfr->wqe_cnt, jfr->wqe_shift);
 	if (buf_size > 0) {
 		buf_attr.region[idx].size = buf_size;
 		buf_attr.region[idx].hopnum = dev->caps.wqe_rq_hop_num;
@@ -161,7 +163,7 @@ static int alloc_jfr_wqe_buf_rq(struct udma_dev *dev,
 
 	buf_attr.region_count = idx;
 	buf_attr.mtt_only = false;
-	buf_attr.page_shift = UDMA_HW_PAGE_SHIFT;
+	buf_attr.page_shift = PAGE_SHIFT;
 
 	ret = udma_mtr_create(dev, &jfr->buf_mtr, &buf_attr,
 			      PAGE_SHIFT + dev->caps.mtt_ba_pg_sz,

@@ -809,6 +809,16 @@ struct udma_port {
 	struct udma_scc_param	*scc_param;
 };
 
+struct udma_num_qp {
+	struct attribute attr;
+	ssize_t (*show)(struct kobject *kobj,
+			struct udma_num_qp *attr,
+			char *buf);
+	ssize_t (*store)(struct kobject *kobj,
+			struct udma_num_qp *attr,
+			const char *buf, size_t count);
+};
+
 struct udma_dev {
 	struct ubcore_device		ub_dev;
 	struct pci_dev			*pci_dev;
@@ -863,6 +873,7 @@ struct udma_dev {
 	struct udma_dev_debugfs		*dbgfs;
 	uint64_t			notify_addr;
 	struct udma_bank		bank[UDMA_QP_BANK_NUM];
+	struct udma_num_qp		num_qp;
 };
 
 struct udma_seg {
@@ -924,6 +935,12 @@ static inline uint32_t to_udma_hem_entries_size(uint32_t count,
 						uint32_t buf_shift)
 {
 	return UDMA_HW_PAGE_ALIGN(count << buf_shift);
+}
+
+static inline uint32_t to_hem_entries_size_by_page(uint32_t count,
+						uint32_t buf_shift)
+{
+	return UDMA_PAGE_ALIGN(count << buf_shift);
 }
 
 static inline uint32_t to_udma_hw_page_shift(uint32_t page_shift)

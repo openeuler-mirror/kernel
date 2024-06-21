@@ -33,7 +33,7 @@ static struct udma_dfx_sys_attr g_sysfs_udma_##file_name##_attr = {\
 
 #define HW_ATTRS_LIST_MEMBER(file_name) (&g_sysfs_udma_##file_name##_attr.attr)
 #define UDMA_DFX_FUNC_MAX	37
-#define MAX_CHAR_NUM_DEV_NAME	12
+#define MAX_CHAR_NUM_DEV_NAME	64
 #define UDMA_DFX_STR_LEN_MAX	20
 
 struct udma_dfx_info;

@@ -29,6 +29,7 @@
 #define UDMA_HW_PAGE_SHIFT			12
 #define UDMA_PAGE_SIZE				(1 << UDMA_HW_PAGE_SHIFT)
 #define UDMA_HW_PAGE_ALIGN(x)		ALIGN(x, 1 << UDMA_HW_PAGE_SHIFT)
+#define UDMA_PAGE_ALIGN(x)		ALIGN(x, 1 << PAGE_SHIFT)
 
 static inline uint64_t umem_cal_npages(uint64_t va, uint64_t len)
 {

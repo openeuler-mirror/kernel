@@ -149,6 +149,13 @@
 
 #define ATTR_RW_RONLY_RONLY 0644
 
+#define UDMA_NUM_QP_MAX		524288
+#define UDMA_NUM_QP_MIN		8
+
+struct udma_num_qp_cmd {
+	uint32_t num;
+};
+
 struct udma_port_attribute {
 	struct attribute attr;
 	ssize_t (*show)(struct udma_port *pdata,
@@ -169,5 +176,8 @@ struct udma_port_cc_attr {
 
 int udma_register_cc_sysfs(struct udma_dev *udma_dev);
 void udma_unregister_cc_sysfs(struct udma_dev *udma_dev);
+
+int udma_register_num_qp_sysfs(struct udma_dev *udma_dev);
+void udma_unregister_num_qp_sysfs(struct udma_dev *udma_dev);
 
 #endif /* _UDMA_SYSFS_H */

@@ -68,10 +68,10 @@ void udma_fill_jetty_qp_attr(struct udma_dev *dev, struct udma_qp_attr *qp_attr,
 		qp_attr->priority = jetty->ubcore_jetty.jetty_cfg.priority;
 	}
 
-	if (is_rc_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
+	if (is_rq_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
 	    !qp_attr->jetty->dca_en) {
 		qp_attr->cap.max_recv_wr = jetty->udma_jfr->ubcore_jfr.jfr_cfg.depth;
-		qp_attr->cap.max_recv_sge = jetty->udma_jfr->ubcore_jfr.jfr_cfg.max_sge;
+		qp_attr->cap.max_recv_sge = jetty->udma_jfr->max_sge;
 	}
 }
 
@@ -191,7 +191,7 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 	jetty->rc_node.wqe_shift = UDMA_SQ_WQE_SHIFT;
 	set_jetty_ext_sge_param(jetty);
 
-	buf_size = to_udma_hem_entries_size(jetty->rc_node.wqe_cnt,
+	buf_size = to_hem_entries_size_by_page(jetty->rc_node.wqe_cnt,
 					    jetty->rc_node.wqe_shift);
 	if (buf_size > 0) {
 		buf_attr->region[idx].size = buf_size;
@@ -202,7 +202,7 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 	/* extend SGE WQE in SQ */
 	jetty->rc_node.sge_offset = total_buff_size;
 
-	buf_size = to_udma_hem_entries_size(jetty->rc_node.sge_cnt,
+	buf_size = to_hem_entries_size_by_page(jetty->rc_node.sge_cnt,
 					    jetty->rc_node.sge_shift);
 	if (buf_size > 0) {
 		buf_attr->region[idx].size = buf_size;
@@ -219,7 +219,7 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 
 	buf_attr->region_count = idx;
 	buf_attr->mtt_only = false;
-	buf_attr->page_shift = UDMA_HW_PAGE_SHIFT;
+	buf_attr->page_shift = PAGE_SHIFT;
 
 	return 0;
 }
