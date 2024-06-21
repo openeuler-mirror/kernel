@@ -951,6 +951,32 @@ static void klp_clear_object_relocs(struct klp_patch *patch,
 }
 #endif /* CONFIG_LIVEPATCH_FTRACE */
 
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+unsigned long __weak arch_klp_fentry_range_size(void)
+{
+	return 0;
+}
+
+static unsigned long klp_ftrace_location(unsigned long func_addr,
+					 unsigned long func_size)
+{
+	unsigned long loc;
+	unsigned long range_size = arch_klp_fentry_range_size();
+
+	/*
+	 * When some arch not need to modify codes after fentry, they are no
+	 * need to override the weak arch_klp_fentry_range_size() which return
+	 * 0, so just return here.
+	 */
+	if (range_size == 0 || range_size > func_size)
+		return 0;
+	loc = ftrace_location_range(func_addr, func_addr + range_size);
+	if (WARN_ON(loc && (loc < func_addr || loc >= func_addr + range_size)))
+		loc = 0;
+	return loc;
+}
+#endif /* CONFIG_LIVEPATCH_ISOLATE_KPROBE */
+
 /* parts of the initialization that is done only when the object is loaded */
 static int klp_init_object_loaded(struct klp_patch *patch,
 				  struct klp_object *obj)
@@ -975,6 +1001,11 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 	klp_module_enable_ro(patch->mod, true);
 
 	klp_for_each_func(obj, func) {
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+		unsigned long old_func;
+		unsigned long ftrace_loc;
+#endif
+
 		ret = klp_find_object_symbol(obj->name, func->old_name,
 					     func->old_sympos,
 					     (unsigned long *)&func->old_func);
@@ -1005,6 +1036,21 @@ static int klp_init_object_loaded(struct klp_patch *patch,
 			       func->old_name);
 			return -ENOENT;
 		}
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+		old_func = (unsigned long)func->old_func;
+		ftrace_loc = klp_ftrace_location(old_func, func->old_size);
+		if (ftrace_loc) {
+			if (ftrace_loc >= old_func &&
+			    ftrace_loc < old_func + func->old_size - MCOUNT_INSN_SIZE) {
+				func->old_func = (void *)(ftrace_loc + MCOUNT_INSN_SIZE);
+				func->old_size -= ((unsigned long)func->old_func - old_func);
+			} else {
+				pr_warn("space not enough after ftrace location in '%s'\n",
+					func->old_name);
+			}
+		}
+#endif
+
 		if (func->old_size < KLP_MAX_REPLACE_SIZE) {
 			pr_err("%s size less than limit (%lu < %zu)\n", func->old_name,
 			       func->old_size, KLP_MAX_REPLACE_SIZE);
@@ -2312,6 +2358,42 @@ static inline struct kprobe *klp_check_patch_kprobed(struct klp_patch *patch)
 }
 #endif /* CONFIG_LIVEPATCH_RESTRICT_KPROBE */
 
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+void klp_lock(void)
+{
+	mutex_lock(&klp_mutex);
+}
+
+void klp_unlock(void)
+{
+	mutex_unlock(&klp_mutex);
+}
+
+int klp_check_patched(unsigned long addr)
+{
+	struct klp_patch *patch;
+	struct klp_object *obj;
+	struct klp_func *func;
+
+	lockdep_assert_held(&klp_mutex);
+	list_for_each_entry(patch, &klp_patches, list) {
+		if (!patch->enabled)
+			continue;
+		klp_for_each_object(patch, obj) {
+			klp_for_each_func(obj, func) {
+				unsigned long old_func = (unsigned long)func->old_func;
+
+				if (addr >= old_func && addr < old_func + func->old_size) {
+					pr_err("func %pS has been livepatched\n", (void *)addr);
+					return -EINVAL;
+				}
+			}
+		}
+	}
+	return 0;
+}
+#endif /* CONFIG_LIVEPATCH_ISOLATE_KPROBE */
+
 void __weak arch_klp_unpatch_func(struct klp_func *func)
 {
 }
@@ -2710,6 +2792,9 @@ static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 	patch = container_of(kobj, struct klp_patch, kobj);
 
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+	kprobes_lock();
+#endif
 	mutex_lock(&klp_mutex);
 
 	if (!klp_is_patch_registered(patch)) {
@@ -2734,6 +2819,9 @@ static ssize_t enabled_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 out:
 	mutex_unlock(&klp_mutex);
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+	kprobes_unlock();
+#endif
 
 	if (ret)
 		return ret;

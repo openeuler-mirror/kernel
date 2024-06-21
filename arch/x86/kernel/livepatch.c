@@ -374,3 +374,21 @@ void arch_klp_unpatch_func(struct klp_func *func)
 	/* replace the text with the new text */
 	klp_patch_text((void *)ip, (const void *)new, JMP_E9_INSN_SIZE);
 }
+
+#ifdef CONFIG_LIVEPATCH_ISOLATE_KPROBE
+unsigned long arch_klp_fentry_range_size(void)
+{
+	unsigned long size = MCOUNT_INSN_SIZE;
+
+	/*
+	 * If CONFIG_X86_KERNEL_IBT enabled, there would be an 'endbr64'
+	 * at function start, then it should be consider into the range
+	 * size.
+	 */
+#ifdef CONFIG_X86_KERNEL_IBT
+	size += ENDBR_INSN_SIZE;
+#endif
+	/* Expect fentry exists at first instruction. */
+	return size;
+}
+#endif /* CONFIG_LIVEPATCH_ISOLATE_KPROBE */
