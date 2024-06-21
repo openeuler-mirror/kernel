@@ -39,6 +39,7 @@ ldflags-y := -Bsymbolic --no-undefined -soname=linux-vdso.so.1 \
 	--hash-style=sysv --build-id -T
 
 GCOV_PROFILE := n
+PGO_PROFILE := n
 
 #
 # Shared build commands.

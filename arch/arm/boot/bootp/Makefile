@@ -6,6 +6,7 @@
 # architecture-specific flags and dependencies.
 #
 GCOV_PROFILE	:= n
+PGO_PROFILE	:= n
 
 ifdef PHYS_OFFSET
 add_hex = $(shell printf 0x%x $$(( $(1) + $(2) )) )

@@ -15,6 +15,7 @@ CFLAGS_cmdline_early.o += -D__NO_FORTIFY
 CFLAGS_lib-fdt_ro.o += -D__NO_FORTIFY
 
 GCOV_PROFILE	:= n
+PGO_PROFILE	:= n
 KASAN_SANITIZE	:= n
 KCSAN_SANITIZE	:= n
 UBSAN_SANITIZE	:= n

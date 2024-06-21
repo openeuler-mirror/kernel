@@ -2,6 +2,7 @@
 # Makefile for xmon
 
 GCOV_PROFILE := n
+PGO_PROFILE := n
 KCOV_INSTRUMENT := n
 UBSAN_SANITIZE := n
 KASAN_SANITIZE := n
