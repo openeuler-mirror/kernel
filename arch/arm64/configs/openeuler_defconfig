@@ -6419,6 +6419,7 @@ CONFIG_VFIO_PCI_INTX=y
 CONFIG_VFIO_PCI=m
 # CONFIG_MLX5_VFIO_PCI is not set
 CONFIG_HISI_ACC_VFIO_PCI=m
+# CONFIG_QAT_VFIO_PCI is not set
 # end of VFIO support for PCI devices
 
 #
