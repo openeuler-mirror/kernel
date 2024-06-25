@@ -285,7 +285,9 @@ static void init_blk_queue_async_dispatch(void)
 
 		init_waitqueue_head(&ctl->wait);
 		ctl->bios = kmalloc_array(nr_cpu_ids, sizeof(struct async_bio),
-					  GFP_KERNEL | __GFP_NOFAIL);
+					  GFP_KERNEL);
+		if (!ctl->bios)
+			panic("Failed to alloc async bio array\n");
 		for (i = 0; i < nr_cpu_ids; ++i) {
 			bio_list_init(&ctl->bios[i].list);
 			spin_lock_init(&ctl->bios[i].lock);
