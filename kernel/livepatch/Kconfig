@@ -87,4 +87,18 @@ config LIVEPATCH_RESTRICT_KPROBE
 	  and vice versa.
 	  Say Y here if you want to check those.
 
+config LIVEPATCH_ISOLATE_KPROBE
+	bool "Isolating livepatch and kprobe"
+	depends on LIVEPATCH_RESTRICT_KPROBE
+	depends on DYNAMIC_FTRACE && (X86_64 || ARM64)
+	default n
+	help
+	  Kprobe and livepatch_wo may modify the first several instructions of
+	  a function at the same time which causing a conflict. Since dynamic
+	  ftrace reserve instructions at non-notrace functions, we can allow
+	  kprobe works on the reserved instructions and livepatch_wo work on
+	  other instructions so as to avoid the conflict. But note that we also
+	  do not allow both modify the same instruction when a function is
+	  marked as 'notrace' and without the reserved instructions.
+
 endmenu
