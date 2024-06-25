@@ -1503,9 +1503,9 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
-	hns_roce_teardown_hca(hr_dev);
 	hns_roce_free_unfree_umem(hr_dev);
 	hns_roce_free_unfree_mtr(hr_dev);
+	hns_roce_teardown_hca(hr_dev);
 	hns_roce_cleanup_hem(hr_dev);
 
 	if (hr_dev->cmd_mod)
