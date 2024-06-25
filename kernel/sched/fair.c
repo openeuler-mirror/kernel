@@ -5329,7 +5329,8 @@ static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
 {
 	struct affinity_domain *ad;
 
-	if (!smart_grid_used())
+	if (!smart_grid_used() ||
+	    !task_group(p)->auto_affinity)
 		return p->prefer_cpus;
 
 	if (task_group(p)->auto_affinity->mode == 0)
