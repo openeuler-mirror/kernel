@@ -400,7 +400,7 @@ static s32 rnpvf_obtain_mbx_lock_vf(struct rnpvf_hw *hw, bool to_cm3)
 		/* reserve mailbox for vf use */
 		if (mbx_rd32(hw, CTRL_REG) & MBOX_CTRL_VF_HOLD_SHM)
 			return 0;
-		usleep_range(500, 1000);
+		udelay(500);
 	}
 
 	return RNP_ERR_MBX;
