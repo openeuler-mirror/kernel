@@ -1079,7 +1079,9 @@ out:
 static void remove_dquot_ref(struct super_block *sb, int type)
 {
 	struct inode *inode;
+#ifdef CONFIG_QUOTA_DEBUG
 	int reserved = 0;
+#endif
 
 	spin_lock(&sb->s_inode_list_lock);
 	list_for_each_entry(inode, &sb->s_inodes, i_sb_list) {
@@ -1094,9 +1096,10 @@ static void remove_dquot_ref(struct super_block *sb, int type)
 			struct dquot **dquots = i_dquot(inode);
 			struct dquot *dquot = dquots[type];
 
+#ifdef CONFIG_QUOTA_DEBUG
 			if (unlikely(inode_get_rsv_space(inode) > 0))
 				reserved = 1;
-
+#endif
 			dquots[type] = NULL;
 			if (dquot)
 				dqput(dquot);
