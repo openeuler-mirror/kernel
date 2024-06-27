@@ -36,7 +36,7 @@ char rnpvf_driver_name[] = "rnpvf";
 static const char rnpvf_driver_string[] =
 	"Mucse(R) 10/40G Gigabit PCI Express Virtual Function Network Driver";
 
-#define DRV_VERSION "0.3.1"
+#define DRV_VERSION "0.3.2"
 const char rnpvf_driver_version[] = DRV_VERSION;
 static const char rnpvf_copyright[] =
 	"Copyright (c) 2020 - 2024 Mucse Corporation.";
