@@ -1086,6 +1086,8 @@ static int vc4_hdmi_audio_init(struct vc4_hdmi *hdmi)
 	 * This VC/MMU should probably be exposed to avoid this kind of hacks.
 	 */
 	addr = of_get_address(dev->of_node, 1, NULL, NULL);
+	if (!addr)
+		return -EINVAL;
 	hdmi->audio.dma_data.addr = be32_to_cpup(addr) + VC4_HD_MAI_DATA;
 	hdmi->audio.dma_data.addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
 	hdmi->audio.dma_data.maxburst = 2;
