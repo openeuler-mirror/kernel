@@ -11465,17 +11465,19 @@ static inline void calculate_imbalance(struct lb_env *env, struct sd_lb_stats *s
 
 			/*
 			 * If there is no overload, we just want to even the number of
-			 * idle cpus.
+			 * busy cpus.
 			 */
 			env->migration_type = migrate_task;
-			env->imbalance = max_t(long, 0, (local->idle_cpus -
-						 busiest->idle_cpus) >> 1);
+			env->imbalance = max_t(long, 0,
+						((busiest->group_weight - busiest->idle_cpus)
+						- (local->group_weight - local->idle_cpus)) >> 1);
 		}
 
 		/* Consider allowing a small imbalance between NUMA groups */
 		if (env->sd->flags & SD_NUMA) {
 			env->imbalance = adjust_numa_imbalance(env->imbalance,
-				local->sum_nr_running + 1, env->sd->imb_numa_nr);
+							       busiest->sum_nr_running,
+							       env->sd->imb_numa_nr);
 		}
 
 		return;
