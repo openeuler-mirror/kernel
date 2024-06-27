@@ -1285,9 +1285,8 @@ int filp_close(struct file *filp, fl_owner_t id)
 {
 	int retval = 0;
 
-	if (CHECK_DATA_CORRUPTION(file_count(filp) == 0,
-			"VFS: Close: file count is 0 (f_op=%ps)",
-			filp->f_op)) {
+	if (!file_count(filp)) {
+		printk(KERN_ERR "VFS: Close: file count is 0\n");
 		return 0;
 	}
 
