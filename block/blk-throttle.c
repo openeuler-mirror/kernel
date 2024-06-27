@@ -913,13 +913,41 @@ static inline void throtl_trim_slice(struct throtl_grp *tg, bool rw)
 		   tg->slice_start[rw], tg->slice_end[rw], jiffies);
 }
 
-static bool tg_with_in_iops_limit(struct throtl_grp *tg, struct bio *bio,
-				  u32 iops_limit, unsigned long *wait)
+static unsigned int calculate_io_allowed(u32 iops_limit,
+					 unsigned long jiffy_elapsed)
+{
+	unsigned int io_allowed;
+	u64 tmp;
+
+	/*
+	 * jiffy_elapsed should not be a big value as minimum iops can be
+	 * 1 then at max jiffy elapsed should be equivalent of 1 second as we
+	 * will allow dispatch after 1 second and after that slice should
+	 * have been trimmed.
+	 */
+
+	tmp = (u64)iops_limit * jiffy_elapsed;
+	do_div(tmp, HZ);
+
+	if (tmp > UINT_MAX)
+		io_allowed = UINT_MAX;
+	else
+		io_allowed = tmp;
+
+	return io_allowed;
+}
+
+static u64 calculate_bytes_allowed(u64 bps_limit, unsigned long jiffy_elapsed)
+{
+	return mul_u64_u64_div_u64(bps_limit, (u64)jiffy_elapsed, (u64)HZ);
+}
+
+static bool tg_within_iops_limit(struct throtl_grp *tg, struct bio *bio,
+				 u32 iops_limit, unsigned long *wait)
 {
 	bool rw = bio_data_dir(bio);
 	unsigned int io_allowed;
 	unsigned long jiffy_elapsed, jiffy_wait, jiffy_elapsed_rnd;
-	u64 tmp;
 
 	if (iops_limit == UINT_MAX) {
 		if (wait)
@@ -931,22 +959,7 @@ static bool tg_with_in_iops_limit(struct throtl_grp *tg, struct bio *bio,
 
 	/* Round up to the next throttle slice, wait time must be nonzero */
 	jiffy_elapsed_rnd = roundup(jiffy_elapsed + 1, tg->td->throtl_slice);
-
-	/*
-	 * jiffy_elapsed_rnd should not be a big value as minimum iops can be
-	 * 1 then at max jiffy elapsed should be equivalent of 1 second as we
-	 * will allow dispatch after 1 second and after that slice should
-	 * have been trimmed.
-	 */
-
-	tmp = (u64)iops_limit * jiffy_elapsed_rnd;
-	do_div(tmp, HZ);
-
-	if (tmp > UINT_MAX)
-		io_allowed = UINT_MAX;
-	else
-		io_allowed = tmp;
-
+	io_allowed = calculate_io_allowed(iops_limit, jiffy_elapsed_rnd);
 	if (tg->io_disp[rw] + 1 <= io_allowed) {
 		if (wait)
 			*wait = 0;
@@ -961,8 +974,8 @@ static bool tg_with_in_iops_limit(struct throtl_grp *tg, struct bio *bio,
 	return false;
 }
 
-static bool tg_with_in_bps_limit(struct throtl_grp *tg, struct bio *bio,
-				 u64 bps_limit, unsigned long *wait)
+static bool tg_within_bps_limit(struct throtl_grp *tg, struct bio *bio,
+				u64 bps_limit, unsigned long *wait)
 {
 	bool rw = bio_data_dir(bio);
 	u64 bytes_allowed, extra_bytes;
@@ -982,9 +995,7 @@ static bool tg_with_in_bps_limit(struct throtl_grp *tg, struct bio *bio,
 		jiffy_elapsed_rnd = tg->td->throtl_slice;
 
 	jiffy_elapsed_rnd = roundup(jiffy_elapsed_rnd, tg->td->throtl_slice);
-	bytes_allowed = mul_u64_u64_div_u64(bps_limit, (u64)jiffy_elapsed_rnd,
-					    (u64)HZ);
-
+	bytes_allowed = calculate_bytes_allowed(bps_limit, jiffy_elapsed_rnd);
 	if (tg->bytes_disp[rw] + bio_size <= bytes_allowed) {
 		if (wait)
 			*wait = 0;
@@ -1055,8 +1066,8 @@ static bool tg_may_dispatch(struct throtl_grp *tg, struct bio *bio,
 	if (iops_limit != UINT_MAX)
 		tg->io_disp[rw] += atomic_xchg(&tg->io_split_cnt[rw], 0);
 
-	if (tg_with_in_bps_limit(tg, bio, bps_limit, &bps_wait) &&
-	    tg_with_in_iops_limit(tg, bio, iops_limit, &iops_wait)) {
+	if (tg_within_bps_limit(tg, bio, bps_limit, &bps_wait) &&
+	    tg_within_iops_limit(tg, bio, iops_limit, &iops_wait)) {
 		if (wait)
 			*wait = 0;
 		return true;
