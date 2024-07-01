@@ -206,28 +206,24 @@ struct tmi_tec_run {
  * always invoked by the Normal world, forward by SPMD and handled by the
  * TMM.
  */
-#define TMI_FNUM_VERSION			U(0x260)
+#define TMI_FNUM_VERSION_REQ			U(0x260)
 #define TMI_FNUM_MEM_INFO_SHOW			U(0x261)
 #define TMI_FNUM_DATA_CREATE			U(0x262)
 #define TMI_FNUM_DATA_DESTROY			U(0x263)
 #define TMI_FNUM_CVM_ACTIVATE			U(0x264)
 #define TMI_FNUM_CVM_CREATE			U(0x265)
 #define TMI_FNUM_CVM_DESTROY			U(0x266)
-#define TMI_FNUM_TEC_CREATE			U(0x27A)
-#define TMI_FNUM_TEC_DESTROY			U(0x27B)
-#define TMI_FNUM_TEC_ENTER			U(0x27C)
-#define TMI_FNUM_TTT_CREATE			U(0x27D)
-#define TMI_FNUM_TTT_MAP_UNPROTECTED		U(0x27F)
-#define TMI_FNUM_TTT_MAP_PROTECTED		U(0x280)
-#define TMI_FNUM_TTT_UNMAP_UNPROTECTED		U(0x282)
-#define TMI_FNUM_TTT_UNMAP_PROTECTED		U(0x283)
-#define TMI_FNUM_PSCI_COMPLETE			U(0x284)
-#define TMI_FNUM_FEATURES			U(0x285)
-#define TMI_FNUM_TTT_MAP_RANGE			U(0x286)
-#define TMI_FNUM_TTT_UNMAP_RANGE		U(0x287)
+#define TMI_FNUM_TEC_CREATE			U(0x267)
+#define TMI_FNUM_TEC_DESTROY			U(0x268)
+#define TMI_FNUM_TEC_ENTER			U(0x269)
+#define TMI_FNUM_TTT_CREATE			U(0x26A)
+#define TMI_FNUM_PSCI_COMPLETE			U(0x26B)
+#define TMI_FNUM_FEATURES			U(0x26C)
+#define TMI_FNUM_TTT_MAP_RANGE			U(0x26D)
+#define TMI_FNUM_TTT_UNMAP_RANGE		U(0x26E)
 
 /* TMI SMC64 PIDs handled by the SPMD */
-#define TMI_TMM_VESION				TMI_FID(SMC_64, TMI_FNUM_VERSION)
+#define TMI_TMM_VERSION_REQ			TMI_FID(SMC_64, TMI_FNUM_VERSION_REQ)
 #define TMI_TMM_DATA_CREATE			TMI_FID(SMC_64, TMI_FNUM_DATA_CREATE)
 #define TMI_TMM_DATA_DESTROY			TMI_FID(SMC_64, TMI_FNUM_DATA_DESTROY)
 #define TMI_TMM_CVM_ACTIVATE			TMI_FID(SMC_64, TMI_FNUM_CVM_ACTIVATE)
@@ -237,10 +233,6 @@ struct tmi_tec_run {
 #define TMI_TMM_TEC_DESTROY			TMI_FID(SMC_64, TMI_FNUM_TEC_DESTROY)
 #define TMI_TMM_TEC_ENTER			TMI_FID(SMC_64, TMI_FNUM_TEC_ENTER)
 #define TMI_TMM_TTT_CREATE			TMI_FID(SMC_64, TMI_FNUM_TTT_CREATE)
-#define TMI_TMM_TTT_MAP_UNPROTECTED		TMI_FID(SMC_64, TMI_FNUM_TTT_MAP_UNPROTECTED)
-#define TMI_TMM_TTT_MAP_PROTECTED		TMI_FID(SMC_64, TMI_FNUM_TTT_MAP_PROTECTED)
-#define TMI_TMM_TTT_UNMAP_UNPROTECTED		TMI_FID(SMC_64, TMI_FNUM_TTT_UNMAP_UNPROTECTED)
-#define TMI_TMM_TTT_UNMAP_PROTECTED		TMI_FID(SMC_64, TMI_FNUM_TTT_UNMAP_PROTECTED)
 #define TMI_TMM_PSCI_COMPLETE			TMI_FID(SMC_64, TMI_FNUM_PSCI_COMPLETE)
 #define TMI_TMM_FEATURES			TMI_FID(SMC_64, TMI_FNUM_FEATURES)
 #define TMI_TMM_MEM_INFO_SHOW			TMI_FID(SMC_64, TMI_FNUM_MEM_INFO_SHOW)
@@ -331,8 +323,6 @@ static inline bool is_armv8_4_sel2_present(void)
 			ID_AA64PFR0_SEL2_MASK) == 1UL;
 }
 
-u64 phys_to_cvm_phys(u64 phys);
-
 u64 tmi_version(void);
 u64 tmi_data_create(u64 data, u64 rd, u64 map_addr, u64 src, u64 level);
 u64 tmi_data_destroy(u64 rd, u64 map_addr, u64 level);
@@ -343,14 +333,10 @@ u64 tmi_tec_create(u64 numa_set, u64 rd, u64 mpidr, u64 params_ptr);
 u64 tmi_tec_destroy(u64 tec);
 u64 tmi_tec_enter(u64 tec, u64 run_ptr);
 u64 tmi_ttt_create(u64 numa_set, u64 rd, u64 map_addr, u64 level);
-u64 tmi_ttt_map_unprotected(u64 rd, u64 map_addr, u64 level, u64 ttte);
-u64 tmi_ttt_unmap_unprotected(u64 rd, u64 map_addr, u64 level, u64 ns);
-u64 tmi_ttt_unmap_protected(u64 rd, u64 map_addr, u64 level);
 u64 tmi_psci_complete(u64 calling_tec, u64 target_tec);
 u64 tmi_features(u64 index);
 u64 tmi_ttt_map_range(u64 rd, u64 map_addr, u64 size, u64 cur_node, u64 target_node);
 u64 tmi_ttt_unmap_range(u64 rd, u64 map_addr, u64 size, u64 node_id);
-
 u64 tmi_mem_info_show(u64 mem_info_addr);
 
 void kvm_cvm_vcpu_put(struct kvm_vcpu *vcpu);

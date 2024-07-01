@@ -10,7 +10,7 @@ u64 tmi_version(void)
 {
 	struct arm_smccc_res res;
 
-	arm_smccc_1_1_smc(TMI_TMM_VESION, &res);
+	arm_smccc_1_1_smc(TMI_TMM_VERSION_REQ, &res);
 	return res.a1;
 }
 
@@ -83,30 +83,6 @@ u64 tmi_ttt_create(u64 numa_set, u64 rd, u64 map_addr, u64 level)
 	struct arm_smccc_res res;
 
 	arm_smccc_1_1_smc(TMI_TMM_TTT_CREATE, numa_set, rd, map_addr, level, &res);
-	return res.a1;
-}
-
-u64 tmi_ttt_map_unprotected(u64 rd, u64 map_addr, u64 level, u64 ttte)
-{
-	struct arm_smccc_res res;
-
-	arm_smccc_1_1_smc(TMI_TMM_TTT_MAP_UNPROTECTED, rd, map_addr, level, ttte, &res);
-	return res.a1;
-}
-
-u64 tmi_ttt_unmap_unprotected(u64 rd, u64 map_addr, u64 level, u64 ns)
-{
-	struct arm_smccc_res res;
-
-	arm_smccc_1_1_smc(TMI_TMM_TTT_UNMAP_UNPROTECTED, rd, map_addr, level, ns, &res);
-	return res.a1;
-}
-
-u64 tmi_ttt_unmap_protected(u64 rd, u64 map_addr, u64 level)
-{
-	struct arm_smccc_res res;
-
-	arm_smccc_1_1_smc(TMI_TMM_TTT_UNMAP_PROTECTED, rd, map_addr, level, &res);
 	return res.a1;
 }
 

@@ -171,7 +171,6 @@ int kvm_arm_create_cvm(struct kvm *kvm)
 
 	pgd_sz = kvm_pgd_pages(pgt->ia_bits, pgt->start_level);
 
-	cvm->params->measurement_algo = 0;
 	cvm->params->ttt_level_start = kvm->arch.mmu.pgt->start_level;
 	cvm->params->ttt_num_start = pgd_sz;
 	cvm->params->s2sz = VTCR_EL2_IPA(kvm->arch.vtcr);
