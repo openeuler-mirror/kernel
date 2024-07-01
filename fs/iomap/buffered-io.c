@@ -1227,7 +1227,17 @@ static int iomap_write_delalloc_release(struct inode *inode,
 			error = data_end;
 			goto out_unlock;
 		}
-		WARN_ON_ONCE(data_end <= start_byte);
+
+		/*
+		 * Seek for data/hole in the page cache can race with drop
+		 * cache, if data page was dropped between seek for data and
+		 * hole, data_end may be equal to start_byte, just let it keep
+		 * seeking.
+		 */
+		if (data_end == start_byte)
+			continue;
+
+		WARN_ON_ONCE(data_end < start_byte);
 		WARN_ON_ONCE(data_end > scan_end_byte);
 
 		error = iomap_write_delalloc_scan(inode, &punch_start_byte,
