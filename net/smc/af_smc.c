@@ -628,6 +628,9 @@ static void smc_switch_to_fallback(struct smc_sock *smc)
 
 	clcsk = smc->clcsock->sk;
 
+	if (smc->use_fallback)
+		return;
+
 	smc->use_fallback = true;
 	if (smc->sk.sk_socket && smc->sk.sk_socket->file) {
 		smc->clcsock->file = smc->sk.sk_socket->file;
