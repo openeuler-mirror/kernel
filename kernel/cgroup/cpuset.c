@@ -3887,6 +3887,7 @@ int proc_cpuset_show(struct seq_file *m, struct pid_namespace *ns,
 	char *buf;
 	struct cgroup_subsys_state *css;
 	int retval;
+	struct cgroup *root_cgroup = NULL;
 
 	retval = -ENOMEM;
 	buf = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -3894,9 +3895,32 @@ int proc_cpuset_show(struct seq_file *m, struct pid_namespace *ns,
 		goto out;
 
 	css = task_get_css(tsk, cpuset_cgrp_id);
+	rcu_read_lock();
+	/*
+	 * When the cpuset subsystem is mounted on the legacy hierarchy,
+	 * the top_cpuset.css->cgroup does not hold a reference count of
+	 * cgroup_root.cgroup. This makes accessing css->cgroup very
+	 * dangerous because when the cpuset subsystem is remounted to the
+	 * default hierarchy, the cgroup_root.cgroup that css->cgroup points
+	 * to will be released, leading to a UAF issue. To avoid this problem,
+	 * get the reference count of top_cpuset.css->cgroup first.
+	 *
+	 * This is ugly!!
+	 */
+	if (css == &top_cpuset.css) {
+		root_cgroup = css->cgroup;
+		if (!css_tryget_online(&root_cgroup->self)) {
+			rcu_read_unlock();
+			retval = -EBUSY;
+			goto out_free;
+		}
+	}
+	rcu_read_unlock();
 	retval = cgroup_path_ns(css->cgroup, buf, PATH_MAX,
 				current->nsproxy->cgroup_ns);
 	css_put(css);
+	if (root_cgroup)
+		css_put(&root_cgroup->self);
 	if (retval >= PATH_MAX)
 		retval = -ENAMETOOLONG;
 	if (retval < 0)
