@@ -2278,12 +2278,21 @@ static int hclgevf_config_gro(struct hclgevf_dev *hdev)
 	return ret;
 }
 
+static int hclgevf_init_rss_tc_mode(struct hclgevf_dev *hdev, u16 rss_size)
+{
+	u16 tc_offset[HNAE3_MAX_TC] = {0};
+	u16 tc_valid[HNAE3_MAX_TC] = {0};
+	u16 tc_size[HNAE3_MAX_TC] = {0};
+
+	hclge_comm_get_rss_tc_info(rss_size, hdev->hw_tc_map,
+				   tc_offset, tc_valid, tc_size);
+	return hclge_comm_set_rss_tc_mode(&hdev->hw.hw, tc_offset, tc_valid,
+					  tc_size);
+}
+
 static int hclgevf_rss_init_hw(struct hclgevf_dev *hdev)
 {
 	struct hclge_comm_rss_cfg *rss_cfg = &hdev->rss_cfg;
-	u16 tc_offset[HCLGE_COMM_MAX_TC_NUM];
-	u16 tc_valid[HCLGE_COMM_MAX_TC_NUM];
-	u16 tc_size[HCLGE_COMM_MAX_TC_NUM];
 	int ret;
 
 	if (hdev->ae_dev->dev_version >= HNAE3_DEVICE_VERSION_V2) {
@@ -2303,11 +2312,7 @@ static int hclgevf_rss_init_hw(struct hclgevf_dev *hdev)
 	if (ret)
 		return ret;
 
-	hclge_comm_get_rss_tc_info(rss_cfg->rss_size, hdev->hw_tc_map,
-				   tc_offset, tc_valid, tc_size);
-
-	return hclge_comm_set_rss_tc_mode(&hdev->hw.hw, tc_offset,
-					  tc_valid, tc_size);
+	return hclgevf_init_rss_tc_mode(hdev, rss_cfg->rss_size);
 }
 
 static int hclgevf_init_vlan_config(struct hclgevf_dev *hdev)
@@ -3342,9 +3347,6 @@ static int hclgevf_set_channels(struct hnae3_handle *handle, u32 new_tqps_num,
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
 	struct hnae3_knic_private_info *kinfo = &handle->kinfo;
-	u16 tc_offset[HCLGE_COMM_MAX_TC_NUM];
-	u16 tc_valid[HCLGE_COMM_MAX_TC_NUM];
-	u16 tc_size[HCLGE_COMM_MAX_TC_NUM];
 	u16 cur_rss_size = kinfo->rss_size;
 	u16 cur_tqps = kinfo->num_tqps;
 	u32 *rss_indir;
@@ -3353,10 +3355,7 @@ static int hclgevf_set_channels(struct hnae3_handle *handle, u32 new_tqps_num,
 
 	hclgevf_update_rss_size(handle, new_tqps_num);
 
-	hclge_comm_get_rss_tc_info(kinfo->rss_size, hdev->hw_tc_map,
-				   tc_offset, tc_valid, tc_size);
-	ret = hclge_comm_set_rss_tc_mode(&hdev->hw.hw, tc_offset,
-					 tc_valid, tc_size);
+	ret = hclgevf_init_rss_tc_mode(hdev, kinfo->rss_size);
 	if (ret)
 		return ret;
 
