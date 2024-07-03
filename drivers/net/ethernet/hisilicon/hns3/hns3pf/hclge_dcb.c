@@ -509,6 +509,72 @@ static u8 hclge_setdcbx(struct hnae3_handle *h, u8 mode)
 	return 0;
 }
 
+static int hclge_ieee_getmaxrate(struct hnae3_handle *h,
+				 struct ieee_maxrate *maxrate)
+{
+	struct hnae3_tc_info *tc_info = &h->kinfo.tc_info;
+	struct hclge_vport *vport = hclge_get_vport(h);
+	struct hclge_dev *hdev = vport->back;
+
+	if (!hnae3_dev_roh_supported(hdev) &&
+	    !hnae3_dev_ubl_supported(hdev->ae_dev))
+		return -EOPNOTSUPP;
+
+	memcpy(maxrate, tc_info->max_rate, sizeof(struct ieee_maxrate));
+	return 0;
+}
+
+static int hclge_check_maxrate(struct hclge_dev *hdev,
+			       struct ieee_maxrate *maxrate)
+{
+	u64 max_speed = (u64)hdev->hw.mac.max_speed * TM_RATE_PORT_RATE_SCALE;
+	u8 i;
+
+	for (i = 0; i < HNAE3_MAX_TC; i++) {
+		/* no limit */
+		if (!maxrate->tc_maxrate[i])
+			continue;
+		if (maxrate->tc_maxrate[i] < TM_RATE_PORT_RATE_SCALE ||
+		    maxrate->tc_maxrate[i] > max_speed) {
+			dev_err(&hdev->pdev->dev,
+				"invalid max_rate[%llubps]: the range is [1Mbps, %uMbps]\n",
+				maxrate->tc_maxrate[i] * HCLGE_BYTE_BITS,
+				hdev->hw.mac.max_speed);
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
+static int hclge_ieee_setmaxrate(struct hnae3_handle *h,
+				 struct ieee_maxrate *maxrate)
+{
+	struct hnae3_tc_info *tc_info = &h->kinfo.tc_info;
+	struct hclge_vport *vport = hclge_get_vport(h);
+	struct hclge_dev *hdev = vport->back;
+	struct hnae3_tc_info old_tc_info;
+	int ret;
+
+	if (!hnae3_dev_roh_supported(hdev) &&
+	    !hnae3_dev_ubl_supported(hdev->ae_dev))
+		return -EOPNOTSUPP;
+
+	if (!(hdev->dcbx_cap & DCB_CAP_DCBX_VER_IEEE) || tc_info->mqprio_active)
+		return -EINVAL;
+
+	ret = hclge_check_maxrate(hdev, maxrate);
+	if (ret)
+		return ret;
+
+	memcpy(&old_tc_info, tc_info, sizeof(struct hnae3_tc_info));
+	memcpy(tc_info->max_rate, maxrate, sizeof(struct ieee_maxrate));
+	ret = hclge_tm_set_tc_rate_limit(hdev, tc_info);
+	if (ret)
+		memcpy(tc_info, &old_tc_info, sizeof(struct hnae3_tc_info));
+
+	return ret;
+}
+
 static int hclge_mqprio_qopt_check_rate(struct hclge_dev *hdev, u64 min_rate,
 					u64 max_rate)
 {
@@ -701,6 +767,8 @@ static const struct hnae3_dcb_ops hns3_dcb_ops = {
 	.getdcbx	= hclge_getdcbx,
 	.setdcbx	= hclge_setdcbx,
 	.setup_tc	= hclge_setup_tc,
+	.ieee_setmaxrate = hclge_ieee_setmaxrate,
+	.ieee_getmaxrate = hclge_ieee_getmaxrate,
 };
 
 void hclge_dcb_ops_set(struct hclge_dev *hdev)

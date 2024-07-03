@@ -12,4 +12,7 @@ void hclge_dcb_ops_set(struct hclge_dev *hdev);
 static inline void hclge_dcb_ops_set(struct hclge_dev *hdev) {}
 #endif
 
+#define HCLGE_BYTE_BITS		8ULL
+#define HCLGE_RATE_UNIT_MBPS	1000000ULL /* 1Mbps */
+
 #endif /* __HCLGE_DCB_H__ */

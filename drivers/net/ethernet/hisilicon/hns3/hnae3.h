@@ -879,6 +879,10 @@ struct hnae3_dcb_ops {
 	int (*ieee_setpfc)(struct hnae3_handle *, struct ieee_pfc *);
 	int (*ieee_setapp)(struct hnae3_handle *h, struct dcb_app *app);
 	int (*ieee_delapp)(struct hnae3_handle *h, struct dcb_app *app);
+	int (*ieee_setmaxrate)(struct hnae3_handle *h,
+			       struct ieee_maxrate *maxrate);
+	int (*ieee_getmaxrate)(struct hnae3_handle *h,
+			       struct ieee_maxrate *maxrate);
 
 	/* DCBX configuration */
 	u8   (*getdcbx)(struct hnae3_handle *);
