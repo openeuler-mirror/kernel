@@ -4,6 +4,8 @@
 #include "../../arch/s390/include/uapi/asm/bpf_perf_event.h"
 #elif defined(__riscv)
 #include "../../arch/riscv/include/uapi/asm/bpf_perf_event.h"
+#elif defined(__sw_64__)
+#include "../../arch/sw_64/include/uapi/asm/bpf_perf_event.h"
 #else
 #include <uapi/asm-generic/bpf_perf_event.h>
 #endif
