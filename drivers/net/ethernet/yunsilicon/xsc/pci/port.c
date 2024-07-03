@@ -211,6 +211,8 @@ int xsc_query_module_eeprom(struct xsc_core_device *dev,
 	case XSC_MODULE_ID_QSFP:
 	case XSC_MODULE_ID_QSFP_PLUS:
 	case XSC_MODULE_ID_QSFP28:
+	case XSC_MODULE_ID_QSFP_DD:
+	case XSC_MODULE_ID_QSFP_PLUS_CMIS:
 		xsc_qsfp_eeprom_params_set(&query.i2c_address, &query.page, &offset);
 		break;
 	default:
@@ -228,3 +230,47 @@ int xsc_query_module_eeprom(struct xsc_core_device *dev,
 	return xsc_query_mcia(dev, &query, data);
 }
 EXPORT_SYMBOL_GPL(xsc_query_module_eeprom);
+
+int xsc_query_module_eeprom_by_page(struct xsc_core_device *dev,
+				    struct xsc_module_eeprom_query_params *params,
+				    u8 *data)
+{
+	u8 module_id;
+	int err;
+
+	err = xsc_query_module_num(dev, &params->module_number);
+	if (err)
+		return err;
+
+	err = xsc_query_module_id(dev, params->module_number, &module_id);
+	if (err)
+		return err;
+
+	switch (module_id) {
+	case XSC_MODULE_ID_SFP:
+		if (params->page > 0)
+			return -EINVAL;
+		break;
+	case XSC_MODULE_ID_QSFP:
+	case XSC_MODULE_ID_QSFP28:
+	case XSC_MODULE_ID_QSFP_PLUS:
+		if (params->page > 3)
+			return -EINVAL;
+		break;
+	case XSC_MODULE_ID_DSFP:
+		break;
+	default:
+		xsc_core_err(dev, "Module ID not recognized: 0x%x\n", module_id);
+		return -EINVAL;
+	}
+
+	if (params->i2c_address != XSC_I2C_ADDR_HIGH &&
+	    params->i2c_address != XSC_I2C_ADDR_LOW) {
+		xsc_core_err(dev, "I2C address not recognized: 0x%x\n", params->i2c_address);
+		return -EINVAL;
+	}
+
+	return xsc_query_mcia(dev, params, data);
+}
+EXPORT_SYMBOL_GPL(xsc_query_module_eeprom_by_page);
+

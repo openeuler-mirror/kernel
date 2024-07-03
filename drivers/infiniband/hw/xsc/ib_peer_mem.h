@@ -33,8 +33,6 @@ struct ib_peer_memory_client {
 	struct mutex lock;
 	struct list_head   core_ticket_list;
 	u64	last_ticket;
-	struct kobject *kobj;
-	struct attribute_group peer_mem_attr_group;
 	struct ib_peer_memory_statistics stats;
 };
 

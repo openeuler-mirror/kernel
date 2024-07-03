@@ -6,7 +6,9 @@
 
 #include <linux/sched/mm.h>
 
+#ifndef MLX_PEER_SUPPORT
 #include "ib_peer_mem.h"
+#endif
 
 #include <rdma/ib_verbs.h>
 #include "ib_umem_ex.h"
@@ -88,12 +90,16 @@ struct ib_umem_ex *ib_umem_ex(struct ib_umem *umem)
 	if (!umem)
 		return ERR_PTR(-EINVAL);
 
+#ifndef MLX_PEER_SUPPORT
 	ret_umem =  kzalloc(sizeof(*ret_umem), GFP_KERNEL);
 	if (!ret_umem)
 		return ERR_PTR(-ENOMEM);
 
 	ret_umem->umem = *umem;
 	kfree(umem);
+#else
+	ret_umem = (struct ib_umem_ex *)umem;
+#endif
 	return ret_umem;
 }
 

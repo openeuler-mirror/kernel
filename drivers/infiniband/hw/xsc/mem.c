@@ -75,7 +75,12 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 	int pa_index;
 	u64 chunk_pa;
 	int chunk_npages;
+#if defined(HAVE_IB_MEM_PAGE_SHIFT)
+	// In some ubuntu kernels, umem page shift maybe 0 for host memory
+	unsigned long page_shift = umem->page_shift != 0 ? umem->page_shift : PAGE_SHIFT;
+#else
 	unsigned long page_shift = PAGE_SHIFT;
+#endif
 
 	pgsz_bitmap &= GENMASK(BITS_PER_LONG - 1, 0);
 
@@ -90,7 +95,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 	list_add_tail(&chunk->list, &chunk_list);
 
 	chunk_cnt = 1;
-	for_each_sg(umem->sgt_append.sgt.sgl, sg, umem->sgt_append.sgt.nents, i) {
+	for_each_sgtable_dma_sg(&umem->sgt_append.sgt, sg, i) {
 		pa = sg_dma_address(sg);
 		if (i == 0) {
 			chunk->va = va;
@@ -102,7 +107,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 
 		if (pa == chunk->pa + chunk->length) {
 			chunk->length += sg_dma_len(sg);
-			va += chunk->length;
+			va += sg_dma_len(sg);
 		} else {
 			chunk = kzalloc(sizeof(*chunk), GFP_KERNEL);
 			if (!chunk) {
@@ -135,7 +140,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 
 	if (chunk_cnt == 1) {
 		list_for_each_entry(chunk, &chunk_list, list) {
-			mask = GENMASK(*shift - 1, min_t(int, page_shift, *shift - 1));
+			mask = GENMASK(*shift - 1, min_t(int, page_shift, *shift));
 			*npages += DIV_ROUND_UP(chunk->length + (virt & mask), pgsz);
 			*pas = vmalloc(*npages * sizeof(u64));
 			if (!*pas) {
@@ -165,7 +170,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 			for (i = 0; i < chunk_npages; i++) {
 				if (pa_index == 0) {
 					mask = GENMASK(*shift - 1,
-						       min_t(int, page_shift, *shift - 1));
+						       min_t(int, page_shift, *shift));
 					chunk_pa -= (virt & mask);
 				}
 				(*pas)[pa_index] = chunk_pa + i * pgsz;
@@ -202,6 +207,7 @@ void __xsc_ib_cont_pages(struct ib_umem *umem, u64 addr,
 	int i = 0;
 	struct scatterlist *sg;
 	int entry;
+	// TODO: need peer mem support
 	unsigned long page_shift = PAGE_SHIFT;
 
 	addr = addr >> page_shift;
@@ -209,7 +215,7 @@ void __xsc_ib_cont_pages(struct ib_umem *umem, u64 addr,
 	m = find_first_bit(&tmp, BITS_PER_LONG);
 	if (max_page_shift)
 		m = min_t(unsigned long, max_page_shift - page_shift, m);
-	for_each_sg(umem->sgt_append.sgt.sgl, sg, umem->sgt_append.sgt.nents, entry) {
+	for_each_sgtable_dma_sg(&umem->sgt_append.sgt, sg, entry) {
 		len = sg_dma_len(sg) >> page_shift;
 		pfn = sg_dma_address(sg) >> page_shift;
 		if (base + p != pfn) {
@@ -251,6 +257,7 @@ void xsc_ib_cont_pages(struct ib_umem *umem, u64 addr,
 		       int *count, int *shift,
 		       int *ncont, int *order)
 {
+	// no limit for page_shift
 	__xsc_ib_cont_pages(umem, addr, 0, count, shift, ncont, order);
 }
 
@@ -269,7 +276,7 @@ void __xsc_ib_populate_pas(struct xsc_ib_dev *dev, struct ib_umem *umem,
 	struct scatterlist *sg;
 	int entry;
 
-	for_each_sg(umem->sgt_append.sgt.sgl, sg, umem->sgt_append.sgt.nents, entry) {
+	for_each_sgtable_dma_sg(&umem->sgt_append.sgt, sg, entry) {
 		len = sg_dma_len(sg) >> umem_page_shift;
 		if (need_to_devide)
 			len = sg_dma_len(sg) >> PAGE_SHIFT_4K;

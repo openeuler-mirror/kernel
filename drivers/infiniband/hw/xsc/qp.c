@@ -298,6 +298,7 @@ static int create_user_qp(struct xsc_ib_dev *dev, struct ib_pd *pd,
 	xsc_ib_cont_pages(qp->umem, ucmd.buf_addr, &npages, &page_shift,
 			  &ncont, NULL);
 	if (ncont != npages) {
+		// TODO: peer memory support failed
 		page_shift = PAGE_SHIFT;
 		ncont = npages;
 	}
@@ -342,6 +343,7 @@ static void destroy_qp_user(struct ib_pd *pd, struct xsc_ib_qp *qp)
 
 	context = to_xucontext(pd->uobject->context);
 	ib_umem_release(qp->umem);
+
 }
 
 #define MAX_QP1_SQ_HDR_SIZE_V2	512
@@ -411,9 +413,9 @@ static int create_kernel_qp(struct xsc_ib_dev *dev,
 		qp->sq.mad_queue_depth = MAD_QUEUE_DEPTH;
 		qp->sq.hdr_size = MAX_QP1_SQ_HDR_SIZE_V2 * MAD_QUEUE_DEPTH;
 		qp->sq.hdr_buf = dma_alloc_coherent(dev->ib_dev.dma_device,
-						       qp->sq.hdr_size,
-						       &qp->sq.hdr_dma,
-						       GFP_KERNEL);
+						    qp->sq.hdr_size,
+						    &qp->sq.hdr_dma,
+						    GFP_KERNEL);
 		if (!qp->sq.hdr_buf) {
 			err = -ENOMEM;
 			xsc_ib_err(dev, "Failed to create sq_hdr_buf");
@@ -439,7 +441,7 @@ static void destroy_qp_kernel(struct xsc_ib_dev *dev, struct xsc_ib_qp *qp)
 {
 	if (qp->sq.hdr_buf)
 		dma_free_coherent(dev->ib_dev.dma_device, qp->sq.hdr_size,
-				     qp->sq.hdr_buf, qp->sq.hdr_dma);
+				  qp->sq.hdr_buf, qp->sq.hdr_dma);
 	kfree(qp->sq.wqe_head);
 	kfree(qp->sq.w_list);
 	kfree(qp->sq.wrid);
@@ -574,7 +576,6 @@ static int create_qp_common(struct xsc_ib_dev *dev, struct ib_pd *pd,
 	if (in->req.qp_type == XSC_QUEUE_TYPE_INVALID)
 		goto err_create;
 	in->req.glb_funcid = cpu_to_be16(dev->xdev->glb_func_id);
-	in->req.logic_port = cpu_to_be16(dev->xdev->logic_port);
 
 	qp->xqp.qp_type_internal = in->req.qp_type;
 
@@ -765,7 +766,6 @@ int xsc_ib_create_qp(struct ib_qp *ibqp,
 	struct xsc_ib_qp *qp;
 	struct ib_pd *pd = ibqp->pd;
 	int err;
-
 	qp = to_xqp(ibqp);
 	if (pd) {
 		dev = to_mdev(pd->device);
@@ -1004,7 +1004,7 @@ static int __xsc_ib_modify_qp(struct ib_qp *ibqp,
 							LAG_PORT_NUM_OFFSET) %
 							lag_port_num;
 			else
-				context->lag_sel = qp->xqp.qpn % XSC_MAX_PORTS;
+				context->lag_sel = (ldev->lag_cnt++) % XSC_MAX_PORTS;
 		}
 	}
 
@@ -1132,23 +1132,6 @@ static int xsc_wq_overflow(struct xsc_ib_wq *wq, int nreq, struct xsc_ib_cq *cq)
 	return cur + nreq >= wq->max_post;
 }
 
-#ifdef XSC_DEBUG
-static void dump_wqe(struct xsc_ib_qp *qp, int idx)
-{
-	struct xsc_send_wqe_ctrl_seg *seg;
-	struct xsc_ib_dev *dev = to_mdev(qp->ibqp.device);
-	u32 *p = NULL;
-	int i;
-
-	seg = xsc_get_send_wqe(qp, idx);
-	xsc_ib_dbg(dev, "current wqe:%p index:%d\n", seg, idx);
-	for (i = 0; i < 4; i++) {
-		p = (u32 *)get_seg_wqe(seg, i);
-		xsc_ib_dbg(dev, "%08x %08x %08x %08x\n", p[0], p[1], p[2], p[3]);
-	}
-}
-#endif
-
 static inline void xsc_post_send_db(struct xsc_ib_qp *qp,
 				    struct xsc_core_device *xdev,
 				    int nreq)
@@ -1275,6 +1258,7 @@ u32 xsc_icrc_hdr(struct xsc_ib_dev *dev, void *pkt, u32 size, u32 *icrc)
 
 /* Routine for sending QP1 packets for RoCE V1 an V2
  */
+ // TO BE DONE: sq hdr buf should be create dynamically for mult entry
 int build_qp1_send_v2(struct xsc_ib_dev *dev,
 		      struct xsc_ib_qp *qp,
 		      const struct ib_send_wr *wr,
@@ -1350,11 +1334,25 @@ int build_qp1_send_v2(struct xsc_ib_dev *dev,
 		qp->qp1_hdr.vlan.tag = cpu_to_be16(vlan_id | cm_pcp);
 	}
 
+#define ECN_CAPABLE_TRANSPORT 0x2
+	if (is_grh || ip_version == 6) {
+		memcpy(qp->qp1_hdr.grh.source_gid.raw, sgid_attr->gid.raw,
+		       sizeof(sgid_attr->gid));
+		memcpy(qp->qp1_hdr.grh.destination_gid.raw, ah->av.rgid,
+		       sizeof(ah->av.rgid));
+		qp->qp1_hdr.grh.hop_limit     = ah->av.hop_limit;
+
+		if (dev->cm_dscp != DSCP_PCP_UNSET)
+			qp->qp1_hdr.grh.traffic_class = (dev->cm_dscp << 2) | ECN_CAPABLE_TRANSPORT;
+		else
+			qp->qp1_hdr.grh.traffic_class = ECN_CAPABLE_TRANSPORT;
+	}
+
 	if (ip_version == 4) {
 		if (dev->cm_dscp != DSCP_PCP_UNSET)
-			qp->qp1_hdr.ip4.tos = dev->cm_dscp << 2;
+			qp->qp1_hdr.ip4.tos = (dev->cm_dscp << 2) | ECN_CAPABLE_TRANSPORT;
 		else
-			qp->qp1_hdr.ip4.tos = 0;
+			qp->qp1_hdr.ip4.tos = ECN_CAPABLE_TRANSPORT;
 		qp->qp1_hdr.ip4.id = 0;
 		qp->qp1_hdr.ip4.frag_off = htons(IP_DF);
 		qp->qp1_hdr.ip4.ttl = ah->av.hop_limit;
@@ -1646,9 +1644,6 @@ int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
 		qp->sq.wrid[idx] = wr->wr_id;
 		qp->sq.wqe_head[idx] = qp->sq.head + nreq;
 		qp->sq.cur_post += 1;
-#ifdef XSC_DEBUG
-		dump_wqe(qp, idx);
-#endif
 	}
 out:
 	xsc_ib_dbg(dev, "nreq:%d\n", nreq);

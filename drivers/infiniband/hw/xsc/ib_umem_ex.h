@@ -15,14 +15,17 @@ struct invalidation_ctx;
 // ib umem ex ib_umem add peer memory support
 struct ib_umem_ex {
 	struct ib_umem umem;
+#ifndef MLX_PEER_SUPPORT
 	struct ib_peer_memory_client *ib_peer_mem;
 	struct invalidation_ctx *invalidation_ctx;
 	void *peer_mem_client_context;
+#endif
 };
 
 // expand ib_umem to ib_umem_ex by reallocate
 struct ib_umem_ex *ib_umem_ex(struct ib_umem *umem);
 
+#ifndef MLX_PEER_SUPPORT
 typedef void (*umem_invalidate_func_t)(void *invalidation_cookie,
 	struct ib_umem_ex *umem_ex, unsigned long addr, size_t size);
 
@@ -36,6 +39,7 @@ struct invalidation_ctx {
 	int peer_invalidated;
 	struct completion comp;
 };
+#endif
 
 struct ib_umem_ex *ib_client_umem_get(struct ib_ucontext *context,
 				      unsigned long addr, size_t size, int access,

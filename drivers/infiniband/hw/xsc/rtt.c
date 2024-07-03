@@ -272,8 +272,8 @@ static ssize_t stats_show(struct xsc_rtt_interface *g, struct xsc_rtt_attributes
 		__be64_to_cpu(out.stats.rtt_rcv_rsp_cnt));
 	count += sprintf(&buf[count], "rtt_rcv_unk_cnt      %llu\n",
 		__be64_to_cpu(out.stats.rtt_rcv_unk_cnt));
-	count += sprintf(&buf[count], "rtt_grp_invalid_cnt  %llu\n",
-		__be64_to_cpu(out.stats.rtt_grp_invalid_cnt));
+	count += sprintf(&buf[count], "rtt_grp_invaild_cnt  %llu\n",
+		__be64_to_cpu(out.stats.rtt_grp_invaild_cnt));
 
 	return count;
 }

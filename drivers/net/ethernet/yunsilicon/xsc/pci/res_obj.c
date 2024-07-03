@@ -7,6 +7,8 @@
 #include "common/xsc_ioctl.h"
 #include "common/xsc_hsi.h"
 #include "common/xsc_cmd.h"
+#include "common/qp.h"
+#include "common/driver.h"
 
 static int xsc_alloc_obj(struct xsc_res_obj *obj, struct xsc_bdf_file *file,
 			 void (*release_func)(void *), unsigned long key,
@@ -264,12 +266,9 @@ static void xsc_send_cmd_2rst_qp(struct xsc_core_device *xdev, unsigned int qpn)
 	struct xsc_modify_qp_mbox_out out;
 	int ret;
 
-	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_2RST_QP);
-	in.qpn = cpu_to_be32(qpn);
-	in.no_need_wait = 0;
-	ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
-	if (ret || out.hdr.status != 0)
-		xsc_core_err(xdev, "failed to modify qp %d to rst\n", qpn);
+	ret = xsc_modify_qp(xdev, &in, &out, qpn, XSC_CMD_OP_2RST_QP);
+	if (ret)
+		xsc_core_err(xdev, "failed to reset qp %u\n", qpn);
 }
 
 static void xsc_send_cmd_destroy_qp(struct xsc_core_device *xdev, unsigned int qpn)

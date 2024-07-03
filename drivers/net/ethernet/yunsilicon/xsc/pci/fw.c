@@ -32,25 +32,15 @@ int xsc_cmd_query_psv_funcid(struct xsc_core_device *dev,
 		goto out_out;
 	}
 
-	/* accordence to xsc_core.h funcid[n] order must be:
-	 * 0: pcie0_vf_begin
-	 * 1: pcie0_vf_end
-	 * 2: pcie0_pf_begin
-	 * 3: pcie0_pf_end
-	 * 4: pcie1_vf_begin
-	 * 5: pcie1_vf_end
-	 * 6: pcie1_pf_begin
-	 * 7: pcie1_pf_end
-	 */
-	caps->funcid[0] = be16_to_cpu(out->hca_cap.funcid[0]);//pcie0_vf_begin
-	caps->funcid[1] = be16_to_cpu(out->hca_cap.funcid[1]);//pcie0_vf_end
-	caps->funcid[2] = be16_to_cpu(out->hca_cap.funcid[2]);//pcie0_pf_begin
-	caps->funcid[3] = be16_to_cpu(out->hca_cap.funcid[3]);//pcie0_pf_end
-	caps->funcid[4] = be16_to_cpu(out->hca_cap.funcid[4]);//pcie1_vf_begin
-	caps->funcid[5] = be16_to_cpu(out->hca_cap.funcid[5]);//pcie1_vf_end
-	caps->funcid[6] = be16_to_cpu(out->hca_cap.funcid[6]);//pcie1_pf_begin
-	caps->funcid[7] = be16_to_cpu(out->hca_cap.funcid[7]);//pcie1_pf_end
-	caps->funcid_valid = 1;
+	caps->pf0_vf_funcid_base = be16_to_cpu(out->hca_cap.pf0_vf_funcid_base);
+	caps->pf0_vf_funcid_top  = be16_to_cpu(out->hca_cap.pf0_vf_funcid_top);
+	caps->pf1_vf_funcid_base = be16_to_cpu(out->hca_cap.pf1_vf_funcid_base);
+	caps->pf1_vf_funcid_top  = be16_to_cpu(out->hca_cap.pf1_vf_funcid_top);
+	caps->pcie0_pf_funcid_base     = be16_to_cpu(out->hca_cap.pcie0_pf_funcid_base);
+	caps->pcie0_pf_funcid_top      = be16_to_cpu(out->hca_cap.pcie0_pf_funcid_top);
+	caps->pcie1_pf_funcid_base     = be16_to_cpu(out->hca_cap.pcie1_pf_funcid_base);
+	caps->pcie1_pf_funcid_top      = be16_to_cpu(out->hca_cap.pcie1_pf_funcid_top);
+	caps->pcie_host = out->hca_cap.pcie_host;
 
 out_out:
 	kfree(out);
@@ -64,6 +54,8 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 {
 	struct xsc_cmd_query_hca_cap_mbox_out *out;
 	struct xsc_cmd_query_hca_cap_mbox_in in;
+	//struct xsc_query_special_ctxs_mbox_out ctx_out;
+	//struct xsc_query_special_ctxs_mbox_in ctx_in;
 	int err;
 	u16 t16;
 
@@ -74,9 +66,8 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_HCA_CAP);
 	in.hdr.opmod  = cpu_to_be16(0x1);
-#ifdef XSC_MSIX_BAR_EMUL
 	in.cpu_num = cpu_to_be16(num_online_cpus());
-#endif
+
 	err = xsc_cmd_exec(dev, &in, sizeof(in), out, sizeof(*out));
 	if (err)
 		goto out_out;
@@ -87,34 +78,24 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	}
 
 	dev->glb_func_id = be32_to_cpu(out->hca_cap.glb_func_id);
-
-	/* accordence to xsc_core.h funcid[n] order must be:
-	 * 0: pcie0_vf_begin
-	 * 1: pcie0_vf_end
-	 * 2: pcie0_pf_begin
-	 * 3: pcie0_pf_end
-	 * 4: pcie1_vf_begin
-	 * 5: pcie1_vf_end
-	 * 6: pcie1_pf_begin
-	 * 7: pcie1_pf_end
-	 */
-	caps->funcid[0] = be16_to_cpu(out->hca_cap.funcid[0]);//pcie0_vf_begin
-	caps->funcid[1] = be16_to_cpu(out->hca_cap.funcid[1]);//pcie0_vf_end
-	caps->funcid[2] = be16_to_cpu(out->hca_cap.funcid[2]);//pcie0_pf_begin
-	caps->funcid[3] = be16_to_cpu(out->hca_cap.funcid[3]);//pcie0_pf_end
-	caps->funcid[4] = be16_to_cpu(out->hca_cap.funcid[4]);//pcie1_vf_begin
-	caps->funcid[5] = be16_to_cpu(out->hca_cap.funcid[5]);//pcie1_vf_end
-	caps->funcid[6] = be16_to_cpu(out->hca_cap.funcid[6]);//pcie1_pf_begin
-	caps->funcid[7] = be16_to_cpu(out->hca_cap.funcid[7]);//pcie1_pf_end
-	caps->funcid_valid = 1;
+	caps->pf0_vf_funcid_base = be16_to_cpu(out->hca_cap.pf0_vf_funcid_base);
+	caps->pf0_vf_funcid_top  = be16_to_cpu(out->hca_cap.pf0_vf_funcid_top);
+	caps->pf1_vf_funcid_base = be16_to_cpu(out->hca_cap.pf1_vf_funcid_base);
+	caps->pf1_vf_funcid_top  = be16_to_cpu(out->hca_cap.pf1_vf_funcid_top);
+	caps->pcie0_pf_funcid_base = be16_to_cpu(out->hca_cap.pcie0_pf_funcid_base);
+	caps->pcie0_pf_funcid_top  = be16_to_cpu(out->hca_cap.pcie0_pf_funcid_top);
+	caps->pcie1_pf_funcid_base = be16_to_cpu(out->hca_cap.pcie1_pf_funcid_base);
+	caps->pcie1_pf_funcid_top  = be16_to_cpu(out->hca_cap.pcie1_pf_funcid_top);
+	caps->funcid_to_logic_port = be16_to_cpu(out->hca_cap.funcid_to_logic_port);
 	if (xsc_core_is_pf(dev)) {
-		xsc_core_dbg(dev, "pcie0_vf_range=(%4u, %4u), pcie0_pf_begin=(%4u, %4u)\n",
-			     caps->funcid[0], caps->funcid[1],
-			     caps->funcid[2], caps->funcid[3]);
-		xsc_core_dbg(dev, "pcie1_vf_range=(%4u, %4u), pcie1_pf_begin=(%4u, %4u)\n",
-			     caps->funcid[4], caps->funcid[5],
-			     caps->funcid[6], caps->funcid[7]);
+		xsc_core_dbg(dev, "pf0_vf_range(%4u, %4u), pf1_vf_range(%4u, %4u)\n",
+			     caps->pf0_vf_funcid_base, caps->pf0_vf_funcid_top,
+			     caps->pf1_vf_funcid_base, caps->pf1_vf_funcid_top);
+		xsc_core_dbg(dev, "pcie0_pf_range=(%4u, %4u), pcie1_pf_range=(%4u, %4u)\n",
+			     caps->pcie0_pf_funcid_base, caps->pcie0_pf_funcid_top,
+			     caps->pcie1_pf_funcid_base, caps->pcie1_pf_funcid_top);
 	}
+	caps->pcie_host = out->hca_cap.pcie_host;
 	caps->nif_port_num = out->hca_cap.nif_port_num;
 	caps->hw_feature_flag = be32_to_cpu(out->hca_cap.hw_feature_flag);
 
@@ -133,8 +114,8 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	caps->log_max_cq = out->hca_cap.log_max_cq & 0x1f;
 	caps->log_max_eq = out->hca_cap.log_max_eq & 0xf;
 	caps->log_max_msix = out->hca_cap.log_max_msix & 0xf;
-	caps->max_num_eqs = out->hca_cap.max_num_eqs & 0xff;
 	caps->mac_port = out->hca_cap.mac_port & 0xff;
+	dev->mac_port = caps->mac_port;
 	if (caps->num_ports > XSC_MAX_FW_PORTS) {
 		xsc_core_err(dev, "device has %d ports while the driver supports max %d ports\n",
 			     caps->num_ports, XSC_MAX_FW_PORTS);
@@ -148,10 +129,8 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 
 	caps->embedded_cpu = 0;
 	caps->ecpf_vport_exists = 0;
-#ifdef CONFIG_XSC_ESWITCH
 	caps->eswitch_manager = 1;
 	caps->vport_group_manager = 1;
-#endif
 	caps->log_max_current_uc_list = 0;
 	caps->log_max_current_mc_list = 0;
 	caps->log_max_vlan_list = 8;
@@ -182,10 +161,9 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 #else
 	caps->msix_enable = 0;
 #endif
-#ifdef XSC_MSIX_BAR_EMUL
+
 	caps->msix_base = be16_to_cpu(out->hca_cap.msix_base);
 	caps->msix_num = be16_to_cpu(out->hca_cap.msix_num);
-#endif
 
 	t16 = be16_to_cpu(out->hca_cap.bf_log_bf_reg_size);
 	if (t16 & 0x8000) {
@@ -203,6 +181,7 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	caps->dscp = 1;
 	caps->max_tc = out->hca_cap.max_tc;
 	caps->log_max_qp_depth = out->hca_cap.log_max_qp_depth & 0xff;
+	caps->mac_bit = out->hca_cap.mac_bit;
 
 	dev->chip_ver_h = be32_to_cpu(out->hca_cap.chip_ver_h);
 	dev->chip_ver_m = be32_to_cpu(out->hca_cap.chip_ver_m);
@@ -220,6 +199,11 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 		dev->regs.event_db = be64_to_cpu(out->hca_cap.event_db);
 	}
 
+	dev->fw_version_major = out->hca_cap.fw_ver.fw_version_major;
+	dev->fw_version_minor = out->hca_cap.fw_ver.fw_version_minor;
+	dev->fw_version_patch = be16_to_cpu(out->hca_cap.fw_ver.fw_version_patch);
+	dev->fw_version_tweak = be32_to_cpu(out->hca_cap.fw_ver.fw_version_tweak);
+	dev->fw_version_extra_flag = out->hca_cap.fw_ver.fw_version_extra_flag;
 out_out:
 	kfree(out);
 
@@ -235,14 +219,11 @@ int xsc_cmd_enable_hca(struct xsc_core_device *dev, u16 vf_num, u16 max_msix)
 	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_ENABLE_HCA);
-	in.pf = dev->pf;
-	in.pcie = g_xsc_pcie_no;
-	in.pf_id = dev->pf_id;
 
 	in.vf_num = cpu_to_be16(vf_num);
 	in.max_msix_vec = cpu_to_be16(max_msix);
 	in.cpu_num = cpu_to_be16(num_online_cpus());
-	in.pp_bypass = xsc_get_pp_bypass_res(dev);
+	in.pp_bypass = xsc_get_pp_bypass_res(dev, false);
 	in.esw_mode = xsc_get_eswitch_mode(dev);
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
@@ -265,11 +246,8 @@ int xsc_cmd_disable_hca(struct xsc_core_device *dev, u16 vf_num)
 	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DISABLE_HCA);
-	in.pf = dev->pf;
-	in.pcie = g_xsc_pcie_no;
-	in.pf_id = dev->pf_id;
 	in.vf_num = cpu_to_be16(vf_num);
-	in.pp_bypass = xsc_get_pp_bypass_res(dev);
+	in.pp_bypass = xsc_get_pp_bypass_res(dev, false);
 	in.esw_mode = xsc_get_eswitch_mode(dev);
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
@@ -291,10 +269,7 @@ int xsc_cmd_modify_hca(struct xsc_core_device *dev)
 	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_HCA);
-	in.pf = dev->pf;
-	in.pcie = g_xsc_pcie_no;
-	in.pf_id = dev->pf_id;
-	in.pp_bypass = xsc_get_pp_bypass_res(dev);
+	in.pp_bypass = xsc_get_pp_bypass_res(dev, true);
 	in.esw_mode = xsc_get_eswitch_mode(dev);
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));

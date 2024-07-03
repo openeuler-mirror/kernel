@@ -88,8 +88,6 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 	int ret = 0;
 	struct xsc_ioctl_data_tl *tl = (struct xsc_ioctl_data_tl *)out;
 	struct xsc_ioctl_get_phy_info_res *resp;
-	struct xsc_ioctl_get_vf_info_res *vf_res;
-	struct xsc_vf_info vf_info;
 	struct xsc_lag *ldev = xsc_lag_dev_get(xdev);
 	u16 lag_id = U16_MAX;
 	struct xsc_core_device *rl_xdev;
@@ -101,11 +99,11 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 	case XSC_IOCTL_OP_GET_LOCAL:
 		resp = (struct xsc_ioctl_get_phy_info_res *)(tl + 1);
 
-		resp->phy_port = xdev->pcie_port;
+		resp->pcie_no = xdev->pcie_no;
 		resp->func_id = xdev->glb_func_id;
-		resp->logic_in_port = xdev->logic_port;
+		resp->pcie_host = xdev->caps.pcie_host;
 		resp->mac_phy_port = xdev->mac_port;
-		resp->mac_logic_in_port = xdev->mac_logic_port;
+		resp->funcid_to_logic_port_off = xdev->caps.funcid_to_logic_port;
 		resp->lag_id = lag_id;
 		resp->raw_qp_id_base = xdev->caps.raweth_qp_id_base;
 		resp->raw_rss_qp_id_base = xdev->caps.raweth_rss_qp_id_base;
@@ -121,28 +119,20 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 		resp->pct_compress_vld =
 				(xdev->feature_flag & FEATURE_PCT_EXP_MASK) ? 1 : 0;
 
-		xsc_core_dbg(xdev, "BY_LOCAL:%d,%d,%d,%d,%d,%d\n", resp->phy_port,
-			     resp->func_id, resp->logic_in_port,
-			     resp->mac_phy_port, resp->mac_logic_in_port,
-			     resp->lag_id);
-		resp->funcid[0] = xdev->caps.funcid[0];
-		resp->funcid[1] = xdev->caps.funcid[1];
-		resp->funcid[2] = xdev->caps.funcid[2];
-		resp->funcid[3] = xdev->caps.funcid[3];
-		resp->funcid[4] = xdev->caps.funcid[4];
-		resp->funcid[5] = xdev->caps.funcid[5];
-		resp->funcid[6] = xdev->caps.funcid[6];
-		resp->funcid[7] = xdev->caps.funcid[7];
-		break;
-
-	case XSC_IOCTL_OP_GET_VF_INFO:
-		vf_res = (struct xsc_ioctl_get_vf_info_res *)(tl + 1);
-		memcpy(&vf_info, vf_res, sizeof(struct xsc_vf_info));
-
-		xsc_pci_get_vf_info(xdev, &vf_info);
-
-		vf_res->func_id = vf_info.func_id;
-		vf_res->logic_port = vf_info.logic_port;
+		xsc_core_dbg(xdev, "%d,%d,%d,%d,%d,%d\n",
+			     resp->pcie_no, resp->func_id, resp->pcie_host,
+			     resp->mac_phy_port, resp->lag_id,
+			     resp->funcid_to_logic_port_off);
+		resp->pf0_vf_funcid_base = xdev->caps.pf0_vf_funcid_base;
+		resp->pf0_vf_funcid_top  = xdev->caps.pf0_vf_funcid_top;
+		resp->pf1_vf_funcid_base = xdev->caps.pf1_vf_funcid_base;
+		resp->pf1_vf_funcid_top  = xdev->caps.pf1_vf_funcid_top;
+		resp->pcie0_pf_funcid_base = xdev->caps.pcie0_pf_funcid_base;
+		resp->pcie0_pf_funcid_top = xdev->caps.pcie0_pf_funcid_top;
+		resp->pcie1_pf_funcid_base = xdev->caps.pcie1_pf_funcid_base;
+		resp->pcie1_pf_funcid_top = xdev->caps.pcie1_pf_funcid_top;
+		resp->hca_core_clock = xdev->caps.hca_core_clock;
+		resp->mac_bit = xdev->caps.mac_bit;
 		break;
 
 	case XSC_IOCTL_OP_GET_INFO_BY_BDF:
@@ -155,11 +145,11 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 		if (!rl_xdev)
 			return -1;
 
-		resp->phy_port = rl_xdev->pcie_port;
+		resp->pcie_no = rl_xdev->pcie_no;
 		resp->func_id = rl_xdev->glb_func_id;
-		resp->logic_in_port = rl_xdev->logic_port;
+		resp->pcie_host = rl_xdev->caps.pcie_host;
 		resp->mac_phy_port = rl_xdev->mac_port;
-		resp->mac_logic_in_port = rl_xdev->mac_logic_port;
+		resp->funcid_to_logic_port_off = rl_xdev->caps.funcid_to_logic_port;
 		resp->lag_id = lag_id;
 		resp->raw_qp_id_base = rl_xdev->caps.raweth_qp_id_base;
 		resp->raw_rss_qp_id_base = xdev->caps.raweth_rss_qp_id_base;
@@ -175,18 +165,18 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 		resp->pct_compress_vld =
 				(rl_xdev->feature_flag & FEATURE_PCT_EXP_MASK) ? 1 : 0;
 
-		xsc_core_dbg(xdev, "BY_BDF:%d,%d,%d,%d,%d,%d\n", resp->phy_port,
-			     resp->func_id, resp->logic_in_port,
-			     resp->mac_phy_port, resp->mac_logic_in_port,
-			     resp->lag_id);
-		resp->funcid[0] = xdev->caps.funcid[0];
-		resp->funcid[1] = xdev->caps.funcid[1];
-		resp->funcid[2] = xdev->caps.funcid[2];
-		resp->funcid[3] = xdev->caps.funcid[3];
-		resp->funcid[4] = xdev->caps.funcid[4];
-		resp->funcid[5] = xdev->caps.funcid[5];
-		resp->funcid[6] = xdev->caps.funcid[6];
-		resp->funcid[7] = xdev->caps.funcid[7];
+		xsc_core_dbg(xdev, "%d,%d,%d,%d,%d,%d\n",
+			     resp->pcie_no, resp->func_id, resp->pcie_host,
+			     resp->mac_phy_port, resp->lag_id,
+			     resp->funcid_to_logic_port_off);
+		resp->pf0_vf_funcid_base = rl_xdev->caps.pf0_vf_funcid_base;
+		resp->pf0_vf_funcid_top  = rl_xdev->caps.pf0_vf_funcid_top;
+		resp->pf1_vf_funcid_base = rl_xdev->caps.pf1_vf_funcid_base;
+		resp->pf1_vf_funcid_top  = rl_xdev->caps.pf1_vf_funcid_top;
+		resp->pcie0_pf_funcid_base = rl_xdev->caps.pcie0_pf_funcid_base;
+		resp->pcie0_pf_funcid_top  = rl_xdev->caps.pcie0_pf_funcid_top;
+		resp->pcie1_pf_funcid_base = rl_xdev->caps.pcie1_pf_funcid_base;
+		resp->pcie1_pf_funcid_top  = rl_xdev->caps.pcie1_pf_funcid_top;
 		break;
 
 	default:
@@ -260,7 +250,6 @@ static struct kprobe kp = {
 
 unsigned long (*kallsyms_lookup_name_func)(const char *name) = NULL;
 
-//调用kprobe找到kallsyms_lookup_name的地址位置
 int find_kallsyms_lookup_name(void)
 {
 	int ret = -1;
@@ -293,9 +282,6 @@ u16 xsc_get_irq_matrix_global_available(struct xsc_core_device *dev)
 	xsc_core_dbg(dev, "vector_matrix addr=0x%lx\n", addr);
 	if (addr == 0) {
 		xsc_core_err(dev, "not support, arch maybe not X86?\n");
-		/* 返回0xffff,做到在不知道cpu vector剩余多少可用的情况
-		 * 下不影响fw用该值判断能否分配中断
-		 */
 		return 0xffff;
 	}
 	m = (struct db_irq_matrix *)(*(long *)addr);
@@ -646,7 +632,7 @@ static int xsc_ioctl_modify_raw_qp(struct xsc_core_device *xdev,
 		goto err;
 
 	in->hdr.opcode = __cpu_to_be16(hdr->attr.opcode);
-	in->pcie_no = g_xsc_pcie_no;
+	in->pcie_no = xdev->pcie_no;
 
 	err = xsc_cmd_exec(xdev, in, sizeof(struct xsc_modify_raw_qp_mbox_in),
 			   out, sizeof(struct xsc_modify_raw_qp_mbox_out));
@@ -756,25 +742,32 @@ static long xsc_pci_ctrl_cmdq_raw(struct xsc_bdf_file *file,
 	u8 key;
 
 	err = copy_from_user(&hdr, user_hdr, sizeof(hdr));
-	if (err)
+	if (err) {
+		xsc_core_err(dev, "fail to copy_from_user user hdr\n");
 		return -EFAULT;
+	}
 
 	/* check valid */
-	if (hdr.check_filed != XSC_IOCTL_CHECK_FILED)
+	if (hdr.check_filed != XSC_IOCTL_CHECK_FILED) {
+		xsc_core_err(dev, "invalid check filed %u\n", hdr.check_filed);
 		return -EINVAL;
+	}
 
 	in = kvzalloc(hdr.attr.length, GFP_KERNEL);
 	if (!in)
 		return -ENOMEM;
+
 	out = kvzalloc(hdr.attr.length, GFP_KERNEL);
 	if (!out) {
 		kfree(in);
+		xsc_core_err(dev, "fail to alloc hdr length for mbox out\n");
 		return -ENOMEM;
 	}
 
 	err = copy_from_user(in, user_hdr->attr.data, hdr.attr.length);
 	if (err) {
 		err = -EFAULT;
+		xsc_core_err(dev, "fail to copy_from_user user hdr attr\n");
 		goto err_exit;
 	}
 
@@ -819,11 +812,10 @@ static long xsc_pci_ctrl_cmdq_raw(struct xsc_bdf_file *file,
 		break;
 	}
 	xsc_pci_ctrl_cmdq_handle_res_obj(file, in, hdr.attr.length, out, hdr.attr.opcode);
-/*	if (copy_to_user((void *)user_hdr, &hdr, sizeof(hdr)))
- *		err = -EFAULT;
- */
-	if (copy_to_user((void *)user_hdr->attr.data, out, hdr.attr.length))
+	if (copy_to_user((void *)user_hdr->attr.data, out, hdr.attr.length)) {
+		xsc_core_err(dev, "fail to copy_to_user user hdr attr\n");
 		err = -EFAULT;
+	}
 err_exit:
 	kfree(in);
 	kfree(out);

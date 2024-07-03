@@ -53,8 +53,7 @@ struct __packed qpt_update_data {
 struct __packed xsc_qpt_update_msg {
 	u16 main_ver;
 	u16 sub_ver;
-	/* 0:UPDATE_TYPE_SPORT; 1:UPDATE_TYPE_AFFINITY */
-	u32 type;
+	u32 type; //0:UPDATE_TYPE_SPORT; 1:UPDATE_TYPE_AFFINITY
 	struct qpt_update_data data;
 };
 

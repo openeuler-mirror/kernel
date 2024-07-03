@@ -255,7 +255,7 @@ void xsc_txwqe_complete(struct xsc_sq *sq, struct sk_buff *skb,
 }
 
 static void xsc_dump_error_sqcqe(struct xsc_sq *sq,
-				 struct xsc_cqe64 *cqe)
+				 struct xsc_cqe *cqe)
 {
 	u32 ci = xsc_cqwq_get_ci(&sq->cq.wq);
 	struct net_device *netdev  = sq->channel->netdev;
@@ -315,7 +315,7 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 	struct device *dev;
 	struct xsc_sq_stats *stats;
 	struct xsc_sq *sq;
-	struct xsc_cqe64 *cqe;
+	struct xsc_cqe *cqe;
 	u32 dma_fifo_cc;
 	u32 nbytes = 0;
 	u16 npkts = 0;

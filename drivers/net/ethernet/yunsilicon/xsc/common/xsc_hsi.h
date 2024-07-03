@@ -87,6 +87,7 @@ enum {
 	XSC_MSG_OPCODE_INIT_PATH_RSP	= 14,
 };
 
+/* TODO: sw cqe opcode*/
 enum {
 	XSC_OPCODE_RDMA_REQ_SEND	= 0,
 	XSC_OPCODE_RDMA_REQ_SEND_IMMDT	= 1,
@@ -215,31 +216,6 @@ struct xsc_cqe {
 	__le32		imm_data;
 	__le32		msg_len;
 	__le32		vni;
-	__le64		ts:48;
-	__le16		wqe_id;
-	__le16		rsv[3];
-	__le16		rsv2:15;
-	u8		owner:1;
-};
-
-struct xsc_cqe64 {
-	union {
-		u8		msg_opcode;
-		struct {
-			u8		error_code:7;
-			u8		is_error:1;
-		};
-	};
-	__le32		qp_id:15;
-	u8		rsv1:1;
-	u8		se:1;
-	u8		has_pph:1;
-	u8		type:1;
-	u8		with_immdt:1;
-	u8		csum_err:4;
-	__le32		imm_data;
-	__le32		msg_len;
-	__le32		vni;	//rx hash
 	__le64		ts:48;
 	__le16		wqe_id;
 	__le16		rsv[3];
@@ -376,7 +352,6 @@ union xsc_db_data {
 
 #define XSC_BROADCASTID_MAX		2
 #define XSC_TBM_BOMT_DESTINFO_SHIFT	(XSC_BROADCASTID_MAX / 2)
-#define XSC_TBM_BOMT_BROADCASTID_MASK	(XSC_BROADCASTID_MAX - 1)
 
 enum {
 	XSC_EQ_VEC_ASYNC		= 0,
@@ -397,12 +372,6 @@ struct rxe_bth {
 struct rxe_deth {
 	__be32			qkey;
 	__be32			sqp;
-};
-
-struct xsc_broadcast_attr {
-	u16 broadcast_id;
-	u16 bc_membernum;
-	u16 vf_num;
 };
 
 #endif /* XSC_HSI_H */

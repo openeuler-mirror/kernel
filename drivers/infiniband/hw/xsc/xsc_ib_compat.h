@@ -30,6 +30,7 @@ int xsc_ib_dereg_mr(struct ib_mr *ibmr, struct ib_udata *udata);
 int xsc_ib_alloc_ucontext(struct ib_ucontext *uctx, struct ib_udata *udata);
 void xsc_ib_dealloc_ucontext(struct ib_ucontext *ibcontext);
 int xsc_ib_alloc_pd(struct ib_pd *ibpd, struct ib_udata *udata);
+
 int xsc_ib_dealloc_pd(struct ib_pd *pd, struct ib_udata *udata);
 int xsc_ib_destroy_cq(struct ib_cq *cq, struct ib_udata *udata);
 struct ib_mr *xsc_ib_alloc_mr(struct ib_pd *pd, enum ib_mr_type mr_type, u32 max_num_sg);
@@ -45,7 +46,9 @@ struct ib_mr *xsc_ib_alloc_mr(struct ib_pd *pd, enum ib_mr_type mr_type, u32 max
 	struct ib_ucontext *uctx, struct ib_udata *udata)
 #define xsc_ib_dealloc_ucontext_def() void xsc_ib_dealloc_ucontext(struct ib_ucontext *ibcontext)
 #define xsc_ib_alloc_pd_def() int xsc_ib_alloc_pd(struct ib_pd *ibpd, struct ib_udata *udata)
+
 #define xsc_ib_dealloc_pd_def() int xsc_ib_dealloc_pd(struct ib_pd *pd, struct ib_udata *udata)
+
 #define RET_VALUE(x) (x)
 
 #endif

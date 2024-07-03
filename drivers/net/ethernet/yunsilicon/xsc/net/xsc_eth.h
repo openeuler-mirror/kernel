@@ -197,7 +197,10 @@ int xsc_eth_num_channels_changed(struct xsc_adapter *priv);
 int xsc_eth_modify_nic_hca(struct xsc_adapter *adapter, u32 change);
 bool xsc_eth_get_link_status(struct xsc_adapter *adapter);
 int xsc_eth_get_link_info(struct xsc_adapter *adapter,
-			  struct xsc_event_linkinfo_resp *plinkinfo);
+			  struct xsc_event_linkinfo *plinkinfo);
+int xsc_eth_set_link_info(struct xsc_adapter *adapter,
+			  struct xsc_event_linkinfo *plinkinfo);
+
 int xsc_eth_set_led_status(int id, struct xsc_adapter *adapter);
 
 /* Use this function to get max num channels after netdev was created */

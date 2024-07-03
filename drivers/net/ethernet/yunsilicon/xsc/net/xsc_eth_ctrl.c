@@ -126,7 +126,7 @@ static int _eth_ctrl_ioctl_hwconfig(struct xsc_core_device *xdev,
 	err = xsc_cmd_exec(xdev, in, sizeof(*in) + expect_req_size, out,
 			   sizeof(*out) + expect_resp_size);
 
-	hdr->attr.error = __be32_to_cpu(out->hdr.status);
+	hdr->attr.error = out->hdr.status;
 	if (decode)
 		decode((void *)out->data);
 
@@ -229,7 +229,8 @@ static long _eth_ctrl_ioctl_cmdq(struct xsc_core_device *xdev,
 					   0, sizeof(struct xsc_dpu_prio_weight_get), NULL, NULL);
 	case XSC_CMD_OP_IOCTL_SET_HWC:
 		return _eth_ctrl_ioctl_hwconfig(xdev, user_hdr, &hdr,
-						sizeof(struct hwc_set_t), 0, NULL, NULL);
+						sizeof(struct hwc_set_t), sizeof(struct hwc_set_t),
+						NULL, NULL);
 	case XSC_CMD_OP_IOCTL_GET_HWC:
 		return _eth_ctrl_ioctl_hwconfig(xdev, user_hdr, &hdr, sizeof(struct hwc_get_t),
 						sizeof(struct hwc_get_t),

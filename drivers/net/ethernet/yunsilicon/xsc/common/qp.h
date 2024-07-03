@@ -116,7 +116,13 @@ struct xsc_core_qp {
 	struct xsc_qp_trace	*trace_info;
 	u16	qp_type_internal;
 	u16	grp_id;
+};
+
+struct xsc_qp_rsc {
+	struct list_head	node;
+	u32 qpn;
 	struct completion	delayed_release;
+	struct xsc_core_device	*xdev;
 };
 
 struct xsc_qp_path {
@@ -182,6 +188,11 @@ void xsc_remove_qptrace(struct xsc_core_device *xdev, struct xsc_core_qp *qp);
 
 void xsc_init_delayed_release(void);
 void xsc_stop_delayed_release(void);
-void xsc_add_to_delayed_release_list(struct xsc_core_device *xdev, struct xsc_core_qp *qp);
+
+int xsc_modify_qp(struct xsc_core_device *xdev,
+		  struct xsc_modify_qp_mbox_in *in,
+		  struct xsc_modify_qp_mbox_out *out,
+		  u32 qpn, u16 status);
+
 
 #endif /* XSC_QP_H */

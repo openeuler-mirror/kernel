@@ -14,9 +14,11 @@
 #include "ib_umem_ex.h"
 #include "xsc_ib.h"
 
+#ifndef MLX_PEER_SUPPORT
 static void xsc_invalidate_umem(void *invalidation_cookie,
 				struct ib_umem_ex *umem,
 				unsigned long addr, size_t size);
+#endif
 
 enum {
 	DEF_CACHE_SIZE	= 10,
@@ -167,6 +169,7 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	umem = ib_umem_get(&dev->ib_dev, start, length, access_flags);
 	if (IS_ERR(umem)) {
 		// check client peer memory
+#ifndef MLX_PEER_SUPPORT
 		u8 peer_exists = 0;
 
 		umem_ex = ib_client_umem_get(pd->uobject->context,
@@ -188,6 +191,11 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		if (err)
 			goto error;
 		using_peer_mem = 1;
+#else
+		xsc_ib_warn(dev, "umem get failed\n");
+		return (void *)umem;
+#endif
+
 	} else {
 		umem_ex = ib_umem_ex(umem);
 		if (IS_ERR(umem_ex)) {
@@ -295,6 +303,7 @@ xsc_ib_dereg_mr_def()
 	return 0;
 }
 
+#ifndef MLX_PEER_SUPPORT
 static void xsc_invalidate_umem(void *invalidation_cookie,
 				struct ib_umem_ex *umem,
 				unsigned long addr,
@@ -321,6 +330,7 @@ static void xsc_invalidate_umem(void *invalidation_cookie,
 	xsc_core_dereg_mr(dev->xdev, &mr->mmr);
 	complete(&mr->invalidation_comp);
 }
+#endif
 
 xsc_ib_alloc_mr_def()
 {

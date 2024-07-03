@@ -234,7 +234,8 @@ static ssize_t policy_show(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 		goto free;
 	}
 	p = policy_str(rep->vport_state_policy);
-	strscpy(buf, p, strlen(p));
+	if (p)
+		strscpy(buf, p, strlen(p));
 
 free:
 	kfree(rep);

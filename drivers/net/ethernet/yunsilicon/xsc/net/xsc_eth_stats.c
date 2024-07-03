@@ -332,6 +332,49 @@ static const struct counter_desc hw_prio_stats_desc[] = {
 	XSC_DECLARE_HW_PRIO_STAT(struct xsc_prio_stats, rx_bytes, 7),
 	XSC_DECLARE_HW_PRIO_STAT(struct xsc_prio_stats, tx_pkts,  7),
 	XSC_DECLARE_HW_PRIO_STAT(struct xsc_prio_stats, rx_pkts,  7),
+
+};
+
+static const struct counter_desc hw_pfc_prio_stats_desc[] = {
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause, 0),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause_duration, 0),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause,  0),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause_duration,  0),
+
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause, 1),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause_duration, 1),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause,  1),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause_duration,  1),
+
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause, 2),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause_duration, 2),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause,  2),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause_duration,  2),
+
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause, 3),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause_duration, 3),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause,  3),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause_duration,  3),
+
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause, 4),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause_duration, 4),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause,  4),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause_duration,  4),
+
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause, 5),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause_duration, 5),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause,  5),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause_duration,  5),
+
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause, 6),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause_duration, 6),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause,  6),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause_duration,  6),
+
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause, 7),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, tx_pause_duration, 7),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause,  7),
+	XSC_DECLARE_HW_PRIO_STAT(struct xsc_pfc_prio_stats, rx_pause_duration,  7),
 };
 
 static const struct counter_desc hw_stats_desc[] = {
@@ -356,7 +399,9 @@ static const struct counter_desc hw_stats_desc[] = {
 
 static int xsc_hw_get_num_stats(struct xsc_adapter *adapter)
 {
-	return ARRAY_SIZE(hw_prio_stats_desc) + ARRAY_SIZE(hw_stats_desc);
+	return ARRAY_SIZE(hw_prio_stats_desc) + ARRAY_SIZE(hw_stats_desc) +
+		(is_support_pfc_prio_statistic(adapter->xdev) ?
+		ARRAY_SIZE(hw_pfc_prio_stats_desc) : 0);
 }
 
 static int xsc_hw_fill_strings(struct xsc_adapter *adapter, u8 *data, int idx)
@@ -371,6 +416,12 @@ static int xsc_hw_fill_strings(struct xsc_adapter *adapter, u8 *data, int idx)
 			hw_prio_stats_desc[i].format,
 			sizeof(hw_prio_stats_desc[i].format));
 
+	if (is_support_pfc_prio_statistic(xdev))
+		for (i = 0; i < ARRAY_SIZE(hw_pfc_prio_stats_desc); i++)
+			strscpy(data + (idx++) * ETH_GSTRING_LEN,
+				hw_pfc_prio_stats_desc[i].format,
+				sizeof(hw_pfc_prio_stats_desc[i].format));
+
 	for (i = 0; i < ARRAY_SIZE(hw_stats_desc); i++)
 		strscpy(data + (idx++) * ETH_GSTRING_LEN,
 			hw_stats_desc[i].format,
@@ -383,6 +434,8 @@ static int xsc_hw_fill_stats(struct xsc_adapter *adapter, u64 *data, int idx)
 {
 	struct xsc_prio_stats_mbox_in in;
 	struct xsc_prio_stats_mbox_out out;
+	struct xsc_pfc_prio_stats_mbox_in pfc_prio_in;
+	struct xsc_pfc_prio_stats_mbox_out pfc_prio_out;
 	struct xsc_hw_stats_mbox_in hw_in;
 	struct xsc_hw_stats_mbox_out hw_out;
 	struct xsc_core_device *xdev;
@@ -404,6 +457,25 @@ static int xsc_hw_fill_stats(struct xsc_adapter *adapter, u64 *data, int idx)
 		for (i = 0; i < ARRAY_SIZE(hw_prio_stats_desc); i++) {
 			val = XSC_READ_CTR64_CPU(&out.prio_stats, hw_prio_stats_desc, i);
 						 data[idx++] = __be64_to_cpu(val);
+		}
+	}
+
+	if (is_support_pfc_prio_statistic(xdev)) {
+		memset(&pfc_prio_in, 0, sizeof(pfc_prio_in));
+		memset(&pfc_prio_out, 0, sizeof(pfc_prio_out));
+		pfc_prio_in.hdr.opcode = __cpu_to_be16(XSC_CMD_OP_QUERY_PFC_PRIO_STATS);
+		pfc_prio_in.pport = xdev->mac_port;
+
+		ret = xsc_cmd_exec(adapter->xdev, (void *)&pfc_prio_in,
+				   sizeof(struct xsc_pfc_prio_stats_mbox_in),
+				   (void *)&pfc_prio_out,
+				   sizeof(struct xsc_pfc_prio_stats_mbox_out));
+		if (ret == 0 && pfc_prio_out.hdr.status == 0) {
+			for (i = 0; i < ARRAY_SIZE(hw_pfc_prio_stats_desc); i++) {
+				val = XSC_READ_CTR64_CPU(&pfc_prio_out.prio_stats,
+							 hw_pfc_prio_stats_desc, i);
+				data[idx++] = __be64_to_cpu(val);
+			}
 		}
 	}
 
