@@ -4,6 +4,7 @@
 #include "hclge_main.h"
 #include "hclge_dcb.h"
 #include "hclge_tm.h"
+#include "hclge_mbx.h"
 #include "hnae3.h"
 
 #define BW_PERCENT	100
@@ -441,12 +442,34 @@ static int hclge_ieee_setpfc(struct hnae3_handle *h, struct ieee_pfc *pfc)
 	return last_bad_ret;
 }
 
+static void hclge_notify_dscp_change(struct hclge_dev *hdev)
+{
+	struct hclge_vport *vport;
+	int ret;
+	int i;
+
+	if (!hnae3_ae_dev_vf_multi_tcs_supported(hdev))
+		return;
+
+	for (i = 0; i < pci_num_vf(hdev->pdev); i++) {
+		vport = &hdev->vport[i + HCLGE_VF_VPORT_START_NUM];
+
+		if (!test_bit(HCLGE_VPORT_STATE_ALIVE, &vport->state))
+			continue;
+
+		ret = hclge_mbx_event_notify(vport, BIT(HCLGE_MBX_DSCP_CHANGE));
+		if (ret)
+			break;
+	}
+}
+
 static int hclge_ieee_setapp(struct hnae3_handle *h, struct dcb_app *app)
 {
 	struct hclge_vport *vport = hclge_get_vport(h);
 	struct net_device *netdev = h->kinfo.netdev;
 	struct hclge_dev *hdev = vport->back;
 	struct dcb_app old_app;
+	int ret1;
 	int ret;
 
 	if (app->selector != IEEE_8021QAZ_APP_SEL_DSCP ||
@@ -483,6 +506,11 @@ static int hclge_ieee_setapp(struct hnae3_handle *h, struct dcb_app *app)
 		h->kinfo.dscp_app_cnt++;
 	else
 		ret = dcb_ieee_delapp(netdev, &old_app);
+
+	ret1 = hclge_dscp_to_pri_map(hdev);
+	if (ret1)
+		return ret1;
+	hclge_notify_dscp_change(hdev);
 
 	return ret;
 }
@@ -524,6 +552,11 @@ static int hclge_ieee_delapp(struct hnae3_handle *h, struct dcb_app *app)
 		vport->nic.kinfo.tc_map_mode = HNAE3_TC_MAP_MODE_PRIO;
 		ret = hclge_up_to_tc_map(hdev);
 	}
+
+	ret = hclge_dscp_to_pri_map(hdev);
+	if (ret)
+		return ret;
+	hclge_notify_dscp_change(hdev);
 
 	return ret;
 }

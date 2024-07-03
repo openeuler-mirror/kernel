@@ -319,4 +319,5 @@ void hclgevf_dcb_init(struct hclgevf_dev *hdev)
 	hdev->tc_info.tc_dwrr[0] = BW_PERCENT;
 	hdev->tc_info.tc_sch_mode = BIT(0);
 	kinfo->dcb_ops = &hclgevf_dcb_ops;
+	hclgevf_get_dscp_to_pri_map(hdev);
 }

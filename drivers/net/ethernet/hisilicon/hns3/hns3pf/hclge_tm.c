@@ -269,12 +269,18 @@ int hclge_up_to_tc_map(struct hclge_dev *hdev)
 
 static void hclge_dscp_to_prio_map_init(struct hclge_dev *hdev)
 {
+	int ret;
 	u8 i;
 
 	hdev->vport[0].nic.kinfo.tc_map_mode = HNAE3_TC_MAP_MODE_PRIO;
 	hdev->vport[0].nic.kinfo.dscp_app_cnt = 0;
 	for (i = 0; i < HNAE3_MAX_DSCP; i++)
 		hdev->vport[0].nic.kinfo.dscp_prio[i] = HNAE3_PRIO_ID_INVALID;
+	ret = hclge_dscp_to_pri_map(hdev);
+	if (ret)
+		dev_err(&hdev->pdev->dev,
+			"failed to init dscp-prio map, ret = %d\n",
+			ret);
 }
 
 int hclge_dscp_to_tc_map(struct hclge_dev *hdev)
@@ -306,6 +312,40 @@ int hclge_dscp_to_tc_map(struct hclge_dev *hdev)
 	}
 
 	return hclge_cmd_send(&hdev->hw, desc, HCLGE_DSCP_MAP_TC_BD_NUM);
+}
+
+int hclge_dscp_to_pri_map(struct hclge_dev *hdev)
+{
+	struct hclge_desc desc[HCLGE_DSCP_MAP_PRI_BD_NUM];
+	u8 *req0 = (u8 *)desc[0].data;
+	u8 *req1 = (u8 *)desc[1].data;
+	u8 pri_id, i, j;
+
+	if (!hnae3_ae_dev_vf_multi_tcs_supported(hdev))
+		return 0;
+
+	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_DSCP_PRI_MAP, false);
+	desc[0].flag |= cpu_to_le16(HCLGE_COMM_CMD_FLAG_NEXT);
+	hclge_cmd_setup_basic_desc(&desc[1], HCLGE_OPC_DSCP_PRI_MAP, false);
+
+	/* The low 32 dscp setting use bd0, high 32 dscp setting use bd1 */
+	for (i = 0; i < HNAE3_MAX_DSCP / HCLGE_DSCP_MAP_PRI_BD_NUM; i++) {
+		pri_id = hdev->vport[0].nic.kinfo.dscp_prio[i];
+		if (pri_id == HNAE3_PRIO_ID_INVALID)
+			pri_id = HNAE3_PRIO_ID_MAP_INVALID;
+		/* Each dscp setting has 4 bits, so each byte saves two dscp
+		 * setting
+		 */
+		req0[i >> 1] |= pri_id << HCLGE_DSCP_PRI_SHIFT(i);
+
+		j = i + HNAE3_MAX_DSCP / HCLGE_DSCP_MAP_PRI_BD_NUM;
+		pri_id = hdev->vport[0].nic.kinfo.dscp_prio[j];
+		if (pri_id == HNAE3_PRIO_ID_INVALID)
+			pri_id = HNAE3_PRIO_ID_MAP_INVALID;
+		req1[i >> 1] |= pri_id << HCLGE_DSCP_PRI_SHIFT(i);
+	}
+
+	return hclge_cmd_send(&hdev->hw, desc, HCLGE_DSCP_MAP_PRI_BD_NUM);
 }
 
 static int hclge_tm_pg_to_pri_map_cfg(struct hclge_dev *hdev,
@@ -1357,6 +1397,10 @@ static int hclge_tm_map_cfg(struct hclge_dev *hdev)
 
 	if (hdev->vport[0].nic.kinfo.tc_map_mode == HNAE3_TC_MAP_MODE_DSCP) {
 		ret = hclge_dscp_to_tc_map(hdev);
+		if (ret)
+			return ret;
+
+		ret = hclge_dscp_to_pri_map(hdev);
 		if (ret)
 			return ret;
 	}

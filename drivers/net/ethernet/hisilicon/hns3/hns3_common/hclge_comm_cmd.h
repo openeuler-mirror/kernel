@@ -268,6 +268,9 @@ enum hclge_opcode_type {
 	HCLGE_OPC_IMP_STATS_INFO		= 0x7013,
 	HCLGE_OPC_IMP_COMPAT_CFG		= 0x701A,
 
+	/* dscp pri map command */
+	HCLGE_OPC_DSCP_PRI_MAP		= 0x7039,
+
 	/* SFP command */
 	HCLGE_OPC_GET_SFP_EEPROM	= 0x7100,
 	HCLGE_OPC_GET_SFP_EXIST		= 0x7101,

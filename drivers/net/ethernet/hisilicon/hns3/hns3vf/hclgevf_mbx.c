@@ -272,6 +272,7 @@ void hclgevf_mbx_handler(struct hclgevf_dev *hdev)
 		case HCLGE_MBX_PUSH_VLAN_INFO:
 		case HCLGE_MBX_PUSH_PROMISC_INFO:
 		case HCLGE_MBX_PUSH_QB_STATE:
+		case HCLGE_MBX_EVENT_NOTIFY:
 			hclgevf_handle_mbx_msg(hdev, req);
 			break;
 		default:
@@ -310,6 +311,16 @@ static void hclgevf_parse_qb_info(struct hclgevf_dev *hdev, u16 qb_state)
 	hdev->qb_cfg.hw_qb_en = qb_state > HCLGEVF_HW_QB_OFF;
 }
 
+static int hclgevf_mbx_parse_event_info(struct hclgevf_dev *hdev, u64 events)
+{
+	int ret = 0;
+
+	if (events & BIT(HCLGE_MBX_DSCP_CHANGE))
+		ret = hclgevf_get_dscp_to_pri_map(hdev);
+
+	return ret;
+}
+
 void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
 {
 	struct hclge_mbx_port_base_vlan *vlan_info;
@@ -318,6 +329,7 @@ void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
 	enum hnae3_reset_type reset_type;
 	u16 link_status, state;
 	__le16 *msg_q;
+	u64 events;
 	u16 opcode;
 	u8 duplex;
 	u32 speed;
@@ -390,6 +402,10 @@ void hclgevf_mbx_async_handler(struct hclgevf_dev *hdev)
 			break;
 		case HCLGE_MBX_PUSH_QB_STATE:
 			hclgevf_parse_qb_info(hdev, msg_q[1]);
+			break;
+		case HCLGE_MBX_EVENT_NOTIFY:
+			events = *(u64 *)(msg_q + 1);
+			hclgevf_mbx_parse_event_info(hdev, events);
 			break;
 		default:
 			dev_err(&hdev->pdev->dev,

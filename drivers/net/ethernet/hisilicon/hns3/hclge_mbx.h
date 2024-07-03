@@ -52,6 +52,7 @@ enum HCLGE_MBX_OPCODE {
 	HCLGE_MBX_SET_QB = 0x28,        /* (VF -> PF) set queue bonding */
 	HCLGE_MBX_PUSH_QB_STATE,        /* (PF -> VF) push qb state */
 	HCLGE_MBX_SET_TC = 0x30,        /* (VF -> PF) set tc */
+	HCLGE_MBX_EVENT_NOTIFY,  /* (PF -> VF) event notify */
 
 	HCLGE_MBX_SET_MGUID = 0x50,	/* (VF -> PF) set mc guid */
 	HCLGE_UNIC_MBX_SET_IP,		/* (VF -> PF) set ip addr */
@@ -101,6 +102,10 @@ enum hclge_mbx_qb_cfg_subcode {
 	HCLGE_MBX_QB_CHECK_CAPS = 0,	/* query whether support qb */
 	HCLGE_MBX_QB_ENABLE,		/* request pf enable qb */
 	HCLGE_MBX_QB_GET_STATE		/* query whether qb enabled */
+};
+
+enum hclge_mbx_event_notify_type {
+	HCLGE_MBX_DSCP_CHANGE = 0,
 };
 
 #define HCLGE_MBX_MAX_MSG_SIZE	14

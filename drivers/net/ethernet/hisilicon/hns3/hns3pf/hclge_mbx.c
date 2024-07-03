@@ -608,6 +608,24 @@ int hclge_push_vf_link_status(struct hclge_vport *vport)
 				  HCLGE_MBX_LINK_STAT_CHANGE, vport->vport_id);
 }
 
+int hclge_mbx_event_notify(struct hclge_vport *vport, u64 event_bits)
+{
+	__le64 msg_data = cpu_to_le64(event_bits);
+	struct hclge_dev *hdev = vport->back;
+	u8 dest_vfid = (u8)vport->vport_id;
+	int ret;
+
+	/* send this requested info to VF */
+	ret = hclge_send_mbx_msg(vport, (u8 *)&msg_data, sizeof(__le64),
+				 HCLGE_MBX_EVENT_NOTIFY, dest_vfid);
+	if (ret)
+		dev_err(&hdev->pdev->dev,
+			"failed to notify vf %u event %#llx, ret = %d\n",
+			vport->vport_id - HCLGE_VF_VPORT_START_NUM, event_bits,
+			ret);
+	return ret;
+}
+
 static void hclge_get_link_mode(struct hclge_vport *vport,
 				struct hclge_mbx_vf_to_pf_cmd *mbx_req)
 {
@@ -675,6 +693,9 @@ static void hclge_notify_vf_config(struct hclge_vport *vport)
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 	struct hclge_port_base_vlan_config *vlan_cfg;
 	int ret;
+
+	if (hnae3_ae_dev_vf_multi_tcs_supported(hdev))
+		hclge_mbx_event_notify(vport, BIT(HCLGE_MBX_DSCP_CHANGE));
 
 	hclge_push_vf_link_status(vport);
 	if (test_bit(HCLGE_VPORT_NEED_NOTIFY_RESET, &vport->need_notify)) {

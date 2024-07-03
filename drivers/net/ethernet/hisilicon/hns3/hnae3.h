@@ -921,6 +921,7 @@ struct hnae3_tc_info {
 
 #define HNAE3_MAX_DSCP			64
 #define HNAE3_PRIO_ID_INVALID		0xff
+#define HNAE3_PRIO_ID_MAP_INVALID	0xf
 struct hnae3_knic_private_info {
 	struct net_device *netdev; /* Set by KNIC client when init instance */
 	u16 rss_size;		   /* Allocated RSS queues */
