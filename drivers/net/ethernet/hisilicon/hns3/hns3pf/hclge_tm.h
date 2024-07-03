@@ -65,9 +65,10 @@ struct hclge_nq_to_qs_link_cmd {
 
 struct hclge_tqp_tx_queue_tc_cmd {
 	__le16 queue_id;
-	__le16 rsvd;
+	u8 func_id;
+	u8 rsvd1;
 	u8 tc_id;
-	u8 rev[3];
+	u8 rsvd2[3];
 };
 
 struct hclge_pg_weight_cmd {

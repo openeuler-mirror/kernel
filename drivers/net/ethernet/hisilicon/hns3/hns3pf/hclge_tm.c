@@ -2039,7 +2039,23 @@ int hclge_tm_get_q_to_tc(struct hclge_dev *hdev, u16 q_id, u8 *tc_id)
 
 	tc = (struct hclge_tqp_tx_queue_tc_cmd *)desc.data;
 	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_TQP_TX_QUEUE_TC, true);
-	tc->queue_id = cpu_to_le16(q_id);
+	if (hnae3_ae_dev_vf_multi_tcs_supported(hdev)) {
+		struct hnae3_queue *tqp = &hdev->htqp[q_id].q;
+		struct hclge_vport *vport;
+
+		if (!hdev->htqp[q_id].alloced) {
+			dev_err(&hdev->pdev->dev,
+				"q_id %u is not alloced\n", q_id);
+			return -EINVAL;
+		}
+		vport = container_of(tqp->handle, struct hclge_vport, nic);
+		tc->queue_id = cpu_to_le16(tqp->tqp_index);
+		tc->func_id = (u8)vport->vport_id;
+	} else {
+		tc->queue_id = cpu_to_le16(q_id);
+		tc->func_id = 0;
+	}
+
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
