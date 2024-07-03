@@ -493,21 +493,13 @@ static void __init setup_firmware_fdt(void)
 			goto cmd_handle;
 		dt_virt = (void *)sunway_boot_params->dtb_start;
 	} else {
-		/**
-		 * Regardless of whether built-in DTB is configured or not,
-		 * we always:
-		 *
-		 * 1. Use DTB provided by firmware for early initialization,
-		 *    since we need the boot params from firmware when using
-		 *    new method to pass boot params.
-		 *
-		 * 2. reserve the DTB from firmware in case it is used later.
-		 */
+		/* Use DTB provided by firmware for early initialization */
 		pr_info("Parse boot params in DTB chosen node\n");
 		dt_virt = (void *)sunway_dtb_address;
-		memblock_reserve(__boot_pa(sunway_dtb_address),
-				fdt_totalsize(sunway_dtb_address));
 	}
+
+	/* reserve the DTB from firmware in case it is used later */
+	memblock_reserve(__boot_pa(dt_virt), fdt_totalsize(dt_virt));
 
 	if (!arch_dtb_verify(dt_virt, true) ||
 			!early_init_dt_scan(dt_virt)) {
