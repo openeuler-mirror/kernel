@@ -48,7 +48,7 @@ static int get_nic_drv_version(void *buf_out, const u32 *out_size)
 	}
 
 	err = snprintf(ver_info->ver, sizeof(ver_info->ver), "%s  %s",
-		       HINIC3_NIC_DRV_VERSION, "2023-05-17_19:56:38");
+		       HINIC3_NIC_DRV_VERSION, "2024-07-03_09:33:00");
 	if (err < 0)
 		return -EINVAL;
 
