@@ -2503,11 +2503,14 @@ struct packet_type {
 					      struct net_device *);
 	bool			(*id_match)(struct packet_type *ptype,
 					    struct sock *sk);
-	struct net		*af_packet_net;
 	void			*af_packet_priv;
 	struct list_head	list;
 
+#ifndef __GENKSYMS__
+	struct net              *af_packet_net;
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
