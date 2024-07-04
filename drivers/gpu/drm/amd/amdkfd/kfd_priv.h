@@ -148,6 +148,7 @@ extern int noretry;
  * Halt if HWS hang is detected
  */
 extern int halt_if_hws_hang;
+extern struct mutex kfd_processes_mutex;
 
 /**
  * enum kfd_sched_policy
