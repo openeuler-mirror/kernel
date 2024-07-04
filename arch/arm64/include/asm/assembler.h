@@ -466,9 +466,10 @@ USER(\label, ic	ivau, \tmp2)			// invalidate I line PoU
  */
 	.macro	reset_pmuserenr_el0, tmpreg
 	mrs	\tmpreg, id_aa64dfr0_el1
-	sbfx	\tmpreg, \tmpreg, #ID_AA64DFR0_PMUVER_SHIFT, #4
-	cmp	\tmpreg, #1			// Skip if no PMU present
-	b.lt	9000f
+	ubfx	\tmpreg, \tmpreg, #ID_AA64DFR0_PMUVER_SHIFT, #4
+	cmp     \tmpreg, #ID_AA64DFR0_PMUVER_NI
+	ccmp    \tmpreg, #ID_AA64DFR0_PMUVER_IMP_DEF, #4, ne
+	b.eq	9000f
 	msr	pmuserenr_el0, xzr		// Disable PMU access from EL0
 9000:
 	.endm

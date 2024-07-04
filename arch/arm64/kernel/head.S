@@ -623,13 +623,14 @@ set_hcr:
 
 	/* EL2 debug */
 	mrs	x1, id_aa64dfr0_el1
-	sbfx	x0, x1, #ID_AA64DFR0_PMUVER_SHIFT, #4
-	cmp	x0, #1
-	b.lt	4f				// Skip if no PMU present
+	ubfx	x0, x1, #ID_AA64DFR0_PMUVER_SHIFT, #4
+	cmp	x0, #ID_AA64DFR0_PMUVER_NI
+	ccmp	x0, #ID_AA64DFR0_PMUVER_IMP_DEF, #4, ne
+	b.eq	4f				// Skip if no PMU present
 	mrs	x0, pmcr_el0			// Disable debug access traps
 	ubfx	x0, x0, #11, #5			// to EL2 and allow access to
 4:
-	csel	x3, xzr, x0, lt			// all PMU counters from EL1
+	csel	x3, xzr, x0, eq			// all PMU counters from EL1
 
 	/* Statistical profiling */
 	ubfx	x0, x1, #ID_AA64DFR0_PMSVER_SHIFT, #4
