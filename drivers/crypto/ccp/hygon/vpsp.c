@@ -107,7 +107,7 @@ static int kvm_pv_psp_cmd_pre_op(struct kvm_vpsp *vpsp, gpa_t data_gpa,
 		return -EFAULT;
 
 	data_size = psp_head.buf_size;
-	if (check_psp_mem_range(NULL, data_gpa, data_size))
+	if (check_psp_mem_range(NULL, (void *)data_gpa, data_size))
 		return -EFAULT;
 
 	data = kzalloc(data_size, GFP_KERNEL);
