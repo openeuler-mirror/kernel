@@ -81,6 +81,14 @@ static int hclge_dcb_common_validate(struct hclge_dev *hdev, u8 num_tc,
 {
 	int i;
 
+	/* Based on hardware limitation, VFs share the configuration of PF. */
+	if (hnae3_ae_dev_vf_multi_tcs_supported(hdev) &&
+	    !bitmap_empty(hdev->vf_multi_tcs_en, HCLGE_VPORT_NUM)) {
+		dev_err(&hdev->pdev->dev,
+			"the tc resource is still being used by VF\n");
+		return -EOPNOTSUPP;
+	}
+
 	if (num_tc > hdev->tc_max) {
 		dev_err(&hdev->pdev->dev,
 			"tc num checking failed, %u > tc_max(%u)\n",
@@ -198,6 +206,41 @@ static int hclge_ets_validate(struct hclge_dev *hdev, struct ieee_ets *ets,
 	return 0;
 }
 
+static bool hclge_ets_not_need_config(struct hclge_dev *hdev,
+				      struct ieee_ets *ets)
+{
+	u8 max_tc_id = 0;
+	u32 i;
+
+	if (ets->ets_cap != hdev->tc_max)
+		return false;
+
+	for (i = 0; i < HNAE3_MAX_TC; i++) {
+		if (ets->tc_tx_bw[i] != hdev->tm_info.pg_info[0].tc_dwrr[i])
+			return false;
+
+		if (ets->prio_tc[i] != hdev->tm_info.prio_tc[i])
+			return false;
+
+		if (hdev->tm_info.tc_info[i].tc_sch_mode ==
+		    HCLGE_SCH_MODE_SP) {
+			if (ets->tc_tsa[i] != IEEE_8021QAZ_TSA_STRICT)
+				return false;
+		} else {
+			if (ets->tc_tsa[i] != IEEE_8021QAZ_TSA_ETS)
+				return false;
+		}
+
+		if (ets->prio_tc[i] > max_tc_id)
+			max_tc_id = ets->prio_tc[i];
+	}
+
+	if (max_tc_id + 1 != hdev->tm_info.num_tc)
+		return false;
+
+	return true;
+}
+
 static int hclge_map_update(struct hclge_dev *hdev)
 {
 	int ret;
@@ -262,6 +305,9 @@ static int hclge_ieee_setets(struct hnae3_handle *h, struct ieee_ets *ets)
 	    h->kinfo.tc_info.mqprio_active)
 		return -EINVAL;
 
+	if (hclge_ets_not_need_config(hdev, ets))
+		return 0;
+
 	ret = hclge_ets_validate(hdev, ets, &num_tc, &map_changed);
 	if (ret)
 		return ret;
@@ -274,6 +320,7 @@ static int hclge_ieee_setets(struct hnae3_handle *h, struct ieee_ets *ets)
 			return ret;
 	}
 
+	mutex_lock(&hdev->vport_lock);
 	hclge_tm_schd_info_update(hdev, num_tc);
 	h->kinfo.tc_info.dcb_ets_active = num_tc > 1;
 
@@ -286,12 +333,15 @@ static int hclge_ieee_setets(struct hnae3_handle *h, struct ieee_ets *ets)
 		if (ret)
 			goto err_out;
 
+		mutex_unlock(&hdev->vport_lock);
 		return hclge_notify_init_up(hdev);
 	}
 
+	mutex_unlock(&hdev->vport_lock);
 	return hclge_tm_dwrr_cfg(hdev);
 
 err_out:
+	mutex_unlock(&hdev->vport_lock);
 	if (!map_changed)
 		return ret;
 

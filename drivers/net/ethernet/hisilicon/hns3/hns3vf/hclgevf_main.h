@@ -12,6 +12,7 @@
 #include "hnae3.h"
 #include "hclge_comm_rss.h"
 #include "hclge_comm_tqp_stats.h"
+#include "hclgevf_dcb.h"
 
 #define HCLGEVF_MOD_VERSION "1.0"
 #define HCLGEVF_DRIVER_NAME "hclgevf"
@@ -232,6 +233,7 @@ struct hclgevf_dev {
 	unsigned long reset_pending;
 	enum hnae3_reset_type reset_type;
 	struct timer_list reset_timer;
+	struct hclge_mbx_tc_info tc_info;
 
 #define HCLGEVF_RESET_REQUESTED		0
 #define HCLGEVF_RESET_PENDING		1
@@ -319,4 +321,8 @@ void hclgevf_update_port_base_vlan_info(struct hclgevf_dev *hdev, u16 state,
 struct hclgevf_dev *hclgevf_ae_get_hdev(struct hnae3_handle *handle);
 void hclgevf_build_send_msg(struct hclge_vf_to_pf_msg *msg, u8 code,
 			    u8 subcode);
+int hclgevf_notify_client(struct hclgevf_dev *hdev,
+			  enum hnae3_reset_notify_type type);
+void hclgevf_update_rss_size(struct hnae3_handle *handle, u32 new_tqps_num);
+int hclgevf_init_rss_tc_mode(struct hclgevf_dev *hdev, u16 rss_size);
 #endif

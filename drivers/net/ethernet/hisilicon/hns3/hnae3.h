@@ -142,6 +142,7 @@ enum HNAE3_DEV_CAP_BITS {
 	HNAE3_DEV_SUPPORT_TM_FLUSH_B,
 	HNAE3_DEV_SUPPORT_VF_FAULT_B,
 	HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B,
+	HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B,
 };
 
 #define hnae3_ae_dev_fd_supported(ae_dev) \
@@ -222,8 +223,12 @@ enum HNAE3_DEV_CAP_BITS {
 #define hnae3_ae_dev_gen_reg_dfx_supported(hdev) \
 	test_bit(HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B, (hdev)->ae_dev->caps)
 
+#define hnae3_ae_dev_vf_multi_tcs_supported(hdev) \
+	test_bit(HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B, (hdev)->ae_dev->caps)
+
 enum HNAE3_PF_CAP_BITS {
 	HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B = 0,
+	HNAE3_PF_SUPPORT_VF_MULTI_TCS_B = 1,
 };
 #define ring_ptr_move_fw(ring, p) \
 	((ring)->p = ((ring)->p + 1) % (ring)->desc_num)

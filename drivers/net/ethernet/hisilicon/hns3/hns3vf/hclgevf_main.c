@@ -17,6 +17,7 @@
 #include "hclgevf_unic_guid.h"
 #include "hclgevf_unic_addr.h"
 #include "hclgevf_trace.h"
+#include "hclgevf_dcb.h"
 
 #define HCLGEVF_NAME	"hclgevf"
 
@@ -191,10 +192,13 @@ static int hclgevf_get_basic_info(struct hclgevf_dev *hdev)
 	basic_info = (struct hclge_basic_info *)resp_msg;
 
 	hdev->hw_tc_map = basic_info->hw_tc_map;
+	hdev->nic.kinfo.tc_info.max_tc = basic_info->tc_max;
 	hdev->mbx_api_version = le16_to_cpu(basic_info->mbx_api_version);
 	caps = le32_to_cpu(basic_info->pf_caps);
 	if (test_bit(HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B, &caps))
 		set_bit(HNAE3_DEV_SUPPORT_VLAN_FLTR_MDF_B, ae_dev->caps);
+	if (!test_bit(HNAE3_PF_SUPPORT_VF_MULTI_TCS_B, &caps))
+		clear_bit(HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B, ae_dev->caps);
 
 	return 0;
 }
@@ -387,12 +391,12 @@ static int hclgevf_knic_setup(struct hclgevf_dev *hdev)
 	new_tqps = kinfo->rss_size * num_tc;
 	kinfo->num_tqps = min(new_tqps, hdev->num_tqps);
 
-	kinfo->tqp = devm_kcalloc(&hdev->pdev->dev, kinfo->num_tqps,
+	kinfo->tqp = devm_kcalloc(&hdev->pdev->dev, hdev->num_tqps,
 				  sizeof(struct hnae3_queue *), GFP_KERNEL);
 	if (!kinfo->tqp)
 		return -ENOMEM;
 
-	for (i = 0; i < kinfo->num_tqps; i++) {
+	for (i = 0; i < hdev->num_tqps; i++) {
 		hdev->htqp[i].q.handle = &hdev->nic;
 		hdev->htqp[i].q.tqp_index = i;
 		kinfo->tqp[i] = &hdev->htqp[i].q;
@@ -1421,8 +1425,10 @@ static int hclgevf_reset_tqp(struct hnae3_handle *handle)
 
 	ret = hclgevf_send_mbx_msg(hdev, &send_msg, true, &return_status,
 				   sizeof(return_status));
-	if (ret || return_status == HCLGEVF_RESET_ALL_QUEUE_DONE)
+	if (ret)
 		return ret;
+	if (return_status == HCLGEVF_RESET_ALL_QUEUE_DONE)
+		goto map_tc;
 
 	for (i = 1; i < handle->kinfo.num_tqps; i++) {
 		hclgevf_build_send_msg(&send_msg, HCLGE_MBX_QUEUE_RESET, 0);
@@ -1431,8 +1437,14 @@ static int hclgevf_reset_tqp(struct hnae3_handle *handle)
 		if (ret)
 			return ret;
 	}
+map_tc:
+	/* restore the tc map for tx ring */
+	ret = hclgevf_tx_ring_tc_config(hdev);
+	if (ret)
+		dev_err(&hdev->pdev->dev, "failed to set tqp tc, ret = %d\n",
+			ret);
 
-	return 0;
+	return ret;
 }
 
 static int hclgevf_set_mtu(struct hnae3_handle *handle, int new_mtu)
@@ -1448,8 +1460,8 @@ static int hclgevf_set_mtu(struct hnae3_handle *handle, int new_mtu)
 	return hclgevf_send_mbx_msg(hdev, &send_msg, true, NULL, 0);
 }
 
-static int hclgevf_notify_client(struct hclgevf_dev *hdev,
-				 enum hnae3_reset_notify_type type)
+int hclgevf_notify_client(struct hclgevf_dev *hdev,
+			  enum hnae3_reset_notify_type type)
 {
 	struct hnae3_client *client = hdev->nic_client;
 	struct hnae3_handle *handle = &hdev->nic;
@@ -2197,6 +2209,8 @@ static int hclgevf_configure(struct hclgevf_dev *hdev)
 	if (ret)
 		return ret;
 
+	hclgevf_dcb_init(hdev);
+
 	/* get current port based vlan state from PF */
 	ret = hclgevf_get_port_base_vlan_filter_state(hdev);
 	if (ret)
@@ -2278,7 +2292,7 @@ static int hclgevf_config_gro(struct hclgevf_dev *hdev)
 	return ret;
 }
 
-static int hclgevf_init_rss_tc_mode(struct hclgevf_dev *hdev, u16 rss_size)
+int hclgevf_init_rss_tc_mode(struct hclgevf_dev *hdev, u16 rss_size)
 {
 	u16 tc_offset[HNAE3_MAX_TC] = {0};
 	u16 tc_valid[HNAE3_MAX_TC] = {0};
@@ -3313,8 +3327,7 @@ static void hclgevf_get_tqps_and_rss_info(struct hnae3_handle *handle,
 	*max_rss_size = hdev->rss_size_max;
 }
 
-static void hclgevf_update_rss_size(struct hnae3_handle *handle,
-				    u32 new_tqps_num)
+void hclgevf_update_rss_size(struct hnae3_handle *handle, u32 new_tqps_num)
 {
 	struct hnae3_knic_private_info *kinfo = &handle->kinfo;
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(handle);
@@ -3336,6 +3349,8 @@ static void hclgevf_update_rss_size(struct hnae3_handle *handle,
 		kinfo->rss_size = max_rss_size;
 
 	kinfo->num_tqps = kinfo->tc_info.num_tc * kinfo->rss_size;
+
+	hdev->rss_cfg.rss_size = kinfo->rss_size;
 }
 
 static int hclgevf_set_channels(struct hnae3_handle *handle, u32 new_tqps_num,
@@ -3350,7 +3365,7 @@ static int hclgevf_set_channels(struct hnae3_handle *handle, u32 new_tqps_num,
 	int ret;
 
 	hclgevf_update_rss_size(handle, new_tqps_num);
-
+	hclgevf_update_tc_info(hdev);
 	ret = hclgevf_init_rss_tc_mode(hdev, kinfo->rss_size);
 	if (ret)
 		return ret;

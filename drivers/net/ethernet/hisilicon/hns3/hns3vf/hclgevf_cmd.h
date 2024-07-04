@@ -90,6 +90,13 @@ struct hclgevf_cfg_com_tqp_queue_cmd {
 	u8 rsv[19];
 };
 
+struct hclgevf_tx_ring_tx_cmd {
+	__le16 tqp_id;
+	__le16 rsv1;
+	u8 tc_id;
+	u8 rsv2[19];
+};
+
 struct hclgevf_cfg_tx_queue_pointer_cmd {
 	__le16 tqp_id;
 	__le16 tx_tail;

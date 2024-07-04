@@ -3,6 +3,7 @@
 
 #include <linux/etherdevice.h>
 
+#include "hclge_mbx.h"
 #include "hclge_cmd.h"
 #include "hclge_main.h"
 #include "hclge_tm.h"
@@ -679,22 +680,33 @@ static void hclge_tm_update_kinfo_rss_size(struct hclge_vport *vport)
 	u16 vport_max_rss_size;
 	u16 max_rss_size;
 
-	/* TC configuration is shared by PF/VF in one port, only allow
-	 * one tc for VF for simplicity. VF's vport_id is non zero.
-	 */
 	if (vport->vport_id) {
-		kinfo->tc_info.max_tc = 1;
-		kinfo->tc_info.num_tc = 1;
-		vport->qs_offset = HNAE3_MAX_TC +
+		/* If the VF supports multiple TCs, the VF has
+		 * HNAE3_MAX_TC qsets. If the VF does not support
+		 * multiple TCs, the VF has only one qset.
+		 */
+		if (hnae3_ae_dev_vf_multi_tcs_supported(hdev))
+			vport->qs_offset = HNAE3_MAX_TC * vport->vport_id;
+		else
+			vport->qs_offset = HNAE3_MAX_TC +
 				   vport->vport_id - HCLGE_VF_VPORT_START_NUM;
 		vport_max_rss_size = hdev->vf_rss_size_max;
 	} else {
-		kinfo->tc_info.max_tc = hdev->tc_max;
-		kinfo->tc_info.num_tc =
-			min_t(u16, vport->alloc_tqps, hdev->tm_info.num_tc);
 		vport->qs_offset = 0;
 		vport_max_rss_size = hdev->pf_rss_size_max;
 	}
+
+	if (vport->vport_id &&
+	    !test_bit(vport->vport_id, hdev->vf_multi_tcs_en))
+		kinfo->tc_info.num_tc = 1;
+	else
+		kinfo->tc_info.num_tc =
+			min_t(u16, vport->alloc_tqps, hdev->tm_info.num_tc);
+
+	if (vport->vport_id && !hnae3_ae_dev_vf_multi_tcs_supported(hdev))
+		kinfo->tc_info.max_tc = 1;
+	else
+		kinfo->tc_info.max_tc = hdev->tc_max;
 
 	max_rss_size = min_t(u16, vport_max_rss_size,
 			     hclge_vport_get_max_rss_size(vport));
@@ -712,7 +724,7 @@ static void hclge_tm_update_kinfo_rss_size(struct hclge_vport *vport)
 	}
 }
 
-static void hclge_tm_vport_tc_info_update(struct hclge_vport *vport)
+void hclge_tm_vport_tc_info_update(struct hclge_vport *vport)
 {
 	struct hnae3_knic_private_info *kinfo = &vport->nic.kinfo;
 	struct hclge_dev *hdev = vport->back;
@@ -1180,9 +1192,28 @@ static int hclge_tm_pri_shaper_cfg(struct hclge_dev *hdev)
 	return 0;
 }
 
+int hclge_tm_vf_tc_dwrr_cfg(struct hclge_vport *vport)
+{
+	struct hnae3_knic_private_info *kinfo = &vport->nic.kinfo;
+	struct hclge_dev *hdev = vport->back;
+	struct hclge_pg_info *pg_info;
+	u8 dwrr;
+	int ret;
+	u32 i;
+
+	for (i = 0; i < kinfo->tc_info.max_tc; i++) {
+		pg_info = &hdev->tm_info.pg_info[hdev->tm_info.tc_info[i].pgid];
+		dwrr = i < kinfo->tc_info.num_tc ? pg_info->tc_dwrr[i] : 0;
+		ret = hclge_tm_qs_weight_cfg(hdev, vport->qs_offset + i, dwrr);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
 static int hclge_tm_pri_tc_base_dwrr_cfg(struct hclge_dev *hdev)
 {
-	struct hclge_vport *vport = hdev->vport;
 	struct hclge_pg_info *pg_info;
 	u8 dwrr;
 	int ret;
@@ -1198,15 +1229,22 @@ static int hclge_tm_pri_tc_base_dwrr_cfg(struct hclge_dev *hdev)
 			return ret;
 
 		for (k = 0; k < hdev->num_alloc_vport; k++) {
-			struct hnae3_knic_private_info *kinfo = &vport[k].nic.kinfo;
+			struct hclge_vport *vport = &hdev->vport[k];
+			struct hnae3_tc_info *tc_info;
 
-			if (i >= kinfo->tc_info.max_tc)
+			tc_info = &vport->nic.kinfo.tc_info;
+			if (i >= tc_info->max_tc)
 				continue;
 
-			dwrr = i < kinfo->tc_info.num_tc ? vport[k].dwrr : 0;
-			ret = hclge_tm_qs_weight_cfg(
-				hdev, vport[k].qs_offset + i,
-				dwrr);
+			if (test_bit(vport->vport_id, hdev->vf_multi_tcs_en))
+				dwrr = pg_info->tc_dwrr[i];
+			else if (i < tc_info->num_tc)
+				dwrr = vport->dwrr;
+			else
+				dwrr = 0;
+
+			ret = hclge_tm_qs_weight_cfg(hdev, vport->qs_offset + i,
+						     dwrr);
 			if (ret)
 				return ret;
 		}
@@ -2212,5 +2250,120 @@ int hclge_tm_flush_cfg(struct hclge_dev *hdev, bool enable)
 	if (enable)
 		msleep(HCLGE_TM_FLUSH_TIME_MS);
 
+	return ret;
+}
+
+static int hclge_vf_prio_tc_validate(struct hclge_dev *hdev,
+				     struct hclge_mbx_tc_info *tc_info)
+{
+#define HCLGE_PRI_SHIFT		4
+
+	u32 prio_tc_map = 0;
+	u8 i;
+
+	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++)
+		prio_tc_map |=
+			(u32)hdev->tm_info.prio_tc[i] << (i * HCLGE_PRI_SHIFT);
+
+	if (prio_tc_map != __le32_to_cpu(tc_info->prio_tc_map)) {
+		dev_err(&hdev->pdev->dev,
+			"failed to check vf prio tc map, not match pf\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int hclge_vf_sch_mode_validate(struct hclge_dev *hdev,
+				      struct hclge_mbx_tc_info *tc_info)
+{
+	struct hclge_tm_info *tm_info = &hdev->tm_info;
+	u8 sch_mode;
+	u8 i;
+
+	if (tc_info->num_tc != tm_info->num_tc) {
+		dev_err(&hdev->pdev->dev,
+			"failed to check vf tc num %u, not match pf tc num %u\n",
+			tc_info->num_tc, tm_info->num_tc);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++) {
+		sch_mode = tc_info->tc_sch_mode & BIT(i) ?
+			HCLGE_SCH_MODE_DWRR : HCLGE_SCH_MODE_SP;
+		if (sch_mode != tm_info->tc_info[i].tc_sch_mode) {
+			dev_err(&hdev->pdev->dev,
+				"failed to check vf tc[%u] sch mode\n", i);
+			return -EINVAL;
+		}
+
+		if (tm_info->pg_info[0].tc_dwrr[i] != tc_info->tc_dwrr[i]) {
+			dev_err(&hdev->pdev->dev,
+				"failed to check vf tc[%u] dwrr bw %u\n",
+				i, tc_info->tc_dwrr[i]);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int hclge_vf_tc_info_validate(struct hclge_dev *hdev,
+				     struct hclge_mbx_tc_info *tc_info)
+{
+	int ret;
+
+	ret = hclge_vf_prio_tc_validate(hdev, tc_info);
+	if (ret)
+		return ret;
+
+	return hclge_vf_sch_mode_validate(hdev, tc_info);
+}
+
+int hclge_mbx_set_vf_multi_tc(struct hclge_vport *vport,
+			      struct hclge_mbx_tc_info *tc_info)
+{
+	struct hnae3_handle *pf_handle = &vport->back->vport[0].nic;
+	struct hclge_dev *hdev = vport->back;
+	int ret;
+
+	if (!hnae3_ae_dev_vf_multi_tcs_supported(hdev))
+		return -EOPNOTSUPP;
+
+	if (!pf_handle->kinfo.tc_info.dcb_ets_active)
+		return -EOPNOTSUPP;
+
+	mutex_lock(&hdev->vport_lock);
+	if (test_bit(vport->vport_id, hdev->vf_multi_tcs_en)) {
+		if (tc_info->num_tc != 1) {
+			ret = -EINVAL;
+			dev_err(&hdev->pdev->dev,
+				"tc number (%u) != 1\n", tc_info->num_tc);
+			goto out;
+		}
+	} else {
+		ret = hclge_vf_tc_info_validate(hdev, tc_info);
+		if (ret)
+			goto out;
+	}
+
+	/* need updating vf_multi_tcs_en first, because the tc_info updating
+	 * depend on it.
+	 */
+	change_bit(vport->vport_id, hdev->vf_multi_tcs_en);
+	hclge_tm_vport_tc_info_update(vport);
+
+	ret = hclge_vport_q_to_qs_map(hdev, vport);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to set vf multi tcs, reset original status\n");
+		change_bit(vport->vport_id, hdev->vf_multi_tcs_en);
+		hclge_tm_vport_tc_info_update(vport);
+		goto out;
+	}
+	ret = hclge_tm_vf_tc_dwrr_cfg(vport);
+
+out:
+	mutex_unlock(&hdev->vport_lock);
 	return ret;
 }

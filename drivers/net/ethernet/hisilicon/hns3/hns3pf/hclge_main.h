@@ -968,6 +968,7 @@ struct hclge_dev {
 	unsigned long vf_vlan_full[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
 
 	unsigned long vport_config_block[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
+	unsigned long vf_multi_tcs_en[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
 
 	struct hclge_fd_cfg fd_cfg;
 	struct hlist_head fd_rule_list;

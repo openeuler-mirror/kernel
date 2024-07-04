@@ -25,6 +25,7 @@ hclgevf-objs = hns3vf/hclgevf_main.o hns3vf/hclgevf_mbx.o  hns3vf/hclgevf_devlin
 hclgevf-$(CONFIG_HNS3_UBL) += hns3_common/hclge_comm_unic_addr.o hns3vf/hclgevf_unic_ip.o hns3vf/hclgevf_unic_guid.o \
 				hns3vf/hclgevf_unic_addr.o
 hclgevf-$(CONFIG_UB_UDMA_HNS3) += hns3vf/hclgevf_udma.o
+hclgevf-$(CONFIG_HNS3_DCB) += hns3vf/hclgevf_dcb.o
 
 obj-$(CONFIG_HNS3_HCLGE) += hclge.o
 hclge-objs = hns3pf/hclge_main.o hns3pf/hclge_mdio.o hns3pf/hclge_tm.o hns3pf/hclge_sysfs.o hns3pf/hclge_regs.o \

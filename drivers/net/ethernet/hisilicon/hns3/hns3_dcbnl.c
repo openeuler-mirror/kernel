@@ -158,7 +158,7 @@ void hns3_dcbnl_setup(struct hnae3_handle *handle)
 {
 	struct net_device *dev = handle->kinfo.netdev;
 
-	if ((!handle->kinfo.dcb_ops) || (handle->flags & HNAE3_SUPPORT_VF))
+	if (!handle->kinfo.dcb_ops)
 		return;
 
 #ifdef CONFIG_HNS3_UBL

@@ -7,6 +7,8 @@
 #include <linux/mutex.h>
 #include <linux/types.h>
 
+#include "hnae3.h"
+
 enum HCLGE_MBX_OPCODE {
 	HCLGE_MBX_RESET = 0x01,		/* (VF -> PF) assert reset */
 	HCLGE_MBX_ASSERTING_RESET,	/* (PF -> VF) PF is asserting reset */
@@ -49,6 +51,7 @@ enum HCLGE_MBX_OPCODE {
 	HCLGE_MBX_GET_RING_VECTOR_MAP,	/* (VF -> PF) get ring-to-vector map */
 	HCLGE_MBX_SET_QB = 0x28,        /* (VF -> PF) set queue bonding */
 	HCLGE_MBX_PUSH_QB_STATE,        /* (PF -> VF) push qb state */
+	HCLGE_MBX_SET_TC = 0x30,        /* (VF -> PF) set tc */
 
 	HCLGE_MBX_SET_MGUID = 0x50,	/* (VF -> PF) set mc guid */
 	HCLGE_UNIC_MBX_SET_IP,		/* (VF -> PF) set ip addr */
@@ -115,7 +118,7 @@ struct hclge_ring_chain_param {
 
 struct hclge_basic_info {
 	u8 hw_tc_map;
-	u8 rsv;
+	u8 tc_max;
 	__le16 mbx_api_version;
 	__le32 pf_caps;
 };
@@ -241,6 +244,13 @@ struct hclge_mbx_vlan_filter {
 
 struct hclge_mbx_mtu_info {
 	__le32 mtu;
+};
+
+struct hclge_mbx_tc_info {
+	__le32 prio_tc_map;
+	u8 tc_dwrr[HNAE3_MAX_TC];
+	u8 num_tc;
+	u8 tc_sch_mode; /* 0: sp; 1: dwrr */
 };
 
 #pragma pack()
