@@ -453,7 +453,7 @@ static int ovl_parse_param_lowerdir(const char *name, struct fs_context *fc)
 		return 0;
 
 	if (*name == ':') {
-		pr_err("cannot append lower layer");
+		pr_err("cannot append lower layer\n");
 		return -EINVAL;
 	}
 
