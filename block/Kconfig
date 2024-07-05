@@ -266,6 +266,15 @@ config BLK_DEV_WRITE_MOUNTED_DUMP
 	  Enabling this to dump info when opening mounted block devices
 	  for write or trying to mount write opened block devices.
 
+config BLK_IO_HUNG_TASK_CHECK
+	bool "Enable io hung task check"
+	depends on DETECT_HUNG_TASK
+	default y
+	help
+	  Enabling this lets the block layer detect hungtask for io, noted
+	  if this is set, hungtask will complain about slow io even if such
+	  io is not hanged. Be careful to enable hungtask panic in this case.
+
 source "block/partitions/Kconfig"
 
 config BLK_MQ_PCI

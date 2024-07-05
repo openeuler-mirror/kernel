@@ -1375,7 +1375,7 @@ int submit_bio_wait(struct bio *bio)
 	submit_bio(bio);
 
 	/* Prevent hang_check timer from firing at us during very long I/O */
-	hang_check = sysctl_hung_task_timeout_secs;
+	hang_check = sysctl_hung_task_timeout_secs && !io_hung_task_check;
 	if (hang_check)
 		while (!wait_for_completion_io_timeout(&done,
 					hang_check * (HZ/2)))

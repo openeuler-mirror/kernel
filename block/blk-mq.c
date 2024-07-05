@@ -1420,7 +1420,7 @@ blk_status_t blk_execute_rq(struct request *rq, bool at_head)
 		 * Prevent hang_check timer from firing at us during very long
 		 * I/O
 		 */
-		unsigned long hang_check = sysctl_hung_task_timeout_secs;
+		unsigned long hang_check = sysctl_hung_task_timeout_secs && !io_hung_task_check;
 
 		if (hang_check)
 			while (!wait_for_completion_io_timeout(&wait.done,
