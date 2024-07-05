@@ -868,10 +868,7 @@ static int create_snapshot(struct btrfs_root *root, struct inode *dir,
 	btrfs_qgroup_convert_reserved_meta(root, qgroup_reserved);
 	qgroup_reserved = 0;
 
-	spin_lock(&fs_info->trans_lock);
-	list_add(&pending_snapshot->list,
-		 &trans->transaction->pending_snapshots);
-	spin_unlock(&fs_info->trans_lock);
+	trans->pending_snapshot = pending_snapshot;
 
 	ret = btrfs_commit_transaction(trans);
 	if (ret)
