@@ -222,6 +222,9 @@ static inline void net_rship_skb_record_dev_rxinfo(struct sk_buff *skb, struct n
 	if (gnet_bpf_enabled(GNET_RCV_NIC_NODE)) {
 		struct sched_net_rship_skb *ext = __get_skb_net_rship(skb);
 
+		if (!dev)
+			return;
+
 		ext->rx_dev_idx = dev->ifindex;
 		ext->rx_dev_net_cookie = dev_net(dev)->net_cookie;
 	}
