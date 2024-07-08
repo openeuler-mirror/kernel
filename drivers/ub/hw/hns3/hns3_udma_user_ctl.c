@@ -29,6 +29,10 @@ int udma_user_ctl_flush_cqe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 	uint32_t qpn;
 	int ret;
 
+	if (in->len < sizeof(struct flush_cqe_param)) {
+		dev_err(udma_device->dev, "invalid input in flush cqe: len %u\n", in->len);
+		return -EINVAL;
+	}
 	ret = (int)copy_from_user(&fcp, (void *)in->addr,
 				  sizeof(struct flush_cqe_param));
 	if (ret) {
@@ -116,6 +120,10 @@ int udma_user_ctl_config_poe(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 	int ret;
 
 	udma_device = to_udma_dev(uctx->ub_dev);
+	if (in->len < sizeof(struct udma_poe_info)) {
+		dev_err(udma_device->dev, "invalid input in config poe: len %u\n", in->len);
+		return -EINVAL;
+	}
 	ret = (int)copy_from_user(&poe_info,
 				  (void *)in->addr,
 				  sizeof(struct udma_poe_info));
@@ -203,19 +211,24 @@ int udma_user_ctl_query_poe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 			    struct ubcore_user_ctl_out *out,
 			    struct ubcore_udrv_priv *udrv_data)
 {
+	struct udma_dev *udma_device = to_udma_dev(uctx->ub_dev);
 	struct udma_poe_info poe_info_out = {};
 	struct udma_poe_info poe_info_in = {};
-	struct udma_dev *udma_device;
 	uint64_t poe_addr;
 	bool poe_en;
 	int ret;
 
-	udma_device = to_udma_dev(uctx->ub_dev);
-	ret = (int)copy_from_user(&poe_info_in, (void *)in->addr,
-				  sizeof(struct udma_poe_info));
-	if (ret) {
-		dev_err(udma_device->dev, "cp from user failed in query poe, ret:%d.\n",
-			ret);
+	if (in->len < sizeof(struct udma_poe_info) || (!out->addr) ||
+	   (out->len < sizeof(struct udma_poe_info))) {
+		dev_err(udma_device->dev,
+			"invalid param in query poe: in len %u, out len %u, or out addr is NULL\n",
+			in->len, out->len);
+		return -EINVAL;
+	}
+
+	if (copy_from_user(&poe_info_in, (void *)in->addr,
+				  sizeof(struct udma_poe_info))) {
+		dev_err(udma_device->dev, "cp from user failed in query poe.\n");
 		return -EFAULT;
 	}
 
@@ -242,12 +255,8 @@ int udma_user_ctl_query_poe(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 
 	poe_info_out.en = poe_en ? 1 : 0;
 	poe_info_out.poe_addr = poe_addr;
-	ret = (int)copy_to_user((void *)out->addr, &poe_info_out,
-				min_t(uint32_t, out->len,
-				      (uint32_t)sizeof(struct udma_poe_info)));
-	if (ret) {
-		dev_err(udma_device->dev, "cp to user failed in query poe, ret:%d.\n",
-			ret);
+	if (copy_to_user((void *)out->addr, &poe_info_out, sizeof(struct udma_poe_info))) {
+		dev_err(udma_device->dev, "cp to user failed in query poe.");
 		return -EFAULT;
 	}
 	return ret;
@@ -261,11 +270,13 @@ int udma_user_ctl_dca_reg(struct ubcore_ucontext *uctx, struct ubcore_user_ctl_i
 	struct udma_dca_reg_attr attr = {};
 	int ret;
 
-	ret = (int)copy_from_user(&attr, (void *)in->addr,
-				  sizeof(struct udma_dca_reg_attr));
-	if (ret) {
-		dev_err(udma_device->dev, "cp from user failed in dca reg, ret:%d.\n",
-			ret);
+	if (in->len < sizeof(struct udma_dca_reg_attr)) {
+		dev_err(udma_device->dev, "invalid input in dca reg: len %u\n", in->len);
+		return -EINVAL;
+	}
+	if (copy_from_user(&attr, (void *)in->addr,
+				  sizeof(struct udma_dca_reg_attr))) {
+		dev_err(udma_device->dev, "cp from user failed in dca reg.\n");
 		return -EFAULT;
 	}
 
@@ -286,11 +297,13 @@ int udma_user_ctl_dca_dereg(struct ubcore_ucontext *uctx, struct ubcore_user_ctl
 	struct udma_dca_dereg_attr attr = {};
 	int ret;
 
-	ret = (int)copy_from_user(&attr, (void *)in->addr,
-				  sizeof(struct udma_dca_dereg_attr));
-	if (ret) {
-		dev_err(udma_device->dev, "cp from user failed in dca dereg, ret:%d.\n",
-			ret);
+	if (in->len < sizeof(struct udma_dca_dereg_attr)) {
+		dev_err(udma_device->dev, "invalid input in dca dereg: len %u\n", in->len);
+		return -EINVAL;
+	}
+	if (copy_from_user(&attr, (void *)in->addr,
+				  sizeof(struct udma_dca_dereg_attr))) {
+		dev_err(udma_device->dev, "cp from user failed in dca dereg.\n");
 		return -EFAULT;
 	}
 
@@ -313,13 +326,16 @@ int udma_user_ctl_dca_shrink(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 	struct udma_dca_shrink_attr shrink_attr = {};
 	struct udma_dca_shrink_resp shrink_resp = {};
 	struct udma_dca_dereg_attr dereg_attr = {};
-	int ret;
 
-	ret = (int)copy_from_user(&shrink_attr, (void *)in->addr,
-				  sizeof(struct udma_dca_shrink_attr));
-	if (ret) {
-		dev_err(udma_device->dev, "cp from user failed in dca shrink, ret:%d.\n",
-			ret);
+	if ((in->len < sizeof(struct udma_dca_shrink_attr)) ||
+		(out->len < sizeof(struct udma_dca_shrink_resp))) {
+		dev_err(udma_device->dev, "invalid input in dca shrink: len %u or output len %u\n",
+			in->len, out->len);
+		return -EINVAL;
+	}
+	if (copy_from_user(&shrink_attr, (void *)in->addr,
+				  sizeof(struct udma_dca_shrink_attr))) {
+		dev_err(udma_device->dev, "cp from user failed in dca shrink.\n");
 		return -EFAULT;
 	}
 
@@ -331,12 +347,9 @@ int udma_user_ctl_dca_shrink(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 		shrink_resp.mem = NULL;
 	}
 
-	ret = (int)copy_to_user((void *)out->addr, &shrink_resp,
-				min_t(uint32_t, out->len,
-				      (uint32_t)sizeof(struct udma_dca_shrink_resp)));
-	if (ret) {
-		dev_err(udma_device->dev, "cp to user failed in dca shrink, ret:%d.\n",
-			ret);
+	if (copy_to_user((void *)out->addr, &shrink_resp,
+			sizeof(struct udma_dca_shrink_resp))) {
+		dev_err(udma_device->dev, "cp to user failed in dca shrink\n");
 		return -EFAULT;
 	}
 
@@ -352,6 +365,10 @@ int udma_user_ctl_dca_attach(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 	struct udma_dca_attach_resp resp = {};
 	int ret;
 
+	if (in->len < sizeof(struct udma_dca_attach_attr)) {
+		dev_err(udma_device->dev, "invalid input in dca attach: len %u\n", in->len);
+		return -EINVAL;
+	}
 	ret = (int)copy_from_user(&attr, (void *)in->addr,
 				  sizeof(struct udma_dca_attach_attr));
 	if (ret) {
@@ -388,6 +405,10 @@ int udma_user_ctl_dca_detach(struct ubcore_ucontext *uctx, struct ubcore_user_ct
 	struct udma_dca_detach_attr attr = {};
 	int ret;
 
+	if (in->addr < sizeof(struct udma_dca_detach_attr)) {
+		dev_err(udma_device->dev, "invalid input in dca detach: len %u\n", in->len);
+		return -EINVAL;
+	}
 	ret = (int)copy_from_user(&attr, (void *)in->addr,
 				  sizeof(struct udma_dca_detach_attr));
 	if (ret) {
@@ -469,6 +490,10 @@ int udma_u_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *k_user_ct
 			(int)in.opcode);
 		return -EINVAL;
 	}
+
+	if (!in.addr)
+		return -EINVAL;
+
 	return g_udma_user_ctl_opcodes[in.opcode](uctx, &in, &out, &udrv_data);
 }
 
@@ -479,7 +504,11 @@ static int udma_k_user_ctl_config_poe_chl(struct udma_dev *dev,
 	struct hns3_udma_user_ctl_cfg_poe_channel_in cfg_in;
 	int ret;
 
-	memcpy(&cfg_in, (void *)in->addr, min_t(uint32_t, in->len, sizeof(cfg_in)));
+	if (in->len < sizeof(cfg_in)) {
+		dev_err(dev->dev, "invalid input in config poe chl: len %u\n", in->len);
+		return -EINVAL;
+	}
+	memcpy(&cfg_in, (void *)in->addr, sizeof(cfg_in));
 	ret = check_poe_channel(dev, cfg_in.poe_channel);
 	if (ret) {
 		dev_err(dev->dev, "check poe channel failed, ret = %d.\n", ret);
@@ -505,7 +534,11 @@ static int udma_k_user_ctl_notify_attr(struct udma_dev *dev,
 {
 	struct hns3_udma_user_ctl_config_notify_attr attr_in;
 
-	memcpy(&attr_in, (void *)in->addr, min_t(uint32_t, in->len, sizeof(attr_in)));
+	if (in->len < sizeof(attr_in)) {
+		dev_err(dev->dev, "invalid input in ctl notify attr: len %u\n", in->len);
+		return -EINVAL;
+	}
+	memcpy(&attr_in, (void *)in->addr, sizeof(attr_in));
 	dev->notify_addr = attr_in.notify_addr;
 
 	return 0;
@@ -517,6 +550,11 @@ static int udma_k_user_ctl_query_hw_id(struct udma_dev *dev,
 {
 	struct hns3_udma_user_ctl_query_hw_id_out info_out;
 
+	if ((!out->addr) || (out->len < sizeof(info_out))) {
+		dev_err(dev->dev, "invalid output in query hw id: len %u or addr is NULL\n",
+			out->len);
+		return -EINVAL;
+	}
 	info_out.chip_id = dev->chip_id;
 	info_out.die_id = dev->die_id;
 	info_out.func_id = dev->func_id;
@@ -545,6 +583,10 @@ int udma_k_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *k_user_ct
 	    !g_udma_user_ctl_ops[in.opcode]) {
 		dev_err(udma_dev->dev, "bad kernel user ctl opcode: 0x%x.\n",
 			in.opcode);
+		return -EINVAL;
+	}
+	if (!in.addr) {
+		dev_err(udma_dev->dev, "bad input addr.\n");
 		return -EINVAL;
 	}
 	return g_udma_user_ctl_ops[in.opcode](udma_dev, &in, &out);

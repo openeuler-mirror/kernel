@@ -28,7 +28,8 @@ struct udma_query_version {
 
 struct udma_query_fw_info {
 	uint32_t fw_ver;
-	uint32_t rsv[5];
+	uint32_t rsv[2];
+	uint32_t hw_caps[3];
 };
 
 struct udma_func_clear {
@@ -251,6 +252,7 @@ enum udma_opcode_type {
 	UDMA_OPC_QUERY_COUNTER				= 0x8206,
 	UDMA_OPC_QUERY_PORT_INFO			= 0x7104,
 	UDMA_NUM_QP_CFG					= 0xA004,
+	UDMA_PF_QP_CFG_QUERY				= 0xA005,
 };
 
 #define UDMA_QUERY_PF_CAPS_CMD_NUM 5
@@ -322,6 +324,15 @@ struct udma_query_pf_caps_e {
 	uint16_t ceq_period;
 	uint16_t aeq_max_cnt;
 	uint16_t aeq_period;
+};
+
+struct udma_query_pf_caps_cfg {
+	uint32_t num_pds;
+	uint32_t num_cqs;
+	uint32_t num_mtpts;
+	uint32_t num_qps;
+	uint32_t num_xrcds;
+	uint32_t num_srqs;
 };
 
 #define UDMA_EXT_LLM_ENTRY(addr, id) (((id) << (64 - 12)) | ((addr) >> 12))

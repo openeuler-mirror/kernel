@@ -75,6 +75,8 @@ int udma_modify_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_jfc_attr *attr,
 		    struct ubcore_udata *udata);
 void udma_jfc_completion(struct udma_dev *udma_dev, uint32_t cqn);
 void udma_jfc_event(struct udma_dev *udma_dev, uint32_t cqn, int event_type);
+uint8_t udma_get_cq_bankid_for_uctx(struct udma_dev *ub_dev);
+void udma_put_cq_bankid_for_uctx(struct udma_ucontext *uctx);
 static inline uint8_t get_jfc_bankid(uint64_t cqn)
 {
 	/* The lower 2 bits of CQN are used to hash to different banks */

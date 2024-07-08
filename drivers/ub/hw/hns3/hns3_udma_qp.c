@@ -1364,16 +1364,38 @@ static uint8_t get_least_load_bankid_for_qp(struct udma_bank *bank,
 static int alloc_qpn_with_bankid(struct udma_bank *bank, uint8_t bankid,
 				 uint32_t *qpn)
 {
+	uint32_t direct_wqe_max;
+	uint32_t max;
 	int idx;
 
-	idx = ida_alloc_range(&bank->ida, bank->min, bank->max, GFP_KERNEL);
-	if (idx < 0)
-		return idx;
+	direct_wqe_max = UDMA_DIRECT_WQE_MAX / UDMA_QP_BANK_NUM - 1;
+	max = (bank->max < direct_wqe_max) ? bank->max : direct_wqe_max;
+	idx = ida_alloc_range(&bank->ida, bank->next, max, GFP_KERNEL);
+	if (idx >= 0)
+		goto alloc_qpn_succ;
 
+	idx = ida_alloc_range(&bank->ida, bank->min, bank->next, GFP_KERNEL);
+	if (idx >= 0)
+		goto alloc_qpn_succ;
+
+	if (bank->max < direct_wqe_max)
+		goto alloc_qpn_fail;
+
+	idx = ida_alloc_range(&bank->ida, direct_wqe_max, bank->max, GFP_KERNEL);
+	if (idx < 0)
+		goto alloc_qpn_fail;
+
+alloc_qpn_succ:
 	/* the lower 3 bits is bankid */
 	*qpn = (idx << 3) | bankid;
+	bank->next = (idx < max) ? (idx + 1) : bank->min;
 
 	return 0;
+
+alloc_qpn_fail:
+	bank->next = bank->min;
+
+	return idx;
 }
 
 int alloc_common_qpn(struct udma_dev *udma_dev, struct udma_jfc *jfc,
@@ -1410,7 +1432,7 @@ void free_common_qpn(struct udma_dev *udma_dev, uint32_t qpn)
 	mutex_unlock(&qp_table->bank_mutex);
 }
 
-static int alloc_qpn(struct udma_dev *udma_dev, struct udma_qp *qp)
+static void alloc_qpn(struct udma_dev *udma_dev, struct udma_qp *qp)
 {
 	struct udma_qp_attr *attr = &qp->qp_attr;
 
@@ -1420,46 +1442,6 @@ static int alloc_qpn(struct udma_dev *udma_dev, struct udma_qp *qp)
 		qp->qpn = attr->jfs->jfs_id;
 	else
 		qp->qpn = attr->jfr->jfrn;
-
-	return 0;
-}
-
-static void init_qpn_bitmap(struct udma_qpn_bitmap *qpn_map, uint32_t qpn_shift)
-{
-	int i;
-
-	qpn_map->qpn_shift = qpn_shift;
-	mutex_init(&qpn_map->bank_mutex);
-	/* reserved 0 for UD */
-	qpn_map->bank[0].min = 1;
-	qpn_map->bank[0].inuse = 1;
-	qpn_map->bank[0].next = qpn_map->bank[0].min;
-	for (i = 0; i < UDMA_QP_BANK_NUM; i++) {
-		ida_init(&qpn_map->bank[i].ida);
-		qpn_map->bank[i].max = (1 << qpn_shift) / UDMA_QP_BANK_NUM - 1;
-	}
-}
-
-void init_jetty_x_qpn_bitmap(struct udma_dev *dev,
-			     struct udma_qpn_bitmap *qpn_map,
-			     uint32_t jetty_x_shift,
-			     uint32_t prefix, uint32_t jid)
-{
-#define QPN_SHIFT_MIN 3
-	int qpn_shift;
-
-	qpn_shift = dev->caps.num_qps_shift - jetty_x_shift -
-		    HNS3_UDMA_JETTY_X_PREFIX_BIT_NUM;
-	if (qpn_shift <= QPN_SHIFT_MIN) {
-		qpn_map->qpn_shift = 0;
-		return;
-	}
-
-	qpn_map->qpn_prefix = prefix <<
-			      (dev->caps.num_qps_shift -
-			      HNS3_UDMA_JETTY_X_PREFIX_BIT_NUM);
-	qpn_map->jid = jid;
-	init_qpn_bitmap(qpn_map, qpn_shift);
 }
 
 void clean_jetty_x_qpn_bitmap(struct udma_qpn_bitmap *qpn_map)
@@ -1529,6 +1511,15 @@ static int set_wqe_buf_attr(struct udma_dev *udma_dev, struct udma_qp *qp,
 	return 0;
 }
 
+static inline int udma_qp_has_direct_wqe(struct udma_dev *dev, struct udma_qp *qp)
+{
+	bool has_dwqe = dev->caps.num_qp_en ? (qp->qpn < UDMA_DIRECT_WQE_MAX) : true;
+
+	return ((PAGE_SIZE <= UDMA_DWQE_SIZE) &&
+		(dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE) &&
+		has_dwqe);
+}
+
 static int alloc_wqe_buf(struct udma_dev *dev, struct udma_qp *qp,
 			 struct udma_buf_attr *buf_attr, uint64_t addr,
 			 bool dca_en)
@@ -1539,8 +1530,7 @@ static int alloc_wqe_buf(struct udma_dev *dev, struct udma_qp *qp,
 		/* DCA must be enabled after the buffer attr is configured. */
 		udma_enable_dca(dev, qp);
 		qp->en_flags |= HNS3_UDMA_QP_CAP_DYNAMIC_CTX_ATTACH;
-	} else if ((PAGE_SIZE <= UDMA_DWQE_SIZE) &&
-		   (dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE)) {
+	} else if (udma_qp_has_direct_wqe(dev, qp)) {
 		qp->en_flags |= HNS3_UDMA_QP_CAP_DIRECT_WQE;
 	}
 
@@ -1689,65 +1679,6 @@ err_out:
 	return ret;
 }
 
-static void udma_lock_cqs(struct udma_jfc *send_jfc, struct udma_jfc *recv_jfc)
-			  __acquires(&send_jfc->lock)
-			  __acquires(&recv_jfc->lock)
-{
-	if (unlikely(send_jfc == NULL && recv_jfc == NULL)) {
-		__acquire(&send_jfc->lock);
-		__acquire(&recv_jfc->lock);
-	} else if (unlikely(send_jfc != NULL && recv_jfc == NULL)) {
-		spin_lock_irq(&send_jfc->lock);
-		__acquire(&recv_jfc->lock);
-	} else if (unlikely(send_jfc == NULL && recv_jfc != NULL)) {
-		spin_lock_irq(&recv_jfc->lock);
-		__acquire(&send_jfc->lock);
-	} else if (send_jfc == recv_jfc) {
-		spin_lock_irq(&send_jfc->lock);
-		__acquire(&recv_jfc->lock);
-	} else if (send_jfc->cqn < recv_jfc->cqn) {
-		spin_lock_irq(&send_jfc->lock);
-		spin_lock_nested(&recv_jfc->lock, SINGLE_DEPTH_NESTING);
-	} else {
-		spin_lock_irq(&recv_jfc->lock);
-		spin_lock_nested(&send_jfc->lock, SINGLE_DEPTH_NESTING);
-	}
-}
-
-static void udma_unlock_cqs(struct udma_jfc *send_jfc,
-			    struct udma_jfc *recv_jfc)
-			__releases(&send_jfc->lock)
-			__releases(&recv_jfc->lock)
-{
-	if (unlikely(send_jfc == NULL && recv_jfc == NULL)) {
-		__release(&recv_jfc->lock);
-		__release(&send_jfc->lock);
-	} else if (unlikely(send_jfc != NULL && recv_jfc == NULL)) {
-		__release(&recv_jfc->lock);
-		spin_unlock(&send_jfc->lock);
-	} else if (unlikely(send_jfc == NULL && recv_jfc != NULL)) {
-		__release(&send_jfc->lock);
-		spin_unlock(&recv_jfc->lock);
-	} else if (send_jfc == recv_jfc) {
-		__release(&recv_jfc->lock);
-		spin_unlock_irq(&send_jfc->lock);
-	} else if (send_jfc->cqn < recv_jfc->cqn) {
-		spin_unlock(&recv_jfc->lock);
-		spin_unlock_irq(&send_jfc->lock);
-	} else {
-		spin_unlock(&send_jfc->lock);
-		spin_unlock_irq(&recv_jfc->lock);
-	}
-}
-
-void copy_send_jfc(struct udma_qp *from_qp, struct udma_qp *to_qp)
-{
-	to_qp->qp_attr.send_jfc = from_qp->qp_attr.send_jfc;
-	udma_lock_cqs(to_qp->qp_attr.send_jfc, NULL);
-	list_add_tail(&to_qp->sq_node, &to_qp->qp_attr.send_jfc->sq_list);
-	udma_unlock_cqs(to_qp->qp_attr.send_jfc, NULL);
-}
-
 static int udma_qp_store(struct udma_dev *udma_dev,
 			 struct udma_qp *qp)
 {
@@ -1801,9 +1732,7 @@ static void free_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)
 
 static void free_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp)
 {
-	if ((is_rq_jetty(&qp->qp_attr) &&
-	    !(qp->en_flags & HNS3_UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) ||
-	    qp->no_free_wqe_buf)
+	if (qp->no_free_wqe_buf)
 		return;
 
 	if (qp->en_flags & HNS3_UDMA_QP_CAP_SQ_RECORD_DB)
@@ -1813,9 +1742,7 @@ static void free_qp_db(struct udma_dev *udma_dev, struct udma_qp *qp)
 
 static void free_wqe_buf(struct udma_dev *dev, struct udma_qp *qp)
 {
-	if ((is_rq_jetty(&qp->qp_attr) &&
-	    !(qp->en_flags & HNS3_UDMA_QP_CAP_DYNAMIC_CTX_ATTACH)) ||
-	    qp->no_free_wqe_buf)
+	if (qp->no_free_wqe_buf)
 		return;
 
 	udma_mtr_destroy(dev, &qp->mtr);
@@ -1906,6 +1833,19 @@ out:
 	return ret;
 }
 
+static void udma_free_qp_sq(struct udma_dev *udma_dev, struct udma_qp *qp)
+{
+	struct udma_qp_attr *qp_attr = &qp->qp_attr;
+
+	if (is_rc_jetty(qp_attr)) {
+		if (!qp_attr->jetty->rc_node.buf_addr)
+			free_qp_wqe(udma_dev, qp);
+	} else {
+		free_qp_wqe(udma_dev, qp);
+		free_qp_db(udma_dev, qp);
+	}
+}
+
 int udma_init_qpc(struct udma_dev *udma_dev, struct udma_qp *qp)
 {
 	struct udma_qp_context ctx[2] = {};
@@ -1939,12 +1879,7 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 		return ret;
 	}
 
-	ret = alloc_qpn(udma_dev, qp);
-	if (ret) {
-		dev_err(dev, "failed to alloc QPN, ret = %d.\n", ret);
-		goto err_qpn;
-	}
-
+	alloc_qpn(udma_dev, qp);
 	if (!qp->qpn) {
 		ret = -EINVAL;
 		goto err_qpn;
@@ -2002,10 +1937,8 @@ err_copy:
 err_store:
 	free_qpc(udma_dev, qp);
 err_qpc:
-	if (udma_qp_need_alloc_sq(&qp->qp_attr) && !is_rq_jetty(qp_attr)) {
-		free_qp_db(udma_dev, qp);
-		free_qp_wqe(udma_dev, qp);
-	}
+	if (udma_qp_need_alloc_sq(qp_attr))
+		udma_free_qp_sq(udma_dev, qp);
 err_sq:
 err_qpn:
 	return ret;
@@ -2021,10 +1954,8 @@ void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 	wait_for_completion(&qp->free);
 
 	free_qpc(udma_dev, qp);
-	if (udma_qp_need_alloc_sq(&qp->qp_attr) || qp->force_free_wqe_buf) {
-		free_qp_db(udma_dev, qp);
-		free_qp_wqe(udma_dev, qp);
-	}
+	if (udma_qp_need_alloc_sq(&qp->qp_attr) || qp->force_free_wqe_buf)
+		udma_free_qp_sq(udma_dev, qp);
 }
 
 int udma_init_qp_table(struct udma_dev *dev)

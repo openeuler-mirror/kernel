@@ -388,6 +388,9 @@ void udma_init_debugfs(void)
 
 void udma_cleanup_debugfs(void)
 {
+	if (IS_ERR_OR_NULL(udma_dbgfs_root))
+		return;
+
 	debugfs_remove_recursive(udma_dbgfs_root);
 	udma_dbgfs_root = NULL;
 }

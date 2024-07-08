@@ -113,10 +113,9 @@ static int alloc_jfr_wqe_buf(struct udma_dev *dev,
 	return ret;
 }
 
-static int alloc_jfr_wqe_buf_rq(struct udma_dev *dev,
-			     struct udma_jfr *jfr,
-			     struct ubcore_udata *udata,
-			     struct hns3_udma_create_jfr_ucmd *ucmd)
+static int alloc_jfr_wqe_buf_rq(struct udma_dev *dev, struct udma_jfr *jfr,
+				struct ubcore_udata *udata,
+				struct hns3_udma_create_jfr_ucmd *ucmd)
 {
 	struct udma_buf_attr buf_attr = {};
 	uint32_t total_buff_size = 0;

@@ -96,12 +96,12 @@ int udma_modify_tp(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 	struct udma_qp *qp;
 	int ret = -EINVAL;
 
+	if (!tp)
+		goto error;
+
 	udma_device = to_udma_dev(tp->ub_dev);
 	utp = to_udma_tp(tp);
-
 	qp = &utp->qp;
-	if (!qp)
-		goto error;
 
 	curr_state = to_udma_qp_state(tp->state);
 
@@ -342,7 +342,7 @@ static int udma_store_jetty_tp(struct udma_dev *udma_device,
 			*fail_ret_tp = &jetty->rc_node.tp->ubcore_tp;
 		} else {
 			dev_err(udma_device->dev,
-				"jetty has bind a target jetty, jetty_id = %d.\n",
+				"jetty has bind a target jetty, jetty_id = %u.\n",
 				jetty->rc_node.tjetty_id.id);
 			return -EEXIST;
 		}
@@ -432,6 +432,7 @@ struct ubcore_tp *udma_create_tp(struct ubcore_device *dev, struct ubcore_tp_cfg
 	}
 	tp->tjetty_id.id = tp->qp.qp_attr.tgt_id;
 	tp->tjetty_id.eid = cfg->peer_eid;
+	tp->sub_trans_mode = UDMA_SUB_TRANS_MODE_NORMAL_TP;
 
 	lock_jetty(&tp->qp.qp_attr);
 	ret = udma_create_qp_common(udma_dev, &tp->qp, udata);
@@ -492,6 +493,7 @@ struct udma_tp *udma_create_user_tp(struct udma_dev *udma_dev,
 
 	tp->ubcore_tp.tpn = tp->qp.qpn;
 	tp->ubcore_tp.ub_dev = &udma_dev->ub_dev;
+	tp->sub_trans_mode = UDMA_SUB_TRANS_MODE_USER_TP;
 	ret = udma_init_qpc(udma_dev, &tp->qp);
 	if (ret)
 		goto failed_init_qpc;
@@ -526,9 +528,17 @@ int udma_modify_user_tp(struct ubcore_device *dev, uint32_t tpn,
 		refcount_inc(&qp->refcount);
 	xa_unlock_irqrestore(&udma_dev->qp_table.xa, flags);
 
-	if (!qp)
+	if (!qp) {
+		dev_err(&dev->dev, "find qp failed, tpn = %u.\n", tpn);
 		return -EINVAL;
+	}
+
 	tp = container_of(qp, struct udma_tp, qp);
+	if (tp->sub_trans_mode != UDMA_SUB_TRANS_MODE_USER_TP) {
+		dev_err(&dev->dev, "invalid tp sub_trans_mode.\n");
+		ret = -EINVAL;
+		goto out;
+	}
 	udma_set_tp(dev, cfg, tp);
 	udma_ipv4_map_to_eid(attr->peer_net_addr.net_addr.in4.addr,
 			     &tp->ubcore_tp.peer_eid);
@@ -536,6 +546,7 @@ int udma_modify_user_tp(struct ubcore_device *dev, uint32_t tpn,
 	if (ret)
 		dev_err(&dev->dev, "modify user tp failed, ret = %d.\n", ret);
 
+out:
 	if (refcount_dec_and_test(&qp->refcount))
 		complete(&qp->free);
 
