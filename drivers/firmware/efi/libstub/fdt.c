@@ -57,13 +57,6 @@ static efi_status_t fdt_init_hbm_mode(void *fdt, int node)
 	if (status)
 		return EFI_LOAD_ERROR;
 
-	node = fdt_subnode_offset(fdt, 0, "cpus");
-	if (node < 0) {
-		node = fdt_add_subnode(fdt, 0, "cpus");
-		if (node < 0)
-			return EFI_LOAD_ERROR;
-	}
-
 	/* Current PBHA bit59 is need to enable PBHA bit0 mode. */
 	status = fdt_setprop_var(fdt, node, "arm,pbha-performance-only", arr);
 	if (status) {
