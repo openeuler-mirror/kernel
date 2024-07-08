@@ -585,9 +585,15 @@ dotraplinkage void notrace do_int3(struct pt_regs *regs, long error_code)
 	 * ftrace must be first, everything else may cause a recursive crash.
 	 * See note by declaration of modifying_ftrace_code in ftrace.c
 	 */
-	if (unlikely(atomic_read(&modifying_ftrace_code)) &&
-	    ftrace_int3_handler(regs))
-		return;
+	if (unlikely(atomic_read(&modifying_ftrace_code))) {
+		int ret;
+
+		lockdep_off();
+		ret = ftrace_int3_handler(regs);
+		lockdep_on();
+		if (ret)
+			return;
+	}
 #endif
 	if (poke_int3_handler(regs))
 		return;
