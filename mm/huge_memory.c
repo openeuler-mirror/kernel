@@ -1608,7 +1608,7 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		return -EAGAIN;
 	}
 	add_mm_counter(dst_mm, MM_ANONPAGES, HPAGE_PMD_NR);
-	add_reliable_page_counter(src_page, dst_mm, HPAGE_PMD_NR);
+	add_reliable_folio_counter(src_folio, dst_mm, HPAGE_PMD_NR);
 out_zero_page:
 	mm_inc_nr_ptes(dst_mm);
 	pgtable_trans_huge_deposit(dst_mm, dst_pmd, pgtable);
@@ -2577,7 +2577,7 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 				folio_mark_dirty(folio);
 			if (!folio_test_referenced(folio) && pmd_young(old_pmd))
 				folio_set_referenced(folio);
-			add_reliable_page_counter(page, mm, -HPAGE_PMD_NR);
+			add_reliable_folio_counter(folio, mm, -HPAGE_PMD_NR);
 			folio_remove_rmap_pmd(folio, page, vma);
 			folio_put(folio);
 		}

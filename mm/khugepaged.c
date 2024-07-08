@@ -1644,7 +1644,7 @@ int collapse_pte_mapped_thp(struct mm_struct *mm, unsigned long addr,
 		 */
 		ptep_clear(mm, addr, pte);
 		folio_remove_rmap_pte(folio, page, vma);
-		add_reliable_page_counter(page, mm, -1);
+		add_reliable_folio_counter(folio, mm, -1);
 		nr_ptes++;
 	}
 

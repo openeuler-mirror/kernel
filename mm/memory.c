@@ -1495,12 +1495,12 @@ static __always_inline void zap_present_folio_ptes(struct mmu_gather *tlb,
 		if (pte_young(ptent) && likely(vma_has_recency(vma)))
 			folio_mark_accessed(folio);
 		rss[mm_counter(folio)] -= nr;
-		add_reliable_page_counter(page, mm, -nr);
 	} else {
 		/* We don't need up-to-date accessed/dirty bits. */
 		clear_full_ptes(mm, addr, pte, nr, tlb->fullmm);
 		rss[MM_ANONPAGES] -= nr;
 	}
+	add_reliable_folio_counter(folio, mm, -nr);
 
 	/* Checking a single PTE in a batch is sufficient. */
 	arch_check_zapped_pte(vma, ptent);
@@ -1637,7 +1637,7 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 			 */
 			WARN_ON_ONCE(!vma_is_anonymous(vma));
 			rss[mm_counter(folio)]--;
-			add_reliable_page_counter(page, mm, -1);
+			add_reliable_folio_counter(folio, mm, -1);
 			if (is_device_private_entry(entry))
 				folio_remove_rmap_pte(folio, page, vma);
 			folio_put(folio);
@@ -1654,6 +1654,7 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 			if (!should_zap_folio(details, folio))
 				continue;
 			rss[mm_counter(folio)]--;
+			add_reliable_folio_counter(folio, mm, -1);
 		} else if (pte_marker_entry_uffd_wp(entry)) {
 			/*
 			 * For anon: always drop the marker; for file: only
@@ -4643,7 +4644,7 @@ vm_fault_t do_set_pmd(struct vm_fault *vmf, struct page *page)
 		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
 
 	add_mm_counter(vma->vm_mm, mm_counter_file(folio), HPAGE_PMD_NR);
-	add_reliable_page_counter(page, vma->vm_mm, HPAGE_PMD_NR);
+	add_reliable_folio_counter(folio, vma->vm_mm, HPAGE_PMD_NR);
 	folio_add_file_rmap_pmd(folio, page, vma);
 
 	/*
