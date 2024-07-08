@@ -1581,12 +1581,7 @@ unsigned long ftrace_location_range(unsigned long start, unsigned long end)
 	key.ip = start;
 	key.flags = end;	/* overload flags, as it is unsigned long */
 
-	/*
-	 * It is in atomic context when called from ftrace_int3_handler(),
-	 * in this case rcu lock is not needed.
-	 */
-	if (!in_atomic())
-		rcu_read_lock();
+	rcu_read_lock();
 	for (pg = ftrace_pages_start; pg; pg = pg->next) {
 		if (pg->index == 0 ||
 		    end < pg->records[0].ip ||
@@ -1600,8 +1595,7 @@ unsigned long ftrace_location_range(unsigned long start, unsigned long end)
 			break;
 		}
 	}
-	if (!in_atomic())
-		rcu_read_unlock();
+	rcu_read_unlock();
 
 	return ip;
 }
