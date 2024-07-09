@@ -5675,7 +5675,7 @@ static int bpf_sock_ops_get_uid_gid(struct bpf_sock_ops_kern *bpf_sock,
 	*(u32 *)optval = from_kgid_munged(sock_net(sk)->user_ns, gid);
 	*((u32 *)optval + 1) = from_kuid_munged(sock_net(sk)->user_ns, uid);
 
-	return sizeof(u64);
+	return 0;
 }
 
 static int bpf_sk_original_addr(struct bpf_sock_ops_kern *bpf_sock,
