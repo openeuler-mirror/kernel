@@ -1236,7 +1236,7 @@ static int replace_page(struct vm_area_struct *vma, struct page *page,
 	 */
 	if (!is_zero_pfn(page_to_pfn(kpage))) {
 		folio_get(kfolio);
-		add_reliable_page_counter(kpage, mm, 1);
+		add_reliable_folio_counter(kfolio, mm, 1);
 		folio_add_anon_rmap_pte(kfolio, kpage, vma, addr, RMAP_NONE);
 		newpte = mk_pte(kpage, vma->vm_page_prot);
 	} else {
