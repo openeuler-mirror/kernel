@@ -509,7 +509,7 @@ static int ccp5_perform_sm4(struct ccp_op *op)
 {
 	struct ccp5_desc desc;
 	union ccp_function function;
-	u32 key_addr = op->sb_ctx * LSB_ITEM_SIZE + SM4_BLOCK_SIZE;
+	u32 key_addr = op->sb_key * LSB_ITEM_SIZE;
 
 	op->cmd_q->total_sm4_ops++;
 

@@ -700,6 +700,7 @@ struct ccp_sm3_engine {
  * @CCP_SM4_MODE_CBC: CBC mode
  * @CCP_SM4_MODE_OFB: OFB mode
  * @CCP_SM4_MODE_CFB: CFB mode
+ * @CCP_SM4_MODE_XTS: XTS mode
  * @CCP_SM4_MODE_CTR: CTR mode
  */
 enum ccp_sm4_mode {
@@ -707,6 +708,7 @@ enum ccp_sm4_mode {
 	CCP_SM4_MODE_CBC,
 	CCP_SM4_MODE_OFB,
 	CCP_SM4_MODE_CFB,
+	CCP_SM4_MODE_XTS,
 	CCP_SM4_MODE_CTR,
 	CCP_SM4_MODE__LAST,
 };
