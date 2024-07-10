@@ -693,13 +693,17 @@ static inline int set_rc_wqe(struct hns_roce_qp *qp,
 		     (wr->send_flags & IB_SEND_SIGNALED) ? 1 : 0);
 
 	if (wr->opcode == IB_WR_ATOMIC_CMP_AND_SWP ||
-	    wr->opcode == IB_WR_ATOMIC_FETCH_AND_ADD)
+	    wr->opcode == IB_WR_ATOMIC_FETCH_AND_ADD) {
+		if (msg_len != ATOMIC_WR_LEN)
+			return -EINVAL;
 		ret = set_atomic_seg(hr_dev, wr, rc_sq_wqe, valid_num_sge,
 				     msg_len);
-	else if (wr->opcode != IB_WR_REG_MR)
+	} else if (wr->opcode != IB_WR_REG_MR) {
 		ret = set_rwqe_data_seg(&qp->ibqp, wr, rc_sq_wqe,
 					&curr_idx, valid_num_sge);
-
+		if (ret)
+			return ret;
+	}
 	if (qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH)
 		fill_dca_fields(qp, rc_sq_wqe);
 
