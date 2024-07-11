@@ -2223,6 +2223,7 @@ wdata_prepare_pages(struct cifs_writedata *wdata, unsigned int found_pages,
 		 * back from swapper_space to tmpfs file mapping
 		 */
 
+relock_recheck:
 		if (nr_pages == 0)
 			lock_page(page);
 		else if (!trylock_page(page))
@@ -2245,11 +2246,16 @@ wdata_prepare_pages(struct cifs_writedata *wdata, unsigned int found_pages,
 			break;
 		}
 
-		if (wbc->sync_mode != WB_SYNC_NONE)
-			wait_on_page_writeback(page);
+		if (PageWriteback(page)) {
+			unlock_page(page);
+			if (wbc->sync_mode != WB_SYNC_NONE) {
+				wait_on_page_writeback(page);
+				goto relock_recheck;
+			}
+			break;
+		}
 
-		if (PageWriteback(page) ||
-				!clear_page_dirty_for_io(page)) {
+		if (!clear_page_dirty_for_io(page)) {
 			unlock_page(page);
 			break;
 		}
