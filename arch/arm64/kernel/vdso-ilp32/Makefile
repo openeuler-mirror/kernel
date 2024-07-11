@@ -53,8 +53,9 @@ ifeq ($(CONFIG_CC_IS_CLANG), y)
   endif
 endif
 
-# Disable gcov profiling for VDSO code
+# Disable gcov and PGO profiling for VDSO code
 GCOV_PROFILE := n
+PGO_PROFILE := n
 KASAN_SANITIZE := n
 UBSAN_SANITIZE := n
 KCOV_INSTRUMENT := n

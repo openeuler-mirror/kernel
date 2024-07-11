@@ -15,6 +15,7 @@ CFLAGS_REMOVE_rethook.o		= $(CC_FLAGS_FTRACE)
 endif
 
 GCOV_PROFILE_early.o		:= n
+PGO_PROFILE_early.o		:= n
 KCOV_INSTRUMENT_early.o		:= n
 UBSAN_SANITIZE_early.o		:= n
 KASAN_SANITIZE_ipl.o		:= n

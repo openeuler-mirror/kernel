@@ -9,6 +9,7 @@ CFLAGS_REMOVE_sclp_early_core.o	= $(CC_FLAGS_FTRACE)
 endif
 
 GCOV_PROFILE_sclp_early_core.o		:= n
+PGO_PROFILE_sclp_early_core.o		:= n
 KCOV_INSTRUMENT_sclp_early_core.o	:= n
 UBSAN_SANITIZE_sclp_early_core.o	:= n
 KASAN_SANITIZE_sclp_early_core.o	:= n

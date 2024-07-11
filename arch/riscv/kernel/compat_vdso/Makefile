@@ -36,6 +36,7 @@ CPPFLAGS_compat_vdso.lds += -P -C -DCOMPAT_VDSO -U$(ARCH)
 
 # Disable profiling and instrumentation for VDSO code
 GCOV_PROFILE := n
+PGO_PROFILE := n
 KCOV_INSTRUMENT := n
 KASAN_SANITIZE := n
 UBSAN_SANITIZE := n

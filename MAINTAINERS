@@ -16863,6 +16863,17 @@ S:	Maintained
 F:	include/linux/personality.h
 F:	include/uapi/linux/personality.h
 
+PGO BASED KERNEL PROFILING
+M:	Sami Tolvanen <samitolvanen@google.com>
+M:	Bill Wendling <wcw@google.com>
+M:	Jingze Xia <xiajingze1@huawei.com>
+M:	Haibo Jiang <jianghaibo9@huawei.com>
+R:	Nathan Chancellor <natechancellor@gmail.com>
+R:	Nick Desaulniers <ndesaulniers@google.com>
+S:	Supported
+F:	Documentation/dev-tools/pgo.rst
+F:	kernel/pgo
+
 PHOENIX RC FLIGHT CONTROLLER ADAPTER
 M:	Marcus Folkesson <marcus.folkesson@gmail.com>
 L:	linux-input@vger.kernel.org

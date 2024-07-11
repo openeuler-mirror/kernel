@@ -7,6 +7,7 @@
 
 KCOV_INSTRUMENT := n
 GCOV_PROFILE := n
+PGO_PROFILE := n
 UBSAN_SANITIZE := n
 
 OBJECTS := head.o real2.o firmware.o misc.o piggy.o
