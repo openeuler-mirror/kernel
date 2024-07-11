@@ -17,6 +17,7 @@
 
 #include "psp-dev.h"
 #include "csv-dev.h"
+#include "ring-buffer.h"
 
 /*
  * Hygon CSV build info:
@@ -24,6 +25,8 @@
  *    in AMD SEV.
  */
 u32 hygon_csv_build;
+
+int csv_comm_mode = CSV_COMM_MAILBOX_ON;
 
 /*
  * csv_update_api_version used to update the api version of HYGON CSV
@@ -42,6 +45,7 @@ int csv_cmd_buffer_len(int cmd)
 {
 	switch (cmd) {
 	case CSV_CMD_HGSC_CERT_IMPORT:		return sizeof(struct csv_data_hgsc_cert_import);
+	case CSV_CMD_RING_BUFFER:		return sizeof(struct csv_data_ring_buffer);
 	default:				return 0;
 	}
 }
@@ -218,3 +222,339 @@ const struct file_operations csv_fops = {
 	.owner = THIS_MODULE,
 	.unlocked_ioctl = csv_ioctl,
 };
+
+/*
+ * __csv_ring_buffer_enter_locked issues command to switch to RING BUFFER
+ * mode, the caller must acquire the mutex lock.
+ */
+static int __csv_ring_buffer_enter_locked(int *error)
+{
+	struct psp_device *psp = psp_master;
+	struct sev_device *sev;
+	struct csv_data_ring_buffer *data;
+	struct csv_ringbuffer_queue *low_queue;
+	struct csv_ringbuffer_queue *hi_queue;
+	int ret = 0;
+
+	if (!psp || !psp->sev_data || !hygon_psp_hooks.sev_dev_hooks_installed)
+		return -ENODEV;
+
+	sev = psp->sev_data;
+
+	if (csv_comm_mode == CSV_COMM_RINGBUFFER_ON)
+		return -EEXIST;
+
+	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	low_queue = &sev->ring_buffer[CSV_COMMAND_PRIORITY_LOW];
+	hi_queue = &sev->ring_buffer[CSV_COMMAND_PRIORITY_HIGH];
+
+	data->queue_lo_cmdptr_address = __psp_pa(low_queue->cmd_ptr.data_align);
+	data->queue_lo_statval_address = __psp_pa(low_queue->stat_val.data_align);
+	data->queue_hi_cmdptr_address = __psp_pa(hi_queue->cmd_ptr.data_align);
+	data->queue_hi_statval_address = __psp_pa(hi_queue->stat_val.data_align);
+	data->queue_lo_size = 1;
+	data->queue_hi_size = 1;
+	data->int_on_empty = 1;
+
+	ret = hygon_psp_hooks.__sev_do_cmd_locked(CSV_CMD_RING_BUFFER, data, error);
+	if (!ret) {
+		iowrite32(0, sev->io_regs + sev->vdata->cmdbuff_addr_hi_reg);
+		csv_comm_mode = CSV_COMM_RINGBUFFER_ON;
+	}
+
+	kfree(data);
+	return ret;
+}
+
+static int csv_wait_cmd_ioc_ring_buffer(struct sev_device *sev,
+					unsigned int *reg,
+					unsigned int timeout)
+{
+	int ret;
+
+	ret = wait_event_timeout(sev->int_queue,
+			sev->int_rcvd, timeout * HZ);
+	if (!ret)
+		return -ETIMEDOUT;
+
+	*reg = ioread32(sev->io_regs + sev->vdata->cmdbuff_addr_lo_reg);
+
+	return 0;
+}
+
+static int csv_get_cmd_status(struct sev_device *sev, int prio, int index)
+{
+	struct csv_queue *queue = &sev->ring_buffer[prio].stat_val;
+	struct csv_statval_entry *statval = (struct csv_statval_entry *)queue->data;
+
+	return statval[index].status;
+}
+
+static int __csv_do_ringbuf_cmds_locked(int *psp_ret)
+{
+	struct psp_device *psp = psp_master;
+	struct sev_device *sev;
+	unsigned int rb_tail;
+	unsigned int rb_ctl;
+	int last_cmd_index;
+	unsigned int reg, ret = 0;
+
+	if (!psp || !psp->sev_data)
+		return -ENODEV;
+
+	if (*hygon_psp_hooks.psp_dead)
+		return -EBUSY;
+
+	sev = psp->sev_data;
+
+	/* update rb tail */
+	rb_tail = ioread32(sev->io_regs + sev->vdata->cmdbuff_addr_hi_reg);
+	rb_tail &= (~PSP_RBTAIL_QHI_TAIL_MASK);
+	rb_tail |= (sev->ring_buffer[CSV_COMMAND_PRIORITY_HIGH].cmd_ptr.tail
+						<< PSP_RBTAIL_QHI_TAIL_SHIFT);
+	rb_tail &= (~PSP_RBTAIL_QLO_TAIL_MASK);
+	rb_tail |= sev->ring_buffer[CSV_COMMAND_PRIORITY_LOW].cmd_ptr.tail;
+	iowrite32(rb_tail, sev->io_regs + sev->vdata->cmdbuff_addr_hi_reg);
+
+	/* update rb ctl to trigger psp irq */
+	sev->int_rcvd = 0;
+
+	/* PSP response to x86 only when all queue is empty or error happends */
+	rb_ctl = PSP_RBCTL_X86_WRITES |
+		 PSP_RBCTL_RBMODE_ACT |
+		 PSP_RBCTL_CLR_INTSTAT;
+	iowrite32(rb_ctl, sev->io_regs + sev->vdata->cmdresp_reg);
+
+	/* wait for all commands in ring buffer completed */
+	ret = csv_wait_cmd_ioc_ring_buffer(sev, &reg,
+					   (*hygon_psp_hooks.psp_timeout) * 10);
+	if (ret) {
+		if (psp_ret)
+			*psp_ret = 0;
+		dev_err(sev->dev, "csv ringbuffer mode command timed out, disabling PSP\n");
+		*hygon_psp_hooks.psp_dead = true;
+
+		return ret;
+	}
+
+	/* cmd error happends */
+	if (reg & PSP_RBHEAD_QPAUSE_INT_STAT)
+		ret = -EFAULT;
+
+	if (psp_ret) {
+		last_cmd_index = (reg & PSP_RBHEAD_QHI_HEAD_MASK)
+					>> PSP_RBHEAD_QHI_HEAD_SHIFT;
+		*psp_ret = csv_get_cmd_status(sev, CSV_COMMAND_PRIORITY_HIGH,
+					      last_cmd_index);
+		if (*psp_ret == 0) {
+			last_cmd_index = reg & PSP_RBHEAD_QLO_HEAD_MASK;
+			*psp_ret = csv_get_cmd_status(sev,
+					CSV_COMMAND_PRIORITY_LOW, last_cmd_index);
+		}
+	}
+
+	return ret;
+}
+
+/*
+ * csv_do_ringbuf_cmds will enter RING BUFFER mode and handling commands
+ * queued in RING BUFFER queues, the user is obligate to manage RING
+ * BUFFER queues including allocate, enqueue and free, etc.
+ */
+static int csv_do_ringbuf_cmds(int *psp_ret)
+{
+	struct sev_user_data_status data;
+	int rc;
+
+	if (!hygon_psp_hooks.sev_dev_hooks_installed)
+		return -ENODEV;
+
+	mutex_lock(hygon_psp_hooks.sev_cmd_mutex);
+
+	rc = __csv_ring_buffer_enter_locked(psp_ret);
+	if (rc)
+		goto cmd_unlock;
+
+	rc = __csv_do_ringbuf_cmds_locked(psp_ret);
+
+	/* exit ringbuf mode by send CMD in mailbox mode */
+	hygon_psp_hooks.__sev_do_cmd_locked(SEV_CMD_PLATFORM_STATUS, &data, NULL);
+	csv_comm_mode = CSV_COMM_MAILBOX_ON;
+
+cmd_unlock:
+	mutex_unlock(hygon_psp_hooks.sev_cmd_mutex);
+
+	return rc;
+}
+
+int csv_issue_ringbuf_cmds_external_user(struct file *filep, int *psp_ret)
+{
+	if (!filep || filep->f_op != &csv_fops)
+		return -EBADF;
+
+	return csv_do_ringbuf_cmds(psp_ret);
+}
+EXPORT_SYMBOL_GPL(csv_issue_ringbuf_cmds_external_user);
+
+void csv_restore_mailbox_mode_postprocess(void)
+{
+	csv_comm_mode = CSV_COMM_MAILBOX_ON;
+	csv_ring_buffer_queue_free();
+}
+
+/*
+ * __csv_ring_buffer_queue_init will allocate memory for command queue
+ * and status queue. If error occurs, this function will return directly,
+ * the caller must free the memories allocated for queues.
+ *
+ * Function csv_ring_buffer_queue_free() can be used to handling error
+ * return by this function and cleanup ring buffer queues when exiting
+ * from RING BUFFER mode.
+ *
+ * Return -ENOMEM if fail to allocate memory for queues, otherwise 0
+ */
+static int __csv_ring_buffer_queue_init(struct csv_ringbuffer_queue *ring_buffer)
+{
+	void *cmd_ptr_buffer = NULL;
+	void *stat_val_buffer = NULL;
+
+	/* If reach here, the command and status queues must be NULL */
+	WARN_ON(ring_buffer->cmd_ptr.data ||
+		ring_buffer->stat_val.data);
+
+	cmd_ptr_buffer = kzalloc(CSV_RING_BUFFER_LEN, GFP_KERNEL);
+	if (!cmd_ptr_buffer)
+		return -ENOMEM;
+
+	/* the command queue will points to @cmd_ptr_buffer */
+	csv_queue_init(&ring_buffer->cmd_ptr, cmd_ptr_buffer,
+		       CSV_RING_BUFFER_LEN, CSV_RING_BUFFER_ESIZE);
+
+	stat_val_buffer = kzalloc(CSV_RING_BUFFER_LEN, GFP_KERNEL);
+	if (!stat_val_buffer)
+		return -ENOMEM;
+
+	/* the status queue will points to @stat_val_buffer */
+	csv_queue_init(&ring_buffer->stat_val, stat_val_buffer,
+		       CSV_RING_BUFFER_LEN, CSV_RING_BUFFER_ESIZE);
+	return 0;
+}
+
+int csv_ring_buffer_queue_init(void)
+{
+	struct psp_device *psp = psp_master;
+	struct sev_device *sev;
+	int i, ret = 0;
+
+	if (!psp || !psp->sev_data)
+		return -ENODEV;
+
+	sev = psp->sev_data;
+
+	for (i = CSV_COMMAND_PRIORITY_HIGH; i < CSV_COMMAND_PRIORITY_NUM; i++) {
+		ret = __csv_ring_buffer_queue_init(&sev->ring_buffer[i]);
+		if (ret)
+			goto e_free;
+	}
+
+	return 0;
+
+e_free:
+	csv_ring_buffer_queue_free();
+	return ret;
+}
+EXPORT_SYMBOL_GPL(csv_ring_buffer_queue_init);
+
+int csv_ring_buffer_queue_free(void)
+{
+	struct psp_device *psp = psp_master;
+	struct sev_device *sev;
+	struct csv_ringbuffer_queue *ring_buffer;
+	int i;
+
+	if (!psp || !psp->sev_data)
+		return -ENODEV;
+
+	sev = psp->sev_data;
+
+	for (i = 0; i < CSV_COMMAND_PRIORITY_NUM; i++) {
+		ring_buffer = &sev->ring_buffer[i];
+
+		/*
+		 * If command queue is not NULL, it must points to memory
+		 * that allocated in __csv_ring_buffer_queue_init().
+		 */
+		if (ring_buffer->cmd_ptr.data) {
+			kfree((void *)ring_buffer->cmd_ptr.data);
+			csv_queue_cleanup(&ring_buffer->cmd_ptr);
+		}
+
+		/*
+		 * If status queue is not NULL, it must points to memory
+		 * that allocated in __csv_ring_buffer_queue_init().
+		 */
+		if (ring_buffer->stat_val.data) {
+			kfree((void *)ring_buffer->stat_val.data);
+			csv_queue_cleanup(&ring_buffer->stat_val);
+		}
+	}
+	return 0;
+}
+EXPORT_SYMBOL_GPL(csv_ring_buffer_queue_free);
+
+int csv_fill_cmd_queue(int prio, int cmd, void *data, uint16_t flags)
+{
+	struct psp_device *psp = psp_master;
+	struct sev_device *sev;
+	struct csv_cmdptr_entry cmdptr = { };
+
+	if (!psp || !psp->sev_data)
+		return -ENODEV;
+
+	sev = psp->sev_data;
+
+	cmdptr.cmd_buf_ptr = __psp_pa(data);
+	cmdptr.cmd_id = cmd;
+	cmdptr.cmd_flags = flags;
+
+	if (csv_enqueue_cmd(&sev->ring_buffer[prio].cmd_ptr, &cmdptr, 1) != 1)
+		return -EFAULT;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(csv_fill_cmd_queue);
+
+int csv_check_stat_queue_status(int *psp_ret)
+{
+	struct psp_device *psp = psp_master;
+	struct sev_device *sev;
+	unsigned int len;
+	int prio;
+
+	if (!psp || !psp->sev_data)
+		return -ENODEV;
+
+	sev = psp->sev_data;
+
+	for (prio = CSV_COMMAND_PRIORITY_HIGH;
+	     prio < CSV_COMMAND_PRIORITY_NUM; prio++) {
+		do {
+			struct csv_statval_entry statval;
+
+			len = csv_dequeue_stat(&sev->ring_buffer[prio].stat_val,
+					       &statval, 1);
+			if (len) {
+				if (statval.status != 0) {
+					*psp_ret = statval.status;
+					return -EFAULT;
+				}
+			}
+		} while (len);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(csv_check_stat_queue_status);

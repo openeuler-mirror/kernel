@@ -667,6 +667,18 @@ static int __sev_launch_update_vmsa(struct kvm *kvm, struct kvm_vcpu *vcpu,
 	  return ret;
 
 	vcpu->arch.guest_state_protected = true;
+
+	/*
+	 * Backup encrypted vmsa to support rebooting CSV2 guest. The
+	 * clflush_cache_range() is necessary to invalidate prefetched
+	 * memory area pointed by svm->sev_es.vmsa so that we can read
+	 * fresh memory updated by PSP.
+	 */
+	if (is_x86_vendor_hygon()) {
+		clflush_cache_range(svm->sev_es.vmsa, PAGE_SIZE);
+		csv2_sync_reset_vmsa(svm);
+	}
+
 	return 0;
 }
 
@@ -2197,10 +2209,13 @@ void __init sev_set_cpu_caps(void)
 /* Code to set all of the function and vaiable pointers */
 void sev_install_hooks(void)
 {
+	hygon_kvm_hooks.sev_enabled = &sev_enabled;
+	hygon_kvm_hooks.sev_me_mask = &sev_me_mask;
 	hygon_kvm_hooks.sev_issue_cmd = sev_issue_cmd;
 	hygon_kvm_hooks.get_num_contig_pages = get_num_contig_pages;
 	hygon_kvm_hooks.sev_pin_memory = sev_pin_memory;
 	hygon_kvm_hooks.sev_unpin_memory = sev_unpin_memory;
+	hygon_kvm_hooks.sev_clflush_pages = sev_clflush_pages;
 
 	hygon_kvm_hooks.sev_hooks_installed = true;
 }
@@ -2309,12 +2324,22 @@ out:
 		sev_es_debug_swap_enabled = false;
 
 #ifdef CONFIG_HYGON_CSV
-	/*
-	 * Install sev related function and variable pointers hooks only for
-	 * Hygon CPUs.
-	 */
-	if (is_x86_vendor_hygon())
+	/* Setup resources which are necessary for HYGON CSV */
+	if (is_x86_vendor_hygon()) {
+		/*
+		 * Install sev related function and variable pointers hooks
+		 * no matter @sev_enabled is false.
+		 */
 		sev_install_hooks();
+
+		/*
+		 * Allocate a memory pool to speed up live migration of
+		 * the CSV/CSV2 guests. If the allocation fails, no
+		 * acceleration is performed at live migration.
+		 */
+		if (sev_enabled)
+			csv_alloc_trans_mempool();
+	}
 #endif
 
 #endif
@@ -2324,6 +2349,10 @@ void sev_hardware_unsetup(void)
 {
 	if (!sev_enabled)
 		return;
+
+	/* Free the memory pool that allocated in sev_hardware_setup(). */
+	if (is_x86_vendor_hygon())
+		csv_free_trans_mempool();
 
 	/* No need to take sev_bitmap_lock, all VMs have been destroyed. */
 	sev_flush_asids(1, max_sev_asid);
@@ -2411,6 +2440,9 @@ void sev_free_vcpu(struct kvm_vcpu *vcpu)
 
 	if (svm->sev_es.ghcb_sa_free)
 		kvfree(svm->sev_es.ghcb_sa);
+
+	if (is_x86_vendor_hygon())
+		csv2_free_reset_vmsa(svm);
 }
 
 static void dump_ghcb(struct vcpu_svm *svm)
