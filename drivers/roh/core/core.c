@@ -4,6 +4,7 @@
 #include <linux/pci.h>
 #include <linux/inetdevice.h>
 #include <linux/if_vlan.h>
+#include <linux/if_macvlan.h>
 
 #include "core_priv.h"
 #include "core.h"
@@ -258,6 +259,15 @@ static int roh_ipv4_event(struct notifier_block *this, unsigned long event, void
 
 	if (is_vlan_dev(ndev)) {
 		if (vlan_dev_real_dev(ndev) == device->netdev) {
+			s_addr.sa_family = ndev->type;
+			u64_to_ether_addr(be32_to_cpu(ifa->ifa_address) & 0xffffff, s_addr.sa_data);
+			dev_set_mac_address(ndev, &s_addr, NULL);
+		}
+		return NOTIFY_DONE;
+	}
+
+	if (netif_is_macvlan(ndev)) {
+		if (macvlan_dev_real_dev(ndev) == device->netdev) {
 			s_addr.sa_family = ndev->type;
 			u64_to_ether_addr(be32_to_cpu(ifa->ifa_address) & 0xffffff, s_addr.sa_data);
 			dev_set_mac_address(ndev, &s_addr, NULL);
