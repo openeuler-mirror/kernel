@@ -87,7 +87,7 @@ static struct gfs2_sbd *init_sbd(struct super_block *sb)
 	set_bit(SDF_NOJOURNALID, &sdp->sd_flags);
 	gfs2_tune_init(&sdp->sd_tune);
 
-	init_waitqueue_head(&sdp->sd_glock_wait);
+	init_waitqueue_head(&sdp->sd_kill_wait);
 	init_waitqueue_head(&sdp->sd_async_glock_wait);
 	atomic_set(&sdp->sd_glock_disposal, 0);
 	init_completion(&sdp->sd_locking_init);
@@ -141,6 +141,7 @@ static struct gfs2_sbd *init_sbd(struct super_block *sb)
 	init_waitqueue_head(&sdp->sd_log_flush_wait);
 	atomic_set(&sdp->sd_freeze_state, SFS_UNFROZEN);
 	mutex_init(&sdp->sd_freeze_mutex);
+	INIT_LIST_HEAD(&sdp->sd_dead_glocks);
 
 	return sdp;
 
@@ -1010,7 +1011,7 @@ static int gfs2_lm_mount(struct gfs2_sbd *sdp, int silent)
 		switch (token) {
 		case Opt_jid:
 			ret = match_int(&tmp[0], &option);
-			if (ret || option < 0) 
+			if (ret || option < 0)
 				goto hostdata_error;
 			if (test_and_clear_bit(SDF_NOJOURNALID, &sdp->sd_flags))
 				ls->ls_jid = option;
