@@ -150,7 +150,8 @@ void __dump_page(struct page *page, const char *reason)
 		}
 
 		dentry_ptr = container_of(dentry_first, struct dentry, d_u.d_alias);
-		if (get_kernel_nofault(dentry, dentry_ptr)) {
+		if (get_kernel_nofault(dentry, dentry_ptr) ||
+		    !dentry.d_parent || !dentry.d_name.name) {
 			pr_warn("aops:%ps ino:%lx with invalid dentry %px\n",
 					a_ops, ino, dentry_ptr);
 		} else {
