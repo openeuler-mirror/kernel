@@ -132,12 +132,6 @@ struct xfs_btree_ops {
 			       int *stat);
 	int	(*free_block)(struct xfs_btree_cur *cur, struct xfs_buf *bp);
 
-	/* update last record information */
-	void	(*update_lastrec)(struct xfs_btree_cur *cur,
-				  const struct xfs_btree_block *block,
-				  const union xfs_btree_rec *rec,
-				  int ptr, int reason);
-
 	/* records in block/level */
 	int	(*get_minrecs)(struct xfs_btree_cur *cur, int level);
 	int	(*get_maxrecs)(struct xfs_btree_cur *cur, int level);
@@ -199,13 +193,6 @@ struct xfs_btree_ops {
 			       const union xfs_btree_key *mask);
 };
 
-/*
- * Reasons for the update_lastrec method to be called.
- */
-#define LASTREC_UPDATE	0
-#define LASTREC_INSREC	1
-#define LASTREC_DELREC	2
-
 
 union xfs_btree_irec {
 	struct xfs_alloc_rec_incore	a;
@@ -218,7 +205,6 @@ union xfs_btree_irec {
 /* Per-AG btree information. */
 struct xfs_btree_cur_ag {
 	struct xfs_perag		*pag;
-	xfs_extlen_t			bc_free_longest; /* the potential longest free extent */
 	union {
 		struct xfs_buf		*agbp;
 		struct xbtree_afakeroot	*afake;	/* for staging cursor */
@@ -308,9 +294,8 @@ xfs_btree_cur_sizeof(unsigned int nlevels)
 /* cursor flags */
 #define XFS_BTREE_LONG_PTRS		(1<<0)	/* pointers are 64bits long */
 #define XFS_BTREE_ROOT_IN_INODE		(1<<1)	/* root may be variable size */
-#define XFS_BTREE_LASTREC_UPDATE	(1<<2)	/* track last rec externally */
-#define XFS_BTREE_CRC_BLOCKS		(1<<3)	/* uses extended btree blocks */
-#define XFS_BTREE_OVERLAPPING		(1<<4)	/* overlapping intervals */
+#define XFS_BTREE_CRC_BLOCKS		(1<<2)	/* uses extended btree blocks */
+#define XFS_BTREE_OVERLAPPING		(1<<3)	/* overlapping intervals */
 /*
  * The root of this btree is a fakeroot structure so that we can stage a btree
  * rebuild without leaving it accessible via primary metadata.  The ops struct
