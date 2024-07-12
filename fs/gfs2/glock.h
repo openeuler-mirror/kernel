@@ -84,7 +84,7 @@ enum {
 #define GL_SKIP			0x0100
 #define GL_NOPID		0x0200
 #define GL_NOCACHE		0x0400
-  
+
 /*
  * lm_async_cb return flags
  *
@@ -266,6 +266,7 @@ extern void gfs2_gl_dq_holders(struct gfs2_sbd *sdp);
 extern void gfs2_glock_thaw(struct gfs2_sbd *sdp);
 extern void gfs2_glock_add_to_lru(struct gfs2_glock *gl);
 extern void gfs2_glock_free(struct gfs2_glock *gl);
+extern void gfs2_glock_free_later(struct gfs2_glock *gl);
 
 extern int __init gfs2_glock_init(void);
 extern void gfs2_glock_exit(void);
