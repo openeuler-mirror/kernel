@@ -682,6 +682,12 @@ int __iomap_write_begin(const struct iomap_iter *iter, loff_t pos,
 	size_t from = offset_in_folio(folio, pos), to = from + len;
 	size_t poff, plen;
 
+	if (nr_blocks > 1) {
+		ifs = ifs_alloc(iter->inode, folio, iter->flags);
+		if ((iter->flags & IOMAP_NOWAIT) && !ifs)
+			return -EAGAIN;
+	}
+
 	/*
 	 * If the write or zeroing completely overlaps the current folio, then
 	 * entire folio will be dirtied so there is no need for
@@ -692,10 +698,6 @@ int __iomap_write_begin(const struct iomap_iter *iter, loff_t pos,
 	if (!(iter->flags & IOMAP_UNSHARE) && pos <= folio_pos(folio) &&
 	    pos + len >= folio_pos(folio) + folio_size(folio))
 		return 0;
-
-	ifs = ifs_alloc(iter->inode, folio, iter->flags);
-	if ((iter->flags & IOMAP_NOWAIT) && !ifs && nr_blocks > 1)
-		return -EAGAIN;
 
 	if (folio_test_uptodate(folio))
 		return 0;
@@ -1925,7 +1927,12 @@ static int iomap_writepage_map(struct iomap_writepage_ctx *wpc,
 	WARN_ON_ONCE(end_pos <= pos);
 
 	if (i_blocks_per_folio(inode, folio) > 1) {
-		if (!ifs) {
+		/*
+		 * This should not happen since we always allocate ifs in
+		 * iomap_folio_mkwrite_iter() and there is more than one
+		 * blocks per folio in __iomap_write_begin().
+		 */
+		if (WARN_ON_ONCE(!ifs)) {
 			ifs = ifs_alloc(inode, folio, 0);
 			iomap_set_range_dirty(folio, 0, end_pos - pos);
 		}
