@@ -180,6 +180,37 @@ static void iomap_set_range_dirty(struct folio *folio, size_t off, size_t len)
 		ifs_set_range_dirty(folio, ifs, off, len);
 }
 
+/*
+ * iomap_is_fully_dirty checks whether blocks within a folio are
+ * dirty or not.
+ *
+ * Returns true if all blocks which correspond to the specified part
+ * of the folio are dirty.
+ */
+bool iomap_is_fully_dirty(struct folio *folio, size_t from, size_t count)
+{
+	struct iomap_folio_state *ifs = folio->private;
+	struct inode *inode = folio->mapping->host;
+	unsigned first, last, i;
+
+	if (!ifs)
+		return folio_test_dirty(folio);
+
+	/* Caller's range may extend past the end of this folio */
+	count = min(folio_size(folio) - from, count);
+
+	/* First and last blocks in range within folio */
+	first = from >> inode->i_blkbits;
+	last = (from + count - 1) >> inode->i_blkbits;
+
+	for (i = first; i <= last; i++)
+		if (!ifs_block_is_dirty(folio, ifs, i))
+			return false;
+
+	return true;
+}
+EXPORT_SYMBOL_GPL(iomap_is_fully_dirty);
+
 static struct iomap_folio_state *ifs_alloc(struct inode *inode,
 		struct folio *folio, unsigned int flags)
 {
