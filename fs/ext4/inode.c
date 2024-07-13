@@ -3988,7 +3988,7 @@ retry:
 
 	WARN_ON_ONCE(pos + len > folio_pos(folio) + folio_size(folio));
 
-	if (folio_test_dirty(folio) && (i_blocks_per_folio(inode, folio) == 1))
+	if (iomap_is_fully_dirty(folio, offset_in_folio(folio, pos), len))
 		goto out;
 
 	do {
