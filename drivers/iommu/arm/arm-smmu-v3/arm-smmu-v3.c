@@ -141,6 +141,7 @@ struct arm_smmu_ctx_desc quiet_cd = { 0 };
 static struct arm_smmu_option_prop arm_smmu_options[] = {
 	{ ARM_SMMU_OPT_SKIP_PREFETCH, "hisilicon,broken-prefetch-cmd" },
 	{ ARM_SMMU_OPT_PAGE0_REGS_ONLY, "cavium,cn9900-broken-page1-regspace"},
+	{ ARM_SMMU_OPT_SYNC_MAP, "hisilicon,broken-prefetch-pgtbl"},
 	{ 0, NULL},
 };
 
@@ -4493,6 +4494,25 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 }
 
 #ifdef CONFIG_ACPI
+static struct acpi_platform_list arm_smmu_v3_plat_info[] __initdata = {
+	/* HiSilicon Hip09 Platform */
+	{"HISI  ", "HIP09   ", 0, ACPI_SIG_IORT, greater_than_or_equal,
+	 "Erratum #162100602", 0},
+	{"HISI  ", "HIP10   ", 0, ACPI_SIG_IORT, greater_than_or_equal,
+	 "Erratum #162100602", 0},
+	{"HISI  ", "HIP11   ", 0, ACPI_SIG_IORT, greater_than_or_equal,
+	 "Erratum #162100602", 0},
+	{ }
+};
+
+static void acpi_get_hisi_options(struct arm_smmu_device *smmu)
+{
+	if (acpi_match_platform_list(arm_smmu_v3_plat_info) < 0)
+		return;
+
+	smmu->options |= ARM_SMMU_OPT_SYNC_MAP;
+}
+
 static void acpi_smmu_get_options(u32 model, struct arm_smmu_device *smmu)
 {
 	switch (model) {
@@ -4503,6 +4523,8 @@ static void acpi_smmu_get_options(u32 model, struct arm_smmu_device *smmu)
 		smmu->options |= ARM_SMMU_OPT_SKIP_PREFETCH;
 		break;
 	}
+
+	acpi_get_hisi_options(smmu);
 
 	dev_notice(smmu->dev, "option mask 0x%x\n", smmu->options);
 }
