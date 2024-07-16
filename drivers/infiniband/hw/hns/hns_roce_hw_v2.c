@@ -3063,8 +3063,6 @@ static void free_mr_exit(struct hns_roce_dev *hr_dev)
 
 	free_mr_uninit_cq(hr_dev);
 	free_mr_uninit_pd(hr_dev);
-
-	mutex_destroy(&free_mr->mutex);
 }
 
 static int free_mr_alloc_res(struct hns_roce_dev *hr_dev)
@@ -3203,10 +3201,8 @@ static int free_mr_init(struct hns_roce_dev *hr_dev)
 	mutex_init(&free_mr->mutex);
 
 	ret = free_mr_alloc_res(hr_dev);
-	if (ret) {
-		mutex_destroy(&free_mr->mutex);
+	if (ret)
 		return ret;
-	}
 
 	ret = free_mr_modify_qp(hr_dev);
 	if (ret)
