@@ -134,7 +134,6 @@ struct rpc_create_args {
 	const char		*servername;
 	const char		*nodename;
 	const struct rpc_program *program;
-	struct rpc_stat		*stats;
 	u32			prognumber;	/* overrides program->number */
 	u32			version;
 	rpc_authflavor_t	authflavor;
@@ -144,7 +143,7 @@ struct rpc_create_args {
 	struct svc_xprt		*bc_xprt;	/* NFSv4.1 backchannel */
 	const struct cred	*cred;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, struct rpc_stat *stats)
 };
 
 struct rpc_add_xprt_test {
