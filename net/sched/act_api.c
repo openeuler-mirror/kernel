@@ -440,7 +440,6 @@ int tcf_idr_check_alloc(struct tc_action_net *tn, u32 *index,
 	struct tc_action *p;
 	int ret;
 
-again:
 	spin_lock(&idrinfo->lock);
 	if (*index) {
 		p = idr_find(&idrinfo->action_idr, *index);
@@ -449,7 +448,7 @@ again:
 			 * index but did not assign the pointer yet.
 			 */
 			spin_unlock(&idrinfo->lock);
-			goto again;
+			return -EAGAIN;
 		}
 
 		if (p) {
