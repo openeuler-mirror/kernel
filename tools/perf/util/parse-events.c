@@ -2637,13 +2637,12 @@ void print_sdt_events(const char *subsys_glob, const char *event_glob,
 	struct probe_cache *pcache;
 	struct probe_cache_entry *ent;
 	struct strlist *bidlist, *sdtlist;
-	struct strlist_config cfg = {.dont_dupstr = true};
-	struct str_node *nd, *nd2;
 	char *buf, *path, *ptr = NULL;
+	struct str_node *nd, *nd2;
 	bool show_detail = false;
 	int ret;
 
-	sdtlist = strlist__new(NULL, &cfg);
+	sdtlist = strlist__new(NULL, NULL);
 	if (!sdtlist) {
 		pr_debug("Failed to allocate new strlist for SDT\n");
 		return;
@@ -2670,6 +2669,8 @@ void print_sdt_events(const char *subsys_glob, const char *event_glob,
 					ent->pev.event, nd->s);
 			if (ret > 0)
 				strlist__add(sdtlist, buf);
+
+			free(buf);
 		}
 		probe_cache__delete(pcache);
 	}
