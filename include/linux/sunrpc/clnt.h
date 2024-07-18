@@ -143,7 +143,7 @@ struct rpc_create_args {
 	struct svc_xprt		*bc_xprt;	/* NFSv4.1 backchannel */
 	const struct cred	*cred;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, struct rpc_stat *stats)
 };
 
 struct rpc_add_xprt_test {
