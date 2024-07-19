@@ -319,6 +319,11 @@ static __always_inline void __folio_dup_file_rmap(struct folio *folio,
 
 	switch (level) {
 	case RMAP_LEVEL_PTE:
+		if (!folio_test_large(folio)) {
+			atomic_inc(&page->_mapcount);
+			break;
+		}
+
 		do {
 			atomic_inc(&page->_mapcount);
 		} while (page++, --nr_pages > 0);
@@ -344,8 +349,12 @@ static inline void folio_dup_file_rmap_ptes(struct folio *folio,
 {
 	__folio_dup_file_rmap(folio, page, nr_pages, RMAP_LEVEL_PTE);
 }
-#define folio_dup_file_rmap_pte(folio, page) \
-	folio_dup_file_rmap_ptes(folio, page, 1)
+
+static __always_inline void folio_dup_file_rmap_pte(struct folio *folio,
+		struct page *page)
+{
+	__folio_dup_file_rmap(folio, page, 1, RMAP_LEVEL_PTE);
+}
 
 /**
  * folio_dup_file_rmap_pmd - duplicate a PMD mapping of a page range of a folio
@@ -398,6 +407,14 @@ static __always_inline int __folio_try_dup_anon_rmap(struct folio *folio,
 				if (PageAnonExclusive(page + i))
 					return -EBUSY;
 		}
+
+		if (!folio_test_large(folio)) {
+			if (PageAnonExclusive(page))
+				ClearPageAnonExclusive(page);
+			atomic_inc(&page->_mapcount);
+			break;
+		}
+
 		do {
 			if (PageAnonExclusive(page))
 				ClearPageAnonExclusive(page);
@@ -445,8 +462,13 @@ static inline int folio_try_dup_anon_rmap_ptes(struct folio *folio,
 	return __folio_try_dup_anon_rmap(folio, page, nr_pages, src_vma,
 					 RMAP_LEVEL_PTE);
 }
-#define folio_try_dup_anon_rmap_pte(folio, page, vma) \
-	folio_try_dup_anon_rmap_ptes(folio, page, 1, vma)
+
+static __always_inline int folio_try_dup_anon_rmap_pte(struct folio *folio,
+		struct page *page, struct vm_area_struct *src_vma)
+{
+	return __folio_try_dup_anon_rmap(folio, page, 1, src_vma,
+					 RMAP_LEVEL_PTE);
+}
 
 /**
  * folio_try_dup_anon_rmap_pmd - try duplicating a PMD mapping of a page range
