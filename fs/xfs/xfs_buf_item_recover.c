@@ -980,20 +980,21 @@ xlog_recover_buf_commit_pass2(
 			bp->b_ops->verify_write(bp);
 			error = bp->b_error;
 			if (error)
-				goto out_release;
+				goto out_writebuf;
 
 			if (be32_to_cpu(sb->sb_agcount) > mp->m_sb.sb_agcount) {
 				error = xfs_initialize_perag(mp,
 						be32_to_cpu(sb->sb_agcount),
 						&mp->m_maxagi);
 				if (error)
-					goto out_release;
+					goto out_writebuf;
 			}
 
 			xfs_sb_from_disk(&mp->m_sb, sb);
 		}
 	}
 
+out_writebuf:
 	/*
 	 * Perform delayed write on the buffer.  Asynchronous writes will be
 	 * slower when taking into account all the buffers to be flushed.
