@@ -141,20 +141,20 @@ xfs_allocbt_update_lastrec(
 			return;
 		ASSERT(ptr == numrecs + 1);
 
+		/*
+		 * Update in advance to prevent file creation failure
+		 * for concurrent processes even though there is no
+		 * numrec currently.
+		 * And there's no need to worry as the value that not
+		 * less than bc_free_longest will be inserted later.
+		 */
+		len = cpu_to_be32(cur->bc_free_longest);
 		if (numrecs) {
 			xfs_alloc_rec_t *rrp;
 
 			rrp = XFS_ALLOC_REC_ADDR(cur->bc_mp, block, numrecs);
-			len = rrp->ar_blockcount;
-		} else {
-			/*
-			 * Update in advance to prevent file creation failure
-			 * for concurrent processes even though there is no
-			 * numrec currently.
-			 * And there's no need to worry as the value that not
-			 * less than bc_free_longest will be inserted later.
-			 */
-			len = cpu_to_be32(cur->bc_free_longest);
+			len = cpu_to_be32(max_t(xfs_extlen_t, cur->bc_free_longest,
+						be32_to_cpu(rrp->ar_blockcount)));
 		}
 
 		break;
