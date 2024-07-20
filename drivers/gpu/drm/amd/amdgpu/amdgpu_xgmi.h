@@ -42,6 +42,8 @@ struct amdgpu_hive_info {
 		AMDGPU_XGMI_PSTATE_MAX_VEGA20,
 		AMDGPU_XGMI_PSTATE_UNKNOWN
 	} pstate;
+
+	atomic_t ras_recovery;
 };
 
 struct amdgpu_pcs_ras_field {
