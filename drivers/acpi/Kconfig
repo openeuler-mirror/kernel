@@ -514,10 +514,11 @@ config ACPI_CONFIGFS
 
 if ARM64
 source "drivers/acpi/arm64/Kconfig"
+endif
 
 config ACPI_PPTT
 	bool
-endif
+	depends on ARM64 || SW64
 
 config ACPI_PCC
 	bool "ACPI PCC Address Space"
