@@ -1802,14 +1802,24 @@ void __init early_pbha_init(void)
 	if (!fdt)
 		goto unlock;
 
+	/* arm,pbha-performance-only may exist in both chosen and cpus node */
+	node = fdt_path_offset(fdt, "/chosen");
+	if (node < 0)
+		goto unlock;
+
+	prop = fdt_getprop(fdt, node, "arm,pbha-performance-only", &size);
+	if (prop)
+		goto found;
+
 	node = fdt_path_offset(fdt, "/cpus");
 	if (node < 0)
 		goto unlock;
 
 	prop = fdt_getprop(fdt, node, "arm,pbha-performance-only", &size);
-	if (!prop)
+	if (prop)
 		goto unlock;
 
+found:
 	if (!cpu_has_pbha())
 		goto unlock;
 
