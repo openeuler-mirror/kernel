@@ -1409,8 +1409,8 @@ void hns_roce_qp_destroy(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	free_kernel_wrid(hr_qp);
 	free_qp_db(hr_dev, hr_qp, udata);
 
-	kfree(hr_qp);
 	mutex_destroy(&hr_qp->mutex);
+	kfree(hr_qp);
 }
 
 static int check_qp_type(struct hns_roce_dev *hr_dev, enum ib_qp_type type,
