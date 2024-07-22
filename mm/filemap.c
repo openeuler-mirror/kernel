@@ -3159,8 +3159,12 @@ static inline void try_enable_file_exec_thp(struct vm_area_struct *vma,
 	if (file->f_op->get_unmapped_area != thp_get_unmapped_area)
 		return;
 
-	if (file_exec_thp_enabled())
-		hugepage_madvise(vma, vm_flags, MADV_HUGEPAGE);
+	if (!file_exec_thp_enabled())
+		return;
+
+	if (thp_vma_allowable_order(vma, *vm_flags, TVA_ENFORCE_SYSFS,
+				PMD_ORDER))
+		*vm_flags |= VM_HUGEPAGE;
 }
 
 static inline bool file_exec_can_enable_mthp(struct address_space *mapping,
