@@ -545,7 +545,12 @@ static ssize_t udma_num_qp_store(struct kobject *kobj,
 	    (cmd->num > UDMA_NUM_QP_MAX))
 		goto error_value;
 
-	udma_cmq_setup_basic_desc(&desc, UDMA_NUM_QP_CFG, false);
+	if (cmd->num == UDMA_NUM_QP_MIN)
+		dev_warn(udma_dev->dev,
+			 "VF traffic maybe cann't work correctly when VF QP is %u.\n",
+			 cmd->num);
+
+	cmd->num = cpu_to_le32(cmd->num);
 	ret = udma_cmq_send(udma_dev, &desc, 1);
 	if (ret)
 		goto error_cmdq;
@@ -554,14 +559,13 @@ static ssize_t udma_num_qp_store(struct kobject *kobj,
 
 error_value:
 	dev_err(udma_dev->dev,
-		"invalid num(%d).\n it must be powers of 2 and between [8, 512K],0 is default.\n",
+		"invalid num(%u).\n it must be powers of 2 and between [8, 512K],0 is default.\n",
 		cmd->num);
 
 	return -EINVAL;
 
 error_cmdq:
-	dev_err(udma_dev->dev,
-		"fail to set num_qp(num:%d), ret = %d", cmd->num, ret);
+	dev_err(udma_dev->dev, "fail to set num_qp(num:%u), ret = %d.\n", cmd->num, ret);
 
 	return -EIO;
 }
@@ -593,6 +597,11 @@ int udma_register_num_qp_sysfs(struct udma_dev *udma_dev)
 {
 	int ret;
 
+	if (!udma_dev->caps.num_qp_en) {
+		dev_info(udma_dev->dev, "current imp version cann't support qp config.\n");
+		return 0;
+	}
+
 	udma_dev->num_qp.attr.name = __stringify(num_qp);
 	udma_dev->num_qp.attr.mode = ATTR_RW_RONLY_RONLY;
 	udma_dev->num_qp.show = udma_num_qp_show;
@@ -608,5 +617,8 @@ int udma_register_num_qp_sysfs(struct udma_dev *udma_dev)
 
 void udma_unregister_num_qp_sysfs(struct udma_dev *udma_dev)
 {
+	if (!udma_dev->caps.num_qp_en)
+		return;
+
 	sysfs_remove_file(&udma_dev->dev->kobj, &udma_dev->num_qp.attr);
 }

@@ -73,9 +73,6 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 
 	resp.num_comp_vectors = dev->caps.num_comp_vectors;
 	resp.num_qps_shift = dev->caps.num_qps_shift;
-	resp.num_jfs_shift = dev->caps.num_jfs_shift;
-	resp.num_jfr_shift = dev->caps.num_jfr_shift;
-	resp.num_jetty_shift = dev->caps.num_jetty_shift;
 	resp.max_jfc_cqe = dev->caps.max_cqes;
 	resp.cqe_size = dev->caps.cqe_sz;
 	resp.max_jfr_wr = dev->caps.max_srq_wrs;
@@ -170,6 +167,7 @@ static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
 	    UDMA_CAP_FLAG_DCA_MODE)
 		udma_register_uctx_debugfs(udma_dev, context);
 
+	context->cq_bank_id = udma_get_cq_bankid_for_uctx(udma_dev);
 	init_ucontext_list(udma_dev, context);
 
 	return &context->uctx;
@@ -186,6 +184,7 @@ static int udma_free_ucontext(struct ubcore_ucontext *uctx)
 	struct udma_ucontext *context = to_udma_ucontext(uctx);
 	struct udma_dev *udma_dev = to_udma_dev(uctx->ub_dev);
 
+	udma_put_cq_bankid_for_uctx(context);
 	if (udma_dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE)
 		udma_unregister_udca(udma_dev, context);
 
@@ -363,10 +362,10 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	int i;
 
 	attr->dev_cap.max_eid_cnt = udma_dev->caps.max_eid_cnt;
-	attr->dev_cap.max_jfc = (1 << udma_dev->caps.num_jfc_shift);
-	attr->dev_cap.max_jfs = (1 << udma_dev->caps.num_jfs_shift);
-	attr->dev_cap.max_jfr = (1 << udma_dev->caps.num_jfr_shift);
-	attr->dev_cap.max_jetty = (1 << udma_dev->caps.num_jetty_shift);
+	attr->dev_cap.max_jfc = udma_dev->caps.num_jfc;
+	attr->dev_cap.max_jfs = udma_dev->caps.num_jfs;
+	attr->dev_cap.max_jfr = udma_dev->caps.num_jfr;
+	attr->dev_cap.max_jetty = udma_dev->caps.num_jetty;
 	attr->dev_cap.max_jfc_depth = udma_dev->caps.max_cqes;
 	attr->dev_cap.max_jfs_depth = udma_dev->caps.max_wqes;
 	attr->dev_cap.max_jfr_depth = udma_dev->caps.max_srq_wrs;
@@ -611,6 +610,7 @@ static void udma_init_jfc_table(struct udma_dev *udma_dev)
 {
 	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
 	uint32_t reserved_from_bot;
+	uint32_t max;
 	uint32_t i;
 
 	mutex_init(&jfc_table->bank_mutex);
@@ -618,15 +618,14 @@ static void udma_init_jfc_table(struct udma_dev *udma_dev)
 
 	reserved_from_bot = 1;
 
-	for (i = 0; i < reserved_from_bot; i++) {
-		jfc_table->bank[get_jfc_bankid(i)].inuse++;
+	for (i = 0; i < reserved_from_bot; i++)
 		jfc_table->bank[get_jfc_bankid(i)].min++;
-	}
+
+	max = udma_dev->caps.num_jfc / UDMA_CQ_BANK_NUM - 1;
 
 	for (i = 0; i < UDMA_CQ_BANK_NUM; i++) {
 		ida_init(&jfc_table->bank[i].ida);
-		jfc_table->bank[i].max = (1 << udma_dev->caps.num_jfc_shift) /
-					UDMA_CQ_BANK_NUM - 1;
+		jfc_table->bank[i].max = max;
 	}
 }
 
@@ -656,7 +655,7 @@ static void udma_init_jfr_table(struct udma_dev *dev)
 
 	xa_init(&jfr_table->xa);
 	ida_init(&jfr_ida->ida);
-	jfr_ida->max = (1 << dev->caps.num_jfr_shift) - 1;
+	jfr_ida->max = dev->caps.num_jfr - 1;
 	/* reserve jfr id 0 */
 	jfr_ida->min = 1;
 }
@@ -682,7 +681,7 @@ static void udma_init_jfs_table(struct udma_dev *dev)
 
 	xa_init(&jfs_table->xa);
 	ida_init(&jfs_ida->ida);
-	jfs_ida->max = (1 << dev->caps.num_jfs_shift) - 1;
+	jfs_ida->max = dev->caps.num_jfs - 1;
 	/* reserve jfs id 0 */
 	jfs_ida->min = 1;
 }
@@ -708,7 +707,7 @@ static void udma_init_jetty_table(struct udma_dev *dev)
 
 	xa_init(&jetty_table->xa);
 	ida_init(&jetty_ida->ida);
-	jetty_ida->max = (1 << dev->caps.num_jetty_shift) - 1;
+	jetty_ida->max = dev->caps.num_jetty - 1;
 	/* reserve jetty id 0 */
 	jetty_ida->min = 1;
 }
@@ -1008,11 +1007,8 @@ static void udma_set_devname(struct udma_dev *udma_dev,
 static int udma_register_device(struct udma_dev *udma_dev)
 {
 	struct ubcore_device *ub_dev = NULL;
-	struct udma_netdev *uboe = NULL;
 
 	ub_dev = &udma_dev->ub_dev;
-	uboe = &udma_dev->uboe;
-	spin_lock_init(&uboe->lock);
 	ub_dev->transport_type = UBCORE_TRANSPORT_HNS_UB;
 	ub_dev->ops = &g_udma_dev_ops;
 	ub_dev->dev.parent = udma_dev->dev;

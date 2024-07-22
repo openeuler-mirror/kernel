@@ -43,6 +43,7 @@
 
 #define MTT_MIN_COUNT				2
 
+#define UDMA_NUM_QP_EN				0x2
 #define UDMA_QP_BANK_NUM			8
 #define QP_BANKID_SHIFT				3
 #define QP_BANKID_MASK				GENMASK(2, 0)
@@ -438,6 +439,7 @@ struct udma_ucontext {
 	uint32_t			eid_index;
 	struct list_head		pgdir_list;
 	struct mutex			pgdir_mutex;
+	uint8_t				cq_bank_id;
 };
 
 struct udma_cmd_context {
@@ -496,7 +498,6 @@ struct udma_cmd_mailbox {
 };
 
 struct udma_netdev {
-	spinlock_t		lock;
 	struct net_device	*netdevs[UDMA_MAX_PORTS];
 };
 
@@ -560,6 +561,7 @@ struct udma_hw {
 
 struct udma_caps {
 	uint64_t		fw_ver;
+	uint8_t			num_qp_en;
 	uint8_t			num_ports;
 	int			pkey_table_len[UDMA_MAX_PORTS];
 	int			local_ca_ack_delay;
@@ -698,10 +700,10 @@ struct udma_caps {
 	uint8_t			reorder_cq_shift;
 	uint32_t		onflight_size;
 	uint8_t			dynamic_ack_timeout;
-	uint32_t		num_jfc_shift;
-	uint32_t		num_jfs_shift;
-	uint32_t		num_jfr_shift;
-	uint32_t		num_jetty_shift;
+	uint32_t		num_jfc;
+	uint32_t		num_jfs;
+	uint32_t		num_jfr;
+	uint32_t		num_jetty;
 	uint8_t			poe_ch_num;
 	uint32_t		speed;
 	uint32_t		max_eid_cnt;
@@ -766,6 +768,7 @@ struct udma_jfc_table {
 	struct udma_hem_table	table;
 	struct udma_bank	bank[UDMA_CQ_BANK_NUM];
 	struct mutex		bank_mutex;
+	uint32_t		ctx_num[UDMA_CQ_BANK_NUM];
 };
 
 struct udma_jfs_table {

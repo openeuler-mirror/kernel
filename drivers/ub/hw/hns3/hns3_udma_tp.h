@@ -19,10 +19,16 @@
 #include <linux/jhash.h>
 #include "hns3_udma_qp.h"
 
+enum {
+	UDMA_SUB_TRANS_MODE_NORMAL_TP,
+	UDMA_SUB_TRANS_MODE_USER_TP,
+};
+
 struct udma_tp {
 	struct ubcore_tp	ubcore_tp;
 	struct udma_qp		qp;
 	struct ubcore_jetty_id	tjetty_id;
+	uint8_t			sub_trans_mode;
 };
 
 static inline struct udma_tp *to_udma_tp(struct ubcore_tp *ubcore_tp)

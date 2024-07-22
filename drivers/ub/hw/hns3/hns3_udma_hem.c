@@ -1881,8 +1881,10 @@ void udma_buf_free(struct udma_dev *udma_dev, struct udma_buf *buf)
 static void mtr_free_bufs(struct udma_dev *udma_dev, struct udma_mtr *mtr)
 {
 	/* release user buffers */
-	ubcore_umem_release(mtr->umem);
-	mtr->umem = NULL;
+	if (mtr->umem) {
+		ubcore_umem_release(mtr->umem);
+		mtr->umem = NULL;
+	}
 
 	/* release kernel buffers */
 	udma_buf_free(udma_dev, mtr->kmem);

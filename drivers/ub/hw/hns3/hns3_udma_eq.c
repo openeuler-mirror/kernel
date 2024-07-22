@@ -203,6 +203,16 @@ static void aeq_event_report(struct udma_dev *udma_dev,
 	uint32_t queue_num = irq_work->queue_num;
 	struct udma_aeqe *aeqe = &irq_work->aeqe;
 	int event_type = irq_work->event_type;
+	uint32_t *tmp = (uint32_t *)aeqe;
+	int sub_type;
+
+	sub_type = udma_get_field(aeqe->asyn,
+				  UDMA_AEQE_SUB_TYPE_M,
+				  UDMA_AEQE_SUB_TYPE_S);
+	if (event_type != UDMA_EVENT_TYPE_COMM_EST)
+		dev_err(udma_dev->dev,
+			"print AEQE: 0x%x, 0x%x queue:0x%x event_type:0x%x, sub_type:0x%x\n",
+			*tmp, *(tmp + 1), queue_num, event_type, sub_type);
 
 	switch (event_type) {
 	case UDMA_EVENT_TYPE_COMM_EST:
@@ -327,11 +337,6 @@ static int udma_aeq_int(struct udma_dev *udma_dev, struct udma_eq *eq)
 					   UDMA_AEQE_EVENT_QUEUE_NUM_M,
 					   UDMA_AEQE_EVENT_QUEUE_NUM_S);
 		tmp = (uint32_t *)aeqe;
-		if (event_type != UDMA_EVENT_TYPE_COMM_EST)
-			dev_err(udma_dev->dev, "print AEQE: 0x%x, 0x%x; "
-				"queue:0x%x event_type:0x%x, sub_type:0x%x\n",
-				*tmp, *(tmp + 1), queue_num, event_type,
-				sub_type);
 
 		eq->event_type = event_type;
 		eq->sub_type = sub_type;

@@ -38,22 +38,6 @@ static const struct pci_device_id udma_hw_pci_tbl[] = {
 	{}
 };
 
-static int udma_cmq_query_hw_info(struct udma_dev *udma_dev)
-{
-	struct udma_query_version *resp;
-	struct udma_cmq_desc desc;
-	int ret;
-
-	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_QUERY_HW_VER, true);
-	ret = udma_cmq_send(udma_dev, &desc, 1);
-	if (ret)
-		return ret;
-
-	resp = (struct udma_query_version *)desc.data;
-
-	return 0;
-}
-
 static int udma_query_fw_ver(struct udma_dev *udma_dev)
 {
 	struct udma_query_fw_info *resp;
@@ -173,10 +157,10 @@ static void set_default_jetty_caps(struct udma_dev *dev)
 {
 	struct udma_caps *caps = &dev->caps;
 
-	caps->num_jfc_shift = ilog2(caps->num_cqs);
-	caps->num_jfs_shift = caps->num_qps_shift;
-	caps->num_jfr_shift = caps->num_qps_shift;
-	caps->num_jetty_shift = caps->num_qps_shift;
+	caps->num_jfc = caps->num_cqs;
+	caps->num_jfs = caps->num_qps;
+	caps->num_jfr = caps->num_qps;
+	caps->num_jetty = caps->num_qps;
 }
 
 static void query_hw_speed(struct udma_dev *udma_dev)
@@ -195,6 +179,37 @@ static void query_hw_speed(struct udma_dev *udma_dev)
 		return;
 	}
 	udma_dev->caps.speed = resp->speed;
+}
+
+static int udma_query_pf_qp_cfg(struct udma_dev *dev)
+{
+	struct udma_query_pf_caps_cfg *cmd;
+	struct udma_cmq_desc desc;
+	int ret;
+
+	if (!dev->caps.num_qp_en)
+		return 0;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_PF_QP_CFG_QUERY, true);
+	ret = udma_cmq_send(dev, &desc, 1);
+	if (ret) {
+		dev_err(dev->dev, "fail to query pf qp config, ret = %d.\n", ret);
+		return -EIO;
+	}
+
+	cmd = (struct udma_query_pf_caps_cfg *)desc.data;
+	dev->caps.num_qps = le32_to_cpu(cmd->num_qps);
+	dev->caps.num_qps_shift = ilog2(dev->caps.num_qps);
+	if ((dev->caps.num_qps & (dev->caps.num_qps - 1)) != 0)
+		dev->caps.num_qps_shift += 1;
+
+	dev->caps.num_srqs = le32_to_cpu(cmd->num_srqs);
+	dev->caps.num_cqs = le32_to_cpu(cmd->num_cqs);
+	dev->caps.num_mtpts = le32_to_cpu(cmd->num_mtpts);
+	dev->caps.num_pds = le32_to_cpu(cmd->num_pds);
+	dev->caps.num_xrcds = le32_to_cpu(cmd->num_xrcds);
+
+	return 0;
 }
 
 static int udma_query_caps(struct udma_dev *udma_dev)
@@ -369,6 +384,10 @@ static int udma_query_caps(struct udma_dev *udma_dev)
 					      QUERY_PF_CAPS_D_RQWQE_HOP_NUM_M,
 					      QUERY_PF_CAPS_D_RQWQE_HOP_NUM_S);
 
+	ret = udma_query_pf_qp_cfg(udma_dev);
+	if (ret)
+		return ret;
+
 	set_default_jetty_caps(udma_dev);
 	query_hw_speed(udma_dev);
 
@@ -432,10 +451,6 @@ static int load_ext_cfg_caps(struct udma_dev *udma_dev)
 	func_num = max_t(uint32_t, 1, udma_dev->func_num);
 	qp_num = udma_reg_read(req, EXT_CFG_QP_PI_NUM) / func_num;
 	caps->num_pi_qps = round_down(qp_num, UDMA_QP_BANK_NUM);
-
-	qp_num = udma_reg_read(req, EXT_CFG_QP_NUM) / func_num;
-	caps->num_qps = round_down(qp_num, UDMA_QP_BANK_NUM);
-	caps->num_qps_shift = ilog2(caps->num_qps);
 
 	/* The extend doorbell memory on the PF is shared by all its VFs. */
 	caps->llm_ba_idx = udma_reg_read(req, EXT_CFG_LLM_INDEX);
@@ -912,12 +927,6 @@ static int udma_profile(struct udma_dev *udma_dev)
 	struct device *dev = udma_dev->dev;
 	int ret;
 
-	ret = udma_cmq_query_hw_info(udma_dev);
-	if (ret) {
-		dev_err(dev, "failed to query hardware info, ret = %d.\n", ret);
-		return ret;
-	}
-
 	ret = udma_query_fw_ver(udma_dev);
 	if (ret) {
 		dev_err(dev, "failed to query firmware info, ret = %d.\n", ret);
@@ -1114,8 +1123,8 @@ static void __udma_function_clear(struct udma_dev *udma_dev, int vf_id)
 	bool fclr_write_fail_flag = false;
 	struct udma_func_clear *resp;
 	struct udma_cmq_desc desc;
-	int end;
 	int ret = 0;
+	int end;
 
 	if (check_device_is_in_reset(udma_dev))
 		goto out;
@@ -1619,7 +1628,12 @@ static int udma_set_hem(struct udma_dev *udma_dev, struct udma_hem_table *table,
 	if (!udma_check_whether_mhop(udma_dev, table->type))
 		return 0;
 
-	udma_calc_hem_mhop(udma_dev, table, &mhop_obj, &mhop);
+	ret = udma_calc_hem_mhop(udma_dev, table, &mhop_obj, &mhop);
+	if (ret) {
+		dev_err(udma_dev->dev, "failed to calc hem mhop, ret is %d.\n", ret);
+		return ret;
+	}
+
 	i = mhop.l0_idx;
 	j = mhop.l1_idx;
 	k = mhop.l2_idx;
@@ -1627,8 +1641,7 @@ static int udma_set_hem(struct udma_dev *udma_dev, struct udma_hem_table *table,
 	chunk_ba_num = mhop.bt_chunk_size / BA_BYTE_LEN;
 
 	if (hop_num == 2) {
-		hem_idx = i * chunk_ba_num * chunk_ba_num + j * chunk_ba_num +
-			  k;
+		hem_idx = i * chunk_ba_num * chunk_ba_num + j * chunk_ba_num + k;
 		l1_idx = i * chunk_ba_num + j;
 	} else if (hop_num == 1) {
 		hem_idx = i * chunk_ba_num + j;
@@ -1738,23 +1751,6 @@ static void udma_get_cfg(struct udma_dev *udma_dev,
 	priv->handle = handle;
 }
 
-static void udma_init_bank(struct udma_dev *dev)
-{
-	uint32_t qpn_shift;
-	int i;
-
-	dev->bank[0].min = 1;
-	dev->bank[0].inuse = 1;
-	dev->bank[0].next = dev->bank[0].min;
-
-	qpn_shift = dev->caps.num_qps_shift - UDMA_DEFAULT_MAX_JETTY_X_SHIFT -
-		    HNS3_UDMA_JETTY_X_PREFIX_BIT_NUM;
-	for (i = 0; i < UDMA_QP_BANK_NUM; i++) {
-		ida_init(&dev->bank[i].ida);
-		dev->bank[i].max = (1U << qpn_shift) / UDMA_QP_BANK_NUM - 1;
-	}
-}
-
 static int __udma_init_instance(struct hnae3_handle *handle)
 {
 	struct udma_dev *udma_dev;
@@ -1802,7 +1798,6 @@ static int __udma_init_instance(struct hnae3_handle *handle)
 		goto error_failed_num_qp_init;
 	}
 
-	udma_init_bank(udma_dev);
 	return 0;
 
 error_failed_num_qp_init:
