@@ -150,6 +150,11 @@ extern void *vmalloc_hugepage(unsigned long size);
 extern void *vmalloc_hugepage_user(unsigned long size);
 #endif
 
+extern void *__vmalloc_array(size_t n, size_t size, gfp_t flags);
+extern void *vmalloc_array(size_t n, size_t size);
+extern void *__vcalloc(size_t n, size_t size, gfp_t flags);
+extern void *vcalloc(size_t n, size_t size);
+
 extern void vfree(const void *addr);
 extern void vfree_atomic(const void *addr);
 
