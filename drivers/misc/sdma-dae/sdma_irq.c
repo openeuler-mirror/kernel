@@ -4,7 +4,7 @@
 #include <linux/platform_device.h>
 #include "sdma_irq.h"
 
-#define HISI_SDMA_IRQ_FUNC_NAME(n)	"SDMA_CHANNEL##n_IOE_IRQ"
+#define HISI_SDMA_IRQ_FUNC_NAME		"SDMA_CHANNEL_IOE_IRQ"
 #define SDMA_IOE_NUM_MAX		(SDMA_IRQ_NUM_MAX / 2)
 #define SDMA_IOC_NUM_MAX		SDMA_IOE_NUM_MAX
 #define SDMA_IOC_MASKED_STATUS		0x1
@@ -18,13 +18,19 @@ irqreturn_t sdma_chn_ioe_irq_handle(int irq, void *psdma_dev)
 	u32 err_status;
 	u32 cqe_status;
 	u32 cqe_sqeid;
-	int chn;
+	int chn = -1;
+	int i;
 
 	sdma = (struct hisi_sdma_device *)psdma_dev;
-	chn = irq - sdma->base_vir_irq - SDMA_IOC_NUM_MAX - HISI_STARS_CHN_NUM;
-	if (chn < 0 || chn >= SDMA_IOC_NUM_MAX) {
+	for (i = INT_CH_IOE_SDMAM_0 + HISI_STARS_CHN_NUM; i <= INT_CH_IOE_SDMAM_191; i++) {
+		if (sdma->irq[i] == irq) {
+			chn = i - (INT_CH_IOE_SDMAM_0 + HISI_STARS_CHN_NUM);
+			break;
+		}
+	}
+	if (chn < 0 || chn >= HISI_SDMA_DEFAULT_CHANNEL_NUM) {
 		dev_err(&sdma->pdev->dev, "SDMA IOE int%d wrong!\n", irq);
-		return 0;
+		return IRQ_NONE;
 	}
 
 	spin_lock(&err_set_lock[chn]);
@@ -40,9 +46,10 @@ irqreturn_t sdma_chn_ioe_irq_handle(int irq, void *psdma_dev)
 	sdma_channel_clear_cqe_status(sdma->io_base + chn * HISI_SDMA_CHANNEL_IOMEM_SIZE);
 	spin_unlock(&err_set_lock[chn]);
 
-	dev_info(&sdma->pdev->dev, "sdma chn%d error status = %u, ioe clear\n", chn, err_status);
+	dev_info(&sdma->pdev->dev, "sdma chn[%d], sqe[%u] error status = %u, ioe clear\n",
+		 chn, cqe_sqeid, err_status);
 
-	return 0;
+	return IRQ_HANDLED;
 }
 
 void sdma_irq_init(struct hisi_sdma_device *sdma)
@@ -70,10 +77,6 @@ void sdma_irq_init(struct hisi_sdma_device *sdma)
 			continue;
 		}
 		sdma->irq[i] = vir_irq;
-		if (i == 0) {
-			sdma->base_vir_irq = vir_irq;
-			dev_info(&pdev->dev, "base_vir_irq = %d\n", vir_irq);
-		}
 	}
 
 	for (i = INT_CH_IOE_SDMAM_0 + HISI_STARS_CHN_NUM; i <= INT_CH_IOE_SDMAM_255; i++) {
@@ -81,7 +84,7 @@ void sdma_irq_init(struct hisi_sdma_device *sdma)
 			continue;
 
 		ret = devm_request_irq(&sdma->pdev->dev, sdma->irq[i], sdma_chn_ioe_irq_handle,
-				       IRQF_ONESHOT, HISI_SDMA_IRQ_FUNC_NAME(i), sdma);
+				       IRQF_ONESHOT, HISI_SDMA_IRQ_FUNC_NAME, sdma);
 		if (ret != 0) {
 			dev_err(&pdev->dev, "request_irq failed, ret=%d", ret);
 			continue;
