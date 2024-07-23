@@ -232,6 +232,12 @@ enum hns_roce_opcode_type {
 	HNS_ROCE_OPC_CHANGE_ACTIVE_PORT			= 0x8603,
 };
 
+#define HNS_ROCE_OPC_POST_MB_TIMEOUT 35000
+struct hns_roce_cmdq_tx_timeout_map {
+	u16 opcode;
+	u32 tx_timeout;
+};
+
 enum {
 	TYPE_CRQ,
 	TYPE_CSQ,
