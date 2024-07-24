@@ -338,7 +338,7 @@ static int set_srq_basic_param(struct hns_roce_srq *srq,
 	max_sge = proc_srq_sge(hr_dev, srq, !!udata);
 
 	if (init_attr->attr.max_wr > hr_dev->caps.max_srq_wrs ||
-	    init_attr->attr.max_sge > max_sge) {
+	    init_attr->attr.max_sge > max_sge || !init_attr->attr.max_sge) {
 		ibdev_err(&hr_dev->ib_dev,
 			  "invalid SRQ attr, depth = %u, sge = %u.\n",
 			   attr->max_wr, attr->max_sge);
