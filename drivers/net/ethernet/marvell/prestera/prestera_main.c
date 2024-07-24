@@ -480,6 +480,7 @@ static int prestera_switch_set_base_mac_addr(struct prestera_switch *sw)
 		eth_random_addr(sw->base_mac);
 		dev_info(prestera_dev(sw), "using random base mac address\n");
 	}
+	of_node_put(np);
 
 	return prestera_hw_switch_mac_set(sw, sw->base_mac);
 }
