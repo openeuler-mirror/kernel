@@ -196,10 +196,8 @@ struct cpuset {
 	/*
 	 * Default hierarchy only:
 	 * use_parent_ecpus - set if using parent's effective_cpus
-	 * child_ecpus_count - # of children with use_parent_ecpus set
 	 */
 	int use_parent_ecpus;
-	int child_ecpus_count;
 
 	/*
 	 * number of SCHED_DEADLINE tasks attached to this cpuset, so that we
@@ -1660,7 +1658,6 @@ static void reset_partition_data(struct cpuset *cs)
 	if (!cpumask_and(cs->effective_cpus,
 			 parent->effective_cpus, cs->cpus_allowed)) {
 		cs->use_parent_ecpus = true;
-		parent->child_ecpus_count++;
 		cpumask_copy(cs->effective_cpus, parent->effective_cpus);
 	}
 }
@@ -1799,12 +1796,8 @@ static int remote_partition_enable(struct cpuset *cs, int new_prs,
 	spin_lock_irq(&callback_lock);
 	partition_xcpus_add(new_prs, NULL, tmp->new_cpus);
 	list_add(&cs->remote_sibling, &remote_children);
-	if (cs->use_parent_ecpus) {
-		struct cpuset *parent = parent_cs(cs);
-
+	if (cs->use_parent_ecpus)
 		cs->use_parent_ecpus = false;
-		parent->child_ecpus_count--;
-	}
 	spin_unlock_irq(&callback_lock);
 
 	/*
@@ -2421,14 +2414,10 @@ static void update_cpumasks_hier(struct cpuset *cs, struct tmpmasks *tmp,
 		 */
 		if (is_in_v2_mode() && !remote && cpumask_empty(tmp->new_cpus)) {
 			cpumask_copy(tmp->new_cpus, parent->effective_cpus);
-			if (!cp->use_parent_ecpus) {
+			if (!cp->use_parent_ecpus)
 				cp->use_parent_ecpus = true;
-				parent->child_ecpus_count++;
-			}
 		} else if (cp->use_parent_ecpus) {
 			cp->use_parent_ecpus = false;
-			WARN_ON_ONCE(!parent->child_ecpus_count);
-			parent->child_ecpus_count--;
 		}
 
 		if (remote)
@@ -4256,7 +4245,6 @@ static int cpuset_css_online(struct cgroup_subsys_state *css)
 		cpumask_copy(cs->effective_cpus, parent->effective_cpus);
 		cs->effective_mems = parent->effective_mems;
 		cs->use_parent_ecpus = true;
-		parent->child_ecpus_count++;
 		/*
 		 * Clear CS_SCHED_LOAD_BALANCE if parent is isolated
 		 */
@@ -4338,12 +4326,8 @@ static void cpuset_css_offline(struct cgroup_subsys_state *css)
 	    is_sched_load_balance(cs))
 		update_flag(CS_SCHED_LOAD_BALANCE, cs, 0);
 
-	if (cs->use_parent_ecpus) {
-		struct cpuset *parent = parent_cs(cs);
-
+	if (cs->use_parent_ecpus)
 		cs->use_parent_ecpus = false;
-		parent->child_ecpus_count--;
-	}
 
 	cpuset_dec();
 	clear_bit(CS_ONLINE, &cs->flags);
