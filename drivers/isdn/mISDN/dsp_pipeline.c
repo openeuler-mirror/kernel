@@ -236,7 +236,7 @@ void dsp_pipeline_destroy(struct dsp_pipeline *pipeline)
 int dsp_pipeline_build(struct dsp_pipeline *pipeline, const char *cfg)
 {
 	int incomplete = 0, found = 0;
-	char *dup, *tok, *name, *args;
+	char *dup, *next, *tok, *name, *args;
 	struct dsp_element_entry *entry, *n;
 	struct dsp_pipeline_entry *pipeline_entry;
 	struct mISDN_dsp_element *elem;
@@ -247,10 +247,10 @@ int dsp_pipeline_build(struct dsp_pipeline *pipeline, const char *cfg)
 	if (!list_empty(&pipeline->list))
 		_dsp_pipeline_destroy(pipeline);
 
-	dup = kstrdup(cfg, GFP_ATOMIC);
+	dup = next = kstrdup(cfg, GFP_ATOMIC);
 	if (!dup)
 		return 0;
-	while ((tok = strsep(&dup, "|"))) {
+	while ((tok = strsep(&next, "|"))) {
 		if (!strlen(tok))
 			continue;
 		name = strsep(&tok, "(");
