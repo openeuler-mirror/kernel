@@ -72,7 +72,6 @@ struct hisi_sdma_device {
 	resource_size_t common_base_addr_size;
 
 	int irq_cnt;
-	int base_vir_irq;
 	int irq[SDMA_IRQ_NUM_MAX];
 };
 
