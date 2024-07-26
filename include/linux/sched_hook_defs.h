@@ -14,3 +14,4 @@ BPF_SCHED_HOOK(int, -1, cfs_can_migrate_task, struct task_struct *p,
 	struct sched_migrate_node *migrate_node)
 BPF_SCHED_HOOK(void, (void) 0, cfs_change_preferred_node,
 	struct sched_preferred_node_ctx *ctx)
+BPF_SCHED_HOOK(int, -1, cfs_preferred_nid_init, struct task_struct *tsk)

@@ -97,6 +97,7 @@
 #include <linux/scs.h>
 #include <linux/io_uring.h>
 #include <linux/sched/mm.h>
+#include <linux/bpf_sched.h>
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 #include <linux/sched/grid_qos.h>
 #endif
@@ -2319,6 +2320,20 @@ static __latent_entropy struct task_struct *copy_process(
 		p->group_leader = p;
 		p->tgid = p->pid;
 	}
+
+#if defined (CONFIG_SCHED_TASK_RELATIONSHIP) && defined(CONFIG_BPF_SCHED)
+	if (bpf_sched_enabled() && task_relationship_supported(p)) {
+		retval = bpf_sched_cfs_preferred_nid_init(p);
+		if (clone_flags & CLONE_THREAD) {
+			if (retval > 0)
+				p->numa_preferred_nid =
+					p->group_leader->numa_preferred_nid;
+		} else {
+			if (retval > 0 && retval <= nr_node_ids)
+				p->numa_preferred_nid = retval - 1;
+		}
+	}
+#endif
 
 	p->nr_dirtied = 0;
 	p->nr_dirtied_pause = 128 >> (PAGE_SHIFT - 10);
