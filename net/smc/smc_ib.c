@@ -201,8 +201,7 @@ int smc_ib_determine_gid(struct smc_ib_device *smcibdev, u8 ibport,
 		if (!IS_ERR(ndev) &&
 		    ((!vlan_id && !is_vlan_dev(ndev)) ||
 		     (vlan_id && is_vlan_dev(ndev) &&
-		      vlan_dev_vlan_id(ndev) == vlan_id)) &&
-		    attr->gid_type == IB_GID_TYPE_ROCE) {
+		      vlan_dev_vlan_id(ndev) == vlan_id))) {
 			rcu_read_unlock();
 			if (gid)
 				memcpy(gid, &attr->gid, SMC_GID_SIZE);
