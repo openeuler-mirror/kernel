@@ -689,9 +689,9 @@ void edma_host_reset_dma(struct edma_host_s *edma_host, int dir)
 		return;
 
 	if (dir == BMC_TO_HOST)
-		reg_addr = REG_PCIE1_DMA_READ_ENGINE_ENABLE;
-	else if (dir == HOST_TO_BMC)
 		reg_addr = REG_PCIE1_DMA_WRITE_ENGINE_ENABLE;
+	else if (dir == HOST_TO_BMC)
+		reg_addr = REG_PCIE1_DMA_READ_ENGINE_ENABLE;
 	else
 		return;
 
