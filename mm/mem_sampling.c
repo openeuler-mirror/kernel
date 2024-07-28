@@ -129,22 +129,6 @@ out:
 }
 
 #ifdef CONFIG_NUMABALANCING_MEM_SAMPLING
-
-static int numa_migrate_prep(struct page *page, struct vm_area_struct *vma,
-				unsigned long addr, int page_nid,
-				int *flags)
-{
-	get_page(page);
-
-	count_vm_numa_event(NUMA_HINT_FAULTS);
-	if (page_nid == numa_node_id()) {
-		count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
-		*flags |= TNF_FAULT_LOCAL;
-	}
-
-	return mpol_misplaced(page, vma, addr);
-}
-
 static inline void do_thp_numa_access(struct mm_struct *mm,
 				      struct vm_area_struct *vma,
 				      u64 vaddr, struct page *page)
