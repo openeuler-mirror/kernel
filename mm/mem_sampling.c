@@ -23,6 +23,7 @@
 #include <linux/migrate.h>
 #include <linux/sched/numa_balancing.h>
 #include <trace/events/kmem.h>
+#include "internal.h"
 
 struct mem_sampling_ops_struct mem_sampling_ops;
 
@@ -257,7 +258,7 @@ static void do_numa_access(struct task_struct *p, u64 vaddr, u64 paddr)
 		goto out_unlock;
 
 	page = pfn_to_online_page(PHYS_PFN(paddr));
-	if (!page || is_zone_device_page(page))
+	if (!page || is_zone_device_page(page) || PageKsm(page))
 		goto out_unlock;
 
 	if (unlikely(!PageLRU(page)))
@@ -274,6 +275,10 @@ static void do_numa_access(struct task_struct *p, u64 vaddr, u64 paddr)
 	 */
 	if (page_mapcount(page) > 1 && (vma->vm_flags & VM_SHARED))
 		flags |= TNF_SHARED;
+
+	/* Also skip shared copy-on-write pages */
+	if (is_cow_mapping(vma->vm_flags) && page_count(page) != 1)
+		goto out_unlock;
 
 	last_cpupid = page_cpupid_last(page);
 	page_nid = page_to_nid(page);
