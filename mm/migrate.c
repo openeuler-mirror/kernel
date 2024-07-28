@@ -1487,6 +1487,7 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 	struct page *page2;
 	int swapwrite = current->flags & PF_SWAPWRITE;
 	int rc, nr_subpages;
+	bool nosplit = (reason == MR_NUMA_MISPLACED);
 
 	if (!swapwrite)
 		current->flags |= PF_SWAPWRITE;
@@ -1527,8 +1528,9 @@ retry:
 				 * pages are added to the tail of the list so
 				 * we encounter them after the rest of the list
 				 * is processed.
+				 * THP NUMA faulting doesn't split THP to retry.
 				 */
-				if (is_thp) {
+				if (is_thp && !nosplit) {
 					lock_page(page);
 					rc = split_huge_page_to_list(page, from);
 					unlock_page(page);
