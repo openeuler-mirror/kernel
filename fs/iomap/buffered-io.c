@@ -136,10 +136,13 @@ static void ifs_clear_range_dirty(struct folio *folio,
 {
 	struct inode *inode = folio->mapping->host;
 	unsigned int blks_per_folio = i_blocks_per_folio(inode, folio);
-	unsigned int first_blk = (off >> inode->i_blkbits);
-	unsigned int last_blk = (off + len - 1) >> inode->i_blkbits;
-	unsigned int nr_blks = last_blk - first_blk + 1;
+	unsigned int first_blk = DIV_ROUND_UP(off, i_blocksize(inode));
+	unsigned int last_blk = (off + len) >> inode->i_blkbits;
+	unsigned int nr_blks = last_blk - first_blk;
 	unsigned long flags;
+
+	if (!nr_blks)
+		return;
 
 	spin_lock_irqsave(&ifs->state_lock, flags);
 	bitmap_clear(ifs->state, first_blk + blks_per_folio, nr_blks);
@@ -176,6 +179,37 @@ static void iomap_set_range_dirty(struct folio *folio, size_t off, size_t len)
 	if (ifs)
 		ifs_set_range_dirty(folio, ifs, off, len);
 }
+
+/*
+ * iomap_is_fully_dirty checks whether blocks within a folio are
+ * dirty or not.
+ *
+ * Returns true if all blocks which correspond to the specified part
+ * of the folio are dirty.
+ */
+bool iomap_is_fully_dirty(struct folio *folio, size_t from, size_t count)
+{
+	struct iomap_folio_state *ifs = folio->private;
+	struct inode *inode = folio->mapping->host;
+	unsigned first, last, i;
+
+	if (!ifs)
+		return folio_test_dirty(folio);
+
+	/* Caller's range may extend past the end of this folio */
+	count = min(folio_size(folio) - from, count);
+
+	/* First and last blocks in range within folio */
+	first = from >> inode->i_blkbits;
+	last = (from + count - 1) >> inode->i_blkbits;
+
+	for (i = first; i <= last; i++)
+		if (!ifs_block_is_dirty(folio, ifs, i))
+			return false;
+
+	return true;
+}
+EXPORT_SYMBOL_GPL(iomap_is_fully_dirty);
 
 static struct iomap_folio_state *ifs_alloc(struct inode *inode,
 		struct folio *folio, unsigned int flags)
@@ -624,6 +658,8 @@ void iomap_invalidate_folio(struct folio *folio, size_t offset, size_t len)
 		WARN_ON_ONCE(folio_test_writeback(folio));
 		folio_cancel_dirty(folio);
 		ifs_free(folio);
+	} else {
+		iomap_clear_range_dirty(folio, offset, len);
 	}
 }
 EXPORT_SYMBOL_GPL(iomap_invalidate_folio);
@@ -677,6 +713,12 @@ int __iomap_write_begin(const struct iomap_iter *iter, loff_t pos,
 	size_t from = offset_in_folio(folio, pos), to = from + len;
 	size_t poff, plen;
 
+	if (nr_blocks > 1) {
+		ifs = ifs_alloc(iter->inode, folio, iter->flags);
+		if ((iter->flags & IOMAP_NOWAIT) && !ifs)
+			return -EAGAIN;
+	}
+
 	/*
 	 * If the write or zeroing completely overlaps the current folio, then
 	 * entire folio will be dirtied so there is no need for
@@ -687,10 +729,6 @@ int __iomap_write_begin(const struct iomap_iter *iter, loff_t pos,
 	if (!(iter->flags & IOMAP_UNSHARE) && pos <= folio_pos(folio) &&
 	    pos + len >= folio_pos(folio) + folio_size(folio))
 		return 0;
-
-	ifs = ifs_alloc(iter->inode, folio, iter->flags);
-	if ((iter->flags & IOMAP_NOWAIT) && !ifs && nr_blocks > 1)
-		return -EAGAIN;
 
 	if (folio_test_uptodate(folio))
 		return 0;
@@ -1481,7 +1519,10 @@ static loff_t iomap_folio_mkwrite_iter(struct iomap_iter *iter,
 		block_commit_write(&folio->page, 0, length);
 	} else {
 		WARN_ON_ONCE(!folio_test_uptodate(folio));
-		folio_mark_dirty(folio);
+
+		ifs_alloc(iter->inode, folio, 0);
+		iomap_set_range_dirty(folio, 0, length);
+		filemap_dirty_folio(iter->inode->i_mapping, folio);
 	}
 
 	return length;
@@ -1920,7 +1961,12 @@ static int iomap_writepage_map(struct iomap_writepage_ctx *wpc,
 	WARN_ON_ONCE(end_pos <= pos);
 
 	if (i_blocks_per_folio(inode, folio) > 1) {
-		if (!ifs) {
+		/*
+		 * This should not happen since we always allocate ifs in
+		 * iomap_folio_mkwrite_iter() and there is more than one
+		 * blocks per folio in __iomap_write_begin().
+		 */
+		if (WARN_ON_ONCE(!ifs)) {
 			ifs = ifs_alloc(inode, folio, 0);
 			iomap_set_range_dirty(folio, 0, end_pos - pos);
 		}
