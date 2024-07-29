@@ -1619,6 +1619,8 @@ static int jbd2_write_superblock(journal_t *journal, int write_flags)
 	/* Buffer got discarded which means block device got invalidated */
 	if (!buffer_mapped(bh)) {
 		unlock_buffer(bh);
+		if (!is_journal_aborted(journal))
+			jbd2_journal_abort(journal, -EIO);
 		return -EIO;
 	}
 
