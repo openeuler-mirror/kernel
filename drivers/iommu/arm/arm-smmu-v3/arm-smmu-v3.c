@@ -2203,6 +2203,14 @@ static void arm_smmu_tlb_inv_page_nosync(struct iommu_iotlb_gather *gather,
 static void arm_smmu_tlb_inv_walk(unsigned long iova, size_t size,
 				  size_t granule, void *cookie)
 {
+#ifdef CONFIG_HISILICON_ERRATUM_162100602
+	struct arm_smmu_domain *smmu_domain = cookie;
+
+	if (!size && smmu_domain->smmu->options & ARM_SMMU_OPT_SYNC_BATCH) {
+		arm_smmu_tlb_inv_range_domain(iova, granule, granule, true, cookie);
+		return;
+	}
+#endif
 	arm_smmu_tlb_inv_range_domain(iova, size, granule, false, cookie);
 }
 
@@ -2734,6 +2742,9 @@ static int arm_smmu_iotlb_sync_map(struct iommu_domain *domain,
 	size_t granule_size;
 
 	if (!(smmu_domain->smmu->options & ARM_SMMU_OPT_SYNC_MAP))
+		return 0;
+
+	if (smmu_domain->smmu->options & ARM_SMMU_OPT_SYNC_BATCH)
 		return 0;
 
 	granule_size = 1 <<  __ffs(smmu_domain->domain.pgsize_bitmap);
@@ -4241,6 +4252,45 @@ static void arm_smmu_get_httu(struct arm_smmu_device *smmu, u32 reg)
 			 fw_features);
 }
 
+#ifdef CONFIG_HISILICON_ERRATUM_162100602
+static void hisi_smmu_check_errata(struct arm_smmu_device *smmu)
+{
+	u32 reg, i;
+
+	if (!(smmu->options & ARM_SMMU_OPT_SYNC_MAP))
+		return;
+
+	smmu->options |= ARM_SMMU_OPT_SYNC_MAP;
+
+	reg = readl_relaxed(smmu->base + ARM_SMMU_USER_CFG1);
+	reg = reg & GENMASK(15, 0);
+	for (i = 0; i < 8; i++) {
+		unsigned long val;
+
+		val = (reg >> 2 * i) & GENMASK(1, 0);
+		switch (PAGE_SIZE) {
+		case SZ_4K:
+			if (!val)
+				return;
+			break;
+		case SZ_16K:
+			if (!val || val == 0x1)
+				return;
+			break;
+		case SZ_64K:
+			if (!val || val == 0x1 || val == 0x3)
+				return;
+			break;
+		default:
+			return;
+		}
+	}
+	smmu->options |= ARM_SMMU_OPT_SYNC_BATCH;
+}
+#else
+static void hisi_smmu_check_errata(struct arm_smmu_device *smmu) {}
+#endif
+
 static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 {
 	u32 reg;
@@ -4454,6 +4504,8 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 	case IDR5_OAS_48_BIT:
 		smmu->oas = 48;
 	}
+
+	hisi_smmu_check_errata(smmu);
 
 	if (arm_smmu_ops.pgsize_bitmap == -1UL)
 		arm_smmu_ops.pgsize_bitmap = smmu->pgsize_bitmap;
