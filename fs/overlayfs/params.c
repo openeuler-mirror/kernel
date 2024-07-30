@@ -497,7 +497,7 @@ static int ovl_parse_param_lowerdir(const char *name, struct fs_context *fc)
 			 * there are no data layers.
 			 */
 			if (ctx->nr_data > 0) {
-				pr_err("regular lower layers cannot follow data lower layers");
+				pr_err("regular lower layers cannot follow data lower layers\n");
 				goto out_err;
 			}
 
