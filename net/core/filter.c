@@ -10699,6 +10699,23 @@ EXPORT_SYMBOL(gnet_bpf_progs);
 struct static_key_false gnet_bpf_enabled_key[MAX_GNET_BPF_ATTACH_TYPE];
 EXPORT_SYMBOL(gnet_bpf_enabled_key);
 
+static inline enum gnet_bpf_attach_type
+to_gnet_bpf_attach_type(enum bpf_attach_type attach_type)
+{
+	switch (attach_type) {
+	case BPF_GNET_TCP_RECVMSG:
+		return GNET_TCP_RECVMSG;
+	case BPF_GNET_SK_DST_SET:
+		return GNET_SK_DST_SET;
+	case BPF_GNET_RCV_NIC_NODE:
+		return GNET_RCV_NIC_NODE;
+	case BPF_GNET_SEND_NIC_NODE:
+		return GNET_SEND_NIC_NODE;
+	default:
+	return GNET_BPF_ATTACH_TYPE_INVALID;
+	}
+}
+
 int gnet_bpf_prog_attach(const union bpf_attr *attr,
 			 enum bpf_prog_type ptype, struct bpf_prog *prog)
 {
