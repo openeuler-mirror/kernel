@@ -23,6 +23,7 @@
 #include <linux/migrate.h>
 #include <linux/sched/numa_balancing.h>
 #include <trace/events/kmem.h>
+#include "internal.h"
 
 struct mem_sampling_ops_struct mem_sampling_ops;
 
@@ -128,20 +129,77 @@ out:
 }
 
 #ifdef CONFIG_NUMABALANCING_MEM_SAMPLING
-
-static int numa_migrate_prep(struct page *page, struct vm_area_struct *vma,
-				unsigned long addr, int page_nid,
-				int *flags)
+static inline void do_thp_numa_access(struct mm_struct *mm,
+				      struct vm_area_struct *vma,
+				      u64 vaddr, struct page *page)
 {
-	get_page(page);
+	int page_nid = NUMA_NO_NODE;
+	int target_nid, last_cpupid = -1;
+	bool migrated = false;
+	int flags = 0;
+	struct page *hpage = NULL;
+	u64 haddr = vaddr & HPAGE_PMD_MASK;
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd, pmde;
+	spinlock_t *ptl;
 
-	count_vm_numa_event(NUMA_HINT_FAULTS);
-	if (page_nid == numa_node_id()) {
-		count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
-		*flags |= TNF_FAULT_LOCAL;
+	pgd = pgd_offset(mm, vaddr);
+	if (!pgd_present(*pgd))
+		return;
+
+	p4d = p4d_offset(pgd, vaddr);
+	if (!p4d_present(*p4d))
+		return;
+
+	pud = pud_offset(p4d, vaddr);
+	if (!pud_present(*pud))
+		return;
+
+	pmd = pmd_offset(pud, vaddr);
+	pmde = READ_ONCE(*pmd);
+	/* TODO: handle PTE-mapped THP */
+	if (!pmd_trans_huge(pmde))
+		return;
+
+	ptl = pmd_lock(mm, pmd);
+	pmde = READ_ONCE(*pmd);
+	if (unlikely(!pmd_trans_huge(pmde)))
+		goto out_unlock;
+
+	hpage = vm_normal_page_pmd(vma, haddr, pmde);
+	if (!hpage || hpage != compound_head(page))
+		goto out_unlock;
+
+	page_nid = page_to_nid(hpage);
+	last_cpupid = page_cpupid_last(hpage);
+	target_nid = numa_migrate_prep(hpage, vma, haddr, page_nid,
+				       &flags);
+	spin_unlock(ptl);
+	if (target_nid == NUMA_NO_NODE) {
+		put_page(hpage);
+		goto out;
 	}
 
-	return mpol_misplaced(page, vma, addr);
+	migrated = migrate_misplaced_page(hpage, vma, target_nid);
+	if (migrated) {
+		flags |= TNF_MIGRATED;
+		page_nid = target_nid;
+	} else {
+		flags |= TNF_MIGRATE_FAIL;
+	}
+
+out:
+	trace_mm_numa_migrating(haddr, page_nid, target_nid, flags&TNF_MIGRATED);
+	if (page_nid != NUMA_NO_NODE)
+		task_numa_fault(last_cpupid, page_nid, HPAGE_PMD_NR,
+				flags);
+
+	return;
+
+out_unlock:
+	spin_unlock(ptl);
 }
 
 /*
@@ -184,15 +242,16 @@ static void do_numa_access(struct task_struct *p, u64 vaddr, u64 paddr)
 		goto out_unlock;
 
 	page = pfn_to_online_page(PHYS_PFN(paddr));
-	if (!page || is_zone_device_page(page))
+	if (!page || is_zone_device_page(page) || PageKsm(page))
 		goto out_unlock;
 
 	if (unlikely(!PageLRU(page)))
 		goto out_unlock;
 
-	/* TODO: handle PTE-mapped THP or PMD-mapped THP*/
-	if (PageCompound(page))
+	if (PageCompound(page)) {
+		do_thp_numa_access(mm, vma, vaddr, page);
 		goto out_unlock;
+	}
 
 	/*
 	 * Flag if the page is shared between multiple address spaces. This
@@ -200,6 +259,10 @@ static void do_numa_access(struct task_struct *p, u64 vaddr, u64 paddr)
 	 */
 	if (page_mapcount(page) > 1 && (vma->vm_flags & VM_SHARED))
 		flags |= TNF_SHARED;
+
+	/* Also skip shared copy-on-write pages */
+	if (is_cow_mapping(vma->vm_flags) && page_count(page) != 1)
+		goto out_unlock;
 
 	last_cpupid = page_cpupid_last(page);
 	page_nid = page_to_nid(page);
