@@ -114,20 +114,15 @@ static int xlnx_pr_decoupler_probe(struct platform_device *pdev)
 
 	clk_disable(priv->clk);
 
-	br = devm_fpga_bridge_create(&pdev->dev, "Xilinx PR Decoupler",
+	br = fpga_bridge_register(&pdev->dev, "Xilinx PR Decoupler",
 				     &xlnx_pr_decoupler_br_ops, priv);
-	if (!br) {
-		err = -ENOMEM;
+	if (IS_ERR(br)) {
+		err = PTR_ERR(br);
+		dev_err(&pdev->dev, "unable to register Xilinx PR Decoupler");
 		goto err_clk;
 	}
 
 	platform_set_drvdata(pdev, br);
-
-	err = fpga_bridge_register(br);
-	if (err) {
-		dev_err(&pdev->dev, "unable to register Xilinx PR Decoupler");
-		goto err_clk;
-	}
 
 	return 0;
 
