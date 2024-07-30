@@ -115,7 +115,7 @@ struct Qdisc {
 	bool			empty;
 	struct rcu_head		rcu;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, int owner)
 	KABI_RESERVE(2)
 
 	/* private data */
