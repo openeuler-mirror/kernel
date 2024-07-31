@@ -1495,23 +1495,6 @@ enum gnet_bpf_attach_type {
 	MAX_GNET_BPF_ATTACH_TYPE
 };
 
-static inline enum gnet_bpf_attach_type
-to_gnet_bpf_attach_type(enum bpf_attach_type attach_type)
-{
-	switch (attach_type) {
-	case BPF_GNET_TCP_RECVMSG:
-		return GNET_TCP_RECVMSG;
-	case BPF_GNET_SK_DST_SET:
-		return GNET_SK_DST_SET;
-	case BPF_GNET_RCV_NIC_NODE:
-		return GNET_RCV_NIC_NODE;
-	case BPF_GNET_SEND_NIC_NODE:
-		return GNET_SEND_NIC_NODE;
-	default:
-	return GNET_BPF_ATTACH_TYPE_INVALID;
-	}
-}
-
 struct gnet_bpf {
 	struct bpf_prog __rcu *progs[MAX_GNET_BPF_ATTACH_TYPE];
 	u32 flags[MAX_GNET_BPF_ATTACH_TYPE];
