@@ -1687,6 +1687,8 @@ error:
 		rx_ring->rx_stats.bad_desc_num++;
 		u64_stats_update_end(&rx_ring->syncp);
 		adapter->reset_reason = ENA_REGS_RESET_TOO_MANY_RX_DESCS;
+	} else if (rc == -EFAULT) {
+		adapter->reset_reason = ENA_REGS_RESET_RX_DESCRIPTOR_MALFORMED;
 	} else {
 		u64_stats_update_begin(&rx_ring->syncp);
 		rx_ring->rx_stats.bad_req_id++;
@@ -4054,7 +4056,6 @@ static void ena_release_bars(struct ena_com_dev *ena_dev, struct pci_dev *pdev)
 
 	pci_release_selected_regions(pdev, release_bars);
 }
-
 
 static int ena_calc_io_queue_size(struct ena_calc_queue_size_ctx *ctx)
 {
