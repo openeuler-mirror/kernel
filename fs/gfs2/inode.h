@@ -13,8 +13,8 @@
 #include "util.h"
 
 bool gfs2_release_folio(struct folio *folio, gfp_t gfp_mask);
-extern int gfs2_internal_read(struct gfs2_inode *ip,
-			      char *buf, loff_t *pos, unsigned size);
+extern ssize_t gfs2_internal_read(struct gfs2_inode *ip,
+				  char *buf, loff_t *pos, size_t size);
 extern void gfs2_set_aops(struct inode *inode);
 
 static inline int gfs2_is_stuffed(const struct gfs2_inode *ip)
@@ -101,7 +101,7 @@ extern struct inode *gfs2_lookupi(struct inode *dir, const struct qstr *name,
 				  int is_root);
 extern int gfs2_permission(struct mnt_idmap *idmap,
 			   struct inode *inode, int mask);
-extern struct inode *gfs2_lookup_simple(struct inode *dip, const char *name);
+extern struct inode *gfs2_lookup_meta(struct inode *dip, const char *name);
 extern void gfs2_dinode_out(const struct gfs2_inode *ip, void *buf);
 extern int gfs2_open_common(struct inode *inode, struct file *file);
 extern loff_t gfs2_seek_data(struct file *file, loff_t offset);
