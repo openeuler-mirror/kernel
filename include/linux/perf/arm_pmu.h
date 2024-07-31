@@ -131,7 +131,7 @@ struct arm_pmu {
 	void		(*branch_stack_add)(struct perf_event *event, struct pmu_hw_events *cpuc);
 	void		(*branch_stack_del)(struct perf_event *event, struct pmu_hw_events *cpuc);
 	void		(*branch_stack_reset)(void);
-	int		num_events;
+	DECLARE_BITMAP(cntr_mask, ARMPMU_MAX_HWEVENTS);
 	unsigned int	secure_access	: 1, /* 32-bit ARM only */
 			has_branch_stack: 1, /* 64-bit ARM only */
 			reserved	: 30;
