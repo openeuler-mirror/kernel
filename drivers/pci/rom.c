@@ -98,6 +98,12 @@ static size_t pci_get_rom_size(struct pci_dev *pdev, void __iomem *rom,
 		}
 		/* get the PCI data structure and check its "PCIR" signature */
 		pds = image + readw(image + 24);
+		/* The PCIR data structure must begin on a 4-byte boundary */
+		if (!IS_ALIGNED((unsigned long)pds, 4)) {
+			pci_info(pdev, "Invalid PCI ROM header signature: PCIR %#06x\n",
+				 readw(image + 24));
+			break;
+		}
 		if (readl(pds) != 0x52494350) {
 			pci_info(pdev, "Invalid PCI ROM data signature: expecting 0x52494350, got %#010x\n",
 				 readl(pds));
