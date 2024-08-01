@@ -330,7 +330,7 @@ static int isolate_single_pageblock(unsigned long boundary_pfn, int flags,
 	start_pfn  = max(ALIGN_DOWN(isolate_pageblock, MAX_ORDER_NR_PAGES),
 				      zone->zone_start_pfn);
 
-	if (page_in_dynamic_pool(pfn_to_page(isolate_pageblock)))
+	if (page_from_or_in_dynamic_pool(pfn_to_page(isolate_pageblock)))
 		return -EBUSY;
 
 	if (skip_isolation) {
@@ -562,7 +562,7 @@ int start_isolate_page_range(unsigned long start_pfn, unsigned long end_pfn,
 	     pfn < isolate_end - pageblock_nr_pages;
 	     pfn += pageblock_nr_pages) {
 		page = __first_valid_page(pfn, pageblock_nr_pages);
-		if (page && (page_in_dynamic_pool(page) ||
+		if (page && (page_from_or_in_dynamic_pool(page) ||
 			    set_migratetype_isolate(page, migratetype, flags,
 					start_pfn, end_pfn))) {
 			undo_isolate_page_range(isolate_start, pfn, migratetype);
