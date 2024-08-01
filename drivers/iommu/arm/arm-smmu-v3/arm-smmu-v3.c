@@ -4494,7 +4494,7 @@ static int arm_smmu_device_hw_probe(struct arm_smmu_device *smmu)
 }
 
 #ifdef CONFIG_ACPI
-static struct acpi_platform_list arm_smmu_v3_plat_info[] __initdata = {
+static struct acpi_platform_list arm_smmu_v3_plat_info[] = {
 	/* HiSilicon Hip09 Platform */
 	{"HISI  ", "HIP09   ", 0, ACPI_SIG_IORT, greater_than_or_equal,
 	 "Erratum #162100602", 0},
