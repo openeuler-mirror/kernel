@@ -22,11 +22,23 @@ struct ib_umem {
 	unsigned long		address;
 	u32 writable : 1;
 	u32 is_odp : 1;
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+	/* Placing at the end of the bitfield list is ABI preserving on LE */
+	u32 is_peer : 1;
+#endif
 	struct work_struct	work;
 	struct sg_table sg_head;
 	int             nmap;
 	unsigned int    sg_nents;
 };
+
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+typedef void (*umem_invalidate_func_t)(struct ib_umem *umem, void *priv);
+enum ib_peer_mem_flags {
+	IB_PEER_MEM_ALLOW = 1 << 0,
+	IB_PEER_MEM_INVAL_SUPP = 1 << 1,
+};
+#endif
 
 /* Returns the offset of the umem start relative to the first page. */
 static inline int ib_umem_offset(struct ib_umem *umem)
@@ -79,6 +91,15 @@ int ib_umem_copy_from(void *dst, struct ib_umem *umem, size_t offset,
 unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 				     unsigned long pgsz_bitmap,
 				     unsigned long virt);
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+struct ib_umem *ib_umem_get_peer(struct ib_device *device, unsigned long addr,
+				 size_t size, int access,
+				 unsigned long peer_mem_flags);
+void ib_umem_activate_invalidation_notifier(struct ib_umem *umem,
+					    umem_invalidate_func_t func,
+					    void *cookie);
+void ib_umem_stop_invalidation_notifier(struct ib_umem *umem);
+#endif /* CONFIG_INFINIBAND_PEER_MEMORY */
 
 #else /* CONFIG_INFINIBAND_USER_MEM */
 
@@ -101,6 +122,26 @@ static inline unsigned long ib_umem_find_best_pgsz(struct ib_umem *umem,
 {
 	return 0;
 }
+
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+static inline struct ib_umem *ib_umem_get_peer(struct ib_device *device,
+					       unsigned long addr, size_t size,
+					       int access,
+					       unsigned long peer_mem_flags)
+{
+	return ERR_PTR(-EINVAL);
+}
+
+static inline void ib_umem_activate_invalidation_notifier(struct ib_umem *umem,
+							  umem_invalidate_func_t func,
+							  void *cookie)
+{
+}
+
+static inline void ib_umem_stop_invalidation_notifier(struct ib_umem *umem)
+{
+}
+#endif /* CONFIG_INFINIBAND_PEER_MEMORY */
 
 #endif /* CONFIG_INFINIBAND_USER_MEM */
 
