@@ -2031,7 +2031,7 @@ repeat:
 	if (!shmem_is_huge(inode, index, false,
 			   vma ? vma->vm_mm : NULL, vma ? vma->vm_flags : 0))
 		goto alloc_nohuge;
-	if (task_in_dynamic_pool(current))
+	if (mm_in_dynamic_pool(vma ? vma->vm_mm : current->mm))
 		goto alloc_nohuge;
 
 	huge_gfp = vma_thp_gfp_mask(vma);

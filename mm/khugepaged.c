@@ -363,7 +363,7 @@ int hugepage_madvise(struct vm_area_struct *vma,
 			return 0;
 #endif
 
-		if (task_in_dynamic_pool(current))
+		if (mm_in_dynamic_pool(vma->vm_mm))
 			return -EINVAL;
 
 		*vm_flags &= ~VM_NOHUGEPAGE;
@@ -2743,7 +2743,7 @@ int madvise_collapse(struct vm_area_struct *vma, struct vm_area_struct **prev,
 	if (!thp_vma_allowable_order(vma, vma->vm_flags, 0, PMD_ORDER))
 		return -EINVAL;
 
-	if (task_in_dynamic_pool(current))
+	if (mm_in_dynamic_pool(mm))
 		return -EINVAL;
 
 	cc = kmalloc(sizeof(*cc), GFP_KERNEL);
