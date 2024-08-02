@@ -2269,8 +2269,10 @@ fastpath_t handle_fastpath_set_msr_irqoff(struct kvm_vcpu *vcpu)
 	}
 
 	if (handled) {
-		kvm_skip_emulated_instruction(vcpu);
-		ret = EXIT_FASTPATH_REENTER_GUEST;
+		if (!kvm_skip_emulated_instruction(vcpu))
+			ret = EXIT_FASTPATH_EXIT_USERSPACE;
+		else
+			ret = EXIT_FASTPATH_REENTER_GUEST;
 		trace_kvm_msr_write(msr, data);
 	} else {
 		ret = EXIT_FASTPATH_NONE;
@@ -11234,6 +11236,9 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 
 	if (vcpu->arch.apic_attention)
 		kvm_lapic_sync_from_vapic(vcpu);
+
+	if (unlikely(exit_fastpath == EXIT_FASTPATH_EXIT_USERSPACE))
+		return 0;
 
 	r = static_call(kvm_x86_handle_exit)(vcpu, exit_fastpath);
 #ifdef CONFIG_ARCH_VCPU_STAT
