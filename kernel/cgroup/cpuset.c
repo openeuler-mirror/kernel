@@ -86,7 +86,7 @@ static const char * const perr_strings[] = {
 	[PERR_NOTEXCL]   = "Cpu list in cpuset.cpus not exclusive",
 	[PERR_NOCPUS]    = "Parent unable to distribute cpu downstream",
 	[PERR_HOTPLUG]   = "No cpu available due to hotplug",
-	[PERR_CPUSEMPTY] = "cpuset.cpus is empty",
+	[PERR_CPUSEMPTY] = "cpuset.cpus and cpuset.cpus.exclusive are empty",
 	[PERR_HKEEPING]  = "partition config conflicts with housekeeping setup",
 };
 
@@ -129,19 +129,28 @@ struct cpuset {
 	/*
 	 * Exclusive CPUs dedicated to current cgroup (default hierarchy only)
 	 *
-	 * This exclusive CPUs must be a subset of cpus_allowed. A parent
-	 * cgroup can only grant exclusive CPUs to one of its children.
+	 * The effective_cpus of a valid partition root comes solely from its
+	 * effective_xcpus and some of the effective_xcpus may be distributed
+	 * to sub-partitions below & hence excluded from its effective_cpus.
+	 * For a valid partition root, its effective_cpus have no relationship
+	 * with cpus_allowed unless its exclusive_cpus isn't set.
 	 *
-	 * When the cgroup becomes a valid partition root, effective_xcpus
-	 * defaults to cpus_allowed if not set. The effective_cpus of a valid
-	 * partition root comes solely from its effective_xcpus and some of the
-	 * effective_xcpus may be distributed to sub-partitions below & hence
-	 * excluded from its effective_cpus.
+	 * This value will only be set if either exclusive_cpus is set or
+	 * when this cpuset becomes a local partition root.
 	 */
 	cpumask_var_t effective_xcpus;
 
 	/*
 	 * Exclusive CPUs as requested by the user (default hierarchy only)
+	 *
+	 * Its value is independent of cpus_allowed and designates the set of
+	 * CPUs that can be granted to the current cpuset or its children when
+	 * it becomes a valid partition root. The effective set of exclusive
+	 * CPUs granted (effective_xcpus) depends on whether those exclusive
+	 * CPUs are passed down by its ancestors and not yet taken up by
+	 * another sibling partition root along the way.
+	 *
+	 * If its value isn't set, it defaults to cpus_allowed.
 	 */
 	cpumask_var_t exclusive_cpus;
 
@@ -232,6 +241,17 @@ static struct list_head remote_children;
  *   2 - partition root without load balancing (isolated)
  *  -1 - invalid partition root
  *  -2 - invalid isolated partition root
+ *
+ *  There are 2 types of partitions - local or remote. Local partitions are
+ *  those whose parents are partition root themselves. Setting of
+ *  cpuset.cpus.exclusive are optional in setting up local partitions.
+ *  Remote partitions are those whose parents are not partition roots. Passing
+ *  down exclusive CPUs by setting cpuset.cpus.exclusive along its ancestor
+ *  nodes are mandatory in creating a remote partition.
+ *
+ *  For simplicity, a local partition can be created under a local or remote
+ *  partition but a remote partition cannot have any partition root in its
+ *  ancestor chain except the cgroup root.
  */
 #define PRS_MEMBER		0
 #define PRS_ROOT		1
@@ -740,6 +760,19 @@ static inline void free_cpuset(struct cpuset *cs)
 	kfree(cs);
 }
 
+/* Return user specified exclusive CPUs */
+static inline struct cpumask *user_xcpus(struct cpuset *cs)
+{
+	return cpumask_empty(cs->exclusive_cpus) ? cs->cpus_allowed
+						 : cs->exclusive_cpus;
+}
+
+static inline bool xcpus_empty(struct cpuset *cs)
+{
+	return cpumask_empty(cs->cpus_allowed) &&
+	       cpumask_empty(cs->exclusive_cpus);
+}
+
 static inline struct cpumask *fetch_xcpus(struct cpuset *cs)
 {
 	return !cpumask_empty(cs->exclusive_cpus) ? cs->exclusive_cpus :
@@ -862,17 +895,41 @@ static int validate_change(struct cpuset *cur, struct cpuset *trial)
 
 	/*
 	 * If either I or some sibling (!= me) is exclusive, we can't
-	 * overlap
+	 * overlap. exclusive_cpus cannot overlap with each other if set.
 	 */
 	ret = -EINVAL;
 	cpuset_for_each_child(c, css, par) {
-		if ((is_cpu_exclusive(trial) || is_cpu_exclusive(c)) &&
-		    c != cur) {
+		bool txset, cxset;	/* Are exclusive_cpus set? */
+
+		if (c == cur)
+			continue;
+
+		txset = !cpumask_empty(trial->exclusive_cpus);
+		cxset = !cpumask_empty(c->exclusive_cpus);
+		if (is_cpu_exclusive(trial) || is_cpu_exclusive(c) ||
+		    (txset && cxset)) {
 			if (!cpusets_are_exclusive(trial, c))
+				goto out;
+		} else if (txset || cxset) {
+			struct cpumask *xcpus, *acpus;
+
+			/*
+			 * When just one of the exclusive_cpus's is set,
+			 * cpus_allowed of the other cpuset, if set, cannot be
+			 * a subset of it or none of those CPUs will be
+			 * available if these exclusive CPUs are activated.
+			 */
+			if (txset) {
+				xcpus = trial->exclusive_cpus;
+				acpus = c->cpus_allowed;
+			} else {
+				xcpus = c->exclusive_cpus;
+				acpus = trial->cpus_allowed;
+			}
+			if (!cpumask_empty(acpus) && cpumask_subset(acpus, xcpus))
 				goto out;
 		}
 		if ((is_mem_exclusive(trial) || is_mem_exclusive(c)) &&
-		    c != cur &&
 		    nodes_intersects(trial->mems_allowed, c->mems_allowed))
 			goto out;
 	}
@@ -1437,7 +1494,7 @@ static void update_sibling_cpumasks(struct cpuset *parent, struct cpuset *cs,
  */
 static int update_partition_exclusive(struct cpuset *cs, int new_prs)
 {
-	bool exclusive = (new_prs > 0);
+	bool exclusive = (new_prs > PRS_MEMBER);
 
 	if (exclusive && !is_cpu_exclusive(cs)) {
 		if (update_flag(CS_CPU_EXCLUSIVE, cs, 1))
@@ -1528,7 +1585,7 @@ static void reset_partition_data(struct cpuset *cs)
  * Return: true if xcpus is not empty, false otherwise.
  *
  * Starting with exclusive_cpus (cpus_allowed if exclusive_cpus is not set),
- * it must be a subset of cpus_allowed and parent's effective_xcpus.
+ * it must be a subset of parent's effective_xcpus.
  */
 static bool compute_effective_exclusive_cpumask(struct cpuset *cs,
 						struct cpumask *xcpus)
@@ -1538,12 +1595,7 @@ static bool compute_effective_exclusive_cpumask(struct cpuset *cs,
 	if (!xcpus)
 		xcpus = cs->effective_xcpus;
 
-	if (!cpumask_empty(cs->exclusive_cpus))
-		cpumask_and(xcpus, cs->exclusive_cpus, cs->cpus_allowed);
-	else
-		cpumask_copy(xcpus, cs->cpus_allowed);
-
-	return cpumask_and(xcpus, xcpus, parent->effective_xcpus);
+	return cpumask_and(xcpus, user_xcpus(cs), parent->effective_xcpus);
 }
 
 static inline bool is_remote_partition(struct cpuset *cs)
@@ -1829,8 +1881,7 @@ static int update_parent_effective_cpumask(struct cpuset *cs, int cmd,
 	 */
 	adding = deleting = false;
 	old_prs = new_prs = cs->partition_root_state;
-	xcpus = !cpumask_empty(cs->exclusive_cpus)
-		? cs->effective_xcpus : cs->cpus_allowed;
+	xcpus = user_xcpus(cs);
 
 	if (cmd == partcmd_invalidate) {
 		if (is_prs_invalid(old_prs))
@@ -1858,7 +1909,7 @@ static int update_parent_effective_cpumask(struct cpuset *cs, int cmd,
 		return is_partition_invalid(parent)
 		       ? PERR_INVPARENT : PERR_NOTPART;
 	}
-	if (!newmask && cpumask_empty(cs->cpus_allowed))
+	if (!newmask && xcpus_empty(cs))
 		return PERR_CPUSEMPTY;
 
 	nocpu = tasks_nocpu_error(parent, cs, xcpus);
@@ -2594,8 +2645,6 @@ static int update_exclusive_cpumask(struct cpuset *cs, struct cpuset *trialcs,
 		retval = cpulist_parse(buf, trialcs->exclusive_cpus);
 		if (retval < 0)
 			return retval;
-		if (!is_cpu_exclusive(cs))
-			set_bit(CS_CPU_EXCLUSIVE, &trialcs->flags);
 	}
 
 	/* Nothing to do if the CPUs didn't change */
@@ -3078,9 +3127,9 @@ static int update_prstate(struct cpuset *cs, int new_prs)
 
 	if (!old_prs) {
 		/*
-		 * cpus_allowed cannot be empty.
+		 * cpus_allowed and exclusive_cpus cannot be both empty.
 		 */
-		if (cpumask_empty(cs->cpus_allowed)) {
+		if (xcpus_empty(cs)) {
 			err = PERR_CPUSEMPTY;
 			goto out;
 		}
