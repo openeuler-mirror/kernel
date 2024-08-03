@@ -584,6 +584,10 @@ struct mcp251xfd_priv {
 	struct mcp251xfd_tx_ring tx[1];
 	struct mcp251xfd_rx_ring *rx[1];
 
+	struct workqueue_struct *wq;
+	struct work_struct tx_work;
+	struct mcp251xfd_tx_obj *tx_work_obj;
+
 	u8 rx_ring_num;
 
 	struct mcp251xfd_ecc ecc;
