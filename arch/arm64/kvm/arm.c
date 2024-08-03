@@ -41,6 +41,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/sections.h>
 #include <asm/kvm_tmi.h>
+#include <linux/perf/arm_pmu.h>
 
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_pmu.h>
@@ -1028,6 +1029,18 @@ static bool kvm_vcpu_exit_request(struct kvm_vcpu *vcpu, int *ret)
 			xfer_to_guest_mode_work_pending();
 }
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+static inline void update_pmu_phys_irq(struct kvm_vcpu *vcpu, bool *pmu_stopped)
+{
+	struct kvm_pmu *pmu = &vcpu->arch.pmu;
+
+	if (pmu->irq_level) {
+		*pmu_stopped = true;
+		arm_pmu_set_phys_irq(false);
+	}
+}
+#endif
+
 /*
  * Actually run the vCPU, entering an RCU extended quiescent state (EQS) while
  * the vCPU is running.
@@ -1080,6 +1093,9 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	run->exit_reason = KVM_EXIT_UNKNOWN;
 	run->flags = 0;
 	while (ret > 0) {
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		bool pmu_stopped = false;
+#endif
 		/*
 		 * Check conditions before entering the guest
 		 */
@@ -1107,6 +1123,10 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		kvm_arm_vmid_update(&vcpu->arch.hw_mmu->vmid);
 
 		kvm_pmu_flush_hwstate(vcpu);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		if (vcpu_is_tec(vcpu))
+			update_pmu_phys_irq(vcpu, &pmu_stopped);
+#endif
 
 		local_irq_disable();
 
@@ -1217,6 +1237,10 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 #endif
 		preempt_enable();
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		if (pmu_stopped)
+			arm_pmu_set_phys_irq(true);
+#endif
 		/*
 		 * The ARMv8 architecture doesn't give the hypervisor
 		 * a mechanism to prevent a guest from dropping to AArch32 EL0

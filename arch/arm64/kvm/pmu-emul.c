@@ -15,6 +15,7 @@
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_vgic.h>
 #include <asm/arm_pmuv3.h>
+#include <asm/kvm_tmi.h>
 
 #define PERF_ATTR_CFG1_COUNTER_64BIT	BIT(0)
 
@@ -324,6 +325,14 @@ static u64 kvm_pmu_overflow_status(struct kvm_vcpu *vcpu)
 {
 	u64 reg = 0;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu)) {
+		struct tmi_tec_run *run = vcpu->arch.tec.tec_run;
+
+		reg = run->tec_exit.pmu_ovf_status;
+		return reg;
+	}
+#endif
 	if ((__vcpu_sys_reg(vcpu, PMCR_EL0) & ARMV8_PMU_PMCR_E)) {
 		reg = __vcpu_sys_reg(vcpu, PMOVSSET_EL0);
 		reg &= __vcpu_sys_reg(vcpu, PMCNTENSET_EL0);
