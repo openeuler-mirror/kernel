@@ -137,14 +137,29 @@ static struct dynamic_pool *dpool_get_from_page(struct page *page)
 	return dpool;
 }
 
-bool __task_in_dynamic_pool(struct task_struct *tsk)
+static struct dynamic_pool *dpool_get_from_mm(struct mm_struct *mm)
+{
+	struct dynamic_pool *dpool = NULL;
+	struct mem_cgroup *memcg;
+
+	memcg = get_mem_cgroup_from_mm(mm);
+	if (!memcg)
+		return NULL;
+
+	dpool = dpool_get_from_memcg(memcg);
+	css_put(&memcg->css);
+
+	return dpool;
+}
+
+bool __mm_in_dynamic_pool(struct mm_struct *mm)
 {
 	struct dynamic_pool *dpool;
 
 	if (!dpool_enabled)
 		return false;
 
-	dpool = dpool_get_from_task(tsk);
+	dpool = dpool_get_from_mm(mm);
 	dpool_put(dpool);
 
 	return !!dpool;

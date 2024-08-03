@@ -2135,7 +2135,7 @@ static isolate_migrate_t isolate_migratepages(struct compact_control *cc)
 			continue;
 		}
 
-		if (page_in_dynamic_pool(page))
+		if (page_from_or_in_dynamic_pool(page))
 			continue;
 
 		/*

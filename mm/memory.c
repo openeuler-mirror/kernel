@@ -5455,7 +5455,7 @@ retry_pud:
 	if (pud_none(*vmf.pud) &&
 	    thp_vma_allowable_order(vma, vm_flags,
 				TVA_IN_PF | TVA_ENFORCE_SYSFS, PUD_ORDER) &&
-	    !task_in_dynamic_pool(current)) {
+	    !mm_in_dynamic_pool(mm)) {
 		ret = create_huge_pud(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
 			return ret;
@@ -5491,7 +5491,7 @@ retry_pud:
 	if (pmd_none(*vmf.pmd) &&
 	    thp_vma_allowable_order(vma, vm_flags,
 				TVA_IN_PF | TVA_ENFORCE_SYSFS, PMD_ORDER) &&
-	    !task_in_dynamic_pool(current)) {
+	    !mm_in_dynamic_pool(mm)) {
 		ret = create_huge_pmd(&vmf);
 		if (!(ret & VM_FAULT_FALLBACK))
 			return ret;

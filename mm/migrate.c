@@ -2050,7 +2050,7 @@ struct folio *alloc_migration_target(struct folio *src, unsigned long private)
 	if (folio_test_hugetlb(src)) {
 		struct hstate *h = folio_hstate(src);
 
-		if (page_in_dynamic_pool(folio_page(src, 0)))
+		if (page_from_dynamic_pool(folio_page(src, 0)))
 			return NULL;
 
 		gfp_mask = htlb_modify_alloc_mask(h, gfp_mask);
@@ -2569,7 +2569,7 @@ static int numamigrate_isolate_folio(pg_data_t *pgdat, struct folio *folio)
 		return 0;
 	}
 
-	if (page_in_dynamic_pool(folio_page(folio, 0)))
+	if (page_from_dynamic_pool(folio_page(folio, 0)))
 		return 0;
 
 	if (!folio_isolate_lru(folio))
