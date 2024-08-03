@@ -45,6 +45,7 @@
 #include <asm/tlb.h>
 #include <asm/alternative.h>
 #include <asm/xen/swiotlb-xen.h>
+#include <asm/set_memory.h>
 
 #include "internal.h"
 
@@ -609,6 +610,8 @@ void __init mem_init(void)
 		swiotlb = true;
 
 	swiotlb_init(swiotlb, SWIOTLB_VERBOSE);
+
+	swiotlb_cvm_update_mem_attributes();
 
 	/* this will put all unused low memory onto the freelists */
 	memblock_free_all();

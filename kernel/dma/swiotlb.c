@@ -1734,4 +1734,20 @@ static int __init rmem_swiotlb_setup(struct reserved_mem *rmem)
 }
 
 RESERVEDMEM_OF_DECLARE(dma, "restricted-dma-pool", rmem_swiotlb_setup);
+
+#ifdef CONFIG_HISI_VIRTCCA_GUEST
+void __init swiotlb_cvm_update_mem_attributes(void)
+{
+	void *vaddr;
+	unsigned long bytes;
+
+	if (!is_virtcca_cvm_world() || !is_swiotlb_allocated())
+		return;
+	vaddr = phys_to_virt(io_tlb_default_mem.defpool.start);
+	bytes = PAGE_ALIGN(io_tlb_default_mem.defpool.nslabs << IO_TLB_SHIFT);
+	set_cvm_memory_decrypted((unsigned long)vaddr, bytes >> PAGE_SHIFT);
+	memset(vaddr, 0, bytes);
+	io_tlb_default_mem.for_alloc = true;
+}
+#endif
 #endif /* CONFIG_DMA_RESTRICTED_POOL */
