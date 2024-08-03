@@ -871,7 +871,11 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	u64 mmfr0, mmfr1;
 	u32 phys_shift;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if ((type & ~KVM_VM_TYPE_ARM_IPA_SIZE_MASK) && (!kvm_is_virtcca_cvm(kvm)))
+#else
 	if (type & ~KVM_VM_TYPE_ARM_IPA_SIZE_MASK)
+#endif
 		return -EINVAL;
 
 	phys_shift = KVM_VM_TYPE_ARM_IPA_SIZE(type);
@@ -1414,6 +1418,12 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 	fault_granule = 1UL << ARM64_HW_PGTABLE_LEVEL_SHIFT(fault_level);
 	write_fault = kvm_is_write_fault(vcpu);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu)) {
+		write_fault = true;
+		prot = KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W;
+	}
+#endif
 	exec_fault = kvm_vcpu_trap_is_exec_fault(vcpu);
 	VM_BUG_ON(write_fault && exec_fault);
 	vcpu->stat.mabt_exit_stat++;

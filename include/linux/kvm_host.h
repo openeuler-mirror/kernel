@@ -543,6 +543,28 @@ static __always_inline void guest_state_exit_irqoff(void)
 	instrumentation_end();
 }
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+
+#define KVM_TYPE_CVM_BIT     8
+#define CVM_MAX_HALT_POLL_NS 100000
+
+DECLARE_STATIC_KEY_FALSE(virtcca_cvm_is_available);
+
+static __always_inline bool vcpu_is_tec(struct kvm_vcpu *vcpu)
+{
+	if (static_branch_unlikely(&virtcca_cvm_is_available))
+		return vcpu->arch.tec.tec_run;
+
+	return false;
+}
+
+static inline bool kvm_arm_cvm_type(unsigned long type)
+{
+	return type & (1UL << KVM_TYPE_CVM_BIT);
+}
+
+#endif
+
 static inline int kvm_vcpu_exiting_guest_mode(struct kvm_vcpu *vcpu)
 {
 	/*

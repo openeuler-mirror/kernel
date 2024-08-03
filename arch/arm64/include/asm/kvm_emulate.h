@@ -639,4 +639,22 @@ static __always_inline void kvm_reset_cptr_el2(struct kvm_vcpu *vcpu)
 
 	kvm_write_cptr_el2(val);
 }
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+static inline bool kvm_is_virtcca_cvm(struct kvm *kvm)
+{
+	if (static_branch_unlikely(&virtcca_cvm_is_available))
+		return kvm->arch.is_virtcca_cvm;
+	return false;
+}
+
+static inline enum virtcca_cvm_state virtcca_cvm_state(struct kvm *kvm)
+{
+	struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
+
+	if (!virtcca_cvm)
+		return 0;
+	return READ_ONCE(virtcca_cvm->state);
+}
+#endif
 #endif /* __ARM64_KVM_EMULATE_H__ */

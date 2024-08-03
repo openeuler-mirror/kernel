@@ -27,7 +27,7 @@
 #include <asm/fpsimd.h>
 #include <asm/kvm.h>
 #include <asm/kvm_asm.h>
-#ifdef CONFIG_CVM_HOST
+#ifdef CONFIG_HISI_VIRTCCA_HOST
 #include <asm/kvm_tmm.h>
 #endif
 
@@ -292,9 +292,12 @@ struct kvm_arch {
 	u64 tlbi_dvmbm;
 #endif
 
-#ifdef CONFIG_CVM_HOST
-	struct cvm cvm;
-	bool is_cvm;
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	union {
+		struct cvm cvm;
+		struct virtcca_cvm *virtcca_cvm;
+	};
+	bool is_virtcca_cvm;
 #endif
 };
 
@@ -622,8 +625,8 @@ struct kvm_vcpu_arch {
 	cpumask_var_t pre_sched_cpus;
 #endif
 
-#ifdef CONFIG_CVM_HOST
-	struct cvm_tec tec;
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	struct virtcca_cvm_tec tec;
 #endif
 };
 

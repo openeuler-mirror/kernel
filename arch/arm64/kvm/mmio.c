@@ -6,6 +6,7 @@
 
 #include <linux/kvm_host.h>
 #include <asm/kvm_emulate.h>
+#include <asm/kvm_tmi.h>
 #include <trace/events/kvm.h>
 
 #include "trace.h"
@@ -109,6 +110,12 @@ int kvm_handle_mmio_return(struct kvm_vcpu *vcpu)
 			       &data);
 		data = vcpu_data_host_to_guest(vcpu, data, len);
 		vcpu_set_reg(vcpu, kvm_vcpu_dabt_get_rd(vcpu), data);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		if (vcpu_is_tec(vcpu)) {
+			((struct tmi_tec_run *)vcpu->arch.tec.tec_run)->
+				tec_entry.gprs[0] = data;
+		}
+#endif
 	}
 
 	/*
@@ -178,7 +185,12 @@ int io_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa)
 	run->mmio.phys_addr	= fault_ipa;
 	run->mmio.len		= len;
 	vcpu->mmio_needed	= 1;
-
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu)) {
+		((struct tmi_tec_run *)vcpu->arch.tec.tec_run)->tec_entry.flags |=
+			TEC_ENTRY_FLAG_EMUL_MMIO;
+	}
+#endif
 	if (!ret) {
 		/* We handled the access successfully in the kernel. */
 		if (!is_write)

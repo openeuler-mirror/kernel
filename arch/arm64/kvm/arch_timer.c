@@ -17,6 +17,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_hyp.h>
 #include <asm/kvm_nested.h>
+#include <asm/kvm_tmi.h>
 
 #include <kvm/arm_vgic.h>
 #include <kvm/arm_arch_timer.h>
@@ -175,8 +176,77 @@ static void timer_set_cval(struct arch_timer_context *ctxt, u64 cval)
 	}
 }
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+static bool cvm_timer_irq_can_fire(struct arch_timer_context *timer_ctx)
+{
+	return timer_ctx &&
+		   ((timer_get_ctl(timer_ctx) &
+		    (ARCH_TIMER_CTRL_IT_MASK | ARCH_TIMER_CTRL_ENABLE)) == ARCH_TIMER_CTRL_ENABLE);
+}
+
+void kvm_cvm_timers_update(struct kvm_vcpu *vcpu)
+{
+	int i;
+	u64 cval, now;
+	bool status, level;
+	struct arch_timer_context *timer;
+	struct arch_timer_cpu *arch_timer = &vcpu->arch.timer_cpu;
+
+	for (i = 0; i < NR_KVM_TIMERS; i++) {
+		timer = &arch_timer->timers[i];
+
+		if (!timer->loaded) {
+			if (!cvm_timer_irq_can_fire(timer))
+				continue;
+			cval = timer_get_cval(timer);
+			now = kvm_phys_timer_read() - timer_get_offset(timer);
+			level = (cval <= now);
+			kvm_timer_update_irq(vcpu, level, timer);
+		} else {
+			status = timer_get_ctl(timer) & ARCH_TIMER_CTRL_IT_STAT;
+			level = cvm_timer_irq_can_fire(timer) && status;
+			if (level != timer->irq.level)
+				kvm_timer_update_irq(vcpu, level, timer);
+		}
+	}
+}
+
+static void set_cvm_timers_loaded(struct kvm_vcpu *vcpu, bool loaded)
+{
+	int i;
+	struct arch_timer_cpu *arch_timer = &vcpu->arch.timer_cpu;
+
+	for (i = 0; i < NR_KVM_TIMERS; i++) {
+		struct arch_timer_context *timer = &arch_timer->timers[i];
+
+		timer->loaded = loaded;
+	}
+}
+
+static void kvm_timer_blocking(struct kvm_vcpu *vcpu);
+static void kvm_timer_unblocking(struct kvm_vcpu *vcpu);
+
+static inline void cvm_vcpu_load_timer_callback(struct kvm_vcpu *vcpu)
+{
+	kvm_cvm_timers_update(vcpu);
+	kvm_timer_unblocking(vcpu);
+	set_cvm_timers_loaded(vcpu, true);
+}
+
+static inline void cvm_vcpu_put_timer_callback(struct kvm_vcpu *vcpu)
+{
+	set_cvm_timers_loaded(vcpu, false);
+	if (rcuwait_active(kvm_arch_vcpu_get_wait(vcpu)))
+		kvm_timer_blocking(vcpu);
+}
+#endif
+
 static void timer_set_offset(struct arch_timer_context *ctxt, u64 offset)
 {
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (kvm_is_virtcca_cvm(ctxt->vcpu->kvm))
+		return;
+#endif
 	if (!ctxt->offset.vm_offset) {
 		WARN(offset, "timer %ld\n", arch_timer_ctx_index(ctxt));
 		return;
@@ -883,6 +953,13 @@ void kvm_timer_vcpu_load(struct kvm_vcpu *vcpu)
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
 	struct timer_map map;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu)) {
+		cvm_vcpu_load_timer_callback(vcpu);
+		return;
+	}
+#endif
+
 	if (unlikely(!timer->enabled))
 		return;
 
@@ -980,6 +1057,13 @@ void kvm_timer_vcpu_put(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = vcpu_timer(vcpu);
 	struct timer_map map;
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu)) {
+		cvm_vcpu_put_timer_callback(vcpu);
+		return;
+	}
+#endif
 
 	if (unlikely(!timer->enabled))
 		return;
@@ -1765,6 +1849,15 @@ int kvm_timer_enable(struct kvm_vcpu *vcpu)
 		kvm_debug("incorrectly configured timer irqs\n");
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	/*
+	 * We don't use mapped IRQs for CVM because the TMI doesn't allow
+	 * us setting the LR.HW bit in the VGIC.
+	 */
+	if (vcpu_is_tec(vcpu))
+		return 0;
+#endif
 
 	get_timer_map(vcpu, &map);
 

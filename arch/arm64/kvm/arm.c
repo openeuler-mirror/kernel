@@ -40,6 +40,7 @@
 #include <asm/kvm_pkvm.h>
 #include <asm/kvm_emulate.h>
 #include <asm/sections.h>
+#include <asm/kvm_tmi.h>
 
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_pmu.h>
@@ -132,6 +133,12 @@ int kvm_vm_ioctl_enable_cap(struct kvm *kvm,
 		}
 		mutex_unlock(&kvm->slots_lock);
 		break;
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	case KVM_CAP_ARM_TMM:
+		if (static_branch_unlikely(&virtcca_cvm_is_available))
+			r = kvm_cvm_enable_cap(kvm, cap);
+		break;
+#endif
 	default:
 		r = -EINVAL;
 		break;
@@ -152,6 +159,14 @@ static int kvm_arm_default_max_vcpus(void)
 int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 {
 	int ret;
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (kvm_arm_cvm_type(type)) {
+		ret = kvm_enable_virtcca_cvm(kvm);
+		if (ret)
+			return ret;
+	}
+#endif
 
 	ret = kvm_sched_affinity_vm_init(kvm);
 	if (ret)
@@ -199,8 +214,20 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 
 	bitmap_zero(kvm->arch.vcpu_features, KVM_VCPU_MAX_FEATURES);
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (kvm_arm_cvm_type(type)) {
+		ret = kvm_init_cvm_vm(kvm);
+		if (ret)
+			goto out_free_stage2_pgd;
+	}
+#endif
+
 	return 0;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+out_free_stage2_pgd:
+	kvm_free_stage2_pgd(&kvm->arch.mmu);
+#endif
 err_free_cpumask:
 	free_cpumask_var(kvm->arch.supported_cpus);
 err_unshare_kvm:
@@ -235,6 +262,10 @@ void kvm_arch_destroy_vm(struct kvm *kvm)
 	kvm_unshare_hyp(kvm, kvm + 1);
 
 	kvm_arm_teardown_hypercalls(kvm);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (kvm_is_virtcca_cvm(kvm))
+		kvm_destroy_cvm(kvm);
+#endif
 }
 
 int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
@@ -306,7 +337,12 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		r = system_supports_mte();
 		break;
 	case KVM_CAP_STEAL_TIME:
-		r = kvm_arm_pvtime_supported();
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		if (kvm && kvm_is_virtcca_cvm(kvm))
+			r = 0;
+		else
+#endif
+			r = kvm_arm_pvtime_supported();
 		break;
 	case KVM_CAP_ARM_EL1_32BIT:
 		r = cpus_have_const_cap(ARM64_HAS_32BIT_EL1);
@@ -345,6 +381,15 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 #ifdef CONFIG_VIRT_PLAT_DEV
 	case KVM_CAP_ARM_VIRT_MSI_BYPASS:
 		r = sdev_enable;
+		break;
+#endif
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	case KVM_CAP_ARM_TMM:
+		if (!is_armv8_4_sel2_present()) {
+			r = -ENXIO;
+			break;
+		}
+		r = static_key_enabled(&virtcca_cvm_is_available);
 		break;
 #endif
 	default:
@@ -499,8 +544,23 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 
 	vcpu->cpu = cpu;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu)) {
+		if (single_task_running())
+			vcpu_clear_wfx_traps(vcpu);
+		else
+			vcpu_set_wfx_traps(vcpu);
+	}
+#endif
 	kvm_vgic_load(vcpu);
 	kvm_timer_vcpu_load(vcpu);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu)) {
+		if (kvm_arm_is_pvtime_enabled(&vcpu->arch))
+			kvm_make_request(KVM_REQ_RECORD_STEAL, vcpu);
+		return;
+	}
+#endif
 	if (has_vhe())
 		kvm_vcpu_load_sysregs_vhe(vcpu);
 	kvm_arch_vcpu_load_fp(vcpu);
@@ -531,6 +591,12 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 
 void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 {
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu)) {
+		kvm_cvm_vcpu_put(vcpu);
+		return;
+	}
+#endif
 	kvm_arch_vcpu_put_debug_state_flags(vcpu);
 	kvm_arch_vcpu_put_fp(vcpu);
 	if (has_vhe())
@@ -705,6 +771,9 @@ int kvm_arch_vcpu_run_pid_change(struct kvm_vcpu *vcpu)
 		 * Tell the rest of the code that there are userspace irqchip
 		 * VMs in the wild.
 		 */
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (!kvm_is_virtcca_cvm(kvm))
+#endif
 		static_branch_inc(&userspace_irqchip_in_use);
 	}
 
@@ -1076,7 +1145,12 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 		trace_kvm_entry(*vcpu_pc(vcpu));
 		guest_timing_enter_irqoff();
 
-		ret = kvm_arm_vcpu_enter_exit(vcpu);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		if (vcpu_is_tec(vcpu))
+			ret = kvm_tec_enter(vcpu);
+		else
+#endif
+			ret = kvm_arm_vcpu_enter_exit(vcpu);
 
 		vcpu->mode = OUTSIDE_GUEST_MODE;
 		vcpu->stat.exits++;
@@ -1130,11 +1204,17 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 		local_irq_enable();
 
-		trace_kvm_exit(ret, kvm_vcpu_trap_get_class(vcpu), *vcpu_pc(vcpu));
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		if (!vcpu_is_tec(vcpu)) {
+#endif
+			trace_kvm_exit(ret, kvm_vcpu_trap_get_class(vcpu), *vcpu_pc(vcpu));
 
-		/* Exit types that need handling before we can be preempted */
-		handle_exit_early(vcpu, ret);
+			/* Exit types that need handling before we can be preempted */
+			handle_exit_early(vcpu, ret);
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		}
+#endif
 		preempt_enable();
 
 		/*
@@ -1156,7 +1236,12 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 			ret = ARM_EXCEPTION_IL;
 		}
 
-		ret = handle_exit(vcpu, ret);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		if (vcpu_is_tec(vcpu))
+			ret = handle_cvm_exit(vcpu, ret);
+		else
+#endif
+			ret = handle_exit(vcpu, ret);
 #ifdef CONFIG_ARCH_VCPU_STAT
 		update_vcpu_stat_time(&vcpu->stat);
 #endif
@@ -1669,6 +1754,11 @@ int kvm_arch_vm_ioctl(struct file *filp, unsigned int ioctl, unsigned long arg)
 	struct kvm_device_attr attr;
 
 	switch (ioctl) {
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	case KVM_LOAD_USER_DATA: {
+		return kvm_load_user_data(kvm, arg);
+	}
+#endif
 	case KVM_CREATE_IRQCHIP: {
 		int ret;
 		if (!vgic_present)
@@ -2554,6 +2644,14 @@ static __init int kvm_arm_init(void)
 		kvm_get_pg_cfg();
 
 	in_hyp_mode = is_kernel_in_hyp_mode();
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (static_branch_unlikely(&virtcca_cvm_is_enable) && in_hyp_mode) {
+		err = kvm_init_tmm();
+		if (err)
+			return err;
+	}
+#endif
 
 	if (cpus_have_final_cap(ARM64_WORKAROUND_DEVICE_LOAD_ACQUIRE) ||
 	    cpus_have_final_cap(ARM64_WORKAROUND_1508412))

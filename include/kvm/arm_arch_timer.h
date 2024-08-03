@@ -172,4 +172,8 @@ static inline bool has_cntpoff(void)
 	return (has_vhe() && cpus_have_final_cap(ARM64_HAS_ECV_CNTPOFF));
 }
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/* Needed for S-EL2 */
+void kvm_cvm_timers_update(struct kvm_vcpu *vcpu);
+#endif
 #endif

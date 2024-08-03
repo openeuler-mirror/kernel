@@ -3550,6 +3550,10 @@ static unsigned int kvm_vcpu_max_halt_poll_ns(struct kvm_vcpu *vcpu)
 {
 	struct kvm *kvm = vcpu->kvm;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu))
+		return CVM_MAX_HALT_POLL_NS;
+#endif
 	if (kvm->override_halt_poll_ns) {
 		/*
 		 * Ensure kvm->max_halt_poll_ns is not read before
