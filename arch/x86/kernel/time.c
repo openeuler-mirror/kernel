@@ -28,16 +28,7 @@
 
 unsigned long profile_pc(struct pt_regs *regs)
 {
-	unsigned long pc = instruction_pointer(regs);
-
-	if (!user_mode(regs) && in_lock_functions(pc)) {
-		struct unwind_state state;
-
-		/* unwind_start will skip the first regs frame */
-		unwind_start(&state, current, regs, NULL);
-		pc = unwind_get_return_address(&state);
-	}
-	return pc;
+	return instruction_pointer(regs);
 }
 EXPORT_SYMBOL(profile_pc);
 
