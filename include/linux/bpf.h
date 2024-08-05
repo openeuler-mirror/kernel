@@ -1582,7 +1582,13 @@ struct bpf_link {
 	enum bpf_link_type type;
 	const struct bpf_link_ops *ops;
 	struct bpf_prog *prog;
-	struct work_struct work;
+	/* rcu is used before freeing, work can be used to schedule that
+	 * RCU-based freeing before that, so they never overlap
+	 */
+	KABI_REPLACE(struct work_struct work, union {
+		struct rcu_head rcu;
+		struct work_struct work;
+	})
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
@@ -1592,6 +1598,9 @@ struct bpf_link {
 
 struct bpf_link_ops {
 	void (*release)(struct bpf_link *link);
+	/* deallocate link resources callback, called without RCU grace period
+	 * waiting
+	 */
 	void (*dealloc)(struct bpf_link *link);
 	int (*detach)(struct bpf_link *link);
 	int (*update_prog)(struct bpf_link *link, struct bpf_prog *new_prog,
@@ -1602,7 +1611,11 @@ struct bpf_link_ops {
 	int (*update_map)(struct bpf_link *link, struct bpf_map *new_map,
 			  struct bpf_map *old_map);
 
-	KABI_RESERVE(1)
+	/* deallocate link resources callback, called after RCU grace period;
+	 * if underlying BPF program is sleepable we go through tasks trace
+	 * RCU GP and then "classic" RCU GP
+	 */
+	KABI_USE(1, void (*dealloc_deferred)(struct bpf_link *link))
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
