@@ -1509,6 +1509,19 @@ struct kvm_numa_info {
 #define KVM_SET_TSS_ADDR          _IO(KVMIO,   0x47)
 #define KVM_SET_IDENTITY_MAP_ADDR _IOW(KVMIO,  0x48, __u64)
 
+#define KVM_LOAD_USER_DATA _IOW(KVMIO, 0x49, struct kvm_user_data)
+
+#define KVM_CAP_ARM_TMM 300  /* FIXME: Large number to prevent conflicts */
+
+struct kvm_user_data {
+	__u64 loader_start;
+	__u64 image_end;
+	__u64 initrd_start;
+	__u64 dtb_end;
+	__u64 ram_size;
+	struct kvm_numa_info numa_info;
+};
+
 /* enable ucontrol for s390 */
 struct kvm_s390_ucas_mapping {
 	__u64 user_addr;

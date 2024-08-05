@@ -2576,6 +2576,14 @@ config COMPAT
 	def_bool y
 	depends on AARCH32_EL0 || ARM64_ILP32
 
+config HISI_VIRTCCA_GUEST
+	bool "Enable cvm guest run"
+	depends on DMA_RESTRICTED_POOL
+	help
+	  Support VIRTCCA CVM guest based on S-EL2
+
+	  If unsure, say N.
+
 menu "Power management options"
 
 source "kernel/power/Kconfig"

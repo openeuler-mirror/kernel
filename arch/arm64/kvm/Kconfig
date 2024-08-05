@@ -49,11 +49,11 @@ menuconfig KVM
 
 	  If unsure, say N.
 
-config CVM_HOST
-	bool "Enable cvm host feature"
+config HISI_VIRTCCA_HOST
+	bool "Enable virtcca cvm host feature"
 	depends on KVM
 	help
-	  Support CVM based on S-EL2
+	  Support VIRTCCA CVM based on S-EL2
 
 	  If unsure, say N.
 

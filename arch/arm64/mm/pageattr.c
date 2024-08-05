@@ -195,6 +195,9 @@ int set_direct_map_default_noflush(struct page *page)
 #ifdef CONFIG_DEBUG_PAGEALLOC
 void __kernel_map_pages(struct page *page, int numpages, int enable)
 {
+	if (is_virtcca_cvm_world())
+		return;
+
 	if (!can_set_direct_map())
 		return;
 

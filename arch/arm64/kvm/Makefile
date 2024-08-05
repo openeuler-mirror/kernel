@@ -24,6 +24,9 @@ kvm-y += arm.o mmu.o mmio.o psci.o hypercalls.o pvtime.o pvsched.o \
 
 kvm-$(CONFIG_VIRT_PLAT_DEV)  += vgic/shadow_dev.o
 kvm-$(CONFIG_HW_PERF_EVENTS)  += pmu-emul.o pmu.o
+kvm-$(CONFIG_HISI_VIRTCCA_HOST) += tmi.o
+kvm-$(CONFIG_HISI_VIRTCCA_HOST) += virtcca_cvm.o
+kvm-$(CONFIG_HISI_VIRTCCA_HOST) += virtcca_cvm_exit.o
 obj-$(CONFIG_KVM_HISI_VIRT) += hisilicon/
 
 always-y := hyp_constants.h hyp-constants.s

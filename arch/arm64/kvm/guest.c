@@ -26,6 +26,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_nested.h>
 #include <asm/sigcontext.h>
+#include <asm/kvm_tmi.h>
 
 #include "trace.h"
 
@@ -875,6 +876,10 @@ int __kvm_arm_vcpu_set_events(struct kvm_vcpu *vcpu,
 	bool has_esr = events->exception.serror_has_esr;
 	bool ext_dabt_pending = events->exception.ext_dabt_pending;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (vcpu_is_tec(vcpu))
+		return kvm_cvm_vcpu_set_events(vcpu, serror_pending, ext_dabt_pending);
+#endif
 	if (serror_pending && has_esr) {
 		if (!cpus_have_const_cap(ARM64_HAS_RAS_EXTN))
 			return -EINVAL;
