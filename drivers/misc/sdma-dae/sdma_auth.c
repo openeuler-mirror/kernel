@@ -120,10 +120,10 @@ static struct hisi_sdma_own_pid_hte *sdma_search_owner_pid_ht(u32 pid)
 	return NULL;
 }
 
-static int sdma_add_authority_ht(struct hisi_sdma_own_pid_hte *entry, int count, u32 *list)
+static int sdma_add_authority_ht(struct hisi_sdma_own_pid_hte *entry, u32 count, u32 *list)
 {
 	struct hisi_sdma_sub_pid_hte *sub_entry;
-	int i;
+	u32 i;
 
 	for (i = 0; i < count; i++) {
 		sub_entry = sdma_search_submitter_pid(entry, list[i]);
@@ -141,7 +141,7 @@ static int sdma_add_authority_ht(struct hisi_sdma_own_pid_hte *entry, int count,
 	return 0;
 }
 
-static int sdma_create_authority_ht(u32 pid, u32 pasid, int num, u32 *list)
+static int sdma_create_authority_ht(u32 pid, u32 pasid, u32 num, u32 *list)
 {
 	struct hisi_sdma_own_pid_hte *entry;
 	int ret;
@@ -160,7 +160,7 @@ static int sdma_create_authority_ht(u32 pid, u32 pasid, int num, u32 *list)
 	return ret;
 }
 
-int sdma_auth_add(u32 pasid, int num, u32 *pid_list)
+int sdma_auth_add(u32 pasid, u32 num, u32 *pid_list)
 {
 	struct hisi_sdma_own_pid_hte *owner;
 	u32 pid = (u32)current->tgid;

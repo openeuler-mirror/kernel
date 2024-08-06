@@ -101,6 +101,11 @@ static int ioctl_sdma_unpin_umem(struct file *file, unsigned long arg)
 	struct file_open_data *data = file->private_data;
 	u64 cookie;
 	int ret;
+	int ida;
+
+	ida = (int)(cookie >> COOKIE_IDA_SHIFT);
+	if (ida != data->ida)
+		return -EPERM;
 
 	if (copy_from_user(&cookie, (u64 __user *)(uintptr_t)arg, sizeof(u64)))
 		return -EFAULT;
@@ -395,7 +400,7 @@ static int ioctl_sdma_add_authority_ht(struct file *file, unsigned long arg)
 	struct hisi_sdma_device *pdev = data->psdma_dev;
 	struct hisi_sdma_pid_info pid_info;
 	u32 *pid_list = NULL;
-	int list_num;
+	u32 list_num;
 	int ret;
 
 	if (copy_from_user(&pid_info, (struct hisi_sdma_pid_info __user *)(uintptr_t)arg,
@@ -404,6 +409,10 @@ static int ioctl_sdma_add_authority_ht(struct file *file, unsigned long arg)
 		return -EFAULT;
 	}
 	list_num = pid_info.num;
+	if (list_num > HISI_SDMA_MAX_ALLOC_SIZE / sizeof(u32) || list_num == 0) {
+		dev_err(&pdev->pdev->dev, "Invalid pid_list num:%u\n", list_num);
+		return -EINVAL;
+	}
 	pid_list = kmalloc_node(list_num * sizeof(int), GFP_KERNEL, pdev->node_idx);
 	if (!pid_list)
 		return -ENOMEM;
@@ -528,6 +537,16 @@ static int ioctl_sdma_send_task(struct file *file, unsigned long arg)
 		dev_err(&data->psdma_dev->pdev->dev, "get hisi_sdma_task_info failed\n");
 		return -EFAULT;
 	}
+	if (task_info.chn < 0 || (u32)task_info.chn >= data->psdma_dev->nr_channel) {
+		dev_err(&data->psdma_dev->pdev->dev, "Invalid channel num:%d!\n", task_info.chn);
+		return -EINVAL;
+	}
+	if (task_info.task_cnt > HISI_SDMA_MAX_ALLOC_SIZE / sizeof(struct hisi_sdma_sqe_task) ||
+	    task_info.task_cnt == 0) {
+		dev_err(&data->psdma_dev->pdev->dev, "Invalid send task cnt:%u!\n",
+			task_info.task_cnt);
+		return -EINVAL;
+	}
 	task_list = kcalloc_node(task_info.task_cnt, sizeof(struct hisi_sdma_sqe_task), GFP_KERNEL,
 				 data->psdma_dev->node_idx);
 	if (!task_list)
@@ -568,6 +587,10 @@ static int sdma_operation_reg(struct hisi_sdma_device *pdev, unsigned long arg,
 		return -EFAULT;
 	}
 
+	if (reg_info.chn < 0 || (u32)reg_info.chn >= pdev->nr_channel) {
+		dev_err(dev, "Invalid channel num:%d!\n", reg_info.chn);
+		return -EINVAL;
+	}
 	pchannel = pdev->channels + reg_info.chn;
 	if (reg_info.type == HISI_SDMA_READ_REG) {
 		reg_info.reg_value = get_func(pchannel);
@@ -631,6 +654,10 @@ static int ioctl_sdma_dfx_reg(struct file *file, unsigned long arg)
 		return -EFAULT;
 	}
 
+	if (reg_info.chn < 0 || (u32)reg_info.chn >= pdev->nr_channel) {
+		dev_err(dev, "Invalid channel num:%d!\n", reg_info.chn);
+		return -EINVAL;
+	}
 	pchannel = pdev->channels + reg_info.chn;
 	reg_info.reg_value = sdma_channel_get_dfx(pchannel);
 	if (copy_to_user((struct hisi_sdma_reg_info __user *)(uintptr_t)arg, &reg_info,
@@ -648,6 +675,10 @@ static int ioctl_sdma_sqe_cnt_reg(struct file *file, unsigned long arg)
 	struct hisi_sdma_channel *pchannel;
 	struct device *dev;
 
+	if (reg_info.chn < 0 || (u32)reg_info.chn >= pdev->nr_channel) {
+		dev_err(dev, "Invalid channel num:%d!\n", reg_info.chn);
+		return -EINVAL;
+	}
 	dev = &pdev->pdev->dev;
 	if (copy_from_user(&reg_info, (struct hisi_sdma_reg_info __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_reg_info))) {
@@ -783,20 +814,27 @@ static int sdma_dev_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
-static int remap_addr_range(u32 chn_num, u64 offset)
+static int remap_addr_range(struct hisi_sdma_device *psdma_dev, u32 chn_num, u64 offset, u64 size)
 {
+	u64 sync_size;
+
+	sync_size = (u64)((sizeof(struct hisi_sdma_queue_info) + PAGE_SIZE - ALIGN_NUM) /
+		    PAGE_SIZE * PAGE_SIZE);
+
 	if (offset >= chn_num * (HISI_SDMA_MMAP_SHMEM + 1))
 		return -EINVAL;
 
-	if (offset < chn_num * HISI_SDMA_MMAP_CQE)
-		return HISI_SDMA_MMAP_SQE;
-
-	else if (offset < chn_num * HISI_SDMA_MMAP_IO)
+	if (offset < chn_num * HISI_SDMA_MMAP_CQE) {
+		return -EINVAL;
+	} else if (offset < chn_num * HISI_SDMA_MMAP_IO) {
+		if (size > HISI_SDMA_CQ_SIZE)
+			return -EINVAL;
 		return HISI_SDMA_MMAP_CQE;
-	else if (offset < chn_num * HISI_SDMA_MMAP_SHMEM)
-		return HISI_SDMA_MMAP_IO;
-	else
-		return HISI_SDMA_MMAP_SHMEM;
+	} else if (offset < chn_num * HISI_SDMA_MMAP_SHMEM)
+		return -EINVAL;
+	if (size > sync_size)
+		return -EINVAL;
+	return HISI_SDMA_MMAP_SHMEM;
 }
 
 static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
@@ -817,35 +855,17 @@ static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
 
 	dev_dbg(dev, "sdma total channel num = %u, user mmap offset = 0x%llx", chn_num, offset);
 
-	switch (remap_addr_range(chn_num, offset)) {
-	case HISI_SDMA_MMAP_SQE:
-		pchan = chn_base + offset;
-		pfn_start = virt_to_phys(pchan->sq_base) >> PAGE_SHIFT;
-		ret = remap_pfn_range(vma, vma->vm_start, pfn_start, size,
-				      vma->vm_page_prot);
-		break;
-
+	switch (remap_addr_range(data->psdma_dev, chn_num, offset, size)) {
 	case HISI_SDMA_MMAP_CQE:
 		pchan = chn_base + offset - chn_num * HISI_SDMA_MMAP_CQE;
 		pfn_start = virt_to_phys(pchan->cq_base) >> PAGE_SHIFT;
-		ret = remap_pfn_range(vma, vma->vm_start, pfn_start, size,
-				      vma->vm_page_prot);
-		break;
-
-	case HISI_SDMA_MMAP_IO:
-		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-		pfn_start = (io_base + HISI_SDMA_CH_OFFSET) >> PAGE_SHIFT;
-		pfn_start += (offset - chn_num * HISI_SDMA_MMAP_IO) * HISI_SDMA_REG_SIZE /
-			      PAGE_SIZE;
-		ret = io_remap_pfn_range(vma, vma->vm_start, pfn_start, size,
-					 vma->vm_page_prot);
+		ret = remap_pfn_range(vma, vma->vm_start, pfn_start, size, vma->vm_page_prot);
 		break;
 
 	case HISI_SDMA_MMAP_SHMEM:
 		pchan = chn_base + offset - chn_num * HISI_SDMA_MMAP_SHMEM;
 		pfn_start = virt_to_phys(pchan->sync_info_base) >> PAGE_SHIFT;
-		ret = remap_pfn_range(vma, vma->vm_start, pfn_start, size,
-				      vma->vm_page_prot);
+		ret = remap_pfn_range(vma, vma->vm_start, pfn_start, size, vma->vm_page_prot);
 		break;
 
 	default:
@@ -853,7 +873,7 @@ static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
 	}
 
 	if (ret)
-		dev_err(dev, "sdma mmap failed!\n");
+		dev_err(&data->psdma_dev->pdev->dev, "sdma mmap failed!\n");
 
 	return ret;
 }
