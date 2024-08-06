@@ -14,6 +14,7 @@
 
 #define RW_R_R			0644
 #define SDMA_IRQ_NUM_MAX	512
+#define ALIGN_NUM		1
 
 /**
  * struct hisi_sdma_channel - Information about one channel in the SDMA device

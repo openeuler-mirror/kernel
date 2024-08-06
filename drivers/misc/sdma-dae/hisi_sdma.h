@@ -141,7 +141,7 @@ struct hisi_sdma_reg_info {
 };
 
 struct hisi_sdma_pid_info {
-	int num;
+	u32 num;
 	uintptr_t pid_list_addr;
 };
 
