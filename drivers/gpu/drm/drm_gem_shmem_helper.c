@@ -17,6 +17,8 @@
 #include <drm/drm_prime.h>
 #include <drm/drm_print.h>
 
+#include "../../../mm/internal.h"	/* is_cow_mapping() */
+
 /**
  * DOC: overview
  *
@@ -612,6 +614,9 @@ int drm_gem_shmem_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma)
 
 		return dma_buf_mmap(obj->dma_buf, vma, 0);
 	}
+
+	if (is_cow_mapping(vma->vm_flags))
+		return -EINVAL;
 
 	shmem = to_drm_gem_shmem_obj(obj);
 
