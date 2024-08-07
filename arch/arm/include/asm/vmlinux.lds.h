@@ -75,7 +75,7 @@
  */
 #define ARM_ASSERTS							\
 	.plt : {							\
-		*(.iplt) * (.rel.iplt) * (.iplt) * (.igot.plt) * (.plt)	\
+		*(.iplt) *(.rel.iplt) *(.iplt) *(.igot.plt)		\
 	}								\
 	ASSERT(SIZEOF(.plt) == 0,					\
 	       "Unexpected run-time procedure linkages detected!")
@@ -105,7 +105,6 @@
 		ARM_STUBS_TEXT						\
 		. = ALIGN(4);						\
 		*(.got)			/* Global offset table */	\
-		*(.got.plt)						\
 		ARM_CPU_KEEP(PROC_INFO)
 
 /* Stack unwinding tables */
