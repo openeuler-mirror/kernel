@@ -1373,10 +1373,11 @@ static long pkey_unlocked_ioctl(struct file *filp, unsigned int cmd,
 				     &kvk.cardnr, &kvk.domain,
 				     &kvk.type, &kvk.size, &kvk.flags);
 		DEBUG_DBG("%s pkey_verifykey2()=%d\n", __func__, rc);
-		kfree(kkey);
-		if (!rc && copy_to_user(utp, &ktp, sizeof(ktp)))
-			rc = -EFAULT;
-		memzero_explicit(&ktp, sizeof(ktp));
+		kfree_sensitive(kkey);
+		if (rc)
+			break;
+		if (copy_to_user(uvk, &kvk, sizeof(kvk)))
+			return -EFAULT;
 		break;
 	}
 	case PKEY_KBLOB2PROTK2: {
@@ -1401,10 +1402,9 @@ static long pkey_unlocked_ioctl(struct file *filp, unsigned int cmd,
 		kfree(apqns);
 		memzero_explicit(kkey, ktp.keylen);
 		kfree(kkey);
-		if (rc)
-			break;
-		if (copy_to_user(utp, &ktp, sizeof(ktp)))
-			return -EFAULT;
+		if (!rc && copy_to_user(utp, &ktp, sizeof(ktp)))
+			rc = -EFAULT;
+		memzero_explicit(&ktp, sizeof(ktp));
 		break;
 	}
 	case PKEY_APQNS4K: {
