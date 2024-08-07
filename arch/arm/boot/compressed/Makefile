@@ -105,10 +105,6 @@ OBJS	+= lib1funcs.o ashldi3.o bswapsdi2.o
 
 targets       := vmlinux vmlinux.lds piggy_data piggy.o \
 		 head.o $(OBJS)
-ifeq ($(CONFIG_RELOCATABLE),y)
-HIDDEN_STR := -include $(srctree)/include/linux/hidden.h
-KBUILD_CFLAGS := $(subst $(HIDDEN_STR), , $(KBUILD_CFLAGS))
-endif
 
 KBUILD_CFLAGS += -DDISABLE_BRANCH_PROFILING
 
