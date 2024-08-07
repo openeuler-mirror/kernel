@@ -44,6 +44,9 @@
 #define PMD_ENTRY_ORDER	2
 #endif
 
+	.globl	swapper_pg_dir
+	.equ	swapper_pg_dir, KERNEL_RAM_VADDR - PG_DIR_SIZE
+
 	/*
 	 * This needs to be assigned at runtime when the linker symbols are
 	 * resolved. These are unsigned 64bit really, but in this assembly code
@@ -60,6 +63,11 @@ kernel_sec_end:
 	.long	0
 	.long	0
 	.popsection
+
+	.macro	pgtbl, rd, phys
+	add	\rd, \phys, #TEXT_OFFSET
+	sub	\rd, \rd, #PG_DIR_SIZE
+	.endm
 
 /*
  * Kernel startup entry point.
@@ -82,9 +90,6 @@ kernel_sec_end:
 	.arm
 
 	__HEAD
-	.globl	swapper_pg_dir
-	.equ	swapper_pg_dir, . - PG_DIR_SIZE
-
 ENTRY(stext)
  ARM_BE8(setend	be )			@ ensure we are in BE8 mode
 
@@ -180,7 +185,7 @@ ENDPROC(stext)
  *  r4 = physical page table address
  */
 __create_page_tables:
-	adr_l	r4, swapper_pg_dir		@ page table address
+	pgtbl	r4, r8				@ page table address
 
 	/*
 	 * Clear the swapper page table
