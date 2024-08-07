@@ -58,21 +58,31 @@ char *f2fs_fault_name[FAULT_MAX] = {
 	[FAULT_DISCARD]		= "discard error",
 };
 
-void f2fs_build_fault_attr(struct f2fs_sb_info *sbi, unsigned int rate,
-							unsigned int type)
+int f2fs_build_fault_attr(struct f2fs_sb_info *sbi, unsigned long rate,
+							unsigned long type)
 {
 	struct f2fs_fault_info *ffi = &F2FS_OPTION(sbi).fault_info;
 
 	if (rate) {
+		if (rate > INT_MAX)
+			return -EINVAL;
 		atomic_set(&ffi->inject_ops, 0);
-		ffi->inject_rate = rate;
+		ffi->inject_rate = (int)rate;
 	}
 
-	if (type)
-		ffi->inject_type = type;
+	if (type) {
+		if (type >= BIT(FAULT_MAX))
+			return -EINVAL;
+		ffi->inject_type = (unsigned int)type;
+	}
 
 	if (!rate && !type)
 		memset(ffi, 0, sizeof(struct f2fs_fault_info));
+	else
+		f2fs_msg(sbi->sb, KERN_INFO,
+			"build fault injection attr: rate: %lu, type: 0x%lx",
+								rate, type);
+	return 0;
 }
 #endif
 
@@ -598,7 +608,9 @@ static int parse_options(struct super_block *sb, char *options)
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
 #ifdef CONFIG_F2FS_FAULT_INJECTION
-			f2fs_build_fault_attr(sbi, arg, F2FS_ALL_FAULT_TYPE);
+			if (f2fs_build_fault_attr(sbi, arg,
+					F2FS_ALL_FAULT_TYPE))
+				return -EINVAL;
 			set_opt(sbi, FAULT_INJECTION);
 #else
 			f2fs_msg(sb, KERN_INFO,
@@ -609,7 +621,8 @@ static int parse_options(struct super_block *sb, char *options)
 			if (args->from && match_int(args, &arg))
 				return -EINVAL;
 #ifdef CONFIG_F2FS_FAULT_INJECTION
-			f2fs_build_fault_attr(sbi, 0, arg);
+			if (f2fs_build_fault_attr(sbi, 0, arg))
+				return -EINVAL;
 			set_opt(sbi, FAULT_INJECTION);
 #else
 			f2fs_msg(sb, KERN_INFO,
