@@ -63,11 +63,7 @@
 		EXIT_CALL						\
 		ARM_MMU_DISCARD(*(.text.fixup))				\
 		ARM_MMU_DISCARD(*(__ex_table))				\
-		COMMON_DISCARDS						\
-		*(.ARM.exidx.discard.text)				\
-		*(.interp .dynamic)					\
-		*(.dynsym .dynstr .hash)
-
+		COMMON_DISCARDS
 
 /*
  * Sections that should stay zero sized, which is safer to explicitly
