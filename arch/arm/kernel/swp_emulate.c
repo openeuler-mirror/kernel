@@ -24,7 +24,6 @@
 #include <linux/syscalls.h>
 #include <linux/perf_event.h>
 
-#include <asm/extable.h>
 #include <asm/opcodes.h>
 #include <asm/system_info.h>
 #include <asm/traps.h>
@@ -47,8 +46,11 @@
 	"3:	mov		%0, %5\n"			\
 	"	b		2b\n"				\
 	"	.previous\n"					\
-	"	ex_entry	0b, 3b\n"			\
-	"	ex_entry	1b, 3b\n"			\
+	"	.section	 __ex_table,\"a\"\n"		\
+	"	.align		3\n"				\
+	"	.long		0b, 3b\n"			\
+	"	.long		1b, 3b\n"			\
+	"	.previous"					\
 	: "=&r" (res), "+r" (data), "=&r" (temp)		\
 	: "r" (addr), "i" (-EAGAIN), "i" (-EFAULT)		\
 	: "cc", "memory")
