@@ -15,10 +15,6 @@
 #include <linux/net_tstamp.h>
 #include <linux/debugfs.h>
 
-#ifndef PTP_CLOCK_NAME_LEN
-#define PTP_CLOCK_NAME_LEN	32
-#endif
-
 #define HISI_PTP_VERSION	"22.10.2"
 
 #define HISI_PTP_NAME		"hisi_ptp"
@@ -588,7 +584,7 @@ static int hisi_ptp_create_clock(struct hisi_ptp_pdev *ptp)
 {
 	dev_info(ptp->ptp_tx->dev, "register ptp clock\n");
 
-	snprintf(ptp->info.name, PTP_CLOCK_NAME_LEN, "%s", HISI_PTP_NAME);
+	snprintf(ptp->info.name, sizeof(ptp->info.name), "%s", HISI_PTP_NAME);
 	ptp->info.owner = THIS_MODULE;
 	ptp->info.adjfine = hisi_ptp_adjfine;
 	ptp->info.adjtime = hisi_ptp_adjtime;
