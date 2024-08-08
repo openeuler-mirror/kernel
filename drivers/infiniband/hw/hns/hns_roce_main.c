@@ -866,7 +866,9 @@ static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev,
 		 * the bond resources cleanup.
 		 */
 		cancel_delayed_work_sync(&bond_grp->bond_work);
+		mutex_lock(&bond_grp->bond_mutex);
 		bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
+		mutex_unlock(&bond_grp->bond_mutex);
 		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 			net_dev = bond_grp->bond_func_info[i].net_dev;
 			if (net_dev && net_dev != iboe->netdevs[0])
