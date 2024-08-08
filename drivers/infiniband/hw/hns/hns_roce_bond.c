@@ -746,6 +746,27 @@ int hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp)
 	return ret;
 }
 
+static bool lowerstate_event_filter(struct hns_roce_bond_group *bond_grp,
+				    struct net_device *net_dev)
+{
+	struct hns_roce_bond_group *bond_grp_tmp;
+
+	bond_grp_tmp = hns_roce_get_bond_grp(net_dev, bond_grp->bus_num);
+	return bond_grp_tmp == bond_grp;
+}
+
+static void lowerstate_event_setting(struct hns_roce_bond_group *bond_grp,
+			struct netdev_notifier_changelowerstate_info *info)
+{
+	mutex_lock(&bond_grp->bond_mutex);
+
+	if (bond_grp->bond_ready &&
+	    bond_grp->bond_state == HNS_ROCE_BOND_IS_BONDED)
+		bond_grp->bond_state = HNS_ROCE_BOND_SLAVE_CHANGESTATE;
+
+	mutex_unlock(&bond_grp->bond_mutex);
+}
+
 static bool hns_roce_bond_lowerstate_event(struct hns_roce_bond_group *bond_grp,
 					   struct netdev_notifier_changelowerstate_info *info)
 {
@@ -755,13 +776,10 @@ static bool hns_roce_bond_lowerstate_event(struct hns_roce_bond_group *bond_grp,
 	if (!netif_is_lag_port(net_dev))
 		return false;
 
-	mutex_lock(&bond_grp->bond_mutex);
+	if (!lowerstate_event_filter(bond_grp, net_dev))
+		return false;
 
-	if (bond_grp->bond_ready &&
-	    bond_grp->bond_state == HNS_ROCE_BOND_IS_BONDED)
-		bond_grp->bond_state = HNS_ROCE_BOND_SLAVE_CHANGESTATE;
-
-	mutex_unlock(&bond_grp->bond_mutex);
+	lowerstate_event_setting(bond_grp, info);
 
 	return true;
 }
@@ -782,16 +800,12 @@ static bool is_bond_setting_supported(struct netdev_lag_upper_info *bond_info)
 	return true;
 }
 
-static bool hns_roce_bond_upper_event(struct hns_roce_bond_group *bond_grp,
-				      struct netdev_notifier_changeupper_info *info)
+static void upper_event_setting(struct hns_roce_bond_group *bond_grp,
+				struct netdev_notifier_changeupper_info *info)
 {
 	struct netdev_lag_upper_info *bond_upper_info = NULL;
 	struct net_device *upper_dev = info->upper_dev;
 	bool slave_inc = info->linking;
-	bool changed = false;
-
-	if (!bond_grp || !upper_dev || !netif_is_lag_master(upper_dev))
-		return false;
 
 	if (slave_inc)
 		bond_upper_info = info->upper_info;
@@ -807,18 +821,14 @@ static bool hns_roce_bond_upper_event(struct hns_roce_bond_group *bond_grp,
 
 	if (bond_grp->bond_state == HNS_ROCE_BOND_NOT_BONDED) {
 		bond_grp->bond_ready = true;
-		changed = true;
 	} else {
 		bond_grp->bond_state = slave_inc ?
 				       HNS_ROCE_BOND_SLAVE_INC :
 				       HNS_ROCE_BOND_SLAVE_DEC;
 		bond_grp->bond_ready = true;
-		changed = true;
 	}
 
 	mutex_unlock(&bond_grp->bond_mutex);
-
-	return changed;
 }
 
 static bool is_dev_bond_supported(struct hns_roce_bond_group *bond_grp,
@@ -942,13 +952,50 @@ static bool upper_event_filter(struct netdev_notifier_changeupper_info *info,
 	return true;
 }
 
-static bool lowerstate_event_filter(struct hns_roce_bond_group *bond_grp,
-				    struct net_device *net_dev)
+static bool hns_roce_bond_upper_event(struct hns_roce_bond_group *bond_grp,
+				struct netdev_notifier_changeupper_info *info)
 {
-	struct hns_roce_bond_group *bond_grp_tmp;
+	struct net_device *net_dev =
+		netdev_notifier_info_to_dev((struct netdev_notifier_info *)info);
+	struct net_device *upper_dev = info->upper_dev;
+	enum bond_support_type support = BOND_SUPPORT;
+	struct hns_roce_dev *hr_dev;
+	int slave_id;
 
-	bond_grp_tmp = hns_roce_get_bond_grp(net_dev, bond_grp->bus_num);
-	return bond_grp_tmp == bond_grp;
+	if (!upper_dev || !netif_is_lag_master(upper_dev))
+		return false;
+
+	if (!upper_event_filter(info, bond_grp, net_dev))
+		return false;
+
+	support = check_bond_support(bond_grp, upper_dev, info);
+	if (support == BOND_NOT_SUPPORT)
+		return false;
+
+	if (bond_grp->bond_state == HNS_ROCE_BOND_NOT_ATTACHED) {
+		hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
+		if (!hr_dev)
+			return false;
+		hns_roce_attach_bond_grp(bond_grp, hr_dev, upper_dev);
+	}
+
+	/* In the case of netdev being unregistered, the roce
+	 * instance shouldn't be inited.
+	 */
+	if (net_dev->reg_state >= NETREG_UNREGISTERING) {
+		slave_id = get_netdev_bond_slave_id(net_dev, bond_grp);
+		if (slave_id >= 0)
+			bond_grp->bond_func_info[slave_id].handle = NULL;
+	}
+
+	if (support == BOND_EXISTING_NOT_SUPPORT) {
+		bond_grp->bond_ready = false;
+		return true;
+	}
+
+	upper_event_setting(bond_grp, info);
+
+	return true;
 }
 
 int hns_roce_bond_event(struct notifier_block *self,
@@ -956,57 +1003,15 @@ int hns_roce_bond_event(struct notifier_block *self,
 {
 	struct hns_roce_bond_group *bond_grp =
 		container_of(self, struct hns_roce_bond_group, bond_nb);
-	struct net_device *net_dev = netdev_notifier_info_to_dev(ptr);
-	struct netdev_notifier_changeupper_info *info;
-	enum bond_support_type support = BOND_SUPPORT;
-	struct net_device *upper_dev;
-	struct hns_roce_dev *hr_dev;
 	bool changed;
-	int slave_id;
 
 	if (event != NETDEV_CHANGEUPPER && event != NETDEV_CHANGELOWERSTATE)
 		return NOTIFY_DONE;
 
-	if (event == NETDEV_CHANGEUPPER) {
-		if (!upper_event_filter(ptr, bond_grp, net_dev))
-			return NOTIFY_DONE;
-		info = (struct netdev_notifier_changeupper_info *)ptr;
-		upper_dev = info->upper_dev;
-		support = check_bond_support(bond_grp, upper_dev, ptr);
-		if (support == BOND_NOT_SUPPORT)
-			return NOTIFY_DONE;
-	} else {
-		if (!lowerstate_event_filter(bond_grp, net_dev))
-			return NOTIFY_DONE;
-		upper_dev = get_upper_dev_from_ndev(net_dev);
-	}
-
-	if (event == NETDEV_CHANGEUPPER) {
-		if (bond_grp->bond_state == HNS_ROCE_BOND_NOT_ATTACHED) {
-			hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
-			if (!hr_dev)
-				return NOTIFY_DONE;
-			hns_roce_attach_bond_grp(bond_grp, hr_dev, upper_dev);
-		}
-
-		/* In the case of netdev being unregistered, the roce
-		 * instance shouldn't be inited.
-		 */
-		if (net_dev->reg_state >= NETREG_UNREGISTERING) {
-			slave_id = get_netdev_bond_slave_id(net_dev, bond_grp);
-			if (slave_id >= 0)
-				bond_grp->bond_func_info[slave_id].handle = NULL;
-		}
-
-		if (support == BOND_EXISTING_NOT_SUPPORT) {
-			bond_grp->bond_ready = false;
-			hns_roce_queue_bond_work(bond_grp, HZ);
-			return NOTIFY_DONE;
-		}
+	if (event == NETDEV_CHANGEUPPER)
 		changed = hns_roce_bond_upper_event(bond_grp, ptr);
-	} else {
+	else
 		changed = hns_roce_bond_lowerstate_event(bond_grp, ptr);
-	}
 	if (changed)
 		hns_roce_queue_bond_work(bond_grp, HZ);
 
