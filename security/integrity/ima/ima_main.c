@@ -620,7 +620,7 @@ int ima_file_check(struct file *file, int mask)
 				 mask & (MAY_READ | MAY_WRITE | MAY_EXEC |
 					 MAY_APPEND), FILE_CHECK);
 	if (ima_current_is_parser() && !rc)
-		ima_check_measured_appraised(file);
+		rc = ima_check_measured_appraised(file) ? 0 : -EACCES;
 	return rc;
 #else
 	return process_measurement(file, current_cred(), secid, NULL, 0,
