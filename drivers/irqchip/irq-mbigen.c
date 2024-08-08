@@ -770,6 +770,7 @@ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_KVM
 static int vtimer_mbigen_device_probe(struct platform_device *pdev)
 {
 	struct mbigen_device *mgn_chip = platform_get_drvdata(pdev);
@@ -816,6 +817,7 @@ out:
 		mgn_chip->base);
 	return err;
 }
+#endif
 
 static int mbigen_device_probe(struct platform_device *pdev)
 {
@@ -853,9 +855,9 @@ static int mbigen_device_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, mgn_chip);
-
+#ifdef CONFIG_KVM
 	err = vtimer_mbigen_device_probe(pdev);
-
+#endif
 	if (err) {
 		dev_err(&pdev->dev, "Failed to probe vtimer mbigen device\n");
 		return err;
