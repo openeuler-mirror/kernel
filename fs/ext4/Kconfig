@@ -117,3 +117,11 @@ config EXT4_KUNIT_TESTS
 	  to the KUnit documentation in Documentation/dev-tools/kunit/.
 
 	  If unsure, say N.
+
+config EXT4_DIOREAD_NOLOCK_PARAM
+	bool "Ext4 default_dioread_nolock module param support"
+	depends on EXT4_FS
+	default n
+	help
+	  Support to enable default_dioread_nolock module param, be attention to
+          that we default disable dioread_nolock with this config set to Y.
