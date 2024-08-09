@@ -853,7 +853,7 @@ vector_bhb_bpiall_\name:
 	@ which gives a "context synchronisation".
 #endif
 
-.Lvector_\name:
+vector_\name:
 	.if \correction
 	sub	lr, lr, #\correction
 	.endif
@@ -882,7 +882,7 @@ vector_bhb_bpiall_\name:
 	mov	r0, sp
  ARM(	ldr	lr, [pc, lr, lsl #2]	)
 	movs	pc, lr			@ branch to handler in SVC mode
-ENDPROC(.Lvector_\name)
+ENDPROC(vector_\name)
 
 #ifdef CONFIG_HARDEN_BRANCH_HISTORY
 	.subsection 1
@@ -914,10 +914,6 @@ ENDPROC(vector_bhb_loop8_\name)
 	.endm
 
 	.section .stubs, "ax", %progbits
-#ifdef CONFIG_FIQ
-	.global	vector_fiq_offset
-	.set	vector_fiq_offset, .Lvector_fiq - . + 0x1000
-#endif
 	@ These need to remain at the start of the section so that
 	@ they are in range of the 'SWI' entries in the vector tables
 	@ located 4k down.
@@ -930,11 +926,11 @@ ENDPROC(vector_bhb_loop8_\name)
 	.word	vector_bhb_bpiall_swi
 #endif
 
-.Lvector_rst:
+vector_rst:
  ARM(	swi	SYS_ERROR0	)
  THUMB(	svc	#0		)
  THUMB(	nop			)
-	b	.Lvector_und
+	b	vector_und
 
 /*
  * Interrupt dispatcher
@@ -1036,8 +1032,8 @@ ENDPROC(vector_bhb_loop8_\name)
  * (they're not supposed to happen, and won't happen in 32-bit data mode).
  */
 
-.Lvector_addrexcptn:
-	b	.Lvector_addrexcptn
+vector_addrexcptn:
+	b	vector_addrexcptn
 
 /*=============================================================================
  * FIQ "NMI" handler
@@ -1066,40 +1062,42 @@ ENDPROC(vector_bhb_loop8_\name)
 	.long	__fiq_svc			@  e
 	.long	__fiq_svc			@  f
 
+	.globl	vector_fiq
+
 	.section .vectors, "ax", %progbits
-	W(b)	.Lvector_rst
-	W(b)	.Lvector_und
+	W(b)	vector_rst
+	W(b)	vector_und
 ARM(	.reloc	., R_ARM_LDR_PC_G0, .L__vector_swi		)
 THUMB(	.reloc	., R_ARM_THM_PC12, .L__vector_swi		)
 	W(ldr)	pc, .
-	W(b)	.Lvector_pabt
-	W(b)	.Lvector_dabt
-	W(b)	.Lvector_addrexcptn
-	W(b)	.Lvector_irq
-	W(b)	.Lvector_fiq
+	W(b)	vector_pabt
+	W(b)	vector_dabt
+	W(b)	vector_addrexcptn
+	W(b)	vector_irq
+	W(b)	vector_fiq
 
 #ifdef CONFIG_HARDEN_BRANCH_HISTORY
 	.section .vectors.bhb.loop8, "ax", %progbits
-	W(b)	.Lvector_rst
+	W(b)	vector_rst
 	W(b)	vector_bhb_loop8_und
 ARM(	.reloc	., R_ARM_LDR_PC_G0, .L__vector_bhb_loop8_swi	)
 THUMB(	.reloc	., R_ARM_THM_PC12, .L__vector_bhb_loop8_swi	)
 	W(ldr)	pc, .
 	W(b)	vector_bhb_loop8_pabt
 	W(b)	vector_bhb_loop8_dabt
-	W(b)	.Lvector_addrexcptn
+	W(b)	vector_addrexcptn
 	W(b)	vector_bhb_loop8_irq
 	W(b)	vector_bhb_loop8_fiq
 
 	.section .vectors.bhb.bpiall, "ax", %progbits
-	W(b)	.Lvector_rst
+	W(b)	vector_rst
 	W(b)	vector_bhb_bpiall_und
 ARM(	.reloc	., R_ARM_LDR_PC_G0, .L__vector_bhb_bpiall_swi	)
 THUMB(	.reloc	., R_ARM_THM_PC12, .L__vector_bhb_bpiall_swi	)
 	W(ldr)	pc, .
 	W(b)	vector_bhb_bpiall_pabt
 	W(b)	vector_bhb_bpiall_dabt
-	W(b)	.Lvector_addrexcptn
+	W(b)	vector_addrexcptn
 	W(b)	vector_bhb_bpiall_irq
 	W(b)	vector_bhb_bpiall_fiq
 #endif

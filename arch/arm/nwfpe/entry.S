@@ -9,7 +9,6 @@
 */
 #include <linux/linkage.h>
 #include <asm/assembler.h>
-#include <asm/extable.h>
 #include <asm/opcodes.h>
 
 /* This is the kernel's entry point into the floating point emulator.
@@ -110,7 +109,10 @@ next:
 .Lfix:	ret	r9			@ let the user eat segfaults
 	.popsection
 
-	ex_entry	.Lx1, .Lfix
+	.pushsection __ex_table,"a"
+	.align	3
+	.long	.Lx1, .Lfix
+	.popsection
 
 	@
 	@ Check whether the instruction is a co-processor instruction.

@@ -63,11 +63,7 @@
 		EXIT_CALL						\
 		ARM_MMU_DISCARD(*(.text.fixup))				\
 		ARM_MMU_DISCARD(*(__ex_table))				\
-		COMMON_DISCARDS						\
-		*(.ARM.exidx.discard.text)				\
-		*(.interp .dynamic)					\
-		*(.dynsym .dynstr .hash)
-
+		COMMON_DISCARDS
 
 /*
  * Sections that should stay zero sized, which is safer to explicitly
@@ -75,7 +71,7 @@
  */
 #define ARM_ASSERTS							\
 	.plt : {							\
-		*(.iplt) * (.rel.iplt) * (.iplt) * (.igot.plt) * (.plt)	\
+		*(.iplt) *(.rel.iplt) *(.iplt) *(.igot.plt)		\
 	}								\
 	ASSERT(SIZEOF(.plt) == 0,					\
 	       "Unexpected run-time procedure linkages detected!")
@@ -105,7 +101,6 @@
 		ARM_STUBS_TEXT						\
 		. = ALIGN(4);						\
 		*(.got)			/* Global offset table */	\
-		*(.got.plt)						\
 		ARM_CPU_KEEP(PROC_INFO)
 
 /* Stack unwinding tables */
@@ -151,8 +146,10 @@
 		*(.stubs)						\
 	}								\
 	ARM_LMA(__stubs, .stubs);					\
-	. = __stubs_lma + SIZEOF(.stubs);
+	. = __stubs_lma + SIZEOF(.stubs);				\
 									\
+	PROVIDE(vector_fiq_offset = vector_fiq - ADDR(.vectors));
+
 #define ARM_TCM								\
 	__itcm_start = ALIGN(4);					\
 	.text_itcm ITCM_OFFSET : AT(__itcm_start - LOAD_OFFSET) {	\
