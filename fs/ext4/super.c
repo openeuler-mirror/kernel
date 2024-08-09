@@ -66,6 +66,20 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/ext4.h>
 
+#ifdef CONFIG_EXT4_DIOREAD_NOLOCK_PARAM
+/*
+ * After 244adf6426ee ("ext4: make dioread_nolock the default"), we will enable
+ * dioread_nolock by default, but this options may lead data lose combine with
+ * poweroff(Since we may first update i_size, and then unwritten extent convert
+ * to written extent). For this case, we give a param to help control does we
+ * really default enable dioread_nolock and we default disable dioread_nolock,
+ * enable it with ext4.default_dioread_nolock=1 if you want.
+ */
+int default_dioread_nolock;
+module_param_named(default_dioread_nolock, default_dioread_nolock, int, 0644);
+MODULE_PARM_DESC(default_dioread_nolock, "Default enable dioread_nolock");
+#endif
+
 static struct ext4_lazy_init *ext4_li_info;
 static DEFINE_MUTEX(ext4_li_mtx);
 static struct ratelimit_state ext4_mount_msg_ratelimit;
@@ -4472,8 +4486,13 @@ static void ext4_set_def_opts(struct super_block *sb,
 	    ((def_mount_opts & EXT4_DEFM_NODELALLOC) == 0))
 		set_opt(sb, DELALLOC);
 
+#ifdef CONFIG_EXT4_DIOREAD_NOLOCK_PARAM
+	if (sb->s_blocksize == PAGE_SIZE && default_dioread_nolock)
+		set_opt(sb, DIOREAD_NOLOCK);
+#else
 	if (sb->s_blocksize == PAGE_SIZE)
 		set_opt(sb, DIOREAD_NOLOCK);
+#endif
 
 	/* Use iomap for buffered IO path on 4k pagesize */
 	if (PAGE_SIZE == SZ_4K)

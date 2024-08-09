@@ -126,3 +126,11 @@ config EXT4_ERROR_REPORT
 	help
 	  Implement the ext3/ext4 file system error report. Report error to
 	  userspace by netlink
+
+config EXT4_DIOREAD_NOLOCK_PARAM
+	bool "Ext4 default_dioread_nolock module param support"
+	depends on EXT4_FS
+	default n
+	help
+	  Support to enable default_dioread_nolock module param, be attention to
+          that we default disable dioread_nolock with this config set to Y.
