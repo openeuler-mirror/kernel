@@ -120,6 +120,7 @@ enum HNAE3_DEV_CAP_BITS {
 	HNAE3_DEV_SUPPORT_NOTIFY_PKT_B,
 	HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B,
 	HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B,
+	HNAE3_DEV_SUPPORT_TC_BUFFER_B,
 };
 
 #define hnae3_ae_dev_fd_supported(ae_dev) \
@@ -205,6 +206,9 @@ enum HNAE3_DEV_CAP_BITS {
 
 #define hnae3_ae_dev_vf_multi_tcs_supported(hdev) \
 	test_bit(HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B, (hdev)->ae_dev->caps)
+
+#define hnae3_ae_dev_tc_buffer_supported(hdev) \
+	test_bit(HNAE3_DEV_SUPPORT_TC_BUFFER_B, (hdev)->ae_dev->caps)
 
 enum HNAE3_PF_CAP_BITS {
 	HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B = 0,
@@ -435,6 +439,8 @@ struct hnae3_dev_specs {
 	u32 mac_stats_num;
 	u8 tnl_num;
 	u8 hilink_version;
+	u32 total_rx_buffer_size;
+	u32 min_rx_buffer_size_per_tc;
 };
 
 struct hnae3_client_ops {
@@ -867,6 +873,12 @@ struct hnae3_dcb_ops {
 	u8   (*getdcbx)(struct hnae3_handle *);
 	u8   (*setdcbx)(struct hnae3_handle *, u8);
 
+	/* buffer settings */
+	int (*setbuffer)(struct hnae3_handle *h,
+			 struct dcbnl_buffer *buffer);
+	int (*getbuffer)(struct hnae3_handle *h,
+			 struct dcbnl_buffer *buffer);
+
 	int (*setup_tc)(struct hnae3_handle *handle,
 			struct tc_mqprio_qopt_offload *mqprio_qopt);
 };
@@ -907,6 +919,7 @@ struct hnae3_knic_private_info {
 	u32 tx_spare_buf_size;
 
 	struct hnae3_tc_info tc_info;
+	u32 buffer_size[HNAE3_MAX_TC];
 	u8 tc_map_mode;
 	u8 dscp_app_cnt;
 	u8 dscp_prio[HNAE3_MAX_DSCP];

@@ -1402,9 +1402,11 @@ static void hclge_parse_dev_specs(struct hclge_dev *hdev,
 	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(hdev->pdev);
 	struct hclge_dev_specs_0_cmd *req0;
 	struct hclge_dev_specs_1_cmd *req1;
+	struct hclge_dev_specs_2_cmd *req2;
 
 	req0 = (struct hclge_dev_specs_0_cmd *)desc[0].data;
 	req1 = (struct hclge_dev_specs_1_cmd *)desc[1].data;
+	req2 = (struct hclge_dev_specs_2_cmd *)desc[2].data;
 
 	ae_dev->dev_specs.max_non_tso_bd_num = req0->max_non_tso_bd_num;
 	ae_dev->dev_specs.rss_ind_tbl_size =
@@ -1419,6 +1421,10 @@ static void hclge_parse_dev_specs(struct hclge_dev *hdev,
 	ae_dev->dev_specs.mc_mac_size = le16_to_cpu(req1->mc_mac_size);
 	ae_dev->dev_specs.tnl_num = req1->tnl_num;
 	ae_dev->dev_specs.hilink_version = req1->hilink_version;
+	ae_dev->dev_specs.total_rx_buffer_size =
+		le32_to_cpu(req2->total_rx_buffer_size);
+	ae_dev->dev_specs.min_rx_buffer_size_per_tc =
+		le32_to_cpu(req2->min_rx_buffer_size_per_tc);
 }
 
 static void hclge_check_dev_specs(struct hclge_dev *hdev)

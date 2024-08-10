@@ -384,6 +384,9 @@ static struct hns3_dbg_cap_info hns3_dbg_cap[] = {
 	}, {
 		.name = "support vf multi tcs",
 		.cap_bit = HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B,
+	}, {
+		.name = "support tc buffer",
+		.cap_bit = HNAE3_DEV_SUPPORT_TC_BUFFER_B,
 	}
 };
 
