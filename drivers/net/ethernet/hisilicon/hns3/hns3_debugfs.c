@@ -424,6 +424,9 @@ static struct hns3_dbg_cap_info hns3_dbg_cap[] = {
 	}, {
 		.name = "support vf multi tcs",
 		.cap_bit = HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B,
+	}, {
+		.name = "support tc buffer",
+		.cap_bit = HNAE3_DEV_SUPPORT_TC_BUFFER_B,
 	}
 };
 
@@ -1106,6 +1109,10 @@ hns3_dbg_dev_specs(struct hnae3_handle *h, char *buf, int len, int *pos)
 			  dev->watchdog_timeo / HZ);
 	*pos += scnprintf(buf + *pos, len - *pos, "Hilink Version: %u\n",
 			  dev_specs->hilink_version);
+	*pos += scnprintf(buf + *pos, len - *pos, "total rx buffer size: %u\n",
+			  dev_specs->total_rx_buffer_size);
+	*pos += scnprintf(buf + *pos, len - *pos, "min rx buffer size per tc: %u\n",
+			  dev_specs->min_rx_buffer_size_per_tc);
 }
 
 static int hns3_dbg_dev_info(struct hnae3_handle *h, char *buf, int len)

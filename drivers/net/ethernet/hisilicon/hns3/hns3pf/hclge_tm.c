@@ -1759,6 +1759,104 @@ void hclge_tm_schd_info_update(struct hclge_dev *hdev, u8 num_tc)
 	hclge_tm_schd_info_init(hdev);
 }
 
+int hclge_tm_tc_buffer_check(struct hclge_dev *hdev,
+			     u32 *buffer_size, u8 buffer_num)
+{
+	struct hnae3_dev_specs *dev_specs = &hdev->ae_dev->dev_specs;
+	u32 total_size = 0;
+	u8 i;
+
+	if (buffer_num != HNAE3_MAX_TC)
+		return -EINVAL;
+
+	for (i = 0; i < HNAE3_MAX_TC; i++) {
+		if (i < hdev->tc_max) {
+			if (dev_specs->min_rx_buffer_size_per_tc >
+			    buffer_size[i])
+				return -EINVAL;
+			total_size += buffer_size[i];
+		} else if (buffer_size[i]) {
+			return -EINVAL;
+		}
+	}
+
+	if (total_size > dev_specs->total_rx_buffer_size)
+		return -EINVAL;
+
+	return 0;
+}
+
+int hclge_tm_tc_buffer_update(struct hclge_dev *hdev,
+			      u32 *buffer_size, u8 buffer_num)
+{
+	struct hclge_desc desc[HCLGE_TC_BUFF_BD_NUM];
+	u8 offset;
+	u8 index;
+	u32 size;
+	int ret;
+	u8 i;
+
+	if (buffer_num != HNAE3_MAX_TC)
+		return -EINVAL;
+
+	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_RX_TC_BUFF_ALLOC, false);
+	desc[0].flag |= cpu_to_le16(HCLGE_COMM_CMD_FLAG_NEXT);
+	hclge_cmd_setup_basic_desc(&desc[1], HCLGE_OPC_RX_TC_BUFF_ALLOC, false);
+
+	for (i = 0; i < HNAE3_MAX_TC; i++) {
+		index = i >> HCLGE_TC_BUFF_PER_BD_SHIFT;
+		offset = i & HCLGE_TC_BUFF_PER_BD_MASK;
+		desc[index].data[offset] = cpu_to_le32(buffer_size[i]);
+	}
+
+	ret = hclge_cmd_send(&hdev->hw, desc, HCLGE_TC_BUFF_BD_NUM);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < HNAE3_MAX_TC; i++) {
+		index = i >> HCLGE_TC_BUFF_PER_BD_SHIFT;
+		offset = i & HCLGE_TC_BUFF_PER_BD_MASK;
+		size = le32_to_cpu(desc[index].data[offset]);
+		if (buffer_size[i] != size) {
+			dev_info(&hdev->pdev->dev,
+				 "tc%u buffer size is not 256-byte aligned, adjusted(%u->%u)\n",
+				 i, buffer_size[i], size);
+			buffer_size[i] = size;
+		}
+	}
+
+	return 0;
+}
+
+static int hclge_tm_tc_buffer_get(struct hclge_dev *hdev)
+{
+	u32 *buffer_size = hdev->vport[0].nic.kinfo.buffer_size;
+	struct hclge_desc desc[HCLGE_TC_BUFF_BD_NUM];
+	u8 offset;
+	u8 index;
+	int ret;
+	u8 i;
+
+	if (!hnae3_ae_dev_tc_buffer_supported(hdev))
+		return 0;
+
+	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_RX_TC_BUFF_ALLOC, true);
+	desc[0].flag |= cpu_to_le16(HCLGE_COMM_CMD_FLAG_NEXT);
+	hclge_cmd_setup_basic_desc(&desc[1], HCLGE_OPC_RX_TC_BUFF_ALLOC, true);
+
+	ret = hclge_cmd_send(&hdev->hw, desc, HCLGE_TC_BUFF_BD_NUM);
+	if (ret)
+		return ret;
+
+	for (i = 0; i < HNAE3_MAX_TC; i++) {
+		index = i >> HCLGE_TC_BUFF_PER_BD_SHIFT;
+		offset = i & HCLGE_TC_BUFF_PER_BD_MASK;
+		buffer_size[i] = le32_to_cpu(desc[index].data[offset]);
+	}
+
+	return 0;
+}
+
 static int hclge_tc_rate_limit_cfg(struct hclge_dev *hdev, u32 speed, u8 tc)
 {
 	struct hclge_tc_rate_limit_cmd *tc_rate_limit_cmd;
@@ -1811,6 +1909,7 @@ u32 hclge_tm_rate_2_port_rate(u64 rate)
 int hclge_tm_init_hw(struct hclge_dev *hdev, bool init)
 {
 	struct hnae3_tc_info *tc_info = &hdev->vport[0].nic.kinfo.tc_info;
+	u32 *buffer_size = hdev->vport[0].nic.kinfo.buffer_size;
 	int ret;
 
 	if ((hdev->tx_sch_mode != HCLGE_FLAG_TC_BASE_SCH_MODE) &&
@@ -1825,6 +1924,15 @@ int hclge_tm_init_hw(struct hclge_dev *hdev, bool init)
 	if (ret)
 		return ret;
 
+	if (hnae3_ae_dev_tc_buffer_supported(hdev) &&
+	    !hclge_tm_tc_buffer_check(hdev, buffer_size, HNAE3_MAX_TC)) {
+		ret = hclge_tm_tc_buffer_update(hdev, buffer_size,
+						HNAE3_MAX_TC);
+		if (ret)
+			dev_warn(&hdev->pdev->dev,
+				 "failed to rebuild tc buffer, ret = %d\n", ret);
+	}
+
 	if (hnae3_dev_roh_supported(hdev) ||
 	    hnae3_dev_ubl_supported(hdev->ae_dev))
 		return hclge_tm_set_tc_rate_limit(hdev, tc_info);
@@ -1834,6 +1942,8 @@ int hclge_tm_init_hw(struct hclge_dev *hdev, bool init)
 
 int hclge_tm_schd_init(struct hclge_dev *hdev)
 {
+	int ret;
+
 	/* fc_mode is HCLGE_FC_FULL on reset */
 	hdev->tm_info.fc_mode = HCLGE_FC_FULL;
 	hdev->fc_mode_last_time = hdev->tm_info.fc_mode;
@@ -1845,6 +1955,10 @@ int hclge_tm_schd_init(struct hclge_dev *hdev)
 
 	hclge_tm_schd_info_init(hdev);
 	hclge_dscp_to_prio_map_init(hdev);
+	ret = hclge_tm_tc_buffer_get(hdev);
+	if (ret)
+		dev_warn(&hdev->pdev->dev,
+			 "failed to get tc buffer, ret = %d\n", ret);
 
 	return hclge_tm_init_hw(hdev, true);
 }

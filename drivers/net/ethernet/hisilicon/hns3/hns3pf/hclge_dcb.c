@@ -658,6 +658,92 @@ static int hclge_ieee_setmaxrate(struct hnae3_handle *h,
 	return ret;
 }
 
+static int hclge_buffer_validate(struct hclge_dev *hdev,
+				 struct dcbnl_buffer *buffer)
+{
+	u8 prio2buffer;
+	int ret;
+	u8 i;
+
+	ret = hclge_tm_tc_buffer_check(hdev, buffer->buffer_size, HNAE3_MAX_TC);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"invalid buffer size, ret = %d\n", ret);
+		return ret;
+	}
+
+	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++) {
+		prio2buffer = (i < hdev->tc_max) ? i : 0;
+		if (buffer->prio2buffer[i] != prio2buffer) {
+			dev_err(&hdev->pdev->dev,
+				"not support prio[%u] buffer %u map\n",
+				i, buffer->prio2buffer[i]);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static int hclge_setbuffer(struct hnae3_handle *h, struct dcbnl_buffer *buffer)
+{
+	struct hclge_vport *vport = hclge_get_vport(h);
+	struct net_device *netdev = h->kinfo.netdev;
+	u32 *buffer_size = h->kinfo.buffer_size;
+	struct hclge_dev *hdev = vport->back;
+	int result;
+	int ret;
+
+	if (!hnae3_ae_dev_tc_buffer_supported(hdev))
+		return -EOPNOTSUPP;
+
+	ret = hclge_buffer_validate(hdev, buffer);
+	if (ret)
+		return ret;
+
+	if (netif_msg_ifdown(h))
+		netdev_info(netdev, "set buffer\n");
+
+	ret = hclge_notify_down_uinit(hdev);
+	if (ret)
+		return ret;
+
+	result = hclge_tm_tc_buffer_update(hdev, buffer->buffer_size,
+					   HNAE3_MAX_TC);
+	if (!result)
+		memcpy(buffer_size, buffer->buffer_size,
+		       sizeof(h->kinfo.buffer_size));
+	else
+		netdev_err(netdev, "failed to update tc buffer, ret = %d\n",
+			   result);
+
+	ret = hclge_notify_init_up(hdev);
+	if (ret)
+		return ret;
+
+	return result;
+}
+
+static int hclge_getbuffer(struct hnae3_handle *h, struct dcbnl_buffer *buffer)
+{
+	struct hclge_vport *vport = hclge_get_vport(h);
+	u32 *buffer_size = h->kinfo.buffer_size;
+	struct hclge_dev *hdev = vport->back;
+	u8 i;
+
+	if (!hnae3_ae_dev_tc_buffer_supported(hdev))
+		return -EOPNOTSUPP;
+
+	memcpy(buffer->buffer_size, buffer_size,
+	       sizeof(buffer->buffer_size));
+
+	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++)
+		buffer->prio2buffer[i] = (i < hdev->tc_max) ? i : 0;
+
+	buffer->total_size = hdev->ae_dev->dev_specs.total_rx_buffer_size;
+	return 0;
+}
+
 static int hclge_mqprio_qopt_check_rate(struct hclge_dev *hdev, u64 min_rate,
 					u64 max_rate)
 {
@@ -854,6 +940,8 @@ static const struct hnae3_dcb_ops hns3_dcb_ops = {
 	.setup_tc	= hclge_setup_tc,
 	.ieee_setmaxrate = hclge_ieee_setmaxrate,
 	.ieee_getmaxrate = hclge_ieee_getmaxrate,
+	.setbuffer	= hclge_setbuffer,
+	.getbuffer	= hclge_getbuffer,
 };
 
 void hclge_dcb_ops_set(struct hclge_dev *hdev)
