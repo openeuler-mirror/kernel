@@ -1370,6 +1370,18 @@ config SCHED_STEAL
 
 	  If unsure, say N here.
 
+config SCHED_KEEP_ON_CORE
+	bool "Prefer physical cores when migrating tasks"
+	depends on SCHED_SMT
+	default n
+	help
+	  When cpu hyperthreading is enabled, one physical core can virtualize
+	  multiple logical cpus. Assume that physical core0 virtualizes two
+	  logical cpus, cpu0 and cpu1. Only when the load of cpu0 exceeds the
+	  ratio to the capacity of cpu0, the task will be migrated to the cpu1,
+	  otherwise the task will not be migrated and the cpu0 will still be
+	  used.
+
 config CHECKPOINT_RESTORE
 	bool "Checkpoint/restore support"
 	select PROC_CHILDREN
