@@ -2817,6 +2817,16 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &one_hundred,
 	},
 #endif
+#ifdef CONFIG_SCHED_KEEP_ON_CORE
+	{
+		.procname       = "sched_util_ratio",
+		.data           = &sysctl_sched_util_ratio,
+		.maxlen         = sizeof(sysctl_sched_util_ratio),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ZERO,
+	},
+#endif
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 	{
 		.procname	= "smart_grid_strategy_ctrl",

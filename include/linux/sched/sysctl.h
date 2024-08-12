@@ -35,6 +35,10 @@ extern unsigned int sysctl_sched_child_runs_first;
 extern int sysctl_sched_util_low_pct;
 #endif
 
+#ifdef CONFIG_SCHED_KEEP_ON_CORE
+extern int sysctl_sched_util_ratio;
+#endif
+
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 extern unsigned int sysctl_smart_grid_strategy_ctrl;
 extern int sysctl_affinity_adjust_delay_ms;
