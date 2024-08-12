@@ -662,7 +662,7 @@ out:
 	return ret;
 out_launder:
 	nfs_write_error_remove_page(req);
-	return 0;
+	return ret;
 }
 
 static int nfs_do_writepage(struct page *page, struct writeback_control *wbc,
