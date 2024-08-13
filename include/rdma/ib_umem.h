@@ -23,8 +23,10 @@ struct ib_umem {
 	u32 writable : 1;
 	u32 is_odp : 1;
 #ifdef CONFIG_INFINIBAND_PEER_MEMORY
+#ifndef __GENKSYMS__
 	/* Placing at the end of the bitfield list is ABI preserving on LE */
 	u32 is_peer : 1;
+#endif
 #endif
 	struct work_struct	work;
 	struct sg_table sg_head;
