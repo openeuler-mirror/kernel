@@ -44,6 +44,7 @@
 #include <asm/kasan.h>
 #include <asm/numa.h>
 #include <asm/scs.h>
+#include <asm/virtcca_cvm_guest.h>
 #include <asm/sections.h>
 #include <asm/setup.h>
 #include <asm/smp_plat.h>
@@ -361,6 +362,9 @@ void __init __no_sanitize_address setup_arch(char **cmdline_p)
 	 */
 	jump_label_init();
 	parse_early_param();
+
+	/* Init TSI after jump_labels are active */
+	virtcca_cvm_tsi_init();
 
 	dynamic_scs_init();
 
