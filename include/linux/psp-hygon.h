@@ -129,6 +129,8 @@ struct csv_data_ring_buffer {
 
 #ifdef CONFIG_CRYPTO_DEV_SP_PSP
 
+int psp_do_cmd(int cmd, void *data, int *psp_ret);
+
 int csv_ring_buffer_queue_init(void);
 int csv_ring_buffer_queue_free(void);
 int csv_fill_cmd_queue(int prio, int cmd, void *data, uint16_t flags);
@@ -142,6 +144,8 @@ int csv_issue_ringbuf_cmds_external_user(struct file *filep, int *psp_ret);
 
 #else	/* !CONFIG_CRYPTO_DEV_SP_PSP */
 
+static inline int psp_do_cmd(int cmd, void *data, int *psp_ret) { return -ENODEV; }
+
 static inline int csv_ring_buffer_queue_init(void) { return -ENODEV; }
 static inline int csv_ring_buffer_queue_free(void) { return -ENODEV; }
 static inline
@@ -151,5 +155,19 @@ static inline int
 csv_issue_ringbuf_cmds_external_user(struct file *filep, int *psp_ret) { return -ENODEV; }
 
 #endif	/* CONFIG_CRYPTO_DEV_SP_PSP */
+
+typedef int (*p2c_notifier_t)(uint32_t id, uint64_t data);
+
+#ifdef CONFIG_HYGON_PSP2CPU_CMD
+
+int psp_register_cmd_notifier(uint32_t cmd_id, p2c_notifier_t notifier);
+int psp_unregister_cmd_notifier(uint32_t cmd_id, p2c_notifier_t notifier);
+
+#else	/* !CONFIG_HYGON_PSP2CPU_CMD */
+
+int psp_register_cmd_notifier(uint32_t cmd_id, p2c_notifier_t notifier) { return -ENODEV; }
+int psp_unregister_cmd_notifier(uint32_t cmd_id, p2c_notifier_t notifier) { return -ENODEV; }
+
+#endif	/* CONFIG_HYGON_PSP2CPU_CMD */
 
 #endif	/* __PSP_HYGON_H__ */

@@ -18,6 +18,9 @@
 #include "dbc.h"
 
 #include "hygon/psp-dev.h"
+#ifdef CONFIG_TDM_DEV_HYGON
+#include "hygon/tdm-dev.h"
+#endif
 
 struct psp_device *psp_master;
 
@@ -153,6 +156,14 @@ static int psp_init(struct psp_device *psp)
 	if (psp->vdata->platform_access)
 		psp_init_platform_access(psp);
 
+#ifdef CONFIG_TDM_DEV_HYGON
+	if (is_vendor_hygon()) {
+		ret = tdm_dev_init();
+		if (ret)
+			return ret;
+	}
+#endif
+
 	return 0;
 }
 
@@ -187,7 +198,11 @@ int psp_dev_init(struct sp_device *sp)
 	iowrite32(-1, psp->io_regs + psp->vdata->intsts_reg);
 
 	/* Request an irq */
-	ret = sp_request_psp_irq(psp->sp, psp_irq_handler, psp->name, psp);
+	if (is_vendor_hygon()) {
+		ret = sp_request_hygon_psp_irq(psp->sp, psp_irq_handler, psp->name, psp);
+	} else {
+		ret = sp_request_psp_irq(psp->sp, psp_irq_handler, psp->name, psp);
+	}
 	if (ret) {
 		dev_err(dev, "psp: unable to allocate an IRQ\n");
 		goto e_err;
@@ -232,6 +247,11 @@ void psp_dev_destroy(struct sp_device *sp)
 
 	if (!psp)
 		return;
+
+#ifdef CONFIG_TDM_DEV_HYGON
+	if (is_vendor_hygon())
+		tdm_dev_destroy();
+#endif
 
 	sev_dev_destroy(psp);
 
