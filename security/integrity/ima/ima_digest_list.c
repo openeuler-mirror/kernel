@@ -270,41 +270,38 @@ int ima_parse_compact_list(loff_t size, void *buf, int op)
 /***************************
  * Digest list usage check *
  ***************************/
-void ima_check_measured_appraised(struct file *file)
+bool ima_check_measured_appraised(struct file *file)
 {
 	struct integrity_iint_cache *iint;
 
 	if (!ima_digest_list_actions)
-		return;
+		return true;
 
 	if (file_inode(file)->i_sb->s_magic == SECURITYFS_MAGIC ||
 	    S_ISDIR(file_inode(file)->i_mode))
-		return;
+		return true;
 
 	iint = integrity_iint_find(file_inode(file));
 	if (!iint) {
-		pr_err("%s not processed, disabling digest lists lookup\n",
-		       file_dentry(file)->d_name.name);
-		ima_digest_list_actions = 0;
-		return;
+		pr_err("%s not processed\n", file_dentry(file)->d_name.name);
+		return false;
 	}
 
 	mutex_lock(&iint->mutex);
 	if ((ima_digest_list_actions & IMA_MEASURE) &&
 	    !(iint->flags & IMA_MEASURED)) {
-		pr_err("%s not measured, disabling digest lists lookup for measurement\n",
-			file_dentry(file)->d_name.name);
-		ima_digest_list_actions &= ~IMA_MEASURE;
+		pr_err("%s not measured\n", file_dentry(file)->d_name.name);
+		return false;
 	}
 
 	if ((ima_digest_list_actions & IMA_APPRAISE) &&
 	    (!(iint->flags & IMA_APPRAISED))) {
-		pr_err("%s not appraised, disabling digest lists lookup for appraisal\n",
-			file_dentry(file)->d_name.name);
-		ima_digest_list_actions &= ~IMA_APPRAISE;
+		pr_err("%s not appraised\n", file_dentry(file)->d_name.name);
+		return false;
 	}
 
 	mutex_unlock(&iint->mutex);
+	return true;
 }
 
 struct ima_digest *ima_digest_allow(struct ima_digest *digest, int action)
@@ -380,7 +377,10 @@ static bool __init load_digest_list(struct dir_context *__ctx, const char *name,
 		goto out_fput;
 	}
 
-	ima_check_measured_appraised(file);
+	if (!ima_check_measured_appraised(file)) {
+		vfree(datap);
+		goto out_fput;
+	}
 
 	ret = ima_parse_compact_list(size, datap, DIGEST_LIST_OP_ADD);
 	if (ret < 0)

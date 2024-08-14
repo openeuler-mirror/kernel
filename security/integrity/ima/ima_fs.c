@@ -377,11 +377,11 @@ static ssize_t ima_read_policy(char *path)
 				rc = -ENOMEM;
 				break;
 			}
-			/*
-			 * Disable usage of digest lists if not measured
-			 * or appraised.
-			 */
-			ima_check_measured_appraised(file);
+
+			if (!ima_check_measured_appraised(file)) {
+				rc = -EACCES;
+				break;
+			}
 
 			if (dentry == digest_list_data_del)
 				op = DIGEST_LIST_OP_DEL;
