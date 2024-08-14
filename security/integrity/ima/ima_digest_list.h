@@ -23,7 +23,7 @@
 extern struct ima_h_table ima_digests_htable;
 
 int ima_parse_compact_list(loff_t size, void *buf, int op);
-void ima_check_measured_appraised(struct file *file);
+bool ima_check_measured_appraised(struct file *file);
 bool ima_check_current_is_parser(void);
 void ima_set_parser(void);
 void ima_unset_parser(void);
