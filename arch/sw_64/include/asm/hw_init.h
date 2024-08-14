@@ -98,11 +98,17 @@ DECLARE_STATIC_KEY_FALSE(run_mode_guest_key);
 DECLARE_STATIC_KEY_FALSE(run_mode_emul_key);
 
 DECLARE_STATIC_KEY_FALSE(hw_una_enabled);
+DECLARE_STATIC_KEY_FALSE(junzhang_v1_key);
+DECLARE_STATIC_KEY_FALSE(junzhang_v2_key);
+DECLARE_STATIC_KEY_FALSE(junzhang_v3_key);
 
 #define is_in_host()		static_branch_likely(&run_mode_host_key)
 #define is_in_guest()		static_branch_unlikely(&run_mode_guest_key)
 #define is_in_emul()		static_branch_unlikely(&run_mode_emul_key)
 #define is_guest_or_emul()	!static_branch_likely(&run_mode_host_key)
+#define is_junzhang_v1()	static_branch_unlikely(&junzhang_v1_key)
+#define is_junzhang_v2()	static_branch_likely(&junzhang_v2_key)
+#define is_junzhang_v3()	static_branch_unlikely(&junzhang_v3_key)
 
 #define CPU_SW3231		0x31
 #define CPU_SW831		0x32
