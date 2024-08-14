@@ -12,6 +12,7 @@
 
 #include <linux/types.h>
 #include <linux/fs.h>
+#include <linux/kvm_types.h>
 
 /*****************************************************************************/
 /***************************** CSV interface *********************************/
@@ -127,7 +128,61 @@ struct csv_data_ring_buffer {
 	u16 int_on_empty;		/* In */
 } __packed;
 
+/*
+ * enum VPSP_CMD_STATUS - virtual psp command status
+ *
+ * @VPSP_INIT: the initial command from guest
+ * @VPSP_RUNNING: the middle command to check and run ringbuffer command
+ * @VPSP_FINISH: inform the guest that the command ran successfully
+ */
+enum VPSP_CMD_STATUS {
+	VPSP_INIT = 0,
+	VPSP_RUNNING,
+	VPSP_FINISH,
+	VPSP_MAX
+};
+
+/**
+ * struct vpsp_cmd - virtual psp command
+ *
+ * @cmd_id: the command id is used to distinguish different commands
+ * @is_high_rb: indicates the ringbuffer level in which the command is placed
+ */
+struct vpsp_cmd {
+	u32 cmd_id	:	31;
+	u32 is_high_rb	:	1;
+};
+
+/**
+ * struct vpsp_ret - virtual psp return result
+ *
+ * @pret: the return code from device
+ * @resv: reserved bits
+ * @index: used to distinguish the position of command in the ringbuffer
+ * @status: indicates the current status of the related command
+ */
+struct vpsp_ret {
+	u32 pret	:	16;
+	u32 resv	:	2;
+	u32 index	:	12;
+	u32 status	:	2;
+};
+
+struct kvm_vpsp {
+	struct kvm *kvm;
+	int (*write_guest)(struct kvm *kvm, gpa_t gpa, const void *data, unsigned long len);
+	int (*read_guest)(struct kvm *kvm, gpa_t gpa, void *data, unsigned long len);
+};
+
+#define PSP_VID_MASK            0xff
+#define PSP_VID_SHIFT           56
+#define PUT_PSP_VID(hpa, vid)   ((__u64)(hpa) | ((__u64)(PSP_VID_MASK & vid) << PSP_VID_SHIFT))
+#define GET_PSP_VID(hpa)        ((__u16)((__u64)(hpa) >> PSP_VID_SHIFT) & PSP_VID_MASK)
+#define CLEAR_PSP_VID(hpa)      ((__u64)(hpa) & ~((__u64)PSP_VID_MASK << PSP_VID_SHIFT))
+
 #ifdef CONFIG_CRYPTO_DEV_SP_PSP
+
+int vpsp_do_cmd(uint32_t vid, int cmd, void *data, int *psp_ret);
 
 int psp_do_cmd(int cmd, void *data, int *psp_ret);
 
@@ -142,7 +197,20 @@ int csv_check_stat_queue_status(int *psp_ret);
  */
 int csv_issue_ringbuf_cmds_external_user(struct file *filep, int *psp_ret);
 
+int vpsp_try_get_result(uint32_t vid, uint8_t prio, uint32_t index,
+			void *data, struct vpsp_ret *psp_ret);
+
+int vpsp_try_do_cmd(uint32_t vid, int cmd, void *data, struct vpsp_ret *psp_ret);
+
+int vpsp_get_vid(uint32_t *vid, pid_t pid);
+
+int vpsp_get_default_vid_permission(void);
+
+int kvm_pv_psp_op(struct kvm_vpsp *vpsp, int cmd, gpa_t data_gpa, gpa_t psp_ret_gpa,
+		gpa_t table_gpa);
 #else	/* !CONFIG_CRYPTO_DEV_SP_PSP */
+
+static inline int vpsp_do_cmd(uint32_t vid, int cmd, void *data, int *psp_ret) { return -ENODEV; }
 
 static inline int psp_do_cmd(int cmd, void *data, int *psp_ret) { return -ENODEV; }
 
@@ -154,6 +222,23 @@ static inline int csv_check_stat_queue_status(int *psp_ret) { return -ENODEV; }
 static inline int
 csv_issue_ringbuf_cmds_external_user(struct file *filep, int *psp_ret) { return -ENODEV; }
 
+static inline int
+vpsp_try_get_result(uint32_t vid, uint8_t prio,
+		uint32_t index, void *data, struct vpsp_ret *psp_ret) { return -ENODEV; }
+
+static inline int
+vpsp_try_do_cmd(uint32_t vid, int cmd,
+		void *data, struct vpsp_ret *psp_ret) { return -ENODEV; }
+
+static inline int
+vpsp_get_vid(uint32_t *vid, pid_t pid) { return -ENODEV; }
+
+static inline int
+vpsp_get_default_vid_permission(void) { return -ENODEV; }
+
+static inline int
+kvm_pv_psp_op(struct kvm_vpsp *vpsp, int cmd, gpa_t data_gpa,
+	      gpa_t psp_ret_gpa, gpa_t table_gpa) { return -ENODEV; }
 #endif	/* CONFIG_CRYPTO_DEV_SP_PSP */
 
 typedef int (*p2c_notifier_t)(uint32_t id, uint64_t data);
