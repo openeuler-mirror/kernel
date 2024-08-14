@@ -3305,7 +3305,6 @@ const struct net_device_ops hns3_unic_netdev_ops = {
 #endif
 	.ndo_get_vf_config	= hns3_nic_get_vf_config,
 	.ndo_set_vf_link_state	= hns3_nic_set_vf_link_state,
-	.ndo_set_vf_rate	= hns3_nic_set_vf_rate,
 	.ndo_select_queue	= hns3_nic_select_queue,
 };
 
