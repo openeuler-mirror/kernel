@@ -253,6 +253,20 @@ extern void outsl(unsigned long port, const void *src, unsigned long count);
  */
 #define xlate_dev_kmem_ptr(p)	p
 
+static inline int pci_remap_iospace(const struct resource *res,
+		phys_addr_t phys_addr)
+{
+	if (!(res->flags & IORESOURCE_IO))
+		return -EINVAL;
+
+	if (res->end > IO_SPACE_LIMIT)
+		return -EINVAL;
+
+	return 0;
+}
+
+#define pci_remap_iospace pci_remap_iospace
+
 #endif /* __KERNEL__ */
 
 #endif /* _ASM_SW64_IO_H */
