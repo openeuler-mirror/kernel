@@ -5,11 +5,11 @@
  */
 
 #include <linux/sched/mm.h>
-
-#include "ib_peer_mem.h"
-
 #include <rdma/ib_verbs.h>
 #include "ib_umem_ex.h"
+#ifndef CONFIG_INFINIBAND_PEER_MEMORY
+#include "ib_peer_mem.h"
+#endif
 
 #if defined(IB_CORE_UMEM_EX_V1)
 #define get_mm(umem_ctx) ((umem_ctx)->mm)
@@ -88,12 +88,16 @@ struct ib_umem_ex *ib_umem_ex(struct ib_umem *umem)
 	if (!umem)
 		return ERR_PTR(-EINVAL);
 
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+	ret_umem = (struct ib_umem_ex *)umem;
+#else
 	ret_umem =  kzalloc(sizeof(*ret_umem), GFP_KERNEL);
 	if (!ret_umem)
 		return ERR_PTR(-ENOMEM);
 
 	ret_umem->umem = *umem;
 	kfree(umem);
+#endif
 	return ret_umem;
 }
 

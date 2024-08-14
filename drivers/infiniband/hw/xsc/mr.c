@@ -14,9 +14,11 @@
 #include "ib_umem_ex.h"
 #include "xsc_ib.h"
 
+#ifndef CONFIG_INFINIBAND_PEER_MEMORY
 static void xsc_invalidate_umem(void *invalidation_cookie,
 				struct ib_umem_ex *umem,
 				unsigned long addr, size_t size);
+#endif
 
 enum {
 	DEF_CACHE_SIZE	= 10,
@@ -164,8 +166,16 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	xsc_ib_dbg(dev, "start 0x%llx, virt_addr 0x%llx, length 0x%llx\n",
 		   start, virt_addr, length);
 
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+	umem = ib_umem_get_peer(&dev->ib_dev, start, length,
+				access_flags, IB_PEER_MEM_INVAL_SUPP);
+#else
 	umem = ib_umem_get(&dev->ib_dev, start, length, access_flags);
+#endif
 	if (IS_ERR(umem)) {
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+		return (void *)umem;
+#else
 		// check client peer memory
 		u8 peer_exists = 0;
 
@@ -188,13 +198,17 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		if (err)
 			goto error;
 		using_peer_mem = 1;
-
+#endif
 	} else {
 		umem_ex = ib_umem_ex(umem);
 		if (IS_ERR(umem_ex)) {
 			err = -ENOMEM;
 			goto error;
 		}
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+		if (umem->is_peer)
+			using_peer_mem = 1;
+#endif
 	}
 	umem = &umem_ex->umem;
 
@@ -294,6 +308,7 @@ xsc_ib_dereg_mr_def()
 	return 0;
 }
 
+#ifndef CONFIG_INFINIBAND_PEER_MEMORY
 static void xsc_invalidate_umem(void *invalidation_cookie,
 				struct ib_umem_ex *umem,
 				unsigned long addr,
@@ -320,6 +335,7 @@ static void xsc_invalidate_umem(void *invalidation_cookie,
 	xsc_core_dereg_mr(dev->xdev, &mr->mmr);
 	complete(&mr->invalidation_comp);
 }
+#endif
 
 xsc_ib_alloc_mr_def()
 {
