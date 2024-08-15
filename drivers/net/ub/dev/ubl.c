@@ -49,15 +49,15 @@ static __be16 ubl_type_to_proto(u8 type)
  * @skb: buffer to alter
  * @ctype: indicates the packet type
  *
- * The packet type cannot be known by parsing packe from user,
+ * The packet type cannot be known by parsing packets from user,
  * which leads to restrictions on the use of socket.
- * Add cs_type field to indicate the packet type. And sw_ctype
+ * Add sw_ctype field to indicate the packet type. And sw_ctype
  * exists only during software prcessing.
  * +----------+----+-----+-----------+
  * | sw_ctype | CC | NPI | L3 Packet |
  * +----------+----+-----+-----------+
  */
-int ubl_add_sw_ctype(struct sk_buff *skb, u8 ctype)
+static int ubl_add_sw_ctype(struct sk_buff *skb, u8 ctype)
 {
 	u8 *pkt_cfg;
 
@@ -77,12 +77,12 @@ int ubl_add_sw_ctype(struct sk_buff *skb, u8 ctype)
  * @type:	ubl type field
  * @daddr:	not used in ubl
  * @saddr:	not used in ubl
- * @len:   packet length (<= skb->len)
+ * @len:	packet length (<= skb->len)
  *
  */
-int ubl_create_header(struct sk_buff *skb, struct net_device *dev,
-		      unsigned short type, const void *daddr,
-		      const void *saddr, unsigned int len)
+static int ubl_create_header(struct sk_buff *skb, struct net_device *dev,
+			     unsigned short type, const void *daddr,
+			     const void *saddr, unsigned int len)
 {
 	u8 ctype = UB_NOIP_CFG_TYPE;
 	int ret = -UBL_HLEN;
@@ -104,10 +104,10 @@ int ubl_create_header(struct sk_buff *skb, struct net_device *dev,
 
 	return ret;
 }
-EXPORT_SYMBOL(ubl_create_header);
 
 /**
- * ubl_header_parse_protocol - parse packets protocol before send it to driver.
+ * ubl_header_parse_protocol - parse packets protocol before sending it to
+ * driver.
  * @skb: buffer to alter
  *
  * parse packets based on packet data if skb->protocol is ETH_P_ALL or 0.
@@ -145,17 +145,17 @@ void ubl_setup(struct net_device *dev)
 EXPORT_SYMBOL(ubl_setup);
 
 /**
- * alloc_ubldev_mqs - Allocates and sets up an ub-n device
+ * alloc_ubldev_mqs - Allocates and sets up a ub-link device
  * @sizeof_priv: Size of additional driver-private structure to be allocated
  *	for this ubl device
  * @txqs: The number of TX queues this device has.
  * @rxqs: The number of RX queues this device has.
  *
  * Fill in the fields of the device structure with ubl-generic
- * values. Basically does everything except registering the device.
+ * values. Basically done everything except registering the device.
  *
- * Constructs a new net device, complete with a private data area of
- * size (sizeof_priv).  A 32-byte (not bit) alignment is enforced for
+ * Constructs a new net device, completing with a private data area of
+ * size (sizeof_priv). A 32-byte (not bit) alignment is enforced for
  * this private data area.
  */
 
@@ -179,7 +179,9 @@ EXPORT_SYMBOL(alloc_ubldev_mqs);
 __be16 ubl_type_trans(struct sk_buff *skb, struct net_device *dev, u8 type)
 {
 	skb->dev = dev;
-	ubl_add_sw_ctype(skb, type);
+	if (ubl_add_sw_ctype(skb, type))
+		net_warn_ratelimited("add sw ctype failed\n");
+
 	skb_reset_mac_header(skb);
 	if (type == UB_IPV4_CFG_TYPE || type == UB_IPV6_CFG_TYPE)
 		skb_pull_inline(skb, UBL_HLEN + 1);
