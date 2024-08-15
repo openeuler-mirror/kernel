@@ -12543,11 +12543,8 @@ static int hclge_init_ae_dev(struct hnae3_ae_dev *ae_dev)
 		goto err_mdiobus_unreg;
 
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(ae_dev)) {
-		ret = hclge_unic_init_iptbl_info(hdev);
-		if (ret)
-			goto err_mdiobus_unreg;
-	}
+	if (hnae3_dev_ubl_supported(ae_dev))
+		hclge_unic_init_iptbl_info(hdev);
 #endif
 
 	ret = hclge_mac_init(hdev);

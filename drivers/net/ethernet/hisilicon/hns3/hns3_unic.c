@@ -274,6 +274,9 @@ static int hns3_unic_add_mc_guid(struct net_device *netdev,
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	u8 mguid[UBL_ALEN] = {0};
 
+	if (!h->ae_algo->ops->add_addr)
+		return -EOPNOTSUPP;
+
 	if (!hns3_unic_mguid_valid_check(addr)) {
 		hns3_unic_format_sim_guid_addr(format_simple_guid_addr, addr);
 		netdev_err(netdev, "Add mc guid err! invalid guid: %s\n",
@@ -282,11 +285,9 @@ static int hns3_unic_add_mc_guid(struct net_device *netdev,
 	}
 
 	hns3_unic_extern_mc_guid(mguid, addr);
-	if (h->ae_algo->ops->add_addr)
-		return h->ae_algo->ops->add_addr(h, (const u8 *)mguid,
-						 HNAE3_UNIC_MCGUID_ADDR);
 
-	return 0;
+	return h->ae_algo->ops->add_addr(h, (const u8 *)mguid,
+					 HNAE3_UNIC_MCGUID_ADDR);
 }
 
 static int hns3_unic_del_mc_guid(struct net_device *netdev,
@@ -296,6 +297,9 @@ static int hns3_unic_del_mc_guid(struct net_device *netdev,
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	u8 mguid[UBL_ALEN] = {0};
 
+	if (!h->ae_algo->ops->rm_addr)
+		return -EOPNOTSUPP;
+
 	if (!hns3_unic_mguid_valid_check(addr)) {
 		hns3_unic_format_sim_guid_addr(format_simple_guid_addr, addr);
 		netdev_err(netdev, "Del mc guid err! invalid guid: %s\n",
@@ -304,11 +308,9 @@ static int hns3_unic_del_mc_guid(struct net_device *netdev,
 	}
 
 	hns3_unic_extern_mc_guid(mguid, addr);
-	if (h->ae_algo->ops->rm_addr)
-		return h->ae_algo->ops->rm_addr(h, (const u8 *)mguid,
-						HNAE3_UNIC_MCGUID_ADDR);
 
-	return 0;
+	return h->ae_algo->ops->rm_addr(h, (const u8 *)mguid,
+					HNAE3_UNIC_MCGUID_ADDR);
 }
 
 static u8 hns3_unic_get_netdev_flags(struct net_device *netdev)

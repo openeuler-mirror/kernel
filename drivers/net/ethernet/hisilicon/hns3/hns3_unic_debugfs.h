@@ -20,7 +20,6 @@ enum hns3_dbg_ub_dentry_type {
 	UB_DBG_DENTRY_IP,
 	UB_DBG_DENTRY_GUID,
 	UB_DBG_DENTRY_FASTPATH,
-	UB_DBG_DENTRY_END,
 };
 
 int hns3_unic_dbg_init(struct hnae3_handle *handle, struct dentry *parent);

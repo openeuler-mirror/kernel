@@ -80,6 +80,9 @@ int hclge_init_udma_client_instance(struct hnae3_ae_dev *ae_dev,
 		return 0;
 
 	client = hdev->udma_client;
+	if (!client->ops->init_instance)
+		return -EOPNOTSUPP;
+
 	ret = hclge_init_udma_base_info(vport);
 	if (ret)
 		return ret;
@@ -105,7 +108,8 @@ init_udma_err:
 	while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
 		msleep(HCLGE_WAIT_RESET_DONE);
 
-	hdev->udma_client->ops->uninit_instance(&vport->udma, 0);
+	if (hdev->udma_client->ops->uninit_instance)
+		hdev->udma_client->ops->uninit_instance(&vport->udma, 0);
 
 	return ret;
 }

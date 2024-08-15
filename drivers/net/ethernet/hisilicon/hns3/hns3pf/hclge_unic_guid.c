@@ -68,7 +68,6 @@ static int hclge_unic_lookup_mc_guid(struct hclge_vport *vport,
 	struct hclge_unic_mc_guid_cfg_cmd *resp;
 	struct hclge_dev *hdev = vport->back;
 	u16 resp_code;
-	u16 retval;
 	int ret;
 
 	resp = (struct hclge_unic_mc_guid_cfg_cmd *)desc[0].data;
@@ -85,13 +84,8 @@ static int hclge_unic_lookup_mc_guid(struct hclge_vport *vport,
 			ret);
 		return ret;
 	}
-	resp_code = resp->hit_info;
-	retval = le16_to_cpu(desc[0].retval);
-	if (retval) {
-		dev_err(&hdev->pdev->dev, "cmdq execute failed for lookup mc guid, status = %u.\n",
-			retval);
-		return -EIO;
-	} else if (!(resp_code & HCLGE_UNIC_GUID_HIT)) {
+	resp_code = le16_to_cpu(resp->hit_info);
+	if (!(resp_code & HCLGE_UNIC_GUID_HIT)) {
 		dev_dbg(&hdev->pdev->dev, "lookup mc guid failed for miss.\n");
 		return -ENOENT;
 	}
@@ -108,18 +102,17 @@ static int hclge_unic_fill_add_desc(struct hclge_vport *vport,
 	struct hclge_dev *hdev = vport->back;
 	u16 mc_guid_tbl_size;
 
-	mc_guid_tbl_size = min(HCLGE_UNIC_MC_GUID_NUM,
-			       hdev->ae_dev->dev_specs.guid_tbl_space -
-			       HCLGE_VPORT_NUM);
+	mc_guid_tbl_size = hclge_unic_real_mguid_tbl_size(hdev);
 	if (is_new_guid) {
 		req->index = find_first_zero_bit(hdev->mc_guid_tbl_bmap,
 						 HCLGE_UNIC_MC_GUID_NUM);
-		if (req->index >= mc_guid_tbl_size)
-			return -ENOSPC;
 	} else {
 		rsp = (struct hclge_unic_mc_guid_cfg_cmd *)desc[0].data;
 		req->index = rsp->index;
 	}
+
+	if (req->index >= mc_guid_tbl_size)
+		return -ENOSPC;
 
 	if (vport->vport_id >= HCLGE_VPORT_NUM)
 		return -EIO;
@@ -140,7 +133,6 @@ static int hclge_unic_add_mc_guid_cmd(struct hclge_vport *vport,
 				      struct hclge_desc *desc)
 {
 	struct hclge_dev *hdev = vport->back;
-	u16 retval;
 	int ret;
 
 	req->vld_lookup_flag = BIT(HCLGE_UNIC_ENTRY_VLD_B);
@@ -156,18 +148,12 @@ static int hclge_unic_add_mc_guid_cmd(struct hclge_vport *vport,
 		dev_err(&hdev->pdev->dev, "add mc guid failed, ret = %d\n", ret);
 		return ret;
 	}
-	retval = le16_to_cpu(desc[0].retval);
-	if (retval) {
-		dev_err(&hdev->pdev->dev, "cmdq execute failed for add mc guid, status = %u.\n",
-			retval);
-		return -EIO;
-	}
 
 	return 0;
 }
 
-int hclge_unic_add_mc_guid_common(struct hclge_vport *vport,
-				  const unsigned char *mguid)
+static int hclge_unic_add_mc_guid_common(struct hclge_vport *vport,
+					 const unsigned char *mguid)
 {
 	struct hclge_unic_mc_guid_cfg_cmd req = {0};
 	struct hclge_dev *hdev = vport->back;
@@ -179,7 +165,7 @@ int hclge_unic_add_mc_guid_common(struct hclge_vport *vport,
 	ret = hclge_unic_lookup_mc_guid(vport, &req, desc);
 	if (ret) {
 		if (hdev->used_mc_guid_num >=
-		    hdev->ae_dev->dev_specs.guid_tbl_space - HCLGE_VPORT_NUM)
+		    hclge_unic_real_mguid_tbl_size(hdev))
 			goto err_no_space;
 		is_new_guid = true;
 		memset(desc[0].data, 0, sizeof(desc[0].data));
@@ -200,7 +186,7 @@ int hclge_unic_add_mc_guid_common(struct hclge_vport *vport,
 		hdev->used_mc_guid_num++;
 	}
 
-	return 0;
+	return ret;
 err_no_space:
 	/* if already overflow, not to print each time */
 	if (!(vport->overflow_promisc_flags & HNAE3_OVERFLOW_MGP)) {

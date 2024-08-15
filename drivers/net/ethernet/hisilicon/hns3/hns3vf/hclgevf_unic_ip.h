@@ -15,7 +15,6 @@
 #ifndef __HCLGEVF_UNIC_IP_H
 #define __HCLGEVF_UNIC_IP_H
 
-#include <linux/in6.h>
 #include <linux/types.h>
 #include <net/ipv6.h>
 

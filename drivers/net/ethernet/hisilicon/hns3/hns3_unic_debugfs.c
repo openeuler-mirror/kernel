@@ -20,9 +20,6 @@
 #include "hns3_enet.h"
 #include "hns3_unic_debugfs.h"
 
-static const char ub_dbg_root_name[] = "ub";
-static struct dentry *ub_dbg_root;
-
 static struct hns3_dbg_dentry_info ub_dbg_dentry[] = {
 	{
 		.name = "ip_tbl"
@@ -172,26 +169,34 @@ static const struct file_operations ub_dbg_fops = {
 	.read  = hns3_unic_dbg_read,
 };
 
-static int hns3_unic_dbg_file_init(struct hnae3_handle *handle, u32 cmd)
+static int hns3_unic_dbg_file_init(struct hnae3_handle *handle, u32 index)
 {
 	struct hns3_dbg_data *data;
 	struct dentry *entry_dir;
+	struct dentry *file;
 
 	data = devm_kzalloc(&handle->pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
 
 	data->handle = handle;
-	data->cmd = ub_dbg_cmd[cmd].cmd;
-	entry_dir = ub_dbg_dentry[ub_dbg_cmd[cmd].dentry].dentry;
-	debugfs_create_file(ub_dbg_cmd[cmd].name, 0400, entry_dir,
-			    data, &ub_dbg_fops);
+	data->cmd = ub_dbg_cmd[index].cmd;
+	entry_dir = ub_dbg_dentry[ub_dbg_cmd[index].dentry].dentry;
+	file = debugfs_create_file(ub_dbg_cmd[index].name, 0400, entry_dir,
+				   data, &ub_dbg_fops);
+	if (IS_ERR_OR_NULL(file)) {
+		dev_err(&handle->pdev->dev, "failed to create %s file.\n",
+			ub_dbg_cmd[index].name);
+		return -EFAULT;
+	}
 
 	return 0;
 }
 
 int hns3_unic_dbg_init(struct hnae3_handle *handle, struct dentry *parent)
 {
+	char ub_dbg_root_name[] = "ub";
+	struct dentry *ub_dbg_root;
 	int ret = 0;
 	u32 i;
 
@@ -206,10 +211,21 @@ int hns3_unic_dbg_init(struct hnae3_handle *handle, struct dentry *parent)
 		return -ENOMEM;
 
 	ub_dbg_root = debugfs_create_dir(ub_dbg_root_name, parent);
+	if (IS_ERR_OR_NULL(ub_dbg_root)) {
+		dev_err(&handle->pdev->dev,
+			"failed to create unic debugfs root dir.\n");
+		return -EFAULT;
+	}
 
-	for (i = 0; i < UB_DBG_DENTRY_END; i++)
+	for (i = 0; i < ARRAY_SIZE(ub_dbg_dentry); i++) {
 		ub_dbg_dentry[i].dentry =
 			debugfs_create_dir(ub_dbg_dentry[i].name, ub_dbg_root);
+		if (IS_ERR_OR_NULL(ub_dbg_dentry[i].dentry)) {
+			dev_err(&handle->pdev->dev, "failed to create %s dir.\n",
+				ub_dbg_dentry[i].name);
+			return -EFAULT;
+		}
+	}
 
 	for (i = 0; i < ARRAY_SIZE(ub_dbg_cmd); i++) {
 		if (!ub_dbg_cmd[i].init) {
