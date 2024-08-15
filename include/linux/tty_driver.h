@@ -381,7 +381,6 @@ struct tty_operations {
 	void (*hangup)(struct tty_struct *tty);
 	int (*break_ctl)(struct tty_struct *tty, int state);
 	void (*flush_buffer)(struct tty_struct *tty);
-	int (*ldisc_ok)(struct tty_struct *tty, int ldisc);
 	void (*set_ldisc)(struct tty_struct *tty);
 	void (*wait_until_sent)(struct tty_struct *tty, int timeout);
 	void (*send_xchar)(struct tty_struct *tty, char ch);
@@ -400,7 +399,7 @@ struct tty_operations {
 	void (*poll_put_char)(struct tty_driver *driver, int line, char ch);
 #endif
 	int (*proc_show)(struct seq_file *m, void *driver);
-	KABI_RESERVE(0)
+	KABI_USE(0, int (*ldisc_ok)(struct tty_struct *tty, int ldisc))
 	KABI_RESERVE(1)
 } __randomize_layout;
 
