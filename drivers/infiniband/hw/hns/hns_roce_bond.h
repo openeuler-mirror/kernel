@@ -36,9 +36,7 @@ enum hns_roce_bond_state {
 	HNS_ROCE_BOND_NOT_ATTACHED,
 	HNS_ROCE_BOND_NOT_BONDED,
 	HNS_ROCE_BOND_IS_BONDED,
-	HNS_ROCE_BOND_REGISTERING,
-	HNS_ROCE_BOND_SLAVE_INC,
-	HNS_ROCE_BOND_SLAVE_DEC,
+	HNS_ROCE_BOND_SLAVE_CHANGE_NUM,
 	HNS_ROCE_BOND_SLAVE_CHANGESTATE,
 };
 
@@ -59,7 +57,6 @@ struct hns_roce_bond_group {
 	u8 active_slave_num;
 	u32 slave_map;
 	u32 active_slave_map;
-	u32 slave_map_diff;
 	u8 bond_id;
 	u8 bus_num;
 	struct bonding *bond;
