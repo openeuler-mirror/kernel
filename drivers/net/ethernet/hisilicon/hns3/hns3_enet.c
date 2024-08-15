@@ -5826,6 +5826,10 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 out_reg_netdev_fail:
 	hns3_state_uninit(handle);
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		hns3_unic_uninit(netdev);
+#endif
 out_dbg_init:
 	hns3_dbg_uninit(handle);
 	hns3_client_stop(handle);

@@ -27,6 +27,18 @@
 
 #define HNS3_UNIC_LB_TEST_PACKET_SIZE	128
 
+static const u8 mc_guid[][HNS3_SIMPLE_GUID_LEN] = {
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x00}, /* DHCPv4 */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x01}, /* DHCPv6 */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x02}, /* IP notify */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x03}, /* ULDP */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x04}, /* ULAP */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x05}, /* Time sync */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x06}, /* NPIC */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x07}, /* NNP */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x08}, /* PHCP */
+};
+
 void hns3_unic_set_default_cc(struct sk_buff *skb)
 {
 	struct ublhdr *ubl = (struct ublhdr *)skb->data;
@@ -325,23 +337,12 @@ void hns3_unic_set_rx_mode(struct net_device *netdev)
 	hns3_request_update_promisc_mode(h);
 }
 
-int hns3_unic_init_guid(struct net_device *netdev)
+static int hns3_unic_init_func_guid(struct net_device *netdev)
 {
-	const u8 mc_guid[][HNS3_SIMPLE_GUID_LEN] = {
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x00}, /* DHCPv4 */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x01}, /* DHCPv6 */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x02}, /* IP notify */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x03}, /* ULDP */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x04}, /* ULAP */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x05}, /* Time sync */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x06}, /* NPIC */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x07}, /* NNP */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x08}, /* PHCP */
-	};
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 	struct hnae3_handle *h = priv->ae_handle;
 	u8 temp_guid_addr[UBL_ALEN];
-	int ret, i;
+	int ret;
 
 	if (!h->ae_algo->ops->get_func_guid ||
 	    !h->ae_algo->ops->set_func_guid) {
@@ -355,6 +356,18 @@ int hns3_unic_init_guid(struct net_device *netdev)
 		return ret;
 	}
 
+	memcpy(netdev->dev_addr, temp_guid_addr, netdev->addr_len);
+	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
+
+	h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
+
+	return 0;
+}
+
+static int hns3_unic_init_mc_guid(struct net_device *netdev)
+{
+	int i, ret;
+
 	for (i = 0; i < ARRAY_SIZE(mc_guid); i++) {
 		ret = hns3_unic_add_mc_guid(netdev, mc_guid[i]);
 		if (ret) {
@@ -363,11 +376,6 @@ int hns3_unic_init_guid(struct net_device *netdev)
 		}
 	}
 
-	memcpy(netdev->dev_addr, temp_guid_addr, netdev->addr_len);
-	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
-
-	h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
-
 	return 0;
 
 err_add_mc_guid:
@@ -375,6 +383,35 @@ err_add_mc_guid:
 		(void)hns3_unic_del_mc_guid(netdev, mc_guid[i]);
 
 	return ret;
+}
+
+int hns3_unic_init_guid(struct net_device *netdev)
+{
+	int ret;
+
+	ret = hns3_unic_init_func_guid(netdev);
+	if (ret)
+		return ret;
+
+	return hns3_unic_init_mc_guid(netdev);
+}
+
+static void hns3_unic_uninit_mc_guid(struct net_device *netdev)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mc_guid); i++)
+		(void)hns3_unic_del_mc_guid(netdev, mc_guid[i]);
+}
+
+static void hns3_unic_uninit_guid(struct net_device *netdev)
+{
+	hns3_unic_uninit_mc_guid(netdev);
+}
+
+void hns3_unic_uninit(struct net_device *netdev)
+{
+	hns3_unic_uninit_guid(netdev);
 }
 
 int hns3_unic_fill_skb_desc(struct hns3_nic_priv *priv,
