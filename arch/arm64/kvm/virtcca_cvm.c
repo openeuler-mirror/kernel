@@ -17,7 +17,6 @@
 static DEFINE_SPINLOCK(cvm_vmid_lock);
 static unsigned long *cvm_vmid_bitmap;
 DEFINE_STATIC_KEY_FALSE(virtcca_cvm_is_available);
-DEFINE_STATIC_KEY_FALSE(virtcca_cvm_is_enable);
 #define SIMD_PAGE_SIZE 0x3000
 
 int kvm_enable_virtcca_cvm(struct kvm *kvm)
@@ -28,25 +27,6 @@ int kvm_enable_virtcca_cvm(struct kvm *kvm)
 	kvm->arch.is_virtcca_cvm = true;
 	return 0;
 }
-
-static int __init setup_virtcca_cvm_host(char *str)
-{
-	int ret;
-	unsigned int val;
-
-	if (!str)
-		return 0;
-
-	ret = kstrtouint(str, 10, &val);
-	if (ret) {
-		pr_warn("Unable to parse cvm_guest.\n");
-	} else {
-		if (val)
-			static_branch_enable(&virtcca_cvm_is_enable);
-	}
-	return ret;
-}
-early_param("virtcca_cvm_host", setup_virtcca_cvm_host);
 
 static int cvm_vmid_init(void)
 {
@@ -506,7 +486,7 @@ static int kvm_tmm_config_cvm(struct kvm *kvm, struct kvm_enable_cap *cap)
 	return r;
 }
 
-static int kvm_cvm_map_range(struct kvm *kvm)
+int kvm_cvm_map_range(struct kvm *kvm)
 {
 	int ret;
 	u64 curr_numa_set;

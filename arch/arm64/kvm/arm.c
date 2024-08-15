@@ -41,6 +41,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/sections.h>
 #include <asm/kvm_tmi.h>
+#include <asm/virtcca_cvm_host.h>
 #include <linux/perf/arm_pmu.h>
 
 #include <kvm/arm_hypercalls.h>
@@ -2671,7 +2672,7 @@ static __init int kvm_arm_init(void)
 	in_hyp_mode = is_kernel_in_hyp_mode();
 
 #ifdef CONFIG_HISI_VIRTCCA_HOST
-	if (static_branch_unlikely(&virtcca_cvm_is_enable) && in_hyp_mode) {
+	if (is_virtcca_cvm_enable() && in_hyp_mode) {
 		err = kvm_init_tmm();
 		if (err)
 			return err;

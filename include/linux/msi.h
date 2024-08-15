@@ -640,6 +640,10 @@ struct irq_domain *platform_msi_create_irq_domain(struct fwnode_handle *fwnode,
 						  struct irq_domain *parent);
 int platform_msi_domain_alloc_irqs(struct device *dev, unsigned int nvec,
 				   irq_write_msi_msg_t write_msi_msg);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+int platform_msi_domain_alloc_range_irqs(struct device *dev, unsigned int start,
+					unsigned int end, irq_write_msi_msg_t write_msi_msg);
+#endif
 void platform_msi_domain_free_irqs(struct device *dev);
 
 /* When an MSI domain is used as an intermediate domain */

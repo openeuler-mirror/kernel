@@ -11,8 +11,6 @@
 #include <linux/virtio_ring.h>
 #include <asm/sysreg.h>
 
-#define GRANULE_SIZE		4096
-
 #define NO_NUMA			0 /* numa bitmap */
 
 #define TMM_TTT_LEVEL_2 2
@@ -68,26 +66,59 @@ struct tmi_tec_params {
 	uint64_t ram_size;
 };
 
-#define TEC_ENTRY_FLAG_EMUL_MMIO		(1UL << 0U)
-#define TEC_ENTRY_FLAG_INJECT_SEA		(1UL << 1U)
-#define TEC_ENTRY_FLAG_TRAP_WFI		(1UL << 2U)
-#define TEC_ENTRY_FLAG_TRAP_WFE		(1UL << 3U)
+struct tmi_smmu_ste_params {
+	uint64_t ns_src;     /* non-secure STE source address */
+	uint64_t sid;        /* stream id */
+	uint64_t smmu_id;    /* smmu id */
+};
 
-#define TMI_EXIT_SYNC		0
-#define TMI_EXIT_IRQ		1
-#define TMI_EXIT_FIQ		2
-#define TMI_EXIT_PSCI		3
-#define TMI_EXIT_HOST_CALL	5
-#define TMI_EXIT_SERROR	6
+struct tmi_smmu_cfg_params {
+	uint64_t smmu_id;    /* smmu id */
+	uint64_t ioaddr;     /* smmu base address */
+	uint8_t strtab_base_RA_bit : 1; /* Read-Allocate hint */
+	uint8_t q_base_RA_WA_bit : 1; /* Write-Allocate hint*/
+	uint8_t is_cmd_queue : 1;    /* Whether to configure command queue */
+};
+
+#define TMI_SMMU_CMD_QUEUE  1
+#define TMI_SMMU_EVT_QUEUE  2
+struct tmi_smmu_queue_params {
+	uint64_t ns_src;     /* non-secure queue source address */
+	uint64_t smmu_base_addr;       /* smmu base address */
+	uint64_t size;       /* queue size */
+	uint64_t smmu_id;    /* smmu id */
+	uint64_t type;       /* cmdq or evtq */
+};
+
+#define MAX_DEV_PER_PORT 256
+struct tmi_dev_delegate_params {
+	/* BDF of PCIe root bus, F=0. BD are used to calculate APB base and port number. */
+	uint16_t root_bd;
+	uint16_t num_dev; /* number of attachable devices */
+	uint32_t _reserved; /* padding for 64-bit alignment */
+	uint16_t devs[MAX_DEV_PER_PORT]; /* BDF of each attachable device */
+};
+
+#define TEC_ENTRY_FLAG_EMUL_MMIO        (1UL << 0U)
+#define TEC_ENTRY_FLAG_INJECT_SEA       (1UL << 1U)
+#define TEC_ENTRY_FLAG_TRAP_WFI         (1UL << 2U)
+#define TEC_ENTRY_FLAG_TRAP_WFE         (1UL << 3U)
+
+#define TMI_EXIT_SYNC       0
+#define TMI_EXIT_IRQ        1
+#define TMI_EXIT_FIQ        2
+#define TMI_EXIT_PSCI       3
+#define TMI_EXIT_HOST_CALL  5
+#define TMI_EXIT_SERROR     6
 
 /*
  * The number of GPRs (starting from X0) per voluntary exit context.
  * Per SMCCC.
  */
- #define TEC_EXIT_NR_GPRS		(31U)
+ #define TEC_EXIT_NR_GPRS       (31U)
 
 /* Maximum number of Interrupt Controller List Registers. */
-#define TEC_GIC_NUM_LRS		(16U)
+#define TEC_GIC_NUM_LRS         (16U)
 
 struct tmi_tec_entry {
 	uint64_t flags;
@@ -125,45 +156,45 @@ struct tmi_tec_run {
 /******************************************************************************
  * Bit definitions inside the function id as per the SMC calling convention
  ******************************************************************************/
-#define FUNCID_TYPE_SHIFT		31
-#define FUNCID_CC_SHIFT		30
-#define FUNCID_OEN_SHIFT		24
-#define FUNCID_NUM_SHIFT		0
+#define FUNCID_TYPE_SHIFT       31
+#define FUNCID_CC_SHIFT         30
+#define FUNCID_OEN_SHIFT        24
+#define FUNCID_NUM_SHIFT        0
 
-#define FUNCID_TYPE_MASK		0x1
-#define FUNCID_CC_MASK			0x1
-#define FUNCID_OEN_MASK		0x3f
-#define FUNCID_NUM_MASK		0xffff
+#define FUNCID_TYPE_MASK        0x1
+#define FUNCID_CC_MASK          0x1
+#define FUNCID_OEN_MASK         0x3f
+#define FUNCID_NUM_MASK         0xffff
 
-#define FUNCID_TYPE_WIDTH		1
-#define FUNCID_CC_WIDTH		1
-#define FUNCID_OEN_WIDTH		6
-#define FUNCID_NUM_WIDTH		16
+#define FUNCID_TYPE_WIDTH       1
+#define FUNCID_CC_WIDTH         1
+#define FUNCID_OEN_WIDTH        6
+#define FUNCID_NUM_WIDTH        16
 
-#define SMC_64				1
-#define SMC_32				0
-#define SMC_TYPE_FAST			1
-#define SMC_TYPE_STD			0
+#define SMC_64                  1
+#define SMC_32                  0
+#define SMC_TYPE_FAST           1
+#define SMC_TYPE_STD            0
 
 /*****************************************************************************
  * Owning entity number definitions inside the function id as per the SMC
  * calling convention
  *****************************************************************************/
-#define OEN_ARM_START			0
-#define OEN_ARM_END			0
-#define OEN_CPU_START			1
-#define OEN_CPU_END			1
-#define OEN_SIP_START			2
-#define OEN_SIP_END			2
-#define OEN_OEM_START			3
-#define OEN_OEM_END			3
-#define OEN_STD_START			4	/* Standard Calls */
-#define OEN_STD_END			4
-#define OEN_TAP_START			48	/* Trusted Applications */
-#define OEN_TAP_END			49
-#define OEN_TOS_START			50	/* Trusted OS */
-#define OEN_TOS_END			63
-#define OEN_LIMIT				64
+#define OEN_ARM_START           0
+#define OEN_ARM_END             0
+#define OEN_CPU_START           1
+#define OEN_CPU_END             1
+#define OEN_SIP_START           2
+#define OEN_SIP_END             2
+#define OEN_OEM_START           3
+#define OEN_OEM_END             3
+#define OEN_STD_START           4	/* Standard Calls */
+#define OEN_STD_END             4
+#define OEN_TAP_START           48	/* Trusted Applications */
+#define OEN_TAP_END             49
+#define OEN_TOS_START           50	/* Trusted OS */
+#define OEN_TOS_END             63
+#define OEN_LIMIT               64
 
 /* Get TMI fastcall std FID from function number */
 #define TMI_FID(smc_cc, func_num)	\
@@ -185,45 +216,75 @@ struct tmi_tec_run {
  * always invoked by the Normal world, forward by SPMD and handled by the
  * TMM.
  */
-#define TMI_FNUM_VERSION_REQ			U(0x260)
-#define TMI_FNUM_MEM_INFO_SHOW			U(0x261)
-#define TMI_FNUM_DATA_CREATE			U(0x262)
-#define TMI_FNUM_DATA_DESTROY			U(0x263)
-#define TMI_FNUM_CVM_ACTIVATE			U(0x264)
-#define TMI_FNUM_CVM_CREATE			U(0x265)
-#define TMI_FNUM_CVM_DESTROY			U(0x266)
-#define TMI_FNUM_TEC_CREATE			U(0x267)
-#define TMI_FNUM_TEC_DESTROY			U(0x268)
-#define TMI_FNUM_TEC_ENTER			U(0x269)
-#define TMI_FNUM_TTT_CREATE			U(0x26A)
-#define TMI_FNUM_PSCI_COMPLETE			U(0x26B)
-#define TMI_FNUM_FEATURES			U(0x26C)
-#define TMI_FNUM_TTT_MAP_RANGE			U(0x26D)
-#define TMI_FNUM_TTT_UNMAP_RANGE		U(0x26E)
-#define TMI_FNUM_INF_TEST              U(0x270)
+#define TMI_FNUM_VERSION_REQ            U(0x260)
+#define TMI_FNUM_MEM_INFO_SHOW          U(0x261)
+#define TMI_FNUM_DATA_CREATE            U(0x262)
+#define TMI_FNUM_DATA_DESTROY           U(0x263)
+#define TMI_FNUM_CVM_ACTIVATE           U(0x264)
+#define TMI_FNUM_CVM_CREATE             U(0x265)
+#define TMI_FNUM_CVM_DESTROY            U(0x266)
+#define TMI_FNUM_TEC_CREATE             U(0x267)
+#define TMI_FNUM_TEC_DESTROY            U(0x268)
+#define TMI_FNUM_TEC_ENTER              U(0x269)
+#define TMI_FNUM_TTT_CREATE             U(0x26A)
+#define TMI_FNUM_PSCI_COMPLETE          U(0x26B)
+#define TMI_FNUM_FEATURES               U(0x26C)
+#define TMI_FNUM_TTT_MAP_RANGE          U(0x26D)
+#define TMI_FNUM_TTT_UNMAP_RANGE        U(0x26E)
+#define TMI_FNUM_INF_TEST               U(0x270)
+
+#define TMI_FNUM_SMMU_QUEUE_CREATE      U(0x277)
+#define TMI_FNUM_SMMU_QUEUE_WRITE       U(0x278)
+#define TMI_FNUM_SMMU_STE_CREATE        U(0x279)
+#define TMI_FNUM_MMIO_MAP               U(0x27A)
+#define TMI_FNUM_MMIO_UNMAP             U(0x27B)
+#define TMI_FNUM_MMIO_WRITE             U(0x27C)
+#define TMI_FNUM_MMIO_READ              U(0x27D)
+#define TMI_FNUM_DEV_DELEGATE           U(0x27E)
+#define TMI_FNUM_DEV_ATTACH             U(0x27F)
+#define TMI_FNUM_HANDLE_S_EVTQ          U(0x280)
+#define TMI_FNUM_SMMU_DEVICE_RESET      U(0x281)
+#define TMI_FNUM_SMMU_WRITE             U(0x282)
+#define TMI_FNUM_SMMU_READ              U(0x283)
+#define TMI_FNUM_SMMU_PCIE_CORE_CHECK   U(0x284)
 
 /* TMI SMC64 PIDs handled by the SPMD */
-#define TMI_TMM_VERSION_REQ			TMI_FID(SMC_64, TMI_FNUM_VERSION_REQ)
-#define TMI_TMM_DATA_CREATE			TMI_FID(SMC_64, TMI_FNUM_DATA_CREATE)
-#define TMI_TMM_DATA_DESTROY			TMI_FID(SMC_64, TMI_FNUM_DATA_DESTROY)
-#define TMI_TMM_CVM_ACTIVATE			TMI_FID(SMC_64, TMI_FNUM_CVM_ACTIVATE)
-#define TMI_TMM_CVM_CREATE			TMI_FID(SMC_64, TMI_FNUM_CVM_CREATE)
-#define TMI_TMM_CVM_DESTROY			TMI_FID(SMC_64, TMI_FNUM_CVM_DESTROY)
-#define TMI_TMM_TEC_CREATE			TMI_FID(SMC_64, TMI_FNUM_TEC_CREATE)
-#define TMI_TMM_TEC_DESTROY			TMI_FID(SMC_64, TMI_FNUM_TEC_DESTROY)
-#define TMI_TMM_TEC_ENTER			TMI_FID(SMC_64, TMI_FNUM_TEC_ENTER)
-#define TMI_TMM_TTT_CREATE			TMI_FID(SMC_64, TMI_FNUM_TTT_CREATE)
-#define TMI_TMM_PSCI_COMPLETE			TMI_FID(SMC_64, TMI_FNUM_PSCI_COMPLETE)
-#define TMI_TMM_FEATURES			TMI_FID(SMC_64, TMI_FNUM_FEATURES)
-#define TMI_TMM_MEM_INFO_SHOW			TMI_FID(SMC_64, TMI_FNUM_MEM_INFO_SHOW)
-#define TMI_TMM_TTT_MAP_RANGE			TMI_FID(SMC_64, TMI_FNUM_TTT_MAP_RANGE)
-#define TMI_TMM_TTT_UNMAP_RANGE			TMI_FID(SMC_64, TMI_FNUM_TTT_UNMAP_RANGE)
+#define TMI_TMM_VERSION_REQ             TMI_FID(SMC_64, TMI_FNUM_VERSION_REQ)
+#define TMI_TMM_DATA_CREATE             TMI_FID(SMC_64, TMI_FNUM_DATA_CREATE)
+#define TMI_TMM_DATA_DESTROY            TMI_FID(SMC_64, TMI_FNUM_DATA_DESTROY)
+#define TMI_TMM_CVM_ACTIVATE            TMI_FID(SMC_64, TMI_FNUM_CVM_ACTIVATE)
+#define TMI_TMM_CVM_CREATE              TMI_FID(SMC_64, TMI_FNUM_CVM_CREATE)
+#define TMI_TMM_CVM_DESTROY             TMI_FID(SMC_64, TMI_FNUM_CVM_DESTROY)
+#define TMI_TMM_TEC_CREATE              TMI_FID(SMC_64, TMI_FNUM_TEC_CREATE)
+#define TMI_TMM_TEC_DESTROY             TMI_FID(SMC_64, TMI_FNUM_TEC_DESTROY)
+#define TMI_TMM_TEC_ENTER               TMI_FID(SMC_64, TMI_FNUM_TEC_ENTER)
+#define TMI_TMM_TTT_CREATE              TMI_FID(SMC_64, TMI_FNUM_TTT_CREATE)
+#define TMI_TMM_PSCI_COMPLETE           TMI_FID(SMC_64, TMI_FNUM_PSCI_COMPLETE)
+#define TMI_TMM_FEATURES                TMI_FID(SMC_64, TMI_FNUM_FEATURES)
+#define TMI_TMM_MEM_INFO_SHOW           TMI_FID(SMC_64, TMI_FNUM_MEM_INFO_SHOW)
+#define TMI_TMM_TTT_MAP_RANGE           TMI_FID(SMC_64, TMI_FNUM_TTT_MAP_RANGE)
+#define TMI_TMM_TTT_UNMAP_RANGE         TMI_FID(SMC_64, TMI_FNUM_TTT_UNMAP_RANGE)
 #define TMI_TMM_INF_TEST                TMI_FID(SMC_64, TMI_FNUM_INF_TEST)
+
+#define TMI_TMM_SMMU_QUEUE_CREATE       TMI_FID(SMC_64, TMI_FNUM_SMMU_QUEUE_CREATE)
+#define TMI_TMM_SMMU_QUEUE_WRITE        TMI_FID(SMC_64, TMI_FNUM_SMMU_QUEUE_WRITE)
+#define TMI_TMM_SMMU_STE_CREATE         TMI_FID(SMC_64, TMI_FNUM_SMMU_STE_CREATE)
+#define TMI_TMM_MMIO_MAP                TMI_FID(SMC_64, TMI_FNUM_MMIO_MAP)
+#define TMI_TMM_MMIO_UNMAP              TMI_FID(SMC_64, TMI_FNUM_MMIO_UNMAP)
+#define TMI_TMM_MMIO_WRITE              TMI_FID(SMC_64, TMI_FNUM_MMIO_WRITE)
+#define TMI_TMM_MMIO_READ               TMI_FID(SMC_64, TMI_FNUM_MMIO_READ)
+#define TMI_TMM_DEV_DELEGATE            TMI_FID(SMC_64, TMI_FNUM_DEV_DELEGATE)
+#define TMI_TMM_DEV_ATTACH              TMI_FID(SMC_64, TMI_FNUM_DEV_ATTACH)
+#define TMI_TMM_HANDLE_S_EVTQ           TMI_FID(SMC_64, TMI_FNUM_HANDLE_S_EVTQ)
+#define TMI_TMM_SMMU_DEVICE_RESET       TMI_FID(SMC_64, TMI_FNUM_SMMU_DEVICE_RESET)
+#define TMI_TMM_SMMU_WRITE              TMI_FID(SMC_64, TMI_FNUM_SMMU_WRITE)
+#define TMI_TMM_SMMU_READ               TMI_FID(SMC_64, TMI_FNUM_SMMU_READ)
+#define TMI_TMM_SMMU_PCIE_CORE_CHECK    TMI_FID(SMC_64, TMI_FNUM_SMMU_PCIE_CORE_CHECK)
 
 #define TMI_ABI_VERSION_GET_MAJOR(_version) ((_version) >> 16)
 #define TMI_ABI_VERSION_GET_MINOR(_version) ((_version) & 0xFFFF)
 
-#define TMI_ABI_VERSION_MAJOR			U(0x1)
+#define TMI_ABI_VERSION_MAJOR			U(0x2)
 
 /* KVM_CAP_ARM_TMM on VM fd */
 #define KVM_CAP_ARM_TMM_CONFIG_CVM_HOST		0
@@ -244,7 +305,6 @@ struct tmi_tec_run {
 #define KVM_CAP_ARM_TMM_CFG_PMU					4
 
 DECLARE_STATIC_KEY_FALSE(virtcca_cvm_is_available);
-DECLARE_STATIC_KEY_FALSE(virtcca_cvm_is_enable);
 
 struct kvm_cap_arm_tmm_config_item {
 	__u32 cfg;
@@ -321,6 +381,21 @@ u64 tmi_ttt_map_range(u64 rd, u64 map_addr, u64 size, u64 cur_node, u64 target_n
 u64 tmi_ttt_unmap_range(u64 rd, u64 map_addr, u64 size, u64 node_id);
 u64 tmi_mem_info_show(u64 mem_info_addr);
 
+u64 tmi_smmu_queue_create(u64 params_ptr);
+u64 tmi_smmu_queue_write(uint64_t cmd0, uint64_t cmd1, u64 smmu_id);
+u64 tmi_smmu_ste_create(u64 params_ptr);
+u64 tmi_mmio_map(u64 rd, u64 map_addr, u64 level, u64 ttte);
+u64 tmi_mmio_unmap(u64 rd, u64 map_addr, u64 level);
+u64 tmi_mmio_write(u64 addr, u64 val, u64 bits, u64 dev_num);
+u64 tmi_mmio_read(u64 addr, u64 bits, u64 dev_num);
+u64 tmi_dev_delegate(u64 params);
+u64 tmi_dev_attach(u64 vdev, u64 rd, u64 smmu_id);
+u64 tmi_handle_s_evtq(u64 smmu_id);
+u64 tmi_smmu_device_reset(u64 params);
+u64 tmi_smmu_pcie_core_check(u64 smmu_base);
+u64 tmi_smmu_write(u64 smmu_base, u64 reg_offset, u64 val, u64 bits);
+u64 tmi_smmu_read(u64 smmu_base, u64 reg_offset, u64 bits);
+
 void kvm_cvm_vcpu_put(struct kvm_vcpu *vcpu);
 int kvm_load_user_data(struct kvm *kvm, unsigned long arg);
 unsigned long cvm_psci_vcpu_affinity_info(struct kvm_vcpu *vcpu,
@@ -329,5 +404,6 @@ int kvm_cvm_vcpu_set_events(struct kvm_vcpu *vcpu,
 	bool serror_pending, bool ext_dabt_pending);
 int kvm_init_cvm_vm(struct kvm *kvm);
 int kvm_enable_virtcca_cvm(struct kvm *kvm);
+
 #endif
 #endif

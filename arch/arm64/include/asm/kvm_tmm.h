@@ -7,6 +7,13 @@
 
 #include <uapi/linux/kvm.h>
 
+/*
+ * There is a conflict with the internal iova of CVM,
+ * so it is necessary to offset the msi iova.
+ */
+#define CVM_MSI_ORIG_IOVA 0x8000000
+#define CVM_MSI_IOVA_OFFSET (-0x1000000)
+
 enum virtcca_cvm_state {
 	CVM_STATE_NONE = 1,
 	CVM_STATE_NEW,
@@ -59,6 +66,7 @@ struct virtcca_cvm {
 	u64 ram_size;
 	struct kvm_numa_info numa_info;
 	struct tmi_cvm_params *params;
+	bool is_mapped; /* Whether the cvm RAM memory is mapped */
 };
 
 /*
@@ -68,6 +76,11 @@ struct virtcca_cvm_tec {
 	u64 tec;
 	bool tec_created;
 	void *tec_run;
+};
+
+struct cvm_ttt_addr {
+	struct list_head list;
+	u64 addr;
 };
 
 int kvm_init_tmm(void);
@@ -83,8 +96,19 @@ int cvm_psci_complete(struct kvm_vcpu *calling, struct kvm_vcpu *target);
 
 void kvm_cvm_unmap_destroy_range(struct kvm *kvm);
 
+int kvm_cvm_map_range(struct kvm *kvm);
+int cvm_arm_smmu_domain_set_kvm(void *group);
+int kvm_cvm_map_unmap_ipa_range(struct kvm *kvm, phys_addr_t ipa_base, phys_addr_t pa,
+	unsigned long map_size, uint32_t is_map);
+int kvm_cvm_map_ipa_mmio(struct kvm *kvm, phys_addr_t ipa_base,
+	phys_addr_t pa, unsigned long map_size);
+
 #define CVM_TTT_BLOCK_LEVEL	2
 #define CVM_TTT_MAX_LEVEL	3
+
+#define CVM_MAP_IPA_RAM	1
+#define CVM_MAP_IPA_SMMU	2
+#define CVM_MAP_IPA_UNPROTECTED	4
 
 #define CVM_PAGE_SHIFT		12
 #define CVM_PAGE_SIZE		BIT(CVM_PAGE_SHIFT)
