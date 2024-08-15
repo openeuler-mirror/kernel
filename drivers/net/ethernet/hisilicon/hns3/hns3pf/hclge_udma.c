@@ -16,6 +16,7 @@
 #include "hclge_main.h"
 #include "hclge_err.h"
 #include "hclge_debugfs.h"
+#include "hclge_tm.h"
 #include "hclge_udma.h"
 
 static const struct hclge_dbg_status_dfx_info hclge_dbg_rst_info_ub[] = {
@@ -135,4 +136,61 @@ void hclge_dbg_dump_udma_rst_info(struct hclge_dev *hdev, char *buf, int len,
 					  hclge_read_dev(&hdev->hw, offset));
 		}
 	}
+}
+
+int hclge_set_fastpath_cmd(struct hnae3_ae_dev *ae_dev, bool fastpath_en)
+{
+	struct hclge_dev *hdev = ae_dev->priv;
+	struct hclge_config_fastpath_cmd *req;
+	struct hclge_desc desc;
+
+	if (!hnae3_dev_udma_supported(ae_dev))
+		return 0;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_COMM_CFG_FASTPATH, false);
+	req = (struct hclge_config_fastpath_cmd *)desc.data;
+	req->fastpath_en = fastpath_en;
+
+	return hclge_cmd_send(&hdev->hw, &desc, 1);
+}
+
+int hclge_set_fastpath(struct hnae3_ae_dev *ae_dev, bool fastpath_en)
+{
+	struct hclge_dev *hdev = ae_dev->priv;
+	int last_bad_ret = 0;
+	int ret;
+
+	while (test_bit(HCLGE_STATE_RST_HANDLING, &hdev->state))
+		msleep(HCLGE_WAIT_RESET_DONE);
+
+	rtnl_lock();
+	ret = hclge_notify_client(hdev, HNAE3_DOWN_CLIENT);
+	if (ret) {
+		rtnl_unlock();
+		return ret;
+	}
+
+	ret = hclge_tm_flush_cfg(hdev, true);
+	if (ret) {
+		rtnl_unlock();
+		return ret;
+	}
+
+	ret = hclge_set_fastpath_cmd(ae_dev, fastpath_en);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to set fastpath, ret = %d\n", ret);
+		last_bad_ret = ret;
+	}
+
+	ret = hclge_tm_flush_cfg(hdev, false);
+	if (ret)
+		last_bad_ret = ret;
+
+	ret = hclge_notify_client(hdev, HNAE3_UP_CLIENT);
+	if (ret)
+		last_bad_ret = ret;
+
+	rtnl_unlock();
+	return last_bad_ret;
 }

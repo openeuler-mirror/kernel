@@ -3193,7 +3193,7 @@ bool hclge_find_error_source(struct hclge_dev *hdev)
 			  HCLGE_RAS_REG_ERR_MASK;
 #if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 	udma_err_src_flag = hclge_get_udma_error_reg(hdev) &
-			   HCLGE_RAS_REG_ERR_MASK_UB;
+			    HCLGE_RAS_REG_ERR_MASK_UB;
 
 	return msix_src_flag || hw_err_src_flag || udma_err_src_flag;
 #else

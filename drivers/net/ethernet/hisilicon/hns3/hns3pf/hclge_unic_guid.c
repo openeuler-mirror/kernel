@@ -183,8 +183,8 @@ int hclge_unic_add_mc_guid_common(struct hclge_vport *vport,
 			goto err_no_space;
 		is_new_guid = true;
 		memset(desc[0].data, 0, sizeof(desc[0].data));
-		memset(desc[1].data, 0, sizeof(desc[0].data));
-		memset(desc[2].data, 0, sizeof(desc[0].data));
+		memset(desc[1].data, 0, sizeof(desc[1].data));
+		memset(desc[2].data, 0, sizeof(desc[2].data));
 	}
 
 	ret = hclge_unic_fill_add_desc(vport, &req, desc, is_new_guid);
@@ -213,11 +213,15 @@ err_no_space:
 
 static bool hclge_unic_is_all_function_deleted(struct hclge_desc *desc)
 {
-#define HCLGE_UNIC_DWORD_OF_MGUID 4
+	struct hclge_unic_mc_guid_cfg_cmd_1 *resp1;
+	struct hclge_unic_mc_guid_cfg_cmd_2 *resp2;
 	int i;
 
+	resp1 = (struct hclge_unic_mc_guid_cfg_cmd_1 *)desc[1].data;
+	resp2 = (struct hclge_unic_mc_guid_cfg_cmd_2 *)desc[2].data;
+
 	for (i = 0; i < HCLGE_UNIC_DWORD_OF_MGUID; i++) {
-		if (desc[1].data[2 + i] || desc[2].data[2 + i])
+		if (resp1->guid_data_h[i] || resp2->guid_data_l[i])
 			return false;
 	}
 
@@ -404,6 +408,8 @@ static void hclge_unic_uninit_vport_guid_list(struct hclge_vport *vport)
 			list_del(&guid_node->node);
 			kfree(guid_node);
 			break;
+		default:
+			break;
 		}
 	}
 
@@ -437,15 +443,14 @@ void hclge_unic_uninit_mguid_table(struct hclge_dev *hdev)
 int hclge_unic_set_vf_mc_guid(struct hclge_vport *vport,
 			      struct hclge_mbx_vf_to_pf_cmd *mbx_req)
 {
-	__le16 proto = *(__le16 *)(mbx_req->msg.data);
 	struct hclge_dev *hdev = vport->back;
-	__le16 *mguid_proto = NULL;
+	__le16 *mguid_proto;
 	u8 mguid[UBL_ALEN];
 	int ret = 0;
 
-	memset(mguid, 0xff, UBL_ALEN);
+	memset(mguid, 0xff, HCLGE_COMM_MGUID_PREFIX_LEN);
 	mguid_proto = (__le16 *)&mguid[HCLGE_COMM_MGUID_PREFIX_LEN];
-	*mguid_proto = proto;
+	*mguid_proto = *(__le16 *)(mbx_req->msg.data);
 
 	if (mbx_req->msg.subcode == HCLGE_MBX_MC_GUID_MC_ADD) {
 		ret = hclge_unic_update_guid_list(vport,
@@ -509,6 +514,8 @@ static void hclge_unic_build_del_list(struct list_head *list,
 				kfree(guid_node);
 			}
 			break;
+		default:
+			break;
 		}
 	}
 }
@@ -525,8 +532,8 @@ static void hclge_unic_unsync_del_list(struct hclge_vport *vport,
 	list_for_each_entry_safe(guid_node, tmp, tmp_del_list, node) {
 		ret = unsync(vport, guid_node->mguid);
 		if (!ret || ret == -ENOENT) {
-			/* clear all mac addr from hardware, but remain these
-			 * mac addr in the mac list, and restore them after
+			/* clear all guid addr from hardware, but remain these
+			 * guid addr in the guid list, and restore them after
 			 * vf reset finished.
 			 */
 			if (!is_del_list &&

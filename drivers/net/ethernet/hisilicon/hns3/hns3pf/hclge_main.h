@@ -1137,6 +1137,12 @@ struct hclge_link_mode_bmap {
 	enum ethtool_link_mode_bit_indices link_mode;
 };
 
+static inline u16 hclge_unic_real_mguid_tbl_size(struct hclge_dev *hdev)
+{
+	return min(HCLGE_UNIC_MC_GUID_NUM,
+		   hdev->ae_dev->dev_specs.guid_tbl_space - HCLGE_VPORT_NUM);
+}
+
 int hclge_set_vport_promisc_mode(struct hclge_vport *vport, bool en_uc_pmc,
 				 bool en_mc_pmc, bool en_bc_pmc);
 int hclge_add_uc_addr_common(struct hclge_vport *vport,

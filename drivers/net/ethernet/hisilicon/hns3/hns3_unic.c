@@ -101,8 +101,8 @@ u8 hns3_unic_get_l3_type(struct net_device *netdev, u32 ol_info, u32 l234info)
 	return UB_UNKNOWN_CFG_TYPE;
 }
 
-static int addr_event(struct notifier_block *nb, unsigned long event,
-		      struct sockaddr *sa, struct net_device *ndev)
+static int addr_event(unsigned long event, struct sockaddr *sa,
+		      struct net_device *ndev)
 {
 	struct hnae3_handle *handle;
 	int ret;
@@ -153,7 +153,7 @@ static int unic_inetaddr_event(struct notifier_block *this, unsigned long event,
 	in.sin_family = AF_INET;
 	in.sin_addr.s_addr = ifa4->ifa_address;
 
-	return addr_event(this, event, (struct sockaddr *)&in, ndev);
+	return addr_event(event, (struct sockaddr *)&in, ndev);
 }
 
 static int unic_inet6addr_event(struct notifier_block *this, unsigned long event,
@@ -166,7 +166,7 @@ static int unic_inet6addr_event(struct notifier_block *this, unsigned long event
 	in6.sin6_family = AF_INET6;
 	in6.sin6_addr = ifa6->addr;
 
-	return addr_event(this, event, (struct sockaddr *)&in6, ndev);
+	return addr_event(event, (struct sockaddr *)&in6, ndev);
 }
 
 static struct notifier_block unic_inetaddr_notifier = {
@@ -179,14 +179,14 @@ static struct notifier_block unic_inet6addr_notifier = {
 
 void register_ipaddr_notifier(void)
 {
-	register_inetaddr_notifier(&unic_inetaddr_notifier);
-	register_inet6addr_notifier(&unic_inet6addr_notifier);
+	(void)register_inetaddr_notifier(&unic_inetaddr_notifier);
+	(void)register_inet6addr_notifier(&unic_inet6addr_notifier);
 }
 
 void unregister_ipaddr_notifier(void)
 {
-	unregister_inetaddr_notifier(&unic_inetaddr_notifier);
-	unregister_inet6addr_notifier(&unic_inet6addr_notifier);
+	(void)unregister_inetaddr_notifier(&unic_inetaddr_notifier);
+	(void)unregister_inet6addr_notifier(&unic_inet6addr_notifier);
 }
 
 #define UNIC_DHCPV4_PROTO 0x0100
@@ -251,7 +251,7 @@ out:
 	if (is_success)
 		tqp_vector->rx_group.total_packets++;
 	else
-		print_hex_dump(KERN_ERR, "ubl selftest:", DUMP_PREFIX_OFFSET,
+		print_hex_dump(KERN_ERR, "selftest:", DUMP_PREFIX_OFFSET,
 			       HNS3_UNIC_DUMP_ROW_SIZE, 1, skb->data, len, true);
 
 	dev_kfree_skb_any(skb);

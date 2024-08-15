@@ -19,6 +19,18 @@ struct hclge_unic_mc_guid_cfg_cmd {
 	__le16 hit_info;
 };
 
+#define HCLGE_UNIC_CMD_HDR_LEN_OF_MGUID 8
+#define HCLGE_UNIC_DWORD_OF_MGUID 4
+struct hclge_unic_mc_guid_cfg_cmd_1 {
+	u8 rsvd[HCLGE_UNIC_CMD_HDR_LEN_OF_MGUID];
+	__le32 guid_data_h[HCLGE_UNIC_DWORD_OF_MGUID];
+};
+
+struct hclge_unic_mc_guid_cfg_cmd_2 {
+	u8 rsvd[HCLGE_UNIC_CMD_HDR_LEN_OF_MGUID];
+	__le32 guid_data_l[HCLGE_UNIC_DWORD_OF_MGUID];
+};
+
 #define HCLGE_UNIC_BIT_NUM_PER_BD 128
 
 #define HCLGE_UNIC_ENTRY_VLD_B 0

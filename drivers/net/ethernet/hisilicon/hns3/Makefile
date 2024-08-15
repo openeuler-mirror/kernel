@@ -33,6 +33,6 @@ hclge-objs = hns3pf/hclge_main.o hns3pf/hclge_mdio.o hns3pf/hclge_tm.o hns3pf/hc
 hclge-objs += hns3pf/hclge_ext.o
 
 hclge-$(CONFIG_HNS3_UBL) += hns3_common/hclge_comm_unic_addr.o hns3pf/hclge_unic_ip.o hns3pf/hclge_unic_guid.o \
-			hns3pf/hclge_unic_addr.o
+			hns3pf/hclge_unic_addr.o hns3pf/hclge_unic_debugfs.o
 hclge-$(CONFIG_UB_UDMA_HNS3) += hns3pf/hclge_udma.o
 hclge-$(CONFIG_HNS3_DCB) += hns3pf/hclge_dcb.o

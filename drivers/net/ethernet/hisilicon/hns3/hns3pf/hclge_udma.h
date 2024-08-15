@@ -29,5 +29,7 @@ int hclge_init_udma_client_instance(struct hnae3_ae_dev *ae_dev,
 u32 hclge_get_udma_error_reg(struct hclge_dev *hdev);
 void hclge_dbg_dump_udma_rst_info(struct hclge_dev *hdev, char *buf, int len,
 				  int *pos);
+int hclge_set_fastpath_cmd(struct hnae3_ae_dev *ae_dev, bool fastpath_en);
+int hclge_set_fastpath(struct hnae3_ae_dev *ae_dev, bool fastpath_en);
 
 #endif

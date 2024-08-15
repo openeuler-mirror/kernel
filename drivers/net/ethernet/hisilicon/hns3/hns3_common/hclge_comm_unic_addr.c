@@ -53,6 +53,8 @@ hclge_comm_unic_update_addr_node(struct hclge_comm_unic_addr_node *addr_node,
 		if (addr_node->state == HCLGE_COMM_UNIC_ADDR_TO_ADD)
 			addr_node->state = HCLGE_COMM_UNIC_ADDR_ACTIVE;
 		break;
+	default:
+		break;
 	}
 }
 

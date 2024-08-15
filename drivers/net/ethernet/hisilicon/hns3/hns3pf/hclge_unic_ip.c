@@ -403,10 +403,11 @@ static bool hclge_unic_need_sync_ip_table(struct hclge_vport *vport)
 
 void hclge_unic_sync_ip_table(struct hclge_dev *hdev)
 {
+	struct hclge_vport *vport;
 	int i;
 
 	for (i = 0; i < hdev->num_alloc_vport; i++) {
-		struct hclge_vport *vport = &hdev->vport[i];
+		vport = &hdev->vport[i];
 
 		if (!hclge_unic_need_sync_ip_table(vport))
 			continue;
@@ -458,6 +459,8 @@ static void hclge_unic_build_ip_del_list(struct list_head *list,
 				list_del(&ip_cfg->node);
 				kfree(ip_cfg);
 			}
+			break;
+		default:
 			break;
 		}
 	}
@@ -540,6 +543,8 @@ static void hclge_unic_uninit_vport_ip_list(struct hclge_vport *vport)
 		case HCLGE_COMM_UNIC_ADDR_TO_ADD:
 			list_del(&ip_node->node);
 			kfree(ip_node);
+			break;
+		default:
 			break;
 		}
 	}

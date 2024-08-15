@@ -128,5 +128,9 @@ struct hclge_dbg_vlan_cfg {
 
 int hclge_dbg_cmd_send(struct hclge_dev *hdev, struct hclge_desc *desc_src,
 		       int index, int bd_num, enum hclge_opcode_type cmd);
+void hclge_dbg_fill_content(char *content, u16 len,
+			    const struct hclge_dbg_item *items,
+			    const char **result, u16 size);
+char *hclge_dbg_get_func_id_str(char *buf, u8 id);
 
 #endif
