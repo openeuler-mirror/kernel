@@ -258,10 +258,7 @@ static void hns_roce_clear_bond(struct hns_roce_bond_group *bond_grp)
 	}
 
 out:
-	ret = hns_roce_cleanup_bond(bond_grp);
-	if (!ret)
-		ibdev_info(&bond_grp->main_hr_dev->ib_dev,
-			   "RoCE clear bond finished!\n");
+	hns_roce_cleanup_bond(bond_grp);
 }
 
 static void hns_roce_slave_changestate(struct hns_roce_bond_group *bond_grp)
@@ -690,7 +687,7 @@ static void hns_roce_detach_bond_grp(struct hns_roce_bond_group *bond_grp)
 	memset(bond_grp->bond_func_info, 0, sizeof(bond_grp->bond_func_info));
 }
 
-int hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp)
+void hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp)
 {
 	int ret;
 
@@ -698,11 +695,12 @@ int hns_roce_cleanup_bond(struct hns_roce_bond_group *bond_grp)
 	      hns_roce_cmd_bond(bond_grp, HNS_ROCE_CLEAR_BOND) : -EIO;
 	if (ret)
 		BOND_ERR_LOG("failed to clear RoCE bond, ret = %d.\n", ret);
+	else
+		ibdev_info(&bond_grp->main_hr_dev->ib_dev,
+			   "RoCE clear bond finished!\n");
 
 	hns_roce_detach_bond_grp(bond_grp);
 	complete(&bond_grp->bond_work_done);
-
-	return ret;
 }
 
 static bool lowerstate_event_filter(struct hns_roce_bond_group *bond_grp,
