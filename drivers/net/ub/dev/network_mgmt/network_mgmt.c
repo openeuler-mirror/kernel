@@ -118,10 +118,10 @@ out:
 static void ub_nm_del_device(struct net_device *ndev)
 {
 	struct list_head *dev_list = ub_nm_get_dev_list();
-	struct ub_nm_device *nm_dev;
+	struct ub_nm_device *nm_dev, *tmp;
 
 	ub_nm_down_write();
-	list_for_each_entry(nm_dev, dev_list, nm_dev_list) {
+	list_for_each_entry_safe(nm_dev, tmp, dev_list, nm_dev_list) {
 		if (nm_dev->ndev != ndev)
 			continue;
 
