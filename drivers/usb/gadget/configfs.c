@@ -114,9 +114,12 @@ static int usb_string_copy(const char *s, char **s_copy)
 	int ret;
 	char *str;
 	char *copy = *s_copy;
+
 	ret = strlen(s);
 	if (ret > 126)
 		return -EOVERFLOW;
+	if (ret < 1)
+		return -EINVAL;
 
 	str = kstrdup(s, GFP_KERNEL);
 	if (!str)
