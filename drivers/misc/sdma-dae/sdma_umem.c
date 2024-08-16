@@ -157,7 +157,7 @@ static int pin_umem(u64 addr, int npages, struct list_head *p_head)
 
 	to_pin_pages = unpin_pages = npages;
 	while (unpin_pages != 0) {
-		if (to_pin_pages * sizeof(struct page *) > HISI_SDMA_MAX_ALLOC_SIZE)
+		if (to_pin_pages > HISI_SDMA_MAX_ALLOC_SIZE / sizeof(struct page *))
 			to_pin_pages = HISI_SDMA_MAX_ALLOC_SIZE / sizeof(struct page *);
 		page_list = (struct page **)(uintptr_t)__get_free_pages(GFP_KERNEL,
 				get_order(to_pin_pages * sizeof(struct page *)));
