@@ -579,6 +579,16 @@ int tty_set_ldisc(struct tty_struct *tty, int disc)
 		goto out;
 	}
 
+#ifdef CONFIG_VT
+	/*vt device use only n_tty ldisc*/
+	if (tty->ops->ioctl == vt_ioctl) {
+		if (disc != N_TTY) {
+			retval = -EINVAL;
+			goto out;
+		}
+	}
+#endif
+
 	old_ldisc = tty->ldisc;
 
 	/* Shutdown the old discipline. */
