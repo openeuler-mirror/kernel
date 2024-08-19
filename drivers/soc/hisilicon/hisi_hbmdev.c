@@ -73,10 +73,35 @@ static int memdev_power_on(struct acpi_device *adev)
 	return 0;
 }
 
+static int hbmdev_check(struct acpi_device *adev, void *arg)
+{
+	const char *hid = acpi_device_hid(adev);
+
+	if (!strcmp(hid, ACPI_MEMORY_DEVICE_HID)) {
+		if (arg) {
+			bool *found = arg;
+			*found = true;
+			return -1;
+		}
+
+		/* There might be devices have not attached */
+		if (!adev->handler)
+			return 0;
+
+		acpi_scan_lock_acquire();
+		adev->handler->hotplug.demand_offline = true;
+		acpi_scan_lock_release();
+	}
+
+	return 0;
+}
+
 static int memdev_power_off(struct acpi_device *adev)
 {
 	acpi_handle handle = adev->handle;
 	acpi_status status;
+
+	acpi_dev_for_each_child(adev, hbmdev_check, NULL);
 
 	status = acpi_evaluate_object(handle, "_OFF", NULL, NULL);
 	if (ACPI_FAILURE(status)) {
@@ -110,21 +135,6 @@ static ssize_t state_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_WO(state);
 
-static int hbmdev_setup(struct acpi_device *adev, void *arg)
-{
-	const char *hid = acpi_device_hid(adev);
-	bool *found = arg;
-
-	if (!strcmp(hid, ACPI_MEMORY_DEVICE_HID)) {
-		acpi_scan_lock_acquire();
-		adev->handler->hotplug.demand_offline = true;
-		acpi_scan_lock_release();
-		*found = true;
-	}
-
-	return 0;
-}
-
 static bool has_hbmdev(struct device *dev)
 {
 	struct acpi_device *adev = ACPI_COMPANION(dev);
@@ -134,8 +144,7 @@ static bool has_hbmdev(struct device *dev)
 	if (strcmp(hid, ACPI_GENERIC_CONTAINER_DEVICE_HID))
 		return found;
 
-	acpi_dev_for_each_child(adev, hbmdev_setup, &found);
-
+	acpi_dev_for_each_child(adev, hbmdev_check, &found);
 	return found;
 }
 
