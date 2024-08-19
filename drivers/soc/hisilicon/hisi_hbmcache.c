@@ -38,25 +38,7 @@ static ssize_t state_store(struct device *d, struct device_attribute *attr,
 
 	return count;
 }
-
-static ssize_t state_show(struct device *d, struct device_attribute *attr,
-			  char *buf)
-{
-	struct acpi_device *adev = ACPI_COMPANION(d);
-	unsigned long long sta = 0;
-	acpi_status status;
-	const char *output;
-
-	status = acpi_evaluate_integer(adev->handle, "_STA", NULL, &sta);
-	if (ACPI_FAILURE(status))
-		return -EINVAL;
-
-	output = (sta & 0x01) ? online_type_to_str[STATE_ONLINE] :
-				online_type_to_str[STATE_OFFLINE];
-
-	return sysfs_emit(buf, "%s\n", output);
-}
-static DEVICE_ATTR_RW(state);
+static DEVICE_ATTR_WO(state);
 
 static ssize_t socket_id_show(struct device *d, struct device_attribute *attr,
 				char *buf)
