@@ -19,12 +19,7 @@ struct cdev_node {
 	struct list_head clist;
 };
 
-struct memory_dev {
-	struct kobject *memdev_kobj;
-	struct cdev_node cdev_list;
-};
-
-static struct memory_dev *mdev;
+struct cdev_node cdev_list;
 
 static int get_pxm(struct acpi_device *acpi_device, void *arg)
 {
@@ -160,7 +155,7 @@ static int container_add(struct device *dev, void *data)
 		return -ENOMEM;
 
 	cnode->dev = dev;
-	list_add_tail(&cnode->clist, &mdev->cdev_list.clist);
+	list_add_tail(&cnode->clist, &cdev_list.clist);
 
 	return 0;
 }
@@ -169,7 +164,7 @@ static void container_remove(void)
 {
 	struct cdev_node *cnode, *tmp;
 
-	list_for_each_entry_safe(cnode, tmp, &mdev->cdev_list.clist, clist) {
+	list_for_each_entry_safe(cnode, tmp, &cdev_list.clist, clist) {
 		device_remove_file(cnode->dev, &dev_attr_state);
 		device_remove_file(cnode->dev, &dev_attr_pxms);
 		list_del(&cnode->clist);
@@ -181,17 +176,17 @@ static int container_init(void)
 {
 	struct cdev_node *cnode;
 
-	INIT_LIST_HEAD(&mdev->cdev_list.clist);
+	INIT_LIST_HEAD(&cdev_list.clist);
 
 	if (bus_for_each_dev(&container_subsys, NULL, NULL, container_add)) {
 		container_remove();
 		return -ENOMEM;
 	}
 
-	if (list_empty(&mdev->cdev_list.clist))
+	if (list_empty(&cdev_list.clist))
 		return -ENODEV;
 
-	list_for_each_entry(cnode, &mdev->cdev_list.clist, clist) {
+	list_for_each_entry(cnode, &cdev_list.clist, clist) {
 		device_create_file(cnode->dev, &dev_attr_state);
 		device_create_file(cnode->dev, &dev_attr_pxms);
 	}
@@ -200,38 +195,17 @@ static int container_init(void)
 }
 
 
-static int __init mdev_init(void)
+static int __init hbmdev_init(void)
 {
-	int ret;
-
-	mdev = kzalloc(sizeof(struct memory_dev), GFP_KERNEL);
-	if (!mdev)
-		return -ENOMEM;
-
-	ret = container_init();
-	if (ret) {
-		kfree(mdev);
-		return ret;
-	}
-
-	mdev->memdev_kobj = kobject_create_and_add("hbm_memory", kernel_kobj);
-	if (!mdev->memdev_kobj) {
-		container_remove();
-		kfree(mdev);
-		return -ENOMEM;
-	}
-
-	return ret;
+	return container_init();
 }
-module_init(mdev_init);
+module_init(hbmdev_init);
 
-static void __exit mdev_exit(void)
+static void __exit hbmdev_exit(void)
 {
 	container_remove();
-	kobject_put(mdev->memdev_kobj);
-	kfree(mdev);
 }
-module_exit(mdev_exit);
+module_exit(hbmdev_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Zhang Zekun <zhangzekun11@huawei.com>");
