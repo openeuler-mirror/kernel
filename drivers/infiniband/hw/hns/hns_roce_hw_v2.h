@@ -1008,7 +1008,9 @@ struct hns_roce_query_version {
 
 struct hns_roce_query_fw_info {
 	__le32 fw_ver;
-	__le32 rsv[5];
+	__le32 rsv[3];
+	__le32 fw_cap;
+	__le32 rsv1[1];
 };
 
 struct hns_roce_func_clear {

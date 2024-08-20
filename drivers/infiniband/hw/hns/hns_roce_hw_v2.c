@@ -1822,6 +1822,7 @@ static int hns_roce_query_fw_ver(struct hns_roce_dev *hr_dev)
 
 	resp = (struct hns_roce_query_fw_info *)desc.data;
 	hr_dev->caps.fw_ver = (u64)(le32_to_cpu(resp->fw_ver));
+	hr_dev->caps.fw_cap = le32_to_cpu(resp->fw_cap);
 
 	return 0;
 }

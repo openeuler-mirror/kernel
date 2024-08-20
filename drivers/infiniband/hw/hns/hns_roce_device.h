@@ -983,6 +983,7 @@ struct hns_roce_caps {
 	u8		congest_type;
 	u8		default_congest_type;
 	u8              poe_ch_num;
+	u32		fw_cap;
 };
 
 enum hns_roce_device_state {
