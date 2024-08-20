@@ -13941,6 +13941,7 @@ void show_numa_stats(struct task_struct *p, struct seq_file *m)
 
 	rcu_read_lock();
 
+	ng = rcu_dereference(p->numa_group);
 	for_each_online_node(node) {
 		if (p->numa_faults) {
 			tsf = p->numa_faults[task_faults_idx(NUMA_MEM, node, 0)];
