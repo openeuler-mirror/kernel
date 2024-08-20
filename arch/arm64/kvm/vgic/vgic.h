@@ -359,4 +359,11 @@ int vgic_v4_request_vpe_irq(struct kvm_vcpu *vcpu, int irq);
 void vgic_v4_configure_vtimer(struct kvm *kvm);
 #endif
 
+static inline bool kvm_has_gicv3(struct kvm *kvm)
+{
+	return (static_branch_unlikely(&kvm_vgic_global_state.gicv3_cpuif) &&
+		irqchip_in_kernel(kvm) &&
+		kvm->arch.vgic.vgic_model == KVM_DEV_TYPE_ARM_VGIC_V3);
+}
+
 #endif
