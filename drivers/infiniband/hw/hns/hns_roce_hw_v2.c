@@ -41,6 +41,7 @@
 #include <rdma/ib_umem.h>
 #include <rdma/uverbs_ioctl.h>
 #include <rdma/ib_verbs.h>
+#include <rdma/ib_mad.h>
 
 #include "hnae3.h"
 #include "hclge_main.h"
@@ -554,7 +555,6 @@ static inline int set_ud_wqe(struct hns_roce_qp *qp,
 			     void *wqe, unsigned int *sge_idx,
 			     unsigned int owner_bit)
 {
-	struct hns_roce_dev *hr_dev = to_hr_dev(qp->ibqp.device);
 	struct hns_roce_ah *ah = to_hr_ah(ud_wr(wr)->ah);
 	struct hns_roce_v2_ud_send_wqe *ud_sq_wqe = wqe;
 	unsigned int curr_idx = *sge_idx;
@@ -4395,6 +4395,100 @@ static int fill_recv_wc(struct ib_wc *wc, struct hns_roce_v2_cqe *cqe)
 	return 0;
 }
 
+struct ib_mad_list_head {
+	struct list_head list;
+	struct ib_cqe cqe;
+	struct ib_mad_queue *mad_queue;
+};
+
+struct ib_mad_private_header {
+	struct ib_mad_list_head mad_list;
+	struct ib_mad_recv_wc recv_wc;
+	struct ib_wc wc;
+	u64 mapping;
+} __packed;
+
+struct ib_mad_private {
+	struct ib_mad_private_header header;
+	size_t mad_size;
+	struct ib_grh grh;
+	u8 mad[];
+} __packed;
+
+static inline struct ib_mad_list_head *to_mad_list_head(void *cqe)
+{
+	return container_of((struct ib_cqe *)cqe, struct ib_mad_list_head, cqe);
+}
+
+static inline struct ib_mad_private_header
+			*to_mad_private_header(struct ib_mad_list_head *mad_list)
+{
+	return container_of(mad_list, struct ib_mad_private_header, mad_list);
+}
+
+static inline struct ib_mad_private
+			*to_mad_private(struct ib_mad_private_header *header)
+{
+	return container_of(header, struct ib_mad_private, header);
+}
+
+static bool find_first_in4_gid(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_qp *qp, union ib_gid *gid)
+{
+	int i;
+
+	/*
+	 * The performance of querying the gid table each time is not good,
+	 * but if we want to cache the gid, we need to add a synchronization
+	 * mechanism which will lead to an increase in software complexity.
+	 * Considering that CM does not belong to the IO path and does not
+	 * have high performance requirements, we use this simpler solution.
+	 */
+	for (i = 0; i < hr_dev->caps.gid_table_len[qp->port]; i += 1) {
+		if (rdma_query_gid(&hr_dev->ib_dev, qp->port + 1, i, gid))
+			continue;
+		/* link local addr is not a valid in4 addr */
+		if (rdma_link_local_addr((struct in6_addr *)gid->raw))
+			continue;
+
+		return true;
+	}
+
+	return false;
+}
+
+static void hns_roh_restore_grh(struct hns_roce_dev *hr_dev,
+				struct hns_roce_qp *qp, struct ib_wc *wc,
+				struct hns_roce_v2_cqe *cqe)
+{
+#define IPV4_PREFIX_MASK 0xFF000000
+	struct ib_mad_list_head *mad_list = to_mad_list_head((void *)wc->wr_id);
+	struct ib_mad_private_header *header = to_mad_private_header(mad_list);
+	struct ib_mad_private *mad_private = to_mad_private(header);
+	u32 smac = hr_reg_read(cqe, CQE_SMAC_L);
+	union rdma_network_hdr *hdr;
+	union ib_gid gid = {};
+	u32 daddr;
+
+	if (hr_dev->mac_type != HNAE3_MAC_ROH || qp->ibqp.qp_type != IB_QPT_GSI)
+		return;
+
+	if (!find_first_in4_gid(hr_dev, qp, &gid))
+		return;
+
+	/* RoH only support IPv4, so interface_id won't bigger than U32_MAX */
+	daddr = (u32)be64_to_cpu(gid.global.interface_id);
+	/*
+	 * For RoH, only the lower 24 bit is valid, it needs to get the first
+	 * 8 bit from the daddr
+	 */
+	smac = smac | (daddr & IPV4_PREFIX_MASK);
+
+	hdr = (union rdma_network_hdr *)&mad_private->grh;
+	hdr->roce4grh.saddr = cpu_to_be32(smac);
+	hdr->roce4grh.daddr = cpu_to_be32(daddr);
+}
+
 static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 				struct hns_roce_qp **cur_qp, struct ib_wc *wc)
 {
@@ -4447,6 +4541,7 @@ static int hns_roce_v2_poll_one(struct hns_roce_cq *hr_cq,
 		} else {
 			wq = &qp->rq;
 			wc->wr_id = wq->wrid[wq->tail & (wq->wqe_cnt - 1)];
+			hns_roh_restore_grh(hr_dev, qp, wc, cqe);
 			++wq->tail;
 		}
 
