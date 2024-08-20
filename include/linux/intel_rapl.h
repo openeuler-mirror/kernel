@@ -100,10 +100,16 @@ struct rapl_package;
 
 #define RAPL_DOMAIN_NAME_LENGTH 16
 
+union rapl_reg {
+	void __iomem *mmio;
+	u32 msr;
+	u64 val;
+};
+
 struct rapl_domain {
 	char name[RAPL_DOMAIN_NAME_LENGTH];
 	enum rapl_domain_type id;
-	u64 regs[RAPL_DOMAIN_REG_MAX];
+	union rapl_reg regs[RAPL_DOMAIN_REG_MAX];
 	struct powercap_zone power_zone;
 	struct rapl_domain_data rdd;
 	struct rapl_power_limit rpl[NR_POWER_LIMITS];
@@ -116,7 +122,7 @@ struct rapl_domain {
 };
 
 struct reg_action {
-	u64 reg;
+	union rapl_reg reg;
 	u64 mask;
 	u64 value;
 	int err;
@@ -143,8 +149,8 @@ struct rapl_if_priv {
 	enum rapl_if_type type;
 	struct powercap_control_type *control_type;
 	enum cpuhp_state pcap_rapl_online;
-	u64 reg_unit;
-	u64 regs[RAPL_DOMAIN_MAX][RAPL_DOMAIN_REG_MAX];
+	union rapl_reg reg_unit;
+	union rapl_reg regs[RAPL_DOMAIN_MAX][RAPL_DOMAIN_REG_MAX];
 	int limits[RAPL_DOMAIN_MAX];
 	int (*read_raw)(int id, struct reg_action *ra);
 	int (*write_raw)(int id, struct reg_action *ra);
@@ -171,6 +177,12 @@ struct rapl_package {
 	char name[PACKAGE_DOMAIN_NAME_LENGTH];
 	struct rapl_if_priv *priv;
 };
+
+struct rapl_package *rapl_find_package_domain_cpuslocked(int id, struct rapl_if_priv *priv,
+						       bool id_is_cpu);
+struct rapl_package *rapl_add_package_cpuslocked(int id, struct rapl_if_priv *priv,
+						 bool id_is_cpu);
+void rapl_remove_package_cpuslocked(struct rapl_package *rp);
 
 struct rapl_package *rapl_find_package_domain(int id, struct rapl_if_priv *priv, bool id_is_cpu);
 struct rapl_package *rapl_add_package(int id, struct rapl_if_priv *priv, bool id_is_cpu);
