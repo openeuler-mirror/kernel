@@ -7376,6 +7376,52 @@ static enum hns_roce_opcode_type scc_opcode[] = {
 	HNS_ROCE_OPC_CFG_DIP_PARAM,
 };
 
+static int hns_roce_v2_config_cnp_pri_param(struct hns_roce_dev *hr_dev,
+					    u8 port_num)
+{
+	struct hns_roce_cnp_pri_param *cnp_pri_param;
+	struct hns_roce_cmq_desc desc;
+	struct hns_roce_port *pdata;
+	int ret;
+
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_CFG_CNP_PRI, false);
+	pdata = &hr_dev->port_data[port_num - 1];
+	cnp_pri_param = pdata->cnp_pri_param;
+	desc.data[0] = cnp_pri_param->param;
+
+	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	if (ret)
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+				      "failed to configure cnp pri param, opcode: 0x%x, ret = %d.\n",
+				      le16_to_cpu(desc.opcode), ret);
+	return ret;
+}
+
+
+static int hns_roce_v2_query_cnp_pri_param(struct hns_roce_dev *hr_dev,
+					   u8 port_num)
+{
+	struct hns_roce_cnp_pri_param *cnp_pri_param;
+	struct hns_roce_cmq_desc desc;
+	struct hns_roce_port *pdata;
+	int ret;
+
+	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_CFG_CNP_PRI, true);
+	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
+	if (ret) {
+		ibdev_err_ratelimited(&hr_dev->ib_dev,
+				      "failed to query cnp pri param, opcode: 0x%x, ret = %d.\n",
+				      le16_to_cpu(desc.opcode), ret);
+		return ret;
+	}
+
+	pdata = &hr_dev->port_data[port_num - 1];
+	cnp_pri_param = pdata->cnp_pri_param;
+	cnp_pri_param->param = desc.data[0];
+
+	return 0;
+}
+
 static int hns_roce_v2_config_scc_param(struct hns_roce_dev *hr_dev,
 					u8 port_num,
 					enum hns_roce_scc_algo algo)
@@ -7566,6 +7612,8 @@ static const struct hns_roce_hw hns_roce_hw_v2 = {
 	.config_scc_param = hns_roce_v2_config_scc_param,
 	.query_scc_param = hns_roce_v2_query_scc_param,
 	.cfg_poe_ch = hns_roce_cfg_poe_ch,
+	.config_cnp_pri_param = hns_roce_v2_config_cnp_pri_param,
+	.query_cnp_pri_param = hns_roce_v2_query_cnp_pri_param,
 };
 
 static const struct pci_device_id hns_roce_hw_v2_pci_tbl[] = {
