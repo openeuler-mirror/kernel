@@ -26,6 +26,41 @@ static void scc_param_config_work(struct work_struct *work)
 				     scc_param->algo_type);
 }
 
+static void get_default_cnp_pri_param(struct hns_roce_dev *hr_dev,
+				  struct hns_roce_port *pdata)
+{
+	if (hr_dev->is_vf || hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP09)
+		return;
+
+	if (hr_dev->mac_type != HNAE3_MAC_ROH ||
+	    hr_dev->func_id != MAIN_PF_FUNC_ID)
+		return;
+
+	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL) ||
+	    !(hr_dev->caps.fw_cap & FW_CAP_FLAG_CNP_PRI))
+		return;
+
+	hr_dev->hw->query_cnp_pri_param(hr_dev, pdata->port_num);
+}
+
+static int alloc_cnp_pri_param(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_port *pdata)
+{
+	struct hns_roce_cnp_pri_param *cnp_pri_param;
+
+	cnp_pri_param = kvzalloc(sizeof(*cnp_pri_param), GFP_KERNEL);
+	if (!cnp_pri_param)
+		return -ENOMEM;
+
+	cnp_pri_param->hr_dev = hr_dev;
+	cnp_pri_param->port_num = pdata->port_num;
+	pdata->cnp_pri_param = cnp_pri_param;
+
+	get_default_cnp_pri_param(hr_dev, pdata);
+
+	return 0;
+}
+
 static void get_default_scc_param(struct hns_roce_dev *hr_dev,
 				  struct hns_roce_port *pdata)
 {
@@ -77,6 +112,14 @@ struct hns_port_cc_attr {
 	u32 min;
 };
 
+struct hns_port_cnp_pri_attr {
+	struct hns_port_attribute port_attr;
+	u32 bit_offset;
+	u32 bit_size;
+	u32 bit_mask;
+	u32 max;
+};
+
 static int scc_attr_check(struct hns_port_cc_attr *scc_attr)
 {
 	if (WARN_ON(scc_attr->size > sizeof(u32)))
@@ -85,6 +128,63 @@ static int scc_attr_check(struct hns_port_cc_attr *scc_attr)
 	if (WARN_ON(scc_attr->algo_type >= HNS_ROCE_SCC_ALGO_TOTAL))
 		return -EINVAL;
 	return 0;
+}
+
+static ssize_t cnp_pri_attr_show(struct hns_roce_port *pdata,
+				 struct hns_port_attribute *attr, char *buf)
+{
+	struct hns_port_cnp_pri_attr *cnp_pri_attr =
+		container_of(attr, struct hns_port_cnp_pri_attr, port_attr);
+	struct hns_roce_cnp_pri_param *cnp_pri_param;
+	u32 param;
+	u32 val;
+
+	cnp_pri_param = pdata->cnp_pri_param;
+	param = le32_to_cpu(cnp_pri_param->param);
+	val = (param & cnp_pri_attr->bit_mask) >> cnp_pri_attr->bit_offset;
+
+	return sysfs_emit(buf, "%u\n", val);
+}
+
+static ssize_t cnp_pri_attr_store(struct hns_roce_port *pdata,
+				  struct hns_port_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct hns_port_cnp_pri_attr *cnp_pri_attr =
+		container_of(attr, struct hns_port_cnp_pri_attr, port_attr);
+	struct hns_roce_cnp_pri_param *cnp_pri_param;
+	struct hns_roce_dev *hr_dev;
+	__le32 param_bak;
+	u32 param;
+	u32 val;
+	int ret;
+
+	ret = kstrtou32(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val > cnp_pri_attr->max)
+		return -EINVAL;
+
+	cnp_pri_param = pdata->cnp_pri_param;
+	param = le32_to_cpu(cnp_pri_param->param);
+	if (cnp_pri_attr->bit_offset != HNS_ROCE_CNP_PRI_ENABLE_BIT_OFS &&
+	    !(param & HNS_ROCE_CNP_PRI_ENABLE_BIT_MASK))
+		return -EPERM;
+
+	param = param & (~cnp_pri_attr->bit_mask);
+	val = (val << cnp_pri_attr->bit_offset) | param;
+	param_bak = cnp_pri_param->param;
+	cnp_pri_param->param = cpu_to_le32(val);
+	hr_dev = cnp_pri_param->hr_dev;
+
+	ret = hr_dev->hw->config_cnp_pri_param(hr_dev, cnp_pri_param->port_num);
+	if (ret) {
+		cnp_pri_param->param = param_bak;
+		return ret;
+	}
+
+	return count;
 }
 
 static ssize_t scc_attr_show(struct hns_roce_port *pdata,
@@ -151,6 +251,27 @@ static ssize_t scc_attr_store(struct hns_roce_port *pdata,
 	return count;
 }
 
+static umode_t cnp_pri_param_is_visible(struct kobject *kobj,
+				     struct attribute *attr, int i)
+{
+	struct hns_roce_port *pdata =
+		container_of(kobj, struct hns_roce_port, kobj);
+	struct hns_roce_dev *hr_dev = pdata->hr_dev;
+
+	if (hr_dev->is_vf || hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP09)
+		return 0;
+
+	if (hr_dev->mac_type != HNAE3_MAC_ROH ||
+	    hr_dev->func_id != MAIN_PF_FUNC_ID)
+		return 0;
+
+	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_FLOW_CTRL) ||
+	    !(hr_dev->caps.fw_cap & FW_CAP_FLAG_CNP_PRI))
+		return 0;
+
+	return 0644;
+}
+
 static umode_t scc_attr_is_visible(struct kobject *kobj,
 				   struct attribute *attr, int i)
 {
@@ -171,6 +292,37 @@ static umode_t scc_attr_is_visible(struct kobject *kobj,
 
 	return 0644;
 }
+
+#define __HNS_CNP_PRI_ATTR(_name, _offset, _size, _mask, _max) {		\
+	.port_attr = __ATTR(_name, 0644, cnp_pri_attr_show,  cnp_pri_attr_store),	\
+	.bit_offset = _offset,							\
+	.bit_size = _size,								\
+	.bit_mask = _mask,								\
+	.max = _max,								\
+}
+
+#define HNS_PORT_CNP_PRI_ATTR_RW(_name, NAME)			\
+	struct hns_port_cnp_pri_attr hns_roce_port_attr_cnp_pri_##_name =	\
+	__HNS_CNP_PRI_ATTR(_name,		\
+			HNS_ROCE_CNP_PRI_##NAME##_BIT_OFS,			\
+			HNS_ROCE_CNP_PRI_##NAME##_BIT_SZ,			\
+			HNS_ROCE_CNP_PRI_##NAME##_BIT_MASK,			\
+			HNS_ROCE_CNP_PRI_##NAME##_MAX)
+
+HNS_PORT_CNP_PRI_ATTR_RW(enable, ENABLE);
+HNS_PORT_CNP_PRI_ATTR_RW(dscp, DSCP);
+
+static struct attribute *cnp_pri_param_attrs[] = {
+	&hns_roce_port_attr_cnp_pri_enable.port_attr.attr,
+	&hns_roce_port_attr_cnp_pri_dscp.port_attr.attr,
+	NULL,
+};
+
+static const struct attribute_group cnp_pri_param_group = {
+	.name = "cnp_pri_param",
+	.attrs = cnp_pri_param_attrs,
+	.is_visible = cnp_pri_param_is_visible,
+};
 
 #define __HNS_SCC_ATTR(_name, _type, _offset, _size, _min, _max) {		\
 	.port_attr = __ATTR(_name, 0644, scc_attr_show,  scc_attr_store),	\
@@ -330,6 +482,7 @@ const struct attribute_group *hns_attr_port_groups[] = {
 	&ldcp_cc_param_group,
 	&hc3_cc_param_group,
 	&dip_cc_param_group,
+	&cnp_pri_param_group,
 	NULL,
 };
 
@@ -368,6 +521,7 @@ static void hns_roce_port_release(struct kobject *kobj)
 		container_of(kobj, struct hns_roce_port, kobj);
 
 	kfree(pdata->scc_param);
+	kvfree(pdata->cnp_pri_param);
 }
 
 static const struct sysfs_ops hns_roce_port_ops = {
@@ -416,6 +570,13 @@ int hns_roce_create_port_files(struct ib_device *ibdev, u8 port_num,
 	ret = alloc_scc_param(hr_dev, pdata);
 	if (ret) {
 		dev_err(hr_dev->dev, "alloc scc param failed, ret = %d!\n",
+			ret);
+		goto fail_group;
+	}
+
+	ret = alloc_cnp_pri_param(hr_dev, pdata);
+	if (ret) {
+		dev_err(hr_dev->dev, "alloc cnp pri param failed, ret = %d!\n",
 			ret);
 		goto fail_group;
 	}

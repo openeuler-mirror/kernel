@@ -230,6 +230,7 @@ enum hns_roce_opcode_type {
 	HNS_ROCE_OPC_CFG_GMV_BT				= 0x8510,
 	HNS_ROCE_OPC_SYNC_MB				= 0x8511,
 	HNS_ROCE_QUERY_RAM_ECC				= 0x8513,
+	HNS_ROCE_OPC_CFG_CNP_PRI			= 0x8514,
 	HNS_SWITCH_PARAMETER_CFG			= 0x1033,
 	HNS_ROCE_OPC_SET_BOND_INFO			= 0x8601,
 	HNS_ROCE_OPC_CLEAR_BOND_INFO			= 0x8602,
@@ -736,7 +737,8 @@ struct hns_roce_v2_cqe {
 #define CQE_LCL_QPN CQE_FIELD_LOC(119, 96)
 #define CQE_SUB_STATUS CQE_FIELD_LOC(127, 120)
 #define CQE_BYTE_CNT CQE_FIELD_LOC(159, 128)
-#define CQE_SMAC CQE_FIELD_LOC(207, 160)
+#define CQE_SMAC_L CQE_FIELD_LOC(191, 160)
+#define CQE_SMAC_H CQE_FIELD_LOC(207, 192)
 #define CQE_PORT_TYPE CQE_FIELD_LOC(209, 208)
 #define CQE_VID CQE_FIELD_LOC(221, 210)
 #define CQE_VID_VLD CQE_FIELD_LOC(222, 222)
@@ -1008,7 +1010,9 @@ struct hns_roce_query_version {
 
 struct hns_roce_query_fw_info {
 	__le32 fw_ver;
-	__le32 rsv[5];
+	__le32 rsv[3];
+	__le32 fw_cap;
+	__le32 rsv1[1];
 };
 
 struct hns_roce_func_clear {
@@ -1552,6 +1556,17 @@ struct hns_roce_wqe_atomic_seg {
 	__le64          fetchadd_swap_data;
 	__le64          cmp_data;
 };
+
+#define HNS_ROCE_CNP_PRI_ENABLE_BIT_OFS 0
+#define HNS_ROCE_CNP_PRI_ENABLE_BIT_SZ 1
+#define HNS_ROCE_CNP_PRI_ENABLE_BIT_MASK GENMASK(0, 0)
+#define HNS_ROCE_CNP_PRI_ENABLE_MAX 1
+
+#define HNS_ROCE_CNP_PRI_DSCP_BIT_OFS (HNS_ROCE_CNP_PRI_ENABLE_BIT_OFS + \
+					HNS_ROCE_CNP_PRI_ENABLE_BIT_SZ)
+#define HNS_ROCE_CNP_PRI_DSCP_BIT_SZ 6
+#define HNS_ROCE_CNP_PRI_DSCP_BIT_MASK GENMASK(6, 1)
+#define HNS_ROCE_CNP_PRI_DSCP_MAX 63
 
 #define HNS_ROCE_DCQCN_AI_OFS 0
 #define HNS_ROCE_DCQCN_AI_SZ sizeof(u16)

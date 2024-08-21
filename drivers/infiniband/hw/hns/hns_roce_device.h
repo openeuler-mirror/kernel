@@ -115,6 +115,8 @@
 #define HNS_ROCE_MAX_CQ_COUNT 0xFFFF
 #define HNS_ROCE_MAX_CQ_PERIOD 0xFFFF
 
+#define MAIN_PF_FUNC_ID 0
+
 enum {
 	SERV_TYPE_RC,
 	SERV_TYPE_UC,
@@ -177,6 +179,10 @@ enum {
 	HNS_ROCE_CAP_FLAG_BOND			= BIT(21),
 	HNS_ROCE_CAP_FLAG_SRQ_RECORD_DB		= BIT(22),
 	HNS_ROCE_CAP_FLAG_POE                   = BIT(27),
+};
+
+enum {
+	FW_CAP_FLAG_CNP_PRI = BIT(3),
 };
 
 #define HNS_ROCE_DB_TYPE_COUNT			2
@@ -983,6 +989,7 @@ struct hns_roce_caps {
 	u8		congest_type;
 	u8		default_congest_type;
 	u8              poe_ch_num;
+	u32		fw_cap;
 };
 
 enum hns_roce_device_state {
@@ -1101,6 +1108,14 @@ struct hns_roce_hw {
 	int (*query_scc_param)(struct hns_roce_dev *hr_dev, u8 port_num,
 			       enum hns_roce_scc_algo alog);
 	int (*cfg_poe_ch)(struct hns_roce_dev *hr_dev, u32 index, u64 poe_addr);
+	int (*config_cnp_pri_param)(struct hns_roce_dev *hr_dev, u8 port_num);
+	int (*query_cnp_pri_param)(struct hns_roce_dev *hr_dev, u8 port_num);
+};
+
+struct hns_roce_cnp_pri_param {
+	__le32 param;
+	struct hns_roce_dev *hr_dev;
+	u8 port_num;
 };
 
 #define HNS_ROCE_SCC_PARAM_SIZE 4
@@ -1119,6 +1134,7 @@ struct hns_roce_port {
 	u8 port_num;
 	struct kobject kobj;
 	struct hns_roce_scc_param *scc_param;
+	struct hns_roce_cnp_pri_param *cnp_pri_param;
 };
 
 struct hns_roce_mtr_node {
