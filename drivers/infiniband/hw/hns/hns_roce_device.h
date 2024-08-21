@@ -607,9 +607,8 @@ struct hns_roce_bank {
 };
 
 struct hns_roce_idx_table {
-	u32 *spare_idx;
-	u32 head;
-	u32 tail;
+	unsigned long *qpn_bitmap;
+	unsigned long *dip_idx_bitmap;
 };
 
 struct hns_roce_qp_table {
@@ -770,6 +769,7 @@ struct hns_roce_qp {
 	u8			priority;
 	bool			delayed_destroy_flag;
 	struct hns_roce_mtr_node *mtr_node;
+	struct hns_roce_dip *dip;
 };
 
 struct hns_roce_ib_iboe {
