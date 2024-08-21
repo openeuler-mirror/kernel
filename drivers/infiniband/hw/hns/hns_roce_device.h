@@ -1131,6 +1131,7 @@ struct hns_roce_scc_param {
 	struct hns_roce_dev *hr_dev;
 	u8 port_num;
 	__le32 latest_param[HNS_ROCE_SCC_PARAM_SIZE];
+	struct mutex scc_mutex; /* protect @param and @latest_param */
 };
 
 struct hns_roce_port {

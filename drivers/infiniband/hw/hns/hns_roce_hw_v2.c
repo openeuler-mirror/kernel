@@ -7597,6 +7597,7 @@ static int hns_roce_v2_config_scc_param(struct hns_roce_dev *hr_dev,
 	hns_roce_cmq_setup_basic_desc(&desc, scc_opcode[algo], false);
 	pdata = &hr_dev->port_data[port_num - 1];
 	scc_param = &pdata->scc_param[algo];
+	mutex_lock(&scc_param->scc_mutex);
 	memcpy(&desc.data, scc_param, sizeof(scc_param->param));
 
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
@@ -7609,6 +7610,8 @@ static int hns_roce_v2_config_scc_param(struct hns_roce_dev *hr_dev,
 
 	memcpy(scc_param->latest_param, &desc.data,
 	       sizeof(scc_param->latest_param));
+	mutex_unlock(&scc_param->scc_mutex);
+
 	return 0;
 }
 
@@ -7645,9 +7648,11 @@ static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
 
 	pdata = &hr_dev->port_data[port_num - 1];
 	scc_param = &pdata->scc_param[algo];
+	mutex_lock(&scc_param->scc_mutex);
 	memcpy(scc_param->param, &desc.data, sizeof(scc_param->param));
 	memcpy(scc_param->latest_param, &desc.data,
 	       sizeof(scc_param->latest_param));
+	mutex_unlock(&scc_param->scc_mutex);
 
 	return 0;
 }
