@@ -152,11 +152,11 @@ static void hns_roce_mr_free(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr
 		ret = hns_roce_destroy_hw_ctx(hr_dev, HNS_ROCE_CMD_DESTROY_MPT,
 					      key_to_hw_index(mr->key) &
 					      (hr_dev->caps.num_mtpts - 1));
-		if (ret)
+		if (ret) {
+			mr->delayed_destroy_flag = true;
 			ibdev_warn_ratelimited(ibdev, "failed to destroy mpt, ret = %d.\n",
 				   ret);
-		if (ret == -EBUSY)
-			mr->delayed_destroy_flag = true;
+		}
 	}
 
 	free_mr_pbl(hr_dev, mr);
