@@ -568,6 +568,20 @@ int hns_roce_create_port_files(struct ib_device *ibdev, u8 port_num,
 	}
 	kobject_uevent(&pdata->kobj, KOBJ_ADD);
 
+	ret = alloc_scc_param(hr_dev, pdata);
+	if (ret) {
+		dev_err(hr_dev->dev, "alloc scc param failed, ret = %d!\n",
+			ret);
+		goto fail_kobj;
+	}
+
+	ret = alloc_cnp_pri_param(hr_dev, pdata);
+	if (ret) {
+		dev_err(hr_dev->dev, "alloc cnp pri param failed, ret = %d!\n",
+			ret);
+		goto fail_kobj;
+	}
+
 	ret = sysfs_create_groups(&pdata->kobj, hns_attr_port_groups);
 	if (ret) {
 		ibdev_err(ibdev,
@@ -576,24 +590,7 @@ int hns_roce_create_port_files(struct ib_device *ibdev, u8 port_num,
 		goto fail_kobj;
 	}
 
-	ret = alloc_scc_param(hr_dev, pdata);
-	if (ret) {
-		dev_err(hr_dev->dev, "alloc scc param failed, ret = %d!\n",
-			ret);
-		goto fail_group;
-	}
-
-	ret = alloc_cnp_pri_param(hr_dev, pdata);
-	if (ret) {
-		dev_err(hr_dev->dev, "alloc cnp pri param failed, ret = %d!\n",
-			ret);
-		goto fail_group;
-	}
-
 	return ret;
-
-fail_group:
-	sysfs_remove_groups(&pdata->kobj, hns_attr_port_groups);
 
 fail_kobj:
 	kobject_put(&pdata->kobj);
