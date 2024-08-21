@@ -293,6 +293,7 @@ struct hns_roce_ucontext {
 	u32			config;
 	struct hns_roce_dca_ctx	dca_ctx;
 	struct hns_dca_ctx_debugfs dca_dbgfs;
+	u8 cq_bank_id;
 };
 
 struct hns_roce_pd {
@@ -627,6 +628,7 @@ struct hns_roce_cq_table {
 	struct hns_roce_hem_table	table;
 	struct hns_roce_bank bank[HNS_ROCE_CQ_BANK_NUM];
 	struct mutex			bank_mutex;
+	u32 ctx_num[HNS_ROCE_CQ_BANK_NUM];
 };
 
 struct hns_roce_srq_table {
@@ -1553,4 +1555,6 @@ int hns_roce_register_poe_channel(struct hns_roce_dev *hr_dev, u8 channel,
 				  u64 poe_addr);
 int hns_roce_unregister_poe_channel(struct hns_roce_dev *hr_dev, u8 channel);
 bool hns_roce_is_srq_exist(struct hns_roce_dev *hr_dev, u32 srqn);
+void hns_roce_put_cq_bankid_for_uctx(struct hns_roce_ucontext *uctx);
+void hns_roce_get_cq_bankid_for_uctx(struct hns_roce_ucontext *uctx);
 #endif /* _HNS_ROCE_DEVICE_H */

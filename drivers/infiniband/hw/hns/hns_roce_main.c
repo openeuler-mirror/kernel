@@ -622,6 +622,7 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	mutex_unlock(&hr_dev->uctx_list_mutex);
 
 	hns_roce_register_uctx_debugfs(hr_dev, context);
+	hns_roce_get_cq_bankid_for_uctx(context);
 
 	return 0;
 
@@ -660,6 +661,7 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB)
 		mutex_destroy(&context->page_mutex);
 
+	hns_roce_put_cq_bankid_for_uctx(context);
 	hns_roce_dealloc_uar_entry(context);
 	hns_roce_dealloc_reset_entry(context);
 
