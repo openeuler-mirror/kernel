@@ -74,6 +74,16 @@ config INFINIBAND_ADDR_TRANS_CONFIGFS
 	  This allows the user to config the default GID type that the CM
 	  uses for each device, when initiaing new connections.
 
+config INFINIBAND_PEER_MEMORY
+	bool "InfiniBand peer memory support"
+	depends on INFINIBAND_USER_MEM
+	default n
+	help
+	  Peer memory support for the InfinBand subsystem. This
+	  enables GPU drivers to provide peer memory operations
+	  and allows InfiniBand hardware drivers to utilize GPU
+	  peer memory.
+
 config INFINIBAND_VIRT_DMA
 	def_bool !HIGHMEM
 
