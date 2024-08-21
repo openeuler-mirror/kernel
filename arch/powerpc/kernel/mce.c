@@ -595,7 +595,7 @@ long notrace machine_check_early(struct pt_regs *regs)
 
 	this_cpu_set_ftrace_enabled(0);
 	/*
-	 * Do not use nmi_enter/exit for pseries hpte guest.
+	 * Do not use nmi_enter/exit for pseries hpte guest
 	 *
 	 * Likewise, do not use it in real mode if percpu first chunk is not
 	 * embedded. With CONFIG_NEED_PER_CPU_PAGE_FIRST_CHUNK enabled there
