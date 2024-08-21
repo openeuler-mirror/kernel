@@ -3878,7 +3878,7 @@ retry:
 		 * ext4_count_free_blocks() is non-zero, a commit
 		 * should free up blocks.
 		 */
-		if (ret == -ENOSPC && ext4_count_free_clusters(sb)) {
+		if (ret == -ENOSPC && journal && ext4_count_free_clusters(sb)) {
 			jbd2_journal_force_commit_nested(journal);
 			goto retry;
 		}
