@@ -136,7 +136,8 @@ static void ifs_clear_range_dirty(struct folio *folio,
 {
 	struct inode *inode = folio->mapping->host;
 	unsigned int blks_per_folio = i_blocks_per_folio(inode, folio);
-	unsigned int first_blk = DIV_ROUND_UP(off, i_blocksize(inode));
+	unsigned int first_blk = round_up(off, i_blocksize(inode)) >>
+				 inode->i_blkbits;
 	unsigned int last_blk = (off + len) >> inode->i_blkbits;
 	unsigned int nr_blks = last_blk - first_blk;
 	unsigned long flags;
@@ -1559,7 +1560,6 @@ static loff_t iomap_folio_mkwrite_iter(struct iomap_iter *iter,
 
 		ifs_alloc(iter->inode, folio, 0);
 		iomap_set_range_dirty(folio, 0, length);
-		filemap_dirty_folio(iter->inode->i_mapping, folio);
 	}
 
 	return length;
@@ -1583,6 +1583,8 @@ vm_fault_t iomap_page_mkwrite(struct vm_fault *vmf, const struct iomap_ops *ops)
 	while ((ret = iomap_iter(&iter, ops)) > 0)
 		iter.processed = iomap_folio_mkwrite_iter(&iter, folio);
 
+	if (iter.pos > folio_pos(folio))
+		filemap_dirty_folio(folio->mapping, folio);
 	if (ret < 0)
 		goto out_unlock;
 	folio_wait_stable(folio);
