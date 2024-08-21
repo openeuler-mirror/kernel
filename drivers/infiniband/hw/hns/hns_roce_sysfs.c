@@ -239,7 +239,7 @@ static ssize_t scc_attr_store(struct hns_roce_port *pdata,
 	if (scc_attr->offset >= offsetof(typeof(*scc_param), lifespan))
 		return count;
 
-	lifespan_jiffies = msecs_to_jiffies(scc_param->lifespan);
+	lifespan_jiffies = msecs_to_jiffies(le32_to_cpu(scc_param->lifespan));
 	exp_time = scc_param->timestamp + lifespan_jiffies;
 
 	if (time_is_before_eq_jiffies(exp_time)) {

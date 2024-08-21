@@ -1124,7 +1124,7 @@ struct hns_roce_cnp_pri_param {
 #define HNS_ROCE_SCC_PARAM_SIZE 4
 struct hns_roce_scc_param {
 	__le32 param[HNS_ROCE_SCC_PARAM_SIZE];
-	u32 lifespan;
+	__le32 lifespan;
 	unsigned long timestamp;
 	enum hns_roce_scc_algo algo_type;
 	struct delayed_work scc_cfg_dwork;
