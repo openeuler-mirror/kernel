@@ -689,7 +689,7 @@ xfs_can_free_eofblocks(
 	 * forever.
 	 */
 	end_fsb = XFS_B_TO_FSB(mp, (xfs_ufsize_t)XFS_ISIZE(ip));
-	if (XFS_IS_REALTIME_INODE(ip) && mp->m_sb.sb_rextsize > 1)
+	if (xfs_inode_has_bigrtalloc(ip))
 		end_fsb = roundup_64(end_fsb, mp->m_sb.sb_rextsize);
 	last_fsb = XFS_B_TO_FSB(mp, mp->m_super->s_maxbytes);
 	if (last_fsb <= end_fsb)
@@ -990,7 +990,7 @@ xfs_free_file_space(
 	endoffset_fsb = XFS_B_TO_FSBT(mp, offset + len);
 
 	/* We can only free complete realtime extents. */
-	if (XFS_IS_REALTIME_INODE(ip) && mp->m_sb.sb_rextsize > 1) {
+	if (xfs_inode_has_bigrtalloc(ip)) {
 		startoffset_fsb = roundup_64(startoffset_fsb,
 					     mp->m_sb.sb_rextsize);
 		endoffset_fsb = rounddown_64(endoffset_fsb,
