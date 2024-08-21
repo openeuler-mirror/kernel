@@ -916,7 +916,12 @@ bool __iomap_write_end(struct inode *inode, loff_t pos, size_t len,
 	if (unlikely(copied < len && !folio_test_uptodate(folio)))
 		return false;
 
-	iomap_set_range_dirty_uptodate(folio, from, copied);
+	if (folio_test_uptodate(folio)) {
+		iomap_set_range_dirty(folio, from, copied);
+		filemap_dirty_folio(folio->mapping, folio);
+	} else {
+		iomap_set_range_dirty_uptodate(folio, from, copied);
+	}
 	return true;
 }
 EXPORT_SYMBOL_GPL(__iomap_write_end);
