@@ -7600,11 +7600,16 @@ static int hns_roce_v2_config_scc_param(struct hns_roce_dev *hr_dev,
 	memcpy(&desc.data, scc_param, sizeof(scc_param->param));
 
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
-	if (ret)
+	if (ret) {
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 				      "failed to configure scc param, opcode: 0x%x, ret = %d.\n",
 			le16_to_cpu(desc.opcode), ret);
-	return ret;
+		return ret;
+	}
+
+	memcpy(scc_param->latest_param, &desc.data,
+	       sizeof(scc_param->latest_param));
+	return 0;
 }
 
 static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
@@ -7640,7 +7645,9 @@ static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
 
 	pdata = &hr_dev->port_data[port_num - 1];
 	scc_param = &pdata->scc_param[algo];
-	memcpy(scc_param, &desc.data, sizeof(scc_param->param));
+	memcpy(scc_param->param, &desc.data, sizeof(scc_param->param));
+	memcpy(scc_param->latest_param, &desc.data,
+	       sizeof(scc_param->latest_param));
 
 	return 0;
 }

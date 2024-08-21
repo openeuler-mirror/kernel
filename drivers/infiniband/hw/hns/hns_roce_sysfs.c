@@ -202,7 +202,11 @@ static ssize_t scc_attr_show(struct hns_roce_port *pdata,
 
 	scc_param = &pdata->scc_param[scc_attr->algo_type];
 
-	memcpy(&val, (void *)scc_param + scc_attr->offset, scc_attr->size);
+	if (scc_attr->offset == offsetof(typeof(*scc_param), lifespan))
+		val = scc_param->lifespan;
+	else
+		memcpy(&val, (void *)scc_param->latest_param + scc_attr->offset,
+		       scc_attr->size);
 
 	return sysfs_emit(buf, "%u\n", le32_to_cpu(val));
 }
