@@ -136,7 +136,8 @@ static void ifs_clear_range_dirty(struct folio *folio,
 {
 	struct inode *inode = folio->mapping->host;
 	unsigned int blks_per_folio = i_blocks_per_folio(inode, folio);
-	unsigned int first_blk = DIV_ROUND_UP(off, i_blocksize(inode));
+	unsigned int first_blk = round_up(off, i_blocksize(inode)) >>
+				 inode->i_blkbits;
 	unsigned int last_blk = (off + len) >> inode->i_blkbits;
 	unsigned int nr_blks = last_blk - first_blk;
 	unsigned long flags;
@@ -210,6 +211,37 @@ bool iomap_is_fully_dirty(struct folio *folio, size_t from, size_t count)
 	return true;
 }
 EXPORT_SYMBOL_GPL(iomap_is_fully_dirty);
+
+static void ifs_set_range_dirty_uptodate(struct folio *folio,
+		struct iomap_folio_state *ifs, size_t off, size_t len)
+{
+	struct inode *inode = folio->mapping->host;
+	unsigned int blks_per_folio = i_blocks_per_folio(inode, folio);
+	unsigned int first_blk = (off >> inode->i_blkbits);
+	unsigned int last_blk = (off + len - 1) >> inode->i_blkbits;
+	unsigned int nr_blks = last_blk - first_blk + 1;
+	unsigned long flags;
+
+	spin_lock_irqsave(&ifs->state_lock, flags);
+	bitmap_set(ifs->state, first_blk, nr_blks);
+	if (ifs_is_fully_uptodate(folio, ifs))
+		folio_mark_uptodate(folio);
+	bitmap_set(ifs->state, first_blk + blks_per_folio, nr_blks);
+	spin_unlock_irqrestore(&ifs->state_lock, flags);
+}
+
+static void iomap_set_range_dirty_uptodate(struct folio *folio,
+		size_t off, size_t len)
+{
+	struct iomap_folio_state *ifs = folio->private;
+
+	if (ifs)
+		ifs_set_range_dirty_uptodate(folio, ifs, off, len);
+	else
+		folio_mark_uptodate(folio);
+
+	filemap_dirty_folio(folio->mapping, folio);
+}
 
 static struct iomap_folio_state *ifs_alloc(struct inode *inode,
 		struct folio *folio, unsigned int flags)
@@ -761,7 +793,6 @@ int __iomap_write_begin(const struct iomap_iter *iter, loff_t pos,
 			if (status)
 				return status;
 		}
-		iomap_set_range_uptodate(folio, poff, plen);
 	} while ((block_start += plen) < block_end);
 
 	return 0;
@@ -868,6 +899,8 @@ out_unlock:
 bool __iomap_write_end(struct inode *inode, loff_t pos, size_t len,
 		size_t copied, struct folio *folio)
 {
+	size_t from = offset_in_folio(folio, pos);
+
 	flush_dcache_folio(folio);
 
 	/*
@@ -883,9 +916,13 @@ bool __iomap_write_end(struct inode *inode, loff_t pos, size_t len,
 	 */
 	if (unlikely(copied < len && !folio_test_uptodate(folio)))
 		return false;
-	iomap_set_range_uptodate(folio, offset_in_folio(folio, pos), len);
-	iomap_set_range_dirty(folio, offset_in_folio(folio, pos), copied);
-	filemap_dirty_folio(inode->i_mapping, folio);
+
+	if (folio_test_uptodate(folio)) {
+		iomap_set_range_dirty(folio, from, copied);
+		filemap_dirty_folio(folio->mapping, folio);
+	} else {
+		iomap_set_range_dirty_uptodate(folio, from, copied);
+	}
 	return true;
 }
 EXPORT_SYMBOL_GPL(__iomap_write_end);
@@ -1523,7 +1560,6 @@ static loff_t iomap_folio_mkwrite_iter(struct iomap_iter *iter,
 
 		ifs_alloc(iter->inode, folio, 0);
 		iomap_set_range_dirty(folio, 0, length);
-		filemap_dirty_folio(iter->inode->i_mapping, folio);
 	}
 
 	return length;
@@ -1547,6 +1583,8 @@ vm_fault_t iomap_page_mkwrite(struct vm_fault *vmf, const struct iomap_ops *ops)
 	while ((ret = iomap_iter(&iter, ops)) > 0)
 		iter.processed = iomap_folio_mkwrite_iter(&iter, folio);
 
+	if (iter.pos > folio_pos(folio))
+		filemap_dirty_folio(folio->mapping, folio);
 	if (ret < 0)
 		goto out_unlock;
 	folio_wait_stable(folio);
