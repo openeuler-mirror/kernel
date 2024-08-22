@@ -6,7 +6,7 @@
 
 #include <linux/sched/mm.h>
 
-#ifndef MLX_PEER_SUPPORT
+#ifndef CONFIG_INFINIBAND_PEER_MEMORY
 #include "ib_peer_mem.h"
 #endif
 
@@ -90,15 +90,15 @@ struct ib_umem_ex *ib_umem_ex(struct ib_umem *umem)
 	if (!umem)
 		return ERR_PTR(-EINVAL);
 
-#ifndef MLX_PEER_SUPPORT
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+	ret_umem = (struct ib_umem_ex *)umem;
+#else
 	ret_umem =  kzalloc(sizeof(*ret_umem), GFP_KERNEL);
 	if (!ret_umem)
 		return ERR_PTR(-ENOMEM);
 
 	ret_umem->umem = *umem;
 	kfree(umem);
-#else
-	ret_umem = (struct ib_umem_ex *)umem;
 #endif
 	return ret_umem;
 }
