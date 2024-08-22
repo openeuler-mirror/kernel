@@ -3366,7 +3366,7 @@ err_out1:
 
 	kfree(lc);
 
-	return 0;
+	return rc;
 }
 
 static int readdir_info_level_struct_sz(int info_level)
