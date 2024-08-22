@@ -4685,6 +4685,10 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb)
 
 	ring->tqp_vector->rx_group.total_bytes += len;
 
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(netdev)))
+		return 0;
+#endif
 	hns3_set_rx_skb_rss_type(ring, skb, le32_to_cpu(desc->rx.rss_hash),
 				 l234info, ol_info);
 	return 0;
