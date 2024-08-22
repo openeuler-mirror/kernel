@@ -81,7 +81,7 @@ obj-$(CONFIG_COMPAT_VDSO)		+= vdso32-wrap.o
 obj-$(CONFIG_ARM64_ILP32)		+= vdso-ilp32/
 obj-$(CONFIG_UNWIND_PATCH_PAC_INTO_SCS)	+= patch-scs.o
 obj-$(CONFIG_IPI_AS_NMI)		+= ipi_nmi.o
-obj-$(CONFIG_HISI_VIRTCCA_GUEST)	+= virtcca_cvm_guest.o
+obj-$(CONFIG_HISI_VIRTCCA_GUEST)	+= virtcca_cvm_guest.o virtcca_cvm_tsi.o
 CFLAGS_patch-scs.o			+= -mbranch-protection=none
 
 # Force dependency (vdso*-wrap.S includes vdso.so through incbin)
