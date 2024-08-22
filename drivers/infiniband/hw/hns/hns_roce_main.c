@@ -341,9 +341,10 @@ static int hns_roce_query_port(struct ib_device *ib_dev, u8 port_num,
 	if (ret)
 		ibdev_warn(ib_dev, "failed to get speed, ret = %d.\n", ret);
 
+	net_dev = hr_dev->hw->get_bond_netdev(hr_dev);
+
 	spin_lock_irqsave(&hr_dev->iboe.lock, flags);
 
-	net_dev = hr_dev->hw->get_bond_netdev(hr_dev);
 	if (!net_dev)
 		net_dev = get_hr_netdev(hr_dev, port);
 	if (!net_dev) {
@@ -622,6 +623,7 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	mutex_unlock(&hr_dev->uctx_list_mutex);
 
 	hns_roce_register_uctx_debugfs(hr_dev, context);
+	hns_roce_get_cq_bankid_for_uctx(context);
 
 	return 0;
 
@@ -660,6 +662,7 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB)
 		mutex_destroy(&context->page_mutex);
 
+	hns_roce_put_cq_bankid_for_uctx(context);
 	hns_roce_dealloc_uar_entry(context);
 	hns_roce_dealloc_reset_entry(context);
 
@@ -1311,6 +1314,8 @@ static void hns_roce_teardown_hca(struct hns_roce_dev *hr_dev)
 		hns_roce_cleanup_dca(hr_dev);
 
 	hns_roce_cleanup_bitmap(hr_dev);
+	mutex_destroy(&hr_dev->umem_unfree_list_mutex);
+	mutex_destroy(&hr_dev->mtr_unfree_list_mutex);
 	mutex_destroy(&hr_dev->uctx_list_mutex);
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
@@ -1339,10 +1344,10 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 	mutex_init(&hr_dev->uctx_list_mutex);
 
 	INIT_LIST_HEAD(&hr_dev->mtr_unfree_list);
-	spin_lock_init(&hr_dev->mtr_unfree_list_lock);
+	mutex_init(&hr_dev->mtr_unfree_list_mutex);
 
 	INIT_LIST_HEAD(&hr_dev->umem_unfree_list);
-	spin_lock_init(&hr_dev->umem_unfree_list_lock);
+	mutex_init(&hr_dev->umem_unfree_list_mutex);
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB) {
@@ -1384,7 +1389,10 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 
 err_uar_table_free:
 	ida_destroy(&hr_dev->uar_ida.ida);
+	mutex_destroy(&hr_dev->umem_unfree_list_mutex);
+	mutex_destroy(&hr_dev->mtr_unfree_list_mutex);
 	mutex_destroy(&hr_dev->uctx_list_mutex);
+
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB)
 		mutex_destroy(&hr_dev->pgdir_mutex);
@@ -1594,9 +1602,9 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
-	hns_roce_teardown_hca(hr_dev);
 	hns_roce_free_unfree_umem(hr_dev);
 	hns_roce_free_unfree_mtr(hr_dev);
+	hns_roce_teardown_hca(hr_dev);
 	hns_roce_cleanup_hem(hr_dev);
 
 	if (hr_dev->cmd_mod)

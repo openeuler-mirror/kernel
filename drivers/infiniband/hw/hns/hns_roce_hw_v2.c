@@ -5308,21 +5308,24 @@ static int get_dip_ctx_idx(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 {
 	const struct ib_global_route *grh = rdma_ah_read_grh(&attr->ah_attr);
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
-	u32 *spare_idx = hr_dev->qp_table.idx_table.spare_idx;
-	u32 *head =  &hr_dev->qp_table.idx_table.head;
-	u32 *tail =  &hr_dev->qp_table.idx_table.tail;
+	unsigned long *dip_idx_bitmap = hr_dev->qp_table.idx_table.dip_idx_bitmap;
+	unsigned long *qpn_bitmap = hr_dev->qp_table.idx_table.qpn_bitmap;
+	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	struct hns_roce_dip *hr_dip;
 	unsigned long flags;
 	int ret = 0;
+	u32 idx;
 
 	spin_lock_irqsave(&hr_dev->dip_list_lock, flags);
 
-	spare_idx[*tail] = ibqp->qp_num;
-	*tail = (*tail == hr_dev->caps.num_qps - 1) ? 0 : (*tail + 1);
+	if (!test_bit(ibqp->qp_num, dip_idx_bitmap))
+		set_bit(ibqp->qp_num, qpn_bitmap);
 
 	list_for_each_entry(hr_dip, &hr_dev->dip_list, node) {
 		if (!memcmp(grh->dgid.raw, hr_dip->dgid, GID_LEN_V2)) {
 			*dip_idx = hr_dip->dip_idx;
+			hr_dip->qp_cnt++;
+			hr_qp->dip = hr_dip;
 			goto out;
 		}
 	}
@@ -5336,9 +5339,21 @@ static int get_dip_ctx_idx(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 		goto out;
 	}
 
+	idx = find_first_bit(qpn_bitmap, hr_dev->caps.num_qps);
+	if (idx < hr_dev->caps.num_qps) {
+		*dip_idx = idx;
+		clear_bit(idx, qpn_bitmap);
+		set_bit(idx, dip_idx_bitmap);
+	} else {
+		ret = -ENOENT;
+		kfree(hr_dip);
+		goto out;
+	}
+
 	memcpy(hr_dip->dgid, grh->dgid.raw, sizeof(grh->dgid.raw));
-	hr_dip->dip_idx = *dip_idx = spare_idx[*head];
-	*head = (*head == hr_dev->caps.num_qps - 1) ? 0 : (*head + 1);
+	hr_dip->dip_idx = *dip_idx;
+	hr_dip->qp_cnt++;
+	hr_qp->dip = hr_dip;
 	list_add_tail(&hr_dip->node, &hr_dev->dip_list);
 
 out:
@@ -6247,10 +6262,12 @@ int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 		/* Modify qp to reset before destroying qp */
 		ret = hns_roce_v2_modify_qp(&hr_qp->ibqp, NULL, 0,
 					    hr_qp->state, IB_QPS_RESET, udata);
-		if (ret)
+		if (ret) {
+			hr_qp->delayed_destroy_flag = true;
 			ibdev_err_ratelimited(ibdev,
 				  "failed to modify QP to RST, ret = %d.\n",
 				  ret);
+		}
 	}
 
 	send_cq = hr_qp->ibqp.send_cq ? to_hr_cq(hr_qp->ibqp.send_cq) : NULL;
@@ -6278,20 +6295,46 @@ int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 	return ret;
 }
 
+static void put_dip_ctx_idx(struct hns_roce_dev *hr_dev,
+							struct hns_roce_qp *hr_qp)
+{
+	unsigned long *dip_idx_bitmap = hr_dev->qp_table.idx_table.dip_idx_bitmap;
+	unsigned long *qpn_bitmap = hr_dev->qp_table.idx_table.qpn_bitmap;
+	struct hns_roce_dip *hr_dip = hr_qp->dip;
+	unsigned long flags;
+
+	spin_lock_irqsave(&hr_dev->dip_list_lock, flags);
+
+	if (hr_dip) {
+		hr_dip->qp_cnt--;
+		if (!hr_dip->qp_cnt) {
+			clear_bit(hr_dip->dip_idx, dip_idx_bitmap);
+			set_bit(hr_dip->dip_idx, qpn_bitmap);
+
+			list_del(&hr_dip->node);
+		} else {
+			hr_dip = NULL;
+		}
+	}
+
+	spin_unlock_irqrestore(&hr_dev->dip_list_lock, flags);
+	kfree(hr_dip);
+}
+
 int hns_roce_v2_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	int ret;
 
+	if (hr_qp->congest_type == HNS_ROCE_CONGEST_TYPE_DIP)
+		put_dip_ctx_idx(hr_dev, hr_qp);
+
 	ret = hns_roce_v2_destroy_qp_common(hr_dev, hr_qp, udata);
 	if (ret)
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 			  "failed to destroy QP, QPN = 0x%06lx, ret = %d.\n",
 			  hr_qp->qpn, ret);
-
-	if (ret == -EBUSY)
-		hr_qp->delayed_destroy_flag = true;
 
 	hns_roce_qp_destroy(hr_dev, hr_qp, udata);
 
@@ -6855,33 +6898,11 @@ static struct hns_roce_ceqe *next_ceqe_sw_v2(struct hns_roce_eq *eq)
 		!!(eq->cons_index & eq->entries)) ? ceqe : NULL;
 }
 
-static irqreturn_t hns_roce_v2_ceq_int(struct hns_roce_dev *hr_dev,
-				       struct hns_roce_eq *eq)
+static irqreturn_t hns_roce_v2_ceq_int(struct hns_roce_eq *eq)
 {
-	struct hns_roce_ceqe *ceqe = next_ceqe_sw_v2(eq);
-	irqreturn_t ceqe_found = IRQ_NONE;
-	u32 cqn;
+	tasklet_schedule(&eq->tasklet);
 
-	while (ceqe) {
-		/* Make sure we read CEQ entry after we have checked the
-		 * ownership bit
-		 */
-		dma_rmb();
-
-		cqn = hr_reg_read(ceqe, CEQE_CQN);
-
-		hns_roce_cq_completion(hr_dev, cqn);
-
-		++eq->cons_index;
-		ceqe_found = IRQ_HANDLED;
-		atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_CEQE_CNT]);
-
-		ceqe = next_ceqe_sw_v2(eq);
-	}
-
-	update_eq_db(eq);
-
-	return IRQ_RETVAL(ceqe_found);
+	return IRQ_HANDLED;
 }
 
 static irqreturn_t hns_roce_v2_msix_interrupt_eq(int irq, void *eq_ptr)
@@ -6892,7 +6913,7 @@ static irqreturn_t hns_roce_v2_msix_interrupt_eq(int irq, void *eq_ptr)
 
 	if (eq->type_flag == HNS_ROCE_CEQ)
 		/* Completion event interrupt */
-		int_work = hns_roce_v2_ceq_int(hr_dev, eq);
+		int_work = hns_roce_v2_ceq_int(eq);
 	else
 		/* Asychronous event interrupt */
 		int_work = hns_roce_v2_aeq_int(hr_dev, eq);
@@ -7264,6 +7285,34 @@ free_cmd_mbox:
 	return ret;
 }
 
+static void hns_roce_ceq_task(struct tasklet_struct *task)
+{
+	struct hns_roce_eq *eq = from_tasklet(eq, task, tasklet);
+	struct hns_roce_ceqe *ceqe = next_ceqe_sw_v2(eq);
+	struct hns_roce_dev *hr_dev = eq->hr_dev;
+	int ceqe_num = 0;
+	u32 cqn;
+
+	while (ceqe && ceqe_num < hr_dev->caps.ceqe_depth) {
+		/* Make sure we read CEQ entry after we have checked the
+		 * ownership bit
+		 */
+		dma_rmb();
+
+		cqn = hr_reg_read(ceqe, CEQE_CQN);
+
+		hns_roce_cq_completion(hr_dev, cqn);
+
+		++eq->cons_index;
+		++ceqe_num;
+		atomic64_inc(&hr_dev->dfx_cnt[HNS_ROCE_DFX_CEQE_CNT]);
+
+		ceqe = next_ceqe_sw_v2(eq);
+	}
+
+	update_eq_db(eq);
+}
+
 static int __hns_roce_request_irq(struct hns_roce_dev *hr_dev, int irq_num,
 				  int comp_num, int aeq_num, int other_num)
 {
@@ -7295,21 +7344,24 @@ static int __hns_roce_request_irq(struct hns_roce_dev *hr_dev, int irq_num,
 			 j - other_num - aeq_num);
 
 	for (j = 0; j < irq_num; j++) {
-		if (j < other_num)
+		if (j < other_num) {
 			ret = request_irq(hr_dev->irq[j],
 					  hns_roce_v2_msix_interrupt_abn,
 					  0, hr_dev->irq_names[j], hr_dev);
-
-		else if (j < (other_num + comp_num))
+		} else if (j < (other_num + comp_num)) {
+			tasklet_setup(&eq_table->eq[j - other_num].tasklet,
+				      hns_roce_ceq_task);
 			ret = request_irq(eq_table->eq[j - other_num].irq,
 					  hns_roce_v2_msix_interrupt_eq,
 					  0, hr_dev->irq_names[j + aeq_num],
 					  &eq_table->eq[j - other_num]);
-		else
+		} else {
 			ret = request_irq(eq_table->eq[j - other_num].irq,
 					  hns_roce_v2_msix_interrupt_eq,
 					  0, hr_dev->irq_names[j - comp_num],
 					  &eq_table->eq[j - other_num]);
+		}
+
 		if (ret) {
 			dev_err(hr_dev->dev, "Request irq error!\n");
 			goto err_request_failed;
@@ -7319,12 +7371,16 @@ static int __hns_roce_request_irq(struct hns_roce_dev *hr_dev, int irq_num,
 	return 0;
 
 err_request_failed:
-	for (j -= 1; j >= 0; j--)
-		if (j < other_num)
+	for (j -= 1; j >= 0; j--) {
+		if (j < other_num) {
 			free_irq(hr_dev->irq[j], hr_dev);
-		else
-			free_irq(eq_table->eq[j - other_num].irq,
-				 &eq_table->eq[j - other_num]);
+			continue;
+		}
+		free_irq(eq_table->eq[j - other_num].irq,
+			 &eq_table->eq[j - other_num]);
+		if (j < other_num + comp_num)
+			tasklet_kill(&eq_table->eq[j - other_num].tasklet);
+	}
 
 err_kzalloc_failed:
 	for (i -= 1; i >= 0; i--)
@@ -7345,8 +7401,12 @@ static void __hns_roce_free_irq(struct hns_roce_dev *hr_dev)
 	for (i = 0; i < hr_dev->caps.num_other_vectors; i++)
 		free_irq(hr_dev->irq[i], hr_dev);
 
-	for (i = 0; i < eq_num; i++)
+	for (i = 0; i < eq_num; i++) {
 		free_irq(hr_dev->eq_table.eq[i].irq, &hr_dev->eq_table.eq[i]);
+		if (i < hr_dev->caps.num_comp_vectors)
+			tasklet_kill(&hr_dev->eq_table.eq[i].tasklet);
+	}
+
 
 	for (i = 0; i < irq_num; i++)
 		kfree(hr_dev->irq_names[i]);
@@ -7537,14 +7597,22 @@ static int hns_roce_v2_config_scc_param(struct hns_roce_dev *hr_dev,
 	hns_roce_cmq_setup_basic_desc(&desc, scc_opcode[algo], false);
 	pdata = &hr_dev->port_data[port_num - 1];
 	scc_param = &pdata->scc_param[algo];
+	mutex_lock(&scc_param->scc_mutex);
 	memcpy(&desc.data, scc_param, sizeof(scc_param->param));
 
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
-	if (ret)
+	if (ret) {
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 				      "failed to configure scc param, opcode: 0x%x, ret = %d.\n",
 			le16_to_cpu(desc.opcode), ret);
-	return ret;
+		return ret;
+	}
+
+	memcpy(scc_param->latest_param, &desc.data,
+	       sizeof(scc_param->latest_param));
+	mutex_unlock(&scc_param->scc_mutex);
+
+	return 0;
 }
 
 static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
@@ -7580,7 +7648,11 @@ static int hns_roce_v2_query_scc_param(struct hns_roce_dev *hr_dev,
 
 	pdata = &hr_dev->port_data[port_num - 1];
 	scc_param = &pdata->scc_param[algo];
-	memcpy(scc_param, &desc.data, sizeof(scc_param->param));
+	mutex_lock(&scc_param->scc_mutex);
+	memcpy(scc_param->param, &desc.data, sizeof(scc_param->param));
+	memcpy(scc_param->latest_param, &desc.data,
+	       sizeof(scc_param->latest_param));
+	mutex_unlock(&scc_param->scc_mutex);
 
 	return 0;
 }
@@ -8013,6 +8085,20 @@ static void hns_roce_v2_reset_notify_user(struct hns_roce_dev *hr_dev)
 	mutex_unlock(&hr_dev->uctx_list_mutex);
 }
 
+static void hns_roce_v2_reset_notify_cmd(struct hns_roce_dev *hr_dev)
+{
+	struct hns_roce_cmdq *hr_cmd = &hr_dev->cmd;
+	int i;
+
+	if (!hr_dev->cmd_mod)
+		return;
+
+	for (i = 0; i < hr_cmd->max_cmds; i++) {
+		hr_cmd->context[i].result = -EBUSY;
+		complete(&hr_cmd->context[i].done);
+	}
+}
+
 static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 {
 	struct hns_roce_dev *hr_dev;
@@ -8035,6 +8121,9 @@ static int hns_roce_hw_v2_reset_notify_down(struct hnae3_handle *handle)
 	hns_roce_v2_reset_notify_user(hr_dev);
 
 	hr_dev->state = HNS_ROCE_DEVICE_STATE_RST_DOWN;
+
+	/* Complete the CMDQ event in advance during the reset. */
+	hns_roce_v2_reset_notify_cmd(hr_dev);
 
 	return 0;
 }

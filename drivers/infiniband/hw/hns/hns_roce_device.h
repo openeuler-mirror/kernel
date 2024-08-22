@@ -293,6 +293,7 @@ struct hns_roce_ucontext {
 	u32			config;
 	struct hns_roce_dca_ctx	dca_ctx;
 	struct hns_dca_ctx_debugfs dca_dbgfs;
+	u8 cq_bank_id;
 };
 
 struct hns_roce_pd {
@@ -606,9 +607,8 @@ struct hns_roce_bank {
 };
 
 struct hns_roce_idx_table {
-	u32 *spare_idx;
-	u32 head;
-	u32 tail;
+	unsigned long *qpn_bitmap;
+	unsigned long *dip_idx_bitmap;
 };
 
 struct hns_roce_qp_table {
@@ -627,6 +627,7 @@ struct hns_roce_cq_table {
 	struct hns_roce_hem_table	table;
 	struct hns_roce_bank bank[HNS_ROCE_CQ_BANK_NUM];
 	struct mutex			bank_mutex;
+	u32 ctx_num[HNS_ROCE_CQ_BANK_NUM];
 };
 
 struct hns_roce_srq_table {
@@ -768,6 +769,7 @@ struct hns_roce_qp {
 	u8			priority;
 	bool			delayed_destroy_flag;
 	struct hns_roce_mtr_node *mtr_node;
+	struct hns_roce_dip *dip;
 };
 
 struct hns_roce_ib_iboe {
@@ -834,6 +836,7 @@ struct hns_roce_eq {
 	int				shift;
 	int				event_type;
 	int				sub_type;
+	struct tasklet_struct		tasklet;
 };
 
 struct hns_roce_eq_table {
@@ -1121,12 +1124,14 @@ struct hns_roce_cnp_pri_param {
 #define HNS_ROCE_SCC_PARAM_SIZE 4
 struct hns_roce_scc_param {
 	__le32 param[HNS_ROCE_SCC_PARAM_SIZE];
-	u32 lifespan;
+	__le32 lifespan;
 	unsigned long timestamp;
 	enum hns_roce_scc_algo algo_type;
 	struct delayed_work scc_cfg_dwork;
 	struct hns_roce_dev *hr_dev;
 	u8 port_num;
+	__le32 latest_param[HNS_ROCE_SCC_PARAM_SIZE];
+	struct mutex scc_mutex; /* protect @param and @latest_param */
 };
 
 struct hns_roce_port {
@@ -1226,9 +1231,9 @@ struct hns_roce_dev {
 	struct rdma_notify_mem *notify_tbl;
 	size_t notify_num;
 	struct list_head mtr_unfree_list; /* list of unfree mtr on this dev */
-	spinlock_t mtr_unfree_list_lock; /* protect mtr_unfree_list */
+	struct mutex mtr_unfree_list_mutex; /* protect mtr_unfree_list */
 	struct list_head umem_unfree_list; /* list of unfree umem on this dev */
-	spinlock_t umem_unfree_list_lock; /* protect umem_unfree_list */
+	struct mutex umem_unfree_list_mutex; /* protect umem_unfree_list */
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)
@@ -1553,4 +1558,6 @@ int hns_roce_register_poe_channel(struct hns_roce_dev *hr_dev, u8 channel,
 				  u64 poe_addr);
 int hns_roce_unregister_poe_channel(struct hns_roce_dev *hr_dev, u8 channel);
 bool hns_roce_is_srq_exist(struct hns_roce_dev *hr_dev, u32 srqn);
+void hns_roce_put_cq_bankid_for_uctx(struct hns_roce_ucontext *uctx);
+void hns_roce_get_cq_bankid_for_uctx(struct hns_roce_ucontext *uctx);
 #endif /* _HNS_ROCE_DEVICE_H */

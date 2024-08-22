@@ -1665,19 +1665,19 @@ void hns_roce_lock_cqs(struct hns_roce_cq *send_cq, struct hns_roce_cq *recv_cq)
 		__acquire(&send_cq->lock);
 		__acquire(&recv_cq->lock);
 	} else if (unlikely(send_cq != NULL && recv_cq == NULL)) {
-		spin_lock_irq(&send_cq->lock);
+		spin_lock(&send_cq->lock);
 		__acquire(&recv_cq->lock);
 	} else if (unlikely(send_cq == NULL && recv_cq != NULL)) {
-		spin_lock_irq(&recv_cq->lock);
+		spin_lock(&recv_cq->lock);
 		__acquire(&send_cq->lock);
 	} else if (send_cq == recv_cq) {
-		spin_lock_irq(&send_cq->lock);
+		spin_lock(&send_cq->lock);
 		__acquire(&recv_cq->lock);
 	} else if (send_cq->cqn < recv_cq->cqn) {
-		spin_lock_irq(&send_cq->lock);
+		spin_lock(&send_cq->lock);
 		spin_lock_nested(&recv_cq->lock, SINGLE_DEPTH_NESTING);
 	} else {
-		spin_lock_irq(&recv_cq->lock);
+		spin_lock(&recv_cq->lock);
 		spin_lock_nested(&send_cq->lock, SINGLE_DEPTH_NESTING);
 	}
 }
@@ -1697,13 +1697,13 @@ void hns_roce_unlock_cqs(struct hns_roce_cq *send_cq,
 		spin_unlock(&recv_cq->lock);
 	} else if (send_cq == recv_cq) {
 		__release(&recv_cq->lock);
-		spin_unlock_irq(&send_cq->lock);
+		spin_unlock(&send_cq->lock);
 	} else if (send_cq->cqn < recv_cq->cqn) {
 		spin_unlock(&recv_cq->lock);
-		spin_unlock_irq(&send_cq->lock);
+		spin_unlock(&send_cq->lock);
 	} else {
 		spin_unlock(&send_cq->lock);
-		spin_unlock_irq(&recv_cq->lock);
+		spin_unlock(&recv_cq->lock);
 	}
 }
 
@@ -1760,10 +1760,17 @@ int hns_roce_init_qp_table(struct hns_roce_dev *hr_dev)
 	unsigned int reserved_from_bot;
 	unsigned int i;
 
-	qp_table->idx_table.spare_idx = kcalloc(hr_dev->caps.num_qps,
-					sizeof(u32), GFP_KERNEL);
-	if (!qp_table->idx_table.spare_idx)
+	qp_table->idx_table.qpn_bitmap = bitmap_zalloc(hr_dev->caps.num_qps,
+						       GFP_KERNEL);
+	if (!qp_table->idx_table.qpn_bitmap)
 		return -ENOMEM;
+
+	qp_table->idx_table.dip_idx_bitmap = bitmap_zalloc(hr_dev->caps.num_qps,
+							   GFP_KERNEL);
+	if (!qp_table->idx_table.dip_idx_bitmap) {
+		bitmap_free(qp_table->idx_table.qpn_bitmap);
+		return -ENOMEM;
+	}
 
 	mutex_init(&qp_table->scc_mutex);
 	mutex_init(&qp_table->bank_mutex);
@@ -1793,6 +1800,6 @@ void hns_roce_cleanup_qp_table(struct hns_roce_dev *hr_dev)
 	for (i = 0; i < HNS_ROCE_QP_BANK_NUM; i++)
 		ida_destroy(&hr_dev->qp_table.bank[i].ida);
 	mutex_destroy(&hr_dev->qp_table.bank_mutex);
-	mutex_destroy(&hr_dev->qp_table.scc_mutex);
-	kfree(hr_dev->qp_table.idx_table.spare_idx);
+	bitmap_free(hr_dev->qp_table.idx_table.qpn_bitmap);
+	bitmap_free(hr_dev->qp_table.idx_table.dip_idx_bitmap);
 }
