@@ -127,15 +127,3 @@ u64 tmi_ttt_unmap_range(u64 rd, u64 map_addr, u64 size, u64 node_id)
 	arm_smccc_1_1_smc(TMI_TMM_TTT_UNMAP_RANGE, rd, map_addr, size, node_id, &res);
 	return res.a1;
 }
-
-u64 tmi_tmm_inf_test(u64 x1, u64 x2, u64 x3, u64 x4, u64 x5)
-{
-	struct arm_smccc_res res;
-	u64 vttbr_el2_pa = __pa(x2);
-	u64 cvm_params_pa = __pa(x3);
-	u64 tec_params_pa = __pa(x4);
-
-	arm_smccc_1_1_smc(TMI_TMM_INF_TEST, x1, vttbr_el2_pa, cvm_params_pa, tec_params_pa, x5, &res);
-	return res.a1;
-}
-EXPORT_SYMBOL_GPL(tmi_tmm_inf_test);

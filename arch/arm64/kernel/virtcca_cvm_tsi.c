@@ -36,7 +36,6 @@ static struct miscdevice ioctl_dev = {
 
 static int __init tmm_tsi_init(void)
 {
-	unsigned long ver;
 	int ret;
 
 	if (!is_virtcca_cvm_world())
@@ -52,10 +51,6 @@ static int __init tmm_tsi_init(void)
 	token.buf = kzalloc(GRANULE_SIZE * MAX_TOKEN_GRANULE_COUNT, GFP_KERNEL);
 	if (!token.buf)
 		return -ENOMEM;
-
-	pr_warn("tmm_tsi: module loaded (version %lu.%lu).\n",
-			TSI_ABI_VERSION_GET_MAJOR(ver),
-			TSI_ABI_VERSION_GET_MINOR(ver));
 
 	return 0;
 }

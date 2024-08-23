@@ -136,6 +136,7 @@ int kvm_vm_ioctl_enable_cap(struct kvm *kvm,
 		break;
 #ifdef CONFIG_HISI_VIRTCCA_HOST
 	case KVM_CAP_ARM_TMM:
+		r = 0;
 		if (static_branch_unlikely(&virtcca_cvm_is_available))
 			r = kvm_cvm_enable_cap(kvm, cap);
 		break;
