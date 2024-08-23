@@ -3976,17 +3976,18 @@ static int ext4_iomap_write_begin(struct file *file,
 	*fsdata = delalloc ? (void *)0 : (void *)FALL_BACK_TO_NONDELALLOC;
 
 retry:
-	iter.pos = pos;
-	iter.len = len;
-
 	folio = iomap_get_folio(&iter, pos, len);
 	if (IS_ERR(folio))
 		return PTR_ERR(folio);
 
-	WARN_ON_ONCE(pos + len > folio_pos(folio) + folio_size(folio));
+	if (pos + len > folio_pos(folio) + folio_size(folio))
+		len = folio_pos(folio) + folio_size(folio) - pos;
 
 	if (iomap_is_fully_dirty(folio, offset_in_folio(folio, pos), len))
 		goto out;
+
+	iter.pos = pos;
+	iter.len = len;
 
 	do {
 		int length;
