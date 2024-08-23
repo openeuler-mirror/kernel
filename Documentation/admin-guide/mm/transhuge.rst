@@ -213,8 +213,8 @@ possible to enable/disable it by configurate the corresponding bit::
 
 The kernel could try to enable mappings for different sizes, eg, 64K on
 arm64, BIT0 for file mapping, BIT1 for anonymous mapping, and THP size
-page, BIT3 for anonymous mapping, where 64K anonymous mapping for arm64
-is dependent on BIT3 being turned on, the above feature are disabled by
+page, BIT2 for anonymous mapping, where 2M anonymous mapping for arm64
+is dependent on BIT2 being turned on, the above feature are disabled by
 default, and could enable the above feature by writing the corresponding
 bit to 1::
 
