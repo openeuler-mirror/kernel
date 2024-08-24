@@ -499,10 +499,22 @@ static void hns3_update_roh_arp_proxy_enable(struct net_device *netdev,
 		    enable ? "enable" : "disable");
 }
 
+static void hns3_update_pfc_storm_prevent_enable(struct net_device *netdev,
+						 bool enable)
+{
+	struct hnae3_handle *handle = hns3_get_handle(netdev);
+
+	if (!handle->ae_algo->ops->request_pfc_storm_config)
+		return;
+
+	handle->ae_algo->ops->request_pfc_storm_config(handle, enable);
+}
+
 static const struct hns3_pflag_desc hns3_priv_flags[HNAE3_PFLAG_MAX] = {
 	{ "limit_promisc",	hns3_update_limit_promisc_mode },
 	{ "qb_enable",		hns3_update_fd_qb_state },
 	{ "roh_arp_proxy_enable",	hns3_update_roh_arp_proxy_enable },
+	{ "pfc_storm_prevent_enable",	hns3_update_pfc_storm_prevent_enable },
 };
 
 static int hns3_get_sset_count(struct net_device *netdev, int stringset)

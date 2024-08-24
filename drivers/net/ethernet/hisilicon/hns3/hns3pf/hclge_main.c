@@ -5498,6 +5498,86 @@ static void hclge_flush_qb_config(struct hnae3_handle *handle)
 	set_bit(HCLGE_VPORT_STATE_QB_CHANGE, &vport->state);
 }
 
+static int
+hclge_get_pfc_storm_prevent(struct hclge_dev *hdev, int dir, bool *enable)
+{
+	struct hclge_pfc_storm_para_cmd *para_cmd;
+	struct hclge_desc desc;
+	int ret;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_PAUSE_STORM_PARA, true);
+	para_cmd = (struct hclge_pfc_storm_para_cmd *)desc.data;
+	para_cmd->dir = cpu_to_le32(dir);
+	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
+	if (ret)
+		return ret;
+
+	*enable = !!le32_to_cpu(para_cmd->enable);
+	return 0;
+}
+
+static int hclge_get_pfc_storm_config(struct hnae3_handle *handle, bool *enable)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+	bool enable_tx, enable_rx;
+	int ret;
+
+	ret = hclge_get_pfc_storm_prevent(hdev, HCLGE_DIR_TX, &enable_tx);
+	if (ret) {
+		dev_err(&hdev->pdev->dev, "failed to get tx pfc storm prevent, ret=%d\n",
+			ret);
+		return ret;
+	}
+	ret = hclge_get_pfc_storm_prevent(hdev, HCLGE_DIR_RX, &enable_rx);
+	if (ret) {
+		dev_err(&hdev->pdev->dev, "failed to get rx pfc storm prevent, ret=%d\n",
+			ret);
+		return ret;
+	}
+
+	*enable = enable_tx || enable_rx;
+	return 0;
+}
+
+static int
+hclge_enable_pfc_storm_prevent(struct hclge_dev *hdev, int dir, bool enable)
+{
+	struct hclge_pfc_storm_para_cmd *para_cmd;
+	struct hclge_desc desc;
+
+	hclge_cmd_setup_basic_desc(&desc, HCLGE_OPC_CFG_PAUSE_STORM_PARA,
+				   false);
+	para_cmd = (struct hclge_pfc_storm_para_cmd *)desc.data;
+	para_cmd->dir = cpu_to_le32(dir);
+	para_cmd->enable = cpu_to_le32(enable);
+
+	return hclge_cmd_send(&hdev->hw, &desc, 1);
+}
+
+static void
+hclge_request_pfc_storm_config(struct hnae3_handle *handle, bool enable)
+{
+	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_dev *hdev = vport->back;
+	int ret;
+
+	ret = hclge_enable_pfc_storm_prevent(hdev, HCLGE_DIR_TX, enable);
+	if (ret) {
+		dev_err(&hdev->pdev->dev, "failed to %s tx pfc storm prevent, ret=%d\n",
+			enable ? "enable" : "disable", ret);
+		return;
+	}
+
+	ret = hclge_enable_pfc_storm_prevent(hdev, HCLGE_DIR_RX, enable);
+	if (ret)
+		dev_err(&hdev->pdev->dev, "failed to %s rx pfc storm prevent, ret=%d\n",
+			enable ? "enable" : "disable", ret);
+	else
+		dev_info(&hdev->pdev->dev, "pfc storm prevent %s\n",
+			 enable ? "enabled" : "disabled");
+}
+
 static void hclge_sync_fd_state(struct hclge_dev *hdev)
 {
 	struct hclge_vport *vport = &hdev->vport[0];
@@ -13510,6 +13590,8 @@ struct hnae3_ae_ops hclge_ops = {
 	.set_promisc_mode = hclge_set_promisc_mode,
 	.request_update_promisc_mode = hclge_request_update_promisc_mode,
 	.request_flush_qb_config = hclge_flush_qb_config,
+	.request_pfc_storm_config = hclge_request_pfc_storm_config,
+	.get_pfc_storm_config = hclge_get_pfc_storm_config,
 	.query_fd_qb_state = hclge_query_fd_qb_state,
 	.set_loopback = hclge_set_loopback,
 	.start = hclge_ae_start,

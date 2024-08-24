@@ -5600,6 +5600,18 @@ static void hns3_state_init(struct hnae3_handle *handle)
 			&handle->supported_pflags);
 		set_bit(HNAE3_PFLAG_ROH_ARP_PROXY_ENABLE, &handle->priv_flags);
 	}
+
+	if (handle->ae_algo->ops->get_pfc_storm_config) {
+		bool enable = true;
+		int ret = handle->ae_algo->ops->get_pfc_storm_config(handle,
+								     &enable);
+
+		set_bit(HNAE3_PFLAG_PFC_STORM_PREVENT_ENABLE,
+			&handle->supported_pflags);
+		if (!ret && enable)
+			set_bit(HNAE3_PFLAG_PFC_STORM_PREVENT_ENABLE,
+				&handle->priv_flags);
+	}
 }
 
 static void hns3_state_uninit(struct hnae3_handle *handle)
