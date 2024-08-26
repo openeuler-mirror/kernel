@@ -29,16 +29,19 @@ int hclgevf_unic_update_ip_list(struct hnae3_handle *handle,
 	struct in6_addr ip_addr;
 	int ret;
 
-	hclge_comm_unic_convert_ip_addr(addr, &ip_addr);
+	ret = hclge_comm_unic_convert_ip_addr(addr, &ip_addr);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to convert ip addr, ret = %d", ret);
+		return ret;
+	}
 
 	ret = hclge_comm_unic_update_addr_list(&hdev->ip_table.ip_list,
 					       &hdev->ip_table.ip_list_lock,
 					       state,
 					       (const unsigned char *)&ip_addr);
 	if (ret == -ENOENT)
-		dev_err(&hdev->pdev->dev,
-			"failed to delete ip %pI6c from ip list\n",
-			ip_addr.s6_addr);
+		dev_err(&hdev->pdev->dev, "failed to delete ip from ip list\n");
 
 	return ret;
 }
@@ -107,8 +110,8 @@ static void hclgevf_unic_config_ip_list(struct hnae3_handle *h,
 		ret = hclgevf_unic_add_del_ip_addr(hdev, ip_node);
 		if  (ret) {
 			dev_err(&hdev->pdev->dev,
-				"failed to configure ip %pI6c, state = %d, ret = %d\n",
-				ip_node->ip_addr.s6_addr, ip_node->state, ret);
+				"failed to configure ip, state = %d, ret = %d\n",
+				ip_node->state, ret);
 			return;
 		}
 		if (ip_node->state == HCLGE_COMM_UNIC_ADDR_TO_ADD) {

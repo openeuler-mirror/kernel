@@ -165,7 +165,7 @@ static int hclge_unic_add_ip_tbl(struct hclge_vport *vport,
 						HCLGE_IP_TBL_ADD);
 }
 
-int hclge_unic_init_iptbl_info(struct hclge_dev *hdev)
+void hclge_unic_init_iptbl_info(struct hclge_dev *hdev)
 {
 	struct unic_ip_table_info *iptbl_info = &hdev->iptbl_info;
 
@@ -177,8 +177,6 @@ int hclge_unic_init_iptbl_info(struct hclge_dev *hdev)
 	memset(&iptbl_info->ipaddr_to_assemble, 0,
 	       sizeof(struct sockaddr_in6));
 	iptbl_info->upper_ip_addr_state = HCLGE_UNIC_IP_ADDR_NOTSET;
-
-	return 0;
 }
 
 void hclge_unic_reset_iptbl_space(struct hclge_dev *hdev)
@@ -245,16 +243,19 @@ int hclge_unic_update_ip_list(struct hclge_vport *vport,
 	struct in6_addr ip_addr;
 	int ret;
 
-	hclge_comm_unic_convert_ip_addr(addr, &ip_addr);
+	ret = hclge_comm_unic_convert_ip_addr(addr, &ip_addr);
+	if (ret) {
+		dev_err(&hdev->pdev->dev,
+			"failed to convert ip addr, ret = %d", ret);
+		return ret;
+	}
 
 	ret = hclge_comm_unic_update_addr_list(&vport->ip_list,
 					       &vport->ip_list_lock,
 					       state,
 					       (const unsigned char *)&ip_addr);
 	if (ret == -ENOENT)
-		dev_err(&hdev->pdev->dev,
-			"failed to delete ip %pI6c from ip list\n",
-			ip_addr.s6_addr);
+		dev_err(&hdev->pdev->dev, "failed to delete ip from ip list\n");
 
 	if (!ret)
 		set_bit(HCLGE_VPORT_STATE_IP_TBL_CHANGE, &vport->state);
@@ -403,10 +404,11 @@ static bool hclge_unic_need_sync_ip_table(struct hclge_vport *vport)
 
 void hclge_unic_sync_ip_table(struct hclge_dev *hdev)
 {
+	struct hclge_vport *vport;
 	int i;
 
 	for (i = 0; i < hdev->num_alloc_vport; i++) {
-		struct hclge_vport *vport = &hdev->vport[i];
+		vport = &hdev->vport[i];
 
 		if (!hclge_unic_need_sync_ip_table(vport))
 			continue;
@@ -458,6 +460,8 @@ static void hclge_unic_build_ip_del_list(struct list_head *list,
 				list_del(&ip_cfg->node);
 				kfree(ip_cfg);
 			}
+			break;
+		default:
 			break;
 		}
 	}
@@ -540,6 +544,8 @@ static void hclge_unic_uninit_vport_ip_list(struct hclge_vport *vport)
 		case HCLGE_COMM_UNIC_ADDR_TO_ADD:
 			list_del(&ip_node->node);
 			kfree(ip_node);
+			break;
+		default:
 			break;
 		}
 	}

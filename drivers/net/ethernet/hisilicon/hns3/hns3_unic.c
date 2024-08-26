@@ -27,6 +27,18 @@
 
 #define HNS3_UNIC_LB_TEST_PACKET_SIZE	128
 
+static const u8 mc_guid[][HNS3_SIMPLE_GUID_LEN] = {
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x00}, /* DHCPv4 */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x01}, /* DHCPv6 */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x02}, /* IP notify */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x03}, /* ULDP */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x04}, /* ULAP */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x05}, /* Time sync */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x06}, /* NPIC */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x07}, /* NNP */
+	{0xff, 0xff, 0xff, 0xff, 0x01, 0x08}, /* PHCP */
+};
+
 void hns3_unic_set_default_cc(struct sk_buff *skb)
 {
 	struct ublhdr *ubl = (struct ublhdr *)skb->data;
@@ -89,8 +101,8 @@ u8 hns3_unic_get_l3_type(struct net_device *netdev, u32 ol_info, u32 l234info)
 	return UB_UNKNOWN_CFG_TYPE;
 }
 
-static int addr_event(struct notifier_block *nb, unsigned long event,
-		      struct sockaddr *sa, struct net_device *ndev)
+static int addr_event(unsigned long event, struct sockaddr *sa,
+		      struct net_device *ndev)
 {
 	struct hnae3_handle *handle;
 	int ret;
@@ -141,7 +153,7 @@ static int unic_inetaddr_event(struct notifier_block *this, unsigned long event,
 	in.sin_family = AF_INET;
 	in.sin_addr.s_addr = ifa4->ifa_address;
 
-	return addr_event(this, event, (struct sockaddr *)&in, ndev);
+	return addr_event(event, (struct sockaddr *)&in, ndev);
 }
 
 static int unic_inet6addr_event(struct notifier_block *this, unsigned long event,
@@ -154,7 +166,7 @@ static int unic_inet6addr_event(struct notifier_block *this, unsigned long event
 	in6.sin6_family = AF_INET6;
 	in6.sin6_addr = ifa6->addr;
 
-	return addr_event(this, event, (struct sockaddr *)&in6, ndev);
+	return addr_event(event, (struct sockaddr *)&in6, ndev);
 }
 
 static struct notifier_block unic_inetaddr_notifier = {
@@ -167,14 +179,14 @@ static struct notifier_block unic_inet6addr_notifier = {
 
 void register_ipaddr_notifier(void)
 {
-	register_inetaddr_notifier(&unic_inetaddr_notifier);
-	register_inet6addr_notifier(&unic_inet6addr_notifier);
+	(void)register_inetaddr_notifier(&unic_inetaddr_notifier);
+	(void)register_inet6addr_notifier(&unic_inet6addr_notifier);
 }
 
 void unregister_ipaddr_notifier(void)
 {
-	unregister_inetaddr_notifier(&unic_inetaddr_notifier);
-	unregister_inet6addr_notifier(&unic_inet6addr_notifier);
+	(void)unregister_inetaddr_notifier(&unic_inetaddr_notifier);
+	(void)unregister_inet6addr_notifier(&unic_inet6addr_notifier);
 }
 
 #define UNIC_DHCPV4_PROTO 0x0100
@@ -239,7 +251,7 @@ out:
 	if (is_success)
 		tqp_vector->rx_group.total_packets++;
 	else
-		print_hex_dump(KERN_ERR, "ubl selftest:", DUMP_PREFIX_OFFSET,
+		print_hex_dump(KERN_ERR, "selftest:", DUMP_PREFIX_OFFSET,
 			       HNS3_UNIC_DUMP_ROW_SIZE, 1, skb->data, len, true);
 
 	dev_kfree_skb_any(skb);
@@ -262,6 +274,9 @@ static int hns3_unic_add_mc_guid(struct net_device *netdev,
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	u8 mguid[UBL_ALEN] = {0};
 
+	if (!h->ae_algo->ops->add_addr)
+		return -EOPNOTSUPP;
+
 	if (!hns3_unic_mguid_valid_check(addr)) {
 		hns3_unic_format_sim_guid_addr(format_simple_guid_addr, addr);
 		netdev_err(netdev, "Add mc guid err! invalid guid: %s\n",
@@ -270,11 +285,9 @@ static int hns3_unic_add_mc_guid(struct net_device *netdev,
 	}
 
 	hns3_unic_extern_mc_guid(mguid, addr);
-	if (h->ae_algo->ops->add_addr)
-		return h->ae_algo->ops->add_addr(h, (const u8 *)mguid,
-						 HNAE3_UNIC_MCGUID_ADDR);
 
-	return 0;
+	return h->ae_algo->ops->add_addr(h, (const u8 *)mguid,
+					 HNAE3_UNIC_MCGUID_ADDR);
 }
 
 static int hns3_unic_del_mc_guid(struct net_device *netdev,
@@ -284,6 +297,9 @@ static int hns3_unic_del_mc_guid(struct net_device *netdev,
 	struct hnae3_handle *h = hns3_get_handle(netdev);
 	u8 mguid[UBL_ALEN] = {0};
 
+	if (!h->ae_algo->ops->rm_addr)
+		return -EOPNOTSUPP;
+
 	if (!hns3_unic_mguid_valid_check(addr)) {
 		hns3_unic_format_sim_guid_addr(format_simple_guid_addr, addr);
 		netdev_err(netdev, "Del mc guid err! invalid guid: %s\n",
@@ -292,11 +308,9 @@ static int hns3_unic_del_mc_guid(struct net_device *netdev,
 	}
 
 	hns3_unic_extern_mc_guid(mguid, addr);
-	if (h->ae_algo->ops->rm_addr)
-		return h->ae_algo->ops->rm_addr(h, (const u8 *)mguid,
-						HNAE3_UNIC_MCGUID_ADDR);
 
-	return 0;
+	return h->ae_algo->ops->rm_addr(h, (const u8 *)mguid,
+					HNAE3_UNIC_MCGUID_ADDR);
 }
 
 static u8 hns3_unic_get_netdev_flags(struct net_device *netdev)
@@ -325,23 +339,12 @@ void hns3_unic_set_rx_mode(struct net_device *netdev)
 	hns3_request_update_promisc_mode(h);
 }
 
-int hns3_unic_init_guid(struct net_device *netdev)
+static int hns3_unic_init_func_guid(struct net_device *netdev)
 {
-	const u8 mc_guid[][HNS3_SIMPLE_GUID_LEN] = {
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x00}, /* DHCPv4 */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x01}, /* DHCPv6 */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x02}, /* IP notify */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x03}, /* ULDP */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x04}, /* ULAP */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x05}, /* Time sync */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x06}, /* NPIC */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x07}, /* NNP */
-		{0xff, 0xff, 0xff, 0xff, 0x01, 0x08}, /* PHCP */
-	};
 	struct hns3_nic_priv *priv = netdev_priv(netdev);
 	struct hnae3_handle *h = priv->ae_handle;
 	u8 temp_guid_addr[UBL_ALEN];
-	int ret, i;
+	int ret;
 
 	if (!h->ae_algo->ops->get_func_guid ||
 	    !h->ae_algo->ops->set_func_guid) {
@@ -355,6 +358,18 @@ int hns3_unic_init_guid(struct net_device *netdev)
 		return ret;
 	}
 
+	memcpy(netdev->dev_addr, temp_guid_addr, netdev->addr_len);
+	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
+
+	h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
+
+	return 0;
+}
+
+static int hns3_unic_init_mc_guid(struct net_device *netdev)
+{
+	int i, ret;
+
 	for (i = 0; i < ARRAY_SIZE(mc_guid); i++) {
 		ret = hns3_unic_add_mc_guid(netdev, mc_guid[i]);
 		if (ret) {
@@ -363,11 +378,6 @@ int hns3_unic_init_guid(struct net_device *netdev)
 		}
 	}
 
-	memcpy(netdev->dev_addr, temp_guid_addr, netdev->addr_len);
-	memcpy(netdev->perm_addr, temp_guid_addr, netdev->addr_len);
-
-	h->ae_algo->ops->set_func_guid(h, netdev->dev_addr);
-
 	return 0;
 
 err_add_mc_guid:
@@ -375,6 +385,35 @@ err_add_mc_guid:
 		(void)hns3_unic_del_mc_guid(netdev, mc_guid[i]);
 
 	return ret;
+}
+
+int hns3_unic_init_guid(struct net_device *netdev)
+{
+	int ret;
+
+	ret = hns3_unic_init_func_guid(netdev);
+	if (ret)
+		return ret;
+
+	return hns3_unic_init_mc_guid(netdev);
+}
+
+static void hns3_unic_uninit_mc_guid(struct net_device *netdev)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mc_guid); i++)
+		(void)hns3_unic_del_mc_guid(netdev, mc_guid[i]);
+}
+
+static void hns3_unic_uninit_guid(struct net_device *netdev)
+{
+	hns3_unic_uninit_mc_guid(netdev);
+}
+
+void hns3_unic_uninit(struct net_device *netdev)
+{
+	hns3_unic_uninit_guid(netdev);
 }
 
 int hns3_unic_fill_skb_desc(struct hns3_nic_priv *priv,

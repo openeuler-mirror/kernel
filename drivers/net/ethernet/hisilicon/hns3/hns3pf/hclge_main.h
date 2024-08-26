@@ -97,8 +97,8 @@
 #define HCLGE_UMV_TBL_SIZE		3072
 #define HCLGE_DEFAULT_UMV_SPACE_PER_PF \
 	(HCLGE_UMV_TBL_SIZE / HCLGE_MAX_PF_NUM)
-#define HCLGE_DEFAULT_GUID_TBL_SIZE	64
-#define HCLGE_DEFAULT_IP_TBL_SIZE		1024
+#define HCLGE_DEFAULT_GUID_TBL_SIZE	320
+#define HCLGE_DEFAULT_IP_TBL_SIZE	1024
 
 #define HCLGE_TQP_RESET_TRY_TIMES	200
 
@@ -1136,6 +1136,12 @@ struct hclge_link_mode_bmap {
 	u16 support_bit;
 	enum ethtool_link_mode_bit_indices link_mode;
 };
+
+static inline u16 hclge_unic_real_mguid_tbl_size(struct hclge_dev *hdev)
+{
+	return min(HCLGE_UNIC_MC_GUID_NUM,
+		   hdev->ae_dev->dev_specs.guid_tbl_space - HCLGE_VPORT_NUM);
+}
 
 int hclge_set_vport_promisc_mode(struct hclge_vport *vport, bool en_uc_pmc,
 				 bool en_mc_pmc, bool en_bc_pmc);

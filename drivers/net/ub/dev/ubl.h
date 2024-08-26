@@ -12,8 +12,8 @@
  *
  */
 
-#ifndef __LINUX_UBL_H
-#define __LINUX_UBL_H
+#ifndef __UBL_H
+#define __UBL_H
 
 #include <linux/if_arp.h>
 #include <linux/if_ether.h>
@@ -51,8 +51,8 @@
 
 /**
  *	struct ublhdr - ub link header
- *	@h_cc: cc
- *	@h_npi: npi
+ *	@h_cc: congestion control
+ *	@h_npi: network partition identifier
  */
 struct ublhdr {
 	__be16 h_cc;
@@ -71,14 +71,10 @@ static inline void *ubl_rmv_sw_ctype(struct sk_buff *skb)
 	return pskb_pull(skb, sizeof(u8));
 }
 
-int ubl_create_header(struct sk_buff *skb, struct net_device *dev,
-		      unsigned short type, const void *daddr,
-		      const void *saddr, unsigned int len);
 void ubl_setup(struct net_device *dev);
 __be16 ubl_type_trans(struct sk_buff *skb, struct net_device *dev, u8 type);
 struct net_device *alloc_ubldev_mqs(int sizeof_priv, unsigned int txqs,
 				    unsigned int rxqs);
-int ubl_add_sw_ctype(struct sk_buff *skb, u8 ctype);
 #define alloc_ubldev_mq(sizeof_priv, count) \
 	alloc_ubldev_mqs((sizeof_priv), (count), (count))
 

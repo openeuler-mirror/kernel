@@ -3305,7 +3305,6 @@ const struct net_device_ops hns3_unic_netdev_ops = {
 #endif
 	.ndo_get_vf_config	= hns3_nic_get_vf_config,
 	.ndo_set_vf_link_state	= hns3_nic_set_vf_link_state,
-	.ndo_set_vf_rate	= hns3_nic_set_vf_rate,
 	.ndo_select_queue	= hns3_nic_select_queue,
 };
 
@@ -4686,6 +4685,10 @@ static int hns3_handle_bdinfo(struct hns3_enet_ring *ring, struct sk_buff *skb)
 
 	ring->tqp_vector->rx_group.total_bytes += len;
 
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(hns3_get_handle(netdev)))
+		return 0;
+#endif
 	hns3_set_rx_skb_rss_type(ring, skb, le32_to_cpu(desc->rx.rss_hash),
 				 l234info, ol_info);
 	return 0;
@@ -5827,6 +5830,10 @@ static int hns3_client_init(struct hnae3_handle *handle)
 
 out_reg_netdev_fail:
 	hns3_state_uninit(handle);
+#ifdef CONFIG_HNS3_UBL
+	if (hns3_ubl_supported(handle))
+		hns3_unic_uninit(netdev);
+#endif
 out_dbg_init:
 	hns3_dbg_uninit(handle);
 	hns3_client_stop(handle);

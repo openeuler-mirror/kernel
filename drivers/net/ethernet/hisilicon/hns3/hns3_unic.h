@@ -53,6 +53,7 @@ static inline void hns3_unic_format_sim_guid_addr(char *format_simple_guid_addr,
 
 void hns3_unic_set_default_cc(struct sk_buff *skb);
 int hns3_unic_init(struct net_device *netdev);
+void hns3_unic_uninit(struct net_device *netdev);
 u8 hns3_unic_get_l3_type(struct net_device *netdev, u32 ol_info, u32 l234info);
 void hns3_unic_lp_setup_skb(struct sk_buff *skb);
 void hns3_unic_lb_check_skb_data(struct hns3_enet_ring *ring,

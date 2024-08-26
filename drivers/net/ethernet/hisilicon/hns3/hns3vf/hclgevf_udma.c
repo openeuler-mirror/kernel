@@ -69,6 +69,9 @@ int hclgevf_init_udma_client_instance(struct hnae3_ae_dev *ae_dev,
 	    !hdev->nic_client)
 		return 0;
 
+	if (!client->ops->init_instance)
+		return -EOPNOTSUPP;
+
 	ret = hclgevf_init_udma_base_info(hdev);
 	if (ret)
 		return ret;

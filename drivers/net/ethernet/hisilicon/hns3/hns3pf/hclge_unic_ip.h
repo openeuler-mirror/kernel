@@ -24,7 +24,7 @@ struct hclge_dev;
 #define HCLGE_UNIC_IP_ADDR_NOTSET	255
 #define HCLGE_UNIC_IP_TBL_MISS	1
 
-int hclge_unic_init_iptbl_info(struct hclge_dev *hdev);
+void hclge_unic_init_iptbl_info(struct hclge_dev *hdev);
 void hclge_unic_reset_iptbl_space(struct hclge_dev *hdev);
 void hclge_unic_sync_ip_table(struct hclge_dev *hdev);
 void hclge_unic_restore_ip_table(struct hclge_vport *vport);

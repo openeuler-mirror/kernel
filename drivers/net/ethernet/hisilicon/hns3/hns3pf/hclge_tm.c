@@ -594,6 +594,15 @@ int hclge_tm_qs_shaper_cfg(struct hclge_vport *vport, int max_tx_rate)
 	u32 shaper_para;
 	int ret, i;
 
+#if CONFIG_HNS3_UBL
+	/* vf rate limiting is not supported in ub link mode, a success message
+	 * is directly returned to prevent redundant failure information from
+	 * being printed in the reset and uninstallation processes.
+	 */
+	if (hnae3_dev_ubl_supported(hdev->ae_dev))
+		return 0;
+#endif
+
 	if (!max_tx_rate)
 		max_tx_rate = hdev->ae_dev->dev_specs.max_tm_rate;
 

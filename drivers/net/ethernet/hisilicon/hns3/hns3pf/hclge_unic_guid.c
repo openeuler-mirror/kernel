@@ -68,7 +68,6 @@ static int hclge_unic_lookup_mc_guid(struct hclge_vport *vport,
 	struct hclge_unic_mc_guid_cfg_cmd *resp;
 	struct hclge_dev *hdev = vport->back;
 	u16 resp_code;
-	u16 retval;
 	int ret;
 
 	resp = (struct hclge_unic_mc_guid_cfg_cmd *)desc[0].data;
@@ -85,13 +84,8 @@ static int hclge_unic_lookup_mc_guid(struct hclge_vport *vport,
 			ret);
 		return ret;
 	}
-	resp_code = resp->hit_info;
-	retval = le16_to_cpu(desc[0].retval);
-	if (retval) {
-		dev_err(&hdev->pdev->dev, "cmdq execute failed for lookup mc guid, status = %u.\n",
-			retval);
-		return -EIO;
-	} else if (!(resp_code & HCLGE_UNIC_GUID_HIT)) {
+	resp_code = le16_to_cpu(resp->hit_info);
+	if (!(resp_code & HCLGE_UNIC_GUID_HIT)) {
 		dev_dbg(&hdev->pdev->dev, "lookup mc guid failed for miss.\n");
 		return -ENOENT;
 	}
@@ -108,18 +102,17 @@ static int hclge_unic_fill_add_desc(struct hclge_vport *vport,
 	struct hclge_dev *hdev = vport->back;
 	u16 mc_guid_tbl_size;
 
-	mc_guid_tbl_size = min(HCLGE_UNIC_MC_GUID_NUM,
-			       hdev->ae_dev->dev_specs.guid_tbl_space -
-			       HCLGE_VPORT_NUM);
+	mc_guid_tbl_size = hclge_unic_real_mguid_tbl_size(hdev);
 	if (is_new_guid) {
 		req->index = find_first_zero_bit(hdev->mc_guid_tbl_bmap,
 						 HCLGE_UNIC_MC_GUID_NUM);
-		if (req->index >= mc_guid_tbl_size)
-			return -ENOSPC;
 	} else {
 		rsp = (struct hclge_unic_mc_guid_cfg_cmd *)desc[0].data;
 		req->index = rsp->index;
 	}
+
+	if (req->index >= mc_guid_tbl_size)
+		return -ENOSPC;
 
 	if (vport->vport_id >= HCLGE_VPORT_NUM)
 		return -EIO;
@@ -140,7 +133,6 @@ static int hclge_unic_add_mc_guid_cmd(struct hclge_vport *vport,
 				      struct hclge_desc *desc)
 {
 	struct hclge_dev *hdev = vport->back;
-	u16 retval;
 	int ret;
 
 	req->vld_lookup_flag = BIT(HCLGE_UNIC_ENTRY_VLD_B);
@@ -156,18 +148,12 @@ static int hclge_unic_add_mc_guid_cmd(struct hclge_vport *vport,
 		dev_err(&hdev->pdev->dev, "add mc guid failed, ret = %d\n", ret);
 		return ret;
 	}
-	retval = le16_to_cpu(desc[0].retval);
-	if (retval) {
-		dev_err(&hdev->pdev->dev, "cmdq execute failed for add mc guid, status = %u.\n",
-			retval);
-		return -EIO;
-	}
 
 	return 0;
 }
 
-int hclge_unic_add_mc_guid_common(struct hclge_vport *vport,
-				  const unsigned char *mguid)
+static int hclge_unic_add_mc_guid_common(struct hclge_vport *vport,
+					 const unsigned char *mguid)
 {
 	struct hclge_unic_mc_guid_cfg_cmd req = {0};
 	struct hclge_dev *hdev = vport->back;
@@ -179,12 +165,12 @@ int hclge_unic_add_mc_guid_common(struct hclge_vport *vport,
 	ret = hclge_unic_lookup_mc_guid(vport, &req, desc);
 	if (ret) {
 		if (hdev->used_mc_guid_num >=
-		    hdev->ae_dev->dev_specs.guid_tbl_space - HCLGE_VPORT_NUM)
+		    hclge_unic_real_mguid_tbl_size(hdev))
 			goto err_no_space;
 		is_new_guid = true;
 		memset(desc[0].data, 0, sizeof(desc[0].data));
-		memset(desc[1].data, 0, sizeof(desc[0].data));
-		memset(desc[2].data, 0, sizeof(desc[0].data));
+		memset(desc[1].data, 0, sizeof(desc[1].data));
+		memset(desc[2].data, 0, sizeof(desc[2].data));
 	}
 
 	ret = hclge_unic_fill_add_desc(vport, &req, desc, is_new_guid);
@@ -200,7 +186,7 @@ int hclge_unic_add_mc_guid_common(struct hclge_vport *vport,
 		hdev->used_mc_guid_num++;
 	}
 
-	return 0;
+	return ret;
 err_no_space:
 	/* if already overflow, not to print each time */
 	if (!(vport->overflow_promisc_flags & HNAE3_OVERFLOW_MGP)) {
@@ -213,11 +199,15 @@ err_no_space:
 
 static bool hclge_unic_is_all_function_deleted(struct hclge_desc *desc)
 {
-#define HCLGE_UNIC_DWORD_OF_MGUID 4
+	struct hclge_unic_mc_guid_cfg_cmd_1 *resp1;
+	struct hclge_unic_mc_guid_cfg_cmd_2 *resp2;
 	int i;
 
+	resp1 = (struct hclge_unic_mc_guid_cfg_cmd_1 *)desc[1].data;
+	resp2 = (struct hclge_unic_mc_guid_cfg_cmd_2 *)desc[2].data;
+
 	for (i = 0; i < HCLGE_UNIC_DWORD_OF_MGUID; i++) {
-		if (desc[1].data[2 + i] || desc[2].data[2 + i])
+		if (resp1->guid_data_h[i] || resp2->guid_data_l[i])
 			return false;
 	}
 
@@ -404,6 +394,8 @@ static void hclge_unic_uninit_vport_guid_list(struct hclge_vport *vport)
 			list_del(&guid_node->node);
 			kfree(guid_node);
 			break;
+		default:
+			break;
 		}
 	}
 
@@ -437,15 +429,14 @@ void hclge_unic_uninit_mguid_table(struct hclge_dev *hdev)
 int hclge_unic_set_vf_mc_guid(struct hclge_vport *vport,
 			      struct hclge_mbx_vf_to_pf_cmd *mbx_req)
 {
-	__le16 proto = *(__le16 *)(mbx_req->msg.data);
 	struct hclge_dev *hdev = vport->back;
-	__le16 *mguid_proto = NULL;
+	__le16 *mguid_proto;
 	u8 mguid[UBL_ALEN];
 	int ret = 0;
 
-	memset(mguid, 0xff, UBL_ALEN);
+	memset(mguid, 0xff, HCLGE_COMM_MGUID_PREFIX_LEN);
 	mguid_proto = (__le16 *)&mguid[HCLGE_COMM_MGUID_PREFIX_LEN];
-	*mguid_proto = proto;
+	*mguid_proto = *(__le16 *)(mbx_req->msg.data);
 
 	if (mbx_req->msg.subcode == HCLGE_MBX_MC_GUID_MC_ADD) {
 		ret = hclge_unic_update_guid_list(vport,
@@ -509,6 +500,8 @@ static void hclge_unic_build_del_list(struct list_head *list,
 				kfree(guid_node);
 			}
 			break;
+		default:
+			break;
 		}
 	}
 }
@@ -525,8 +518,8 @@ static void hclge_unic_unsync_del_list(struct hclge_vport *vport,
 	list_for_each_entry_safe(guid_node, tmp, tmp_del_list, node) {
 		ret = unsync(vport, guid_node->mguid);
 		if (!ret || ret == -ENOENT) {
-			/* clear all mac addr from hardware, but remain these
-			 * mac addr in the mac list, and restore them after
+			/* clear all guid addr from hardware, but remain these
+			 * guid addr in the guid list, and restore them after
 			 * vf reset finished.
 			 */
 			if (!is_del_list &&
