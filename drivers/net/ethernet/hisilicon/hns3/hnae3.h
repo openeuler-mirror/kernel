@@ -142,6 +142,7 @@ enum HNAE3_DEV_CAP_BITS {
 	HNAE3_DEV_SUPPORT_TM_FLUSH_B,
 	HNAE3_DEV_SUPPORT_VF_FAULT_B,
 	HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B,
+	HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B,
 };
 
 #define hnae3_ae_dev_fd_supported(ae_dev) \
@@ -222,8 +223,12 @@ enum HNAE3_DEV_CAP_BITS {
 #define hnae3_ae_dev_gen_reg_dfx_supported(hdev) \
 	test_bit(HNAE3_DEV_SUPPORT_ERR_MOD_GEN_REG_B, (hdev)->ae_dev->caps)
 
+#define hnae3_ae_dev_vf_multi_tcs_supported(hdev) \
+	test_bit(HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B, (hdev)->ae_dev->caps)
+
 enum HNAE3_PF_CAP_BITS {
 	HNAE3_PF_SUPPORT_VLAN_FLTR_MDF_B = 0,
+	HNAE3_PF_SUPPORT_VF_MULTI_TCS_B = 1,
 };
 #define ring_ptr_move_fw(ring, p) \
 	((ring)->p = ((ring)->p + 1) % (ring)->desc_num)
@@ -881,6 +886,10 @@ struct hnae3_dcb_ops {
 	int (*ieee_setpfc)(struct hnae3_handle *, struct ieee_pfc *);
 	int (*ieee_setapp)(struct hnae3_handle *h, struct dcb_app *app);
 	int (*ieee_delapp)(struct hnae3_handle *h, struct dcb_app *app);
+	int (*ieee_setmaxrate)(struct hnae3_handle *h,
+			       struct ieee_maxrate *maxrate);
+	int (*ieee_getmaxrate)(struct hnae3_handle *h,
+			       struct ieee_maxrate *maxrate);
 
 	/* DCBX configuration */
 	u8   (*getdcbx)(struct hnae3_handle *);
@@ -914,6 +923,7 @@ struct hnae3_tc_info {
 
 #define HNAE3_MAX_DSCP			64
 #define HNAE3_PRIO_ID_INVALID		0xff
+#define HNAE3_PRIO_ID_MAP_INVALID	0xf
 struct hnae3_knic_private_info {
 	struct net_device *netdev; /* Set by KNIC client when init instance */
 	u16 rss_size;		   /* Allocated RSS queues */

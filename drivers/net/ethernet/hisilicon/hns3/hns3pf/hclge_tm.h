@@ -30,6 +30,9 @@ enum hclge_opcode_type;
 #define HCLGE_TM_PF_MAX_PRI_NUM		8
 #define HCLGE_TM_PF_MAX_QSET_NUM	8
 
+#define HCLGE_DSCP_MAP_PRI_BD_NUM	2
+#define HCLGE_DSCP_PRI_SHIFT(n)		(((n) & 1) * 4)
+
 #define HCLGE_DSCP_MAP_TC_BD_NUM	2
 #define HCLGE_DSCP_TC_SHIFT(n)		(((n) & 1) * 4)
 
@@ -65,9 +68,10 @@ struct hclge_nq_to_qs_link_cmd {
 
 struct hclge_tqp_tx_queue_tc_cmd {
 	__le16 queue_id;
-	__le16 rsvd;
+	u8 func_id;
+	u8 rsvd1;
 	u8 tc_id;
-	u8 rev[3];
+	u8 rsvd2[3];
 };
 
 struct hclge_pg_weight_cmd {
@@ -288,4 +292,6 @@ int hclge_tm_flush_cfg(struct hclge_dev *hdev, bool enable);
 int hclge_tm_set_tc_rate_limit(struct hclge_dev *hdev,
 			       struct hnae3_tc_info *tc_info);
 u32 hclge_tm_rate_2_port_rate(u64 rate);
+void hclge_tm_vport_tc_info_update(struct hclge_vport *vport);
+int hclge_dscp_to_pri_map(struct hclge_dev *hdev);
 #endif

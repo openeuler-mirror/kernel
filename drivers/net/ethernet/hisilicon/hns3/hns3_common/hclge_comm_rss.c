@@ -36,11 +36,12 @@ int hclge_comm_rss_init_cfg(struct hnae3_handle *nic,
 			    struct hclge_comm_rss_cfg *rss_cfg)
 {
 	u16 rss_ind_tbl_size = ae_dev->dev_specs.rss_ind_tbl_size;
+	struct hnae3_knic_private_info *kinfo = &nic->kinfo;
 	int rss_algo = HCLGE_COMM_RSS_HASH_ALGO_TOEPLITZ;
 	u16 *rss_ind_tbl;
 
 	if (nic->flags & HNAE3_SUPPORT_VF)
-		rss_cfg->rss_size = nic->kinfo.rss_size;
+		rss_cfg->rss_size = kinfo->rss_size;
 
 	if (ae_dev->dev_version >= HNAE3_DEVICE_VERSION_V2)
 		rss_algo = HCLGE_COMM_RSS_HASH_ALGO_SIMPLE;

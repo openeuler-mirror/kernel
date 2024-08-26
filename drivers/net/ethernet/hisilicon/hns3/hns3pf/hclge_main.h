@@ -968,6 +968,7 @@ struct hclge_dev {
 	unsigned long vf_vlan_full[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
 
 	unsigned long vport_config_block[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
+	unsigned long vf_multi_tcs_en[BITS_TO_LONGS(HCLGE_VPORT_NUM)];
 
 	struct hclge_fd_cfg fd_cfg;
 	struct hlist_head fd_rule_list;
@@ -1235,4 +1236,5 @@ void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
 			  u8 *module_type);
 int hclge_cfg_mac_mode(struct hclge_dev *hdev, bool enable);
 int hclge_query_scc_version(struct hclge_dev *hdev, u32 *scc_version);
+int hclge_mbx_event_notify(struct hclge_vport *vport, u64 event_bits);
 #endif

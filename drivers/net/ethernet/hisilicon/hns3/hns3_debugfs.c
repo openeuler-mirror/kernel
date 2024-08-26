@@ -61,7 +61,7 @@ static struct hns3_dbg_cmd_info hns3_dbg_cmd[] = {
 		.name = "tm_qset",
 		.cmd = HNAE3_DBG_CMD_TM_QSET,
 		.dentry = HNS3_DBG_DENTRY_TM,
-		.buf_len = HNS3_DBG_READ_LEN,
+		.buf_len = HNS3_DBG_READ_LEN_1MB,
 		.init = hns3_dbg_common_file_init,
 	},
 	{
@@ -419,6 +419,9 @@ static struct hns3_dbg_cap_info hns3_dbg_cap[] = {
 	}, {
 		.name = "support vf fault detect",
 		.cap_bit = HNAE3_DEV_SUPPORT_VF_FAULT_B,
+	}, {
+		.name = "support vf multi tcs",
+		.cap_bit = HNAE3_DEV_SUPPORT_VF_MULTI_TCS_B,
 	}
 };
 
