@@ -851,12 +851,25 @@ static int cppc_get_perf_ctrs_pair(void *val)
 	struct fb_ctr_pair *fb_ctrs = val;
 	int cpu = fb_ctrs->cpu;
 	int ret;
+	unsigned long timeout;
 
 	ret = cppc_get_perf_ctrs(cpu, &fb_ctrs->fb_ctrs_t0);
 	if (ret)
 		return ret;
 
-	udelay(2); /* 2usec delay between sampling */
+	if (likely(!in_atomic() && !irqs_disabled())) {
+		/*
+		 * Set 1ms as sampling interval, but never schedule
+		 * to the idle task to prevent the AMU counters from
+		 * stopping working.
+		 */
+		timeout = jiffies + msecs_to_jiffies(1);
+		while (!time_after(jiffies, timeout))
+			cond_resched();
+	} else {
+		pr_warn_once("CPU%d: Get rate in atomic context", cpu);
+		udelay(2); /* 2usec delay between sampling */
+	}
 
 	return cppc_get_perf_ctrs(cpu, &fb_ctrs->fb_ctrs_t1);
 }
