@@ -2490,7 +2490,7 @@ static void deactivate_slab(struct kmem_cache *s, struct slab *slab,
 	struct slab new;
 	struct slab old;
 
-	if (slab->freelist) {
+	if (READ_ONCE(slab->freelist)) {
 		stat(s, DEACTIVATE_REMOTE_FREES);
 		tail = DEACTIVATE_TO_TAIL;
 	}
@@ -5448,7 +5448,7 @@ static ssize_t show_slab_objects(struct kmem_cache *s,
 				else if (flags & SO_OBJECTS)
 					WARN_ON_ONCE(1);
 				else
-					x = slab->slabs;
+					x = data_race(slab->slabs);
 				total += x;
 				nodes[node] += x;
 			}
@@ -5653,7 +5653,7 @@ static ssize_t slabs_cpu_partial_show(struct kmem_cache *s, char *buf)
 		slab = slub_percpu_partial(per_cpu_ptr(s->cpu_slab, cpu));
 
 		if (slab)
-			slabs += slab->slabs;
+			slabs += data_race(slab->slabs);
 	}
 #endif
 
@@ -5667,7 +5667,7 @@ static ssize_t slabs_cpu_partial_show(struct kmem_cache *s, char *buf)
 
 		slab = slub_percpu_partial(per_cpu_ptr(s->cpu_slab, cpu));
 		if (slab) {
-			slabs = READ_ONCE(slab->slabs);
+			slabs = data_race(slab->slabs);
 			objects = (slabs * oo_objects(s->oo)) / 2;
 			len += sysfs_emit_at(buf, len, " C%d=%d(%d)",
 					     cpu, objects, slabs);
