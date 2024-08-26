@@ -19,3 +19,5 @@ ima-$(CONFIG_IMA_DIGEST_LIST) += ima_digest_list.o
 ifeq ($(CONFIG_EFI),y)
 ima-$(CONFIG_IMA_SECURE_AND_OR_TRUSTED_BOOT) += ima_efi.o
 endif
+
+ima-$(CONFIG_HISI_VIRTCCA_GUEST) += ima_cvm.o
