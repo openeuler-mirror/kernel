@@ -23,10 +23,10 @@
 static struct workqueue_struct *ip_notify_wq;
 static int initialized;
 
-u8 ub_dguid[UBL_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF,
-			 0xFF, 0xFF, 0xFF, 0xFF,
-			 0xFF, 0xFF, 0xFF, 0xFF,
-			 0xFF, 0xFF, 0x01, 0x02};
+const u8 ub_dguid[UBL_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF,
+			       0xFF, 0xFF, 0xFF, 0xFF,
+			       0xFF, 0xFF, 0xFF, 0xFF,
+			       0xFF, 0xFF, 0x01, 0x02};
 
 static ssize_t good_ipv4_notify_tx_cnt_show(struct kobject *kobj,
 					    struct kobj_attribute *attr,
@@ -41,7 +41,7 @@ static ssize_t good_ipv4_notify_tx_cnt_show(struct kobject *kobj,
 	ipn_ctx = container_of(ipn_attrs, struct ub_nm_ip_notify_ctx, attrs);
 	good_ipv4_tx_cnt = atomic64_read(&ipn_ctx->stats.good_ipv4_notify_tx_cnt);
 
-	return sprintf(buf, "0x%llx\n", good_ipv4_tx_cnt);
+	return sysfs_emit(buf, "0x%llx\n", good_ipv4_tx_cnt);
 }
 
 static ssize_t bad_ipv4_notify_tx_cnt_show(struct kobject *kobj,
@@ -57,7 +57,7 @@ static ssize_t bad_ipv4_notify_tx_cnt_show(struct kobject *kobj,
 	ipn_ctx = container_of(ipn_attrs, struct ub_nm_ip_notify_ctx, attrs);
 	bad_ipv4_tx_cnt = atomic64_read(&ipn_ctx->stats.bad_ipv4_notify_tx_cnt);
 
-	return sprintf(buf, "0x%llx\n", bad_ipv4_tx_cnt);
+	return sysfs_emit(buf, "0x%llx\n", bad_ipv4_tx_cnt);
 }
 
 static ssize_t good_ipv6_notify_tx_cnt_show(struct kobject *kobj,
@@ -73,7 +73,7 @@ static ssize_t good_ipv6_notify_tx_cnt_show(struct kobject *kobj,
 	ipn_ctx = container_of(ipn_attrs, struct ub_nm_ip_notify_ctx, attrs);
 	good_ipv6_tx_cnt = atomic64_read(&ipn_ctx->stats.good_ipv6_notify_tx_cnt);
 
-	return sprintf(buf, "0x%llx\n", good_ipv6_tx_cnt);
+	return sysfs_emit(buf, "0x%llx\n", good_ipv6_tx_cnt);
 }
 
 static ssize_t bad_ipv6_notify_tx_cnt_show(struct kobject *kobj,
@@ -89,7 +89,7 @@ static ssize_t bad_ipv6_notify_tx_cnt_show(struct kobject *kobj,
 	ipn_ctx = container_of(ipn_attrs, struct ub_nm_ip_notify_ctx, attrs);
 	bad_ipv6_tx_cnt = atomic64_read(&ipn_ctx->stats.bad_ipv6_notify_tx_cnt);
 
-	return sprintf(buf, "0x%llx\n", bad_ipv6_tx_cnt);
+	return sysfs_emit(buf, "0x%llx\n", bad_ipv6_tx_cnt);
 }
 
 static ssize_t print_ip_notify_pkt_en_show(struct kobject *kobj,
@@ -105,7 +105,7 @@ static ssize_t print_ip_notify_pkt_en_show(struct kobject *kobj,
 	ipn_ctx = container_of(ipn_attrs, struct ub_nm_ip_notify_ctx, attrs);
 	status = ipn_ctx->ctls.print_ip_notify_pkt_en;
 
-	return sprintf(buf, "%u\n", status);
+	return sysfs_emit(buf, "%u\n", status);
 }
 
 static ssize_t print_ip_notify_pkt_en_store(struct kobject *kobj,
@@ -450,10 +450,9 @@ struct sk_buff *ub_ipv6_create_ip_notify_pkt(struct net_device *ndev,
 	return skb;
 }
 
-static void ub_update_tx_stats(int ptype, struct sk_buff *skb, int rc)
+static void ub_update_tx_stats(int ptype, struct net_device *ndev, int rc)
 {
 	struct list_head *dev_list = ub_nm_get_dev_list();
-	struct net_device *ndev = skb->dev;
 	struct ub_nm_device *nm_dev;
 
 	ub_nm_down_read();
@@ -487,10 +486,11 @@ out:
 
 static void ub_xmit_ip_notify_pkt(int ptype, struct sk_buff *skb)
 {
+	struct net_device *ndev = skb->dev;
 	int rc;
 
 	rc = dev_queue_xmit(skb);
-	ub_update_tx_stats(ptype, skb, rc);
+	ub_update_tx_stats(ptype, ndev, rc);
 }
 
 static void ub_ipv4_send_ip_notify(struct net_device *ndev,
