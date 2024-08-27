@@ -1019,7 +1019,7 @@ static void process_aging_dca_mem(struct hns_roce_dev *hr_dev,
 	list_for_each_entry_safe(cfg, tmp_cfg, &ctx->aging_new_list, aging_node)
 		list_move(&cfg->aging_node, &ctx->aging_proc_list);
 
-	while (!ctx->exit_aging && !list_empty(&ctx->aging_proc_list)) {
+	while (!ctx->exit_aging && !list_empty_careful(&ctx->aging_proc_list)) {
 		cfg = list_first_entry(&ctx->aging_proc_list,
 				       struct hns_roce_dca_cfg, aging_node);
 		list_del_init_careful(&cfg->aging_node);
