@@ -851,7 +851,7 @@ struct perf_event {
 	 */
 	__u32				orig_type;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, struct rcuwait pending_work_wait)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
