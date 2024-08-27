@@ -825,6 +825,8 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			hns_roce_disable_dca(hr_dev, hr_qp, udata);
 		kvfree(hr_qp->mtr_node);
 		hr_qp->mtr_node = NULL;
+	} else if (dca_en) {
+		ret = hns_roce_map_dca_safe_page(hr_dev, hr_qp);
 	}
 
 	return ret;
@@ -845,6 +847,21 @@ static void free_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		hns_roce_disable_dca(hr_dev, hr_qp, udata);
 }
 
+static int alloc_dca_safe_page(struct hns_roce_dev *hr_dev)
+{
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+
+	hr_dev->dca_safe_buf = dma_alloc_coherent(hr_dev->dev, PAGE_SIZE,
+						  &hr_dev->dca_safe_page,
+						  GFP_KERNEL);
+	if (!hr_dev->dca_safe_buf) {
+		ibdev_err(ibdev, "failed to alloc dca safe page.\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
 static int alloc_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			struct ib_qp_init_attr *init_attr,
 			struct ib_udata *udata,
@@ -862,6 +879,12 @@ static int alloc_qp_wqe(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		page_shift = ucmd->pageshift;
 
 	dca_en = check_dca_is_enable(hr_dev, init_attr, !!udata, ucmd->buf_addr);
+	if (dca_en && !hr_dev->dca_safe_buf) {
+		ret = alloc_dca_safe_page(hr_dev);
+		if (ret)
+			return ret;
+	}
+
 	ret = set_wqe_buf_attr(hr_dev, hr_qp, dca_en, page_shift, &buf_attr);
 	if (ret) {
 		ibdev_err(ibdev, "failed to split WQE buf, ret = %d.\n", ret);
