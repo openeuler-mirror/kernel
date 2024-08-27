@@ -109,6 +109,7 @@ static void release_crq_queue(struct ibmvnic_adapter *);
 static int __ibmvnic_set_mac(struct net_device *, u8 *);
 static int init_crq_queue(struct ibmvnic_adapter *adapter);
 static int send_query_phys_parms(struct ibmvnic_adapter *adapter);
+static void ibmvnic_disable_irqs(struct ibmvnic_adapter *adapter);
 
 struct ibmvnic_stat {
 	char name[ETH_GSTRING_LEN];
@@ -1167,7 +1168,7 @@ static int __ibmvnic_open(struct net_device *netdev)
 	rc = set_link_state(adapter, IBMVNIC_LOGICAL_LNK_UP);
 	if (rc) {
 		ibmvnic_napi_disable(adapter);
-		release_resources(adapter);
+		ibmvnic_disable_irqs(adapter);
 		return rc;
 	}
 
@@ -1203,7 +1204,6 @@ static int ibmvnic_open(struct net_device *netdev)
 		rc = init_resources(adapter);
 		if (rc) {
 			netdev_err(netdev, "failed to initialize resources\n");
-			release_resources(adapter);
 			goto out;
 		}
 	}
@@ -1219,6 +1219,10 @@ out:
 		adapter->state = VNIC_OPEN;
 		rc = 0;
 	}
+
+	if (rc)
+		release_resources(adapter);
+
 	return rc;
 }
 
