@@ -614,7 +614,7 @@ static int active_dca_pages_proc(struct dca_mem *mem, int index, void *param)
 	}
 
 	for (; changed && i < mem->page_count; i++)
-		if (dca_page_is_free(state))
+		if (dca_page_is_free(&mem->states[i]))
 			free_pages++;
 
 	/* Clean mem changed to dirty */
