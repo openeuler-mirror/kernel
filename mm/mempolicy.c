@@ -471,7 +471,7 @@ static int queue_folios_pmd(pmd_t *pmd, spinlock_t *ptl, unsigned long addr,
 		ret = -EIO;
 		goto unlock;
 	}
-	folio = pfn_folio(pmd_pfn(*pmd));
+	folio = pmd_folio(*pmd);
 	if (is_huge_zero_page(&folio->page)) {
 		walk->action = ACTION_CONTINUE;
 		goto unlock;
