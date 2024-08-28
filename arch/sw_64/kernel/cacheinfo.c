@@ -16,6 +16,7 @@
  */
 
 #include <linux/cacheinfo.h>
+#include <linux/acpi.h>
 
 #include <asm/topology.h>
 #include <asm/cache.h>
@@ -113,6 +114,23 @@ int init_cache_level(unsigned int cpu)
 	return 0;
 }
 
+static bool is_pptt_cache_info_valid(void)
+{
+	struct acpi_table_header *table;
+	acpi_status status;
+
+	if (is_guest_or_emul() || acpi_disabled)
+		return false;
+
+	status = acpi_get_table(ACPI_SIG_PPTT, 0, &table);
+	if (ACPI_FAILURE(status))
+		return false;
+
+	acpi_put_table(table);
+
+	return true;
+}
+
 int populate_cache_leaves(unsigned int cpu)
 {
 	enum sunway_cache_type type;
@@ -138,6 +156,9 @@ int populate_cache_leaves(unsigned int cpu)
 	}
 
 	this_cpu_ci->cpu_map_populated = true;
+
+	if (is_pptt_cache_info_valid())
+		this_cpu_ci->cpu_map_populated = false;
 
 	return 0;
 }
