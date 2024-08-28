@@ -74,4 +74,6 @@ void hns_roce_modify_dca(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 
 void hns_roce_enum_dca_pool(struct hns_roce_dca_ctx *dca_ctx, void *param,
 			    hns_dca_enum_callback cb);
+int hns_roce_map_dca_safe_page(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_qp *hr_qp);
 #endif

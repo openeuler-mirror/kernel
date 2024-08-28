@@ -1489,6 +1489,17 @@ static void hns_roce_dealloc_dfx_cnt(struct hns_roce_dev *hr_dev)
 	kvfree(hr_dev->dfx_cnt);
 }
 
+static void hns_roce_free_dca_safe_buf(struct hns_roce_dev *hr_dev)
+{
+	if (!hr_dev->dca_safe_buf)
+		return;
+
+	dma_free_coherent(hr_dev->dev, PAGE_SIZE, hr_dev->dca_safe_buf,
+			  hr_dev->dca_safe_page);
+	hr_dev->dca_safe_page = 0;
+	hr_dev->dca_safe_buf = NULL;
+}
+
 int hns_roce_init(struct hns_roce_dev *hr_dev)
 {
 	struct device *dev = hr_dev->dev;
@@ -1599,6 +1610,7 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 	hns_roce_unregister_device(hr_dev, bond_cleanup);
 	hns_roce_unregister_debugfs(hr_dev);
 	hns_roce_unregister_poe_ch(hr_dev);
+	hns_roce_free_dca_safe_buf(hr_dev);
 
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);

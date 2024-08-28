@@ -1234,6 +1234,9 @@ struct hns_roce_dev {
 	struct mutex mtr_unfree_list_mutex; /* protect mtr_unfree_list */
 	struct list_head umem_unfree_list; /* list of unfree umem on this dev */
 	struct mutex umem_unfree_list_mutex; /* protect umem_unfree_list */
+
+	void *dca_safe_buf;
+	dma_addr_t dca_safe_page;
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)

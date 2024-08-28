@@ -306,6 +306,33 @@ hr_qp_to_dca_ctx(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp)
 	return to_hr_dca_ctx(hr_dev, uctx);
 }
 
+int hns_roce_map_dca_safe_page(struct hns_roce_dev *hr_dev,
+			       struct hns_roce_qp *hr_qp)
+{
+	unsigned int page_count = hr_qp->dca_cfg.npages;
+	struct ib_device *ibdev = &hr_dev->ib_dev;
+	dma_addr_t *pages;
+	unsigned int i;
+	int ret;
+
+	pages = kvcalloc(page_count, sizeof(dma_addr_t), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(pages)) {
+		ibdev_err(ibdev, "failed to alloc DCA safe page array.\n");
+		return IS_ERR(pages) ? PTR_ERR(pages) : -ENOMEM;
+	}
+
+	for (i = 0; i < page_count; i++)
+		pages[i] = hr_dev->dca_safe_page;
+
+	ret = hns_roce_mtr_map(hr_dev, &hr_qp->mtr, pages, page_count);
+	if (ret)
+		ibdev_err(ibdev, "failed to map safe page for DCA, ret = %d.\n",
+			  ret);
+
+	kvfree(pages);
+	return ret;
+}
+
 static int config_dca_qpc(struct hns_roce_dev *hr_dev,
 			  struct hns_roce_qp *hr_qp, dma_addr_t *pages,
 			  int page_count)
@@ -330,6 +357,29 @@ static int config_dca_qpc(struct hns_roce_dev *hr_dev,
 	}
 
 	return 0;
+}
+
+static int config_dca_qpc_to_safe_page(struct hns_roce_dev *hr_dev,
+				       struct hns_roce_qp *hr_qp)
+{
+	unsigned int page_count = hr_qp->dca_cfg.npages;
+	dma_addr_t *pages;
+	unsigned int i;
+	int ret;
+
+	might_sleep();
+
+	pages = kvcalloc(page_count, sizeof(dma_addr_t), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(pages))
+		return -ENOMEM;
+
+	for (i = 0; i < page_count; i++)
+		pages[i] = hr_dev->dca_safe_page;
+
+	ret = config_dca_qpc(hr_dev, hr_qp, pages, page_count);
+
+	kvfree(pages);
+	return ret;
 }
 
 static int setup_dca_buf_to_hw(struct hns_roce_dev *hr_dev,
@@ -564,7 +614,7 @@ static int active_dca_pages_proc(struct dca_mem *mem, int index, void *param)
 	}
 
 	for (; changed && i < mem->page_count; i++)
-		if (dca_page_is_free(state))
+		if (dca_page_is_free(&mem->states[i]))
 			free_pages++;
 
 	/* Clean mem changed to dirty */
@@ -969,7 +1019,7 @@ static void process_aging_dca_mem(struct hns_roce_dev *hr_dev,
 	list_for_each_entry_safe(cfg, tmp_cfg, &ctx->aging_new_list, aging_node)
 		list_move(&cfg->aging_node, &ctx->aging_proc_list);
 
-	while (!ctx->exit_aging && !list_empty(&ctx->aging_proc_list)) {
+	while (!ctx->exit_aging && !list_empty_careful(&ctx->aging_proc_list)) {
 		cfg = list_first_entry(&ctx->aging_proc_list,
 				       struct hns_roce_dca_cfg, aging_node);
 		list_del_init_careful(&cfg->aging_node);
@@ -977,8 +1027,10 @@ static void process_aging_dca_mem(struct hns_roce_dev *hr_dev,
 		spin_unlock(&ctx->aging_lock);
 
 		if (start_free_dca_buf(ctx, cfg->dcan)) {
-			if (hr_dev->hw->chk_dca_buf_inactive(hr_dev, hr_qp))
-				free_buf_from_dca_mem(ctx, cfg);
+			if (hr_dev->hw->chk_dca_buf_inactive(hr_dev, hr_qp)) {
+				if (!config_dca_qpc_to_safe_page(hr_dev, hr_qp))
+					free_buf_from_dca_mem(ctx, cfg);
+			}
 
 			stop_free_dca_buf(ctx, cfg->dcan);
 		}
