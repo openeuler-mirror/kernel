@@ -2233,10 +2233,11 @@ static struct iommu_device *amd_iommu_probe_device(struct device *dev)
 			dev_err(dev, "Failed to initialize - trying to proceed anyway\n");
 		iommu_dev = ERR_PTR(ret);
 		iommu_ignore_device(iommu, dev);
-	} else {
-		amd_iommu_set_pci_msi_domain(dev, iommu);
-		iommu_dev = &iommu->iommu;
+		goto out_err;
 	}
+
+	amd_iommu_set_pci_msi_domain(dev, iommu);
+	iommu_dev = &iommu->iommu;
 
 	/*
 	 * If IOMMU and device supports PASID then it will contain max
@@ -2250,6 +2251,7 @@ static struct iommu_device *amd_iommu_probe_device(struct device *dev)
 	}
 
 
+out_err:
 	iommu_completion_wait(iommu);
 
 	if (FEATURE_NUM_INT_REMAP_SUP_2K(amd_iommu_efr2))
