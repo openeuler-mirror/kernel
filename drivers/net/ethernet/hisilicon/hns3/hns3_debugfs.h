@@ -5,6 +5,9 @@
 #define __HNS3_DEBUGFS_H
 
 #include "hnae3.h"
+#ifdef CONFIG_HNS3_UBL
+#include "hns3_unic_debugfs.h"
+#endif
 
 #define HNS3_DBG_READ_LEN	65536
 #define HNS3_DBG_READ_LEN_128KB	0x20000
@@ -48,7 +51,11 @@ struct hns3_dbg_dentry_info {
 struct hns3_dbg_cmd_info {
 	const char *name;
 	enum hnae3_dbg_cmd cmd;
+#ifdef CONFIG_HNS3_UBL
+	enum hns3_dbg_ub_dentry_type dentry;
+#else
 	enum hns3_dbg_dentry_type dentry;
+#endif
 	u32 buf_len;
 	int (*init)(struct hnae3_handle *handle, unsigned int cmd);
 };
