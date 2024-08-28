@@ -16,7 +16,9 @@
 #include <net/ipv6.h>
 #include <net/rtnetlink.h>
 #include <net/vxlan.h>
+#if IS_ENABLED(CONFIG_UBL)
 #include "ubl.h"
+#endif
 #include "hclge_cmd.h"
 #include "hclge_dcb.h"
 #include "hclge_ext.h"
@@ -29,11 +31,15 @@
 #include "hnae3.h"
 #include "hclge_devlink.h"
 #include "hclge_comm_cmd.h"
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 #include "hclge_udma.h"
+#endif
+#ifdef CONFIG_HNS3_UBL
 #include "hclge_comm_unic_addr.h"
 #include "hclge_unic_ip.h"
 #include "hclge_unic_guid.h"
 #include "hclge_unic_addr.h"
+#endif
 
 #include "hclge_trace.h"
 

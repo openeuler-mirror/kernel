@@ -23,11 +23,15 @@
 #include <net/vxlan.h>
 #include <net/geneve.h>
 
+#if IS_ENABLED(CONFIG_UBL)
 #include "ubl.h"
+#endif
 #include "hnae3.h"
 #include "hnae3_ext.h"
 #include "hns3_enet.h"
+#ifdef CONFIG_HNS3_UBL
 #include "hns3_unic.h"
+#endif
 #include "hns3_roh.h"
 /* All hns3 tracepoints are defined by the include below, which
  * must be included exactly once across the whole kernel with

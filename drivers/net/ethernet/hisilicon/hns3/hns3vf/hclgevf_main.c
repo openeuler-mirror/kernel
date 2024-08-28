@@ -11,11 +11,15 @@
 #include "hnae3.h"
 #include "hclgevf_devlink.h"
 #include "hclge_comm_rss.h"
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 #include "hclgevf_udma.h"
+#endif
+#ifdef CONFIG_HNS3_UBL
 #include "hclge_comm_unic_addr.h"
 #include "hclgevf_unic_ip.h"
 #include "hclgevf_unic_guid.h"
 #include "hclgevf_unic_addr.h"
+#endif
 #include "hclgevf_trace.h"
 #include "hclgevf_dcb.h"
 

@@ -8,7 +8,9 @@
 
 #include "hns3_enet.h"
 #include "hns3_ethtool.h"
+#ifdef CONFIG_HNS3_UBL
 #include "hns3_unic.h"
+#endif
 
 /* tqp related stats */
 #define HNS3_TQP_STAT(_string, _member)	{			\

@@ -6,10 +6,14 @@
 #include "hclge_debugfs.h"
 #include "hclge_err.h"
 #include "hclge_main.h"
+#ifdef CONFIG_HNS3_UBL
 #include "hclge_unic_debugfs.h"
+#endif
 #include "hclge_regs.h"
 #include "hclge_tm.h"
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 #include "hclge_udma.h"
+#endif
 #include "hnae3.h"
 
 static const char * const state_str[] = { "off", "on" };

@@ -18,7 +18,9 @@
 #include "hnae3.h"
 #include "hns3_debugfs.h"
 #include "hns3_enet.h"
+#ifdef CONFIG_HNS3_UBL
 #include "hns3_unic_debugfs.h"
+#endif
 
 static struct hns3_dbg_dentry_info ub_dbg_dentry[] = {
 	{
