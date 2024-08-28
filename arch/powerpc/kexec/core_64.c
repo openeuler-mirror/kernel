@@ -25,6 +25,7 @@
 #include <asm/paca.h>
 #include <asm/mmu.h>
 #include <asm/sections.h>	/* _end */
+#include <asm/setup.h>
 #include <asm/prom.h>
 #include <asm/smp.h>
 #include <asm/hw_breakpoint.h>
@@ -312,6 +313,16 @@ void default_machine_kexec(struct kimage *image)
 
 	if (!kdump_in_progress())
 		kexec_prepare_cpus();
+
+	#ifdef CONFIG_PPC_PSERIES
+		/*
+		 * This must be done after other CPUs have shut down, otherwise they
+		 * could execute the 'scv' instruction, which is not supported with
+		 * reloc disabled (see configure_exceptions()).
+		 */
+		if (firmware_has_feature(FW_FEATURE_SET_MODE))
+			pseries_disable_reloc_on_exc();
+	#endif
 
 	printk("kexec: Starting switchover sequence.\n");
 
