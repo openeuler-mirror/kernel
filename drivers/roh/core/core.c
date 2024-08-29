@@ -617,7 +617,7 @@ int roh_device_set_eid(struct roh_device *device, struct roh_eid_attr *attr)
 		return ret;
 	}
 
-	device->eid = *attr;
+	memcpy(&device->eid, attr, sizeof(device->eid));
 	ret = roh_set_mac_by_eid(device, attr);
 	mutex_unlock(&device->eid_mutex);
 
