@@ -152,6 +152,9 @@
 #define UDMA_NUM_QP_MAX		524288
 #define UDMA_NUM_QP_MIN		8
 
+#define UDMA_CNP_ATTR_SEL_MAX	1
+#define UDMA_CNP_DSCP_MAX	63
+
 struct udma_num_qp_cmd {
 	uint32_t num;
 };
@@ -173,6 +176,21 @@ struct udma_port_cc_attr {
 	uint32_t			min;
 	uint32_t			max;
 };
+
+enum udma_cnp_param_type {
+	CNP_PARAM_ATTR_SEL,
+	CNP_PARAM_DSCP,
+};
+
+struct udma_cnp_attr {
+	struct udma_port_attribute port_attr;
+	enum udma_cnp_param_type type;
+};
+
+static inline struct udma_cnp_attr *to_udma_cnp_attr(struct udma_port_attribute *attr)
+{
+	return container_of(attr, struct udma_cnp_attr, port_attr);
+}
 
 int udma_register_cc_sysfs(struct udma_dev *udma_dev);
 void udma_unregister_cc_sysfs(struct udma_dev *udma_dev);

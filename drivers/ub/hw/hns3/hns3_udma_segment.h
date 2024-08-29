@@ -19,7 +19,7 @@
 #include <linux/slab.h>
 #include <linux/scatterlist.h>
 #include <linux/dma-mapping.h>
-#include "urma/ubcore_opcode.h"
+#include "urma/ubcore_types.h"
 #include "hns3_udma_device.h"
 #include "hns3_udma_common.h"
 

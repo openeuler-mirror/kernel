@@ -128,9 +128,6 @@ int udma_table_get(struct udma_dev *udma_dev,
 		   struct udma_hem_table *table, uint64_t obj);
 void udma_table_put(struct udma_dev *udma_dev,
 		    struct udma_hem_table *table, uint64_t obj);
-void *udma_table_find(struct udma_dev *udma_dev,
-		      struct udma_hem_table *table, uint64_t obj,
-		      dma_addr_t *dma_handle);
 int udma_init_hem_table(struct udma_dev *udma_dev,
 			struct udma_hem_table *table, uint32_t type,
 			uint64_t obj_size, uint64_t nobj);

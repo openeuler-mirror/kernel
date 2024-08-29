@@ -36,7 +36,7 @@ static int udma_hw_create_mpt(struct udma_dev *udma_dev,
 			      struct udma_cmd_mailbox *mailbox,
 			      uint64_t mpt_index)
 {
-	struct udma_cmq_desc desc;
+	struct udma_cmq_desc desc = {};
 	struct udma_mbox *mb;
 
 	mb = (struct udma_mbox *)desc.data;
@@ -50,7 +50,7 @@ static int udma_hw_destroy_mpt(struct udma_dev *udma_dev,
 			struct udma_cmd_mailbox *mailbox,
 			uint64_t mpt_index)
 {
-	struct udma_cmq_desc desc;
+	struct udma_cmq_desc desc = {};
 	struct udma_mbox *mb;
 
 	mb = (struct udma_mbox *)desc.data;
@@ -227,8 +227,7 @@ static int udma_seg_enable(struct udma_dev *udma_dev, struct udma_seg *seg)
 		goto err_page;
 	}
 
-	ret = udma_hw_create_mpt(udma_dev, mailbox,
-				 seg_idx & (udma_dev->caps.num_mtpts - 1));
+	ret = udma_hw_create_mpt(udma_dev, mailbox, seg_idx);
 	if (ret) {
 		dev_err(dev, "failed to create mpt, ret = %d.\n", ret);
 		goto err_page;
@@ -396,12 +395,11 @@ err_alloc_key:
 
 static void udma_seg_free(struct udma_dev *udma_dev, struct udma_seg *seg)
 {
+	uint64_t seg_idx = key_to_hw_index(seg->key);
 	int ret;
 
 	if (seg->enabled) {
-		ret = udma_hw_destroy_mpt(udma_dev, NULL,
-					  key_to_hw_index(seg->key) &
-					  (udma_dev->caps.num_mtpts - 1));
+		ret = udma_hw_destroy_mpt(udma_dev, NULL, seg_idx);
 		if (ret)
 			dev_err(udma_dev->dev, "failed to destroy mpt, ret = %d.\n",
 				ret);
