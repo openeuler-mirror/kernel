@@ -115,7 +115,7 @@ static int stats_dca_qp_proc(struct dca_page_state *states, uint32_t count,
 static void dca_ctx_stats_qp(struct udma_dca_ctx *ctx,
 			     uintptr_t *qpn_bitmap, uint32_t qpn_max)
 {
-	struct dca_stats_qp_attr attr;
+	struct dca_stats_qp_attr attr = {};
 
 	attr.qpn_bitmap = qpn_bitmap;
 	attr.qpn_max = qpn_max;
@@ -125,9 +125,10 @@ static void dca_ctx_stats_qp(struct udma_dca_ctx *ctx,
 static uint64_t calc_loading_percent(size_t total, size_t free,
 				     uint32_t *out_rem)
 {
-	uint32_t all_pages, used_pages, free_pages, scale;
+	uint64_t all_pages, used_pages, free_pages;
 	uint64_t percent = 0;
 	uint32_t rem = 0;
+	uint32_t scale;
 
 	all_pages = total >> UDMA_HW_PAGE_SHIFT;
 	free_pages = free >> UDMA_HW_PAGE_SHIFT;
@@ -165,10 +166,11 @@ static void dca_stats_ctx_qp_in_seqfile(struct udma_dev *udma_dev,
 					struct udma_dca_ctx *ctx,
 					struct seq_file *file)
 {
-	struct dca_qp_stats stats;
-	uint32_t qpn, nbits;
+	struct dca_qp_stats stats = {};
 	struct udma_qp *qp;
 	uintptr_t *bitmap;
+	uint32_t qpn = 0;
+	uint32_t nbits;
 
 	nbits = udma_dev->caps.num_qps;
 	if (nbits < 1)
@@ -247,7 +249,7 @@ static void init_dca_ctx_debugfs(struct udma_dca_ctx_debugfs *dbgfs,
 				 struct udma_dev *udma_dev,
 				 struct udma_ucontext *uctx)
 {
-	char name[DCA_CTX_PID_LEN];
+	char name[DCA_CTX_PID_LEN] = {};
 
 	if (IS_ERR_OR_NULL(parent))
 		return;
@@ -337,8 +339,10 @@ void udma_register_debugfs(struct udma_dev *udma_dev)
 {
 	struct udma_dev_debugfs *dbgfs;
 
-	if (IS_ERR_OR_NULL(udma_dbgfs_root))
+	if (IS_ERR_OR_NULL(udma_dbgfs_root)) {
+		dev_err(udma_dev->dev, "udma_dbgfs_root is NULL.\n");
 		return;
+	}
 
 	dbgfs = kzalloc(sizeof(*dbgfs), GFP_KERNEL);
 	if (!dbgfs)
@@ -362,12 +366,16 @@ void udma_unregister_debugfs(struct udma_dev *udma_dev)
 {
 	struct udma_dev_debugfs *dbgfs;
 
-	if (IS_ERR_OR_NULL(udma_dbgfs_root))
+	if (IS_ERR_OR_NULL(udma_dbgfs_root)) {
+		dev_err(udma_dev->dev, "udma_dbgfs_root is NULL.\n");
 		return;
+	}
 
 	dbgfs = udma_dev->dbgfs;
-	if (!dbgfs)
+	if (!dbgfs) {
+		dev_err(udma_dev->dev, "dbgfs is NULL.\n");
 		return;
+	}
 
 	udma_dev->dbgfs = NULL;
 

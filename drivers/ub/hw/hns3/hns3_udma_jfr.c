@@ -33,6 +33,12 @@ static int init_jfr_cfg(struct udma_dev *dev, struct udma_jfr *jfr,
 		return -EINVAL;
 	}
 
+	if (cfg->trans_mode == UBCORE_TP_UM &&
+	    cfg->max_sge + 1 > dev->caps.max_srq_sges) {
+		dev_err(dev->dev, "invalid UM sge num = %u.\n", cfg->max_sge);
+		return -EINVAL;
+	}
+
 	jfr->wqe_cnt = roundup_pow_of_two(cfg->depth);
 
 	if (cfg->trans_mode == UBCORE_TP_UM)
@@ -72,9 +78,6 @@ static int alloc_jfr_idx(struct udma_dev *dev, struct udma_jfr *jfr,
 			"failed to alloc JFR idx mtr, ret = %d.\n", ret);
 		return ret;
 	}
-
-	idx_que->head = 0;
-	idx_que->tail = 0;
 
 	return 0;
 }
@@ -186,16 +189,16 @@ static int alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 	struct hns3_udma_create_jfr_ucmd ucmd = {};
 	int ret;
 
-	if (udata) {
-		ret = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
-				     min_t(uint32_t, udata->udrv_data->in_len,
-					   (uint32_t)sizeof(ucmd)));
-		if (ret) {
-			dev_err(dev->dev,
-				"failed to copy JFR udata, ret = %d.\n",
-				ret);
-			return -EFAULT;
-		}
+	if (!udata->udrv_data->in_addr || udata->udrv_data->in_len < sizeof(ucmd)) {
+		dev_err(dev->dev, "Invalid jfr in_len %u or null addr.\n",
+			udata->udrv_data->in_len);
+		return -EINVAL;
+	}
+
+	if (copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
+			   sizeof(ucmd))) {
+		dev_err(dev->dev, "failed to copy JFR udata.\n");
+		return -EFAULT;
 	}
 
 	jfr->share_jfr = ucmd.share_jfr;
@@ -361,8 +364,7 @@ static int alloc_jfrc(struct udma_dev *dev, struct udma_jfr *jfr)
 		return ret;
 	}
 
-	id = ida_alloc_range(&jfr_ida->ida, jfr_ida->min, jfr_ida->max,
-			     GFP_KERNEL);
+	id = ida_alloc_range(&jfr_ida->ida, jfr_ida->min, jfr_ida->max, GFP_KERNEL);
 	if (id < 0) {
 		dev_err(dev->dev, "failed to alloc jfr_id(%d).\n", id);
 		ret = id;
@@ -556,7 +558,7 @@ static int udma_modify_jfr_um_qpc(struct udma_dev *dev, struct udma_jfr *jfr,
 	qp->recv_jfc = to_udma_jfc(jfr->ubcore_jfr.jfr_cfg.jfc);
 	qp->send_jfc = NULL;
 	ubcore_attr_mask.value = 0;
-	qp->m_attr = &attr;
+	memcpy(&qp->m_attr, &attr, sizeof(struct udma_modify_tp_attr));
 
 	ret = udma_modify_qp_common(qp, NULL, ubcore_attr_mask, jfr->um_qp->state, target_state);
 	if (ret)
@@ -623,13 +625,43 @@ static void destroy_jfr_um_qp(struct udma_dev *dev, struct udma_jfr *jfr)
 	kfree(jfr->um_qp);
 }
 
+static int create_jfr_resp_to_user(struct udma_dev *udma_dev, struct udma_jfr *jfr,
+				   struct ubcore_udata *udata)
+{
+	struct hns3_udma_create_jfr_resp resp = {};
+	unsigned long byte;
+
+	if (!udata->udrv_data->out_addr || udata->udrv_data->out_len < sizeof(resp)) {
+		dev_err(udma_dev->dev,
+			"Invalid jfr out_len %u or null addr.\n",
+			udata->udrv_data->out_len);
+		return -EINVAL;
+	}
+
+	resp.jfr_caps = jfr->jfr_caps;
+	resp.srqn = jfr->srqn;
+	byte = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
+			    sizeof(resp));
+	if (byte) {
+		dev_err(udma_dev->dev,
+			"failed to copy jfr resp, byte = %lu.\n", byte);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
 struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
 				   struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(dev);
-	struct hns3_udma_create_jfr_resp resp = {};
 	struct udma_jfr *jfr;
 	int ret;
+
+	if (!udata || !udata->udrv_data) {
+		dev_err(&dev->dev, "jfr udata or udrv_data is null.\n");
+		return NULL;
+	}
 
 	jfr = kcalloc(1, sizeof(*jfr), GFP_KERNEL);
 	if (!jfr)
@@ -658,18 +690,8 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_
 	if (dfx_switch)
 		store_jfr_id(udma_dev, jfr);
 
-	if (udata) {
-		resp.jfr_caps = jfr->jfr_caps;
-		resp.srqn = jfr->srqn;
-		ret = copy_to_user((void *)udata->udrv_data->out_addr, &resp,
-				   min_t(uint32_t, udata->udrv_data->out_len,
-					 (uint32_t)sizeof(resp)));
-		if (ret) {
-			dev_err(udma_dev->dev,
-				"failed to copy jfr resp, ret = %d.\n", ret);
-			goto err_copy;
-		}
-	}
+	if (create_jfr_resp_to_user(udma_dev, jfr, udata))
+		goto err_copy;
 
 	return &jfr->ubcore_jfr;
 
@@ -810,6 +832,8 @@ void udma_jfr_event(struct udma_dev *udma_dev, uint32_t jfrn, int event_type)
 
 	xa_lock(&jfr_table->xa);
 	jfr = (struct udma_jfr *)xa_load(&jfr_table->xa, jfrn);
+	if (jfr)
+		refcount_inc(&jfr->refcount);
 	xa_unlock(&jfr_table->xa);
 
 	if (!jfr) {
@@ -819,8 +843,6 @@ void udma_jfr_event(struct udma_dev *udma_dev, uint32_t jfrn, int event_type)
 	}
 
 	event.event_type = UBCORE_EVENT_JFR_LIMIT_REACHED;
-
-	refcount_inc(&jfr->refcount);
 	ubcore_jfr = &jfr->ubcore_jfr;
 	if (ubcore_jfr->jfae_handler) {
 		event.ub_dev = ubcore_jfr->ub_dev;

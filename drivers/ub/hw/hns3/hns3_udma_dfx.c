@@ -40,8 +40,8 @@ static int udma_dfx_read_buf(char *str, const char *buf)
 		str_buf++;
 		blk_cnt++;
 	}
-	while (str_buf[cnt] != ' ' && str_buf[cnt] != '\0' &&
-	       cnt < UDMA_DFX_STR_LEN_MAX - 1)
+	while ((cnt < (UDMA_DFX_STR_LEN_MAX - 1)) && (str_buf[cnt] != ' ') &&
+		(str_buf[cnt] != '\0'))
 		cnt++;
 
 	if (((uint32_t)(blk_cnt + cnt) < strlen(buf)) || str_buf[cnt] != '\0')
@@ -106,6 +106,7 @@ static void udma_dfx_seg_print(struct udma_dev *udma_dev, uint32_t seg_key,
 static int udma_dfx_seg_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 {
 	struct udma_dev *udma_dev = (struct udma_dev *)udma_dfx->priv;
+	struct udma_ida *seg_ida = &udma_dev->seg_table.seg_ida;
 	struct udma_mpt_entry mpt_entry;
 	char str[UDMA_DFX_STR_LEN_MAX];
 	uint32_t mpt_index;
@@ -123,7 +124,12 @@ static int udma_dfx_seg_store(const char *p_buf, struct udma_dfx_info *udma_dfx)
 		return -EINVAL;
 	}
 
-	mpt_index = key_to_hw_index(seg_key) & (udma_dev->caps.num_mtpts - 1);
+	mpt_index = key_to_hw_index(seg_key);
+	if (mpt_index > seg_ida->max) {
+		dev_err(udma_dev->dev, "seg_key(%u) is invalid.\n", seg_key);
+		return -EINVAL;
+	}
+
 	ret = udma_dfx_query_context(udma_dev, mpt_index, &mpt_entry,
 				     sizeof(mpt_entry), UDMA_CMD_QUERY_MPT);
 	if (ret) {
@@ -836,16 +842,22 @@ static int udma_query_res_seg(struct udma_dev *udma_dev, struct ubcore_res_key *
 			      struct ubcore_res_val *val)
 {
 	struct ubcore_res_seg_val *seg = (struct ubcore_res_seg_val *)val->addr;
+	struct udma_ida *seg_ida = &udma_dev->seg_table.seg_ida;
 	struct udma_mpt_entry mpt_entry;
 	uint32_t mpt_index, token_id;
+	union ubcore_eid eid = {};
 	struct seg_list *seg_now;
-	union ubcore_eid eid;
 	int ret, i;
 
 	if (key->key_cnt == 0)
 		return udma_query_res_seg_list(udma_dev, key, val);
 
-	mpt_index = key_to_hw_index(key->key) & (udma_dev->caps.num_mtpts - 1);
+	mpt_index = key_to_hw_index(key->key);
+	if (mpt_index > seg_ida->max) {
+		dev_err(udma_dev->dev, "seg_key(%u) is invalid.\n", key->key);
+		return -EINVAL;
+	}
+
 	ret = udma_dfx_query_context(udma_dev, mpt_index, &mpt_entry,
 				     sizeof(mpt_entry), UDMA_CMD_QUERY_MPT);
 	if (ret) {
@@ -979,10 +991,9 @@ int udma_query_res(struct ubcore_device *dev,
 		return udma_query_res_dev_tp(udma_dev, key, val);
 	default:
 		dev_err(udma_dev->dev, "key type: %u invalid.\n", (uint32_t)key->type);
-		return -EINVAL;
 	}
 
-	return 0;
+	return -EINVAL;
 }
 
 UDMA_DFX_FILE_ATTR_DEF(tp_context, NULL, udma_dfx_tp_store);
@@ -1185,12 +1196,15 @@ static int udma_dfx_add_udma_device(struct udma_dev *udma_dev)
 	if (udma_dev_count == MAX_UDMA_DEV) {
 		dev_err(drv_device,
 			"udma dfx add device failed, g_udma_dfx_list is full.\n.");
-		ret = -EINVAL;
-		goto g_udma_dfx_list_full;
+		return -EINVAL;
 	}
 	for (i = 0; i < MAX_UDMA_DEV; i++)
 		if (!g_udma_dfx_list[i].dfx)
 			break;
+	if (i == MAX_UDMA_DEV) {
+		dev_err(drv_device, "no free udma dfx list.\n.");
+		return -EINVAL;
+	}
 
 	g_udma_dfx_list[i].dev = udma_dev;
 	g_udma_dfx_list[i].dfx = kzalloc(sizeof(struct udma_dfx_info),
@@ -1230,7 +1244,6 @@ dfx_list_init_failed:
 	g_udma_dfx_list[i].dfx = NULL;
 dfx_info_alloc_failed:
 	g_udma_dfx_list[i].dev = NULL;
-g_udma_dfx_list_full:
 	return ret;
 }
 
