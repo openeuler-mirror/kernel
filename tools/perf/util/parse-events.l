@@ -147,6 +147,8 @@ static int pmu_str_check(yyscan_t scanner, struct parse_events_state *parse_stat
 			return PE_PMU_EVENT_PRE;
 		case PMU_EVENT_SYMBOL_SUFFIX:
 			return PE_PMU_EVENT_SUF;
+		case PMU_EVENT_SYMBOL_SUFFIX2:
+			return PE_PMU_EVENT_SUF2;
 		case PMU_EVENT_SYMBOL:
 			return PE_KERNEL_PMU_EVENT;
 		default:
