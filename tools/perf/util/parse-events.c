@@ -1567,44 +1567,48 @@ int parse_events_add_pmu(struct parse_events_state *parse_state,
 }
 
 int parse_events_multi_pmu_add(struct parse_events_state *parse_state,
-			       char *str, struct list_head **listp)
+			       char *str, struct list_head *head,
+			       struct list_head **listp)
 {
 	struct parse_events_term *term;
-	struct list_head *list;
+	struct list_head *list = NULL;
 	struct perf_pmu *pmu = NULL;
 	int ok = 0;
+	char *config;
 
 	*listp = NULL;
+
+	if (!head) {
+		head = malloc(sizeof(struct list_head));
+		if (!head)
+			goto out_err;
+
+		INIT_LIST_HEAD(head);
+	}
+	config = strdup(str);
+	if (!config)
+		goto out_err;
+
+	if (parse_events_term__num(&term,
+				   PARSE_EVENTS__TERM_TYPE_USER,
+				   config, 1, false, &config,
+					NULL) < 0) {
+		free(config);
+		goto out_err;
+	}
+	list_add_tail(&term->list, head);
+
 	/* Add it for all PMUs that support the alias */
 	list = malloc(sizeof(struct list_head));
 	if (!list)
-		return -1;
+		goto out_err;
+
 	INIT_LIST_HEAD(list);
 	while ((pmu = perf_pmu__scan(pmu)) != NULL) {
 		struct perf_pmu_alias *alias;
 
 		list_for_each_entry(alias, &pmu->aliases, list) {
 			if (!strcasecmp(alias->name, str)) {
-				struct list_head *head;
-				char *config;
-
-				head = malloc(sizeof(struct list_head));
-				if (!head)
-					return -1;
-				INIT_LIST_HEAD(head);
-				config = strdup(str);
-				if (!config)
-					return -1;
-				if (parse_events_term__num(&term,
-						   PARSE_EVENTS__TERM_TYPE_USER,
-						   config, 1, false, &config,
-						   NULL) < 0) {
-					free(list);
-					free(config);
-					return -1;
-				}
-				list_add_tail(&term->list, head);
-
 				if (!parse_events_add_pmu(parse_state, list,
 							  pmu->name, head,
 							  true, true)) {
@@ -1612,8 +1616,6 @@ int parse_events_multi_pmu_add(struct parse_events_state *parse_state,
 						 pmu->name, alias->str);
 					ok++;
 				}
-
-				parse_events_terms__delete(head);
 			}
 		}
 	}
@@ -1626,12 +1628,14 @@ int parse_events_multi_pmu_add(struct parse_events_state *parse_state,
 		}
 	}
 
-	if (!ok) {
+out_err:
+	if (ok)
+		*listp = list;
+	else
 		free(list);
-		return -1;
-	}
-	*listp = list;
-	return 0;
+
+	parse_events_terms__delete(head);
+	return ok ? 0 : -1;
 }
 
 int parse_events__modifier_group(struct list_head *list,
@@ -2234,6 +2238,19 @@ int __parse_events(struct evlist *evlist, const char *str,
 	return ret;
 }
 
+void parse_events_error__init(struct parse_events_error *err)
+{
+	bzero(err, sizeof(*err));
+}
+
+void parse_events_error__exit(struct parse_events_error *err)
+{
+	zfree(&err->str);
+	zfree(&err->help);
+	zfree(&err->first_str);
+	zfree(&err->first_help);
+}
+
 #define MAX_WIDTH 1000
 static int get_term_width(void)
 {
@@ -2295,6 +2312,21 @@ static void __parse_events_print_error(int err_idx, const char *err_str,
 		fprintf(stderr, "%*s\\___ %s\n", idx + 1, "", err_str);
 		if (err_help)
 			fprintf(stderr, "\n%s\n", err_help);
+	}
+}
+
+void parse_events_error__print(struct parse_events_error *err,
+			       const char *event)
+{
+	if (!err->num_errors)
+		return;
+
+	__parse_events_print_error(err->idx, err->str, err->help, event);
+
+	if (err->num_errors > 1) {
+		fputs("\nInitial error:\n", stderr);
+		__parse_events_print_error(err->first_idx, err->first_str,
+					err->first_help, event);
 	}
 }
 

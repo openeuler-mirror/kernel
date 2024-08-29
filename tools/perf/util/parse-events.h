@@ -202,7 +202,7 @@ struct evsel *parse_events__add_event(int idx, struct perf_event_attr *attr,
 					char *name, struct perf_pmu *pmu);
 
 int parse_events_multi_pmu_add(struct parse_events_state *parse_state,
-			       char *str,
+			       char *str, struct list_head *head,
 			       struct list_head **listp);
 
 int parse_events_copy_term_list(struct list_head *old,
@@ -242,6 +242,10 @@ char *parse_events_formats_error_string(char *additional_terms);
 
 void parse_events_print_error(struct parse_events_error *err,
 			      const char *event);
+void parse_events_error__init(struct parse_events_error *err);
+void parse_events_error__exit(struct parse_events_error *err);
+void parse_events_error__print(struct parse_events_error *err,
+			       const char *event);
 
 #ifdef HAVE_LIBELF_SUPPORT
 /*
