@@ -159,7 +159,9 @@ static struct attribute *alloc_hsa(const char *name,
 static void free_hw_stats(struct roh_device *device)
 {
 	kfree(device->hw_private_stats);
+	device->hw_private_stats = NULL;
 	kfree(device->hw_public_stats);
+	device->hw_public_stats = NULL;
 }
 
 static int alloc_and_get_hw_stats(struct roh_device *device)
@@ -203,7 +205,8 @@ static int alloc_and_get_hw_stats(struct roh_device *device)
 	return 0;
 
 err:
-	free_hw_stats(device);
+	kfree(privite_stats);
+	kfree(public_stats);
 
 	return ret;
 }
@@ -309,7 +312,8 @@ int roh_device_register_sysfs(struct roh_device *device)
 
 	return 0;
 err:
-	remove_device_sysfs(device);
+	for (i = i - 1; i >= 0; i--)
+		device_remove_file(&device->dev, roh_class_attr[i]);
 	return ret;
 }
 

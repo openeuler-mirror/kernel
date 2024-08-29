@@ -536,8 +536,6 @@ static void hns3_roh_dfx_uninit(struct hns3_roh_device *hroh_dev)
 static void hns3_roh_dfx_register_debugfs(const char *dir_name)
 {
 	hns3_roh_dfx_root = debugfs_create_dir(dir_name, NULL);
-	if (IS_ERR_OR_NULL(hns3_roh_dfx_root))
-		return;
 }
 
 static void hns3_roh_dfx_unregister_debugfs(void)
