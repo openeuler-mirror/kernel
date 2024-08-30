@@ -514,12 +514,10 @@ struct hclge_port_vlan_filter_bypass_cmd {
 #define HCLGE_SWITCH_ANTI_SPOOF_B	0U
 #define HCLGE_SWITCH_ALW_LPBK_B		1U
 #define HCLGE_SWITCH_ALW_LCL_LPBK_B	2U
-#define HCLGE_SWITCH_ALW_DST_OVRD_B	3U
 #define HCLGE_SWITCH_NO_MASK		0x0
 #define HCLGE_SWITCH_ANTI_SPOOF_MASK	0xFE
 #define HCLGE_SWITCH_ALW_LPBK_MASK	0xFD
 #define HCLGE_SWITCH_ALW_LCL_LPBK_MASK	0xFB
-#define HCLGE_SWITCH_LW_DST_OVRD_MASK	0xF7
 
 struct hclge_mac_vlan_switch_cmd {
 	u8 roce_sel;

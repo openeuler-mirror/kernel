@@ -180,9 +180,6 @@ static int hclge_torus_cfg_switch(struct hclge_dev *hdev, bool is_rocee,
 	hnae3_set_bit(req->switch_param, HCLGE_SWITCH_ALW_LPBK_B, 1);
 	hnae3_set_bit(req->switch_param, HCLGE_SWITCH_ALW_LCL_LPBK_B, 0);
 	hnae3_set_bit(req->switch_param, HCLGE_SWITCH_ANTI_SPOOF_B, enabled);
-	if (!is_rocee)
-		hnae3_set_bit(req->switch_param, HCLGE_SWITCH_ALW_DST_OVRD_B,
-			      enabled);
 
 	hclge_comm_cmd_reuse_desc(&desc, false);
 	ret = hclge_cmd_send(&hdev->hw, &desc, 1);
