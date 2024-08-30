@@ -7,7 +7,9 @@
 #include "hnae3.h"
 #include "hns3_debugfs.h"
 #include "hns3_enet.h"
+#ifdef CONFIG_HNS3_UBL
 #include "hns3_unic_debugfs.h"
+#endif
 
 static struct dentry *hns3_dbgfs_root;
 

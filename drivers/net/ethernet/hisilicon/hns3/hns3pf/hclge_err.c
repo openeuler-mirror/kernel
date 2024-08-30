@@ -2,7 +2,9 @@
 /* Copyright (c) 2016-2017 Hisilicon Limited. */
 
 #include "hclge_err.h"
+#if IS_ENABLED(CONFIG_UB_UDMA_HNS3)
 #include "hclge_udma.h"
+#endif
 
 static const struct hclge_hw_error hclge_imp_tcm_ecc_int[] = {
 	{

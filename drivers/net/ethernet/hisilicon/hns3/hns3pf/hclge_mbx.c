@@ -5,9 +5,11 @@
 #include "hclge_mbx.h"
 #include "hnae3.h"
 #include "hclge_comm_rss.h"
+#ifdef CONFIG_HNS3_UBL
 #include "hclge_comm_unic_addr.h"
 #include "hclge_unic_guid.h"
 #include "hclge_unic_ip.h"
+#endif
 #include "hclge_dcb.h"
 #include "hclge_tm.h"
 
