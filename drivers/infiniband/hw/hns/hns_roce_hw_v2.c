@@ -588,9 +588,6 @@ static inline int set_ud_wqe(struct hns_roce_qp *qp,
 	if (ret)
 		return ret;
 
-	if (hr_dev->mac_type == HNAE3_MAC_ROH && qp->ibqp.qp_type == IB_QPT_GSI)
-		ud_sq_wqe->dmac[0] = 0xF0;
-
 	qp->sl = to_hr_ah(ud_wr(wr)->ah)->av.sl;
 
 	set_extend_sge(qp, wr->sg_list, &curr_idx, valid_num_sge);
