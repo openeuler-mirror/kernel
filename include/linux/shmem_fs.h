@@ -23,18 +23,22 @@ struct shmem_inode_info {
 	unsigned long		flags;
 	unsigned long		alloced;	/* data pages alloced to file */
 	unsigned long		swapped;	/* subtotal assigned to swap */
-	pgoff_t			fallocend;	/* highest fallocate endindex */
-	struct list_head        shrinklist;     /* shrinkable hpage inodes */
-	struct list_head	swaplist;	/* chain of maybes on swap */
+	union {
+	    struct offset_ctx	dir_offsets;	/* stable directory offsets */
+	    struct {
+		struct list_head shrinklist;	/* shrinkable hpage inodes */
+		struct list_head swaplist;	/* chain of maybes on swap */
+	    };
+	};
+	struct timespec64	i_crtime;	/* file creation time */
 	struct shared_policy	policy;		/* NUMA memory alloc policy */
 	struct simple_xattrs	xattrs;		/* list of xattrs */
+	pgoff_t			fallocend;	/* highest fallocate endindex */
+	unsigned int		fsflags;	/* for FS_IOC_[SG]ETFLAGS */
 	atomic_t		stop_eviction;	/* hold when working on inode */
-	struct timespec64	i_crtime;	/* file creation time */
-	unsigned int		fsflags;	/* flags for FS_IOC_[SG]ETFLAGS */
 #ifdef CONFIG_TMPFS_QUOTA
 	struct dquot __rcu	*i_dquot[MAXQUOTAS];
 #endif
-	struct offset_ctx	dir_offsets;	/* stable entry offsets */
 	struct inode		vfs_inode;
 };
 
@@ -113,11 +117,20 @@ int shmem_unuse(unsigned int type);
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 extern bool shmem_is_huge(struct inode *inode, pgoff_t index, bool shmem_huge_force,
 			  struct mm_struct *mm, unsigned long vm_flags);
+unsigned long shmem_allowable_huge_orders(struct inode *inode,
+				struct vm_area_struct *vma, pgoff_t index,
+				bool global_huge);
 #else
 static __always_inline bool shmem_is_huge(struct inode *inode, pgoff_t index, bool shmem_huge_force,
 					  struct mm_struct *mm, unsigned long vm_flags)
 {
 	return false;
+}
+static inline unsigned long shmem_allowable_huge_orders(struct inode *inode,
+				struct vm_area_struct *vma, pgoff_t index,
+				bool global_huge)
+{
+	return 0;
 }
 #endif
 
