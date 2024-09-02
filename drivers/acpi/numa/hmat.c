@@ -723,6 +723,23 @@ static void hmat_register_target_devices(struct memory_target *target)
 	}
 }
 
+void hmat_restore_target(int nid)
+{
+	struct memory_target *target;
+	int pxm;
+
+	pxm = node_to_pxm(nid);
+	target = find_mem_target(pxm);
+	if (!target)
+		return;
+
+	mutex_lock(&target_lock);
+	hmat_register_target_cache(target);
+	hmat_register_target_perf(target, 0);
+	hmat_register_target_perf(target, 1);
+	mutex_unlock(&target_lock);
+}
+
 static void hmat_register_target(struct memory_target *target)
 {
 	int nid = pxm_to_node(target->memory_pxm);

@@ -224,6 +224,19 @@ static int acpi_memory_enable_device(struct acpi_memory_device *mem_device)
 		hotplug_mdev[node] = mem_device->device;
 		num_enabled++;
 	}
+	if (acpi_has_method(handle, "_HMA")) {
+		acpi_status status;
+		struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
+
+		status = acpi_evaluate_object(handle, "_HMA", NULL, &buffer);
+		if (ACPI_SUCCESS(status) && buffer.length) {
+			union acpi_object *obj = buffer.pointer;
+
+			if (!obj->buffer.length)
+				hmat_restore_target(node);
+		}
+	}
+
 	if (!num_enabled) {
 		dev_err(&mem_device->device->dev, "add_memory failed\n");
 		return -EINVAL;
