@@ -194,7 +194,7 @@ static unsigned long vm_insert_anon_page(struct vm_area_struct *vma,
 
 	inc_mm_counter(mm, MM_ANONPAGES);
 	add_reliable_page_counter(page, mm, 1);
-	page_add_new_anon_rmap(page, vma, addr);
+	folio_add_new_anon_rmap(page_folio(page), vma, addr);
 	dst_pte = mk_pte(page, vma->vm_page_prot);
 	if (vma->vm_flags & VM_WRITE)
 		dst_pte = pte_mkwrite_novma(pte_mkdirty(dst_pte));
@@ -220,7 +220,7 @@ static void uswap_map_anon_page(struct mm_struct *mm,
 	set_pte_at(mm, addr, pte, old_pte);
 	inc_mm_counter(mm, MM_ANONPAGES);
 	add_reliable_page_counter(page, mm, 1);
-	page_add_new_anon_rmap(page, vma, addr);
+	folio_add_new_anon_rmap(page_folio(page), vma, addr);
 	pte_unmap_unlock(pte, ptl);
 }
 
@@ -535,7 +535,7 @@ int mfill_atomic_pte_nocopy(struct mm_struct *mm, pmd_t *dst_pmd,
 
 	inc_mm_counter(mm, MM_ANONPAGES);
 	add_reliable_page_counter(page, mm, 1);
-	page_add_new_anon_rmap(page, dst_vma, dst_addr);
+	folio_add_new_anon_rmap(page_folio(page), dst_vma, dst_addr);
 	set_pte_at(mm, dst_addr, pte, dst_pte);
 
 	/* No need to invalidate - it was non-present before */
