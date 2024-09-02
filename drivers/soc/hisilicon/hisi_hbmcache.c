@@ -20,21 +20,22 @@ static ssize_t state_store(struct device *d, struct device_attribute *attr,
 {
 	struct acpi_device *adev = ACPI_COMPANION(d);
 	const int type = online_type_from_str(buf);
-	int ret = -EINVAL;
+	acpi_handle handle = adev->handle;
+	acpi_status status = AE_OK;
 
 	switch (type) {
 	case STATE_ONLINE:
-		ret = acpi_device_set_power(adev, ACPI_STATE_D0);
+		status = acpi_evaluate_object(handle, "_ON", NULL, NULL);
 		break;
 	case STATE_OFFLINE:
-		ret = acpi_device_set_power(adev, ACPI_STATE_D3);
+		status = acpi_evaluate_object(handle, "_OFF", NULL, NULL);
 		break;
 	default:
 		break;
 	}
 
-	if (ret)
-		return ret;
+	if (ACPI_FAILURE(status))
+		return -ENODEV;
 
 	return count;
 }
@@ -90,8 +91,8 @@ static int cache_remove(struct platform_device *pdev)
 }
 
 static const struct acpi_device_id cache_acpi_ids[] = {
-	{"HISI04A1"},
-	{},
+	{"HISI04A1", 0},
+	{"", 0},
 };
 
 static struct platform_driver hbm_cache_driver = {
