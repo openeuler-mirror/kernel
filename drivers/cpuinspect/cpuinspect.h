@@ -14,8 +14,8 @@ void cpuinspect_remove_interface(struct device *dev);
 void cpuinspect_result_notify(void);
 
 /* inspect control */
-int start_inspect_threads(void);
-int stop_inspect_threads(void);
+void start_inspect_threads(void);
+void stop_inspect_threads(void);
 void stop_inspect_threads_sync(void);
 int cpuinspect_is_running(void);
 
