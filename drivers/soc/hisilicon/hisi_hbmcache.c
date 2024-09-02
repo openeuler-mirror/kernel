@@ -14,6 +14,7 @@
 #define MODULE_NAME            "hbm_cache"
 
 static struct kobject *cache_kobj;
+static struct mutex cache_lock;
 
 static ssize_t state_store(struct device *d, struct device_attribute *attr,
 			   const char *buf, size_t count)
@@ -23,6 +24,7 @@ static ssize_t state_store(struct device *d, struct device_attribute *attr,
 	acpi_handle handle = adev->handle;
 	acpi_status status = AE_OK;
 
+	mutex_lock(&cache_lock);
 	switch (type) {
 	case STATE_ONLINE:
 		status = acpi_evaluate_object(handle, "_ON", NULL, NULL);
@@ -33,6 +35,7 @@ static ssize_t state_store(struct device *d, struct device_attribute *attr,
 	default:
 		break;
 	}
+	mutex_unlock(&cache_lock);
 
 	if (ACPI_FAILURE(status))
 		return -ENODEV;
@@ -111,6 +114,8 @@ static int __init hbm_cache_module_init(void)
 	cache_kobj = kobject_create_and_add("hbm_cache", kernel_kobj);
 	if (!cache_kobj)
 		return -ENOMEM;
+
+	mutex_init(&cache_lock);
 
 	ret = platform_driver_register(&hbm_cache_driver);
 	if (ret) {
