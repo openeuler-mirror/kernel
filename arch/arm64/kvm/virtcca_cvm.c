@@ -67,29 +67,14 @@ static bool tmm_supports(unsigned long feature)
 	return !!u64_get_bits(tmm_feat_reg0, feature);
 }
 
-bool kvm_cvm_supports_sve(void)
+static bool kvm_cvm_supports_sve(void)
 {
 	return tmm_supports(TMI_FEATURE_REGISTER_0_SVE_EN);
 }
 
-bool kvm_cvm_supports_pmu(void)
+static bool kvm_cvm_supports_pmu(void)
 {
 	return tmm_supports(TMI_FEATURE_REGISTER_0_PMU_EN);
-}
-
-u32 kvm_cvm_ipa_limit(void)
-{
-	return u64_get_bits(tmm_feat_reg0, TMI_FEATURE_REGISTER_0_S2SZ);
-}
-
-u32 kvm_cvm_get_num_brps(void)
-{
-	return u64_get_bits(tmm_feat_reg0, TMI_FEATURE_REGISTER_0_NUM_BPS);
-}
-
-u32 kvm_cvm_get_num_wrps(void)
-{
-	return u64_get_bits(tmm_feat_reg0, TMI_FEATURE_REGISTER_0_NUM_WPS);
 }
 
 static int cvm_vmid_reserve(void)
@@ -241,7 +226,7 @@ static int kvm_cvm_ttt_create(struct virtcca_cvm *cvm,
 	return tmi_ttt_create(numa_set, cvm->rd, addr, level);
 }
 
-int kvm_cvm_create_ttt_levels(struct kvm *kvm, struct virtcca_cvm *cvm,
+static int kvm_cvm_create_ttt_levels(struct kvm *kvm, struct virtcca_cvm *cvm,
 			unsigned long ipa,
 			int level,
 			int max_level,
@@ -308,7 +293,7 @@ static bool is_data_create_region(phys_addr_t ipa_base,
 	return false;
 }
 
-int kvm_cvm_populate_par_region(struct kvm *kvm, u64 numa_set,
+static int kvm_cvm_populate_par_region(struct kvm *kvm, u64 numa_set,
 			phys_addr_t ipa_base, phys_addr_t ipa_end,
 			struct kvm_cap_arm_tmm_populate_region_args *args)
 {
