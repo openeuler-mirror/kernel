@@ -139,7 +139,7 @@ enum sdma_irq_type {
 	INT_CH_IOE_SDMAM_252, INT_CH_IOE_SDMAM_253, INT_CH_IOE_SDMAM_254, INT_CH_IOE_SDMAM_255,
 };
 
-void sdma_irq_init(struct hisi_sdma_device *sdma);
+int sdma_irq_init(struct hisi_sdma_device *sdma);
 void sdma_irq_deinit(struct hisi_sdma_device *sdma);
 
 #endif

@@ -52,7 +52,7 @@ irqreturn_t sdma_chn_ioe_irq_handle(int irq, void *psdma_dev)
 	return IRQ_HANDLED;
 }
 
-void sdma_irq_init(struct hisi_sdma_device *sdma)
+int sdma_irq_init(struct hisi_sdma_device *sdma)
 {
 	struct platform_device *pdev;
 	void __iomem *io_addr;
@@ -61,7 +61,7 @@ void sdma_irq_init(struct hisi_sdma_device *sdma)
 	u32 i;
 
 	pdev = sdma->pdev;
-	for (i = 0; i < sdma->nr_channel + HISI_STARS_CHN_NUM; i++) {
+	for (i = HISI_STARS_CHN_NUM; i < sdma->nr_channel + HISI_STARS_CHN_NUM; i++) {
 		io_addr = sdma->io_orig_base + i * HISI_SDMA_CHANNEL_IOMEM_SIZE;
 		sdma_channel_set_irq_mask(io_addr, SDMA_IOC_MASKED_STATUS);
 	}
@@ -72,27 +72,29 @@ void sdma_irq_init(struct hisi_sdma_device *sdma)
 	for (i = 0; i < irq_cnt; i++) {
 		vir_irq = platform_get_irq(pdev, i);
 		if (vir_irq < 0) {
-			dev_err(&pdev->dev, "get vir_irq[idx:%d] failed:%d!\n", i, vir_irq);
+			dev_err(&pdev->dev, "get vir_irq[idx:%u] failed:%d!\n", i, vir_irq);
 			sdma->irq[i] = -1;
 			continue;
 		}
 		sdma->irq[i] = vir_irq;
 	}
 
-	for (i = INT_CH_IOE_SDMAM_0 + HISI_STARS_CHN_NUM; i <= INT_CH_IOE_SDMAM_255; i++) {
-		if (sdma->irq[i] == -1)
+	for (i = INT_CH_IOE_SDMAM_0 + HISI_STARS_CHN_NUM; i <= INT_CH_IOE_SDMAM_191; i++) {
+		if (sdma->irq[i] == -1 || sdma->irq[i] == 0)
 			continue;
 
 		ret = devm_request_irq(&sdma->pdev->dev, sdma->irq[i], sdma_chn_ioe_irq_handle,
 				       IRQF_ONESHOT, HISI_SDMA_IRQ_FUNC_NAME, sdma);
 		if (ret != 0) {
 			dev_err(&pdev->dev, "request_irq failed, ret=%d", ret);
-			continue;
+			return ret;
 		}
 	}
 
 	for (i = 0; i < SDMA_IOE_NUM_MAX; i++)
 		spin_lock_init(&err_set_lock[i]);
+
+	return 0;
 }
 
 void sdma_irq_deinit(struct hisi_sdma_device *sdma)

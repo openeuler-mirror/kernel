@@ -29,6 +29,9 @@ struct hisi_sdma_channel {
 	u16 idx;
 	struct hisi_sdma_device *pdev;
 
+	u32 ida;
+	spinlock_t owner_chn_lock;
+
 	/* must be page-aligned and continuous physical memory */
 	struct hisi_sdma_sq_entry *sq_base;
 	struct hisi_sdma_cq_entry *cq_base;
@@ -79,6 +82,7 @@ struct hisi_sdma_device {
 struct hisi_sdma_core_device {
 	u32 sdma_major;
 	u32 sdma_device_num;
+	spinlock_t device_lock;
 	struct hisi_sdma_device *sdma_devices[HISI_SDMA_MAX_DEVS];
 };
 
@@ -89,7 +93,7 @@ struct hisi_sdma_global_info {
 };
 
 void sdma_cdev_init(struct cdev *cdev);
-void sdma_info_sync_cdev(struct hisi_sdma_global_info *g_info);
+void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida);
 
 static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val, u32 mask)
 {
