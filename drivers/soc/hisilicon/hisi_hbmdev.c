@@ -59,7 +59,9 @@ static int memdev_power_on(struct acpi_device *adev)
 	acpi_handle handle = adev->handle;
 	acpi_status status;
 
+	acpi_scan_lock_acquire();
 	status = acpi_evaluate_object(handle, "_ON", NULL, NULL);
+	acpi_scan_lock_release();
 	if (ACPI_FAILURE(status)) {
 		acpi_handle_warn(handle, "Power on failed (0x%x)\n", status);
 		return -ENODEV;

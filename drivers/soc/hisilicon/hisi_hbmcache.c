@@ -14,27 +14,31 @@
 #define MODULE_NAME            "hbm_cache"
 
 static struct kobject *cache_kobj;
+static struct mutex cache_lock;
 
 static ssize_t state_store(struct device *d, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
 	struct acpi_device *adev = ACPI_COMPANION(d);
 	const int type = online_type_from_str(buf);
-	int ret = -EINVAL;
+	acpi_handle handle = adev->handle;
+	acpi_status status = AE_OK;
 
+	mutex_lock(&cache_lock);
 	switch (type) {
 	case STATE_ONLINE:
-		ret = acpi_device_set_power(adev, ACPI_STATE_D0);
+		status = acpi_evaluate_object(handle, "_ON", NULL, NULL);
 		break;
 	case STATE_OFFLINE:
-		ret = acpi_device_set_power(adev, ACPI_STATE_D3);
+		status = acpi_evaluate_object(handle, "_OFF", NULL, NULL);
 		break;
 	default:
 		break;
 	}
+	mutex_unlock(&cache_lock);
 
-	if (ret)
-		return ret;
+	if (ACPI_FAILURE(status))
+		return -ENODEV;
 
 	return count;
 }
@@ -90,8 +94,8 @@ static int cache_remove(struct platform_device *pdev)
 }
 
 static const struct acpi_device_id cache_acpi_ids[] = {
-	{"HISI04A1"},
-	{},
+	{"HISI04A1", 0},
+	{"", 0},
 };
 
 static struct platform_driver hbm_cache_driver = {
@@ -110,6 +114,8 @@ static int __init hbm_cache_module_init(void)
 	cache_kobj = kobject_create_and_add("hbm_cache", kernel_kobj);
 	if (!cache_kobj)
 		return -ENOMEM;
+
+	mutex_init(&cache_lock);
 
 	ret = platform_driver_register(&hbm_cache_driver);
 	if (ret) {
