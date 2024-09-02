@@ -758,56 +758,6 @@ static ssize_t tx_ring_info_store(struct device *dev,
 	return ret;
 }
 
-static ssize_t queue_mapping_show(struct device *dev,
-				  struct device_attribute *attr, char *buf)
-{
-	int ret = 0;
-	int i;
-	struct net_device *netdev = to_net_device(dev);
-	struct rnp_adapter *adapter = netdev_priv(netdev);
-	struct rnp_ring *ring;
-	struct rnp_q_vector *q_vector;
-
-	ret += sprintf(buf + ret, "tx_queue count %d\n",
-		       adapter->num_tx_queues);
-	ret += sprintf(buf + ret, "queue-mapping :\n");
-	for (i = 0; i < adapter->num_tx_queues; i++) {
-		ring = adapter->tx_ring[i];
-		ret += sprintf(buf + ret, "tx queue %d <---> ring %d\n", i,
-			       ring->rnp_queue_idx);
-	}
-	ret += sprintf(buf + ret, "rx_queue count %d\n",
-		       adapter->num_rx_queues);
-	ret += sprintf(buf + ret, "queue-mapping :\n");
-	for (i = 0; i < adapter->num_rx_queues; i++) {
-		ring = adapter->rx_ring[i];
-		ret += sprintf(buf + ret, "rx queue %d <---> ring %d\n", i,
-			       ring->rnp_queue_idx);
-	}
-	ret += sprintf(buf + ret, "vector-queue mapping:\n");
-	for (i = 0; i < adapter->num_q_vectors; i++) {
-		q_vector = adapter->q_vector[i];
-		ret += sprintf(buf + ret, "---vector %d---\n", i);
-		rnp_for_each_ring(ring, q_vector->tx) {
-			ret += sprintf(buf + ret, "tx ring %d\n",
-				       ring->rnp_queue_idx);
-		}
-		rnp_for_each_ring(ring, q_vector->rx) {
-			ret += sprintf(buf + ret, "rx ring %d\n",
-				       ring->rnp_queue_idx);
-		}
-	}
-
-	return ret;
-}
-
-static ssize_t queue_mapping_store(struct device *dev,
-				   struct device_attribute *attr,
-				   const char *buf, size_t count)
-{
-	return count;
-}
-
 static ssize_t tx_counter_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
@@ -1571,8 +1521,6 @@ static ssize_t pcs_reg_show(struct device *dev, struct device_attribute *attr,
 			       adapter->sysfs_bar4_reg_val);
 		break;
 	default:
-		e_err(drv, "Error: Invalid input_arg_cnt value =%d\n",
-		       adapter->sysfs_input_arg_cnt);
 		break;
 	}
 
@@ -2012,7 +1960,6 @@ static DEVICE_ATTR_WO(switch_loopback_off);
 static DEVICE_ATTR_RO(root_slot_info);
 static DEVICE_ATTR_RO(temperature);
 static DEVICE_ATTR_RW(active_vid);
-static DEVICE_ATTR_RW(queue_mapping);
 static DEVICE_ATTR_RW(tx_ring_info);
 static DEVICE_ATTR_RW(rx_ring_info);
 static DEVICE_ATTR_RO(para_info);
@@ -2027,7 +1974,6 @@ static struct attribute *dev_attrs[] = {
 	&dev_attr_tx_stags_info.attr,
 	&dev_attr_root_slot_info.attr,
 	&dev_attr_active_vid.attr,
-	&dev_attr_queue_mapping.attr,
 	&dev_attr_rx_drop_info.attr,
 	&dev_attr_outer_vlan_info.attr,
 	&dev_attr_tcp_sync_info.attr,
