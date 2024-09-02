@@ -8,3 +8,4 @@ obj-$(CONFIG_ARM64_PBHA)		+= pbha.o
 obj-$(CONFIG_HISI_SOC_CACHE)	+= hisi_soc_cache_framework.o
 obj-$(CONFIG_HISI_SOC_HHA)	+= hisi_soc_hha.o
 obj-$(CONFIG_HISI_SOC_L3C)	+= hisi_soc_l3c.o
+obj-$(CONFIG_HISI_MEM_RAS)	+= hisi_mem_ras.o
