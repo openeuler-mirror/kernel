@@ -44,10 +44,8 @@ static int region_cleanup(int id, void *p, void *data)
 
 static void entry_free_idr(struct hash_entry *entry)
 {
-	spin_lock(&entry->idr_lock);
 	idr_for_each(&entry->pin_mem_region, region_cleanup, &entry->pin_mem_region);
 	idr_destroy(&entry->pin_mem_region);
-	spin_unlock(&entry->idr_lock);
 
 	hash_del(&entry->node);
 	kfree(entry);
@@ -99,6 +97,7 @@ void sdma_hash_free(void)
 static int record_umem(u64 addr, struct list_head *list_head, int ida, u64 *cookie)
 {
 	struct hash_entry *entry;
+	bool entry_find = true;
 	struct pin_mem *pmem;
 	int ret, idr;
 
@@ -116,28 +115,30 @@ static int record_umem(u64 addr, struct list_head *list_head, int ida, u64 *cook
 		if (!entry) {
 			ret = -ENOMEM;
 			spin_unlock(&g_hash_table->hash_lock);
+			pr_err("Sdma failed to alloc hash_entry!\n");
 			goto free_pmem;
 		}
-
+		entry_find = false;
 		entry->ida = ida;
 		idr_init(&entry->pin_mem_region);
-		spin_lock_init(&entry->idr_lock);
-
 		hash_add(g_hash_table->sdma_fd_ht, &entry->node, ida);
 	}
-	spin_unlock(&g_hash_table->hash_lock);
 
-	spin_lock(&entry->idr_lock);
 	idr = idr_alloc(&entry->pin_mem_region, pmem, 0, 0, GFP_ATOMIC);
-	spin_unlock(&entry->idr_lock);
 	if (idr < 0) {
 		ret = idr;
-		goto free_entry;
+		spin_unlock(&g_hash_table->hash_lock);
+		pr_err("Sdma failed to alloc idr!\n");
+		if (entry_find)
+			goto free_pmem;
+		else
+			goto free_entry;
 	}
 
-	pr_debug("%s: idr alloc = %d\n", __func__, idr);
 	pmem->idr = idr;
+	spin_unlock(&g_hash_table->hash_lock);
 	*cookie = ((u64)ida << COOKIE_IDA_SHIFT) + idr;
+	pr_debug("record addr: ida = %d, idr = %d\n", ida, idr);
 
 	return 0;
 
@@ -162,17 +163,17 @@ static int pin_umem(u64 addr, int npages, struct list_head *p_head)
 		page_list = (struct page **)(uintptr_t)__get_free_pages(GFP_KERNEL,
 				get_order(to_pin_pages * sizeof(struct page *)));
 		if (!page_list) {
-			pr_err("Failed to alloc page list!\n");
+			pr_err("Sdma failed to alloc page list!\n");
 			return -ENOMEM;
 		}
 
 		pinned = pin_user_pages_fast(addr, to_pin_pages, FOLL_WRITE, page_list);
 		if (pinned < 0) {
-			pr_err("Fall to pin user pages!\n");
+			pr_err("Sdma failed to pin user pages!\n");
 			ret = pinned;
 			goto free_pages;
 		} else if (pinned != to_pin_pages) {
-			pr_err("Invalid number of pages. pinned %d pages, expect %d pages\n",
+			pr_err("Invalid number of pages. Sdma pinned %d pages, expect %d pages\n",
 			       pinned, to_pin_pages);
 			ret = -EINVAL;
 			goto unpin_page;
@@ -207,7 +208,7 @@ int sdma_umem_get(u64 addr, u32 size, int ida, u64 *cookie)
 
 	/* Check overflow */
 	if (((addr + size) < addr) || PAGE_ALIGN(addr + size) < (addr + size)) {
-		pr_err("Input size is overflow!");
+		pr_err("Sdma input size is overflow!\n");
 		return -EINVAL;
 	}
 
@@ -219,7 +220,7 @@ int sdma_umem_get(u64 addr, u32 size, int ida, u64 *cookie)
 	npages = (PAGE_ALIGN(addr + size) - ALIGN_DOWN(addr, PAGE_SIZE)) / PAGE_SIZE;
 	ret = pin_umem(addr, npages, p_head);
 	if (ret != 0) {
-		pr_err("Failed to pin_umem");
+		pr_err("Sdma failed to pin_umem\n");
 		free_region(p_head);
 		kfree(p_head);
 		return ret;
@@ -227,7 +228,7 @@ int sdma_umem_get(u64 addr, u32 size, int ida, u64 *cookie)
 
 	ret = record_umem(addr, p_head, ida, cookie);
 	if (ret) {
-		pr_err("Failed to record umem");
+		pr_err("Sdma failed to record umem\n");
 		free_region(p_head);
 		kfree(p_head);
 		return ret;
@@ -245,27 +246,26 @@ int sdma_umem_release(u64 cookie)
 	fd_ida = (int)(cookie >> COOKIE_IDA_SHIFT);
 	idr = (int)(cookie & COOKIE_IDA_MASK);
 
-	pr_debug("%s: fd_ida = %d, idr = %d\n", __func__, fd_ida, idr);
+	pr_debug("release addr: ida = %d, idr = %d\n", fd_ida, idr);
 	spin_lock(&g_hash_table->hash_lock);
 	entry = hash_lookup_entry(fd_ida);
-	spin_unlock(&g_hash_table->hash_lock);
 	if (!entry) {
-		pr_err("sdma cookie_ida is invalid!\n");
+		spin_unlock(&g_hash_table->hash_lock);
+		pr_err("Sdma cookie_ida is invalid!\n");
 		return -EFAULT;
 	}
 
-	spin_lock(&entry->idr_lock);
 	pmem = idr_find(&entry->pin_mem_region, idr);
 	if (!pmem) {
-		pr_err("sdma cookie_idr is invalid!\n");
-		spin_unlock(&entry->idr_lock);
+		spin_unlock(&g_hash_table->hash_lock);
+		pr_err("Sdma cookie_idr is invalid!\n");
 		return -EFAULT;
 	}
 
 	idr_remove(&entry->pin_mem_region, idr);
-	spin_unlock(&entry->idr_lock);
-
+	spin_unlock(&g_hash_table->hash_lock);
 	free_region(pmem->list_head);
 	kfree((void *)pmem->list_head);
+	kfree(pmem);
 	return 0;
 }

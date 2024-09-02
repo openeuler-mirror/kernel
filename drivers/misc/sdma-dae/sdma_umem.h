@@ -36,7 +36,6 @@ struct hash_entry {
 	int ida;
 	struct hlist_node node;
 	struct idr pin_mem_region;
-	spinlock_t idr_lock;
 };
 
 /* sdma_umem_get - Pin userspace memory.

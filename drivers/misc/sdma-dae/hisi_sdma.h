@@ -14,8 +14,11 @@
 #define HISI_SDMA_MMAP_CQE			1
 #define HISI_SDMA_MMAP_IO			2
 #define HISI_SDMA_MMAP_SHMEM			3
-#define HISI_SDMA_FSM_TIMEOUT			100
+#define HISI_SDMA_FSM_INTERVAL			20
+#define HISI_SDMA_FSM_TIMEOUT			10
 
+#define HISI_SDMA_MAX_BASE_ADDR_SIZE		0x100000
+#define HISI_SDMA_MAX_COMMEN_BASE_ADDR_SIZE	0x10000
 #define HISI_SDMA_CHANNEL_IOMEM_SIZE		0x1000
 #define HISI_SDMA_SQ_ENTRY_SIZE			64UL
 #define HISI_SDMA_CQ_ENTRY_SIZE			16UL
@@ -135,7 +138,7 @@ struct hisi_sdma_share_chn {
 };
 
 struct hisi_sdma_reg_info {
-	int chn;
+	u32 chn;
 	int type;
 	u32 reg_value;
 };
@@ -168,7 +171,7 @@ struct hisi_sdma_sqe_task {
 };
 
 struct hisi_sdma_task_info {
-	int chn;
+	u32 chn;
 	u32 req_cnt;
 	u32 task_cnt;
 	uintptr_t task_addr;
@@ -181,8 +184,8 @@ struct hisi_sdma_ioctl_func_list {
 };
 
 #define IOCTL_SDMA_GET_PROCESS_ID	_IOR('s', 1, u32)
-#define IOCTL_SDMA_GET_CHN		_IOR('s', 2, int)
-#define IOCTL_SDMA_PUT_CHN		_IOW('s', 3, int)
+#define IOCTL_SDMA_GET_CHN		_IOR('s', 2, u32)
+#define IOCTL_SDMA_PUT_CHN		_IOW('s', 3, u32)
 #define IOCTL_SDMA_GET_STREAMID		_IOR('s', 4, u32)
 #define IOCTL_SDMA_PIN_UMEM		_IOWR('s', 5, struct hisi_sdma_umem_info)
 #define IOCTL_SDMA_UNPIN_UMEM		_IOW('s', 6, u64)
