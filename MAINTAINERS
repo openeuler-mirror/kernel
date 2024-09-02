@@ -7952,6 +7952,12 @@ F:	Documentation/ABI/testing/sysfs-devices-platform-kunpeng_hccs
 F:	drivers/soc/hisilicon/kunpeng_hccs.c
 F:	drivers/soc/hisilicon/kunpeng_hccs.h
 
+HISILICON KUNPENG SOC MEMORY RAS DRIVER
+M:	Xiaofei Tan <tanxiaofei@huawei.com>
+S:	Maintained
+F:	drivers/soc/hisilicon/hisi_mem_ras.c
+F:	drivers/soc/hisilicon/hisi_mem_ras.h
+
 HISILICON LPC BUS DRIVER
 M:	john.garry@huawei.com
 S:	Maintained

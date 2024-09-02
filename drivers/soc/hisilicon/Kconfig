@@ -58,4 +58,18 @@ config HISI_L0
 	  for user to alloc and lock memory
 
 	  If not sure say no.
+
+config HISI_MEM_RAS
+	tristate "Add RAS support for Hisilicon memory device"
+	depends on ACPI
+	depends on PCC
+	depends on ARM64 || COMPILE_TEST
+	help
+	  Add RAS driver for Hisilicon memory device to repair hardware error of
+	  memory devices in OS side. The driver interacts with firmware through PCC
+	  and provides sysfs files as user-mode interfaces.It could support both
+	  HBM and DDR memory.
+
+	  If not sure say no.
+
 endmenu
