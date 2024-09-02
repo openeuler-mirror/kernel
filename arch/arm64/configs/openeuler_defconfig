@@ -6119,6 +6119,7 @@ CONFIG_HISI_HBMCACHE=m
 CONFIG_HISI_HBMDEV_ACLS=y
 CONFIG_HISI_L3T=m
 CONFIG_HISI_L0=m
+CONFIG_HISI_MEM_RAS=m
 # end of Hisilicon SoC drivers
 # end of SOC (System On Chip) specific Drivers
 
