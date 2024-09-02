@@ -150,6 +150,20 @@ int stop_inspect_threads(void)
 }
 
 /**
+ * stop_inspect_threads_sync - Stop all the inspect threads and wait for
+ * current inspect tasks to finish.
+ *
+ * This function must be called with the cpuinspect lock held.
+ */
+void stop_inspect_threads_sync(void)
+{
+	stop_inspect_threads();
+
+	while (atomic_read(&active_threads_num))
+		cpu_relax();
+}
+
+/**
  * cpuinspect_init - core initializer
  */
 static int __init cpuinspect_init(void)

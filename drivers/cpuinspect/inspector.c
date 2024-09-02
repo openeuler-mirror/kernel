@@ -106,10 +106,7 @@ int cpuinspect_unregister_inspector(struct cpu_inspector *insp)
 
 	mutex_lock(&cpuinspect_lock);
 	if (curr_cpu_inspector == insp) {
-		if (ci_core.inspect_on) {
-			mutex_unlock(&cpuinspect_lock);
-			return -EBUSY;
-		}
+		stop_inspect_threads_sync();
 
 		curr_cpu_inspector = NULL;
 	}
