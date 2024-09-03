@@ -4062,6 +4062,7 @@ void blk_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 	if (q)
 		queue_unplugged(q, depth, from_schedule);
 
+	plug->cur_ktime = 0;
 	current->flags &= ~PF_BLOCK_TS;
 }
 
