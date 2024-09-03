@@ -368,6 +368,8 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	rq->part = NULL;
 	rq->start_time_ns = blk_time_get_ns();
 	blk_rq_init_bi_alloc_time(rq, NULL);
+	blk_mq_get_alloc_task(rq, data->bio);
+
 	rq->io_start_time_ns = 0;
 	rq->nr_phys_segments = 0;
 #if defined(CONFIG_BLK_DEV_INTEGRITY)
@@ -533,6 +535,7 @@ static void __blk_mq_free_request(struct request *rq)
 	struct blk_mq_hw_ctx *hctx = blk_mq_map_queue(q, ctx->cpu);
 	const int sched_tag = rq->internal_tag;
 
+	blk_mq_put_alloc_task(rq);
 	if (rq->tag != -1)
 		blk_mq_put_tag(hctx, hctx->tags, ctx, rq->tag);
 	if (sched_tag != -1)
@@ -1976,7 +1979,10 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 {
 	const int is_sync = op_is_sync(bio->bi_opf);
 	const int is_flush_fua = op_is_flush(bio->bi_opf);
-	struct blk_mq_alloc_data data = { .flags = 0 };
+	struct blk_mq_alloc_data data = {
+		.flags	= 0,
+		.bio	= bio
+	};
 	struct request *rq;
 	unsigned int request_count = 0;
 	struct blk_plug *plug;
