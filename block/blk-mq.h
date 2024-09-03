@@ -37,6 +37,7 @@ struct blk_mq_ctx {
 } ____cacheline_aligned_in_smp;
 
 struct request_wrapper {
+	u64 io_end_time_ns;
 #ifdef CONFIG_BLK_BIO_ALLOC_TIME
 	u64 bi_alloc_time_ns;
 #endif

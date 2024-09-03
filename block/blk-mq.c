@@ -371,6 +371,7 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	blk_mq_get_alloc_task(rq, data->bio);
 
 	rq->io_start_time_ns = 0;
+	request_to_wrapper(rq)->io_end_time_ns = 0;
 	rq->nr_phys_segments = 0;
 #if defined(CONFIG_BLK_DEV_INTEGRITY)
 	rq->nr_integrity_segments = 0;
@@ -580,7 +581,10 @@ EXPORT_SYMBOL_GPL(blk_mq_free_request);
 
 inline void __blk_mq_end_request(struct request *rq, blk_status_t error)
 {
-	u64 now = blk_time_get_ns();
+	u64 now = request_to_wrapper(rq)->io_end_time_ns;
+
+	if (!now)
+		now = blk_time_get_ns();
 
 	if (rq->rq_flags & RQF_STATS) {
 		blk_mq_poll_stats_start(rq->q);
