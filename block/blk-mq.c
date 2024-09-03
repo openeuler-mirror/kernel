@@ -2241,7 +2241,8 @@ int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 	 * rq_size is the size of the request plus driver payload, rounded
 	 * to the cacheline size
 	 */
-	rq_size = round_up(sizeof(struct request) + set->cmd_size,
+	rq_size = round_up(sizeof(struct request) +
+			   sizeof(struct request_wrapper) + set->cmd_size,
 				cache_line_size());
 	left = rq_size * depth;
 
@@ -2282,7 +2283,7 @@ int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 		to_do = min(entries_per_page, depth - i);
 		left -= to_do * rq_size;
 		for (j = 0; j < to_do; j++) {
-			struct request *rq = p;
+			struct request *rq = p + sizeof(struct request_wrapper);
 
 			tags->static_rqs[i] = rq;
 			if (blk_mq_init_request(set, rq, hctx_idx, node)) {

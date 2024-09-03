@@ -152,8 +152,12 @@ static inline u64 blk_time_get_ns(void);
 static inline void blk_rq_init_bi_alloc_time(struct request *rq,
 					     struct request *first_rq)
 {
-	rq->bi_alloc_time_ns = first_rq ? first_rq->bi_alloc_time_ns :
-					  blk_time_get_ns();
+	if (!rq->q->mq_ops)
+		return;
+
+	request_to_wrapper(rq)->bi_alloc_time_ns =
+		first_rq ? request_to_wrapper(first_rq)->bi_alloc_time_ns :
+			   blk_time_get_ns();
 }
 
 /*
@@ -167,17 +171,26 @@ static inline void blk_rq_update_bi_alloc_time(struct request *rq,
 					       struct bio *bio,
 					       struct request *merged_rq)
 {
+	struct request_wrapper *rq_wrapper;
+	struct request_wrapper *merged_rq_wrapper;
+
+	if (!rq->q->mq_ops)
+		return;
+
+	rq_wrapper = request_to_wrapper(rq);
 	if (bio) {
-		if (rq->bi_alloc_time_ns > bio->bi_alloc_time_ns)
-			rq->bi_alloc_time_ns = bio->bi_alloc_time_ns;
+		if (rq_wrapper->bi_alloc_time_ns > bio->bi_alloc_time_ns)
+			rq_wrapper->bi_alloc_time_ns = bio->bi_alloc_time_ns;
 		return;
 	}
 
 	if (WARN_ON_ONCE(!merged_rq))
 		return;
 
-	if (rq->bi_alloc_time_ns > merged_rq->bi_alloc_time_ns)
-		rq->bi_alloc_time_ns = merged_rq->bi_alloc_time_ns;
+	merged_rq_wrapper = request_to_wrapper(merged_rq);
+	if (rq_wrapper->bi_alloc_time_ns > merged_rq_wrapper->bi_alloc_time_ns)
+		rq_wrapper->bi_alloc_time_ns =
+			merged_rq_wrapper->bi_alloc_time_ns;
 }
 #else /* CONFIG_BLK_BIO_ALLOC_TIME */
 static inline void blk_rq_init_bi_alloc_time(struct request *rq,

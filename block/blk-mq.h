@@ -36,6 +36,17 @@ struct blk_mq_ctx {
 	struct kobject		kobj;
 } ____cacheline_aligned_in_smp;
 
+struct request_wrapper {
+#ifdef CONFIG_BLK_BIO_ALLOC_TIME
+	u64 bi_alloc_time_ns;
+#endif
+} ____cacheline_aligned_in_smp;
+
+static inline struct request_wrapper *request_to_wrapper(void *rq)
+{
+	return rq - sizeof(struct request_wrapper);
+}
+
 void blk_mq_freeze_queue(struct request_queue *q);
 void blk_mq_exit_queue(struct request_queue *q);
 int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr);
