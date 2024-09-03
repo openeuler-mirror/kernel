@@ -2773,6 +2773,8 @@ void blk_mq_release(struct request_queue *q)
 	struct blk_mq_hw_ctx *hctx, *next;
 	int i;
 
+	blk_io_hierarchy_stats_free(q);
+
 	queue_for_each_hw_ctx(q, hctx, i)
 		WARN_ON_ONCE(hctx && list_empty(&hctx->hctx_list));
 
@@ -2910,14 +2912,17 @@ struct request_queue *blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
 	/* mark the queue as mq asap */
 	q->mq_ops = set->ops;
 
+	if (blk_io_hierarchy_stats_alloc(q))
+		goto err_exit;
+
 	q->poll_cb = blk_stat_alloc_callback(blk_mq_poll_stats_fn,
 					     blk_mq_poll_stats_bkt,
 					     BLK_MQ_POLL_STATS_BKTS, q);
 	if (!q->poll_cb)
-		goto err_exit;
+		goto err_hierarchy_exit;
 
 	if (blk_mq_alloc_ctxs(q))
-		goto err_exit;
+		goto err_hierarchy_exit;
 
 	/* init q->mq_kobj and sw queues' kobjects */
 	blk_mq_sysfs_init(q);
@@ -2987,6 +2992,8 @@ err_hctxs:
 	q->nr_hw_queues = 0;
 err_sys_init:
 	blk_mq_sysfs_deinit(q);
+err_hierarchy_exit:
+	blk_io_hierarchy_stats_free(q);
 err_exit:
 	q->mq_ops = NULL;
 	return ERR_PTR(-ENOMEM);

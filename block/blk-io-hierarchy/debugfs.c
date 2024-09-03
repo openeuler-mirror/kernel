@@ -19,6 +19,9 @@
 #include "iodump.h"
 
 static const char *stage_name[NR_STAGE_GROUPS] = {
+#ifdef CONFIG_HIERARCHY_THROTTLE
+	[STAGE_THROTTLE]	= "throtl",
+#endif
 };
 
 const char *hierarchy_stage_name(enum stage_group stage)

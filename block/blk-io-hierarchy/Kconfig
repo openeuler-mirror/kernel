@@ -26,4 +26,15 @@ config HIERARCHY_IO_DUMP
 
 	If unsure, say N.
 
+config HIERARCHY_THROTTLE
+	bool "Enable hierarchy stats layer blk-throttle"
+	default n
+	depends on BLK_DEV_THROTTLING=y
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for blk-throttle. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif

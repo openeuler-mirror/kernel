@@ -386,6 +386,9 @@ enum stat_group {
 };
 
 enum stage_group {
+#ifdef CONFIG_BLK_DEV_THROTTLING
+	STAGE_THROTTLE,
+#endif
 	STAGE_BIO_RESERVE,
 	NR_BIO_STAGE_GROUPS,
 	NR_RQ_STAGE_GROUPS,
