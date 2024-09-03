@@ -37,4 +37,15 @@ config HIERARCHY_THROTTLE
 
 	If unsure, say N.
 
+config HIERARCHY_WBT
+	bool "Enable hierarchy stats layer blk-wbt"
+	default n
+	depends on BLK_WBT
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for blk-wbt. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif
