@@ -121,4 +121,14 @@ config HIERARCHY_REQUEUE
 
 	If unsure, say N.
 
+config HIERARCHY_RQ_DRIVER
+	bool "Enable hierarchy stats layer rq_driver"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for rq_driver. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif

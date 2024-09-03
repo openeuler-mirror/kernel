@@ -1008,6 +1008,7 @@ static void blk_mq_unregister_default_hierarchy(struct request_queue *q)
 	blk_mq_unregister_hierarchy(q, STAGE_PLUG);
 	blk_mq_unregister_hierarchy(q, STAGE_HCTX);
 	blk_mq_unregister_hierarchy(q, STAGE_REQUEUE);
+	blk_mq_unregister_hierarchy(q, STAGE_RQ_DRIVER);
 }
 
 /**

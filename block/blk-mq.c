@@ -590,6 +590,12 @@ inline void __blk_mq_end_request(struct request *rq, blk_status_t error)
 		blk_stat_add(rq, now);
 	}
 
+	/*
+	 * Avoid accounting flush request with data twice and request that is
+	 * not started.
+	 */
+	if (blk_mq_request_started(rq) && !blk_rq_hierarchy_is_flush_done(rq))
+		rq_hierarchy_end_io_acct(rq, STAGE_RQ_DRIVER);
 	blk_account_io_done(rq, now);
 
 	if (rq->end_io) {
@@ -729,6 +735,7 @@ void blk_mq_start_request(struct request *rq)
 	blk_mq_sched_started_request(rq);
 
 	trace_block_rq_issue(q, rq);
+	rq_hierarchy_start_io_acct(rq, STAGE_RQ_DRIVER);
 
 	if (test_bit(QUEUE_FLAG_STATS, &q->queue_flags)) {
 		rq->io_start_time_ns = blk_time_get_ns();
@@ -767,6 +774,7 @@ static void __blk_mq_requeue_request(struct request *rq)
 	if (blk_mq_request_started(rq)) {
 		WRITE_ONCE(rq->state, MQ_RQ_IDLE);
 		rq->rq_flags &= ~RQF_TIMED_OUT;
+		rq_hierarchy_end_io_acct(rq, STAGE_RQ_DRIVER);
 		if (q->dma_drain_size && blk_rq_bytes(rq))
 			rq->nr_phys_segments--;
 	}

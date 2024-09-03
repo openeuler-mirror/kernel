@@ -406,6 +406,7 @@ enum stage_group {
 #endif
 	STAGE_HCTX,
 	STAGE_REQUEUE,
+	STAGE_RQ_DRIVER,
 	NR_RQ_STAGE_GROUPS,
 	NR_STAGE_GROUPS,
 };

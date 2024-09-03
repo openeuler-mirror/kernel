@@ -458,6 +458,8 @@ static void mq_flush_data_end_io(struct request *rq, blk_status_t error)
 		blk_mq_put_driver_tag_hctx(hctx, rq);
 	}
 
+	blk_rq_hierarchy_set_flush_done(rq);
+
 	/*
 	 * After populating an empty queue, kick it to avoid stall.  Read
 	 * the comment in flush_end_io().
