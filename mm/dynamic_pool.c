@@ -1576,7 +1576,9 @@ static int dpool_fill_from_pagelist(struct dynamic_pool *dpool, void *arg)
 {
 	struct dpool_info *info = (struct dpool_info *)arg;
 	struct pages_pool *pool = &dpool->pool[PAGES_POOL_4K];
-	int i, ret = -EINVAL;
+	unsigned long nr_pages = 0;
+	int i;
+	LIST_HEAD(page_list);
 
 	dpool->range_cnt = info->range_cnt;
 	dpool->pfn_ranges =
@@ -1586,8 +1588,6 @@ static int dpool_fill_from_pagelist(struct dynamic_pool *dpool, void *arg)
 
 	memcpy(dpool->pfn_ranges, info->pfn_ranges,
 		sizeof(struct range) * dpool->range_cnt);
-
-	spin_lock_irq(&dpool->lock);
 
 	for (i = 0; i < dpool->range_cnt; i++) {
 		struct range *range = &dpool->pfn_ranges[i];
@@ -1601,22 +1601,23 @@ static int dpool_fill_from_pagelist(struct dynamic_pool *dpool, void *arg)
 
 			if (!dpool_free_page_prepare(page)) {
 				pr_err("fill pool failed, check pages failed\n");
-				goto unlock;
+				return -EINVAL;
 			}
 
 			__SetPageDpool(page);
-			list_add_tail(&page->lru, &pool->freelist);
-			pool->free_pages++;
+			list_add_tail(&page->lru, &page_list);
+			nr_pages++;
 
-			cond_resched_lock(&dpool->lock);
+			cond_resched();
 		}
 	}
-	ret = 0;
 
-unlock:
+	spin_lock_irq(&dpool->lock);
+	list_splice(&page_list, &pool->freelist);
+	pool->free_pages += nr_pages;
 	spin_unlock_irq(&dpool->lock);
 
-	return ret;
+	return 0;
 }
 
 static int dpool_drain_to_pagelist(struct dynamic_pool *dpool)
