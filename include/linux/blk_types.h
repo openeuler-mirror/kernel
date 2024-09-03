@@ -405,6 +405,7 @@ enum stage_group {
 	STAGE_KYBER,
 #endif
 	STAGE_HCTX,
+	STAGE_REQUEUE,
 	NR_RQ_STAGE_GROUPS,
 	NR_STAGE_GROUPS,
 };

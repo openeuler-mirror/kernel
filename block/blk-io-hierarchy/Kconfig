@@ -111,4 +111,14 @@ config HIERARCHY_HCTX
 
 	If unsure, say N.
 
+config HIERARCHY_REQUEUE
+	bool "Enable hierarchy stats layer requeue"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for requeue. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif

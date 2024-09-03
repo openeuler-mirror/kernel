@@ -794,6 +794,7 @@ static void blk_mq_requeue_work(struct work_struct *work)
 	spin_lock_irq(&q->requeue_lock);
 	list_splice_init(&q->requeue_list, &rq_list);
 	spin_unlock_irq(&q->requeue_lock);
+	rq_list_hierarchy_end_io_acct(&rq_list, STAGE_REQUEUE);
 
 	list_for_each_entry_safe(rq, next, &rq_list, queuelist) {
 		if (!(rq->rq_flags & (RQF_SOFTBARRIER | RQF_DONTPREP)))
@@ -833,6 +834,7 @@ void blk_mq_add_to_requeue_list(struct request *rq, bool at_head,
 	 */
 	BUG_ON(rq->rq_flags & RQF_SOFTBARRIER);
 
+	rq_hierarchy_start_io_acct(rq, STAGE_REQUEUE);
 	spin_lock_irqsave(&q->requeue_lock, flags);
 	if (at_head) {
 		rq->rq_flags |= RQF_SOFTBARRIER;

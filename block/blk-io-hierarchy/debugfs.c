@@ -43,6 +43,9 @@ static const char *stage_name[NR_STAGE_GROUPS] = {
 #ifdef CONFIG_HIERARCHY_HCTX
 	[STAGE_HCTX]		= "hctx",
 #endif
+#ifdef CONFIG_HIERARCHY_REQUEUE
+	[STAGE_REQUEUE]		= "requeue",
+#endif
 };
 
 const char *hierarchy_stage_name(enum stage_group stage)
