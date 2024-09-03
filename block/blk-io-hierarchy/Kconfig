@@ -68,4 +68,15 @@ config HIERARCHY_PLUG
 
 	If unsure, say N.
 
+config HIERARCHY_DEADLINE
+	bool "Enable hierarchy stats layer mq-deadline"
+	default n
+	depends on MQ_IOSCHED_DEADLINE
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for mq-deadline. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif

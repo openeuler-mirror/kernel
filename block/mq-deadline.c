@@ -22,6 +22,7 @@
 #include "blk-mq-debugfs.h"
 #include "blk-mq-tag.h"
 #include "blk-mq-sched.h"
+#include "blk-io-hierarchy/stats.h"
 
 /*
  * See Documentation/block/deadline-iosched.txt
@@ -61,6 +62,8 @@ struct deadline_data {
 	spinlock_t lock;
 	spinlock_t zone_lock;
 	struct list_head dispatch;
+
+	struct request_queue *q;
 };
 
 static inline struct rb_root *
@@ -386,6 +389,8 @@ static struct request *dd_dispatch_request(struct blk_mq_hw_ctx *hctx)
 	rq = __dd_dispatch_request(dd);
 	spin_unlock(&dd->lock);
 
+	if (rq)
+		rq_hierarchy_end_io_acct(rq, STAGE_DEADLINE);
 	return rq;
 }
 
@@ -396,6 +401,7 @@ static void dd_exit_queue(struct elevator_queue *e)
 	BUG_ON(!list_empty(&dd->fifo_list[READ]));
 	BUG_ON(!list_empty(&dd->fifo_list[WRITE]));
 
+	blk_mq_unregister_hierarchy(dd->q, STAGE_DEADLINE);
 	kfree(dd);
 }
 
@@ -427,11 +433,13 @@ static int dd_init_queue(struct request_queue *q, struct elevator_type *e)
 	dd->writes_starved = writes_starved;
 	dd->front_merges = 1;
 	dd->fifo_batch = fifo_batch;
+	dd->q = q;
 	spin_lock_init(&dd->lock);
 	spin_lock_init(&dd->zone_lock);
 	INIT_LIST_HEAD(&dd->dispatch);
 
 	q->elevator = eq;
+	blk_mq_register_hierarchy(q, STAGE_DEADLINE);
 	return 0;
 }
 
@@ -469,8 +477,10 @@ static bool dd_bio_merge(struct blk_mq_hw_ctx *hctx, struct bio *bio)
 	ret = blk_mq_sched_try_merge(q, bio, &free);
 	spin_unlock(&dd->lock);
 
-	if (free)
+	if (free) {
+		rq_hierarchy_end_io_acct(free, STAGE_DEADLINE);
 		blk_mq_free_request(free);
+	}
 
 	return ret;
 }
@@ -493,6 +503,7 @@ static void dd_insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 	blk_req_zone_write_unlock(rq);
 
 	if (blk_mq_sched_try_insert_merge(q, rq, &free)) {
+		rq_list_hierarchy_end_io_acct(&free, STAGE_DEADLINE);
 		blk_mq_free_requests(&free);
 		return;
 	}
@@ -526,6 +537,8 @@ static void dd_insert_requests(struct blk_mq_hw_ctx *hctx,
 {
 	struct request_queue *q = hctx->queue;
 	struct deadline_data *dd = q->elevator->elevator_data;
+
+	rq_list_hierarchy_start_io_acct(list, STAGE_DEADLINE);
 
 	spin_lock(&dd->lock);
 	while (!list_empty(list)) {
