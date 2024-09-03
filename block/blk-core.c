@@ -3919,11 +3919,11 @@ void blk_start_plug(struct blk_plug *plug)
 	INIT_LIST_HEAD(&plug->list);
 	INIT_LIST_HEAD(&plug->mq_list);
 	INIT_LIST_HEAD(&plug->cb_list);
-	plug->cur_ktime = 0;
 	/*
 	 * Store ordering should not be needed here, since a potential
 	 * preempt will imply a full memory barrier
 	 */
+	tsk->_resvd->cur_ktime = 0;
 	tsk->plug = plug;
 }
 EXPORT_SYMBOL(blk_start_plug);
@@ -4062,7 +4062,7 @@ void blk_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 	if (q)
 		queue_unplugged(q, depth, from_schedule);
 
-	plug->cur_ktime = 0;
+	current->_resvd->cur_ktime = 0;
 	current->flags &= ~PF_BLOCK_TS;
 }
 

@@ -481,7 +481,8 @@ static inline void blk_free_queue_dispatch_async(struct request_queue *q)
 
 static inline u64 blk_time_get_ns(void)
 {
-	struct blk_plug *plug = current->plug;
+	struct task_struct *tsk = current;
+	struct blk_plug *plug = tsk->plug;
 
 	if (!plug || !in_task())
 		return ktime_get_ns();
@@ -491,11 +492,11 @@ static inline u64 blk_time_get_ns(void)
 	 * a valid timestamp" separately, just accept that we'll do an extra
 	 * ktime_get_ns() if we just happen to get 0 as the current time.
 	 */
-	if (!plug->cur_ktime) {
-		plug->cur_ktime = ktime_get_ns();
-		current->flags |= PF_BLOCK_TS;
+	if (!tsk->_resvd->cur_ktime) {
+		tsk->_resvd->cur_ktime = ktime_get_ns();
+		tsk->flags |= PF_BLOCK_TS;
 	}
-	return plug->cur_ktime;
+	return tsk->_resvd->cur_ktime;
 }
 
 static inline ktime_t blk_time_get(void)

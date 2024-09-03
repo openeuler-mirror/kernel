@@ -635,6 +635,7 @@ struct task_struct_resvd {
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 	struct sched_grid_qos	*grid_qos;
 #endif
+	u64 cur_ktime;
 };
 
 struct task_struct {

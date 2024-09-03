@@ -1372,7 +1372,6 @@ struct blk_plug {
 	struct list_head list; /* requests */
 	struct list_head mq_list; /* blk-mq requests */
 	struct list_head cb_list; /* md requires an unplug callback */
-	u64 cur_ktime;
 };
 #define BLK_MAX_REQUEST_COUNT 16
 #define BLK_PLUG_FLUSH_SIZE (128 * 1024)
@@ -1444,7 +1443,7 @@ static inline void blk_plug_invalidate_ts(struct task_struct *tsk)
 	struct blk_plug *plug = tsk->plug;
 
 	if (plug)
-		plug->cur_ktime = 0;
+		current->_resvd->cur_ktime = 0;
 	current->flags &= ~PF_BLOCK_TS;
 }
 
