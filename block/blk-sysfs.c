@@ -931,6 +931,7 @@ static void blk_mq_register_default_hierarchy(struct request_queue *q)
 		return;
 
 	blk_mq_register_hierarchy(q, STAGE_GETTAG);
+	blk_mq_register_hierarchy(q, STAGE_PLUG);
 }
 
 /**

@@ -1799,6 +1799,8 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 		if (rq->mq_ctx != this_ctx) {
 			if (this_ctx) {
 				trace_block_unplug(this_q, depth, !from_schedule);
+				rq_list_hierarchy_end_io_acct(&ctx_list,
+							      STAGE_PLUG);
 				blk_mq_sched_insert_requests(this_q, this_ctx,
 								&ctx_list,
 								from_schedule);
@@ -1819,6 +1821,7 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 	 */
 	if (this_ctx) {
 		trace_block_unplug(this_q, depth, !from_schedule);
+		rq_list_hierarchy_end_io_acct(&ctx_list, STAGE_PLUG);
 		blk_mq_sched_insert_requests(this_q, this_ctx, &ctx_list,
 						from_schedule);
 	}
@@ -2059,6 +2062,7 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 			trace_block_plug(q);
 		}
 
+		rq_hierarchy_start_io_acct(rq, STAGE_PLUG);
 		list_add_tail(&rq->queuelist, &plug->mq_list);
 	} else if (plug && !blk_queue_nomerges(q)) {
 		blk_mq_bio_to_request(rq, bio);
@@ -2074,11 +2078,13 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 			same_queue_rq = NULL;
 		if (same_queue_rq)
 			list_del_init(&same_queue_rq->queuelist);
+		rq_hierarchy_start_io_acct(rq, STAGE_PLUG);
 		list_add_tail(&rq->queuelist, &plug->mq_list);
 
 		if (same_queue_rq) {
 			data.hctx = blk_mq_map_queue(q,
 					same_queue_rq->mq_ctx->cpu);
+			rq_hierarchy_end_io_acct(same_queue_rq, STAGE_PLUG);
 			blk_mq_try_issue_directly(data.hctx, same_queue_rq,
 					&cookie);
 		}

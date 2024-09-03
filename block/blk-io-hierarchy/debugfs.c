@@ -28,6 +28,9 @@ static const char *stage_name[NR_STAGE_GROUPS] = {
 #ifdef CONFIG_HIERARCHY_GETTAG
 	[STAGE_GETTAG]		= "gettag",
 #endif
+#ifdef CONFIG_HIERARCHY_PLUG
+	[STAGE_PLUG]		= "plug",
+#endif
 };
 
 const char *hierarchy_stage_name(enum stage_group stage)

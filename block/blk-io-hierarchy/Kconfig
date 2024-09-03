@@ -58,4 +58,14 @@ config HIERARCHY_GETTAG
 
 	If unsure, say N.
 
+config HIERARCHY_PLUG
+	bool "Enable hierarchy stats layer plug"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for plug. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif

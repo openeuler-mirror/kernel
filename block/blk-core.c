@@ -1005,6 +1005,7 @@ void blk_exit_queue(struct request_queue *q)
 static void blk_mq_unregister_default_hierarchy(struct request_queue *q)
 {
 	blk_mq_unregister_hierarchy(q, STAGE_GETTAG);
+	blk_mq_unregister_hierarchy(q, STAGE_PLUG);
 }
 
 /**
