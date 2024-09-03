@@ -282,6 +282,7 @@ void __bio_hierarchy_end_io_acct(struct bio *bio, enum stage_group stage,
 	hierarchy_remove_bio(hstage, bio);
 	io_hierarchy_inc(hstage->hstats_data, completed, op);
 	io_hierarchy_add(hstage->hstats_data, nsecs, op, duration);
+	hierarchy_account_slow_io_ns(hstage, op, duration);
 }
 
 static enum stat_group rq_hierarchy_op(struct request *rq)
@@ -366,6 +367,7 @@ void __rq_hierarchy_end_io_acct(struct request *rq,
 
 	io_hierarchy_inc(hstage->hstats_data, completed, op);
 	io_hierarchy_add(hstage->hstats_data, jiffies, op, duration);
+	hierarchy_account_slow_io_jiffies(hstage, op, duration);
 	WRITE_ONCE(rq_wrapper->stage, NR_RQ_STAGE_GROUPS);
 }
 EXPORT_SYMBOL_GPL(__rq_hierarchy_end_io_acct);

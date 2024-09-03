@@ -60,6 +60,7 @@ static int __hierarchy_stats_show(struct hierarchy_stats_data *hstats_data,
 		   latency[STAT_DISCARD], dispatched[STAT_FLUSH],
 		   completed[STAT_FLUSH], latency[STAT_FLUSH]);
 
+	hierarchy_show_slow_io(hstats_data, m);
 	seq_putc(m, '\n');
 	return 0;
 }

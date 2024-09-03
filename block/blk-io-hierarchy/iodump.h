@@ -29,6 +29,25 @@ void hierarchy_remove_bio(struct hierarchy_stage *hstage, struct bio *bio);
 void bio_hierarchy_data_init(struct bio *bio, struct bio_hierarchy_data *hdata);
 void io_hierarchy_register_iodump(struct hierarchy_stage *hstage);
 
+void hierarchy_account_slow_io(struct hierarchy_stage *hstage,
+			       enum stat_group op, unsigned long duration);
+void hierarchy_show_slow_io(struct hierarchy_stats_data *hstats_data,
+			    struct seq_file *m);
+
+static inline void
+hierarchy_account_slow_io_ns(struct hierarchy_stage *hstage,
+			     enum stat_group op, u64 duration)
+{
+	hierarchy_account_slow_io(hstage, op, ns_to_ms(duration));
+}
+
+static inline void
+hierarchy_account_slow_io_jiffies(struct hierarchy_stage *hstage,
+				  enum stat_group op, unsigned long duration)
+{
+	hierarchy_account_slow_io(hstage, op, jiffies_to_msecs(duration));
+}
+
 #else
 static inline int
 blk_io_hierarchy_iodump_init(struct request_queue *q,
@@ -59,6 +78,24 @@ bio_hierarchy_data_init(struct bio *bio, struct bio_hierarchy_data *hdata)
 
 static inline void
 io_hierarchy_register_iodump(struct hierarchy_stage *hstage)
+{
+}
+
+static inline void
+hierarchy_account_slow_io(struct hierarchy_stage *hstage,
+			  enum stat_group op, unsigned long duration)
+{
+}
+
+static inline void
+hierarchy_account_slow_io_ns(struct hierarchy_stage *hstage,
+			     enum stat_group op, u64 duration)
+{
+}
+
+static inline void
+hierarchy_account_slow_io_jiffies(struct hierarchy_stage *hstage,
+				  enum stat_group op, unsigned long duration)
 {
 }
 

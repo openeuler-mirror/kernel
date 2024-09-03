@@ -489,3 +489,29 @@ void io_hierarchy_register_iodump(struct hierarchy_stage *hstage)
 	if (attr)
 		debugfs_create_files(hstage->debugfs_dir, hstage, attr);
 }
+
+void hierarchy_account_slow_io(struct hierarchy_stage *hstage,
+			       enum stat_group op, unsigned long duration)
+{
+	if (hstage->threshold <= duration)
+		this_cpu_inc(hstage->hstats_data->hstats->slow[op]);
+}
+
+void hierarchy_show_slow_io(struct hierarchy_stats_data *hstats_data,
+			    struct seq_file *m)
+{
+	u64 slow[NR_NEW_STAT_GROUPS] = {0};
+	int cpu;
+	int i;
+
+	for_each_possible_cpu(cpu) {
+		struct hierarchy_stats *stat =
+			per_cpu_ptr(hstats_data->hstats, cpu);
+
+		for (i = 0; i < NR_NEW_STAT_GROUPS; ++i)
+			slow[i] += stat->slow[i];
+	}
+
+	seq_printf(m, " %llu %llu %llu %llu", slow[STAT_READ], slow[STAT_WRITE],
+		   slow[STAT_DISCARD], slow[STAT_FLUSH]);
+}

@@ -37,6 +37,9 @@ struct hierarchy_stats {
 	};
 	unsigned long dispatched[NR_NEW_STAT_GROUPS];
 	unsigned long completed[NR_NEW_STAT_GROUPS];
+#ifdef CONFIG_HIERARCHY_IO_DUMP
+	unsigned long slow[NR_NEW_STAT_GROUPS];
+#endif
 };
 
 struct hierarchy_stats_data {
