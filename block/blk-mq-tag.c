@@ -113,7 +113,6 @@ unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
 	struct sbq_wait_state *ws;
 	DEFINE_WAIT(wait);
 	unsigned int tag_offset;
-	bool drop_ctx;
 	int tag;
 
 	if (data->flags & BLK_MQ_REQ_RESERVED) {
@@ -136,7 +135,6 @@ unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
 		return BLK_MQ_TAG_FAIL;
 
 	ws = bt_wait_ptr(bt, data->hctx);
-	drop_ctx = data->ctx == NULL;
 	do {
 		struct sbitmap_queue *bt_prev;
 
@@ -162,9 +160,6 @@ unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
 		if (tag != -1)
 			break;
 
-		if (data->ctx)
-			blk_mq_put_ctx(data->ctx);
-
 		bt_prev = bt;
 		io_schedule();
 
@@ -188,9 +183,6 @@ unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
 
 		ws = bt_wait_ptr(bt, data->hctx);
 	} while (1);
-
-	if (drop_ctx && data->ctx)
-		blk_mq_put_ctx(data->ctx);
 
 	finish_wait(&ws->wait, &wait);
 
