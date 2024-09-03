@@ -3676,8 +3676,10 @@ static inline int ext4_iomap_buffered_da_write_begin(struct inode *inode,
 static int ext4_iomap_punch_delalloc(struct inode *inode, loff_t offset,
 				     loff_t length)
 {
+	down_write(&EXT4_I(inode)->i_data_sem);
 	ext4_es_remove_extent(inode, offset >> inode->i_blkbits,
 			DIV_ROUND_UP_ULL(length, EXT4_BLOCK_SIZE(inode->i_sb)));
+	up_write(&EXT4_I(inode)->i_data_sem);
 	return 0;
 }
 
