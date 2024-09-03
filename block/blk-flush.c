@@ -188,6 +188,7 @@ static bool blk_flush_complete_seq(struct request *rq,
 		if (list_empty(pending))
 			fq->flush_pending_since = jiffies;
 		list_move_tail(&rq->flush.list, pending);
+		rq_hierarchy_start_io_acct(rq, STAGE_HCTX);
 		break;
 
 	case REQ_FSEQ_DATA:
@@ -277,6 +278,7 @@ static void flush_end_io(struct request *flush_rq, blk_status_t error)
 		unsigned int seq = blk_flush_cur_seq(rq);
 
 		BUG_ON(seq != REQ_FSEQ_PREFLUSH && seq != REQ_FSEQ_POSTFLUSH);
+		rq_hierarchy_end_io_acct(rq, STAGE_HCTX);
 		queued |= blk_flush_complete_seq(rq, fq, seq, error);
 	}
 

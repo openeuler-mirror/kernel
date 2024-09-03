@@ -101,4 +101,14 @@ config HIERARCHY_KYBER
 
 	If unsure, say N.
 
+config HIERARCHY_HCTX
+	bool "Enable hierarchy stats layer hctx"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for hctx. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif
