@@ -92,8 +92,10 @@ struct hisi_sdma_global_info {
 	struct ida *fd_ida;
 };
 
+int sdma_create_dbg_node(struct dentry *sdma_dbgfs_dir);
 void sdma_cdev_init(struct cdev *cdev);
 void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida);
+void sdma_info_sync_dbg(struct hisi_sdma_core_device *p, u32 *share_chns);
 
 static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val, u32 mask)
 {
@@ -126,6 +128,16 @@ static inline bool sdma_channel_is_paused(struct hisi_sdma_channel *pchan)
 static inline bool sdma_channel_is_idle(struct hisi_sdma_channel *pchan)
 {
 	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_IDLE_MSK) == 1;
+}
+
+static inline bool sdma_channel_is_running(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_RUNNING_MSK) == 1;
+}
+
+static inline bool sdma_channel_is_abort(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_ABORT_MSK) == 1;
 }
 
 static inline bool sdma_channel_is_quiescent(struct hisi_sdma_channel *pchan)
