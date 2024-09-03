@@ -252,6 +252,7 @@ void bio_uninit(struct bio *bio)
 		bio->pid = NULL;
 	}
 #endif
+	bio_hierarchy_end(bio);
 	bio_free_hierarchy_data(bio);
 }
 EXPORT_SYMBOL(bio_uninit);

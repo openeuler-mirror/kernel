@@ -13,6 +13,17 @@ menuconfig BLK_IO_HIERARCHY_STATS
 
 if BLK_IO_HIERARCHY_STATS
 
+config HIERARCHY_BIO
+	bool "Support to record stats for bio lifetime"
+	default n
+	select BLK_BIO_ALLOC_TIME
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for bio. Such information can be helpful to debug performance and
+	problems like io hang.
+
+	If unsure, say N.
+
 config HIERARCHY_IO_DUMP
 	bool "Support to dump io that is throttled"
 	default n

@@ -238,7 +238,8 @@ static enum stat_group bio_hierarchy_op(struct bio *bio)
 	if (op_is_discard(bio->bi_opf))
 		return STAT_DISCARD;
 
-	if (op_is_flush(bio->bi_opf) && !bio_sectors(bio))
+	if (op_is_flush(bio->bi_opf) &&
+	    !(bio_sectors(bio) || (bio->bi_opf & REQ_HAS_DATA)))
 		return STAT_FLUSH;
 
 	if (op_is_write(bio->bi_opf))
@@ -371,6 +372,50 @@ void __rq_hierarchy_end_io_acct(struct request *rq,
 	WRITE_ONCE(rq_wrapper->stage, NR_RQ_STAGE_GROUPS);
 }
 EXPORT_SYMBOL_GPL(__rq_hierarchy_end_io_acct);
+
+#ifdef CONFIG_HIERARCHY_BIO
+void bio_hierarchy_start(struct bio *bio)
+{
+	struct request_queue_wrapper *q_wrapper;
+	struct gendisk *disk = bio->bi_disk;
+	struct hierarchy_stage *hstage;
+
+	if (bio_flagged(bio, BIO_HIERARCHY_ACCT))
+		return;
+
+	if (!blk_mq_hierarchy_registered(disk->queue, STAGE_BIO))
+		return;
+
+	bio_set_flag(bio, BIO_HIERARCHY_ACCT);
+	if (bio_has_data(bio))
+		bio->bi_opf |= REQ_HAS_DATA;
+	q_wrapper = queue_to_wrapper(disk->queue);
+	hstage = q_wrapper->io_hierarchy_stats->hstage[STAGE_BIO];
+	io_hierarchy_inc(hstage->hstats_data, dispatched,
+			 bio_hierarchy_op(bio));
+}
+
+void __bio_hierarchy_end(struct bio *bio, u64 now)
+{
+	struct request_queue_wrapper *q_wrapper;
+	struct gendisk *disk = bio->bi_disk;
+	struct hierarchy_stage *hstage;
+	enum stat_group op;
+	u64 duration;
+
+	op = bio_hierarchy_op(bio);
+	duration = now - bio->bi_alloc_time_ns;
+	q_wrapper = queue_to_wrapper(disk->queue);
+	hstage = q_wrapper->io_hierarchy_stats->hstage[STAGE_BIO];
+
+	io_hierarchy_inc(hstage->hstats_data, completed, op);
+	io_hierarchy_add(hstage->hstats_data, nsecs, op, duration);
+	hierarchy_account_slow_io_ns(hstage, op, duration);
+
+	bio_clear_flag(bio, BIO_HIERARCHY_ACCT);
+	bio->bi_opf &= ~REQ_HAS_DATA;
+}
+#endif
 
 static int __init hierarchy_stats_init(void)
 {

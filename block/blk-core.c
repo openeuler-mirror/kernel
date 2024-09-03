@@ -538,8 +538,10 @@ static void req_bio_endio(struct request *rq, struct bio *bio,
 	bio_advance(bio, nbytes);
 
 	/* don't actually finish bio if it's part of flush sequence */
-	if (bio->bi_iter.bi_size == 0 && !(rq->rq_flags & RQF_FLUSH_SEQ))
+	if (bio->bi_iter.bi_size == 0 && !(rq->rq_flags & RQF_FLUSH_SEQ)) {
+		req_bio_hierarchy_end(rq, bio);
 		bio_endio(bio);
+	}
 }
 
 void blk_dump_rq_flags(struct request *rq, char *msg)
@@ -2627,6 +2629,12 @@ generic_make_request_checks(struct bio *bio)
 	 */
 	create_io_context(GFP_ATOMIC, q->node);
 
+	/*
+	 * On the one hand REQ_PREFLUSH | REQ_FUA can be cleared above, on the
+	 * other hand it doesn't make sense to count invalid bio. Split bio will
+	 * be accounted separately.
+	 */
+	bio_hierarchy_start(bio);
 	if (!blkcg_bio_issue_check(q, bio))
 		return false;
 

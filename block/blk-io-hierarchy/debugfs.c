@@ -49,6 +49,9 @@ static const char *stage_name[NR_STAGE_GROUPS] = {
 #ifdef CONFIG_HIERARCHY_RQ_DRIVER
 	[STAGE_RQ_DRIVER]	= "rq_driver",
 #endif
+#ifdef CONFIG_HIERARCHY_BIO
+	[STAGE_BIO]		= "bio",
+#endif
 };
 
 const char *hierarchy_stage_name(enum stage_group stage)

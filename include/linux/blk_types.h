@@ -232,6 +232,12 @@ struct bio {
 /*
  * bio flags
  */
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+#define BIO_HIERARCHY_ACCT 0	/*
+				 * This bio has already been subjected to
+				 * blk-io-hierarchy, don't do it again.
+				 */
+#endif
 #define BIO_SEG_VALID	1	/* bi_phys_segments valid */
 #define BIO_CLONED	2	/* doesn't own data */
 #define BIO_BOUNCED	3	/* bio is a bounce bio */
@@ -346,6 +352,9 @@ enum req_flag_bits {
 	/* for driver use */
 	__REQ_DRV,
 	__REQ_SWAP,		/* swapping request. */
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+	_REQ_HAS_DATA,		/* io contain data. */
+#endif
 	__REQ_NR_BITS,		/* stops here */
 };
 
@@ -368,6 +377,9 @@ enum req_flag_bits {
 
 #define REQ_DRV			(1ULL << __REQ_DRV)
 #define REQ_SWAP		(1ULL << __REQ_SWAP)
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+#define REQ_HAS_DATA		(1UL << _REQ_HAS_DATA)
+#endif
 
 #define REQ_FAILFAST_MASK \
 	(REQ_FAILFAST_DEV | REQ_FAILFAST_TRANSPORT | REQ_FAILFAST_DRIVER)
@@ -408,6 +420,7 @@ enum stage_group {
 	STAGE_REQUEUE,
 	STAGE_RQ_DRIVER,
 	NR_RQ_STAGE_GROUPS,
+	STAGE_BIO = NR_RQ_STAGE_GROUPS,
 	NR_STAGE_GROUPS,
 };
 

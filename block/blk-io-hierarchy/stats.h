@@ -202,6 +202,41 @@ static inline bool blk_rq_hierarchy_is_flush_done(struct request *rq)
 	return request_to_wrapper(rq)->flush_done;
 }
 
+#ifdef CONFIG_HIERARCHY_BIO
+void bio_hierarchy_start(struct bio *bio);
+void __bio_hierarchy_end(struct bio *bio, u64 now);
+
+static inline void bio_hierarchy_end(struct bio *bio)
+{
+	if (!bio_flagged(bio, BIO_HIERARCHY_ACCT))
+		return;
+
+	if (!blk_mq_hierarchy_registered(bio->bi_disk->queue, STAGE_BIO))
+		return;
+
+	__bio_hierarchy_end(bio, blk_time_get_ns());
+}
+
+static inline void req_bio_hierarchy_end(struct request *rq, struct bio *bio)
+{
+	u64 now;
+
+	if (!bio_flagged(bio, BIO_HIERARCHY_ACCT))
+		return;
+
+	if (!blk_mq_hierarchy_registered(bio->bi_disk->queue, STAGE_BIO))
+		return;
+
+	now = request_to_wrapper(rq)->io_end_time_ns;
+	if (!now) {
+		now = blk_time_get_ns();
+		request_to_wrapper(rq)->io_end_time_ns = now;
+	}
+
+	__bio_hierarchy_end(bio, now);
+}
+#endif
+
 #else /* CONFIG_BLK_IO_HIERARCHY_STATS */
 
 static inline int
@@ -310,5 +345,22 @@ blk_rq_hierarchy_stats_init(struct request *rq)
 }
 
 #endif /* CONFIG_BLK_IO_HIERARCHY_STATS */
+
+#if !defined(CONFIG_BLK_IO_HIERARCHY_STATS) || !defined(CONFIG_HIERARCHY_BIO)
+static inline void
+bio_hierarchy_start(struct bio *bio)
+{
+}
+
+static inline void
+bio_hierarchy_end(struct bio *bio)
+{
+}
+
+static inline void
+req_bio_hierarchy_end(struct request *rq, struct bio *bio)
+{
+}
+#endif
 
 #endif /* BLK_IO_HIERARCHY_STATS_H */

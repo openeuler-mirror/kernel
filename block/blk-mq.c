@@ -2016,6 +2016,9 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 
 	blk_queue_split(q, &bio);
 
+	/* account for split bio. */
+	bio_hierarchy_start(bio);
+
 	if (!bio_integrity_prep(bio))
 		return BLK_QC_T_NONE;
 
@@ -2782,6 +2785,7 @@ void blk_mq_release(struct request_queue *q)
 	struct blk_mq_hw_ctx *hctx, *next;
 	int i;
 
+	blk_mq_unregister_hierarchy(q, STAGE_BIO);
 	blk_io_hierarchy_stats_free(q);
 
 	queue_for_each_hw_ctx(q, hctx, i)

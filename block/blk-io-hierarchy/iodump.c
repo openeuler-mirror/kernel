@@ -42,6 +42,22 @@ struct rq_dump_data {
 	bool enter_queue;
 };
 
+#ifdef CONFIG_HIERARCHY_BIO
+struct pos_data {
+	enum stage_group stage;
+	unsigned int count;
+};
+
+struct bio_stage_dump_data {
+	union {
+		loff_t pos;
+		struct pos_data pdata;
+	};
+	struct rq_dump_data rq_ddata;
+	u64 stat_time;
+};
+#endif
+
 int blk_io_hierarchy_iodump_init(struct request_queue *q,
 				 struct hierarchy_stage *hstage)
 {
@@ -72,6 +88,23 @@ int blk_io_hierarchy_iodump_init(struct request_queue *q,
 		hstage->dump_data = rq_ddata;
 		return 0;
 	}
+
+#ifdef CONFIG_HIERARCHY_BIO
+	BUILD_BUG_ON(sizeof(struct pos_data) != sizeof(loff_t));
+
+	if (hstage->stage == STAGE_BIO) {
+		struct bio_stage_dump_data *bstage_ddata =
+			kzalloc(sizeof(*bstage_ddata), GFP_KERNEL);
+
+		if (!bstage_ddata)
+			return -ENOMEM;
+
+		bstage_ddata->rq_ddata.q = q;
+		bstage_ddata->rq_ddata.stage = hstage->stage;
+		hstage->dump_data = bstage_ddata;
+		return 0;
+	}
+#endif
 
 	return -EINVAL;
 }
@@ -373,7 +406,8 @@ static struct request *hierarchy_find_and_get_rq(struct rq_dump_data *rq_ddata)
 	 * fast path to avoid refcount cas operations for the request that
 	 * is from other shared request_queue or other stages.
 	 */
-	if (rq->q != q || READ_ONCE(rq_wrapper->stage) != rq_ddata->stage)
+	if (rq->q != q || (rq_ddata->stage != STAGE_BIO &&
+			   READ_ONCE(rq_wrapper->stage) != rq_ddata->stage))
 		return NULL;
 
 	if (!refcount_inc_not_zero(&rq->ref))
@@ -384,6 +418,9 @@ static struct request *hierarchy_find_and_get_rq(struct rq_dump_data *rq_ddata)
 		blk_mq_put_rq_ref(rq);
 		return NULL;
 	}
+
+	if (rq_ddata->stage == STAGE_BIO)
+		return rq;
 
 	/*
 	 * Barrier is paired with the smp_store_release() in
@@ -473,6 +510,206 @@ static const struct blk_mq_debugfs_attr hierarchy_rq_dump_attr[] = {
 	{},
 };
 
+#ifdef CONFIG_HIERARCHY_BIO
+static struct bio_dump_data *get_bio_stage_ddata(struct request_queue *q,
+						 enum stage_group stage)
+{
+	struct blk_io_hierarchy_stats *stats =
+		queue_to_wrapper(q)->io_hierarchy_stats;
+	struct hierarchy_stage *hstage = READ_ONCE(stats->hstage[stage]);
+
+	if (!hstage)
+		return NULL;
+
+	return hstage->dump_data;
+}
+
+static void bio_stage_start_next_stage(struct bio_stage_dump_data *bstage_ddata,
+				       loff_t *pos)
+{
+	struct pos_data *pdata = &bstage_ddata->pdata;
+
+	pdata->stage++;
+	if (!stage_is_bio(pdata->stage))
+		pdata->stage = STAGE_BIO;
+	pdata->count = 0;
+
+	*pos = bstage_ddata->pos;
+}
+
+static void bio_stage_start_next_io(struct bio_stage_dump_data *bstage_ddata,
+				    loff_t *pos)
+{
+	struct pos_data *pdata = &bstage_ddata->pdata;
+
+	if (stage_is_bio(pdata->stage))
+		pdata->count++;
+	else
+		pdata->count = bstage_ddata->rq_ddata.tag;
+
+	*pos = bstage_ddata->pos;
+}
+
+static void __bio_stage_hierarchy_stop(struct bio_stage_dump_data *bstage_ddata)
+{
+	struct pos_data *pdata = &bstage_ddata->pdata;
+	struct rq_dump_data *rq_ddata = &bstage_ddata->rq_ddata;
+
+	if (stage_is_bio(pdata->stage)) {
+		struct bio_dump_data *bio_ddata =
+			get_bio_stage_ddata(rq_ddata->q, pdata->stage);
+
+		spin_unlock_irq(&bio_ddata->lock);
+	}
+
+	if (rq_ddata->enter_queue) {
+		percpu_ref_put(&rq_ddata->q->q_usage_counter);
+		rq_ddata->enter_queue = false;
+	}
+}
+
+void *__bio_stage_hierarchy_start(struct bio_stage_dump_data *bstage_ddata,
+				 loff_t *pos)
+{
+	struct pos_data *pdata = &bstage_ddata->pdata;
+	struct rq_dump_data *rq_ddata = &bstage_ddata->rq_ddata;
+
+retry:
+	if (stage_is_bio(pdata->stage)) {
+		struct list_head *list;
+		struct bio_dump_data *bio_ddata =
+			get_bio_stage_ddata(rq_ddata->q, pdata->stage);
+
+		if (!bio_ddata) {
+			bio_stage_start_next_stage(bstage_ddata, pos);
+			goto retry;
+		}
+
+		spin_lock_irq(&bio_ddata->lock);
+		list = seq_list_start(&bio_ddata->head, pdata->count);
+		if (list)
+			return list;
+
+		spin_unlock_irq(&bio_ddata->lock);
+		bio_stage_start_next_stage(bstage_ddata, pos);
+		goto retry;
+	}
+
+	if (pdata->stage == STAGE_BIO &&
+	    __rq_hierarchy_start(rq_ddata, pdata->count))
+		return bstage_ddata;
+
+	return NULL;
+}
+
+static void *bio_stage_hierarchy_start(struct seq_file *m, loff_t *pos)
+{
+	struct hierarchy_stage *hstage = m->private;
+	struct bio_stage_dump_data *bstage_ddata = hstage->dump_data;
+
+	mutex_lock(&dump_mutex);
+	bstage_ddata->pos = *pos;
+	bstage_ddata->stat_time = blk_time_get_ns();
+
+	return __bio_stage_hierarchy_start(bstage_ddata, pos);
+}
+
+static void *bio_stage_hierarchy_next(struct seq_file *m, void *v, loff_t *pos)
+{
+	struct hierarchy_stage *hstage = m->private;
+	struct bio_stage_dump_data *bstage_ddata = hstage->dump_data;
+	struct rq_dump_data *rq_ddata = &bstage_ddata->rq_ddata;
+	struct pos_data *pdata = &bstage_ddata->pdata;
+
+	if (stage_is_bio(pdata->stage)) {
+		struct bio_dump_data *bio_ddata =
+			get_bio_stage_ddata(rq_ddata->q, pdata->stage);
+		struct list_head *list = ((struct list_head *)v)->next;
+
+		if (list != &bio_ddata->head) {
+			bio_stage_start_next_io(bstage_ddata, pos);
+			return list;
+		}
+
+		spin_unlock_irq(&bio_ddata->lock);
+
+		bio_stage_start_next_stage(bstage_ddata, pos);
+		return __bio_stage_hierarchy_start(bstage_ddata, pos);
+	}
+
+	if (pdata->stage == STAGE_BIO &&
+	    __rq_hierarchy_next(rq_ddata)) {
+		bio_stage_start_next_io(bstage_ddata, pos);
+		return bstage_ddata;
+	}
+
+	(*pos)++;
+	return NULL;
+}
+
+static void bio_stage_hierarchy_stop(struct seq_file *m, void *v)
+{
+	struct hierarchy_stage *hstage = m->private;
+	struct bio_stage_dump_data *bstage_ddata = hstage->dump_data;
+
+	__bio_stage_hierarchy_stop(bstage_ddata);
+	mutex_unlock(&dump_mutex);
+}
+
+static int bio_stage_hierarchy_show(struct seq_file *m, void *v)
+{
+	struct hierarchy_stage *hstage = m->private;
+	struct bio_stage_dump_data *bstage_ddata = hstage->dump_data;
+	struct rq_dump_data *rq_ddata = &bstage_ddata->rq_ddata;
+	struct pos_data *pdata = &bstage_ddata->pdata;
+	u64 duration;
+
+	if (stage_is_bio(pdata->stage)) {
+		struct bio_hierarchy_data *data = list_entry(
+				v, struct bio_hierarchy_data, hierarchy_list);
+
+		duration = get_duration(bstage_ddata->stat_time,
+					data->bio->bi_alloc_time_ns);
+		if (hstage->threshold <= ns_to_ms(duration))
+			__hierarchy_show_bio(m, data, pdata->stage, duration);
+	} else if (pdata->stage == STAGE_BIO) {
+		struct request *rq = hierarchy_find_and_get_rq(rq_ddata);
+
+		if (rq) {
+			duration = get_duration(bstage_ddata->stat_time,
+				request_to_wrapper(rq)->bi_alloc_time_ns);
+			if (hstage->threshold <= ns_to_ms(duration))
+				hierarchy_show_rq(m, rq, duration);
+			blk_mq_put_rq_ref(rq);
+		}
+	}
+
+	return 0;
+}
+
+static const struct seq_operations bio_stage_hierarchy_ops = {
+	.start  = bio_stage_hierarchy_start,
+	.next   = bio_stage_hierarchy_next,
+	.stop   = bio_stage_hierarchy_stop,
+	.show   = bio_stage_hierarchy_show,
+};
+
+static const struct blk_mq_debugfs_attr bio_stage_dump_attr[] = {
+	{
+		"io_dump",
+		0400,
+		.seq_ops = &bio_stage_hierarchy_ops,
+	},
+	{},
+};
+
+#else /* CONFIG_HIERARCHY_BIO */
+static const struct blk_mq_debugfs_attr bio_stage_dump_attr[] = {
+	{},
+};
+
+#endif
+
 void io_hierarchy_register_iodump(struct hierarchy_stage *hstage)
 {
 	const struct blk_mq_debugfs_attr *attr;
@@ -481,6 +718,8 @@ void io_hierarchy_register_iodump(struct hierarchy_stage *hstage)
 		attr = hierarchy_bio_dump_attr;
 	else if (stage_is_rq(hstage->stage))
 		attr = hierarchy_rq_dump_attr;
+	else if (hstage->stage == STAGE_BIO)
+		attr = bio_stage_dump_attr;
 	else
 		attr = NULL;
 
