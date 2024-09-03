@@ -454,7 +454,7 @@ void __blk_rq_init(struct request_queue *q, struct request *rq)
 	RB_CLEAR_NODE(&rq->rb_node);
 	rq->tag = -1;
 	rq->internal_tag = -1;
-	rq->start_time_ns = ktime_get_ns();
+	rq->start_time_ns = blk_time_get_ns();
 	rq->part = NULL;
 }
 
@@ -2952,7 +2952,7 @@ blk_status_t __blk_insert_cloned_request(struct request_queue *q,
 			u64 now = 0;
 
 			if (blk_mq_need_time_stamp(rq))
-				now = ktime_get_ns();
+				now = blk_time_get_ns();
 
 			blk_account_io_done(rq, now);
 		}
@@ -3304,7 +3304,7 @@ void blk_start_request(struct request *req)
 	blk_dequeue_request(req);
 
 	if (test_bit(QUEUE_FLAG_STATS, &req->q->queue_flags)) {
-		req->io_start_time_ns = ktime_get_ns();
+		req->io_start_time_ns = blk_time_get_ns();
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 		req->throtl_size = blk_rq_sectors(req);
 #endif
@@ -3509,7 +3509,7 @@ EXPORT_SYMBOL_GPL(blk_unprep_request);
 void blk_finish_request(struct request *req, blk_status_t error)
 {
 	struct request_queue *q = req->q;
-	u64 now = ktime_get_ns();
+	u64 now = blk_time_get_ns();
 
 	lockdep_assert_held(req->q->queue_lock);
 	WARN_ON_ONCE(q->mq_ops);

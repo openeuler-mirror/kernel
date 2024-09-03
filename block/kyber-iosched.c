@@ -584,7 +584,7 @@ static void kyber_completed_request(struct request *rq)
 	if (blk_stat_is_active(kqd->cb))
 		return;
 
-	now = ktime_get_ns();
+	now = blk_time_get_ns();
 	if (now < rq->io_start_time_ns)
 		return;
 

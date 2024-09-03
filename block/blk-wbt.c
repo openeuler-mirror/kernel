@@ -25,6 +25,7 @@
 #include <linux/swap.h>
 #ifndef __GENKSYMS__
 #include <linux/blk-mq.h>
+#include "blk.h"
 #endif
 
 #include "blk-wbt.h"
@@ -223,7 +224,7 @@ static u64 rwb_sync_issue_lat(struct rq_wb *rwb)
 	if (!issue || !rwb->sync_cookie)
 		return 0;
 
-	now = ktime_to_ns(ktime_get());
+	now = blk_time_get_ns();
 	return now - issue;
 }
 

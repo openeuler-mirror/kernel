@@ -479,4 +479,13 @@ static inline void blk_free_queue_dispatch_async(struct request_queue *q)
 }
 #endif
 
+static inline u64 blk_time_get_ns(void)
+{
+	return ktime_get_ns();
+}
+
+static inline ktime_t blk_time_get(void)
+{
+	return ns_to_ktime(blk_time_get_ns());
+}
 #endif /* BLK_INTERNAL_H */
