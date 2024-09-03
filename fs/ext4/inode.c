@@ -3078,9 +3078,6 @@ retry:
 	if (!page)
 		return -ENOMEM;
 
-	/* In case writeback began while the page was unlocked */
-	wait_for_stable_page(page);
-
 #ifdef CONFIG_EXT4_FS_ENCRYPTION
 	ret = ext4_block_write_begin(page, pos, len,
 				     ext4_da_get_block_prep);
