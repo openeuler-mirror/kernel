@@ -157,7 +157,9 @@ struct blk_mq_alloc_data {
 	struct blk_mq_ctx *ctx;
 	struct blk_mq_hw_ctx *hctx;
 
+#ifndef __GENKSYMS__
 	struct bio *bio;
+#endif
 };
 
 static inline struct blk_mq_tags *blk_mq_tags_from_data(struct blk_mq_alloc_data *data)
