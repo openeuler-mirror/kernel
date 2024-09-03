@@ -13,6 +13,7 @@
 #include "blk.h"
 #include "blk-mq.h"
 #include "blk-mq-tag.h"
+#include "blk-io-hierarchy/stats.h"
 
 bool blk_mq_has_free_tags(struct blk_mq_tags *tags)
 {
@@ -134,6 +135,8 @@ unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
 	if (data->flags & BLK_MQ_REQ_NOWAIT)
 		return BLK_MQ_TAG_FAIL;
 
+	if (data->bio)
+		bio_hierarchy_start_io_acct(data->bio, STAGE_GETTAG);
 	ws = bt_wait_ptr(bt, data->hctx);
 	do {
 		struct sbitmap_queue *bt_prev;
@@ -185,6 +188,8 @@ unsigned int blk_mq_get_tag(struct blk_mq_alloc_data *data)
 	} while (1);
 
 	finish_wait(&ws->wait, &wait);
+	if (data->bio)
+		bio_hierarchy_end_io_acct(data->bio, STAGE_GETTAG);
 
 found_tag:
 	return tag + tag_offset;

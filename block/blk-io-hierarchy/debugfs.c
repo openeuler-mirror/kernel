@@ -25,6 +25,9 @@ static const char *stage_name[NR_STAGE_GROUPS] = {
 #ifdef CONFIG_HIERARCHY_WBT
 	[STAGE_WBT]		= "wbt",
 #endif
+#ifdef CONFIG_HIERARCHY_GETTAG
+	[STAGE_GETTAG]		= "gettag",
+#endif
 };
 
 const char *hierarchy_stage_name(enum stage_group stage)

@@ -43,6 +43,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
+#include "blk-io-hierarchy/stats.h"
 
 #ifdef CONFIG_DEBUG_FS
 struct dentry *blk_debugfs_root;
@@ -1001,6 +1002,11 @@ void blk_exit_queue(struct request_queue *q)
 	bdi_put(q->backing_dev_info);
 }
 
+static void blk_mq_unregister_default_hierarchy(struct request_queue *q)
+{
+	blk_mq_unregister_hierarchy(q, STAGE_GETTAG);
+}
+
 /**
  * blk_cleanup_queue - shutdown a request queue
  * @q: request queue to shutdown
@@ -1088,6 +1094,7 @@ void blk_cleanup_queue(struct request_queue *q)
 	blk_exit_queue(q);
 
 	if (q->mq_ops) {
+		blk_mq_unregister_default_hierarchy(q);
 		blk_mq_cancel_work_sync(q);
 		blk_mq_exit_queue(q);
 	}

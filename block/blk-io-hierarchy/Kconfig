@@ -48,4 +48,14 @@ config HIERARCHY_WBT
 
 	If unsure, say N.
 
+config HIERARCHY_GETTAG
+	bool "Enable hierarchy stats layer gettag"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for gettag. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif
