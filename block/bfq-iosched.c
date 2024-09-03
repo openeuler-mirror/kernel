@@ -140,6 +140,7 @@
 #include "blk-mq-sched.h"
 #include "bfq-iosched.h"
 #include "blk-wbt.h"
+#include "blk-io-hierarchy/stats.h"
 
 #define BFQ_BFQQ_FNS(name)						\
 void bfq_mark_bfqq_##name(struct bfq_queue *bfqq)			\
@@ -1882,8 +1883,10 @@ static bool bfq_bio_merge(struct blk_mq_hw_ctx *hctx, struct bio *bio)
 	ret = blk_mq_sched_try_merge(q, bio, &free);
 
 	spin_unlock_irq(&bfqd->lock);
-	if (free)
+	if (free) {
+		rq_hierarchy_end_io_acct(free, STAGE_BFQ);
 		blk_mq_free_request(free);
+	}
 
 	return ret;
 }
@@ -4168,6 +4171,8 @@ static struct request *bfq_dispatch_request(struct blk_mq_hw_ctx *hctx)
 			idle_timer_disabled ? in_serv_queue : NULL,
 				idle_timer_disabled);
 
+	if (rq)
+		rq_hierarchy_end_io_acct(rq, STAGE_BFQ);
 	return rq;
 }
 
@@ -4751,6 +4756,7 @@ static void bfq_insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 	spin_lock_irq(&bfqd->lock);
 	if (blk_mq_sched_try_insert_merge(q, rq, &free)) {
 		spin_unlock_irq(&bfqd->lock);
+		rq_list_hierarchy_end_io_acct(&free, STAGE_BFQ);
 		blk_mq_free_requests(&free);
 		return;
 	}
@@ -4798,6 +4804,7 @@ static void bfq_insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 static void bfq_insert_requests(struct blk_mq_hw_ctx *hctx,
 				struct list_head *list, bool at_head)
 {
+	rq_list_hierarchy_start_io_acct(list, STAGE_BFQ);
 	while (!list_empty(list)) {
 		struct request *rq;
 
@@ -5395,6 +5402,7 @@ static void bfq_exit_queue(struct elevator_queue *e)
 	struct bfq_queue *bfqq, *n;
 	struct request_queue *q = bfqd->queue;
 
+	blk_mq_unregister_hierarchy(q, STAGE_BFQ);
 	hrtimer_cancel(&bfqd->idle_slice_timer);
 
 	spin_lock_irq(&bfqd->lock);
@@ -5561,6 +5569,7 @@ static int bfq_init_queue(struct request_queue *q, struct elevator_type *e)
 	bfq_init_entity(&bfqd->oom_bfqq.entity, bfqd->root_group);
 
 	wbt_disable_default(q);
+	blk_mq_register_hierarchy(q, STAGE_BFQ);
 	return 0;
 
 out_free:

@@ -79,4 +79,15 @@ config HIERARCHY_DEADLINE
 
 	If unsure, say N.
 
+config HIERARCHY_BFQ
+	bool "Enable hierarchy stats layer bfq"
+	default n
+	depends on IOSCHED_BFQ
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for bfq. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif

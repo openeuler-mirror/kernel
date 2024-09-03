@@ -34,6 +34,9 @@ static const char *stage_name[NR_STAGE_GROUPS] = {
 #ifdef CONFIG_HIERARCHY_DEADLINE
 	[STAGE_DEADLINE]        = "deadline",
 #endif
+#ifdef CONFIG_HIERARCHY_BFQ
+	[STAGE_BFQ]	        = "bfq",
+#endif
 };
 
 const char *hierarchy_stage_name(enum stage_group stage)
