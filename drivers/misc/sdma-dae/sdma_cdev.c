@@ -265,7 +265,7 @@ static int cmp(const void *a, const void *b)
 	return 0;
 }
 
-static int ioctl_get_near_sdmaid(struct file *file, unsigned long arg)
+static int ioctl_get_near_sdmaid(struct file *file SDMA_UNUSED, unsigned long arg)
 {
 	struct hisi_sdma_numa_domain sdma_numa[HISI_SDMA_MAX_DEVS];
 	u32 num = g_info.core_dev->sdma_device_num;
@@ -829,7 +829,8 @@ static int sdma_core_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
-ssize_t sdma_read_info(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+ssize_t sdma_read_info(struct file *file, char __user *buf SDMA_UNUSED, size_t size SDMA_UNUSED,
+		       loff_t *ppos SDMA_UNUSED)
 {
 	struct file_open_data *data = file->private_data;
 	struct hisi_sdma_device *pdev = data->psdma_dev;
@@ -844,7 +845,7 @@ ssize_t sdma_read_info(struct file *file, char __user *buf, size_t size, loff_t 
 	return 0;
 }
 
-static int sdma_dev_release(struct inode *inode, struct file *file)
+static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 {
 	struct file_open_data *data = file->private_data;
 	struct hisi_sdma_device *pdev = data->psdma_dev;

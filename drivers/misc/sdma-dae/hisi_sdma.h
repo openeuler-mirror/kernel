@@ -41,6 +41,7 @@
 #define HISI_SDMA_CLR_ERR_SQE_CNT		2
 
 #define HISI_SDMA_HBM_CACHE_PRELOAD_MODE	0x6
+#define SDMA_UNUSED				__attribute__((__unused__))
 
 struct chn_ioe_info {
 	u32 ch_err_status;
