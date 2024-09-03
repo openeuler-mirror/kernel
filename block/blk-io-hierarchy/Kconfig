@@ -90,4 +90,15 @@ config HIERARCHY_BFQ
 
 	If unsure, say N.
 
+config HIERARCHY_KYBER
+	bool "Enable hierarchy stats layer kyber"
+	default n
+	depends on MQ_IOSCHED_KYBER
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for kyber. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
 endif

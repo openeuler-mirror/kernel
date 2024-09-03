@@ -37,6 +37,9 @@ static const char *stage_name[NR_STAGE_GROUPS] = {
 #ifdef CONFIG_HIERARCHY_BFQ
 	[STAGE_BFQ]	        = "bfq",
 #endif
+#ifdef CONFIG_HIERARCHY_KYBER
+	[STAGE_KYBER]		= "kyber",
+#endif
 };
 
 const char *hierarchy_stage_name(enum stage_group stage)
