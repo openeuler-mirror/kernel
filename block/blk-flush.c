@@ -75,6 +75,7 @@
 #include "blk-mq.h"
 #include "blk-mq-tag.h"
 #include "blk-mq-sched.h"
+#include "blk-io-hierarchy/stats.h"
 
 /* PREFLUSH/FUA sequences */
 enum {
@@ -246,6 +247,7 @@ static void flush_end_io(struct request *flush_rq, blk_status_t error)
 		 */
 		WRITE_ONCE(flush_rq->state, MQ_RQ_IDLE);
 		blk_mq_put_alloc_task(flush_rq);
+		blk_rq_hierarchy_stats_complete(flush_rq);
 		if (fq->rq_status != BLK_STS_OK) {
 			error = fq->rq_status;
 			fq->rq_status = BLK_STS_OK;
@@ -378,6 +380,8 @@ static bool blk_kick_flush(struct request_queue *q, struct blk_flush_queue *fq,
 	flush_rq->rq_flags |= RQF_FLUSH_SEQ;
 	flush_rq->rq_disk = first_rq->rq_disk;
 	flush_rq->end_io = flush_end_io;
+
+	blk_rq_hierarchy_stats_init(flush_rq);
 	blk_rq_init_bi_alloc_time(flush_rq, first_rq);
 	if (q->mq_ops)
 		blk_mq_get_alloc_task(flush_rq, first_rq->bio);

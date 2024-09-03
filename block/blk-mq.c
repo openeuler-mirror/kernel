@@ -36,6 +36,7 @@
 #include "blk-stat.h"
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
+#include "blk-io-hierarchy/stats.h"
 
 static bool blk_mq_poll(struct request_queue *q, blk_qc_t cookie);
 static void blk_mq_poll_stats_start(struct request_queue *q);
@@ -369,6 +370,7 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	rq->start_time_ns = blk_time_get_ns();
 	blk_rq_init_bi_alloc_time(rq, NULL);
 	blk_mq_get_alloc_task(rq, data->bio);
+	blk_rq_hierarchy_stats_init(rq);
 
 	rq->io_start_time_ns = 0;
 	request_to_wrapper(rq)->io_end_time_ns = 0;
@@ -536,6 +538,7 @@ static void __blk_mq_free_request(struct request *rq)
 	struct blk_mq_hw_ctx *hctx = blk_mq_map_queue(q, ctx->cpu);
 	const int sched_tag = rq->internal_tag;
 
+	blk_rq_hierarchy_stats_complete(rq);
 	blk_mq_put_alloc_task(rq);
 	if (rq->tag != -1)
 		blk_mq_put_tag(hctx, hctx->tags, ctx, rq->tag);

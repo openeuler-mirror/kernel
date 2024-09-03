@@ -44,6 +44,11 @@ struct request_wrapper {
 #ifdef CONFIG_BLK_BIO_ALLOC_TASK
 	struct pid *pid;
 #endif
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+	bool flush_done;
+	enum stage_group stage;
+	unsigned long hierarchy_time;
+#endif
 } ____cacheline_aligned_in_smp;
 
 static inline struct request_wrapper *request_to_wrapper(void *rq)

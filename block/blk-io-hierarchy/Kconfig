@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+menuconfig BLK_IO_HIERARCHY_STATS
+	bool "Enable hierarchy io stats"
+	default n
+	depends on BLK_DEBUG_FS=y
+	help
+	Enabling this lets the block layer to record additional information
+	in different io stages. Such information can be helpful to debug
+	performance and problems like io hang.
+
+	If unsure, say N.

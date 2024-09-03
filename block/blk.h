@@ -55,10 +55,13 @@ struct request_queue_wrapper {
 	int __percpu		*last_dispatch_cpu;
 #endif
 	struct mutex		sysfs_dir_lock;
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+	struct blk_io_hierarchy_stats *io_hierarchy_stats;
+#endif
 };
 
-#define queue_to_wrapper(q) \
-	container_of(q, struct request_queue_wrapper, q)
+#define queue_to_wrapper(__q) \
+	container_of((__q), struct request_queue_wrapper, q)
 
 extern struct kmem_cache *blk_requestq_cachep;
 extern struct kmem_cache *request_cachep;

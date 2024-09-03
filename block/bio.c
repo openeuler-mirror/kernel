@@ -33,6 +33,7 @@
 #include <trace/events/block.h>
 #include "blk.h"
 #include "blk-rq-qos.h"
+#include "blk-io-hierarchy/stats.h"
 
 /*
  * Test patch to inline a certain number of bi_io_vec's inside the bio
@@ -251,6 +252,7 @@ void bio_uninit(struct bio *bio)
 		bio->pid = NULL;
 	}
 #endif
+	bio_free_hierarchy_data(bio);
 }
 EXPORT_SYMBOL(bio_uninit);
 

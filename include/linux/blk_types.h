@@ -213,7 +213,11 @@ struct bio {
 #else
 	KABI_RESERVE(2)
 #endif
+#if defined(CONFIG_BLK_IO_HIERARCHY_STATS) && !defined(__GENKSYMS__)
+	struct bio_hierarchy_data *hdata;
+#else
 	KABI_RESERVE(3)
+#endif
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
@@ -376,7 +380,16 @@ enum stat_group {
 	STAT_WRITE,
 	STAT_DISCARD,
 
-	NR_STAT_GROUPS
+	NR_STAT_GROUPS,
+	STAT_FLUSH = NR_STAT_GROUPS,
+	NR_NEW_STAT_GROUPS,
+};
+
+enum stage_group {
+	STAGE_BIO_RESERVE,
+	NR_BIO_STAGE_GROUPS,
+	NR_RQ_STAGE_GROUPS,
+	NR_STAGE_GROUPS,
 };
 
 #define bio_op(bio) \
