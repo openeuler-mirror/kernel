@@ -208,7 +208,11 @@ struct bio {
 #else
 	KABI_RESERVE(1)
 #endif
+#if defined(CONFIG_BLK_BIO_ALLOC_TASK) && !defined(__GENKSYMS__)
+	struct pid		*pid;
+#else
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 
 	/*
