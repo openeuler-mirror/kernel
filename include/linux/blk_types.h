@@ -203,7 +203,11 @@ struct bio {
 
 	struct bio_set		*bi_pool;
 
+#if defined(CONFIG_BLK_BIO_ALLOC_TIME) && !defined(__GENKSYMS__)
+	u64			bi_alloc_time_ns;
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 

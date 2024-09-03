@@ -285,6 +285,10 @@ void bio_init(struct bio *bio, struct bio_vec *table,
 
 	bio->bi_io_vec = table;
 	bio->bi_max_vecs = max_vecs;
+
+#ifdef CONFIG_BLK_BIO_ALLOC_TIME
+	bio->bi_alloc_time_ns = blk_time_get_ns();
+#endif
 }
 EXPORT_SYMBOL(bio_init);
 

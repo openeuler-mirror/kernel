@@ -26,6 +26,9 @@ menuconfig BLOCK
 
 if BLOCK
 
+config BLK_BIO_ALLOC_TIME
+	bool
+
 config LBDAF
 	bool "Support for large (2TB+) block devices and files"
 	depends on !64BIT
