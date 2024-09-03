@@ -22,6 +22,10 @@
 
 struct bio_hierarchy_data {
 	u64 time;
+#ifdef CONFIG_HIERARCHY_IO_DUMP
+	struct bio *bio;
+	struct list_head hierarchy_list;
+#endif
 };
 
 struct hierarchy_stats {
@@ -45,6 +49,10 @@ struct hierarchy_stage {
 	bool unbalanced_warned;
 	struct dentry *debugfs_dir;
 	struct hierarchy_stats_data *hstats_data;
+#ifdef CONFIG_HIERARCHY_IO_DUMP
+	unsigned long threshold;
+	void *dump_data;
+#endif
 };
 
 struct blk_io_hierarchy_stats {

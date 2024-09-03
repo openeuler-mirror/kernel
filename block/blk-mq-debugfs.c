@@ -23,6 +23,7 @@
 #include "blk-mq.h"
 #include "blk-mq-debugfs.h"
 #include "blk-mq-tag.h"
+#include "blk-io-hierarchy/stats.h"
 
 static void print_stat(struct seq_file *m, struct blk_rq_stat *stat)
 {
@@ -872,6 +873,7 @@ int blk_mq_debugfs_register(struct request_queue *q)
 			goto err;
 	}
 
+	blk_mq_debugfs_register_hierarchy_stats(q);
 	return 0;
 
 err:

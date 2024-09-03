@@ -15,6 +15,7 @@
 #include <linux/debugfs.h>
 
 #include "stats.h"
+#include "iodump.h"
 #include "../blk.h"
 #include "../blk-mq-debugfs.h"
 
@@ -50,6 +51,7 @@ static void bio_alloc_hierarchy_data(struct bio *bio)
 		struct bio_hierarchy_data *hdata =
 					mempool_alloc(hdata_pool, GFP_NOIO);
 
+		bio_hierarchy_data_init(bio, hdata);
 		bio->hdata = hdata;
 	}
 }
@@ -193,6 +195,11 @@ void blk_mq_register_hierarchy(struct request_queue *q, enum stage_group stage)
 	hstage->stage = stage;
 	hstage->unbalanced_warned = false;
 	hstage->debugfs_dir = NULL;
+	if (blk_io_hierarchy_iodump_init(q, hstage) < 0) {
+		put_hstats_data(stats, hstage->hstats_data);
+		kfree(hstage);
+		return;
+	}
 
 	blk_mq_freeze_queue(q);
 
@@ -214,6 +221,7 @@ void blk_mq_unregister_hierarchy(struct request_queue *q,
 		return;
 
 	blk_mq_debugfs_unregister_hierarchy(q, stage);
+	blk_io_hierarchy_iodump_exit(q, stage);
 
 	spin_lock(&stats->hstage_lock);
 	hstage = stats->hstage[stage];
@@ -253,6 +261,7 @@ void bio_hierarchy_start_io_acct(struct bio *bio, enum stage_group stage)
 	io_hierarchy_inc(hstage->hstats_data, dispatched,
 			 bio_hierarchy_op(bio));
 	bio->hdata->time = blk_time_get_ns();
+	hierarchy_add_bio(hstage, bio);
 }
 
 void __bio_hierarchy_end_io_acct(struct bio *bio, enum stage_group stage,
@@ -270,6 +279,7 @@ void __bio_hierarchy_end_io_acct(struct bio *bio, enum stage_group stage,
 	duration = time - bio->hdata->time;
 	hstage = queue_to_wrapper(q)->io_hierarchy_stats->hstage[stage];
 
+	hierarchy_remove_bio(hstage, bio);
 	io_hierarchy_inc(hstage->hstats_data, completed, op);
 	io_hierarchy_add(hstage->hstats_data, nsecs, op, duration);
 }

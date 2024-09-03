@@ -10,3 +10,20 @@ menuconfig BLK_IO_HIERARCHY_STATS
 	performance and problems like io hang.
 
 	If unsure, say N.
+
+if BLK_IO_HIERARCHY_STATS
+
+config HIERARCHY_IO_DUMP
+	bool "Support to dump io that is throttled"
+	default n
+	select BLK_BIO_ALLOC_TIME
+	select BLK_BIO_ALLOC_TASK
+	depends on BLK_DEV_IO_TRACE
+	help
+	Enable this will create new debugfs entries to show user the detailed
+	information of IO that are submitted and not done yet, and user can
+	filter the result by IO stage or IO latency.
+
+	If unsure, say N.
+
+endif

@@ -16,6 +16,7 @@
 
 #include "../blk-mq-debugfs.h"
 #include "stats.h"
+#include "iodump.h"
 
 static const char *stage_name[NR_STAGE_GROUPS] = {
 };
@@ -142,6 +143,7 @@ static void hierarchy_register_stage(struct blk_io_hierarchy_stats *stats,
 
 	hstage->debugfs_dir = dir;
 	debugfs_create_files(dir, hstage, hierarchy_debugfs_attrs);
+	io_hierarchy_register_iodump(hstage);
 }
 
 static void hierarchy_unregister_stage(struct blk_io_hierarchy_stats *stats,
