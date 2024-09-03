@@ -811,8 +811,8 @@ static const struct blk_mq_debugfs_attr blk_mq_debugfs_ctx_attrs[] = {
 	{},
 };
 
-static bool debugfs_create_files(struct dentry *parent, void *data,
-				 const struct blk_mq_debugfs_attr *attr)
+bool debugfs_create_files(struct dentry *parent, void *data,
+			  const struct blk_mq_debugfs_attr *attr)
 {
 	if (IS_ERR_OR_NULL(parent))
 		return false;
