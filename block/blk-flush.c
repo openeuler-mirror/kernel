@@ -377,6 +377,7 @@ static bool blk_kick_flush(struct request_queue *q, struct blk_flush_queue *fq,
 	flush_rq->rq_flags |= RQF_FLUSH_SEQ;
 	flush_rq->rq_disk = first_rq->rq_disk;
 	flush_rq->end_io = flush_end_io;
+	blk_rq_init_bi_alloc_time(flush_rq, first_rq);
 
 	/*
 	 * Order WRITE ->end_io and WRITE rq->ref, and its pair is the one

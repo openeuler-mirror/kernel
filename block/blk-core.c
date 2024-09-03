@@ -2106,6 +2106,7 @@ bool bio_attempt_back_merge(struct request_queue *q, struct request *req,
 	req->biotail->bi_next = bio;
 	req->biotail = bio;
 	req->__data_len += bio->bi_iter.bi_size;
+	blk_rq_update_bi_alloc_time(req, bio, NULL);
 
 	blk_account_io_start(req, false);
 	return true;
@@ -2129,6 +2130,7 @@ bool bio_attempt_front_merge(struct request_queue *q, struct request *req,
 
 	req->__sector = bio->bi_iter.bi_sector;
 	req->__data_len += bio->bi_iter.bi_size;
+	blk_rq_update_bi_alloc_time(req, bio, NULL);
 
 	blk_account_io_start(req, false);
 	return true;
@@ -2149,6 +2151,7 @@ bool bio_attempt_discard_merge(struct request_queue *q, struct request *req,
 	req->biotail = bio;
 	req->__data_len += bio->bi_iter.bi_size;
 	req->nr_phys_segments = segments + 1;
+	blk_rq_update_bi_alloc_time(req, bio, NULL);
 
 	blk_account_io_start(req, false);
 	return true;
@@ -3727,6 +3730,7 @@ void blk_rq_bio_prep(struct request_queue *q, struct request *rq,
 
 	rq->__data_len = bio->bi_iter.bi_size;
 	rq->bio = rq->biotail = bio;
+	blk_rq_update_bi_alloc_time(rq, bio, NULL);
 
 	if (bio->bi_disk)
 		rq->rq_disk = bio->bi_disk;

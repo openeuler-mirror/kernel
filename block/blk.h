@@ -147,6 +147,51 @@ static inline void __blk_get_queue(struct request_queue *q)
 	kobject_get(&q->kobj);
 }
 
+#ifdef CONFIG_BLK_BIO_ALLOC_TIME
+static inline u64 blk_time_get_ns(void);
+static inline void blk_rq_init_bi_alloc_time(struct request *rq,
+					     struct request *first_rq)
+{
+	rq->bi_alloc_time_ns = first_rq ? first_rq->bi_alloc_time_ns :
+					  blk_time_get_ns();
+}
+
+/*
+ * Used in following cases to updated request bi_alloc_time_ns:
+ *
+ * 1) Allocate a new @rq for @bio;
+ * 2) @bio is merged to @rq, in this case @merged_rq should be NULL;
+ * 3) @merged_rq is merged to @rq, in this case @bio should be NULL;
+ */
+static inline void blk_rq_update_bi_alloc_time(struct request *rq,
+					       struct bio *bio,
+					       struct request *merged_rq)
+{
+	if (bio) {
+		if (rq->bi_alloc_time_ns > bio->bi_alloc_time_ns)
+			rq->bi_alloc_time_ns = bio->bi_alloc_time_ns;
+		return;
+	}
+
+	if (WARN_ON_ONCE(!merged_rq))
+		return;
+
+	if (rq->bi_alloc_time_ns > merged_rq->bi_alloc_time_ns)
+		rq->bi_alloc_time_ns = merged_rq->bi_alloc_time_ns;
+}
+#else /* CONFIG_BLK_BIO_ALLOC_TIME */
+static inline void blk_rq_init_bi_alloc_time(struct request *rq,
+					     struct request *first_rq)
+{
+}
+
+static inline void blk_rq_update_bi_alloc_time(struct request *rq,
+					       struct bio *bio,
+					       struct request *merged_rq)
+{
+}
+#endif /* CONFIG_BLK_BIO_ALLOC_TIME */
+
 bool is_flush_rq(struct request *req);
 
 struct blk_flush_queue *blk_alloc_flush_queue(struct request_queue *q,

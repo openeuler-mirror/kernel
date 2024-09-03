@@ -367,6 +367,7 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	rq->rq_disk = NULL;
 	rq->part = NULL;
 	rq->start_time_ns = blk_time_get_ns();
+	blk_rq_init_bi_alloc_time(rq, NULL);
 	rq->io_start_time_ns = 0;
 	rq->nr_phys_segments = 0;
 #if defined(CONFIG_BLK_DEV_INTEGRITY)

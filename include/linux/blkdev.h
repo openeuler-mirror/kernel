@@ -225,6 +225,9 @@ struct request {
 	u64 start_time_ns;
 	/* Time that I/O was submitted to the device. */
 	u64 io_start_time_ns;
+#ifdef CONFIG_BLK_BIO_ALLOC_TIME
+	u64 bi_alloc_time_ns;
+#endif
 
 #ifdef CONFIG_BLK_WBT
 	unsigned short wbt_flags;
