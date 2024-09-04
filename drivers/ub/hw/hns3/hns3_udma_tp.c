@@ -117,12 +117,10 @@ int udma_modify_tp(struct ubcore_tp *tp, struct ubcore_tp_attr *attr,
 	qp->udma_device = udma_device;
 	qp->send_jfc = qp->qp_attr.send_jfc;
 	qp->recv_jfc = qp->qp_attr.recv_jfc;
-	qp->m_attr = m_attr;
-	if (attr)
-		qp->ubcore_path_mtu = attr->mtu;
+	memcpy(&qp->m_attr, m_attr, sizeof(struct udma_modify_tp_attr));
+	qp->ubcore_path_mtu = attr->mtu;
 	ret = udma_modify_qp_common(qp, attr, mask, curr_state, target_state);
 	kfree(m_attr);
-	qp->m_attr = NULL;
 error:
 	return ret;
 }
@@ -250,7 +248,6 @@ int udma_destroy_tp(struct ubcore_tp *tp)
 	qp = &udma_tp->qp;
 	curr_state = to_udma_qp_state(tp->state);
 	ubcore_attr_mask.value = 0;
-	qp->m_attr = NULL;
 
 	if (qp->state != QPS_RESET) {
 		ret = udma_modify_qp_common(qp, NULL, ubcore_attr_mask, curr_state, QPS_RESET);
@@ -258,7 +255,6 @@ int udma_destroy_tp(struct ubcore_tp *tp)
 			dev_err(udma_device->dev,
 				"Modify QP 0x%06llx to Reset failed(%d).\n",
 				qp->qpn, ret);
-			goto error;
 		}
 	}
 
@@ -266,10 +262,7 @@ int udma_destroy_tp(struct ubcore_tp *tp)
 
 	kfree(udma_tp);
 
-	return ret;
-
-error:
-	return -EINVAL;
+	return 0;
 }
 
 static void udma_set_tp(struct ubcore_device *dev, const struct ubcore_tp_cfg *cfg,
@@ -420,6 +413,11 @@ struct ubcore_tp *udma_create_tp(struct ubcore_device *dev, struct ubcore_tp_cfg
 	struct ubcore_tp *fail_ret_tp = NULL;
 	struct udma_tp *tp;
 	int ret;
+
+	if (!udata || !udata->udrv_data || !udata->uctx) {
+		dev_err(udma_dev->dev, "tp udata or uctx is null.\n");
+		return ERR_PTR(-EINVAL);
+	}
 
 	tp = kzalloc(sizeof(*tp), GFP_KERNEL);
 	if (!tp)

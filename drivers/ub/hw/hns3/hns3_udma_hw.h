@@ -233,13 +233,11 @@ enum udma_opcode_type {
 	UDMA_OPC_QUERY_FUNC_INFO			= 0x8407,
 	UDMA_OPC_QUERY_PF_CAPS_NUM			= 0x8408,
 	UDMA_OPC_CFG_ENTRY_SIZE				= 0x8409,
-	UDMA_OPC_QUERY_VF_CAPS_NUM			= 0x8410,
 	UDMA_OPC_POST_MB				= 0x8504,
 	UDMA_OPC_QUERY_MB_ST				= 0x8505,
 	UDMA_OPC_CFG_BT_ATTR				= 0x8506,
 	UDMA_OPC_FUNC_CLEAR				= 0x8508,
 	UDMA_OPC_CLEAR_EXTDB_LIST_INFO			= 0x850d,
-	UDMA_OPC_QUERY_VF_RES				= 0x850e,
 	UDMA_OPC_CFG_GMV_BT				= 0x8510,
 	UDMA_OPC_EXT_CFG				= 0x8512,
 	UDMA_QUERY_RAM_ECC				= 0x8513,
@@ -253,6 +251,7 @@ enum udma_opcode_type {
 	UDMA_OPC_QUERY_PORT_INFO			= 0x7104,
 	UDMA_NUM_QP_CFG					= 0xA004,
 	UDMA_PF_QP_CFG_QUERY				= 0xA005,
+	UDMA_OPC_CFG_CNP				= 0x8514,
 };
 
 #define UDMA_QUERY_PF_CAPS_CMD_NUM 5
@@ -335,6 +334,13 @@ struct udma_query_pf_caps_cfg {
 	uint32_t num_srqs;
 };
 
+struct udma_cmdq_cnp_cfg {
+	uint32_t cnp_attr_sel : 1;
+	uint32_t cnp_dscp : 6;
+	uint32_t rsv : 25;
+	uint32_t rsv2[5];
+};
+
 #define UDMA_EXT_LLM_ENTRY(addr, id) (((id) << (64 - 12)) | ((addr) >> 12))
 #define UDMA_EXT_LLM_MIN_PAGES(que_num) ((que_num) * 4 + 2)
 
@@ -373,14 +379,6 @@ struct udma_query_pf_caps_cfg {
 
 #define QUERY_PF_CAPS_D_CONG_TYPE_S 26
 #define QUERY_PF_CAPS_D_CONG_TYPE_M GENMASK(29, 26)
-
-/* default cap configuration for vf only */
-#define DEFAULT_AEQ_ARM_ST 0x3
-#define DEFAULT_CEQ_ARM_ST 0x3
-#define DEFAULT_CEQ_MAX_CNT 0x1
-#define DEFAULT_CEQ_PERIOD 0x10
-#define DEFAULT_AEQ_MAX_CNT 0x1
-#define DEFAULT_AEQ_PERIOD 0x10
 
 #define QUERY_PF_CAPS_D_CEQ_DEPTH_S 0
 #define QUERY_PF_CAPS_D_CEQ_DEPTH_M GENMASK(21, 0)
@@ -458,6 +456,8 @@ enum {
 #define UDMA_INT_NAME_LEN		32
 
 #define SGID_H_SHIFT 12
+
+#define UDMA_MAX_BT_LEVEL 3
 
 struct udma_poe_cfg_addr_cmq {
 	uint32_t channel_id;

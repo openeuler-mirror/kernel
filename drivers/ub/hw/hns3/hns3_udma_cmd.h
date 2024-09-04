@@ -23,6 +23,7 @@
 #define UDMA_CMD_TIMEOUT_MSECS	10000
 #define CMD_POLL_TOKEN		0xffff
 #define SUB_OPCODE_IDX		4
+#define UDMA_CMQ_DESC_SIZE	2
 
 enum {
 	/* QPC BT commands */

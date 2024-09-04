@@ -14,12 +14,12 @@
  */
 
 #include <linux/acpi.h>
+#include "urma/ubcore_uapi.h"
 #include "hnae3.h"
 #include "hns3_udma_hem.h"
-#include "hns3_udma_device.h"
+#include "hns3_udma_db.h"
 #include "hns3_udma_jfc.h"
 #include "hns3_udma_jfr.h"
-#include "hns3_udma_qp.h"
 #include "hns3_udma_eq.h"
 
 static int alloc_eq_buf(struct udma_dev *udma_dev, struct udma_eq *eq)
@@ -130,17 +130,31 @@ static int udma_create_eq(struct udma_dev *udma_dev, struct udma_eq *eq,
 	if (IS_ERR(mailbox))
 		return -ENOMEM;
 
-	ret = config_eqc(udma_dev, eq, mailbox->buf);
-	if (ret)
+	ret = alloc_eq_buf(udma_dev, eq);
+	if (ret) {
+		dev_err(udma_dev->dev, "failed to alloc eq buf.\n");
 		goto err_cmd_mbox;
+	}
+	ret = config_eqc(udma_dev, eq, mailbox->buf);
+	if (ret) {
+		dev_err(udma_dev->dev, "[mailbox cmd] config eqc failed.\n");
+		goto err_eq_buf;
+	}
 
 	mb = (struct udma_mbox *)desc.data;
 	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
 	mbox_desc_init(mb, mailbox->dma, 0, eq->eqn, eq_cmd);
 	ret = udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
-	if (ret)
+	if (ret) {
 		dev_err(udma_dev->dev, "[mailbox cmd] create eqc failed.\n");
+		goto err_eq_buf;
+	}
 
+	udma_free_cmd_mailbox(udma_dev, mailbox);
+	return 0;
+
+err_eq_buf:
+	free_eq_buf(udma_dev, eq);
 err_cmd_mbox:
 	udma_free_cmd_mailbox(udma_dev, mailbox);
 
@@ -210,9 +224,10 @@ static void aeq_event_report(struct udma_dev *udma_dev,
 				  UDMA_AEQE_SUB_TYPE_M,
 				  UDMA_AEQE_SUB_TYPE_S);
 	if (event_type != UDMA_EVENT_TYPE_COMM_EST)
-		dev_err(udma_dev->dev,
-			"print AEQE: 0x%x, 0x%x queue:0x%x event_type:0x%x, sub_type:0x%x\n",
-			*tmp, *(tmp + 1), queue_num, event_type, sub_type);
+		dev_err(udma_dev->dev, "print AEQE: 0x%x, 0x%x; "
+			"queue:0x%x event_type:0x%x, sub_type:0x%x\n",
+			*tmp, *(tmp + 1), queue_num, event_type,
+			sub_type);
 
 	switch (event_type) {
 	case UDMA_EVENT_TYPE_COMM_EST:
@@ -734,6 +749,29 @@ static void set_jfae_attr(struct udma_dev *udma_dev, struct udma_eq *eq,
 	eq->eq_period = UDMA_AEQ_DEFAULT_INTERVAL;
 }
 
+static void udma_destroy_eq(struct udma_dev *udma_dev, struct udma_eq *eq)
+{
+	struct device *dev = udma_dev->dev;
+	struct udma_cmq_desc desc;
+	struct udma_mbox *mb;
+	int eqn = eq->eqn;
+	uint16_t eq_cmd;
+	int ret;
+
+	mb = (struct udma_mbox *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
+	if (eqn < udma_dev->caps.num_comp_vectors)
+		eq_cmd = UDMA_CMD_DESTROY_CEQC;
+	else
+		eq_cmd = UDMA_CMD_DESTROY_AEQC;
+	mbox_desc_init(mb, 0, 0, eqn & UDMA_EQN_M, eq_cmd);
+
+	ret = udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+	if (ret)
+		dev_err(dev, "[mailbox cmd] destroy eqc(%d) failed.\n", eqn);
+	free_eq_buf(udma_dev, eq);
+}
+
 static int udma_create_hw_eq(struct udma_dev *udma_dev, int ceq_num,
 			     int aeq_num, int other_num)
 {
@@ -760,16 +798,9 @@ static int udma_create_hw_eq(struct udma_dev *udma_dev, int ceq_num,
 			set_jfae_attr(udma_dev, eq, (i - ceq_num + other_num));
 		}
 		init_eq_config(udma_dev, eq);
-		ret = alloc_eq_buf(udma_dev, eq);
-		if (ret) {
-			dev_err(udma_dev->dev, "failed to alloc eq buf.\n");
-			goto err_out;
-		}
-
 		ret = udma_create_eq(udma_dev, eq, eq_cmd);
 		if (ret) {
 			dev_err(udma_dev->dev, "failed to create eq.\n");
-			free_eq_buf(udma_dev, &eq_table->eq[i]);
 			goto err_out;
 		}
 	}
@@ -778,26 +809,9 @@ static int udma_create_hw_eq(struct udma_dev *udma_dev, int ceq_num,
 
 err_out:
 	for (i -= 1; i >= 0; i--)
-		free_eq_buf(udma_dev, &eq_table->eq[i]);
+		udma_destroy_eq(udma_dev, &eq_table->eq[i]);
 
 	return ret;
-}
-
-void udma_destroy_eqc(struct udma_dev *udma_dev, int eqn, uint32_t eq_cmd)
-{
-	struct device *dev = udma_dev->dev;
-	struct udma_cmq_desc desc;
-	struct udma_mbox *mb;
-	int ret;
-
-	mb = (struct udma_mbox *)desc.data;
-	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
-
-	mbox_desc_init(mb, 0, 0, eqn & UDMA_EQN_M, eq_cmd);
-
-	ret = udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
-	if (ret)
-		dev_err(dev, "[mailbox cmd] destroy eqc(%d) failed.\n", eqn);
 }
 
 static void __udma_free_irq(struct udma_dev *udma_dev)
@@ -824,7 +838,6 @@ static void __udma_free_irq(struct udma_dev *udma_dev)
 void udma_cleanup_eq_table(struct udma_dev *udma_dev)
 {
 	struct udma_eq_table *eq_table = &udma_dev->eq_table;
-	uint32_t eq_cmd;
 	int eq_num;
 	int i;
 
@@ -839,13 +852,7 @@ void udma_cleanup_eq_table(struct udma_dev *udma_dev)
 	destroy_workqueue(udma_dev->irq_workq);
 
 	for (i = 0; i < eq_num; i++) {
-		if (i < udma_dev->caps.num_comp_vectors)
-			eq_cmd = UDMA_CMD_DESTROY_CEQC;
-		else
-			eq_cmd = UDMA_CMD_DESTROY_AEQC;
-
-		udma_destroy_eqc(udma_dev, i, eq_cmd);
-		free_eq_buf(udma_dev, &eq_table->eq[i]);
+		udma_destroy_eq(udma_dev, &eq_table->eq[i]);
 	}
 
 	kfree(eq_table->eq);
@@ -903,7 +910,7 @@ err_request_irq_fail:
 
 err_alloc_workqueue_fail:
 	for (i = ceq_num + aeq_num - 1; i >= 0; i--)
-		free_eq_buf(udma_dev, &eq_table->eq[i]);
+		udma_destroy_eq(udma_dev, &eq_table->eq[i]);
 
 err_create_eq_fail:
 	kfree(eq_table->eq);

@@ -16,6 +16,7 @@
 #ifndef _UDMA_QP_H
 #define _UDMA_QP_H
 
+#include "urma/ubcore_types.h"
 #include "hns3_udma_device.h"
 
 #define UDMA_GID_SIZE 16
@@ -299,7 +300,7 @@ struct udma_qp {
 	bool			no_free_wqe_buf;
 	bool			force_free_wqe_buf;
 	int64_t			dip_idx;
-	struct udma_modify_tp_attr *m_attr;
+	struct udma_modify_tp_attr m_attr;
 };
 
 struct udma_congestion_algorithm {
@@ -373,7 +374,6 @@ int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 			  struct ubcore_udata *udata);
 void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
 			    struct ubcore_tp *fail_ret_tp);
-void clean_jetty_x_qpn_bitmap(struct udma_qpn_bitmap *qpn_map);
 int udma_flush_cqe(struct udma_dev *udma_dev, struct udma_qp *udma_qp,
 		   uint32_t sq_pi);
 void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type);

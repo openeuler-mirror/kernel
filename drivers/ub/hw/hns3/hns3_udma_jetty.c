@@ -90,11 +90,13 @@ static int udma_modify_qp_jetty(struct udma_dev *dev, struct udma_jetty *jetty,
 
 	m_attr.sgid_index = qp->qp_attr.eid_index;
 	ubcore_attr_mask.value = 0;
-	qp->m_attr = &m_attr;
+	memcpy(&qp->m_attr, &m_attr, sizeof(struct udma_modify_tp_attr));
 
 	ret = udma_modify_qp_common(qp, NULL, ubcore_attr_mask, jetty->qp.state, target_state);
-	if (ret)
+	if (ret) {
 		dev_err(dev->dev, "failed to modify qpc to RTS in Jetty, ret = %d.\n", ret);
+		return ret;
+	}
 
 	qp->state = target_state;
 	return ret;
@@ -440,20 +442,25 @@ struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct hns3_udma_create_jetty_ucmd ucmd = {};
 	struct udma_jetty *jetty;
+	unsigned long byte;
 	int ret;
 
-	if (!udata) {
-		dev_err(udma_dev->dev, "udata is a null pointer.\n");
+	if (!udata || !udata->udrv_data) {
+		dev_err(udma_dev->dev, "jetty udata or udrv_data is null.\n");
 		return NULL;
 	}
 
-	ret = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
-			     min_t(uint32_t, udata->udrv_data->in_len,
-				   (uint32_t)sizeof(ucmd)));
-	if (ret) {
+	if (!udata->udrv_data->in_addr || udata->udrv_data->in_len < sizeof(ucmd)) {
+		dev_err(udma_dev->dev, "Invalid jetty in_len %u or addr is null.\n",
+			udata->udrv_data->in_len);
+		return NULL;
+	}
+
+	byte = copy_from_user(&ucmd, (void *)udata->udrv_data->in_addr,
+			      sizeof(ucmd));
+	if (byte) {
 		dev_err(udma_dev->dev,
-			"failed to copy jetty udata, ret = %d.\n",
-			ret);
+			"failed to copy jetty udata, byte = %lu.\n", byte);
 		return NULL;
 	}
 

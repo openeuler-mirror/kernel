@@ -601,15 +601,16 @@ int udma_register_udca(struct udma_dev *udma_dev,
 {
 	struct udma_dca_ctx *dca_ctx = &context->dca_ctx;
 	struct hns3_udma_create_ctx_ucmd ucmd = {};
-	int max_qps;
-	int ret;
+	uint32_t max_qps;
 
-	ret = copy_from_user(&ucmd, (void *)udrv_data->in_addr,
-			     min_t(uint32_t, udrv_data->in_len,
-				   (uint32_t)sizeof(ucmd)));
-	if (ret) {
-		dev_err(udma_dev->dev, "Failed to copy udata, ret = %d.\n",
-			ret);
+	if (!udrv_data->in_addr || udrv_data->in_len < sizeof(ucmd)) {
+		dev_err(udma_dev->dev, "Invalid udca in_len %u or null addr.\n",
+			udrv_data->in_len);
+		return -EINVAL;
+	}
+
+	if (copy_from_user(&ucmd, (void *)udrv_data->in_addr, sizeof(ucmd))) {
+		dev_err(udma_dev->dev, "Failed to copy udata.\n");
 		return -EFAULT;
 	}
 
@@ -709,7 +710,7 @@ static int shrink_dca_page_proc(struct dca_mem *mem, uint32_t index,
 {
 	struct udma_dca_shrink_resp *resp = param;
 	struct dca_page_state *state;
-	int i, free_pages;
+	uint32_t i, free_pages;
 
 	free_pages = 0;
 	for (i = 0; i < mem->page_count; i++) {

@@ -98,6 +98,15 @@ static int udma_get_bt_num(uint32_t table_type, uint32_t hop_num)
 		return 0;
 }
 
+static void set_mhop_field_info(struct udma_hem_mhop *mhop, uint32_t buf_sz,
+				uint32_t bt_sz, uint32_t ba_num, uint32_t hop_num)
+{
+	mhop->buf_chunk_size = 1U << (buf_sz + PAGE_SHIFT);
+	mhop->bt_chunk_size = 1U << (bt_sz + PAGE_SHIFT);
+	mhop->ba_l0_num = ba_num;
+	mhop->hop_num = hop_num;
+}
+
 static int get_hem_table_config(struct udma_dev *udma_dev,
 				struct udma_hem_mhop *mhop,
 				uint32_t type)
@@ -106,72 +115,45 @@ static int get_hem_table_config(struct udma_dev *udma_dev,
 
 	switch (type) {
 	case HEM_TYPE_QPC:
-		mhop->buf_chunk_size = 1U << (udma_dev->caps.qpc_buf_pg_sz
-					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1U << (udma_dev->caps.qpc_ba_pg_sz
-					     + PAGE_SHIFT);
-		mhop->ba_l0_num = udma_dev->caps.qpc_bt_num;
-		mhop->hop_num = udma_dev->caps.qpc_hop_num;
+		set_mhop_field_info(mhop, udma_dev->caps.qpc_buf_pg_sz, udma_dev->caps.qpc_ba_pg_sz,
+				    udma_dev->caps.qpc_bt_num, udma_dev->caps.qpc_hop_num);
 		break;
 	case HEM_TYPE_MTPT:
-		mhop->buf_chunk_size = 1U << (udma_dev->caps.mpt_buf_pg_sz
-					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1U << (udma_dev->caps.mpt_ba_pg_sz
-					     + PAGE_SHIFT);
-		mhop->ba_l0_num = udma_dev->caps.mpt_bt_num;
-		mhop->hop_num = udma_dev->caps.mpt_hop_num;
+		set_mhop_field_info(mhop, udma_dev->caps.mpt_buf_pg_sz, udma_dev->caps.mpt_ba_pg_sz,
+				    udma_dev->caps.mpt_bt_num, udma_dev->caps.mpt_hop_num);
 		break;
 	case HEM_TYPE_CQC:
-		mhop->buf_chunk_size = 1U << (udma_dev->caps.cqc_buf_pg_sz
-					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1U << (udma_dev->caps.cqc_ba_pg_sz
-					    + PAGE_SHIFT);
-		mhop->ba_l0_num = udma_dev->caps.cqc_bt_num;
-		mhop->hop_num = udma_dev->caps.cqc_hop_num;
+		set_mhop_field_info(mhop, udma_dev->caps.cqc_buf_pg_sz, udma_dev->caps.cqc_ba_pg_sz,
+				    udma_dev->caps.cqc_bt_num, udma_dev->caps.cqc_hop_num);
 		break;
 	case HEM_TYPE_SCCC:
-		mhop->buf_chunk_size = 1U << (udma_dev->caps.sccc_buf_pg_sz
-					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1U << (udma_dev->caps.sccc_ba_pg_sz
-					    + PAGE_SHIFT);
-		mhop->ba_l0_num = udma_dev->caps.sccc_bt_num;
-		mhop->hop_num = udma_dev->caps.sccc_hop_num;
+		set_mhop_field_info(mhop, udma_dev->caps.sccc_buf_pg_sz,
+				    udma_dev->caps.sccc_ba_pg_sz, udma_dev->caps.sccc_bt_num,
+				    udma_dev->caps.sccc_hop_num);
 		break;
 	case HEM_TYPE_QPC_TIMER:
-		mhop->buf_chunk_size = 1U << (udma_dev->caps.qpc_timer_buf_pg_sz
-					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1U << (udma_dev->caps.qpc_timer_ba_pg_sz
-					    + PAGE_SHIFT);
-		mhop->ba_l0_num = udma_dev->caps.qpc_timer_bt_num;
-		mhop->hop_num = udma_dev->caps.qpc_timer_hop_num;
+		set_mhop_field_info(mhop, udma_dev->caps.qpc_timer_buf_pg_sz,
+				    udma_dev->caps.qpc_timer_ba_pg_sz,
+				    udma_dev->caps.qpc_timer_bt_num,
+				    udma_dev->caps.qpc_timer_hop_num);
 		break;
 	case HEM_TYPE_CQC_TIMER:
-		mhop->buf_chunk_size = 1U << (udma_dev->caps.cqc_timer_buf_pg_sz
-					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1U << (udma_dev->caps.cqc_timer_ba_pg_sz
-					    + PAGE_SHIFT);
-		mhop->ba_l0_num = udma_dev->caps.cqc_timer_bt_num;
-		mhop->hop_num = udma_dev->caps.cqc_timer_hop_num;
+		set_mhop_field_info(mhop, udma_dev->caps.cqc_timer_buf_pg_sz,
+				    udma_dev->caps.cqc_timer_ba_pg_sz,
+				    udma_dev->caps.cqc_timer_bt_num,
+				    udma_dev->caps.cqc_timer_hop_num);
 		break;
 	case HEM_TYPE_SRQC:
-		mhop->buf_chunk_size = 1U << (udma_dev->caps.srqc_buf_pg_sz
-					     + PAGE_SHIFT);
-		mhop->bt_chunk_size = 1U << (udma_dev->caps.srqc_ba_pg_sz
-					     + PAGE_SHIFT);
-		mhop->ba_l0_num = udma_dev->caps.srqc_bt_num;
-		mhop->hop_num = udma_dev->caps.srqc_hop_num;
+		set_mhop_field_info(mhop, udma_dev->caps.srqc_buf_pg_sz,
+				    udma_dev->caps.srqc_ba_pg_sz, udma_dev->caps.srqc_bt_num,
+				    udma_dev->caps.srqc_hop_num);
 		break;
 	case HEM_TYPE_GMV:
-		mhop->buf_chunk_size = 1U << (udma_dev->caps.gmv_buf_pg_sz +
-					     PAGE_SHIFT);
-		mhop->bt_chunk_size = 1U << (udma_dev->caps.gmv_ba_pg_sz +
-					    PAGE_SHIFT);
-		mhop->ba_l0_num = udma_dev->caps.gmv_bt_num;
-		mhop->hop_num = udma_dev->caps.gmv_hop_num;
+		set_mhop_field_info(mhop, udma_dev->caps.gmv_buf_pg_sz, udma_dev->caps.gmv_ba_pg_sz,
+				    udma_dev->caps.gmv_bt_num, udma_dev->caps.gmv_hop_num);
 		break;
 	default:
-		dev_err(dev, "table %u not support multi-hop addressing!\n",
-			type);
+		dev_err(dev, "table %u not support multi-hop addressing!\n", type);
 		return -EINVAL;
 	}
 
@@ -204,6 +186,13 @@ int udma_calc_hem_mhop(struct udma_dev *udma_dev,
 	chunk_ba_num = mhop->bt_chunk_size / BA_BYTE_LEN;
 	chunk_size = table->type < HEM_TYPE_MTT ? mhop->buf_chunk_size :
 			      mhop->bt_chunk_size;
+
+	if (table->obj_size == 0 || table->obj_size > chunk_size) {
+		dev_err(dev, "obj size is wrong, obj_size = %llu, chunk_size = %d.\n",
+			table->obj_size, chunk_size);
+		return -EINVAL;
+	}
+
 	table_idx = *obj / (chunk_size / table->obj_size);
 	switch (bt_num) {
 	case 3:
@@ -223,7 +212,7 @@ int udma_calc_hem_mhop(struct udma_dev *udma_dev,
 			table->type, mhop->hop_num);
 		return -EINVAL;
 	}
-	if (mhop->l0_idx >= mhop->ba_l0_num)
+	if (mhop->l0_idx >= mhop->ba_l0_num && mhop->ba_l0_num != 0)
 		mhop->l0_idx %= mhop->ba_l0_num;
 
 	return 0;
@@ -377,18 +366,13 @@ static void free_mhop_hem(struct udma_dev *udma_dev,
 	}
 }
 
-static int alloc_mhop_hem(struct udma_dev *udma_dev,
-			  struct udma_hem_table *table,
-			  struct udma_hem_mhop *mhop,
-			  struct udma_hem_index *index)
+static int udma_alloc_table_btl0(struct udma_dev *udma_dev,
+				 struct udma_hem_table *table,
+				 struct udma_hem_mhop *mhop,
+				 struct udma_hem_index *index)
 {
 	uint32_t bt_size = mhop->bt_chunk_size;
 	struct device *dev = udma_dev->dev;
-	struct udma_hem_iter iter;
-	uint64_t bt_ba;
-	uint32_t size;
-	gfp_t flag;
-	int ret;
 
 	/* alloc L1 BA's chunk */
 	if ((check_whether_bt_num_3(table->type, mhop->hop_num) ||
@@ -397,12 +381,22 @@ static int alloc_mhop_hem(struct udma_dev *udma_dev,
 		table->bt_l0[index->l0] = dma_alloc_coherent(dev, bt_size,
 					  &table->bt_l0_dma_addr[index->l0],
 					  GFP_KERNEL);
-		if (!table->bt_l0[index->l0]) {
-			ret = -ENOMEM;
-			goto out;
-		}
+		if (!table->bt_l0[index->l0])
+			return -ENOMEM;
+
 		index->inited |= HEM_INDEX_L0;
 	}
+
+	return 0;
+}
+
+static int udma_alloc_table_btl1(struct udma_dev *udma_dev,
+				 struct udma_hem_table *table,
+				 struct udma_hem_mhop *mhop,
+				 struct udma_hem_index *index)
+{
+	uint32_t bt_size = mhop->bt_chunk_size;
+	struct device *dev = udma_dev->dev;
 
 	/* alloc L2 BA's chunk */
 	if (check_whether_bt_num_3(table->type, mhop->hop_num) &&
@@ -410,14 +404,36 @@ static int alloc_mhop_hem(struct udma_dev *udma_dev,
 		table->bt_l1[index->l1] = dma_alloc_coherent(dev, bt_size,
 					  &table->bt_l1_dma_addr[index->l1],
 					  GFP_KERNEL);
-		if (!table->bt_l1[index->l1]) {
-			ret = -ENOMEM;
-			goto err_alloc_hem;
-		}
+		if (!table->bt_l1[index->l1])
+			return -ENOMEM;
+
 		index->inited |= HEM_INDEX_L1;
 		*(table->bt_l0[index->l0] + mhop->l1_idx) =
 					       table->bt_l1_dma_addr[index->l1];
 	}
+
+	return 0;
+}
+
+static int alloc_mhop_hem(struct udma_dev *udma_dev,
+			  struct udma_hem_table *table,
+			  struct udma_hem_mhop *mhop,
+			  struct udma_hem_index *index)
+{
+	uint32_t bt_size = mhop->bt_chunk_size;
+	struct udma_hem_iter iter;
+	uint64_t bt_ba;
+	uint32_t size;
+	gfp_t flag;
+	int ret;
+
+	ret = udma_alloc_table_btl0(udma_dev, table, mhop, index);
+	if (ret)
+		goto out;
+
+	ret = udma_alloc_table_btl1(udma_dev, table, mhop, index);
+	if (ret)
+		goto err_alloc_hem;
 
 	/*
 	 * alloc buffer space chunk for QPC/MTPT/CQC/SRQC/SCCC.
@@ -545,6 +561,12 @@ int udma_table_get(struct udma_dev *udma_dev,
 	if (udma_check_whether_mhop(udma_dev, table->type))
 		return udma_table_mhop_get(udma_dev, table, obj);
 
+	if (table->obj_size == 0 || table->obj_size > table->table_chunk_size) {
+		dev_err(dev, "obj size is wrong, obj_size = %llu, chunk_size = %llu.\n",
+			table->obj_size, table->table_chunk_size);
+		return -EINVAL;
+	}
+
 	i = obj / (table->table_chunk_size / table->obj_size);
 
 	mutex_lock(&table->mutex);
@@ -661,6 +683,12 @@ void udma_table_put(struct udma_dev *udma_dev,
 		return;
 	}
 
+	if (table->obj_size == 0 || table->obj_size > table->table_chunk_size) {
+		dev_err(dev, "obj size is wrong, obj_size = %llu, chunk_size = %llu.\n",
+			table->obj_size, table->table_chunk_size);
+		return;
+	}
+
 	i = obj / (table->table_chunk_size / table->obj_size);
 
 	if (!refcount_dec_and_mutex_lock(&table->hem[i]->refcount,
@@ -676,73 +704,72 @@ void udma_table_put(struct udma_dev *udma_dev,
 	mutex_unlock(&table->mutex);
 }
 
-void *udma_table_find(struct udma_dev *udma_dev,
-		      struct udma_hem_table *table,
-		      uint64_t obj, dma_addr_t *dma_handle)
+static void udma_free_hem_table(struct udma_hem_table *table)
 {
-	struct udma_hem_chunk *chunk;
-	struct udma_hem_mhop mhop;
-	uint64_t mhop_obj = obj;
-	uint64_t obj_per_chunk;
-	int offset, dma_offset;
-	struct udma_hem *hem;
-	uint32_t hem_idx = 0;
-	uint64_t idx_offset;
-	void *addr = NULL;
-	uint32_t length;
-	uint32_t i, j;
+	kfree(table->hem);
+	table->hem = NULL;
+}
 
-	mutex_lock(&table->mutex);
+static void udma_free_hem_btl0(struct udma_hem_table *table)
+{
+	kfree(table->bt_l0);
+	table->bt_l0 = NULL;
+}
 
-	if (!udma_check_whether_mhop(udma_dev, table->type)) {
-		obj_per_chunk = table->table_chunk_size / table->obj_size;
-		hem = table->hem[obj / obj_per_chunk];
-		idx_offset = obj % obj_per_chunk;
-		dma_offset = offset = idx_offset * table->obj_size;
-	} else {
-		/* 8 bytes per BA and 8 BA per segment */
-		uint32_t seg_size = 64;
+static void udma_free_hem_btl1(struct udma_hem_table *table)
+{
+	kfree(table->bt_l1);
+	table->bt_l1 = NULL;
+}
 
-		if (udma_calc_hem_mhop(udma_dev, table, &mhop_obj, &mhop))
-			goto out;
-		/* mtt mhop */
-		i = mhop.l0_idx;
-		j = mhop.l1_idx;
-		if (mhop.hop_num == 2)
-			hem_idx = i * (mhop.bt_chunk_size / BA_BYTE_LEN) + j;
-		else if (mhop.hop_num == 1 ||
-			 mhop.hop_num == UDMA_HOP_NUM_0)
-			hem_idx = i;
+static void udma_free_hem_btl1_dma_addr(struct udma_hem_table *table)
+{
+	kfree(table->bt_l1_dma_addr);
+	table->bt_l1_dma_addr = NULL;
+}
 
-		hem = table->hem[hem_idx];
-		dma_offset = offset = obj * seg_size % mhop.bt_chunk_size;
-		if (mhop.hop_num == 2)
-			dma_offset = offset = 0;
-	}
+static int check_whether_mhop_bt2(struct udma_hem_table *table, uint32_t type,
+				  uint32_t hop_num, uint64_t num_bt_l0)
+{
+	if (check_whether_bt_num_2(type, hop_num) ||
+	    check_whether_bt_num_3(type, hop_num)) {
+		table->bt_l0 = kcalloc(num_bt_l0, sizeof(*table->bt_l0), GFP_KERNEL);
+		if (!table->bt_l0)
+			return -ENOMEM;
 
-	if (!hem)
-		goto out;
-
-	list_for_each_entry(chunk, &hem->chunk_list, list) {
-		for (i = 0; (int)i < chunk->npages; ++i) {
-			length = sg_dma_len(&chunk->mem[i]);
-			if (dma_handle && dma_offset >= 0) {
-				*dma_handle = length > (uint32_t)dma_offset ? sg_dma_address(
-						&chunk->mem[i]) + dma_offset : *dma_handle;
-				dma_offset -= length;
-			}
-
-			if (length > (uint32_t)offset) {
-				addr = (char *)chunk->buf[i] + offset;
-				goto out;
-			}
-			offset -= length;
+		table->bt_l0_dma_addr = kcalloc(num_bt_l0,
+					sizeof(*table->bt_l0_dma_addr),
+					GFP_KERNEL);
+		if (!table->bt_l0_dma_addr) {
+			udma_free_hem_btl0(table);
+			return -ENOMEM;
 		}
 	}
 
-out:
-	mutex_unlock(&table->mutex);
-	return addr;
+	return 0;
+}
+
+static int check_whether_mhop_bt3(struct udma_hem_table *table, uint32_t type,
+				  uint32_t hop_num, uint64_t bt_chunk_num, uint64_t num_hem)
+{
+	uint64_t num_bt_l1;
+
+	if (check_whether_bt_num_3(type, hop_num)) {
+		num_bt_l1 = DIV_ROUND_UP(num_hem, bt_chunk_num);
+		table->bt_l1 = kcalloc(num_bt_l1, sizeof(*table->bt_l1), GFP_KERNEL);
+		if (!table->bt_l1)
+			return -ENOMEM;
+
+		table->bt_l1_dma_addr = kcalloc(num_bt_l1,
+					sizeof(*table->bt_l1_dma_addr), GFP_KERNEL);
+
+		if (!table->bt_l1_dma_addr) {
+			udma_free_hem_btl1(table);
+			return -ENOMEM;
+		}
+	}
+
+	return 0;
 }
 
 int udma_init_hem_table(struct udma_dev *udma_dev,
@@ -752,22 +779,23 @@ int udma_init_hem_table(struct udma_dev *udma_dev,
 	uint64_t obj_per_chunk;
 	uint64_t num_hem;
 
+	if (obj_size == 0) {
+		dev_err(udma_dev->dev, "obj size is zero.\n");
+		return -EINVAL;
+	}
+
 	if (!udma_check_whether_mhop(udma_dev, type)) {
 		table->table_chunk_size = udma_dev->caps.chunk_sz;
 		obj_per_chunk = table->table_chunk_size / obj_size;
 		num_hem = DIV_ROUND_UP(nobj, obj_per_chunk);
 
-		table->hem = kcalloc(num_hem, sizeof(*table->hem),
-							 GFP_KERNEL);
+		table->hem = kcalloc(num_hem, sizeof(*table->hem), GFP_KERNEL);
 		if (!table->hem)
 			return -ENOMEM;
 	} else {
 		struct udma_hem_mhop mhop = {};
-		uint64_t buf_chunk_size;
-		uint64_t bt_chunk_size;
-		uint64_t bt_chunk_num;
-		uint64_t num_bt_l0;
-		uint32_t hop_num;
+		uint64_t buf_chunk_size, bt_chunk_size, bt_chunk_num;
+		uint64_t num_bt_l0, hop_num;
 		int ret;
 
 		ret = get_hem_table_config(udma_dev, &mhop, type);
@@ -786,40 +814,22 @@ int udma_init_hem_table(struct udma_dev *udma_dev,
 		if (type >= HEM_TYPE_MTT)
 			num_bt_l0 = bt_chunk_num;
 
-		table->hem = kcalloc(num_hem, sizeof(*table->hem),
-							 GFP_KERNEL);
+		table->hem = kcalloc(num_hem, sizeof(*table->hem), GFP_KERNEL);
 		if (!table->hem)
-			goto err_kcalloc_hem_buf;
+			return -ENOMEM;
 
-		if (check_whether_bt_num_3(type, hop_num)) {
-			uint64_t num_bt_l1;
-
-			num_bt_l1 = DIV_ROUND_UP(num_hem, bt_chunk_num);
-			table->bt_l1 = kcalloc(num_bt_l1, sizeof(*table->bt_l1),
-					       GFP_KERNEL);
-			if (!table->bt_l1)
-				goto err_kcalloc_bt_l1;
-
-			table->bt_l1_dma_addr = kcalloc(num_bt_l1,
-						 sizeof(*table->bt_l1_dma_addr),
-						 GFP_KERNEL);
-
-			if (!table->bt_l1_dma_addr)
-				goto err_kcalloc_l1_dma;
+		if (check_whether_mhop_bt3(table, type, hop_num, bt_chunk_num, num_hem)) {
+			udma_free_hem_table(table);
+			dev_err(udma_dev->dev, "failed to alloc table bt_l1.\n");
+			return -ENOMEM;
 		}
 
-		if (check_whether_bt_num_2(type, hop_num) ||
-		    check_whether_bt_num_3(type, hop_num)) {
-			table->bt_l0 = kcalloc(num_bt_l0, sizeof(*table->bt_l0),
-						       GFP_KERNEL);
-			if (!table->bt_l0)
-				goto err_kcalloc_bt_l0;
-
-			table->bt_l0_dma_addr = kcalloc(num_bt_l0,
-						 sizeof(*table->bt_l0_dma_addr),
-						 GFP_KERNEL);
-			if (!table->bt_l0_dma_addr)
-				goto err_kcalloc_l0_dma;
+		if (check_whether_mhop_bt2(table, type, hop_num, num_bt_l0)) {
+			udma_free_hem_btl1_dma_addr(table);
+			udma_free_hem_btl1(table);
+			udma_free_hem_table(table);
+			dev_err(udma_dev->dev, "failed to alloc table bt_l0.\n");
+			return -ENOMEM;
 		}
 	}
 
@@ -829,25 +839,6 @@ int udma_init_hem_table(struct udma_dev *udma_dev,
 	mutex_init(&table->mutex);
 
 	return 0;
-
-err_kcalloc_l0_dma:
-	kfree(table->bt_l0);
-	table->bt_l0 = NULL;
-
-err_kcalloc_bt_l0:
-	kfree(table->bt_l1_dma_addr);
-	table->bt_l1_dma_addr = NULL;
-
-err_kcalloc_l1_dma:
-	kfree(table->bt_l1);
-	table->bt_l1 = NULL;
-
-err_kcalloc_bt_l1:
-	kfree(table->hem);
-	table->hem = NULL;
-
-err_kcalloc_hem_buf:
-	return -ENOMEM;
 }
 
 static void udma_cleanup_mhop_hem_table(struct udma_dev *udma_dev,
@@ -886,6 +877,11 @@ void udma_cleanup_hem_table(struct udma_dev *udma_dev,
 {
 	struct device *dev = udma_dev->dev;
 	uint64_t i;
+
+	if (table->obj_size == 0) {
+		dev_err(udma_dev->dev, "obj size is zero.\n");
+		return;
+	}
 
 	if (udma_check_whether_mhop(udma_dev, table->type)) {
 		udma_cleanup_mhop_hem_table(udma_dev, table);
@@ -1065,28 +1061,15 @@ static int udma_hem_list_calc_root_ba(const struct udma_buf_region *regions,
 	return total;
 }
 
-static int hem_list_alloc_mid_bt(struct udma_dev *udma_dev,
-				 const struct udma_buf_region *r, int unit,
-				 uint32_t offset, struct list_head *mid_bt,
-				 struct list_head *btm_bt)
+static int hem_list_check_parameter(struct udma_dev *udma_dev,
+				    const struct udma_buf_region *r,
+				    uint32_t offset)
 {
-	struct udma_hem_item *hem_ptrs[UDMA_MAX_BT_LEVEL] = { NULL };
-	struct list_head temp_list[UDMA_MAX_BT_LEVEL];
-	struct udma_hem_item *cur, *pre;
-	const int hopnum = r->hopnum;
-	int start_aligned;
-	uint32_t step;
-	int distance;
-	int ret = 0;
-	int max_ofs;
-	int level;
-	int end;
-
-	if (hopnum <= 1)
+	if (r->hopnum <= 1)
 		return 0;
 
-	if (hopnum > UDMA_MAX_BT_LEVEL) {
-		dev_err(udma_dev->dev, "invalid hopnum %d!\n", hopnum);
+	if (r->hopnum > UDMA_MAX_BT_LEVEL) {
+		dev_err(udma_dev->dev, "invalid hopnum %d!\n", r->hopnum);
 		return -EINVAL;
 	}
 
@@ -1095,6 +1078,25 @@ static int hem_list_alloc_mid_bt(struct udma_dev *udma_dev,
 			offset, r->offset);
 		return -EINVAL;
 	}
+
+	return 0;
+}
+
+static int hem_list_alloc_mid_bt(struct udma_dev *udma_dev,
+				 const struct udma_buf_region *r, int unit,
+				 uint32_t offset, struct list_head *mid_bt,
+				 struct list_head *btm_bt)
+{
+	struct udma_hem_item *hem_ptrs[UDMA_MAX_BT_LEVEL] = { NULL };
+	int start_aligned, distance, max_ofs, level, end;
+	struct list_head temp_list[UDMA_MAX_BT_LEVEL];
+	struct udma_hem_item *cur, *pre;
+	const int hopnum = r->hopnum;
+	int ret = -EINVAL;
+	uint32_t step;
+
+	if (hem_list_check_parameter(udma_dev, r, offset))
+		return ret;
 
 	distance = offset - r->offset;
 	max_ofs = r->offset + r->count - 1;
@@ -1110,19 +1112,17 @@ static int hem_list_alloc_mid_bt(struct udma_dev *udma_dev,
 		}
 
 		step = hem_list_calc_ba_range(hopnum, level, unit);
-		if (step < 1) {
-			ret = -EINVAL;
+		if (step < 1)
 			goto err_exit;
-		}
 
 		start_aligned = (distance / step) * step + r->offset;
 		end = min_t(int, start_aligned + step - 1, max_ofs);
-		cur = hem_list_alloc_item(udma_dev, start_aligned, end, unit,
-					  true);
+		cur = hem_list_alloc_item(udma_dev, start_aligned, end, unit, true);
 		if (!cur) {
 			ret = -ENOMEM;
 			goto err_exit;
 		}
+
 		hem_ptrs[level] = cur;
 		list_add(&cur->list, &temp_list[level]);
 		if (hem_list_is_bottom_bt(hopnum, level))
@@ -1132,8 +1132,7 @@ static int hem_list_alloc_mid_bt(struct udma_dev *udma_dev,
 		if (level > 1) {
 			pre = hem_ptrs[level - 1];
 			step = (cur->start - pre->start) / step * BA_BYTE_LEN;
-			hem_list_link_bt(udma_dev, (char *)pre->addr + step,
-					 cur->dma_addr);
+			hem_list_link_bt(udma_dev, (char *)pre->addr + step, cur->dma_addr);
 		}
 	}
 

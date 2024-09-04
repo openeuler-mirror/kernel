@@ -28,7 +28,7 @@ static int udma_config_scc_param(struct udma_dev *udma_dev,
 				 uint8_t port_num, enum udma_cong_type algo)
 {
 	struct udma_scc_param *scc_param;
-	struct udma_cmq_desc desc;
+	struct udma_cmq_desc desc = {};
 	struct udma_port *pdata;
 	int ret;
 
@@ -55,7 +55,7 @@ static int udma_query_scc_param(struct udma_dev *udma_dev,
 				uint8_t port_num, enum udma_cong_type algo)
 {
 	struct udma_scc_param *scc_param;
-	struct udma_cmq_desc desc;
+	struct udma_cmq_desc desc = {};
 	struct udma_port *pdata;
 	int ret;
 
@@ -178,8 +178,11 @@ static ssize_t scc_attr_store(struct udma_port *pdata,
 	if (kstrtou32(buf, 0, &val))
 		return -EINVAL;
 
-	if (val > scc_attr->max || val < scc_attr->min)
+	if (val > scc_attr->max || val < scc_attr->min) {
+		dev_err(pdata->udma_dev->dev, "val = %u, max = %u, min = %u", val,
+			scc_attr->max, scc_attr->min);
 		return -EINVAL;
+	}
 
 	attr_val = cpu_to_le32(val);
 	scc_param = &pdata->scc_param[scc_attr->algo_type];
@@ -233,6 +236,105 @@ static umode_t scc_attr_is_visible(struct kobject *kobj,
 	return ATTR_RW_RONLY_RONLY;
 }
 
+static void cnp_param_config_work(struct work_struct *work)
+{
+	struct udma_cnp_param *cnp_param =
+		container_of(work, struct udma_cnp_param, cnp_cfg_dwork.work);
+	struct udma_dev *udma_dev = cnp_param->udma_dev;
+	struct udma_cmdq_cnp_cfg *cnp_cfg;
+	struct udma_cmq_desc desc = {};
+	int ret;
+
+	cnp_cfg = (struct udma_cmdq_cnp_cfg *)desc.data;
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_CNP, false);
+	cnp_cfg->cnp_attr_sel = cpu_to_le32(cnp_param->tmp_attr_sel);
+	cnp_cfg->cnp_dscp = cpu_to_le32(cnp_param->tmp_dscp);
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret) {
+		dev_err(udma_dev->dev, "failed to set cnp param, ret = %d", ret);
+	} else {
+		cnp_param->attr_sel = cnp_param->tmp_attr_sel;
+		cnp_param->dscp = cnp_param->tmp_dscp;
+	}
+}
+
+static void udma_init_cnp_param(struct udma_port *port_data)
+{
+	struct udma_dev *udma_dev = port_data->udma_dev;
+	struct udma_cmdq_cnp_cfg *cnp_cfg;
+	struct udma_cmq_desc desc = {};
+	int ret;
+
+	port_data->cnp_param.udma_dev = udma_dev;
+	port_data->cnp_param.timestamp = jiffies;
+	INIT_DELAYED_WORK(&port_data->cnp_param.cnp_cfg_dwork, cnp_param_config_work);
+	port_data->cnp_param.cnp_param_inited = true;
+
+	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_CFG_CNP, true);
+	ret = udma_cmq_send(udma_dev, &desc, 1);
+	if (ret) {
+		dev_warn(udma_dev->dev, "failed to query cnp param, ret = %d.\n", ret);
+		return;
+	}
+
+	cnp_cfg = (struct udma_cmdq_cnp_cfg *)desc.data;
+	port_data->cnp_param.attr_sel = cnp_cfg->cnp_attr_sel;
+	port_data->cnp_param.tmp_attr_sel = cnp_cfg->cnp_attr_sel;
+	port_data->cnp_param.dscp = cnp_cfg->cnp_dscp;
+	port_data->cnp_param.tmp_dscp = cnp_cfg->cnp_dscp;
+}
+
+static ssize_t cnp_attr_show(struct udma_port *pdata,
+			     struct udma_port_attribute *attr, char *buf)
+{
+	struct udma_cnp_attr *cnp_attr = to_udma_cnp_attr(attr);
+	uint32_t val;
+
+	val = cnp_attr->type == CNP_PARAM_ATTR_SEL ? pdata->cnp_param.attr_sel :
+				pdata->cnp_param.dscp;
+
+	return sysfs_emit(buf, "%u\n", le32_to_cpu(val));
+}
+
+static ssize_t cnp_attr_store(struct udma_port *pdata,
+			      struct udma_port_attribute *attr,
+			      const char *buf, size_t count)
+{
+#define CNP_LIFESPAN 100
+	struct udma_cnp_attr *cnp_attr = to_udma_cnp_attr(attr);
+	struct net_device *net_dev;
+	unsigned long exp_time;
+	uint32_t val;
+
+	net_dev = pdata->udma_dev->uboe.netdevs[pdata->port_num];
+	if (!net_dev || (netif_running(net_dev) && netif_carrier_ok(net_dev)))
+		return -EPERM;
+
+	if (kstrtou32(buf, 0, &val))
+		return -EINVAL;
+
+	if (cnp_attr->type == CNP_PARAM_ATTR_SEL) {
+		if (val > UDMA_CNP_ATTR_SEL_MAX)
+			return -EINVAL;
+		pdata->cnp_param.tmp_attr_sel = val;
+	} else {
+		if (pdata->cnp_param.attr_sel == 0)
+			return -EPERM;
+		if (val > UDMA_CNP_DSCP_MAX)
+			return -EINVAL;
+		pdata->cnp_param.tmp_dscp = val;
+	}
+
+	exp_time = pdata->cnp_param.timestamp + msecs_to_jiffies(CNP_LIFESPAN);
+	if (time_is_before_eq_jiffies(exp_time)) {
+		pdata->cnp_param.timestamp = jiffies;
+		queue_delayed_work(pdata->udma_dev->irq_workq,
+				   &pdata->cnp_param.cnp_cfg_dwork, CNP_LIFESPAN);
+	}
+
+	return count;
+}
+
 #define __UDMA_SCC_ATTR(_name, _type, _offset, _size, _min, _max) {		\
 	.port_attr = __ATTR(_name, 0644, scc_attr_show,  scc_attr_store),	\
 	.algo_type = (_type),							\
@@ -280,6 +382,27 @@ static const struct attribute_group dcqcn_cc_param_group = {
 	.name = "dcqcn_cc_param",
 	.attrs = dcqcn_param_attrs,
 	.is_visible = scc_attr_is_visible,
+};
+
+struct udma_cnp_attr udma_attr_cnp_attr_sel = {
+	.port_attr = __ATTR(dscp_enable, 0644, cnp_attr_show, cnp_attr_store),
+	.type = CNP_PARAM_ATTR_SEL
+};
+
+struct udma_cnp_attr udma_attr_cnp_dscp = {
+	.port_attr = __ATTR(dscp, 0644, cnp_attr_show, cnp_attr_store),
+	.type = CNP_PARAM_DSCP
+};
+
+static struct attribute *cnp_param_attrs[] = {
+	&udma_attr_cnp_attr_sel.port_attr.attr,
+	&udma_attr_cnp_dscp.port_attr.attr,
+	NULL,
+};
+
+static const struct attribute_group cnp_param_group = {
+	.name = "cnp_param",
+	.attrs = cnp_param_attrs,
 };
 
 #define UDMA_LDCP_CC_ATTR_RW(_name, NAME)			\
@@ -430,11 +553,16 @@ static void udma_port_release(struct kobject *kobj)
 
 	pdata = container_of(kobj, struct udma_port, kobj);
 
-	for (i = 0; i < UDMA_CONG_TYPE_TOTAL; i++)
-		cancel_delayed_work_sync(&pdata->scc_param[i].scc_cfg_dwork);
+	if (pdata->scc_param) {
+		for (i = 0; i < UDMA_CONG_TYPE_TOTAL; i++)
+			cancel_delayed_work_sync(&pdata->scc_param[i].scc_cfg_dwork);
 
-	kfree(pdata->scc_param);
-	pdata->scc_param = NULL;
+		kfree(pdata->scc_param);
+		pdata->scc_param = NULL;
+	}
+
+	if (pdata->udma_dev->caps.cnp_en && pdata->cnp_param.cnp_param_inited)
+		cancel_delayed_work_sync(&pdata->cnp_param.cnp_cfg_dwork);
 }
 
 static const struct sysfs_ops udma_port_ops = {
@@ -465,25 +593,40 @@ static int udma_register_port_sysfs(struct udma_dev *udma_dev, uint8_t port_num,
 	}
 	kobject_uevent(&pdata->kobj, KOBJ_ADD);
 
+	if (udma_dev->caps.cnp_en) {
+		ret = sysfs_create_group(&pdata->kobj, &cnp_param_group);
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"fail to create port(%u) cnp param sysfs, ret = %d.\n",
+				port_num, ret);
+			goto fail_create_cnp;
+		}
+		udma_init_cnp_param(pdata);
+	}
+
 	ret = sysfs_create_groups(&pdata->kobj, udma_attr_port_groups);
 	if (ret) {
 		dev_err(udma_dev->dev,
 			"fail to create port(%u) cc param sysfs, ret = %d.\n",
 			port_num, ret);
-		goto fail_kobj;
+		goto fail_create_scc;
 	}
 
 	ret = alloc_scc_param(udma_dev, pdata);
 	if (ret) {
 		dev_err(udma_dev->dev, "alloc scc param failed, ret = %d!\n",
 			ret);
-		goto fail_group;
+		goto fail_alloc_scc_param;
 	}
 
 	return ret;
 
-fail_group:
+fail_alloc_scc_param:
 	sysfs_remove_groups(&pdata->kobj, udma_attr_port_groups);
+fail_create_scc:
+	if (udma_dev->caps.cnp_en)
+		sysfs_remove_group(&pdata->kobj, &cnp_param_group);
+fail_create_cnp:
 fail_kobj:
 	kobject_put(&pdata->kobj);
 	return ret;
@@ -495,6 +638,8 @@ static void udma_unregister_port_sysfs(struct udma_dev *udma_dev, uint8_t port_n
 
 	pdata = &udma_dev->port_data[port_num];
 	sysfs_remove_groups(&pdata->kobj, udma_attr_port_groups);
+	if (udma_dev->caps.cnp_en)
+		sysfs_remove_group(&pdata->kobj, &cnp_param_group);
 	kobject_put(&pdata->kobj);
 }
 
@@ -529,16 +674,16 @@ static ssize_t udma_num_qp_store(struct kobject *kobj,
 				 struct udma_num_qp *attr,
 				 const char *buf, size_t count)
 {
+	struct udma_cmq_desc desc = {};
 	struct udma_num_qp_cmd *cmd;
-	struct udma_cmq_desc desc;
 	struct udma_dev *udma_dev;
 	int ret;
 
 	udma_dev = container_of(attr, struct udma_dev, num_qp);
-
+	udma_cmq_setup_basic_desc(&desc, UDMA_NUM_QP_CFG, false);
 	cmd = (struct udma_num_qp_cmd *)desc.data;
 	if (kstrtou32(buf, 0, &cmd->num))
-		return -EINVAL;
+		goto error_value;
 
 	if (((cmd->num & (cmd->num - 1)) != 0) ||
 	    ((cmd->num < UDMA_NUM_QP_MIN) && (cmd->num != 0)) ||
@@ -572,8 +717,8 @@ error_cmdq:
 
 static ssize_t udma_num_qp_show(struct kobject *kobj, struct udma_num_qp *attr, char *buf)
 {
+	struct udma_cmq_desc desc = {};
 	struct udma_num_qp_cmd *cmd;
-	struct udma_cmq_desc desc;
 	struct udma_dev *udma_dev;
 	int ret;
 
