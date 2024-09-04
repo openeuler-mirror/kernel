@@ -15,6 +15,7 @@
 #define RW_R_R			0644
 #define SDMA_IRQ_NUM_MAX	512
 #define ALIGN_NUM		1
+#define HISI_SDMA_HAL_HASH_BUCKETS_BITS 8
 
 /**
  * struct hisi_sdma_channel - Information about one channel in the SDMA device
@@ -39,6 +40,12 @@ struct hisi_sdma_channel {
 
 	void __iomem *io_base;
 	u16 cnt_used;
+};
+
+struct hisi_sdma_pid_ref_hte {
+	u32 pid;
+	u32 ref;
+	struct hlist_node node;
 };
 
 /**
@@ -77,6 +84,8 @@ struct hisi_sdma_device {
 
 	int irq_cnt;
 	int irq[SDMA_IRQ_NUM_MAX];
+	DECLARE_HASHTABLE(sdma_pid_ref_ht, HISI_SDMA_HAL_HASH_BUCKETS_BITS);
+	spinlock_t pid_lock;
 };
 
 struct hisi_sdma_core_device {
@@ -92,6 +101,7 @@ struct hisi_sdma_global_info {
 	struct ida *fd_ida;
 };
 
+void sdma_clear_pid_ref(struct hisi_sdma_device *psdma_dev);
 int sdma_create_dbg_node(struct dentry *sdma_dbgfs_dir);
 void sdma_cdev_init(struct cdev *cdev);
 void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida);
