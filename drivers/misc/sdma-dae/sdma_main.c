@@ -23,6 +23,10 @@ u32 share_chns = 16;
 module_param(share_chns, uint, RW_R_R);
 MODULE_PARM_DESC(share_chns, "num of share channels, 16 by default");
 
+static bool safe_mode = true; /* fast mode by default */
+module_param(safe_mode, bool, RW_R_R);
+MODULE_PARM_DESC(safe_mode, "| 0 - fast_mode| 1 - safe_mode(default)|");
+
 struct ida fd_ida;
 struct hisi_sdma_core_device hisi_sdma_core_device = {0};
 static struct class *sdma_class;
@@ -159,6 +163,7 @@ void sdma_destroy_channels(struct hisi_sdma_device *psdma_dev)
 
 	sdma_free_all_sq_cq(psdma_dev);
 	kfree(psdma_dev->channels);
+	psdma_dev->channels = NULL;
 }
 
 int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
@@ -501,7 +506,7 @@ static int __init sdma_driver_init(void)
 	long ret;
 
 	ida_init(&fd_ida);
-	sdma_info_sync_cdev(&hisi_sdma_core_device, &share_chns, &fd_ida);
+	sdma_info_sync_cdev(&hisi_sdma_core_device, &share_chns, &fd_ida, &safe_mode);
 	sdma_info_sync_dbg(&hisi_sdma_core_device, &share_chns);
 
 	sdma_class = class_create(THIS_MODULE, "sdma");

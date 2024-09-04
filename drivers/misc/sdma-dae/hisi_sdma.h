@@ -15,15 +15,16 @@
 #define HISI_SDMA_MMAP_IO			2
 #define HISI_SDMA_MMAP_SHMEM			3
 #define HISI_SDMA_FSM_INTERVAL			20
-#define HISI_SDMA_FSM_TIMEOUT			10
+#define HISI_SDMA_FSM_TIMEOUT			5
+#define HISI_SDMA_LOW_ADDR_SHIFT		32
 
 #define HISI_SDMA_MAX_BASE_ADDR_SIZE		0x100000
 #define HISI_SDMA_MAX_COMMEN_BASE_ADDR_SIZE	0x10000
 #define HISI_SDMA_CHANNEL_IOMEM_SIZE		0x1000
 #define HISI_SDMA_SQ_ENTRY_SIZE			64UL
 #define HISI_SDMA_CQ_ENTRY_SIZE			16UL
-#define HISI_SDMA_SQ_LENGTH			(1U << 16)
-#define HISI_SDMA_CQ_LENGTH			(1U << 16)
+#define HISI_SDMA_SQ_LENGTH			(1U << 10)
+#define HISI_SDMA_CQ_LENGTH			(1U << 10)
 
 #define HISI_STARS_CHN_NUM			32
 #define HISI_SDMA_DEFAULT_CHANNEL_NUM		(192 - HISI_STARS_CHN_NUM)
@@ -39,6 +40,9 @@
 
 #define HISI_SDMA_CLR_NORMAL_SQE_CNT		1
 #define HISI_SDMA_CLR_ERR_SQE_CNT		2
+
+#define HISI_SDMA_FAST_MODE			0
+#define HISI_SDMA_SAFE_MODE			1
 
 #define HISI_SDMA_HBM_CACHE_PRELOAD_MODE	0x6
 #define SDMA_UNUSED				__attribute__((__unused__))
@@ -112,10 +116,10 @@ struct hisi_sdma_cq_entry {
 };
 
 struct hisi_sdma_queue_info {
-	u32    sq_head;
-	u32    sq_tail;
-	u32    cq_head;
-	u32    cq_tail;
+	u16    sq_head;
+	u16    sq_tail;
+	u16    cq_head;
+	u16    cq_tail;
 	u32    cq_vld;
 	int    lock;
 	u32    lock_pid;
@@ -203,5 +207,6 @@ struct hisi_sdma_ioctl_func_list {
 #define IOCTL_SDMA_CQ_TAIL_REG		_IOWR('s', 17, struct hisi_sdma_reg_info)
 #define IOCTL_SDMA_DFX_REG		_IOWR('s', 18, struct hisi_sdma_reg_info)
 #define IOCTL_SDMA_SQE_CNT_REG		_IOW('s', 19, struct hisi_sdma_reg_info)
+#define IOCTL_GET_SDMA_MODE			_IOR('s', 20, bool)
 
 #endif
