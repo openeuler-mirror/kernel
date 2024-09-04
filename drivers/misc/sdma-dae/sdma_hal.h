@@ -97,6 +97,7 @@ struct hisi_sdma_core_device {
 
 struct hisi_sdma_global_info {
 	u32 *share_chns;
+	bool *sdma_mode;
 	struct hisi_sdma_core_device *core_dev;
 	struct ida *fd_ida;
 };
@@ -104,7 +105,8 @@ struct hisi_sdma_global_info {
 void sdma_clear_pid_ref(struct hisi_sdma_device *psdma_dev);
 int sdma_create_dbg_node(struct dentry *sdma_dbgfs_dir);
 void sdma_cdev_init(struct cdev *cdev);
-void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida);
+void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida,
+			 bool *safe_mode);
 void sdma_info_sync_dbg(struct hisi_sdma_core_device *p, u32 *share_chns);
 
 static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val, u32 mask)
