@@ -36,6 +36,7 @@
 #include "blk-stat.h"
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
+#include "blk-io-hierarchy/stats.h"
 
 static bool blk_mq_poll(struct request_queue *q, blk_qc_t cookie);
 static void blk_mq_poll_stats_start(struct request_queue *q);
@@ -366,8 +367,13 @@ static struct request *blk_mq_rq_ctx_init(struct blk_mq_alloc_data *data,
 	RB_CLEAR_NODE(&rq->rb_node);
 	rq->rq_disk = NULL;
 	rq->part = NULL;
-	rq->start_time_ns = ktime_get_ns();
+	rq->start_time_ns = blk_time_get_ns();
+	blk_rq_init_bi_alloc_time(rq, NULL);
+	blk_mq_get_alloc_task(rq, data->bio);
+	blk_rq_hierarchy_stats_init(rq);
+
 	rq->io_start_time_ns = 0;
+	request_to_wrapper(rq)->io_end_time_ns = 0;
 	rq->nr_phys_segments = 0;
 #if defined(CONFIG_BLK_DEV_INTEGRITY)
 	rq->nr_integrity_segments = 0;
@@ -400,13 +406,13 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 	struct elevator_queue *e = q->elevator;
 	struct request *rq;
 	unsigned int tag;
-	bool put_ctx_on_error = false;
+	bool clear_ctx_on_error = false;
 
 	blk_queue_enter_live(q);
 	data->q = q;
 	if (likely(!data->ctx)) {
 		data->ctx = blk_mq_get_ctx(q);
-		put_ctx_on_error = true;
+		clear_ctx_on_error = true;
 	}
 	if (likely(!data->hctx))
 		data->hctx = blk_mq_map_queue(q, data->ctx->cpu);
@@ -430,10 +436,8 @@ static struct request *blk_mq_get_request(struct request_queue *q,
 
 	tag = blk_mq_get_tag(data);
 	if (tag == BLK_MQ_TAG_FAIL) {
-		if (put_ctx_on_error) {
-			blk_mq_put_ctx(data->ctx);
+		if (clear_ctx_on_error)
 			data->ctx = NULL;
-		}
 		blk_queue_exit(q);
 		return NULL;
 	}
@@ -469,8 +473,6 @@ struct request *blk_mq_alloc_request(struct request_queue *q, unsigned int op,
 
 	if (!rq)
 		return ERR_PTR(-EWOULDBLOCK);
-
-	blk_mq_put_ctx(alloc_data.ctx);
 
 	rq->__data_len = 0;
 	rq->__sector = (sector_t) -1;
@@ -532,6 +534,8 @@ static void __blk_mq_free_request(struct request *rq)
 	struct blk_mq_hw_ctx *hctx = blk_mq_map_queue(q, ctx->cpu);
 	const int sched_tag = rq->internal_tag;
 
+	blk_rq_hierarchy_stats_complete(rq);
+	blk_mq_put_alloc_task(rq);
 	if (rq->tag != -1)
 		blk_mq_put_tag(hctx, hctx->tags, ctx, rq->tag);
 	if (sched_tag != -1)
@@ -576,13 +580,22 @@ EXPORT_SYMBOL_GPL(blk_mq_free_request);
 
 inline void __blk_mq_end_request(struct request *rq, blk_status_t error)
 {
-	u64 now = ktime_get_ns();
+	u64 now = request_to_wrapper(rq)->io_end_time_ns;
+
+	if (!now)
+		now = blk_time_get_ns();
 
 	if (rq->rq_flags & RQF_STATS) {
 		blk_mq_poll_stats_start(rq->q);
 		blk_stat_add(rq, now);
 	}
 
+	/*
+	 * Avoid accounting flush request with data twice and request that is
+	 * not started.
+	 */
+	if (blk_mq_request_started(rq) && !blk_rq_hierarchy_is_flush_done(rq))
+		rq_hierarchy_end_io_acct(rq, STAGE_RQ_DRIVER);
 	blk_account_io_done(rq, now);
 
 	if (rq->end_io) {
@@ -722,9 +735,10 @@ void blk_mq_start_request(struct request *rq)
 	blk_mq_sched_started_request(rq);
 
 	trace_block_rq_issue(q, rq);
+	rq_hierarchy_start_io_acct(rq, STAGE_RQ_DRIVER);
 
 	if (test_bit(QUEUE_FLAG_STATS, &q->queue_flags)) {
-		rq->io_start_time_ns = ktime_get_ns();
+		rq->io_start_time_ns = blk_time_get_ns();
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 		rq->throtl_size = blk_rq_sectors(rq);
 #endif
@@ -760,6 +774,7 @@ static void __blk_mq_requeue_request(struct request *rq)
 	if (blk_mq_request_started(rq)) {
 		WRITE_ONCE(rq->state, MQ_RQ_IDLE);
 		rq->rq_flags &= ~RQF_TIMED_OUT;
+		rq_hierarchy_end_io_acct(rq, STAGE_RQ_DRIVER);
 		if (q->dma_drain_size && blk_rq_bytes(rq))
 			rq->nr_phys_segments--;
 	}
@@ -787,6 +802,7 @@ static void blk_mq_requeue_work(struct work_struct *work)
 	spin_lock_irq(&q->requeue_lock);
 	list_splice_init(&q->requeue_list, &rq_list);
 	spin_unlock_irq(&q->requeue_lock);
+	rq_list_hierarchy_end_io_acct(&rq_list, STAGE_REQUEUE);
 
 	list_for_each_entry_safe(rq, next, &rq_list, queuelist) {
 		if (!(rq->rq_flags & (RQF_SOFTBARRIER | RQF_DONTPREP)))
@@ -826,6 +842,7 @@ void blk_mq_add_to_requeue_list(struct request *rq, bool at_head,
 	 */
 	BUG_ON(rq->rq_flags & RQF_SOFTBARRIER);
 
+	rq_hierarchy_start_io_acct(rq, STAGE_REQUEUE);
 	spin_lock_irqsave(&q->requeue_lock, flags);
 	if (at_head) {
 		rq->rq_flags |= RQF_SOFTBARRIER;
@@ -1317,6 +1334,7 @@ bool blk_mq_dispatch_rq_list(struct request_queue *q, struct list_head *list,
 	if (!list_empty(list)) {
 		bool needs_restart;
 
+		rq_list_hierarchy_start_io_acct(list, STAGE_HCTX);
 		spin_lock(&hctx->lock);
 		list_splice_tail_init(list, &hctx->dispatch);
 		spin_unlock(&hctx->lock);
@@ -1726,6 +1744,7 @@ void blk_mq_request_bypass_insert(struct request *rq, bool at_head,
 	struct blk_mq_ctx *ctx = rq->mq_ctx;
 	struct blk_mq_hw_ctx *hctx = blk_mq_map_queue(rq->q, ctx->cpu);
 
+	rq_hierarchy_start_io_acct(rq, STAGE_HCTX);
 	spin_lock(&hctx->lock);
 	if (at_head)
 		list_add(&rq->queuelist, &hctx->dispatch);
@@ -1792,6 +1811,8 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 		if (rq->mq_ctx != this_ctx) {
 			if (this_ctx) {
 				trace_block_unplug(this_q, depth, !from_schedule);
+				rq_list_hierarchy_end_io_acct(&ctx_list,
+							      STAGE_PLUG);
 				blk_mq_sched_insert_requests(this_q, this_ctx,
 								&ctx_list,
 								from_schedule);
@@ -1812,6 +1833,7 @@ void blk_mq_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 	 */
 	if (this_ctx) {
 		trace_block_unplug(this_q, depth, !from_schedule);
+		rq_list_hierarchy_end_io_acct(&ctx_list, STAGE_PLUG);
 		blk_mq_sched_insert_requests(this_q, this_ctx, &ctx_list,
 						from_schedule);
 	}
@@ -1975,7 +1997,10 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 {
 	const int is_sync = op_is_sync(bio->bi_opf);
 	const int is_flush_fua = op_is_flush(bio->bi_opf);
-	struct blk_mq_alloc_data data = { .flags = 0 };
+	struct blk_mq_alloc_data data = {
+		.flags	= 0,
+		.bio	= bio
+	};
 	struct request *rq;
 	unsigned int request_count = 0;
 	struct blk_plug *plug;
@@ -1990,6 +2015,9 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 	blk_queue_bounce(q, &bio);
 
 	blk_queue_split(q, &bio);
+
+	/* account for split bio. */
+	bio_hierarchy_start(bio);
 
 	if (!bio_integrity_prep(bio))
 		return BLK_QC_T_NONE;
@@ -2019,7 +2047,6 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 
 	plug = current->plug;
 	if (unlikely(is_flush_fua)) {
-		blk_mq_put_ctx(data.ctx);
 		blk_mq_bio_to_request(rq, bio);
 
 		/* bypass scheduler for flush rq */
@@ -2028,7 +2055,6 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 	} else if (plug && q->nr_hw_queues == 1) {
 		struct request *last = NULL;
 
-		blk_mq_put_ctx(data.ctx);
 		blk_mq_bio_to_request(rq, bio);
 
 		/*
@@ -2051,6 +2077,7 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 			trace_block_plug(q);
 		}
 
+		rq_hierarchy_start_io_acct(rq, STAGE_PLUG);
 		list_add_tail(&rq->queuelist, &plug->mq_list);
 	} else if (plug && !blk_queue_nomerges(q)) {
 		blk_mq_bio_to_request(rq, bio);
@@ -2066,23 +2093,21 @@ static blk_qc_t blk_mq_make_request(struct request_queue *q, struct bio *bio)
 			same_queue_rq = NULL;
 		if (same_queue_rq)
 			list_del_init(&same_queue_rq->queuelist);
+		rq_hierarchy_start_io_acct(rq, STAGE_PLUG);
 		list_add_tail(&rq->queuelist, &plug->mq_list);
-
-		blk_mq_put_ctx(data.ctx);
 
 		if (same_queue_rq) {
 			data.hctx = blk_mq_map_queue(q,
 					same_queue_rq->mq_ctx->cpu);
+			rq_hierarchy_end_io_acct(same_queue_rq, STAGE_PLUG);
 			blk_mq_try_issue_directly(data.hctx, same_queue_rq,
 					&cookie);
 		}
 	} else if ((q->nr_hw_queues > 1 && is_sync) || (!q->elevator &&
 			!data.hctx->dispatch_busy)) {
-		blk_mq_put_ctx(data.ctx);
 		blk_mq_bio_to_request(rq, bio);
 		blk_mq_try_issue_directly(data.hctx, rq, &cookie);
 	} else {
-		blk_mq_put_ctx(data.ctx);
 		blk_mq_bio_to_request(rq, bio);
 		blk_mq_sched_insert_request(rq, false, true, true);
 	}
@@ -2240,7 +2265,8 @@ int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 	 * rq_size is the size of the request plus driver payload, rounded
 	 * to the cacheline size
 	 */
-	rq_size = round_up(sizeof(struct request) + set->cmd_size,
+	rq_size = round_up(sizeof(struct request) +
+			   sizeof(struct request_wrapper) + set->cmd_size,
 				cache_line_size());
 	left = rq_size * depth;
 
@@ -2281,7 +2307,7 @@ int blk_mq_alloc_rqs(struct blk_mq_tag_set *set, struct blk_mq_tags *tags,
 		to_do = min(entries_per_page, depth - i);
 		left -= to_do * rq_size;
 		for (j = 0; j < to_do; j++) {
-			struct request *rq = p;
+			struct request *rq = p + sizeof(struct request_wrapper);
 
 			tags->static_rqs[i] = rq;
 			if (blk_mq_init_request(set, rq, hctx_idx, node)) {
@@ -2324,6 +2350,7 @@ static int blk_mq_hctx_notify_dead(unsigned int cpu, struct hlist_node *node)
 	if (list_empty(&tmp))
 		return 0;
 
+	rq_list_hierarchy_start_io_acct(&tmp, STAGE_HCTX);
 	spin_lock(&hctx->lock);
 	list_splice_tail_init(&tmp, &hctx->dispatch);
 	spin_unlock(&hctx->lock);
@@ -2758,6 +2785,9 @@ void blk_mq_release(struct request_queue *q)
 	struct blk_mq_hw_ctx *hctx, *next;
 	int i;
 
+	blk_mq_unregister_hierarchy(q, STAGE_BIO);
+	blk_io_hierarchy_stats_free(q);
+
 	queue_for_each_hw_ctx(q, hctx, i)
 		WARN_ON_ONCE(hctx && list_empty(&hctx->hctx_list));
 
@@ -2895,14 +2925,17 @@ struct request_queue *blk_mq_init_allocated_queue(struct blk_mq_tag_set *set,
 	/* mark the queue as mq asap */
 	q->mq_ops = set->ops;
 
+	if (blk_io_hierarchy_stats_alloc(q))
+		goto err_exit;
+
 	q->poll_cb = blk_stat_alloc_callback(blk_mq_poll_stats_fn,
 					     blk_mq_poll_stats_bkt,
 					     BLK_MQ_POLL_STATS_BKTS, q);
 	if (!q->poll_cb)
-		goto err_exit;
+		goto err_hierarchy_exit;
 
 	if (blk_mq_alloc_ctxs(q))
-		goto err_exit;
+		goto err_hierarchy_exit;
 
 	/* init q->mq_kobj and sw queues' kobjects */
 	blk_mq_sysfs_init(q);
@@ -2972,6 +3005,8 @@ err_hctxs:
 	q->nr_hw_queues = 0;
 err_sys_init:
 	blk_mq_sysfs_deinit(q);
+err_hierarchy_exit:
+	blk_io_hierarchy_stats_free(q);
 err_exit:
 	q->mq_ops = NULL;
 	return ERR_PTR(-ENOMEM);

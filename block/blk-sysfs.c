@@ -17,6 +17,7 @@
 #include "blk-mq.h"
 #include "blk-mq-debugfs.h"
 #include "blk-wbt.h"
+#include "blk-io-hierarchy/stats.h"
 
 struct queue_sysfs_entry {
 	struct attribute attr;
@@ -924,6 +925,19 @@ struct kobj_type blk_queue_ktype = {
 	.release	= blk_release_queue,
 };
 
+static void blk_mq_register_default_hierarchy(struct request_queue *q)
+{
+	if (!q->mq_ops)
+		return;
+
+	blk_mq_register_hierarchy(q, STAGE_GETTAG);
+	blk_mq_register_hierarchy(q, STAGE_PLUG);
+	blk_mq_register_hierarchy(q, STAGE_HCTX);
+	blk_mq_register_hierarchy(q, STAGE_REQUEUE);
+	blk_mq_register_hierarchy(q, STAGE_RQ_DRIVER);
+	blk_mq_register_hierarchy(q, STAGE_BIO);
+}
+
 /**
  * blk_register_queue - register a block layer queue with sysfs
  * @disk: Disk of which the request queue should be registered with sysfs.
@@ -972,6 +986,8 @@ int blk_register_queue(struct gendisk *disk)
 		}
 		has_elevator = true;
 	}
+
+	blk_mq_register_default_hierarchy(q);
 
 	blk_queue_flag_set(QUEUE_FLAG_REGISTERED, q);
 	wbt_enable_default(q);

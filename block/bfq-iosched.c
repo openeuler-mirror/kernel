@@ -140,6 +140,7 @@
 #include "blk-mq-sched.h"
 #include "bfq-iosched.h"
 #include "blk-wbt.h"
+#include "blk-io-hierarchy/stats.h"
 
 #define BFQ_BFQQ_FNS(name)						\
 void bfq_mark_bfqq_##name(struct bfq_queue *bfqq)			\
@@ -844,7 +845,7 @@ static struct request *bfq_check_fifo(struct bfq_queue *bfqq,
 
 	rq = rq_entry_fifo(bfqq->fifo.next);
 
-	if (rq == last || ktime_get_ns() < rq->fifo_time)
+	if (rq == last || blk_time_get_ns() < rq->fifo_time)
 		return NULL;
 
 	bfq_log_bfqq(bfqq->bfqd, bfqq, "check_fifo: returned %p", rq);
@@ -1566,7 +1567,7 @@ static void bfq_bfqq_handle_idle_busy_switch(struct bfq_data *bfqd,
 		 * bfq_bfqq_update_budg_for_activation for
 		 * details on the usage of the next variable.
 		 */
-		arrived_in_time =  ktime_get_ns() <=
+		arrived_in_time =  blk_time_get_ns() <=
 			bfqq->ttime.last_end_request +
 			bfqd->bfq_slice_idle * 3;
 
@@ -1882,8 +1883,10 @@ static bool bfq_bio_merge(struct blk_mq_hw_ctx *hctx, struct bio *bio)
 	ret = blk_mq_sched_try_merge(q, bio, &free);
 
 	spin_unlock_irq(&bfqd->lock);
-	if (free)
+	if (free) {
+		rq_hierarchy_end_io_acct(free, STAGE_BFQ);
 		blk_mq_free_request(free);
+	}
 
 	return ret;
 }
@@ -2468,7 +2471,7 @@ static void bfq_set_budget_timeout(struct bfq_data *bfqd,
 	else
 		timeout_coeff = bfqq->entity.weight / bfqq->entity.orig_weight;
 
-	bfqd->last_budget_start = ktime_get();
+	bfqd->last_budget_start = blk_time_get();
 
 	bfqq->budget_timeout = jiffies +
 		bfqd->bfq_timeout * timeout_coeff;
@@ -2568,7 +2571,7 @@ static void bfq_arm_slice_timer(struct bfq_data *bfqd)
 	else if (bfqq->wr_coeff > 1)
 		sl = max_t(u32, sl, 20ULL * NSEC_PER_MSEC);
 
-	bfqd->last_idling_start = ktime_get();
+	bfqd->last_idling_start = blk_time_get();
 	hrtimer_start(&bfqd->idle_slice_timer, ns_to_ktime(sl),
 		      HRTIMER_MODE_REL);
 	bfqg_stats_set_start_idle_time(bfqq_group(bfqq));
@@ -2605,7 +2608,7 @@ static void bfq_reset_rate_computation(struct bfq_data *bfqd,
 				       struct request *rq)
 {
 	if (rq != NULL) { /* new rq dispatch now, reset accordingly */
-		bfqd->last_dispatch = bfqd->first_dispatch = ktime_get_ns();
+		bfqd->last_dispatch = bfqd->first_dispatch = blk_time_get_ns();
 		bfqd->peak_rate_samples = 1;
 		bfqd->sequential_samples = 0;
 		bfqd->tot_sectors_dispatched = bfqd->last_rq_max_size =
@@ -2762,7 +2765,7 @@ reset_computation:
  */
 static void bfq_update_peak_rate(struct bfq_data *bfqd, struct request *rq)
 {
-	u64 now_ns = ktime_get_ns();
+	u64 now_ns = blk_time_get_ns();
 
 	if (bfqd->peak_rate_samples == 0) { /* first dispatch */
 		bfq_log(bfqd, "update_peak_rate: goto reset, samples %d",
@@ -3099,7 +3102,7 @@ static bool bfq_bfqq_is_slow(struct bfq_data *bfqd, struct bfq_queue *bfqq,
 	if (compensate)
 		delta_ktime = bfqd->last_idling_start;
 	else
-		delta_ktime = ktime_get();
+		delta_ktime = blk_time_get();
 	delta_ktime = ktime_sub(delta_ktime, bfqd->last_budget_start);
 	delta_usecs = ktime_to_us(delta_ktime);
 
@@ -4168,6 +4171,8 @@ static struct request *bfq_dispatch_request(struct blk_mq_hw_ctx *hctx)
 			idle_timer_disabled ? in_serv_queue : NULL,
 				idle_timer_disabled);
 
+	if (rq)
+		rq_hierarchy_end_io_acct(rq, STAGE_BFQ);
 	return rq;
 }
 
@@ -4410,7 +4415,7 @@ static void bfq_init_bfqq(struct bfq_data *bfqd, struct bfq_queue *bfqq,
 		bfq_clear_bfqq_sync(bfqq);
 
 	/* set end request to minus infinity from now */
-	bfqq->ttime.last_end_request = ktime_get_ns() + 1;
+	bfqq->ttime.last_end_request = blk_time_get_ns() + 1;
 
 	bfq_mark_bfqq_IO_bound(bfqq);
 
@@ -4528,7 +4533,7 @@ static void bfq_update_io_thinktime(struct bfq_data *bfqd,
 				    struct bfq_queue *bfqq)
 {
 	struct bfq_ttime *ttime = &bfqq->ttime;
-	u64 elapsed = ktime_get_ns() - bfqq->ttime.last_end_request;
+	u64 elapsed = blk_time_get_ns() - bfqq->ttime.last_end_request;
 
 	elapsed = min_t(u64, elapsed, 2ULL * bfqd->bfq_slice_idle);
 
@@ -4697,7 +4702,8 @@ static bool __bfq_insert_request(struct bfq_data *bfqd, struct request *rq)
 	bfq_add_request(rq);
 	idle_timer_disabled = waiting && !bfq_bfqq_wait_request(bfqq);
 
-	rq->fifo_time = ktime_get_ns() + bfqd->bfq_fifo_expire[rq_is_sync(rq)];
+	rq->fifo_time = blk_time_get_ns() +
+			bfqd->bfq_fifo_expire[rq_is_sync(rq)];
 	list_add_tail(&rq->queuelist, &bfqq->fifo);
 
 	bfq_rq_enqueued(bfqd, bfqq, rq);
@@ -4750,6 +4756,7 @@ static void bfq_insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 	spin_lock_irq(&bfqd->lock);
 	if (blk_mq_sched_try_insert_merge(q, rq, &free)) {
 		spin_unlock_irq(&bfqd->lock);
+		rq_list_hierarchy_end_io_acct(&free, STAGE_BFQ);
 		blk_mq_free_requests(&free);
 		return;
 	}
@@ -4797,6 +4804,7 @@ static void bfq_insert_request(struct blk_mq_hw_ctx *hctx, struct request *rq,
 static void bfq_insert_requests(struct blk_mq_hw_ctx *hctx,
 				struct list_head *list, bool at_head)
 {
+	rq_list_hierarchy_start_io_acct(list, STAGE_BFQ);
 	while (!list_empty(list)) {
 		struct request *rq;
 
@@ -4853,7 +4861,7 @@ static void bfq_completed_request(struct bfq_queue *bfqq, struct bfq_data *bfqd)
 		bfq_weights_tree_remove(bfqd, bfqq);
 	}
 
-	now_ns = ktime_get_ns();
+	now_ns = blk_time_get_ns();
 
 	bfqq->ttime.last_end_request = now_ns;
 
@@ -5394,6 +5402,7 @@ static void bfq_exit_queue(struct elevator_queue *e)
 	struct bfq_queue *bfqq, *n;
 	struct request_queue *q = bfqd->queue;
 
+	blk_mq_unregister_hierarchy(q, STAGE_BFQ);
 	hrtimer_cancel(&bfqd->idle_slice_timer);
 
 	spin_lock_irq(&bfqd->lock);
@@ -5560,6 +5569,7 @@ static int bfq_init_queue(struct request_queue *q, struct elevator_type *e)
 	bfq_init_entity(&bfqd->oom_bfqq.entity, bfqd->root_group);
 
 	wbt_disable_default(q);
+	blk_mq_register_hierarchy(q, STAGE_BFQ);
 	return 0;
 
 out_free:

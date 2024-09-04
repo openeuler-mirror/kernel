@@ -55,10 +55,13 @@ struct request_queue_wrapper {
 	int __percpu		*last_dispatch_cpu;
 #endif
 	struct mutex		sysfs_dir_lock;
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+	struct blk_io_hierarchy_stats *io_hierarchy_stats;
+#endif
 };
 
-#define queue_to_wrapper(q) \
-	container_of(q, struct request_queue_wrapper, q)
+#define queue_to_wrapper(__q) \
+	container_of((__q), struct request_queue_wrapper, q)
 
 extern struct kmem_cache *blk_requestq_cachep;
 extern struct kmem_cache *request_cachep;
@@ -146,6 +149,64 @@ static inline void __blk_get_queue(struct request_queue *q)
 {
 	kobject_get(&q->kobj);
 }
+
+#ifdef CONFIG_BLK_BIO_ALLOC_TIME
+static inline u64 blk_time_get_ns(void);
+static inline void blk_rq_init_bi_alloc_time(struct request *rq,
+					     struct request *first_rq)
+{
+	if (!rq->q->mq_ops)
+		return;
+
+	request_to_wrapper(rq)->bi_alloc_time_ns =
+		first_rq ? request_to_wrapper(first_rq)->bi_alloc_time_ns :
+			   blk_time_get_ns();
+}
+
+/*
+ * Used in following cases to updated request bi_alloc_time_ns:
+ *
+ * 1) Allocate a new @rq for @bio;
+ * 2) @bio is merged to @rq, in this case @merged_rq should be NULL;
+ * 3) @merged_rq is merged to @rq, in this case @bio should be NULL;
+ */
+static inline void blk_rq_update_bi_alloc_time(struct request *rq,
+					       struct bio *bio,
+					       struct request *merged_rq)
+{
+	struct request_wrapper *rq_wrapper;
+	struct request_wrapper *merged_rq_wrapper;
+
+	if (!rq->q->mq_ops)
+		return;
+
+	rq_wrapper = request_to_wrapper(rq);
+	if (bio) {
+		if (rq_wrapper->bi_alloc_time_ns > bio->bi_alloc_time_ns)
+			rq_wrapper->bi_alloc_time_ns = bio->bi_alloc_time_ns;
+		return;
+	}
+
+	if (WARN_ON_ONCE(!merged_rq))
+		return;
+
+	merged_rq_wrapper = request_to_wrapper(merged_rq);
+	if (rq_wrapper->bi_alloc_time_ns > merged_rq_wrapper->bi_alloc_time_ns)
+		rq_wrapper->bi_alloc_time_ns =
+			merged_rq_wrapper->bi_alloc_time_ns;
+}
+#else /* CONFIG_BLK_BIO_ALLOC_TIME */
+static inline void blk_rq_init_bi_alloc_time(struct request *rq,
+					     struct request *first_rq)
+{
+}
+
+static inline void blk_rq_update_bi_alloc_time(struct request *rq,
+					       struct bio *bio,
+					       struct request *merged_rq)
+{
+}
+#endif /* CONFIG_BLK_BIO_ALLOC_TIME */
 
 bool is_flush_rq(struct request *req);
 
@@ -479,4 +540,28 @@ static inline void blk_free_queue_dispatch_async(struct request_queue *q)
 }
 #endif
 
+static inline u64 blk_time_get_ns(void)
+{
+	struct task_struct *tsk = current;
+	struct blk_plug *plug = tsk->plug;
+
+	if (!plug || !in_task())
+		return ktime_get_ns();
+
+	/*
+	 * 0 could very well be a valid time, but rather than flag "this is
+	 * a valid timestamp" separately, just accept that we'll do an extra
+	 * ktime_get_ns() if we just happen to get 0 as the current time.
+	 */
+	if (!tsk->_resvd->cur_ktime) {
+		tsk->_resvd->cur_ktime = ktime_get_ns();
+		tsk->flags |= PF_BLOCK_TS;
+	}
+	return tsk->_resvd->cur_ktime;
+}
+
+static inline ktime_t blk_time_get(void)
+{
+	return ns_to_ktime(blk_time_get_ns());
+}
 #endif /* BLK_INTERNAL_H */

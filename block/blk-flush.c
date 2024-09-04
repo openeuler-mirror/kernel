@@ -75,6 +75,7 @@
 #include "blk-mq.h"
 #include "blk-mq-tag.h"
 #include "blk-mq-sched.h"
+#include "blk-io-hierarchy/stats.h"
 
 /* PREFLUSH/FUA sequences */
 enum {
@@ -187,6 +188,7 @@ static bool blk_flush_complete_seq(struct request *rq,
 		if (list_empty(pending))
 			fq->flush_pending_since = jiffies;
 		list_move_tail(&rq->flush.list, pending);
+		rq_hierarchy_start_io_acct(rq, STAGE_HCTX);
 		break;
 
 	case REQ_FSEQ_DATA:
@@ -245,6 +247,8 @@ static void flush_end_io(struct request *flush_rq, blk_status_t error)
 		 * avoiding use-after-free.
 		 */
 		WRITE_ONCE(flush_rq->state, MQ_RQ_IDLE);
+		blk_mq_put_alloc_task(flush_rq);
+		blk_rq_hierarchy_stats_complete(flush_rq);
 		if (fq->rq_status != BLK_STS_OK) {
 			error = fq->rq_status;
 			fq->rq_status = BLK_STS_OK;
@@ -274,6 +278,7 @@ static void flush_end_io(struct request *flush_rq, blk_status_t error)
 		unsigned int seq = blk_flush_cur_seq(rq);
 
 		BUG_ON(seq != REQ_FSEQ_PREFLUSH && seq != REQ_FSEQ_POSTFLUSH);
+		rq_hierarchy_end_io_acct(rq, STAGE_HCTX);
 		queued |= blk_flush_complete_seq(rq, fq, seq, error);
 	}
 
@@ -378,6 +383,11 @@ static bool blk_kick_flush(struct request_queue *q, struct blk_flush_queue *fq,
 	flush_rq->rq_disk = first_rq->rq_disk;
 	flush_rq->end_io = flush_end_io;
 
+	blk_rq_hierarchy_stats_init(flush_rq);
+	blk_rq_init_bi_alloc_time(flush_rq, first_rq);
+	if (q->mq_ops)
+		blk_mq_get_alloc_task(flush_rq, first_rq->bio);
+
 	/*
 	 * Order WRITE ->end_io and WRITE rq->ref, and its pair is the one
 	 * implied in refcount_inc_not_zero() called from
@@ -447,6 +457,8 @@ static void mq_flush_data_end_io(struct request *rq, blk_status_t error)
 		WARN_ON(rq->tag < 0);
 		blk_mq_put_driver_tag_hctx(hctx, rq);
 	}
+
+	blk_rq_hierarchy_set_flush_done(rq);
 
 	/*
 	 * After populating an empty queue, kick it to avoid stall.  Read
@@ -601,7 +613,8 @@ struct blk_flush_queue *blk_alloc_flush_queue(struct request_queue *q,
 		int node, int cmd_size, gfp_t flags)
 {
 	struct blk_flush_queue *fq;
-	int rq_sz = sizeof(struct request);
+	struct request_wrapper *wrapper;
+	int rq_sz = sizeof(struct request) + sizeof(struct request_wrapper);
 
 	fq = kzalloc_node(sizeof(*fq), flags, node);
 	if (!fq)
@@ -611,10 +624,11 @@ struct blk_flush_queue *blk_alloc_flush_queue(struct request_queue *q,
 		spin_lock_init(&fq->mq_flush_lock);
 
 	rq_sz = round_up(rq_sz + cmd_size, cache_line_size());
-	fq->flush_rq = kzalloc_node(rq_sz, flags, node);
-	if (!fq->flush_rq)
+	wrapper = kzalloc_node(rq_sz, flags, node);
+	if (!wrapper)
 		goto fail_rq;
 
+	fq->flush_rq = (struct request *)(wrapper + 1);
 	INIT_LIST_HEAD(&fq->flush_queue[0]);
 	INIT_LIST_HEAD(&fq->flush_queue[1]);
 	INIT_LIST_HEAD(&fq->flush_data_in_flight);
@@ -633,6 +647,6 @@ void blk_free_flush_queue(struct blk_flush_queue *fq)
 	if (!fq)
 		return;
 
-	kfree(fq->flush_rq);
+	kfree(request_to_wrapper(fq->flush_rq));
 	kfree(fq);
 }

@@ -22,6 +22,7 @@
 #include <linux/sbitmap.h>
 #include <linux/delay.h>
 
+#include "blk.h"
 #include "bfq-iosched.h"
 
 #if defined(CONFIG_BFQ_GROUP_IOSCHED) &&  defined(CONFIG_DEBUG_BLK_CGROUP)
@@ -60,7 +61,7 @@ static void bfqg_stats_update_group_wait_time(struct bfqg_stats *stats)
 	if (!bfqg_stats_waiting(stats))
 		return;
 
-	now = ktime_get_ns();
+	now = blk_time_get_ns();
 	if (now > stats->start_group_wait_time)
 		blkg_stat_add(&stats->group_wait_time,
 			      now - stats->start_group_wait_time);
@@ -77,7 +78,7 @@ static void bfqg_stats_set_start_group_wait_time(struct bfq_group *bfqg,
 		return;
 	if (bfqg == curr_bfqg)
 		return;
-	stats->start_group_wait_time = ktime_get_ns();
+	stats->start_group_wait_time = blk_time_get_ns();
 	bfqg_stats_mark_waiting(stats);
 }
 
@@ -89,7 +90,7 @@ static void bfqg_stats_end_empty_time(struct bfqg_stats *stats)
 	if (!bfqg_stats_empty(stats))
 		return;
 
-	now = ktime_get_ns();
+	now = blk_time_get_ns();
 	if (now > stats->start_empty_time)
 		blkg_stat_add(&stats->empty_time,
 			      now - stats->start_empty_time);
@@ -116,7 +117,7 @@ void bfqg_stats_set_start_empty_time(struct bfq_group *bfqg)
 	if (bfqg_stats_empty(stats))
 		return;
 
-	stats->start_empty_time = ktime_get_ns();
+	stats->start_empty_time = blk_time_get_ns();
 	bfqg_stats_mark_empty(stats);
 }
 
@@ -125,7 +126,7 @@ void bfqg_stats_update_idle_time(struct bfq_group *bfqg)
 	struct bfqg_stats *stats = &bfqg->stats;
 
 	if (bfqg_stats_idling(stats)) {
-		u64 now = ktime_get_ns();
+		u64 now = blk_time_get_ns();
 
 		if (now > stats->start_idle_time)
 			blkg_stat_add(&stats->idle_time,
@@ -138,7 +139,7 @@ void bfqg_stats_set_start_idle_time(struct bfq_group *bfqg)
 {
 	struct bfqg_stats *stats = &bfqg->stats;
 
-	stats->start_idle_time = ktime_get_ns();
+	stats->start_idle_time = blk_time_get_ns();
 	bfqg_stats_mark_idling(stats);
 }
 
@@ -175,7 +176,7 @@ void bfqg_stats_update_completion(struct bfq_group *bfqg, u64 start_time_ns,
 				  u64 io_start_time_ns, unsigned int op)
 {
 	struct bfqg_stats *stats = &bfqg->stats;
-	u64 now = ktime_get_ns();
+	u64 now = blk_time_get_ns();
 
 	if (now > io_start_time_ns)
 		blkg_rwstat_add(&stats->service_time, op,

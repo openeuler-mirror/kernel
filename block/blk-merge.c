@@ -784,6 +784,7 @@ static struct request *attempt_merge(struct request_queue *q,
 	req->biotail = next->biotail;
 
 	req->__data_len += blk_rq_bytes(next);
+	blk_rq_update_bi_alloc_time(req, NULL, next);
 
 	if (!blk_discard_mergable(req))
 		elv_merge_requests(q, req, next);

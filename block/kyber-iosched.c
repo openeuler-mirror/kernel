@@ -30,6 +30,7 @@
 #include "blk-mq-sched.h"
 #include "blk-mq-tag.h"
 #include "blk-stat.h"
+#include "blk-io-hierarchy/stats.h"
 
 /* Scheduling domains. */
 enum {
@@ -365,6 +366,7 @@ static int kyber_init_sched(struct request_queue *q, struct elevator_type *e)
 
 	blk_stat_add_callback(q, kqd->cb);
 
+	blk_mq_register_hierarchy(q, STAGE_KYBER);
 	return 0;
 }
 
@@ -374,6 +376,7 @@ static void kyber_exit_sched(struct elevator_queue *e)
 	struct request_queue *q = kqd->q;
 	int i;
 
+	blk_mq_unregister_hierarchy(q, STAGE_KYBER);
 	blk_stat_remove_callback(q, kqd->cb);
 
 	for (i = 0; i < KYBER_NUM_DOMAINS; i++)
@@ -517,7 +520,6 @@ static bool kyber_bio_merge(struct blk_mq_hw_ctx *hctx_q, struct bio *bio)
 	spin_lock(&kcq->lock);
 	merged = blk_mq_bio_list_merge(hctx->queue, rq_list, bio);
 	spin_unlock(&kcq->lock);
-	blk_mq_put_ctx(ctx);
 
 	return merged;
 }
@@ -533,6 +535,7 @@ static void kyber_insert_requests(struct blk_mq_hw_ctx *hctx,
 	struct kyber_hctx_data *khd = hctx->sched_data;
 	struct request *rq, *next;
 
+	rq_list_hierarchy_start_io_acct(rq_list, STAGE_KYBER);
 	list_for_each_entry_safe(rq, next, rq_list, queuelist) {
 		unsigned int sched_domain = kyber_sched_domain(rq->cmd_flags);
 		struct kyber_ctx_queue *kcq = &khd->kcqs[rq->mq_ctx->index_hw];
@@ -584,7 +587,7 @@ static void kyber_completed_request(struct request *rq)
 	if (blk_stat_is_active(kqd->cb))
 		return;
 
-	now = ktime_get_ns();
+	now = blk_time_get_ns();
 	if (now < rq->io_start_time_ns)
 		return;
 
@@ -772,6 +775,9 @@ static struct request *kyber_dispatch_request(struct blk_mq_hw_ctx *hctx)
 	rq = NULL;
 out:
 	spin_unlock(&khd->lock);
+
+	if (rq)
+		rq_hierarchy_end_io_acct(rq, STAGE_KYBER);
 	return rq;
 }
 

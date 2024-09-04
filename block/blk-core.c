@@ -43,6 +43,7 @@
 #include "blk-mq.h"
 #include "blk-mq-sched.h"
 #include "blk-rq-qos.h"
+#include "blk-io-hierarchy/stats.h"
 
 #ifdef CONFIG_DEBUG_FS
 struct dentry *blk_debugfs_root;
@@ -454,7 +455,7 @@ void __blk_rq_init(struct request_queue *q, struct request *rq)
 	RB_CLEAR_NODE(&rq->rb_node);
 	rq->tag = -1;
 	rq->internal_tag = -1;
-	rq->start_time_ns = ktime_get_ns();
+	rq->start_time_ns = blk_time_get_ns();
 	rq->part = NULL;
 }
 
@@ -537,8 +538,10 @@ static void req_bio_endio(struct request *rq, struct bio *bio,
 	bio_advance(bio, nbytes);
 
 	/* don't actually finish bio if it's part of flush sequence */
-	if (bio->bi_iter.bi_size == 0 && !(rq->rq_flags & RQF_FLUSH_SEQ))
+	if (bio->bi_iter.bi_size == 0 && !(rq->rq_flags & RQF_FLUSH_SEQ)) {
+		req_bio_hierarchy_end(rq, bio);
 		bio_endio(bio);
+	}
 }
 
 void blk_dump_rq_flags(struct request *rq, char *msg)
@@ -1001,6 +1004,15 @@ void blk_exit_queue(struct request_queue *q)
 	bdi_put(q->backing_dev_info);
 }
 
+static void blk_mq_unregister_default_hierarchy(struct request_queue *q)
+{
+	blk_mq_unregister_hierarchy(q, STAGE_GETTAG);
+	blk_mq_unregister_hierarchy(q, STAGE_PLUG);
+	blk_mq_unregister_hierarchy(q, STAGE_HCTX);
+	blk_mq_unregister_hierarchy(q, STAGE_REQUEUE);
+	blk_mq_unregister_hierarchy(q, STAGE_RQ_DRIVER);
+}
+
 /**
  * blk_cleanup_queue - shutdown a request queue
  * @q: request queue to shutdown
@@ -1088,6 +1100,7 @@ void blk_cleanup_queue(struct request_queue *q)
 	blk_exit_queue(q);
 
 	if (q->mq_ops) {
+		blk_mq_unregister_default_hierarchy(q);
 		blk_mq_cancel_work_sync(q);
 		blk_mq_exit_queue(q);
 	}
@@ -2106,6 +2119,7 @@ bool bio_attempt_back_merge(struct request_queue *q, struct request *req,
 	req->biotail->bi_next = bio;
 	req->biotail = bio;
 	req->__data_len += bio->bi_iter.bi_size;
+	blk_rq_update_bi_alloc_time(req, bio, NULL);
 
 	blk_account_io_start(req, false);
 	return true;
@@ -2129,6 +2143,7 @@ bool bio_attempt_front_merge(struct request_queue *q, struct request *req,
 
 	req->__sector = bio->bi_iter.bi_sector;
 	req->__data_len += bio->bi_iter.bi_size;
+	blk_rq_update_bi_alloc_time(req, bio, NULL);
 
 	blk_account_io_start(req, false);
 	return true;
@@ -2149,6 +2164,7 @@ bool bio_attempt_discard_merge(struct request_queue *q, struct request *req,
 	req->biotail = bio;
 	req->__data_len += bio->bi_iter.bi_size;
 	req->nr_phys_segments = segments + 1;
+	blk_rq_update_bi_alloc_time(req, bio, NULL);
 
 	blk_account_io_start(req, false);
 	return true;
@@ -2613,6 +2629,12 @@ generic_make_request_checks(struct bio *bio)
 	 */
 	create_io_context(GFP_ATOMIC, q->node);
 
+	/*
+	 * On the one hand REQ_PREFLUSH | REQ_FUA can be cleared above, on the
+	 * other hand it doesn't make sense to count invalid bio. Split bio will
+	 * be accounted separately.
+	 */
+	bio_hierarchy_start(bio);
 	if (!blkcg_bio_issue_check(q, bio))
 		return false;
 
@@ -2952,7 +2974,7 @@ blk_status_t __blk_insert_cloned_request(struct request_queue *q,
 			u64 now = 0;
 
 			if (blk_mq_need_time_stamp(rq))
-				now = ktime_get_ns();
+				now = blk_time_get_ns();
 
 			blk_account_io_done(rq, now);
 		}
@@ -3304,7 +3326,7 @@ void blk_start_request(struct request *req)
 	blk_dequeue_request(req);
 
 	if (test_bit(QUEUE_FLAG_STATS, &req->q->queue_flags)) {
-		req->io_start_time_ns = ktime_get_ns();
+		req->io_start_time_ns = blk_time_get_ns();
 #ifdef CONFIG_BLK_DEV_THROTTLING_LOW
 		req->throtl_size = blk_rq_sectors(req);
 #endif
@@ -3509,7 +3531,7 @@ EXPORT_SYMBOL_GPL(blk_unprep_request);
 void blk_finish_request(struct request *req, blk_status_t error)
 {
 	struct request_queue *q = req->q;
-	u64 now = ktime_get_ns();
+	u64 now = blk_time_get_ns();
 
 	lockdep_assert_held(req->q->queue_lock);
 	WARN_ON_ONCE(q->mq_ops);
@@ -3727,6 +3749,7 @@ void blk_rq_bio_prep(struct request_queue *q, struct request *rq,
 
 	rq->__data_len = bio->bi_iter.bi_size;
 	rq->bio = rq->biotail = bio;
+	blk_rq_update_bi_alloc_time(rq, bio, NULL);
 
 	if (bio->bi_disk)
 		rq->rq_disk = bio->bi_disk;
@@ -3923,6 +3946,7 @@ void blk_start_plug(struct blk_plug *plug)
 	 * Store ordering should not be needed here, since a potential
 	 * preempt will imply a full memory barrier
 	 */
+	tsk->_resvd->cur_ktime = 0;
 	tsk->plug = plug;
 }
 EXPORT_SYMBOL(blk_start_plug);
@@ -4060,6 +4084,9 @@ void blk_flush_plug_list(struct blk_plug *plug, bool from_schedule)
 	 */
 	if (q)
 		queue_unplugged(q, depth, from_schedule);
+
+	current->_resvd->cur_ktime = 0;
+	current->flags &= ~PF_BLOCK_TS;
 }
 
 void blk_finish_plug(struct blk_plug *plug)

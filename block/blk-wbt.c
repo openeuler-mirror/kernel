@@ -25,10 +25,14 @@
 #include <linux/swap.h>
 #ifndef __GENKSYMS__
 #include <linux/blk-mq.h>
+#include "blk.h"
 #endif
 
 #include "blk-wbt.h"
 #include "blk-rq-qos.h"
+#ifndef __GENKSYMS__
+#include "blk-io-hierarchy/stats.h"
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/wbt.h>
@@ -223,7 +227,7 @@ static u64 rwb_sync_issue_lat(struct rq_wb *rwb)
 	if (!issue || !rwb->sync_cookie)
 		return 0;
 
-	now = ktime_to_ns(ktime_get());
+	now = blk_time_get_ns();
 	return now - issue;
 }
 
@@ -533,11 +537,12 @@ static int wbt_wake_function(struct wait_queue_entry *curr, unsigned int mode,
  * the timer to kick off queuing again.
  */
 static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
-		       unsigned long rw, spinlock_t *lock)
+		       struct bio *bio, spinlock_t *lock)
 	__releases(lock)
 	__acquires(lock)
 {
 	struct rq_wait *rqw = get_rq_wait(rwb, wb_acct);
+	unsigned long rw = bio->bi_opf;
 	struct wbt_wait_data data = {
 		.wq = {
 			.func	= wbt_wake_function,
@@ -554,6 +559,7 @@ static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
 	if (!has_sleeper && rq_wait_inc_below(rqw, get_limit(rwb, rw)))
 		return;
 
+	bio_hierarchy_start_io_acct(bio, STAGE_WBT);
 	has_sleeper = !__prepare_to_wait_exclusive(&rqw->wait, &data.wq,
 						 TASK_UNINTERRUPTIBLE);
 	do {
@@ -588,6 +594,7 @@ static void __wbt_wait(struct rq_wb *rwb, enum wbt_flags wb_acct,
 	} while (1);
 
 	finish_wait(&rqw->wait, &data.wq);
+	bio_hierarchy_end_io_acct(bio, STAGE_WBT);
 }
 
 static inline bool wbt_should_throttle(struct rq_wb *rwb, struct bio *bio)
@@ -652,7 +659,7 @@ static void wbt_wait(struct rq_qos *rqos, struct bio *bio, spinlock_t *lock)
 		return;
 	}
 
-	__wbt_wait(rwb, flags, bio->bi_opf, lock);
+	__wbt_wait(rwb, flags, bio, lock);
 
 	if (!blk_stat_is_active(rwb->cb))
 		rwb_arm_timer(rwb);
@@ -770,6 +777,7 @@ static void wbt_exit(struct rq_qos *rqos)
 	struct rq_wb *rwb = RQWB(rqos);
 	struct request_queue *q = rqos->q;
 
+	blk_mq_unregister_hierarchy(q, STAGE_WBT);
 	blk_stat_remove_callback(q, rwb->cb);
 	blk_stat_free_callback(rwb->cb);
 	kfree(rwb);
@@ -848,6 +856,7 @@ int wbt_init(struct request_queue *q)
 
 	blk_mq_unfreeze_queue(q);
 	wbt_set_write_cache(q, test_bit(QUEUE_FLAG_WC, &q->queue_flags));
+	blk_mq_register_hierarchy(q, STAGE_WBT);
 
 	return 0;
 }

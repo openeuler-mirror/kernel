@@ -26,6 +26,12 @@ menuconfig BLOCK
 
 if BLOCK
 
+config BLK_BIO_ALLOC_TIME
+	bool
+
+config BLK_BIO_ALLOC_TASK
+	bool
+
 config LBDAF
 	bool "Support for large (2TB+) block devices and files"
 	depends on !64BIT
@@ -212,6 +218,8 @@ config BLK_BIO_DISPATCH_ASYNC
 	specific CPUs to avoid across nodes memory access in driver, noted this
 	feature will require special care in the driver to work. If unsure,
 	say N here.
+
+source "block/blk-io-hierarchy/Kconfig"
 
 menu "Partition Types"
 

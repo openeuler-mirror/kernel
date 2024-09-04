@@ -33,6 +33,7 @@
 #include <trace/events/block.h>
 #include "blk.h"
 #include "blk-rq-qos.h"
+#include "blk-io-hierarchy/stats.h"
 
 /*
  * Test patch to inline a certain number of bi_io_vec's inside the bio
@@ -245,6 +246,14 @@ fallback:
 void bio_uninit(struct bio *bio)
 {
 	bio_disassociate_task(bio);
+#ifdef CONFIG_BLK_BIO_ALLOC_TASK
+	if (bio->pid) {
+		put_pid(bio->pid);
+		bio->pid = NULL;
+	}
+#endif
+	bio_hierarchy_end(bio);
+	bio_free_hierarchy_data(bio);
 }
 EXPORT_SYMBOL(bio_uninit);
 
@@ -285,6 +294,14 @@ void bio_init(struct bio *bio, struct bio_vec *table,
 
 	bio->bi_io_vec = table;
 	bio->bi_max_vecs = max_vecs;
+
+#ifdef CONFIG_BLK_BIO_ALLOC_TIME
+	bio->bi_alloc_time_ns = blk_time_get_ns();
+#endif
+
+#ifdef CONFIG_BLK_BIO_ALLOC_TASK
+	bio->pid = get_pid(task_pid(current));
+#endif
 }
 EXPORT_SYMBOL(bio_init);
 

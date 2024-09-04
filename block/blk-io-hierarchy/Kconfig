@@ -1,0 +1,145 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+menuconfig BLK_IO_HIERARCHY_STATS
+	bool "Enable hierarchy io stats"
+	default n
+	depends on BLK_DEBUG_FS=y
+	help
+	Enabling this lets the block layer to record additional information
+	in different io stages. Such information can be helpful to debug
+	performance and problems like io hang.
+
+	If unsure, say N.
+
+if BLK_IO_HIERARCHY_STATS
+
+config HIERARCHY_BIO
+	bool "Support to record stats for bio lifetime"
+	default n
+	select BLK_BIO_ALLOC_TIME
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for bio. Such information can be helpful to debug performance and
+	problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_IO_DUMP
+	bool "Support to dump io that is throttled"
+	default n
+	select BLK_BIO_ALLOC_TIME
+	select BLK_BIO_ALLOC_TASK
+	depends on BLK_DEV_IO_TRACE
+	help
+	Enable this will create new debugfs entries to show user the detailed
+	information of IO that are submitted and not done yet, and user can
+	filter the result by IO stage or IO latency.
+
+	If unsure, say N.
+
+config HIERARCHY_THROTTLE
+	bool "Enable hierarchy stats layer blk-throttle"
+	default n
+	depends on BLK_DEV_THROTTLING=y
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for blk-throttle. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_WBT
+	bool "Enable hierarchy stats layer blk-wbt"
+	default n
+	depends on BLK_WBT
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for blk-wbt. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_GETTAG
+	bool "Enable hierarchy stats layer gettag"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for gettag. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_PLUG
+	bool "Enable hierarchy stats layer plug"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for plug. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_DEADLINE
+	bool "Enable hierarchy stats layer mq-deadline"
+	default n
+	depends on MQ_IOSCHED_DEADLINE
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for mq-deadline. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_BFQ
+	bool "Enable hierarchy stats layer bfq"
+	default n
+	depends on IOSCHED_BFQ
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for bfq. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_KYBER
+	bool "Enable hierarchy stats layer kyber"
+	default n
+	depends on MQ_IOSCHED_KYBER
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for kyber. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_HCTX
+	bool "Enable hierarchy stats layer hctx"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for hctx. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_REQUEUE
+	bool "Enable hierarchy stats layer requeue"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for requeue. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+config HIERARCHY_RQ_DRIVER
+	bool "Enable hierarchy stats layer rq_driver"
+	default n
+	help
+	Enabling this lets blk hierarchy stats to record additional information
+	for rq_driver. Such information can be helpful to debug performance
+	and problems like io hang.
+
+	If unsure, say N.
+
+endif

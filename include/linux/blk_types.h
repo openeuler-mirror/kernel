@@ -203,9 +203,21 @@ struct bio {
 
 	struct bio_set		*bi_pool;
 
+#if defined(CONFIG_BLK_BIO_ALLOC_TIME) && !defined(__GENKSYMS__)
+	u64			bi_alloc_time_ns;
+#else
 	KABI_RESERVE(1)
+#endif
+#if defined(CONFIG_BLK_BIO_ALLOC_TASK) && !defined(__GENKSYMS__)
+	struct pid		*pid;
+#else
 	KABI_RESERVE(2)
+#endif
+#if defined(CONFIG_BLK_IO_HIERARCHY_STATS) && !defined(__GENKSYMS__)
+	struct bio_hierarchy_data *hdata;
+#else
 	KABI_RESERVE(3)
+#endif
 
 	/*
 	 * We can inline a number of vecs at the end of the bio, to avoid
@@ -220,6 +232,12 @@ struct bio {
 /*
  * bio flags
  */
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+#define BIO_HIERARCHY_ACCT 0	/*
+				 * This bio has already been subjected to
+				 * blk-io-hierarchy, don't do it again.
+				 */
+#endif
 #define BIO_SEG_VALID	1	/* bi_phys_segments valid */
 #define BIO_CLONED	2	/* doesn't own data */
 #define BIO_BOUNCED	3	/* bio is a bounce bio */
@@ -334,6 +352,9 @@ enum req_flag_bits {
 	/* for driver use */
 	__REQ_DRV,
 	__REQ_SWAP,		/* swapping request. */
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+	_REQ_HAS_DATA,		/* io contain data. */
+#endif
 	__REQ_NR_BITS,		/* stops here */
 };
 
@@ -356,6 +377,9 @@ enum req_flag_bits {
 
 #define REQ_DRV			(1ULL << __REQ_DRV)
 #define REQ_SWAP		(1ULL << __REQ_SWAP)
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+#define REQ_HAS_DATA		(1UL << _REQ_HAS_DATA)
+#endif
 
 #define REQ_FAILFAST_MASK \
 	(REQ_FAILFAST_DEV | REQ_FAILFAST_TRANSPORT | REQ_FAILFAST_DRIVER)
@@ -368,7 +392,36 @@ enum stat_group {
 	STAT_WRITE,
 	STAT_DISCARD,
 
-	NR_STAT_GROUPS
+	NR_STAT_GROUPS,
+	STAT_FLUSH = NR_STAT_GROUPS,
+	NR_NEW_STAT_GROUPS,
+};
+
+enum stage_group {
+#ifdef CONFIG_BLK_DEV_THROTTLING
+	STAGE_THROTTLE,
+#endif
+#ifdef CONFIG_BLK_WBT
+	STAGE_WBT,
+#endif
+	STAGE_GETTAG,
+	NR_BIO_STAGE_GROUPS,
+	STAGE_PLUG = NR_BIO_STAGE_GROUPS,
+#if IS_ENABLED(CONFIG_MQ_IOSCHED_DEADLINE)
+	STAGE_DEADLINE,
+#endif
+#if IS_ENABLED(CONFIG_IOSCHED_BFQ)
+	STAGE_BFQ,
+#endif
+#if IS_ENABLED(CONFIG_MQ_IOSCHED_KYBER)
+	STAGE_KYBER,
+#endif
+	STAGE_HCTX,
+	STAGE_REQUEUE,
+	STAGE_RQ_DRIVER,
+	NR_RQ_STAGE_GROUPS,
+	STAGE_BIO = NR_RQ_STAGE_GROUPS,
+	NR_STAGE_GROUPS,
 };
 
 #define bio_op(bio) \

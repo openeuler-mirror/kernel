@@ -36,6 +36,26 @@ struct blk_mq_ctx {
 	struct kobject		kobj;
 } ____cacheline_aligned_in_smp;
 
+struct request_wrapper {
+	u64 io_end_time_ns;
+#ifdef CONFIG_BLK_BIO_ALLOC_TIME
+	u64 bi_alloc_time_ns;
+#endif
+#ifdef CONFIG_BLK_BIO_ALLOC_TASK
+	struct pid *pid;
+#endif
+#ifdef CONFIG_BLK_IO_HIERARCHY_STATS
+	bool flush_done;
+	enum stage_group stage;
+	unsigned long hierarchy_time;
+#endif
+} ____cacheline_aligned_in_smp;
+
+static inline struct request_wrapper *request_to_wrapper(void *rq)
+{
+	return rq - sizeof(struct request_wrapper);
+}
+
 void blk_mq_freeze_queue(struct request_queue *q);
 void blk_mq_exit_queue(struct request_queue *q);
 int blk_mq_update_nr_requests(struct request_queue *q, unsigned int nr);
@@ -125,12 +145,7 @@ static inline struct blk_mq_ctx *__blk_mq_get_ctx(struct request_queue *q,
  */
 static inline struct blk_mq_ctx *blk_mq_get_ctx(struct request_queue *q)
 {
-	return __blk_mq_get_ctx(q, get_cpu());
-}
-
-static inline void blk_mq_put_ctx(struct blk_mq_ctx *ctx)
-{
-	put_cpu();
+	return __blk_mq_get_ctx(q, raw_smp_processor_id());
 }
 
 struct blk_mq_alloc_data {
@@ -142,6 +157,10 @@ struct blk_mq_alloc_data {
 	/* input & output parameter */
 	struct blk_mq_ctx *ctx;
 	struct blk_mq_hw_ctx *hctx;
+
+#ifndef __GENKSYMS__
+	struct bio *bio;
+#endif
 };
 
 static inline struct blk_mq_tags *blk_mq_tags_from_data(struct blk_mq_alloc_data *data)
@@ -233,5 +252,30 @@ static inline void blk_mq_free_requests(struct list_head *list)
 		__blk_put_request(rq->q, rq);
 	}
 }
+
+#ifdef CONFIG_BLK_BIO_ALLOC_TASK
+static inline void blk_mq_get_alloc_task(struct request *rq, struct bio *bio)
+{
+	request_to_wrapper(rq)->pid = bio ? get_pid(bio->pid) :
+					    get_pid(task_pid(current));
+}
+
+static inline void blk_mq_put_alloc_task(struct request *rq)
+{
+	struct request_wrapper *rq_wrapper = request_to_wrapper(rq);
+
+	if (rq_wrapper->pid) {
+		put_pid(rq_wrapper->pid);
+		rq_wrapper->pid = NULL;
+	}
+}
+#else
+static inline void blk_mq_get_alloc_task(struct request *rq, struct bio *bio)
+{
+}
+static inline void blk_mq_put_alloc_task(struct request *rq)
+{
+}
+#endif
 
 #endif

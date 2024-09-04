@@ -1435,6 +1435,18 @@ static inline struct request *blk_map_queue_find_tag(struct blk_queue_tag *bqt,
 	return bqt->tag_index[tag];
 }
 
+/*
+ * tsk == current here
+ */
+static inline void blk_plug_invalidate_ts(struct task_struct *tsk)
+{
+	struct blk_plug *plug = tsk->plug;
+
+	if (plug)
+		current->_resvd->cur_ktime = 0;
+	current->flags &= ~PF_BLOCK_TS;
+}
+
 extern int blkdev_issue_flush(struct block_device *, gfp_t, sector_t *);
 extern int blkdev_issue_write_same(struct block_device *bdev, sector_t sector,
 		sector_t nr_sects, gfp_t gfp_mask, struct page *page);
@@ -2148,6 +2160,10 @@ static inline void blk_schedule_flush_plug(struct task_struct *task)
 static inline bool blk_needs_flush_plug(struct task_struct *tsk)
 {
 	return false;
+}
+
+static inline void blk_plug_invalidate_ts(struct task_struct *tsk)
+{
 }
 
 static inline int blkdev_issue_flush(struct block_device *bdev, gfp_t gfp_mask,
