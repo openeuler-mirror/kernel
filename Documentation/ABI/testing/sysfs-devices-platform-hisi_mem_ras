@@ -1,0 +1,41 @@
+What:		/sys/devices/platform/HISI0521:00/memory_type
+What:		/sys/devices/platform/HISI0521:00/memory_type_supported
+What:		/sys/devices/platform/HISI0521:00/acls_query
+What:		/sys/devices/platform/HISI0521:00/acls_repair
+What:		/sys/devices/platform/HISI0521:00/sppr_query
+What:		/sys/devices/platform/HISI0521:00/sppr_repair
+Date:		July 2024
+KernelVersion:	6.11
+Contact:	Xiaofei Tan <tanxiaofei@huawei.com>
+Description:
+		The /sys/devices/platform/HISI0521:00/ directory contains
+		some attributes about memory repair capability query and execute.
+
+		There are following attributes in this directory:
+
+		================= ==== =========================================
+		memory_type:	       (RO) memory type the device managed.
+		memory_type_supported: (RO) all memory type device the driver supports.
+		acls_query:	       (WO) write with physical address to check if the
+					    address support ACLS repair.
+					    fails with -EINVAL if input parsing fails.
+					    fails with -EIO if PCC message excution failed.
+					    fails with -ENXIO if the address doesn't belong this device.
+					    fails with -ENOSPC if no ACLS resource left for this address.
+		acls_repair:	       (WO) write with physical address to do ACLS repair.
+					    fails with -EINVAL if input parsing fails.
+					    fails with -EIO if PCC message excution failed.
+					    fails with -ENXIO if the address doesn't belong this device.
+					    fails with -ENOSPC if no ACLS resource left for this address.
+		sppr_query:	       (WO) write with physical address to check if the
+					    address support sPPR repair.
+					    fails with -EINVAL if input parsing fails.
+					    fails with -EIO if PCC message excution failed.
+					    fails with -ENXIO if the address doesn't belong this device.
+					    fails with -ENOSPC if no ACLS resource left for this address.
+		sppr_repair:	       (WO) write with physical address to do sPPR repair.
+					    fails with -EINVAL if input parsing fails.
+					    fails with -EIO if PCC message excution failed.
+					    fails with -ENXIO if the address doesn't belong this device.
+					    fails with -ENOSPC if no ACLS resource left for this address.
+		================= ==== =========================================
