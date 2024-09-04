@@ -913,6 +913,7 @@ struct hnae3_roh_private_info {
 	struct net_device *netdev;
 	void __iomem *roh_io_base;
 	int base_vector;
+	int num_vectors;
 	unsigned long reset_state;
 };
 

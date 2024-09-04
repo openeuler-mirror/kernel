@@ -60,7 +60,7 @@ struct hns3_roh_priv {
 };
 
 struct hns3_roh_intr_info {
-	u16 base_vecotr;
+	u16 base_vector;
 	u16 vector_offset;
 	u16 vector_num;
 };
@@ -93,7 +93,6 @@ struct hns3_roh_device {
 struct hns3_roh_hw {
 	int (*cmdq_init)(struct hns3_roh_device *hroh_dev);
 	void (*cmdq_exit)(struct hns3_roh_device *hroh_dev);
-	int (*get_intr_cap)(struct hns3_roh_device *hroh_dev);
 };
 
 static inline struct hns3_roh_device *to_hroh_dev(struct roh_device *rohdev)

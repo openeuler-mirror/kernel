@@ -2576,6 +2576,9 @@ static int hclgevf_init_client_instance(struct hnae3_client *client,
 			goto clear_roce;
 
 		break;
+	/* ROH does not support vf, just do nothing */
+	case HNAE3_CLIENT_ROH:
+		break;
 	default:
 		return -EINVAL;
 	}
