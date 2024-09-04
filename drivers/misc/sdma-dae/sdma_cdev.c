@@ -38,6 +38,74 @@ struct pasid_info {
 	u32 dst_pasid;
 };
 
+static struct hisi_sdma_pid_ref_hte *sdma_search_pid_ref(struct hisi_sdma_device *psdma_dev,
+							 u32 pid)
+{
+	struct hisi_sdma_pid_ref_hte *entry = NULL;
+
+	hash_for_each_possible(psdma_dev->sdma_pid_ref_ht, entry, node, pid) {
+		if (entry->pid == pid)
+			return entry;
+	}
+
+	return NULL;
+}
+
+static int sdma_add_pid_ref(struct hisi_sdma_device *psdma_dev, u32 pid)
+{
+	struct hisi_sdma_pid_ref_hte *entry = NULL;
+
+	spin_lock(&psdma_dev->pid_lock);
+	entry = sdma_search_pid_ref(psdma_dev, pid);
+	if (!entry) {
+		entry = kmalloc_node(sizeof(struct hisi_sdma_pid_ref_hte), GFP_KERNEL,
+				     psdma_dev->node_idx);
+		if (!entry) {
+			spin_unlock(&psdma_dev->pid_lock);
+			return -ENOMEM;
+		}
+		entry->pid = pid;
+		entry->ref = 1;
+		hash_add(psdma_dev->sdma_pid_ref_ht, &entry->node, entry->pid);
+	} else {
+		entry->ref++;
+	}
+	spin_unlock(&psdma_dev->pid_lock);
+
+	return 0;
+}
+
+static void sdma_del_pid_ref(struct hisi_sdma_device *psdma_dev, u32 pid)
+{
+	struct hisi_sdma_pid_ref_hte *entry = NULL;
+
+	spin_lock(&psdma_dev->pid_lock);
+	entry = sdma_search_pid_ref(psdma_dev, pid);
+	if (entry) {
+		entry->ref--;
+		if (entry->ref == 0) {
+			hash_del(&entry->node);
+			kfree(entry);
+			sdma_free_authority_ht_with_pid(pid);
+		}
+	}
+	spin_unlock(&psdma_dev->pid_lock);
+}
+
+void sdma_clear_pid_ref(struct hisi_sdma_device *psdma_dev)
+{
+	struct hisi_sdma_pid_ref_hte *entry = NULL;
+	struct hlist_node *tmp;
+	u32 bkt;
+
+	spin_lock(&psdma_dev->pid_lock);
+	hash_for_each_safe(psdma_dev->sdma_pid_ref_ht, bkt, tmp, entry, node) {
+		hash_del(&entry->node);
+		kfree(entry);
+	}
+	spin_unlock(&psdma_dev->pid_lock);
+}
+
 static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 {
 	struct file_open_data *data;
@@ -49,11 +117,17 @@ static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 	if (id < 0)
 		return id;
 
+	ret = sdma_add_pid_ref(psdma_dev, (u32)current->tgid);
+	if (ret != 0) {
+		dev_err(&psdma_dev->pdev->dev, "alloc pid_ref hash failed\n");
+		goto free_ida;
+	}
+
 	dev_dbg(&psdma_dev->pdev->dev, "%s: ida alloc id = %d\n", __func__, id);
 	data = kmalloc_node(sizeof(struct file_open_data), GFP_KERNEL, psdma_dev->node_idx);
 	if (!data) {
 		ret = -ENOMEM;
-		goto free_ida;
+		goto free_pid_ref_ht;
 	}
 
 	handle = iommu_sva_bind_device(&psdma_dev->pdev->dev, current->mm, NULL);
@@ -84,6 +158,8 @@ sva_unbind:
 	iommu_sva_unbind_device(handle);
 free_privt_data:
 	kfree(data);
+free_pid_ref_ht:
+	sdma_del_pid_ref(psdma_dev, current->tgid);
 free_ida:
 	ida_free(g_info.fd_ida, id);
 	return ret;
@@ -176,7 +252,8 @@ static int ioctl_sdma_get_chn(struct file *file, unsigned long arg)
 	u32 alloc_chn_num_max, idx;
 	int ret;
 
-	list_node = kmalloc_node(sizeof(struct hisi_sdma_channel_list), GFP_KERNEL, pdev->node_idx);
+	list_node = kmalloc_node(sizeof(struct hisi_sdma_channel_list), GFP_KERNEL,
+				 pdev->node_idx);
 	if (!list_node)
 		return -ENOMEM;
 
@@ -511,7 +588,8 @@ static bool sdma_check_channel_permission(struct hisi_sdma_channel *pchannel, u3
 	return true;
 }
 
-static int sdma_send_task_kernel(struct file_open_data *data, struct hisi_sdma_task_info *task_info,
+static int sdma_send_task_kernel(struct file_open_data *data,
+				 struct hisi_sdma_task_info *task_info,
 				 struct hisi_sdma_sqe_task *task_list)
 {
 	struct hisi_sdma_device *pdev = data->psdma_dev;
@@ -529,6 +607,10 @@ static int sdma_send_task_kernel(struct file_open_data *data, struct hisi_sdma_t
 		return -EPERM;
 	}
 	sq_tail = pchannel->sync_info_base->sq_tail;
+	if (sq_tail >= HISI_SDMA_SQ_LENGTH) {
+		dev_err(&pdev->pdev->dev, "sq_tail in share mem wrong, sq_tail = %u\n", sq_tail);
+		return -EINVAL;
+	}
 	for (i = 0; i < task_info->task_cnt; i++) {
 		if (task_info->req_cnt != 0) {
 			/* not send/record tasks whose length == 0 */
@@ -569,7 +651,7 @@ static u32 sdma_channel_free_sqe_cnt(struct hisi_sdma_channel *pchannel)
 }
 
 static int sdma_task_info_validate(struct file_open_data *data,
-				    struct hisi_sdma_task_info *task_info)
+				   struct hisi_sdma_task_info *task_info)
 {
 	struct hisi_sdma_channel *pchannel;
 	u32 free_sqe_cnt;
@@ -635,6 +717,25 @@ free_list:
 	return ret;
 }
 
+/* register value should be between cq_head(software update) and cq_tail(hardware updated) */
+static bool sdma_cq_head_validate(struct hisi_sdma_channel *pchan, u32 reg_value)
+{
+	u32 cq_tail;
+	u32 cq_head;
+
+	cq_head = sdma_channel_get_cq_head(pchan);
+	cq_tail = sdma_channel_get_cq_tail(pchan);
+	if (cq_tail > cq_head) {
+		if (reg_value <= cq_tail && reg_value >= cq_head)
+			return true;
+	} else {
+		if (reg_value <= cq_tail || reg_value >= cq_head)
+			return true;
+	}
+
+	return false;
+}
+
 static int sdma_operation_reg(struct hisi_sdma_device *pdev, unsigned long arg,
 			      u32 (*get_func)(struct hisi_sdma_channel *),
 			      void (*set_func)(struct hisi_sdma_channel *, u32))
@@ -660,10 +761,16 @@ static int sdma_operation_reg(struct hisi_sdma_device *pdev, unsigned long arg,
 				 sizeof(struct hisi_sdma_reg_info)))
 			return -EFAULT;
 	} else if (reg_info.type == HISI_SDMA_WRITE_REG) {
-		if (!set_func)
-			dev_err(dev, "write operation not supported\n");
-		else
-			set_func(pchannel, reg_info.reg_value);
+		if (set_func) {
+			if (reg_info.reg_value == sdma_channel_get_cq_head(pchannel))
+				return 0;
+			if (sdma_cq_head_validate(pchannel, reg_info.reg_value)) {
+				set_func(pchannel, reg_info.reg_value);
+			} else {
+				dev_err(dev, "cq_head value illegal!\n");
+				return -EINVAL;
+			}
+		}
 	}
 
 	return 0;
@@ -682,7 +789,7 @@ static int ioctl_sdma_sq_tail_reg(struct file *file, unsigned long arg)
 	struct file_open_data *data = file->private_data;
 	struct hisi_sdma_device *pdev = data->psdma_dev;
 
-	return sdma_operation_reg(pdev, arg, sdma_channel_get_sq_tail, sdma_channel_set_sq_tail);
+	return sdma_operation_reg(pdev, arg, sdma_channel_get_sq_tail, NULL);
 }
 
 static int ioctl_sdma_cq_head_reg(struct file *file, unsigned long arg)
@@ -886,7 +993,7 @@ static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 		iommu_sva_unbind_device(data->handle);
 
 	sdma_hash_free_entry(data->ida);
-	sdma_free_authority_ht_with_pid(pid);
+	sdma_del_pid_ref(pdev, pid);
 	ida_free(g_info.fd_ida, data->ida);
 
 	kfree(file->private_data);

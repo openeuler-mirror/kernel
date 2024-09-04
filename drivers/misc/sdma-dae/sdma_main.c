@@ -420,6 +420,8 @@ static int sdma_device_probe(struct platform_device *pdev)
 
 	psdma_dev->streamid = pdev->dev.iommu->fwspec->ids[0];
 	spin_lock_init(&psdma_dev->channel_lock);
+	hash_init(psdma_dev->sdma_pid_ref_ht);
+	spin_lock_init(&psdma_dev->pid_lock);
 
 	ret = sdma_device_add(psdma_dev);
 	if (ret)
@@ -430,6 +432,7 @@ static int sdma_device_probe(struct platform_device *pdev)
 	return 0;
 
 sva_device_shutdown:
+	sdma_clear_pid_ref(psdma_dev);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 deinit_device:
@@ -445,6 +448,7 @@ static int sdma_device_remove(struct platform_device *pdev)
 	struct hisi_sdma_device *psdma_dev = dev_get_drvdata(&pdev->dev);
 
 	sdma_device_delete(psdma_dev);
+	sdma_clear_pid_ref(psdma_dev);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 	sdma_deinit_device_info(psdma_dev);
