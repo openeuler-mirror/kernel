@@ -99,7 +99,7 @@ static int run_inspector(void *data)
 	return 0;
 }
 
-int start_inspect_threads(void)
+void start_inspect_threads(void)
 {
 	unsigned int cpu = 0;
 
@@ -129,24 +129,34 @@ int start_inspect_threads(void)
 		ci_core.inspect_on = 0;
 		cpuinspect_result_notify();
 	}
-
-	return 0;
 }
 
-int stop_inspect_threads(void)
+void stop_inspect_threads(void)
 {
 	unsigned int cpu = 0;
 
 	/* All inspection threads has been stopped */
 	if (atomic_read(&active_threads_num) == 0)
-		return 0;
+		return;
 
 	for_each_cpu(cpu, &ci_core.inspect_cpumask) {
 		if (cpuinspect_threads[cpu])
 			kthread_stop(cpuinspect_threads[cpu]);
 	}
+}
 
-	return 0;
+/**
+ * stop_inspect_threads_sync - Stop all the inspect threads and wait for
+ * current inspect tasks to finish.
+ *
+ * This function must be called with the cpuinspect lock held.
+ */
+void stop_inspect_threads_sync(void)
+{
+	stop_inspect_threads();
+
+	while (atomic_read(&active_threads_num))
+		cpu_relax();
 }
 
 /**
