@@ -39,6 +39,10 @@ enum hclge_opcode_type;
 #define HCLGE_TM_FLUSH_TIME_MS	10
 #define HCLGE_TM_FLUSH_EN_MSK	BIT(0)
 
+#define HCLGE_TC_BUFF_BD_NUM	2
+#define HCLGE_TC_BUFF_PER_BD_SHIFT	2
+#define HCLGE_TC_BUFF_PER_BD_MASK	0x3
+
 struct hclge_pg_to_pri_link_cmd {
 	u8 pg_id;
 	u8 rsvd1[3];
@@ -295,4 +299,8 @@ u32 hclge_tm_rate_2_port_rate(u64 rate);
 void hclge_tm_vport_tc_info_update(struct hclge_vport *vport);
 int hclge_dscp_to_pri_map(struct hclge_dev *hdev);
 void hclge_reset_tc_config(struct hclge_dev *hdev);
+int hclge_tm_tc_buffer_update(struct hclge_dev *hdev,
+			      u32 *buffer_size, u8 buffer_num);
+int hclge_tm_tc_buffer_check(struct hclge_dev *hdev,
+			     u32 *buffer_size, u8 buffer_num);
 #endif

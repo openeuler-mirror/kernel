@@ -870,6 +870,12 @@ struct hclge_dev_specs_1_cmd {
 	u8 rsv2[4];
 };
 
+struct hclge_dev_specs_2_cmd {
+	__le32 total_rx_buffer_size;
+	__le32 min_rx_buffer_size_per_tc;
+	u8 rsv[16];
+};
+
 /* mac speed type defined in firmware command */
 enum HCLGE_FIRMWARE_MAC_SPEED {
 	HCLGE_FW_MAC_SPEED_1G,
