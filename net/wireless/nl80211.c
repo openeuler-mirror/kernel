@@ -403,7 +403,7 @@ nl80211_unsol_bcast_probe_resp_policy[NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_MAX + 
 						       .len = IEEE80211_MAX_DATA_LEN }
 };
 
-static const struct netlink_range_validation q_range = {
+static struct netlink_range_validation q_range = {
 	.max = INT_MAX,
 };
 
