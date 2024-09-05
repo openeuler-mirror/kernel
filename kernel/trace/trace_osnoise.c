@@ -258,6 +258,11 @@ static inline struct timerlat_variables *this_cpu_tmr_var(void)
 }
 
 /*
+ * Protect the interface.
+ */
+static struct mutex interface_lock;
+
+/*
  * tlat_var_reset - Reset the values of the given timerlat_variables
  */
 static inline void tlat_var_reset(void)
