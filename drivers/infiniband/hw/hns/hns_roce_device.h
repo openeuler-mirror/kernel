@@ -1223,7 +1223,6 @@ struct hns_roce_dev {
 	u32 congest_algo_tmpl_id;
 	u64 dwqe_page;
 
-	struct notifier_block bond_nb;
 	struct hns_roce_port port_data[HNS_ROCE_MAX_PORTS];
 	atomic64_t *dfx_cnt;
 	struct hns_roce_poe_ctx poe_ctx; /* poe ch array */

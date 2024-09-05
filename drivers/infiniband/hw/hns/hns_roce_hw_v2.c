@@ -2534,6 +2534,9 @@ static int hns_roce_query_caps(struct hns_roce_dev *hr_dev)
 	caps->flags |= le16_to_cpu(resp_d->cap_flags_ex) <<
 		       HNS_ROCE_CAP_FLAGS_EX_SHIFT;
 
+	if (hr_dev->is_vf)
+		caps->flags &= ~HNS_ROCE_CAP_FLAG_BOND;
+
 	caps->num_cqs = 1 << hr_reg_read(resp_c, PF_CAPS_C_NUM_CQS);
 	caps->gid_table_len[0] = hr_reg_read(resp_c, PF_CAPS_C_MAX_GID);
 	caps->max_cqes = 1 << hr_reg_read(resp_c, PF_CAPS_C_CQ_DEPTH);
@@ -8019,11 +8022,8 @@ static void hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
 	if (handle->rinfo.instance_state == HNS_ROCE_STATE_BOND_UNINIT) {
 		bond_grp = hns_roce_get_bond_grp(handle->rinfo.netdev,
 						 handle->pdev->bus->number);
-		if (bond_grp) {
+		if (bond_grp)
 			wait_for_completion(&bond_grp->bond_work_done);
-			if (bond_grp->bond_state == HNS_ROCE_BOND_NOT_BONDED)
-				kfree(bond_grp);
-		}
 	}
 
 	if (handle->rinfo.instance_state != HNS_ROCE_STATE_INITED)
@@ -8264,6 +8264,7 @@ static int __init hns_roce_hw_v2_init(void)
 
 static void __exit hns_roce_hw_v2_exit(void)
 {
+	hns_roce_dealloc_bond_grp();
 	hnae3_unregister_client(&hns_roce_hw_v2_client);
 	hns_roce_cleanup_debugfs();
 }
