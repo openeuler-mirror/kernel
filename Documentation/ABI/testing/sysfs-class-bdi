@@ -48,6 +48,15 @@ max_ratio (read-write)
 	mount that is prone to get stuck, or a FUSE mount which cannot
 	be trusted to play fair.
 
+max_bytes (read-write)
+
+	Allows limiting a particular device to use not more than the
+	given 'max_bytes' of the write-back cache.  This is useful in
+	situations where we want to avoid one device taking all or
+	most of the write-back cache.  For example in case of an NFS
+	mount that is prone to get stuck, a FUSE mount which cannot be
+	trusted to play fair, or a nbd device.
+
 strict_limit (read-write)
 
 	Forces per-BDI checks for the share of given device in the write-back
