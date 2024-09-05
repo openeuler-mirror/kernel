@@ -260,7 +260,11 @@ struct iommu_domain {
 	};
 	struct mutex switch_log_lock;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	KABI_USE(1, bool secure)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

@@ -13,6 +13,9 @@
 #include <linux/kernel.h>
 #include <linux/mmzone.h>
 #include <linux/sizes.h>
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+#include <linux/kvm_host.h>
+#endif
 
 /* MMIO registers */
 #define ARM_SMMU_IDR0			0x0
@@ -753,6 +756,13 @@ struct arm_smmu_device {
 	struct mutex			streams_mutex;
 
 	bool				bypass;
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	int				s_evtq_irq;
+	int				s_gerr_irq;
+	resource_size_t			ioaddr;
+	uint64_t			s_smmu_id;
+#endif
 };
 
 struct arm_smmu_stream {
@@ -805,6 +815,11 @@ struct arm_smmu_domain {
 	spinlock_t			devices_lock;
 
 	struct list_head		mmu_notifiers;
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	struct list_head		node;
+	struct kvm			*kvm;
+#endif
 };
 
 static inline struct arm_smmu_domain *to_smmu_domain(struct iommu_domain *dom)

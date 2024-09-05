@@ -221,6 +221,35 @@ int platform_msi_domain_alloc_irqs(struct device *dev, unsigned int nvec,
 }
 EXPORT_SYMBOL_GPL(platform_msi_domain_alloc_irqs);
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/**
+ * platform_msi_domain_alloc_range_irqs - Allocate specific scope MSI interrupts for @dev
+ * @dev:	The device for which to allocate interrupts
+ * @start:	The start index of msi
+ * @end:	The end index of msi
+ *
+ * %0 if alloc irqs success
+ * %error_code if alloc irqs failed
+ * %-EINVAL if platform_data is null
+ */
+int platform_msi_domain_alloc_range_irqs(struct device *dev, unsigned int start,
+					unsigned int end, irq_write_msi_msg_t write_msi_msg)
+{
+	int err;
+
+	if (!dev->msi.data->platform_data)
+		return -EINVAL;
+
+	dev->msi.data->platform_data->write_msg = write_msi_msg;
+	err = msi_domain_alloc_irqs_range(dev, MSI_DEFAULT_DOMAIN, start, end);
+	if (err)
+		platform_msi_free_priv_data(dev);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(platform_msi_domain_alloc_range_irqs);
+#endif
+
 /**
  * platform_msi_domain_free_irqs - Free MSI interrupts for @dev
  * @dev:	The device for which to free interrupts

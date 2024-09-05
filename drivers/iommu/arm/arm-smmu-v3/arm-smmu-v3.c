@@ -30,6 +30,10 @@
 #include "arm-smmu-v3.h"
 #include "../../dma-iommu.h"
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+#include "arm-s-smmu-v3.h"
+#endif
+
 static bool disable_bypass = true;
 module_param(disable_bypass, bool, 0444);
 MODULE_PARM_DESC(disable_bypass,
@@ -995,6 +999,9 @@ static int arm_smmu_cmdq_issue_cmdlist(struct arm_smmu_device *smmu,
 	 * Dependency ordering from the cmpxchg() loop above.
 	 */
 	arm_smmu_cmdq_write_entries(cmdq, cmds, llq.prod, n);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	virtcca_smmu_cmdq_write_entries(smmu, cmds, &llq, &cmdq->q, n, sync);
+#endif
 	if (sync) {
 		prod = queue_inc_prod_n(&llq, n);
 		arm_smmu_cmdq_build_sync_cmd(cmd_sync, smmu, &cmdq->q, prod);
@@ -2376,6 +2383,10 @@ static int arm_smmu_domain_finalise(struct iommu_domain *domain)
 	if (!(smmu->features & ARM_SMMU_FEAT_TRANS_S2))
 		smmu_domain->stage = ARM_SMMU_DOMAIN_S1;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	virtcca_smmu_set_stage(domain, smmu_domain);
+#endif
+
 	switch (smmu_domain->stage) {
 	case ARM_SMMU_DOMAIN_S1:
 		ias = (smmu->features & ARM_SMMU_FEAT_VAX) ? 52 : 48;
@@ -3681,6 +3692,15 @@ static void arm_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg)
 	writel_relaxed(ARM_SMMU_MEMATTR_DEVICE_nGnRE, smmu->base + cfg[2]);
 }
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+void _arm_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg)
+{
+	if (virtcca_smmu_write_msi_msg(desc, msg))
+		return;
+	arm_smmu_write_msi_msg(desc, msg);
+}
+#endif
+
 static void arm_smmu_setup_msis(struct arm_smmu_device *smmu)
 {
 	int ret, nvec = ARM_SMMU_MAX_MSIS;
@@ -4855,6 +4875,10 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 	ret = arm_smmu_device_reset(smmu, false);
 	if (ret)
 		return ret;
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	virtcca_smmu_device_init(pdev, smmu, ioaddr, false, disable_bypass);
+#endif
 
 	/* And we're up. Go go go! */
 	ret = iommu_device_sysfs_add(&smmu->iommu, dev, NULL,

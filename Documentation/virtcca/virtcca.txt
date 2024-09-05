@@ -1,0 +1,67 @@
+=================================================================================
+                                VirtCCA Feature
+=================================================================================
+
+ARM recently introduced the Confidential Compute Architecture (CCA)
+as part of the upcoming ARMv9-A architecture. CCA enables the support
+of confidential virtual machines (cVMs) within a separate world called
+the Realm world, providing protection from the untrusted normal world.
+To enable confidential virtual machine capabilitise on ARM V8.4, we
+present virtCCA, an architecture that facilitates virtualized CCA using
+TrustZone, a mature hardware feature available on existing ARM platforms.
+Notably, virtCCA can be implemented on platforms equipped with the Secure
+EL2 (S-EL2) extension available from ARMv8.4 onwards, as well as on earlier
+platforms that lack S-EL2 support. virtCCA is fully compatible with the CCA
+specifications at the API level.
+TMM (Trusted Management Monitor) is a hypersivor for Secure World S-EL2,
+responsible for managing the lifecycle of confidential virtual machine.
+
+        ========================================================
+                No Secure World     |       Secure World
+            ====================    |   ====================
+            ||      VM1       ||    |   ||      CVM1      ||
+            ||                ||    |   ||                ||
+            ||      APP       ||    |   ||      APP       ||       EL0/EL1
+            ||                ||    |   ||                ||
+            ||  GUEST KERNEL  ||    |   ||  GUEST KERNEL  ||
+            ||                ||    |   ||                ||
+            ====================    |   ====================
+                                    |
+                    HOST OS         |            TMM                 EL2
+                                    |
+        ========================================================
+
+Under the virtCCA architecture, we want to pass devices directly to the
+confidential virtual machine, which requires the initialization of security
+registers in the SMMU and the implementation of PCIe protection controller
+functionlity designed by HiSiLicon.
+
+When a device is marked as a secure device, it enables the PCIe protection
+controller under that device. The DMA requests initiated by the device will
+carry secure flow information. allowing for secure SMMU translation and access
+to secure memory of confidential virtual machine.
+
+Secure SMMU Init
+
+when the secure component, TMM (Trusted Management Monitor), is loaded, the SMMU
+driver will initialize the secure SMMU. Every SMMU register setting will be forwarded
+to the secure world for the corresponding security register settings。
+
+Secure SMMU Init Process:
+
+In the arm_smmu_device_probe function, it checks whether TMM is loaded. If it is loaded,
+it will allocate an ID for the SMMU that needs secure initialization. Otherwise, it will
+not allocate an ID, and subsequent secure SMMU operations will not be performed;
+
+If TMM loaded, virtcca_smmu_device_init function wull initialize the cmd/evt queues; initialize control
+registers such as S_CR0, S_CR1 and S_CR2, during the initialization process, we will ensure that the values
+of these registers meet the requirements of the secure SMMU. Complete the secure SMMU interrupt request function,
+We will configure some interrupts handler for the secure SMMU to promptly respond to any interrupts that may
+occur, finally, we will enable the secure SMMU so that it can begin processing requests sent from the processor.
+
+After the secure SMMU initialization is completed, the arm_smmu_cmdq_issue_cmdlist function will forward the
+corresponding cmd to the TMM, which will then be sent to the secure SMMU.
+
+IF the SMMU domain is secure, the arm_smmu_attach_dev function will initialize the corresponding STE entry
+in the secure SMMU. After activating the confidential virtual machine, it will fill in the address
+translation(s_s2ttb) for the secure device. So that security devices can access secure memory.
