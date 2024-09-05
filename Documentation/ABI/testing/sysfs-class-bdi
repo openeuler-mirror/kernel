@@ -39,6 +39,17 @@ min_ratio (read-write)
 	percentage of the write-back cache to a particular device.
 	For example, this is useful for providing a minimum QoS.
 
+min_ratio_fine (read-write)
+
+	Under normal circumstances each device is given a part of the
+	total write-back cache that relates to its current average
+	writeout speed in relation to the other devices.
+
+	The 'min_ratio_fine' parameter allows assigning a minimum reserve
+	of the write-back cache to a particular device. The value is
+	expressed as part of 1 million. For example, this is useful for
+	providing a minimum QoS.
+
 max_ratio (read-write)
 
 	Allows limiting a particular device to use not more than the
