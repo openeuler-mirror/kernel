@@ -750,6 +750,7 @@ static int trace_kprobe_create(int argc, const char *argv[])
 	long offset = 0;
 	void *addr = NULL;
 	char buf[MAX_EVENT_NAME_LEN];
+	char *dbuf = NULL;
 	unsigned int flags = TPARG_FL_KERNEL;
 
 	switch (argv[0][0]) {
@@ -860,6 +861,10 @@ static int trace_kprobe_create(int argc, const char *argv[])
 		event = buf;
 	}
 
+	ret = traceprobe_expand_dentry_args(argc, argv, &dbuf);
+	if (ret)
+		goto out;
+
 	/* setup a probe */
 	tk = alloc_trace_kprobe(group, event, addr, symbol, offset, maxactive,
 			       argc - 2, is_return);
@@ -905,6 +910,7 @@ static int trace_kprobe_create(int argc, const char *argv[])
 out:
 	trace_probe_log_clear();
 	kfree(symbol);
+	kfree(dbuf);
 	return ret;
 
 parse_error:

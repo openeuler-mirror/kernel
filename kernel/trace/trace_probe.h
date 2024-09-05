@@ -32,6 +32,7 @@
 #define MAX_ARGSTR_LEN		63
 #define MAX_ARRAY_LEN		64
 #define MAX_ARG_NAME_LEN	32
+#define MAX_DENTRY_ARGS_LEN	256
 #define MAX_STRING_SIZE		PATH_MAX
 
 /* Reserved field names */
@@ -355,6 +356,7 @@ bool trace_probe_match_command_args(struct trace_probe *tp,
 extern int traceprobe_parse_probe_arg(struct trace_probe *tp, int i,
 				char *arg, unsigned int flags);
 
+extern int traceprobe_expand_dentry_args(int argc, const char *argv[], char **buf);
 extern int traceprobe_update_arg(struct probe_arg *arg);
 extern void traceprobe_free_probe_arg(struct probe_arg *arg);
 
