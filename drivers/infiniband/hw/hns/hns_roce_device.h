@@ -1154,7 +1154,6 @@ struct hns_roce_dev {
 	struct hns_roce_dev_debugfs dbgfs;
 	atomic64_t *dfx_cnt;
 	struct hns_roce_scc_param *scc_param;
-	struct notifier_block bond_nb;
 
 	struct list_head mtr_unfree_list; /* list of unfree mtr on this dev */
 	struct mutex mtr_unfree_list_mutex; /* protect mtr_unfree_list */

@@ -856,7 +856,6 @@ static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev,
 	if (!(hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_BOND))
 		goto normal_unregister;
 
-	unregister_netdevice_notifier(&hr_dev->bond_nb);
 	bond_grp = hns_roce_get_bond_grp(net_dev, bus_num);
 	if (!bond_grp)
 		goto normal_unregister;
@@ -866,7 +865,10 @@ static void hns_roce_unregister_device(struct hns_roce_dev *hr_dev,
 		 * is unregistered, re-initialized the remaining slaves before
 		 * the bond resources cleanup.
 		 */
+		cancel_delayed_work_sync(&bond_grp->bond_work);
+		mutex_lock(&bond_grp->bond_mutex);
 		bond_grp->bond_state = HNS_ROCE_BOND_NOT_BONDED;
+		mutex_unlock(&bond_grp->bond_mutex);
 		for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 			net_dev = bond_grp->bond_func_info[i].net_dev;
 			if (net_dev && net_dev != iboe->netdevs[0])
