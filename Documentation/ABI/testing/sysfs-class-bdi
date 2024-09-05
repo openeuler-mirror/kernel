@@ -48,6 +48,17 @@ max_ratio (read-write)
 	mount that is prone to get stuck, or a FUSE mount which cannot
 	be trusted to play fair.
 
+min_bytes (read-write)
+
+	Under normal circumstances each device is given a part of the
+	total write-back cache that relates to its current average
+	writeout speed in relation to the other devices.
+
+	The 'min_bytes' parameter allows assigning a minimum
+	percentage of the write-back cache to a particular device
+	expressed in bytes.
+	For example, this is useful for providing a minimum QoS.
+
 max_bytes (read-write)
 
 	Allows limiting a particular device to use not more than the
