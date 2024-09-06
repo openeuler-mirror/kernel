@@ -265,6 +265,10 @@ void acpi_init_lpit(void);
 #else
 static inline void acpi_init_lpit(void) { }
 #endif
+#ifdef CONFIG_ACPI_HMAT
 void hmat_restore_target(int nid);
+#else
+static inline void hmat_restore_target(int nid) {}
+#endif
 
 #endif /* _ACPI_INTERNAL_H_ */
