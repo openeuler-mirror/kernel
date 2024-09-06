@@ -467,6 +467,13 @@ static inline int ext4_should_journal_data(struct inode *inode)
 
 static inline int ext4_should_order_data(struct inode *inode)
 {
+	/*
+	 * Ordered mode is no longer needed for the inode that use the
+	 * iomap path, always use writeback mode.
+	 */
+	if (ext4_test_inode_state(inode, EXT4_STATE_BUFFERED_IOMAP))
+		return 0;	/* writeback */
+
 	return ext4_inode_journal_mode(inode) & EXT4_INODE_ORDERED_DATA_MODE;
 }
 
