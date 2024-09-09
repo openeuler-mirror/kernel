@@ -1567,44 +1567,48 @@ int parse_events_add_pmu(struct parse_events_state *parse_state,
 }
 
 int parse_events_multi_pmu_add(struct parse_events_state *parse_state,
-			       char *str, struct list_head **listp)
+			       char *str, struct list_head *head,
+			       struct list_head **listp)
 {
 	struct parse_events_term *term;
-	struct list_head *list;
+	struct list_head *list = NULL;
 	struct perf_pmu *pmu = NULL;
 	int ok = 0;
+	char *config;
 
 	*listp = NULL;
+
+	if (!head) {
+		head = malloc(sizeof(struct list_head));
+		if (!head)
+			goto out_err;
+
+		INIT_LIST_HEAD(head);
+	}
+	config = strdup(str);
+	if (!config)
+		goto out_err;
+
+	if (parse_events_term__num(&term,
+				   PARSE_EVENTS__TERM_TYPE_USER,
+				   config, 1, false, &config,
+					NULL) < 0) {
+		free(config);
+		goto out_err;
+	}
+	list_add_tail(&term->list, head);
+
 	/* Add it for all PMUs that support the alias */
 	list = malloc(sizeof(struct list_head));
 	if (!list)
-		return -1;
+		goto out_err;
+
 	INIT_LIST_HEAD(list);
 	while ((pmu = perf_pmu__scan(pmu)) != NULL) {
 		struct perf_pmu_alias *alias;
 
 		list_for_each_entry(alias, &pmu->aliases, list) {
 			if (!strcasecmp(alias->name, str)) {
-				struct list_head *head;
-				char *config;
-
-				head = malloc(sizeof(struct list_head));
-				if (!head)
-					return -1;
-				INIT_LIST_HEAD(head);
-				config = strdup(str);
-				if (!config)
-					return -1;
-				if (parse_events_term__num(&term,
-						   PARSE_EVENTS__TERM_TYPE_USER,
-						   config, 1, false, &config,
-						   NULL) < 0) {
-					free(list);
-					free(config);
-					return -1;
-				}
-				list_add_tail(&term->list, head);
-
 				if (!parse_events_add_pmu(parse_state, list,
 							  pmu->name, head,
 							  true, true)) {
@@ -1612,17 +1616,26 @@ int parse_events_multi_pmu_add(struct parse_events_state *parse_state,
 						 pmu->name, alias->str);
 					ok++;
 				}
-
-				parse_events_terms__delete(head);
 			}
 		}
 	}
-	if (!ok) {
-		free(list);
-		return -1;
+
+	if (parse_state->fake_pmu) {
+		if (!parse_events_add_pmu(parse_state, list, str, head,
+					  true, true)) {
+			pr_debug("%s -> %s/%s/\n", str, "fake_pmu", str);
+			ok++;
+		}
 	}
-	*listp = list;
-	return 0;
+
+out_err:
+	if (ok)
+		*listp = list;
+	else
+		free(list);
+
+	parse_events_terms__delete(head);
+	return ok ? 0 : -1;
 }
 
 int parse_events__modifier_group(struct list_head *list,
@@ -2004,8 +2017,17 @@ static void perf_pmu__parse_init(void)
 	pmu = NULL;
 	while ((pmu = perf_pmu__scan(pmu)) != NULL) {
 		list_for_each_entry(alias, &pmu->aliases, list) {
-			if (strchr(alias->name, '-'))
+			char *tmp = strchr(alias->name, '-');
+
+			if (tmp) {
+				char *tmp2 = NULL;
+
+				tmp2 = strchr(tmp + 1, '-');
 				len++;
+				if (tmp2)
+					len++;
+			}
+
 			len++;
 		}
 	}
@@ -2025,8 +2047,20 @@ static void perf_pmu__parse_init(void)
 		list_for_each_entry(alias, &pmu->aliases, list) {
 			struct perf_pmu_event_symbol *p = perf_pmu_events_list + len;
 			char *tmp = strchr(alias->name, '-');
+			char *tmp2 = NULL;
 
-			if (tmp != NULL) {
+			if (tmp)
+				tmp2 = strchr(tmp + 1, '-');
+			if (tmp2) {
+				SET_SYMBOL(strndup(alias->name, tmp - alias->name),
+						PMU_EVENT_SYMBOL_PREFIX);
+				p++;
+				tmp++;
+				SET_SYMBOL(strndup(tmp, tmp2 - tmp), PMU_EVENT_SYMBOL_SUFFIX);
+				p++;
+				SET_SYMBOL(strdup(++tmp2), PMU_EVENT_SYMBOL_SUFFIX2);
+				len += 3;
+			} else if (tmp) {
 				SET_SYMBOL(strndup(alias->name, tmp - alias->name),
 						PMU_EVENT_SYMBOL_PREFIX);
 				p++;
@@ -2053,23 +2087,38 @@ err:
  */
 int perf_pmu__test_parse_init(void)
 {
-	struct perf_pmu_event_symbol *list;
+	struct perf_pmu_event_symbol *list, *tmp, symbols[] = {
+		{(char *)"read", PMU_EVENT_SYMBOL},
+		{(char *)"event", PMU_EVENT_SYMBOL_PREFIX},
+		{(char *)"two", PMU_EVENT_SYMBOL_SUFFIX},
+		{(char *)"hyphen", PMU_EVENT_SYMBOL_SUFFIX},
+		{(char *)"hyph", PMU_EVENT_SYMBOL_SUFFIX2},
+	};
+	unsigned long i, j;
 
-	list = malloc(sizeof(*list) * 1);
+	tmp = list = malloc(sizeof(*list) * ARRAY_SIZE(symbols));
 	if (!list)
 		return -ENOMEM;
 
-	list->type   = PMU_EVENT_SYMBOL;
-	list->symbol = strdup("read");
-
-	if (!list->symbol) {
-		free(list);
-		return -ENOMEM;
+	for (i = 0; i < ARRAY_SIZE(symbols); i++, tmp++) {
+		tmp->type = symbols[i].type;
+		tmp->symbol = strdup(symbols[i].symbol);
+		if (!list->symbol)
+			goto err_free;
 	}
 
 	perf_pmu_events_list = list;
-	perf_pmu_events_list_num = 1;
+	perf_pmu_events_list_num = ARRAY_SIZE(symbols);
+
+	qsort(perf_pmu_events_list, ARRAY_SIZE(symbols),
+	      sizeof(struct perf_pmu_event_symbol), comp_pmu);
 	return 0;
+
+err_free:
+	for (j = 0, tmp = list; j < i; j++, tmp++)
+		free(tmp->symbol);
+	free(list);
+	return -ENOMEM;
 }
 
 enum perf_pmu_event_symbol_type
@@ -2189,6 +2238,19 @@ int __parse_events(struct evlist *evlist, const char *str,
 	return ret;
 }
 
+void parse_events_error__init(struct parse_events_error *err)
+{
+	bzero(err, sizeof(*err));
+}
+
+void parse_events_error__exit(struct parse_events_error *err)
+{
+	zfree(&err->str);
+	zfree(&err->help);
+	zfree(&err->first_str);
+	zfree(&err->first_help);
+}
+
 #define MAX_WIDTH 1000
 static int get_term_width(void)
 {
@@ -2250,6 +2312,21 @@ static void __parse_events_print_error(int err_idx, const char *err_str,
 		fprintf(stderr, "%*s\\___ %s\n", idx + 1, "", err_str);
 		if (err_help)
 			fprintf(stderr, "\n%s\n", err_help);
+	}
+}
+
+void parse_events_error__print(struct parse_events_error *err,
+			       const char *event)
+{
+	if (!err->num_errors)
+		return;
+
+	__parse_events_print_error(err->idx, err->str, err->help, event);
+
+	if (err->num_errors > 1) {
+		fputs("\nInitial error:\n", stderr);
+		__parse_events_print_error(err->first_idx, err->first_str,
+					err->first_help, event);
 	}
 }
 
