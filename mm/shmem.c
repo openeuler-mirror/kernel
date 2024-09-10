@@ -1735,7 +1735,7 @@ static struct folio *shmem_alloc_folio(gfp_t gfp, int order,
 	struct folio *folio;
 
 	shmem_pseudo_vma_init(&pvma, info, index);
-	folio = vma_alloc_folio(gfp, order, &pvma, 0, order == HPAGE_PMD_ORDER);
+	folio = vma_alloc_folio(gfp, order, &pvma, 0, order == PMD_ORDER);
 	shmem_pseudo_vma_destroy(&pvma);
 
 	return folio;
