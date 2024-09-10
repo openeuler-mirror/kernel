@@ -882,15 +882,6 @@ extern struct vmw_buffer_object *
 vmw_user_bo_noref_lookup(struct ttm_object_file *tfile, u32 handle);
 
 /**
- * vmw_user_bo_noref_release - release a buffer object pointer looked up
- * without reference
- */
-static inline void vmw_user_bo_noref_release(void)
-{
-	ttm_base_object_noref_release();
-}
-
-/**
  * vmw_bo_adjust_prio - Adjust the buffer object eviction priority
  * according to attached resources
  * @vbo: The struct vmw_buffer_object
