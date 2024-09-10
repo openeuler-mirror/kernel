@@ -7611,6 +7611,7 @@ static int hns_roce_v2_config_scc_param(struct hns_roce_dev *hr_dev,
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 				      "failed to configure scc param, opcode: 0x%x, ret = %d.\n",
 			le16_to_cpu(desc.opcode), ret);
+		mutex_unlock(&scc_param->scc_mutex);
 		return ret;
 	}
 
