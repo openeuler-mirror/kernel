@@ -2498,6 +2498,16 @@ int virtcca_attach_secure_dev(struct iommu_domain *domain, struct iommu_group *g
 	return ret;
 }
 EXPORT_SYMBOL_GPL(virtcca_attach_secure_dev);
+
+/* Obtain domain information through iommu group */
+struct iommu_domain *virtcca_iommu_group_get_domain(struct iommu_group *iommu_group)
+{
+	if (iommu_group)
+		return iommu_group->domain;
+
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(virtcca_iommu_group_get_domain);
 #endif
 
 int iommu_map(struct iommu_domain *domain, unsigned long iova,

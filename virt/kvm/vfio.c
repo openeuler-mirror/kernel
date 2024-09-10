@@ -21,6 +21,10 @@
 #include <asm/kvm_ppc.h>
 #endif
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+#include <asm/virtcca_cvm_host.h>
+#endif
+
 struct kvm_vfio_file {
 	struct list_head node;
 	struct file *file;
@@ -140,6 +144,67 @@ static void kvm_vfio_update_coherency(struct kvm_device *dev)
 	}
 }
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/**
+ * cvm_vfio_file_iommu_group - Get iommu group from vfio file
+ * @file: Vfio file
+ *
+ * Returns:
+ * %NULL if the virtcca_vfio_file_iommu_group func is not defined
+ * or CONFIG_HISI_VIRTCCA_HOST is not enable, group is null
+ * %iommu_group if get the iommu group from file success
+ */
+static struct iommu_group *cvm_vfio_file_iommu_group(struct file *file)
+{
+	struct iommu_group *(*fn)(struct file *file);
+	struct iommu_group *ret;
+
+	fn = symbol_get(virtcca_vfio_file_iommu_group);
+	if (!fn)
+		return NULL;
+
+	ret = fn(file);
+
+	symbol_put(virtcca_vfio_file_iommu_group);
+
+	return ret;
+}
+
+/**
+ * cvm_vfio_add_kvm_to_smmu_domain - Bind the confidential
+ * virtual machine to smmu domain
+ * @filp: The handle of file
+ * @kvm: The kvm belone to confidential virtual machine
+ *
+ * Returns:
+ * %-ENXIO if set kvm failed or iommu group is null
+ * %0 if set kvm success
+ */
+static int cvm_vfio_add_kvm_to_smmu_domain(struct file *filp, struct kvm_vfio *kv)
+{
+	struct iommu_group *iommu_group;
+	int ret = 0;
+
+	if (!is_virtcca_cvm_enable())
+		return ret;
+
+	mutex_unlock(&kv->lock);
+	iommu_group = cvm_vfio_file_iommu_group(filp);
+	if (!iommu_group) {
+		ret = -ENXIO;
+		goto out_lock;
+	}
+	if (cvm_arm_smmu_domain_set_kvm((void *)iommu_group)) {
+		ret = -ENXIO;
+		goto out_lock;
+	}
+
+out_lock:
+	mutex_lock(&kv->lock);
+	return ret;
+}
+#endif
+
 static int kvm_vfio_file_add(struct kvm_device *dev, unsigned int fd)
 {
 	struct kvm_vfio *kv = dev->private;
@@ -178,6 +243,9 @@ static int kvm_vfio_file_add(struct kvm_device *dev, unsigned int fd)
 	kvm_arch_start_assignment(dev->kvm);
 	kvm_vfio_file_set_kvm(kvf->file, dev->kvm);
 	kvm_vfio_update_coherency(dev);
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	ret = cvm_vfio_add_kvm_to_smmu_domain(filp, kv);
+#endif
 
 out_unlock:
 	mutex_unlock(&kv->lock);
@@ -392,3 +460,70 @@ void kvm_vfio_ops_exit(void)
 {
 	kvm_unregister_device_ops(KVM_DEV_TYPE_VFIO);
 }
+
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/**
+ * virtcca_arm_smmu_get_kvm - Find the kvm
+ * with vfio devices through SMMU domain
+ * @domain: Smmu domain
+ *
+ * Returns:
+ * %kvm if find the kvm with vfio devices
+ * %NULL if kvm is null
+ */
+struct kvm *virtcca_arm_smmu_get_kvm(struct arm_smmu_domain *domain)
+{
+	int ret = -1;
+	struct kvm *kvm;
+	struct kvm_device *dev;
+	struct kvm_vfio *kv;
+	struct kvm_vfio_file *kvf;
+	struct iommu_group *iommu_group;
+
+	unsigned long flags;
+	struct arm_smmu_master *master;
+
+	spin_lock_irqsave(&domain->devices_lock, flags);
+	list_for_each_entry(master, &domain->devices, domain_head) {
+		if (master && master->num_streams >= 0) {
+			ret = 0;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&domain->devices_lock, flags);
+	if (ret)
+		return NULL;
+
+	ret = -1;
+	iommu_group = master->dev->iommu_group;
+	mutex_lock(&kvm_lock);
+	list_for_each_entry(kvm, &vm_list, vm_list) {
+		mutex_lock(&kvm->lock);
+		list_for_each_entry(dev, &kvm->devices, vm_node) {
+			if (dev->ops && strcmp(dev->ops->name, "kvm-vfio") == 0) {
+				kv = (struct kvm_vfio *)dev->private;
+				mutex_lock(&kv->lock);
+				list_for_each_entry(kvf, &kv->file_list, node) {
+					if (cvm_vfio_file_iommu_group(kvf->file) == iommu_group) {
+						ret = 0;
+						break;
+					}
+				}
+				mutex_unlock(&kv->lock);
+				if (!ret)
+					break;
+			}
+		}
+		mutex_unlock(&kvm->lock);
+		if (!ret)
+			break;
+	}
+	mutex_unlock(&kvm_lock);
+
+	if (ret)
+		return NULL;
+	return kvm;
+}
+EXPORT_SYMBOL_GPL(virtcca_arm_smmu_get_kvm);
+#endif

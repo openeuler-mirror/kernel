@@ -4,6 +4,7 @@
  */
 #include <linux/kvm_host.h>
 #include <linux/kvm.h>
+#include <linux/vfio.h>
 #include <asm/kvm_tmi.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/kvm_emulate.h>
@@ -12,6 +13,8 @@
 #include <linux/arm-smccc.h>
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
+
+#include "../virt/kvm/vfio.h"
 
 /* Protects access to cvm_vmid_bitmap */
 static DEFINE_SPINLOCK(cvm_vmid_lock);
@@ -852,3 +855,38 @@ int kvm_init_cvm_vm(struct kvm *kvm)
 
 	return 0;
 }
+
+/*
+ * Coda (Confidential device assignment) feature
+ * enable devices to pass directly to confidential virtual machines
+ */
+
+/**
+ * cvm_arm_smmu_domain_set_kvm - Associate SMMU domain with CVM
+ * @group: Iommu group
+ *
+ * Returns:
+ * %0 if smmu_domain has been associate cvm or associate cvm successfully
+ * %-ENXIO if the iommu group does not have smmu domain
+ */
+int cvm_arm_smmu_domain_set_kvm(void *group)
+{
+	struct arm_smmu_domain *arm_smmu_domain = NULL;
+	struct iommu_domain *domain;
+	struct kvm *kvm;
+
+	domain = virtcca_iommu_group_get_domain((struct iommu_group *)group);
+	if (!domain)
+		return -ENXIO;
+
+	arm_smmu_domain = to_smmu_domain(domain);
+	if (arm_smmu_domain->kvm)
+		return 0;
+
+	kvm = virtcca_arm_smmu_get_kvm(arm_smmu_domain);
+	if (kvm && kvm_is_virtcca_cvm(kvm))
+		arm_smmu_domain->kvm = kvm;
+
+	return 0;
+}
+

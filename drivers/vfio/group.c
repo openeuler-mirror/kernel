@@ -957,3 +957,34 @@ void vfio_group_cleanup(void)
 	vfio.class = NULL;
 	vfio_container_cleanup();
 }
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/**
+ * virtcca_vfio_file_iommu_group - Return the struct iommu_group for the vfio group file
+ * @file: VFIO group file
+ *
+ * The returned iommu_group is valid as long as a ref is held on the file. This
+ * returns a reference on the group. This function is deprecated, only the SPAPR
+ * path in kvm should call it.
+ */
+struct iommu_group *virtcca_vfio_file_iommu_group(struct file *file)
+{
+	struct vfio_group *group = vfio_group_from_file(file);
+	struct iommu_group *iommu_group = NULL;
+
+	if (!IS_ENABLED(CONFIG_HISI_VIRTCCA_HOST))
+		return NULL;
+
+	if (!group)
+		return NULL;
+
+	mutex_lock(&group->group_lock);
+	if (group->iommu_group) {
+		iommu_group = group->iommu_group;
+		iommu_group_ref_get(iommu_group);
+	}
+	mutex_unlock(&group->group_lock);
+	return iommu_group;
+}
+EXPORT_SYMBOL_GPL(virtcca_vfio_file_iommu_group);
+#endif
