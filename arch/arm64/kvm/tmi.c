@@ -139,9 +139,10 @@ u64 tmi_smmu_queue_create(u64 params_ptr)
 EXPORT_SYMBOL_GPL(tmi_smmu_queue_create);
 
 /**
- * Write command to command queue
+ * tmi_smmu_queue_write - Write command to command queue
  * @cmd0:	Command consists of 128 bits, cmd0 is the low 64 bits
  * @cmd1:	Cmdq is the high 64 bits of command
+ * @smmu_id:	SMMU ID
  */
 u64 tmi_smmu_queue_write(uint64_t cmd0, uint64_t cmd1, u64 smmu_id)
 {
@@ -163,7 +164,8 @@ u64 tmi_smmu_ste_create(u64 params_ptr)
 EXPORT_SYMBOL_GPL(tmi_smmu_ste_create);
 
 /**
- * Map mmio stage2 translation for device
+ * tmi_mmio_map - Map mmio stage2 translation for device
+ * @rd:	CVM handle
  * @map_addr:	IPA from guest view
  * @level:	Page table mapping level
  * @ttte:	Physical address mapped by page table
@@ -177,7 +179,8 @@ u64 tmi_mmio_map(u64 rd, u64 map_addr, u64 level, u64 ttte)
 }
 
 /**
- * Unmap mmio stage2 translation for device
+ * tmi_mmio_unmap - Unmap mmio stage2 translation for device
+ * @rd:	CVM handle
  * @map_addr:	IPA from guest view
  * @level:	Page table mapping level
  */
@@ -190,8 +193,9 @@ u64 tmi_mmio_unmap(u64 rd, u64 map_addr, u64 level)
 }
 
 /**
- * Write device mmio
+ * tmi_mmio_write - Write device mmio
  * @addr:	MMIO address
+ * @val:	Val to write
  * @bits:	The number of bits of val
  * @dev_num:	Device bdf number
  */
@@ -205,7 +209,7 @@ u64 tmi_mmio_write(u64 addr, u64 val, u64 bits, u64 dev_num)
 EXPORT_SYMBOL(tmi_mmio_write);
 
 /**
- * Read device mmio
+ * tmi_mmio_read - Read device mmio
  * @addr:	MMIO address
  * @bits:	Read data bit
  * @dev_num:	Device bdf number
@@ -230,8 +234,10 @@ u64 tmi_dev_delegate(u64 params)
 EXPORT_SYMBOL(tmi_dev_delegate);
 
 /**
- * Attach device and configure L2 ste before activate CVM
+ * tmi_dev_attach - Attach device and configure L2 ste before activate CVM
  * @vdev:	Device bdf number
+ * @rd:	CVM handle
+ * @smmu_id:	SMMU ID
  */
 u64 tmi_dev_attach(u64 vdev, u64 rd, u64 smmu_id)
 {
@@ -273,9 +279,11 @@ u64 tmi_smmu_pcie_core_check(u64 smmu_base)
 EXPORT_SYMBOL(tmi_smmu_pcie_core_check);
 
 /**
- * Write smmu secure register
+ * tmi_smmu_write - Write smmu secure register
  * @smmu_base:	SMMU base address
  * @reg_offset:	SMMU register
+ * @val:	Val to write
+ * @bits:	Bits to write
  */
 u64 tmi_smmu_write(u64 smmu_base, u64 reg_offset, u64 val, u64 bits)
 {
@@ -287,9 +295,10 @@ u64 tmi_smmu_write(u64 smmu_base, u64 reg_offset, u64 val, u64 bits)
 EXPORT_SYMBOL(tmi_smmu_write);
 
 /**
- * Read smmu secure register
+ * tmi_smmu_read - Read smmu secure register
  * @smmu_base:	SMMU base address
  * @reg_offset:	SMMU register
+ * @bits:	Bits to read
  */
 u64 tmi_smmu_read(u64 smmu_base, u64 reg_offset, u64 bits)
 {
