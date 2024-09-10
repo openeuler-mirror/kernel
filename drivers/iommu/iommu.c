@@ -2475,6 +2475,156 @@ static int __iommu_map(struct iommu_domain *domain, unsigned long iova,
 
 #ifdef CONFIG_HISI_VIRTCCA_HOST
 /**
+ * virtcca_iommu_map - Iommu driver map pages, and then
+ * calls the map function in the
+ * smmu to perform mapping
+ * @domain: Iommu domain
+ * @iova: Ipa address
+ * @paddr: Physical address
+ * @size: Map size
+ * @prot: Iommu attribute
+ *
+ * Returns:
+ * %0 if map success
+ * %-EINVAL if domain type is not paging
+ * %-ENODEV if the domain pgsize_bitmap is zero or parameter is invalid
+ */
+int virtcca_iommu_map(struct iommu_domain *domain, unsigned long iova,
+	phys_addr_t paddr, size_t size, int prot)
+{
+	unsigned int min_pagesz;
+	int ret = 0;
+	unsigned long orig_iova = iova;
+	size_t orig_size = size;
+	const struct iommu_domain_ops *ops = domain->ops;
+
+	if (unlikely(!(domain->type & __IOMMU_DOMAIN_PAGING)))
+		return -EINVAL;
+
+	if (WARN_ON(domain->pgsize_bitmap == 0UL))
+		return -ENODEV;
+
+	/* find out the minimum page size supported */
+	min_pagesz = 1 << __ffs(domain->pgsize_bitmap);
+
+	/*
+	 * both the virtual address and the physical one, as well as
+	 * the size of the mapping, must be aligned (at least) to the
+	 * size of the smallest page supported by the hardware
+	 */
+	if (!IS_ALIGNED(iova | paddr | size, min_pagesz)) {
+		pr_err("unaligned: iova 0x%lx pa %pa size 0x%zx min_pagesz 0x%x\n",
+			iova, &paddr, size, min_pagesz);
+		return -EINVAL;
+	}
+
+	pr_debug("map: iova 0x%lx pa %pa size 0x%zx\n", iova, &paddr, size);
+
+	while (size) {
+		size_t pgsize, count, mapped = 0;
+
+		pgsize = iommu_pgsize(domain, iova, paddr, size, &count);
+
+		pr_debug("mapping: iova 0x%lx pa %pa pgsize 0x%zx count %zu\n",
+			iova, &paddr, pgsize, count);
+		ret = virtcca_smmu_map_pages(domain, iova, paddr, pgsize,
+			count, prot, &mapped);
+		/*
+		 * Some pages may have been mapped, even if an error occurred,
+		 * so we should account for those so they can be unmapped.
+		 */
+		size -= mapped;
+
+		if (ret)
+			break;
+
+		iova += mapped;
+		paddr += mapped;
+	}
+
+	/* unroll mapping in case something went wrong */
+	if (ret)
+		virtcca_iommu_unmap(domain, orig_iova, orig_size - size);
+
+	if (ret == 0 && ops->iotlb_sync_map) {
+		ret = ops->iotlb_sync_map(domain, iova, size);
+		if (ret)
+			goto out_err;
+	}
+
+	return ret;
+
+out_err:
+	/* undo mappings already done */
+	virtcca_iommu_unmap(domain, iova, size);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(virtcca_iommu_map);
+
+/**
+ * virtcca_iommu_unmap - Iommu driver unmap pages, and then
+ * calls the map function in the
+ * smmu to perform unmapping
+ * @domain: Iommu domain
+ * @iova: Ipa address
+ * @size: Map size
+ *
+ * Returns:
+ * %0 if map success or domain type and parameter is invalid
+ */
+
+size_t virtcca_iommu_unmap(struct iommu_domain *domain,
+	unsigned long iova, size_t size)
+{
+	size_t unmapped_page, unmapped = 0;
+	unsigned int min_pagesz;
+
+	if (unlikely(!(domain->type & __IOMMU_DOMAIN_PAGING)))
+		return 0;
+
+	if (WARN_ON(domain->pgsize_bitmap == 0UL))
+		return 0;
+
+	/* find out the minimum page size supported */
+	min_pagesz = 1 << __ffs(domain->pgsize_bitmap);
+
+	/*
+	 * The virtual address, as well as the size of the mapping, must be
+	 * aligned (at least) to the size of the smallest page supported
+	 * by the hardware
+	 */
+	if (!IS_ALIGNED(iova | size, min_pagesz)) {
+		pr_err("unaligned: iova 0x%lx size 0x%zx min_pagesz 0x%x\n",
+			iova, size, min_pagesz);
+		return 0;
+	}
+
+	pr_debug("unmap this: iova 0x%lx size 0x%zx\n", iova, size);
+
+	/*
+	 * Keep iterating until we either unmap 'size' bytes (or more)
+	 * or we hit an area that isn't mapped.
+	 */
+	while (unmapped < size) {
+		size_t pgsize, count;
+
+		pgsize = iommu_pgsize(domain, iova, iova, size - unmapped, &count);
+		unmapped_page = virtcca_smmu_unmap_pages(domain, iova, pgsize, count);
+		if (!unmapped_page)
+			break;
+
+		pr_debug("unmapped: iova 0x%lx size 0x%zx\n",
+				iova, unmapped_page);
+
+		iova += unmapped_page;
+		unmapped += unmapped_page;
+	}
+	return unmapped;
+}
+EXPORT_SYMBOL_GPL(virtcca_iommu_unmap);
+
+/**
  * virtcca_attach_secure_dev - Attach the device of iommu
  * group to confidential virtual machine
  * @domain: The handle of iommu domain

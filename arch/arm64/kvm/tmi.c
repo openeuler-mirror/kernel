@@ -309,3 +309,12 @@ u64 tmi_smmu_read(u64 smmu_base, u64 reg_offset, u64 bits)
 }
 EXPORT_SYMBOL(tmi_smmu_read);
 
+/* Create device ttt */
+u64 tmi_dev_ttt_create(u64 numa_set, u64 rd, u64 map_addr, u64 level)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(TMI_TMM_DEV_TTT_CREATE, numa_set, rd, map_addr, level, &res);
+	return res.a1;
+}
+

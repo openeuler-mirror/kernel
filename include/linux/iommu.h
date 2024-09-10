@@ -1767,5 +1767,19 @@ static inline void iopf_group_response(struct iopf_group *group,
 int virtcca_attach_secure_dev(struct iommu_domain *domain, struct iommu_group *group);
 int virtcca_smmu_secure_dev_operator(struct iommu_domain *domain, struct device *dev);
 struct iommu_domain *virtcca_iommu_group_get_domain(struct iommu_group *iommu_group);
+int virtcca_iommu_map(struct iommu_domain *domain, unsigned long iova,
+	phys_addr_t paddr, size_t size, int prot);
+size_t virtcca_iommu_unmap(struct iommu_domain *domain,
+	unsigned long iova, size_t size);
+int virtcca_smmu_map_pages(struct iommu_domain *domain, unsigned long iova,
+	phys_addr_t paddr, size_t pgsize, size_t pgcount,
+	int prot, size_t *mapped);
+size_t virtcca_smmu_unmap_pages(struct iommu_domain *domain, unsigned long iova,
+	size_t pgsize, size_t pgcount);
+int virtcca_map_pages(void *ops, unsigned long iova,
+	phys_addr_t paddr, size_t pgsize, size_t pgcount,
+	int iommu_prot, size_t *mapped);
+size_t virtcca_unmap_pages(void *ops, unsigned long iova,
+	size_t pgsize, size_t pgcount);
 #endif
 #endif /* __LINUX_IOMMU_H */

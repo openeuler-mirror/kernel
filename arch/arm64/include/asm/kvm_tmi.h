@@ -247,6 +247,7 @@ struct tmi_tec_run {
 #define TMI_FNUM_SMMU_WRITE             U(0x282)
 #define TMI_FNUM_SMMU_READ              U(0x283)
 #define TMI_FNUM_SMMU_PCIE_CORE_CHECK   U(0x284)
+#define TMI_FNUM_DEV_TTT_CREATE         U(0x285)
 
 /* TMI SMC64 PIDs handled by the SPMD */
 #define TMI_TMM_VERSION_REQ             TMI_FID(SMC_64, TMI_FNUM_VERSION_REQ)
@@ -280,6 +281,7 @@ struct tmi_tec_run {
 #define TMI_TMM_SMMU_WRITE              TMI_FID(SMC_64, TMI_FNUM_SMMU_WRITE)
 #define TMI_TMM_SMMU_READ               TMI_FID(SMC_64, TMI_FNUM_SMMU_READ)
 #define TMI_TMM_SMMU_PCIE_CORE_CHECK    TMI_FID(SMC_64, TMI_FNUM_SMMU_PCIE_CORE_CHECK)
+#define TMI_TMM_DEV_TTT_CREATE          TMI_FID(SMC_64, TMI_FNUM_DEV_TTT_CREATE)
 
 #define TMI_ABI_VERSION_GET_MAJOR(_version) ((_version) >> 16)
 #define TMI_ABI_VERSION_GET_MINOR(_version) ((_version) & 0xFFFF)
@@ -381,6 +383,7 @@ u64 tmi_ttt_map_range(u64 rd, u64 map_addr, u64 size, u64 cur_node, u64 target_n
 u64 tmi_ttt_unmap_range(u64 rd, u64 map_addr, u64 size, u64 node_id);
 u64 tmi_mem_info_show(u64 mem_info_addr);
 
+u64 tmi_dev_ttt_create(u64 numa_set, u64 rd, u64 map_addr, u64 level);
 u64 tmi_smmu_queue_create(u64 params_ptr);
 u64 tmi_smmu_queue_write(uint64_t cmd0, uint64_t cmd1, u64 smmu_id);
 u64 tmi_smmu_ste_create(u64 params_ptr);

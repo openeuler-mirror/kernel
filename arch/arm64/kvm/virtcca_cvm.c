@@ -196,6 +196,7 @@ void kvm_destroy_cvm(struct kvm *kvm)
 	if (!tmi_cvm_destroy(cvm->rd))
 		kvm_info("KVM has destroyed cVM: %d\n", cvm->cvm_vmid);
 
+	cvm->is_mapped = false;
 	kfree(cvm);
 	kvm->arch.virtcca_cvm = NULL;
 }
@@ -517,7 +518,11 @@ int kvm_cvm_map_range(struct kvm *kvm)
 			}
 		}
 	}
-
+	/* Vfio driver will pin memory in advance,
+	 * if the ram already mapped, activate cvm
+	 * does not need to map twice
+	 */
+	cvm->is_mapped = true;
 	return ret;
 }
 
@@ -528,7 +533,7 @@ static int kvm_activate_cvm(struct kvm *kvm)
 	if (virtcca_cvm_state(kvm) != CVM_STATE_NEW)
 		return -EINVAL;
 
-	if (kvm_cvm_map_range(kvm))
+	if (!cvm->is_mapped && kvm_cvm_map_range(kvm))
 		return -EFAULT;
 
 	if (tmi_cvm_activate(cvm->rd)) {
@@ -862,7 +867,53 @@ int kvm_init_cvm_vm(struct kvm *kvm)
  */
 
 /**
- * cvm_arm_smmu_domain_set_kvm - Associate SMMU domain with CVM
+ * check_virtcca_cvm_ram_range - Check if the iova belongs
+ * to the cvm ram range
+ * @kvm: The handle of kvm
+ * @iova: Ipa address
+ *
+ * Returns:
+ * %true if the iova belongs to cvm ram
+ * %false if the iova is not within the scope of cvm ram
+ */
+bool check_virtcca_cvm_ram_range(struct kvm *kvm, uint64_t iova)
+{
+	struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
+
+	if (iova >= virtcca_cvm->loader_start &&
+		iova < virtcca_cvm->loader_start + virtcca_cvm->ram_size)
+		return true;
+
+	return false;
+}
+EXPORT_SYMBOL_GPL(check_virtcca_cvm_ram_range);
+
+/**
+ * check_virtcca_cvm_vfio_map_dma - Whether the vfio need
+ * to map the dma address
+ * @kvm: The handle of kvm
+ * @iova: Ipa address
+ *
+ * Returns:
+ * %true if virtcca cvm ram is nort mapped or
+ * virtcca_cvm_ram is mapped and the iova does not
+ * belong to cvm ram range
+ * %false if virtcca_cvm_ram is mapped and the iova belong
+ * to cvm ram range
+ */
+bool check_virtcca_cvm_vfio_map_dma(struct kvm *kvm, uint64_t iova)
+{
+	struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
+
+	if (!virtcca_cvm->is_mapped)
+		return true;
+
+	return !check_virtcca_cvm_ram_range(kvm, iova);
+}
+EXPORT_SYMBOL_GPL(check_virtcca_cvm_vfio_map_dma);
+
+/**
+ * cvm_arm_smmu_domain_set_kvm - Associate SMMU domain with CV
  * @group: Iommu group
  *
  * Returns:
@@ -890,3 +941,95 @@ int cvm_arm_smmu_domain_set_kvm(void *group)
 	return 0;
 }
 
+static int kvm_cvm_dev_ttt_create(struct virtcca_cvm *cvm,
+			unsigned long addr,
+			int level,
+			u64 numa_set)
+{
+	addr = ALIGN_DOWN(addr, cvm_ttt_level_mapsize(level - 1));
+	return tmi_dev_ttt_create(numa_set, cvm->rd, addr, level);
+}
+
+/* CVM create ttt level information about device */
+int kvm_cvm_create_dev_ttt_levels(struct kvm *kvm, struct virtcca_cvm *cvm,
+			unsigned long ipa,
+			int level,
+			int max_level,
+			struct kvm_mmu_memory_cache *mc)
+{
+	int ret = 0;
+
+	if (WARN_ON(level == max_level))
+		return 0;
+
+	while (level++ < max_level) {
+		u64 numa_set = kvm_get_first_binded_numa_set(kvm);
+
+		ret = kvm_cvm_dev_ttt_create(cvm, ipa, level, numa_set);
+		if (ret)
+			return -ENXIO;
+	}
+
+	return 0;
+}
+
+/**
+ * cvm_map_unmap_ipa_range - Vfio driver map or
+ * unmap cvm ipa
+ * @kvm: The handle of kvm
+ * @ipa_base: Ipa address
+ * @pa: Physical address
+ * @map_size: Map range
+ * @is_map: Map type
+ *
+ * Returns:
+ * %0 if cvm map/unmap address successfully
+ * %-ENXIO if map/unmap failed
+ */
+int cvm_map_unmap_ipa_range(struct kvm *kvm, phys_addr_t ipa_base,
+	phys_addr_t pa, unsigned long map_size, uint32_t is_map)
+{
+	unsigned long size;
+	struct virtcca_cvm *virtcca_cvm = (struct virtcca_cvm *)kvm->arch.virtcca_cvm;
+	phys_addr_t rd = virtcca_cvm->rd;
+	unsigned long ipa = ipa_base;
+	unsigned long phys = pa;
+	int ret = 0;
+
+	for (size = 0; size < map_size; size += PAGE_SIZE) {
+		if (is_map)
+			ret = tmi_mmio_map(rd, ipa, CVM_TTT_MAX_LEVEL, phys);
+		else
+			ret = tmi_mmio_unmap(rd, ipa, CVM_TTT_MAX_LEVEL);
+
+		if (TMI_RETURN_STATUS(ret) == TMI_ERROR_TTT_WALK) {
+			/* Create missing TTTs and retry */
+			int level_fault = TMI_RETURN_INDEX(ret);
+
+			if (is_map) {
+				ret = kvm_cvm_create_dev_ttt_levels(kvm, virtcca_cvm, ipa,
+					level_fault, CVM_TTT_MAX_LEVEL, NULL);
+				if (ret)
+					goto err;
+				ret = tmi_mmio_map(rd, ipa, CVM_TTT_MAX_LEVEL, phys);
+			} else {
+				ret = tmi_mmio_unmap(rd, ipa, level_fault);
+			}
+		}
+
+		if (ret)
+			goto err;
+
+		if (size + PAGE_SIZE >= map_size)
+			break;
+		ipa += PAGE_SIZE;
+		phys += PAGE_SIZE;
+	}
+
+	return 0;
+
+err:
+	if (!tmi_cvm_destroy(rd))
+		kvm_info("Vfio map failed, kvm has destroyed cVM: %d\n", virtcca_cvm->cvm_vmid);
+	return -ENXIO;
+}
