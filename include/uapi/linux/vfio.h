@@ -25,6 +25,7 @@
 #define VFIO_TYPE1_IOMMU		1
 #define VFIO_SPAPR_TCE_IOMMU		2
 #define VFIO_TYPE1v2_IOMMU		3
+#define VFIO_TYPE1v2_S_IOMMU		12
 /*
  * IOMMU enforces DMA cache coherence (ex. PCIe NoSnoop stripping).  This
  * capability is subject to change as groups are added or removed.

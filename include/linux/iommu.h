@@ -1762,4 +1762,9 @@ static inline void iopf_group_response(struct iopf_group *group,
 {
 }
 #endif /* CONFIG_IOMMU_IOPF */
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+int virtcca_attach_secure_dev(struct iommu_domain *domain, struct iommu_group *group);
+int virtcca_smmu_secure_dev_operator(struct iommu_domain *domain, struct device *dev);
+#endif
 #endif /* __LINUX_IOMMU_H */

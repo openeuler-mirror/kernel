@@ -2473,6 +2473,33 @@ static int __iommu_map(struct iommu_domain *domain, unsigned long iova,
 	return ret;
 }
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/**
+ * virtcca_attach_secure_dev - Attach the device of iommu
+ * group to confidential virtual machine
+ * @domain: The handle of iommu domain
+ * @group: Iommu group
+ *
+ * Returns:
+ * %0 if attach the all devices success
+ * %-EINVAL if the smmu does not initialize secure state
+ * %-ENOMEM if the device create secure ste failed
+ * %-ENOENT if the device does not have fwspec
+ */
+int virtcca_attach_secure_dev(struct iommu_domain *domain, struct iommu_group *group)
+{
+	struct group_device *gdev;
+	int ret = 0;
+
+	mutex_lock(&group->mutex);
+	for_each_group_device(group, gdev)
+		ret = virtcca_smmu_secure_dev_operator(domain, gdev->dev);
+	mutex_unlock(&group->mutex);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(virtcca_attach_secure_dev);
+#endif
+
 int iommu_map(struct iommu_domain *domain, unsigned long iova,
 	      phys_addr_t paddr, size_t size, int prot, gfp_t gfp)
 {

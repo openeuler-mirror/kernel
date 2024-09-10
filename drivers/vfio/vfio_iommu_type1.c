@@ -77,6 +77,9 @@ struct vfio_iommu {
 	bool			dirty_page_tracking;
 	struct list_head	emulated_iommu_groups;
 	bool			dirty_log_get_no_clear;
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	bool            secure;
+#endif
 };
 
 struct vfio_domain {
@@ -2454,9 +2457,22 @@ static int vfio_iommu_type1_attach_group(void *iommu_data,
 			goto out_domain;
 	}
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (iommu->secure)
+		domain->domain->secure = true;
+#endif
+
 	ret = iommu_attach_group(domain->domain, group->iommu_group);
 	if (ret)
 		goto out_domain;
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (iommu->secure) {
+		ret = virtcca_attach_secure_dev(domain->domain, group->iommu_group);
+		if (ret)
+			goto out_domain;
+	}
+#endif
 
 	/* Get aperture info */
 	geo = &domain->domain->geometry;
@@ -2807,6 +2823,12 @@ static void *vfio_iommu_type1_open(unsigned long arg)
 	case VFIO_TYPE1v2_IOMMU:
 		iommu->v2 = true;
 		break;
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	case VFIO_TYPE1v2_S_IOMMU:
+		iommu->v2 = true;
+		iommu->secure = true;
+		break;
+#endif
 	default:
 		kfree(iommu);
 		return ERR_PTR(-EINVAL);
@@ -2898,6 +2920,9 @@ static int vfio_iommu_type1_check_extension(struct vfio_iommu *iommu,
 	switch (arg) {
 	case VFIO_TYPE1_IOMMU:
 	case VFIO_TYPE1v2_IOMMU:
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	case VFIO_TYPE1v2_S_IOMMU:
+#endif
 	case VFIO_TYPE1_NESTING_IOMMU:
 	case VFIO_UNMAP_ALL:
 		return 1;

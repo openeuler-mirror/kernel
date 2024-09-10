@@ -1172,6 +1172,7 @@ int virtcca_smmu_secure_dev_operator(struct iommu_domain *domain, struct device 
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(virtcca_smmu_secure_dev_operator);
 
 /**
  * virtcca_smmu_device_init - Initialize the smmu security features
