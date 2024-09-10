@@ -49,6 +49,8 @@ struct drm_open_hash {
 	u8 order;
 };
 
+struct hlist_node *drm_ht_find_key(struct drm_open_hash *ht, unsigned long key);
+
 int drm_ht_create(struct drm_open_hash *ht, unsigned int order);
 int drm_ht_insert_item(struct drm_open_hash *ht, struct drm_hash_item *item);
 int drm_ht_just_insert_please(struct drm_open_hash *ht, struct drm_hash_item *item,
