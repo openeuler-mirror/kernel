@@ -1173,7 +1173,7 @@ static int vmw_translate_mob_ptr(struct vmw_private *dev_priv,
 	}
 
 	ret = vmw_validation_add_bo(sw_context->ctx, vmw_bo, true, false);
-	vmw_user_bo_noref_release();
+	ttm_bo_put(&vmw_bo->base);
 	if (unlikely(ret != 0))
 		return ret;
 
@@ -1228,7 +1228,7 @@ static int vmw_translate_guest_ptr(struct vmw_private *dev_priv,
 	}
 
 	ret = vmw_validation_add_bo(sw_context->ctx, vmw_bo, false, false);
-	vmw_user_bo_noref_release();
+	ttm_bo_put(&vmw_bo->base);
 	if (unlikely(ret != 0))
 		return ret;
 
