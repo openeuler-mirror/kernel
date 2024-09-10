@@ -128,6 +128,7 @@
 #include <linux/blk-cgroup.h>
 #include <linux/fadvise.h>
 #include <linux/sched/mm.h>
+#include <linux/dynamic_pool.h>
 
 #include "internal.h"
 
@@ -502,6 +503,8 @@ void page_cache_ra_order(struct readahead_control *ractl,
 	gfp_t gfp = readahead_gfp_mask(mapping);
 
 	if (!mapping_large_folio_support(mapping) || ra->size < 4)
+		goto fallback;
+	if (mm_in_dynamic_pool(current->mm))
 		goto fallback;
 
 	limit = min(limit, index + ra->size - 1);

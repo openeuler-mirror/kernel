@@ -47,6 +47,7 @@
 #include <linux/splice.h>
 #include <linux/huge_mm.h>
 #include <linux/pgtable.h>
+#include <linux/dynamic_pool.h>
 #include <asm/pgalloc.h>
 #include <asm/tlbflush.h>
 #include "internal.h"
@@ -1930,6 +1931,8 @@ no_page:
 			fgp_flags |= FGP_LOCK;
 
 		if (!mapping_large_folio_support(mapping))
+			order = 0;
+		if (order && mm_in_dynamic_pool(current->mm))
 			order = 0;
 		if (order > MAX_PAGECACHE_ORDER)
 			order = MAX_PAGECACHE_ORDER;

@@ -4395,6 +4395,8 @@ static struct folio *alloc_anon_folio(struct vm_fault *vmf)
 	 */
 	if (unlikely(userfaultfd_armed(vma)))
 		goto fallback;
+	if (mm_in_dynamic_pool(vma->vm_mm))
+		goto fallback;
 
 	/*
 	 * Get a list of all the (large) orders below PMD_ORDER that are enabled
