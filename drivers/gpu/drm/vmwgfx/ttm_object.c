@@ -137,6 +137,20 @@ ttm_object_file_ref(struct ttm_object_file *tfile)
 	return tfile;
 }
 
+static int ttm_tfile_find_ref(struct drm_open_hash *ht,
+			      uint32_t key,
+			      struct drm_hash_item **item)
+{
+	struct hlist_node *h_node;
+
+	h_node = drm_ht_find_key(ht, key);
+	if (!h_node)
+		return -EINVAL;
+
+	*item = hlist_entry(h_node, struct drm_hash_item, head);
+	return 0;
+}
+
 static void ttm_object_file_destroy(struct kref *kref)
 {
 	struct ttm_object_file *tfile =
