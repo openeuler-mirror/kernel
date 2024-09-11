@@ -65,7 +65,8 @@ unsigned long transparent_hugepage_flags __read_mostly =
 #endif
 	(1<<TRANSPARENT_HUGEPAGE_DEFRAG_REQ_MADV_FLAG)|
 	(1<<TRANSPARENT_HUGEPAGE_DEFRAG_KHUGEPAGED_FLAG)|
-	(1<<TRANSPARENT_HUGEPAGE_USE_ZERO_PAGE_FLAG);
+	(1<<TRANSPARENT_HUGEPAGE_USE_ZERO_PAGE_FLAG)|
+	(1<<TRANSPARENT_HUGEPAGE_FILE_MTHP_FLAG);
 
 static struct shrinker deferred_split_shrinker;
 
@@ -489,6 +490,40 @@ static void thp_flag_set(enum transparent_hugepage_flag flag, bool enable)
 		clear_bit(flag, &transparent_hugepage_flags);
 }
 
+static ssize_t file_enabled_show(struct kobject *kobj,
+				 struct kobj_attribute *attr, char *buf)
+{
+	const char *output;
+
+	if (test_bit(TRANSPARENT_HUGEPAGE_FILE_MTHP_FLAG,
+		     &transparent_hugepage_flags))
+		output = "[always] never";
+	else
+		output = "always [never]";
+
+	return sysfs_emit(buf, "%s\n", output);
+}
+
+static ssize_t file_enabled_store(struct kobject *kobj,
+				  struct kobj_attribute *attr,
+				  const char *buf, size_t count)
+{
+	ssize_t ret = count;
+
+	if (sysfs_streq(buf, "always")) {
+		set_bit(TRANSPARENT_HUGEPAGE_FILE_MTHP_FLAG,
+			&transparent_hugepage_flags);
+	} else if (sysfs_streq(buf, "never")) {
+		clear_bit(TRANSPARENT_HUGEPAGE_FILE_MTHP_FLAG,
+			  &transparent_hugepage_flags);
+	} else
+		ret = -EINVAL;
+
+	return ret;
+}
+
+static struct kobj_attribute file_enabled_attr = __ATTR_RW(file_enabled);
+
 static ssize_t thp_exec_enabled_show(struct kobject *kobj,
 				     struct kobj_attribute *attr, char *buf)
 {
@@ -592,6 +627,7 @@ static struct attribute *hugepage_attr[] = {
 #ifdef CONFIG_SHMEM
 	&shmem_enabled_attr.attr,
 #endif
+	&file_enabled_attr.attr,
 	&thp_exec_enabled_attr.attr,
 	&thp_mapping_align_attr.attr,
 	NULL,

@@ -232,6 +232,12 @@ it back by writing 0::
         echo 0 >/sys/kernel/mm/transparent_hugepage/pcp_allow_high_order
         echo 4 >/sys/kernel/mm/transparent_hugepage/pcp_allow_high_order
 
+The kernel could enable or disable file-backed hugepages, which has no
+effect on existed pagecache::
+
+	echo always >/sys/kernel/mm/transparent_hugepage/file_enabled
+	echo never >/sys/kernel/mm/transparent_hugepage/file_enabled
+
 khugepaged will be automatically started when PMD-sized THP is enabled
 (either of the per-size anon control or the top-level control are set
 to "always" or "madvise"), and it'll be automatically shutdown when
