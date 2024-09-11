@@ -98,7 +98,8 @@ int hns_roce_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr,
 		ibdev_err_ratelimited(&hr_dev->ib_dev,
 			  "failed to set sl, sl (%u) shouldn't be larger than %u.\n",
 			  ah->av.sl, sl_num);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_out;
 	}
 
 	memcpy(ah->av.dgid, grh->dgid.raw, HNS_ROCE_GID_SIZE);
