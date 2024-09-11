@@ -77,15 +77,6 @@ struct hclge_port_num_info_cmd {
 	u8 rsv[20];
 };
 
-struct hclge_pfc_storm_para_cmd {
-	__le32 dir;
-	__le32 enable;
-	__le32 period_ms;
-	__le32 times;
-	__le32 recovery_period_ms;
-	__le32 rsv;
-};
-
 struct hclge_notify_pkt_param_cmd {
 	__le32 cfg;
 	__le32 ipg;
