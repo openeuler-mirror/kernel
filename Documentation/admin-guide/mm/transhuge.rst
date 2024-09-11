@@ -211,12 +211,10 @@ possible to enable/disable it by configurate the corresponding bit::
 	echo 0x2 >/sys/kernel/mm/transparent_hugepage/thp_exec_enabled
 	echo 0x3 >/sys/kernel/mm/transparent_hugepage/thp_exec_enabled
 
-The kernel could try to enable mappings for different sizes, eg, 64K on
-arm64, BIT0 for file mapping, BIT1 for anonymous mapping, and THP size
-page, BIT2 for anonymous mapping, where 2M anonymous mapping for arm64
-is dependent on BIT2 being turned on, the above feature are disabled by
-default, and could enable the above feature by writing the corresponding
-bit to 1::
+The kernel could try to enable mappings for different sizes, BIT0 for
+64K file mapping, BIT1 for 64K anonymous mapping, and BIT2 for PMD size
+anonymous mapping, the above feature are disabled by default, and could
+enable the above feature by writing the corresponding bit to 1::
 
 	echo 0x1 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
 	echo 0x4 >/sys/kernel/mm/transparent_hugepage/thp_mapping_align
