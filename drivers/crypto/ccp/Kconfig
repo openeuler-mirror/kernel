@@ -46,6 +46,14 @@ config CRYPTO_DEV_SP_PSP
 	 along with software-based Trusted Execution Environment (TEE) to
 	 enable third-party trusted applications.
 
+config HYGON_GM
+	bool "Hygon GM (sm2/sm3/sm4) Interface"
+	default y
+	depends on CRYPTO_DEV_CCP_CRYPTO && X86_64
+	select CRYPTO_SM3_GENERIC
+	help
+	  Hygon GM ccp driver
+
 config CRYPTO_DEV_CCP_DEBUGFS
 	bool "Enable CCP Internals in DebugFS"
 	default n
@@ -79,3 +87,15 @@ config TDM_KERNEL_GUARD
 	  The key part of kernel is protected by TDM technology, SCT and IDT
 	  are protected by default, and others are added later according to the
 	  requirements.
+
+config CRYPTO_DEV_HCT
+	tristate "HCT CCP device"
+	default m
+	depends on X86_64
+	select VFIO_MDEV
+	help
+	  Provides hygon crypto technology ccp device driver.
+	  Support virtualize ccp devices based on mediated devices.
+	  Support multi-process and virtual machines.
+	  Support host-noiommu mode memory encryption function.
+	  If you choose 'M' here, this module will be called hct ccp.
