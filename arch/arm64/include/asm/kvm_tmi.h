@@ -407,6 +407,8 @@ int kvm_cvm_vcpu_set_events(struct kvm_vcpu *vcpu,
 	bool serror_pending, bool ext_dabt_pending);
 int kvm_init_cvm_vm(struct kvm *kvm);
 int kvm_enable_virtcca_cvm(struct kvm *kvm);
+int kvm_cvm_map_ipa(struct kvm *kvm, phys_addr_t ipa, kvm_pfn_t pfn,
+	unsigned long map_size, enum kvm_pgtable_prot prot, int ret);
 
 #endif
 #endif

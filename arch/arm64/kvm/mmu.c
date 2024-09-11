@@ -19,7 +19,9 @@
 #include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
 #include <asm/virt.h>
-
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+#include <asm/kvm_tmi.h>
+#endif
 #include "trace.h"
 
 static struct kvm_pgtable *hyp_pgtable;
@@ -1605,6 +1607,10 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 					     memcache,
 					     KVM_PGTABLE_WALK_HANDLE_FAULT |
 					     KVM_PGTABLE_WALK_SHARED);
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	ret = kvm_cvm_map_ipa(kvm, fault_ipa, pfn, vma_pagesize, prot, ret);
+#endif
 
 	/* Mark the page dirty only if the fault is handled successfully */
 	if (writable && !ret) {

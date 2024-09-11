@@ -10,6 +10,7 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_mmu.h>
 #include <asm/stage2_pgtable.h>
+#include <asm/virtcca_cvm_host.h>
 #include <linux/arm-smccc.h>
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
@@ -1032,4 +1033,90 @@ err:
 	if (!tmi_cvm_destroy(rd))
 		kvm_info("Vfio map failed, kvm has destroyed cVM: %d\n", virtcca_cvm->cvm_vmid);
 	return -ENXIO;
+}
+
+/**
+ * kvm_cvm_map_ipa_mmio - Map the mmio address when page fault
+ * @kvm: The handle of kvm
+ * @ipa_base: Ipa address
+ * @pa: Physical address
+ * @map_size: Map range
+ *
+ * Returns:
+ * %0 if cvm map address successfully
+ * %-ENXIO if map failed
+ */
+int kvm_cvm_map_ipa_mmio(struct kvm *kvm, phys_addr_t ipa_base,
+	phys_addr_t pa, unsigned long map_size)
+{
+	unsigned long size;
+	gfn_t gfn;
+	kvm_pfn_t pfn;
+	struct virtcca_cvm *virtcca_cvm = (struct virtcca_cvm *)kvm->arch.virtcca_cvm;
+	phys_addr_t rd = virtcca_cvm->rd;
+	unsigned long ipa = ipa_base;
+	unsigned long phys = pa;
+	int ret = 0;
+
+	if (WARN_ON(!IS_ALIGNED(ipa, map_size)))
+		return -EINVAL;
+
+	for (size = 0; size < map_size; size += PAGE_SIZE) {
+		ret = tmi_mmio_map(rd, ipa, CVM_TTT_MAX_LEVEL, phys);
+		if (ret == TMI_ERROR_TTT_CREATED) {
+			ret = 0;
+			goto label;
+		}
+		if (TMI_RETURN_STATUS(ret) == TMI_ERROR_TTT_WALK) {
+			/* Create missing TTTs and retry */
+			int level_fault = TMI_RETURN_INDEX(ret);
+
+			ret = kvm_cvm_create_dev_ttt_levels(kvm, virtcca_cvm, ipa, level_fault,
+					CVM_TTT_MAX_LEVEL, NULL);
+
+			if (ret)
+				goto err;
+			ret = tmi_mmio_map(rd, ipa, CVM_TTT_MAX_LEVEL, phys);
+		}
+
+		if (ret)
+			goto err;
+label:
+		if (size + PAGE_SIZE >= map_size)
+			break;
+
+		ipa += PAGE_SIZE;
+		gfn = gpa_to_gfn(ipa);
+		pfn = gfn_to_pfn(kvm, gfn);
+		kvm_set_pfn_accessed(pfn);
+		kvm_release_pfn_clean(pfn);
+		phys = (uint64_t)__pfn_to_phys(pfn);
+
+	}
+
+	return 0;
+
+err:
+	if (!tmi_cvm_destroy(rd))
+		kvm_info("MMIO map failed, kvm has destroyed cVM: %d\n", virtcca_cvm->cvm_vmid);
+	return -ENXIO;
+}
+
+/* Page fault map ipa */
+int kvm_cvm_map_ipa(struct kvm *kvm, phys_addr_t ipa, kvm_pfn_t pfn,
+	unsigned long map_size, enum kvm_pgtable_prot prot, int ret)
+{
+	if (!is_virtcca_cvm_enable() || !kvm_is_virtcca_cvm(kvm))
+		return ret;
+
+	struct page *dst_page = pfn_to_page(pfn);
+	phys_addr_t dst_phys = page_to_phys(dst_page);
+
+	if (WARN_ON(!(prot & KVM_PGTABLE_PROT_W)))
+		return -EFAULT;
+
+	if (prot & KVM_PGTABLE_PROT_DEVICE)
+		return kvm_cvm_map_ipa_mmio(kvm, ipa, dst_phys, map_size);
+
+	return 0;
 }
