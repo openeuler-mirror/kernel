@@ -19,6 +19,13 @@
 
 #include "vfio_pci_priv.h"
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifndef __GENKSYMS__
+#include <asm/kvm_tmi.h>
+#include <asm/virtcca_cvm_host.h>
+#endif
+#endif
+
 #ifdef __LITTLE_ENDIAN
 #define vfio_ioread64	ioread64
 #define vfio_iowrite64	iowrite64
@@ -37,6 +44,64 @@
 #define vfio_ioread8	ioread8
 #define vfio_iowrite8	iowrite8
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/* Judge startup virtcca_cvm_host is enable and device is secure or not */
+static bool is_virtcca_pci_io_rw(struct vfio_pci_core_device *vdev)
+{
+	if (!is_virtcca_cvm_enable())
+		return false;
+
+	struct pci_dev *pdev = vdev->pdev;
+	bool cc_dev = pdev == NULL ? false : is_cc_dev(pci_dev_id(pdev));
+
+	if (cc_dev)
+		return true;
+
+	return false;
+}
+
+/* Transfer to tmm write io value */
+static void virtcca_pci_io_write(struct vfio_pci_core_device *vdev, u64 val,
+	u64 size, void __iomem *io)
+{
+	struct pci_dev *pdev = vdev->pdev;
+
+	WARN_ON(tmi_mmio_write(iova_to_pa(io), val, size, pci_dev_id(pdev)));
+}
+
+/* Transfer to tmm read io value */
+static u64 virtcca_pci_io_read(struct vfio_pci_core_device *vdev,
+	u64 size, void __iomem *io)
+{
+	struct pci_dev *pdev = vdev->pdev;
+
+	return tmi_mmio_read(iova_to_pa(io), size, pci_dev_id(pdev));
+}
+
+#define VFIO_IOWRITE(size) \
+static int vfio_pci_iowrite##size(struct vfio_pci_core_device *vdev,	\
+			bool test_mem, u##size val, void __iomem *io)	\
+{									\
+	if (test_mem) {							\
+		down_read(&vdev->memory_lock);				\
+		if (!__vfio_pci_memory_enabled(vdev)) {			\
+			up_read(&vdev->memory_lock);			\
+			return -EIO;					\
+		}							\
+	}								\
+									\
+	if (is_virtcca_pci_io_rw(vdev)) {				\
+		virtcca_pci_io_write(vdev, val, size, io);		\
+	} else {							\
+		vfio_iowrite##size(val, io);				\
+	}								\
+									\
+	if (test_mem)							\
+		up_read(&vdev->memory_lock);				\
+									\
+	return 0;							\
+}
+#else
 #define VFIO_IOWRITE(size) \
 static int vfio_pci_iowrite##size(struct vfio_pci_core_device *vdev,		\
 			bool test_mem, u##size val, void __iomem *io)	\
@@ -56,6 +121,7 @@ static int vfio_pci_iowrite##size(struct vfio_pci_core_device *vdev,		\
 									\
 	return 0;							\
 }
+#endif
 
 VFIO_IOWRITE(8)
 VFIO_IOWRITE(16)
@@ -64,6 +130,31 @@ VFIO_IOWRITE(32)
 VFIO_IOWRITE(64)
 #endif
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+#define VFIO_IOREAD(size) \
+static int vfio_pci_ioread##size(struct vfio_pci_core_device *vdev,	\
+			bool test_mem, u##size * val, void __iomem *io)	\
+{									\
+	if (test_mem) {							\
+		down_read(&vdev->memory_lock);				\
+		if (!__vfio_pci_memory_enabled(vdev)) {			\
+			up_read(&vdev->memory_lock);			\
+			return -EIO;					\
+		}							\
+	}								\
+									\
+	if (is_virtcca_pci_io_rw(vdev)) {				\
+		*val = virtcca_pci_io_read(vdev, size, io);		\
+	} else {							\
+		*val = vfio_ioread##size(io);				\
+	}								\
+									\
+	if (test_mem)							\
+		up_read(&vdev->memory_lock);				\
+									\
+	return 0;							\
+}
+#else
 #define VFIO_IOREAD(size) \
 static int vfio_pci_ioread##size(struct vfio_pci_core_device *vdev,		\
 			bool test_mem, u##size *val, void __iomem *io)	\
@@ -83,6 +174,7 @@ static int vfio_pci_ioread##size(struct vfio_pci_core_device *vdev,		\
 									\
 	return 0;							\
 }
+#endif
 
 VFIO_IOREAD(8)
 VFIO_IOREAD(16)
