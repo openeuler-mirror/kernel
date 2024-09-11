@@ -526,4 +526,54 @@ struct kvm *virtcca_arm_smmu_get_kvm(struct arm_smmu_domain *domain)
 	return kvm;
 }
 EXPORT_SYMBOL_GPL(virtcca_arm_smmu_get_kvm);
+
+/**
+ * find_arm_smmu_domain - Find smmu domain list from kvm vfio file
+ * @kvf: Kvm vfio file
+ * @smmu_domain_group_list: List of smmu domain group
+ */
+void find_arm_smmu_domain(struct kvm_vfio_file *kvf, struct list_head *smmu_domain_group_list)
+{
+	struct iommu_group *iommu_group;
+	int ret = 0;
+	struct arm_smmu_domain *arm_smmu_domain = NULL;
+	struct arm_smmu_domain *arm_smmu_domain_node = NULL;
+
+	iommu_group = cvm_vfio_file_iommu_group(kvf->file);
+	arm_smmu_domain = to_smmu_domain(virtcca_iommu_group_get_domain(iommu_group));
+	list_for_each_entry(arm_smmu_domain_node,
+		smmu_domain_group_list, node) {
+		if (arm_smmu_domain_node == arm_smmu_domain) {
+			ret = -1;
+			break;
+		}
+	}
+	if (!ret)
+		list_add_tail(&arm_smmu_domain->node, smmu_domain_group_list);
+}
+
+/**
+ * kvm_get_arm_smmu_domain - Find kvm vfio file from kvm
+ * @kvm: Kvm handle
+ * @smmu_domain_group_list: List of smmu domain group
+ */
+void kvm_get_arm_smmu_domain(struct kvm *kvm, struct list_head *smmu_domain_group_list)
+{
+	struct kvm_device *dev;
+	struct kvm_vfio *kv;
+	struct kvm_vfio_file *kvf;
+
+	INIT_LIST_HEAD(smmu_domain_group_list);
+
+	list_for_each_entry(dev, &kvm->devices, vm_node) {
+		if (dev->ops && strcmp(dev->ops->name, "kvm-vfio") == 0) {
+			kv = (struct kvm_vfio *)dev->private;
+			mutex_lock(&kv->lock);
+			list_for_each_entry(kvf, &kv->file_list, node) {
+				find_arm_smmu_domain(kvf, smmu_domain_group_list);
+			}
+			mutex_unlock(&kv->lock);
+		}
+	}
+}
 #endif

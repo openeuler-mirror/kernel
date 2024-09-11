@@ -180,9 +180,18 @@ void kvm_destroy_cvm(struct kvm *kvm)
 {
 	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
 	uint32_t cvm_vmid;
+	struct arm_smmu_domain *arm_smmu_domain;
+	struct list_head smmu_domain_group_list;
 
 	if (!cvm)
 		return;
+
+	/* Unmap the cvm with arm smmu domain */
+	kvm_get_arm_smmu_domain(kvm, &smmu_domain_group_list);
+	list_for_each_entry(arm_smmu_domain, &smmu_domain_group_list, node) {
+		if (arm_smmu_domain->kvm && arm_smmu_domain->kvm == kvm)
+			arm_smmu_domain->kvm = NULL;
+	}
 
 	cvm_vmid = cvm->cvm_vmid;
 	kfree(cvm->params);
@@ -530,6 +539,9 @@ int kvm_cvm_map_range(struct kvm *kvm)
 
 static int kvm_activate_cvm(struct kvm *kvm)
 {
+	int ret;
+	struct arm_smmu_domain *arm_smmu_domain;
+	struct list_head smmu_domain_group_list;
 	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
 
 	if (virtcca_cvm_state(kvm) != CVM_STATE_NEW)
@@ -537,6 +549,15 @@ static int kvm_activate_cvm(struct kvm *kvm)
 
 	if (!cvm->is_mapped && kvm_cvm_map_range(kvm))
 		return -EFAULT;
+
+	kvm_get_arm_smmu_domain(kvm, &smmu_domain_group_list);
+	list_for_each_entry(arm_smmu_domain, &smmu_domain_group_list, node) {
+		if (arm_smmu_domain) {
+			ret = virtcca_smmu_tmi_dev_attach(arm_smmu_domain, kvm);
+			if (ret)
+				return ret;
+		}
+	}
 
 	if (tmi_cvm_activate(cvm->rd)) {
 		kvm_err("tmi_cvm_activate failed!\n");
