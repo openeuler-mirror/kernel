@@ -147,6 +147,73 @@ void pci_msi_unmask_irq(struct irq_data *data)
 }
 EXPORT_SYMBOL_GPL(pci_msi_unmask_irq);
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/**
+ * virtcca_pci_read_msi_msg - secure dev read msi msg
+ * @dev: Pointer to the pci_dev data structure of MSI-X device function
+ * @msg: Msg information
+ * @base: Msi base address
+ *
+ **/
+static inline void virtcca_pci_read_msi_msg(struct pci_dev *dev, struct msi_msg *msg,
+	void __iomem *base)
+{
+	u64 pbase = iova_to_pa(base);
+
+	msg->address_lo = tmi_mmio_read(pbase + PCI_MSIX_ENTRY_LOWER_ADDR,
+		CVM_RW_32_BIT, pci_dev_id(dev));
+	msg->address_hi = tmi_mmio_read(pbase + PCI_MSIX_ENTRY_UPPER_ADDR,
+		CVM_RW_32_BIT, pci_dev_id(dev));
+	msg->data = tmi_mmio_read(pbase + PCI_MSIX_ENTRY_DATA, CVM_RW_32_BIT, pci_dev_id(dev));
+}
+
+/**
+ * virtcca_pci_write_msi_msg - secure dev write msi msg
+ * @desc: MSI-X description
+ * @msg: Msg information
+ *
+ **/
+static inline int virtcca_pci_write_msg_msi(struct msi_desc *desc, struct msi_msg *msg)
+{
+	if (!is_virtcca_cvm_enable())
+		return 0;
+
+	void __iomem *base = pci_msix_desc_addr(desc);
+	u32 ctrl = desc->pci.msix_ctrl;
+	bool unmasked = !(ctrl & PCI_MSIX_ENTRY_CTRL_MASKBIT);
+	u64 pbase = iova_to_pa(base);
+	struct pci_dev *pdev = (desc->dev != NULL &&
+		dev_is_pci(desc->dev)) ? to_pci_dev(desc->dev) : NULL;
+
+	if (!is_cc_dev(pci_dev_id(pdev)))
+		return 0;
+
+	u64 addr = (u64)msg->address_lo | ((u64)msg->address_hi << 32);
+
+	addr += CVM_MSI_IOVA_OFFSET;
+	tmi_mmio_write(pbase + PCI_MSIX_ENTRY_LOWER_ADDR,
+		lower_32_bits(addr), CVM_RW_32_BIT, pci_dev_id(pdev));
+	tmi_mmio_write(pbase + PCI_MSIX_ENTRY_UPPER_ADDR,
+		upper_32_bits(addr), CVM_RW_32_BIT, pci_dev_id(pdev));
+	tmi_mmio_write(pbase + PCI_MSIX_ENTRY_DATA,
+		msg->data, CVM_RW_32_BIT, pci_dev_id(pdev));
+
+	if (unmasked)
+		pci_msix_write_vector_ctrl(desc, ctrl);
+	tmi_mmio_read(iova_to_pa((void *)pbase + PCI_MSIX_ENTRY_DATA),
+		CVM_RW_32_BIT, pci_dev_id(pdev));
+
+	return 1;
+}
+
+static inline void virtcca_msix_prepare_msi_desc(struct pci_dev *dev,
+	struct msi_desc *desc, void __iomem *addr)
+{
+	desc->pci.msix_ctrl = tmi_mmio_read(iova_to_pa(addr + PCI_MSIX_ENTRY_VECTOR_CTRL),
+		CVM_RW_32_BIT, pci_dev_id(dev));
+}
+#endif
+
 void __pci_read_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
 {
 	struct pci_dev *dev = msi_desc_to_pci_dev(entry);
@@ -159,6 +226,10 @@ void __pci_read_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
 		if (WARN_ON_ONCE(entry->pci.msi_attrib.is_virtual))
 			return;
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		if (is_virtcca_cvm_enable() && dev != NULL && is_cc_dev(pci_dev_id(dev)))
+			return virtcca_pci_read_msi_msg(dev, msg, base);
+#endif
 		msg->address_lo = readl(base + PCI_MSIX_ENTRY_LOWER_ADDR);
 		msg->address_hi = readl(base + PCI_MSIX_ENTRY_UPPER_ADDR);
 		msg->data = readl(base + PCI_MSIX_ENTRY_DATA);
@@ -221,6 +292,10 @@ static inline void pci_write_msg_msix(struct msi_desc *desc, struct msi_msg *msg
 	if (unmasked)
 		pci_msix_write_vector_ctrl(desc, ctrl | PCI_MSIX_ENTRY_CTRL_MASKBIT);
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (virtcca_pci_write_msg_msi(desc, msg))
+		return;
+#endif
 	writel(msg->address_lo, base + PCI_MSIX_ENTRY_LOWER_ADDR);
 	writel(msg->address_hi, base + PCI_MSIX_ENTRY_UPPER_ADDR);
 	writel(msg->data, base + PCI_MSIX_ENTRY_DATA);
@@ -639,6 +714,10 @@ void msix_prepare_msi_desc(struct pci_dev *dev, struct msi_desc *desc)
 	if (desc->pci.msi_attrib.can_mask) {
 		void __iomem *addr = pci_msix_desc_addr(desc);
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+		if (is_virtcca_cvm_enable() && is_cc_dev(pci_dev_id(dev)))
+			return virtcca_msix_prepare_msi_desc(dev, desc, addr);
+#endif
 		desc->pci.msix_ctrl = readl(addr + PCI_MSIX_ENTRY_VECTOR_CTRL);
 	}
 }
@@ -724,6 +803,40 @@ out_unlock:
 	return ret;
 }
 
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/**
+ * msix_mask_all_cc - mask all secure dev msix c
+ * @dev: Pointer to the pci_dev data structure of MSI-X device function
+ * @base: Io address
+ * @tsize: Number of entry
+ * @dev_num: Dev number
+ *
+ * Returns:
+ * %0 if msix mask all cc device success
+ **/
+static int msix_mask_all_cc(struct pci_dev *dev, void __iomem *base, int tsize, u64 dev_num)
+{
+	int i;
+	u32 ctrl = PCI_MSIX_ENTRY_CTRL_MASKBIT;
+	u64 pbase = iova_to_pa(base);
+
+	if (pci_msi_ignore_mask)
+		goto out;
+
+	for (i = 0; i < tsize; i++, base += PCI_MSIX_ENTRY_SIZE) {
+		tmi_mmio_write(pbase + PCI_MSIX_ENTRY_VECTOR_CTRL,
+			ctrl, CVM_RW_32_BIT, dev_num);
+	}
+
+out:
+	pci_msix_clear_and_set_ctrl(dev, PCI_MSIX_FLAGS_MASKALL, 0);
+
+	pcibios_free_irq(dev);
+	return 0;
+}
+#endif
+
 /**
  * msix_capability_init - configure device's MSI-X capability
  * @dev: pointer to the pci_dev data structure of MSI-X device function
@@ -776,6 +889,10 @@ static int msix_capability_init(struct pci_dev *dev, struct msix_entry *entries,
 	 * which takes the MSI-X mask bits into account even
 	 * when MSI-X is disabled, which prevents MSI delivery.
 	 */
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (is_virtcca_cvm_enable() && is_cc_dev(pci_dev_id(dev)))
+		return msix_mask_all_cc(dev, dev->msix_base, tsize, pci_dev_id(dev));
+#endif
 	msix_mask_all(dev->msix_base, tsize);
 	pci_msix_clear_and_set_ctrl(dev, PCI_MSIX_FLAGS_MASKALL, 0);
 
