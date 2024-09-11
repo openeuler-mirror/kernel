@@ -399,6 +399,7 @@ u64 tmi_smmu_pcie_core_check(u64 smmu_base);
 u64 tmi_smmu_write(u64 smmu_base, u64 reg_offset, u64 val, u64 bits);
 u64 tmi_smmu_read(u64 smmu_base, u64 reg_offset, u64 bits);
 
+u64 iova_to_pa(void *addr);
 void kvm_cvm_vcpu_put(struct kvm_vcpu *vcpu);
 int kvm_load_user_data(struct kvm *kvm, unsigned long arg);
 unsigned long cvm_psci_vcpu_affinity_info(struct kvm_vcpu *vcpu,

@@ -14,6 +14,13 @@
 #define CVM_MSI_ORIG_IOVA 0x8000000
 #define CVM_MSI_IOVA_OFFSET (-0x1000000)
 
+#define CVM_RW_8_BIT	0x8
+#define CVM_RW_16_BIT	0x10
+#define CVM_RW_32_BIT	0x20
+#define CVM_RW_64_BIT	0x40
+
+#define BUS_NUM_SHIFT	0x8
+
 enum virtcca_cvm_state {
 	CVM_STATE_NONE = 1,
 	CVM_STATE_NEW,

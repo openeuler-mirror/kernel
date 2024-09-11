@@ -5,6 +5,14 @@
 #include <linux/ioport.h>
 #include <linux/wait.h>
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifndef __GENKSYMS__
+#include <asm/kvm_tmi.h>
+#include <asm/kvm_tmm.h>
+#include <asm/virtcca_cvm_host.h>
+#endif
+#endif
+
 #include "pci.h"
 
 /*
@@ -77,6 +85,42 @@ EXPORT_SYMBOL(pci_bus_write_config_byte);
 EXPORT_SYMBOL(pci_bus_write_config_word);
 EXPORT_SYMBOL(pci_bus_write_config_dword);
 
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/* If device is secure dev, read config need transfer to tmm module */
+static int virtcca_pci_generic_config_read(void __iomem *addr, unsigned char bus_num,
+	unsigned int devfn, int size, u32 *val)
+{
+	if (size == 1)
+		*val = tmi_mmio_read(iova_to_pa(addr), CVM_RW_8_BIT,
+			((bus_num << BUS_NUM_SHIFT) | devfn));
+	else if (size == 2)
+		*val = tmi_mmio_read(iova_to_pa(addr), CVM_RW_16_BIT,
+			((bus_num << BUS_NUM_SHIFT) | devfn));
+	else
+		*val = tmi_mmio_read(iova_to_pa(addr), CVM_RW_32_BIT,
+			((bus_num << BUS_NUM_SHIFT) | devfn));
+
+	return PCIBIOS_SUCCESSFUL;
+}
+
+/* If device is secure dev, write config need transfer to tmm module */
+int virtcca_pci_generic_config_write(void __iomem *addr, unsigned char bus_num,
+	unsigned int devfn, int size, u32 val)
+{
+	if (size == 1)
+		WARN_ON(tmi_mmio_write(iova_to_pa(addr), val,
+			CVM_RW_8_BIT, ((bus_num << BUS_NUM_SHIFT) | devfn)));
+	else if (size == 2)
+		WARN_ON(tmi_mmio_write(iova_to_pa(addr), val,
+			CVM_RW_16_BIT, ((bus_num << BUS_NUM_SHIFT) | devfn)));
+	else
+		WARN_ON(tmi_mmio_write(iova_to_pa(addr), val,
+			CVM_RW_32_BIT, ((bus_num << BUS_NUM_SHIFT) | devfn)));
+
+	return PCIBIOS_SUCCESSFUL;
+}
+#endif
+
 int pci_generic_config_read(struct pci_bus *bus, unsigned int devfn,
 			    int where, int size, u32 *val)
 {
@@ -85,6 +129,11 @@ int pci_generic_config_read(struct pci_bus *bus, unsigned int devfn,
 	addr = bus->ops->map_bus(bus, devfn, where);
 	if (!addr)
 		return PCIBIOS_DEVICE_NOT_FOUND;
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (is_virtcca_cvm_enable() && is_cc_dev((bus->number << BUS_NUM_SHIFT) | devfn))
+		return virtcca_pci_generic_config_read(addr, bus->number, devfn, size, val);
+#endif
 
 	if (size == 1)
 		*val = readb(addr);
@@ -105,6 +154,11 @@ int pci_generic_config_write(struct pci_bus *bus, unsigned int devfn,
 	addr = bus->ops->map_bus(bus, devfn, where);
 	if (!addr)
 		return PCIBIOS_DEVICE_NOT_FOUND;
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+	if (is_virtcca_cvm_enable() && is_cc_dev((bus->number << BUS_NUM_SHIFT) | devfn))
+		return virtcca_pci_generic_config_write(addr, bus->number, devfn, size, val);
+#endif
 
 	if (size == 1)
 		writeb(val, addr);

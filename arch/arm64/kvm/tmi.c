@@ -6,6 +6,31 @@
 #include <asm/kvm_tmi.h>
 #include <asm/memory.h>
 
+/* Supported io_va transfer to pa */
+u64 iova_to_pa(void *addr)
+{
+	uint64_t pa, par_el1;
+
+	asm volatile(
+		"AT S1E1W, %0\n"
+		::"r"((uint64_t)(addr))
+	);
+	isb();
+	asm volatile(
+		"mrs %0, par_el1\n"
+		: "=r"(par_el1)
+	);
+
+	pa = ((uint64_t)(addr) & (PAGE_SIZE - 1)) |
+		(par_el1 & ULL(0x000ffffffffff000));
+
+	if (par_el1 & UL(1 << 0))
+		return (uint64_t)(addr);
+	else
+		return pa;
+}
+EXPORT_SYMBOL(iova_to_pa);
+
 u64 tmi_version(void)
 {
 	struct arm_smccc_res res;
