@@ -5486,8 +5486,8 @@ static int fill_congest_field(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 	return 0;
 }
 
-int hns_roce_hw_v2_get_dscp(struct hns_roce_dev *hr_dev, u8 dscp,
-			    u8 *tc_mode, u8 *priority)
+static int hns_roce_hw_v2_get_dscp(struct hns_roce_dev *hr_dev, u8 dscp,
+				   u8 *tc_mode, u8 *priority)
 {
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hnae3_handle *handle = priv->handle;

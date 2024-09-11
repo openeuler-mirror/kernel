@@ -913,7 +913,7 @@ normal_unregister:
 	ib_unregister_device(&hr_dev->ib_dev);
 }
 
-const struct uapi_definition hns_roce_uapi_defs[] = {
+static const struct uapi_definition hns_roce_uapi_defs[] = {
 	UAPI_DEF_CHAIN(hns_roce_dca_uapi_defs),
 	{}
 };
