@@ -5,6 +5,7 @@
 #include <linux/kvm_host.h>
 #include <linux/kvm.h>
 #include <linux/vfio.h>
+#include <linux/vfio_pci_core.h>
 #include <asm/kvm_tmi.h>
 #include <asm/kvm_pgtable.h>
 #include <asm/kvm_emulate.h>
@@ -1120,3 +1121,17 @@ int kvm_cvm_map_ipa(struct kvm *kvm, phys_addr_t ipa, kvm_pfn_t pfn,
 
 	return 0;
 }
+
+/* Set device secure flag */
+void virtcca_cvm_set_secure_flag(void *vdev, void *info)
+{
+	if (!is_virtcca_cvm_enable())
+		return;
+
+	if (!is_cc_dev(pci_dev_id(((struct vfio_pci_core_device *)vdev)->pdev)))
+		return;
+
+	((struct vfio_device_info *)info)->flags |= VFIO_DEVICE_FLAGS_SECURE;
+}
+EXPORT_SYMBOL_GPL(virtcca_cvm_set_secure_flag);
+

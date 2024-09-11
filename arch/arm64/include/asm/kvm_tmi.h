@@ -409,6 +409,6 @@ int kvm_init_cvm_vm(struct kvm *kvm);
 int kvm_enable_virtcca_cvm(struct kvm *kvm);
 int kvm_cvm_map_ipa(struct kvm *kvm, phys_addr_t ipa, kvm_pfn_t pfn,
 	unsigned long map_size, enum kvm_pgtable_prot prot, int ret);
-
+void virtcca_cvm_set_secure_flag(void *vdev, void *info);
 #endif
 #endif
