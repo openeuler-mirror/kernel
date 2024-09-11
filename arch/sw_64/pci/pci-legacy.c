@@ -229,8 +229,10 @@ static bool __init is_any_rc_linkup_one_node(unsigned long node)
 
 static bool __init is_sunway_legacy_pci(void)
 {
-	if (sunway_machine_is_compatible("sunway,chip3") ||
-	    sunway_machine_is_compatible("sunway,chip4"))
+	if (IS_ENABLED(CONFIG_SUBARCH_C3B))
+		return true;
+
+	if (sunway_machine_is_compatible("sunway,chip4"))
 		return true;
 
 	if (is_in_host() && sunway_machine_is_compatible("sunway,junzhang"))
