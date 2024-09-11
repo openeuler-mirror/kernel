@@ -1451,7 +1451,7 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 			if (likely(desc_ret == CMD_EXEC_SUCCESS))
 				continue;
 
-			if (desc->opcode != HNS_ROCE_OPC_QUERY_HW_ID &&
+			if (desc->opcode != cpu_to_le16(HNS_ROCE_OPC_QUERY_HW_ID) &&
 			    desc_ret != CMD_NOT_EXIST)
 				dev_err_ratelimited(hr_dev->dev,
 					"Cmdq IO error, opcode = 0x%x, return = 0x%x.\n",
@@ -1599,7 +1599,7 @@ static void hns_roce_cmq_query_hw_id(struct hns_roce_dev *hr_dev)
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_QUERY_HW_ID, true);
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret) {
-		if (desc.retval != CMD_NOT_EXIST)
+		if (desc.retval != cpu_to_le16(CMD_NOT_EXIST))
 			ibdev_warn(&hr_dev->ib_dev,
 				   "failed to query hw id, ret = %d.\n", ret);
 
@@ -4012,37 +4012,39 @@ static void hns_roce_v2_cq_clean(struct hns_roce_cq *hr_cq, u32 qpn,
 static void enable_write_notify(struct hns_roce_cq *hr_cq,
 				struct hns_roce_v2_cq_context *cq_context)
 {
+	__le64 notify_addr = cpu_to_le64(hr_cq->write_notify.notify_addr);
+
 	hr_reg_enable(cq_context, CQC_NOTIFY_EN);
 	hr_reg_write(cq_context, CQC_NOTIFY_DEVICE_EN,
 		     hr_cq->write_notify.notify_device_en);
 	hr_reg_write(cq_context, CQC_NOTIFY_MODE,
 		     hr_cq->write_notify.notify_mode);
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_0,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_0_M,
 					   CQC_NOTIFY_ADDR_0_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_1,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_1_M,
 					   CQC_NOTIFY_ADDR_1_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_2,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_2_M,
 					   CQC_NOTIFY_ADDR_2_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_3,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_3_M,
 					   CQC_NOTIFY_ADDR_3_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_4,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_4_M,
 					   CQC_NOTIFY_ADDR_4_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_5,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_5_M,
 					   CQC_NOTIFY_ADDR_5_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_6,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_6_M,
 					   CQC_NOTIFY_ADDR_6_S));
 }
@@ -7714,7 +7716,7 @@ static int config_poe_attr(struct hns_roce_dev *hr_dev, u32 channel_id, bool en)
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_CFG_POE_ATTR, false);
 	cmd = (struct hns_roce_poe_cfg_attr_cmq *)desc.data;
 	cmd->channel_id = cpu_to_le32(channel_id);
-	cmd->rsv_en_outstd = en ? 1 : 0;
+	cmd->rsv_en_outstd = cpu_to_le32(!!en);
 
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret)
