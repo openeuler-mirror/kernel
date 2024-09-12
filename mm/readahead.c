@@ -504,6 +504,8 @@ void page_cache_ra_order(struct readahead_control *ractl,
 
 	if (!mapping_large_folio_support(mapping) || ra->size < 4)
 		goto fallback;
+	if (!file_mthp_enabled())
+		goto fallback;
 	if (mm_in_dynamic_pool(current->mm))
 		goto fallback;
 

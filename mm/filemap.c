@@ -1932,6 +1932,8 @@ no_page:
 
 		if (!mapping_large_folio_support(mapping))
 			order = 0;
+		if (order && !file_mthp_enabled())
+			order = 0;
 		if (order && mm_in_dynamic_pool(current->mm))
 			order = 0;
 		if (order > MAX_PAGECACHE_ORDER)

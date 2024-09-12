@@ -51,6 +51,7 @@ enum transparent_hugepage_flag {
 	TRANSPARENT_HUGEPAGE_DEFRAG_REQ_MADV_FLAG,
 	TRANSPARENT_HUGEPAGE_DEFRAG_KHUGEPAGED_FLAG,
 	TRANSPARENT_HUGEPAGE_USE_ZERO_PAGE_FLAG,
+	TRANSPARENT_HUGEPAGE_FILE_MTHP_FLAG,
 	TRANSPARENT_HUGEPAGE_FILE_EXEC_THP_FLAG,
 	TRANSPARENT_HUGEPAGE_FILE_EXEC_MTHP_FLAG,
 	TRANSPARENT_HUGEPAGE_FILE_MAPPING_ALIGN_FLAG,
@@ -308,9 +309,9 @@ static inline void count_mthp_stat(int order, enum mthp_stat_item item)
 	(transparent_hugepage_flags &					\
 	 (1<<TRANSPARENT_HUGEPAGE_USE_ZERO_PAGE_FLAG))
 
-#define thp_anon_mapping_pmd_align()				\
+#define file_mthp_enabled()					\
 	(transparent_hugepage_flags &				\
-	 (1<<TRANSPARENT_HUGEPAGE_ANON_MAPPING_PMD_ALIGN_FLAG))
+	 (1<<TRANSPARENT_HUGEPAGE_FILE_MTHP_FLAG))
 
 unsigned long thp_get_unmapped_area(struct file *filp, unsigned long addr,
 		unsigned long len, unsigned long pgoff, unsigned long flags);
@@ -465,7 +466,7 @@ static inline void folio_prep_large_rmappable(struct folio *folio) {}
 
 #define transparent_hugepage_flags 0UL
 
-#define thp_anon_mapping_pmd_align()	NULL
+#define file_mthp_enabled()	false
 
 #define thp_get_unmapped_area	NULL
 
