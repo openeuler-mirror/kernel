@@ -15,6 +15,7 @@
 #define RW_R_R			0644
 #define SDMA_IRQ_NUM_MAX	512
 #define ALIGN_NUM		1
+#define HISI_SDMA_HAL_HASH_BUCKETS_BITS 8
 
 /**
  * struct hisi_sdma_channel - Information about one channel in the SDMA device
@@ -39,6 +40,12 @@ struct hisi_sdma_channel {
 
 	void __iomem *io_base;
 	u16 cnt_used;
+};
+
+struct hisi_sdma_pid_ref_hte {
+	u32 pid;
+	u32 ref;
+	struct hlist_node node;
 };
 
 /**
@@ -77,6 +84,8 @@ struct hisi_sdma_device {
 
 	int irq_cnt;
 	int irq[SDMA_IRQ_NUM_MAX];
+	DECLARE_HASHTABLE(sdma_pid_ref_ht, HISI_SDMA_HAL_HASH_BUCKETS_BITS);
+	spinlock_t pid_lock;
 };
 
 struct hisi_sdma_core_device {
@@ -88,12 +97,17 @@ struct hisi_sdma_core_device {
 
 struct hisi_sdma_global_info {
 	u32 *share_chns;
+	bool *sdma_mode;
 	struct hisi_sdma_core_device *core_dev;
 	struct ida *fd_ida;
 };
 
+void sdma_clear_pid_ref(struct hisi_sdma_device *psdma_dev);
+int sdma_create_dbg_node(struct dentry *sdma_dbgfs_dir);
 void sdma_cdev_init(struct cdev *cdev);
-void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida);
+void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida,
+			 bool *safe_mode);
+void sdma_info_sync_dbg(struct hisi_sdma_core_device *p, u32 *share_chns);
 
 static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val, u32 mask)
 {
@@ -126,6 +140,16 @@ static inline bool sdma_channel_is_paused(struct hisi_sdma_channel *pchan)
 static inline bool sdma_channel_is_idle(struct hisi_sdma_channel *pchan)
 {
 	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_IDLE_MSK) == 1;
+}
+
+static inline bool sdma_channel_is_running(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_RUNNING_MSK) == 1;
+}
+
+static inline bool sdma_channel_is_abort(struct hisi_sdma_channel *pchan)
+{
+	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_ABORT_MSK) == 1;
 }
 
 static inline bool sdma_channel_is_quiescent(struct hisi_sdma_channel *pchan)

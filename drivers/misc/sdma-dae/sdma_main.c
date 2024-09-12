@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <linux/acpi.h>
 #include <linux/bitmap.h>
+#include <linux/debugfs.h>
 #include <linux/iommu.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
@@ -14,6 +15,7 @@
 #include "sdma_umem.h"
 #include "sdma_auth.h"
 
+#define BASE_DIR		"sdma" /* Subdir in /sys/kernel/debug/  */
 #define UPPER_SHIFT		32
 #define MAX_INPUT_LENGTH	128
 
@@ -21,9 +23,14 @@ u32 share_chns = 16;
 module_param(share_chns, uint, RW_R_R);
 MODULE_PARM_DESC(share_chns, "num of share channels, 16 by default");
 
+static bool safe_mode = true; /* fast mode by default */
+module_param(safe_mode, bool, RW_R_R);
+MODULE_PARM_DESC(safe_mode, "| 0 - fast_mode| 1 - safe_mode(default)|");
+
 struct ida fd_ida;
 struct hisi_sdma_core_device hisi_sdma_core_device = {0};
 static struct class *sdma_class;
+static struct dentry *sdma_dbgfs_dir;
 
 static bool sdma_channel_alloc_sq_cq(struct hisi_sdma_channel *pchan, u32 idx)
 {
@@ -74,6 +81,8 @@ static void sdma_channel_init(struct hisi_sdma_channel *pchan)
 	sdma_channel_set_cq_size(pchan, HISI_SDMA_CQ_LENGTH - 1);
 	sdma_channel_set_sq_tail(pchan, 0);
 	sdma_channel_set_cq_head(pchan, 0);
+	sdma_channel_clr_normal_sqe_cnt(pchan);
+	sdma_channel_clr_err_sqe_cnt(pchan);
 
 	sdma_channel_enable(pchan);
 }
@@ -154,6 +163,7 @@ void sdma_destroy_channels(struct hisi_sdma_device *psdma_dev)
 
 	sdma_free_all_sq_cq(psdma_dev);
 	kfree(psdma_dev->channels);
+	psdma_dev->channels = NULL;
 }
 
 int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
@@ -415,16 +425,19 @@ static int sdma_device_probe(struct platform_device *pdev)
 
 	psdma_dev->streamid = pdev->dev.iommu->fwspec->ids[0];
 	spin_lock_init(&psdma_dev->channel_lock);
+	hash_init(psdma_dev->sdma_pid_ref_ht);
+	spin_lock_init(&psdma_dev->pid_lock);
 
 	ret = sdma_device_add(psdma_dev);
 	if (ret)
 		goto sva_device_shutdown;
 
-	dev_info(&pdev->dev, "sdma%d registered\n", psdma_dev->idx);
+	dev_info(&pdev->dev, "sdma%u registered\n", psdma_dev->idx);
 
 	return 0;
 
 sva_device_shutdown:
+	sdma_clear_pid_ref(psdma_dev);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 deinit_device:
@@ -440,9 +453,12 @@ static int sdma_device_remove(struct platform_device *pdev)
 	struct hisi_sdma_device *psdma_dev = dev_get_drvdata(&pdev->dev);
 
 	sdma_device_delete(psdma_dev);
+	sdma_clear_pid_ref(psdma_dev);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 	sdma_deinit_device_info(psdma_dev);
+	dev_info(&pdev->dev, "sdma%u removed\n", psdma_dev->idx);
+
 	kfree(psdma_dev);
 
 	return 0;
@@ -463,13 +479,35 @@ static struct platform_driver sdma_driver = {
 	},
 };
 
+static long sdma_create_debugfs(void)
+{
+	long ret;
+
+	/* Create dbgfs dir */
+	sdma_dbgfs_dir = debugfs_create_dir(BASE_DIR, NULL);
+	if (IS_ERR(sdma_dbgfs_dir)) {
+		pr_err("Couldn't create debugfs dir /sys/kernel/debug/%s\n", BASE_DIR);
+		return PTR_ERR(sdma_dbgfs_dir);
+	}
+	/* Create dbgfs nodes */
+	ret = sdma_create_dbg_node(sdma_dbgfs_dir);
+	if (ret < 0) {
+		pr_err("Couldn't create sdma debug node file, ret = %ld\n", ret);
+		debugfs_remove_recursive(sdma_dbgfs_dir);
+		return ret;
+	}
+
+	return 0;
+}
+
 static int __init sdma_driver_init(void)
 {
 	dev_t sdma_dev;
-	int ret;
+	long ret;
 
 	ida_init(&fd_ida);
-	sdma_info_sync_cdev(&hisi_sdma_core_device, &share_chns, &fd_ida);
+	sdma_info_sync_cdev(&hisi_sdma_core_device, &share_chns, &fd_ida, &safe_mode);
+	sdma_info_sync_dbg(&hisi_sdma_core_device, &share_chns);
 
 	sdma_class = class_create(THIS_MODULE, "sdma");
 	if (IS_ERR(sdma_class)) {
@@ -483,10 +521,14 @@ static int __init sdma_driver_init(void)
 	}
 	spin_lock_init(&hisi_sdma_core_device.device_lock);
 	hisi_sdma_core_device.sdma_major = MAJOR(sdma_dev);
+	ret = sdma_create_debugfs();
+	if (ret != 0)
+		goto unregister_chrdev;
+
 	ret = platform_driver_register(&sdma_driver);
 	if (ret) {
 		pr_err("sdma platform_driver_register failed!\n");
-		goto unregister_chrdev;
+		goto remove_debugfs;
 	}
 
 	if (sdma_hash_init()) {
@@ -505,6 +547,8 @@ umem_hash_free:
 	sdma_hash_free();
 unregister_driver:
 	platform_driver_unregister(&sdma_driver);
+remove_debugfs:
+	debugfs_remove_recursive(sdma_dbgfs_dir);
 unregister_chrdev:
 	unregister_chrdev_region(sdma_dev, HISI_SDMA_MAX_DEVS);
 destroy_class:
@@ -517,14 +561,12 @@ destroy_ida:
 
 static void __exit sdma_driver_exit(void)
 {
-	dev_t devno;
-
 	sdma_authority_ht_free();
 	sdma_hash_free();
 	platform_driver_unregister(&sdma_driver);
+	debugfs_remove_recursive(sdma_dbgfs_dir);
 
-	devno = MKDEV(hisi_sdma_core_device.sdma_major, 0);
-	unregister_chrdev_region(devno, HISI_SDMA_MAX_DEVS);
+	unregister_chrdev_region(MKDEV(hisi_sdma_core_device.sdma_major, 0), HISI_SDMA_MAX_DEVS);
 	class_destroy(sdma_class);
 	ida_destroy(&fd_ida);
 }
