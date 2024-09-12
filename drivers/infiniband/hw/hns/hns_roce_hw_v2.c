@@ -1451,7 +1451,7 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 			if (likely(desc_ret == CMD_EXEC_SUCCESS))
 				continue;
 
-			if (desc->opcode != HNS_ROCE_OPC_QUERY_HW_ID &&
+			if (desc->opcode != cpu_to_le16(HNS_ROCE_OPC_QUERY_HW_ID) &&
 			    desc_ret != CMD_NOT_EXIST)
 				dev_err_ratelimited(hr_dev->dev,
 					"Cmdq IO error, opcode = 0x%x, return = 0x%x.\n",
@@ -1599,7 +1599,7 @@ static void hns_roce_cmq_query_hw_id(struct hns_roce_dev *hr_dev)
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_QUERY_HW_ID, true);
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret) {
-		if (desc.retval != CMD_NOT_EXIST)
+		if (desc.retval != cpu_to_le16(CMD_NOT_EXIST))
 			ibdev_warn(&hr_dev->ib_dev,
 				   "failed to query hw id, ret = %d.\n", ret);
 
@@ -4012,37 +4012,39 @@ static void hns_roce_v2_cq_clean(struct hns_roce_cq *hr_cq, u32 qpn,
 static void enable_write_notify(struct hns_roce_cq *hr_cq,
 				struct hns_roce_v2_cq_context *cq_context)
 {
+	__le64 notify_addr = cpu_to_le64(hr_cq->write_notify.notify_addr);
+
 	hr_reg_enable(cq_context, CQC_NOTIFY_EN);
 	hr_reg_write(cq_context, CQC_NOTIFY_DEVICE_EN,
 		     hr_cq->write_notify.notify_device_en);
 	hr_reg_write(cq_context, CQC_NOTIFY_MODE,
 		     hr_cq->write_notify.notify_mode);
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_0,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_0_M,
 					   CQC_NOTIFY_ADDR_0_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_1,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_1_M,
 					   CQC_NOTIFY_ADDR_1_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_2,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_2_M,
 					   CQC_NOTIFY_ADDR_2_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_3,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_3_M,
 					   CQC_NOTIFY_ADDR_3_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_4,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_4_M,
 					   CQC_NOTIFY_ADDR_4_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_5,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_5_M,
 					   CQC_NOTIFY_ADDR_5_S));
 	hr_reg_write(cq_context, CQC_NOTIFY_ADDR_6,
-		     (u32)roce_get_field64(hr_cq->write_notify.notify_addr,
+		     (u32)roce_get_field64(notify_addr,
 					   CQC_NOTIFY_ADDR_6_M,
 					   CQC_NOTIFY_ADDR_6_S));
 }
@@ -5486,8 +5488,8 @@ static int fill_congest_field(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 	return 0;
 }
 
-int hns_roce_hw_v2_get_dscp(struct hns_roce_dev *hr_dev, u8 dscp,
-			    u8 *tc_mode, u8 *priority)
+static int hns_roce_hw_v2_get_dscp(struct hns_roce_dev *hr_dev, u8 dscp,
+				   u8 *tc_mode, u8 *priority)
 {
 	struct hns_roce_v2_priv *priv = hr_dev->priv;
 	struct hnae3_handle *handle = priv->handle;
@@ -6700,11 +6702,10 @@ err_mailbox:
 	return ret;
 }
 
-static void hns_roce_irq_work_handle(struct work_struct *work)
+static void dump_aeqe_log(struct hns_roce_work *irq_work)
 {
-	struct hns_roce_work *irq_work =
-				container_of(work, struct hns_roce_work, work);
-	struct ib_device *ibdev = &irq_work->hr_dev->ib_dev;
+	struct hns_roce_dev *hr_dev = irq_work->hr_dev;
+	struct ib_device *ibdev = &hr_dev->ib_dev;
 
 	switch (irq_work->event_type) {
 	case HNS_ROCE_EVENT_TYPE_PATH_MIG:
@@ -6748,6 +6749,8 @@ static void hns_roce_irq_work_handle(struct work_struct *work)
 	case HNS_ROCE_EVENT_TYPE_DB_OVERFLOW:
 		ibdev_warn(ibdev, "DB overflow.\n");
 		break;
+	case HNS_ROCE_EVENT_TYPE_MB:
+		break;
 	case HNS_ROCE_EVENT_TYPE_FLR:
 		ibdev_warn(ibdev, "Function level reset.\n");
 		break;
@@ -6758,8 +6761,41 @@ static void hns_roce_irq_work_handle(struct work_struct *work)
 		ibdev_err(ibdev, "invalid xrceth error.\n");
 		break;
 	default:
+		ibdev_info(ibdev, "Undefined event %d.\n",
+			   irq_work->event_type);
 		break;
 	}
+}
+
+static void hns_roce_irq_work_handle(struct work_struct *work)
+{
+	struct hns_roce_work *irq_work =
+				container_of(work, struct hns_roce_work, work);
+	struct hns_roce_dev *hr_dev = irq_work->hr_dev;
+	int event_type = irq_work->event_type;
+	u32 queue_num = irq_work->queue_num;
+
+	switch (event_type) {
+	case HNS_ROCE_EVENT_TYPE_PATH_MIG:
+	case HNS_ROCE_EVENT_TYPE_PATH_MIG_FAILED:
+	case HNS_ROCE_EVENT_TYPE_COMM_EST:
+	case HNS_ROCE_EVENT_TYPE_SQ_DRAINED:
+	case HNS_ROCE_EVENT_TYPE_SRQ_LAST_WQE_REACH:
+		hns_roce_qp_event(hr_dev, queue_num, event_type);
+		break;
+	case HNS_ROCE_EVENT_TYPE_SRQ_LIMIT_REACH:
+	case HNS_ROCE_EVENT_TYPE_SRQ_CATAS_ERROR:
+		hns_roce_srq_event(hr_dev, queue_num, event_type);
+		break;
+	case HNS_ROCE_EVENT_TYPE_CQ_ACCESS_ERROR:
+	case HNS_ROCE_EVENT_TYPE_CQ_OVERFLOW:
+		hns_roce_cq_event(hr_dev, queue_num, event_type);
+		break;
+	default:
+		break;
+	}
+
+	dump_aeqe_log(irq_work);
 
 	kfree(irq_work);
 }
@@ -6820,14 +6856,14 @@ static struct hns_roce_aeqe *next_aeqe_sw_v2(struct hns_roce_eq *eq)
 static irqreturn_t hns_roce_v2_aeq_int(struct hns_roce_dev *hr_dev,
 				       struct hns_roce_eq *eq)
 {
-	struct device *dev = hr_dev->dev;
 	struct hns_roce_aeqe *aeqe = next_aeqe_sw_v2(eq);
 	irqreturn_t aeqe_found = IRQ_NONE;
+	int num_aeqes = 0;
 	int event_type;
 	u32 queue_num;
 	int sub_type;
 
-	while (aeqe) {
+	while (aeqe && num_aeqes < HNS_AEQ_POLLING_BUDGET) {
 		/* Make sure we read AEQ entry after we have checked the
 		 * ownership bit
 		 */
@@ -6838,25 +6874,12 @@ static irqreturn_t hns_roce_v2_aeq_int(struct hns_roce_dev *hr_dev,
 		queue_num = hr_reg_read(aeqe, AEQE_EVENT_QUEUE_NUM);
 
 		switch (event_type) {
-		case HNS_ROCE_EVENT_TYPE_PATH_MIG:
-		case HNS_ROCE_EVENT_TYPE_PATH_MIG_FAILED:
-		case HNS_ROCE_EVENT_TYPE_COMM_EST:
-		case HNS_ROCE_EVENT_TYPE_SQ_DRAINED:
 		case HNS_ROCE_EVENT_TYPE_WQ_CATAS_ERROR:
-		case HNS_ROCE_EVENT_TYPE_SRQ_LAST_WQE_REACH:
 		case HNS_ROCE_EVENT_TYPE_INV_REQ_LOCAL_WQ_ERROR:
 		case HNS_ROCE_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR:
 		case HNS_ROCE_EVENT_TYPE_XRCD_VIOLATION:
 		case HNS_ROCE_EVENT_TYPE_INVALID_XRCETH:
 			hns_roce_qp_event(hr_dev, queue_num, event_type);
-			break;
-		case HNS_ROCE_EVENT_TYPE_SRQ_LIMIT_REACH:
-		case HNS_ROCE_EVENT_TYPE_SRQ_CATAS_ERROR:
-			hns_roce_srq_event(hr_dev, queue_num, event_type);
-			break;
-		case HNS_ROCE_EVENT_TYPE_CQ_ACCESS_ERROR:
-		case HNS_ROCE_EVENT_TYPE_CQ_OVERFLOW:
-			hns_roce_cq_event(hr_dev, queue_num, event_type);
 			break;
 		case HNS_ROCE_EVENT_TYPE_MB:
 			hns_roce_cmd_event(hr_dev,
@@ -6864,12 +6887,7 @@ static irqreturn_t hns_roce_v2_aeq_int(struct hns_roce_dev *hr_dev,
 					aeqe->event.cmd.status,
 					le64_to_cpu(aeqe->event.cmd.out_param));
 			break;
-		case HNS_ROCE_EVENT_TYPE_DB_OVERFLOW:
-		case HNS_ROCE_EVENT_TYPE_FLR:
-			break;
 		default:
-			dev_err(dev, "Unhandled event %d on EQ %d at idx %u.\n",
-				event_type, eq->eqn, eq->cons_index);
 			break;
 		}
 
@@ -6882,6 +6900,7 @@ static irqreturn_t hns_roce_v2_aeq_int(struct hns_roce_dev *hr_dev,
 		hns_roce_v2_init_irq_work(hr_dev, eq, queue_num);
 
 		aeqe = next_aeqe_sw_v2(eq);
+		++num_aeqes;
 	}
 
 	update_eq_db(eq);
@@ -7432,6 +7451,9 @@ static int hns_roce_v2_init_eq_table(struct hns_roce_dev *hr_dev)
 	int ret;
 	int i;
 
+	if (hr_dev->caps.aeqe_depth < HNS_AEQ_POLLING_BUDGET)
+		return -EINVAL;
+
 	other_num = hr_dev->caps.num_other_vectors;
 	comp_num = hr_dev->caps.num_comp_vectors;
 	aeq_num = hr_dev->caps.num_aeq_vectors;
@@ -7694,7 +7716,7 @@ static int config_poe_attr(struct hns_roce_dev *hr_dev, u32 channel_id, bool en)
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_CFG_POE_ATTR, false);
 	cmd = (struct hns_roce_poe_cfg_attr_cmq *)desc.data;
 	cmd->channel_id = cpu_to_le32(channel_id);
-	cmd->rsv_en_outstd = en ? 1 : 0;
+	cmd->rsv_en_outstd = cpu_to_le32(!!en);
 
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret)

@@ -310,12 +310,12 @@ static umode_t scc_attr_is_visible(struct kobject *kobj,
 	.max = _max,								\
 }
 
-#define HNS_PORT_CNP_PRI_ATTR_RW(_name, NAME)			\
-	struct hns_port_cnp_pri_attr hns_roce_port_attr_cnp_pri_##_name =	\
+#define HNS_PORT_CNP_PRI_ATTR_RW(_name, NAME)						\
+	static struct hns_port_cnp_pri_attr hns_roce_port_attr_cnp_pri_##_name =	\
 	__HNS_CNP_PRI_ATTR(_name,		\
-			HNS_ROCE_CNP_PRI_##NAME##_BIT_OFS,			\
-			HNS_ROCE_CNP_PRI_##NAME##_BIT_SZ,			\
-			HNS_ROCE_CNP_PRI_##NAME##_BIT_MASK,			\
+			HNS_ROCE_CNP_PRI_##NAME##_BIT_OFS,				\
+			HNS_ROCE_CNP_PRI_##NAME##_BIT_SZ,				\
+			HNS_ROCE_CNP_PRI_##NAME##_BIT_MASK,				\
 			HNS_ROCE_CNP_PRI_##NAME##_MAX)
 
 HNS_PORT_CNP_PRI_ATTR_RW(enable, ENABLE);
@@ -342,11 +342,11 @@ static const struct attribute_group cnp_pri_param_group = {
 	.max = _max,								\
 }
 
-#define HNS_PORT_DCQCN_CC_ATTR_RW(_name, NAME)			\
-	struct hns_port_cc_attr hns_roce_port_attr_dcqcn_##_name =	\
-	__HNS_SCC_ATTR(_name, HNS_ROCE_SCC_ALGO_DCQCN,			\
-			HNS_ROCE_DCQCN_##NAME##_OFS,			\
-			HNS_ROCE_DCQCN_##NAME##_SZ,			\
+#define HNS_PORT_DCQCN_CC_ATTR_RW(_name, NAME)					\
+	static struct hns_port_cc_attr hns_roce_port_attr_dcqcn_##_name =	\
+	__HNS_SCC_ATTR(_name, HNS_ROCE_SCC_ALGO_DCQCN,				\
+			HNS_ROCE_DCQCN_##NAME##_OFS,				\
+			HNS_ROCE_DCQCN_##NAME##_SZ,				\
 			0, HNS_ROCE_DCQCN_##NAME##_MAX)
 
 HNS_PORT_DCQCN_CC_ATTR_RW(ai, AI);
@@ -382,11 +382,11 @@ static const struct attribute_group dcqcn_cc_param_group = {
 	.is_visible = scc_attr_is_visible,
 };
 
-#define HNS_PORT_LDCP_CC_ATTR_RW(_name, NAME)				\
-	struct hns_port_cc_attr hns_roce_port_attr_ldcp_##_name =	\
-	__HNS_SCC_ATTR(_name, HNS_ROCE_SCC_ALGO_LDCP,			\
-			HNS_ROCE_LDCP_##NAME##_OFS,			\
-			HNS_ROCE_LDCP_##NAME##_SZ,			\
+#define HNS_PORT_LDCP_CC_ATTR_RW(_name, NAME)					\
+	static struct hns_port_cc_attr hns_roce_port_attr_ldcp_##_name =	\
+	__HNS_SCC_ATTR(_name, HNS_ROCE_SCC_ALGO_LDCP,				\
+			HNS_ROCE_LDCP_##NAME##_OFS,				\
+			HNS_ROCE_LDCP_##NAME##_SZ,				\
 			0, HNS_ROCE_LDCP_##NAME##_MAX)
 
 HNS_PORT_LDCP_CC_ATTR_RW(cwd0, CWD0);
@@ -413,7 +413,7 @@ static const struct attribute_group ldcp_cc_param_group = {
 };
 
 #define HNS_PORT_HC3_CC_ATTR_RW(_name, NAME)				\
-	struct hns_port_cc_attr hns_roce_port_attr_hc3_##_name =	\
+	static struct hns_port_cc_attr hns_roce_port_attr_hc3_##_name =	\
 	__HNS_SCC_ATTR(_name, HNS_ROCE_SCC_ALGO_HC3,			\
 			HNS_ROCE_HC3_##NAME##_OFS,			\
 			HNS_ROCE_HC3_##NAME##_SZ,			\
@@ -447,7 +447,7 @@ static const struct attribute_group hc3_cc_param_group = {
 };
 
 #define HNS_PORT_DIP_CC_ATTR_RW(_name, NAME)				\
-	struct hns_port_cc_attr hns_roce_port_attr_dip_##_name =	\
+	static struct hns_port_cc_attr hns_roce_port_attr_dip_##_name =	\
 	__HNS_SCC_ATTR(_name, HNS_ROCE_SCC_ALGO_DIP,			\
 			HNS_ROCE_DIP_##NAME##_OFS,			\
 			HNS_ROCE_DIP_##NAME##_SZ,			\
@@ -486,7 +486,7 @@ static const struct attribute_group dip_cc_param_group = {
 	.is_visible = scc_attr_is_visible,
 };
 
-const struct attribute_group *hns_attr_port_groups[] = {
+static const struct attribute_group *hns_attr_port_groups[] = {
 	&dcqcn_cc_param_group,
 	&ldcp_cc_param_group,
 	&hc3_cc_param_group,
