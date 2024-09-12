@@ -20,6 +20,7 @@
 #define IPV6_ADDR_LEN 16
 #define VER_SHIFT_4 4u
 #define IP_NOTIFY_TIMEOUT_MS 30000
+#define IP_NOTIFY_TIMEOUT_S 30
 
 /* IP Protocol type */
 enum { UB_PROTO_IPV4 = 1, UB_PROTO_IPV6 };
