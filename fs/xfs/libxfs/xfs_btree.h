@@ -235,6 +235,7 @@ typedef struct xfs_btree_cur
 		struct xfs_btree_cur_ag	bc_ag;
 		struct xfs_btree_cur_ino bc_ino;
 	};
+	xfs_extlen_t	bc_free_longest;	/* the actual longest free extent */
 } xfs_btree_cur_t;
 
 /* cursor flags */
