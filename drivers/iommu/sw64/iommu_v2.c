@@ -992,6 +992,10 @@ static int sunway_iommu_acpi_init(void)
 		return ret;
 
 	for_each_iommu(iommu) {
+		hose = find_hose_by_rcid(iommu->node, iommu->index);
+		if (!hose)
+			continue;
+
 		if (!iommu->enabled || hose->iommu_enable)
 			continue;
 
@@ -1000,7 +1004,6 @@ static int sunway_iommu_acpi_init(void)
 		iommu_device_set_ops(&iommu->iommu, &sunway_iommu_ops);
 		iommu_device_register(&iommu->iommu);
 		iommu_index++;
-		hose = find_hose_by_rcid(iommu->node, iommu->index);
 		sunway_enable_iommu_func(hose);
 		hose->iommu_enable = true;
 		piu_flush_all(iommu);
