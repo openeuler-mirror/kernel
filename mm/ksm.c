@@ -1965,7 +1965,6 @@ again:
 
 	INIT_HLIST_HEAD(&stable_node_dup->hlist);
 	stable_node_dup->kpfn = kpfn;
-	set_page_stable_node(kpage, stable_node_dup);
 	stable_node_dup->rmap_hlist_len = 0;
 	DO_NUMA(stable_node_dup->nid = nid);
 	if (!need_chain) {
@@ -1983,6 +1982,8 @@ again:
 		}
 		stable_node_chain_add_dup(stable_node_dup, stable_node);
 	}
+
+	set_page_stable_node(kpage, stable_node_dup);
 
 	return stable_node_dup;
 }
