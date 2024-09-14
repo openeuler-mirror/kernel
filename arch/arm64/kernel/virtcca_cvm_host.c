@@ -11,6 +11,7 @@
 #include <asm/cacheflush.h>
 #include <asm/set_memory.h>
 #include <asm/tlbflush.h>
+#include <asm/virtcca_cvm_host.h>
 
 DEFINE_STATIC_KEY_FALSE(virtcca_cvm_is_enable);
 

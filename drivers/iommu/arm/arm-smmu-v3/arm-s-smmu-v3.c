@@ -55,7 +55,7 @@ static inline void virtcca_smmu_set_irq(struct arm_smmu_device *smmu)
 }
 
 /**
- * Traverse pcie topology to find the root <bus,device> number
+ * get_root_bd - Traverse pcie topology to find the root <bus,device> number
  * @dev: The device for which to get root bd
  *
  * Returns:
@@ -77,7 +77,7 @@ static int get_root_bd(struct device *dev)
 }
 
 /**
- * Traverse pcie topology to find child devices
+ * get_child_devices_rec - Traverse pcie topology to find child devices
  * If dev is a bridge, get it's children
  * If dev is a regular device, get itself
  * @dev: Device for which to get child devices
@@ -115,7 +115,7 @@ static void get_child_devices_rec(struct pci_dev *dev, uint16_t *devs,
 }
 
 /**
- * Get all devices which share the same root_bd as dev
+ * get_sibling_devices - Get all devices which share the same root_bd as dev
  * @dev: Device for which to get child devices
  * @devs: All child devices under input dev
  * @max_devs: Max num of devs
@@ -143,7 +143,7 @@ static int get_sibling_devices(struct device *dev, uint16_t *devs, int max_devs)
 }
 
 /**
- * Add device obj to hash tablse
+ * add_cc_dev_obj - Add device obj to hash tablse
  * @sid: Stream id of device
  * @vmid: Virtual machine id
  * @root_bd: Root port bus device num
@@ -180,7 +180,7 @@ static int add_cc_dev_obj(u32 sid, u32 vmid, u32 root_bd, bool secure)
 }
 
 /**
- * Whether the root port is secure or not
+ * is_cc_root_bd - Whether the root port is secure or not
  * @root_bd: Root port bus device num
  *
  * Returns:
@@ -201,7 +201,7 @@ static bool is_cc_root_bd(u32 root_bd)
 }
 
 /**
- * Whether the vm is confidential vm
+ * is_cc_vmid - Whether the vm is confidential vm
  * @vmid: Virtual machine id
  *
  * Returns:
@@ -222,7 +222,7 @@ static bool is_cc_vmid(u32 vmid)
 }
 
 /**
- * Whether the stream id of dev is confidential
+ * is_cc_dev - Whether the stream id of dev is confidential
  * @sid: Stream id of dev
  *
  * Returns:
@@ -243,7 +243,7 @@ bool is_cc_dev(u32 sid)
 EXPORT_SYMBOL(is_cc_dev);
 
 /**
- * Whether the cmd queue need transfer to secure world
+ * virtcca_smmu_cmdq_need_forward - Whether the cmd queue need transfer to secure world
  * @cmd0: Command consists of 128 bits, cmd0 is the low 64 bits
  * @cmd1: Cmdq is the high 64 bits of command
  * @forward: Need transfer to secure world or not
@@ -295,7 +295,7 @@ static void virtcca_smmu_cmdq_need_forward(u64 cmd0, u64 cmd1, u64 *forward)
 }
 
 /**
- * Write queue command to TMM
+ * virtcca_smmu_queue_write - Write queue command to TMM
  * @smmu: An SMMUv3 instance
  * @src: Command information
  * @n_dwords: Num of command
@@ -325,7 +325,8 @@ static void virtcca_smmu_queue_write(struct arm_smmu_device *smmu, u64 *src, siz
 }
 
 /**
- * Write a batch of queue command to TMM, if need sync, will send additional cmd queue
+ * virtcca_smmu_cmdq_write_entries - Write a batch of queue command
+ * to TMM, if need sync, will send additional cmd queue
  * @smmu: An SMMUv3 instance
  * @cmds: A batch of queue command
  * @llq: Head and tail pointers of a circular queue
@@ -380,7 +381,7 @@ void virtcca_smmu_cmdq_write_entries(struct arm_smmu_device *smmu, u64 *cmds,
 }
 
 /**
- * Initialize a queue of the corresponding type
+ * virtcca_smmu_init_one_queue - Initialize a queue of the corresponding type
  * @smmu: An SMMUv3 instance
  * @q: Smmu queue
  * @dwords: Size of command
@@ -421,7 +422,7 @@ static void virtcca_smmu_init_one_queue(struct arm_smmu_device *smmu,
 }
 
 /**
- * Write values to secure smmu registers and wait for completion
+ * virtcca_smmu_write_reg_sync - Write values to secure smmu registers and wait for completion
  * @smmu: An SMMUv3 instance
  * @val: Expected value to be written
  * @cmp_val: Complete value need to be compare
@@ -446,7 +447,7 @@ static int virtcca_smmu_write_reg_sync(struct arm_smmu_device *smmu, u32 val,
 }
 
 /**
- * Write values to glabal bypass register
+ * virtcca_smmu_update_gbpa - Write values to glabal bypass register
  * @smmu: An SMMUv3 instance
  * @set: Number of bits to be set
  * @clr: Number of bits to be clear
@@ -482,7 +483,7 @@ static int virtcca_smmu_update_gbpa(struct arm_smmu_device *smmu, u32 set, u32 c
 }
 
 /**
- * Disable the secure smmu
+ * virtcca_smmu_device_disable - Disable the secure smmu
  * @smmu: An SMMUv3 instance
  *
  * Returns:
@@ -502,11 +503,11 @@ static int virtcca_smmu_device_disable(struct arm_smmu_device *smmu)
 }
 
 /**
- * The secure evt queue thread
+ * virtcca_smmu_evtq_thread - The secure evt queue thread
  * @irq: Irq index
  * @dev: Smmu device
  */
-irqreturn_t virtcca_smmu_evtq_thread(int irq, void *dev)
+static irqreturn_t virtcca_smmu_evtq_thread(int irq, void *dev)
 {
 	struct arm_smmu_device *smmu = dev;
 
@@ -517,7 +518,7 @@ irqreturn_t virtcca_smmu_evtq_thread(int irq, void *dev)
 }
 
 /**
- * The secure gerror handler
+ * virtcca_smmu_gerror_handler - The secure gerror handler
  * @irq: Irq index
  * @dev: Smmu device
  *
@@ -587,7 +588,7 @@ irqreturn_t virtcca_smmu_gerror_handler(int irq, void *dev)
 }
 
 /**
- * Disable secure smmu irq function
+ * virtcca_smmu_disable_irq - Disable secure smmu irq function
  * @smmu: An SMMUv3 instance
  */
 static void virtcca_smmu_disable_irq(struct arm_smmu_device *smmu)
@@ -600,7 +601,7 @@ static void virtcca_smmu_disable_irq(struct arm_smmu_device *smmu)
 }
 
 /**
- * Enable secure smmu irq function
+ * virtcca_smmu_enable_irq - Enable secure smmu irq function
  * @smmu: An SMMUv3 instance
  * @irqen_flags: Mask value of irq
  */
@@ -614,7 +615,7 @@ static void virtcca_smmu_enable_irq(struct arm_smmu_device *smmu, u32 irqen_flag
 }
 
 /**
- * Get irq index from platform
+ * platform_get_s_irq_byname_optional - Get irq index from platform
  * @pdev: The handle of platform_device
  * @smmu: An SMMUv3 instance
  */
@@ -633,7 +634,8 @@ static void platform_get_s_irq_byname_optional(struct platform_device *pdev,
 }
 
 /**
- * Complete the stage2 page table establishment for the security device
+ * virtcca_smmu_tmi_dev_attach - Complete the stage2 page table establishment
+ * for the security device
  * @arm_smmu_domain: The handle of smmu domain
  * @kvm: The handle of virtual machine
  *
@@ -688,7 +690,8 @@ out:
 }
 
 /**
- * Setting up the STE config content for the security device
+ * virtcca_smmu_secure_dev_ste_create - Setting up the STE config content
+ * for the security device
  * @smmu: An SMMUv3 instance
  * @master: SMMU private data for each master
  * @sid: Stream id of device
@@ -726,7 +729,7 @@ static int virtcca_smmu_secure_dev_ste_create(struct arm_smmu_device *smmu,
 }
 
 /**
- * Add secure device to hash table
+ * add_secure_dev_to_cc_table - Add secure device to hash table
  * @smmu: An SMMUv3 instance
  * @smmu_domain: The handle of smmu_domain
  * @root_bd: The port where the secure device is located
@@ -763,7 +766,7 @@ static inline int add_secure_dev_to_cc_table(struct arm_smmu_device *smmu,
 }
 
 /**
- * Delegate device to secure state
+ * virtcca_delegate_secure_dev - Delegate device to secure state
  * @smmu: An SMMUv3 instance
  * @root_bd: The port where the secure device is located
  * @dev: Secure device
@@ -812,7 +815,8 @@ out:
 }
 
 /**
- * Enable the PCIe protection controller function of the security device
+ * virtcca_enable_secure_dev - Enable the PCIe protection controller function
+ * of the security device
  * @smmu_domain: The handle of smmu_domain
  * @master: SMMU private data for each master
  * @dev: Secure device
@@ -841,7 +845,7 @@ static int virtcca_enable_secure_dev(struct arm_smmu_domain *smmu_domain,
 }
 
 /**
- * Write secure smmu msi msg
+ * virtcca_smmu_write_msi_msg - Write secure smmu msi msg
  * @desc: Descriptor structure for MSI based interrupts
  * @msg: Representation of a MSI message
  *
@@ -874,7 +878,7 @@ bool virtcca_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg)
 }
 
 /**
- * Enable secure smmu msi
+ * arm_s_smmu_setup_msis - Enable secure smmu msi
  * @smmu: An SMMUv3 instance
  */
 static void arm_s_smmu_setup_msis(struct arm_smmu_device *smmu)
@@ -904,7 +908,7 @@ static void arm_s_smmu_setup_msis(struct arm_smmu_device *smmu)
 }
 
 /**
- * Set secure irq handle
+ * virtcca_smmu_setup_unique_irqs - Set secure irq handle
  * @smmu: An SMMUv3 instance
  * @resume: Resume or not
  */
@@ -942,7 +946,7 @@ static void virtcca_smmu_setup_unique_irqs(struct arm_smmu_device *smmu, bool re
 }
 
 /**
- * Write value to smmu registers and wait for completion
+ * _arm_smmu_write_reg_sync - Write value to smmu registers and wait for completion
  * @smmu: An SMMUv3 instance
  * @val: Expected value to be written
  * @reg_off: Offset of object register
@@ -962,7 +966,7 @@ static int _arm_smmu_write_reg_sync(struct arm_smmu_device *smmu, u32 val,
 }
 
 /**
- * Initialize the smmu irq
+ * virtcca_smmu_setup_irqs - Initialize the smmu irq
  * @smmu: An SMMUv3 instance
  * @resume: Resume or not
  */
@@ -1013,7 +1017,7 @@ static int virtcca_smmu_id_alloc(void)
 }
 
 /**
- * For SMMU, it has various uses. In virtCCA scenario,
+ * virtcca_smmu_map_init - For SMMU, it has various uses. In virtCCA scenario,
  * only smmus used by PCIe devices require secure state initialization.
  * @smmu: An SMMUv3 instance
  * @ioaddr: Smmu address
@@ -1041,7 +1045,7 @@ static bool virtcca_smmu_map_init(struct arm_smmu_device *smmu, resource_size_t 
 }
 
 /**
- * Enable the smmu secure state
+ * arm_s_smmu_device_enable - Enable the smmu secure state
  * @smmu: An SMMUv3 instance
  * @enables: The smmu attribute need to enable
  * @bypass: Bypass smmu
@@ -1076,7 +1080,8 @@ static void arm_s_smmu_device_enable(struct arm_smmu_device *smmu,
 }
 
 /**
- * Whether the smmu support secure registers and secure stage2 translate
+ * arm_s_smmu_idr1_support_secure - Whether the smmu support secure registers
+ * and secure stage2 translate
  * @smmu: An SMMUv3 instance
  *
  * Returns:
@@ -1110,7 +1115,8 @@ static bool arm_s_smmu_idr1_support_secure(struct arm_smmu_device *smmu)
 }
 
 /**
- * Implement security settings for corresponding devices targeting the secure smmu domain
+ * virtcca_smmu_secure_dev_operator - Implement security settings for corresponding devices
+ * targeting the secure smmu domain
  * @domain: The handle of iommu_domain
  * @dev: Secure device
  *
@@ -1168,7 +1174,7 @@ int virtcca_smmu_secure_dev_operator(struct iommu_domain *domain, struct device 
 }
 
 /**
- * Initialize the smmu security features
+ * virtcca_smmu_device_init - Initialize the smmu security features
  * @pdev: The handle of iommu_domain
  * @smmu: An SMMUv3 instance
  * @ioaddr: SMMU address

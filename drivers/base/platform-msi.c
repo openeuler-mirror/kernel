@@ -227,6 +227,7 @@ EXPORT_SYMBOL_GPL(platform_msi_domain_alloc_irqs);
  * @dev:	The device for which to allocate interrupts
  * @start:	The start index of msi
  * @end:	The end index of msi
+ * @write_msi_msg:	The function for writing msi message
  *
  * %0 if alloc irqs success
  * %error_code if alloc irqs failed
