@@ -81,6 +81,8 @@ static int ip6_finish_output2(struct net *net, struct sock *sk, struct sk_buff *
 			}
 			skb = nskb;
 		}
+		/* Make sure idev stays alive */
+		rcu_read_lock();
 		if (skb &&
 		    pskb_expand_head(skb, SKB_DATA_ALIGN(delta), 0, GFP_ATOMIC)) {
 			kfree_skb(skb);
@@ -88,8 +90,10 @@ static int ip6_finish_output2(struct net *net, struct sock *sk, struct sk_buff *
 		}
 		if (!skb) {
 			IP6_INC_STATS(net, ip6_dst_idev(dst), IPSTATS_MIB_OUTDISCARDS);
+			rcu_read_unlock();
 			return -ENOMEM;
 		}
+		rcu_read_unlock();
 	}
 
 	if (ipv6_addr_is_multicast(&ipv6_hdr(skb)->daddr)) {
