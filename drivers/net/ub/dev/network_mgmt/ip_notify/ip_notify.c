@@ -15,7 +15,6 @@
 
 #include <linux/timer.h>
 #include <linux/types.h>
-#include <linux/version.h>
 
 #include "ubl.h"
 #include "network_mgmt.h"
