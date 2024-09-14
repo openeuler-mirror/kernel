@@ -15,6 +15,7 @@
 
 #include <linux/timer.h>
 #include <linux/types.h>
+#include <linux/version.h>
 
 #include "ubl.h"
 #include "network_mgmt.h"
@@ -473,6 +474,9 @@ out:
 		break;
 	case NET_XMIT_DROP:
 	case NETDEV_TX_BUSY:
+	case NET_XMIT_CN:
+	case -ENOMEM:
+	case -ENETDOWN:
 		if (ptype == UB_PROTO_IPV4)
 			atomic64_inc(&nm_dev->sys_ctx.ip_notify_ctx.stats.bad_ipv4_notify_tx_cnt);
 		else
@@ -611,6 +615,48 @@ static int ip_notify_enable;
 static int ip_notify_tx_hold = 1;
 static int ip_notify_tx_hold_max = (INT_MAX / IP_NOTIFY_TIMEOUT_MS);
 
+static int ip_notify_enable_change(struct ctl_table *table, int write,
+				   void *buffer, size_t *lenp, loff_t *ppos)
+{
+	u32 period_notify_time;
+	int ret;
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret)
+		return ret;
+
+	if (write && ip_notify_enable) {
+		period_notify_time = ip_notify_tx_hold * IP_NOTIFY_TIMEOUT_S;
+		pr_warn("period notify timer is %us.\n", period_notify_time);
+	}
+
+	return 0;
+}
+
+static int ip_notify_tx_hold_change(struct ctl_table *table, int write,
+				    void *buffer, size_t *lenp, loff_t *ppos)
+{
+	u32 period_notify_time;
+	int ret;
+
+	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+	if (ret)
+		return ret;
+
+	if (!write)
+		return 0;
+
+	if (ip_notify_enable) {
+		period_notify_time = ip_notify_tx_hold * IP_NOTIFY_TIMEOUT_S;
+		pr_warn("setting period notify timer to %us.\n",
+			period_notify_time);
+	} else {
+		pr_warn("ip notify timer disable.\n");
+	}
+
+	return 0;
+}
+
 static struct ctl_table_header *sysctl_header;
 static struct ctl_table ip_notify_sysctl[] = {
 	{
@@ -618,7 +664,7 @@ static struct ctl_table ip_notify_sysctl[] = {
 		.data		= &ip_notify_enable,
 		.maxlen		= sizeof(ip_notify_enable),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
+		.proc_handler	= ip_notify_enable_change,
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
@@ -627,7 +673,7 @@ static struct ctl_table ip_notify_sysctl[] = {
 		.data		= &ip_notify_tx_hold,
 		.maxlen		= sizeof(ip_notify_tx_hold),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec_minmax,
+		.proc_handler	= ip_notify_tx_hold_change,
 		.extra1		= SYSCTL_ONE,
 		.extra2		= &ip_notify_tx_hold_max,
 	},
@@ -646,7 +692,6 @@ static int ub_ip_notify_sysctl_init(void)
 					      ip_notify_sysctl);
 	if (sysctl_header)
 		return 0;
-
 	pr_warn("ip_notify sysctl init failed!\n");
 	return 1;
 }
