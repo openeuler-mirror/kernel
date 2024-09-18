@@ -11,12 +11,11 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_mmu.h>
 #include <asm/stage2_pgtable.h>
+#include <asm/virtcca_coda.h>
 #include <asm/virtcca_cvm_host.h>
 #include <linux/arm-smccc.h>
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
-
-#include "../virt/kvm/vfio.h"
 
 /* Protects access to cvm_vmid_bitmap */
 static DEFINE_SPINLOCK(cvm_vmid_lock);
@@ -885,12 +884,12 @@ int kvm_init_cvm_vm(struct kvm *kvm)
 }
 
 /*
- * Coda (Confidential device assignment) feature
+ * Coda (Confidential Device Assignment) feature
  * enable devices to pass directly to confidential virtual machines
  */
 
 /**
- * check_virtcca_cvm_ram_range - Check if the iova belongs
+ * is_in_virtcca_ram_range - Check if the iova belongs
  * to the cvm ram range
  * @kvm: The handle of kvm
  * @iova: Ipa address
@@ -899,8 +898,11 @@ int kvm_init_cvm_vm(struct kvm *kvm)
  * %true if the iova belongs to cvm ram
  * %false if the iova is not within the scope of cvm ram
  */
-bool check_virtcca_cvm_ram_range(struct kvm *kvm, uint64_t iova)
+bool is_in_virtcca_ram_range(struct kvm *kvm, uint64_t iova)
 {
+	if (!is_virtcca_cvm_enable())
+		return false;
+
 	struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
 
 	if (iova >= virtcca_cvm->loader_start &&
@@ -909,10 +911,10 @@ bool check_virtcca_cvm_ram_range(struct kvm *kvm, uint64_t iova)
 
 	return false;
 }
-EXPORT_SYMBOL_GPL(check_virtcca_cvm_ram_range);
+EXPORT_SYMBOL_GPL(is_in_virtcca_ram_range);
 
 /**
- * check_virtcca_cvm_vfio_map_dma - Whether the vfio need
+ * is_virtcca_iova_need_vfio_dma - Whether the vfio need
  * to map the dma address
  * @kvm: The handle of kvm
  * @iova: Ipa address
@@ -924,16 +926,19 @@ EXPORT_SYMBOL_GPL(check_virtcca_cvm_ram_range);
  * %false if virtcca_cvm_ram is mapped and the iova belong
  * to cvm ram range
  */
-bool check_virtcca_cvm_vfio_map_dma(struct kvm *kvm, uint64_t iova)
+bool is_virtcca_iova_need_vfio_dma(struct kvm *kvm, uint64_t iova)
 {
+	if (!is_virtcca_cvm_enable())
+		return false;
+
 	struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
 
 	if (!virtcca_cvm->is_mapped)
 		return true;
 
-	return !check_virtcca_cvm_ram_range(kvm, iova);
+	return !is_in_virtcca_ram_range(kvm, iova);
 }
-EXPORT_SYMBOL_GPL(check_virtcca_cvm_vfio_map_dma);
+EXPORT_SYMBOL_GPL(is_virtcca_iova_need_vfio_dma);
 
 /**
  * cvm_arm_smmu_domain_set_kvm - Associate SMMU domain with CV
@@ -982,9 +987,6 @@ int kvm_cvm_create_dev_ttt_levels(struct kvm *kvm, struct virtcca_cvm *cvm,
 {
 	int ret = 0;
 
-	if (WARN_ON(level == max_level))
-		return 0;
-
 	while (level++ < max_level) {
 		u64 numa_set = kvm_get_first_binded_numa_set(kvm);
 
@@ -1013,7 +1015,7 @@ int cvm_map_unmap_ipa_range(struct kvm *kvm, phys_addr_t ipa_base,
 	phys_addr_t pa, unsigned long map_size, uint32_t is_map)
 {
 	unsigned long size;
-	struct virtcca_cvm *virtcca_cvm = (struct virtcca_cvm *)kvm->arch.virtcca_cvm;
+	struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
 	phys_addr_t rd = virtcca_cvm->rd;
 	unsigned long ipa = ipa_base;
 	unsigned long phys = pa;
@@ -1074,7 +1076,7 @@ int kvm_cvm_map_ipa_mmio(struct kvm *kvm, phys_addr_t ipa_base,
 	unsigned long size;
 	gfn_t gfn;
 	kvm_pfn_t pfn;
-	struct virtcca_cvm *virtcca_cvm = (struct virtcca_cvm *)kvm->arch.virtcca_cvm;
+	struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
 	phys_addr_t rd = virtcca_cvm->rd;
 	unsigned long ipa = ipa_base;
 	unsigned long phys = pa;

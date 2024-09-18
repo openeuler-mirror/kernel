@@ -5,8 +5,7 @@
 
 #ifdef CONFIG_HISI_VIRTCCA_HOST
 #ifndef __GENKSYMS__
-#include <asm/kvm_tmi.h>
-#include <asm/virtcca_cvm_host.h>
+#include <asm/virtcca_coda.h>
 #endif
 #endif
 
@@ -32,50 +31,6 @@ static inline void __iomem *pci_msix_desc_addr(struct msi_desc *desc)
 {
 	return desc->pci.mask_base + desc->msi_index * PCI_MSIX_ENTRY_SIZE;
 }
-
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-/*
- * If it is a safety device, write vector ctrl need
- * use tmi interface
- */
-static inline int virtcca_pci_msix_write_vector_ctrl(struct msi_desc *desc, u32 ctrl)
-{
-	if (!is_virtcca_cvm_enable())
-		return 0;
-
-	void __iomem *desc_addr = pci_msix_desc_addr(desc);
-	struct pci_dev *pdev = (desc->dev != NULL &&
-		dev_is_pci(desc->dev)) ? to_pci_dev(desc->dev) : NULL;
-
-	if (pdev == NULL || !is_cc_dev(pci_dev_id(pdev)))
-		return 0;
-
-	if (desc->pci.msi_attrib.can_mask)
-		tmi_mmio_write(iova_to_pa(desc_addr + PCI_MSIX_ENTRY_VECTOR_CTRL),
-			ctrl, CVM_RW_32_BIT, pci_dev_id(pdev));
-	return 1;
-}
-
-/*
- * If it is a safety device, read msix need
- * use tmi interface
- */
-static inline int virtcca_pci_msix_mask(struct msi_desc *desc)
-{
-	if (!is_virtcca_cvm_enable())
-		return 0;
-
-	struct pci_dev *pdev = (desc->dev != NULL &&
-		dev_is_pci(desc->dev)) ? to_pci_dev(desc->dev) : NULL;
-
-	if (pdev == NULL || !is_cc_dev(pci_dev_id(pdev)))
-		return 0;
-
-	/* Flush write to device */
-	tmi_mmio_read(iova_to_pa(desc->pci.mask_base), CVM_RW_32_BIT, pci_dev_id(pdev));
-	return 1;
-}
-#endif
 
 /*
  * This internal function does not flush PCI writes to the device.  All

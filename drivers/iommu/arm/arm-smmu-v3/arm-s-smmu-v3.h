@@ -178,7 +178,6 @@ bool virtcca_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg);
 u32 virtcca_smmu_tmi_dev_attach(struct arm_smmu_domain *arm_smmu_domain,
 	struct kvm *kvm);
 void _arm_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg);
-int virtcca_smmu_secure_dev_operator(struct iommu_domain *domain, struct device *dev);
 void virtcca_smmu_device_init(struct platform_device *pdev,
 	struct arm_smmu_device *smmu, resource_size_t ioaddr, bool resume, bool disable_bypass);
 

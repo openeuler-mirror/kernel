@@ -21,7 +21,7 @@
 
 #ifdef CONFIG_HISI_VIRTCCA_HOST
 #ifndef __GENKSYMS__
-#include <asm/kvm_tmi.h>
+#include <asm/virtcca_coda.h>
 #include <asm/virtcca_cvm_host.h>
 #endif
 #endif
@@ -45,39 +45,6 @@
 #define vfio_iowrite8	iowrite8
 
 #ifdef CONFIG_HISI_VIRTCCA_HOST
-/* Judge startup virtcca_cvm_host is enable and device is secure or not */
-static bool is_virtcca_pci_io_rw(struct vfio_pci_core_device *vdev)
-{
-	if (!is_virtcca_cvm_enable())
-		return false;
-
-	struct pci_dev *pdev = vdev->pdev;
-	bool cc_dev = pdev == NULL ? false : is_cc_dev(pci_dev_id(pdev));
-
-	if (cc_dev)
-		return true;
-
-	return false;
-}
-
-/* Transfer to tmm write io value */
-static void virtcca_pci_io_write(struct vfio_pci_core_device *vdev, u64 val,
-	u64 size, void __iomem *io)
-{
-	struct pci_dev *pdev = vdev->pdev;
-
-	WARN_ON(tmi_mmio_write(iova_to_pa(io), val, size, pci_dev_id(pdev)));
-}
-
-/* Transfer to tmm read io value */
-static u64 virtcca_pci_io_read(struct vfio_pci_core_device *vdev,
-	u64 size, void __iomem *io)
-{
-	struct pci_dev *pdev = vdev->pdev;
-
-	return tmi_mmio_read(iova_to_pa(io), size, pci_dev_id(pdev));
-}
-
 #define VFIO_IOWRITE(size) \
 static int vfio_pci_iowrite##size(struct vfio_pci_core_device *vdev,	\
 			bool test_mem, u##size val, void __iomem *io)	\

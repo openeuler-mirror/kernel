@@ -112,8 +112,8 @@ int cvm_map_unmap_ipa_range(struct kvm *kvm, phys_addr_t ipa_base, phys_addr_t p
 int kvm_cvm_map_ipa_mmio(struct kvm *kvm, phys_addr_t ipa_base,
 	phys_addr_t pa, unsigned long map_size);
 
-bool check_virtcca_cvm_ram_range(struct kvm *kvm, uint64_t iova);
-bool check_virtcca_cvm_vfio_map_dma(struct kvm *kvm, uint64_t iova);
+bool is_in_virtcca_ram_range(struct kvm *kvm, uint64_t iova);
+bool is_virtcca_iova_need_vfio_dma(struct kvm *kvm, uint64_t iova);
 
 #define CVM_TTT_BLOCK_LEVEL	2
 #define CVM_TTT_MAX_LEVEL	3

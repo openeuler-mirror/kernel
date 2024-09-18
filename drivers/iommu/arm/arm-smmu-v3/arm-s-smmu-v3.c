@@ -650,7 +650,7 @@ u32 virtcca_smmu_tmi_dev_attach(struct arm_smmu_domain *arm_smmu_domain, struct 
 	struct arm_smmu_master *master;
 	int ret = 0;
 	u64 cmd[CMDQ_ENT_DWORDS] = {0};
-	struct virtcca_cvm *virtcca_cvm = (struct virtcca_cvm *)kvm->arch.virtcca_cvm;
+	struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
 
 	spin_lock_irqsave(&arm_smmu_domain->devices_lock, flags);
 	/*
@@ -1113,62 +1113,6 @@ static bool arm_s_smmu_idr1_support_secure(struct arm_smmu_device *smmu)
 	dev_info(smmu->dev, "S_SMMU: secure smmu id:%lld start init!\n", smmu->s_smmu_id);
 	return true;
 }
-
-/**
- * virtcca_smmu_map_pages - Iommu driver calls to this point,
- * and then calls the map function in the
- * io-pgtable to perform mapping
- * @domain: Iommu domain
- * @iova: Ipa address
- * @paddr: Physical address
- * @pgsize: Page size
- * @pgcount: Page count
- * @prot: Iommu attribute
- * @mapped: Maped size
- *
- * Returns:
- * %0 if map success
- * %-ENODEV if ops is null
- */
-int virtcca_smmu_map_pages(struct iommu_domain *domain, unsigned long iova,
-	phys_addr_t paddr, size_t pgsize, size_t pgcount,
-	int prot, size_t *mapped)
-{
-	struct io_pgtable_ops *ops = to_smmu_domain(domain)->pgtbl_ops;
-
-	if (!ops)
-		return -ENODEV;
-
-	return virtcca_map_pages(ops, iova, paddr, pgsize, pgcount, prot, mapped);
-}
-EXPORT_SYMBOL_GPL(virtcca_smmu_map_pages);
-
-/**
- * virtcca_smmu_unmap_pages - Iommu driver calls to this point,
- * and then calls the unmap function in the
- * io-pgtable to perform unmapping
- * @domain: Iommu domain
- * @iova: Ipa address
- * @pgsize: Page size
- * @pgcount: Page count
- *
- * Returns:
- * %0 if map success
- * %-ENODEV if ops is null
- */
-
-size_t virtcca_smmu_unmap_pages(struct iommu_domain *domain, unsigned long iova,
-	size_t pgsize, size_t pgcount)
-{
-	struct arm_smmu_domain *smmu_domain = to_smmu_domain(domain);
-	struct io_pgtable_ops *ops = smmu_domain->pgtbl_ops;
-
-	if (!ops)
-		return 0;
-
-	return virtcca_unmap_pages(ops, iova, pgsize, pgcount);
-}
-EXPORT_SYMBOL_GPL(virtcca_smmu_unmap_pages);
 
 /**
  * virtcca_smmu_secure_dev_operator - Implement security settings for corresponding devices

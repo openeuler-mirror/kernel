@@ -7,8 +7,9 @@
 
 #ifdef CONFIG_HISI_VIRTCCA_HOST
 #ifndef __GENKSYMS__
-#include <asm/kvm_tmi.h>
+#include <linux/kvm_host.h>
 #include <asm/kvm_tmm.h>
+#include <asm/virtcca_coda.h>
 #include <asm/virtcca_cvm_host.h>
 #endif
 #endif
@@ -84,42 +85,6 @@ EXPORT_SYMBOL(pci_bus_read_config_dword);
 EXPORT_SYMBOL(pci_bus_write_config_byte);
 EXPORT_SYMBOL(pci_bus_write_config_word);
 EXPORT_SYMBOL(pci_bus_write_config_dword);
-
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-/* If device is secure dev, read config need transfer to tmm module */
-static int virtcca_pci_generic_config_read(void __iomem *addr, unsigned char bus_num,
-	unsigned int devfn, int size, u32 *val)
-{
-	if (size == 1)
-		*val = tmi_mmio_read(iova_to_pa(addr), CVM_RW_8_BIT,
-			((bus_num << BUS_NUM_SHIFT) | devfn));
-	else if (size == 2)
-		*val = tmi_mmio_read(iova_to_pa(addr), CVM_RW_16_BIT,
-			((bus_num << BUS_NUM_SHIFT) | devfn));
-	else
-		*val = tmi_mmio_read(iova_to_pa(addr), CVM_RW_32_BIT,
-			((bus_num << BUS_NUM_SHIFT) | devfn));
-
-	return PCIBIOS_SUCCESSFUL;
-}
-
-/* If device is secure dev, write config need transfer to tmm module */
-int virtcca_pci_generic_config_write(void __iomem *addr, unsigned char bus_num,
-	unsigned int devfn, int size, u32 val)
-{
-	if (size == 1)
-		WARN_ON(tmi_mmio_write(iova_to_pa(addr), val,
-			CVM_RW_8_BIT, ((bus_num << BUS_NUM_SHIFT) | devfn)));
-	else if (size == 2)
-		WARN_ON(tmi_mmio_write(iova_to_pa(addr), val,
-			CVM_RW_16_BIT, ((bus_num << BUS_NUM_SHIFT) | devfn)));
-	else
-		WARN_ON(tmi_mmio_write(iova_to_pa(addr), val,
-			CVM_RW_32_BIT, ((bus_num << BUS_NUM_SHIFT) | devfn)));
-
-	return PCIBIOS_SUCCESSFUL;
-}
-#endif
 
 int pci_generic_config_read(struct pci_bus *bus, unsigned int devfn,
 			    int where, int size, u32 *val)

@@ -6,8 +6,14 @@
 #include <asm/kvm_tmi.h>
 #include <asm/memory.h>
 
-/* Supported io_va transfer to pa */
-u64 iova_to_pa(void *addr)
+/**
+ * mmio_va_to_pa - To convert the virtual address of the mmio space
+ * to a physical address, it is necessary to implement this interface
+ * because the kernel insterface __pa has an error when converting the
+ * physical address of the virtual address of the mmio space
+ * @addr:	MMIO virtual address
+ */
+u64 mmio_va_to_pa(void *addr)
 {
 	uint64_t pa, par_el1;
 
@@ -29,7 +35,7 @@ u64 iova_to_pa(void *addr)
 	else
 		return pa;
 }
-EXPORT_SYMBOL(iova_to_pa);
+EXPORT_SYMBOL(mmio_va_to_pa);
 
 u64 tmi_version(void)
 {

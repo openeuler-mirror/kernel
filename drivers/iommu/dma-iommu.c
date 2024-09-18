@@ -34,6 +34,7 @@
 #include "dma-iommu.h"
 
 #ifdef CONFIG_HISI_VIRTCCA_HOST
+#include <asm/virtcca_coda.h>
 #include <asm/virtcca_cvm_host.h>
 #endif
 

@@ -20,12 +20,11 @@
 
 #include <asm/barrier.h>
 
-#include "io-pgtable-arm.h"
-
 #ifdef CONFIG_HISI_VIRTCCA_HOST
-#include <asm/kvm_emulate.h>
-#include "../virt/kvm/vfio.h"
+#include <asm/virtcca_coda.h>
 #endif
+
+#include "io-pgtable-arm.h"
 
 #define ARM_LPAE_MAX_ADDR_BITS		52
 #define ARM_LPAE_S2_MAX_CONCAT_PAGES	16
@@ -502,113 +501,6 @@ static arm_lpae_iopte arm_lpae_prot_to_pte(struct arm_lpae_io_pgtable *data,
 
 	return pte;
 }
-
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-/* Obtain kvm from smmu domain */
-static struct kvm *virtcca_smmu_domain_get_kvm(struct arm_lpae_io_pgtable *data)
-{
-	struct arm_smmu_domain *smmu_domain = (struct arm_smmu_domain *)data->iop.cookie;
-
-	if (!smmu_domain)
-		return NULL;
-
-	return smmu_domain->kvm;
-}
-
-/**
- * virtcca_map_pages - Virtcca need map the secure
- * memory with paddr
- * @ops: the handle of io_pgtable_ops
- * @iova: Ipa address
- * @paddr: Physical address
- * @pgsize: Page size
- * @pgcount: Page count
- * @iommu_prot: iommu attribute
- * @mapped: mapped size
- *
- * Returns:
- * %0 if map pages success
- */
-int virtcca_map_pages(void *ops, unsigned long iova,
-	phys_addr_t paddr, size_t pgsize, size_t pgcount,
-	int iommu_prot, size_t *mapped)
-{
-	struct kvm *kvm;
-	u64 loader_start;
-	u64 ram_size;
-	struct arm_lpae_io_pgtable *data = io_pgtable_ops_to_data((struct io_pgtable_ops *)ops);
-	struct io_pgtable_cfg *cfg = &data->iop.cfg;
-	long iaext = (s64)iova >> cfg->ias;
-	int ret = 0;
-
-	if (WARN_ON(!pgsize || (pgsize & cfg->pgsize_bitmap) != pgsize))
-		return -EINVAL;
-
-	if (cfg->quirks & IO_PGTABLE_QUIRK_ARM_TTBR1)
-		iaext = ~iaext;
-	if (WARN_ON(iaext || paddr >> cfg->oas))
-		return -ERANGE;
-
-	/* If no access, then nothing to do */
-	if (!(iommu_prot & (IOMMU_READ | IOMMU_WRITE)))
-		return 0;
-
-	kvm = virtcca_smmu_domain_get_kvm(data);
-	if (kvm) {
-		struct virtcca_cvm *virtcca_cvm = (struct virtcca_cvm *)kvm->arch.virtcca_cvm;
-
-		loader_start = virtcca_cvm->loader_start;
-		ram_size = virtcca_cvm->ram_size;
-		if (iova >= loader_start &&
-			iova < loader_start + ram_size &&
-			!virtcca_cvm->is_mapped) {
-			ret = kvm_cvm_map_range(kvm);
-		} else if (iova < loader_start) {
-			if (iova == CVM_MSI_ORIG_IOVA)
-				iova += CVM_MSI_IOVA_OFFSET;
-			ret = cvm_map_unmap_ipa_range(kvm, iova, paddr, pgsize * pgcount, true);
-		}
-		if (mapped)
-			*mapped += pgsize * pgcount;
-	}
-	return ret;
-}
-EXPORT_SYMBOL_GPL(virtcca_map_pages);
-
-/**
- * virtcca_unmap_pages - Virtcca unmap the iova
- * @ops: the handle of io_pgtable_ops
- * @iova: Ipa address
- * @pgsize: Page size
- * @pgcount: Page count
- *
- * Returns:
- * %0 if map pages success or parameter is invalid
- */
-size_t virtcca_unmap_pages(void *ops, unsigned long iova,
-	size_t pgsize, size_t pgcount)
-{
-	struct kvm *kvm;
-	struct arm_lpae_io_pgtable *data = io_pgtable_ops_to_data((struct io_pgtable_ops *)ops);
-	struct io_pgtable_cfg *cfg = &data->iop.cfg;
-	long iaext = (s64)iova >> cfg->ias;
-
-	if (WARN_ON(!pgsize || (pgsize & cfg->pgsize_bitmap) != pgsize || !pgcount))
-		return 0;
-
-	if (cfg->quirks & IO_PGTABLE_QUIRK_ARM_TTBR1)
-		iaext = ~iaext;
-	if (WARN_ON(iaext))
-		return 0;
-
-	kvm = virtcca_smmu_domain_get_kvm(data);
-	if (!kvm)
-		return 0;
-
-	return cvm_map_unmap_ipa_range(kvm, iova, 0, pgsize * pgcount, false);
-}
-EXPORT_SYMBOL_GPL(virtcca_unmap_pages);
-#endif
 
 static int arm_lpae_map_pages(struct io_pgtable_ops *ops, unsigned long iova,
 			      phys_addr_t paddr, size_t pgsize, size_t pgcount,
@@ -1834,4 +1726,29 @@ static int __init arm_lpae_do_selftests(void)
 	return fail ? -EFAULT : 0;
 }
 subsys_initcall(arm_lpae_do_selftests);
+#endif
+
+#ifdef CONFIG_HISI_VIRTCCA_HOST
+/* Obtain kvm from smmu domain */
+struct kvm *virtcca_smmu_domain_get_kvm(struct arm_lpae_io_pgtable *data)
+{
+	struct arm_smmu_domain *smmu_domain = (struct arm_smmu_domain *)data->iop.cookie;
+
+	if (!smmu_domain)
+		return NULL;
+
+	return smmu_domain->kvm;
+}
+
+/* Obtain io pgtable data from io pgtable ops */
+struct arm_lpae_io_pgtable *virtcca_io_pgtable_get_data(void *ops)
+{
+	return io_pgtable_ops_to_data((struct io_pgtable_ops *)ops);
+}
+
+/* Obtain io pgtable cfg from io pgtable data */
+struct io_pgtable_cfg *virtcca_io_pgtable_get_cfg(struct arm_lpae_io_pgtable *data)
+{
+	return &data->iop.cfg;
+}
 #endif

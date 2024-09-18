@@ -39,8 +39,10 @@
 #include <linux/notifier.h>
 #include "vfio.h"
 #ifdef CONFIG_HISI_VIRTCCA_HOST
+#include <linux/kvm_host.h>
+#include <asm/kvm_tmm.h>
+#include <asm/virtcca_coda.h>
 #include <asm/virtcca_cvm_host.h>
-#include "../virt/kvm/vfio.h"
 #endif
 
 #define DRIVER_VERSION  "0.2"
@@ -1047,28 +1049,16 @@ static size_t unmap_unpin_slow(struct vfio_domain *domain,
 #ifdef CONFIG_HISI_VIRTCCA_HOST
 static void vfio_remove_dma(struct vfio_iommu *iommu, struct vfio_dma *dma);
 
-/* Whether the kvm is cvm */
-static bool virtcca_iommu_domain_get_kvm(struct iommu_domain *domain, struct kvm **kvm)
-{
-	struct arm_smmu_domain *arm_smmu_domain;
-
-	arm_smmu_domain = to_smmu_domain(domain);
-	*kvm = virtcca_arm_smmu_get_kvm(arm_smmu_domain);
-	if (*kvm)
-		return (*kvm)->arch.is_virtcca_cvm;
-
-	return false;
-}
-
-static bool virtcca_check_kvm_is_cvm(struct vfio_iommu *iommu, struct kvm **kvm)
+bool virtcca_check_kvm_is_cvm(void *iommu, struct kvm **kvm)
 {
 	struct vfio_domain *domain;
 	bool is_virtcca_cvm = false;
+	struct vfio_iommu *vfio_iommu = (struct vfio_iommu *)iommu;
 
-	if (!iommu || !kvm)
+	if (!vfio_iommu || !kvm)
 		return false;
 
-	list_for_each_entry(domain, &iommu->domain_list, next) {
+	list_for_each_entry(domain, &vfio_iommu->domain_list, next) {
 		if (domain && domain->domain && virtcca_iommu_domain_get_kvm(domain->domain, kvm)) {
 			is_virtcca_cvm = true;
 			break;
@@ -1079,13 +1069,14 @@ static bool virtcca_check_kvm_is_cvm(struct vfio_iommu *iommu, struct kvm **kvm)
 }
 
 /* Traverse all domains and perform mapping operations */
-static int virtcca_vfio_iommu_map(struct vfio_iommu *iommu, dma_addr_t iova,
+int virtcca_vfio_iommu_map(void *iommu, dma_addr_t iova,
 	unsigned long pfn, long npage, int prot)
 {
 	struct vfio_domain *d;
 	int ret;
+	struct vfio_iommu *vfio_iommu = (struct vfio_iommu *)iommu;
 
-	list_for_each_entry(d, &iommu->domain_list, next) {
+	list_for_each_entry(d, &vfio_iommu->domain_list, next) {
 		ret = virtcca_iommu_map(d->domain, iova, (phys_addr_t)pfn << PAGE_SHIFT,
 			npage << PAGE_SHIFT, prot | IOMMU_CACHE);
 		if (ret)
@@ -1097,7 +1088,7 @@ static int virtcca_vfio_iommu_map(struct vfio_iommu *iommu, dma_addr_t iova,
 	return 0;
 
 unwind:
-	list_for_each_entry_continue_reverse(d, &iommu->domain_list, next) {
+	list_for_each_entry_continue_reverse(d, &vfio_iommu->domain_list, next) {
 		virtcca_iommu_unmap(d->domain, iova, npage << PAGE_SHIFT);
 		cond_resched();
 	}
@@ -1125,13 +1116,13 @@ static int virtcca_vfio_pin_map_dma(struct vfio_iommu *iommu, struct vfio_dma *d
 	size_t size = map_size;
 	unsigned long pfn, limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
 	int ret = 0;
-	bool is_virtcca_cvm = virtcca_check_kvm_is_cvm(iommu, &kvm);
+	bool is_virtcca_cvm = virtcca_check_kvm_is_cvm((void *)iommu, &kvm);
 
 	vfio_batch_init(&batch);
 
 	while (size) {
 
-		if (is_virtcca_cvm && !check_virtcca_cvm_vfio_map_dma(kvm, dma->iova))
+		if (is_virtcca_cvm && !is_virtcca_iova_need_vfio_dma(kvm, dma->iova))
 			break;
 		/* Pin a contiguous chunk of memory */
 		npage = vfio_pin_pages_remote(dma, vaddr + dma->size,
@@ -1153,7 +1144,7 @@ static int virtcca_vfio_pin_map_dma(struct vfio_iommu *iommu, struct vfio_dma *d
 			break;
 		}
 
-		if (is_virtcca_cvm && check_virtcca_cvm_ram_range(kvm, iova)) {
+		if (is_virtcca_cvm && is_in_virtcca_ram_range(kvm, iova)) {
 			vfio_unpin_pages_remote(dma, iova + dma->size, pfn,
 				npage, true);
 			vfio_batch_unpin(&batch, dma);
@@ -1191,7 +1182,7 @@ static long virtcca_vfio_unmap_unpin(struct vfio_iommu *iommu, struct vfio_dma *
 	long unlocked = 0;
 	dma_addr_t iova = dma->iova, end = dma->iova + dma->size;
 
-	if (!virtcca_check_kvm_is_cvm(iommu, &kvm))
+	if (!virtcca_check_kvm_is_cvm((void *)iommu, &kvm))
 		return 0;
 
 	if (!dma->size)
