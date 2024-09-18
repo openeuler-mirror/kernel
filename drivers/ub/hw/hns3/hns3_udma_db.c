@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -19,13 +19,13 @@
 #include "hns3_udma_device.h"
 #include "hns3_udma_db.h"
 
-int udma_db_map_user(struct udma_ucontext *udma_ctx, uint64_t virt,
-		     struct udma_db *db)
+int hns3_udma_db_map_user(struct hns3_udma_ucontext *udma_ctx, uint64_t virt,
+			  struct hns3_udma_db *db)
 {
-	struct udma_dev *udma_dev = to_udma_dev(udma_ctx->uctx.ub_dev);
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(udma_ctx->uctx.ub_dev);
+	struct hns3_udma_user_db_page *db_page;
 	uint64_t page_addr = virt & PAGE_MASK;
 	union ubcore_umem_flag access = {};
-	struct udma_user_db_page *db_page;
 	uint32_t offset;
 	int ret = 0;
 
@@ -69,7 +69,7 @@ out:
 	return ret;
 }
 
-void udma_db_unmap_user(struct udma_ucontext *udma_ctx, struct udma_db *db)
+void hns3_udma_db_unmap_user(struct hns3_udma_ucontext *udma_ctx, struct hns3_udma_db *db)
 {
 	mutex_lock(&udma_ctx->pgdir_mutex);
 

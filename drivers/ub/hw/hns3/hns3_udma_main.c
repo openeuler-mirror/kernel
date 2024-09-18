@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -38,9 +38,9 @@
 
 static int is_active = 1;
 
-static int udma_uar_alloc(struct udma_dev *udma_dev, struct udma_uar *uar)
+static int hns3_udma_uar_alloc(struct hns3_udma_dev *udma_dev, struct hns3_udma_uar *uar)
 {
-	struct udma_ida *uar_ida = &udma_dev->uar_ida;
+	struct hns3_udma_ida *uar_ida = &udma_dev->uar_ida;
 	int id;
 
 	/* Using bitmap to manager UAR index */
@@ -53,17 +53,17 @@ static int udma_uar_alloc(struct udma_dev *udma_dev, struct udma_uar *uar)
 	uar->logic_idx = (uint64_t)id;
 
 	uar->pfn = ((pci_resource_start(udma_dev->pci_dev,
-					UDMA_DEV_START_OFFSET)) >> PAGE_SHIFT);
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_DIRECT_WQE)
+					HNS3_UDMA_DEV_START_OFFSET)) >> PAGE_SHIFT);
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_DIRECT_WQE)
 		udma_dev->dwqe_page =
 			pci_resource_start(udma_dev->pci_dev,
-					   UDMA_DEV_EX_START_OFFSET);
+					   HNS3_UDMA_DEV_EX_START_OFFSET);
 
 	return 0;
 }
 
-static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data,
-			      struct udma_dca_ctx *dca_ctx)
+static int hns3_udma_init_ctx_resp(struct hns3_udma_dev *dev, struct ubcore_udrv_priv *udrv_data,
+				   struct hns3_udma_dca_ctx *dca_ctx)
 {
 	struct hns3_udma_create_ctx_resp resp = {};
 	unsigned long byte;
@@ -84,16 +84,16 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.max_jfs_wr = dev->caps.max_wqes;
 	resp.max_jfs_sge = dev->caps.max_sq_sg;
 	resp.poe_ch_num = dev->caps.poe_ch_num;
-	resp.db_addr = pci_resource_start(dev->pci_dev, UDMA_DEV_START_OFFSET) +
-		       UDMA_DB_ADDR_OFFSET;
+	resp.db_addr = pci_resource_start(dev->pci_dev, HNS3_UDMA_DEV_START_OFFSET) +
+		       HNS3_UDMA_DB_ADDR_OFFSET;
 	resp.chip_id = dev->chip_id;
 	resp.die_id = dev->die_id;
 	resp.func_id = dev->func_id;
 
-	if (dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE) {
+	if (dev->caps.flags & HNS3_UDMA_CAP_FLAG_DCA_MODE) {
 		resp.dca_qps = dca_ctx->max_qps;
 		resp.dca_mmap_size = dca_ctx->status_npage * PAGE_SIZE;
-		resp.dca_mode = dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE;
+		resp.dca_mode = dev->caps.flags & HNS3_UDMA_CAP_FLAG_DCA_MODE;
 	}
 
 	byte = copy_to_user((void *)udrv_data->out_addr, &resp, sizeof(resp));
@@ -106,29 +106,29 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	return 0;
 }
 
-static void udma_uar_free(struct udma_dev *udma_dev,
-			  struct udma_ucontext *context)
+static void hns3_udma_uar_free(struct hns3_udma_dev *udma_dev,
+			       struct hns3_udma_ucontext *context)
 {
 	ida_free(&udma_dev->uar_ida.ida, (int)context->uar.logic_idx);
 }
 
-static void init_ucontext_list(struct udma_dev *udma_dev,
-			       struct udma_ucontext *uctx)
+static void init_ucontext_list(struct hns3_udma_dev *udma_dev,
+			       struct hns3_udma_ucontext *uctx)
 {
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_CQ_RECORD_DB ||
-	    udma_dev->caps.flags & UDMA_CAP_FLAG_QP_RECORD_DB) {
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_CQ_RECORD_DB ||
+	    udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_QP_RECORD_DB) {
 		INIT_LIST_HEAD(&uctx->pgdir_list);
 		mutex_init(&uctx->pgdir_mutex);
 	}
 }
 
-static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
-						   uint32_t eid_index,
-						   struct ubcore_udrv_priv *udrv_data)
+static struct ubcore_ucontext *hns3_udma_alloc_ucontext(struct ubcore_device *dev,
+							uint32_t eid_index,
+							struct ubcore_udrv_priv *udrv_data)
 {
-	struct udma_dev *udma_dev = to_udma_dev(dev);
-	struct udma_ucontext *context;
-	struct udma_eid *udma_eid;
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(dev);
+	struct hns3_udma_ucontext *context;
+	struct hns3_udma_eid *udma_eid;
 	int ret;
 
 	if (!udrv_data) {
@@ -136,11 +136,11 @@ static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
 		return NULL;
 	}
 
-	context = kzalloc(sizeof(struct udma_ucontext), GFP_KERNEL);
+	context = kzalloc(sizeof(struct hns3_udma_ucontext), GFP_KERNEL);
 	if (!context)
 		return NULL;
 
-	udma_eid = (struct udma_eid *)xa_load(&udma_dev->eid_table, eid_index);
+	udma_eid = (struct hns3_udma_eid *)xa_load(&udma_dev->eid_table, eid_index);
 	if (IS_ERR_OR_NULL(udma_eid)) {
 		dev_err(udma_dev->dev, "Failed to find eid, index = %d\n.",
 			eid_index);
@@ -153,49 +153,49 @@ static struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *dev,
 	}
 	context->eid_index = eid_index;
 
-	ret = udma_uar_alloc(udma_dev, &context->uar);
+	ret = hns3_udma_uar_alloc(udma_dev, &context->uar);
 	if (ret) {
-		dev_err(udma_dev->dev, "Alloc udma_uar Failed.\n");
+		dev_err(udma_dev->dev, "Alloc hns3_udma_uar Failed.\n");
 		goto err_alloc_ucontext;
 	}
 
-	ret = udma_register_udca(udma_dev, context, udrv_data);
+	ret = hns3_udma_register_udca(udma_dev, context, udrv_data);
 	if (ret) {
 		dev_err(udma_dev->dev, "Register udca Failed.\n");
 		goto err_alloc_uar;
 	}
 
-	ret = udma_init_ctx_resp(udma_dev, udrv_data, &context->dca_ctx);
+	ret = hns3_udma_init_ctx_resp(udma_dev, udrv_data, &context->dca_ctx);
 	if (ret) {
 		dev_err(udma_dev->dev, "Init ctx resp failed.\n");
-		udma_unregister_udca(udma_dev, context);
+		hns3_udma_unregister_udca(udma_dev, context);
 		goto err_alloc_uar;
 	}
 
 	if (context->dca_ctx.unit_size > 0 && udma_dev->caps.flags &
-	    UDMA_CAP_FLAG_DCA_MODE)
-		udma_register_uctx_debugfs(udma_dev, context);
+	    HNS3_UDMA_CAP_FLAG_DCA_MODE)
+		hns3_udma_register_uctx_debugfs(udma_dev, context);
 
-	context->cq_bank_id = udma_get_cq_bankid_for_uctx(udma_dev);
+	context->cq_bank_id = hns3_udma_get_cq_bankid_for_uctx(udma_dev);
 	init_ucontext_list(udma_dev, context);
 
 	return &context->uctx;
 
 err_alloc_uar:
-	udma_uar_free(udma_dev, context);
+	hns3_udma_uar_free(udma_dev, context);
 err_alloc_ucontext:
 	kfree(context);
 	return NULL;
 }
 
-static int udma_free_ucontext(struct ubcore_ucontext *uctx)
+static int hns3_udma_free_ucontext(struct ubcore_ucontext *uctx)
 {
-	struct udma_ucontext *context = to_udma_ucontext(uctx);
-	struct udma_dev *udma_dev = to_udma_dev(uctx->ub_dev);
+	struct hns3_udma_ucontext *context = to_hns3_udma_ucontext(uctx);
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(uctx->ub_dev);
 
-	udma_put_cq_bankid_for_uctx(context);
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE)
-		udma_unregister_udca(udma_dev, context);
+	hns3_udma_put_cq_bankid_for_uctx(context);
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_DCA_MODE)
+		hns3_udma_unregister_udca(udma_dev, context);
 
 	ida_free(&udma_dev->uar_ida.ida, (int)context->uar.logic_idx);
 	kfree(context);
@@ -214,8 +214,8 @@ static uint64_t get_mmap_idx(struct vm_area_struct *vma)
 
 static int mmap_dca(struct ubcore_ucontext *context, struct vm_area_struct *vma)
 {
-	struct udma_ucontext *uctx = to_udma_ucontext(context);
-	struct udma_dca_ctx *ctx = &uctx->dca_ctx;
+	struct hns3_udma_ucontext *uctx = to_hns3_udma_ucontext(context);
+	struct hns3_udma_dca_ctx *ctx = &uctx->dca_ctx;
 	struct page **pages;
 	unsigned long num;
 	int ret;
@@ -244,16 +244,40 @@ static int mmap_dca(struct ubcore_ucontext *context, struct vm_area_struct *vma)
 	return ret;
 }
 
-static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
+static bool hns3_udma_mmap_check_qpn(struct ubcore_ucontext *uctx, uint64_t qpn)
 {
-	struct udma_dev *udma_dev = to_udma_dev(uctx->ub_dev);
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(uctx->ub_dev);
+	struct hns3_udma_qp *qp;
+	bool ret = true;
+
+	xa_lock(&udma_dev->qp_table.xa);
+
+	qp = get_qp(udma_dev, qpn);
+	if (!qp) {
+		xa_unlock(&udma_dev->qp_table.xa);
+		return false;
+	}
+	refcount_inc(&qp->refcount);
+
+	xa_unlock(&udma_dev->qp_table.xa);
+
+	if (uctx != qp->qp_attr.uctx)
+		ret = false;
+	if (refcount_dec_and_test(&qp->refcount))
+		complete(&qp->free);
+
+	return ret;
+}
+
+static int hns3_udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
+{
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(uctx->ub_dev);
 	uint64_t address;
 	uint64_t qpn;
 	int cmd;
 
 	if (((vma->vm_end - vma->vm_start) % PAGE_SIZE) != 0) {
-		dev_err(udma_dev->dev,
-			"mmap failed, unexpected vm area size.\n");
+		dev_err(udma_dev->dev, "mmap failed, unexpected vm area size.\n");
 		return -EINVAL;
 	}
 
@@ -262,16 +286,17 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 	case HNS3_UDMA_MMAP_UAR_PAGE:
 		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 		if (io_remap_pfn_range(vma, vma->vm_start,
-				       to_udma_ucontext(uctx)->uar.pfn,
+				       to_hns3_udma_ucontext(uctx)->uar.pfn,
 				       PAGE_SIZE, vma->vm_page_prot))
 			return -EAGAIN;
 		break;
 	case HNS3_UDMA_MMAP_DWQE_PAGE:
 		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 		qpn = get_mmap_idx(vma);
+		if (!hns3_udma_mmap_check_qpn(uctx, qpn))
+			return -EINVAL;
 		address = udma_dev->dwqe_page + qpn * HNS3_UDMA_DWQE_PAGE_SIZE;
-		if (io_remap_pfn_range(vma, vma->vm_start,
-				       address >> PAGE_SHIFT,
+		if (io_remap_pfn_range(vma, vma->vm_start, address >> PAGE_SHIFT,
 				       HNS3_UDMA_DWQE_PAGE_SIZE, vma->vm_page_prot))
 			return -EAGAIN;
 		break;
@@ -297,15 +322,15 @@ static int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 	return 0;
 }
 
-static int udma_query_stats(struct ubcore_device *dev, struct ubcore_stats_key *key,
-			    struct ubcore_stats_val *val)
+static int hns3_udma_query_stats(struct ubcore_device *dev, struct ubcore_stats_key *key,
+				 struct ubcore_stats_val *val)
 {
 	struct ubcore_stats_com_val *com_val = (struct ubcore_stats_com_val *)val->addr;
-	struct udma_cmq_desc desc[UDMA_QUERY_COUNTER];
-	struct udma_dev *udma_dev = to_udma_dev(dev);
-	struct udma_tx_err_cnt_cmd_data *resp_tx_err;
-	struct udma_rx_cnt_cmd_data *resp_rx;
-	struct udma_tx_cnt_cmd_data *resp_tx;
+	struct hns3_udma_cmq_desc desc[HNS3_UDMA_QUERY_COUNTER];
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(dev);
+	struct hns3_udma_tx_err_cnt_cmd_data *resp_tx_err;
+	struct hns3_udma_rx_cnt_cmd_data *resp_rx;
+	struct hns3_udma_tx_cnt_cmd_data *resp_tx;
 	int ret;
 	int i;
 
@@ -314,23 +339,23 @@ static int udma_query_stats(struct ubcore_device *dev, struct ubcore_stats_key *
 		return -EINVAL;
 	}
 
-	for (i = 0; i < UDMA_QUERY_COUNTER; i++) {
-		udma_cmq_setup_basic_desc(&desc[i], UDMA_OPC_QUERY_COUNTER, true);
-		if (i < (UDMA_QUERY_COUNTER - 1))
-			desc[i].flag |= cpu_to_le16(UDMA_CMD_FLAG_NEXT);
+	for (i = 0; i < HNS3_UDMA_QUERY_COUNTER; i++) {
+		hns3_udma_cmq_setup_basic_desc(&desc[i], HNS3_UDMA_OPC_QUERY_COUNTER, true);
+		if (i < (HNS3_UDMA_QUERY_COUNTER - 1))
+			desc[i].flag |= cpu_to_le16(HNS3_UDMA_CMD_FLAG_NEXT);
 		else
-			desc[i].flag &= ~cpu_to_le16(UDMA_CMD_FLAG_NEXT);
+			desc[i].flag &= ~cpu_to_le16(HNS3_UDMA_CMD_FLAG_NEXT);
 	}
 
-	ret = udma_cmq_send(udma_dev, desc, UDMA_QUERY_COUNTER);
+	ret = hns3_udma_cmq_send(udma_dev, desc, HNS3_UDMA_QUERY_COUNTER);
 	if (ret) {
 		dev_err(udma_dev->dev, "Failed to query stats, ret = %d.\n", ret);
 		return ret;
 	}
 
-	resp_rx = (struct udma_rx_cnt_cmd_data *)desc[UDMA_QX_RESP].data;
-	resp_tx = (struct udma_tx_cnt_cmd_data *)desc[UDMA_TX_RESP].data;
-	resp_tx_err = (struct udma_tx_err_cnt_cmd_data *)desc[UDMA_TX_ERR_RESP].data;
+	resp_rx = (struct hns3_udma_rx_cnt_cmd_data *)desc[HNS3_UDMA_QX_RESP].data;
+	resp_tx = (struct hns3_udma_tx_cnt_cmd_data *)desc[HNS3_UDMA_TX_RESP].data;
+	resp_tx_err = (struct hns3_udma_tx_err_cnt_cmd_data *)desc[HNS3_UDMA_TX_ERR_RESP].data;
 
 	com_val->tx_pkt = resp_tx->pkt_tx_cnt;
 	com_val->tx_pkt_err = resp_tx_err->err_pkt_tx_cnt;
@@ -345,28 +370,28 @@ static int udma_query_stats(struct ubcore_device *dev, struct ubcore_stats_key *
 	return ret;
 }
 
-static uint16_t query_congest_alg(uint8_t udma_cc_caps)
+static uint16_t query_congest_alg(uint8_t hns3_udma_cc_caps)
 {
 	uint16_t ubcore_cc_alg = 0;
 
-	if (udma_cc_caps & UDMA_CONG_SEL_DCQCN)
+	if (hns3_udma_cc_caps & HNS3_UDMA_CONG_SEL_DCQCN)
 		ubcore_cc_alg |= UBCORE_CC_DCQCN;
-	if (udma_cc_caps & UDMA_CONG_SEL_LDCP)
+	if (hns3_udma_cc_caps & HNS3_UDMA_CONG_SEL_LDCP)
 		ubcore_cc_alg |= UBCORE_CC_LDCP;
-	if (udma_cc_caps & UDMA_CONG_SEL_HC3)
+	if (hns3_udma_cc_caps & HNS3_UDMA_CONG_SEL_HC3)
 		ubcore_cc_alg |= UBCORE_CC_HC3;
-	if (udma_cc_caps & UDMA_CONG_SEL_DIP)
+	if (hns3_udma_cc_caps & HNS3_UDMA_CONG_SEL_DIP)
 		ubcore_cc_alg |= UBCORE_CC_DIP;
 
 	return ubcore_cc_alg;
 }
 
-static int udma_query_device_attr(struct ubcore_device *dev,
-				  struct ubcore_device_attr *attr)
+static int hns3_udma_query_device_attr(struct ubcore_device *dev,
+				       struct ubcore_device_attr *attr)
 {
-#define UDMA_MAX_TP_IN_TPG 10
-	struct udma_dev *udma_dev = to_udma_dev(dev);
-	struct device *dev_of_udma = udma_dev->dev;
+#define HNS3_UDMA_MAX_TP_IN_TPG 10
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(dev);
+	struct device *dev_of_hns3_udma = udma_dev->dev;
 	struct net_device *net_dev;
 	int i;
 
@@ -382,35 +407,36 @@ static int udma_query_device_attr(struct ubcore_device *dev,
 	attr->dev_cap.max_jfs_inline_size = udma_dev->caps.max_sq_inline;
 	attr->dev_cap.max_jfs_sge = udma_dev->caps.max_sq_sg;
 	attr->dev_cap.max_jfr_sge = udma_dev->caps.max_srq_sges;
-	attr->dev_cap.max_msg_size = UDMA_MAX_MSG_LEN;
-	attr->dev_cap.trans_mode = UBCORE_TP_UM;
+	attr->dev_cap.max_msg_size = HNS3_UDMA_MAX_MSG_LEN;
+	attr->dev_cap.trans_mode = UBCORE_TP_RC | UBCORE_TP_UM;
 	attr->dev_cap.feature.bs.oor = udma_dev->caps.oor_en;
 	attr->dev_cap.ceq_cnt = udma_dev->caps.num_comp_vectors;
-	attr->dev_cap.feature.bs.jfc_inline = !!(udma_dev->caps.flags & UDMA_CAP_FLAG_CQE_INLINE);
-	attr->dev_cap.feature.bs.spray_en = !!(udma_dev->caps.flags & UDMA_CAP_FLAG_AR);
+	attr->dev_cap.feature.bs.jfc_inline = !!(udma_dev->caps.flags &
+						 HNS3_UDMA_CAP_FLAG_CQE_INLINE);
+	attr->dev_cap.feature.bs.spray_en = !!(udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_AR);
 	attr->dev_cap.max_jfs_rsge = udma_dev->caps.max_sq_sg;
 	attr->dev_cap.sub_trans_mode_cap = UBCORE_RC_USER_TP | UBCORE_RC_TP_DST_ORDERING;
 	attr->dev_cap.congestion_ctrl_alg = query_congest_alg(udma_dev->caps.cong_type);
 	attr->dev_cap.max_fe_cnt = udma_dev->func_num - 1;
 	attr->port_cnt = udma_dev->caps.num_ports;
 	attr->tp_maintainer = true;
-	attr->dev_cap.max_tp_in_tpg = UDMA_MAX_TP_IN_TPG;
+	attr->dev_cap.max_tp_in_tpg = HNS3_UDMA_MAX_TP_IN_TPG;
 	attr->fe_idx = udma_dev->func_id;
 
 	for (i = 0; i < udma_dev->caps.num_ports; i++) {
 		net_dev = udma_dev->uboe.netdevs[i];
 		if (!net_dev) {
-			dev_err(dev_of_udma, "Find netdev %u failed!\n", i);
+			dev_err(dev_of_hns3_udma, "Find netdev %d failed!\n", i);
 			return -EINVAL;
 		}
 		attr->port_attr[i].max_mtu =
-			udma_mtu_int_to_enum(net_dev->max_mtu);
+			hns3_udma_mtu_int_to_enum(net_dev->max_mtu);
 	}
 
 	return 0;
 }
 
-static int udma_get_active_speed(uint32_t speed, struct ubcore_port_status *port_status)
+static int hns3_udma_get_active_speed(uint32_t speed, struct ubcore_port_status *port_status)
 {
 	if (speed == SPEED_100G) {
 		port_status->active_width = UBCORE_LINK_X1;
@@ -425,10 +451,10 @@ static int udma_get_active_speed(uint32_t speed, struct ubcore_port_status *port
 	return 0;
 }
 
-static int udma_query_device_status(struct ubcore_device *dev,
-				    struct ubcore_device_status *dev_status)
+static int hns3_udma_query_device_status(struct ubcore_device *dev,
+					 struct ubcore_device_status *dev_status)
 {
-	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(dev);
 	enum ubcore_mtu net_dev_mtu;
 	struct net_device *net_dev;
 	enum ubcore_mtu mtu;
@@ -441,7 +467,7 @@ static int udma_query_device_status(struct ubcore_device *dev,
 	for (i = 0; i < port_num; i++) {
 		net_dev = udma_dev->uboe.netdevs[i];
 		if (!net_dev) {
-			dev_err(udma_dev->dev, "Find netdev %u failed!\n", i);
+			dev_err(udma_dev->dev, "Find netdev %d failed!\n", i);
 			return -EINVAL;
 		}
 
@@ -459,11 +485,11 @@ static int udma_query_device_status(struct ubcore_device *dev,
 
 		dev_status->port_status[i].active_mtu = (enum ubcore_mtu)
 							(mtu ? min(net_dev_mtu, mtu) :
-							 UBCORE_MTU_256);
+							       UBCORE_MTU_256);
 
-		ret = udma_get_active_speed(udma_dev->caps.speed, &dev_status->port_status[i]);
+		ret = hns3_udma_get_active_speed(udma_dev->caps.speed, &dev_status->port_status[i]);
 		if (ret) {
-			dev_err(udma_dev->dev, "Port[%u] query speed and width failed!\n", i);
+			dev_err(udma_dev->dev, "Port[%d] query speed and width failed!\n", i);
 			return ret;
 		}
 	}
@@ -471,9 +497,9 @@ static int udma_query_device_status(struct ubcore_device *dev,
 	return 0;
 }
 
-static int udma_send_req(struct ubcore_device *dev, struct ubcore_req *msg)
+static int hns3_udma_send_req(struct ubcore_device *dev, struct ubcore_req *msg)
 {
-	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(dev);
 	struct ubcore_req_host *req_host_msg;
 	int ret;
 
@@ -496,9 +522,9 @@ static int udma_send_req(struct ubcore_device *dev, struct ubcore_req *msg)
 	return ret;
 }
 
-static int udma_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *msg)
+static int hns3_udma_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *msg)
 {
-	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(dev);
 	struct ubcore_resp *resp_msg;
 	int ret;
 
@@ -520,89 +546,89 @@ static int udma_send_resp(struct ubcore_device *dev, struct ubcore_resp_host *ms
 	return ret;
 }
 
-static struct ubcore_ops g_udma_dev_ops = {
+static struct ubcore_ops g_hns3_udma_dev_ops = {
 	.owner = THIS_MODULE,
 	.abi_version = 1,
-	.add_ueid = udma_add_ueid,
-	.delete_ueid = udma_delete_ueid,
-	.query_device_attr = udma_query_device_attr,
-	.query_device_status = udma_query_device_status,
-	.query_res = udma_query_res,
-	.alloc_ucontext = udma_alloc_ucontext,
-	.free_ucontext = udma_free_ucontext,
-	.mmap = udma_mmap,
-	.register_seg = udma_register_seg,
-	.unregister_seg = udma_unregister_seg,
-	.import_seg = udma_import_seg,
-	.unimport_seg = udma_unimport_seg,
-	.create_jfc = udma_create_jfc,
-	.modify_jfc = udma_modify_jfc,
-	.destroy_jfc = udma_destroy_jfc,
-	.create_jfs = udma_create_jfs,
-	.destroy_jfs = udma_destroy_jfs,
-	.create_jfr = udma_create_jfr,
-	.modify_jfr = udma_modify_jfr,
-	.destroy_jfr = udma_destroy_jfr,
-	.import_jfr = udma_import_jfr,
-	.unimport_jfr = udma_unimport_jfr,
-	.create_jetty = udma_create_jetty,
-	.destroy_jetty = udma_destroy_jetty,
-	.import_jetty = udma_import_jetty,
-	.unimport_jetty = udma_unimport_jetty,
-	.create_tp = udma_create_tp,
-	.modify_tp = udma_modify_tp,
-	.modify_user_tp = udma_modify_user_tp,
-	.destroy_tp = udma_destroy_tp,
-	.send_req = udma_send_req,
-	.send_resp = udma_send_resp,
-	.user_ctl = udma_user_ctl,
-	.query_stats = udma_query_stats,
+	.add_ueid = hns3_udma_add_ueid,
+	.delete_ueid = hns3_udma_delete_ueid,
+	.query_device_attr = hns3_udma_query_device_attr,
+	.query_device_status = hns3_udma_query_device_status,
+	.query_res = hns3_udma_query_res,
+	.alloc_ucontext = hns3_udma_alloc_ucontext,
+	.free_ucontext = hns3_udma_free_ucontext,
+	.mmap = hns3_udma_mmap,
+	.register_seg = hns3_udma_register_seg,
+	.unregister_seg = hns3_udma_unregister_seg,
+	.import_seg = hns3_udma_import_seg,
+	.unimport_seg = hns3_udma_unimport_seg,
+	.create_jfc = hns3_udma_create_jfc,
+	.modify_jfc = hns3_udma_modify_jfc,
+	.destroy_jfc = hns3_udma_destroy_jfc,
+	.create_jfs = hns3_udma_create_jfs,
+	.destroy_jfs = hns3_udma_destroy_jfs,
+	.create_jfr = hns3_udma_create_jfr,
+	.modify_jfr = hns3_udma_modify_jfr,
+	.destroy_jfr = hns3_udma_destroy_jfr,
+	.import_jfr = hns3_udma_import_jfr,
+	.unimport_jfr = hns3_udma_unimport_jfr,
+	.create_jetty = hns3_udma_create_jetty,
+	.destroy_jetty = hns3_udma_destroy_jetty,
+	.import_jetty = hns3_udma_import_jetty,
+	.unimport_jetty = hns3_udma_unimport_jetty,
+	.create_tp = hns3_udma_create_tp,
+	.modify_tp = hns3_udma_modify_tp,
+	.modify_user_tp = hns3_udma_modify_user_tp,
+	.destroy_tp = hns3_udma_destroy_tp,
+	.send_req = hns3_udma_send_req,
+	.send_resp = hns3_udma_send_resp,
+	.user_ctl = hns3_udma_user_ctl,
+	.query_stats = hns3_udma_query_stats,
 };
 
-static void udma_cleanup_uar_table(struct udma_dev *dev)
+static void hns3_udma_cleanup_uar_table(struct hns3_udma_dev *dev)
 {
-	struct udma_ida *uar_ida = &dev->uar_ida;
+	struct hns3_udma_ida *uar_ida = &dev->uar_ida;
 
 	if (!ida_is_empty(&uar_ida->ida))
 		dev_err(dev->dev, "IDA not empty in clean up uar table.\n");
 	ida_destroy(&uar_ida->ida);
 }
 
-static void udma_init_uar_table(struct udma_dev *udma_dev)
+static void hns3_udma_init_uar_table(struct hns3_udma_dev *udma_dev)
 {
-	struct udma_ida *uar_ida = &udma_dev->uar_ida;
+	struct hns3_udma_ida *uar_ida = &udma_dev->uar_ida;
 
 	ida_init(&uar_ida->ida);
 	uar_ida->max = udma_dev->caps.num_uars - 1;
 	uar_ida->min = udma_dev->caps.reserved_uars;
 }
 
-static void udma_cleanup_seg_table(struct udma_dev *dev)
+static void hns3_udma_cleanup_seg_table(struct hns3_udma_dev *dev)
 {
-	struct udma_ida *seg_ida = &dev->seg_table.seg_ida;
+	struct hns3_udma_ida *seg_ida = &dev->seg_table.seg_ida;
 
 	if (!ida_is_empty(&seg_ida->ida))
 		dev_err(dev->dev, "IDA not empty in clean up seg table.\n");
 	ida_destroy(&seg_ida->ida);
 }
 
-static void udma_init_seg_table(struct udma_dev *udma_dev)
+static void hns3_udma_init_seg_table(struct hns3_udma_dev *udma_dev)
 {
-	struct udma_ida *seg_ida = &udma_dev->seg_table.seg_ida;
+	struct hns3_udma_ida *seg_ida = &udma_dev->seg_table.seg_ida;
 
 	ida_init(&seg_ida->ida);
 	seg_ida->max = udma_dev->caps.num_mtpts - 1;
 	seg_ida->min = udma_dev->caps.reserved_mrws;
 }
 
-static void udma_cleanup_jfc_table(struct udma_dev *udma_dev)
+static void hns3_udma_cleanup_jfc_table(struct hns3_udma_dev *udma_dev)
 {
-	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
+	struct hns3_udma_jfc_table *jfc_table = &udma_dev->jfc_table;
 	unsigned long index = 0;
-	struct udma_jfc *jfc;
+	struct hns3_udma_jfc *jfc;
 	int i;
 
-	for (i = 0; i < UDMA_CQ_BANK_NUM; i++) {
+	for (i = 0; i < HNS3_UDMA_CQ_BANK_NUM; i++) {
 		if (!ida_is_empty(&jfc_table->bank[i].ida))
 			dev_err(udma_dev->dev,
 				"IDA not empty in clean up jfc bank[%d] table\n",
@@ -613,40 +639,37 @@ static void udma_cleanup_jfc_table(struct udma_dev *udma_dev)
 	if (!xa_empty(&jfc_table->xa)) {
 		dev_err(udma_dev->dev, "JFC not empty\n");
 		xa_for_each(&jfc_table->xa, index, jfc)
-			udma_table_put(udma_dev, &jfc_table->table, index);
+			hns3_udma_table_put(udma_dev, &jfc_table->table, index);
 	}
 	xa_destroy(&jfc_table->xa);
 }
 
-static void udma_init_jfc_table(struct udma_dev *udma_dev)
+static void hns3_udma_init_jfc_table(struct hns3_udma_dev *udma_dev)
 {
-	struct udma_jfc_table *jfc_table = &udma_dev->jfc_table;
-	uint32_t reserved_from_bot;
+	struct hns3_udma_jfc_table *jfc_table = &udma_dev->jfc_table;
 	uint32_t max;
 	uint32_t i;
 
 	mutex_init(&jfc_table->bank_mutex);
 	xa_init(&jfc_table->xa);
 
-	reserved_from_bot = 1;
+	/* reserve jfc id 0 */
+	jfc_table->bank[0].min = 1;
 
-	for (i = 0; i < reserved_from_bot; i++)
-		jfc_table->bank[get_jfc_bankid(i)].min++;
+	max = udma_dev->caps.num_jfc / HNS3_UDMA_CQ_BANK_NUM - 1;
 
-	max = udma_dev->caps.num_jfc / UDMA_CQ_BANK_NUM - 1;
-
-	for (i = 0; i < UDMA_CQ_BANK_NUM; i++) {
+	for (i = 0; i < HNS3_UDMA_CQ_BANK_NUM; i++) {
 		ida_init(&jfc_table->bank[i].ida);
 		jfc_table->bank[i].max = max;
 	}
 }
 
-static void udma_cleanup_jfr_table(struct udma_dev *dev)
+static void hns3_udma_cleanup_jfr_table(struct hns3_udma_dev *dev)
 {
-	struct udma_jfr_table *jfr_table = &dev->jfr_table;
-	struct udma_ida *jfr_ida = &jfr_table->jfr_ida;
+	struct hns3_udma_jfr_table *jfr_table = &dev->jfr_table;
+	struct hns3_udma_ida *jfr_ida = &jfr_table->jfr_ida;
+	struct hns3_udma_jfr *jfr;
 	unsigned long index = 0;
-	struct udma_jfr *jfr;
 
 	if (!ida_is_empty(&jfr_ida->ida))
 		dev_err(dev->dev, "IDA not empty in clean up jfr table.\n");
@@ -655,15 +678,15 @@ static void udma_cleanup_jfr_table(struct udma_dev *dev)
 	if (!xa_empty(&jfr_table->xa)) {
 		dev_err(dev->dev, "JFR not empty\n");
 		xa_for_each(&jfr_table->xa, index, jfr)
-			udma_table_put(dev, &jfr_table->table, index);
+			hns3_udma_table_put(dev, &jfr_table->table, index);
 	}
 	xa_destroy(&jfr_table->xa);
 }
 
-static void udma_init_jfr_table(struct udma_dev *dev)
+static void hns3_udma_init_jfr_table(struct hns3_udma_dev *dev)
 {
-	struct udma_jfr_table *jfr_table = &dev->jfr_table;
-	struct udma_ida *jfr_ida = &jfr_table->jfr_ida;
+	struct hns3_udma_jfr_table *jfr_table = &dev->jfr_table;
+	struct hns3_udma_ida *jfr_ida = &jfr_table->jfr_ida;
 
 	xa_init(&jfr_table->xa);
 	ida_init(&jfr_ida->ida);
@@ -672,10 +695,10 @@ static void udma_init_jfr_table(struct udma_dev *dev)
 	jfr_ida->min = 1;
 }
 
-static void udma_cleanup_jfs_table(struct udma_dev *dev)
+static void hns3_udma_cleanup_jfs_table(struct hns3_udma_dev *dev)
 {
-	struct udma_jfs_table *jfs_table = &dev->jfs_table;
-	struct udma_ida *jfs_ida = &jfs_table->jfs_ida;
+	struct hns3_udma_jfs_table *jfs_table = &dev->jfs_table;
+	struct hns3_udma_ida *jfs_ida = &jfs_table->jfs_ida;
 
 	if (!ida_is_empty(&jfs_ida->ida))
 		dev_err(dev->dev, "IDA not empty in clean up jfs table.\n");
@@ -686,10 +709,10 @@ static void udma_cleanup_jfs_table(struct udma_dev *dev)
 	xa_destroy(&jfs_table->xa);
 }
 
-static void udma_init_jfs_table(struct udma_dev *dev)
+static void hns3_udma_init_jfs_table(struct hns3_udma_dev *dev)
 {
-	struct udma_jfs_table *jfs_table = &dev->jfs_table;
-	struct udma_ida *jfs_ida = &jfs_table->jfs_ida;
+	struct hns3_udma_jfs_table *jfs_table = &dev->jfs_table;
+	struct hns3_udma_ida *jfs_ida = &jfs_table->jfs_ida;
 
 	xa_init(&jfs_table->xa);
 	ida_init(&jfs_ida->ida);
@@ -698,10 +721,10 @@ static void udma_init_jfs_table(struct udma_dev *dev)
 	jfs_ida->min = 1;
 }
 
-static void udma_cleanup_jetty_table(struct udma_dev *dev)
+static void hns3_udma_cleanup_jetty_table(struct hns3_udma_dev *dev)
 {
-	struct udma_jetty_table	*jetty_table = &dev->jetty_table;
-	struct udma_ida *jetty_ida = &jetty_table->jetty_ida;
+	struct hns3_udma_jetty_table	*jetty_table = &dev->jetty_table;
+	struct hns3_udma_ida *jetty_ida = &jetty_table->jetty_ida;
 
 	if (!ida_is_empty(&jetty_ida->ida))
 		dev_err(dev->dev, "IDA not empty in clean up jetty table.\n");
@@ -712,10 +735,10 @@ static void udma_cleanup_jetty_table(struct udma_dev *dev)
 	xa_destroy(&jetty_table->xa);
 }
 
-static void udma_init_jetty_table(struct udma_dev *dev)
+static void hns3_udma_init_jetty_table(struct hns3_udma_dev *dev)
 {
-	struct udma_jetty_table	*jetty_table = &dev->jetty_table;
-	struct udma_ida *jetty_ida = &jetty_table->jetty_ida;
+	struct hns3_udma_jetty_table	*jetty_table = &dev->jetty_table;
+	struct hns3_udma_ida *jetty_ida = &jetty_table->jetty_ida;
 
 	xa_init(&jetty_table->xa);
 	ida_init(&jetty_ida->ida);
@@ -724,19 +747,19 @@ static void udma_init_jetty_table(struct udma_dev *dev)
 	jetty_ida->min = 1;
 }
 
-static void udma_cleanup_eid_table(struct udma_dev *dev)
+static void hns3_udma_cleanup_eid_table(struct hns3_udma_dev *dev)
 {
 	if (!xa_empty(&dev->eid_table))
 		dev_err(dev->dev, "EID table not empty.\n");
 	xa_destroy(&dev->eid_table);
 }
 
-static void udma_init_eid_table(struct udma_dev *dev)
+static void hns3_udma_init_eid_table(struct hns3_udma_dev *dev)
 {
 	xa_init(&dev->eid_table);
 }
 
-int udma_init_eq_idx_table(struct udma_dev *udma_dev)
+int hns3_udma_init_eq_idx_table(struct hns3_udma_dev *udma_dev)
 {
 	uint32_t eq_num;
 
@@ -750,7 +773,7 @@ int udma_init_eq_idx_table(struct udma_dev *udma_dev)
 	return 0;
 }
 
-int udma_setup_hca(struct udma_dev *udma_dev)
+int hns3_udma_setup_hca(struct hns3_udma_dev *udma_dev)
 {
 	struct device *dev = udma_dev->dev;
 	int ret;
@@ -760,21 +783,21 @@ int udma_setup_hca(struct udma_dev *udma_dev)
 	INIT_LIST_HEAD(&udma_dev->dip_list);
 	spin_lock_init(&udma_dev->dip_list_lock);
 
-	udma_init_uar_table(udma_dev);
+	hns3_udma_init_uar_table(udma_dev);
 
-	ret = udma_init_qp_table(udma_dev);
+	ret = hns3_udma_init_qp_table(udma_dev);
 	if (ret) {
 		dev_err(dev, "Failed to init qp_table.\n");
 		goto err_uar_table_free;
 	}
 
-	udma_init_seg_table(udma_dev);
-	udma_init_jfc_table(udma_dev);
-	udma_init_jfr_table(udma_dev);
-	udma_init_jfs_table(udma_dev);
-	udma_init_jetty_table(udma_dev);
-	udma_init_eid_table(udma_dev);
-	ret = udma_init_eq_idx_table(udma_dev);
+	hns3_udma_init_seg_table(udma_dev);
+	hns3_udma_init_jfc_table(udma_dev);
+	hns3_udma_init_jfr_table(udma_dev);
+	hns3_udma_init_jfs_table(udma_dev);
+	hns3_udma_init_jetty_table(udma_dev);
+	hns3_udma_init_eid_table(udma_dev);
+	ret = hns3_udma_init_eq_idx_table(udma_dev);
 	if (ret) {
 		dev_err(dev, "Failed to init eq_table.\n");
 		goto err_eq_table;
@@ -782,59 +805,59 @@ int udma_setup_hca(struct udma_dev *udma_dev)
 
 	return 0;
 err_eq_table:
-	udma_cleanup_eid_table(udma_dev);
-	udma_cleanup_jetty_table(udma_dev);
-	udma_cleanup_jfs_table(udma_dev);
-	udma_cleanup_jfr_table(udma_dev);
-	udma_cleanup_jfc_table(udma_dev);
-	udma_cleanup_seg_table(udma_dev);
-	udma_cleanup_qp_table(udma_dev);
+	hns3_udma_cleanup_eid_table(udma_dev);
+	hns3_udma_cleanup_jetty_table(udma_dev);
+	hns3_udma_cleanup_jfs_table(udma_dev);
+	hns3_udma_cleanup_jfr_table(udma_dev);
+	hns3_udma_cleanup_jfc_table(udma_dev);
+	hns3_udma_cleanup_seg_table(udma_dev);
+	hns3_udma_cleanup_qp_table(udma_dev);
 
 err_uar_table_free:
-	udma_cleanup_uar_table(udma_dev);
+	hns3_udma_cleanup_uar_table(udma_dev);
 	return ret;
 }
 
-void udma_teardown_hca(struct udma_dev *udma_dev)
+void hns3_udma_teardown_hca(struct hns3_udma_dev *udma_dev)
 {
 	kfree(udma_dev->eq_table.idx_table);
-	udma_cleanup_eid_table(udma_dev);
-	udma_cleanup_jetty_table(udma_dev);
-	udma_cleanup_jfs_table(udma_dev);
-	udma_cleanup_jfr_table(udma_dev);
-	udma_cleanup_jfc_table(udma_dev);
-	udma_cleanup_seg_table(udma_dev);
-	udma_cleanup_qp_table(udma_dev);
-	udma_cleanup_uar_table(udma_dev);
+	hns3_udma_cleanup_eid_table(udma_dev);
+	hns3_udma_cleanup_jetty_table(udma_dev);
+	hns3_udma_cleanup_jfs_table(udma_dev);
+	hns3_udma_cleanup_jfr_table(udma_dev);
+	hns3_udma_cleanup_jfc_table(udma_dev);
+	hns3_udma_cleanup_seg_table(udma_dev);
+	hns3_udma_cleanup_qp_table(udma_dev);
+	hns3_udma_cleanup_uar_table(udma_dev);
 }
 
-int udma_init_common_hem(struct udma_dev *udma_dev)
+int hns3_udma_init_common_hem(struct hns3_udma_dev *udma_dev)
 {
 	struct device *dev = udma_dev->dev;
 	int ret;
 
-	ret = udma_init_hem_table(udma_dev, &udma_dev->seg_table.table,
-				  HEM_TYPE_MTPT, udma_dev->caps.mtpt_entry_sz,
-				  udma_dev->caps.num_mtpts);
+	ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->seg_table.table,
+				       HEM_TYPE_MTPT, udma_dev->caps.mtpt_entry_sz,
+				       udma_dev->caps.num_mtpts);
 	if (ret) {
 		dev_err(dev, "Failed to init MTPT context memory.\n");
 		return ret;
 	}
 	dev_info(dev, "init MPT hem table success.\n");
 
-	ret = udma_init_hem_table(udma_dev, &udma_dev->qp_table.qp_table,
-				  HEM_TYPE_QPC, udma_dev->caps.qpc_sz,
-				  udma_dev->caps.num_qps);
+	ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->qp_table.qp_table,
+				       HEM_TYPE_QPC, udma_dev->caps.qpc_sz,
+				       udma_dev->caps.num_qps);
 	if (ret) {
 		dev_err(dev, "Failed to init QP context memory.\n");
 		goto err_unmap_dmpt;
 	}
 	dev_info(dev, "init QPC hem table success.\n");
 
-	ret = udma_init_hem_table(udma_dev, &udma_dev->qp_table.irrl_table,
-				  HEM_TYPE_IRRL, udma_dev->caps.irrl_entry_sz *
-				  udma_dev->caps.max_qp_init_rdma,
-				  udma_dev->caps.num_qps);
+	ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->qp_table.irrl_table,
+				       HEM_TYPE_IRRL, udma_dev->caps.irrl_entry_sz *
+				       udma_dev->caps.max_qp_init_rdma,
+				       udma_dev->caps.num_qps);
 	if (ret) {
 		dev_err(dev, "Failed to init irrl_table memory.\n");
 		goto err_unmap_qp;
@@ -842,12 +865,12 @@ int udma_init_common_hem(struct udma_dev *udma_dev)
 	dev_info(dev, "init IRRL hem table success.\n");
 
 	if (udma_dev->caps.trrl_entry_sz) {
-		ret = udma_init_hem_table(udma_dev,
-					  &udma_dev->qp_table.trrl_table,
-					  HEM_TYPE_TRRL,
-					  udma_dev->caps.trrl_entry_sz *
-					  udma_dev->caps.max_qp_dest_rdma,
-					  udma_dev->caps.num_qps);
+		ret = hns3_udma_init_hem_table(udma_dev,
+					       &udma_dev->qp_table.trrl_table,
+					       HEM_TYPE_TRRL,
+					       udma_dev->caps.trrl_entry_sz *
+					       udma_dev->caps.max_qp_dest_rdma,
+					       udma_dev->caps.num_qps);
 		if (ret) {
 			dev_err(dev, "Failed to init trrl_table memory.\n");
 			goto err_unmap_irrl;
@@ -855,20 +878,20 @@ int udma_init_common_hem(struct udma_dev *udma_dev)
 		dev_info(dev, "init TRRL hem table success.\n");
 	}
 
-	ret = udma_init_hem_table(udma_dev, &udma_dev->jfc_table.table,
-				  HEM_TYPE_CQC, udma_dev->caps.cqc_entry_sz,
-				  udma_dev->caps.num_cqs);
+	ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->jfc_table.table,
+				       HEM_TYPE_CQC, udma_dev->caps.cqc_entry_sz,
+				       udma_dev->caps.num_cqs);
 	if (ret) {
 		dev_err(dev, "Failed to init CQ context memory.\n");
 		goto err_unmap_trrl;
 	}
 	dev_info(dev, "init CQC hem table success.\n");
 
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_SRQ) {
-		ret = udma_init_hem_table(udma_dev, &udma_dev->jfr_table.table,
-					  HEM_TYPE_SRQC,
-					  udma_dev->caps.srqc_entry_sz,
-					  udma_dev->caps.num_srqs);
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_SRQ) {
+		ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->jfr_table.table,
+					       HEM_TYPE_SRQC,
+					       udma_dev->caps.srqc_entry_sz,
+					       udma_dev->caps.num_srqs);
 		if (ret) {
 			dev_err(dev, "Failed to init SRQ context memory.\n");
 			goto err_unmap_cq;
@@ -876,12 +899,12 @@ int udma_init_common_hem(struct udma_dev *udma_dev)
 		dev_info(dev, "init SRQC hem table success.\n");
 	}
 
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_QP_FLOW_CTRL) {
-		ret = udma_init_hem_table(udma_dev,
-					  &udma_dev->qp_table.sccc_table,
-					  HEM_TYPE_SCCC,
-					  udma_dev->caps.scc_ctx_sz,
-					  udma_dev->caps.num_qps);
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_QP_FLOW_CTRL) {
+		ret = hns3_udma_init_hem_table(udma_dev,
+					       &udma_dev->qp_table.sccc_table,
+					       HEM_TYPE_SCCC,
+					       udma_dev->caps.scc_ctx_sz,
+					       udma_dev->caps.num_qps);
 		if (ret) {
 			dev_err(dev, "Failed to init SCC context memory.\n");
 			goto err_unmap_srq;
@@ -890,10 +913,10 @@ int udma_init_common_hem(struct udma_dev *udma_dev)
 	}
 
 	if (udma_dev->caps.gmv_entry_sz) {
-		ret = udma_init_hem_table(udma_dev, &udma_dev->gmv_table,
-					  HEM_TYPE_GMV,
-					  udma_dev->caps.gmv_entry_sz,
-					  udma_dev->caps.gmv_entry_num);
+		ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->gmv_table,
+					       HEM_TYPE_GMV,
+					       udma_dev->caps.gmv_entry_sz,
+					       udma_dev->caps.gmv_entry_num);
 		if (ret) {
 			dev_err(dev, "failed to init gmv table memory.\n");
 			goto err_unmap_ctx;
@@ -903,54 +926,54 @@ int udma_init_common_hem(struct udma_dev *udma_dev)
 
 	return 0;
 err_unmap_ctx:
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_QP_FLOW_CTRL)
-		udma_cleanup_hem_table(udma_dev,
-				       &udma_dev->qp_table.sccc_table);
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_QP_FLOW_CTRL)
+		hns3_udma_cleanup_hem_table(udma_dev,
+					    &udma_dev->qp_table.sccc_table);
 err_unmap_srq:
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_SRQ)
-		udma_cleanup_hem_table(udma_dev, &udma_dev->jfr_table.table);
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_SRQ)
+		hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->jfr_table.table);
 err_unmap_cq:
-	udma_cleanup_hem_table(udma_dev, &udma_dev->jfc_table.table);
+	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->jfc_table.table);
 err_unmap_trrl:
 	if (udma_dev->caps.trrl_entry_sz)
-		udma_cleanup_hem_table(udma_dev,
-				       &udma_dev->qp_table.trrl_table);
+		hns3_udma_cleanup_hem_table(udma_dev,
+					    &udma_dev->qp_table.trrl_table);
 err_unmap_irrl:
-	udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.irrl_table);
+	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.irrl_table);
 err_unmap_qp:
-	udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.qp_table);
+	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.qp_table);
 err_unmap_dmpt:
-	udma_cleanup_hem_table(udma_dev, &udma_dev->seg_table.table);
+	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->seg_table.table);
 
 	return ret;
 }
 
-static int udma_init_hem(struct udma_dev *udma_dev)
+static int hns3_udma_init_hem(struct hns3_udma_dev *udma_dev)
 {
 	struct device *dev = udma_dev->dev;
 	int ret;
 
-	ret = udma_init_common_hem(udma_dev);
+	ret = hns3_udma_init_common_hem(udma_dev);
 	if (ret) {
 		dev_err(dev, "Failed to init common hem table of PF.\n");
 		return ret;
 	}
 
 	if (udma_dev->caps.qpc_timer_entry_sz) {
-		ret = udma_init_hem_table(udma_dev, &udma_dev->qpc_timer_table,
-					  HEM_TYPE_QPC_TIMER,
-					  udma_dev->caps.qpc_timer_entry_sz,
-					  udma_dev->caps.num_qpc_timer);
+		ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->qpc_timer_table,
+					       HEM_TYPE_QPC_TIMER,
+					       udma_dev->caps.qpc_timer_entry_sz,
+					       udma_dev->caps.num_qpc_timer);
 		if (ret) {
 			dev_err(dev, "Failed to init QPC timer memory.\n");
 			goto err_unmap_vf_hem;
 		}
 	}
 	if (udma_dev->caps.cqc_timer_entry_sz) {
-		ret = udma_init_hem_table(udma_dev, &udma_dev->cqc_timer_table,
-					  HEM_TYPE_CQC_TIMER,
-					  udma_dev->caps.cqc_timer_entry_sz,
-					  udma_dev->caps.cqc_timer_bt_num);
+		ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->cqc_timer_table,
+					       HEM_TYPE_CQC_TIMER,
+					       udma_dev->caps.cqc_timer_entry_sz,
+					       udma_dev->caps.cqc_timer_bt_num);
 		if (ret) {
 			dev_err(dev, "Failed to init CQC timer memory.\n");
 			goto err_unmap_qpc_timer;
@@ -960,50 +983,50 @@ static int udma_init_hem(struct udma_dev *udma_dev)
 	return 0;
 err_unmap_qpc_timer:
 	if (udma_dev->caps.qpc_timer_entry_sz)
-		udma_cleanup_hem_table(udma_dev, &udma_dev->qpc_timer_table);
+		hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qpc_timer_table);
 err_unmap_vf_hem:
-	udma_cleanup_common_hem(udma_dev);
+	hns3_udma_cleanup_common_hem(udma_dev);
 
 	return ret;
 }
 
-void udma_cleanup_common_hem(struct udma_dev *udma_dev)
+void hns3_udma_cleanup_common_hem(struct hns3_udma_dev *udma_dev)
 {
 	if (udma_dev->caps.gmv_entry_sz)
-		udma_cleanup_hem_table(udma_dev, &udma_dev->gmv_table);
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_QP_FLOW_CTRL)
-		udma_cleanup_hem_table(udma_dev,
-				       &udma_dev->qp_table.sccc_table);
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_SRQ)
-		udma_cleanup_hem_table(udma_dev, &udma_dev->jfr_table.table);
-	udma_cleanup_hem_table(udma_dev, &udma_dev->jfc_table.table);
+		hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->gmv_table);
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_QP_FLOW_CTRL)
+		hns3_udma_cleanup_hem_table(udma_dev,
+					    &udma_dev->qp_table.sccc_table);
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_SRQ)
+		hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->jfr_table.table);
+	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->jfc_table.table);
 	if (udma_dev->caps.trrl_entry_sz)
-		udma_cleanup_hem_table(udma_dev,
-				       &udma_dev->qp_table.trrl_table);
+		hns3_udma_cleanup_hem_table(udma_dev,
+					    &udma_dev->qp_table.trrl_table);
 
-	udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.irrl_table);
-	udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.qp_table);
-	udma_cleanup_hem_table(udma_dev, &udma_dev->seg_table.table);
+	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.irrl_table);
+	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.qp_table);
+	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->seg_table.table);
 }
 
-static void udma_cleanup_hem(struct udma_dev *udma_dev)
+static void hns3_udma_cleanup_hem(struct hns3_udma_dev *udma_dev)
 {
 	if (udma_dev->caps.qpc_timer_entry_sz)
-		udma_cleanup_hem_table(udma_dev, &udma_dev->qpc_timer_table);
+		hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qpc_timer_table);
 	if (udma_dev->caps.cqc_timer_entry_sz)
-		udma_cleanup_hem_table(udma_dev, &udma_dev->cqc_timer_table);
+		hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->cqc_timer_table);
 
-	udma_cleanup_common_hem(udma_dev);
+	hns3_udma_cleanup_common_hem(udma_dev);
 }
 
-void udma_set_poe_ch_num(struct udma_dev *dev)
+void hns3_udma_set_poe_ch_num(struct hns3_udma_dev *dev)
 {
-#define UDMA_POE_CH_NUM 4
-	dev->caps.poe_ch_num = UDMA_POE_CH_NUM;
+#define HNS3_UDMA_POE_CH_NUM 4
+	dev->caps.poe_ch_num = HNS3_UDMA_POE_CH_NUM;
 }
 
-static void udma_set_devname(struct udma_dev *udma_dev,
-			     struct ubcore_device *ub_dev)
+static void hns3_udma_set_devname(struct hns3_udma_dev *udma_dev,
+				  struct ubcore_device *ub_dev)
 {
 #define UB_DEV_BASE_NAME "ubl"
 #define UB_DEV_NAME_SHIFT 3
@@ -1019,30 +1042,30 @@ static void udma_set_devname(struct udma_dev *udma_dev,
 	strlcpy(ub_dev->dev_name, udma_dev->dev_name, UBCORE_MAX_DEV_NAME);
 }
 
-static int udma_register_device(struct udma_dev *udma_dev)
+static int hns3_udma_register_device(struct hns3_udma_dev *udma_dev)
 {
 	struct ubcore_device *ub_dev = NULL;
 
 	ub_dev = &udma_dev->ub_dev;
 	ub_dev->transport_type = UBCORE_TRANSPORT_HNS_UB;
-	ub_dev->ops = &g_udma_dev_ops;
+	ub_dev->ops = &g_hns3_udma_dev_ops;
 	ub_dev->dev.parent = udma_dev->dev;
 	ub_dev->dma_dev = ub_dev->dev.parent;
 	ub_dev->netdev = udma_dev->uboe.netdevs[0];
-	scnprintf(ub_dev->ops->driver_name, UBCORE_MAX_DRIVER_NAME, "udma_v1");
-	udma_set_devname(udma_dev, ub_dev);
+	scnprintf(ub_dev->ops->driver_name, UBCORE_MAX_DRIVER_NAME, "hns3_udma_v1");
+	hns3_udma_set_devname(udma_dev, ub_dev);
 
 	return ubcore_register_device(ub_dev);
 }
 
-static void udma_unregister_device(struct udma_dev *udma_dev)
+static void hns3_udma_unregister_device(struct hns3_udma_dev *udma_dev)
 {
 	struct ubcore_device *ub_dev = &udma_dev->ub_dev;
 
 	ubcore_unregister_device(ub_dev);
 }
 
-int udma_hnae_client_init(struct udma_dev *udma_dev)
+int hns3_udma_client_init(struct hns3_udma_dev *udma_dev)
 {
 	struct device *dev = udma_dev->dev;
 	int ret;
@@ -1061,7 +1084,7 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 		goto error_failed_hw_profile;
 	}
 
-	ret = udma_cmd_init(udma_dev);
+	ret = hns3_udma_cmd_init(udma_dev);
 	if (ret) {
 		dev_err(dev, "cmd init failed!\n");
 		goto error_failed_cmd_init;
@@ -1074,7 +1097,7 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 	}
 
 	if (udma_dev->cmd_mod) {
-		ret = udma_cmd_use_events(udma_dev);
+		ret = hns3_udma_cmd_use_events(udma_dev);
 		if (ret) {
 			udma_dev->cmd_mod = 0;
 			dev_warn(dev,
@@ -1082,13 +1105,13 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 		}
 	}
 
-	ret = udma_init_hem(udma_dev);
+	ret = hns3_udma_init_hem(udma_dev);
 	if (ret) {
 		dev_err(dev, "init HEM(Hardware Entry Memory) failed!\n");
 		goto error_failed_hem_init;
 	}
 
-	ret = udma_setup_hca(udma_dev);
+	ret = hns3_udma_setup_hca(udma_dev);
 	if (ret) {
 		dev_err(dev, "setup hca failed!\n");
 		goto error_failed_setup;
@@ -1100,14 +1123,14 @@ int udma_hnae_client_init(struct udma_dev *udma_dev)
 		goto error_failed_engine_init;
 	}
 
-	udma_set_poe_ch_num(udma_dev);
-	ret = udma_register_device(udma_dev);
+	hns3_udma_set_poe_ch_num(udma_dev);
+	ret = hns3_udma_register_device(udma_dev);
 	if (ret) {
-		dev_err(dev, "udma register device failed!\n");
+		dev_err(dev, "hns3_udma register device failed!\n");
 		goto error_failed_register_device;
 	}
 
-	udma_register_debugfs(udma_dev);
+	hns3_udma_register_debugfs(udma_dev);
 
 	return 0;
 
@@ -1115,19 +1138,19 @@ error_failed_register_device:
 	udma_dev->hw->hw_exit(udma_dev);
 
 error_failed_engine_init:
-	udma_teardown_hca(udma_dev);
+	hns3_udma_teardown_hca(udma_dev);
 
 error_failed_setup:
-	udma_cleanup_hem(udma_dev);
+	hns3_udma_cleanup_hem(udma_dev);
 
 error_failed_hem_init:
 	if (udma_dev->cmd_mod)
-		udma_cmd_use_polling(udma_dev);
+		hns3_udma_cmd_use_polling(udma_dev);
 
 	udma_dev->hw->cleanup_eq(udma_dev);
 
 error_failed_eq_table:
-	udma_cmd_cleanup(udma_dev);
+	hns3_udma_cmd_cleanup(udma_dev);
 
 error_failed_cmd_init:
 error_failed_hw_profile:
@@ -1137,24 +1160,25 @@ error_failed_cmq_init:
 	return ret;
 }
 
-void udma_hnae_client_exit(struct udma_dev *udma_dev)
+void hns3_udma_hnae_client_exit(struct hns3_udma_dev *udma_dev)
 {
-	udma_unregister_device(udma_dev);
-	udma_unregister_debugfs(udma_dev);
+	hns3_udma_unregister_device(udma_dev);
+	hns3_udma_unregister_debugfs(udma_dev);
+	hns3_udma_free_dca_safe_buf(udma_dev);
 
 	if (udma_dev->hw->hw_exit)
 		udma_dev->hw->hw_exit(udma_dev);
 
-	udma_teardown_hca(udma_dev);
+	hns3_udma_teardown_hca(udma_dev);
 
-	udma_cleanup_hem(udma_dev);
+	hns3_udma_cleanup_hem(udma_dev);
 
 	if (udma_dev->cmd_mod)
-		udma_cmd_use_polling(udma_dev);
+		hns3_udma_cmd_use_polling(udma_dev);
 
 	udma_dev->hw->cleanup_eq(udma_dev);
 
-	udma_cmd_cleanup(udma_dev);
+	hns3_udma_cmd_cleanup(udma_dev);
 	if (udma_dev->hw->cmq_exit)
 		udma_dev->hw->cmq_exit(udma_dev);
 }

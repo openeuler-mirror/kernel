@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -13,8 +13,8 @@
  *
  */
 
-#ifndef __UDMA_DEBUGFS_H
-#define __UDMA_DEBUGFS_H
+#ifndef __HNS3_UDMA_DEBUGFS_H
+#define __HNS3_UDMA_DEBUGFS_H
 
 #define KB 1024
 #define KB_SHIFT 10
@@ -24,7 +24,7 @@
 #define LOADING_PERCENT_SCALE 100
 #define LOADING_PERCENT_SHIFT 2
 
-#define UDMA_DCA_BUF_ID_TO_QPN(buf_id) ((buf_id) & UDMA_DCA_OWN_MASK)
+#define HNS3_UDMA_DCA_BUF_ID_TO_QPN(buf_id) ((buf_id) & HNS3_UDMA_DCA_OWN_MASK)
 
 #define DCA_STAT_NAME_FMT "%-22s "
 #define dca_ctx_print_mem_size(f, n, fmt, v) \
@@ -40,27 +40,27 @@ struct dca_stats_qp_attr {
 };
 
 /* debugfs seqfile */
-struct udma_debugfs_seqfile {
+struct hns3_udma_debugfs_seqfile {
 	struct dentry	*entry;
 	int		(*read)(struct seq_file *seq, void *data);
 	void		*data;
 };
 
 /* DCA debugfs */
-struct udma_dca_ctx_debugfs {
-	struct dentry			*root; /* pool debugfs entry */
-	struct udma_debugfs_seqfile	mem; /* mems in pool */
-	struct udma_debugfs_seqfile	qp; /* QPs stats in pool */
+struct hns3_udma_dca_ctx_debugfs {
+	struct dentry				*root; /* pool debugfs entry */
+	struct hns3_udma_debugfs_seqfile	mem; /* mems in pool */
+	struct hns3_udma_debugfs_seqfile	qp; /* QPs stats in pool */
 };
 
-struct udma_dca_debugfs {
+struct hns3_udma_dca_debugfs {
 	struct dentry *root; /* dev debugfs entry */
 };
 
 /* Debugfs for device */
-struct udma_dev_debugfs {
-	struct dentry		*root;
-	struct udma_dca_debugfs	*dca_root;
+struct hns3_udma_dev_debugfs {
+	struct dentry			*root;
+	struct hns3_udma_dca_debugfs	*dca_root;
 };
 
 struct dca_mem_stats {
@@ -80,11 +80,11 @@ struct dca_qp_stats {
 	uint32_t sge_size;
 };
 
-void udma_init_debugfs(void);
-void udma_cleanup_debugfs(void);
-void udma_register_debugfs(struct udma_dev *udma_dev);
-void udma_unregister_debugfs(struct udma_dev *udma_dev);
-void udma_unregister_uctx_debugfs(struct udma_ucontext *uctx);
-void udma_register_uctx_debugfs(struct udma_dev *udma_dev,
-				struct udma_ucontext *uctx);
+void hns3_udma_init_debugfs(void);
+void hns3_udma_cleanup_debugfs(void);
+void hns3_udma_register_debugfs(struct hns3_udma_dev *udma_dev);
+void hns3_udma_unregister_debugfs(struct hns3_udma_dev *udma_dev);
+void hns3_udma_unregister_uctx_debugfs(struct hns3_udma_ucontext *uctx);
+void hns3_udma_register_uctx_debugfs(struct hns3_udma_dev *udma_dev,
+				     struct hns3_udma_ucontext *uctx);
 #endif

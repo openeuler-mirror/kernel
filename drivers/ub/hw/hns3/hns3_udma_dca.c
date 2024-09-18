@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -20,7 +20,7 @@
 #include "hns3_udma_debugfs.h"
 #include "hns3_udma_dca.h"
 
-static void travel_dca_pages(struct udma_dca_ctx *ctx, void *param,
+static void travel_dca_pages(struct hns3_udma_dca_ctx *ctx, void *param,
 			     int (*cb)(struct dca_mem *, uint32_t, void *))
 {
 	struct dca_mem *mem;
@@ -53,19 +53,19 @@ done:
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 }
 
-void udma_enable_dca(struct udma_dev *dev, struct udma_qp *qp)
+void hns3_udma_enable_dca(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp)
 {
-	struct udma_dca_cfg *cfg = &qp->dca_cfg;
+	struct hns3_udma_dca_cfg *cfg = &qp->dca_cfg;
 
 	spin_lock_init(&cfg->lock);
 	INIT_LIST_HEAD(&cfg->aging_node);
-	cfg->buf_id = UDMA_DCA_INVALID_BUF_ID;
-	cfg->npages = qp->buff_size >> UDMA_HW_PAGE_SHIFT;
+	cfg->buf_id = HNS3_UDMA_DCA_INVALID_BUF_ID;
+	cfg->npages = qp->buff_size >> HNS3_UDMA_HW_PAGE_SHIFT;
 	cfg->dcan = HNS3_UDMA_DCA_INVALID_DCA_NUM;
 }
 
-static void stop_aging_dca_mem(struct udma_dca_ctx *ctx,
-			       struct udma_dca_cfg *cfg, bool stop_worker)
+static void stop_aging_dca_mem(struct hns3_udma_dca_ctx *ctx,
+			       struct hns3_udma_dca_cfg *cfg, bool stop_worker)
 {
 	spin_lock(&ctx->aging_lock);
 	if (stop_worker) {
@@ -82,7 +82,7 @@ static void stop_aging_dca_mem(struct udma_dca_ctx *ctx,
 	spin_unlock(&ctx->aging_lock);
 }
 
-static void update_dca_buf_status(struct udma_dca_ctx *ctx, uint32_t dcan,
+static void update_dca_buf_status(struct hns3_udma_dca_ctx *ctx, uint32_t dcan,
 				  bool en)
 {
 	uintptr_t *st = ctx->buf_status;
@@ -134,8 +134,8 @@ static int free_buffer_pages_proc(struct dca_mem *mem, uint32_t index,
 	return stop ? DCA_MEM_STOP_ITERATE : DCA_MEM_NEXT_ITERATE;
 }
 
-static void free_buf_from_dca_mem(struct udma_dca_ctx *ctx,
-				  struct udma_dca_cfg *cfg)
+static void free_buf_from_dca_mem(struct hns3_udma_dca_ctx *ctx,
+				  struct hns3_udma_dca_cfg *cfg)
 {
 	struct dca_page_free_buf_attr attr = {};
 	unsigned long flags;
@@ -144,9 +144,9 @@ static void free_buf_from_dca_mem(struct udma_dca_ctx *ctx,
 	update_dca_buf_status(ctx, cfg->dcan, false);
 	spin_lock(&cfg->lock);
 	buf_id = cfg->buf_id;
-	cfg->buf_id = UDMA_DCA_INVALID_BUF_ID;
+	cfg->buf_id = HNS3_UDMA_DCA_INVALID_BUF_ID;
 	spin_unlock(&cfg->lock);
-	if (buf_id == UDMA_DCA_INVALID_BUF_ID)
+	if (buf_id == HNS3_UDMA_DCA_INVALID_BUF_ID)
 		return;
 
 	attr.buf_id = buf_id;
@@ -156,12 +156,12 @@ static void free_buf_from_dca_mem(struct udma_dca_ctx *ctx,
 	/* Update free size */
 	spin_lock_irqsave(&ctx->pool_lock, flags);
 	ctx->free_mems += attr.clean_mems;
-	ctx->free_size += attr.free_pages << UDMA_HW_PAGE_SHIFT;
+	ctx->free_size += attr.free_pages << HNS3_UDMA_HW_PAGE_SHIFT;
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 }
 
-static void restart_aging_dca_mem(struct udma_dev *dev,
-				  struct udma_dca_ctx *ctx)
+static void restart_aging_dca_mem(struct hns3_udma_dev *dev,
+				  struct hns3_udma_dca_ctx *ctx)
 {
 	spin_lock(&ctx->aging_lock);
 	ctx->exit_aging = false;
@@ -172,15 +172,15 @@ static void restart_aging_dca_mem(struct udma_dev *dev,
 	spin_unlock(&ctx->aging_lock);
 }
 
-static void kick_dca_buf(struct udma_dev *dev, struct udma_dca_cfg *cfg,
-			 struct udma_dca_ctx *ctx)
+static void kick_dca_buf(struct hns3_udma_dev *dev, struct hns3_udma_dca_cfg *cfg,
+			 struct hns3_udma_dca_ctx *ctx)
 {
 	stop_aging_dca_mem(ctx, cfg, true);
 	free_buf_from_dca_mem(ctx, cfg);
 	restart_aging_dca_mem(dev, ctx);
 }
 
-static void free_dca_num(struct udma_dca_cfg *cfg, struct udma_dca_ctx *ctx)
+static void free_dca_num(struct hns3_udma_dca_cfg *cfg, struct hns3_udma_dca_ctx *ctx)
 {
 	if (cfg->dcan == HNS3_UDMA_DCA_INVALID_DCA_NUM)
 		return;
@@ -189,17 +189,17 @@ static void free_dca_num(struct udma_dca_cfg *cfg, struct udma_dca_ctx *ctx)
 	cfg->dcan = HNS3_UDMA_DCA_INVALID_DCA_NUM;
 }
 
-void udma_disable_dca(struct udma_dev *dev, struct udma_qp *qp)
+void hns3_udma_disable_dca(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp)
 {
-	struct udma_dca_cfg *cfg = &qp->dca_cfg;
-	struct udma_dca_ctx *ctx = qp->dca_ctx;
+	struct hns3_udma_dca_cfg *cfg = &qp->dca_cfg;
+	struct hns3_udma_dca_ctx *ctx = qp->dca_ctx;
 
 	kick_dca_buf(dev, cfg, ctx);
 	free_dca_num(cfg, ctx);
 }
 
-static struct dca_mem *alloc_dca_mem(struct udma_dev *dev,
-				     struct udma_dca_ctx *ctx)
+static struct dca_mem *alloc_dca_mem(struct hns3_udma_dev *dev,
+				     struct hns3_udma_dca_ctx *ctx)
 {
 	struct dca_mem *mem, *found = NULL;
 	unsigned long flags;
@@ -247,8 +247,8 @@ static void free_dca_mem(struct dca_mem *mem)
 	spin_unlock(&mem->lock);
 }
 
-static void *alloc_dca_pages(struct udma_dev *dev, struct dca_mem *mem,
-			     struct udma_dca_reg_attr *attr)
+static void *alloc_dca_pages(struct hns3_udma_dev *dev, struct dca_mem *mem,
+			     struct hns3_udma_dca_reg_attr *attr)
 {
 	struct ubcore_device *ub_dev = &dev->ub_dev;
 	union ubcore_umem_flag flag = {};
@@ -268,7 +268,7 @@ static void *alloc_dca_pages(struct udma_dev *dev, struct dca_mem *mem,
 	return umem;
 }
 
-static void init_dca_umem_states(struct udma_dev *dev, struct ubcore_umem *umem,
+static void init_dca_umem_states(struct hns3_udma_dev *dev, struct ubcore_umem *umem,
 				 struct dca_page_state *states, uint32_t count)
 {
 	uint32_t npage_per_sg, k, i, total = 0;
@@ -276,10 +276,10 @@ static void init_dca_umem_states(struct udma_dev *dev, struct ubcore_umem *umem,
 	struct scatterlist *sg;
 
 	for_each_sg(umem->sg_head.sgl, sg, umem->sg_head.nents, k) {
-		npage_per_sg = sg_dma_len(sg) >> UDMA_HW_PAGE_SHIFT;
+		npage_per_sg = sg_dma_len(sg) >> HNS3_UDMA_HW_PAGE_SHIFT;
 		for (i = 0; i < npage_per_sg; ++i) {
-			cur_addr = sg_dma_address(sg) + (i << UDMA_HW_PAGE_SHIFT);
-			if (cur_addr - pre_addr != UDMA_PAGE_SIZE)
+			cur_addr = sg_dma_address(sg) + (i << HNS3_UDMA_HW_PAGE_SHIFT);
+			if (cur_addr - pre_addr != HNS3_UDMA_PAGE_SIZE)
 				states[total].head = 1;
 
 			if (count <= ++total)
@@ -290,7 +290,7 @@ static void init_dca_umem_states(struct udma_dev *dev, struct ubcore_umem *umem,
 	}
 }
 
-static struct dca_page_state *alloc_dca_states(struct udma_dev *dev,
+static struct dca_page_state *alloc_dca_states(struct hns3_udma_dev *dev,
 					       void *pages, uint32_t count)
 {
 	struct dca_page_state *states;
@@ -304,7 +304,7 @@ static struct dca_page_state *alloc_dca_states(struct udma_dev *dev,
 	return states;
 }
 
-static void stop_free_dca_buf(struct udma_dca_ctx *ctx, uint32_t dcan)
+static void stop_free_dca_buf(struct hns3_udma_dca_ctx *ctx, uint32_t dcan)
 {
 	uintptr_t *st = ctx->sync_status;
 
@@ -312,7 +312,7 @@ static void stop_free_dca_buf(struct udma_dca_ctx *ctx, uint32_t dcan)
 		clear_bit_unlock(DCAN_TO_SYNC_BIT(dcan), st);
 }
 
-static uint32_t alloc_dca_num(struct udma_dca_ctx *ctx)
+static uint32_t alloc_dca_num(struct hns3_udma_dca_ctx *ctx)
 {
 	int ret;
 
@@ -326,10 +326,10 @@ static uint32_t alloc_dca_num(struct udma_dca_ctx *ctx)
 	return ret;
 }
 
-void udma_modify_dca(struct udma_dev *dev, struct udma_qp *qp)
+void hns3_udma_modify_dca(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp)
 {
-	struct udma_dca_cfg *cfg = &qp->dca_cfg;
-	struct udma_dca_ctx *ctx = qp->dca_ctx;
+	struct hns3_udma_dca_cfg *cfg = &qp->dca_cfg;
+	struct hns3_udma_dca_ctx *ctx = qp->dca_ctx;
 
 	if (qp->state == QPS_RESET || qp->state == QPS_ERR) {
 		kick_dca_buf(dev, cfg, ctx);
@@ -340,10 +340,10 @@ void udma_modify_dca(struct udma_dev *dev, struct udma_qp *qp)
 	}
 }
 
-int udma_register_dca_mem(struct udma_dev *dev, struct udma_ucontext *context,
-			  struct udma_dca_reg_attr *attr)
+int hns3_udma_register_dca_mem(struct hns3_udma_dev *dev, struct hns3_udma_ucontext *context,
+			       struct hns3_udma_dca_reg_attr *attr)
 {
-	struct udma_dca_ctx *ctx = &context->dca_ctx;
+	struct hns3_udma_dca_ctx *ctx = &context->dca_ctx;
 	struct dca_mem *mem;
 	unsigned long flags;
 	void *states;
@@ -391,7 +391,7 @@ err_alloc_dca_pages:
 	return -ENOMEM;
 }
 
-static void unregister_dca_mem(struct udma_dev *dev, struct udma_dca_ctx *ctx,
+static void unregister_dca_mem(struct hns3_udma_dev *dev, struct hns3_udma_dca_ctx *ctx,
 			       struct dca_mem *mem)
 {
 	void *states, *pages;
@@ -418,12 +418,12 @@ static void unregister_dca_mem(struct udma_dev *dev, struct udma_dca_ctx *ctx,
 	ubcore_umem_release(pages);
 }
 
-static uint32_t get_udca_max_qps(struct udma_dev *udma_dev,
+static uint32_t get_udca_max_qps(struct hns3_udma_dev *udma_dev,
 				 struct hns3_udma_create_ctx_ucmd *ucmd)
 {
 	uint32_t qp_num = 0;
 
-	if (ucmd->comp & UDMA_CONTEXT_MASK_DCA_PRIME_QPS) {
+	if (ucmd->comp & HNS3_UDMA_CONTEXT_MASK_DCA_PRIME_QPS) {
 		qp_num = ucmd->dca_max_qps;
 		if (!qp_num)
 			qp_num = udma_dev->caps.num_qps;
@@ -432,7 +432,7 @@ static uint32_t get_udca_max_qps(struct udma_dev *udma_dev,
 	return qp_num;
 }
 
-static bool start_free_dca_buf(struct udma_dca_ctx *ctx, uint32_t dcan)
+static bool start_free_dca_buf(struct hns3_udma_dca_ctx *ctx, uint32_t dcan)
 {
 	uintptr_t *st = ctx->sync_status;
 
@@ -442,61 +442,61 @@ static bool start_free_dca_buf(struct udma_dca_ctx *ctx, uint32_t dcan)
 	return true;
 }
 
-static int udma_query_qpc(struct udma_dev *udma_dev, uint32_t qpn,
-			  void *context)
+static int hns3_udma_query_qpc(struct hns3_udma_dev *udma_dev, uint32_t qpn,
+			       void *context)
 {
-	struct udma_cmd_mailbox *mailbox;
-	struct udma_cmq_desc desc;
-	struct udma_mbox *mb;
+	struct hns3_udma_cmd_mailbox *mailbox;
+	struct hns3_udma_cmq_desc desc;
+	struct hns3_udma_mbox *mb;
 	int ret;
 
-	mailbox = udma_alloc_cmd_mailbox(udma_dev);
+	mailbox = hns3_udma_alloc_cmd_mailbox(udma_dev);
 	if (IS_ERR(mailbox)) {
 		dev_err(udma_dev->dev, "alloc mailbox failed\n");
 		ret = PTR_ERR(mailbox);
 		goto alloc_mailbox_fail;
 	}
 
-	udma_cmq_setup_basic_desc(&desc, UDMA_OPC_POST_MB, false);
-	mb = (struct udma_mbox *)desc.data;
-	mbox_desc_init(mb, 0, mailbox->dma, qpn, UDMA_CMD_QUERY_QPC);
+	hns3_udma_cmq_setup_basic_desc(&desc, HNS3_UDMA_OPC_POST_MB, false);
+	mb = (struct hns3_udma_mbox *)desc.data;
+	mbox_desc_init(mb, 0, mailbox->dma, qpn, HNS3_UDMA_CMD_QUERY_QPC);
 
-	ret = udma_cmd_mbox(udma_dev, &desc, UDMA_CMD_TIMEOUT_MSECS, 0);
+	ret = hns3_udma_cmd_mbox(udma_dev, &desc, HNS3_UDMA_CMD_TIMEOUT_MSECS, 0);
 	if (ret) {
 		dev_err(udma_dev->dev, "QUERY id(0x%x) cmd(0x%x) error(%d).\n",
-			qpn, UDMA_CMD_QUERY_QPC, ret);
+			qpn, HNS3_UDMA_CMD_QUERY_QPC, ret);
 		goto err_mailbox;
 	}
-	memcpy(context, mailbox->buf, sizeof(struct udma_qp_context));
+	memcpy(context, mailbox->buf, sizeof(struct hns3_udma_qp_context));
 
 err_mailbox:
-	udma_free_cmd_mailbox(udma_dev, mailbox);
+	hns3_udma_free_cmd_mailbox(udma_dev, mailbox);
 alloc_mailbox_fail:
 	return ret;
 }
 
-static bool udma_chk_dca_buf_inactive(struct udma_dev *udma_dev,
-				      struct udma_qp *qp)
+static bool hns3_udma_chk_dca_buf_inactive(struct hns3_udma_dev *udma_dev,
+					   struct hns3_udma_qp *qp)
 {
-	struct udma_dca_cfg *cfg = &qp->dca_cfg;
-	struct udma_qp_context context = {};
+	struct hns3_udma_dca_cfg *cfg = &qp->dca_cfg;
+	struct hns3_udma_qp_context context = {};
 	uint32_t tmp, sq_idx;
 	int state;
 	int ret;
 
-	ret = udma_query_qpc(udma_dev, qp->qpn, &context);
+	ret = hns3_udma_query_qpc(udma_dev, qp->qpn, &context);
 	if (ret) {
-		dev_info(udma_dev->dev, "Failed to query QPC, ret = %d.\n",
+		dev_warn(udma_dev->dev, "Failed to query QPC, ret = %d.\n",
 			 ret);
 		return false;
 	}
 
-	state = udma_reg_read(&context, QPC_QP_ST);
+	state = hns3_udma_reg_read(&context, QPC_QP_ST);
 	if (state == QP_ST_ERR || state == QP_ST_RST)
 		return true;
 
 	if (qp->sq.wqe_cnt > 0) {
-		tmp = udma_reg_read(&context, QPC_RETRY_MSG_MSN);
+		tmp = hns3_udma_reg_read(&context, QPC_RETRY_MSG_MSN);
 		sq_idx = tmp & (qp->sq.wqe_cnt - 1);
 		/* If SQ-PI equals to retry_msg_msn in QPC, the QP is
 		 * inactive.
@@ -508,11 +508,11 @@ static bool udma_chk_dca_buf_inactive(struct udma_dev *udma_dev,
 	return true;
 }
 
-static void process_aging_dca_mem(struct udma_dev *udma_dev,
-				  struct udma_dca_ctx *ctx)
+static void process_aging_dca_mem(struct hns3_udma_dev *udma_dev,
+				  struct hns3_udma_dca_ctx *ctx)
 {
-	struct udma_dca_cfg *cfg, *cfg_tmp;
-	struct udma_qp *qp;
+	struct hns3_udma_dca_cfg *cfg, *cfg_tmp;
+	struct hns3_udma_qp *qp;
 
 	spin_lock(&ctx->aging_lock);
 	list_for_each_entry_safe(cfg, cfg_tmp, &ctx->aging_new_list, aging_node)
@@ -520,13 +520,13 @@ static void process_aging_dca_mem(struct udma_dev *udma_dev,
 
 	while (!ctx->exit_aging && !list_empty(&ctx->aging_proc_list)) {
 		cfg = list_first_entry(&ctx->aging_proc_list,
-				       struct udma_dca_cfg, aging_node);
+				       struct hns3_udma_dca_cfg, aging_node);
 		list_del_init_careful(&cfg->aging_node);
-		qp = container_of(cfg, struct udma_qp, dca_cfg);
+		qp = container_of(cfg, struct hns3_udma_qp, dca_cfg);
 		spin_unlock(&ctx->aging_lock);
 
 		if (start_free_dca_buf(ctx, cfg->dcan)) {
-			if (udma_chk_dca_buf_inactive(udma_dev, qp))
+			if (hns3_udma_chk_dca_buf_inactive(udma_dev, qp))
 				free_buf_from_dca_mem(ctx, cfg);
 
 			stop_free_dca_buf(ctx, cfg->dcan);
@@ -536,7 +536,7 @@ static void process_aging_dca_mem(struct udma_dev *udma_dev,
 
 		spin_lock(&cfg->lock);
 
-		if (cfg->buf_id != UDMA_DCA_INVALID_BUF_ID)
+		if (cfg->buf_id != HNS3_UDMA_DCA_INVALID_BUF_ID)
 			list_move(&cfg->aging_node, &ctx->aging_new_list);
 
 		spin_unlock(&cfg->lock);
@@ -546,11 +546,11 @@ static void process_aging_dca_mem(struct udma_dev *udma_dev,
 
 static void udca_mem_aging_work(struct work_struct *work)
 {
-	struct udma_dca_ctx *ctx = container_of(work, struct udma_dca_ctx,
-						aging_dwork.work);
-	struct udma_ucontext *ucontext = container_of(ctx, struct udma_ucontext,
-						      dca_ctx);
-	struct udma_dev *udma_dev = to_udma_dev(ucontext->uctx.ub_dev);
+	struct hns3_udma_dca_ctx *ctx = container_of(work, struct hns3_udma_dca_ctx,
+						     aging_dwork.work);
+	struct hns3_udma_ucontext *ucontext = container_of(ctx, struct hns3_udma_ucontext,
+							   dca_ctx);
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(ucontext->uctx.ub_dev);
 
 	cancel_delayed_work(&ctx->aging_dwork);
 	process_aging_dca_mem(udma_dev, ctx);
@@ -558,7 +558,7 @@ static void udca_mem_aging_work(struct work_struct *work)
 		restart_aging_dca_mem(udma_dev, ctx);
 }
 
-static void init_dca_context(struct udma_dca_ctx *dca_ctx)
+static void init_dca_context(struct hns3_udma_dca_ctx *dca_ctx)
 {
 	INIT_LIST_HEAD(&dca_ctx->pool);
 	spin_lock_init(&dca_ctx->pool_lock);
@@ -573,11 +573,11 @@ static void init_dca_context(struct udma_dca_ctx *dca_ctx)
 	INIT_DELAYED_WORK(&dca_ctx->aging_dwork, udca_mem_aging_work);
 }
 
-static void init_udca_status(struct udma_ucontext *uctx, int udca_max_qps,
+static void init_udca_status(struct hns3_udma_ucontext *uctx, int udca_max_qps,
 			     uint32_t dev_max_qps)
 {
-	const uint32_t bits_per_qp = 2 * UDMA_DCA_BITS_PER_STATUS;
-	struct udma_dca_ctx *dca_ctx = &uctx->dca_ctx;
+	const uint32_t bits_per_qp = 2 * HNS3_UDMA_DCA_BITS_PER_STATUS;
+	struct hns3_udma_dca_ctx *dca_ctx = &uctx->dca_ctx;
 	void *kaddr;
 	size_t size;
 
@@ -596,10 +596,10 @@ static void init_udca_status(struct udma_ucontext *uctx, int udca_max_qps,
 	dca_ctx->sync_status = (uintptr_t *)(kaddr + size / DCA_BITS_HALF);
 }
 
-int udma_register_udca(struct udma_dev *udma_dev,
-		       struct udma_ucontext *context, struct ubcore_udrv_priv *udrv_data)
+int hns3_udma_register_udca(struct hns3_udma_dev *udma_dev,
+			    struct hns3_udma_ucontext *context, struct ubcore_udrv_priv *udrv_data)
 {
-	struct udma_dca_ctx *dca_ctx = &context->dca_ctx;
+	struct hns3_udma_dca_ctx *dca_ctx = &context->dca_ctx;
 	struct hns3_udma_create_ctx_ucmd ucmd = {};
 	uint32_t max_qps;
 
@@ -614,7 +614,7 @@ int udma_register_udca(struct udma_dev *udma_dev,
 		return -EFAULT;
 	}
 
-	if (!(udma_dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE) ||
+	if (!(udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_DCA_MODE) ||
 	    ucmd.dca_unit_size == 0)
 		return 0;
 
@@ -627,7 +627,7 @@ int udma_register_udca(struct udma_dev *udma_dev,
 	return 0;
 }
 
-static void cleanup_dca_context(struct udma_dca_ctx *ctx)
+static void cleanup_dca_context(struct hns3_udma_dca_ctx *ctx)
 {
 	struct dca_mem *mem, *tmp;
 	unsigned long flags;
@@ -654,14 +654,14 @@ static void cleanup_dca_context(struct udma_dca_ctx *ctx)
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 }
 
-void udma_unregister_udca(struct udma_dev *udma_dev,
-			    struct udma_ucontext *context)
+void hns3_udma_unregister_udca(struct hns3_udma_dev *udma_dev,
+			       struct hns3_udma_ucontext *context)
 {
-	struct udma_dca_ctx *dca_ctx = &context->dca_ctx;
+	struct hns3_udma_dca_ctx *dca_ctx = &context->dca_ctx;
 
 	if (dca_ctx->unit_size == 0)
 		return;
-	udma_unregister_uctx_debugfs(context);
+	hns3_udma_unregister_uctx_debugfs(context);
 
 	cleanup_dca_context(dca_ctx);
 	if (dca_ctx->buf_status) {
@@ -676,7 +676,7 @@ void udma_unregister_udca(struct udma_dev *udma_dev,
 static int dereg_dca_page_proc(struct dca_mem *mem, uint32_t index,
 			       void *param)
 {
-	struct udma_dca_dereg_attr *attr = param;
+	struct hns3_udma_dca_dereg_attr *attr = param;
 
 	if (mem->key == attr->free_key) {
 		attr->mem = mem;
@@ -686,9 +686,10 @@ static int dereg_dca_page_proc(struct dca_mem *mem, uint32_t index,
 	}
 }
 
-int udma_unregister_dca_mem(struct udma_dev *dev,
-			    struct udma_ucontext *context,
-			    struct udma_dca_dereg_attr *attr, bool from_user)
+int hns3_udma_unregister_dca_mem(struct hns3_udma_dev *dev,
+				 struct hns3_udma_ucontext *context,
+				 struct hns3_udma_dca_dereg_attr *attr,
+				 bool from_user)
 {
 	if (from_user) {
 		travel_dca_pages(&context->dca_ctx, attr,
@@ -708,7 +709,7 @@ int udma_unregister_dca_mem(struct udma_dev *dev,
 static int shrink_dca_page_proc(struct dca_mem *mem, uint32_t index,
 				void *param)
 {
-	struct udma_dca_shrink_resp *resp = param;
+	struct hns3_udma_dca_shrink_resp *resp = param;
 	struct dca_page_state *state;
 	uint32_t i, free_pages;
 
@@ -735,11 +736,11 @@ static int shrink_dca_page_proc(struct dca_mem *mem, uint32_t index,
 		return DCA_MEM_NEXT_ITERATE;
 }
 
-void udma_shrink_dca_mem(struct udma_dev *dev, struct udma_ucontext *context,
-			 struct udma_dca_shrink_attr *attr,
-			 struct udma_dca_shrink_resp *resp)
+void hns3_udma_shrink_dca_mem(struct hns3_udma_dev *dev, struct hns3_udma_ucontext *context,
+			      struct hns3_udma_dca_shrink_attr *attr,
+			      struct hns3_udma_dca_shrink_resp *resp)
 {
-	struct udma_dca_ctx *ctx = &context->dca_ctx;
+	struct hns3_udma_dca_ctx *ctx = &context->dca_ctx;
 	unsigned long flags;
 	bool need_shink;
 
@@ -784,9 +785,9 @@ static int query_dca_active_pages_proc(struct dca_mem *mem, uint32_t index,
 	return DCA_MEM_STOP_ITERATE;
 }
 
-static struct udma_qp *udma_dca_get_qp(struct udma_dev *dev, uint32_t qpn)
+static struct hns3_udma_qp *hns3_udma_dca_get_qp(struct hns3_udma_dev *dev, uint32_t qpn)
 {
-	struct udma_qp *qp;
+	struct hns3_udma_qp *qp;
 
 	xa_lock(&dev->qp_table.xa);
 	qp = get_qp(dev, qpn);
@@ -802,15 +803,15 @@ static struct udma_qp *udma_dca_get_qp(struct udma_dev *dev, uint32_t qpn)
 	return qp;
 }
 
-int udma_query_dca_mem(struct udma_dev *dev, struct udma_dca_query_attr *attr,
-		       struct udma_dca_query_resp *resp)
+int hns3_udma_query_dca_mem(struct hns3_udma_dev *dev, struct hns3_udma_dca_query_attr *attr,
+			    struct hns3_udma_dca_query_resp *resp)
 {
 	struct dca_page_query_active_attr a_attr = {};
-	struct udma_dca_ctx *ctx;
-	struct udma_dca_cfg *cfg;
-	struct udma_qp *qp;
+	struct hns3_udma_dca_ctx *ctx;
+	struct hns3_udma_dca_cfg *cfg;
+	struct hns3_udma_qp *qp;
 
-	qp = udma_dca_get_qp(dev, attr->qpn);
+	qp = hns3_udma_dca_get_qp(dev, attr->qpn);
 	if (qp == NULL)
 		return -EINVAL;
 
@@ -822,7 +823,7 @@ int udma_query_dca_mem(struct udma_dev *dev, struct udma_dca_query_attr *attr,
 	travel_dca_pages(ctx, &a_attr, query_dca_active_pages_proc);
 
 	resp->mem_key = a_attr.mem_key;
-	resp->mem_ofs = a_attr.page_index << UDMA_HW_PAGE_SHIFT;
+	resp->mem_ofs = a_attr.page_index << HNS3_UDMA_HW_PAGE_SHIFT;
 	resp->page_count = a_attr.page_count;
 
 	if (refcount_dec_and_test(&qp->refcount))
@@ -877,7 +878,7 @@ static int assign_dca_pages_proc(struct dca_mem *mem, uint32_t index,
 	return checked_pages;
 }
 
-static uint32_t assign_dca_pages(struct udma_dca_ctx *ctx, uint32_t buf_id,
+static uint32_t assign_dca_pages(struct hns3_udma_dca_ctx *ctx, uint32_t buf_id,
 				 uint32_t count, uint32_t unit)
 {
 	struct dca_page_assign_attr attr = {};
@@ -907,7 +908,7 @@ static int clear_dca_pages_proc(struct dca_mem *mem, uint32_t index,
 		return 0;
 }
 
-static void clear_dca_pages(struct udma_dca_ctx *ctx, uint32_t buf_id,
+static void clear_dca_pages(struct hns3_udma_dca_ctx *ctx, uint32_t buf_id,
 			    uint32_t count)
 {
 	struct dca_page_clear_attr attr = {};
@@ -917,8 +918,8 @@ static void clear_dca_pages(struct udma_dca_ctx *ctx, uint32_t buf_id,
 	travel_dca_pages(ctx, &attr, clear_dca_pages_proc);
 }
 
-static uint32_t alloc_buf_from_dca_mem(struct udma_qp *qp,
-				       struct udma_dca_ctx *ctx)
+static uint32_t alloc_buf_from_dca_mem(struct hns3_udma_qp *qp,
+				       struct hns3_udma_dca_ctx *ctx)
 {
 	uint32_t alloc_pages;
 	uint32_t unit_pages;
@@ -927,7 +928,7 @@ static uint32_t alloc_buf_from_dca_mem(struct udma_qp *qp,
 
 	buf_pages = qp->dca_cfg.npages;
 	/* Gen new buf id */
-	buf_id = UDMA_DCA_TO_BUF_ID(qp->qpn, qp->dca_cfg.attach_count);
+	buf_id = HNS3_UDMA_DCA_TO_BUF_ID(qp->qpn, qp->dca_cfg.attach_count);
 
 	/* Assign pages from free pages */
 	unit_pages = qp->mtr.hem_cfg.is_direct ? buf_pages : 1;
@@ -935,14 +936,14 @@ static uint32_t alloc_buf_from_dca_mem(struct udma_qp *qp,
 	if (buf_pages != alloc_pages) {
 		if (alloc_pages > 0)
 			clear_dca_pages(ctx, buf_id, alloc_pages);
-		return UDMA_DCA_INVALID_BUF_ID;
+		return HNS3_UDMA_DCA_INVALID_BUF_ID;
 	}
 
 	return buf_id;
 }
 
-static int sync_dca_buf_offset(struct udma_dev *dev, struct udma_qp *qp,
-			       struct udma_dca_attach_attr *attr)
+static int sync_dca_buf_offset(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp,
+			       struct hns3_udma_dca_attach_attr *attr)
 {
 	if (qp->sq.wqe_cnt > 0) {
 		if (attr->sq_offset >= qp->sge.offset) {
@@ -953,8 +954,14 @@ static int sync_dca_buf_offset(struct udma_dev *dev, struct udma_qp *qp,
 		qp->sq.wqe_offset = qp->sq.offset + attr->sq_offset;
 	}
 
-	if (qp->sge.sge_cnt > 0)
+	if (qp->sge.sge_cnt > 0) {
+		if (attr->sge_offset >= qp->buff_size) {
+			dev_err(dev->dev, "failed to check sge offset = %u\n",
+				attr->sge_offset);
+			return -EINVAL;
+		}
 		qp->sge.wqe_offset = qp->sge.offset + attr->sge_offset;
+	}
 
 	return 0;
 }
@@ -969,11 +976,11 @@ static int get_alloced_umem_proc(struct dca_mem *mem, uint32_t index,
 	struct scatterlist *sg;
 
 	for_each_sg(umem->sg_head.sgl, sg, umem->sg_head.nents, k) {
-		npage_per_sg = sg_dma_len(sg) >> UDMA_HW_PAGE_SHIFT;
+		npage_per_sg = sg_dma_len(sg) >> HNS3_UDMA_HW_PAGE_SHIFT;
 		for (i = 0; i < npage_per_sg; ++i) {
 			if (dca_page_is_allocated(&states[i], attr->buf_id)) {
 				attr->pages[attr->total++] = sg_dma_address(sg) +
-							     (i << UDMA_HW_PAGE_SHIFT);
+							     (i << HNS3_UDMA_HW_PAGE_SHIFT);
 			}
 			if (attr->total >= attr->max)
 				return DCA_MEM_STOP_ITERATE;
@@ -983,18 +990,18 @@ static int get_alloced_umem_proc(struct dca_mem *mem, uint32_t index,
 	return DCA_MEM_NEXT_ITERATE;
 }
 
-static int config_dca_qpc(struct udma_dev *dev, struct udma_qp *qp,
+static int config_dca_qpc(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp,
 			  dma_addr_t *pages, uint32_t page_count)
 {
 	int ret;
 
-	ret = udma_mtr_map(dev, &qp->mtr, pages, page_count);
+	ret = hns3_udma_mtr_map(dev, &qp->mtr, pages, page_count);
 	if (ret) {
 		dev_err(dev->dev, "failed to map DCA pages, ret = %d.\n", ret);
 		return ret;
 	}
 
-	ret = udma_set_dca_buf(dev, qp);
+	ret = hns3_udma_set_dca_buf(dev, qp);
 	if (ret) {
 		dev_err(dev->dev, "failed to set DCA to HW, ret = %d.\n", ret);
 		return ret;
@@ -1003,8 +1010,8 @@ static int config_dca_qpc(struct udma_dev *dev, struct udma_qp *qp,
 	return 0;
 }
 
-static int setup_dca_buf_to_hw(struct udma_dev *dev, struct udma_qp *qp,
-			       struct udma_dca_ctx *ctx, uint32_t buf_id,
+static int setup_dca_buf_to_hw(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp,
+			       struct hns3_udma_dca_ctx *ctx, uint32_t buf_id,
 			       uint32_t count)
 {
 	struct dca_get_alloced_pages_attr attr = {};
@@ -1062,9 +1069,11 @@ static int active_dca_pages_proc(struct dca_mem *mem, uint32_t index,
 		}
 	}
 
-	for (; changed && i < mem->page_count; i++)
+	for (; changed && i < mem->page_count; i++) {
+		state = &mem->states[i];
 		if (dca_page_is_free(state))
 			free_pages++;
+	}
 
 	/* Clean mem changed to dirty */
 	if (changed && free_pages == mem->page_count)
@@ -1073,7 +1082,7 @@ static int active_dca_pages_proc(struct dca_mem *mem, uint32_t index,
 	return stop ? DCA_MEM_STOP_ITERATE : DCA_MEM_NEXT_ITERATE;
 }
 
-static uint32_t active_dca_pages(struct udma_dca_ctx *ctx, uint32_t buf_id,
+static uint32_t active_dca_pages(struct hns3_udma_dca_ctx *ctx, uint32_t buf_id,
 				 uint32_t count)
 {
 	struct dca_page_active_attr attr = {};
@@ -1086,15 +1095,15 @@ static uint32_t active_dca_pages(struct udma_dca_ctx *ctx, uint32_t buf_id,
 	/* Update free size */
 	spin_lock_irqsave(&ctx->pool_lock, flags);
 	ctx->free_mems -= attr.dirty_mems;
-	ctx->free_size -= attr.alloc_pages << UDMA_HW_PAGE_SHIFT;
+	ctx->free_size -= attr.alloc_pages << HNS3_UDMA_HW_PAGE_SHIFT;
 	spin_unlock_irqrestore(&ctx->pool_lock, flags);
 
 	return attr.alloc_pages;
 }
 
-static int active_alloced_buf(struct udma_dev *dev, struct udma_dca_ctx *ctx,
-			      struct udma_qp *qp, uint32_t buf_id,
-			      struct udma_dca_attach_attr *attr)
+static int active_alloced_buf(struct hns3_udma_dev *dev, struct hns3_udma_dca_ctx *ctx,
+			      struct hns3_udma_qp *qp, uint32_t buf_id,
+			      struct hns3_udma_dca_attach_attr *attr)
 {
 	uint32_t active_pages;
 	uint32_t alloc_pages;
@@ -1127,16 +1136,16 @@ active_fail:
 	return ret;
 }
 
-int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
-		    struct udma_dca_attach_resp *resp)
+int hns3_udma_dca_attach(struct hns3_udma_dev *dev, struct hns3_udma_dca_attach_attr *attr,
+			 struct hns3_udma_dca_attach_resp *resp)
 {
-	struct udma_dca_ctx *ctx;
-	struct udma_dca_cfg *cfg;
-	struct udma_qp *qp;
+	struct hns3_udma_dca_ctx *ctx;
+	struct hns3_udma_dca_cfg *cfg;
+	struct hns3_udma_qp *qp;
 	uint32_t buf_id;
 	int ret = 0;
 
-	qp = udma_dca_get_qp(dev, attr->qpn);
+	qp = hns3_udma_dca_get_qp(dev, attr->qpn);
 	if (qp == NULL)
 		return -EINVAL;
 
@@ -1149,7 +1158,7 @@ int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
 	spin_lock(&cfg->lock);
 	buf_id = cfg->buf_id;
 	/* Already attached */
-	if (buf_id != UDMA_DCA_INVALID_BUF_ID) {
+	if (buf_id != HNS3_UDMA_DCA_INVALID_BUF_ID) {
 		resp->alloc_pages = cfg->npages;
 		spin_unlock(&cfg->lock);
 		goto refcount_dec;
@@ -1158,7 +1167,7 @@ int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
 	/* Start to new attach */
 	resp->alloc_pages = 0;
 	buf_id = alloc_buf_from_dca_mem(qp, ctx);
-	if (buf_id == UDMA_DCA_INVALID_BUF_ID) {
+	if (buf_id == HNS3_UDMA_DCA_INVALID_BUF_ID) {
 		spin_unlock(&cfg->lock);
 		/* No report fail, need try again after the pool increased */
 		goto refcount_dec;
@@ -1189,13 +1198,13 @@ refcount_dec:
 	return ret;
 }
 
-void udma_dca_disattach(struct udma_dev *dev, struct udma_dca_attach_attr *attr)
+void hns3_udma_dca_disattach(struct hns3_udma_dev *dev, struct hns3_udma_dca_attach_attr *attr)
 {
-	struct udma_dca_ctx *ctx;
-	struct udma_dca_cfg *cfg;
-	struct udma_qp *qp;
+	struct hns3_udma_dca_ctx *ctx;
+	struct hns3_udma_dca_cfg *cfg;
+	struct hns3_udma_qp *qp;
 
-	qp = udma_dca_get_qp(dev, attr->qpn);
+	qp = hns3_udma_dca_get_qp(dev, attr->qpn);
 	if (qp == NULL)
 		return;
 
@@ -1204,7 +1213,7 @@ void udma_dca_disattach(struct udma_dev *dev, struct udma_dca_attach_attr *attr)
 
 	clear_dca_pages(ctx, cfg->buf_id, qp->dca_cfg.npages);
 
-	cfg->buf_id = UDMA_DCA_INVALID_BUF_ID;
+	cfg->buf_id = HNS3_UDMA_DCA_INVALID_BUF_ID;
 
 	update_dca_buf_status(ctx, cfg->dcan, false);
 
@@ -1212,13 +1221,13 @@ void udma_dca_disattach(struct udma_dev *dev, struct udma_dca_attach_attr *attr)
 		complete(&qp->free);
 }
 
-void udma_dca_detach(struct udma_dev *dev, struct udma_dca_detach_attr *attr)
+void hns3_udma_dca_detach(struct hns3_udma_dev *dev, struct hns3_udma_dca_detach_attr *attr)
 {
-	struct udma_dca_ctx *ctx;
-	struct udma_dca_cfg *cfg;
-	struct udma_qp *qp;
+	struct hns3_udma_dca_ctx *ctx;
+	struct hns3_udma_dca_cfg *cfg;
+	struct hns3_udma_qp *qp;
 
-	qp = udma_dca_get_qp(dev, attr->qpn);
+	qp = hns3_udma_dca_get_qp(dev, attr->qpn);
 	if (qp == NULL)
 		return;
 
@@ -1251,12 +1260,64 @@ static int enum_dca_pool_proc(struct dca_mem *mem, uint32_t index, void *param)
 	return ret ? DCA_MEM_STOP_ITERATE : DCA_MEM_NEXT_ITERATE;
 }
 
-void udma_enum_dca_pool(struct udma_dca_ctx *dca_ctx, void *param,
-			udma_dca_enum_callback cb)
+void hns3_udma_enum_dca_pool(struct hns3_udma_dca_ctx *dca_ctx, void *param,
+			     hns3_udma_dca_enum_callback cb)
 {
 	struct dca_mem_enum_attr attr;
 
 	attr.enum_fn = cb;
 	attr.param = param;
 	travel_dca_pages(dca_ctx, &attr, enum_dca_pool_proc);
+}
+
+int hns3_udma_alloc_dca_safe_page(struct hns3_udma_dev *udev)
+{
+	udev->dca_safe_buf = dma_alloc_coherent(udev->dev, PAGE_SIZE,
+						&udev->dca_safe_page,
+						GFP_KERNEL);
+	if (!udev->dca_safe_buf) {
+		dev_err(udev->dev, "failed to alloc dca safe page.\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+void hns3_udma_free_dca_safe_buf(struct hns3_udma_dev *udev)
+{
+	if (!udev->dca_safe_buf)
+		return;
+
+	dma_free_coherent(udev->dev, PAGE_SIZE, udev->dca_safe_buf,
+			  udev->dca_safe_page);
+	udev->dca_safe_page = 0;
+	udev->dca_safe_buf = NULL;
+}
+
+int hns3_udma_map_dca_safe_page(struct hns3_udma_dev *udev, struct hns3_udma_qp *qp)
+{
+	uint32_t page_count = qp->dca_cfg.npages;
+	dma_addr_t *pages;
+	size_t page_size;
+	uint32_t i;
+	int ret;
+
+	page_size = page_count * sizeof(*pages);
+	pages = kzalloc(page_size, GFP_KERNEL);
+	if (IS_ERR_OR_NULL(pages)) {
+		dev_err(udev->dev, "failed to alloc DCA safe page array.\n");
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < page_count; i++)
+		pages[i] = udev->dca_safe_page;
+
+	ret = hns3_udma_mtr_map(udev, &qp->mtr, pages, page_count);
+	if (ret)
+		dev_err(udev->dev, "failed to map safe page for DCA, ret = %d.\n",
+			  ret);
+
+	kfree(pages);
+
+	return ret;
 }

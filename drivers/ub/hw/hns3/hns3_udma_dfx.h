@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -13,16 +13,16 @@
  *
  */
 
-#ifndef _UDMA_DFX_H
-#define _UDMA_DFX_H
+#ifndef _HNS3_UDMA_DFX_H
+#define _HNS3_UDMA_DFX_H
 
 #include <linux/fs.h>
 #include "hns3_udma_device.h"
 
-#define DFX_DEVICE_NAME	"udma_dfx"
-#define MAX_UDMA_DEV	16
-#define UDMA_DFX_FILE_ATTR_DEF(file_name, func_show, func_store) \
-static struct udma_dfx_sys_attr g_sysfs_udma_##file_name##_attr = {\
+#define DFX_DEVICE_NAME	"hns3_udma_dfx"
+#define MAX_HNS3_UDMA_DEV	16
+#define HNS3_UDMA_DFX_FILE_ATTR_DEF(file_name, func_show, func_store) \
+static struct hns3_udma_dfx_sys_attr g_sysfs_hns3_udma_##file_name##_attr = {\
 	{\
 		.name = #file_name,\
 		.mode = 0644,\
@@ -31,27 +31,27 @@ static struct udma_dfx_sys_attr g_sysfs_udma_##file_name##_attr = {\
 	.pub_store = (func_store),\
 }
 
-#define HW_ATTRS_LIST_MEMBER(file_name) (&g_sysfs_udma_##file_name##_attr.attr)
-#define UDMA_DFX_FUNC_MAX	37
+#define HW_ATTRS_LIST_MEMBER(file_name) (&g_sysfs_hns3_udma_##file_name##_attr.attr)
+#define HNS3_UDMA_DFX_FUNC_MAX	37
 #define MAX_CHAR_NUM_DEV_NAME	64
-#define UDMA_DFX_STR_LEN_MAX	20
+#define HNS3_UDMA_DFX_STR_LEN_MAX	20
 
-struct udma_dfx_info;
+struct hns3_udma_dfx_info;
 
-struct udma_dfx_sys_attr {
+struct hns3_udma_dfx_sys_attr {
 	struct attribute attr;
-	int (*pub_show)(struct udma_dfx_info *udma_dfx);
-	int (*pub_store)(const char *buf, struct udma_dfx_info *udma_dfx);
+	int (*pub_show)(struct hns3_udma_dfx_info *hns3_udma_dfx);
+	int (*pub_store)(const char *buf, struct hns3_udma_dfx_info *hns3_udma_dfx);
 };
 
-struct udma_dfx_dev_info {
-	atomic_t fc[UDMA_DFX_FUNC_MAX];
+struct hns3_udma_dfx_dev_info {
+	atomic_t fc[HNS3_UDMA_DFX_FUNC_MAX];
 	char dev_name[MAX_CHAR_NUM_DEV_NAME];
 };
 
-struct udma_dfx_ops {
-	int (*add_sysfs)(struct udma_dfx_info *info);
-	void (*del_sysfs)(struct udma_dfx_info *info);
+struct hns3_udma_dfx_ops {
+	int (*add_sysfs)(struct hns3_udma_dfx_info *info);
+	void (*del_sysfs)(struct hns3_udma_dfx_info *info);
 };
 
 struct tpn_list {
@@ -107,9 +107,9 @@ struct seg_list {
 	union ubcore_eid	eid;
 };
 
-struct udma_dfx_info {
-	struct udma_dfx_dev_info	dev;
-	struct udma_dfx_ops		*ops;
+struct hns3_udma_dfx_info {
+	struct hns3_udma_dfx_dev_info	dev;
+	struct hns3_udma_dfx_ops	*ops;
 	struct device			*drv_dev;
 	struct kobject			kobj;
 	uint32_t			tpn_cnt;
@@ -127,18 +127,18 @@ struct udma_dfx_info {
 	void				*priv;
 };
 
-struct udma_dfx_dev {
-	struct udma_dfx_info	*dfx;
-	struct udma_dev		*dev;
-	rwlock_t		rwlock;
+struct hns3_udma_dfx_dev {
+	struct hns3_udma_dfx_info	*dfx;
+	struct hns3_udma_dev		*dev;
+	rwlock_t			rwlock;
 };
 
-extern struct udma_dfx_dev g_udma_dfx_list[MAX_UDMA_DEV];
+extern struct hns3_udma_dfx_dev g_hns3_udma_dfx_list[MAX_HNS3_UDMA_DEV];
 
-int udma_dfx_init(struct udma_dev *udma_dev);
-void udma_dfx_uninit(struct udma_dev *udma_dev);
-int udma_find_dfx_dev(struct udma_dev *udma_dev, int *num);
-int udma_query_res(struct ubcore_device *dev, struct ubcore_res_key *key,
-		   struct ubcore_res_val *val);
+int hns3_udma_dfx_init(struct hns3_udma_dev *udma_dev);
+void hns3_udma_dfx_uninit(struct hns3_udma_dev *udma_dev);
+int hns3_udma_find_dfx_dev(struct hns3_udma_dev *udma_dev, int *num);
+int hns3_udma_query_res(struct ubcore_device *dev, struct ubcore_res_key *key,
+			struct ubcore_res_val *val);
 
-#endif /* _UDMA_DFX_H */
+#endif /* _HNS3_UDMA_DFX_H */

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -22,39 +22,39 @@
 #include "hns3_udma_jetty.h"
 #include "hns3_udma_dfx.h"
 
-static void init_jetty_cfg(struct udma_jetty *jetty,
+static void init_jetty_cfg(struct hns3_udma_jetty *jetty,
 			   struct ubcore_jetty_cfg *cfg)
 {
 	jetty->shared_jfr = cfg->flag.bs.share_jfr;
 	jetty->tp_mode = cfg->trans_mode;
 	jetty->ubcore_jetty.jetty_cfg = *cfg;
-	jetty->send_jfc = to_udma_jfc(cfg->send_jfc);
+	jetty->send_jfc = to_hns3_udma_jfc(cfg->send_jfc);
 }
 
-void udma_fill_jetty_qp_attr(struct udma_dev *dev, struct udma_qp_attr *qp_attr,
-			     struct udma_jetty *jetty,
-			     struct ubcore_ucontext *uctx,
-			     struct ubcore_jetty_cfg *cfg)
+void hns3_udma_fill_jetty_qp_attr(struct hns3_udma_dev *dev, struct hns3_udma_qp_attr *qp_attr,
+				  struct hns3_udma_jetty *jetty,
+				  struct ubcore_ucontext *uctx,
+				  struct ubcore_jetty_cfg *cfg)
 {
-	struct udma_ucontext *udma_ctx = to_udma_ucontext(uctx);
+	struct hns3_udma_ucontext *udma_ctx = to_hns3_udma_ucontext(uctx);
 
 	qp_attr->is_tgt = false;
 	qp_attr->is_jetty = true;
 	qp_attr->uctx = uctx;
 	qp_attr->pdn = udma_ctx->pdn;
-	qp_attr->send_jfc = to_udma_jfc(cfg->send_jfc);
+	qp_attr->send_jfc = to_hns3_udma_jfc(cfg->send_jfc);
 	qp_attr->jetty = jetty;
 	qp_attr->cap.max_send_wr = cfg->jfs_depth;
 	qp_attr->cap.max_send_sge = cfg->max_send_sge;
 	qp_attr->cap.max_inline_data = cfg->max_inline_data;
 	qp_attr->cap.rnr_retry = cfg->rnr_retry;
-	qp_attr->cap.min_rnr_timer = jetty->udma_jfr->ubcore_jfr.jfr_cfg.min_rnr_timer;
+	qp_attr->cap.min_rnr_timer = jetty->hns3_udma_jfr->ubcore_jfr.jfr_cfg.min_rnr_timer;
 	qp_attr->cap.ack_timeout = cfg->err_timeout;
 	qp_attr->qp_type = (cfg->trans_mode == UBCORE_TP_UM ? QPT_UD : QPT_RC);
 	qp_attr->tp_mode = jetty->tp_mode;
-	qp_attr->jfr = jetty->udma_jfr;
+	qp_attr->jfr = jetty->hns3_udma_jfr;
 	qp_attr->qpn_map = &jetty->qpn_map;
-	qp_attr->recv_jfc = to_udma_jfc(cfg->recv_jfc);
+	qp_attr->recv_jfc = to_hns3_udma_jfc(cfg->recv_jfc);
 	qp_attr->local_eid = jetty->ubcore_jetty.jetty_id.eid;
 	qp_attr->eid_index = udma_ctx->eid_index;
 	if (jetty->ubcore_jetty.jetty_cfg.priority >= dev->caps.sl_num) {
@@ -70,17 +70,17 @@ void udma_fill_jetty_qp_attr(struct udma_dev *dev, struct udma_qp_attr *qp_attr,
 
 	if (is_rq_jetty(qp_attr) && !qp_attr->jetty->shared_jfr &&
 	    !qp_attr->jetty->dca_en) {
-		qp_attr->cap.max_recv_wr = jetty->udma_jfr->ubcore_jfr.jfr_cfg.depth;
-		qp_attr->cap.max_recv_sge = jetty->udma_jfr->max_sge;
+		qp_attr->cap.max_recv_wr = jetty->hns3_udma_jfr->ubcore_jfr.jfr_cfg.depth;
+		qp_attr->cap.max_recv_sge = jetty->hns3_udma_jfr->max_sge;
 	}
 }
 
-static int udma_modify_qp_jetty(struct udma_dev *dev, struct udma_jetty *jetty,
-				enum udma_qp_state target_state)
+static int hns3_udma_modify_qp_jetty(struct hns3_udma_dev *dev, struct hns3_udma_jetty *jetty,
+				     enum hns3_udma_qp_state target_state)
 {
 	union ubcore_tp_attr_mask ubcore_attr_mask;
-	struct udma_modify_tp_attr m_attr = {};
-	struct udma_qp *qp;
+	struct hns3_udma_modify_tp_attr m_attr = {};
+	struct hns3_udma_qp *qp;
 	int ret;
 
 	qp = &jetty->qp;
@@ -90,9 +90,9 @@ static int udma_modify_qp_jetty(struct udma_dev *dev, struct udma_jetty *jetty,
 
 	m_attr.sgid_index = qp->qp_attr.eid_index;
 	ubcore_attr_mask.value = 0;
-	memcpy(&qp->m_attr, &m_attr, sizeof(struct udma_modify_tp_attr));
+	memcpy(&qp->m_attr, &m_attr, sizeof(struct hns3_udma_modify_tp_attr));
 
-	ret = udma_modify_qp_common(qp, NULL, ubcore_attr_mask, jetty->qp.state, target_state);
+	ret = hns3_udma_modify_qp_common(qp, NULL, ubcore_attr_mask, jetty->qp.state, target_state);
 	if (ret) {
 		dev_err(dev->dev, "failed to modify qpc to RTS in Jetty, ret = %d.\n", ret);
 		return ret;
@@ -102,16 +102,16 @@ static int udma_modify_qp_jetty(struct udma_dev *dev, struct udma_jetty *jetty,
 	return ret;
 }
 
-static int set_jetty_jfr(struct udma_dev *dev, struct udma_jetty *jetty,
+static int set_jetty_jfr(struct hns3_udma_dev *dev, struct hns3_udma_jetty *jetty,
 			 struct ubcore_jetty_cfg *cfg, uint32_t srqn)
 {
 	if (cfg->jfr) {
 		jetty->shared_jfr = true;
-		jetty->udma_jfr = to_udma_jfr(cfg->jfr);
+		jetty->hns3_udma_jfr = to_hns3_udma_jfr(cfg->jfr);
 	} else {
 		jetty->shared_jfr = false;
-		jetty->udma_jfr = get_udma_jfr(&dev->ub_dev, srqn);
-		if (!jetty->udma_jfr) {
+		jetty->hns3_udma_jfr = get_hns3_udma_jfr(&dev->ub_dev, srqn);
+		if (!jetty->hns3_udma_jfr) {
 			dev_err(dev->dev,
 				"failed to find jfr, srqn:%u.\n", srqn);
 			return -EINVAL;
@@ -121,35 +121,35 @@ static int set_jetty_jfr(struct udma_dev *dev, struct udma_jetty *jetty,
 	return 0;
 }
 
-static int alloc_jetty_um_qp(struct udma_dev *dev, struct udma_jetty *jetty,
+static int alloc_jetty_um_qp(struct hns3_udma_dev *dev, struct hns3_udma_jetty *jetty,
 			     struct ubcore_jetty_cfg *cfg,
 			     struct ubcore_udata *udata)
 {
 	int ret;
 
-	udma_fill_jetty_qp_attr(dev, &jetty->qp.qp_attr, jetty, udata->uctx, cfg);
+	hns3_udma_fill_jetty_qp_attr(dev, &jetty->qp.qp_attr, jetty, udata->uctx, cfg);
 
-	ret = udma_create_qp_common(dev, &jetty->qp, udata);
+	ret = hns3_udma_create_qp_common(dev, &jetty->qp, udata);
 	if (ret) {
 		dev_err(dev->dev, "failed create qp for um jetty.\n");
 		return ret;
 	}
 
-	ret = udma_init_qpc(dev, &jetty->qp);
+	ret = hns3_udma_init_qpc(dev, &jetty->qp);
 	if (ret) {
-		udma_destroy_qp_common(dev, &jetty->qp, NULL);
+		hns3_udma_destroy_qp_common(dev, &jetty->qp, NULL);
 		return ret;
 	}
 
 	jetty->qp.state = QPS_RESET;
-	ret = udma_modify_qp_jetty(dev, jetty, QPS_RTS);
+	ret = hns3_udma_modify_qp_jetty(dev, jetty, QPS_RTS);
 	if (ret)
-		udma_destroy_qp_common(dev, &jetty->qp, NULL);
+		hns3_udma_destroy_qp_common(dev, &jetty->qp, NULL);
 
 	return ret;
 }
 
-static void set_jetty_ext_sge_param(struct udma_jetty *jetty)
+static void set_jetty_ext_sge_param(struct hns3_udma_jetty *jetty)
 {
 	struct ubcore_jetty_cfg *jetty_cfg = &jetty->ubcore_jetty.jetty_cfg;
 	uint32_t max_inline_data;
@@ -160,25 +160,25 @@ static void set_jetty_ext_sge_param(struct udma_jetty *jetty)
 	uint32_t max_gs;
 
 	sq_wqe_cnt = jetty->rc_node.wqe_cnt;
-	jetty->rc_node.sge_shift = UDMA_SGE_SHIFT;
+	jetty->rc_node.sge_shift = HNS3_UDMA_SGE_SHIFT;
 	max_inline_data = roundup_pow_of_two(jetty_cfg->max_inline_data);
-	ext_sge_cnt = max_inline_data / UDMA_SGE_SIZE;
+	ext_sge_cnt = max_inline_data / HNS3_UDMA_SGE_SIZE;
 
 	max_gs = max_t(uint32_t, ext_sge_cnt, jetty_cfg->max_send_sge);
-	if (max_gs > UDMA_SGE_IN_WQE)
-		wqe_sge_cnt = max_gs - UDMA_SGE_IN_WQE;
+	if (max_gs > HNS3_UDMA_SGE_IN_WQE)
+		wqe_sge_cnt = max_gs - HNS3_UDMA_SGE_IN_WQE;
 
 	if (wqe_sge_cnt) {
 		total_sge_cnt = roundup_pow_of_two(sq_wqe_cnt * wqe_sge_cnt);
 		jetty->rc_node.sge_cnt = max_t(uint32_t, total_sge_cnt,
-					       (uint32_t)UDMA_PAGE_SIZE /
-					       UDMA_SGE_SIZE);
+					       (uint32_t)HNS3_UDMA_PAGE_SIZE /
+					       HNS3_UDMA_SGE_SIZE);
 	}
 }
 
-static int set_jetty_buf_attr(struct udma_dev *udma_dev,
-			      struct udma_jetty *jetty,
-			      struct udma_buf_attr *buf_attr)
+static int set_jetty_buf_attr(struct hns3_udma_dev *udma_dev,
+			      struct hns3_udma_jetty *jetty,
+			      struct hns3_udma_buf_attr *buf_attr)
 {
 	uint32_t total_buff_size = 0;
 	uint32_t cfg_depth;
@@ -188,9 +188,9 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 	/* SQ WQE */
 	jetty->rc_node.sge_offset = 0;
 	cfg_depth = roundup_pow_of_two(jetty->ubcore_jetty.jetty_cfg.jfs_depth);
-	jetty->rc_node.wqe_cnt = cfg_depth < UDMA_MIN_JFS_DEPTH ?
-				 UDMA_MIN_JFS_DEPTH : cfg_depth;
-	jetty->rc_node.wqe_shift = UDMA_SQ_WQE_SHIFT;
+	jetty->rc_node.wqe_cnt = cfg_depth < HNS3_UDMA_MIN_JFS_DEPTH ?
+				 HNS3_UDMA_MIN_JFS_DEPTH : cfg_depth;
+	jetty->rc_node.wqe_shift = HNS3_UDMA_SQ_WQE_SHIFT;
 	set_jetty_ext_sge_param(jetty);
 
 	buf_size = to_hem_entries_size_by_page(jetty->rc_node.wqe_cnt,
@@ -226,15 +226,15 @@ static int set_jetty_buf_attr(struct udma_dev *udma_dev,
 	return 0;
 }
 
-static int alloc_rc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
+static int alloc_rc_jetty_buf(struct hns3_udma_dev *dev, struct hns3_udma_jetty *jetty,
 			      struct hns3_udma_create_jetty_ucmd *ucmd,
 			      struct ubcore_udata *udata)
 {
-	struct udma_ucontext *udma_uctx = to_udma_ucontext(udata->uctx);
-	struct udma_buf_attr buf_attr = {};
+	struct hns3_udma_ucontext *hns3_udma_uctx = to_hns3_udma_ucontext(udata->uctx);
+	struct hns3_udma_buf_attr buf_attr = {};
 	int ret;
 
-	ret = udma_db_map_user(udma_uctx, ucmd->sdb_addr, &jetty->rc_node.sdb);
+	ret = hns3_udma_db_map_user(hns3_udma_uctx, ucmd->sdb_addr, &jetty->rc_node.sdb);
 	if (ret) {
 		dev_err(dev->dev,
 			"failed to map user sdb_addr, ret = %d.\n", ret);
@@ -242,7 +242,7 @@ static int alloc_rc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 	}
 
 	jetty->rc_node.buf_addr = ucmd->buf_addr;
-	jetty->rc_node.context = to_udma_ucontext(udata->uctx);
+	jetty->rc_node.context = to_hns3_udma_ucontext(udata->uctx);
 	if (!ucmd->buf_addr) {
 		jetty->dca_en = true;
 		return 0;
@@ -252,43 +252,43 @@ static int alloc_rc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 	if (ret) {
 		dev_err(dev->dev,
 			"failed to set jetty buf attr, ret = %d.\n", ret);
-		udma_db_unmap_user(udma_uctx, &jetty->rc_node.sdb);
+		hns3_udma_db_unmap_user(hns3_udma_uctx, &jetty->rc_node.sdb);
 		return ret;
 	}
 
 	if (!jetty->shared_jfr) {
-		jetty->rc_node.mtr = jetty->udma_jfr->buf_mtr;
+		jetty->rc_node.mtr = jetty->hns3_udma_jfr->buf_mtr;
 		return 0;
 	}
 
-	ret = udma_mtr_create(dev, &jetty->rc_node.mtr, &buf_attr,
+	ret = hns3_udma_mtr_create(dev, &jetty->rc_node.mtr, &buf_attr,
 			      PAGE_SHIFT + dev->caps.mtt_ba_pg_sz,
 			      ucmd->buf_addr, !!udata);
 	if (ret) {
 		dev_err(dev->dev,
 			"failed to create WQE mtr for RC Jetty, ret = %d.\n",
 			ret);
-		udma_db_unmap_user(udma_uctx, &jetty->rc_node.sdb);
+		hns3_udma_db_unmap_user(hns3_udma_uctx, &jetty->rc_node.sdb);
 	}
 
 	return ret;
 }
 
-static void free_rc_jetty_buf(struct udma_dev *dev,
-			      struct udma_ucontext *udma_uctx,
-			      struct udma_jetty *jetty)
+static void free_rc_jetty_buf(struct hns3_udma_dev *dev,
+			      struct hns3_udma_ucontext *hns3_udma_uctx,
+			      struct hns3_udma_jetty *jetty)
 {
 	if (jetty->shared_jfr && !jetty->dca_en)
-		udma_mtr_destroy(dev, &jetty->rc_node.mtr);
-	udma_db_unmap_user(udma_uctx, &jetty->rc_node.sdb);
+		hns3_udma_mtr_destroy(dev, &jetty->rc_node.mtr);
+	hns3_udma_db_unmap_user(hns3_udma_uctx, &jetty->rc_node.sdb);
 }
 
-static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
+static int alloc_jetty_buf(struct hns3_udma_dev *dev, struct hns3_udma_jetty *jetty,
 			   struct ubcore_jetty_cfg *cfg,
 			   struct hns3_udma_create_jetty_ucmd *ucmd,
 			   struct ubcore_udata *udata)
 {
-	struct udma_ucontext *udma_uctx = to_udma_ucontext(udata->uctx);
+	struct hns3_udma_ucontext *hns3_udma_uctx = to_hns3_udma_ucontext(udata->uctx);
 	int ret;
 
 	ret = set_jetty_jfr(dev, jetty, cfg, ucmd->srqn);
@@ -302,9 +302,9 @@ static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 		if (ret)
 			return ret;
 		if (cfg->flag.bs.sub_trans_mode == UBCORE_SUB_TRANS_MODE_USER_TP) {
-			jetty->rc_node.tp = udma_create_user_tp(dev, jetty, cfg, udata);
+			jetty->rc_node.tp = hns3_udma_create_user_tp(dev, jetty, cfg, udata);
 			if (!jetty->rc_node.tp) {
-				free_rc_jetty_buf(dev, udma_uctx, jetty);
+				free_rc_jetty_buf(dev, hns3_udma_uctx, jetty);
 				ret = -EINVAL;
 			} else {
 				jetty->rc_node.tpn = jetty->jetty_id;
@@ -315,10 +315,10 @@ static int alloc_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 	return ret;
 }
 
-static int alloc_common_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty,
+static int alloc_common_jetty_id(struct hns3_udma_dev *udma_dev, struct hns3_udma_jetty *jetty,
 				 struct hns3_udma_create_jetty_ucmd *ucmd)
 {
-	struct udma_jetty_table *jetty_table = &udma_dev->jetty_table;
+	struct hns3_udma_jetty_table *jetty_table = &udma_dev->jetty_table;
 	int ret;
 
 	if (jetty->shared_jfr) {
@@ -326,6 +326,11 @@ static int alloc_common_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *j
 		if (ret)
 			return ret;
 	} else {
+		if (ucmd->jfr_id >= udma_dev->caps.num_qps) {
+			dev_err(udma_dev->dev, "check jfr id fail: id 0x%x, max 0x%x",
+				ucmd->jfr_id, udma_dev->caps.num_qps);
+			return -EINVAL;
+		}
 		jetty->jetty_id = ucmd->jfr_id;
 	}
 
@@ -342,14 +347,14 @@ static int alloc_common_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *j
 	return ret;
 }
 
-static void free_common_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
+static void free_common_jetty_id(struct hns3_udma_dev *udma_dev, struct hns3_udma_jetty *jetty)
 {
 	xa_erase(&udma_dev->jetty_table.xa, jetty->jetty_id);
 	if (jetty->shared_jfr)
 		free_common_qpn(udma_dev, jetty->jetty_id);
 }
 
-static void store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
+static void store_jetty_id(struct hns3_udma_dev *udma_dev, struct hns3_udma_jetty *jetty)
 {
 	struct jetty_list *jetty_new;
 	struct jetty_list *jetty_now;
@@ -358,20 +363,20 @@ static void store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 	int ret;
 	int i;
 
-	ret = udma_find_dfx_dev(udma_dev, &i);
+	ret = hns3_udma_find_dfx_dev(udma_dev, &i);
 	if (ret)
 		return;
 
 	jetty_new = kzalloc(sizeof(struct jetty_list), GFP_KERNEL);
 	if (!jetty_new) {
-		read_unlock(&g_udma_dfx_list[i].rwlock);
+		read_unlock(&g_hns3_udma_dfx_list[i].rwlock);
 		return;
 	}
 
-	lock = &g_udma_dfx_list[i].dfx->jetty_list->node_lock;
+	lock = &g_hns3_udma_dfx_list[i].dfx->jetty_list->node_lock;
 	spin_lock_irqsave(lock, flags);
 	list_for_each_entry(jetty_now,
-			    &g_udma_dfx_list[i].dfx->jetty_list->node, node) {
+			    &g_hns3_udma_dfx_list[i].dfx->jetty_list->node, node) {
 		if (jetty_now->jetty_id == jetty->jetty_id) {
 			jetty_now->jfs_depth =
 				jetty->ubcore_jetty.jetty_cfg.jfs_depth;
@@ -379,7 +384,7 @@ static void store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 				jetty->ubcore_jetty.jetty_cfg.jfr_depth;
 			jetty_now->pri =
 				jetty->ubcore_jetty.jetty_cfg.priority;
-			jetty_now->jfr_id = jetty->udma_jfr->jfrn;
+			jetty_now->jfr_id = jetty->hns3_udma_jfr->jfrn;
 			jetty_now->jfc_s_id = jetty->ubcore_jetty.jetty_cfg.send_jfc->id;
 			jetty_now->jfc_r_id = jetty->ubcore_jetty.jetty_cfg.recv_jfc->id;
 			goto found;
@@ -390,24 +395,24 @@ static void store_jetty_id(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 	jetty_new->jfs_depth = jetty->ubcore_jetty.jetty_cfg.jfs_depth;
 	jetty_new->jfr_depth = jetty->ubcore_jetty.jetty_cfg.jfr_depth;
 	jetty_new->pri = jetty->ubcore_jetty.jetty_cfg.priority;
-	jetty_new->jfr_id = jetty->udma_jfr->jfrn;
+	jetty_new->jfr_id = jetty->hns3_udma_jfr->jfrn;
 	jetty_new->jfc_s_id = jetty->ubcore_jetty.jetty_cfg.send_jfc->id;
 	jetty_new->jfc_r_id = jetty->ubcore_jetty.jetty_cfg.recv_jfc->id;
-	list_add(&jetty_new->node, &g_udma_dfx_list[i].dfx->jetty_list->node);
-	++g_udma_dfx_list[i].dfx->jetty_cnt;
+	list_add(&jetty_new->node, &g_hns3_udma_dfx_list[i].dfx->jetty_list->node);
+	++g_hns3_udma_dfx_list[i].dfx->jetty_cnt;
 	spin_unlock_irqrestore(lock, flags);
-	read_unlock(&g_udma_dfx_list[i].rwlock);
+	read_unlock(&g_hns3_udma_dfx_list[i].rwlock);
 
 	return;
 
 found:
 	spin_unlock_irqrestore(lock, flags);
-	read_unlock(&g_udma_dfx_list[i].rwlock);
+	read_unlock(&g_hns3_udma_dfx_list[i].rwlock);
 	kfree(jetty_new);
 }
 
-static void delete_jetty_id(struct udma_dev *udma_dev,
-			    struct udma_jetty *jetty)
+static void delete_jetty_id(struct hns3_udma_dev *udma_dev,
+			    struct hns3_udma_jetty *jetty)
 {
 	struct jetty_list *jetty_now, *jetty_tmp;
 	unsigned long flags;
@@ -415,33 +420,33 @@ static void delete_jetty_id(struct udma_dev *udma_dev,
 	int ret;
 	int i;
 
-	ret = udma_find_dfx_dev(udma_dev, &i);
+	ret = hns3_udma_find_dfx_dev(udma_dev, &i);
 	if (ret)
 		return;
 
-	lock = &g_udma_dfx_list[i].dfx->jetty_list->node_lock;
+	lock = &g_hns3_udma_dfx_list[i].dfx->jetty_list->node_lock;
 	spin_lock_irqsave(lock, flags);
 	list_for_each_entry_safe(jetty_now, jetty_tmp,
-				 &g_udma_dfx_list[i].dfx->jetty_list->node,
+				 &g_hns3_udma_dfx_list[i].dfx->jetty_list->node,
 				 node) {
 		if (jetty_now->jetty_id == jetty->jetty_id) {
 			list_del(&jetty_now->node);
-			--g_udma_dfx_list[i].dfx->jetty_cnt;
+			--g_hns3_udma_dfx_list[i].dfx->jetty_cnt;
 			kfree(jetty_now);
 			break;
 		}
 	}
 	spin_unlock_irqrestore(lock, flags);
-	read_unlock(&g_udma_dfx_list[i].rwlock);
+	read_unlock(&g_hns3_udma_dfx_list[i].rwlock);
 }
 
-struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
-				       struct ubcore_jetty_cfg *cfg,
-				       struct ubcore_udata *udata)
+struct ubcore_jetty *hns3_udma_create_jetty(struct ubcore_device *dev,
+					    struct ubcore_jetty_cfg *cfg,
+					    struct ubcore_udata *udata)
 {
-	struct udma_dev *udma_dev = to_udma_dev(dev);
+	struct hns3_udma_dev *udma_dev = to_hns3_udma_dev(dev);
 	struct hns3_udma_create_jetty_ucmd ucmd = {};
-	struct udma_jetty *jetty;
+	struct hns3_udma_jetty *jetty;
 	unsigned long byte;
 	int ret;
 
@@ -464,7 +469,7 @@ struct ubcore_jetty *udma_create_jetty(struct ubcore_device *dev,
 		return NULL;
 	}
 
-	jetty = kzalloc(sizeof(struct udma_jetty), GFP_KERNEL);
+	jetty = kzalloc(sizeof(struct hns3_udma_jetty), GFP_KERNEL);
 	if (!jetty)
 		return NULL;
 
@@ -494,37 +499,37 @@ err_alloc_jetty_id:
 	return NULL;
 }
 
-static int free_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty)
+static int free_jetty_buf(struct hns3_udma_dev *dev, struct hns3_udma_jetty *jetty)
 {
-	struct udma_ucontext *udma_uctx = to_udma_ucontext(jetty->ubcore_jetty.uctx);
+	struct hns3_udma_ucontext *udma_uctx = to_hns3_udma_ucontext(jetty->ubcore_jetty.uctx);
 	int ret = 0;
 
 	if (jetty->tp_mode == UBCORE_TP_UM) {
-		ret = udma_modify_qp_jetty(dev, jetty, QPS_RESET);
+		ret = hns3_udma_modify_qp_jetty(dev, jetty, QPS_RESET);
 		if (ret)
 			dev_err(dev->dev,
 				"modify qp(0x%llx) to RESET failed for um jetty.\n",
 				jetty->qp.qpn);
 
-		udma_destroy_qp_common(dev, &jetty->qp, NULL);
+		hns3_udma_destroy_qp_common(dev, &jetty->qp, NULL);
 	} else if (jetty->tp_mode == UBCORE_TP_RC) {
 		if (jetty->ubcore_jetty.jetty_cfg.flag.bs.sub_trans_mode ==
 		    UBCORE_SUB_TRANS_MODE_USER_TP)
-			udma_destroy_tp(&jetty->rc_node.tp->ubcore_tp);
+			hns3_udma_destroy_tp(&jetty->rc_node.tp->ubcore_tp);
 		free_rc_jetty_buf(dev, udma_uctx, jetty);
 	}
 
 	return ret;
 }
 
-int udma_destroy_jetty(struct ubcore_jetty *jetty)
+int hns3_udma_destroy_jetty(struct ubcore_jetty *jetty)
 {
-	struct udma_jetty *udma_jetty;
-	struct udma_dev *udma_dev;
+	struct hns3_udma_jetty *udma_jetty;
+	struct hns3_udma_dev *udma_dev;
 	int ret;
 
-	udma_jetty = to_udma_jetty(jetty);
-	udma_dev = to_udma_dev(jetty->ub_dev);
+	udma_jetty = to_hns3_udma_jetty(jetty);
+	udma_dev = to_hns3_udma_dev(jetty->ub_dev);
 	ret = free_jetty_buf(udma_dev, udma_jetty);
 
 	if (dfx_switch)
@@ -537,7 +542,7 @@ int udma_destroy_jetty(struct ubcore_jetty *jetty)
 	return ret;
 }
 
-struct ubcore_tjetty *udma_import_jetty(struct ubcore_device *dev,
+struct ubcore_tjetty *hns3_udma_import_jetty(struct ubcore_device *dev,
 					struct ubcore_tjetty_cfg *cfg,
 					struct ubcore_udata *udata)
 {
@@ -550,7 +555,7 @@ struct ubcore_tjetty *udma_import_jetty(struct ubcore_device *dev,
 	return tjetty;
 }
 
-int udma_unimport_jetty(struct ubcore_tjetty *tjetty)
+int hns3_udma_unimport_jetty(struct ubcore_tjetty *tjetty)
 {
 	kfree(tjetty);
 

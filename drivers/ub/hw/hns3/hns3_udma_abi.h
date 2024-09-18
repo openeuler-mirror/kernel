@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -84,8 +84,8 @@ struct hns3_udma_jfc_attr_ex {
 };
 
 struct hns3_udma_create_jfc_ucmd {
-	uint64_t		buf_addr;
-	uint64_t		db_addr;
+	uint64_t			buf_addr;
+	uint64_t			db_addr;
 	struct hns3_udma_jfc_attr_ex	jfc_attr_ex;
 };
 
@@ -162,10 +162,10 @@ struct hns3_udma_create_ctx_ucmd {
 };
 
 enum hns3_udma_context_comp_mask {
-	UDMA_CONTEXT_MASK_DCA_PRIME_QPS = 1 << 0,
-	UDMA_CONTEXT_MASK_DCA_UNIT_SIZE = 1 << 1,
-	UDMA_CONTEXT_MASK_DCA_MAX_SIZE = 1 << 2,
-	UDMA_CONTEXT_MASK_DCA_MIN_SIZE = 1 << 3,
+	HNS3_UDMA_CONTEXT_MASK_DCA_PRIME_QPS = 1 << 0,
+	HNS3_UDMA_CONTEXT_MASK_DCA_UNIT_SIZE = 1 << 1,
+	HNS3_UDMA_CONTEXT_MASK_DCA_MAX_SIZE = 1 << 2,
+	HNS3_UDMA_CONTEXT_MASK_DCA_MIN_SIZE = 1 << 3,
 };
 
 struct hns3_udma_create_ctx_resp {
@@ -195,72 +195,72 @@ struct flush_cqe_param {
 	uint32_t sq_producer_idx;
 };
 
-struct udma_poe_info {
+struct hns3_udma_poe_info {
 	uint8_t		en;
 	uint8_t		poe_channel;
 	uint64_t	poe_addr;
 };
 
-struct udma_dca_reg_attr {
+struct hns3_udma_dca_reg_attr {
 	uintptr_t	key;
 	uintptr_t	addr;
 	uint32_t	size;
 };
 
-struct udma_dca_dereg_attr {
+struct hns3_udma_dca_dereg_attr {
 	uintptr_t	free_key;
 	struct dca_mem	*mem;
 };
 
-struct udma_dca_shrink_attr {
+struct hns3_udma_dca_shrink_attr {
 	uint64_t reserved_size;
 };
 
-struct udma_dca_shrink_resp {
+struct hns3_udma_dca_shrink_resp {
 	struct dca_mem	*mem;
 	uintptr_t	free_key;
 	uint32_t	free_mems;
 };
 
-struct udma_dca_attach_attr {
+struct hns3_udma_dca_attach_attr {
 	uint64_t	qpn;
 	uint32_t	sq_offset;
 	uint32_t	sge_offset;
 };
 
-struct udma_dca_attach_resp {
+struct hns3_udma_dca_attach_resp {
 	uint32_t	alloc_flags;
 	uint32_t	alloc_pages;
 	uint32_t	dcan;
 };
 
-struct udma_dca_detach_attr {
+struct hns3_udma_dca_detach_attr {
 	uint64_t	qpn;
 	uint32_t	sq_idx;
 };
 
-struct udma_dca_query_attr {
+struct hns3_udma_dca_query_attr {
 	uint64_t	qpn;
 	uint32_t	page_idx;
 };
 
-struct udma_dca_query_resp {
+struct hns3_udma_dca_query_resp {
 	uintptr_t	mem_key;
 	uint32_t	mem_ofs;
 	uint32_t	page_count;
 };
 
 enum hns3_udma_user_ctl_handlers {
-	UDMA_USER_CTL_FLUSH_CQE,
-	UDMA_CONFIG_POE_CHANNEL,
-	UDMA_QUERY_POE_CHANNEL,
-	UDMA_DCA_MEM_REG,
-	UDMA_DCA_MEM_DEREG,
-	UDMA_DCA_MEM_SHRINK,
-	UDMA_DCA_MEM_ATTACH,
-	UDMA_DCA_MEM_DETACH,
-	UDMA_DCA_MEM_QUERY,
-	UDMA_OPCODE_NUM,
+	HNS3_UDMA_USER_CTL_FLUSH_CQE,
+	HNS3_UDMA_CONFIG_POE_CHANNEL,
+	HNS3_UDMA_QUERY_POE_CHANNEL,
+	HNS3_UDMA_DCA_MEM_REG,
+	HNS3_UDMA_DCA_MEM_DEREG,
+	HNS3_UDMA_DCA_MEM_SHRINK,
+	HNS3_UDMA_DCA_MEM_ATTACH,
+	HNS3_UDMA_DCA_MEM_DETACH,
+	HNS3_UDMA_DCA_MEM_QUERY,
+	HNS3_UDMA_OPCODE_NUM,
 };
 
 #endif /* _HNS3_UDMA_ABI_H */

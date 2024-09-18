@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -13,23 +13,23 @@
  *
  */
 
-#ifndef _UDMA_EQ_H
-#define _UDMA_EQ_H
+#ifndef _HNS3_UDMA_EQ_H
+#define _HNS3_UDMA_EQ_H
 
 #include <linux/types.h>
 #include "hns3_udma_cmd.h"
 
-struct udma_eq_context {
+struct hns3_udma_eq_context {
 	uint32_t	data[16];
 };
 
-#define UDMA_EQ_STATE_VALID		1
-#define UDMA_EQ_INIT_EQE_CNT		0
-#define UDMA_EQ_INIT_PROD_IDX		0
-#define UDMA_EQ_INIT_REPORT_TIMER	0
-#define UDMA_EQ_INIT_MSI_IDX		0
-#define UDMA_EQ_INIT_CONS_IDX		0
-#define UDMA_EQ_INIT_NXT_EQE_BA		0
+#define HNS3_UDMA_EQ_STATE_VALID		1
+#define HNS3_UDMA_EQ_INIT_EQE_CNT		0
+#define HNS3_UDMA_EQ_INIT_PROD_IDX		0
+#define HNS3_UDMA_EQ_INIT_REPORT_TIMER		0
+#define HNS3_UDMA_EQ_INIT_MSI_IDX		0
+#define HNS3_UDMA_EQ_INIT_CONS_IDX		0
+#define HNS3_UDMA_EQ_INIT_NXT_EQE_BA		0
 
 #define EQC_FIELD_LOC(h, l) ((uint64_t)(h) << 32 | (l))
 
@@ -58,17 +58,17 @@ struct udma_eq_context {
 #define EQC_NEX_EQE_BA_H EQC_FIELD_LOC(339, 320)
 #define EQC_EQE_SIZE EQC_FIELD_LOC(341, 340)
 
-#define UDMA_CEQE_COMP_CQN_S 0
-#define UDMA_CEQE_COMP_CQN_M GENMASK(23, 0)
+#define HNS3_UDMA_CEQE_COMP_CQN_S 0
+#define HNS3_UDMA_CEQE_COMP_CQN_M GENMASK(23, 0)
 
-#define UDMA_AEQE_EVENT_TYPE_S 0
-#define UDMA_AEQE_EVENT_TYPE_M GENMASK(7, 0)
+#define HNS3_UDMA_AEQE_EVENT_TYPE_S 0
+#define HNS3_UDMA_AEQE_EVENT_TYPE_M GENMASK(7, 0)
 
-#define UDMA_AEQE_SUB_TYPE_S 8
-#define UDMA_AEQE_SUB_TYPE_M GENMASK(15, 8)
+#define HNS3_UDMA_AEQE_SUB_TYPE_S 8
+#define HNS3_UDMA_AEQE_SUB_TYPE_M GENMASK(15, 8)
 
-#define UDMA_AEQE_EVENT_QUEUE_NUM_S 0
-#define UDMA_AEQE_EVENT_QUEUE_NUM_M GENMASK(23, 0)
+#define HNS3_UDMA_AEQE_EVENT_QUEUE_NUM_S 0
+#define HNS3_UDMA_AEQE_EVENT_QUEUE_NUM_M GENMASK(23, 0)
 
 #define EQC_EQE_BA_L_SHIFT	3
 #define EQC_EQE_BA_H_SHIFT	35
@@ -77,10 +77,10 @@ struct udma_eq_context {
 #define EQC_CUR_EQE_BA_H_SHIFT	60
 #define EQC_NEX_EQE_BA_L_SHIFT	12
 #define EQC_NEX_EQE_BA_H_SHIFT	44
-#define UDMA_VF_INT_ST_AEQ_OVERFLOW_S	0
-#define UDMA_VF_ABN_INT_EN_S 0
+#define HNS3_UDMA_VF_INT_ST_AEQ_OVERFLOW_S	0
+#define HNS3_UDMA_VF_ABN_INT_EN_S 0
 
-struct udma_eq_db {
+struct hns3_udma_eq_db {
 	uint32_t	data[2];
 };
 
@@ -108,39 +108,39 @@ static const struct {
 	uint8_t		write_bt0_op;
 } fmea_ram_res[] = {
 	{ "ECC_RESOURCE_QPC",
-	  UDMA_CMD_READ_QPC_BT0, UDMA_CMD_WRITE_QPC_BT0 },
+	  HNS3_UDMA_CMD_READ_QPC_BT0, HNS3_UDMA_CMD_WRITE_QPC_BT0 },
 	{ "ECC_RESOURCE_CQC",
-	  UDMA_CMD_READ_CQC_BT0, UDMA_CMD_WRITE_CQC_BT0 },
+	  HNS3_UDMA_CMD_READ_CQC_BT0, HNS3_UDMA_CMD_WRITE_CQC_BT0 },
 	{ "ECC_RESOURCE_MPT",
-	  UDMA_CMD_READ_MPT_BT0, UDMA_CMD_WRITE_MPT_BT0 },
+	  HNS3_UDMA_CMD_READ_MPT_BT0, HNS3_UDMA_CMD_WRITE_MPT_BT0 },
 	{ "ECC_RESOURCE_SRQC",
-	  UDMA_CMD_READ_SRQC_BT0, UDMA_CMD_WRITE_SRQC_BT0 },
+	  HNS3_UDMA_CMD_READ_SRQC_BT0, HNS3_UDMA_CMD_WRITE_SRQC_BT0 },
 	/* ECC_RESOURCE_GMV is handled by cmdq, not mailbox */
 	{ "ECC_RESOURCE_GMV",
 	  0, 0 },
 	{ "ECC_RESOURCE_QPC_TIMER",
-	  UDMA_CMD_READ_QPC_TIMER_BT0, UDMA_CMD_WRITE_QPC_TIMER_BT0 },
+	  HNS3_UDMA_CMD_READ_QPC_TIMER_BT0, HNS3_UDMA_CMD_WRITE_QPC_TIMER_BT0 },
 	{ "ECC_RESOURCE_CQC_TIMER",
-	  UDMA_CMD_READ_CQC_TIMER_BT0, UDMA_CMD_WRITE_CQC_TIMER_BT0 },
+	  HNS3_UDMA_CMD_READ_CQC_TIMER_BT0, HNS3_UDMA_CMD_WRITE_CQC_TIMER_BT0 },
 	{ "ECC_RESOURCE_SCCC",
-	  UDMA_CMD_READ_SCCC_BT0, UDMA_CMD_WRITE_SCCC_BT0 },
+	  HNS3_UDMA_CMD_READ_SCCC_BT0, HNS3_UDMA_CMD_WRITE_SCCC_BT0 },
 };
 
 #define EQ_DB_FIELD_LOC(h, l) ((uint64_t)(h) << 32 | (l))
 
-#define UDMA_EQ_DB_TAG EQ_DB_FIELD_LOC(7, 0)
-#define UDMA_EQ_DB_CMD EQ_DB_FIELD_LOC(17, 16)
-#define UDMA_EQ_DB_CI EQ_DB_FIELD_LOC(55, 32)
+#define HNS3_UDMA_EQ_DB_TAG EQ_DB_FIELD_LOC(7, 0)
+#define HNS3_UDMA_EQ_DB_CMD EQ_DB_FIELD_LOC(17, 16)
+#define HNS3_UDMA_EQ_DB_CI EQ_DB_FIELD_LOC(55, 32)
 
-#define UDMA_EQ_ARMED			1
-#define UDMA_EQ_ALWAYS_ARMED		3
+#define HNS3_UDMA_EQ_ARMED		1
+#define HNS3_UDMA_EQ_ALWAYS_ARMED	3
 
-#define UDMA_EQ_DB_CMD_AEQ		0x0
-#define UDMA_EQ_DB_CMD_AEQ_ARMED	0x1
-#define UDMA_EQ_DB_CMD_CEQ		0x2
-#define UDMA_EQ_DB_CMD_CEQ_ARMED	0x3
+#define HNS3_UDMA_EQ_DB_CMD_AEQ		0x0
+#define HNS3_UDMA_EQ_DB_CMD_AEQ_ARMED	0x1
+#define HNS3_UDMA_EQ_DB_CMD_CEQ		0x2
+#define HNS3_UDMA_EQ_DB_CMD_CEQ_ARMED	0x3
 
-int udma_init_eq_table(struct udma_dev *udma_dev);
-void udma_cleanup_eq_table(struct udma_dev *udma_dev);
+int hns3_udma_init_eq_table(struct hns3_udma_dev *udma_dev);
+void hns3_udma_cleanup_eq_table(struct hns3_udma_dev *udma_dev);
 
-#endif /* _UDMA_EQ_H */
+#endif /* _HNS3_UDMA_EQ_H */

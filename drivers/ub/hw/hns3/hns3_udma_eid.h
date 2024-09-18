@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -13,11 +13,11 @@
  *
  */
 
-#ifndef _UDMA_EID_H
-#define _UDMA_EID_H
+#ifndef _HNS3_UDMA_EID_H
+#define _HNS3_UDMA_EID_H
 
 #define UBOE_MAC_LEN 6
-#define UDMA_SMAC_OFFSET 10
+#define HNS3_UDMA_SMAC_OFFSET 10
 
 #define SMAC_L_SHIFT 0
 #define SMAC_H_SHIFT 2
@@ -29,14 +29,14 @@
 #define CFG_GMV_TB_VF_SGID_TYPE_M GENMASK(1, 0)
 #define CFG_GMV_TB_VF_SMAC_L_M GENMASK(31, 16)
 
-#define UDMA_IPV4_MAP_IPV6_PREFIX 0x0000ffff
+#define HNS3_UDMA_IPV4_MAP_IPV6_PREFIX 0x0000ffff
 
-enum udma_sgid_type {
+enum hns3_udma_sgid_type {
 	SGID_TYPE_IPV6,
 	SGID_TYPE_IPV4,
 };
 
-struct udma_cfg_gmv_tb_a {
+struct hns3_udma_cfg_gmv_tb_a {
 	uint32_t vf_sgid_l;
 	uint32_t vf_sgid_ml;
 	uint32_t vf_sgid_mh;
@@ -45,7 +45,7 @@ struct udma_cfg_gmv_tb_a {
 	uint32_t vf_smac_h;
 };
 
-struct udma_cfg_gmv_tb_b {
+struct hns3_udma_cfg_gmv_tb_b {
 	uint32_t vf_upi;
 	uint32_t vf_eid_high;
 	uint32_t table_idx_rsv;
@@ -53,28 +53,28 @@ struct udma_cfg_gmv_tb_b {
 	uint32_t resv[2];
 };
 
-struct udma_eid {
+struct hns3_udma_eid {
 	union ubcore_eid eid;
-	enum udma_sgid_type type;
+	enum hns3_udma_sgid_type type;
 };
 
-int udma_add_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ueid_cfg *cfg);
-int udma_delete_ueid(struct ubcore_device *dev, uint16_t fe_idx,
-		     struct ubcore_ueid_cfg *cfg);
-int udma_find_eid_idx(struct udma_dev *dev, union ubcore_eid eid);
+int hns3_udma_add_ueid(struct ubcore_device *dev, uint16_t fe_idx, struct ubcore_ueid_cfg *cfg);
+int hns3_udma_delete_ueid(struct ubcore_device *dev, uint16_t fe_idx,
+			  struct ubcore_ueid_cfg *cfg);
+int hns3_udma_find_eid_idx(struct hns3_udma_dev *dev, union ubcore_eid eid);
 
-static inline enum udma_sgid_type get_sgid_type_from_eid(union ubcore_eid eid)
+static inline enum hns3_udma_sgid_type get_sgid_type_from_eid(union ubcore_eid eid)
 {
-	if (eid.in4.reserved == 0 && eid.in4.prefix == htonl(UDMA_IPV4_MAP_IPV6_PREFIX))
+	if (eid.in4.reserved == 0 && eid.in4.prefix == htonl(HNS3_UDMA_IPV4_MAP_IPV6_PREFIX))
 		return SGID_TYPE_IPV4;
 	return SGID_TYPE_IPV6;
 }
 
-static inline void udma_ipv4_map_to_eid(uint32_t ipv4, union ubcore_eid *eid)
+static inline void hns3_udma_ipv4_map_to_eid(uint32_t ipv4, union ubcore_eid *eid)
 {
 	eid->in4.reserved = 0;
-	eid->in4.prefix = cpu_to_be32(UDMA_IPV4_MAP_IPV6_PREFIX);
+	eid->in4.prefix = cpu_to_be32(HNS3_UDMA_IPV4_MAP_IPV6_PREFIX);
 	eid->in4.addr = ipv4;
 }
 
-#endif /* _UDMA_EID_H */
+#endif /* _HNS3_UDMA_EID_H */
