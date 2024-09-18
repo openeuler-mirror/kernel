@@ -10787,7 +10787,10 @@ static int __init gnet_bpf_init(void)
 }
 late_initcall(gnet_bpf_init);
 
+#if defined(CONFIG_SCHED_TASK_RELATIONSHIP)
 #include <linux/sched/relationship.h>
+unsigned long net_numa_rship_jiffies __read_mostly = HZ / 10; /* 100ms */
+#endif
 BPF_CALL_3(bpf_sched_net_rship_submit, void *, reqbuf, size_t, sz, u64, flags)
 {
 #if defined(CONFIG_SCHED_TASK_RELATIONSHIP)

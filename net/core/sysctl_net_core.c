@@ -47,7 +47,6 @@ int sysctl_devconf_inherit_init_net __read_mostly;
 EXPORT_SYMBOL(sysctl_devconf_inherit_init_net);
 
 #ifdef CONFIG_SCHED_TASK_RELATIONSHIP
-unsigned long net_numa_rship_jiffies __read_mostly = HZ / 10; /* 100ms */
 static unsigned long net_numa_rship_ms_min = HZ / 10; /* 100ms */
 static unsigned long net_numa_rship_ms_max = 100 * HZ; /* 100s */
 #endif
