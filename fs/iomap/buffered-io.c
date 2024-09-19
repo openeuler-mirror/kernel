@@ -158,9 +158,6 @@ iomap_set_range_dirty(struct page *page, unsigned int off, unsigned int len)
 	if (PageError(page))
 		return;
 
-	if (len)
-		iomap_set_page_dirty(page);
-
 	if (!page_has_private(page))
 		return;
 
@@ -757,6 +754,7 @@ static size_t __iomap_write_end(struct inode *inode, loff_t pos, size_t len,
 	if (unlikely(copied < len && !PageUptodate(page)))
 		return 0;
 	iomap_set_range_uptodate(page, offset_in_page(pos), len);
+	iomap_set_page_dirty(page);
 	iomap_set_range_dirty(page, offset_in_page(pos), len);
 	return copied;
 }
@@ -1073,7 +1071,9 @@ iomap_page_mkwrite_actor(struct inode *inode, loff_t pos, loff_t length,
 		block_commit_write(page, 0, length);
 	} else {
 		WARN_ON_ONCE(!PageUptodate(page));
+		iomap_page_create(inode, page);
 		set_page_dirty(page);
+		iomap_set_range_dirty(page, offset_in_page(pos), length);
 	}
 
 	return length;
