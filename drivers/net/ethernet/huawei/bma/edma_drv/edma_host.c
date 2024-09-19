@@ -1319,47 +1319,15 @@ int edma_host_init(struct edma_host_s *edma_host)
 
 	edma_host->pdev = bma_dev->bma_pci_dev->pdev;
 
-#ifdef EDMA_TIMER
-	#ifdef HAVE_TIMER_SETUP
-		timer_setup(&edma_host->timer, edma_host_timeout, 0);
-	#else
-		setup_timer(&edma_host->timer, edma_host_timeout,
-			    (unsigned long)edma_host);
-	#endif
-	(void)mod_timer(&edma_host->timer, jiffies_64 + TIMER_INTERVAL_CHECK);
-#ifdef USE_DMA
-	#ifdef HAVE_TIMER_SETUP
-		timer_setup(&edma_host->dma_timer, edma_host_dma_timeout, 0);
-
-	#else
-		setup_timer(&edma_host->dma_timer, edma_host_dma_timeout,
-			    (unsigned long)edma_host);
-	#endif
-	(void)mod_timer(&edma_host->dma_timer,
-			jiffies_64 + DMA_TIMER_INTERVAL_CHECK);
-#endif
-
-#else
-	init_completion(&edma_host->msg_ready);
-
-	edma_host->edma_thread =
-	    kthread_run(edma_host_thread, (void *)edma_host, "edma_host_msg");
-
-	if (IS_ERR(edma_host->edma_thread)) {
-		BMA_LOG(DLOG_ERROR, "kernel_run  edma_host_msg failed\n");
-		return PTR_ERR(edma_host->edma_thread);
-	}
-#endif
-
 	edma_host->msg_send_buf = kmalloc(HOST_MAX_SEND_MBX_LEN, GFP_KERNEL);
 	if (!edma_host->msg_send_buf) {
 		BMA_LOG(DLOG_ERROR, "malloc msg_send_buf failed!");
 		ret = -ENOMEM;
-		goto failed1;
+		return ret;
 	}
 
 	edma_host->msg_send_write = 0;
-
+	/* init send_msg_lock before timer setup */
 	spin_lock_init(&edma_host->send_msg_lock);
 
 	tasklet_init(&edma_host->tasklet,
@@ -1392,6 +1360,38 @@ int edma_host_init(struct edma_host_s *edma_host)
 	edma_host->h2b_state = H2BSTATE_IDLE;
 	edma_host->b2h_state = B2HSTATE_IDLE;
 
+#ifdef EDMA_TIMER
+	#ifdef HAVE_TIMER_SETUP
+		timer_setup(&edma_host->timer, edma_host_timeout, 0);
+	#else
+		setup_timer(&edma_host->timer, edma_host_timeout,
+			    (unsigned long)edma_host);
+	#endif
+	(void)mod_timer(&edma_host->timer, jiffies_64 + TIMER_INTERVAL_CHECK);
+#ifdef USE_DMA
+	#ifdef HAVE_TIMER_SETUP
+		timer_setup(&edma_host->dma_timer, edma_host_dma_timeout, 0);
+
+	#else
+		setup_timer(&edma_host->dma_timer, edma_host_dma_timeout,
+			    (unsigned long)edma_host);
+	#endif
+	(void)mod_timer(&edma_host->dma_timer,
+			jiffies_64 + DMA_TIMER_INTERVAL_CHECK);
+#endif
+
+#else
+	init_completion(&edma_host->msg_ready);
+
+	edma_host->edma_thread =
+	    kthread_run(edma_host_thread, (void *)edma_host, "edma_host_msg");
+
+	if (IS_ERR(edma_host->edma_thread)) {
+		BMA_LOG(DLOG_ERROR, "kernel_run  edma_host_msg failed\n");
+		return PTR_ERR(edma_host->edma_thread);
+	}
+#endif
+
 	#ifdef HAVE_TIMER_SETUP
 		timer_setup(&edma_host->heartbeat_timer,
 			    edma_host_heartbeat_timer, 0);
@@ -1415,18 +1415,6 @@ int edma_host_init(struct edma_host_s *edma_host)
 	BMA_LOG(DLOG_ERROR, "thread ok\n");
 #endif
 	return 0;
-
-failed1:
-#ifdef EDMA_TIMER
-	(void)del_timer_sync(&edma_host->timer);
-#ifdef USE_DMA
-	(void)del_timer_sync(&edma_host->dma_timer);
-#endif
-#else
-	kthread_stop(edma_host->edma_thread);
-	complete(&edma_host->msg_ready);
-#endif
-	return ret;
 }
 
 void edma_host_cleanup(struct edma_host_s *edma_host)
