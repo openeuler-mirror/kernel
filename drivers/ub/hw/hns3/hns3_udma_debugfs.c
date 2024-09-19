@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -20,24 +20,24 @@
 #include "hns3_udma_dca.h"
 #include "hns3_udma_debugfs.h"
 
-static struct dentry *udma_dbgfs_root;
+static struct dentry *hns3_udma_dbgfs_root;
 
-static int udma_debugfs_seqfile_open(struct inode *inode, struct file *f)
+static int hns3_udma_debugfs_seqfile_open(struct inode *inode, struct file *f)
 {
-	struct udma_debugfs_seqfile *seqfile = inode->i_private;
+	struct hns3_udma_debugfs_seqfile *seqfile = inode->i_private;
 
 	return single_open(f, seqfile->read, seqfile->data);
 }
 
-static const struct file_operations udma_debugfs_seqfile_fops = {
+static const struct file_operations hns3_udma_debugfs_seqfile_fops = {
 	.owner = THIS_MODULE,
-	.open = udma_debugfs_seqfile_open,
+	.open = hns3_udma_debugfs_seqfile_open,
 	.release = single_release,
 	.read = seq_read,
 	.llseek = seq_lseek
 };
 
-static void init_debugfs_seqfile(struct udma_debugfs_seqfile *seq,
+static void init_debugfs_seqfile(struct hns3_udma_debugfs_seqfile *seq,
 				 const char *name, struct dentry *parent,
 				 int (*read_fn)(struct seq_file *, void *),
 				 void *data)
@@ -45,7 +45,7 @@ static void init_debugfs_seqfile(struct udma_debugfs_seqfile *seq,
 	struct dentry *entry;
 
 	entry = debugfs_create_file(name, FILE_PERMISSION, parent, seq,
-				    &udma_debugfs_seqfile_fops);
+				    &hns3_udma_debugfs_seqfile_fops);
 	if (IS_ERR(entry))
 		return;
 
@@ -54,7 +54,7 @@ static void init_debugfs_seqfile(struct udma_debugfs_seqfile *seq,
 	seq->entry = entry;
 }
 
-static void cleanup_debugfs_seqfile(struct udma_debugfs_seqfile *seq)
+static void cleanup_debugfs_seqfile(struct hns3_udma_debugfs_seqfile *seq)
 {
 	debugfs_remove(seq->entry);
 	seq->entry = NULL;
@@ -70,19 +70,19 @@ static int stats_dca_pool_proc(struct dca_page_state *states, uint32_t count,
 	free_pages = 0;
 	for (i = 0; i < count; i++) {
 		s = &states[i];
-		if (s->buf_id == UDMA_DCA_INVALID_BUF_ID) {
+		if (s->buf_id == HNS3_UDMA_DCA_INVALID_BUF_ID) {
 			free_pages++;
-			stats->free_size += UDMA_PAGE_SIZE;
+			stats->free_size += HNS3_UDMA_PAGE_SIZE;
 		} else {
 			if (s->lock)
-				stats->locked_size += UDMA_PAGE_SIZE;
+				stats->locked_size += HNS3_UDMA_PAGE_SIZE;
 
 			if (s->active)
-				stats->active_size += UDMA_PAGE_SIZE;
+				stats->active_size += HNS3_UDMA_PAGE_SIZE;
 		}
 	}
 
-	stats->total_size += (count * UDMA_PAGE_SIZE);
+	stats->total_size += (count * HNS3_UDMA_PAGE_SIZE);
 	stats->total_mems++;
 	if (free_pages == count)
 		stats->clean_mems++;
@@ -100,11 +100,11 @@ static int stats_dca_qp_proc(struct dca_page_state *states, uint32_t count,
 
 	for (i = 0; i < count; i++) {
 		s = &states[i];
-		if (s->buf_id == UDMA_DCA_INVALID_BUF_ID || s->lock ||
+		if (s->buf_id == HNS3_UDMA_DCA_INVALID_BUF_ID || s->lock ||
 		    !s->active)
 			continue;
 
-		qpn = UDMA_DCA_BUF_ID_TO_QPN(s->buf_id);
+		qpn = HNS3_UDMA_DCA_BUF_ID_TO_QPN(s->buf_id);
 		if (qpn < attr->qpn_max)
 			set_bit(qpn, attr->qpn_bitmap);
 	}
@@ -112,14 +112,14 @@ static int stats_dca_qp_proc(struct dca_page_state *states, uint32_t count,
 	return 0;
 }
 
-static void dca_ctx_stats_qp(struct udma_dca_ctx *ctx,
+static void dca_ctx_stats_qp(struct hns3_udma_dca_ctx *ctx,
 			     uintptr_t *qpn_bitmap, uint32_t qpn_max)
 {
 	struct dca_stats_qp_attr attr = {};
 
 	attr.qpn_bitmap = qpn_bitmap;
 	attr.qpn_max = qpn_max;
-	udma_enum_dca_pool(ctx, &attr, stats_dca_qp_proc);
+	hns3_udma_enum_dca_pool(ctx, &attr, stats_dca_qp_proc);
 }
 
 static uint64_t calc_loading_percent(size_t total, size_t free,
@@ -130,8 +130,8 @@ static uint64_t calc_loading_percent(size_t total, size_t free,
 	uint32_t rem = 0;
 	uint32_t scale;
 
-	all_pages = total >> UDMA_HW_PAGE_SHIFT;
-	free_pages = free >> UDMA_HW_PAGE_SHIFT;
+	all_pages = total >> HNS3_UDMA_HW_PAGE_SHIFT;
+	free_pages = free >> HNS3_UDMA_HW_PAGE_SHIFT;
 	if (all_pages >= free_pages) {
 		used_pages = all_pages - free_pages;
 		scale = LOADING_PERCENT_SCALE * LOADING_PERCENT_SCALE;
@@ -145,7 +145,7 @@ static uint64_t calc_loading_percent(size_t total, size_t free,
 	return percent;
 }
 
-static void dca_setup_qp_stats(struct udma_qp *qp,
+static void dca_setup_qp_stats(struct hns3_udma_qp *qp,
 			       struct dca_qp_stats *stats)
 {
 	if (!(qp->en_flags & HNS3_UDMA_QP_CAP_DYNAMIC_CTX_ATTACH))
@@ -154,20 +154,20 @@ static void dca_setup_qp_stats(struct udma_qp *qp,
 	stats->qpn = (uint32_t)qp->qpn;
 	stats->total_size = qp->buff_size;
 
-	stats->sq_size = to_udma_hem_entries_size(qp->sq.wqe_cnt,
-						  qp->sq.wqe_shift);
-	stats->sge_size = to_udma_hem_entries_size(qp->sge.sge_cnt,
-						   qp->sge.sge_shift);
-	stats->rq_size = to_udma_hem_entries_size(qp->rq.wqe_cnt,
-						  qp->rq.wqe_shift);
+	stats->sq_size = to_hns3_udma_hem_entries_size(qp->sq.wqe_cnt,
+						       qp->sq.wqe_shift);
+	stats->sge_size = to_hns3_udma_hem_entries_size(qp->sge.sge_cnt,
+							qp->sge.sge_shift);
+	stats->rq_size = to_hns3_udma_hem_entries_size(qp->rq.wqe_cnt,
+						       qp->rq.wqe_shift);
 }
 
-static void dca_stats_ctx_qp_in_seqfile(struct udma_dev *udma_dev,
-					struct udma_dca_ctx *ctx,
+static void dca_stats_ctx_qp_in_seqfile(struct hns3_udma_dev *udma_dev,
+					struct hns3_udma_dca_ctx *ctx,
 					struct seq_file *file)
 {
 	struct dca_qp_stats stats = {};
-	struct udma_qp *qp;
+	struct hns3_udma_qp *qp;
 	uintptr_t *bitmap;
 	uint32_t qpn = 0;
 	uint32_t nbits;
@@ -204,14 +204,14 @@ static void dca_stats_ctx_qp_in_seqfile(struct udma_dev *udma_dev,
 	bitmap_free(bitmap);
 }
 
-static void dca_stats_ctx_mem_in_seqfile(struct udma_dca_ctx *ctx,
+static void dca_stats_ctx_mem_in_seqfile(struct hns3_udma_dca_ctx *ctx,
 					 bool is_kdca, struct seq_file *file)
 {
 	struct dca_mem_stats stats = {};
 	uint64_t percent;
 	uint32_t rem = 0;
 
-	udma_enum_dca_pool(ctx, &stats, stats_dca_pool_proc);
+	hns3_udma_enum_dca_pool(ctx, &stats, stats_dca_pool_proc);
 	percent = calc_loading_percent(stats.total_size, stats.free_size, &rem);
 	seq_printf(file, DCA_STAT_NAME_FMT "%llu.%0*u\n", "Loading:", percent,
 		   LOADING_PERCENT_SHIFT, rem);
@@ -226,10 +226,10 @@ static void dca_stats_ctx_mem_in_seqfile(struct udma_dca_ctx *ctx,
 
 static int dca_debugfs_uctx_qp_stats_show(struct seq_file *file, void *offset)
 {
-	struct udma_ucontext *ucontext = file->private;
-	struct udma_dev *udma_dev;
+	struct hns3_udma_ucontext *ucontext = file->private;
+	struct hns3_udma_dev *udma_dev;
 
-	udma_dev = to_udma_dev(ucontext->uctx.ub_dev);
+	udma_dev = to_hns3_udma_dev(ucontext->uctx.ub_dev);
 	dca_stats_ctx_qp_in_seqfile(udma_dev, &ucontext->dca_ctx, file);
 
 	return 0;
@@ -237,17 +237,17 @@ static int dca_debugfs_uctx_qp_stats_show(struct seq_file *file, void *offset)
 
 static int dca_debugfs_uctx_mem_stats_show(struct seq_file *file, void *offset)
 {
-	struct udma_ucontext *uctx = file->private;
+	struct hns3_udma_ucontext *uctx = file->private;
 
 	dca_stats_ctx_mem_in_seqfile(&uctx->dca_ctx, false, file);
 
 	return 0;
 }
 
-static void init_dca_ctx_debugfs(struct udma_dca_ctx_debugfs *dbgfs,
+static void init_dca_ctx_debugfs(struct hns3_udma_dca_ctx_debugfs *dbgfs,
 				 struct dentry *parent,
-				 struct udma_dev *udma_dev,
-				 struct udma_ucontext *uctx)
+				 struct hns3_udma_dev *udma_dev,
+				 struct hns3_udma_ucontext *uctx)
 {
 	char name[DCA_CTX_PID_LEN] = {};
 
@@ -265,17 +265,17 @@ static void init_dca_ctx_debugfs(struct udma_dca_ctx_debugfs *dbgfs,
 			     dca_debugfs_uctx_qp_stats_show, uctx);
 }
 
-static void cleanup_dca_ctx_debugfs(struct udma_dca_ctx_debugfs *ctx_dbgfs)
+static void cleanup_dca_ctx_debugfs(struct hns3_udma_dca_ctx_debugfs *ctx_dbgfs)
 {
 	cleanup_debugfs_seqfile(&ctx_dbgfs->qp);
 	cleanup_debugfs_seqfile(&ctx_dbgfs->mem);
 	debugfs_remove_recursive(ctx_dbgfs->root);
 }
 
-static struct udma_dca_debugfs *create_dca_debugfs(struct udma_dev *udma_dev,
-						   struct dentry *parent)
+static struct hns3_udma_dca_debugfs *create_dca_debugfs(struct hns3_udma_dev *udma_dev,
+							struct dentry *parent)
 {
-	struct udma_dca_debugfs *dbgfs;
+	struct hns3_udma_dca_debugfs *dbgfs;
 
 	if (IS_ERR(parent)) {
 		dev_err(udma_dev->dev, "invalid parameter.\n");
@@ -296,25 +296,25 @@ static struct udma_dca_debugfs *create_dca_debugfs(struct udma_dev *udma_dev,
 	return dbgfs;
 }
 
-static void destroy_dca_debugfs(struct udma_dca_debugfs *dca_dbgfs)
+static void destroy_dca_debugfs(struct hns3_udma_dca_debugfs *dca_dbgfs)
 {
 	debugfs_remove_recursive(dca_dbgfs->root);
 	kfree(dca_dbgfs);
 }
 
 /* debugfs for ucontext */
-void udma_register_uctx_debugfs(struct udma_dev *udma_dev,
-				struct udma_ucontext *uctx)
+void hns3_udma_register_uctx_debugfs(struct hns3_udma_dev *udma_dev,
+				     struct hns3_udma_ucontext *uctx)
 {
-	struct udma_dev_debugfs *dev_dbgfs = udma_dev->dbgfs;
-	struct udma_dca_debugfs *dca_dbgfs;
+	struct hns3_udma_dev_debugfs *dev_dbgfs = udma_dev->dbgfs;
+	struct hns3_udma_dca_debugfs *dca_dbgfs;
 
 	if (!dev_dbgfs)
 		return;
 
 	dca_dbgfs = dev_dbgfs->dca_root;
 	if (dca_dbgfs) {
-		uctx->dca_dbgfs = kzalloc(sizeof(struct udma_dca_ctx_debugfs),
+		uctx->dca_dbgfs = kzalloc(sizeof(struct hns3_udma_dca_ctx_debugfs),
 					  GFP_KERNEL);
 		if (!uctx->dca_dbgfs)
 			return;
@@ -323,9 +323,9 @@ void udma_register_uctx_debugfs(struct udma_dev *udma_dev,
 	}
 }
 
-void udma_unregister_uctx_debugfs(struct udma_ucontext *uctx)
+void hns3_udma_unregister_uctx_debugfs(struct hns3_udma_ucontext *uctx)
 {
-	struct udma_dca_ctx_debugfs *dbgfs = uctx->dca_dbgfs;
+	struct hns3_udma_dca_ctx_debugfs *dbgfs = uctx->dca_dbgfs;
 
 	if (dbgfs) {
 		uctx->dca_dbgfs = NULL;
@@ -335,12 +335,12 @@ void udma_unregister_uctx_debugfs(struct udma_ucontext *uctx)
 }
 
 /* debugfs for device */
-void udma_register_debugfs(struct udma_dev *udma_dev)
+void hns3_udma_register_debugfs(struct hns3_udma_dev *udma_dev)
 {
-	struct udma_dev_debugfs *dbgfs;
+	struct hns3_udma_dev_debugfs *dbgfs;
 
-	if (IS_ERR_OR_NULL(udma_dbgfs_root)) {
-		dev_err(udma_dev->dev, "udma_dbgfs_root is NULL.\n");
+	if (IS_ERR_OR_NULL(hns3_udma_dbgfs_root)) {
+		dev_err(udma_dev->dev, "hns3_udma_dbgfs_root is NULL.\n");
 		return;
 	}
 
@@ -349,25 +349,25 @@ void udma_register_debugfs(struct udma_dev *udma_dev)
 		return;
 
 	dbgfs->root = debugfs_create_dir(dev_name(&udma_dev->ub_dev.dev),
-					 udma_dbgfs_root);
+					 hns3_udma_dbgfs_root);
 	if (IS_ERR(dbgfs->root)) {
 		dev_err(udma_dev->dev, "failed to create debugfs dir.\n");
 		kfree(dbgfs);
 		return;
 	}
 
-	if (udma_dev->caps.flags & UDMA_CAP_FLAG_DCA_MODE)
+	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_DCA_MODE)
 		dbgfs->dca_root = create_dca_debugfs(udma_dev, dbgfs->root);
 
 	udma_dev->dbgfs = dbgfs;
 }
 
-void udma_unregister_debugfs(struct udma_dev *udma_dev)
+void hns3_udma_unregister_debugfs(struct hns3_udma_dev *udma_dev)
 {
-	struct udma_dev_debugfs *dbgfs;
+	struct hns3_udma_dev_debugfs *dbgfs;
 
-	if (IS_ERR_OR_NULL(udma_dbgfs_root)) {
-		dev_err(udma_dev->dev, "udma_dbgfs_root is NULL.\n");
+	if (IS_ERR_OR_NULL(hns3_udma_dbgfs_root)) {
+		dev_err(udma_dev->dev, "hns3_udma_dbgfs_root is NULL.\n");
 		return;
 	}
 
@@ -388,17 +388,17 @@ void udma_unregister_debugfs(struct udma_dev *udma_dev)
 	kfree(dbgfs);
 }
 
-/* debugfs for udma module */
-void udma_init_debugfs(void)
+/* debugfs for hns3_udma module */
+void hns3_udma_init_debugfs(void)
 {
-	udma_dbgfs_root = debugfs_create_dir("udma", NULL);
+	hns3_udma_dbgfs_root = debugfs_create_dir("hns3_udma", NULL);
 }
 
-void udma_cleanup_debugfs(void)
+void hns3_udma_cleanup_debugfs(void)
 {
-	if (IS_ERR_OR_NULL(udma_dbgfs_root))
+	if (IS_ERR_OR_NULL(hns3_udma_dbgfs_root))
 		return;
 
-	debugfs_remove_recursive(udma_dbgfs_root);
-	udma_dbgfs_root = NULL;
+	debugfs_remove_recursive(hns3_udma_dbgfs_root);
+	hns3_udma_dbgfs_root = NULL;
 }

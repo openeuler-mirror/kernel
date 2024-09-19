@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -13,13 +13,14 @@
  *
  */
 
-#ifndef _UDMA_QP_H
-#define _UDMA_QP_H
+#ifndef _HNS3_UDMA_QP_H
+#define _HNS3_UDMA_QP_H
 
+#include <linux/bitmap.h>
 #include "urma/ubcore_types.h"
 #include "hns3_udma_device.h"
 
-#define UDMA_GID_SIZE 16
+#define HNS3_UDMA_GID_SIZE 16
 #define SGEN_INI_VALUE 3
 #define QP_TIMEOUT_MAX 31
 #define WQE_SGE_BA_OFFSET 3
@@ -27,31 +28,33 @@
 #define MAX_LP_MSG_LEN 16384
 #define QPC_DMAC_H_IDX 4
 #define UDP_RANGE_BASE 8
-#define UDMA_SQ_WQE_SHIFT 6
+#define HNS3_UDMA_SQ_WQE_SHIFT 6
 #define RETRY_MSG_PSN_H_OFFSET 16
-#define UDMA_MTU_VAL_256 256
-#define UDMA_MTU_VAL_512 512
-#define UDMA_MTU_VAL_1024 1024
-#define UDMA_MTU_VAL_2048 2048
-#define UDMA_MTU_VAL_4096 4096
-#define UDMA_DIRECT_WQE_MAX 524288
+#define HNS3_UDMA_MTU_VAL_256 256
+#define HNS3_UDMA_MTU_VAL_512 512
+#define HNS3_UDMA_MTU_VAL_1024 1024
+#define HNS3_UDMA_MTU_VAL_2048 2048
+#define HNS3_UDMA_MTU_VAL_4096 4096
+#define HNS3_UDMA_DIRECT_WQE_MAX 524288
 
-struct udma_qp_context_ex {
+#define CQ_BANKID_MASK GENMASK(1, 0)
+
+struct hns3_udma_qp_context_ex {
 	uint32_t data[64];
 };
 
-struct udma_qp_context {
+struct hns3_udma_qp_context {
 	uint32_t qpc_context1;
 	uint32_t wqe_sge_ba;
 	uint32_t qpc_context2[5];
-	uint8_t  dgid[UDMA_GID_SIZE];
+	uint8_t  dgid[HNS3_UDMA_GID_SIZE];
 	uint32_t dmac;
 	uint32_t qpc_context3[3];
 	uint32_t qkey_xrcd;
 	uint32_t qpc_context4[11];
 	uint32_t rq_rnr_timer;
 	uint32_t qpc_context5[36];
-	struct udma_qp_context_ex ext;
+	struct hns3_udma_qp_context_ex ext;
 };
 
 #define QPC_FIELD_LOC(h, l) ((uint64_t)(h) << 32 | (l))
@@ -138,7 +141,7 @@ struct udma_qp_context {
 #define QPCEX_REORDER_CQ_ADDR_SHIFT 12
 #define QPCEX_DATA_UDP_SRCPORT_H_SHIFT 11
 #define QPCEX_RTT_INIT 100
-#define QPCEX_P_TYPE_UDMA 0x1
+#define QPCEX_P_TYPE_HNS3_UDMA 0x1
 #define MAX_SERVICE_LEVEL 0x7
 
 #define QPCEX_CONGEST_ALG_SEL QPCEX_FIELD_LOC(0, 0)
@@ -166,7 +169,7 @@ struct udma_qp_context {
 #define UDP_SRCPORT_RANGE_BASE 7
 #define UDP_SRCPORT_RANGE_SIZE_MASK 0xF
 
-struct udma_modify_tp_attr {
+struct hns3_udma_modify_tp_attr {
 	uint8_t				dmac[UBCORE_MAC_BYTES];
 	uint32_t			dest_qp_num;
 	uint8_t				retry_cnt;
@@ -179,17 +182,17 @@ struct udma_modify_tp_attr {
 	uint8_t				max_rd_atomic;
 	uint8_t				min_rnr_timer;
 	uint32_t			qkey;
-	uint8_t				dgid[UDMA_GID_SIZE];
+	uint8_t				dgid[HNS3_UDMA_GID_SIZE];
 	uint8_t				dipv4[4];
 	uint8_t				sgid_index;
 	uint16_t			data_udp_start;
 	uint16_t			ack_udp_start;
 	uint16_t			udp_range;
 	uint32_t			ar_en;
-	enum udma_cong_type		cong_alg;
+	enum hns3_udma_cong_type	cong_alg;
 };
 
-struct udma_qp_cap {
+struct hns3_udma_qp_cap {
 	uint32_t	max_send_wr;
 	uint32_t	max_recv_wr;
 	uint32_t	max_send_sge;
@@ -201,39 +204,39 @@ struct udma_qp_cap {
 	uint8_t		ack_timeout;
 };
 
-struct udma_qpn_bitmap {
+struct hns3_udma_qpn_bitmap {
 	uint32_t		qpn_prefix;
 	uint32_t		jid;
 	uint32_t		qpn_shift;
-	struct udma_bank	bank[UDMA_QP_BANK_NUM];
+	struct hns3_udma_bank	bank[HNS3_UDMA_QP_BANK_NUM];
 	struct mutex		bank_mutex;
 };
 
-struct udma_qp_attr {
-	bool			is_jetty;
-	bool			is_tgt;
-	struct ubcore_ucontext	*uctx;
-	struct udma_jfc		*send_jfc;
-	struct udma_jfc		*recv_jfc;
-	struct udma_jfs		*jfs;
-	struct udma_jfr		*jfr;
-	struct udma_jetty	*jetty;
-	struct udma_qp_cap	cap;
-	enum udma_qp_type	qp_type;
-	uint32_t		pdn;
-	struct udma_qpn_bitmap	*qpn_map;
-	void			*reorder_cq_page;
-	int			reorder_cq_size;
-	dma_addr_t		reorder_cq_addr;
+struct hns3_udma_qp_attr {
+	bool				is_jetty;
+	bool				is_tgt;
+	struct ubcore_ucontext		*uctx;
+	struct hns3_udma_jfc		*send_jfc;
+	struct hns3_udma_jfc		*recv_jfc;
+	struct hns3_udma_jfs		*jfs;
+	struct hns3_udma_jfr		*jfr;
+	struct hns3_udma_jetty		*jetty;
+	struct hns3_udma_qp_cap		cap;
+	enum hns3_udma_qp_type		qp_type;
+	uint32_t			pdn;
+	struct hns3_udma_qpn_bitmap	*qpn_map;
+	void				*reorder_cq_page;
+	int				reorder_cq_size;
+	dma_addr_t			reorder_cq_addr;
 	union ubcore_eid		remote_eid;
 	union ubcore_eid		local_eid;
-	int			tgt_id;
-	uint8_t			priority;
-	uint32_t		eid_index;
+	int				tgt_id;
+	uint8_t				priority;
+	uint32_t			eid_index;
 	enum ubcore_transport_mode	tp_mode;
 };
 
-struct udma_wq {
+struct hns3_udma_wq {
 	uint32_t		wqe_cnt; /* WQE num */
 	uint32_t		max_gs;
 	uint32_t		offset;
@@ -242,14 +245,14 @@ struct udma_wq {
 	uint32_t		head;
 };
 
-struct udma_qp_sge {
+struct hns3_udma_qp_sge {
 	uint32_t		sge_cnt; /* SGE num */
 	uint32_t		offset;
 	int			sge_shift; /* SGE size */
 	uint32_t		wqe_offset;
 };
 
-struct udma_dca_cfg {
+struct hns3_udma_dca_cfg {
 	spinlock_t		lock;
 	uint32_t		attach_count;
 	uint32_t		buf_id;
@@ -261,49 +264,51 @@ struct udma_dca_cfg {
 	struct list_head	aging_node;
 };
 
-struct udma_qp {
-	struct udma_dev		*udma_device;
-	struct udma_ucontext	*udma_uctx;
-	enum udma_qp_type	qp_type;
-	struct udma_qp_attr	qp_attr;
-	struct udma_wq		sq;
-	struct udma_wq		rq;
-	struct udma_db		sdb;
-	struct udma_jfc		*send_jfc;
-	struct udma_jfc		*recv_jfc;
-	uint64_t		en_flags;
-	enum udma_sig_type	sq_signal_bits;
-	struct udma_mtr		mtr;
-	struct udma_dca_cfg	dca_cfg;
-	struct udma_dca_ctx	*dca_ctx;
-	uint32_t		buff_size;
-	enum udma_qp_state	state;
-	uint32_t		atomic_rd_en;
-	void (*event)(struct udma_qp *qp,
-		      enum udma_event event_type);
-	uint64_t		qpn;
+struct hns3_udma_qp {
+	struct hns3_udma_dev		*udma_device;
+	struct hns3_udma_ucontext	*hns3_udma_uctx;
+	enum hns3_udma_qp_type		qp_type;
+	struct hns3_udma_qp_attr	qp_attr;
+	struct hns3_udma_wq		sq;
+	struct hns3_udma_wq		rq;
+	struct hns3_udma_db		sdb;
+	struct hns3_udma_jfc		*send_jfc;
+	struct hns3_udma_jfc		*recv_jfc;
+	uint64_t			en_flags;
+	enum hns3_udma_sig_type		sq_signal_bits;
+	struct hns3_udma_mtr		mtr;
+	struct hns3_udma_dca_cfg	dca_cfg;
+	struct hns3_udma_dca_ctx	*dca_ctx;
+	uint32_t			buff_size;
+	enum hns3_udma_qp_state		state;
+	uint32_t			atomic_rd_en;
+	void (*event)(struct hns3_udma_qp	*qp,
+		      enum hns3_udma_event	event_type);
+	uint64_t			qpn;
 
-	refcount_t		refcount;
-	struct completion	free;
-	struct udma_qp_sge	sge;
-	enum udma_mtu		path_mtu;
-	enum ubcore_mtu		ubcore_path_mtu;
-	uint32_t		max_inline_data;
-	uint8_t			sl;
-	struct list_head	node; /* all qps are on a list */
-	struct list_head	rq_node; /* all recv qps are on a list */
-	struct list_head	sq_node; /* all send qps are on a list */
-	uint8_t			rnr_retry;
-	uint8_t			ack_timeout;
-	uint8_t			min_rnr_timer;
-	uint8_t			priority;
-	bool			no_free_wqe_buf;
-	bool			force_free_wqe_buf;
-	int64_t			dip_idx;
-	struct udma_modify_tp_attr m_attr;
+	refcount_t			refcount;
+	struct completion		free;
+	struct hns3_udma_qp_sge		sge;
+	enum hns3_udma_mtu		path_mtu;
+	enum ubcore_mtu			ubcore_path_mtu;
+	uint32_t			max_inline_data;
+	uint8_t				sl;
+	struct list_head		node; /* all qps are on a list */
+	struct list_head		rq_node; /* all recv qps are on a list */
+	struct list_head		sq_node; /* all send qps are on a list */
+	uint8_t				rnr_retry;
+	uint8_t				ack_timeout;
+	uint8_t				min_rnr_timer;
+	uint8_t				priority;
+	bool				no_free_wqe_buf;
+	bool				force_free_wqe_buf;
+	int64_t				dip_idx;
+	struct hns3_udma_modify_tp_attr m_attr;
+	struct hns3_udma_dip		*dip;
+	enum hns3_udma_cong_type	congest_type;
 };
 
-struct udma_congestion_algorithm {
+struct hns3_udma_congestion_algorithm {
 	uint8_t congest_type;
 	uint8_t alg_sel;
 	uint8_t alg_sub_sel;
@@ -311,16 +316,17 @@ struct udma_congestion_algorithm {
 	uint8_t wnd_mode_sel;
 };
 
-struct udma_dip {
-	uint8_t dgid[UDMA_GID_SIZE];
+struct hns3_udma_dip {
+	uint8_t dgid[HNS3_UDMA_GID_SIZE];
 	uint32_t dip_idx;
+	uint32_t qp_cnt;
 	struct list_head node; /* all dips are on a list */
 };
 
-#define UDMA_INVALID_LOAD_QPNUM 0xFFFFFFFF
+#define HNS3_UDMA_INVALID_LOAD_QPNUM 0xFFFFFFFF
 
-#define UDMA_CONGEST_SIZE 64
-#define UDMA_SCC_DIP_INVALID_IDX (-1)
+#define HNS3_UDMA_CONGEST_SIZE 64
+#define HNS3_UDMA_SCC_DIP_INVALID_IDX (-1)
 
 enum {
 	CONGEST_DCQCN,
@@ -361,31 +367,31 @@ enum {
 
 #define gen_qpn(high, mid, low) ((high) | (mid) | (low))
 
-bool is_rc_jetty(struct udma_qp_attr *qp_attr);
-bool is_rq_jetty(struct udma_qp_attr *qp_attr);
-int udma_modify_qp_common(struct udma_qp *qp,
-			  struct ubcore_tp_attr *attr,
-			  union ubcore_tp_attr_mask ubcore_mask,
-			  enum udma_qp_state curr_state,
-			  enum udma_qp_state new_state);
-int udma_fill_qp_attr(struct udma_dev *udma_dev, struct udma_qp_attr *qp_attr,
-		      struct ubcore_tp_cfg *cfg, struct ubcore_udata *udata);
-int udma_create_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
-			  struct ubcore_udata *udata);
-void udma_destroy_qp_common(struct udma_dev *udma_dev, struct udma_qp *qp,
-			    struct ubcore_tp *fail_ret_tp);
-int udma_flush_cqe(struct udma_dev *udma_dev, struct udma_qp *udma_qp,
-		   uint32_t sq_pi);
-void udma_qp_event(struct udma_dev *udma_dev, uint32_t qpn, int event_type);
-int udma_set_dca_buf(struct udma_dev *dev, struct udma_qp *qp);
-int udma_init_qpc(struct udma_dev *udma_dev, struct udma_qp *qp);
-int alloc_common_qpn(struct udma_dev *udma_dev, struct udma_jfc *jfc,
+bool is_rc_jetty(struct hns3_udma_qp_attr *qp_attr);
+bool is_rq_jetty(struct hns3_udma_qp_attr *qp_attr);
+int hns3_udma_modify_qp_common(struct hns3_udma_qp *qp,
+			       struct ubcore_tp_attr *attr,
+			       union ubcore_tp_attr_mask ubcore_mask,
+			       enum hns3_udma_qp_state curr_state,
+			       enum hns3_udma_qp_state new_state);
+int hns3_udma_fill_qp_attr(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp_attr *qp_attr,
+			   struct ubcore_tp_cfg *cfg, struct ubcore_udata *udata);
+int hns3_udma_create_qp_common(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp *qp,
+			       struct ubcore_udata *udata);
+void hns3_udma_destroy_qp_common(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp *qp,
+				 struct ubcore_tp *fail_ret_tp);
+int hns3_udma_flush_cqe(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp *hns3_udma_qp,
+			uint32_t sq_pi);
+void hns3_udma_qp_event(struct hns3_udma_dev *udma_dev, uint32_t qpn, int event_type);
+int hns3_udma_set_dca_buf(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp);
+int hns3_udma_init_qpc(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp *qp);
+int alloc_common_qpn(struct hns3_udma_dev *udma_dev, struct hns3_udma_jfc *jfc,
 		     uint32_t *qpn);
-void free_common_qpn(struct udma_dev *udma_dev, uint32_t qpn);
+void free_common_qpn(struct hns3_udma_dev *udma_dev, uint32_t qpn);
 
 static inline uint8_t get_affinity_cq_bank(uint8_t qp_bank)
 {
 	return (qp_bank >> 1) & CQ_BANKID_MASK;
 }
 
-#endif /* _UDMA_QP_H */
+#endif /* _HNS3_UDMA_QP_H */

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -13,8 +13,8 @@
  *
  */
 
-#ifndef _UDMA_SEGMENT_H
-#define _UDMA_SEGMENT_H
+#ifndef _HNS3_UDMA_SEGMENT_H
+#define _HNS3_UDMA_SEGMENT_H
 
 #include <linux/slab.h>
 #include <linux/scatterlist.h>
@@ -28,13 +28,13 @@
 #define PA_PAGE_SHIFT		6
 #define MPT_VA_H_SHIFT		32
 #define MPT_LEN_H_SHIFT		32
-#define UDMA_PAGE_SIZE_1G	0x40000 // 1GB page size
+#define HNS3_UDMA_PAGE_SIZE_1G	0x40000 // 1GB page size
 
 enum {
 	MPT_ST_VALID = 0x1,
 };
 
-struct udma_mpt_entry {
+struct hns3_udma_mpt_entry {
 	uint32_t	mpt_context1[4];
 	uint32_t	len_l;
 	uint32_t	len_h;
@@ -74,16 +74,16 @@ struct udma_mpt_entry {
 #define MPT_PERSIST_EN MPT_FIELD_LOC(506, 506)
 #define MPT_PBL_BUF_PG_SZ MPT_FIELD_LOC(511, 508)
 
-#define UDMA_MAX_INNER_MTPT_NUM 2
+#define HNS3_UDMA_MAX_INNER_MTPT_NUM 2
 
-struct ubcore_target_seg *udma_register_seg(struct ubcore_device *dev,
-					    struct ubcore_seg_cfg *cfg,
-					    struct ubcore_udata *udata);
-int udma_unregister_seg(struct ubcore_target_seg *seg);
-struct ubcore_target_seg *udma_import_seg(struct ubcore_device *dev,
-					  struct ubcore_target_seg_cfg *cfg,
-					  struct ubcore_udata *udata);
-int udma_unimport_seg(struct ubcore_target_seg *tseg);
+struct ubcore_target_seg *hns3_udma_register_seg(struct ubcore_device *dev,
+						 struct ubcore_seg_cfg *cfg,
+						 struct ubcore_udata *udata);
+int hns3_udma_unregister_seg(struct ubcore_target_seg *seg);
+struct ubcore_target_seg *hns3_udma_import_seg(struct ubcore_device *dev,
+					       struct ubcore_target_seg_cfg *cfg,
+					       struct ubcore_udata *udata);
+int hns3_udma_unimport_seg(struct ubcore_target_seg *tseg);
 uint64_t key_to_hw_index(uint32_t key);
 
-#endif /* _UDMA_SEGMENT_H */
+#endif /* _HNS3_UDMA_SEGMENT_H */

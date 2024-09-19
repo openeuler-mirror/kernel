@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -13,42 +13,42 @@
  *
  */
 
-#ifndef _UDMA_HW_H
-#define _UDMA_HW_H
+#ifndef _HNS3_UDMA_HW_H
+#define _HNS3_UDMA_HW_H
 
 #include "urma/ubcore_types.h"
 
 extern bool dfx_switch;
 
-struct udma_query_version {
-	uint16_t udma_vendor_id;
-	uint16_t udma_hw_version;
+struct hns3_udma_query_version {
+	uint16_t hns3_udma_vendor_id;
+	uint16_t hns3_udma_hw_version;
 	uint32_t rsv[5];
 };
 
-struct udma_query_fw_info {
+struct hns3_udma_query_fw_info {
 	uint32_t fw_ver;
 	uint32_t rsv[2];
 	uint32_t hw_caps[3];
 };
 
-struct udma_func_clear {
+struct hns3_udma_func_clear {
 	uint32_t rst_funcid_en;
 	uint32_t func_done;
 	uint32_t rsv[4];
 };
 
-struct udma_pf_func_info {
+struct hns3_udma_pf_func_info {
 	uint32_t own_func_num;
 	uint32_t own_mac_id;
 	uint32_t rsv[4];
 };
 
-struct udma_cmq_req {
+struct hns3_udma_cmq_req {
 	uint32_t data[6];
 };
 
-struct udma_vf_switch {
+struct hns3_udma_vf_switch {
 	uint32_t udma_sel;
 	uint32_t fun_id;
 	uint32_t cfg;
@@ -57,7 +57,7 @@ struct udma_vf_switch {
 	uint32_t resv3;
 };
 
-struct udma_hw_id_query_cmq {
+struct hns3_udma_hw_id_query_cmq {
 	uint8_t		chip_id;
 	uint8_t		die_id;
 	uint8_t		mac_id;
@@ -66,7 +66,7 @@ struct udma_hw_id_query_cmq {
 	uint32_t	rsv[4];
 };
 
-struct udma_query_oor_cmq {
+struct hns3_udma_query_oor_cmq {
 	uint8_t		oor_en;
 	uint8_t		reorder_cq_buffer_en;
 	uint8_t		reorder_cap;
@@ -76,29 +76,29 @@ struct udma_query_oor_cmq {
 	uint8_t		rsv[15];
 };
 
-#define UDMA_MAX_MTT_SEGS		0x1000000
-#define UDMA_MAX_SRQWQE_SEGS		0x1000000
-#define UDMA_MAX_IDX_SEGS		0x1000000
-#define UDMA_MTT_ENTRY_SZ		64
-#define UDMA_EID_SIZE_IDX		4
+#define HNS3_UDMA_MAX_MTT_SEGS		0x1000000
+#define HNS3_UDMA_MAX_SRQWQE_SEGS	0x1000000
+#define HNS3_UDMA_MAX_IDX_SEGS		0x1000000
+#define HNS3_UDMA_MTT_ENTRY_SZ		64
+#define HNS3_UDMA_EID_SIZE_IDX		4
 
-#define UDMA_PBL_HOP_NUM		2
-#define UDMA_EQE_HOP_NUM		2
+#define HNS3_UDMA_PBL_HOP_NUM		2
+#define HNS3_UDMA_EQE_HOP_NUM		2
 
-#define UDMA_QPC_TIMER_ENTRY_SZ		PAGE_SIZE
-#define UDMA_CQC_TIMER_ENTRY_SZ		PAGE_SIZE
+#define HNS3_UDMA_QPC_TIMER_ENTRY_SZ		PAGE_SIZE
+#define HNS3_UDMA_CQC_TIMER_ENTRY_SZ		PAGE_SIZE
 
-#define UDMA_EQE_SIZE			0x40
-#define UDMA_EQ_OVER_IGNORE_0		0
-#define UDMA_EQ_COALESCE_0		0
-#define UDMA_EQ_ALWAYS_ARMED		3
-#define UDMA_EQN_M			GENMASK(23, 0)
+#define HNS3_UDMA_EQE_SIZE			0x40
+#define HNS3_UDMA_EQ_OVER_IGNORE_0		0
+#define HNS3_UDMA_EQ_COALESCE_0			0
+#define HNS3_UDMA_EQ_ALWAYS_ARMED		3
+#define HNS3_UDMA_EQN_M				GENMASK(23, 0)
 
-#define UDMA_CEQ_CEQE_OWNER_S		31
-#define UDMA_AEQ_AEQE_OWNER_S		31
+#define HNS3_UDMA_CEQ_CEQE_OWNER_S		31
+#define HNS3_UDMA_AEQ_AEQE_OWNER_S		31
 
-#define NIC_ICL_SWITCH_CMD_UDMA_SEL_SHIFT	0
-#define NIC_ICL_SWITCH_CMD_UDMA_SEL	BIT(NIC_ICL_SWITCH_CMD_UDMA_SEL_SHIFT)
+#define NIC_ICL_SWITCH_CMD_HNS3_UDMA_SEL_SHIFT	0
+#define NIC_ICL_SWITCH_CMD_HNS3_UDMA_SEL	BIT(NIC_ICL_SWITCH_CMD_HNS3_UDMA_SEL_SHIFT)
 
 #define VF_SWITCH_DATA_FUN_ID_VF_ID_S 3
 #define VF_SWITCH_DATA_FUN_ID_VF_ID_M GENMASK(10, 3)
@@ -109,39 +109,39 @@ struct udma_query_oor_cmq {
 
 #define CMQ_REQ_FIELD_LOC(h, l) ((uint64_t)(h) << 32 | (l))
 
-/* Fields of UDMA_OPC_CFG_GLOBAL_PARAM */
+/* Fields of HNS3_UDMA_OPC_CFG_GLOBAL_PARAM */
 #define CFG_GLOBAL_PARAM_1US_CYCLES CMQ_REQ_FIELD_LOC(9, 0)
 #define CFG_GLOBAL_PARAM_UDP_PORT CMQ_REQ_FIELD_LOC(31, 16)
 
 #define FUNC_CLEAR_RST_FUN_DONE_S 0
-#define UDMA_FUNC_CLEAR_TIMEOUT_MSECS	(249 * 2 * 100)
-#define UDMA_READ_FUNC_CLEAR_FLAG_INTERVAL	40
-#define UDMA_READ_FUNC_CLEAR_FLAG_FAIL_WAIT	20
+#define HNS3_UDMA_FUNC_CLEAR_TIMEOUT_MSECS		(249 * 2 * 100)
+#define HNS3_UDMA_READ_FUNC_CLEAR_FLAG_INTERVAL		40
+#define HNS3_UDMA_READ_FUNC_CLEAR_FLAG_FAIL_WAIT	20
 
-#define UDMA_HW_RST_TIMEOUT		1000
-#define UDMA_HW_RST_UNINT_DELAY		100
+#define HNS3_UDMA_HW_RST_TIMEOUT		1000
+#define HNS3_UDMA_HW_RST_UNINT_DELAY		100
 
-#define UDMA_HW_RST_COMPLETION_WAIT	20
+#define HNS3_UDMA_HW_RST_COMPLETION_WAIT	20
 
-#define UDMA_FUNC_IRQ_RSV 2
-#define UDMA_1US_CFG 999
+#define HNS3_UDMA_FUNC_IRQ_RSV 2
+#define HNS3_UDMA_1US_CFG 999
 
-#define UDMA_EXT_LLM_ENTRY_SZ		8
-#define UDMA_EXT_LLM_MAX_DEPTH		4096
+#define HNS3_UDMA_EXT_LLM_ENTRY_SZ		8
+#define HNS3_UDMA_EXT_LLM_MAX_DEPTH		4096
 
-#define UDMA_BA_PG_SZ_SUPPORTED_256K	6
-#define UDMA_BA_PG_SZ_SUPPORTED_16K	2
+#define HNS3_UDMA_BA_PG_SZ_SUPPORTED_256K	6
+#define HNS3_UDMA_BA_PG_SZ_SUPPORTED_16K	2
 
-#define UDMA_QUERY_PORT_INFO	1
+#define HNS3_UDMA_QUERY_PORT_INFO	1
 #define SPEED_100G  100000
 #define SPEED_200G  200000
 
-#define UDMA_QUERY_COUNTER 8
-#define UDMA_QX_RESP 1
-#define UDMA_TX_RESP 3
-#define UDMA_TX_ERR_RESP 4
+#define HNS3_UDMA_QUERY_COUNTER 8
+#define HNS3_UDMA_QX_RESP 1
+#define HNS3_UDMA_TX_RESP 3
+#define HNS3_UDMA_TX_ERR_RESP 4
 
-/* Fields of UDMA_OPC_EXT_CFG */
+/* Fields of HNS3_UDMA_OPC_EXT_CFG */
 #define EXT_CFG_VF_ID CMQ_REQ_FIELD_LOC(31, 0)
 #define EXT_CFG_QP_PI_INDEX CMQ_REQ_FIELD_LOC(45, 32)
 #define EXT_CFG_QP_PI_NUM CMQ_REQ_FIELD_LOC(63, 48)
@@ -164,8 +164,8 @@ struct udma_query_oor_cmq {
 #define CFG_LLM_B_TAIL_PTR CMQ_REQ_FIELD_LOC(75, 64)
 
 /*
- * Fields of UDMA_OPC_QUERY_PF_RES, UDMA_OPC_QUERY_VF_RES
- * and UDMA_OPC_ALLOC_VF_RES
+ * Fields of HNS3_UDMA_OPC_QUERY_PF_RES, HNS3_UDMA_OPC_QUERY_VF_RES
+ * and HNS3_UDMA_OPC_ALLOC_VF_RES
  */
 #define FUNC_RES_A_VF_ID CMQ_REQ_FIELD_LOC(7, 0)
 #define FUNC_RES_A_QPC_BT_INDEX CMQ_REQ_FIELD_LOC(42, 32)
@@ -190,23 +190,23 @@ struct udma_query_oor_cmq {
 #define FUNC_RES_B_GMV_BT_NUM CMQ_REQ_FIELD_LOC(176, 168)
 #define FUNC_RES_V_GMV_BT_NUM CMQ_REQ_FIELD_LOC(184, 176)
 
-/* Fields of UDMA_OPC_QUERY_PF_TIMER_RES */
+/* Fields of HNS3_UDMA_OPC_QUERY_PF_TIMER_RES */
 #define PF_TIMER_RES_QPC_ITEM_NUM CMQ_REQ_FIELD_LOC(60, 48)
 #define PF_TIMER_RES_CQC_ITEM_NUM CMQ_REQ_FIELD_LOC(91, 80)
 
-/* Fields of UDMA_QUERY_RAM_ECC */
+/* Fields of HNS3_UDMA_QUERY_RAM_ECC */
 #define QUERY_RAM_ECC_1BIT_ERR CMQ_REQ_FIELD_LOC(31, 0)
 #define QUERY_RAM_ECC_RES_TYPE CMQ_REQ_FIELD_LOC(63, 32)
 #define QUERY_RAM_ECC_TAG CMQ_REQ_FIELD_LOC(95, 64)
 
 enum {
-	UDMA_CMD_FLAG_IN = BIT(0),
-	UDMA_CMD_FLAG_NEXT = BIT(2),
-	UDMA_CMD_FLAG_WR = BIT(3),
-	UDMA_CMD_FLAG_NO_INTR = BIT(4),
+	HNS3_UDMA_CMD_FLAG_IN = BIT(0),
+	HNS3_UDMA_CMD_FLAG_NEXT = BIT(2),
+	HNS3_UDMA_CMD_FLAG_WR = BIT(3),
+	HNS3_UDMA_CMD_FLAG_NO_INTR = BIT(4),
 };
 
-enum udma_cmd_return_status {
+enum hns3_udma_cmd_return_status {
 	CMD_EXEC_SUCCESS	= 0,
 	CMD_NOT_EXIST		= 2,
 };
@@ -217,45 +217,45 @@ enum {
 };
 
 /* CMQ command */
-enum udma_opcode_type {
-	UDMA_QUERY_FW_VER				= 0x0001,
-	UDMA_OPC_CFG_DCQCN_PARAM			= 0x1A80,
-	UDMA_OPC_CFG_LDCP_PARAM				= 0x1A81,
-	UDMA_OPC_CFG_HC3_PARAM				= 0x1A82,
-	UDMA_OPC_CFG_DIP_PARAM				= 0x1A83,
-	UDMA_OPC_QUERY_HW_ID				= 0x7032,
-	UDMA_OPC_QUERY_HW_VER				= 0x8000,
-	UDMA_OPC_CFG_GLOBAL_PARAM			= 0x8001,
-	UDMA_OPC_QUERY_PF_RES				= 0x8400,
-	UDMA_OPC_ALLOC_VF_RES				= 0x8401,
-	UDMA_OPC_CFG_EXT_LLM				= 0x8403,
-	UDMA_OPC_QUERY_PF_TIMER_RES			= 0x8406,
-	UDMA_OPC_QUERY_FUNC_INFO			= 0x8407,
-	UDMA_OPC_QUERY_PF_CAPS_NUM			= 0x8408,
-	UDMA_OPC_CFG_ENTRY_SIZE				= 0x8409,
-	UDMA_OPC_POST_MB				= 0x8504,
-	UDMA_OPC_QUERY_MB_ST				= 0x8505,
-	UDMA_OPC_CFG_BT_ATTR				= 0x8506,
-	UDMA_OPC_FUNC_CLEAR				= 0x8508,
-	UDMA_OPC_CLEAR_EXTDB_LIST_INFO			= 0x850d,
-	UDMA_OPC_CFG_GMV_BT				= 0x8510,
-	UDMA_OPC_EXT_CFG				= 0x8512,
-	UDMA_QUERY_RAM_ECC				= 0x8513,
-	UDMA_SWITCH_PARAMETER_CFG			= 0x1033,
-	UDMA_QUERY_OOR_CAPS				= 0xA002,
-	UDMA_OPC_DEID_TBL_ADD				= 0xA110,
-	UDMA_OPC_CFG_GMV_TBL				= 0xA140,
-	UDMA_OPC_CFG_POE_ADDR				= 0x801B,
-	UDMA_OPC_CFG_POE_ATTR				= 0x801C,
-	UDMA_OPC_QUERY_COUNTER				= 0x8206,
-	UDMA_OPC_QUERY_PORT_INFO			= 0x7104,
-	UDMA_NUM_QP_CFG					= 0xA004,
-	UDMA_PF_QP_CFG_QUERY				= 0xA005,
-	UDMA_OPC_CFG_CNP				= 0x8514,
+enum hns3_udma_opcode_type {
+	HNS3_UDMA_QUERY_FW_VER				= 0x0001,
+	HNS3_UDMA_OPC_CFG_DCQCN_PARAM			= 0x1A80,
+	HNS3_UDMA_OPC_CFG_LDCP_PARAM			= 0x1A81,
+	HNS3_UDMA_OPC_CFG_HC3_PARAM			= 0x1A82,
+	HNS3_UDMA_OPC_CFG_DIP_PARAM			= 0x1A83,
+	HNS3_UDMA_OPC_QUERY_HW_ID			= 0x7032,
+	HNS3_UDMA_OPC_QUERY_HW_VER			= 0x8000,
+	HNS3_UDMA_OPC_CFG_GLOBAL_PARAM			= 0x8001,
+	HNS3_UDMA_OPC_QUERY_PF_RES			= 0x8400,
+	HNS3_UDMA_OPC_ALLOC_VF_RES			= 0x8401,
+	HNS3_UDMA_OPC_CFG_EXT_LLM			= 0x8403,
+	HNS3_UDMA_OPC_QUERY_PF_TIMER_RES		= 0x8406,
+	HNS3_UDMA_OPC_QUERY_FUNC_INFO			= 0x8407,
+	HNS3_UDMA_OPC_QUERY_PF_CAPS_NUM			= 0x8408,
+	HNS3_UDMA_OPC_CFG_ENTRY_SIZE			= 0x8409,
+	HNS3_UDMA_OPC_POST_MB				= 0x8504,
+	HNS3_UDMA_OPC_QUERY_MB_ST			= 0x8505,
+	HNS3_UDMA_OPC_CFG_BT_ATTR			= 0x8506,
+	HNS3_UDMA_OPC_FUNC_CLEAR			= 0x8508,
+	HNS3_UDMA_OPC_CLEAR_EXTDB_LIST_INFO		= 0x850d,
+	HNS3_UDMA_OPC_CFG_GMV_BT			= 0x8510,
+	HNS3_UDMA_OPC_EXT_CFG				= 0x8512,
+	HNS3_UDMA_QUERY_RAM_ECC				= 0x8513,
+	HNS3_UDMA_SWITCH_PARAMETER_CFG			= 0x1033,
+	HNS3_UDMA_QUERY_OOR_CAPS			= 0xA002,
+	HNS3_UDMA_OPC_DEID_TBL_ADD			= 0xA110,
+	HNS3_UDMA_OPC_CFG_GMV_TBL			= 0xA140,
+	HNS3_UDMA_OPC_CFG_POE_ADDR			= 0x801B,
+	HNS3_UDMA_OPC_CFG_POE_ATTR			= 0x801C,
+	HNS3_UDMA_OPC_QUERY_COUNTER			= 0x8206,
+	HNS3_UDMA_OPC_QUERY_PORT_INFO			= 0x7104,
+	HNS3_UDMA_NUM_QP_CFG				= 0xA004,
+	HNS3_UDMA_PF_QP_CFG_QUERY			= 0xA005,
+	HNS3_UDMA_OPC_CFG_CNP				= 0x8514,
 };
 
-#define UDMA_QUERY_PF_CAPS_CMD_NUM 5
-struct udma_query_pf_caps_a {
+#define HNS3_UDMA_QUERY_PF_CAPS_CMD_NUM 5
+struct hns3_udma_query_pf_caps_a {
 	uint8_t		number_ports;
 	uint8_t		local_ca_ack_delay;
 	uint16_t	max_sq_sg;
@@ -273,7 +273,7 @@ struct udma_query_pf_caps_a {
 	uint8_t		cqe_sz;
 };
 
-struct udma_query_pf_caps_b {
+struct hns3_udma_query_pf_caps_b {
 	uint8_t		mtpt_entry_sz;
 	uint8_t		irrl_entry_sz;
 	uint8_t		trrl_entry_sz;
@@ -294,7 +294,7 @@ struct udma_query_pf_caps_b {
 	uint8_t		pbl_hop_num;
 };
 
-struct udma_query_pf_caps_c {
+struct hns3_udma_query_pf_caps_c {
 	uint32_t cap_flags_num_pds;
 	uint32_t max_gid_num_cqs;
 	uint32_t cq_depth;
@@ -304,7 +304,7 @@ struct udma_query_pf_caps_c {
 	uint16_t rq_depth;
 };
 
-struct udma_query_pf_caps_d {
+struct hns3_udma_query_pf_caps_d {
 	uint32_t wq_hop_num_max_srqs;
 	uint16_t srq_depth;
 	uint16_t cap_flags_ex;
@@ -314,7 +314,7 @@ struct udma_query_pf_caps_d {
 	uint32_t rsv_uars_rsv_qps;
 };
 
-struct udma_query_pf_caps_e {
+struct hns3_udma_query_pf_caps_e {
 	uint32_t chunk_size_shift_rsv_mrws;
 	uint32_t rsv_cqs;
 	uint32_t rsv_srqs;
@@ -325,7 +325,7 @@ struct udma_query_pf_caps_e {
 	uint16_t aeq_period;
 };
 
-struct udma_query_pf_caps_cfg {
+struct hns3_udma_query_pf_caps_cfg {
 	uint32_t num_pds;
 	uint32_t num_cqs;
 	uint32_t num_mtpts;
@@ -334,15 +334,15 @@ struct udma_query_pf_caps_cfg {
 	uint32_t num_srqs;
 };
 
-struct udma_cmdq_cnp_cfg {
+struct hns3_udma_cmdq_cnp_cfg {
 	uint32_t cnp_attr_sel : 1;
 	uint32_t cnp_dscp : 6;
 	uint32_t rsv : 25;
 	uint32_t rsv2[5];
 };
 
-#define UDMA_EXT_LLM_ENTRY(addr, id) (((id) << (64 - 12)) | ((addr) >> 12))
-#define UDMA_EXT_LLM_MIN_PAGES(que_num) ((que_num) * 4 + 2)
+#define HNS3_UDMA_EXT_LLM_ENTRY(addr, id) (((id) << (64 - 12)) | ((addr) >> 12))
+#define HNS3_UDMA_EXT_LLM_MIN_PAGES(que_num) ((que_num) * 4 + 2)
 
 #define QUERY_PF_CAPS_C_NUM_PDS_S 0
 #define QUERY_PF_CAPS_C_NUM_PDS_M GENMASK(19, 0)
@@ -422,7 +422,7 @@ struct udma_cmdq_cnp_cfg {
 #define QUERY_PF_CAPS_E_RSV_LKEYS_S 0
 #define QUERY_PF_CAPS_E_RSV_LKEYS_M GENMASK(19, 0)
 
-/* Fields of UDMA_OPC_CFG_BT_ATTR */
+/* Fields of HNS3_UDMA_OPC_CFG_BT_ATTR */
 #define CFG_BT_QPC_BA_PGSZ CMQ_REQ_FIELD_LOC(3, 0)
 #define CFG_BT_QPC_BUF_PGSZ CMQ_REQ_FIELD_LOC(7, 4)
 #define CFG_BT_QPC_HOPNUM CMQ_REQ_FIELD_LOC(9, 8)
@@ -439,11 +439,11 @@ struct udma_cmdq_cnp_cfg {
 #define CFG_BT_SCCC_BUF_PGSZ CMQ_REQ_FIELD_LOC(135, 132)
 #define CFG_BT_SCCC_HOPNUM CMQ_REQ_FIELD_LOC(137, 136)
 
-/* Fields of UDMA_OPC_CFG_ENTRY_SIZE */
+/* Fields of HNS3_UDMA_OPC_CFG_ENTRY_SIZE */
 #define CFG_HEM_ENTRY_SIZE_TYPE CMQ_REQ_FIELD_LOC(31, 0)
 enum {
-	UDMA_CFG_QPC_SIZE = BIT(0),
-	UDMA_CFG_SCCC_SIZE = BIT(1),
+	HNS3_UDMA_CFG_QPC_SIZE = BIT(0),
+	HNS3_UDMA_CFG_SCCC_SIZE = BIT(1),
 };
 
 #define CFG_HEM_ENTRY_SIZE_VALUE CMQ_REQ_FIELD_LOC(191, 160)
@@ -453,45 +453,45 @@ enum {
 #define CFG_GMV_BT_IDX CMQ_REQ_FIELD_LOC(95, 64)
 #define CFG_GMV_BT_VF_ID CMQ_REQ_FIELD_LOC(103, 96)
 
-#define UDMA_INT_NAME_LEN		32
+#define HNS3_UDMA_INT_NAME_LEN		32
 
 #define SGID_H_SHIFT 12
 
-#define UDMA_MAX_BT_LEVEL 3
+#define HNS3_UDMA_MAX_BT_LEVEL 3
 
-struct udma_poe_cfg_addr_cmq {
+struct hns3_udma_poe_cfg_addr_cmq {
 	uint32_t channel_id;
 	uint32_t poe_addr_l;
 	uint32_t poe_addr_h;
 	uint32_t rsv[3];
 };
 
-struct udma_poe_cfg_attr_cmq {
+struct hns3_udma_poe_cfg_attr_cmq {
 	uint32_t channel_id;
 	uint32_t rsv_en_outstd;
 	uint32_t rsv[4];
 };
 
-struct udma_port_info_cmq {
+struct hns3_udma_port_info_cmq {
 	uint32_t speed;
 	uint8_t query_type;
 	uint8_t rsv[19];
 };
 
-struct udma_rx_cnt_cmd_data {
+struct hns3_udma_rx_cnt_cmd_data {
 	uint64_t rsv;
 	uint64_t pkt_rx_cnt;
 	uint64_t err_pkt_rx_cnt;
 };
 
-struct udma_tx_cnt_cmd_data {
+struct hns3_udma_tx_cnt_cmd_data {
 	uint64_t rsv[2];
 	uint64_t pkt_tx_cnt;
 };
 
-struct udma_tx_err_cnt_cmd_data {
+struct hns3_udma_tx_err_cnt_cmd_data {
 	uint64_t err_pkt_tx_cnt;
 	uint64_t rsv[2];
 };
 
-#endif /* _UDMA_HW_H */
+#endif /* _HNS3_UDMA_HW_H */

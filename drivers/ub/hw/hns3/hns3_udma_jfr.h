@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -13,47 +13,47 @@
  *
  */
 
-#ifndef _UDMA_JFR_H
-#define _UDMA_JFR_H
+#ifndef _HNS3_UDMA_JFR_H
+#define _HNS3_UDMA_JFR_H
 
 #include "hns3_udma_common.h"
 #include "hns3_udma_qp.h"
 
-struct udma_jfr_idx_que {
-	struct udma_mtr		mtr;
+struct hns3_udma_jfr_idx_que {
+	struct hns3_udma_mtr	mtr;
 	int			entry_shift;
 	uint32_t		head;
 	uint32_t		tail;
 };
 
-struct udma_jfr {
+struct hns3_udma_jfr {
 	struct ubcore_jfr		ubcore_jfr;
-	uint32_t		jfrn;
-	uint32_t		srqn;
-	uint32_t		wqe_cnt;
-	uint32_t		max_sge;
-	uint32_t		wqe_shift;
-	uint32_t		offset;
-	struct udma_jfr_idx_que	idx_que;
-	struct udma_mtr		buf_mtr;
-	struct udma_db		db;
-	struct udma_qp		*um_qp;
-	struct xarray		tp_table_xa;
+	uint32_t			jfrn;
+	uint32_t			srqn;
+	uint32_t			wqe_cnt;
+	uint32_t			max_sge;
+	uint32_t			wqe_shift;
+	uint32_t			offset;
+	struct hns3_udma_jfr_idx_que	idx_que;
+	struct hns3_udma_mtr		buf_mtr;
+	struct hns3_udma_db		db;
+	struct hns3_udma_qp		*um_qp;
+	struct xarray			tp_table_xa;
 
-	refcount_t		refcount;
-	struct completion	free;
+	refcount_t			refcount;
+	struct completion		free;
 
-	struct udma_qpn_bitmap	qpn_map;
-	void (*event)(struct udma_jfr *jfr, enum udma_event event_type);
-	uint32_t		jfr_caps;
-	struct udma_jfc		*jfc;
-	uint32_t		qpn;
-	enum ubcore_transport_mode tp_mode;
-	bool			share_jfr;
-	struct udma_ucontext	*udma_uctx;
+	struct hns3_udma_qpn_bitmap	qpn_map;
+	void (*event)(struct hns3_udma_jfr *jfr, enum hns3_udma_event event_type);
+	uint32_t			jfr_caps;
+	struct hns3_udma_jfc		*jfc;
+	uint32_t			qpn;
+	enum ubcore_transport_mode	tp_mode;
+	bool				share_jfr;
+	struct hns3_udma_ucontext	*hns3_udma_uctx;
 };
 
-struct udma_jfr_context {
+struct hns3_udma_jfr_context {
 	uint32_t data[16];
 };
 
@@ -86,21 +86,21 @@ struct udma_jfr_context {
 #define SRQC_RECORD_DB_ADDR_L SRQC_FIELD_LOC(479, 449)
 #define SRQC_RECORD_DB_ADDR_H SRQC_FIELD_LOC(511, 480)
 
-static inline struct udma_jfr *to_udma_jfr(struct ubcore_jfr *ubcore_jfr)
+static inline struct hns3_udma_jfr *to_hns3_udma_jfr(struct ubcore_jfr *ubcore_jfr)
 {
-	return container_of(ubcore_jfr, struct udma_jfr, ubcore_jfr);
+	return container_of(ubcore_jfr, struct hns3_udma_jfr, ubcore_jfr);
 }
 
-struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
-				   struct ubcore_udata *udata);
-int udma_destroy_jfr(struct ubcore_jfr *jfr);
-struct udma_jfr *get_udma_jfr(struct ubcore_device *dev, uint32_t jfr_id);
-struct ubcore_tjetty *udma_import_jfr(struct ubcore_device *dev,
-				      struct ubcore_tjetty_cfg *cfg,
-				      struct ubcore_udata *udata);
-int udma_unimport_jfr(struct ubcore_tjetty *tjfr);
-int udma_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
-		    struct ubcore_udata *udata);
-void udma_jfr_event(struct udma_dev *udma_dev, uint32_t jfrn, int event_type);
+struct ubcore_jfr *hns3_udma_create_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg,
+					struct ubcore_udata *udata);
+int hns3_udma_destroy_jfr(struct ubcore_jfr *jfr);
+struct hns3_udma_jfr *get_hns3_udma_jfr(struct ubcore_device *dev, uint32_t jfr_id);
+struct ubcore_tjetty *hns3_udma_import_jfr(struct ubcore_device *dev,
+					   struct ubcore_tjetty_cfg *cfg,
+					   struct ubcore_udata *udata);
+int hns3_udma_unimport_jfr(struct ubcore_tjetty *tjfr);
+int hns3_udma_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
+			 struct ubcore_udata *udata);
+void hns3_udma_jfr_event(struct hns3_udma_dev *udma_dev, uint32_t jfrn, int event_type);
 
-#endif /* _UDMA_JFR_H */
+#endif /* _HNS3_UDMA_JFR_H */

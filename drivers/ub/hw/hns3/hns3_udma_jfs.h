@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Huawei UDMA Linux driver
+/* Huawei HNS3_UDMA Linux driver
  * Copyright (c) 2023-2023 Hisilicon Limited.
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -13,30 +13,30 @@
  *
  */
 
-#ifndef _UDMA_JFS_H
-#define _UDMA_JFS_H
+#ifndef _HNS3_UDMA_JFS_H
+#define _HNS3_UDMA_JFS_H
 
 #include "hns3_udma_qp.h"
-struct udma_jfs {
+struct hns3_udma_jfs {
 	struct ubcore_jfs		ubcore_jfs;
 	uint32_t			jfs_id;
 	enum ubcore_transport_mode	tp_mode;
 	union {
 		struct xarray		node_table;
-		struct udma_qp		um_qp;
+		struct hns3_udma_qp	um_qp;
 	};
-	struct udma_qpn_bitmap		qpn_map;
-	struct udma_jfc			*jfc;
+	struct hns3_udma_qpn_bitmap	qpn_map;
+	struct hns3_udma_jfc		*jfc;
 };
 
-static inline struct udma_jfs *to_udma_jfs(struct ubcore_jfs *jfs)
+static inline struct hns3_udma_jfs *to_hns3_udma_jfs(struct ubcore_jfs *jfs)
 {
-	return container_of(jfs, struct udma_jfs, ubcore_jfs);
+	return container_of(jfs, struct hns3_udma_jfs, ubcore_jfs);
 }
 
-struct ubcore_jfs *udma_create_jfs(struct ubcore_device *dev,
-				   struct ubcore_jfs_cfg *cfg,
-				   struct ubcore_udata *udata);
-int udma_destroy_jfs(struct ubcore_jfs *ubcore_jfs);
+struct ubcore_jfs *hns3_udma_create_jfs(struct ubcore_device *dev,
+					struct ubcore_jfs_cfg *cfg,
+					struct ubcore_udata *udata);
+int hns3_udma_destroy_jfs(struct ubcore_jfs *ubcore_jfs);
 
-#endif /* _UDMA_JFS_H */
+#endif /* _HNS3_UDMA_JFS_H */

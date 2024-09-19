@@ -13,8 +13,8 @@
  *
  */
 
-#ifndef _UDMA_DCA_H
-#define _UDMA_DCA_H
+#ifndef _HNS3_UDMA_DCA_H
+#define _HNS3_UDMA_DCA_H
 
 #include "hns3_udma_abi.h"
 #include "hns3_udma_tp.h"
@@ -24,27 +24,27 @@
 #define DCA_MEM_FLAGS_REGISTERED BIT(1)
 
 #define DCA_MEM_AGEING_MSES 1000 /* DCA mem ageing interval time */
-#define UDMA_DCA_INVALID_BUF_ID 0U
+#define HNS3_UDMA_DCA_INVALID_BUF_ID 0U
 #define DCA_MEM_STOP_ITERATE (-1)
 #define DCA_MEM_NEXT_ITERATE (-2)
 
-#define DCAN_TO_SYNC_BIT(n) ((n) * UDMA_DCA_BITS_PER_STATUS)
+#define DCAN_TO_SYNC_BIT(n) ((n) * HNS3_UDMA_DCA_BITS_PER_STATUS)
 #define DCAN_TO_STAT_BIT(n) DCAN_TO_SYNC_BIT(n)
 
-#define UDMA_DCA_OWN_MASK GENMASK(21, 0)
+#define HNS3_UDMA_DCA_OWN_MASK GENMASK(21, 0)
 
 /*
  * buffer id(29b) = tag(7b) + owner(22b)
  * [28:22] tag  : indicate the QP config update times.
  * [21: 0] owner: indicate the QP to which the page belongs.
  */
-#define UDMA_DCA_ID_MASK GENMASK(28, 0)
-#define UDMA_DCA_TAG_MASK GENMASK(28, 22)
-#define UDMA_DCA_OWN_MASK GENMASK(21, 0)
+#define HNS3_UDMA_DCA_ID_MASK GENMASK(28, 0)
+#define HNS3_UDMA_DCA_TAG_MASK GENMASK(28, 22)
+#define HNS3_UDMA_DCA_OWN_MASK GENMASK(21, 0)
 
-#define UDMA_DCA_BUF_ID_TO_QPN(buf_id) ((buf_id) & UDMA_DCA_OWN_MASK)
-#define UDMA_DCA_TO_BUF_ID(qpn, tag) (((qpn) & UDMA_DCA_OWN_MASK) | \
-				      (((tag) << 22) & UDMA_DCA_TAG_MASK))
+#define HNS3_UDMA_DCA_BUF_ID_TO_QPN(buf_id) ((buf_id) & HNS3_UDMA_DCA_OWN_MASK)
+#define HNS3_UDMA_DCA_TO_BUF_ID(qpn, tag) (((qpn) & HNS3_UDMA_DCA_OWN_MASK) | \
+					   (((tag) << 22) & HNS3_UDMA_DCA_TAG_MASK))
 
 /* DCA page state (32 bit) */
 struct dca_page_state {
@@ -108,20 +108,20 @@ struct dca_page_query_active_attr {
 	uint64_t mem_key;
 };
 
-typedef int (*udma_dca_enum_callback)(struct dca_page_state *states,
-				      uint32_t count, void *param);
+typedef int (*hns3_udma_dca_enum_callback)(struct dca_page_state *states,
+					   uint32_t count, void *param);
 
 struct dca_mem_enum_attr {
 	void *param;
-	udma_dca_enum_callback enum_fn;
+	hns3_udma_dca_enum_callback enum_fn;
 };
 
 static inline bool dca_page_is_attached(struct dca_page_state *state,
 					uint32_t buf_id)
 {
 	/* only the own bit needs to be matched. */
-	return (UDMA_DCA_OWN_MASK & buf_id) ==
-	       (UDMA_DCA_OWN_MASK & state->buf_id);
+	return (HNS3_UDMA_DCA_OWN_MASK & buf_id) ==
+	       (HNS3_UDMA_DCA_OWN_MASK & state->buf_id);
 }
 
 static inline bool dca_mem_is_available(struct dca_mem *mem)
@@ -131,21 +131,21 @@ static inline bool dca_mem_is_available(struct dca_mem *mem)
 
 static inline void set_dca_page_to_free(struct dca_page_state *state)
 {
-	state->buf_id = UDMA_DCA_INVALID_BUF_ID;
+	state->buf_id = HNS3_UDMA_DCA_INVALID_BUF_ID;
 	state->active = 0;
 	state->lock = 0;
 }
 
 static inline bool dca_page_is_free(struct dca_page_state *state)
 {
-	return state->buf_id == UDMA_DCA_INVALID_BUF_ID;
+	return state->buf_id == HNS3_UDMA_DCA_INVALID_BUF_ID;
 }
 
 static inline bool dca_page_is_active(struct dca_page_state *state,
 				      uint32_t buf_id)
 {
 	/* all buf id bits must be matched */
-	return (UDMA_DCA_ID_MASK & buf_id) == state->buf_id &&
+	return (HNS3_UDMA_DCA_ID_MASK & buf_id) == state->buf_id &&
 		!state->lock && state->active;
 }
 
@@ -157,7 +157,7 @@ static inline bool dca_page_is_inactive(struct dca_page_state *state)
 static inline void lock_dca_page_to_attach(struct dca_page_state *state,
 					   uint32_t buf_id)
 {
-	state->buf_id = UDMA_DCA_ID_MASK & buf_id;
+	state->buf_id = HNS3_UDMA_DCA_ID_MASK & buf_id;
 	state->active = 0;
 	state->lock = 1;
 }
@@ -171,40 +171,45 @@ static inline bool dca_page_is_allocated(struct dca_page_state *state,
 static inline void unlock_dca_page_to_active(struct dca_page_state *state,
 					     uint32_t buf_id)
 {
-	state->buf_id = UDMA_DCA_ID_MASK & buf_id;
+	state->buf_id = HNS3_UDMA_DCA_ID_MASK & buf_id;
 	state->active = 1;
 	state->lock = 0;
 }
 
-void udma_enable_dca(struct udma_dev *dev, struct udma_qp *qp);
-void udma_disable_dca(struct udma_dev *dev, struct udma_qp *qp);
+void hns3_udma_enable_dca(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp);
+void hns3_udma_disable_dca(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp);
 
-void udma_modify_dca(struct udma_dev *dev, struct udma_qp *qp);
+void hns3_udma_modify_dca(struct hns3_udma_dev *dev, struct hns3_udma_qp *qp);
 
-int udma_register_dca_mem(struct udma_dev *dev, struct udma_ucontext *context,
-			  struct udma_dca_reg_attr *attr);
-int udma_unregister_dca_mem(struct udma_dev *dev,
-			    struct udma_ucontext *context,
-			    struct udma_dca_dereg_attr *attr, bool from_user);
+int hns3_udma_register_dca_mem(struct hns3_udma_dev *dev, struct hns3_udma_ucontext *context,
+			       struct hns3_udma_dca_reg_attr *attr);
+int hns3_udma_unregister_dca_mem(struct hns3_udma_dev *dev,
+				 struct hns3_udma_ucontext *context,
+				 struct hns3_udma_dca_dereg_attr *attr, bool from_user);
 
-void udma_shrink_dca_mem(struct udma_dev *dev, struct udma_ucontext *context,
-			 struct udma_dca_shrink_attr *attr,
-			 struct udma_dca_shrink_resp *resp);
+void hns3_udma_shrink_dca_mem(struct hns3_udma_dev *dev, struct hns3_udma_ucontext *context,
+			      struct hns3_udma_dca_shrink_attr *attr,
+			      struct hns3_udma_dca_shrink_resp *resp);
 
-int udma_query_dca_mem(struct udma_dev *dev, struct udma_dca_query_attr *attr,
-		       struct udma_dca_query_resp *resp);
+int hns3_udma_query_dca_mem(struct hns3_udma_dev *dev, struct hns3_udma_dca_query_attr *attr,
+			    struct hns3_udma_dca_query_resp *resp);
 
-int udma_dca_attach(struct udma_dev *dev, struct udma_dca_attach_attr *attr,
-		    struct udma_dca_attach_resp *resp);
-void udma_dca_disattach(struct udma_dev *dev, struct udma_dca_attach_attr *attr);
-void udma_dca_detach(struct udma_dev *dev, struct udma_dca_detach_attr *attr);
+int hns3_udma_dca_attach(struct hns3_udma_dev *dev, struct hns3_udma_dca_attach_attr *attr,
+			 struct hns3_udma_dca_attach_resp *resp);
+void hns3_udma_dca_disattach(struct hns3_udma_dev *dev, struct hns3_udma_dca_attach_attr *attr);
+void hns3_udma_dca_detach(struct hns3_udma_dev *dev, struct hns3_udma_dca_detach_attr *attr);
 
-int udma_register_udca(struct udma_dev *udma_dev,
-		       struct udma_ucontext *context, struct ubcore_udrv_priv *udrv_data);
+int hns3_udma_register_udca(struct hns3_udma_dev *udma_dev,
+			    struct hns3_udma_ucontext *context, struct ubcore_udrv_priv *udrv_data);
 
-void udma_unregister_udca(struct udma_dev *udma_dev,
-			  struct udma_ucontext *context);
+void hns3_udma_unregister_udca(struct hns3_udma_dev *udma_dev,
+			       struct hns3_udma_ucontext *context);
 
-void udma_enum_dca_pool(struct udma_dca_ctx *dca_ctx, void *param,
-			udma_dca_enum_callback cb);
-#endif /* _UDMA_DCA_H */
+void hns3_udma_enum_dca_pool(struct hns3_udma_dca_ctx *dca_ctx, void *param,
+			     hns3_udma_dca_enum_callback cb);
+
+int hns3_udma_alloc_dca_safe_page(struct hns3_udma_dev *udev);
+void hns3_udma_free_dca_safe_buf(struct hns3_udma_dev *udev);
+int hns3_udma_map_dca_safe_page(struct hns3_udma_dev *udev, struct hns3_udma_qp *qp);
+
+#endif /* _HNS3_UDMA_DCA_H */
