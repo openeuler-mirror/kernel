@@ -1114,6 +1114,8 @@ static struct its_vpe *its_build_vmapp_cmd(struct its_node *its,
 			 * no need to issue a VSYNC.
 			 */
 			vpe = NULL;
+		} else if (is_v4(its)) {
+			vpe = NULL;
 		}
 
 		goto out;
