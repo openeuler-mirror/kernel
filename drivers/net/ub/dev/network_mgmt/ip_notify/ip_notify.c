@@ -23,10 +23,10 @@
 static struct workqueue_struct *ip_notify_wq;
 static int initialized;
 
-const u8 ub_dguid[UBL_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF,
-			       0xFF, 0xFF, 0xFF, 0xFF,
-			       0xFF, 0xFF, 0xFF, 0xFF,
-			       0xFF, 0xFF, 0x01, 0x02};
+static const u8 ub_dguid[UBL_ALEN] = {0xFF, 0xFF, 0xFF, 0xFF,
+				      0xFF, 0xFF, 0xFF, 0xFF,
+				      0xFF, 0xFF, 0xFF, 0xFF,
+				      0xFF, 0xFF, 0x01, 0x02};
 
 static ssize_t good_ipv4_notify_tx_cnt_show(struct kobject *kobj,
 					    struct kobj_attribute *attr,
@@ -322,14 +322,14 @@ int ip_notify_sysfs_create(struct ub_nm_device *nm_dev)
 	ip_notify_ctx->ip_notify_root = kobject_create_and_add("ip_notify",
 							       kobj);
 	if (!ip_notify_ctx->ip_notify_root) {
-		pr_err("Failed to create ip_notify dir.\n");
+		netdev_err(nm_dev->ndev, "Failed to create ip_notify dir.\n");
 		return -ENOMEM;
 	}
 
 	ret = ip_notify_init_attrs(ip_notify_ctx->ip_notify_root,
 				   &ip_notify_ctx->attrs);
 	if (ret) {
-		pr_err("Failed to init ip notify attrs, ret = %d\n", ret);
+		netdev_err(nm_dev->ndev, "Failed to init ip notify attrs, ret = %d\n", ret);
 		goto err_ip_notify_init_attrs;
 	}
 
