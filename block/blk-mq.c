@@ -2428,7 +2428,9 @@ static void blk_mq_exit_hw_queues(struct request_queue *q,
 	queue_for_each_hw_ctx(q, hctx, i) {
 		if (i == nr_queue)
 			break;
+		mutex_lock(&q->debugfs_mutex);
 		blk_mq_debugfs_unregister_hctx(hctx);
+		mutex_unlock(&q->debugfs_mutex);
 		blk_mq_exit_hctx(q, set, hctx, i);
 	}
 }
