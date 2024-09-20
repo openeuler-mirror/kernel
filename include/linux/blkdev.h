@@ -645,6 +645,14 @@ struct request_queue {
 	struct blk_trace __rcu	*blk_trace;
 #endif
 	/*
+	 * Serializes all debugfs metadata operations using the above dentries.
+	 */
+#ifndef __GENKSYMS__
+	struct mutex		debugfs_mutex;
+#else
+	struct mutex            blk_trace_mutex;
+#endif
+	/*
 	 * for flush operations
 	 */
 	struct blk_flush_queue	*fq;
@@ -690,10 +698,6 @@ struct request_queue {
 
 	struct dentry		*debugfs_dir;
 	struct dentry		*sched_debugfs_dir;
-	/*
-	 * Serializes all debugfs metadata operations using the above dentries.
-	 */
-	struct mutex		debugfs_mutex;
 
 	bool			mq_sysfs_init_done;
 
