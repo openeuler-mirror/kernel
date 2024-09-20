@@ -895,13 +895,6 @@ static void __blk_release_queue(struct work_struct *work)
 		blk_mq_release(q);
 	}
 
-	mutex_lock(&q->debugfs_mutex);
-	blk_trace_shutdown(q);
-	debugfs_remove_recursive(q->debugfs_dir);
-	q->debugfs_dir = NULL;
-	q->sched_debugfs_dir = NULL;
-	mutex_unlock(&q->debugfs_mutex);
-
 	bioset_exit(&q->bio_split);
 
 	ida_simple_remove(&blk_queue_ida, q->id);
@@ -1075,6 +1068,13 @@ void blk_unregister_queue(struct gendisk *disk)
 		elv_unregister_queue(q);
 	mutex_unlock(&q->sysfs_lock);
 	mutex_unlock(&queue_to_wrapper(q)->sysfs_dir_lock);
+
+	mutex_lock(&q->debugfs_mutex);
+	blk_trace_shutdown(q);
+	debugfs_remove_recursive(q->debugfs_dir);
+	q->debugfs_dir = NULL;
+	q->sched_debugfs_dir = NULL;
+	mutex_unlock(&q->debugfs_mutex);
 
 	/* Now that we've deleted all child objects, we can delete the queue. */
 	kobject_uevent(&q->kobj, KOBJ_REMOVE);
