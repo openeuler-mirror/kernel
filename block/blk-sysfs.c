@@ -895,13 +895,12 @@ static void __blk_release_queue(struct work_struct *work)
 		blk_mq_release(q);
 	}
 
-	blk_trace_shutdown(q);
 	mutex_lock(&q->debugfs_mutex);
+	blk_trace_shutdown(q);
 	debugfs_remove_recursive(q->debugfs_dir);
+	q->debugfs_dir = NULL;
+	q->sched_debugfs_dir = NULL;
 	mutex_unlock(&q->debugfs_mutex);
-
-	if (q->mq_ops)
-		blk_mq_debugfs_unregister(q);
 
 	bioset_exit(&q->bio_split);
 
@@ -972,17 +971,17 @@ int blk_register_queue(struct gendisk *disk)
 		goto unlock;
 	}
 
+	if (q->mq_ops)
+		__blk_mq_register_dev(dev, q);
+	mutex_lock(&q->sysfs_lock);
+
 	mutex_lock(&q->debugfs_mutex);
 	q->debugfs_dir = debugfs_create_dir(kobject_name(q->kobj.parent),
 					    blk_debugfs_root);
+	if (q->mq_ops)
+		blk_mq_debugfs_register(q);
 	mutex_unlock(&q->debugfs_mutex);
 
-	if (q->mq_ops) {
-		__blk_mq_register_dev(dev, q);
-		blk_mq_debugfs_register(q);
-	}
-
-	mutex_lock(&q->sysfs_lock);
 	if (q->request_fn || (q->mq_ops && q->elevator)) {
 		ret = elv_register_queue(q, false);
 		if (ret) {

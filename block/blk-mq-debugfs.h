@@ -20,7 +20,6 @@ int __blk_mq_debugfs_rq_show(struct seq_file *m, struct request *rq);
 int blk_mq_debugfs_rq_show(struct seq_file *m, void *v);
 
 void blk_mq_debugfs_register(struct request_queue *q);
-void blk_mq_debugfs_unregister(struct request_queue *q);
 void blk_mq_debugfs_register_hctx(struct request_queue *q,
 				 struct blk_mq_hw_ctx *hctx);
 void blk_mq_debugfs_unregister_hctx(struct blk_mq_hw_ctx *hctx);
@@ -43,10 +42,6 @@ static inline bool blk_mq_debugfs_enabled(struct request_queue *q)
 
 #else
 static inline void blk_mq_debugfs_register(struct request_queue *q)
-{
-}
-
-static inline void blk_mq_debugfs_unregister(struct request_queue *q)
 {
 }
 

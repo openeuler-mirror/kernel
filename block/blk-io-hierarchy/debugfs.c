@@ -198,6 +198,8 @@ void blk_mq_debugfs_register_hierarchy(struct request_queue *q,
 	struct blk_io_hierarchy_stats *stats =
 		queue_to_wrapper(q)->io_hierarchy_stats;
 
+	lockdep_assert_held(&q->debugfs_mutex);
+
 	if (!blk_mq_hierarchy_registered(q, stage) ||
 	    !blk_mq_debugfs_enabled(q))
 		return;
@@ -211,6 +213,8 @@ void blk_mq_debugfs_unregister_hierarchy(struct request_queue *q,
 	struct blk_io_hierarchy_stats *stats =
 		queue_to_wrapper(q)->io_hierarchy_stats;
 
+	lockdep_assert_held(&q->debugfs_mutex);
+
 	if (!blk_mq_hierarchy_registered(q, stage) ||
 	    !blk_mq_debugfs_enabled(q))
 		return;
@@ -222,6 +226,8 @@ void blk_mq_debugfs_create_default_hierarchy_attr(struct request_queue *q)
 {
 	struct blk_io_hierarchy_stats *stats =
 		queue_to_wrapper(q)->io_hierarchy_stats;
+
+	lockdep_assert_held(&q->debugfs_mutex);
 
 	if (!blk_mq_debugfs_enabled(q))
 		return;
