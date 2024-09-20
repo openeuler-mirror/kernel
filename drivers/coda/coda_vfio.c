@@ -2,29 +2,21 @@
 /*
  * Copyright (C) 2024. Huawei Technologies Co., Ltd. All rights reserved.
  */
-#include <linux/pci.h>
-#include <linux/msi.h>
-#include <linux/vfio.h>
 #include <linux/io-pgtable.h>
+#include <linux/kvm_host.h>
+#include <linux/iommu.h>
 #include <asm/virtcca_coda.h>
-#include <asm/virtcca_cvm_host.h>
-#include <asm/kvm_host.h>
-#include <asm/kvm_tmm.h>
-#include <asm/kvm_tmi.h>
-
-#include "../../drivers/pci/msi/msi.h"
-#include "../../drivers/vfio/vfio.h"
 
 /**
  * virtcca_map_pages - Virtcca need map the secure
  * memory with paddr
- * @ops: the handle of io_pgtable_ops
+ * @ops: The handle of io_pgtable_ops
  * @iova: Ipa address
  * @paddr: Physical address
  * @pgsize: Page size
  * @pgcount: Page count
- * @iommu_prot: iommu attribute
- * @mapped: mapped size
+ * @iommu_prot: Iommu attribute
+ * @mapped: Mapped size
  *
  * Returns:
  * %0 if map pages success
@@ -40,6 +32,7 @@ int virtcca_map_pages(void *ops, unsigned long iova,
 	struct io_pgtable_cfg *cfg = virtcca_io_pgtable_get_cfg(data);
 	long iaext = (s64)iova >> cfg->ias;
 	int ret = 0;
+	struct arm_smmu_domain *smmu_domain = NULL;
 
 	if (WARN_ON(!pgsize || (pgsize & cfg->pgsize_bitmap) != pgsize))
 		return -EINVAL;
@@ -53,20 +46,30 @@ int virtcca_map_pages(void *ops, unsigned long iova,
 	if (!(iommu_prot & (IOMMU_READ | IOMMU_WRITE)))
 		return 0;
 
-	kvm = virtcca_smmu_domain_get_kvm(data);
+	smmu_domain = (struct arm_smmu_domain *)virtcca_io_pgtable_get_smmu_domain(data);
+	if (!smmu_domain)
+		return -EINVAL;
+
+	kvm = smmu_domain->kvm;
 	if (kvm) {
 		struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
 
 		loader_start = virtcca_cvm->loader_start;
 		ram_size = virtcca_cvm->ram_size;
+		/* Cvm ram space mapping*/
 		if (iova >= loader_start &&
-			iova < loader_start + ram_size &&
-			!virtcca_cvm->is_mapped) {
+		iova < loader_start + ram_size &&
+		!virtcca_cvm->is_mapped) {
 			ret = kvm_cvm_map_range(kvm);
-		} else if (iova < loader_start) {
+		} else if (iova < loader_start || iova >= loader_start + ram_size) {
 			if (iova == CVM_MSI_ORIG_IOVA)
-				iova += CVM_MSI_IOVA_OFFSET;
-			ret = cvm_map_unmap_ipa_range(kvm, iova, paddr, pgsize * pgcount, true);
+				/* Cvm msi address mapping */
+				ret = virtcca_map_msi_address(kvm, smmu_domain,
+					paddr, pgsize * pgcount);
+			else
+				/* Cvm mmio space mapping */
+				ret = cvm_map_unmap_ipa_range(kvm, iova,
+					paddr, pgsize * pgcount, true);
 		}
 		if (mapped)
 			*mapped += pgsize * pgcount;
@@ -77,7 +80,7 @@ EXPORT_SYMBOL_GPL(virtcca_map_pages);
 
 /**
  * virtcca_unmap_pages - Virtcca unmap the iova
- * @ops: the handle of io_pgtable_ops
+ * @ops: The handle of io_pgtable_ops
  * @iova: Ipa address
  * @pgsize: Page size
  * @pgcount: Page count
@@ -92,6 +95,7 @@ size_t virtcca_unmap_pages(void *ops, unsigned long iova,
 	struct arm_lpae_io_pgtable *data = virtcca_io_pgtable_get_data(ops);
 	struct io_pgtable_cfg *cfg = virtcca_io_pgtable_get_cfg(data);
 	long iaext = (s64)iova >> cfg->ias;
+	struct arm_smmu_domain *smmu_domain = NULL;
 
 	if (WARN_ON(!pgsize || (pgsize & cfg->pgsize_bitmap) != pgsize || !pgcount))
 		return 0;
@@ -101,7 +105,11 @@ size_t virtcca_unmap_pages(void *ops, unsigned long iova,
 	if (WARN_ON(iaext))
 		return 0;
 
-	kvm = virtcca_smmu_domain_get_kvm(data);
+	smmu_domain = (struct arm_smmu_domain *)virtcca_io_pgtable_get_smmu_domain(data);
+	if (!smmu_domain)
+		return 0;
+
+	kvm = smmu_domain->kvm;
 	if (!kvm)
 		return 0;
 
@@ -258,218 +266,6 @@ size_t virtcca_iommu_unmap(struct iommu_domain *domain,
 }
 EXPORT_SYMBOL_GPL(virtcca_iommu_unmap);
 
-/**
- * virtcca_pci_read_msi_msg - secure dev read msi msg
- * @dev: Pointer to the pci_dev data structure of MSI-X device function
- * @msg: Msg information
- * @base: Msi base address
- *
- **/
-void virtcca_pci_read_msi_msg(struct pci_dev *dev, struct msi_msg *msg,
-	void __iomem *base)
-{
-	u64 pbase = mmio_va_to_pa(base);
-
-	msg->address_lo = tmi_mmio_read(pbase + PCI_MSIX_ENTRY_LOWER_ADDR,
-		CVM_RW_32_BIT, pci_dev_id(dev));
-	msg->address_hi = tmi_mmio_read(pbase + PCI_MSIX_ENTRY_UPPER_ADDR,
-		CVM_RW_32_BIT, pci_dev_id(dev));
-	msg->data = tmi_mmio_read(pbase + PCI_MSIX_ENTRY_DATA, CVM_RW_32_BIT, pci_dev_id(dev));
-}
-
-/**
- * virtcca_pci_write_msi_msg - secure dev write msi msg
- * @desc: MSI-X description
- * @msg: Msg information
- *
- **/
-int virtcca_pci_write_msg_msi(struct msi_desc *desc, struct msi_msg *msg)
-{
-	if (!is_virtcca_cvm_enable())
-		return 0;
-
-	void __iomem *base = pci_msix_desc_addr(desc);
-	u32 ctrl = desc->pci.msix_ctrl;
-	bool unmasked = !(ctrl & PCI_MSIX_ENTRY_CTRL_MASKBIT);
-	u64 pbase = mmio_va_to_pa(base);
-	struct pci_dev *pdev = (desc->dev != NULL &&
-		dev_is_pci(desc->dev)) ? to_pci_dev(desc->dev) : NULL;
-
-	if (!is_cc_dev(pci_dev_id(pdev)))
-		return 0;
-
-	u64 addr = (u64)msg->address_lo | ((u64)msg->address_hi << 32);
-
-	addr += CVM_MSI_IOVA_OFFSET;
-	tmi_mmio_write(pbase + PCI_MSIX_ENTRY_LOWER_ADDR,
-		lower_32_bits(addr), CVM_RW_32_BIT, pci_dev_id(pdev));
-	tmi_mmio_write(pbase + PCI_MSIX_ENTRY_UPPER_ADDR,
-		upper_32_bits(addr), CVM_RW_32_BIT, pci_dev_id(pdev));
-	tmi_mmio_write(pbase + PCI_MSIX_ENTRY_DATA,
-		msg->data, CVM_RW_32_BIT, pci_dev_id(pdev));
-
-	if (unmasked)
-		pci_msix_write_vector_ctrl(desc, ctrl);
-	tmi_mmio_read(mmio_va_to_pa((void *)pbase + PCI_MSIX_ENTRY_DATA),
-		CVM_RW_32_BIT, pci_dev_id(pdev));
-
-	return 1;
-}
-
-void virtcca_msix_prepare_msi_desc(struct pci_dev *dev,
-	struct msi_desc *desc, void __iomem *addr)
-{
-	desc->pci.msix_ctrl = tmi_mmio_read(mmio_va_to_pa(addr + PCI_MSIX_ENTRY_VECTOR_CTRL),
-		CVM_RW_32_BIT, pci_dev_id(dev));
-}
-
-/*
- * If it is a safety device, write vector ctrl need
- * use tmi interface
- */
-int virtcca_pci_msix_write_vector_ctrl(struct msi_desc *desc, u32 ctrl)
-{
-	if (!is_virtcca_cvm_enable())
-		return 0;
-
-	void __iomem *desc_addr = pci_msix_desc_addr(desc);
-	struct pci_dev *pdev = (desc->dev != NULL &&
-		dev_is_pci(desc->dev)) ? to_pci_dev(desc->dev) : NULL;
-
-	if (pdev == NULL || !is_cc_dev(pci_dev_id(pdev)))
-		return 0;
-
-	if (desc->pci.msi_attrib.can_mask)
-		tmi_mmio_write(mmio_va_to_pa(desc_addr + PCI_MSIX_ENTRY_VECTOR_CTRL),
-			ctrl, CVM_RW_32_BIT, pci_dev_id(pdev));
-	return 1;
-}
-
-/*
- * If it is a safety device, read msix need
- * use tmi interface
- */
-int virtcca_pci_msix_mask(struct msi_desc *desc)
-{
-	if (!is_virtcca_cvm_enable())
-		return 0;
-
-	struct pci_dev *pdev = (desc->dev != NULL &&
-		dev_is_pci(desc->dev)) ? to_pci_dev(desc->dev) : NULL;
-
-	if (pdev == NULL || !is_cc_dev(pci_dev_id(pdev)))
-		return 0;
-
-	/* Flush write to device */
-	tmi_mmio_read(mmio_va_to_pa(desc->pci.mask_base), CVM_RW_32_BIT, pci_dev_id(pdev));
-	return 1;
-}
-
-/**
- * msix_mask_all_cc - mask all secure dev msix c
- * @dev: Pointer to the pci_dev data structure of MSI-X device function
- * @base: Io address
- * @tsize: Number of entry
- * @dev_num: Dev number
- *
- * Returns:
- * %0 if msix mask all cc device success
- **/
-int msix_mask_all_cc(struct pci_dev *dev, void __iomem *base, int tsize, u64 dev_num)
-{
-	int i;
-	u16 rw_ctrl;
-	u32 ctrl = PCI_MSIX_ENTRY_CTRL_MASKBIT;
-	u64 pbase = mmio_va_to_pa(base);
-
-	if (pci_msi_ignore_mask)
-		goto out;
-
-	for (i = 0; i < tsize; i++, base += PCI_MSIX_ENTRY_SIZE) {
-		tmi_mmio_write(pbase + PCI_MSIX_ENTRY_VECTOR_CTRL,
-			ctrl, CVM_RW_32_BIT, dev_num);
-	}
-
-out:
-	pci_read_config_word(dev, dev->msix_cap + PCI_MSIX_FLAGS, &rw_ctrl);
-	rw_ctrl &= ~PCI_MSIX_FLAGS_MASKALL;
-	rw_ctrl |= 0;
-	pci_write_config_word(dev, dev->msix_cap + PCI_MSIX_FLAGS, rw_ctrl);
-
-	pcibios_free_irq(dev);
-	return 0;
-}
-
-/* If device is secure dev, read config need transfer to tmm module */
-int virtcca_pci_generic_config_read(void __iomem *addr, unsigned char bus_num,
-	unsigned int devfn, int size, u32 *val)
-{
-	if (size == 1)
-		*val = tmi_mmio_read(mmio_va_to_pa(addr), CVM_RW_8_BIT,
-			((bus_num << BUS_NUM_SHIFT) | devfn));
-	else if (size == 2)
-		*val = tmi_mmio_read(mmio_va_to_pa(addr), CVM_RW_16_BIT,
-			((bus_num << BUS_NUM_SHIFT) | devfn));
-	else
-		*val = tmi_mmio_read(mmio_va_to_pa(addr), CVM_RW_32_BIT,
-			((bus_num << BUS_NUM_SHIFT) | devfn));
-
-	return 0;
-}
-
-/* If device is secure dev, write config need transfer to tmm module */
-int virtcca_pci_generic_config_write(void __iomem *addr, unsigned char bus_num,
-	unsigned int devfn, int size, u32 val)
-{
-	if (size == 1)
-		WARN_ON(tmi_mmio_write(mmio_va_to_pa(addr), val,
-			CVM_RW_8_BIT, ((bus_num << BUS_NUM_SHIFT) | devfn)));
-	else if (size == 2)
-		WARN_ON(tmi_mmio_write(mmio_va_to_pa(addr), val,
-			CVM_RW_16_BIT, ((bus_num << BUS_NUM_SHIFT) | devfn)));
-	else
-		WARN_ON(tmi_mmio_write(mmio_va_to_pa(addr), val,
-			CVM_RW_32_BIT, ((bus_num << BUS_NUM_SHIFT) | devfn)));
-
-	return 0;
-}
-
-/* Judge startup virtcca_cvm_host is enable and device is secure or not */
-bool is_virtcca_pci_io_rw(struct vfio_pci_core_device *vdev)
-{
-	if (!is_virtcca_cvm_enable())
-		return false;
-
-	struct pci_dev *pdev = vdev->pdev;
-	bool cc_dev = pdev == NULL ? false : is_cc_dev(pci_dev_id(pdev));
-
-	if (cc_dev)
-		return true;
-
-	return false;
-}
-EXPORT_SYMBOL_GPL(is_virtcca_pci_io_rw);
-
-/* Transfer to tmm write io value */
-void virtcca_pci_io_write(struct vfio_pci_core_device *vdev, u64 val,
-	u64 size, void __iomem *io)
-{
-	struct pci_dev *pdev = vdev->pdev;
-
-	WARN_ON(tmi_mmio_write(mmio_va_to_pa(io), val, size, pci_dev_id(pdev)));
-}
-EXPORT_SYMBOL_GPL(virtcca_pci_io_write);
-
-/* Transfer to tmm read io value */
-u64 virtcca_pci_io_read(struct vfio_pci_core_device *vdev,
-	u64 size, void __iomem *io)
-{
-	struct pci_dev *pdev = vdev->pdev;
-
-	return tmi_mmio_read(mmio_va_to_pa(io), size, pci_dev_id(pdev));
-}
-EXPORT_SYMBOL_GPL(virtcca_pci_io_read);
-
 /* Whether the kvm is cvm */
 bool virtcca_iommu_domain_get_kvm(struct iommu_domain *domain, struct kvm **kvm)
 {
@@ -490,7 +286,7 @@ EXPORT_SYMBOL_GPL(virtcca_iommu_domain_get_kvm);
  *
  * Returns:
  * %NULL if the virtcca_vfio_file_iommu_group func is not defined
- * or CONFIG_HISI_VIRTCCA_HOST is not enable, group is null
+ * or CONFIG_HISI_VIRTCCA_CODA is not enable, group is null
  * %iommu_group if get the iommu group from file success
  */
 struct iommu_group *cvm_vfio_file_iommu_group(struct file *file)
@@ -506,5 +302,42 @@ struct iommu_group *cvm_vfio_file_iommu_group(struct file *file)
 
 	symbol_put(virtcca_vfio_file_iommu_group);
 
+	return ret;
+}
+
+/* Obtain msi address through iommu group id */
+u64 virtcca_get_iommu_device_msi_addr(struct iommu_group *iommu_group)
+{
+	u64 msi_addr = iommu_group_id(iommu_group) * CVM_MSI_IOVA_OFFSET + CVM_MSI_MIN_IOVA;
+
+	if (msi_addr >= CVM_MSI_MAX_IOVA || msi_addr < CVM_MSI_MIN_IOVA) {
+		pr_err("MSI address 0x%llx overflow.\n", msi_addr);
+		return 0;
+	}
+
+	return msi_addr;
+}
+EXPORT_SYMBOL_GPL(virtcca_get_iommu_device_msi_addr);
+
+/* Set the corresponding MSI address */
+int virtcca_set_dev_msi_addr(struct device *dev, void *iova)
+{
+	unsigned long *msi_iova = (unsigned long *)iova;
+
+	if (dev_is_pci(dev)) {
+		struct pci_dev *pci_dev = to_pci_dev(dev);
+		u16 pci_id = pci_dev_id(pci_dev);
+
+		set_g_cc_dev_msi_addr(pci_id, *msi_iova);
+	}
+	return 0;
+}
+
+/* Traverse the devices in the iommu group and set the corresponding MSI address */
+int virtcca_iommu_group_set_dev_msi_addr(struct iommu_group *iommu_group, unsigned long *iova)
+{
+	int ret;
+
+	ret = iommu_group_for_each_dev(iommu_group, (void *)iova, virtcca_set_dev_msi_addr);
 	return ret;
 }

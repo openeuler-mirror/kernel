@@ -958,7 +958,7 @@ void vfio_group_cleanup(void)
 	vfio_container_cleanup();
 }
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 /**
  * virtcca_vfio_file_iommu_group - Return the struct iommu_group for the vfio group file
  * @file: VFIO group file
@@ -972,7 +972,7 @@ struct iommu_group *virtcca_vfio_file_iommu_group(struct file *file)
 	struct vfio_group *group = vfio_group_from_file(file);
 	struct iommu_group *iommu_group = NULL;
 
-	if (!IS_ENABLED(CONFIG_HISI_VIRTCCA_HOST))
+	if (!IS_ENABLED(CONFIG_HISI_VIRTCCA_CODA))
 		return NULL;
 
 	if (!group)

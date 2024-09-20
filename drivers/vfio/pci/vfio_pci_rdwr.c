@@ -19,10 +19,10 @@
 
 #include "vfio_pci_priv.h"
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #ifndef __GENKSYMS__
-#include <asm/virtcca_coda.h>
 #include <asm/virtcca_cvm_host.h>
+#include <asm/virtcca_coda.h>
 #endif
 #endif
 
@@ -44,7 +44,7 @@
 #define vfio_ioread8	ioread8
 #define vfio_iowrite8	iowrite8
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #define VFIO_IOWRITE(size) \
 static int vfio_pci_iowrite##size(struct vfio_pci_core_device *vdev,	\
 			bool test_mem, u##size val, void __iomem *io)	\
@@ -97,7 +97,7 @@ VFIO_IOWRITE(32)
 VFIO_IOWRITE(64)
 #endif
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #define VFIO_IOREAD(size) \
 static int vfio_pci_ioread##size(struct vfio_pci_core_device *vdev,	\
 			bool test_mem, u##size * val, void __iomem *io)	\

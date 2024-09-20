@@ -20,7 +20,7 @@
 
 #include <asm/barrier.h>
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #include <asm/virtcca_coda.h>
 #endif
 
@@ -1728,18 +1728,7 @@ static int __init arm_lpae_do_selftests(void)
 subsys_initcall(arm_lpae_do_selftests);
 #endif
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-/* Obtain kvm from smmu domain */
-struct kvm *virtcca_smmu_domain_get_kvm(struct arm_lpae_io_pgtable *data)
-{
-	struct arm_smmu_domain *smmu_domain = (struct arm_smmu_domain *)data->iop.cookie;
-
-	if (!smmu_domain)
-		return NULL;
-
-	return smmu_domain->kvm;
-}
-
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 /* Obtain io pgtable data from io pgtable ops */
 struct arm_lpae_io_pgtable *virtcca_io_pgtable_get_data(void *ops)
 {
@@ -1750,5 +1739,11 @@ struct arm_lpae_io_pgtable *virtcca_io_pgtable_get_data(void *ops)
 struct io_pgtable_cfg *virtcca_io_pgtable_get_cfg(struct arm_lpae_io_pgtable *data)
 {
 	return &data->iop.cfg;
+}
+
+/* Obtain smmu domain from io pgtable data */
+void *virtcca_io_pgtable_get_smmu_domain(struct arm_lpae_io_pgtable *data)
+{
+	return data->iop.cookie;
 }
 #endif

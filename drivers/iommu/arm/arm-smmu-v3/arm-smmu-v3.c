@@ -30,7 +30,7 @@
 #include "arm-smmu-v3.h"
 #include "../../dma-iommu.h"
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #include "arm-s-smmu-v3.h"
 #endif
 
@@ -999,7 +999,7 @@ static int arm_smmu_cmdq_issue_cmdlist(struct arm_smmu_device *smmu,
 	 * Dependency ordering from the cmpxchg() loop above.
 	 */
 	arm_smmu_cmdq_write_entries(cmdq, cmds, llq.prod, n);
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	virtcca_smmu_cmdq_write_entries(smmu, cmds, &llq, &cmdq->q, n, sync);
 #endif
 	if (sync) {
@@ -2383,7 +2383,7 @@ static int arm_smmu_domain_finalise(struct iommu_domain *domain)
 	if (!(smmu->features & ARM_SMMU_FEAT_TRANS_S2))
 		smmu_domain->stage = ARM_SMMU_DOMAIN_S1;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	virtcca_smmu_set_stage(domain, smmu_domain);
 #endif
 
@@ -3692,7 +3692,7 @@ static void arm_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg)
 	writel_relaxed(ARM_SMMU_MEMATTR_DEVICE_nGnRE, smmu->base + cfg[2]);
 }
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 void _arm_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg)
 {
 	if (virtcca_smmu_write_msi_msg(desc, msg))
@@ -4876,7 +4876,7 @@ static int arm_smmu_device_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	virtcca_smmu_device_init(pdev, smmu, ioaddr, false, disable_bypass);
 #endif
 

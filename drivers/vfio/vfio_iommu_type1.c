@@ -38,11 +38,11 @@
 #include <linux/workqueue.h>
 #include <linux/notifier.h>
 #include "vfio.h"
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #include <linux/kvm_host.h>
 #include <asm/kvm_tmm.h>
-#include <asm/virtcca_coda.h>
 #include <asm/virtcca_cvm_host.h>
+#include <asm/virtcca_coda.h>
 #endif
 
 #define DRIVER_VERSION  "0.2"
@@ -83,8 +83,8 @@ struct vfio_iommu {
 	bool			dirty_page_tracking;
 	struct list_head	emulated_iommu_groups;
 	bool			dirty_log_get_no_clear;
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-	bool            secure;
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	bool            secure;	/* Whether the vfio iommu is secure or not */
 #endif
 };
 
@@ -1046,10 +1046,10 @@ static size_t unmap_unpin_slow(struct vfio_domain *domain,
 	return unmapped;
 }
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 static void vfio_remove_dma(struct vfio_iommu *iommu, struct vfio_dma *dma);
 
-bool virtcca_check_kvm_is_cvm(void *iommu, struct kvm **kvm)
+bool virtcca_check_is_cvm_or_not(void *iommu, struct kvm **kvm)
 {
 	struct vfio_domain *domain;
 	bool is_virtcca_cvm = false;
@@ -1116,14 +1116,18 @@ static int virtcca_vfio_pin_map_dma(struct vfio_iommu *iommu, struct vfio_dma *d
 	size_t size = map_size;
 	unsigned long pfn, limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
 	int ret = 0;
-	bool is_virtcca_cvm = virtcca_check_kvm_is_cvm((void *)iommu, &kvm);
+	bool is_virtcca_cvm = virtcca_check_is_cvm_or_not((void *)iommu, &kvm);
 
 	vfio_batch_init(&batch);
 
 	while (size) {
-
+		/*
+		 * Due to cvm ram full mapping, ram space only needs to be mapped once,
+		 * if the iova is in ram space, there is no need to map it again.
+		 */
 		if (is_virtcca_cvm && !is_virtcca_iova_need_vfio_dma(kvm, dma->iova))
 			break;
+
 		/* Pin a contiguous chunk of memory */
 		npage = vfio_pin_pages_remote(dma, vaddr + dma->size,
 					      size >> PAGE_SHIFT, &pfn, limit,
@@ -1145,6 +1149,10 @@ static int virtcca_vfio_pin_map_dma(struct vfio_iommu *iommu, struct vfio_dma *d
 		}
 
 		if (is_virtcca_cvm && is_in_virtcca_ram_range(kvm, iova)) {
+			/*
+			 * The cvm ram mapping uses secure memory,
+			 * so non-secure memory needs to be unpinned.
+			 */
 			vfio_unpin_pages_remote(dma, iova + dma->size, pfn,
 				npage, true);
 			vfio_batch_unpin(&batch, dma);
@@ -1182,7 +1190,7 @@ static long virtcca_vfio_unmap_unpin(struct vfio_iommu *iommu, struct vfio_dma *
 	long unlocked = 0;
 	dma_addr_t iova = dma->iova, end = dma->iova + dma->size;
 
-	if (!virtcca_check_kvm_is_cvm((void *)iommu, &kvm))
+	if (!virtcca_check_is_cvm_or_not((void *)iommu, &kvm))
 		return 0;
 
 	if (!dma->size)
@@ -1270,7 +1278,7 @@ static long vfio_unmap_unpin(struct vfio_iommu *iommu, struct vfio_dma *dma,
 	int unmapped_region_cnt = 0;
 	long unlocked = 0;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	if (is_virtcca_cvm_enable() && iommu->secure)
 		return virtcca_vfio_unmap_unpin(iommu, dma, do_accounting);
 #endif
@@ -1858,7 +1866,7 @@ static int vfio_pin_map_dma(struct vfio_iommu *iommu, struct vfio_dma *dma,
 	unsigned long pfn, limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
 	int ret = 0;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	if (is_virtcca_cvm_enable() && iommu->secure)
 		return virtcca_vfio_pin_map_dma(iommu, dma, map_size);
 #endif
@@ -2086,7 +2094,7 @@ static int vfio_iommu_replay(struct vfio_iommu *iommu,
 	unsigned long limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
 	int ret;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	if (is_virtcca_cvm_enable() && iommu->secure)
 		return 0;
 #endif
@@ -2692,8 +2700,8 @@ static int vfio_iommu_type1_attach_group(void *iommu_data,
 			goto out_domain;
 	}
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-	if (iommu->secure)
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	if (is_virtcca_cvm_enable() && iommu->secure)
 		domain->domain->secure = true;
 #endif
 
@@ -2701,8 +2709,8 @@ static int vfio_iommu_type1_attach_group(void *iommu_data,
 	if (ret)
 		goto out_domain;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-	if (iommu->secure) {
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	if (is_virtcca_cvm_enable() && iommu->secure) {
 		ret = virtcca_attach_secure_dev(domain->domain, group->iommu_group);
 		if (ret)
 			goto out_domain;
@@ -3058,7 +3066,7 @@ static void *vfio_iommu_type1_open(unsigned long arg)
 	case VFIO_TYPE1v2_IOMMU:
 		iommu->v2 = true;
 		break;
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	case VFIO_TYPE1v2_S_IOMMU:
 		iommu->v2 = true;
 		iommu->secure = true;
@@ -3155,7 +3163,7 @@ static int vfio_iommu_type1_check_extension(struct vfio_iommu *iommu,
 	switch (arg) {
 	case VFIO_TYPE1_IOMMU:
 	case VFIO_TYPE1v2_IOMMU:
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	case VFIO_TYPE1v2_S_IOMMU:
 #endif
 	case VFIO_TYPE1_NESTING_IOMMU:

@@ -83,7 +83,6 @@ struct tmi_smmu_cfg_params {
 #define TMI_SMMU_CMD_QUEUE  1
 #define TMI_SMMU_EVT_QUEUE  2
 struct tmi_smmu_queue_params {
-	uint64_t ns_src;     /* non-secure queue source address */
 	uint64_t smmu_base_addr;       /* smmu base address */
 	uint64_t size;       /* queue size */
 	uint64_t smmu_id;    /* smmu id */

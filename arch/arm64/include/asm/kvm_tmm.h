@@ -10,16 +10,19 @@
 /*
  * There is a conflict with the internal iova of CVM,
  * so it is necessary to offset the msi iova.
+ * According to qemu file(hw/arm/virt.c), 0x0a001000 - 0x0b000000
+ * iova is not being used, so it is used as the iova range for msi
+ * mapping.
  */
-#define CVM_MSI_ORIG_IOVA 0x8000000
-#define CVM_MSI_IOVA_OFFSET (-0x1000000)
+#define CVM_MSI_ORIG_IOVA	0x8000000
+#define CVM_MSI_MIN_IOVA	0x0a001000
+#define CVM_MSI_MAX_IOVA	0x0b000000
+#define CVM_MSI_IOVA_OFFSET	0x1000
 
 #define CVM_RW_8_BIT	0x8
 #define CVM_RW_16_BIT	0x10
 #define CVM_RW_32_BIT	0x20
 #define CVM_RW_64_BIT	0x40
-
-#define BUS_NUM_SHIFT	0x8
 
 enum virtcca_cvm_state {
 	CVM_STATE_NONE = 1,
@@ -102,11 +105,8 @@ void kvm_free_rd(struct kvm *kvm);
 int cvm_psci_complete(struct kvm_vcpu *calling, struct kvm_vcpu *target);
 
 void kvm_cvm_unmap_destroy_range(struct kvm *kvm);
-
 int kvm_cvm_map_range(struct kvm *kvm);
-int cvm_arm_smmu_domain_set_kvm(void *group);
-int kvm_cvm_map_unmap_ipa_range(struct kvm *kvm, phys_addr_t ipa_base, phys_addr_t pa,
-	unsigned long map_size, uint32_t is_map);
+int virtcca_cvm_arm_smmu_domain_set_kvm(void *group);
 int cvm_map_unmap_ipa_range(struct kvm *kvm, phys_addr_t ipa_base, phys_addr_t pa,
 	unsigned long map_size, uint32_t is_map);
 int kvm_cvm_map_ipa_mmio(struct kvm *kvm, phys_addr_t ipa_base,
@@ -127,6 +127,11 @@ bool is_virtcca_iova_need_vfio_dma(struct kvm *kvm, uint64_t iova);
 #define CVM_TTT_LEVEL_SHIFT(l)	\
 	((CVM_PAGE_SHIFT - 3) * (4 - (l)) + 3)
 #define CVM_L2_BLOCK_SIZE	BIT(CVM_TTT_LEVEL_SHIFT(2))
+
+#define TMM_GRANULE_SIZE2		12
+#define TMM_TTT_WIDTH			19
+#define TMM_GRANULE_SIZE		(1UL << TMM_GRANULE_SIZE2)
+#define tmm_granule_size(level)	(TMM_GRANULE_SIZE << ((3 - level)) * TMM_TTT_WIDTH)
 
 static inline unsigned long cvm_ttt_level_mapsize(int level)
 {

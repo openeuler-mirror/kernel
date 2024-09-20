@@ -3,7 +3,7 @@
 #include <linux/pci.h>
 #include <linux/msi.h>
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #ifndef __GENKSYMS__
 #include <asm/virtcca_coda.h>
 #endif
@@ -42,8 +42,8 @@ static inline void pci_msix_write_vector_ctrl(struct msi_desc *desc, u32 ctrl)
 {
 	void __iomem *desc_addr = pci_msix_desc_addr(desc);
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-	if (virtcca_pci_msix_write_vector_ctrl(desc, ctrl))
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	if (is_virtcca_cvm_enable() && virtcca_pci_msix_write_vector_ctrl(desc, ctrl))
 		return;
 #endif
 
@@ -56,8 +56,8 @@ static inline void pci_msix_mask(struct msi_desc *desc)
 	desc->pci.msix_ctrl |= PCI_MSIX_ENTRY_CTRL_MASKBIT;
 	pci_msix_write_vector_ctrl(desc, desc->pci.msix_ctrl);
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-	if (virtcca_pci_msix_mask(desc))
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	if (is_virtcca_cvm_enable() && virtcca_pci_msix_mask(desc))
 		return;
 #endif
 	/* Flush write to device */

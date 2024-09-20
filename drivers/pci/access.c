@@ -5,12 +5,12 @@
 #include <linux/ioport.h>
 #include <linux/wait.h>
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #ifndef __GENKSYMS__
 #include <linux/kvm_host.h>
 #include <asm/kvm_tmm.h>
-#include <asm/virtcca_coda.h>
 #include <asm/virtcca_cvm_host.h>
+#include <asm/virtcca_coda.h>
 #endif
 #endif
 
@@ -95,8 +95,8 @@ int pci_generic_config_read(struct pci_bus *bus, unsigned int devfn,
 	if (!addr)
 		return PCIBIOS_DEVICE_NOT_FOUND;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-	if (is_virtcca_cvm_enable() && is_cc_dev((bus->number << BUS_NUM_SHIFT) | devfn))
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	if (is_virtcca_cvm_enable() && is_cc_dev(PCI_DEVID(bus->number, devfn)))
 		return virtcca_pci_generic_config_read(addr, bus->number, devfn, size, val);
 #endif
 
@@ -120,8 +120,8 @@ int pci_generic_config_write(struct pci_bus *bus, unsigned int devfn,
 	if (!addr)
 		return PCIBIOS_DEVICE_NOT_FOUND;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-	if (is_virtcca_cvm_enable() && is_cc_dev((bus->number << BUS_NUM_SHIFT) | devfn))
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	if (is_virtcca_cvm_enable() && is_cc_dev(PCI_DEVID(bus->number, devfn)))
 		return virtcca_pci_generic_config_write(addr, bus->number, devfn, size, val);
 #endif
 

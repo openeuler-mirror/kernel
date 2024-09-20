@@ -290,9 +290,6 @@ void vfio_combine_iova_ranges(struct rb_root_cached *root, u32 cur_nodes,
  * External user API
  */
 struct iommu_group *vfio_file_iommu_group(struct file *file);
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-struct iommu_group *virtcca_vfio_file_iommu_group(struct file *file);
-#endif
 
 #if IS_ENABLED(CONFIG_VFIO_GROUP)
 bool vfio_file_is_group(struct file *file);

@@ -33,12 +33,6 @@
 #include <linux/sched/mm.h>
 #include <linux/msi.h>
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-#ifndef __GENKSYMS__
-#include <asm/virtcca_coda.h>
-#endif
-#endif
-
 #include "dma-iommu.h"
 #include "iommu-priv.h"
 
@@ -3660,40 +3654,3 @@ void iommu_free_global_pasid(ioasid_t pasid)
 	ida_free(&iommu_global_pasid_ida, pasid);
 }
 EXPORT_SYMBOL_GPL(iommu_free_global_pasid);
-
-#ifdef CONFIG_HISI_VIRTCCA_HOST
-/**
- * virtcca_attach_secure_dev - Attach the device of iommu
- * group to confidential virtual machine
- * @domain: The handle of iommu domain
- * @group: Iommu group
- *
- * Returns:
- * %0 if attach the all devices success
- * %-EINVAL if the smmu does not initialize secure state
- * %-ENOMEM if the device create secure ste failed
- * %-ENOENT if the device does not have fwspec
- */
-int virtcca_attach_secure_dev(struct iommu_domain *domain, struct iommu_group *group)
-{
-	struct group_device *gdev;
-	int ret = 0;
-
-	mutex_lock(&group->mutex);
-	for_each_group_device(group, gdev)
-		ret = virtcca_smmu_secure_dev_operator(domain, gdev->dev);
-	mutex_unlock(&group->mutex);
-	return ret;
-}
-EXPORT_SYMBOL_GPL(virtcca_attach_secure_dev);
-
-/* Obtain domain information through iommu group */
-struct iommu_domain *virtcca_iommu_group_get_domain(struct iommu_group *iommu_group)
-{
-	if (iommu_group)
-		return iommu_group->domain;
-
-	return NULL;
-}
-EXPORT_SYMBOL_GPL(virtcca_iommu_group_get_domain);
-#endif

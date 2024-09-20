@@ -31,7 +31,7 @@
 #if IS_ENABLED(CONFIG_EEH)
 #include <asm/eeh.h>
 #endif
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #include <asm/kvm_tmi.h>
 #endif
 
@@ -976,7 +976,7 @@ static int vfio_pci_ioctl_get_info(struct vfio_pci_core_device *vdev,
 	if (vdev->reset_works)
 		info.flags |= VFIO_DEVICE_FLAGS_RESET;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	virtcca_cvm_set_secure_flag((void *)vdev, (void *)&info);
 #endif
 

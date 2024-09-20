@@ -11,11 +11,12 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_mmu.h>
 #include <asm/stage2_pgtable.h>
-#include <asm/virtcca_coda.h>
 #include <asm/virtcca_cvm_host.h>
 #include <linux/arm-smccc.h>
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
+
+#include <asm/virtcca_coda.h>
 
 /* Protects access to cvm_vmid_bitmap */
 static DEFINE_SPINLOCK(cvm_vmid_lock);
@@ -179,18 +180,22 @@ void kvm_destroy_cvm(struct kvm *kvm)
 {
 	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
 	uint32_t cvm_vmid;
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	struct arm_smmu_domain *arm_smmu_domain;
 	struct list_head smmu_domain_group_list;
+#endif
 
 	if (!cvm)
 		return;
 
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	/* Unmap the cvm with arm smmu domain */
 	kvm_get_arm_smmu_domain(kvm, &smmu_domain_group_list);
 	list_for_each_entry(arm_smmu_domain, &smmu_domain_group_list, node) {
 		if (arm_smmu_domain->kvm && arm_smmu_domain->kvm == kvm)
 			arm_smmu_domain->kvm = NULL;
 	}
+#endif
 
 	cvm_vmid = cvm->cvm_vmid;
 	kfree(cvm->params);
@@ -538,9 +543,11 @@ int kvm_cvm_map_range(struct kvm *kvm)
 
 static int kvm_activate_cvm(struct kvm *kvm)
 {
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	int ret;
 	struct arm_smmu_domain *arm_smmu_domain;
 	struct list_head smmu_domain_group_list;
+#endif
 	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
 
 	if (virtcca_cvm_state(kvm) != CVM_STATE_NEW)
@@ -549,14 +556,16 @@ static int kvm_activate_cvm(struct kvm *kvm)
 	if (!cvm->is_mapped && kvm_cvm_map_range(kvm))
 		return -EFAULT;
 
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	kvm_get_arm_smmu_domain(kvm, &smmu_domain_group_list);
 	list_for_each_entry(arm_smmu_domain, &smmu_domain_group_list, node) {
 		if (arm_smmu_domain) {
-			ret = virtcca_smmu_tmi_dev_attach(arm_smmu_domain, kvm);
+			ret = virtcca_tmi_dev_attach(arm_smmu_domain, kvm);
 			if (ret)
 				return ret;
 		}
 	}
+#endif
 
 	if (tmi_cvm_activate(cvm->rd)) {
 		kvm_err("tmi_cvm_activate failed!\n");
@@ -883,6 +892,7 @@ int kvm_init_cvm_vm(struct kvm *kvm)
 	return 0;
 }
 
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 /*
  * Coda (Confidential Device Assignment) feature
  * enable devices to pass directly to confidential virtual machines
@@ -940,35 +950,6 @@ bool is_virtcca_iova_need_vfio_dma(struct kvm *kvm, uint64_t iova)
 }
 EXPORT_SYMBOL_GPL(is_virtcca_iova_need_vfio_dma);
 
-/**
- * cvm_arm_smmu_domain_set_kvm - Associate SMMU domain with CV
- * @group: Iommu group
- *
- * Returns:
- * %0 if smmu_domain has been associate cvm or associate cvm successfully
- * %-ENXIO if the iommu group does not have smmu domain
- */
-int cvm_arm_smmu_domain_set_kvm(void *group)
-{
-	struct arm_smmu_domain *arm_smmu_domain = NULL;
-	struct iommu_domain *domain;
-	struct kvm *kvm;
-
-	domain = virtcca_iommu_group_get_domain((struct iommu_group *)group);
-	if (!domain)
-		return -ENXIO;
-
-	arm_smmu_domain = to_smmu_domain(domain);
-	if (arm_smmu_domain->kvm)
-		return 0;
-
-	kvm = virtcca_arm_smmu_get_kvm(arm_smmu_domain);
-	if (kvm && kvm_is_virtcca_cvm(kvm))
-		arm_smmu_domain->kvm = kvm;
-
-	return 0;
-}
-
 static int kvm_cvm_dev_ttt_create(struct virtcca_cvm *cvm,
 			unsigned long addr,
 			int level,
@@ -999,6 +980,42 @@ int kvm_cvm_create_dev_ttt_levels(struct kvm *kvm, struct virtcca_cvm *cvm,
 }
 
 /**
+ * cvm_map_max_level_size - MMIO Map according to largest possible granularity
+ * @map_start: The start of map address
+ * @map_end: The end of map address
+ * @map_size: Map range
+ *
+ * Returns:
+ * %level the map level
+ * %-ENXIO if no suitable mapping level was found
+ */
+static int cvm_map_max_level_size(unsigned long map_start, unsigned long map_end,
+	unsigned long *map_size)
+{
+	int level = 1;
+
+	*map_size = tmm_granule_size(level);
+	if (IS_ALIGNED(map_start, *map_size) &&
+	(map_start + *map_size <= map_end))
+		return level;
+
+	level++;
+	*map_size = tmm_granule_size(level);
+	if (IS_ALIGNED(map_start, *map_size) &&
+	(map_start + *map_size <= map_end))
+		return level;
+
+	level++;
+	*map_size = tmm_granule_size(level);
+	if (IS_ALIGNED(map_start, *map_size) &&
+	(map_start + *map_size <= map_end))
+		return level;
+
+	pr_err("level not allow to map size\n");
+	return -ENXIO;
+}
+
+/**
  * cvm_map_unmap_ipa_range - Vfio driver map or
  * unmap cvm ipa
  * @kvm: The handle of kvm
@@ -1014,41 +1031,48 @@ int kvm_cvm_create_dev_ttt_levels(struct kvm *kvm, struct virtcca_cvm *cvm,
 int cvm_map_unmap_ipa_range(struct kvm *kvm, phys_addr_t ipa_base,
 	phys_addr_t pa, unsigned long map_size, uint32_t is_map)
 {
-	unsigned long size;
+	unsigned long map_start;
+	unsigned long map_end;
+	int level;
 	struct virtcca_cvm *virtcca_cvm = kvm->arch.virtcca_cvm;
 	phys_addr_t rd = virtcca_cvm->rd;
-	unsigned long ipa = ipa_base;
 	unsigned long phys = pa;
 	int ret = 0;
 
-	for (size = 0; size < map_size; size += PAGE_SIZE) {
+	map_start = ipa_base;
+	map_end = map_start + map_size;
+	while (map_start < map_end) {
+		level = cvm_map_max_level_size(map_start, map_end, &map_size);
+		if (level < 0) {
+			ret = -ENXIO;
+			goto err;
+		}
 		if (is_map)
-			ret = tmi_mmio_map(rd, ipa, CVM_TTT_MAX_LEVEL, phys);
+			ret = tmi_mmio_map(rd, map_start, level, phys);
 		else
-			ret = tmi_mmio_unmap(rd, ipa, CVM_TTT_MAX_LEVEL);
+			ret = tmi_mmio_unmap(rd, map_start, level);
 
 		if (TMI_RETURN_STATUS(ret) == TMI_ERROR_TTT_WALK) {
 			/* Create missing TTTs and retry */
 			int level_fault = TMI_RETURN_INDEX(ret);
 
 			if (is_map) {
-				ret = kvm_cvm_create_dev_ttt_levels(kvm, virtcca_cvm, ipa,
+				ret = kvm_cvm_create_dev_ttt_levels(kvm, virtcca_cvm, map_start,
 					level_fault, CVM_TTT_MAX_LEVEL, NULL);
 				if (ret)
 					goto err;
-				ret = tmi_mmio_map(rd, ipa, CVM_TTT_MAX_LEVEL, phys);
+				ret = tmi_mmio_map(rd, map_start, level, phys);
 			} else {
-				ret = tmi_mmio_unmap(rd, ipa, level_fault);
+				ret = tmi_mmio_unmap(rd, map_start, level_fault);
+				map_size = tmm_granule_size(level_fault);
 			}
 		}
 
 		if (ret)
 			goto err;
 
-		if (size + PAGE_SIZE >= map_size)
-			break;
-		ipa += PAGE_SIZE;
-		phys += PAGE_SIZE;
+		map_start += map_size;
+		phys += map_size;
 	}
 
 	return 0;
@@ -1158,3 +1182,41 @@ void virtcca_cvm_set_secure_flag(void *vdev, void *info)
 }
 EXPORT_SYMBOL_GPL(virtcca_cvm_set_secure_flag);
 
+/**
+ * cvm_arm_smmu_domain_set_kvm - Associate SMMU domain with CVM
+ * @dev: The Device under the iommu group
+ *
+ * Returns:
+ * %0 if smmu_domain has been associate cvm or associate cvm successfully
+ * %-ENXIO if the iommu group does not have smmu domain
+ */
+int cvm_arm_smmu_domain_set_kvm(struct device *dev, void *data)
+{
+	struct kvm *kvm;
+	struct iommu_domain *domain;
+	struct arm_smmu_domain *arm_smmu_domain = NULL;
+
+	domain = iommu_get_domain_for_dev(dev);
+	if (!domain)
+		return -ENXIO;
+
+	arm_smmu_domain = to_smmu_domain(domain);
+	if (arm_smmu_domain->kvm)
+		return 1;
+
+	kvm = virtcca_arm_smmu_get_kvm(arm_smmu_domain);
+	if (kvm && kvm_is_virtcca_cvm(kvm))
+		arm_smmu_domain->kvm = kvm;
+
+	return 1;
+}
+
+int virtcca_cvm_arm_smmu_domain_set_kvm(void *group)
+{
+	int ret;
+
+	ret = iommu_group_for_each_dev((struct iommu_group *)group,
+		(void *)NULL, cvm_arm_smmu_domain_set_kvm);
+	return ret;
+}
+#endif
