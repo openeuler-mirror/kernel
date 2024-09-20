@@ -3042,6 +3042,7 @@ static ssize_t shmem_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
+	pgoff_t index = iocb->ki_pos >> PAGE_SHIFT;
 	ssize_t ret;
 
 	inode_lock(inode);
@@ -3054,6 +3055,10 @@ static ssize_t shmem_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	ret = file_update_time(file);
 	if (ret)
 		goto unlock;
+
+	if (!shmem_allowable_huge_orders(inode, NULL, index, 0, false))
+		iocb->ki_flags |= IOCB_NO_LARGE_CHUNK;
+
 	ret = generic_perform_write(iocb, from);
 unlock:
 	inode_unlock(inode);

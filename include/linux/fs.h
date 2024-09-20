@@ -372,6 +372,8 @@ enum rw_hint {
 #define IOCB_DIO_CALLER_COMP	(1 << 22)
 /* kiocb is a read or write operation submitted by fs/aio.c. */
 #define IOCB_AIO_RW		(1 << 23)
+/* fault int small chunks(PAGE_SIZE) from userspace */
+#define IOCB_NO_LARGE_CHUNK	(1 << 24)
 
 /* for use in trace events */
 #define TRACE_IOCB_STRINGS \
