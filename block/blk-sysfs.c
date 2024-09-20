@@ -895,6 +895,10 @@ static void __blk_release_queue(struct work_struct *work)
 		blk_mq_release(q);
 	}
 
+	mutex_lock(&q->debugfs_mutex);
+	blk_trace_shutdown(q);
+	mutex_unlock(&q->debugfs_mutex);
+
 	bioset_exit(&q->bio_split);
 
 	ida_simple_remove(&blk_queue_ida, q->id);
