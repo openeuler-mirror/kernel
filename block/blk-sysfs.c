@@ -11,6 +11,7 @@
 #include <linux/blktrace_api.h>
 #include <linux/blk-mq.h>
 #include <linux/blk-cgroup.h>
+#include <linux/debugfs.h>
 #include <linux/atomic.h>
 
 #include "blk.h"
@@ -894,10 +895,9 @@ static void __blk_release_queue(struct work_struct *work)
 		blk_mq_release(q);
 	}
 
+	mutex_lock(&q->debugfs_mutex);
 	blk_trace_shutdown(q);
-
-	if (q->mq_ops)
-		blk_mq_debugfs_unregister(q);
+	mutex_unlock(&q->debugfs_mutex);
 
 	bioset_exit(&q->bio_split);
 
@@ -968,12 +968,17 @@ int blk_register_queue(struct gendisk *disk)
 		goto unlock;
 	}
 
-	if (q->mq_ops) {
+	if (q->mq_ops)
 		__blk_mq_register_dev(dev, q);
-		blk_mq_debugfs_register(q);
-	}
-
 	mutex_lock(&q->sysfs_lock);
+
+	mutex_lock(&q->debugfs_mutex);
+	q->debugfs_dir = debugfs_create_dir(kobject_name(q->kobj.parent),
+					    blk_debugfs_root);
+	if (q->mq_ops)
+		blk_mq_debugfs_register(q);
+	mutex_unlock(&q->debugfs_mutex);
+
 	if (q->request_fn || (q->mq_ops && q->elevator)) {
 		ret = elv_register_queue(q, false);
 		if (ret) {
@@ -1067,6 +1072,13 @@ void blk_unregister_queue(struct gendisk *disk)
 		elv_unregister_queue(q);
 	mutex_unlock(&q->sysfs_lock);
 	mutex_unlock(&queue_to_wrapper(q)->sysfs_dir_lock);
+
+	mutex_lock(&q->debugfs_mutex);
+	blk_trace_shutdown(q);
+	debugfs_remove_recursive(q->debugfs_dir);
+	q->debugfs_dir = NULL;
+	q->sched_debugfs_dir = NULL;
+	mutex_unlock(&q->debugfs_mutex);
 
 	/* Now that we've deleted all child objects, we can delete the queue. */
 	kobject_uevent(&q->kobj, KOBJ_REMOVE);

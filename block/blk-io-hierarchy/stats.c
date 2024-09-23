@@ -33,6 +33,8 @@ void blk_mq_debugfs_register_hierarchy_stats(struct request_queue *q)
 	struct blk_io_hierarchy_stats *stats;
 	enum stage_group stage;
 
+	lockdep_assert_held(&q->debugfs_mutex);
+
 	stats = queue_to_wrapper(q)->io_hierarchy_stats;
 	if (!stats || !blk_mq_debugfs_enabled(q))
 		return;
@@ -203,8 +205,10 @@ void blk_mq_register_hierarchy(struct request_queue *q, enum stage_group stage)
 
 	blk_mq_freeze_queue(q);
 
+	mutex_lock(&q->debugfs_mutex);
 	WRITE_ONCE(stats->hstage[stage], hstage);
 	blk_mq_debugfs_register_hierarchy(q, stage);
+	mutex_unlock(&q->debugfs_mutex);
 
 	blk_mq_unfreeze_queue(q);
 }
@@ -220,6 +224,8 @@ void blk_mq_unregister_hierarchy(struct request_queue *q,
 	if (!blk_mq_hierarchy_registered(q, stage))
 		return;
 
+	mutex_lock(&q->debugfs_mutex);
+
 	blk_mq_debugfs_unregister_hierarchy(q, stage);
 	blk_io_hierarchy_iodump_exit(q, stage);
 
@@ -230,6 +236,8 @@ void blk_mq_unregister_hierarchy(struct request_queue *q,
 	spin_unlock(&stats->hstage_lock);
 
 	kfree(hstage);
+
+	mutex_unlock(&q->debugfs_mutex);
 }
 EXPORT_SYMBOL_GPL(blk_mq_unregister_hierarchy);
 
