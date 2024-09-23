@@ -470,12 +470,12 @@ static void get_recent_stat_times(struct psi_group *group, int cpu,
 				  enum psi_aggregators aggregator, u64 *stat_delta, u64 nonidle)
 {
 	struct psi_group_cpu *groupc = per_cpu_ptr(group->pcpu, cpu);
-	u32 times[NR_PSI_STAT_STATES] = {0};
+	u32 times[PSI_STATE_LAST] = {0};
 	enum psi_stat_states s;
 	u32 delta;
 
-	memcpy(times, groupc->fine_grained_times, sizeof(groupc->fine_grained_times));
-	for (s = 0; s < NR_PSI_STAT_STATES; s++) {
+	for (s = 0; s < PSI_STATE_LAST; s++) {
+		times[s] = groupc->fine_grained_times[s];
 		if (groupc->fine_grained_state_mask & (1 << s))
 			times[s] += groupc->fine_grained_times_delta;
 		delta = times[s] - groupc->fine_grained_times_prev[aggregator][s];
@@ -522,7 +522,7 @@ static void collect_percpu_times(struct psi_group *group,
 				 u32 *pchanged_states)
 {
 #ifdef CONFIG_PSI_FINE_GRAINED
-	u64 stat_delta[NR_PSI_STAT_STATES] = { 0 };
+	u64 stat_delta[PSI_STATE_LAST] = { 0 };
 #endif
 	u64 deltas[NR_PSI_STATES - 1] = { 0, };
 	unsigned long nonidle_total = 0;
@@ -575,7 +575,7 @@ static void collect_percpu_times(struct psi_group *group,
 				div_u64(deltas[s], max(nonidle_total, 1UL));
 
 #ifdef CONFIG_PSI_FINE_GRAINED
-	for (s = 0; s < NR_PSI_STAT_STATES; s++)
+	for (s = 0; s < PSI_STATE_LAST; s++)
 		group->fine_grained_total[aggregator][s] +=
 			div_u64(stat_delta[s], max(nonidle_total, 1UL));
 #endif
@@ -753,7 +753,7 @@ static u64 update_averages(struct psi_group *group, u64 now)
 		calc_avgs(group->avg[s], missed_periods, sample, period);
 	}
 #ifdef CONFIG_PSI_FINE_GRAINED
-	for (s = 0; s < NR_PSI_STAT_STATES; s++) {
+	for (s = 0; s < PSI_STATE_LAST; s++) {
 		u32 stat_sample;
 
 		stat_sample = group->fine_grained_total[PSI_AVGS][s] -
@@ -1935,7 +1935,7 @@ int psi_stat_show(struct seq_file *m, struct psi_group *group)
 		group->avg_next_update = update_averages(group, now);
 	mutex_unlock(&group->avgs_lock);
 
-	for (i = 0; i < NR_PSI_STAT_STATES; i++) {
+	for (i = 0; i < PSI_STATE_LAST; i++) {
 		unsigned long avg[3] = {0, };
 		int w;
 		u64 total;
