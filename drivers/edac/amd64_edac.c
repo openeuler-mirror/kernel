@@ -2677,6 +2677,16 @@ static struct amd64_family_type family_types[] = {
 			.dbam_to_cs		= f17_addr_mask_to_cs_size,
 		}
 	},
+	[F18_M10H_CPUS] = {
+		.ctl_name = "F18h_M10h",
+		.f0_id = PCI_DEVICE_ID_HYGON_18H_M10H_DF_F0,
+		.f6_id = PCI_DEVICE_ID_HYGON_18H_M10H_DF_F6,
+		.max_mcs = 2,
+		.ops = {
+			.early_channel_count	= f17_early_channel_count,
+			.dbam_to_cs		= f17_addr_mask_to_cs_size,
+		}
+	},
 	[F19_CPUS] = {
 		.ctl_name = "F19h",
 		.f0_id = PCI_DEVICE_ID_AMD_19H_DF_F0,
@@ -3790,6 +3800,10 @@ static struct amd64_family_type *per_family_init(struct amd64_pvt *pvt)
 			fam_type = &family_types[F18_M06H_CPUS];
 			pvt->ops = &family_types[F18_M06H_CPUS].ops;
 			family_types[F18_M06H_CPUS].ctl_name = "F18h_M07h";
+			break;
+		} else if (pvt->model == 0x10) {
+			fam_type = &family_types[F18_M10H_CPUS];
+			pvt->ops = &family_types[F18_M10H_CPUS].ops;
 			break;
 		}
 		fam_type	= &family_types[F17_CPUS];
