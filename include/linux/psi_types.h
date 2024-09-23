@@ -100,12 +100,15 @@ enum psi_stat_states {
 #ifdef CONFIG_QOS_SCHED
 	PSI_CPU_QOS_FULL,
 #endif
+	/* reserve for KABI start */
+	PSI_STATE_LAST,
 	PSI_STATE_RESERVE1,
 	PSI_STATE_RESERVE2,
 	PSI_STATE_RESERVE3,
 	PSI_STATE_RESERVE4,
 	PSI_STATE_RESERVE5,
-	PSI_STATE_RESERVE6,
+	/* reserve for KABI end */
+
 	NR_PSI_STAT_STATES,
 };
 
