@@ -1,0 +1,26 @@
+/* SPDX-License-Identifier: GPL-2.0*/
+/*
+ * Copyright (c) 2022 nebula-matrix Limited.
+ * Author:
+ */
+
+#ifndef _NBL_INTERRUPT_H_
+#define _NBL_INTERRUPT_H_
+
+#include "nbl_resource.h"
+
+#define NBL_MSIX_MAP_TABLE_MAX_ENTRIES	(1024)
+
+#define NBL_INTR_SUPPRESS_LEVEL1_THRESHOLD	(100000) /* 100k pps */
+#define NBL_INTR_SUPPRESS_LEVEL1_DOWNGRADE_THRESHOLD	(60000) /* 60kpps */
+#define NBL_INTR_SUPPRESS_LEVEL0		(0)
+#define NBL_INTR_SUPPRESS_LEVEL1		(1)
+
+#define NBL_INTR_SUPPRESS_LEVEL0_PNUM		(0)
+#define NBL_INTR_SUPPRESS_LEVEL1_25G_PNUM	(8)
+#define NBL_INTR_SUPPRESS_LEVEL1_100G_PNUM	(16)
+#define NBL_INTR_SUPPRESS_LEVEL0_RATE		(0)
+#define NBL_INTR_SUPPRESS_LEVEL1_25G_RATE	(1)
+#define NBL_INTR_SUPPRESS_LEVEL1_100G_RATE	(2)
+
+#endif
