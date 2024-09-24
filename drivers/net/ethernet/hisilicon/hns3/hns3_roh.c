@@ -77,8 +77,10 @@ int hns3_handle_roh_arp_req(struct sk_buff *skb, struct hns3_nic_priv *priv)
 	if (skb_vlan_tagged(skb)) {
 		ring->arp_reply[reply_idx].has_vlan = true;
 		ring->arp_reply[reply_idx].vlan_tci = skb_vlan_tag_get(skb);
-		skb_vlan_pop(skb);
-		len += VLAN_HLEN;
+		if (likely(!skb_vlan_pop(skb)))
+			len += VLAN_HLEN;
+		else
+			goto err_vlan_head;
 	} else {
 		ring->arp_reply[reply_idx].has_vlan = false;
 	}
@@ -107,6 +109,11 @@ int hns3_handle_roh_arp_req(struct sk_buff *skb, struct hns3_nic_priv *priv)
 
 	dev_kfree_skb_any(skb);
 	napi_schedule(&ring->tqp_vector->napi);
+	return NETDEV_TX_OK;
+
+err_vlan_head:
+	hns3_ring_stats_update(ring, tx_vlan_err);
+	dev_kfree_skb_any(skb);
 	return NETDEV_TX_OK;
 }
 
