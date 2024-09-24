@@ -5215,13 +5215,22 @@ static int kvm_hygon_arch_hypercall(struct kvm *kvm, u64 nr, u64 a0, u64 a1, u64
 	struct kvm_vpsp vpsp = {
 		.kvm = kvm,
 		.write_guest = kvm_write_guest,
-		.read_guest = kvm_read_guest
+		.read_guest = kvm_read_guest,
+		.gfn_to_pfn = gfn_to_pfn,
 	};
-	switch (nr) {
-	case KVM_HC_PSP_OP:
-		ret = kvm_pv_psp_op(&vpsp, a0, a1, a2, a3);
-		break;
 
+	if (sev_guest(kvm)) {
+		vpsp.vm_handle = to_kvm_svm(kvm)->sev_info.handle;
+		vpsp.is_csv_guest = 1;
+	}
+
+	switch (nr) {
+	case KVM_HC_PSP_COPY_FORWARD_OP:
+		ret = kvm_pv_psp_copy_forward_op(&vpsp, a0, a1, a2);
+		break;
+	case KVM_HC_PSP_FORWARD_OP:
+		ret = kvm_pv_psp_forward_op(&vpsp, a0, a1, a2);
+		break;
 	default:
 		ret = -KVM_ENOSYS;
 		break;

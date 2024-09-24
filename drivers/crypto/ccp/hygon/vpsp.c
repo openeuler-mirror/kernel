@@ -13,45 +13,39 @@
 #include <linux/psp-sev.h>
 #include <linux/psp.h>
 #include <linux/psp-hygon.h>
+#include <asm/cpuid.h>
 
 #ifdef pr_fmt
 #undef pr_fmt
 #endif
 #define pr_fmt(fmt) "vpsp: " fmt
+#define VTKM_VM_BIND	0x904
 
 /*
- * The file mainly implements the base execution
- * logic of virtual PSP in kernel mode, which mainly includes:
- *	(1) Obtain the VM command and preprocess the pointer
- *		mapping table information in the command buffer
- *	(2) The command that has been converted will interact
- *		with the channel of the psp through the driver and
- *		try to obtain the execution result
- *	(3) The executed command data is recovered according to
- *		the multilevel pointer of the mapping table, and then returned to the VM
+ * The file mainly implements the base execution logic of virtual PSP in kernel mode,
+ *	which mainly includes:
+ *	(1) Preprocess the guest data in the host kernel
+ *	(2) The command that has been converted will interact with the channel of the
+ *		psp through the driver and try to obtain the execution result
+ *	(3) The executed command data is recovered, and then returned to the VM
  *
  * The primary implementation logic of virtual PSP in kernel mode
  * call trace:
- * guest command(vmmcall)
- *	|
- *	|	   |-> kvm_pv_psp_cmd_pre_op
- *		   |		|
- *		   |		| -> guest_addr_map_table_op
- *		   |				|
- *		   |				| -> guest_multiple_level_gpa_replace
+ * guest command(vmmcall, KVM_HC_PSP_COPY_FORWARD_OP)
  *		   |
- *  kvm_pv_psp_op->|-> vpsp_try_do_cmd/vpsp_try_get_result <====> psp device driver
- *		   |
- *		   |
- *		   |-> kvm_pv_psp_cmd_post_op
+ *	kvm_pv_psp_copy_op---->	| -> kvm_pv_psp_cmd_pre_op
  *				|
- *				| -> guest_addr_map_table_op
- *						|
- *						| -> guest_multiple_level_gpa_restore
+ *				| -> vpsp_try_do_cmd/vpsp_try_get_result
+ *				|	|<=> psp device driver
+ *				|
+ *				|
+ *				|-> kvm_pv_psp_cmd_post_op
+ *
+ * guest command(vmmcall, KVM_HC_PSP_FORWARD_OP)
+ *		   |
+ *	kvm_pv_psp_forward_op-> |-> vpsp_try_do_cmd/vpsp_try_get_result
+ *					|<=> psp device driver
  */
-
-#define TKM_CMD_ID_MIN  0x120
-#define TKM_CMD_ID_MAX  0x12f
 
 struct psp_cmdresp_head {
 	uint32_t buf_size;
@@ -59,353 +53,63 @@ struct psp_cmdresp_head {
 	uint32_t cmdresp_code;
 } __packed;
 
-/**
- * struct map_tbl - multilevel pointer address mapping table
- *
- * @parent_pa: parent address block's physics address
- * @offset: offset in parent address block
- * @size: submemory size
- * @align: submemory align size, hva need to keep size alignment in kernel
- * @hva: submemory copy block in kernel virtual address
- */
-struct map_tbl {
-	uint64_t parent_pa;
-	uint32_t offset;
-	uint32_t size;
-	uint32_t align;
-	uint64_t hva;
-} __packed;
-
-struct addr_map_tbls {
-	uint32_t tbl_nums;
-	struct map_tbl tbl[];
-} __packed;
-
-/* gpa and hva conversion maintenance table for internal use */
-struct gpa2hva_t {
-	void *hva;
-	gpa_t gpa;
-};
-
-struct gpa2hva_tbls {
-	uint32_t max_nums;
-	uint32_t tbl_nums;
-	struct gpa2hva_t tbl[];
-};
-
 /* save command data for restoring later */
 struct vpsp_hbuf_wrapper {
 	void *data;
 	uint32_t data_size;
-	struct addr_map_tbls *map_tbls;
-	struct gpa2hva_tbls *g2h_tbls;
 };
 
 /* Virtual PSP host memory information maintenance, used in ringbuffer mode */
 struct vpsp_hbuf_wrapper
 g_hbuf_wrap[CSV_COMMAND_PRIORITY_NUM][CSV_RING_BUFFER_SIZE / CSV_RING_BUFFER_ESIZE] = {0};
 
-void __maybe_unused map_tbl_dump(const char *title, struct addr_map_tbls *tbls)
+static int check_gpa_range(struct vpsp_context *vpsp_ctx, gpa_t addr, uint32_t size)
 {
-	int i;
-
-	pr_info("[%s]-> map_tbl_nums: %d", title, tbls->tbl_nums);
-	for (i = 0; i < tbls->tbl_nums; i++) {
-		pr_info("\t[%d]: parent_pa: 0x%llx, offset: 0x%x, size: 0x%x, align: 0x%x hva: 0x%llx",
-			i, tbls->tbl[i].parent_pa, tbls->tbl[i].offset,
-			tbls->tbl[i].size, tbls->tbl[i].align, tbls->tbl[i].hva);
-	}
-	pr_info("\n");
-}
-
-void __maybe_unused g2h_tbl_dump(const char *title, struct gpa2hva_tbls *tbls)
-{
-	int i;
-
-	pr_info("[%s]-> g2h_tbl_nums: %d, max_nums: %d", title, tbls->tbl_nums,
-		tbls->max_nums);
-	for (i = 0; i < tbls->tbl_nums; i++)
-		pr_info("\t[%d]: hva: 0x%llx, gpa: 0x%llx", i,
-			(uint64_t)tbls->tbl[i].hva, tbls->tbl[i].gpa);
-	pr_info("\n");
-}
-
-static int gpa2hva_tbl_fill(struct gpa2hva_tbls *tbls, void *hva, gpa_t gpa)
-{
-	uint32_t fill_idx = tbls->tbl_nums;
-
-	if (fill_idx >= tbls->max_nums)
+	if (!vpsp_ctx || !addr)
 		return -EFAULT;
 
-	tbls->tbl[fill_idx].hva = hva;
-	tbls->tbl[fill_idx].gpa = gpa;
-	tbls->tbl_nums = fill_idx + 1;
+	if (addr >= vpsp_ctx->gpa_start && (addr + size) <= vpsp_ctx->gpa_end)
+		return 0;
+	return -EFAULT;
+}
+
+static int check_psp_mem_range(struct vpsp_context *vpsp_ctx,
+			void *data, uint32_t size)
+{
+	if ((((uintptr_t)data + size - 1) & ~PSP_2MB_MASK) !=
+			((uintptr_t)data & ~PSP_2MB_MASK)) {
+		pr_err("data %llx, size %d crossing 2MB\n", (u64)data, size);
+		return -EFAULT;
+	}
+
+	if (vpsp_ctx)
+		return check_gpa_range(vpsp_ctx, (gpa_t)data, size);
 
 	return 0;
 }
 
-static void clear_hva_in_g2h_tbls(struct gpa2hva_tbls *g2h, void *hva)
-{
-	int i;
-
-	for (i = 0; i < g2h->tbl_nums; i++) {
-		if (g2h->tbl[i].hva == hva)
-			g2h->tbl[i].hva = NULL;
-	}
-}
-
-static void *get_hva_from_gpa(struct gpa2hva_tbls *g2h, gpa_t gpa)
-{
-	int i;
-
-	for (i = 0; i < g2h->tbl_nums; i++) {
-		if (g2h->tbl[i].gpa == gpa)
-			return (void *)g2h->tbl[i].hva;
-	}
-
-	return NULL;
-}
-
-static gpa_t get_gpa_from_hva(struct gpa2hva_tbls *g2h, void *hva)
-{
-	int i;
-
-	for (i = 0; i < g2h->tbl_nums; i++) {
-		if (g2h->tbl[i].hva == hva)
-			return g2h->tbl[i].gpa;
-	}
-
-	return 0;
-}
-
-/*
- * The virtual machine multilevel pointer command buffer handles the
- * execution entity, synchronizes the data in the original gpa to the
- * newly allocated hva(host virtual address) and updates the mapping
- * relationship in the parent memory
- */
-static int guest_multiple_level_gpa_replace(struct kvm_vpsp *vpsp,
-		struct map_tbl *tbl, struct gpa2hva_tbls *g2h)
-{
-	int ret = 0;
-	uint32_t sub_block_size;
-	uint64_t sub_paddr;
-	void *parent_kva = NULL;
-
-	/* kmalloc memory for child block */
-	sub_block_size = max(tbl->size, tbl->align);
-	tbl->hva = (uint64_t)kzalloc(sub_block_size, GFP_KERNEL);
-	if (!tbl->hva)
-		return -ENOMEM;
-
-	/* get child gpa from parent gpa */
-	if (unlikely(vpsp->read_guest(vpsp->kvm, tbl->parent_pa + tbl->offset,
-		&sub_paddr, sizeof(sub_paddr)))) {
-		pr_err("[%s]: kvm_read_guest for parent gpa failed\n",
-			__func__);
-		ret = -EFAULT;
-		goto e_free;
-	}
-
-	/* copy child block data from gpa to hva */
-	if (unlikely(vpsp->read_guest(vpsp->kvm, sub_paddr, (void *)tbl->hva,
-		tbl->size))) {
-		pr_err("[%s]: kvm_read_guest for sub_data failed\n",
-			__func__);
-		ret = -EFAULT;
-		goto e_free;
-	}
-
-	/* get hva from gpa */
-	parent_kva = get_hva_from_gpa(g2h, tbl->parent_pa);
-	if (unlikely(!parent_kva)) {
-		pr_err("[%s]: get_hva_from_gpa for parent_pa failed\n",
-			__func__);
-		ret = -EFAULT;
-		goto e_free;
-	}
-
-	/* replace pa of hva from gpa */
-	*(uint64_t *)((uint8_t *)parent_kva + tbl->offset) = __psp_pa(tbl->hva);
-
-	/* fill in gpa and hva to map table for restoring later */
-	if (unlikely(gpa2hva_tbl_fill(g2h, (void *)tbl->hva, sub_paddr))) {
-		pr_err("[%s]: gpa2hva_tbl_fill for sub_addr failed\n",
-			__func__);
-		ret = -EFAULT;
-		goto e_free;
-	}
-
-	return ret;
-
-e_free:
-	kfree((const void *)tbl->hva);
-	return ret;
-}
-
-/* The virtual machine multi-level pointer command memory handles the
- * execution entity, synchronizes the data in the hva(host virtual
- * address) back to the memory corresponding to the gpa, and restores
- * the mapping relationship in the original parent memory
- */
-static int guest_multiple_level_gpa_restore(struct kvm_vpsp *vpsp,
-		struct map_tbl *tbl, struct gpa2hva_tbls *g2h)
-{
-	int ret = 0;
-	gpa_t sub_gpa;
-	void *parent_hva = NULL;
-
-	/* get gpa from hva */
-	sub_gpa = get_gpa_from_hva(g2h, (void *)tbl->hva);
-	if (unlikely(!sub_gpa)) {
-		pr_err("[%s]: get_gpa_from_hva for sub_gpa failed\n",
-			__func__);
-		ret = -EFAULT;
-		goto end;
-	}
-
-	/* copy child block data from hva to gpa */
-	if (unlikely(vpsp->write_guest(vpsp->kvm, sub_gpa, (void *)tbl->hva,
-				tbl->size))) {
-		pr_err("[%s]: kvm_write_guest for sub_gpa failed\n",
-			__func__);
-		ret = -EFAULT;
-		goto end;
-	}
-
-	/* get parent hva from parent gpa  */
-	parent_hva = get_hva_from_gpa(g2h, tbl->parent_pa);
-	if (unlikely(!parent_hva)) {
-		pr_err("[%s]: get_hva_from_gpa for parent_pa failed\n",
-			__func__);
-		ret = -EFAULT;
-		goto end;
-	}
-
-	/* restore gpa from pa of hva in parent block  */
-	*(uint64_t *)((uint8_t *)parent_hva + tbl->offset) = sub_gpa;
-
-	/* free child block memory  */
-	clear_hva_in_g2h_tbls(g2h, (void *)tbl->hva);
-	kfree((const void *)tbl->hva);
-	tbl->hva = 0;
-
-end:
-	return ret;
-}
-
-/*
- * The virtual machine multilevel pointer command memory processing
- * executes upper-layer abstract interfaces, including replacing and
- * restoring two sub-processing functions
- */
-static int guest_addr_map_table_op(struct kvm_vpsp *vpsp, struct gpa2hva_tbls *g2h,
-	struct addr_map_tbls *map_tbls, int op)
-{
-	int ret = 0;
-	int i;
-	uint64_t *sub_paddr_ptr;
-
-	if (op) {
-		for (i = map_tbls->tbl_nums - 1; i >= 0; i--) {
-			/* check if the gpa of root points to itself */
-			if (map_tbls->tbl[i].parent_pa == g2h->tbl[0].gpa) {
-				sub_paddr_ptr = (uint64_t *)((uint8_t *)g2h->tbl[0].hva
-						+ map_tbls->tbl[i].offset);
-				/* if the child paddr is equal to the parent paddr */
-				if ((uint64_t)g2h->tbl[0].hva == map_tbls->tbl[i].hva) {
-					*sub_paddr_ptr = g2h->tbl[0].gpa;
-					continue;
-				}
-			}
-
-			/* restore new pa of kva with the gpa from guest */
-			if (unlikely(guest_multiple_level_gpa_restore(vpsp,
-				&map_tbls->tbl[i], g2h))) {
-				pr_err("[%s]: guest_multiple_level_gpa_restore failed\n",
-					__func__);
-				ret = -EFAULT;
-				goto end;
-			}
-		}
-	} else {
-		for (i = 0; i < map_tbls->tbl_nums; i++) {
-			/* check if the gpa of root points to itself */
-			if (map_tbls->tbl[i].parent_pa == g2h->tbl[0].gpa) {
-				sub_paddr_ptr = (uint64_t *)((uint8_t *)g2h->tbl[0].hva
-							+ map_tbls->tbl[i].offset);
-				/* if the child paddr is equal to the parent paddr */
-				if (*sub_paddr_ptr == map_tbls->tbl[i].parent_pa) {
-					*sub_paddr_ptr = __psp_pa(g2h->tbl[0].hva);
-					map_tbls->tbl[i].hva = (uint64_t)g2h->tbl[0].hva;
-					continue;
-				}
-			}
-
-			/* check if parent_pa is valid */
-			if (unlikely(!get_hva_from_gpa(g2h, map_tbls->tbl[i].parent_pa))) {
-				pr_err("[%s]: g2h->tbl[%d].parent_pa: 0x%llx is invalid\n",
-					__func__, i, map_tbls->tbl[i].parent_pa);
-				ret = -EFAULT;
-				goto end;
-			}
-
-			/* replace the gpa from guest with the new pa of kva */
-			if (unlikely(guest_multiple_level_gpa_replace(vpsp,
-				&map_tbls->tbl[i], g2h))) {
-				pr_err("[%s]: guest_multiple_level_gpa_replace failed\n",
-					__func__);
-				ret = -EFAULT;
-				goto end;
-			}
-		}
-	}
-
-end:
-	return ret;
-}
-
-static void kvm_pv_psp_mem_free(struct gpa2hva_tbls *g2h, struct addr_map_tbls
-	*map_tbl, void *data)
-{
-	int i;
-
-	if (g2h) {
-		for (i = 0; i < g2h->tbl_nums; i++) {
-			if (g2h->tbl[i].hva && (g2h->tbl[i].hva != data)) {
-				kfree(g2h->tbl[i].hva);
-				g2h->tbl[i].hva = NULL;
-			}
-		}
-		kfree(g2h);
-	}
-
-	kfree(map_tbl);
-	kfree(data);
-}
-
-/*
- * Obtain the VM command and preprocess the pointer mapping table
- * information in the command buffer, the processed data will be
- * used to interact with the psp device
+/**
+ * Copy the guest data to the host kernel buffer
+ * and record the host buffer address in 'hbuf'.
+ * This 'hbuf' is used to restore context information
+ * during asynchronous processing.
  */
 static int kvm_pv_psp_cmd_pre_op(struct kvm_vpsp *vpsp, gpa_t data_gpa,
-		gpa_t table_gpa, struct vpsp_hbuf_wrapper *hbuf)
+		struct vpsp_hbuf_wrapper *hbuf)
 {
 	int ret = 0;
 	void *data = NULL;
 	struct psp_cmdresp_head psp_head;
 	uint32_t data_size;
-	struct addr_map_tbls map_head, *map_tbls = NULL;
-	uint32_t map_tbl_size;
-	struct gpa2hva_tbls *g2h = NULL;
-	uint32_t g2h_tbl_size;
 
 	if (unlikely(vpsp->read_guest(vpsp->kvm, data_gpa, &psp_head,
 					sizeof(struct psp_cmdresp_head))))
 		return -EFAULT;
 
 	data_size = psp_head.buf_size;
+	if (check_psp_mem_range(NULL, (void *)data_gpa, data_size))
+		return -EFAULT;
+
 	data = kzalloc(data_size, GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
@@ -415,86 +119,17 @@ static int kvm_pv_psp_cmd_pre_op(struct kvm_vpsp *vpsp, gpa_t data_gpa,
 		goto end;
 	}
 
-	if (table_gpa) {
-		/* parse address map table from guest */
-		if (unlikely(vpsp->read_guest(vpsp->kvm, table_gpa, &map_head,
-			sizeof(struct addr_map_tbls)))) {
-			pr_err("[%s]: kvm_read_guest for map_head failed\n",
-				__func__);
-			ret = -EFAULT;
-			goto end;
-		}
-
-		map_tbl_size = sizeof(struct addr_map_tbls) + map_head.tbl_nums
-			* sizeof(struct map_tbl);
-		map_tbls = kzalloc(map_tbl_size, GFP_KERNEL);
-		if (!map_tbls) {
-			ret = -ENOMEM;
-			goto end;
-		}
-
-		if (unlikely(vpsp->read_guest(vpsp->kvm, table_gpa, map_tbls,
-			map_tbl_size))) {
-			pr_err("[%s]: kvm_read_guest for map_tbls failed\n",
-				__func__);
-			ret = -EFAULT;
-			goto end;
-		}
-
-		/* init for gpa2hva table*/
-		g2h_tbl_size = sizeof(struct gpa2hva_tbls) + (map_head.tbl_nums
-			+ 1) * sizeof(struct gpa2hva_t);
-		g2h = kzalloc(g2h_tbl_size, GFP_KERNEL);
-		if (!g2h) {
-			ret = -ENOMEM;
-			goto end;
-		}
-		g2h->max_nums = map_head.tbl_nums + 1;
-
-		/* fill the root parent address */
-		if (gpa2hva_tbl_fill(g2h, data, data_gpa)) {
-			pr_err("[%s]: gpa2hva_tbl_fill for root data address failed\n",
-				__func__);
-			ret = -EFAULT;
-			goto end;
-		}
-
-		if (guest_addr_map_table_op(vpsp, g2h, map_tbls, 0)) {
-			pr_err("[%s]: guest_addr_map_table_op for replacing failed\n",
-				__func__);
-			ret = -EFAULT;
-			goto end;
-		}
-	}
-
 	hbuf->data = data;
 	hbuf->data_size = data_size;
-	hbuf->map_tbls = map_tbls;
-	hbuf->g2h_tbls = g2h;
 
 end:
 	return ret;
 }
 
-/*
- * The executed command data is recovered according to the multilevel
- * pointer of the mapping table when the command has finished
- * interacting with the psp device
- */
 static int kvm_pv_psp_cmd_post_op(struct kvm_vpsp *vpsp, gpa_t data_gpa,
-		struct vpsp_hbuf_wrapper *hbuf)
+				struct vpsp_hbuf_wrapper *hbuf)
 {
 	int ret = 0;
-
-	if (hbuf->map_tbls) {
-		if (guest_addr_map_table_op(vpsp, hbuf->g2h_tbls,
-					hbuf->map_tbls, 1)) {
-			pr_err("[%s]: guest_addr_map_table_op for restoring failed\n",
-				__func__);
-			ret = -EFAULT;
-			goto end;
-		}
-	}
 
 	/* restore cmdresp's buffer from context */
 	if (unlikely(vpsp->write_guest(vpsp->kvm, data_gpa, hbuf->data,
@@ -504,12 +139,9 @@ static int kvm_pv_psp_cmd_post_op(struct kvm_vpsp *vpsp, gpa_t data_gpa,
 		ret = -EFAULT;
 		goto end;
 	}
-
 end:
-	/* release memory and clear hbuf */
-	kvm_pv_psp_mem_free(hbuf->g2h_tbls, hbuf->map_tbls, hbuf->data);
+	kfree(hbuf->data);
 	memset(hbuf, 0, sizeof(*hbuf));
-
 	return ret;
 }
 
@@ -520,29 +152,292 @@ static int cmd_type_is_tkm(int cmd)
 	return 0;
 }
 
-/*
- * The primary implementation interface of virtual PSP in kernel mode
+static int cmd_type_is_allowed(int cmd)
+{
+	if (cmd >= TKM_PSP_CMDID_OFFSET && cmd <= TKM_CMD_ID_MAX)
+		return 1;
+	return 0;
+}
+
+struct psp_cmdresp_vtkm_vm_bind {
+	struct psp_cmdresp_head head;
+	uint16_t vid;
+	uint32_t vm_handle;
+	uint8_t reserved[46];
+} __packed;
+
+static int kvm_bind_vtkm(uint32_t vm_handle, uint32_t cmd_id, uint32_t vid, uint32_t *pret)
+{
+	int ret = 0;
+	struct psp_cmdresp_vtkm_vm_bind *data;
+
+	data = kzalloc(sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	data->head.buf_size = sizeof(*data);
+	data->head.cmdresp_size = sizeof(*data);
+	data->head.cmdresp_code = VTKM_VM_BIND;
+	data->vid = vid;
+	data->vm_handle = vm_handle;
+
+	ret = psp_do_cmd(cmd_id, data, pret);
+	if (ret == -EIO)
+		ret = 0;
+
+	kfree(data);
+	return ret;
+}
+
+static unsigned long vpsp_get_me_mask(void)
+{
+	unsigned int eax, ebx, ecx, edx;
+	unsigned long me_mask;
+
+#define AMD_SME_BIT	BIT(0)
+#define AMD_SEV_BIT	BIT(1)
+	/*
+	 * Check for the SME/SEV feature:
+	 *   CPUID Fn8000_001F[EAX]
+	 *   - Bit 0 - Secure Memory Encryption support
+	 *   - Bit 1 - Secure Encrypted Virtualization support
+	 *   CPUID Fn8000_001F[EBX]
+	 *   - Bits 5:0 - Pagetable bit position used to indicate encryption
+	 */
+	eax = 0x8000001f;
+	ecx = 0;
+	native_cpuid(&eax, &ebx, &ecx, &edx);
+	/* Check whether SEV or SME is supported */
+	if (!(eax & (AMD_SEV_BIT | AMD_SME_BIT)))
+		return 0;
+
+	me_mask = 1UL << (ebx & 0x3f);
+	return me_mask;
+}
+
+static phys_addr_t gpa_to_hpa(struct kvm_vpsp *vpsp, unsigned long data_gpa)
+{
+	phys_addr_t hpa = 0;
+	unsigned long pfn = vpsp->gfn_to_pfn(vpsp->kvm, data_gpa >> PAGE_SHIFT);
+	unsigned long me_mask = sme_get_me_mask();
+
+	if (me_mask == 0 && vpsp->is_csv_guest)
+		me_mask = vpsp_get_me_mask();
+
+	if (!is_error_pfn(pfn))
+		hpa = ((pfn << PAGE_SHIFT) + offset_in_page(data_gpa)) | me_mask;
+
+	pr_debug("gpa %lx, hpa %llx\n", data_gpa, hpa);
+	return hpa;
+
+}
+
+static int check_cmd_forward_op_permission(struct kvm_vpsp *vpsp, struct vpsp_context *vpsp_ctx,
+				uint64_t data, uint32_t cmd)
+{
+	int ret;
+	struct vpsp_cmd *vcmd = (struct vpsp_cmd *)&cmd;
+	struct psp_cmdresp_head psp_head;
+
+	if (!cmd_type_is_allowed(vcmd->cmd_id)) {
+		pr_err("[%s]: unsupported cmd id %x\n", __func__, vcmd->cmd_id);
+		return -EINVAL;
+	}
+
+	if (vpsp->is_csv_guest) {
+		/**
+		 * If the gpa address range exists,
+		 * it means there must be a legal vid
+		 */
+		if (!vpsp_ctx || !vpsp_ctx->gpa_start || !vpsp_ctx->gpa_end) {
+			pr_err("[%s]: No set gpa range or vid in csv guest\n", __func__);
+			return -EPERM;
+		}
+
+		ret = check_psp_mem_range(vpsp_ctx, (void *)data, 0);
+		if (ret)
+			return -EFAULT;
+	} else {
+		if (!vpsp_ctx && cmd_type_is_tkm(vcmd->cmd_id)
+				&& !vpsp_get_default_vid_permission()) {
+			pr_err("[%s]: not allowed tkm command without vid\n", __func__);
+			return -EPERM;
+		}
+
+		// the 'data' is gpa address
+		if (unlikely(vpsp->read_guest(vpsp->kvm, data, &psp_head,
+					sizeof(struct psp_cmdresp_head))))
+			return -EFAULT;
+
+		ret = check_psp_mem_range(vpsp_ctx, (void *)data, psp_head.buf_size);
+		if (ret)
+			return -EFAULT;
+	}
+	return 0;
+}
+
+static int
+check_cmd_copy_forward_op_permission(struct kvm_vpsp *vpsp,
+				struct vpsp_context *vpsp_ctx,
+				uint64_t data, uint32_t cmd)
+{
+	int ret = 0;
+	struct vpsp_cmd *vcmd = (struct vpsp_cmd *)&cmd;
+
+	if (!cmd_type_is_allowed(vcmd->cmd_id)) {
+		pr_err("[%s]: unsupported cmd id %x\n", __func__, vcmd->cmd_id);
+		return -EINVAL;
+	}
+
+	if (vpsp->is_csv_guest) {
+		pr_err("[%s]: unsupported run on csv guest\n", __func__);
+		ret = -EPERM;
+	} else {
+		if (!vpsp_ctx && cmd_type_is_tkm(vcmd->cmd_id)
+				&& !vpsp_get_default_vid_permission()) {
+			pr_err("[%s]: not allowed tkm command without vid\n", __func__);
+			ret = -EPERM;
+		}
+	}
+	return ret;
+}
+
+static int vpsp_try_bind_vtkm(struct kvm_vpsp *vpsp, struct vpsp_context *vpsp_ctx,
+				uint32_t cmd, uint32_t *psp_ret)
+{
+	int ret;
+	struct vpsp_cmd *vcmd = (struct vpsp_cmd *)&cmd;
+
+	if (vpsp_ctx && !vpsp_ctx->vm_is_bound && vpsp->is_csv_guest) {
+		ret = kvm_bind_vtkm(vpsp->vm_handle, vcmd->cmd_id,
+					vpsp_ctx->vid, psp_ret);
+		if (ret || *psp_ret) {
+			pr_err("[%s] kvm bind vtkm failed with ret: %d, pspret: %d\n",
+				__func__, ret, *psp_ret);
+			return ret;
+		}
+		vpsp_ctx->vm_is_bound = 1;
+	}
+	return 0;
+}
+
+/**
+ * @brief Directly convert the gpa address into hpa and forward it to PSP,
+ *	  It is another form of kvm_pv_psp_copy_op, mainly used for csv VMs.
+ *
+ * @param vpsp points to kvm related data
+ * @param cmd psp cmd id, bit 31 indicates queue priority
+ * @param data_gpa guest physical address of input data
+ * @param psp_ret indicates Asynchronous context information
+ *
+ * Since the csv guest memory cannot be read or written directly,
+ * the shared asynchronous context information is shared through psp_ret and return value.
  */
-int kvm_pv_psp_op(struct kvm_vpsp *vpsp, int cmd, gpa_t data_gpa, gpa_t psp_ret_gpa,
-		gpa_t table_gpa)
+int kvm_pv_psp_forward_op(struct kvm_vpsp *vpsp, uint32_t cmd,
+			gpa_t data_gpa, uint32_t psp_ret)
+{
+	int ret;
+	uint64_t data_hpa;
+	uint32_t index = 0, vid = 0;
+	struct vpsp_ret psp_async = {0};
+	struct vpsp_context *vpsp_ctx = NULL;
+	struct vpsp_cmd *vcmd = (struct vpsp_cmd *)&cmd;
+	uint8_t prio = CSV_COMMAND_PRIORITY_LOW;
+
+	vpsp_get_context(&vpsp_ctx, vpsp->kvm->userspace_pid);
+
+	ret = check_cmd_forward_op_permission(vpsp, vpsp_ctx, data_gpa, cmd);
+	if (unlikely(ret)) {
+		pr_err("directly operation not allowed\n");
+		goto end;
+	}
+
+	ret = vpsp_try_bind_vtkm(vpsp, vpsp_ctx, cmd, (uint32_t *)&psp_async);
+	if (unlikely(ret || *(uint32_t *)&psp_async)) {
+		pr_err("try to bind vtkm failed (ret %x, psp_async %x)\n",
+			ret, *(uint32_t *)&psp_async);
+		goto end;
+	}
+
+	if (vpsp_ctx)
+		vid = vpsp_ctx->vid;
+
+	*((uint32_t *)&psp_async) = psp_ret;
+	data_hpa = PUT_PSP_VID(gpa_to_hpa(vpsp, data_gpa), vid);
+
+	switch (psp_async.status) {
+	case VPSP_INIT:
+		/* try to send command to the device for execution*/
+		ret = vpsp_try_do_cmd(cmd, data_hpa, &psp_async);
+		if (unlikely(ret)) {
+			pr_err("[%s]: vpsp_do_cmd failed\n", __func__);
+			goto end;
+		}
+		break;
+
+	case VPSP_RUNNING:
+		prio = vcmd->is_high_rb ? CSV_COMMAND_PRIORITY_HIGH :
+			CSV_COMMAND_PRIORITY_LOW;
+		index = psp_async.index;
+		/* try to get the execution result from ringbuffer*/
+		ret = vpsp_try_get_result(prio, index, data_hpa, &psp_async);
+		if (unlikely(ret)) {
+			pr_err("[%s]: vpsp_try_get_result failed\n", __func__);
+			goto end;
+		}
+		break;
+
+	default:
+		pr_err("[%s]: invalid command status\n", __func__);
+		break;
+	}
+
+end:
+	/**
+	 * In order to indicate both system errors and PSP errors,
+	 * the psp_async.pret field needs to be reused.
+	 */
+	psp_async.format = VPSP_RET_PSP_FORMAT;
+	if (ret) {
+		psp_async.format = VPSP_RET_SYS_FORMAT;
+		if (ret > 0)
+			ret = -ret;
+		psp_async.pret = (uint16_t)ret;
+	}
+	return *((int *)&psp_async);
+}
+EXPORT_SYMBOL_GPL(kvm_pv_psp_forward_op);
+
+/**
+ * @brief copy data in gpa to host memory and send it to psp for processing.
+ *
+ * @param vpsp points to kvm related data
+ * @param cmd psp cmd id, bit 31 indicates queue priority
+ * @param data_gpa guest physical address of input data
+ * @param psp_ret_gpa guest physical address of psp_ret
+ */
+int kvm_pv_psp_copy_forward_op(struct kvm_vpsp *vpsp, int cmd, gpa_t data_gpa, gpa_t psp_ret_gpa)
 {
 	int ret = 0;
 	struct vpsp_ret psp_ret = {0};
 	struct vpsp_hbuf_wrapper hbuf = {0};
 	struct vpsp_cmd *vcmd = (struct vpsp_cmd *)&cmd;
+	struct vpsp_context *vpsp_ctx = NULL;
+	phys_addr_t data_paddr = 0;
 	uint8_t prio = CSV_COMMAND_PRIORITY_LOW;
 	uint32_t index = 0;
 	uint32_t vid = 0;
 
-	// only tkm cmd need vid
-	if (cmd_type_is_tkm(vcmd->cmd_id)) {
-		// check the permission to use the default vid when no vid is set
-		ret = vpsp_get_vid(&vid, vpsp->kvm->userspace_pid);
-		if (ret && !vpsp_get_default_vid_permission()) {
-			pr_err("[%s]: not allowed tkm command without vid\n", __func__);
-			return -EFAULT;
-		}
+	vpsp_get_context(&vpsp_ctx, vpsp->kvm->userspace_pid);
+
+	ret = check_cmd_copy_forward_op_permission(vpsp, vpsp_ctx, data_gpa, cmd);
+	if (unlikely(ret)) {
+		pr_err("copy operation not allowed\n");
+		return -EPERM;
 	}
+
+	if (vpsp_ctx)
+		vid = vpsp_ctx->vid;
 
 	if (unlikely(vpsp->read_guest(vpsp->kvm, psp_ret_gpa, &psp_ret,
 					sizeof(psp_ret))))
@@ -550,8 +445,8 @@ int kvm_pv_psp_op(struct kvm_vpsp *vpsp, int cmd, gpa_t data_gpa, gpa_t psp_ret_
 
 	switch (psp_ret.status) {
 	case VPSP_INIT:
-		/* multilevel pointer replace*/
-		ret = kvm_pv_psp_cmd_pre_op(vpsp, data_gpa, table_gpa, &hbuf);
+		/* copy data from guest */
+		ret = kvm_pv_psp_cmd_pre_op(vpsp, data_gpa, &hbuf);
 		if (unlikely(ret)) {
 			psp_ret.status = VPSP_FINISH;
 			pr_err("[%s]: kvm_pv_psp_cmd_pre_op failed\n",
@@ -560,25 +455,22 @@ int kvm_pv_psp_op(struct kvm_vpsp *vpsp, int cmd, gpa_t data_gpa, gpa_t psp_ret_
 			goto end;
 		}
 
+		data_paddr = PUT_PSP_VID(__psp_pa(hbuf.data), vid);
 		/* try to send command to the device for execution*/
-		ret = vpsp_try_do_cmd(vid, cmd, (void *)hbuf.data,
-				(struct vpsp_ret *)&psp_ret);
+		ret = vpsp_try_do_cmd(cmd, data_paddr, (struct vpsp_ret *)&psp_ret);
 		if (unlikely(ret)) {
-			pr_err("[%s]: vpsp_do_cmd failed\n", __func__);
+			pr_err("[%s]: vpsp_try_do_cmd failed\n", __func__);
 			ret = -EFAULT;
 			goto end;
 		}
 
-		switch (psp_ret.status) {
-		case VPSP_RUNNING:
-			/* backup host memory message for restoring later*/
+		if (psp_ret.status == VPSP_RUNNING) {
 			prio = vcmd->is_high_rb ? CSV_COMMAND_PRIORITY_HIGH :
 				CSV_COMMAND_PRIORITY_LOW;
 			g_hbuf_wrap[prio][psp_ret.index] = hbuf;
 			break;
 
-		case VPSP_FINISH:
-			/* restore multilevel pointer data */
+		} else if (psp_ret.status == VPSP_FINISH) {
 			ret = kvm_pv_psp_cmd_post_op(vpsp, data_gpa, &hbuf);
 			if (unlikely(ret)) {
 				pr_err("[%s]: kvm_pv_psp_cmd_post_op failed\n",
@@ -586,11 +478,6 @@ int kvm_pv_psp_op(struct kvm_vpsp *vpsp, int cmd, gpa_t data_gpa, gpa_t psp_ret_
 				ret = -EFAULT;
 				goto end;
 			}
-			break;
-
-		default:
-			ret = -EFAULT;
-			break;
 		}
 		break;
 
@@ -598,35 +485,31 @@ int kvm_pv_psp_op(struct kvm_vpsp *vpsp, int cmd, gpa_t data_gpa, gpa_t psp_ret_
 		prio = vcmd->is_high_rb ? CSV_COMMAND_PRIORITY_HIGH :
 			CSV_COMMAND_PRIORITY_LOW;
 		index = psp_ret.index;
+		data_paddr = PUT_PSP_VID(__psp_pa(g_hbuf_wrap[prio][index].data), vid);
 		/* try to get the execution result from ringbuffer*/
-		ret = vpsp_try_get_result(vid, prio, index, g_hbuf_wrap[prio][index].data,
-				(struct vpsp_ret *)&psp_ret);
+		ret = vpsp_try_get_result(prio, index, data_paddr,
+					(struct vpsp_ret *)&psp_ret);
 		if (unlikely(ret)) {
 			pr_err("[%s]: vpsp_try_get_result failed\n", __func__);
 			ret = -EFAULT;
 			goto end;
 		}
 
-		switch (psp_ret.status) {
-		case VPSP_RUNNING:
-			break;
-
-		case VPSP_FINISH:
-			/* restore multilevel pointer data */
+		if (psp_ret.status == VPSP_RUNNING) {
+			ret = 0;
+			goto end;
+		} else if (psp_ret.status == VPSP_FINISH) {
+			/* copy data to guest */
 			ret = kvm_pv_psp_cmd_post_op(vpsp, data_gpa,
 					&g_hbuf_wrap[prio][index]);
 			if (unlikely(ret)) {
 				pr_err("[%s]: kvm_pv_psp_cmd_post_op failed\n",
 						__func__);
 				ret = -EFAULT;
-				goto end;
 			}
-			break;
-
-		default:
-			ret = -EFAULT;
-			break;
+			goto end;
 		}
+		ret = -EFAULT;
 		break;
 
 	default:
@@ -638,4 +521,5 @@ end:
 	/* return psp_ret to guest */
 	vpsp->write_guest(vpsp->kvm, psp_ret_gpa, &psp_ret, sizeof(psp_ret));
 	return ret;
-} EXPORT_SYMBOL_GPL(kvm_pv_psp_op);
+}
+EXPORT_SYMBOL_GPL(kvm_pv_psp_copy_forward_op);
