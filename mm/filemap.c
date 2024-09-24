@@ -4043,9 +4043,14 @@ ssize_t generic_perform_write(struct kiocb *iocb, struct iov_iter *i)
 	loff_t pos = iocb->ki_pos;
 	struct address_space *mapping = file->f_mapping;
 	const struct address_space_operations *a_ops = mapping->a_ops;
-	size_t chunk = mapping_max_folio_size(mapping);
 	long status = 0;
 	ssize_t written = 0;
+	size_t chunk;
+
+	if (iocb->ki_flags & IOCB_NO_LARGE_CHUNK)
+		chunk = PAGE_SIZE;
+	else
+		chunk = mapping_max_folio_size(mapping);
 
 	do {
 		struct page *page;
