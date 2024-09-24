@@ -544,20 +544,30 @@ int folio_migrate_mapping(struct address_space *mapping,
 }
 EXPORT_SYMBOL(folio_migrate_mapping);
 
+static int folio_migrate_mc_copy(struct folio *dst, struct folio *src,
+				 enum migrate_mode mode, int expected_count)
+{
+	/* Check whether src does not have extra refs before we do more work */
+	if (folio_ref_count(src) != expected_count)
+		return -EAGAIN;
+
+	if (mode == MIGRATE_SYNC_NO_COPY)
+		return 0;
+
+	return folio_mc_copy(dst, src);
+}
+
 /*
  * The expected number of remaining references is the same as that
  * of folio_migrate_mapping().
  */
 int migrate_huge_page_move_mapping(struct address_space *mapping,
-				   struct folio *dst, struct folio *src)
+		struct folio *dst, struct folio *src, enum migrate_mode mode)
 {
 	XA_STATE(xas, &mapping->i_pages, folio_index(src));
 	int rc, expected_count = folio_expected_refs(mapping, src);
 
-	if (folio_ref_count(src) != expected_count)
-		return -EAGAIN;
-
-	rc = folio_mc_copy(dst, src);
+	rc = folio_migrate_mc_copy(dst, src, mode, expected_count);
 	if (unlikely(rc))
 		return rc;
 
@@ -691,11 +701,7 @@ static int __migrate_folio(struct address_space *mapping, struct folio *dst,
 {
 	int rc, expected_count = folio_expected_refs(mapping, src);
 
-	/* Check whether src does not have extra refs before we do more work */
-	if (folio_ref_count(src) != expected_count)
-		return -EAGAIN;
-
-	rc = folio_mc_copy(dst, src);
+	rc = folio_migrate_mc_copy(dst, src, mode, expected_count);
 	if (unlikely(rc))
 		return rc;
 
