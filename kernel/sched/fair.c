@@ -1423,6 +1423,20 @@ static inline unsigned long group_weight(struct task_struct *p, int nid,
 	return 1000 * faults / total_faults;
 }
 
+static inline bool in_early_stage(struct task_struct *p, int early_seq)
+{
+	/*
+	 * For sampling based autonuma, numa_scan_seq never update. Currently,
+	 * just skip here to avoid false migrate. In the future, the real
+	 * lifetime judgment can be implemented if the workloads are very
+	 * sensitive to the starting stage of the process.
+	 */
+	if (numa_affinity_sampling_enabled())
+		return false;
+
+	return p->numa_scan_seq <= early_seq;
+}
+
 bool should_numa_migrate_memory(struct task_struct *p, struct page * page,
 				int src_nid, int dst_cpu)
 {
@@ -1439,7 +1453,7 @@ bool should_numa_migrate_memory(struct task_struct *p, struct page * page,
 	 * two full passes of the "multi-stage node selection" test that is
 	 * executed below.
 	 */
-	if ((p->numa_preferred_nid == NUMA_NO_NODE || p->numa_scan_seq <= 4) &&
+	if ((p->numa_preferred_nid == NUMA_NO_NODE || in_early_stage(p, 4)) &&
 	    (cpupid_pid_unset(last_cpupid) || cpupid_match_pid(p, last_cpupid)))
 		return true;
 
