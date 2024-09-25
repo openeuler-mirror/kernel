@@ -2405,6 +2405,8 @@ static void task_numa_placement(struct task_struct *p)
 	spinlock_t *group_lock = NULL;
 	struct numa_group *ng;
 
+	if (numa_affinity_sampling_enabled())
+		goto not_scan;
 	/*
 	 * The p->mm->numa_scan_seq field gets updated without
 	 * exclusive access. Use READ_ONCE() here to ensure
@@ -2416,6 +2418,7 @@ static void task_numa_placement(struct task_struct *p)
 	p->numa_scan_seq = seq;
 	p->numa_scan_period_max = task_scan_max(p);
 
+not_scan:
 	total_faults = p->numa_faults_locality[0] +
 		       p->numa_faults_locality[1];
 	runtime = numa_get_avg_runtime(p, &period);
