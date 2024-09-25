@@ -607,6 +607,10 @@ struct hnae3_ae_dev {
  *   Execute debugfs read command.
  * request_flush_qb_config
  *   Request to update queue bonding configuration
+ * request_pfc_storm_config
+ *   Request to update pfc storm configuration
+ * get_pfc_storm_config
+ *   Get pfc storm config
  * query_fd_qb_state
  *   Query whether hw queue bonding enabled
  * set_tx_hwts_info
@@ -809,6 +813,9 @@ struct hnae3_ae_ops {
 	int (*set_phy_link_ksettings)(struct hnae3_handle *handle,
 				      const struct ethtool_link_ksettings *cmd);
 	void (*request_flush_qb_config)(struct hnae3_handle *handle);
+	void (*request_pfc_storm_config)(struct hnae3_handle *handle,
+					 bool enable);
+	int (*get_pfc_storm_config)(struct hnae3_handle *handle, bool *enable);
 	bool (*query_fd_qb_state)(struct hnae3_handle *handle);
 	bool (*set_tx_hwts_info)(struct hnae3_handle *handle,
 				 struct sk_buff *skb);
@@ -936,6 +943,7 @@ enum hnae3_pflag {
 	HNAE3_PFLAG_LIMIT_PROMISC,
 	HNAE3_PFLAG_FD_QB_ENABLE,
 	HNAE3_PFLAG_ROH_ARP_PROXY_ENABLE,
+	HNAE3_PFLAG_PFC_STORM_PREVENT_ENABLE,
 	HNAE3_PFLAG_MAX
 };
 
