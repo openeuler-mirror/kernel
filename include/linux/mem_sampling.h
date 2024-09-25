@@ -105,4 +105,17 @@ static inline int arm_spe_enabled(void)
 	return 0;
 }
 #endif /* CONFIG_ARM_SPE_MEM_SAMPLING */
+
+#ifdef CONFIG_NUMABALANCING_MEM_SAMPLING
+static inline bool numa_affinity_sampling_enabled(void)
+{
+	return static_branch_unlikely(&sched_numabalancing_mem_sampling);
+}
+#else
+static inline bool numa_affinity_sampling_enabled(void)
+{
+	return false;
+}
+#endif
+
 #endif	/* __MEM_SAMPLING_H */
