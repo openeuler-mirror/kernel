@@ -2161,6 +2161,9 @@ int migrate_misplaced_page(struct page *page, struct vm_area_struct *vma,
 	 */
 	compound = PageTransHuge(page);
 
+	if (compound && thp_numa_migrate_disabled())
+		return 0;
+
 	if (compound)
 		new = alloc_misplaced_dst_page_thp;
 	else
