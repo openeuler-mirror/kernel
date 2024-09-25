@@ -498,6 +498,19 @@ static inline unsigned long thp_size(struct page *page)
 	return PAGE_SIZE << thp_order(page);
 }
 
+#ifdef CONFIG_THP_NUMA_CONTROL
+#define THP_DISABLE_NUMA_MIGRATE    1
+extern unsigned long thp_numa_control;
+static inline bool thp_numa_migrate_disabled(void)
+{
+	return thp_numa_control == THP_DISABLE_NUMA_MIGRATE;
+}
+#else
+static inline bool thp_numa_migrate_disabled(void)
+{
+	return false;
+}
+#endif
 /*
  * archs that select ARCH_WANTS_THP_SWAP but don't support THP_SWP due to
  * limitations in the implementation like arm64 MTE can override this to

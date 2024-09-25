@@ -316,6 +316,36 @@ static ssize_t hpage_pmd_size_show(struct kobject *kobj,
 static struct kobj_attribute hpage_pmd_size_attr =
 	__ATTR_RO(hpage_pmd_size);
 
+#ifdef CONFIG_THP_NUMA_CONTROL
+unsigned long thp_numa_control __read_mostly;
+
+static ssize_t numa_control_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%lu\n", READ_ONCE(thp_numa_control));
+}
+
+static ssize_t numa_control_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	unsigned long value;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &value);
+	if (ret < 0)
+		return ret;
+	if (value > THP_DISABLE_NUMA_MIGRATE)
+		return -EINVAL;
+
+	WRITE_ONCE(thp_numa_control, value);
+
+	return count;
+}
+
+static struct kobj_attribute numa_control_attr =
+	__ATTR(numa_control, 0644, numa_control_show, numa_control_store);
+#endif
+
 static struct attribute *hugepage_attr[] = {
 	&enabled_attr.attr,
 	&defrag_attr.attr,
@@ -323,6 +353,9 @@ static struct attribute *hugepage_attr[] = {
 	&hpage_pmd_size_attr.attr,
 #ifdef CONFIG_SHMEM
 	&shmem_enabled_attr.attr,
+#endif
+#ifdef CONFIG_THP_NUMA_CONTROL
+	&numa_control_attr.attr,
 #endif
 	NULL,
 };

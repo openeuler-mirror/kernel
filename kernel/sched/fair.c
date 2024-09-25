@@ -1423,6 +1423,20 @@ static inline unsigned long group_weight(struct task_struct *p, int nid,
 	return 1000 * faults / total_faults;
 }
 
+static inline bool in_early_stage(struct task_struct *p, int early_seq)
+{
+	/*
+	 * For sampling based autonuma, numa_scan_seq never update. Currently,
+	 * just skip here to avoid false migrate. In the future, the real
+	 * lifetime judgment can be implemented if the workloads are very
+	 * sensitive to the starting stage of the process.
+	 */
+	if (numa_affinity_sampling_enabled())
+		return false;
+
+	return p->numa_scan_seq <= early_seq;
+}
+
 bool should_numa_migrate_memory(struct task_struct *p, struct page * page,
 				int src_nid, int dst_cpu)
 {
@@ -1439,7 +1453,7 @@ bool should_numa_migrate_memory(struct task_struct *p, struct page * page,
 	 * two full passes of the "multi-stage node selection" test that is
 	 * executed below.
 	 */
-	if ((p->numa_preferred_nid == NUMA_NO_NODE || p->numa_scan_seq <= 4) &&
+	if ((p->numa_preferred_nid == NUMA_NO_NODE || in_early_stage(p, 4)) &&
 	    (cpupid_pid_unset(last_cpupid) || cpupid_match_pid(p, last_cpupid)))
 		return true;
 
@@ -2391,6 +2405,8 @@ static void task_numa_placement(struct task_struct *p)
 	spinlock_t *group_lock = NULL;
 	struct numa_group *ng;
 
+	if (numa_affinity_sampling_enabled())
+		goto not_scan;
 	/*
 	 * The p->mm->numa_scan_seq field gets updated without
 	 * exclusive access. Use READ_ONCE() here to ensure
@@ -2402,6 +2418,7 @@ static void task_numa_placement(struct task_struct *p)
 	p->numa_scan_seq = seq;
 	p->numa_scan_period_max = task_scan_max(p);
 
+not_scan:
 	total_faults = p->numa_faults_locality[0] +
 		       p->numa_faults_locality[1];
 	runtime = numa_get_avg_runtime(p, &period);
@@ -2968,16 +2985,13 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	struct callback_head *work = &curr->numa_work;
 	u64 period, now;
 
-#ifdef CONFIG_NUMABALANCING_MEM_SAMPLING
 	/*
-	 * If we are using access hints from hardware (like using
-	 * SPE), don't scan the address space.
-	 * Note that currently PMD-level page migration is not
-	 * supported.
+	 * numa affinity use hardware sampling to get numa info(like using
+	 * SPE for ARM64), no need to scan the address space anymore.
 	 */
-	if (static_branch_unlikely(&sched_numabalancing_mem_sampling))
+	if (numa_affinity_sampling_enabled())
 		return;
-#endif
+
 	/*
 	 * We don't care about NUMA placement if we don't have memory.
 	 */

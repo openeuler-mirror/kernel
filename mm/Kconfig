@@ -1038,6 +1038,16 @@ config NUMABALANCING_MEM_SAMPLING
 
 	  if unsure, say N to disable the NUMABALANCING_MEM_SAMPLING.
 
+config THP_NUMA_CONTROL
+	bool "Control THP migration when numa balancing"
+	depends on NUMA_BALANCING && TRANSPARENT_HUGEPAGE
+	default n
+	help
+	  Sometimes migrate THP is not beneficial, for example, when 64K page
+	  size is set on ARM64, THP will be 512M, migration will be expensive.
+	  This featrue add a switch to control the behavior of THP migration
+	  when do numa balancing.
+
 source "mm/damon/Kconfig"
 
 endmenu
