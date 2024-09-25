@@ -369,7 +369,6 @@ static void set_numabalancing_mem_sampling_state(bool enabled)
 	}
 }
 
-#ifdef CONFIG_PROC_SYSCTL
 int sysctl_numabalancing_mem_sampling(struct ctl_table *table, int write,
 				void *buffer, size_t *lenp, loff_t *ppos)
 {
@@ -391,7 +390,6 @@ int sysctl_numabalancing_mem_sampling(struct ctl_table *table, int write,
 
 	return err;
 }
-#endif
 #else
 static inline void set_numabalancing_mem_sampling_state(bool enabled)
 {
@@ -423,7 +421,6 @@ static void set_mem_sampling_state(bool enabled)
 		set_numabalancing_mem_sampling_state(enabled);
 }
 
-#ifdef CONFIG_PROC_SYSCTL
 static int sysctl_mem_sampling_enable(struct ctl_table *table, int write,
 			  void *buffer, size_t *lenp, loff_t *ppos)
 {
@@ -443,7 +440,6 @@ static int sysctl_mem_sampling_enable(struct ctl_table *table, int write,
 		set_mem_sampling_state(state);
 	return err;
 }
-#endif
 
 static struct ctl_table ctl_table[] = {
 	{
