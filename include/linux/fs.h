@@ -3256,8 +3256,17 @@ extern ssize_t simple_write_to_buffer(void *to, size_t available, loff_t *ppos,
 		const void __user *from, size_t count);
 
 struct offset_ctx {
-	struct maple_tree	mt;
-	unsigned long		next_offset;
+	KABI_REPLACE(struct xarray xa, struct maple_tree mt)
+#if BITS_PER_LONG == 32
+	KABI_REPLACE(u32 next_offset, unsigned long next_offset)
+#else
+#ifdef __GENKSYMS__
+	u32 next_offset;
+	/* 4 bytes hole */
+#else
+	unsigned long next_offset;
+#endif
+#endif
 };
 
 void simple_offset_init(struct offset_ctx *octx);
