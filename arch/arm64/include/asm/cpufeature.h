@@ -858,14 +858,7 @@ static inline bool cpus_support_mpam(void)
 		cpus_have_final_cap(ARM64_MPAM);
 }
 
-#ifdef CONFIG_ARM64_MPAM
 bool mpam_detect_is_enabled(void);
-#else
-static inline bool mpam_detect_is_enabled(void)
-{
-	return false;
-}
-#endif
 
 int do_emulate_mrs(struct pt_regs *regs, u32 sys_reg, u32 rt);
 bool try_emulate_mrs(struct pt_regs *regs, u32 isn);
