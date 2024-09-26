@@ -277,7 +277,6 @@ int acpi_map_cpu(acpi_handle handle, phys_cpuid_t physid, u32 acpi_id,
 	nid = acpi_get_node(handle);
 	if (nid != NUMA_NO_NODE) {
 		set_cpu_numa_node(cpu, nid);
-		numa_add_cpu(cpu);
 	}
 
 	*pcpu = cpu;
@@ -290,7 +289,7 @@ EXPORT_SYMBOL(acpi_map_cpu);
 int acpi_unmap_cpu(int cpu)
 {
 	set_cpu_present(cpu, false);
-	numa_clear_node(cpu);
+	set_cpu_numa_node(cpu, NUMA_NO_NODE);
 
 	return 0;
 }
