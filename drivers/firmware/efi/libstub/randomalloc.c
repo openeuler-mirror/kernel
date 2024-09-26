@@ -107,6 +107,33 @@ static unsigned long cal_slots_avoid_overlap(efi_memory_desc_t *md, unsigned lon
 	return total_slots;
 }
 
+static void mem_check_memmaps(void)
+{
+	int i;
+	efi_status_t status;
+	unsigned long nr_pages;
+	unsigned long long start, end;
+
+	for (i = 0; i < MAX_MEMMAP_REGIONS; i++) {
+		if (!mem_avoid[i].size)
+			continue;
+		start = round_down(mem_avoid[i].start, EFI_ALLOC_ALIGN);
+		end = round_up(mem_avoid[i].start + mem_avoid[i].size, EFI_ALLOC_ALIGN);
+		nr_pages = (end - start) / EFI_PAGE_SIZE;
+
+		mem_avoid[i].start = start;
+		mem_avoid[i].size = end - start;
+		status = efi_bs_call(allocate_pages, EFI_ALLOCATE_ADDRESS,
+				     EFI_LOADER_DATA, nr_pages, &mem_avoid[i].start);
+		if (status == EFI_SUCCESS) {
+			efi_free(mem_avoid[i].size, mem_avoid[i].start);
+		} else {
+			mem_avoid[i].size = 0;
+			efi_err("Failed to reserve memmap, index: %d, status: %lu\n", i, status);
+		}
+	}
+}
+
 void mem_avoid_memmap(char *str)
 {
 	static int i;
@@ -137,6 +164,7 @@ void mem_avoid_memmap(char *str)
 		str = k;
 		i++;
 	}
+	mem_check_memmaps();
 }
 
 void mem_avoid_mem_nokaslr(char *str)
