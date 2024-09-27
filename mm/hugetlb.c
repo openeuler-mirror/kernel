@@ -3355,7 +3355,7 @@ static inline void dhugetlb_percpu_pool_lock_all(struct dhugetlb_pool *hpool)
 	int i;
 
 	for (i = 0; i < NR_SMPOOL; i++)
-		spin_lock(&hpool->smpool[i].lock);
+		spin_lock_nested(&hpool->smpool[i].lock, i);
 }
 
 static inline void dhugetlb_percpu_pool_unlock_all(struct dhugetlb_pool *hpool)
