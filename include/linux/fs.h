@@ -43,6 +43,7 @@
 #include <linux/cred.h>
 #include <linux/mnt_idmapping.h>
 #include <linux/slab.h>
+#include <linux/maple_tree.h>
 #ifdef CONFIG_BPF_READAHEAD
 #include <linux/tracepoint-defs.h>
 #endif
@@ -3255,13 +3256,23 @@ extern ssize_t simple_write_to_buffer(void *to, size_t available, loff_t *ppos,
 		const void __user *from, size_t count);
 
 struct offset_ctx {
-	struct xarray		xa;
-	u32			next_offset;
+	KABI_REPLACE(struct xarray xa, struct maple_tree mt)
+#if BITS_PER_LONG == 32
+	KABI_REPLACE(u32 next_offset, unsigned long next_offset)
+#else
+#ifdef __GENKSYMS__
+	u32 next_offset;
+	/* 4 bytes hole */
+#else
+	unsigned long next_offset;
+#endif
+#endif
 };
 
 void simple_offset_init(struct offset_ctx *octx);
 int simple_offset_add(struct offset_ctx *octx, struct dentry *dentry);
 void simple_offset_remove(struct offset_ctx *octx, struct dentry *dentry);
+int simple_offset_empty(struct dentry *dentry);
 int simple_offset_rename_exchange(struct inode *old_dir,
 				  struct dentry *old_dentry,
 				  struct inode *new_dir,
