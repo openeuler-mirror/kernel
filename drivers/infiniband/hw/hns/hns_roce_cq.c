@@ -42,7 +42,7 @@ void hns_roce_put_cq_bankid_for_uctx(struct hns_roce_ucontext *uctx)
 	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->ibucontext.device);
 	struct hns_roce_cq_table *cq_table = &hr_dev->cq_table;
 
-	if (hr_dev->pci_dev->revision < PCI_REVISION_ID_HIP10)
+	if (hr_dev->pci_dev->revision < PCI_REVISION_ID_HIP09)
 		return;
 
 	mutex_lock(&cq_table->bank_mutex);
@@ -58,7 +58,7 @@ void hns_roce_get_cq_bankid_for_uctx(struct hns_roce_ucontext *uctx)
 	u8 bankid = 0;
 	u8 i;
 
-	if (hr_dev->pci_dev->revision < PCI_REVISION_ID_HIP10)
+	if (hr_dev->pci_dev->revision < PCI_REVISION_ID_HIP09)
 		return;
 
 	mutex_lock(&cq_table->bank_mutex);
@@ -98,8 +98,8 @@ static u8 select_cq_bankid(struct hns_roce_dev *hr_dev, struct hns_roce_bank *ba
 	struct hns_roce_ucontext *uctx = udata ?
 		rdma_udata_to_drv_context(udata, struct hns_roce_ucontext,
 					  ibucontext) : NULL;
-	/* only apply for HIP10 now, and use bank 0 for kernel */
-	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP10)
+	/* only apply for HIP09 and HIP10 now, and use bank 0 for kernel */
+	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
 		return uctx ? uctx->cq_bank_id : 0;
 
 	return get_least_load_bankid_for_cq(bank);
