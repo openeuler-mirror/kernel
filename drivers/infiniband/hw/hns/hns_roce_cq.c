@@ -52,9 +52,10 @@ void hns_roce_put_cq_bankid_for_uctx(struct hns_roce_ucontext *uctx)
 
 void hns_roce_get_cq_bankid_for_uctx(struct hns_roce_ucontext *uctx)
 {
+#define INVALID_LOAD_CQNUM 0xFFFFFFFF
 	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->ibucontext.device);
 	struct hns_roce_cq_table *cq_table = &hr_dev->cq_table;
-	u32 least_load = cq_table->ctx_num[0];
+	u32 least_load = INVALID_LOAD_CQNUM;
 	u8 bankid = 0;
 	u8 i;
 
@@ -62,7 +63,10 @@ void hns_roce_get_cq_bankid_for_uctx(struct hns_roce_ucontext *uctx)
 		return;
 
 	mutex_lock(&cq_table->bank_mutex);
-	for (i = 1; i < HNS_ROCE_CQ_BANK_NUM; i++) {
+	for (i = 0; i < HNS_ROCE_CQ_BANK_NUM; i++) {
+		if (!(cq_table->valid_cq_bank_mask & BIT(i)))
+			continue;
+
 		if (cq_table->ctx_num[i] < least_load) {
 			least_load = cq_table->ctx_num[i];
 			bankid = i;
@@ -98,7 +102,7 @@ static u8 select_cq_bankid(struct hns_roce_dev *hr_dev, struct hns_roce_bank *ba
 	struct hns_roce_ucontext *uctx = udata ?
 		rdma_udata_to_drv_context(udata, struct hns_roce_ucontext,
 					  ibucontext) : NULL;
-	/* only apply for HIP09 and HIP10 now, and use bank 0 for kernel */
+	/* only HIP08 is not applied now, and use bank 0 for kernel */
 	if (hr_dev->pci_dev->revision >= PCI_REVISION_ID_HIP09)
 		return uctx ? uctx->cq_bank_id : 0;
 
@@ -712,6 +716,11 @@ void hns_roce_init_cq_table(struct hns_roce_dev *hr_dev)
 		cq_table->bank[i].max = hr_dev->caps.num_cqs /
 					HNS_ROCE_CQ_BANK_NUM - 1;
 	}
+
+	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_LIMIT_BANK)
+		cq_table->valid_cq_bank_mask = VALID_CQ_BANK_MASK_LIMIT;
+	else
+		cq_table->valid_cq_bank_mask = VALID_CQ_BANK_MASK_DEFAULT;
 }
 
 void hns_roce_cleanup_cq_table(struct hns_roce_dev *hr_dev)
