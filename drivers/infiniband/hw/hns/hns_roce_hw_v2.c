@@ -3178,9 +3178,6 @@ err_clear_extdb_failed:
 
 static void hns_roce_v2_exit(struct hns_roce_dev *hr_dev)
 {
-	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08)
-		free_mr_exit(hr_dev);
-
 	hns_roce_function_clear(hr_dev);
 
 	if (!hr_dev->is_vf)
@@ -7500,6 +7497,9 @@ static void __hns_roce_hw_v2_uninit_instance(struct hnae3_handle *handle,
 
 	hr_dev->state = HNS_ROCE_DEVICE_STATE_UNINIT;
 	hns_roce_handle_device_err(hr_dev);
+
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08)
+		free_mr_exit(hr_dev);
 
 	hns_roce_exit(hr_dev, bond_cleanup);
 	kfree(hr_dev->priv);
