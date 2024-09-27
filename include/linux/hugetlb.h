@@ -729,6 +729,8 @@ struct dhugetlb_pool {
 	struct small_page_pool smpool[0];
 };
 
+void dhugetlb_lock_all(struct dhugetlb_pool *hpool);
+void dhugetlb_unlock_all(struct dhugetlb_pool *hpool);
 bool dhugetlb_pool_get(struct dhugetlb_pool *hpool);
 void dhugetlb_pool_put(struct dhugetlb_pool *hpool);
 struct dhugetlb_pool *hpool_alloc(unsigned long nid);

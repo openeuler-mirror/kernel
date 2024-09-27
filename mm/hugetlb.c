@@ -3345,6 +3345,53 @@ DEFINE_STATIC_KEY_FALSE(dhugetlb_enabled_key);
 DEFINE_RWLOCK(dhugetlb_pagelist_rwlock);
 struct dhugetlb_pagelist *dhugetlb_pagelist_t;
 
+/*
+ * Lock this to prevert any page allocation from percpu pool.
+ *
+ * Before we lock percpu_pool, must be sure hpool lock is released.
+ */
+static inline void dhugetlb_percpu_pool_lock_all(struct dhugetlb_pool *hpool)
+{
+	int i;
+
+	for (i = 0; i < NR_SMPOOL; i++)
+		spin_lock(&hpool->smpool[i].lock);
+}
+
+static inline void dhugetlb_percpu_pool_unlock_all(struct dhugetlb_pool *hpool)
+{
+	int i;
+
+	for (i = NR_SMPOOL - 1; i >= 0; i--)
+		spin_unlock(&hpool->smpool[i].lock);
+}
+
+/*
+ * Lock all before r/w percpu_pool.
+ *
+ * Each percpu_pool lock is used to block page allocated/freed by others.
+ * The hpool lock is used to block page allocated/freed by percpu_pool.
+ *
+ * We need to lock all in following situation:
+ * a) when merging pages, we have to make sure no one can alloc page from
+ *   each pool.
+ * b) when get the accurate pagecount.
+ * hpool->lock & all percpu_pool lock must be released before this.
+ */
+void dhugetlb_lock_all(struct dhugetlb_pool *hpool)
+{
+	dhugetlb_percpu_pool_lock_all(hpool);
+	spin_lock(&hpool->lock);
+}
+
+void dhugetlb_unlock_all(struct dhugetlb_pool *hpool)
+{
+	lockdep_assert_held(&hpool->lock);
+
+	spin_unlock(&hpool->lock);
+	dhugetlb_percpu_pool_unlock_all(hpool);
+}
+
 bool dhugetlb_pool_get(struct dhugetlb_pool *hpool)
 {
 	if (!hpool)
@@ -3707,9 +3754,7 @@ static void try_migrate_pages(struct dhugetlb_pool *hpool)
 	struct page *page;
 	int sleep_interval = 100; /* wait for the migration */
 
-	spin_unlock(&hpool->lock);
-	for (i = NR_SMPOOL - 1; i >= 0; i--)
-		spin_unlock(&hpool->smpool[i].lock);
+	dhugetlb_unlock_all(hpool);
 
 	msleep(sleep_interval);
 	dhugetlb_pool_force_empty(hpool->attach_memcg);
@@ -3741,9 +3786,7 @@ static void try_migrate_pages(struct dhugetlb_pool *hpool)
 		}
 	}
 
-	for (i = 0; i < NR_SMPOOL; i++)
-		spin_lock(&hpool->smpool[i].lock);
-	spin_lock(&hpool->lock);
+	dhugetlb_lock_all(hpool);
 }
 
 /*
@@ -3830,12 +3873,9 @@ static void free_back_hugetlb(struct dhugetlb_pool *hpool)
 
 bool free_dhugetlb_pool(struct dhugetlb_pool *hpool)
 {
-	int i;
 	bool ret = false;
 
-	for (i = 0; i < NR_SMPOOL; i++)
-		spin_lock(&hpool->smpool[i].lock);
-	spin_lock(&hpool->lock);
+	dhugetlb_lock_all(hpool);
 
 	ret = free_dhugetlb_pages(hpool);
 	if (!ret)
@@ -3844,9 +3884,7 @@ bool free_dhugetlb_pool(struct dhugetlb_pool *hpool)
 	free_back_hugetlb(hpool);
 
 out_unlock:
-	spin_unlock(&hpool->lock);
-	for (i = NR_SMPOOL - 1; i >= 0; i--)
-		spin_unlock(&hpool->smpool[i].lock);
+	dhugetlb_unlock_all(hpool);
 
 	if (ret)
 		dhugetlb_pool_put(hpool);
@@ -4038,18 +4076,14 @@ static void hugetlb_migrate_pages(struct dhugetlb_pool *hpool,
 					list_len(&hpool->smpool[i].head_page);
 			hpool->free_pages =
 				list_len(&hpool->dhugetlb_4K_freelists);
-			spin_unlock(&hpool->lock);
-			for (i = NR_SMPOOL - 1; i >= 0; i--)
-				spin_unlock(&hpool->smpool[i].lock);
+			dhugetlb_unlock_all(hpool);
 
 			for (i = 0; i < nr_pages; i++) {
 				page = pfn_to_page(split_huge->start_pfn + i);
 				if (PagePool(page))
 					try_migrate_page(page, hpool->nid);
 			}
-			for (i = 0; i < NR_SMPOOL; i++)
-				spin_lock(&hpool->smpool[i].lock);
-			spin_lock(&hpool->lock);
+			dhugetlb_lock_all(hpool);
 
 			/*
 			 * Isolate free page. If all page in the split_huge
@@ -4151,8 +4185,6 @@ static void merge_free_small_page(struct dhugetlb_pool *hpool,
 static void dhugetlb_collect_2M_pages(struct dhugetlb_pool *hpool,
 				      unsigned long count)
 {
-	int i;
-
 	while (hpool->free_unreserved_1G &&
 	       count > hpool->free_unreserved_2M)
 		split_free_huge_page(hpool);
@@ -4163,12 +4195,10 @@ static void dhugetlb_collect_2M_pages(struct dhugetlb_pool *hpool,
 	 */
 	if (count > hpool->free_unreserved_2M) {
 		spin_unlock(&hpool->lock);
-		for (i = 0; i < NR_SMPOOL; i++)
-			spin_lock(&hpool->smpool[i].lock);
-		spin_lock(&hpool->lock);
+		dhugetlb_lock_all(hpool);
 		merge_free_small_page(hpool, count - hpool->free_unreserved_2M);
-		for (i = NR_SMPOOL - 1; i >= 0; i--)
-			spin_unlock(&hpool->smpool[i].lock);
+		/* Keep hpool->lock */
+		dhugetlb_percpu_pool_unlock_all(hpool);
 	}
 }
 
