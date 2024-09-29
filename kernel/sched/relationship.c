@@ -141,6 +141,9 @@ int sched_net_relationship_submit(struct net_relationship_req *req)
 	    req->net_rship_type == NET_RS_TYPE_TX)
 		return remote_rxtx_process(req);
 
+	if (req->rx_pid == req->tx_pid)
+		return -EINVAL;
+
 	rcu_read_lock();
 
 	rx_tsk = find_task_by_pid_ns(req->rx_pid, &init_pid_ns);
