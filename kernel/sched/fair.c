@@ -8962,12 +8962,27 @@ unlock:
 
 DEFINE_STATIC_KEY_FALSE(__dynamic_affinity_switch);
 
-static int __init dynamic_affinity_switch_setup(char *__unused)
+static int __init dynamic_affinity_switch_setup(char *str)
 {
-	static_branch_enable(&__dynamic_affinity_switch);
-	return 1;
+	int ret = 1;
+
+	if (!str)
+		goto out;
+
+	if (!strcmp(str, "enable"))
+		static_branch_enable(&__dynamic_affinity_switch);
+	else if (!strcmp(str, "disable"))
+		static_branch_disable(&__dynamic_affinity_switch);
+	else
+		ret = 0;
+
+out:
+	if (!ret)
+		pr_warn("Unable to parse dynamic_affinity=\n");
+
+	return ret;
 }
-__setup("dynamic_affinity", dynamic_affinity_switch_setup);
+__setup("dynamic_affinity=", dynamic_affinity_switch_setup);
 
 static inline bool prefer_cpus_valid(struct task_struct *p)
 {
