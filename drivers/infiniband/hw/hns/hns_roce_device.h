@@ -112,6 +112,11 @@
 #define HNS_ROCE_MEM_BAR 2
 #define CQ_BANKID_MASK GENMASK(1, 0)
 
+#define VALID_CQ_BANK_MASK_DEFAULT 0xF
+#define VALID_CQ_BANK_MASK_LIMIT 0x5
+
+#define QP_HARDEN_MASK GENMASK(1, 0)
+
 #define HNS_ROCE_MAX_CQ_COUNT 0xFFFF
 #define HNS_ROCE_MAX_CQ_PERIOD 0xFFFF
 
@@ -178,6 +183,7 @@ enum {
 	HNS_ROCE_CAP_FLAG_CQE_INLINE		= BIT(19),
 	HNS_ROCE_CAP_FLAG_BOND			= BIT(21),
 	HNS_ROCE_CAP_FLAG_SRQ_RECORD_DB		= BIT(22),
+	HNS_ROCE_CAP_FLAG_LIMIT_BANK		= BIT(23),
 	HNS_ROCE_CAP_FLAG_POE                   = BIT(27),
 };
 
@@ -628,6 +634,7 @@ struct hns_roce_cq_table {
 	struct hns_roce_bank bank[HNS_ROCE_CQ_BANK_NUM];
 	struct mutex			bank_mutex;
 	u32 ctx_num[HNS_ROCE_CQ_BANK_NUM];
+	u8 valid_cq_bank_mask;
 };
 
 struct hns_roce_srq_table {
