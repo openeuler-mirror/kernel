@@ -42,6 +42,7 @@ static void blk_mq_update_wake_batch(struct blk_mq_tags *tags,
 bool __blk_mq_tag_busy(struct blk_mq_hw_ctx *hctx)
 {
 	unsigned int users;
+	unsigned long flags;
 	struct blk_mq_tags *tags = hctx->tags;
 
 	if (blk_mq_is_sbitmap_shared(hctx->flags)) {
@@ -58,10 +59,10 @@ bool __blk_mq_tag_busy(struct blk_mq_hw_ctx *hctx)
 		}
 	}
 
-	spin_lock_irq(&tags->lock);
+	spin_lock_irqsave(&tags->lock, flags);
 	users = atomic_inc_return(&tags->active_queues);
 	blk_mq_update_wake_batch(tags, users);
-	spin_unlock_irq(&tags->lock);
+	spin_unlock_irqrestore(&tags->lock, flags);
 
 	return true;
 }
