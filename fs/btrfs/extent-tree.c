@@ -5150,7 +5150,6 @@ static noinline int walk_down_proc(struct btrfs_trans_handle *trans,
 					       eb->start, level, 1,
 					       &wc->refs[level],
 					       &wc->flags[level]);
-		BUG_ON(ret == -ENOMEM);
 		if (ret)
 			return ret;
 		BUG_ON(wc->refs[level] == 0);
