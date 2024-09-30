@@ -32,7 +32,7 @@ static inline int cpu_map__socket(struct perf_cpu_map *sock, int s)
 {
 	if (!sock || s > sock->nr || s < 0)
 		return 0;
-	return sock->map[s];
+	return sock->map[s].cpu;
 }
 
 static inline int cpu_map__id_to_socket(int id)

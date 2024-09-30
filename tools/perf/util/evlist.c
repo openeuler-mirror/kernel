@@ -373,7 +373,7 @@ bool evsel__cpu_iter_skip_no_inc(struct evsel *ev, int cpu)
 {
 	if (ev->cpu_iter >= ev->core.cpus->nr)
 		return true;
-	if (cpu >= 0 && ev->core.cpus->map[ev->cpu_iter] != cpu)
+	if (cpu >= 0 && ev->core.cpus->map[ev->cpu_iter].cpu != cpu)
 		return true;
 	return false;
 }
