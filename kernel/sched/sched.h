@@ -723,12 +723,13 @@ struct cfs_rq {
 	unsigned int		forceidle_seq;
 	KABI_FILL_HOLE(unsigned int kabi_hole)
 	u64			min_vruntime_fi;
-#elif defined CONFIG_QOS_SCHED_SMT_EXPELLER && !defined(__GENKSYMS__)
+#elif (defined(CONFIG_QOS_SCHED_SMT_EXPELLER) || \
+		defined(CONFIG_SCHED_STEAL)) && !defined(__GENKSYMS__)
 	union {
 		unsigned int            qos_idle_h_nr_running; /* qos_level：-1 */
 		unsigned long           qos_idle_h_nr_running_padding;
 	};
-	KABI_FILL_HOLE(unsigned long kabi_hole)
+	unsigned long		steal_h_nr_running;
 #else
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
