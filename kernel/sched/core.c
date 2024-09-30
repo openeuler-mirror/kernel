@@ -8636,13 +8636,6 @@ static inline int alloc_qos_sched_group(struct task_group *tg,
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	tg->smt_expell = parent->smt_expell;
 #endif
-	tg->qos_level_mutex = kzalloc(sizeof(struct mutex), GFP_KERNEL);
-
-	if (!tg->qos_level_mutex)
-		return 0;
-
-	mutex_init(tg->qos_level_mutex);
-
 	return 1;
 }
 
@@ -9727,7 +9720,6 @@ static int tg_change_scheduler(struct task_group *tg, void *data)
 	s64 qos_level = *(s64 *)data;
 	struct cgroup_subsys_state *css = &tg->css;
 
-	mutex_lock(tg->qos_level_mutex);
 	tg->qos_level = qos_level;
 	if (is_offline_level(qos_level))
 		policy = SCHED_IDLE;
@@ -9745,7 +9737,6 @@ static int tg_change_scheduler(struct task_group *tg, void *data)
 		sched_setscheduler(tsk, policy, &param);
 	}
 	css_task_iter_end(&it);
-	mutex_unlock(tg->qos_level_mutex);
 
 	return 0;
 }

@@ -13691,9 +13691,6 @@ void free_fair_sched_group(struct task_group *tg)
 			kfree(tg->se[i]);
 	}
 
-#ifdef CONFIG_QOS_SCHED
-	kfree(tg->qos_level_mutex);
-#endif
 	kfree(tg->cfs_rq);
 	kfree(tg->se);
 }
