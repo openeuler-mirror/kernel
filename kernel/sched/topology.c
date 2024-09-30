@@ -1885,7 +1885,6 @@ static void init_numa_topology_type(void)
 #ifdef CONFIG_SCHED_STEAL
 DEFINE_STATIC_KEY_TRUE(sched_steal_allow);
 static int sched_steal_node_limit;
-#define SCHED_STEAL_NODE_LIMIT_DEFAULT 2
 
 static int __init steal_node_limit_setup(char *buf)
 {
@@ -1900,7 +1899,7 @@ static void check_node_limit(void)
 	int n = num_possible_nodes();
 
 	if (sched_steal_node_limit == 0)
-		sched_steal_node_limit = SCHED_STEAL_NODE_LIMIT_DEFAULT;
+		sched_steal_node_limit = n;
 	if (n > sched_steal_node_limit) {
 		static_branch_disable(&sched_steal_allow);
 		pr_debug("Suppressing sched STEAL. To enable, reboot with sched_steal_node_limit=%d", n);

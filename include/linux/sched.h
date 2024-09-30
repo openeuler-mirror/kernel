@@ -522,7 +522,11 @@ struct sched_entity {
 #else
 	KABI_RESERVE(1)
 #endif
+#ifdef CONFIG_SCHED_STEAL
+	KABI_USE(2, int steal_task)
+#else
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };

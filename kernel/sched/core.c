@@ -8275,6 +8275,9 @@ void __init sched_init(void)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		root_task_group.smt_expell = TG_SMT_EXPELL;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+		root_task_group.steal_task = TG_STEAL_NO;
+#endif
 #ifdef CONFIG_RT_GROUP_SCHED
 		root_task_group.rt_se = (struct sched_rt_entity **)ptr;
 		ptr += nr_cpu_ids * sizeof(void **);
@@ -8636,13 +8639,6 @@ static inline int alloc_qos_sched_group(struct task_group *tg,
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	tg->smt_expell = parent->smt_expell;
 #endif
-	tg->qos_level_mutex = kzalloc(sizeof(struct mutex), GFP_KERNEL);
-
-	if (!tg->qos_level_mutex)
-		return 0;
-
-	mutex_init(tg->qos_level_mutex);
-
 	return 1;
 }
 
@@ -8719,6 +8715,20 @@ static void sched_free_group(struct task_group *tg)
 	kmem_cache_free(task_group_cache, tg);
 }
 
+#ifdef CONFIG_SCHED_STEAL
+static void sched_change_steal_group(struct task_struct *tsk, struct task_group *tg)
+{
+	struct sched_entity *se = &tsk->se;
+
+	se->steal_task = tg->steal_task;
+}
+
+static inline void tg_init_steal(struct task_group *tg, struct task_group *ptg)
+{
+	tg->steal_task = ptg->steal_task;
+}
+#endif
+
 #ifdef CONFIG_BPF_SCHED
 static inline void tg_init_tag(struct task_group *tg, struct task_group *ptg)
 {
@@ -8745,6 +8755,10 @@ struct task_group *sched_create_group(struct task_group *parent)
 
 	if (!alloc_rt_sched_group(tg, parent))
 		goto err;
+
+#ifdef CONFIG_SCHED_STEAL
+	tg_init_steal(tg, parent);
+#endif
 
 #ifdef CONFIG_BPF_SCHED
 	tg_init_tag(tg, parent);
@@ -8819,6 +8833,10 @@ static void sched_change_group(struct task_struct *tsk, int type)
 
 #ifdef CONFIG_QOS_SCHED
 	sched_change_qos_group(tsk, tg);
+#endif
+
+#ifdef CONFIG_SCHED_STEAL
+	sched_change_steal_group(tsk, tg);
 #endif
 
 #ifdef CONFIG_BPF_SCHED
@@ -9727,7 +9745,6 @@ static int tg_change_scheduler(struct task_group *tg, void *data)
 	s64 qos_level = *(s64 *)data;
 	struct cgroup_subsys_state *css = &tg->css;
 
-	mutex_lock(tg->qos_level_mutex);
 	tg->qos_level = qos_level;
 	if (is_offline_level(qos_level))
 		policy = SCHED_IDLE;
@@ -9745,7 +9762,6 @@ static int tg_change_scheduler(struct task_group *tg, void *data)
 		sched_setscheduler(tsk, policy, &param);
 	}
 	css_task_iter_end(&it);
-	mutex_unlock(tg->qos_level_mutex);
 
 	return 0;
 }
@@ -9793,6 +9809,87 @@ static inline s64 cpu_qos_read(struct cgroup_subsys_state *css,
 			       struct cftype *cft)
 {
 	return css_tg(css)->qos_level;
+}
+#endif
+
+#ifdef CONFIG_SCHED_STEAL
+static DEFINE_MUTEX(steal_mutex);
+
+static inline s64 cpu_steal_task_read(struct cgroup_subsys_state *css,
+				      struct cftype *cft)
+{
+	return css_tg(css)->steal_task;
+}
+
+void sched_setsteal(struct task_struct *tsk, s64 steal_task)
+{
+	struct sched_entity *se = &tsk->se;
+	int queued, running, queue_flags =
+			DEQUEUE_SAVE | DEQUEUE_MOVE | DEQUEUE_NOCLOCK;
+	struct rq_flags rf;
+	struct rq *rq;
+
+	if (se->steal_task == steal_task)
+		return;
+
+	rq = task_rq_lock(tsk, &rf);
+
+	running = task_current(rq, tsk);
+	queued = task_on_rq_queued(tsk);
+
+	update_rq_clock(rq);
+	if (queued)
+		dequeue_task(rq, tsk, queue_flags);
+	if (running)
+		put_prev_task(rq, tsk);
+
+	se->steal_task = steal_task;
+
+	if (queued)
+		enqueue_task(rq, tsk, queue_flags);
+	if (running)
+		set_next_task(rq, tsk);
+
+	task_rq_unlock(rq, tsk, &rf);
+}
+
+int tg_change_steal(struct task_group *tg, void *data)
+{
+	struct css_task_iter it;
+	struct task_struct *tsk;
+	s64 steal_task = *(s64 *)data;
+	struct cgroup_subsys_state *css = &tg->css;
+
+	tg->steal_task = steal_task;
+
+	css_task_iter_start(css, 0, &it);
+	while ((tsk = css_task_iter_next(&it)))
+		sched_setsteal(tsk, steal_task);
+	css_task_iter_end(&it);
+
+	return 0;
+}
+
+static int cpu_steal_task_write(struct cgroup_subsys_state *css,
+				struct cftype *cftype, s64 steal_task)
+{
+	struct task_group *tg = css_tg(css);
+
+	if (!group_steal_used())
+		return -EPERM;
+
+	if (steal_task < TG_STEAL_NO || steal_task > TG_STEAL)
+		return -EINVAL;
+
+	mutex_lock(&steal_mutex);
+
+	rcu_read_lock();
+	walk_tg_tree_from(tg, tg_change_steal, tg_nop, (void *)(&steal_task));
+	rcu_read_unlock();
+
+	mutex_unlock(&steal_mutex);
+
+	return 0;
 }
 #endif
 
@@ -9964,6 +10061,14 @@ static struct cftype cpu_legacy_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.read_s64 = cpu_smt_expell_read,
 		.write_s64 = cpu_smt_expell_write,
+	},
+#endif
+#ifdef CONFIG_SCHED_STEAL
+	{
+		.name = "steal_task",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_s64 = cpu_steal_task_read,
+		.write_s64 = cpu_steal_task_write,
 	},
 #endif
 #ifdef CONFIG_BPF_SCHED

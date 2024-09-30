@@ -4459,6 +4459,14 @@ static inline void rq_idle_stamp_clear(struct rq *rq)
 }
 
 #ifdef CONFIG_SCHED_STEAL
+DEFINE_STATIC_KEY_FALSE(group_steal);
+
+static int __init group_steal_setup(char *__unused)
+{
+	static_branch_enable(&group_steal);
+	return 1;
+}
+__setup("group_steal", group_steal_setup);
 
 static inline bool steal_enabled(void)
 {
@@ -4470,12 +4478,28 @@ static inline bool steal_enabled(void)
 	return sched_feat(STEAL) && allow;
 }
 
+static inline bool group_steal_enabled(int steal_task)
+{
+	return group_steal_used() && is_tg_steal(steal_task);
+}
+
 static void overload_clear(struct rq *rq)
 {
 	struct sparsemask *overload_cpus;
 	unsigned long time;
+	bool need_clear = false;
 
 	if (!steal_enabled())
+		return;
+
+	if (!group_steal_used() && rq->cfs.h_nr_running >= 2)
+		return;
+
+	if (group_steal_used() &&
+	    (rq->cfs.h_nr_running < 2 || rq->cfs.steal_h_nr_running == 0))
+		need_clear = true;
+
+	if (!need_clear)
 		return;
 
 	time = schedstat_start_time();
@@ -4493,6 +4517,12 @@ static void overload_set(struct rq *rq)
 	unsigned long time;
 
 	if (!steal_enabled())
+		return;
+
+	if (rq->cfs.h_nr_running < 2)
+		return;
+
+	if (group_steal_used() && rq->cfs.steal_h_nr_running < 1)
 		return;
 
 	time = schedstat_start_time();
@@ -5278,12 +5308,14 @@ static int tg_throttle_down(struct task_group *tg, void *data)
 static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
-	unsigned int prev_nr = rq->cfs.h_nr_running;
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta, dequeue = 1;
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	long qos_idle_delta;
+#endif
+#ifdef CONFIG_SCHED_STEAL
+	long steal_delta;
 #endif
 
 	raw_spin_lock(&cfs_b->lock);
@@ -5319,6 +5351,9 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	qos_idle_delta = cfs_rq->qos_idle_h_nr_running;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+	steal_delta = cfs_rq->steal_h_nr_running;
+#endif
 
 	for_each_sched_entity(se) {
 		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
@@ -5338,6 +5373,9 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		qcfs_rq->qos_idle_h_nr_running -= qos_idle_delta;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+		qcfs_rq->steal_h_nr_running -= steal_delta;
+#endif
 
 		if (qcfs_rq->load.weight)
 			dequeue = 0;
@@ -5345,8 +5383,9 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	if (!se) {
 		sub_nr_running(rq, task_delta);
-		if (prev_nr >= 2 && prev_nr - task_delta < 2)
-			overload_clear(rq);
+#ifdef CONFIG_SCHED_STEAL
+		overload_clear(rq);
+#endif
 	}
 
 	/*
@@ -5361,12 +5400,14 @@ static bool throttle_cfs_rq(struct cfs_rq *cfs_rq)
 void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
-	unsigned int prev_nr = rq->cfs.h_nr_running;
 	struct cfs_bandwidth *cfs_b = tg_cfs_bandwidth(cfs_rq->tg);
 	struct sched_entity *se;
 	long task_delta, idle_task_delta;
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	long qos_idle_delta;
+#endif
+#ifdef CONFIG_SCHED_STEAL
+	long steal_delta;
 #endif
 
 	se = cfs_rq->tg->se[cpu_of(rq)];
@@ -5399,6 +5440,10 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	qos_idle_delta = cfs_rq->qos_idle_h_nr_running;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+	steal_delta = cfs_rq->steal_h_nr_running;
+#endif
+
 	for_each_sched_entity(se) {
 		if (se->on_rq)
 			break;
@@ -5409,6 +5454,9 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 		cfs_rq->idle_h_nr_running += idle_task_delta;
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		cfs_rq->qos_idle_h_nr_running += qos_idle_delta;
+#endif
+#ifdef CONFIG_SCHED_STEAL
+		cfs_rq->steal_h_nr_running += steal_delta;
 #endif
 
 		/* end evaluation on encountering a throttled cfs_rq */
@@ -5427,6 +5475,9 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		cfs_rq->qos_idle_h_nr_running += qos_idle_delta;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+		cfs_rq->steal_h_nr_running += steal_delta;
+#endif
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
@@ -5442,8 +5493,9 @@ void unthrottle_cfs_rq(struct cfs_rq *cfs_rq)
 
 	/* At this point se is NULL and we are at root level*/
 	add_nr_running(rq, task_delta);
-	if (prev_nr < 2 && prev_nr + task_delta >= 2)
-		overload_set(rq);
+#ifdef CONFIG_SCHED_STEAL
+	overload_set(rq);
+#endif
 
 unthrottle_throttle:
 	/*
@@ -6576,8 +6628,9 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	int idle_h_nr_running = task_has_idle_policy(p);
 
 	int task_new = !(flags & ENQUEUE_WAKEUP);
-	unsigned int prev_nr = rq->cfs.h_nr_running;
-
+#ifdef CONFIG_SCHED_STEAL
+	bool tg_steal_enabled = group_steal_enabled(se->steal_task);
+#endif
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	int qos_idle_h_nr_running;
 
@@ -6612,6 +6665,10 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		cfs_rq->qos_idle_h_nr_running += qos_idle_h_nr_running;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+		if (tg_steal_enabled)
+			cfs_rq->steal_h_nr_running++;
+#endif
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
@@ -6632,6 +6689,10 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		cfs_rq->qos_idle_h_nr_running += qos_idle_h_nr_running;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+		if (tg_steal_enabled)
+			cfs_rq->steal_h_nr_running++;
+#endif
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
@@ -6647,8 +6708,9 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 	/* At this point se is NULL and we are at root level*/
 	add_nr_running(rq, 1);
-	if (prev_nr == 1)
-		overload_set(rq);
+#ifdef CONFIG_SCHED_STEAL
+	overload_set(rq);
+#endif
 
 	/*
 	 * Since new tasks are assigned an initial util_avg equal to
@@ -6707,9 +6769,10 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	int task_sleep = flags & DEQUEUE_SLEEP;
 	int idle_h_nr_running = task_has_idle_policy(p);
 
-	unsigned int prev_nr = rq->cfs.h_nr_running;
 	bool was_sched_idle = sched_idle_rq(rq);
-
+#ifdef CONFIG_SCHED_STEAL
+	bool tg_steal_enabled = group_steal_enabled(se->steal_task);
+#endif
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	int qos_idle_h_nr_running = se->qos_idle ? 1 : 0;
 
@@ -6726,6 +6789,10 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		cfs_rq->idle_h_nr_running -= idle_h_nr_running;
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		cfs_rq->qos_idle_h_nr_running -= qos_idle_h_nr_running;
+#endif
+#ifdef CONFIG_SCHED_STEAL
+		if (tg_steal_enabled)
+			cfs_rq->steal_h_nr_running--;
 #endif
 
 		/* end evaluation on encountering a throttled cfs_rq */
@@ -6759,6 +6826,10 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		cfs_rq->qos_idle_h_nr_running -= qos_idle_h_nr_running;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+		if (tg_steal_enabled)
+			cfs_rq->steal_h_nr_running--;
+#endif
 
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
@@ -6768,8 +6839,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 	/* At this point se is NULL and we are at root level*/
 	sub_nr_running(rq, 1);
-	if (prev_nr == 2)
-		overload_clear(rq);
+#ifdef CONFIG_SCHED_STEAL
+	overload_clear(rq);
+#endif
 
 	/* balance early to pull high priority tasks */
 	if (unlikely(!was_sched_idle && sched_idle_rq(rq)))
@@ -8543,10 +8615,12 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
 	struct sched_entity *se;
-	unsigned int prev_nr = cfs_rq->h_nr_running;
 	long task_delta, idle_task_delta, dequeue = 1;
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	long qos_idle_delta;
+#endif
+#ifdef CONFIG_SCHED_STEAL
+	long steal_delta;
 #endif
 	se = cfs_rq->tg->se[cpu_of(rq_of(cfs_rq))];
 
@@ -8560,6 +8634,10 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	qos_idle_delta = cfs_rq->qos_idle_h_nr_running;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+	steal_delta = cfs_rq->steal_h_nr_running;
+#endif
+
 	for_each_sched_entity(se) {
 		struct cfs_rq *qcfs_rq = cfs_rq_of(se);
 		/* throttled entity or throttle-on-deactivate */
@@ -8578,6 +8656,9 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		qcfs_rq->qos_idle_h_nr_running -= qos_idle_delta;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+		qcfs_rq->steal_h_nr_running -= steal_delta;
+#endif
 
 		if (qcfs_rq->load.weight)
 			dequeue = 0;
@@ -8585,9 +8666,9 @@ static void throttle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 
 	if (!se) {
 		sub_nr_running(rq, task_delta);
-		if (prev_nr >= 2 && prev_nr - task_delta < 2)
-			overload_clear(rq);
-
+#ifdef CONFIG_SCHED_STEAL
+		overload_clear(rq);
+#endif
 	}
 
 	if (!qos_timer_is_activated(cpu_of(rq)))
@@ -8603,10 +8684,12 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
 	struct rq *rq = rq_of(cfs_rq);
 	struct sched_entity *se;
-	unsigned int prev_nr = cfs_rq->h_nr_running;
 	long task_delta, idle_task_delta;
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	long qos_idle_delta;
+#endif
+#ifdef CONFIG_SCHED_STEAL
+	long steal_delta;
 #endif
 
 	se = cfs_rq->tg->se[cpu_of(rq)];
@@ -8632,6 +8715,10 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	qos_idle_delta = cfs_rq->qos_idle_h_nr_running;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+	steal_delta = cfs_rq->steal_h_nr_running;
+#endif
+
 	for_each_sched_entity(se) {
 		if (se->on_rq)
 			break;
@@ -8643,6 +8730,9 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 		cfs_rq->idle_h_nr_running += idle_task_delta;
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		cfs_rq->qos_idle_h_nr_running += qos_idle_delta;
+#endif
+#ifdef CONFIG_SCHED_STEAL
+		cfs_rq->steal_h_nr_running += steal_delta;
 #endif
 
 		if (cfs_rq_throttled(cfs_rq))
@@ -8660,6 +8750,10 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		cfs_rq->qos_idle_h_nr_running += qos_idle_delta;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+		cfs_rq->steal_h_nr_running += steal_delta;
+#endif
+
 		/* end evaluation on encountering a throttled cfs_rq */
 		if (cfs_rq_throttled(cfs_rq))
 			goto unthrottle_throttle;
@@ -8673,8 +8767,9 @@ static void unthrottle_qos_cfs_rq(struct cfs_rq *cfs_rq)
 	}
 
 	add_nr_running(rq, task_delta);
-	if (prev_nr < 2 && prev_nr + task_delta >= 2)
-		overload_set(rq);
+#ifdef CONFIG_SCHED_STEAL
+	overload_set(rq);
+#endif
 
 unthrottle_throttle:
 	/*
@@ -9842,10 +9937,14 @@ static bool
 can_migrate_task_llc(struct task_struct *p, struct rq *rq, struct rq *dst_rq)
 {
 	int dst_cpu = dst_rq->cpu;
+	struct task_group *tg = task_group(p);
 
 	lockdep_assert_rq_held(rq);
 
-	if (throttled_lb_pair(task_group(p), cpu_of(rq), dst_cpu))
+	if (group_steal_used() && !is_tg_steal(tg->steal_task))
+		return false;
+
+	if (throttled_lb_pair(tg, cpu_of(rq), dst_cpu))
 		return false;
 
 	if (!cpumask_test_cpu(dst_cpu, p->cpus_ptr)) {
@@ -13084,6 +13183,7 @@ void trigger_load_balance(struct rq *rq)
 }
 
 #ifdef CONFIG_SCHED_STEAL
+int sysctl_sched_max_steal_count = 32;
 /*
  * Search the runnable tasks in @cfs_rq in order of next to run, and find
  * the first one that can be migrated to @dst_rq.  @cfs_rq is locked on entry.
@@ -13095,14 +13195,20 @@ detach_next_task(struct cfs_rq *cfs_rq, struct rq *dst_rq)
 	int dst_cpu = dst_rq->cpu;
 	struct task_struct *p;
 	struct rq *rq = rq_of(cfs_rq);
+	int count = 1;
 
 	lockdep_assert_rq_held(rq_of(cfs_rq));
 
 	list_for_each_entry_reverse(p, &rq->cfs_tasks, se.group_node) {
+		if (count > sysctl_sched_max_steal_count)
+			break;
+
 		if (can_migrate_task_llc(p, rq, dst_rq)) {
 			detach_task(p, rq, dst_cpu);
 			return p;
 		}
+
+		count++;
 	}
 	return NULL;
 }
@@ -13122,8 +13228,12 @@ static int steal_from(struct rq *dst_rq, struct rq_flags *dst_rf, bool *locked,
 	int stolen = 0;
 	int dst_cpu = dst_rq->cpu;
 	struct rq *src_rq = cpu_rq(src_cpu);
+	bool tg_used = group_steal_used();
 
 	if (dst_cpu == src_cpu || src_rq->cfs.h_nr_running < 2)
+		return 0;
+
+	if (tg_used && src_rq->cfs.steal_h_nr_running < 1)
 		return 0;
 
 	if (*locked) {
@@ -13134,7 +13244,8 @@ static int steal_from(struct rq *dst_rq, struct rq_flags *dst_rf, bool *locked,
 	rq_lock_irqsave(src_rq, &rf);
 	update_rq_clock(src_rq);
 
-	if (src_rq->cfs.h_nr_running < 2 || !cpu_active(src_cpu))
+	if (!cpu_active(src_cpu) || src_rq->cfs.h_nr_running < 2 ||
+	    (tg_used && src_rq->cfs.steal_h_nr_running < 1))
 		p = NULL;
 	else
 		p = detach_next_task(&src_rq->cfs, dst_rq);
@@ -13691,9 +13802,6 @@ void free_fair_sched_group(struct task_group *tg)
 			kfree(tg->se[i]);
 	}
 
-#ifdef CONFIG_QOS_SCHED
-	kfree(tg->qos_level_mutex);
-#endif
 	kfree(tg->cfs_rq);
 	kfree(tg->se);
 }

@@ -402,7 +402,6 @@ struct cfs_bandwidth {
 #endif
 };
 
-
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 #define AD_LEVEL_MAX		8
 
@@ -497,17 +496,31 @@ struct task_group {
 #else
 	KABI_RESERVE(2)
 #endif
-#ifdef CONFIG_QOS_SCHED
-	KABI_USE(3, struct mutex *qos_level_mutex)
+
+#ifdef CONFIG_SCHED_STEAL
+	KABI_USE(3, int steal_task)
 #else
 	KABI_RESERVE(3)
 #endif
+
 #if defined(CONFIG_QOS_SCHED_SMART_GRID) && !defined(__GENKSYMS__)
 	KABI_USE(4, struct auto_affinity *auto_affinity)
 #else
 	KABI_RESERVE(4)
 #endif
 };
+
+#ifdef CONFIG_SCHED_STEAL
+enum tg_steal_task {
+	TG_STEAL_NO = 0,
+	TG_STEAL = 1,
+};
+
+static inline bool is_tg_steal(int steal_task)
+{
+	return steal_task == TG_STEAL;
+}
+#endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 #define ROOT_TASK_GROUP_LOAD	NICE_0_LOAD
@@ -710,12 +723,13 @@ struct cfs_rq {
 	unsigned int		forceidle_seq;
 	KABI_FILL_HOLE(unsigned int kabi_hole)
 	u64			min_vruntime_fi;
-#elif defined CONFIG_QOS_SCHED_SMT_EXPELLER && !defined(__GENKSYMS__)
+#elif (defined(CONFIG_QOS_SCHED_SMT_EXPELLER) || \
+		defined(CONFIG_SCHED_STEAL)) && !defined(__GENKSYMS__)
 	union {
 		unsigned int            qos_idle_h_nr_running; /* qos_level：-1 */
 		unsigned long           qos_idle_h_nr_running_padding;
 	};
-	KABI_FILL_HOLE(unsigned long kabi_hole)
+	unsigned long		steal_h_nr_running;
 #else
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -1777,6 +1791,15 @@ this_rq_lock_irq(struct rq_flags *rf)
 extern void set_sched_cluster(void);
 #else
 static inline void set_sched_cluster(void) { }
+#endif
+
+#ifdef CONFIG_SCHED_STEAL
+DECLARE_STATIC_KEY_FALSE(group_steal);
+
+static inline bool group_steal_used(void)
+{
+	return static_branch_unlikely(&group_steal);
+}
 #endif
 
 #ifdef CONFIG_NUMA
