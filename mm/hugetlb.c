@@ -1387,6 +1387,7 @@ static void free_huge_page_to_dhugetlb_pool(struct page *page,
 {
 	struct hstate *h = page_hstate(page);
 	struct dhugetlb_pool *hpool;
+	unsigned long flags;
 
 	hpool = get_dhugetlb_pool_from_dhugetlb_pagelist(page);
 	if (unlikely(!hpool)) {
@@ -1394,7 +1395,7 @@ static void free_huge_page_to_dhugetlb_pool(struct page *page,
 		return;
 	}
 
-	spin_lock(&hpool->lock);
+	spin_lock_irqsave(&hpool->lock, flags);
 	if (PageHWPoison(page))
 		goto out;
 	ClearPagePool(page);
@@ -1424,7 +1425,7 @@ static void free_huge_page_to_dhugetlb_pool(struct page *page,
 					  DHUGETLB_FREE_1G);
 	}
 out:
-	spin_unlock(&hpool->lock);
+	spin_unlock_irqrestore(&hpool->lock, flags);
 	dhugetlb_pool_put(hpool);
 }
 #else
@@ -3345,6 +3346,55 @@ DEFINE_STATIC_KEY_FALSE(dhugetlb_enabled_key);
 DEFINE_RWLOCK(dhugetlb_pagelist_rwlock);
 struct dhugetlb_pagelist *dhugetlb_pagelist_t;
 
+/*
+ * Lock this to prevert any page allocation from percpu pool.
+ *
+ * Before we lock percpu_pool, must be sure hpool lock is released.
+ */
+static inline void dhugetlb_percpu_pool_lock_all(struct dhugetlb_pool *hpool)
+{
+	int i;
+
+	for (i = 0; i < NR_SMPOOL; i++)
+		spin_lock_nested(&hpool->smpool[i].lock, i);
+}
+
+static inline void dhugetlb_percpu_pool_unlock_all(struct dhugetlb_pool *hpool)
+{
+	int i;
+
+	for (i = NR_SMPOOL - 1; i >= 0; i--)
+		spin_unlock(&hpool->smpool[i].lock);
+}
+
+/*
+ * Lock all before r/w percpu_pool.
+ *
+ * Each percpu_pool lock is used to block page allocated/freed by others.
+ * The hpool lock is used to block page allocated/freed by percpu_pool.
+ *
+ * We need to lock all in following situation:
+ * a) when merging pages, we have to make sure no one can alloc page from
+ *   each pool.
+ * b) when get the accurate pagecount.
+ * hpool->lock & all percpu_pool lock must be released before this.
+ */
+void dhugetlb_lock_all(struct dhugetlb_pool *hpool)
+{
+	local_irq_disable();
+	dhugetlb_percpu_pool_lock_all(hpool);
+	spin_lock(&hpool->lock);
+}
+
+void dhugetlb_unlock_all(struct dhugetlb_pool *hpool)
+{
+	lockdep_assert_held(&hpool->lock);
+
+	spin_unlock(&hpool->lock);
+	dhugetlb_percpu_pool_unlock_all(hpool);
+	local_irq_enable();
+}
+
 bool dhugetlb_pool_get(struct dhugetlb_pool *hpool)
 {
 	if (!hpool)
@@ -3405,8 +3455,8 @@ int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
 	if (!h)
 		return -ENOMEM;
 
-	spin_lock(&hpool->lock);
-	spin_lock_irq(&hugetlb_lock);
+	spin_lock_irq(&hpool->lock);
+	spin_lock(&hugetlb_lock);
 	if (h->free_huge_pages_node[nid] < size) {
 		ret = -ENOMEM;
 		goto out_unlock;
@@ -3428,8 +3478,8 @@ int alloc_hugepage_from_hugetlb(struct dhugetlb_pool *hpool,
 	}
 	ret = 0;
 out_unlock:
-	spin_unlock_irq(&hugetlb_lock);
-	spin_unlock(&hpool->lock);
+	spin_unlock(&hugetlb_lock);
+	spin_unlock_irq(&hpool->lock);
 	return ret;
 }
 
@@ -3707,20 +3757,18 @@ static void try_migrate_pages(struct dhugetlb_pool *hpool)
 	struct page *page;
 	int sleep_interval = 100; /* wait for the migration */
 
-	spin_unlock(&hpool->lock);
-	for (i = NR_SMPOOL - 1; i >= 0; i--)
-		spin_unlock(&hpool->smpool[i].lock);
+	dhugetlb_unlock_all(hpool);
 
 	msleep(sleep_interval);
 	dhugetlb_pool_force_empty(hpool->attach_memcg);
 
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	nr_free_pages = hpool->free_pages;
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 	for (i = 0; i < NR_SMPOOL; i++) {
-		spin_lock(&hpool->smpool[i].lock);
+		spin_lock_irq(&hpool->smpool[i].lock);
 		nr_free_pages += hpool->smpool[i].free_pages;
-		spin_unlock(&hpool->smpool[i].lock);
+		spin_unlock_irq(&hpool->smpool[i].lock);
 	}
 
 	if (nr_free_pages >> HUGETLB_PAGE_ORDER < hpool->nr_split_2M) {
@@ -3741,9 +3789,7 @@ static void try_migrate_pages(struct dhugetlb_pool *hpool)
 		}
 	}
 
-	for (i = 0; i < NR_SMPOOL; i++)
-		spin_lock(&hpool->smpool[i].lock);
-	spin_lock(&hpool->lock);
+	dhugetlb_lock_all(hpool);
 }
 
 /*
@@ -3830,12 +3876,9 @@ static void free_back_hugetlb(struct dhugetlb_pool *hpool)
 
 bool free_dhugetlb_pool(struct dhugetlb_pool *hpool)
 {
-	int i;
 	bool ret = false;
 
-	for (i = 0; i < NR_SMPOOL; i++)
-		spin_lock(&hpool->smpool[i].lock);
-	spin_lock(&hpool->lock);
+	dhugetlb_lock_all(hpool);
 
 	ret = free_dhugetlb_pages(hpool);
 	if (!ret)
@@ -3844,9 +3887,7 @@ bool free_dhugetlb_pool(struct dhugetlb_pool *hpool)
 	free_back_hugetlb(hpool);
 
 out_unlock:
-	spin_unlock(&hpool->lock);
-	for (i = NR_SMPOOL - 1; i >= 0; i--)
-		spin_unlock(&hpool->smpool[i].lock);
+	dhugetlb_unlock_all(hpool);
 
 	if (ret)
 		dhugetlb_pool_put(hpool);
@@ -4038,18 +4079,14 @@ static void hugetlb_migrate_pages(struct dhugetlb_pool *hpool,
 					list_len(&hpool->smpool[i].head_page);
 			hpool->free_pages =
 				list_len(&hpool->dhugetlb_4K_freelists);
-			spin_unlock(&hpool->lock);
-			for (i = NR_SMPOOL - 1; i >= 0; i--)
-				spin_unlock(&hpool->smpool[i].lock);
+			dhugetlb_unlock_all(hpool);
 
 			for (i = 0; i < nr_pages; i++) {
 				page = pfn_to_page(split_huge->start_pfn + i);
 				if (PagePool(page))
 					try_migrate_page(page, hpool->nid);
 			}
-			for (i = 0; i < NR_SMPOOL; i++)
-				spin_lock(&hpool->smpool[i].lock);
-			spin_lock(&hpool->lock);
+			dhugetlb_lock_all(hpool);
 
 			/*
 			 * Isolate free page. If all page in the split_huge
@@ -4151,8 +4188,6 @@ static void merge_free_small_page(struct dhugetlb_pool *hpool,
 static void dhugetlb_collect_2M_pages(struct dhugetlb_pool *hpool,
 				      unsigned long count)
 {
-	int i;
-
 	while (hpool->free_unreserved_1G &&
 	       count > hpool->free_unreserved_2M)
 		split_free_huge_page(hpool);
@@ -4162,13 +4197,11 @@ static void dhugetlb_collect_2M_pages(struct dhugetlb_pool *hpool,
 	 * first, and then try to lock every lock in order to avoid deadlock.
 	 */
 	if (count > hpool->free_unreserved_2M) {
-		spin_unlock(&hpool->lock);
-		for (i = 0; i < NR_SMPOOL; i++)
-			spin_lock(&hpool->smpool[i].lock);
-		spin_lock(&hpool->lock);
+		spin_unlock_irq(&hpool->lock);
+		dhugetlb_lock_all(hpool);
 		merge_free_small_page(hpool, count - hpool->free_unreserved_2M);
-		for (i = NR_SMPOOL - 1; i >= 0; i--)
-			spin_unlock(&hpool->smpool[i].lock);
+		/* Keep hpool->lock */
+		dhugetlb_percpu_pool_unlock_all(hpool);
 	}
 }
 
@@ -4183,7 +4216,7 @@ void dhugetlb_reserve_hugepages(struct dhugetlb_pool *hpool,
 {
 	unsigned long delta;
 
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	if (gigantic) {
 		if (count > hpool->total_reserved_1G) {
 			delta = min(count - hpool->total_reserved_1G,
@@ -4218,7 +4251,7 @@ void dhugetlb_reserve_hugepages(struct dhugetlb_pool *hpool,
 			hpool->free_unreserved_2M += delta;
 		}
 	}
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 }
 
 static int dhugetlb_acct_memory(struct hstate *h, long delta,
@@ -4229,7 +4262,7 @@ static int dhugetlb_acct_memory(struct hstate *h, long delta,
 	if (delta == 0)
 		return 0;
 
-	spin_lock(&hpool->lock);
+	spin_lock_irq(&hpool->lock);
 	if (hstate_is_gigantic(h)) {
 		if (delta > 0 && delta <= hpool->free_reserved_1G -
 					  hpool->mmap_reserved_1G) {
@@ -4263,7 +4296,7 @@ static int dhugetlb_acct_memory(struct hstate *h, long delta,
 						   DHUGETLB_UNRESV_2M);
 		}
 	}
-	spin_unlock(&hpool->lock);
+	spin_unlock_irq(&hpool->lock);
 
 	return ret;
 }

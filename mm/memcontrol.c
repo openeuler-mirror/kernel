@@ -4879,9 +4879,7 @@ static int memcg_read_dhugetlb(struct seq_file *m, void *v)
 		return 0;
 	}
 
-	for (i = 0; i < NR_SMPOOL; i++)
-		spin_lock(&hpool->smpool[i].lock);
-	spin_lock(&hpool->lock);
+	dhugetlb_lock_all(hpool);
 
 	free_pages = hpool->free_pages;
 	for (i = 0; i < NR_SMPOOL; i++) {
@@ -4916,9 +4914,7 @@ static int memcg_read_dhugetlb(struct seq_file *m, void *v)
 		   free_pages,
 		   used_pages);
 
-	spin_unlock(&hpool->lock);
-	for (i = NR_SMPOOL - 1; i >= 0; i--)
-		spin_unlock(&hpool->smpool[i].lock);
+	dhugetlb_unlock_all(hpool);
 	dhugetlb_pool_put(hpool);
 	return 0;
 }
