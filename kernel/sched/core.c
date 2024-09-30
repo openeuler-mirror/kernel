@@ -9813,6 +9813,8 @@ static inline s64 cpu_qos_read(struct cgroup_subsys_state *css,
 #endif
 
 #ifdef CONFIG_SCHED_STEAL
+static DEFINE_MUTEX(steal_mutex);
+
 static inline s64 cpu_steal_task_read(struct cgroup_subsys_state *css,
 				      struct cftype *cft)
 {
@@ -9879,9 +9881,13 @@ static int cpu_steal_task_write(struct cgroup_subsys_state *css,
 	if (steal_task < TG_STEAL_NO || steal_task > TG_STEAL)
 		return -EINVAL;
 
+	mutex_lock(&steal_mutex);
+
 	rcu_read_lock();
 	walk_tg_tree_from(tg, tg_change_steal, tg_nop, (void *)(&steal_task));
 	rcu_read_unlock();
+
+	mutex_unlock(&steal_mutex);
 
 	return 0;
 }
