@@ -5909,6 +5909,7 @@ int sched_cpu_deactivate(unsigned int cpu)
 
 	ret = cpuset_cpu_inactive(cpu);
 	if (ret) {
+		sched_smt_present_inc(cpu);
 		set_cpu_active(cpu, true);
 		return ret;
 	}
