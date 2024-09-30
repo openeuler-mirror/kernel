@@ -4459,6 +4459,14 @@ static inline void rq_idle_stamp_clear(struct rq *rq)
 }
 
 #ifdef CONFIG_SCHED_STEAL
+DEFINE_STATIC_KEY_FALSE(group_steal);
+
+static int __init group_steal_setup(char *__unused)
+{
+	static_branch_enable(&group_steal);
+	return 1;
+}
+__setup("group_steal", group_steal_setup);
 
 static inline bool steal_enabled(void)
 {

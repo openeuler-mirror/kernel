@@ -1775,6 +1775,15 @@ extern void set_sched_cluster(void);
 static inline void set_sched_cluster(void) { }
 #endif
 
+#ifdef CONFIG_SCHED_STEAL
+DECLARE_STATIC_KEY_FALSE(group_steal);
+
+static inline bool group_steal_used(void)
+{
+	return static_branch_unlikely(&group_steal);
+}
+#endif
+
 #ifdef CONFIG_NUMA
 #ifdef CONFIG_SCHED_STEAL
 extern struct static_key_true sched_steal_allow;
