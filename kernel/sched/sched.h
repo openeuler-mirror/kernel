@@ -402,7 +402,6 @@ struct cfs_bandwidth {
 #endif
 };
 
-
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 #define AD_LEVEL_MAX		8
 
@@ -497,13 +496,31 @@ struct task_group {
 #else
 	KABI_RESERVE(2)
 #endif
+
+#ifdef CONFIG_SCHED_STEAL
+	KABI_USE(3, int steal_task)
+#else
 	KABI_RESERVE(3)
+#endif
+
 #if defined(CONFIG_QOS_SCHED_SMART_GRID) && !defined(__GENKSYMS__)
 	KABI_USE(4, struct auto_affinity *auto_affinity)
 #else
 	KABI_RESERVE(4)
 #endif
 };
+
+#ifdef CONFIG_SCHED_STEAL
+enum tg_steal_task {
+	TG_STEAL_NO = 0,
+	TG_STEAL = 1,
+};
+
+static inline bool is_tg_steal(int steal_task)
+{
+	return steal_task == TG_STEAL;
+}
+#endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 #define ROOT_TASK_GROUP_LOAD	NICE_0_LOAD
