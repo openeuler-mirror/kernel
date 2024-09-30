@@ -13183,6 +13183,7 @@ void trigger_load_balance(struct rq *rq)
 }
 
 #ifdef CONFIG_SCHED_STEAL
+int sysctl_sched_max_steal_count = 32;
 /*
  * Search the runnable tasks in @cfs_rq in order of next to run, and find
  * the first one that can be migrated to @dst_rq.  @cfs_rq is locked on entry.
@@ -13194,14 +13195,20 @@ detach_next_task(struct cfs_rq *cfs_rq, struct rq *dst_rq)
 	int dst_cpu = dst_rq->cpu;
 	struct task_struct *p;
 	struct rq *rq = rq_of(cfs_rq);
+	int count = 1;
 
 	lockdep_assert_rq_held(rq_of(cfs_rq));
 
 	list_for_each_entry_reverse(p, &rq->cfs_tasks, se.group_node) {
+		if (count > sysctl_sched_max_steal_count)
+			break;
+
 		if (can_migrate_task_llc(p, rq, dst_rq)) {
 			detach_task(p, rq, dst_cpu);
 			return p;
 		}
+
+		count++;
 	}
 	return NULL;
 }

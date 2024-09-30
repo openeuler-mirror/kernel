@@ -131,6 +131,9 @@ static int hundred_thousand = 100000;
 #ifdef CONFIG_PERF_EVENTS
 static int six_hundred_forty_kb = 640 * 1024;
 #endif
+#ifdef CONFIG_SCHED_STEAL
+static int max_steal_count = 1024;
+#endif
 
 /* this is needed for the proc_doulongvec_minmax of vm_dirty_bytes */
 static unsigned long dirty_bytes_min = 2 * PAGE_SIZE;
@@ -2825,6 +2828,17 @@ static struct ctl_table kern_table[] = {
 		.mode           = 0644,
 		.proc_handler   = proc_dointvec_minmax,
 		.extra1         = SYSCTL_ZERO,
+	},
+#endif
+#ifdef CONFIG_SCHED_STEAL
+	{
+		.procname       = "sched_max_steal_count",
+		.data           = &sysctl_sched_max_steal_count,
+		.maxlen         = sizeof(sysctl_sched_max_steal_count),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ONE,
+		.extra2         = &max_steal_count,
 	},
 #endif
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
