@@ -4102,7 +4102,11 @@ static int xdp_do_generic_redirect_map(struct net_device *dev,
 	} else if (map->map_type == BPF_MAP_TYPE_XSKMAP) {
 		struct xdp_sock *xs = fwd;
 
+#ifdef CONFIG_XSK_MULTI_BUF
+		err = xs->sg ? xsk_generic_rcv_multi(xs, xdp) : xsk_generic_rcv(xs, xdp);
+#else
 		err = xsk_generic_rcv(xs, xdp);
+#endif
 		if (err)
 			goto err;
 		consume_skb(skb);

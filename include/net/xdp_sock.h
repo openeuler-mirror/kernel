@@ -43,6 +43,13 @@ struct xsk_map {
 struct xdp_sock {
 	/* struct sock must be the first member of struct xdp_sock */
 	struct sock sk;
+#ifdef CONFIG_XSK_MULTI_BUF
+	/* When __xsk_generic_xmit() must return before it sees the EOP descriptor for the current
+	 * packet, the partially built skb is saved here so that packet building can resume in next
+	 * call of __xsk_generic_xmit().
+	 */
+	KABI_FILL_HOLE(struct sk_buff *skb)
+#endif
 	struct xsk_queue *rx ____cacheline_aligned_in_smp;
 	struct net_device *dev;
 	struct xdp_umem *umem;
@@ -50,6 +57,9 @@ struct xdp_sock {
 	struct xsk_buff_pool *pool;
 	u16 queue_id;
 	bool zc;
+#ifdef CONFIG_XSK_MULTI_BUF
+	KABI_FILL_HOLE(bool sg)
+#endif
 	enum {
 		XSK_READY = 0,
 		XSK_BOUND,
@@ -77,6 +87,9 @@ struct xdp_sock {
 #ifdef CONFIG_XDP_SOCKETS
 
 int xsk_generic_rcv(struct xdp_sock *xs, struct xdp_buff *xdp);
+#ifdef CONFIG_XSK_MULTI_BUF
+int xsk_generic_rcv_multi(struct xdp_sock *xs, struct xdp_buff *xdp);
+#endif
 int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp);
 void __xsk_map_flush(void);
 
@@ -99,6 +112,13 @@ static inline int xsk_generic_rcv(struct xdp_sock *xs, struct xdp_buff *xdp)
 {
 	return -ENOTSUPP;
 }
+
+#ifdef CONFIG_XSK_MULTI_BUF
+static inline int xsk_generic_rcv_multi(struct xdp_sock *xs, struct xdp_buff *xdp)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 static inline int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp)
 {

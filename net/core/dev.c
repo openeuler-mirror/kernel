@@ -4643,6 +4643,216 @@ static struct netdev_rx_queue *netif_get_rxqueue(struct sk_buff *skb)
 	return rxqueue;
 }
 
+#ifdef CONFIG_XSK_MULTI_BUF
+static u32 bpf_prog_run_generic_xdp(struct sk_buff *skb, struct xdp_buff *xdp,
+				    struct bpf_prog *xdp_prog)
+{
+	struct netdev_rx_queue *rxqueue;
+	void *orig_data, *orig_data_end;
+	bool orig_bcast, orig_host;
+	__be16 orig_eth_type;
+	struct ethhdr *eth;
+	u32 metalen, act;
+	int hlen, off;
+	u32 mac_len;
+
+	/* The XDP program wants to see the packet starting at the MAC
+	 * header.
+	 */
+	mac_len = skb->data - skb_mac_header(skb);
+	hlen = skb_headlen(skb) + mac_len;
+	xdp->data = skb->data - mac_len;
+	xdp->data_meta = xdp->data;
+	xdp->data_end = xdp->data + hlen;
+	xdp->data_hard_start = skb->data - skb_headroom(skb);
+
+	/* SKB "head" area always have tailroom for skb_shared_info */
+	xdp->frame_sz  = (void *)skb_end_pointer(skb) - xdp->data_hard_start;
+	xdp->frame_sz += SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
+
+	if (skb_is_nonlinear(skb)) {
+		skb_shinfo(skb)->xdp_frags_size = skb->data_len;
+		xdp_buff_set_frags_flag(xdp);
+	} else {
+		xdp_buff_clear_frags_flag(xdp);
+	}
+
+	orig_data_end = xdp->data_end;
+	orig_data = xdp->data;
+	eth = (struct ethhdr *)xdp->data;
+	orig_host = ether_addr_equal_64bits(eth->h_dest, skb->dev->dev_addr);
+	orig_bcast = is_multicast_ether_addr_64bits(eth->h_dest);
+	orig_eth_type = eth->h_proto;
+
+	rxqueue = netif_get_rxqueue(skb);
+	xdp->rxq = &rxqueue->xdp_rxq;
+
+	act = bpf_prog_run_xdp(xdp_prog, xdp);
+
+	/* check if bpf_xdp_adjust_head was used */
+	off = xdp->data - orig_data;
+	if (off) {
+		if (off > 0)
+			__skb_pull(skb, off);
+		else if (off < 0)
+			__skb_push(skb, -off);
+
+		skb->mac_header += off;
+		skb_reset_network_header(skb);
+	}
+
+	/* check if bpf_xdp_adjust_tail was used */
+	off = xdp->data_end - orig_data_end;
+	if (off != 0) {
+		skb_set_tail_pointer(skb, xdp->data_end - xdp->data);
+		skb->len += off; /* positive on grow, negative on shrink */
+	}
+
+	/* XDP frag metadata (e.g. nr_frags) are updated in eBPF helpers
+	 * (e.g. bpf_xdp_adjust_tail), we need to update data_len here.
+	 */
+	if (xdp_buff_has_frags(xdp))
+		skb->data_len = skb_shinfo(skb)->xdp_frags_size;
+	else
+		skb->data_len = 0;
+
+	/* check if XDP changed eth hdr such SKB needs update */
+	eth = (struct ethhdr *)xdp->data;
+	if ((orig_eth_type != eth->h_proto) ||
+	    (orig_host != ether_addr_equal_64bits(eth->h_dest,
+						  skb->dev->dev_addr)) ||
+	    (orig_bcast != is_multicast_ether_addr_64bits(eth->h_dest))) {
+		__skb_push(skb, ETH_HLEN);
+		skb->pkt_type = PACKET_HOST;
+		skb->protocol = eth_type_trans(skb, skb->dev);
+	}
+
+	/* Redirect/Tx gives L2 packet, code that will reuse skb must __skb_pull
+	 * before calling us again on redirect path. We do not call do_redirect
+	 * as we leave that up to the caller.
+	 *
+	 * Caller is responsible for managing lifetime of skb (i.e. calling
+	 * kfree_skb in response to actions it cannot handle/XDP_DROP).
+	 */
+	switch (act) {
+	case XDP_REDIRECT:
+	case XDP_TX:
+		__skb_push(skb, mac_len);
+		break;
+	case XDP_PASS:
+		metalen = xdp->data - xdp->data_meta;
+		if (metalen)
+			skb_metadata_set(skb, metalen);
+		break;
+	}
+
+	return act;
+}
+
+static int
+netif_skb_check_for_xdp(struct sk_buff **pskb, struct bpf_prog *prog)
+{
+	struct sk_buff *skb = *pskb;
+	int err, hroom, troom;
+
+	if (!skb_cow_data_for_xdp(pskb, prog))
+		return 0;
+
+	/* In case we have to go down the path and also linearize,
+	 * then lets do the pskb_expand_head() work just once here.
+	 */
+	hroom = XDP_PACKET_HEADROOM - skb_headroom(skb);
+	troom = skb->tail + skb->data_len - skb->end;
+	err = pskb_expand_head(skb,
+			       hroom > 0 ? ALIGN(hroom, NET_SKB_PAD) : 0,
+			       troom > 0 ? troom + 128 : 0, GFP_ATOMIC);
+	if (err)
+		return err;
+
+	return skb_linearize(skb);
+}
+
+static u32 netif_receive_generic_xdp_multi(struct sk_buff **pskb,
+					   struct xdp_buff *xdp,
+					   struct bpf_prog *xdp_prog)
+{
+	struct sk_buff *skb = *pskb;
+	u32 mac_len, act = XDP_DROP;
+
+	/* Reinjected packets coming from act_mirred or similar should
+	 * not get XDP generic processing.
+	 */
+	if (skb_is_redirected(skb))
+		return XDP_PASS;
+
+	/* XDP packets must have sufficient headroom of XDP_PACKET_HEADROOM
+	 * bytes. This is the guarantee that also native XDP provides,
+	 * thus we need to do it here as well.
+	 */
+	mac_len = skb->data - skb_mac_header(skb);
+	__skb_push(skb, mac_len);
+
+	if (skb_cloned(skb) || skb_is_nonlinear(skb) ||
+	    skb_headroom(skb) < XDP_PACKET_HEADROOM) {
+		if (netif_skb_check_for_xdp(pskb, xdp_prog))
+			goto do_drop;
+	}
+
+	__skb_pull(*pskb, mac_len);
+
+	act = bpf_prog_run_generic_xdp(*pskb, xdp, xdp_prog);
+	switch (act) {
+	case XDP_REDIRECT:
+	case XDP_TX:
+	case XDP_PASS:
+		break;
+	default:
+		bpf_warn_invalid_xdp_action(act);
+		fallthrough;
+	case XDP_ABORTED:
+		trace_xdp_exception((*pskb)->dev, xdp_prog, act);
+		fallthrough;
+	case XDP_DROP:
+do_drop:
+		kfree_skb(*pskb);
+		break;
+	}
+
+	return act;
+}
+
+void generic_xdp_tx(struct sk_buff *skb, struct bpf_prog *xdp_prog);
+int do_xdp_generic_multi(struct bpf_prog *xdp_prog, struct sk_buff **pskb)
+{
+	if (xdp_prog) {
+		struct xdp_buff xdp;
+		u32 act;
+		int err;
+
+		act = netif_receive_generic_xdp_multi(pskb, &xdp, xdp_prog);
+		if (act != XDP_PASS) {
+			switch (act) {
+			case XDP_REDIRECT:
+				err = xdp_do_generic_redirect((*pskb)->dev, *pskb,
+							      &xdp, xdp_prog);
+				if (err)
+					goto out_redir;
+				break;
+			case XDP_TX:
+				generic_xdp_tx(*pskb, xdp_prog);
+				break;
+			}
+			return XDP_DROP;
+		}
+	}
+	return XDP_PASS;
+out_redir:
+	kfree_skb(*pskb);
+	return XDP_DROP;
+}
+EXPORT_SYMBOL_GPL(do_xdp_generic_multi);
+#endif
+
 static u32 netif_receive_generic_xdp(struct sk_buff *skb,
 				     struct xdp_buff *xdp,
 				     struct bpf_prog *xdp_prog)

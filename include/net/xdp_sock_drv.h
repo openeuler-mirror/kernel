@@ -76,6 +76,13 @@ static inline struct xdp_buff *xsk_buff_alloc(struct xsk_buff_pool *pool)
 	return xp_alloc(pool);
 }
 
+#ifdef CONFIG_XSK_MULTI_BUF
+static inline bool xsk_is_eop_desc(struct xdp_desc *desc)
+{
+	return !xp_mb_desc(desc);
+}
+#endif
+
 static inline bool xsk_buff_can_alloc(struct xsk_buff_pool *pool, u32 count)
 {
 	return xp_can_alloc(pool, count);
@@ -204,6 +211,13 @@ static inline struct xdp_buff *xsk_buff_alloc(struct xsk_buff_pool *pool)
 {
 	return NULL;
 }
+
+#ifdef CONFIG_XSK_MULTI_BUF
+static inline bool xsk_is_eop_desc(struct xdp_desc *desc)
+{
+	return false;
+}
+#endif
 
 static inline bool xsk_buff_can_alloc(struct xsk_buff_pool *pool, u32 count)
 {

@@ -71,6 +71,12 @@ struct xdp_txq_info {
 	struct net_device *dev;
 };
 
+#ifdef CONFIG_XSK_MULTI_BUF
+enum xdp_buff_flags {
+	XDP_FLAGS_HAS_FRAGS	= BIT(0), /* non-linear xdp buff */
+};
+#endif
+
 struct xdp_buff {
 	void *data;
 	void *data_end;
@@ -79,7 +85,27 @@ struct xdp_buff {
 	struct xdp_rxq_info *rxq;
 	struct xdp_txq_info *txq;
 	u32 frame_sz; /* frame size to deduce data_hard_end/reserved tailroom*/
+#ifdef CONFIG_XSK_MULTI_BUF
+	KABI_FILL_HOLE(u32 flags) /* supported values defined in xdp_buff_flags */
+#endif
 };
+
+#ifdef CONFIG_XSK_MULTI_BUF
+static __always_inline bool xdp_buff_has_frags(struct xdp_buff *xdp)
+{
+	return !!(xdp->flags & XDP_FLAGS_HAS_FRAGS);
+}
+
+static __always_inline void xdp_buff_set_frags_flag(struct xdp_buff *xdp)
+{
+	xdp->flags |= XDP_FLAGS_HAS_FRAGS;
+}
+
+static __always_inline void xdp_buff_clear_frags_flag(struct xdp_buff *xdp)
+{
+	xdp->flags &= ~XDP_FLAGS_HAS_FRAGS;
+}
+#endif
 
 /* Reserve memory area at end-of data area.
  *
@@ -96,6 +122,23 @@ xdp_get_shared_info_from_buff(struct xdp_buff *xdp)
 {
 	return (struct skb_shared_info *)xdp_data_hard_end(xdp);
 }
+
+#ifdef CONFIG_XSK_MULTI_BUF
+static __always_inline unsigned int xdp_get_buff_len(struct xdp_buff *xdp)
+{
+	unsigned int len = xdp->data_end - xdp->data;
+	struct skb_shared_info *sinfo;
+
+	if (likely(!xdp_buff_has_frags(xdp)))
+		goto out;
+
+	sinfo = xdp_get_shared_info_from_buff(xdp);
+
+	len += sinfo->xdp_frags_size;
+out:
+	return len;
+}
+#endif
 
 struct xdp_frame {
 	void *data;
