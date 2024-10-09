@@ -1223,7 +1223,7 @@ void kprobes_inc_nmissed_count(struct kprobe *p)
 }
 NOKPROBE_SYMBOL(kprobes_inc_nmissed_count);
 
-static void recycle_rp_inst(struct kretprobe_instance *ri)
+static void recycle_rp_inst(struct kretprobe_instance *ri, struct hlist_head *head)
 {
 	struct kretprobe *rp = ri->rp;
 
@@ -1235,7 +1235,7 @@ static void recycle_rp_inst(struct kretprobe_instance *ri)
 		hlist_add_head(&ri->hlist, &rp->free_instances);
 		raw_spin_unlock(&rp->lock);
 	} else
-		kfree_rcu(ri, rcu);
+		hlist_add_head(&ri->hlist, head);
 }
 NOKPROBE_SYMBOL(recycle_rp_inst);
 
@@ -1326,6 +1326,7 @@ void kprobe_flush_task(struct task_struct *tk)
 	struct hlist_head *head;
 	struct hlist_node *tmp;
 	unsigned long hash, flags = 0;
+	HLIST_HEAD(empty_rp);
 
 	if (unlikely(!kprobes_initialized))
 		/* Early boot.  kretprobe_table_locks not yet initialized. */
@@ -1338,9 +1339,15 @@ void kprobe_flush_task(struct task_struct *tk)
 	kretprobe_table_lock(hash, &flags);
 	hlist_for_each_entry_safe(ri, tmp, head, hlist) {
 		if (ri->task == tk)
-			recycle_rp_inst(ri);
+			recycle_rp_inst(ri, &empty_rp);
 	}
 	kretprobe_table_unlock(hash, &flags);
+
+	hlist_for_each_entry_safe(ri, tmp, &empty_rp, hlist) {
+		hlist_del(&ri->hlist);
+		INIT_HLIST_NODE(&ri->hlist);
+		kfree_rcu(ri, rcu);
+	}
 
 	kprobe_busy_end();
 }
@@ -2014,6 +2021,7 @@ unsigned long __kretprobe_trampoline_handler(struct pt_regs *regs,
 	unsigned long flags;
 	kprobe_opcode_t *correct_ret_addr = NULL;
 	bool skipped = false;
+	HLIST_HEAD(empty_rp);
 
 	kretprobe_hash_lock(current, &head, &flags);
 
@@ -2082,13 +2090,19 @@ unsigned long __kretprobe_trampoline_handler(struct pt_regs *regs,
 			__this_cpu_write(current_kprobe, prev);
 		}
 
-		recycle_rp_inst(ri);
+		recycle_rp_inst(ri, &empty_rp);
 
 		if (ri == last)
 			break;
 	}
 
 	kretprobe_hash_unlock(current, &flags);
+
+	hlist_for_each_entry_safe(ri, tmp, &empty_rp, hlist) {
+		hlist_del(&ri->hlist);
+		INIT_HLIST_NODE(&ri->hlist);
+		kfree_rcu(ri, rcu);
+	}
 
 	return (unsigned long)correct_ret_addr;
 }
