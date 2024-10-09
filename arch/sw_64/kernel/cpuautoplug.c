@@ -11,6 +11,7 @@
 #include <linux/tick.h>
 #include <linux/kernel_stat.h>
 #include <linux/platform_device.h>
+#include <linux/delay.h>
 
 #include <asm/cpufreq.h>
 #include <asm/cputime.h>
@@ -46,11 +47,12 @@ static ssize_t enabled_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
 {
-	char val[5];
-	int n;
+	int err, n;
 
-	memcpy(val, buf, count);
-	n = kstrtol(val, 0, 0);
+	err = kstrtoint(buf, 10, &n);
+
+	if (err)
+		return err;
 
 	if (n > 1 || n < 0)
 		return -EINVAL;
@@ -70,11 +72,12 @@ static ssize_t verbose_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
 {
-	char val[5];
-	int n;
+	int err, n;
 
-	memcpy(val, buf, count);
-	n = kstrtol(val, 0, 0);
+	err = kstrtoint(buf, 10, &n);
+
+	if (err)
+		return err;
 
 	if (n > 1 || n < 0)
 		return -EINVAL;
@@ -94,11 +97,12 @@ static ssize_t maxcpus_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
 {
-	char val[5];
-	int n;
+	int err, n;
 
-	memcpy(val, buf, count);
-	n = kstrtol(val, 0, 0);
+	err = kstrtoint(buf, 10, &n);
+
+	if (err)
+		return err;
 
 	if (n > num_possible_cpus() || n < ap_info.mincpus)
 		return -EINVAL;
@@ -118,11 +122,12 @@ static ssize_t mincpus_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
 {
-	char val[5];
-	int n;
+	int err, n;
 
-	memcpy(val, buf, count);
-	n = kstrtol(val, 0, 0);
+	err = kstrtoint(buf, 10, &n);
+
+	if (err)
+		return err;
 
 	if (n > ap_info.maxcpus || n < 1)
 		return -EINVAL;
@@ -145,11 +150,12 @@ static ssize_t sampling_rate_store(struct device *dev,
 		struct device_attribute *attr,
 		const char *buf, size_t count)
 {
-	char val[6];
-	int n;
+	int err, n;
 
-	memcpy(val, buf, count);
-	n = kstrtol(val, 0, 0);
+	err = kstrtoint(buf, 10, &n);
+
+	if (err)
+		return err;
 
 	if (n > SAMPLING_RATE_MAX || n < SAMPLING_RATE_MIN)
 		return -EINVAL;
@@ -275,7 +281,7 @@ static int find_min_busy_cpu(void)
 	int nr_all_cpus = num_possible_cpus();
 	unsigned int cpus, target_cpu;
 	cputime64_t busy_time;
-	cputime64_t b_time[NR_CPUS];
+	cputime64_t b_time[nr_all_cpus];
 
 	memset(b_time, 0, sizeof(b_time));
 	for_each_online_cpu(cpus) {
@@ -286,48 +292,73 @@ static int find_min_busy_cpu(void)
 	return target_cpu;
 }
 
+static void up_core(int target_cpu)
+{
+	if (target_cpu > 0 && target_cpu < CONFIG_NR_CPUS) {
+		per_cpu(cpu_adjusting, target_cpu) = 1;
+		lock_device_hotplug();
+		cpu_up(target_cpu);
+		pr_debug("The target_cpu is %d, After cpu_up, the cpu_num is %d\n",
+				target_cpu, num_online_cpus());
+		get_cpu_device(target_cpu)->offline = false;
+		unlock_device_hotplug();
+		per_cpu(cpu_adjusting, target_cpu) = 0;
+	}
+}
+
+static void down_core(int target_cpu)
+{
+	if (target_cpu > 0 && target_cpu < CONFIG_NR_CPUS) {
+		per_cpu(cpu_adjusting, target_cpu) = -1;
+		lock_device_hotplug();
+		cpu_down(target_cpu);
+		pr_debug("The target_cpu is %d. After cpu_down, the cpu_num is %d\n",
+				target_cpu, num_online_cpus());
+		get_cpu_device(target_cpu)->offline = true;
+		unlock_device_hotplug();
+		per_cpu(cpu_adjusting, target_cpu) = 0;
+	}
+}
+
 static void increase_cores(int cur_cpus)
 {
-	struct device *dev;
+	int cr;
 
 	if (cur_cpus == ap_info.maxcpus)
 		return;
 
-	cur_cpus = cpumask_next_zero(0, cpu_online_mask);
+	for (cr = 0; cr < ((num_possible_cpus() + 7) / 8); cr++) {
+		int target_cpu;
+		int target_rcid;
+		int next_cpu;
+		int next_rcid;
 
-	dev = get_cpu_device(cur_cpus);
+		target_cpu = cpumask_next_zero(0, cpu_online_mask);
+		target_rcid = cpu_to_rcid(target_cpu);
+		next_rcid = target_rcid ^ (1ULL << 8);
 
-	per_cpu(cpu_adjusting, dev->id) = 1;
-	lock_device_hotplug();
-	cpu_device_up(dev);
-	pr_info("The target_cpu is %d, After cpu_up, the cpu_num is %d\n",
-			dev->id, num_online_cpus());
-	get_cpu_device(dev->id)->offline = false;
-	unlock_device_hotplug();
-	per_cpu(cpu_adjusting, dev->id) = 0;
+		for_each_possible_cpu(cr) {
+			if ((cpu_to_rcid(cr)) == next_rcid)
+				next_cpu = cr;
+		}
+
+		pr_debug("increase_cores target_cpu = %d, next_cpu = %d\n",
+				target_cpu, next_cpu);
+		up_core(target_cpu);
+		up_core(next_cpu);
+	}
 }
 
 static void decrease_cores(int cur_cpus)
 {
-	struct device *dev;
+	int target_cpu;
 
 	if (cur_cpus == ap_info.mincpus)
 		return;
 
-	cur_cpus = find_min_busy_cpu();
-
-	dev = get_cpu_device(cur_cpus);
-
-	if (dev->id > 0) {
-		per_cpu(cpu_adjusting, dev->id) = -1;
-		lock_device_hotplug();
-		cpu_device_down(dev);
-		pr_info("The target_cpu is %d. After cpu_down, the cpu_num is %d\n",
-				cur_cpus, num_online_cpus());
-		get_cpu_device(dev->id)->offline = true;
-		unlock_device_hotplug();
-		per_cpu(cpu_adjusting, dev->id) = 0;
-	}
+	target_cpu = find_min_busy_cpu();
+	pr_debug("decrease_cores target_cpu = %d\n", target_cpu);
+	down_core(target_cpu);
 }
 
 #define INC_THRESHOLD 80
@@ -351,7 +382,7 @@ static void do_autoplug_timer(struct work_struct *work)
 
 	ap_info.maxcpus =
 		setup_max_cpus > nr_cpu_ids ? nr_cpu_ids : setup_max_cpus;
-	ap_info.mincpus = ap_info.maxcpus / 4;
+	ap_info.mincpus = ap_info.maxcpus / 16;
 
 	if (strcmp(policy->governor->name, "performance") == 0) {
 		ap_info.mincpus = ap_info.maxcpus;
@@ -364,7 +395,7 @@ static void do_autoplug_timer(struct work_struct *work)
 	} else if (strcmp(policy->governor->name, "conservative") == 0) {
 		inc_req = 1;
 		dec_req = 3;
-		ap_info.sampling_rate = 1000;  /* 1s */
+		ap_info.sampling_rate = 500;  /* 1s */
 	}
 
 	BUG_ON(smp_processor_id() != 0);
@@ -394,14 +425,14 @@ static void do_autoplug_timer(struct work_struct *work)
 
 	idle_time = (unsigned int)(cur_idle_time - ap_info.prev_idle);
 	idle_time += wall_time * (nr_all_cpus - nr_cur_cpus);
-	ap_info.prev_wall = cur_idle_time;
+	ap_info.prev_idle = cur_idle_time;
 
 	if (unlikely(!wall_time || wall_time * nr_all_cpus < idle_time)) {
 		autoplug_adjusting = 0;
 		goto out;
 	}
 
-	load = 100 * (wall_time * nr_all_cpus - idle_time) / wall_time;
+	load = (100 * (wall_time * nr_all_cpus - idle_time)) / wall_time;
 
 	if (load < (nr_cur_cpus - 1) * 100 - DEC_THRESHOLD) {
 		ap_info.inc_reqs = 0;
@@ -460,6 +491,9 @@ static int __init cpuautoplug_init(void)
 
 	pr_info("cpuautoplug: SW64 CPU autoplug driver.\n");
 
+	ap_info.prev_wall = 0;
+	ap_info.prev_idle = 0;
+
 	ap_info.maxcpus =
 		setup_max_cpus > nr_cpu_ids ? nr_cpu_ids : setup_max_cpus;
 	ap_info.mincpus = ap_info.maxcpus / 4;
@@ -484,11 +518,8 @@ static int __init cpuautoplug_init(void)
 #else
 	delay = msecs_to_jiffies(ap_info.sampling_rate * 8);
 #endif
-	INIT_DEFERRABLE_WORK(&ap_info.work, do_autoplug_timer);
+	INIT_DELAYED_WORK(&ap_info.work, do_autoplug_timer);
 	schedule_delayed_work_on(0, &ap_info.work, delay);
-
-	if (!autoplug_enabled)
-		cancel_delayed_work_sync(&ap_info.work);
 
 	return ret;
 }
