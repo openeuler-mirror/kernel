@@ -937,6 +937,7 @@ struct dc *dc_create(const struct dc_init_data *init_params)
 		goto alloc_fail;
 
 	if (init_params->dce_environment == DCE_ENV_VIRTUAL_HW) {
+		dc->caps.linear_pitch_alignment = 64;
 		if (false == dc_construct_ctx(dc, init_params)) {
 			dc_destruct(dc);
 			goto construct_fail;
