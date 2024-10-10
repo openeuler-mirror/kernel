@@ -77,6 +77,7 @@ struct ipvl_dev {
 	unsigned long           local_timeout;
 	struct timer_list       local_free_timer;
 	struct sk_buff_head     local_xmit_queue;
+	struct bpf_prog __rcu   *xdp_prog;
 };
 
 struct ipvl_addr {

@@ -211,6 +211,129 @@ static int __xsk_rcv(struct xdp_sock *xs, struct xdp_buff *xdp, u32 len,
 	return 0;
 }
 
+#ifdef CONFIG_XSK_MULTI_BUF
+static int __xsk_rcv_zc_multi(struct xdp_sock *xs, struct xdp_buff_xsk *xskb, u32 len,
+			      u32 flags)
+{
+	u64 addr;
+	int err;
+
+	addr = xp_get_handle(xskb);
+	err = xskq_prod_reserve_desc_op(xs->rx, addr, len, flags);
+	if (err) {
+		xs->rx_queue_full++;
+		return err;
+	}
+
+	xp_release(xskb);
+	return 0;
+}
+
+static void *xsk_copy_xdp_start(struct xdp_buff *from)
+{
+	if (unlikely(xdp_data_meta_unsupported(from)))
+		return from->data;
+	else
+		return from->data_meta;
+}
+
+static u32 xsk_copy_xdp_multi(void *to, void **from, u32 to_len,
+			      u32 *from_len, skb_frag_t **frag, u32 rem)
+{
+	u32 copied = 0;
+
+	while (1) {
+		u32 copy_len = min_t(u32, *from_len, to_len);
+
+		memcpy(to, *from, copy_len);
+		copied += copy_len;
+		if (rem == copied)
+			return copied;
+
+		if (*from_len == copy_len) {
+			*from = skb_frag_address(*frag);
+			*from_len = skb_frag_size((*frag)++);
+		} else {
+			*from += copy_len;
+			*from_len -= copy_len;
+		}
+		if (to_len == copy_len)
+			return copied;
+
+		to_len -= copy_len;
+		to += copy_len;
+	}
+}
+
+static int __xsk_rcv_multi(struct xdp_sock *xs, struct xdp_buff *xdp, u32 len)
+{
+	u32 frame_size = xsk_pool_get_rx_frame_size(xs->pool);
+	void *copy_from = xsk_copy_xdp_start(xdp), *copy_to;
+	u32 from_len, meta_len, rem, num_desc;
+	struct xdp_buff_xsk *xskb;
+	struct xdp_buff *xsk_xdp;
+	skb_frag_t *frag;
+
+	from_len = xdp->data_end - copy_from;
+	meta_len = xdp->data - copy_from;
+	rem = len + meta_len;
+
+	if (len <= frame_size && !xdp_buff_has_frags(xdp)) {
+		int err;
+
+		xsk_xdp = xsk_buff_alloc(xs->pool);
+		if (!xsk_xdp) {
+			xs->rx_dropped++;
+			return -ENOMEM;
+		}
+		memcpy(xsk_xdp->data - meta_len, copy_from, rem);
+		xskb = container_of(xsk_xdp, struct xdp_buff_xsk, xdp);
+		err = __xsk_rcv_zc_multi(xs, xskb, len, 0);
+		if (err) {
+			xsk_buff_free(xsk_xdp);
+			return err;
+		}
+
+		return 0;
+	}
+
+	num_desc = (len - 1) / frame_size + 1;
+
+	if (!xsk_buff_can_alloc(xs->pool, num_desc)) {
+		xs->rx_dropped++;
+		return -ENOSPC;
+	}
+
+	if (xskq_prod_nb_free(xs->rx, num_desc) < num_desc) {
+		xs->rx_queue_full++;
+		return -ENOBUFS;
+	}
+	if (xdp_buff_has_frags(xdp)) {
+		struct skb_shared_info *sinfo;
+
+		sinfo = xdp_get_shared_info_from_buff(xdp);
+		frag =  &sinfo->frags[0];
+	}
+
+	do {
+		u32 to_len = frame_size + meta_len;
+		u32 copied;
+
+		xsk_xdp = xsk_buff_alloc(xs->pool);
+		copy_to = xsk_xdp->data - meta_len;
+
+		copied = xsk_copy_xdp_multi(copy_to, &copy_from, to_len, &from_len, &frag, rem);
+		rem -= copied;
+
+		xskb = container_of(xsk_xdp, struct xdp_buff_xsk, xdp);
+		__xsk_rcv_zc_multi(xs, xskb, copied - meta_len, rem ? XDP_PKT_CONTD : 0);
+		meta_len = 0;
+	} while (rem);
+
+	return 0;
+}
+#endif
+
 static bool xsk_tx_writeable(struct xdp_sock *xs)
 {
 	if (xskq_cons_present_entries(xs->tx) > xs->tx->nentries / 2)
@@ -228,6 +351,40 @@ static bool xsk_is_bound(struct xdp_sock *xs)
 	}
 	return false;
 }
+
+#ifdef CONFIG_XSK_MULTI_BUF
+static int xsk_rcv_check(struct xdp_sock *xs, struct xdp_buff *xdp, u32 len)
+{
+	if (!xsk_is_bound(xs))
+		return -EINVAL;
+
+	if (xs->dev != xdp->rxq->dev || xs->queue_id != xdp->rxq->queue_index)
+		return -EINVAL;
+
+	if (len > xsk_pool_get_rx_frame_size(xs->pool) && !xs->sg) {
+		xs->rx_dropped++;
+		return -ENOSPC;
+	}
+
+	return 0;
+}
+
+static void xsk_flush(struct xdp_sock *xs);
+int xsk_generic_rcv_multi(struct xdp_sock *xs, struct xdp_buff *xdp)
+{
+	u32 len = xdp_get_buff_len(xdp);
+	int err;
+
+	spin_lock_bh(&xs->rx_lock);
+	err = xsk_rcv_check(xs, xdp, len);
+	if (!err) {
+		err = __xsk_rcv_multi(xs, xdp, len);
+		xsk_flush(xs);
+	}
+	spin_unlock_bh(&xs->rx_lock);
+	return err;
+}
+#endif
 
 static int xsk_rcv(struct xdp_sock *xs, struct xdp_buff *xdp,
 		   bool explicit_free)
@@ -678,7 +835,11 @@ static int xsk_bind(struct socket *sock, struct sockaddr *addr, int addr_len)
 
 	flags = sxdp->sxdp_flags;
 	if (flags & ~(XDP_SHARED_UMEM | XDP_COPY | XDP_ZEROCOPY |
+#ifdef CONFIG_XSK_MULTI_BUF
+		      XDP_USE_NEED_WAKEUP | XDP_USE_SG))
+#else
 		      XDP_USE_NEED_WAKEUP))
+#endif
 		return -EINVAL;
 
 	bound_dev_if = READ_ONCE(sk->sk_bound_dev_if);
@@ -710,7 +871,11 @@ static int xsk_bind(struct socket *sock, struct sockaddr *addr, int addr_len)
 		struct socket *sock;
 
 		if ((flags & XDP_COPY) || (flags & XDP_ZEROCOPY) ||
+#ifdef CONFIG_XSK_MULTI_BUF
+		    (flags & XDP_USE_NEED_WAKEUP) || (flags & XDP_USE_SG)) {
+#else
 		    (flags & XDP_USE_NEED_WAKEUP)) {
+#endif
 			/* Cannot specify flags for shared sockets. */
 			err = -EINVAL;
 			goto out_unlock;
@@ -796,6 +961,9 @@ static int xsk_bind(struct socket *sock, struct sockaddr *addr, int addr_len)
 
 	xs->dev = dev;
 	xs->zc = xs->umem->zc;
+#ifdef CONFIG_XSK_MULTI_BUF
+	xs->sg = !!(flags & XDP_USE_SG);
+#endif
 	xs->queue_id = qid;
 	xp_add_xsk(xs->pool, xs);
 

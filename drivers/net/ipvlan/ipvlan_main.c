@@ -424,6 +424,27 @@ static int ipvlan_get_iflink(const struct net_device *dev)
 	return ipvlan->phy_dev->ifindex;
 }
 
+static int ipvlan_xdp_set(struct net_device *dev, struct bpf_prog *prog,
+			  struct netlink_ext_ack *extack)
+{
+	struct ipvl_dev *priv = netdev_priv(dev);
+	struct bpf_prog *old_prog;
+
+	old_prog = rtnl_dereference(priv->xdp_prog);
+	rcu_assign_pointer(priv->xdp_prog, prog);
+	return 0;
+}
+
+static int ipvlan_xdp(struct net_device *dev, struct netdev_bpf *xdp)
+{
+	switch (xdp->command) {
+	case XDP_SETUP_PROG:
+		return ipvlan_xdp_set(dev, xdp->prog, xdp->extack);
+	default:
+		return -EINVAL;
+	}
+}
+
 static const struct net_device_ops ipvlan_netdev_ops = {
 	.ndo_init		= ipvlan_init,
 	.ndo_uninit		= ipvlan_uninit,
@@ -437,6 +458,7 @@ static const struct net_device_ops ipvlan_netdev_ops = {
 	.ndo_vlan_rx_add_vid	= ipvlan_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid	= ipvlan_vlan_rx_kill_vid,
 	.ndo_get_iflink		= ipvlan_get_iflink,
+	.ndo_bpf		= ipvlan_xdp,
 };
 
 static int ipvlan_hard_header(struct sk_buff *skb, struct net_device *dev,

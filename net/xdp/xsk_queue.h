@@ -123,6 +123,13 @@ static inline bool xskq_cons_read_addr_unchecked(struct xsk_queue *q, u64 *addr)
 	return false;
 }
 
+#ifdef CONFIG_XSK_MULTI_BUF
+static inline bool xp_unused_options_set(u32 options)
+{
+	return options & ~XDP_PKT_CONTD;
+}
+#endif
+
 static inline bool xp_aligned_validate_desc(struct xsk_buff_pool *pool,
 					    struct xdp_desc *desc)
 {
@@ -138,7 +145,11 @@ static inline bool xp_aligned_validate_desc(struct xsk_buff_pool *pool,
 	if (chunk >= pool->addrs_cnt)
 		return false;
 
+#ifdef CONFIG_XSK_MULTI_BUF
+	if (xp_unused_options_set(desc->options))
+#else
 	if (desc->options)
+#endif
 		return false;
 	return true;
 }
@@ -159,7 +170,11 @@ static inline bool xp_unaligned_validate_desc(struct xsk_buff_pool *pool,
 	    xp_desc_crosses_non_contig_pg(pool, addr, desc->len))
 		return false;
 
+#ifdef CONFIG_XSK_MULTI_BUF
+	if (xp_unused_options_set(desc->options))
+#else
 	if (desc->options)
+#endif
 		return false;
 	return true;
 }
@@ -275,6 +290,32 @@ static inline u32 xskq_cons_present_entries(struct xsk_queue *q)
 
 /* Functions for producers */
 
+#ifdef CONFIG_XSK_MULTI_BUF
+static inline u32 xskq_prod_nb_free(struct xsk_queue *q, u32 max)
+{
+	u32 free_entries = q->nentries - (q->cached_prod - q->cached_cons);
+
+	if (free_entries >= max)
+		return max;
+
+	/* Refresh the local tail pointer */
+	q->cached_cons = READ_ONCE(q->ring->consumer);
+	free_entries = q->nentries - (q->cached_prod - q->cached_cons);
+
+	return free_entries >= max ? max : free_entries;
+}
+
+static inline bool xskq_prod_is_full(struct xsk_queue *q)
+{
+	return xskq_prod_nb_free(q, 1) ? false : true;
+}
+
+static inline void xskq_prod_cancel_n(struct xsk_queue *q, u32 cnt)
+{
+	q->cached_prod -= cnt;
+}
+
+#else
 static inline bool xskq_prod_is_full(struct xsk_queue *q)
 {
 	u32 free_entries = q->nentries - (q->cached_prod - q->cached_cons);
@@ -288,6 +329,7 @@ static inline bool xskq_prod_is_full(struct xsk_queue *q)
 
 	return !free_entries;
 }
+#endif
 
 static inline void xskq_prod_cancel(struct xsk_queue *q)
 {
@@ -315,6 +357,26 @@ static inline int xskq_prod_reserve_addr(struct xsk_queue *q, u64 addr)
 	ring->desc[q->cached_prod++ & q->ring_mask] = addr;
 	return 0;
 }
+
+#ifdef CONFIG_XSK_MULTI_BUF
+static inline int xskq_prod_reserve_desc_op(struct xsk_queue *q,
+					    u64 addr, u32 len, u32 flags)
+{
+	struct xdp_rxtx_ring *ring = (struct xdp_rxtx_ring *)q->ring;
+	u32 idx;
+
+	if (xskq_prod_is_full(q))
+		return -ENOSPC;
+
+	/* A, matches D */
+	idx = q->cached_prod++ & q->ring_mask;
+	ring->desc[idx].addr = addr;
+	ring->desc[idx].len = len;
+	ring->desc[idx].options = flags;
+
+	return 0;
+}
+#endif
 
 static inline int xskq_prod_reserve_desc(struct xsk_queue *q,
 					 u64 addr, u32 len)

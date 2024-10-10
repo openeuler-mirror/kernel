@@ -314,11 +314,27 @@ static int ipvlan_rcv_frame(struct ipvl_addr *addr, struct sk_buff **pskb,
 {
 	struct ipvl_dev *ipvlan = addr->master;
 	struct net_device *dev = ipvlan->dev;
+	struct bpf_prog *xdp_prog = rtnl_dereference(ipvlan->xdp_prog);
 	unsigned int len;
 	rx_handler_result_t ret = RX_HANDLER_CONSUMED;
 	bool success = false;
 	struct sk_buff *skb = *pskb;
+	struct net_device *old_dev = skb->dev;
+	int xdp_ret;
 
+	if (!xdp_prog)
+		goto go_network_stack;
+	skb->dev = dev;
+#ifdef CONFIG_XSK_MULTI_BUF
+	xdp_ret = do_xdp_generic_multi(xdp_prog, &skb);
+#else
+	xdp_ret = do_xdp_generic(xdp_prog, skb);
+#endif
+	if (xdp_ret != XDP_PASS)
+		return ret;
+	skb->dev = old_dev;
+
+go_network_stack:
 	len = skb->len + ETH_HLEN;
 	/* Only packets exchanged between two local slaves need to have
 	 * device-up check as well as skb-share check.

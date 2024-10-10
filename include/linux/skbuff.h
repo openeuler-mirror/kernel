@@ -530,6 +530,9 @@ struct skb_shared_info {
 	 * Warning : all fields before dataref are cleared in __alloc_skb()
 	 */
 	atomic_t	dataref;
+#ifdef CONFIG_XSK_MULTI_BUF
+	KABI_FILL_HOLE(unsigned int	xdp_frags_size)
+#endif
 
 	/* Intermediate layers must ensure that destructor_arg
 	 * remains valid until skb destructor */
@@ -3110,6 +3113,9 @@ static inline void skb_frag_ref(struct sk_buff *skb, int f)
 	__skb_frag_ref(&skb_shinfo(skb)->frags[f]);
 }
 
+#ifdef CONFIG_XSK_MULTI_BUF
+int skb_cow_data_for_xdp(struct sk_buff **pskb, struct bpf_prog *prog);
+#endif
 /**
  * __skb_frag_unref - release a reference on a paged fragment.
  * @frag: the paged fragment
