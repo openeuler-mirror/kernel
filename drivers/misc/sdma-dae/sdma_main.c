@@ -156,7 +156,7 @@ static void sdma_free_all_sq_cq(struct hisi_sdma_device *psdma_dev)
 	}
 }
 
-void sdma_destroy_channels(struct hisi_sdma_device *psdma_dev)
+static void sdma_destroy_channels(struct hisi_sdma_device *psdma_dev)
 {
 	if (!psdma_dev || !psdma_dev->channels)
 		return;
@@ -166,7 +166,7 @@ void sdma_destroy_channels(struct hisi_sdma_device *psdma_dev)
 	psdma_dev->channels = NULL;
 }
 
-int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
+static int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
 {
 	u32 chn_num = psdma_dev->nr_channel;
 	struct hisi_sdma_channel *pchan;

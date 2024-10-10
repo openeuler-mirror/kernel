@@ -279,18 +279,17 @@ static int ioctl_sdma_get_chn(struct file *file, unsigned long arg)
 	list_add(&list_node->chn_list, &data->non_share_chn_list);
 	pchannel = pdev->channels + idx;
 	pchannel->ida = (u32)data->ida;
-	spin_unlock(&pdev->channel_lock);
 
-	dev_dbg(&pdev->pdev->dev, "sdma get chn %u\n", idx);
 	if (copy_to_user((u32 __user *)(uintptr_t)arg, &idx, sizeof(u32))) {
 		ret = -EFAULT;
 		goto put_chn;
 	}
+	spin_unlock(&pdev->channel_lock);
+	dev_dbg(&pdev->pdev->dev, "sdma get chn %u\n", idx);
 
 	return 0;
 
 put_chn:
-	spin_lock(&pdev->channel_lock);
 	list_del(&list_node->chn_list);
 	bitmap_set(pdev->channel_map, idx - share_chns, 1);
 	pdev->nr_channel_used--;
@@ -369,17 +368,14 @@ static int ioctl_get_near_sdmaid(struct file *file SDMA_UNUSED, unsigned long ar
 	}
 
 	for (i = 0; i < num; i++) {
-		spin_lock(&g_info.core_dev->device_lock);
 		sdma_dev = g_info.core_dev->sdma_devices[i];
 		dev = &sdma_dev->pdev->dev;
 		sdma_numa[i].idx = sdma_dev->idx;
 		sdma_numa[i].pxm = sdma_dev->node_idx;
 		if (sdma_numa[i].pxm < 0) {
-			spin_unlock(&g_info.core_dev->device_lock);
 			dev_err(dev, "sdma%d PXM domain not reported!\n", sdma_numa[i].idx);
 			return -ENODATA;
 		}
-		spin_unlock(&g_info.core_dev->device_lock);
 		dev_dbg(dev, "sdma%d PXM = %d\n", sdma_numa[i].idx, sdma_numa[i].pxm);
 	}
 
@@ -470,8 +466,11 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 		list_for_each_entry_safe(c, n, &data->share_chn_list, chn_list) {
 			if (c->chn_idx == share_chn.chn_idx) {
 				pchannel->cnt_used--;
-				if (pchannel->cnt_used == 0)
+				if (pchannel->cnt_used == 0) {
 					pchannel->sync_info_base->err_cnt = 0;
+					pchannel->sync_info_base->lock_pid = 0;
+					pchannel->sync_info_base->lock = 0;
+				}
 				dev_dbg(dev, "release share_chn%u\n", c->chn_idx);
 				list_del(&c->chn_list);
 				kfree(c);
@@ -928,7 +927,6 @@ static int sdma_core_open(struct inode *inode, struct file *file)
 	struct hisi_sdma_device *psdma_dev;
 	dev_t sdma_dev;
 	u32 sdma_idx;
-	int ret;
 
 	if (g_info.core_dev->sdma_device_num == 0) {
 		pr_err("cannot find a sdma device\n");
@@ -940,21 +938,13 @@ static int sdma_core_open(struct inode *inode, struct file *file)
 		pr_err("wrong id of sdma device\n");
 		return -ENODEV;
 	}
-	spin_lock(&g_info.core_dev->device_lock);
 	psdma_dev = g_info.core_dev->sdma_devices[sdma_idx];
 	if (!psdma_dev) {
-		spin_unlock(&g_info.core_dev->device_lock);
 		pr_err("cannot find sdma%u\n", sdma_idx);
 		return -ENODEV;
 	}
-	ret = __do_sdma_open(psdma_dev, file);
-	spin_unlock(&g_info.core_dev->device_lock);
-	if (ret != 0) {
-		pr_err("open sdma failed\n");
-		return ret;
-	}
 
-	return 0;
+	return __do_sdma_open(psdma_dev, file);
 }
 
 ssize_t sdma_read_info(struct file *file, char __user *buf SDMA_UNUSED, size_t size SDMA_UNUSED,
@@ -1005,12 +995,15 @@ static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 		pchannel->cnt_used--;
 		if (pchannel->sync_info_base->lock != 0 &&
 			pchannel->sync_info_base->lock_pid == (u32)current->tgid) {
-			dev_err(dev, "process %d exit with lock\n", current->tgid);
-			pchannel->sync_info_base->lock = 0;
+			dev_warn(dev, "process %d exit with lock\n", current->tgid);
 			pchannel->sync_info_base->lock_pid = 0;
+			pchannel->sync_info_base->lock = 0;
 		}
-		if (pchannel->cnt_used == 0)
+		if (pchannel->cnt_used == 0) {
 			pchannel->sync_info_base->err_cnt = 0;
+			pchannel->sync_info_base->lock_pid = 0;
+			pchannel->sync_info_base->lock = 0;
+		}
 		list_del(&c->chn_list);
 		kfree(c);
 	}
@@ -1068,6 +1061,16 @@ static int remap_addr_range(u32 chn_num, u64 offset, u64 size)
 	}
 }
 
+static int sdma_vma_remap(struct vm_area_struct *vma)
+{
+	pr_err("sdma vma remap not supported!\n");
+	return -EINVAL;
+}
+
+static const struct vm_operations_struct sdma_vm_ops = {
+	.mremap = sdma_vma_remap,
+};
+
 static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct file_open_data *data = file->private_data;
@@ -1083,6 +1086,7 @@ static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
 	io_base = data->psdma_dev->base_addr;
 	size = vma->vm_end - vma->vm_start;
 	offset = vma->vm_pgoff;
+	vma->vm_ops = &sdma_vm_ops;
 	vma->vm_flags |= VM_DONTEXPAND | VM_WIPEONFORK | VM_DONTCOPY;
 
 	dev_dbg(dev, "sdma total channel num = %u, user mmap offset = 0x%llx", chn_num, offset);
