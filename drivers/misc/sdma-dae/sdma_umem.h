@@ -9,7 +9,7 @@
 
 #define HISI_SDMA_HASH_BUCKETS_BITS	3
 #define COOKIE_IDA_SHIFT		32
-#define COOKIE_IDA_MASK			0xffff
+#define COOKIE_IDA_MASK			0xffffffff
 
 struct page_node {
 	struct page **page_list;

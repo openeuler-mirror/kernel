@@ -389,7 +389,9 @@ static int sdma_debugfs_channels_show(struct seq_file *f, void *data SDMA_UNUSED
 	struct hisi_sdma_chn_num chn_num;
 	struct hisi_sdma_device *sdev;
 	struct hisi_sdma_channel *chn;
+	u32 dbg_mode = debug_mode;
 	u32 chn_idx;
+	u32 dev_idx;
 	u32 i;
 
 	split_line(f);
@@ -397,7 +399,7 @@ static int sdma_debugfs_channels_show(struct seq_file *f, void *data SDMA_UNUSED
 	if (num == 0 || num > HISI_SDMA_MAX_DEVS)
 		return -ENOENT;
 
-	if (debug_mode == ALL_CHANNEL_SELECTED) {
+	if (dbg_mode == ALL_CHANNEL_SELECTED) {
 		for (i = 0; i < num; i++) {
 			spin_lock(&dbg_g_info.core_dev->device_lock);
 			sdev = dbg_g_info.core_dev->sdma_devices[i];
@@ -417,21 +419,23 @@ static int sdma_debugfs_channels_show(struct seq_file *f, void *data SDMA_UNUSED
 			}
 			spin_unlock(&dbg_g_info.core_dev->device_lock);
 		}
-	} else if (debug_mode == SINGLE_CHANNEL_SELECTED) {
-		if (device_id >= HISI_SDMA_MAX_DEVS ||
-		    channel_id >= HISI_SDMA_DEFAULT_CHANNEL_NUM) {
+	} else if (dbg_mode == SINGLE_CHANNEL_SELECTED) {
+		chn_idx = channel_id;
+		dev_idx = device_id;
+		if (dev_idx >= HISI_SDMA_MAX_DEVS ||
+		    chn_idx >= HISI_SDMA_DEFAULT_CHANNEL_NUM) {
 			seq_puts(f, "Unsupported device or channel!\n");
 			return -EINVAL;
 		}
 		spin_lock(&dbg_g_info.core_dev->device_lock);
-		sdev = dbg_g_info.core_dev->sdma_devices[device_id];
+		sdev = dbg_g_info.core_dev->sdma_devices[dev_idx];
 		if (!sdev) {
 			seq_puts(f, "sdma_devices already released!\n");
 			spin_unlock(&dbg_g_info.core_dev->device_lock);
 			return -ENXIO;
 		}
 		chn_num = sdma_chn_info(f, sdev);
-		chn = sdev->channels + channel_id;
+		chn = sdev->channels + chn_idx;
 		split_line(f);
 		sdma_debugfs_get_channel_dfx(f, chn, sdev->idx);
 		sdma_sqe_cqe_list(f, chn);
