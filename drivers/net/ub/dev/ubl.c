@@ -84,25 +84,19 @@ static int ubl_create_header(struct sk_buff *skb, struct net_device *dev,
 			     unsigned short type, const void *daddr,
 			     const void *saddr, unsigned int len)
 {
-	u8 ctype = UB_NOIP_CFG_TYPE;
-	int ret = -UBL_HLEN;
 	struct ublhdr *ubl;
 
 	if (type == ETH_P_IP || type == ETH_P_IPV6) {
 		ubl = (struct ublhdr *)skb_push(skb, UBL_HLEN);
 		memset(ubl, 0, sizeof(struct ublhdr));
 		ubl->h_npi = htonl(UB_DEFAULT_NPI);
-		ctype = (type == ETH_P_IP) ? UB_IPV4_CFG_TYPE : UB_IPV6_CFG_TYPE;
-		ret = UBL_HLEN;
+		ubl->cfg = (type == ETH_P_IP) ? UB_IPV4_CFG_TYPE : UB_IPV6_CFG_TYPE;
+		return UBL_HLEN;
 	} else if (type == ETH_P_UB) {
-		/* if type is ETH_P_UB, then do nothing. */
-		ret = 0;
+		return 0;
 	}
 
-	if (ubl_add_sw_ctype(skb, ctype))
-		ret = -ENOMEM;
-
-	return ret;
+	return -UBL_HLEN;
 }
 
 /**
@@ -184,7 +178,7 @@ __be16 ubl_type_trans(struct sk_buff *skb, struct net_device *dev, u8 type)
 
 	skb_reset_mac_header(skb);
 	if (type == UB_IPV4_CFG_TYPE || type == UB_IPV6_CFG_TYPE)
-		skb_pull_inline(skb, UBL_HLEN + 1);
+		skb_pull_inline(skb, UBL_HLEN);
 	else if (type != UB_NOIP_CFG_TYPE)
 		net_warn_ratelimited("An unknown packet is received by %s, type is %u\n",
 				     dev->name, type);

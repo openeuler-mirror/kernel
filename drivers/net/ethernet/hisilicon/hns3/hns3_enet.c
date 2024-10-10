@@ -2618,10 +2618,10 @@ netdev_tx_t hns3_nic_net_xmit(struct sk_buff *skb, struct net_device *netdev)
 	}
 #ifdef CONFIG_HNS3_UBL
 	if (hns3_ubl_supported(hns3_get_handle(netdev))) {
+		hns3_unic_set_default_cc(skb);
+
 		if (unlikely(!ubl_rmv_sw_ctype(skb)))
 			goto out_err_tx_ok;
-
-		hns3_unic_set_default_cc(skb);
 	}
 #endif
 	if (test_bit(HNAE3_PFLAG_ROH_ARP_PROXY_ENABLE,

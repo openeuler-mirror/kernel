@@ -23,7 +23,7 @@
 #define UBL_MOD_VERSION "1.0.0"
 
 #define UBL_HARD_HLEN		4
-#define UBL_HLEN		6
+#define UBL_HLEN		7
 #define UBL_ALEN		16
 
 #define UBL_LCRC_LEN		2
@@ -55,6 +55,13 @@
  *	@h_npi: network partition identifier
  */
 struct ublhdr {
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+	u8     cfg : 4;
+	u8     resv : 4;
+#else
+	u8     resv : 4;
+	u8     cfg : 4;
+#endif
 	__be16 h_cc;
 	__be32 h_npi;
 } __packed;
