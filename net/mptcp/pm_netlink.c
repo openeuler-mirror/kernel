@@ -420,6 +420,7 @@ void mptcp_pm_nl_rm_addr_received(struct mptcp_sock *msk)
 		struct sock *ssk = mptcp_subflow_tcp_sock(subflow);
 		int how = RCV_SHUTDOWN | SEND_SHUTDOWN;
 		long timeout = 0;
+		bool removed = false;
 
 		if (msk->pm.rm_id != subflow->remote_id)
 			continue;
@@ -429,7 +430,13 @@ void mptcp_pm_nl_rm_addr_received(struct mptcp_sock *msk)
 		__mptcp_close_ssk(sk, ssk, subflow, timeout);
 		spin_lock_bh(&msk->pm.lock);
 
-		msk->pm.add_addr_accepted--;
+		removed |= subflow->request_join;
+		if(removed && msk->pm.rm_id &&
+		   !WARN_ON_ONCE(msk->pm.add_addr_accepted == 0))
+			/* Note: if the subflow has been closed before, this
+			* add_addr_accepted counter will not be decremented.
+			*/
+			msk->pm.add_addr_accepted--;
 		msk->pm.subflows--;
 		WRITE_ONCE(msk->pm.accept_addr, true);
 
