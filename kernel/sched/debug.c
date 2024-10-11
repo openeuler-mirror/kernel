@@ -594,11 +594,6 @@ void print_cfs_rq(struct seq_file *m, int cpu, struct cfs_rq *cfs_rq)
 	SEQ_printf(m, "  .%-30s: %d\n", "nr_spread_over",
 			cfs_rq->nr_spread_over);
 	SEQ_printf(m, "  .%-30s: %d\n", "nr_running", cfs_rq->nr_running);
-#ifdef CONFIG_SCHED_STEAL
-	SEQ_printf(m, "  .%-30s: %d\n", "h_nr_running", cfs_rq->h_nr_running);
-	SEQ_printf(m, "  .%-30s: %ld\n", "steal_h_nr_running",
-			cfs_rq->steal_h_nr_running);
-#endif
 	SEQ_printf(m, "  .%-30s: %ld\n", "load", cfs_rq->load.weight);
 #ifdef CONFIG_SMP
 	SEQ_printf(m, "  .%-30s: %lu\n", "load_avg",
@@ -714,6 +709,11 @@ do {									\
 	SEQ_printf(m, "  .%-30s: %Ld.%06ld\n", #x, SPLIT_NS(rq->x))
 
 	P(nr_running);
+#ifdef CONFIG_SCHED_STEAL
+	SEQ_printf(m, "  .%-30s: %d\n", "h_nr_running", rq->cfs.h_nr_running);
+	SEQ_printf(m, "  .%-30s: %ld\n", "steal_h_nr_running",
+			rq->cfs.steal_h_nr_running);
+#endif
 	P(nr_switches);
 	P(nr_uninterruptible);
 	PN(next_balance);
