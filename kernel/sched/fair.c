@@ -4492,11 +4492,10 @@ static void overload_clear(struct rq *rq)
 	if (!steal_enabled())
 		return;
 
-	if (!group_steal_used() && rq->cfs.h_nr_running >= 2)
-		return;
+	if (rq->cfs.h_nr_running < 2)
+		need_clear = true;
 
-	if (group_steal_used() &&
-	    (rq->cfs.h_nr_running < 2 || rq->cfs.steal_h_nr_running == 0))
+	if (group_steal_used() && rq->cfs.steal_h_nr_running < 1)
 		need_clear = true;
 
 	if (!need_clear)
