@@ -2891,6 +2891,7 @@ static const struct pci_device_id azx_ids[] = {
 	/* Hygon HDAudio */
 	{ PCI_DEVICE(0x1d94, 0x14a9),
 	  .driver_data = AZX_DRIVER_HYGON | AZX_DCAPS_POSFIX_LPIB | AZX_DCAPS_NO_MSI },
+	{ PCI_DEVICE(0x1d94, 0x14c9), .driver_data = AZX_DRIVER_HYGON },
 	{ 0, }
 };
 MODULE_DEVICE_TABLE(pci, azx_ids);
