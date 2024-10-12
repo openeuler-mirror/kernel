@@ -536,6 +536,23 @@ void mddev_resume(struct mddev *mddev)
 }
 EXPORT_SYMBOL_GPL(mddev_resume);
 
+static void md_end_flush(struct bio *bio)
+{
+	struct bio *parent = bio->bi_private;
+	char b[BDEVNAME_SIZE];
+
+	/*
+	 * If any flush io error before the power failure,
+	 * disk data may be lost.
+	 */
+	if (bio->bi_status)
+		pr_err("md: %s flush io error %d\n", bio_devname(bio, b),
+			blk_status_to_errno(bio->bi_status));
+
+	bio_put(bio);
+	bio_endio(parent);
+}
+
 bool md_flush_request(struct mddev *mddev, struct bio *bio)
 {
 	struct md_rdev *rdev;
@@ -550,7 +567,9 @@ bool md_flush_request(struct mddev *mddev, struct bio *bio)
 		new = bio_alloc_mddev(GFP_NOIO, 0, mddev);
 		bio_set_dev(new, rdev->bdev);
 		new->bi_opf = REQ_OP_WRITE | REQ_PREFLUSH;
-		bio_chain(new, bio);
+		new->bi_private = bio;
+		new->bi_end_io = md_end_flush;
+		bio_inc_remaining(bio);
 		submit_bio(new);
 		rcu_read_lock();
 	}
