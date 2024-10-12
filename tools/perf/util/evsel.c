@@ -1792,13 +1792,13 @@ retry_sample_id:
 retry_open:
 			test_attr__ready();
 
-			fd = perf_event_open(evsel, pid, cpus->map[cpu],
+			fd = perf_event_open(evsel, pid, cpus->map[cpu].cpu,
 					     group_fd, flags);
 
 			FD(evsel, cpu, thread) = fd;
 
 			if (unlikely(test_attr__enabled)) {
-				test_attr__open(&evsel->core.attr, pid, cpus->map[cpu],
+				test_attr__open(&evsel->core.attr, pid, cpus->map[cpu].cpu,
 						fd, group_fd, flags);
 			}
 

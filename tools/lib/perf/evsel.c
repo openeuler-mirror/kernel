@@ -102,7 +102,7 @@ int perf_evsel__open(struct perf_evsel *evsel, struct perf_cpu_map *cpus,
 
 			fd = sys_perf_event_open(&evsel->attr,
 						 threads->map[thread].pid,
-						 cpus->map[cpu], -1, 0);
+						 cpus->map[cpu].cpu, -1, 0);
 
 			if (fd < 0)
 				return -errno;

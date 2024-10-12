@@ -33,9 +33,9 @@ static struct perf_cpu_map *cpu_map__from_entries(struct cpu_map_entries *cpus)
 			 * otherwise it would become 65535.
 			 */
 			if (cpus->cpu[i] == (u16) -1)
-				map->map[i] = -1;
+				map->map[i].cpu = -1;
 			else
-				map->map[i] = (int) cpus->cpu[i];
+				map->map[i].cpu = (int) cpus->cpu[i];
 		}
 	}
 
@@ -54,7 +54,7 @@ static struct perf_cpu_map *cpu_map__from_mask(struct perf_record_record_cpu_map
 		int cpu, i = 0;
 
 		for_each_set_bit(cpu, mask->mask, nbits)
-			map->map[i++] = cpu;
+			map->map[i++].cpu = cpu;
 	}
 	return map;
 
@@ -87,7 +87,7 @@ struct perf_cpu_map *perf_cpu_map__empty_new(int nr)
 
 		cpus->nr = nr;
 		for (i = 0; i < nr; i++)
-			cpus->map[i] = -1;
+			cpus->map[i].cpu = -1;
 
 		refcount_set(&cpus->refcnt, 1);
 	}
@@ -118,7 +118,7 @@ int cpu_map__get_socket(struct perf_cpu_map *map, int idx, void *data __maybe_un
 	if (idx > map->nr)
 		return -1;
 
-	cpu = map->map[idx];
+	cpu = map->map[idx].cpu;
 
 	return cpu_map__get_socket_id(cpu);
 }
@@ -144,11 +144,11 @@ int cpu_map__build_map(struct perf_cpu_map *cpus, struct perf_cpu_map **res,
 	for (cpu = 0; cpu < nr; cpu++) {
 		s1 = f(cpus, cpu, data);
 		for (s2 = 0; s2 < c->nr; s2++) {
-			if (s1 == c->map[s2])
+			if (s1 == c->map[s2].cpu)
 				break;
 		}
 		if (s2 == c->nr) {
-			c->map[c->nr] = s1;
+			c->map[c->nr].cpu = s1;
 			c->nr++;
 		}
 	}
@@ -174,7 +174,7 @@ int cpu_map__get_die(struct perf_cpu_map *map, int idx, void *data)
 	if (idx > map->nr)
 		return -1;
 
-	cpu = map->map[idx];
+	cpu = map->map[idx].cpu;
 
 	die_id = cpu_map__get_die_id(cpu);
 	/* There is no die_id on legacy system. */
@@ -218,7 +218,7 @@ int cpu_map__get_core(struct perf_cpu_map *map, int idx, void *data)
 	if (idx > map->nr)
 		return -1;
 
-	cpu = map->map[idx];
+	cpu = map->map[idx].cpu;
 
 	cpu = cpu_map__get_core_id(cpu);
 
@@ -245,7 +245,7 @@ int cpu_map__get_node(struct perf_cpu_map *map, int idx, void *data __maybe_unus
 	if (idx < 0 || idx >= map->nr)
 		return -1;
 
-	return cpu_map__get_node_id(map->map[idx]);
+	return cpu_map__get_node_id(map->map[idx].cpu);
 }
 
 int cpu_map__build_socket_map(struct perf_cpu_map *cpus, struct perf_cpu_map **sockp)
@@ -482,7 +482,7 @@ bool cpu_map__has(struct perf_cpu_map *cpus, int cpu)
 
 int cpu_map__cpu(struct perf_cpu_map *cpus, int idx)
 {
-	return cpus->map[idx];
+	return cpus->map[idx].cpu;
 }
 
 size_t cpu_map__snprint(struct perf_cpu_map *map, char *buf, size_t size)
@@ -496,26 +496,26 @@ size_t cpu_map__snprint(struct perf_cpu_map *map, char *buf, size_t size)
 	for (i = 0; i < map->nr + 1; i++) {
 		bool last = i == map->nr;
 
-		cpu = last ? INT_MAX : map->map[i];
+		cpu = last ? INT_MAX : map->map[i].cpu;
 
 		if (start == -1) {
 			start = i;
 			if (last) {
 				ret += snprintf(buf + ret, size - ret,
 						"%s%d", COMMA,
-						map->map[i]);
+						map->map[i].cpu);
 			}
-		} else if (((i - start) != (cpu - map->map[start])) || last) {
+		} else if (((i - start) != (cpu - map->map[start].cpu)) || last) {
 			int end = i - 1;
 
 			if (start == end) {
 				ret += snprintf(buf + ret, size - ret,
 						"%s%d", COMMA,
-						map->map[start]);
+						map->map[start].cpu);
 			} else {
 				ret += snprintf(buf + ret, size - ret,
 						"%s%d-%d", COMMA,
-						map->map[start], map->map[end]);
+						map->map[start].cpu, map->map[end].cpu);
 			}
 			first = false;
 			start = i;
