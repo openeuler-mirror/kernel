@@ -19,6 +19,8 @@
 #include <linux/ccp.h>
 
 #include "../ccp-dev.h"
+#include "ccp-mdev.h"
+#include "sp-dev.h"
 
 /* Allocate the requested number of contiguous LSB slots
  * from the LSB bitmap. Look in the private range for this
@@ -828,11 +830,17 @@ static void ccp5_enable_queue_interrupts(struct ccp_device *ccp)
 static void ccp5_irq_bh(unsigned long data)
 {
 	struct ccp_device *ccp = (struct ccp_device *)data;
+	struct hygon_ccp_dev_wrapper *ccp_wrapper = NULL;
 	u32 status;
 	unsigned int i;
 
+	if (is_vendor_hygon())
+		ccp_wrapper = hygon_ccp_dev_wrapper_get(ccp);
+
 	for (i = 0; i < ccp->cmd_q_count; i++) {
 		struct ccp_cmd_queue *cmd_q = &ccp->cmd_q[i];
+		struct hygon_ectx_list *ectx_q = NULL;
+		struct eventfd_ctx *trigger = NULL;
 
 		status = ioread32(cmd_q->reg_interrupt_status);
 
@@ -847,8 +855,20 @@ static void ccp5_irq_bh(unsigned long data)
 
 			/* Acknowledge the interrupt and wake the kthread */
 			iowrite32(status, cmd_q->reg_interrupt_status);
-			cmd_q->int_rcvd = 1;
-			wake_up_interruptible(&cmd_q->int_queue);
+
+			if (is_vendor_hygon()) {
+				if (ccp_wrapper->used_mode == _KERNEL_SPACE_USED) {
+					cmd_q->int_rcvd = 1;
+					wake_up_interruptible(&cmd_q->int_queue);
+				} else {
+					ectx_q = &ccp_wrapper->ectx_q[i];
+					while (kfifo_get(&ectx_q->ectx_fifo, &trigger))
+						eventfd_signal(trigger, 1);
+				}
+			} else {
+				cmd_q->int_rcvd = 1;
+				wake_up_interruptible(&cmd_q->int_queue);
+			}
 		}
 	}
 	ccp5_enable_queue_interrupts(ccp);

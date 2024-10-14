@@ -21,6 +21,8 @@
 
 #include "ccp-dev.h"
 #include "sp-dev.h"
+#include "hygon/ccp-mdev.h"
+#include "hygon/sp-dev.h"
 
 MODULE_AUTHOR("Tom Lendacky <thomas.lendacky@amd.com>");
 MODULE_AUTHOR("Gary R Hook <gary.hook@amd.com>");
@@ -263,6 +265,12 @@ static int __init sp_mod_init(void)
 #ifdef CONFIG_X86
 	int ret;
 
+	if (is_vendor_hygon()) {
+		ret = ccp_mdev_init();
+		if (ret)
+			return ret;
+	}
+
 	ret = sp_pci_init();
 	if (ret)
 		return ret;
@@ -296,6 +304,9 @@ static void __exit sp_mod_exit(void)
 #endif
 
 	sp_pci_exit();
+
+	if (is_vendor_hygon())
+		ccp_mdev_exit();
 #endif
 
 #ifdef CONFIG_ARM64
