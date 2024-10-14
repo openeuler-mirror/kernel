@@ -2127,7 +2127,14 @@ out_image:
 	if (image) {
 		if (!prog->is_func || extra_pass) {
 			bpf_tail_call_direct_fixup(prog);
-			bpf_jit_binary_lock_ro(header);
+			if (bpf_jit_binary_lock_ro(header)) {
+				bpf_jit_binary_free(header);
+				prog = orig_prog;
+				prog->bpf_func = NULL;
+				prog->jited = 0;
+				prog->jited_len = 0;
+				goto out_addrs;
+			}
 		} else {
 			jit_data->addrs = addrs;
 			jit_data->ctx = ctx;

@@ -1912,7 +1912,8 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog)
 		/* Dump JIT code */
 		bpf_jit_dump(prog->len, image_size, 2, ctx.target);
 
-	bpf_jit_binary_lock_ro(header);
+	if (bpf_jit_binary_lock_ro(header))
+		goto out_err;
 	prog->bpf_func = (void *)ctx.target;
 	prog->jited = 1;
 	prog->jited_len = image_size;
