@@ -48,6 +48,10 @@
 #define HAS_MSMON           BIT(30)
 #define HAS_PARTID_NRW      BIT(31)
 
+/* MPAMF_AIDR - MPAM architecture ID register */
+#define MPAMF_AIDR_ARCH_MAJOR_REV       GENMASK(7, 4)
+#define MPAMF_AIDR_ARCH_MINOR_REV       GENMASK(3, 0)
+
 /* MPAMF_IDR */
 #define MPAMF_IDR_PMG_MAX_MASK      ((BIT(8) - 1) << 16)
 #define MPAMF_IDR_PMG_MAX_SHIFT     16
