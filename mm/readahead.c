@@ -523,6 +523,7 @@ void page_cache_ra_order(struct readahead_control *ractl,
 
 	if (unlikely(!mapping_large_folio_support(mapping))) {
 		filemap_invalidate_unlock_shared(mapping);
+		memalloc_nofs_restore(nofs);
 		goto fallback;
 	}
 
