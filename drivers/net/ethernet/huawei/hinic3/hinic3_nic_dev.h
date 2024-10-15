@@ -17,7 +17,7 @@
 #include "hinic3_dcb.h"
 
 #define HINIC3_NIC_DRV_NAME	"hinic3"
-#define HINIC3_NIC_DRV_VERSION	""
+#define HINIC3_NIC_DRV_VERSION	"15.17.1.1"
 
 #define HINIC3_FUNC_IS_VF(hwdev)	(hinic3_func_type(hwdev) == TYPE_VF)
 
