@@ -3686,10 +3686,12 @@ xfs_bmap_btalloc(
 		 * very fragmented so we're unlikely to be able to satisfy the
 		 * hints anyway.
 		 */
-		if (ap->length <= orig_length)
-			ap->offset = orig_offset;
-		else if (ap->offset + ap->length < orig_offset + orig_length)
-			ap->offset = orig_offset + orig_length - ap->length;
+		if (!(xfs_inode_forcealign(ap->ip) && align)) {
+			if (ap->length <= orig_length)
+				ap->offset = orig_offset;
+			else if (ap->offset + ap->length < orig_offset + orig_length)
+				ap->offset = orig_offset + orig_length - ap->length;
+		}
 		xfs_bmap_btalloc_accounting(ap, &args);
 	} else {
 		ap->blkno = NULLFSBLOCK;
