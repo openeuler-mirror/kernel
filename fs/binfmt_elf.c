@@ -730,6 +730,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 		struct elfhdr interp_elf_ex;
 	} *loc;
 	struct arch_elf_state arch_state = INIT_ARCH_ELF_STATE;
+	const int snapshot_randomize_va_space = READ_ONCE(randomize_va_space);
 	loff_t pos;
 
 	loc = kmalloc(sizeof(*loc), GFP_KERNEL);
@@ -897,7 +898,6 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	if (elf_read_implies_exec(loc->elf_ex, executable_stack))
 		current->personality |= READ_IMPLIES_EXEC;
 
-	const int snapshot_randomize_va_space = READ_ONCE(randomize_va_space);
 	if (!(current->personality & ADDR_NO_RANDOMIZE) && snapshot_randomize_va_space)
 		current->flags |= PF_RANDOMIZE;
 
