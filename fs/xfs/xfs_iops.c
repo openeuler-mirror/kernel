@@ -770,12 +770,18 @@ xfs_setattr_size(
 	uint			lock_flags = 0;
 	bool			did_zeroing = false;
 	bool                    write_back = false;
+	unsigned int            blocksize = 0;
 
 	ASSERT(xfs_isilocked(ip, XFS_IOLOCK_EXCL));
 	ASSERT(xfs_isilocked(ip, XFS_MMAPLOCK_EXCL));
 	ASSERT(S_ISREG(inode->i_mode));
 	ASSERT((iattr->ia_valid & (ATTR_UID|ATTR_GID|ATTR_ATIME|ATTR_ATIME_SET|
 		ATTR_MTIME_SET|ATTR_TIMES_SET)) == 0);
+
+	if (xfs_inode_forcealign(ip) && ip->i_d.di_extsize > 1)
+		blocksize = ip->i_d.di_extsize << i_blocksize(inode);
+	else
+		blocksize = i_blocksize(inode);
 
 	oldsize = inode->i_size;
 	newsize = iattr->ia_size;
@@ -808,8 +814,6 @@ xfs_setattr_size(
 
 	write_back = newsize > ip->i_d.di_size && oldsize != ip->i_d.di_size;
 	if (newsize < oldsize) {
-		unsigned int	blocksize = i_blocksize(inode);
-
 		/*
 		 * iomap won't detect a dirty page over an unwritten block (or a
 		 * cow block over a hole) and subsequently skips zeroing the
