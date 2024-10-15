@@ -3253,32 +3253,51 @@ out:
 	return error;
 }
 
-static void
+static int
 xfs_bmap_select_minlen(
 	struct xfs_bmalloca	*ap,
 	struct xfs_alloc_arg	*args,
 	xfs_extlen_t		*blen,
 	int			notinit)
 {
+	xfs_extlen_t nlen = 0;
+
+	/* Adjust best length for extent start alignment. */
+	if (*blen > args->alignment)
+		*blen -= args->alignment;
+
 	if (notinit || *blen < ap->minlen) {
 		/*
 		 * Since we did a BUF_TRYLOCK above, it is possible that
 		 * there is space for this request.
 		 */
-		args->minlen = ap->minlen;
+		nlen = ap->minlen;
 	} else if (*blen < args->maxlen) {
 		/*
 		 * If the best seen length is less than the request length,
 		 * use the best as the minimum.
 		 */
-		args->minlen = *blen;
+
+		nlen = *blen;
 	} else {
 		/*
 		 * Otherwise we've seen an extent as big as maxlen, use that
 		 * as the minimum.
 		 */
-		args->minlen = args->maxlen;
+		nlen = args->maxlen;
 	}
+
+	if (args->alignment > 1) {
+		nlen = rounddown(nlen, args->alignment);
+		if (nlen < ap->minlen) {
+			if (xfs_inode_forcealign(ap->ip) &&
+				(ap->datatype & XFS_ALLOC_USERDATA))
+				return -ENOSPC;
+			nlen = ap->minlen;
+		}
+	}
+	args->minlen = nlen;
+	return 0;
 }
 
 STATIC int
@@ -3311,8 +3330,8 @@ xfs_bmap_btalloc_nullfb(
 			break;
 	}
 
-	xfs_bmap_select_minlen(ap, args, blen, notinit);
-	return 0;
+	error = xfs_bmap_select_minlen(ap, args, blen, notinit);
+	return error;
 }
 
 STATIC int
@@ -3349,7 +3368,9 @@ xfs_bmap_btalloc_filestreams(
 
 	}
 
-	xfs_bmap_select_minlen(ap, args, blen, notinit);
+	error = xfs_bmap_select_minlen(ap, args, blen, notinit);
+	if (error)
+		return error;
 
 	/*
 	 * Set the failure fallback case to look in the selected AG as stream
@@ -3419,9 +3440,8 @@ xfs_bmap_btalloc(
 	xfs_fileoff_t	orig_offset;
 	xfs_extlen_t	orig_length;
 	xfs_extlen_t	blen;
-	xfs_extlen_t	nextminlen = 0;
+	xfs_extlen_t    alignment;
 	int		nullfb;		/* true if ap->firstblock isn't set */
-	int		isaligned;
 	int		tryagain;
 	int		error;
 	int		stripe_align;
@@ -3480,7 +3500,7 @@ xfs_bmap_btalloc(
 	/*
 	 * Normal allocation, done through xfs_alloc_vextent.
 	 */
-	tryagain = isaligned = 0;
+	tryagain = 0;
 	memset(&args, 0, sizeof(args));
 	args.tp = ap->tp;
 	args.mp = mp;
@@ -3491,13 +3511,12 @@ xfs_bmap_btalloc(
 	 * xfs_get_cowextsz_hint() returns extsz_hint for when forcealign is
 	 * set as forcealign and cowextsz_hint are mutually exclusive
 	 */
-	if (xfs_inode_forcealign(ap->ip) && align) {
+	if (xfs_inode_forcealign(ap->ip))
 		args.alignment = align;
-		if (stripe_align == 0 || stripe_align % align)
-			stripe_align = align;
-	} else {
+	else if (stripe_align)
+		args.alignment = stripe_align;
+	else
 		args.alignment = 1;
-	}
 
 	/* Trim the allocation back to the maximum an AG can fit. */
 	args.maxlen = min(ap->length, mp->m_ag_max_usable);
@@ -3548,47 +3567,27 @@ xfs_bmap_btalloc(
 	 * is only set if the allocation length is >= the stripe unit and the
 	 * allocation offset is at the end of file.
 	 */
-	if (!(ap->tp->t_flags & XFS_TRANS_LOWMODE) && ap->aeof) {
-		if (!ap->offset) {
-			args.alignment = stripe_align;
-			atype = args.type;
-			isaligned = 1;
-			/*
-			 * Adjust minlen to try and preserve alignment if we
-			 * can't guarantee an aligned maxlen extent.
-			 */
-			if (blen > args.alignment &&
-			    blen <= args.maxlen + args.alignment)
-				args.minlen = blen - args.alignment;
-			args.minalignslop = 0;
-		} else {
-			/*
-			 * First try an exact bno allocation.
-			 * If it fails then do a near or start bno
-			 * allocation with alignment turned on.
-			 */
-			atype = args.type;
-			tryagain = 1;
-			args.type = XFS_ALLOCTYPE_THIS_BNO;
-			/*
-			 * Compute the minlen+alignment for the
-			 * next case.  Set slop so that the value
-			 * of minlen+alignment+slop doesn't go up
-			 * between the calls.
-			 */
-			if (blen > stripe_align && blen <= args.maxlen)
-				nextminlen = blen - stripe_align;
-			else
-				nextminlen = args.minlen;
-			if (nextminlen + stripe_align > args.minlen + 1)
-				args.minalignslop =
-					nextminlen + stripe_align -
-					args.minlen - 1;
-			else
-				args.minalignslop = 0;
+	args.minalignslop = 0;
+	if (ap->tp->t_flags & XFS_TRANS_LOWMODE) {
+		if (args.alignment > 1 && xfs_inode_forcealign(ap->ip)) {
+			args.fsbno = NULLFSBLOCK;
+			goto alloc_out;
 		}
-	} else {
-		args.minalignslop = 0;
+		args.alignment = 1;
+	} else if (ap->aeof && ap->offset) {
+		/*
+		 * First try an exact bno allocation.
+		 * If it fails then do a near or start bno
+		 * allocation with alignment turned on.
+		 */
+		alignment = args.alignment;
+		atype = args.type;
+		tryagain = 1;
+		args.type = XFS_ALLOCTYPE_THIS_BNO;
+		args.fsbno = ap->blkno;
+
+		args.alignment = 1;
+		args.minalignslop = alignment - args.alignment;
 	}
 	args.postallocs = 1;
 	args.minleft = ap->minleft;
@@ -3607,21 +3606,26 @@ xfs_bmap_btalloc(
 		 */
 		args.type = atype;
 		args.fsbno = ap->blkno;
-		args.alignment = stripe_align;
-		args.minlen = nextminlen;
+		args.alignment = alignment;
 		args.minalignslop = 0;
-		isaligned = 1;
 		if ((error = xfs_alloc_vextent(&args)))
 			return error;
 	}
 
-	if (isaligned && args.fsbno == NULLFSBLOCK &&
-		(args.alignment <= 1 || !xfs_inode_forcealign(ap->ip))) {
+	if (args.fsbno == NULLFSBLOCK && args.alignment > 1 &&
+		xfs_inode_forcealign(ap->ip)) {
+		/*
+		 * Don't attempting non-aligned fallbacks alloc
+		 * for forcealign
+		 */
+		goto alloc_out;
+	}
+
+	if (args.alignment > 1 && args.fsbno == NULLFSBLOCK) {
 		/*
 		 * allocation failed, so turn off alignment and
 		 * try again.
 		 */
-		args.type = atype;
 		args.fsbno = ap->blkno;
 		args.alignment = 0;
 		if ((error = xfs_alloc_vextent(&args)))
@@ -3643,6 +3647,8 @@ xfs_bmap_btalloc(
 			return error;
 		ap->tp->t_flags |= XFS_TRANS_LOWMODE;
 	}
+
+alloc_out:
 	if (args.fsbno != NULLFSBLOCK) {
 		/*
 		 * check the allocation happened at the same or higher AG than
@@ -3669,10 +3675,12 @@ xfs_bmap_btalloc(
 		 * very fragmented so we're unlikely to be able to satisfy the
 		 * hints anyway.
 		 */
-		if (ap->length <= orig_length)
-			ap->offset = orig_offset;
-		else if (ap->offset + ap->length < orig_offset + orig_length)
-			ap->offset = orig_offset + orig_length - ap->length;
+		if (!(xfs_inode_forcealign(ap->ip) && align)) {
+			if (ap->length <= orig_length)
+				ap->offset = orig_offset;
+			else if (ap->offset + ap->length < orig_offset + orig_length)
+				ap->offset = orig_offset + orig_length - ap->length;
+		}
 		xfs_bmap_btalloc_accounting(ap, &args);
 	} else {
 		ap->blkno = NULLFSBLOCK;
@@ -5289,7 +5297,7 @@ __xfs_bunmapi(
 	isrt = (whichfork == XFS_DATA_FORK) && XFS_IS_REALTIME_INODE(ip);
 	end = start + len;
 	if (xfs_inode_forcealign(ip) && ip->i_d.di_extsize > 1
-			&& S_ISREG(VFS_I(ip)->i_mode)) {
+		&& S_ISREG(VFS_I(ip)->i_mode) && whichfork == XFS_DATA_FORK) {
 		start = roundup_64(start, ip->i_d.di_extsize);
 		end = rounddown_64(end, ip->i_d.di_extsize);
 		len  = end - start;

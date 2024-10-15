@@ -769,12 +769,19 @@ xfs_setattr_size(
 	int			error;
 	uint			lock_flags = 0;
 	bool			did_zeroing = false;
+	bool                    write_back = false;
+	unsigned int            blocksize = 0;
 
 	ASSERT(xfs_isilocked(ip, XFS_IOLOCK_EXCL));
 	ASSERT(xfs_isilocked(ip, XFS_MMAPLOCK_EXCL));
 	ASSERT(S_ISREG(inode->i_mode));
 	ASSERT((iattr->ia_valid & (ATTR_UID|ATTR_GID|ATTR_ATIME|ATTR_ATIME_SET|
 		ATTR_MTIME_SET|ATTR_TIMES_SET)) == 0);
+
+	if (xfs_inode_forcealign(ip) && ip->i_d.di_extsize > 1)
+		blocksize = ip->i_d.di_extsize << i_blocksize(inode);
+	else
+		blocksize = i_blocksize(inode);
 
 	oldsize = inode->i_size;
 	newsize = iattr->ia_size;
@@ -805,21 +812,8 @@ xfs_setattr_size(
 	 */
 	inode_dio_wait(inode);
 
-	/*
-	 * File data changes must be complete before we start the transaction to
-	 * modify the inode.  This needs to be done before joining the inode to
-	 * the transaction because the inode cannot be unlocked once it is a
-	 * part of the transaction.
-	 *
-	 * Start with zeroing any data beyond EOF that we may expose on file
-	 * extension, or zeroing out the rest of the block on a downward
-	 * truncate.
-	 */
-	if (newsize > oldsize) {
-		trace_xfs_zero_eof(ip, oldsize, newsize - oldsize);
-		error = iomap_zero_range(inode, oldsize, newsize - oldsize,
-				&did_zeroing, &xfs_buffered_write_iomap_ops);
-	} else {
+	write_back = newsize > ip->i_d.di_size && oldsize != ip->i_d.di_size;
+	if (newsize < oldsize) {
 		/*
 		 * iomap won't detect a dirty page over an unwritten block (or a
 		 * cow block over a hole) and subsequently skips zeroing the
@@ -827,53 +821,69 @@ xfs_setattr_size(
 		 * convert the block before the pagecache truncate.
 		 */
 		error = filemap_write_and_wait_range(inode->i_mapping, newsize,
-						     newsize);
+					roundup_64(newsize, blocksize) - 1);
 		if (error)
 			return error;
-		error = iomap_truncate_page(inode, newsize, &did_zeroing,
-				&xfs_buffered_write_iomap_ops);
-	}
 
-	if (error)
-		return error;
-
-	/*
-	 * We've already locked out new page faults, so now we can safely remove
-	 * pages from the page cache knowing they won't get refaulted until we
-	 * drop the XFS_MMAP_EXCL lock after the extent manipulations are
-	 * complete. The truncate_setsize() call also cleans partial EOF page
-	 * PTEs on extending truncates and hence ensures sub-page block size
-	 * filesystems are correctly handled, too.
-	 *
-	 * We have to do all the page cache truncate work outside the
-	 * transaction context as the "lock" order is page lock->log space
-	 * reservation as defined by extent allocation in the writeback path.
-	 * Hence a truncate can fail with ENOMEM from xfs_trans_alloc(), but
-	 * having already truncated the in-memory version of the file (i.e. made
-	 * user visible changes). There's not much we can do about this, except
-	 * to hope that the caller sees ENOMEM and retries the truncate
-	 * operation.
-	 *
-	 * And we update in-core i_size and truncate page cache beyond newsize
-	 * before writeback the [di_size, newsize] range, so we're guaranteed
-	 * not to write stale data past the new EOF on truncate down.
-	 */
-	truncate_setsize(inode, newsize);
-
-	/*
-	 * We are going to log the inode size change in this transaction so
-	 * any previous writes that are beyond the on disk EOF and the new
-	 * EOF that have not been written out need to be written here.  If we
-	 * do not write the data out, we expose ourselves to the null files
-	 * problem. Note that this includes any block zeroing we did above;
-	 * otherwise those blocks may not be zeroed after a crash.
-	 */
-	if (did_zeroing ||
-	    (newsize > ip->i_d.di_size && oldsize != ip->i_d.di_size)) {
-		error = filemap_write_and_wait_range(VFS_I(ip)->i_mapping,
-						ip->i_d.di_size, newsize - 1);
+		error = iomap_truncate_page(inode, newsize, blocksize,
+				&did_zeroing, &xfs_buffered_write_iomap_ops);
 		if (error)
 			return error;
+		/*
+		 * We are going to log the inode size change in this transaction
+		 * so any previous writes that are beyond the on disk EOF and
+		 * the new EOF that have not been written out need to be written
+		 * here.  If we do not write the data out, we expose ourselves
+		 * to the null files problem. Note that this includes any block
+		 * zeroing we did above; otherwise those blocks may not be
+		 * zeroed after a crash.
+		 */
+		if (did_zeroing || write_back) {
+			error = filemap_write_and_wait_range(inode->i_mapping,
+					min_t(loff_t, ip->i_d.di_size, newsize),
+					roundup_64(newsize, blocksize) - 1);
+			if (error)
+				return error;
+		}
+
+		/*
+		 * Updating i_size after writing back to make sure the zeroed
+		 * blocks could been written out, and drop all the page cache
+		 * range that beyond blocksize aligned new EOF block.
+		 *
+		 * We've already locked out new page faults, so now we can
+		 * safely remove pages from the page cache knowing they won't
+		 * get refaulted until we drop the XFS_MMAP_EXCL lock after the
+		 * extent manipulations are complete.
+		 */
+		i_size_write(inode, newsize);
+		truncate_pagecache(inode, roundup_64(newsize, blocksize));
+	} else {
+		/*
+		 * Start with zeroing any data beyond EOF that we may expose on
+		 * file extension.
+		 */
+		if (newsize > oldsize) {
+			trace_xfs_zero_eof(ip, oldsize, newsize - oldsize);
+			error = iomap_zero_range(inode, oldsize, newsize - oldsize,
+					&did_zeroing, &xfs_buffered_write_iomap_ops);
+			if (error)
+				return error;
+		}
+
+		/*
+		 * The truncate_setsize() call also cleans partial EOF page
+		 * PTEs on extending truncates and hence ensures sub-page block
+		 * size filesystems are correctly handled, too.
+		 */
+		truncate_setsize(inode, newsize);
+
+		if (did_zeroing || write_back) {
+			error = filemap_write_and_wait_range(inode->i_mapping,
+					ip->i_d.di_size, newsize - 1);
+			if (error)
+				return error;
+		}
 	}
 
 	error = xfs_trans_alloc(mp, &M_RES(mp)->tr_itruncate, 0, 0, 0, &tp);
