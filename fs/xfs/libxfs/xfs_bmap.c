@@ -5297,7 +5297,7 @@ __xfs_bunmapi(
 	isrt = (whichfork == XFS_DATA_FORK) && XFS_IS_REALTIME_INODE(ip);
 	end = start + len;
 	if (xfs_inode_forcealign(ip) && ip->i_d.di_extsize > 1
-			&& S_ISREG(VFS_I(ip)->i_mode)) {
+		&& S_ISREG(VFS_I(ip)->i_mode) && whichfork == XFS_DATA_FORK) {
 		start = roundup_64(start, ip->i_d.di_extsize);
 		end = rounddown_64(end, ip->i_d.di_extsize);
 		len  = end - start;
