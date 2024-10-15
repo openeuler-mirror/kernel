@@ -1658,9 +1658,18 @@ xfs_fc_fill_super(
 		}
 	}
 
-	if (xfs_has_forcealign(mp))
+	if (xfs_has_forcealign(mp)) {
 		xfs_warn(mp,
 "EXPERIMENTAL forced data extent alignment feature in use. Use at your own risk!");
+
+		if (xfs_has_realtime(mp)) {
+			xfs_alert(mp,
+	"forcealign not supported for realtime device!");
+			error = -EINVAL;
+			goto out_filestream_unmount;
+		}
+
+	}
 
 	if (xfs_has_atomicwrites(mp))
 		xfs_warn(mp,
@@ -1673,6 +1682,14 @@ xfs_fc_fill_super(
 			error = -EINVAL;
 			goto out_filestream_unmount;
 		}
+
+		if (xfs_has_forcealign(mp)) {
+			xfs_alert(mp,
+	"reflink not compatible with forcealign!");
+			error = -EINVAL;
+			goto out_filestream_unmount;
+		}
+
 
 		if (xfs_globals.always_cow) {
 			xfs_info(mp, "using DEBUG-only always_cow mode.");
