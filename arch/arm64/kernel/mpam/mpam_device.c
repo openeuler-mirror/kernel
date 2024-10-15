@@ -127,12 +127,14 @@ mpam_probe_update_sysprops(u16 max_partid, u16 max_pmg)
 
 static int mpam_device_probe(struct mpam_device *dev)
 {
+	u64 idr;
 	u32 hwfeatures, part_sel;
 	u16 max_intpartid = 0;
 	u16 max_partid, max_pmg;
 
-	if (mpam_read_reg(dev, MPAMF_AIDR) != MPAM_ARCHITECTURE_V1) {
-		pr_err_once("device at 0x%llx does not match MPAM architecture v1.0\n",
+	idr = mpam_read_reg(dev, MPAMF_AIDR);
+	if ((idr & MPAMF_AIDR_ARCH_MAJOR_REV) != MPAM_ARCHITECTURE_V1) {
+		pr_err_once("device at 0x%llx does not match MPAM architecture v1.x\n",
 			dev->hwpage_address);
 		return -EIO;
 	}
