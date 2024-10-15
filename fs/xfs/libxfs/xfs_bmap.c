@@ -3565,7 +3565,13 @@ xfs_bmap_btalloc(
 	 * is only set if the allocation length is >= the stripe unit and the
 	 * allocation offset is at the end of file.
 	 */
-	if (!(ap->tp->t_flags & XFS_TRANS_LOWMODE) && ap->aeof) {
+	args.minalignslop = 0;
+	if (ap->tp->t_flags & XFS_TRANS_LOWMODE) {
+		if (args.alignment > 1 && xfs_inode_forcealign(ap->ip)) {
+			args.fsbno = NULLFSBLOCK;
+			goto alloc_out;
+		}
+	} else if (ap->aeof) {
 		if (!ap->offset) {
 			args.alignment = stripe_align;
 			atype = args.type;
@@ -3577,7 +3583,6 @@ xfs_bmap_btalloc(
 			if (blen > args.alignment &&
 			    blen <= args.maxlen + args.alignment)
 				args.minlen = blen - args.alignment;
-			args.minalignslop = 0;
 		} else {
 			/*
 			 * First try an exact bno allocation.
@@ -3604,8 +3609,6 @@ xfs_bmap_btalloc(
 			else
 				args.minalignslop = 0;
 		}
-	} else {
-		args.minalignslop = 0;
 	}
 	args.postallocs = 1;
 	args.minleft = ap->minleft;
@@ -3632,8 +3635,16 @@ xfs_bmap_btalloc(
 			return error;
 	}
 
-	if (isaligned && args.fsbno == NULLFSBLOCK &&
-		(args.alignment <= 1 || !xfs_inode_forcealign(ap->ip))) {
+	if (args.fsbno == NULLFSBLOCK && args.alignment > 1 &&
+		xfs_inode_forcealign(ap->ip)) {
+		/*
+		 * Don't attempting non-aligned fallbacks alloc
+		 * for forcealign
+		 */
+		goto alloc_out;
+	}
+
+	if (isaligned && args.fsbno == NULLFSBLOCK) {
 		/*
 		 * allocation failed, so turn off alignment and
 		 * try again.
@@ -3660,6 +3671,8 @@ xfs_bmap_btalloc(
 			return error;
 		ap->tp->t_flags |= XFS_TRANS_LOWMODE;
 	}
+
+alloc_out:
 	if (args.fsbno != NULLFSBLOCK) {
 		/*
 		 * check the allocation happened at the same or higher AG than
