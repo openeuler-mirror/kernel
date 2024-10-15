@@ -3262,6 +3262,10 @@ xfs_bmap_select_minlen(
 {
 	xfs_extlen_t nlen = 0;
 
+	/* Adjust best length for extent start alignment. */
+	if (*blen > args->alignment)
+		*blen -= args->alignment;
+
 	if (notinit || *blen < ap->minlen) {
 		/*
 		 * Since we did a BUF_TRYLOCK above, it is possible that
@@ -3436,9 +3440,8 @@ xfs_bmap_btalloc(
 	xfs_fileoff_t	orig_offset;
 	xfs_extlen_t	orig_length;
 	xfs_extlen_t	blen;
-	xfs_extlen_t	nextminlen = 0;
+	xfs_extlen_t    alignment;
 	int		nullfb;		/* true if ap->firstblock isn't set */
-	int		isaligned;
 	int		tryagain;
 	int		error;
 	int		stripe_align;
@@ -3497,7 +3500,7 @@ xfs_bmap_btalloc(
 	/*
 	 * Normal allocation, done through xfs_alloc_vextent.
 	 */
-	tryagain = isaligned = 0;
+	tryagain = 0;
 	memset(&args, 0, sizeof(args));
 	args.tp = ap->tp;
 	args.mp = mp;
@@ -3508,13 +3511,12 @@ xfs_bmap_btalloc(
 	 * xfs_get_cowextsz_hint() returns extsz_hint for when forcealign is
 	 * set as forcealign and cowextsz_hint are mutually exclusive
 	 */
-	if (xfs_inode_forcealign(ap->ip) && align) {
+	if (xfs_inode_forcealign(ap->ip))
 		args.alignment = align;
-		if (stripe_align == 0 || stripe_align % align)
-			stripe_align = align;
-	} else {
+	else if (stripe_align)
+		args.alignment = stripe_align;
+	else
 		args.alignment = 1;
-	}
 
 	/* Trim the allocation back to the maximum an AG can fit. */
 	args.maxlen = min(ap->length, mp->m_ag_max_usable);
@@ -3571,44 +3573,21 @@ xfs_bmap_btalloc(
 			args.fsbno = NULLFSBLOCK;
 			goto alloc_out;
 		}
-	} else if (ap->aeof) {
-		if (!ap->offset) {
-			args.alignment = stripe_align;
-			atype = args.type;
-			isaligned = 1;
-			/*
-			 * Adjust minlen to try and preserve alignment if we
-			 * can't guarantee an aligned maxlen extent.
-			 */
-			if (blen > args.alignment &&
-			    blen <= args.maxlen + args.alignment)
-				args.minlen = blen - args.alignment;
-		} else {
-			/*
-			 * First try an exact bno allocation.
-			 * If it fails then do a near or start bno
-			 * allocation with alignment turned on.
-			 */
-			atype = args.type;
-			tryagain = 1;
-			args.type = XFS_ALLOCTYPE_THIS_BNO;
-			/*
-			 * Compute the minlen+alignment for the
-			 * next case.  Set slop so that the value
-			 * of minlen+alignment+slop doesn't go up
-			 * between the calls.
-			 */
-			if (blen > stripe_align && blen <= args.maxlen)
-				nextminlen = blen - stripe_align;
-			else
-				nextminlen = args.minlen;
-			if (nextminlen + stripe_align > args.minlen + 1)
-				args.minalignslop =
-					nextminlen + stripe_align -
-					args.minlen - 1;
-			else
-				args.minalignslop = 0;
-		}
+		args.alignment = 1;
+	} else if (ap->aeof && ap->offset) {
+		/*
+		 * First try an exact bno allocation.
+		 * If it fails then do a near or start bno
+		 * allocation with alignment turned on.
+		 */
+		alignment = args.alignment;
+		atype = args.type;
+		tryagain = 1;
+		args.type = XFS_ALLOCTYPE_THIS_BNO;
+		args.fsbno = ap->blkno;
+
+		args.alignment = 1;
+		args.minalignslop = alignment - args.alignment;
 	}
 	args.postallocs = 1;
 	args.minleft = ap->minleft;
@@ -3627,10 +3606,8 @@ xfs_bmap_btalloc(
 		 */
 		args.type = atype;
 		args.fsbno = ap->blkno;
-		args.alignment = stripe_align;
-		args.minlen = nextminlen;
+		args.alignment = alignment;
 		args.minalignslop = 0;
-		isaligned = 1;
 		if ((error = xfs_alloc_vextent(&args)))
 			return error;
 	}
@@ -3644,12 +3621,11 @@ xfs_bmap_btalloc(
 		goto alloc_out;
 	}
 
-	if (isaligned && args.fsbno == NULLFSBLOCK) {
+	if (args.alignment > 1 && args.fsbno == NULLFSBLOCK) {
 		/*
 		 * allocation failed, so turn off alignment and
 		 * try again.
 		 */
-		args.type = atype;
 		args.fsbno = ap->blkno;
 		args.alignment = 0;
 		if ((error = xfs_alloc_vextent(&args)))
