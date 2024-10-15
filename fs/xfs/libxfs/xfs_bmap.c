@@ -3253,32 +3253,47 @@ out:
 	return error;
 }
 
-static void
+static int
 xfs_bmap_select_minlen(
 	struct xfs_bmalloca	*ap,
 	struct xfs_alloc_arg	*args,
 	xfs_extlen_t		*blen,
 	int			notinit)
 {
+	xfs_extlen_t nlen = 0;
+
 	if (notinit || *blen < ap->minlen) {
 		/*
 		 * Since we did a BUF_TRYLOCK above, it is possible that
 		 * there is space for this request.
 		 */
-		args->minlen = ap->minlen;
+		nlen = ap->minlen;
 	} else if (*blen < args->maxlen) {
 		/*
 		 * If the best seen length is less than the request length,
 		 * use the best as the minimum.
 		 */
-		args->minlen = *blen;
+
+		nlen = *blen;
 	} else {
 		/*
 		 * Otherwise we've seen an extent as big as maxlen, use that
 		 * as the minimum.
 		 */
-		args->minlen = args->maxlen;
+		nlen = args->maxlen;
 	}
+
+	if (args->alignment > 1) {
+		nlen = rounddown(nlen, args->alignment);
+		if (nlen < ap->minlen) {
+			if (xfs_inode_forcealign(ap->ip) &&
+				(ap->datatype & XFS_ALLOC_USERDATA))
+				return -ENOSPC;
+			nlen = ap->minlen;
+		}
+	}
+	args->minlen = nlen;
+	return 0;
 }
 
 STATIC int
@@ -3311,8 +3326,8 @@ xfs_bmap_btalloc_nullfb(
 			break;
 	}
 
-	xfs_bmap_select_minlen(ap, args, blen, notinit);
-	return 0;
+	error = xfs_bmap_select_minlen(ap, args, blen, notinit);
+	return error;
 }
 
 STATIC int
@@ -3349,7 +3364,9 @@ xfs_bmap_btalloc_filestreams(
 
 	}
 
-	xfs_bmap_select_minlen(ap, args, blen, notinit);
+	error = xfs_bmap_select_minlen(ap, args, blen, notinit);
+	if (error)
+		return error;
 
 	/*
 	 * Set the failure fallback case to look in the selected AG as stream
