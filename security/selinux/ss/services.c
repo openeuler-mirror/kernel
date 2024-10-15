@@ -3584,7 +3584,7 @@ int selinux_audit_rule_init(u32 field, u32 op, char *rulestr, void **vrule)
 		return -EINVAL;
 	}
 
-	tmprule = kzalloc(sizeof(struct selinux_audit_rule), GFP_ATOMIC);
+	tmprule = kzalloc(sizeof(struct selinux_audit_rule), GFP_KERNEL);
 	if (!tmprule)
 		return -ENOMEM;
 
