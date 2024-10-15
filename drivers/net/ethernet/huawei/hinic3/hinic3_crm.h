@@ -8,7 +8,7 @@
 
 #include "mpu_cmd_base_defs.h"
 
-#define HINIC3_DRV_VERSION ""
+#define HINIC3_DRV_VERSION "15.17.1.1"
 #define HINIC3_DRV_DESC "Intelligent Network Interface Card Driver"
 #define HIUDK_DRV_DESC "Intelligent Network Unified Driver"
 
