@@ -85,6 +85,7 @@ void __blk_mq_tag_idle(struct blk_mq_hw_ctx *hctx)
 {
 	struct blk_mq_tags *tags = hctx->tags;
 	unsigned int users;
+	unsigned long flags;
 
 	if (blk_mq_is_sbitmap_shared(hctx->flags)) {
 		struct request_queue *q = hctx->queue;
@@ -97,10 +98,10 @@ void __blk_mq_tag_idle(struct blk_mq_hw_ctx *hctx)
 			return;
 	}
 
-	spin_lock_irq(&tags->lock);
+	spin_lock_irqsave(&tags->lock, flags);
 	users = atomic_dec_return(&tags->active_queues);
 	blk_mq_update_wake_batch(tags, users);
-	spin_unlock_irq(&tags->lock);
+	spin_unlock_irqrestore(&tags->lock, flags);
 
 	blk_mq_tag_wakeup_all(tags, false);
 }
