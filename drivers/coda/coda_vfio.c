@@ -28,8 +28,8 @@ int virtcca_map_pages(void *ops, unsigned long iova,
 	struct kvm *kvm;
 	u64 loader_start;
 	u64 ram_size;
-	struct arm_lpae_io_pgtable *data = virtcca_io_pgtable_get_data(ops);
-	struct io_pgtable_cfg *cfg = virtcca_io_pgtable_get_cfg(data);
+	struct io_pgtable *data = io_pgtable_ops_to_pgtable(ops);
+	struct io_pgtable_cfg *cfg = &data->cfg;
 	long iaext = (s64)iova >> cfg->ias;
 	int ret = 0;
 	struct arm_smmu_domain *smmu_domain = NULL;
@@ -46,7 +46,7 @@ int virtcca_map_pages(void *ops, unsigned long iova,
 	if (!(iommu_prot & (IOMMU_READ | IOMMU_WRITE)))
 		return 0;
 
-	smmu_domain = (struct arm_smmu_domain *)virtcca_io_pgtable_get_smmu_domain(data);
+	smmu_domain = (struct arm_smmu_domain *)(data->cookie);
 	if (!smmu_domain)
 		return -EINVAL;
 
@@ -92,8 +92,8 @@ size_t virtcca_unmap_pages(void *ops, unsigned long iova,
 	size_t pgsize, size_t pgcount)
 {
 	struct kvm *kvm;
-	struct arm_lpae_io_pgtable *data = virtcca_io_pgtable_get_data(ops);
-	struct io_pgtable_cfg *cfg = virtcca_io_pgtable_get_cfg(data);
+	struct io_pgtable *data = io_pgtable_ops_to_pgtable(ops);
+	struct io_pgtable_cfg *cfg = &data->cfg;
 	long iaext = (s64)iova >> cfg->ias;
 	struct arm_smmu_domain *smmu_domain = NULL;
 
@@ -105,7 +105,7 @@ size_t virtcca_unmap_pages(void *ops, unsigned long iova,
 	if (WARN_ON(iaext))
 		return 0;
 
-	smmu_domain = (struct arm_smmu_domain *)virtcca_io_pgtable_get_smmu_domain(data);
+	smmu_domain = (struct arm_smmu_domain *)(data->cookie);
 	if (!smmu_domain)
 		return 0;
 
@@ -341,3 +341,43 @@ int virtcca_iommu_group_set_dev_msi_addr(struct iommu_group *iommu_group, unsign
 	ret = iommu_group_for_each_dev(iommu_group, (void *)iova, virtcca_set_dev_msi_addr);
 	return ret;
 }
+
+/**
+ * virtcca_msi_map - Vfio driver mapping device side msi address
+ * @vdev: Vfio pci core device
+ *
+ * Returns:
+ * %0 if map success
+ */
+int virtcca_msi_map(struct vfio_pci_core_device *vdev)
+{
+	if (!is_virtcca_cvm_enable())
+		return 0;
+
+	int ret;
+	dma_addr_t iova;
+	phys_addr_t msi_addr;
+	struct iommu_domain *domain = NULL;
+	struct pci_dev *pdev = vdev->pdev;
+	bool cc_dev = pdev == NULL ? false : is_cc_dev(pci_dev_id(pdev));
+	int prot = IOMMU_WRITE | IOMMU_NOEXEC | IOMMU_MMIO;
+
+	/*
+	 * If the device is secure and has not done MSI address mapping,
+	 * Mapping is required.
+	 */
+	if (cc_dev && !get_g_cc_dev_msi_addr(pci_dev_id(pdev))) {
+		domain = iommu_get_domain_for_dev(&(pdev->dev));
+		/* Get the MSI address of the device */
+		virtcca_iommu_dma_get_msi_page((void *)domain->iova_cookie, &iova, &msi_addr);
+		/* Release non-secure side device MSI address mapping */
+		iommu_unmap(domain, iova, PAGE_SIZE);
+		/* Mapping secure side MSI address */
+		ret = virtcca_iommu_map(domain, iova, msi_addr, PAGE_SIZE, prot);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(virtcca_msi_map);

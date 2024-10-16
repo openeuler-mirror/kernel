@@ -22,6 +22,10 @@
 
 #include "vfio_pci_priv.h"
 
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+#include <asm/virtcca_coda.h>
+#endif
+
 struct vfio_pci_irq_ctx {
 	struct eventfd_ctx	*trigger;
 	struct virqfd		*unmask;
@@ -711,6 +715,12 @@ static int vfio_pci_set_msi_trigger(struct vfio_pci_core_device *vdev,
 		ret = vfio_msi_enable(vdev, start + count, msix);
 		if (ret)
 			return ret;
+
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+		ret = virtcca_msi_map(vdev);
+		if (ret)
+			return ret;
+#endif
 
 		ret = vfio_msi_set_block(vdev, start, count, fds, msix);
 		if (ret)

@@ -68,10 +68,7 @@ int virtcca_vfio_iommu_map(void *iommu, dma_addr_t iova,
 int cvm_vfio_add_kvm_to_smmu_domain(struct file *filp, void *kv);
 struct kvm *virtcca_arm_smmu_get_kvm(struct arm_smmu_domain *domain);
 void kvm_get_arm_smmu_domain(struct kvm *kvm, struct list_head *smmu_domain_group_list);
-struct arm_lpae_io_pgtable *virtcca_io_pgtable_get_data(void *ops);
-struct io_pgtable_cfg *virtcca_io_pgtable_get_cfg(struct arm_lpae_io_pgtable *data);
 struct iommu_group *cvm_vfio_file_iommu_group(struct file *file);
-void *virtcca_io_pgtable_get_smmu_domain(struct arm_lpae_io_pgtable *data);
 
 struct iommu_group *virtcca_vfio_file_iommu_group(struct file *file);
 
@@ -87,7 +84,8 @@ void g_cc_dev_table_init(void);
 
 u32 virtcca_tmi_dev_attach(struct arm_smmu_domain *arm_smmu_domain, struct kvm *kvm);
 
-struct iommu_dma_msi_page *virtcca_iommu_dma_get_msi_page(struct device *dev,
-	phys_addr_t msi_addr, struct iommu_domain *domain);
+void virtcca_iommu_dma_get_msi_page(void *cookie, dma_addr_t *iova, phys_addr_t *phys);
+
+int virtcca_msi_map(struct vfio_pci_core_device *vdev);
 #endif
 #endif

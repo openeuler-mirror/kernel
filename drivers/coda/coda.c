@@ -226,6 +226,7 @@ u64 get_g_cc_dev_msi_addr(u32 sid)
 	}
 	return 0;
 }
+EXPORT_SYMBOL_GPL(get_g_cc_dev_msi_addr);
 
 /**
  * set_g_cc_dev_msi_addr - Set the msi address of confidential device

@@ -33,11 +33,6 @@
 
 #include "dma-iommu.h"
 
-#ifdef CONFIG_HISI_VIRTCCA_CODA
-#include <asm/virtcca_cvm_host.h>
-#include <asm/virtcca_coda.h>
-#endif
-
 struct iommu_dma_msi_page {
 	struct list_head	list;
 	dma_addr_t		iova;
@@ -1825,10 +1820,6 @@ static struct iommu_dma_msi_page *iommu_dma_get_msi_page(struct device *dev,
 	int prot = IOMMU_WRITE | IOMMU_NOEXEC | IOMMU_MMIO;
 	size_t size = cookie_msi_granule(cookie);
 
-#ifdef CONFIG_HISI_VIRTCCA_CODA
-	if (is_virtcca_cvm_enable() && domain->secure)
-		return virtcca_iommu_dma_get_msi_page(dev, msi_addr, domain);
-#endif
 	msi_addr &= ~(phys_addr_t)(size - 1);
 	list_for_each_entry(msi_page, &cookie->msi_page_list, list)
 		if (msi_page->phys == msi_addr)
@@ -1924,42 +1915,22 @@ static int iommu_dma_init(void)
 arch_initcall(iommu_dma_init);
 
 #ifdef CONFIG_HISI_VIRTCCA_CODA
-/* Virtcca map msi address */
-struct iommu_dma_msi_page *virtcca_iommu_dma_get_msi_page(struct device *dev,
-	phys_addr_t msi_addr, struct iommu_domain *domain)
+/**
+ * virtcca_iommu_dma_get_msi_page() - Traverse the MSI page list to obtain the last
+ * MSI page
+ * @cookie: Iommu dma cookie
+ * @iova: Iova address
+ * @phys: Physical address
+ *
+ */
+void virtcca_iommu_dma_get_msi_page(void *cookie, dma_addr_t *iova, phys_addr_t *phys)
 {
-	struct iommu_dma_cookie *cookie = domain->iova_cookie;
-	struct iommu_dma_msi_page *msi_page;
-	dma_addr_t iova;
-	int prot = IOMMU_WRITE | IOMMU_NOEXEC | IOMMU_MMIO;
-	size_t size = cookie_msi_granule(cookie);
+	struct iommu_dma_msi_page *msi_page = NULL;
+	struct iommu_dma_cookie *dma_cookie = (struct iommu_dma_cookie *)cookie;
 
-	msi_addr &= ~(phys_addr_t)(size - 1);
-	list_for_each_entry(msi_page, &cookie->msi_page_list, list)
-		if (msi_page->phys == msi_addr)
-			return msi_page;
-
-	msi_page = kzalloc(sizeof(*msi_page), GFP_KERNEL);
-	if (!msi_page)
-		return NULL;
-
-	iova = iommu_dma_alloc_iova(domain, size, dma_get_mask(dev), dev);
-	if (!iova)
-		goto out_free_page;
-
-	if (virtcca_iommu_map(domain, iova, msi_addr, size, prot))
-		goto out_free_iova;
-
-	INIT_LIST_HEAD(&msi_page->list);
-	msi_page->phys = msi_addr;
-	msi_page->iova = iova;
-	list_add(&msi_page->list, &cookie->msi_page_list);
-	return msi_page;
-
-out_free_iova:
-	iommu_dma_free_iova(cookie, iova, size, NULL);
-out_free_page:
-	kfree(msi_page);
-	return NULL;
+	msi_page = list_last_entry(&dma_cookie->msi_page_list, struct iommu_dma_msi_page, list);
+	*iova = msi_page->iova;
+	*phys = msi_page->phys;
 }
+EXPORT_SYMBOL_GPL(virtcca_iommu_dma_get_msi_page);
 #endif
