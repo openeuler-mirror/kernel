@@ -3090,7 +3090,6 @@ static struct r1conf *setup_conf(struct mddev *mddev)
 	return ERR_PTR(err);
 }
 
-static void raid1_free(struct mddev *mddev, void *priv);
 static int raid1_run(struct mddev *mddev)
 {
 	struct r1conf *conf;
@@ -3149,8 +3148,7 @@ static int raid1_run(struct mddev *mddev)
 	 */
 	if (conf->raid_disks - mddev->degraded < 1) {
 		md_unregister_thread(&conf->thread);
-		ret = -EINVAL;
-		goto abort;
+		return -EINVAL;
 	}
 
 	if (conf->raid_disks - mddev->degraded == 1)
@@ -3183,14 +3181,8 @@ static int raid1_run(struct mddev *mddev)
 	}
 
 	ret =  md_integrity_register(mddev);
-	if (ret) {
+	if (ret)
 		md_unregister_thread(&mddev->thread);
-		goto abort;
-	}
-	return 0;
-
-abort:
-	raid1_free(mddev, conf);
 	return ret;
 }
 
