@@ -116,7 +116,7 @@ enum {
 	Opt_filestreams, Opt_quota, Opt_noquota, Opt_usrquota, Opt_grpquota,
 	Opt_prjquota, Opt_uquota, Opt_gquota, Opt_pquota,
 	Opt_uqnoenforce, Opt_gqnoenforce, Opt_pqnoenforce, Opt_qnoenforce,
-	Opt_discard, Opt_nodiscard, Opt_dax, Opt_dax_enum,
+	Opt_discard, Opt_nodiscard, Opt_dax, Opt_dax_enum, Opt_atomicalways,
 };
 
 static const struct fs_parameter_spec xfs_fs_parameters[] = {
@@ -161,6 +161,7 @@ static const struct fs_parameter_spec xfs_fs_parameters[] = {
 	fsparam_flag("nodiscard",	Opt_nodiscard),
 	fsparam_flag("dax",		Opt_dax),
 	fsparam_enum("dax",		Opt_dax_enum, dax_param_enums),
+	fsparam_flag("atomicalways",    Opt_atomicalways),
 	{}
 };
 
@@ -189,6 +190,7 @@ xfs_fs_show_options(
 		{ XFS_FEAT_LARGE_IOSIZE,	",largeio" },
 		{ XFS_FEAT_DAX_ALWAYS,		",dax=always" },
 		{ XFS_FEAT_DAX_NEVER,		",dax=never" },
+		{ XFS_FEAT_ATOMICALWAYS,	",atomicalways"},
 		{ 0, NULL }
 	};
 	struct xfs_mount	*mp = XFS_M(root->d_sb);
@@ -1361,6 +1363,9 @@ xfs_fc_parse_param(
 		xfs_fs_warn_deprecated(fc, param, XFS_FEAT_NOATTR2, true);
 		parsing_mp->m_features |= XFS_FEAT_NOATTR2;
 		return 0;
+	case Opt_atomicalways:
+		parsing_mp->m_features |= XFS_FEAT_ATOMICALWAYS;
+		return 0;
 	default:
 		xfs_warn(parsing_mp, "unknown mount option [%s].", param->key);
 		return -EINVAL;
@@ -1671,9 +1676,33 @@ xfs_fc_fill_super(
 
 	}
 
-	if (xfs_has_atomicwrites(mp))
+	if (xfs_has_atomicwrites(mp)) {
+		if (!xfs_has_forcealign(mp)) {
+			xfs_alert(mp,
+	"forcealign should support for atomic writes!");
+			error = -EINVAL;
+			goto out_filestream_unmount;
+		}
+
 		xfs_warn(mp,
 "EXPERIMENTAL atomicwrites feature in use. Use at your own risk!");
+	}
+
+	if (xfs_has_atomicalways(mp)) {
+		if (!xfs_has_atomicwrites(mp)) {
+			xfs_alert(mp,
+	"mounting with \"atomicalways\" option, but fs not support atomic writes!");
+			error = -EINVAL;
+			goto out_filestream_unmount;
+		}
+
+		if (!bdev_can_atomic_write(mp->m_ddev_targp->bt_bdev)) {
+			xfs_alert(mp,
+	"mounting with \"atomicalways\" option, but device not support atomic writes!");
+			error = -EINVAL;
+			goto out_filestream_unmount;
+		}
+	}
 
 	if (xfs_has_reflink(mp)) {
 		if (mp->m_sb.sb_rblocks) {
