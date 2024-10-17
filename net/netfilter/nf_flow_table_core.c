@@ -74,13 +74,23 @@ err_ct_refcnt:
 }
 EXPORT_SYMBOL_GPL(flow_offload_alloc);
 
+static struct dst_entry *nft_route_dst_fetch(struct nf_flow_route *route,
+					     enum flow_offload_tuple_dir dir)
+{
+	struct dst_entry *dst = route->tuple[dir].dst;
+
+	route->tuple[dir].dst = NULL;
+
+	return dst;
+}
+
 static int flow_offload_fill_route(struct flow_offload *flow,
-				   const struct nf_flow_route *route,
+				   struct nf_flow_route *route,
 				   enum flow_offload_tuple_dir dir)
 {
 	struct flow_offload_tuple *flow_tuple = &flow->tuplehash[dir].tuple;
 	struct dst_entry *other_dst = route->tuple[!dir].dst;
-	struct dst_entry *dst = route->tuple[dir].dst;
+	struct dst_entry *dst = nft_route_dst_fetch(route, dir);
 
 	if (!dst_hold_safe(route->tuple[dir].dst))
 		return -1;
@@ -101,7 +111,7 @@ static int flow_offload_fill_route(struct flow_offload *flow,
 }
 
 int flow_offload_route_init(struct flow_offload *flow,
-			    const struct nf_flow_route *route)
+			    struct nf_flow_route *route)
 {
 	int err;
 
