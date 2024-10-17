@@ -279,6 +279,7 @@ typedef struct xfs_mount {
 
 
 /* Mount features */
+#define XFS_FEAT_ATOMICALWAYS   (1ULL << 47)    /* convert dio to atomic writes always */
 #define XFS_FEAT_NOATTR2	(1ULL << 48)	/* disable attr2 creation */
 #define XFS_FEAT_NOALIGN	(1ULL << 49)	/* ignore alignment */
 #define XFS_FEAT_ALLOCSIZE	(1ULL << 50)	/* user specified allocation size */
@@ -365,6 +366,7 @@ __XFS_HAS_FEAT(dax_always, DAX_ALWAYS)
 __XFS_HAS_FEAT(dax_never, DAX_NEVER)
 __XFS_HAS_FEAT(norecovery, NORECOVERY)
 __XFS_HAS_FEAT(nouuid, NOUUID)
+__XFS_HAS_FEAT(atomicalways, ATOMICALWAYS)
 
 /*
  * Operational mount state flags

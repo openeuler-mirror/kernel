@@ -814,6 +814,11 @@ xfs_file_write_iter(
 		return xfs_file_dax_write(iocb, from);
 
 	if (iocb->ki_flags & IOCB_DIRECT) {
+
+		if (xfs_inode_atomicwrites(ip) &&
+		    xfs_has_atomicalways(ip->i_mount) &&
+		    !(iocb->ki_flags & IOCB_ATOMIC))
+			iocb->ki_flags |= IOCB_ATOMIC;
 		/*
 		 * Allow a directio write to fall back to a buffered
 		 * write *only* in the case that we're doing a reflink
