@@ -1109,6 +1109,8 @@ hns3_dbg_dev_specs(struct hnae3_handle *h, char *buf, int len, int *pos)
 			  dev->watchdog_timeo / HZ);
 	*pos += scnprintf(buf + *pos, len - *pos, "Hilink Version: %u\n",
 			  dev_specs->hilink_version);
+	pos += scnprintf(buf + *pos, len - *pos, "mac tunnel number: %u\n",
+			  dev_specs->tnl_num);
 	*pos += scnprintf(buf + *pos, len - *pos, "total rx buffer size: %u\n",
 			  dev_specs->total_rx_buffer_size);
 	*pos += scnprintf(buf + *pos, len - *pos, "min rx buffer size per tc: %u\n",
