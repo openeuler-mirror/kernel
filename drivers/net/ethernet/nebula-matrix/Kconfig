@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Nebula-matrix network device configuration
+#
+
+config NET_VENDOR_NEBULA_MATRIX
+    bool "Nebula-matrix devices"
+    default y
+    help
+      If you have a network (Ethernet) card belonging to this class, say Y.
+
+      Note that the answer to this question doesn't directly affect the
+      kernel: saying N will just cause the configurator to skip all
+      the questions about Nebual-matrix cards. If you say Y, you will be
+      asked for your specific card in the following questions.
+
+if NET_VENDOR_NEBULA_MATRIX
+
+config NBL_CORE
+    tristate "Nebula-matrix Ethernet Controller m18110 Family support"
+    depends on PCI && VFIO
+    depends on ARM64 || X86_64
+    default m
+    help
+      This driver supports Nebula-matrix Ethernet Controller m18110 Family of
+      devices.  For more information about this product, go to the product
+      description with smart NIC:
+
+      <http://www.nebula-matrix.com>
+
+      More specific information on configuring the driver is in
+      <file:Documentation/networking/device_drivers/ethernet/nebula-matrix/m18110.rst>.
+
+      To compile this driver as a module, choose M here. The module
+      will be called nbl_core.
+
+endif # NET_VENDOR_NEBULA_MATRIX
