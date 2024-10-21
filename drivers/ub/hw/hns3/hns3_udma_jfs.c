@@ -123,19 +123,14 @@ static int create_jfs_um_qp(struct hns3_udma_dev *dev, struct hns3_udma_jfs *jfs
 	return ret;
 }
 
-static int destroy_jfs_qp(struct hns3_udma_dev *dev, struct hns3_udma_jfs *jfs)
+static inline void destroy_jfs_qp(struct hns3_udma_dev *dev, struct hns3_udma_jfs *jfs)
 {
-	int ret = 0;
-
-	ret = hns3_udma_modify_jfs_um_qp(dev, jfs, QPS_RESET);
-	if (ret)
+	if (hns3_udma_modify_jfs_um_qp(dev, jfs, QPS_RESET))
 		dev_err(dev->dev,
 			"failed to modify qp(0x%llx) to RESET for um jfs.\n",
 			jfs->um_qp.qpn);
 
 	hns3_udma_destroy_qp_common(dev, &jfs->um_qp, NULL);
-
-	return ret;
 }
 
 static int alloc_jfs_buf(struct hns3_udma_dev *udma_dev, struct hns3_udma_jfs *jfs,

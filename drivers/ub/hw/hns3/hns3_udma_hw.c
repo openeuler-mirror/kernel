@@ -243,8 +243,6 @@ static void set_dev_cap_by_resp_ab(struct hns3_udma_caps *caps,
 	caps->cqe_sz = resp_a->cqe_sz;
 
 	caps->mtpt_entry_sz = resp_b->mtpt_entry_sz;
-	caps->irrl_entry_sz = resp_b->irrl_entry_sz;
-	caps->trrl_entry_sz = resp_b->trrl_entry_sz;
 	caps->cqc_entry_sz = resp_b->cqc_entry_sz;
 	caps->srqc_entry_sz = resp_b->srqc_entry_sz;
 	caps->idx_entry_sz = resp_b->idx_entry_sz;
@@ -2038,7 +2036,7 @@ static void hns3_udma_link_status_change(struct hnae3_handle *handle, bool linku
 	dev = handle->priv;
 
 	if (IS_ERR_OR_NULL(dev)) {
-		pr_err("[hns3-hns3_udma:link_status_change]: Invalid dev!\n");
+		pr_err("[hns3-udma:link_status_change]: Invalid dev!\n");
 		return;
 	}
 
@@ -2083,7 +2081,9 @@ static struct hnae3_client hns3_udma_client = {
 
 static int __init hns3_udma_init(void)
 {
-	hns3_udma_init_debugfs();
+	if (IS_ERR_OR_NULL(hns3_udma_init_debugfs()))
+		pr_err("[hns3-udma:hns3_udma_init]:fail to create debugfs!\n");
+
 	return hnae3_register_client(&hns3_udma_client);
 }
 

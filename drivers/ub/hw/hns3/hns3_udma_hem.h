@@ -51,8 +51,6 @@ enum {
 	HEM_TYPE_CQE,
 	HEM_TYPE_SRQWQE,
 	HEM_TYPE_INDEX,
-	HEM_TYPE_IRRL,
-	HEM_TYPE_TRRL,
 };
 
 #define HNS3_UDMA_HEM_CHUNK_LEN                              \

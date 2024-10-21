@@ -389,9 +389,11 @@ void hns3_udma_unregister_debugfs(struct hns3_udma_dev *udma_dev)
 }
 
 /* debugfs for hns3_udma module */
-void hns3_udma_init_debugfs(void)
+struct dentry *hns3_udma_init_debugfs(void)
 {
 	hns3_udma_dbgfs_root = debugfs_create_dir("hns3_udma", NULL);
+
+	return hns3_udma_dbgfs_root;
 }
 
 void hns3_udma_cleanup_debugfs(void)

@@ -589,6 +589,7 @@ static int alloc_jfr_um_qp(struct hns3_udma_dev *dev, struct hns3_udma_jfr *jfr)
 	qp->qp_attr.jfr = jfr;
 	qp->qp_attr.eid_index =
 		to_hns3_udma_ucontext(jfr->ubcore_jfr.uctx)->eid_index;
+	qp->qp_attr.uctx = jfr->ubcore_jfr.uctx;
 	udata.uctx = NULL;
 	ret = hns3_udma_create_qp_common(dev, qp, &udata);
 	if (ret) {
