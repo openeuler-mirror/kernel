@@ -216,6 +216,14 @@ static inline void add_reliable_page_counter(struct page *page,
 
 	reliable_page_counter_inner(mm, val);
 }
+
+static inline void reliable_clear_page_counter(struct mm_struct *mm)
+{
+	if (!mem_reliable_is_enabled())
+		return;
+
+	atomic_long_set(&mm->reliable_nr_page, 0);
+}
 #else
 #define reliable_enabled 0
 
@@ -259,6 +267,7 @@ static inline void add_reliable_folio_counter(struct folio *folio,
 		struct mm_struct *mm, int val) {}
 static inline void reliable_report_usage(struct seq_file *m,
 		struct mm_struct *mm) {}
+static inline void reliable_clear_page_counter(struct mm_struct *mm) {}
 #endif
 
 #endif
