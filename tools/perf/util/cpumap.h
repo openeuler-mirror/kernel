@@ -26,7 +26,7 @@ int cpu_map__build_socket_map(struct perf_cpu_map *cpus, struct perf_cpu_map **s
 int cpu_map__build_die_map(struct perf_cpu_map *cpus, struct perf_cpu_map **diep);
 int cpu_map__build_core_map(struct perf_cpu_map *cpus, struct perf_cpu_map **corep);
 int cpu_map__build_node_map(struct perf_cpu_map *cpus, struct perf_cpu_map **nodep);
-struct perf_cpu_map *cpu_map__online(void); /* thread unsafe */
+const struct perf_cpu_map *cpu_map__online(void); /* thread unsafe */
 
 static inline int cpu_map__socket(struct perf_cpu_map *sock, int s)
 {
@@ -36,14 +36,6 @@ static inline int cpu_map__socket(struct perf_cpu_map *sock, int s)
 }
 
 static inline int cpu_map__id_to_socket(int id)
-{	
-	return id >> 24;
-}
-
-/**
- * cpu_map__is_dummy - Events associated with a pid, rather than a CPU, use a single dummy map with an entry of -1.
- */
-static inline bool cpu_map__is_dummy(const struct perf_cpu_map *cpus)
 {
 	return id >> 24;
 }

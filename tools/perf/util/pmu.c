@@ -631,7 +631,7 @@ static struct perf_cpu_map *pmu_cpumask(const char *name)
 			return cpus;
 	}
 
-	return !strcmp(name, "cpu") ? perf_cpu_map__get(cpu_map__online()) : NULL;
+	return NULL;
 }
 
 static bool pmu_is_uncore(const char *name)

@@ -577,9 +577,9 @@ size_t cpu_map__snprint_mask(struct perf_cpu_map *map, char *buf, size_t size)
 	return ptr - buf;
 }
 
-struct perf_cpu_map *cpu_map__online(void) /* thread unsafe */
+const struct perf_cpu_map *cpu_map__online(void) /* thread unsafe */
 {
-	static struct perf_cpu_map *online;
+	static const struct perf_cpu_map *online = NULL;
 
 	if (!online)
 		online = perf_cpu_map__new(NULL); /* from /sys/devices/system/cpu/online */
