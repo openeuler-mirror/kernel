@@ -687,8 +687,6 @@ static inline void process_adjtimex_modes(const struct timex *txc, s32 *time_tai
 
 	if (txc->modes & ADJ_MAXERROR)
 		time_maxerror = txc->maxerror;
-	if (time_maxerror > NTP_PHASE_LIMIT)
-		time_maxerror = NTP_PHASE_LIMIT;
 
 	if (txc->modes & ADJ_ESTERROR)
 		time_esterror = txc->esterror;
