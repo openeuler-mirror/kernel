@@ -427,10 +427,10 @@ void mptcp_pm_nl_rm_addr_received(struct mptcp_sock *msk)
 
 		spin_unlock_bh(&msk->pm.lock);
 		mptcp_subflow_shutdown(sk, ssk, how);
+		removed |= subflow->request_join;
 		__mptcp_close_ssk(sk, ssk, subflow, timeout);
 		spin_lock_bh(&msk->pm.lock);
 
-		removed |= subflow->request_join;
 		if(removed && msk->pm.rm_id &&
 		   !WARN_ON_ONCE(msk->pm.add_addr_accepted == 0))
 			/* Note: if the subflow has been closed before, this
