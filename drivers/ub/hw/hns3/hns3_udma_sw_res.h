@@ -133,14 +133,14 @@ struct hns3_udma_uar {
 
 struct hns3_udma_ida {
 	struct ida	ida;
-	uint32_t	min; /* Lowest ID to allocate. */
+	uint32_t	min; /* Lowest ID to allocate.  */
 	uint32_t	max; /* Highest ID to allocate. */
 };
 
 struct hns3_udma_bank {
 	struct ida ida;
 	uint32_t inuse; /* Number of IDs allocated */
-	uint32_t min; /* Lowest ID to allocate. */
+	uint32_t min; /* Lowest ID to allocate.  */
 	uint32_t max; /* Highest ID to allocate. */
 	uint32_t next; /* Next ID to allocate. */
 };
@@ -390,8 +390,6 @@ struct hns3_udma_eq {
 struct hns3_udma_qp_table {
 	struct xarray			xa;
 	struct hns3_udma_hem_table	qp_table;
-	struct hns3_udma_hem_table	irrl_table;
-	struct hns3_udma_hem_table	trrl_table;
 	struct hns3_udma_hem_table	sccc_table;
 	struct hns3_udma_bank		bank[HNS3_UDMA_QP_BANK_NUM];
 	struct mutex			bank_mutex;

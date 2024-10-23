@@ -80,7 +80,7 @@ struct dca_qp_stats {
 	uint32_t sge_size;
 };
 
-void hns3_udma_init_debugfs(void);
+struct dentry *hns3_udma_init_debugfs(void);
 void hns3_udma_cleanup_debugfs(void);
 void hns3_udma_register_debugfs(struct hns3_udma_dev *udma_dev);
 void hns3_udma_unregister_debugfs(struct hns3_udma_dev *udma_dev);

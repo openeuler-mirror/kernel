@@ -1187,7 +1187,7 @@ static void hns3_udma_dfx_list_free(int num)
 	DFX_LIST_FREE(jfc);
 }
 
-static int hns3_udma_dfx_add_hns3_udma_device(struct hns3_udma_dev *udma_dev)
+static int hns3_udma_dfx_add_device(struct hns3_udma_dev *udma_dev)
 {
 	int ret;
 	int i;
@@ -1308,7 +1308,7 @@ int hns3_udma_dfx_init(struct hns3_udma_dev *udma_dev)
 		dev_info(drv_device, "hns3_udma dfx create chr device success.\n");
 	}
 
-	ret = hns3_udma_dfx_add_hns3_udma_device(udma_dev);
+	ret = hns3_udma_dfx_add_device(udma_dev);
 	if (ret) {
 		dev_err(drv_device, "hns3_udma dfx add hns3_udma device failed.\n");
 		goto add_device_failed;
@@ -1325,7 +1325,7 @@ chrdev_create_failed:
 	return ret;
 }
 
-static void hns3_udma_dfx_remove_hns3_udma_device(struct hns3_udma_dev *udma_dev)
+static void hns3_udma_dfx_remove_device(struct hns3_udma_dev *udma_dev)
 {
 	int i;
 
@@ -1355,7 +1355,7 @@ void hns3_udma_dfx_uninit(struct hns3_udma_dev *udma_dev)
 		return;
 	}
 
-	hns3_udma_dfx_remove_hns3_udma_device(udma_dev);
+	hns3_udma_dfx_remove_device(udma_dev);
 	if (!hns3_udma_dev_count) {
 		dev_info(drv_device, "hns3_udma dfx remove chr device.\n");
 		hns3_udma_dfx_chrdev_destroy();

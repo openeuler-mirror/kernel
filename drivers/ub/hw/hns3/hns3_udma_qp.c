@@ -1530,7 +1530,7 @@ static int set_wqe_buf_attr(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp 
 		return -EINVAL;
 
 	buf_attr->region_count = idx;
-	buf_attr->page_shift = PAGE_SHIFT;
+	buf_attr->page_shift = dca_en ? HNS3_UDMA_HW_PAGE_SHIFT : PAGE_SHIFT;
 	buf_attr->mtt_only = dca_en;
 
 	return 0;
@@ -1665,30 +1665,13 @@ static int alloc_qpc(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp *qp)
 		goto err_out;
 	}
 
-	/* Alloc memory for IRRL */
-	ret = hns3_udma_table_get(udma_dev, &qp_table->irrl_table, qp->qpn);
-	if (ret) {
-		dev_err(dev, "Failed to get IRRL table\n");
-		goto err_put_qp;
-	}
-
-	if (udma_dev->caps.trrl_entry_sz) {
-		/* Alloc memory for TRRL */
-		ret = hns3_udma_table_get(udma_dev, &qp_table->trrl_table,
-				     qp->qpn);
-		if (ret) {
-			dev_err(dev, "Failed to get TRRL table\n");
-			goto err_put_irrl;
-		}
-	}
-
 	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_QP_FLOW_CTRL) {
 		/* Alloc memory for SCC CTX */
 		ret = hns3_udma_table_get(udma_dev, &qp_table->sccc_table,
 				     qp->qpn);
 		if (ret) {
 			dev_err(dev, "Failed to get SCC CTX table\n");
-			goto err_put_trrl;
+			goto err_put_qp;
 		}
 	}
 
@@ -1701,11 +1684,6 @@ static int alloc_qpc(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp *qp)
 
 	return 0;
 
-err_put_trrl:
-	if (udma_dev->caps.trrl_entry_sz)
-		hns3_udma_table_put(udma_dev, &qp_table->trrl_table, qp->qpn);
-err_put_irrl:
-	hns3_udma_table_put(udma_dev, &qp_table->irrl_table, qp->qpn);
 err_put_qp:
 	hns3_udma_table_put(udma_dev, &qp_table->qp_table, qp->qpn);
 err_out:
@@ -1745,15 +1723,8 @@ static void hns3_udma_qp_remove(struct hns3_udma_dev *udma_dev, struct hns3_udma
 
 static void free_qpc(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp *qp)
 {
-	struct hns3_udma_qp_table *qp_table = &udma_dev->qp_table;
-
 	if (udma_dev->caps.reorder_cq_buffer_en)
 		hns3_udma_free_reorder_cq_buf(udma_dev, &qp->qp_attr);
-
-	if (udma_dev->caps.trrl_entry_sz)
-		hns3_udma_table_put(udma_dev, &qp_table->trrl_table, qp->qpn);
-
-	hns3_udma_table_put(udma_dev, &qp_table->irrl_table, qp->qpn);
 }
 
 static void free_qp_db(struct hns3_udma_dev *udma_dev, struct hns3_udma_qp *qp)

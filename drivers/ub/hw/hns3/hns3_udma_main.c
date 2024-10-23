@@ -422,6 +422,7 @@ static int hns3_udma_query_device_attr(struct ubcore_device *dev,
 	attr->tp_maintainer = true;
 	attr->dev_cap.max_tp_in_tpg = HNS3_UDMA_MAX_TP_IN_TPG;
 	attr->fe_idx = udma_dev->func_id;
+	attr->pattern = UBCORE_PATTERN_1;
 
 	for (i = 0; i < udma_dev->caps.num_ports; i++) {
 		net_dev = udma_dev->uboe.netdevs[i];
@@ -854,36 +855,12 @@ int hns3_udma_init_common_hem(struct hns3_udma_dev *udma_dev)
 	}
 	dev_info(dev, "init QPC hem table success.\n");
 
-	ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->qp_table.irrl_table,
-				       HEM_TYPE_IRRL, udma_dev->caps.irrl_entry_sz *
-				       udma_dev->caps.max_qp_init_rdma,
-				       udma_dev->caps.num_qps);
-	if (ret) {
-		dev_err(dev, "Failed to init irrl_table memory.\n");
-		goto err_unmap_qp;
-	}
-	dev_info(dev, "init IRRL hem table success.\n");
-
-	if (udma_dev->caps.trrl_entry_sz) {
-		ret = hns3_udma_init_hem_table(udma_dev,
-					       &udma_dev->qp_table.trrl_table,
-					       HEM_TYPE_TRRL,
-					       udma_dev->caps.trrl_entry_sz *
-					       udma_dev->caps.max_qp_dest_rdma,
-					       udma_dev->caps.num_qps);
-		if (ret) {
-			dev_err(dev, "Failed to init trrl_table memory.\n");
-			goto err_unmap_irrl;
-		}
-		dev_info(dev, "init TRRL hem table success.\n");
-	}
-
 	ret = hns3_udma_init_hem_table(udma_dev, &udma_dev->jfc_table.table,
 				       HEM_TYPE_CQC, udma_dev->caps.cqc_entry_sz,
 				       udma_dev->caps.num_cqs);
 	if (ret) {
 		dev_err(dev, "Failed to init CQ context memory.\n");
-		goto err_unmap_trrl;
+		goto err_unmap_qp;
 	}
 	dev_info(dev, "init CQC hem table success.\n");
 
@@ -934,12 +911,6 @@ err_unmap_srq:
 		hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->jfr_table.table);
 err_unmap_cq:
 	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->jfc_table.table);
-err_unmap_trrl:
-	if (udma_dev->caps.trrl_entry_sz)
-		hns3_udma_cleanup_hem_table(udma_dev,
-					    &udma_dev->qp_table.trrl_table);
-err_unmap_irrl:
-	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.irrl_table);
 err_unmap_qp:
 	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.qp_table);
 err_unmap_dmpt:
@@ -1000,11 +971,7 @@ void hns3_udma_cleanup_common_hem(struct hns3_udma_dev *udma_dev)
 	if (udma_dev->caps.flags & HNS3_UDMA_CAP_FLAG_SRQ)
 		hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->jfr_table.table);
 	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->jfc_table.table);
-	if (udma_dev->caps.trrl_entry_sz)
-		hns3_udma_cleanup_hem_table(udma_dev,
-					    &udma_dev->qp_table.trrl_table);
 
-	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.irrl_table);
 	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->qp_table.qp_table);
 	hns3_udma_cleanup_hem_table(udma_dev, &udma_dev->seg_table.table);
 }

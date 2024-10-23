@@ -252,8 +252,6 @@ struct hns3_udma_caps {
 	uint32_t		reserved_lkey;
 	int			mtpt_entry_sz;
 	int			qpc_sz;
-	int			irrl_entry_sz;
-	int			trrl_entry_sz;
 	int			cqc_entry_sz;
 	int			scc_ctx_sz;
 	int			qpc_timer_entry_sz;

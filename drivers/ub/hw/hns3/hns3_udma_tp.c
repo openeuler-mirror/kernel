@@ -552,6 +552,12 @@ int hns3_udma_modify_user_tp(struct ubcore_device *dev, uint32_t tpn,
 	unsigned long flags;
 	int ret;
 
+	if (attr->state != UBCORE_TP_STATE_RTS) {
+		dev_err(&dev->dev, "Invalid TP STATE %d, only supports TP STATE RTS.\n",
+			attr->state);
+		return -EINVAL;
+	}
+
 	xa_lock_irqsave(&udma_dev->qp_table.xa, flags);
 	qp = (struct hns3_udma_qp *)xa_load(&udma_dev->qp_table.xa, tpn);
 	if (qp)
