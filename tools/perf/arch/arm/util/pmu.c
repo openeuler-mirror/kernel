@@ -13,13 +13,11 @@
 #include "hisi-ptt.h"
 #include "../../../util/cpumap.h"
 #include "../../../util/pmu.h"
-#include "../../../util/cs-etm.h"
-#include "../../arm64/util/mem-events.h"
 
 struct perf_event_attr
 *perf_pmu__get_default_config(struct perf_pmu *pmu)
 {
-	        struct perf_cpu_map *intersect;
+	struct perf_cpu_map *intersect;
 
 #ifdef HAVE_AUXTRACE_SUPPORT
 	if (!strcmp(pmu->name, CORESIGHT_ETM_PMU_NAME)) {
@@ -32,10 +30,12 @@ struct perf_event_attr
 		pmu->selectable = true;
 #endif
 	}
+
 #endif
 	/* Workaround some ARM PMU's failing to correctly set CPU maps for online processors. */
-        intersect = perf_cpu_map__intersect(cpu_map__online(), pmu->cpus);
-        perf_cpu_map__put(pmu->cpus);
-        pmu->cpus = intersect;
+	intersect = perf_cpu_map__intersect(cpu_map__online(), pmu->cpus);
+	perf_cpu_map__put(pmu->cpus);
+	pmu->cpus = intersect;
 
+	return NULL;
 }

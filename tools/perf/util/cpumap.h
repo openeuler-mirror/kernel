@@ -36,14 +36,6 @@ static inline int cpu_map__socket(struct perf_cpu_map *sock, int s)
 }
 
 static inline int cpu_map__id_to_socket(int id)
-{	
-	return id >> 24;
-}
-
-/**
- * cpu_map__is_dummy - Events associated with a pid, rather than a CPU, use a single dummy map with an entry of -1.
- */
-static inline bool cpu_map__is_dummy(const struct perf_cpu_map *cpus)
 {
 	return id >> 24;
 }
