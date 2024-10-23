@@ -4,20 +4,11 @@
  */
 #ifndef _ARM_S_SMMU_V3_H
 #define _ARM_S_SMMU_V3_H
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 
 #include <linux/platform_device.h>
 #include <asm/kvm_tmi.h>
 #include <asm/virtcca_cvm_host.h>
-
-#define MAX_CC_DEV_NUM_ORDER    8
-#define MASK_DEV_FUNCTION       0xfff8
-#define MASK_DEV_BUS            0xff
-
-#define DEV_BUS_NUM             0x8
-#define DEV_FUNCTION_NUM        0x3
-
-#define STE_ENTRY_SIZE          0x40
 
 #define SMMU_PCIE_CORE_IS_VALID 0x1
 
@@ -168,17 +159,11 @@
 	result ? result : ((cond) ? 0 : -ETIMEDOUT); \
 })
 
-/* Has the root bus device number switched to secure */
-bool is_cc_dev(u32 sid);
-
 void virtcca_smmu_cmdq_write_entries(struct arm_smmu_device *smmu, u64 *cmds,
 	struct arm_smmu_ll_queue *llq, struct arm_smmu_queue *q,
 	int n, bool sync);
 bool virtcca_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg);
-u32 virtcca_smmu_tmi_dev_attach(struct arm_smmu_domain *arm_smmu_domain,
-	struct kvm *kvm);
 void _arm_smmu_write_msi_msg(struct msi_desc *desc, struct msi_msg *msg);
-int virtcca_smmu_secure_dev_operator(struct iommu_domain *domain, struct device *dev);
 void virtcca_smmu_device_init(struct platform_device *pdev,
 	struct arm_smmu_device *smmu, resource_size_t ioaddr, bool resume, bool disable_bypass);
 

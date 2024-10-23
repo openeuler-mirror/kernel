@@ -25,6 +25,7 @@
 #define VFIO_TYPE1_IOMMU		1
 #define VFIO_SPAPR_TCE_IOMMU		2
 #define VFIO_TYPE1v2_IOMMU		3
+#define VFIO_TYPE1v2_S_IOMMU		12	/* Virtcca feature: secure iommu */
 /*
  * IOMMU enforces DMA cache coherence (ex. PCIe NoSnoop stripping).  This
  * capability is subject to change as groups are added or removed.
@@ -224,6 +225,7 @@ struct vfio_device_info {
 #define VFIO_DEVICE_FLAGS_FSL_MC (1 << 6)	/* vfio-fsl-mc device */
 #define VFIO_DEVICE_FLAGS_CAPS	(1 << 7)	/* Info supports caps */
 #define VFIO_DEVICE_FLAGS_CDX	(1 << 8)	/* vfio-cdx device */
+#define VFIO_DEVICE_FLAGS_SECURE (1 << 15)	/* vfio-secure device */
 	__u32	num_regions;	/* Max region index + 1 */
 	__u32	num_irqs;	/* Max IRQ index + 1 */
 	__u32   cap_offset;	/* Offset within info struct of first cap */

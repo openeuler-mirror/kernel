@@ -4,21 +4,13 @@
  */
 #include <linux/iopoll.h>
 #include <linux/pci.h>
+#include <asm/virtcca_coda.h>
 
 #include "arm-smmu-v3.h"
 #include "arm-s-smmu-v3.h"
 
-struct cc_dev_config {
-	u32               sid; /* BDF number of the device */
-	u32               vmid; /* virtual machine id */
-	u32               root_bd; /* root bus and device number. */
-	bool              secure; /* device secure attribute */
-	struct hlist_node node; /* device hash table */
-};
-
 static bool g_s_smmu_id_map_init;
 
-static DEFINE_HASHTABLE(g_cc_dev_htable, MAX_CC_DEV_NUM_ORDER);
 static DECLARE_BITMAP(g_s_smmu_id_map, ARM_S_SMMU_MAX_IDS);
 
 /*
@@ -53,194 +45,6 @@ static inline void virtcca_smmu_set_irq(struct arm_smmu_device *smmu)
 	smmu->s_evtq_irq = msi_get_virq(smmu->dev, S_EVTQ_MSI_INDEX);
 	smmu->s_gerr_irq = msi_get_virq(smmu->dev, S_GERROR_MSI_INDEX);
 }
-
-/**
- * get_root_bd - Traverse pcie topology to find the root <bus,device> number
- * @dev: The device for which to get root bd
- *
- * Returns:
- * %-1 if error or not pci device
- */
-static int get_root_bd(struct device *dev)
-{
-	struct pci_dev *pdev;
-
-	if (!dev_is_pci(dev))
-		return -1;
-	pdev = to_pci_dev(dev);
-	if (pdev->bus == NULL)
-		return -1;
-	while (pdev->bus->parent != NULL)
-		pdev = pdev->bus->self;
-
-	return pci_dev_id(pdev) & MASK_DEV_FUNCTION;
-}
-
-/**
- * get_child_devices_rec - Traverse pcie topology to find child devices
- * If dev is a bridge, get it's children
- * If dev is a regular device, get itself
- * @dev: Device for which to get child devices
- * @devs: All child devices under input dev
- * @max_devs: Max num of devs
- * @ndev: Num of child devices
- */
-static void get_child_devices_rec(struct pci_dev *dev, uint16_t *devs,
-	int max_devs, int *ndev)
-{
-	struct pci_bus *bus = dev->subordinate;
-
-	if (bus) { /* dev is a bridge */
-		struct pci_dev *child;
-
-		list_for_each_entry(child, &bus->devices, bus_list) {
-			get_child_devices_rec(child, devs, max_devs, ndev);
-		}
-	} else { /* dev is a regular device */
-		uint16_t bdf = pci_dev_id(dev);
-		int i;
-		/* check if bdf is already in devs */
-		for (i = 0; i < *ndev; i++) {
-			if (devs[i] == bdf)
-				return;
-		}
-		/* check overflow */
-		if (*ndev >= max_devs) {
-			pr_warn("S_SMMU: devices num over max devs\n");
-			return;
-		}
-		devs[*ndev] = bdf;
-		*ndev = *ndev + 1;
-	}
-}
-
-/**
- * get_sibling_devices - Get all devices which share the same root_bd as dev
- * @dev: Device for which to get child devices
- * @devs: All child devices under input dev
- * @max_devs: Max num of devs
- *
- * Returns:
- * %0 if get child devices failure
- */
-static int get_sibling_devices(struct device *dev, uint16_t *devs, int max_devs)
-{
-	struct pci_dev *pdev;
-	int ndev = 0;
-
-	if (!dev_is_pci(dev))
-		return ndev;
-
-	pdev = to_pci_dev(dev);
-	if (pdev->bus == NULL)
-		return ndev;
-
-	while (pdev->bus->parent != NULL)
-		pdev = pdev->bus->self;
-
-	get_child_devices_rec(pdev, devs, max_devs, &ndev);
-	return ndev;
-}
-
-/**
- * add_cc_dev_obj - Add device obj to hash tablse
- * @sid: Stream id of device
- * @vmid: Virtual machine id
- * @root_bd: Root port bus device num
- * @secure: Whether the device is secure or not
- *
- * Returns:
- * %0 if add obj success
- * %-ENOMEM if alloc obj failed
- */
-static int add_cc_dev_obj(u32 sid, u32 vmid, u32 root_bd, bool secure)
-{
-	struct cc_dev_config *obj;
-
-	hash_for_each_possible(g_cc_dev_htable, obj, node, sid) {
-		if (obj->sid == sid) {
-			obj->vmid = vmid;
-			obj->root_bd = root_bd;
-			obj->secure = secure;
-			return 0;
-		}
-	}
-
-	obj = kzalloc(sizeof(*obj), GFP_KERNEL);
-	if (!obj)
-		return -ENOMEM;
-
-	obj->sid = sid;
-	obj->vmid = vmid;
-	obj->root_bd = root_bd;
-	obj->secure = secure;
-
-	hash_add(g_cc_dev_htable, &obj->node, sid);
-	return 0;
-}
-
-/**
- * is_cc_root_bd - Whether the root port is secure or not
- * @root_bd: Root port bus device num
- *
- * Returns:
- * %true if the root bd is secure
- * %false if the root bd is non-secure
- */
-static bool is_cc_root_bd(u32 root_bd)
-{
-	int bkt;
-	struct cc_dev_config *obj;
-
-	hash_for_each(g_cc_dev_htable, bkt, obj, node) {
-		if (obj->root_bd == root_bd && obj->secure)
-			return true;
-	}
-
-	return false;
-}
-
-/**
- * is_cc_vmid - Whether the vm is confidential vm
- * @vmid: Virtual machine id
- *
- * Returns:
- * %true if the vm is confidential
- * %false if the vm is not confidential
- */
-static bool is_cc_vmid(u32 vmid)
-{
-	int bkt;
-	struct cc_dev_config *obj;
-
-	hash_for_each(g_cc_dev_htable, bkt, obj, node) {
-		if (vmid > 0 && obj->vmid == vmid)
-			return true;
-	}
-
-	return false;
-}
-
-/**
- * is_cc_dev - Whether the stream id of dev is confidential
- * @sid: Stream id of dev
- *
- * Returns:
- * %true if the dev is confidential
- * %false if the dev is not confidential
- */
-bool is_cc_dev(u32 sid)
-{
-	struct cc_dev_config *obj;
-
-	hash_for_each_possible(g_cc_dev_htable, obj, node, sid) {
-		if (obj != NULL && obj->sid == sid)
-			return obj->secure;
-	}
-
-	return false;
-}
-EXPORT_SYMBOL(is_cc_dev);
 
 /**
  * virtcca_smmu_cmdq_need_forward - Whether the cmd queue need transfer to secure world
@@ -401,7 +205,6 @@ static void virtcca_smmu_init_one_queue(struct arm_smmu_device *smmu,
 
 	qsz = ((1 << q->llq.max_n_shift) * dwords) << ARM_S_QUEUE_SHIFT_SIZE;
 	if (!strcmp(name, "cmdq")) {
-		params_ptr->ns_src = q->base_dma;
 		params_ptr->smmu_base_addr = smmu->ioaddr;
 		params_ptr->size = qsz;
 		params_ptr->smmu_id = smmu->s_smmu_id;
@@ -410,7 +213,6 @@ static void virtcca_smmu_init_one_queue(struct arm_smmu_device *smmu,
 	}
 
 	if (!strcmp(name, "evtq")) {
-		params_ptr->ns_src = q->base_dma;
 		params_ptr->smmu_base_addr = smmu->ioaddr;
 		params_ptr->size = qsz;
 		params_ptr->smmu_id = smmu->s_smmu_id;
@@ -634,217 +436,6 @@ static void platform_get_s_irq_byname_optional(struct platform_device *pdev,
 }
 
 /**
- * virtcca_smmu_tmi_dev_attach - Complete the stage2 page table establishment
- * for the security device
- * @arm_smmu_domain: The handle of smmu domain
- * @kvm: The handle of virtual machine
- *
- * Returns:
- * %0 if attach dev success
- * %-ENXIO if the root port of device does not have pcipc capability
- */
-u32 virtcca_smmu_tmi_dev_attach(struct arm_smmu_domain *arm_smmu_domain, struct kvm *kvm)
-{
-	unsigned long flags;
-	int i, j;
-	struct arm_smmu_master *master;
-	int ret = 0;
-	u64 cmd[CMDQ_ENT_DWORDS] = {0};
-	struct virtcca_cvm *virtcca_cvm = (struct virtcca_cvm *)kvm->arch.virtcca_cvm;
-
-	spin_lock_irqsave(&arm_smmu_domain->devices_lock, flags);
-	/*
-	 * Traverse all devices under the secure smmu domain and
-	 * set the correspnding address translation table for each device
-	 */
-	list_for_each_entry(master, &arm_smmu_domain->devices, domain_head) {
-		if (master && master->num_streams >= 0) {
-			for (i = 0; i < master->num_streams; i++) {
-				u32 sid = master->streams[i].id;
-
-				for (j = 0; j < i; j++)
-					if (master->streams[j].id == sid)
-						break;
-				if (j < i)
-					continue;
-				ret = tmi_dev_attach(sid, virtcca_cvm->rd,
-					arm_smmu_domain->smmu->s_smmu_id);
-				if (ret) {
-					dev_err(arm_smmu_domain->smmu->dev, "S_SMMU: dev protected failed!\n");
-					ret = -ENXIO;
-					goto out;
-				}
-				/* Need to config ste */
-				cmd[0] |= FIELD_PREP(CMDQ_0_OP, CMDQ_OP_CFGI_STE);
-				cmd[0] |= FIELD_PREP(CMDQ_CFGI_0_SID, sid);
-				cmd[1] |= FIELD_PREP(CMDQ_CFGI_1_LEAF, true);
-				tmi_smmu_queue_write(cmd[0], cmd[1],
-					arm_smmu_domain->smmu->s_smmu_id);
-			}
-		}
-	}
-
-out:
-	spin_unlock_irqrestore(&arm_smmu_domain->devices_lock, flags);
-	return ret;
-}
-
-/**
- * virtcca_smmu_secure_dev_ste_create - Setting up the STE config content
- * for the security device
- * @smmu: An SMMUv3 instance
- * @master: SMMU private data for each master
- * @sid: Stream id of device
- *
- * Returns:
- * %0 if create ste success
- * %-ENOMEM alloc ste params failed
- * %-EINVAL set ste config content failed
- */
-static int virtcca_smmu_secure_dev_ste_create(struct arm_smmu_device *smmu,
-	struct arm_smmu_master *master, u32 sid)
-{
-	struct tmi_smmu_ste_params *params_ptr;
-	struct arm_smmu_strtab_cfg *cfg = &smmu->strtab_cfg;
-	struct arm_smmu_strtab_l1_desc *desc = &cfg->l1_desc[sid >> STRTAB_SPLIT];
-
-	params_ptr = kzalloc(sizeof(*params_ptr), GFP_KERNEL);
-	if (!params_ptr)
-		return -ENOMEM;
-
-	/* Sync Level 2 STE to TMM */
-	params_ptr->ns_src = desc->l2ptr_dma + ((sid & ((1 << STRTAB_SPLIT) - 1)) * STE_ENTRY_SIZE);
-	params_ptr->sid = sid;
-	params_ptr->smmu_id = smmu->s_smmu_id;
-
-	if (tmi_smmu_ste_create(__pa(params_ptr)) != 0) {
-		kfree(params_ptr);
-		dev_err(smmu->dev, "S_SMMU: failed to create ste level 2\n");
-		return -EINVAL;
-	}
-
-	kfree(params_ptr);
-
-	return 0;
-}
-
-/**
- * add_secure_dev_to_cc_table - Add secure device to hash table
- * @smmu: An SMMUv3 instance
- * @smmu_domain: The handle of smmu_domain
- * @root_bd: The port where the secure device is located
- * @master: SMMU private data for each master
- *
- * Returns:
- * %0 if add to hash table success
- * %-ENOMEM if alloc obj failed
- * %-EINVAL if stream id is invalid
- */
-static inline int add_secure_dev_to_cc_table(struct arm_smmu_device *smmu,
-	struct arm_smmu_domain *smmu_domain, uint16_t root_bd, struct arm_smmu_master *master)
-{
-	int i, j;
-	u64 ret = 0;
-
-	for (i = 0; i < master->num_streams; i++) {
-		u32 sid = master->streams[i].id;
-
-		for (j = 0; j < i; j++)
-			if (master->streams[j].id == sid)
-				break;
-		if (j < i)
-			continue;
-		if (!is_cc_dev(sid)) {
-			dev_err(smmu->dev, "S_SMMU: sid is not cc dev\n");
-			return -EINVAL;
-		}
-		ret = add_cc_dev_obj(sid, smmu_domain->s2_cfg.vmid, root_bd, true);
-		if (ret)
-			break;
-	}
-	return ret;
-}
-
-/**
- * virtcca_delegate_secure_dev - Delegate device to secure state
- * @smmu: An SMMUv3 instance
- * @root_bd: The port where the secure device is located
- * @dev: Secure device
- *
- * Returns:
- * %0 if delegate success
- * %-ENOMEM if alloc params failed
- * %-EINVAL if the dev is invalid
- */
-static inline int virtcca_delegate_secure_dev(uint16_t root_bd, struct arm_smmu_device *smmu,
-	struct device *dev)
-{
-	int i;
-	u64 ret = 0;
-	struct tmi_dev_delegate_params *params = NULL;
-
-	params = kzalloc(sizeof(*params), GFP_KERNEL);
-	if (!params)
-		return -ENOMEM;
-
-	params->root_bd = root_bd;
-	params->num_dev = get_sibling_devices(dev, params->devs, MAX_DEV_PER_PORT);
-	if (params->num_dev >= MAX_DEV_PER_PORT) {
-		ret = -EINVAL;
-		goto out;
-	}
-
-	dev_info(smmu->dev, "S_SMMU: Delegate %d devices as %02x:%02x to secure\n",
-			params->num_dev, root_bd >> DEV_BUS_NUM,
-			(root_bd & MASK_DEV_BUS) >> DEV_FUNCTION_NUM);
-	ret = tmi_dev_delegate(__pa(params));
-	if (ret) {
-		dev_err(smmu->dev, "S_SMMU: failed to delegate device to secure\n");
-		goto out;
-	}
-
-	for (i = 0; i < params->num_dev; i++) {
-		ret = add_cc_dev_obj(params->devs[i], 0, root_bd, true);
-		if (ret)
-			break;
-	}
-
-out:
-	kfree(params);
-	return ret;
-}
-
-/**
- * virtcca_enable_secure_dev - Enable the PCIe protection controller function
- * of the security device
- * @smmu_domain: The handle of smmu_domain
- * @master: SMMU private data for each master
- * @dev: Secure device
- *
- * Returns:
- * %0 if the root port of secure dev successfully set up pcipc capability
- * %-ENOMEM alloc ste params failed
- * %-EINVAL set ste config content failed
- */
-static int virtcca_enable_secure_dev(struct arm_smmu_domain *smmu_domain,
-	struct arm_smmu_master *master, struct device *dev)
-{
-	u64 ret = 0;
-	uint16_t root_bd = get_root_bd(dev);
-	struct arm_smmu_device *smmu = smmu_domain->smmu;
-
-	if (!is_cc_root_bd(root_bd)) {
-		ret = virtcca_delegate_secure_dev(root_bd, smmu, dev);
-		if (ret)
-			return ret;
-	}
-
-	ret = add_secure_dev_to_cc_table(smmu, smmu_domain, root_bd, master);
-
-	return ret;
-}
-
-/**
  * virtcca_smmu_write_msi_msg - Write secure smmu msi msg
  * @desc: Descriptor structure for MSI based interrupts
  * @msg: Representation of a MSI message
@@ -946,41 +537,15 @@ static void virtcca_smmu_setup_unique_irqs(struct arm_smmu_device *smmu, bool re
 }
 
 /**
- * _arm_smmu_write_reg_sync - Write value to smmu registers and wait for completion
- * @smmu: An SMMUv3 instance
- * @val: Expected value to be written
- * @reg_off: Offset of object register
- * @ack_off: Acknowledge offset of object register
- *
- * Returns:
- * %0 if write success
- */
-static int _arm_smmu_write_reg_sync(struct arm_smmu_device *smmu, u32 val,
-	u32 reg_off, u32 ack_off)
-{
-	u32 reg;
-
-	writel_relaxed(val, smmu->base + reg_off);
-	return readl_relaxed_poll_timeout(smmu->base + ack_off, reg, reg == val,
-					  1, ARM_SMMU_POLL_TIMEOUT_US);
-}
-
-/**
  * virtcca_smmu_setup_irqs - Initialize the smmu irq
  * @smmu: An SMMUv3 instance
  * @resume: Resume or not
  */
 static void virtcca_smmu_setup_irqs(struct arm_smmu_device *smmu, bool resume)
 {
-	int irq, ret;
+	int irq;
 	u32 irqen_flags = IRQ_CTRL_EVTQ_IRQEN | IRQ_CTRL_GERROR_IRQEN;
 
-	ret = _arm_smmu_write_reg_sync(smmu, 0, ARM_SMMU_IRQ_CTRL,
-				      ARM_SMMU_IRQ_CTRLACK);
-	if (ret) {
-		dev_err(smmu->dev, "S_SMMU: failed to disable irqs\n");
-		return;
-	}
 	/* Disable IRQs first */
 	virtcca_smmu_disable_irq(smmu);
 
@@ -990,12 +555,6 @@ static void virtcca_smmu_setup_irqs(struct arm_smmu_device *smmu, bool resume)
 
 	if (smmu->features & ARM_SMMU_FEAT_PRI)
 		irqen_flags |= IRQ_CTRL_PRIQ_IRQEN;
-
-	/* Enable interrupt generation on the SMMU */
-	ret = _arm_smmu_write_reg_sync(smmu, irqen_flags,
-		ARM_SMMU_IRQ_CTRL, ARM_SMMU_IRQ_CTRLACK);
-	if (ret)
-		dev_warn(smmu->dev, "S_SMMU: failed to enable irqs\n");
 
 	virtcca_smmu_enable_irq(smmu, IRQ_CTRL_EVTQ_IRQEN | IRQ_CTRL_GERROR_IRQEN);
 }
@@ -1026,11 +585,11 @@ static int virtcca_smmu_id_alloc(void)
  * %true if the smmu need to initialize secure state
  * %false the smmu does not need to initialize secure state
  */
-static bool virtcca_smmu_map_init(struct arm_smmu_device *smmu, resource_size_t ioaddr)
+bool virtcca_smmu_map_init(struct arm_smmu_device *smmu, resource_size_t ioaddr)
 {
 	if (!g_s_smmu_id_map_init) {
 		set_bit(0, g_s_smmu_id_map);
-		hash_init(g_cc_dev_htable);
+		g_cc_dev_table_init();
 		g_s_smmu_id_map_init = true;
 	}
 	smmu->ioaddr = ioaddr;
@@ -1043,6 +602,7 @@ static bool virtcca_smmu_map_init(struct arm_smmu_device *smmu, resource_size_t 
 	smmu->s_smmu_id = ARM_S_SMMU_INVALID_ID;
 	return false;
 }
+EXPORT_SYMBOL_GPL(virtcca_smmu_map_init);
 
 /**
  * arm_s_smmu_device_enable - Enable the smmu secure state
@@ -1106,71 +666,12 @@ static bool arm_s_smmu_idr1_support_secure(struct arm_smmu_device *smmu)
 	}
 
 	if (!(rv & S_IDR1_SEL2)) {
-		dev_err(smmu->dev, "S_SMMU: secure stage2 translation not supported!\n");
+		dev_err(smmu->dev, "S_SMMU: secure stage2 translation is not supported!\n");
 		smmu->s_smmu_id = ARM_S_SMMU_INVALID_ID;
 		return false;
 	}
 	dev_info(smmu->dev, "S_SMMU: secure smmu id:%lld start init!\n", smmu->s_smmu_id);
 	return true;
-}
-
-/**
- * virtcca_smmu_secure_dev_operator - Implement security settings for corresponding devices
- * targeting the secure smmu domain
- * @domain: The handle of iommu_domain
- * @dev: Secure device
- *
- * Returns:
- * %0 if the domain does not need to enable secure or the domain
- * successfully set up security features
- * %-EINVAL if the smmu does not initialize secure state
- * %-ENOMEM if the device create secure ste failed
- * %-ENOENT if the device does not have fwspec
- */
-int virtcca_smmu_secure_dev_operator(struct iommu_domain *domain, struct device *dev)
-{
-	int i, j;
-	int ret;
-	struct iommu_fwspec *fwspec = NULL;
-	struct arm_smmu_device *smmu = NULL;
-	struct arm_smmu_domain *smmu_domain = NULL;
-	struct arm_smmu_master *master = NULL;
-
-	if (!is_virtcca_cvm_enable())
-		return 0;
-
-	fwspec = dev_iommu_fwspec_get(dev);
-	if (!fwspec)
-		return -ENOENT;
-
-	smmu_domain = to_smmu_domain(domain);
-	master = dev_iommu_priv_get(dev);
-	smmu = master->smmu;
-
-	if (!smmu && !virtcca_smmu_enable(smmu)) {
-		dev_err(smmu->dev, "S_SMMU: security smmu not initialized for the device\n");
-		return -EINVAL;
-	}
-
-	ret = virtcca_enable_secure_dev(smmu_domain, master, dev);
-	if (ret)
-		return ret;
-
-	for (i = 0; i < master->num_streams; i++) {
-		u32 sid = master->streams[i].id;
-		/* Bridged PCI devices may end up with duplicated IDs */
-		for (j = 0; j < i; j++)
-			if (master->streams[j].id == sid)
-				break;
-		if (j < i)
-			continue;
-		if (virtcca_smmu_secure_dev_ste_create(smmu, master, sid))
-			return -ENOMEM;
-	}
-
-	dev_info(smmu->dev, "S_SMMU: attach confidential dev: %s", dev_name(dev));
-
-	return ret;
 }
 
 /**
@@ -1204,9 +705,18 @@ void virtcca_smmu_device_init(struct platform_device *pdev, struct arm_smmu_devi
 	if (!virtcca_smmu_enable(smmu) || !arm_s_smmu_idr1_support_secure(smmu))
 		return;
 
+	/*
+	 * S_SMMU implementation doesn't support unique irq lines,
+	 * use a single irq line for all the S_SMMU interrupts.
+	 */
 	irq = platform_get_irq_byname_optional(pdev, "combined");
-	if (irq <= 0)
+	if (irq <= 0) {
 		platform_get_s_irq_byname_optional(pdev, smmu);
+	} else {
+		dev_err(smmu->dev, "S_SMMU: virtcca does not support combined irq\n");
+		smmu->s_smmu_id = ARM_S_SMMU_INVALID_ID;
+		return;
+	}
 
 	/* Create cmd queue */
 	virtcca_smmu_init_one_queue(smmu, &smmu->cmdq.q, CMDQ_ENT_DWORDS, "cmdq");

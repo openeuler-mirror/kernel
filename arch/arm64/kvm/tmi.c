@@ -6,6 +6,37 @@
 #include <asm/kvm_tmi.h>
 #include <asm/memory.h>
 
+/**
+ * mmio_va_to_pa - To convert the virtual address of the mmio space
+ * to a physical address, it is necessary to implement this interface
+ * because the kernel insterface __pa has an error when converting the
+ * physical address of the virtual address of the mmio space
+ * @addr:	MMIO virtual address
+ */
+u64 mmio_va_to_pa(void *addr)
+{
+	uint64_t pa, par_el1;
+
+	asm volatile(
+		"AT S1E1W, %0\n"
+		::"r"((uint64_t)(addr))
+	);
+	isb();
+	asm volatile(
+		"mrs %0, par_el1\n"
+		: "=r"(par_el1)
+	);
+
+	pa = ((uint64_t)(addr) & (PAGE_SIZE - 1)) |
+		(par_el1 & ULL(0x000ffffffffff000));
+
+	if (par_el1 & UL(1 << 0))
+		return (uint64_t)(addr);
+	else
+		return pa;
+}
+EXPORT_SYMBOL(mmio_va_to_pa);
+
 u64 tmi_version(void)
 {
 	struct arm_smccc_res res;
@@ -308,4 +339,13 @@ u64 tmi_smmu_read(u64 smmu_base, u64 reg_offset, u64 bits)
 	return res.a1;
 }
 EXPORT_SYMBOL(tmi_smmu_read);
+
+/* Create device ttt */
+u64 tmi_dev_ttt_create(u64 numa_set, u64 rd, u64 map_addr, u64 level)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(TMI_TMM_DEV_TTT_CREATE, numa_set, rd, map_addr, level, &res);
+	return res.a1;
+}
 

@@ -13,6 +13,10 @@
 #include "../pci.h"
 #include "msi.h"
 
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+#include <asm/virtcca_cvm_host.h>
+#endif
+
 int pci_msi_enable = 1;
 int pci_msi_ignore_mask;
 
@@ -159,6 +163,10 @@ void __pci_read_msi_msg(struct msi_desc *entry, struct msi_msg *msg)
 		if (WARN_ON_ONCE(entry->pci.msi_attrib.is_virtual))
 			return;
 
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+		if (is_virtcca_cvm_enable() && dev != NULL && is_cc_dev(pci_dev_id(dev)))
+			return virtcca_pci_read_msi_msg(dev, msg, base);
+#endif
 		msg->address_lo = readl(base + PCI_MSIX_ENTRY_LOWER_ADDR);
 		msg->address_hi = readl(base + PCI_MSIX_ENTRY_UPPER_ADDR);
 		msg->data = readl(base + PCI_MSIX_ENTRY_DATA);
@@ -221,6 +229,10 @@ static inline void pci_write_msg_msix(struct msi_desc *desc, struct msi_msg *msg
 	if (unmasked)
 		pci_msix_write_vector_ctrl(desc, ctrl | PCI_MSIX_ENTRY_CTRL_MASKBIT);
 
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	if (is_virtcca_cvm_enable() && virtcca_pci_write_msg_msi(desc, msg))
+		return;
+#endif
 	writel(msg->address_lo, base + PCI_MSIX_ENTRY_LOWER_ADDR);
 	writel(msg->address_hi, base + PCI_MSIX_ENTRY_UPPER_ADDR);
 	writel(msg->data, base + PCI_MSIX_ENTRY_DATA);
@@ -639,6 +651,10 @@ void msix_prepare_msi_desc(struct pci_dev *dev, struct msi_desc *desc)
 	if (desc->pci.msi_attrib.can_mask) {
 		void __iomem *addr = pci_msix_desc_addr(desc);
 
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+		if (is_virtcca_cvm_enable() && is_cc_dev(pci_dev_id(dev)))
+			return virtcca_msix_prepare_msi_desc(dev, desc, addr);
+#endif
 		desc->pci.msix_ctrl = readl(addr + PCI_MSIX_ENTRY_VECTOR_CTRL);
 	}
 }
@@ -776,6 +792,10 @@ static int msix_capability_init(struct pci_dev *dev, struct msix_entry *entries,
 	 * which takes the MSI-X mask bits into account even
 	 * when MSI-X is disabled, which prevents MSI delivery.
 	 */
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	if (is_virtcca_cvm_enable() && is_cc_dev(pci_dev_id(dev)))
+		return virtcca_msix_mask_all_cc(dev, dev->msix_base, tsize, pci_dev_id(dev));
+#endif
 	msix_mask_all(dev->msix_base, tsize);
 	pci_msix_clear_and_set_ctrl(dev, PCI_MSIX_FLAGS_MASKALL, 0);
 

@@ -13,7 +13,7 @@
 #include <linux/kernel.h>
 #include <linux/mmzone.h>
 #include <linux/sizes.h>
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 #include <linux/kvm_host.h>
 #endif
 
@@ -757,7 +757,7 @@ struct arm_smmu_device {
 
 	bool				bypass;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	int				s_evtq_irq;
 	int				s_gerr_irq;
 	resource_size_t			ioaddr;
@@ -816,7 +816,7 @@ struct arm_smmu_domain {
 
 	struct list_head		mmu_notifiers;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	struct list_head		node;
 	struct kvm			*kvm;
 #endif

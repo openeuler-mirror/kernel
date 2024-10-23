@@ -1,0 +1,8 @@
+config HISI_VIRTCCA_CODA
+	bool "Support for virtCCA Confidential Device Assignment"
+	default y
+	depends on HISI_VIRTCCA_HOST
+	help
+	  Support VIRTCCA Device Assignment based on S-EL2
+
+	  If unsure, say Y.

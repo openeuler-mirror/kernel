@@ -249,4 +249,6 @@ source "drivers/cpuinspect/Kconfig"
 
 source "drivers/roh/Kconfig"
 
+source "drivers/coda/Kconfig"
+
 endmenu

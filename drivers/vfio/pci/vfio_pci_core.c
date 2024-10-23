@@ -31,6 +31,9 @@
 #if IS_ENABLED(CONFIG_EEH)
 #include <asm/eeh.h>
 #endif
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+#include <asm/kvm_tmi.h>
+#endif
 
 #include "vfio_pci_priv.h"
 
@@ -972,6 +975,10 @@ static int vfio_pci_ioctl_get_info(struct vfio_pci_core_device *vdev,
 
 	if (vdev->reset_works)
 		info.flags |= VFIO_DEVICE_FLAGS_RESET;
+
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	virtcca_cvm_set_secure_flag((void *)vdev, (void *)&info);
+#endif
 
 	info.num_regions = VFIO_PCI_NUM_REGIONS + vdev->num_regions;
 	info.num_irqs = VFIO_PCI_NUM_IRQS;

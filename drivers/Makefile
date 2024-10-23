@@ -203,3 +203,5 @@ obj-$(CONFIG_CDX_BUS)		+= cdx/
 obj-$(CONFIG_S390)		+= s390/
 
 obj-$(CONFIG_ROH)		+= roh/
+
+obj-$(CONFIG_HISI_VIRTCCA_CODA)	+= coda/

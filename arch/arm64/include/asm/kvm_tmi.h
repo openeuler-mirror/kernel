@@ -83,7 +83,6 @@ struct tmi_smmu_cfg_params {
 #define TMI_SMMU_CMD_QUEUE  1
 #define TMI_SMMU_EVT_QUEUE  2
 struct tmi_smmu_queue_params {
-	uint64_t ns_src;     /* non-secure queue source address */
 	uint64_t smmu_base_addr;       /* smmu base address */
 	uint64_t size;       /* queue size */
 	uint64_t smmu_id;    /* smmu id */
@@ -247,6 +246,7 @@ struct tmi_tec_run {
 #define TMI_FNUM_SMMU_WRITE             U(0x282)
 #define TMI_FNUM_SMMU_READ              U(0x283)
 #define TMI_FNUM_SMMU_PCIE_CORE_CHECK   U(0x284)
+#define TMI_FNUM_DEV_TTT_CREATE         U(0x285)
 
 /* TMI SMC64 PIDs handled by the SPMD */
 #define TMI_TMM_VERSION_REQ             TMI_FID(SMC_64, TMI_FNUM_VERSION_REQ)
@@ -280,6 +280,7 @@ struct tmi_tec_run {
 #define TMI_TMM_SMMU_WRITE              TMI_FID(SMC_64, TMI_FNUM_SMMU_WRITE)
 #define TMI_TMM_SMMU_READ               TMI_FID(SMC_64, TMI_FNUM_SMMU_READ)
 #define TMI_TMM_SMMU_PCIE_CORE_CHECK    TMI_FID(SMC_64, TMI_FNUM_SMMU_PCIE_CORE_CHECK)
+#define TMI_TMM_DEV_TTT_CREATE          TMI_FID(SMC_64, TMI_FNUM_DEV_TTT_CREATE)
 
 #define TMI_ABI_VERSION_GET_MAJOR(_version) ((_version) >> 16)
 #define TMI_ABI_VERSION_GET_MINOR(_version) ((_version) & 0xFFFF)
@@ -381,6 +382,7 @@ u64 tmi_ttt_map_range(u64 rd, u64 map_addr, u64 size, u64 cur_node, u64 target_n
 u64 tmi_ttt_unmap_range(u64 rd, u64 map_addr, u64 size, u64 node_id);
 u64 tmi_mem_info_show(u64 mem_info_addr);
 
+u64 tmi_dev_ttt_create(u64 numa_set, u64 rd, u64 map_addr, u64 level);
 u64 tmi_smmu_queue_create(u64 params_ptr);
 u64 tmi_smmu_queue_write(uint64_t cmd0, uint64_t cmd1, u64 smmu_id);
 u64 tmi_smmu_ste_create(u64 params_ptr);
@@ -396,6 +398,7 @@ u64 tmi_smmu_pcie_core_check(u64 smmu_base);
 u64 tmi_smmu_write(u64 smmu_base, u64 reg_offset, u64 val, u64 bits);
 u64 tmi_smmu_read(u64 smmu_base, u64 reg_offset, u64 bits);
 
+u64 mmio_va_to_pa(void *addr);
 void kvm_cvm_vcpu_put(struct kvm_vcpu *vcpu);
 int kvm_load_user_data(struct kvm *kvm, unsigned long arg);
 unsigned long cvm_psci_vcpu_affinity_info(struct kvm_vcpu *vcpu,
@@ -404,6 +407,8 @@ int kvm_cvm_vcpu_set_events(struct kvm_vcpu *vcpu,
 	bool serror_pending, bool ext_dabt_pending);
 int kvm_init_cvm_vm(struct kvm *kvm);
 int kvm_enable_virtcca_cvm(struct kvm *kvm);
-
+int kvm_cvm_map_ipa(struct kvm *kvm, phys_addr_t ipa, kvm_pfn_t pfn,
+	unsigned long map_size, enum kvm_pgtable_prot prot, int ret);
+void virtcca_cvm_set_secure_flag(void *vdev, void *info);
 #endif
 #endif

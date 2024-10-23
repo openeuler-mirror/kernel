@@ -19,7 +19,9 @@
 #include <asm/kvm_asm.h>
 #include <asm/kvm_emulate.h>
 #include <asm/virt.h>
-
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+#include <asm/kvm_tmi.h>
+#endif
 #include "trace.h"
 
 static struct kvm_pgtable *hyp_pgtable;
@@ -871,7 +873,7 @@ int kvm_init_stage2_mmu(struct kvm *kvm, struct kvm_s2_mmu *mmu, unsigned long t
 	u64 mmfr0, mmfr1;
 	u32 phys_shift;
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	if ((type & ~KVM_VM_TYPE_ARM_IPA_SIZE_MASK) && (!kvm_is_virtcca_cvm(kvm)))
 #else
 	if (type & ~KVM_VM_TYPE_ARM_IPA_SIZE_MASK)
@@ -1418,7 +1420,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 
 	fault_granule = 1UL << ARM64_HW_PGTABLE_LEVEL_SHIFT(fault_level);
 	write_fault = kvm_is_write_fault(vcpu);
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 	if (vcpu_is_tec(vcpu)) {
 		write_fault = true;
 		prot = KVM_PGTABLE_PROT_R | KVM_PGTABLE_PROT_W;
@@ -1605,6 +1607,10 @@ static int user_mem_abort(struct kvm_vcpu *vcpu, phys_addr_t fault_ipa,
 					     memcache,
 					     KVM_PGTABLE_WALK_HANDLE_FAULT |
 					     KVM_PGTABLE_WALK_SHARED);
+
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+	ret = kvm_cvm_map_ipa(kvm, fault_ipa, pfn, vma_pagesize, prot, ret);
+#endif
 
 	/* Mark the page dirty only if the fault is handled successfully */
 	if (writable && !ret) {

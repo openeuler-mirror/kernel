@@ -221,7 +221,7 @@ int platform_msi_domain_alloc_irqs(struct device *dev, unsigned int nvec,
 }
 EXPORT_SYMBOL_GPL(platform_msi_domain_alloc_irqs);
 
-#ifdef CONFIG_HISI_VIRTCCA_HOST
+#ifdef CONFIG_HISI_VIRTCCA_CODA
 /**
  * platform_msi_domain_alloc_range_irqs - Allocate specific scope MSI interrupts for @dev
  * @dev:	The device for which to allocate interrupts

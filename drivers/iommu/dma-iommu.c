@@ -1913,3 +1913,24 @@ static int iommu_dma_init(void)
 	return iova_cache_get();
 }
 arch_initcall(iommu_dma_init);
+
+#ifdef CONFIG_HISI_VIRTCCA_CODA
+/**
+ * virtcca_iommu_dma_get_msi_page() - Traverse the MSI page list to obtain the last
+ * MSI page
+ * @cookie: Iommu dma cookie
+ * @iova: Iova address
+ * @phys: Physical address
+ *
+ */
+void virtcca_iommu_dma_get_msi_page(void *cookie, dma_addr_t *iova, phys_addr_t *phys)
+{
+	struct iommu_dma_msi_page *msi_page = NULL;
+	struct iommu_dma_cookie *dma_cookie = (struct iommu_dma_cookie *)cookie;
+
+	msi_page = list_last_entry(&dma_cookie->msi_page_list, struct iommu_dma_msi_page, list);
+	*iova = msi_page->iova;
+	*phys = msi_page->phys;
+}
+EXPORT_SYMBOL_GPL(virtcca_iommu_dma_get_msi_page);
+#endif
