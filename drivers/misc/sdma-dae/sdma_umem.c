@@ -127,6 +127,8 @@ static int record_umem(u64 addr, struct list_head *list_head, int ida, u64 *cook
 	idr = idr_alloc(&entry->pin_mem_region, pmem, 0, 0, GFP_ATOMIC);
 	if (idr < 0) {
 		ret = idr;
+		if (entry_find == false)
+			hash_del(&entry->node);
 		spin_unlock(&g_hash_table->hash_lock);
 		pr_err("Sdma failed to alloc idr!\n");
 		if (entry_find)
@@ -155,6 +157,7 @@ static int pin_umem(u64 addr, int npages, struct list_head *p_head)
 	size_t node_size = sizeof(struct p_list);
 	struct page **page_list;
 	struct p_list *cur_node;
+	u64 pin_addr = addr;
 
 	to_pin_pages = unpin_pages = npages;
 	while (unpin_pages != 0) {
@@ -167,7 +170,7 @@ static int pin_umem(u64 addr, int npages, struct list_head *p_head)
 			return -ENOMEM;
 		}
 
-		pinned = pin_user_pages_fast(addr, to_pin_pages, FOLL_WRITE, page_list);
+		pinned = pin_user_pages_fast(pin_addr, to_pin_pages, FOLL_WRITE, page_list);
 		if (pinned < 0) {
 			pr_err("Sdma failed to pin user pages!\n");
 			ret = pinned;
@@ -189,6 +192,8 @@ static int pin_umem(u64 addr, int npages, struct list_head *p_head)
 		cur_node->pnode.pinned = pinned;
 		list_add(&cur_node->list, p_head);
 		unpin_pages -= to_pin_pages;
+		if (unpin_pages > 0)
+			pin_addr += to_pin_pages * PAGE_SIZE;
 		to_pin_pages = unpin_pages;
 	}
 	goto exit;
