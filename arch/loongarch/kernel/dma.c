@@ -11,21 +11,8 @@
  * 48bit physical address space and embed it into 40bit.
  */
 
-static int node_id_offset;
-
-dma_addr_t phys_to_dma(struct device *dev, phys_addr_t paddr)
-{
-	long nid = (paddr >> 44) & 0xf;
-
-	return ((nid << 44) ^ paddr) | (nid << node_id_offset);
-}
-
-phys_addr_t dma_to_phys(struct device *dev, dma_addr_t daddr)
-{
-	long nid = (daddr >> node_id_offset) & 0xf;
-
-	return ((nid << node_id_offset) ^ daddr) | (nid << 44);
-}
+int node_id_offset;
+EXPORT_SYMBOL_GPL(node_id_offset);
 
 void acpi_arch_dma_setup(struct device *dev)
 {
