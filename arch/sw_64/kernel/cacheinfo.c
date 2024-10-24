@@ -137,6 +137,7 @@ int populate_cache_leaves(unsigned int cpu)
 	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
 	struct cacheinfo *this_leaf = this_cpu_ci->info_list;
 	struct cpu_topology *topo = &cpu_topology[cpu];
+	bool pptt_valid = is_pptt_cache_info_valid();
 
 	for (type = L1_ICACHE; type <= L3_CACHE; type++) {
 		if (!cache_size(type))
@@ -144,12 +145,14 @@ int populate_cache_leaves(unsigned int cpu)
 
 		/* L3 Cache is shared */
 		if (type == L3_CACHE) {
-			cpumask_copy(&this_leaf->shared_cpu_map,
-					topology_llc_cpumask(cpu));
+			if (!pptt_valid)
+				cpumask_copy(&this_leaf->shared_cpu_map,
+						topology_llc_cpumask(cpu));
 			populate_cache(get_cache_info(type), this_leaf, cache_level(type),
 					kernel_cache_type(type), topo->package_id);
 		} else {
-			cpumask_set_cpu(cpu, &this_leaf->shared_cpu_map);
+			if (!pptt_valid)
+				cpumask_set_cpu(cpu, &this_leaf->shared_cpu_map);
 			populate_cache(get_cache_info(type), this_leaf, cache_level(type),
 					kernel_cache_type(type), cpu);
 		}
@@ -157,7 +160,7 @@ int populate_cache_leaves(unsigned int cpu)
 
 	this_cpu_ci->cpu_map_populated = true;
 
-	if (is_pptt_cache_info_valid())
+	if (pptt_valid)
 		this_cpu_ci->cpu_map_populated = false;
 
 	return 0;
