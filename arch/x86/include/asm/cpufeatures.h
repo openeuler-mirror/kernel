@@ -504,7 +504,7 @@
 #define X86_FEATURE_BHI_CTRL		(21*32+ 2) /* "" BHI_DIS_S HW control available */
 #define X86_FEATURE_CLEAR_BHB_HW	(21*32+ 3) /* "" BHI_DIS_S HW control enabled */
 #define X86_FEATURE_CLEAR_BHB_LOOP_ON_VMEXIT (21*32+ 4) /* "" Clear branch history at vmexit using SW loop */
-#define X86_FEATURE_FAST_CPPC		(21*32 + 5) /* "" AMD Fast CPPC */
+#define X86_FEATURE_AMD_FAST_CPPC	(21*32 + 5) /* "" AMD Fast CPPC */
 
 /* HYGON-defined CPU features, CPUID level 0x8c860000:0 (EDX), word 29 */
 #define X86_FEATURE_HYGON_SM3		(29*32 + 1) /* "sm3" SM3 instructions */
