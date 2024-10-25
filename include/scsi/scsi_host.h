@@ -546,7 +546,6 @@ struct Scsi_Host {
 
 	struct mutex		scan_mutex;/* serialize scanning activity */
 
-	struct list_head	eh_abort_list;
 	struct list_head	eh_cmd_q;
 	struct task_struct    * ehandler;  /* Error recovery thread. */
 	struct completion     * eh_action; /* Wait for specific actions on the
@@ -700,8 +699,8 @@ struct Scsi_Host {
 	struct device *dma_dev;
 
 	KABI_USE(1, bool is_builtin)
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
+	KABI_REPLACE(_KABI_RESERVE(2); _KABI_RESERVE(3),
+			struct list_head eh_abort_list)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
