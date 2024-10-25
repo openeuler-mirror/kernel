@@ -1741,6 +1741,8 @@ static void osnoise_hotplug_workfn(struct work_struct *dummy)
 
 	mutex_lock(&interface_lock);
 	get_online_cpus();
+	if (!cpu_online(cpu))
+		goto out_unlock;
 
 	if (!cpumask_test_cpu(cpu, &osnoise_cpumask))
 		goto out_unlock;
