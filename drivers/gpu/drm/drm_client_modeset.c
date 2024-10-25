@@ -860,6 +860,11 @@ int drm_client_modeset_probe(struct drm_client_dev *client, unsigned int width, 
 			}
 
 			modeset->mode = drm_mode_duplicate(dev, mode);
+			if (!modeset->mode) {
+				ret = -ENOMEM;
+				break;
+			}
+
 			drm_connector_get(connector);
 			modeset->connectors[modeset->num_connectors++] = connector;
 			modeset->x = offset->x;
