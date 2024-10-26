@@ -51,6 +51,7 @@ enum ucount_type {
 	UCOUNT_INOTIFY_INSTANCES,
 	UCOUNT_INOTIFY_WATCHES,
 #endif
+#ifdef CONFIG_KABI_RESERVE
 	/* These 15 members are reserved (with extra margin) for the future
 	 * enlargement of enum ucount_type, as how RH8.1 did it. This number
 	 * should be enough, as 6 of them are very likely to be used in the near
@@ -71,6 +72,7 @@ enum ucount_type {
 	UCOUNT_KABI_RESERVE13,
 	UCOUNT_KABI_RESERVE14,
 	UCOUNT_KABI_RESERVE15,
+#endif
 	UCOUNT_COUNTS,
 };
 

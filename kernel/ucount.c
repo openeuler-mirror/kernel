@@ -77,6 +77,7 @@ static struct ctl_table user_table[] = {
 	UCOUNT_ENTRY("max_inotify_instances"),
 	UCOUNT_ENTRY("max_inotify_watches"),
 #endif
+#ifdef CONFIG_KABI_RESERVE
 	/* These corresponds to the reservation in enum ucount_type */
 	{ }, // UCOUNT_KABI_RESERVE1
 	{ }, // UCOUNT_KABI_RESERVE2
@@ -93,6 +94,7 @@ static struct ctl_table user_table[] = {
 	{ }, // UCOUNT_KABI_RESERVE13
 	{ }, // UCOUNT_KABI_RESERVE14
 	{ }, // UCOUNT_KABI_RESERVE15
+#endif
 	{ }
 };
 #endif /* CONFIG_SYSCTL */
