@@ -1503,6 +1503,40 @@ static int svm_proc_load_flag(int __user *arg)
 	return put_user(flag, arg);
 }
 
+static void svm_vma_open(struct vm_area_struct *vma)
+{
+	struct page *page = vma->vm_private_data;
+
+	if (page)
+		get_page(page);
+}
+
+static void svm_vma_close(struct vm_area_struct *vma)
+{
+	struct page *page = vma->vm_private_data;
+
+	put_page(page);
+}
+
+/* avoid split */
+static int svm_vma_split(struct vm_area_struct *area, unsigned long addr)
+{
+	return -EINVAL;
+}
+
+/* avoid mremap */
+static int svm_vma_mremap(struct vm_area_struct *area)
+{
+	return -EINVAL;
+}
+
+static const struct vm_operations_struct svm_vma_ops = {
+	.open = svm_vma_open,
+	.close = svm_vma_close,
+	.split = svm_vma_split,
+	.mremap = svm_vma_mremap,
+};
+
 static int svm_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	int err;
@@ -1540,6 +1574,9 @@ static int svm_mmap(struct file *file, struct vm_area_struct *vma)
 			dev_err(sdev->dev,
 				"fail to remap 0x%pK err=%d\n",
 				(void *)vma->vm_start, err);
+
+		vma->vm_private_data = page;
+		vma->vm_ops = &svm_vma_ops;
 	} else {
 		if ((vma->vm_end < vma->vm_start) ||
 		    ((vma->vm_end - vma->vm_start) > sdev->l2size))
@@ -1566,9 +1603,7 @@ static int svm_release_phys32(unsigned long __user *arg)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma = NULL;
-	struct page *page = NULL;
-	pte_t *pte = NULL;
-	unsigned long phys, addr, offset;
+	unsigned long addr;
 	unsigned int len = 0;
 
 	if (arg == NULL)
@@ -1578,28 +1613,18 @@ static int svm_release_phys32(unsigned long __user *arg)
 		return -EFAULT;
 
 	down_read(&mm->mmap_sem);
-	pte = svm_walk_pt(addr, NULL, &offset);
-	if (pte && pte_present(*pte)) {
-		phys = PFN_PHYS(pte_pfn(*pte)) + offset;
-	} else {
-		up_read(&mm->mmap_sem);
-		return -EINVAL;
-	}
 
 	vma = find_vma(mm, addr);
-	if (!vma) {
+	if (!vma || addr != vma->vm_start) {
 		up_read(&mm->mmap_sem);
 		return -EFAULT;
 	}
 
-	page = phys_to_page(phys);
 	len = vma->vm_end - vma->vm_start;
-
-	__free_pages(page, get_order(len));
 
 	up_read(&mm->mmap_sem);
 
-	return 0;
+	return vm_munmap(addr, len);
 }
 
 static unsigned long svm_sp_alloc_mem(unsigned long __user *arg)
