@@ -17,6 +17,7 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 #include <linux/percpu-refcount.h>
+#include <linux/hash.h>
 
 
 /*
@@ -310,12 +311,26 @@ static inline void __check_heap_object(const void *ptr, unsigned long n,
 #define SLAB_OBJ_MIN_SIZE      (KMALLOC_MIN_SIZE < 16 ? \
                                (KMALLOC_MIN_SIZE) : 16)
 
+#ifdef CONFIG_RANDOM_KMALLOC_CACHES
+#define RANDOM_KMALLOC_CACHES_NR	15 // # of cache copies
+#else
+#define RANDOM_KMALLOC_CACHES_NR	0
+#endif
+
 /*
  * Whenever changing this, take care of that kmalloc_type() and
  * create_kmalloc_caches() still work as intended.
  */
 enum kmalloc_cache_type {
 	KMALLOC_NORMAL = 0,
+	/*
+	 * This config control, not present in Linux mainline, is just for
+	 * kABI maintenance.
+	 */
+#ifdef CONFIG_RANDOM_KMALLOC_CACHES
+	KMALLOC_RANDOM_START = KMALLOC_NORMAL,
+	KMALLOC_RANDOM_END = KMALLOC_RANDOM_START + RANDOM_KMALLOC_CACHES_NR,
+#endif
 	KMALLOC_RECLAIM,
 #ifdef CONFIG_ZONE_DMA
 	KMALLOC_DMA,
@@ -327,7 +342,9 @@ enum kmalloc_cache_type {
 extern struct kmem_cache *
 kmalloc_caches[NR_KMALLOC_TYPES][KMALLOC_SHIFT_HIGH + 1];
 
-static __always_inline enum kmalloc_cache_type kmalloc_type(gfp_t flags)
+extern unsigned long random_kmalloc_seed;
+
+static __always_inline enum kmalloc_cache_type kmalloc_type(gfp_t flags, unsigned long caller)
 {
 #ifdef CONFIG_ZONE_DMA
 	/*
@@ -335,7 +352,13 @@ static __always_inline enum kmalloc_cache_type kmalloc_type(gfp_t flags)
 	 * with a single branch for both flags.
 	 */
 	if (likely((flags & (__GFP_DMA | __GFP_RECLAIMABLE)) == 0))
+#ifdef CONFIG_RANDOM_KMALLOC_CACHES
+		/* RANDOM_KMALLOC_CACHES_NR (=15) copies + the KMALLOC_NORMAL */
+		return KMALLOC_RANDOM_START + hash_64(caller ^ random_kmalloc_seed,
+						      ilog2(RANDOM_KMALLOC_CACHES_NR + 1));
+#else
 		return KMALLOC_NORMAL;
+#endif
 
 	/*
 	 * At least one of the flags has to be set. If both are, __GFP_DMA
@@ -343,7 +366,13 @@ static __always_inline enum kmalloc_cache_type kmalloc_type(gfp_t flags)
 	 */
 	return flags & __GFP_DMA ? KMALLOC_DMA : KMALLOC_RECLAIM;
 #else
-	return flags & __GFP_RECLAIMABLE ? KMALLOC_RECLAIM : KMALLOC_NORMAL;
+	return flags & __GFP_RECLAIMABLE ? KMALLOC_RECLAIM :
+#ifdef CONFIG_RANDOM_KMALLOC_CACHES
+		KMALLOC_RANDOM_START + hash_64(caller ^ random_kmalloc_seed,
+					       ilog2(RANDOM_KMALLOC_CACHES_NR + 1));
+#else
+		KMALLOC_NORMAL;
+#endif
 #endif
 }
 
@@ -573,7 +602,7 @@ static __always_inline void *kmalloc(size_t size, gfp_t flags)
 			return ZERO_SIZE_PTR;
 
 		return kmem_cache_alloc_trace(
-				kmalloc_caches[kmalloc_type(flags)][index],
+				kmalloc_caches[kmalloc_type(flags, _RET_IP_)][index],
 				flags, size);
 #endif
 	}
@@ -591,7 +620,7 @@ static __always_inline void *kmalloc_node(size_t size, gfp_t flags, int node)
 			return ZERO_SIZE_PTR;
 
 		return kmem_cache_alloc_node_trace(
-				kmalloc_caches[kmalloc_type(flags)][i],
+				kmalloc_caches[kmalloc_type(flags, _RET_IP_)][i],
 						flags, node, size);
 	}
 #endif

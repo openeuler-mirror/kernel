@@ -86,7 +86,7 @@ void setup_kmalloc_cache_index_table(void);
 void create_kmalloc_caches(slab_flags_t);
 
 /* Find the kmalloc slab corresponding for a certain size */
-struct kmem_cache *kmalloc_slab(size_t, gfp_t);
+struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags, unsigned long caller);
 #endif
 
 gfp_t kmalloc_fix_flags(gfp_t flags);
