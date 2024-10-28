@@ -809,22 +809,24 @@ static struct sock *gtp_encap_enable_socket(int fd, int type,
 	sock = sockfd_lookup(fd, &err);
 	if (!sock) {
 		pr_debug("gtp socket fd=%d not found\n", fd);
-		return NULL;
+		return ERR_PTR(err);
 	}
 
-	if (sock->sk->sk_protocol != IPPROTO_UDP) {
+	sk = sock->sk;
+	if (sk->sk_protocol != IPPROTO_UDP ||
+	    sk->sk_type != SOCK_DGRAM ||
+	    (sk->sk_family != AF_INET && sk->sk_family != AF_INET6)) {
 		pr_debug("socket fd=%d not UDP\n", fd);
 		sk = ERR_PTR(-EINVAL);
 		goto out_sock;
 	}
 
-	lock_sock(sock->sk);
-	if (sock->sk->sk_user_data) {
+	lock_sock(sk);
+	if (sk->sk_user_data) {
 		sk = ERR_PTR(-EBUSY);
 		goto out_rel_sock;
 	}
 
-	sk = sock->sk;
 	sock_hold(sk);
 
 	tuncfg.sk_user_data = gtp;
