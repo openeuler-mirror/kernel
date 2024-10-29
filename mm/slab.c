@@ -1684,7 +1684,7 @@ static size_t calculate_slab_order(struct kmem_cache *cachep,
 			size_t freelist_size;
 
 			freelist_size = num * sizeof(freelist_idx_t);
-			freelist_cache = kmalloc_slab(freelist_size, 0u);
+			freelist_cache = kmalloc_slab(freelist_size, 0u, _RET_IP_);
 			if (!freelist_cache)
 				continue;
 
@@ -2074,7 +2074,7 @@ done:
 
 	if (OFF_SLAB(cachep)) {
 		cachep->freelist_cache =
-			kmalloc_slab(cachep->freelist_size, 0u);
+			kmalloc_slab(cachep->freelist_size, 0u, _RET_IP_);
 	}
 
 	err = setup_cpu_cache(cachep, gfp);
@@ -3628,7 +3628,7 @@ __do_kmalloc_node(size_t size, gfp_t flags, int node, unsigned long caller)
 
 	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))
 		return NULL;
-	cachep = kmalloc_slab(size, flags);
+	cachep = kmalloc_slab(size, flags, _RET_IP_);
 	if (unlikely(ZERO_OR_NULL_PTR(cachep)))
 		return cachep;
 	ret = kmem_cache_alloc_node_trace(cachep, flags, node, size);
@@ -3667,7 +3667,7 @@ static __always_inline void *__do_kmalloc(size_t size, gfp_t flags,
 
 	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))
 		return NULL;
-	cachep = kmalloc_slab(size, flags);
+	cachep = kmalloc_slab(size, flags, _RET_IP_);
 	if (unlikely(ZERO_OR_NULL_PTR(cachep)))
 		return cachep;
 	ret = slab_alloc(cachep, flags, size, caller);

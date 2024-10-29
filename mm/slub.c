@@ -4012,7 +4012,7 @@ void *__kmalloc(size_t size, gfp_t flags)
 	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))
 		return kmalloc_large(size, flags);
 
-	s = kmalloc_slab(size, flags);
+	s = kmalloc_slab(size, flags, _RET_IP_);
 
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
@@ -4060,7 +4060,7 @@ void *__kmalloc_node(size_t size, gfp_t flags, int node)
 		return ret;
 	}
 
-	s = kmalloc_slab(size, flags);
+	s = kmalloc_slab(size, flags, _RET_IP_);
 
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
@@ -4520,7 +4520,7 @@ void *__kmalloc_track_caller(size_t size, gfp_t gfpflags, unsigned long caller)
 	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))
 		return kmalloc_large(size, gfpflags);
 
-	s = kmalloc_slab(size, gfpflags);
+	s = kmalloc_slab(size, gfpflags, _RET_IP_);
 
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;
@@ -4551,7 +4551,7 @@ void *__kmalloc_node_track_caller(size_t size, gfp_t gfpflags,
 		return ret;
 	}
 
-	s = kmalloc_slab(size, gfpflags);
+	s = kmalloc_slab(size, gfpflags, _RET_IP_);
 
 	if (unlikely(ZERO_OR_NULL_PTR(s)))
 		return s;

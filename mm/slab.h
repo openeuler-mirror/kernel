@@ -86,7 +86,7 @@ void setup_kmalloc_cache_index_table(void);
 void create_kmalloc_caches(slab_flags_t);
 
 /* Find the kmalloc slab corresponding for a certain size */
-struct kmem_cache *kmalloc_slab(size_t, gfp_t);
+struct kmem_cache *kmalloc_slab(size_t size, gfp_t flags, unsigned long caller);
 #endif
 
 gfp_t kmalloc_fix_flags(gfp_t flags);
@@ -142,10 +142,10 @@ static inline slab_flags_t kmem_cache_flags(unsigned int object_size,
 #if defined(CONFIG_SLAB)
 #define SLAB_CACHE_FLAGS (SLAB_MEM_SPREAD | SLAB_NOLEAKTRACE | \
 			  SLAB_RECLAIM_ACCOUNT | SLAB_TEMPORARY | \
-			  SLAB_ACCOUNT)
+			  SLAB_ACCOUNT | SLAB_NO_MERGE)
 #elif defined(CONFIG_SLUB)
 #define SLAB_CACHE_FLAGS (SLAB_NOLEAKTRACE | SLAB_RECLAIM_ACCOUNT | \
-			  SLAB_TEMPORARY | SLAB_ACCOUNT)
+			  SLAB_TEMPORARY | SLAB_ACCOUNT | SLAB_NO_MERGE)
 #else
 #define SLAB_CACHE_FLAGS (SLAB_NOLEAKTRACE)
 #endif
@@ -164,6 +164,7 @@ static inline slab_flags_t kmem_cache_flags(unsigned int object_size,
 			      SLAB_NOLEAKTRACE | \
 			      SLAB_RECLAIM_ACCOUNT | \
 			      SLAB_TEMPORARY | \
+			      SLAB_NO_MERGE | \
 			      SLAB_ACCOUNT)
 
 bool __kmem_cache_empty(struct kmem_cache *);
