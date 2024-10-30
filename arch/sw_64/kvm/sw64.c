@@ -606,8 +606,7 @@ vm_fault_t kvm_arch_vcpu_fault(struct kvm_vcpu *vcpu, struct vm_fault *vmf)
 void kvm_arch_flush_remote_tlbs_memslot(struct kvm *kvm,
 					struct kvm_memory_slot *memslot)
 {
-	/* Let implementation handle TLB/GVA invalidation */
-	kvm_arch_flush_shadow_memslot(kvm, memslot);
+	kvm_flush_remote_tlbs(kvm);
 }
 
 int kvm_dev_ioctl_check_extension(long ext)
