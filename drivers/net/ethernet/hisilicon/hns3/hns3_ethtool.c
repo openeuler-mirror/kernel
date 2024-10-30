@@ -2246,6 +2246,7 @@ static const struct ethtool_ops hns3vf_ethtool_ops = {
 	.reset = hns3_set_reset,
 };
 
+#ifdef CONFIG_HNS3_UBL
 static const struct ethtool_ops hns3_unic_ethtool_ops = {
 	.supported_coalesce_params = HNS3_ETHTOOL_COALESCE,
 	.supported_ring_params = HNS3_ETHTOOL_RING,
@@ -2287,6 +2288,7 @@ static const struct ethtool_ops hns3_unic_ethtool_ops = {
 	.reset = hns3_set_reset,
 	.get_link_ext_state = hns3_get_link_ext_state,
 };
+#endif
 
 static const struct ethtool_ops hns3_ethtool_ops = {
 	.supported_coalesce_params = HNS3_ETHTOOL_COALESCE,
