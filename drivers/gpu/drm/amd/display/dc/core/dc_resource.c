@@ -2911,9 +2911,15 @@ void resource_build_bit_depth_reduction_params(struct dc_stream_state *stream,
 
 enum dc_status dc_validate_stream(struct dc *dc, struct dc_stream_state *stream)
 {
-	struct dc_link *link = stream->link;
-	struct timing_generator *tg = dc->res_pool->timing_generators[0];
+	struct dc_link *link;
+	struct timing_generator *tg;
 	enum dc_status res = DC_OK;
+
+	if (dc == NULL || stream == NULL)
+		return DC_ERROR_UNEXPECTED;
+
+	link = stream->link;
+	tg = dc->res_pool->timing_generators[0];
 
 	calculate_phy_pix_clks(stream);
 
