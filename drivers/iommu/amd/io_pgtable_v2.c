@@ -266,8 +266,12 @@ static int iommu_v2_map_pages(struct io_pgtable_ops *ops, unsigned long iova,
 	}
 
 out:
-	if (updated)
+	if (updated){
+		unsigned long flags;
+		spin_lock_irqsave(&pdom->lock, flags);
 		amd_iommu_domain_flush_pages(pdom, o_iova, size);
+		spin_unlock_irqrestore(&pdom->lock, flags);
+	}
 
 	if (mapped)
 		*mapped += mapped_size;
