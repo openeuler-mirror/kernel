@@ -463,8 +463,10 @@ static int thermal_genl_cmd_tz_get_trip(struct param *p)
 		return -EINVAL;
 
 	start_trip = nla_nest_start(msg, THERMAL_GENL_ATTR_TZ_TRIP);
-	if (!start_trip)
+	if (!start_trip) {
+		put_device(&tz->device);
 		return -EMSGSIZE;
+	}
 
 	mutex_lock(&tz->lock);
 
@@ -489,10 +491,13 @@ static int thermal_genl_cmd_tz_get_trip(struct param *p)
 
 	nla_nest_end(msg, start_trip);
 
+	put_device(&tz->device);
+
 	return 0;
 
 out_cancel_nest:
 	mutex_unlock(&tz->lock);
+	put_device(&tz->device);
 
 	return -EMSGSIZE;
 }
@@ -514,13 +519,17 @@ static int thermal_genl_cmd_tz_get_temp(struct param *p)
 
 	ret = thermal_zone_get_temp(tz, &temp);
 	if (ret)
-		return ret;
+		goto out;
 
 	if (nla_put_u32(msg, THERMAL_GENL_ATTR_TZ_ID, id) ||
-	    nla_put_u32(msg, THERMAL_GENL_ATTR_TZ_TEMP, temp))
-		return -EMSGSIZE;
+	    nla_put_u32(msg, THERMAL_GENL_ATTR_TZ_TEMP, temp)) {
+		ret = -EMSGSIZE;
+		goto out;
+	}
 
-	return 0;
+out:
+	put_device(&tz->device);
+	return ret;
 }
 
 static int thermal_genl_cmd_tz_get_gov(struct param *p)
@@ -546,6 +555,7 @@ static int thermal_genl_cmd_tz_get_gov(struct param *p)
 		ret = -EMSGSIZE;
 
 	mutex_unlock(&tz->lock);
+	put_device(&tz->device);
 
 	return ret;
 }
