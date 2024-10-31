@@ -927,7 +927,11 @@ static int avc_update_node(struct selinux_avc *avc,
 		node->ae.avd.auditdeny &= ~perms;
 		break;
 	case AVC_CALLBACK_ADD_XPERMS:
-		avc_add_xperms_decision(node, xpd);
+		rc = avc_add_xperms_decision(node, xpd);
+		if (rc) {
+			avc_node_kill(avc, node);
+			goto out_unlock;
+		}
 		break;
 	}
 	avc_node_replace(avc, node, orig);
