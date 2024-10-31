@@ -945,6 +945,7 @@ struct bpf_array_aux {
 	 * the same prog type and JITed flag.
 	 */
 	struct {
+		const struct btf_type *attach_func_proto;
 		spinlock_t lock;
 		enum bpf_prog_type type;
 		bool jited;

@@ -1779,6 +1779,7 @@ bool bpf_prog_array_compatible(struct bpf_array *array,
 			       const struct bpf_prog *fp)
 {
 	bool ret;
+	struct bpf_prog_aux *aux = fp->aux;
 
 	if (fp->kprobe_override)
 		return false;
@@ -1791,10 +1792,24 @@ bool bpf_prog_array_compatible(struct bpf_array *array,
 		 */
 		array->aux->owner.type  = fp->type;
 		array->aux->owner.jited = fp->jited;
+		array->aux->owner.attach_func_proto = aux->attach_func_proto;
 		ret = true;
 	} else {
 		ret = array->aux->owner.type  == fp->type &&
 		      array->aux->owner.jited == fp->jited;
+		if (ret &&
+		    array->aux->owner.attach_func_proto != aux->attach_func_proto) {
+			switch (fp->type) {
+			case BPF_PROG_TYPE_TRACING:
+			case BPF_PROG_TYPE_LSM:
+			case BPF_PROG_TYPE_EXT:
+			case BPF_PROG_TYPE_STRUCT_OPS:
+				ret = false;
+				break;
+			default:
+				break;
+			}
+		}
 	}
 	spin_unlock(&array->aux->owner.lock);
 	return ret;
