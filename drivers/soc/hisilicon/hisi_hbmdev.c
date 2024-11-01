@@ -85,9 +85,7 @@ static int hbmdev_check(struct acpi_device *adev, void *arg)
 		if (!adev->handler)
 			return 0;
 
-		acpi_scan_lock_acquire();
 		adev->handler->hotplug.demand_offline = true;
-		acpi_scan_lock_release();
 	}
 
 	return 0;
@@ -98,7 +96,9 @@ static int memdev_power_off(struct acpi_device *adev)
 	acpi_handle handle = adev->handle;
 	acpi_status status;
 
+	acpi_scan_lock_acquire();
 	acpi_dev_for_each_child(adev, hbmdev_check, NULL);
+	acpi_scan_lock_release();
 
 	status = acpi_evaluate_object(handle, "_OFF", NULL, NULL);
 	if (ACPI_FAILURE(status)) {
