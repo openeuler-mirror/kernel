@@ -32,6 +32,7 @@
 #include <drm/drm_plane_helper.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_vblank.h>
+#include <drm/drm_managed.h>
 
 #include <video/videomode.h>
 
@@ -956,7 +957,6 @@ static struct drm_plane *ltdc_plane_create(struct drm_device *ddev,
 {
 	unsigned long possible_crtcs = CRTC_MASK;
 	struct ltdc_device *ldev = ddev->dev_private;
-	struct device *dev = ddev->dev;
 	struct drm_plane *plane;
 	unsigned int i, nb_fmt = 0;
 	u32 formats[NB_PF * 2];
@@ -984,7 +984,7 @@ static struct drm_plane *ltdc_plane_create(struct drm_device *ddev,
 		formats[nb_fmt++] = drm_fmt_no_alpha;
 	}
 
-	plane = devm_kzalloc(dev, sizeof(*plane), GFP_KERNEL);
+	plane = drmm_kzalloc(ddev, sizeof(*plane), GFP_KERNEL);
 	if (!plane)
 		return NULL;
 
@@ -1115,7 +1115,7 @@ static int ltdc_encoder_init(struct drm_device *ddev, struct drm_bridge *bridge)
 	struct drm_encoder *encoder;
 	int ret;
 
-	encoder = devm_kzalloc(ddev->dev, sizeof(*encoder), GFP_KERNEL);
+	encoder = drmm_kzalloc(ddev, sizeof(*encoder), GFP_KERNEL);
 	if (!encoder)
 		return -ENOMEM;
 
@@ -1327,7 +1327,7 @@ int ltdc_load(struct drm_device *ddev)
 
 	}
 
-	crtc = devm_kzalloc(dev, sizeof(*crtc), GFP_KERNEL);
+	crtc = drmm_kzalloc(ddev, sizeof(*crtc), GFP_KERNEL);
 	if (!crtc) {
 		DRM_ERROR("Failed to allocate crtc\n");
 		ret = -ENOMEM;
