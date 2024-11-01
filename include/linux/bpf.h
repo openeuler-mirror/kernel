@@ -488,6 +488,7 @@ static_assert(__BPF_REG_TYPE_MAX <= BPF_BASE_TYPE_LIMIT);
  */
 struct bpf_insn_access_aux {
 	enum bpf_reg_type reg_type;
+	bool is_retval; /* is accessing function return value ? */
 	union {
 		int ctx_field_size;
 		u32 btf_id;
