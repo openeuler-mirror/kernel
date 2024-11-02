@@ -1875,6 +1875,12 @@ restart:
 				continue;
 			if (!atomic_inc_not_zero(&sp->so_count))
 				continue;
+			if (!(server->super && nfs_sb_active(server->super))) {
+				spin_unlock(&clp->cl_lock);
+				rcu_read_unlock();
+				nfs4_put_state_owner(sp);
+				goto restart;
+			}
 			spin_unlock(&clp->cl_lock);
 			rcu_read_unlock();
 
@@ -1883,10 +1889,13 @@ restart:
 				set_bit(ops->owner_flag_bit, &sp->so_flags);
 				nfs4_put_state_owner(sp);
 				status = nfs4_recovery_handle_error(clp, status);
+				nfs4_free_state_owners(&freeme);
+				nfs_sb_deactive(server->super);
 				return (status != 0) ? status : -EAGAIN;
 			}
 
 			nfs4_put_state_owner(sp);
+			nfs_sb_deactive(server->super);
 			goto restart;
 		}
 		spin_unlock(&clp->cl_lock);
