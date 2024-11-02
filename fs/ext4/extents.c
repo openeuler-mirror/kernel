@@ -3402,7 +3402,7 @@ out:
 }
 
 /*
- * ext4_split_extents() splits an extent and mark extent which is covered
+ * ext4_split_extent() splits an extent and mark extent which is covered
  * by @map as split_flags indicates
  *
  * It may result in splitting the extent into multiple extents (up to three)
@@ -3479,7 +3479,7 @@ static int ext4_split_extent(handle_t *handle,
 			goto out;
 	}
 
-	ext4_ext_show_leaf(inode, path);
+	ext4_ext_show_leaf(inode, *ppath);
 out:
 	return err ? err : allocated;
 }
@@ -4114,7 +4114,6 @@ ext4_ext_handle_unwritten_extents(handle_t *handle, struct inode *inode,
 			struct ext4_ext_path **ppath, int flags,
 			unsigned int allocated, ext4_fsblk_t newblock)
 {
-	struct ext4_ext_path *path = *ppath;
 	int ret = 0;
 	int err = 0;
 
@@ -4122,7 +4121,7 @@ ext4_ext_handle_unwritten_extents(handle_t *handle, struct inode *inode,
 		  "block %llu, max_blocks %u, flags %x, allocated %u\n",
 		  inode->i_ino, (unsigned long long)map->m_lblk, map->m_len,
 		  flags, allocated);
-	ext4_ext_show_leaf(inode, path);
+	ext4_ext_show_leaf(inode, *ppath);
 
 	/*
 	 * When writing into unwritten space, we should not fail to
@@ -4157,7 +4156,7 @@ ext4_ext_handle_unwritten_extents(handle_t *handle, struct inode *inode,
 		if (ret >= 0) {
 			ext4_update_inode_fsync_trans(handle, inode, 1);
 			err = check_eofblocks_fl(handle, inode, map->m_lblk,
-						 path, map->m_len);
+						 *ppath, map->m_len);
 		} else
 			err = ret;
 		map->m_flags |= EXT4_MAP_MAPPED;
@@ -4235,7 +4234,7 @@ out:
 map_out:
 	map->m_flags |= EXT4_MAP_MAPPED;
 	if ((flags & EXT4_GET_BLOCKS_KEEP_SIZE) == 0) {
-		err = check_eofblocks_fl(handle, inode, map->m_lblk, path,
+		err = check_eofblocks_fl(handle, inode, map->m_lblk, *ppath,
 					 map->m_len);
 		if (err < 0)
 			goto out2;
@@ -4243,7 +4242,7 @@ map_out:
 out1:
 	if (allocated > map->m_len)
 		allocated = map->m_len;
-	ext4_ext_show_leaf(inode, path);
+	ext4_ext_show_leaf(inode, *ppath);
 	map->m_pblk = newblock;
 	map->m_len = allocated;
 out2:
