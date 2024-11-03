@@ -404,9 +404,11 @@ void padata_do_serial(struct padata_priv *padata)
 
 	spin_lock(&reorder->lock);
 	/* Sort in ascending order of sequence number. */
-	list_for_each_entry_reverse(cur, &reorder->list, list)
-		if (cur->seq_nr < padata->seq_nr)
+	list_for_each_entry_reverse(cur, &reorder->list, list) {
+		/* Compare by difference to consider integer wrap around */
+		if ((signed int)(cur->seq_nr - padata->seq_nr) < 0)
 			break;
+	}
 	list_add(&padata->list, &cur->list);
 	spin_unlock(&reorder->lock);
 
