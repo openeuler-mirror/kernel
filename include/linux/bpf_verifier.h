@@ -177,6 +177,11 @@ struct bpf_reference_state {
 	int insn_idx;
 };
 
+struct bpf_retval_range {
+	s32 minval;
+	s32 maxval;
+};
+
 /* state of the program:
  * type of all registers and stack info
  */
