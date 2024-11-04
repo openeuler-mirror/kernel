@@ -239,6 +239,8 @@ static void __handle_ksmbd_work(struct ksmbd_work *work,
 		return;
 
 send:
+	if (work->sess)
+		ksmbd_user_session_put(work->sess);
 	smb3_preauth_hash_rsp(work);
 	if (work->sess && work->sess->enc && work->encrypted &&
 	    conn->ops->encrypt_resp) {
