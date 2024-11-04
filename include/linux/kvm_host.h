@@ -613,7 +613,12 @@ struct kvm_memory_slot {
 
 #ifdef CONFIG_KVM_PRIVATE_MEM
 	KABI_EXTEND(struct {
-		struct file __rcu *file;
+		/*
+		 * Writes protected by kvm->slots_lock.  Acquiring a
+		 * reference via kvm_gmem_get_file() is protected by
+		 * either kvm->slots_lock or kvm->srcu.
+		 */
+		struct file *file;
 		pgoff_t pgoff;
 	} gmem;)
 #endif
