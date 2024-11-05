@@ -11409,7 +11409,6 @@ static int hclge_set_mtu(struct hnae3_handle *handle, int new_mtu)
 
 int hclge_set_vport_mtu(struct hclge_vport *vport, int new_mtu)
 {
-	struct hnae3_ae_dev *ae_dev = pci_get_drvdata(vport->nic.pdev);
 	int l2_hlen = ETH_HLEN + ETH_FCS_LEN + 2 * VLAN_HLEN;
 	int default_size = HCLGE_MAC_DEFAULT_FRAME;
 	int min_frm_size = HCLGE_MAC_MIN_FRAME;
@@ -11417,7 +11416,7 @@ int hclge_set_vport_mtu(struct hclge_vport *vport, int new_mtu)
 	int i, max_frm_size, ret;
 
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(ae_dev)) {
+	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
 		/* UB MTU */
 		l2_hlen = 0;
 		min_frm_size = UB_MIN_MTU;

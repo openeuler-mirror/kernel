@@ -1062,15 +1062,13 @@ static int hclge_mbx_get_link_mode_handler(struct hclge_mbx_ops_param *param)
 static int
 hclge_mbx_get_vf_flr_status_handler(struct hclge_mbx_ops_param *param)
 {
-	struct hclge_dev *hdev = param->vport->back;
-
 	hclge_rm_vport_all_mac_table(param->vport, false,
 				     HCLGE_MAC_ADDR_UC);
 	hclge_rm_vport_all_mac_table(param->vport, false,
 				     HCLGE_MAC_ADDR_MC);
 	hclge_rm_vport_all_vlan_table(param->vport, false);
 #ifdef CONFIG_HNS3_UBL
-	if (hnae3_dev_ubl_supported(hdev->ae_dev)) {
+	if (hnae3_dev_ubl_supported(param->vport->back->ae_dev)) {
 		hclge_unic_del_vport_all_mc_guid_table(param->vport, false);
 		hclge_unic_rm_vport_all_ip_table(param->vport, false);
 	}
