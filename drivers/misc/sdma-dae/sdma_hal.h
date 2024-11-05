@@ -30,7 +30,8 @@ struct hisi_sdma_channel {
 	u16 idx;
 	struct hisi_sdma_device *pdev;
 
-	u32 ida;
+	int ida;
+	DECLARE_HASHTABLE(sdma_ida_ht, HISI_SDMA_HAL_HASH_BUCKETS_BITS);
 	spinlock_t owner_chn_lock;
 
 	/* must be page-aligned and continuous physical memory */
@@ -40,6 +41,11 @@ struct hisi_sdma_channel {
 
 	void __iomem *io_base;
 	u16 cnt_used;
+};
+
+struct hisi_sdma_channel_node {
+	int ida;
+	struct hlist_node node;
 };
 
 struct hisi_sdma_pid_ref_hte {
@@ -103,6 +109,7 @@ struct hisi_sdma_global_info {
 };
 
 void sdma_clear_pid_ref(struct hisi_sdma_device *psdma_dev);
+void sdma_clear_ida_ref(struct hisi_sdma_channel *pchannel);
 int sdma_create_dbg_node(struct dentry *sdma_dbgfs_dir);
 void sdma_cdev_init(struct cdev *cdev);
 void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida,
@@ -115,7 +122,8 @@ static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val
 
 	reg_val &= ~mask;
 	reg_val |= FIELD_PREP(mask, val);
-	asm volatile("dsb st" ::: "memory");
+	/* calculate reg_val before writing into register */
+	wmb();
 
 	writel(reg_val, pchan->io_base + reg);
 }
