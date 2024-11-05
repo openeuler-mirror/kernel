@@ -105,6 +105,96 @@ void sdma_clear_pid_ref(struct hisi_sdma_device *psdma_dev)
 	spin_unlock(&psdma_dev->pid_lock);
 }
 
+static struct hisi_sdma_channel_node *sdma_search_ida_ref(struct hisi_sdma_channel *pchannel,
+							  int ida)
+{
+	struct hisi_sdma_channel_node *entry;
+
+	hash_for_each_possible(pchannel->sdma_ida_ht, entry, node, ida) {
+		if (entry->ida == ida)
+			return entry;
+	}
+	return NULL;
+}
+
+static int sdma_add_ida_ref(struct hisi_sdma_channel *pchannel, int ida)
+{
+	struct hisi_sdma_channel_node *entry;
+
+	spin_lock(&pchannel->owner_chn_lock);
+	entry = sdma_search_ida_ref(pchannel, ida);
+	if (entry == NULL) {
+		entry = kzalloc(sizeof(struct hisi_sdma_channel_node), GFP_KERNEL);
+		if (entry == NULL) {
+			spin_unlock(&pchannel->owner_chn_lock);
+			return -ENOMEM;
+		}
+		entry->ida = ida;
+		hash_add(pchannel->sdma_ida_ht, &entry->node, entry->ida);
+	}
+	spin_unlock(&pchannel->owner_chn_lock);
+	return 0;
+}
+
+static bool sdma_del_ida_ref(struct hisi_sdma_channel *pchannel, int ida)
+{
+	struct hisi_sdma_channel_node *entry;
+
+	spin_lock(&pchannel->owner_chn_lock);
+	entry = sdma_search_ida_ref(pchannel, ida);
+	if (entry != NULL) {
+		hash_del(&entry->node);
+		kfree(entry);
+	} else {
+		spin_unlock(&pchannel->owner_chn_lock);
+		return false;
+	}
+	spin_unlock(&pchannel->owner_chn_lock);
+	return true;
+}
+
+static void sdma_add_ida_val(struct hisi_sdma_channel *pchannel, int ida)
+{
+	spin_lock(&pchannel->owner_chn_lock);
+	pchannel->ida = ida;
+	spin_unlock(&pchannel->owner_chn_lock);
+}
+
+static void sdma_reset_ida_val(struct hisi_sdma_channel *pchannel)
+{
+	spin_lock(&pchannel->owner_chn_lock);
+	pchannel->ida = -1;
+	spin_unlock(&pchannel->owner_chn_lock);
+}
+
+static bool sdma_check_ida_val(struct hisi_sdma_channel *pchannel, int ida)
+{
+	spin_lock(&pchannel->owner_chn_lock);
+	if (pchannel->ida != ida) {
+		spin_unlock(&pchannel->owner_chn_lock);
+		return false;
+	}
+	spin_unlock(&pchannel->owner_chn_lock);
+	return true;
+}
+
+void sdma_clear_ida_ref(struct hisi_sdma_channel *pchannel)
+{
+	struct hisi_sdma_channel_node *entry;
+	struct hlist_node *tmp;
+	u32 bkt;
+
+	if (pchannel == NULL || pchannel->sdma_ida_ht == NULL)
+		return;
+
+	spin_lock(&pchannel->owner_chn_lock);
+	hash_for_each_safe(pchannel->sdma_ida_ht, bkt, tmp, entry, node) {
+		hash_del(&entry->node);
+		kfree(entry);
+	}
+	spin_unlock(&pchannel->owner_chn_lock);
+}
+
 static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 {
 	struct file_open_data *data;
@@ -278,7 +368,7 @@ static int ioctl_sdma_get_chn(struct file *file, unsigned long arg)
 	list_node->chn_idx = idx;
 	list_add(&list_node->chn_list, &data->non_share_chn_list);
 	pchannel = pdev->channels + idx;
-	pchannel->ida = (u32)data->ida;
+	sdma_add_ida_val(pchannel, data->ida);
 
 	if (copy_to_user((u32 __user *)(uintptr_t)arg, &idx, sizeof(u32))) {
 		ret = -EFAULT;
@@ -293,7 +383,7 @@ put_chn:
 	list_del(&list_node->chn_list);
 	bitmap_set(pdev->channel_map, idx - share_chns, 1);
 	pdev->nr_channel_used--;
-	pchannel->ida = 0;
+	sdma_reset_ida_val(pchannel);
 unlock:
 	spin_unlock(&pdev->channel_lock);
 	kfree(list_node);
@@ -308,6 +398,7 @@ static int ioctl_sdma_put_chn(struct file *file, unsigned long arg)
 	struct device *dev = &pdev->pdev->dev;
 	u32 share_chns = *(g_info.share_chns);
 	struct hisi_sdma_channel_list *c, *n;
+	struct hisi_sdma_channel *pchannel;
 	u32 idx;
 
 	if (copy_from_user(&idx, (u32 __user *)(uintptr_t)arg, sizeof(u32))) {
@@ -320,11 +411,18 @@ static int ioctl_sdma_put_chn(struct file *file, unsigned long arg)
 		return -EFAULT;
 	}
 
+	pchannel = pdev->channels + idx;
+	if (!sdma_check_ida_val(pchannel, data->ida)) {
+		dev_err(dev, "invalid process put chn by sdma exclusive channel%u\n", idx);
+		return -EPERM;
+	}
+
 	spin_lock(&pdev->channel_lock);
 	list_for_each_entry_safe(c, n, &data->non_share_chn_list, chn_list) {
 		if (c->chn_idx == idx) {
 			bitmap_set(pdev->channel_map, idx - share_chns, 1);
 			pdev->nr_channel_used--;
+			sdma_reset_ida_val(pchannel);
 			dev_dbg(dev, "sdma put chn %u\n", idx);
 			list_del(&c->chn_list);
 			kfree(c);
@@ -437,6 +535,7 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 	struct hisi_sdma_channel *pchannel;
 	struct hisi_sdma_channel_list *c;
 	struct hisi_sdma_channel_list *n;
+	int ida = data->ida;
 
 	if (copy_from_user(&share_chn, (struct hisi_sdma_share_chn __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_share_chn))) {
@@ -460,15 +559,28 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 		list_node->chn_idx = share_chn.chn_idx;
 		list_add(&list_node->chn_list, &data->share_chn_list);
 		pchannel->cnt_used++;
+		if (sdma_add_ida_ref(pchannel, ida) != 0) {
+			kfree(list_node);
+			dev_err(dev, "alloc channel node error\n");
+			spin_unlock(&pdev->channel_lock);
+			return -ENOMEM;
+		}
 	}
 
 	if (!share_chn.init_flag && pchannel->cnt_used > 0) {
 		list_for_each_entry_safe(c, n, &data->share_chn_list, chn_list) {
 			if (c->chn_idx == share_chn.chn_idx) {
+				if (!sdma_del_ida_ref(pchannel, ida)) {
+					dev_err(dev, "invalid process deinit share chn!\n");
+					spin_unlock(&pdev->channel_lock);
+					return -EPERM;
+				}
 				pchannel->cnt_used--;
 				if (pchannel->cnt_used == 0) {
 					pchannel->sync_info_base->err_cnt = 0;
 					pchannel->sync_info_base->lock_pid = 0;
+					/* clear lockpid before release lock */
+					wmb();
 					pchannel->sync_info_base->lock = 0;
 				}
 				dev_dbg(dev, "release share_chn%u\n", c->chn_idx);
@@ -582,18 +694,20 @@ static void sdma_fill_sqe(struct hisi_sdma_sq_entry *sq_entry, struct hisi_sdma_
 	sq_entry->qos             = task->qos;
 }
 
-static bool sdma_check_channel_permission(struct hisi_sdma_channel *pchannel, u32 ida, u32 chn)
+static int sdma_check_channel_permission(struct hisi_sdma_channel *pchannel, int ida, u32 chn)
 {
 	u32 share_chns = *(g_info.share_chns);
+	struct hisi_sdma_channel_node *entry;
 
 	if (chn < share_chns) {
-		return true;
+		entry = sdma_search_ida_ref(pchannel, ida);
+		if (entry == NULL)
+			return -EPERM;
 	} else if (chn < HISI_SDMA_DEFAULT_CHANNEL_NUM && pchannel->ida != ida) {
-		pr_err("invalid process send task by sdma exclusive channel%u\n", chn);
-		return false;
+		return -EPERM;
 	}
 
-	return true;
+	return 0;
 }
 
 static int sdma_send_task_kernel(struct file_open_data *data,
@@ -610,11 +724,14 @@ static int sdma_send_task_kernel(struct file_open_data *data,
 
 	pchannel = pdev->channels + task_info->chn;
 	spin_lock(&pchannel->owner_chn_lock);
-	if (!sdma_check_channel_permission(pchannel, (u32)data->ida, task_info->chn)) {
+	ret = sdma_check_channel_permission(pchannel, data->ida, task_info->chn);
+	if (ret != 0) {
+		dev_err(&pdev->pdev->dev, "invalid process send task by channel %u",
+			task_info->chn);
 		spin_unlock(&pchannel->owner_chn_lock);
 		return -EPERM;
 	}
-	sq_tail = pchannel->sync_info_base->sq_tail;
+	sq_tail = sdma_channel_get_sq_tail(pchannel);
 	if (sq_tail >= HISI_SDMA_SQ_LENGTH) {
 		spin_unlock(&pchannel->owner_chn_lock);
 		dev_err(&pdev->pdev->dev, "sq_tail in share mem wrong, sq_tail = %u\n", sq_tail);
@@ -732,6 +849,9 @@ static bool sdma_cq_head_validate(struct hisi_sdma_channel *pchan, u32 reg_value
 	u32 cq_tail;
 	u32 cq_head;
 
+	if (reg_value >= HISI_SDMA_CQ_LENGTH)
+		return false;
+
 	cq_head = sdma_channel_get_cq_head(pchan);
 	cq_tail = sdma_channel_get_cq_tail(pchan);
 	if (cq_tail > cq_head) {
@@ -745,10 +865,11 @@ static bool sdma_cq_head_validate(struct hisi_sdma_channel *pchan, u32 reg_value
 	return false;
 }
 
-static int sdma_operation_reg(struct hisi_sdma_device *pdev, unsigned long arg,
+static int sdma_operation_reg(struct file_open_data *data, unsigned long arg,
 			      u32 (*get_func)(struct hisi_sdma_channel *),
 			      void (*set_func)(struct hisi_sdma_channel *, u32))
 {
+	struct hisi_sdma_device *pdev = data->psdma_dev;
 	struct device *dev = &pdev->pdev->dev;
 	struct hisi_sdma_reg_info reg_info;
 	struct hisi_sdma_channel *pchannel;
@@ -764,23 +885,36 @@ static int sdma_operation_reg(struct hisi_sdma_device *pdev, unsigned long arg,
 		return -EINVAL;
 	}
 	pchannel = pdev->channels + reg_info.chn;
+	spin_lock(&pchannel->owner_chn_lock);
+	if (sdma_check_channel_permission(pchannel, data->ida, reg_info.chn) != 0) {
+		spin_unlock(&pchannel->owner_chn_lock);
+		dev_err(dev, "Invalid process operate channel%u!\n", reg_info.chn);
+		return -EPERM;
+	}
+
 	if (reg_info.type == HISI_SDMA_READ_REG) {
 		reg_info.reg_value = get_func(pchannel);
 		if (copy_to_user((struct hisi_sdma_reg_info __user *)(uintptr_t)arg, &reg_info,
-				 sizeof(struct hisi_sdma_reg_info)))
+				 sizeof(struct hisi_sdma_reg_info))) {
+			spin_unlock(&pchannel->owner_chn_lock);
 			return -EFAULT;
+		}
 	} else if (reg_info.type == HISI_SDMA_WRITE_REG) {
 		if (set_func) {
-			if (reg_info.reg_value == sdma_channel_get_cq_head(pchannel))
+			if (reg_info.reg_value == sdma_channel_get_cq_head(pchannel)) {
+				spin_unlock(&pchannel->owner_chn_lock);
 				return 0;
+			}
 			if (sdma_cq_head_validate(pchannel, reg_info.reg_value)) {
 				set_func(pchannel, reg_info.reg_value);
 			} else {
+				spin_unlock(&pchannel->owner_chn_lock);
 				dev_err(dev, "cq_head value illegal!\n");
 				return -EINVAL;
 			}
 		}
 	}
+	spin_unlock(&pchannel->owner_chn_lock);
 
 	return 0;
 }
@@ -788,33 +922,29 @@ static int sdma_operation_reg(struct hisi_sdma_device *pdev, unsigned long arg,
 static int ioctl_sdma_sq_head_reg(struct file *file, unsigned long arg)
 {
 	struct file_open_data *data = file->private_data;
-	struct hisi_sdma_device *pdev = data->psdma_dev;
 
-	return sdma_operation_reg(pdev, arg, sdma_channel_get_sq_head, NULL);
+	return sdma_operation_reg(data, arg, sdma_channel_get_sq_head, NULL);
 }
 
 static int ioctl_sdma_sq_tail_reg(struct file *file, unsigned long arg)
 {
 	struct file_open_data *data = file->private_data;
-	struct hisi_sdma_device *pdev = data->psdma_dev;
 
-	return sdma_operation_reg(pdev, arg, sdma_channel_get_sq_tail, NULL);
+	return sdma_operation_reg(data, arg, sdma_channel_get_sq_tail, NULL);
 }
 
 static int ioctl_sdma_cq_head_reg(struct file *file, unsigned long arg)
 {
 	struct file_open_data *data = file->private_data;
-	struct hisi_sdma_device *pdev = data->psdma_dev;
 
-	return sdma_operation_reg(pdev, arg, sdma_channel_get_cq_head, sdma_channel_set_cq_head);
+	return sdma_operation_reg(data, arg, sdma_channel_get_cq_head, sdma_channel_set_cq_head);
 }
 
 static int ioctl_sdma_cq_tail_reg(struct file *file, unsigned long arg)
 {
 	struct file_open_data *data = file->private_data;
-	struct hisi_sdma_device *pdev = data->psdma_dev;
 
-	return sdma_operation_reg(pdev, arg, sdma_channel_get_cq_tail, NULL);
+	return sdma_operation_reg(data, arg, sdma_channel_get_cq_tail, NULL);
 }
 
 static int ioctl_sdma_dfx_reg(struct file *file, unsigned long arg)
@@ -837,6 +967,13 @@ static int ioctl_sdma_dfx_reg(struct file *file, unsigned long arg)
 		return -EINVAL;
 	}
 	pchannel = pdev->channels + reg_info.chn;
+	spin_lock(&pchannel->owner_chn_lock);
+	if (sdma_check_channel_permission(pchannel, data->ida, reg_info.chn) != 0) {
+		spin_unlock(&pchannel->owner_chn_lock);
+		dev_err(dev, "Invalid process operate channel%u dfx!\n", reg_info.chn);
+		return -EPERM;
+	}
+	spin_unlock(&pchannel->owner_chn_lock);
 	reg_info.reg_value = sdma_channel_get_dfx(pchannel);
 	if (copy_to_user((struct hisi_sdma_reg_info __user *)(uintptr_t)arg, &reg_info,
 			 sizeof(struct hisi_sdma_reg_info))) {
@@ -867,6 +1004,13 @@ static int ioctl_sdma_sqe_cnt_reg(struct file *file, unsigned long arg)
 	}
 
 	pchannel = pdev->channels + reg_info.chn;
+	spin_lock(&pchannel->owner_chn_lock);
+	if (sdma_check_channel_permission(pchannel, data->ida, reg_info.chn) != 0) {
+		spin_unlock(&pchannel->owner_chn_lock);
+		dev_err(dev, "Invalid process operate channel%u sqe reg!\n", reg_info.chn);
+		return -EPERM;
+	}
+	spin_unlock(&pchannel->owner_chn_lock);
 	if (reg_info.type == HISI_SDMA_CLR_NORMAL_SQE_CNT)
 		sdma_channel_clr_normal_sqe_cnt(pchannel);
 	else if (reg_info.type == HISI_SDMA_CLR_ERR_SQE_CNT)
@@ -983,6 +1127,8 @@ static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 	spin_lock(&pdev->channel_lock);
 	list_for_each_entry_safe(c, n, &data->non_share_chn_list, chn_list) {
 		dev_dbg(dev, "release non_share_chn%u\n", c->chn_idx);
+		pchannel = pdev->channels + c->chn_idx;
+		sdma_reset_ida_val(pchannel);
 		bitmap_set(pdev->channel_map, c->chn_idx - share_chns, 1);
 		list_del(&c->chn_list);
 		kfree(c);
@@ -997,13 +1143,18 @@ static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 			pchannel->sync_info_base->lock_pid == (u32)current->tgid) {
 			dev_warn(dev, "process %d exit with lock\n", current->tgid);
 			pchannel->sync_info_base->lock_pid = 0;
+			/* clear lockpid before release lock */
+			wmb();
 			pchannel->sync_info_base->lock = 0;
 		}
 		if (pchannel->cnt_used == 0) {
 			pchannel->sync_info_base->err_cnt = 0;
 			pchannel->sync_info_base->lock_pid = 0;
+			/* clear lockpid before release lock */
+			wmb();
 			pchannel->sync_info_base->lock = 0;
 		}
+		sdma_del_ida_ref(pchannel, data->ida);
 		list_del(&c->chn_list);
 		kfree(c);
 	}
@@ -1021,8 +1172,10 @@ static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 	return 0;
 }
 
-static int remap_addr_range(u32 chn_num, u64 offset, u64 size)
+static int remap_addr_range(u32 chn_num, u64 offset, u64 size, struct hisi_sdma_channel *chn_base,
+			    int ida)
 {
+	struct hisi_sdma_channel *pchannel;
 	bool mode = *(g_info.sdma_mode);
 	u64 sync_size;
 
@@ -1033,6 +1186,15 @@ static int remap_addr_range(u32 chn_num, u64 offset, u64 size)
 		pr_err("sdma mmap offset exceed range\n");
 		return -EINVAL;
 	}
+
+	pchannel = chn_base + offset % chn_num;
+	spin_lock(&pchannel->owner_chn_lock);
+	if (sdma_check_channel_permission(pchannel, ida, pchannel->idx)) {
+		spin_unlock(&pchannel->owner_chn_lock);
+		pr_err("sdma invalid process mmap\n");
+		return -EPERM;
+	}
+	spin_unlock(&pchannel->owner_chn_lock);
 
 	if (offset < chn_num * HISI_SDMA_MMAP_CQE) {
 		if (mode == HISI_SDMA_SAFE_MODE || size > HISI_SDMA_SQ_SIZE) {
@@ -1090,7 +1252,7 @@ static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
 	vma->vm_flags |= VM_DONTEXPAND | VM_WIPEONFORK | VM_DONTCOPY;
 
 	dev_dbg(dev, "sdma total channel num = %u, user mmap offset = 0x%llx", chn_num, offset);
-	switch (remap_addr_range(chn_num, offset, size)) {
+	switch (remap_addr_range(chn_num, offset, size, chn_base, data->ida)) {
 	case HISI_SDMA_MMAP_SQE:
 		pchan = chn_base + offset;
 		pfn_start = virt_to_phys(pchan->sq_base) >> PAGE_SHIFT;

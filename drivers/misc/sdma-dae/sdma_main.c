@@ -153,6 +153,10 @@ static void sdma_free_all_sq_cq(struct hisi_sdma_device *psdma_dev)
 			free_pages((uintptr_t)(void *)pchan->cq_base, get_order(HISI_SDMA_CQ_SIZE));
 		if (pchan->sync_info_base)
 			free_pages((uintptr_t)(void *)pchan->sync_info_base, get_order(sync_size));
+		if (i < share_chns)
+			sdma_clear_ida_ref(pchan);
+		else
+			pchan->ida = -1;
 	}
 }
 
@@ -181,7 +185,10 @@ static int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
 		pchan = psdma_dev->channels + i;
 		pchan->idx = i;
 		pchan->pdev = psdma_dev;
-		pchan->ida = 0;
+		if (i < share_chns)
+			hash_init(pchan->sdma_ida_ht);
+		else
+			pchan->ida = -1;
 		spin_lock_init(&pchan->owner_chn_lock);
 
 		if (sdma_channel_alloc_sq_cq(pchan, psdma_dev->node_idx) == false)
