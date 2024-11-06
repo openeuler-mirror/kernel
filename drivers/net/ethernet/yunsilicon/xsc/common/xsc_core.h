@@ -25,8 +25,8 @@
 #include <linux/sched.h>
 #include <linux/version.h>
 #include <linux/if_vlan.h>
+#include <linux/reboot.h>
 
-#include "common/xsc_macro.h"
 #include "common/xsc_cmd.h"
 #include "common/xsc_ioctl.h"
 #include "common/xsc_auto_hw.h"
@@ -37,14 +37,9 @@
 extern uint xsc_debug_mask;
 extern unsigned int xsc_log_level;
 
-#ifndef mmiowb
 #define mmiowb()
-#endif
 
-#define XSC_PCI_VENDOR_ID_OBSOLETE	0x1172
 #define XSC_PCI_VENDOR_ID		0x1f67
-#define XSC_PF1_DEVICE_ID_OBSOLETE	0x0001
-#define XSC_PF1_VF_DEVICE_ID_OBSOLETE	0x0002
 
 #define XSC_MC_PF_DEV_ID		0x1011
 #define XSC_MC_VF_DEV_ID		0x1012
@@ -69,6 +64,23 @@ extern unsigned int xsc_log_level;
 #define QPM_PAM_TBL_INDEX_SHIFT				2
 #define QPM_PAM_PAGE_SHIFT				12
 
+#define XSC_SUB_DEV_ID_MC_50		0xC050
+#define XSC_SUB_DEV_ID_MC_100		0xC100
+#define XSC_SUB_DEV_ID_MC_200		0xC200
+#define XSC_SUB_DEV_ID_MC_400S		0xC400
+#define XSC_SUB_DEV_ID_MF_50		0xF050
+#define XSC_SUB_DEV_ID_MF_200		0xF200
+#define XSC_SUB_DEV_ID_MS_50		0xA050
+#define XSC_SUB_DEV_ID_MS_100Q		0xA104
+#define XSC_SUB_DEV_ID_MS_200		0xA200
+#define XSC_SUB_DEV_ID_MS_200S		0xA201
+#define XSC_SUB_DEV_ID_MS_400M		0xA202
+#define XSC_SUB_DEV_ID_MS_200_OCP	0xA203
+#define XSC_SUB_DEV_ID_MV_100		0xD100
+#define XSC_SUB_DEV_ID_MV_200		0xD200
+
+#define XSC_MAX_PRODUCT_NAME_LEN	32
+
 enum {
 	XSC_LOG_LEVEL_DBG	= 0,
 	XSC_LOG_LEVEL_INFO	= 1,
@@ -84,9 +96,6 @@ enum {
 	XSC_CHIP_UNKNOWN,
 };
 
-#ifndef dev_fmt
-#define dev_fmt(fmt) fmt
-#endif
 
 #define xsc_dev_log(condition, level, dev, fmt, ...)			\
 do {									\
@@ -201,10 +210,8 @@ enum xsc_rdma_driver_id {
 	RDMA_DRIVER_XSC4,
 };
 
-static LIST_HEAD(intf_list);
-static LIST_HEAD(xsc_dev_list);
 /* mutex for interface device list */
-static DEFINE_MUTEX(xsc_intf_mutex);
+extern struct mutex xsc_intf_mutex;
 
 #define GROUP_REFER_CNT_SIZE	1024
 
@@ -214,7 +221,6 @@ struct qp_group_refer {
 };
 
 struct xsc_priv_device {
-	struct class	*priv_class;
 	char	device_name[IB_DEVICE_NAME_MAX];
 	dev_t	devno;
 	struct cdev	cdev;
@@ -222,11 +228,6 @@ struct xsc_priv_device {
 	spinlock_t		mem_lock;	/* protect mem_list */
 	struct radix_tree_root	bdf_tree;
 	spinlock_t		bdf_lock;	/* protect bdf_tree */
-};
-
-struct xsc_dpdk_mem {
-	struct list_head	mem_list;
-	spinlock_t		mem_lock;	/* protect mem_list */
 };
 
 enum xsc_pci_status {
@@ -255,9 +256,7 @@ enum {
 	XSC_INTERFACE_ATTACHED,
 };
 
-#ifndef COSIM
 #define CONFIG_XSC_SRIOV	1
-#endif
 
 enum xsc_coredev_type {
 	XSC_COREDEV_PF,
@@ -387,14 +386,17 @@ struct xsc_vport {
 		u8    enabled;
 		u32     esw_tsar_ix;
 		u32     bw_share;
-		u32     min_rate;
-		u32     max_rate;
+	u32     min_rate;
+	u32     max_rate;
 	} qos;
 
 	u8 enabled;
 	enum xsc_eswitch_vport_event enabled_events;
 	u16 match_id;
 	u32 bond_metadata;
+	u16 vlan_id;
+	u8 vlan_qos;
+	__be16 vlan_proto;
 };
 
 struct xsc_eswitch {
@@ -433,7 +435,6 @@ struct xsc_priv {
 	int			numa_node;
 	struct xsc_core_sriov	sriov;
 	struct xsc_eswitch	*eswitch;
-	struct xsc_lag		*lag;
 	struct xsc_core_health	health;
 };
 
@@ -446,19 +447,22 @@ struct xsc_port_ctrl {
 	spinlock_t file_lock;	/* protect file_list */
 };
 
-struct xsc_port_ctrl_file {
-	struct list_head file_node;
-	struct radix_tree_root bdf_tree;
-	spinlock_t bdf_lock;	/* protect bdf_tree */
-	struct xsc_bdf_file *root_bdf;
-	struct xsc_port_ctrl *ctrl;
-};
+typedef	int (*restore_func_t)(struct xsc_core_device *dev);
 
 struct xsc_bdf_file {
 	unsigned long key;
 	struct radix_tree_root obj_tree;	/* protect obj_tree */
 	spinlock_t obj_lock;
 	struct xsc_core_device *xdev;
+	restore_func_t restore_nic_fn;
+};
+
+struct xsc_port_ctrl_file {
+	struct list_head file_node;
+	struct radix_tree_root bdf_tree;
+	spinlock_t bdf_lock;	/* protect bdf_tree */
+	struct xsc_bdf_file *root_bdf;
+	struct xsc_port_ctrl *ctrl;
 };
 
 struct xsc_port_caps {
@@ -556,8 +560,9 @@ struct xsc_caps {
 	u16		pcie1_pf_funcid_top;
 	u8		nif_port_num;
 	u8		pcie_host;
-	u8		mac_num;
+	u8		mac_bit;
 	u16		funcid_to_logic_port;
+	u8		lag_logic_port_ofst;
 };
 
 struct cache_ent {
@@ -756,6 +761,14 @@ struct xsc_reg_addr {
 	u64	cpm_busy;
 };
 
+struct xsc_board_info {
+	u32			board_id;
+	char			board_sn[XSC_BOARD_SN_LEN];
+	__be64			guid;
+	u8			guid_valid;
+	u8			hw_config_activated;
+};
+
 /* our core device */
 struct xsc_core_device {
 	struct pci_dev	*pdev;
@@ -780,8 +793,6 @@ struct xsc_core_device {
 
 	struct mutex		pci_status_mutex;	/* protect pci_status */
 	enum xsc_pci_status	pci_status;
-	u32			board_id;
-	char			board_sn[XSC_BOARD_SN_LEN];
 	struct mutex		intf_state_mutex;	/* protect intf_state */
 	unsigned long		intf_state;
 	enum xsc_coredev_type	coredev_type;
@@ -792,7 +803,7 @@ struct xsc_core_device {
 
 	void			*counters_priv;
 	struct xsc_priv_device	priv_device;
-	struct xsc_dpdk_mem	dpdk_mem;
+	struct xsc_board_info	*board_info;
 	void (*event)(struct xsc_core_device *dev,
 		      enum xsc_dev_event event, unsigned long param);
 
@@ -812,11 +823,17 @@ struct xsc_core_device {
 	u8			fw_version_extra_flag;
 	cpumask_var_t		xps_cpumask;
 
+	u8	reg_mr_via_cmdq;
+	u8	user_mode;
+
 	struct xsc_port_ctrl port_ctrl;
 
 	void	*rtt_priv;
 	void	*ap_priv;
 	void	*pcie_lat;
+
+	u8	bond_id;
+	struct list_head slave_node;
 };
 
 struct xsc_feature_flag {
@@ -856,6 +873,24 @@ struct xsc_mem_entry {
 	struct xsc_ioctl_mem_info mem_info;
 };
 
+struct xsc_device_product_info {
+	u16 vendor;
+	u16 device;
+	u16 subdevice;
+	char product_name[XSC_MAX_PRODUCT_NAME_LEN];
+};
+
+#define XSC_DEVICE_PRODUCT_INFO(vend, dev, subdev, name) \
+	.vendor = (vend), .device = (dev), \
+	.subdevice = (subdev), .product_name = (name)
+
+#define kcalloc_node(n, size, flags, node) kmalloc_node((n) * (size), (flags) | __GFP_ZERO, (node))
+
+static inline bool xsc_fw_is_available(struct xsc_core_device *dev)
+{
+	return dev->cmd.cmd_status == XSC_CMD_STATUS_NORMAL;
+}
+
 int xsc_debugfs_init(struct xsc_core_device *dev);
 void xsc_debugfs_fini(struct xsc_core_device *dev);
 void xsc_register_debugfs(void);
@@ -872,9 +907,12 @@ void xsc_reload_interface(struct xsc_core_device *dev, int protocol);
 void xsc_reload_interfaces(struct xsc_core_device *dev,
 			   int protocol1, int protocol2,
 			   bool valid1, bool valid2);
-struct xsc_core_device *xsc_get_next_phys_dev(struct xsc_core_device *dev);
+
 void xsc_remove_dev_by_protocol(struct xsc_core_device *dev, int protocol);
 void xsc_add_dev_by_protocol(struct xsc_core_device *dev, int protocol);
+void xsc_dev_list_lock(void);
+void xsc_dev_list_unlock(void);
+int xsc_dev_list_trylock(void);
 
 int xsc_cmd_write_reg_directly(struct xsc_core_device *dev, void *in, int in_size, void *out,
 			       int out_size, int func_id);
@@ -905,12 +943,15 @@ void xsc_counters_fini(struct ib_device *ib_dev,
 int xsc_priv_dev_init(struct ib_device *ib_dev, struct xsc_core_device *dev);
 void xsc_priv_dev_fini(struct ib_device *ib_dev, struct xsc_core_device *dev);
 
+int xsc_priv_alloc_chrdev_region(void);
+void xsc_priv_unregister_chrdev_region(void);
+
 int xsc_eth_sysfs_create(struct net_device *netdev, struct xsc_core_device *dev);
 void xsc_eth_sysfs_remove(struct net_device *netdev, struct xsc_core_device *dev);
 int xsc_rtt_sysfs_init(struct ib_device *ib_dev, struct xsc_core_device *xdev);
 void xsc_rtt_sysfs_fini(struct xsc_core_device *xdev);
 
-int xsc_ib_sysfs_init(struct ib_device *ib_dev, struct xsc_core_device *xdev);
+void xsc_ib_sysfs_init(struct ib_device *ib_dev, struct xsc_core_device *xdev);
 void xsc_ib_sysfs_fini(struct ib_device *ib_dev, struct xsc_core_device *xdev);
 
 int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
@@ -918,7 +959,8 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 int xsc_cmd_enable_hca(struct xsc_core_device *dev, u16 vf_num, u16 max_msix);
 int xsc_cmd_disable_hca(struct xsc_core_device *dev, u16 vf_num);
 int xsc_cmd_modify_hca(struct xsc_core_device *dev);
-int xsc_get_board_id(struct xsc_core_device *dev);
+int xsc_query_guid(struct xsc_core_device *dev);
+void xsc_free_board_info(void);
 
 int xsc_irq_eq_create(struct xsc_core_device *dev);
 int xsc_irq_eq_destroy(struct xsc_core_device *dev);
@@ -944,6 +986,7 @@ struct cpumask *xsc_comp_irq_get_affinity_mask(struct xsc_core_device *dev, int 
 void mask_cpu_by_node(int node, struct cpumask *dstp);
 int xsc_get_link_speed(struct xsc_core_device *dev);
 int xsc_chip_type(struct xsc_core_device *dev);
+int xsc_eth_restore_nic_hca(struct xsc_core_device *dev);
 
 #define XSC_ESWITCH_MANAGER(dev) ((dev)->caps.eswitch_manager)
 
@@ -1212,6 +1255,11 @@ is_support_rdma(struct xsc_core_device *dev)
 	return false;
 }
 
+static inline bool is_support_rdma_cm(struct xsc_core_device *dev)
+{
+	return dev->caps.hw_feature_flag & XSC_HW_RDMA_CM_SUPPORT;
+}
+
 static inline bool
 is_support_pfc_prio_statistic(struct xsc_core_device *dev)
 {
@@ -1224,5 +1272,40 @@ is_support_pfc_prio_statistic(struct xsc_core_device *dev)
 	return false;
 }
 
-#endif /* XSC_CORE_H */
+static inline bool
+is_support_pfc_stall_stats(struct xsc_core_device *dev)
+{
+	if (!dev)
+		return false;
 
+	if (dev->caps.hw_feature_flag & XSC_HW_PFC_STALL_STATS_SUPPORT)
+		return true;
+
+	return false;
+}
+
+static inline bool is_support_hw_pf_stats(struct xsc_core_device *dev)
+{
+	return xsc_core_is_pf(dev);
+}
+
+static inline void xsc_set_user_mode(struct xsc_core_device *dev, u8 mode)
+{
+	dev->user_mode = mode;
+}
+
+static inline u8 xsc_get_user_mode(struct xsc_core_device *dev)
+{
+	return dev->user_mode;
+}
+
+void xsc_pci_exit(void);
+
+void xsc_remove_eth_driver(void);
+
+void xsc_remove_rdma_driver(void);
+
+void xsc_set_exit_flag(void);
+bool xsc_get_exit_flag(void);
+bool exist_incomplete_qp_flush(void);
+#endif /* XSC_CORE_H */

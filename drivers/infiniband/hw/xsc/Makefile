@@ -11,7 +11,7 @@ endif
 obj-$(CONFIG_INFINIBAND_XSC) += xsc_ib.o
 
 xsc_ib-y := main.o xsc_rdma_ctrl.o cq.o qp.o mem.o mr.o ah.o \
-		counters.o devx.o global.o private_dev.o ib_umem_ex.o\
+		counters.o devx.o private_dev.o ib_umem_ex.o\
 		rtt.o xsc_ib_sysfs.o
 
 xsc_ib-$(CONFIG_XSC_PEER_SUPPORT) += peer_mem.o

@@ -88,88 +88,6 @@ static inline unsigned short from32to16(unsigned int x)
 
 static inline bool handle_udp_frag_csum(struct sk_buff *skb, struct epp_pph *pph)
 {
-#ifdef XSC_UDP_FRAG_CSUM
-	char *head = (char *)pph;
-	struct iphdr *iph;
-	u8 l3_proto = PPH_OUTER_IP_TYPE(head);
-	u8 l4_proto = PPH_OUTER_TP_TYPE(head);
-	u16 csum_off = (u16)PPH_CSUM_OFST(head);
-	u16 csum_plen = (u16)PPH_CSUM_PLEN(head);
-	u8 payload_off = PPH_PAYLOAD_OFST(head);
-	u32 hw_csum = PPH_CSUM_VAL(head);
-	u16 udp_check = 0;
-	u16 udp_len = 0;
-	u32 off = 64;
-	__wsum csum1, csum2, csum3, csum;
-
-#ifdef CUM_SKB_DATA
-	head = (char *)skb->data;
-	off = 0;
-#endif
-
-	if (l4_proto != L4_PROTO_UDP && l4_proto != L4_PROTO_NONE)
-		return false;
-
-	off += ETH_HLEN;
-	if (l3_proto == L3_PROTO_IP) {
-		iph = (struct iphdr *)(head + off);
-		if (!ip_is_fragment(iph))
-			return false;
-
-#ifdef UDP_CSUM_DEBUG
-	netdev_dbg("ip_id=%d frag_off=0x%x l4_prt=%d l3_prt=%d iph_off=%d ip_len=%d csum_off=%d pload_off=%d\n",
-		   ntohs(iph->id), ntohs(iph->frag_off),
-		   l4_proto, l3_proto, PPH_OUTER_IP_OFST(head), PPH_OUTER_IP_LEN(pph),
-		   csum_off, payload_off);
-#endif
-
-		off += iph->ihl * 4;
-		if (l4_proto == L4_PROTO_UDP) {
-			struct udphdr *uh = (struct udphdr *)(head + off);
-
-			udp_check = uh->check;
-			udp_len = ntohs(uh->len);
-		}
-
-		if (csum_off == 0)
-			csum_off = 256;
-
-		netdev_dbg("%s: ip_id=%d frag_off=0x%x skb_len=%d data_len=%d csum_off=%d csum_plen=%d payload_off=%d udp_off=%d udp_len=%d udp_check=0x%x\n",
-			   __func__, ntohs(iph->id), ntohs(iph->frag_off),
-			   skb->len, skb->data_len,
-			   csum_off, csum_plen, payload_off, off, udp_len, udp_check);
-#ifdef CUM_RAW_DATA_DUMP
-		xsc_pkt_pph_dump((char *)head, 272);
-#endif
-
-		if (csum_off < off) {
-			csum1 = csum_partial((char *)(head + csum_off), (off - csum_off), 0);
-			csum2 = htons(from32to16(hw_csum));
-			csum = csum_sub(csum2, csum1);
-		} else if (csum_off > off) {
-			csum2 = csum_partial((char *)(head + csum_off), csum_plen, 0);
-			csum1 = csum_partial((char *)(head + off), (csum_off - off), 0);
-			csum = htons(from32to16(hw_csum));
-			csum = csum_partial((char *)(head + off), (csum_off - off), csum);
-			csum3 = csum_partial((char *)(head + off), (skb->len - off + 64), 0);
-		} else {
-			csum = htons(from32to16(hw_csum));
-		}
-		skb->csum = csum_unfold(from32to16(csum));
-
-		ETH_DEBUG_LOG("%s: sw_cal_csum[%d:%d]=0x%x -> 0x%x\n",
-			      __func__, off, csum_off, csum1, from32to16(csum1));
-		ETH_DEBUG_LOG("%s: sw_cal_hw_csum[%d:%d]=0x%x -> 0x%x, hw_csum=0x%x -> 0x%x\n",
-			      __func__, csum_off, csum_plen, csum2, from32to16(csum2),
-			      hw_csum, from32to16(hw_csum));
-		ETH_DEBUG_LOG("%s: sw_cal_tot_csum[%d:%d]=0x%x -> 0x%x, skb_csum=0x%x -> 0x%x\n",
-			      __func__, off, skb->len, csum3, from32to16(csum3), csum, skb->csum);
-
-		skb->ip_summed = CHECKSUM_COMPLETE;
-
-		return true;
-	}
-#endif
 
 	return false;
 }
@@ -258,6 +176,9 @@ static inline void xsc_complete_rx_cqe(struct xsc_rq *rq,
 	stats->packets++;
 	stats->bytes += cqe_bcnt;
 	xsc_build_rx_skb(cqe, cqe_bcnt, rq, skb, wi);
+
+	rq->dim_obj.sample.pkt_ctr  = rq->stats->packets;
+	rq->dim_obj.sample.byte_ctr = rq->stats->bytes;
 }
 
 static inline void xsc_add_skb_frag(struct xsc_rq *rq,
@@ -343,6 +264,7 @@ struct sk_buff *xsc_skb_from_cqe_nonlinear(struct xsc_rq *rq,
 {
 	struct xsc_rq_frag_info *frag_info = &rq->wqe.info.arr[0];
 	struct xsc_wqe_frag_info *head_wi = wi;
+	struct xsc_wqe_frag_info *rx_wi = wi;
 	u16 headlen  = min_t(u32, XSC_RX_MAX_HEAD, cqe_bcnt);
 	u16 frag_headlen = headlen;
 	u16 byte_cnt = cqe_bcnt - headlen;
@@ -353,12 +275,9 @@ struct sk_buff *xsc_skb_from_cqe_nonlinear(struct xsc_rq *rq,
 	u8 fragcnt = 0;
 	u16 head_offset = head_wi->offset;
 	u16 frag_consumed_bytes = 0;
+	int i = 0;
 
-#ifndef NEED_CREATE_RX_THREAD
 	skb = napi_alloc_skb(rq->cq.napi, ALIGN(XSC_RX_MAX_HEAD, sizeof(long)));
-#else
-	skb = netdev_alloc_skb(netdev, ALIGN(XSC_RX_MAX_HEAD, sizeof(long)));
-#endif
 	if (unlikely(!skb)) {
 		rq->stats->buff_alloc_err++;
 		return NULL;
@@ -372,6 +291,15 @@ struct sk_buff *xsc_skb_from_cqe_nonlinear(struct xsc_rq *rq,
 		byte_cnt = cqe_bcnt - headlen - XSC_PPH_HEAD_LEN;
 		head_offset += XSC_PPH_HEAD_LEN;
 	}
+
+	if (byte_cnt == 0 && (XSC_GET_PFLAG(&c->adapter->nic_param, XSC_PFLAG_RX_COPY_BREAK))) {
+		for (i = 0; i < rq->wqe.info.num_frags; i++, wi++)
+			wi->is_available = 1;
+		goto ret;
+	}
+
+	for (i = 0; i < rq->wqe.info.num_frags; i++, rx_wi++)
+		rx_wi->is_available = 0;
 
 	while (byte_cnt) {
 		/*figure out whether the first fragment can be a page ?*/
@@ -405,6 +333,7 @@ struct sk_buff *xsc_skb_from_cqe_nonlinear(struct xsc_rq *rq,
 		wi++;
 	}
 
+ret:
 	/* copy header */
 	xsc_copy_skb_header(dev, skb, head_wi->di, head_offset, headlen);
 
@@ -493,10 +422,8 @@ void xsc_page_release_dynamic(struct xsc_rq *rq,
 			      struct xsc_dma_info *dma_info, bool recycle)
 {
 	if (likely(recycle)) {
-#ifdef XSC_PAGE_CACHE
 		if (xsc_rx_cache_put(rq, dma_info))
 			return;
-#endif
 
 		xsc_page_dma_unmap(rq, dma_info);
 		page_pool_recycle_direct(rq->page_pool, dma_info->page);
@@ -524,8 +451,24 @@ static inline void xsc_free_rx_wqe(struct xsc_rq *rq,
 {
 	int i;
 
-	for (i = 0; i < rq->wqe.info.num_frags; i++, wi++)
+	for (i = 0; i < rq->wqe.info.num_frags; i++, wi++) {
+		if (wi->is_available && recycle)
+			continue;
 		xsc_put_rx_frag(rq, wi, recycle);
+	}
+}
+
+static void xsc_dump_error_rqcqe(struct xsc_rq *rq,
+				 struct xsc_cqe *cqe)
+{
+	struct xsc_channel *c = rq->cq.channel;
+	struct net_device *netdev  = c->adapter->netdev;
+	u32 ci = xsc_cqwq_get_ci(&rq->cq.wq);
+
+	net_err_ratelimited("Error cqe on dev=%s, cqn=%d, ci=%d, rqn=%d, qpn=%d, error_code=0x%x\n",
+			    netdev->name, rq->cq.xcq.cqn, ci,
+			    rq->rqn, cqe->qp_id, get_cqe_opcode(cqe));
+
 }
 
 void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
@@ -542,13 +485,17 @@ void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
 	ci = xsc_wq_cyc_ctr2ix(wq, cqwq->cc);
 	wi = get_frag(rq, ci);
 	if (unlikely(cqe_opcode & BIT(7))) {
-		rq->stats->wqe_err++;
+		xsc_dump_error_rqcqe(rq, cqe);
+		rq->stats->cqe_err++;
 		goto free_wqe;
 	}
 
 	cqe_bcnt = le32_to_cpu(cqe->msg_len);
+	if (cqe->has_pph && cqe_bcnt <= XSC_PPH_HEAD_LEN) {
+		rq->stats->wqe_err++;
+		goto free_wqe;
+	}
 
-	/* Check packet size. */
 	if (unlikely(cqe_bcnt > rq->frags_sz)) {
 		if (!XSC_GET_PFLAG(&c->adapter->nic_param, XSC_PFLAG_DROPLESS_RQ)) {
 			rq->stats->oversize_pkts_sw_drop += cqe_bcnt;
@@ -563,33 +510,15 @@ void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
 	if (!skb)
 		goto free_wqe;
 
-	xsc_complete_rx_cqe(rq, cqe, cqe_bcnt, skb, wi);
+	xsc_complete_rx_cqe(rq, cqe,
+			    cqe->has_pph == 1 ? cqe_bcnt - XSC_PPH_HEAD_LEN : cqe_bcnt,
+			    skb, wi);
 
-#ifdef NEED_CREATE_RX_THREAD
-	netif_rx_ni(skb);
-#else
 	napi_gro_receive(rq->cq.napi, skb);
-#endif
 
 free_wqe:
 	xsc_free_rx_wqe(rq, wi, true);
 	xsc_wq_cyc_pop(wq);
-}
-
-static void xsc_dump_error_rqcqe(struct xsc_rq *rq,
-				 struct xsc_cqe *cqe)
-{
-	struct xsc_channel *c = rq->cq.channel;
-	struct net_device *netdev  = c->adapter->netdev;
-	u32 ci = xsc_cqwq_get_ci(&rq->cq.wq);
-
-	net_err_ratelimited("Error cqe on dev=%s, cqn=%d, ci=%d, rqn=%d, qpn=%d, error_code=0x%x\n",
-			    netdev->name, rq->cq.xcq.cqn, ci,
-			    rq->rqn, cqe->qp_id, get_cqe_opcode(cqe));
-
-#ifdef XSC_DEBUG
-	xsc_dump_err_cqe(rq->cq.xdev, cqe);
-#endif
 }
 
 int xsc_poll_rx_cq(struct xsc_cq *cq, int budget)
@@ -604,12 +533,6 @@ int xsc_poll_rx_cq(struct xsc_cq *cq, int budget)
 		return 0;
 
 	while ((work_done < budget) && (cqe = xsc_cqwq_get_cqe(cqwq))) {
-		if (unlikely(get_cqe_opcode(cqe) & BIT(7))) {
-			xsc_dump_error_rqcqe(rq, cqe);
-			rq->stats->cqe_err++;
-			break;
-		}
-
 		rq->stats->cqes++;
 
 		rq->handle_rx_cqe(cqwq, rq, cqe);
@@ -626,10 +549,9 @@ int xsc_poll_rx_cq(struct xsc_cq *cq, int budget)
 	wmb();
 
 out:
-	rq->post_wqes(rq);
 	ch_stats->poll += work_done;
 	if (work_done < budget) {
-		if (ch_stats->poll == 0 && cq->channel->rx_int)
+		if (ch_stats->poll == 0)
 			ch_stats->poll_0++;
 		else if (ch_stats->poll < 64)
 			ch_stats->poll_1_63++;
@@ -650,12 +572,10 @@ static inline int xsc_page_alloc_mapped(struct xsc_rq *rq,
 	struct xsc_channel *c = rq->cq.channel;
 	struct device *dev = c->adapter->dev;
 
-#ifdef XSC_PAGE_CACHE
 	if (xsc_rx_cache_get(rq, dma_info))
 		return 0;
 
 	rq->stats->cache_alloc++;
-#endif
 
 	dma_info->page = page_pool_dev_alloc_pages(rq->page_pool);
 	if (unlikely(!dma_info->page))
@@ -677,7 +597,7 @@ static inline int xsc_get_rx_frag(struct xsc_rq *rq,
 {
 	int err = 0;
 
-	if (!frag->offset)
+	if (!frag->offset && !frag->is_available)
 		/* On first frag (offset == 0), replenish page (dma_info actually).
 		 * Other frags that point to the same dma_info (with a different
 		 * offset) should just use the new one without replenishing again

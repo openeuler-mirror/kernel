@@ -9,16 +9,18 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/uaccess.h>
+#include <linux/bitmap.h>
 #include "common/xsc_core.h"
 #include "common/driver.h"
 #include "common/xsc_port_ctrl.h"
 #include "common/res_obj.h"
 
 
-#define XSC_PORT_CTRL_MAX		256
+#define XSC_PORT_CTRL_MAX		1024
 #define XSC_PORT_CTRL_NAME_PRE		"yunsilicon"
 #define XSC_PORT_CTRL_NAME		"port_ctrl"
 #define XSC_PORT_CTRL_CB_NAME_LEN	15
+DECLARE_BITMAP(g_bitmap_dev_id, XSC_PORT_CTRL_MAX);
 
 struct xsc_port_ctrl_reg {
 	struct list_head node;
@@ -156,7 +158,7 @@ static int _port_ctrl_mmap(struct file *filp, struct vm_area_struct *vma)
 		}
 	} else {
 		rl_xdev = xdev;
-		if (is_db_ofst(xdev, offset))
+		if (is_db_ofst(xdev, offset) || !offset)
 			addr = offset;
 		else
 			return -EINVAL;
@@ -168,10 +170,12 @@ static int _port_ctrl_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	reg_base = (pci_resource_start(rl_xdev->pdev, rl_xdev->bar_num) + (addr & PAGE_MASK));
 
-	if (xdev->chip_ver_h == 0x100)
-		reg_base = xsc_core_is_pf(rl_xdev) ? reg_base - 0xA0000000 : reg_base;
-	else
-		reg_base = reg_base - 0xA0000000;
+	if (addr) {
+		if (xdev->chip_ver_h == 0x100)
+			reg_base = xsc_core_is_pf(rl_xdev) ? reg_base - 0xA0000000 : reg_base;
+		else
+			reg_base = reg_base - 0xA0000000;
+	}
 
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 	if (remap_pfn_range(vma, start, (reg_base >> PAGE_SHIFT), size, vma->vm_page_prot)) {
@@ -328,11 +332,13 @@ static void _port_ctrl_dev_del(struct xsc_core_device *dev)
 {
 	struct xsc_port_ctrl *ctrl;
 	struct xsc_port_ctrl_file *file, *n;
+	int dev_id = 0;
 
 	ctrl = &dev->port_ctrl;
 	if (!ctrl)
 		return;
 
+	dev_id = MINOR(ctrl->devid);
 	spin_lock(&ctrl->file_lock);
 	list_for_each_entry_safe(file, n, &ctrl->file_list, file_node) {
 		xsc_release_port_ctrl_file(file);
@@ -343,12 +349,16 @@ static void _port_ctrl_dev_del(struct xsc_core_device *dev)
 
 	device_destroy(g_port_ctrl_class, ctrl->devid);
 	cdev_del(&ctrl->cdev);
+
+	clear_bit(dev_id, g_bitmap_dev_id);
+	g_port_ctrl_dev_cnt--;
 }
 
 static int _port_ctrl_dev_add(struct xsc_core_device *dev)
 {
 	struct xsc_port_ctrl *ctrl;
 	int ret;
+	int dev_id = 0;
 
 	if (g_port_ctrl_dev_cnt >= XSC_PORT_CTRL_MAX) {
 		xsc_core_err(dev, "too many port control devices\n");
@@ -356,7 +366,8 @@ static int _port_ctrl_dev_add(struct xsc_core_device *dev)
 	}
 
 	ctrl = &dev->port_ctrl;
-	ctrl->devid = g_port_ctrl_root_dev + g_port_ctrl_dev_cnt;
+	dev_id = find_first_zero_bit(g_bitmap_dev_id, XSC_PORT_CTRL_MAX);
+	ctrl->devid = g_port_ctrl_root_dev + dev_id;
 	ctrl->cdev.owner = THIS_MODULE;
 	INIT_LIST_HEAD(&ctrl->file_list);
 	spin_lock_init(&ctrl->file_lock);
@@ -369,8 +380,9 @@ static int _port_ctrl_dev_add(struct xsc_core_device *dev)
 	}
 
 	ctrl->device = device_create(g_port_ctrl_class, NULL, ctrl->devid, NULL,
-				     "%s!%s_%02x:%02x.%x", XSC_PORT_CTRL_NAME_PRE,
-				     XSC_PORT_CTRL_NAME, dev->pdev->bus->number,
+				     "%s!%s_%04x:%02x:%02x.%x", XSC_PORT_CTRL_NAME_PRE,
+				     XSC_PORT_CTRL_NAME, pci_domain_nr(dev->pdev->bus),
+				     dev->pdev->bus->number,
 				     PCI_SLOT(dev->pdev->devfn),
 				     PCI_FUNC(dev->pdev->devfn));
 	if (IS_ERR(ctrl->device)) {
@@ -381,6 +393,7 @@ static int _port_ctrl_dev_add(struct xsc_core_device *dev)
 	}
 
 	g_port_ctrl_dev_cnt++;
+	set_bit(dev_id, g_bitmap_dev_id);
 
 	return 0;
 }
@@ -435,56 +448,18 @@ int xsc_port_ctrl_init(void)
 	return 0;
 }
 
-static void xsc_release_bdf_file(struct xsc_core_device *dev)
-{
-	struct xsc_core_device *pf_dev;
-	int domain;
-	unsigned int bus;
-	unsigned int devfn;
-	struct xsc_port_ctrl_file *file, *n;
-	struct xsc_bdf_file *bdf_file;
-	unsigned long key;
-
-	if (!dev->pdev->physfn)    /*for vf passthrough vm*/
-		return;
-
-	pf_dev = pci_get_drvdata(dev->pdev->physfn);
-	domain = pci_domain_nr(dev->pdev->bus);
-	bus = dev->pdev->bus->number;
-	devfn = dev->pdev->devfn;
-	key = bdf_to_key(domain, bus, devfn);
-	xsc_core_dbg(dev, "%x %x %x removed\n", domain, bus, devfn);
-
-	spin_lock(&pf_dev->port_ctrl.file_lock);
-	list_for_each_entry_safe(file, n, &pf_dev->port_ctrl.file_list, file_node) {
-		spin_lock(&file->bdf_lock);
-		bdf_file = radix_tree_delete(&file->bdf_tree, key);
-		spin_unlock(&file->bdf_lock);
-		if (!bdf_file)
-			continue;
-		xsc_close_bdf_file(bdf_file);
-		kfree(bdf_file);
-	}
-	spin_unlock(&pf_dev->port_ctrl.file_lock);
-}
-
 void xsc_port_ctrl_remove(struct xsc_core_device *dev)
 {
-	if (xsc_core_is_pf(dev))
-		_port_ctrl_dev_del(dev);
-	else
-		xsc_release_bdf_file(dev);
+	_port_ctrl_dev_del(dev);
 }
 
 int xsc_port_ctrl_probe(struct xsc_core_device *dev)
 {
 	int ret = 0;
 
-	if (xsc_core_is_pf(dev)) {
-		ret = _port_ctrl_dev_add(dev);
-		if (ret != 0)
-			xsc_core_err(dev, "failed to add new port control device\n");
-	}
+	ret = _port_ctrl_dev_add(dev);
+	if (ret != 0)
+		xsc_core_err(dev, "failed to add new port control device\n");
 
 	return ret;
 }
@@ -508,7 +483,7 @@ int xsc_port_ctrl_cb_reg(const char *name, port_ctrl_cb cb, void *data)
 	if (!reg_node)
 		return -1;
 
-	strlcpy(reg_node->name, name, sizeof(reg_node->name));
+	strscpy(reg_node->name, name, sizeof(reg_node->name));
 	reg_node->cb = cb;
 	reg_node->data = data;
 	INIT_LIST_HEAD(&reg_node->node);

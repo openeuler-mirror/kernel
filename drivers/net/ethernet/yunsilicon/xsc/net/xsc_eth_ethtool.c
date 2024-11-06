@@ -12,6 +12,7 @@
 #include "common/xsc_cmd.h"
 #include "common/xsc_pp.h"
 #include "common/port.h"
+#include "xsc_eth_dim.h"
 
 typedef int (*xsc_pflag_handler)(struct net_device *dev, bool enable);
 
@@ -20,22 +21,20 @@ struct pflag_desc {
 	xsc_pflag_handler handler;
 };
 
-const static char *fpga_type_name[] = {"S", "L"};
-const static char *hps_ddr_name[] = {"1", "2", "4", "unknown"};
-const static char *onchip_ft_name[] = {"N", "O" };
-const static char *rdma_icrc_name[] = {"N", "C" };
-const static char *ma_xbar_name[] = {"N", "X" };
-const static char *anlt_fec_name[] = {"N", "A" };
-const static char *pp_tbl_dma_name[] = {"N", "D" };
-const static char *pct_exp_name[] = {"N", "E" };
+static const char * const fpga_type_name[] = {"S", "L"};
+static const char * const hps_ddr_name[] = {"1", "2", "4", "unknown"};
+static const char * const onchip_ft_name[] = {"N", "O" };
+static const char * const rdma_icrc_name[] = {"N", "C" };
+static const char * const ma_xbar_name[] = {"N", "X" };
+static const char * const anlt_fec_name[] = {"N", "A" };
+static const char * const pp_tbl_dma_name[] = {"N", "D" };
+static const char * const pct_exp_name[] = {"N", "E" };
 
 enum {
 	XSC_ST_LINK_STATE,
 	XSC_ST_LINK_SPEED,
 	XSC_ST_HEALTH_INFO,
-#ifdef CONFIG_INET
 	XSC_ST_LOOPBACK,
-#endif
 	XSC_ST_NUM,
 };
 
@@ -43,9 +42,7 @@ const char xsc_self_tests[XSC_ST_NUM][ETH_GSTRING_LEN] = {
 	"Link Test",
 	"Speed Test",
 	"Health Test",
-#ifdef CONFIG_INET
 	"Loopback Test",
-#endif
 };
 
 static int xsc_test_loopback(struct xsc_adapter *adapter)
@@ -115,10 +112,67 @@ static int set_pflag_dropless_rq(struct net_device *dev,
 	return 0;
 }
 
+static int set_pflag_rx_copy_break(struct net_device *dev,
+				   bool enable)
+{
+	struct xsc_adapter *priv = netdev_priv(dev);
+
+	XSC_SET_PFLAG(&priv->nic_param, XSC_PFLAG_RX_COPY_BREAK, enable);
+
+	return 0;
+}
+
+static int cqe_mode_to_period_mode(bool val)
+{
+	return val ? XSC_CQ_PERIOD_MODE_START_FROM_CQE : XSC_CQ_PERIOD_MODE_START_FROM_EQE;
+}
+
+static int set_pflag_cqe_based_moder(struct net_device *dev, bool enable,
+				     bool is_rx_cq)
+{
+	struct xsc_adapter *priv = netdev_priv(dev);
+	u8 cq_period_mode, current_cq_period_mode;
+	struct xsc_eth_params new_params;
+	int err;
+
+	cq_period_mode = cqe_mode_to_period_mode(enable);
+
+	current_cq_period_mode = is_rx_cq ?
+		priv->nic_param.rx_cq_moderation.cq_period_mode :
+		priv->nic_param.tx_cq_moderation.cq_period_mode;
+
+	if (cq_period_mode == current_cq_period_mode)
+		return 0;
+
+	new_params = priv->nic_param;
+	if (is_rx_cq)
+		xsc_set_rx_cq_mode_params(&new_params, cq_period_mode);
+	else
+		xsc_set_tx_cq_mode_params(&new_params, cq_period_mode);
+
+	priv->nic_param = new_params;
+
+	err = xsc_safe_switch_channels(priv, NULL, NULL);
+	return err;
+}
+
+static int set_pflag_rx_cqe_moder(struct net_device *dev, bool enable)
+{
+	return set_pflag_cqe_based_moder(dev, enable, true);
+}
+
+static int set_pflag_tx_cqe_moder(struct net_device *dev, bool enable)
+{
+	return set_pflag_cqe_based_moder(dev, enable, false);
+}
+
 static const struct pflag_desc xsc_priv_flags[XSC_NUM_PFLAGS] = {
 	{ "rx_no_csum_complete",	set_pflag_rx_no_csum_complete },
-	{ "sniffer",				set_pflag_sniffer },
-	{ "dropless_rq",			set_pflag_dropless_rq},
+	{ "sniffer",			set_pflag_sniffer },
+	{ "dropless_rq",		set_pflag_dropless_rq},
+	{ "rx_copy_break",		set_pflag_rx_copy_break},
+	{ "rx_cqe_moder",		set_pflag_rx_cqe_moder},
+	{ "tx_cqe_moder",		set_pflag_tx_cqe_moder},
 };
 
 int xsc_priv_flags_num(void)
@@ -208,6 +262,7 @@ static int xsc_get_module_info(struct net_device *netdev,
 		modinfo->eeprom_len = ETH_MODULE_SFF_8472_LEN;
 		break;
 	case XSC_MODULE_ID_QSFP_DD:
+	case XSC_MODULE_ID_DSFP:
 	case XSC_MODULE_ID_QSFP_PLUS_CMIS:
 		modinfo->type       = ETH_MODULE_SFF_8636;
 		/* Verify if module EEPROM is a flat memory. In case of flat
@@ -301,10 +356,8 @@ static void xsc_set_drv_fw_version(struct ethtool_drvinfo *info, struct xsc_core
 static void xsc_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 {
 	struct xsc_adapter *adapter = netdev_priv(dev);
-	struct xsc_feature_flag *ff = (struct xsc_feature_flag *)&adapter->xdev->feature_flag;
 
-	snprintf(info->driver, sizeof(info->driver), "%s(cmdq-%d)", XSCALE_DRIVER_NAME,
-		 adapter->xdev->cmdq_ver);
+	snprintf(info->driver, sizeof(info->driver), "%s", XSCALE_DRIVER_NAME);
 
 	if (HOTFIX_NUM == 0)
 		snprintf(info->version, sizeof(info->version), "%d.%d.%d.%d",
@@ -313,40 +366,8 @@ static void xsc_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info
 		snprintf(info->version, sizeof(info->version), "%d.%d.%d.%d.H%d",
 			 BRANCH_VERSION, MAJOR_VERSION, MINOR_VERSION, BUILD_VERSION, HOTFIX_NUM);
 
-	if (xsc_chip_type(adapter->xdev) == XSC_CHIP_MS ||
-	    xsc_chip_type(adapter->xdev) == XSC_CHIP_MV) {
-		xsc_set_drv_fw_version(info, adapter->xdev);
-	} else {
-		if (adapter->xdev->hotfix_num >= 0x27)
-			snprintf(info->fw_version,
-				 sizeof(info->fw_version),
-				 "%x.%x.%x.%s%s%s%s%s%s%s%s",
-				 adapter->xdev->chip_ver_h,
-				 adapter->xdev->hotfix_num,
-				 adapter->xdev->chip_ver_l,
-				 fpga_type_name[ff->fpga_type],
-				 hps_ddr_name[ff->hps_ddr],
-				 onchip_ft_name[ff->onchip_ft],
-				 rdma_icrc_name[ff->rdma_icrc],
-				 ma_xbar_name[ff->ma_xbar],
-				 anlt_fec_name[ff->anlt_fec],
-				 pp_tbl_dma_name[ff->pp_tbl_dma],
-				 pct_exp_name[ff->pct_exp]);
-		else
-			snprintf(info->fw_version,
-				 sizeof(info->fw_version),
-				 "%x.%x.%x.%s%s%s%s%s%s",
-				 adapter->xdev->chip_ver_h,
-				 adapter->xdev->hotfix_num,
-				 adapter->xdev->chip_ver_l,
-				 fpga_type_name[ff->fpga_type],
-				 hps_ddr_name[ff->hps_ddr],
-				 onchip_ft_name[ff->onchip_ft],
-				 rdma_icrc_name[ff->rdma_icrc],
-				 ma_xbar_name[ff->ma_xbar],
-				 anlt_fec_name[ff->anlt_fec]);
-	}
-	strlcpy(info->bus_info, pci_name(adapter->pdev), sizeof(info->bus_info));
+	xsc_set_drv_fw_version(info, adapter->xdev);
+	strscpy(info->bus_info, pci_name(adapter->pdev), sizeof(info->bus_info));
 }
 
 static void xsc_fill_stats_strings(struct xsc_adapter *adapter, u8 *data)
@@ -373,12 +394,16 @@ static void xsc_ethtool_get_strings(struct xsc_adapter *adapter, u32 stringset, 
 
 	case ETH_SS_TEST:
 		for (i = 0; i < xsc_self_test_num(adapter); i++)
-			strcpy(data + i * ETH_GSTRING_LEN, xsc_self_tests[i]);
+			strscpy(data + i * ETH_GSTRING_LEN,
+				xsc_self_tests[i],
+				ETH_GSTRING_LEN);
 		break;
 
 	case ETH_SS_PRIV_FLAGS:
 		for (i = 0; i < XSC_NUM_PFLAGS; i++)
-			strcpy(data + i * ETH_GSTRING_LEN, xsc_priv_flags[i].name);
+			strscpy(data + i * ETH_GSTRING_LEN,
+				xsc_priv_flags[i].name,
+				ETH_GSTRING_LEN);
 		break;
 
 	default:
@@ -423,9 +448,7 @@ static int (*xsc_st_func[XSC_ST_NUM])(struct xsc_adapter *) = {
 	xsc_test_link_state,
 	xsc_test_link_speed,
 	xsc_test_health_info,
-#ifdef CONFIG_INET
 	xsc_test_loopback,
-#endif
 };
 
 static void xsc_self_test(struct net_device *ndev, struct ethtool_test *etest, u64 *buf)
@@ -505,9 +528,9 @@ static void xsc_get_ringparam(struct net_device *dev,
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 
-	param->rx_max_pending = priv->nic_param.rq_max_size;
+	param->rx_max_pending = 8192; //hack for H3C
 	param->rx_pending     = priv->nic_param.rq_size;
-	param->tx_max_pending = priv->nic_param.sq_max_size;
+	param->tx_max_pending = 8192; //hack for H3C
 	param->tx_pending     = priv->nic_param.sq_size;
 }
 
@@ -539,7 +562,7 @@ static int xsc_set_ringparam(struct net_device *dev,
 	if (param->rx_pending > priv->nic_param.rq_max_size) {
 		netdev_info(priv->netdev, "%s: rx_pending (%d) > max (%d)\n",
 			    __func__, param->rx_pending, priv->nic_param.rq_max_size);
-		return -EINVAL;
+		param->rx_pending = priv->nic_param.rq_max_size;
 	}
 
 	if (param->tx_pending < BIT(XSC_MIN_LOG_SQ_SZ)) {
@@ -550,7 +573,7 @@ static int xsc_set_ringparam(struct net_device *dev,
 	if (param->tx_pending > priv->nic_param.sq_max_size) {
 		netdev_info(priv->netdev, "%s: tx_pending (%d) > max (%d)\n",
 			    __func__, param->tx_pending, priv->nic_param.sq_max_size);
-		return -EINVAL;
+		param->tx_pending = priv->nic_param.sq_max_size;
 	}
 
 	if (param->rx_pending == priv->nic_param.rq_size &&
@@ -923,6 +946,12 @@ static int xsc_get_link_ksettings(struct net_device *netdev,
 		break;
 	}
 
+	//when link down, show speed && duplex as unknown
+	if (!linkinfo.linkstatus) {
+		cmd->base.duplex = DUPLEX_UNKNOWN;
+		cmd->base.speed = LINKSPEED_MODE_UNKNOWN;
+	}
+
 	ethtool_link_ksettings_zero_link_mode(cmd, supported);
 	ethtool_link_ksettings_zero_link_mode(cmd, advertising);
 
@@ -1040,7 +1069,128 @@ static int xsc_get_fecparam(struct net_device *netdev,
 	return err;
 }
 
+static int xsc_get_coalesce(struct net_device *netdev,
+			    struct ethtool_coalesce *coal,
+			    struct kernel_ethtool_coalesce *kernel_coal,
+			    struct netlink_ext_ack *extack)
+{
+	struct xsc_adapter *priv = netdev_priv(netdev);
+	xsc_dim_cq_moder_t *rx_moder, *tx_moder;
+
+	rx_moder = &priv->nic_param.rx_cq_moderation;
+	coal->rx_coalesce_usecs		= rx_moder->usec;
+	coal->rx_max_coalesced_frames	= rx_moder->pkts;
+	coal->use_adaptive_rx_coalesce	= priv->nic_param.rx_dim_enabled;
+
+	tx_moder = &priv->nic_param.tx_cq_moderation;
+	coal->tx_coalesce_usecs		= tx_moder->usec;
+	coal->tx_max_coalesced_frames	= tx_moder->pkts;
+	coal->use_adaptive_tx_coalesce	= priv->nic_param.tx_dim_enabled;
+	coal->rx_coalesce_usecs_low	= priv->nic_param.rx_dim_usecs_low;
+	coal->rx_max_coalesced_frames_low = priv->nic_param.rx_dim_frames_low;
+
+	kernel_coal->use_cqe_mode_rx =
+		XSC_GET_PFLAG(&priv->nic_param, XSC_PFLAG_RX_CQE_BASED_MODER);
+	kernel_coal->use_cqe_mode_tx =
+		XSC_GET_PFLAG(&priv->nic_param, XSC_PFLAG_TX_CQE_BASED_MODER);
+
+	return 0;
+}
+
+static int xsc_set_coalesce(struct net_device *netdev,
+			    struct ethtool_coalesce *coal,
+			    struct kernel_ethtool_coalesce *kernel_coal,
+			    struct netlink_ext_ack *extack)
+{
+	struct xsc_adapter *priv = netdev_priv(netdev);
+	xsc_dim_cq_moder_t *rx_moder, *tx_moder;
+	struct xsc_eth_params new_params = {};
+	int err = 0;
+	bool reset_rx, reset_tx;
+	u8 mode;
+
+	if (coal->tx_coalesce_usecs > XSC_MAX_COAL_TIME ||
+	    coal->rx_coalesce_usecs > XSC_MAX_COAL_TIME ||
+	    coal->rx_coalesce_usecs_low > XSC_MAX_COAL_TIME) {
+		netdev_info(priv->netdev, "%s: maximum coalesce time supported is %u usecs\n",
+			    __func__, XSC_MAX_COAL_TIME);
+		return -ERANGE;
+	}
+
+	if (coal->tx_max_coalesced_frames > XSC_MAX_COAL_FRAMES ||
+	    coal->rx_max_coalesced_frames > XSC_MAX_COAL_FRAMES ||
+	    coal->rx_max_coalesced_frames_low > XSC_MAX_COAL_FRAMES) {
+		netdev_info(priv->netdev, "%s: maximum coalesced frames supported is %u\n",
+			    __func__, XSC_MAX_COAL_FRAMES);
+		return -ERANGE;
+	}
+
+	mutex_lock(&priv->state_lock);
+	new_params = priv->nic_param;
+
+	rx_moder          = &new_params.rx_cq_moderation;
+	rx_moder->usec    = coal->rx_coalesce_usecs;
+	rx_moder->pkts    = coal->rx_max_coalesced_frames;
+	new_params.rx_dim_enabled = !!coal->use_adaptive_rx_coalesce;
+	new_params.rx_dim_usecs_low = coal->rx_coalesce_usecs_low;
+	new_params.rx_dim_frames_low = coal->rx_max_coalesced_frames_low;
+
+	tx_moder          = &new_params.tx_cq_moderation;
+	tx_moder->usec    = coal->tx_coalesce_usecs;
+	tx_moder->pkts    = coal->tx_max_coalesced_frames;
+	new_params.tx_dim_enabled = !!coal->use_adaptive_tx_coalesce;
+
+	if (priv->status != XSCALE_ETH_DRIVER_OK) {
+		priv->nic_param = new_params;
+		goto out;
+	}
+
+	reset_rx = !!coal->use_adaptive_rx_coalesce != priv->nic_param.rx_dim_enabled;
+	reset_tx = !!coal->use_adaptive_tx_coalesce != priv->nic_param.tx_dim_enabled;
+
+	if (rx_moder->cq_period_mode != kernel_coal->use_cqe_mode_rx) {
+		rx_moder->cq_period_mode = kernel_coal->use_cqe_mode_rx;
+		XSC_SET_PFLAG(&new_params, XSC_PFLAG_RX_CQE_BASED_MODER,
+			      rx_moder->cq_period_mode ==
+			      XSC_CQ_PERIOD_MODE_START_FROM_CQE);
+		reset_rx = true;
+	}
+	if (tx_moder->cq_period_mode != kernel_coal->use_cqe_mode_tx) {
+		tx_moder->cq_period_mode = kernel_coal->use_cqe_mode_tx;
+		XSC_SET_PFLAG(&new_params, XSC_PFLAG_TX_CQE_BASED_MODER,
+			      tx_moder->cq_period_mode ==
+			      XSC_CQ_PERIOD_MODE_START_FROM_CQE);
+		reset_tx = true;
+	}
+
+	if (reset_rx) {
+		mode = XSC_GET_PFLAG(&new_params, XSC_PFLAG_RX_CQE_BASED_MODER);
+
+		xsc_set_rx_cq_mode_params(&new_params, mode);
+	}
+	if (reset_tx) {
+		mode = XSC_GET_PFLAG(&new_params, XSC_PFLAG_TX_CQE_BASED_MODER);
+
+		xsc_set_tx_cq_mode_params(&new_params, mode);
+	}
+
+	priv->nic_param = new_params;
+	if (!reset_rx && !reset_tx)
+		goto out;
+
+	err = xsc_safe_switch_channels(priv, NULL, NULL);
+
+out:
+	mutex_unlock(&priv->state_lock);
+	return err;
+}
+
 static const struct ethtool_ops xsc_ethtool_ops = {
+	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
+				     ETHTOOL_COALESCE_MAX_FRAMES |
+				     ETHTOOL_COALESCE_USECS_LOW_HIGH |
+				     ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH |
+				     ETHTOOL_COALESCE_USE_ADAPTIVE,
 	.get_drvinfo = xsc_get_drvinfo,
 	.get_link = ethtool_op_get_link,
 	.get_strings = xsc_get_strings,
@@ -1050,6 +1200,8 @@ static const struct ethtool_ops xsc_ethtool_ops = {
 	.set_ringparam = xsc_set_ringparam,
 	.set_channels = xsc_set_channels,
 	.get_channels = xsc_get_channels,
+	.get_coalesce = xsc_get_coalesce,
+	.set_coalesce = xsc_set_coalesce,
 	.get_ts_info = NULL,
 	.get_link_ksettings = xsc_get_link_ksettings,
 	.set_link_ksettings = xsc_set_link_ksettings,

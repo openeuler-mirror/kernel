@@ -40,28 +40,6 @@ static char xsc_version[] =
 	DRIVER_NAME ": Yunsilicon Infiniband driver"
 	DRIVER_VERSION " (" DRIVER_RELDATE ")\n";
 
-__be64 sys_image_guid;
-void xsc_get_sys_image_guid(u8 *dev_addr, u8 *guid)
-{
-	static bool is_set;
-	u8 mac[ETH_ALEN];
-
-	if (is_set)
-		return;
-
-	memcpy(mac, dev_addr, ETH_ALEN);
-	guid[0] = mac[0];
-	guid[1] = mac[1];
-	guid[2] = mac[2];
-	guid[3] = 0x30;
-	guid[4] = 0x0;
-	guid[5] = mac[3];
-	guid[6] = mac[4];
-	guid[7] = mac[5];
-
-	is_set = 1;
-}
-
 static int xsc_ib_query_device(struct ib_device *ibdev,
 			       struct ib_device_attr *props,
 			       struct ib_udata *udata)
@@ -90,10 +68,10 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	resp.response_length = resp_len;
 
 	fw_ver.data = 0;
-	fw_ver.s.chip_ver_h = dev->xdev->chip_ver_h & 0xffff;
-	fw_ver.s.hotfix_num = dev->xdev->hotfix_num & 0xffff;
-	fw_ver.s.chip_ver_l = dev->xdev->chip_ver_l & 0xffff;
-	fw_ver.s.feature_flag = dev->xdev->feature_flag & 0xffff;
+	fw_ver.s.ver_major = dev->xdev->fw_version_major;
+	fw_ver.s.ver_minor = dev->xdev->fw_version_minor;
+	fw_ver.s.ver_patch = dev->xdev->fw_version_patch;
+	fw_ver.s.ver_tweak = dev->xdev->fw_version_tweak;
 	props->fw_ver = fw_ver.data;
 
 	props->device_cap_flags    = IB_DEVICE_CHANGE_PHY_PORT |
@@ -101,6 +79,8 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 		IB_DEVICE_SYS_IMAGE_GUID		|
 		IB_DEVICE_RC_RNR_NAK_GEN		|
 		IB_DEVICE_BLOCK_MULTICAST_LOOPBACK;
+	props->device_cap_flags |= IB_DEVICE_LOCAL_DMA_LKEY;
+
 	flags = dev->xdev->caps.flags;
 	if (flags & XSC_DEV_CAP_FLAG_BAD_PKEY_CNTR)
 		props->device_cap_flags |= IB_DEVICE_BAD_PKEY_CNTR;
@@ -108,7 +88,6 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 		props->device_cap_flags |= IB_DEVICE_BAD_QKEY_CNTR;
 	if (flags & XSC_DEV_CAP_FLAG_APM)
 		props->device_cap_flags |= IB_DEVICE_AUTO_PATH_MIG;
-	props->device_cap_flags |= IB_DEVICE_LOCAL_DMA_LKEY;
 	if (flags & XSC_DEV_CAP_FLAG_XRC)
 		props->device_cap_flags |= IB_DEVICE_XRC;
 	props->device_cap_flags |= IB_DEVICE_MEM_MGT_EXTENSIONS;
@@ -147,14 +126,15 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	props->max_total_mcast_qp_attach = props->max_mcast_qp_attach *
 					   props->max_mcast_grp;
 
-	props->sys_image_guid = sys_image_guid;
+	props->sys_image_guid = dev->xdev->board_info->guid;
 	props->vendor_id = dev->xdev->pdev->vendor;
 	props->vendor_part_id = dev->xdev->pdev->device;
-	props->hw_ver = 0x0;
+	props->hw_ver = ((dev->xdev->chip_ver_l & 0xffff) << 16) |
+		(dev->xdev->hotfix_num & 0xffff);
 	props->max_pkeys = 0x80;
 	props->max_wq_type_rq = 1 << dev->xdev->caps.log_max_qp;
 
-	props->hca_core_clock = dev->xdev->caps.hca_core_clock;
+	props->hca_core_clock = dev->xdev->caps.hca_core_clock * 1000;//KHz
 	props->rss_caps.max_rwq_indirection_tables =
 		dev->xdev->caps.max_rwq_indirection_tables;
 	props->rss_caps.max_rwq_indirection_table_size =
@@ -349,7 +329,7 @@ static int xsc_ib_del_gid(const struct ib_gid_attr *attr, void **context)
 
 	memcpy(&sgid_tbl->tbl[index], &xsc_gid_zero, sizeof(xsc_gid_zero));
 	sgid_tbl->count--;
-	xsc_ib_dbg(dev, "Del gid from index:%u, count:%u\n", index, sgid_tbl->count);
+	xsc_ib_info(dev, "Del gid from index:%u, count:%u\n", index, sgid_tbl->count);
 
 	return 0;
 }
@@ -383,8 +363,8 @@ int xsc_ib_add_gid(const struct ib_gid_attr *attr, void **context)
 
 	memcpy(&sgid_tbl->tbl[free_idx], gid_raw, sizeof(*gid_raw));
 	sgid_tbl->count++;
-	xsc_ib_dbg(dev, "Add gid to index:%u, count:%u, max:%u\n", free_idx, sgid_tbl->count,
-		   sgid_tbl->max);
+	xsc_ib_info(dev, "Add gid to index:%u, count:%u, max:%u\n", free_idx, sgid_tbl->count,
+		    sgid_tbl->max);
 
 	return 0;
 }
@@ -594,8 +574,8 @@ static int xsc_port_immutable(struct ib_device *ibdev, u8 port_num,
 
 	immutable->pkey_tbl_len = attr.pkey_tbl_len;
 	immutable->gid_tbl_len = attr.gid_tbl_len;
-	immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE
-		| RDMA_CORE_CAP_PROT_ROCE_UDP_ENCAP;
+	immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE |
+				    RDMA_CORE_PORT_IBA_ROCE_UDP_ENCAP;
 	immutable->max_mad_size = IB_MGMT_MAD_SIZE * 2;
 
 	return 0;
@@ -612,12 +592,14 @@ static struct net_device *xsc_get_netdev(struct ib_device *ibdev, u8 port_num)
 {
 	struct xsc_ib_dev *xsc_ib_dev = to_mdev(ibdev);
 	struct net_device *dev = xsc_ib_dev->netdev;
+	struct xsc_core_device *xdev = xsc_ib_dev->xdev;
 
-	rcu_read_lock();
 	if (dev) {
-		if (xsc_ib_dev->xdev->priv.lag && __xsc_lag_is_active(xsc_ib_dev->xdev->priv.lag)) {
+		xsc_board_lag_lock(xdev);
+		if (xsc_lag_is_roce(xdev)) {
 			struct net_device *upper = NULL;
 
+			rcu_read_lock();
 			upper = netdev_master_upper_dev_get_rcu(dev);
 			if (upper) {
 				struct net_device *active;
@@ -626,14 +608,16 @@ static struct net_device *xsc_get_netdev(struct ib_device *ibdev, u8 port_num)
 				if (active)
 					dev = active;
 			}
+			rcu_read_unlock();
 		}
 		dev_hold(dev);
+		xsc_board_lag_unlock(xdev);
 	}
-	rcu_read_unlock();
+
 	return dev;
 }
 
-void xsc_get_guid(u8 *dev_addr, u8 *guid)
+void xsc_get_guid(const u8 *dev_addr, u8 *guid)
 {
 	u8 mac[ETH_ALEN];
 
@@ -653,7 +637,7 @@ static int init_node_data(struct xsc_ib_dev *dev)
 {
 	int err = -ENOMEM;
 
-	strlcpy(dev->ib_dev.node_desc, "xsc_node_desc", sizeof(dev->ib_dev.node_desc));
+	strscpy(dev->ib_dev.node_desc, "xsc_node_desc", sizeof(dev->ib_dev.node_desc));
 
 	if (unlikely(!dev->netdev->dev_addr))
 		_xsc_get_netdev(dev);
@@ -829,11 +813,28 @@ static void crc_table_init(struct xsc_ib_dev *dev)
 	}
 }
 
+static void xsc_ib_get_dev_fw_str(struct ib_device *ibdev, char *str)
+{
+	struct xsc_core_device *dev = to_mdev(ibdev)->xdev;
+	u8 ver_major = dev->fw_version_major;
+	u8 ver_minor = dev->fw_version_minor;
+	u16 ver_patch = dev->fw_version_patch;
+	u32 ver_tweak = dev->fw_version_tweak;
+
+	if (ver_tweak == 0) {
+		snprintf(str, IB_FW_VERSION_NAME_MAX, "v%u.%u.%u",
+			 ver_major,  ver_minor, ver_patch);
+	} else {
+		snprintf(str, IB_FW_VERSION_NAME_MAX, "v%u.%u.%u+%u",
+			 ver_major, ver_minor, ver_patch, ver_tweak);
+	}
+}
+
 static void xsc_ib_dev_setting(struct xsc_ib_dev *dev)
 {
 	dev->ib_dev.ops.owner		= THIS_MODULE;
 	dev->ib_dev.ops.uverbs_abi_ver	= XSC_IB_UVERBS_ABI_VERSION;
-	dev->ib_dev.ops.driver_id = RDMA_DRIVER_XSC5;
+	dev->ib_dev.ops.driver_id = (enum rdma_driver_id)RDMA_DRIVER_XSC5;
 	dev->ib_dev.ops.uverbs_no_driver_id_binding = 1;
 	dev->ib_dev.ops.query_device	= xsc_ib_query_device;
 	dev->ib_dev.ops.query_port	= xsc_ib_query_port;
@@ -875,10 +876,57 @@ static void xsc_ib_dev_setting(struct xsc_ib_dev *dev)
 
 	dev->ib_dev.ops.get_port_immutable		= xsc_port_immutable;
 
+	dev->ib_dev.ops.drain_sq		= xsc_ib_drain_sq;
+	dev->ib_dev.ops.drain_rq		= xsc_ib_drain_rq;
+	dev->ib_dev.ops.get_dev_fw_str	= xsc_ib_get_dev_fw_str;
+
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_ah, xsc_ib_ah, ibah);
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_cq, xsc_ib_cq, ibcq);
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_pd, xsc_ib_pd, ibpd);
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_ucontext, xsc_ib_ucontext, ibucontext);
+}
+
+static void xsc_get_port_state(struct net_device *ndev, enum xsc_dev_event *ev)
+{
+	*ev = XSC_DEV_EVENT_PORT_DOWN;
+	if (netif_running(ndev) && netif_carrier_ok(ndev))
+		*ev = XSC_DEV_EVENT_PORT_UP;
+}
+
+static int xsc_netdev_event(struct notifier_block *this, unsigned long event, void *ptr)
+{
+	struct xsc_ib_dev *ibdev = container_of(this, struct xsc_ib_dev, nb);
+	struct net_device *ndev = netdev_notifier_info_to_dev(ptr);
+	enum xsc_dev_event ev;
+	u8 port = 1;
+
+	if (ndev != ibdev->netdev)
+		goto done;
+
+	xsc_ib_info(ibdev, "netdev notfiy event:%ld\n", event);
+	switch (event) {
+	case NETDEV_CHANGE:
+	case NETDEV_UP:
+	case NETDEV_DOWN:
+		xsc_get_port_state(ibdev->netdev, &ev);
+		xsc_ib_event(ibdev->xdev, ibdev, ev, (unsigned long)&port);
+		break;
+	default:
+		break;
+	}
+done:
+	return NOTIFY_DONE;
+}
+
+static int xsc_register_netdev_notifier(struct xsc_ib_dev *ibdev)
+{
+	ibdev->nb.notifier_call = xsc_netdev_event;
+	return register_netdevice_notifier(&ibdev->nb);
+}
+
+static int xsc_unregister_netdev_notifier(struct xsc_ib_dev *ibdev)
+{
+	return unregister_netdevice_notifier(&ibdev->nb);
 }
 
 static int init_one(struct xsc_core_device *xdev,
@@ -887,7 +935,7 @@ static int init_one(struct xsc_core_device *xdev,
 	struct xsc_ib_dev *dev;
 	int err;
 
-	printk_once(KERN_INFO "%s", xsc_version);
+	pr_info_once("%s", xsc_version);
 
 	dev = (struct xsc_ib_dev *)ib_alloc_device(xsc_ib_dev, ib_dev);
 	if (!dev)
@@ -896,7 +944,6 @@ static int init_one(struct xsc_core_device *xdev,
 	dev->xdev = xdev;
 	xdev->event = xsc_core_event;
 	_xsc_get_netdev(dev);
-	xsc_get_sys_image_guid(dev->netdev->dev_addr, (u8 *)&sys_image_guid);
 	err = get_port_caps(dev);
 	if (err)
 		goto err_free;
@@ -905,7 +952,11 @@ static int init_one(struct xsc_core_device *xdev,
 	else
 		dev->num_comp_vectors = xdev->dev_res->eq_table.num_comp_vectors;
 
-	strlcpy(dev->ib_dev.name, "xscale_%d", IB_DEVICE_NAME_MAX);
+	if (xsc_lag_is_roce(xdev))
+		strlcpy(dev->ib_dev.name, "xscale_bond_%d", IB_DEVICE_NAME_MAX);
+	else
+		strlcpy(dev->ib_dev.name, "xscale_%d", IB_DEVICE_NAME_MAX);
+
 	dev->ib_dev.node_type		= RDMA_NODE_IB_CA;
 	dev->ib_dev.local_dma_lkey	= 0xFF;
 	dev->num_ports		= xdev->caps.num_ports;
@@ -915,6 +966,8 @@ static int init_one(struct xsc_core_device *xdev,
 	xsc_ib_dev_setting(dev);
 	dev->cm_dscp = DSCP_PCP_UNSET;
 	dev->cm_pcp = DSCP_PCP_UNSET;
+	dev->force_pcp = DSCP_PCP_UNSET;
+	dev->force_dscp = DSCP_PCP_UNSET;
 
 	dev->ib_dev.uverbs_cmd_mask	=
 		(1ull << IB_USER_VERBS_CMD_GET_CONTEXT)		|
@@ -947,8 +1000,8 @@ static int init_one(struct xsc_core_device *xdev,
 		(1ull << IB_USER_VERBS_EX_CMD_QUERY_DEVICE)	|
 		(1ull << IB_USER_VERBS_EX_CMD_CREATE_CQ)	|
 		(1ull << IB_USER_VERBS_EX_CMD_CREATE_QP)	|
-		(1ull << IB_USER_VERBS_EX_CMD_MODIFY_QP)	|
-		(1ull << IB_USER_VERBS_EX_CMD_MODIFY_CQ);
+		(1ull << IB_USER_VERBS_EX_CMD_MODIFY_CQ)	|
+		(1ull << IB_USER_VERBS_EX_CMD_MODIFY_QP);
 
 	init_node_data(dev);
 
@@ -964,6 +1017,7 @@ static int init_one(struct xsc_core_device *xdev,
 	populate_specs_root(dev);
 
 	xsc_reg_local_dma_mr(xdev);
+
 	if (ib_register_device(&dev->ib_dev, dev->ib_dev.name, dev->xdev->device))
 		goto err_rsrc;
 
@@ -972,15 +1026,16 @@ static int init_one(struct xsc_core_device *xdev,
 	*m_ibdev = dev;
 
 	xdev->xsc_ib_dev = dev;
+
+	xsc_register_netdev_notifier(dev);
+
 	xsc_counters_init(&dev->ib_dev, xdev);
 
 	xsc_priv_dev_init(&dev->ib_dev, xdev);
 
 	xsc_rtt_sysfs_init(&dev->ib_dev, xdev);
 
-	err = xsc_ib_sysfs_init(&dev->ib_dev, xdev);
-	if (err)
-		pr_err("fail to init ib sysfs\n");
+	xsc_ib_sysfs_init(&dev->ib_dev, xdev);
 
 	return 0;
 
@@ -1001,8 +1056,51 @@ static void remove_one(struct xsc_core_device *xdev, void *intf_ctx)
 	xsc_ib_sysfs_fini(&dev->ib_dev, xdev);
 	xsc_priv_dev_fini(&dev->ib_dev, xdev);
 	xsc_counters_fini(&dev->ib_dev, xdev);
+	xsc_unregister_netdev_notifier(dev);
 	ib_unregister_device(&dev->ib_dev);
 	ib_dealloc_device(&dev->ib_dev);
+}
+
+static void init_iommu_state(struct xsc_ib_dev *xdev)
+{
+	if (xdev) {
+		struct iommu_domain *domain;
+
+		xdev->iommu_state = XSC_IB_IOMMU_MAP_DISABLE;
+		domain = iommu_get_domain_for_dev(xdev->ib_dev.dma_device);
+		if (domain) {
+			if (domain->type & __IOMMU_DOMAIN_DMA_API)
+				xdev->iommu_state = XSC_IB_IOMMU_MAP_NORMAL;
+		} else {
+			/* try to allocate dma memory, if dma address is not equal to phys address,
+			 * the iommu map is enabled, but iommu domain is unknown.
+			 */
+			dma_addr_t dma_addr;
+
+			void *tmp = dma_alloc_coherent(xdev->ib_dev.dma_device, PAGE_SIZE,
+						       &dma_addr, GFP_KERNEL);
+			if (tmp) {
+				if (virt_to_phys(tmp) != dma_addr)
+					xdev->iommu_state = XSC_IB_IOMMU_MAP_UNKNOWN_DOMAIN;
+				dma_free_coherent(xdev->ib_dev.dma_device, PAGE_SIZE,
+						  tmp, dma_addr);
+			}
+		}
+
+		if (xdev->iommu_state)
+			xsc_ib_dbg(xdev, "ibdev supports iommu dma map, state=%d\n",
+				   xdev->iommu_state);
+		else
+			xsc_ib_dbg(xdev, "ibdev does not support iommu dma map\n");
+	}
+}
+
+static bool xsc_need_create_ib_device(struct xsc_core_device *dev)
+{
+	if (xsc_get_roce_lag_xdev(dev) == dev)
+		return true;
+
+	return false;
 }
 
 static void *xsc_add(struct xsc_core_device *xpdev)
@@ -1010,7 +1108,10 @@ static void *xsc_add(struct xsc_core_device *xpdev)
 	struct xsc_ib_dev *m_ibdev = NULL;
 	int ret = -1;
 
-	pr_err("add rdma driver\n");
+	if (!xsc_need_create_ib_device(xpdev))
+		return NULL;
+
+	pr_info("add rdma driver\n");
 
 	ret = init_one(xpdev, &m_ibdev);
 	if (ret) {
@@ -1018,12 +1119,14 @@ static void *xsc_add(struct xsc_core_device *xpdev)
 		return NULL;
 	}
 
+	init_iommu_state(m_ibdev);
+
 	return m_ibdev;
 }
 
 static void xsc_remove(struct xsc_core_device *xpdev, void *context)
 {
-	pr_err("remove rdma driver\n");
+	pr_info("remove rdma driver\n");
 	remove_one(xpdev, context);
 }
 
@@ -1034,20 +1137,56 @@ static struct xsc_interface xsc_interface = {
 	.protocol  = XSC_INTERFACE_PROTOCOL_IB,
 };
 
+int xsc_ib_reboot_event_handler(struct notifier_block *nb, unsigned long action, void *data)
+{
+	pr_info("xsc ib driver recv %lu event\n", action);
+
+	if (exist_incomplete_qp_flush()) {
+		xsc_set_exit_flag();
+		return NOTIFY_OK;
+	}
+
+	xsc_remove_rdma_driver();
+
+	return NOTIFY_OK;
+}
+
+struct notifier_block xsc_ib_nb = {
+	.notifier_call = xsc_ib_reboot_event_handler,
+	.next = NULL,
+	.priority = 2,
+};
+
+void xsc_remove_rdma_driver(void)
+{
+	xsc_rdma_ctrl_fini();
+	xsc_unregister_interface(&xsc_interface);
+	xsc_priv_unregister_chrdev_region();
+}
+
 static int __init xsc_ib_init(void)
 {
 	int ret;
 
-	ret = xsc_register_interface(&xsc_interface);
+	ret = xsc_priv_alloc_chrdev_region();
 	if (ret)
 		goto out;
+
+	ret = xsc_register_interface(&xsc_interface);
+	if (ret) {
+		xsc_priv_unregister_chrdev_region();
+		goto out;
+	}
 
 	ret = xsc_rdma_ctrl_init();
 	if (ret != 0) {
 		pr_err("failed to register port control node\n");
 		xsc_unregister_interface(&xsc_interface);
+		xsc_priv_unregister_chrdev_region();
 		goto out;
 	}
+
+	register_reboot_notifier(&xsc_ib_nb);
 
 	return 0;
 out:
@@ -1056,8 +1195,8 @@ out:
 
 static void __exit xsc_ib_cleanup(void)
 {
-	xsc_rdma_ctrl_fini();
-	xsc_unregister_interface(&xsc_interface);
+	unregister_reboot_notifier(&xsc_ib_nb);
+	xsc_remove_rdma_driver();
 }
 
 module_init(xsc_ib_init);

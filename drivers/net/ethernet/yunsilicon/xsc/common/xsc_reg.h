@@ -5,6 +5,7 @@
 
 #ifndef XSC_REG_H
 #define XSC_REG_H
+
 #define CMDQM_HOST_REQ_BUF_BASE_H_ADDR_MEM_ADDR 0x0
 #define CMDQM_HOST_REQ_BUF_BASE_L_ADDR_MEM_ADDR 0x4
 #define CMDQM_HOST_REQ_PID_MEM_ADDR 0x8
@@ -31,5 +32,4 @@
 #define DB_CQ_CID_DIRECT_MEM_ADDR 0x8cc
 #define TX_DB_FUNC_MEM_ADDR 0x8d0
 #define RX_DB_FUNC_MEM_ADDR 0x8d4
-
-#endif
+#endif /* XSC_REG_H */

@@ -757,6 +757,8 @@ static ssize_t trace_write(struct file *filp, const char __user *buf, size_t cou
 
 	tmp_buf[len] = '\0';
 
+	// <sport>
+	// sport 10000
 	if (strncmp(tmp_buf, "sport", 5) == 0) {
 		ret = kstrtouint(&tmp_buf[6], 0, &sport);
 		if (ret != 0) {

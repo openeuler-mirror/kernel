@@ -12,11 +12,15 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_smi.h>
 #include <rdma/ib_pack.h>
+#include <rdma/ib_mad.h>
 #include "common/xsc_core.h"
 #include "common/driver.h"
 #include "common/cq.h"
 #include "common/qp.h"
 #include <linux/types.h>
+#include <linux/iommu.h>
+#include <linux/dma-direct.h>
+#include <linux/dma-mapping.h>
 #include <crypto/hash.h>
 
 #include "xsc_ib_compat.h"
@@ -38,6 +42,13 @@ do {										\
 #define xsc_ib_warn(dev, format, arg...)					\
 do {										\
 	if (xsc_log_level <= XSC_LOG_LEVEL_WARN)				\
+		pr_warn("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name,	\
+			__func__, __LINE__, current->pid, ##arg);		\
+} while (0)
+
+#define xsc_ib_info(dev, format, arg...)					\
+do {										\
+	if (xsc_log_level <= XSC_LOG_LEVEL_INFO)				\
 		pr_warn("%s:%s:%d:(pid %d): " format, (dev)->ib_dev.name,	\
 			__func__, __LINE__, current->pid, ##arg);		\
 } while (0)
@@ -309,15 +320,19 @@ struct xsc_ib_dev {
 	u32				crc_32_table[256];
 	int cm_pcp;
 	int cm_dscp;
+	int force_pcp;
+	int force_dscp;
+	int iommu_state;
+	struct notifier_block nb;
 };
 
 union xsc_ib_fw_ver {
 	u64 data;
 	struct {
-		u16	chip_ver_h;
-		u16	hotfix_num;
-		u16	chip_ver_l;
-		u16	feature_flag;
+		u8	ver_major;
+		u8	ver_minor;
+		u16	ver_patch;
+		u32	ver_tweak;
 	} s;
 };
 
@@ -425,6 +440,9 @@ int xsc_wr_invalidate_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr);
 int xsc_find_best_pgsz(struct ib_umem *umem, unsigned long pgsz_bitmap,
 		       unsigned long addr, int *npage, int *shift, u64 **pas);
 
+void xsc_ib_drain_rq(struct ib_qp *qp);
+void xsc_ib_drain_sq(struct ib_qp *qp);
+
 static inline void init_query_mad(struct ib_smp *mad)
 {
 	mad->base_version  = 1;
@@ -481,4 +499,128 @@ static inline u16 xsc_flow_label_to_udp_sport(u32 fl)
 	return (u16)(fl_low | IB_ROCE_UDP_ENCAP_VALID_PORT_MIN);
 }
 
+#define XSC_IB_IOMMU_MAP_DISABLE 0
+#define XSC_IB_IOMMU_MAP_UNKNOWN_DOMAIN 1
+#define XSC_IB_IOMMU_MAP_NORMAL 2
+
+static inline int xsc_ib_iommu_dma_map(struct ib_device *ibdev)
+{
+	return to_mdev(ibdev)->iommu_state;
+}
+
+static inline void *xsc_ib_iova_to_virt(struct ib_device *ibdev, dma_addr_t iova)
+{
+	phys_addr_t phyaddr;
+	struct iommu_domain *domain;
+
+	domain = iommu_get_domain_for_dev(ibdev->dma_device);
+	if (likely(domain)) {
+		phyaddr = iommu_iova_to_phys(domain, iova);
+		phyaddr |= iova & (PAGE_SIZE - 1);
+	} else {
+		phyaddr = dma_to_phys(ibdev->dma_device, iova);
+	}
+
+	return phys_to_virt(phyaddr);
+}
+
+struct ib_mad_list_head {
+	struct list_head list;
+	struct ib_cqe cqe;
+	struct ib_mad_queue *mad_queue;
+};
+
+#define IB_MAD_SEND_REQ_MAX_SG 2
+struct ib_mad_send_wr_private {
+	struct ib_mad_list_head mad_list;
+	struct list_head agent_list;
+	struct ib_mad_agent_private *mad_agent_priv;
+	struct ib_mad_send_buf send_buf;
+	u64 header_mapping;
+	u64 payload_mapping;
+	struct ib_ud_wr send_wr;
+	struct ib_sge sg_list[IB_MAD_SEND_REQ_MAX_SG];
+	__be64 tid;
+	unsigned long timeout;
+	int max_retries;
+	int retries_left;
+	int retry;
+	int refcount;
+	enum ib_wc_status status;
+
+	/* RMPP control */
+	struct list_head rmpp_list;
+	struct ib_rmpp_segment *last_ack_seg;
+	struct ib_rmpp_segment *cur_seg;
+	int last_ack;
+	int seg_num;
+	int newwin;
+	int pad;
+};
+
+struct ib_mad_private_header {
+	struct ib_mad_list_head mad_list;
+	struct ib_mad_recv_wc recv_wc;
+	struct ib_wc wc;
+	u64 mapping;
+} __packed;
+
+struct ib_mad_private {
+	struct ib_mad_private_header header;
+	size_t mad_size;
+	struct ib_grh grh;
+	u8 mad[0];
+} __packed;
+
+static inline void *xsc_ib_send_mad_sg_virt_addr(struct ib_device *ibdev,
+						 const struct ib_send_wr *wr,
+						 int sg)
+{
+	struct ib_mad_send_wr_private *mad_send_wr;
+	struct ib_mad_list_head *mad_list;
+	int iommu_state = xsc_ib_iommu_dma_map(ibdev);
+
+	/* direct dma mapping */
+	if (!iommu_state)
+		return phys_to_virt(dma_to_phys(ibdev->dma_device, wr->sg_list[sg].addr));
+
+	if (iommu_state == XSC_IB_IOMMU_MAP_NORMAL)
+		return xsc_ib_iova_to_virt(ibdev, wr->sg_list[sg].addr);
+
+	mad_list = container_of(wr->wr_cqe, struct ib_mad_list_head, cqe);
+	mad_send_wr = container_of(mad_list, struct ib_mad_send_wr_private,
+				   mad_list);
+
+	/* sg_list[0] */
+	if (sg == 0)
+		return mad_send_wr->send_buf.mad;
+
+	/* sg_list[1] */
+	if (mad_send_wr->send_buf.seg_count)
+		return ib_get_rmpp_segment(&mad_send_wr->send_buf,
+					   mad_send_wr->seg_num);
+	return mad_send_wr->send_buf.mad + mad_send_wr->send_buf.hdr_len;
+}
+
+static inline void *xsc_ib_recv_mad_sg_virt_addr(struct ib_device *ibdev,
+						 struct ib_wc *wc,
+						 u64 sg_addr)
+{
+	struct ib_mad_private_header *mad_priv_hdr;
+	struct ib_mad_private *recv;
+	struct ib_mad_list_head *mad_list;
+	int iommu_state = xsc_ib_iommu_dma_map(ibdev);
+
+	/* direct dma mapping */
+	if (!iommu_state)
+		return phys_to_virt(dma_to_phys(ibdev->dma_device, sg_addr));
+
+	if (iommu_state == XSC_IB_IOMMU_MAP_NORMAL)
+		return xsc_ib_iova_to_virt(ibdev, sg_addr);
+
+	mad_list = container_of(wc->wr_cqe, struct ib_mad_list_head, cqe);
+	mad_priv_hdr = container_of(mad_list, struct ib_mad_private_header, mad_list);
+	recv = container_of(mad_priv_hdr, struct ib_mad_private, header);
+	return &recv->grh;
+}
 #endif /* XSC_IB_H */

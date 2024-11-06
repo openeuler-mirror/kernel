@@ -22,42 +22,31 @@ struct xsc_counters_attribute {
 	ssize_t (*store)(struct kobject *kobj,
 			 struct attribute *attr, const char *buf,
 			 size_t count);
-	int     id;
 	struct xsc_core_device *dev;
-	const struct counter_desc *desc;
-	int desc_size;
 };
 
 struct xsc_counters_bin_attribute {
-	struct attribute  attr;
-	ssize_t (*read)(struct file *file,
-			struct kobject *kobj,
-			struct bin_attribute *bin_attr,
-			char *buf, loff_t off, size_t size);
-	ssize_t (*write)(struct file *file,
-			 struct kobject *kobj,
-			 struct bin_attribute *bin_attr,
-			 char *buf, loff_t off, size_t size);
-	int (*mmap)(struct file *file,
-		    struct kobject *kobj,
-		    struct bin_attribute *attr,
+	struct attribute	attr;
+	size_t			size;
+	void			*private;
+	ssize_t (*read)(struct file *f, struct kobject *k, struct bin_attribute *bin_attr,
+			char *buf, loff_t l, size_t s);
+	ssize_t (*write)(struct file *f, struct kobject *k, struct bin_attribute *bin_attr,
+			 char *buf, loff_t l, size_t s);
+	int (*mmap)(struct file *f, struct kobject *k, struct bin_attribute *bin_attr,
 		    struct vm_area_struct *vma);
-	int    id;
-	struct xsc_core_device *dev;
-	const struct counter_desc *desc;
-	int desc_size;
-	size_t    size;
 };
 
-ssize_t counters_vf_names_show(struct kobject *kobjs,
-			       struct attribute *attr, char *buf);
+struct xsc_global_cnt_interface {
+	struct xsc_core_device  *xdev;
+	struct kobject		kobj;
+};
 
-ssize_t counters_vf_value_read(struct file *file,
-			       struct kobject *kob,
-			       struct bin_attribute *bin_attr,
-			       char *buf, loff_t loff, size_t size);
-
-ssize_t counters_vf_show(struct kobject *kobjs,
-			 struct attribute *attr, char *buf);
-
-#endif
+struct xsc_global_cnt_attributes {
+	struct attribute attr;
+	ssize_t (*show)(struct xsc_global_cnt_interface *g, struct xsc_global_cnt_attributes *a,
+			char *buf);
+	ssize_t (*store)(struct xsc_global_cnt_interface *g, struct xsc_global_cnt_attributes *a,
+			 const char *buf, size_t count);
+};
+#endif /* __COUNTERS_H__ */

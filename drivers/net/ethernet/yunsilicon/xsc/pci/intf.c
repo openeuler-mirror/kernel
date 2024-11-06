@@ -5,6 +5,10 @@
 
 #include "common/xsc_core.h"
 
+LIST_HEAD(intf_list);
+LIST_HEAD(xsc_dev_list);
+DEFINE_MUTEX(xsc_intf_mutex); // protect intf_list and xsc_dev_list
+
 static void xsc_add_device(struct xsc_interface *intf, struct xsc_priv *priv)
 {
 	struct xsc_device_context *dev_ctx;
@@ -221,26 +225,6 @@ void xsc_unregister_device(struct xsc_core_device *dev)
 }
 EXPORT_SYMBOL(xsc_unregister_device);
 
-/* Must be called with intf_mutex held */
-static bool xsc_has_added_dev_by_protocol(struct xsc_core_device *dev, int protocol)
-{
-	struct xsc_device_context *dev_ctx;
-	struct xsc_interface *intf;
-	bool found = false;
-
-	list_for_each_entry(intf, &intf_list, list) {
-		if (intf->protocol == protocol) {
-			dev_ctx = xsc_get_device(intf, &dev->priv);
-			if (dev_ctx && test_bit(XSC_INTERFACE_ADDED, &dev_ctx->state))
-				found = true;
-			break;
-		}
-	}
-
-	return found;
-}
-
-/* Must be called with intf_mutex held */
 void xsc_add_dev_by_protocol(struct xsc_core_device *dev, int protocol)
 {
 	struct xsc_interface *intf;
@@ -253,7 +237,6 @@ void xsc_add_dev_by_protocol(struct xsc_core_device *dev, int protocol)
 }
 EXPORT_SYMBOL(xsc_add_dev_by_protocol);
 
-/* Must be called with intf_mutex held */
 void xsc_remove_dev_by_protocol(struct xsc_core_device *dev, int protocol)
 {
 	struct xsc_interface *intf;
@@ -266,68 +249,21 @@ void xsc_remove_dev_by_protocol(struct xsc_core_device *dev, int protocol)
 }
 EXPORT_SYMBOL(xsc_remove_dev_by_protocol);
 
-void xsc_reload_interfaces(struct xsc_core_device *dev,
-			   int protocol1, int protocol2,
-			   bool valid1, bool valid2)
-{
-	bool reload1;
-	bool reload2;
-
-	mutex_lock(&xsc_intf_mutex);
-
-	reload1 = valid1 && xsc_has_added_dev_by_protocol(dev, protocol1);
-	reload2 = valid2 && xsc_has_added_dev_by_protocol(dev, protocol2);
-
-	if (reload2)
-		xsc_remove_dev_by_protocol(dev, protocol2);
-	if (reload1)
-		xsc_remove_dev_by_protocol(dev, protocol1);
-	if (reload1)
-		xsc_add_dev_by_protocol(dev, protocol1);
-	if (reload2)
-		xsc_add_dev_by_protocol(dev, protocol2);
-	mutex_unlock(&xsc_intf_mutex);
-}
-
-void xsc_reload_interface(struct xsc_core_device *dev, int protocol)
+void xsc_dev_list_lock(void)
 {
 	mutex_lock(&xsc_intf_mutex);
-	if (xsc_has_added_dev_by_protocol(dev, protocol)) {
-		xsc_remove_dev_by_protocol(dev, protocol);
-		xsc_add_dev_by_protocol(dev, protocol);
-	}
+}
+EXPORT_SYMBOL(xsc_dev_list_lock);
+
+void xsc_dev_list_unlock(void)
+{
 	mutex_unlock(&xsc_intf_mutex);
 }
+EXPORT_SYMBOL(xsc_dev_list_unlock);
 
-static u32 xsc_gen_pci_id(struct xsc_core_device *dev)
+int xsc_dev_list_trylock(void)
 {
-	return (u32)((pci_domain_nr(dev->pdev->bus) << 16) |
-		     (dev->pdev->bus->number << 8) |
-		     PCI_SLOT(dev->pdev->devfn));
+	return mutex_trylock(&xsc_intf_mutex);
 }
+EXPORT_SYMBOL(xsc_dev_list_trylock);
 
-struct xsc_core_device *xsc_get_next_phys_dev(struct xsc_core_device *dev)
-{
-	struct xsc_core_device *res = NULL;
-	struct xsc_core_device *tmp_dev;
-	struct xsc_priv *priv;
-	u32 pci_id;
-
-	if (!xsc_core_is_pf(dev))
-		return NULL;
-
-	pci_id = xsc_gen_pci_id(dev);
-	list_for_each_entry(priv, &xsc_dev_list, dev_list) {
-		tmp_dev = container_of(priv, struct xsc_core_device, priv);
-		if (!xsc_core_is_pf(tmp_dev))
-			continue;
-
-		if (dev != tmp_dev && (xsc_gen_pci_id(tmp_dev) == pci_id)) {
-			res = tmp_dev;
-			break;
-		}
-	}
-
-	return res;
-}
-EXPORT_SYMBOL(xsc_get_next_phys_dev);

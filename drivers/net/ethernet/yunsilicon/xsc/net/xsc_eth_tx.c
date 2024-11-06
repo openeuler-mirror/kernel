@@ -227,11 +227,9 @@ void xsc_txwqe_complete(struct xsc_sq *sq, struct sk_buff *skb,
 	wi->num_wqebbs = num_wqebbs;
 	wi->skb = skb;
 
-#ifdef XSC_BQL_SUPPORT
 	ETH_SQ_STATE(sq);
 	netdev_tx_sent_queue(sq->txq, num_bytes);
 	ETH_SQ_STATE(sq);
-#endif
 
 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP)) {
 		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
@@ -264,9 +262,6 @@ static void xsc_dump_error_sqcqe(struct xsc_sq *sq,
 			    netdev->name, sq->cq.xcq.cqn, ci,
 			    sq->sqn, get_cqe_opcode(cqe), cqe->qp_id);
 
-#ifdef XSC_DEBUG
-	xsc_dump_err_cqe(sq->cq.xdev, cqe);
-#endif
 }
 
 void xsc_free_tx_wqe(struct device *dev, struct xsc_sq *sq)
@@ -300,14 +295,9 @@ void xsc_free_tx_wqe(struct device *dev, struct xsc_sq *sq)
 		sq->cc += wi->num_wqebbs;
 	}
 
-#ifdef XSC_BQL_SUPPORT
 	netdev_tx_completed_queue(sq->txq, npkts, nbytes);
-#endif
 }
 
-#ifdef NEED_CREATE_RX_THREAD
-	DECLARE_PER_CPU(bool, txcqe_get);
-#endif
 
 bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 {
@@ -341,9 +331,6 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 		return false;
 	}
 
-#ifdef NEED_CREATE_RX_THREAD
-	__this_cpu_write(txcqe_get, true);
-#endif
 
 	sqcc = sq->cc;
 
@@ -374,22 +361,13 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 			xsc_tx_dma_unmap(dev, dma);
 		}
 
-#ifndef NEED_CREATE_RX_THREAD
 		npkts++;
 		nbytes += wi->num_bytes;
 		sqcc += wi->num_wqebbs;
 		napi_consume_skb(skb, napi_budget);
-#else
-		npkts++;
-		nbytes += wi->num_bytes;
-		sqcc += wi->num_wqebbs;
-		if (refcount_read(&skb->users) < 1)
-			stats->txdone_skb_refcnt_err++;
-		napi_consume_skb(skb, 0);
-#endif
 		ETH_DEBUG_LOG("ci=%d, sqcc=%d, pkts=%d\n", ci, sqcc, npkts);
 
-	} while ((++i <= XSC_TX_POLL_BUDGET) && (cqe = xsc_cqwq_get_cqe(&cq->wq)));
+	} while ((++i <= napi_budget) && (cqe = xsc_cqwq_get_cqe(&cq->wq)));
 
 	stats->cqes += i;
 
@@ -402,11 +380,9 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 	sq->cc = sqcc;
 	ETH_DEBUG_LOG("dma_fifo_cc=%d, sqcc=%d\n", dma_fifo_cc, sqcc);
 
-#ifdef XSC_BQL_SUPPORT
 	ETH_SQ_STATE(sq);
 	netdev_tx_completed_queue(sq->txq, npkts, nbytes);
 	ETH_SQ_STATE(sq);
-#endif
 
 	if (netif_tx_queue_stopped(sq->txq) &&
 	    xsc_wqc_has_room_for(&sq->wq, sq->cc, sq->pc, sq->stop_room)) {
@@ -485,6 +461,9 @@ retry_send:
 	cseg = &wqe->ctrl;
 	dseg = &wqe->data[0];
 
+	if (unlikely(num_bytes == 0))
+		goto err_drop;
+
 	xsc_txwqe_build_csegs(sq, skb, mss, ihs, headlen,
 			      opcode, ds_cnt, num_bytes, cseg);
 
@@ -498,6 +477,10 @@ retry_send:
 
 	stats->bytes     += num_bytes;
 	stats->xmit_more += xsc_netdev_xmit_more(skb);
+
+	sq->dim_obj.sample.pkt_ctr  = sq->stats->packets;
+	sq->dim_obj.sample.byte_ctr = sq->stats->bytes;
+
 	return NETDEV_TX_OK;
 
 err_drop:
@@ -549,9 +532,6 @@ netdev_tx_t xsc_eth_xmit_start(struct sk_buff *skb, struct net_device *netdev)
 	ETH_DEBUG_LOG("wqe = %p pi = %d\n", wqe, pi);
 	assert(adapter->xdev, wqe);
 
-#ifndef ANDES_DRIVER
-	skb = xsc_accel_handle_tx(skb);
-#endif
 
 	ret = xsc_eth_xmit_frame(skb, sq, wqe, pi);
 

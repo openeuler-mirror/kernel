@@ -8,6 +8,8 @@
 
 #include <net/page_pool.h>
 
+#include <linux/dim.h>
+
 #include "../pci/wq.h"
 
 enum {
@@ -30,11 +32,13 @@ enum {
 
 enum {
 	XSC_ETH_RQ_STATE_ENABLED,
+	XSC_ETH_RQ_STATE_AM,
+	XSC_ETH_RQ_STATE_CACHE_REDUCE_PENDING,
 };
 
 enum {
 	XSC_ETH_SQ_STATE_ENABLED,
-	XSC_ETH_RQ_STATE_CACHE_REDUCE_PENDING,
+	XSC_ETH_SQ_STATE_AM,
 };
 
 struct xsc_dma_info {
@@ -46,6 +50,7 @@ struct xsc_wqe_frag_info {
 	struct xsc_dma_info *di;
 	u32 offset;
 	u8 last_in_page;
+	u8 is_available;
 };
 
 struct xsc_rq_frag_info {
@@ -62,6 +67,20 @@ struct xsc_rq_frags_info {
 	u8 frags_max_num;
 };
 
+#define xsc_dim_t struct dim
+#define xsc_dim_sample_t struct dim_sample
+#define xsc_dim_cq_moder_t struct dim_cq_moder
+
+struct xsc_dim {
+	xsc_dim_t dim;
+	xsc_dim_sample_t sample;
+};
+
+struct xsc_dim_reduce_work {
+	struct hrtimer		timer;
+	u32			dim_us;
+};
+
 struct xsc_cq {
 	/* data path - accessed per cqe */
 	struct xsc_cqwq	wq;
@@ -76,6 +95,7 @@ struct xsc_cq {
 	struct xsc_core_device	*xdev;
 	struct xsc_wq_ctrl	wq_ctrl;
 	u8			rx;
+	struct xsc_dim_reduce_work  cq_reduce;
 } ____cacheline_aligned_in_smp;
 
 struct xsc_pcie_lat_work {
@@ -142,6 +162,7 @@ struct xsc_rq {
 	unsigned long	state;
 	struct work_struct  recover_work;
 	struct xsc_rq_stats *stats;
+	struct xsc_dim	dim_obj;
 
 	u32 hw_mtu;
 	u32 frags_sz;
@@ -175,6 +196,8 @@ struct xsc_sq {
 	/* dirtied @completion */
 	u16                        cc;
 	u32                        dma_fifo_cc;
+	struct xsc_dim		dim_obj;
+
 	/* dirtied @xmit */
 	u16                        pc ____cacheline_aligned_in_smp;
 	u32                        dma_fifo_pc;

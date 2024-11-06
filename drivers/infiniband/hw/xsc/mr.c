@@ -37,8 +37,6 @@ struct ib_mr *xsc_ib_get_dma_mr(struct ib_pd *pd, int acc)
 	if (!mr)
 		return ERR_PTR(-ENOMEM);
 
-	return &mr->ibmr;
-
 	in = kzalloc(sizeof(*in), GFP_KERNEL);
 	if (!in) {
 		err = -ENOMEM;
@@ -46,9 +44,9 @@ struct ib_mr *xsc_ib_get_dma_mr(struct ib_pd *pd, int acc)
 	}
 
 	req = &in->req;
-	req->acc = convert_access(acc) | XSC_ACCESS_MODE_PA;
-	req->pdn = cpu_to_be32(to_mpd(pd)->pdn | XSC_MKEY_LEN64);
+	req->acc = convert_access(acc);
 	req->va_base = 0;
+	req->map_en = !(XSC_MPT_MAP_EN);
 
 	err = xsc_core_create_mkey(xdev, &mr->mmr);
 	if (err)
@@ -159,7 +157,6 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	int npages;
 	u64 *pas;
 	int err;
-	int using_peer_mem = 0;
 	struct ib_peer_memory_client *ib_peer_mem = NULL;
 	struct xsc_ib_peer_id *xsc_ib_peer_id = NULL;
 
@@ -174,6 +171,7 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 #endif
 	if (IS_ERR(umem)) {
 #ifdef CONFIG_INFINIBAND_PEER_MEMORY
+		xsc_ib_warn(dev, "umem get failed\n");
 		return (void *)umem;
 #else
 		// check client peer memory
@@ -197,18 +195,14 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 								    xsc_ib_peer_id);
 		if (err)
 			goto error;
-		using_peer_mem = 1;
 #endif
+
 	} else {
 		umem_ex = ib_umem_ex(umem);
 		if (IS_ERR(umem_ex)) {
 			err = -ENOMEM;
 			goto error;
 		}
-#ifdef CONFIG_INFINIBAND_PEER_MEMORY
-		if (umem->is_peer)
-			using_peer_mem = 1;
-#endif
 	}
 	umem = &umem_ex->umem;
 
@@ -281,11 +275,13 @@ xsc_ib_dereg_mr_def()
 		kfree(mr);
 		return 0;
 	}
+
 	if (mr->npages) {
 		err = xsc_core_dereg_mr(dev->xdev, &mr->mmr);
 		if (err) {
 			xsc_ib_warn(dev, "failed to dereg mr 0x%x (%d)\n",
 				    mr->mmr.key, err);
+			atomic_set(&mr->invalidated, 0);
 			return err;
 		}
 	}
@@ -293,6 +289,7 @@ xsc_ib_dereg_mr_def()
 	if (err) {
 		xsc_ib_warn(dev, "failed to destroy mkey 0x%x (%d)\n",
 			    mr->mmr.key, err);
+		atomic_set(&mr->invalidated, 0);
 		return err;
 	}
 
@@ -303,6 +300,7 @@ xsc_ib_dereg_mr_def()
 		spin_unlock(&dev->mr_lock);
 	}
 
+	kfree(mr->pas);
 	kfree(mr);
 
 	return 0;
@@ -344,13 +342,19 @@ xsc_ib_alloc_mr_def()
 	int err;
 
 	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
-	if (!mr)
-		return NULL;
+	if (!mr) {
+		xsc_ib_err(dev, "Alloc mr failed.\n");
+		return ERR_PTR(-ENOMEM);
+	}
+
 	mr->npages = 0;
 	mr->mmr.pd = to_mpd(pd)->pdn;
 	mr->pas = kcalloc(max_num_sg, sizeof(__be64), GFP_KERNEL);
-	if (!mr->pas)
+	if (!mr->pas) {
+		err = -ENOMEM;
 		goto err_alloc;
+	}
+
 	err = xsc_core_create_mkey(dev->xdev, &mr->mmr);
 	if (err)
 		goto err_create_mkey;
@@ -363,7 +367,7 @@ err_create_mkey:
 	kfree(mr->pas);
 err_alloc:
 	kfree(mr);
-	return NULL;
+	return ERR_PTR(err);
 }
 
 static int xsc_set_page(struct ib_mr *ibmr, u64 pa)
@@ -373,6 +377,17 @@ static int xsc_set_page(struct ib_mr *ibmr, u64 pa)
 	mmr->pas[mmr->npages] = pa;
 	mmr->npages++;
 	return 0;
+}
+
+u8 xsc_get_mr_page_mode(struct xsc_core_device *xdev, u32 page_shift)
+{
+	u8 page_mode = 0;
+
+	page_mode = (page_shift == XSC_PAGE_SHIFT_4K ? XSC_PAGE_MODE_4K :
+		(page_shift == XSC_PAGE_SHIFT_64K ? XSC_PAGE_MODE_64K :
+		(page_shift == XSC_PAGE_SHIFT_2M ? XSC_PAGE_MODE_2M : XSC_PAGE_MODE_1G)));
+
+	return page_mode;
 }
 
 int xsc_ib_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg,
@@ -401,16 +416,56 @@ int xsc_wr_reg_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr)
 		return -ENOMEM;
 
 	in->req.pdn = cpu_to_be32(mmr->mmr.pd);
-	in->req.pa_num = cpu_to_be32(mmr->npages);
-	in->req.len = cpu_to_be32(ibmr->length);
 	in->req.mkey = cpu_to_be32(ibmr->rkey);
 	in->req.acc = convert_access(reg_wr->access);
 	in->req.page_mode = 0;
 	in->req.map_en = XSC_MPT_MAP_EN;
+
+	if (xsc_ib_iommu_dma_map(ibmr->device)) {
+		static u32 support_page_shift[] = {12, 16, 21, 30};
+		u64 va_base;
+		u64 pa_base;
+		int len;
+		int i;
+		u32 page_shift;
+
+		for (i = 0; i < ARRAY_SIZE(support_page_shift); i++) {
+			page_shift = support_page_shift[i];
+			va_base = ALIGN_DOWN(ibmr->iova, 1 << page_shift);
+			len = ibmr->iova + ibmr->length - va_base;
+			if (len <= (1 << page_shift)) {
+				in->req.page_mode = xsc_get_mr_page_mode(dev->xdev, page_shift);
+				pa_base = ALIGN_DOWN(mmr->pas[0], (1 << page_shift));
+				in->req.page_mode = xsc_get_mr_page_mode(dev->xdev, page_shift);
+				in->req.pa_num = cpu_to_be32(1);
+				in->req.len = cpu_to_be32(len);
+				in->req.va_base = cpu_to_be64(va_base);
+				in->req.pas[0] = cpu_to_be64(pa_base);
+				goto out;
+			}
+		}
+
+		xsc_ib_warn(dev, "Not found suitable page mode for iommu dma map, using 4k mode");
+	}
+
+	in->req.page_mode = xsc_get_mr_page_mode(dev->xdev, PAGE_SHIFT_4K);
 	in->req.va_base = cpu_to_be64(ibmr->iova);
+	in->req.pa_num = cpu_to_be32(mmr->npages);
+	in->req.len = cpu_to_be32(ibmr->length);
 	pas = in->req.pas;
 	for (i = 0; i < mmr->npages; i++)
 		pas[i] = cpu_to_be64(mmr->pas[i]);
+
+out:
+	xsc_ib_dbg(dev, "iova=%llx, pas=%llx, req.page_mode=%u, req.va_base=%llx, req.pas=%llx, req.len=%d, req.pa_num=%d\n",
+		   ibmr->iova,
+		   mmr->pas[0],
+		   in->req.page_mode,
+		   be64_to_cpu(in->req.va_base),
+		   be64_to_cpu(in->req.pas[0]),
+		   be32_to_cpu(in->req.len),
+		   be32_to_cpu(in->req.pa_num));
+
 	err = xsc_core_register_mr(dev->xdev, &mmr->mmr, in, sizeof(*in));
 
 	kfree(in);

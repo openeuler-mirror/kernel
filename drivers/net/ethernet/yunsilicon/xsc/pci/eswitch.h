@@ -27,7 +27,9 @@ int xsc_eswitch_enable(struct xsc_eswitch *esw, int mode, int num_vfs);
 void xsc_eswitch_disable_locked(struct xsc_eswitch *esw, bool clear_vf);
 void xsc_eswitch_disable(struct xsc_eswitch *esw, bool clear_vf);
 
-int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mod, struct netlink_ext_ack *extack);
+int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mod
+				, struct netlink_ext_ack *extack
+				);
 int xsc_devlink_eswitch_mode_get(struct devlink *devlink, u16 *mode);
 
 struct xsc_vport *__must_check
@@ -72,6 +74,8 @@ int xsc_eswitch_get_vport_stats(struct xsc_eswitch *esw,
 int xsc_eswitch_query_vport_drop_stats(struct xsc_core_device *dev,
 				       struct xsc_vport *vport,
 				       struct xsc_vport_drop_stats *stats);
+int xsc_eswitch_set_vport_rate(struct xsc_eswitch *esw, u16 vport,
+			       u32 max_rate, u32 min_rate);
 
 #define xsc_esw_for_all_vports(esw, i, vport)  \
 	for ((i) = XSC_VPORT_PF;            \
@@ -144,7 +148,7 @@ static inline bool xsc_host_is_dpu_mode(struct xsc_core_device *dev)
 		dev->pdev->device == XSC_MV_HOST_PF_DEV_ID);
 }
 
-static inline bool xsc_is_host_mode(struct xsc_core_device *dev)
+static inline bool xsc_pf_vf_is_dpu_mode(struct xsc_core_device *dev)
 {
 	return (dev->pdev->device == XSC_MF_HOST_PF_DEV_ID ||
 		dev->pdev->device == XSC_MF_HOST_VF_DEV_ID ||
@@ -154,7 +158,7 @@ static inline bool xsc_is_host_mode(struct xsc_core_device *dev)
 
 static inline bool xsc_get_pp_bypass_res(struct xsc_core_device *dev, bool esw_set)
 {
-	return esw_set || xsc_is_host_mode(dev);
+	return esw_set || xsc_pf_vf_is_dpu_mode(dev);
 }
 
 static inline bool xsc_get_pct_drop_config(struct xsc_core_device *dev)
@@ -166,4 +170,3 @@ static inline bool xsc_get_pct_drop_config(struct xsc_core_device *dev)
 }
 
 #endif /* ESWITCH_H */
-

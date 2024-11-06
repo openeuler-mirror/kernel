@@ -59,7 +59,7 @@ static ssize_t enable_store(struct xsc_rtt_interface *g, struct xsc_rtt_attribut
 		return -EINVAL;
 
 	if (rtt_enable > 1) {
-		xsc_core_err(g->xdev, "Failed to set rtt en, rtt_enable(%hu) out of range[0,1]\n",
+		xsc_core_err(g->xdev, "Failed to set rtt en, rtt_enable(%u) out of range[0,1]\n",
 			     rtt_enable);
 		return -EINVAL;
 	}
@@ -102,39 +102,39 @@ static ssize_t qpn_show(struct xsc_rtt_interface *g, struct xsc_rtt_attributes *
 	}
 
 	for (i = 0; i < (XSC_RTT_CFG_QPN_MAX - 1); i++)
-		count += sprintf(&buf[count], "%hu,", __be16_to_cpu(out.qpn[i]));
+		count += sprintf(&buf[count], "%hu,", __be32_to_cpu(out.qpn[i]));
 
-	count += sprintf(&buf[count], "%hu\n", __be16_to_cpu(out.qpn[i]));
+	count += sprintf(&buf[count], "%hu\n", __be32_to_cpu(out.qpn[i]));
 
 	return count;
 }
 
-#define RTT_CFG_QPN_FORMAT  "%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu," \
-"%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu,%hu"
+#define RTT_CFG_QPN_FORMAT  "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u," \
+"%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u"
 
 static ssize_t qpn_store(struct xsc_rtt_interface *g, struct xsc_rtt_attributes *a,
 			 const char *buf, size_t count)
 {
-	int err, i;
+	int err, i, num;
 	struct xsc_rtt_qpn_mbox_in in;
 	struct xsc_rtt_qpn_mbox_out out;
-	u16 *ptr = in.qpn;
+	u32 *ptr = in.qpn;
 
 	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
 
-	err = sscanf(buf, RTT_CFG_QPN_FORMAT, &ptr[0], &ptr[1], &ptr[2], &ptr[3], &ptr[4],
+	num = sscanf(buf, RTT_CFG_QPN_FORMAT, &ptr[0], &ptr[1], &ptr[2], &ptr[3], &ptr[4],
 		     &ptr[5], &ptr[6], &ptr[7], &ptr[8], &ptr[9], &ptr[10], &ptr[11], &ptr[12],
 		     &ptr[13], &ptr[14], &ptr[15], &ptr[16], &ptr[17], &ptr[18], &ptr[19],
 		     &ptr[20], &ptr[21], &ptr[22], &ptr[23], &ptr[24], &ptr[25], &ptr[26],
 		     &ptr[27], &ptr[28], &ptr[29], &ptr[30], &ptr[31]);
-	if (err != XSC_RTT_CFG_QPN_MAX)
+	if (num == 0)
 		return -EINVAL;
 
 	in.hdr.opcode = __cpu_to_be16(XSC_CMD_OP_SET_RTT_QPN);
 
 	for (i = 0 ; i < XSC_RTT_CFG_QPN_MAX; i++)
-		in.qpn[i] = __cpu_to_be16(ptr[i]);
+		in.qpn[i] = __cpu_to_be32(ptr[i]);
 
 	err = xsc_cmd_exec(g->xdev, (void *)&in, sizeof(struct xsc_rtt_qpn_mbox_in),
 			   (void *)&out, sizeof(struct xsc_rtt_qpn_mbox_out));
@@ -170,6 +170,7 @@ static ssize_t period_show(struct xsc_rtt_interface *g, struct xsc_rtt_attribute
 }
 
 #define RTT_CFG_PERIOD_MAX	10000 //ms, 10s
+#define RTT_CFG_PERIOD_MIN	1000 //ms, 1s
 static ssize_t period_store(struct xsc_rtt_interface *g, struct xsc_rtt_attributes *a,
 			    const char *buf, size_t count)
 {
@@ -182,7 +183,7 @@ static ssize_t period_store(struct xsc_rtt_interface *g, struct xsc_rtt_attribut
 	if (err != 0)
 		return -EINVAL;
 
-	if (rtt_period > RTT_CFG_PERIOD_MAX)
+	if (rtt_period > RTT_CFG_PERIOD_MAX || rtt_period < RTT_CFG_PERIOD_MIN)
 		return -EINVAL;
 
 	memset(&in, 0, sizeof(in));
@@ -334,9 +335,11 @@ static struct attribute *rtt_attrs[] = {
 	NULL
 };
 
+ATTRIBUTE_GROUPS(rtt);
+
 static struct kobj_type rtt_ktype = {
 	.sysfs_ops     = &rtt_sysfs_ops,
-	.default_attrs = rtt_attrs
+	.default_groups = rtt_groups,
 };
 
 int xsc_rtt_sysfs_init(struct ib_device *ib_dev, struct xsc_core_device *xdev)

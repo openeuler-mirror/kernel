@@ -11,18 +11,14 @@
 #include "common/driver.h"
 #include "common/xsc_hsi.h"
 #include "common/xsc_core.h"
-#ifdef CONFIG_RFS_ACCEL
 #include <linux/cpu_rmap.h>
-#endif
 #include "fw/xsc_flow.h"
 #include "fw/xsc_fw.h"
 
 enum xsc_eq_type {
 	XSC_EQ_TYPE_COMP,
 	XSC_EQ_TYPE_ASYNC,
-#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	XSC_EQ_TYPE_PF,
-#endif
 };
 
 struct xsc_irq {
@@ -34,18 +30,9 @@ struct xsc_irq {
 struct xsc_irq_table {
 	struct xsc_irq *irq;
 	int nvec;
-#ifdef CONFIG_RFS_ACCEL
 	struct cpu_rmap *rmap;
-#endif
 };
 
-struct xsc_msix_resource {
-	u16 msix_max_num;
-	u16 msix_vec_base;
-	u16 msix_vec_end;
-	unsigned long *msix_vec_tbl;
-	atomic_t refcount;
-};
 
 struct xsc_msix_resource *g_msix_xres;
 
@@ -77,23 +64,24 @@ static int xsc_dma_read_msix_init(struct xsc_core_device *xdev)
 	return err;
 }
 
+static void xsc_free_irq(struct xsc_core_device *xdev, unsigned int vector)
+{
+	unsigned int irqn = 0;
+
+	irqn = pci_irq_vector(xdev->pdev, vector);
+	disable_irq(irqn);
+
+	if (xsc_fw_is_available(xdev))
+		free_irq(irqn, xdev);
+}
+
 static void xsc_dma_read_msix_fini(struct xsc_core_device *xdev)
 {
 	if (xdev->caps.msix_enable && xsc_core_is_pf(xdev))
-		free_irq(pci_irq_vector(xdev->pdev, XSC_DMA_READ_DONE_VEC), xdev);
+		xsc_free_irq(xdev, XSC_DMA_READ_DONE_VEC);
 }
 
-static int xsc_msix_tbl_init(struct xsc_core_device *xdev)
-{
-	return 0;
-}
-
-static int xsc_msix_tbl_fini(struct xsc_core_device *xdev)
-{
-	return 0;
-}
-
-static struct xsc_eq *xsc_eq_get(struct xsc_core_device *dev, int i)
+struct xsc_eq *xsc_eq_get(struct xsc_core_device *dev, int i)
 {
 	struct xsc_eq_table *table = &dev->dev_res->eq_table;
 	struct xsc_eq *eq, *n;
@@ -110,6 +98,7 @@ static struct xsc_eq *xsc_eq_get(struct xsc_core_device *dev, int i)
 
 	return eq_ret;
 }
+EXPORT_SYMBOL(xsc_eq_get);
 
 void mask_cpu_by_node(int node, struct cpumask *dstp)
 {
@@ -253,6 +242,9 @@ static void xsc_free_irq_vectors(struct xsc_core_device *dev)
 {
 	struct xsc_dev_resource *dev_res = dev->dev_res;
 
+	if (!xsc_fw_is_available(dev))
+		return;
+
 	pci_free_irq_vectors(dev->pdev);
 	kfree(dev_res->irq_info);
 }
@@ -346,9 +338,6 @@ static irqreturn_t xsc_cmd_handler(int irq, void *arg)
 	struct xsc_core_device *dev = (struct xsc_core_device *)arg;
 	int err;
 
-#ifdef XSC_DEBUG
-	xsc_core_dbg(dev, "cmdq hint irq: %d\n", irq);
-#endif
 	disable_irq_nosync(dev->cmd.irqn);
 	err = xsc_cmd_err_handler(dev);
 	if (!err)
@@ -373,7 +362,7 @@ int xsc_request_irq_for_cmdq(struct xsc_core_device *dev, u8 vecidx)
 
 void xsc_free_irq_for_cmdq(struct xsc_core_device *dev)
 {
-	free_irq(dev->cmd.irqn, dev);
+	xsc_free_irq(dev, XSC_VEC_CMD);
 }
 
 static irqreturn_t xsc_event_handler(int irq, void *arg)
@@ -399,14 +388,13 @@ int xsc_request_irq_for_event(struct xsc_core_device *dev)
 
 	snprintf(dev_res->irq_info[XSC_VEC_CMD_EVENT].name, XSC_MAX_IRQ_NAME, "%s@pci:%s",
 		 "xsc_eth_event", pci_name(dev->pdev));
-
 	return request_irq(pci_irq_vector(dev->pdev, XSC_VEC_CMD_EVENT), xsc_event_handler, 0,
 			dev_res->irq_info[XSC_VEC_CMD_EVENT].name, dev);
 }
 
 void xsc_free_irq_for_event(struct xsc_core_device *dev)
 {
-	free_irq(pci_irq_vector(dev->pdev, XSC_VEC_CMD_EVENT), dev);
+	xsc_free_irq(dev, XSC_VEC_CMD_EVENT);
 }
 
 int xsc_cmd_enable_msix(struct xsc_core_device *xdev)
@@ -473,12 +461,6 @@ int xsc_irq_eq_create(struct xsc_core_device *dev)
 		}
 	}
 
-	err = xsc_msix_tbl_init(dev);
-	if (err) {
-		xsc_core_err(dev, "failed to init msix tbl, err=%d\n", err);
-		goto err_msix_tbl_init;
-	}
-
 	err = set_comp_irq_affinity_hints(dev);
 	if (err) {
 		xsc_core_err(dev, "failed to alloc affinity hint cpumask, err=%d\n", err);
@@ -495,8 +477,6 @@ int xsc_irq_eq_create(struct xsc_core_device *dev)
 	return 0;
 
 err_set_affinity:
-	xsc_msix_tbl_fini(dev);
-err_msix_tbl_init:
 	xsc_dma_read_msix_fini(dev);
 err_dma_read_msix:
 	xsc_free_irq_for_event(dev);
@@ -524,9 +504,7 @@ int xsc_irq_eq_destroy(struct xsc_core_device *dev)
 	xsc_dma_read_msix_fini(dev);
 	xsc_free_irq_for_event(dev);
 	xsc_free_irq_for_cmdq(dev);
-	xsc_free_continuous_msix_vec(dev);
 	xsc_free_irq_vectors(dev);
-	xsc_msix_tbl_fini(dev);
 
 	return 0;
 }

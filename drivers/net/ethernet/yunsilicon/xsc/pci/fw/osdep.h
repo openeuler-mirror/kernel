@@ -28,5 +28,4 @@ void *xsc_malloc(unsigned int size);
 
 void xsc_free(void *addr);
 
-#endif
-
+#endif /* OSDEP_H */

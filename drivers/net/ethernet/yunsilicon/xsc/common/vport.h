@@ -41,8 +41,8 @@ enum {
 	XSC_VPORT_ADMIN_STATE_AUTO  = 0x2,
 };
 
-u8 xsc_query_vport_state(struct xsc_core_device *dev, u8 opmod, u16 vport);
-int xsc_modify_vport_admin_state(struct xsc_core_device *dev, u8 opmod,
+u8 xsc_query_vport_state(struct xsc_core_device *dev, u16 opmod, u16 vport);
+int xsc_modify_vport_admin_state(struct xsc_core_device *dev, u16 opmod,
 				 u16 vport, u8 other_vport, u8 state);
 int xsc_query_nic_vport_mac_address(struct xsc_core_device *dev,
 				    u16 vport, u8 *addr);
@@ -92,13 +92,15 @@ int xsc_modify_nic_vport_mac_list(struct xsc_core_device *dev,
 				  int list_size);
 int xsc_query_nic_vport_promisc(struct xsc_core_device *dev,
 				u16 vport,
-				int *promisc_uc,
-				int *promisc_mc,
-				int *promisc_all);
+				int *promisc,
+				int *allmcast);
 int xsc_modify_nic_vport_promisc(struct xsc_core_device *dev,
-				 int promisc_uc,
-				 int promisc_mc,
-				 int promisc_all);
+				 bool allmcast_flag, bool promisc_flag,
+				 int allmcast, int promisc);
+int xsc_modify_nic_vport_spoofchk(struct xsc_core_device *dev,
+				  u16 vport, int spoofchk);
+int xsc_modify_nic_vport_trust(struct xsc_core_device *dev,
+			       u16 vport, bool trust);
 int xsc_query_nic_vport_vlans(struct xsc_core_device *dev, u32 vport,
 			      unsigned long *vlans);
 int xsc_modify_nic_vport_vlans(struct xsc_core_device *dev,
@@ -113,5 +115,13 @@ int xsc_modify_hca_vport_context(struct xsc_core_device *dev,
 				 u8 other_vport, u8 port_num,
 				 int vf,
 				 struct xsc_hca_vport_context *req);
+int xsc_modify_vport_max_rate(struct xsc_core_device *dev,
+			      u16 vport, u32 rate);
+
 u16 xsc_eswitch_get_total_vports(const struct xsc_core_device *dev);
+int xsc_modify_nic_vport_context(struct xsc_core_device *dev, void *in,
+				 int inlen);
+int __xsc_query_nic_vport_context(struct xsc_core_device *dev,
+				  u16 vport, void *out, int outlen,
+				  int force_other);
 #endif /* XSC_VPORT_H */

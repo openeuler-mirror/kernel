@@ -5,15 +5,11 @@
 
 #include "common/xsc_core.h"
 #include "devlink.h"
-#ifdef CONFIG_XSC_ESWITCH
 #include "eswitch.h"
-#endif
 
 static const struct devlink_ops xsc_devlink_ops = {
-#ifdef CONFIG_XSC_ESWITCH
 	.eswitch_mode_set = xsc_devlink_eswitch_mode_set,
 	.eswitch_mode_get = xsc_devlink_eswitch_mode_get,
-#endif
 };
 
 struct devlink *xsc_devlink_alloc(void)
@@ -29,6 +25,7 @@ void xsc_devlink_free(struct devlink *devlink)
 int xsc_devlink_register(struct devlink *devlink, struct device *dev)
 {
 	int err = 0;
+
 	err = devlink_register(devlink, dev);
 	return err;
 }

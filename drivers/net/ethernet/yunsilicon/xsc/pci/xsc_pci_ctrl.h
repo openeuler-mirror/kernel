@@ -12,7 +12,7 @@
 
 //for x86
 #ifndef NR_VECTORS
-#define NR_VECTORS				256
+#define NR_VECTORS                              256
 #endif
 #define IRQ_MATRIX_BITS			NR_VECTORS
 #define IRQ_MATRIX_SIZE (BITS_TO_LONGS(IRQ_MATRIX_BITS))
@@ -47,5 +47,4 @@ u16 xsc_get_irq_matrix_global_available(struct xsc_core_device *dev);
 
 int xsc_pci_ctrl_init(void);
 void xsc_pci_ctrl_fini(void);
-
-#endif
+#endif /* XSC_PCI_CTRL_H */

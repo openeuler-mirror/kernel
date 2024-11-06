@@ -10,28 +10,18 @@
 
 #include <linux/types.h>
 #include <linux/bitops.h>
-#include "common/xsc_macro.h"
-
-#ifdef MSIX_SUPPORT
-#else
-#define NEED_CREATE_RX_THREAD
-#endif
 
 #define PAGE_SHIFT_4K          12
 #define PAGE_SIZE_4K           (_AC(1, UL) << PAGE_SHIFT_4K)
 #define PAGE_MASK_4K           (~(PAGE_SIZE_4K - 1))
 
-#ifndef EQ_NUM_MAX
 #define EQ_NUM_MAX		1024
-#endif
-#ifndef EQ_SIZE_MAX
 #define EQ_SIZE_MAX		1024
-#endif
 
 #define XSC_RSS_INDIR_TBL_S     256
 #define XSC_MAX_TSO_PAYLOAD     0x10000/*64kb*/
 
-#define MAX_BOARD_NUM	8
+#define MAX_BOARD_NUM	32
 
 #define DMA_LO_LE(x)		__cpu_to_le32(lower_32_bits(x))
 #define DMA_HI_LE(x)		__cpu_to_le32(upper_32_bits(x))
@@ -348,8 +338,6 @@ union xsc_db_data {
 
 #define XSC_BROADCASTID_MAX		2
 #define XSC_TBM_BOMT_DESTINFO_SHIFT	(XSC_BROADCASTID_MAX / 2)
-
-/* Doorbell registers */
 
 enum {
 	XSC_EQ_VEC_ASYNC		= 0,

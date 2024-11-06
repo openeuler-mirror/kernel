@@ -18,5 +18,4 @@ struct xsc_mpt_entry {
 	u32 mem_map_en:1;
 	u32 rsv:7;
 };
-
-#endif
+#endif /* XSC_REG_DEFINE_H */

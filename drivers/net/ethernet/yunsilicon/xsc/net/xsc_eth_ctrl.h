@@ -8,5 +8,4 @@
 
 void xsc_eth_ctrl_fini(void);
 int xsc_eth_ctrl_init(void);
-
-#endif /* XSC_RXTX_H */
+#endif /* XSC_ETH_CTRL_H */

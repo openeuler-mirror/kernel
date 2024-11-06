@@ -20,11 +20,11 @@ int xsc_core_create_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 	key = 0x80 + dev->dev_res->mkey_key++;
 	spin_unlock(&dev->dev_res->mkey_lock);
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_CREATE_MKEY);
-#ifdef REG_MR_VIA_CMDQ
-	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
-#else
-	err = xsc_create_mkey(dev, &in, &out);
-#endif
+	if (dev->reg_mr_via_cmdq)
+		err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	else
+		err = xsc_create_mkey(dev, &in, &out);
+
 	if (err) {
 		xsc_core_err(dev, "cmd exec faile %d\n", err);
 		return err;
@@ -53,11 +53,11 @@ int xsc_core_destroy_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DESTROY_MKEY);
 	in.mkey = cpu_to_be32(mr->key);
-#ifdef REG_MR_VIA_CMDQ
-	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
-#else
-	err = xsc_destroy_mkey(dev, &in, &out);
-#endif
+	if (dev->reg_mr_via_cmdq)
+		err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	else
+		err = xsc_destroy_mkey(dev, &in, &out);
+
 	if (err)
 		return err;
 
@@ -68,7 +68,6 @@ int xsc_core_destroy_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 }
 EXPORT_SYMBOL(xsc_core_destroy_mkey);
 
-#ifdef REG_MR_VIA_CMDQ
 int xsc_set_mpt_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbox_in *in_cmd,
 			 u32 *mtt_base)
 {
@@ -93,11 +92,12 @@ int xsc_set_mpt_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbo
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_SET_MPT);
 	memset(&out, 0, sizeof(out));
 	err = xsc_cmd_exec(dev, in, sizeof(*in), &out, sizeof(out));
-	if (err) {
+	if (err || out.hdr.status) {
 		xsc_core_err(dev, "set mpt failed\n");
 		kfree(in);
-		return err;
+		return -EINVAL;
 	}
+
 	*mtt_base = be32_to_cpu(out.mtt_base);
 	kfree(in);
 	return 0;
@@ -138,10 +138,10 @@ int xsc_set_mtt_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbo
 		xsc_core_dbg(dev, "set mtt seg %d, pa_num %d, pa_idx_base %d, tot_seg %d\n",
 			     seg_idx, seg_pa_num, pa_idx_base, tot_seg_num);
 		err = xsc_cmd_exec(dev, seg_in, in_len, &seg_out, sizeof(seg_out));
-		if (err) {
+		if (err || seg_out.hdr.status) {
 			xsc_core_err(dev, "set mtt seg %d failed\n", seg_idx);
 			kfree(seg_in);
-			return err;
+			return -EINVAL;
 		}
 		kfree(seg_in);
 		pa_idx_base += seg_pa_num;
@@ -160,9 +160,9 @@ int xsc_dereg_mr_via_cmdq(struct xsc_core_device *dev,  struct xsc_register_mr_m
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DEREG_MR);
 	in.mkey = in_cmd->req.mkey;
 	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
-	if (err) {
+	if (err || out.hdr.status) {
 		xsc_core_err(dev, "cmd exec failed %d\n", err);
-		return err;
+		return -EINVAL;
 	}
 	return 0;
 }
@@ -191,7 +191,6 @@ set_mtt_err:
 		xsc_core_err(dev, "dereg error mr failed\n");
 	return err;
 }
-#endif
 
 int xsc_core_register_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr,
 			 struct xsc_register_mr_mbox_in *in, int inlen)
@@ -201,11 +200,11 @@ int xsc_core_register_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr,
 
 	memset(&out, 0, sizeof(out));
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_REG_MR);
-#ifdef REG_MR_VIA_CMDQ
-	err = xsc_reg_mr_via_cmdq(dev, in);
-#else
-	err = xsc_reg_mr(dev, in, &out);
-#endif
+	if (dev->reg_mr_via_cmdq)
+		err = xsc_reg_mr_via_cmdq(dev, in);
+	else
+		err = xsc_reg_mr(dev, in, &out);
+
 	if (err) {
 		xsc_core_err(dev, "cmd exec failed %d\n", err);
 		return err;
@@ -228,11 +227,11 @@ int xsc_core_dereg_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 	memset(&out, 0, sizeof(out));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DEREG_MR);
 	in.mkey = cpu_to_be32(xsc_mkey_to_idx(mr->key));
-#ifdef REG_MR_VIA_CMDQ
-	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
-#else
-	err = xsc_dereg_mr(dev, &in, &out);
-#endif
+	if (dev->reg_mr_via_cmdq)
+		err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	else
+		err = xsc_dereg_mr(dev, &in, &out);
+
 	if (err) {
 		xsc_core_err(dev, "cmd exec failed %d\n", err);
 		return err;

@@ -36,5 +36,4 @@ enum {
 	XSC_CNT_TYPE_TX_PAUSE = 0,
 	XSC_CNT_TYPE_RX_PAUSE,
 };
-
-#endif
+#endif /* __XSC_COUNTERS_H__ */

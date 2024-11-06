@@ -117,11 +117,11 @@ static void xsc_send_cmd_destroy_mkey(struct xsc_core_device *xdev, unsigned int
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DESTROY_MKEY);
 	in.mkey = cpu_to_be32(mkey);
-#ifdef REG_MR_VIA_CMDQ
-	ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
-#else
-	ret = xsc_destroy_mkey(xdev, &in, &out);
-#endif
+	if (xdev->reg_mr_via_cmdq)
+		ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
+	else
+		ret = xsc_destroy_mkey(xdev, &in, &out);
+
 	if (ret || out.hdr.status != 0)
 		xsc_core_err(xdev, "failed to destroy mkey %d\n", mkey);
 }
@@ -134,11 +134,11 @@ static void xsc_send_cmd_dereg_mr(struct xsc_core_device *xdev, unsigned int mke
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DEREG_MR);
 	in.mkey = cpu_to_be32(mkey);
-#ifdef REG_MR_VIA_CMDQ
-	ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
-#else
-	ret = xsc_dereg_mr(xdev, &in, &out);
-#endif
+	if (xdev->reg_mr_via_cmdq)
+		ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
+	else
+		ret = xsc_dereg_mr(xdev, &in, &out);
+
 	if (ret || out.hdr.status != 0)
 		xsc_core_err(xdev, "failed to dereg mr %d\n", mkey);
 }
@@ -260,7 +260,7 @@ void xsc_destroy_cq_obj(struct xsc_bdf_file *file, unsigned int cqn)
 }
 EXPORT_SYMBOL_GPL(xsc_destroy_cq_obj);
 
-static void xsc_send_cmd_2rst_qp(struct xsc_core_device *xdev, unsigned int qpn)
+void xsc_send_cmd_2rst_qp(struct xsc_core_device *xdev, unsigned int qpn)
 {
 	struct xsc_modify_qp_mbox_in in;
 	struct xsc_modify_qp_mbox_out out;
@@ -448,3 +448,4 @@ void xsc_close_bdf_file(struct xsc_bdf_file *file)
 	spin_unlock(&file->obj_lock);
 }
 EXPORT_SYMBOL_GPL(xsc_close_bdf_file);
+

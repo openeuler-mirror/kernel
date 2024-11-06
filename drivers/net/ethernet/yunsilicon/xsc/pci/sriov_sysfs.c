@@ -8,9 +8,7 @@
 #include <linux/etherdevice.h>
 #include "common/xsc_core.h"
 #include "common/vport.h"
-#ifdef CONFIG_XSC_ESWITCH
 #include "eswitch.h"
-#endif
 
 struct vf_attributes {
 	struct attribute attr;
@@ -234,7 +232,8 @@ static ssize_t policy_show(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 		goto free;
 	}
 	p = policy_str(rep->vport_state_policy);
-	strcpy(buf, p);
+	if (p)
+		sprintf(buf, "%s", p);
 
 free:
 	kfree(rep);
@@ -289,7 +288,6 @@ static ssize_t policy_store(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 	return count;
 }
 
-#ifdef CONFIG_XSC_ESWITCH
 /* ETH SRIOV SYSFS */
 static ssize_t mac_show(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 			char *buf)
@@ -785,7 +783,6 @@ static ssize_t stats_store(struct xsc_sriov_vf *g, struct vf_attributes *oa,
 {
 	return -EOPNOTSUPP;
 }
-#endif /* CONFIG_XSC_ESWITCH */
 
 static ssize_t num_vfs_store(struct device *device, struct device_attribute *attr,
 			     const char *buf, size_t count)
@@ -836,7 +833,6 @@ VF_ATTR(node);
 VF_ATTR(port);
 VF_ATTR(policy);
 
-#ifdef CONFIG_XSC_ESWITCH
 VF_ATTR(mac);
 VF_ATTR(vlan);
 VF_ATTR(link_state);
@@ -868,6 +864,8 @@ static struct attribute *vf_eth_attrs[] = {
 	NULL
 };
 
+ATTRIBUTE_GROUPS(vf_eth);
+
 static struct attribute *vf_group_attrs[] = {
 	&vf_group_attr_max_tx_rate.attr,
 	&vf_group_attr_min_tx_rate.attr,
@@ -875,14 +873,16 @@ static struct attribute *vf_group_attrs[] = {
 	NULL
 };
 
+ATTRIBUTE_GROUPS(vf_group);
+
 static struct kobj_type vf_type_eth = {
 	.sysfs_ops     = &vf_sysfs_ops,
-	.default_attrs = vf_eth_attrs
+	.default_groups = vf_eth_groups,
 };
 
 static struct kobj_type vf_group = {
 	.sysfs_ops     = &vf_group_sysfs_ops,
-	.default_attrs = vf_group_attrs
+	.default_groups = vf_group_groups,
 };
 
 static struct vf_attributes pf_attr_min_pf_tx_rate =
@@ -893,11 +893,12 @@ static struct attribute *pf_eth_attrs[] = {
 	NULL,
 };
 
+ATTRIBUTE_GROUPS(pf_eth);
+
 static struct kobj_type pf_type_eth = {
 	.sysfs_ops     = &vf_sysfs_ops,
-	.default_attrs = pf_eth_attrs
+	.default_groups = pf_eth_groups,
 };
-#endif /* CONFIG_XSC_ESWITCH */
 
 static struct attribute *vf_ib_attrs[] = {
 	&vf_attr_node.attr,
@@ -906,9 +907,11 @@ static struct attribute *vf_ib_attrs[] = {
 	NULL
 };
 
+ATTRIBUTE_GROUPS(vf_ib);
+
 static struct kobj_type vf_type_ib = {
 	.sysfs_ops     = &vf_sysfs_ops,
-	.default_attrs = vf_ib_attrs
+	.default_groups = vf_ib_groups,
 };
 
 static struct device_attribute *xsc_class_attributes[] = {
@@ -926,7 +929,6 @@ int xsc_sriov_sysfs_init(struct xsc_core_device *dev)
 	if (!sriov->config)
 		return -ENOMEM;
 
-#ifdef CONFIG_XSC_ESWITCH
 	if (dev->caps.log_esw_max_sched_depth) {
 		sriov->groups_config = kobject_create_and_add("groups",
 							      sriov->config);
@@ -935,7 +937,6 @@ int xsc_sriov_sysfs_init(struct xsc_core_device *dev)
 			goto err_groups;
 		}
 	}
-#endif
 
 	for (i = 0; i < ARRAY_SIZE(xsc_class_attributes); i++) {
 		err = device_create_file(device, xsc_class_attributes[i]);
@@ -946,14 +947,12 @@ int xsc_sriov_sysfs_init(struct xsc_core_device *dev)
 	return 0;
 
 err_attr:
-#ifdef CONFIG_XSC_ESWITCH
 	if (sriov->groups_config) {
 		kobject_put(sriov->groups_config);
 		sriov->groups_config = NULL;
 	}
 
 err_groups:
-#endif
 	kobject_put(sriov->config);
 	sriov->config = NULL;
 	return err;
@@ -977,7 +976,6 @@ void xsc_sriov_sysfs_cleanup(struct xsc_core_device *dev)
 int xsc_create_vf_group_sysfs(struct xsc_core_device *dev,
 			      u32 group_id, struct kobject *group_kobj)
 {
-#ifdef CONFIG_XSC_ESWITCH
 	struct xsc_core_sriov *sriov = &dev->priv.sriov;
 	int err;
 
@@ -987,7 +985,6 @@ int xsc_create_vf_group_sysfs(struct xsc_core_device *dev,
 		return err;
 
 	kobject_uevent(group_kobj, KOBJ_ADD);
-#endif
 
 	return 0;
 }
@@ -995,9 +992,7 @@ int xsc_create_vf_group_sysfs(struct xsc_core_device *dev,
 void xsc_destroy_vf_group_sysfs(struct xsc_core_device *dev,
 				struct kobject *group_kobj)
 {
-#ifdef CONFIG_XSC_ESWITCH
 	kobject_put(group_kobj);
-#endif
 }
 
 int xsc_create_vfs_sysfs(struct xsc_core_device *dev, int num_vfs)
@@ -1010,9 +1005,7 @@ int xsc_create_vfs_sysfs(struct xsc_core_device *dev, int num_vfs)
 
 	sysfs = &vf_type_ib;
 
-#ifdef CONFIG_XSC_ESWITCH
 	sysfs = &vf_type_eth;
-#endif
 
 	sriov->vfs = kcalloc(num_vfs + 1, sizeof(*sriov->vfs), GFP_KERNEL);
 	if (!sriov->vfs)
@@ -1030,7 +1023,6 @@ int xsc_create_vfs_sysfs(struct xsc_core_device *dev, int num_vfs)
 		kobject_uevent(&tmp->kobj, KOBJ_ADD);
 	}
 
-#ifdef CONFIG_XSC_ESWITCH
 	tmp = &sriov->vfs[vf];
 	tmp->dev = dev;
 	tmp->vf = 0;
@@ -1042,7 +1034,6 @@ int xsc_create_vfs_sysfs(struct xsc_core_device *dev, int num_vfs)
 	}
 
 	kobject_uevent(&tmp->kobj, KOBJ_ADD);
-#endif
 
 	return 0;
 
@@ -1063,12 +1054,10 @@ void xsc_destroy_vfs_sysfs(struct xsc_core_device *dev, int num_vfs)
 	struct xsc_sriov_vf *tmp;
 	int vf;
 
-#ifdef CONFIG_XSC_ESWITCH
 	if (num_vfs) {
 		tmp = &sriov->vfs[num_vfs];
 		kobject_put(&tmp->kobj);
 	}
-#endif
 	for (vf = 0; vf < num_vfs; vf++) {
 		tmp = &sriov->vfs[vf];
 		kobject_put(&tmp->kobj);

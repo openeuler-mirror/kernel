@@ -6,5 +6,5 @@
 #define BRANCH_VERSION 1
 #define MAJOR_VERSION 2
 #define MINOR_VERSION 0
-#define BUILD_VERSION 93
-#define HOTFIX_NUM 70
+#define BUILD_VERSION 367
+#define HOTFIX_NUM 460

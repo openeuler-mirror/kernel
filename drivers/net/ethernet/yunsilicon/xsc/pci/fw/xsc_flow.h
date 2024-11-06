@@ -62,5 +62,4 @@ int xsc_flow_add(struct xsc_core_device *xdev,
 		 int table, int length, void *data);
 
 void xsc_dma_read_done_complete(void);
-
-#endif
+#endif /* XSC_FLOW_H */

@@ -25,7 +25,6 @@ int xsc_core_access_reg(struct xsc_core_device *xdev, void *data_in,
 
 	memcpy(in->data, data_in, size_in);
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_ACCESS_REG);
-	in->hdr.opmod = cpu_to_be16(!write);
 	in->arg = cpu_to_be32(arg);
 	in->register_id = cpu_to_be16(reg_num);
 	err = xsc_cmd_exec(xdev, in, sizeof(*in) + size_in, out,
@@ -212,6 +211,7 @@ int xsc_query_module_eeprom(struct xsc_core_device *dev,
 	case XSC_MODULE_ID_QSFP_PLUS:
 	case XSC_MODULE_ID_QSFP28:
 	case XSC_MODULE_ID_QSFP_DD:
+	case XSC_MODULE_ID_DSFP:
 	case XSC_MODULE_ID_QSFP_PLUS_CMIS:
 		xsc_qsfp_eeprom_params_set(&query.i2c_address, &query.page, &offset);
 		break;
@@ -230,4 +230,3 @@ int xsc_query_module_eeprom(struct xsc_core_device *dev,
 	return xsc_query_mcia(dev, &query, data);
 }
 EXPORT_SYMBOL_GPL(xsc_query_module_eeprom);
-

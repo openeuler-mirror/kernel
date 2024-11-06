@@ -28,9 +28,12 @@ struct xsc_mpt_info {
 	u32 page_num;
 };
 
+#define XSC_RES_IAE_GRP_MASK (XSC_RES_NUM_IAE_GRP - 1)
 struct xsc_resources {
 	int refcnt;
-	int iae_idx;
+	atomic_t iae_grp;
+	int iae_idx[XSC_RES_NUM_IAE_GRP];
+	spinlock_t iae_lock[XSC_RES_NUM_IAE_GRP];	/* iae group lock */
 #define XSC_MAX_MPT_NUM MMC_MPT_TBL_MEM_DEPTH
 	struct xsc_mpt_info mpt_entry[XSC_MAX_MPT_NUM];
 	int max_mpt_num;
@@ -38,10 +41,6 @@ struct xsc_resources {
 #define XSC_MAX_MTT_NUM MMC_MTT_TBL_MEM_DEPTH
 	int max_mtt_num;
 	struct xsc_free_list_wl mtt_list;
-	u16 msix_max_num;
-	u16 msix_vec_base;
-	u16 msix_vec_end;
-	unsigned long *msix_vec_tbl;
 	struct xsc_lock lock;
 };
 
@@ -64,8 +63,4 @@ int dealloc_mpt_entry(struct xsc_core_device *dev, u32 *mpt_idx);
 int alloc_mtt_entry(struct xsc_core_device *dev, u32 pages_num, u32 *mtt_base);
 
 int dealloc_mtt_entry(struct xsc_core_device *dev, int pages_num, u32 mtt_base);
-
-int xsc_alloc_continuous_msix_vec(struct xsc_core_device *dev, u16 vec_num);
-int xsc_free_continuous_msix_vec(struct xsc_core_device *dev);
-
-#endif
+#endif /* XSC_FW_H */
