@@ -81,7 +81,6 @@ static int sdma_debugfs_stats_show(struct seq_file *f, void *data SDMA_UNUSED)
 	struct hisi_sdma_device *dev;
 	u32 exclusive_chn_used_nr;
 	u32 share_chn_used_nr;
-	u32 exclusive_chn_num;
 	u32 chn_idx;
 	u32 i;
 
@@ -99,7 +98,6 @@ static int sdma_debugfs_stats_show(struct seq_file *f, void *data SDMA_UNUSED)
 			return -ENXIO;
 		}
 		chn_num = sdma_chn_info(f, dev);
-		exclusive_chn_num = chn_num.total_chn_num - chn_num.share_chn_num;
 		exclusive_chn_used_nr = dev->nr_channel_used;
 		seq_printf(f, "Used exclusive chn total num = %u\n", exclusive_chn_used_nr);
 		seq_puts(f, "\n");
