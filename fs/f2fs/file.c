@@ -2614,6 +2614,11 @@ static int f2fs_defragment_range(struct f2fs_sb_info *sbi,
 
 	inode_lock(inode);
 
+	if (f2fs_is_atomic_file(inode)) {
+		err = -EINVAL;
+		goto out;
+	}
+
 	/* writeback all dirty pages in the range */
 	err = filemap_write_and_wait_range(inode->i_mapping, range->start,
 						range->start + range->len - 1);
@@ -2819,6 +2824,11 @@ static int f2fs_move_file_range(struct file *file_in, loff_t pos_in,
 		ret = -EBUSY;
 		if (!inode_trylock(dst))
 			goto out;
+	}
+
+	if (f2fs_is_atomic_file(src) || f2fs_is_atomic_file(dst)) {
+		ret = -EINVAL;
+		goto out_unlock;
 	}
 
 	ret = -EINVAL;
@@ -3263,6 +3273,11 @@ static int f2fs_ioc_set_pin_file(struct file *filp, unsigned long arg)
 	inode_lock(inode);
 
 	if (f2fs_should_update_outplace(inode, NULL)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (f2fs_is_atomic_file(inode)) {
 		ret = -EINVAL;
 		goto out;
 	}
