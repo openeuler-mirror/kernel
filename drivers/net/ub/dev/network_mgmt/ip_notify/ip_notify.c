@@ -126,7 +126,7 @@ static ssize_t print_ip_notify_pkt_en_store(struct kobject *kobj,
 	ipn_ctx = container_of(ipn_attrs, struct ub_nm_ip_notify_ctx, attrs);
 	ipn_ctx->ctls.print_ip_notify_pkt_en = idata;
 
-	pr_info("ipn_ctx->ctls.print_ip_notify_pkt_en is %u",
+	pr_info("ipn_ctx->ctls.print_ip_notify_pkt_en is %u\n",
 		ipn_ctx->ctls.print_ip_notify_pkt_en);
 
 	return count;
@@ -180,7 +180,7 @@ static int init_print_ipn_pkt_en(struct kobject *kobj,
 {
 	sysfs_attr_init(&kobj_attrs->attr);
 	kobj_attrs->attr.name = "print_ip_notify_pkt_en";
-	kobj_attrs->attr.mode = 0666;
+	kobj_attrs->attr.mode = 0644;
 	kobj_attrs->show = print_ip_notify_pkt_en_show;
 	kobj_attrs->store = print_ip_notify_pkt_en_store;
 
@@ -756,7 +756,6 @@ int ub_ip_notify_init(struct ub_nm_device *nm_dev)
 
 	if (initialized)
 		goto sysfs_create;
-
 	if (!ip_notify_wq) {
 		ip_notify_wq = create_singlethread_workqueue("ip_notify_wq");
 		if (!ip_notify_wq) {
