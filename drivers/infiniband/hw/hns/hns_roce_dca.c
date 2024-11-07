@@ -1181,7 +1181,8 @@ static void init_udca_status(struct hns_roce_ucontext *uctx, int udca_max_qps,
 		return;
 
 	ctx->dca_mmap_entry = hns_roce_user_mmap_entry_insert(ib_uctx,
-				(u64)kaddr, size, HNS_ROCE_MMAP_TYPE_DCA);
+				(u64)virt_to_phys(kaddr), size,
+				HNS_ROCE_MMAP_TYPE_DCA);
 	if (!ctx->dca_mmap_entry) {
 		free_pages_exact(kaddr, size);
 		return;
