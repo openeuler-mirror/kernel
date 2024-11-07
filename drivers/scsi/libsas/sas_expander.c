@@ -195,13 +195,13 @@ static enum sas_device_type to_dev_type(struct discover_resp *dr)
 		return dr->attached_dev_type;
 }
 
-static void sas_set_ex_phy(struct domain_device *dev, int phy_id, void *rsp)
+static void sas_set_ex_phy(struct domain_device *dev, int phy_id,
+			   struct smp_disc_resp *disc_resp)
 {
 	enum sas_device_type dev_type;
 	enum sas_linkrate linkrate;
 	u8 sas_addr[SAS_ADDR_SIZE];
-	struct smp_resp *resp = rsp;
-	struct discover_resp *dr = &resp->disc;
+	struct discover_resp *dr = &disc_resp->disc;
 	struct sas_ha_struct *ha = dev->port->ha;
 	struct expander_device *ex = &dev->ex_dev;
 	struct ex_phy *phy = &ex->ex_phy[phy_id];
@@ -218,7 +218,7 @@ static void sas_set_ex_phy(struct domain_device *dev, int phy_id, void *rsp)
 		BUG_ON(!phy->phy);
 	}
 
-	switch (resp->result) {
+	switch (disc_resp->result) {
 	case SMP_RESP_PHY_VACANT:
 		phy->phy_state = PHY_VACANT;
 		break;
@@ -367,12 +367,13 @@ struct domain_device *sas_ex_to_ata(struct domain_device *ex_dev, int phy_id)
 }
 
 #define DISCOVER_REQ_SIZE  16
-#define DISCOVER_RESP_SIZE 56
+#define DISCOVER_RESP_SIZE sizeof(struct smp_disc_resp)
 
 static int sas_ex_phy_discover_helper(struct domain_device *dev, u8 *disc_req,
-				      u8 *disc_resp, int single)
+				      struct smp_disc_resp *disc_resp,
+				      int single)
 {
-	struct discover_resp *dr;
+	struct discover_resp *dr = &disc_resp->disc;
 	int res;
 
 	disc_req[9] = single;
@@ -381,7 +382,6 @@ static int sas_ex_phy_discover_helper(struct domain_device *dev, u8 *disc_req,
 			       disc_resp, DISCOVER_RESP_SIZE);
 	if (res)
 		return res;
-	dr = &((struct smp_resp *)disc_resp)->disc;
 	if (memcmp(dev->sas_addr, dr->attached_sas_addr, SAS_ADDR_SIZE) == 0) {
 		pr_notice("Found loopback topology, just ignore it!\n");
 		return 0;
@@ -395,7 +395,7 @@ int sas_ex_phy_discover(struct domain_device *dev, int single)
 	struct expander_device *ex = &dev->ex_dev;
 	int  res = 0;
 	u8   *disc_req;
-	u8   *disc_resp;
+	struct smp_disc_resp *disc_resp;
 
 	disc_req = alloc_smp_req(DISCOVER_REQ_SIZE);
 	if (!disc_req)
@@ -1675,8 +1675,18 @@ out_err:
 
 /* ---------- Domain revalidation ---------- */
 
+static void sas_get_sas_addr_and_dev_type(struct smp_disc_resp *disc_resp,
+					  u8 *sas_addr,
+					  enum sas_device_type *type)
+{
+	memcpy(sas_addr, disc_resp->disc.attached_sas_addr, SAS_ADDR_SIZE);
+	*type = to_dev_type(&disc_resp->disc);
+	if (*type == SAS_PHY_UNUSED)
+		memset(sas_addr, 0, SAS_ADDR_SIZE);
+}
+
 static int sas_get_phy_discover(struct domain_device *dev,
-				int phy_id, struct smp_resp *disc_resp)
+				int phy_id, struct smp_disc_resp *disc_resp)
 {
 	int res;
 	u8 *disc_req;
@@ -1692,10 +1702,8 @@ static int sas_get_phy_discover(struct domain_device *dev,
 			       disc_resp, DISCOVER_RESP_SIZE);
 	if (res)
 		goto out;
-	else if (disc_resp->result != SMP_RESP_FUNC_ACC) {
+	if (disc_resp->result != SMP_RESP_FUNC_ACC)
 		res = disc_resp->result;
-		goto out;
-	}
 out:
 	kfree(disc_req);
 	return res;
@@ -1705,7 +1713,7 @@ static int sas_get_phy_change_count(struct domain_device *dev,
 				    int phy_id, int *pcc)
 {
 	int res;
-	struct smp_resp *disc_resp;
+	struct smp_disc_resp *disc_resp;
 
 	disc_resp = alloc_smp_resp(DISCOVER_RESP_SIZE);
 	if (!disc_resp)
@@ -1723,22 +1731,15 @@ static int sas_get_phy_attached_dev(struct domain_device *dev, int phy_id,
 				    u8 *sas_addr, enum sas_device_type *type)
 {
 	int res;
-	struct smp_resp *disc_resp;
-	struct discover_resp *dr;
+	struct smp_disc_resp *disc_resp;
 
 	disc_resp = alloc_smp_resp(DISCOVER_RESP_SIZE);
 	if (!disc_resp)
 		return -ENOMEM;
-	dr = &disc_resp->disc;
 
 	res = sas_get_phy_discover(dev, phy_id, disc_resp);
-	if (res == 0) {
-		memcpy(sas_addr, disc_resp->disc.attached_sas_addr,
-		       SAS_ADDR_SIZE);
-		*type = to_dev_type(dr);
-		if (*type == 0)
-			memset(sas_addr, 0, SAS_ADDR_SIZE);
-	}
+	if (res == 0)
+		sas_get_sas_addr_and_dev_type(disc_resp, sas_addr, type);
 	kfree(disc_resp);
 	return res;
 }
@@ -2000,6 +2001,7 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id,
 	struct expander_device *ex = &dev->ex_dev;
 	struct ex_phy *phy = &ex->ex_phy[phy_id];
 	enum sas_device_type type = SAS_PHY_UNUSED;
+	struct smp_disc_resp *disc_resp;
 	u8 sas_addr[SAS_ADDR_SIZE];
 	char msg[80] = "";
 	int res;
@@ -2011,33 +2013,41 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id,
 		 SAS_ADDR(dev->sas_addr), phy_id, msg);
 
 	memset(sas_addr, 0, SAS_ADDR_SIZE);
-	res = sas_get_phy_attached_dev(dev, phy_id, sas_addr, &type);
+	disc_resp = alloc_smp_resp(DISCOVER_RESP_SIZE);
+	if (!disc_resp)
+		return -ENOMEM;
+
+	res = sas_get_phy_discover(dev, phy_id, disc_resp);
 	switch (res) {
 	case SMP_RESP_NO_PHY:
 		phy->phy_state = PHY_NOT_PRESENT;
 		sas_unregister_devs_sas_addr(dev, phy_id, last);
-		return res;
+		goto out_free_resp;
 	case SMP_RESP_PHY_VACANT:
 		phy->phy_state = PHY_VACANT;
 		sas_unregister_devs_sas_addr(dev, phy_id, last);
-		return res;
+		goto out_free_resp;
 	case SMP_RESP_FUNC_ACC:
 		break;
 	case -ECOMM:
 		break;
 	default:
-		return res;
+		goto out_free_resp;
 	}
+
+	if (res == 0)
+		sas_get_sas_addr_and_dev_type(disc_resp, sas_addr, &type);
 
 	if ((SAS_ADDR(sas_addr) == 0) || (res == -ECOMM)) {
 		phy->phy_state = PHY_EMPTY;
 		sas_unregister_devs_sas_addr(dev, phy_id, last);
 		/*
-		 * Even though the PHY is empty, for convenience we discover
-		 * the PHY to update the PHY info, like negotiated linkrate.
+		 * Even though the PHY is empty, for convenience we update
+		 * the PHY info, like negotiated linkrate.
 		 */
-		sas_ex_phy_discover(dev, phy_id);
-		return res;
+		if (res == 0)
+			sas_set_ex_phy(dev, phy_id, disc_resp);
+		goto out_free_resp;
 	} else if (SAS_ADDR(sas_addr) == SAS_ADDR(phy->attached_sas_addr) &&
 		   dev_type_flutter(type, phy->attached_dev_type)) {
 		struct domain_device *ata_dev = sas_ex_to_ata(dev, phy_id);
@@ -2049,7 +2059,7 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id,
 			action = ", needs recovery";
 		pr_debug("ex %016llx phy%02d broadcast flutter%s\n",
 			 SAS_ADDR(dev->sas_addr), phy_id, action);
-		return res;
+		goto out_free_resp;
 	}
 
 	/* we always have to delete the old device when we went here */
@@ -2058,7 +2068,10 @@ static int sas_rediscover_dev(struct domain_device *dev, int phy_id,
 		SAS_ADDR(phy->attached_sas_addr));
 	sas_unregister_devs_sas_addr(dev, phy_id, last);
 
-	return sas_discover_new(dev, phy_id);
+	res = sas_discover_new(dev, phy_id);
+out_free_resp:
+	kfree(disc_resp);
+	return res;
 }
 
 /**
