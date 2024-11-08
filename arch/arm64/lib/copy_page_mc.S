@@ -74,7 +74,11 @@ CPY_MC(9998f, stnp	x12, x13, [x0, #80 - 256])
 CPY_MC(9998f, stnp	x14, x15, [x0, #96 - 256])
 CPY_MC(9998f, stnp	x16, x17, [x0, #112 - 256])
 
-9998:	ret
+	mov x0, #0
+	ret
+
+9998:	mov x0, #-EFAULT
+	ret
 
 SYM_FUNC_END(copy_page_mc)
 EXPORT_SYMBOL(copy_page_mc)

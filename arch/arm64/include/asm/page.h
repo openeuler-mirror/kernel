@@ -29,12 +29,12 @@ void copy_highpage(struct page *to, struct page *from);
 #define __HAVE_ARCH_COPY_HIGHPAGE
 
 #ifdef CONFIG_ARCH_HAS_COPY_MC
-extern void copy_page_mc(void *to, const void *from);
-void copy_highpage_mc(struct page *to, struct page *from);
+extern int copy_page_mc(void *to, const void *from);
+int copy_highpage_mc(struct page *to, struct page *from);
 int copy_mc_highpage(struct page *to, struct page *from);
 #define __HAVE_ARCH_COPY_HIGHPAGE_MC
 
-void copy_user_highpage_mc(struct page *to, struct page *from,
+int copy_user_highpage_mc(struct page *to, struct page *from,
 		unsigned long vaddr, struct vm_area_struct *vma);
 #define __HAVE_ARCH_COPY_USER_HIGHPAGE_MC
 #endif
