@@ -844,8 +844,11 @@ copy_present_page(struct vm_area_struct *dst_vma, struct vm_area_struct *src_vma
 	 * We have a prealloc page, all good!  Take it
 	 * over and copy the page & arm it.
 	 */
+
+	if (copy_user_highpage_mc(new_page, page, addr, src_vma))
+		return -EHWPOISON;
+
 	*prealloc = NULL;
-	copy_user_highpage(new_page, page, addr, src_vma);
 	__SetPageUptodate(new_page);
 	reliable_page_counter(new_page, dst_vma->vm_mm, 1);
 	page_add_new_anon_rmap(new_page, dst_vma, addr, false);
@@ -996,8 +999,9 @@ again:
 		/*
 		 * If we need a pre-allocated page for this pte, drop the
 		 * locks, allocate, and try again.
+		 * If copy failed due to hwpoison in source page, break out.
 		 */
-		if (unlikely(ret == -EAGAIN))
+		if (unlikely(ret == -EAGAIN || ret == -EHWPOISON))
 			break;
 		if (unlikely(prealloc)) {
 			/*
@@ -1025,6 +1029,8 @@ again:
 			goto out;
 		}
 		entry.val = 0;
+	} else if (unlikely(ret == -EHWPOISON)) {
+		goto out;
 	} else if (ret) {
 		WARN_ON_ONCE(ret != -EAGAIN);
 		prealloc = page_copy_prealloc(src_mm, src_vma, addr);
