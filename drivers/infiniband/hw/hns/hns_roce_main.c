@@ -674,36 +674,6 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	ida_free(&hr_dev->uar_ida.ida, (int)context->uar.logic_idx);
 }
 
-static int mmap_dca(struct ib_ucontext *context, struct vm_area_struct *vma)
-{
-	struct hns_roce_ucontext *uctx = to_hr_ucontext(context);
-	struct hns_roce_dca_ctx *ctx = &uctx->dca_ctx;
-	struct page **pages;
-	unsigned long num;
-	int ret;
-
-	if ((vma->vm_end - vma->vm_start != (ctx->status_npage * PAGE_SIZE) ||
-	     !(vma->vm_flags & VM_SHARED)))
-		return -EINVAL;
-
-	if (!(vma->vm_flags & VM_WRITE) || (vma->vm_flags & VM_EXEC))
-		return -EPERM;
-
-	if (!ctx->buf_status)
-		return -EOPNOTSUPP;
-
-	pages = kcalloc(ctx->status_npage, sizeof(struct page *), GFP_KERNEL);
-	if (!pages)
-		return -ENOMEM;
-
-	for (num = 0; num < ctx->status_npage; num++)
-		pages[num] = virt_to_page(ctx->buf_status + num * PAGE_SIZE);
-
-	ret = vm_insert_pages(vma, vma->vm_start, pages, &num);
-	kfree(pages);
-	return ret;
-}
-
 static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(uctx->device);
@@ -728,8 +698,13 @@ static int hns_roce_mmap(struct ib_ucontext *uctx, struct vm_area_struct *vma)
 		prot = pgprot_device(vma->vm_page_prot);
 		break;
 	case HNS_ROCE_MMAP_TYPE_DCA:
-		ret = mmap_dca(uctx, vma);
-		goto out;
+		if (!(vma->vm_flags & VM_WRITE) || (vma->vm_flags & VM_EXEC)) {
+			ret = -EPERM;
+			goto out;
+		}
+		vma->vm_flags |= VM_DONTEXPAND;
+		prot = vma->vm_page_prot;
+		break;
 	case HNS_ROCE_MMAP_TYPE_RESET:
 		if (vma->vm_flags & (VM_WRITE | VM_EXEC)) {
 			ret = -EINVAL;
