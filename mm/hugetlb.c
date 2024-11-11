@@ -4728,8 +4728,11 @@ retry_avoidcopy:
 		goto out_release_all;
 	}
 
-	copy_user_huge_page(new_page, old_page, address, vma,
-			    pages_per_huge_page(h));
+	if (copy_user_huge_page(new_page, old_page, address, vma,
+			    pages_per_huge_page(h))) {
+		ret = VM_FAULT_HWPOISON_LARGE | VM_FAULT_SET_HINDEX(hstate_index(h));
+		goto out_release_all;
+	}
 	__SetPageUptodate(new_page);
 
 	mmu_notifier_range_init(&range, MMU_NOTIFY_CLEAR, 0, vma, mm, haddr,

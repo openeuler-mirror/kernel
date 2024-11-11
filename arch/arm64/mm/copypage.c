@@ -44,21 +44,30 @@ void copy_user_highpage(struct page *to, struct page *from,
 EXPORT_SYMBOL_GPL(copy_user_highpage);
 
 #ifdef CONFIG_ARCH_HAS_COPY_MC
-void copy_highpage_mc(struct page *to, struct page *from)
+int copy_highpage_mc(struct page *to, struct page *from)
 {
 	void *kto = page_address(to);
 	void *kfrom = page_address(from);
+	int ret;
 
-	copy_page_mc(kto, kfrom);
-	do_mte(to, from, kto, kfrom, true);
+	ret = copy_page_mc(kto, kfrom);
+	if (!ret)
+		do_mte(to, from, kto, kfrom, true);
+
+	return ret;
 }
 EXPORT_SYMBOL(copy_highpage_mc);
 
-void copy_user_highpage_mc(struct page *to, struct page *from,
+int copy_user_highpage_mc(struct page *to, struct page *from,
 			unsigned long vaddr, struct vm_area_struct *vma)
 {
-	copy_highpage_mc(to, from);
-	flush_dcache_page(to);
+	int ret;
+
+	ret = copy_highpage_mc(to, from);
+	if (!ret)
+		flush_dcache_page(to);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(copy_user_highpage_mc);
 

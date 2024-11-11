@@ -342,7 +342,12 @@ static inline void copy_user_highpage(struct page *to, struct page *from,
 #endif
 
 #ifndef __HAVE_ARCH_COPY_USER_HIGHPAGE_MC
-#define copy_user_highpage_mc copy_user_highpage
+static inline int copy_user_highpage_mc(struct page *to, struct page *from,
+	unsigned long vaddr, struct vm_area_struct *vma)
+{
+	copy_user_highpage(to, from, vaddr, vma);
+	return 0;
+}
 #endif
 
 #ifndef __HAVE_ARCH_COPY_HIGHPAGE
@@ -361,7 +366,11 @@ static inline void copy_highpage(struct page *to, struct page *from)
 #endif
 
 #ifndef __HAVE_ARCH_COPY_HIGHPAGE_MC
-#define copy_highpage_mc copy_highpage
+static inline int copy_highpage_mc(struct page *to, struct page *from)
+{
+	copy_highpage(to, from);
+	return 0;
+}
 #endif
 
 #ifndef __HAVE_ARCH_COPY_HUGEPAGES
