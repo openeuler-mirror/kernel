@@ -526,10 +526,6 @@ struct cgroup_root {
 	/* Unique id for this hierarchy. */
 	int hierarchy_id;
 
-	/* A list running through the active hierarchies */
-	struct list_head root_list;
-	struct rcu_head rcu;	/* Must be near the top */
-
 	/* The root cgroup.  Root is destroyed on its release. */
 	struct cgroup cgrp;
 
@@ -541,6 +537,9 @@ struct cgroup_root {
 
 	/* Wait while cgroups are being destroyed */
 	wait_queue_head_t wait;
+
+	/* A list running through the active hierarchies */
+	struct list_head root_list;
 
 	/* Hierarchy-specific flags */
 	unsigned int flags;
@@ -555,6 +554,15 @@ struct cgroup_root {
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
+};
+
+/*
+ * To keep kabi uncharged, add cgroup_root_ext, add rcu_head to make operations
+ * on the cgroup root_list RCU safe
+ */
+struct cgroup_root_ext {
+	struct rcu_head rcu;    /* Must be near the top */
+	struct cgroup_root root;
 };
 
 /*

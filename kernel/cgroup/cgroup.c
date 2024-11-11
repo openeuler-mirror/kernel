@@ -1310,7 +1310,10 @@ static void cgroup_exit_root_id(struct cgroup_root *root)
 
 void cgroup_free_root(struct cgroup_root *root)
 {
-	kfree_rcu(root, rcu);
+	struct cgroup_root_ext *root_ext;
+
+	root_ext = container_of(root, struct cgroup_root_ext, root);
+	kfree_rcu(root_ext, rcu);
 }
 
 static void cgroup_destroy_root(struct cgroup_root *root)
