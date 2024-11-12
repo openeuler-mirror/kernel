@@ -68,6 +68,9 @@ int sched_grid_qos_fork(struct task_struct *p, struct task_struct *orig)
 
 void sched_grid_qos_free(struct task_struct *p)
 {
+	if (!p->_resvd->grid_qos)
+		return;
+
 	kfree(p->_resvd->grid_qos);
 	p->_resvd->grid_qos = NULL;
 }
