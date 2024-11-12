@@ -63,7 +63,7 @@ struct acpi_madt_msi_pic pchmsi_default[MAX_IO_PICS];
 struct acpi_madt_bio_pic pchpic_default[MAX_IO_PICS];
 
 static int
-acpi_parse_lapic(union acpi_subtable_headers *header, const unsigned long end)
+acpi_parse_p1_lapic(union acpi_subtable_headers *header, const unsigned long end)
 {
 	struct acpi_madt_local_apic *processor = NULL;
 
@@ -72,7 +72,24 @@ acpi_parse_lapic(union acpi_subtable_headers *header, const unsigned long end)
 		return -EINVAL;
 
 	acpi_table_print_madt_entry(&header->common);
-	set_processor_mask(processor->id, processor->lapic_flags);
+	if (processor->lapic_flags & ACPI_MADT_ENABLED)
+		set_processor_mask(processor->id, 1);
+
+	return 0;
+}
+
+static int
+acpi_parse_p2_lapic(union acpi_subtable_headers *header, const unsigned long end)
+{
+	struct acpi_madt_local_apic *processor = NULL;
+
+	processor = (struct acpi_madt_local_apic *)header;
+	if (BAD_MADT_ENTRY(processor, end))
+		return -EINVAL;
+
+	acpi_table_print_madt_entry(&header->common);
+	if (!(processor->lapic_flags & ACPI_MADT_ENABLED))
+		set_processor_mask(processor->id, 2);
 
 	return 0;
 }
@@ -174,7 +191,8 @@ acpi_parse_legacy_pch_pic(union acpi_subtable_headers *header, const unsigned lo
 __init int legacy_madt_table_init(void)
 {
 	/* Parse MADT LAPIC entries */
-	acpi_table_parse_madt(ACPI_MADT_TYPE_LOCAL_APIC, acpi_parse_lapic, MAX_CORE_PIC);
+	acpi_table_parse_madt(ACPI_MADT_TYPE_LOCAL_APIC, acpi_parse_p1_lapic, MAX_CORE_PIC);
+	acpi_table_parse_madt(ACPI_MADT_TYPE_LOCAL_APIC, acpi_parse_p2_lapic, MAX_CORE_PIC);
 	acpi_table_parse_madt(ACPI_MADT_TYPE_IO_APIC, acpi_parse_legacy_pch_pic, MAX_IO_PICS);
 
 	acpi_liointc = &liointc_default;
