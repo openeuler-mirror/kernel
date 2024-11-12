@@ -37,18 +37,21 @@ typedef struct arch_msi_msg_data {
  * @arch_data:		Architecture specific shadow of @data
  */
 struct msi_msg {
-	union {
+	_KABI_DEPRECATE(u32, address_lo);
+	_KABI_DEPRECATE(u32, address_hi);
+	_KABI_DEPRECATE(u32, data);
+	KABI_EXTEND(union {
 		u32			address_lo;
 		arch_msi_msg_addr_lo_t	arch_addr_lo;
-	};
-	union {
+	})
+	KABI_EXTEND(union {
 		u32			address_hi;
 		arch_msi_msg_addr_hi_t	arch_addr_hi;
-	};
-	union {
+	})
+	KABI_EXTEND(union {
 		u32			data;
 		arch_msi_msg_data_t	arch_data;
-	};
+	})
 };
 
 extern int pci_msi_ignore_mask;

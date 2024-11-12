@@ -13,6 +13,7 @@
 #include <asm/msr.h>
 #include <asm/hardirq.h>
 #include <asm/io.h>
+#include <linux/kabi.h>
 
 #define ARCH_APICTIMER_STOPS_ON_C3	1
 
@@ -298,10 +299,11 @@ struct apic {
 	void	(*send_IPI_all)(int vector);
 	void	(*send_IPI_self)(int vector);
 
+	_KABI_DEPRECATE(u32, dest_logical);
 	u32	disable_esr;
 
-	enum apic_delivery_modes delivery_mode;
-	bool	dest_mode_logical;
+	_KABI_DEPRECATE(u32, irq_delivery_mode);
+	_KABI_DEPRECATE(u32, irq_dest_mode);
 
 	u32	(*calc_dest_apicid)(unsigned int cpu);
 
@@ -346,6 +348,9 @@ struct apic {
 	int (*x86_32_early_logical_apicid)(int cpu);
 #endif
 	char	*name;
+
+	KABI_EXTEND(enum apic_delivery_modes delivery_mode)
+	KABI_EXTEND(bool dest_mode_logical)
 };
 
 /*
