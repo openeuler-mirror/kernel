@@ -70,6 +70,9 @@ int sched_grid_qos_fork(struct task_struct *p, struct task_struct *orig)
 
 void sched_grid_qos_free(struct task_struct *p)
 {
+	if (!p->grid_qos)
+		return;
+
 	kfree(p->grid_qos);
 	p->grid_qos = NULL;
 }
