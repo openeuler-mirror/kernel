@@ -997,4 +997,9 @@ void kasan_release_vmalloc(unsigned long start, unsigned long end,
 				       (unsigned long)shadow_end);
 	}
 }
+
+void __init __weak kasan_populate_early_vm_area_shadow(void *start,
+							unsigned long size)
+{ }
+
 #endif
