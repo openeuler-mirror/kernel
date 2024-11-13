@@ -1143,6 +1143,7 @@ static int cgroup1_root_to_use(struct fs_context *fc)
 {
 	struct cgroup_fs_context *ctx = cgroup_fc2context(fc);
 	struct cgroup_root *root;
+	struct cgroup_root_ext *root_ext;
 	struct cgroup_subsys *ss;
 	int i, ret;
 
@@ -1215,10 +1216,11 @@ static int cgroup1_root_to_use(struct fs_context *fc)
 	if (ctx->ns != &init_cgroup_ns)
 		return -EPERM;
 
-	root = kzalloc(sizeof(*root), GFP_KERNEL);
-	if (!root)
+	root_ext = kzalloc(sizeof(struct cgroup_root_ext), GFP_KERNEL);
+	if (!root_ext)
 		return -ENOMEM;
 
+	root = &root_ext->root;
 	ctx->root = root;
 	init_cgroup_root(ctx);
 
