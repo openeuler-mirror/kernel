@@ -745,14 +745,19 @@ static bool arm64_do_kernel_sea(void __user *addr, unsigned int esr,
 		return false;
 
 	err = apei_claim_sea(regs);
-	if (err) {
-		regs->pc = orig_pc;
-		pr_emerg("apei claim sea failed. addr: %#lx, esr: %#x\n",
-			 (unsigned long)addr, esr);
-	}
+	if (err)
+		pr_emerg(
+			"comm: %s pid: %d apei claim sea failed. addr: %#lx, esr: %#x\n",
+			current->comm, current->pid, (unsigned long)addr, esr);
 
-	if (!current->mm)
-		return err ? false : true;
+	if (!current->mm) {
+		if (err) {
+			regs->pc = orig_pc;
+			return false;
+		}
+
+		return true;
+	}
 
 	set_thread_esr(0, esr);
 	arm64_force_sig_fault(sig, code, addr,
