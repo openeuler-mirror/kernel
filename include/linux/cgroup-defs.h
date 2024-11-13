@@ -557,6 +557,15 @@ struct cgroup_root {
 };
 
 /*
+ * To keep kabi uncharged, add cgroup_root_ext, add rcu_head to make operations
+ * on the cgroup root_list RCU safe
+ */
+struct cgroup_root_ext {
+	struct rcu_head rcu;    /* Must be near the top */
+	struct cgroup_root root;
+};
+
+/*
  * struct cftype: handler definitions for cgroup control files
  *
  * When reading/writing to a file:
