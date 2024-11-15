@@ -244,7 +244,8 @@ static u8 select_qp_bankid(struct hns_roce_dev *hr_dev,
 			continue;
 
 		if ((hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_LIMIT_BANK) &&
-		    use_ext_sge(init_attr) && (QP_HARDEN_MASK & i))
+		    use_ext_sge(init_attr) &&
+		    !(VALID_EXT_SGE_QP_BANK_MASK_LIMIT & BIT(i)))
 			continue;
 
 		valid_qp_bank_mask |= BIT(i);
