@@ -95,7 +95,7 @@ static int sdma_debugfs_stats_show(struct seq_file *f, void *data SDMA_UNUSED)
 		if (!dev) {
 			seq_puts(f, "sdma_devices already released!\n");
 			spin_unlock(&dbg_g_info.core_dev->device_lock);
-			return -ENXIO;
+			return 0;
 		}
 		chn_num = sdma_chn_info(f, dev);
 		exclusive_chn_used_nr = dev->nr_channel_used;
@@ -249,7 +249,7 @@ static int sdma_debugfs_error_show(struct seq_file *f, void *data SDMA_UNUSED)
 		if (!dev) {
 			seq_puts(f, "sdma_devices already released!\n");
 			spin_unlock(&dbg_g_info.core_dev->device_lock);
-			return -ENXIO;
+			return 0;
 		}
 		chn_num = sdma_chn_info(f, dev);
 		total_err_cnt = 0;
@@ -404,7 +404,7 @@ static int sdma_debugfs_channels_show(struct seq_file *f, void *data SDMA_UNUSED
 			if (!sdev) {
 				seq_puts(f, "sdma_devices already released!\n");
 				spin_unlock(&dbg_g_info.core_dev->device_lock);
-				return -ENXIO;
+				return 0;
 			}
 			chn_num = sdma_chn_info(f, sdev);
 			chn_idx = 0;
@@ -423,14 +423,14 @@ static int sdma_debugfs_channels_show(struct seq_file *f, void *data SDMA_UNUSED
 		if (dev_idx >= HISI_SDMA_MAX_DEVS ||
 		    chn_idx >= HISI_SDMA_DEFAULT_CHANNEL_NUM) {
 			seq_puts(f, "Unsupported device or channel!\n");
-			return -EINVAL;
+			return 0;
 		}
 		spin_lock(&dbg_g_info.core_dev->device_lock);
 		sdev = dbg_g_info.core_dev->sdma_devices[dev_idx];
 		if (!sdev) {
 			seq_puts(f, "sdma_devices already released!\n");
 			spin_unlock(&dbg_g_info.core_dev->device_lock);
-			return -ENXIO;
+			return 0;
 		}
 		chn_num = sdma_chn_info(f, sdev);
 		chn = sdev->channels + chn_idx;
@@ -441,7 +441,7 @@ static int sdma_debugfs_channels_show(struct seq_file *f, void *data SDMA_UNUSED
 		spin_unlock(&dbg_g_info.core_dev->device_lock);
 	} else {
 		seq_puts(f, "Unsupported debug mode!\n");
-		return -EINVAL;
+		return 0;
 	}
 
 	return 0;
@@ -477,9 +477,9 @@ int sdma_create_dbg_node(struct dentry *sdma_dbgfs_dir)
 	if (IS_ERR(entry))
 		return PTR_ERR(entry);
 
-	debugfs_create_u32("debug_mode", RW_R_R, sdma_dbgfs_dir, &debug_mode);
-	debugfs_create_u32("device_id", RW_R_R, sdma_dbgfs_dir, &device_id);
-	debugfs_create_u32("channel_id", RW_R_R, sdma_dbgfs_dir, &channel_id);
+	debugfs_create_u32("debug_mode", RW_RW_RW, sdma_dbgfs_dir, &debug_mode);
+	debugfs_create_u32("device_id", RW_RW_RW, sdma_dbgfs_dir, &device_id);
+	debugfs_create_u32("channel_id", RW_RW_RW, sdma_dbgfs_dir, &channel_id);
 	debug_mode = 0;
 	device_id = 0;
 	channel_id = 0;
