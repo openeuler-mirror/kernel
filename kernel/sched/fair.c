@@ -7248,7 +7248,6 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 	struct task_group *tg;
 	long spare;
 	int cpu, mode;
-	int nr_cpus_valid = 0;
 
 	rcu_read_lock();
 	mode = dynamic_affinity_mode(p);
@@ -7266,7 +7265,7 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 
 	/* manual mode */
 	tg = task_group(p);
-	for_each_cpu_and(cpu, p->prefer_cpus, cpu_online_mask) {
+	for_each_cpu(cpu, p->prefer_cpus) {
 		if (unlikely(!tg->se[cpu]))
 			continue;
 
@@ -7290,18 +7289,10 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 
 		util_avg_sum += tg->se[cpu]->avg.util_avg;
 		tg_capacity += capacity_of(cpu);
-		nr_cpus_valid++;
 	}
 	rcu_read_unlock();
 
-	/*
-	 * Follow cases should select cpus_ptr, checking by condition of
-	 * tg_capacity > nr_cpus_valid:
-	 * 1. all prefer_cpus offline;
-	 * 2. all prefer_cpus has no cfs capaicity(tg_capacity =
-	 * nr_cpus_valid * 1)
-	 */
-	if (tg_capacity > nr_cpus_valid &&
+	if (tg_capacity > cpumask_weight(p->prefer_cpus) &&
 	    util_avg_sum * 100 <= tg_capacity * sysctl_sched_util_low_pct) {
 		p->select_cpus = p->prefer_cpus;
 		if (sd_flag & SD_BALANCE_WAKE)
