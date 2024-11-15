@@ -13,6 +13,7 @@
 #include "sdma_reg.h"
 
 #define RW_R_R			0644
+#define RW_RW_RW		0666
 #define SDMA_IRQ_NUM_MAX	512
 #define ALIGN_NUM		1
 #define HISI_SDMA_HAL_HASH_BUCKETS_BITS 8
