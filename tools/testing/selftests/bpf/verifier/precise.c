@@ -141,10 +141,11 @@
 	.result = REJECT,
 },
 {
-	"precise: ST insn causing spi > allocated_stack",
+	"precise: ST zero to stack insn is supported",
 	.insns = {
 	BPF_MOV64_REG(BPF_REG_3, BPF_REG_10),
 	BPF_JMP_IMM(BPF_JNE, BPF_REG_3, 123, 0),
+	/* not a register spill, so we stop precision propagation for R4 here */
 	BPF_ST_MEM(BPF_DW, BPF_REG_3, -8, 0),
 	BPF_LDX_MEM(BPF_DW, BPF_REG_4, BPF_REG_10, -8),
 	BPF_MOV64_IMM(BPF_REG_0, -1),
@@ -159,9 +160,10 @@
 	last_idx 4 first_idx 2\
 	regs=10 stack=0 before 4\
 	regs=10 stack=0 before 3\
-	regs=0 stack=1 before 2\
 	last_idx 5 first_idx 5\
-	parent didn't have regs=1 stack=0 marks",
+	parent didn't have regs=1 stack=0 marks\
+	last_idx 4 first_idx 2\
+	regs=1 stack=0 before 4",
 	.result = VERBOSE_ACCEPT,
 	.retval = -1,
 },
@@ -169,6 +171,8 @@
 	"precise: STX insn causing spi > allocated_stack",
 	.insns = {
 	BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 0, 0, BPF_FUNC_get_prandom_u32),
+	/* make later reg spill more interesting by having somewhat known scalar */
+	BPF_ALU64_IMM(BPF_AND, BPF_REG_0, 0xff),
 	BPF_MOV64_REG(BPF_REG_3, BPF_REG_10),
 	BPF_JMP_IMM(BPF_JNE, BPF_REG_3, 123, 0),
 	BPF_STX_MEM(BPF_DW, BPF_REG_3, BPF_REG_0, -8),
@@ -179,16 +183,21 @@
 	},
 	.prog_type = BPF_PROG_TYPE_XDP,
 	.flags = BPF_F_TEST_STATE_FREQ,
-	.errstr = "last_idx 6 first_idx 6\
+	.errstr = "last_idx 7 first_idx 7\
 	parent didn't have regs=10 stack=0 marks\
-	last_idx 5 first_idx 3\
+	last_idx 6 first_idx 4\
+	regs=10 stack=0 before 6\
 	regs=10 stack=0 before 5\
-	regs=10 stack=0 before 4\
-	regs=0 stack=1 before 3\
-	last_idx 6 first_idx 6\
+	regs=0 stack=1 before 4\
 	parent didn't have regs=1 stack=0 marks\
-	last_idx 5 first_idx 3\
-	regs=1 stack=0 before 5",
+	last_idx 3 first_idx 3\
+	regs=1 stack=0 before 3\
+	regs=1 stack=0 before 2\
+	regs=1 stack=0 before 1\
+	parent didn't have regs=1 stack=0 marks\
+	last_idx 0 first_idx 0\
+	regs=1 stack=0 before 0\
+	last_idx 7 first_idx 7",
 	.result = VERBOSE_ACCEPT,
 	.retval = -1,
 },

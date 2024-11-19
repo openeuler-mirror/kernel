@@ -574,6 +574,12 @@ static bool is_spilled_reg(const struct bpf_stack_state *stack)
 	return stack->slot_type[BPF_REG_SIZE - 1] == STACK_SPILL;
 }
 
+static bool is_spilled_scalar_reg(const struct bpf_stack_state *stack)
+{
+	return stack->slot_type[BPF_REG_SIZE - 1] == STACK_SPILL &&
+	       stack->spilled_ptr.type == SCALAR_VALUE;
+}
+
 static void scrub_spilled_slot(u8 *stype)
 {
 	if (*stype != STACK_INVALID)
@@ -914,8 +920,8 @@ static int copy_verifier_state(struct bpf_verifier_state *dst_state,
 	int i, err;
 
 	dst_state->jmp_history = copy_array(dst_state->jmp_history, src->jmp_history,
-					    src->jmp_history_cnt, sizeof(struct bpf_idx_pair),
-					    GFP_USER);
+					  src->jmp_history_cnt, sizeof(*dst_state->jmp_history),
+					  GFP_USER);
 	if (!dst_state->jmp_history)
 		return -ENOMEM;
 	dst_state->jmp_history_cnt = src->jmp_history_cnt;
@@ -1825,22 +1831,73 @@ static int check_reg_arg(struct bpf_verifier_env *env, u32 regno,
 	return 0;
 }
 
+static int insn_stack_access_flags(int frameno, int spi)
+{
+	return INSN_F_STACK_ACCESS | (spi << INSN_F_SPI_SHIFT) | frameno;
+}
+
+static int insn_stack_access_spi(int insn_flags)
+{
+	return (insn_flags >> INSN_F_SPI_SHIFT) & INSN_F_SPI_MASK;
+}
+
+static int insn_stack_access_frameno(int insn_flags)
+{
+	return insn_flags & INSN_F_FRAMENO_MASK;
+}
+
+static void mark_jmp_point(struct bpf_verifier_env *env, int idx)
+{
+	env->insn_aux_data[idx].jmp_point = true;
+}
+
+static bool is_jmp_point(struct bpf_verifier_env *env, int insn_idx)
+{
+	return env->insn_aux_data[insn_idx].jmp_point;
+}
+
 /* for any branch, call, exit record the history of jmps in the given state */
-static int push_jmp_history(struct bpf_verifier_env *env,
-			    struct bpf_verifier_state *cur)
+static int push_jmp_history(struct bpf_verifier_env *env, struct bpf_verifier_state *cur,
+			    int insn_flags)
 {
 	u32 cnt = cur->jmp_history_cnt;
-	struct bpf_idx_pair *p;
+	struct bpf_jmp_history_entry *p;
+
+	/* combine instruction flags if we already recorded this instruction */
+	if (env->cur_hist_ent) {
+		/* atomic instructions push insn_flags twice, for READ and
+		 * WRITE sides, but they should agree on stack slot
+		 */
+		WARN_ONCE((env->cur_hist_ent->flags & insn_flags) &&
+			  (env->cur_hist_ent->flags & insn_flags) != insn_flags,
+			  "verifier insn history bug: insn_idx %d cur flags %x new flags %x\n",
+			  env->insn_idx, env->cur_hist_ent->flags, insn_flags);
+		env->cur_hist_ent->flags |= insn_flags;
+		return 0;
+	}
 
 	cnt++;
 	p = krealloc(cur->jmp_history, cnt * sizeof(*p), GFP_USER);
 	if (!p)
 		return -ENOMEM;
-	p[cnt - 1].idx = env->insn_idx;
-	p[cnt - 1].prev_idx = env->prev_insn_idx;
 	cur->jmp_history = p;
+
+	p = &cur->jmp_history[cnt - 1];
+	p->idx = env->insn_idx;
+	p->prev_idx = env->prev_insn_idx;
+	p->flags = insn_flags;
 	cur->jmp_history_cnt = cnt;
+	env->cur_hist_ent = p;
+
 	return 0;
+}
+
+static struct bpf_jmp_history_entry *get_jmp_hist_entry(struct bpf_verifier_state *st,
+							u32 hist_end, int insn_idx)
+{
+	if (hist_end > 0 && st->jmp_history[hist_end - 1].idx == insn_idx)
+		return &st->jmp_history[hist_end - 1];
+	return NULL;
 }
 
 /* Backtrack one insn at a time. If idx is not at the top of recorded
@@ -1860,12 +1917,133 @@ static int get_prev_insn_idx(struct bpf_verifier_state *st, int i,
 	return i;
 }
 
+static inline void bt_init(struct backtrack_state *bt, u32 frame)
+{
+	bt->frame = frame;
+}
+
+static inline void bt_reset(struct backtrack_state *bt)
+{
+	struct bpf_verifier_env *env = bt->env;
+
+	memset(bt, 0, sizeof(*bt));
+	bt->env = env;
+}
+
+static inline u32 bt_empty(struct backtrack_state *bt)
+{
+	u64 mask = 0;
+	int i;
+
+	for (i = 0; i <= bt->frame; i++)
+		mask |= bt->reg_masks[i] | bt->stack_masks[i];
+
+	return mask == 0;
+}
+
+static inline int bt_subprog_enter(struct backtrack_state *bt)
+{
+	if (bt->frame == MAX_CALL_FRAMES - 1) {
+		verbose(bt->env, "BUG subprog enter from frame %d\n", bt->frame);
+		WARN_ONCE(1, "verifier backtracking bug");
+		return -EFAULT;
+	}
+	bt->frame++;
+	return 0;
+}
+
+static inline int bt_subprog_exit(struct backtrack_state *bt)
+{
+	if (bt->frame == 0) {
+		verbose(bt->env, "BUG subprog exit from frame 0\n");
+		WARN_ONCE(1, "verifier backtracking bug");
+		return -EFAULT;
+	}
+	bt->frame--;
+	return 0;
+}
+
+static inline void bt_set_frame_reg(struct backtrack_state *bt, u32 frame, u32 reg)
+{
+	bt->reg_masks[frame] |= 1 << reg;
+}
+
+static inline void bt_clear_frame_reg(struct backtrack_state *bt, u32 frame, u32 reg)
+{
+	bt->reg_masks[frame] &= ~(1 << reg);
+}
+
+static inline void bt_set_reg(struct backtrack_state *bt, u32 reg)
+{
+	bt_set_frame_reg(bt, bt->frame, reg);
+}
+
+static inline void bt_clear_reg(struct backtrack_state *bt, u32 reg)
+{
+	bt_clear_frame_reg(bt, bt->frame, reg);
+}
+
+static inline void bt_set_frame_slot(struct backtrack_state *bt, u32 frame, u32 slot)
+{
+	bt->stack_masks[frame] |= 1ull << slot;
+}
+
+static inline void bt_clear_frame_slot(struct backtrack_state *bt, u32 frame, u32 slot)
+{
+	bt->stack_masks[frame] &= ~(1ull << slot);
+}
+
+static inline void bt_set_slot(struct backtrack_state *bt, u32 slot)
+{
+	bt_set_frame_slot(bt, bt->frame, slot);
+}
+
+static inline void bt_clear_slot(struct backtrack_state *bt, u32 slot)
+{
+	bt_clear_frame_slot(bt, bt->frame, slot);
+}
+
+static inline u32 bt_frame_reg_mask(struct backtrack_state *bt, u32 frame)
+{
+	return bt->reg_masks[frame];
+}
+
+static inline u32 bt_reg_mask(struct backtrack_state *bt)
+{
+	return bt->reg_masks[bt->frame];
+}
+
+static inline u64 bt_frame_stack_mask(struct backtrack_state *bt, u32 frame)
+{
+	return bt->stack_masks[frame];
+}
+
+static inline u64 bt_stack_mask(struct backtrack_state *bt)
+{
+	return bt->stack_masks[bt->frame];
+}
+
+static inline bool bt_is_reg_set(struct backtrack_state *bt, u32 reg)
+{
+	return bt->reg_masks[bt->frame] & (1 << reg);
+}
+
+static inline bool bt_is_frame_slot_set(struct backtrack_state *bt, u32 frame, u32 slot)
+{
+	return bt->stack_masks[frame] & (1ull << slot);
+}
+
+static inline bool bt_is_slot_set(struct backtrack_state *bt, u32 slot)
+{
+	return bt_is_frame_slot_set(bt, bt->frame, slot);
+}
+
 /* For given verifier state backtrack_insn() is called from the last insn to
  * the first insn. Its purpose is to compute a bitmask of registers and
  * stack slots that needs precision in the parent verifier state.
  */
 static int backtrack_insn(struct bpf_verifier_env *env, int idx,
-			  u32 *reg_mask, u64 *stack_mask)
+			  struct bpf_jmp_history_entry *hist, struct backtrack_state *bt)
 {
 	const struct bpf_insn_cbs cbs = {
 		.cb_print	= verbose,
@@ -1875,20 +2053,20 @@ static int backtrack_insn(struct bpf_verifier_env *env, int idx,
 	u8 class = BPF_CLASS(insn->code);
 	u8 opcode = BPF_OP(insn->code);
 	u8 mode = BPF_MODE(insn->code);
-	u32 dreg = 1u << insn->dst_reg;
-	u32 sreg = 1u << insn->src_reg;
-	u32 spi;
+	u32 dreg = insn->dst_reg;
+	u32 sreg = insn->src_reg;
+	u32 spi, fr;
 
 	if (insn->code == 0)
 		return 0;
 	if (env->log.level & BPF_LOG_LEVEL) {
-		verbose(env, "regs=%x stack=%llx before ", *reg_mask, *stack_mask);
+		verbose(env, "regs=%x stack=%llx before ", bt_reg_mask(bt), bt_stack_mask(bt));
 		verbose(env, "%d: ", idx);
 		print_bpf_insn(&cbs, insn, env->allow_ptr_leaks);
 	}
 
 	if (class == BPF_ALU || class == BPF_ALU64) {
-		if (!(*reg_mask & dreg))
+		if (!bt_is_reg_set(bt, dreg))
 			return 0;
 		if (opcode == BPF_END || opcode == BPF_NEG) {
 			/* sreg is reserved and unused
@@ -1901,8 +2079,8 @@ static int backtrack_insn(struct bpf_verifier_env *env, int idx,
 				 * dreg needs precision after this insn
 				 * sreg needs precision before this insn
 				 */
-				*reg_mask &= ~dreg;
-				*reg_mask |= sreg;
+				bt_clear_reg(bt, dreg);
+				bt_set_reg(bt, sreg);
 			} else {
 				/* dreg = K
 				 * dreg needs precision after this insn.
@@ -1910,7 +2088,7 @@ static int backtrack_insn(struct bpf_verifier_env *env, int idx,
 				 * as precise=true in this verifier state.
 				 * No further markings in parent are necessary
 				 */
-				*reg_mask &= ~dreg;
+				bt_clear_reg(bt, dreg);
 			}
 		} else {
 			if (BPF_SRC(insn->code) == BPF_X) {
@@ -1918,15 +2096,15 @@ static int backtrack_insn(struct bpf_verifier_env *env, int idx,
 				 * both dreg and sreg need precision
 				 * before this insn
 				 */
-				*reg_mask |= sreg;
+				bt_set_reg(bt, sreg);
 			} /* else dreg += K
 			   * dreg still needs precision before this insn
 			   */
 		}
 	} else if (class == BPF_LDX) {
-		if (!(*reg_mask & dreg))
+		if (!bt_is_reg_set(bt, dreg))
 			return 0;
-		*reg_mask &= ~dreg;
+		bt_clear_reg(bt, dreg);
 
 		/* scalars can only be spilled into stack w/o losing precision.
 		 * Load from any other memory can be zero extended.
@@ -1934,59 +2112,51 @@ static int backtrack_insn(struct bpf_verifier_env *env, int idx,
 		 * by 'precise' mark in corresponding register of this state.
 		 * No further tracking necessary.
 		 */
-		if (insn->src_reg != BPF_REG_FP)
+		if (!hist || !(hist->flags & INSN_F_STACK_ACCESS))
 			return 0;
 
 		/* dreg = *(u64 *)[fp - off] was a fill from the stack.
 		 * that [fp - off] slot contains scalar that needs to be
 		 * tracked with precision
 		 */
-		spi = (-insn->off - 1) / BPF_REG_SIZE;
-		if (spi >= 64) {
-			verbose(env, "BUG spi %d\n", spi);
-			WARN_ONCE(1, "verifier backtracking bug");
-			return -EFAULT;
-		}
-		*stack_mask |= 1ull << spi;
+		spi = insn_stack_access_spi(hist->flags);
+		fr = insn_stack_access_frameno(hist->flags);
+		bt_set_frame_slot(bt, fr, spi);
 	} else if (class == BPF_STX || class == BPF_ST) {
-		if (*reg_mask & dreg)
+		if (bt_is_reg_set(bt, dreg))
 			/* stx & st shouldn't be using _scalar_ dst_reg
 			 * to access memory. It means backtracking
 			 * encountered a case of pointer subtraction.
 			 */
 			return -ENOTSUPP;
 		/* scalars can only be spilled into stack */
-		if (insn->dst_reg != BPF_REG_FP)
+		if (!hist || !(hist->flags & INSN_F_STACK_ACCESS))
 			return 0;
-		spi = (-insn->off - 1) / BPF_REG_SIZE;
-		if (spi >= 64) {
-			verbose(env, "BUG spi %d\n", spi);
-			WARN_ONCE(1, "verifier backtracking bug");
-			return -EFAULT;
-		}
-		if (!(*stack_mask & (1ull << spi)))
+		spi = insn_stack_access_spi(hist->flags);
+		fr = insn_stack_access_frameno(hist->flags);
+		if (!bt_is_frame_slot_set(bt, fr, spi))
 			return 0;
-		*stack_mask &= ~(1ull << spi);
+		bt_clear_frame_slot(bt, fr, spi);
 		if (class == BPF_STX)
-			*reg_mask |= sreg;
+			bt_set_reg(bt, sreg);
 	} else if (class == BPF_JMP || class == BPF_JMP32) {
 		if (opcode == BPF_CALL) {
 			if (insn->src_reg == BPF_PSEUDO_CALL)
 				return -ENOTSUPP;
 			/* regular helper call sets R0 */
-			*reg_mask &= ~1;
-			if (*reg_mask & 0x3f) {
+			bt_clear_reg(bt, BPF_REG_0);
+			if (bt_reg_mask(bt) & BPF_REGMASK_ARGS) {
 				/* if backtracing was looking for registers R1-R5
 				 * they should have been found already.
 				 */
-				verbose(env, "BUG regs %x\n", *reg_mask);
+				verbose(env, "BUG regs %x\n", bt_reg_mask(bt));
 				WARN_ONCE(1, "verifier backtracking bug");
 				return -EFAULT;
 			}
 		} else if (opcode == BPF_EXIT) {
 			return -ENOTSUPP;
 		} else if (BPF_SRC(insn->code) == BPF_X) {
-			if (!(*reg_mask & (dreg | sreg)))
+			if (!bt_is_reg_set(bt, dreg) && !bt_is_reg_set(bt, sreg))
 				return 0;
 			/* dreg <cond> sreg
 			 * Both dreg and sreg need precision before
@@ -1994,7 +2164,8 @@ static int backtrack_insn(struct bpf_verifier_env *env, int idx,
 			 * before it would be equally necessary to
 			 * propagate it to dreg.
 			 */
-			*reg_mask |= (sreg | dreg);
+			bt_set_reg(bt, dreg);
+			bt_set_reg(bt, sreg);
 			 /* else dreg <cond> K
 			  * Only dreg still needs precision before
 			  * this insn, so for the K-based conditional
@@ -2002,9 +2173,9 @@ static int backtrack_insn(struct bpf_verifier_env *env, int idx,
 			  */
 		}
 	} else if (class == BPF_LD) {
-		if (!(*reg_mask & dreg))
+		if (!bt_is_reg_set(bt, dreg))
 			return 0;
-		*reg_mask &= ~dreg;
+		bt_clear_reg(bt, dreg);
 		/* It's ld_imm64 or ld_abs or ld_ind.
 		 * For ld_imm64 no further tracking of precision
 		 * into parent is necessary
@@ -2217,19 +2388,20 @@ static void mark_all_scalars_imprecise(struct bpf_verifier_env *env, struct bpf_
 static int __mark_chain_precision(struct bpf_verifier_env *env, int frame, int regno,
 				  int spi)
 {
+	struct backtrack_state *bt = &env->bt;
 	struct bpf_verifier_state *st = env->cur_state;
 	int first_idx = st->first_insn_idx;
 	int last_idx = env->insn_idx;
 	struct bpf_func_state *func;
 	struct bpf_reg_state *reg;
-	u32 reg_mask = regno >= 0 ? 1u << regno : 0;
-	u64 stack_mask = spi >= 0 ? 1ull << spi : 0;
 	bool skip_first = true;
-	bool new_marks = false;
 	int i, err;
 
 	if (!env->bpf_capable)
 		return 0;
+
+	/* set frame number from which we are starting to backtrack */
+	bt_init(bt, frame);
 
 	/* Do sanity checks against current state of register and/or stack
 	 * slot, but don't set precise flag in current state, as precision
@@ -2242,31 +2414,23 @@ static int __mark_chain_precision(struct bpf_verifier_env *env, int frame, int r
 			WARN_ONCE(1, "backtracing misuse");
 			return -EFAULT;
 		}
-		new_marks = true;
+		bt_set_reg(bt, regno);
 	}
 
 	while (spi >= 0) {
-		if (!is_spilled_reg(&func->stack[spi])) {
-			stack_mask = 0;
+		if (!is_spilled_scalar_reg(&func->stack[spi]))
 			break;
-		}
-		reg = &func->stack[spi].spilled_ptr;
-		if (reg->type != SCALAR_VALUE) {
-			stack_mask = 0;
-			break;
-		}
-		new_marks = true;
+		bt_set_slot(bt, spi);
 		break;
 	}
 
-	if (!new_marks)
-		return 0;
-	if (!reg_mask && !stack_mask)
+	if (bt_empty(bt))
 		return 0;
 
 	for (;;) {
 		DECLARE_BITMAP(mask, 64);
 		u32 history = st->jmp_history_cnt;
+		struct bpf_jmp_history_entry *hist;
 
 		if (env->log.level & BPF_LOG_LEVEL)
 			verbose(env, "last_idx %d first_idx %d\n", last_idx, first_idx);
@@ -2280,12 +2444,13 @@ static int __mark_chain_precision(struct bpf_verifier_env *env, int frame, int r
 			if (st->curframe == 0 &&
 			    st->frame[0]->subprogno > 0 &&
 			    st->frame[0]->callsite == BPF_MAIN_FUNC &&
-			    stack_mask == 0 && (reg_mask & ~0x3e) == 0) {
-				bitmap_from_u64(mask, reg_mask);
+			    bt_stack_mask(bt) == 0 &&
+			    (bt_reg_mask(bt) & ~BPF_REGMASK_ARGS) == 0) {
+				bitmap_from_u64(mask, bt_reg_mask(bt));
 				for_each_set_bit(i, mask, 32) {
 					reg = &st->frame[0]->regs[i];
 					if (reg->type != SCALAR_VALUE) {
-						reg_mask &= ~(1u << i);
+						bt_clear_reg(bt, i);
 						continue;
 					}
 					reg->precise = true;
@@ -2293,8 +2458,8 @@ static int __mark_chain_precision(struct bpf_verifier_env *env, int frame, int r
 				return 0;
 			}
 
-			verbose(env, "BUG backtracing func entry subprog %d reg_mask %x stack_mask %llx\n",
-				st->frame[0]->subprogno, reg_mask, stack_mask);
+			verbose(env, "BUG backtracking func entry subprog %d reg_mask %x stack_mask %llx\n",
+				st->frame[0]->subprogno, bt_reg_mask(bt), bt_stack_mask(bt));
 			WARN_ONCE(1, "verifier backtracking bug");
 			return -EFAULT;
 		}
@@ -2304,15 +2469,17 @@ static int __mark_chain_precision(struct bpf_verifier_env *env, int frame, int r
 				err = 0;
 				skip_first = false;
 			} else {
-				err = backtrack_insn(env, i, &reg_mask, &stack_mask);
+				hist = get_jmp_hist_entry(st, history, i);
+				err = backtrack_insn(env, i, hist, bt);
 			}
 			if (err == -ENOTSUPP) {
 				mark_all_scalars_precise(env, st);
+				bt_reset(bt);
 				return 0;
 			} else if (err) {
 				return err;
 			}
-			if (!reg_mask && !stack_mask)
+			if (bt_empty(bt))
 				/* Found assignment(s) into tracked register in this state.
 				 * Since this state is already marked, just return.
 				 * Nothing to be tracked further in the parent state.
@@ -2337,63 +2504,47 @@ static int __mark_chain_precision(struct bpf_verifier_env *env, int frame, int r
 		if (!st)
 			break;
 
-		new_marks = false;
 		func = st->frame[frame];
-		bitmap_from_u64(mask, reg_mask);
+		bitmap_from_u64(mask, bt_reg_mask(bt));
 		for_each_set_bit(i, mask, 32) {
 			reg = &func->regs[i];
 			if (reg->type != SCALAR_VALUE) {
-				reg_mask &= ~(1u << i);
+				bt_clear_reg(bt, i);
 				continue;
 			}
-			if (!reg->precise)
-				new_marks = true;
-			reg->precise = true;
+			if (reg->precise)
+				bt_clear_reg(bt, i);
+			else
+				reg->precise = true;
 		}
 
-		bitmap_from_u64(mask, stack_mask);
+		bitmap_from_u64(mask, bt_stack_mask(bt));
 		for_each_set_bit(i, mask, 64) {
 			if (i >= func->allocated_stack / BPF_REG_SIZE) {
-				/* the sequence of instructions:
-				 * 2: (bf) r3 = r10
-				 * 3: (7b) *(u64 *)(r3 -8) = r0
-				 * 4: (79) r4 = *(u64 *)(r10 -8)
-				 * doesn't contain jmps. It's backtracked
-				 * as a single block.
-				 * During backtracking insn 3 is not recognized as
-				 * stack access, so at the end of backtracking
-				 * stack slot fp-8 is still marked in stack_mask.
-				 * However the parent state may not have accessed
-				 * fp-8 and it's "unallocated" stack space.
-				 * In such case fallback to conservative.
-				 */
-				mark_all_scalars_precise(env, st);
-				return 0;
+				verbose(env, "BUG backtracking (stack slot %d, total slots %d)\n",
+					i, func->allocated_stack / BPF_REG_SIZE);
+				WARN_ONCE(1, "verifier backtracking bug (stack slot out of bounds)");
+				return -EFAULT;
 			}
 
-			if (!is_spilled_reg(&func->stack[i])) {
-				stack_mask &= ~(1ull << i);
+			if (!is_spilled_scalar_reg(&func->stack[i])) {
+				bt_clear_slot(bt, i);
 				continue;
 			}
 			reg = &func->stack[i].spilled_ptr;
-			if (reg->type != SCALAR_VALUE) {
-				stack_mask &= ~(1ull << i);
-				continue;
-			}
-			if (!reg->precise)
-				new_marks = true;
-			reg->precise = true;
+			if (reg->precise)
+				bt_clear_slot(bt, i);
+			else
+				reg->precise = true;
 		}
 		if (env->log.level & BPF_LOG_LEVEL) {
 			print_verifier_state(env, func);
 			verbose(env, "parent %s regs=%x stack=%llx marks\n",
-				new_marks ? "didn't have" : "already had",
-				reg_mask, stack_mask);
+				!bt_empty(bt) ? "didn't have" : "already had",
+				bt_reg_mask(bt), bt_stack_mask(bt));
 		}
 
-		if (!reg_mask && !stack_mask)
-			break;
-		if (!new_marks)
+		if (bt_empty(bt))
 			break;
 
 		last_idx = st->last_insn_idx;
@@ -2523,7 +2674,7 @@ static int check_stack_write_fixed_off(struct bpf_verifier_env *env,
 	int i, slot = -off - 1, spi = slot / BPF_REG_SIZE, err;
 	struct bpf_insn *insn = &env->prog->insnsi[insn_idx];
 	struct bpf_reg_state *reg = NULL;
-	u32 dst_reg = insn->dst_reg;
+	int insn_flags = insn_stack_access_flags(state->frameno, spi);
 
 	/* caller checked that off % size == 0 and -MAX_BPF_STACK <= off < 0,
 	 * so it's aligned access and [off, off + size) are within stack limits
@@ -2556,17 +2707,6 @@ static int check_stack_write_fixed_off(struct bpf_verifier_env *env,
 
 	if (reg && !(off % BPF_REG_SIZE) && register_is_bounded(reg) &&
 	    !register_is_null(reg) && env->bpf_capable) {
-		if (dst_reg != BPF_REG_FP) {
-			/* The backtracking logic can only recognize explicit
-			 * stack slot address like [fp - 8]. Other spill of
-			 * scalar via different register has to be conervative.
-			 * Backtrack from here and mark all registers as precise
-			 * that contributed into 'reg' being a constant.
-			 */
-			err = mark_chain_precision(env, value_regno);
-			if (err)
-				return err;
-		}
 		save_register_state(state, spi, reg, size);
 		/* Break the relation on a narrowing spill. */
 		if (fls64(reg->umax_value) > BITS_PER_BYTE * size)
@@ -2623,9 +2763,12 @@ static int check_stack_write_fixed_off(struct bpf_verifier_env *env,
 
 		/* Mark slots affected by this stack write. */
 		for (i = 0; i < size; i++)
-			state->stack[spi].slot_type[(slot - i) % BPF_REG_SIZE] =
-				type;
+			state->stack[spi].slot_type[(slot - i) % BPF_REG_SIZE] = type;
+		insn_flags = 0; /* not a register spill */
 	}
+
+	if (insn_flags)
+		return push_jmp_history(env, env->cur_state, insn_flags);
 	return 0;
 }
 
@@ -2801,6 +2944,7 @@ static int check_stack_read_fixed_off(struct bpf_verifier_env *env,
 	int i, slot = -off - 1, spi = slot / BPF_REG_SIZE;
 	struct bpf_reg_state *reg;
 	u8 *stype, type;
+	int insn_flags = insn_stack_access_flags(reg_state->frameno, spi);
 
 	stype = reg_state->stack[spi].slot_type;
 	reg = &reg_state->stack[spi].spilled_ptr;
@@ -2844,12 +2988,10 @@ static int check_stack_read_fixed_off(struct bpf_verifier_env *env,
 					return -EACCES;
 				}
 				mark_reg_unknown(env, state->regs, dst_regno);
+				insn_flags = 0; /* not restoring original register state */
 			}
 			state->regs[dst_regno].live |= REG_LIVE_WRITTEN;
-			return 0;
-		}
-
-		if (dst_regno >= 0) {
+		} else if (dst_regno >= 0) {
 			/* restore register state from stack */
 			copy_register_state(&state->regs[dst_regno], reg);
 			/* mark reg as written since spilled pointer state likely
@@ -2885,7 +3027,10 @@ static int check_stack_read_fixed_off(struct bpf_verifier_env *env,
 		mark_reg_read(env, reg, reg->parent, REG_LIVE_READ64);
 		if (dst_regno >= 0)
 			mark_reg_stack_read(env, reg_state, off, off + size, dst_regno);
+		insn_flags = 0; /* we are not restoring spilled register */
 	}
+	if (insn_flags)
+		return push_jmp_history(env, env->cur_state, insn_flags);
 	return 0;
 }
 
@@ -8835,9 +8980,14 @@ static struct bpf_verifier_state_list **explored_state(
 	return &env->explored_states[(idx ^ state->callsite) % state_htab_size(env)];
 }
 
-static void init_explored_state(struct bpf_verifier_env *env, int idx)
+static void mark_prune_point(struct bpf_verifier_env *env, int idx)
 {
 	env->insn_aux_data[idx].prune_point = true;
+}
+
+static bool is_prune_point(struct bpf_verifier_env *env, int insn_idx)
+{
+	return env->insn_aux_data[insn_idx].prune_point;
 }
 
 /* t, w, e - match pseudo-code above:
@@ -8863,9 +9013,11 @@ static int push_insn(int t, int w, int e, struct bpf_verifier_env *env,
 		return -EINVAL;
 	}
 
-	if (e == BRANCH)
+	if (e == BRANCH) {
 		/* mark branch target for state pruning */
-		init_explored_state(env, w);
+		mark_prune_point(env, w);
+		mark_jmp_point(env, w);
+	}
 
 	if (insn_state[w] == 0) {
 		/* tree-edge */
@@ -8934,10 +9086,13 @@ peek_stack:
 				goto peek_stack;
 			else if (ret < 0)
 				goto err_free;
-			if (t + 1 < insn_cnt)
-				init_explored_state(env, t + 1);
+			if (t + 1 < insn_cnt) {
+				mark_prune_point(env, t + 1);
+				mark_jmp_point(env, t + 1);
+			}
 			if (insns[t].src_reg == BPF_PSEUDO_CALL) {
-				init_explored_state(env, t);
+				mark_prune_point(env, t);
+				mark_jmp_point(env, t);
 				ret = push_insn(t, t + insns[t].imm + 1, BRANCH,
 						env, false);
 				if (ret == 1)
@@ -8961,15 +9116,19 @@ peek_stack:
 			 * but it's marked, since backtracking needs
 			 * to record jmp history in is_state_visited().
 			 */
-			init_explored_state(env, t + insns[t].off + 1);
+			mark_prune_point(env, t + insns[t].off + 1);
+			mark_jmp_point(env, t + insns[t].off + 1);
 			/* tell verifier to check for equivalent states
 			 * after every call and jump
 			 */
-			if (t + 1 < insn_cnt)
-				init_explored_state(env, t + 1);
+			if (t + 1 < insn_cnt) {
+				mark_prune_point(env, t + 1);
+				mark_jmp_point(env, t + 1);
+			}
 		} else {
 			/* conditional jump with two edges */
-			init_explored_state(env, t);
+			mark_prune_point(env, t);
+			mark_jmp_point(env, t);
 			ret = push_insn(t, t + 1, FALLTHROUGH, env, true);
 			if (ret == 1)
 				goto peek_stack;
@@ -9897,13 +10056,6 @@ static int is_state_visited(struct bpf_verifier_env *env, int insn_idx)
 	int i, j, err, states_cnt = 0;
 	bool add_new_state = env->test_state_freq ? true : false;
 
-	cur->last_insn_idx = env->prev_insn_idx;
-	if (!env->insn_aux_data[insn_idx].prune_point)
-		/* this 'insn_idx' instruction wasn't marked, so we will not
-		 * be doing state search here
-		 */
-		return 0;
-
 	/* bpf progs typically have pruning point every 4 instructions
 	 * http://vger.kernel.org/bpfconf2019.html#session-1
 	 * Do not add new state for future pruning if the verifier hasn't seen
@@ -9968,7 +10120,8 @@ static int is_state_visited(struct bpf_verifier_env *env, int insn_idx)
 			 * the precision needs to be propagated back in
 			 * the current state.
 			 */
-			err = err ? : push_jmp_history(env, cur);
+			if (is_jmp_point(env, env->insn_idx))
+				err = err ? : push_jmp_history(env, cur, 0);
 			err = err ? : propagate_precision(env, &sl->state);
 			if (err)
 				return err;
@@ -10022,10 +10175,10 @@ next:
 		env->max_states_per_insn = states_cnt;
 
 	if (!env->bpf_capable && states_cnt > BPF_COMPLEXITY_LIMIT_STATES)
-		return push_jmp_history(env, cur);
+		return 0;
 
 	if (!add_new_state)
-		return push_jmp_history(env, cur);
+		return 0;
 
 	/* There were no equivalent states, remember the current one.
 	 * Technically the current state is not proven to be safe yet,
@@ -10148,6 +10301,9 @@ static int do_check(struct bpf_verifier_env *env)
 		u8 class;
 		int err;
 
+		/* reset current history entry on each new instruction */
+		env->cur_hist_ent = NULL;
+
 		env->prev_insn_idx = prev_insn_idx;
 		if (env->insn_idx >= insn_cnt) {
 			verbose(env, "invalid insn idx %d insn_cnt %d\n",
@@ -10165,21 +10321,31 @@ static int do_check(struct bpf_verifier_env *env)
 			return -E2BIG;
 		}
 
-		err = is_state_visited(env, env->insn_idx);
-		if (err < 0)
-			return err;
-		if (err == 1) {
-			/* found equivalent state, can prune the search */
-			if (env->log.level & BPF_LOG_LEVEL) {
-				if (do_print_state)
-					verbose(env, "\nfrom %d to %d%s: safe\n",
-						env->prev_insn_idx, env->insn_idx,
-						env->cur_state->speculative ?
-						" (speculative execution)" : "");
-				else
-					verbose(env, "%d: safe\n", env->insn_idx);
+		state->last_insn_idx = env->prev_insn_idx;
+
+		if (is_prune_point(env, env->insn_idx)) {
+			err = is_state_visited(env, env->insn_idx);
+			if (err < 0)
+				return err;
+			if (err == 1) {
+				/* found equivalent state, can prune the search */
+				if (env->log.level & BPF_LOG_LEVEL) {
+					if (do_print_state)
+						verbose(env, "\nfrom %d to %d%s: safe\n",
+							env->prev_insn_idx, env->insn_idx,
+							env->cur_state->speculative ?
+							" (speculative execution)" : "");
+					else
+						verbose(env, "%d: safe\n", env->insn_idx);
+				}
+				goto process_bpf_exit;
 			}
-			goto process_bpf_exit;
+		}
+
+		if (is_jmp_point(env, env->insn_idx)) {
+			err = push_jmp_history(env, state, 0);
+			if (err)
+				return err;
 		}
 
 		if (signal_pending(current))
@@ -12727,6 +12893,8 @@ int bpf_check(struct bpf_prog **prog, union bpf_attr *attr,
 	if (!env)
 		return -ENOMEM;
 	log = &env->log;
+
+	env->bt.env = env;
 
 	len = (*prog)->len;
 	env->insn_aux_data =
