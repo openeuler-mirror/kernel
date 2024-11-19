@@ -135,6 +135,12 @@ struct cppc_cpudata {
 
 extern int cppc_get_desired_perf(int cpunum, u64 *desired_perf);
 extern int cppc_get_perf_ctrs(int cpu, struct cppc_perf_fb_ctrs *perf_fb_ctrs);
+extern int cppc_get_epp_perf(int cpunum, u64 *epp_perf);
+extern int cppc_get_auto_sel(int cpunum, u64 *auto_sel);
+extern int cppc_get_auto_act_window(int cpunum, u64 *auto_act_window);
+extern int cppc_set_auto_act_window(int cpu, u64 auto_act_window);
+extern int cppc_set_auto_sel(int cpu, bool enable);
+extern int cppc_set_epp(int cpu, u64 epp_val);
 extern int cppc_set_perf(int cpu, struct cppc_perf_ctrls *perf_ctrls);
 extern int cppc_get_perf_caps(int cpu, struct cppc_perf_caps *caps);
 extern int acpi_get_psd_map(struct cppc_cpudata **);
