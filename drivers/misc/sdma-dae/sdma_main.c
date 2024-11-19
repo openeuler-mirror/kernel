@@ -507,6 +507,16 @@ static long sdma_create_debugfs(void)
 	return 0;
 }
 
+static char *sdma_devnode(struct device *dev, umode_t *mode)
+{
+	if (!mode)
+		return NULL;
+
+	*mode = RW_RW_RW;
+
+	return NULL;
+}
+
 static int __init sdma_driver_init(void)
 {
 	dev_t sdma_dev;
@@ -521,6 +531,7 @@ static int __init sdma_driver_init(void)
 		pr_err("class_create() failed for sdma_class: %ld\n", PTR_ERR(sdma_class));
 		goto destroy_ida;
 	}
+	sdma_class->devnode = sdma_devnode;
 	ret = alloc_chrdev_region(&sdma_dev, 0, HISI_SDMA_MAX_DEVS, "sdma");
 	if (ret < 0) {
 		pr_err("alloc_chrdev_region() failed for sdma\n");
