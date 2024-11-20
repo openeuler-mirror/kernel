@@ -40,7 +40,6 @@ struct perf_buffer {
 	struct user_struct		*mmap_user;
 
 	/* AUX area */
-	struct mutex			aux_mutex;
 	long				aux_head;
 	unsigned int			aux_nest;
 	long				aux_wakeup;	/* last aux_watermark boundary crossed by aux_head */
@@ -57,6 +56,11 @@ struct perf_buffer {
 
 	struct perf_event_mmap_page	*user_page;
 	void				*data_pages[];
+};
+
+struct perf_buffer_ext {
+	struct mutex		aux_mutex;
+	struct perf_buffer	perf_buffer;
 };
 
 extern void rb_free(struct perf_buffer *rb);

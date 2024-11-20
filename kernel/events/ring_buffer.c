@@ -306,6 +306,7 @@ static void
 ring_buffer_init(struct perf_buffer *rb, long watermark, int flags)
 {
 	long max_size = perf_data_size(rb);
+	struct perf_buffer_ext *rb_ext = container_of(rb, struct perf_buffer_ext, perf_buffer);
 
 	if (watermark)
 		rb->watermark = min(max_size, watermark);
@@ -330,7 +331,7 @@ ring_buffer_init(struct perf_buffer *rb, long watermark, int flags)
 	if (!rb->nr_pages)
 		rb->paused = 1;
 
-	mutex_init(&rb->aux_mutex);
+	mutex_init(&rb_ext->aux_mutex);
 }
 
 void perf_aux_output_flag(struct perf_output_handle *handle, u64 flags)
@@ -810,20 +811,22 @@ static void perf_mmap_free_page(void *addr)
 
 struct perf_buffer *rb_alloc(int nr_pages, long watermark, int cpu, int flags)
 {
+	struct perf_buffer_ext *rb_ext;
 	struct perf_buffer *rb;
 	unsigned long size;
 	int i;
 
-	size = sizeof(struct perf_buffer);
+	size = sizeof(struct perf_buffer_ext);
 	size += nr_pages * sizeof(void *);
 
 	if (order_base_2(size) >= PAGE_SHIFT+MAX_ORDER)
 		goto fail;
 
-	rb = kzalloc(size, GFP_KERNEL);
-	if (!rb)
+	rb_ext = kzalloc(size, GFP_KERNEL);
+	if (!rb_ext)
 		goto fail;
 
+	rb = &rb_ext->perf_buffer;
 	rb->user_page = perf_mmap_alloc_page(cpu);
 	if (!rb->user_page)
 		goto fail_user_page;
@@ -847,7 +850,7 @@ fail_data_pages:
 	perf_mmap_free_page(rb->user_page);
 
 fail_user_page:
-	kfree(rb);
+	kfree(rb_ext);
 
 fail:
 	return NULL;
@@ -856,11 +859,12 @@ fail:
 void rb_free(struct perf_buffer *rb)
 {
 	int i;
+	struct perf_buffer_ext *rb_ext = container_of(rb, struct perf_buffer_ext, perf_buffer);
 
 	perf_mmap_free_page(rb->user_page);
 	for (i = 0; i < rb->nr_pages; i++)
 		perf_mmap_free_page(rb->data_pages[i]);
-	kfree(rb);
+	kfree(rb_ext);
 }
 
 #else
@@ -883,6 +887,7 @@ static void perf_mmap_unmark_page(void *addr)
 
 static void rb_free_work(struct work_struct *work)
 {
+	struct perf_buffer_ext *rb_ext;
 	struct perf_buffer *rb;
 	void *base;
 	int i, nr;
@@ -896,7 +901,8 @@ static void rb_free_work(struct work_struct *work)
 		perf_mmap_unmark_page(base + (i * PAGE_SIZE));
 
 	vfree(base);
-	kfree(rb);
+	rb_ext = container_of(rb, struct perf_buffer_ext, perf_buffer);
+	kfree(rb_ext);
 }
 
 void rb_free(struct perf_buffer *rb)
@@ -906,17 +912,19 @@ void rb_free(struct perf_buffer *rb)
 
 struct perf_buffer *rb_alloc(int nr_pages, long watermark, int cpu, int flags)
 {
+	struct perf_buffer_ext *rb_ext;
 	struct perf_buffer *rb;
 	unsigned long size;
 	void *all_buf;
 
-	size = sizeof(struct perf_buffer);
+	size = sizeof(struct perf_buffer_ext);
 	size += sizeof(void *);
 
-	rb = kzalloc(size, GFP_KERNEL);
-	if (!rb)
+	rb_ext = kzalloc(size, GFP_KERNEL);
+	if (!rb_ext)
 		goto fail;
 
+	rb = &rb_ext->perf_buffer;
 	INIT_WORK(&rb->work, rb_free_work);
 
 	all_buf = vmalloc_user((nr_pages + 1) * PAGE_SIZE);
@@ -935,7 +943,7 @@ struct perf_buffer *rb_alloc(int nr_pages, long watermark, int cpu, int flags)
 	return rb;
 
 fail_all_buf:
-	kfree(rb);
+	kfree(rb_ext);
 
 fail:
 	return NULL;
