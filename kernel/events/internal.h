@@ -58,6 +58,11 @@ struct perf_buffer {
 	void				*data_pages[];
 };
 
+struct perf_buffer_ext {
+	struct mutex		aux_mutex;
+	struct perf_buffer	perf_buffer;
+};
+
 extern void rb_free(struct perf_buffer *rb);
 
 static inline void rb_free_rcu(struct rcu_head *rcu_head)
