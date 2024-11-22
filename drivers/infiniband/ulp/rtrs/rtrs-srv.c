@@ -909,12 +909,11 @@ static void rtrs_srv_info_req_done(struct ib_cq *cq, struct ib_wc *wc)
 	if (unlikely(err))
 		goto close;
 
-out:
 	rtrs_iu_free(iu, sess->s.dev->ib_dev, 1);
 	return;
 close:
+	rtrs_iu_free(iu, sess->s.dev->ib_dev, 1);
 	close_sess(sess);
-	goto out;
 }
 
 static int post_recv_info_req(struct rtrs_srv_con *con)
@@ -965,6 +964,16 @@ static int post_recv_sess(struct rtrs_srv_sess *sess)
 			q_size = SERVICE_CON_QUEUE_DEPTH;
 		else
 			q_size = srv->queue_depth;
+		if (sess->state != RTRS_SRV_CONNECTING) {
+			rtrs_err(s, "Path state invalid. state %s\n",
+				 rtrs_srv_state_str(sess->state));
+			return -EIO;
+		}
+
+		if (!sess->s.con[cid]) {
+			rtrs_err(s, "Conn not set for %d\n", cid);
+			return -EIO;
+		}
 
 		err = post_recv_io(to_srv_con(sess->s.con[cid]), q_size);
 		if (unlikely(err)) {
