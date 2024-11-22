@@ -1722,7 +1722,13 @@ int sched_cluster_handler(struct ctl_table *table, int write,
 	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 	if (!ret && write) {
 		if (oldval != sysctl_sched_cluster) {
+			/*
+			 * Here may have raced with partition_sched_domains_locked,
+			 * it needs to be protected with sched_domains_mutex.
+			 */
+			mutex_lock(&sched_domains_mutex);
 			set_sched_cluster();
+			mutex_unlock(&sched_domains_mutex);
 			arch_rebuild_cpu_topology();
 		}
 	}
