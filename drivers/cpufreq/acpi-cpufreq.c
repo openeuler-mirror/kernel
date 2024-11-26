@@ -643,6 +643,10 @@ static u64 get_max_boost_ratio(unsigned int cpu)
 	if (acpi_pstate_strict)
 		return 0;
 
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN ||
+	    boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR)
+		return 0;
+
 	ret = cppc_get_perf_caps(cpu, &perf_caps);
 	if (ret) {
 		pr_debug("CPU%d: Unable to get performance capabilities (%d)\n",
