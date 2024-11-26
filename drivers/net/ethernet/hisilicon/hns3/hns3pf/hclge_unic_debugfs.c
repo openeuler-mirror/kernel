@@ -47,11 +47,13 @@ int hclge_dbg_dump_ip_spec(struct hclge_dev *hdev, char *buf, int len)
 
 int hclge_dbg_dump_guid_spec(struct hclge_dev *hdev, char *buf, int len)
 {
-	u16 mc_guid_tbl_size;
+	u16 guid_tbl_space = hdev->ae_dev->dev_specs.guid_tbl_space;
+	u16 mc_guid_tbl_size, func_guid_tbl_size;
 
 	mc_guid_tbl_size = hclge_unic_real_mguid_tbl_size(hdev);
+	func_guid_tbl_size = mc_guid_tbl_size ? HCLGE_VPORT_NUM : guid_tbl_space;
 	scnprintf(buf, len, "function guid tbl size: %u\nmc guid tbl size: %u\n",
-		  HCLGE_VPORT_NUM, mc_guid_tbl_size);
+		  func_guid_tbl_size, mc_guid_tbl_size);
 
 	return 0;
 }

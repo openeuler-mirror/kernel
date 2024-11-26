@@ -1144,7 +1144,8 @@ struct hclge_link_mode_bmap {
 static inline u16 hclge_unic_real_mguid_tbl_size(struct hclge_dev *hdev)
 {
 	return min(HCLGE_UNIC_MC_GUID_NUM,
-		   hdev->ae_dev->dev_specs.guid_tbl_space - HCLGE_VPORT_NUM);
+		   (hdev->ae_dev->dev_specs.guid_tbl_space < HCLGE_VPORT_NUM ? 0 :
+		    hdev->ae_dev->dev_specs.guid_tbl_space - HCLGE_VPORT_NUM));
 }
 
 int hclge_set_vport_promisc_mode(struct hclge_vport *vport, bool en_uc_pmc,
