@@ -772,6 +772,7 @@ struct lpfc_hba {
 					 */
 #define HBA_FLOGI_ISSUED	0x100000 /* FLOGI was issued */
 #define HBA_DEFER_FLOGI		0x800000 /* Defer FLOGI till read_sparm cmpl */
+#define HBA_SETUP		0x1000000 /* Signifies HBA setup is completed */
 
 	struct completion *fw_dump_cmpl; /* cmpl event tracker for fw_dump */
 	uint32_t fcp_ring_in_use; /* When polling test if intr-hndlr active*/
