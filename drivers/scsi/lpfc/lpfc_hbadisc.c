@@ -140,7 +140,8 @@ lpfc_dev_loss_tmo_callbk(struct fc_rport *rport)
 	 * or unloading the driver. The unload will cleanup the node
 	 * appropriately we just need to cleanup the ndlp rport info here.
 	 */
-	if (vport->load_flag & FC_UNLOADING) {
+	if (vport->load_flag & FC_UNLOADING ||
+	    !(phba->hba_flag & HBA_SETUP)) {
 		put_node = rdata->pnode != NULL;
 		put_rport = ndlp->rport != NULL;
 		rdata->pnode = NULL;
