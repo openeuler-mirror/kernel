@@ -253,6 +253,8 @@ struct dentry *nfs4_try_mount(int flags, const char *dev_name,
 
 	res = nfs_follow_remote_path(root_mnt, export_path);
 
+	if (!IS_ERR(res))
+		res->d_sb->s_flags = flags;
 	dfprintk(MOUNT, "<-- nfs4_try_mount() = %d%s\n",
 		 PTR_ERR_OR_ZERO(res),
 		 IS_ERR(res) ? " [error]" : "");
