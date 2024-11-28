@@ -3174,6 +3174,27 @@ static int io_write_prep(struct io_kiocb *req, const struct io_uring_sqe *sqe,
 	return io_rw_prep_async(req, WRITE, force_nonblock);
 }
 
+static bool io_kiocb_start_write(struct io_kiocb *req, struct kiocb *kiocb)
+{
+	struct inode *inode;
+	bool ret;
+
+	if (!(req->flags & REQ_F_ISREG))
+		return true;
+
+	inode = file_inode(kiocb->ki_filp);
+	if (!(kiocb->ki_flags & IOCB_NOWAIT)) {
+		__sb_start_write(inode->i_sb, SB_FREEZE_WRITE, true);
+		__sb_writers_release(inode->i_sb, SB_FREEZE_WRITE);
+		return true;
+	}
+
+	ret = sb_start_write_trylock(inode->i_sb);
+	if (ret)
+		__sb_writers_release(inode->i_sb, SB_FREEZE_WRITE);
+	return ret;
+}
+
 static int io_write(struct io_kiocb *req, bool force_nonblock,
 		    struct io_comp_state *cs)
 {
@@ -3209,19 +3230,8 @@ static int io_write(struct io_kiocb *req, bool force_nonblock,
 		unsigned long nr_segs = iter.nr_segs;
 		ssize_t ret2;
 
-		/*
-		 * Open-code file_start_write here to grab freeze protection,
-		 * which will be released by another thread in
-		 * io_complete_rw().  Fool lockdep by telling it the lock got
-		 * released so that it doesn't complain about the held lock when
-		 * we return to userspace.
-		 */
-		if (req->flags & REQ_F_ISREG) {
-			__sb_start_write(file_inode(req->file)->i_sb,
-						SB_FREEZE_WRITE, true);
-			__sb_writers_release(file_inode(req->file)->i_sb,
-						SB_FREEZE_WRITE);
-		}
+		if (unlikely(!io_kiocb_start_write(req, kiocb)))
+			goto copy_iov;
 		kiocb->ki_flags |= IOCB_WRITE;
 
 		if (req->file->f_op->write_iter)
