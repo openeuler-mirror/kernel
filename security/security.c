@@ -850,6 +850,13 @@ int security_vm_enough_memory_mm(struct mm_struct *mm, long pages)
 	return __vm_enough_memory(mm, pages, cap_sys_admin);
 }
 
+/*
+ * If execveat(2) is called with the AT_CHECK flag, bprm->is_check is set.  The
+ * result must be the same as without this flag even if the execution will
+ * never really happen and @bprm will always be dropped.
+ *
+ * This hook must not change current->cred, only @bprm->cred.
+ */
 int security_bprm_creds_for_exec(struct linux_binprm *bprm)
 {
 	return call_int_hook(bprm_creds_for_exec, 0, bprm);
@@ -1643,6 +1650,11 @@ int security_file_receive(struct file *file)
 	return call_int_hook(file_receive, 0, file);
 }
 
+/*
+ * We can check if a file is opened for execution (e.g. execve(2) call), either
+ * directly or indirectly (e.g. ELF's ld.so) by checking file->f_flags &
+ * __FMODE_EXEC .
+ */
 int security_file_open(struct file *file)
 {
 	int ret;
