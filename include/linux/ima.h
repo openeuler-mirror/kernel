@@ -15,6 +15,7 @@ struct linux_binprm;
 
 #ifdef CONFIG_IMA
 extern int ima_bprm_check(struct linux_binprm *bprm);
+extern int ima_bprm_creds_for_exec(struct linux_binprm *bprm);
 extern int ima_file_check(struct file *file, int mask);
 extern void ima_post_create_tmpfile(struct inode *inode);
 extern void ima_file_free(struct file *file);
@@ -53,6 +54,11 @@ static inline const char * const *arch_get_ima_policy(void)
 
 #else
 static inline int ima_bprm_check(struct linux_binprm *bprm)
+{
+	return 0;
+}
+
+static inline int ima_bprm_creds_for_exec(struct linux_binprm *bprm)
 {
 	return 0;
 }

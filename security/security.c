@@ -859,7 +859,12 @@ int security_vm_enough_memory_mm(struct mm_struct *mm, long pages)
  */
 int security_bprm_creds_for_exec(struct linux_binprm *bprm)
 {
-	return call_int_hook(bprm_creds_for_exec, 0, bprm);
+	int ret;
+
+	ret = call_int_hook(bprm_creds_for_exec, 0, bprm);
+	if (ret)
+		return ret;
+	return ima_bprm_creds_for_exec(bprm);
 }
 
 int security_bprm_creds_from_file(struct linux_binprm *bprm, struct file *file)
