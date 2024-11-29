@@ -333,21 +333,14 @@ struct blk_mq_ops {
 	 * reserved budget. Also we have to handle failure case
 	 * of .get_budget for avoiding I/O deadlock.
 	 */
-	int (*get_budget)(struct request_queue *);
+	KABI_REPLACE(bool (*get_budget)(struct request_queue *),
+		     int (*get_budget)(struct request_queue *))
 
 	/**
 	 * @put_budget: Release the reserved budget.
 	 */
-	void (*put_budget)(struct request_queue *, int);
-
-	/**
-	 * @set_rq_budget_token: store rq's budget token
-	 */
-	void (*set_rq_budget_token)(struct request *, int);
-	/**
-	 * @get_rq_budget_token: retrieve rq's budget token
-	 */
-	int (*get_rq_budget_token)(struct request *);
+	KABI_REPLACE(void (*put_budget)(struct request_queue *),
+		     void (*put_budget)(struct request_queue *, int))
 
 	/**
 	 * @timeout: Called on request timeout.
@@ -420,8 +413,15 @@ struct blk_mq_ops {
 	void (*show_rq)(struct seq_file *m, struct request *rq);
 #endif
 
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
+	/**
+	 * @set_rq_budget_token: store rq's budget token
+	 */
+	KABI_USE(1, void (*set_rq_budget_token)(struct request *, int))
+	/**
+	 * @get_rq_budget_token: retrieve rq's budget token
+	 */
+	KABI_USE(2, int (*get_rq_budget_token)(struct request *))
+
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)

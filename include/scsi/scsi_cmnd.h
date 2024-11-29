@@ -76,8 +76,6 @@ struct scsi_cmnd {
 
 	int eh_eflags;		/* Used by error handlr */
 
-	int budget_token;
-
 	/*
 	 * This is set to jiffies as it was when the command was first
 	 * allocated.  It is used to time how long the command has
@@ -146,7 +144,7 @@ struct scsi_cmnd {
 	unsigned char tag;	/* SCSI-II queued command tag */
 	unsigned int extra_len;	/* length of alignment and padding */
 
-	KABI_RESERVE(1)
+	KABI_USE(1, int budget_token)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
