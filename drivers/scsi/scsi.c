@@ -242,7 +242,7 @@ int scsi_change_queue_depth(struct scsi_device *sdev, int depth)
 	if (sdev->request_queue)
 		blk_set_queue_depth(sdev->request_queue, depth);
 
-	sbitmap_resize(&sdev->budget_map, sdev->queue_depth);
+	sbitmap_resize(sdev->budget_map, sdev->queue_depth);
 
 	return sdev->queue_depth;
 }

@@ -198,6 +198,38 @@ static void scsi_unlock_floptical(struct scsi_device *sdev,
 			 SCSI_TIMEOUT, 3, NULL);
 }
 
+static int scsi_alloc_and_init_budget_map(struct scsi_device *sdev, unsigned int depth)
+{
+	sdev->budget_map = kzalloc(sizeof(*sdev->budget_map), GFP_KERNEL);
+	if (!sdev->budget_map)
+		return -ENOMEM;
+
+	/*
+	 * Use .can_queue as budget map's depth because we have to
+	 * support adjusting queue depth from sysfs. Meantime use
+	 * default device queue depth to figure out sbitmap shift
+	 * since we use this queue depth most of times.
+	 */
+	if (sbitmap_init_node(sdev->budget_map,
+				scsi_device_max_queue_depth(sdev),
+				sbitmap_calculate_shift(depth),
+				GFP_KERNEL, sdev->request_queue->node,
+				false, true)) {
+		kfree(sdev->budget_map);
+		sdev->budget_map = NULL;
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+void scsi_free_budget_map(struct scsi_device *sdev)
+{
+	sbitmap_free(sdev->budget_map);
+	kfree(sdev->budget_map);
+	sdev->budget_map = NULL;
+}
+
 /**
  * scsi_alloc_sdev - allocate and setup a scsi_Device
  * @starget: which target to allocate a &scsi_device for
@@ -279,17 +311,7 @@ static struct scsi_device *scsi_alloc_sdev(struct scsi_target *starget,
 
 	depth = sdev->host->cmd_per_lun ?: 1;
 
-	/*
-	 * Use .can_queue as budget map's depth because we have to
-	 * support adjusting queue depth from sysfs. Meantime use
-	 * default device queue depth to figure out sbitmap shift
-	 * since we use this queue depth most of times.
-	 */
-	if (sbitmap_init_node(&sdev->budget_map,
-				scsi_device_max_queue_depth(sdev),
-				sbitmap_calculate_shift(depth),
-				GFP_KERNEL, sdev->request_queue->node,
-				false, true)) {
+	if (scsi_alloc_and_init_budget_map(sdev, depth)) {
 		put_device(&starget->dev);
 		kfree(sdev);
 		goto out;
@@ -998,7 +1020,7 @@ static int scsi_add_lun(struct scsi_device *sdev, unsigned char *inq_result,
 		scsi_attach_vpd(sdev);
 
 	sdev->max_queue_depth = sdev->queue_depth;
-	WARN_ON_ONCE(sdev->max_queue_depth > sdev->budget_map.depth);
+	WARN_ON_ONCE(sdev->max_queue_depth > sdev->budget_map->depth);
 	sdev->sdev_bflags = *bflags;
 
 	/*
