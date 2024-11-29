@@ -40,6 +40,21 @@ struct sbitmap_word {
 	spinlock_t swap_lock;
 } ____cacheline_aligned_in_smp;
 
+struct sbitmap_extend {
+	/**
+	 * @alloc_hint: Cache of last successfully allocated or freed bit.
+	 */
+	bool round_robin;
+
+	/**
+	 * This is per-cpu, which allows multiple users to stick to different
+	 * cachelines until the map is exhausted.
+	 *
+	 * @round_robin: Allocate bits in strict round-robin order.
+	 */
+	unsigned int __percpu *alloc_hint;
+};
+
 /**
  * struct sbitmap - Scalable bitmap.
  *
@@ -63,24 +78,11 @@ struct sbitmap {
 	unsigned int map_nr;
 
 	/**
-	 * @round_robin: Allocate bits in strict round-robin order.
-	 */
-	bool round_robin;
-
-	/**
 	 * @map: Allocated bitmap.
 	 */
 	struct sbitmap_word *map;
 
-	/*
-	 * @alloc_hint: Cache of last successfully allocated or freed bit.
-	 *
-	 * This is per-cpu, which allows multiple users to stick to different
-	 * cachelines until the map is exhausted.
-	 */
-	unsigned int __percpu *alloc_hint;
-
-	KABI_RESERVE(1)
+	KABI_USE(1,  struct sbitmap_extend *extend)
 };
 
 #define SBQ_WAIT_QUEUES 8
@@ -116,6 +118,8 @@ struct sbitmap_queue {
 	 */
 	struct sbitmap sb;
 
+	KABI_DEPRECATE(unsigned int __percpu *, alloc_hint)
+
 	/**
 	 * @wake_batch: Number of bits which must be freed before we wake up any
 	 * waiters.
@@ -136,6 +140,8 @@ struct sbitmap_queue {
 	 * @ws_active: count of currently active ws waitqueues
 	 */
 	atomic_t ws_active;
+
+	KABI_DEPRECATE(bool, round_robin)
 
 	/**
 	 * @min_shallow_depth: The minimum shallow depth which may be passed to
@@ -169,7 +175,9 @@ int sbitmap_init_node(struct sbitmap *sb, unsigned int depth, int shift,
  */
 static inline void sbitmap_free(struct sbitmap *sb)
 {
-	free_percpu(sb->alloc_hint);
+	free_percpu(sb->extend->alloc_hint);
+	kfree(sb->extend);
+	sb->extend = NULL;
 	kfree(sb->map);
 	sb->map = NULL;
 }
@@ -331,8 +339,8 @@ static inline void sbitmap_put(struct sbitmap *sb, unsigned int bitnr)
 {
 	sbitmap_deferred_clear_bit(sb, bitnr);
 
-	if (likely(sb->alloc_hint && !sb->round_robin && bitnr < sb->depth))
-		*raw_cpu_ptr(sb->alloc_hint) = bitnr;
+	if (likely(sb->extend->alloc_hint && !sb->extend->round_robin && bitnr < sb->depth))
+		*raw_cpu_ptr(sb->extend->alloc_hint) = bitnr;
 }
 
 static inline int sbitmap_test_bit(struct sbitmap *sb, unsigned int bitnr)

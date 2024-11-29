@@ -13,15 +13,15 @@ static int init_alloc_hint(struct sbitmap *sb, gfp_t flags)
 {
 	unsigned depth = sb->depth;
 
-	sb->alloc_hint = alloc_percpu_gfp(unsigned int, flags);
-	if (!sb->alloc_hint)
+	sb->extend->alloc_hint = alloc_percpu_gfp(unsigned int, flags);
+	if (!sb->extend->alloc_hint)
 		return -ENOMEM;
 
-	if (depth && !sb->round_robin) {
+	if (depth && !sb->extend->round_robin) {
 		int i;
 
 		for_each_possible_cpu(i)
-			*per_cpu_ptr(sb->alloc_hint, i) = prandom_u32() % depth;
+			*per_cpu_ptr(sb->extend->alloc_hint, i) = prandom_u32() % depth;
 	}
 	return 0;
 }
@@ -31,10 +31,10 @@ static inline unsigned update_alloc_hint_before_get(struct sbitmap *sb,
 {
 	unsigned hint;
 
-	hint = this_cpu_read(*sb->alloc_hint);
+	hint = this_cpu_read(*sb->extend->alloc_hint);
 	if (unlikely(hint >= depth)) {
 		hint = depth ? prandom_u32() % depth : 0;
-		this_cpu_write(*sb->alloc_hint, hint);
+		this_cpu_write(*sb->extend->alloc_hint, hint);
 	}
 
 	return hint;
@@ -47,13 +47,13 @@ static inline void update_alloc_hint_after_get(struct sbitmap *sb,
 {
 	if (nr == -1) {
 		/* If the map is full, a hint won't do us much good. */
-		this_cpu_write(*sb->alloc_hint, 0);
-	} else if (nr == hint || unlikely(sb->round_robin)) {
+		this_cpu_write(*sb->extend->alloc_hint, 0);
+	} else if (nr == hint || unlikely(sb->extend->round_robin)) {
 		/* Only update the hint if we used it. */
 		hint = nr + 1;
 		if (hint >= depth - 1)
 			hint = 0;
-		this_cpu_write(*sb->alloc_hint, hint);
+		this_cpu_write(*sb->extend->alloc_hint, hint);
 	}
 }
 
@@ -103,10 +103,14 @@ int sbitmap_init_node(struct sbitmap *sb, unsigned int depth, int shift,
 	if (bits_per_word > BITS_PER_LONG)
 		return -EINVAL;
 
+	sb->extend = kzalloc(sizeof(*sb->extend), flags);
+	if (!sb->extend)
+		return -ENOMEM;
+
 	sb->shift = shift;
 	sb->depth = depth;
 	sb->map_nr = DIV_ROUND_UP(sb->depth, bits_per_word);
-	sb->round_robin = round_robin;
+	sb->extend->round_robin = round_robin;
 
 	if (depth == 0) {
 		sb->map = NULL;
@@ -114,15 +118,20 @@ int sbitmap_init_node(struct sbitmap *sb, unsigned int depth, int shift,
 	}
 
 	if (alloc_hint) {
-		if (init_alloc_hint(sb, flags))
+		if (init_alloc_hint(sb, flags)) {
+			kfree(sb->extend);
+			sb->extend = NULL;
 			return -ENOMEM;
+		}
 	} else {
-		sb->alloc_hint = NULL;
+		sb->extend->alloc_hint = NULL;
 	}
 
 	sb->map = kcalloc_node(sb->map_nr, sizeof(*sb->map), flags, node);
 	if (!sb->map) {
-		free_percpu(sb->alloc_hint);
+		free_percpu(sb->extend->alloc_hint);
+		kfree(sb->extend);
+		sb->extend = NULL;
 		return -ENOMEM;
 	}
 
@@ -193,7 +202,7 @@ static int sbitmap_find_bit_in_index(struct sbitmap *sb, int index,
 
 	do {
 		nr = __sbitmap_get_word(&map->word, map->depth, alloc_hint,
-					!sb->round_robin);
+					!sb->extend->round_robin);
 		if (nr != -1)
 			break;
 		if (!sbitmap_deferred_clear(map))
@@ -215,7 +224,7 @@ static int __sbitmap_get(struct sbitmap *sb, unsigned int alloc_hint)
 	 * alloc_hint to find the right word index. No point in looping
 	 * twice in find_next_zero_bit() for that case.
 	 */
-	if (sb->round_robin)
+	if (sb->extend->round_robin)
 		alloc_hint = SB_NR_TO_BIT(sb, alloc_hint);
 	else
 		alloc_hint = 0;
@@ -241,7 +250,7 @@ int sbitmap_get(struct sbitmap *sb)
 	int nr;
 	unsigned int hint, depth;
 
-	if (WARN_ON_ONCE(unlikely(!sb->alloc_hint)))
+	if (WARN_ON_ONCE(unlikely(!sb->extend->alloc_hint)))
 		return -1;
 
 	depth = READ_ONCE(sb->depth);
@@ -293,7 +302,7 @@ int sbitmap_get_shallow(struct sbitmap *sb, unsigned long shallow_depth)
 	int nr;
 	unsigned int hint, depth;
 
-	if (WARN_ON_ONCE(unlikely(!sb->alloc_hint)))
+	if (WARN_ON_ONCE(unlikely(!sb->extend->alloc_hint)))
 		return -1;
 
 	depth = READ_ONCE(sb->depth);
@@ -653,8 +662,8 @@ void sbitmap_queue_clear(struct sbitmap_queue *sbq, unsigned int nr,
 	smp_mb__after_atomic();
 	sbitmap_queue_wake_up(sbq);
 
-	if (likely(!sbq->sb.round_robin && nr < sbq->sb.depth))
-		*per_cpu_ptr(sbq->sb.alloc_hint, cpu) = nr;
+	if (likely(!sbq->sb.extend->round_robin && nr < sbq->sb.depth))
+		*per_cpu_ptr(sbq->sb.extend->alloc_hint, cpu) = nr;
 }
 EXPORT_SYMBOL_GPL(sbitmap_queue_clear);
 
@@ -692,7 +701,7 @@ void sbitmap_queue_show(struct sbitmap_queue *sbq, struct seq_file *m)
 		if (!first)
 			seq_puts(m, ", ");
 		first = false;
-		seq_printf(m, "%u", *per_cpu_ptr(sbq->sb.alloc_hint, i));
+		seq_printf(m, "%u", *per_cpu_ptr(sbq->sb.extend->alloc_hint, i));
 	}
 	seq_puts(m, "}\n");
 
@@ -710,7 +719,7 @@ void sbitmap_queue_show(struct sbitmap_queue *sbq, struct seq_file *m)
 	}
 	seq_puts(m, "}\n");
 
-	seq_printf(m, "round_robin=%d\n", sbq->sb.round_robin);
+	seq_printf(m, "round_robin=%d\n", sbq->sb.extend->round_robin);
 	seq_printf(m, "min_shallow_depth=%u\n", sbq->min_shallow_depth);
 }
 EXPORT_SYMBOL_GPL(sbitmap_queue_show);
