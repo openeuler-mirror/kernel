@@ -1796,16 +1796,14 @@ void __init early_pbha_init(void)
 	const u8 *prop;
 	int size;
 
-	spin_lock(&pbha_dt_lock);
-
 	fdt = get_early_fdt_ptr();
 	if (!fdt)
-		goto unlock;
+		return;
 
 	/* arm,pbha-performance-only may exist in both chosen and cpus node */
 	node = fdt_path_offset(fdt, "/chosen");
 	if (node < 0)
-		goto unlock;
+		return;
 
 	prop = fdt_getprop(fdt, node, "arm,pbha-performance-only", &size);
 	if (prop)
@@ -1813,15 +1811,15 @@ void __init early_pbha_init(void)
 
 	node = fdt_path_offset(fdt, "/cpus");
 	if (node < 0)
-		goto unlock;
+		return;
 
 	prop = fdt_getprop(fdt, node, "arm,pbha-performance-only", &size);
 	if (prop)
-		goto unlock;
+		return;
 
 found:
 	if (!cpu_has_pbha())
-		goto unlock;
+		return;
 
 	update_pbha_perf_only_bit(prop, size);
 	enable_pbha_inner();
@@ -1829,9 +1827,6 @@ found:
 	pbha_enabled = true;
 
 	early_pbha_bit0_init();
-
-unlock:
-	spin_unlock(&pbha_dt_lock);
 }
 
 /*
