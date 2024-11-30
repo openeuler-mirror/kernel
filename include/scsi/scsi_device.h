@@ -9,6 +9,7 @@
 #include <linux/blkdev.h>
 #include <scsi/scsi.h>
 #include <linux/atomic.h>
+#include <linux/sbitmap.h>
 
 struct device;
 struct request_queue;
@@ -107,7 +108,7 @@ struct scsi_device {
 	struct list_head    siblings;   /* list of all devices on this host */
 	struct list_head    same_target_siblings; /* just the devices sharing same target id */
 
-	atomic_t device_busy;		/* commands actually active on LLDD */
+	KABI_DEPRECATE(atomic_t, device_busy)
 	atomic_t device_blocked;	/* Device returned QUEUE_FULL. */
 
 	atomic_t restarts;
@@ -240,7 +241,7 @@ struct scsi_device {
 	enum scsi_device_state sdev_state;
 	struct task_struct	*quiesced_by;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, struct sbitmap *budget_map)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -459,6 +460,9 @@ extern int __scsi_execute(struct scsi_device *sdev, const unsigned char *cmd,
 			unsigned char *sense, struct scsi_sense_hdr *sshdr,
 			int timeout, int retries, u64 flags,
 			req_flags_t rq_flags, int *resid);
+
+extern void scsi_free_budget_map(struct scsi_device *sdev);
+
 /* Make sure any sense buffer is the correct size. */
 #define scsi_execute(sdev, cmd, data_direction, buffer, bufflen, sense,	\
 		     sshdr, timeout, retries, flags, rq_flags, resid)	\
@@ -604,6 +608,11 @@ static inline int scsi_device_supports_vpd(struct scsi_device *sdev)
 	if (sdev->scsi_level >= SCSI_SPC_2 && !sdev->skip_vpd_pages)
 		return 1;
 	return 0;
+}
+
+static inline int scsi_device_busy(struct scsi_device *sdev)
+{
+	return sbitmap_weight(sdev->budget_map);
 }
 
 #define MODULE_ALIAS_SCSI_DEVICE(type) \
