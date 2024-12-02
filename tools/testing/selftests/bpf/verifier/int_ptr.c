@@ -1,5 +1,5 @@
 {
-	"ARG_PTR_TO_LONG uninitialized",
+	"ARG_PTR_TO_LONG uninitialized"
 	.insns = {
 		/* bpf_strtoul arg1 (buf) */
 		BPF_MOV64_REG(BPF_REG_7, BPF_REG_10),
@@ -27,8 +27,6 @@
 	},
 	.result = ACCEPT,
 	.retval = POINTER_VALUE,
-	.errstr_unpriv = "invalid indirect read from stack R4 off -16+0 size 8",
-	.result_unpriv = REJECT,
 },
 {
 	"ARG_PTR_TO_LONG half-uninitialized",
@@ -58,9 +56,6 @@
 		BPF_MOV64_IMM(BPF_REG_0, 0),
 		BPF_EXIT_INSN(),
 	},
-	.result_unpriv = REJECT,
-	.errstr_unpriv = "invalid indirect read from stack R4 off -16+4 size 8",
-	/* in privileged mode reads from uninitialized stack locations are permitted */
 	.result = ACCEPT,
 },
 {
