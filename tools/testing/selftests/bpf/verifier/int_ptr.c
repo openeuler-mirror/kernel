@@ -1,5 +1,5 @@
 {
-	"ARG_PTR_TO_LONG uninitialized"
+	"arg pointer to long uninitialized",
 	.insns = {
 		/* bpf_strtoul arg1 (buf) */
 		BPF_MOV64_REG(BPF_REG_7, BPF_REG_10),
@@ -29,7 +29,7 @@
 	.retval = POINTER_VALUE,
 },
 {
-	"ARG_PTR_TO_LONG half-uninitialized",
+	"arg pointer to long half-uninitialized",
 	.insns = {
 		/* bpf_strtoul arg1 (buf) */
 		BPF_MOV64_REG(BPF_REG_7, BPF_REG_10),
@@ -59,7 +59,7 @@
 	.result = ACCEPT,
 },
 {
-	"ARG_PTR_TO_LONG misaligned",
+	"arg pointer to long misaligned",
 	.insns = {
 		/* bpf_strtoul arg1 (buf) */
 		BPF_MOV64_REG(BPF_REG_7, BPF_REG_10),
@@ -93,7 +93,7 @@
 	.errstr = "misaligned stack access off (0x0; 0x0)+-20+0 size 8",
 },
 {
-	"ARG_PTR_TO_LONG size < sizeof(long)",
+	"arg pointer to long size < sizeof(long)",
 	.insns = {
 		/* bpf_strtoul arg1 (buf) */
 		BPF_MOV64_REG(BPF_REG_7, BPF_REG_10),
@@ -125,7 +125,7 @@
 	.errstr = "invalid indirect access to stack R4 off=-4 size=8",
 },
 {
-	"ARG_PTR_TO_LONG initialized",
+	"arg pointer to long initialized",
 	.insns = {
 		/* bpf_strtoul arg1 (buf) */
 		BPF_MOV64_REG(BPF_REG_7, BPF_REG_10),
