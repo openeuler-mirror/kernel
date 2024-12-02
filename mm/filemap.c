@@ -2554,7 +2554,7 @@ ssize_t generic_file_buffered_read(struct kiocb *iocb,
 	if (unlikely(!iov_iter_count(iter)))
 		return 0;
 
-	iov_iter_truncate(iter, inode->i_sb->s_maxbytes);
+	iov_iter_truncate(iter, inode->i_sb->s_maxbytes - iocb->ki_pos);
 
 	if (nr_pages > ARRAY_SIZE(pages_onstack))
 		pages = kmalloc_array(nr_pages, sizeof(void *), GFP_KERNEL);
