@@ -27,5 +27,4 @@ void xsc_port_ctrl_cb_dereg(const char *name);
 void xsc_port_ctrl_fini(void);
 int xsc_port_ctrl_init(void);
 struct xsc_core_device *xsc_pci_get_xdev_by_bus_and_slot(int domain, uint32_t bus, uint32_t devfn);
-#endif
-
+#endif /* XSC_PORT_CTRL_H */

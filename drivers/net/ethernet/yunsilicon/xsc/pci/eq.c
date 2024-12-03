@@ -72,9 +72,6 @@ static void eq_update_ci(struct xsc_eq *eq, int arm)
 	db.arm = !!arm;
 	db.eq_next_cid = eq->cons_index;
 	db.eq_id = eq->eqn;
-#ifdef XSC_DEBUG
-	xsc_core_dbg(eq->dev, "ARM EQ %d ci 0x%x arm %d\n", eq->eqn, eq->cons_index, arm);
-#endif
 	writel(db.val, REG_ADDR(eq->dev, eq->doorbell));
 	/* We still want ordering, just not swabbing, so add a barrier */
 	mb();
@@ -141,10 +138,6 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 		 * checked the ownership bit.
 		 */
 		rmb();
-#ifdef XSC_DEBUG
-		xsc_core_dbg(eq->dev, "eqn=%d, eqe_type=%d, cqn/qpn=%d\n",
-			     eq->eqn, eqe->type, eqe->queue_id);
-#endif
 		switch (eqe->type) {
 		case XSC_EVENT_TYPE_COMP:
 		case XSC_EVENT_TYPE_INTERNAL_ERROR:
@@ -190,10 +183,6 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 	}
 
 	eq_update_ci(eq, 1);
-#ifdef XSC_DEBUG
-	xsc_core_dbg(dev, "EQ%d eq_num=%d qpn=%d, db_arm\n",
-		     eq->eqn, set_ci, (eqe ? eqe->queue_id : 0));
-#endif
 
 	return eqes_found;
 }
@@ -202,9 +191,6 @@ static irqreturn_t xsc_msix_handler(int irq, void *eq_ptr)
 {
 	struct xsc_eq *eq = eq_ptr;
 	struct xsc_core_device *dev = eq->dev;
-#ifdef XSC_DEBUG
-	xsc_core_dbg(dev, "EQ %d hint irq: %d\n", eq->eqn, irq);
-#endif
 	xsc_eq_int(dev, eq);
 
 	/* MSI-X vectors always belong to us */
@@ -304,6 +290,9 @@ EXPORT_SYMBOL_GPL(xsc_create_map_eq);
 int xsc_destroy_unmap_eq(struct xsc_core_device *dev, struct xsc_eq *eq)
 {
 	int err;
+
+	if (!xsc_fw_is_available(dev))
+		return 0;
 
 	free_irq(eq->irqn, eq);
 	err = xsc_cmd_destroy_eq(dev, eq->eqn);

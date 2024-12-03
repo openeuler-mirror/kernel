@@ -37,4 +37,3 @@ enum {
 };
 
 #endif /* XSC_ESWITCH_H */
-

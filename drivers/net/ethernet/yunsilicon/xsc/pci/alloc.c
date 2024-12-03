@@ -67,8 +67,12 @@ int xsc_buf_alloc(struct xsc_core_device *xdev, int size, int max_direct,
 			pages = kmalloc_array(buf->nbufs, sizeof(*pages), GFP_KERNEL);
 			if (!pages)
 				goto err_free;
-			for (i = 0; i < buf->nbufs; i++)
-				pages[i] = virt_to_page(buf->page_list[i].buf);
+			for (i = 0; i < buf->nbufs; i++) {
+				if (is_vmalloc_addr(buf->page_list[i].buf))
+					pages[i] = vmalloc_to_page(buf->page_list[i].buf);
+				else
+					pages[i] = virt_to_page(buf->page_list[i].buf);
+			}
 			buf->direct.buf = vmap(pages, buf->nbufs, VM_MAP, PAGE_KERNEL);
 			kfree(pages);
 			if (!buf->direct.buf)
@@ -149,11 +153,7 @@ static void *xsc_dma_zalloc_coherent_node(struct xsc_core_device *xdev,
 
 	/* WA for kernels that don't use numa_mem_id in alloc_pages_node */
 	if (node == NUMA_NO_NODE)
-#ifdef HAVE_NUMA_MEM_ID
-		node = numa_mem_id();
-#else
 		node = first_memory_node;
-#endif
 
 	mutex_lock(&dev_res->alloc_mutex);
 	original_node = dev_to_node(device);

@@ -50,13 +50,11 @@ static int xsc_pci_ctrl_modify_qp(struct xsc_core_device *xdev, void *in, void *
 		xsc_core_dbg(xdev, "xsc_ioctl_qp_range: enomem\n");
 		return -ENOMEM;
 	}
-	if (resp->opcode == XSC_CMD_OP_RTR2RTS_QP) {
-		for (i = 0; i < resp->num; i++) {
-			mailin->hdr.opcode = cpu_to_be16(XSC_CMD_OP_RTR2RTS_QP);
-			mailin->qpn = cpu_to_be32(qpn + 0);
-			ret = xsc_cmd_exec(xdev, mailin, insize, &mailout, sizeof(mailout));
-			xsc_core_dbg(xdev, "modify qp state qpn:%d\n", qpn + i);
-		}
+	for (i = 0; i < resp->num; i++) {
+		mailin->hdr.opcode = cpu_to_be16(resp->opcode);
+		mailin->qpn = cpu_to_be32(qpn + i);
+		ret = xsc_cmd_exec(xdev, mailin, insize, &mailout, sizeof(mailout));
+		xsc_core_dbg(xdev, "modify qp state qpn:%d\n", qpn + i);
 	}
 	kvfree(mailin);
 
@@ -86,14 +84,11 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 				void *in, void *out)
 {
 	int ret = 0;
+	struct xsc_eswitch *esw = xdev->priv.eswitch;
 	struct xsc_ioctl_data_tl *tl = (struct xsc_ioctl_data_tl *)out;
 	struct xsc_ioctl_get_phy_info_res *resp;
-	struct xsc_lag *ldev = xsc_lag_dev_get(xdev);
-	u16 lag_id = U16_MAX;
+	u16 lag_id = xsc_get_lag_id(xdev);
 	struct xsc_core_device *rl_xdev;
-
-	if (ldev && __xsc_lag_is_active(ldev))
-		lag_id = ldev->lag_id;
 
 	switch (tl->opmod) {
 	case XSC_IOCTL_OP_GET_LOCAL:
@@ -107,7 +102,7 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 		resp->lag_id = lag_id;
 		resp->raw_qp_id_base = xdev->caps.raweth_qp_id_base;
 		resp->raw_rss_qp_id_base = xdev->caps.raweth_rss_qp_id_base;
-		resp->lag_port_start = XSC_LAG_PORT_START;
+		resp->lag_port_start = xdev->caps.lag_logic_port_ofst;
 		resp->send_seg_num = xdev->caps.send_ds_num;
 		resp->recv_seg_num = xdev->caps.recv_ds_num;
 		resp->raw_tpe_qp_num = xdev->caps.raw_tpe_qp_num;
@@ -131,6 +126,16 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 		resp->pcie0_pf_funcid_top = xdev->caps.pcie0_pf_funcid_top;
 		resp->pcie1_pf_funcid_base = xdev->caps.pcie1_pf_funcid_base;
 		resp->pcie1_pf_funcid_top = xdev->caps.pcie1_pf_funcid_top;
+		resp->hca_core_clock = xdev->caps.hca_core_clock;
+		resp->mac_bit = xdev->caps.mac_bit;
+		if (xsc_core_is_pf(xdev)) {
+			mutex_lock(&esw->mode_lock);
+			resp->esw_mode = esw->mode;
+			mutex_unlock(&esw->mode_lock);
+		} else {
+			resp->esw_mode = 0;
+		}
+		resp->board_id = xdev->board_info->board_id;
 		break;
 
 	case XSC_IOCTL_OP_GET_INFO_BY_BDF:
@@ -151,7 +156,7 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 		resp->lag_id = lag_id;
 		resp->raw_qp_id_base = rl_xdev->caps.raweth_qp_id_base;
 		resp->raw_rss_qp_id_base = xdev->caps.raweth_rss_qp_id_base;
-		resp->lag_port_start = XSC_LAG_PORT_START;
+		resp->lag_port_start = xdev->caps.lag_logic_port_ofst;
 		resp->send_seg_num = rl_xdev->caps.send_ds_num;
 		resp->recv_seg_num = rl_xdev->caps.recv_ds_num;
 		resp->raw_tpe_qp_num = rl_xdev->caps.raw_tpe_qp_num;
@@ -175,6 +180,7 @@ static int xsc_pci_ctrl_get_phy(struct xsc_core_device *xdev,
 		resp->pcie0_pf_funcid_top  = rl_xdev->caps.pcie0_pf_funcid_top;
 		resp->pcie1_pf_funcid_base = rl_xdev->caps.pcie1_pf_funcid_base;
 		resp->pcie1_pf_funcid_top  = rl_xdev->caps.pcie1_pf_funcid_top;
+		resp->board_id = xdev->board_info->board_id;
 		break;
 
 	default:
@@ -248,6 +254,7 @@ static struct kprobe kp = {
 
 unsigned long (*kallsyms_lookup_name_func)(const char *name) = NULL;
 
+//调用kprobe找到kallsyms_lookup_name的地址位置
 int find_kallsyms_lookup_name(void)
 {
 	int ret = -1;
@@ -266,25 +273,30 @@ int find_kallsyms_lookup_name(void)
 u16 xsc_get_irq_matrix_global_available(struct xsc_core_device *dev)
 {
 	struct db_irq_matrix *m;
-	unsigned long addr;
+	static unsigned long addr;
+	static int flag;
 	char *name = "vector_matrix";
 	int ret;
 
-	ret = find_kallsyms_lookup_name();
-	if (ret < 0) {
-		xsc_core_err(dev, "find kallsyms_lookup_name failed\n");
-		return 0xffff;
+	if (flag == 0) {
+		ret = find_kallsyms_lookup_name();
+		if (ret < 0) {
+			xsc_core_err(dev, "find kallsyms_lookup_name failed\n");
+			return 0xffff;
+		}
+
+		addr = kallsyms_lookup_name_func(name);
+		xsc_core_dbg(dev, "vector_matrix addr=0x%lx\n", addr);
+		if (addr == 0) {
+			xsc_core_err(dev, "not support, arch maybe not X86?\n");
+			/* 返回0xffff,做到在不知道cpu vector剩余多少可用的情况
+			 * 下不影响fw用该值判断能否分配中断
+			 */
+			return 0xffff;
+		}
+		flag = 1;
 	}
 
-	addr = kallsyms_lookup_name_func(name);
-	xsc_core_dbg(dev, "vector_matrix addr=0x%lx\n", addr);
-	if (addr == 0) {
-		xsc_core_err(dev, "not support, arch maybe not X86?\n");
-		/* 返回0xffff,做到在不知道cpu vector剩余多少可用的情况
-		 * 下不影响fw用该值判断能否分配中断
-		 */
-		return 0xffff;
-	}
 	m = (struct db_irq_matrix *)(*(long *)addr);
 	if (!m) {
 		xsc_core_err(dev, "vector_matrix is NULL\n");
@@ -519,6 +531,7 @@ static int xsc_ioctl_flow_cmdq(struct xsc_bdf_file *file,
 		return -EFAULT;
 
 	in->hdr.opcode = __cpu_to_be16(hdr->attr.opcode);
+	in->hdr.ver = cpu_to_be16(hdr->attr.ver);
 	in->len = __cpu_to_be16(hdr->attr.length);
 	err = copy_from_user(in->data, user_hdr->attr.data, hdr->attr.length);
 	if (err) {
@@ -620,10 +633,10 @@ static int xsc_ioctl_modify_raw_qp(struct xsc_core_device *xdev,
 	if (hdr->attr.length != sizeof(struct xsc_modify_raw_qp_request))
 		return -EINVAL;
 
-	in = kvzalloc(sizeof(struct xsc_modify_raw_qp_mbox_in), GFP_KERNEL);
+	in = kvzalloc(sizeof(*in), GFP_KERNEL);
 	if (!in)
 		goto err_in;
-	out = kvzalloc(sizeof(struct xsc_modify_raw_qp_mbox_out), GFP_KERNEL);
+	out = kvzalloc(sizeof(*out), GFP_KERNEL);
 	if (!out)
 		goto err_out;
 
@@ -633,6 +646,7 @@ static int xsc_ioctl_modify_raw_qp(struct xsc_core_device *xdev,
 		goto err;
 
 	in->hdr.opcode = __cpu_to_be16(hdr->attr.opcode);
+	in->hdr.ver = cpu_to_be16(hdr->attr.ver);
 	in->pcie_no = xdev->pcie_no;
 
 	err = xsc_cmd_exec(xdev, in, sizeof(struct xsc_modify_raw_qp_mbox_in),
@@ -653,6 +667,27 @@ err_out:
 	kvfree(in);
 err_in:
 	return -EFAULT;
+}
+
+static void xsc_handle_multiqp_create(struct xsc_bdf_file *file, void *in,
+				      unsigned int inlen, void *out)
+{
+	u16 qp_num = 0;
+	int i = 0;
+	struct xsc_create_qp_request *req = NULL;
+	void *ptr = NULL;
+	int len = 0;
+	u32 qpn_base = be32_to_cpu(((struct xsc_create_multiqp_mbox_out *)out)->qpn_base);
+
+	qp_num = be16_to_cpu(((struct xsc_create_multiqp_mbox_in *)in)->qp_num);
+	ptr = ((struct xsc_create_multiqp_mbox_in *)in)->data;
+	for (i = 0; i < qp_num; i++) {
+		req = (struct xsc_create_qp_request *)ptr;
+		len = sizeof(struct xsc_create_qp_request) +
+			     be16_to_cpu(req->pa_num) * sizeof(u64);
+		xsc_alloc_qp_obj(file, qpn_base + i, (char *)req, len);
+		ptr += len;
+	}
 }
 
 static void xsc_pci_ctrl_cmdq_handle_res_obj(struct xsc_bdf_file *file, void *in,
@@ -687,11 +722,16 @@ static void xsc_pci_ctrl_cmdq_handle_res_obj(struct xsc_bdf_file *file, void *in
 		break;
 	case XSC_CMD_OP_CREATE_QP:
 		idx = be32_to_cpu(((struct xsc_create_qp_mbox_out *)out)->qpn);
-		xsc_alloc_qp_obj(file, idx, in, inlen);
+		xsc_alloc_qp_obj(file, idx,
+				 (char *)&(((struct xsc_create_qp_mbox_in *)in)->req),
+				 inlen);
 		break;
 	case XSC_CMD_OP_DESTROY_QP:
 		idx = be32_to_cpu(((struct xsc_destroy_qp_mbox_in *)in)->qpn);
 		xsc_destroy_qp_obj(file, idx);
+		break;
+	case XSC_CMD_OP_CREATE_MULTI_QP:
+		xsc_handle_multiqp_create(file, in, inlen, out);
 		break;
 	default:
 		break;
@@ -741,10 +781,12 @@ static long xsc_pci_ctrl_cmdq_raw(struct xsc_bdf_file *file,
 	struct xsc_create_mkey_mbox_out *resp;
 	struct xsc_unregister_mr_mbox_in *req;
 	u8 key;
+	u16 out_len;
+	int qpn = 0;
 
 	err = copy_from_user(&hdr, user_hdr, sizeof(hdr));
 	if (err) {
-		xsc_core_err(dev, "fail to copy from user, user_hdr\n");
+		xsc_core_err(dev, "fail to copy from user user_hdr\n");
 		return -EFAULT;
 	}
 
@@ -757,7 +799,9 @@ static long xsc_pci_ctrl_cmdq_raw(struct xsc_bdf_file *file,
 	in = kvzalloc(hdr.attr.length, GFP_KERNEL);
 	if (!in)
 		return -ENOMEM;
-	out = kvzalloc(hdr.attr.length, GFP_KERNEL);
+
+	out_len = min_t(u16, hdr.attr.length, MAX_MBOX_OUT_LEN);
+	out = kvzalloc(out_len, GFP_KERNEL);
 	if (!out) {
 		kfree(in);
 		xsc_core_err(dev, "fail to alloc hdr length for mbox out\n");
@@ -777,46 +821,45 @@ static long xsc_pci_ctrl_cmdq_raw(struct xsc_bdf_file *file,
 		spin_lock(&dev->dev_res->mkey_lock);
 		key = 0x80 + dev->dev_res->mkey_key++;
 		spin_unlock(&dev->dev_res->mkey_lock);
-#ifdef REG_MR_VIA_CMDQ
-		err = xsc_cmd_exec(dev, in, hdr.attr.length, out, hdr.attr.length);
-#else
-		err = xsc_create_mkey(dev, in, out);
-#endif
+		if (dev->reg_mr_via_cmdq)
+			err = xsc_cmd_exec(dev, in, hdr.attr.length, out, hdr.attr.length);
+		else
+			err = xsc_create_mkey(dev, in, out);
+
 		resp = (struct xsc_create_mkey_mbox_out *)out;
 		resp->mkey = xsc_idx_to_mkey(be32_to_cpu(resp->mkey) & 0xffffff) | key;
 		resp->mkey = cpu_to_be32(resp->mkey);
 		break;
-
-#ifndef REG_MR_VIA_CMDQ
 	case XSC_CMD_OP_DESTROY_MKEY:
-		err = xsc_destroy_mkey(dev, in, out);
+		if (!dev->reg_mr_via_cmdq)
+			err = xsc_destroy_mkey(dev, in, out);
 		break;
-
 	case XSC_CMD_OP_REG_MR:
-		err = xsc_reg_mr(dev, in, out);
+		if (!dev->reg_mr_via_cmdq)
+			err = xsc_reg_mr(dev, in, out);
 		break;
-#endif
-
 	case XSC_CMD_OP_DEREG_MR:
 		req = (struct xsc_unregister_mr_mbox_in *)in;
 		req->mkey = be32_to_cpu(req->mkey);
 		req->mkey = cpu_to_be32(xsc_mkey_to_idx(req->mkey));
-#ifdef REG_MR_VIA_CMDQ
-		err = xsc_cmd_exec(dev, in, hdr.attr.length, out, hdr.attr.length);
-#else
-		err = xsc_dereg_mr(dev, in, out);
-#endif
+		if (dev->reg_mr_via_cmdq)
+			err = xsc_cmd_exec(dev, in, hdr.attr.length, out, hdr.attr.length);
+		else
+			err = xsc_dereg_mr(dev, in, out);
+		break;
+	case XSC_CMD_OP_DESTROY_QP:
+		qpn = be32_to_cpu(((struct xsc_destroy_qp_mbox_in *)in)->qpn);
+		xsc_send_cmd_2rst_qp(dev, qpn);
+		err = xsc_cmd_exec(dev, in, hdr.attr.length, out, out_len);
 		break;
 	default:
-		err = xsc_cmd_exec(dev, in, hdr.attr.length, out, hdr.attr.length);
+		err = xsc_cmd_exec(dev, in, hdr.attr.length, out, out_len);
 		break;
 	}
 	xsc_pci_ctrl_cmdq_handle_res_obj(file, in, hdr.attr.length, out, hdr.attr.opcode);
-/*	if (copy_to_user((void *)user_hdr, &hdr, sizeof(hdr)))
- *		err = -EFAULT;
- */
-	if (copy_to_user((void *)user_hdr->attr.data, out, hdr.attr.length)) {
-		xsc_core_err(dev, "fail to copy to user, user_hdr->attr\n");
+
+	if (copy_to_user((void *)user_hdr->attr.data, out, out_len)) {
+		xsc_core_err(dev, "fail to copy_to_user user hdr attr\n");
 		err = -EFAULT;
 	}
 err_exit:

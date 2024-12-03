@@ -30,11 +30,7 @@
 #define XSC_LOG_INDIR_RQT_SIZE		0x8
 
 #define XSC_INDIR_RQT_SIZE			BIT(XSC_LOG_INDIR_RQT_SIZE)
-#ifdef XSC_RSS_SUPPORT
 #define XSC_ETH_MIN_NUM_CHANNELS	2
-#else
-#define XSC_ETH_MIN_NUM_CHANNELS	1
-#endif
 #define XSC_ETH_MAX_NUM_CHANNELS	XSC_INDIR_RQT_SIZE
 
 #define XSC_TX_NUM_TC			1
@@ -59,8 +55,11 @@
 #define XSC_SQ_ELE_NUM_DEF	BIT(XSC_DEF_LOG_SQ_SZ)
 #define XSC_RQ_ELE_NUM_DEF	BIT(XSC_DEF_LOG_RQ_SZ)
 
-#define XSC_RQCQ_ELE_NUM	XSC_RQ_ELE_NUM_DEF //number of rqcq entry
-#define XSC_SQCQ_ELE_NUM	XSC_SQ_ELE_NUM_DEF //number of sqcq entry
+#define XSC_LOG_RQCQ_SZ		0xb
+#define XSC_LOG_SQCQ_SZ		0xa
+
+#define XSC_RQCQ_ELE_NUM	BIT(XSC_LOG_RQCQ_SZ)
+#define XSC_SQCQ_ELE_NUM	BIT(XSC_LOG_SQCQ_SZ)
 #define XSC_RQ_ELE_NUM		XSC_RQ_ELE_NUM_DEF //ds number of a wqebb
 #define XSC_SQ_ELE_NUM		XSC_SQ_ELE_NUM_DEF //DS number
 #define XSC_EQ_ELE_NUM		XSC_SQ_ELE_NUM_DEF //number of eq entry???
@@ -74,6 +73,8 @@
 #define XSC_CQ_POLL_BUDGET	64
 #define XSC_TX_POLL_BUDGET	128
 
+#define XSC_NET_DIM_ENABLE_THRESHOLD	16
+
 #define XSC_MAX_BW_ALLOC	100 /* Max percentage of BW allocation */
 #define XSC_MAX_PRIORITY	8
 #define XSC_MAX_DSCP		64
@@ -81,8 +82,8 @@
 #define XSC_DEFAULT_CABLE_LEN	7 /* 7 meters */
 
 enum xsc_port_status {
+	XSC_PORT_DOWN      = 0,
 	XSC_PORT_UP        = 1,
-	XSC_PORT_DOWN      = 2,
 };
 
 /*all attributes of queue, MAYBE no use for some special queue*/
@@ -126,7 +127,7 @@ struct xsc_eth_qp_attr {
 };
 
 struct xsc_eth_rx_wqe_cyc {
-	struct xsc_wqe_data_seg      data[0];
+	DECLARE_FLEX_ARRAY(struct xsc_wqe_data_seg, data);
 };
 
 struct xsc_eq_param {
@@ -192,16 +193,18 @@ struct xsc_channel {
 	unsigned long	flags;
 
 	/* data path - accessed per napi poll */
-	struct cpumask *aff_mask;
+	const struct cpumask *aff_mask;
 	struct irq_desc *irq_desc;
 	struct xsc_ch_stats *stats;
-	u8	rx_int;
 } ____cacheline_aligned_in_smp;
 
 enum xsc_eth_priv_flag {
 	XSC_PFLAG_RX_NO_CSUM_COMPLETE,
 	XSC_PFLAG_SNIFFER,
 	XSC_PFLAG_DROPLESS_RQ,
+	XSC_PFLAG_RX_COPY_BREAK,
+	XSC_PFLAG_RX_CQE_BASED_MODER,
+	XSC_PFLAG_TX_CQE_BASED_MODER,
 	XSC_NUM_PFLAGS, /* Keep last */
 };
 
@@ -238,8 +241,15 @@ struct xsc_eth_params {
 	u8	scatter_fcs_en;
 	u8	rx_dim_enabled;
 	u8	tx_dim_enabled;
+	u32	rx_dim_usecs_low;
+	u32	rx_dim_frames_low;
+	u32	tx_dim_usecs_low;
+	u32	tx_dim_frames_low;
 	u32	lro_timeout;
 	u32	pflags;
+
+	xsc_dim_cq_moder_t rx_cq_moderation;
+	xsc_dim_cq_moder_t tx_cq_moderation;
 };
 
 struct xsc_eth_channels {

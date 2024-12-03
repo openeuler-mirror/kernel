@@ -21,6 +21,9 @@
 	_IOWR(XSC_IOCTL_MAGIC, 4, struct xsc_ioctl_hdr)
 #define XSC_IOCTL_CMDQ_RAW \
 	_IOWR(XSC_IOCTL_MAGIC, 5, struct xsc_ioctl_hdr)
+#define XSC_IOCTL_USER_MODE \
+	_IOWR(XSC_IOCTL_MAGIC, 8, struct xsc_ioctl_hdr)
+
 
 #define XSC_IOCTL_CHECK_FILED		0x01234567
 enum {
@@ -33,8 +36,8 @@ enum {
 
 enum {
 	XSC_IOCTL_GET_PHY_INFO		= 0x100,
-	XSC_IOCTL_GET_GLOBAL_PCP	= 0x101,
-	XSC_IOCTL_GET_GLOBAL_DSCP	= 0x102,
+	XSC_IOCTL_GET_FORCE_PCP	= 0x101,
+	XSC_IOCTL_GET_FORCE_DSCP	= 0x102,
 	XSC_IOCTL_GET_CMA_PCP		= 0x103,
 	XSC_IOCTL_GET_CMA_DSCP		= 0x104,
 	XSC_IOCTL_GET_CONTEXT		= 0x105,
@@ -43,8 +46,8 @@ enum {
 
 enum {
 	XSC_IOCTL_SET_QP_STATUS     = 0x200,
-	XSC_IOCTL_SET_GLOBAL_PCP    = 0x201,
-	XSC_IOCTL_SET_GLOBAL_DSCP   = 0x202,
+	XSC_IOCTL_SET_FORCE_PCP    = 0x201,
+	XSC_IOCTL_SET_FORCE_DSCP   = 0x202,
 	XSC_IOCTL_SET_CMA_PCP		= 0x203,
 	XSC_IOCTL_SET_CMA_DSCP		= 0x204,
 	XSC_IOCTL_SET_MAX
@@ -61,6 +64,10 @@ enum {
 	XSC_IOCTL_SET_LOG_LEVEL		= 0x401,
 	XSC_IOCTL_SET_CMD_VERBOSE	= 0x402,
 	XSC_IOCTL_DRIVER_MAX
+};
+
+enum {
+	XSC_IOCTL_OPCODE_ENABLE_USER_MODE = 0x600,
 };
 
 enum  xsc_flow_tbl_id {
@@ -216,7 +223,9 @@ struct xsc_ioctl_get_phy_info_res {
 	u8 pct_compress_vld;
 	u32 chip_version;
 	u32 hca_core_clock;
-	u8 mac_num;
+	u8 mac_bit;
+	u8 esw_mode;
+	u32 board_id;
 };
 
 struct xsc_ioctl_get_vf_info_res {
@@ -233,11 +242,11 @@ struct xsc_alloc_ucontext_req {
 	u32 devfn;
 };
 
-struct xsc_ioctl_global_pcp {
+struct xsc_ioctl_force_pcp {
 	int pcp;
 };
 
-struct xsc_ioctl_global_dscp {
+struct xsc_ioctl_force_dscp {
 	int dscp;
 };
 
@@ -270,6 +279,10 @@ struct xsc_ioctl_set_debug_info {
 	unsigned int	cmd_verbose;
 };
 
+struct xsc_ioctl_user_mode_attr {
+	u8  enable;
+};
+
 /* type-value */
 struct xsc_ioctl_data_tl {
 	u16 table;		/* table id */
@@ -283,13 +296,15 @@ struct xsc_ioctl_attr {
 	u16 opcode;		/* ioctl cmd */
 	u16 length;		/* data length */
 	u32 error;		/* ioctl error info */
-	u8 data[0];		/* specific table info */
+	u16 ver;
+	u16 rsvd;
+	u8 data[];		/* specific table info */
 };
 
 struct xsc_ioctl_emu_hdr {
 	u16	in_length;	/* cmd req length */
 	u16	out_length;	/* cmd rsp length */
-	u8	data[0];	/* emu cmd content start from here */
+	u8	data[];	/* emu cmd content start from here */
 };
 
 struct xsc_ioctl_hdr {
@@ -300,4 +315,4 @@ struct xsc_ioctl_hdr {
 	struct xsc_ioctl_attr attr;
 };
 
-#endif
+#endif /* XSC_IOCTL_H */

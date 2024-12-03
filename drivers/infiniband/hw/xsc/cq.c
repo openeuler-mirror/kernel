@@ -153,26 +153,6 @@ static void handle_responder(struct ib_wc *wc, struct xsc_cqe *cqe,
 	++wq->tail;
 }
 
-struct ib_mad_list_head {
-	struct list_head list;
-	struct ib_cqe cqe;
-	struct ib_mad_queue *mad_queue;
-};
-
-struct ib_mad_private_header {
-	struct ib_mad_list_head mad_list;
-	struct ib_mad_recv_wc recv_wc;
-	struct ib_wc wc;
-	u64 mapping;
-} __packed;
-
-struct ib_mad_private {
-	struct ib_mad_private_header header;
-	size_t mad_size;
-	struct ib_grh grh;
-	u8 mad[0];
-} __packed;
-
 static void *get_wqe(struct xsc_ib_qp *qp, int offset)
 {
 	return xsc_buf_offset(&qp->buf, offset);
@@ -218,7 +198,7 @@ static void xsc_handle_rdma_mad_resp_recv(struct xsc_ib_cq *cq,
 	handle_responder(wc, cqe, *cur_qp, opcode);
 
 	data_seg = get_seg_wqe(get_recv_wqe(*cur_qp, idx), 0);
-	recv = phys_to_virt(dma_to_phys(dev->ib_dev.dma_device, data_seg->va));
+	recv = xsc_ib_recv_mad_sg_virt_addr(&dev->ib_dev, wc, data_seg->va);
 
 	eth = (struct ib_unpacked_eth *)recv;
 	grh = (struct ib_grh *)recv;
@@ -258,6 +238,7 @@ static void xsc_handle_rdma_mad_resp_recv(struct xsc_ib_cq *cq,
 	wc->wc_flags |= IB_WC_GRH;
 
 	xsc_ib_dbg(dev, "recv cqe idx:%u, len:%u\n", wq->tail, wc->byte_len);
+	xsc_ib_info(dev, "qp[%d] recv MAD packet, msg_len=%d\n", (*cur_qp)->xqp.qpn, wc->byte_len);
 	wc->status = IB_WC_SUCCESS;
 }
 
@@ -386,7 +367,6 @@ int xsc_cqe_is_empty(struct xsc_ib_cq *cq)
 
 int xsc_ib_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags)
 {
-#ifdef MSIX_SUPPORT
 	union xsc_cq_doorbell db;
 	struct xsc_ib_cq *xcq = to_xcq(ibcq);
 	struct xsc_core_cq *cq = &xcq->xcq;
@@ -413,11 +393,6 @@ int xsc_ib_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags)
 out:
 	spin_unlock_irqrestore(&xcq->lock, irq_flags);
 	return ret;
-#else
-	if ((flags & IB_CQ_REPORT_MISSED_EVENTS))
-		return 1;
-	return 0;
-#endif
 }
 
 static int alloc_cq_buf(struct xsc_ib_dev *dev, struct xsc_ib_cq_buf *buf,
@@ -477,8 +452,8 @@ static int create_cq_user(struct xsc_ib_dev *dev, struct ib_udata *udata,
 	}
 	log_cq_sz = ilog2(entries);
 	hw_npages = DIV_ROUND_UP((1 << log_cq_sz) * sizeof(struct xsc_cqe), PAGE_SIZE_4K);
-	xsc_ib_dbg(dev, "addr 0x%llx, entries %d, size %u, npages %d, page_shift %d, ncont %d, hw_npages %d\n",
-		   ucmd.buf_addr, entries, ucmd.cqe_size, npages, page_shift, ncont, hw_npages);
+	xsc_ib_info(dev, "addr 0x%llx, entries %d, size %u, npages %d, page_shift %d, ncont %d, hw_npages %d\n",
+		    ucmd.buf_addr, entries, ucmd.cqe_size, npages, page_shift, ncont, hw_npages);
 
 	*inlen = sizeof(**cqb) + sizeof(*(*cqb)->pas) * hw_npages;
 	*cqb = xsc_vzalloc(*inlen);
@@ -561,8 +536,8 @@ xsc_ib_create_cq_def()
 
 	entries = roundup_pow_of_two(entries);
 
-	xsc_ib_dbg(dev, "entries:%d, vector:%d, max_cqes:%d\n", entries, vector,
-		   dev->xdev->caps.max_cqes);
+	xsc_ib_info(dev, "entries:%d, vector:%d, max_cqes:%d\n", entries, vector,
+		    dev->xdev->caps.max_cqes);
 
 	if (entries > dev->xdev->caps.max_cqes)
 		entries = dev->xdev->caps.max_cqes;
@@ -600,7 +575,8 @@ xsc_ib_create_cq_def()
 	if (err)
 		goto err_cqb;
 
-	xsc_ib_dbg(dev, "cqn 0x%x\n", cq->xcq.cqn);
+	xsc_ib_info(dev, "succeeded to create cqn %d, vector=%d, cq_sz=%d, eqn=%d\n",
+		    cq->xcq.cqn, vector, entries, eqn);
 	cq->xcq.irqn = irqn;
 	cq->xcq.comp  = xsc_ib_cq_comp;
 	cq->xcq.event = xsc_ib_cq_event;
@@ -627,6 +603,7 @@ err_cqb:
 		destroy_cq_kernel(dev, cq);
 
 err_create:
+
 	return RET_VALUE(err);
 }
 

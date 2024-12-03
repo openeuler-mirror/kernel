@@ -7,6 +7,47 @@
 #include <linux/module.h>
 #include "eswitch.h"
 
+static struct xsc_board_info *board_info[MAX_BOARD_NUM];
+
+static struct xsc_board_info *xsc_get_board_info(char *board_sn)
+{
+	int i;
+
+	for (i = 0; i < MAX_BOARD_NUM; i++) {
+		if (!board_info[i])
+			continue;
+		if (!strncmp(board_info[i]->board_sn, board_sn, XSC_BOARD_SN_LEN))
+			return board_info[i];
+	}
+	return NULL;
+}
+
+static struct xsc_board_info *xsc_alloc_board_info(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_BOARD_NUM; i++) {
+		if (!board_info[i])
+			break;
+	}
+	if (i == MAX_BOARD_NUM)
+		return NULL;
+	board_info[i] = vmalloc(sizeof(*board_info[i]));
+	if (!board_info[i])
+		return NULL;
+	memset(board_info[i], 0, sizeof(*board_info[i]));
+	board_info[i]->board_id = i;
+	return board_info[i];
+}
+
+void xsc_free_board_info(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_BOARD_NUM; i++)
+		vfree(board_info[i]);
+}
+
 int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 			  struct xsc_caps *caps)
 {
@@ -14,6 +55,7 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	struct xsc_cmd_query_hca_cap_mbox_in in;
 	int err;
 	u16 t16;
+	struct xsc_board_info *board_info = NULL;
 
 	out = kzalloc(sizeof(*out), GFP_KERNEL);
 	if (!out)
@@ -21,7 +63,6 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 
 	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_HCA_CAP);
-	in.hdr.opmod  = cpu_to_be16(0x1);
 	in.cpu_num = cpu_to_be16(num_online_cpus());
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), out, sizeof(*out));
@@ -85,10 +126,8 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 
 	caps->embedded_cpu = 0;
 	caps->ecpf_vport_exists = 0;
-#ifdef CONFIG_XSC_ESWITCH
 	caps->eswitch_manager = 1;
 	caps->vport_group_manager = 1;
-#endif
 	caps->log_max_current_uc_list = 0;
 	caps->log_max_current_mc_list = 0;
 	caps->log_max_vlan_list = 8;
@@ -114,11 +153,7 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	caps->qp_rate_limit_min = be32_to_cpu(out->hca_cap.qp_rate_limit_min);
 	caps->qp_rate_limit_max = be32_to_cpu(out->hca_cap.qp_rate_limit_max);
 
-#ifdef MSIX_SUPPORT
 	caps->msix_enable = 1;
-#else
-	caps->msix_enable = 0;
-#endif
 
 	caps->msix_base = be16_to_cpu(out->hca_cap.msix_base);
 	caps->msix_num = be16_to_cpu(out->hca_cap.msix_num);
@@ -139,7 +174,8 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	caps->dscp = 1;
 	caps->max_tc = out->hca_cap.max_tc;
 	caps->log_max_qp_depth = out->hca_cap.log_max_qp_depth & 0xff;
-	caps->mac_num = out->hca_cap.mac_num;
+	caps->mac_bit = out->hca_cap.mac_bit;
+	caps->lag_logic_port_ofst = out->hca_cap.lag_logic_port_ofst;
 
 	dev->chip_ver_h = be32_to_cpu(out->hca_cap.chip_ver_h);
 	dev->chip_ver_m = be32_to_cpu(out->hca_cap.chip_ver_m);
@@ -147,7 +183,15 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	dev->hotfix_num = be32_to_cpu(out->hca_cap.hotfix_num);
 	dev->feature_flag = be32_to_cpu(out->hca_cap.feature_flag);
 
-	memcpy(dev->board_sn, out->hca_cap.board_sn, sizeof(out->hca_cap.board_sn));
+	board_info = xsc_get_board_info(out->hca_cap.board_sn);
+	if (!board_info) {
+		board_info = xsc_alloc_board_info();
+		if (!board_info)
+			return -ENOMEM;
+
+		memcpy(board_info->board_sn, out->hca_cap.board_sn, sizeof(out->hca_cap.board_sn));
+	}
+	dev->board_info = board_info;
 
 	if (xsc_core_is_pf(dev)) {
 		dev->regs.tx_db = be64_to_cpu(out->hca_cap.tx_db);
@@ -162,6 +206,7 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	dev->fw_version_patch = be16_to_cpu(out->hca_cap.fw_ver.fw_version_patch);
 	dev->fw_version_tweak = be32_to_cpu(out->hca_cap.fw_ver.fw_version_tweak);
 	dev->fw_version_extra_flag = out->hca_cap.fw_ver.fw_version_extra_flag;
+	dev->reg_mr_via_cmdq = out->hca_cap.reg_mr_via_cmdq;
 out_out:
 	kfree(out);
 
@@ -182,7 +227,7 @@ int xsc_cmd_enable_hca(struct xsc_core_device *dev, u16 vf_num, u16 max_msix)
 	in.max_msix_vec = cpu_to_be16(max_msix);
 	in.cpu_num = cpu_to_be16(num_online_cpus());
 	in.pp_bypass = xsc_get_pp_bypass_res(dev, false);
-	in.esw_mode = xsc_get_eswitch_mode(dev);
+	in.esw_mode = XSC_ESWITCH_LEGACY;
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	if (err || out.hdr.status) {
@@ -206,7 +251,7 @@ int xsc_cmd_disable_hca(struct xsc_core_device *dev, u16 vf_num)
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DISABLE_HCA);
 	in.vf_num = cpu_to_be16(vf_num);
 	in.pp_bypass = xsc_get_pp_bypass_res(dev, false);
-	in.esw_mode = xsc_get_eswitch_mode(dev);
+	in.esw_mode = XSC_ESWITCH_NONE;
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	if (err || out.hdr.status) {
@@ -240,30 +285,28 @@ int xsc_cmd_modify_hca(struct xsc_core_device *dev)
 	return err;
 }
 
-static u32 xsc_board_num;
-static char xsc_board_sn[MAX_BOARD_NUM][XSC_BOARD_SN_LEN];
-
-int xsc_get_board_id(struct xsc_core_device *dev)
+static int xsc_cmd_query_guid(struct xsc_core_device *dev)
 {
-	int i = 0;
+	struct xsc_cmd_query_guid_mbox_in in;
+	struct xsc_cmd_query_guid_mbox_out out;
+	int err;
 
-	xsc_core_info(dev, "board_sn=%s, current_board_num=%d\n",
-		      dev->board_sn, xsc_board_num);
-	if (strnlen(dev->board_sn, XSC_BOARD_SN_LEN) == 0)
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_GUID);
+	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return xsc_cmd_status_to_err(&out.hdr);
+	dev->board_info->guid = out.guid;
+	dev->board_info->guid_valid = 1;
+	return 0;
+}
+
+int xsc_query_guid(struct xsc_core_device *dev)
+{
+	if (dev->board_info->guid_valid)
 		return 0;
 
-	for (i = 0; i < xsc_board_num; i++) {
-		if (!strncmp(xsc_board_sn[i], dev->board_sn, XSC_BOARD_SN_LEN)) {
-			dev->board_id = i;
-			return 0;
-		}
-	}
-	if (xsc_board_num < MAX_BOARD_NUM) {
-		memcpy(xsc_board_sn[xsc_board_num], dev->board_sn, XSC_BOARD_SN_LEN);
-		dev->board_id = xsc_board_num++;
-	} else {
-		return -ENOMEM;
-	}
-
-	return 0;
+	return xsc_cmd_query_guid(dev);
 }

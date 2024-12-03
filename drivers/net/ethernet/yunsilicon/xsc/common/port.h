@@ -37,4 +37,4 @@ int xsc_query_module_eeprom(struct xsc_core_device *dev,
 int xsc_query_module_eeprom_by_page(struct xsc_core_device *dev,
 				    struct xsc_module_eeprom_query_params *params,
 				    u8 *data);
-#endif
+#endif /* __XSC_PORT_H__ */

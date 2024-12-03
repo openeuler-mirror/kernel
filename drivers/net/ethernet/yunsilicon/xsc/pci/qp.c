@@ -26,7 +26,7 @@ struct {
 	struct list_head	head;
 	spinlock_t		lock;	/* protect delayed_release_list */
 	struct task_struct	*poll_task;
-	struct wait_queue_head	wq;
+	wait_queue_head_t	wq;
 	int			wait_flag;
 } delayed_release_list;
 
@@ -35,6 +35,26 @@ enum {
 	WAKEUP,
 	EXIT,
 };
+
+static bool exit_flag;
+
+void xsc_set_exit_flag(void)
+{
+	exit_flag = true;
+}
+EXPORT_SYMBOL_GPL(xsc_set_exit_flag);
+
+bool xsc_get_exit_flag(void)
+{
+	return exit_flag;
+}
+EXPORT_SYMBOL_GPL(xsc_get_exit_flag);
+
+bool exist_incomplete_qp_flush(void)
+{
+	return !list_empty(&delayed_release_list.head);
+}
+EXPORT_SYMBOL_GPL(exist_incomplete_qp_flush);
 
 static bool xsc_qp_flush_finished(struct xsc_core_device *xdev, u32 qpn)
 {
@@ -77,7 +97,7 @@ static int xsc_qp_flush_check(void *arg)
 		list_del(&entry->node);
 		spin_unlock(&delayed_release_list.lock);
 
-		if (!xsc_qp_flush_finished(entry->xdev, entry->qpn)) {
+		if (!exit_flag && !xsc_qp_flush_finished(entry->xdev, entry->qpn)) {
 			spin_lock(&delayed_release_list.lock);
 			list_add_tail(&entry->node, &delayed_release_list.head);
 			spin_unlock(&delayed_release_list.lock);
@@ -113,6 +133,9 @@ static void xsc_wait_qp_flush_complete(struct xsc_core_device *xdev, u32 qpn)
 	struct xsc_qp_rsc qp_rsc;
 	int err = 0;
 
+	if (exit_flag)
+		return;
+
 	init_completion(&qp_rsc.delayed_release);
 	qp_rsc.qpn = qpn;
 	qp_rsc.xdev = xdev;
@@ -123,9 +146,13 @@ static void xsc_wait_qp_flush_complete(struct xsc_core_device *xdev, u32 qpn)
 	wake_up(&delayed_release_list.wq);
 
 	while ((err = wait_for_completion_interruptible(&qp_rsc.delayed_release))
-		== -ERESTARTSYS)
+		== -ERESTARTSYS) {
 		xsc_core_dbg(xdev, "qp %d wait for completion is interrupted, err = %d\n",
 			     qpn, err);
+		if (need_resched()) {
+			schedule();
+		}
+	}
 }
 
 int create_resource_common(struct xsc_core_device *xdev,
@@ -198,34 +225,24 @@ int xsc_core_create_qp(struct xsc_core_device *xdev,
 	struct xsc_destroy_qp_mbox_out dout;
 	int err;
 	struct timespec64 ts;
-	int exec = 1;
 
 	ktime_get_boottime_ts64(&ts);
+
 	memset(&dout, 0, sizeof(dout));
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_CREATE_QP);
 
-	if (!is_support_rdma(xdev)) {
-		if (in->req.qp_type == XSC_QUEUE_TYPE_RDMA_MAD ||
-		    in->req.qp_type == XSC_QUEUE_TYPE_RDMA_RC) {
-			exec = 0;
-			qp->qpn = 0;
-		}
+	err = xsc_cmd_exec(xdev, in, inlen, &out, sizeof(out));
+	if (err) {
+		xsc_core_err(xdev, "ret %d", err);
+		return err;
 	}
 
-	if (exec) {
-		err = xsc_cmd_exec(xdev, in, inlen, &out, sizeof(out));
-		if (err) {
-			xsc_core_warn(xdev, "ret %d", err);
-			return err;
-		}
-
-		if (out.hdr.status) {
-			pr_warn("current num of QPs 0x%x\n", atomic_read(&xdev->num_qps));
-			return xsc_cmd_status_to_err(&out.hdr);
-		}
-		qp->qpn = be32_to_cpu(out.qpn) & 0xffffff;
-		xsc_core_dbg(xdev, "qpn = %x\n", qp->qpn);
+	if (out.hdr.status) {
+		xsc_core_err(xdev, "current num of QPs %u\n", atomic_read(&xdev->num_qps));
+		return xsc_cmd_status_to_err(&out.hdr);
 	}
+	qp->qpn = be32_to_cpu(out.qpn) & 0xffffff;
+	xsc_core_info(xdev, "qpn = %u\n", qp->qpn);
 
 	qp->trace_info = kzalloc(sizeof(*qp->trace_info), GFP_KERNEL);
 	if (!qp->trace_info) {
@@ -238,13 +255,13 @@ int xsc_core_create_qp(struct xsc_core_device *xdev,
 
 	err = create_resource_common(xdev, qp);
 	if (err) {
-		xsc_core_warn(xdev, "err %d", err);
+		xsc_core_err(xdev, "err %d", err);
 		goto err_trace;
 	}
 
 	err = xsc_debug_qp_add(xdev, qp);
 	if (err)
-		xsc_core_dbg(xdev, "failed adding QP 0x%x to debug file system\n",
+		xsc_core_err(xdev, "failed adding QP %u to debug file system\n",
 			     qp->qpn);
 
 	atomic_inc(&xdev->num_qps);
@@ -268,7 +285,6 @@ int xsc_core_destroy_qp(struct xsc_core_device *xdev,
 	struct xsc_destroy_qp_mbox_in in;
 	struct xsc_destroy_qp_mbox_out out;
 	int err;
-	int exec = 1;
 
 	xsc_debug_qp_remove(xdev, qp);
 	xsc_remove_qptrace(xdev, qp);
@@ -281,21 +297,12 @@ int xsc_core_destroy_qp(struct xsc_core_device *xdev,
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DESTROY_QP);
 	in.qpn = cpu_to_be32(qp->qpn);
 
-	if (!is_support_rdma(xdev)) {
-		if (qp->qp_type == XSC_QUEUE_TYPE_RDMA_MAD ||
-		    qp->qp_type == XSC_QUEUE_TYPE_RDMA_RC) {
-			exec = 0;
-		}
-	}
+	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
+	if (err)
+		return err;
 
-	if (exec) {
-		err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
-		if (err)
-			return err;
-
-		if (out.hdr.status)
-			return xsc_cmd_status_to_err(&out.hdr);
-	}
+	if (out.hdr.status)
+		return xsc_cmd_status_to_err(&out.hdr);
 	atomic_dec(&xdev->num_qps);
 	return 0;
 }
@@ -411,7 +418,7 @@ int xsc_core_qp_modify(struct xsc_core_device *xdev, enum xsc_qp_state cur_state
 		qp->trace_info->d_port = cpu_to_be16(4791);
 		qp->trace_info->lqpn = qp->qpn;
 		qp->trace_info->rqpn = be32_to_cpu(in->ctx.remote_qpn);
-		qp->trace_info->affinity_idx = 0;
+		qp->trace_info->affinity_idx = (in->ctx.lag_sel_en == 0 ? 0 : in->ctx.lag_sel);
 		qp->trace_info->af_type = (in->ctx.ip_type == 0 ? AF_INET : AF_INET6);
 
 		if (in->ctx.ip_type == 0) {

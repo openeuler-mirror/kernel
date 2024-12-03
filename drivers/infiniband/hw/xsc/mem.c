@@ -22,7 +22,7 @@ int xsc_find_chunk_cont_0(struct xsc_pa_chunk *chunk,
 			  int is_first,
 			  int is_last)
 {
-	const static int max_count =  sizeof(int) << 3;
+	static const int max_count =  sizeof(int) << 3;
 	dma_addr_t pa, end_pa;
 	u64 va, end_va;
 	size_t length;
@@ -202,6 +202,7 @@ void __xsc_ib_cont_pages(struct ib_umem *umem, u64 addr,
 	int i = 0;
 	struct scatterlist *sg;
 	int entry;
+	// TODO: need peer mem support
 	unsigned long page_shift = PAGE_SHIFT;
 
 	addr = addr >> page_shift;

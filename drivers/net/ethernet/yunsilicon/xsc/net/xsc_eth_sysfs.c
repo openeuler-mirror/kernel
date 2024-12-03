@@ -119,7 +119,6 @@ static ssize_t pcie_lat_enable_store(struct device *device,
 	} else if (pcie_lat_enable == XSC_PCIE_LAT_EN_DISABLE &&
 		   pcie_lat->enable == XSC_PCIE_LAT_EN_ENABLE) {
 		cancel_delayed_work_sync(&pcie_lat->work);
-		pcie_lat->period = XSC_PCIE_LAT_PERIOD_MIN;
 	}
 
 	pcie_lat->enable = pcie_lat_enable;

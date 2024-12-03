@@ -166,5 +166,4 @@ static inline void xsc_cqwq_pop(struct xsc_cqwq *wq)
 {
 	wq->cc++;
 }
-
 #endif /* __XSC_WQ_H__ */

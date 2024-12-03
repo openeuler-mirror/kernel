@@ -47,6 +47,8 @@ struct xsc_rq_stats {
 	u64 cache_waive;
 	u64 cache_ext;
 	u64 cache_rdc;
+	u64 dim_us;
+	u64 dim_pkts;
 };
 
 struct xsc_sq_stats {
@@ -72,6 +74,8 @@ struct xsc_sq_stats {
 	u64 txdone_skb_null;
 	u64 txdone_skb_refcnt_err;
 	u64 skb_linear;
+	u64 dim_us;
+	u64 dim_pkts;
 };
 
 struct xsc_ch_stats {
@@ -82,6 +86,7 @@ struct xsc_ch_stats {
 	u64 poll_64_511;
 	u64 poll_512_1023;
 	u64 poll_1024;
+	u64 poll_tx;
 	u64 arm;
 	u64 noarm;
 	u64 aff_change;
@@ -124,6 +129,8 @@ struct xsc_sw_stats {
 	u64 tx_queue_wake;
 	u64 tx_cqe_err;
 	u64 tx_oversize_pkts_sw_drop;
+	u64 tx_dim_us;
+	u64 tx_dim_pkts;
 	u64 txdone_skb_null;
 	u64 txdone_skb_refcnt_err;
 	u64 skb_linear;
@@ -142,6 +149,8 @@ struct xsc_sw_stats {
 	u64 rx_cache_waive;
 	u64 rx_cache_ext;
 	u64 rx_cache_rdc;
+	u64 rx_dim_us;
+	u64 rx_dim_pkts;
 	u64 ch_events;
 	u64 ch_poll;
 	u64 ch_poll_0;
@@ -149,6 +158,7 @@ struct xsc_sw_stats {
 	u64 ch_poll_64_511;
 	u64 ch_poll_512_1023;
 	u64 ch_poll_1024;
+	u64 ch_poll_tx;
 	u64 ch_arm;
 	u64 ch_noarm;
 	u64 ch_aff_change;

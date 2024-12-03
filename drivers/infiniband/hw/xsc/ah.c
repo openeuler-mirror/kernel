@@ -7,7 +7,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/random.h>
-
 #include "xsc_ib.h"
 #include "user.h"
 
@@ -68,8 +67,10 @@ static struct ib_ah *create_ib_ah(struct xsc_ib_dev *dev,
 
 	if (ah_attr->type == RDMA_AH_ATTR_TYPE_ROCE) {
 		gid_type = ah_attr->grh.sgid_attr->gid_type;
+
 		memcpy(ah->av.rmac, ah_attr->roce.dmac,
 		       sizeof(ah_attr->roce.dmac));
+
 		ah->av.udp_sport = xsc_ah_get_udp_sport(dev, ah_attr);
 		ah->av.stat_rate_sl |= (rdma_ah_get_sl(ah_attr) & 0x7) << 1;
 		if (gid_type == IB_GID_TYPE_ROCE_UDP_ENCAP)
@@ -105,7 +106,6 @@ xsc_ib_create_ah_def()
 			return RET_VALUE(-EINVAL);
 
 		resp.response_length = min_resp_len;
-
 		memcpy(resp.dmac, ah_attr->roce.dmac, ETH_ALEN);
 		err = ib_copy_to_udata(udata, &resp, resp.response_length);
 		if (err)

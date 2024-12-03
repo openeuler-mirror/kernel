@@ -14,23 +14,26 @@
 
 #include <linux/log2.h>
 
-int xsc_alloc_iae_idx(struct xsc_core_device *dev, int *iae_idx)
+static inline void xsc_iae_lock(struct xsc_core_device *dev, int grp)
 {
-	ACQUIRE_IA_LOCK(dev, *iae_idx);
-	return *iae_idx != -1 ? 0 : -1;
+	spin_lock_bh(&get_xsc_res(dev)->iae_lock[grp]);
 }
 
-void xsc_release_iae_idx(struct xsc_core_device *dev, int *iae_idx)
+static inline void xsc_iae_unlock(struct xsc_core_device *dev, int grp)
 {
-	RELEASE_IA_LOCK(dev, *iae_idx);
-	*iae_idx = -1;
+	spin_unlock_bh(&get_xsc_res(dev)->iae_lock[grp]);
 }
 
-int xsc_get_iae_idx(struct xsc_core_device *dev)
+static inline int xsc_iae_idx_get(struct xsc_core_device *dev, int grp)
 {
-	struct xsc_resources *res = get_xsc_res(dev);
+	return get_xsc_res(dev)->iae_idx[grp];
+}
 
-	return res->iae_idx;
+static inline int xsc_iae_grp_get(struct xsc_core_device *dev)
+{
+	struct xsc_resources *xres = get_xsc_res(dev);
+
+	return atomic_inc_return(&xres->iae_grp) & XSC_RES_IAE_GRP_MASK;
 }
 
 static int xsc_cmd_exec_create_mkey(struct xsc_core_device *xdev, void *in, void *out)
@@ -101,6 +104,7 @@ static int xsc_cmd_exec_reg_mr(struct xsc_core_device *dev, void *in, void *out)
 	u64 reg_addr;
 	int i;
 	int reg_stride;
+	int iae_idx, iae_grp;
 
 	if (pa_num && alloc_mtt_entry(dev, pa_num, &mtt_base))
 		return -EINVAL;
@@ -126,14 +130,18 @@ static int xsc_cmd_exec_reg_mr(struct xsc_core_device *dev, void *in, void *out)
 	reg_addr = MMC_MPT_TBL_MEM_ADDR +
 		mpt_idx * roundup_pow_of_two(reg_stride);
 
-	IA_WRITE_REG_MR(dev, reg_addr, ptr, sizeof(mpt_ent) / sizeof(u32),
-			xsc_get_iae_idx(dev));
+	iae_grp = xsc_iae_grp_get(dev);
+	iae_idx = xsc_iae_idx_get(dev, iae_grp);
 
-	xsc_core_dbg(dev, "reg mr, write mpt[%u]: va=%llx, mem_size=%u, pdn=%u\n",
-		     mpt_idx, va, mpt_ent.mem_size, mpt_ent.pdn);
-	xsc_core_dbg(dev, "key=%u, mtt_base=%u, acc=%u, page_mode=%u, mem_map_en=%u\n",
-		     mpt_ent.key, mpt_ent.mtt_base, mpt_ent.acc,
-		     mpt_ent.page_mode, mpt_ent.mem_map_en);
+	xsc_iae_lock(dev, iae_grp);
+
+	IA_WRITE_REG_MR(dev, reg_addr, ptr, sizeof(mpt_ent) / sizeof(u32), iae_idx);
+
+	xsc_core_info(dev, "reg mr, write mpt[%u]: va=%llx, mem_size=%u, pdn=%u\n",
+		      mpt_idx, va, mpt_ent.mem_size, mpt_ent.pdn);
+	xsc_core_info(dev, "key=%u, mtt_base=%u, acc=%u, page_mode=%u, mem_map_en=%u\n",
+		      mpt_ent.key, mpt_ent.mtt_base, mpt_ent.acc,
+		      mpt_ent.page_mode, mpt_ent.mem_map_en);
 
 	for (i = 0; i < pa_num; i++) {
 		u64 pa = req->req.pas[i];
@@ -144,11 +152,12 @@ static int xsc_cmd_exec_reg_mr(struct xsc_core_device *dev, void *in, void *out)
 		reg_addr = MMC_MTT_TBL_MEM_ADDR +
 			(mtt_base + i) * REG_WIDTH_TO_STRIDE(MMC_MTT_TBL_MEM_WIDTH);
 
-		IA_WRITE_REG_MR(dev, reg_addr, ptr, sizeof(pa) / sizeof(u32),
-				xsc_get_iae_idx(dev));
+		IA_WRITE_REG_MR(dev, reg_addr, ptr, sizeof(pa) / sizeof(u32), iae_idx);
 
-		xsc_core_dbg(dev, "reg mr, write mtt: pa[%u]=%llx\n", i, pa);
+		xsc_core_info(dev, "reg mr, write mtt: pa[%u]=%llx\n", i, pa);
 	}
+
+	xsc_iae_unlock(dev, iae_grp);
 
 	resp->hdr.status = 0;
 	return 0;
@@ -156,14 +165,7 @@ static int xsc_cmd_exec_reg_mr(struct xsc_core_device *dev, void *in, void *out)
 
 int xsc_reg_mr(struct xsc_core_device *xdev, void *in, void *out)
 {
-	unsigned long flags;
-	struct xsc_resources *xres = get_xsc_res(xdev);
-	int ret;
-
-	xsc_acquire_lock(&xres->lock, &flags);
-	ret = xsc_cmd_exec_reg_mr(xdev, in, out);
-	xsc_release_lock(&xres->lock, flags);
-	return ret;
+	return xsc_cmd_exec_reg_mr(xdev, in, out);
 }
 
 static int xsc_cmd_exec_dereg_mr(struct xsc_core_device *dev, void *in, void *out)
@@ -179,12 +181,16 @@ static int xsc_cmd_exec_dereg_mr(struct xsc_core_device *dev, void *in, void *ou
 	resp->hdr.status = -EINVAL;
 
 	mpt_idx = be32_to_cpu(req->mkey);
-	xsc_core_dbg(dev, "mpt idx:%u\n", mpt_idx);
+	xsc_core_info(dev, "mpt idx:%u\n", mpt_idx);
 
 	pages_num = get_xsc_res(dev)->mpt_entry[mpt_idx].page_num;
 	mtt_base = get_xsc_res(dev)->mpt_entry[mpt_idx].mtt_base;
-	if (pages_num > 0)
+	if (pages_num > 0) {
 		dealloc_mtt_entry(dev, pages_num, mtt_base);
+		get_xsc_res(dev)->mpt_entry[mpt_idx].page_num = 0;
+	} else {
+		xsc_core_dbg(dev, "no mtt entries to be freed, mpt_idx=%d\n", mpt_idx);
+	}
 
 	resp->hdr.status = 0;
 	return 0;
@@ -192,14 +198,7 @@ static int xsc_cmd_exec_dereg_mr(struct xsc_core_device *dev, void *in, void *ou
 
 int xsc_dereg_mr(struct xsc_core_device *xdev, void *in, void *out)
 {
-	unsigned long flags;
-	struct xsc_resources *xres = get_xsc_res(xdev);
-	int ret;
-
-	xsc_acquire_lock(&xres->lock, &flags);
-	ret = xsc_cmd_exec_dereg_mr(xdev, in, out);
-	xsc_release_lock(&xres->lock, flags);
-	return ret;
+	return xsc_cmd_exec_dereg_mr(xdev, in, out);
 }
 
 static int xsc_cmd_exec_ioctl_flow(struct xsc_core_device *dev,

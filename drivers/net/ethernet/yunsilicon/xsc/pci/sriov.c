@@ -7,9 +7,7 @@
 #include "common/xsc_core.h"
 #include "common/xsc_lag.h"
 #include "common/vport.h"
-#ifdef CONFIG_XSC_ESWITCH
 #include "eswitch.h"
-#endif
 #include "xsc_pci_ctrl.h"
 
 static int xsc_device_enable_sriov(struct xsc_core_device *dev, int num_vfs)
@@ -28,30 +26,24 @@ static int xsc_device_enable_sriov(struct xsc_core_device *dev, int num_vfs)
 	if (!XSC_ESWITCH_MANAGER(dev))
 		goto enable_vfs;
 
-#ifdef CONFIG_XSC_ESWITCH
 	err = xsc_eswitch_enable(dev->priv.eswitch, XSC_ESWITCH_LEGACY,
 				 num_vfs);
 	if (err) {
 		xsc_core_warn(dev, "failed to enable eswitch SRIOV (%d)\n", err);
 		return err;
 	}
-#endif
 
 enable_vfs:
 	err = xsc_create_vfs_sysfs(dev, num_vfs);
 	if (err) {
 		xsc_core_warn(dev, "failed to create SRIOV sysfs (%d)\n", err);
-#ifdef CONFIG_XSC_ESWITCH
 		if (XSC_ESWITCH_MANAGER(dev))
 			xsc_eswitch_disable(dev->priv.eswitch, true);
-#endif
 		return err;
 	}
 
-	xsc_lag_disable(dev);
 	for (vf = 0; vf < num_vfs; vf++)
 		sriov->vfs_ctx[vf].enabled = 1;
-	xsc_lag_enable(dev);
 
 	return 0;
 }
@@ -76,13 +68,8 @@ static void xsc_device_disable_sriov(struct xsc_core_device *dev,
 		sriov->vfs_ctx[vf].enabled = 0;
 	}
 
-#ifdef CONFIG_XSC_ESWITCH
-	if (XSC_ESWITCH_MANAGER(dev)) {
-		xsc_lag_disable(dev);
+	if (XSC_ESWITCH_MANAGER(dev))
 		xsc_eswitch_disable(dev->priv.eswitch, clear_vf);
-		xsc_lag_enable(dev);
-	}
-#endif
 
 	xsc_destroy_vfs_sysfs(dev, num_vfs);
 }
@@ -108,19 +95,31 @@ static int xsc_sriov_enable(struct pci_dev *pdev, int num_vfs)
 		return -EBUSY;
 	}
 
+	xsc_lag_disable(dev);
+
 	xsc_core_info(dev, "enable %d VFs\n", num_vfs);
 
 	err = xsc_device_enable_sriov(dev, num_vfs);
 	if (err) {
 		xsc_core_warn(dev, "xsc_device_enable_sriov failed, err=%d\n", err);
-		return err;
+		goto device_enable_sriov_err;
 	}
 
 	err = pci_enable_sriov(pdev, num_vfs);
 	if (err) {
 		xsc_core_warn(dev, "pci_enable_sriov failed, err=%d\n", err);
-		xsc_device_disable_sriov(dev, num_vfs, true);
+		goto pci_enable_sriov_err;
 	}
+
+	xsc_lag_enable(dev);
+
+	return err;
+
+pci_enable_sriov_err:
+	xsc_device_disable_sriov(dev, num_vfs, true);
+
+device_enable_sriov_err:
+	xsc_lag_enable(dev);
 
 	return err;
 }
@@ -130,10 +129,14 @@ static void xsc_sriov_disable(struct pci_dev *pdev)
 	struct xsc_core_device *dev  = pci_get_drvdata(pdev);
 	int num_vfs = pci_num_vf(dev->pdev);
 
+	xsc_lag_disable(dev);
+
 	xsc_core_info(dev, "disable %d VFs\n", num_vfs);
 	pci_disable_sriov(pdev);
 
 	xsc_device_disable_sriov(dev, num_vfs, true);
+
+	xsc_lag_enable(dev);
 }
 
 int xsc_core_sriov_configure(struct pci_dev *pdev, int num_vfs)
@@ -187,6 +190,9 @@ void xsc_sriov_detach(struct xsc_core_device *dev)
 
 static u16 xsc_get_max_vfs(struct xsc_core_device *dev)
 {
+	/* In RH6.8 and lower pci_sriov_get_totalvfs might return -EINVAL
+	 * return in that case 1
+	 */
 	return (pci_sriov_get_totalvfs(dev->pdev) < 0) ? 0 :
 		pci_sriov_get_totalvfs(dev->pdev);
 }

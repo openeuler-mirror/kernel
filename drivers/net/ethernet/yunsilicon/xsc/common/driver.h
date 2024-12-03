@@ -74,7 +74,7 @@ struct xsc_rsc_debug {
 	void		       *object;
 	enum dbg_rsc_type	type;
 	struct dentry	       *root;
-	struct xsc_field_desc	fields[0];
+	struct xsc_field_desc	fields[];
 };
 
 struct xsc_buf_list {
@@ -275,12 +275,12 @@ int xsc_core_dereg_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr);
 void xsc_reg_local_dma_mr(struct xsc_core_device *dev);
 int xsc_core_alloc_pd(struct xsc_core_device *xdev, u32 *pdn);
 int xsc_core_dealloc_pd(struct xsc_core_device *xdev, u32 pdn);
-int xsc_core_mad_ifc(struct xsc_core_device *xdev, void *inb, void *outb,
-		     u16 opmod, int port);
 void xsc_register_debugfs(void);
 void xsc_unregister_debugfs(void);
 int xsc_eq_init(struct xsc_core_device *dev);
 void xsc_eq_cleanup(struct xsc_core_device *dev);
+struct xsc_eq *xsc_eq_get(struct xsc_core_device *dev, int index);
+
 void xsc_fill_page_array(struct xsc_buf *buf, __be64 *pas, int npages);
 void xsc_fill_page_frag_array(struct xsc_frag_buf *buf, __be64 *pas, int npages);
 void xsc_qp_event(struct xsc_core_device *xdev, u32 qpn, int event_type);

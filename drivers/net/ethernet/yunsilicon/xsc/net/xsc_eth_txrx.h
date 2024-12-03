@@ -77,4 +77,5 @@ void xsc_page_release_dynamic(struct xsc_rq *rq,
 			      struct xsc_dma_info *dma_info,
 			      bool recycle);
 
+enum hrtimer_restart xsc_dim_reduce_timer_fn(struct hrtimer *timer);
 #endif /* XSC_RXTX_H */

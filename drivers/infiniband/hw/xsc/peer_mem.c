@@ -13,6 +13,7 @@ static LIST_HEAD(peer_memory_list);
 static struct kobject *peers_kobj;
 
 static void complete_peer(struct kref *kref);
+
 static struct ib_peer_memory_client *get_peer_by_kobj(void *kobj);
 static ssize_t version_show(struct kobject *kobj,
 			    struct kobj_attribute *attr, char *buf)

@@ -21,6 +21,8 @@ struct xsc_core_cq {
 	struct completion	free;
 	unsigned int		vector;
 	int			irqn;
+	u16			dim_us;
+	u16			dim_pkts;
 	void (*comp)(struct xsc_core_cq *cq);
 	void (*event)(struct xsc_core_cq *cq, enum xsc_event);
 	u32			cons_index;
@@ -29,6 +31,7 @@ struct xsc_core_cq {
 	int			pid;
 	u32		reg_next_cid;
 	u32		reg_done_pid;
+	struct xsc_eq		*eq;
 };
 
 enum {

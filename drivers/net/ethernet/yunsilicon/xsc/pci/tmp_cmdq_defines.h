@@ -3,7 +3,6 @@
  * All rights reserved.
  */
 
-#ifndef CMDQ_DEFINE_H
 #define CMDQ_DEFINE_H
 
 #define CMDQ_PA_REG_ADDR				0xFC00000
@@ -15,5 +14,4 @@
 #define CMDQ_DB_REG_ADDR				0xFC0000C
 #define CMDQ_DB_REG_WIDTH				32
 
-#endif
 

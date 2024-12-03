@@ -117,4 +117,5 @@ void xsc_destroy_pct_obj(struct xsc_bdf_file *file, unsigned int priority);
 
 void xsc_close_bdf_file(struct xsc_bdf_file *file);
 
-#endif
+void xsc_send_cmd_2rst_qp(struct xsc_core_device *xdev, unsigned int qpn);
+#endif /* RES_OBJ_H */

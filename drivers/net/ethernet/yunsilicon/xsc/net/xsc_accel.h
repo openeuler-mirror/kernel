@@ -39,5 +39,4 @@ static inline bool xsc_any_tunnel_proto_supported(struct xsc_core_device *dev)
 {
 	return false;
 }
-
 #endif /* XSC_ACCEL_H */

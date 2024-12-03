@@ -9,5 +9,4 @@
 
 void xsc_rdma_ctrl_fini(void);
 int xsc_rdma_ctrl_init(void);
-
-#endif
+#endif /* XSC_RDMA_CTRL_H */

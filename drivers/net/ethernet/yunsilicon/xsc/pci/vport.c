@@ -9,23 +9,24 @@
 #include "common/xsc_cmd.h"
 #include "eswitch.h"
 #include "common/xsc_fs.h"
+#include "net/xsc_eth.h"
+#include "common/xsc_lag.h"
 
-static int _xsc_query_vport_state(struct xsc_core_device *dev, u8 opmod,
+static int _xsc_query_vport_state(struct xsc_core_device *dev, u16 opmod,
 				  u16 vport, void *out, int outlen)
 {
 	struct xsc_query_vport_state_in in;
 
 	memset(&in, 0, sizeof(in));
-	in.hdr.opcode = XSC_CMD_OP_QUERY_VPORT_STATE;
-	in.hdr.opmod = opmod;
-	in.vport_number = vport;
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_VPORT_STATE);
+	in.vport_number = cpu_to_be16(vport);
 	if (vport)
 		in.other_vport = 1;
 
 	return xsc_cmd_exec(dev, &in, sizeof(in), out, outlen);
 }
 
-u8 xsc_query_vport_state(struct xsc_core_device *dev, u8 opmod, u16 vport)
+u8 xsc_query_vport_state(struct xsc_core_device *dev, u16 opmod, u16 vport)
 {
 	struct xsc_query_vport_state_out out;
 
@@ -34,8 +35,9 @@ u8 xsc_query_vport_state(struct xsc_core_device *dev, u8 opmod, u16 vport)
 
 	return out.state;
 }
+EXPORT_SYMBOL(xsc_query_vport_state);
 
-int xsc_modify_vport_admin_state(struct xsc_core_device *dev, u8 opmod,
+int xsc_modify_vport_admin_state(struct xsc_core_device *dev, u16 opmod,
 				 u16 vport, u8 other_vport, u8 state)
 {
 	struct xsc_modify_vport_state_in in;
@@ -43,24 +45,23 @@ int xsc_modify_vport_admin_state(struct xsc_core_device *dev, u8 opmod,
 
 	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
-	in.hdr.opcode = XSC_CMD_OP_MODIFY_VPORT_STATE;
-	in.hdr.opmod = opmod;
-	in.vport_number = vport;
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_VPORT_STATE);
+	in.vport_number = cpu_to_be16(vport);
 	in.other_vport = other_vport;
 	in.admin_state = state;
 
 	return xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 }
 
-static int __xsc_query_nic_vport_context(struct xsc_core_device *dev,
-					 u16 vport, void *out, int outlen,
+int __xsc_query_nic_vport_context(struct xsc_core_device *dev,
+				  u16 vport, void *out, int outlen,
 					 int force_other)
 {
 	struct xsc_query_nic_vport_context_in in;
 
 	memset(&in, 0, sizeof(in));
-	in.hdr.opcode = XSC_CMD_OP_QUERY_NIC_VPORT_CONTEXT;
-	in.vport_number = vport;
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_NIC_VPORT_CONTEXT);
+	in.vport_number = cpu_to_be16(vport);
 	if (vport || force_other)
 		in.other_vport = 1;
 
@@ -73,17 +74,23 @@ static int xsc_query_nic_vport_context(struct xsc_core_device *dev, u16 vport,
 	return __xsc_query_nic_vport_context(dev, vport, out, outlen, 0);
 }
 
-static int xsc_modify_nic_vport_context(struct xsc_core_device *dev, void *in,
-					int inlen)
+int xsc_modify_nic_vport_context(struct xsc_core_device *dev, void *in,
+				 int inlen)
 {
 	struct xsc_modify_nic_vport_context_out out;
 	struct xsc_modify_nic_vport_context_in *tmp;
+	int err;
 
 	memset(&out, 0, sizeof(out));
 	tmp = (struct xsc_modify_nic_vport_context_in *)in;
 	tmp->hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_NIC_VPORT_CONTEXT);
 
-	return xsc_cmd_exec(dev, in, inlen, &out, sizeof(out));
+	err = xsc_cmd_exec(dev, in, inlen, &out, sizeof(out));
+	if (err || out.hdr.status) {
+		xsc_core_err(dev, "fail to modify nic vport err=%d status=%d\n",
+			     err, out.hdr.status);
+	}
+	return err;
 }
 
 int xsc_query_nic_vport_min_inline(struct xsc_core_device *dev,
@@ -168,38 +175,99 @@ EXPORT_SYMBOL_GPL(xsc_query_nic_vport_mac_address);
 static int __xsc_modify_nic_vport_mac_address(struct xsc_core_device *dev,
 					      u16 vport, u8 *addr, int force_other, bool perm_mac)
 {
-	struct xsc_modify_nic_vport_context_in in;
-	int err;
+	struct xsc_modify_nic_vport_context_in *in;
+	struct xsc_modify_nic_vport_context_out out;
+	struct xsc_adapter *adapter = netdev_priv(dev->netdev);
+	struct xsc_vport *evport = NULL;
+	int err, in_sz, i;
 	u8 *mac_addr;
 	u16 caps = 0;
 	u16 caps_mask = 0;
+	u16 lag_id = xsc_get_lag_id(dev);
 
-	memset(&in, 0, sizeof(in));
+	in_sz = sizeof(struct xsc_modify_nic_vport_context_in) + 2;
+
+	in = kzalloc(in_sz, GFP_KERNEL);
+	if (!in)
+		return -ENOMEM;
+
+	in->lag_id = cpu_to_be16(lag_id);
 
 	if (perm_mac) {
-		in.field_select.permanent_address = 1;
-		mac_addr = in.nic_vport_ctx.permanent_address;
+		in->field_select.permanent_address = 1;
+		mac_addr = in->nic_vport_ctx.permanent_address;
 	} else {
-		in.field_select.current_address = 1;
-		mac_addr = in.nic_vport_ctx.current_address;
+		in->field_select.current_address = 1;
+		mac_addr = in->nic_vport_ctx.current_address;
 	}
 
 	if (force_other) {
-		in.other_vport = 1;
-		in.vport_number = cpu_to_be16(vport);
+		in->other_vport = 1;
+		in->vport_number = cpu_to_be16(vport);
+		evport = xsc_eswitch_get_vport(adapter->xdev->priv.eswitch, i + 1);
 	}
 
 	if (xsc_get_pp_bypass_res(dev, false))
 		caps |= BIT(XSC_TBM_CAP_PP_BYPASS);
 	caps_mask |= BIT(XSC_TBM_CAP_PP_BYPASS);
-	in.caps = cpu_to_be16(caps);
-	in.caps_mask = cpu_to_be16(caps_mask);
+	in->caps = cpu_to_be16(caps);
+	in->caps_mask = cpu_to_be16(caps_mask);
 
 	ether_addr_copy(mac_addr, addr);
 
-	err = xsc_modify_nic_vport_context(dev, &in, sizeof(in));
+	in->field_select.addresses_list = 1;
+	if (evport)
+		in->nic_vport_ctx.vlan = cpu_to_be16(evport->vlan_id);
 
+	in->nic_vport_ctx.vlan_allowed = 1;
+
+	err = xsc_modify_nic_vport_context(dev, in, in_sz);
+	if (be16_to_cpu(out.outer_vlan_id))
+		goto ret;
+
+	for (i = 0; i < VLAN_N_VID; i++) {
+		if (test_bit(i, adapter->vlan_params.active_cvlans)) {
+			in->nic_vport_ctx.vlan = cpu_to_be16(i);
+			in->nic_vport_ctx.vlan_allowed = 1;
+			err |= xsc_modify_nic_vport_context(dev, in, in_sz);
+		}
+		if (test_bit(i, adapter->vlan_params.active_svlans)) {
+			in->nic_vport_ctx.vlan = cpu_to_be16(i);
+			in->nic_vport_ctx.vlan_allowed = 1;
+			err |= xsc_modify_nic_vport_context(dev, in, in_sz);
+		}
+	}
+
+ret:
+	kfree(in);
 	return err;
+}
+
+static int __xsc_modify_vport_max_rate(struct xsc_core_device *dev,
+				       u16 vport, u32 rate)
+{
+	struct xsc_vport_rate_limit_mobox_in  in;
+	struct xsc_vport_rate_limit_mobox_out out;
+	int err = 0;
+
+	memset(&in, 0, sizeof(struct xsc_vport_rate_limit_mobox_in));
+	memset(&out, 0, sizeof(struct xsc_vport_rate_limit_mobox_out));
+
+	in.vport_number = cpu_to_be16(vport);
+	if (vport)
+		in.other_vport = 1;
+
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_SET_VPORT_RATE_LIMIT);
+	in.rate = cpu_to_be32(rate);
+
+	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (err || out.hdr.status) {
+		xsc_core_err(dev, "modify_vport_max_rate failed!err=%d, status=%u\n",
+			     err, out.hdr.status);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 int xsc_modify_other_nic_vport_mac_address(struct xsc_core_device *dev,
@@ -208,6 +276,13 @@ int xsc_modify_other_nic_vport_mac_address(struct xsc_core_device *dev,
 	return __xsc_modify_nic_vport_mac_address(dev, vport, addr, 1, perm_mac);
 }
 EXPORT_SYMBOL(xsc_modify_other_nic_vport_mac_address);
+
+int xsc_modify_vport_max_rate(struct xsc_core_device *dev,
+			      u16 vport, u32 rate)
+{
+	return __xsc_modify_vport_max_rate(dev, vport, rate);
+}
+EXPORT_SYMBOL(xsc_modify_vport_max_rate);
 
 int xsc_modify_nic_vport_mac_address(struct xsc_core_device *dev,
 				     u16 vport, u8 *addr, bool perm_mac)
@@ -393,7 +468,6 @@ int xsc_modify_nic_vport_vlans(struct xsc_core_device *dev,
 	struct xsc_modify_nic_vport_context_in *in;
 	int in_sz;
 	int err;
-	u16 *vlan_addr;
 
 	in_sz = sizeof(struct xsc_modify_nic_vport_context_in) + 2;
 
@@ -406,18 +480,16 @@ int xsc_modify_nic_vport_vlans(struct xsc_core_device *dev,
 
 	in->nic_vport_ctx.vlan_allowed = add;
 	in->nic_vport_ctx.allowed_list_type = XSC_NVPRT_LIST_TYPE_VLAN;
-
-	vlan_addr = (u16 *)in->nic_vport_ctx.current_uc_mac_address[0];
-	*vlan_addr = cpu_to_be16(vid);
+	in->nic_vport_ctx.vlan = cpu_to_be16(vid);
 
 	memset(&out, 0, sizeof(out));
 	err = xsc_cmd_exec(dev, in, in_sz, &out, sizeof(out));
 	kfree(in);
 
 	if (err || out.hdr.status) {
-		xsc_core_err(dev, "Failes to modify vlan err=%d out.status=%u",
+		xsc_core_err(dev, "Failed to modify vlan err=%d out.status=%u",
 			     err, out.hdr.status);
-	return -ENOEXEC;
+		return -ENOEXEC;
 	}
 
 	return 0;
@@ -702,9 +774,8 @@ EXPORT_SYMBOL_GPL(xsc_query_hca_vport_node_guid);
 
 int xsc_query_nic_vport_promisc(struct xsc_core_device *dev,
 				u16 vport,
-				int *promisc_uc,
-				int *promisc_mc,
-				int *promisc_all)
+				int *promisc,
+				int *allmcast)
 {
 	struct xsc_query_nic_vport_context_out *out;
 	int err;
@@ -717,9 +788,8 @@ int xsc_query_nic_vport_promisc(struct xsc_core_device *dev,
 	if (err)
 		goto out;
 
-	*promisc_uc = out->nic_vport_ctx.promisc_uc;
-	*promisc_mc = out->nic_vport_ctx.promisc_mc;
-	*promisc_all = out->nic_vport_ctx.promisc_all;
+	*promisc = out->nic_vport_ctx.promisc;
+	*allmcast = out->nic_vport_ctx.allmcast;
 
 out:
 	kfree(out);
@@ -728,9 +798,8 @@ out:
 EXPORT_SYMBOL_GPL(xsc_query_nic_vport_promisc);
 
 int xsc_modify_nic_vport_promisc(struct xsc_core_device *dev,
-				 int promisc_uc,
-				 int promisc_mc,
-				 int promisc_all)
+				 bool allmulti_flag, bool promisc_flag,
+				 int allmulti, int promisc)
 {
 	struct xsc_modify_nic_vport_context_in *in;
 	int err;
@@ -739,10 +808,11 @@ int xsc_modify_nic_vport_promisc(struct xsc_core_device *dev,
 	if (!in)
 		return -ENOMEM;
 
-	in->field_select.promisc = 1;
-	in->nic_vport_ctx.promisc_uc = promisc_uc;
-	in->nic_vport_ctx.promisc_mc = promisc_mc;
-	in->nic_vport_ctx.promisc_all = promisc_all;
+	in->field_select.allmcast = allmulti_flag;
+	in->nic_vport_ctx.allmcast = allmulti;
+
+	in->field_select.promisc = promisc_flag;
+	in->nic_vport_ctx.promisc = promisc;
 
 	err = xsc_modify_nic_vport_context(dev, in, sizeof(*in));
 
@@ -751,6 +821,52 @@ int xsc_modify_nic_vport_promisc(struct xsc_core_device *dev,
 	return err;
 }
 EXPORT_SYMBOL_GPL(xsc_modify_nic_vport_promisc);
+
+int xsc_modify_nic_vport_spoofchk(struct xsc_core_device *dev,
+				  u16 vport, int spoofchk)
+{
+	struct xsc_modify_nic_vport_context_in *in;
+	int err;
+
+	in = kvzalloc(sizeof(*in), GFP_KERNEL);
+	if (!in)
+		return -ENOMEM;
+
+	in->other_vport = 1;
+	in->vport_number = cpu_to_be16(vport);
+	in->field_select.spoofchk = 1;
+	in->nic_vport_ctx.spoofchk = spoofchk;
+
+	err = xsc_modify_nic_vport_context(dev, in, sizeof(*in));
+
+	kvfree(in);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(xsc_modify_nic_vport_spoofchk);
+
+int xsc_modify_nic_vport_trust(struct xsc_core_device *dev,
+			       u16 vport, bool trust)
+{
+	struct xsc_modify_nic_vport_context_in *in;
+	int err;
+
+	in = kvzalloc(sizeof(*in), GFP_KERNEL);
+	if (!in)
+		return -ENOMEM;
+
+	in->other_vport = 1;
+	in->vport_number = cpu_to_be16(vport);
+	in->field_select.trust = 1;
+	in->nic_vport_ctx.trust = (trust ? 1 : 0);
+
+	err = xsc_modify_nic_vport_context(dev, in, sizeof(*in));
+
+	kvfree(in);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(xsc_modify_nic_vport_trust);
 
 int xsc_query_vport_counter(struct xsc_core_device *dev, u8 other_vport,
 			    int vf, u8 port_num, void *out,

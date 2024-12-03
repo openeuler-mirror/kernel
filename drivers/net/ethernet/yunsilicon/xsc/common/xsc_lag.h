@@ -6,121 +6,131 @@
 #ifndef XSC_LAG_H
 #define XSC_LAG_H
 
-#include <net/ip_fib.h>
+#define XSC_BOARD_LAG_MAX    XSC_MAX_PORTS
 
-#define XSC_LAG_PORT_START	15
-#define XSC_LAG_NUM_MAX		0x30
-
-struct lag_func {
-	struct xsc_core_device	*xdev;
-	struct net_device		*netdev;
+enum lag_event_type {
+	XSC_LAG_CREATE,
+	XSC_LAG_ADD_MEMBER,
+	XSC_LAG_REMOVE_MEMBER,
+	XSC_LAG_UPDATE_MEMBER_STATUS,
+	XSC_LAG_UPDATE_HASH_TYPE,
+	XSC_LAG_DESTROY,
+	XSC_LAG_EVENT_MAX
 };
 
-/* Used for collection of netdev event info. */
-struct lag_tracker {
-	enum   netdev_lag_hash		hash_type;
-	enum   netdev_lag_hash		old_hash_type;
-	enum   netdev_lag_tx_type	tx_type;
-	struct netdev_lag_lower_state_info	netdev_state[XSC_MAX_PORTS];
-	struct net_device *ndev[XSC_MAX_PORTS];
-	unsigned int is_hw_bonded:1;
-	unsigned int is_kernel_bonded:1;
-	unsigned int lag_disable:1;
-	u8 gw_dmac0[6];
-	u8 gw_dmac1[6];
+enum lag_slave_status {
+	XSC_LAG_SLAVE_INACTIVE,
+	XSC_LAG_SLAVE_ACTIVE,
+	XSC_LAG_SLAVE_STATUS_MAX,
 };
 
-/* used in tracking fib events */
-struct lag_mp {
-	struct notifier_block		fib_nb;
-	struct fib_info			*mfi;
-	struct workqueue_struct		*wq;
-};
-
-struct xsc_lag {
-	u8				flags;
-	struct kref			ref;
-	u8				v2p_map[XSC_MAX_PORTS];
-	struct lag_func			pf[XSC_MAX_PORTS];
-	struct lag_tracker		tracker;
-	struct workqueue_struct		*wq;
-	struct delayed_work		bond_work;
-	struct notifier_block		nb;
-	struct lag_mp			lag_mp;
-	u16				lag_id;
-	u16				lag_cnt;
-};
-
-struct xsc_fib_event_work {
-	struct work_struct	work;
-	struct xsc_lag		*ldev;
-	unsigned long		event;
-	union {
-		struct fib_entry_notifier_info fen_info;
-		struct fib_nh_notifier_info fnh_info;
-	};
+enum {
+	XSC_SLEEP,
+	XSC_WAKEUP,
+	XSC_EXIT,
 };
 
 enum {
 	XSC_LAG_FLAG_ROCE	= 1 << 0,
 	XSC_LAG_FLAG_SRIOV	= 1 << 1,
-	XSC_LAG_FLAG_MULTIPATH	= 1 << 2,
-};
-
-enum {
-	XSC_BOND_FLAG_KERNEL	= 1 << 3,
+	XSC_LAG_FLAG_KERNEL	= 1 << 2,
 };
 
 enum xsc_lag_hash {
 	XSC_LAG_HASH_L23,
 	XSC_LAG_HASH_L34,
 	XSC_LAG_HASH_E23,
-	XSC_LAG_HASH_E34
+	XSC_LAG_HASH_E34,
 };
 
-#define MAC_SHIFT			1
-#define MAC_0_1_LOGIC		0
-#define MAC_0_LOGIC			(0 + MAC_SHIFT)
-#define MAC_1_LOGIC			(1 + MAC_SHIFT)
-#define MAC_INVALID			0xff
+enum {
+	QOS_LAG_OP_CREATE	= 0,
+	QOS_LAG_OP_ADD_MEMBER	= 1,
+	QOS_LAG_OP_DEL_MEMBER	= 2,
+	QOS_LAG_OP_DESTROY	= 3,
+};
 
-#define XSC_LAG_MODE_FLAGS (XSC_LAG_FLAG_ROCE | XSC_LAG_FLAG_SRIOV |\
-				XSC_LAG_FLAG_MULTIPATH)
+#define BOND_ID_INVALID		U8_MAX
+#define	BOARD_ID_INVALID	U32_MAX
+#define LAG_ID_INVALID		U16_MAX
 
-#define GET_LAG_MEMBER_BITMAP(remap_port1, remap_port2)		\
-	((((remap_port1) != MAC_INVALID) ? BIT((remap_port1) - MAC_SHIFT) : 0) |		\
-	(((remap_port2) != MAC_INVALID) ? BIT((remap_port2) - MAC_SHIFT) : 0))
+#define XSC_LAG_MODE_FLAGS (XSC_LAG_FLAG_ROCE | XSC_LAG_FLAG_SRIOV | XSC_LAG_FLAG_KERNEL)
 
-static inline bool __xsc_bond_is_active(struct xsc_lag *ldev)
-{
-	return !!(ldev->flags & XSC_BOND_FLAG_KERNEL);
-}
+struct xsc_lag {
+	struct net_device *bond_dev;
+	u8	   bond_mode;
+	enum   netdev_lag_tx_type	tx_type;
+	enum   netdev_lag_hash		hash_type;
+	u8			lag_type;
+	u16			lag_id;
+	atomic_t		qp_cnt[XSC_MAX_PORTS];
+	struct list_head	slave_list;
+	u8		xsc_member_cnt;
+	u32		board_id;
+	int		mode_changes_in_progress;
+	u8		not_roce_lag_xdev_mask;
+};
 
-static inline bool __xsc_lag_is_active(struct xsc_lag *ldev)
-{
-	return !!(ldev->flags & XSC_LAG_MODE_FLAGS);
-}
+struct xsc_lag_event {
+	struct list_head	node;
+	enum   lag_event_type event_type;
+	struct xsc_core_device	*xdev;
+	struct xsc_core_device	*roce_lag_xdev;
+	u8		bond_mode;
+	u8		lag_type;
+	u8		hash_type;
+	u8		lag_sel_mode;
+	u16		lag_id;
+	enum	lag_slave_status slave_status;
+	u8		is_roce_lag_xdev;
+	u8		not_roce_lag_xdev_mask;
+};
 
-static bool __attribute__((unused)) __xsc_lag_is_multipath(struct xsc_lag *ldev)
-{
-	return !!(ldev->flags & XSC_LAG_FLAG_MULTIPATH);
-}
+struct lag_event_list {
+	struct list_head	head;
+	spinlock_t		lock;	/* protect lag_event_list */
+	struct task_struct	*bond_poll_task;
+	wait_queue_head_t	wq;
+	int			wait_flag;
+	u8	event_type;
+};
 
-static bool __attribute__((unused)) __xsc_lag_is_roce(struct xsc_lag *ldev)
-{
-	return !!(ldev->flags & XSC_LAG_FLAG_ROCE);
-}
+struct xsc_board_lag {
+	struct xsc_lag xsc_lag[XSC_BOARD_LAG_MAX];
+	u32 board_id;
+	struct kref	ref;
+	u8	bond_valid_mask;
+	struct lag_event_list	lag_event_list;
+	struct notifier_block	nb;
+	struct mutex	lock;	/* protects board_lag */
+};
 
-static inline struct xsc_lag *xsc_lag_dev_get(struct xsc_core_device *xdev)
-{
-	return xdev->priv.lag;
-}
-
-void xsc_lag_add(struct xsc_core_device *xdev, struct net_device *netdev);
-void xsc_lag_remove(struct xsc_core_device *xdev);
 void xsc_lag_add_xdev(struct xsc_core_device *xdev);
 void xsc_lag_remove_xdev(struct xsc_core_device *xdev);
-void xsc_lag_enable(struct xsc_core_device *xdev);
+void xsc_lag_add_netdev(struct net_device *ndev);
+void xsc_lag_remove_netdev(struct net_device *ndev);
 void xsc_lag_disable(struct xsc_core_device *xdev);
+void xsc_lag_enable(struct xsc_core_device *xdev);
+bool xsc_lag_is_roce(struct xsc_core_device *xdev);
+struct xsc_lag *xsc_get_lag(struct xsc_core_device *xdev);
+struct xsc_core_device *xsc_get_roce_lag_xdev(struct xsc_core_device *xdev);
+u16 xsc_get_lag_id(struct xsc_core_device *xdev);
+struct xsc_board_lag *xsc_board_lag_get(struct xsc_core_device *xdev);
+
+static inline void xsc_board_lag_lock(struct xsc_core_device *xdev)
+{
+	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
+
+	if (xsc_core_is_pf(xdev))
+		mutex_lock(&board_lag->lock);
+}
+
+static inline void xsc_board_lag_unlock(struct xsc_core_device *xdev)
+{
+	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
+
+	if (xsc_core_is_pf(xdev))
+		mutex_unlock(&board_lag->lock);
+}
 
 #endif /* XSC_LAG_H */

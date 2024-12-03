@@ -273,5 +273,4 @@ struct xsc_ib_query_device_resp {
 	__u32	tunnel_offloads_caps; /* enum xsc_ib_tunnel_offloads */
 	__u32	reserved;
 };
-
 #endif /* XSC_IB_USER_H */

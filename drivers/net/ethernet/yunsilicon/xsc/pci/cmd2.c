@@ -50,25 +50,6 @@ enum {
 	XSC_CMD_DELIVERY_STAT_CMD_DESCR_ERR		= 0x10,
 };
 
-enum {
-	XSC_CMD_STAT_OK			= 0x0,
-	XSC_CMD_STAT_INT_ERR			= 0x1,
-	XSC_CMD_STAT_BAD_OP_ERR		= 0x2,
-	XSC_CMD_STAT_BAD_PARAM_ERR		= 0x3,
-	XSC_CMD_STAT_BAD_SYS_STATE_ERR		= 0x4,
-	XSC_CMD_STAT_BAD_RES_ERR		= 0x5,
-	XSC_CMD_STAT_RES_BUSY			= 0x6,
-	XSC_CMD_STAT_LIM_ERR			= 0x8,
-	XSC_CMD_STAT_BAD_RES_STATE_ERR		= 0x9,
-	XSC_CMD_STAT_IX_ERR			= 0xa,
-	XSC_CMD_STAT_NO_RES_ERR		= 0xf,
-	XSC_CMD_STAT_BAD_INP_LEN_ERR		= 0x50,
-	XSC_CMD_STAT_BAD_OUTP_LEN_ERR		= 0x51,
-	XSC_CMD_STAT_BAD_QP_STATE_ERR		= 0x10,
-	XSC_CMD_STAT_BAD_PKT_ERR		= 0x30,
-	XSC_CMD_STAT_BAD_SIZE_OUTS_CQES_ERR	= 0x40,
-};
-
 static struct xsc_cmd_work_ent *alloc_cmd(struct xsc_cmd *cmd,
 					  struct xsc_cmd_msg *in,
 					  struct xsc_rsp_msg *out)
@@ -241,6 +222,12 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_FUNCTION_RESET:
 		return "FUNCTION_RESET";
 
+	case XSC_CMD_OP_ALLOC_IA_LOCK:
+		return "ALLOC_IA_LOCK";
+
+	case XSC_CMD_OP_RELEASE_IA_LOCK:
+		return "RELEASE_IA_LOCK";
+
 	case XSC_CMD_OP_DUMMY:
 		return "DUMMY_CMD";
 
@@ -409,8 +396,17 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_LAG_CREATE:
 		return "LAG_CREATE";
 
-	case XSC_CMD_OP_LAG_MODIFY:
-		return "LAG_MODIFY";
+	case XSC_CMD_OP_LAG_ADD_MEMBER:
+		return "LAG ADD MEMBER";
+
+	case XSC_CMD_OP_LAG_REMOVE_MEMBER:
+		return "LAG REMOVE MEMBER";
+
+	case XSC_CMD_OP_LAG_UPDATE_MEMBER_STATUS:
+		return "LAG UPDATE MEMBER STATUS";
+
+	case XSC_CMD_OP_LAG_UPDATE_HASH_TYPE:
+		return "LAG UPDATE HASH TYPE";
 
 	case XSC_CMD_OP_LAG_DESTROY:
 		return "LAG_DESTROY";
@@ -451,8 +447,14 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_IOCTL_SET_PFC:
 		return "SET_PFC";
 
+	case XSC_CMD_OP_IOCTL_SET_PFC_DROP_TH:
+		return "SET_PFC_DROP_TH";
+
 	case XSC_CMD_OP_IOCTL_GET_PFC:
 		return "GET_PFC";
+
+	case XSC_CMD_OP_IOCTL_GET_PFC_CFG_STATUS:
+		return "GET_PFC_CFG_STATUS";
 
 	case XSC_CMD_OP_IOCTL_SET_RATE_LIMIT:
 		return "SET_RATE_LIMIT";
@@ -483,6 +485,18 @@ const char *xsc_command_str(int command)
 
 	case XSC_CMD_OP_IOCTL_DPU_GET_PRIO_WEIGHT:
 		return "DPU_GET_PRIO_WEIGHT";
+
+	case XSC_CMD_OP_IOCTL_SET_WATCHDOG_EN:
+		return "SET_WATCHDOG_EN";
+
+	case XSC_CMD_OP_IOCTL_GET_WATCHDOG_EN:
+		return "GET_WATCHDOG_EN";
+
+	case XSC_CMD_OP_IOCTL_SET_WATCHDOG_PERIOD:
+		return "SET_WATCHDOG_PERIOD";
+
+	case XSC_CMD_OP_IOCTL_GET_WATCHDOG_PERIOD:
+		return "GET_WATCHDOG_PERIOD";
 
 	case XSC_CMD_OP_IOCTL_SET_ENABLE_RP:
 		return "ENABLE_RP";
@@ -607,6 +621,18 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_QUERY_PFC_PRIO_STATS:
 		return "QUERY_PFC_PRIO_STATS";
 
+	case XSC_CMD_OP_IOCTL_QUERY_PFC_STALL_STATS:
+		return "QUERY_PFC_STALL_STATS";
+
+	case XSC_CMD_OP_QUERY_HW_STATS_RDMA:
+		return "QUERY_HW_STATS_RDMA";
+
+	case XSC_CMD_OP_QUERY_HW_STATS_ETH:
+		return "QUERY_HW_STATS_ETH";
+
+	case XSC_CMD_OP_SET_VPORT_RATE_LIMIT:
+		return "SET_VPORT_RATE_LIMIT";
+
 	default: return "unknown command opcode";
 	}
 }
@@ -690,9 +716,6 @@ static void cmd_work_handler(struct work_struct *work)
 	mmiowb();
 	spin_unlock_irqrestore(&cmd->doorbell_lock, flags);
 
-#ifdef XSC_DEBUG
-	xsc_core_dbg(xdev, "write 0x%x to command doorbell, idx %u\n", cmd->cmd_pid, ent->idx);
-#endif
 }
 
 static const char *deliv_status_to_str(u8 status)
@@ -901,10 +924,8 @@ static int xsc_copy_from_rsp_msg(void *to, struct xsc_rsp_msg *from, int size)
 
 		copy = min_t(int, size, XSC_CMD_DATA_BLOCK_SIZE);
 		block = next->buf;
-		if (block->owner_status != 1) {
-			mdelay(10);
-			continue;
-		}
+		if (!block->owner_status)
+			pr_err("block ownership check failed\n");
 
 		memcpy(to, block->data, copy);
 		to += copy;
@@ -1495,7 +1516,6 @@ static int xsc_send_dummy_cmd(struct xsc_core_device *xdev, u16 gap, u16 dummy_s
 
 	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DUMMY);
-	in.hdr.opmod = cpu_to_be16(0x1);
 
 	err = xsc_dummy_cmd_exec(xdev, &in, sizeof(in), out, sizeof(*out), gap, dummy_start);
 	if (err)
@@ -1697,9 +1717,7 @@ static int cmd_cq_polling(void *data)
 			schedule();
 		cq_pid = readl(REG_ADDR(xdev, cmd->reg.rsp_pid_addr));
 		if (cmd->cq_cid == cq_pid) {
-#ifdef COSIM
-			mdelay(1000);
-#endif
+			mdelay(3);
 			continue;
 		}
 
@@ -2103,14 +2121,13 @@ int xsc_cmd_status_to_err(struct xsc_outbox_hdr *hdr)
 	if (!hdr->status)
 		return 0;
 
-	pr_warn("command failed, status %s(0x%x), syndrome 0x%x\n",
-		cmd_status_str(hdr->status), hdr->status,
-		be32_to_cpu(hdr->syndrome));
+	pr_warn("command failed, status %s(0x%x)\n",
+		cmd_status_str(hdr->status), hdr->status);
 
 	switch (hdr->status) {
 	case XSC_CMD_STAT_OK:				return 0;
 	case XSC_CMD_STAT_INT_ERR:			return -EIO;
-	case XSC_CMD_STAT_BAD_OP_ERR:			return -EINVAL;
+	case XSC_CMD_STAT_BAD_OP_ERR:			return -EOPNOTSUPP;
 	case XSC_CMD_STAT_BAD_PARAM_ERR:		return -EINVAL;
 	case XSC_CMD_STAT_BAD_SYS_STATE_ERR:		return -EIO;
 	case XSC_CMD_STAT_BAD_RES_ERR:			return -EINVAL;

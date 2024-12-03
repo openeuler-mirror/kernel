@@ -5,7 +5,7 @@
 
 #include "xsc_fw.h"
 
-struct xsc_resources g_xres[MAX_BOARD_NUM];
+struct xsc_resources *g_xres[MAX_BOARD_NUM];
 
 static int xsc_alloc_free_list_res(struct xsc_free_list_wl *list, int max_num)
 {
@@ -36,97 +36,71 @@ static void xsc_destroy_free_list_res(struct xsc_free_list_wl *list)
 	}
 }
 
-static int xsc_alloc_msix_res_tbl(unsigned long **res_tbl, u32 max)
+static int xsc_res_iae_init(struct xsc_core_device *dev)
 {
-	u32 bytes;
+	int i = 0;
+	int ret = 0;
+	struct xsc_resources *res = get_xsc_res(dev);
+	struct xsc_alloc_ia_lock_mbox_in in;
+	struct xsc_alloc_ia_lock_mbox_out out;
 
-	bytes = max >> 3;
-	if (!bytes)
-		bytes = 1;
-	*res_tbl = kmalloc(bytes, GFP_KERNEL);
-	if (!*res_tbl)
-		return -ENOMEM;
-	memset((u8 *)(*res_tbl), 0xFF, bytes);
-	return 0;
-}
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_ALLOC_IA_LOCK);
+	in.lock_num = XSC_RES_NUM_IAE_GRP;
 
-static void xsc_free_msix_res_tbl(unsigned long **res)
-{
-	if (*res)
-		kfree(*res);
-	*res = 0;
-}
-
-int xsc_alloc_continuous_msix_vec(struct xsc_core_device *dev, u16 vec_num)
-{
-	struct xsc_resources *xres = get_xsc_res(dev);
-	int i, j, start, end;
-	int vec_base = 0;
-	int avail_vec = 0;
-
-	start = xres->msix_vec_base;
-	end = xres->msix_vec_end;
-
-	vec_base = -1;
-	for (i = start; i <= end; i++) {
-		if (test_bit(i, xres->msix_vec_tbl)) {
-			avail_vec++;
-			if (vec_base == -1)
-				vec_base = i;
-		} else {
-			avail_vec = 0;
-			vec_base = -1;
-		}
-
-		if (avail_vec == vec_num) {
-			for (j = 0; j < vec_num; j++)
-				clear_bit(vec_base + j, xres->msix_vec_tbl);
-
-			dev->msix_vec_base = vec_base;
-			return 0;
-		}
-	}
-	xsc_core_warn(dev,
-		      "failed to alloc msix vec, vec_range=%d~%d, vec_num=%d\n",
-		      start, end, vec_num);
-	return -EINVAL;
-}
-
-int xsc_free_continuous_msix_vec(struct xsc_core_device *dev)
-{
-	struct xsc_resources *xres = get_xsc_res(dev);
-	struct xsc_eq_table *table = &dev->dev_res->eq_table;
-	u32 vec_base, vec_num;
-	int i, start, end;
-
-	vec_base = dev->msix_vec_base;
-	vec_num = table->num_comp_vectors + table->eq_vec_comp_base;
-
-	start = xres->msix_vec_base;
-	end = xres->msix_vec_end;
-
-	if (vec_base < start || vec_base > end ||
-	    (vec_base + vec_num - 1) > end) {
-		xsc_core_warn(dev,
-			      "failed to free msix vec, vec_base=%d, vec_num=%d, range=%d~%d\n",
-			      vec_base, vec_num, start, end);
+	ret = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (ret || out.hdr.status) {
+		xsc_core_err(dev, "failed to alloc ia lock from fw, ret = %d\n", ret);
 		return -EINVAL;
 	}
 
-	for (i = 0; i < vec_num; i++)
-		set_bit(vec_base + i, xres->msix_vec_tbl);
+	for (i = 0; i < XSC_RES_NUM_IAE_GRP; i++) {
+		res->iae_idx[i] = out.lock_idx[i];
+		spin_lock_init(&res->iae_lock[i]);
+	}
+
+	atomic_set(&res->iae_grp, 0);
+
+	xsc_core_info(dev, "allocated %d iae groups", i);
 
 	return 0;
+}
+
+static void xsc_res_iae_release(struct xsc_core_device *dev)
+{
+	int ret = 0;
+	int i = 0;
+	struct xsc_resources *res = get_xsc_res(dev);
+	struct xsc_release_ia_lock_mbox_in in;
+	struct xsc_release_ia_lock_mbox_out out;
+
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_RELEASE_IA_LOCK);
+	for (i = 0; i < XSC_RES_NUM_IAE_GRP; i++)
+		in.lock_idx[i] = res->iae_idx[i];
+
+	ret = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (ret)
+		xsc_core_err(dev, "failed to release ia lock, ret = %d\n", ret);
+
+	return;
 }
 
 int xsc_create_res(struct xsc_core_device *dev)
 {
 	int ret = 0;
+	u32 board_id = dev->board_info->board_id;
 	struct xsc_resources *xres = get_xsc_res(dev);
 
-	xres->refcnt++;
-	if (xres->refcnt > 1)
-		return 0;
+	if (xres) {
+		xres->refcnt++;
+		if (xres->refcnt > 1)
+			return 0;
+	} else {
+		g_xres[board_id] = vmalloc(sizeof(*g_xres[board_id]));
+		if (!g_xres[board_id])
+			return -ENOMEM;
+		xres = g_xres[board_id];
+		xres->refcnt = 1;
+	}
 
 	xsc_lock_init(&xres->lock);
 	xres->max_mpt_num = XSC_MAX_MPT_NUM;
@@ -134,16 +108,12 @@ int xsc_create_res(struct xsc_core_device *dev)
 	/* reserved for local dma lkey */
 	clear_bit(0, (unsigned long *)xres->mpt_tbl);
 
-	ret = xsc_alloc_iae_idx(dev, &xres->iae_idx);
-	if (ret)
+	ret = xsc_res_iae_init(dev);
+	if (ret) {
+		vfree(g_xres[board_id]);
+		g_xres[board_id] = NULL;
 		return -EINVAL;
-
-	xres->msix_max_num = 1 << dev->caps.log_max_msix;
-	xres->msix_vec_base = 0;
-	xres->msix_vec_end = (xres->msix_max_num - 1);
-	ret = xsc_alloc_msix_res_tbl(&xres->msix_vec_tbl, xres->msix_max_num);
-	if (ret)
-		goto err_msix;
+	}
 
 	xres->max_mtt_num = XSC_MAX_MTT_NUM;
 	ret = xsc_alloc_free_list_res(&xres->mtt_list, xres->max_mtt_num);
@@ -153,9 +123,9 @@ int xsc_create_res(struct xsc_core_device *dev)
 	return ret;
 
 err_mtt:
-	xsc_free_msix_res_tbl(&xres->msix_vec_tbl);
-err_msix:
-	xsc_release_iae_idx(dev, &xres->iae_idx);
+	xsc_res_iae_release(dev);
+	vfree(g_xres[board_id]);
+	g_xres[board_id] = NULL;
 	return ret;
 }
 
@@ -163,18 +133,21 @@ void xsc_destroy_res(struct xsc_core_device *dev)
 {
 	struct xsc_resources *xres = get_xsc_res(dev);
 
-	xres->refcnt--;
-	if (xres->refcnt)
-		return;
+	if (xres) {
+		xres->refcnt--;
+		if (xres->refcnt)
+			return;
 
-	xsc_destroy_free_list_res(&xres->mtt_list);
-	xsc_free_msix_res_tbl(&xres->msix_vec_tbl);
-	xsc_release_iae_idx(dev, &xres->iae_idx);
+		xsc_destroy_free_list_res(&xres->mtt_list);
+		xsc_res_iae_release(dev);
+		vfree(g_xres[dev->board_info->board_id]);
+		g_xres[dev->board_info->board_id] = NULL;
+	}
 }
 
 struct xsc_resources *get_xsc_res(struct xsc_core_device *dev)
 {
-	return &g_xres[dev->board_id];
+	return g_xres[dev->board_info->board_id];
 }
 
 int xsc_alloc_res(u32 *res, u64 *res_tbl, u32 max)

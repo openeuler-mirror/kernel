@@ -12,7 +12,6 @@
 #include "common/xsc_ioctl.h"
 #include "common/xsc_hsi.h"
 #include "common/xsc_port_ctrl.h"
-#include "global.h"
 #include "xsc_ib.h"
 
 #define XSC_RDMA_CTRL_NAME	"rdma_ctrl"
@@ -207,6 +206,16 @@ static void encode_cc_cmd_max_hai_factor(void *data, u32 mac_port)
 	cc_cmd->section = __cpu_to_be32(mac_port);
 }
 
+static void encode_cc_cmd_scale(void *data, u32 mac_port)
+{
+	struct xsc_cc_cmd_scale *cc_cmd = (struct xsc_cc_cmd_scale *)data;
+
+	cc_cmd->cmd = __cpu_to_be16(cc_cmd->cmd);
+	cc_cmd->len = __cpu_to_be16(cc_cmd->len);
+	cc_cmd->scale = __cpu_to_be32(cc_cmd->scale);
+	cc_cmd->section = __cpu_to_be32(mac_port);
+}
+
 static void encode_cc_get_cfg(void *data, u32 mac_port)
 {
 	struct xsc_cc_cmd_get_cfg *cc_cmd = (struct xsc_cc_cmd_get_cfg *)data;
@@ -242,6 +251,7 @@ static void decode_cc_get_cfg(void *data)
 	cc_cmd->evt_period_alpha = __be32_to_cpu(cc_cmd->evt_period_alpha);
 	cc_cmd->clamp_tgt_rate = __be32_to_cpu(cc_cmd->clamp_tgt_rate);
 	cc_cmd->max_hai_factor = __be32_to_cpu(cc_cmd->max_hai_factor);
+	cc_cmd->scale = __be32_to_cpu(cc_cmd->scale);
 	cc_cmd->section = __be32_to_cpu(cc_cmd->section);
 }
 
@@ -264,38 +274,58 @@ static void decode_cc_get_stat(void *data)
 	cc_cmd->reset_bytecount = __be32_to_cpu(cc_cmd->reset_bytecount);
 }
 
-static int xsc_priv_dev_ioctl_get_global_pcp(struct xsc_core_device *xdev, void *in, void *out)
+static int xsc_priv_dev_ioctl_get_force_pcp(struct xsc_core_device *xdev, void *in, void *out)
 {
-	struct xsc_ioctl_global_pcp *resp = (struct xsc_ioctl_global_pcp *)out;
+	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
+	struct xsc_ioctl_force_pcp *resp = (struct xsc_ioctl_force_pcp *)out;
 
-	resp->pcp = get_global_force_pcp();
+	if (!xsc_core_is_pf(xdev))
+		return -EOPNOTSUPP;
+
+	resp->pcp = ib_dev->force_pcp;
 	return 0;
 }
 
-static int xsc_priv_dev_ioctl_get_global_dscp(struct xsc_core_device *xdev, void *in, void *out)
+static int xsc_priv_dev_ioctl_get_force_dscp(struct xsc_core_device *xdev, void *in, void *out)
 {
-	struct xsc_ioctl_global_dscp *resp = (struct xsc_ioctl_global_dscp *)out;
+	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
+	struct xsc_ioctl_force_dscp *resp = (struct xsc_ioctl_force_dscp *)out;
 
-	resp->dscp = get_global_force_dscp();
+	if (!xsc_core_is_pf(xdev))
+		return -EOPNOTSUPP;
+
+	resp->dscp = ib_dev->force_dscp;
 	return 0;
 }
 
-static int xsc_priv_dev_ioctl_set_global_pcp(struct xsc_core_device *xdev, void *in, void *out)
+static int xsc_priv_dev_ioctl_set_force_pcp(struct xsc_core_device *xdev, void *in, void *out)
 {
-	int ret = 0;
-	struct xsc_ioctl_global_pcp *req = (struct xsc_ioctl_global_pcp *)out;
+	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
+	struct xsc_ioctl_force_pcp *req = (struct xsc_ioctl_force_pcp *)out;
 
-	ret = set_global_force_pcp(req->pcp);
-	return ret;
+	if (!xsc_core_is_pf(xdev))
+		return -EOPNOTSUPP;
+
+	if (req->pcp < 0 || (req->pcp > QOS_PCP_MAX && req->pcp != DSCP_PCP_UNSET))
+		return -EINVAL;
+
+	ib_dev->force_pcp = req->pcp;
+	return 0;
 }
 
-static int xsc_priv_dev_ioctl_set_global_dscp(struct xsc_core_device *xdev, void *in, void *out)
+static int xsc_priv_dev_ioctl_set_force_dscp(struct xsc_core_device *xdev, void *in, void *out)
 {
-	int ret = 0;
-	struct xsc_ioctl_global_dscp *req = (struct xsc_ioctl_global_dscp *)out;
+	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
+	struct xsc_ioctl_force_dscp *req = (struct xsc_ioctl_force_dscp *)out;
 
-	ret = set_global_force_dscp(req->dscp);
-	return ret;
+	if (!xsc_core_is_pf(xdev))
+		return -EOPNOTSUPP;
+
+	if (req->dscp < 0 || (req->dscp > QOS_DSCP_MAX && req->dscp != DSCP_PCP_UNSET))
+		return -EINVAL;
+
+	ib_dev->force_dscp = req->dscp;
+	return 0;
 }
 
 static int xsc_priv_dev_ioctl_get_cma_pcp(struct xsc_core_device *xdev, void *in, void *out)
@@ -378,6 +408,7 @@ static int _rdma_ctrl_ioctl_cc(struct xsc_core_device *xdev,
 		goto err;
 
 	in->hdr.opcode = __cpu_to_be16(hdr->attr.opcode);
+	in->hdr.ver = cpu_to_be16(hdr->attr.ver);
 	if (encode)
 		encode((void *)in->data, xdev->mac_port);
 
@@ -414,11 +445,11 @@ int _rdma_ctrl_exec_ioctl(struct xsc_core_device *xdev, void *in, int in_size, v
 	hdr = (struct xsc_ioctl_attr *)in;
 	opcode = hdr->opcode;
 	switch (opcode) {
-	case XSC_IOCTL_GET_GLOBAL_PCP:
-		ret = xsc_priv_dev_ioctl_get_global_pcp(xdev, in, out);
+	case XSC_IOCTL_GET_FORCE_PCP:
+		ret = xsc_priv_dev_ioctl_get_force_pcp(xdev, in, out);
 		break;
-	case XSC_IOCTL_GET_GLOBAL_DSCP:
-		ret = xsc_priv_dev_ioctl_get_global_dscp(xdev, in, out);
+	case XSC_IOCTL_GET_FORCE_DSCP:
+		ret = xsc_priv_dev_ioctl_get_force_dscp(xdev, in, out);
 		break;
 	case XSC_IOCTL_GET_CMA_PCP:
 		ret = xsc_priv_dev_ioctl_get_cma_pcp(xdev, in, out);
@@ -426,13 +457,13 @@ int _rdma_ctrl_exec_ioctl(struct xsc_core_device *xdev, void *in, int in_size, v
 	case XSC_IOCTL_GET_CMA_DSCP:
 		ret = xsc_priv_dev_ioctl_get_cma_dscp(xdev, in, out);
 		break;
-	case XSC_IOCTL_SET_GLOBAL_PCP:
+	case XSC_IOCTL_SET_FORCE_PCP:
 		xsc_core_dbg(xdev, "setting global pcp\n");
-		ret = xsc_priv_dev_ioctl_set_global_pcp(xdev, in, out);
+		ret = xsc_priv_dev_ioctl_set_force_pcp(xdev, in, out);
 		break;
-	case XSC_IOCTL_SET_GLOBAL_DSCP:
+	case XSC_IOCTL_SET_FORCE_DSCP:
 		xsc_core_dbg(xdev, "setting global dscp\n");
-		ret = xsc_priv_dev_ioctl_set_global_dscp(xdev, in, out);
+		ret = xsc_priv_dev_ioctl_set_force_dscp(xdev, in, out);
 		break;
 	case XSC_IOCTL_SET_CMA_PCP:
 		ret = xsc_priv_dev_ioctl_set_cma_pcp(xdev, in, out);
@@ -461,10 +492,10 @@ static long _rdma_ctrl_ioctl_getinfo(struct xsc_core_device *xdev,
 	if (hdr.check_filed != XSC_IOCTL_CHECK_FILED)
 		return -EINVAL;
 	switch (hdr.attr.opcode) {
-	case XSC_IOCTL_GET_GLOBAL_PCP:
-	case XSC_IOCTL_GET_GLOBAL_DSCP:
-	case XSC_IOCTL_SET_GLOBAL_PCP:
-	case XSC_IOCTL_SET_GLOBAL_DSCP:
+	case XSC_IOCTL_GET_FORCE_PCP:
+	case XSC_IOCTL_GET_FORCE_DSCP:
+	case XSC_IOCTL_SET_FORCE_PCP:
+	case XSC_IOCTL_SET_FORCE_DSCP:
 	case XSC_IOCTL_GET_CMA_PCP:
 	case XSC_IOCTL_GET_CMA_DSCP:
 	case XSC_IOCTL_SET_CMA_PCP:
@@ -591,6 +622,10 @@ static long _rdma_ctrl_ioctl_cmdq(struct xsc_core_device *xdev,
 		return _rdma_ctrl_ioctl_cc(xdev, user_hdr, &hdr,
 					   sizeof(struct xsc_cc_cmd_max_hai_factor),
 					   0, encode_cc_cmd_max_hai_factor, NULL);
+	case XSC_CMD_OP_IOCTL_SET_SCALE:
+		return _rdma_ctrl_ioctl_cc(xdev, user_hdr, &hdr,
+					   sizeof(struct xsc_cc_cmd_scale),
+					   0, encode_cc_cmd_scale, NULL);
 	case XSC_CMD_OP_IOCTL_GET_CC_CFG:
 		return _rdma_ctrl_ioctl_cc(xdev, user_hdr, &hdr, sizeof(struct xsc_cc_cmd_get_cfg),
 					   sizeof(struct xsc_cc_cmd_get_cfg),

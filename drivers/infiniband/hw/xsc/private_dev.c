@@ -8,12 +8,13 @@
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/device.h>
+#include <linux/bitmap.h>
 #include "common/xsc_core.h"
 #include "common/xsc_ioctl.h"
 #include "common/xsc_hsi.h"
 #include "common/xsc_lag.h"
 #include "common/res_obj.h"
-#include "global.h"
+#include "xsc_ib.h"
 
 #define FEATURE_ONCHIP_FT_MASK		BIT(4)
 #define FEATURE_DMA_RW_TBL_MASK		BIT(8)
@@ -30,11 +31,15 @@ static int xsc_priv_dev_open(struct inode *inode, struct file *file)
 	bdf_file = kzalloc(sizeof(*bdf_file), GFP_KERNEL);
 	if (!file)
 		return -ENOMEM;
+
 	INIT_RADIX_TREE(&bdf_file->obj_tree, GFP_ATOMIC);
 	spin_lock_init(&bdf_file->obj_lock);
+
 	bdf_file->xdev = xdev;
 	bdf_file->key = bdf_to_key(pci_domain_nr(xdev->pdev->bus),
 				   xdev->pdev->bus->number, xdev->pdev->devfn);
+	bdf_file->restore_nic_fn = NULL;
+
 	radix_tree_preload(GFP_KERNEL);
 	spin_lock(&priv_dev->bdf_lock);
 	radix_tree_insert(&priv_dev->bdf_tree, bdf_file->key, bdf_file);
@@ -48,11 +53,19 @@ static int xsc_priv_dev_open(struct inode *inode, struct file *file)
 static int xsc_priv_dev_release(struct inode *inode, struct file *filp)
 {
 	struct xsc_bdf_file *bdf_file = filp->private_data;
+	struct xsc_core_device *xdev = bdf_file->xdev;
 
 	xsc_close_bdf_file(bdf_file);
-	spin_lock(&bdf_file->xdev->priv_device.bdf_lock);
-	radix_tree_delete(&bdf_file->xdev->priv_device.bdf_tree, bdf_file->key);
-	spin_unlock(&bdf_file->xdev->priv_device.bdf_lock);
+
+	if (bdf_file->restore_nic_fn) {
+		xsc_set_user_mode(xdev, false);
+		bdf_file->restore_nic_fn(xdev);
+	}
+
+	spin_lock(&xdev->priv_device.bdf_lock);
+	radix_tree_delete(&xdev->priv_device.bdf_tree, bdf_file->key);
+	spin_unlock(&xdev->priv_device.bdf_lock);
+
 	kfree(bdf_file);
 
 	return 0;
@@ -209,7 +222,7 @@ static long xsc_ioctl_mem_alloc(struct xsc_priv_device *priv_dev,
 					kvfree(in);
 					return -ENOMEM;
 				}
-				strcpy(m_ent->task_name, tname);
+				strscpy(m_ent->task_name, tname, sizeof(m_ent->task_name));
 				m_ent->mem_info.mem_num = minfo->mem_num;
 				m_ent->mem_info.size = minfo->size;
 				m_ent->mem_info.phy_addr = paddr;
@@ -286,13 +299,11 @@ static int xsc_priv_modify_qp(struct xsc_core_device *xdev, void *in, void *out)
 	mailin = kvzalloc(insize, GFP_KERNEL);
 	if (!mailin)
 		return -ENOMEM;
-	if (resp->opcode == XSC_CMD_OP_RTR2RTS_QP) {
-		for (i = 0; i < resp->num; i++) {
-			mailin->hdr.opcode = cpu_to_be16(XSC_CMD_OP_RTR2RTS_QP);
-			mailin->qpn = cpu_to_be32(qpn + i);
-			ret = xsc_cmd_exec(xdev, mailin, insize, &mailout, sizeof(mailout));
-			xsc_core_dbg(xdev, "modify qp state qpn:%d\n", qpn + i);
-		}
+	for (i = 0; i < resp->num; i++) {
+		mailin->hdr.opcode = cpu_to_be16(resp->opcode);
+		mailin->qpn = cpu_to_be32(qpn + i);
+		ret = xsc_cmd_exec(xdev, mailin, insize, &mailout, sizeof(mailout));
+		xsc_core_dbg(xdev, "modify qp state qpn:%d\n", qpn + i);
 	}
 	kvfree(mailin);
 
@@ -303,13 +314,10 @@ static int xsc_priv_dev_ioctl_get_phy(struct xsc_core_device *xdev,
 				      void *in, void *out)
 {
 	int ret = 0;
+	struct xsc_eswitch *esw = xdev->priv.eswitch;
 	struct xsc_ioctl_data_tl *tl = (struct xsc_ioctl_data_tl *)out;
 	struct xsc_ioctl_get_phy_info_res *resp;
-	struct xsc_lag *ldev = xsc_lag_dev_get(xdev);
-	u16 lag_id = U16_MAX;
-
-	if (ldev && __xsc_lag_is_active(ldev))
-		lag_id = ldev->lag_id;
+	u16 lag_id = xsc_get_lag_id(xdev);
 
 	switch (tl->opmod) {
 	case XSC_IOCTL_OP_GET_LOCAL:
@@ -323,7 +331,7 @@ static int xsc_priv_dev_ioctl_get_phy(struct xsc_core_device *xdev,
 		resp->lag_id = lag_id;
 		resp->raw_qp_id_base = xdev->caps.raweth_qp_id_base;
 		resp->raw_rss_qp_id_base = xdev->caps.raweth_rss_qp_id_base;
-		resp->lag_port_start = XSC_LAG_PORT_START;
+		resp->lag_port_start = xdev->caps.lag_logic_port_ofst;
 		resp->send_seg_num = xdev->caps.send_ds_num;
 		resp->recv_seg_num = xdev->caps.recv_ds_num;
 		resp->raw_tpe_qp_num = xdev->caps.raw_tpe_qp_num;
@@ -348,7 +356,15 @@ static int xsc_priv_dev_ioctl_get_phy(struct xsc_core_device *xdev,
 		resp->pcie1_pf_funcid_base     = xdev->caps.pcie1_pf_funcid_base;
 		resp->pcie1_pf_funcid_top      = xdev->caps.pcie1_pf_funcid_top;
 		resp->hca_core_clock = xdev->caps.hca_core_clock;
-		resp->mac_num = xdev->caps.mac_num;
+		resp->mac_bit = xdev->caps.mac_bit;
+		if (xsc_core_is_pf(xdev)) {
+			mutex_lock(&esw->mode_lock);
+			resp->esw_mode = esw->mode;
+			mutex_unlock(&esw->mode_lock);
+		} else {
+			resp->esw_mode = 0;
+		}
+		resp->board_id = xdev->board_info->board_id;
 		break;
 
 	default:
@@ -359,60 +375,58 @@ static int xsc_priv_dev_ioctl_get_phy(struct xsc_core_device *xdev,
 	return ret;
 }
 
-static int xsc_priv_dev_ioctl_get_global_pcp(struct xsc_core_device *xdev, void *in, void *out)
+static int xsc_priv_dev_ioctl_get_force_pcp(struct xsc_core_device *xdev, void *in, void *out)
 {
-	int ret = 0;
-	struct xsc_ioctl_global_pcp *resp = (struct xsc_ioctl_global_pcp *)out;
+	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
+	struct xsc_ioctl_force_pcp *resp = (struct xsc_ioctl_force_pcp *)out;
 
-	if (!xsc_core_is_pf(xdev)) {
-		ret = -EOPNOTSUPP;
-		return ret;
-	}
+	if (!xsc_core_is_pf(xdev))
+		return -EOPNOTSUPP;
 
-	resp->pcp = get_global_force_pcp();
+	resp->pcp = ib_dev->force_pcp;
 	return 0;
 }
 
-static int xsc_priv_dev_ioctl_get_global_dscp(struct xsc_core_device *xdev, void *in, void *out)
+static int xsc_priv_dev_ioctl_get_force_dscp(struct xsc_core_device *xdev, void *in, void *out)
 {
-	int ret = 0;
-	struct xsc_ioctl_global_dscp *resp = (struct xsc_ioctl_global_dscp *)out;
+	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
+	struct xsc_ioctl_force_dscp *resp = (struct xsc_ioctl_force_dscp *)out;
 
-	if (!xsc_core_is_pf(xdev)) {
-		ret = -EOPNOTSUPP;
-		return ret;
-	}
+	if (!xsc_core_is_pf(xdev))
+		return -EOPNOTSUPP;
 
-	resp->dscp = get_global_force_dscp();
+	resp->dscp = ib_dev->force_dscp;
 	return 0;
 }
 
-static int xsc_priv_dev_ioctl_set_global_pcp(struct xsc_core_device *xdev, void *in, void *out)
+static int xsc_priv_dev_ioctl_set_force_pcp(struct xsc_core_device *xdev, void *in, void *out)
 {
-	int ret = 0;
-	struct xsc_ioctl_global_pcp *req = (struct xsc_ioctl_global_pcp *)out;
+	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
+	struct xsc_ioctl_force_pcp *req = (struct xsc_ioctl_force_pcp *)out;
 
-	if (!xsc_core_is_pf(xdev)) {
-		ret = -EOPNOTSUPP;
-		return ret;
-	}
+	if (!xsc_core_is_pf(xdev))
+		return -EOPNOTSUPP;
 
-	ret = set_global_force_pcp(req->pcp);
-	return ret;
+	if (req->pcp < 0 || (req->pcp > QOS_PCP_MAX && req->pcp != DSCP_PCP_UNSET))
+		return -EINVAL;
+
+	ib_dev->force_pcp = req->pcp;
+	return 0;
 }
 
-static int xsc_priv_dev_ioctl_set_global_dscp(struct xsc_core_device *xdev, void *in, void *out)
+static int xsc_priv_dev_ioctl_set_force_dscp(struct xsc_core_device *xdev, void *in, void *out)
 {
-	int ret = 0;
-	struct xsc_ioctl_global_dscp *req = (struct xsc_ioctl_global_dscp *)out;
+	struct xsc_ib_dev *ib_dev = xdev->xsc_ib_dev;
+	struct xsc_ioctl_force_dscp *req = (struct xsc_ioctl_force_dscp *)out;
 
-	if (!xsc_core_is_pf(xdev)) {
-		ret = -EOPNOTSUPP;
-		return ret;
-	}
+	if (!xsc_core_is_pf(xdev))
+		return -EOPNOTSUPP;
 
-	ret = set_global_force_dscp(req->dscp);
-	return ret;
+	if (req->dscp < 0 || (req->dscp > QOS_DSCP_MAX && req->dscp != DSCP_PCP_UNSET))
+		return -EINVAL;
+
+	ib_dev->force_dscp = req->dscp;
+	return 0;
 }
 
 int xsc_priv_dev_exec_ioctl(struct xsc_core_device *xdev, void *in, int in_size, void *out,
@@ -427,24 +441,24 @@ int xsc_priv_dev_exec_ioctl(struct xsc_core_device *xdev, void *in, int in_size,
 	case XSC_IOCTL_GET_PHY_INFO:
 		ret = xsc_priv_dev_ioctl_get_phy(xdev, in, out);
 		break;
-	case XSC_IOCTL_GET_GLOBAL_PCP:
+	case XSC_IOCTL_GET_FORCE_PCP:
 		xsc_core_dbg(xdev, "getting global pcp\n");
-		ret = xsc_priv_dev_ioctl_get_global_pcp(xdev, in, out);
+		ret = xsc_priv_dev_ioctl_get_force_pcp(xdev, in, out);
 		break;
-	case XSC_IOCTL_GET_GLOBAL_DSCP:
-		ret = xsc_priv_dev_ioctl_get_global_dscp(xdev, in, out);
+	case XSC_IOCTL_GET_FORCE_DSCP:
+		ret = xsc_priv_dev_ioctl_get_force_dscp(xdev, in, out);
 		break;
 	case XSC_IOCTL_SET_QP_STATUS:
 		xsc_core_dbg(xdev, "case XSC_IOCTL_SET_QP_STATUS:\n");
 		ret = xsc_priv_modify_qp(xdev, in, out);
 		break;
-	case XSC_IOCTL_SET_GLOBAL_PCP:
+	case XSC_IOCTL_SET_FORCE_PCP:
 		xsc_core_dbg(xdev, "setting global pcp\n");
-		ret = xsc_priv_dev_ioctl_set_global_pcp(xdev, in, out);
+		ret = xsc_priv_dev_ioctl_set_force_pcp(xdev, in, out);
 		break;
-	case XSC_IOCTL_SET_GLOBAL_DSCP:
+	case XSC_IOCTL_SET_FORCE_DSCP:
 		xsc_core_dbg(xdev, "setting global dscp\n");
-		ret = xsc_priv_dev_ioctl_set_global_dscp(xdev, in, out);
+		ret = xsc_priv_dev_ioctl_set_force_dscp(xdev, in, out);
 		break;
 	default:
 		ret = -EINVAL;
@@ -474,11 +488,11 @@ static long xsc_priv_dev_ioctl_getinfo(struct file *filp, unsigned long arg)
 		return -EINVAL;
 	switch (hdr.attr.opcode) {
 	case XSC_IOCTL_GET_PHY_INFO:
-	case XSC_IOCTL_GET_GLOBAL_PCP:
-	case XSC_IOCTL_GET_GLOBAL_DSCP:
+	case XSC_IOCTL_GET_FORCE_PCP:
+	case XSC_IOCTL_GET_FORCE_DSCP:
 	case XSC_IOCTL_SET_QP_STATUS:
-	case XSC_IOCTL_SET_GLOBAL_PCP:
-	case XSC_IOCTL_SET_GLOBAL_DSCP:
+	case XSC_IOCTL_SET_FORCE_PCP:
+	case XSC_IOCTL_SET_FORCE_DSCP:
 	case XSC_IOCTL_GET_CONTEXT:
 		break;
 	default:
@@ -671,6 +685,27 @@ err_in:
 	return -EFAULT;
 }
 
+static void xsc_handle_multiqp_create(struct xsc_bdf_file *file, void *in,
+				      unsigned int inlen, void *out)
+{
+	u16 qp_num = 0;
+	int i = 0;
+	struct xsc_create_qp_request *req = NULL;
+	void *ptr = NULL;
+	int len = 0;
+	u32 qpn_base = be32_to_cpu(((struct xsc_create_multiqp_mbox_out *)out)->qpn_base);
+
+	qp_num = be16_to_cpu(((struct xsc_create_multiqp_mbox_in *)in)->qp_num);
+	ptr = ((struct xsc_create_multiqp_mbox_in *)in)->data;
+	for (i = 0; i < qp_num; i++) {
+		req = (struct xsc_create_qp_request *)ptr;
+		len = sizeof(struct xsc_create_qp_request) +
+			     be16_to_cpu(req->pa_num) * sizeof(u64);
+		xsc_alloc_qp_obj(file, qpn_base + i, (char *)req, len);
+		ptr += len;
+	}
+}
+
 static void xsc_pci_ctrl_cmdq_handle_res_obj(struct xsc_bdf_file *file,
 					     void *in, unsigned int inlen, void *out, int opcode)
 {
@@ -708,6 +743,9 @@ static void xsc_pci_ctrl_cmdq_handle_res_obj(struct xsc_bdf_file *file,
 	case XSC_CMD_OP_DESTROY_QP:
 		idx = be32_to_cpu(((struct xsc_destroy_qp_mbox_in *)in)->qpn);
 		xsc_destroy_qp_obj(file, idx);
+		break;
+	case XSC_CMD_OP_CREATE_MULTI_QP:
+		xsc_handle_multiqp_create(file, in, inlen, out);
 		break;
 	default:
 		break;
@@ -753,6 +791,7 @@ static long xsc_priv_dev_ioctl_cmdq_raw(struct file *filp, unsigned long arg)
 	int err;
 	void *in;
 	void *out;
+	u16 out_len;
 
 	err = copy_from_user(&hdr, user_hdr, sizeof(hdr));
 	if (err)
@@ -765,7 +804,8 @@ static long xsc_priv_dev_ioctl_cmdq_raw(struct file *filp, unsigned long arg)
 	in = kvzalloc(hdr.attr.length, GFP_KERNEL);
 	if (!in)
 		return -ENOMEM;
-	out = kvzalloc(hdr.attr.length, GFP_KERNEL);
+	out_len = min_t(u16, hdr.attr.length, MAX_MBOX_OUT_LEN);
+	out = kvzalloc(out_len, GFP_KERNEL);
 	if (!out) {
 		kfree(in);
 		return -ENOMEM;
@@ -777,16 +817,69 @@ static long xsc_priv_dev_ioctl_cmdq_raw(struct file *filp, unsigned long arg)
 		goto err_exit;
 	}
 
-	xsc_cmd_exec(xdev, in, hdr.attr.length, out, hdr.attr.length);
+	xsc_cmd_exec(xdev, in, hdr.attr.length, out, out_len);
 	xsc_pci_ctrl_cmdq_handle_res_obj(bdf_file, in, hdr.attr.length, out, hdr.attr.opcode);
 
 	if (copy_to_user((void *)user_hdr, &hdr, sizeof(hdr)))
 		err = -EFAULT;
-	if (copy_to_user((void *)user_hdr->attr.data, out, hdr.attr.length))
+	if (copy_to_user((void *)user_hdr->attr.data, out, out_len))
 		err = -EFAULT;
 err_exit:
 	kfree(in);
 	kfree(out);
+	return err;
+}
+
+static int xsc_ioctl_user_mode(struct file *filp, unsigned long arg)
+{
+	struct xsc_bdf_file *bdf_file = filp->private_data;
+	struct xsc_core_device *dev = bdf_file->xdev;
+	struct xsc_ioctl_hdr __user *user_hdr =
+		(struct xsc_ioctl_hdr __user *)arg;
+	struct xsc_ioctl_hdr hdr;
+	struct xsc_ioctl_user_mode_attr *attr;
+	u8 *buf;
+	int err = 0;
+
+	err = copy_from_user(&hdr, user_hdr, sizeof(hdr));
+	if (err) {
+		xsc_core_err(dev, "fail to copy from user user_hdr\n");
+		return -EFAULT;
+	}
+
+	/* check valid */
+	if (hdr.check_filed != XSC_IOCTL_CHECK_FILED) {
+		xsc_core_err(dev, "invalid check filed %u\n", hdr.check_filed);
+		return -EINVAL;
+	}
+
+	buf = kvzalloc(hdr.attr.length, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	err = copy_from_user(buf, user_hdr->attr.data, hdr.attr.length);
+	if (err) {
+		xsc_core_err(dev, "failed to copy ioctl user data.\n");
+		kvfree(buf);
+		return -EFAULT;
+	}
+
+	switch (hdr.attr.opcode) {
+	case XSC_IOCTL_OPCODE_ENABLE_USER_MODE:
+		attr = (struct xsc_ioctl_user_mode_attr *)buf;
+		xsc_set_user_mode(dev, (attr->enable ? true : false));
+		if (attr->enable)
+			bdf_file->restore_nic_fn = xsc_eth_restore_nic_hca;
+		else
+			bdf_file->restore_nic_fn = NULL;
+
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+
+	kvfree(buf);
 	return err;
 }
 
@@ -809,6 +902,9 @@ static long xsc_priv_dev_ioctl(struct file *filp, unsigned int cmd, unsigned lon
 	case XSC_IOCTL_CMDQ_RAW:
 		err = xsc_priv_dev_ioctl_cmdq_raw(filp, arg);
 		break;
+	case XSC_IOCTL_USER_MODE:
+		err = xsc_ioctl_user_mode(filp, arg);
+		break;
 	default:
 		err = -EFAULT;
 		break;
@@ -824,24 +920,33 @@ static const struct file_operations dev_fops = {
 	.release	= xsc_priv_dev_release,
 };
 
+#define XSC_MAX_CDEV_NUM	1024
+static dev_t g_priv_cdev_no;
+static int g_priv_cdev_cnt;
+static char *g_priv_class_name = "xscale";
+static struct class *g_priv_class;
+DECLARE_BITMAP(g_bitmap_dev_id, XSC_MAX_CDEV_NUM);
+
 int xsc_priv_dev_init(struct ib_device *ib_dev, struct xsc_core_device *dev)
 {
 	int ret;
+	int dev_id = 0;
 	struct xsc_priv_device *priv_dev = &dev->priv_device;
+
+	if (g_priv_cdev_cnt >= XSC_MAX_CDEV_NUM) {
+		xsc_core_err(dev, "too many xscale cdevice\n");
+		priv_dev->devno = U32_MAX;
+		return -EBUSY;
+	}
 
 	sprintf(priv_dev->device_name, "%s", ib_dev->name);
 
 	xsc_core_dbg(dev, "device_name %s\n", priv_dev->device_name);
 
-	ret = alloc_chrdev_region(&priv_dev->devno, 0, 1, priv_dev->device_name);
-	if (ret) {
-		xsc_core_err(dev, "%s cant't get major %d\n",
-			     priv_dev->device_name, MAJOR(priv_dev->devno));
-		return ret;
-	}
-
 	cdev_init(&priv_dev->cdev, &dev_fops);
 	priv_dev->cdev.owner = THIS_MODULE;
+	dev_id = find_first_zero_bit(g_bitmap_dev_id, XSC_MAX_CDEV_NUM);
+	priv_dev->devno = g_priv_cdev_no + dev_id;
 
 	ret = cdev_add(&priv_dev->cdev, priv_dev->devno, 1);
 	if (ret) {
@@ -850,9 +955,10 @@ int xsc_priv_dev_init(struct ib_device *ib_dev, struct xsc_core_device *dev)
 		return ret;
 	}
 
-	priv_dev->priv_class = class_create(THIS_MODULE, priv_dev->device_name);
-	device_create(priv_dev->priv_class, NULL, priv_dev->devno,
-		      NULL, "%s", priv_dev->device_name);
+	device_create(g_priv_class, NULL, priv_dev->devno,
+		      NULL, "%s!%s", g_priv_class_name, priv_dev->device_name);
+	g_priv_cdev_cnt++;
+	set_bit(dev_id, g_bitmap_dev_id);
 
 	INIT_LIST_HEAD(&priv_dev->mem_list);
 	spin_lock_init(&priv_dev->mem_lock);
@@ -872,6 +978,7 @@ void xsc_priv_dev_fini(struct ib_device *ib_dev, struct xsc_core_device *dev)
 	struct xsc_bdf_file *bdf_file;
 	struct radix_tree_iter iter;
 	void **slot;
+	int dev_id = 0;
 
 	if (!dev || !ib_dev) {
 		pr_err("[%s:%d] device is null pointer\n", __func__, __LINE__);
@@ -879,12 +986,12 @@ void xsc_priv_dev_fini(struct ib_device *ib_dev, struct xsc_core_device *dev)
 	}
 
 	priv_dev = &dev->priv_device;
-	if (!priv_dev || !priv_dev->priv_class)
-		return;
-	char_dev = &priv_dev->cdev;
-	if (!char_dev)
+	if (priv_dev->devno == U32_MAX)
 		return;
 
+	char_dev = &priv_dev->cdev;
+
+	dev_id = MINOR(priv_dev->devno);
 	spin_lock(&priv_dev->bdf_lock);
 	radix_tree_for_each_slot(slot, &priv_dev->bdf_tree, &iter, 0) {
 		bdf_file = (struct xsc_bdf_file *)(*slot);
@@ -893,10 +1000,33 @@ void xsc_priv_dev_fini(struct ib_device *ib_dev, struct xsc_core_device *dev)
 		kfree(bdf_file);
 	}
 	spin_unlock(&priv_dev->bdf_lock);
-	device_destroy(priv_dev->priv_class, priv_dev->devno);
+	device_destroy(g_priv_class, priv_dev->devno);
 	cdev_del(&priv_dev->cdev);
-	unregister_chrdev_region(priv_dev->devno, 1);
-	class_destroy(priv_dev->priv_class);
 
+	clear_bit(dev_id, g_bitmap_dev_id);
+	g_priv_cdev_cnt--;
 	xsc_core_dbg(dev, "fini success\n");
 }
+
+int xsc_priv_alloc_chrdev_region(void)
+{
+	int ret = 0;
+	char *device_name = "xscale";
+
+	ret = alloc_chrdev_region(&g_priv_cdev_no, 0, XSC_MAX_CDEV_NUM, device_name);
+	if (ret) {
+		pr_err("%s cant't get major %d\n", device_name, MAJOR(g_priv_cdev_no));
+		return ret;
+	}
+	g_priv_class = class_create(THIS_MODULE, g_priv_class_name);
+	g_priv_cdev_cnt = 0;
+
+	return 0;
+}
+
+void xsc_priv_unregister_chrdev_region(void)
+{
+	class_destroy(g_priv_class);
+	unregister_chrdev_region(g_priv_cdev_no, XSC_MAX_CDEV_NUM);
+}
+

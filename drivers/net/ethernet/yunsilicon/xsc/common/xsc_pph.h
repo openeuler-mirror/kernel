@@ -172,5 +172,4 @@ struct epp_pph {
 #define PPH_CSUM_VAL(base)		\
 	((be64_to_cpu(*(u64	 *)((u8 *)(base) + PPH_CSUM_VAL_OFF)) >> \
 	PPH_CSUM_VAL_SHIFT) & PPH_CSUM_VAL_MASK)
-#endif /* XSC_TBM_H */
-
+#endif /* XSC_PPH_H */

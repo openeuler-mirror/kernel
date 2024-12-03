@@ -43,6 +43,4 @@ enum {
 	XSC_HASH_TMPL_IDX_MAX,
 };
 
-
 #endif /* XSC_PP_H */
-

@@ -13,15 +13,7 @@
 static bool debug;
 #define FUN_LINE_FMT    "%s %d "
 
-#ifdef XSC_DEBUG
-#define ETH_DEBUG_LOG(fmt, ...) \
-	do { \
-		if (debug) \
-			pr_info(FUN_LINE_FMT fmt, __func__, __LINE__, ##__VA_ARGS__); \
-	} while (0)
-#else
 #define ETH_DEBUG_LOG(fmt, ...) do { } while (0)
-#endif
 
 #define XSC_MSG_LEVEL	(NETIF_MSG_LINK) // | NETIF_MSG_HW)
 
