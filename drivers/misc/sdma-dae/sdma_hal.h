@@ -46,6 +46,7 @@ struct hisi_sdma_channel {
 
 struct hisi_sdma_channel_node {
 	int ida;
+	u32 ref;
 	struct hlist_node node;
 };
 
