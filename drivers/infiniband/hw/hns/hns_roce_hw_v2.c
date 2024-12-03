@@ -6780,12 +6780,7 @@ static void hns_roce_irq_work_handle(struct work_struct *work)
 	case HNS_ROCE_EVENT_TYPE_PATH_MIG_FAILED:
 	case HNS_ROCE_EVENT_TYPE_COMM_EST:
 	case HNS_ROCE_EVENT_TYPE_SQ_DRAINED:
-	case HNS_ROCE_EVENT_TYPE_WQ_CATAS_ERROR:
 	case HNS_ROCE_EVENT_TYPE_SRQ_LAST_WQE_REACH:
-	case HNS_ROCE_EVENT_TYPE_INV_REQ_LOCAL_WQ_ERROR:
-	case HNS_ROCE_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR:
-	case HNS_ROCE_EVENT_TYPE_XRCD_VIOLATION:
-	case HNS_ROCE_EVENT_TYPE_INVALID_XRCETH:
 		hns_roce_qp_event(hr_dev, queue_num, event_type);
 		break;
 	case HNS_ROCE_EVENT_TYPE_SRQ_LIMIT_REACH:
@@ -6884,7 +6879,7 @@ static irqreturn_t hns_roce_v2_aeq_int(struct hns_roce_dev *hr_dev,
 		case HNS_ROCE_EVENT_TYPE_LOCAL_WQ_ACCESS_ERROR:
 		case HNS_ROCE_EVENT_TYPE_XRCD_VIOLATION:
 		case HNS_ROCE_EVENT_TYPE_INVALID_XRCETH:
-			hns_roce_flush_cqe(hr_dev, queue_num);
+			hns_roce_qp_event(hr_dev, queue_num, event_type);
 			break;
 		case HNS_ROCE_EVENT_TYPE_MB:
 			hns_roce_cmd_event(hr_dev,
