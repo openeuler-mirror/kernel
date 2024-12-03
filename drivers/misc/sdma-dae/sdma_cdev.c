@@ -124,14 +124,16 @@ static int sdma_add_ida_ref(struct hisi_sdma_channel *pchannel, int ida)
 	spin_lock(&pchannel->owner_chn_lock);
 	entry = sdma_search_ida_ref(pchannel, ida);
 	if (entry == NULL) {
-		entry = kzalloc(sizeof(struct hisi_sdma_channel_node), GFP_KERNEL);
+		entry = kzalloc(sizeof(struct hisi_sdma_channel_node), GFP_ATOMIC);
 		if (entry == NULL) {
 			spin_unlock(&pchannel->owner_chn_lock);
 			return -ENOMEM;
 		}
 		entry->ida = ida;
+		entry->ref = 1;
 		hash_add(pchannel->sdma_ida_ht, &entry->node, entry->ida);
-	}
+	} else
+		entry->ref++;
 	spin_unlock(&pchannel->owner_chn_lock);
 	return 0;
 }
@@ -143,8 +145,11 @@ static bool sdma_del_ida_ref(struct hisi_sdma_channel *pchannel, int ida)
 	spin_lock(&pchannel->owner_chn_lock);
 	entry = sdma_search_ida_ref(pchannel, ida);
 	if (entry != NULL) {
-		hash_del(&entry->node);
-		kfree(entry);
+		entry->ref--;
+		if (entry->ref == 0) {
+			hash_del(&entry->node);
+			kfree(entry);
+		}
 	} else {
 		spin_unlock(&pchannel->owner_chn_lock);
 		return false;
