@@ -326,7 +326,8 @@ static int ipvlan_rcv_frame(struct ipvl_addr *addr, struct sk_buff **pskb,
 		goto go_network_stack;
 	skb->dev = dev;
 #ifdef CONFIG_XSK_MULTI_BUF
-	xdp_ret = do_xdp_generic_multi(xdp_prog, &skb);
+	xdp_ret = do_xdp_generic_multi(xdp_prog, pskb);
+	skb = *pskb;
 #else
 	xdp_ret = do_xdp_generic(xdp_prog, skb);
 #endif
