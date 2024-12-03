@@ -2317,47 +2317,57 @@ static bool __nvme_disable_io_queues(struct nvme_dev *dev, u8 opcode)
 	return true;
 }
 
-static void nvme_dev_add(struct nvme_dev *dev)
+static void nvme_pci_alloc_tag_set(struct nvme_dev *dev)
 {
+	struct blk_mq_tag_set * set = &dev->tagset;
 	int ret;
 
-	if (!dev->ctrl.tagset) {
-		dev->tagset.ops = &nvme_mq_ops;
-		dev->tagset.nr_hw_queues = dev->online_queues - 1;
-		dev->tagset.nr_maps = 2; /* default + read */
-		if (dev->io_queues[HCTX_TYPE_POLL])
-			dev->tagset.nr_maps++;
-		dev->tagset.timeout = NVME_IO_TIMEOUT;
-		dev->tagset.numa_node = dev->ctrl.numa_node;
-		dev->tagset.queue_depth = min_t(unsigned int, dev->q_depth,
-						BLK_MQ_MAX_DEPTH) - 1;
-		dev->tagset.cmd_size = sizeof(struct nvme_iod);
-		dev->tagset.flags = BLK_MQ_F_SHOULD_MERGE;
-		dev->tagset.driver_data = dev;
+	set->ops = &nvme_mq_ops;
+	set->nr_hw_queues = dev->online_queues - 1;
+	set->nr_maps = 2; /* default + read */
+	if (dev->io_queues[HCTX_TYPE_POLL])
+		set->nr_maps++;
+	set->timeout = NVME_IO_TIMEOUT;
+	set->numa_node = dev->ctrl.numa_node;
+	set->queue_depth = min_t(unsigned, dev->q_depth, BLK_MQ_MAX_DEPTH) - 1;
+	set->cmd_size = sizeof(struct nvme_iod);
+	set->flags = BLK_MQ_F_SHOULD_MERGE;
+	set->driver_data = dev;
 
-		/*
-		 * Some Apple controllers requires tags to be unique
-		 * across admin and IO queue, so reserve the first 32
-		 * tags of the IO queue.
-		 */
-		if (dev->ctrl.quirks & NVME_QUIRK_SHARED_TAGS)
-			dev->tagset.reserved_tags = NVME_AQ_DEPTH;
+	/*
+	 * Some Apple controllers requires tags to be unique
+	 * across admin and IO queue, so reserve the first 32
+	 * tags of the IO queue.
+	 */
+	if (dev->ctrl.quirks & NVME_QUIRK_SHARED_TAGS)
+		set->reserved_tags = NVME_AQ_DEPTH;
 
-		ret = blk_mq_alloc_tag_set(&dev->tagset);
-		if (ret) {
-			dev_warn(dev->ctrl.device,
-				"IO queues tagset allocation failed %d\n", ret);
-			return;
-		}
-		dev->ctrl.tagset = &dev->tagset;
-	} else {
-		blk_mq_update_nr_hw_queues(&dev->tagset, dev->online_queues - 1);
+	ret = blk_mq_alloc_tag_set(set);
+	if (ret) {
+		dev_warn(dev->ctrl.device,
+			"IO queues tagset allocation failed %d\n", ret);
+		return;
+	}
+	dev->ctrl.tagset = set;
+}
 
-		/* Free previously allocated queues that are no longer usable */
-		nvme_free_queues(dev, dev->online_queues);
+static bool nvme_pci_update_nr_queues(struct nvme_dev *dev)
+{
+	/* Give up if we are racing with nvme_dev_disable() */
+	if (!mutex_trylock(&dev->shutdown_lock))
+		return false;
+
+	/* Check if nvme_dev_disable() has been executed already */
+	if (!dev->online_queues) {
+		mutex_unlock(&dev->shutdown_lock);
+		return false;
 	}
 
-	nvme_dbbuf_set(dev);
+	blk_mq_update_nr_hw_queues(&dev->tagset, dev->online_queues - 1);
+	/* free previously allocated queues that are no longer usable */
+	nvme_free_queues(dev, dev->online_queues);
+	mutex_unlock(&dev->shutdown_lock);
+	return true;
 }
 
 static int nvme_pci_enable(struct nvme_dev *dev)
@@ -2704,20 +2714,37 @@ static void nvme_reset_work(struct work_struct *work)
 	if (result)
 		goto out;
 
-	/*
-	 * Keep the controller around but remove all namespaces if we don't have
-	 * any working I/O queue.
-	 */
-	if (dev->online_queues < 2) {
-		dev_warn(dev->ctrl.device, "IO queues not created\n");
-		nvme_kill_queues(&dev->ctrl);
-		nvme_remove_namespaces(&dev->ctrl);
-		nvme_free_tagset(dev);
+	if (dev->ctrl.tagset) {
+		/*
+		 * This is a controller reset and we already have a tagset.
+		 * Freeze and update the number of I/O queues as thos might have
+		 * changed.  If there are no I/O queues left after this reset,
+		 * keep the controller around but remove all namespaces.
+		 */
+		if (dev->online_queues > 1) {
+			nvme_start_queues(&dev->ctrl);
+			nvme_wait_freeze(&dev->ctrl);
+			if (!nvme_pci_update_nr_queues(dev))
+				goto out;
+			nvme_dbbuf_set(dev);
+			nvme_unfreeze(&dev->ctrl);
+		} else {
+			dev_warn(dev->ctrl.device, "IO queues lost\n");
+			nvme_kill_queues(&dev->ctrl);
+			nvme_remove_namespaces(&dev->ctrl);
+			nvme_free_tagset(dev);
+		}
 	} else {
-		nvme_start_queues(&dev->ctrl);
-		nvme_wait_freeze(&dev->ctrl);
-		nvme_dev_add(dev);
-		nvme_unfreeze(&dev->ctrl);
+		/*
+		 * First probe.  Still allow the controller to show up even if
+		 * there are no namespaces.
+		 */
+		if (dev->online_queues > 1) {
+			nvme_pci_alloc_tag_set(dev);
+			nvme_dbbuf_set(dev);
+		} else {
+			dev_warn(dev->ctrl.device, "IO queues not created\n");
+		}
 	}
 
 	/*
