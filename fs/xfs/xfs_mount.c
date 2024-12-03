@@ -1259,8 +1259,8 @@ xfs_mod_fdblocks(
 	bool			rsvd)
 {
 	int64_t			lcounter;
-	long long		res_used;
 	s32			batch;
+	uint64_t		res_used;
 	uint64_t		set_aside;
 
 	if (delta > 0) {
@@ -1274,7 +1274,7 @@ xfs_mod_fdblocks(
 		}
 
 		spin_lock(&mp->m_sb_lock);
-		res_used = (long long)(mp->m_resblks - mp->m_resblks_avail);
+		res_used = mp->m_resblks - mp->m_resblks_avail;
 
 		if (res_used > delta) {
 			mp->m_resblks_avail += delta;
