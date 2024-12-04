@@ -19,6 +19,17 @@ config ACPI_CPPC_CPUFREQ
 
 	  If in doubt, say N.
 
+config CPPC_CPUFREQ_SYSFS_INTERFACE
+    bool "Enable CPPC CPUFreq sysfs tuning interfaces"
+    depends on ACPI_CPPC_CPUFREQ
+    default n
+    help
+      This enables sysfs interfaces for CPPC CPUFreq driver including
+      auto_act_window and energy_perf. These interfaces allow users
+      to tune CPPC parameters at runtime.
+
+      If unsure, say N.
+
 config ARM_ALLWINNER_SUN50I_CPUFREQ_NVMEM
 	tristate "Allwinner nvmem based SUN50I CPUFreq driver"
 	depends on ARCH_SUNXI

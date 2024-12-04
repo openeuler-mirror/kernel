@@ -1215,6 +1215,100 @@ static int cpc_write(int cpu, struct cpc_register_resource *reg_res, u64 val)
 	return ret_val;
 }
 
+static int cppc_get_reg(int cpunum, enum cppc_regs reg_idx, u64 *val)
+{
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpunum);
+	struct cppc_pcc_data *pcc_ss_data = NULL;
+	struct cpc_register_resource *reg;
+	int pcc_ss_id;
+	int ret = 0;
+
+	if (!cpc_desc) {
+		pr_debug("No CPC descriptor for CPU:%d\n", cpunum);
+		return -ENODEV;
+	}
+
+	reg = &cpc_desc->cpc_regs[reg_idx];
+
+	if (!CPC_SUPPORTED(reg)) {
+		pr_debug("CPC register is not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (CPC_IN_PCC(reg)) {
+		pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpunum);
+
+		if (pcc_ss_id < 0)
+			return -ENODEV;
+
+		pcc_ss_data = pcc_data[pcc_ss_id];
+		down_write(&pcc_ss_data->pcc_lock);
+
+		if (send_pcc_cmd(pcc_ss_id, CMD_READ) >= 0)
+			cpc_read(cpunum, reg, val);
+		else
+			ret = -EIO;
+
+		up_write(&pcc_ss_data->pcc_lock);
+
+		return ret;
+	}
+
+	cpc_read(cpunum, reg, val);
+
+	return 0;
+}
+
+static int cppc_set_reg(int cpu, enum cppc_regs reg_idx, u64 val)
+{
+	struct cpc_desc *cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+	struct cppc_pcc_data *pcc_ss_data = NULL;
+	struct cpc_register_resource *reg;
+	int pcc_ss_id;
+	int ret;
+
+	if (!cpc_desc) {
+		pr_debug("No CPC descriptor for CPU:%d\n", cpu);
+		return -ENODEV;
+	}
+
+	reg = &cpc_desc->cpc_regs[reg_idx];
+
+	if (!CPC_SUPPORTED(reg)) {
+		pr_debug("CPC register is not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (CPC_IN_PCC(reg)) {
+		pcc_ss_id = per_cpu(cpu_pcc_subspace_idx, cpu);
+
+		if (pcc_ss_id < 0) {
+			pr_debug("Invalid pcc_ss_id\n");
+			return -ENODEV;
+		}
+
+		ret = cpc_write(cpu, reg, val);
+		if (ret)
+			return ret;
+
+		pcc_ss_data = pcc_data[pcc_ss_id];
+
+		down_write(&pcc_ss_data->pcc_lock);
+		/* after writing CPC, transfer the ownership of PCC to platform */
+		ret = send_pcc_cmd(pcc_ss_id, CMD_WRITE);
+		up_write(&pcc_ss_data->pcc_lock);
+		return ret;
+	}
+
+	return cpc_write(cpu, reg, val);
+}
+
+int cppc_get_epp_perf(int cpunum, u64 *epp_perf)
+{
+	return cppc_get_reg(cpunum, ENERGY_PERF, epp_perf);
+}
+EXPORT_SYMBOL_GPL(cppc_get_epp_perf);
+
 /**
  * cppc_get_desired_perf - Get the value of desired performance register.
  * @cpunum: CPU from which to get desired performance.
@@ -1426,6 +1520,62 @@ out_err:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(cppc_get_perf_ctrs);
+
+/**
+ * cppc_set_auto_act_window - Write autonomous act window register.
+ * @cpu    : CPU to which to write register.
+ * @enable : the desired value of autonomous act window register to be updated.
+ */
+int cppc_set_auto_act_window(int cpu, u64 auto_act_window)
+{
+	return cppc_set_reg(cpu, AUTO_ACT_WINDOW, auto_act_window);
+}
+EXPORT_SYMBOL_GPL(cppc_set_auto_act_window);
+
+/**
+ * cppc_get_auto_act_window - Read autonomous act window register.
+ * @cpu    : CPU to which to write register.
+ * @enable : the desired value of autonomous act window register to be updated.
+ */
+int cppc_get_auto_act_window(int cpunum, u64 *auto_act_window)
+{
+	return cppc_get_reg(cpunum, AUTO_ACT_WINDOW, auto_act_window);
+}
+EXPORT_SYMBOL_GPL(cppc_get_auto_act_window);
+
+/**
+ * cppc_get_auto_sel - Read autonomous selection register.
+ * @cpunum : CPU to which to write register.
+ * @enable : the desired value of autonomous selection resiter to be updated.
+ */
+int cppc_get_auto_sel(int cpunum, u64 *auto_sel)
+{
+	return cppc_get_reg(cpunum, AUTO_SEL_ENABLE, auto_sel);
+}
+EXPORT_SYMBOL_GPL(cppc_get_auto_sel);
+
+
+/**
+ * cppc_set_auto_sel - Write autonomous selection register.
+ * @cpu    : CPU to which to write register.
+ * @enable : the desired value of autonomous selection resiter to be updated.
+ */
+int cppc_set_auto_sel(int cpu, bool enable)
+{
+	return cppc_set_reg(cpu, AUTO_SEL_ENABLE, enable);
+}
+EXPORT_SYMBOL_GPL(cppc_set_auto_sel);
+
+/**
+ * cppc_set_epp - Write energe perf register.
+ * @cpu    : CPU to which to write register.
+ * @enable : the desired value of energe perf register to be updated.
+ */
+int cppc_set_epp(int cpu, u64 epp_val)
+{
+	return cppc_set_reg(cpu, ENERGY_PERF, epp_val);
+}
+EXPORT_SYMBOL_GPL(cppc_set_epp);
 
 /**
  * cppc_set_perf - Set a CPU's performance controls.
