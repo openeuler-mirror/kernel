@@ -89,18 +89,18 @@ static void sdma_channel_init(struct hisi_sdma_channel *pchan)
 
 static void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan)
 {
-	u32 sq_head, sq_tail, cq_head, cq_tail;
+	u32 cq_head, cq_tail;
 
-	sq_head = sdma_channel_get_sq_head(pchan);
-	sq_tail = sdma_channel_get_sq_tail(pchan);
 	cq_head = sdma_channel_get_cq_head(pchan);
 	cq_tail = sdma_channel_get_cq_tail(pchan);
 
-	if (sq_head != sq_tail)
-		sdma_channel_set_sq_tail(pchan, sq_head);
-
-	if (cq_head != cq_tail)
+	while (cq_head != cq_tail) {
 		sdma_channel_set_cq_head(pchan, cq_tail);
+		msleep(HISI_SDMA_FSM_INTERVAL);
+
+		cq_head = sdma_channel_get_cq_head(pchan);
+		cq_tail = sdma_channel_get_cq_tail(pchan);
+	}
 }
 
 static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
