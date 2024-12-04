@@ -290,7 +290,19 @@ enum bpf_type_flag {
 	 */
 	MEM_ALLOC		= BIT(2 + BPF_BASE_TYPE_BITS),
 
-	__BPF_TYPE_LAST_FLAG	= MEM_ALLOC,
+	KABI_BROKEN_INSERT_ENUM(MEM_UNINIT = BIT(7 + BPF_BASE_TYPE_BITS))
+
+	/* Size is known at compile time. */
+	KABI_BROKEN_INSERT_ENUM(MEM_FIXED_SIZE = BIT(10 + BPF_BASE_TYPE_BITS))
+
+	/* Memory must be aligned on some architectures, used in combination with
+	 * MEM_FIXED_SIZE.
+	 */
+	KABI_BROKEN_INSERT_ENUM(MEM_ALIGNED = BIT(17 + BPF_BASE_TYPE_BITS))
+
+	KABI_BROKEN_INSERT_ENUM(__BPF_TYPE_FLAG_MAX)
+	KABI_BROKEN_REMOVE_ENUM(__BPF_TYPE_LAST_FLAG = MEM_ALLOC)
+	KABI_BROKEN_INSERT_ENUM(__BPF_TYPE_LAST_FLAG = __BPF_TYPE_FLAG_MAX - 1)
 };
 
 /* Max number of base types. */
@@ -309,16 +321,11 @@ enum bpf_arg_type {
 	ARG_CONST_MAP_PTR,	/* const argument used as pointer to bpf_map */
 	ARG_PTR_TO_MAP_KEY,	/* pointer to stack used as map key */
 	ARG_PTR_TO_MAP_VALUE,	/* pointer to stack used as map value */
-	ARG_PTR_TO_UNINIT_MAP_VALUE,	/* pointer to valid memory used to store a map value */
 
-	/* the following constraints used to prototype bpf_memcmp() and other
-	 * functions that access data on eBPF program stack
+	/* Used to prototype bpf_memcmp() and other functions that access data
+	 * on eBPF program stack
 	 */
 	ARG_PTR_TO_MEM,		/* pointer to valid memory (stack, packet, map value) */
-	ARG_PTR_TO_UNINIT_MEM,	/* pointer to memory does not need to be initialized,
-				 * helper function must fill all bytes or clear
-				 * them in error case.
-				 */
 
 	ARG_CONST_SIZE,		/* number of bytes accessed from memory */
 	ARG_CONST_SIZE_OR_ZERO,	/* number of bytes accessed from memory or 0 */
@@ -327,8 +334,6 @@ enum bpf_arg_type {
 	ARG_ANYTHING,		/* any (initialized) argument is ok */
 	ARG_PTR_TO_SPIN_LOCK,	/* pointer to bpf_spin_lock */
 	ARG_PTR_TO_SOCK_COMMON,	/* pointer to sock_common */
-	ARG_PTR_TO_INT,		/* pointer to int */
-	ARG_PTR_TO_LONG,	/* pointer to long */
 	ARG_PTR_TO_SOCKET,	/* pointer to bpf_sock (fullsock) */
 	ARG_PTR_TO_BTF_ID,	/* pointer to in-kernel struct */
 	ARG_PTR_TO_ALLOC_MEM,	/* pointer to dynamically allocated memory */
@@ -343,6 +348,12 @@ enum bpf_arg_type {
 	ARG_PTR_TO_CTX_OR_NULL		= PTR_MAYBE_NULL | ARG_PTR_TO_CTX,
 	ARG_PTR_TO_SOCKET_OR_NULL	= PTR_MAYBE_NULL | ARG_PTR_TO_SOCKET,
 	ARG_PTR_TO_ALLOC_MEM_OR_NULL	= PTR_MAYBE_NULL | ARG_PTR_TO_ALLOC_MEM,
+	/* pointer to memory does not need to be initialized, helper function must fill
+	 * all bytes or clear them in error case.
+	 */
+	ARG_PTR_TO_UNINIT_MEM		= MEM_UNINIT | ARG_PTR_TO_MEM,
+	/* Pointer to valid memory of size known at compile time. */
+	ARG_PTR_TO_FIXED_SIZE_MEM	= MEM_FIXED_SIZE | ARG_PTR_TO_MEM,
 
 	/* This must be the last entry. Its purpose is to ensure the enum is
 	 * wide enough to hold the higher bits reserved for bpf_type_flag.
@@ -407,6 +418,14 @@ struct bpf_func_proto {
 			u32 *arg5_btf_id;
 		};
 		u32 *arg_btf_id[5];
+		struct {
+			size_t arg1_size;
+			size_t arg2_size;
+			size_t arg3_size;
+			size_t arg4_size;
+			size_t arg5_size;
+		};
+		size_t arg_size[5];
 	};
 	int *ret_btf_id; /* return value btf_id */
 	bool (*allowed)(const struct bpf_prog *prog);

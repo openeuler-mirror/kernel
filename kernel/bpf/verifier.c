@@ -4700,37 +4700,21 @@ static int process_spin_lock(struct bpf_verifier_env *env, int regno,
 	return 0;
 }
 
-static bool arg_type_is_mem_ptr(enum bpf_arg_type type)
-{
-	return base_type(type) == ARG_PTR_TO_MEM ||
-	       base_type(type) == ARG_PTR_TO_UNINIT_MEM;
-}
-
 static bool arg_type_is_mem_size(enum bpf_arg_type type)
 {
 	return type == ARG_CONST_SIZE ||
 	       type == ARG_CONST_SIZE_OR_ZERO;
 }
 
+static bool arg_type_is_raw_mem(enum bpf_arg_type type)
+{
+	return base_type(type) == ARG_PTR_TO_MEM &&
+		type & MEM_UNINIT;
+}
+
 static bool arg_type_is_alloc_size(enum bpf_arg_type type)
 {
 	return type == ARG_CONST_ALLOC_SIZE_OR_ZERO;
-}
-
-static bool arg_type_is_int_ptr(enum bpf_arg_type type)
-{
-	return type == ARG_PTR_TO_INT ||
-	       type == ARG_PTR_TO_LONG;
-}
-
-static int int_ptr_type_to_size(enum bpf_arg_type type)
-{
-	if (type == ARG_PTR_TO_INT)
-		return sizeof(u32);
-	else if (type == ARG_PTR_TO_LONG)
-		return sizeof(u64);
-
-	return -EINVAL;
 }
 
 static int resolve_map_arg_type(struct bpf_verifier_env *env,
@@ -4808,15 +4792,6 @@ static const struct bpf_reg_types mem_types = {
 	},
 };
 
-static const struct bpf_reg_types int_ptr_types = {
-	.types = {
-		PTR_TO_STACK,
-		PTR_TO_PACKET,
-		PTR_TO_PACKET_META,
-		PTR_TO_MAP_VALUE,
-	},
-};
-
 static const struct bpf_reg_types fullsock_types = { .types = { PTR_TO_SOCKET } };
 static const struct bpf_reg_types scalar_types = { .types = { SCALAR_VALUE } };
 static const struct bpf_reg_types context_types = { .types = { PTR_TO_CTX } };
@@ -4829,7 +4804,6 @@ static const struct bpf_reg_types percpu_btf_ptr_types = { .types = { PTR_TO_PER
 static const struct bpf_reg_types *compatible_reg_types[__BPF_ARG_TYPE_MAX] = {
 	[ARG_PTR_TO_MAP_KEY]		= &map_key_value_types,
 	[ARG_PTR_TO_MAP_VALUE]		= &map_key_value_types,
-	[ARG_PTR_TO_UNINIT_MAP_VALUE]	= &map_key_value_types,
 	[ARG_CONST_SIZE]		= &scalar_types,
 	[ARG_CONST_SIZE_OR_ZERO]	= &scalar_types,
 	[ARG_CONST_ALLOC_SIZE_OR_ZERO]	= &scalar_types,
@@ -4843,10 +4817,7 @@ static const struct bpf_reg_types *compatible_reg_types[__BPF_ARG_TYPE_MAX] = {
 	[ARG_PTR_TO_BTF_ID]		= &btf_ptr_types,
 	[ARG_PTR_TO_SPIN_LOCK]		= &spin_lock_types,
 	[ARG_PTR_TO_MEM]		= &mem_types,
-	[ARG_PTR_TO_UNINIT_MEM]		= &mem_types,
 	[ARG_PTR_TO_ALLOC_MEM]		= &alloc_mem_types,
-	[ARG_PTR_TO_INT]		= &int_ptr_types,
-	[ARG_PTR_TO_LONG]		= &int_ptr_types,
 	[ARG_PTR_TO_PERCPU_BTF_ID]	= &percpu_btf_ptr_types,
 };
 
@@ -4925,6 +4896,7 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
 	struct bpf_reg_state *regs = cur_regs(env), *reg = &regs[regno];
 	enum bpf_arg_type arg_type = fn->arg_type[arg];
 	enum bpf_reg_type type = reg->type;
+	u32 *arg_btf_id = NULL;
 	int err = 0;
 
 	if (arg_type == ARG_DONTCARE)
@@ -4949,8 +4921,7 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
 		return -EACCES;
 	}
 
-	if (base_type(arg_type) == ARG_PTR_TO_MAP_VALUE ||
-	    base_type(arg_type) == ARG_PTR_TO_UNINIT_MAP_VALUE) {
+	if (base_type(arg_type) == ARG_PTR_TO_MAP_VALUE) {
 		err = resolve_map_arg_type(env, meta, &arg_type);
 		if (err)
 			return err;
@@ -4962,7 +4933,11 @@ static int check_func_arg(struct bpf_verifier_env *env, u32 arg,
 		 */
 		goto skip_type_check;
 
-	err = check_reg_type(env, regno, arg_type, fn->arg_btf_id[arg]);
+	/* arg_btf_id and arg_size are in a union. */
+	if (base_type(arg_type) == ARG_PTR_TO_BTF_ID)
+		arg_btf_id = fn->arg_btf_id[arg];
+
+	err = check_reg_type(env, regno, arg_type, arg_btf_id);
 	if (err)
 		return err;
 
@@ -5025,8 +5000,7 @@ skip_type_check:
 		err = check_helper_mem_access(env, regno,
 					      meta->map_ptr->key_size, false,
 					      NULL);
-	} else if (base_type(arg_type) == ARG_PTR_TO_MAP_VALUE ||
-		   base_type(arg_type) == ARG_PTR_TO_UNINIT_MAP_VALUE) {
+	} else if (base_type(arg_type) == ARG_PTR_TO_MAP_VALUE) {
 		if (type_may_be_null(arg_type) && register_is_null(reg))
 			return 0;
 
@@ -5038,7 +5012,7 @@ skip_type_check:
 			verbose(env, "invalid map_ptr to access map->value\n");
 			return -EACCES;
 		}
-		meta->raw_mode = (arg_type == ARG_PTR_TO_UNINIT_MAP_VALUE);
+		meta->raw_mode = arg_type & MEM_UNINIT;
 		err = check_helper_mem_access(env, regno,
 					      meta->map_ptr->value_size, false,
 					      meta);
@@ -5059,11 +5033,18 @@ skip_type_check:
 			verbose(env, "verifier internal error\n");
 			return -EFAULT;
 		}
-	} else if (arg_type_is_mem_ptr(arg_type)) {
+	} else if (base_type(arg_type) == ARG_PTR_TO_MEM) {
 		/* The access to this pointer is only checked when we hit the
 		 * next is_mem_size argument below.
 		 */
-		meta->raw_mode = (arg_type == ARG_PTR_TO_UNINIT_MEM);
+		meta->raw_mode = arg_type & MEM_UNINIT;
+		if (arg_type & MEM_FIXED_SIZE) {
+			err = check_helper_mem_access(env, regno, fn->arg_size[arg], false, meta);
+			if (err)
+				return err;
+			if (arg_type & MEM_ALIGNED)
+				err = check_ptr_alignment(env, reg, 0, fn->arg_size[arg], true);
+		}
 	} else if (arg_type_is_mem_size(arg_type)) {
 		bool zero_size_allowed = (arg_type == ARG_CONST_SIZE_OR_ZERO);
 
@@ -5119,13 +5100,6 @@ skip_type_check:
 			return -EACCES;
 		}
 		meta->mem_size = reg->var_off.value;
-	} else if (arg_type_is_int_ptr(arg_type)) {
-		int size = int_ptr_type_to_size(arg_type);
-
-		err = check_helper_mem_access(env, regno, size, false, meta);
-		if (err)
-			return err;
-		err = check_ptr_alignment(env, reg, 0, size, true);
 	}
 
 	return err;
@@ -5375,15 +5349,15 @@ static bool check_raw_mode_ok(const struct bpf_func_proto *fn)
 {
 	int count = 0;
 
-	if (fn->arg1_type == ARG_PTR_TO_UNINIT_MEM)
+	if (arg_type_is_raw_mem(fn->arg1_type))
 		count++;
-	if (fn->arg2_type == ARG_PTR_TO_UNINIT_MEM)
+	if (arg_type_is_raw_mem(fn->arg2_type))
 		count++;
-	if (fn->arg3_type == ARG_PTR_TO_UNINIT_MEM)
+	if (arg_type_is_raw_mem(fn->arg3_type))
 		count++;
-	if (fn->arg4_type == ARG_PTR_TO_UNINIT_MEM)
+	if (arg_type_is_raw_mem(fn->arg4_type))
 		count++;
-	if (fn->arg5_type == ARG_PTR_TO_UNINIT_MEM)
+	if (arg_type_is_raw_mem(fn->arg5_type))
 		count++;
 
 	/* We only support one arg being in raw mode at the moment,
@@ -5393,13 +5367,19 @@ static bool check_raw_mode_ok(const struct bpf_func_proto *fn)
 	return count <= 1;
 }
 
-static bool check_args_pair_invalid(enum bpf_arg_type arg_curr,
-				    enum bpf_arg_type arg_next)
+static bool check_args_pair_invalid(const struct bpf_func_proto *fn, int arg)
 {
-	return (arg_type_is_mem_ptr(arg_curr) &&
-	        !arg_type_is_mem_size(arg_next)) ||
-	       (!arg_type_is_mem_ptr(arg_curr) &&
-		arg_type_is_mem_size(arg_next));
+	bool is_fixed = fn->arg_type[arg] & MEM_FIXED_SIZE;
+	bool has_size = fn->arg_size[arg] != 0;
+	bool is_next_size = false;
+
+	if (arg + 1 < ARRAY_SIZE(fn->arg_type))
+		is_next_size = arg_type_is_mem_size(fn->arg_type[arg + 1]);
+
+	if (base_type(fn->arg_type[arg]) != ARG_PTR_TO_MEM)
+		return is_next_size;
+
+	return has_size == is_next_size || is_next_size == is_fixed;
 }
 
 static bool check_arg_pair_ok(const struct bpf_func_proto *fn)
@@ -5410,11 +5390,11 @@ static bool check_arg_pair_ok(const struct bpf_func_proto *fn)
 	 * helper function specification.
 	 */
 	if (arg_type_is_mem_size(fn->arg1_type) ||
-	    arg_type_is_mem_ptr(fn->arg5_type)  ||
-	    check_args_pair_invalid(fn->arg1_type, fn->arg2_type) ||
-	    check_args_pair_invalid(fn->arg2_type, fn->arg3_type) ||
-	    check_args_pair_invalid(fn->arg3_type, fn->arg4_type) ||
-	    check_args_pair_invalid(fn->arg4_type, fn->arg5_type))
+	    check_args_pair_invalid(fn, 0) ||
+	    check_args_pair_invalid(fn, 1) ||
+	    check_args_pair_invalid(fn, 2) ||
+	    check_args_pair_invalid(fn, 3) ||
+	    check_args_pair_invalid(fn, 4))
 		return false;
 
 	return true;
@@ -5455,7 +5435,10 @@ static bool check_btf_id_ok(const struct bpf_func_proto *fn)
 		if (base_type(fn->arg_type[i]) == ARG_PTR_TO_BTF_ID && !fn->arg_btf_id[i])
 			return false;
 
-		if (base_type(fn->arg_type[i]) != ARG_PTR_TO_BTF_ID && fn->arg_btf_id[i])
+		if (base_type(fn->arg_type[i]) != ARG_PTR_TO_BTF_ID && fn->arg_btf_id[i] &&
+		    /* arg_btf_id and arg_size are in a union. */
+		    (base_type(fn->arg_type[i]) != ARG_PTR_TO_MEM ||
+		     !(fn->arg_type[i] & MEM_FIXED_SIZE)))
 			return false;
 	}
 
