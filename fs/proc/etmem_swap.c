@@ -70,6 +70,8 @@ static ssize_t swap_pages_write(struct file *file, const char __user *buf,
 			continue;
 
 		add_page_for_swap(page, &pagelist);
+		/* release the ref count we get from the get_page_from_vaddr interface */
+		put_page(page);
 	}
 
 	if (!list_empty(&pagelist))
