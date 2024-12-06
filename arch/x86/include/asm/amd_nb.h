@@ -87,23 +87,6 @@ bool hygon_f18h_m10h(void);
 u16 hygon_nb_num(void);
 int get_df_id(struct pci_dev *misc, u8 *id);
 
-static inline u16 amd_pci_dev_to_node_id(struct pci_dev *pdev)
-{
-	struct pci_dev *misc;
-	int i;
-
-	for (i = 0; i != amd_nb_num(); i++) {
-		misc = node_to_amd_nb(i)->misc;
-
-		if (pci_domain_nr(misc->bus) == pci_domain_nr(pdev->bus) &&
-		    PCI_SLOT(misc->devfn) == PCI_SLOT(pdev->devfn))
-			return i;
-	}
-
-	WARN(1, "Unable to find AMD Northbridge id for %s\n", pci_name(pdev));
-	return 0;
-}
-
 static inline bool amd_gart_present(void)
 {
 	if (boot_cpu_data.x86_vendor != X86_VENDOR_AMD)
