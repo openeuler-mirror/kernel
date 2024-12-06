@@ -31,24 +31,7 @@
 #define PCI_DEVICE_ID_AMD_MI300_ROOT		0x14f8
 
 #define PCI_DEVICE_ID_AMD_17H_DF_F4		0x1464
-#define PCI_DEVICE_ID_AMD_17H_M10H_DF_F4	0x15ec
 #define PCI_DEVICE_ID_AMD_17H_M30H_DF_F4	0x1494
-#define PCI_DEVICE_ID_AMD_17H_M60H_DF_F4	0x144c
-#define PCI_DEVICE_ID_AMD_17H_M70H_DF_F4	0x1444
-#define PCI_DEVICE_ID_AMD_17H_MA0H_DF_F4	0x1728
-#define PCI_DEVICE_ID_AMD_19H_DF_F4		0x1654
-#define PCI_DEVICE_ID_AMD_19H_M10H_DF_F4	0x14b1
-#define PCI_DEVICE_ID_AMD_19H_M40H_DF_F4	0x167d
-#define PCI_DEVICE_ID_AMD_19H_M50H_DF_F4	0x166e
-#define PCI_DEVICE_ID_AMD_19H_M60H_DF_F4	0x14e4
-#define PCI_DEVICE_ID_AMD_19H_M70H_DF_F4	0x14f4
-#define PCI_DEVICE_ID_AMD_19H_M78H_DF_F4	0x12fc
-#define PCI_DEVICE_ID_AMD_1AH_M00H_DF_F4	0x12c4
-#define PCI_DEVICE_ID_AMD_1AH_M20H_DF_F4	0x16fc
-#define PCI_DEVICE_ID_AMD_1AH_M60H_DF_F4	0x124c
-#define PCI_DEVICE_ID_AMD_1AH_M70H_DF_F4	0x12bc
-#define PCI_DEVICE_ID_AMD_MI200_DF_F4		0x14d4
-#define PCI_DEVICE_ID_AMD_MI300_DF_F4		0x152c
 
 #define PCI_DEVICE_ID_HYGON_18H_M05H_ROOT	0x14a0
 #define PCI_DEVICE_ID_HYGON_18H_M10H_ROOT	0x14c0
@@ -84,8 +67,6 @@ static const struct pci_device_id amd_root_ids[] = {
 	{}
 };
 
-#define PCI_DEVICE_ID_AMD_CNB17H_F4     0x1704
-
 static const struct pci_device_id amd_nb_misc_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_K8_NB_MISC) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_10H_NB_MISC) },
@@ -115,35 +96,6 @@ static const struct pci_device_id amd_nb_misc_ids[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_1AH_M70H_DF_F3) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_MI200_DF_F3) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_MI300_DF_F3) },
-	{}
-};
-
-static const struct pci_device_id amd_nb_link_ids[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_15H_NB_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_15H_M30H_NB_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_15H_M60H_NB_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_16H_NB_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_16H_M30H_NB_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_M10H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_M30H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_M60H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_M70H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_17H_MA0H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M10H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M40H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M50H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M60H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M70H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_19H_M78H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_CNB17H_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_1AH_M00H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_1AH_M20H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_1AH_M60H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_1AH_M70H_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_MI200_DF_F4) },
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_MI300_DF_F4) },
 	{}
 };
 
@@ -504,9 +456,8 @@ ret:
 static int amd_cache_northbridges(void)
 {
 	const struct pci_device_id *misc_ids = amd_nb_misc_ids;
-	const struct pci_device_id *link_ids = amd_nb_link_ids;
 	const struct pci_device_id *root_ids = amd_root_ids;
-	struct pci_dev *root, *misc, *link;
+	struct pci_dev *root, *misc;
 	struct amd_northbridge *nb;
 	u16 roots_per_misc = 0;
 	u16 misc_count = 0;
@@ -519,7 +470,7 @@ static int amd_cache_northbridges(void)
 	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON) {
 		root_ids = hygon_root_ids;
 		misc_ids = hygon_nb_misc_ids;
-		link_ids = hygon_nb_link_ids;
+		const struct pci_device_id *link_ids = hygon_nb_link_ids;
 
 		if (boot_cpu_data.x86_model >= 0x4 &&
 		    boot_cpu_data.x86_model <= 0xf)
@@ -558,14 +509,13 @@ static int amd_cache_northbridges(void)
 	amd_northbridges.nb = nb;
 	amd_northbridges.num = misc_count;
 
-	link = misc = root = NULL;
+	misc = root = NULL;
 	for (i = 0; i < amd_northbridges.num; i++) {
 		node_to_amd_nb(i)->root = root =
 			next_northbridge(root, root_ids);
 		node_to_amd_nb(i)->misc = misc =
 			next_northbridge(misc, misc_ids);
-		node_to_amd_nb(i)->link = link =
-			next_northbridge(link, link_ids);
+		node_to_amd_nb(i)->link = amd_node_get_func(i, 4);
 
 		/*
 		 * If there are more PCI root devices than data fabric/
