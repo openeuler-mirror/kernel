@@ -717,6 +717,7 @@ struct hns_roce_dev;
 
 enum {
 	HNS_ROCE_FLUSH_FLAG = 0,
+	HNS_ROCE_STOP_FLUSH_FLAG = 1,
 };
 
 struct hns_roce_work {
@@ -777,6 +778,7 @@ struct hns_roce_qp {
 	bool			delayed_destroy_flag;
 	struct hns_roce_mtr_node *mtr_node;
 	struct hns_roce_dip *dip;
+	spinlock_t flush_lock;
 };
 
 struct hns_roce_ib_iboe {
