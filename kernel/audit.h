@@ -187,6 +187,7 @@ struct audit_context {
 		} mmap;
 		struct {
 			int			argc;
+			KABI_FILL_HOLE(bool is_check)
 		} execve;
 		struct {
 			char			*name;

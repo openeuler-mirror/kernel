@@ -2403,6 +2403,7 @@ void __audit_bprm(struct linux_binprm *bprm)
 
 	context->type = AUDIT_EXECVE;
 	context->execve.argc = bprm->argc;
+	context->execve.is_check = bprm->is_check;
 }
 
 

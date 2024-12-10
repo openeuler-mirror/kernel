@@ -598,6 +598,17 @@ int ima_bprm_check(struct linux_binprm *bprm)
 }
 
 /**
+ * ima_bprm_creds_for_exec - ima support exec check.
+ */
+int ima_bprm_creds_for_exec(struct linux_binprm *bprm)
+{
+	if (!bprm->is_check)
+		return 0;
+
+	return ima_bprm_check(bprm);
+}
+
+/**
  * ima_path_check - based on policy, collect/store measurement.
  * @file: pointer to the file to be measured
  * @mask: contains MAY_READ, MAY_WRITE, MAY_EXEC or MAY_APPEND
