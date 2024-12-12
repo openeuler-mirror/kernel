@@ -13,6 +13,7 @@
 #include <asm/msr.h>
 #include <asm/hardirq.h>
 #include <asm/io.h>
+#include <linux/kabi.h>
 
 #define ARCH_APICTIMER_STOPS_ON_C3	1
 
@@ -298,11 +299,11 @@ struct apic {
 	void	(*send_IPI_all)(int vector);
 	void	(*send_IPI_self)(int vector);
 
-	/* dest_logical is used by the IPI functions */
-	u32	dest_logical;
+	_KABI_DEPRECATE(u32, dest_logical);
 	u32	disable_esr;
-	u32	irq_delivery_mode;
-	u32	irq_dest_mode;
+
+	_KABI_DEPRECATE(u32, irq_delivery_mode);
+	_KABI_DEPRECATE(u32, irq_dest_mode);
 
 	u32	(*calc_dest_apicid)(unsigned int cpu);
 
@@ -347,6 +348,9 @@ struct apic {
 	int (*x86_32_early_logical_apicid)(int cpu);
 #endif
 	char	*name;
+
+	KABI_EXTEND(enum apic_delivery_modes delivery_mode)
+	KABI_EXTEND(bool dest_mode_logical)
 };
 
 /*
@@ -513,12 +517,10 @@ static inline void apic_smt_update(void) { }
 #endif
 
 struct msi_msg;
+struct irq_cfg;
 
-#ifdef CONFIG_PCI_MSI
-void x86_vector_msi_compose_msg(struct irq_data *data, struct msi_msg *msg);
-#else
-# define x86_vector_msi_compose_msg NULL
-#endif
+extern void __irq_msi_compose_msg(struct irq_cfg *cfg, struct msi_msg *msg,
+				  bool dmar);
 
 extern void ioapic_zap_locks(void);
 
