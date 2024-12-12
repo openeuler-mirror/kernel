@@ -17,9 +17,6 @@
 
 #include "sp-dev.h"
 
-#define PSP_CMDRESP_RESP		BIT(31)
-#define PSP_CMDRESP_ERR_MASK		0xffff
-
 #define MAX_PSP_NAME_LEN		16
 
 extern struct psp_device *psp_master;
@@ -45,6 +42,7 @@ struct psp_device {
 
 	void *sev_data;
 	void *tee_data;
+	void *platform_access_data;
 };
 
 void psp_set_sev_irq_handler(struct psp_device *psp, psp_irq_handler_t handler,
