@@ -1021,7 +1021,7 @@ struct auxtrace_queue *auxtrace_queues__sample_queue(struct auxtrace_queues *que
 	if (!id)
 		return NULL;
 
-	sid = perf_evlist__id2sid(session->evlist, id);
+	sid = evlist__id2sid(session->evlist, id);
 	if (!sid)
 		return NULL;
 
@@ -1051,7 +1051,7 @@ int auxtrace_queues__add_sample(struct auxtrace_queues *queues,
 	if (!id)
 		return -EINVAL;
 
-	sid = perf_evlist__id2sid(session->evlist, id);
+	sid = evlist__id2sid(session->evlist, id);
 	if (!sid)
 		return -ENOENT;
 
@@ -1086,7 +1086,7 @@ static int auxtrace_queue_data_cb(struct perf_session *session,
 	if (!qd->samples || event->header.type != PERF_RECORD_SAMPLE)
 		return 0;
 
-	err = perf_evlist__parse_sample(session->evlist, event, &sample);
+	err = evlist__parse_sample(session->evlist, event, &sample);
 	if (err)
 		return err;
 

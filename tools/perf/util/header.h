@@ -45,6 +45,8 @@ enum {
 	HEADER_COMPRESSED,
 	HEADER_CPU_PMU_CAPS,
 	HEADER_CLOCK_DATA,
+	HEADER_HYBRID_TOPOLOGY,
+	HEADER_PMU_CAPS,
 	HEADER_LAST_FEATURE,
 	HEADER_FEAT_BITS	= 256,
 };
@@ -118,6 +120,21 @@ int perf_session__write_header(struct perf_session *session,
 			       struct evlist *evlist,
 			       int fd, bool at_exit);
 int perf_header__write_pipe(int fd);
+
+/* feat_writer writes a feature section to output */
+struct feat_writer {
+	int (*write)(struct feat_writer *fw, void *buf, size_t sz);
+};
+
+/* feat_copier copies a feature section using feat_writer to output */
+struct feat_copier {
+	int (*copy)(struct feat_copier *fc, int feat, struct feat_writer *fw);
+};
+
+int perf_session__inject_header(struct perf_session *session,
+				struct evlist *evlist,
+				int fd,
+				struct feat_copier *fc);
 
 void perf_header__set_feat(struct perf_header *header, int feat);
 void perf_header__clear_feat(struct perf_header *header, int feat);

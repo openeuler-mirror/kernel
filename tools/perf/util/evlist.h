@@ -166,11 +166,10 @@ int evlist__add_wakeup_eventfd(struct evlist *evlist, int fd);
 
 int evlist__poll(struct evlist *evlist, int timeout);
 
-struct evsel *perf_evlist__id2evsel(struct evlist *evlist, u64 id);
-struct evsel *perf_evlist__id2evsel_strict(struct evlist *evlist,
-						u64 id);
+struct evsel *evlist__id2evsel(struct evlist *evlist, u64 id);
+struct evsel *evlist__id2evsel_strict(struct evlist *evlist, u64 id);
 
-struct perf_sample_id *perf_evlist__id2sid(struct evlist *evlist, u64 id);
+struct perf_sample_id *evlist__id2sid(struct evlist *evlist, u64 id);
 
 void perf_evlist__toggle_bkw_mmap(struct evlist *evlist, enum bkw_mmap_state state);
 
@@ -233,12 +232,8 @@ u64 evlist__combined_branch_type(struct evlist *evlist);
 bool evlist__sample_id_all(struct evlist *evlist);
 u16 perf_evlist__id_hdr_size(struct evlist *evlist);
 
-int perf_evlist__parse_sample(struct evlist *evlist, union perf_event *event,
-			      struct perf_sample *sample);
-
-int perf_evlist__parse_sample_timestamp(struct evlist *evlist,
-					union perf_event *event,
-					u64 *timestamp);
+int evlist__parse_sample(struct evlist *evlist, union perf_event *event, struct perf_sample *sample);
+int evlist__parse_sample_timestamp(struct evlist *evlist, union perf_event *event, u64 *timestamp);
 
 bool evlist__valid_sample_type(struct evlist *evlist);
 bool evlist__valid_sample_id_all(struct evlist *evlist);
@@ -354,8 +349,7 @@ bool evsel__cpu_iter_skip_no_inc(struct evsel *ev, int cpu);
 struct evsel *
 perf_evlist__find_evsel_by_str(struct evlist *evlist, const char *str);
 
-struct evsel *perf_evlist__event2evsel(struct evlist *evlist,
-					    union perf_event *event);
+struct evsel *evlist__event2evsel(struct evlist *evlist, union perf_event *event);
 
 bool perf_evlist__exclude_kernel(struct evlist *evlist);
 

@@ -37,6 +37,18 @@ struct memory_node {
 	unsigned long	*set;
 };
 
+struct hybrid_node {
+	char	*pmu_name;
+	char	*cpus;
+};
+
+struct pmu_caps {
+	int		nr_caps;
+	unsigned int    max_branches;
+	char            **caps;
+	char            *pmu_name;
+};
+
 struct perf_env {
 	char			*hostname;
 	char			*os_release;
@@ -59,13 +71,15 @@ struct perf_env {
 	int			nr_pmu_mappings;
 	int			nr_groups;
 	int			nr_cpu_pmu_caps;
+	int			nr_hybrid_nodes;
+	int			nr_pmus_with_caps;
 	char			*cmdline;
 	const char		**cmdline_argv;
 	char			*sibling_cores;
 	char			*sibling_dies;
 	char			*sibling_threads;
 	char			*pmu_mappings;
-	char			*cpu_pmu_caps;
+	char			**cpu_pmu_caps;
 	struct cpu_topology_map	*cpu;
 	struct cpu_cache_level	*caches;
 	int			 caches_cnt;
@@ -77,7 +91,9 @@ struct perf_env {
 	struct numa_node	*numa_nodes;
 	struct memory_node	*memory_nodes;
 	unsigned long long	 memory_bsize;
-
+	struct hybrid_node	*hybrid_nodes;
+	struct pmu_caps		*pmu_caps;
+#ifdef HAVE_LIBBPF_SUPPORT
 	/*
 	 * bpf_info_lock protects bpf rbtrees. This is needed because the
 	 * trees are accessed by different threads in perf-top
@@ -89,7 +105,7 @@ struct perf_env {
 		struct rb_root		btfs;
 		u32			btfs_cnt;
 	} bpf_progs;
-
+#endif // HAVE_LIBBPF_SUPPORT
 	/* same reason as above (for perf-top) */
 	struct {
 		struct rw_semaphore	lock;
@@ -130,11 +146,16 @@ void perf_env__exit(struct perf_env *env);
 int perf_env__set_cmdline(struct perf_env *env, int argc, const char *argv[]);
 
 int perf_env__read_cpuid(struct perf_env *env);
+int perf_env__read_pmu_mappings(struct perf_env *env);
+int perf_env__nr_pmu_mappings(struct perf_env *env);
+const char *perf_env__pmu_mappings(struct perf_env *env);
+
 int perf_env__read_cpu_topology_map(struct perf_env *env);
 
 void cpu_cache_level__free(struct cpu_cache_level *cache);
 
 const char *perf_env__arch(struct perf_env *env);
+const char *perf_env__cpuid(struct perf_env *env);
 const char *perf_env__raw_arch(struct perf_env *env);
 int perf_env__nr_cpus_avail(struct perf_env *env);
 
@@ -151,4 +172,6 @@ struct btf_node *perf_env__find_btf(struct perf_env *env, __u32 btf_id);
 struct btf_node *__perf_env__find_btf(struct perf_env *env, __u32 btf_id);
 
 int perf_env__numa_node(struct perf_env *env, int cpu);
+char *perf_env__find_pmu_cap(struct perf_env *env, const char *pmu_name,
+			     const char *cap);
 #endif /* __PERF_ENV_H */

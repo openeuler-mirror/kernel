@@ -402,6 +402,41 @@ struct {
 	u64 clockid_time_ns;
 };
 
+	HEADER_HYBRID_TOPOLOGY = 30,
+
+Indicate the hybrid CPUs. The format of data is as below.
+
+struct {
+	u32 nr;
+	struct {
+		char pmu_name[];
+		char cpus[];
+	} [nr]; /* Variable length records */
+};
+
+Example:
+  hybrid cpu system:
+  cpu_core cpu list : 0-15
+  cpu_atom cpu list : 16-23
+
+	HEADER_PMU_CAPS = 31,
+
+	List of pmu capabilities (except cpu pmu which is already
+	covered by HEADER_CPU_PMU_CAPS). Note that hybrid cpu pmu
+	capabilities are also stored here.
+
+struct {
+	u32 nr_pmu;
+	struct {
+		u32 nr_caps;
+		{
+			char	name[];
+			char	value[];
+		} [nr_caps];
+		char pmu_name[];
+	} [nr_pmu];
+};
+
 	other bits are reserved and should ignored for now
 	HEADER_FEAT_BITS	= 256,
 

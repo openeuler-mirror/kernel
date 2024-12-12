@@ -128,12 +128,12 @@ static int process_sample_event(struct evlist *evlist,
 	pid_t next_tid, prev_tid;
 	int cpu, err;
 
-	if (perf_evlist__parse_sample(evlist, event, &sample)) {
-		pr_debug("perf_evlist__parse_sample failed\n");
+	if (evlist__parse_sample(evlist, event, &sample)) {
+		pr_debug("evlist__parse_sample failed\n");
 		return -1;
 	}
 
-	evsel = perf_evlist__id2evsel(evlist, sample.id);
+	evsel = evlist__id2evsel(evlist, sample.id);
 	if (evsel == switch_tracking->switch_evsel) {
 		next_tid = evsel__intval(evsel, &sample, "next_pid");
 		prev_tid = evsel__intval(evsel, &sample, "prev_pid");
@@ -223,8 +223,8 @@ static int add_event(struct evlist *evlist, struct list_head *events,
 	node->event = event;
 	list_add(&node->list, events);
 
-	if (perf_evlist__parse_sample(evlist, event, &sample)) {
-		pr_debug("perf_evlist__parse_sample failed\n");
+	if (evlist__parse_sample(evlist, event, &sample)) {
+		pr_debug("evlist__parse_sample failed\n");
 		return -1;
 	}
 
