@@ -1150,7 +1150,7 @@ out_unlock:
 				     locked_page,
 				     clear_bits | EXTENT_CLEAR_DATA_RESV,
 				     page_ops);
-	btrfs_qgroup_free_data(inode, NULL, start, cur_alloc_size);
+	btrfs_qgroup_free_data(inode, NULL, start, end - start + 1);
 	goto out;
 }
 
