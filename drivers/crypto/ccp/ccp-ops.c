@@ -14,6 +14,7 @@
 #include <linux/interrupt.h>
 #include <crypto/scatterwalk.h>
 #include <crypto/des.h>
+#include <crypto/gf128mul.h>
 #include <linux/ccp.h>
 
 #include "ccp-dev.h"
@@ -55,6 +56,35 @@ static const __be64 ccp_sha512_init[SHA512_DIGEST_SIZE / sizeof(__be64)] = {
 
 #define	CCP_NEW_JOBID(ccp)	((ccp->vdata->version == CCP_VERSION(3, 0)) ? \
 					ccp_gen_jobid(ccp) : 0)
+
+/*
+ * Complete the encryption operation of a block for sm4 algorithm.
+ * enc: 1--encrypt 0--decrypt
+ */
+static inline int sm4_generic_crypt_block(u8 *dst, u8 *src, u8 *key, int enc)
+{
+	struct crypto_cipher *cipher = NULL;
+	int ret = 0;
+
+	cipher = crypto_alloc_cipher("sm4", 0, 0);
+	if (IS_ERR(cipher)) {
+		pr_err("Allocate sm4 cipher failed, %ld\n", PTR_ERR(cipher));
+		return -ENOMEM;
+	}
+
+	ret = crypto_cipher_setkey(cipher, key, SM4_KEY_SIZE);
+	if (ret)
+		goto out;
+
+	if (enc)
+		crypto_cipher_encrypt_one(cipher, dst, src);
+	else
+		crypto_cipher_decrypt_one(cipher, dst, src);
+
+out:
+	crypto_free_cipher(cipher);
+	return ret;
+}
 
 static u32 ccp_gen_jobid(struct ccp_device *ccp)
 {
@@ -2731,25 +2761,24 @@ e_ctx:
 static int ccp_run_sm4_cmd(struct ccp_cmd_queue *cmd_q, struct ccp_cmd *cmd)
 {
 	struct ccp_sm4_engine *sm4 = &cmd->u.sm4;
-	struct ccp_dm_workarea key, ctx;
+	struct ccp_dm_workarea iv_key;
 	struct ccp_data src, dst;
 	struct ccp_op op;
-	unsigned int jobid;
+	int remain = sm4->src_len & (SM4_BLOCK_SIZE - 1);
 	bool in_place = false;
 	int ret;
 
-	if (sm4->src == NULL || sm4->dst == NULL)
+	if (sm4->src == NULL || sm4->dst == NULL || sm4->key == NULL)
 		return -EINVAL;
 
-	if (sm4->key == NULL)
+	if (sm4->mode != CCP_SM4_MODE_XTS && sm4->key_len != SM4_KEY_SIZE)
 		return -EINVAL;
 
-	switch ((sm4->mode == CCP_SM4_MODE_XTS) ? sm4->key_len/2 : sm4->key_len) {
-	case SM4_KEY_SIZE:
-		break;
-	default:
+	if (sm4->mode == CCP_SM4_MODE_XTS && sm4->src_len < SM4_BLOCK_SIZE)
 		return -EINVAL;
-	}
+
+	if (sm4->mode == CCP_SM4_MODE_XTS && sm4->key_len != SM4_KEY_SIZE * 2)
+		return -EINVAL;
 
 	if (sg_nents_for_len(sm4->key, sm4->key_len) < 0)
 		return -EINVAL;
@@ -2762,77 +2791,11 @@ static int ccp_run_sm4_cmd(struct ccp_cmd_queue *cmd_q, struct ccp_cmd *cmd)
 			return -EINVAL;
 	}
 
-	jobid = CCP_NEW_JOBID(cmd_q->ccp);
-	ret = -EIO;
-	memset(&op, 0, sizeof(op));
-	if (sm4->mode == CCP_SM4_MODE_XTS) {
-		op.cmd_q = cmd_q;
-		op.jobid = jobid;
-		op.sb_key = cmd_q->sb_key;
-		op.sb_ctx = cmd_q->sb_ctx;
-
-		op.u.sm4.select = 0;
-		op.u.sm4.mode = CCP_SM4_MODE_ECB;
-		op.u.sm4.action = CCP_SM4_ACTION_ENCRYPT;
-
-		/* Copy the tweak key to the LSB */
-
-		ret = ccp_init_dm_workarea(&key, cmd_q,
-			CCP_XTS_SM4_KEY_SB_COUNT * CCP_SB_BYTES, DMA_TO_DEVICE);
-		if (ret) {
-			ccp_dm_free(&key);
-			return ret;
-		}
-
-		ret = ccp_set_dm_area(&key, 0, sm4->key, sm4->key_len/2, sm4->key_len/2);
-		if (ret) {
-			ccp_dm_free(&key);
-			return ret;
-		}
-
-		ret = ccp_copy_to_sb(cmd_q, &key, op.jobid, op.sb_key, CCP_PASSTHRU_BYTESWAP_NOOP);
-		if (ret) {
-			cmd->engine_error = cmd_q->cmd_error;
-			ccp_dm_free(&key);
-			return ret;
-		}
-
-		ret = ccp_init_data(&src, cmd_q, sm4->iv,
-			sm4->iv_len, SM4_BLOCK_SIZE, DMA_BIDIRECTIONAL);
-		if (ret) {
-			ccp_dm_free(&key);
-			return ret;
-		}
-
-		dst = src;
-		ccp_prepare_data(&src, &dst, &op, SM4_BLOCK_SIZE, true);
-
-		op.ioc = 1;
-		op.soc = 0;
-		op.init = 0;
-		op.eom = 1;
-		ret = cmd_q->ccp->vdata->perform->sm4(&op);
-		if (ret) {
-			cmd->engine_error = cmd_q->cmd_error;
-			ccp_free_data(&src, cmd_q);
-			ccp_dm_free(&key);
-			return ret;
-		}
-		ret = cmd_q->ccp->vdata->perform->run_cmd(&op);
-		if (ret) {
-			cmd->engine_error = cmd_q->cmd_error;
-			ccp_free_data(&src, cmd_q);
-			ccp_dm_free(&key);
-			return ret;
-		}
-	}
-
 	memset(&op, 0, sizeof(op));
 	op.cmd_q = cmd_q;
-	op.jobid = jobid;
+	op.jobid = CCP_NEW_JOBID(cmd_q->ccp);
 	op.ioc = 1;
-	op.sb_key = cmd_q->sb_key; /* Pre-allocated */
-	op.sb_ctx = cmd_q->sb_ctx; /* Pre-allocated */
+	op.sb_ctx = cmd_q->sb_ctx;
 	op.u.sm4.action = sm4->action;
 	op.u.sm4.mode = sm4->mode;
 	op.u.sm4.select = sm4->select;
@@ -2844,38 +2807,10 @@ static int ccp_run_sm4_cmd(struct ccp_cmd_queue *cmd_q, struct ccp_cmd *cmd)
 	if (sg_virt(sm4->src) == sg_virt(sm4->dst))
 		in_place = true;
 
-	/* Copy the key to the LSB */
-	ret = ccp_init_dm_workarea(&key, cmd_q,
-		CCP_XTS_SM4_KEY_SB_COUNT * CCP_SB_BYTES, DMA_TO_DEVICE);
-	if (ret)
-		goto e_key;
-
-	ret = ccp_set_dm_area(&key, 0, sm4->key, 0,
-		(sm4->mode == CCP_SM4_MODE_XTS) ? sm4->key_len/2 : sm4->key_len);
-	if (ret)
-		goto e_key;
-	ret = ccp_copy_to_sb(cmd_q, &key, op.jobid, op.sb_key, CCP_PASSTHRU_BYTESWAP_NOOP);
-	if (ret) {
-		cmd->engine_error = cmd_q->cmd_error;
-		goto e_key;
-	}
-
-	/* Copy the context (IV) to the LSB.*/
-	ret = ccp_init_dm_workarea(&ctx, cmd_q,
-		CCP_AES_CTX_SB_COUNT * CCP_SB_BYTES, DMA_BIDIRECTIONAL);
-	if (ret)
-		goto e_ctx;
-
-	if (sm4->mode != CCP_SM4_MODE_ECB) {
-		ret = ccp_set_dm_area(&ctx, 0, sm4->iv, 0, sm4->iv_len);
-		if (ret)
-			goto e_ctx;
-		ret = ccp_copy_to_sb(cmd_q, &ctx, op.jobid, op.sb_ctx,
-				     CCP_PASSTHRU_BYTESWAP_NOOP);
-		if (ret) {
-			cmd->engine_error = cmd_q->cmd_error;
-			goto e_ctx;
-		}
+	if (sm4->mode == CCP_SM4_MODE_XTS && remain) {
+		sm4->src_len -= remain;
+		if (sm4->action == CCP_SM4_ACTION_DECRYPT)
+			sm4->src_len -= SM4_BLOCK_SIZE;
 	}
 
 	ret = ccp_init_data(&src, cmd_q, sm4->src, sm4->src_len,
@@ -2892,6 +2827,33 @@ static int ccp_run_sm4_cmd(struct ccp_cmd_queue *cmd_q, struct ccp_cmd *cmd)
 			goto e_src;
 	}
 
+	/* load iv and key */
+	ret = ccp_init_dm_workarea(&iv_key, cmd_q,
+		SM4_BLOCK_SIZE + SM4_KEY_SIZE, DMA_BIDIRECTIONAL);
+	if (ret)
+		goto e_dst;
+
+	if (sm4->mode != CCP_SM4_MODE_ECB)
+		ccp_set_dm_area(&iv_key, 0, sm4->iv, 0, SM4_BLOCK_SIZE);
+
+	if (sm4->mode == CCP_SM4_MODE_XTS) {
+		ccp_set_dm_area(&iv_key, SM4_BLOCK_SIZE, sm4->key,
+				SM4_KEY_SIZE, SM4_KEY_SIZE);
+		ret = sm4_generic_crypt_block(iv_key.address,
+			iv_key.address, iv_key.address + SM4_BLOCK_SIZE, 1);
+		if (ret)
+			goto e_iv_key;
+	}
+
+	ccp_set_dm_area(&iv_key, SM4_BLOCK_SIZE, sm4->key, 0, SM4_KEY_SIZE);
+
+	ret = ccp_copy_to_sb(cmd_q, &iv_key, 0, op.sb_ctx,
+			CCP_PASSTHRU_BYTESWAP_NOOP);
+	if (ret) {
+		cmd->engine_error = cmd_q->cmd_error;
+		goto e_iv_key;
+	}
+
 	/* send data to the CCP SM4 engine */
 	while (src.sg_wa.bytes_left) {
 		ccp_prepare_data(&src, &dst, &op, SM4_BLOCK_SIZE, true);
@@ -2906,14 +2868,14 @@ static int ccp_run_sm4_cmd(struct ccp_cmd_queue *cmd_q, struct ccp_cmd *cmd)
 		ret = cmd_q->ccp->vdata->perform->sm4(&op);
 		if (ret) {
 			cmd->engine_error = cmd_q->cmd_error;
-			goto e_dst;
+			goto e_iv_key;
 		}
 
 		if (!src.sg_wa.bytes_left || op.soc) {
 			ret = cmd_q->ccp->vdata->perform->run_cmd(&op);
 			if (ret) {
 				cmd->engine_error = cmd_q->cmd_error;
-				goto e_dst;
+				goto e_iv_key;
 			}
 		}
 
@@ -2922,17 +2884,76 @@ static int ccp_run_sm4_cmd(struct ccp_cmd_queue *cmd_q, struct ccp_cmd *cmd)
 
 	if (sm4->mode != CCP_SM4_MODE_ECB) {
 		/* retrieve the SM4 iv */
-		ret = ccp_copy_from_sb(cmd_q, &ctx, 0, op.sb_ctx,
+		ret = ccp_copy_from_sb(cmd_q, &iv_key, 0, op.sb_ctx,
 				CCP_PASSTHRU_BYTESWAP_NOOP);
 		if (ret) {
 			cmd->engine_error = cmd_q->cmd_error;
-			goto e_dst;
+			goto e_iv_key;
 		}
 
-		ccp_get_dm_area(&ctx, 0, sm4->iv, 0, sm4->iv_len);
+		ccp_get_dm_area(&iv_key, 0, sm4->iv, 0, SM4_BLOCK_SIZE);
 	}
 
+	if (sm4->mode == CCP_SM4_MODE_XTS && remain) {
+		struct ccp_dm_workarea xts_wa;
+		u8 tweak[SM4_BLOCK_SIZE] = {0};
+		u8 temp[SM4_BLOCK_SIZE] = {0};
+		u8 key1[SM4_KEY_SIZE] = {0};
 
+		ret = ccp_init_dm_workarea(&xts_wa, cmd_q,
+				SM4_BLOCK_SIZE * 2, DMA_BIDIRECTIONAL);
+		if (ret)
+			goto e_iv_key;
+
+		memcpy(tweak, iv_key.address, SM4_BLOCK_SIZE);
+		scatterwalk_map_and_copy(key1, sm4->key, 0, SM4_KEY_SIZE, 0);
+		if (sm4->action == CCP_SM4_ACTION_ENCRYPT) {
+			ccp_set_dm_area(&xts_wa, 0, sm4->dst,
+				sm4->src_len - SM4_BLOCK_SIZE, SM4_BLOCK_SIZE);
+			memcpy(xts_wa.address + SM4_BLOCK_SIZE, xts_wa.address, remain);
+			ccp_set_dm_area(&xts_wa, 0, sm4->src, sm4->src_len, remain);
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
+			ret = sm4_generic_crypt_block(xts_wa.address, xts_wa.address, key1, 1);
+			if (ret) {
+				ccp_dm_free(&xts_wa);
+				goto e_iv_key;
+			}
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
+			ccp_get_dm_area(&xts_wa, 0, sm4->dst,
+				sm4->src_len - SM4_BLOCK_SIZE, remain + SM4_BLOCK_SIZE);
+		} else {
+			gf128mul_x_lle((be128 *)tweak, (be128 *)tweak);
+			ccp_set_dm_area(&xts_wa, 0, sm4->src,
+					sm4->src_len, remain + SM4_BLOCK_SIZE);
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
+			ret = sm4_generic_crypt_block(xts_wa.address, xts_wa.address, key1, 0);
+			if (ret) {
+				ccp_dm_free(&xts_wa);
+				goto e_iv_key;
+			}
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
+
+			memcpy(tweak, iv_key.address, SM4_BLOCK_SIZE);
+			memcpy(temp, xts_wa.address, remain);
+			memcpy(xts_wa.address, xts_wa.address + SM4_BLOCK_SIZE, remain);
+			memcpy(xts_wa.address + SM4_BLOCK_SIZE, temp, remain);
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
+			ret = sm4_generic_crypt_block(xts_wa.address, xts_wa.address, key1, 0);
+			if (ret) {
+				ccp_dm_free(&xts_wa);
+				goto e_iv_key;
+			}
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
+			ccp_get_dm_area(&xts_wa, 0, sm4->dst, sm4->src_len,
+					remain + SM4_BLOCK_SIZE);
+		}
+
+		ccp_dm_free(&xts_wa);
+	}
+
+e_iv_key:
+	memset(iv_key.address, 0, SM4_BLOCK_SIZE + SM4_KEY_SIZE);
+	ccp_dm_free(&iv_key);
 
 e_dst:
 	if (!in_place)
@@ -2940,12 +2961,6 @@ e_dst:
 
 e_src:
 	ccp_free_data(&src, cmd_q);
-
-e_ctx:
-	ccp_dm_free(&ctx);
-
-e_key:
-	ccp_dm_free(&key);
 
 	return ret;
 }

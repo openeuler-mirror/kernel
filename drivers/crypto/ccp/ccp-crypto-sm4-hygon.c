@@ -85,6 +85,7 @@ static int ccp_sm4_crypt(struct skcipher_request *req, bool encrypt)
 	if ((mode != CCP_SM4_ALG_MODE_CTR) &&
 			(mode != CCP_SM4_ALG_MODE_OFB) &&
 			(mode != CCP_SM4_ALG_MODE_CFB) &&
+			(mode != CCP_SM4_ALG_MODE_XTS) &&
 			(req->cryptlen & (SM4_BLOCK_SIZE - 1)))
 		return -EINVAL;
 
@@ -246,7 +247,7 @@ static struct ccp_sm4_def sm4_algs[] = {
 	{
 		.mode		= CCP_SM4_ALG_MODE_XTS,
 		.version	= CCP_VERSION(5, 0),
-		.name		= "xts(sm4)",
+		.name		= "xts_ccp(sm4)",
 		.driver_name	= "xts-sm4-ccp",
 		.blocksize	= SM4_BLOCK_SIZE,
 		.ivsize		= SM4_BLOCK_SIZE,
