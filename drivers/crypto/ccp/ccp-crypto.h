@@ -345,7 +345,7 @@ struct ccp_sm3_exp_ctx {
 /***** SM4 related defines *****/
 struct ccp_sm4_ctx {
 	struct scatterlist key_sg;
-	u8 key[SM4_KEY_SIZE];
+	u8 key[SM4_KEY_SIZE * 2];
 	u32 key_len;
 	u32 mode;
 };
