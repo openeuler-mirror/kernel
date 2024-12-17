@@ -209,7 +209,7 @@ static int do_nfs4_mount(struct nfs_server *server,
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 
-	dentry->d_sb->s_flags = fc->sb_flags;
+	dentry->d_sb->s_flags |= (fc->sb_flags & SB_RDONLY);
 	fc->root = dentry;
 	return 0;
 }
