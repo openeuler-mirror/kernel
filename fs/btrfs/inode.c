@@ -1141,6 +1141,7 @@ out_unlock:
 					     locked_page,
 					     clear_bits,
 					     page_ops);
+		btrfs_qgroup_free_data(inode, NULL, start, cur_alloc_size);
 		start += cur_alloc_size;
 		if (start >= end)
 			goto out;
@@ -1149,6 +1150,7 @@ out_unlock:
 				     locked_page,
 				     clear_bits | EXTENT_CLEAR_DATA_RESV,
 				     page_ops);
+	btrfs_qgroup_free_data(inode, NULL, start, end - start + 1);
 	goto out;
 }
 
@@ -1577,7 +1579,7 @@ out_check:
 	}
 
 error:
-	if (ret && cur_offset < end)
+	if (ret && cur_offset < end) {
 		extent_clear_unlock_delalloc(inode, cur_offset, end, end,
 					     locked_page, EXTENT_LOCKED |
 					     EXTENT_DELALLOC | EXTENT_DEFRAG |
@@ -1585,6 +1587,8 @@ error:
 					     PAGE_CLEAR_DIRTY |
 					     PAGE_SET_WRITEBACK |
 					     PAGE_END_WRITEBACK);
+		btrfs_qgroup_free_data(inode, NULL, cur_offset, end - cur_offset + 1);
+	}
 	btrfs_free_path(path);
 	return ret;
 }
