@@ -2828,7 +2828,7 @@ static int cs_etm__queue_aux_records_cb(struct perf_session *session, union perf
 	 * Parse the sample, we need the sample_id_all data that comes after the event so that the
 	 * CPU or PID can be matched to an AUXTRACE buffer's CPU or PID.
 	 */
-	evsel = perf_evlist__event2evsel(session->evlist, event);
+	evsel = evlist__event2evsel(session->evlist, event);
 	if (!evsel)
 		return -EINVAL;
 	ret = evsel__parse_sample(evsel, event, &sample);
