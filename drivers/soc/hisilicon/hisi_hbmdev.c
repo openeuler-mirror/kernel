@@ -59,9 +59,8 @@ static int memdev_power_on(struct acpi_device *adev)
 	acpi_handle handle = adev->handle;
 	acpi_status status;
 
-	acpi_scan_lock_acquire();
+	/* Power on and online the devices */
 	status = acpi_evaluate_object(handle, "_ON", NULL, NULL);
-	acpi_scan_lock_release();
 	if (ACPI_FAILURE(status)) {
 		acpi_handle_warn(handle, "Power on failed (0x%x)\n", status);
 		return -ENODEV;
@@ -100,6 +99,7 @@ static int memdev_power_off(struct acpi_device *adev)
 	acpi_dev_for_each_child(adev, hbmdev_check, NULL);
 	acpi_scan_lock_release();
 
+	/* Eject the devices and power off */
 	status = acpi_evaluate_object(handle, "_OFF", NULL, NULL);
 	if (ACPI_FAILURE(status)) {
 		return -ENODEV;
@@ -112,7 +112,12 @@ static ssize_t state_store(struct device *dev, struct device_attribute *attr,
 {
 	struct acpi_device *adev = ACPI_COMPANION(dev);
 	const int type = online_type_from_str(buf);
-	int ret = -EINVAL;
+	int ret;
+
+	/* Disallow pending on the mutex to avoid potential hung task*/
+	ret = lock_device_hotplug_sysfs();
+	if (ret)
+		return ret;
 
 	switch (type) {
 	case STATE_ONLINE:
@@ -124,6 +129,7 @@ static ssize_t state_store(struct device *dev, struct device_attribute *attr,
 	default:
 		break;
 	}
+	unlock_device_hotplug();
 
 	if (ret)
 		return ret;
@@ -196,9 +202,16 @@ static int container_init(void)
 	return 0;
 }
 
+static struct acpi_platform_list hbm_plat_info[] = {
+	{"HISI  ", "HIP11   ", 0, ACPI_SIG_IORT, all_versions, NULL, 0},
+	{ }
+};
 
 static int __init hbmdev_init(void)
 {
+	if (acpi_match_platform_list(hbm_plat_info) < 0)
+		return 0;
+
 	return container_init();
 }
 module_init(hbmdev_init);

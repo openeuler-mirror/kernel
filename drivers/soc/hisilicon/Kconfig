@@ -19,7 +19,7 @@ config KUNPENG_HCCS
 	  health status and port information of HCCS on Kunpeng SoC.
 
 config HISI_HBMDEV
-	tristate "add extra support for hbm memory device"
+	bool "add extra support for hbm memory device"
 	depends on ACPI_HOTPLUG_MEMORY
 	select ACPI_CONTAINER
 	help
