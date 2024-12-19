@@ -1857,6 +1857,13 @@ static struct socket *xs_create_sock(struct rpc_xprt *xprt,
 		goto out;
 	}
 
+	if (protocol == IPPROTO_TCP) {
+		sock->sk->sk_net_refcnt = 1;
+		get_net(xprt->xprt_net);
+#ifdef CONFIG_PROC_FS
+		this_cpu_add(*xprt->xprt_net->core.sock_inuse, 1);
+#endif
+	}
 	filp = sock_alloc_file(sock, O_NONBLOCK, NULL);
 	if (IS_ERR(filp))
 		return ERR_CAST(filp);
