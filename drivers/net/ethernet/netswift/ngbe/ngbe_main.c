@@ -2784,7 +2784,7 @@ static void ngbe_mac_set_default_filter(struct ngbe_adapter *adapter,
 			    NGBE_PSR_MAC_SWC_AD_H_AV);
 }
 
-int ngbe_add_mac_filter(struct ngbe_adapter *adapter, u8 *addr, u16 pool)
+int ngbe_add_mac_filter(struct ngbe_adapter *adapter, const u8 *addr, u16 pool)
 {
 	struct ngbe_hw *hw = &adapter->hw;
 	u32 i;
@@ -2820,7 +2820,7 @@ static void ngbe_flush_sw_mac_table(struct ngbe_adapter *adapter)
 	ngbe_sync_mac_table(adapter);
 }
 
-int ngbe_del_mac_filter(struct ngbe_adapter *adapter, u8 *addr, u16 pool)
+int ngbe_del_mac_filter(struct ngbe_adapter *adapter, const u8 *addr, u16 pool)
 {
 	/* search table for addr, if found, set to 0 and sync */
 	u32 i;
@@ -2841,6 +2841,25 @@ int ngbe_del_mac_filter(struct ngbe_adapter *adapter, u8 *addr, u16 pool)
 		}
 	}
 	return -ENOMEM;
+}
+
+static int ngbe_uc_sync(struct net_device *netdev, const unsigned char *addr)
+{
+	struct ngbe_adapter *adapter = netdev_priv(netdev);
+	int ret;
+
+	ret = ngbe_add_mac_filter(adapter, addr, VMDQ_P(0));
+
+	return min_t(int, ret, 0);
+}
+
+static int ngbe_uc_unsync(struct net_device *netdev, const unsigned char *addr)
+{
+	struct ngbe_adapter *adapter = netdev_priv(netdev);
+
+	ngbe_del_mac_filter(adapter, addr, VMDQ_P(0));
+
+	return 0;
 }
 
 /**
@@ -2938,10 +2957,11 @@ void ngbe_set_rx_mode(struct net_device *netdev)
 	 * sufficient space to store all the addresses then enable
 	 * unicast promiscuous mode
 	 */
-	count = ngbe_write_uc_addr_list(netdev, VMDQ_P(0));
-	if (count < 0) {
+	if (__dev_uc_sync(netdev, ngbe_uc_sync, ngbe_uc_unsync)) {
 		vmolr &= ~NGBE_PSR_VM_L2CTL_ROPE;
-		vmolr |= NGBE_PSR_VM_L2CTL_UPE;
+		fctrl |= NGBE_PSR_CTL_UPE;
+		e_dev_warn("uc count is %d, available mac entry is %d, enable promisc mode\n",
+			   netdev_uc_count(netdev), ngbe_available_rars(adapter));
 	}
 
 	/* Write addresses to the MTA, if the attempt fails

@@ -3220,7 +3220,7 @@ static void txgbe_mac_set_default_filter(struct txgbe_adapter *adapter,
 			    TXGBE_PSR_MAC_SWC_AD_H_AV);
 }
 
-int txgbe_add_mac_filter(struct txgbe_adapter *adapter, u8 *addr, u16 pool)
+int txgbe_add_mac_filter(struct txgbe_adapter *adapter, const u8 *addr, u16 pool)
 {
 	struct txgbe_hw *hw = &adapter->hw;
 	u32 i;
@@ -3267,7 +3267,7 @@ static void txgbe_flush_sw_mac_table(struct txgbe_adapter *adapter)
 	txgbe_sync_mac_table(adapter);
 }
 
-int txgbe_del_mac_filter(struct txgbe_adapter *adapter, u8 *addr, u16 pool)
+int txgbe_del_mac_filter(struct txgbe_adapter *adapter, const u8 *addr, u16 pool)
 {
 	/* search table for addr, if found, set to 0 and sync */
 	u32 i;
@@ -3301,6 +3301,25 @@ int txgbe_del_mac_filter(struct txgbe_adapter *adapter, u8 *addr, u16 pool)
 	}
 
 	return -ENOMEM;
+}
+
+static int txgbe_uc_sync(struct net_device *netdev, const unsigned char *addr)
+{
+	struct txgbe_adapter *adapter = netdev_priv(netdev);
+	int ret;
+
+	ret = txgbe_add_mac_filter(adapter, addr, VMDQ_P(0));
+
+	return min_t(int, ret, 0);
+}
+
+static int txgbe_uc_unsync(struct net_device *netdev, const unsigned char *addr)
+{
+	struct txgbe_adapter *adapter = netdev_priv(netdev);
+
+	txgbe_del_mac_filter(adapter, addr, VMDQ_P(0));
+
+	return 0;
 }
 
 /**
@@ -3426,10 +3445,9 @@ void txgbe_set_rx_mode(struct net_device *netdev)
 	 * sufficient space to store all the addresses then enable
 	 * unicast promiscuous mode
 	 */
-	count = txgbe_write_uc_addr_list(netdev, VMDQ_P(0));
-	if (count < 0) {
+	if (__dev_uc_sync(netdev, txgbe_uc_sync, txgbe_uc_unsync)) {
 		vmolr &= ~TXGBE_PSR_VM_L2CTL_ROPE;
-		vmolr |= TXGBE_PSR_VM_L2CTL_UPE;
+		fctrl |= TXGBE_PSR_CTL_UPE;
 	}
 
 	/*
