@@ -4623,7 +4623,6 @@ EXPORT_SYMBOL_GPL(check_move_unevictable_pages);
 #ifdef CONFIG_ETMEM
 int add_page_for_swap(struct page *page, struct list_head *pagelist)
 {
-	int err = -EBUSY;
 	struct page *head;
 
 	/* If the page is mapped by more than one process, do not swap it */
@@ -4634,19 +4633,15 @@ int add_page_for_swap(struct page *page, struct list_head *pagelist)
 		return -EACCES;
 
 	head = compound_head(page);
-	err = isolate_lru_page(head);
-	if (err) {
-		put_page(page);
-		return err;
-	}
-	put_page(page);
-	if (PageUnevictable(page))
-		putback_lru_page(page);
+	if (isolate_lru_page(head))
+		return -EBUSY;
+
+	if (PageUnevictable(head))
+		putback_lru_page(head);
 	else
 		list_add_tail(&head->lru, pagelist);
 
-	err = 0;
-	return err;
+	return 0;
 }
 EXPORT_SYMBOL_GPL(add_page_for_swap);
 
