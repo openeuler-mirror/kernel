@@ -445,7 +445,7 @@ config USE_PERCPU_NUMA_NODE_ID
 
 config NODES_SHIFT
 	int
-	default "7"
+	default "3"
 	depends on NEED_MULTIPLE_NODES
 
 config RELOCATABLE
