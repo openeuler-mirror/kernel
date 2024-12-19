@@ -6350,12 +6350,11 @@ static void txgbe_tx_csum(struct txgbe_ring *tx_ring,
 	u32 vlan_macip_lens = 0;
 	u32 mss_l4len_idx = 0;
 	u32 tunhdr_eiplen_tunlen = 0;
-
 	u8 tun_prot = 0;
-
 	u32 type_tucmd;
 
 	if (skb->ip_summed != CHECKSUM_PARTIAL) {
+csum_failed:
 		if (!(first->tx_flags & TXGBE_TX_FLAGS_HW_VLAN) &&
 		    !(first->tx_flags & TXGBE_TX_FLAGS_CC))
 			return;
@@ -6447,7 +6446,6 @@ static void txgbe_tx_csum(struct txgbe_ring *tx_ring,
 
 		switch (l4_prot) {
 		case IPPROTO_TCP:
-
 		mss_l4len_idx = (transport_hdr.tcphdr->doff * 4) <<
 				TXGBE_TXD_L4LEN_SHIFT;
 			break;
@@ -6460,7 +6458,8 @@ static void txgbe_tx_csum(struct txgbe_ring *tx_ring,
 					TXGBE_TXD_L4LEN_SHIFT;
 			break;
 		default:
-			break;
+			skb_checksum_help(skb);
+			goto csum_failed;
 		}
 
 		/* update TX checksum flag */
