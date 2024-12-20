@@ -859,6 +859,7 @@ static void clean_demultiplex_info(struct TCP_Server_Info *server)
 		 */
 	}
 
+	put_net(cifs_net_ns(server));
 	kfree(server->hostname);
 	kfree(server);
 
@@ -2472,8 +2473,6 @@ cifs_put_tcp_session(struct TCP_Server_Info *server, int from_reconnect)
 		return;
 	}
 
-	put_net(cifs_net_ns(server));
-
 	list_del_init(&server->tcp_ses_list);
 	spin_unlock(&cifs_tcp_ses_lock);
 
@@ -3629,13 +3628,23 @@ generic_ip_connect(struct TCP_Server_Info *server)
 	}
 
 	if (socket == NULL) {
-		rc = __sock_create(cifs_net_ns(server), sfamily, SOCK_STREAM,
+		struct net *net = cifs_net_ns(server);
+		struct sock *sk;
+
+		rc = __sock_create(net, sfamily, SOCK_STREAM,
 				   IPPROTO_TCP, &socket, 1);
 		if (rc < 0) {
 			cifs_dbg(VFS, "Error %d creating socket\n", rc);
 			server->ssocket = NULL;
 			return rc;
 		}
+
+		sk = socket->sk;
+		sk->sk_net_refcnt = 1;
+		get_net(net);
+#ifdef CONFIG_PROC_FS
+		this_cpu_add(*net->core.sock_inuse, 1);
+#endif
 
 		/* BB other socket options to set KEEPALIVE, NODELAY? */
 		cifs_dbg(FYI, "Socket created\n");
