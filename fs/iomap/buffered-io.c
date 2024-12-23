@@ -1409,6 +1409,7 @@ iomap_add_to_ioend(struct inode *inode, loff_t offset, struct page *page,
 	unsigned len = i_blocksize(inode);
 	unsigned poff = offset & (PAGE_SIZE - 1);
 	bool merged, same_page = false;
+	loff_t isize = i_size_read(inode);
 
 	if (!wpc->ioend || !iomap_can_add_to_ioend(wpc, offset, sector)) {
 		if (wpc->ioend)
@@ -1429,7 +1430,53 @@ iomap_add_to_ioend(struct inode *inode, loff_t offset, struct page *page,
 		bio_add_page(wpc->ioend->io_bio, page, len, poff);
 	}
 
+	/*
+	 * Clamp io_offset and io_size to the incore EOF so that ondisk
+	 * file size updates in the ioend completion are byte-accurate.
+	 * This avoids recovering files with zeroed tail regions when
+	 * writeback races with appending writes:
+	 *
+	 *    Thread 1:                  Thread 2:
+	 *    ------------               -----------
+	 *    write [A, A+B]
+	 *    update inode size to A+B
+	 *    submit I/O [A, A+BS]
+	 *                               write [A+B, A+B+C]
+	 *                               update inode size to A+B+C
+	 *    <I/O completes, updates disk size to min(A+B+C, A+BS)>
+	 *    <power failure>
+	 *
+	 *  After reboot:
+	 *    1) with A+B+C < A+BS, the file has zero padding in range
+	 *       [A+B, A+B+C]
+	 *
+	 *    |<     Block Size (BS)   >|
+	 *    |DDDDDDDDDDDD0000000000000|
+	 *    ^           ^        ^
+	 *    A          A+B     A+B+C
+	 *                       (EOF)
+	 *
+	 *    2) with A+B+C > A+BS, the file has zero padding in range
+	 *       [A+B, A+BS]
+	 *
+	 *    |<     Block Size (BS)   >|<     Block Size (BS)    >|
+	 *    |DDDDDDDDDDDD0000000000000|00000000000000000000000000|
+	 *    ^           ^             ^           ^
+	 *    A          A+B           A+BS       A+B+C
+	 *                             (EOF)
+	 *
+	 *    D = Valid Data
+	 *    0 = Zero Padding
+	 *
+	 * Note that this defeats the ability to chain the ioends of
+	 * appending writes. Writeback beyond EOF block may occur in
+	 * concurrent scenarios(e.g. racing with truncate) and io_size
+	 * should not be trimmed in such cases.
+	 */
 	wpc->ioend->io_size += len;
+	if (offset < isize && offset + len > isize)
+		wpc->ioend->io_size = isize - wpc->ioend->io_offset;
+
 	wbc_account_cgroup_owner(wbc, page, len);
 }
 

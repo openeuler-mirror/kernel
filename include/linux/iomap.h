@@ -228,7 +228,7 @@ struct iomap_ioend {
 	u16			io_flags;	/* IOMAP_F_* */
 	u32			io_folios;	/* folios added to ioend */
 	struct inode		*io_inode;	/* file being written to */
-	size_t			io_size;	/* size of the extent */
+	size_t			io_size;	/* size of data within eof */
 	loff_t			io_offset;	/* offset in the file */
 	void			*io_private;	/* file system private data */
 	sector_t		io_sector;	/* start sector of ioend */
