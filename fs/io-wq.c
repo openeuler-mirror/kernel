@@ -25,12 +25,12 @@
 #define WORKER_IDLE_TIMEOUT	(5 * HZ)
 
 enum {
-	IO_WORKER_F_UP		= 1,	/* up and active */
-	IO_WORKER_F_RUNNING	= 2,	/* account as running */
-	IO_WORKER_F_FREE	= 4,	/* worker on free list */
-	IO_WORKER_F_EXITING	= 8,	/* worker exiting */
-	IO_WORKER_F_FIXED	= 16,	/* static idle worker */
-	IO_WORKER_F_BOUND	= 32,	/* is doing bounded work */
+	IO_WORKER_F_UP		= 0,	/* up and active */
+	IO_WORKER_F_RUNNING	= 1,	/* account as running */
+	IO_WORKER_F_FREE	= 2,	/* worker on free list */
+	IO_WORKER_F_EXITING	= 3,	/* worker exiting */
+	IO_WORKER_F_FIXED	= 4,	/* static idle worker */
+	IO_WORKER_F_BOUND	= 5,	/* is doing bounded work */
 };
 
 enum {
@@ -48,7 +48,7 @@ enum {
  */
 struct io_worker {
 	refcount_t ref;
-	unsigned flags;
+	unsigned long flags;
 	struct hlist_nulls_node nulls_node;
 	struct list_head all_list;
 	struct task_struct *task;
@@ -193,7 +193,7 @@ static inline struct io_wqe_acct *io_work_get_acct(struct io_wqe *wqe,
 static inline struct io_wqe_acct *io_wqe_get_acct(struct io_wqe *wqe,
 						  struct io_worker *worker)
 {
-	if (worker->flags & IO_WORKER_F_BOUND)
+	if (test_bit(IO_WORKER_F_BOUND, &worker->flags))
 		return &wqe->acct[IO_WQ_ACCT_BOUND];
 
 	return &wqe->acct[IO_WQ_ACCT_UNBOUND];
@@ -215,9 +215,9 @@ static void io_worker_exit(struct io_worker *worker)
 
 	preempt_disable();
 	current->flags &= ~PF_IO_WORKER;
-	if (worker->flags & IO_WORKER_F_RUNNING)
+	if (test_bit(IO_WORKER_F_RUNNING, &worker->flags))
 		atomic_dec(&acct->nr_running);
-	if (!(worker->flags & IO_WORKER_F_BOUND))
+	if (!test_bit(IO_WORKER_F_BOUND, &worker->flags))
 		atomic_dec(&wqe->wq->user->processes);
 	worker->flags = 0;
 	preempt_enable();
@@ -315,7 +315,8 @@ static void io_worker_start(struct io_wqe *wqe, struct io_worker *worker)
 
 	current->flags |= PF_IO_WORKER;
 
-	worker->flags |= (IO_WORKER_F_UP | IO_WORKER_F_RUNNING);
+	set_mask_bits(&worker->flags, 0,
+		      BIT(IO_WORKER_F_UP) | BIT(IO_WORKER_F_RUNNING));
 	worker->restore_files = current->files;
 	worker->restore_fs = current->fs;
 	io_wqe_inc_running(wqe, worker);
@@ -331,8 +332,8 @@ static void __io_worker_busy(struct io_wqe *wqe, struct io_worker *worker,
 {
 	bool worker_bound, work_bound;
 
-	if (worker->flags & IO_WORKER_F_FREE) {
-		worker->flags &= ~IO_WORKER_F_FREE;
+	if (test_bit(IO_WORKER_F_FREE, &worker->flags)) {
+		clear_bit(IO_WORKER_F_FREE, &worker->flags);
 		hlist_nulls_del_init_rcu(&worker->nulls_node);
 	}
 
@@ -340,17 +341,17 @@ static void __io_worker_busy(struct io_wqe *wqe, struct io_worker *worker,
 	 * If worker is moving from bound to unbound (or vice versa), then
 	 * ensure we update the running accounting.
 	 */
-	worker_bound = (worker->flags & IO_WORKER_F_BOUND) != 0;
+	worker_bound = test_bit(IO_WORKER_F_BOUND, &worker->flags);
 	work_bound = (work->flags & IO_WQ_WORK_UNBOUND) == 0;
 	if (worker_bound != work_bound) {
 		io_wqe_dec_running(wqe, worker);
 		if (work_bound) {
-			worker->flags |= IO_WORKER_F_BOUND;
+			set_bit(IO_WORKER_F_BOUND, &worker->flags);
 			wqe->acct[IO_WQ_ACCT_UNBOUND].nr_workers--;
 			wqe->acct[IO_WQ_ACCT_BOUND].nr_workers++;
 			atomic_dec(&wqe->wq->user->processes);
 		} else {
-			worker->flags &= ~IO_WORKER_F_BOUND;
+			clear_bit(IO_WORKER_F_BOUND, &worker->flags);
 			wqe->acct[IO_WQ_ACCT_UNBOUND].nr_workers++;
 			wqe->acct[IO_WQ_ACCT_BOUND].nr_workers--;
 			atomic_inc(&wqe->wq->user->processes);
@@ -369,8 +370,8 @@ static void __io_worker_busy(struct io_wqe *wqe, struct io_worker *worker,
 static bool __io_worker_idle(struct io_wqe *wqe, struct io_worker *worker)
 	__must_hold(wqe->lock)
 {
-	if (!(worker->flags & IO_WORKER_F_FREE)) {
-		worker->flags |= IO_WORKER_F_FREE;
+	if (!test_bit(IO_WORKER_F_FREE, &worker->flags)) {
+		set_bit(IO_WORKER_F_FREE, &worker->flags);
 		hlist_nulls_add_head_rcu(&worker->nulls_node, &wqe->free_list);
 	}
 
@@ -585,7 +586,7 @@ loop:
 			continue;
 		/* timed out, exit unless we're the fixed worker */
 		if (test_bit(IO_WQ_BIT_EXIT, &wq->state) ||
-		    !(worker->flags & IO_WORKER_F_FIXED))
+		    !test_bit(IO_WORKER_F_FIXED, &worker->flags))
 			break;
 	}
 
@@ -609,11 +610,11 @@ void io_wq_worker_running(struct task_struct *tsk)
 	struct io_worker *worker = kthread_data(tsk);
 	struct io_wqe *wqe = worker->wqe;
 
-	if (!(worker->flags & IO_WORKER_F_UP))
+	if (!test_bit(IO_WORKER_F_UP, &worker->flags))
 		return;
-	if (worker->flags & IO_WORKER_F_RUNNING)
+	if (test_bit(IO_WORKER_F_RUNNING, &worker->flags))
 		return;
-	worker->flags |= IO_WORKER_F_RUNNING;
+	set_bit(IO_WORKER_F_RUNNING, &worker->flags);
 	io_wqe_inc_running(wqe, worker);
 }
 
@@ -627,12 +628,12 @@ void io_wq_worker_sleeping(struct task_struct *tsk)
 	struct io_worker *worker = kthread_data(tsk);
 	struct io_wqe *wqe = worker->wqe;
 
-	if (!(worker->flags & IO_WORKER_F_UP))
+	if (!test_bit(IO_WORKER_F_UP, &worker->flags))
 		return;
-	if (!(worker->flags & IO_WORKER_F_RUNNING))
+	if (!test_bit(IO_WORKER_F_RUNNING, &worker->flags))
 		return;
 
-	worker->flags &= ~IO_WORKER_F_RUNNING;
+	clear_bit(IO_WORKER_F_RUNNING, &worker->flags);
 
 	spin_lock_irq(&wqe->lock);
 	io_wqe_dec_running(wqe, worker);
@@ -663,11 +664,11 @@ static bool create_io_worker(struct io_wq *wq, struct io_wqe *wqe, int index)
 	spin_lock_irq(&wqe->lock);
 	hlist_nulls_add_head_rcu(&worker->nulls_node, &wqe->free_list);
 	list_add_tail_rcu(&worker->all_list, &wqe->all_list);
-	worker->flags |= IO_WORKER_F_FREE;
+	set_bit(IO_WORKER_F_FREE, &worker->flags);
 	if (index == IO_WQ_ACCT_BOUND)
-		worker->flags |= IO_WORKER_F_BOUND;
-	if (!acct->nr_workers && (worker->flags & IO_WORKER_F_BOUND))
-		worker->flags |= IO_WORKER_F_FIXED;
+		set_bit(IO_WORKER_F_BOUND, &worker->flags);
+	if (!acct->nr_workers && test_bit(IO_WORKER_F_BOUND, &worker->flags))
+		set_bit(IO_WORKER_F_FIXED, &worker->flags);
 	acct->nr_workers++;
 	spin_unlock_irq(&wqe->lock);
 
