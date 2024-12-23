@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
+
+#define pr_fmt(fmt) "MSIC: " fmt
+
 #include <linux/pci.h>
 #include <linux/module.h>
 #include <linux/msi.h>
@@ -7,8 +10,6 @@
 
 #include <asm/irq_impl.h>
 #include <asm/kvm_emulate.h>
-
-#define PREFIX "MSIC: "
 
 static struct irq_domain *msi_default_domain;
 static DEFINE_RAW_SPINLOCK(vector_lock);
@@ -481,7 +482,7 @@ int __init msic_acpi_init(struct irq_domain *parent,
 	enabled = is_msic_enabled(msic->flags);
 	virtual = is_msic_virtual(msic->flags);
 
-	pr_info(PREFIX "version [%u] on node [%u] Root Complex [%u] (%s) %s\n",
+	pr_info("version [%u] on node [%u] Root Complex [%u] (%s) %s\n",
 			msic->version, msic->node, msic->rc,
 			virtual ? "virtual" : "physical",
 			enabled ? "found" : "disabled");
