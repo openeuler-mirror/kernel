@@ -102,10 +102,14 @@ static long cachefiles_ondemand_fd_ioctl(struct file *filp, unsigned int ioctl,
 
 	id = arg;
 	xa_lock(&cache->reqs);
-	req = radix_tree_delete(&cache->reqs, id);
-	xa_unlock(&cache->reqs);
-	if (!req)
+	req = radix_tree_lookup(&cache->reqs, id);
+	if (!req || req->msg.opcode != CACHEFILES_OP_READ ||
+	    req->object != object) {
+		xa_unlock(&cache->reqs);
 		return -EINVAL;
+	}
+	radix_tree_delete(&cache->reqs, id);
+	xa_unlock(&cache->reqs);
 
 	complete(&req->done);
 	return 0;
@@ -155,10 +159,13 @@ int cachefiles_ondemand_copen(struct cachefiles_cache *cache, char *args)
 		return ret;
 
 	xa_lock(&cache->reqs);
-	req = radix_tree_delete(&cache->reqs, id);
-	xa_unlock(&cache->reqs);
-	if (!req)
+	req = radix_tree_lookup(&cache->reqs, id);
+	if (!req || req->msg.opcode != CACHEFILES_OP_OPEN) {
+		xa_unlock(&cache->reqs);
 		return -EINVAL;
+	}
+	radix_tree_delete(&cache->reqs, id);
+	xa_unlock(&cache->reqs);
 
 	/* fail OPEN request if copen format is invalid */
 	ret = kstrtol(psize, 0, &size);
