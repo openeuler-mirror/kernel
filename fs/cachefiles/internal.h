@@ -18,6 +18,8 @@
 #include <linux/cred.h>
 #include <linux/workqueue.h>
 #include <linux/security.h>
+#include <linux/cachefiles.h>
+#include <linux/idr.h>
 
 struct cachefiles_cache;
 struct cachefiles_object;
@@ -45,9 +47,14 @@ struct cachefiles_object {
 	uint8_t				new;		/* T if object new */
 	spinlock_t			work_lock;
 	struct rb_node			active_node;	/* link in active tree (dentry is key) */
+#ifdef CONFIG_CACHEFILES_ONDEMAND
+	int				ondemand_id;
+#endif
 };
 
 extern struct kmem_cache *cachefiles_object_jar;
+
+#define CACHEFILES_ONDEMAND_ID_CLOSED	-1
 
 /*
  * Cache files cache definition
@@ -84,10 +91,29 @@ struct cachefiles_cache {
 #define CACHEFILES_DEAD			1	/* T if cache dead */
 #define CACHEFILES_CULLING		2	/* T if cull engaged */
 #define CACHEFILES_STATE_CHANGED	3	/* T if state changed (poll trigger) */
+#define CACHEFILES_ONDEMAND_MODE	4	/* T if in on-demand read mode */
 	char				*rootdirname;	/* name of cache root directory */
 	char				*secctx;	/* LSM security context */
 	char				*tag;		/* cache binding tag */
+	struct radix_tree_root		reqs;		/* xarray of pending on-demand requests */
+	struct idr			ondemand_ids;	/* xarray for ondemand_id allocation */
+	u32				ondemand_id_next;
 };
+
+static inline bool cachefiles_in_ondemand_mode(struct cachefiles_cache *cache)
+{
+	return IS_ENABLED(CONFIG_CACHEFILES_ONDEMAND) &&
+		test_bit(CACHEFILES_ONDEMAND_MODE, &cache->flags);
+}
+
+struct cachefiles_req {
+	struct cachefiles_object *object;
+	struct completion done;
+	int error;
+	struct cachefiles_msg msg;
+};
+
+#define CACHEFILES_REQ_NEW	0
 
 /*
  * backing file read tracking
@@ -216,6 +242,31 @@ extern int cachefiles_allocate_pages(struct fscache_retrieval *,
 				     struct list_head *, unsigned *, gfp_t);
 extern int cachefiles_write_page(struct fscache_storage *, struct page *);
 extern void cachefiles_uncache_page(struct fscache_object *, struct page *);
+
+/*
+ * ondemand.c
+ */
+#ifdef CONFIG_CACHEFILES_ONDEMAND
+extern ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
+				char __user *_buffer, size_t buflen, loff_t *pos);
+
+extern int cachefiles_ondemand_copen(struct cachefiles_cache *cache,
+				     char *args);
+
+extern int cachefiles_ondemand_init_object(struct cachefiles_object *object);
+
+#else
+static inline ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
+				char __user *_buffer, size_t buflen, loff_t *pos)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int cachefiles_ondemand_init_object(struct cachefiles_object *object)
+{
+	return 0;
+}
+#endif
 
 /*
  * security.c
