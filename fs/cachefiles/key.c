@@ -30,10 +30,14 @@ static void cachefiles_cook_acc(char *key, unsigned int acc, int *len)
 	*len += 2;
 }
 
-static int cachefiles_cook_csum(const u8 *raw, int keylen, char *key)
+static int cachefiles_cook_csum(struct fscache_cookie *cookie, const u8 *raw,
+				int keylen, char *key)
 {
 	unsigned char csum = 0;
 	int loop;
+
+	if (volume_new_location(cookie))
+		return 1;
 
 	for (loop = 0; loop < keylen; loop++)
 		csum += raw[loop];
@@ -98,7 +102,7 @@ char *cachefiles_cook_key(struct cachefiles_object *object,
 	if (!key)
 		return NULL;
 
-	len = cachefiles_cook_csum(raw, keylen, key);
+	len = cachefiles_cook_csum(cookie, raw, keylen, key);
 	mark = len - 1;
 
 	if (print) {
