@@ -27,32 +27,6 @@ static int fscache_alloc_object(struct fscache_cache *cache,
 static int fscache_attach_object(struct fscache_cookie *cookie,
 				 struct fscache_object *object);
 
-static void fscache_print_cookie(struct fscache_cookie *cookie, char prefix)
-{
-	struct hlist_node *object;
-	const u8 *k;
-	unsigned loop;
-
-	pr_err("%c-cookie c=%p [p=%p fl=%lx nc=%u na=%u]\n",
-	       prefix, cookie, cookie->parent, cookie->flags,
-	       atomic_read(&cookie->n_children),
-	       atomic_read(&cookie->n_active));
-	pr_err("%c-cookie d=%p n=%p\n",
-	       prefix, cookie->def, cookie->netfs_data);
-
-	object = READ_ONCE(cookie->backing_objects.first);
-	if (object)
-		pr_err("%c-cookie o=%p\n",
-		       prefix, hlist_entry(object, struct fscache_object, cookie_link));
-
-	pr_err("%c-key=[%u] '", prefix, cookie->key_len);
-	k = (cookie->key_len <= sizeof(cookie->inline_key)) ?
-		cookie->inline_key : cookie->key;
-	for (loop = 0; loop < cookie->key_len; loop++)
-		pr_cont("%02x", k[loop]);
-	pr_cont("'\n");
-}
-
 void fscache_free_cookie(struct fscache_cookie *cookie)
 {
 	if (cookie) {
@@ -284,10 +258,8 @@ collision:
 	if (test_and_set_bit(FSCACHE_COOKIE_ACQUIRED, &cursor->flags)) {
 		trace_fscache_cookie(cursor, fscache_cookie_collision,
 				     atomic_read(&cursor->usage));
-		fscache_print_cookie(cursor, 'O');
-		fscache_print_cookie(candidate, 'N');
 		hlist_bl_unlock(h);
-		pr_err("Duplicate cookie detected\n");
+		pr_err_ratelimited("Duplicate cookie detected\n");
 		return NULL;
 	}
 
