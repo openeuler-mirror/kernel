@@ -95,6 +95,7 @@ struct cachefiles_cache {
 	char				*rootdirname;	/* name of cache root directory */
 	char				*secctx;	/* LSM security context */
 	char				*tag;		/* cache binding tag */
+	refcount_t			unbind_pincount;/* refcount to do daemon unbind */
 	struct radix_tree_root		reqs;		/* xarray of pending on-demand requests */
 	struct idr			ondemand_ids;	/* xarray for ondemand_id allocation */
 	u32				ondemand_id_next;
@@ -167,6 +168,8 @@ extern void cachefiles_daemon_unbind(struct cachefiles_cache *cache);
  * daemon.c
  */
 extern const struct file_operations cachefiles_daemon_fops;
+extern void cachefiles_get_unbind_pincount(struct cachefiles_cache *cache);
+extern void cachefiles_put_unbind_pincount(struct cachefiles_cache *cache);
 
 extern int cachefiles_has_space(struct cachefiles_cache *cache,
 				unsigned fnr, unsigned bnr);

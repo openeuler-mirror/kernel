@@ -108,6 +108,7 @@ static int cachefiles_daemon_open(struct inode *inode, struct file *file)
 	cache->active_nodes = RB_ROOT;
 	rwlock_init(&cache->active_lock);
 	init_waitqueue_head(&cache->daemon_pollwq);
+	refcount_set(&cache->unbind_pincount, 1);
 
 	INIT_RADIX_TREE(&cache->reqs, GFP_ATOMIC);
 	idr_init(&cache->ondemand_ids);
@@ -167,6 +168,21 @@ static void cachefiles_flush_reqs(struct cachefiles_cache *cache)
 	xa_unlock(&cache->ondemand_ids.idr_rt);
 }
 
+void cachefiles_put_unbind_pincount(struct cachefiles_cache *cache)
+{
+	if (refcount_dec_and_test(&cache->unbind_pincount)) {
+		cachefiles_daemon_unbind(cache);
+		ASSERT(!cache->active_nodes.rb_node);
+		cachefiles_open = 0;
+		kfree(cache);
+	}
+}
+
+void cachefiles_get_unbind_pincount(struct cachefiles_cache *cache)
+{
+	refcount_inc(&cache->unbind_pincount);
+}
+
 /*
  * release a cache
  */
@@ -182,17 +198,12 @@ static int cachefiles_daemon_release(struct inode *inode, struct file *file)
 
 	if (cachefiles_in_ondemand_mode(cache))
 		cachefiles_flush_reqs(cache);
-	cachefiles_daemon_unbind(cache);
-
-	ASSERT(!cache->active_nodes.rb_node);
 
 	/* clean up the control file interface */
 	cache->cachefilesd = NULL;
 	file->private_data = NULL;
-	cachefiles_open = 0;
 
-	kfree(cache);
-
+	cachefiles_put_unbind_pincount(cache);
 	_leave("");
 	return 0;
 }
