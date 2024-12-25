@@ -7,6 +7,7 @@
 
 static DEFINE_MUTEX(erofs_domain_list_lock);
 static LIST_HEAD(erofs_domain_list);
+static struct vfsmount *erofs_pseudo_mnt;
 
 struct fscache_netfs erofs_fscache_netfs = {
 	.name = "erofs",
@@ -279,6 +280,10 @@ static void erofs_fscache_domain_put(struct erofs_domain *domain)
 	mutex_lock(&erofs_domain_list_lock);
 	if (refcount_dec_and_test(&domain->ref)) {
 		list_del(&domain->list);
+		if (list_empty(&erofs_domain_list)) {
+			kern_unmount(erofs_pseudo_mnt);
+			erofs_pseudo_mnt = NULL;
+		}
 		mutex_unlock(&erofs_domain_list_lock);
 		fscache_relinquish_cookie(domain->volume, NULL, false);
 		kfree(domain->domain_id);
@@ -334,6 +339,14 @@ static int erofs_fscache_init_domain(struct super_block *sb)
 	err = erofs_fscache_register_volume(sb);
 	if (err)
 		goto out;
+
+	if (!erofs_pseudo_mnt) {
+		erofs_pseudo_mnt = kern_mount(&erofs_fs_type);
+		if (IS_ERR(erofs_pseudo_mnt)) {
+			err = PTR_ERR(erofs_pseudo_mnt);
+			goto out;
+		}
+	}
 
 	domain->volume = sbi->volume;
 	refcount_set(&domain->ref, 1);
