@@ -38,6 +38,13 @@ static void erofs_readpage_from_fscache_complete(struct page *page, void *ctx,
 	unlock_page(page);
 }
 
+static void erofs_readahead_from_fscache_complete(struct page *page, void *ctx,
+						 int error)
+{
+	erofs_readpage_from_fscache_complete(page, ctx, error);
+	put_page(page);
+}
+
 static int erofs_fscache_meta_readpage(struct file *data, struct page *page)
 {
 	int ret;
@@ -175,6 +182,79 @@ out_unlock:
 	return ret;
 }
 
+static void erofs_fscache_readahead(struct readahead_control *rac)
+{
+	struct inode *inode = rac->mapping->host;
+	struct super_block *sb = inode->i_sb;
+	struct page *page;
+	size_t len, count, done = 0;
+	erofs_off_t pos;
+	loff_t start, start_pos;
+	int ret;
+
+	if (!readahead_count(rac))
+		return;
+
+	start = readahead_pos(rac);
+	len = readahead_length(rac);
+
+	do {
+		struct erofs_map_blocks map;
+		struct erofs_map_dev mdev;
+
+		pos = start + done;
+
+		map.m_la = pos;
+		ret = erofs_map_blocks(inode, &map, EROFS_GET_BLOCKS_RAW);
+		if (ret)
+			return;
+
+		if (!(map.m_flags & EROFS_MAP_MAPPED)) {
+			page = readahead_page(rac);
+			zero_user_segment(page, 0, PAGE_SIZE);
+			SetPageUptodate(page);
+			unlock_page(page);
+			put_page(page);
+			done += PAGE_SIZE;
+			continue;
+		}
+
+		if (map.m_flags & EROFS_MAP_META) {
+			page = readahead_page(rac);
+			ret = erofs_fscache_readpage_inline(page, &map);
+			unlock_page(page);
+			put_page(page);
+			done += PAGE_SIZE;
+			continue;
+		}
+
+		mdev = (struct erofs_map_dev) {
+			.m_deviceid = map.m_deviceid,
+			.m_pa = map.m_pa,
+		};
+
+		ret = erofs_map_dev(sb, &mdev);
+		if (ret)
+			return;
+
+		start_pos = mdev.m_pa + (pos - map.m_la);
+		count = min_t(size_t, map.m_llen - (pos - map.m_la), len - done);
+		ret = fscache_prepare_read(mdev.m_fscache->cookie, rac->mapping,
+				pos / PAGE_SIZE, count / PAGE_SIZE, start_pos,
+				erofs_readahead_from_fscache_complete, NULL);
+		if (ret) {
+			erofs_err(sb, "%s: prepare_read %d", __func__, ret);
+			return;
+		}
+
+		done += count;
+		while (count) {
+			page = readahead_page(rac);
+			count -= PAGE_SIZE;
+		}
+	} while (done < len);
+}
+
 static const struct address_space_operations erofs_fscache_meta_aops = {
 	.readpage = erofs_fscache_meta_readpage,
 	.releasepage = erofs_fscache_release_page,
@@ -183,6 +263,7 @@ static const struct address_space_operations erofs_fscache_meta_aops = {
 
 const struct address_space_operations erofs_fscache_access_aops = {
 	.readpage = erofs_fscache_readpage,
+	.readahead = erofs_fscache_readahead,
 	.releasepage = erofs_fscache_release_page,
 	.invalidatepage = erofs_fscache_invalidate_page,
 };
