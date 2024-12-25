@@ -13,17 +13,18 @@ static int cachefiles_ondemand_fd_release(struct inode *inode,
 					  struct file *file)
 {
 	struct cachefiles_object *object = file->private_data;
-	int object_id = object->ondemand_id;
 	struct cachefiles_cache *cache;
 	void **slot;
 	struct radix_tree_iter iter;
+	struct cachefiles_ondemand_info *info = object->private;
+	int object_id = info->ondemand_id;
 	struct cachefiles_req *req;
 
 	cache = container_of(object->fscache.cache,
 			     struct cachefiles_cache, cache);
 
 	xa_lock(&cache->reqs);
-	object->ondemand_id = CACHEFILES_ONDEMAND_ID_CLOSED;
+	info->ondemand_id = CACHEFILES_ONDEMAND_ID_CLOSED;
 	cachefiles_ondemand_set_object_close(object);
 
 	/*
@@ -235,7 +236,7 @@ static int cachefiles_ondemand_get_fd(struct cachefiles_req *req)
 	load = (void *)req->msg.data;
 	load->fd = fd;
 	req->msg.object_id = object_id;
-	object->ondemand_id = object_id;
+	object->private->ondemand_id = object_id;
 
 	cachefiles_get_unbind_pincount(cache);
 	return 0;
@@ -404,7 +405,7 @@ static int cachefiles_ondemand_send_req(struct cachefiles_object *object,
 	smp_mb();
 	if (opcode != CACHEFILES_OP_OPEN &&
 		!cachefiles_ondemand_object_is_open(object)) {
-		WARN_ON_ONCE(object->ondemand_id == 0);
+		WARN_ON_ONCE(object->private->ondemand_id == 0);
 		xa_unlock(&cache->reqs);
 		ret = -EIO;
 		goto out;
@@ -471,7 +472,7 @@ static int cachefiles_ondemand_init_close_req(struct cachefiles_req *req,
 	if (!cachefiles_ondemand_object_is_open(object))
 		return -ENOENT;
 
-	req->msg.object_id = object->ondemand_id;
+	req->msg.object_id = object->private->ondemand_id;
 	return 0;
 }
 
@@ -486,7 +487,7 @@ static int cachefiles_ondemand_init_read_req(struct cachefiles_req *req,
 	struct cachefiles_object *object = req->object;
 	struct cachefiles_read *load = (void *)req->msg.data;
 	struct cachefiles_read_ctx *read_ctx = private;
-	int object_id = object->ondemand_id;
+	int object_id = object->private->ondemand_id;
 
 	/* Stop enqueuing requests when daemon has closed anon_fd. */
 	if (!cachefiles_ondemand_object_is_open(object)) {
@@ -538,4 +539,20 @@ int cachefiles_ondemand_read(struct cachefiles_object *object,
 	return cachefiles_ondemand_send_req(object, CACHEFILES_OP_READ,
 			sizeof(struct cachefiles_read),
 			cachefiles_ondemand_init_read_req, &read_ctx);
+}
+
+int cachefiles_ondemand_init_obj_info(struct cachefiles_object *object)
+{
+	struct cachefiles_cache *cache;
+
+	cache = container_of(object->fscache.cache, struct cachefiles_cache, cache);
+	if (!cachefiles_in_ondemand_mode(cache))
+		return 0;
+
+	object->private = kzalloc(sizeof(struct cachefiles_ondemand_info), GFP_KERNEL);
+	if (!object->private)
+		return -ENOMEM;
+
+	object->private->object = object;
+	return 0;
 }
