@@ -46,8 +46,9 @@ DEFINE_PER_CPU(wait_queue_head_t, fscache_object_cong_wait);
 
 /* these values serve as lower bounds, will be adjusted in fscache_init() */
 #define FSCACHE_MIN_OBJECT_MAX_ACTIVE 4
-static unsigned int fscache_object_max_active = FSCACHE_MIN_OBJECT_MAX_ACTIVE;
-static unsigned int fscache_op_max_active = FSCACHE_MIN_OBJECT_MAX_ACTIVE / 2;
+#define FSCACHE_DEF_OBJECT_MAX_ACTIVE 256
+static unsigned int fscache_object_max_active = FSCACHE_DEF_OBJECT_MAX_ACTIVE;
+static unsigned int fscache_op_max_active = FSCACHE_DEF_OBJECT_MAX_ACTIVE / 2;
 static unsigned int fscache_min_object_max_active = FSCACHE_MIN_OBJECT_MAX_ACTIVE;
 static unsigned int fscache_min_op_max_active = FSCACHE_MIN_OBJECT_MAX_ACTIVE / 2;
 
