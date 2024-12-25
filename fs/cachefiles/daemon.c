@@ -370,6 +370,7 @@ static __poll_t cachefiles_daemon_poll(struct file *file,
 
 	if (cachefiles_in_ondemand_mode(cache)) {
 		if (!radix_tree_empty(&cache->reqs)) {
+			xa_lock(&cache->reqs);
 			radix_tree_for_each_tagged(slot, &cache->reqs, &iter, 0,
 					CACHEFILES_REQ_NEW) {
 				req = radix_tree_deref_slot_protected(slot,
@@ -379,6 +380,7 @@ static __poll_t cachefiles_daemon_poll(struct file *file,
 					break;
 				}
 			}
+			xa_unlock(&cache->reqs);
 		}
 	} else {
 		if (test_bit(CACHEFILES_STATE_CHANGED, &cache->flags))
