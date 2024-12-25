@@ -522,6 +522,20 @@ advance:
 		key = NULL;
 
 lookup_again:
+
+	/*
+	 * Process the open request before acquiring the dir inode lock to
+	 * avoid AA deadlocks caused by the daemon acquiring the dir inode
+	 * lock while processing the open request. Although the daemon gets
+	 * an anonymous fd, it can't be used until object->file has been
+	 * assigned a value.
+	 */
+	if (!key) {
+		ret = cachefiles_ondemand_init_object(object);
+		if (ret < 0)
+			goto error_out2;
+	}
+
 	/* search the current directory for the element name */
 	_debug("lookup '%s'", name);
 
@@ -592,10 +606,6 @@ lookup_again:
 			if (ret < 0)
 				goto no_space_error;
 
-			ret = cachefiles_ondemand_init_object(object);
-			if (ret < 0)
-				goto create_error;
-
 			path.dentry = dir;
 			ret = security_path_mknod(&path, next, S_IFREG, 0);
 			if (ret < 0)
@@ -639,12 +649,6 @@ lookup_again:
 	 * check its attributes and delete it if it's out of date */
 	if (!object->new) {
 		_debug("validate '%pd'", next);
-
-		ret = cachefiles_ondemand_init_object(object);
-		if (ret < 0) {
-			object->dentry = NULL;
-			goto error;
-		}
 
 		ret = cachefiles_check_object_xattr(object, auxdata);
 		if (ret == -ESTALE) {
