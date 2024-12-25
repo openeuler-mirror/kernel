@@ -535,9 +535,11 @@ static int cachefiles_ondemand_send_req(struct cachefiles_object *object,
 		goto out;
 	}
 
-	while (radix_tree_insert(&cache->reqs,
-				 id = atomic64_read(&global_index), req))
-		atomic64_inc(&global_index);
+	do {
+		id = atomic64_inc_return(&global_index);
+		if (unlikely(id == UINT_MAX))
+			atomic64_set(&global_index, 0);
+	} while (radix_tree_insert(&cache->reqs, id, req));
 
 	radix_tree_tag_set(&cache->reqs, id, CACHEFILES_REQ_NEW);
 	xa_unlock(&cache->reqs);
