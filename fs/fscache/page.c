@@ -113,6 +113,8 @@ try_again:
 		fscache_stat(&fscache_n_store_vmscan_gone);
 	}
 
+	/* Make sure the delete operation is performed before waking. */
+	smp_mb();
 	wake_up_bit(&cookie->flags, 0);
 	trace_fscache_wake_cookie(cookie);
 	if (xpage)
@@ -171,6 +173,8 @@ static void fscache_end_page_write(struct fscache_object *object,
 			trace_fscache_page(cookie, page, fscache_page_write_end_pend);
 		}
 		spin_unlock(&cookie->stores_lock);
+		/* Make sure the delete operation is performed before waking. */
+		smp_mb();
 		wake_up_bit(&cookie->flags, 0);
 		trace_fscache_wake_cookie(cookie);
 	} else {
@@ -988,6 +992,8 @@ void fscache_invalidate_writes(struct fscache_cookie *cookie)
 			put_page(results[i]);
 	}
 
+	/* Make sure the delete operation is performed before waking. */
+	smp_mb();
 	wake_up_bit(&cookie->flags, 0);
 	trace_fscache_wake_cookie(cookie);
 
