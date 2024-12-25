@@ -189,6 +189,7 @@ int cachefiles_ondemand_copen(struct cachefiles_cache *cache, char *args)
 	radix_tree_delete(&cache->reqs, id);
 	xa_unlock(&cache->reqs);
 
+	info = req->object->private;
 	/* fail OPEN request if copen format is invalid */
 	ret = kstrtol(psize, 0, &size);
 	if (ret) {
@@ -208,7 +209,6 @@ int cachefiles_ondemand_copen(struct cachefiles_cache *cache, char *args)
 		goto out;
 	}
 
-	info = req->object->private;
 	spin_lock(&info->lock);
 	/* The anonymous fd was closed before copen. */
 	if (info->ondemand_id == CACHEFILES_ONDEMAND_ID_CLOSED) {
@@ -228,6 +228,11 @@ int cachefiles_ondemand_copen(struct cachefiles_cache *cache, char *args)
 	wake_up_all(&cache->daemon_pollwq);
 
 out:
+	spin_lock(&info->lock);
+	/* Need to set object close to avoid reopen status continuing */
+	if (info->ondemand_id == CACHEFILES_ONDEMAND_ID_CLOSED)
+		cachefiles_ondemand_set_object_close(req->object);
+	spin_unlock(&info->lock);
 	complete(&req->done);
 	return ret;
 }
@@ -323,7 +328,7 @@ err_free_id:
 err:
 	spin_lock(&req->object->private->lock);
 	/* Avoid marking an opened object as closed. */
-	if (ret && object->private->ondemand_id <= 0)
+	if (object->private->ondemand_id <= 0)
 		cachefiles_ondemand_set_object_close(req->object);
 	spin_unlock(&req->object->private->lock);
 
