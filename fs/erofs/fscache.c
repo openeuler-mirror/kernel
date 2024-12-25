@@ -4,6 +4,7 @@
  */
 #include <linux/pseudo_fs.h>
 #include <linux/fscache.h>
+#include <linux/fscache-cache.h>
 #include <linux/mount.h>
 #include "internal.h"
 
@@ -24,21 +25,6 @@ static struct file_system_type erofs_anon_fs_type = {
 	.init_fs_context = erofs_anon_init_fs_context,
 	.kill_sb	= kill_anon_super,
 };
-
-struct fscache_netfs erofs_fscache_netfs = {
-	.name = "erofs",
-	.version = 0,
-};
-
-int erofs_fscache_register(void)
-{
-	return fscache_register_netfs(&erofs_fscache_netfs);
-}
-
-void erofs_fscache_unregister(void)
-{
-	fscache_unregister_netfs(&erofs_fscache_netfs);
-}
 
 const struct fscache_cookie_def erofs_fscache_super_index_def = {
 	.name = "EROFS.super",
@@ -319,7 +305,7 @@ static int erofs_fscache_register_volume(struct super_block *sb)
 	if (!name)
 		return -ENOMEM;
 
-	volume = fscache_acquire_cookie(erofs_fscache_netfs.primary_index,
+	volume = fscache_acquire_cookie(&fscache_fsdef_index,
 			&erofs_fscache_super_index_def, name, strlen(name),
 			NULL, 0, NULL, 0, true);
 	if (IS_ERR_OR_NULL(volume)) {

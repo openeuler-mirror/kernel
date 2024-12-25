@@ -753,10 +753,6 @@ static int __init erofs_module_init(void)
 	if (err)
 		goto zip_err;
 
-	err = erofs_fscache_register();
-	if (err)
-		goto fscache_err;
-
 	err = register_filesystem(&erofs_fs_type);
 	if (err)
 		goto fs_err;
@@ -764,8 +760,6 @@ static int __init erofs_module_init(void)
 	return 0;
 
 fs_err:
-	erofs_fscache_unregister();
-fscache_err:
 	z_erofs_exit_zip_subsystem();
 zip_err:
 	erofs_exit_shrinker();
@@ -778,7 +772,6 @@ icache_err:
 static void __exit erofs_module_exit(void)
 {
 	unregister_filesystem(&erofs_fs_type);
-	erofs_fscache_unregister();
 	z_erofs_exit_zip_subsystem();
 	erofs_exit_shrinker();
 
