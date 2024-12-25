@@ -226,10 +226,8 @@ static int cachefiles_ondemand_get_fd(struct cachefiles_req *req)
 	u32 object_id;
 	int ret, fd;
 
-	ret = object->fscache.cache->ops->grab_object(&object->fscache,
-			cachefiles_obj_get_ondemand_fd) ? 0 : -EAGAIN;
-	if (ret)
-		return ret;
+	object->fscache.cache->ops->grab_object(&object->fscache,
+			cachefiles_obj_get_ondemand_fd);
 
 	cache = container_of(object->fscache.cache,
 			     struct cachefiles_cache, cache);
@@ -356,6 +354,8 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 	radix_tree_iter_tag_clear(&cache->reqs, &iter, CACHEFILES_REQ_NEW);
 	cache->req_id_next = iter.index + 1;
 	refcount_inc(&req->ref);
+	req->object->fscache.cache->ops->grab_object(&req->object->fscache,
+			cachefiles_obj_get_read_req);
 	xa_unlock(&cache->reqs);
 
 	id = iter.index;
@@ -379,6 +379,8 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 	}
 
 out:
+	req->object->fscache.cache->ops->put_object(&req->object->fscache,
+			cachefiles_obj_put_read_req);
 	/* Remove error request and CLOSE request has no reply */
 	if (ret || msg->opcode == CACHEFILES_OP_CLOSE) {
 		xa_lock(&cache->reqs);
