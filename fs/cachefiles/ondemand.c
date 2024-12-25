@@ -29,7 +29,8 @@ static int cachefiles_ondemand_fd_release(struct inode *inode,
 						      &cache->reqs.xa_lock);
 		BUG_ON(!req);
 
-		if (req->msg.opcode == CACHEFILES_OP_READ) {
+		if (req->msg.object_id == object_id &&
+		    req->msg.opcode == CACHEFILES_OP_READ) {
 			req->error = -EIO;
 			complete(&req->done);
 			radix_tree_iter_delete(&cache->reqs, &iter, slot);
