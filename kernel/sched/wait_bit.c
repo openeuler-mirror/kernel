@@ -47,13 +47,30 @@ __wait_on_bit(struct wait_queue_head *wq_head, struct wait_bit_queue_entry *wbq_
 		prepare_to_wait(wq_head, &wbq_entry->wq_entry, mode);
 		if (test_bit(wbq_entry->key.bit_nr, wbq_entry->key.flags))
 			ret = (*action)(&wbq_entry->key, mode);
-	} while (test_bit_acquire(wbq_entry->key.bit_nr, wbq_entry->key.flags) && !ret);
+	} while (test_bit(wbq_entry->key.bit_nr, wbq_entry->key.flags) && !ret);
 
 	finish_wait(wq_head, &wbq_entry->wq_entry);
 
 	return ret;
 }
 EXPORT_SYMBOL(__wait_on_bit);
+
+static int __sched
+__wait_on_bit_acquire(struct wait_queue_head *wq_head, struct wait_bit_queue_entry *wbq_entry,
+	      wait_bit_action_f *action, unsigned mode)
+{
+	int ret = 0;
+
+	do {
+		prepare_to_wait(wq_head, &wbq_entry->wq_entry, mode);
+		if (test_bit(wbq_entry->key.bit_nr, wbq_entry->key.flags))
+			ret = (*action)(&wbq_entry->key, mode);
+	} while (test_bit_acquire(wbq_entry->key.bit_nr, wbq_entry->key.flags) && !ret);
+
+	finish_wait(wq_head, &wbq_entry->wq_entry);
+
+	return ret;
+}
 
 int __sched out_of_line_wait_on_bit(void *word, int bit,
 				    wait_bit_action_f *action, unsigned mode)
@@ -64,6 +81,29 @@ int __sched out_of_line_wait_on_bit(void *word, int bit,
 	return __wait_on_bit(wq_head, &wq_entry, action, mode);
 }
 EXPORT_SYMBOL(out_of_line_wait_on_bit);
+
+int __sched out_of_line_wait_on_bit_acquire(void *word, int bit,
+					    wait_bit_action_f *action, unsigned mode)
+{
+	struct wait_queue_head *wq_head = bit_waitqueue(word, bit);
+	DEFINE_WAIT_BIT(wq_entry, word, bit);
+
+	return __wait_on_bit_acquire(wq_head, &wq_entry, action, mode);
+}
+EXPORT_SYMBOL(out_of_line_wait_on_bit_acquire);
+
+int __sched out_of_line_wait_on_bit_timeout_acquire(
+	void *word, int bit, wait_bit_action_f *action,
+	unsigned mode, unsigned long timeout)
+{
+	struct wait_queue_head *wq_head = bit_waitqueue(word, bit);
+	DEFINE_WAIT_BIT(wq_entry, word, bit);
+
+	wq_entry.key.timeout = jiffies + timeout;
+
+	return __wait_on_bit_acquire(wq_head, &wq_entry, action, mode);
+}
+EXPORT_SYMBOL_GPL(out_of_line_wait_on_bit_timeout_acquire);
 
 int __sched out_of_line_wait_on_bit_timeout(
 	void *word, int bit, wait_bit_action_f *action,
