@@ -70,6 +70,12 @@ struct fscache_cookie_def {
 #define FSCACHE_COOKIE_TYPE_INDEX	0
 #define FSCACHE_COOKIE_TYPE_DATAFILE	1
 
+	/*
+	 * Used for index cookie. If set, the location of cachefile will be the
+	 * same as mainline kernel v5.18+.
+	 */
+	bool new_location;
+
 	/* select the cache into which to insert an entry in this index
 	 * - optional
 	 * - should return a cache identifier or NULL to cause the cache to be
@@ -874,6 +880,20 @@ void fscache_enable_cookie(struct fscache_cookie *cookie,
 	if (fscache_cookie_valid(cookie) && !fscache_cookie_enabled(cookie))
 		__fscache_enable_cookie(cookie, aux_data, object_size,
 					can_enable, data);
+}
+
+static inline bool volume_new_location(struct fscache_cookie *cookie)
+{
+	return cookie->def && cookie->type == FSCACHE_COOKIE_TYPE_INDEX &&
+	       cookie->def->new_location;
+}
+
+static inline bool data_new_location(struct fscache_cookie *cookie)
+{
+	if (cookie->type != FSCACHE_COOKIE_TYPE_DATAFILE)
+		return false;
+
+	return cookie->parent && volume_new_location(cookie->parent);
 }
 
 #endif /* _LINUX_FSCACHE_H */
