@@ -65,6 +65,38 @@ void fscache_free_cookie(struct fscache_cookie *cookie)
 	}
 }
 
+static int fscache_set_volume_key_hash(struct fscache_cookie *cookie, u32 *buf)
+{
+	u8 *key;
+	size_t hlen = round_up(1 + cookie->key_len + 1, sizeof(__le32));
+
+	key = kzalloc(hlen, GFP_KERNEL);
+	if (!key)
+		return -ENOMEM;
+
+	key[0] = cookie->key_len;
+	memcpy(key + 1, buf, cookie->key_len);
+	cookie->key_hash = fscache_hash(0, (u32 *)key, hlen / sizeof(__le32));
+	kfree(key);
+
+	return 0;
+}
+
+static int fscache_set_key_hash(struct fscache_cookie *cookie, u32 *buf,
+				int bufs)
+{
+	unsigned int salt = 0;
+
+	if (volume_new_location(cookie))
+		return fscache_set_volume_key_hash(cookie, buf);
+
+	if (data_new_location(cookie))
+		salt = cookie->parent->key_hash;
+
+	cookie->key_hash = fscache_hash(salt, buf, bufs);
+	return 0;
+}
+
 /*
  * Set the index key in a cookie.  The cookie struct has space for a 16-byte
  * key plus length and hash, but if that's not big enough, it's instead a
@@ -76,6 +108,7 @@ static int fscache_set_key(struct fscache_cookie *cookie,
 {
 	u32 *buf;
 	int bufs;
+	int ret;
 
 	bufs = DIV_ROUND_UP(index_key_len, sizeof(*buf));
 
@@ -89,8 +122,12 @@ static int fscache_set_key(struct fscache_cookie *cookie,
 	}
 
 	memcpy(buf, index_key, index_key_len);
-	cookie->key_hash = fscache_hash(0, buf, bufs);
-	return 0;
+	ret = fscache_set_key_hash(cookie, buf, bufs);
+	if (ret && index_key_len > sizeof(cookie->inline_key)) {
+		kfree(cookie->key);
+		cookie->key = NULL;
+	}
+	return ret;
 }
 
 static long fscache_compare_cookie(const struct fscache_cookie *a,
@@ -137,6 +174,9 @@ struct fscache_cookie *fscache_alloc_cookie(
 
 	cookie->key_len = index_key_len;
 	cookie->aux_len = aux_data_len;
+	cookie->def	= def;
+	cookie->parent	= parent;
+	cookie->type	= def->type;
 
 	if (fscache_set_key(cookie, index_key, index_key_len) < 0)
 		goto nomem;
@@ -157,12 +197,9 @@ struct fscache_cookie *fscache_alloc_cookie(
 	 */
 	atomic_set(&cookie->n_active, 1);
 
-	cookie->def		= def;
-	cookie->parent		= parent;
 	cookie->collision	= NULL;
 	cookie->netfs_data	= netfs_data;
 	cookie->flags		= (1 << FSCACHE_COOKIE_NO_DATA_YET);
-	cookie->type		= def->type;
 	spin_lock_init(&cookie->lock);
 	spin_lock_init(&cookie->stores_lock);
 	INIT_HLIST_HEAD(&cookie->backing_objects);
