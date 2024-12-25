@@ -725,6 +725,11 @@ lookup_again:
 				 */
 				file->f_mode |= FMODE_RANDOM;
 				rcu_assign_pointer(object->file, file);
+
+				/* Now the pages can be read. */
+				if (object->new && object->fscache.store_limit_l)
+					clear_bit_unlock(FSCACHE_COOKIE_NO_DATA_YET,
+						    &object->fscache.cookie->flags);
 			}
 
 			object->backer = object->dentry;
