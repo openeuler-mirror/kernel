@@ -22,6 +22,14 @@ static const char cachefiles_filecharmap[256] = {
 	[48 ... 127] = 1,		/* '0' -> '~' */
 };
 
+static void cachefiles_cook_acc(char *key, unsigned int acc, int *len)
+{
+	key[*len + 1] = cachefiles_charmap[acc & 63];
+	acc >>= 6;
+	key[*len] = cachefiles_charmap[acc & 63];
+	*len += 2;
+}
+
 /*
  * turn the raw key into something cooked
  * - the raw key should include the length in the two bytes at the front
@@ -86,14 +94,8 @@ char *cachefiles_cook_key(const u8 *raw, int keylen, uint8_t type)
 	mark = len - 1;
 
 	if (print) {
-		acc = *(uint16_t *) raw;
+		cachefiles_cook_acc(key, *(uint16_t *) raw, &len);
 		raw += 2;
-
-		key[len + 1] = cachefiles_charmap[acc & 63];
-		acc >>= 6;
-		key[len] = cachefiles_charmap[acc & 63];
-		len += 2;
-
 		seg = 250;
 		for (loop = keylen; loop > 0; loop--) {
 			if (seg <= 0) {
