@@ -518,8 +518,8 @@ static int fscache_acquire_non_index_cookie(struct fscache_cookie *cookie,
 	/* we may be required to wait for lookup to complete at this point */
 	if (!fscache_defer_lookup) {
 		_debug("non-deferred lookup %p", &cookie->flags);
-		wait_on_bit(&cookie->flags, FSCACHE_COOKIE_LOOKING_UP,
-			    TASK_UNINTERRUPTIBLE);
+		wait_on_bit_acquire(&cookie->flags, FSCACHE_COOKIE_LOOKING_UP,
+				    TASK_UNINTERRUPTIBLE);
 		_debug("complete");
 		if (test_bit(FSCACHE_COOKIE_UNAVAILABLE, &cookie->flags))
 			goto unavailable;

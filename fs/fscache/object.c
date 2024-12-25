@@ -521,8 +521,7 @@ void fscache_object_lookup_negative(struct fscache_object *object)
 		clear_bit(FSCACHE_COOKIE_UNAVAILABLE, &cookie->flags);
 
 		_debug("wake up lookup %p", &cookie->flags);
-		clear_bit_unlock(FSCACHE_COOKIE_LOOKING_UP, &cookie->flags);
-		wake_up_bit(&cookie->flags, FSCACHE_COOKIE_LOOKING_UP);
+		clear_and_wake_up_bit(FSCACHE_COOKIE_LOOKING_UP, &cookie->flags);
 	}
 	_leave("");
 }
@@ -556,8 +555,7 @@ void fscache_obtained_object(struct fscache_object *object)
 		/* Allow write requests to begin stacking up and read requests
 		 * to begin shovelling data.
 		 */
-		clear_bit_unlock(FSCACHE_COOKIE_LOOKING_UP, &cookie->flags);
-		wake_up_bit(&cookie->flags, FSCACHE_COOKIE_LOOKING_UP);
+		clear_and_wake_up_bit(FSCACHE_COOKIE_LOOKING_UP, &cookie->flags);
 	} else {
 		fscache_stat(&fscache_n_object_created);
 	}

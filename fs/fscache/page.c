@@ -352,8 +352,8 @@ int fscache_wait_for_deferred_lookup(struct fscache_cookie *cookie)
 	fscache_stat(&fscache_n_retrievals_wait);
 
 	jif = jiffies;
-	if (wait_on_bit(&cookie->flags, FSCACHE_COOKIE_LOOKING_UP,
-			TASK_INTERRUPTIBLE) != 0) {
+	if (wait_on_bit_acquire(&cookie->flags, FSCACHE_COOKIE_LOOKING_UP,
+				TASK_INTERRUPTIBLE) != 0) {
 		fscache_stat(&fscache_n_retrievals_intr);
 		_leave(" = -ERESTARTSYS");
 		return -ERESTARTSYS;
