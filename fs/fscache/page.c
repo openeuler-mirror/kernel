@@ -472,8 +472,6 @@ int __fscache_read_or_alloc_page(struct fscache_cookie *cookie,
 	object = hlist_entry(cookie->backing_objects.first,
 			     struct fscache_object, cookie_link);
 
-	ASSERT(test_bit(FSCACHE_OBJECT_IS_LOOKED_UP, &object->flags));
-
 	__fscache_use_cookie(cookie);
 	atomic_inc(&object->n_reads);
 	__set_bit(FSCACHE_OP_DEC_READ_CNT, &op->op.flags);
