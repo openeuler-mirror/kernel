@@ -430,7 +430,7 @@ int __fscache_read_or_alloc_page(struct fscache_cookie *cookie,
 				 struct page *page,
 				 fscache_rw_complete_t end_io_func,
 				 void *context,
-				 gfp_t gfp)
+				 gfp_t gfp, loff_t pos)
 {
 	struct fscache_retrieval *op;
 	struct fscache_object *object;
@@ -492,6 +492,8 @@ int __fscache_read_or_alloc_page(struct fscache_cookie *cookie,
 		__fscache_stat(&fscache_n_retrievals_object_dead));
 	if (ret < 0)
 		goto error;
+
+	op->offset = pos;
 
 	/* ask the cache to honour the operation */
 	if (test_bit(FSCACHE_COOKIE_NO_DATA_YET, &object->cookie->flags)) {

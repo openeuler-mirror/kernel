@@ -204,7 +204,7 @@ extern int __fscache_read_or_alloc_page(struct fscache_cookie *,
 					struct page *,
 					fscache_rw_complete_t,
 					void *,
-					gfp_t);
+					gfp_t, loff_t);
 extern int __fscache_read_or_alloc_pages(struct fscache_cookie *,
 					 struct address_space *,
 					 struct list_head *,
@@ -545,7 +545,21 @@ int fscache_read_or_alloc_page(struct fscache_cookie *cookie,
 {
 	if (fscache_cookie_valid(cookie) && fscache_cookie_enabled(cookie))
 		return __fscache_read_or_alloc_page(cookie, page, end_io_func,
-						    context, gfp);
+						    context, gfp, page_offset(page));
+	else
+		return -ENOBUFS;
+}
+
+static inline
+int fscache_read_or_alloc_page2(struct fscache_cookie *cookie,
+			       struct page *page,
+			       fscache_rw_complete_t end_io_func,
+			       void *context,
+			       gfp_t gfp, loff_t pos)
+{
+	if (fscache_cookie_valid(cookie) && fscache_cookie_enabled(cookie))
+		return __fscache_read_or_alloc_page(cookie, page, end_io_func,
+						    context, gfp, pos);
 	else
 		return -ENOBUFS;
 }

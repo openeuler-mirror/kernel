@@ -149,6 +149,7 @@ struct fscache_retrieval {
 	struct list_head	to_do;		/* list of things to be done by the backend */
 	unsigned long		start_time;	/* time at which retrieval started */
 	atomic_t		n_pages;	/* number of pages to be retrieved */
+	loff_t			offset;
 };
 
 typedef int (*fscache_page_retrieval_func_t)(struct fscache_retrieval *op,

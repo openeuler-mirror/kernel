@@ -11,11 +11,32 @@ static int cachefiles_ondemand_fd_release(struct inode *inode,
 	struct cachefiles_object *object = file->private_data;
 	int object_id = object->ondemand_id;
 	struct cachefiles_cache *cache;
+	void **slot;
+	struct radix_tree_iter iter;
+	struct cachefiles_req *req;
 
 	cache = container_of(object->fscache.cache,
 			     struct cachefiles_cache, cache);
 
+	xa_lock(&cache->reqs);
 	object->ondemand_id = CACHEFILES_ONDEMAND_ID_CLOSED;
+	/*
+	 * Flush all pending READ requests since their completion depends on
+	 * anon_fd.
+	 */
+	radix_tree_for_each_slot(slot, &cache->reqs, &iter, 0) {
+		req = radix_tree_deref_slot_protected(slot,
+						      &cache->reqs.xa_lock);
+		BUG_ON(!req);
+
+		if (req->msg.opcode == CACHEFILES_OP_READ) {
+			req->error = -EIO;
+			complete(&req->done);
+			radix_tree_iter_delete(&cache->reqs, &iter, slot);
+		}
+	}
+	xa_unlock(&cache->reqs);
+
 	xa_lock(&cache->ondemand_ids.idr_rt);
 	idr_remove(&cache->ondemand_ids, object_id);
 	xa_unlock(&cache->ondemand_ids.idr_rt);
@@ -58,10 +79,39 @@ static ssize_t cachefiles_ondemand_fd_write_iter(struct kiocb *kiocb,
 	return len;
 }
 
+static long cachefiles_ondemand_fd_ioctl(struct file *filp, unsigned int ioctl,
+					 unsigned long arg)
+{
+	struct cachefiles_object *object = filp->private_data;
+	struct cachefiles_cache *cache;
+	struct cachefiles_req *req;
+	unsigned long id;
+
+	if (ioctl != CACHEFILES_IOC_READ_COMPLETE)
+		return -EINVAL;
+
+	cache = container_of(object->fscache.cache,
+			     struct cachefiles_cache, cache);
+
+	if (!test_bit(CACHEFILES_ONDEMAND_MODE, &cache->flags))
+		return -EOPNOTSUPP;
+
+	id = arg;
+	xa_lock(&cache->reqs);
+	req = radix_tree_delete(&cache->reqs, id);
+	xa_unlock(&cache->reqs);
+	if (!req)
+		return -EINVAL;
+
+	complete(&req->done);
+	return 0;
+}
+
 static const struct file_operations cachefiles_ondemand_fd_fops = {
 	.owner		= THIS_MODULE,
 	.release	= cachefiles_ondemand_fd_release,
 	.write_iter	= cachefiles_ondemand_fd_write_iter,
+	.unlocked_ioctl	= cachefiles_ondemand_fd_ioctl,
 };
 
 /*
@@ -402,6 +452,32 @@ static int cachefiles_ondemand_init_close_req(struct cachefiles_req *req,
 	return 0;
 }
 
+struct cachefiles_read_ctx {
+	loff_t off;
+	size_t len;
+};
+
+static int cachefiles_ondemand_init_read_req(struct cachefiles_req *req,
+					     void *private)
+{
+	struct cachefiles_object *object = req->object;
+	struct cachefiles_read *load = (void *)req->msg.data;
+	struct cachefiles_read_ctx *read_ctx = private;
+	int object_id = object->ondemand_id;
+
+	/* Stop enqueuing requests when daemon has closed anon_fd. */
+	if (object_id <= 0) {
+		WARN_ON_ONCE(object_id == 0);
+		pr_info_once("READ: anonymous fd closed prematurely.\n");
+		return -EIO;
+	}
+
+	req->msg.object_id = object_id;
+	load->off = read_ctx->off;
+	load->len = read_ctx->len;
+	return 0;
+}
+
 int cachefiles_ondemand_init_object(struct cachefiles_object *object)
 {
 	struct fscache_cookie *cookie = object->fscache.cookie;
@@ -428,4 +504,14 @@ void cachefiles_ondemand_clean_object(struct cachefiles_object *object)
 {
 	cachefiles_ondemand_send_req(object, CACHEFILES_OP_CLOSE, 0,
 			cachefiles_ondemand_init_close_req, NULL);
+}
+
+int cachefiles_ondemand_read(struct cachefiles_object *object,
+			     loff_t pos, size_t len)
+{
+	struct cachefiles_read_ctx read_ctx = {pos, len};
+
+	return cachefiles_ondemand_send_req(object, CACHEFILES_OP_READ,
+			sizeof(struct cachefiles_read),
+			cachefiles_ondemand_init_read_req, &read_ctx);
 }
