@@ -3,7 +3,11 @@
 #include <linux/file.h>
 #include <linux/anon_inodes.h>
 #include <linux/uio.h>
+#include <linux/module.h>
 #include "internal.h"
+
+static bool cachefiles_buffered_ondemand = true;
+module_param_named(buffered_ondemand, cachefiles_buffered_ondemand, bool, 0644);
 
 static int cachefiles_ondemand_fd_release(struct inode *inode,
 					  struct file *file)
@@ -52,13 +56,23 @@ static ssize_t cachefiles_ondemand_fd_write_iter(struct kiocb *kiocb,
 {
 	struct cachefiles_object *object = kiocb->ki_filp->private_data;
 	size_t len = iter->count;
-	loff_t pos = kiocb->ki_pos;
+	struct kiocb iocb;
 	int ret;
 
 	if (!object->file)
 		return -ENOBUFS;
 
-	ret = vfs_iter_write(object->file, iter, &pos, 0);
+	iocb = (struct kiocb) {
+		.ki_filp   = object->file,
+		.ki_pos    = kiocb->ki_pos,
+		.ki_flags  = IOCB_WRITE,
+		.ki_ioprio = get_current_ioprio(),
+	};
+
+	if (!cachefiles_buffered_ondemand)
+		iocb.ki_flags |= IOCB_DIRECT;
+
+	ret = vfs_iocb_iter_write(object->file, &iocb, iter);
 	if (ret != len)
 		return -EIO;
 	return len;
