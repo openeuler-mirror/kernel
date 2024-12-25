@@ -77,7 +77,7 @@ static struct fscache_object *cachefiles_alloc_object(
 	((char *)buffer)[keylen + 4] = 0;
 
 	/* turn the raw key into something that can work with as a filename */
-	key = cachefiles_cook_key(buffer, keylen + 2, object->type);
+	key = cachefiles_cook_key(object, buffer, keylen + 2);
 	if (!key)
 		goto nomem_key;
 

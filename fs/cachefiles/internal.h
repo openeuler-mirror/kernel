@@ -195,7 +195,8 @@ extern const struct fscache_cache_ops cachefiles_cache_ops;
 /*
  * key.c
  */
-extern char *cachefiles_cook_key(const u8 *raw, int keylen, uint8_t type);
+extern char *cachefiles_cook_key(struct cachefiles_object *object,
+				 const u8 *raw, int keylen);
 
 /*
  * namei.c

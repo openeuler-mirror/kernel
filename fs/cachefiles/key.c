@@ -50,19 +50,24 @@ static int cachefiles_cook_csum(const u8 *raw, int keylen, char *key)
  *     cooked
  *   - need to cut the cooked key into 252 char lengths (189 raw bytes)
  */
-char *cachefiles_cook_key(const u8 *raw, int keylen, uint8_t type)
+char *cachefiles_cook_key(struct cachefiles_object *object,
+			  const u8 *raw, int keylen)
 {
 	unsigned int acc;
 	char *key;
 	int loop, len, max, seg, mark, print;
+	uint8_t type = object->type;
+	struct fscache_cookie *cookie = object->fscache.cookie;
 
 	_enter(",%d", keylen);
 
 	BUG_ON(keylen < 2 || keylen > 514);
 
 	print = 1;
-	for (loop = 2; loop < keylen; loop++)
-		print &= cachefiles_filecharmap[raw[loop]];
+	if (!volume_new_location(cookie)) {
+		for (loop = 2; loop < keylen; loop++)
+			print &= cachefiles_filecharmap[raw[loop]];
+	}
 
 	if (print) {
 		/* if the path is usable ASCII, then we render it directly */
