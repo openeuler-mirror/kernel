@@ -593,12 +593,37 @@ int cachefiles_ondemand_init_object(struct cachefiles_object *object)
 
 void cachefiles_ondemand_clean_object(struct cachefiles_object *object)
 {
+	void **slot;
+	struct cachefiles_req *req;
+	struct radix_tree_iter iter;
+	struct cachefiles_cache *cache;
+
 	if (!object->private)
 		return;
 
 	cachefiles_ondemand_send_req(object, CACHEFILES_OP_CLOSE, 0,
 			cachefiles_ondemand_init_close_req, NULL);
+
+	if (!object->private->ondemand_id)
+		return;
+
+	/* Flush all requests for the object that is being dropped. */
+	cache = container_of(object->fscache.cache,
+			     struct cachefiles_cache, cache);
+	xa_lock(&cache->reqs);
 	cachefiles_ondemand_set_object_dropping(object);
+	radix_tree_for_each_slot(slot, &cache->reqs, &iter, 0) {
+		req = radix_tree_deref_slot_protected(slot,
+						      &cache->reqs.xa_lock);
+		if (WARN_ON(!req))
+			continue;
+		if (req->object == object) {
+			req->error = -EIO;
+			complete(&req->done);
+			radix_tree_delete(&cache->reqs, iter.index);
+		}
+	}
+	xa_unlock(&cache->reqs);
 }
 
 int cachefiles_ondemand_read(struct cachefiles_object *object,
