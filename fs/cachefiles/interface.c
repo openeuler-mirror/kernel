@@ -288,6 +288,11 @@ static void cachefiles_drop_object(struct fscache_object *_object)
 	ASSERT((atomic_read(&object->usage) & 0xffff0000) != 0x6b6b0000);
 #endif
 
+	if (test_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags) &&
+	    (volume_new_version(object->fscache.cookie) ||
+	     data_new_version(object->fscache.cookie)))
+		cachefiles_mark_object_inactive(cache, object, 0);
+
 	cachefiles_ondemand_clean_object(object);
 
 	/* We need to tidy the object up if we did in fact manage to open it.
