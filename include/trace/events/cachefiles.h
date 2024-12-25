@@ -50,6 +50,8 @@ enum cachefiles_obj_ref_trace {
 	EM(fscache_obj_put_work,		"PUT work")		\
 	EM(cachefiles_obj_put_wait_retry,	"PUT wait_retry")	\
 	EM(cachefiles_obj_put_wait_timeo,	"PUT wait_timeo")	\
+	EM(cachefiles_obj_get_ondemand_fd,	"GET ondemand_fd")	\
+	EM(cachefiles_obj_put_ondemand_fd,	"PUT ondemand_fd")	\
 	EM(cachefiles_obj_get_read_req,		"GET read_req")		\
 	E_(cachefiles_obj_put_read_req,		"PUT read_req")
 
