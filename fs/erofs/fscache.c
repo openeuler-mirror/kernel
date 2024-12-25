@@ -57,16 +57,9 @@ static int erofs_fscache_meta_readpage(struct file *data, struct page *page)
 {
 	int ret;
 	struct super_block *sb = page->mapping->host->i_sb;
-	struct erofs_map_dev mdev = {
-		.m_deviceid = 0,
-		.m_pa = page_offset(page),
-	};
+	struct erofs_fscache *ctx = page->mapping->host->i_private;
 
-	ret = erofs_map_dev(sb, &mdev);
-	if (ret)
-		goto out;
-
-	ret = fscache_read_or_alloc_page(mdev.m_fscache->cookie, page,
+	ret = fscache_read_or_alloc_page(ctx->cookie, page,
 					 erofs_readpage_from_fscache_complete,
 					 NULL,
 					 GFP_KERNEL);
@@ -423,6 +416,7 @@ struct erofs_fscache *erofs_fscache_acquire_cookie(struct super_block *sb,
 		inode->i_size = OFFSET_MAX;
 		inode->i_mapping->a_ops = &erofs_fscache_meta_aops;
 		mapping_set_gfp_mask(inode->i_mapping, GFP_NOFS);
+		inode->i_private = ctx;
 
 		ctx->inode = inode;
 	}
