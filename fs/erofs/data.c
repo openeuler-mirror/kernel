@@ -269,6 +269,7 @@ static inline struct bio *erofs_read_raw_page(struct bio *bio,
 	struct inode *const inode = mapping->host;
 	struct super_block *const sb = inode->i_sb;
 	erofs_off_t current_block = (erofs_off_t)page->index;
+	erofs_off_t pos = blknr_to_addr(current_block);
 	int err;
 
 	DBG_BUGON(!nblocks);
@@ -289,7 +290,7 @@ submit_bio_retry:
 
 	if (!bio) {
 		struct erofs_map_blocks map = {
-			.m_la = blknr_to_addr(current_block),
+			.m_la = pos,
 		};
 		struct erofs_map_dev mdev;
 		erofs_blk_t blknr;
@@ -319,8 +320,8 @@ submit_bio_retry:
 		/* for RAW access mode, m_plen must be equal to m_llen */
 		DBG_BUGON(map.m_plen != map.m_llen);
 
-		blknr = erofs_blknr(mdev.m_pa);
-		blkoff = erofs_blkoff(mdev.m_pa);
+		blknr = erofs_blknr(mdev.m_pa + (pos - map.m_la));
+		blkoff = erofs_blkoff(mdev.m_pa + (pos - map.m_la));
 
 		/* deal with inline page */
 		if (map.m_flags & EROFS_MAP_META) {
