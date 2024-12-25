@@ -210,6 +210,8 @@ extern char *cachefiles_cook_key(struct cachefiles_object *object,
 extern void cachefiles_mark_object_inactive(struct cachefiles_cache *cache,
 					    struct cachefiles_object *object,
 					    blkcnt_t i_blocks);
+extern int cachefiles_mark_object_active(struct cachefiles_cache *cache,
+					 struct cachefiles_object *object);
 extern int cachefiles_delete_object(struct cachefiles_cache *cache,
 				    struct cachefiles_object *object);
 extern int cachefiles_walk_to_object(struct cachefiles_object *parent,

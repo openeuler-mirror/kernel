@@ -232,6 +232,12 @@ static int cachefiles_daemon_add_cache(struct cachefiles_cache *cache)
 	if (ret < 0)
 		goto error_add_cache;
 
+	/*
+	 * As the cache->daemon_mutex lock hold and the cache is set to
+	 * CACHEFILES_READY, this function must not return an error.
+	 */
+	cachefiles_mark_object_active(cache, fsdef);
+
 	/* done */
 	set_bit(CACHEFILES_READY, &cache->flags);
 	dput(root);

@@ -133,8 +133,8 @@ found_dentry:
 /*
  * record the fact that an object is now active
  */
-static int cachefiles_mark_object_active(struct cachefiles_cache *cache,
-					 struct cachefiles_object *object)
+int cachefiles_mark_object_active(struct cachefiles_cache *cache,
+				  struct cachefiles_object *object)
 {
 	struct cachefiles_object *xobject;
 	struct rb_node **_p, *_parent = NULL;

@@ -662,6 +662,12 @@ static int cachefiles_daemon_cull(struct cachefiles_cache *cache, char *args)
 	if (!d_can_lookup(path.dentry))
 		goto notdir;
 
+	/* limit the scope of cull */
+	if (cache->mnt != path.mnt) {
+		path_put(&path);
+		return -EOPNOTSUPP;
+	}
+
 	cachefiles_begin_secure(cache, &saved_cred);
 	ret = cachefiles_cull(cache, path.dentry, args);
 	cachefiles_end_secure(cache, saved_cred);
