@@ -355,11 +355,13 @@ static int erofs_fscache_init_domain(struct super_block *sb)
 		goto out;
 
 	if (!erofs_pseudo_mnt) {
-		erofs_pseudo_mnt = kern_mount(&erofs_anon_fs_type);
-		if (IS_ERR(erofs_pseudo_mnt)) {
-			err = PTR_ERR(erofs_pseudo_mnt);
+		struct vfsmount *mnt = kern_mount(&erofs_anon_fs_type);
+
+		if (IS_ERR(mnt)) {
+			err = PTR_ERR(mnt);
 			goto out;
 		}
+		erofs_pseudo_mnt = mnt;
 	}
 
 	domain->volume = sbi->volume;
