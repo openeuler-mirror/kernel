@@ -89,8 +89,67 @@ static void erofs_fscache_invalidate_page(struct page *page, unsigned int offset
 		ClearPageFsCache(page);
 }
 
+static int erofs_fscache_readpage(struct file *file, struct page *page)
+{
+	struct inode *inode = page->mapping->host;
+	struct super_block *sb = inode->i_sb;
+	struct erofs_map_blocks map;
+	struct erofs_map_dev mdev;
+	erofs_off_t pos = page_offset(page);
+	loff_t pstart;
+	int ret;
+
+	map.m_la = pos;
+	ret = erofs_map_blocks(inode, &map, EROFS_GET_BLOCKS_RAW);
+	if (ret)
+		goto out_unlock;
+
+	if (!(map.m_flags & EROFS_MAP_MAPPED)) {
+		zero_user_segment(page, 0, PAGE_SIZE);
+		SetPageUptodate(page);
+		goto out_unlock;
+	}
+
+	mdev = (struct erofs_map_dev) {
+		.m_deviceid = map.m_deviceid,
+		.m_pa = map.m_pa,
+	};
+
+	ret = erofs_map_dev(sb, &mdev);
+	if (ret)
+		goto out_unlock;
+
+	pstart = mdev.m_pa + (pos - map.m_la);
+	ret = fscache_read_or_alloc_page2(mdev.m_fscache->cookie, page,
+					 erofs_readpage_from_fscache_complete,
+					 NULL,
+					 GFP_KERNEL, pstart);
+	switch (ret) {
+	case 0: /* page found in fscache, read submitted */
+		erofs_dbg("%s: submitted", __func__);
+		return ret;
+	case -ENOBUFS:	/* page won't be cached */
+	case -ENODATA:	/* page not in cache */
+		erofs_err(sb, "%s: %d", __func__, ret);
+		ret = -EIO;
+		goto out_unlock;
+	default:
+		erofs_err(sb, "unknown error ret = %d", ret);
+	}
+
+out_unlock:
+	unlock_page(page);
+	return ret;
+}
+
 static const struct address_space_operations erofs_fscache_meta_aops = {
 	.readpage = erofs_fscache_meta_readpage,
+	.releasepage = erofs_fscache_release_page,
+	.invalidatepage = erofs_fscache_invalidate_page,
+};
+
+const struct address_space_operations erofs_fscache_access_aops = {
+	.readpage = erofs_fscache_readpage,
 	.releasepage = erofs_fscache_release_page,
 	.invalidatepage = erofs_fscache_invalidate_page,
 };
