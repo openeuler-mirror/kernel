@@ -882,7 +882,6 @@ void __fscache_relinquish_cookie(struct fscache_cookie *cookie,
 
 	/* Clear pointers back to the netfs */
 	cookie->netfs_data	= NULL;
-	cookie->def		= NULL;
 	BUG_ON(!radix_tree_empty(&cookie->stores));
 
 	if (cookie->parent) {
@@ -902,19 +901,24 @@ EXPORT_SYMBOL(__fscache_relinquish_cookie);
 /*
  * Remove a cookie from the hash table.
  */
-static void fscache_unhash_cookie(struct fscache_cookie *cookie)
+void fscache_unhash_cookie(struct fscache_cookie *cookie)
 {
 	struct hlist_bl_head *h;
 	unsigned int bucket;
+
+	if (hlist_bl_unhashed(&cookie->hash_link))
+		return;
 
 	bucket = cookie->key_hash & (ARRAY_SIZE(fscache_cookie_hash) - 1);
 	h = &fscache_cookie_hash[bucket];
 
 	hlist_bl_lock(h);
-	hlist_bl_del(&cookie->hash_link);
-	if (cookie->collision)
+	hlist_bl_del_init(&cookie->hash_link);
+	if (cookie->collision) {
 		clear_and_wake_up_bit(FSCACHE_COOKIE_ACQUIRE_PENDING,
 				      &cookie->collision->flags);
+		cookie->collision = NULL;
+	}
 	hlist_bl_unlock(h);
 }
 

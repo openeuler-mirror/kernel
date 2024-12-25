@@ -55,6 +55,7 @@ extern struct fscache_cookie *fscache_alloc_cookie(struct fscache_cookie *,
 extern struct fscache_cookie *fscache_hash_cookie(struct fscache_cookie *);
 extern void fscache_cookie_put(struct fscache_cookie *,
 			       enum fscache_cookie_trace);
+extern void fscache_unhash_cookie(struct fscache_cookie *cookie);
 
 /*
  * fsdef.c

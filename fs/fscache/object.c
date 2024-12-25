@@ -745,6 +745,9 @@ static const struct fscache_state *fscache_drop_object(struct fscache_object *ob
 	cache->ops->drop_object(object);
 	fscache_stat_d(&fscache_n_cop_drop_object);
 
+	if (volume_new_version(cookie) || data_new_version(cookie))
+		fscache_unhash_cookie(cookie);
+
 	/* The parent object wants to know when all it dependents have gone */
 	if (parent) {
 		_debug("release parent OBJ%x {%d}",
