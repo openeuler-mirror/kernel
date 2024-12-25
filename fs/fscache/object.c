@@ -382,14 +382,14 @@ static const struct fscache_state *fscache_initialise_object(struct fscache_obje
 	parent = object->parent;
 	if (!parent) {
 		_leave(" [no parent]");
-		return transit_to(DROP_OBJECT);
+		return transit_to(KILL_OBJECT);
 	}
 
 	_debug("parent: %s of:%lx", parent->state->name, parent->flags);
 
 	if (fscache_object_is_dying(parent)) {
 		_leave(" [bad parent]");
-		return transit_to(DROP_OBJECT);
+		return transit_to(KILL_OBJECT);
 	}
 
 	if (fscache_object_is_available(parent)) {
@@ -411,7 +411,7 @@ static const struct fscache_state *fscache_initialise_object(struct fscache_obje
 	spin_unlock(&parent->lock);
 	if (!success) {
 		_leave(" [grab failed]");
-		return transit_to(DROP_OBJECT);
+		return transit_to(KILL_OBJECT);
 	}
 
 	/* fscache_acquire_non_index_cookie() uses this
