@@ -6,6 +6,11 @@
 #include <linux/module.h>
 #include "internal.h"
 
+struct anon_file {
+	struct file *file;
+	int fd;
+};
+
 static bool cachefiles_buffered_ondemand = true;
 module_param_named(buffered_ondemand, cachefiles_buffered_ondemand, bool, 0644);
 
@@ -249,14 +254,14 @@ int cachefiles_ondemand_restore(struct cachefiles_cache *cache, char *args)
 	return 0;
 }
 
-static int cachefiles_ondemand_get_fd(struct cachefiles_req *req)
+static int cachefiles_ondemand_get_fd(struct cachefiles_req *req,
+				      struct anon_file *anon_file)
 {
 	struct cachefiles_object *object = req->object;
 	struct cachefiles_cache *cache;
 	struct cachefiles_open *load;
-	struct file *file;
 	u32 object_id;
-	int ret, fd;
+	int ret;
 
 	object->fscache.cache->ops->grab_object(&object->fscache,
 			cachefiles_obj_get_ondemand_fd);
@@ -273,16 +278,16 @@ static int cachefiles_ondemand_get_fd(struct cachefiles_req *req)
 		goto err;
 	object_id = ret;
 
-	fd = get_unused_fd_flags(O_WRONLY);
-	if (fd < 0) {
-		ret = fd;
+	anon_file->fd = get_unused_fd_flags(O_WRONLY);
+	if (anon_file->fd < 0) {
+		ret = anon_file->fd;
 		goto err_free_id;
 	}
 
-	file = anon_inode_getfile("[cachefiles]", &cachefiles_ondemand_fd_fops,
-				  object, O_WRONLY);
-	if (IS_ERR(file)) {
-		ret = PTR_ERR(file);
+	anon_file->file = anon_inode_getfile("[cachefiles]",
+				&cachefiles_ondemand_fd_fops, object, O_WRONLY);
+	if (IS_ERR(anon_file->file)) {
+		ret = PTR_ERR(anon_file->file);
 		goto err_put_fd;
 	}
 
@@ -290,15 +295,14 @@ static int cachefiles_ondemand_get_fd(struct cachefiles_req *req)
 	if (object->private->ondemand_id > 0) {
 		spin_unlock(&object->private->lock);
 		ret = -EEXIST;
-		file->private_data = NULL;
+		anon_file->file->private_data = NULL;
 		goto err_put_file;
 	}
 
-	file->f_mode |= FMODE_PWRITE | FMODE_LSEEK;
-	fd_install(fd, file);
+	anon_file->file->f_mode |= FMODE_PWRITE | FMODE_LSEEK;
 
 	load = (void *)req->msg.data;
-	load->fd = fd;
+	load->fd = anon_file->fd;
 	object->private->ondemand_id = object_id;
 	spin_unlock(&object->private->lock);
 
@@ -306,9 +310,11 @@ static int cachefiles_ondemand_get_fd(struct cachefiles_req *req)
 	return 0;
 
 err_put_file:
-	fput(file);
+	fput(anon_file->file);
+	anon_file->file = NULL;
 err_put_fd:
-	put_unused_fd(fd);
+	put_unused_fd(anon_file->fd);
+	anon_file->fd = ret;
 err_free_id:
 	xa_lock(&cache->ondemand_ids.idr_rt);
 	idr_remove(&cache->ondemand_ids, object_id);
@@ -377,6 +383,7 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 	size_t n;
 	int ret = 0;
 	struct radix_tree_iter iter;
+	struct anon_file anon_file;
 
 	/*
 	 * Cyclically search for a request that has not ever been processed,
@@ -410,7 +417,7 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 	id = iter.index;
 
 	if (msg->opcode == CACHEFILES_OP_OPEN) {
-		ret = cachefiles_ondemand_get_fd(req);
+		ret = cachefiles_ondemand_get_fd(req, &anon_file);
 		if (ret)
 			goto out;
 	}
@@ -418,11 +425,16 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 	msg->msg_id = id;
 	msg->object_id = req->object->private->ondemand_id;
 
-	if (copy_to_user(_buffer, msg, n) != 0) {
+	if (copy_to_user(_buffer, msg, n) != 0)
 		ret = -EFAULT;
-		if (msg->opcode == CACHEFILES_OP_OPEN)
-			__close_fd(current->files,
-				((struct cachefiles_open *)msg->data)->fd);
+
+	if (msg->opcode == CACHEFILES_OP_OPEN) {
+		if (ret < 0) {
+			fput(anon_file.file);
+			put_unused_fd(anon_file.fd);
+			goto out;
+		}
+		fd_install(anon_file.fd, anon_file.file);
 	}
 
 out:
