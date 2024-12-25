@@ -106,6 +106,7 @@ nomem_key:
 	kfree(buffer);
 nomem_buffer:
 	kfree(object->private);
+	object->private = NULL;
 nomem_obj_info:
 	BUG_ON(test_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags));
 	kmem_cache_free(cachefiles_object_jar, object);
@@ -379,6 +380,7 @@ static void cachefiles_put_object(struct fscache_object *_object,
 
 		cache = object->fscache.cache;
 		kfree(object->private);
+		object->private = NULL;
 		fscache_object_destroy(&object->fscache);
 		kmem_cache_free(cachefiles_object_jar, object);
 		fscache_object_destroyed(cache);
