@@ -262,15 +262,27 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 	void **slot;
 
 	/*
-	 * Search for a request that has not ever been processed, to prevent
-	 * requests from being processed repeatedly.
+	 * Cyclically search for a request that has not ever been processed,
+	 * to prevent requests from being processed repeatedly, and make
+	 * request distribution fair.
 	 */
 	xa_lock(&cache->reqs);
-	radix_tree_for_each_tagged(slot, &cache->reqs, &iter, 0,
+	radix_tree_for_each_tagged(slot, &cache->reqs, &iter, cache->req_id_next,
 				   CACHEFILES_REQ_NEW) {
 		req = radix_tree_deref_slot_protected(slot, &cache->reqs.xa_lock);
 		WARN_ON(!req);
 		break;
+	}
+
+	if (!req && cache->req_id_next > 0) {
+		radix_tree_for_each_tagged(slot, &cache->reqs, &iter, 0,
+				CACHEFILES_REQ_NEW) {
+			if (iter.index >= cache->req_id_next)
+				break;
+			req = radix_tree_deref_slot_protected(slot, &cache->reqs.xa_lock);
+			WARN_ON(!req);
+			break;
+		}
 	}
 
 	/* no request tagged with CACHEFILES_REQ_NEW found */
@@ -288,6 +300,7 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 	}
 
 	radix_tree_iter_tag_clear(&cache->reqs, &iter, CACHEFILES_REQ_NEW);
+	cache->req_id_next = iter.index + 1;
 	xa_unlock(&cache->reqs);
 
 	id = iter.index;
