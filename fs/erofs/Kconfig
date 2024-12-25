@@ -89,4 +89,3 @@ config EROFS_FS_CLUSTER_PAGE_LIMIT
 	  into 8k-unit, hard limit should not be configured
 	  less than 2. Otherwise, the image will be refused
 	  to mount on this kernel.
-
