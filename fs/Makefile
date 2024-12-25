@@ -15,6 +15,8 @@ obj-y :=	open.o read_write.o file_table.o super.o \
 		stack.o fs_struct.o statfs.o fs_pin.o nsfs.o \
 		fs_types.o fs_context.o fs_parser.o fsopen.o init.o \
 		kernel_read_file.o remap_range.o
+obj-y +=	fs_ctl.o
+
 ifdef CONFIG_CC_IS_CLANG
 CFLAGS_namei.o := $(call cc-disable-warning, bitwise-instead-of-logical)
 endif

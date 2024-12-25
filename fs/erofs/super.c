@@ -661,6 +661,9 @@ static int erofs_init_fs_context(struct fs_context *fc)
 {
 	struct erofs_fs_context *ctx;
 
+	if (!READ_ONCE(erofs_enabled))
+		return -EOPNOTSUPP;
+
 	/* pseudo mount for anon inodes */
 	if (fc->sb_flags & SB_KERNMOUNT) {
 		fc->ops = &erofs_anon_context_ops;

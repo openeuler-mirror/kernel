@@ -3733,4 +3733,8 @@ bool generic_atomic_write_valid(loff_t pos, size_t len,
 	return true;
 }
 
+#if IS_ENABLED(CONFIG_EROFS_FS)
+extern bool erofs_enabled;
+#endif
+
 #endif /* _LINUX_FS_H */
