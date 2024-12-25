@@ -517,8 +517,24 @@ static int cachefiles_ondemand_send_req(struct cachefiles_object *object,
 	xa_unlock(&cache->reqs);
 
 	wake_up_all(&cache->daemon_pollwq);
-	wait_for_completion(&req->done);
-	ret = req->error;
+wait:
+	ret = wait_for_completion_killable(&req->done);
+	if (!ret) {
+		ret = req->error;
+	} else {
+		xa_lock(&cache->reqs);
+		if (radix_tree_lookup(&cache->reqs, id) == req) {
+			radix_tree_delete(&cache->reqs, id);
+			ret = -EINTR;
+		}
+		xa_unlock(&cache->reqs);
+
+		/* Someone will complete it soon. */
+		if (ret != -EINTR) {
+			cpu_relax();
+			goto wait;
+		}
+	}
 	cachefiles_req_put(req);
 	return ret;
 out:
