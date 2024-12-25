@@ -30,7 +30,69 @@ const struct fscache_cookie_def erofs_fscache_inode_object_def = {
 	.type           = FSCACHE_COOKIE_TYPE_DATAFILE,
 };
 
+static void erofs_readpage_from_fscache_complete(struct page *page, void *ctx,
+						 int error)
+{
+	if (!error)
+		SetPageUptodate(page);
+	unlock_page(page);
+}
+
+static int erofs_fscache_meta_readpage(struct file *data, struct page *page)
+{
+	int ret;
+	struct super_block *sb = page->mapping->host->i_sb;
+	struct erofs_map_dev mdev = {
+		.m_deviceid = 0,
+		.m_pa = page_offset(page),
+	};
+
+	ret = erofs_map_dev(sb, &mdev);
+	if (ret)
+		goto out;
+
+	ret = fscache_read_or_alloc_page(mdev.m_fscache->cookie, page,
+					 erofs_readpage_from_fscache_complete,
+					 NULL,
+					 GFP_KERNEL);
+	switch (ret) {
+	case 0: /* page found in fscache, read submitted */
+		erofs_dbg("%s: submitted", __func__);
+		return ret;
+	case -ENOBUFS:	/* page won't be cached */
+	case -ENODATA:	/* page not in cache */
+		erofs_err(sb, "%s: %d", __func__, ret);
+		ret = -EIO;
+		goto out;
+	default:
+		erofs_err(sb, "unknown error ret = %d", ret);
+	}
+
+out:
+	unlock_page(page);
+	return ret;
+}
+
+static int erofs_fscache_release_page(struct page *page, gfp_t gfp)
+{
+	if (WARN_ON(PagePrivate(page)))
+		return 0;
+
+	ClearPageFsCache(page);
+	return 1;
+}
+
+static void erofs_fscache_invalidate_page(struct page *page, unsigned int offset,
+					  unsigned int length)
+{
+	if (offset == 0 && length == PAGE_SIZE)
+		ClearPageFsCache(page);
+}
+
 static const struct address_space_operations erofs_fscache_meta_aops = {
+	.readpage = erofs_fscache_meta_readpage,
+	.releasepage = erofs_fscache_release_page,
+	.invalidatepage = erofs_fscache_invalidate_page,
 };
 
 int erofs_fscache_register_cookie(struct super_block *sb,

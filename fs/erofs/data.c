@@ -34,9 +34,13 @@ static void erofs_readendio(struct bio *bio)
 
 static struct page *erofs_read_meta_page(struct super_block *sb, pgoff_t index)
 {
-	struct address_space *const mapping = sb->s_bdev->bd_inode->i_mapping;
+	struct address_space *mapping;
 	struct page *page;
 
+	if (erofs_is_fscache_mode(sb))
+		mapping = EROFS_SB(sb)->s_fscache->inode->i_mapping;
+	else
+		mapping = sb->s_bdev->bd_inode->i_mapping;
 	page = read_cache_page_gfp(mapping, index,
 				   mapping_gfp_constraint(mapping, ~__GFP_FS));
 	return page;
