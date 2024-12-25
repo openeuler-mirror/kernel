@@ -246,6 +246,7 @@ static int cachefiles_daemon_add_cache(struct cachefiles_cache *cache)
 error_add_cache:
 	dput(cache->graveyard);
 	cache->graveyard = NULL;
+	fscache_object_destroy(&fsdef->fscache);
 error_unsupported:
 	mntput(cache->mnt);
 	cache->mnt = NULL;

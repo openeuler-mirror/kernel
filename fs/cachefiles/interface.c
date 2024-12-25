@@ -109,6 +109,7 @@ nomem_buffer:
 	object->private = NULL;
 nomem_obj_info:
 	BUG_ON(test_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags));
+	fscache_object_destroy(&object->fscache);
 	kmem_cache_free(cachefiles_object_jar, object);
 	fscache_object_destroyed(&cache->cache);
 nomem_object:
