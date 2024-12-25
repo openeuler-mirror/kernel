@@ -102,7 +102,8 @@ char *cachefiles_cook_key(struct cachefiles_object *object,
 	mark = len - 1;
 
 	if (print) {
-		cachefiles_cook_acc(key, *(uint16_t *) raw, &len);
+		if (!volume_new_location(cookie) && !data_new_location(cookie))
+			cachefiles_cook_acc(key, *(uint16_t *) raw, &len);
 		raw += 2;
 		seg = 250;
 		for (loop = keylen; loop > 0; loop--) {
