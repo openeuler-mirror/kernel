@@ -18,8 +18,7 @@ struct erofs_map_blocks;
 		{ 0,		"FILE" },				\
 		{ 1,		"DIR" })
 
-#define show_map_flags(flags) __print_flags(flags, "|",	\
-	{ EROFS_GET_BLOCKS_RAW,	"RAW" })
+#define show_map_flags(flags) __print_flags(flags, "|",	{} )
 
 #define show_mflags(flags) __print_flags(flags, "",	\
 	{ EROFS_MAP_MAPPED,	"M" },			\

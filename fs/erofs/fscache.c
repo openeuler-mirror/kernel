@@ -142,7 +142,7 @@ static int erofs_fscache_readpage(struct file *file, struct page *page)
 	int ret;
 
 	map.m_la = pos;
-	ret = erofs_map_blocks(inode, &map, EROFS_GET_BLOCKS_RAW);
+	ret = erofs_map_blocks(inode, &map);
 	if (ret)
 		goto out_unlock;
 
@@ -212,7 +212,7 @@ static void erofs_fscache_readahead(struct readahead_control *rac)
 		pos = start + done;
 
 		map.m_la = pos;
-		ret = erofs_map_blocks(inode, &map, EROFS_GET_BLOCKS_RAW);
+		ret = erofs_map_blocks(inode, &map);
 		if (ret)
 			return;
 

@@ -388,9 +388,6 @@ struct erofs_map_blocks {
 	unsigned int m_flags;
 };
 
-/* Flags used by erofs_map_blocks_flatmode() */
-#define EROFS_GET_BLOCKS_RAW    0x0001
-
 /* zmap.c */
 #ifdef CONFIG_EROFS_FS_ZIP
 int z_erofs_fill_inode(struct inode *inode);
@@ -421,8 +418,7 @@ void erofs_put_metabuf(struct erofs_buf *buf);
 void *erofs_read_metabuf(struct erofs_buf *buf, struct super_block *sb,
 			 erofs_blk_t blkaddr, enum erofs_kmap_type type);
 int erofs_map_dev(struct super_block *sb, struct erofs_map_dev *dev);
-int erofs_map_blocks(struct inode *inode,
-		     struct erofs_map_blocks *map, int flags);
+int erofs_map_blocks(struct inode *inode, struct erofs_map_blocks *map);
 
 /* inode.c */
 static inline unsigned long erofs_inode_hash(erofs_nid_t nid)
