@@ -91,8 +91,7 @@ struct erofs_domain {
 
 struct erofs_fscache {
 	struct fscache_cookie *cookie;
-	struct inode *inode;
-	struct inode *anon_inode;
+	struct inode *inode;	/* anonymous inode for the blob */
 
 	/* used for share domain mode */
 	struct erofs_domain *domain;
@@ -496,8 +495,8 @@ static inline void z_erofs_exit_zip_subsystem(void) {}
 #endif	/* !CONFIG_EROFS_FS_ZIP */
 
 /* flags for erofs_fscache_register_cookie() */
-#define EROFS_REG_COOKIE_NEED_INODE   1
-#define EROFS_REG_COOKIE_NEED_NOEXIST 2
+#define EROFS_REG_COOKIE_SHARE         0x0001
+#define EROFS_REG_COOKIE_NEED_NOEXIST  0x0002
 
 /* fscache.c */
 #ifdef CONFIG_EROFS_FS_ONDEMAND

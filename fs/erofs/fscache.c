@@ -375,13 +375,13 @@ static int erofs_fscache_register_domain(struct super_block *sb)
 	return err;
 }
 
-static
-struct erofs_fscache *erofs_fscache_acquire_cookie(struct super_block *sb,
-						   char *name,
-						   unsigned int flags)
+static struct erofs_fscache *erofs_fscache_acquire_cookie(struct super_block *sb,
+						char *name, unsigned int flags)
 {
 	struct erofs_fscache *ctx;
 	struct fscache_cookie *cookie;
+	struct super_block *isb;
+	struct inode *inode;
 	int ret;
 
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
@@ -401,31 +401,31 @@ struct erofs_fscache *erofs_fscache_acquire_cookie(struct super_block *sb,
 	}
 
 	//fscache_use_cookie(cookie, false);
-	ctx->cookie = cookie;
 
-	if (flags & EROFS_REG_COOKIE_NEED_INODE) {
-		struct inode *const inode = new_inode(sb);
-
-		if (!inode) {
-			erofs_err(sb, "failed to get anon inode for %s", name);
-			ret = -ENOMEM;
-			goto err_cookie;
-		}
-
-		set_nlink(inode, 1);
-		inode->i_size = OFFSET_MAX;
-		inode->i_mapping->a_ops = &erofs_fscache_meta_aops;
-		mapping_set_gfp_mask(inode->i_mapping, GFP_NOFS);
-		inode->i_private = ctx;
-
-		ctx->inode = inode;
+	/*
+	 * Allocate anonymous inode in global pseudo mount for shareable blobs,
+	 * so that they are accessible among erofs fs instances.
+	 */
+	isb = flags & EROFS_REG_COOKIE_SHARE ? erofs_pseudo_mnt->mnt_sb : sb;
+	inode = new_inode(isb);
+	if (!inode) {
+		erofs_err(sb, "failed to get anon inode for %s", name);
+		ret = -ENOMEM;
+		goto err_cookie;
 	}
 
+	inode->i_size = OFFSET_MAX;
+	inode->i_mapping->a_ops = &erofs_fscache_meta_aops;
+	mapping_set_gfp_mask(inode->i_mapping, GFP_NOFS);
+	inode->i_private = ctx;
+
+	ctx->cookie = cookie;
+	ctx->inode = inode;
 	return ctx;
 
 err_cookie:
-//	fscache_unuse_cookie(ctx->cookie, NULL, NULL);
-	fscache_relinquish_cookie(ctx->cookie, NULL, false);
+//	fscache_unuse_cookie(cookie, NULL, NULL);
+	fscache_relinquish_cookie(cookie, NULL, false);
 err:
 	kfree(ctx);
 	return ERR_PTR(ret);
@@ -436,18 +436,13 @@ static void erofs_fscache_relinquish_cookie(struct erofs_fscache *ctx)
 	//fscache_unuse_cookie(ctx->cookie, NULL, NULL);
 	fscache_relinquish_cookie(ctx->cookie, NULL, false);
 	iput(ctx->inode);
-	iput(ctx->anon_inode);
 	kfree(ctx->name);
 	kfree(ctx);
 }
 
-static
-struct erofs_fscache *erofs_fscache_domain_init_cookie(struct super_block *sb,
-						       char *name,
-						       unsigned int flags)
+static struct erofs_fscache *erofs_domain_init_cookie(struct super_block *sb,
+						char *name, unsigned int flags)
 {
-	int err;
-	struct inode *inode;
 	struct erofs_fscache *ctx;
 	struct erofs_domain *domain = EROFS_SB(sb)->domain;
 
@@ -457,35 +452,23 @@ struct erofs_fscache *erofs_fscache_domain_init_cookie(struct super_block *sb,
 
 	ctx->name = kstrdup(name, GFP_KERNEL);
 	if (!ctx->name) {
-		err = -ENOMEM;
-		goto out;
+		erofs_fscache_relinquish_cookie(ctx);
+		return ERR_PTR(-ENOMEM);
 	}
 
-	inode = new_inode(erofs_pseudo_mnt->mnt_sb);
-	if (!inode) {
-		err = -ENOMEM;
-		goto out;
-	}
-
-	ctx->domain = domain;
-	ctx->anon_inode = inode;
-	list_add(&ctx->node, &erofs_domain_cookies_list);
-	inode->i_private = ctx;
 	refcount_inc(&domain->ref);
+	ctx->domain = domain;
+	list_add(&ctx->node, &erofs_domain_cookies_list);
 	return ctx;
-out:
-	erofs_fscache_relinquish_cookie(ctx);
-	return ERR_PTR(err);
 }
 
-static
-struct erofs_fscache *erofs_domain_register_cookie(struct super_block *sb,
-						   char *name,
-						   unsigned int flags)
+static struct erofs_fscache *erofs_domain_register_cookie(struct super_block *sb,
+						char *name, unsigned int flags)
 {
 	struct erofs_fscache *ctx;
 	struct erofs_domain *domain = EROFS_SB(sb)->domain;
 
+	flags |= EROFS_REG_COOKIE_SHARE;
 	mutex_lock(&erofs_domain_cookies_lock);
 	list_for_each_entry(ctx, &erofs_domain_cookies_list, node) {
 		if (ctx->domain != domain || strcmp(ctx->name, name))
@@ -500,7 +483,7 @@ struct erofs_fscache *erofs_domain_register_cookie(struct super_block *sb,
 		mutex_unlock(&erofs_domain_cookies_lock);
 		return ctx;
 	}
-	ctx = erofs_fscache_domain_init_cookie(sb, name, flags);
+	ctx = erofs_domain_init_cookie(sb, name, flags);
 	mutex_unlock(&erofs_domain_cookies_lock);
 	return ctx;
 }
@@ -539,7 +522,7 @@ int erofs_fscache_register_fs(struct super_block *sb)
 	int ret;
 	struct erofs_sb_info *sbi = EROFS_SB(sb);
 	struct erofs_fscache *fscache;
-	unsigned int flags;
+	unsigned int flags = 0;
 
 	if (sbi->domain_id)
 		ret = erofs_fscache_register_domain(sb);
@@ -558,7 +541,6 @@ int erofs_fscache_register_fs(struct super_block *sb)
 	 *
 	 * Acquired domain/volume will be relinquished in kill_sb() on error.
 	 */
-	flags = EROFS_REG_COOKIE_NEED_INODE;
 	if (sbi->domain_id)
 		flags |= EROFS_REG_COOKIE_NEED_NOEXIST;
 	fscache = erofs_fscache_register_cookie(sb, sbi->fsid, flags);
