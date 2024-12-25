@@ -482,7 +482,7 @@ out:
 	 * cachefiles_ondemand_fd_release() will set object to close.
 	 */
 	if (opcode == CACHEFILES_OP_OPEN)
-		cachefiles_ondemand_set_object_close(req->object);
+		cachefiles_ondemand_set_object_close(object);
 	kfree(req);
 	return ret;
 }
