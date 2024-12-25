@@ -30,8 +30,10 @@ static int cachefiles_ondemand_fd_release(struct inode *inode,
 			     struct cachefiles_cache, cache);
 
 	xa_lock(&cache->reqs);
+	spin_lock(&info->lock);
 	info->ondemand_id = CACHEFILES_ONDEMAND_ID_CLOSED;
 	cachefiles_ondemand_set_object_close(object);
+	spin_unlock(&info->lock);
 
 	/* Only flush CACHEFILES_REQ_NEW marked req to avoid race with daemon_read */
 	radix_tree_for_each_tagged(slot, &cache->reqs, &iter, 0, CACHEFILES_REQ_NEW) {
@@ -131,6 +133,7 @@ int cachefiles_ondemand_copen(struct cachefiles_cache *cache, char *args)
 {
 	struct cachefiles_req *req;
 	struct fscache_cookie *cookie;
+	struct cachefiles_ondemand_info *info;
 	char *pid, *psize;
 	unsigned long id;
 	long size;
@@ -186,6 +189,14 @@ int cachefiles_ondemand_copen(struct cachefiles_cache *cache, char *args)
 		goto out;
 	}
 
+	info = req->object->private;
+	spin_lock(&info->lock);
+	/* The anonymous fd was closed before copen. */
+	if (info->ondemand_id == CACHEFILES_ONDEMAND_ID_CLOSED) {
+		spin_unlock(&info->lock);
+		req->error = -EBADFD;
+		goto out;
+	}
 	cookie = req->object->fscache.cookie;
 	fscache_set_store_limit(&req->object->fscache, size);
 	if (size)
@@ -194,6 +205,7 @@ int cachefiles_ondemand_copen(struct cachefiles_cache *cache, char *args)
 		set_bit(FSCACHE_COOKIE_NO_DATA_YET, &cookie->flags);
 
 	cachefiles_ondemand_set_object_open(req->object);
+	spin_unlock(&info->lock);
 	wake_up_all(&cache->daemon_pollwq);
 
 out:
@@ -652,6 +664,7 @@ int cachefiles_ondemand_init_obj_info(struct cachefiles_object *object)
 		return -ENOMEM;
 
 	object->private->object = object;
+	spin_lock_init(&object->private->lock);
 	INIT_WORK(&object->private->work, ondemand_object_worker);
 	return 0;
 }
