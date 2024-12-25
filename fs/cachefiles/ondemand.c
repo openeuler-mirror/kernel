@@ -72,10 +72,11 @@ static ssize_t cachefiles_ondemand_fd_write_iter(struct kiocb *kiocb,
 						 struct iov_iter *iter)
 {
 	struct cachefiles_object *object = kiocb->ki_filp->private_data;
-	size_t len = iter->count;
 	struct kiocb iocb;
 	struct file *file;
-	int ret;
+	ssize_t ret = 0;
+	ssize_t written = 0;
+	size_t bytes;
 
 	rcu_read_lock();
 	file = rcu_dereference(object->file);
@@ -95,12 +96,29 @@ static ssize_t cachefiles_ondemand_fd_write_iter(struct kiocb *kiocb,
 
 	if (!cachefiles_buffered_ondemand)
 		iocb.ki_flags |= IOCB_DIRECT;
+retry:
+	bytes = iov_iter_count(iter);
+	if (unlikely(!bytes))
+		goto out;
 
+	ret = iov_iter_fault_in_readable(iter, bytes);
+	if (unlikely(ret))
+		goto out;
+
+	pagefault_disable();
 	ret = vfs_iocb_iter_write(file, &iocb, iter);
+	pagefault_enable();
+	if (ret > 0) {
+		written += ret;
+		goto retry;
+	} else if (ret == -EFAULT) {
+		goto retry;
+	}
+out:
 	fput(file);
-	if (ret != len)
+	if (!ret && iov_iter_count(iter))
 		return -EIO;
-	return len;
+	return ret < 0 ? ret : written;
 }
 
 static long cachefiles_ondemand_fd_ioctl(struct file *filp, unsigned int ioctl,
