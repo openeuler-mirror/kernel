@@ -930,9 +930,8 @@ void fscache_cookie_put(struct fscache_cookie *cookie,
 	_enter("%p", cookie);
 
 	do {
+		trace_fscache_cookie(cookie, where, atomic_read(&cookie->usage));
 		usage = atomic_dec_return(&cookie->usage);
-		trace_fscache_cookie(cookie, where, usage);
-
 		if (usage > 0)
 			return;
 		BUG_ON(usage < 0);
