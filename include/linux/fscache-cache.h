@@ -34,6 +34,7 @@ enum fscache_obj_ref_trace {
 	fscache_obj_put_enq_dep,
 	fscache_obj_put_queue,
 	fscache_obj_put_work,
+	fscache_obj_put_dequeue,
 	fscache_obj_ref__nr_traces
 };
 

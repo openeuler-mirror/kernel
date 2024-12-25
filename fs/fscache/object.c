@@ -904,6 +904,7 @@ static void fscache_dequeue_object(struct fscache_object *object)
 	if (!list_empty(&object->dep_link)) {
 		spin_lock(&object->parent->lock);
 		list_del_init(&object->dep_link);
+		fscache_put_object(object, fscache_obj_put_dequeue);
 		spin_unlock(&object->parent->lock);
 	}
 
