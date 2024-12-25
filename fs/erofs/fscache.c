@@ -26,7 +26,7 @@ const struct fscache_cookie_def erofs_fscache_super_index_def = {
 };
 
 const struct fscache_cookie_def erofs_fscache_inode_object_def = {
-	.name           = "CIFS.uniqueid",
+	.name           = "EROFS.uniqueid",
 	.type           = FSCACHE_COOKIE_TYPE_DATAFILE,
 };
 
