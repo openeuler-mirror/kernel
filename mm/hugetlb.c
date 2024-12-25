@@ -3575,8 +3575,8 @@ static void add_new_huge_page_to_pool(struct dhugetlb_pool *hpool,
 		list_add_tail(&page->lru, &hpool->dhugetlb_1G_freelists);
 		hpool->free_unreserved_1G++;
 	} else {
-		prep_new_page(page, PMD_SHIFT - PAGE_SHIFT, __GFP_COMP, 0);
-		set_page_count(page, 0);
+		prep_new_frozen_free_page(page, PMD_SHIFT - PAGE_SHIFT,
+					  __GFP_COMP);
 		list_add_tail(&page->lru, &hpool->dhugetlb_2M_freelists);
 		hpool->free_unreserved_2M++;
 	}
