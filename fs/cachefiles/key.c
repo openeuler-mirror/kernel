@@ -41,10 +41,10 @@ static int cachefiles_cook_csum(struct fscache_cookie *cookie, const u8 *raw,
 	unsigned char csum = 0;
 	int loop;
 
-	if (volume_new_location(cookie))
+	if (volume_new_version(cookie))
 		return 1;
 
-	if (data_new_location(cookie)) {
+	if (data_new_version(cookie)) {
 		csum = (u8)cookie->key_hash;
 	} else {
 		for (loop = 0; loop < keylen; loop++)
@@ -156,7 +156,7 @@ char *cachefiles_cook_key(struct cachefiles_object *object,
 	BUG_ON(keylen < 2 || keylen > 514);
 
 	print = 1;
-	if (!volume_new_location(cookie)) {
+	if (!volume_new_version(cookie)) {
 		for (loop = 2; loop < keylen; loop++)
 			print &= cachefiles_filecharmap[raw[loop]];
 	}
@@ -170,7 +170,7 @@ char *cachefiles_cook_key(struct cachefiles_object *object,
 				 * is ((514 + 251) / 252) = 3
 				 */
 		max += 1;	/* NUL on end */
-	} else if (data_new_location(cookie)) {
+	} else if (data_new_version(cookie)) {
 		max = 5;	/* @checksum/M */
 		max += 1;	/* NUL on end */
 	} else {
@@ -197,7 +197,7 @@ char *cachefiles_cook_key(struct cachefiles_object *object,
 	mark = len - 1;
 
 	if (print) {
-		if (!volume_new_location(cookie) && !data_new_location(cookie))
+		if (!volume_new_version(cookie) && !data_new_version(cookie))
 			cachefiles_cook_acc(key, *(uint16_t *) raw, &len);
 		raw += 2;
 		seg = 250;
@@ -218,7 +218,7 @@ char *cachefiles_cook_key(struct cachefiles_object *object,
 		case FSCACHE_COOKIE_TYPE_DATAFILE:	type = 'D';	break;
 		default:				type = 'S';	break;
 		}
-	} else if (data_new_location(cookie)) {
+	} else if (data_new_version(cookie)) {
 		int nlen;
 		char *name = cachefiles_cook_data_key(raw + 2, keylen - 2);
 		char *new_key;

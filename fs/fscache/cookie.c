@@ -87,10 +87,10 @@ static int fscache_set_key_hash(struct fscache_cookie *cookie, u32 *buf,
 {
 	unsigned int salt = 0;
 
-	if (volume_new_location(cookie))
+	if (volume_new_version(cookie))
 		return fscache_set_volume_key_hash(cookie, buf);
 
-	if (data_new_location(cookie))
+	if (data_new_version(cookie))
 		salt = cookie->parent->key_hash;
 
 	cookie->key_hash = fscache_hash(salt, buf, bufs);

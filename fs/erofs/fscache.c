@@ -30,7 +30,7 @@ const struct fscache_cookie_def erofs_fscache_super_index_def = {
 	.name = "EROFS.super",
 	.type = FSCACHE_COOKIE_TYPE_INDEX,
 	.check_aux = NULL,
-	.new_location = true,
+	.new_version = true,
 };
 
 const struct fscache_cookie_def erofs_fscache_inode_object_def = {
