@@ -9,6 +9,8 @@
 #include <linux/slab.h>
 #include <linux/file.h>
 #include <linux/swap.h>
+#include <linux/backing-dev.h>
+#include <linux/uio.h>
 #include "internal.h"
 
 /*
@@ -790,6 +792,166 @@ int cachefiles_read_or_alloc_pages(struct fscache_retrieval *op,
 
 all_enobufs:
 	fscache_retrieval_complete(op, *nr_pages);
+	return -ENOBUFS;
+}
+
+static int cachefiles_ondemand_check(struct cachefiles_object *object,
+		loff_t start_pos, size_t len)
+{
+	struct file *file = object->file;
+	size_t remained;
+	loff_t pos;
+	int ret;
+
+	/* make sure there's no hole in the requested range */
+	pos = start_pos;
+	remained = len;
+
+	while (remained) {
+		bool again = true;
+		size_t count = remained;
+		loff_t off, off2, new_pos;
+retry:
+		off = vfs_llseek(file, pos, SEEK_DATA);
+		if (off < 0) {
+			if (off == (loff_t)-ENXIO)
+				goto ondemand_read;
+			return -ENODATA;
+		}
+
+		if (off >= pos + remained)
+			goto ondemand_read;
+
+		if (off > pos) {
+			count = off - pos;
+			goto ondemand_read;
+		}
+
+		off2 = vfs_llseek(file, pos, SEEK_HOLE);
+		if (off2 < 0)
+			return -ENODATA;
+
+		new_pos = min_t(loff_t, off2, pos + remained);
+		remained -= new_pos - pos;
+		pos = new_pos;
+		continue;
+ondemand_read:
+		if (again) {
+			ret = cachefiles_ondemand_read(object, pos, count);
+			if (!ret) {
+				/* recheck if the hole has been filled or not */
+				again = false;
+				goto retry;
+			}
+		}
+		return -ENODATA;
+	}
+	return 0;
+}
+
+struct cachefiles_kiocb {
+	struct kiocb iocb;
+	struct fscache_retrieval *op;
+	struct iov_iter iter;
+	struct work_struct work;
+	struct bio_vec bvs[];
+};
+
+void cachefiles_readpages_work_func(struct work_struct *work)
+{
+	struct cachefiles_kiocb *ki = container_of(work, struct cachefiles_kiocb, work);
+	int ret;
+
+	ret = vfs_iocb_iter_read(ki->iocb.ki_filp, &ki->iocb, &ki->iter);
+	/* complete the request if there's any progress or error occurred */
+	if (ret != -EIOCBQUEUED) {
+		struct fscache_retrieval *op = ki->op;
+		unsigned int nr_pages = atomic_read(&op->n_pages);
+		unsigned int done_pages = 0;
+		int i, error;
+
+		if (ret > 0)
+			done_pages = ret / PAGE_SIZE;
+
+		for (i = 0; i < nr_pages; i++) {
+			error = i < done_pages ? 0 : -EIO;
+			fscache_end_io(op, ki->bvs[i].bv_page, error);
+		}
+
+		fscache_retrieval_complete(op, nr_pages);
+		fscache_put_retrieval(op);
+		kfree(ki);
+	}
+}
+
+int cachefiles_prepare_read(struct fscache_retrieval *op, pgoff_t index)
+{
+	struct cachefiles_object *object;
+	struct cachefiles_kiocb *ki;
+	loff_t start_pos = op->offset;
+	unsigned int n, nr_pages = atomic_read(&op->n_pages);
+	size_t len = nr_pages << PAGE_SHIFT;
+	struct page **pages;
+	size_t size;
+	int i, ret;
+
+	object = container_of(op->op.object, struct cachefiles_object, fscache);
+	if (!object->backer)
+		goto all_enobufs;
+
+	/*
+	 * 1. Check if there's hole in the requested range, and trigger an
+	 * on-demand read request if there's any.
+	 */
+	ASSERT(start_pos % PAGE_SIZE == 0);
+	ret = cachefiles_ondemand_check(object, start_pos, len);
+	if (ret)
+		goto all_enobufs;
+
+	/*
+	 * 2. Trigger readahead on the backing file in advance. Since
+	 * FMODE_RANDOM, the following page_cache_sync_readahead() will fallback
+	 * to force_page_cache_readahead().
+	 */
+	page_cache_sync_readahead(d_inode(object->backer)->i_mapping,
+			&object->file->f_ra, object->file,
+			start_pos / PAGE_SIZE, nr_pages);
+
+	size = sizeof(struct cachefiles_kiocb) + nr_pages * sizeof(struct bio_vec);
+	ki = kzalloc(size, GFP_KERNEL);
+	if (!ki)
+		goto all_enobufs;
+
+	/* reuse the tailing part of ki as pages[] */
+	pages = (void *)ki + size - nr_pages * sizeof(struct page *);
+	n = find_get_pages_contig(op->mapping, index, nr_pages, pages);
+	if (WARN_ON(n != nr_pages)) {
+		for (i = 0; i < n; i++)
+			put_page(pages[i]);
+		kfree(ki);
+		goto all_enobufs;
+	}
+
+	for (i = 0; i < n; i++) {
+		put_page(pages[i]);
+		ki->bvs[i].bv_page = pages[i];
+		ki->bvs[i].bv_offset = 0;
+		ki->bvs[i].bv_len = PAGE_SIZE;
+	}
+	iov_iter_bvec(&ki->iter, READ, ki->bvs, n, n * PAGE_SIZE);
+
+	ki->iocb.ki_filp	= object->file;
+	ki->iocb.ki_pos		= start_pos;
+	ki->iocb.ki_ioprio	= get_current_ioprio();
+	ki->op			= fscache_get_retrieval(op);
+
+	/* 3. Start a buffer read in worker context */
+	INIT_WORK(&ki->work, cachefiles_readpages_work_func);
+	queue_work(system_unbound_wq, &ki->work);
+	return 0;
+
+all_enobufs:
+	fscache_retrieval_complete(op, nr_pages);
 	return -ENOBUFS;
 }
 

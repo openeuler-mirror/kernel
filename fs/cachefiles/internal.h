@@ -241,6 +241,7 @@ extern int cachefiles_read_or_alloc_page(struct fscache_retrieval *,
 extern int cachefiles_read_or_alloc_pages(struct fscache_retrieval *,
 					  struct list_head *, unsigned *,
 					  gfp_t);
+extern int cachefiles_prepare_read(struct fscache_retrieval *op, pgoff_t index);
 extern int cachefiles_allocate_page(struct fscache_retrieval *, struct page *,
 				    gfp_t);
 extern int cachefiles_allocate_pages(struct fscache_retrieval *,

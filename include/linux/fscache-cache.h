@@ -161,6 +161,9 @@ typedef int (*fscache_pages_retrieval_func_t)(struct fscache_retrieval *op,
 					      unsigned *nr_pages,
 					      gfp_t gfp);
 
+typedef int (*fscache_prepare_read_func_t)(struct fscache_retrieval *op,
+					   pgoff_t index);
+
 /**
  * fscache_get_retrieval - Get an extra reference on a retrieval operation
  * @op: The retrieval operation to get a reference on
@@ -284,6 +287,8 @@ struct fscache_cache_ops {
 	/* request backing blocks for a list of pages be read or allocated in
 	 * the cache */
 	fscache_pages_retrieval_func_t read_or_alloc_pages;
+
+	fscache_prepare_read_func_t prepare_read;
 
 	/* request a backing block for a page be allocated in the cache so that
 	 * it can be written directly */

@@ -573,6 +573,7 @@ const struct fscache_cache_ops cachefiles_cache_ops = {
 	.attr_changed		= cachefiles_attr_changed,
 	.read_or_alloc_page	= cachefiles_read_or_alloc_page,
 	.read_or_alloc_pages	= cachefiles_read_or_alloc_pages,
+	.prepare_read		= cachefiles_prepare_read,
 	.allocate_page		= cachefiles_allocate_page,
 	.allocate_pages		= cachefiles_allocate_pages,
 	.write_page		= cachefiles_write_page,
