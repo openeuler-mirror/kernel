@@ -181,7 +181,8 @@ int cachefiles_ondemand_copen(struct cachefiles_cache *cache, char *args)
 
 	xa_lock(&cache->reqs);
 	req = radix_tree_lookup(&cache->reqs, id);
-	if (!req || req->msg.opcode != CACHEFILES_OP_OPEN) {
+	if (!req || req->msg.opcode != CACHEFILES_OP_OPEN ||
+	    !req->object->private->ondemand_id) {
 		xa_unlock(&cache->reqs);
 		return -EINVAL;
 	}
