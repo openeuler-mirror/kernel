@@ -270,6 +270,7 @@ static void cachefiles_drop_object(struct fscache_object *_object)
 	struct cachefiles_cache *cache;
 	const struct cred *saved_cred;
 	struct inode *inode;
+	struct file *file;
 	blkcnt_t i_blocks = 0;
 
 	ASSERT(_object);
@@ -315,9 +316,10 @@ static void cachefiles_drop_object(struct fscache_object *_object)
 	}
 
 	/* clean up file descriptor for non-index object */
-	if (object->file) {
-		fput(object->file);
-		object->file = NULL;
+	file = rcu_dereference_protected(object->file, true);
+	if (file) {
+		fput(file);
+		rcu_assign_pointer(object->file, NULL);
 	}
 
 	/* note that the object is now inactive */

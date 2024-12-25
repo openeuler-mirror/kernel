@@ -720,7 +720,7 @@ lookup_again:
 				 * to force_page_cache_readahead()
 				 */
 				file->f_mode |= FMODE_RANDOM;
-				object->file = file;
+				rcu_assign_pointer(object->file, file);
 			}
 
 			object->backer = object->dentry;

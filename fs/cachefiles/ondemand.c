@@ -69,13 +69,20 @@ static ssize_t cachefiles_ondemand_fd_write_iter(struct kiocb *kiocb,
 	struct cachefiles_object *object = kiocb->ki_filp->private_data;
 	size_t len = iter->count;
 	struct kiocb iocb;
+	struct file *file;
 	int ret;
 
-	if (!object->file)
+	rcu_read_lock();
+	file = rcu_dereference(object->file);
+	if (!file || !get_file_rcu(file))
+		file = NULL;
+	rcu_read_unlock();
+
+	if (!file)
 		return -ENOBUFS;
 
 	iocb = (struct kiocb) {
-		.ki_filp   = object->file,
+		.ki_filp   = file,
 		.ki_pos    = kiocb->ki_pos,
 		.ki_flags  = IOCB_WRITE,
 		.ki_ioprio = get_current_ioprio(),
@@ -84,7 +91,8 @@ static ssize_t cachefiles_ondemand_fd_write_iter(struct kiocb *kiocb,
 	if (!cachefiles_buffered_ondemand)
 		iocb.ki_flags |= IOCB_DIRECT;
 
-	ret = vfs_iocb_iter_write(object->file, &iocb, iter);
+	ret = vfs_iocb_iter_write(file, &iocb, iter);
+	fput(file);
 	if (ret != len)
 		return -EIO;
 	return len;

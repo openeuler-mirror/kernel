@@ -798,7 +798,7 @@ all_enobufs:
 static int cachefiles_ondemand_check(struct cachefiles_object *object,
 		loff_t start_pos, size_t len)
 {
-	struct file *file = object->file;
+	struct file *file = rcu_dereference_raw(object->file);
 	size_t remained;
 	loff_t pos;
 	int ret;
@@ -892,12 +892,14 @@ int cachefiles_prepare_read(struct fscache_retrieval *op, pgoff_t index)
 	unsigned int n, nr_pages = atomic_read(&op->n_pages);
 	size_t len = nr_pages << PAGE_SHIFT;
 	struct page **pages;
+	struct file *file;
 	size_t size;
 	int i, ret;
 
 	object = container_of(op->op.object, struct cachefiles_object, fscache);
 	if (!object->backer)
 		goto all_enobufs;
+	file = rcu_dereference_raw(object->file);
 
 	/*
 	 * 1. Check if there's hole in the requested range, and trigger an
@@ -914,8 +916,7 @@ int cachefiles_prepare_read(struct fscache_retrieval *op, pgoff_t index)
 	 * to force_page_cache_readahead().
 	 */
 	page_cache_sync_readahead(d_inode(object->backer)->i_mapping,
-			&object->file->f_ra, object->file,
-			start_pos / PAGE_SIZE, nr_pages);
+			&file->f_ra, file, start_pos / PAGE_SIZE, nr_pages);
 
 	size = sizeof(struct cachefiles_kiocb) + nr_pages * sizeof(struct bio_vec);
 	ki = kzalloc(size, GFP_KERNEL);
@@ -940,7 +941,7 @@ int cachefiles_prepare_read(struct fscache_retrieval *op, pgoff_t index)
 	}
 	iov_iter_bvec(&ki->iter, READ, ki->bvs, n, n * PAGE_SIZE);
 
-	ki->iocb.ki_filp	= object->file;
+	ki->iocb.ki_filp	= file;
 	ki->iocb.ki_pos		= start_pos;
 	ki->iocb.ki_ioprio	= get_current_ioprio();
 	ki->op			= fscache_get_retrieval(op);
