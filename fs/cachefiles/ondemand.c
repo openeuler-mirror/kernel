@@ -22,10 +22,15 @@ static int cachefiles_ondemand_fd_release(struct inode *inode,
 	struct cachefiles_cache *cache;
 	void **slot;
 	struct radix_tree_iter iter;
-	struct cachefiles_ondemand_info *info = object->private;
-	int object_id = info->ondemand_id;
+	struct cachefiles_ondemand_info *info;
+	int object_id;
 	struct cachefiles_req *req;
 
+	if (!object)
+		return 0;
+
+	info = object->private;
+	object_id = info->ondemand_id;
 	cache = container_of(object->fscache.cache,
 			     struct cachefiles_cache, cache);
 
@@ -273,16 +278,27 @@ static int cachefiles_ondemand_get_fd(struct cachefiles_req *req)
 		goto err_put_fd;
 	}
 
+	spin_lock(&object->private->lock);
+	if (object->private->ondemand_id > 0) {
+		spin_unlock(&object->private->lock);
+		ret = -EEXIST;
+		file->private_data = NULL;
+		goto err_put_file;
+	}
+
 	file->f_mode |= FMODE_PWRITE | FMODE_LSEEK;
 	fd_install(fd, file);
 
 	load = (void *)req->msg.data;
 	load->fd = fd;
 	object->private->ondemand_id = object_id;
+	spin_unlock(&object->private->lock);
 
 	cachefiles_get_unbind_pincount(cache);
 	return 0;
 
+err_put_file:
+	fput(file);
 err_put_fd:
 	put_unused_fd(fd);
 err_free_id:
@@ -290,6 +306,12 @@ err_free_id:
 	idr_remove(&cache->ondemand_ids, object_id);
 	xa_unlock(&cache->ondemand_ids.idr_rt);
 err:
+	spin_lock(&req->object->private->lock);
+	/* Avoid marking an opened object as closed. */
+	if (ret && object->private->ondemand_id <= 0)
+		cachefiles_ondemand_set_object_close(req->object);
+	spin_unlock(&req->object->private->lock);
+
 	object->fscache.cache->ops->put_object(&object->fscache,
 			cachefiles_obj_put_ondemand_fd);
 	return ret;
@@ -381,10 +403,8 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 
 	if (msg->opcode == CACHEFILES_OP_OPEN) {
 		ret = cachefiles_ondemand_get_fd(req);
-		if (ret) {
-			cachefiles_ondemand_set_object_close(req->object);
+		if (ret)
 			goto out;
-		}
 	}
 
 	msg->msg_id = id;
