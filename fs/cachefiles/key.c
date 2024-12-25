@@ -30,6 +30,18 @@ static void cachefiles_cook_acc(char *key, unsigned int acc, int *len)
 	*len += 2;
 }
 
+static int cachefiles_cook_csum(const u8 *raw, int keylen, char *key)
+{
+	unsigned char csum = 0;
+	int loop;
+
+	for (loop = 0; loop < keylen; loop++)
+		csum += raw[loop];
+	sprintf(key, "@%02x%c+", (unsigned int) csum, 0);
+
+	return 5;
+}
+
 /*
  * turn the raw key into something cooked
  * - the raw key should include the length in the two bytes at the front
@@ -40,7 +52,6 @@ static void cachefiles_cook_acc(char *key, unsigned int acc, int *len)
  */
 char *cachefiles_cook_key(const u8 *raw, int keylen, uint8_t type)
 {
-	unsigned char csum, ch;
 	unsigned int acc;
 	char *key;
 	int loop, len, max, seg, mark, print;
@@ -49,13 +60,9 @@ char *cachefiles_cook_key(const u8 *raw, int keylen, uint8_t type)
 
 	BUG_ON(keylen < 2 || keylen > 514);
 
-	csum = raw[0] + raw[1];
 	print = 1;
-	for (loop = 2; loop < keylen; loop++) {
-		ch = raw[loop];
-		csum += ch;
-		print &= cachefiles_filecharmap[ch];
-	}
+	for (loop = 2; loop < keylen; loop++)
+		print &= cachefiles_filecharmap[raw[loop]];
 
 	if (print) {
 		/* if the path is usable ASCII, then we render it directly */
@@ -86,11 +93,7 @@ char *cachefiles_cook_key(const u8 *raw, int keylen, uint8_t type)
 	if (!key)
 		return NULL;
 
-	len = 0;
-
-	/* build the cooked key */
-	sprintf(key, "@%02x%c+", (unsigned) csum, 0);
-	len = 5;
+	len = cachefiles_cook_csum(raw, keylen, key);
 	mark = len - 1;
 
 	if (print) {
