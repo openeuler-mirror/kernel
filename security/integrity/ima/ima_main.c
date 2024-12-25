@@ -267,7 +267,7 @@ static int process_measurement(struct file *file, const struct cred *cred,
 			       u32 secid, char *buf, loff_t size, int mask,
 			       enum ima_hooks func)
 {
-#ifdef IMA_FIX_OVERLAYFS_DETECTION
+#ifdef CONFIG_IMA_FIX_OVERLAYFS_DETECTION
 	struct inode *backing_inode, *inode = file_inode(file);
 #else
 	struct inode *inode = file_inode(file);
@@ -348,7 +348,7 @@ static int process_measurement(struct file *file, const struct cred *cred,
 		iint->measured_pcrs = 0;
 	}
 
-#ifdef IMA_FIX_OVERLAYFS_DETECTION
+#ifdef CONFIG_IMA_FIX_OVERLAYFS_DETECTION
 	/* Detect and re-evaluate changes made to the backing file. */
 	backing_inode = d_real_inode(file_dentry(file));
 	if (backing_inode != inode &&
