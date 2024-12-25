@@ -460,7 +460,8 @@ static int cachefiles_ondemand_send_req(struct cachefiles_object *object,
 	 */
 	xa_lock(&cache->reqs);
 
-	if (test_bit(CACHEFILES_DEAD, &cache->flags)) {
+	if (test_bit(CACHEFILES_DEAD, &cache->flags) ||
+	    cachefiles_ondemand_object_is_dropping(object)) {
 		xa_unlock(&cache->reqs);
 		ret = -EIO;
 		goto out;
@@ -493,7 +494,8 @@ out:
 	 * If error occurs after creating the anonymous fd,
 	 * cachefiles_ondemand_fd_release() will set object to close.
 	 */
-	if (opcode == CACHEFILES_OP_OPEN)
+	if (opcode == CACHEFILES_OP_OPEN &&
+	    !cachefiles_ondemand_object_is_dropping(object))
 		cachefiles_ondemand_set_object_close(object);
 	kfree(req);
 	return ret;
@@ -591,8 +593,12 @@ int cachefiles_ondemand_init_object(struct cachefiles_object *object)
 
 void cachefiles_ondemand_clean_object(struct cachefiles_object *object)
 {
+	if (!object->private)
+		return;
+
 	cachefiles_ondemand_send_req(object, CACHEFILES_OP_CLOSE, 0,
 			cachefiles_ondemand_init_close_req, NULL);
+	cachefiles_ondemand_set_object_dropping(object);
 }
 
 int cachefiles_ondemand_read(struct cachefiles_object *object,
