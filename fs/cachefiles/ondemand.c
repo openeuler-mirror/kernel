@@ -27,8 +27,8 @@ static int cachefiles_ondemand_fd_release(struct inode *inode,
 	radix_tree_for_each_slot(slot, &cache->reqs, &iter, 0) {
 		req = radix_tree_deref_slot_protected(slot,
 						      &cache->reqs.xa_lock);
-		BUG_ON(!req);
-
+		if (WARN_ON(!req))
+			continue;
 		if (req->msg.object_id == object_id &&
 		    req->msg.opcode == CACHEFILES_OP_READ) {
 			req->error = -EIO;
