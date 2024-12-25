@@ -141,6 +141,8 @@ struct cachefiles_one_read {
 	struct page			*netfs_page;	/* netfs page we're going to fill */
 	struct fscache_retrieval	*op;		/* retrieval op covering this */
 	struct list_head		op_link;	/* link in op's todo list */
+	unsigned long			flags;
+#define CACHEFILES_MONITOR_ENTER_READ	0       /* restrict calls to read_page */
 };
 
 /*

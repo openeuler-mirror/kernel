@@ -108,6 +108,13 @@ static int cachefiles_read_reissue(struct cachefiles_object *object,
 	 * need a second */
 	put_page(backpage2);
 
+	/*
+	 * end the process if the page was not truncated
+	 * and we have already read it before
+	 */
+	if (test_bit(CACHEFILES_MONITOR_ENTER_READ, &monitor->flags))
+		return -EIO;
+
 	INIT_LIST_HEAD(&monitor->op_link);
 	add_page_wait_queue(backpage, &monitor->monitor);
 
@@ -120,6 +127,8 @@ static int cachefiles_read_reissue(struct cachefiles_object *object,
 			goto unlock_discard;
 
 		_debug("reissue read");
+		if (data_new_version(object->fscache.cookie))
+			set_bit(CACHEFILES_MONITOR_ENTER_READ, &monitor->flags);
 		ret = bmapping->a_ops->readpage(NULL, backpage);
 		if (ret < 0)
 			goto discard;
@@ -190,7 +199,11 @@ static void cachefiles_read_copier(struct fscache_operation *_op)
 			error = cachefiles_read_reissue(object, monitor);
 			if (error == -EINPROGRESS)
 				goto next;
-			goto recheck;
+			if (!data_new_version(object->fscache.cookie) || !error)
+				goto recheck;
+			pr_warn("%s, read error: %d, at page %lu, flags: %lx\n",
+				__func__, error, monitor->back_page->index,
+				(unsigned long) monitor->back_page->flags);
 		} else {
 			cachefiles_io_error_obj(
 				object,
@@ -284,6 +297,8 @@ installed_new_backing_page:
 	newpage = NULL;
 
 read_backing_page:
+	if (data_new_version(object->fscache.cookie))
+		set_bit(CACHEFILES_MONITOR_ENTER_READ, &monitor->flags);
 	ret = bmapping->a_ops->readpage(NULL, backpage);
 	if (ret < 0)
 		goto read_error;
