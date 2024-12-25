@@ -255,10 +255,9 @@ static void erofs_fscache_readahead(struct readahead_control *rac)
 		}
 
 		done += count;
-		while (count) {
-			page = readahead_page(rac);
-			count -= PAGE_SIZE;
-		}
+		count /= PAGE_SIZE;
+		rac->_nr_pages -= count;
+		rac->_index += count;
 	} while (done < len);
 }
 
