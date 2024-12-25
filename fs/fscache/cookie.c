@@ -159,6 +159,7 @@ struct fscache_cookie *fscache_alloc_cookie(
 
 	cookie->def		= def;
 	cookie->parent		= parent;
+	cookie->collision	= NULL;
 	cookie->netfs_data	= netfs_data;
 	cookie->flags		= (1 << FSCACHE_COOKIE_NO_DATA_YET);
 	cookie->type		= def->type;
@@ -174,6 +175,27 @@ struct fscache_cookie *fscache_alloc_cookie(
 nomem:
 	fscache_free_cookie(cookie);
 	return NULL;
+}
+
+static bool fscache_is_acquire_pending(struct fscache_cookie *cookie)
+{
+	return test_bit(FSCACHE_COOKIE_ACQUIRE_PENDING, &cookie->flags);
+}
+
+static int fscache_wait_on_cookie_collision(struct fscache_cookie *candidate)
+{
+	int ret;
+
+	ret = wait_on_bit_timeout(&candidate->flags, FSCACHE_COOKIE_ACQUIRE_PENDING,
+				  TASK_INTERRUPTIBLE, 20 * HZ);
+	if (ret == -EINTR)
+		return ret;
+	if (fscache_is_acquire_pending(candidate)) {
+		pr_notice("Potential cookie collision!");
+		return wait_on_bit(&candidate->flags, FSCACHE_COOKIE_ACQUIRE_PENDING,
+				   TASK_INTERRUPTIBLE);
+	}
+	return 0;
 }
 
 /*
@@ -192,8 +214,13 @@ struct fscache_cookie *fscache_hash_cookie(struct fscache_cookie *candidate)
 
 	hlist_bl_lock(h);
 	hlist_bl_for_each_entry(cursor, p, h, hash_link) {
-		if (fscache_compare_cookie(candidate, cursor) == 0)
-			goto collision;
+		if (fscache_compare_cookie(candidate, cursor) == 0) {
+			if (!test_bit(FSCACHE_COOKIE_RELINQUISHED, &cursor->flags))
+				goto collision;
+			cursor->collision = candidate;
+			set_bit(FSCACHE_COOKIE_ACQUIRE_PENDING, &candidate->flags);
+			break;
+		}
 	}
 
 	__set_bit(FSCACHE_COOKIE_ACQUIRED, &candidate->flags);
@@ -201,16 +228,29 @@ struct fscache_cookie *fscache_hash_cookie(struct fscache_cookie *candidate)
 	atomic_inc(&candidate->parent->n_children);
 	hlist_bl_add_head(&candidate->hash_link, h);
 	hlist_bl_unlock(h);
+
+	if (fscache_is_acquire_pending(candidate) &&
+	    fscache_wait_on_cookie_collision(candidate)) {
+		fscache_cookie_put(candidate->parent, fscache_cookie_put_acquire_nobufs);
+		atomic_dec(&candidate->parent->n_children);
+		hlist_bl_lock(h);
+		hlist_bl_del(&candidate->hash_link);
+		if (fscache_is_acquire_pending(candidate))
+			cursor->collision = NULL;
+		hlist_bl_unlock(h);
+		pr_err("Wait duplicate cookie unhashed interrupted\n");
+		return NULL;
+	}
 	return candidate;
 
 collision:
 	if (test_and_set_bit(FSCACHE_COOKIE_ACQUIRED, &cursor->flags)) {
 		trace_fscache_cookie(cursor, fscache_cookie_collision,
 				     atomic_read(&cursor->usage));
-		pr_err("Duplicate cookie detected\n");
 		fscache_print_cookie(cursor, 'O');
 		fscache_print_cookie(candidate, 'N');
 		hlist_bl_unlock(h);
+		pr_err("Duplicate cookie detected\n");
 		return NULL;
 	}
 
@@ -835,6 +875,9 @@ static void fscache_unhash_cookie(struct fscache_cookie *cookie)
 
 	hlist_bl_lock(h);
 	hlist_bl_del(&cookie->hash_link);
+	if (cookie->collision)
+		clear_and_wake_up_bit(FSCACHE_COOKIE_ACQUIRE_PENDING,
+				      &cookie->collision->flags);
 	hlist_bl_unlock(h);
 }
 
