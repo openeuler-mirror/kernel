@@ -45,8 +45,11 @@ struct workqueue_struct *fscache_op_wq;
 DEFINE_PER_CPU(wait_queue_head_t, fscache_object_cong_wait);
 
 /* these values serve as lower bounds, will be adjusted in fscache_init() */
-static unsigned fscache_object_max_active = 4;
-static unsigned fscache_op_max_active = 2;
+#define FSCACHE_MIN_OBJECT_MAX_ACTIVE 4
+static unsigned int fscache_object_max_active = FSCACHE_MIN_OBJECT_MAX_ACTIVE;
+static unsigned int fscache_op_max_active = FSCACHE_MIN_OBJECT_MAX_ACTIVE / 2;
+static unsigned int fscache_min_object_max_active = FSCACHE_MIN_OBJECT_MAX_ACTIVE;
+static unsigned int fscache_min_op_max_active = FSCACHE_MIN_OBJECT_MAX_ACTIVE / 2;
 
 #ifdef CONFIG_SYSCTL
 static struct ctl_table_header *fscache_sysctl_header;
@@ -55,12 +58,16 @@ static int fscache_max_active_sysctl(struct ctl_table *table, int write,
 				     void *buffer, size_t *lenp, loff_t *ppos)
 {
 	struct workqueue_struct **wqp = table->extra1;
+	unsigned int *min_val = table->extra2;
 	unsigned int *datap = table->data;
 	int ret;
 
 	ret = proc_dointvec(table, write, buffer, lenp, ppos);
-	if (ret == 0)
+	if (ret == 0) {
+		if (cachefiles_ondemand_is_enabled() && *datap < *min_val)
+			return -EINVAL;
 		workqueue_set_max_active(*wqp, *datap);
+	}
 	return ret;
 }
 
@@ -72,6 +79,7 @@ static struct ctl_table fscache_sysctls[] = {
 		.mode		= 0644,
 		.proc_handler	= fscache_max_active_sysctl,
 		.extra1		= &fscache_object_wq,
+		.extra2		= &fscache_min_object_max_active,
 	},
 	{
 		.procname	= "operation_max_active",
@@ -80,6 +88,7 @@ static struct ctl_table fscache_sysctls[] = {
 		.mode		= 0644,
 		.proc_handler	= fscache_max_active_sysctl,
 		.extra1		= &fscache_op_wq,
+		.extra2		= &fscache_min_op_max_active,
 	},
 	{}
 };
