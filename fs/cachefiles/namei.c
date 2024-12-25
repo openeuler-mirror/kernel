@@ -264,10 +264,8 @@ void cachefiles_mark_object_inactive(struct cachefiles_cache *cache,
 
 	write_lock(&cache->active_lock);
 	rb_erase(&object->active_node, &cache->active_nodes);
-	clear_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags);
+	clear_and_wake_up_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags);
 	write_unlock(&cache->active_lock);
-
-	wake_up_bit(&object->flags, CACHEFILES_OBJECT_ACTIVE);
 
 	/* This object can now be culled, so we need to let the daemon know
 	 * that there is something it can remove if it needs to.

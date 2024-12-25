@@ -223,14 +223,14 @@ static int fscache_wait_on_cookie_collision(struct fscache_cookie *candidate)
 {
 	int ret;
 
-	ret = wait_on_bit_timeout(&candidate->flags, FSCACHE_COOKIE_ACQUIRE_PENDING,
-				  TASK_INTERRUPTIBLE, 20 * HZ);
+	ret = wait_on_bit_timeout_acquire(&candidate->flags, FSCACHE_COOKIE_ACQUIRE_PENDING,
+					  TASK_INTERRUPTIBLE, 20 * HZ);
 	if (ret == -EINTR)
 		return ret;
 	if (fscache_is_acquire_pending(candidate)) {
 		pr_notice("Potential cookie collision!");
-		return wait_on_bit(&candidate->flags, FSCACHE_COOKIE_ACQUIRE_PENDING,
-				   TASK_INTERRUPTIBLE);
+		return wait_on_bit_acquire(&candidate->flags, FSCACHE_COOKIE_ACQUIRE_PENDING,
+					   TASK_INTERRUPTIBLE);
 	}
 	return 0;
 }
@@ -445,8 +445,7 @@ void __fscache_enable_cookie(struct fscache_cookie *cookie,
 	}
 
 out_unlock:
-	clear_bit_unlock(FSCACHE_COOKIE_ENABLEMENT_LOCK, &cookie->flags);
-	wake_up_bit(&cookie->flags, FSCACHE_COOKIE_ENABLEMENT_LOCK);
+	clear_and_wake_up_bit(FSCACHE_COOKIE_ENABLEMENT_LOCK, &cookie->flags);
 }
 EXPORT_SYMBOL(__fscache_enable_cookie);
 
@@ -725,7 +724,7 @@ void __fscache_wait_on_invalidate(struct fscache_cookie *cookie)
 {
 	_enter("%p", cookie);
 
-	wait_on_bit(&cookie->flags, FSCACHE_COOKIE_INVALIDATING,
+	wait_on_bit_acquire(&cookie->flags, FSCACHE_COOKIE_INVALIDATING,
 		    TASK_UNINTERRUPTIBLE);
 
 	_leave("");
@@ -842,8 +841,7 @@ void __fscache_disable_cookie(struct fscache_cookie *cookie,
 	}
 
 out_unlock_enable:
-	clear_bit_unlock(FSCACHE_COOKIE_ENABLEMENT_LOCK, &cookie->flags);
-	wake_up_bit(&cookie->flags, FSCACHE_COOKIE_ENABLEMENT_LOCK);
+	clear_and_wake_up_bit(FSCACHE_COOKIE_ENABLEMENT_LOCK, &cookie->flags);
 	_leave("");
 }
 EXPORT_SYMBOL(__fscache_disable_cookie);

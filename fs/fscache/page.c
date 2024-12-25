@@ -383,8 +383,8 @@ int fscache_wait_for_operation_activation(struct fscache_object *object,
 	_debug(">>> WT");
 	if (stat_op_waits)
 		fscache_stat(stat_op_waits);
-	if (wait_on_bit(&op->flags, FSCACHE_OP_WAITING,
-			TASK_INTERRUPTIBLE) != 0) {
+	if (wait_on_bit_acquire(&op->flags, FSCACHE_OP_WAITING,
+				TASK_INTERRUPTIBLE) != 0) {
 		trace_fscache_op(object->cookie, op, fscache_op_signal);
 		ret = fscache_cancel_op(op, false);
 		if (ret == 0)
@@ -392,8 +392,8 @@ int fscache_wait_for_operation_activation(struct fscache_object *object,
 
 		/* it's been removed from the pending queue by another party,
 		 * so we should get to run shortly */
-		wait_on_bit(&op->flags, FSCACHE_OP_WAITING,
-			    TASK_UNINTERRUPTIBLE);
+		wait_on_bit_acquire(&op->flags, FSCACHE_OP_WAITING,
+				    TASK_UNINTERRUPTIBLE);
 	}
 	_debug("<<< GO");
 
