@@ -9,6 +9,12 @@
 static bool cachefiles_buffered_ondemand = true;
 module_param_named(buffered_ondemand, cachefiles_buffered_ondemand, bool, 0644);
 
+static inline void cachefiles_req_put(struct cachefiles_req *req)
+{
+	if (refcount_dec_and_test(&req->ref))
+		kfree(req);
+}
+
 static int cachefiles_ondemand_fd_release(struct inode *inode,
 					  struct file *file)
 {
@@ -349,6 +355,7 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 
 	radix_tree_iter_tag_clear(&cache->reqs, &iter, CACHEFILES_REQ_NEW);
 	cache->req_id_next = iter.index + 1;
+	refcount_inc(&req->ref);
 	xa_unlock(&cache->reqs);
 
 	id = iter.index;
@@ -357,7 +364,7 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 		ret = cachefiles_ondemand_get_fd(req);
 		if (ret) {
 			cachefiles_ondemand_set_object_close(req->object);
-			goto error;
+			goto out;
 		}
 	}
 
@@ -369,25 +376,21 @@ ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
 		if (msg->opcode == CACHEFILES_OP_OPEN)
 			__close_fd(current->files,
 				((struct cachefiles_open *)msg->data)->fd);
-		goto error;
 	}
 
-	/* CLOSE request has no reply */
-	if (msg->opcode == CACHEFILES_OP_CLOSE) {
+out:
+	/* Remove error request and CLOSE request has no reply */
+	if (ret || msg->opcode == CACHEFILES_OP_CLOSE) {
 		xa_lock(&cache->reqs);
-		radix_tree_delete(&cache->reqs, id);
+		if (radix_tree_lookup(&cache->reqs, id) == req) {
+			req->error = ret;
+			complete(&req->done);
+			radix_tree_delete(&cache->reqs, id);
+		}
 		xa_unlock(&cache->reqs);
-		complete(&req->done);
 	}
-	return n;
-
-error:
-	xa_lock(&cache->reqs);
-	radix_tree_delete(&cache->reqs, id);
-	xa_unlock(&cache->reqs);
-	req->error = ret;
-	complete(&req->done);
-	return ret;
+	cachefiles_req_put(req);
+	return ret ? ret : n;
 }
 
 typedef int (*init_req_fn)(struct cachefiles_req *req, void *private);
@@ -421,6 +424,7 @@ static int cachefiles_ondemand_send_req(struct cachefiles_object *object,
 		goto out;
 	}
 
+	refcount_set(&req->ref, 1);
 	req->object = object;
 	init_completion(&req->done);
 	req->msg.opcode = opcode;
@@ -473,7 +477,7 @@ static int cachefiles_ondemand_send_req(struct cachefiles_object *object,
 	wake_up_all(&cache->daemon_pollwq);
 	wait_for_completion(&req->done);
 	ret = req->error;
-	kfree(req);
+	cachefiles_req_put(req);
 	return ret;
 out:
 	/* Reset the object to close state in error handling path.
