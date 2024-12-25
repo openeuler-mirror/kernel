@@ -79,6 +79,7 @@ struct erofs_fs_context {
 	struct erofs_dev_context *devs;
 	char *fsid;
 	char *domain_id;
+	bool ondemand_enabled;
 };
 
 struct erofs_domain {

@@ -5,7 +5,7 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 
-#if IS_ENABLED(CONFIG_EROFS_FS)
+#if IS_ENABLED(CONFIG_EROFS_FS) || IS_ENABLED(CONFIG_CACHEFILES_ONDEMAND)
 static int param_set_bool_on_only_once(const char *s, const struct kernel_param *kp)
 {
 	int ret;
@@ -33,4 +33,11 @@ bool erofs_enabled;
 EXPORT_SYMBOL(erofs_enabled);
 module_param_call(erofs_enabled, param_set_bool_on_only_once, param_get_bool,
 				  &erofs_enabled, 0644);
+#endif
+
+#if IS_ENABLED(CONFIG_CACHEFILES_ONDEMAND)
+bool cachefiles_ondemand_enabled;
+EXPORT_SYMBOL(cachefiles_ondemand_enabled);
+module_param_call(cachefiles_ondemand_enabled, param_set_bool_on_only_once, param_get_bool,
+				  &cachefiles_ondemand_enabled, 0644);
 #endif

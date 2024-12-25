@@ -59,6 +59,10 @@ int cachefiles_daemon_bind(struct cachefiles_cache *cache, char *args)
 
 	if (IS_ENABLED(CONFIG_CACHEFILES_ONDEMAND)) {
 		if (!strcmp(args, "ondemand")) {
+			if (!cachefiles_ondemand_is_enabled()) {
+				pr_err("ondemand mode is disabled\n");
+				return -EINVAL;
+			}
 			set_bit(CACHEFILES_ONDEMAND_MODE, &cache->flags);
 		} else if (*args) {
 			pr_err("Invalid argument to the 'bind' command\n");

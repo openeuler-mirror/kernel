@@ -401,6 +401,10 @@ static int erofs_fc_parse_param(struct fs_context *fc,
 		break;
 	case Opt_fsid:
 #ifdef CONFIG_EROFS_FS_ONDEMAND
+		if (!ctx->ondemand_enabled) {
+			errorfc(fc, "fsid option not supported");
+			return -EINVAL;
+		}
 		kfree(ctx->fsid);
 		ctx->fsid = kstrdup(param->string, GFP_KERNEL);
 		if (!ctx->fsid)
@@ -412,6 +416,10 @@ static int erofs_fc_parse_param(struct fs_context *fc,
 		break;
 	case Opt_domain_id:
 #ifdef CONFIG_EROFS_FS_ONDEMAND
+		if (!ctx->ondemand_enabled) {
+			errorfc(fc, "domain_id option not supported");
+			break;
+		}
 		kfree(ctx->domain_id);
 		ctx->domain_id = kstrdup(param->string, GFP_KERNEL);
 		if (!ctx->domain_id)
@@ -657,11 +665,16 @@ static const struct fs_context_operations erofs_anon_context_ops = {
 	.get_tree       = erofs_fc_anon_get_tree,
 };
 
+static inline bool erofs_can_init(void)
+{
+	return READ_ONCE(erofs_enabled) || cachefiles_ondemand_is_enabled();
+}
+
 static int erofs_init_fs_context(struct fs_context *fc)
 {
 	struct erofs_fs_context *ctx;
 
-	if (!READ_ONCE(erofs_enabled))
+	if (!erofs_can_init())
 		return -EOPNOTSUPP;
 
 	/* pseudo mount for anon inodes */
@@ -678,6 +691,7 @@ static int erofs_init_fs_context(struct fs_context *fc)
 		kfree(ctx);
 		return -ENOMEM;
 	}
+	ctx->ondemand_enabled = cachefiles_ondemand_is_enabled();
 	fc->fs_private = ctx;
 
 	idr_init(&ctx->devs->tree);
