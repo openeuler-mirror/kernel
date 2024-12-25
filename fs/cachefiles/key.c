@@ -39,8 +39,12 @@ static int cachefiles_cook_csum(struct fscache_cookie *cookie, const u8 *raw,
 	if (volume_new_location(cookie))
 		return 1;
 
-	for (loop = 0; loop < keylen; loop++)
-		csum += raw[loop];
+	if (data_new_location(cookie)) {
+		csum = (u8)cookie->key_hash;
+	} else {
+		for (loop = 0; loop < keylen; loop++)
+			csum += raw[loop];
+	}
 	sprintf(key, "@%02x%c+", (unsigned int) csum, 0);
 
 	return 5;
