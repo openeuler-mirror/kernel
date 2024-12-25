@@ -51,30 +51,14 @@ static ssize_t cachefiles_ondemand_fd_write_iter(struct kiocb *kiocb,
 						 struct iov_iter *iter)
 {
 	struct cachefiles_object *object = kiocb->ki_filp->private_data;
-	struct cachefiles_cache *cache;
 	size_t len = iter->count;
 	loff_t pos = kiocb->ki_pos;
-	struct path path;
-	struct file *file;
 	int ret;
 
-	if (!object->backer)
+	if (!object->file)
 		return -ENOBUFS;
 
-	cache = container_of(object->fscache.cache,
-			     struct cachefiles_cache, cache);
-
-	/* write data to the backing filesystem and let it store it in its
-	 * own time */
-	path.mnt = cache->mnt;
-	path.dentry = object->backer;
-	file = dentry_open(&path, O_RDWR | O_LARGEFILE | O_DIRECT,
-			   cache->cache_cred);
-	if (IS_ERR(file))
-		return -ENOBUFS;
-
-	ret = vfs_iter_write(file, iter, &pos, 0);
-	fput(file);
+	ret = vfs_iter_write(object->file, iter, &pos, 0);
 	if (ret != len)
 		return -EIO;
 	return len;

@@ -39,6 +39,7 @@ struct cachefiles_object {
 	struct cachefiles_lookup_data	*lookup_data;	/* cached lookup data */
 	struct dentry			*dentry;	/* the file/dir representing this object */
 	struct dentry			*backer;	/* backing file */
+	struct file			*file;		/* backing file in on-demand mode */
 	loff_t				i_size;		/* object size */
 	unsigned long			flags;
 #define CACHEFILES_OBJECT_ACTIVE	0		/* T if marked active */

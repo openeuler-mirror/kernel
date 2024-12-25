@@ -705,6 +705,24 @@ lookup_again:
 			if (object->dentry->d_sb->s_blocksize > PAGE_SIZE)
 				goto check_error;
 
+			if (cachefiles_in_ondemand_mode(cache)) {
+				struct path path;
+				struct file *file;
+
+				path.mnt = cache->mnt;
+				path.dentry = object->dentry;
+				file = dentry_open(&path, O_RDWR | O_LARGEFILE,
+						   cache->cache_cred);
+				if (IS_ERR(file))
+					goto check_error;
+				/*
+				 * so that page_cache_sync_readahead() will fallback
+				 * to force_page_cache_readahead()
+				 */
+				file->f_mode |= FMODE_RANDOM;
+				object->file = file;
+			}
+
 			object->backer = object->dentry;
 		} else {
 			BUG(); // TODO: open file in data-class subdir
