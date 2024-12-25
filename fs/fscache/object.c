@@ -427,17 +427,9 @@ static const struct fscache_state *fscache_initialise_object(struct fscache_obje
 static const struct fscache_state *fscache_parent_ready(struct fscache_object *object,
 							int event)
 {
-	struct fscache_object *parent = object->parent;
-
 	_enter("{OBJ%x},%d", object->debug_id, event);
 
-	ASSERT(parent != NULL);
-
-	spin_lock(&parent->lock);
-	parent->n_ops++;
-	parent->n_obj_ops++;
 	object->lookup_jif = jiffies;
-	spin_unlock(&parent->lock);
 
 	_leave("");
 	return transit_to(LOOK_UP_OBJECT);
@@ -460,6 +452,12 @@ static const struct fscache_state *fscache_look_up_object(struct fscache_object 
 	object->oob_table = fscache_osm_lookup_oob;
 
 	ASSERT(parent != NULL);
+
+	spin_lock(&parent->lock);
+	parent->n_ops++;
+	parent->n_obj_ops++;
+	spin_unlock(&parent->lock);
+
 	ASSERTCMP(parent->n_ops, >, 0);
 	ASSERTCMP(parent->n_obj_ops, >, 0);
 
