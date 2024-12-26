@@ -1762,11 +1762,21 @@ void zap_locks(void)
 {
 	if (raw_spin_is_locked(&logbuf_lock)) {
 		debug_locks_off();
+#ifdef CONFIG_QUEUED_SPINLOCKS
+		/* Do not clear the tail to avoid infinite loops in qspinlock. */
+		WRITE_ONCE(logbuf_lock.raw_lock.locked_pending, 0);
+#else
 		raw_spin_lock_init(&logbuf_lock);
+#endif
 	}
 
 	if (raw_spin_is_locked(&console_owner_lock)) {
+#ifdef CONFIG_QUEUED_SPINLOCKS
+		/* Do not clear the tail to avoid infinite loops in qspinlock. */
+		WRITE_ONCE(console_owner_lock.raw_lock.locked_pending, 0);
+#else
 		raw_spin_lock_init(&console_owner_lock);
+#endif
 	}
 
 	console_owner = NULL;
