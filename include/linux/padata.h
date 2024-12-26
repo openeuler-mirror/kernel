@@ -167,7 +167,7 @@ extern struct padata_instance *padata_alloc_possible(
 					struct workqueue_struct *wq);
 extern void padata_free(struct padata_instance *pinst);
 extern int padata_do_parallel(struct padata_instance *pinst,
-			      struct padata_priv *padata, int cb_cpu);
+			      struct padata_priv *padata, int *cb_cpu);
 extern void padata_do_serial(struct padata_priv *padata);
 extern int padata_set_cpumask(struct padata_instance *pinst, int cpumask_type,
 			      cpumask_var_t cpumask);
