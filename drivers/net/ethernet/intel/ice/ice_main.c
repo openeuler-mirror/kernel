@@ -79,7 +79,7 @@ static void ice_check_for_hang_subtask(struct ice_pf *pf)
 			break;
 		}
 
-	if (!vsi || test_bit(__ICE_DOWN, vsi->state))
+	if (!vsi || test_bit(ICE_VSI_DOWN, vsi->state))
 		return;
 
 	if (!(vsi->netdev && netif_carrier_ok(vsi->netdev)))
@@ -212,9 +212,9 @@ static int ice_add_mac_to_unsync_list(struct net_device *netdev, const u8 *addr)
  */
 static bool ice_vsi_fltr_changed(struct ice_vsi *vsi)
 {
-	return test_bit(ICE_VSI_FLAG_UMAC_FLTR_CHANGED, vsi->flags) ||
-	       test_bit(ICE_VSI_FLAG_MMAC_FLTR_CHANGED, vsi->flags) ||
-	       test_bit(ICE_VSI_FLAG_VLAN_FLTR_CHANGED, vsi->flags);
+	return test_bit(ICE_VSI_UMAC_FLTR_CHANGED, vsi->state) ||
+	       test_bit(ICE_VSI_MMAC_FLTR_CHANGED, vsi->state) ||
+	       test_bit(ICE_VSI_VLAN_FLTR_CHANGED, vsi->state);
 }
 
 /**
@@ -232,7 +232,7 @@ static int ice_cfg_promisc(struct ice_vsi *vsi, u8 promisc_m, bool set_promisc)
 	if (vsi->type != ICE_VSI_PF)
 		return 0;
 
-	if (vsi->vlan_ena) {
+	if (vsi->num_vlan > 1) {
 		status = ice_set_vlan_vsi_promisc(hw, vsi->idx, promisc_m,
 						  set_promisc);
 	} else {
@@ -281,9 +281,9 @@ static int ice_vsi_sync_fltr(struct ice_vsi *vsi)
 	INIT_LIST_HEAD(&vsi->tmp_unsync_list);
 
 	if (ice_vsi_fltr_changed(vsi)) {
-		clear_bit(ICE_VSI_FLAG_UMAC_FLTR_CHANGED, vsi->flags);
-		clear_bit(ICE_VSI_FLAG_MMAC_FLTR_CHANGED, vsi->flags);
-		clear_bit(ICE_VSI_FLAG_VLAN_FLTR_CHANGED, vsi->flags);
+		clear_bit(ICE_VSI_UMAC_FLTR_CHANGED, vsi->state);
+		clear_bit(ICE_VSI_MMAC_FLTR_CHANGED, vsi->state);
+		clear_bit(ICE_VSI_VLAN_FLTR_CHANGED, vsi->state);
 
 		/* grab the netdev's addr_list_lock */
 		netif_addr_lock_bh(netdev);
@@ -334,7 +334,7 @@ static int ice_vsi_sync_fltr(struct ice_vsi *vsi)
 	/* check for changes in promiscuous modes */
 	if (changed_flags & IFF_ALLMULTI) {
 		if (vsi->current_netdev_flags & IFF_ALLMULTI) {
-			if (vsi->vlan_ena)
+			if (vsi->num_vlan > 1)
 				promisc_m = ICE_MCAST_VLAN_PROMISC_BITS;
 			else
 				promisc_m = ICE_MCAST_PROMISC_BITS;
@@ -348,7 +348,7 @@ static int ice_vsi_sync_fltr(struct ice_vsi *vsi)
 			}
 		} else {
 			/* !(vsi->current_netdev_flags & IFF_ALLMULTI) */
-			if (vsi->vlan_ena)
+			if (vsi->num_vlan > 1)
 				promisc_m = ICE_MCAST_VLAN_PROMISC_BITS;
 			else
 				promisc_m = ICE_MCAST_PROMISC_BITS;
@@ -364,8 +364,8 @@ static int ice_vsi_sync_fltr(struct ice_vsi *vsi)
 	}
 
 	if (((changed_flags & IFF_PROMISC) || promisc_forced_on) ||
-	    test_bit(ICE_VSI_FLAG_PROMISC_CHANGED, vsi->flags)) {
-		clear_bit(ICE_VSI_FLAG_PROMISC_CHANGED, vsi->flags);
+	    test_bit(ICE_VSI_PROMISC_CHANGED, vsi->state)) {
+		clear_bit(ICE_VSI_PROMISC_CHANGED, vsi->state);
 		if (vsi->current_netdev_flags & IFF_PROMISC) {
 			/* Apply Rx filter rule to get traffic from wire */
 			if (!ice_is_dflt_vsi_in_use(pf->first_sw)) {
@@ -398,12 +398,12 @@ static int ice_vsi_sync_fltr(struct ice_vsi *vsi)
 	goto exit;
 
 out_promisc:
-	set_bit(ICE_VSI_FLAG_PROMISC_CHANGED, vsi->flags);
+	set_bit(ICE_VSI_PROMISC_CHANGED, vsi->state);
 	goto exit;
 out:
 	/* if something went wrong then set the changed flag so we try again */
-	set_bit(ICE_VSI_FLAG_UMAC_FLTR_CHANGED, vsi->flags);
-	set_bit(ICE_VSI_FLAG_MMAC_FLTR_CHANGED, vsi->flags);
+	set_bit(ICE_VSI_UMAC_FLTR_CHANGED, vsi->state);
+	set_bit(ICE_VSI_MMAC_FLTR_CHANGED, vsi->state);
 exit:
 	clear_bit(__ICE_CFG_BUSY, vsi->state);
 	return err;
@@ -476,6 +476,7 @@ ice_prepare_for_reset(struct ice_pf *pf)
 	/* clear SW filtering DB */
 	ice_clear_hw_tbls(hw);
 	/* disable the VSIs and their queues that are not already DOWN */
+	set_bit(ICE_VSI_REBUILD_PENDING, ice_get_main_vsi(pf)->state);
 	ice_pf_dis_all_vsi(pf, false);
 
 	if (hw->port_info)
@@ -763,7 +764,7 @@ static void ice_vsi_link_event(struct ice_vsi *vsi, bool link_up)
 	if (!vsi)
 		return;
 
-	if (test_bit(__ICE_DOWN, vsi->state) || !vsi->netdev)
+	if (test_bit(ICE_VSI_DOWN, vsi->state) || !vsi->netdev)
 		return;
 
 	if (vsi->type == ICE_VSI_PF) {
@@ -2027,7 +2028,7 @@ static void ice_check_media_subtask(struct ice_pf *pf)
 		/* PHY settings are reset on media insertion, reconfigure
 		 * PHY to preserve settings.
 		 */
-		if (test_bit(__ICE_DOWN, vsi->state) &&
+		if (test_bit(ICE_VSI_DOWN, vsi->state) &&
 		    test_bit(ICE_FLAG_LINK_DOWN_ON_CLOSE_ENA, vsi->back->flags))
 			return;
 
@@ -2318,11 +2319,11 @@ static void ice_vsi_assign_bpf_prog(struct ice_vsi *vsi, struct bpf_prog *prog)
 	int i;
 
 	old_prog = xchg(&vsi->xdp_prog, prog);
-	if (old_prog)
-		bpf_prog_put(old_prog);
-
 	ice_for_each_rxq(vsi, i)
 		WRITE_ONCE(vsi->rx_rings[i]->xdp_prog, vsi->xdp_prog);
+
+	if (old_prog)
+		bpf_prog_put(old_prog);
 }
 
 /**
@@ -2527,8 +2528,15 @@ ice_xdp_setup_prog(struct ice_vsi *vsi, struct bpf_prog *prog,
 		return -EOPNOTSUPP;
 	}
 
+	/* hot swap progs and avoid toggling link */
+	if (ice_is_xdp_ena_vsi(vsi) == !!prog ||
+	    test_bit(ICE_VSI_REBUILD_PENDING, vsi->state)) {
+		ice_vsi_assign_bpf_prog(vsi, prog);
+		return 0;
+	}
+
 	/* need to stop netdev while setting up the program for Rx rings */
-	if (if_running && !test_and_set_bit(__ICE_DOWN, vsi->state)) {
+	if (if_running && !test_and_set_bit(ICE_VSI_DOWN, vsi->state)) {
 		ret = ice_down(vsi);
 		if (ret) {
 			NL_SET_ERR_MSG_MOD(extack, "Preparing device for XDP attach failed");
@@ -2545,13 +2553,6 @@ ice_xdp_setup_prog(struct ice_vsi *vsi, struct bpf_prog *prog,
 		xdp_ring_err = ice_destroy_xdp_rings(vsi);
 		if (xdp_ring_err)
 			NL_SET_ERR_MSG_MOD(extack, "Freeing XDP Tx resources failed");
-	} else {
-		/* safe to call even when prog == vsi->xdp_prog as
-		 * dev_xdp_install in net/core/dev.c incremented prog's
-		 * refcount so corresponding bpf_prog_put won't cause
-		 * underflow
-		 */
-		ice_vsi_assign_bpf_prog(vsi, prog);
 	}
 
 	if (if_running)
@@ -2594,21 +2595,28 @@ static int ice_xdp(struct net_device *dev, struct netdev_bpf *xdp)
 {
 	struct ice_netdev_priv *np = netdev_priv(dev);
 	struct ice_vsi *vsi = np->vsi;
+	int ret;
 
 	if (vsi->type != ICE_VSI_PF) {
 		NL_SET_ERR_MSG_MOD(xdp->extack, "XDP can be loaded only on PF VSI");
 		return -EINVAL;
 	}
 
+	mutex_lock(&vsi->xdp_state_lock);
+
 	switch (xdp->command) {
 	case XDP_SETUP_PROG:
-		return ice_xdp_setup_prog(vsi, xdp->prog, xdp->extack);
+		ret = ice_xdp_setup_prog(vsi, xdp->prog, xdp->extack);
+		break;
 	case XDP_SETUP_XSK_POOL:
-		return ice_xsk_pool_setup(vsi, xdp->xsk.pool,
-					  xdp->xsk.queue_id);
+		ret = ice_xsk_pool_setup(vsi, xdp->xsk.pool, xdp->xsk.queue_id);
+		break;
 	default:
-		return -EINVAL;
+		ret = -EINVAL;
 	}
+
+	mutex_unlock(&vsi->xdp_state_lock);
+	return ret;
 }
 
 /**
@@ -3162,10 +3170,8 @@ ice_vlan_rx_add_vid(struct net_device *netdev, __always_unused __be16 proto,
 	 * packets aren't pruned by the device's internal switch on Rx
 	 */
 	ret = ice_vsi_add_vlan(vsi, vid, ICE_FWD_TO_VSI);
-	if (!ret) {
-		vsi->vlan_ena = true;
-		set_bit(ICE_VSI_FLAG_VLAN_FLTR_CHANGED, vsi->flags);
-	}
+	if (!ret)
+		set_bit(ICE_VSI_VLAN_FLTR_CHANGED, vsi->state);
 
 	return ret;
 }
@@ -3204,8 +3210,7 @@ ice_vlan_rx_kill_vid(struct net_device *netdev, __always_unused __be16 proto,
 	if (vsi->num_vlan == 1 && ice_vsi_is_vlan_pruning_ena(vsi))
 		ret = ice_cfg_vlan_pruning(vsi, false, false);
 
-	vsi->vlan_ena = false;
-	set_bit(ICE_VSI_FLAG_VLAN_FLTR_CHANGED, vsi->flags);
+	set_bit(ICE_VSI_VLAN_FLTR_CHANGED, vsi->state);
 	return ret;
 }
 
@@ -4989,8 +4994,8 @@ static void ice_set_rx_mode(struct net_device *netdev)
 	 * ndo_set_rx_mode may be triggered even without a change in netdev
 	 * flags
 	 */
-	set_bit(ICE_VSI_FLAG_UMAC_FLTR_CHANGED, vsi->flags);
-	set_bit(ICE_VSI_FLAG_MMAC_FLTR_CHANGED, vsi->flags);
+	set_bit(ICE_VSI_UMAC_FLTR_CHANGED, vsi->state);
+	set_bit(ICE_VSI_MMAC_FLTR_CHANGED, vsi->state);
 	set_bit(ICE_FLAG_FLTR_SYNC, vsi->back->flags);
 
 	/* schedule our worker thread which will take care of
@@ -5265,7 +5270,7 @@ static int ice_up_complete(struct ice_vsi *vsi)
 	if (err)
 		return err;
 
-	clear_bit(__ICE_DOWN, vsi->state);
+	clear_bit(ICE_VSI_DOWN, vsi->state);
 	ice_napi_enable_all(vsi);
 	ice_vsi_ena_irq(vsi);
 
@@ -5412,7 +5417,7 @@ void ice_update_vsi_stats(struct ice_vsi *vsi)
 	struct ice_eth_stats *cur_es = &vsi->eth_stats;
 	struct ice_pf *pf = vsi->back;
 
-	if (test_bit(__ICE_DOWN, vsi->state) ||
+	if (test_bit(ICE_VSI_DOWN, vsi->state) ||
 	    test_bit(__ICE_CFG_BUSY, pf->state))
 		return;
 
@@ -5617,7 +5622,7 @@ void ice_get_stats64(struct net_device *netdev, struct rtnl_link_stats64 *stats)
 	 * But, only call the update routine and read the registers if VSI is
 	 * not down.
 	 */
-	if (!test_bit(__ICE_DOWN, vsi->state))
+	if (!test_bit(ICE_VSI_DOWN, vsi->state))
 		ice_update_vsi_ring_stats(vsi);
 	stats->tx_packets = vsi_stats->tx_packets;
 	stats->tx_bytes = vsi_stats->tx_bytes;
@@ -5817,7 +5822,7 @@ int ice_vsi_open_ctrl(struct ice_vsi *vsi)
 	if (err)
 		goto err_up_complete;
 
-	clear_bit(__ICE_DOWN, vsi->state);
+	clear_bit(ICE_VSI_DOWN, vsi->state);
 	ice_vsi_ena_irq(vsi);
 
 	return 0;
@@ -6217,7 +6222,7 @@ static int ice_change_mtu(struct net_device *netdev, int new_mtu)
 	netdev->mtu = (unsigned int)new_mtu;
 
 	/* if VSI is up, bring it down and then back up */
-	if (!test_and_set_bit(__ICE_DOWN, vsi->state)) {
+	if (!test_and_set_bit(ICE_VSI_DOWN, vsi->state)) {
 		int err;
 
 		err = ice_down(vsi);
@@ -6657,7 +6662,7 @@ static void ice_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 	default:
 		netdev_err(netdev, "tx_timeout recovery unsuccessful, device is in unrecoverable state.\n");
 		set_bit(__ICE_DOWN, pf->state);
-		set_bit(__ICE_NEEDS_RESTART, vsi->state);
+		set_bit(ICE_VSI_NEEDS_RESTART, vsi->state);
 		set_bit(__ICE_SERVICE_DIS, pf->state);
 		break;
 	}

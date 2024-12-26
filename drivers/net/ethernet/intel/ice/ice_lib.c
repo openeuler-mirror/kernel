@@ -352,6 +352,7 @@ static int ice_vsi_clear(struct ice_vsi *vsi)
 		pf->next_vsi = vsi->idx;
 
 	ice_vsi_free_arrays(vsi);
+	mutex_destroy(&vsi->xdp_state_lock);
 	mutex_unlock(&pf->sw_mutex);
 	devm_kfree(dev, vsi);
 
@@ -426,7 +427,7 @@ ice_vsi_alloc(struct ice_pf *pf, enum ice_vsi_type vsi_type, u16 vf_id)
 
 	vsi->type = vsi_type;
 	vsi->back = pf;
-	set_bit(__ICE_DOWN, vsi->state);
+	set_bit(ICE_VSI_DOWN, vsi->state);
 
 	if (vsi_type == ICE_VSI_VF)
 		ice_vsi_set_num_qs(vsi, vf_id);
@@ -475,6 +476,9 @@ ice_vsi_alloc(struct ice_pf *pf, enum ice_vsi_type vsi_type, u16 vf_id)
 		pf->next_vsi = ice_get_free_slot(pf->vsi, pf->num_alloc_vsi,
 						 pf->next_vsi);
 	}
+
+	mutex_init(&vsi->xdp_state_lock);
+
 	goto unlock_pf;
 
 err_rings:
@@ -2490,7 +2494,7 @@ void ice_vsi_free_rx_rings(struct ice_vsi *vsi)
  */
 void ice_vsi_close(struct ice_vsi *vsi)
 {
-	if (!test_and_set_bit(__ICE_DOWN, vsi->state))
+	if (!test_and_set_bit(ICE_VSI_DOWN, vsi->state))
 		ice_down(vsi);
 
 	ice_vsi_free_irq(vsi);
@@ -2507,10 +2511,10 @@ int ice_ena_vsi(struct ice_vsi *vsi, bool locked)
 {
 	int err = 0;
 
-	if (!test_bit(__ICE_NEEDS_RESTART, vsi->state))
+	if (!test_bit(ICE_VSI_NEEDS_RESTART, vsi->state))
 		return 0;
 
-	clear_bit(__ICE_NEEDS_RESTART, vsi->state);
+	clear_bit(ICE_VSI_NEEDS_RESTART, vsi->state);
 
 	if (vsi->netdev && vsi->type == ICE_VSI_PF) {
 		if (netif_running(vsi->netdev)) {
@@ -2536,10 +2540,10 @@ int ice_ena_vsi(struct ice_vsi *vsi, bool locked)
  */
 void ice_dis_vsi(struct ice_vsi *vsi, bool locked)
 {
-	if (test_bit(__ICE_DOWN, vsi->state))
+	if (test_bit(ICE_VSI_DOWN, vsi->state))
 		return;
 
-	set_bit(__ICE_NEEDS_RESTART, vsi->state);
+	set_bit(ICE_VSI_NEEDS_RESTART, vsi->state);
 
 	if (vsi->type == ICE_VSI_PF && vsi->netdev) {
 		if (netif_running(vsi->netdev)) {
@@ -2694,7 +2698,7 @@ int ice_vsi_release(struct ice_vsi *vsi)
 	ice_vsi_free_q_vectors(vsi);
 
 	/* make sure unregister_netdev() was called by checking __ICE_DOWN */
-	if (vsi->netdev && test_bit(__ICE_DOWN, vsi->state)) {
+	if (vsi->netdev && test_bit(ICE_VSI_DOWN, vsi->state)) {
 		free_netdev(vsi->netdev);
 		vsi->netdev = NULL;
 	}
@@ -2881,10 +2885,14 @@ int ice_vsi_rebuild(struct ice_vsi *vsi, bool init_vsi)
 	if (vsi->type == ICE_VSI_VF)
 		vf = &pf->vf[vsi->vf_id];
 
+	mutex_lock(&vsi->xdp_state_lock);
+
 	coalesce = kcalloc(vsi->num_q_vectors,
 			   sizeof(struct ice_coalesce_stored), GFP_KERNEL);
-	if (!coalesce)
-		return -ENOMEM;
+	if (!coalesce) {
+		ret = -ENOMEM;
+		goto unlock;
+	}
 
 	prev_num_q_vectors = ice_vsi_rebuild_get_coalesce(vsi, coalesce);
 
@@ -3000,13 +3008,16 @@ int ice_vsi_rebuild(struct ice_vsi *vsi, bool init_vsi)
 			ret = -EIO;
 			goto err_vectors;
 		} else {
-			return ice_schedule_reset(pf, ICE_RESET_PFR);
+			ret = ice_schedule_reset(pf, ICE_RESET_PFR);
+			if (ret)
+				goto err_vectors;
+			goto free_coalesce;
 		}
 	}
 	ice_vsi_rebuild_set_coalesce(vsi, coalesce, prev_num_q_vectors);
-	kfree(coalesce);
+	clear_bit(ICE_VSI_REBUILD_PENDING, vsi->state);
 
-	return 0;
+	goto free_coalesce;
 
 err_vectors:
 	ice_vsi_free_q_vectors(vsi);
@@ -3020,7 +3031,10 @@ err_rings:
 err_vsi:
 	ice_vsi_clear(vsi);
 	set_bit(__ICE_RESET_FAILED, pf->state);
+free_coalesce:
 	kfree(coalesce);
+unlock:
+	mutex_unlock(&vsi->xdp_state_lock);
 	return ret;
 }
 

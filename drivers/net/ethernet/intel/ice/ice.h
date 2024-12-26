@@ -188,7 +188,7 @@ struct ice_sw {
 	u8 dflt_vsi_ena:1;	/* true if above dflt_vsi is enabled */
 };
 
-enum ice_state {
+enum ice_pf_state {
 	__ICE_TESTING,
 	__ICE_DOWN,
 	__ICE_NEEDS_RESTART,
@@ -229,12 +229,15 @@ enum ice_state {
 	__ICE_STATE_NBITS		/* must be last */
 };
 
-enum ice_vsi_flags {
-	ICE_VSI_FLAG_UMAC_FLTR_CHANGED,
-	ICE_VSI_FLAG_MMAC_FLTR_CHANGED,
-	ICE_VSI_FLAG_VLAN_FLTR_CHANGED,
-	ICE_VSI_FLAG_PROMISC_CHANGED,
-	ICE_VSI_FLAG_NBITS		/* must be last */
+enum ice_vsi_state {
+	ICE_VSI_DOWN,
+	ICE_VSI_NEEDS_RESTART,
+	ICE_VSI_UMAC_FLTR_CHANGED,
+	ICE_VSI_MMAC_FLTR_CHANGED,
+	ICE_VSI_VLAN_FLTR_CHANGED,
+	ICE_VSI_PROMISC_CHANGED,
+	ICE_VSI_REBUILD_PENDING,
+	ICE_VSI_STATE_NBITS		/* must be last */
 };
 
 /* struct that defines a VSI, associated with a dev */
@@ -250,8 +253,7 @@ struct ice_vsi {
 	irqreturn_t (*irq_handler)(int irq, void *data);
 
 	u64 tx_linearize;
-	DECLARE_BITMAP(state, __ICE_STATE_NBITS);
-	DECLARE_BITMAP(flags, ICE_VSI_FLAG_NBITS);
+	DECLARE_BITMAP(state, ICE_VSI_STATE_NBITS);
 	unsigned int current_netdev_flags;
 	u32 tx_restart;
 	u32 tx_busy;
@@ -305,7 +307,6 @@ struct ice_vsi {
 	u8 irqs_ready:1;
 	u8 current_isup:1;		 /* Sync 'link up' logging */
 	u8 stat_offsets_loaded:1;
-	u8 vlan_ena:1;
 	u16 num_vlan;
 
 	/* queue information */
@@ -326,6 +327,7 @@ struct ice_vsi {
 	struct ice_ring **xdp_rings;	 /* XDP ring array */
 	u16 num_xdp_txq;		 /* Used XDP queues */
 	u8 xdp_mapping_mode;		 /* ICE_MAP_MODE_[CONTIG|SCATTER] */
+	struct mutex xdp_state_lock;
 	struct xsk_buff_pool **xsk_pools;
 	u16 num_xsk_pools_used;
 	u16 num_xsk_pools;
@@ -480,7 +482,7 @@ ice_irq_dynamic_ena(struct ice_hw *hw, struct ice_vsi *vsi,
 	val = GLINT_DYN_CTL_INTENA_M | GLINT_DYN_CTL_CLEARPBA_M |
 	      (itr << GLINT_DYN_CTL_ITR_INDX_S);
 	if (vsi)
-		if (test_bit(__ICE_DOWN, vsi->state))
+		if (test_bit(ICE_VSI_DOWN, vsi->state))
 			return;
 	wr32(hw, GLINT_DYN_CTL(vector), val);
 }
