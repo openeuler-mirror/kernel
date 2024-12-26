@@ -279,8 +279,10 @@ static int ioctl_sdma_unpin_umem(struct file *file, unsigned long arg)
 		return -EFAULT;
 
 	ida = (int)(cookie >> COOKIE_IDA_SHIFT);
-	if (ida != data->ida)
+	if (ida != data->ida) {
+		dev_err(&data->psdma_dev->pdev->dev, "invalid process unpin umem!\n");
 		return -EPERM;
+	}
 
 	ret = sdma_umem_release(cookie);
 	if (ret)
@@ -297,7 +299,7 @@ static int ioctl_sdma_pin_umem(struct file *file, unsigned long arg)
 
 	if (copy_from_user(&umemInfo, (struct hisi_sdma_umem_info __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_umem_info))) {
-		dev_dbg(&data->psdma_dev->pdev->dev, "umem_info copy from user failed!\n");
+		dev_err(&data->psdma_dev->pdev->dev, "umem_info copy from user failed!\n");
 		return -EFAULT;
 	}
 
@@ -308,7 +310,7 @@ static int ioctl_sdma_pin_umem(struct file *file, unsigned long arg)
 	if (copy_to_user((struct hisi_sdma_umem_info __user *)(uintptr_t)arg, &umemInfo,
 			 sizeof(struct hisi_sdma_umem_info))) {
 		sdma_umem_release(umemInfo.cookie);
-		dev_dbg(&data->psdma_dev->pdev->dev, "umem_info copy to user failed!\n");
+		dev_err(&data->psdma_dev->pdev->dev, "umem_info copy to user failed!\n");
 		return -EFAULT;
 	}
 
@@ -365,6 +367,7 @@ static int ioctl_sdma_get_chn(struct file *file, unsigned long arg)
 		bitmap_clear(pdev->channel_map, idx, 1);
 		pdev->nr_channel_used++;
 	} else {
+		dev_err(&pdev->pdev->dev, "fail to allocate usable exclusive chn!\n");
 		ret = -ENOSPC;
 		goto unlock;
 	}
@@ -902,6 +905,7 @@ static int sdma_operation_reg(struct file_open_data *data, unsigned long arg,
 		if (copy_to_user((struct hisi_sdma_reg_info __user *)(uintptr_t)arg, &reg_info,
 				 sizeof(struct hisi_sdma_reg_info))) {
 			spin_unlock(&pchannel->owner_chn_lock);
+			dev_err(dev, "copy reg_info to user failed\n");
 			return -EFAULT;
 		}
 	} else if (reg_info.type == HISI_SDMA_WRITE_REG) {
