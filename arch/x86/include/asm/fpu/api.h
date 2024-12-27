@@ -37,6 +37,32 @@ static inline void kernel_fpu_begin(void)
 	kernel_fpu_begin_mask(KFPU_387 | KFPU_MXCSR);
 }
 
+#if defined(CONFIG_X86_HYGON_LMC_SSE2_ON) || \
+	defined(CONFIG_X86_HYGON_LMC_AVX2_ON)
+extern int kernel_fpu_begin_nonatomic_mask(unsigned int kfpu_mask);
+extern void kernel_fpu_end_nonatomic(void);
+
+/* Code that is unaware of kernel_fpu_begin_nonatomic_mask() can use this */
+static inline int kernel_fpu_begin_nonatomic(void)
+{
+	return kernel_fpu_begin_nonatomic_mask(KFPU_387 | KFPU_MXCSR);
+}
+
+/*
+ * It means we call kernel_fpu_end after kernel_fpu_begin_nonatomic
+ * func, but before kernel_fpu_end_nonatomic
+ */
+static inline void check_using_kernel_fpu(void)
+{
+
+	WARN_ON_ONCE(test_thread_flag(TIF_USING_FPU_NONATOMIC));
+}
+
+#else
+static inline void check_using_kernel_fpu(void) { }
+
+#endif
+
 /*
  * Use fpregs_lock() while editing CPU's FPU registers or fpu->fpstate.
  * A context switch will (and softirq might) save CPU's FPU registers to
