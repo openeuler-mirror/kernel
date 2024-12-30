@@ -2,7 +2,6 @@
 /*
  * Copyright (C) 2017-2018 HUAWEI, Inc.
  *             https://www.huawei.com/
- * Created by Gao Xiang <gaoxiang25@huawei.com>
  */
 #ifndef __EROFS_XATTR_H
 #define __EROFS_XATTR_H
@@ -87,4 +86,3 @@ struct posix_acl *erofs_get_acl(struct inode *inode, int type);
 #endif
 
 #endif
-

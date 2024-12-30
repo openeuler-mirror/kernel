@@ -51,6 +51,9 @@ static struct fscache_object *cachefiles_alloc_object(
 
 	fscache_object_init(&object->fscache, cookie, &cache->cache);
 
+	if (cachefiles_ondemand_init_obj_info(object))
+		goto nomem_obj_info;
+
 	object->type = cookie->def->type;
 
 	/* get hold of the raw key
@@ -74,7 +77,7 @@ static struct fscache_object *cachefiles_alloc_object(
 	((char *)buffer)[keylen + 4] = 0;
 
 	/* turn the raw key into something that can work with as a filename */
-	key = cachefiles_cook_key(buffer, keylen + 2, object->type);
+	key = cachefiles_cook_key(object, buffer, keylen + 2);
 	if (!key)
 		goto nomem_key;
 
@@ -102,7 +105,11 @@ static struct fscache_object *cachefiles_alloc_object(
 nomem_key:
 	kfree(buffer);
 nomem_buffer:
+	kfree(object->private);
+	object->private = NULL;
+nomem_obj_info:
 	BUG_ON(test_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags));
+	fscache_object_destroy(&object->fscache);
 	kmem_cache_free(cachefiles_object_jar, object);
 	fscache_object_destroyed(&cache->cache);
 nomem_object:
@@ -264,6 +271,7 @@ static void cachefiles_drop_object(struct fscache_object *_object)
 	struct cachefiles_cache *cache;
 	const struct cred *saved_cred;
 	struct inode *inode;
+	struct file *file;
 	blkcnt_t i_blocks = 0;
 
 	ASSERT(_object);
@@ -279,6 +287,13 @@ static void cachefiles_drop_object(struct fscache_object *_object)
 #ifdef CACHEFILES_DEBUG_SLAB
 	ASSERT((atomic_read(&object->usage) & 0xffff0000) != 0x6b6b0000);
 #endif
+
+	if (test_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags) &&
+	    (volume_new_version(object->fscache.cookie) ||
+	     data_new_version(object->fscache.cookie)))
+		cachefiles_mark_object_inactive(cache, object, 0);
+
+	cachefiles_ondemand_clean_object(object);
 
 	/* We need to tidy the object up if we did in fact manage to open it.
 	 * It's possible for us to get here before the object is fully
@@ -304,6 +319,13 @@ static void cachefiles_drop_object(struct fscache_object *_object)
 		if (object->backer != object->dentry)
 			dput(object->backer);
 		object->backer = NULL;
+	}
+
+	/* clean up file descriptor for non-index object */
+	file = rcu_dereference_protected(object->file, true);
+	if (file) {
+		fput(file);
+		rcu_assign_pointer(object->file, NULL);
 	}
 
 	/* note that the object is now inactive */
@@ -337,8 +359,11 @@ static void cachefiles_put_object(struct fscache_object *_object,
 	ASSERT((atomic_read(&object->usage) & 0xffff0000) != 0x6b6b0000);
 #endif
 
-	ASSERTIFCMP(object->fscache.parent,
-		    object->fscache.parent->n_children, >, 0);
+	if (!cachefiles_in_ondemand_mode(container_of(object->fscache.cache,
+					struct cachefiles_cache, cache))) {
+		ASSERTIFCMP(object->fscache.parent,
+			    object->fscache.parent->n_children, >, 0);
+	}
 
 	u = atomic_dec_return(&object->usage);
 	trace_cachefiles_ref(object, _object->cookie,
@@ -362,6 +387,8 @@ static void cachefiles_put_object(struct fscache_object *_object,
 		}
 
 		cache = object->fscache.cache;
+		kfree(object->private);
+		object->private = NULL;
 		fscache_object_destroy(&object->fscache);
 		kmem_cache_free(cachefiles_object_jar, object);
 		fscache_object_destroyed(cache);
@@ -562,6 +589,7 @@ const struct fscache_cache_ops cachefiles_cache_ops = {
 	.attr_changed		= cachefiles_attr_changed,
 	.read_or_alloc_page	= cachefiles_read_or_alloc_page,
 	.read_or_alloc_pages	= cachefiles_read_or_alloc_pages,
+	.prepare_read		= cachefiles_prepare_read,
 	.allocate_page		= cachefiles_allocate_page,
 	.allocate_pages		= cachefiles_allocate_pages,
 	.write_page		= cachefiles_write_page,

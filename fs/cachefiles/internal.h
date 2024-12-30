@@ -18,6 +18,8 @@
 #include <linux/cred.h>
 #include <linux/workqueue.h>
 #include <linux/security.h>
+#include <linux/cachefiles.h>
+#include <linux/idr.h>
 
 struct cachefiles_cache;
 struct cachefiles_object;
@@ -29,6 +31,21 @@ extern unsigned cachefiles_debug;
 
 #define cachefiles_gfp (__GFP_RECLAIM | __GFP_NORETRY | __GFP_NOMEMALLOC)
 
+enum cachefiles_object_state {
+	CACHEFILES_ONDEMAND_OBJSTATE_close, /* Anonymous fd closed by daemon or initial state */
+	CACHEFILES_ONDEMAND_OBJSTATE_open, /* Anonymous fd associated with object is available */
+	CACHEFILES_ONDEMAND_OBJSTATE_reopening, /* Object that was closed and is being reopened. */
+	CACHEFILES_ONDEMAND_OBJSTATE_dropping, /* Object is being dropped. */
+};
+
+struct cachefiles_ondemand_info {
+	struct work_struct		work;
+	int				ondemand_id;
+	enum cachefiles_object_state	state;
+	struct cachefiles_object	*object;
+	spinlock_t			lock;
+};
+
 /*
  * node records
  */
@@ -37,6 +54,7 @@ struct cachefiles_object {
 	struct cachefiles_lookup_data	*lookup_data;	/* cached lookup data */
 	struct dentry			*dentry;	/* the file/dir representing this object */
 	struct dentry			*backer;	/* backing file */
+	struct file __rcu		*file;		/* backing file in on-demand mode */
 	loff_t				i_size;		/* object size */
 	unsigned long			flags;
 #define CACHEFILES_OBJECT_ACTIVE	0		/* T if marked active */
@@ -45,9 +63,12 @@ struct cachefiles_object {
 	uint8_t				new;		/* T if object new */
 	spinlock_t			work_lock;
 	struct rb_node			active_node;	/* link in active tree (dentry is key) */
+	struct cachefiles_ondemand_info	*private;
 };
 
 extern struct kmem_cache *cachefiles_object_jar;
+
+#define CACHEFILES_ONDEMAND_ID_CLOSED	-1
 
 /*
  * Cache files cache definition
@@ -84,10 +105,32 @@ struct cachefiles_cache {
 #define CACHEFILES_DEAD			1	/* T if cache dead */
 #define CACHEFILES_CULLING		2	/* T if cull engaged */
 #define CACHEFILES_STATE_CHANGED	3	/* T if state changed (poll trigger) */
+#define CACHEFILES_ONDEMAND_MODE	4	/* T if in on-demand read mode */
 	char				*rootdirname;	/* name of cache root directory */
 	char				*secctx;	/* LSM security context */
 	char				*tag;		/* cache binding tag */
+	refcount_t			unbind_pincount;/* refcount to do daemon unbind */
+	struct radix_tree_root		reqs;		/* xarray of pending on-demand requests */
+	unsigned long			req_id_next;
+	struct idr			ondemand_ids;	/* xarray for ondemand_id allocation */
+	u32				ondemand_id_next;
 };
+
+static inline bool cachefiles_in_ondemand_mode(struct cachefiles_cache *cache)
+{
+	return IS_ENABLED(CONFIG_CACHEFILES_ONDEMAND) &&
+		test_bit(CACHEFILES_ONDEMAND_MODE, &cache->flags);
+}
+
+struct cachefiles_req {
+	struct cachefiles_object *object;
+	struct completion done;
+	refcount_t ref;
+	int error;
+	struct cachefiles_msg msg;
+};
+
+#define CACHEFILES_REQ_NEW	0
 
 /*
  * backing file read tracking
@@ -98,6 +141,8 @@ struct cachefiles_one_read {
 	struct page			*netfs_page;	/* netfs page we're going to fill */
 	struct fscache_retrieval	*op;		/* retrieval op covering this */
 	struct list_head		op_link;	/* link in op's todo list */
+	unsigned long			flags;
+#define CACHEFILES_MONITOR_ENTER_READ	0       /* restrict calls to read_page */
 };
 
 /*
@@ -141,6 +186,9 @@ extern void cachefiles_daemon_unbind(struct cachefiles_cache *cache);
  * daemon.c
  */
 extern const struct file_operations cachefiles_daemon_fops;
+extern void cachefiles_flush_reqs(struct cachefiles_cache *cache);
+extern void cachefiles_get_unbind_pincount(struct cachefiles_cache *cache);
+extern void cachefiles_put_unbind_pincount(struct cachefiles_cache *cache);
 
 extern int cachefiles_has_space(struct cachefiles_cache *cache,
 				unsigned fnr, unsigned bnr);
@@ -153,7 +201,8 @@ extern const struct fscache_cache_ops cachefiles_cache_ops;
 /*
  * key.c
  */
-extern char *cachefiles_cook_key(const u8 *raw, int keylen, uint8_t type);
+extern char *cachefiles_cook_key(struct cachefiles_object *object,
+				 const u8 *raw, int keylen);
 
 /*
  * namei.c
@@ -161,6 +210,8 @@ extern char *cachefiles_cook_key(const u8 *raw, int keylen, uint8_t type);
 extern void cachefiles_mark_object_inactive(struct cachefiles_cache *cache,
 					    struct cachefiles_object *object,
 					    blkcnt_t i_blocks);
+extern int cachefiles_mark_object_active(struct cachefiles_cache *cache,
+					 struct cachefiles_object *object);
 extern int cachefiles_delete_object(struct cachefiles_cache *cache,
 				    struct cachefiles_object *object);
 extern int cachefiles_walk_to_object(struct cachefiles_object *parent,
@@ -210,12 +261,89 @@ extern int cachefiles_read_or_alloc_page(struct fscache_retrieval *,
 extern int cachefiles_read_or_alloc_pages(struct fscache_retrieval *,
 					  struct list_head *, unsigned *,
 					  gfp_t);
+extern int cachefiles_prepare_read(struct fscache_retrieval *op, pgoff_t index);
 extern int cachefiles_allocate_page(struct fscache_retrieval *, struct page *,
 				    gfp_t);
 extern int cachefiles_allocate_pages(struct fscache_retrieval *,
 				     struct list_head *, unsigned *, gfp_t);
 extern int cachefiles_write_page(struct fscache_storage *, struct page *);
 extern void cachefiles_uncache_page(struct fscache_object *, struct page *);
+
+/*
+ * ondemand.c
+ */
+#ifdef CONFIG_CACHEFILES_ONDEMAND
+extern ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
+				char __user *_buffer, size_t buflen, loff_t *pos);
+
+extern int cachefiles_ondemand_copen(struct cachefiles_cache *cache,
+				     char *args);
+
+extern int cachefiles_ondemand_restore(struct cachefiles_cache *cache,
+					char *args);
+
+extern int cachefiles_ondemand_init_object(struct cachefiles_object *object);
+extern void cachefiles_ondemand_clean_object(struct cachefiles_object *object);
+extern int cachefiles_ondemand_read(struct cachefiles_object *object,
+			     loff_t pos, size_t len);
+
+extern int cachefiles_ondemand_init_obj_info(struct cachefiles_object *object);
+
+#define CACHEFILES_OBJECT_STATE_FUNCS(_state)	\
+static inline bool								\
+cachefiles_ondemand_object_is_##_state(const struct cachefiles_object *object) \
+{												\
+	return object->private->state == CACHEFILES_ONDEMAND_OBJSTATE_##_state; \
+}												\
+												\
+static inline void								\
+cachefiles_ondemand_set_object_##_state(struct cachefiles_object *object) \
+{												\
+	object->private->state = CACHEFILES_ONDEMAND_OBJSTATE_##_state; \
+}
+
+CACHEFILES_OBJECT_STATE_FUNCS(open);
+CACHEFILES_OBJECT_STATE_FUNCS(close);
+CACHEFILES_OBJECT_STATE_FUNCS(reopening);
+CACHEFILES_OBJECT_STATE_FUNCS(dropping);
+
+static inline bool cachefiles_ondemand_is_reopening_read(struct cachefiles_req *req)
+{
+	return cachefiles_ondemand_object_is_reopening(req->object) &&
+			req->msg.opcode == CACHEFILES_OP_READ;
+}
+
+#else
+static inline ssize_t cachefiles_ondemand_daemon_read(struct cachefiles_cache *cache,
+				char __user *_buffer, size_t buflen, loff_t *pos)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int cachefiles_ondemand_init_object(struct cachefiles_object *object)
+{
+	return 0;
+}
+
+static inline void cachefiles_ondemand_clean_object(struct cachefiles_object *object)
+{
+}
+static inline int cachefiles_ondemand_read(struct cachefiles_object *object,
+					   loff_t pos, size_t len)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int cachefiles_ondemand_init_obj_info(struct cachefiles_object *object)
+{
+	return 0;
+}
+
+static inline bool cachefiles_ondemand_is_reopening_read(struct cachefiles_req *req)
+{
+	return false;
+}
+#endif
 
 /*
  * security.c
@@ -261,6 +389,8 @@ do {							\
 	pr_err("I/O Error: " FMT"\n", ##__VA_ARGS__);	\
 	fscache_io_error(&(___cache)->cache);		\
 	set_bit(CACHEFILES_DEAD, &(___cache)->flags);	\
+	if (cachefiles_in_ondemand_mode(___cache))	\
+		cachefiles_flush_reqs(___cache);	\
 } while (0)
 
 #define cachefiles_io_error_obj(object, FMT, ...)			\

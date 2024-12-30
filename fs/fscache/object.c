@@ -382,14 +382,14 @@ static const struct fscache_state *fscache_initialise_object(struct fscache_obje
 	parent = object->parent;
 	if (!parent) {
 		_leave(" [no parent]");
-		return transit_to(DROP_OBJECT);
+		return transit_to(KILL_OBJECT);
 	}
 
 	_debug("parent: %s of:%lx", parent->state->name, parent->flags);
 
 	if (fscache_object_is_dying(parent)) {
 		_leave(" [bad parent]");
-		return transit_to(DROP_OBJECT);
+		return transit_to(KILL_OBJECT);
 	}
 
 	if (fscache_object_is_available(parent)) {
@@ -411,7 +411,7 @@ static const struct fscache_state *fscache_initialise_object(struct fscache_obje
 	spin_unlock(&parent->lock);
 	if (!success) {
 		_leave(" [grab failed]");
-		return transit_to(DROP_OBJECT);
+		return transit_to(KILL_OBJECT);
 	}
 
 	/* fscache_acquire_non_index_cookie() uses this
@@ -427,17 +427,9 @@ static const struct fscache_state *fscache_initialise_object(struct fscache_obje
 static const struct fscache_state *fscache_parent_ready(struct fscache_object *object,
 							int event)
 {
-	struct fscache_object *parent = object->parent;
-
 	_enter("{OBJ%x},%d", object->debug_id, event);
 
-	ASSERT(parent != NULL);
-
-	spin_lock(&parent->lock);
-	parent->n_ops++;
-	parent->n_obj_ops++;
 	object->lookup_jif = jiffies;
-	spin_unlock(&parent->lock);
 
 	_leave("");
 	return transit_to(LOOK_UP_OBJECT);
@@ -460,6 +452,12 @@ static const struct fscache_state *fscache_look_up_object(struct fscache_object 
 	object->oob_table = fscache_osm_lookup_oob;
 
 	ASSERT(parent != NULL);
+
+	spin_lock(&parent->lock);
+	parent->n_ops++;
+	parent->n_obj_ops++;
+	spin_unlock(&parent->lock);
+
 	ASSERTCMP(parent->n_ops, >, 0);
 	ASSERTCMP(parent->n_obj_ops, >, 0);
 
@@ -523,8 +521,7 @@ void fscache_object_lookup_negative(struct fscache_object *object)
 		clear_bit(FSCACHE_COOKIE_UNAVAILABLE, &cookie->flags);
 
 		_debug("wake up lookup %p", &cookie->flags);
-		clear_bit_unlock(FSCACHE_COOKIE_LOOKING_UP, &cookie->flags);
-		wake_up_bit(&cookie->flags, FSCACHE_COOKIE_LOOKING_UP);
+		clear_and_wake_up_bit(FSCACHE_COOKIE_LOOKING_UP, &cookie->flags);
 	}
 	_leave("");
 }
@@ -558,8 +555,7 @@ void fscache_obtained_object(struct fscache_object *object)
 		/* Allow write requests to begin stacking up and read requests
 		 * to begin shovelling data.
 		 */
-		clear_bit_unlock(FSCACHE_COOKIE_LOOKING_UP, &cookie->flags);
-		wake_up_bit(&cookie->flags, FSCACHE_COOKIE_LOOKING_UP);
+		clear_and_wake_up_bit(FSCACHE_COOKIE_LOOKING_UP, &cookie->flags);
 	} else {
 		fscache_stat(&fscache_n_object_created);
 	}
@@ -745,6 +741,9 @@ static const struct fscache_state *fscache_drop_object(struct fscache_object *ob
 	cache->ops->drop_object(object);
 	fscache_stat_d(&fscache_n_cop_drop_object);
 
+	if (volume_new_version(cookie) || data_new_version(cookie))
+		fscache_unhash_cookie(cookie);
+
 	/* The parent object wants to know when all it dependents have gone */
 	if (parent) {
 		_debug("release parent OBJ%x {%d}",
@@ -901,12 +900,16 @@ static void fscache_dequeue_object(struct fscache_object *object)
 {
 	_enter("{OBJ%x}", object->debug_id);
 
-	if (!list_empty(&object->dep_link)) {
-		spin_lock(&object->parent->lock);
-		list_del_init(&object->dep_link);
-		spin_unlock(&object->parent->lock);
-	}
+	if (list_empty(&object->dep_link))
+		goto out;
 
+	spin_lock(&object->parent->lock);
+	if (!list_empty(&object->dep_link)) {
+		list_del_init(&object->dep_link);
+		fscache_put_object(object, fscache_obj_put_dequeue);
+	}
+	spin_unlock(&object->parent->lock);
+out:
 	_leave("");
 }
 

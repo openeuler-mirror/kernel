@@ -46,11 +46,6 @@ int cachefiles_daemon_bind(struct cachefiles_cache *cache, char *args)
 	       cache->bcull_percent < cache->brun_percent &&
 	       cache->brun_percent  < 100);
 
-	if (*args) {
-		pr_err("'bind' command doesn't take an argument\n");
-		return -EINVAL;
-	}
-
 	if (!cache->rootdirname) {
 		pr_err("No cache directory specified\n");
 		return -EINVAL;
@@ -60,6 +55,22 @@ int cachefiles_daemon_bind(struct cachefiles_cache *cache, char *args)
 	if (test_bit(CACHEFILES_READY, &cache->flags)) {
 		pr_err("Cache already bound\n");
 		return -EBUSY;
+	}
+
+	if (IS_ENABLED(CONFIG_CACHEFILES_ONDEMAND)) {
+		if (!strcmp(args, "ondemand")) {
+			if (!cachefiles_ondemand_is_enabled()) {
+				pr_err("ondemand mode is disabled\n");
+				return -EINVAL;
+			}
+			set_bit(CACHEFILES_ONDEMAND_MODE, &cache->flags);
+		} else if (*args) {
+			pr_err("Invalid argument to the 'bind' command\n");
+			return -EINVAL;
+		}
+	} else if (*args) {
+		pr_err("'bind' command doesn't take an argument\n");
+		return -EINVAL;
 	}
 
 	/* make sure we have copies of the tag and dirname strings */
@@ -221,6 +232,12 @@ static int cachefiles_daemon_add_cache(struct cachefiles_cache *cache)
 	if (ret < 0)
 		goto error_add_cache;
 
+	/*
+	 * As the cache->daemon_mutex lock hold and the cache is set to
+	 * CACHEFILES_READY, this function must not return an error.
+	 */
+	cachefiles_mark_object_active(cache, fsdef);
+
 	/* done */
 	set_bit(CACHEFILES_READY, &cache->flags);
 	dput(root);
@@ -235,6 +252,7 @@ static int cachefiles_daemon_add_cache(struct cachefiles_cache *cache)
 error_add_cache:
 	dput(cache->graveyard);
 	cache->graveyard = NULL;
+	fscache_object_destroy(&fsdef->fscache);
 error_unsupported:
 	mntput(cache->mnt);
 	cache->mnt = NULL;

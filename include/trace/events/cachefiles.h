@@ -21,6 +21,10 @@
 enum cachefiles_obj_ref_trace {
 	cachefiles_obj_put_wait_retry = fscache_obj_ref__nr_traces,
 	cachefiles_obj_put_wait_timeo,
+	cachefiles_obj_get_ondemand_fd,
+	cachefiles_obj_put_ondemand_fd,
+	cachefiles_obj_get_read_req,
+	cachefiles_obj_put_read_req,
 	cachefiles_obj_ref__nr_traces
 };
 
@@ -45,7 +49,11 @@ enum cachefiles_obj_ref_trace {
 	EM(fscache_obj_put_queue,		"PUT queue")		\
 	EM(fscache_obj_put_work,		"PUT work")		\
 	EM(cachefiles_obj_put_wait_retry,	"PUT wait_retry")	\
-	E_(cachefiles_obj_put_wait_timeo,	"PUT wait_timeo")
+	EM(cachefiles_obj_put_wait_timeo,	"PUT wait_timeo")	\
+	EM(cachefiles_obj_get_ondemand_fd,	"GET ondemand_fd")	\
+	EM(cachefiles_obj_put_ondemand_fd,	"PUT ondemand_fd")	\
+	EM(cachefiles_obj_get_read_req,		"GET read_req")		\
+	E_(cachefiles_obj_put_read_req,		"PUT read_req")
 
 /*
  * Export enum symbols via userspace.

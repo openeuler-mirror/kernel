@@ -133,8 +133,8 @@ found_dentry:
 /*
  * record the fact that an object is now active
  */
-static int cachefiles_mark_object_active(struct cachefiles_cache *cache,
-					 struct cachefiles_object *object)
+int cachefiles_mark_object_active(struct cachefiles_cache *cache,
+				  struct cachefiles_object *object)
 {
 	struct cachefiles_object *xobject;
 	struct rb_node **_p, *_parent = NULL;
@@ -264,10 +264,8 @@ void cachefiles_mark_object_inactive(struct cachefiles_cache *cache,
 
 	write_lock(&cache->active_lock);
 	rb_erase(&object->active_node, &cache->active_nodes);
-	clear_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags);
+	clear_and_wake_up_bit(CACHEFILES_OBJECT_ACTIVE, &object->flags);
 	write_unlock(&cache->active_lock);
-
-	wake_up_bit(&object->flags, CACHEFILES_OBJECT_ACTIVE);
 
 	/* This object can now be culled, so we need to let the daemon know
 	 * that there is something it can remove if it needs to.
@@ -522,6 +520,20 @@ advance:
 		key = NULL;
 
 lookup_again:
+
+	/*
+	 * Process the open request before acquiring the dir inode lock to
+	 * avoid AA deadlocks caused by the daemon acquiring the dir inode
+	 * lock while processing the open request. Although the daemon gets
+	 * an anonymous fd, it can't be used until object->file has been
+	 * assigned a value.
+	 */
+	if (!key) {
+		ret = cachefiles_ondemand_init_object(object);
+		if (ret < 0)
+			goto error_out2;
+	}
+
 	/* search the current directory for the element name */
 	_debug("lookup '%s'", name);
 
@@ -694,6 +706,29 @@ lookup_again:
 				goto check_error;
 			if (object->dentry->d_sb->s_blocksize > PAGE_SIZE)
 				goto check_error;
+
+			if (cachefiles_in_ondemand_mode(cache)) {
+				struct path path;
+				struct file *file;
+
+				path.mnt = cache->mnt;
+				path.dentry = object->dentry;
+				file = dentry_open(&path, O_RDWR | O_LARGEFILE,
+						   cache->cache_cred);
+				if (IS_ERR(file))
+					goto check_error;
+				/*
+				 * so that page_cache_sync_readahead() will fallback
+				 * to force_page_cache_readahead()
+				 */
+				file->f_mode |= FMODE_RANDOM;
+				rcu_assign_pointer(object->file, file);
+
+				/* Now the pages can be read. */
+				if (object->new && object->fscache.store_limit_l)
+					clear_bit_unlock(FSCACHE_COOKIE_NO_DATA_YET,
+						    &object->fscache.cookie->flags);
+			}
 
 			object->backer = object->dentry;
 		} else {

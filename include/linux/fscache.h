@@ -70,6 +70,12 @@ struct fscache_cookie_def {
 #define FSCACHE_COOKIE_TYPE_INDEX	0
 #define FSCACHE_COOKIE_TYPE_DATAFILE	1
 
+	/*
+	 * Used for index cookie. If set, the location/xattr of cachefiles
+	 * will be the same as mainline kernel v5.18+.
+	 */
+	bool new_version;
+
 	/* select the cache into which to insert an entry in this index
 	 * - optional
 	 * - should return a cache identifier or NULL to cause the cache to be
@@ -139,6 +145,7 @@ struct fscache_cookie {
 	struct hlist_head		backing_objects; /* object(s) backing this file/index */
 	const struct fscache_cookie_def	*def;		/* definition */
 	struct fscache_cookie		*parent;	/* parent of this entry */
+	struct fscache_cookie		*collision;	/* collision cookie */
 	struct hlist_bl_node		hash_link;	/* Link in hash table */
 	void				*netfs_data;	/* back pointer to netfs */
 	struct radix_tree_root		stores;		/* pages to be stored on this cookie */
@@ -156,6 +163,7 @@ struct fscache_cookie {
 #define FSCACHE_COOKIE_AUX_UPDATED	8	/* T if the auxiliary data was updated */
 #define FSCACHE_COOKIE_ACQUIRED		9	/* T if cookie is in use */
 #define FSCACHE_COOKIE_RELINQUISHING	10	/* T if cookie is being relinquished */
+#define FSCACHE_COOKIE_ACQUIRE_PENDING	11	/* T if cookie is waiting to complete acquisition */
 
 	u8				type;		/* Type of object */
 	u8				key_len;	/* Length of index key */
@@ -204,7 +212,7 @@ extern int __fscache_read_or_alloc_page(struct fscache_cookie *,
 					struct page *,
 					fscache_rw_complete_t,
 					void *,
-					gfp_t);
+					gfp_t, loff_t);
 extern int __fscache_read_or_alloc_pages(struct fscache_cookie *,
 					 struct address_space *,
 					 struct list_head *,
@@ -212,6 +220,13 @@ extern int __fscache_read_or_alloc_pages(struct fscache_cookie *,
 					 fscache_rw_complete_t,
 					 void *,
 					 gfp_t);
+extern int __fscache_prepare_read(struct fscache_cookie *cookie,
+				  struct address_space *mapping,
+				  pgoff_t index,
+				  unsigned int nr_pages,
+				  loff_t start_pos,
+				  fscache_rw_complete_t term_func,
+				  void *context);
 extern int __fscache_alloc_page(struct fscache_cookie *, struct page *, gfp_t);
 extern int __fscache_write_page(struct fscache_cookie *, struct page *, loff_t, gfp_t);
 extern void __fscache_uncache_page(struct fscache_cookie *, struct page *);
@@ -545,7 +560,21 @@ int fscache_read_or_alloc_page(struct fscache_cookie *cookie,
 {
 	if (fscache_cookie_valid(cookie) && fscache_cookie_enabled(cookie))
 		return __fscache_read_or_alloc_page(cookie, page, end_io_func,
-						    context, gfp);
+						    context, gfp, page_offset(page));
+	else
+		return -ENOBUFS;
+}
+
+static inline
+int fscache_read_or_alloc_page2(struct fscache_cookie *cookie,
+			       struct page *page,
+			       fscache_rw_complete_t end_io_func,
+			       void *context,
+			       gfp_t gfp, loff_t pos)
+{
+	if (fscache_cookie_valid(cookie) && fscache_cookie_enabled(cookie))
+		return __fscache_read_or_alloc_page(cookie, page, end_io_func,
+						    context, gfp, pos);
 	else
 		return -ENOBUFS;
 }
@@ -598,6 +627,19 @@ int fscache_read_or_alloc_pages(struct fscache_cookie *cookie,
 		return __fscache_read_or_alloc_pages(cookie, mapping, pages,
 						     nr_pages, end_io_func,
 						     context, gfp);
+	else
+		return -ENOBUFS;
+}
+
+static inline
+int fscache_prepare_read(struct fscache_cookie *cookie,
+		struct address_space *mapping, pgoff_t index,
+		unsigned int nr_pages, loff_t start_pos,
+		fscache_rw_complete_t term_func, void *context)
+{
+	if (fscache_cookie_valid(cookie) && fscache_cookie_enabled(cookie))
+		return __fscache_prepare_read(cookie, mapping, index,
+				nr_pages, start_pos, term_func, context);
 	else
 		return -ENOBUFS;
 }
@@ -838,6 +880,20 @@ void fscache_enable_cookie(struct fscache_cookie *cookie,
 	if (fscache_cookie_valid(cookie) && !fscache_cookie_enabled(cookie))
 		__fscache_enable_cookie(cookie, aux_data, object_size,
 					can_enable, data);
+}
+
+static inline bool volume_new_version(struct fscache_cookie *cookie)
+{
+	return cookie->def && cookie->type == FSCACHE_COOKIE_TYPE_INDEX &&
+	       cookie->def->new_version;
+}
+
+static inline bool data_new_version(struct fscache_cookie *cookie)
+{
+	if (cookie->type != FSCACHE_COOKIE_TYPE_DATAFILE)
+		return false;
+
+	return cookie->parent && volume_new_version(cookie->parent);
 }
 
 #endif /* _LINUX_FSCACHE_H */

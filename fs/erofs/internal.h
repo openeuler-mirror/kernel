@@ -2,7 +2,7 @@
 /*
  * Copyright (C) 2017-2018 HUAWEI, Inc.
  *             https://www.huawei.com/
- * Created by Gao Xiang <gaoxiang25@huawei.com>
+ * Copyright (C) 2021, Alibaba Cloud
  */
 #ifndef __EROFS_INTERNAL_H
 #define __EROFS_INTERNAL_H
@@ -13,6 +13,7 @@
 #include <linux/pagemap.h>
 #include <linux/bio.h>
 #include <linux/buffer_head.h>
+#include <linux/idr.h>
 #include <linux/magic.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
@@ -46,7 +47,16 @@ typedef u64 erofs_off_t;
 /* data type for filesystem-wide blocks number */
 typedef u32 erofs_blk_t;
 
-struct erofs_fs_context {
+struct erofs_device_info {
+	char *path;
+	struct erofs_fscache *fscache;
+	struct block_device *bdev;
+
+	u32 blocks;
+	u32 mapped_blkaddr;
+};
+
+struct erofs_mount_opts {
 #ifdef CONFIG_EROFS_FS_ZIP
 	/* current strategy of how to use managed cache */
 	unsigned char cache_strategy;
@@ -57,7 +67,41 @@ struct erofs_fs_context {
 	unsigned int mount_opt;
 };
 
+struct erofs_dev_context {
+	struct idr tree;
+	struct rw_semaphore rwsem;
+
+	unsigned int extra_devices;
+};
+
+struct erofs_fs_context {
+	struct erofs_mount_opts opt;
+	struct erofs_dev_context *devs;
+	char *fsid;
+	char *domain_id;
+	bool ondemand_enabled;
+};
+
+struct erofs_domain {
+	refcount_t ref;
+	struct list_head list;
+	struct fscache_cookie *volume;
+	char *domain_id;
+};
+
+struct erofs_fscache {
+	struct fscache_cookie *cookie;
+	struct inode *inode;	/* anonymous inode for the blob */
+
+	/* used for share domain mode */
+	struct erofs_domain *domain;
+	struct list_head node;
+	refcount_t ref;
+	char *name;
+};
+
 struct erofs_sb_info {
+	struct erofs_mount_opts opt;	/* options */
 #ifdef CONFIG_EROFS_FS_ZIP
 	/* list for all registered superblocks, mainly for shrinker */
 	struct list_head list;
@@ -71,11 +115,15 @@ struct erofs_sb_info {
 	/* pseudo inode to manage cached pages */
 	struct inode *managed_cache;
 #endif	/* CONFIG_EROFS_FS_ZIP */
-	u32 blocks;
+	struct erofs_dev_context *devs;
+	u64 total_blocks;
+	u32 primarydevice_blocks;
+
 	u32 meta_blkaddr;
 #ifdef CONFIG_EROFS_FS_XATTR
 	u32 xattr_blkaddr;
 #endif
+	u16 device_id_mask;	/* valid bits of device id to be used */
 
 	/* inode slot unit size in bit shift */
 	unsigned char islotbits;
@@ -93,7 +141,12 @@ struct erofs_sb_info {
 	u32 feature_compat;
 	u32 feature_incompat;
 
-	struct erofs_fs_context ctx;	/* options */
+	/* fscache support */
+	struct fscache_cookie *volume;
+	struct erofs_fscache *s_fscache;
+	struct erofs_domain *domain;
+	char *fsid;
+	char *domain_id;
 };
 
 #define EROFS_SB(sb) ((struct erofs_sb_info *)(sb)->s_fs_info)
@@ -103,9 +156,14 @@ struct erofs_sb_info {
 #define EROFS_MOUNT_XATTR_USER		0x00000010
 #define EROFS_MOUNT_POSIX_ACL		0x00000020
 
-#define clear_opt(ctx, option)	((ctx)->mount_opt &= ~EROFS_MOUNT_##option)
-#define set_opt(ctx, option)	((ctx)->mount_opt |= EROFS_MOUNT_##option)
-#define test_opt(ctx, option)	((ctx)->mount_opt & EROFS_MOUNT_##option)
+#define clear_opt(opt, option)	((opt)->mount_opt &= ~EROFS_MOUNT_##option)
+#define set_opt(opt, option)	((opt)->mount_opt |= EROFS_MOUNT_##option)
+#define test_opt(opt, option)	((opt)->mount_opt & EROFS_MOUNT_##option)
+
+static inline bool erofs_is_fscache_mode(struct super_block *sb)
+{
+	return IS_ENABLED(CONFIG_EROFS_FS_ONDEMAND) && !sb->s_bdev;
+}
 
 enum {
 	EROFS_ZIP_CACHE_DISABLED,
@@ -176,6 +234,19 @@ static inline int erofs_wait_on_workgroup_freezed(struct erofs_workgroup *grp)
 #error erofs cannot be used in this platform
 #endif
 
+enum erofs_kmap_type {
+	EROFS_NO_KMAP,		/* don't map the buffer */
+	EROFS_KMAP,		/* use kmap() to map the buffer */
+	EROFS_KMAP_ATOMIC,	/* use kmap_atomic() to map the buffer */
+};
+
+struct erofs_buf {
+	struct page *page;
+	void *base;
+	enum erofs_kmap_type kmap_type;
+};
+#define __EROFS_BUF_INITIALIZER	((struct erofs_buf){ .page = NULL })
+
 #define ROOT_NID(sb)		((sb)->root_nid)
 
 #define erofs_blknr(addr)       ((addr) / EROFS_BLKSIZ)
@@ -186,6 +257,16 @@ static inline erofs_off_t iloc(struct erofs_sb_info *sbi, erofs_nid_t nid)
 {
 	return blknr_to_addr(sbi->meta_blkaddr) + (nid << sbi->islotbits);
 }
+
+#define EROFS_FEATURE_FUNCS(name, compat, feature) \
+static inline bool erofs_sb_has_##name(struct erofs_sb_info *sbi) \
+{ \
+	return sbi->feature_##compat & EROFS_FEATURE_##feature; \
+}
+
+EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_LZ4_0PADDING)
+EROFS_FEATURE_FUNCS(device_table, incompat, INCOMPAT_DEVICE_TABLE)
+EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
 
 /* atomic flag definitions */
 #define EROFS_I_EA_INITED_BIT	0
@@ -210,6 +291,10 @@ struct erofs_inode {
 
 	union {
 		erofs_blk_t raw_blkaddr;
+		struct {
+			unsigned short	chunkformat;
+			unsigned char	chunkbits;
+		};
 #ifdef CONFIG_EROFS_FS_ZIP
 		struct {
 			unsigned short z_advise;
@@ -258,7 +343,7 @@ extern const struct address_space_operations erofs_raw_access_aops;
 extern const struct address_space_operations z_erofs_aops;
 
 /*
- * Logical to physical block mapping, used by erofs_map_blocks()
+ * Logical to physical block mapping
  *
  * Different with other file systems, it is used for 2 access modes:
  *
@@ -297,16 +382,14 @@ enum {
 #define EROFS_MAP_FULL_MAPPED	(1 << BH_FullMapped)
 
 struct erofs_map_blocks {
+	struct erofs_buf buf;
+
 	erofs_off_t m_pa, m_la;
 	u64 m_plen, m_llen;
 
+	unsigned short m_deviceid;
 	unsigned int m_flags;
-
-	struct page *mpage;
 };
-
-/* Flags used by erofs_map_blocks() */
-#define EROFS_GET_BLOCKS_RAW    0x0001
 
 /* zmap.c */
 #ifdef CONFIG_EROFS_FS_ZIP
@@ -324,10 +407,21 @@ static inline int z_erofs_map_blocks_iter(struct inode *inode,
 }
 #endif	/* !CONFIG_EROFS_FS_ZIP */
 
-/* data.c */
-struct page *erofs_get_meta_page(struct super_block *sb, erofs_blk_t blkaddr);
+struct erofs_map_dev {
+	struct erofs_fscache *m_fscache;
+	struct block_device *m_bdev;
 
-int erofs_map_blocks(struct inode *, struct erofs_map_blocks *, int);
+	erofs_off_t m_pa;
+	unsigned int m_deviceid;
+};
+
+/* data.c */
+void erofs_unmap_metabuf(struct erofs_buf *buf);
+void erofs_put_metabuf(struct erofs_buf *buf);
+void *erofs_read_metabuf(struct erofs_buf *buf, struct super_block *sb,
+			 erofs_blk_t blkaddr, enum erofs_kmap_type type);
+int erofs_map_dev(struct super_block *sb, struct erofs_map_dev *dev);
+int erofs_map_blocks(struct inode *inode, struct erofs_map_blocks *map);
 
 /* inode.c */
 static inline unsigned long erofs_inode_hash(erofs_nid_t nid)
@@ -400,7 +494,40 @@ static inline int z_erofs_init_zip_subsystem(void) { return 0; }
 static inline void z_erofs_exit_zip_subsystem(void) {}
 #endif	/* !CONFIG_EROFS_FS_ZIP */
 
+/* flags for erofs_fscache_register_cookie() */
+#define EROFS_REG_COOKIE_SHARE         0x0001
+#define EROFS_REG_COOKIE_NEED_NOEXIST  0x0002
+
+/* fscache.c */
+#ifdef CONFIG_EROFS_FS_ONDEMAND
+int erofs_fscache_register_fs(struct super_block *sb);
+void erofs_fscache_unregister_fs(struct super_block *sb);
+
+struct erofs_fscache *erofs_fscache_register_cookie(struct super_block *sb,
+						    char *name,
+						    unsigned int flags);
+void erofs_fscache_unregister_cookie(struct erofs_fscache *fscache);
+extern const struct address_space_operations erofs_fscache_access_aops;
+#else
+static inline int erofs_fscache_register_fs(struct super_block *sb)
+{
+	return -EOPNOTSUPP;
+}
+static inline void erofs_fscache_unregister_fs(struct super_block *sb) {}
+
+static inline
+struct erofs_fscache *erofs_fscache_register_cookie(struct super_block *sb,
+						     char *name,
+						     unsigned int flags)
+{
+	return ERR_PTR(-EOPNOTSUPP);
+}
+
+static inline void erofs_fscache_unregister_cookie(struct erofs_fscache *fscache)
+{
+}
+#endif
+
 #define EFSCORRUPTED    EUCLEAN         /* Filesystem is corrupted */
 
 #endif	/* __EROFS_INTERNAL_H */
-

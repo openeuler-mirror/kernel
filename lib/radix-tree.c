@@ -1059,6 +1059,7 @@ void radix_tree_iter_tag_clear(struct radix_tree_root *root,
 {
 	node_tag_clear(root, iter->node, tag, iter_offset(iter));
 }
+EXPORT_SYMBOL(radix_tree_iter_tag_clear);
 
 /**
  * radix_tree_tag_get - get a tag on a radix tree node

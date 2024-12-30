@@ -18,6 +18,29 @@
 static const char cachefiles_xattr_cache[] =
 	XATTR_USER_PREFIX "CacheFiles.cache";
 
+#define CACHEFILES_COOKIE_TYPE_DATA 1
+#define CACHEFILES_CONTENT_NO_DATA 0 /* No content stored */
+
+struct cachefiles_obj_xattr {
+	__be64	object_size;	/* Actual size of the object */
+	__be64	zero_point;     /* always zero */
+	__u8	type;           /* Type of object */
+	__u8	content;        /* always zero */
+	__u8	data[];         /* netfs coherency data, always NULL */
+} __packed;
+
+struct cachefiles_vol_xattr {
+	__be32  reserved;	/* Reserved, should be 0 */
+	__u8    data[];		/* netfs volume coherency data, NULL */
+} __packed;
+
+struct cachefiles_vol_xattr new_vol_xattr;
+
+static int cachefiles_set_new_vol_xattr(struct cachefiles_object *object);
+static int cachefiles_check_new_vol_xattr(struct cachefiles_object *object);
+static int cachefiles_set_new_obj_xattr(struct cachefiles_object *object);
+static int cachefiles_check_new_obj_xattr(struct cachefiles_object *object);
+
 /*
  * check the type label on an object
  * - done using xattrs
@@ -110,9 +133,14 @@ int cachefiles_set_object_xattr(struct cachefiles_object *object,
 	_debug("SET #%u", auxdata->len);
 
 	clear_bit(FSCACHE_COOKIE_AUX_UPDATED, &object->fscache.cookie->flags);
-	ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
-			   &auxdata->type, auxdata->len,
-			   XATTR_CREATE);
+	if (data_new_version(object->fscache.cookie))
+		ret = cachefiles_set_new_obj_xattr(object);
+	else if (volume_new_version(object->fscache.cookie))
+		ret = cachefiles_set_new_vol_xattr(object);
+	else
+		ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
+				   &auxdata->type, auxdata->len,
+				   XATTR_CREATE);
 	if (ret < 0 && ret != -ENOMEM)
 		cachefiles_io_error_obj(
 			object,
@@ -190,48 +218,30 @@ error:
 	return ret;
 }
 
-/*
- * check the state xattr on a cache file
- * - return -ESTALE if the object should be deleted
- */
-int cachefiles_check_object_xattr(struct cachefiles_object *object,
-				  struct cachefiles_xattr *auxdata)
+int cachefiles_check_old_object_xattr(struct cachefiles_object *object,
+				      struct cachefiles_xattr *auxdata)
 {
 	struct cachefiles_xattr *auxbuf;
+	unsigned int len = sizeof(struct cachefiles_xattr) + 512;
 	struct dentry *dentry = object->dentry;
 	int ret;
 
-	_enter("%p,#%d", object, auxdata->len);
-
-	ASSERT(dentry);
-	ASSERT(d_backing_inode(dentry));
-
-	auxbuf = kmalloc(sizeof(struct cachefiles_xattr) + 512, cachefiles_gfp);
-	if (!auxbuf) {
-		_leave(" = -ENOMEM");
+	auxbuf = kmalloc(len, cachefiles_gfp);
+	if (!auxbuf)
 		return -ENOMEM;
-	}
 
 	/* read the current type label */
 	ret = vfs_getxattr(dentry, cachefiles_xattr_cache,
 			   &auxbuf->type, 512 + 1);
-	if (ret < 0) {
-		if (ret == -ENODATA)
-			goto stale; /* no attribute - power went off
-				     * mid-cull? */
-
-		if (ret == -ERANGE)
-			goto bad_type_length;
-
-		cachefiles_io_error_obj(object,
-					"Can't read xattr on %lu (err %d)",
-					d_backing_inode(dentry)->i_ino, -ret);
+	if (ret < 0)
 		goto error;
-	}
 
 	/* check the on-disk object */
-	if (ret < 1)
-		goto bad_type_length;
+	if (ret < 1) {
+		pr_err("Cache object %lu xattr length incorrect\n",
+		       d_backing_inode(dentry)->i_ino);
+		goto stale;
+	}
 
 	if (auxbuf->type != auxdata->type)
 		goto stale;
@@ -287,6 +297,51 @@ okay:
 
 error:
 	kfree(auxbuf);
+	return ret;
+
+stale:
+	ret = -ESTALE;
+	goto error;
+}
+
+/*
+ * check the state xattr on a cache file
+ * - return -ESTALE if the object should be deleted
+ */
+int cachefiles_check_object_xattr(struct cachefiles_object *object,
+				  struct cachefiles_xattr *auxdata)
+{
+	int ret;
+	struct dentry *dentry = object->dentry;
+
+	_enter("%p,#%d", object, auxdata->len);
+
+	ASSERT(dentry);
+	ASSERT(d_backing_inode(dentry));
+
+	if (data_new_version(object->fscache.cookie))
+		ret = cachefiles_check_new_obj_xattr(object);
+	else if (volume_new_version(object->fscache.cookie))
+		ret = cachefiles_check_new_vol_xattr(object);
+	else
+		ret = cachefiles_check_old_object_xattr(object, auxdata);
+
+	if (ret < 0) {
+		if (ret == -ENOMEM || ret == -ESTALE)
+			goto error;
+		/* no attribute - power went off mid-cull? */
+		if (ret == -ENODATA)
+			goto stale;
+		if (ret == -ERANGE)
+			goto bad_type_length;
+
+		cachefiles_io_error_obj(object,
+					"Can't read xattr on %lu (err %d)",
+					d_backing_inode(dentry)->i_ino, -ret);
+		goto error;
+	}
+	ret = 0;
+error:
 	_leave(" = %d", ret);
 	return ret;
 
@@ -322,4 +377,64 @@ int cachefiles_remove_object_xattr(struct cachefiles_cache *cache,
 
 	_leave(" = %d", ret);
 	return ret;
+}
+
+static int cachefiles_set_new_vol_xattr(struct cachefiles_object *object)
+{
+	unsigned int len = sizeof(struct cachefiles_vol_xattr);
+	struct dentry *dentry = object->dentry;
+
+	return vfs_setxattr(dentry, cachefiles_xattr_cache, &new_vol_xattr,
+			    len, XATTR_CREATE);
+}
+
+static int cachefiles_check_new_vol_xattr(struct cachefiles_object *object)
+{
+	int ret;
+	struct cachefiles_vol_xattr buf;
+	unsigned int len = sizeof(struct cachefiles_vol_xattr);
+	struct dentry *dentry = object->dentry;
+
+	ret = vfs_getxattr(dentry, cachefiles_xattr_cache, &buf, len);
+	if (ret < 0)
+		return ret;
+
+	if (ret != len || memcmp(&buf, &new_vol_xattr, len) != 0)
+		ret = -ESTALE;
+
+	return ret > 0 ? 0 : ret;
+}
+
+static int cachefiles_set_new_obj_xattr(struct cachefiles_object *object)
+{
+	unsigned int len = sizeof(struct cachefiles_obj_xattr);
+	struct dentry *dentry = object->dentry;
+	struct cachefiles_obj_xattr buf = {
+		.object_size = cpu_to_be64(object->fscache.store_limit_l),
+		.type	     = CACHEFILES_COOKIE_TYPE_DATA,
+		.content     = CACHEFILES_CONTENT_NO_DATA,
+	};
+
+	return vfs_setxattr(dentry, cachefiles_xattr_cache, &buf, len,
+			    XATTR_CREATE);
+}
+
+static int cachefiles_check_new_obj_xattr(struct cachefiles_object *object)
+{
+	int ret;
+	struct cachefiles_obj_xattr buf;
+	unsigned int len = sizeof(struct cachefiles_obj_xattr);
+	struct dentry *dentry = object->dentry;
+
+	ret = vfs_getxattr(dentry, cachefiles_xattr_cache, &buf, len);
+	if (ret < 0)
+		return ret;
+
+	if (ret != len ||
+	    buf.type != CACHEFILES_COOKIE_TYPE_DATA ||
+	    buf.content != CACHEFILES_CONTENT_NO_DATA ||
+	    buf.object_size != cpu_to_be64(object->fscache.store_limit_l))
+		ret = -ESTALE;
+
+	return ret > 0 ? 0 : ret;
 }

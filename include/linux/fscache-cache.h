@@ -34,6 +34,7 @@ enum fscache_obj_ref_trace {
 	fscache_obj_put_enq_dep,
 	fscache_obj_put_queue,
 	fscache_obj_put_work,
+	fscache_obj_put_dequeue,
 	fscache_obj_ref__nr_traces
 };
 
@@ -74,6 +75,7 @@ struct fscache_cache {
 };
 
 extern wait_queue_head_t fscache_cache_cleared_wq;
+extern struct workqueue_struct *fscache_object_wq;
 
 /*
  * operation to be applied to a cache object
@@ -149,6 +151,7 @@ struct fscache_retrieval {
 	struct list_head	to_do;		/* list of things to be done by the backend */
 	unsigned long		start_time;	/* time at which retrieval started */
 	atomic_t		n_pages;	/* number of pages to be retrieved */
+	loff_t			offset;
 };
 
 typedef int (*fscache_page_retrieval_func_t)(struct fscache_retrieval *op,
@@ -159,6 +162,9 @@ typedef int (*fscache_pages_retrieval_func_t)(struct fscache_retrieval *op,
 					      struct list_head *pages,
 					      unsigned *nr_pages,
 					      gfp_t gfp);
+
+typedef int (*fscache_prepare_read_func_t)(struct fscache_retrieval *op,
+					   pgoff_t index);
 
 /**
  * fscache_get_retrieval - Get an extra reference on a retrieval operation
@@ -283,6 +289,8 @@ struct fscache_cache_ops {
 	/* request backing blocks for a list of pages be read or allocated in
 	 * the cache */
 	fscache_pages_retrieval_func_t read_or_alloc_pages;
+
+	fscache_prepare_read_func_t prepare_read;
 
 	/* request a backing block for a page be allocated in the cache so that
 	 * it can be written directly */
