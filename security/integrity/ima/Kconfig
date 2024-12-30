@@ -370,7 +370,7 @@ config IMA_PARSER_BINARY_PATH
 	   This option defines the path of the parser binary.
 
 config IMA_FIX_OVERLAYFS_DETECTION
-	bool
+	bool "Fix for overlayfs backing inode change detection"
 	default y
 	help
 	   This option enables the fix for overlayfs backing inode change
