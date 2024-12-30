@@ -273,9 +273,12 @@ struct fuse_args {
 #ifndef __GENKSYMS__
 	bool user_pages:1;
 #endif
+	bool invalidate_vmap:1;
 	struct fuse_in_arg in_args[3];
 	struct fuse_arg out_args[2];
 	void (*end)(struct fuse_mount *fm, struct fuse_args *args, int error);
+	/* Used for kvec iter backed by vmalloc address */
+	void *vmap_base;
 };
 
 struct fuse_args_pages {
@@ -765,6 +768,9 @@ struct fuse_conn {
 
 	/* Auto-mount submounts announced by the server */
 	unsigned int auto_submounts:1;
+
+	/* Use pages instead of pointer for kernel I/O */
+	unsigned int use_pages_for_kvec_io:1;
 
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
