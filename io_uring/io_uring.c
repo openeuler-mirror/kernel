@@ -1090,6 +1090,7 @@ static struct file *io_file_get(struct io_ring_ctx *ctx,
 				unsigned int issue_flags);
 static void __io_queue_sqe(struct io_kiocb *req);
 static void io_rsrc_put_work(struct work_struct *work);
+static void io_req_task_queue_fail(struct io_kiocb *req, int ret);
 
 static void io_req_task_queue(struct io_kiocb *req);
 static void io_submit_flush_completions(struct io_ring_ctx *ctx);
@@ -1459,7 +1460,11 @@ static void io_queue_async_work(struct io_kiocb *req, bool *locked)
 	locked = NULL;
 
 	BUG_ON(!tctx);
-	BUG_ON(!tctx->io_wq);
+
+	if ((current->flags & PF_KTHREAD) || !tctx->io_wq) {
+		io_req_task_queue_fail(req, -ECANCELED);
+		return;
+	}
 
 	/* init ->work of the whole link before punting */
 	io_prep_async_link(req);
