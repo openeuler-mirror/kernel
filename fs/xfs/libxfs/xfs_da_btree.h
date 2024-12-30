@@ -187,22 +187,11 @@ int	xfs_da3_path_shift(xfs_da_state_t *state, xfs_da_state_path_t *path,
  */
 int	xfs_da3_blk_link(xfs_da_state_t *state, xfs_da_state_blk_t *old_blk,
 				       xfs_da_state_blk_t *new_blk);
-int	__xfs_da3_node_read(struct xfs_trans *tp, struct xfs_inode *dp,
-			xfs_dablk_t bno, unsigned int flags,
-			struct xfs_buf **bpp, int whichfork);
+int	xfs_da3_node_read(struct xfs_trans *tp, struct xfs_inode *dp,
+			xfs_dablk_t bno, struct xfs_buf **bpp, int whichfork);
 int	xfs_da3_node_read_mapped(struct xfs_trans *tp, struct xfs_inode *dp,
 			xfs_daddr_t mappedbno, struct xfs_buf **bpp,
 			int whichfork);
-static inline int
-xfs_da3_node_read(
-	struct xfs_trans	*tp,
-	struct xfs_inode	*dp,
-	xfs_dablk_t		bno,
-	struct xfs_buf		**bpp,
-	int			whichfork)
-{
-	return __xfs_da3_node_read(tp, dp, bno, 0, bpp, whichfork);
-}
 
 /*
  * Utility routines.
@@ -223,6 +212,8 @@ int	xfs_da_reada_buf(struct xfs_inode *dp, xfs_dablk_t bno,
 		const struct xfs_buf_ops *ops);
 int	xfs_da_shrink_inode(xfs_da_args_t *args, xfs_dablk_t dead_blkno,
 					  struct xfs_buf *dead_buf);
+void	xfs_da3_node_entry_remove(struct xfs_trans *tp, struct xfs_inode *dp,
+		struct xfs_buf *bp, int index);
 
 uint xfs_da_hashname(const uint8_t *name_string, int name_length);
 enum xfs_dacmp xfs_da_compname(struct xfs_da_args *args,
