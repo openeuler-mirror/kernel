@@ -1451,11 +1451,9 @@ static int __hns_roce_cmq_send(struct hns_roce_dev *hr_dev,
 			if (likely(desc_ret == CMD_EXEC_SUCCESS))
 				continue;
 
-			if (desc->opcode != cpu_to_le16(HNS_ROCE_OPC_QUERY_HW_ID) &&
-			    desc_ret != CMD_NOT_EXIST)
-				dev_err_ratelimited(hr_dev->dev,
-					"Cmdq IO error, opcode = 0x%x, return = 0x%x.\n",
-					desc->opcode, desc_ret);
+			dev_err_ratelimited(hr_dev->dev,
+					    "Cmdq IO error, opcode = 0x%x, return = 0x%x.\n",
+					    desc->opcode, desc_ret);
 			ret = hns_roce_cmd_err_convert_errno(desc_ret);
 		}
 	} else {
@@ -1593,16 +1591,14 @@ static void hns_roce_cmq_query_hw_id(struct hns_roce_dev *hr_dev)
 	struct hns_roce_cmq_desc desc;
 	int ret;
 
-	if (hr_dev->is_vf)
+	if (hr_dev->is_vf || hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP09)
 		goto invalid_val;
 
 	hns_roce_cmq_setup_basic_desc(&desc, HNS_ROCE_OPC_QUERY_HW_ID, true);
 	ret = hns_roce_cmq_send(hr_dev, &desc, 1);
 	if (ret) {
-		if (desc.retval != cpu_to_le16(CMD_NOT_EXIST))
-			ibdev_warn(&hr_dev->ib_dev,
-				   "failed to query hw id, ret = %d.\n", ret);
-
+		ibdev_warn(&hr_dev->ib_dev,
+			   "failed to query hw id, ret = %d.\n", ret);
 		goto invalid_val;
 	}
 

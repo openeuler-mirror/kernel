@@ -543,6 +543,7 @@ static void hns_roce_do_bond(struct hns_roce_bond_group *bond_grp)
 
 bool is_bond_slave_in_reset(struct hns_roce_bond_group *bond_grp)
 {
+	const struct hnae3_ae_ops *ops;
 	struct hnae3_handle *handle;
 	struct net_device *net_dev;
 	int i;
@@ -550,9 +551,11 @@ bool is_bond_slave_in_reset(struct hns_roce_bond_group *bond_grp)
 	for (i = 0; i < ROCE_BOND_FUNC_MAX; i++) {
 		net_dev = bond_grp->bond_func_info[i].net_dev;
 		handle = bond_grp->bond_func_info[i].handle;
-		if (net_dev && handle &&
-		    handle->rinfo.reset_state != HNS_ROCE_STATE_NON_RST &&
-		    handle->rinfo.reset_state != HNS_ROCE_STATE_RST_INITED)
+		if (!net_dev || !handle)
+			continue;
+		ops = handle->ae_algo->ops;
+		if (ops->ae_dev_resetting(handle) ||
+		    ops->get_hw_reset_stat(handle))
 			return true;
 	}
 
