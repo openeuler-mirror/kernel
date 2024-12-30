@@ -73,6 +73,9 @@ int	xfs_attr3_leaf_flipflags(struct xfs_da_args *args);
 /*
  * Routines used for growing the Btree.
  */
+
+int	xfs_attr3_leaf_init(struct xfs_trans *tp, struct xfs_inode *dp,
+				xfs_dablk_t blkno);
 int	xfs_attr3_leaf_split(struct xfs_da_state *state,
 				   struct xfs_da_state_blk *oldblk,
 				   struct xfs_da_state_blk *newblk);

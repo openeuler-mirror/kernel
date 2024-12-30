@@ -1241,36 +1241,30 @@ out:
  * Routines used for growing the Btree.
  *========================================================================*/
 
-/*
- * Create the initial contents of a leaf attribute list
- * or a leaf in a node attribute list.
- */
 STATIC int
-xfs_attr3_leaf_create(
-	struct xfs_da_args	*args,
+__xfs_attr3_leaf_create(
+	struct xfs_trans	*tp,
+	struct xfs_inode	*dp,
+	struct xfs_da_geometry	*geo,
 	xfs_dablk_t		blkno,
 	struct xfs_buf		**bpp)
 {
 	struct xfs_attr_leafblock *leaf;
 	struct xfs_attr3_icleaf_hdr ichdr;
-	struct xfs_inode	*dp = args->dp;
 	struct xfs_mount	*mp = dp->i_mount;
 	struct xfs_buf		*bp;
 	int			error;
 
-	trace_xfs_attr_leaf_create(args);
-
-	error = xfs_da_get_buf(args->trans, args->dp, blkno, &bp,
-					    XFS_ATTR_FORK);
+	error = xfs_da_get_buf(tp, dp, blkno, &bp, XFS_ATTR_FORK);
 	if (error)
 		return error;
 	bp->b_ops = &xfs_attr3_leaf_buf_ops;
-	xfs_trans_buf_set_type(args->trans, bp, XFS_BLFT_ATTR_LEAF_BUF);
+	xfs_trans_buf_set_type(tp, bp, XFS_BLFT_ATTR_LEAF_BUF);
 	leaf = bp->b_addr;
-	memset(leaf, 0, args->geo->blksize);
+	memset(leaf, 0, geo->blksize);
 
 	memset(&ichdr, 0, sizeof(ichdr));
-	ichdr.firstused = args->geo->blksize;
+	ichdr.firstused = geo->blksize;
 
 	if (xfs_has_crc(mp)) {
 		struct xfs_da3_blkinfo *hdr3 = bp->b_addr;
@@ -1288,11 +1282,41 @@ xfs_attr3_leaf_create(
 	}
 	ichdr.freemap[0].size = ichdr.firstused - ichdr.freemap[0].base;
 
-	xfs_attr3_leaf_hdr_to_disk(args->geo, leaf, &ichdr);
-	xfs_trans_log_buf(args->trans, bp, 0, args->geo->blksize - 1);
+	xfs_attr3_leaf_hdr_to_disk(geo, leaf, &ichdr);
+	xfs_trans_log_buf(tp, bp, 0, geo->blksize - 1);
 
 	*bpp = bp;
 	return 0;
+}
+
+/*
+ * Create the initial contents of a leaf attribute list
+ * or a leaf in a node attribute list.
+ */
+STATIC int
+xfs_attr3_leaf_create(
+	struct xfs_da_args	*args,
+	xfs_dablk_t		blkno,
+	struct xfs_buf		**bpp)
+{
+	trace_xfs_attr_leaf_create(args);
+	return __xfs_attr3_leaf_create(args->trans, args->dp,
+			args->geo, blkno, bpp);
+}
+
+/*
+ * Wrapper function of initializing leaf node, export for external use.
+ */
+int
+xfs_attr3_leaf_init(
+	struct xfs_trans	*tp,
+	struct xfs_inode	*dp,
+	xfs_dablk_t		blkno)
+{
+	struct xfs_buf		*bp = NULL;
+	struct xfs_da_geometry  *geo = dp->i_mount->m_attr_geo;
+
+	return __xfs_attr3_leaf_create(tp, dp, geo, blkno, &bp);
 }
 
 /*
