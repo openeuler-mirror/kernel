@@ -3606,7 +3606,7 @@ static void nfs4_close_done(struct rpc_task *task, void *data)
 			res_stateid, calldata->arg.fmode);
 out_release:
 	task->tk_status = 0;
-	nfs_release_seqid_inorder(calldata->arg.seqid);
+	nfs_release_seqid(calldata->arg.seqid);
 	nfs_refresh_inode(calldata->inode, &calldata->fattr);
 	dprintk("%s: done, ret = %d!\n", __func__, task->tk_status);
 	return;
