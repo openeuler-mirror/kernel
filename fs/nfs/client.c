@@ -283,6 +283,39 @@ void nfs_put_client(struct nfs_client *clp)
 }
 EXPORT_SYMBOL_GPL(nfs_put_client);
 
+static void nfs_free_client_work(struct work_struct *work)
+{
+	struct nfs_client *clp =
+		container_of(work, struct nfs_client, free_work);
+
+	clp->rpc_ops->free_client(clp);
+}
+
+/*
+ * Similar to nfs_put_client, but call free_client with async mode
+ */
+void nfs_async_put_client(struct nfs_client *clp)
+{
+	struct nfs_net *nn;
+
+	if (!clp)
+		return;
+
+	nn = net_generic(clp->cl_net, nfs_net_id);
+
+	if (refcount_dec_and_lock(&clp->cl_count, &nn->nfs_client_lock)) {
+		list_del(&clp->cl_share_link);
+		nfs_cb_idr_remove_locked(clp);
+		spin_unlock(&nn->nfs_client_lock);
+
+		WARN_ON_ONCE(!list_empty(&clp->cl_superblocks));
+
+		INIT_WORK(&clp->free_work, nfs_free_client_work);
+		queue_work(nfsiod_workqueue, &clp->free_work);
+	}
+}
+EXPORT_SYMBOL_GPL(nfs_async_put_client);
+
 /*
  * Find an nfs_client on the list that matches the initialisation data
  * that is supplied.
