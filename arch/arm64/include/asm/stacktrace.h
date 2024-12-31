@@ -171,4 +171,7 @@ static inline void start_backtrace(struct stackframe *frame,
 	frame->prev_type = STACK_TYPE_UNKNOWN;
 }
 
+#ifdef CONFIG_PREEMPTION
+extern void preempt_schedule_irq_ret_addr(void);
+#endif
 #endif	/* __ASM_STACKTRACE_H */
