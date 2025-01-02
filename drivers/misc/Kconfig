@@ -475,7 +475,7 @@ config HISI_HIKEY_USB
 	  using only one USB controller.
 
 config VIRT_PLAT_DEV
-	depends on KVM && ARM64 && ARCH_HISI
+	depends on KVM && ARM64 && ARCH_HISI && ACPI_IORT
 	default y
 	tristate "virt platform device driver"
 	help
