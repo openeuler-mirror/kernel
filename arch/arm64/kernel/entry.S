@@ -523,6 +523,8 @@ alternative_else_nop_endif
 #endif
 	cbnz	x24, 1f				// preempt count != 0 || NMI return path
 	bl	arm64_preempt_schedule_irq	// irq en/disable is done inside
+.global preempt_schedule_irq_ret_addr
+preempt_schedule_irq_ret_addr:
 1:
 #endif
 

@@ -129,6 +129,72 @@ void notrace walk_stackframe(struct task_struct *tsk, struct stackframe *frame,
 
 		if (!fn(data, frame->pc))
 			break;
+#ifdef CONFIG_PREEMPTION
+		/*
+		 * Suppose existing call chain: P() -> A() -> B(), B() don't construct stack
+		 * frame in which fp and lr are saved for call stack unwinding, then if task1
+		 * is interrupted as running at address 'B2' and then preempted by task2,
+		 * and task2 unwind the call stack of task1, it expect to see P->A->B, but
+		 * actually P->B, A disappeared!
+		 *
+		 *   A():
+		 *   A1:  stp fp, lr, ...  <-- suppose fp_P and lr_P saved
+		 *   A2:  mov fp, sp       <-- suppose fp_A saved in 'fp' register
+		 *   A3:  bl  B            <-- call to B()
+		 *   A4:  mov ...          <-- 'A4' saved in 'lr' register
+		 *
+		 *   B():
+		 *   B1:  mov ...
+		 *   B2:  mov ...   <--  interrupt comes, then run into el1_irq()
+		 *   B3:  mov ...   <--  'B3' is saved in 'elr_el1' register
+		 *
+		 *   el1_irq():
+		 *   ...          <-- save registers then construct stack frame
+		 *   Cm:  bl  arm64_preempt_schedule_irq    <-- Can be preempted here
+		 *   Cn:  ...
+		 *
+		 * In this case, at the time interrupt comes, the address 'A4' will be saved
+		 * In 'lr' register, then in interrupt entry, 'lr' register will be saved in
+		 * Stack memory as struct pt_regs.
+		 *
+		 * See following stack memory layout, as call stack unwinding, if address
+		 * 'Cn' is found , we know that fp_C is point to pt_regs.stackframe[0],
+		 * then we can found the 'A4' in pt_regs.regs[30], then we can know that
+		 * B() is currently called by A().
+		 *
+		 * Stack memory (High address downto Low address):
+		 *
+		 *   <High address>
+		 *         |-----------------|
+		 *         |      lr_P       |
+		 *         |-----------------|
+		 *         |      fp_P       |
+		 *      -> |-----------------|
+		 *     |   |      ...        |
+		 *     |   |-----------------|
+		 *     |   |       B3        |
+		 *     |   |-----------------|
+		 *      -- |       fp_A      |
+		 *      -> |-----------------|  <-- pt_regs.stackframe[0]
+		 *     |   |                 |
+		 *     |   | X0... fp lr(A4) |  <-- pt_regs.regs[]
+		 *     |   |-----------------|
+		 *     |   |       ...       |
+		 *     |   |-----------------|
+		 *     |   |        Cn       |  <-- 'Cn' is return address of
+		 *     |   |-----------------|      arm64_preempt_schedule_irq()
+		 *      -- |       fp_C      |
+		 *         |-----------------|
+		 *   <Low address>
+		 */
+		if (frame->pc == (unsigned long)preempt_schedule_irq_ret_addr) {
+			struct pt_regs *reg = container_of((u64 *)frame->fp,
+							   struct pt_regs, stackframe[0]);
+
+			if (!fn(data, reg->regs[30]))
+				break;
+		}
+#endif
 		ret = unwind_frame(tsk, frame);
 		if (ret < 0)
 			break;
