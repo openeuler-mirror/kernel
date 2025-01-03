@@ -7226,6 +7226,19 @@ static inline bool prefer_cpus_valid(struct task_struct *p)
 	       cpumask_subset(prefer_cpus, &p->cpus_allowed);
 }
 
+static unsigned long scale_rt_capacity(struct sched_domain *sd, int cpu);
+
+static inline unsigned long calc_cpu_capacity(int cpu)
+{
+	unsigned long capacity;
+
+	capacity = scale_rt_capacity(NULL, cpu);
+	if (!capacity)
+		capacity = 1;
+
+	return capacity;
+}
+
 /*
  * set_task_select_cpus: select the cpu range for task
  * @p: the task whose available cpu range will to set
@@ -7288,7 +7301,11 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 		}
 
 		util_avg_sum += tg->se[cpu]->avg.util_avg;
-		tg_capacity += capacity_of(cpu);
+
+		if (cpu_rq(cpu)->rt.rt_nr_running)
+			tg_capacity += calc_cpu_capacity(cpu);
+		else
+			tg_capacity += capacity_of(cpu);
 	}
 	rcu_read_unlock();
 
