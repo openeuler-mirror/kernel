@@ -186,6 +186,13 @@ static inline bool xp_validate_desc(struct xsk_buff_pool *pool,
 		xp_aligned_validate_desc(pool, desc);
 }
 
+#ifdef CONFIG_XSK_MULTI_BUF
+static inline bool xskq_has_descs(struct xsk_queue *q)
+{
+	return q->cached_cons != q->cached_prod;
+}
+#endif
+
 static inline bool xskq_cons_is_valid_desc(struct xsk_queue *q,
 					   struct xdp_desc *d,
 					   struct xsk_buff_pool *pool)
@@ -281,6 +288,13 @@ static inline bool xskq_cons_is_full(struct xsk_queue *q)
 	return READ_ONCE(q->ring->producer) - READ_ONCE(q->ring->consumer) ==
 		q->nentries;
 }
+
+#ifdef CONFIG_XSK_MULTI_BUF
+static inline void xskq_cons_cancel_n(struct xsk_queue *q, u32 cnt)
+{
+	q->cached_cons -= cnt;
+}
+#endif
 
 static inline u32 xskq_cons_present_entries(struct xsk_queue *q)
 {
