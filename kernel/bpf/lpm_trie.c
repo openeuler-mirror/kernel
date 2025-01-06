@@ -299,6 +299,16 @@ static struct lpm_trie_node *lpm_trie_node_alloc(const struct lpm_trie *trie,
 	return node;
 }
 
+static int trie_check_add_elem(struct lpm_trie *trie, u64 flags)
+{
+	if (flags == BPF_EXIST)
+		return -ENOENT;
+	if (trie->n_entries == trie->map.max_entries)
+		return -ENOSPC;
+	trie->n_entries++;
+	return 0;
+}
+
 /* Called from syscall or from eBPF program */
 static int trie_update_elem(struct bpf_map *map,
 			    void *_key, void *value, u64 flags)
@@ -321,19 +331,11 @@ static int trie_update_elem(struct bpf_map *map,
 	spin_lock_irqsave(&trie->lock, irq_flags);
 
 	/* Allocate and fill a new node */
-
-	if (trie->n_entries == trie->map.max_entries) {
-		ret = -ENOSPC;
-		goto out;
-	}
-
 	new_node = lpm_trie_node_alloc(trie, value);
 	if (!new_node) {
 		ret = -ENOMEM;
 		goto out;
 	}
-
-	trie->n_entries++;
 
 	new_node->prefixlen = key->prefixlen;
 	RCU_INIT_POINTER(new_node->child[0], NULL);
@@ -364,6 +366,10 @@ static int trie_update_elem(struct bpf_map *map,
 	 * simply assign the @new_node to that slot and be done.
 	 */
 	if (!node) {
+		ret = trie_check_add_elem(trie, flags);
+		if (ret)
+			goto out;
+
 		rcu_assign_pointer(*slot, new_node);
 		goto out;
 	}
@@ -372,17 +378,29 @@ static int trie_update_elem(struct bpf_map *map,
 	 * which already has the correct data array set.
 	 */
 	if (node->prefixlen == matchlen) {
+		if (!(node->flags & LPM_TREE_NODE_FLAG_IM)) {
+			if (flags == BPF_NOEXIST) {
+				ret = -EEXIST;
+				goto out;
+			}
+		} else {
+			ret = trie_check_add_elem(trie, flags);
+			if (ret)
+				goto out;
+		}
+
 		new_node->child[0] = node->child[0];
 		new_node->child[1] = node->child[1];
-
-		if (!(node->flags & LPM_TREE_NODE_FLAG_IM))
-			trie->n_entries--;
 
 		rcu_assign_pointer(*slot, new_node);
 		kfree_rcu(node, rcu);
 
 		goto out;
 	}
+
+	ret = trie_check_add_elem(trie, flags);
+	if (ret)
+		goto out;
 
 	/* If the new node matches the prefix completely, it must be inserted
 	 * as an ancestor. Simply insert it between @node and *@slot.
@@ -396,6 +414,7 @@ static int trie_update_elem(struct bpf_map *map,
 
 	im_node = lpm_trie_node_alloc(trie, NULL);
 	if (!im_node) {
+		trie->n_entries--;
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -418,9 +437,6 @@ static int trie_update_elem(struct bpf_map *map,
 
 out:
 	if (ret) {
-		if (new_node)
-			trie->n_entries--;
-
 		kfree(new_node);
 		kfree(im_node);
 	}
