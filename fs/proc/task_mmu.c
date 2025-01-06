@@ -1934,14 +1934,14 @@ static int mm_idle_release(struct inode *inode, struct file *file)
 	struct mm_struct *mm = file->private_data;
 	int ret = 0;
 
+	if (proc_page_scan_operations.release)
+		ret = proc_page_scan_operations.release(inode, file);
+
 	if (mm) {
 		if (!mm_kvm(mm))
 			flush_tlb_mm(mm);
 		mmdrop(mm);
 	}
-
-	if (proc_page_scan_operations.release)
-		ret = proc_page_scan_operations.release(inode, file);
 
 	if (proc_page_scan_operations.owner)
 		module_put(proc_page_scan_operations.owner);
