@@ -42,6 +42,7 @@
 #include <linux/init.h>
 #include <linux/mmu_notifier.h>
 #include <linux/share_pool.h>
+#include <linux/nmi.h>
 
 #include <asm/tlb.h>
 #include "internal.h"
@@ -518,10 +519,15 @@ static void dump_tasks(struct oom_control *oc)
 			memcg_print_bad_task(oc);
 	} else {
 		struct task_struct *p;
+		int i = 0;
 
 		rcu_read_lock();
-		for_each_process(p)
+		for_each_process(p) {
+			/* Avoid potential softlockup warning */
+			if ((++i & 1023) == 0)
+				touch_softlockup_watchdog();
 			dump_task(p, oc);
+		}
 		rcu_read_unlock();
 	}
 }
