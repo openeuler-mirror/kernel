@@ -135,6 +135,7 @@ static void bma_priv_clean_up(struct bma_priv_data_s *bma_priv)
 	int i = 0;
 	struct bma_priv_data_s *priv = bma_priv;
 	struct edma_recv_msg_s *msg = NULL;
+	unsigned long flags = 0;
 
 	if (!priv)
 		return;
@@ -144,6 +145,7 @@ static void bma_priv_clean_up(struct bma_priv_data_s *bma_priv)
 		return;
 	}
 
+	spin_lock_irqsave(&priv->recv_msg_lock, flags);
 	for (i = 0; i < priv->user.max_recvmsg_nums; i++) {
 		ret = edma_host_recv_msg(&g_bma_dev->edma_host, priv, &msg);
 		if (ret)
@@ -151,6 +153,7 @@ static void bma_priv_clean_up(struct bma_priv_data_s *bma_priv)
 
 		kfree(msg);
 	}
+	spin_unlock_irqrestore(&priv->recv_msg_lock, flags);
 
 	priv->user.type = TYPE_UNKNOWN;
 	priv->user.sub_type = 0;
@@ -419,8 +422,8 @@ EXPORT_SYMBOL(bma_intf_int_to_bmc);
 
 int bma_intf_is_link_ok(void)
 {
-	if ((&g_bma_dev->edma_host != NULL) &&
-		(g_bma_dev->edma_host.statistics.remote_status == REGISTERED))
+	if (g_bma_dev &&
+	    g_bma_dev->edma_host.statistics.remote_status == REGISTERED)
 		return 1;
 	return 0;
 }
@@ -432,6 +435,7 @@ int bma_cdev_recv_msg(void *handle, char __user *data, size_t count)
 	struct edma_recv_msg_s *msg = NULL;
 	int result = 0;
 	int len = 0;
+	unsigned long flags = 0;
 
 	if (!handle || !data || count == 0) {
 		BMA_LOG(DLOG_DEBUG, "input NULL point!\n");
@@ -440,7 +444,9 @@ int bma_cdev_recv_msg(void *handle, char __user *data, size_t count)
 
 	priv = (struct bma_priv_data_s *)handle;
 
+	spin_lock_irqsave(&priv->recv_msg_lock, flags);
 	result = edma_host_recv_msg(&g_bma_dev->edma_host, priv, &msg);
+	spin_unlock_irqrestore(&priv->recv_msg_lock, flags);
 	if (result != 0)
 		return -ENODATA;
 
