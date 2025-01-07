@@ -795,7 +795,7 @@ err_free_gdev:
 err_print_message:
 	/* failures here can mean systems won't boot... */
 	pr_err("%s: GPIOs %d..%d (%s) failed to register, %d\n", __func__,
-	       base, base + gdev->ngpio - 1,
+	       base, base + (int)gc->ngpio - 1,
 	       gc->label ? : "generic", ret);
 	return ret;
 }
