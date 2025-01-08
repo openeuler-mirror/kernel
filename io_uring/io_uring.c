@@ -8902,7 +8902,7 @@ static int io_sqe_buffer_register(struct io_ring_ctx *ctx, struct iovec *iov,
 	struct io_mapped_ubuf *imu = NULL;
 	struct vm_area_struct **vmas = NULL;
 	struct page **pages = NULL;
-	unsigned long off, start, end, ubuf;
+	unsigned long off, start, end, ubuf, len;
 	size_t size;
 	int ret, pret, nr_pages, i;
 
@@ -8912,7 +8912,13 @@ static int io_sqe_buffer_register(struct io_ring_ctx *ctx, struct iovec *iov,
 	}
 
 	ubuf = (unsigned long) iov->iov_base;
-	end = (ubuf + iov->iov_len + PAGE_SIZE - 1) >> PAGE_SHIFT;
+	len = (unsigned long) iov->iov_len;
+	if (check_add_overflow(ubuf, len, &end))
+		return -EOVERFLOW;
+	if (check_add_overflow(end, PAGE_SIZE - 1, &end))
+		return -EOVERFLOW;
+
+	end = end >> PAGE_SHIFT;
 	start = ubuf >> PAGE_SHIFT;
 	nr_pages = end - start;
 
