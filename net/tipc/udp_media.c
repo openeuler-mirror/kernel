@@ -753,12 +753,12 @@ static int tipc_udp_enable(struct net *net, struct tipc_bearer *b,
 	else
 		err = tipc_udp_rcast_add(b, &remote);
 	if (err)
-		goto err;
+		goto free;
 
 	return 0;
+free:
+	udp_tunnel_sock_release(ub->ubsock);
 err:
-	if (ub->ubsock)
-		udp_tunnel_sock_release(ub->ubsock);
 	kfree(ub);
 	return err;
 }
@@ -768,16 +768,20 @@ static void cleanup_bearer(struct work_struct *work)
 {
 	struct udp_bearer *ub = container_of(work, struct udp_bearer, work);
 	struct udp_replicast *rcast, *tmp;
+	struct tipc_net *tn;
 
 	list_for_each_entry_safe(rcast, tmp, &ub->rcast.list, list) {
 		list_del_rcu(&rcast->list);
 		kfree_rcu(rcast, rcu);
 	}
 
-	atomic_dec(&tipc_net(sock_net(ub->ubsock->sk))->wq_count);
-	if (ub->ubsock)
-		udp_tunnel_sock_release(ub->ubsock);
+	tn = tipc_net(sock_net(ub->ubsock->sk));
+
+	udp_tunnel_sock_release(ub->ubsock);
+
+	/* Note: could use a call_rcu() to avoid another synchronize_net() */
 	synchronize_net();
+	atomic_dec(&tn->wq_count);
 	kfree(ub);
 }
 
@@ -791,8 +795,7 @@ static void tipc_udp_disable(struct tipc_bearer *b)
 		pr_err("UDP bearer instance not found\n");
 		return;
 	}
-	if (ub->ubsock)
-		sock_set_flag(ub->ubsock->sk, SOCK_DEAD);
+	sock_set_flag(ub->ubsock->sk, SOCK_DEAD);
 	RCU_INIT_POINTER(ub->bearer, NULL);
 
 	/* sock_release need to be done outside of rtnl lock */
