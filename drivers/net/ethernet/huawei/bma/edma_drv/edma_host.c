@@ -1069,21 +1069,14 @@ int edma_host_recv_msg(struct edma_host_s *edma_host,
 		       struct bma_priv_data_s *priv,
 		       struct edma_recv_msg_s **msg)
 {
-	unsigned long flags = 0;
 	struct list_head *entry = NULL;
 	struct edma_recv_msg_s *msg_tmp = NULL;
-	struct bma_dev_s *bma_dev = NULL;
 
 	if (!edma_host || !priv || !msg)
 		return -EAGAIN;
 
-	bma_dev = list_entry(edma_host, struct bma_dev_s, edma_host);
-
-	spin_lock_irqsave(&bma_dev->priv_list_lock, flags);
-
 	if (list_empty(&priv->recv_msgs)) {
 		priv->user.cur_recvmsg_nums = 0;
-		spin_unlock_irqrestore(&bma_dev->priv_list_lock, flags);
 		BMA_LOG(DLOG_DEBUG, "recv msgs empty\n");
 		return -EAGAIN;
 	}
@@ -1094,8 +1087,6 @@ int edma_host_recv_msg(struct edma_host_s *edma_host,
 
 	if (priv->user.cur_recvmsg_nums > 0)
 		priv->user.cur_recvmsg_nums--;
-
-	spin_unlock_irqrestore(&bma_dev->priv_list_lock, flags);
 
 	*msg = msg_tmp;
 
