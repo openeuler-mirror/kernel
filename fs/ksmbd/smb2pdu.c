@@ -6535,6 +6535,11 @@ int smb2_write(struct ksmbd_work *work)
 		return smb2_write_pipe(work);
 	}
 
+	offset = le64_to_cpu(req->Offset);
+	if (offset < 0)
+		return -EINVAL;
+	length = le32_to_cpu(req->Length);
+
 	if (req->Channel == SMB2_CHANNEL_RDMA_V1 ||
 	    req->Channel == SMB2_CHANNEL_RDMA_V1_INVALIDATE) {
 		unsigned int ch_offset = le16_to_cpu(req->WriteChannelInfoOffset);
@@ -6572,9 +6577,6 @@ int smb2_write(struct ksmbd_work *work)
 		err = -EACCES;
 		goto out;
 	}
-
-	offset = le64_to_cpu(req->Offset);
-	length = le32_to_cpu(req->Length);
 
 	if (length > work->conn->vals->max_write_size) {
 		ksmbd_debug(SMB, "limiting write size to max size(%u)\n",
