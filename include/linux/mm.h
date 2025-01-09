@@ -2104,6 +2104,7 @@ static inline bool pgtable_pmd_page_ctor(struct page *page)
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	page->pmd_huge_pte = NULL;
 #endif
+	page_pmd_pts_init(page);
 	return ptlock_init(page);
 }
 

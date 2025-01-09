@@ -145,6 +145,9 @@ struct page {
 			union {
 				struct mm_struct *pt_mm; /* x86 pgds only */
 				atomic_t pt_frag_refcount; /* powerpc */
+#if defined(CONFIG_ARCH_WANT_HUGE_PMD_SHARE) && !defined(__GENKSYMS__)
+				atomic_t pt_share_count;
+#endif
 			};
 #if ALLOC_SPLIT_PTLOCKS
 			spinlock_t *ptl;
@@ -208,6 +211,32 @@ struct page {
 	int _last_cpupid;
 #endif
 } _struct_page_alignment;
+
+#ifdef CONFIG_ARCH_WANT_HUGE_PMD_SHARE
+static inline void page_pmd_pts_init(struct page *page)
+{
+	atomic_set(&page->pt_share_count, 0);
+}
+
+static inline void page_pmd_pts_inc(struct page *page)
+{
+	atomic_inc(&page->pt_share_count);
+}
+
+static inline void page_pmd_pts_dec(struct page *page)
+{
+	atomic_dec(&page->pt_share_count);
+}
+
+static inline int page_pmd_pts_count(struct page *page)
+{
+	return atomic_read(&page->pt_share_count);
+}
+#else
+static inline void page_pmd_pts_init(struct page *page)
+{
+}
+#endif
 
 #define PAGE_FRAG_CACHE_MAX_SIZE	__ALIGN_MASK(32768, ~PAGE_MASK)
 #define PAGE_FRAG_CACHE_MAX_ORDER	get_order(PAGE_FRAG_CACHE_MAX_SIZE)
