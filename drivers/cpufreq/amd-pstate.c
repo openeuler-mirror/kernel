@@ -732,7 +732,6 @@ static int amd_pstate_set_boost(struct cpufreq_policy *policy, int state)
 	mutex_lock(&amd_pstate_driver_lock);
 	ret = amd_pstate_cpu_boost_update(policy, state);
 	WRITE_ONCE(cpudata->boost_state, !ret ? state : false);
-	policy->boost_enabled = !ret ? state : false;
 	refresh_frequency_limits(policy);
 	mutex_unlock(&amd_pstate_driver_lock);
 
