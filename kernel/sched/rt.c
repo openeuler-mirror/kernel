@@ -762,7 +762,10 @@ static void __disable_runtime(struct rq *rq)
 		 * We cannot be left wanting - that would mean some runtime
 		 * leaked out of the system.
 		 */
-		WARN_ON_ONCE(want);
+		if (unlikely(want != 0))
+			printk_deferred_once(KERN_WARNING
+				"WARNING: runtime leaks possible want=%lld cpu=%d\n",
+				want, cpu_of(rq));
 balanced:
 		/*
 		 * Disable all the borrow logic by marking runtime disabled.
