@@ -120,6 +120,7 @@ static void dump_dirtypages_sb(struct super_block *sb, struct seq_file *m)
 
 	spin_lock(&sb->s_inode_list_lock);
 	list_for_each_entry(inode, &sb->s_inodes, i_sb_list) {
+		nr_dirtys = 0;
 		spin_lock(&inode->i_lock);
 
 		/*
@@ -138,7 +139,8 @@ static void dump_dirtypages_sb(struct super_block *sb, struct seq_file *m)
 
 		cond_resched();
 
-		nr_dirtys = dump_dirtypages_inode(inode);
+		if (!S_ISBLK(inode->i_mode) || sb_is_blkdev_sb(sb))
+			nr_dirtys = dump_dirtypages_inode(inode);
 		if (!nr_dirtys || nr_dirtys < limit)
 			goto skip;
 
