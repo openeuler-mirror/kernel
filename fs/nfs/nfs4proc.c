@@ -6295,7 +6295,8 @@ static int _nfs4_proc_delegreturn(struct inode *inode, struct rpc_cred *cred, co
 		data->lr.roc = false;
 	}
 
-	if (!data->inode)
+	if (!data->inode ||
+	    test_bit(NFS4CLNT_RECLAIM_REBOOT, &server->nfs_client->cl_state))
 		nfs4_init_sequence(&data->args.seq_args, &data->res.seq_res, 1,
 				   1);
 	else
