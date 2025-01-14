@@ -207,6 +207,12 @@ static void ndesc_prepare_tx_desc(struct dma_desc *p, int is_fs, int len,
 	else
 		norm_set_tx_desc_len_on_ring(p, len);
 
+#ifdef CONFIG_ARCH_PHYTIUM
+	/* The own bit must be the latest setting done when prepare the
+	 * descriptor and then barrier is needed to make sure that all is coherent.
+	 */
+	wmb();
+#endif
 	if (tx_own)
 		p->des0 |= cpu_to_le32(TDES0_OWN);
 }
