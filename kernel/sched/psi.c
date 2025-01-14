@@ -962,13 +962,14 @@ static void record_times(struct psi_group_cpu *groupc, u64 now)
 }
 
 static void psi_group_change(struct psi_group *group, int cpu,
-			     unsigned int clear, unsigned int set, u64 now,
+			     unsigned int clear, unsigned int set,
 			     bool wake_clock)
 {
 	struct psi_group_cpu *groupc;
 	unsigned int t, m;
 	enum psi_states s;
 	u32 state_mask;
+	u64 now;
 
 	groupc = per_cpu_ptr(group->pcpu, cpu);
 
@@ -981,7 +982,9 @@ static void psi_group_change(struct psi_group *group, int cpu,
 	 * change requested through the @clear and @set bits.
 	 */
 	write_seqcount_begin(&groupc->seq);
+	now = cpu_clock(cpu);
 
+	update_psi_stat_delta(group, cpu, now);
 	record_times(groupc, now);
 	record_cpu_stat_times(group, cpu);
 
@@ -1110,7 +1113,6 @@ void psi_task_change(struct task_struct *task, int clear, int set)
 	int cpu = task_cpu(task);
 	struct psi_group *group;
 	void *iter = NULL;
-	u64 now;
 	int stat_set = 0;
 	int stat_clear = 0;
 
@@ -1120,11 +1122,8 @@ void psi_task_change(struct task_struct *task, int clear, int set)
 	psi_flags_change(task, clear, set);
 	psi_stat_flags_change(task, &stat_set, &stat_clear, set, clear);
 
-	now = cpu_clock(cpu);
-
 	while ((group = iterate_groups(task, &iter))) {
-		update_psi_stat_delta(group, cpu, now);
-		psi_group_change(group, cpu, clear, set, now, true);
+		psi_group_change(group, cpu, clear, set, true);
 		psi_group_stat_change(group, cpu, stat_clear, stat_set);
 	}
 }
@@ -1135,7 +1134,6 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 	struct psi_group *group, *common = NULL;
 	int cpu = task_cpu(prev);
 	void *iter;
-	u64 now = cpu_clock(cpu);
 
 	if (next->pid) {
 		update_throttle_type(next, cpu, true);
@@ -1153,8 +1151,7 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 				break;
 			}
 
-			update_psi_stat_delta(group, cpu, now);
-			psi_group_change(group, cpu, 0, TSK_ONCPU, now, true);
+			psi_group_change(group, cpu, 0, TSK_ONCPU, true);
 			psi_group_stat_change(group, cpu, 0, 0);
 		}
 	}
@@ -1196,8 +1193,7 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 
 		iter = NULL;
 		while ((group = iterate_groups(prev, &iter)) && group != common) {
-			update_psi_stat_delta(group, cpu, now);
-			psi_group_change(group, cpu, clear, set, now, wake_clock);
+			psi_group_change(group, cpu, clear, set, wake_clock);
 			psi_group_stat_change(group, cpu, stat_clear, stat_set);
 		}
 #ifdef CONFIG_PSI_FINE_GRAINED
@@ -1214,8 +1210,7 @@ void psi_task_switch(struct task_struct *prev, struct task_struct *next,
 		     memstall_type_change) {
 			clear &= ~TSK_ONCPU;
 			for (; group; group = iterate_groups(prev, &iter)) {
-				update_psi_stat_delta(group, cpu, now);
-				psi_group_change(group, cpu, clear, set, now, wake_clock);
+				psi_group_change(group, cpu, clear, set, wake_clock);
 				psi_group_stat_change(group, cpu, stat_clear,
 						      stat_set);
 			}
@@ -1238,12 +1233,11 @@ void psi_account_irqtime(struct task_struct *task, u32 delta)
 	if (!task->pid)
 		return;
 
-	now = cpu_clock(cpu);
-
 	while ((group = iterate_groups(task, &iter))) {
 		groupc = per_cpu_ptr(group->pcpu, cpu);
 
 		write_seqcount_begin(&groupc->seq);
+		now = cpu_clock(cpu);
 
 		update_psi_stat_delta(group, cpu, now);
 		record_stat_times(to_psi_group_ext(group), cpu);
