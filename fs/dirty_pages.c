@@ -19,11 +19,9 @@ static char *buf_dirty;	/* buffer to store number of dirty pages */
 static unsigned long buf_size;	/* size of buffer in bytes */
 static long buff_num;	/* size of buffer in number of pages */
 static int buff_limit;	/* filter threshold of dirty pages*/
+static unsigned long lock_word;	/* for exclusive access to buffer */
 
 static struct proc_dir_entry *dirty_dir;
-
-static struct mutex buff_used;	/* buffer is in used */
-static struct mutex buff_lock;	/* lock when buffer is changed */
 
 /* proc root directory */
 #define DIRTY_ROOT "dirty"
@@ -38,6 +36,18 @@ static struct mutex buff_lock;	/* lock when buffer is changed */
 static void seq_set_overflow(struct seq_file *m)
 {
 	m->count = m->size;
+}
+
+static bool dirty_pages_lock(void)
+{
+	if (xchg(&lock_word, 1) == 1)
+		return false;
+	return true;
+}
+
+static void dirty_pages_unlock(void)
+{
+	lock_word = 0;
 }
 
 static unsigned long dump_dirtypages_inode(struct inode *inode)
@@ -197,10 +207,6 @@ static ssize_t seq_read_dirty(
 	size_t n;
 	int err = 0;
 
-	if (!mutex_trylock(&buff_used))
-		return -EBUSY;
-	/* don't allow buffer to change during read */
-	mutex_lock(&buff_lock);
 	if (m->count == 0) {
 		memset(buf_dirty, 0, buf_size);
 		if (!m->buf) {
@@ -210,13 +216,6 @@ static ssize_t seq_read_dirty(
 		err = m->op->show(m, NULL);
 		if (err < 0)
 			goto done;
-	}
-
-	/* if buffer changed somehow */
-	if (m->size != buf_size) {
-		mutex_unlock(&buff_lock);
-		mutex_unlock(&buff_used);
-		return -EFAULT;
 	}
 
 	n = min(m->count - m->from, size);
@@ -236,8 +235,6 @@ done:
 	else
 		*ppos += copied;
 
-	mutex_unlock(&buff_lock);
-	mutex_unlock(&buff_used);
 	return copied;
 }
 
@@ -249,6 +246,7 @@ static void free_buf_dirty(void)
 		buf_size = 0;
 	}
 }
+
 static ssize_t write_proc(
 	struct file *filp,
 	const char *buf,
@@ -258,9 +256,6 @@ static ssize_t write_proc(
 	char *msg;
 	int ret = 0;
 	long old_buff_num;
-
-	if (!mutex_trylock(&buff_used))
-		return -EBUSY;
 
 	if (count > PAGE_SIZE) {
 		ret = -EINVAL;
@@ -285,42 +280,44 @@ static ssize_t write_proc(
 		goto free;
 	}
 
-	mutex_lock(&buff_lock);
-
 	ret = count;
 	if (buff_num == 0) {
 		free_buf_dirty();
-		goto out;
+		goto free;
 	}
 	if (buff_num == old_buff_num)
-		goto out;
+		goto free;
 
 	free_buf_dirty();
 	buf_size = PAGE_SIZE * buff_num;
 	buf_dirty = vzalloc(buf_size);
 
-	if (!buf_dirty) {
+	if (!buf_dirty)
 		ret = -ENOMEM;
-		goto out;
-	}
-out:
-	mutex_unlock(&buff_lock);
 free:
 	kfree(msg);
 error:
-	mutex_unlock(&buff_used);
 	return ret;
 }
 
 static int proc_dpages_open(struct inode *inode, struct file *filp)
 {
+	int ret;
+
+	if (!dirty_pages_lock())
+		return -EBUSY;
+
 	if (buf_dirty == NULL || buf_size == 0) {
 		pr_warn("please allocate buffer before getting dirty pages\n");
+		dirty_pages_unlock();
 		return -ENOMEM;
 	}
 
-	return single_open(filp, proc_dpages_show, NULL);
+	ret = single_open(filp, proc_dpages_show, NULL);
+	if (ret)
+		dirty_pages_unlock();
 
+	return ret;
 }
 
 static int seq_release_dirty(struct inode *inode, struct file *file)
@@ -329,6 +326,7 @@ static int seq_release_dirty(struct inode *inode, struct file *file)
 
 	/* we don't want to free the buf */
 	m->buf = NULL;
+	dirty_pages_unlock();
 	single_release(inode, file);
 	return 0;
 }
@@ -353,12 +351,29 @@ static int proc_limit_show(struct seq_file *m, void *v)
 
 static int proc_switch_open(struct inode *inode, struct file *filp)
 {
-	return single_open(filp, proc_switch_show, NULL);
+	int ret;
+
+	if (((filp->f_flags & O_ACCMODE) != O_RDONLY) && !dirty_pages_lock())
+		return -EBUSY;
+
+	ret = single_open(filp, proc_switch_show, NULL);
+	if (ret && ((filp->f_flags & O_ACCMODE) != O_RDONLY))
+		dirty_pages_unlock();
+
+	return ret;
 }
 
 static int proc_limit_open(struct inode *inode, struct file *filp)
 {
 	return single_open(filp, proc_limit_show, NULL);
+}
+
+static int proc_switch_release(struct inode *inode, struct file *filp)
+{
+	if ((filp->f_flags & O_ACCMODE) != O_RDONLY)
+		dirty_pages_unlock();
+
+	return single_release(inode, filp);
 }
 
 static ssize_t write_limit_proc(
@@ -407,7 +422,7 @@ static const struct proc_ops proc_switch_operations = {
 	.proc_read           = seq_read,
 	.proc_write          = write_proc,
 	.proc_lseek          = seq_lseek,
-	.proc_release        = single_release,
+	.proc_release        = proc_switch_release,
 };
 
 static const struct proc_ops proc_limit_operations = {
@@ -442,8 +457,6 @@ static int __init dpages_proc_init(void)
 	if (!proc_file)
 		goto fail_limit;
 
-	mutex_init(&buff_used);
-	mutex_init(&buff_lock);
 	return 0;
 
 fail_limit:
@@ -458,9 +471,7 @@ fail_dir:
 
 static void dpages_proc_exit(void)
 {
-	mutex_lock(&buff_lock);
 	free_buf_dirty();
-	mutex_unlock(&buff_lock);
 	remove_proc_entry(DIRTY_PAGES, dirty_dir);
 	remove_proc_entry(DIRTY_SWITCH, dirty_dir);
 	remove_proc_entry(DIRTY_LIMIT, dirty_dir);
