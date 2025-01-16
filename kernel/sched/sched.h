@@ -166,7 +166,7 @@ static inline void cpu_load_update_active(struct rq *this_rq) { }
 /*
  * Single value that denotes runtime is disabled, and it should not be used.
  */
-#define RUNTIME_DISABLED	(-2ULL)
+#define RUNTIME_DISABLED	((u64)~1ULL)
 
 static inline int idle_policy(int policy)
 {

@@ -715,7 +715,8 @@ static void __disable_runtime(struct rq *rq)
 		 * exactly the right amount of runtime to take out.
 		 */
 		if (rt_rq->rt_runtime == RUNTIME_INF ||
-				rt_rq->rt_runtime == rt_b->rt_runtime)
+		    rt_rq->rt_runtime == rt_b->rt_runtime ||
+		    rt_rq->rt_runtime == RUNTIME_DISABLED)
 			goto balanced;
 		raw_spin_unlock(&rt_rq->rt_runtime_lock);
 
@@ -761,7 +762,10 @@ static void __disable_runtime(struct rq *rq)
 		 * We cannot be left wanting - that would mean some runtime
 		 * leaked out of the system.
 		 */
-		WARN_ON_ONCE(want);
+		if (unlikely(want != 0))
+			printk_deferred_once(KERN_WARNING
+				"WARNING: runtime leaks possible want=%lld cpu=%d\n",
+				want, cpu_of(rq));
 balanced:
 		/*
 		 * Disable all the borrow logic by marking runtime disabled.
@@ -844,7 +848,9 @@ static int do_sched_rt_period_timer(struct rt_bandwidth *rt_b, int overrun)
 		 * can be time-consuming. Try to avoid it when possible.
 		 */
 		raw_spin_lock(&rt_rq->rt_runtime_lock);
-		if (!sched_feat(RT_RUNTIME_SHARE) && rt_rq->rt_runtime != RUNTIME_INF)
+		if (!sched_feat(RT_RUNTIME_SHARE) &&
+		    rt_rq->rt_runtime != RUNTIME_INF &&
+		    rt_rq->rt_runtime != RUNTIME_DISABLED)
 			rt_rq->rt_runtime = rt_b->rt_runtime;
 		skip = !rt_rq->rt_time && !rt_rq->rt_nr_running;
 		raw_spin_unlock(&rt_rq->rt_runtime_lock);
@@ -922,7 +928,7 @@ static int sched_rt_runtime_exceeded(struct rt_rq *rt_rq)
 
 	balance_runtime(rt_rq);
 	runtime = sched_rt_runtime(rt_rq);
-	if (runtime == RUNTIME_INF)
+	if (runtime == RUNTIME_INF || runtime == RUNTIME_DISABLED)
 		return 0;
 
 	if (rt_rq->rt_time > runtime) {
