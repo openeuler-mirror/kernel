@@ -1177,7 +1177,7 @@ fail:
 	return err;
 }
 
-static int platform_profile_omen_get(struct platform_profile_handler *pprof,
+static int platform_profile_omen_get(struct device *dev,
 				     enum platform_profile_option *profile)
 {
 	int tp;
@@ -1206,7 +1206,7 @@ static int platform_profile_omen_get(struct platform_profile_handler *pprof,
 	return 0;
 }
 
-static int platform_profile_omen_set(struct platform_profile_handler *pprof,
+static int platform_profile_omen_set(struct device *dev,
 				     enum platform_profile_option profile)
 {
 	int err, tp, tp_version;
@@ -1257,7 +1257,7 @@ static int thermal_profile_set(int thermal_profile)
 							   sizeof(thermal_profile), 0);
 }
 
-static int hp_wmi_platform_profile_get(struct platform_profile_handler *pprof,
+static int hp_wmi_platform_profile_get(struct device *dev,
 					enum platform_profile_option *profile)
 {
 	int tp;
@@ -1286,7 +1286,7 @@ static int hp_wmi_platform_profile_get(struct platform_profile_handler *pprof,
 	return 0;
 }
 
-static int hp_wmi_platform_profile_set(struct platform_profile_handler *pprof,
+static int hp_wmi_platform_profile_set(struct device *dev,
 					enum platform_profile_option profile)
 {
 	int err, tp;
@@ -1327,7 +1327,7 @@ static bool is_victus_thermal_profile(void)
 			    board_name) >= 0;
 }
 
-static int platform_profile_victus_get(struct platform_profile_handler *pprof,
+static int platform_profile_victus_get(struct device *dev,
 				     enum platform_profile_option *profile)
 {
 	int tp;
@@ -1353,7 +1353,7 @@ static int platform_profile_victus_get(struct platform_profile_handler *pprof,
 	return 0;
 }
 
-static int platform_profile_victus_set(struct platform_profile_handler *pprof,
+static int platform_profile_victus_set(struct device *dev,
 				     enum platform_profile_option profile)
 {
 	int err, tp;
