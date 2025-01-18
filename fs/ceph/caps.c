@@ -1347,7 +1347,7 @@ static int __send_cap(struct ceph_mds_client *mdsc, struct ceph_cap *cap,
 	if (flushing & CEPH_CAP_XATTR_EXCL) {
 		old_blob = __ceph_build_xattrs_blob(ci);
 		arg.xattr_version = ci->i_xattrs.version;
-		arg.xattr_buf = ci->i_xattrs.blob;
+		arg.xattr_buf = ceph_buffer_get(ci->i_xattrs.blob);
 	} else {
 		arg.xattr_buf = NULL;
 	}
@@ -1387,6 +1387,7 @@ static int __send_cap(struct ceph_mds_client *mdsc, struct ceph_cap *cap,
 		dout("error sending cap msg, must requeue %p\n", inode);
 		delayed = 1;
 	}
+	ceph_buffer_put(arg.xattr_buf);
 
 	if (wake)
 		wake_up_all(&ci->i_cap_wq);
