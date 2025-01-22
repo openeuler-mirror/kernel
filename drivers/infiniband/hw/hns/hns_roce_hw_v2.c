@@ -5313,24 +5313,21 @@ static int get_dip_ctx_idx(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 {
 	const struct ib_global_route *grh = rdma_ah_read_grh(&attr->ah_attr);
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
-	unsigned long *dip_idx_bitmap = hr_dev->qp_table.idx_table.dip_idx_bitmap;
-	unsigned long *qpn_bitmap = hr_dev->qp_table.idx_table.qpn_bitmap;
-	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
+	u32 *spare_idx = hr_dev->qp_table.idx_table.spare_idx;
+	u32 *head =  &hr_dev->qp_table.idx_table.head;
+	u32 *tail =  &hr_dev->qp_table.idx_table.tail;
 	struct hns_roce_dip *hr_dip;
 	unsigned long flags;
 	int ret = 0;
-	u32 idx;
 
 	spin_lock_irqsave(&hr_dev->dip_list_lock, flags);
 
-	if (!test_bit(ibqp->qp_num, dip_idx_bitmap))
-		set_bit(ibqp->qp_num, qpn_bitmap);
+	spare_idx[*tail] = ibqp->qp_num;
+	*tail = (*tail == hr_dev->caps.num_qps - 1) ? 0 : (*tail + 1);
 
 	list_for_each_entry(hr_dip, &hr_dev->dip_list, node) {
 		if (!memcmp(grh->dgid.raw, hr_dip->dgid, GID_LEN_V2)) {
 			*dip_idx = hr_dip->dip_idx;
-			hr_dip->qp_cnt++;
-			hr_qp->dip = hr_dip;
 			goto out;
 		}
 	}
@@ -5344,21 +5341,9 @@ static int get_dip_ctx_idx(struct ib_qp *ibqp, const struct ib_qp_attr *attr,
 		goto out;
 	}
 
-	idx = find_first_bit(qpn_bitmap, hr_dev->caps.num_qps);
-	if (idx < hr_dev->caps.num_qps) {
-		*dip_idx = idx;
-		clear_bit(idx, qpn_bitmap);
-		set_bit(idx, dip_idx_bitmap);
-	} else {
-		ret = -ENOENT;
-		kfree(hr_dip);
-		goto out;
-	}
-
 	memcpy(hr_dip->dgid, grh->dgid.raw, sizeof(grh->dgid.raw));
-	hr_dip->dip_idx = *dip_idx;
-	hr_dip->qp_cnt++;
-	hr_qp->dip = hr_dip;
+	hr_dip->dip_idx = *dip_idx = spare_idx[*head];
+	*head = (*head == hr_dev->caps.num_qps - 1) ? 0 : (*head + 1);
 	list_add_tail(&hr_dip->node, &hr_dev->dip_list);
 
 out:
@@ -6300,41 +6285,12 @@ int hns_roce_v2_destroy_qp_common(struct hns_roce_dev *hr_dev,
 	return ret;
 }
 
-static void put_dip_ctx_idx(struct hns_roce_dev *hr_dev,
-							struct hns_roce_qp *hr_qp)
-{
-	unsigned long *dip_idx_bitmap = hr_dev->qp_table.idx_table.dip_idx_bitmap;
-	unsigned long *qpn_bitmap = hr_dev->qp_table.idx_table.qpn_bitmap;
-	struct hns_roce_dip *hr_dip = hr_qp->dip;
-	unsigned long flags;
-
-	spin_lock_irqsave(&hr_dev->dip_list_lock, flags);
-
-	if (hr_dip) {
-		hr_dip->qp_cnt--;
-		if (!hr_dip->qp_cnt) {
-			clear_bit(hr_dip->dip_idx, dip_idx_bitmap);
-			set_bit(hr_dip->dip_idx, qpn_bitmap);
-
-			list_del(&hr_dip->node);
-		} else {
-			hr_dip = NULL;
-		}
-	}
-
-	spin_unlock_irqrestore(&hr_dev->dip_list_lock, flags);
-	kfree(hr_dip);
-}
-
 int hns_roce_v2_destroy_qp(struct ib_qp *ibqp, struct ib_udata *udata)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibqp->device);
 	struct hns_roce_qp *hr_qp = to_hr_qp(ibqp);
 	unsigned long flags;
 	int ret;
-
-	if (hr_qp->congest_type == HNS_ROCE_CONGEST_TYPE_DIP)
-		put_dip_ctx_idx(hr_dev, hr_qp);
 
 	/* Make sure flush_cqe() is completed */
 	spin_lock_irqsave(&hr_qp->flush_lock, flags);
