@@ -150,6 +150,9 @@ struct cpufreq_policy {
 	/* Per policy boost enabled flag. */
 	bool			boost_enabled;
 
+	/* Per policy boost supported flag. */
+	bool			boost_supported;
+
 	/* Pending policy->min/max update for the driver */
 	bool			update_limits;
 
