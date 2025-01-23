@@ -1458,7 +1458,6 @@ struct hns_roce_dip {
 	u8 dgid[GID_LEN_V2];
 	u32 dip_idx;
 	u32 qp_cnt;
-	struct list_head node; /* all dips are on a list */
 };
 
 struct fmea_ram_ecc {
