@@ -858,9 +858,9 @@ int ngbe_get_settings(struct net_device *netdev,
 int ngbe_write_uc_addr_list(struct net_device *netdev, int pool);
 void ngbe_full_sync_mac_table(struct ngbe_adapter *adapter);
 int ngbe_add_mac_filter(struct ngbe_adapter *adapter,
-				u8 *addr, u16 pool);
+				const u8 *addr, u16 pool);
 int ngbe_del_mac_filter(struct ngbe_adapter *adapter,
-				u8 *addr, u16 pool);
+				const u8 *addr, u16 pool);
 int ngbe_available_rars(struct ngbe_adapter *adapter);
 void ngbe_vlan_mode(struct net_device *netdev, u32 features);
 

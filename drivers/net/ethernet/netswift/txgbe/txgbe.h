@@ -1078,9 +1078,9 @@ int txgbe_get_settings(struct net_device *netdev,
 int txgbe_write_uc_addr_list(struct net_device *netdev, int pool);
 void txgbe_full_sync_mac_table(struct txgbe_adapter *adapter);
 int txgbe_add_mac_filter(struct txgbe_adapter *adapter,
-				u8 *addr, u16 pool);
+				const u8 *addr, u16 pool);
 int txgbe_del_mac_filter(struct txgbe_adapter *adapter,
-				u8 *addr, u16 pool);
+				const u8 *addr, u16 pool);
 int txgbe_available_rars(struct txgbe_adapter *adapter);
 void txgbe_vlan_mode(struct net_device *, u32);
 
