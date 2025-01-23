@@ -2105,7 +2105,7 @@ static void *get_partial(struct kmem_cache *s, gfp_t flags, int node,
 		searchnode = numa_mem_id();
 
 	object = get_partial_node(s, get_node(s, searchnode), c, flags);
-	if (object || node != NUMA_NO_NODE)
+	if (object || (node != NUMA_NO_NODE && (flags & __GFP_THISNODE)))
 		return object;
 
 	return get_any_partial(s, flags, c);
@@ -2687,6 +2687,8 @@ static void *___slab_alloc(struct kmem_cache *s, gfp_t gfpflags, int node,
 {
 	void *freelist;
 	struct page *page;
+	bool try_thisnode = true;
+	gfp_t pc_gfpflags;
 
 	stat(s, ALLOC_SLOWPATH);
 
@@ -2764,9 +2766,33 @@ new_slab:
 		goto redo;
 	}
 
-	freelist = new_slab_objects(s, gfpflags, node, &c);
+new_objects:
+
+	pc_gfpflags = gfpflags;
+	/*
+	 * When a preferred node is indicated but no __GFP_THISNODE
+	 *
+	 * 1) try to get a partial slab from target node only by having
+	 *    __GFP_THISNODE in pc_gfpflags for new_slab_objects()
+	 * 2) if 1) failed, try to allocate a new slab from target node with
+	 *    GPF_NOWAIT | __GFP_THISNODE opportunistically
+	 * 3) if 2) failed, retry with original gfpflags which will allow
+	 *    new_slab_objects() try partial lists of other nodes before potentially
+	 *    allocating new page from other nodes
+	 */
+	if (unlikely(node != NUMA_NO_NODE && !(gfpflags & __GFP_THISNODE)
+		     && try_thisnode))
+		pc_gfpflags = GFP_NOWAIT | __GFP_THISNODE;
+
+	freelist = new_slab_objects(s, pc_gfpflags, node, &c);
 
 	if (unlikely(!freelist)) {
+		if (node != NUMA_NO_NODE && !(gfpflags & __GFP_THISNODE)
+		    && try_thisnode) {
+			try_thisnode = false;
+			goto new_objects;
+		}
+
 		slab_out_of_memory(s, gfpflags, node);
 		return NULL;
 	}
