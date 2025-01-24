@@ -4252,7 +4252,7 @@ static void memcg_swap_device_init(struct mem_cgroup *memcg,
 	}
 }
 
-u64 memcg_swapmax_read(struct cgroup_subsys_state *css, struct cftype *cft)
+static u64 memcg_swapmax_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 
