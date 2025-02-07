@@ -1222,7 +1222,7 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	ret = adv7511_init_regulators(adv7511);
 	if (ret) {
 		dev_err(dev, "failed to init regulators\n");
-		return ret;
+		goto err_of_node_put;
 	}
 
 	/*
@@ -1332,6 +1332,8 @@ err_i2c_unregister_edid:
 	i2c_unregister_device(adv7511->i2c_edid);
 uninit_regulators:
 	adv7511_uninit_regulators(adv7511);
+err_of_node_put:
+	of_node_put(adv7511->host_node);
 
 	return ret;
 }
@@ -1346,6 +1348,7 @@ static int adv7511_remove(struct i2c_client *i2c)
 	if (adv7511->cec_clk)
 		clk_disable_unprepare(adv7511->cec_clk);
 
+	of_node_put(adv7511->host_node);
 	adv7511_uninit_regulators(adv7511);
 
 	drm_bridge_remove(&adv7511->bridge);
