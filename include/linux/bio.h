@@ -706,12 +706,6 @@ struct bio_set {
 	KABI_RESERVE(4)
 };
 
-struct biovec_slab {
-	int nr_vecs;
-	char *name;
-	struct kmem_cache *slab;
-};
-
 static inline bool bioset_initialized(struct bio_set *bs)
 {
 	return bs->bio_slab != NULL;
