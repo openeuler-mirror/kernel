@@ -271,6 +271,29 @@ unsigned int ccp_version(void)
 EXPORT_SYMBOL_GPL(ccp_version);
 
 /**
+ * get_ccp_version_reg_val - get PspCcpVersion register value
+ *
+ * Returns the PspCcpVersion register value of the fist CCP on list;
+ * otherwise a zero if no CCP device is present
+ */
+unsigned int get_ccp_version_reg_val(void)
+{
+	struct ccp_device *dp;
+	unsigned long flags;
+	int ret = 0;
+
+	read_lock_irqsave(&ccp_unit_lock, flags);
+	if (!list_empty(&ccp_units)) {
+		dp = list_first_entry(&ccp_units, struct ccp_device, entry);
+		ret = ioread32(dp->io_regs + CMD5_PSP_CCP_VERSION);
+	}
+	read_unlock_irqrestore(&ccp_unit_lock, flags);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(get_ccp_version_reg_val);
+
+/**
  * ccp_enqueue_cmd - queue an operation for processing by the CCP
  *
  * @cmd: ccp_cmd struct to be processed
