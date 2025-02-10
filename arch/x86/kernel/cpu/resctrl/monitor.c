@@ -64,6 +64,69 @@ unsigned int rdt_mon_features;
  */
 unsigned int resctrl_cqm_threshold;
 
+#define CF(cf)	((unsigned long)(1048576 * (cf) + 0.5))
+
+/*
+ * The correction factor table is documented in Documentation/x86/resctrl.rst.
+ * If rmid > rmid threshold, MBM total and local values should be multiplied
+ * by the correction factor.
+ *
+ * The original table is modified for better code:
+ *
+ * 1. The threshold 0 is changed to rmid count - 1 so don't do correction
+ *    for the case.
+ * 2. MBM total and local correction table indexed by core counter which is
+ *    equal to (x86_cache_max_rmid + 1) / 8 - 1 and is from 0 up to 27.
+ * 3. The correction factor is normalized to 2^20 (1048576) so it's faster
+ *    to calculate corrected value by shifting:
+ *    corrected_value = (original_value * correction_factor) >> 20
+ */
+static const struct mbm_correction_factor_table {
+	u32 rmidthreshold;
+	u64 cf;
+} mbm_cf_table[] __initdata = {
+	{7,	CF(1.000000)},
+	{15,	CF(1.000000)},
+	{15,	CF(0.969650)},
+	{31,	CF(1.000000)},
+	{31,	CF(1.066667)},
+	{31,	CF(0.969650)},
+	{47,	CF(1.142857)},
+	{63,	CF(1.000000)},
+	{63,	CF(1.185115)},
+	{63,	CF(1.066553)},
+	{79,	CF(1.454545)},
+	{95,	CF(1.000000)},
+	{95,	CF(1.230769)},
+	{95,	CF(1.142857)},
+	{95,	CF(1.066667)},
+	{127,	CF(1.000000)},
+	{127,	CF(1.254863)},
+	{127,	CF(1.185255)},
+	{151,	CF(1.000000)},
+	{127,	CF(1.066667)},
+	{167,	CF(1.000000)},
+	{159,	CF(1.454334)},
+	{183,	CF(1.000000)},
+	{127,	CF(0.969744)},
+	{191,	CF(1.280246)},
+	{191,	CF(1.230921)},
+	{215,	CF(1.000000)},
+	{191,	CF(1.143118)},
+};
+
+static u32 mbm_cf_rmidthreshold __read_mostly = UINT_MAX;
+static u64 mbm_cf __read_mostly;
+
+static inline u64 get_corrected_mbm_count(u32 rmid, unsigned long val)
+{
+	/* Correct MBM value. */
+	if (rmid > mbm_cf_rmidthreshold)
+		val = (val * mbm_cf) >> 20;
+
+	return val;
+}
+
 static inline struct rmid_entry *__rmid_entry(u32 rmid)
 {
 	struct rmid_entry *entry;
@@ -111,7 +174,7 @@ void __check_limbo(struct rdt_domain *d, bool force_free)
 	struct rdt_resource *r;
 	u32 crmid = 1, nrmid;
 
-	r = &rdt_resources_all[RDT_RESOURCE_L3];
+	r = &rdt_resources_all[RDT_RESOURCE_L3].r_resctrl;
 
 	/*
 	 * Skip RMID 0 and start from RMID 1 and check all the RMIDs that
@@ -169,7 +232,7 @@ static void add_rmid_to_limbo(struct rmid_entry *entry)
 	int cpu;
 	u64 val;
 
-	r = &rdt_resources_all[RDT_RESOURCE_L3];
+	r = &rdt_resources_all[RDT_RESOURCE_L3].r_resctrl;
 
 	entry->busy = 0;
 	cpu = get_cpu();
@@ -214,6 +277,23 @@ void free_rmid(u32 rmid)
 		list_add_tail(&entry->list, &rmid_free_lru);
 }
 
+/*
+ * Assumes that hardware counters are also reset and thus that there is
+ * no need to record initial non-zero counts.
+ */
+void resctrl_arch_reset_rmid_all(struct rdt_resource *r, struct rdt_domain *d)
+{
+	struct rdt_hw_domain *hw_dom = resctrl_to_arch_dom(d);
+
+	if (is_mbm_total_enabled())
+		memset(hw_dom->arch_mbm_total, 0,
+		       sizeof(*hw_dom->arch_mbm_total) * r->num_rmid);
+
+	if (is_mbm_local_enabled())
+		memset(hw_dom->arch_mbm_local, 0,
+		       sizeof(*hw_dom->arch_mbm_local) * r->num_rmid);
+}
+
 static u64 mbm_overflow_count(u64 prev_msr, u64 cur_msr, unsigned int width)
 {
 	u64 shift = 64 - width, chunks;
@@ -224,6 +304,7 @@ static u64 mbm_overflow_count(u64 prev_msr, u64 cur_msr, unsigned int width)
 
 static u64 __mon_event_count(u32 rmid, struct rmid_read *rr)
 {
+	struct rdt_hw_resource *hw_res = resctrl_to_arch_res(rr->r);
 	struct mbm_state *m;
 	u64 chunks, tval;
 
@@ -255,11 +336,12 @@ static u64 __mon_event_count(u32 rmid, struct rmid_read *rr)
 		return 0;
 	}
 
-	chunks = mbm_overflow_count(m->prev_msr, tval, rr->r->mbm_width);
+	chunks = mbm_overflow_count(m->prev_msr, tval, hw_res->mbm_width);
 	m->chunks += chunks;
 	m->prev_msr = tval;
 
-	rr->val += m->chunks;
+	rr->val += get_corrected_mbm_count(rmid, m->chunks);
+
 	return 0;
 }
 
@@ -269,7 +351,7 @@ static u64 __mon_event_count(u32 rmid, struct rmid_read *rr)
  */
 static void mbm_bw_count(u32 rmid, struct rmid_read *rr)
 {
-	struct rdt_resource *r = &rdt_resources_all[RDT_RESOURCE_L3];
+	struct rdt_hw_resource *hw_res = resctrl_to_arch_res(rr->r);
 	struct mbm_state *m = &rr->d->mbm_local[rmid];
 	u64 tval, cur_bw, chunks;
 
@@ -277,8 +359,8 @@ static void mbm_bw_count(u32 rmid, struct rmid_read *rr)
 	if (tval & (RMID_VAL_ERROR | RMID_VAL_UNAVAIL))
 		return;
 
-	chunks = mbm_overflow_count(m->prev_bw_msr, tval, rr->r->mbm_width);
-	cur_bw = (chunks * r->mon_scale) >> 20;
+	chunks = mbm_overflow_count(m->prev_bw_msr, tval, hw_res->mbm_width);
+	cur_bw = (get_corrected_mbm_count(rmid, chunks) * hw_res->mon_scale) >> 20;
 
 	if (m->delta_comp)
 		m->delta_bw = abs(cur_bw - m->prev_bw);
@@ -357,6 +439,8 @@ static void update_mba_bw(struct rdtgroup *rgrp, struct rdt_domain *dom_mbm)
 {
 	u32 closid, rmid, cur_msr, cur_msr_val, new_msr_val;
 	struct mbm_state *pmbm_data, *cmbm_data;
+	struct rdt_hw_resource *hw_r_mba;
+	struct rdt_hw_domain *hw_dom_mba;
 	u32 cur_bw, delta_bw, user_bw;
 	struct rdt_resource *r_mba;
 	struct rdt_domain *dom_mba;
@@ -366,7 +450,8 @@ static void update_mba_bw(struct rdtgroup *rgrp, struct rdt_domain *dom_mbm)
 	if (!is_mbm_local_enabled())
 		return;
 
-	r_mba = &rdt_resources_all[RDT_RESOURCE_MBA];
+	hw_r_mba = &rdt_resources_all[RDT_RESOURCE_MBA];
+	r_mba = &hw_r_mba->r_resctrl;
 	closid = rgrp->closid;
 	rmid = rgrp->mon.rmid;
 	pmbm_data = &dom_mbm->mbm_local[rmid];
@@ -376,11 +461,12 @@ static void update_mba_bw(struct rdtgroup *rgrp, struct rdt_domain *dom_mbm)
 		pr_warn_once("Failure to get domain for MBA update\n");
 		return;
 	}
+	hw_dom_mba = resctrl_to_arch_dom(dom_mba);
 
 	cur_bw = pmbm_data->prev_bw;
-	user_bw = dom_mba->mbps_val[closid];
+	user_bw = hw_dom_mba->mbps_val[closid];
 	delta_bw = pmbm_data->delta_bw;
-	cur_msr_val = dom_mba->ctrl_val[closid];
+	cur_msr_val = hw_dom_mba->ctrl_val[closid];
 
 	/*
 	 * For Ctrl groups read data from child monitor groups.
@@ -415,9 +501,9 @@ static void update_mba_bw(struct rdtgroup *rgrp, struct rdt_domain *dom_mbm)
 		return;
 	}
 
-	cur_msr = r_mba->msr_base + closid;
+	cur_msr = hw_r_mba->msr_base + closid;
 	wrmsrl(cur_msr, delay_bw_map(new_msr_val, r_mba));
-	dom_mba->ctrl_val[closid] = new_msr_val;
+	hw_dom_mba->ctrl_val[closid] = new_msr_val;
 
 	/*
 	 * Delta values are updated dynamically package wise for each
@@ -479,7 +565,7 @@ void cqm_handle_limbo(struct work_struct *work)
 
 	mutex_lock(&rdtgroup_mutex);
 
-	r = &rdt_resources_all[RDT_RESOURCE_L3];
+	r = &rdt_resources_all[RDT_RESOURCE_L3].r_resctrl;
 	d = container_of(work, struct rdt_domain, cqm_limbo.work);
 
 	__check_limbo(d, false);
@@ -515,7 +601,7 @@ void mbm_handle_overflow(struct work_struct *work)
 	if (!static_branch_likely(&rdt_mon_enable_key))
 		goto out_unlock;
 
-	r = &rdt_resources_all[RDT_RESOURCE_L3];
+	r = &rdt_resources_all[RDT_RESOURCE_L3].r_resctrl;
 	d = container_of(work, struct rdt_domain, mbm_over.work);
 
 	list_for_each_entry(prgrp, &rdt_all_groups, rdtgroup_list) {
@@ -609,18 +695,19 @@ static void l3_mon_evt_init(struct rdt_resource *r)
 		list_add_tail(&mbm_local_event.list, &r->evt_list);
 }
 
-int rdt_get_mon_l3_config(struct rdt_resource *r)
+int __init rdt_get_mon_l3_config(struct rdt_resource *r)
 {
 	unsigned int mbm_offset = boot_cpu_data.x86_cache_mbm_width_offset;
+	struct rdt_hw_resource *hw_res = resctrl_to_arch_res(r);
 	unsigned int cl_size = boot_cpu_data.x86_cache_size;
 	int ret;
 
-	r->mon_scale = boot_cpu_data.x86_cache_occ_scale;
+	hw_res->mon_scale = boot_cpu_data.x86_cache_occ_scale;
 	r->num_rmid = boot_cpu_data.x86_cache_max_rmid + 1;
-	r->mbm_width = MBM_CNTR_WIDTH_BASE;
+	hw_res->mbm_width = MBM_CNTR_WIDTH_BASE;
 
 	if (mbm_offset > 0 && mbm_offset <= MBM_CNTR_WIDTH_OFFSET_MAX)
-		r->mbm_width += mbm_offset;
+		hw_res->mbm_width += mbm_offset;
 	else if (mbm_offset > MBM_CNTR_WIDTH_OFFSET_MAX)
 		pr_warn("Ignoring impossible MBM counter offset\n");
 
@@ -634,16 +721,46 @@ int rdt_get_mon_l3_config(struct rdt_resource *r)
 	resctrl_cqm_threshold = cl_size * 1024 / r->num_rmid;
 
 	/* h/w works in units of "boot_cpu_data.x86_cache_occ_scale" */
-	resctrl_cqm_threshold /= r->mon_scale;
+	resctrl_cqm_threshold /= hw_res->mon_scale;
 
 	ret = dom_data_init(r);
 	if (ret)
 		return ret;
 
+	if (rdt_cpu_has(X86_FEATURE_BMEC)) {
+		u32 eax, ebx, ecx, edx;
+
+		/* Detect list of bandwidth sources that can be tracked */
+		cpuid_count(0x80000020, 3, &eax, &ebx, &ecx, &edx);
+		hw_res->mbm_cfg_mask = ecx & MAX_EVT_CONFIG_BITS;
+
+		if (rdt_cpu_has(X86_FEATURE_CQM_MBM_TOTAL)) {
+			mbm_total_event.configurable = true;
+			mbm_config_rftype_init("mbm_total_bytes_config");
+		}
+		if (rdt_cpu_has(X86_FEATURE_CQM_MBM_LOCAL)) {
+			mbm_local_event.configurable = true;
+			mbm_config_rftype_init("mbm_local_bytes_config");
+		}
+	}
+
 	l3_mon_evt_init(r);
 
 	r->mon_capable = true;
-	r->mon_enabled = true;
 
 	return 0;
+}
+
+void __init intel_rdt_mbm_apply_quirk(void)
+{
+	int cf_index;
+
+	cf_index = (boot_cpu_data.x86_cache_max_rmid + 1) / 8 - 1;
+	if (cf_index >= ARRAY_SIZE(mbm_cf_table)) {
+		pr_info("No MBM correction factor available\n");
+		return;
+	}
+
+	mbm_cf_rmidthreshold = mbm_cf_table[cf_index].rmidthreshold;
+	mbm_cf = mbm_cf_table[cf_index].cf;
 }
