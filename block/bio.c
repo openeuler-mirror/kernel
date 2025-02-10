@@ -1118,8 +1118,10 @@ int bio_iov_iter_get_pages(struct bio *bio, struct iov_iter *iter)
 		}
 	} while (!ret && iov_iter_count(iter) && !bio_full(bio, 0));
 
-	if (is_bvec)
+	if (is_bvec) {
 		bio_set_flag(bio, BIO_NO_PAGE_REF);
+		bio_set_flag(bio, BIO_CLONED);
+	}
 
 	/* don't account direct I/O as memory stall */
 	bio_clear_flag(bio, BIO_WORKINGSET);
