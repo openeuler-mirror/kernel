@@ -3055,6 +3055,8 @@ static struct hns_roce_qp *create_free_mr_qp(struct hns_roce_dev *hr_dev,
 		ibdev_err(ibdev, "failed to create qp for free mr.\n");
 		return NULL;
 	}
+	qp->device = ibdev;
+	qp->qp_type = IB_QPT_RC;
 
 	return to_hr_qp(qp);
 }
@@ -3138,8 +3140,6 @@ static int free_mr_modify_rsv_qp(struct hns_roce_dev *hr_dev,
 
 	hr_qp = to_hr_qp(&free_mr->rsv_qp[sl_num]->ibqp);
 	hr_qp->free_mr_en = 1;
-	hr_qp->ibqp.device = ibdev;
-	hr_qp->ibqp.qp_type = IB_QPT_RC;
 
 	mask = IB_QP_STATE | IB_QP_PKEY_INDEX | IB_QP_PORT | IB_QP_ACCESS_FLAGS;
 	attr->qp_state = IB_QPS_INIT;
