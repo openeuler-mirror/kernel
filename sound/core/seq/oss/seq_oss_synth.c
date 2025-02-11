@@ -66,6 +66,7 @@ static struct seq_oss_synth midi_synth_dev = {
 };
 
 static DEFINE_SPINLOCK(register_lock);
+static DEFINE_MUTEX(sysex_mutex);
 
 /*
  * prototypes
@@ -491,16 +492,20 @@ snd_seq_oss_synth_sysex(struct seq_oss_devinfo *dp, int dev, unsigned char *buf,
 	unsigned char *dest;
 	struct seq_oss_synth_sysex *sysex;
 	struct seq_oss_synthinfo *info;
+	int err = -EINVAL;
 
 	info = snd_seq_oss_synth_info(dp, dev);
 	if (!info)
 		return -ENXIO;
 
+	mutex_lock(&sysex_mutex);
 	sysex = info->sysex;
 	if (sysex == NULL) {
 		sysex = kzalloc(sizeof(*sysex), GFP_KERNEL);
-		if (sysex == NULL)
-			return -ENOMEM;
+		if (sysex == NULL) {
+			err = -ENOMEM;
+			goto unlock_sysex;
+		}
 		info->sysex = sysex;
 	}
 
@@ -525,19 +530,25 @@ snd_seq_oss_synth_sysex(struct seq_oss_devinfo *dp, int dev, unsigned char *buf,
 		if (sysex->skip) {
 			sysex->skip = 0;
 			sysex->len = 0;
-			return -EINVAL; /* skip */
+			err = -EINVAL; /* skip */
+			goto unlock_sysex;
 		}
 		/* copy the data to event record and send it */
 		ev->flags = SNDRV_SEQ_EVENT_LENGTH_VARIABLE;
-		if (snd_seq_oss_synth_addr(dp, dev, ev))
-			return -EINVAL;
+		if (snd_seq_oss_synth_addr(dp, dev, ev)) {
+			err = -EINVAL;
+			goto unlock_sysex;
+		}
 		ev->data.ext.len = sysex->len;
 		ev->data.ext.ptr = sysex->buf;
 		sysex->len = 0;
+		mutex_unlock(&sysex_mutex);
 		return 0;
 	}
 
-	return -EINVAL; /* skip */
+unlock_sysex:
+	mutex_unlock(&sysex_mutex);
+	return err; /* skip */
 }
 
 /*
