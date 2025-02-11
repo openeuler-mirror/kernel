@@ -21,6 +21,7 @@ void
 start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 {
 	regs->pc = pc;
+	regs->regs[27] = pc;
 	regs->ps = 8;
 	regs->regs[30] = sp;
 }
