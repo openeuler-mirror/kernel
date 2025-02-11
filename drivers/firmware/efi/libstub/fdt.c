@@ -31,7 +31,7 @@ static void fdt_update_cell_size(void *fdt)
 #ifdef CONFIG_ARM64_PBHA
 extern bool efi_pbha;
 
-static efi_status_t fdt_init_hbm_mode(void *fdt, int node)
+static efi_status_t fdt_init_moc_mode(void *fdt, int node)
 {
 	efi_guid_t oem_config_guid = EFI_OEMCONFIG_VARIABLE_GUID;
 	unsigned long size;
@@ -44,12 +44,12 @@ static efi_status_t fdt_init_hbm_mode(void *fdt, int node)
 	if (!efi_pbha)
 		goto out;
 
-	efi_status = get_efi_var(L"HBMMode", &oem_config_guid, NULL, &size,
+	efi_status = get_efi_var(L"MemoryOnChipMode", &oem_config_guid, NULL, &size,
 				 &hbm_mode);
 	if (efi_status != EFI_SUCCESS)
 		goto out;
 
-	if (hbm_mode != HBM_MODE_CACHE)
+	if (hbm_mode != MOC_MODE_CACHE)
 		goto out;
 
 	fdt_val32 = 1;
@@ -68,7 +68,7 @@ out:
 	return EFI_SUCCESS;
 }
 #else
-static inline efi_status_t fdt_init_hbm_mode(void *fdt, int node)
+static inline efi_status_t fdt_init_moc_mode(void *fdt, int node)
 {
 	return EFI_SUCCESS;
 }
@@ -195,7 +195,7 @@ static efi_status_t update_fdt(void *orig_fdt, unsigned long orig_fdt_size,
 		}
 	}
 
-	if (fdt_init_hbm_mode(fdt, node) != EFI_SUCCESS)
+	if (fdt_init_moc_mode(fdt, node) != EFI_SUCCESS)
 		goto fdt_set_fail;
 
 	/* Shrink the FDT back to its minimum size: */

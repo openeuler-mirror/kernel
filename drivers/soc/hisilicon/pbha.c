@@ -15,8 +15,6 @@
 
 #include <asm/setup.h>
 
-#define HBM_MODE_CACHE	1
-
 __ro_after_init DEFINE_STATIC_KEY_FALSE(pbha_bit0_enabled);
 __ro_after_init DEFINE_STATIC_KEY_FALSE(pbha_bit0_kernel_enabled);
 
@@ -43,7 +41,7 @@ void __init early_pbha_bit0_init(void)
 	prop = fdt_getprop(fdt, node, "linux,pbha-bit0", NULL);
 	if (!prop)
 		return;
-	if (*prop == HBM_MODE_CACHE)
+	if (*prop == MOC_MODE_CACHE)
 		pbha_enabled_phase_1 = true;
 }
 

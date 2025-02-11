@@ -16,8 +16,8 @@
 	EFI_GUID(0x21f3b3c5, 0x946d, 0x41c1, 0x83, 0x8c, 0x19, 0x4e, 0x48,     \
 		 0xaa, 0x41, 0xe2)
 
-#define HBM_MODE_MEMORY	0
-#define HBM_MODE_CACHE	1
+#define MOC_MODE_MEMORY	0
+#define MOC_MODE_CACHE	1
 
 #ifdef CONFIG_ARM64_PBHA
 DECLARE_STATIC_KEY_FALSE(pbha_bit0_enabled);
