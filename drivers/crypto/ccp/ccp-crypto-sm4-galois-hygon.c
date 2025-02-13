@@ -2,7 +2,7 @@
 /*
  * Hygon Cryptographic Coprocessor (CCP) SM4 GCM crypto API support
  *
- * Copyright (C) 2022 Hygon Info Technologies Ltd.
+ * Copyright (C) 2022 Hygon Information Technology Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -19,6 +19,8 @@
 
 #include "ccp-crypto.h"
 #include "ccp-dev.h"
+
+#define RI_SM4GCM_PRESENT_BIT	14
 
 static int ccp_sm4_gcm_setkey(struct crypto_aead *tfm, const u8 *key,
 			      unsigned int key_len)
@@ -43,8 +45,13 @@ static int ccp_sm4_gcm_setauthsize(struct crypto_aead *tfm,
 				   unsigned int authsize)
 {
 	switch (authsize) {
-	//16 byte tag only
 	case 16:
+	case 15:
+	case 14:
+	case 13:
+	case 12:
+	case 8:
+	case 4:
 		break;
 	default:
 		return -EINVAL;
@@ -60,7 +67,6 @@ static int ccp_sm4_gcm_crypt(struct aead_request *req, bool encrypt)
 	struct ccp_sm4_req_ctx *rctx = aead_request_ctx(req);
 	struct scatterlist *iv_sg = NULL;
 	unsigned int iv_len = 0;
-	int ret = 0;
 
 	if (!ctx->u.sm4.key_len)
 		return -EINVAL;
@@ -72,22 +78,18 @@ static int ccp_sm4_gcm_crypt(struct aead_request *req, bool encrypt)
 		return -EINVAL;
 
 	/*
-	 * 5 parts:
-	 *   plaintext/ciphertext input
-	 *   AAD
-	 *   key
-	 *   IV
-	 *   Destination+tag buffer
+	 * encrypt:
+	 *       AAD & PT  =>  AAD, CT & TAG
+	 * decrypt:
+	 *      AAD & [CT + TAG]  =>  AAD & PT
 	 */
 
 	/* Prepare the IV (12 byte iv only)*/
-	memcpy(rctx->iv, req->iv, HGGON_CCP_SM4GCM_IV_LEN);
-	/* Set up a scatterlist for the IV */
+	memcpy(rctx->iv, req->iv, HYGON_CCP_SM4GCM_IV_LEN);
 	iv_sg = &rctx->iv_sg;
-	iv_len = HGGON_CCP_SM4GCM_IV_LEN;
+	iv_len = HYGON_CCP_SM4GCM_IV_LEN;
 	sg_init_one(iv_sg, rctx->iv, iv_len);
 
-	/* The AAD + plaintext are concatenated in the src buffer */
 	memset(&rctx->cmd, 0, sizeof(rctx->cmd));
 	INIT_LIST_HEAD(&rctx->cmd.entry);
 	rctx->cmd.engine = CCP_ENGINE_SM4_GCM;
@@ -101,13 +103,9 @@ static int ccp_sm4_gcm_crypt(struct aead_request *req, bool encrypt)
 	rctx->cmd.u.sm4_gcm.src = req->src;
 	rctx->cmd.u.sm4_gcm.src_len = req->cryptlen;
 	rctx->cmd.u.sm4_gcm.aad_len = req->assoclen;
-
-	/* The cipher text + the tag are in the dst buffer */
 	rctx->cmd.u.sm4_gcm.dst = req->dst;
 
-	ret = ccp_crypto_enqueue_request(&req->base, &rctx->cmd);
-
-	return ret;
+	return ccp_crypto_enqueue_request(&req->base, &rctx->cmd);
 }
 
 static int ccp_sm4_gcm_encrypt(struct aead_request *req)
@@ -137,13 +135,13 @@ static void ccp_sm4_gcm_cra_exit(struct crypto_tfm *tfm)
 }
 
 static struct aead_alg ccp_sm4_gcm_defaults = {
-	.setkey = ccp_sm4_gcm_setkey,
-	.setauthsize = ccp_sm4_gcm_setauthsize,
-	.encrypt = ccp_sm4_gcm_encrypt,
-	.decrypt = ccp_sm4_gcm_decrypt,
-	.init = ccp_sm4_gcm_cra_init,
-	.ivsize = HGGON_CCP_SM4GCM_IV_LEN,
-	.maxauthsize = SM4_BLOCK_SIZE,
+	.setkey		= ccp_sm4_gcm_setkey,
+	.setauthsize	= ccp_sm4_gcm_setauthsize,
+	.encrypt	= ccp_sm4_gcm_encrypt,
+	.decrypt	= ccp_sm4_gcm_decrypt,
+	.init		= ccp_sm4_gcm_cra_init,
+	.ivsize		= HYGON_CCP_SM4GCM_IV_LEN,
+	.maxauthsize	= SM4_BLOCK_SIZE,
 	.base = {
 		.cra_flags	= CRYPTO_ALG_ASYNC |
 				  CRYPTO_ALG_ALLOCATES_MEMORY |
@@ -174,7 +172,7 @@ static struct ccp_sm4_aead_def sm4_aead_algs[] = {
 		.name		= "gcm(sm4)",
 		.driver_name	= "gcm-sm4-ccp",
 		.blocksize	= SM4_BLOCK_SIZE,
-		.ivsize	= HGGON_CCP_SM4GCM_IV_LEN,
+		.ivsize		= HYGON_CCP_SM4GCM_IV_LEN,
 		.alg_defaults	= &ccp_sm4_gcm_defaults,
 	},
 };
@@ -215,7 +213,6 @@ static int ccp_register_sm4_aead(struct list_head *head,
 	return 0;
 }
 
-#define RI_SM4GCM_PRESENT_BIT 14
 int ccp_register_sm4_hygon_aeads(struct list_head *head)
 {
 	int i, ret;

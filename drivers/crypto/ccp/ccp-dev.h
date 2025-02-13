@@ -164,8 +164,8 @@
 #define REQ1_ECC_FUNCTION_SHIFT		18
 
 /***** HYGON CCP SM4 GCM related defines *****/
-#define HGGON_CCP_SM4GCM_IV_LEN 12
-#define HGGON_CCP_SM4GCM_TAG_LEN 16
+#define HYGON_CCP_SM4GCM_IV_LEN		12
+#define HYGON_CCP_SM4GCM_TAG_LEN	16
 
 /****** REQ4 Related Values ******/
 #define REQ4_KSB_SHIFT			18
