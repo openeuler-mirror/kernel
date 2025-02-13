@@ -1080,7 +1080,8 @@ next_pdu:
 			if (mids[i] != NULL) {
 				mids[i]->resp_buf_size = server->pdu_size;
 				if ((mids[i]->mid_flags & MID_WAIT_CANCELLED) &&
-				    mids[i]->mid_state == MID_RESPONSE_RECEIVED &&
+				    (mids[i]->mid_state == MID_RESPONSE_RECEIVED ||
+				     mids[i]->mid_state == MID_RESPONSE_READY) &&
 				    server->ops->handle_cancelled_mid)
 					server->ops->handle_cancelled_mid(
 							mids[i]->resp_buf,
