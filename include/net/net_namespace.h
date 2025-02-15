@@ -82,7 +82,6 @@ struct net {
 						 * or to unregister pernet ops
 						 * (pernet_ops_rwsem write locked).
 						 */
-	struct llist_node	defer_free_list;
 	struct llist_node	cleanup_list;	/* namespaces on death row */
 
 #ifdef CONFIG_KEYS
@@ -201,7 +200,7 @@ struct net {
 #else
 	KABI_RESERVE(1)
 #endif
-	KABI_RESERVE(2)
+	KABI_USE(2, struct llist_node defer_free_list)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 } __randomize_layout;
