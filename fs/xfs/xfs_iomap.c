@@ -1191,11 +1191,11 @@ xfs_iomap_write_delalloc_scan(
 			 * the end of this data range, not the end of the folio.
 			 */
 			*punch_start_byte = min_t(loff_t, end_byte,
-				(page->index + 1) << PAGE_SHIFT);
+				page_offset(page) + PAGE_SIZE);
 		}
 
 		/* move offset to start of next folio in range */
-		start_byte = (page->index + 1) << PAGE_SHIFT;
+		start_byte = page_offset(page) + PAGE_SIZE;
 		unlock_page(page);
 		put_page(page);
 	}
