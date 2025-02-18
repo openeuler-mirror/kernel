@@ -2777,7 +2777,8 @@ static void decode_umc_error(int node_id, struct mce *m)
 
 	err.csrow = m->synd & 0x7;
 
-	if (hygon_f18h_m4h() && boot_cpu_data.x86_model >= 0x6)
+	if ((hygon_f18h_m4h() && boot_cpu_data.x86_model >= 0x6) ||
+	    hygon_f18h_m10h())
 		umc = (err.channel << 1) + ((m->ipid & BIT(13)) >> 13);
 	else
 		umc = err.channel;
