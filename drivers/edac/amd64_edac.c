@@ -1249,12 +1249,29 @@ static void umc_debug_display_dimm_sizes(struct amd64_pvt *pvt, u8 ctrl)
 	}
 }
 
+static bool hygon_umc_channel_enabled(struct amd64_pvt *pvt, int channel)
+{
+	u32 enable;
+
+	if (hygon_f18h_m10h()) {
+		amd_df_indirect_read(pvt->mc_node_id, 1, 0x32c, 0xc, &enable);
+		if ((enable & BIT(channel)))
+			return true;
+		return false;
+	}
+
+	return true;
+}
+
 static void __dump_misc_regs_df(struct amd64_pvt *pvt)
 {
 	struct amd64_umc *umc;
 	u32 i, tmp, umc_base;
 
 	for_each_umc(i) {
+		if (!hygon_umc_channel_enabled(pvt, i))
+			continue;
+
 		if (hygon_f18h_m4h())
 			umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, i);
 		else
@@ -1379,6 +1396,9 @@ static void read_umc_base_mask(struct amd64_pvt *pvt)
 	int cs, umc;
 
 	for_each_umc(umc) {
+		if (!hygon_umc_channel_enabled(pvt, umc))
+			continue;
+
 		if (hygon_f18h_m4h())
 			umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, umc);
 		else
@@ -2888,6 +2908,9 @@ static void __read_mc_regs_df(struct amd64_pvt *pvt)
 
 	/* Read registers from each UMC */
 	for_each_umc(i) {
+		if (!hygon_umc_channel_enabled(pvt, i))
+			continue;
+
 		if (hygon_f18h_m4h())
 			umc_base = get_umc_base_f18h_m4h(pvt->mc_node_id, i);
 		else
