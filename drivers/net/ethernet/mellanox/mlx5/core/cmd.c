@@ -937,6 +937,7 @@ static void cmd_work_handler(struct work_struct *work)
 				complete(&ent->done);
 			}
 			up(&cmd->sem);
+			complete(&ent->slotted);
 			return;
 		}
 		ent->idx = alloc_ret;
