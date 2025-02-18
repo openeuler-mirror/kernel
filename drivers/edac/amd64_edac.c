@@ -3573,6 +3573,11 @@ static struct amd64_family_type *per_family_init(struct amd64_pvt *pvt)
 			pvt->ops = &family_types[F18_M06H_CPUS].ops;
 			family_types[F18_M06H_CPUS].ctl_name = "F18h_M07h";
 			break;
+		} else if (pvt->model == 0x8) {
+			fam_type = &family_types[F18_M06H_CPUS];
+			pvt->ops = &family_types[F18_M06H_CPUS].ops;
+			family_types[F18_M06H_CPUS].ctl_name = "F18h_M08h";
+			break;
 		} else if (pvt->model == 0x10) {
 			fam_type = &family_types[F18_M10H_CPUS];
 			pvt->ops = &family_types[F18_M10H_CPUS].ops;
