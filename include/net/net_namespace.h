@@ -200,7 +200,7 @@ struct net {
 #else
 	KABI_RESERVE(1)
 #endif
-	KABI_RESERVE(2)
+	KABI_USE(2, struct llist_node defer_free_list)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 } __randomize_layout;
