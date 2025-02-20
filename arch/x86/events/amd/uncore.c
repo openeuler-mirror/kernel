@@ -196,7 +196,8 @@ static u64 l3_thread_slice_mask(u64 config)
 
 	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
 	    boot_cpu_data.x86 == 0x18) {
-		if (boot_cpu_data.x86_model == 0x6)
+		if (boot_cpu_data.x86_model >= 0x6 &&
+		    boot_cpu_data.x86_model <= 0xf)
 			return ((config & HYGON_L3_SLICE_MASK) ? : HYGON_L3_SLICE_MASK) |
 			       ((config & HYGON_L3_THREAD_MASK) ? : HYGON_L3_THREAD_MASK);
 		else
@@ -642,7 +643,8 @@ static int __init amd_uncore_init(void)
 			   boot_cpu_data.x86 == 0x18) {
 			*l3_attr++ = &format_attr_event8.attr;
 			*l3_attr++ = &format_attr_umask.attr;
-			if (boot_cpu_data.x86_model == 6) {
+			if (boot_cpu_data.x86_model >= 6 &&
+			    boot_cpu_data.x86_model <= 0xf) {
 				*l3_attr++ = &format_attr_slicemask4.attr;
 				*l3_attr++ = &format_attr_threadmask32.attr;
 			} else {
