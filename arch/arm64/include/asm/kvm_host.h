@@ -50,6 +50,7 @@
 #define KVM_REQ_RELOAD_GICv4	KVM_ARCH_REQ(4)
 #define KVM_REQ_RELOAD_PMU	KVM_ARCH_REQ(5)
 #define KVM_REQ_RELOAD_DVMBM	KVM_ARCH_REQ(6)
+#define KVM_REQ_RELOAD_WFI_TRAPS	KVM_ARCH_REQ(7)
 
 #define KVM_DIRTY_LOG_MANUAL_CAPS   (KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE | \
 				     KVM_DIRTY_LOG_INITIALLY_SET)
@@ -755,6 +756,7 @@ extern unsigned int twedel;
 #define use_twed() (false)
 #endif
 
+extern bool force_wfi_trap;
 extern bool kvm_ncsnp_support;
 extern bool kvm_dvmbm_support;
 
