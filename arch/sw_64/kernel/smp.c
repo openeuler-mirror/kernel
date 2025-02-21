@@ -857,12 +857,12 @@ void arch_cpu_idle_dead(void)
 		hcall(HCALL_SET_CLOCKEVENT, 0, 0, 0);
 		hcall(HCALL_STOP, 0, 0, 0);
 		return;
-	} else {
-		wrtimer(0);
 	}
 
+	wrtimer(0);
+
 #ifdef CONFIG_SUSPEND
-	if (!is_junzhang_v1()) {
+	if (is_in_host() && !is_junzhang_v1()) {
 		sleepen();
 		send_sleep_interrupt(smp_processor_id());
 		while (1)
@@ -872,7 +872,6 @@ void arch_cpu_idle_dead(void)
 		while (1)
 			asm("nop");
 	}
-
 #else
 	asm volatile("memb");
 	asm volatile("halt");
