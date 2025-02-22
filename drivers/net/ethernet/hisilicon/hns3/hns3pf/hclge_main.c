@@ -8755,6 +8755,7 @@ static void hclge_ae_stop(struct hnae3_handle *handle)
 
 int hclge_vport_start(struct hclge_vport *vport)
 {
+	struct hnae3_knic_private_info *kinfo = &vport->nic.kinfo;
 	struct hclge_dev *hdev = vport->back;
 
 	set_bit(HCLGE_VPORT_STATE_INITED, &vport->state);
@@ -8780,6 +8781,10 @@ int hclge_vport_start(struct hclge_vport *vport)
 	}
 
 	clear_bit(vport->vport_id, hdev->vport_config_block);
+
+	if (hnae3_ae_dev_vf_multi_tcs_supported(hdev) && vport->vport_id > 0 &&
+	    kinfo->tc_info.num_tc > 1)
+		set_bit(vport->vport_id, hdev->vf_multi_tcs_en);
 
 	return 0;
 }
