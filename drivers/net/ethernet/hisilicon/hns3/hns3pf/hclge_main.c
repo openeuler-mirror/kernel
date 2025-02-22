@@ -7100,8 +7100,8 @@ static int hclge_add_fd_entry(struct hnae3_handle *handle,
 			      struct ethtool_rxnfc *cmd)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
+	struct hclge_fd_user_def_info info = {0};
 	struct hclge_dev *hdev = vport->back;
-	struct hclge_fd_user_def_info info;
 	u16 dst_vport_id = 0, q_index = 0;
 	struct ethtool_rx_flow_spec *fs;
 	struct hclge_fd_rule *rule;
