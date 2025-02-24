@@ -84,6 +84,15 @@ unsigned int twedel = 0;
 module_param(twedel, uint, S_IRUGO | S_IWUSR);
 #endif
 
+static const struct kernel_param_ops pv_preempted_enable_ops = {
+	.set = param_set_bool,
+	.get = param_get_bool,
+};
+
+bool pv_preempted_enable = true;
+MODULE_PARM_DESC(pv_preempted_enable, "bool");
+module_param_cb(pv_preempted_enable, &pv_preempted_enable_ops, &pv_preempted_enable, 0644);
+
 static int vcpu_req_reload_wfi_traps(const char *val, const struct kernel_param *kp);
 
 static const struct kernel_param_ops force_wfi_trap_ops = {
@@ -575,8 +584,20 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	if (vcpu_has_ptrauth(vcpu))
 		vcpu_ptrauth_disable(vcpu);
 
-	if (kvm_arm_is_pvsched_enabled(&vcpu->arch))
-		kvm_update_pvsched_preempted(vcpu, 0);
+	/*
+	 * When pv_preempted is changed from enabled to disabled, preempted
+	 * state will not be updated in kvm_arch_vcpu_put/load. So we must
+	 * update the preempted state to 0 for every vCPU in case some vCPUs'
+	 * preempted state will always be 1.
+	 */
+	if (kvm_arm_is_pvsched_valid(&vcpu->arch)) {
+		if (pv_preempted_enable)
+			kvm_update_pvsched_preempted(vcpu, 0);
+		else {
+			if (vcpu->arch.pvsched.preempted)
+				kvm_update_pvsched_preempted(vcpu, 0);
+		}
+	}
 
 #ifdef CONFIG_KVM_HISI_VIRT
 	kvm_hisi_dvmbm_load(vcpu);
@@ -600,7 +621,7 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 
 	vcpu->cpu = -1;
 
-	if (kvm_arm_is_pvsched_enabled(&vcpu->arch))
+	if (kvm_arm_is_pvsched_valid(&vcpu->arch) && pv_preempted_enable)
 		kvm_update_pvsched_preempted(vcpu, 1);
 
 #ifdef CONFIG_KVM_HISI_VIRT
