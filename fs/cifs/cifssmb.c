@@ -2126,7 +2126,7 @@ cifs_writedata_alloc(unsigned int nr_pages, work_func_t complete)
 	if (pages) {
 		wdata = cifs_writedata_direct_alloc(pages, complete);
 		if (!wdata)
-			kvfree(pages);
+			kfree(pages);
 	}
 
 	return wdata;
