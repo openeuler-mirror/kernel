@@ -11,6 +11,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/mm.h>
+#include <linux/numa_kernel_replication.h>
 
 #include <asm/cpufeature.h>
 #include <asm/mmu_context.h>
@@ -267,7 +268,7 @@ switch_mm_fastpath:
 	 * emulating PAN.
 	 */
 	if (!system_uses_ttbr0_pan())
-		cpu_switch_mm(mm->pgd, mm);
+		cpu_switch_mm(this_node_pgd(mm), mm);
 }
 
 unsigned long arm64_mm_context_get(struct mm_struct *mm)

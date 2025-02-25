@@ -21,7 +21,11 @@
  * VMALLOC_END: extends to the available space below vmemmap, PCI I/O space
  *	and fixed mappings
  */
+#ifdef CONFIG_KERNEL_REPLICATION
+#define VMALLOC_START		((MODULES_END & PGDIR_MASK) + PGDIR_SIZE)
+#else /* !CONFIG_KERNEL_REPLICATION */
 #define VMALLOC_START		(MODULES_END)
+#endif /* CONFIG_KERNEL_REPLICATION */
 #define VMALLOC_END		(VMEMMAP_START - SZ_256M)
 
 #define vmemmap			((struct page *)VMEMMAP_START - (memstart_addr >> PAGE_SHIFT))

@@ -34,6 +34,7 @@
 #include <linux/kexec.h>
 #include <linux/crash_dump.h>
 #include <linux/kvm_host.h>
+#include <linux/numa_kernel_replication.h>
 
 #include <asm/alternative.h>
 #include <asm/atomic.h>
@@ -208,6 +209,13 @@ asmlinkage notrace void secondary_start_kernel(void)
 	 */
 	mmgrab(mm);
 	current->active_mm = mm;
+
+	/*
+	 * Setup per-NUMA node page table if kernel
+	 * replication is enabled. Option supported
+	 * only for 64-bit mode.
+	 */
+	numa_setup_pgd();
 
 	/*
 	 * TTBR0 is only used for the identity mapping at this stage. Make it
