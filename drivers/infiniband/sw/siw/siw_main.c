@@ -75,8 +75,7 @@ static int siw_device_register(struct siw_device *sdev, const char *name)
 		return rv;
 	}
 
-	siw_dbg(base_dev, "HWaddr=%pM\n", sdev->netdev->dev_addr);
-
+	siw_dbg(base_dev, "HWaddr=%pM\n", sdev->raw_gid);
 	return 0;
 }
 
@@ -120,6 +119,7 @@ static int siw_dev_qualified(struct net_device *netdev)
 	 * <linux/if_arp.h> for type identifiers.
 	 */
 	if (netdev->type == ARPHRD_ETHER || netdev->type == ARPHRD_IEEE802 ||
+	    netdev->type == ARPHRD_NONE ||
 	    (netdev->type == ARPHRD_LOOPBACK && loopback_enabled))
 		return 1;
 
@@ -313,23 +313,18 @@ static struct siw_device *siw_device_create(struct net_device *netdev)
 
 	base_dev = &sdev->base_dev;
 
-	sdev->netdev = netdev;
-
-	if (netdev->type != ARPHRD_LOOPBACK) {
-		addrconf_addr_eui48((unsigned char *)&base_dev->node_guid,
-				    netdev->dev_addr);
+	if (netdev->addr_len) {
+		memcpy(sdev->raw_gid, netdev->dev_addr,
+		       min_t(unsigned int, netdev->addr_len, ETH_ALEN));
 	} else {
 		/*
-		 * The loopback device does not have a HW address,
-		 * but connection mangagement lib expects gid != 0
+		 * This device does not have a HW address, but
+		 * connection mangagement requires a unique gid.
 		 */
-		size_t len = min_t(size_t, strlen(base_dev->name), 6);
-		char addr[6] = { };
-
-		memcpy(addr, base_dev->name, len);
-		addrconf_addr_eui48((unsigned char *)&base_dev->node_guid,
-				    addr);
+		eth_random_addr(sdev->raw_gid);
 	}
+	addrconf_addr_eui48((u8 *)&base_dev->node_guid, sdev->raw_gid);
+
 	base_dev->uverbs_cmd_mask =
 		(1ull << IB_USER_VERBS_CMD_QUERY_DEVICE) |
 		(1ull << IB_USER_VERBS_CMD_QUERY_PORT) |
@@ -466,7 +461,6 @@ static int siw_netdev_event(struct notifier_block *nb, unsigned long event,
 
 	switch (event) {
 	case NETDEV_UP:
-		sdev->state = IB_PORT_ACTIVE;
 		siw_port_event(sdev, 1, IB_EVENT_PORT_ACTIVE);
 		break;
 
@@ -475,7 +469,6 @@ static int siw_netdev_event(struct notifier_block *nb, unsigned long event,
 		break;
 
 	case NETDEV_DOWN:
-		sdev->state = IB_PORT_DOWN;
 		siw_port_event(sdev, 1, IB_EVENT_PORT_ERR);
 		break;
 
@@ -496,12 +489,8 @@ static int siw_netdev_event(struct notifier_block *nb, unsigned long event,
 		siw_port_event(sdev, 1, IB_EVENT_LID_CHANGE);
 		break;
 	/*
-	 * Todo: Below netdev events are currently not handled.
+	 * All other events are not handled
 	 */
-	case NETDEV_CHANGEMTU:
-	case NETDEV_CHANGE:
-		break;
-
 	default:
 		break;
 	}
@@ -531,11 +520,6 @@ static int siw_newlink(const char *basedev_name, struct net_device *netdev)
 	sdev = siw_device_create(netdev);
 	if (sdev) {
 		dev_dbg(&netdev->dev, "siw: new device\n");
-
-		if (netif_running(netdev) && netif_carrier_ok(netdev))
-			sdev->state = IB_PORT_ACTIVE;
-		else
-			sdev->state = IB_PORT_DOWN;
 
 		rv = siw_device_register(sdev, basedev_name);
 		if (rv)
