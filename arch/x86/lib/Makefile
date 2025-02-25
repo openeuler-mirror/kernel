@@ -69,6 +69,8 @@ else
         lib-y += clear_page_64.o copy_page_64.o
         lib-y += memmove_64.o memset_64.o
         lib-y += copy_user_64.o
+        lib-$(CONFIG_X86_HYGON_LMC_SSE2_ON) += copy_user_sse2.o
+	lib-$(CONFIG_X86_HYGON_LMC_AVX2_ON) += copy_user_avx2.o
 	lib-y += cmpxchg16b_emu.o
 	lib-y += copy_highpages.o
 endif
