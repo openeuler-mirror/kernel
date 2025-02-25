@@ -2795,8 +2795,24 @@ static inline int __p4d_alloc(struct mm_struct *mm, pgd_t *pgd,
 {
 	return 0;
 }
-#else
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline int __p4d_alloc_node(unsigned int nid,
+				   struct mm_struct *mm,
+				   pgd_t *pgd, unsigned long address)
+{
+	return 0;
+}
+#endif
+
+#else /* !__PAGETABLE_P4D_FOLDED */
 int __p4d_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address);
+
+#ifdef CONFIG_KERNEL_REPLICATION
+int __p4d_alloc_node(unsigned int nid, struct mm_struct *mm,
+		     pgd_t *pgd, unsigned long address);
+#endif
+
 #endif
 
 #if defined(__PAGETABLE_PUD_FOLDED) || !defined(CONFIG_MMU)
@@ -2805,12 +2821,27 @@ static inline int __pud_alloc(struct mm_struct *mm, p4d_t *p4d,
 {
 	return 0;
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline int __pud_alloc_node(unsigned int nid,
+				   struct mm_struct *mm,
+				   p4d_t *p4d, unsigned long address)
+{
+	return 0;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 static inline void mm_inc_nr_puds(struct mm_struct *mm) {}
 static inline void mm_dec_nr_puds(struct mm_struct *mm) {}
 
 #else
 int __pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address);
 
+#ifdef CONFIG_KERNEL_REPLICATION
+int __pud_alloc_node(unsigned int nid,
+		     struct mm_struct *mm,
+		     p4d_t *p4d, unsigned long address);
+#endif /* CONFIG_KERNEL_REPLICATION */
 static inline void mm_inc_nr_puds(struct mm_struct *mm)
 {
 	if (mm_pud_folded(mm))
@@ -2833,11 +2864,26 @@ static inline int __pmd_alloc(struct mm_struct *mm, pud_t *pud,
 	return 0;
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline int __pmd_alloc_node(unsigned int nid,
+				   struct mm_struct *mm,
+				   pud_t *pud, unsigned long address)
+{
+	return 0;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 static inline void mm_inc_nr_pmds(struct mm_struct *mm) {}
 static inline void mm_dec_nr_pmds(struct mm_struct *mm) {}
 
 #else
 int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address);
+
+#ifdef CONFIG_KERNEL_REPLICATION
+int __pmd_alloc_node(unsigned int nid,
+		     struct mm_struct *mm,
+		     pud_t *pud, unsigned long address);
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 static inline void mm_inc_nr_pmds(struct mm_struct *mm)
 {
@@ -2910,6 +2956,32 @@ static inline pmd_t *pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long a
 	return (unlikely(pud_none(*pud)) && __pmd_alloc(mm, pud, address))?
 		NULL: pmd_offset(pud, address);
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline p4d_t *p4d_alloc_node(unsigned int nid,
+		struct mm_struct *mm,
+		pgd_t *pgd, unsigned long address)
+{
+	return (unlikely(pgd_none(*pgd)) && __p4d_alloc_node(nid, mm, pgd, address)) ?
+		NULL : p4d_offset(pgd, address);
+}
+
+static inline pud_t *pud_alloc_node(unsigned int nid,
+		struct mm_struct *mm,
+		p4d_t *p4d, unsigned long address)
+{
+	return (unlikely(p4d_none(*p4d)) && __pud_alloc_node(nid, mm, p4d, address)) ?
+		NULL : pud_offset(p4d, address);
+}
+
+static inline pmd_t *pmd_alloc_node(unsigned int nid,
+		struct mm_struct *mm,
+		pud_t *pud, unsigned long address)
+{
+	return (unlikely(pud_none(*pud)) && __pmd_alloc_node(nid, mm, pud, address)) ?
+		NULL : pmd_offset(pud, address);
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
 #endif /* CONFIG_MMU */
 
 static inline struct ptdesc *virt_to_ptdesc(const void *x)
@@ -2945,6 +3017,14 @@ static inline bool pagetable_is_reserved(struct ptdesc *pt)
 static inline struct ptdesc *pagetable_alloc(gfp_t gfp, unsigned int order)
 {
 	struct page *page = alloc_pages(gfp | __GFP_COMP, order);
+
+	return page_ptdesc(page);
+}
+
+static inline struct ptdesc *pagetable_alloc_node(int nid, gfp_t gfp,
+						  unsigned int order)
+{
+	struct page *page = alloc_pages_node(nid, gfp | __GFP_COMP, order);
 
 	return page_ptdesc(page);
 }

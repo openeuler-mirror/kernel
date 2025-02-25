@@ -76,6 +76,24 @@ static inline pgtable_t __pte_alloc_one(struct mm_struct *mm, gfp_t gfp)
 	return ptdesc_page(ptdesc);
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline pgtable_t __pte_alloc_one_node(unsigned int nid,
+					     struct mm_struct *mm, gfp_t gfp)
+{
+	struct page *pte;
+
+	pte = alloc_pages_node(nid, gfp, 0);
+	if (!pte)
+		return NULL;
+	if (!pagetable_pte_ctor(page_ptdesc(pte))) {
+		__free_page(pte);
+		return NULL;
+	}
+
+	return pte;
+}
+#endif
+
 #ifndef __HAVE_ARCH_PTE_ALLOC_ONE
 /**
  * pte_alloc_one - allocate a page for PTE-level user page table
@@ -89,6 +107,15 @@ static inline pgtable_t pte_alloc_one(struct mm_struct *mm)
 {
 	return __pte_alloc_one(mm, GFP_PGTABLE_USER);
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline pgtable_t pte_alloc_one_node(unsigned int nid,
+					   struct mm_struct *mm)
+{
+	return __pte_alloc_one_node(nid, mm, GFP_PGTABLE_USER | __GFP_THISNODE);
+}
+#endif
+
 #endif
 
 /*
@@ -140,6 +167,30 @@ static inline pmd_t *pmd_alloc_one(struct mm_struct *mm, unsigned long addr)
 	}
 	return ptdesc_address(ptdesc);
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline pmd_t *pmd_alloc_one_node(unsigned int nid,
+					struct mm_struct *mm,
+					unsigned long addr)
+{
+	struct ptdesc *ptdesc;
+	gfp_t gfp = GFP_PGTABLE_USER;
+
+	if (mm == &init_mm)
+		gfp = GFP_PGTABLE_KERNEL;
+
+	gfp |= __GFP_THISNODE;
+
+	ptdesc = pagetable_alloc_node(nid, gfp, 0);
+	if (!ptdesc)
+		return NULL;
+	if (!pagetable_pmd_ctor(ptdesc)) {
+		pagetable_free(ptdesc);
+		return NULL;
+	}
+	return ptdesc_address(ptdesc);
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
 #endif
 
 #ifndef __HAVE_ARCH_PMD_FREE
@@ -172,6 +223,25 @@ static inline pud_t *__pud_alloc_one(struct mm_struct *mm, unsigned long addr)
 	return ptdesc_address(ptdesc);
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline pud_t *__pud_alloc_one_node(unsigned int nid,
+					  struct mm_struct *mm,
+					  unsigned long addr)
+{
+	gfp_t gfp = GFP_PGTABLE_USER;
+	struct ptdesc *ptdesc;
+
+	if (mm == &init_mm)
+		gfp = GFP_PGTABLE_KERNEL;
+
+	gfp |= __GFP_THISNODE;
+	ptdesc = pagetable_alloc_node(nid, gfp, 0);
+	if (!ptdesc)
+		return NULL;
+	return ptdesc_address(ptdesc);
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 #ifndef __HAVE_ARCH_PUD_ALLOC_ONE
 /**
  * pud_alloc_one - allocate memory for a PUD-level page table
@@ -186,6 +256,14 @@ static inline pud_t *pud_alloc_one(struct mm_struct *mm, unsigned long addr)
 {
 	return __pud_alloc_one(mm, addr);
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline pud_t *pud_alloc_one_node(unsigned int nid,
+					struct mm_struct *mm, unsigned long addr)
+{
+	return __pud_alloc_one_node(nid, mm, addr);
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
 #endif
 
 static inline void __pud_free(struct mm_struct *mm, pud_t *pud)

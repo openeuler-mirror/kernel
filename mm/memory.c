@@ -6013,6 +6013,28 @@ inval:
 #endif /* CONFIG_PER_VMA_LOCK */
 
 #ifndef __PAGETABLE_P4D_FOLDED
+
+#ifdef CONFIG_KERNEL_REPLICATION
+int __p4d_alloc_node(unsigned int nid,
+		struct mm_struct *mm,
+		pgd_t *pgd, unsigned long address)
+{
+	p4d_t *new = p4d_alloc_one_node(nid, mm, address);
+	if (!new)
+		return -ENOMEM;
+
+	spin_lock(&mm->page_table_lock);
+	if (pgd_present(*pgd)) { /* Another has populated it */
+		p4d_free(mm, new);
+	} else {
+		smp_wmb(); /* See comment in pmd_install() */
+		pgd_populate(mm, pgd, new);
+	}
+	spin_unlock(&mm->page_table_lock);
+	return 0;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 /*
  * Allocate p4d page table.
  * We've already handled the fast-path in-line.
@@ -6036,6 +6058,28 @@ int __p4d_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
 #endif /* __PAGETABLE_P4D_FOLDED */
 
 #ifndef __PAGETABLE_PUD_FOLDED
+
+#ifdef CONFIG_KERNEL_REPLICATION
+int __pud_alloc_node(unsigned int nid,
+		struct mm_struct *mm,
+		p4d_t *p4d, unsigned long address)
+{
+	pud_t *new = pud_alloc_one_node(nid, mm, address);
+	if (!new)
+		return -ENOMEM;
+
+	spin_lock(&mm->page_table_lock);
+	if (!p4d_present(*p4d)) {
+		mm_inc_nr_puds(mm);
+		smp_wmb(); /* See comment in pmd_install() */
+		p4d_populate(mm, p4d, new);
+	} else  /* Another has populated it */
+		pud_free(mm, new);
+	spin_unlock(&mm->page_table_lock);
+	return 0;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 /*
  * Allocate page upper directory.
  * We've already handled the fast-path in-line.
@@ -6081,6 +6125,30 @@ int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
 	spin_unlock(ptl);
 	return 0;
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+int __pmd_alloc_node(unsigned int nid,
+		struct mm_struct *mm,
+		pud_t *pud, unsigned long address)
+{
+	spinlock_t *ptl;
+	pmd_t *new = pmd_alloc_one_node(nid, mm, address);
+	if (!new)
+		return -ENOMEM;
+
+	ptl = pud_lock(mm, pud);
+	if (!pud_present(*pud)) {
+		mm_inc_nr_pmds(mm);
+		smp_wmb(); /* See comment in pmd_install() */
+		pud_populate(mm, pud, new);
+	} else { /* Another has populated it */
+		pmd_free(mm, new);
+	}
+	spin_unlock(ptl);
+	return 0;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 #endif /* __PAGETABLE_PMD_FOLDED */
 
 /**

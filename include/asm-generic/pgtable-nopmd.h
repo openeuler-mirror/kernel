@@ -60,6 +60,11 @@ static inline pmd_t * pmd_offset(pud_t * pud, unsigned long address)
  * inside the pud, so has no extra memory associated with it.
  */
 #define pmd_alloc_one(mm, address)		NULL
+
+#ifdef CONFIG_KERNEL_REPLICATION
+#define pmd_alloc_one_node(nid, mm, address)	NULL
+#endif
+
 static inline void pmd_free(struct mm_struct *mm, pmd_t *pmd)
 {
 }
