@@ -18,6 +18,7 @@
 #include <linux/ptdump.h>
 #include <linux/sched.h>
 #include <linux/seq_file.h>
+#include <linux/numa_kernel_replication.h>
 
 #include <asm/fixmap.h>
 #include <asm/kasan.h>
@@ -345,7 +346,7 @@ static struct ptdump_info kernel_ptdump_info = {
 	.base_addr	= PAGE_OFFSET,
 };
 
-void ptdump_check_wx(void)
+static void ptdump_check_wx_pgd(struct mm_struct *mm, pgd_t *pgd)
 {
 	struct pg_state st = {
 		.seq = NULL,
@@ -364,13 +365,25 @@ void ptdump_check_wx(void)
 		}
 	};
 
-	ptdump_walk_pgd(&st.ptdump, &init_mm, NULL);
+	ptdump_walk_pgd(&st.ptdump, mm, pgd);
 
 	if (st.wx_pages || st.uxn_pages)
 		pr_warn("Checked W+X mappings: FAILED, %lu W+X pages found, %lu non-UXN pages found\n",
 			st.wx_pages, st.uxn_pages);
 	else
 		pr_info("Checked W+X mappings: passed, no W+X pages found\n");
+}
+
+void ptdump_check_wx(void)
+{
+#ifdef CONFIG_KERNEL_REPLICATION
+	int nid;
+
+	for_each_memory_node(nid)
+		ptdump_check_wx_pgd(&init_mm, per_node_pgd(&init_mm, nid));
+#else
+	ptdump_check_wx_pgd(&init_mm, init_mm->pgd);
+#endif
 }
 
 static int __init ptdump_init(void)
