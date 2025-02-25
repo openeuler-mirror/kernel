@@ -1298,6 +1298,16 @@ config LOCK_MM_AND_FIND_VMA
 	bool
 	depends on !STACK_GROWSUP
 
+config KERNEL_REPLICATION
+	bool "Enable kernel text and ro-data replication across NUMA nodes"
+	default n
+	depends on ARM64 && MMU && NUMA && !MAXSMP
+
+	help
+	  Creates per-NUMA node replicas of kernel text and ro-data sections.
+	  Page tables are replicated partially, according to replicated kernel memory range.
+	  If unsure, say "n".
+
 config IOMMU_MM_DATA
 	bool
 
