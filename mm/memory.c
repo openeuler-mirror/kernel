@@ -3026,7 +3026,7 @@ static int apply_to_p4d_range(struct mm_struct *mm, pgd_t *pgd,
 	return err;
 }
 
-static int __apply_to_page_range(struct mm_struct *mm, unsigned long addr,
+static int __apply_to_page_range(struct mm_struct *mm, pgd_t *pgtable, unsigned long addr,
 				 unsigned long size, pte_fn_t fn,
 				 void *data, bool create)
 {
@@ -3039,7 +3039,7 @@ static int __apply_to_page_range(struct mm_struct *mm, unsigned long addr,
 	if (WARN_ON(addr >= end))
 		return -EINVAL;
 
-	pgd = pgd_offset(mm, addr);
+	pgd = pgd_offset_pgd(pgtable, addr);
 	do {
 		next = pgd_addr_end(addr, end);
 		if (pgd_none(*pgd) && !create)
@@ -3070,9 +3070,31 @@ static int __apply_to_page_range(struct mm_struct *mm, unsigned long addr,
 int apply_to_page_range(struct mm_struct *mm, unsigned long addr,
 			unsigned long size, pte_fn_t fn, void *data)
 {
-	return __apply_to_page_range(mm, addr, size, fn, data, true);
+	return __apply_to_page_range(mm, mm->pgd, addr, size, fn, data, true);
 }
 EXPORT_SYMBOL_GPL(apply_to_page_range);
+
+#ifdef CONFIG_KERNEL_REPLICATION
+/*
+ * Same as apply_to_page_range(), but taking into account per-NUMA node
+ * replicas.
+ */
+int apply_to_page_range_replicas(struct mm_struct *mm, unsigned long addr,
+				 unsigned long size, pte_fn_t fn, void *data)
+{
+	int nid;
+	int ret = 0;
+
+	for_each_memory_node(nid) {
+		ret = __apply_to_page_range(mm, per_node_pgd(mm, nid),
+					    addr, size, fn, data, true);
+		if (ret)
+			break;
+	}
+
+	return ret;
+}
+#endif /* CONFIG_KERNEL_REPLICATION && CONFIG_ARM64 */
 
 /*
  * Scan a region of virtual memory, calling a provided function on
@@ -3084,7 +3106,7 @@ EXPORT_SYMBOL_GPL(apply_to_page_range);
 int apply_to_existing_page_range(struct mm_struct *mm, unsigned long addr,
 				 unsigned long size, pte_fn_t fn, void *data)
 {
-	return __apply_to_page_range(mm, addr, size, fn, data, false);
+	return __apply_to_page_range(mm, mm->pgd, addr, size, fn, data, false);
 }
 EXPORT_SYMBOL_GPL(apply_to_existing_page_range);
 

@@ -3787,6 +3787,10 @@ extern int apply_to_page_range(struct mm_struct *mm, unsigned long address,
 extern int apply_to_existing_page_range(struct mm_struct *mm,
 				   unsigned long address, unsigned long size,
 				   pte_fn_t fn, void *data);
+#ifdef CONFIG_KERNEL_REPLICATION
+int apply_to_page_range_replicas(struct mm_struct *mm, unsigned long addr,
+				 unsigned long size, pte_fn_t fn, void *data);
+#endif /* CONFIG_KERNEL_REPLICATION && CONFIG_ARM64 */
 
 #ifdef CONFIG_PAGE_POISONING
 extern void __kernel_poison_pages(struct page *page, int numpages);
