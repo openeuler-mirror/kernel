@@ -10,6 +10,7 @@
 
 #include <linux/init.h>
 #include <linux/cpu.h>
+#include <linux/numa_kernel_replication.h>
 #include <linux/elf.h>
 #include <asm/cacheflush.h>
 #include <asm/alternative.h>
@@ -139,6 +140,30 @@ static noinstr void clean_dcache_range_nopatch(u64 start, u64 end)
 	} while (cur += d_size, cur < end);
 }
 
+static void __nocfi __write_alternatives(struct alt_instr *alt,
+					 alternative_cb_t alt_cb,
+					 __le32 *origptr, __le32 *updptr,
+					 int nr_inst)
+{
+#ifdef CONFIG_KERNEL_REPLICATION
+	if (is_text_replicated() && is_kernel_text((unsigned long)origptr)) {
+		int nid;
+
+		for_each_memory_node(nid) {
+			__le32 *ptr = numa_get_replica(origptr, nid);
+
+			alt_cb(alt, origptr, ptr, nr_inst);
+			clean_dcache_range_nopatch((u64)ptr,
+						   (u64)(ptr + nr_inst));
+		}
+
+		return;
+	}
+#endif /* CONFIG_KERNEL_REPLICATION */
+	alt_cb(alt, origptr, updptr, nr_inst);
+}
+
+
 static void __apply_alternatives(const struct alt_region *region,
 				 bool is_module,
 				 unsigned long *cpucap_mask)
@@ -171,7 +196,7 @@ static void __apply_alternatives(const struct alt_region *region,
 		else
 			alt_cb = patch_alternative;
 
-		alt_cb(alt, origptr, updptr, nr_inst);
+		__write_alternatives(alt, alt_cb, origptr, updptr, nr_inst);
 
 		if (!is_module) {
 			clean_dcache_range_nopatch((u64)origptr,
