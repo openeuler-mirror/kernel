@@ -515,7 +515,7 @@ static long bpf_struct_ops_map_update_elem(struct bpf_map *map, void *key,
 			if (err)
 				goto reset_unlock;
 		}
-		set_memory_rox((long)st_map->image, 1);
+		numa_set_memory_rox((long)st_map->image, 1);
 		/* Let bpf_link handle registration & unregistration.
 		 *
 		 * Pair with smp_load_acquire() during lookup_elem().
@@ -524,7 +524,7 @@ static long bpf_struct_ops_map_update_elem(struct bpf_map *map, void *key,
 		goto unlock;
 	}
 
-	set_memory_rox((long)st_map->image, 1);
+	numa_set_memory_rox((long)st_map->image, 1);
 	err = st_ops->reg(kdata);
 	if (likely(!err)) {
 		/* This refcnt increment on the map here after
@@ -547,8 +547,8 @@ static long bpf_struct_ops_map_update_elem(struct bpf_map *map, void *key,
 	 * there was a race in registering the struct_ops (under the same name) to
 	 * a sub-system through different struct_ops's maps.
 	 */
-	set_memory_nx((long)st_map->image, 1);
-	set_memory_rw((long)st_map->image, 1);
+	numa_set_memory_nx((long)st_map->image, 1);
+	numa_set_memory_rw((long)st_map->image, 1);
 
 reset_unlock:
 	bpf_struct_ops_map_put_progs(st_map);
