@@ -1174,6 +1174,8 @@ int region_intersects(resource_size_t offset, size_t size, unsigned long flags,
 struct page *vmalloc_to_page(const void *addr);
 unsigned long vmalloc_to_pfn(const void *addr);
 
+struct page *walk_to_page_node(int nid, const void *addr);
+
 /*
  * Determine if an address is within the vmalloc range
  *

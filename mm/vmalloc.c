@@ -10,6 +10,7 @@
 
 #include <linux/vmalloc.h>
 #include <linux/mm.h>
+#include <linux/numa_kernel_replication.h>
 #include <linux/module.h>
 #include <linux/highmem.h>
 #include <linux/sched/signal.h>
@@ -420,18 +421,17 @@ static void vunmap_p4d_range(pgd_t *pgd, unsigned long addr, unsigned long end,
 }
 
 /*
- * vunmap_range_noflush is similar to vunmap_range, but does not
- * flush caches or TLBs.
+ * vunmap_range_noflush_pgd is similar to vunmap_range, but does not
+ * flush caches or TLBs, and able to work with pgd granularity.
  *
  * The caller is responsible for calling flush_cache_vmap() before calling
  * this function, and flush_tlb_kernel_range after it has returned
  * successfully (and before the addresses are expected to cause a page fault
  * or be re-mapped for something else, if TLB flushes are being delayed or
  * coalesced).
- *
- * This is an internal function only. Do not use outside mm/.
  */
-void __vunmap_range_noflush(unsigned long start, unsigned long end)
+static void vunmap_range_noflush_pgd(pgd_t *pgtable,
+		unsigned long start, unsigned long end)
 {
 	unsigned long next;
 	pgd_t *pgd;
@@ -439,7 +439,7 @@ void __vunmap_range_noflush(unsigned long start, unsigned long end)
 	pgtbl_mod_mask mask = 0;
 
 	BUG_ON(addr >= end);
-	pgd = pgd_offset_k(addr);
+	pgd = pgd_offset_pgd(pgtable, addr);
 	do {
 		next = pgd_addr_end(addr, end);
 		if (pgd_bad(*pgd))
@@ -451,6 +451,17 @@ void __vunmap_range_noflush(unsigned long start, unsigned long end)
 
 	if (mask & ARCH_PAGE_TABLE_SYNC_MASK)
 		arch_sync_kernel_mappings(start, end);
+}
+
+/*
+ * vunmap_range_noflush is similar to vunmap_range_noflush_pgd, but works
+ * only with init_mm->pgd.
+ *
+ * This is an internal function only. Do not use outside mm/.
+ */
+void __vunmap_range_noflush(unsigned long start, unsigned long end)
+{
+	vunmap_range_noflush_pgd(init_mm.pgd, start, end);
 }
 
 void vunmap_range_noflush(unsigned long start, unsigned long end)
@@ -474,6 +485,18 @@ void vunmap_range(unsigned long addr, unsigned long end)
 	vunmap_range_noflush(addr, end);
 	flush_tlb_kernel_range(addr, end);
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+void vunmap_range_replicas(unsigned long addr, unsigned long end)
+{
+	int nid;
+
+	flush_cache_vunmap(addr, end);
+	for_each_memory_node(nid)
+		vunmap_range_noflush_pgd(init_mm.pgd_numa[nid], addr, end);
+	flush_tlb_kernel_range(addr, end);
+}
+#endif /* CONFIG_KERNEL_REPLICATION && CONFIG_ARM64 */
 
 static int vmap_pages_pte_range(pmd_t *pmd, unsigned long addr,
 		unsigned long end, pgprot_t prot, struct page **pages, int *nr,
@@ -560,7 +583,8 @@ static int vmap_pages_p4d_range(pgd_t *pgd, unsigned long addr,
 	return 0;
 }
 
-static int vmap_small_pages_range_noflush(unsigned long addr, unsigned long end,
+static int vmap_small_pages_range_noflush_pgd(pgd_t *pgtable,
+		unsigned long addr, unsigned long end,
 		pgprot_t prot, struct page **pages)
 {
 	unsigned long start = addr;
@@ -571,7 +595,7 @@ static int vmap_small_pages_range_noflush(unsigned long addr, unsigned long end,
 	pgtbl_mod_mask mask = 0;
 
 	BUG_ON(addr >= end);
-	pgd = pgd_offset_k(addr);
+	pgd = pgd_offset_pgd(pgtable, addr);
 	do {
 		next = pgd_addr_end(addr, end);
 		if (pgd_bad(*pgd))
@@ -587,8 +611,38 @@ static int vmap_small_pages_range_noflush(unsigned long addr, unsigned long end,
 	return 0;
 }
 
+static int vmap_range_noflush_pgd(pgd_t *pgtable,
+		unsigned long addr, unsigned long end,
+		phys_addr_t phys_addr, pgprot_t prot,
+		unsigned int max_page_shift)
+{
+	pgd_t *pgd;
+	unsigned long start;
+	unsigned long next;
+	int err;
+	pgtbl_mod_mask mask = 0;
+
+	might_sleep();
+	BUG_ON(addr >= end);
+
+	start = addr;
+	pgd = pgd_offset_pgd(pgtable, addr);
+	do {
+		next = pgd_addr_end(addr, end);
+		err = vmap_p4d_range(pgd, addr, next, phys_addr, prot,
+					max_page_shift, &mask);
+		if (err)
+			break;
+	} while (pgd++, phys_addr += (next - addr), addr = next, addr != end);
+
+	if (mask & ARCH_PAGE_TABLE_SYNC_MASK)
+		arch_sync_kernel_mappings(start, end);
+
+	return err;
+}
+
 /*
- * vmap_pages_range_noflush is similar to vmap_pages_range, but does not
+ * vmap_pages_range_noflush_pgd is similar to vmap_pages_range, but does not
  * flush caches.
  *
  * The caller is responsible for calling flush_cache_vmap() after this
@@ -596,8 +650,10 @@ static int vmap_small_pages_range_noflush(unsigned long addr, unsigned long end,
  *
  * This is an internal function only. Do not use outside mm/.
  */
-int __vmap_pages_range_noflush(unsigned long addr, unsigned long end,
-		pgprot_t prot, struct page **pages, unsigned int page_shift)
+static int vmap_pages_range_noflush_pgd(pgd_t *pgtable,
+		unsigned long addr, unsigned long end,
+		pgprot_t prot, struct page **pages,
+		unsigned int page_shift)
 {
 	unsigned int i, nr = (end - addr) >> PAGE_SHIFT;
 
@@ -605,12 +661,13 @@ int __vmap_pages_range_noflush(unsigned long addr, unsigned long end,
 
 	if (!IS_ENABLED(CONFIG_HAVE_ARCH_HUGE_VMALLOC) ||
 			page_shift == PAGE_SHIFT)
-		return vmap_small_pages_range_noflush(addr, end, prot, pages);
+		return vmap_small_pages_range_noflush_pgd(pgtable, addr, end,
+				prot, pages);
 
 	for (i = 0; i < nr; i += 1U << (page_shift - PAGE_SHIFT)) {
 		int err;
 
-		err = vmap_range_noflush(addr, addr + (1UL << page_shift),
+		err = vmap_range_noflush_pgd(pgtable, addr, addr + (1UL << page_shift),
 					page_to_phys(pages[i]), prot,
 					page_shift);
 		if (err)
@@ -630,7 +687,8 @@ int vmap_pages_range_noflush(unsigned long addr, unsigned long end,
 
 	if (ret)
 		return ret;
-	return __vmap_pages_range_noflush(addr, end, prot, pages, page_shift);
+
+	return vmap_pages_range_noflush_pgd(init_mm.pgd, addr, end, prot, pages, page_shift);
 }
 
 /**
@@ -730,57 +788,12 @@ EXPORT_SYMBOL_GPL(is_vmalloc_or_module_addr);
  */
 struct page *vmalloc_to_page(const void *vmalloc_addr)
 {
-	unsigned long addr = (unsigned long) vmalloc_addr;
-	struct page *page = NULL;
-	pgd_t *pgd = pgd_offset_k(addr);
-	p4d_t *p4d;
-	pud_t *pud;
-	pmd_t *pmd;
-	pte_t *ptep, pte;
-
 	/*
 	 * XXX we might need to change this if we add VIRTUAL_BUG_ON for
 	 * architectures that do not vmalloc module space
 	 */
 	VIRTUAL_BUG_ON(!is_vmalloc_or_module_addr(vmalloc_addr));
-
-	if (pgd_none(*pgd))
-		return NULL;
-	if (WARN_ON_ONCE(pgd_leaf(*pgd)))
-		return NULL; /* XXX: no allowance for huge pgd */
-	if (WARN_ON_ONCE(pgd_bad(*pgd)))
-		return NULL;
-
-	p4d = p4d_offset(pgd, addr);
-	if (p4d_none(*p4d))
-		return NULL;
-	if (p4d_leaf(*p4d))
-		return p4d_page(*p4d) + ((addr & ~P4D_MASK) >> PAGE_SHIFT);
-	if (WARN_ON_ONCE(p4d_bad(*p4d)))
-		return NULL;
-
-	pud = pud_offset(p4d, addr);
-	if (pud_none(*pud))
-		return NULL;
-	if (pud_leaf(*pud))
-		return pud_page(*pud) + ((addr & ~PUD_MASK) >> PAGE_SHIFT);
-	if (WARN_ON_ONCE(pud_bad(*pud)))
-		return NULL;
-
-	pmd = pmd_offset(pud, addr);
-	if (pmd_none(*pmd))
-		return NULL;
-	if (pmd_leaf(*pmd))
-		return pmd_page(*pmd) + ((addr & ~PMD_MASK) >> PAGE_SHIFT);
-	if (WARN_ON_ONCE(pmd_bad(*pmd)))
-		return NULL;
-
-	ptep = pte_offset_kernel(pmd, addr);
-	pte = ptep_get(ptep);
-	if (pte_present(pte))
-		page = pte_page(pte);
-
-	return page;
+	return walk_to_page_node(first_memory_node, vmalloc_addr);
 }
 EXPORT_SYMBOL(vmalloc_to_page);
 
@@ -2357,7 +2370,22 @@ static void free_vmap_area_noflush(struct vmap_area *va)
 static void free_unmap_vmap_area(struct vmap_area *va)
 {
 	flush_cache_vunmap(va->va_start, va->va_end);
+#ifdef CONFIG_KERNEL_REPLICATION
+	if (numa_addr_has_replica((void *)va->va_start)) {
+		int node;
+		/**
+		 *  In some scenarios we might clear
+		 *  empty entries here, which is totally fine
+		 */
+		for_each_memory_node(node)
+			vunmap_range_noflush_pgd(init_mm.pgd_numa[node],
+					va->va_start, va->va_end);
+	} else {
+		vunmap_range_noflush(va->va_start, va->va_end);
+	}
+#else
 	vunmap_range_noflush(va->va_start, va->va_end);
+#endif /* CONFIG_KERNEL_REPLICATION */
 	if (debug_pagealloc_enabled_static())
 		flush_tlb_kernel_range(va->va_start, va->va_end);
 
@@ -3216,16 +3244,73 @@ struct vm_struct *remove_vm_area(const void *addr)
 	return vm;
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline void set_direct_map_page_replicas(const struct vm_struct *area,
+						struct page *page,
+						int (*set_direct_map)(struct page *page))
+{
+	if (area->replicated) {
+		struct page *cursor;
+
+		list_for_each_entry(cursor, &page->lru, lru) {
+			if (page_address(cursor))
+				set_direct_map(cursor);
+		}
+	}
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 static inline void set_area_direct_map(const struct vm_struct *area,
 				       int (*set_direct_map)(struct page *page))
 {
 	int i;
 
 	/* HUGE_VMALLOC passes small pages to set_direct_map */
-	for (i = 0; i < area->nr_pages; i++)
+	for (i = 0; i < area->nr_pages; i++) {
 		if (page_address(area->pages[i]))
 			set_direct_map(area->pages[i]);
+#ifdef CONFIG_KERNEL_REPLICATION
+		set_direct_map_page_replicas(area,
+				area->pages[i], set_direct_map);
+#endif /* CONFIG_KERNEL_REPLICATION */
+	}
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static void vm_account_replicated_range(struct vm_struct *area,
+					struct page *page,
+					unsigned long *s,
+					unsigned long *e,
+					int *flush)
+{
+	int flush_dmap = 0;
+	unsigned long start = ULONG_MAX, end = 0;
+	unsigned int page_order = vm_area_page_order(area);
+
+	if (area->replicated) {
+		struct page *cursor;
+
+		list_for_each_entry(cursor, &page->lru, lru) {
+			unsigned long addr = (unsigned long)page_address(cursor);
+
+			if (addr) {
+				unsigned long page_size;
+
+				page_size = PAGE_SIZE << page_order;
+				start = min(addr, start);
+				end = max(addr + page_size, end);
+				flush_dmap = 1;
+			}
+		}
+	}
+
+	if (flush_dmap)
+		*flush = flush_dmap;
+
+	*s = start;
+	*e = end;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 /*
  * Flush the vm mapping and reset the direct map.
@@ -3252,6 +3337,10 @@ static void vm_reset_perms(struct vm_struct *area)
 			end = max(addr + page_size, end);
 			flush_dmap = 1;
 		}
+#ifdef CONFIG_KERNEL_REPLICATION
+		vm_account_replicated_range(area, area->pages[i],
+				&start, &end, &flush_dmap);
+#endif /* CONFIG_KERNEL_REPLICATION */
 	}
 
 	/*
@@ -3296,6 +3385,28 @@ void vfree_atomic(const void *addr)
 	if (addr && llist_add((struct llist_node *)addr, &p->list))
 		schedule_work(&p->wq);
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static void vfree_page_replicas(struct vm_struct *area, struct page *page)
+{
+	if (area->replicated) {
+		struct page *cursor, *tmp;
+
+		list_for_each_entry_safe(cursor, tmp, &page->lru, lru) {
+			BUG_ON(!cursor);
+
+			list_del(&cursor->lru);
+			mod_memcg_page_state(cursor, MEMCG_VMALLOC, -1);
+			/*
+			 * High-order allocs for huge vmallocs are split, so
+			 * can be freed as an array of order-0 allocations
+			 */
+			__free_pages(cursor, 0);
+			cond_resched();
+		}
+	}
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 /**
  * vfree - Release memory allocated by vmalloc()
@@ -3343,6 +3454,9 @@ void vfree(const void *addr)
 	for (i = 0; i < vm->nr_pages; i++) {
 		struct page *page = vm->pages[i];
 
+#ifdef CONFIG_KERNEL_REPLICATION
+		vfree_page_replicas(vm, page);
+#endif /* CONFIG_KERNEL_REPLICATION */
 		BUG_ON(!page);
 		mod_memcg_page_state(page, MEMCG_VMALLOC, -1);
 		/*
@@ -3600,26 +3714,91 @@ vm_area_alloc_pages(gfp_t gfp, int nid,
 	return nr_allocated;
 }
 
+static int vmalloc_map_area_pages_pgd(unsigned long addr,
+		struct page **pages, unsigned long size,
+		gfp_t gfp_mask, pgprot_t prot,
+		unsigned int page_shift, pgd_t *pgd)
+{
+	int ret = 0;
+	unsigned int flags;
+	bool nofail = gfp_mask & __GFP_NOFAIL;
+
+	/*
+	 * page tables allocations ignore external gfp mask, enforce it
+	 * by the scope API
+	 */
+	if ((gfp_mask & (__GFP_FS | __GFP_IO)) == __GFP_IO)
+		flags = memalloc_nofs_save();
+	else if ((gfp_mask & (__GFP_FS | __GFP_IO)) == 0)
+		flags = memalloc_noio_save();
+
+	do {
+		ret = vmap_pages_range_noflush_pgd(pgd, addr, addr + size,
+				prot, pages, page_shift);
+		if (nofail && (ret < 0))
+			schedule_timeout_uninterruptible(1);
+	} while (nofail && (ret < 0));
+
+	if ((gfp_mask & (__GFP_FS | __GFP_IO)) == __GFP_IO)
+		memalloc_nofs_restore(flags);
+	else if ((gfp_mask & (__GFP_FS | __GFP_IO)) == 0)
+		memalloc_noio_restore(flags);
+
+	if (ret < 0) {
+		warn_alloc(gfp_mask, NULL,
+			"vmalloc error: size %lu, failed to map pages",
+			size);
+	}
+
+	return ret;
+}
+
+static int vmalloc_map_area_pages(unsigned long addr, unsigned long size,
+				  struct vm_struct *area,
+				  gfp_t gfp_mask, pgprot_t prot,
+				  unsigned int page_shift)
+{
+	int ret;
+#ifdef CONFIG_KERNEL_REPLICATION
+	int nid;
+
+	if (area->flags & VM_NUMA_SHARED) {
+		for_each_memory_node(nid) {
+			pgd_t *pgd = per_node_pgd(&init_mm, nid);
+
+			ret = vmalloc_map_area_pages_pgd(addr, area->pages, size,
+					gfp_mask, prot, page_shift, pgd);
+			if (ret)
+				return ret;
+		}
+	} else {
+		ret = vmalloc_map_area_pages_pgd(addr, area->pages, size,
+				gfp_mask, prot, page_shift, init_mm.pgd);
+	}
+#else
+	ret = vmalloc_map_area_pages_pgd(addr, area->pages, size,
+			gfp_mask, prot, page_shift, init_mm.pgd);
+#endif /* CONFIG_KERNEL_REPLICATION */
+	return ret;
+}
+
 static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 				 pgprot_t prot, unsigned int page_shift,
 				 int node)
 {
 	const gfp_t nested_gfp = (gfp_mask & GFP_RECLAIM_MASK) | __GFP_ZERO;
-	bool nofail = gfp_mask & __GFP_NOFAIL;
 	unsigned long addr = (unsigned long)area->addr;
 	unsigned long size = get_vm_area_size(area);
 	unsigned long array_size;
 	unsigned int nr_small_pages = size >> PAGE_SHIFT;
 	unsigned int page_order;
-	unsigned int flags;
-	int ret;
+	int ret = 0;
 
 	array_size = (unsigned long)nr_small_pages * sizeof(struct page *);
 
 	if (!(gfp_mask & (GFP_DMA | GFP_DMA32)))
 		gfp_mask |= __GFP_HIGHMEM;
 
-	/* Please note that the recursion is strictly bounded. */
 	if (array_size > PAGE_SIZE) {
 		area->pages = __vmalloc_node(array_size, 1, nested_gfp, node,
 					area->caller);
@@ -3631,8 +3810,7 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 		warn_alloc(gfp_mask, NULL,
 			"vmalloc error: size %lu, failed to allocated page array size %lu",
 			nr_small_pages * PAGE_SIZE, array_size);
-		free_vm_area(area);
-		return NULL;
+		goto fail;
 	}
 
 	set_vm_area_page_order(area, page_shift - PAGE_SHIFT);
@@ -3671,33 +3849,10 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 		goto fail;
 	}
 
-	/*
-	 * page tables allocations ignore external gfp mask, enforce it
-	 * by the scope API
-	 */
-	if ((gfp_mask & (__GFP_FS | __GFP_IO)) == __GFP_IO)
-		flags = memalloc_nofs_save();
-	else if ((gfp_mask & (__GFP_FS | __GFP_IO)) == 0)
-		flags = memalloc_noio_save();
-
-	do {
-		ret = vmap_pages_range(addr, addr + size, prot, area->pages,
-			page_shift);
-		if (nofail && (ret < 0))
-			schedule_timeout_uninterruptible(1);
-	} while (nofail && (ret < 0));
-
-	if ((gfp_mask & (__GFP_FS | __GFP_IO)) == __GFP_IO)
-		memalloc_nofs_restore(flags);
-	else if ((gfp_mask & (__GFP_FS | __GFP_IO)) == 0)
-		memalloc_noio_restore(flags);
-
-	if (ret < 0) {
-		warn_alloc(gfp_mask, NULL,
-			"vmalloc error: size %lu, failed to map pages",
-			area->nr_pages * PAGE_SIZE);
+	ret = vmalloc_map_area_pages(addr, size, area, gfp_mask, prot, page_shift);
+	if (ret)
 		goto fail;
-	}
+	flush_cache_vmap(addr, addr + size);
 
 	return area->addr;
 
@@ -3797,6 +3952,11 @@ again:
 		goto fail;
 	}
 
+#ifdef CONFIG_KERNEL_REPLICATION
+	if (numa_addr_has_replica(area->addr))
+		vm_flags |= VM_NUMA_SHARED;
+	area->node = node;
+#endif
 	/*
 	 * Prepare arguments for __vmalloc_area_node() and
 	 * kasan_unpoison_vmalloc().
@@ -3891,6 +4051,129 @@ void *__vmalloc_node(unsigned long size, unsigned long align,
 	return __vmalloc_node_range(size, align, VMALLOC_START, VMALLOC_END,
 				gfp_mask, PAGE_KERNEL, 0, node, caller);
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static void numa_replicate_page_range(struct page **src, struct page **dst, int nr_pages)
+{
+	int i;
+	void *from, *to;
+
+	for (i = 0; i < nr_pages; i++) {
+		from = kmap(src[i]);
+		to = kmap(dst[i]);
+
+		copy_page(to, from);
+
+		kunmap(src[i]);
+		kunmap(dst[i]);
+	}
+}
+
+int __vmalloc_node_replicate_range(const void *addr, gfp_t gfp_mask,
+		pgprot_t prot, unsigned long vm_flags)
+{
+	int i, ret, node = 0;
+	struct vm_struct *area;
+	unsigned int page_order;
+	unsigned int nr_allocated;
+	struct page **pages;
+	unsigned long area_start, area_end;
+	const gfp_t nested_gfp = (gfp_mask & GFP_RECLAIM_MASK) | __GFP_ZERO;
+	unsigned long array_size;
+
+	gfp_mask |= __GFP_NOWARN;
+	if (!(gfp_mask & (GFP_DMA | GFP_DMA32)))
+		gfp_mask |= __GFP_HIGHMEM;
+
+	if (unlikely(!numa_addr_has_replica(addr)))
+		return -EINVAL;
+
+	area = find_vm_area(addr);
+	if (unlikely(!area))
+		return -ENOENT;
+
+	if (area->node == NUMA_NO_NODE)
+		return -EINVAL;
+
+	array_size = sizeof(struct page *) * area->nr_pages;
+	if (array_size > PAGE_SIZE)
+		pages = __vmalloc(array_size, nested_gfp);
+	else
+		pages = kmalloc(array_size, nested_gfp);
+
+	if (!pages)
+		return -ENOMEM;
+
+	page_order = vm_area_page_order(area);
+	for (i = 0; i < area->nr_pages; i++)
+		INIT_LIST_HEAD(&area->pages[i]->lru);
+
+	area_start = (unsigned long)area->addr;
+	area_end = (unsigned long)(area->addr + area->nr_pages * PAGE_SIZE);
+
+	for_each_memory_node(node) {
+		if (area->node == node)
+			continue;
+
+		nr_allocated = vm_area_alloc_pages(gfp_mask | __GFP_NOWARN,
+			node, page_order, area->nr_pages, pages);
+		if (nr_allocated != area->nr_pages)
+			goto fail_alloc_pages;
+
+		for (i = 0; i < area->nr_pages; i++)
+			list_add(&pages[i]->lru, &area->pages[i]->lru);
+
+		vunmap_range_noflush_pgd(init_mm.pgd_numa[node],
+					 area_start, area_end);
+
+		/*
+		 * We can't fail here (hopefully)
+		 * Possible errors: not enough memory for tables and not empty entries.
+		 * Both unrealistic because we just cleared entries in existed tables.
+		 */
+		ret = vmalloc_map_area_pages_pgd(area_start, pages,
+					nr_allocated * PAGE_SIZE,
+					gfp_mask, prot, PAGE_SHIFT,
+					per_node_pgd(&init_mm, node));
+		if (ret != 0)
+			goto fail_map_pages;
+
+		atomic_long_add(nr_allocated, &nr_vmalloc_pages);
+		if (gfp_mask & __GFP_ACCOUNT) {
+			for (i = 0; i < nr_allocated; i++)
+				mod_memcg_page_state(pages[i], MEMCG_VMALLOC, 1);
+		}
+		numa_replicate_page_range(area->pages, pages, area->nr_pages);
+
+		for (i = 0; i < area->nr_pages; i++)
+			pages[i] = NULL;
+	}
+	kvfree(pages);
+
+	flush_tlb_kernel_range(area_start, area_end);
+	area->replicated = true;
+
+	return 0;
+fail_alloc_pages:
+	for (i = 0; i < nr_allocated; i++)
+		__free_pages(pages[i], 0);
+
+fail_map_pages:
+	kfree(pages);
+	for (i = 0; i < area->nr_pages; i++) {
+		struct page *page, *tmp;
+
+		list_for_each_entry_safe(page, tmp, &area->pages[i]->lru, lru) {
+			list_del(&page->lru);
+			mod_memcg_page_state(page, MEMCG_VMALLOC, -1);
+			__free_pages(page, 0);
+		}
+	}
+
+	return ret;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 /*
  * This is only for performance analysis of vmalloc and stress purpose.
  * It is required by vmalloc test module, therefore do not use it other
