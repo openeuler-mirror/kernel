@@ -981,7 +981,11 @@ struct mm_struct {
 #endif
 	} __randomize_layout;
 
+#ifdef CONFIG_KERNEL_REPLICATION
+	KABI_USE(1, pgd_t **pgd_numa)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
