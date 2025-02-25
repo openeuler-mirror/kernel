@@ -75,6 +75,7 @@
 #include <linux/cpu.h>
 #include <linux/kasan.h>
 #include <linux/percpu.h>
+#include <linux/numa_kernel_replication.h>
 
 #include <asm/cpu.h>
 #include <asm/cpufeature.h>
@@ -3677,7 +3678,11 @@ subsys_initcall_sync(init_32bit_el0_mask);
 
 static void __maybe_unused cpu_enable_cnp(struct arm64_cpu_capabilities const *cap)
 {
+#ifdef CONFIG_KERNEL_REPLICATION
+	cpu_replace_ttbr1(this_node_pgd(&init_mm), idmap_pg_dir);
+#else
 	cpu_replace_ttbr1(lm_alias(swapper_pg_dir), idmap_pg_dir);
+#endif /* CONFIG_KERNEL_REPLICATION */
 }
 
 /*

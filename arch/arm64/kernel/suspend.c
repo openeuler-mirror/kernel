@@ -5,6 +5,8 @@
 #include <linux/uaccess.h>
 #include <linux/pgtable.h>
 #include <linux/cpuidle.h>
+#include <linux/numa_kernel_replication.h>
+
 #include <asm/alternative.h>
 #include <asm/cacheflush.h>
 #include <asm/cpufeature.h>
@@ -56,7 +58,11 @@ void notrace __cpu_suspend_exit(void)
 
 	/* Restore CnP bit in TTBR1_EL1 */
 	if (system_supports_cnp())
+#ifdef CONFIG_KERNEL_REPLICATION
+		cpu_replace_ttbr1(this_node_pgd(&init_mm), idmap_pg_dir);
+#else
 		cpu_replace_ttbr1(lm_alias(swapper_pg_dir), idmap_pg_dir);
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 	/*
 	 * PSTATE was not saved over suspend/resume, re-enable any detected
