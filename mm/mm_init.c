@@ -2819,6 +2819,9 @@ void __init mm_core_init(void)
 	ptlock_cache_init();
 	pgtable_cache_init();
 	debug_objects_mem_init();
+#ifdef CONFIG_KERNEL_REPLICATION
+	preallocate_vmalloc_pages();
+#endif
 	vmalloc_init();
 	/* If no deferred init page_ext now, as vmap is fully initialized */
 	if (!deferred_struct_pages)
