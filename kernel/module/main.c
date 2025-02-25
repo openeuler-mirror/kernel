@@ -57,6 +57,7 @@
 #include <linux/audit.h>
 #include <linux/cfi.h>
 #include <linux/debugfs.h>
+#include <linux/numa_kernel_replication.h>
 #include <uapi/linux/module.h>
 #include "internal.h"
 
@@ -1209,12 +1210,39 @@ static bool mod_mem_use_vmalloc(enum mod_mem_type type)
 		mod_mem_type_is_core_data(type);
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+static int sections_to_replicate[] = {MOD_TEXT, MOD_RODATA};
+
+static void module_replicate_sections(struct module *mod)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(sections_to_replicate); i++)
+		module_replicate(mod->mem[sections_to_replicate[i]].base);
+}
+
+static void *module_memory_alloc(unsigned int size, enum mod_mem_type type)
+{
+	int i;
+
+	if (mod_mem_use_vmalloc(type))
+		return vzalloc(size);
+
+	for (i = 0; i < ARRAY_SIZE(sections_to_replicate); i++) {
+		if (type == sections_to_replicate[i])
+			return module_alloc_replica(size);
+	}
+	return module_alloc(size);
+}
+
+#else /* !CONFIG_KERNEL_REPLICATION */
 static void *module_memory_alloc(unsigned int size, enum mod_mem_type type)
 {
 	if (mod_mem_use_vmalloc(type))
 		return vzalloc(size);
 	return module_alloc(size);
 }
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 static void module_memory_free(void *ptr, enum mod_mem_type type)
 {
@@ -2751,6 +2779,10 @@ static int complete_formation(struct module *mod, struct load_info *info)
 	/* These rely on module_mutex for list integrity. */
 	module_bug_finalize(info->hdr, info->sechdrs, mod);
 	module_cfi_finalize(info->hdr, info->sechdrs, mod);
+
+#ifdef CONFIG_KERNEL_REPLICATION
+	module_replicate_sections(mod);
+#endif
 
 	module_enable_ro(mod, false);
 	module_enable_nx(mod);

@@ -29,6 +29,12 @@ unsigned int arch_mod_section_prepend(struct module *mod, unsigned int section);
    sections.  Returns NULL on failure. */
 void *module_alloc(unsigned long size);
 
+#ifdef CONFIG_KERNEL_REPLICATION
+void *module_alloc_replica(unsigned long size);
+/* Replicate memory allocated in previous function*/
+void module_replicate(void *ptr);
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 /* Free memory returned from module_alloc. */
 void module_memfree(void *module_region);
 

@@ -29,7 +29,7 @@ static void module_set_memory(const struct module *mod, enum mod_mem_type type,
 void module_enable_x(const struct module *mod)
 {
 	for_class_mod_mem_type(type, text)
-		module_set_memory(mod, type, set_memory_x);
+		module_set_memory(mod, type, numa_set_memory_x);
 }
 
 #ifdef CONFIG_LIVEPATCH_WO_FTRACE
@@ -59,13 +59,13 @@ void module_enable_ro(const struct module *mod, bool after_init)
 		return;
 #endif
 
-	module_set_memory(mod, MOD_TEXT, set_memory_ro);
-	module_set_memory(mod, MOD_INIT_TEXT, set_memory_ro);
-	module_set_memory(mod, MOD_RODATA, set_memory_ro);
-	module_set_memory(mod, MOD_INIT_RODATA, set_memory_ro);
+	module_set_memory(mod, MOD_TEXT, numa_set_memory_ro);
+	module_set_memory(mod, MOD_INIT_TEXT, numa_set_memory_ro);
+	module_set_memory(mod, MOD_RODATA, numa_set_memory_ro);
+	module_set_memory(mod, MOD_INIT_RODATA, numa_set_memory_ro);
 
 	if (after_init)
-		module_set_memory(mod, MOD_RO_AFTER_INIT, set_memory_ro);
+		module_set_memory(mod, MOD_RO_AFTER_INIT, numa_set_memory_ro);
 }
 
 void module_enable_nx(const struct module *mod)
@@ -74,7 +74,7 @@ void module_enable_nx(const struct module *mod)
 		return;
 
 	for_class_mod_mem_type(type, data)
-		module_set_memory(mod, type, set_memory_nx);
+		module_set_memory(mod, type, numa_set_memory_nx);
 }
 
 int module_enforce_rwx_sections(Elf_Ehdr *hdr, Elf_Shdr *sechdrs,
