@@ -18,6 +18,7 @@
 #define BASE_DIR		"sdma" /* Subdir in /sys/kernel/debug/  */
 #define UPPER_SHIFT		32
 #define MAX_INPUT_LENGTH	128
+#define SDMA_VERSION		"1.0.0"
 
 u32 share_chns = 16;
 module_param(share_chns, uint, RW_R_R);
@@ -595,3 +596,4 @@ module_exit(sdma_driver_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("HiSilicon Tech. Co., Ltd.");
 MODULE_DESCRIPTION("SDMA data accelerator engine for Userland applications");
+MODULE_VERSION(SDMA_VERSION);
