@@ -53,13 +53,6 @@ int kvm_arch_set_irq_inatomic(struct kvm_kernel_irq_routing_entry *e,
 	return -EWOULDBLOCK;
 }
 
-int vcpu_interrupt_line(struct kvm_vcpu *vcpu, int number, bool level)
-{
-	set_bit(number, (vcpu->arch.irqs_pending));
-	kvm_vcpu_kick(vcpu);
-	return 0;
-}
-
 int kvm_arch_check_processor_compat(void *opaque)
 {
 	return 0;
@@ -78,7 +71,7 @@ int kvm_set_msi(struct kvm_kernel_irq_routing_entry *e, struct kvm *kvm, int irq
 	if (!vcpu)
 		return -EINVAL;
 
-	return vcpu_interrupt_line(vcpu, vector, true);
+	return vcpu_interrupt_line(vcpu, vector);
 }
 
 void sw64_kvm_switch_vpn(struct kvm_vcpu *vcpu)
@@ -178,18 +171,6 @@ struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
 	{ NULL }
 };
 
-int kvm_arch_vcpu_runnable(struct kvm_vcpu *vcpu)
-{
-	if (vcpu->arch.restart)
-		return 1;
-
-	if (vcpu->arch.vcb.vcpu_irq_disabled)
-		return 0;
-
-	return ((!bitmap_empty(vcpu->arch.irqs_pending, SWVM_IRQS) || !vcpu->arch.halted)
-			&& !vcpu->arch.power_off);
-}
-
 int kvm_arch_hardware_enable(void)
 {
 	return 0;
@@ -244,11 +225,6 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 
 void kvm_arch_sync_dirty_log(struct kvm *kvm, struct kvm_memory_slot *memslot)
 {
-}
-
-int kvm_cpu_has_pending_timer(struct kvm_vcpu *vcpu)
-{
-	return test_bit(SW64_KVM_IRQ_TIMER, &vcpu->arch.irqs_pending);
 }
 
 int kvm_arch_hardware_setup(void *opaque)
@@ -426,8 +402,7 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 	struct kvm_run *run = vcpu->run;
 	struct vcpucb *vcb = &(vcpu->arch.vcb);
 	struct hcall_args hargs;
-	int irq, ret;
-	bool more;
+	int ret;
 	sigset_t sigsaved;
 
 	/* Set guest vcb */
@@ -465,17 +440,13 @@ int kvm_arch_vcpu_ioctl_run(struct kvm_vcpu *vcpu)
 
 		memset(&hargs, 0, sizeof(hargs));
 
-		clear_vcpu_irq(vcpu);
-
 		if (vcpu->arch.restart == 1) {
 			/* handle reset vCPU */
 			vcpu->arch.regs.pc = GUEST_RESET_PC;
 			vcpu->arch.restart = 0;
 		}
 
-		irq = interrupt_pending(vcpu, &more);
-		if (irq < SWVM_IRQS)
-			try_deliver_interrupt(vcpu, irq, more);
+		sw64_kvm_try_deliver_interrupt(vcpu);
 
 		vcpu->arch.halted = 0;
 
@@ -628,24 +599,12 @@ int kvm_dev_ioctl_check_extension(long ext)
 	return r;
 }
 
-void vcpu_send_ipi(struct kvm_vcpu *vcpu, int target_vcpuid, int type)
-{
-	struct kvm_vcpu *target_vcpu = kvm_get_vcpu(vcpu->kvm, target_vcpuid);
-
-	if (type == II_RESET)
-		target_vcpu->arch.restart = 1;
-
-	if (target_vcpu != NULL)
-		vcpu_interrupt_line(target_vcpu, 1, 1);
-}
-
 int kvm_vm_ioctl_irq_line(struct kvm *kvm, struct kvm_irq_level *irq_level,
 		bool line_status)
 {
 	u32 irq = irq_level->irq;
 	unsigned int irq_num;
 	struct kvm_vcpu *vcpu = NULL;
-	bool level = irq_level->level;
 
 	irq_num = irq;
 	trace_kvm_irq_line(0, irq_num, irq_level->level);
@@ -655,6 +614,6 @@ int kvm_vm_ioctl_irq_line(struct kvm *kvm, struct kvm_irq_level *irq_level,
 	if (!vcpu)
 		return -EINVAL;
 
-	return vcpu_interrupt_line(vcpu, irq_num, level);
+	return vcpu_interrupt_line(vcpu, irq_num);
 }
 
