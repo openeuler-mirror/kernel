@@ -234,6 +234,7 @@ static bool hclgevf_ets_not_need_config(struct hclgevf_dev *hdev,
 static int hclgevf_ieee_setets(struct hnae3_handle *h, struct ieee_ets *ets)
 {
 	struct hclgevf_dev *hdev = hclgevf_ae_get_hdev(h);
+	int ret1;
 	int ret;
 
 	if (!test_bit(HCLGEVF_STATE_DOWN, &hdev->state))
@@ -246,7 +247,16 @@ static int hclgevf_ieee_setets(struct hnae3_handle *h, struct ieee_ets *ets)
 	if (hclgevf_ets_not_need_config(hdev, ets))
 		return 0;
 
-	return hclgevf_set_vf_multi_tc(hdev, ets);
+	ret = hclgevf_notify_client(hdev, HNAE3_UNINIT_CLIENT);
+	if (ret)
+		return ret;
+
+	ret1 = hclgevf_set_vf_multi_tc(hdev, ets);
+	ret = hclgevf_notify_client(hdev, HNAE3_INIT_CLIENT);
+	if (ret)
+		return ret;
+
+	return ret1;
 }
 
 static void hclgevf_tm_info_to_ieee_ets(struct hclgevf_dev *hdev,
