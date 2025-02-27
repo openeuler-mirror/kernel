@@ -131,6 +131,15 @@ bool scx_bpf_dispatch_vtime_from_dsq___compat(struct bpf_iter_scx_dsq *it__iter,
 	 bpf_ktime_get_ns())
 
 /*
+ * v6.15: Introduce event counters.
+ *
+ * Preserve the following macro until v6.17.
+ */
+#define __COMPAT_scx_bpf_events(events, size)					\
+	(bpf_ksym_exists(scx_bpf_events) ?					\
+	 scx_bpf_events(events, size) : ({}))
+
+/*
  * Define sched_ext_ops. This may be expanded to define multiple variants for
  * backward compatibility. See compat.h::SCX_OPS_LOAD/ATTACH().
  */
