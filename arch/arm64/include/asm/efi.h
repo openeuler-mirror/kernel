@@ -87,8 +87,6 @@ static inline unsigned long efi_get_max_initrd_addr(unsigned long image_addr)
 
 static inline unsigned long efi_get_kimg_min_align(void)
 {
-	extern bool efi_nokaslr;
-
 	/*
 	 * Although relocatable kernels can fix up the misalignment with
 	 * respect to MIN_KIMG_ALIGN, the resulting virtual text addresses are
@@ -97,7 +95,23 @@ static inline unsigned long efi_get_kimg_min_align(void)
 	 * 2M alignment if KASLR was explicitly disabled, even if it was not
 	 * going to be activated to begin with.
 	 */
+
+#ifdef CONFIG_KERNEL_REPLICATION
+	/* If kernel replication is enabled, the special alignment is necessary.
+	 * Due to this fact for now we map kernel by huge pages even
+	 * in case of KASLR enabled. Ugly but works.
+	 */
+#ifdef CONFIG_ARM64_4K_PAGES
+	return HPAGE_SIZE;
+#else
+	return CONT_PTE_SIZE;
+#endif
+
+#else
+	extern bool efi_nokaslr;
+
 	return efi_nokaslr ? MIN_KIMG_ALIGN : EFI_KIMG_ALIGN;
+#endif
 }
 
 #define EFI_ALLOC_ALIGN		SZ_64K

@@ -25,6 +25,7 @@
 #include <linux/vmalloc.h>
 #include <linux/set_memory.h>
 #include <linux/kfence.h>
+#include <linux/numa_kernel_replication.h>
 
 #include <asm/barrier.h>
 #include <asm/cputype.h>
@@ -477,6 +478,23 @@ void __init create_pgd_mapping(struct mm_struct *mm, phys_addr_t phys,
 			     pgd_pgtable_alloc, flags);
 }
 
+static void populate_mappings_prot(phys_addr_t phys, unsigned long virt,
+				   phys_addr_t size, pgprot_t prot)
+{
+#ifdef CONFIG_KERNEL_REPLICATION
+	int nid;
+
+	for_each_memory_node(nid) {
+		__create_pgd_mapping(per_node_pgd(&init_mm, nid),
+			page_to_phys(walk_to_page_node(nid, (void *)virt)),
+			virt, size, prot, NULL, NO_CONT_MAPPINGS);
+	}
+#else
+	__create_pgd_mapping(init_mm.pgd, phys, virt, size, prot, NULL,
+			     NO_CONT_MAPPINGS);
+#endif /* CONFIG_KERNEL_REPLICATION */
+}
+
 static void update_mapping_prot(phys_addr_t phys, unsigned long virt,
 				phys_addr_t size, pgprot_t prot)
 {
@@ -486,8 +504,7 @@ static void update_mapping_prot(phys_addr_t phys, unsigned long virt,
 		return;
 	}
 
-	__create_pgd_mapping(init_mm.pgd, phys, virt, size, prot, NULL,
-			     NO_CONT_MAPPINGS);
+	populate_mappings_prot(phys, virt, size, prot);
 
 	/* flush the TLBs after updating live kernel mappings */
 	flush_tlb_kernel_range(virt, virt + size);
@@ -676,6 +693,22 @@ static pgprot_t kernel_exec_prot(void)
 }
 
 #ifdef CONFIG_UNMAP_KERNEL_AT_EL0
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static void __init populate_trampoline_mappings(void)
+{
+	int nid;
+
+	/* Copy trampoline mappings in replicated tables */
+	for_each_memory_node(nid) {
+		memcpy(per_node_pgd(&init_mm, nid) - (PAGE_SIZE * 2 / sizeof(pgd_t)),
+				tramp_pg_dir, PGD_SIZE);
+	}
+	/* Be sure that replicated page table can be observed properly */
+	dsb(ishst);
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 static int __init map_entry_trampoline(void)
 {
 	int i;
@@ -700,6 +733,10 @@ static int __init map_entry_trampoline(void)
 	if (IS_ENABLED(CONFIG_RELOCATABLE))
 		__set_fixmap(FIX_ENTRY_TRAMP_TEXT1 - i,
 			     pa_start + i * PAGE_SIZE, PAGE_KERNEL_RO);
+
+#ifdef CONFIG_KERNEL_REPLICATION
+	populate_trampoline_mappings();
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 	return 0;
 }

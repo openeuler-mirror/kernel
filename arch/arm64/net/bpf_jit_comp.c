@@ -2251,10 +2251,10 @@ int bpf_arch_text_poke(void *ip, enum bpf_text_poke_type poke_type,
 		/* non-zero plt_target indicates we're patching a bpf prog,
 		 * which is read only.
 		 */
-		if (set_memory_rw(PAGE_MASK & ((uintptr_t)&plt->target), 1))
+		if (numa_set_memory_rw(PAGE_MASK & ((uintptr_t)&plt->target), 1))
 			return -EFAULT;
 		WRITE_ONCE(plt->target, plt_target);
-		set_memory_ro(PAGE_MASK & ((uintptr_t)&plt->target), 1);
+		numa_set_memory_ro(PAGE_MASK & ((uintptr_t)&plt->target), 1);
 		/* since plt target points to either the new trampoline
 		 * or dummy_tramp, even if another CPU reads the old plt
 		 * target value before fetching the bl instruction to plt,

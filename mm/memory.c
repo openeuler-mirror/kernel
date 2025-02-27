@@ -79,6 +79,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/userswap.h>
 #include <linux/dynamic_pool.h>
+#include <linux/numa_kernel_replication.h>
 
 #include <trace/events/kmem.h>
 
@@ -185,6 +186,96 @@ void mm_trace_rss_stat(struct mm_struct *mm, int member)
 	trace_rss_stat(mm, member);
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+
+static void free_pte_range(struct mmu_gather *tlb, pmd_t *pmd,
+			   unsigned long addr)
+{
+	unsigned long offset;
+	int nid;
+	pmd_t *curr_pmd;
+	pgtable_t token = pmd_pgtable(*pmd);
+
+	if (get_propagation_level() == PMD_PROPAGATION) {
+		for_each_pgtable_replica(pmd, tlb->mm, curr_pmd, nid, offset) {
+			pmd_clear(curr_pmd);
+		}
+	} else {
+		pmd_clear(pmd);
+	}
+
+	pte_free_tlb(tlb, token, addr);
+	mm_dec_nr_ptes(tlb->mm);
+	(void)token;
+}
+
+static inline void __free_pmd_range(struct mmu_gather *tlb, pud_t *pud,
+				    unsigned long addr)
+{
+	unsigned long offset;
+	int nid;
+	pud_t *curr_pud;
+	pmd_t *pmd = pmd_offset(pud, addr);
+
+	if (get_propagation_level() == PUD_PROPAGATION) {
+		for_each_pgtable_replica(pud, tlb->mm, curr_pud, nid, offset) {
+			pud_clear(curr_pud);
+		}
+	} else {
+		pud_clear(pud);
+	}
+
+	pmd_free_tlb(tlb, pmd, addr);
+	mm_dec_nr_pmds(tlb->mm);
+	(void)pmd;
+}
+
+static inline void __free_pud_range(struct mmu_gather *tlb, p4d_t *p4d,
+				    unsigned long addr)
+{
+	unsigned long offset;
+	int nid;
+	p4d_t *curr_p4d;
+	pud_t *pud = pud_offset(p4d, addr);
+
+	if (get_propagation_level() == P4D_PROPAGATION) {
+		for_each_pgtable_replica(p4d, tlb->mm, curr_p4d, nid, offset) {
+			p4d_clear(curr_p4d);
+		}
+	} else {
+		p4d_clear(p4d);
+	}
+
+	pud_free_tlb(tlb, pud, addr);
+	mm_dec_nr_puds(tlb->mm);
+	(void)pud;
+}
+
+static inline void __free_p4d_range(struct mmu_gather *tlb, pgd_t *pgd,
+				    unsigned long addr)
+{
+	unsigned long offset;
+	int nid;
+	pgd_t *curr_pgd;
+	p4d_t *p4d  = p4d_offset(pgd, addr);
+
+	if (get_propagation_level() == PGD_PROPAGATION) {
+		for_each_pgtable_replica(pgd, tlb->mm, curr_pgd, nid, offset) {
+			pgd_clear(curr_pgd);
+		}
+	} else {
+		pgd_clear(pgd);
+	}
+	p4d_free_tlb(tlb, p4d, addr);
+	/*
+	 * Why? If 4-level paging is enabled via kconfig,
+	 * all functions execept p4d_offset are empty,
+	 * and we get unused variable error
+	 */
+	(void)p4d;
+}
+#else
+
 /*
  * Note: this doesn't free the actual pages themselves. That
  * has been handled earlier when unmapping all the memory regions.
@@ -196,7 +287,42 @@ static void free_pte_range(struct mmu_gather *tlb, pmd_t *pmd,
 	pmd_clear(pmd);
 	pte_free_tlb(tlb, token, addr);
 	mm_dec_nr_ptes(tlb->mm);
+	(void)token;
 }
+
+static void __free_pmd_range(struct mmu_gather *tlb, pud_t *pud,
+				    unsigned long addr)
+{
+	pmd_t *pmd = pmd_offset(pud, addr);
+
+	pud_clear(pud);
+	pmd_free_tlb(tlb, pmd, addr);
+	mm_dec_nr_pmds(tlb->mm);
+	(void)pmd;
+}
+
+static inline void __free_pud_range(struct mmu_gather *tlb, p4d_t *p4d,
+				    unsigned long addr)
+{
+	pud_t *pud = pud_offset(p4d, addr);
+
+	p4d_clear(p4d);
+	pud_free_tlb(tlb, pud, addr);
+	mm_dec_nr_puds(tlb->mm);
+	(void)pud;
+}
+
+static inline void __free_p4d_range(struct mmu_gather *tlb, pgd_t *pgd,
+				    unsigned long addr)
+{
+	p4d_t *p4d = p4d_offset(pgd, addr);
+
+	pgd_clear(pgd);
+	p4d_free_tlb(tlb, p4d, addr);
+	(void)p4d;
+}
+
+#endif
 
 static inline void free_pmd_range(struct mmu_gather *tlb, pud_t *pud,
 				unsigned long addr, unsigned long end,
@@ -226,10 +352,7 @@ static inline void free_pmd_range(struct mmu_gather *tlb, pud_t *pud,
 	if (end - 1 > ceiling - 1)
 		return;
 
-	pmd = pmd_offset(pud, start);
-	pud_clear(pud);
-	pmd_free_tlb(tlb, pmd, start);
-	mm_dec_nr_pmds(tlb->mm);
+	__free_pmd_range(tlb, pud, start);
 }
 
 static inline void free_pud_range(struct mmu_gather *tlb, p4d_t *p4d,
@@ -260,10 +383,7 @@ static inline void free_pud_range(struct mmu_gather *tlb, p4d_t *p4d,
 	if (end - 1 > ceiling - 1)
 		return;
 
-	pud = pud_offset(p4d, start);
-	p4d_clear(p4d);
-	pud_free_tlb(tlb, pud, start);
-	mm_dec_nr_puds(tlb->mm);
+	__free_pud_range(tlb, p4d, start);
 }
 
 static inline void free_p4d_range(struct mmu_gather *tlb, pgd_t *pgd,
@@ -294,9 +414,7 @@ static inline void free_p4d_range(struct mmu_gather *tlb, pgd_t *pgd,
 	if (end - 1 > ceiling - 1)
 		return;
 
-	p4d = p4d_offset(pgd, start);
-	pgd_clear(pgd);
-	p4d_free_tlb(tlb, p4d, start);
+	__free_p4d_range(tlb, pgd, start);
 }
 
 /*
@@ -440,7 +558,7 @@ void pmd_install(struct mm_struct *mm, pmd_t *pmd, pgtable_t *pte)
 		 * smp_rmb() barriers in page table walking code.
 		 */
 		smp_wmb(); /* Could be smp_wmb__xxx(before|after)_spin_lock */
-		pmd_populate(mm, pmd, *pte);
+		pmd_populate_replicated(mm, pmd, *pte);
 		*pte = NULL;
 	}
 	spin_unlock(ptl);
@@ -2908,7 +3026,7 @@ static int apply_to_p4d_range(struct mm_struct *mm, pgd_t *pgd,
 	return err;
 }
 
-static int __apply_to_page_range(struct mm_struct *mm, unsigned long addr,
+static int __apply_to_page_range(struct mm_struct *mm, pgd_t *pgtable, unsigned long addr,
 				 unsigned long size, pte_fn_t fn,
 				 void *data, bool create)
 {
@@ -2921,7 +3039,7 @@ static int __apply_to_page_range(struct mm_struct *mm, unsigned long addr,
 	if (WARN_ON(addr >= end))
 		return -EINVAL;
 
-	pgd = pgd_offset(mm, addr);
+	pgd = pgd_offset_pgd(pgtable, addr);
 	do {
 		next = pgd_addr_end(addr, end);
 		if (pgd_none(*pgd) && !create)
@@ -2952,9 +3070,31 @@ static int __apply_to_page_range(struct mm_struct *mm, unsigned long addr,
 int apply_to_page_range(struct mm_struct *mm, unsigned long addr,
 			unsigned long size, pte_fn_t fn, void *data)
 {
-	return __apply_to_page_range(mm, addr, size, fn, data, true);
+	return __apply_to_page_range(mm, mm->pgd, addr, size, fn, data, true);
 }
 EXPORT_SYMBOL_GPL(apply_to_page_range);
+
+#ifdef CONFIG_KERNEL_REPLICATION
+/*
+ * Same as apply_to_page_range(), but taking into account per-NUMA node
+ * replicas.
+ */
+int apply_to_page_range_replicas(struct mm_struct *mm, unsigned long addr,
+				 unsigned long size, pte_fn_t fn, void *data)
+{
+	int nid;
+	int ret = 0;
+
+	for_each_memory_node(nid) {
+		ret = __apply_to_page_range(mm, per_node_pgd(mm, nid),
+					    addr, size, fn, data, true);
+		if (ret)
+			break;
+	}
+
+	return ret;
+}
+#endif /* CONFIG_KERNEL_REPLICATION && CONFIG_ARM64 */
 
 /*
  * Scan a region of virtual memory, calling a provided function on
@@ -2966,7 +3106,7 @@ EXPORT_SYMBOL_GPL(apply_to_page_range);
 int apply_to_existing_page_range(struct mm_struct *mm, unsigned long addr,
 				 unsigned long size, pte_fn_t fn, void *data)
 {
-	return __apply_to_page_range(mm, addr, size, fn, data, false);
+	return __apply_to_page_range(mm, mm->pgd, addr, size, fn, data, false);
 }
 EXPORT_SYMBOL_GPL(apply_to_existing_page_range);
 
@@ -6013,6 +6153,28 @@ inval:
 #endif /* CONFIG_PER_VMA_LOCK */
 
 #ifndef __PAGETABLE_P4D_FOLDED
+
+#ifdef CONFIG_KERNEL_REPLICATION
+int __p4d_alloc_node(unsigned int nid,
+		struct mm_struct *mm,
+		pgd_t *pgd, unsigned long address)
+{
+	p4d_t *new = p4d_alloc_one_node(nid, mm, address);
+	if (!new)
+		return -ENOMEM;
+
+	spin_lock(&mm->page_table_lock);
+	if (pgd_present(*pgd)) { /* Another has populated it */
+		p4d_free(mm, new);
+	} else {
+		smp_wmb(); /* See comment in pmd_install() */
+		pgd_populate(mm, pgd, new);
+	}
+	spin_unlock(&mm->page_table_lock);
+	return 0;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 /*
  * Allocate p4d page table.
  * We've already handled the fast-path in-line.
@@ -6028,7 +6190,7 @@ int __p4d_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
 		p4d_free(mm, new);
 	} else {
 		smp_wmb(); /* See comment in pmd_install() */
-		pgd_populate(mm, pgd, new);
+		pgd_populate_replicated(mm, pgd, new);
 	}
 	spin_unlock(&mm->page_table_lock);
 	return 0;
@@ -6036,6 +6198,28 @@ int __p4d_alloc(struct mm_struct *mm, pgd_t *pgd, unsigned long address)
 #endif /* __PAGETABLE_P4D_FOLDED */
 
 #ifndef __PAGETABLE_PUD_FOLDED
+
+#ifdef CONFIG_KERNEL_REPLICATION
+int __pud_alloc_node(unsigned int nid,
+		struct mm_struct *mm,
+		p4d_t *p4d, unsigned long address)
+{
+	pud_t *new = pud_alloc_one_node(nid, mm, address);
+	if (!new)
+		return -ENOMEM;
+
+	spin_lock(&mm->page_table_lock);
+	if (!p4d_present(*p4d)) {
+		mm_inc_nr_puds(mm);
+		smp_wmb(); /* See comment in pmd_install() */
+		p4d_populate(mm, p4d, new);
+	} else  /* Another has populated it */
+		pud_free(mm, new);
+	spin_unlock(&mm->page_table_lock);
+	return 0;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 /*
  * Allocate page upper directory.
  * We've already handled the fast-path in-line.
@@ -6050,7 +6234,7 @@ int __pud_alloc(struct mm_struct *mm, p4d_t *p4d, unsigned long address)
 	if (!p4d_present(*p4d)) {
 		mm_inc_nr_puds(mm);
 		smp_wmb(); /* See comment in pmd_install() */
-		p4d_populate(mm, p4d, new);
+		p4d_populate_replicated(mm, p4d, new);
 	} else	/* Another has populated it */
 		pud_free(mm, new);
 	spin_unlock(&mm->page_table_lock);
@@ -6074,13 +6258,37 @@ int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address)
 	if (!pud_present(*pud)) {
 		mm_inc_nr_pmds(mm);
 		smp_wmb(); /* See comment in pmd_install() */
-		pud_populate(mm, pud, new);
+		pud_populate_replicated(mm, pud, new);
 	} else {	/* Another has populated it */
 		pmd_free(mm, new);
 	}
 	spin_unlock(ptl);
 	return 0;
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+int __pmd_alloc_node(unsigned int nid,
+		struct mm_struct *mm,
+		pud_t *pud, unsigned long address)
+{
+	spinlock_t *ptl;
+	pmd_t *new = pmd_alloc_one_node(nid, mm, address);
+	if (!new)
+		return -ENOMEM;
+
+	ptl = pud_lock(mm, pud);
+	if (!pud_present(*pud)) {
+		mm_inc_nr_pmds(mm);
+		smp_wmb(); /* See comment in pmd_install() */
+		pud_populate(mm, pud, new);
+	} else { /* Another has populated it */
+		pmd_free(mm, new);
+	}
+	spin_unlock(ptl);
+	return 0;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 #endif /* __PAGETABLE_PMD_FOLDED */
 
 /**
@@ -6655,3 +6863,63 @@ void ptlock_free(struct ptdesc *ptdesc)
 	kmem_cache_free(page_ptl_cachep, ptdesc->ptl);
 }
 #endif
+
+/**
+ * Walk in replicated tranlation table specified by nid.
+ * If kernel replication is disabled or text is not replicated yet,
+ * value of nid is not used
+ */
+struct page *walk_to_page_node(int nid, const void *vmalloc_addr)
+{
+	unsigned long addr = (unsigned long)vmalloc_addr;
+	struct page *page = NULL;
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *ptep, pte;
+
+	if (is_text_replicated())
+		pgd = pgd_offset_pgd(per_node_pgd(&init_mm, nid), addr);
+	else
+		pgd = pgd_offset_pgd(init_mm.pgd, addr);
+
+	if (pgd_none(*pgd))
+		return NULL;
+	if (WARN_ON_ONCE(pgd_leaf(*pgd)))
+		return NULL; /* XXX: no allowance for huge pgd */
+	if (WARN_ON_ONCE(pgd_bad(*pgd)))
+		return NULL;
+
+	p4d = p4d_offset(pgd, addr);
+	if (p4d_none(*p4d))
+		return NULL;
+	if (p4d_leaf(*p4d))
+		return p4d_page(*p4d) + ((addr & ~P4D_MASK) >> PAGE_SHIFT);
+	if (WARN_ON_ONCE(p4d_bad(*p4d)))
+		return NULL;
+
+	pud = pud_offset(p4d, addr);
+	if (pud_none(*pud))
+		return NULL;
+	if (pud_leaf(*pud))
+		return pud_page(*pud) + ((addr & ~PUD_MASK) >> PAGE_SHIFT);
+	if (WARN_ON_ONCE(pud_bad(*pud)))
+		return NULL;
+
+	pmd = pmd_offset(pud, addr);
+	if (pmd_none(*pmd))
+		return NULL;
+	if (pmd_leaf(*pmd))
+		return pmd_page(*pmd) + ((addr & ~PMD_MASK) >> PAGE_SHIFT);
+	if (WARN_ON_ONCE(pmd_bad(*pmd)))
+		return NULL;
+
+	ptep = pte_offset_map(pmd, addr);
+	pte = *ptep;
+	if (pte_present(pte))
+		page = pte_page(pte);
+	pte_unmap(ptep);
+
+	return page;
+}

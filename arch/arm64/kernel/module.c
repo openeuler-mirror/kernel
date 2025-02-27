@@ -110,7 +110,7 @@ static int __init module_init_limits(void)
 }
 subsys_initcall(module_init_limits);
 
-void *module_alloc(unsigned long size)
+static void *__module_alloc(unsigned long size, unsigned long vm_flags, int nid)
 {
 	void *p = NULL;
 
@@ -123,7 +123,7 @@ void *module_alloc(unsigned long size)
 					 module_direct_base,
 					 module_direct_base + SZ_128M,
 					 GFP_KERNEL | __GFP_NOWARN,
-					 PAGE_KERNEL, 0, NUMA_NO_NODE,
+					 PAGE_KERNEL, vm_flags, nid,
 					 __builtin_return_address(0));
 	}
 
@@ -132,7 +132,7 @@ void *module_alloc(unsigned long size)
 					 module_plt_base,
 					 module_plt_base + SZ_2G,
 					 GFP_KERNEL | __GFP_NOWARN,
-					 PAGE_KERNEL, 0, NUMA_NO_NODE,
+					 PAGE_KERNEL, vm_flags, nid,
 					 __builtin_return_address(0));
 	}
 
@@ -149,6 +149,36 @@ void *module_alloc(unsigned long size)
 	/* Memory is intended to be executable, reset the pointer tag. */
 	return kasan_reset_tag(p);
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+void *module_alloc(unsigned long size)
+{
+	return __module_alloc(size, VM_NUMA_SHARED, NUMA_NO_NODE);
+}
+
+void *module_alloc_replica(unsigned long size)
+{
+	return __module_alloc(size, VM_NUMA_SHARED, first_memory_node);
+}
+
+void module_replicate(void *ptr)
+{
+	gfp_t gfp_mask = GFP_KERNEL;
+
+	__vmalloc_node_replicate_range(ptr, gfp_mask,
+			PAGE_KERNEL, 0);
+}
+#else
+void *module_alloc(unsigned long size)
+{
+	return __module_alloc(size, 0, NUMA_NO_NODE);
+}
+
+void *module_alloc_replica(unsigned long size)
+{
+	return module_alloc(size);
+}
+#endif /*CONFIG_KERNEL_REPLICATION*/
 
 enum aarch64_reloc_op {
 	RELOC_OP_NONE,

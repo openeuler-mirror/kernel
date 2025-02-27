@@ -21,7 +21,11 @@
  * VMALLOC_END: extends to the available space below vmemmap, PCI I/O space
  *	and fixed mappings
  */
+#ifdef CONFIG_KERNEL_REPLICATION
+#define VMALLOC_START		((MODULES_END & PGDIR_MASK) + PGDIR_SIZE)
+#else /* !CONFIG_KERNEL_REPLICATION */
 #define VMALLOC_START		(MODULES_END)
+#endif /* CONFIG_KERNEL_REPLICATION */
 #define VMALLOC_END		(VMEMMAP_START - SZ_256M)
 
 #define vmemmap			((struct page *)VMEMMAP_START - (memstart_addr >> PAGE_SHIFT))
@@ -536,6 +540,15 @@ static inline pmd_t pmd_mkdevmap(pmd_t pmd)
 #define __phys_to_pud_val(phys)	__phys_to_pte_val(phys)
 #define pud_pfn(pud)		((__pud_to_phys(pud) & PUD_MASK) >> PAGE_SHIFT)
 #define pfn_pud(pfn,prot)	__pud(__phys_to_pud_val((phys_addr_t)(pfn) << PAGE_SHIFT) | pgprot_val(prot))
+
+#ifdef CONFIG_KERNEL_REPLICATION
+static inline pgprot_t pmd_pgprot(pmd_t pmd)
+{
+	unsigned long pfn = pmd_pfn(pmd);
+
+	return __pgprot(pmd_val(pfn_pmd(pfn, __pgprot(0))) ^ pmd_val(pmd));
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 static inline void __set_pte_at(struct mm_struct *mm,
 				unsigned long __always_unused addr,

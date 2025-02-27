@@ -4872,6 +4872,26 @@ unsigned long get_zeroed_page(gfp_t gfp_mask)
 }
 EXPORT_SYMBOL(get_zeroed_page);
 
+#ifdef CONFIG_KERNEL_REPLICATION
+unsigned long __get_free_pages_node(unsigned int nid, gfp_t gfp_mask,
+				    unsigned int order)
+{
+	struct page *page;
+
+	page = alloc_pages_node(nid, gfp_mask & ~__GFP_HIGHMEM, order);
+	if (!page)
+		return 0;
+	return (unsigned long) page_address(page);
+}
+EXPORT_SYMBOL(__get_free_pages_node);
+
+unsigned long get_zeroed_page_node(unsigned int nid, gfp_t gfp_mask)
+{
+	return __get_free_pages_node(nid, gfp_mask | __GFP_ZERO, 0);
+}
+EXPORT_SYMBOL(get_zeroed_page_node);
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 /**
  * __free_pages - Free pages allocated with alloc_pages().
  * @page: The page pointer returned from alloc_pages().

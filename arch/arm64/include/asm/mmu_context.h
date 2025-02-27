@@ -162,7 +162,11 @@ static inline void cpu_replace_ttbr1(pgd_t *pgdp, pgd_t *idmap)
 	/* phys_to_ttbr() zeros lower 2 bits of ttbr with 52-bit PA */
 	phys_addr_t ttbr1 = phys_to_ttbr(virt_to_phys(pgdp));
 
+#ifdef CONFIG_KERNEL_REPLICATION
+	if (system_supports_cnp() && !WARN_ON(pgdp != init_mm.pgd_numa[numa_node_id()])) {
+#else
 	if (system_supports_cnp() && !WARN_ON(pgdp != lm_alias(swapper_pg_dir))) {
+#endif /* CONFIG_KERNEL_REPLICATION */
 		/*
 		 * cpu_replace_ttbr1() is used when there's a boot CPU
 		 * up (i.e. cpufeature framework is not up yet) and

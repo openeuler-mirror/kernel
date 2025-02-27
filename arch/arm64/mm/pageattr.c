@@ -64,6 +64,24 @@ static int __change_memory_common(unsigned long start, unsigned long size,
 	return ret;
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+static int __change_memory_common_replicas(unsigned long start, unsigned long size,
+					pgprot_t set_mask, pgprot_t clear_mask)
+{
+	struct page_change_data data;
+	int ret;
+
+	data.set_mask = set_mask;
+	data.clear_mask = clear_mask;
+
+	ret = apply_to_page_range_replicas(&init_mm, start, size,
+			change_page_range, &data);
+
+	flush_tlb_kernel_range(start, start + size);
+	return ret;
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 static int change_memory_common(unsigned long addr, int numpages,
 				pgprot_t set_mask, pgprot_t clear_mask)
 {
@@ -122,6 +140,20 @@ static int change_memory_common(unsigned long addr, int numpages,
 	return __change_memory_common(start, size, set_mask, clear_mask);
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+static int numa_change_memory_common(unsigned long addr, int numpages,
+				pgprot_t set_mask, pgprot_t clear_mask)
+{
+	int ret;
+
+	ret = change_memory_common(addr, numpages, set_mask, clear_mask);
+	if (ret)
+		return ret;
+
+	return __change_memory_common_replicas(addr, numpages * PAGE_SIZE, set_mask, clear_mask);
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 int set_memory_ro(unsigned long addr, int numpages)
 {
 	return change_memory_common(addr, numpages,
@@ -149,6 +181,36 @@ int set_memory_x(unsigned long addr, int numpages)
 					__pgprot(PTE_MAYBE_GP),
 					__pgprot(PTE_PXN));
 }
+
+#ifdef CONFIG_KERNEL_REPLICATION
+int numa_set_memory_x(unsigned long addr, int numpages)
+{
+	return numa_change_memory_common(addr, numpages,
+					__pgprot(PTE_MAYBE_GP),
+					__pgprot(PTE_PXN));
+}
+
+int numa_set_memory_nx(unsigned long addr, int numpages)
+{
+	return numa_change_memory_common(addr, numpages,
+					__pgprot(PTE_PXN),
+					__pgprot(PTE_MAYBE_GP));
+}
+
+int numa_set_memory_ro(unsigned long addr, int numpages)
+{
+	return numa_change_memory_common(addr, numpages,
+					__pgprot(PTE_RDONLY),
+					__pgprot(PTE_WRITE));
+}
+
+int numa_set_memory_rw(unsigned long addr, int numpages)
+{
+	return numa_change_memory_common(addr, numpages,
+					__pgprot(PTE_WRITE),
+					__pgprot(PTE_RDONLY));
+}
+#endif /*CONFIG_KERNEL_REPLICATION*/
 
 int set_memory_valid(unsigned long addr, int numpages, int enable)
 {

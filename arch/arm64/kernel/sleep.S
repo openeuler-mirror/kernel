@@ -5,6 +5,10 @@
 #include <asm/assembler.h>
 #include <asm/smp.h>
 
+#ifdef CONFIG_KERNEL_REPLICATION
+.extern numa_setup_pgd
+#endif
+
 	.text
 /*
  * Implementation of MPIDR_EL1 hash algorithm through shifting
@@ -145,6 +149,10 @@ SYM_FUNC_START(_cpu_resume)
 #if defined(CONFIG_KASAN) && defined(CONFIG_KASAN_STACK)
 	mov	x0, sp
 	bl	kasan_unpoison_task_stack_below
+#endif
+
+#ifdef CONFIG_KERNEL_REPLICATION
+	bl 	numa_setup_pgd
 #endif
 
 	ldp	x19, x20, [x29, #16]

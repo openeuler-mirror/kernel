@@ -5,6 +5,7 @@
 #include <linux/spinlock.h>
 #include <linux/stop_machine.h>
 #include <linux/uaccess.h>
+#include <linux/numa_kernel_replication.h>
 
 #include <asm/cacheflush.h>
 #include <asm/fixmap.h>
@@ -15,6 +16,7 @@
 
 static DEFINE_RAW_SPINLOCK(patch_lock);
 
+#ifndef CONFIG_KERNEL_REPLICATION
 static bool is_exit_text(unsigned long addr)
 {
 	/* discarded with init text/data */
@@ -41,10 +43,22 @@ static void __kprobes *patch_map(void *addr, int fixmap)
 	else
 		return addr;
 
-	BUG_ON(!page);
 	return (void *)set_fixmap_offset(fixmap, page_to_phys(page) +
 			(uintaddr & ~PAGE_MASK));
 }
+#else
+static void __kprobes *patch_map(void *addr, int fixmap, int nid)
+{
+	unsigned long uintaddr = (uintptr_t) addr;
+	struct page *page;
+
+	page = walk_to_page_node(nid, addr);
+	BUG_ON(!page);
+
+	return (void *)set_fixmap_offset(fixmap, page_to_phys(page) +
+			(uintaddr & ~PAGE_MASK));
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 static void __kprobes patch_unmap(int fixmap)
 {
@@ -66,6 +80,28 @@ int __kprobes aarch64_insn_read(void *addr, u32 *insnp)
 	return ret;
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+static int __kprobes __aarch64_insn_write(void *addr, __le32 insn)
+{
+	int nid;
+	void *waddr = addr;
+	unsigned long flags = 0;
+	int ret;
+
+	raw_spin_lock_irqsave(&patch_lock, flags);
+	for_each_memory_node(nid) {
+		waddr = patch_map(addr, FIX_TEXT_POKE0, nid);
+		ret = copy_to_kernel_nofault(waddr, &insn, AARCH64_INSN_SIZE);
+		patch_unmap(FIX_TEXT_POKE0);
+
+		if (ret || !is_text_replicated())
+			break;
+	}
+	raw_spin_unlock_irqrestore(&patch_lock, flags);
+
+	return ret;
+}
+#else
 static int __kprobes __aarch64_insn_write(void *addr, __le32 insn)
 {
 	void *waddr = addr;
@@ -82,12 +118,34 @@ static int __kprobes __aarch64_insn_write(void *addr, __le32 insn)
 
 	return ret;
 }
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 int __kprobes aarch64_insn_write(void *addr, u32 insn)
 {
 	return __aarch64_insn_write(addr, cpu_to_le32(insn));
 }
 
+#ifdef CONFIG_KERNEL_REPLICATION
+noinstr int aarch64_insn_write_literal_u64(void *addr, u64 val)
+{
+	int nid;
+	u64 *waddr;
+	unsigned long flags;
+	int ret;
+
+	raw_spin_lock_irqsave(&patch_lock, flags);
+	for_each_memory_node(nid) {
+		waddr = patch_map(addr, FIX_TEXT_POKE0, nid);
+
+		ret = copy_to_kernel_nofault(waddr, &val, sizeof(val));
+
+		patch_unmap(FIX_TEXT_POKE0);
+	}
+	raw_spin_unlock_irqrestore(&patch_lock, flags);
+
+	return ret;
+}
+#else
 noinstr int aarch64_insn_write_literal_u64(void *addr, u64 val)
 {
 	u64 *waddr;
@@ -104,6 +162,7 @@ noinstr int aarch64_insn_write_literal_u64(void *addr, u64 val)
 
 	return ret;
 }
+#endif /* CONFIG_KERNEL_REPLICATION */
 
 int __kprobes aarch64_insn_patch_text_nosync(void *addr, u32 insn)
 {

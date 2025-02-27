@@ -29,6 +29,10 @@ struct iov_iter;		/* in uio.h */
 #define VM_MAP_PUT_PAGES	0x00000200	/* put pages and free array in vfree */
 #define VM_ALLOW_HUGE_VMAP	0x00000400      /* Allow for huge pages on archs with HAVE_ARCH_HUGE_VMALLOC */
 
+#ifdef CONFIG_KERNEL_REPLICATION
+#define VM_NUMA_SHARED		0x00002000	/* Pages shared between per-NUMA node TT*/
+#endif
+
 #if (defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KASAN_SW_TAGS)) && \
 	!defined(CONFIG_KASAN_VMALLOC)
 #define VM_DEFER_KMEMLEAK	0x00000800	/* defer kmemleak object creation */
@@ -65,6 +69,10 @@ struct vm_struct {
 	unsigned int		nr_pages;
 	phys_addr_t		phys_addr;
 	const void		*caller;
+#ifdef CONFIG_KERNEL_REPLICATION
+	KABI_EXTEND(int	node)
+	KABI_EXTEND(bool replicated)
+#endif
 };
 
 struct vmap_area {
@@ -156,6 +164,17 @@ extern void *__vmalloc_node_range(unsigned long size, unsigned long align,
 			unsigned long start, unsigned long end, gfp_t gfp_mask,
 			pgprot_t prot, unsigned long vm_flags, int node,
 			const void *caller) __alloc_size(1);
+
+#ifdef CONFIG_KERNEL_REPLICATION
+ /*
+  * DO NOT USE this function if you don't understand what it is doing
+  * Use only in pair with vmalloc(vm_flags|=VM_NUMA_SHARED)
+  */
+int __vmalloc_node_replicate_range(const void *addr, gfp_t gfp_mask,
+		pgprot_t prot, unsigned long vm_flags);
+void vunmap_range_replicas(unsigned long addr, unsigned long end);
+#endif
+
 void *__vmalloc_node(unsigned long size, unsigned long align, gfp_t gfp_mask,
 		int node, const void *caller) __alloc_size(1);
 void *vmalloc_huge(unsigned long size, gfp_t gfp_mask) __alloc_size(1);

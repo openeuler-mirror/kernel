@@ -100,6 +100,7 @@
 #include <linux/init_syscalls.h>
 #include <linux/stackdepot.h>
 #include <linux/randomize_kstack.h>
+#include <linux/numa_kernel_replication.h>
 #include <net/net_namespace.h>
 
 #include <asm/io.h>
@@ -928,11 +929,19 @@ void start_kernel(void)
 	 * These use large bootmem allocations and must precede
 	 * initalization of page allocator
 	 */
+	numa_replication_init();
 	setup_log_buf(0);
 	vfs_caches_init_early();
 	sort_main_extable();
 	trap_init();
 	mm_core_init();
+	/*
+	 * Kernel text replication should be done before
+	 * alloc/init first mm struct, due to it is necessary
+	 * to setup per-NUMA node translation tables and kernel
+	 * instances properly.
+	 */
+	numa_replicate_kernel_text();
 	poking_init();
 	ftrace_init();
 
@@ -1454,6 +1463,14 @@ static int __ref kernel_init(void *unused)
 	exit_boot_config();
 	free_initmem();
 	mark_readonly();
+
+	/*
+	 * RODATA replication is done here due to
+	 * it is necessary to finalize the kernel
+	 * and modules initialization before
+	 */
+	numa_replicate_kernel_rodata();
+	numa_replication_fini();
 
 	/*
 	 * Kernel mappings are now finalized - update the userspace page-table

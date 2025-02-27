@@ -170,6 +170,13 @@ SECTIONS
 		_text = .;
 		HEAD_TEXT
 	}
+#ifdef CONFIG_KERNEL_REPLICATION
+#ifdef CONFIG_ARM64_4K_PAGES
+	. = ALIGN(PMD_SIZE);
+#else
+	. = ALIGN(CONT_PTE_SIZE);
+#endif
+#endif
 	.text : ALIGN(SEGMENT_ALIGN) {	/* Real text segment		*/
 		_stext = .;		/* Text and read-only data	*/
 			IRQENTRY_TEXT
@@ -184,10 +191,25 @@ SECTIONS
 	}
 
 	. = ALIGN(SEGMENT_ALIGN);
+#ifdef CONFIG_KERNEL_REPLICATION
+#ifdef CONFIG_ARM64_4K_PAGES
+	. = ALIGN(PMD_SIZE);
+#else
+	. = ALIGN(CONT_PTE_SIZE);
+#endif
+#endif
 	_etext = .;			/* End of text section */
 
 	/* everything from this point to __init_begin will be marked RO NX */
+#ifdef CONFIG_KERNEL_REPLICATION
+#ifdef CONFIG_ARM64_4K_PAGES
+	RO_DATA(PMD_SIZE)
+#else
+	RO_DATA(CONT_PTE_SIZE)
+#endif
+#else
 	RO_DATA(PAGE_SIZE)
+#endif
 
 	HYPERVISOR_DATA_SECTIONS
 

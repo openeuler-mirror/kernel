@@ -19,6 +19,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/pgtable.h>
+#include <linux/numa_kernel_replication.h>
 
 #include <asm/cacheflush.h>
 #include <asm/efi.h>
@@ -49,6 +50,18 @@ device_initcall(ptdump_init);
 
 #endif
 
+#ifdef CONFIG_KERNEL_REPLICATION
+static void populate_efi_pgd(struct mm_struct *efi_mm)
+{
+	int nid;
+
+	for_each_memory_node(nid)
+		memcpy(per_node_pgd(efi_mm, nid), efi_mm->pgd, PGD_SIZE);
+	dsb(ishst);
+	isb();
+}
+#endif /* CONFIG_KERNEL_REPLICATION */
+
 static bool __init efi_virtmap_init(void)
 {
 	efi_memory_desc_t *md;
@@ -73,7 +86,9 @@ static bool __init efi_virtmap_init(void)
 			return false;
 		}
 	}
-
+#ifdef CONFIG_KERNEL_REPLICATION
+	populate_efi_pgd(&efi_mm);
+#endif
 	if (efi_memattr_apply_permissions(&efi_mm, efi_set_mapping_permissions))
 		return false;
 
