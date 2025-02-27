@@ -772,6 +772,12 @@ CONFIG_VIRT_VTIMER_IRQ_BYPASS=y
 CONFIG_CPU_MITIGATIONS=y
 
 #
+# Hardware Assisted OS Compartmentalization(HAOC)
+#
+# CONFIG_IEE is not set
+# end of Hardware Assisted OS Compartmentalization(HAOC)
+
+#
 # General architecture-dependent options
 #
 CONFIG_HOTPLUG_SMT=y
