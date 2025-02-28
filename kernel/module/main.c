@@ -1217,6 +1217,9 @@ static void module_replicate_sections(struct module *mod)
 {
 	int i;
 
+	if (!is_text_replicated())
+		return;
+
 	for (i = 0; i < ARRAY_SIZE(sections_to_replicate); i++)
 		module_replicate(mod->mem[sections_to_replicate[i]].base);
 }
@@ -1228,9 +1231,11 @@ static void *module_memory_alloc(unsigned int size, enum mod_mem_type type)
 	if (mod_mem_use_vmalloc(type))
 		return vzalloc(size);
 
-	for (i = 0; i < ARRAY_SIZE(sections_to_replicate); i++) {
-		if (type == sections_to_replicate[i])
-			return module_alloc_replica(size);
+	if (is_text_replicated()) {
+		for (i = 0; i < ARRAY_SIZE(sections_to_replicate); i++) {
+			if (type == sections_to_replicate[i])
+				return module_alloc_replica(size);
+		}
 	}
 	return module_alloc(size);
 }
