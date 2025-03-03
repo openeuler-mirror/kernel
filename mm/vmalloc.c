@@ -493,7 +493,7 @@ void vunmap_range_replicas(unsigned long addr, unsigned long end)
 
 	flush_cache_vunmap(addr, end);
 	for_each_memory_node(nid)
-		vunmap_range_noflush_pgd(init_mm.pgd_numa[nid], addr, end);
+		vunmap_range_noflush_pgd(per_node_pgd(&init_mm, nid), addr, end);
 	flush_tlb_kernel_range(addr, end);
 }
 #endif /* CONFIG_KERNEL_REPLICATION && CONFIG_ARM64 */
@@ -2378,7 +2378,7 @@ static void free_unmap_vmap_area(struct vmap_area *va)
 		 *  empty entries here, which is totally fine
 		 */
 		for_each_memory_node(node)
-			vunmap_range_noflush_pgd(init_mm.pgd_numa[node],
+			vunmap_range_noflush_pgd(per_node_pgd(&init_mm, node),
 					va->va_start, va->va_end);
 	} else {
 		vunmap_range_noflush(va->va_start, va->va_end);
@@ -4123,7 +4123,7 @@ int __vmalloc_node_replicate_range(const void *addr, gfp_t gfp_mask,
 		for (i = 0; i < area->nr_pages; i++)
 			list_add(&pages[i]->lru, &area->pages[i]->lru);
 
-		vunmap_range_noflush_pgd(init_mm.pgd_numa[node],
+		vunmap_range_noflush_pgd(per_node_pgd(&init_mm, node),
 					 area_start, area_end);
 
 		/*

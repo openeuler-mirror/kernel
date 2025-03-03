@@ -65,6 +65,8 @@ static unsigned int master_node = INT_MAX;
  */
 static int node_to_memory_node[MAX_NUMNODES];
 
+static bool kernel_replication_enabled;
+
 static bool pgtables_extra;
 static DEFINE_SPINLOCK(debugfs_lock);
 
@@ -253,6 +255,9 @@ static void dump_pgtables(struct mm_struct *mm,
 
 	start = start & PAGE_MASK;
 	end = (end & PAGE_MASK) - 1 + PAGE_SIZE;
+
+	if (!mm->pgd_numa)
+		return;
 
 	replication_log(data,
 			"----PER-NUMA NODE KERNEL REPLICATION ENABLED----\n");
@@ -622,6 +627,18 @@ static void replicate_pgtables(void)
 	}
 }
 
+static void __init numa_replicate_kernel_text_disabled(void)
+{
+	int nid;
+
+	init_mm.pgd_numa = (pgd_t **)kmalloc(sizeof(pgd_t *) * MAX_NUMNODES, GFP_PGTABLE_KERNEL);
+	BUG_ON(!init_mm.pgd_numa);
+	for_each_online_node(nid) {
+		init_mm.pgd_numa[nid] = init_mm.pgd;
+	}
+}
+
+
 /*
  * Kernel text replication includes two steps:
  * 1. page tables replication for init_mm
@@ -638,6 +655,11 @@ static void replicate_pgtables(void)
 void __init numa_replicate_kernel_text(void)
 {
 	int nid;
+
+	if (!kernel_replication_enabled) {
+		numa_replicate_kernel_text_disabled();
+		return;
+	}
 
 	replicate_pgtables();
 
@@ -667,6 +689,10 @@ void numa_replicate_kernel_rodata(void)
 {
 	int nid;
 
+	if (!kernel_replication_enabled) {
+		return;
+	}
+
 	for_each_memory_node(nid) {
 		if (nid == master_node)
 			continue;
@@ -678,7 +704,7 @@ void numa_replicate_kernel_rodata(void)
 
 void numa_setup_pgd(void)
 {
-	numa_load_replicated_pgd(init_mm.pgd_numa[numa_node_id()]);
+	numa_load_replicated_pgd(this_node_pgd(&init_mm));
 }
 
 void __init_or_module *numa_get_replica(void *vaddr, int nid)
@@ -693,7 +719,47 @@ void __init_or_module *numa_get_replica(void *vaddr, int nid)
 	return node_desc[nid].text_vaddr + offset;
 }
 
+static int __init setup_kernel_replication(char *str)
+{
+	int ret = 0;
+
+	if (!str)
+		goto out;
+	if (!strcmp(str, "on")) {
+		kernel_replication_enabled = true;
+		pr_info("Kernel replication enabled via cmdline\n");
+		ret = 1;
+	} else if (!strcmp(str, "off")) {
+		kernel_replication_enabled = false;
+		pr_info("Kernel replication disabled via cmdline\n");
+		ret = 1;
+	}
+out:
+	if (!ret)
+		pr_warn("kernel_replication= cannot parse, ignored\n");
+	return ret;
+}
+__setup("kernel_replication=", setup_kernel_replication);
+
+
 nodemask_t __ro_after_init replica_nodes = { { [0] = 1UL } };
+
+/*
+ * Let us pretend, that we have only single node fore replicas.
+ * Do not replicate anything.
+ */
+static void __init numa_replication_init_disabled(void)
+{
+	int nid;
+
+	__node_set(0, &replica_nodes);
+	for_each_online_node(nid) {
+		node_to_memory_node[nid] = 0;
+	}
+
+	node_desc[0].text_vaddr = lm_alias((void *)KERNEL_TEXT_START);
+	node_desc[0].rodata_vaddr = lm_alias((void *)KERNEL_RODATA_START);
+}
 
 void __init numa_replication_init(void)
 {
@@ -706,6 +772,16 @@ void __init numa_replication_init(void)
 	align = CONT_PTE_SIZE;
 #endif
 	nodes_clear(replica_nodes);
+
+	if (kernel_replication_enabled)
+		pr_info("WARNING! WARNING! WARNING! Kernel replication enabled WARNING! WARNING! WARNING!\n");
+	else
+		pr_info("Kernel replication disabled\n");
+
+	if (!kernel_replication_enabled) {
+		numa_replication_init_disabled();
+		return;
+	}
 
 	for_each_node_state(nid, N_MEMORY) {
 		__node_set(nid, &replica_nodes);

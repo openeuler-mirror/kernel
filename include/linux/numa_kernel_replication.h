@@ -42,8 +42,31 @@ extern nodemask_t replica_nodes;
 	     nid != MAX_NUMNODES;			\
 	     nid = next_node(nid, replica_nodes))
 
-#define this_node_pgd(mm) ((mm)->pgd_numa[numa_node_id()])
-#define per_node_pgd(mm, nid) ((mm)->pgd_numa[nid])
+bool is_text_replicated(void);
+
+static inline pgd_t *this_node_pgd(struct mm_struct *mm)
+{
+	if (is_text_replicated())
+		return mm->pgd_numa[numa_node_id()];
+	else
+		return mm->pgd;
+}
+
+static inline pgd_t *per_node_pgd(struct mm_struct *mm, int nid)
+{
+	if (is_text_replicated())
+		return mm->pgd_numa[nid];
+	else
+		return mm->pgd;
+}
+
+static inline pgd_t **per_node_pgd_ptr(struct mm_struct *mm, int nid)
+{
+	if (is_text_replicated())
+		return &mm->pgd_numa[nid];
+	else
+		return &mm->pgd;
+}
 
 static inline bool numa_addr_has_replica(const void *addr)
 {
@@ -56,7 +79,6 @@ void __init numa_replicate_kernel_text(void);
 void numa_replicate_kernel_rodata(void);
 void numa_replication_fini(void);
 
-bool is_text_replicated(void);
 propagation_level_t get_propagation_level(void);
 void numa_setup_pgd(void);
 void __init_or_module *numa_get_replica(void *vaddr, int nid);

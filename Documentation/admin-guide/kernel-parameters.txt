@@ -2534,6 +2534,13 @@
 			some extension. These two features are alternatives.
 			Current only arm64 is supported.
 
+	kernel_replication=
+			[ARM64]
+			Format: [on|off]
+			If CONFIG_KERNEL_REPLICATION is set, it allows
+			enabling/disabling the kernel replication feature
+			via cmdline. Default value is off.
+
 	kgdbdbgp=	[KGDB,HW] kgdb over EHCI usb debug port.
 			Format: <Controller#>[,poll interval]
 			The controller # is the number of the ehci usb debug
