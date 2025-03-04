@@ -1,6 +1,7 @@
 config SDMA_DAE
 	tristate "SDMA-DAE driver for SDMA hardware"
 	depends on ARM64 && NUMA
+	select MMU_NOTIFIER
 	default n
 	help
 	  Kernel driver of SDMA hardware.
