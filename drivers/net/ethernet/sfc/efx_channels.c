@@ -744,6 +744,51 @@ void efx_remove_channels(struct efx_nic *efx)
 	kfree(efx->xdp_tx_queues);
 }
 
+static void efx_set_xdp_channels(struct efx_nic *efx)
+{
+	struct efx_tx_queue *tx_queue;
+	struct efx_channel *channel;
+	unsigned int next_queue = 0;
+	int xdp_queue_number = 0;
+
+	/* We need to mark which channels really have RX and TX
+	 * queues, and adjust the TX queue numbers if we have separate
+	 * RX-only and TX-only channels.
+	 */
+	efx_for_each_channel(channel, efx) {
+		if (channel->channel < efx->tx_channel_offset)
+			continue;
+
+		if (efx_channel_is_xdp_tx(channel)) {
+			efx_for_each_channel_tx_queue(tx_queue, channel) {
+				tx_queue->queue = next_queue++;
+
+				/* We may have a few left-over XDP TX
+				 * queues owing to xdp_tx_queue_count
+				 * not dividing evenly by EFX_MAX_TXQ_PER_CHANNEL.
+				 * We still allocate and probe those
+				 * TXQs, but never use them.
+				 */
+				if (xdp_queue_number < efx->xdp_tx_queue_count) {
+					netif_dbg(efx, drv, efx->net_dev, "Channel %u TXQ %u is XDP %u, HW %u\n",
+						  channel->channel, tx_queue->label,
+						  xdp_queue_number, tx_queue->queue);
+					efx->xdp_tx_queues[xdp_queue_number] = tx_queue;
+					xdp_queue_number++;
+				}
+			}
+		} else {
+			efx_for_each_channel_tx_queue(tx_queue, channel) {
+				tx_queue->queue = next_queue++;
+				netif_dbg(efx, drv, efx->net_dev, "Channel %u TXQ %u is HW %u\n",
+					  channel->channel, tx_queue->label,
+					  tx_queue->queue);
+			}
+		}
+	}
+	WARN_ON(xdp_queue_number != efx->xdp_tx_queue_count);
+}
+
 int efx_realloc_channels(struct efx_nic *efx, u32 rxq_entries, u32 txq_entries)
 {
 	struct efx_channel *other_channel[EFX_MAX_CHANNELS], *channel,
@@ -817,6 +862,7 @@ int efx_realloc_channels(struct efx_nic *efx, u32 rxq_entries, u32 txq_entries)
 		efx_init_napi_channel(efx->channel[i]);
 	}
 
+	efx_set_xdp_channels(efx);
 out:
 	efx->ptp_data = NULL;
 	/* Destroy unused channel structures */
@@ -854,10 +900,7 @@ rollback:
 
 int efx_set_channels(struct efx_nic *efx)
 {
-	struct efx_tx_queue *tx_queue;
 	struct efx_channel *channel;
-	unsigned int next_queue = 0;
-	int xdp_queue_number;
 	int rc;
 
 	if (efx->xdp_tx_queue_count) {
@@ -871,47 +914,13 @@ int efx_set_channels(struct efx_nic *efx)
 			return -ENOMEM;
 	}
 
-	/* We need to mark which channels really have RX and TX
-	 * queues, and adjust the TX queue numbers if we have separate
-	 * RX-only and TX-only channels.
-	 */
-	xdp_queue_number = 0;
 	efx_for_each_channel(channel, efx) {
 		if (channel->channel < efx->n_rx_channels)
 			channel->rx_queue.core_index = channel->channel;
 		else
 			channel->rx_queue.core_index = -1;
-
-		if (channel->channel >= efx->tx_channel_offset) {
-			if (efx_channel_is_xdp_tx(channel)) {
-				efx_for_each_channel_tx_queue(tx_queue, channel) {
-					tx_queue->queue = next_queue++;
-
-					/* We may have a few left-over XDP TX
-					 * queues owing to xdp_tx_queue_count
-					 * not dividing evenly by EFX_MAX_TXQ_PER_CHANNEL.
-					 * We still allocate and probe those
-					 * TXQs, but never use them.
-					 */
-					if (xdp_queue_number < efx->xdp_tx_queue_count) {
-						netif_dbg(efx, drv, efx->net_dev, "Channel %u TXQ %u is XDP %u, HW %u\n",
-							  channel->channel, tx_queue->label,
-							  xdp_queue_number, tx_queue->queue);
-						efx->xdp_tx_queues[xdp_queue_number] = tx_queue;
-						xdp_queue_number++;
-					}
-				}
-			} else {
-				efx_for_each_channel_tx_queue(tx_queue, channel) {
-					tx_queue->queue = next_queue++;
-					netif_dbg(efx, drv, efx->net_dev, "Channel %u TXQ %u is HW %u\n",
-						  channel->channel, tx_queue->label,
-						  tx_queue->queue);
-				}
-			}
-		}
 	}
-	WARN_ON(xdp_queue_number != efx->xdp_tx_queue_count);
+	efx_set_xdp_channels(efx);
 
 	rc = netif_set_real_num_tx_queues(efx->net_dev, efx->n_tx_channels);
 	if (rc)
