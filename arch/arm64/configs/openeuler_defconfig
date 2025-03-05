@@ -774,7 +774,7 @@ CONFIG_CPU_MITIGATIONS=y
 #
 # Hardware Assisted OS Compartmentalization(HAOC)
 #
-# CONFIG_IEE is not set
+CONFIG_IEE=y
 # end of Hardware Assisted OS Compartmentalization(HAOC)
 
 #
