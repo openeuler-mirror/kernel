@@ -16,6 +16,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/iomap.h>
+#include <linux/hashtable.h>
 #include "erofs_fs.h"
 
 /* redefine pr_fmt "erofs: " */
@@ -177,6 +178,15 @@ struct erofs_sb_info {
 	char *fsid;
 	char *domain_id;
 	bool  ondemand_enabled;
+
+#ifdef CONFIG_EROFS_TRIO
+#define TRIO_HT_BITS   10
+	/* trio support */
+	char *trio_meta;
+	char *trio_data;
+	void *buffer;
+	DECLARE_HASHTABLE(meta_ht, TRIO_HT_BITS);
+#endif
 };
 
 #define EROFS_SB(sb) ((struct erofs_sb_info *)(sb)->s_fs_info)
@@ -523,6 +533,52 @@ struct erofs_fscache *erofs_fscache_register_cookie(struct super_block *sb,
 static inline void erofs_fscache_unregister_cookie(struct erofs_fscache *fscache)
 {
 }
+#endif
+
+#ifdef CONFIG_EROFS_TRIO
+static inline bool erofs_trio_is_enable(struct super_block *sb)
+{
+	struct erofs_sb_info *sbi = EROFS_SB(sb);
+
+	return sbi->trio_meta && sbi->trio_data;
+}
+void *erofs_get_trio_object(struct inode *inode);
+ssize_t erofs_read_from_trio(struct address_space *mapping,
+			loff_t pos, size_t len);
+int erofs_register_trio(struct super_block *sb);
+void erofs_unregister_trio(struct super_block *sb);
+int trio_manager_init(void);
+void trio_manager_exit(void);
+#else
+static inline bool erofs_trio_is_enable(struct super_block *sb)
+{
+	return false;
+}
+
+static inline void *erofs_get_trio_object(struct inode *inode)
+{
+	return NULL;
+}
+
+static inline ssize_t erofs_read_from_trio(struct address_space *mapping,
+			loff_t pos, size_t len)
+{
+	return 0;
+}
+
+static inline int erofs_register_trio(struct super_block *sb)
+{
+	return 0;
+}
+
+static inline void erofs_unregister_trio(struct super_block *sb) {}
+
+static inline int trio_manager_init(void)
+{
+	return 0;
+}
+
+static inline void trio_manager_exit(void) {}
 #endif
 
 #define EFSCORRUPTED    EUCLEAN         /* Filesystem is corrupted */

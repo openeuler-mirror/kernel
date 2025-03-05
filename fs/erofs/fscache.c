@@ -198,6 +198,21 @@ static int erofs_fscache_meta_read_folio(struct file *data, struct folio *folio)
 	return ret;
 }
 
+static bool erofs_fscache_read_trio(struct erofs_fscache_request *primary)
+{
+	struct address_space *mapping = primary->mapping;
+	loff_t pos = primary->start + primary->submitted;
+
+	ssize_t ret = erofs_read_from_trio(mapping, pos,
+					   primary->len - primary->submitted);
+	if (ret > 0) {
+		primary->submitted += ret;
+		return true;
+	}
+
+	return false;
+}
+
 static int erofs_fscache_data_read_slice(struct erofs_fscache_request *primary)
 {
 	struct address_space *mapping = primary->mapping;
@@ -207,10 +222,15 @@ static int erofs_fscache_data_read_slice(struct erofs_fscache_request *primary)
 	struct erofs_map_blocks map;
 	struct erofs_map_dev mdev;
 	struct iov_iter iter;
-	loff_t pos = primary->start + primary->submitted;
+	loff_t pos;
 	size_t count;
 	int ret;
 
+	/* first try mapping in trio */
+	if (erofs_fscache_read_trio(primary))
+		return 0;
+
+	pos = primary->start + primary->submitted;
 	map.m_la = pos;
 	ret = erofs_map_blocks(inode, &map);
 	if (ret)

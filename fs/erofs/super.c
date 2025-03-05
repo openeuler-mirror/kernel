@@ -13,6 +13,7 @@
 #include <linux/fs_parser.h>
 #include <linux/dax.h>
 #include <linux/exportfs.h>
+#include <linux/backing-dev-defs.h>
 #include "xattr.h"
 
 #define CREATE_TRACE_POINTS
@@ -388,6 +389,8 @@ enum {
 	Opt_device,
 	Opt_fsid,
 	Opt_domain_id,
+	Opt_trio_meta,
+	Opt_trio_data,
 	Opt_err
 };
 
@@ -414,6 +417,8 @@ static const struct fs_parameter_spec erofs_fs_parameters[] = {
 	fsparam_string("device",	Opt_device),
 	fsparam_string("fsid",		Opt_fsid),
 	fsparam_string("domain_id",	Opt_domain_id),
+	fsparam_string("trio_meta",     Opt_trio_meta),
+	fsparam_string("trio_data",     Opt_trio_data),
 	{}
 };
 
@@ -530,6 +535,25 @@ static int erofs_fc_parse_param(struct fs_context *fc,
 		if (!sbi->domain_id)
 			return -ENOMEM;
 		break;
+#ifdef CONFIG_EROFS_TRIO
+	case Opt_trio_meta:
+		kfree(sbi->trio_meta);
+		sbi->trio_meta = kstrdup(param->string, GFP_KERNEL);
+		if (!sbi->trio_meta)
+			return -ENOMEM;
+		break;
+	case Opt_trio_data:
+		kfree(sbi->trio_data);
+		sbi->trio_data = kstrdup(param->string, GFP_KERNEL);
+		if (!sbi->trio_data)
+			return -ENOMEM;
+		break;
+#else
+	case Opt_trio_meta:
+	case Opt_trio_data:
+		errorfc(fc, "%s option not supported", erofs_fs_parameters[opt].name);
+		break;
+#endif
 #else
 	case Opt_fsid:
 	case Opt_domain_id:
@@ -596,6 +620,10 @@ static int erofs_fc_fill_super(struct super_block *sb, struct fs_context *fc)
 		sb->s_blocksize = PAGE_SIZE;
 		sb->s_blocksize_bits = PAGE_SHIFT;
 
+		err = erofs_register_trio(sb);
+		if (err)
+			return err;
+
 		err = erofs_fscache_register_fs(sb);
 		if (err)
 			return err;
@@ -603,6 +631,11 @@ static int erofs_fc_fill_super(struct super_block *sb, struct fs_context *fc)
 		err = super_setup_bdi(sb);
 		if (err)
 			return err;
+
+		if (erofs_trio_is_enable(sb)) {
+			sb->s_bdi->ra_pages = 0;
+			sb->s_bdi->io_pages = 0;
+		}
 	} else {
 		if (!sb_set_blocksize(sb, PAGE_SIZE)) {
 			errorfc(fc, "failed to set initial blksize");
@@ -809,7 +842,12 @@ static void erofs_kill_sb(struct super_block *sb)
 
 	erofs_free_dev_context(sbi->devs);
 	fs_put_dax(sbi->dax_dev, NULL);
+	erofs_unregister_trio(sb);
 	erofs_fscache_unregister_fs(sb);
+#ifdef CONFIG_EROFS_TRIO
+	kfree(sbi->trio_meta);
+	kfree(sbi->trio_data);
+#endif
 	kfree(sbi->fsid);
 	kfree(sbi->domain_id);
 	kfree(sbi);
@@ -833,6 +871,7 @@ static void erofs_put_super(struct super_block *sb)
 	sbi->packed_inode = NULL;
 	erofs_free_dev_context(sbi->devs);
 	sbi->devs = NULL;
+	erofs_unregister_trio(sb);
 	erofs_fscache_unregister_fs(sb);
 }
 
@@ -879,12 +918,17 @@ static int __init erofs_module_init(void)
 	if (err)
 		goto sysfs_err;
 
-	err = register_filesystem(&erofs_fs_type);
+	err = trio_manager_init();
 	if (err)
 		goto fs_err;
 
-	return 0;
+	err = register_filesystem(&erofs_fs_type);
+	if (err)
+		goto trio_err;
 
+	return 0;
+trio_err:
+	trio_manager_exit();
 fs_err:
 	erofs_exit_sysfs();
 sysfs_err:
@@ -907,6 +951,7 @@ static void __exit erofs_module_exit(void)
 	/* Ensure all RCU free inodes / pclusters are safe to be destroyed. */
 	rcu_barrier();
 
+	trio_manager_exit();
 	erofs_exit_sysfs();
 	z_erofs_exit_zip_subsystem();
 	z_erofs_deflate_exit();

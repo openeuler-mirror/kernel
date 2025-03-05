@@ -185,6 +185,14 @@ close_data:
 	return data;
 }
 
+void *erofs_get_trio_object(struct inode *inode)
+{
+	struct trace_object *obj;
+
+	obj = find_trace_object(inode);
+	return obj;
+}
+
 ssize_t erofs_read_from_trio(struct address_space *mapping,
 			loff_t pos, size_t len)
 {
@@ -197,10 +205,10 @@ ssize_t erofs_read_from_trio(struct address_space *mapping,
 	size_t hit_len;
 	ssize_t ret;
 
-	obj = find_trace_object(inode);
-	if (!obj)
+	if (!inode->i_private)
 		return 0;
 
+	obj = (struct trace_object *)inode->i_private;
 	target_io = get_io_from_object(obj, pos, len, &hit_len);
 	if (!target_io || !hit_len)
 		return 0;
@@ -224,6 +232,9 @@ int erofs_register_trio(struct super_block *sb)
 	struct list_head *pos, *n;
 	LIST_HEAD(head);
 	int ret = -EINVAL;
+
+	if (!sbi->trio_meta && !sbi->trio_data)
+		return 0;
 
 	if (!sbi->trio_meta || !sbi->trio_data) {
 		erofs_err(sb, "trio_meta and trio_data must be set together");
