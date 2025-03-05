@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * arch/sw_64/chip/chip3/i2c-lib.c
- *
  *  Copyright (C) 2020 Platform Software
  *
  *  This program is free software; you can redistribute it and/or

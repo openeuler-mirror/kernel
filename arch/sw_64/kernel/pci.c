@@ -57,6 +57,39 @@ static void quirk_isa_bridge(struct pci_dev *dev)
 }
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82378, quirk_isa_bridge);
 
+/*
+ * Early fix up the Root Complex settings
+ */
+static void fixup_root_complex(struct pci_dev *dev)
+{
+	int i;
+	struct pci_bus *bus = dev->bus;
+	struct pci_controller *hose = bus->sysdata;
+
+	hose->self_busno = hose->busn_space->start;
+
+	if (likely(bus->number == hose->self_busno)) {
+		if (IS_ENABLED(CONFIG_HOTPLUG_PCI_PCIE)) {
+			/* Check Root Complex port again */
+			dev->is_hotplug_bridge = 0;
+			dev->current_state = PCI_D0;
+		}
+
+		dev->class &= 0xff;
+		dev->class |= PCI_CLASS_BRIDGE_PCI << 8;
+		for (i = 0; i < PCI_NUM_RESOURCES; i++) {
+			dev->resource[i].start = 0;
+			dev->resource[i].end   = 0;
+			dev->resource[i].flags = IORESOURCE_PCI_FIXED;
+		}
+	}
+	atomic_inc(&dev->enable_cnt);
+
+	dev->no_msi = 1;
+}
+
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_SW64_ROOT_BRIDGE, fixup_root_complex);
+
 /* Just declaring that the power-of-ten prefixes are actually the
  * power-of-two ones doesn't make it true :)
  */
@@ -136,7 +169,8 @@ resource_size_t pcibios_align_resource(void *data, const struct resource *res,
 static int __init
 pcibios_init(void)
 {
-	sw64_init_pci();
+	if (acpi_disabled)
+		sw64_init_pci();
 	return 0;
 }
 subsys_initcall(pcibios_init);
@@ -601,6 +635,7 @@ sw64_init_host(unsigned long node, unsigned long index)
 }
 
 void __weak set_devint_wken(int node) {}
+void __weak set_adr_int(int node) {}
 
 void __init sw64_init_arch(void)
 {
@@ -610,12 +645,20 @@ void __init sw64_init_arch(void)
 		char id[8], msg[64];
 		int i;
 
-		pr_info("SW arch PCI initialize!\n");
 		cpu_num = sw64_chip->get_cpu_num();
 
 		for (node = 0; node < cpu_num; node++) {
-			if (is_in_host())
+			if (is_in_host()) {
 				set_devint_wken(node);
+				set_adr_int(node);
+			}
+		}
+
+		if (!acpi_disabled)
+			return;
+
+		pr_info("SW arch PCI initialize!\n");
+		for (node = 0; node < cpu_num; node++) {
 			rc_enable = sw64_chip_init->pci_init.get_rc_enable(node);
 			if (rc_enable == 0) {
 				printk("PCIe is disabled on node %ld\n", node);
@@ -690,7 +733,24 @@ void __init sw64_init_irq(void)
 void __init
 sw64_init_pci(void)
 {
+	pci_add_flags(PCI_REASSIGN_ALL_BUS);
 	common_init_pci();
+	pci_clear_flags(PCI_REASSIGN_ALL_BUS);
+}
+
+void __init reserve_mem_for_pci(void)
+{
+	int ret;
+	unsigned long base = PCI_32BIT_MEMIO;
+
+	ret = add_memmap_region(base, PCI_32BIT_MEMIO_SIZE, memmap_pci);
+	if (ret) {
+		pr_err("reserved pages for pcie memory space failed\n");
+		return;
+	}
+
+	pr_info("reserved pages for pcie memory space %lx:%lx\n", base >> PAGE_SHIFT,
+			(base + PCI_32BIT_MEMIO_SIZE) >> PAGE_SHIFT);
 }
 
 static int setup_bus_dma_cb(struct pci_dev *pdev, void *data)
@@ -705,3 +765,41 @@ static void fix_bus_dma_limit(struct pci_dev *dev)
 	pr_info("Set zx200 bus_dma_limit to 32-bit\n");
 }
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ZHAOXIN, 0x071f, fix_bus_dma_limit);
+
+const struct dma_map_ops *dma_ops;
+EXPORT_SYMBOL(dma_ops);
+
+#ifdef CONFIG_DCA
+static void enable_sw_dca(struct pci_dev *dev)
+{
+	struct pci_controller *hose = (struct pci_controller *)dev->sysdata;
+	unsigned long node, rc_index, dca_ctl, dca_conf;
+	int i;
+
+	if (dev->class >> 8 != PCI_CLASS_NETWORK_ETHERNET)
+		return;
+
+	node = hose->node;
+	rc_index = hose->index;
+
+	for (i = 0; i < 256; i++) {
+		dca_conf = read_piu_ior1(node, rc_index, DEVICEID0 + (i << 7));
+		if (dca_conf >> 63)
+			continue;
+		else {
+			dca_conf = (1UL << 63) | (dev->bus->number << 8) | dev->devfn;
+			pr_info("dca device index %d, dca_conf = %#lx\n", i, dca_conf);
+			write_piu_ior1(node, rc_index, DEVICEID0 + (i << 7), dca_conf);
+			break;
+		}
+	}
+
+	dca_ctl = read_piu_ior1(node, rc_index, DCACONTROL);
+	if (dca_ctl & 0x1) {
+		dca_ctl = 0x2;
+		write_piu_ior1(node, rc_index, DCACONTROL, dca_ctl);
+		pr_info("Node %ld RC %ld enable DCA 1.0\n", node, rc_index);
+	}
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, PCI_ANY_ID, enable_sw_dca);
+#endif

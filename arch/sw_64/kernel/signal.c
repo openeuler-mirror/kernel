@@ -11,10 +11,13 @@
 #include <linux/errno.h>
 #include <linux/tracehook.h>
 #include <linux/syscalls.h>
+#include <linux/livepatch.h>
 
 #include <asm/ucontext.h>
+#include <asm/uprobes.h>
 #include <asm/vdso.h>
 #include <asm/switch_to.h>
+#include <asm/syscall.h>
 
 #include "proto.h"
 
@@ -92,43 +95,9 @@ extern char compile_time_assert
 static long
 restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
 {
-	unsigned long usp;
 	long err = __get_user(regs->pc, &sc->sc_pc);
 
-	current->restart_block.fn = do_no_restart_syscall;
-
-	err |= __get_user(regs->r0, sc->sc_regs+0);
-	err |= __get_user(regs->r1, sc->sc_regs+1);
-	err |= __get_user(regs->r2, sc->sc_regs+2);
-	err |= __get_user(regs->r3, sc->sc_regs+3);
-	err |= __get_user(regs->r4, sc->sc_regs+4);
-	err |= __get_user(regs->r5, sc->sc_regs+5);
-	err |= __get_user(regs->r6, sc->sc_regs+6);
-	err |= __get_user(regs->r7, sc->sc_regs+7);
-	err |= __get_user(regs->r8, sc->sc_regs+8);
-	err |= __get_user(regs->r9, sc->sc_regs+9);
-	err |= __get_user(regs->r10, sc->sc_regs+10);
-	err |= __get_user(regs->r11, sc->sc_regs+11);
-	err |= __get_user(regs->r12, sc->sc_regs+12);
-	err |= __get_user(regs->r13, sc->sc_regs+13);
-	err |= __get_user(regs->r14, sc->sc_regs+14);
-	err |= __get_user(regs->r15, sc->sc_regs+15);
-	err |= __get_user(regs->r16, sc->sc_regs+16);
-	err |= __get_user(regs->r17, sc->sc_regs+17);
-	err |= __get_user(regs->r18, sc->sc_regs+18);
-	err |= __get_user(regs->r19, sc->sc_regs+19);
-	err |= __get_user(regs->r20, sc->sc_regs+20);
-	err |= __get_user(regs->r21, sc->sc_regs+21);
-	err |= __get_user(regs->r22, sc->sc_regs+22);
-	err |= __get_user(regs->r23, sc->sc_regs+23);
-	err |= __get_user(regs->r24, sc->sc_regs+24);
-	err |= __get_user(regs->r25, sc->sc_regs+25);
-	err |= __get_user(regs->r26, sc->sc_regs+26);
-	err |= __get_user(regs->r27, sc->sc_regs+27);
-	err |= __get_user(regs->r28, sc->sc_regs+28);
-	err |= __get_user(regs->gp, sc->sc_regs+29);
-	err |= __get_user(usp, sc->sc_regs+30);
-	wrusp(usp);
+	err |= __copy_from_user(regs, sc->sc_regs, sizeof_field(struct pt_regs, regs));
 	/* simd-fp */
 	err |= __copy_from_user(&current->thread.fpstate, &sc->sc_fpregs,
 				offsetof(struct user_fpsimd_state, fpcr));
@@ -146,11 +115,15 @@ restore_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs)
  * registers and transfer control from userland.
  */
 
-asmlinkage void
-do_sigreturn(struct sigcontext __user *sc)
+SYSCALL_DEFINE1(sigreturn, struct sigcontext __user *, sc)
 {
 	struct pt_regs *regs = current_pt_regs();
 	sigset_t set;
+
+	force_successful_syscall_return();
+
+	/* Always make any pending restarted system calls return -EINTR */
+	current->restart_block.fn = do_no_restart_syscall;
 
 	/* Verify that it's a good sigcontext before using it */
 	if (!access_ok(sc, sizeof(*sc)))
@@ -166,19 +139,24 @@ do_sigreturn(struct sigcontext __user *sc)
 	/* Send SIGTRAP if we're single-stepping: */
 	if (ptrace_cancel_bpt(current)) {
 		force_sig_fault(SIGTRAP, TRAP_BRKPT,
-				(void __user *)regs->pc, 0);
+				(void __user *)regs->pc);
 	}
-	return;
+	return regs->regs[0];
 
 give_sigsegv:
 	force_sig(SIGSEGV);
+	return 0;
 }
 
-asmlinkage void
-do_rt_sigreturn(struct rt_sigframe __user *frame)
+SYSCALL_DEFINE1(rt_sigreturn, struct rt_sigframe __user *, frame)
 {
 	struct pt_regs *regs = current_pt_regs();
 	sigset_t set;
+
+	force_successful_syscall_return();
+
+	/* Always make any pending restarted system calls return -EINTR */
+	current->restart_block.fn = do_no_restart_syscall;
 
 	/* Verify that it's a good ucontext_t before using it */
 	if (!access_ok(&frame->uc, sizeof(frame->uc)))
@@ -197,12 +175,13 @@ do_rt_sigreturn(struct rt_sigframe __user *frame)
 	/* Send SIGTRAP if we're single-stepping: */
 	if (ptrace_cancel_bpt(current)) {
 		force_sig_fault(SIGTRAP, TRAP_BRKPT,
-				(void __user *)regs->pc, 0);
+				(void __user *)regs->pc);
 	}
-	return;
+	return regs->regs[0];
 
 give_sigsegv:
 	force_sig(SIGSEGV);
+	return 0;
 }
 
 
@@ -218,7 +197,7 @@ get_sigframe(struct ksignal *ksig, unsigned long sp, size_t frame_size)
 
 static long
 setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
-		 unsigned long mask, unsigned long sp)
+		 unsigned long mask)
 {
 	long err = 0;
 
@@ -227,37 +206,7 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	err |= __put_user(regs->pc, &sc->sc_pc);
 	err |= __put_user(8, &sc->sc_ps);
 
-	err |= __put_user(regs->r0, sc->sc_regs+0);
-	err |= __put_user(regs->r1, sc->sc_regs+1);
-	err |= __put_user(regs->r2, sc->sc_regs+2);
-	err |= __put_user(regs->r3, sc->sc_regs+3);
-	err |= __put_user(regs->r4, sc->sc_regs+4);
-	err |= __put_user(regs->r5, sc->sc_regs+5);
-	err |= __put_user(regs->r6, sc->sc_regs+6);
-	err |= __put_user(regs->r7, sc->sc_regs+7);
-	err |= __put_user(regs->r8, sc->sc_regs+8);
-	err |= __put_user(regs->r9, sc->sc_regs+9);
-	err |= __put_user(regs->r10, sc->sc_regs+10);
-	err |= __put_user(regs->r11, sc->sc_regs+11);
-	err |= __put_user(regs->r12, sc->sc_regs+12);
-	err |= __put_user(regs->r13, sc->sc_regs+13);
-	err |= __put_user(regs->r14, sc->sc_regs+14);
-	err |= __put_user(regs->r15, sc->sc_regs+15);
-	err |= __put_user(regs->r16, sc->sc_regs+16);
-	err |= __put_user(regs->r17, sc->sc_regs+17);
-	err |= __put_user(regs->r18, sc->sc_regs+18);
-	err |= __put_user(regs->r19, sc->sc_regs+19);
-	err |= __put_user(regs->r20, sc->sc_regs+20);
-	err |= __put_user(regs->r21, sc->sc_regs+21);
-	err |= __put_user(regs->r22, sc->sc_regs+22);
-	err |= __put_user(regs->r23, sc->sc_regs+23);
-	err |= __put_user(regs->r24, sc->sc_regs+24);
-	err |= __put_user(regs->r25, sc->sc_regs+25);
-	err |= __put_user(regs->r26, sc->sc_regs+26);
-	err |= __put_user(regs->r27, sc->sc_regs+27);
-	err |= __put_user(regs->r28, sc->sc_regs+28);
-	err |= __put_user(regs->gp, sc->sc_regs+29);
-	err |= __put_user(sp, sc->sc_regs+30);
+	err |= __copy_to_user(sc->sc_regs, regs, sizeof_field(struct pt_regs, regs));
 	err |= __put_user(0, sc->sc_regs+31);
 	/* simd-fp */
 	__fpstate_save(current);
@@ -271,11 +220,10 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 static int
 setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 {
-	unsigned long oldsp, err = 0;
+	unsigned long err = 0;
 	struct rt_sigframe __user *frame;
 
-	oldsp = rdusp();
-	frame = get_sigframe(ksig, oldsp, sizeof(*frame));
+	frame = get_sigframe(ksig, regs->regs[30], sizeof(*frame));
 	if (!access_ok(frame, sizeof(*frame)))
 		return -EFAULT;
 
@@ -286,31 +234,30 @@ setup_rt_frame(struct ksignal *ksig, sigset_t *set, struct pt_regs *regs)
 	err |= __put_user(0, &frame->uc.uc_flags);
 	err |= __put_user(0, &frame->uc.uc_link);
 	err |= __put_user(set->sig[0], &frame->uc.uc_old_sigmask);
-	err |= __save_altstack(&frame->uc.uc_stack, oldsp);
-	err |= setup_sigcontext(&frame->uc.uc_mcontext, regs,
-			set->sig[0], oldsp);
+	err |= __save_altstack(&frame->uc.uc_stack, regs->regs[30]);
+	err |= setup_sigcontext(&frame->uc.uc_mcontext, regs, set->sig[0]);
 	err |= __copy_to_user(&frame->uc.uc_sigmask, set, sizeof(*set));
 	if (err)
 		return -EFAULT;
 
 	/* "Return" to the handler */
-	regs->r26 = VDSO_SYMBOL(current->mm->context.vdso, rt_sigreturn);
-	regs->r27 = regs->pc = (unsigned long) ksig->ka.sa.sa_handler;
-	regs->r16 = ksig->sig;                    /* a0: signal number */
+	regs->regs[26] = VDSO_SYMBOL(current->mm->context.vdso, rt_sigreturn);
+	regs->regs[27] = regs->pc = (unsigned long) ksig->ka.sa.sa_handler;
+	regs->regs[16] = ksig->sig;                    /* a0: signal number */
 	if (ksig->ka.sa.sa_flags & SA_SIGINFO) {
 		/* a1: siginfo pointer, a2: ucontext pointer */
-		regs->r17 = (unsigned long) &frame->info;
-		regs->r18 = (unsigned long) &frame->uc;
+		regs->regs[17] = (unsigned long) &frame->info;
+		regs->regs[18] = (unsigned long) &frame->uc;
 	} else {
 		/* a1: exception code, a2: sigcontext pointer */
-		regs->r17 = 0;
-		regs->r18 = (unsigned long) &frame->uc.uc_mcontext;
+		regs->regs[17] = 0;
+		regs->regs[18] = (unsigned long) &frame->uc.uc_mcontext;
 	}
-	wrusp((unsigned long) frame);
+	regs->regs[30] = (unsigned long) frame;
 
 #if DEBUG_SIG
 	printk("SIG deliver (%s:%d): sp=%p pc=%p ra=%p\n",
-			current->comm, current->pid, frame, regs->pc, regs->r26);
+			current->comm, current->pid, frame, regs->pc, regs->regs[26]);
 #endif
 
 	return 0;
@@ -332,32 +279,6 @@ handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 	signal_setup_done(ret, ksig, 0);
 }
 
-static inline void
-syscall_restart(unsigned long r0, unsigned long r19,
-		struct pt_regs *regs, struct k_sigaction *ka)
-{
-	switch (regs->r0) {
-	case ERESTARTSYS:
-		if (!(ka->sa.sa_flags & SA_RESTART)) {
-			regs->r0 = EINTR;
-			break;
-		}
-		/* else: fallthrough */
-	case ERESTARTNOINTR:
-		regs->r0 = r0;	/* reset v0 and a3 and replay syscall */
-		regs->r19 = r19;
-		regs->pc -= 4;
-		break;
-	case ERESTART_RESTARTBLOCK:
-		regs->r0 = EINTR;
-		break;
-	case ERESTARTNOHAND:
-		regs->r0 = EINTR;
-		break;
-	}
-}
-
-
 /*
  * Note that 'init' is a special process: it doesn't get signals it doesn't
  * want to handle. Thus you cannot kill init even with a SIGKILL even by
@@ -366,13 +287,9 @@ syscall_restart(unsigned long r0, unsigned long r19,
  * Note that we go through the signals twice: once to check the signals that
  * the kernel can handle, and then we build all the user-level signal handling
  * stack-frames in one go after that.
- *
- * "r0" and "r19" are the registers we need to restore for system call
- * restart. "r0" is also used as an indicator whether we can restart at
- * all (if we get here from anything but a syscall return, it will be 0)
  */
 static void
-do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
+do_signal(struct pt_regs *regs)
 {
 	unsigned long single_stepping = ptrace_cancel_bpt(current);
 	struct ksignal ksig;
@@ -382,27 +299,47 @@ do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 		/* ... so re-check the single stepping. */
 		single_stepping |= ptrace_cancel_bpt(current);
 		/* Whee!  Actually deliver the signal.  */
-		if (r0)
-			syscall_restart(r0, r19, regs, &ksig.ka);
+		if (regs->orig_r0 != NO_SYSCALL) {
+			switch (syscall_get_error(current, regs)) {
+			case -ERESTARTSYS:
+				if (!(ksig.ka.sa.sa_flags & SA_RESTART)) {
+					regs->regs[0] = EINTR;
+					break;
+				}
+				fallthrough;
+			case -ERESTARTNOINTR:
+				/* reset v0 and a3 and replay syscall */
+				regs->regs[0] = regs->orig_r0;
+				regs->regs[19] = regs->orig_r19;
+				regs->pc -= 4;
+				break;
+			case -ERESTARTNOHAND:
+			case -ERESTART_RESTARTBLOCK:
+				regs->regs[0] = EINTR;
+				break;
+			}
+			regs->orig_r0 = NO_SYSCALL;
+		}
 		handle_signal(&ksig, regs);
 	} else {
 		single_stepping |= ptrace_cancel_bpt(current);
-		if (r0) {
-			switch (regs->r0) {
-			case ERESTARTNOHAND:
-			case ERESTARTSYS:
-			case ERESTARTNOINTR:
+		if (regs->orig_r0 != NO_SYSCALL) {
+			switch (syscall_get_error(current, regs)) {
+			case -ERESTARTSYS:
+			case -ERESTARTNOINTR:
+			case -ERESTARTNOHAND:
 				/* Reset v0 and a3 and replay syscall.  */
-				regs->r0 = r0;
-				regs->r19 = r19;
+				regs->regs[0] = regs->orig_r0;
+				regs->regs[19] = regs->orig_r19;
 				regs->pc -= 4;
 				break;
-			case ERESTART_RESTARTBLOCK:
+			case -ERESTART_RESTARTBLOCK:
 				/* Set v0 to the restart_syscall and replay */
-				regs->r0 = __NR_restart_syscall;
+				regs->regs[0] = __NR_restart_syscall;
 				regs->pc -= 4;
 				break;
 			}
+			regs->orig_r0 = NO_SYSCALL;
 		}
 		restore_saved_sigmask();
 	}
@@ -410,29 +347,35 @@ do_signal(struct pt_regs *regs, unsigned long r0, unsigned long r19)
 		ptrace_set_bpt(current);        /* re-set breakpoint */
 }
 
-void
-do_work_pending(struct pt_regs *regs, unsigned long thread_flags,
-		unsigned long r0, unsigned long r19)
+asmlinkage void
+do_notify_resume(struct pt_regs *regs, unsigned long thread_flags)
 {
 	do {
-		if (thread_flags & _TIF_NEED_RESCHED) {
+		local_irq_enable();
+
+		if (thread_flags & _TIF_NEED_RESCHED)
 			schedule();
-		} else {
-			local_irq_enable();
 
-			if (thread_flags & _TIF_UPROBE)
-				uprobe_notify_resume(regs);
+		if (thread_flags & _TIF_UPROBE) {
+			unsigned long pc = regs->pc;
 
-			if (thread_flags & _TIF_SIGPENDING) {
-				do_signal(regs, r0, r19);
-				r0 = 0;
-			} else {
-				clear_thread_flag(TIF_NOTIFY_RESUME);
-				tracehook_notify_resume(regs);
-				rseq_handle_notify_resume(NULL, regs);
-			}
+			uprobe_notify_resume(regs);
+			sw64_fix_uretprobe(regs, pc - 4);
 		}
+
+		if (thread_flags & _TIF_PATCH_PENDING)
+			klp_update_patch_state(current);
+
+		if (thread_flags & (_TIF_SIGPENDING | _TIF_NOTIFY_SIGNAL))
+			do_signal(regs);
+
+		if (thread_flags & _TIF_NOTIFY_RESUME) {
+			clear_thread_flag(TIF_NOTIFY_RESUME);
+			tracehook_notify_resume(regs);
+			rseq_handle_notify_resume(NULL, regs);
+		}
+
 		local_irq_disable();
-		thread_flags = current_thread_info()->flags;
+		thread_flags = READ_ONCE(current_thread_info()->flags);
 	} while (thread_flags & _TIF_WORK_MASK);
 }

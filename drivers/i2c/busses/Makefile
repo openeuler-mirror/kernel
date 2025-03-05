@@ -26,6 +26,7 @@ obj-$(CONFIG_I2C_SIS630)	+= i2c-sis630.o
 obj-$(CONFIG_I2C_SIS96X)	+= i2c-sis96x.o
 obj-$(CONFIG_I2C_VIA)		+= i2c-via.o
 obj-$(CONFIG_I2C_VIAPRO)	+= i2c-viapro.o
+obj-$(CONFIG_I2C_SUNWAY)	+= i2c-sunway.o
 
 # Mac SMBus host controller drivers
 obj-$(CONFIG_I2C_HYDRA)		+= i2c-hydra.o
@@ -51,10 +52,6 @@ obj-$(CONFIG_I2C_DAVINCI)	+= i2c-davinci.o
 obj-$(CONFIG_I2C_DESIGNWARE_CORE)			+= i2c-designware-core.o
 i2c-designware-core-y					:= i2c-designware-common.o
 i2c-designware-core-y					+= i2c-designware-master.o
-obj-$(CONFIG_I2C_SUNWAY_SW6)				+= i2c-sunway-sw6.o
-i2c-sunway-sw6-y 					:= i2c-sunway-sw6-common.o
-i2c-sunway-sw6-y 					+= i2c-sunway-sw6-master.o
-i2c-sunway-sw6-y 					+= i2c-sunway-sw6-platdrv.o
 i2c-designware-core-$(CONFIG_I2C_DESIGNWARE_SLAVE) 	+= i2c-designware-slave.o
 obj-$(CONFIG_I2C_DESIGNWARE_PLATFORM)			+= i2c-designware-platform.o
 i2c-designware-platform-y 				:= i2c-designware-platdrv.o

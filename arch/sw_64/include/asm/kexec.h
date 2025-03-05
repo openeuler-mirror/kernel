@@ -34,25 +34,37 @@ static inline void crash_setup_regs(struct pt_regs *newregs,
 	if (oldregs) {
 		memcpy(newregs, oldregs, sizeof(*newregs));
 	} else {
-		__asm__ __volatile__ ("stl $0, %0" : "=m" (newregs->r0));
-		__asm__ __volatile__ ("stl $1, %0" : "=m" (newregs->r1));
-		__asm__ __volatile__ ("stl $2, %0" : "=m" (newregs->r2));
-		__asm__ __volatile__ ("stl $3, %0" : "=m" (newregs->r3));
-		__asm__ __volatile__ ("stl $4, %0" : "=m" (newregs->r4));
-		__asm__ __volatile__ ("stl $5, %0" : "=m" (newregs->r5));
-		__asm__ __volatile__ ("stl $6, %0" : "=m" (newregs->r6));
-		__asm__ __volatile__ ("stl $7, %0" : "=m" (newregs->r7));
-		__asm__ __volatile__ ("stl $8, %0" : "=m" (newregs->r8));
-		__asm__ __volatile__ ("stl $19, %0" : "=m" (newregs->r19));
-		__asm__ __volatile__ ("stl $20, %0" : "=m" (newregs->r20));
-		__asm__ __volatile__ ("stl $21, %0" : "=m" (newregs->r21));
-		__asm__ __volatile__ ("stl $22, %0" : "=m" (newregs->r22));
-		__asm__ __volatile__ ("stl $23, %0" : "=m" (newregs->r23));
-		__asm__ __volatile__ ("stl $24, %0" : "=m" (newregs->r24));
-		__asm__ __volatile__ ("stl $25, %0" : "=m" (newregs->r25));
-		__asm__ __volatile__ ("stl $26, %0" : "=m" (newregs->r26));
-		__asm__ __volatile__ ("stl $27, %0" : "=m" (newregs->r27));
-		__asm__ __volatile__ ("stl $28, %0" : "=m" (newregs->r28));
+		__asm__ __volatile__ ("stl $0, %0" : "=m" (newregs->regs[0]));
+		__asm__ __volatile__ ("stl $1, %0" : "=m" (newregs->regs[1]));
+		__asm__ __volatile__ ("stl $2, %0" : "=m" (newregs->regs[2]));
+		__asm__ __volatile__ ("stl $3, %0" : "=m" (newregs->regs[3]));
+		__asm__ __volatile__ ("stl $4, %0" : "=m" (newregs->regs[4]));
+		__asm__ __volatile__ ("stl $5, %0" : "=m" (newregs->regs[5]));
+		__asm__ __volatile__ ("stl $6, %0" : "=m" (newregs->regs[6]));
+		__asm__ __volatile__ ("stl $7, %0" : "=m" (newregs->regs[7]));
+		__asm__ __volatile__ ("stl $8, %0" : "=m" (newregs->regs[8]));
+		__asm__ __volatile__ ("stl $9, %0" : "=m" (newregs->regs[9]));
+		__asm__ __volatile__ ("stl $10, %0" : "=m" (newregs->regs[10]));
+		__asm__ __volatile__ ("stl $11, %0" : "=m" (newregs->regs[11]));
+		__asm__ __volatile__ ("stl $12, %0" : "=m" (newregs->regs[12]));
+		__asm__ __volatile__ ("stl $13, %0" : "=m" (newregs->regs[13]));
+		__asm__ __volatile__ ("stl $14, %0" : "=m" (newregs->regs[14]));
+		__asm__ __volatile__ ("stl $15, %0" : "=m" (newregs->regs[15]));
+		__asm__ __volatile__ ("stl $16, %0" : "=m" (newregs->regs[16]));
+		__asm__ __volatile__ ("stl $17, %0" : "=m" (newregs->regs[17]));
+		__asm__ __volatile__ ("stl $18, %0" : "=m" (newregs->regs[18]));
+		__asm__ __volatile__ ("stl $19, %0" : "=m" (newregs->regs[19]));
+		__asm__ __volatile__ ("stl $20, %0" : "=m" (newregs->regs[20]));
+		__asm__ __volatile__ ("stl $21, %0" : "=m" (newregs->regs[21]));
+		__asm__ __volatile__ ("stl $22, %0" : "=m" (newregs->regs[22]));
+		__asm__ __volatile__ ("stl $23, %0" : "=m" (newregs->regs[23]));
+		__asm__ __volatile__ ("stl $24, %0" : "=m" (newregs->regs[24]));
+		__asm__ __volatile__ ("stl $25, %0" : "=m" (newregs->regs[25]));
+		__asm__ __volatile__ ("stl $26, %0" : "=m" (newregs->regs[26]));
+		__asm__ __volatile__ ("stl $27, %0" : "=m" (newregs->regs[27]));
+		__asm__ __volatile__ ("stl $28, %0" : "=m" (newregs->regs[28]));
+		__asm__ __volatile__ ("stl $29, %0" : "=m" (newregs->regs[29]));
+		__asm__ __volatile__ ("stl $30, %0" : "=m" (newregs->regs[30]));
 		newregs->pc = (unsigned long)current_text_addr();
 	}
 }

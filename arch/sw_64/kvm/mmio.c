@@ -7,6 +7,7 @@
 #include <linux/kvm_host.h>
 #include <asm/kvm_mmio.h>
 #include <asm/kvm_emulate.h>
+#include <asm/kvm_asm.h>
 
 static unsigned long mmio_read_buf(char *buf, unsigned int len)
 {
@@ -63,8 +64,13 @@ int io_mem_abort(struct kvm_vcpu *vcpu, struct kvm_run *run,
 {
 	int ret;
 
+#ifdef CONFIG_SUBARCH_C3B
 	run->mmio.phys_addr = hargs->arg1 & 0xfffffffffffffUL;
 	sw64_decode(vcpu, hargs->arg2, run);
+#elif defined(CONFIG_SUBARCH_C4)
+	run->mmio.phys_addr = read_csr(CSR_DVA) & 0xfffffffffffffUL;
+	sw64_decode(vcpu, 0, run);
+#endif
 	if (run->mmio.is_write)
 		ret = kvm_io_bus_write(vcpu, KVM_MMIO_BUS, run->mmio.phys_addr,
 				run->mmio.len, run->mmio.data);

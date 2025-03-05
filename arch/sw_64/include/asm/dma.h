@@ -88,20 +88,14 @@
  */
 #define MAX_ISA_DMA_ADDRESS	0x100000000UL
 
+#define MAX_DMA32_PFN		(1UL << (32 - PAGE_SHIFT))
+
 /*
  * If we have the iommu, we don't have any address limitations on DMA.
  * Otherwise (Nautilus, RX164), we have to have 0-16 Mb DMA zone
  * like i386.
  */
-#ifdef CONFIG_IOMMU_SUPPORT
-#ifndef CONFIG_SWICH_GPU
-#define MAX_DMA_ADDRESS		(PAGE_OFFSET + 0x100000000)
-#else
-#define MAX_DMA_ADDRESS		(~0UL)
-#endif /* CONFIG_IOMMU_SUPPORT */
-#else
-#define MAX_DMA_ADDRESS		(PAGE_OFFSET + 0x80000000)
-#endif
+#define MAX_DMA_ADDRESS		~0UL
 
 /* 8237 DMA controllers */
 #define IO_DMA1_BASE	0x00	/* 8 bit slave DMA, channels 0..3 */

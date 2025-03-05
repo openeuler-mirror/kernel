@@ -727,6 +727,7 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 		break;
 	case BPF_ALU | BPF_RSH | BPF_X:
 		emit(SW64_BPF_ZAP_IMM(dst, 0xf0, dst), ctx);
+		fallthrough;
 	case BPF_ALU64 | BPF_RSH | BPF_X:
 		emit(SW64_BPF_SRL_REG(dst, src, dst), ctx);
 		break;
@@ -1010,6 +1011,7 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 		src = tmp1;
 		emit(SW64_BPF_ADDW_REG(SW64_BPF_REG_ZR, dst, tmp2), ctx);
 		dst = tmp2;
+		fallthrough;
 	case BPF_JMP | BPF_JEQ | BPF_X:
 	case BPF_JMP | BPF_JGT | BPF_X:
 	case BPF_JMP | BPF_JLT | BPF_X:
@@ -1080,6 +1082,7 @@ static int build_insn(const struct bpf_insn *insn, struct jit_ctx *ctx)
 	case BPF_JMP32 | BPF_JSET | BPF_K:
 		emit(SW64_BPF_ADDW_REG(SW64_BPF_REG_ZR, dst, tmp2), ctx);
 		dst = tmp2;
+		fallthrough;
 	case BPF_JMP | BPF_JEQ | BPF_K:
 	case BPF_JMP | BPF_JGT | BPF_K:
 	case BPF_JMP | BPF_JLT | BPF_K:

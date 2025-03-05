@@ -8,9 +8,14 @@
 
 int acpi_disabled = 1;
 EXPORT_SYMBOL(acpi_disabled);
-int acpi_noirq;				/* skip ACPI IRQ initialization */
-int acpi_pci_disabled;		/* skip ACPI PCI scan and IRQ initialization */
+
+int acpi_noirq = 1;		/* skip ACPI IRQ initialization */
+int acpi_pci_disabled = 1;	/* skip ACPI PCI scan and IRQ initialization */
 EXPORT_SYMBOL(acpi_pci_disabled);
+
+static bool param_acpi_on  __initdata;
+static bool param_acpi_off __initdata;
+
 int acpi_strict;
 u64 arch_acpi_wakeup_start;
 u64 acpi_saved_sp_s3;
@@ -115,13 +120,14 @@ static int __init parse_acpi(char *arg)
 	if (!arg)
 		return -EINVAL;
 
-	/* "acpi=off" disables both ACPI table parsing and interpreter */
-	if (strcmp(arg, "off") == 0) {
-		disable_acpi();
-	} else {
-		/* Core will printk when we return error. */
-		return -EINVAL;
-	}
+	/* disable both ACPI table parsing and interpreter */
+	if (strcmp(arg, "off") == 0)
+		param_acpi_off = true;
+	else if (strcmp(arg, "on") == 0) /* prefer ACPI over device tree */
+		param_acpi_on = true;
+	else
+		return -EINVAL; /* Core will printk when we return error. */
+
 	return 0;
 }
 early_param("acpi", parse_acpi);
@@ -364,16 +370,25 @@ EXPORT_SYMBOL(acpi_unmap_cpu);
 #endif /* CONFIG_ACPI_HOTPLUG_CPU */
 
 void __init acpi_boot_table_init(void)
-
 {
+	/**
+	 * ACPI is disabled by default.
+	 * ACPI is only enabled when firmware passes ACPI table
+	 * and sets boot parameter "acpi=on".
+	 */
+	if (param_acpi_on)
+		enable_acpi();
+
 	/*
 	 * If acpi_disabled, bail out
 	 */
 	if (!acpi_disabled) {
+		pr_warn("Currently, ACPI is an experimental feature!\n");
 		if (acpi_table_init()) {
 			pr_err("Failed to init ACPI tables\n");
 			disable_acpi();
-		}
-		pr_info("Enable ACPI support\n");
+		} else
+			pr_info("Successfully parsed ACPI table\n");
 	}
 }
+

@@ -33,20 +33,26 @@ extern void copy_page(void *_to, void *_from);
 typedef struct page *pgtable_t;
 
 extern unsigned long __phys_addr(unsigned long);
+#ifdef CONFIG_SUBARCH_C3B
+extern unsigned long __boot_phys_addr(unsigned long);
+#else
+#define __boot_phys_addr(x)	__phys_addr(x)
+#endif
+
 #endif /* !__ASSEMBLY__ */
 
 #define KERNEL_IMAGE_SIZE	(512 * 1024 * 1024)
 
 #include <asm/pgtable-4level.h>
 
-#if defined(CONFIG_SW64_LEGACY_KTEXT_ADDRESS)
 #define __START_KERNEL_map	PAGE_OFFSET
-#else
-#define __START_KERNEL_map	0xffffffff80000000
-#endif
 
 #define __pa(x)			__phys_addr((unsigned long)(x))
 #define __va(x)			((void *)((unsigned long) (x) | PAGE_OFFSET))
+
+#define __boot_pa(x)		__boot_phys_addr((unsigned long)(x))
+#define __boot_va(x)		__va(x)
+
 #define virt_to_page(kaddr)	pfn_to_page(__pa(kaddr) >> PAGE_SHIFT)
 #define virt_addr_valid(kaddr)	pfn_valid(__pa(kaddr) >> PAGE_SHIFT)
 

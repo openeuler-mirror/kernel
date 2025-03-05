@@ -15,6 +15,7 @@
 #include <asm/asm-offsets.h>
 
 #include "proto.h"
+#include <asm/csr.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/syscalls.h>
@@ -46,28 +47,21 @@
  * zero have no stack-slot and need to be treated specially (see
  * get_reg/put_reg below).
  */
-#define R(x)	((size_t) &((struct pt_regs *)0)->x)
-
-short regoffsets[32] = {
-	R(r0), R(r1), R(r2), R(r3), R(r4), R(r5), R(r6), R(r7), R(r8),
-	R(r9), R(r10), R(r11), R(r12), R(r13), R(r14), R(r15),
-	R(r16), R(r17), R(r18),
-	R(r19), R(r20), R(r21), R(r22), R(r23), R(r24), R(r25), R(r26),
-	R(r27), R(r28), R(gp), 0, 0
-};
-
-#undef R
-
 #define PCB_OFF(var)	offsetof(struct pcb_struct, var)
 
 static int pcboff[] = {
-	[USP] = PCB_OFF(usp),
-	[TP] = PCB_OFF(tp),
-	[DA_MATCH] = PCB_OFF(da_match),
-	[DA_MASK] = PCB_OFF(da_mask),
-	[DV_MATCH] = PCB_OFF(dv_match),
-	[DV_MASK] = PCB_OFF(dv_mask),
-	[DC_CTL] = PCB_OFF(dc_ctl)
+	[PT_TP] = PCB_OFF(tp),
+	[PT_DA_MATCH] = PCB_OFF(da_match),
+	[PT_DA_MASK] = PCB_OFF(da_mask),
+	[PT_DV_MATCH] = PCB_OFF(dv_match),
+	[PT_DV_MASK] = PCB_OFF(dv_mask),
+	[PT_DC_CTL] = PCB_OFF(dc_ctl),
+	[PT_MATCH_CTL] = PCB_OFF(match_ctl),
+	[PT_IA_MATCH] = PCB_OFF(ia_match),
+	[PT_IA_MASK] = PCB_OFF(ia_mask),
+	[PT_IV_MATCH] = PCB_OFF(iv_match),
+	[PT_IDA_MATCH] = PCB_OFF(ida_match),
+	[PT_IDA_MASK] = PCB_OFF(ida_mask)
 };
 
 static unsigned long zero;
@@ -83,39 +77,43 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 	int fno, vno;
 
 	switch (regno) {
-	case USP:
-	case UNIQUE:
-	case DA_MATCH:
-	case DA_MASK:
-	case DV_MATCH:
-	case DV_MASK:
-	case DC_CTL:
+	case PT_UNIQUE:
+	case PT_DA_MATCH:
+	case PT_DA_MASK:
+	case PT_DV_MATCH:
+	case PT_DV_MASK:
+	case PT_MATCH_CTL:
+	case PT_IA_MATCH:
+	case PT_IA_MASK:
+	case PT_IV_MATCH:
+	case PT_IDA_MATCH:
+	case PT_IDA_MASK:
 		addr = (void *)task_thread_info(task) + pcboff[regno];
 		break;
-	case REG_BASE ... REG_END:
-		addr = (void *)task_pt_regs(task) + regoffsets[regno];
+	case PT_REG_BASE ... PT_REG_END:
+		addr = &task_pt_regs(task)->regs[regno];
 		break;
-	case FPREG_BASE ... FPREG_END:
-		fno = regno - FPREG_BASE;
+	case PT_FPREG_BASE ... PT_FPREG_END:
+		fno = regno - PT_FPREG_BASE;
 		addr = &task->thread.fpstate.fp[fno].v[0];
 		break;
-	case VECREG_BASE ... VECREG_END:
+	case PT_VECREG_BASE ... PT_VECREG_END:
 		/*
 		 * return addr for zero value if we catch vectors of f31
 		 * v0 and v3 of f31 are not in this range so ignore them
 		 */
-		if (regno == F31_V1 || regno == F31_V2) {
+		if (regno == PT_F31_V1 || regno == PT_F31_V2) {
 			addr = &zero;
 			break;
 		}
-		fno = (regno - VECREG_BASE) & 0x1f;
-		vno = 1 + ((regno - VECREG_BASE) >> 5);
+		fno = (regno - PT_VECREG_BASE) & 0x1f;
+		vno = 1 + ((regno - PT_VECREG_BASE) >> 5);
 		addr = &task->thread.fpstate.fp[fno].v[vno];
 		break;
-	case FPCR:
+	case PT_FPCR:
 		addr = &task->thread.fpstate.fpcr;
 		break;
-	case PC:
+	case PT_PC:
 		addr = (void *)task_pt_regs(task) + PT_REGS_PC;
 		break;
 	default:
@@ -170,7 +168,7 @@ ptrace_set_bpt(struct task_struct *child)
 	unsigned int insn, op_code;
 	unsigned long pc;
 
-	pc = get_reg(child, PC);
+	pc = get_reg(child, PT_PC);
 	res = read_int(child, pc, (int *)&insn);
 	if (res < 0)
 		return res;
@@ -263,21 +261,7 @@ static int gpr_get(struct task_struct *target,
 			const struct user_regset *regset,
 			struct membuf to)
 {
-	struct pt_regs *regs;
-	struct user_pt_regs uregs;
-	int i, ret;
-
-	regs = task_pt_regs(target);
-	for (i = 0; i < 30; i++)
-		uregs.regs[i] = *(__u64 *)((void *)regs + regoffsets[i]);
-
-	uregs.regs[30] = task_thread_info(target)->pcb.usp;
-	uregs.pc = regs->pc;
-	uregs.pstate = regs->ps;
-
-	ret = membuf_write(&to, &uregs, sizeof(uregs));
-
-	return ret;
+	return membuf_write(&to, task_pt_regs(target), sizeof(struct user_pt_regs));
 }
 
 static int gpr_set(struct task_struct *target,
@@ -285,24 +269,8 @@ static int gpr_set(struct task_struct *target,
 			unsigned int pos, unsigned int count,
 			const void *kbuf, const void __user *ubuf)
 {
-	struct pt_regs *regs;
-	struct user_pt_regs uregs;
-	int i, ret;
-
-	ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf,
-				&uregs, 0, sizeof(uregs));
-	if (ret)
-		return ret;
-
-	regs = task_pt_regs(target);
-	for (i = 0; i < 30; i++)
-		*(__u64 *)((void *)regs + regoffsets[i]) = uregs.regs[i];
-
-	task_thread_info(target)->pcb.usp = uregs.regs[30];
-	regs->pc = uregs.pc;
-	regs->ps = uregs.pstate;
-
-	return 0;
+	return user_regset_copyin(&pos, &count, &kbuf, &ubuf,
+				task_pt_regs(target), 0, sizeof(struct user_pt_regs));
 }
 
 static int fpr_get(struct task_struct *target,
@@ -406,19 +374,19 @@ asmlinkage unsigned long syscall_trace_enter(void)
 	struct pt_regs *regs = current_pt_regs();
 
 	if (test_thread_flag(TIF_SYSCALL_TRACE) &&
-		tracehook_report_syscall_entry(current_pt_regs()))
-		ret = -1UL;
+		tracehook_report_syscall_entry(regs))
+		return NO_SYSCALL;
 
 #ifdef CONFIG_SECCOMP
 	/* Do seccomp after ptrace, to catch any tracer changes. */
 	if (secure_computing() == -1)
-		return -1;
+		return NO_SYSCALL;
 #endif
 
 	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
-		trace_sys_enter(regs, regs->r0);
-	audit_syscall_entry(regs->r0, regs->r16, regs->r17, regs->r18, regs->r19);
-	return ret ?: current_pt_regs()->r0;
+		trace_sys_enter(regs, regs->regs[0]);
+	audit_syscall_entry(regs->regs[0], regs->regs[16], regs->regs[17], regs->regs[18], regs->regs[19]);
+	return ret ?: regs->regs[0];
 }
 
 asmlinkage void
@@ -426,13 +394,14 @@ syscall_trace_leave(void)
 {
 	struct pt_regs *regs = current_pt_regs();
 
-	audit_syscall_exit(current_pt_regs());
+	audit_syscall_exit(regs);
 	if (test_thread_flag(TIF_SYSCALL_TRACE))
-		tracehook_report_syscall_exit(current_pt_regs(), 0);
+		tracehook_report_syscall_exit(regs, 0);
 	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
 		trace_sys_exit(regs, regs_return_value(regs));
 }
 
+#ifdef CONFIG_SUBARCH_C3B
 static long rwcsr(int rw, unsigned long csr, unsigned long value)
 {
 	register unsigned long __r0 __asm__("$0");
@@ -522,7 +491,7 @@ int do_match(unsigned long address, unsigned long mmcsr, long cause, struct pt_r
 		task_thread_info(current)->pcb.dv_match = 0;
 		task_thread_info(current)->pcb.dc_ctl = 0;
 		printk("do_page_fault: want to send SIGTRAP, pid = %d\n", current->pid);
-		force_sig_fault(SIGTRAP, TRAP_HWBKPT, (void *) address, 0);
+		force_sig_fault(SIGTRAP, TRAP_HWBKPT, (void *) address);
 		return 1;
 
 	case MMCSR__IA_MATCH:
@@ -556,10 +525,249 @@ void restore_da_match_after_sched(void)
 	}
 }
 
+#elif defined(CONFIG_SUBARCH_C4)
+int do_match(unsigned long address, unsigned long mmcsr, long cause, struct pt_regs *regs)
+{
+	kernel_siginfo_t info;
+	unsigned long match_ctl, ia_match;
+	sigval_t sw64_value;
+
+	printk("%s: pid %d, name = %s, cause = %#lx, mmcsr = %#lx, address = %#lx, pc %#lx\n",
+			__func__, current->pid, current->comm, cause, mmcsr, address, regs->pc);
+
+	switch (mmcsr) {
+	case MMCSR__DA_MATCH:
+	case MMCSR__DV_MATCH:
+	case MMCSR__DAV_MATCH:
+	case MMCSR__IA_MATCH:
+	case MMCSR__IDA_MATCH:
+	case MMCSR__IV_MATCH:
+		show_regs(regs);
+
+		if (!(current->ptrace & PT_PTRACED)) {
+			printk(" pid %d %s not be ptraced, return\n", current->pid, current->comm);
+			if (mmcsr == MMCSR__DA_MATCH) {
+				match_ctl = read_csr(CSR_DC_CTLP);
+				match_ctl &= ~(0x3UL << DA_MATCH_EN_S);
+				write_csr(match_ctl, CSR_DC_CTLP);
+				write_csr(0, CSR_DA_MATCH);		// clear da_match
+				task_thread_info(current)->pcb.match_ctl &= ~0x1;
+				task_thread_info(current)->pcb.da_match = 0;
+			}
+			if (mmcsr == MMCSR__DV_MATCH) {
+				match_ctl = read_csr(CSR_DC_CTLP);
+				match_ctl &= ~(0x1UL << DV_MATCH_EN_S);
+				write_csr(match_ctl, CSR_DC_CTLP);
+				write_csr(0, CSR_DV_MATCH);		// clear dv_match
+				task_thread_info(current)->pcb.match_ctl &= ~(0x1 << 1);
+				task_thread_info(current)->pcb.dv_match = 0;
+			}
+			if (mmcsr == MMCSR__DAV_MATCH) {
+				match_ctl = read_csr(CSR_DC_CTLP);
+				match_ctl &= ~((0x3UL << DA_MATCH_EN_S) | (0x1UL << DV_MATCH_EN_S) | (0x1UL << DAV_MATCH_EN_S));
+				write_csr(match_ctl, CSR_DC_CTLP);
+				write_csr(0, CSR_DA_MATCH);		// clear da_match
+				write_csr(0, CSR_DV_MATCH);		// clear dv_match
+				task_thread_info(current)->pcb.match_ctl &= ~(0x1 | (0x1 << 1) | (0x1 << 2));
+				task_thread_info(current)->pcb.da_match = 0;
+				task_thread_info(current)->pcb.dv_match = 0;
+			}
+			if (mmcsr == MMCSR__IA_MATCH) {
+				ia_match = read_csr(CSR_IA_MATCH);
+				ia_match &= ~((0x1UL << IA_MATCH_EN_S) | (0x7ffffffffffffUL << 2));
+				write_csr(ia_match, CSR_IA_MATCH);	// clear ia_match
+				task_thread_info(current)->pcb.match_ctl &= ~(0x1 << 3);
+				task_thread_info(current)->pcb.ia_match = 0;
+			}
+			if (mmcsr == MMCSR__IV_MATCH) {
+				ia_match = read_csr(CSR_IA_MATCH);
+				ia_match &= ~((0x1UL << IV_MATCH_EN_S) | (0x1UL << IV_PM_EN_S));
+				write_csr(ia_match, CSR_IA_MATCH);	// clear ia_match
+				write_csr(0, CSR_IV_MATCH);		// clear iv_match
+				task_thread_info(current)->pcb.match_ctl &= ~(0x1 << 4);
+				task_thread_info(current)->pcb.ia_match &= ~((0x1UL << IV_MATCH_EN_S) | (0x1UL << IV_PM_EN_S));
+				task_thread_info(current)->pcb.iv_match = 0;
+			}
+			if (mmcsr == MMCSR__IDA_MATCH) {
+				write_csr(0, CSR_IDA_MATCH);		// clear ida_match
+				task_thread_info(current)->pcb.match_ctl &= ~(0x1 << 5);
+				task_thread_info(current)->pcb.ida_match = 0;
+			}
+			return 1;
+		}
+
+		info.si_signo = SIGTRAP;
+		info.si_addr = (void *) address;
+		sw64_value.sival_ptr = (void *)(regs->pc);
+		info.si_value = sw64_value;
+		info.si_code = TRAP_HWBKPT;
+
+		if (mmcsr == MMCSR__DA_MATCH) {
+			info.si_errno = 1;
+			match_ctl = read_csr(CSR_DC_CTLP);
+			match_ctl &= ~(0x3UL << DA_MATCH_EN_S);
+			write_csr(match_ctl, CSR_DC_CTLP);
+			write_csr(0, CSR_DA_MATCH);		// clear da_match
+			task_thread_info(current)->pcb.match_ctl &= ~0x1;
+			task_thread_info(current)->pcb.da_match = 0;
+		}
+		if (mmcsr == MMCSR__DV_MATCH) {
+			info.si_errno = 2;
+			match_ctl = read_csr(CSR_DC_CTLP);
+			match_ctl &= ~(0x1UL << DV_MATCH_EN_S);
+			write_csr(match_ctl, CSR_DC_CTLP);
+			write_csr(0, CSR_DV_MATCH);		// clear dv_match
+			task_thread_info(current)->pcb.match_ctl &= ~(0x1 << 1);
+			task_thread_info(current)->pcb.dv_match = 0;
+		}
+		if (mmcsr == MMCSR__DAV_MATCH) {
+			info.si_errno = 3;
+			match_ctl = read_csr(CSR_DC_CTLP);
+			match_ctl &= ~((0x3UL << DA_MATCH_EN_S) | (0x1UL << DV_MATCH_EN_S) | (0x1UL << DAV_MATCH_EN_S));
+			write_csr(match_ctl, CSR_DC_CTLP);
+			write_csr(0, CSR_DA_MATCH);		// clear da_match
+			write_csr(0, CSR_DV_MATCH);		// clear dv_match
+			task_thread_info(current)->pcb.match_ctl &= ~(0x1 | (0x1 << 1) | (0x1 << 2));
+			task_thread_info(current)->pcb.da_match = 0;
+			task_thread_info(current)->pcb.dv_match = 0;
+		}
+		if (mmcsr == MMCSR__IA_MATCH) {
+			info.si_errno = 4;
+			ia_match = read_csr(CSR_IA_MATCH);
+			ia_match &= ~((0x1UL << IA_MATCH_EN_S) | (0x7ffffffffffffUL << 2));
+			write_csr(ia_match, CSR_IA_MATCH);	// clear ia_match
+			task_thread_info(current)->pcb.match_ctl &= ~(0x1 << 3);
+			task_thread_info(current)->pcb.ia_match = 0;
+		}
+		if (mmcsr == MMCSR__IV_MATCH) {
+			info.si_errno = 5;
+			ia_match = read_csr(CSR_IA_MATCH);
+			ia_match &= ~((0x1UL << IV_MATCH_EN_S) | (0x1UL << IV_PM_EN_S));
+			write_csr(ia_match, CSR_IA_MATCH);	// clear ia_match
+			write_csr(0, CSR_IV_MATCH);		// clear iv_match
+			task_thread_info(current)->pcb.match_ctl &= ~(0x1 << 4);
+			task_thread_info(current)->pcb.ia_match &= ~((0x1UL << IV_MATCH_EN_S) | (0x1UL << IV_PM_EN_S));
+			task_thread_info(current)->pcb.iv_match = 0;
+		}
+		if (mmcsr == MMCSR__IDA_MATCH) {
+			info.si_errno = 6;
+			write_csr(0, CSR_IDA_MATCH);		// clear ida_match
+			task_thread_info(current)->pcb.match_ctl &= ~(0x1 << 5);
+			task_thread_info(current)->pcb.ida_match = 0;
+		}
+		printk("do_page_fault: want to send SIGTRAP, pid = %d\n", current->pid);
+		force_sig_info(&info);
+		return 1;
+	}
+
+	return 0;
+}
+
+/*
+ *pcb->match_ctl:
+ * [0] DA_MATCH
+ * [1] DV_MATCH
+ * [2] DAV_MATCH
+ * [3] IA_MATCH
+ * [4] IV_MATCH
+ * [5] IDA_MATCH
+ * [8:9] match_ctl_mode
+ *
+ */
+#define DA_MATCH	0x1
+#define DV_MATCH	0x2
+#define DAV_MATCH	0x4
+#define IA_MATCH	0x8
+#define IV_MATCH	0x10
+#define IDA_MATCH	0x20
+
+void restore_da_match_after_sched(void)
+{
+	unsigned long match_ctl_mode;
+	unsigned long match_ctl;
+	struct pcb_struct *pcb = &task_thread_info(current)->pcb;
+	unsigned long vpn, upn;
+
+	if (!pcb->match_ctl)
+		return;
+	pr_info("Restroe MATCH status, pid: %d\n", current->pid);
+
+	if (pcb->match_ctl & DA_MATCH) {
+		write_csr(pcb->da_match, CSR_DA_MATCH);
+		write_csr(pcb->da_mask, CSR_DA_MASK);
+		match_ctl_mode = (pcb->match_ctl >> 8) & 0x3;
+		match_ctl = read_csr(CSR_DC_CTLP);
+		match_ctl &= ~((0x1UL << 3) | (0x3UL << DA_MATCH_EN_S) | (0x1UL << DV_MATCH_EN_S) | (0x1UL << DAV_MATCH_EN_S));
+		match_ctl |= (match_ctl_mode << DA_MATCH_EN_S) | (0x1UL << DPM_MATCH_EN_S) | (0x3UL << DPM_MATCH);
+		write_csr(match_ctl, CSR_DC_CTLP);
+		pr_info("da_match:%#lx da_mask:%#lx match_ctl:%#lx\n", pcb->da_match, pcb->da_mask, match_ctl);
+	}
+
+	if (pcb->match_ctl & DV_MATCH) {
+		write_csr(pcb->dv_match, CSR_DV_MATCH);
+		write_csr(pcb->dv_mask, CSR_DV_MASK);
+		match_ctl = read_csr(CSR_DC_CTLP);
+		match_ctl &= ~((0x1UL << 3) | (0x3UL << DA_MATCH_EN_S) | (0x1UL << DV_MATCH_EN_S) | (0x1UL << DAV_MATCH_EN_S));
+		match_ctl |= (0x1UL << DV_MATCH_EN_S) | (0x1UL << DPM_MATCH_EN_S) | (0x3UL << DPM_MATCH);
+		write_csr(match_ctl, CSR_DC_CTLP);
+		pr_info("dv_match:%#lx dv_mask:%#lx match_ctl:%#lx\n", pcb->dv_match, pcb->dv_mask, match_ctl);
+	}
+
+	if (pcb->match_ctl & DAV_MATCH) {
+		write_csr(pcb->da_match, CSR_DA_MATCH);
+		write_csr(pcb->da_mask, CSR_DA_MASK);
+		write_csr(pcb->dv_match, CSR_DV_MATCH);
+		write_csr(pcb->dv_mask, CSR_DV_MASK);
+		write_csr(0xfffffffff, CSR_DA_MATCH_MODE);
+		match_ctl_mode = (pcb->match_ctl >> 8) & 0x3;
+		match_ctl = read_csr(CSR_DC_CTLP);
+		match_ctl &= ~((0x3UL << DA_MATCH_EN_S) | (0x1UL << DV_MATCH_EN_S) | (0x1UL << DAV_MATCH_EN_S));
+		match_ctl |= (match_ctl_mode << DA_MATCH_EN_S) | (0x1UL << DV_MATCH_EN_S)
+				| (0x1UL << DAV_MATCH_EN_S) | (0x1UL << DPM_MATCH_EN_S)
+				| (0x3UL << DPM_MATCH);
+		write_csr(match_ctl, CSR_DC_CTLP);
+		pr_info("da_match:%#lx da_mask:%#lx dv_match:%#lx dv_mask:%#lx match_ctl:%#lx\n",
+				pcb->da_match, pcb->da_mask, pcb->dv_match, pcb->dv_mask, match_ctl);
+	}
+
+	if (pcb->match_ctl & IA_MATCH) {
+		pcb->ia_match |= (0x1UL << IA_MATCH_EN_S) | 0x3;
+		pcb->ia_mask |= 0x3;
+		write_csr(pcb->ia_match, CSR_IA_MATCH);
+		write_csr(pcb->ia_mask, CSR_IA_MASK);
+		vpn = read_csr(CSR_VPCR) >> 44;
+		vpn &= 0x3ff;
+		upn = read_csr(CSR_UPCR);
+		upn &= 0x3ff;
+		write_csr(((0x3ff << 18) | vpn), CSR_IA_VPNMATCH);
+		write_csr(((0x3ff << 18) | upn), CSR_IA_UPNMATCH);
+		pr_info("ia_match:%#lx ia_mask:%#lx\n", pcb->ia_match, pcb->ia_mask);
+	}
+	if (pcb->match_ctl & IV_MATCH) {
+		pcb->ia_match |= (0x1UL << IV_MATCH_EN_S) | (0x1UL << IV_PM_EN_S) | 0x3;
+		write_csr(pcb->ia_match, CSR_IA_MATCH);
+		write_csr(pcb->iv_match, CSR_IV_MATCH);
+		pr_info("ia_match:%#lx iv_match:%#lx\n", pcb->ia_match, pcb->iv_match);
+	}
+	if (pcb->match_ctl & IDA_MATCH) {
+		pcb->ida_match |= (0x1UL << IDA_MATCH_EN_S) | 0x3;
+		pcb->ida_mask |= 0x3;
+		write_csr(pcb->ida_match, CSR_IDA_MATCH);
+		write_csr(pcb->ida_mask, CSR_IDA_MASK);
+		pr_info("ida_match:%#lx ida_mask:%#lx\n", pcb->ida_match, pcb->ida_mask);
+	}
+}
+#endif
+
 struct pt_regs_offset {
 	const char *name;
 	int offset;
 };
+
+#define GPR_OFFSET_NAME(r) {					\
+	.name = "r" #r,						\
+	.offset = offsetof(struct pt_regs, regs[r])		\
+}
 
 #define REG_OFFSET_NAME(r) {					\
 	.name = #r,						\
@@ -572,38 +780,39 @@ struct pt_regs_offset {
 }
 
 static const struct pt_regs_offset regoffset_table[] = {
-	REG_OFFSET_NAME(r0),
-	REG_OFFSET_NAME(r1),
-	REG_OFFSET_NAME(r2),
-	REG_OFFSET_NAME(r3),
-	REG_OFFSET_NAME(r4),
-	REG_OFFSET_NAME(r5),
-	REG_OFFSET_NAME(r6),
-	REG_OFFSET_NAME(r7),
-	REG_OFFSET_NAME(r8),
-	REG_OFFSET_NAME(r9),
-	REG_OFFSET_NAME(r10),
-	REG_OFFSET_NAME(r11),
-	REG_OFFSET_NAME(r12),
-	REG_OFFSET_NAME(r13),
-	REG_OFFSET_NAME(r14),
-	REG_OFFSET_NAME(r15),
-	REG_OFFSET_NAME(r19),
-	REG_OFFSET_NAME(r20),
-	REG_OFFSET_NAME(r21),
-	REG_OFFSET_NAME(r22),
-	REG_OFFSET_NAME(r23),
-	REG_OFFSET_NAME(r24),
-	REG_OFFSET_NAME(r25),
-	REG_OFFSET_NAME(r26),
-	REG_OFFSET_NAME(r27),
-	REG_OFFSET_NAME(r28),
-	REG_OFFSET_NAME(ps),
+	GPR_OFFSET_NAME(0),
+	GPR_OFFSET_NAME(1),
+	GPR_OFFSET_NAME(2),
+	GPR_OFFSET_NAME(3),
+	GPR_OFFSET_NAME(4),
+	GPR_OFFSET_NAME(5),
+	GPR_OFFSET_NAME(6),
+	GPR_OFFSET_NAME(7),
+	GPR_OFFSET_NAME(8),
+	GPR_OFFSET_NAME(9),
+	GPR_OFFSET_NAME(10),
+	GPR_OFFSET_NAME(11),
+	GPR_OFFSET_NAME(12),
+	GPR_OFFSET_NAME(13),
+	GPR_OFFSET_NAME(14),
+	GPR_OFFSET_NAME(15),
+	GPR_OFFSET_NAME(16),
+	GPR_OFFSET_NAME(17),
+	GPR_OFFSET_NAME(18),
+	GPR_OFFSET_NAME(19),
+	GPR_OFFSET_NAME(20),
+	GPR_OFFSET_NAME(21),
+	GPR_OFFSET_NAME(22),
+	GPR_OFFSET_NAME(23),
+	GPR_OFFSET_NAME(24),
+	GPR_OFFSET_NAME(25),
+	GPR_OFFSET_NAME(26),
+	GPR_OFFSET_NAME(27),
+	GPR_OFFSET_NAME(28),
+	GPR_OFFSET_NAME(29),
+	GPR_OFFSET_NAME(30),
 	REG_OFFSET_NAME(pc),
-	REG_OFFSET_NAME(gp),
-	REG_OFFSET_NAME(r16),
-	REG_OFFSET_NAME(r17),
-	REG_OFFSET_NAME(r18),
+	REG_OFFSET_NAME(ps),
 	REG_OFFSET_END,
 };
 

@@ -8,7 +8,7 @@
 #include <asm/sw64io.h>
 
 struct sw64_early_init_ops {
-	void (*setup_core_start)(struct cpumask *cpumask);
+	void (*setup_core_map)(struct cpumask *cpumask);
 	unsigned long (*get_node_mem)(int nodeid);
 	void (*get_smp_info)(void);
 };
@@ -38,9 +38,12 @@ struct sw64_chip_ops {
 };
 
 extern void sw64_init_noop(void);
-extern void sw64_setup_chip_ops(void);
+extern void setup_chip_ops(void);
 extern struct sw64_chip_ops *sw64_chip;
 extern struct sw64_chip_init_ops *sw64_chip_init;
+#ifdef CONFIG_PM
+extern struct syscore_ops io_syscore_ops;
+#endif
 
 DECLARE_PER_CPU(unsigned long, hard_node_id);
 

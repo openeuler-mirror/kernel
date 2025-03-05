@@ -19,6 +19,7 @@
 #include <linux/sched/debug.h>
 #include <linux/spinlock.h>
 #include <linux/module.h>
+#include <linux/syscalls.h>
 
 #include <asm/gentrap.h>
 #include <asm/mmu_context.h>
@@ -30,6 +31,8 @@
 #include <asm/ptrace.h>
 #include <asm/debug.h>
 #include <asm/efi.h>
+#include <asm/syscall.h>
+#include <asm/unistd.h>
 
 #include "proto.h"
 
@@ -47,33 +50,32 @@ void show_regs(struct pt_regs *regs)
 	show_regs_print_info(KERN_DEFAULT);
 
 	printk("pc = [<%016lx>]  ra = [<%016lx>]  ps = %04lx    %s\n",
-	       regs->pc, regs->r26, regs->ps, print_tainted());
+	       regs->pc, regs->regs[26], regs->ps, print_tainted());
 	printk("pc is at %pSR\n", (void *)regs->pc);
-	printk("ra is at %pSR\n", (void *)regs->r26);
+	printk("ra is at %pSR\n", (void *)regs->regs[26]);
 	printk("v0 = %016lx  t0 = %016lx  t1 = %016lx\n",
-	       regs->r0, regs->r1, regs->r2);
+	       regs->regs[0], regs->regs[1], regs->regs[2]);
 	printk("t2 = %016lx  t3 = %016lx  t4 = %016lx\n",
-	       regs->r3, regs->r4, regs->r5);
+	       regs->regs[3], regs->regs[4], regs->regs[5]);
 	printk("t5 = %016lx  t6 = %016lx  t7 = %016lx\n",
-	       regs->r6, regs->r7, regs->r8);
+	       regs->regs[6], regs->regs[7], regs->regs[8]);
 
 	printk("s0 = %016lx  s1 = %016lx  s2 = %016lx\n",
-	       regs->r9, regs->r10, regs->r11);
+	       regs->regs[9], regs->regs[10], regs->regs[11]);
 	printk("s3 = %016lx  s4 = %016lx  s5 = %016lx\n",
-	       regs->r12, regs->r13, regs->r14);
+	       regs->regs[12], regs->regs[13], regs->regs[14]);
 	printk("s6 = %016lx\n",
-	       regs->r15);
+	       regs->regs[15]);
 
 	printk("a0 = %016lx  a1 = %016lx  a2 = %016lx\n",
-	       regs->r16, regs->r17, regs->r18);
+	       regs->regs[16], regs->regs[17], regs->regs[18]);
 	printk("a3 = %016lx  a4 = %016lx  a5 = %016lx\n",
-	       regs->r19, regs->r20, regs->r21);
+	       regs->regs[19], regs->regs[20], regs->regs[21]);
 	printk("t8 = %016lx  t9 = %016lx  t10 = %016lx\n",
-	       regs->r22, regs->r23, regs->r24);
+	       regs->regs[22], regs->regs[23], regs->regs[24]);
 	printk("t11= %016lx  pv = %016lx  at = %016lx\n",
-	       regs->r25, regs->r27, regs->r28);
-	printk("gp = %016lx  sp = %px\n", regs->gp,
-	       user_mode(regs) ? (void *)rdusp() : (regs + 1));
+	       regs->regs[25], regs->regs[27], regs->regs[28]);
+	printk("gp = %016lx  sp = %016lx\n", regs->regs[29], regs->regs[30]);
 }
 
 static void show_code(unsigned int *pc)
@@ -164,7 +166,11 @@ do_entArith(unsigned long summary, unsigned long write_mask,
 	if (!user_mode(regs))
 		die("Arithmetic fault", regs, 0);
 
-	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc, 0);
+	/*summary<39> means integer divide by zero in C4.*/
+	if ((summary >> 39) & 1)
+		si_code = FPE_INTDIV;
+
+	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc);
 }
 
 void simd_emulate(unsigned int inst, unsigned long va)
@@ -217,12 +223,12 @@ do_entIF(unsigned long inst_type, unsigned long va, struct pt_regs *regs)
 
 	switch (type) {
 	case IF_BREAKPOINT: /* gdb do pc-4 for sigtrap */
-		force_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *)regs->pc, 0);
+		force_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *)regs->pc);
 		return;
 
 	case IF_GENTRAP:
 		regs->pc -= 4;
-		switch ((long)regs->r16) {
+		switch ((long)regs->regs[16]) {
 		case GEN_INTOVF:
 			signo = SIGFPE;
 			code = FPE_INTOVF;
@@ -280,7 +286,7 @@ do_entIF(unsigned long inst_type, unsigned long va, struct pt_regs *regs)
 			break;
 		}
 
-		force_sig_fault(signo, code, (void __user *)regs->pc, regs->r16);
+		force_sig_fault(signo, code, (void __user *)regs->pc);
 		return;
 
 	case IF_FEN:
@@ -293,17 +299,20 @@ do_entIF(unsigned long inst_type, unsigned long va, struct pt_regs *regs)
 		case BREAK_KPROBE:
 			if (notify_die(DIE_BREAK, "kprobe", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
 				return;
+			break;
 		case BREAK_KPROBE_SS:
 			if (notify_die(DIE_SSTEPBP, "single_step", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
 				return;
+			break;
 #endif
 #ifdef CONFIG_UPROBES
 		case UPROBE_BRK_UPROBE:
 			if (notify_die(DIE_UPROBE, "uprobe", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
-				return sw64_fix_uretprobe(regs);
+				return;
+			break;
 		case UPROBE_BRK_UPROBE_XOL:
 			if (notify_die(DIE_UPROBE_XOL, "uprobe_xol", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
-				return sw64_fix_uretprobe(regs);
+				return;
 #endif
 		}
 
@@ -318,7 +327,7 @@ do_entIF(unsigned long inst_type, unsigned long va, struct pt_regs *regs)
 		break;
 	}
 
-	force_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)regs->pc, 0);
+	force_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)regs->pc);
 }
 
 asmlinkage void
@@ -328,7 +337,6 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 	long error;
 	unsigned long tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8;
 	unsigned long pc = regs->pc - 4;
-	const struct exception_table_entry *fixup;
 
 	/*
 	 * We don't want to use the generic get/put unaligned macros as
@@ -355,7 +363,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		map_regs(reg) = tmp1 | tmp2;
+		regs->regs[reg] = tmp1 | tmp2;
 		return;
 
 	case 0x22:
@@ -376,7 +384,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		map_regs(reg) = (int)(tmp1 | tmp2);
+		regs->regs[reg] = (int)(tmp1 | tmp2);
 		return;
 
 	case 0x23: /* ldl */
@@ -397,7 +405,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 
 		if (error)
 			goto got_exception;
-		map_regs(reg) = tmp1 | tmp2;
+		regs->regs[reg] = tmp1 | tmp2;
 		return;
 
 	case 0x29: /* sth */
@@ -415,7 +423,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2),
 		"=&r"(tmp3), "=&r"(tmp4)
-		: "r"(va), "r"(map_regs(reg)), "0"(0));
+		: "r"(va), "r"(regs->regs[reg]), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -447,7 +455,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2),
 		  "=&r"(tmp3), "=&r"(tmp4)
-		: "r"(va), "r"(map_regs(reg)), "0"(0));
+		: "r"(va), "r"(regs->regs[reg]), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -499,7 +507,7 @@ do_entUna(void *va, unsigned long opcode, unsigned long reg,
 		".previous"
 		: "=r"(error), "=&r"(tmp1), "=&r"(tmp2), "=&r"(tmp3),
 		"=&r"(tmp4), "=&r"(tmp5), "=&r"(tmp6), "=&r"(tmp7), "=&r"(tmp8)
-		: "r"(va), "r"(map_regs(reg)), "0"(0));
+		: "r"(va), "r"(regs->regs[reg]), "0"(0));
 
 		if (error)
 			goto got_exception;
@@ -514,15 +522,9 @@ got_exception:
 	/* Ok, we caught the exception, but we don't want it. Is there
 	 * someone to pass it along to?
 	 */
-	fixup = search_exception_tables(pc);
-	if (fixup != 0) {
-		unsigned long newpc;
-
-		newpc = fixup_exception(map_regs, fixup, pc);
+	if (fixup_exception(regs, pc)) {
 		printk("Forwarding unaligned exception at %lx (%lx)\n",
-		       pc, newpc);
-
-		regs->pc = newpc;
+		       pc, regs->pc);
 		return;
 	}
 
@@ -619,12 +621,8 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 
 	if ((1L << opcode) & OP_INT_MASK) {
 		/* it's an integer load/store */
-		if (reg < 30) {
-			reg_addr = (unsigned long *)
-				((char *)regs + regoffsets[reg]);
-		} else if (reg == 30) {
-			/* usp in HMCODE regs */
-			fake_reg = rdusp();
+		if (reg < 31) {
+			reg_addr = &regs->regs[reg];
 		} else {
 			/* zero "register" */
 			fake_reg = 0;
@@ -1457,9 +1455,6 @@ do_entUnaUser(void __user *va, unsigned long opcode,
 		goto give_sigbus;
 	}
 
-	/* Only integer loads should get here; everyone else returns early. */
-	if (reg == 30)
-		wrusp(fake_reg);
 	return;
 
 give_sigsegv:
@@ -1481,12 +1476,51 @@ give_sigsegv:
 			si_code = SEGV_MAPERR;
 		up_read(&mm->mmap_lock);
 	}
-	force_sig_fault(SIGSEGV, si_code, va, 0);
+	force_sig_fault(SIGSEGV, si_code, va);
 	return;
 
 give_sigbus:
 	regs->pc -= 4;
-	force_sig_fault(SIGBUS, BUS_ADRALN, va, 0);
+	force_sig_fault(SIGBUS, BUS_ADRALN, va);
+}
+
+asmlinkage void do_entSys(struct pt_regs *regs)
+{
+	long ret = -ENOSYS;
+	unsigned long nr;
+	unsigned long ti_flags = current_thread_info()->flags;
+
+	regs->orig_r0 = regs->regs[0];
+	regs->orig_r19 = regs->regs[19];
+	nr = regs->regs[0];
+
+	if (ti_flags & _TIF_SYSCALL_WORK) {
+		nr = syscall_trace_enter();
+		if (nr == NO_SYSCALL)
+			goto syscall_out;
+		regs->orig_r0 = regs->regs[0];
+		regs->orig_r19 = regs->regs[19];
+	}
+
+	if (nr < __NR_syscalls) {
+		syscall_fn_t syscall_fn = sys_call_table[nr];
+
+		ret = syscall_fn(regs->regs[16], regs->regs[17], regs->regs[18],
+				regs->regs[19], regs->regs[20], regs->regs[21]);
+	}
+
+	if ((nr != __NR_sigreturn) && (nr != __NR_rt_sigreturn)) {
+		if (likely((ret >= 0) || regs->orig_r0 == NO_SYSCALL))
+			syscall_set_return_value(current, regs, 0, ret);
+		else
+			syscall_set_return_value(current, regs, ret, 0);
+	}
+
+syscall_out:
+	rseq_syscall(regs);
+
+	if (ti_flags & _TIF_SYSCALL_WORK)
+		syscall_trace_leave();
 }
 
 void
@@ -1502,6 +1536,7 @@ trap_init(void)
 	wrent(entUna, 4);
 	wrent(entSys, 5);
 #ifdef CONFIG_EFI
-	wrent((void *)entSuspend, 6);
+	if (smp_processor_id() == 0)
+		wrent((void *)entSuspend, 6);
 #endif
 }

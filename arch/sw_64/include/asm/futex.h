@@ -9,33 +9,17 @@
 #include <asm/errno.h>
 #include <asm/barrier.h>
 
-#ifndef LOCK_MEMB
-#ifdef CONFIG_LOCK_MEMB
-#define LOCK_MEMB	"memb\n"
-#else
-#define LOCK_MEMB
-#endif
-#endif
-
-#ifndef LOCK_FIXUP
-#ifdef CONFIG_LOCK_FIXUP
-#define LOCK_FIXUP	"memb\n"
-#else
-#define LOCK_FIXUP
-#endif
-#endif
+#ifdef CONFIG_SUBARCH_C3B
 
 #define __futex_atomic_op(insn, ret, oldval, uaddr, oparg, tmp)	\
 	__asm__ __volatile__(					\
-	LOCK_MEMB						\
 	"1:	lldw	%0, 0(%3)\n"				\
 	"	ldi	%2, 1\n"				\
 	"	wr_f	%2\n"					\
 		insn						\
-	LOCK_FIXUP						\
 	"2:	lstw	%1, 0(%3)\n"				\
-	"	rd_f	%2\n"					\
-	"	beq	%2, 4f\n"				\
+	"	rd_f	%1\n"					\
+	"	beq	%1, 4f\n"				\
 	"	bis	$31, $31, %1\n"				\
 	"3:	.subsection 2\n"				\
 	"4:	br	1b\n"					\
@@ -49,6 +33,99 @@
 	:	"=&r" (oldval), "=&r"(ret), "=&r"(tmp)		\
 	:	"r" (uaddr), "r"(oparg)				\
 	:	"memory")
+
+static inline int
+futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
+			      u32 oldval, u32 newval)
+{
+	int ret = 0, cmp;
+	u32 prev, tmp;
+
+	if (!access_ok(uaddr, sizeof(u32)))
+		return -EFAULT;
+
+	__asm__ __volatile__ (
+	"1:	lldw	%1, 0(%4)\n"
+	"	cmpeq	%1, %5, %2\n"
+	"	wr_f	%2\n"
+	"	bis	$31, %6, %3\n"
+	"2:	lstw	%3, 0(%4)\n"
+	"	rd_f	%3\n"
+	"	beq	%2, 3f\n"
+	"	beq	%3, 4f\n"
+	"3:	.subsection 2\n"
+	"4:	br	1b\n"
+	"	.previous\n"
+	"	.section __ex_table, \"a\"\n"
+	"	.long	1b-.\n"
+	"	ldi	$31, 3b-1b(%0)\n"
+	"	.long	2b-.\n"
+	"	ldi	$31, 3b-2b(%0)\n"
+	"	.previous\n"
+	:	"+r"(ret), "=&r"(prev), "=&r"(cmp), "=&r"(tmp)
+	:	"r"(uaddr), "r"((long)(int)oldval), "r"(newval)
+	:	"memory");
+
+	*uval = prev;
+	return ret;
+}
+#else /* !CONFIG_SUBARCH_C3B */
+
+#define __futex_atomic_op(insn, ret, oldval, uaddr, oparg, tmp)	\
+	__asm__ __volatile__(					\
+	"1:	lldw	%0, 0(%3)\n"				\
+		insn						\
+	"2:	lstw	%1, 0(%3)\n"				\
+	"	beq	%1, 4f\n"				\
+	"	bis	$31, $31, %1\n"				\
+	"3:	.subsection 2\n"				\
+	"4:	lbr	1b\n"					\
+	"	.previous\n"					\
+	"	.section __ex_table, \"a\"\n"			\
+	"	.long	1b-.\n"					\
+	"	ldi	$31, 3b-1b(%1)\n"			\
+	"	.long	2b-.\n"					\
+	"	ldi	$31, 3b-2b(%1)\n"			\
+	"	.previous\n"					\
+	:	"=&r" (oldval), "=&r"(ret), "=&r"(tmp)		\
+	:	"r" (uaddr), "r"(oparg)				\
+	:	"memory")
+
+
+static inline int
+futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
+			      u32 oldval, u32 newval)
+{
+	int ret = 0, cmp;
+	u32 prev, tmp;
+
+	if (!access_ok(uaddr, sizeof(u32)))
+		return -EFAULT;
+
+	__asm__ __volatile__ (
+	"1:	lldw	%1, 0(%4)\n"
+	"	cmpeq	%1, %5, %2\n"
+	"	beq	%2, 3f\n"
+	"	bis	$31, %6, %3\n"
+	"2:	lstw	%3, 0(%4)\n"
+	"	beq	%3, 4f\n"
+	"3:	.subsection 2\n"
+	"4:	lbr	1b\n"
+	"	.previous\n"
+	"	.section __ex_table, \"a\"\n"
+	"	.long	1b-.\n"
+	"	ldi	$31, 3b-1b(%0)\n"
+	"	.long	2b-.\n"
+	"	ldi	$31, 3b-2b(%0)\n"
+	"	.previous\n"
+	:	"+r"(ret), "=&r"(prev), "=&r"(cmp), "=&r"(tmp)
+	:	"r"(uaddr), "r"((long)(int)oldval), "r"(newval)
+	:	"memory");
+
+	*uval = prev;
+	return ret;
+}
+#endif /* CONFIG_SUBARCH_C3B */
 
 static inline int arch_futex_atomic_op_inuser(int op, int oparg, int *oval,
 					      u32 __user *uaddr)
@@ -83,48 +160,6 @@ static inline int arch_futex_atomic_op_inuser(int op, int oparg, int *oval,
 	if (!ret)
 		*oval = oldval;
 
-	return ret;
-}
-
-static inline int
-futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
-			      u32 oldval, u32 newval)
-{
-	int ret = 0, cmp;
-	u32 prev, tmp;
-
-	if (!access_ok(uaddr, sizeof(u32)))
-		return -EFAULT;
-
-	__asm__ __volatile__ (
-#ifdef CONFIG_LOCK_MEMB
-	"	memb\n"
-#endif
-	"1:	lldw	%1, 0(%4)\n"
-	"	cmpeq	%1, %5, %2\n"
-	"	wr_f	%2\n"
-	"	bis	$31, %6, %3\n"
-#ifdef CONFIG_LOCK_FIXUP
-	"	memb\n"
-#endif
-	"2:	lstw	%3, 0(%4)\n"
-	"	rd_f	%3\n"
-	"	beq	%2, 3f\n"
-	"	beq	%3, 4f\n"
-	"3:	.subsection 2\n"
-	"4:	br	1b\n"
-	"	.previous\n"
-	"	.section __ex_table, \"a\"\n"
-	"	.long	1b-.\n"
-	"	ldi	$31, 3b-1b(%0)\n"
-	"	.long	2b-.\n"
-	"	ldi	$31, 3b-2b(%0)\n"
-	"	.previous\n"
-	:	"+r"(ret), "=&r"(prev), "=&r"(cmp), "=&r"(tmp)
-	:	"r"(uaddr), "r"((long)(int)oldval), "r"(newval)
-	:	"memory");
-
-	*uval = prev;
 	return ret;
 }
 

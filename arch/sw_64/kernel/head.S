@@ -66,11 +66,23 @@ __smp_callin:
 	bis	$31, $31, $16	# invalidate all TLB with current VPN
 	sys_call HMC_tbi
 
+#if defined(CONFIG_SUBARCH_C3B)
 	sys_call HMC_whami	# Get hard cid
-
-	ldi	$1, __rcid_to_cpu
-	s4addl	$0, $1, $1
-	ldw	$0, 0($1)	# Get logical cpu number
+	ldi	$1, __cpu_to_rcid
+	ldi	$2, 0($31)
+	ldi	$4, CONFIG_NR_CPUS
+3:	ldw	$3, 0($1)
+	cmpeq	$3, $0, $3
+	bne	$3, 4f
+	addl	$1, 4, $1
+	addl	$2, 1, $2
+	cmpeq	$2, $4, $5
+	bne	$5, 5f
+	br	$31, 3b
+4:	ldi	$0, 0($2)
+#else
+	rcid	$0
+#endif
 
 	ldi	$2, idle_task_pointer
 	s8addl	$0, $2, $2
@@ -81,6 +93,7 @@ __smp_callin:
 	ldi	$30, ASM_THREAD_SIZE($30)
 
 	call	$26, smp_callin
+5:
 	sys_call HMC_halt
 	.end __smp_callin
 #endif /* CONFIG_SMP */

@@ -83,11 +83,9 @@ static inline unsigned long get_cpu_freq(void)
 	return cpu_desc.frequency;
 }
 
-static inline void update_cpu_freq(unsigned long freq)
+static inline void update_cpu_freq(unsigned long khz)
 {
-	freq = freq * 1000000;
-	if (cpu_desc.frequency != freq)
-		cpu_desc.frequency = freq;
+	cpu_desc.frequency = khz * 1000;
 }
 
 #define EMUL_FLAG	(0x1UL << 63)
@@ -104,6 +102,7 @@ DECLARE_STATIC_KEY_FALSE(run_mode_emul_key);
 
 #define CPU_SW3231		0x31
 #define CPU_SW831		0x32
+#define CPU_SW8A		0x41
 
 #define GET_TABLE_ENTRY		1
 #define GET_VENDOR_ID		2

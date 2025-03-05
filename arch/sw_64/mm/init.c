@@ -24,7 +24,7 @@ struct numa_node_desc_t numa_nodes_desc[1];
  * empty_zero_page is a special page that is used for
  * zero-initialized data and COW.
  */
-struct page *empty_zero_page;
+unsigned long empty_zero_page[PAGE_SIZE / sizeof(unsigned long)] __page_aligned_bss;
 EXPORT_SYMBOL(empty_zero_page);
 pg_data_t *node_data[MAX_NUMNODES] __read_mostly;
 EXPORT_SYMBOL(node_data);
@@ -65,6 +65,7 @@ static int __init setup_mem_size(char *p)
 }
 early_param("mem", setup_mem_size);
 
+#if defined(CONFIG_SUBARCH_C3B)
 pgd_t *
 pgd_alloc(struct mm_struct *mm)
 {
@@ -77,6 +78,17 @@ pgd_alloc(struct mm_struct *mm)
 
 	return ret;
 }
+#elif defined(CONFIG_SUBARCH_C4)
+pgd_t *
+pgd_alloc(struct mm_struct *mm)
+{
+	pgd_t *ret;
+
+	ret = (pgd_t *)__get_free_page(GFP_KERNEL | __GFP_ZERO);
+
+	return ret;
+}
+#endif
 
 /* Set up initial PCB, VPTB, and other such nicities.  */
 
@@ -84,7 +96,7 @@ static inline void
 switch_to_system_map(void)
 {
 	memset(swapper_pg_dir, 0, PAGE_SIZE);
-	wrptbr(virt_to_phys(swapper_pg_dir));
+	update_ptbr_sys(virt_to_phys(swapper_pg_dir));
 	tbiv();
 }
 
@@ -104,14 +116,11 @@ void __init callback_init(void)
 void __init zone_sizes_init(void)
 {
 	unsigned long max_zone_pfns[MAX_NR_ZONES];
-	unsigned long dma_pfn;
 
 	memset(max_zone_pfns, 0, sizeof(max_zone_pfns));
 
-	dma_pfn = PFN_DOWN(virt_to_phys((void *)MAX_DMA_ADDRESS));
-
 #ifdef CONFIG_ZONE_DMA32
-	max_zone_pfns[ZONE_DMA32] = min(dma_pfn, max_low_pfn);
+	max_zone_pfns[ZONE_DMA32] = min(MAX_DMA32_PFN, max_low_pfn);
 #endif
 	max_zone_pfns[ZONE_NORMAL] = max_low_pfn;
 
@@ -123,12 +132,6 @@ void __init zone_sizes_init(void)
  */
 void __init paging_init(void)
 {
-	void *zero_page;
-
-	zero_page = __va(memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE));
-	pr_info("zero page start: %p\n", zero_page);
-	memset(zero_page, 0, PAGE_SIZE);
-	empty_zero_page = virt_to_page(zero_page);
 }
 
 void __init mem_detect(void)
@@ -172,7 +175,7 @@ void __init sw64_memblock_init(void)
 
 	/* Make sure initrd is in memory range. */
 	if (sunway_boot_params->initrd_start) {
-		phys_addr_t base = __pa(sunway_boot_params->initrd_start);
+		phys_addr_t base = __boot_pa(sunway_boot_params->initrd_start);
 		phys_addr_t size = sunway_boot_params->initrd_size;
 
 		memblock_add(base, size);

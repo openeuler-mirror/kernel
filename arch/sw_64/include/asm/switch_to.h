@@ -2,7 +2,7 @@
 #ifndef _ASM_SW64_SWITCH_TO_H
 #define _ASM_SW64_SWITCH_TO_H
 
-#include<linux/sched.h>
+#include <linux/sched.h>
 
 extern void __fpstate_save(struct task_struct *save_to);
 extern void __fpstate_restore(struct task_struct *restore_from);
@@ -16,7 +16,6 @@ static inline void aux_save(struct task_struct *task)
 
 	if (likely(!(task->flags & PF_KTHREAD))) {
 		pcb = &task_thread_info(task)->pcb;
-		pcb->usp = rdusp();
 		pcb->tp = rtid();
 		__fpstate_save(task);
 	}
@@ -28,7 +27,6 @@ static inline void aux_restore(struct task_struct *task)
 
 	if (likely(!(task->flags & PF_KTHREAD))) {
 		pcb = &task_thread_info(task)->pcb;
-		wrusp(pcb->usp);
 		wrtp(pcb->tp);
 		__fpstate_restore(task);
 	}

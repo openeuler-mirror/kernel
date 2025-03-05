@@ -44,3 +44,10 @@ config SW64_RRK
 	help
 	  Duplicate kernel log to specific space.
 	  Do not enable it in a production kernel.
+
+config DEBUG_MATCH
+	bool "instruction-flow and data-flow match debugfs interface"
+	depends on DEBUG_FS
+	default n
+	help
+	  Turns on the DebugFS interface for instruction-flow and data-flow match.

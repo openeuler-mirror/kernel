@@ -17,7 +17,6 @@ if VIRTUALIZATION
 
 config KVM
 	tristate "Kernel-based Virtual Machine (KVM) support"
-	select KVM_SW64_HOST
 	select PREEMPT_NOTIFIERS
 	select CMA
 	depends on NET
@@ -27,6 +26,8 @@ config KVM
 	select HAVE_KVM_IRQFD
 	select HAVE_KVM_MSI
 	select KVM_VFIO
+	select MMU_NOTIFIER
+	select KVM_GENERIC_DIRTYLOG_READ_PROTECT
 	select TUN
 	select GENERIC_ALLOCATOR
 	select KVM_GENERIC_DIRTYLOG_READ_PROTECT
@@ -36,16 +37,9 @@ config KVM
 
 	  If unsure, say N.
 
-config KVM_SW64_HOST
-	tristate "KVM for SW64 processors support"
-	depends on KVM
-	help
-	  Provides host support for SW64 processors.
-	  To compile this as a module, choose M here.
-
 config KVM_MEMHOTPLUG
 	bool "Memory hotplug support for guest"
-	depends on KVM && MEMORY_HOTPLUG
+	depends on KVM && MEMORY_HOTPLUG && SUBARCH_C3B
 	help
 	  Provides memory hotplug support for SW64 guest.
 

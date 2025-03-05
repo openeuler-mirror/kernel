@@ -4,4 +4,4 @@
 
 extern void arch_cpu_idle(void);
 
-#endif /* _ASM_SW64_IDLE_H  */
+#endif /* _ASM_SW64_IDLE_H */

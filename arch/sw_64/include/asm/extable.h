@@ -34,26 +34,14 @@ struct exception_table_entry {
 	} fixup;
 };
 
-/* Returns the new pc */
-#define fixup_exception(map_reg, _fixup, pc)			\
-({								\
-	if ((_fixup)->fixup.bits.valreg != 31)			\
-		map_reg((_fixup)->fixup.bits.valreg) = 0;	\
-	if ((_fixup)->fixup.bits.errreg != 31)			\
-		map_reg((_fixup)->fixup.bits.errreg) = -EFAULT;	\
-	(pc) + (_fixup)->fixup.bits.nextinsn;			\
-})
-
 #define ARCH_HAS_RELATIVE_EXTABLE
+
+extern int fixup_exception(struct pt_regs *regs, unsigned long pc);
 
 #define swap_ex_entry_fixup(a, b, tmp, delta)			\
 	do {							\
 		(a)->fixup.unit = (b)->fixup.unit;		\
 		(b)->fixup.unit = (tmp).fixup.unit;		\
 	} while (0)
-
-/* Macro for exception fixup code to access integer registers. */
-extern short regoffsets[];
-#define map_regs(r) (*(unsigned long *)((char *)regs + regoffsets[r]))
 
 #endif /* _ASM_SW64_EXTABLE_H */

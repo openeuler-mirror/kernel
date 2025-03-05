@@ -117,4 +117,15 @@ struct kvm_sync_regs {
 struct kvm_sregs {
 };
 
+struct swvm_mem_bank {
+	unsigned long guest_phys_addr;
+	unsigned long host_phys_addr;
+	unsigned long host_addr;
+	unsigned long size;
+};
+
+struct swvm_mem {
+	struct swvm_mem_bank membank[SWVM_NUM_NUMA_MEMBANKS];
+};
+
 #endif /* _UAPI_ASM_SW64_KVM_H */

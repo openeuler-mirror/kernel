@@ -740,4 +740,7 @@ config MICROCHIP_PIT64B
 	  modes and high resolution. It is used as a clocksource
 	  and a clockevent.
 
+config SW64_TIMER
+	bool
+
 endmenu

@@ -24,12 +24,12 @@ void kprobe_ftrace_handler(unsigned long ip, unsigned long parent_ip,
 	if (kprobe_running()) {
 		kprobes_inc_nmissed_count(p);
 	} else {
-		regs->r28 -= MCOUNT_INSN_SIZE;
+		regs->regs[28] -= MCOUNT_INSN_SIZE;
 
 		__this_cpu_write(current_kprobe, p);
 		kcb->kprobe_status = KPROBE_HIT_ACTIVE;
 		if (!p->pre_handler || !p->pre_handler(p, regs)) {
-			regs->r28 += MCOUNT_INSN_SIZE;
+			regs->regs[28] += MCOUNT_INSN_SIZE;
 			if (unlikely(p->post_handler)) {
 				kcb->kprobe_status = KPROBE_HIT_SSDONE;
 				p->post_handler(p, regs, 0);

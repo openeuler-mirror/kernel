@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-#ifndef _ASM_SW64_CHIP3_IO_H
-#define _ASM_SW64_CHIP3_IO_H
+#ifndef _ASM_SW64_UNCORE_IO_XUELANG_H
+#define _ASM_SW64_UNCORE_IO_XUELANG_H
 
 #include <asm/platform.h>
 
@@ -9,11 +9,7 @@
 #define PCI_IOR0_BASE		(0x2UL << 32)
 #define PCI_IOR1_BASE		(0x3UL << 32)
 
-#ifdef CONFIG_SW64_FPGA
-#define PCI_RC_CFG		(0x4UL << 32)
-#else
 #define PCI_RC_CFG		(0x5UL << 32)
-#endif
 
 #define PCI_EP_CFG		(0x3UL << 33)
 #define PCI_LEGACY_IO		(0x1UL << 32)
@@ -28,9 +24,6 @@
 #define IO_NODE_SHIFT		44
 #define IO_MARK_BIT		47
 
-extern int topo_nr_threads;
-extern int topo_nr_cores;
-extern int topo_nr_maxcpus;
 #define VT_MAX_CPUS_SHIFT	0
 #define VT_MAX_CPUS_MASK	0x3ff
 #define VT_CORES_SHIFT		10
@@ -38,10 +31,14 @@ extern int topo_nr_maxcpus;
 #define VT_THREADS_SHIFT	20
 #define VT_THREADS_MASK		0xfff
 
+#define QEMU_PRINTF_BUFF_BASE	(IO_BASE | MCU_BASE | 0x40000UL)
+
 /* MSIConfig */
 #define MSICONFIG_VALID		(0x1UL << 63)
 #define MSICONFIG_EN		(0x1UL << 62)
 #define MSICONFIG_VECTOR_SHIFT	10
+
+#define MSIX_MSG_ADDR		(0x91abc0UL)
 
 #define SW64_PCI_IO_BASE(m, n)	\
 	(IO_BASE | ((m) << IO_NODE_SHIFT) | PCI_BASE | ((n) << IO_RC_SHIFT))
@@ -52,13 +49,6 @@ extern int topo_nr_maxcpus;
 
 #define MAX_NR_NODES		0x2
 #define MAX_NR_RCS		0x6
-
-#define SW64_PCI_DEBUG		0
-#if SW64_PCI_DEBUG
-#define PCIINFO(fmt, args...)	printk(fmt, ##args)
-#else
-#define PCIINFO(fmt, args...)
-#endif
 
 #define MCU_BASE		(0x3UL << 36)
 #define CAB0_BASE		(0x10UL << 32)
@@ -81,6 +71,8 @@ extern int topo_nr_maxcpus;
 
 #define PME_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x1UL << 10)
 #define AER_ENABLE_INTD_CORE0	(0x1UL << 62 | 0x1UL << 10)
+
+#define PIUCONFIG0_INIT_VAL	0x38056
 
 /*-----------------------addr-----------------------*/
 /* CAB0 REG */
@@ -328,4 +320,4 @@ enum {
 	GPIO_SWPORTA_DDR =	GPIO_BASE | 0x200UL,
 };
 /*--------------------------------------------------------------------------*/
-#endif /* _ASM_SW64_CHIP3_IO_H */
+#endif /* _ASM_SW64_UNCORE_IO_XUELANG_H */

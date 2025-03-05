@@ -121,7 +121,7 @@ unsigned long show_va_to_pa(struct mm_struct *mm, unsigned long addr)
 	}
 	pte = pte_offset_map(pmd, addr);
 	if (pte_present(*pte)) {
-		ret = (unsigned long)pfn_to_virt(pte_val(*pte) >> _PFN_SHIFT);
+		ret = (unsigned long)pfn_to_virt(pte_pfn(*pte));
 		pr_debug("addr = %#lx, pgd = %#lx, pud = %#lx, pmd = %#lx, pte = %#lx, ret = %#lx\n",
 				addr, *(unsigned long *)pgd, *(unsigned long *)pud,
 				*(unsigned long *)pmd, *(unsigned long *)pte, ret);
@@ -138,7 +138,6 @@ do_page_fault(unsigned long address, unsigned long mmcsr,
 {
 	struct vm_area_struct *vma;
 	struct mm_struct *mm = current->mm;
-	const struct exception_table_entry *fixup;
 	int si_code = SEGV_MAPERR;
 	vm_fault_t fault;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
@@ -261,14 +260,8 @@ good_area:
 
  no_context:
 	/* Are we prepared to handle this fault as an exception?  */
-	fixup = search_exception_tables(regs->pc);
-	if (fixup != 0) {
-		unsigned long newpc;
-
-		newpc = fixup_exception(map_regs, fixup, regs->pc);
-		regs->pc = newpc;
+	if (fixup_exception(regs, regs->pc))
 		return;
-	}
 
 	/*
 	 * Oops. The kernel tried to access some bad page. We'll have to
@@ -296,13 +289,13 @@ good_area:
 	 * Send a sigbus, regardless of whether we were in kernel
 	 * or user mode.
 	 */
-	force_sig_fault(SIGBUS, BUS_ADRERR, (void __user *) address, 0);
+	force_sig_fault(SIGBUS, BUS_ADRERR, (void __user *) address);
 	if (!user_mode(regs))
 		goto no_context;
 	return;
 
  do_sigsegv:
-	force_sig_fault(SIGSEGV, si_code, (void __user *) address, 0);
+	force_sig_fault(SIGSEGV, si_code, (void __user *) address);
 
 	if (unlikely(segv_debug_enabled)) {
 		pr_info("fault: want to send_segv: pid %d, cause = %#lx, mmcsr = %#lx, address = %#lx, pc %#lx\n",

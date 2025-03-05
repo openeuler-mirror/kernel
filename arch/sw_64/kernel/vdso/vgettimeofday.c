@@ -16,6 +16,7 @@
 
 #include <asm/unistd.h>
 #include <asm/vdso.h>
+#include <asm/csr.h>
 #include <asm/hmcall.h>
 
 static __always_inline int syscall_fallback(clockid_t clkid, struct timespec64 *ts)
@@ -74,6 +75,7 @@ static __always_inline int do_monotonic_coarse(struct timespec64 *ts,
 	return 0;
 }
 
+#if defined(CONFIG_SUBARCH_C3B)
 static __always_inline u64 read_longtime(void)
 {
 	register unsigned long __r0 __asm__("$0");
@@ -83,6 +85,12 @@ static __always_inline u64 read_longtime(void)
 
 	return __r0;
 }
+#elif defined(CONFIG_SUBARCH_C4)
+static __always_inline u64 read_longtime(void)
+{
+	return read_csr(CSR_SHTCLOCK);
+}
+#endif
 
 static __always_inline u64 get_ns(const struct vdso_data *data)
 {

@@ -2,7 +2,7 @@
 #ifndef _ASM_SW64_PERF_EVENT_H
 #define _ASM_SW64_PERF_EVENT_H
 
-#include <asm/wrperfmon.h>
+#include <asm/pmc.h>
 #include <asm/ptrace.h>
 
 #ifdef CONFIG_PERF_EVENTS

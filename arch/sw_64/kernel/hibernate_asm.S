@@ -114,7 +114,7 @@ $hibernate_setfpec_over:
 
 	ldl	sp, PSTATE_SP($16)
 	ldl	$8, PSTATE_KTP($16)
-
+	sys_call HMC_wrktp
 
 	ldi	$0, 0($31)
 

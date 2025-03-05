@@ -33,46 +33,25 @@ void sw64_suspend_enter(void)
 	/* boot processor will go to deep sleep mode from here
 	 * After wake up  boot processor, pc will go here
 	 */
-
-#ifdef CONFIG_SW64_SUPPORT_S3_SLEEPING_STATE
-	if (sw64_chip->suspend)
-		sw64_chip->suspend(false);
-#endif
-
 	disable_local_timer();
 	current_thread_info()->pcb.tp = rtid();
 
-#ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_BOOTCORE
 	sw64_suspend_deep_sleep(&suspend_state);
-#else
-	mtinten();
-	asm("halt");
-#endif
 	wrtp(current_thread_info()->pcb.tp);
-
-#ifdef CONFIG_SW64_SUPPORT_S3_SLEEPING_STATE
-	if (sw64_chip->suspend)
-		sw64_chip->suspend(true);
-#endif
 
 	disable_local_timer();
 }
 
 static int native_suspend_enter(suspend_state_t state)
 {
+	if (is_in_guest())
+		return 0;
 	/* processor specific suspend */
 	sw64_suspend_enter();
 	return 0;
 }
 
-static const struct platform_suspend_ops native_suspend_ops = {
+const struct platform_suspend_ops native_suspend_ops = {
 	.valid = native_suspend_state_valid,
 	.enter = native_suspend_enter,
 };
-
-static int __init sw64_pm_init(void)
-{
-	suspend_set_ops(&native_suspend_ops);
-	return 0;
-}
-arch_initcall(sw64_pm_init);

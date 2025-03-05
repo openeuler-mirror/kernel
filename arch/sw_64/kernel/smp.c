@@ -15,6 +15,7 @@
 #include <asm/tlbflush.h>
 #include <asm/sw64_init.h>
 #include <asm/topology.h>
+#include <asm/timer.h>
 
 #include "proto.h"
 
@@ -27,12 +28,6 @@ int smp_booted;
 #define smp_debug 0
 #define DBGS(fmt, arg...) \
 	do { if (smp_debug) printk("SMP: " fmt, ## arg); } while (0)
-
-int __cpu_to_rcid[NR_CPUS];		/* Map logical to physical */
-EXPORT_SYMBOL(__cpu_to_rcid);
-
-int __rcid_to_cpu[NR_CPUS];		/* Map physical to logical */
-EXPORT_SYMBOL(__rcid_to_cpu);
 
 void *idle_task_pointer[NR_CPUS];
 
@@ -56,8 +51,6 @@ EXPORT_SYMBOL(smp_num_cpus);
 #define send_sleep_interrupt(cpu)	send_ipi((cpu), II_SLEEP)
 #define send_wakeup_interrupt(cpu)	send_ipi((cpu), II_WAKE)
 
-void __weak enable_chip_int(void) { }
-
 /*
  * Where secondaries begin a life of C.
  */
@@ -66,8 +59,6 @@ void smp_callin(void)
 	int cpuid = smp_processor_id();
 
 	local_irq_disable();
-
-	enable_chip_int();
 
 	if (cpu_online(cpuid)) {
 		printk("??, cpu 0x%x already present??\n", cpuid);
@@ -83,22 +74,28 @@ void smp_callin(void)
 	trap_init();
 
 	/* Set interrupt vector.  */
+	if (is_in_host()) {
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI0_INTEN);
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI1_INTEN);
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI2_INTEN);
+		write_csr(0xffffffffffffffffUL, CSR_PCIE_MSI3_INTEN);
+	}
 	wrent(entInt, 0);
 
 	/* Get our local ticker going. */
-	setup_timer();
+	sw64_setup_timer();
 
 	/* All kernel threads share the same mm context.  */
 	mmgrab(&init_mm);
 	current->active_mm = &init_mm;
 	/* update csr:ptbr */
-	wrptbr(virt_to_phys(init_mm.pgd));
+	update_ptbr_sys(virt_to_phys(init_mm.pgd));
 
 	/* inform the notifiers about the new cpu */
 	notify_cpu_starting(cpuid);
 
 	per_cpu(cpu_state, cpuid) = CPU_ONLINE;
-	per_cpu(hard_node_id, cpuid) = cpu_to_rcid(cpuid) >> CORES_PER_NODE_SHIFT;
+	per_cpu(hard_node_id, cpuid) = rcid_to_domain_id(cpu_to_rcid(cpuid));
 
 	/* Must have completely accurate bogos.  */
 	local_irq_enable();
@@ -195,29 +192,19 @@ void __init smp_rcb_init(void)
  */
 void __init setup_smp(void)
 {
-	int i = 0, num = 0; /* i: physical id, num: logical id */
+	int i = 0, num = 0;
 
 	init_cpu_possible(cpu_none_mask);
 
 	/* For unified kernel, NR_CPUS is the maximum possible value */
 	for (; i < NR_CPUS; i++) {
-		if (cpumask_test_cpu(i, &core_start)) {
-			__cpu_to_rcid[num] = i;
-			__rcid_to_cpu[i] = num;
+		if (cpu_to_rcid(i) != -1) {
 			set_cpu_possible(num, true);
 			store_cpu_data(num);
 			if (!cpumask_test_cpu(i, &cpu_offline))
 				set_cpu_present(num, true);
 			num++;
-		} else
-			__rcid_to_cpu[i] = -1;
-	}
-	/* for sw64, the BSP must be logical core 0 */
-	BUG_ON(cpu_to_rcid(0) != hard_smp_processor_id());
-
-	while (num < NR_CPUS) {
-		__cpu_to_rcid[num] = -1;
-		num++;
+		}
 	}
 
 	process_nr_cpu_ids();
@@ -268,12 +255,19 @@ int vt_cpu_up(unsigned int cpu, struct task_struct *tidle)
 
 	wmb();
 	smp_rcb->ready = 0;
+	if (smp_booted) {
+		/* irq must be disabled before reset vCPU */
+		reset_cpu(cpu);
+	}
 	smp_boot_one_cpu(cpu, tidle);
 
 	return cpu_online(cpu) ? 0 : -ENOSYS;
 }
 
+#ifdef CONFIG_SUBARCH_C3B
 DECLARE_STATIC_KEY_FALSE(use_tc_as_sched_clock);
+#endif
+
 int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 {
 	if (is_in_guest())
@@ -282,10 +276,8 @@ int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 	wmb();
 	smp_rcb->ready = 0;
 
-#ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_NONBOOT_CORE
 	/* send wake up signal */
 	send_wakeup_interrupt(cpu);
-#endif
 	/* send reset signal */
 	if (smp_booted) {
 		if (is_in_host()) {
@@ -298,7 +290,7 @@ int __cpu_up(unsigned int cpu, struct task_struct *tidle)
 	}
 	smp_boot_one_cpu(cpu, tidle);
 
-#ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_NONBOOT_CORE
+#ifdef CONFIG_SUBARCH_C3B
 	if (static_branch_likely(&use_tc_as_sched_clock)) {
 		if (smp_booted) {
 			tc_sync_clear();
@@ -373,6 +365,8 @@ void handle_ipi(struct pt_regs *regs)
 
 			case IPI_CPU_STOP:
 				ipi_cpu_stop(cpu);
+				break;
+
 			default:
 				pr_crit("Unknown IPI on CPU %d: %lu\n", cpu, which);
 				break;
@@ -583,19 +577,10 @@ void arch_cpu_idle_dead(void)
 	}
 
 #ifdef CONFIG_SUSPEND
-
-#ifdef CONFIG_SW64_SUSPEND_DEEPSLEEP_NONBOOT_CORE
 	sleepen();
 	send_sleep_interrupt(smp_processor_id());
 	while (1)
 		asm("nop");
-#else
-	asm volatile("halt");
-	while (1)
-		asm("nop");
-#endif /* SW64_SUSPEND_DEEPSLEEP */
-
-
 #else
 	asm volatile("memb");
 	asm volatile("halt");

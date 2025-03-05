@@ -378,7 +378,7 @@ void cpu_set_node(void)
 		rr = first_node(node_online_map);
 		for (i = 0; i < nr_cpu_ids; i++) {
 			cid = cpu_to_rcid(i);
-			default_node = cid >> CORES_PER_NODE_SHIFT;
+			default_node = rcid_to_domain_id(cid);
 			if (node_online(default_node)) {
 				cpu_to_node_map[i] = default_node;
 			} else {

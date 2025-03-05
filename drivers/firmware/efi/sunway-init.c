@@ -36,9 +36,10 @@ static int __init is_memory(efi_memory_desc_t *md)
 	return 0;
 }
 static efi_config_table_type_t arch_tables[] __initdata = {
-	{SMBIOS3_TABLE_GUID, NULL, NULL},
+	{SMBIOS3_TABLE_GUID, NULL, ""},
 	{SLEEP_ENTRY_GUID, &entSuspend, "SLEEP ENTRY"},
-	{BIOS_VERSION_GUID,  &bios_version, "BIOS VERSION"}
+	{BIOS_VERSION_GUID,  &bios_version, "BIOS VERSION"},
+	{},
 };
 
 static int __init uefi_init(u64 efi_system_table)

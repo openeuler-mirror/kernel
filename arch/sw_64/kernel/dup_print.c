@@ -15,12 +15,6 @@ static DEFINE_SPINLOCK(printk_lock);
 unsigned long sw64_printk_offset;
 #define PRINTK_SIZE	0x100000UL
 
-/*
- * For output the kernel message on the console
- * with full-system emulator.
- */
-#define QEMU_PRINTF_BUFF_BASE	(IO_BASE | MCU_BASE | 0x40000UL)
-
 int sw64_printk(const char *fmt, va_list args)
 {
 	char *sw64_printk_buf;
@@ -52,7 +46,7 @@ int sw64_printk(const char *fmt, va_list args)
 #endif
 
 #ifdef CONFIG_SW64_RRU
-#include<linux/uaccess.h>
+#include <linux/uaccess.h>
 
 static DEFINE_SPINLOCK(printf_lock);
 #define USER_PRINT_BUFF_BASE            (0x600000UL + __START_KERNEL_map)

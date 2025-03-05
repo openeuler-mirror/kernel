@@ -89,7 +89,7 @@ int populate_cache_leaves(unsigned int cpu)
 	}
 
 	if (c->tcache.size) {
-		cpumask_copy(&this_leaf->shared_cpu_map, cpu_online_mask);
+		cpumask_copy(&this_leaf->shared_cpu_map, topology_llc_cpumask(cpu));
 		populate_cache(tcache, this_leaf, 3, CACHE_TYPE_UNIFIED, topo->package_id);
 	}
 

@@ -102,7 +102,7 @@ typedef struct user_fpsimd_state elf_fpregset_t;
  * such function.
  */
 
-#define ELF_PLAT_INIT(_r, load_addr)	(_r->r0 = 0)
+#define ELF_PLAT_INIT(_r, load_addr)	(_r->regs[0] = 0)
 
 /*
  * The registers are laid out in pt_regs for HMCODE and syscall

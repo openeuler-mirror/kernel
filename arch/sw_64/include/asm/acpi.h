@@ -43,6 +43,7 @@ extern int acpi_pci_disabled;
 					ACPI_PDC_C_C2C3_FFH)
 
 #define ACPI_TABLE_UPGRADE_MAX_PHYS (max_low_pfn_mapped << PAGE_SHIFT)
+
 static inline void disable_acpi(void)
 {
 	acpi_disabled = 1;
@@ -50,7 +51,18 @@ static inline void disable_acpi(void)
 	acpi_noirq = 1;
 }
 
-static inline void acpi_noirq_set(void) { acpi_noirq = 1; }
+static inline void enable_acpi(void)
+{
+	acpi_disabled = 0;
+	acpi_pci_disabled = 0;
+	acpi_noirq = 0;
+}
+
+static inline void acpi_noirq_set(void)
+{
+	acpi_noirq = 1;
+}
+
 static inline void acpi_disable_pci(void)
 {
 	acpi_pci_disabled = 1;

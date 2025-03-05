@@ -16,6 +16,7 @@
 #include <linux/log2.h>
 #include <linux/dma-mapping.h>
 #include <linux/dma-map-ops.h>
+#include <linux/dma-direct.h>
 #include <linux/dma-iommu.h>
 #include <linux/iommu.h>
 #include <linux/iommu-helper.h>
@@ -38,6 +39,11 @@
 #define SW64_DMA_LIMIT (0xe0000000 - 1)
 #define SW64_BAR_ADDRESS (IO_BASE | PCI_BASE)
 
+#define SW64_IOMMU_LEVEL1_OFFSET	0x1ff
+#define SW64_IOMMU_LEVEL2_OFFSET	0x3ff
+
+#define SW64_IOMMU_GRN_8K		((0UL) << 4)	/* page size as 8KB */
+#define SW64_IOMMU_GRN_8M		((0x2UL) << 4)	/* page size as 8MB */
 #define SW64_IOMMU_PGSIZES (((1ULL) << PAGE_SHIFT) | ((1ULL) << PAGE_8M_SHIFT))
 
 #define IDENTMAP_ALL    ((1U) << 0)
@@ -1293,14 +1299,6 @@ sunway_unmap_sg(struct device *dev, struct scatterlist *sgl,
 	}
 }
 
-static int sunway_supported(struct device *dev, u64 mask)
-{
-	if (MAX_DMA_ADDRESS - PAGE_OFFSET - 1 <= mask)
-		return 1;
-
-	return 0;
-}
-
 static const struct dma_map_ops sunway_dma_ops = {
 	.alloc = sunway_alloc_coherent,
 	.free = sunway_free_coherent,
@@ -1308,7 +1306,7 @@ static const struct dma_map_ops sunway_dma_ops = {
 	.unmap_sg = sunway_unmap_sg,
 	.map_page = sunway_map_page,
 	.unmap_page = sunway_unmap_page,
-	.dma_supported = sunway_supported,
+	.dma_supported = dma_direct_supported,
 };
 
 /**********************************************************************
@@ -1466,7 +1464,7 @@ sunway_iommu_iova_to_phys(struct iommu_domain *dom, dma_addr_t iova)
 	struct sunway_iommu_domain *sdomain = to_sunway_domain(dom);
 	unsigned long paddr, grn;
 
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return iova;
 
 	paddr = fetch_pte(sdomain, iova, PTE_LEVEL2_VAL);
@@ -1503,7 +1501,7 @@ sunway_iommu_map(struct iommu_domain *dom, unsigned long iova,
 	 * and pci device BAR, check should be introduced manually
 	 * to avoid VFIO trying to map pci config space.
 	 */
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return 0;
 
 	mutex_lock(&sdomain->api_lock);
@@ -1521,7 +1519,7 @@ sunway_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 	struct sunway_iommu_domain *sdomain = to_sunway_domain(dom);
 	size_t unmap_size;
 
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return page_size;
 
 	mutex_lock(&sdomain->api_lock);
@@ -1678,6 +1676,9 @@ const struct iommu_ops sunway_iommu_ops = {
 /*****************************************************************************
  *
  * Boot param handle
+ * Each bit of iommu_enable bitmap represents an rc enable, and every 8 bits
+ * represents one cpu node. For example, iommu_enable=0x0100 means enabling
+ * rc0 for cpu node 1.
  *
  *****************************************************************************/
 static int __init iommu_enable_setup(char *str)

@@ -22,7 +22,7 @@ start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 {
 	regs->pc = pc;
 	regs->ps = 8;
-	wrusp(sp);
+	regs->regs[30] = sp;
 }
 EXPORT_SYMBOL(start_thread);
 
@@ -34,7 +34,7 @@ flush_thread(void)
 	 * with respect to the FPU.  This is all exceptions disabled.
 	 */
 	current_thread_info()->ieee_state = 0;
-	wrfpcr(FPCR_DYN_NORMAL | ieee_swcr_to_fpcr(0));
+	wrfpcr(FPCR_INIT | ieee_swcr_to_fpcr(0));
 
 	/* Clean slate for TLS.  */
 	current_thread_info()->pcb.tp = 0;
@@ -80,7 +80,6 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 		p->thread.ra = (unsigned long) ret_from_kernel_thread;
 		p->thread.s[0] = usp;	/* function */
 		p->thread.s[1] = kthread_arg;
-		childti->pcb.usp = 0;
 		return 0;
 	}
 
@@ -92,14 +91,14 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 	 * application calling fork.
 	 */
 	if (clone_flags & CLONE_SETTLS)
-		childti->pcb.tp = regs->r20;
+		childti->pcb.tp = regs->regs[20];
 	else
-		regs->r20 = 0;
-	if (usp)
-		childti->pcb.usp = usp;
+		regs->regs[20] = 0;
 	*childregs = *regs;
-	childregs->r0 = 0;
-	childregs->r19 = 0;
+	if (usp)
+		childregs->regs[30] = usp;
+	childregs->regs[0] = 0;
+	childregs->regs[19] = 0;
 	p->thread.ra = (unsigned long) ret_from_fork;
 	return 0;
 }
@@ -115,9 +114,8 @@ void sw64_elf_core_copy_regs(elf_greg_t *dest, struct pt_regs *regs)
 
 	ti = (void *)((__u64)regs & ~(THREAD_SIZE - 1));
 
-	for (i = 0; i < 30; i++)
-		dest[i] = *(__u64 *)((void *)regs + regoffsets[i]);
-	dest[30] = ti == current_thread_info() ? rdusp() : ti->pcb.usp;
+	for (i = 0; i < 31; i++)
+		dest[i] = regs->regs[i];
 	dest[31] = regs->pc;
 	dest[32] = ti->pcb.tp;
 }

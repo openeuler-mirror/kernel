@@ -1,11 +1,17 @@
 # SPDX-License-Identifier: GPL-2.0
 # Built-in dtb
 
+ifeq ($(CONFIG_PLATFORM_XUELANG),y)
 builtindtb-y            := chip3
+endif
 
-ifeq ($(CONFIG_SW64_BUILTIN_DTB), y)
-ifneq ($(CONFIG_SW64_BUILTIN_DTB_NAME),"")
-        builtindtb-y    := $(patsubst "%",%,$(CONFIG_SW64_BUILTIN_DTB_NAME))
+ifeq ($(CONFIG_PLATFORM_JUNZHANG),y)
+builtindtb-y            := empty
+endif
+
+ifeq ($(CONFIG_BUILTIN_DTB), y)
+ifneq ($(CONFIG_BUILTIN_DTB_NAME),"")
+        builtindtb-y    := $(patsubst "%",%,$(CONFIG_BUILTIN_DTB_NAME))
 endif
 
 obj-y   += $(builtindtb-y).dtb.o
