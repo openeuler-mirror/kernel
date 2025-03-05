@@ -87,10 +87,10 @@ asmlinkage void noinstr do_entInt(struct pt_regs *regs)
 	/* restart idle routine if it is interrupted */
 	if (regs->pc > (u64)__idle_start && regs->pc < (u64)__idle_end)
 		regs->pc = (u64)__idle_start;
-	if (regs->cause != -2)
-		irq_enter();
-	else
+	if (unlikely(regs->cause == -2 && IS_ENABLED(CONFIG_SUBARCH_C4)))
 		nmi_enter();
+	else
+		irq_enter();
 	old_regs = set_irq_regs(regs);
 
 #ifdef CONFIG_PM
@@ -176,10 +176,10 @@ asmlinkage void noinstr do_entInt(struct pt_regs *regs)
 
 out:
 	set_irq_regs(old_regs);
-	if (regs->cause != -2)
-		irq_exit();
-	else
+	if (unlikely(regs->cause == -2 && IS_ENABLED(CONFIG_SUBARCH_C4)))
 		nmi_exit();
+	else
+		irq_exit();
 }
 EXPORT_SYMBOL(do_entInt);
 
