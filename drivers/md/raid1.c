@@ -1551,6 +1551,13 @@ static void raid1_write_request(struct mddev *mddev, struct bio *bio,
 		}
 	}
 
+	/*
+	 * Corresponding to md_bitmap_endwrite() from close_write(), in the case
+	 * io range from all member disks are badblocks.
+	 */
+	if (first_clone)
+		md_bitmap_startwrite(bitmap, r1_bio->sector, r1_bio->sectors, 0);
+
 	r1_bio_write_done(r1_bio);
 
 	/* In case raid1d snuck in to freeze_array */
