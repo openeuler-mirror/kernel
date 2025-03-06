@@ -265,8 +265,15 @@ static inline void
 switch_mm(struct mm_struct *prev, struct mm_struct *next,
 	  struct task_struct *tsk)
 {
-	if (prev != next)
+	if (prev != next) {
 		__switch_mm(next);
+#ifdef CONFIG_ARM64_TLBI_IPI
+		if (unlikely(test_tlbi_ipi_switch())) {
+			cpumask_clear_cpu(smp_processor_id(), mm_cpumask(prev));
+			local_flush_tlb_mm(prev);
+		}
+#endif
+	}
 
 	/*
 	 * Update the saved TTBR0_EL1 of the scheduled-in task as the previous

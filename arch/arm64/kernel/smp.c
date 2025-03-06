@@ -210,6 +210,9 @@ asmlinkage notrace void secondary_start_kernel(void)
 	mmgrab(mm);
 	current->active_mm = mm;
 
+#ifdef CONFIG_ARM64_TLBI_IPI
+	cpumask_set_cpu(cpu, mm_cpumask(mm));
+#endif
 	/*
 	 * Setup per-NUMA node page table if kernel
 	 * replication is enabled. Option supported
@@ -323,6 +326,13 @@ int __cpu_disable(void)
 	 * OK - migrate IRQs away from this CPU
 	 */
 	irq_migrate_all_off_this_cpu();
+
+#ifdef CONFIG_ARM64_TLBI_IPI
+	/*
+	 * Remove this CPU from the vm mask set of all processes.
+	 */
+	clear_tasks_mm_cpumask(cpu);
+#endif
 
 	return 0;
 }
