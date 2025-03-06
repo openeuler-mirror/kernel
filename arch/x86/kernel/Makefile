@@ -164,3 +164,4 @@ ifeq ($(CONFIG_X86_64),y)
 endif
 
 obj-$(CONFIG_HYGON_CSV)			+= csv.o
+obj-$(CONFIG_IEE)				+= haoc/

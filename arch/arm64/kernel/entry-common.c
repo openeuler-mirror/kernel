@@ -212,7 +212,11 @@ static __always_inline void fast_enter_from_user_mode(struct pt_regs *regs)
  * mode. Before this function is called it is not safe to call regular kernel
  * code, instrumentable code, or any code which may trigger an exception.
  */
+#ifdef CONFIG_IEE
+void noinstr arm64_enter_nmi(struct pt_regs *regs)
+#else
 static void noinstr arm64_enter_nmi(struct pt_regs *regs)
+#endif
 {
 	regs->lockdep_hardirqs = lockdep_hardirqs_enabled();
 
