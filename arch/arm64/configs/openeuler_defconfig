@@ -633,6 +633,11 @@ CONFIG_ARCH_CPUIDLE_HALTPOLL=y
 # end of Power management options
 
 #
+# TLB options
+#
+# CONFIG_ARM64_TLBI_IPI is not set
+
+#
 # CPU Power Management
 #
 
