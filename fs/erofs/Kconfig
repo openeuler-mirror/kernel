@@ -125,6 +125,17 @@ config EROFS_FS_ONDEMAND
 
 	  If unsure, say N.
 
+config EROFS_TRIO
+	bool "EROFS TrIO support"
+	depends on EROFS_FS_ONDEMAND
+	default n
+	help
+	  If this config option is enabled then erofs trio will be enable.
+	  This is used for container cases to boost on-demand loading for
+	  container's images.
+
+	  If unsure, say N.
+
 config EROFS_FS_PCPU_KTHREAD
 	bool "EROFS per-cpu decompression kthread workers"
 	depends on EROFS_FS_ZIP

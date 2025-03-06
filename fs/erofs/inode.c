@@ -252,6 +252,8 @@ static int erofs_fill_inode(struct inode *inode)
 			inode->i_fop = &generic_ro_fops;
 		else
 			inode->i_fop = &erofs_file_fops;
+		if (erofs_trio_is_enable(inode->i_sb))
+			inode->i_private = erofs_get_trio_object(inode);
 		break;
 	case S_IFDIR:
 		inode->i_op = &erofs_dir_iops;
