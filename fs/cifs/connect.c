@@ -478,6 +478,7 @@ cifs_reconnect(struct TCP_Server_Info *server)
 			 server->ssocket->state, server->ssocket->flags);
 		sock_release(server->ssocket);
 		server->ssocket = NULL;
+		put_net(cifs_net_ns(server));
 	}
 	server->sequence_number = 0;
 	server->session_estab = false;
@@ -918,6 +919,9 @@ static void clean_demultiplex_info(struct TCP_Server_Info *server)
 	if (server->ssocket) {
 		sock_release(server->ssocket);
 		server->ssocket = NULL;
+
+		/* Release netns reference for the socket. */
+		put_net(cifs_net_ns(server));
 	}
 
 	if (!list_empty(&server->pending_mid_q)) {
@@ -966,6 +970,7 @@ static void clean_demultiplex_info(struct TCP_Server_Info *server)
 		 */
 	}
 
+	/* Release netns reference for this server. */
 	put_net(cifs_net_ns(server));
 	kfree(server->hostname);
 	kfree(server);
@@ -2584,6 +2589,8 @@ cifs_get_tcp_session(struct smb_vol *volume_info)
 
 	tcp_ses->ops = volume_info->ops;
 	tcp_ses->vals = volume_info->vals;
+
+	/* Grab netns reference for this server. */
 	cifs_set_net_ns(tcp_ses, get_net(current->nsproxy->net_ns));
 	tcp_ses->hostname = extract_hostname(volume_info->UNC);
 	if (IS_ERR(tcp_ses->hostname)) {
@@ -2701,14 +2708,17 @@ smbd_connected:
 out_err_crypto_release:
 	cifs_crypto_secmech_release(tcp_ses);
 
+	/* Release netns reference for this server. */
 	put_net(cifs_net_ns(tcp_ses));
 
 out_err:
 	if (tcp_ses) {
 		if (!IS_ERR(tcp_ses->hostname))
 			kfree(tcp_ses->hostname);
-		if (tcp_ses->ssocket)
+		if (tcp_ses->ssocket) {
 			sock_release(tcp_ses->ssocket);
+			put_net(cifs_net_ns(tcp_ses));
+		}
 		kfree(tcp_ses);
 	}
 	return ERR_PTR(rc);
@@ -3743,22 +3753,26 @@ generic_ip_connect(struct TCP_Server_Info *server)
 
 	if (socket == NULL) {
 		struct net *net = cifs_net_ns(server);
-		struct sock *sk;
 
-		rc = __sock_create(net, sfamily, SOCK_STREAM,
-				   IPPROTO_TCP, &socket, 1);
+		rc = sock_create_kern(net, sfamily, SOCK_STREAM,
+				   IPPROTO_TCP, &socket);
 		if (rc < 0) {
 			cifs_server_dbg(VFS, "Error %d creating socket\n", rc);
 			server->ssocket = NULL;
 			return rc;
 		}
 
-		sk = socket->sk;
-		sk->sk_net_refcnt = 1;
+		/*
+		 * Grab netns reference for the socket.
+		 *
+		 * This reference will be released in several situations:
+		 * - In the failure path before the cifsd is started
+		 * - In the all place where server->socket is released, it is
+		 *   also set to NULL.
+		 * - Ultimately in clean_demultiplex_info(), during the final
+		 *   teardown.
+		 */
 		get_net(net);
-#ifdef CONFIG_PROC_FS
-		this_cpu_add(*net->core.sock_inuse, 1);
-#endif
 
 		/* BB other socket options to set KEEPALIVE, NODELAY? */
 		cifs_dbg(FYI, "Socket created\n");
@@ -3808,6 +3822,7 @@ generic_ip_connect(struct TCP_Server_Info *server)
 		rc = 0;
 	if (rc < 0) {
 		cifs_dbg(FYI, "Error %d connecting to server\n", rc);
+		put_net(cifs_net_ns(server));
 		sock_release(socket);
 		server->ssocket = NULL;
 		return rc;
