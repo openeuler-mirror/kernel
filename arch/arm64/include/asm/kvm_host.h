@@ -412,6 +412,7 @@ struct kvm_vcpu_arch {
 	/* Guest PV sched state */
 	struct {
 		bool pv_unhalted;
+		bool preempted;
 		gpa_t base;
 	} pvsched;
 
@@ -645,12 +646,14 @@ long kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu);
 void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu, u32 preempted);
 long kvm_pvsched_kick_vcpu(struct kvm_vcpu *vcpu);
 
+extern bool pv_preempted_enable;
 static inline void kvm_arm_pvsched_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
 {
 	vcpu_arch->pvsched.base = GPA_INVALID;
+	vcpu_arch->pvsched.preempted = false;
 }
 
-static inline bool kvm_arm_is_pvsched_enabled(struct kvm_vcpu_arch *vcpu_arch)
+static inline bool kvm_arm_is_pvsched_valid(struct kvm_vcpu_arch *vcpu_arch)
 {
 	return (vcpu_arch->pvsched.base != GPA_INVALID);
 }
