@@ -248,34 +248,37 @@ static bool sdma_wait_cq_writeback(struct hisi_sdma_channel *pchannel)
 	return (cnt <= SDMA_POLL_TIMEOUT);
 }
 
-static void sdma_pause_channel(struct hisi_sdma_device *psdma_dev)
+static void sdma_pause_single_channel(struct hisi_sdma_channel *pchannel,
+				      struct hisi_sdma_device *psdma_dev)
+{
+	u16 idx = pchannel->idx;
+
+	if (sdma_wait_hardware_done(pchannel) == false)
+		pr_warn("SDMA %u chn %hu hardware not finish all sqes!\n",
+			psdma_dev->idx, idx);
+
+	sdma_channel_set_pause(pchannel);
+	if (sdma_wait_cq_writeback(pchannel))
+		sdma_channel_reset_sq_cq(pchannel);
+	else
+		pr_warn("SDMA %u chn %hu hardware not write back all cqes!\n",
+			psdma_dev->idx, idx);
+}
+
+static void sdma_pause_channels(struct hisi_sdma_device *psdma_dev)
 {
 	struct hisi_sdma_channel *pchannel;
-	bool flag;
 	int i;
 
 	for (i = 0; i < HISI_SDMA_DEFAULT_CHANNEL_NUM; i++) {
 		pchannel = psdma_dev->channels + i;
-		if (sdma_wait_hardware_done(pchannel) == false) {
-			pr_warn("SDMA %u chn %d hardware not finish all sqes!\n",
-				psdma_dev->idx, i);
-			continue;
-		}
-
-		sdma_channel_set_pause(pchannel);
-		flag = sdma_wait_cq_writeback(pchannel);
-		if (flag)
-			sdma_channel_reset_sq_cq(pchannel);
-		else
-			pr_warn("SDMA %u chn %d hardware not write back all cqes!\n",
-				psdma_dev->idx, i);
+		sdma_pause_single_channel(pchannel, psdma_dev);
 	}
 }
 
 static void sdma_wait_channel_quiescent(struct hisi_sdma_device *psdma_dev)
 {
 	struct hisi_sdma_channel *pchannel;
-	bool flag;
 	int i;
 
 	for (i = 0; i < HISI_SDMA_DEFAULT_CHANNEL_NUM; i++) {
@@ -283,20 +286,7 @@ static void sdma_wait_channel_quiescent(struct hisi_sdma_device *psdma_dev)
 		if (sdma_channel_is_quiescent(pchannel))
 			continue;
 
-		if (sdma_channel_is_paused(pchannel)) {
-			sdma_channel_reset_sq_cq(pchannel);
-			continue;
-		}
-
-		if (sdma_wait_hardware_done(pchannel) == false) {
-			pr_warn("SDMA %u chn %d hardware not finish all sqes!\n",
-				psdma_dev->idx, i);
-			continue;
-		}
-
-		sdma_channel_set_pause(pchannel);
-		flag = sdma_wait_cq_writeback(pchannel);
-		if (flag)
+		if (sdma_wait_cq_writeback(pchannel))
 			sdma_channel_reset_sq_cq(pchannel);
 		else
 			pr_warn("SDMA %u chn %d hardware not write back all cqes!\n",
@@ -332,13 +322,12 @@ static void sdma_mmu_release_pause(struct mmu_notifier *mn, struct mm_struct *mm
 	if (!sdma_mn->data)
 		return;
 
-	mutex_lock(g_info.mutex_lock);
 	if (atomic_read(&exit_processes) == 0) {
 		atomic_set(&exit_processes, 1);
 		pr_warn("SDMA exit exceptionally, stop SDMA tasks before mm exit.\n");
 		for (i = 0; i < g_info.core_dev->sdma_device_num; i++) {
 			psdma_dev = g_info.core_dev->sdma_devices[i];
-			sdma_pause_channel(psdma_dev);
+			sdma_pause_channels(psdma_dev);
 		}
 	} else {
 		for (i = 0; i < g_info.core_dev->sdma_device_num; i++) {
@@ -346,7 +335,6 @@ static void sdma_mmu_release_pause(struct mmu_notifier *mn, struct mm_struct *mm
 			sdma_wait_channel_quiescent(psdma_dev);
 		}
 	}
-	mutex_unlock(g_info.mutex_lock);
 }
 
 static void sdma_mmu_release_resume(struct mmu_notifier *mn, struct mm_struct *mm)
