@@ -4259,6 +4259,11 @@ try_mount_again:
 
 	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, volume_info);
 	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, volume_info);
+	if (cifs_sb->rsize == 0) {
+		cifs_dbg(VFS, "Negotiated rsize is 0, mount failed\n");
+		rc = -EINVAL;
+		goto mount_fail_check;
+	}
 
 remote_path_check:
 #ifdef CONFIG_CIFS_DFS_UPCALL
