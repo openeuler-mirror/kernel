@@ -500,6 +500,7 @@ struct hns_roce_db_pgdir {
 struct hns_roce_umem_node {
 	struct ib_umem *umem;
 	struct list_head list;
+	bool delayed_unmap_flag;
 };
 
 struct hns_roce_user_db_page {

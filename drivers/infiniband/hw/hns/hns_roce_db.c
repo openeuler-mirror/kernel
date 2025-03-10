@@ -67,17 +67,20 @@ void hns_roce_db_unmap_user(struct hns_roce_ucontext *context,
 			    bool delayed_unmap_flag)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(context->ibucontext.device);
+	struct hns_roce_umem_node *umem_node = db->u.user_page->umem_node;
 
 	mutex_lock(&context->page_mutex);
+
+	umem_node->delayed_unmap_flag |= delayed_unmap_flag;
 
 	refcount_dec(&db->u.user_page->refcount);
 	if (refcount_dec_if_one(&db->u.user_page->refcount)) {
 		list_del(&db->u.user_page->list);
-		if (delayed_unmap_flag) {
+		if (umem_node->delayed_unmap_flag) {
 			hns_roce_add_unfree_umem(db->u.user_page, hr_dev);
 		} else {
 			ib_umem_release(db->u.user_page->umem);
-			kvfree(db->u.user_page->umem_node);
+			kvfree(umem_node);
 		}
 		kfree(db->u.user_page);
 	}
