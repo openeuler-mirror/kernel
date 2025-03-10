@@ -1296,7 +1296,7 @@ static void hns_roce_teardown_hca(struct hns_roce_dev *hr_dev)
 		hns_roce_cleanup_dca(hr_dev);
 
 	hns_roce_cleanup_bitmap(hr_dev);
-	mutex_destroy(&hr_dev->umem_unfree_list_mutex);
+	mutex_destroy(&hr_dev->db_unfree_list_mutex);
 	mutex_destroy(&hr_dev->mtr_unfree_list_mutex);
 	mutex_destroy(&hr_dev->uctx_list_mutex);
 
@@ -1326,8 +1326,8 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 	INIT_LIST_HEAD(&hr_dev->mtr_unfree_list);
 	mutex_init(&hr_dev->mtr_unfree_list_mutex);
 
-	INIT_LIST_HEAD(&hr_dev->umem_unfree_list);
-	mutex_init(&hr_dev->umem_unfree_list_mutex);
+	INIT_LIST_HEAD(&hr_dev->db_unfree_list);
+	mutex_init(&hr_dev->db_unfree_list_mutex);
 
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB) {
@@ -1369,7 +1369,7 @@ static int hns_roce_setup_hca(struct hns_roce_dev *hr_dev)
 
 err_uar_table_free:
 	ida_destroy(&hr_dev->uar_ida.ida);
-	mutex_destroy(&hr_dev->umem_unfree_list_mutex);
+	mutex_destroy(&hr_dev->db_unfree_list_mutex);
 	mutex_destroy(&hr_dev->mtr_unfree_list_mutex);
 	mutex_destroy(&hr_dev->uctx_list_mutex);
 
@@ -1594,7 +1594,7 @@ void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
-	hns_roce_free_unfree_umem(hr_dev);
+	hns_roce_free_unfree_db(hr_dev);
 	hns_roce_free_unfree_mtr(hr_dev);
 	hns_roce_teardown_hca(hr_dev);
 	hns_roce_cleanup_hem(hr_dev);

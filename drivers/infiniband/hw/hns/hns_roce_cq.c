@@ -339,7 +339,8 @@ static void free_cq_db(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 		hns_roce_db_unmap_user(uctx, &hr_cq->db,
 				       hr_cq->delayed_destroy_flag);
 	} else {
-		hns_roce_free_db(hr_dev, &hr_cq->db);
+		hns_roce_free_db(hr_dev, &hr_cq->db,
+				 hr_cq->delayed_destroy_flag);
 	}
 }
 

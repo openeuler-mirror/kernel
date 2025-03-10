@@ -1132,7 +1132,8 @@ static void free_qp_db(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			qp_user_mmap_entry_remove(hr_qp);
 	} else {
 		if (hr_qp->en_flags & HNS_ROCE_QP_CAP_RQ_RECORD_DB)
-			hns_roce_free_db(hr_dev, &hr_qp->rdb);
+			hns_roce_free_db(hr_dev, &hr_qp->rdb,
+					 hr_qp->delayed_destroy_flag);
 	}
 }
 
