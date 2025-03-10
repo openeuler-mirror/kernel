@@ -312,7 +312,7 @@ struct bio_integrity_payload {
 
 	struct bvec_iter	bip_iter;
 
-	unsigned short		bip_slab;	/* slab the bip came from */
+	KABI_DEPRECATE(unsigned short, bip_slab)
 	unsigned short		bip_vcnt;	/* # of integrity bio_vecs */
 	unsigned short		bip_max_vcnt;	/* integrity bio_vec slots */
 	unsigned short		bip_flags;	/* control flags */
@@ -466,8 +466,9 @@ static inline void zero_fill_bio(struct bio *bio)
 	zero_fill_bio_iter(bio, bio->bi_iter);
 }
 
-extern struct bio_vec *bvec_alloc(gfp_t, int, unsigned long *, mempool_t *);
-extern void bvec_free(mempool_t *, struct bio_vec *, unsigned int);
+extern struct bio_vec *bvec_alloc(mempool_t *pool, unsigned short *nr_vecs,
+		gfp_t gfp_mask);
+extern void bvec_free(mempool_t *pool, struct bio_vec *bv, unsigned short nr_vecs);
 extern unsigned int bvec_nr_vecs(unsigned short idx);
 extern const char *bio_devname(struct bio *bio, char *buffer);
 
@@ -704,12 +705,6 @@ struct bio_set {
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
-};
-
-struct biovec_slab {
-	int nr_vecs;
-	char *name;
-	struct kmem_cache *slab;
 };
 
 static inline bool bioset_initialized(struct bio_set *bs)
