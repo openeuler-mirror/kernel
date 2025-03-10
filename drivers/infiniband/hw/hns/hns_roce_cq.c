@@ -190,7 +190,7 @@ static int alloc_cqc(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 	u64 mtts[MTT_MIN_COUNT] = {};
 	int ret;
 
-	ret = hns_roce_mtr_find(hr_dev, &hr_cq->mtr, 0, mtts, ARRAY_SIZE(mtts));
+	ret = hns_roce_mtr_find(hr_dev, hr_cq->mtr, 0, mtts, ARRAY_SIZE(mtts));
 	if (ret) {
 		ibdev_err(ibdev, "failed to find CQ mtr, ret = %d.\n", ret);
 		return ret;
@@ -211,7 +211,7 @@ static int alloc_cqc(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 	}
 
 	ret = hns_roce_create_cqc(hr_dev, hr_cq, mtts,
-				  hns_roce_get_mtr_ba(&hr_cq->mtr));
+				  hns_roce_get_mtr_ba(hr_cq->mtr));
 	if (ret)
 		goto err_xa;
 
@@ -262,7 +262,7 @@ static int alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
-	int ret;
+	int ret = 0;
 
 	hr_cq->mtr_node = kvmalloc(sizeof(*hr_cq->mtr_node), GFP_KERNEL);
 	if (!hr_cq->mtr_node)
@@ -273,10 +273,11 @@ static int alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 	buf_attr.region[0].hopnum = hr_dev->caps.cqe_hop_num;
 	buf_attr.region_count = 1;
 
-	ret = hns_roce_mtr_create(hr_dev, &hr_cq->mtr, &buf_attr,
-				  hr_dev->caps.cqe_ba_pg_sz + PAGE_SHIFT,
-				  udata, addr);
-	if (ret) {
+	hr_cq->mtr = hns_roce_mtr_create(hr_dev, &buf_attr,
+					 hr_dev->caps.cqe_ba_pg_sz + PAGE_SHIFT,
+					 udata, addr);
+	if (IS_ERR(hr_cq->mtr)) {
+		ret = PTR_ERR(hr_cq->mtr);
 		ibdev_err(ibdev, "Failed to alloc CQ mtr, ret = %d\n", ret);
 		kvfree(hr_cq->mtr_node);
 		hr_cq->mtr_node = NULL;
@@ -288,9 +289,9 @@ static int alloc_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq,
 static void free_cq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_cq *hr_cq)
 {
 	if (hr_cq->delayed_destroy_flag) {
-		hns_roce_add_unfree_mtr(hr_cq->mtr_node, hr_dev, &hr_cq->mtr);
+		hns_roce_add_unfree_mtr(hr_cq->mtr_node, hr_dev, hr_cq->mtr);
 	} else {
-		hns_roce_mtr_destroy(hr_dev, &hr_cq->mtr);
+		hns_roce_mtr_destroy(hr_dev, hr_cq->mtr);
 		kvfree(hr_cq->mtr_node);
 		hr_cq->mtr_node = NULL;
 	}

@@ -97,7 +97,7 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	bool is_fast = mr->type == MR_TYPE_FRMR;
 	struct hns_roce_buf_attr buf_attr = {};
-	int err;
+	int err = 0;
 
 	mr->mtr_node = kvmalloc(sizeof(*mr->mtr_node), GFP_KERNEL);
 	if (!mr->mtr_node)
@@ -116,17 +116,18 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 	/* pagesize and hopnum is fixed for fast MR */
 	buf_attr.adaptive = !is_fast;
 
-	err = hns_roce_mtr_create(hr_dev, &mr->pbl_mtr, &buf_attr,
-				  hr_dev->caps.pbl_ba_pg_sz + PAGE_SHIFT,
-				  udata, start);
-	if (err) {
+	mr->pbl_mtr = hns_roce_mtr_create(hr_dev, &buf_attr,
+					  hr_dev->caps.pbl_ba_pg_sz + HNS_HW_PAGE_SHIFT,
+					  udata, start);
+	if (IS_ERR(mr->pbl_mtr)) {
+		err = PTR_ERR(mr->pbl_mtr);
 		ibdev_err(ibdev, "failed to alloc pbl mtr, ret = %d.\n", err);
 		kvfree(mr->mtr_node);
 		mr->mtr_node = NULL;
 		return err;
 	}
 
-	mr->npages = mr->pbl_mtr.hem_cfg.buf_pg_count;
+	mr->npages = mr->pbl_mtr->hem_cfg.buf_pg_count;
 	mr->pbl_hop_num = buf_attr.region[0].hopnum;
 
 	return err;
@@ -135,9 +136,9 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 static void free_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr)
 {
 	if (mr->delayed_destroy_flag && mr->type != MR_TYPE_DMA) {
-		hns_roce_add_unfree_mtr(mr->mtr_node, hr_dev, &mr->pbl_mtr);
+		hns_roce_add_unfree_mtr(mr->mtr_node, hr_dev, mr->pbl_mtr);
 	} else {
-		hns_roce_mtr_destroy(hr_dev, &mr->pbl_mtr);
+		hns_roce_mtr_destroy(hr_dev, mr->pbl_mtr);
 		kvfree(mr->mtr_node);
 		mr->mtr_node = NULL;
 	}
@@ -213,18 +214,22 @@ struct ib_mr *hns_roce_get_dma_mr(struct ib_pd *pd, int acc)
 {
 	struct hns_roce_dev *hr_dev = to_hr_dev(pd->device);
 	struct hns_roce_mr *mr;
-	int ret;
+	int ret = -ENOMEM;
 
 	mr = kzalloc(sizeof(*mr), GFP_KERNEL);
 	if (mr == NULL)
 		return  ERR_PTR(-ENOMEM);
+
+	mr->pbl_mtr = kvzalloc(sizeof(*mr->pbl_mtr), GFP_KERNEL);
+	if (!mr->pbl_mtr)
+		goto err_mtr;
 
 	mr->type = MR_TYPE_DMA;
 	mr->pd = to_hr_pd(pd)->pdn;
 	mr->access = acc;
 
 	/* Allocate memory region key */
-	hns_roce_hem_list_init(&mr->pbl_mtr.hem_list);
+	hns_roce_hem_list_init(&mr->pbl_mtr->hem_list);
 	ret = alloc_mr_key(hr_dev, mr);
 	if (ret)
 		goto err_free;
@@ -240,6 +245,8 @@ err_mr:
 	free_mr_key(hr_dev, mr);
 
 err_free:
+	kvfree(mr->pbl_mtr);
+err_mtr:
 	kfree(mr);
 	return ERR_PTR(ret);
 }
@@ -437,7 +444,7 @@ static int hns_roce_set_page(struct ib_mr *ibmr, u64 addr)
 {
 	struct hns_roce_mr *mr = to_hr_mr(ibmr);
 
-	if (likely(mr->npages < mr->pbl_mtr.hem_cfg.buf_pg_count)) {
+	if (likely(mr->npages < mr->pbl_mtr->hem_cfg.buf_pg_count)) {
 		mr->page_list[mr->npages++] = addr;
 		return 0;
 	}
@@ -452,7 +459,7 @@ int hns_roce_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg, int sg_nents,
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibmr->device);
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_mr *mr = to_hr_mr(ibmr);
-	struct hns_roce_mtr *mtr = &mr->pbl_mtr;
+	struct hns_roce_mtr *mtr = mr->pbl_mtr;
 	int ret, sg_num = 0;
 
 	if (!IS_ALIGNED(sg_offset, HNS_ROCE_FRMR_ALIGN_SIZE) ||
@@ -461,7 +468,7 @@ int hns_roce_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg, int sg_nents,
 		return sg_num;
 
 	mr->npages = 0;
-	mr->page_list = kvcalloc(mr->pbl_mtr.hem_cfg.buf_pg_count,
+	mr->page_list = kvcalloc(mr->pbl_mtr->hem_cfg.buf_pg_count,
 				 sizeof(dma_addr_t), GFP_KERNEL);
 	if (!mr->page_list)
 		return sg_num;
@@ -469,7 +476,7 @@ int hns_roce_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg, int sg_nents,
 	sg_num = ib_sg_to_pages(ibmr, sg, sg_nents, sg_offset_p, hns_roce_set_page);
 	if (sg_num < 1) {
 		ibdev_err(ibdev, "failed to store sg pages %u %u, cnt = %d.\n",
-			  mr->npages, mr->pbl_mtr.hem_cfg.buf_pg_count, sg_num);
+			  mr->npages, mr->pbl_mtr->hem_cfg.buf_pg_count, sg_num);
 		goto err_page_list;
 	}
 
@@ -482,7 +489,7 @@ int hns_roce_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg, int sg_nents,
 		ibdev_err(ibdev, "failed to map sg mtr, ret = %d.\n", ret);
 		sg_num = 0;
 	} else {
-		mr->pbl_mtr.hem_cfg.buf_pg_shift = (u32)ilog2(ibmr->page_size);
+		mr->pbl_mtr->hem_cfg.buf_pg_shift = (u32)ilog2(ibmr->page_size);
 	}
 
 err_page_list:
@@ -1189,26 +1196,31 @@ static void mtr_free_mtt(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr)
  * hns_roce_mtr_create - Create hns memory translate region.
  *
  * @hr_dev: RoCE device struct pointer
- * @mtr: memory translate region
  * @buf_attr: buffer attribute for creating mtr
  * @ba_page_shift: page shift for multi-hop base address table
  * @udata: user space context, if it's NULL, means kernel space
  * @user_addr: userspace virtual address to start at
  */
-int hns_roce_mtr_create(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
-			struct hns_roce_buf_attr *buf_attr,
-			unsigned int ba_page_shift, struct ib_udata *udata,
-			unsigned long user_addr)
+struct hns_roce_mtr *hns_roce_mtr_create(struct hns_roce_dev *hr_dev,
+					 struct hns_roce_buf_attr *buf_attr,
+					 unsigned int ba_page_shift,
+					 struct ib_udata *udata,
+					 unsigned long user_addr)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
+	struct hns_roce_mtr *mtr;
 	int ret;
+
+	mtr = kvzalloc(sizeof(*mtr), GFP_KERNEL);
+	if (!mtr)
+		return ERR_PTR(-ENOMEM);
 
 	if (!buf_attr->mtt_only) {
 		ret = mtr_alloc_bufs(hr_dev, mtr, buf_attr, udata, user_addr);
 		if (ret) {
 			ibdev_err(ibdev,
 				  "failed to alloc mtr bufs, ret = %d.\n", ret);
-			return ret;
+			goto err_out;
 		}
 
 		ret = get_best_page_shift(hr_dev, mtr, buf_attr);
@@ -1236,7 +1248,7 @@ int hns_roce_mtr_create(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
 	if (buf_attr->mtt_only) {
 		mtr->umem = NULL;
 		mtr->kmem = NULL;
-		return 0;
+		return mtr;
 	}
 
 	/* Write buffer's dma address to MTT */
@@ -1245,13 +1257,15 @@ int hns_roce_mtr_create(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr,
 		ibdev_err(ibdev, "failed to map mtr bufs, ret = %d.\n", ret);
 		goto err_alloc_mtt;
 	}
-	return 0;
+	return mtr;
 
 err_alloc_mtt:
 	mtr_free_mtt(hr_dev, mtr);
 err_init_buf:
 	mtr_free_bufs(hr_dev, mtr);
-	return ret;
+err_out:
+	kvfree(mtr);
+	return ERR_PTR(ret);
 }
 
 void hns_roce_mtr_destroy(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr)
@@ -1261,6 +1275,7 @@ void hns_roce_mtr_destroy(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr)
 
 	/* free buffers */
 	mtr_free_bufs(hr_dev, mtr);
+	kvfree(mtr);
 }
 
 static void hns_roce_copy_mtr(struct hns_roce_mtr *new_mtr, struct hns_roce_mtr *old_mtr)

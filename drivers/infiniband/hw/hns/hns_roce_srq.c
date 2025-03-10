@@ -183,7 +183,7 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 	struct hns_roce_idx_que *idx_que = &srq->idx_que;
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
-	int ret;
+	int ret = 0;
 
 	idx_que->mtr_node = kvmalloc(sizeof(*idx_que->mtr_node), GFP_KERNEL);
 	if (!idx_que->mtr_node)
@@ -197,10 +197,11 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 	buf_attr.region[0].hopnum = hr_dev->caps.idx_hop_num;
 	buf_attr.region_count = 1;
 
-	ret = hns_roce_mtr_create(hr_dev, &idx_que->mtr, &buf_attr,
-				  hr_dev->caps.idx_ba_pg_sz + PAGE_SHIFT,
-				  udata, addr);
-	if (ret) {
+	idx_que->mtr = hns_roce_mtr_create(hr_dev, &buf_attr,
+					   hr_dev->caps.idx_ba_pg_sz + PAGE_SHIFT,
+					udata, addr);
+	if (IS_ERR(idx_que->mtr)) {
+		ret = PTR_ERR(idx_que->mtr);
 		ibdev_err(ibdev, "Failed to alloc SRQ idx mtr, ret = %d.\n", ret);
 		goto err_kvmalloc;
 	}
@@ -219,7 +220,7 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 
 	return 0;
 err_idx_mtr:
-	hns_roce_mtr_destroy(hr_dev, &idx_que->mtr);
+	hns_roce_mtr_destroy(hr_dev, idx_que->mtr);
 err_kvmalloc:
 	kvfree(idx_que->mtr_node);
 	idx_que->mtr_node = NULL;
@@ -234,9 +235,9 @@ static void free_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq)
 	bitmap_free(idx_que->bitmap);
 	idx_que->bitmap = NULL;
 	if (srq->delayed_destroy_flag) {
-		hns_roce_add_unfree_mtr(idx_que->mtr_node, hr_dev, &idx_que->mtr);
+		hns_roce_add_unfree_mtr(idx_que->mtr_node, hr_dev, idx_que->mtr);
 	} else {
-		hns_roce_mtr_destroy(hr_dev, &idx_que->mtr);
+		hns_roce_mtr_destroy(hr_dev, idx_que->mtr);
 		kvfree(idx_que->mtr_node);
 		idx_que->mtr_node = NULL;
 	}
@@ -248,7 +249,7 @@ static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
-	int ret;
+	int ret = 0;
 
 	srq->mtr_node = kvmalloc(sizeof(*srq->mtr_node), GFP_KERNEL);
 	if (!srq->mtr_node)
@@ -264,10 +265,11 @@ static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 	buf_attr.region[0].hopnum = hr_dev->caps.srqwqe_hop_num;
 	buf_attr.region_count = 1;
 
-	ret = hns_roce_mtr_create(hr_dev, &srq->buf_mtr, &buf_attr,
-				  hr_dev->caps.srqwqe_ba_pg_sz + PAGE_SHIFT,
-				  udata, addr);
-	if (ret) {
+	srq->buf_mtr = hns_roce_mtr_create(hr_dev, &buf_attr,
+					   hr_dev->caps.srqwqe_ba_pg_sz + PAGE_SHIFT,
+				udata, addr);
+	if (IS_ERR(srq->buf_mtr)) {
+		ret = PTR_ERR(srq->buf_mtr);
 		ibdev_err(ibdev,
 			  "failed to alloc SRQ buf mtr, ret = %d.\n", ret);
 		kvfree(srq->mtr_node);
@@ -281,9 +283,9 @@ static void free_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 			     struct hns_roce_srq *srq)
 {
 	if (srq->delayed_destroy_flag) {
-		hns_roce_add_unfree_mtr(srq->mtr_node, hr_dev, &srq->buf_mtr);
+		hns_roce_add_unfree_mtr(srq->mtr_node, hr_dev, srq->buf_mtr);
 	} else {
-		hns_roce_mtr_destroy(hr_dev, &srq->buf_mtr);
+		hns_roce_mtr_destroy(hr_dev, srq->buf_mtr);
 		kvfree(srq->mtr_node);
 		srq->mtr_node = NULL;
 	}

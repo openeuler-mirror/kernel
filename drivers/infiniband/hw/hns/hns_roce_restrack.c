@@ -145,11 +145,11 @@ int hns_roce_fill_res_mr_entry(struct sk_buff *msg, struct ib_mr *ib_mr)
 		goto err;
 
 	if (rdma_nl_put_driver_u32_hex(msg, "ba_pg_shift",
-				       hr_mr->pbl_mtr.hem_cfg.ba_pg_shift))
+				       hr_mr->pbl_mtr->hem_cfg.ba_pg_shift))
 		goto err;
 
 	if (rdma_nl_put_driver_u32_hex(msg, "buf_pg_shift",
-				       hr_mr->pbl_mtr.hem_cfg.buf_pg_shift))
+				       hr_mr->pbl_mtr->hem_cfg.buf_pg_shift))
 		goto err;
 
 	nla_nest_end(msg, table_attr);

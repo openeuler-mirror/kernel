@@ -324,7 +324,7 @@ int hns_roce_map_dca_safe_page(struct hns_roce_dev *hr_dev,
 	for (i = 0; i < page_count; i++)
 		pages[i] = hr_dev->dca_safe_page;
 
-	ret = hns_roce_mtr_map(hr_dev, &hr_qp->mtr, pages, page_count);
+	ret = hns_roce_mtr_map(hr_dev, hr_qp->mtr, pages, page_count);
 	if (ret)
 		ibdev_err(ibdev, "failed to map safe page for DCA, ret = %d.\n",
 			  ret);
@@ -338,7 +338,7 @@ static int config_dca_qpc(struct hns_roce_dev *hr_dev,
 			  int page_count)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
-	struct hns_roce_mtr *mtr = &hr_qp->mtr;
+	struct hns_roce_mtr *mtr = hr_qp->mtr;
 	int ret;
 
 	ret = hns_roce_mtr_map(hr_dev, mtr, pages, page_count);
@@ -698,7 +698,7 @@ static u32 alloc_buf_from_dca_mem(struct hns_roce_qp *hr_qp,
 	buf_id = HNS_DCA_TO_BUF_ID(hr_qp->qpn, hr_qp->dca_cfg.attach_count);
 
 	/* Assign pages from free pages */
-	unit_pages = hr_qp->mtr.hem_cfg.is_direct ? buf_pages : 1;
+	unit_pages = hr_qp->mtr->hem_cfg.is_direct ? buf_pages : 1;
 	alloc_pages = assign_dca_pages(ctx, buf_id, buf_pages, unit_pages);
 	if (buf_pages != alloc_pages) {
 		if (alloc_pages > 0)
