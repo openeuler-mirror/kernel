@@ -133,8 +133,7 @@ int rdma_unregister_notify_addr(struct ib_device *ib_dev)
 	if (!is_hns_roce(ib_dev) || !is_write_notify_supported(hr_dev))
 		return -EOPNOTSUPP;
 
-	if (hr_dev->notify_tbl)
-		kvfree(hr_dev->notify_tbl);
+	kvfree(hr_dev->notify_tbl);
 
 	hr_dev->notify_tbl = NULL;
 
