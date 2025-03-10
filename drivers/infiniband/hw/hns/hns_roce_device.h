@@ -391,6 +391,7 @@ struct hns_roce_mtr {
 	struct ib_umem		*umem; /* user space buffer */
 	struct hns_roce_buf	*kmem; /* kernel space buffer */
 	struct hns_roce_hem_cfg  hem_cfg; /* config for hardware addressing */
+	struct list_head	 node; /* list node for delay-destruction */
 };
 
 /* DCA config */
@@ -430,7 +431,6 @@ struct hns_roce_mr {
 	u32			npages;
 	dma_addr_t		*page_list;
 	bool			delayed_destroy_flag;
-	struct hns_roce_mtr_node *mtr_node;
 };
 
 struct hns_roce_mr_table {
@@ -561,7 +561,6 @@ struct hns_roce_cq {
 	u8				poe_channel;
 	bool				delayed_destroy_flag;
 	struct hns_roce_notify_conf	write_notify;
-	struct hns_roce_mtr_node *mtr_node;
 };
 
 struct hns_roce_idx_que {
@@ -570,7 +569,6 @@ struct hns_roce_idx_que {
 	unsigned long			*bitmap;
 	u32				head;
 	u32				tail;
-	struct hns_roce_mtr_node *mtr_node;
 };
 
 struct hns_roce_srq {
@@ -597,7 +595,6 @@ struct hns_roce_srq {
 	struct hns_roce_db	rdb;
 	u32			cap_flags;
 	bool			delayed_destroy_flag;
-	struct hns_roce_mtr_node *mtr_node;
 };
 
 struct hns_roce_uar_table {
@@ -771,7 +768,6 @@ struct hns_roce_qp {
 	u8			tc_mode;
 	u8			priority;
 	bool			delayed_destroy_flag;
-	struct hns_roce_mtr_node *mtr_node;
 	spinlock_t flush_lock;
 	struct hns_roce_dip *dip;
 };
@@ -1144,11 +1140,6 @@ struct hns_roce_port {
 	struct kobject kobj;
 	struct hns_roce_scc_param *scc_param;
 	struct hns_roce_cnp_pri_param *cnp_pri_param;
-};
-
-struct hns_roce_mtr_node {
-	struct hns_roce_mtr mtr;
-	struct list_head list;
 };
 
 struct hns_roce_dev {
@@ -1549,8 +1540,7 @@ int hns_roce_fill_res_mr_entry_raw(struct sk_buff *msg, struct ib_mr *ib_mr);
 void hns_roce_add_unfree_umem(struct hns_roce_user_db_page *user_page,
 			      struct hns_roce_dev *hr_dev);
 void hns_roce_free_unfree_umem(struct hns_roce_dev *hr_dev);
-void hns_roce_add_unfree_mtr(struct hns_roce_mtr_node *pos,
-			     struct hns_roce_dev *hr_dev,
+void hns_roce_add_unfree_mtr(struct hns_roce_dev *hr_dev,
 			     struct hns_roce_mtr *mtr);
 void hns_roce_free_unfree_mtr(struct hns_roce_dev *hr_dev);
 struct hns_user_mmap_entry *

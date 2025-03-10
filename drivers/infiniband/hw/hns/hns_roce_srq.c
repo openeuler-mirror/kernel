@@ -185,10 +185,6 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 	struct hns_roce_buf_attr buf_attr = {};
 	int ret = 0;
 
-	idx_que->mtr_node = kvmalloc(sizeof(*idx_que->mtr_node), GFP_KERNEL);
-	if (!idx_que->mtr_node)
-		return -ENOMEM;
-
 	srq->idx_que.entry_shift = ilog2(HNS_ROCE_IDX_QUE_ENTRY_SZ);
 
 	buf_attr.page_shift = hr_dev->caps.idx_buf_pg_sz + PAGE_SHIFT;
@@ -203,7 +199,7 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 	if (IS_ERR(idx_que->mtr)) {
 		ret = PTR_ERR(idx_que->mtr);
 		ibdev_err(ibdev, "Failed to alloc SRQ idx mtr, ret = %d.\n", ret);
-		goto err_kvmalloc;
+		return ret;
 	}
 
 	if (!udata) {
@@ -221,9 +217,6 @@ static int alloc_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq,
 	return 0;
 err_idx_mtr:
 	hns_roce_mtr_destroy(hr_dev, idx_que->mtr);
-err_kvmalloc:
-	kvfree(idx_que->mtr_node);
-	idx_que->mtr_node = NULL;
 
 	return ret;
 }
@@ -234,13 +227,10 @@ static void free_srq_idx(struct hns_roce_dev *hr_dev, struct hns_roce_srq *srq)
 
 	bitmap_free(idx_que->bitmap);
 	idx_que->bitmap = NULL;
-	if (srq->delayed_destroy_flag) {
-		hns_roce_add_unfree_mtr(idx_que->mtr_node, hr_dev, idx_que->mtr);
-	} else {
+	if (srq->delayed_destroy_flag)
+		hns_roce_add_unfree_mtr(hr_dev, idx_que->mtr);
+	else
 		hns_roce_mtr_destroy(hr_dev, idx_que->mtr);
-		kvfree(idx_que->mtr_node);
-		idx_que->mtr_node = NULL;
-	}
 }
 
 static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
@@ -250,10 +240,6 @@ static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_buf_attr buf_attr = {};
 	int ret = 0;
-
-	srq->mtr_node = kvmalloc(sizeof(*srq->mtr_node), GFP_KERNEL);
-	if (!srq->mtr_node)
-		return -ENOMEM;
 
 	srq->wqe_shift = ilog2(roundup_pow_of_two(max(HNS_ROCE_SGE_SIZE,
 						      HNS_ROCE_SGE_SIZE *
@@ -272,8 +258,6 @@ static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 		ret = PTR_ERR(srq->buf_mtr);
 		ibdev_err(ibdev,
 			  "failed to alloc SRQ buf mtr, ret = %d.\n", ret);
-		kvfree(srq->mtr_node);
-		srq->mtr_node = NULL;
 	}
 
 	return ret;
@@ -282,13 +266,10 @@ static int alloc_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 static void free_srq_wqe_buf(struct hns_roce_dev *hr_dev,
 			     struct hns_roce_srq *srq)
 {
-	if (srq->delayed_destroy_flag) {
-		hns_roce_add_unfree_mtr(srq->mtr_node, hr_dev, srq->buf_mtr);
-	} else {
+	if (srq->delayed_destroy_flag)
+		hns_roce_add_unfree_mtr(hr_dev, srq->buf_mtr);
+	else
 		hns_roce_mtr_destroy(hr_dev, srq->buf_mtr);
-		kvfree(srq->mtr_node);
-		srq->mtr_node = NULL;
-	}
 }
 
 static int alloc_srq_wrid(struct hns_roce_srq *srq)

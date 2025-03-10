@@ -99,10 +99,6 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 	struct hns_roce_buf_attr buf_attr = {};
 	int err = 0;
 
-	mr->mtr_node = kvmalloc(sizeof(*mr->mtr_node), GFP_KERNEL);
-	if (!mr->mtr_node)
-		return -ENOMEM;
-
 	mr->pbl_hop_num = is_fast ? 1 : hr_dev->caps.pbl_hop_num;
 	buf_attr.page_shift = is_fast ? PAGE_SHIFT :
 			      hr_dev->caps.pbl_buf_pg_sz + PAGE_SHIFT;
@@ -122,8 +118,6 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 	if (IS_ERR(mr->pbl_mtr)) {
 		err = PTR_ERR(mr->pbl_mtr);
 		ibdev_err(ibdev, "failed to alloc pbl mtr, ret = %d.\n", err);
-		kvfree(mr->mtr_node);
-		mr->mtr_node = NULL;
 		return err;
 	}
 
@@ -135,13 +129,10 @@ static int alloc_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr,
 
 static void free_mr_pbl(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr)
 {
-	if (mr->delayed_destroy_flag && mr->type != MR_TYPE_DMA) {
-		hns_roce_add_unfree_mtr(mr->mtr_node, hr_dev, mr->pbl_mtr);
-	} else {
+	if (mr->delayed_destroy_flag && mr->type != MR_TYPE_DMA)
+		hns_roce_add_unfree_mtr(hr_dev, mr->pbl_mtr);
+	else
 		hns_roce_mtr_destroy(hr_dev, mr->pbl_mtr);
-		kvfree(mr->mtr_node);
-		mr->mtr_node = NULL;
-	}
 }
 
 static void hns_roce_mr_free(struct hns_roce_dev *hr_dev, struct hns_roce_mr *mr)
@@ -1278,49 +1269,22 @@ void hns_roce_mtr_destroy(struct hns_roce_dev *hr_dev, struct hns_roce_mtr *mtr)
 	kvfree(mtr);
 }
 
-static void hns_roce_copy_mtr(struct hns_roce_mtr *new_mtr, struct hns_roce_mtr *old_mtr)
-{
-	struct list_head *new_head, *old_head;
-	int i, j;
-
-	memcpy(new_mtr, old_mtr, sizeof(*old_mtr));
-
-	for (i = 0; i < HNS_ROCE_MAX_BT_REGION; i++)
-		for (j = 0; j < HNS_ROCE_MAX_BT_LEVEL; j++) {
-			new_head = &new_mtr->hem_list.mid_bt[i][j];
-			old_head = &old_mtr->hem_list.mid_bt[i][j];
-			list_replace(old_head, new_head);
-		}
-
-	new_head = &new_mtr->hem_list.root_bt;
-	old_head = &old_mtr->hem_list.root_bt;
-	list_replace(old_head, new_head);
-
-	new_head = &new_mtr->hem_list.btm_bt;
-	old_head = &old_mtr->hem_list.btm_bt;
-	list_replace(old_head, new_head);
-}
-
-void hns_roce_add_unfree_mtr(struct hns_roce_mtr_node *pos,
-			     struct hns_roce_dev *hr_dev,
+void hns_roce_add_unfree_mtr(struct hns_roce_dev *hr_dev,
 			     struct hns_roce_mtr *mtr)
 {
-	hns_roce_copy_mtr(&pos->mtr, mtr);
-
 	mutex_lock(&hr_dev->mtr_unfree_list_mutex);
-	list_add_tail(&pos->list, &hr_dev->mtr_unfree_list);
+	list_add_tail(&mtr->node, &hr_dev->mtr_unfree_list);
 	mutex_unlock(&hr_dev->mtr_unfree_list_mutex);
 }
 
 void hns_roce_free_unfree_mtr(struct hns_roce_dev *hr_dev)
 {
-	struct hns_roce_mtr_node *pos, *next;
+	struct hns_roce_mtr *mtr, *next;
 
 	mutex_lock(&hr_dev->mtr_unfree_list_mutex);
-	list_for_each_entry_safe(pos, next, &hr_dev->mtr_unfree_list, list) {
-		list_del(&pos->list);
-		hns_roce_mtr_destroy(hr_dev, &pos->mtr);
-		kvfree(pos);
+	list_for_each_entry_safe(mtr, next, &hr_dev->mtr_unfree_list, node) {
+		list_del(&mtr->node);
+		hns_roce_mtr_destroy(hr_dev, mtr);
 	}
 	mutex_unlock(&hr_dev->mtr_unfree_list_mutex);
 }
