@@ -57,7 +57,7 @@ found:
 err_dbnode:
 	kvfree(page->db_node);
 err_page:
-	kvfree(page);
+	kfree(page);
 err_out:
 	mutex_unlock(&context->page_mutex);
 
