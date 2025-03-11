@@ -7,6 +7,7 @@
 
 #include <linux/module.h>
 #include <linux/cpu.h>
+#include <linux/cpufreq.h>
 #include <linux/sched.h>
 #include <linux/tick.h>
 #include <linux/kernel_stat.h>
@@ -18,7 +19,6 @@
 #include <linux/sched/nohz.h>
 #include <linux/jiffies.h>
 
-#include <asm/cpufreq.h>
 #include <asm/cputime.h>
 #include <asm/smp.h>
 #include "../../../kernel/sched/sched.h"
@@ -384,9 +384,10 @@ static void do_autoplug_timer(struct work_struct *work)
 	long active;
 	atomic_long_t calc_load_tasks;
 #endif
-	if (!policy || IS_ERR(policy->clk)) {
-		pr_err("%s: No %s associated to cpu: %d\n",
-			__func__, policy ? "clk" : "policy", 0);
+
+	if (!policy) {
+		pr_err("%s: no policy associated to cpu: %d\n",
+				__func__, smp_processor_id());
 		return;
 	}
 
