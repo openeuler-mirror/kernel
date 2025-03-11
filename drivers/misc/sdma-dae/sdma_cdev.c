@@ -253,7 +253,7 @@ static void sdma_pause_single_channel(struct hisi_sdma_channel *pchannel,
 {
 	u16 idx = pchannel->idx;
 
-	if (sdma_wait_hardware_done(pchannel) == false)
+	if (!sdma_wait_hardware_done(pchannel))
 		pr_warn("SDMA %u chn %hu hardware not finish all sqes!\n",
 			psdma_dev->idx, idx);
 
@@ -885,11 +885,11 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 
 	if (copy_from_user(&share_chn, (struct hisi_sdma_share_chn __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_share_chn))) {
-		dev_err(dev, "get share chn failed\n");
+		dev_err(dev, "Get share chn failed\n");
 		return -EFAULT;
 	}
 	if (share_chn.chn_idx >= share_chns) {
-		dev_err(dev, "get share chn index = %u is err\n", share_chn.chn_idx);
+		dev_err(dev, "Get share chn index = %u is err\n", share_chn.chn_idx);
 		return -EFAULT;
 	}
 
@@ -902,22 +902,23 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 			spin_unlock(&pdev->channel_lock);
 			return -ENOMEM;
 		}
-		list_node->chn_idx = share_chn.chn_idx;
-		list_add(&list_node->chn_list, &data->share_chn_list);
-		pchannel->cnt_used++;
-		if (sdma_add_ida_ref(pchannel, ida) != 0) {
+
+		if (sdma_add_ida_ref(pchannel, ida)) {
 			kfree(list_node);
-			dev_err(dev, "alloc channel node error\n");
+			dev_err(dev, "Alloc channel node error\n");
 			spin_unlock(&pdev->channel_lock);
 			return -ENOMEM;
 		}
+		list_node->chn_idx = share_chn.chn_idx;
+		list_add(&list_node->chn_list, &data->share_chn_list);
+		pchannel->cnt_used++;
 	}
 
 	if (!share_chn.init_flag && pchannel->cnt_used > 0) {
 		list_for_each_entry_safe(c, n, &data->share_chn_list, chn_list) {
 			if (c->chn_idx == share_chn.chn_idx) {
 				if (!sdma_del_ida_ref(pchannel, ida)) {
-					dev_err(dev, "invalid process deinit share chn!\n");
+					dev_err(dev, "Invalid process deinit share chn!\n");
 					spin_unlock(&pdev->channel_lock);
 					return -EPERM;
 				}
@@ -929,7 +930,7 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 					wmb();
 					pchannel->sync_info_base->lock = 0;
 				}
-				dev_dbg(dev, "release share_chn%u\n", c->chn_idx);
+				dev_dbg(dev, "Release share_chn%u\n", c->chn_idx);
 				list_del(&c->chn_list);
 				kfree(c);
 				break;
@@ -1072,7 +1073,7 @@ static int sdma_send_task_kernel(struct file_open_data *data,
 	spin_lock(&pchannel->owner_chn_lock);
 	ret = sdma_check_channel_permission(pchannel, data->ida, task_info->chn);
 	if (ret != 0) {
-		dev_err(&pdev->pdev->dev, "invalid process send task by channel %u",
+		dev_err(&pdev->pdev->dev, "Invalid process send task by channel %u\n",
 			task_info->chn);
 		spin_unlock(&pchannel->owner_chn_lock);
 		return -EPERM;
@@ -1080,7 +1081,7 @@ static int sdma_send_task_kernel(struct file_open_data *data,
 	sq_tail = sdma_channel_get_sq_tail(pchannel);
 	if (sq_tail >= HISI_SDMA_SQ_LENGTH) {
 		spin_unlock(&pchannel->owner_chn_lock);
-		dev_err(&pdev->pdev->dev, "sq_tail in share mem wrong, sq_tail = %u\n", sq_tail);
+		dev_err(&pdev->pdev->dev, "Sq_tail in share mem wrong, sq_tail = %u\n", sq_tail);
 		return -EINVAL;
 	}
 	for (i = 0; i < task_info->task_cnt; i++) {
@@ -1094,7 +1095,7 @@ static int sdma_send_task_kernel(struct file_open_data *data,
 		ret = sdma_verify_src_dst(data, &pasid, task_list[i]);
 		if (ret < 0) {
 			spin_unlock(&pchannel->owner_chn_lock);
-			dev_err(&pdev->pdev->dev, "no correct pid\n");
+			dev_err(&pdev->pdev->dev, "No correct pid\n");
 			return ret;
 		}
 		sqe = pchannel->sq_base + sq_tail;

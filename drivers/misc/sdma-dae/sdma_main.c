@@ -19,7 +19,7 @@
 #define BASE_DIR		"sdma" /* Subdir in /sys/kernel/debug/  */
 #define UPPER_SHIFT		32
 #define MAX_INPUT_LENGTH	128
-#define SDMA_VERSION		"1.0.0"
+#define SDMA_VERSION		"1.0.1"
 
 u32 share_chns = 16;
 module_param(share_chns, uint, RW_R_R);
