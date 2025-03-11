@@ -41,7 +41,6 @@
 #include "hclge_unic_guid.h"
 #include "hclge_unic_addr.h"
 #endif
-
 #include "hclge_trace.h"
 
 #define HCLGE_NAME			"hclge"
@@ -429,7 +428,7 @@ static void hclge_trace_cmd_send(struct hclge_comm_hw *hw, struct hclge_desc *de
 			trace_hclge_pf_cmd_send(hw, &desc[i], i, num);
 	} else {
 		for (i = 1; i < num; i++)
-			trace_hclge_pf_special_cmd_send(hw, (u32 *)&desc[i],
+			trace_hclge_pf_special_cmd_send(hw, (__le32 *)&desc[i],
 							i, num);
 	}
 }
@@ -449,7 +448,7 @@ static void hclge_trace_cmd_get(struct hclge_comm_hw *hw, struct hclge_desc *des
 			trace_hclge_pf_cmd_get(hw, &desc[i], i, num);
 	} else {
 		for (i = 1; i < num; i++)
-			trace_hclge_pf_special_cmd_get(hw, (u32 *)&desc[i],
+			trace_hclge_pf_special_cmd_get(hw, (__le32 *)&desc[i],
 						       i, num);
 	}
 }
@@ -13842,9 +13841,11 @@ static int hclge_init(void)
 
 static void hclge_exit(void)
 {
+	hnae3_acquire_unload_lock();
 	hnae3_unregister_ae_algo_prepare(&ae_algo);
 	hnae3_unregister_ae_algo(&ae_algo);
 	destroy_workqueue(hclge_wq);
+	hnae3_release_unload_lock();
 }
 module_init(hclge_init);
 module_exit(hclge_exit);

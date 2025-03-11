@@ -131,7 +131,7 @@ DEFINE_EVENT(hclge_pf_cmd_template, hclge_pf_cmd_get,
 
 DECLARE_EVENT_CLASS(hclge_pf_special_cmd_template,
 		    TP_PROTO(struct hclge_comm_hw *hw,
-			     u32 *data,
+			     __le32 *data,
 			     int index,
 			     int num),
 		    TP_ARGS(hw, data, index, num),
@@ -158,14 +158,14 @@ DECLARE_EVENT_CLASS(hclge_pf_special_cmd_template,
 
 DEFINE_EVENT(hclge_pf_special_cmd_template, hclge_pf_special_cmd_send,
 	     TP_PROTO(struct hclge_comm_hw *hw,
-		      u32 *desc,
+		      __le32 *desc,
 		      int index,
 		      int num),
 	     TP_ARGS(hw, desc, index, num));
 
 DEFINE_EVENT(hclge_pf_special_cmd_template, hclge_pf_special_cmd_get,
 	     TP_PROTO(struct hclge_comm_hw *hw,
-		      u32 *desc,
+		      __le32 *desc,
 		      int index,
 		      int num),
 	     TP_ARGS(hw, desc, index, num)

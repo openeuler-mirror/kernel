@@ -20,8 +20,8 @@
 #include "hclgevf_unic_guid.h"
 #include "hclgevf_unic_addr.h"
 #endif
-#include "hclgevf_trace.h"
 #include "hclgevf_dcb.h"
+#include "hclgevf_trace.h"
 
 #define HCLGEVF_NAME	"hclgevf"
 
@@ -3735,8 +3735,10 @@ static int hclgevf_init(void)
 
 static void hclgevf_exit(void)
 {
+	hnae3_acquire_unload_lock();
 	hnae3_unregister_ae_algo(&ae_algovf);
 	destroy_workqueue(hclgevf_wq);
+	hnae3_release_unload_lock();
 }
 module_init(hclgevf_init);
 module_exit(hclgevf_exit);
