@@ -656,7 +656,7 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibcontext->device);
 
 	hns_roce_put_cq_bankid_for_uctx(context);
-	hns_roce_unregister_uctx_debugfs(context);
+	hns_roce_unregister_uctx_debugfs(hr_dev, context);
 
 	mutex_lock(&hr_dev->uctx_list_mutex);
 	list_del(&context->list);
@@ -1580,8 +1580,8 @@ error_failed_alloc_dfx_cnt:
 void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 {
 	hns_roce_unregister_sysfs(hr_dev);
-	hns_roce_unregister_device(hr_dev, bond_cleanup);
 	hns_roce_unregister_debugfs(hr_dev);
+	hns_roce_unregister_device(hr_dev, bond_cleanup);
 	hns_roce_unregister_poe_ch(hr_dev);
 	hns_roce_free_dca_safe_buf(hr_dev);
 
