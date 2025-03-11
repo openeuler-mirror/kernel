@@ -836,11 +836,7 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			 struct ib_udata *udata, unsigned long addr)
 {
 	struct ib_device *ibdev = &hr_dev->ib_dev;
-	int ret;
-
-	hr_qp->mtr_node = kvmalloc(sizeof(*hr_qp->mtr_node), GFP_KERNEL);
-	if (!hr_qp->mtr_node)
-		return -ENOMEM;
+	int ret = 0;
 
 	if (dca_en) {
 		/* DCA must be enabled after the buffer attr is configured. */
@@ -848,8 +844,6 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 		if (ret) {
 			ibdev_err(ibdev, "failed to enable DCA, ret = %d.\n",
 				  ret);
-			kvfree(hr_qp->mtr_node);
-			hr_qp->mtr_node = NULL;
 			return ret;
 		}
 
@@ -866,15 +860,14 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			hr_qp->en_flags |= HNS_ROCE_QP_CAP_SVE_DIRECT_WQE;
 	}
 
-	ret = hns_roce_mtr_create(hr_dev, &hr_qp->mtr, buf_attr,
-				  PAGE_SHIFT + hr_dev->caps.mtt_ba_pg_sz,
-				  udata, addr);
-	if (ret) {
+	hr_qp->mtr = hns_roce_mtr_create(hr_dev, buf_attr,
+					 PAGE_SHIFT + hr_dev->caps.mtt_ba_pg_sz,
+					 udata, addr);
+	if (IS_ERR(hr_qp->mtr)) {
+		ret = PTR_ERR(hr_qp->mtr);
 		ibdev_err(ibdev, "failed to create WQE mtr, ret = %d.\n", ret);
 		if (dca_en)
 			hns_roce_disable_dca(hr_dev, hr_qp, udata);
-		kvfree(hr_qp->mtr_node);
-		hr_qp->mtr_node = NULL;
 	} else if (dca_en) {
 		ret = hns_roce_map_dca_safe_page(hr_dev, hr_qp);
 	}
@@ -885,13 +878,10 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 static void free_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			 struct ib_udata *udata)
 {
-	if (hr_qp->delayed_destroy_flag) {
-		hns_roce_add_unfree_mtr(hr_qp->mtr_node, hr_dev, &hr_qp->mtr);
-	} else {
-		hns_roce_mtr_destroy(hr_dev, &hr_qp->mtr);
-		kvfree(hr_qp->mtr_node);
-		hr_qp->mtr_node = NULL;
-	}
+	if (hr_qp->delayed_destroy_flag)
+		hns_roce_add_unfree_mtr(hr_dev, hr_qp->mtr);
+	else
+		hns_roce_mtr_destroy(hr_dev, hr_qp->mtr);
 
 	if (hr_qp->en_flags & HNS_ROCE_QP_CAP_DYNAMIC_CTX_ATTACH)
 		hns_roce_disable_dca(hr_dev, hr_qp, udata);
@@ -1142,7 +1132,8 @@ static void free_qp_db(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 			qp_user_mmap_entry_remove(hr_qp);
 	} else {
 		if (hr_qp->en_flags & HNS_ROCE_QP_CAP_RQ_RECORD_DB)
-			hns_roce_free_db(hr_dev, &hr_qp->rdb);
+			hns_roce_free_db(hr_dev, &hr_qp->rdb,
+					 hr_qp->delayed_destroy_flag);
 	}
 }
 
@@ -1795,7 +1786,7 @@ static inline void *get_wqe(struct hns_roce_qp *hr_qp, u32 offset)
 	if (unlikely(hr_qp->dca_cfg.buf_list))
 		return dca_buf_offset(&hr_qp->dca_cfg, offset);
 	else
-		return hns_roce_buf_offset(hr_qp->mtr.kmem, offset);
+		return hns_roce_buf_offset(hr_qp->mtr->kmem, offset);
 }
 
 void *hns_roce_get_recv_wqe(struct hns_roce_qp *hr_qp, unsigned int n)

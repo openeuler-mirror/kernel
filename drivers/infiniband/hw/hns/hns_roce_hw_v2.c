@@ -152,7 +152,7 @@ static void set_frmr_seg(struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
 	hr_reg_write_bool(fseg, FRMR_LW, wr->access & IB_ACCESS_LOCAL_WRITE);
 
 	/* Data structure reuse may lead to confusion */
-	pbl_ba = mr->pbl_mtr.hem_cfg.root_ba;
+	pbl_ba = mr->pbl_mtr->hem_cfg.root_ba;
 	rc_sq_wqe->msg_len = cpu_to_le32(lower_32_bits(pbl_ba));
 	rc_sq_wqe->inv_key = cpu_to_le32(upper_32_bits(pbl_ba));
 
@@ -163,7 +163,7 @@ static void set_frmr_seg(struct hns_roce_v2_rc_send_wqe *rc_sq_wqe,
 
 	hr_reg_write(fseg, FRMR_PBL_SIZE, mr->npages);
 	hr_reg_write(fseg, FRMR_PBL_BUF_PG_SZ,
-		     to_hr_hw_page_shift(mr->pbl_mtr.hem_cfg.buf_pg_shift));
+		     to_hr_hw_page_shift(mr->pbl_mtr->hem_cfg.buf_pg_shift));
 	hr_reg_clear(fseg, FRMR_BLK_MODE);
 }
 
@@ -981,12 +981,12 @@ out:
 
 static void *get_srq_wqe_buf(struct hns_roce_srq *srq, u32 n)
 {
-	return hns_roce_buf_offset(srq->buf_mtr.kmem, n << srq->wqe_shift);
+	return hns_roce_buf_offset(srq->buf_mtr->kmem, n << srq->wqe_shift);
 }
 
 static void *get_idx_buf(struct hns_roce_idx_que *idx_que, u32 n)
 {
-	return hns_roce_buf_offset(idx_que->mtr.kmem,
+	return hns_roce_buf_offset(idx_que->mtr->kmem,
 				   n << idx_que->entry_shift);
 }
 
@@ -3648,7 +3648,7 @@ static int set_mtpt_pbl(struct hns_roce_dev *hr_dev,
 	int ret;
 	int i;
 
-	ret = hns_roce_mtr_find(hr_dev, &mr->pbl_mtr, 0, pages,
+	ret = hns_roce_mtr_find(hr_dev, mr->pbl_mtr, 0, pages,
 				min_t(int, ARRAY_SIZE(pages), mr->npages));
 	if (ret) {
 		ibdev_err(ibdev, "failed to find PBL mtr, ret = %d.\n", ret);
@@ -3659,7 +3659,7 @@ static int set_mtpt_pbl(struct hns_roce_dev *hr_dev,
 	for (i = 0; i < ARRAY_SIZE(pages); i++)
 		pages[i] >>= MPT_PBL_BUF_ADDR_S;
 
-	pbl_ba = hns_roce_get_mtr_ba(&mr->pbl_mtr);
+	pbl_ba = hns_roce_get_mtr_ba(mr->pbl_mtr);
 
 	mpt_entry->pbl_size = cpu_to_le32(mr->npages);
 	mpt_entry->pbl_ba_l = cpu_to_le32(pbl_ba >> MPT_PBL_BA_ADDR_S);
@@ -3672,7 +3672,7 @@ static int set_mtpt_pbl(struct hns_roce_dev *hr_dev,
 	mpt_entry->pa1_l = cpu_to_le32(lower_32_bits(pages[1]));
 	hr_reg_write(mpt_entry, MPT_PA1_H, upper_32_bits(pages[1]));
 	hr_reg_write(mpt_entry, MPT_PBL_BUF_PG_SZ,
-		     to_hr_hw_page_shift(mr->pbl_mtr.hem_cfg.buf_pg_shift));
+		     to_hr_hw_page_shift(mr->pbl_mtr->hem_cfg.buf_pg_shift));
 
 	return 0;
 }
@@ -3715,7 +3715,7 @@ static int hns_roce_v2_write_mtpt(struct hns_roce_dev *hr_dev,
 		hr_reg_write(mpt_entry, MPT_PBL_HOP_NUM, mr->pbl_hop_num);
 
 	hr_reg_write(mpt_entry, MPT_PBL_BA_PG_SZ,
-		     to_hr_hw_page_shift(mr->pbl_mtr.hem_cfg.ba_pg_shift));
+		     to_hr_hw_page_shift(mr->pbl_mtr->hem_cfg.ba_pg_shift));
 	hr_reg_enable(mpt_entry, MPT_INNER_PA_VLD);
 
 	return set_mtpt_pbl(hr_dev, mpt_entry, mr);
@@ -3759,7 +3759,7 @@ static int hns_roce_v2_rereg_write_mtpt(struct hns_roce_dev *hr_dev,
 
 static int hns_roce_v2_frmr_write_mtpt(void *mb_buf, struct hns_roce_mr *mr)
 {
-	dma_addr_t pbl_ba = mr->pbl_mtr.hem_cfg.root_ba;
+	dma_addr_t pbl_ba = mr->pbl_mtr->hem_cfg.root_ba;
 	struct hns_roce_v2_mpt_entry *mpt_entry;
 
 	mpt_entry = mb_buf;
@@ -3778,9 +3778,9 @@ static int hns_roce_v2_frmr_write_mtpt(void *mb_buf, struct hns_roce_mr *mr)
 
 	hr_reg_write(mpt_entry, MPT_PBL_HOP_NUM, 1);
 	hr_reg_write(mpt_entry, MPT_PBL_BA_PG_SZ,
-		     to_hr_hw_page_shift(mr->pbl_mtr.hem_cfg.ba_pg_shift));
+		     to_hr_hw_page_shift(mr->pbl_mtr->hem_cfg.ba_pg_shift));
 	hr_reg_write(mpt_entry, MPT_PBL_BUF_PG_SZ,
-		     to_hr_hw_page_shift(mr->pbl_mtr.hem_cfg.buf_pg_shift));
+		     to_hr_hw_page_shift(mr->pbl_mtr->hem_cfg.buf_pg_shift));
 
 	mpt_entry->pbl_size = cpu_to_le32(mr->npages);
 
@@ -3919,7 +3919,7 @@ static void hns_roce_v2_dereg_mr(struct hns_roce_dev *hr_dev)
 
 static void *get_cqe_v2(struct hns_roce_cq *hr_cq, int n)
 {
-	return hns_roce_buf_offset(hr_cq->mtr.kmem, n * hr_cq->cqe_size);
+	return hns_roce_buf_offset(hr_cq->mtr->kmem, n * hr_cq->cqe_size);
 }
 
 static void *get_sw_cqe_v2(struct hns_roce_cq *hr_cq, unsigned int n)
@@ -4078,9 +4078,9 @@ static void hns_roce_v2_write_cqc(struct hns_roce_dev *hr_dev,
 	hr_reg_write(cq_context, CQC_CQE_NEX_BLK_ADDR_H,
 		     upper_32_bits(to_hr_hw_page_addr(mtts[1])));
 	hr_reg_write(cq_context, CQC_CQE_BAR_PG_SZ,
-		     to_hr_hw_page_shift(hr_cq->mtr.hem_cfg.ba_pg_shift));
+		     to_hr_hw_page_shift(hr_cq->mtr->hem_cfg.ba_pg_shift));
 	hr_reg_write(cq_context, CQC_CQE_BUF_PG_SZ,
-		     to_hr_hw_page_shift(hr_cq->mtr.hem_cfg.buf_pg_shift));
+		     to_hr_hw_page_shift(hr_cq->mtr->hem_cfg.buf_pg_shift));
 	hr_reg_write(cq_context, CQC_CQE_BA_L, dma_handle >> CQC_CQE_BA_L_S);
 	hr_reg_write(cq_context, CQC_CQE_BA_H, dma_handle >> CQC_CQE_BA_H_S);
 	hr_reg_write_bool(cq_context, CQC_DB_RECORD_EN,
@@ -4957,7 +4957,7 @@ static int config_qp_rq_buf(struct hns_roce_dev *hr_dev,
 	int ret;
 
 	/* Search qp buf's mtts */
-	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->rq.wqe_offset,
+	ret = hns_roce_mtr_find(hr_dev, hr_qp->mtr, hr_qp->rq.wqe_offset,
 				mtts, ARRAY_SIZE(mtts));
 	if (hr_qp->rq.wqe_cnt && ret) {
 		ibdev_err(&hr_dev->ib_dev,
@@ -4965,7 +4965,7 @@ static int config_qp_rq_buf(struct hns_roce_dev *hr_dev,
 		return -EINVAL;
 	}
 
-	wqe_sge_ba = hns_roce_get_mtr_ba(&hr_qp->mtr);
+	wqe_sge_ba = hns_roce_get_mtr_ba(hr_qp->mtr);
 
 	context->wqe_sge_ba = cpu_to_le32(wqe_sge_ba >> 3);
 	qpc_mask->wqe_sge_ba = 0;
@@ -4996,11 +4996,11 @@ static int config_qp_rq_buf(struct hns_roce_dev *hr_dev,
 	hr_reg_clear(qpc_mask, QPC_RQ_HOP_NUM);
 
 	hr_reg_write(context, QPC_WQE_SGE_BA_PG_SZ,
-		     to_hr_hw_page_shift(hr_qp->mtr.hem_cfg.ba_pg_shift));
+		     to_hr_hw_page_shift(hr_qp->mtr->hem_cfg.ba_pg_shift));
 	hr_reg_clear(qpc_mask, QPC_WQE_SGE_BA_PG_SZ);
 
 	hr_reg_write(context, QPC_WQE_SGE_BUF_PG_SZ,
-		     to_hr_hw_page_shift(hr_qp->mtr.hem_cfg.buf_pg_shift));
+		     to_hr_hw_page_shift(hr_qp->mtr->hem_cfg.buf_pg_shift));
 	hr_reg_clear(qpc_mask, QPC_WQE_SGE_BUF_PG_SZ);
 
 	context->rq_cur_blk_addr = cpu_to_le32(to_hr_hw_page_addr(mtts[0]));
@@ -5034,17 +5034,16 @@ static int config_qp_sq_buf(struct hns_roce_dev *hr_dev,
 	int ret;
 
 	/* search qp buf's mtts */
-	ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr, hr_qp->sq.wqe_offset,
-				  &sq_cur_blk, 1);
+	ret = hns_roce_mtr_find(hr_dev, hr_qp->mtr, hr_qp->sq.wqe_offset,
+				&sq_cur_blk, 1);
 	if (ret) {
 		ibdev_err(ibdev, "failed to find QP(0x%lx) SQ buf, ret = %d.\n",
 			  hr_qp->qpn, ret);
 		return ret;
 	}
 	if (hr_qp->sge.sge_cnt > 0) {
-		ret = hns_roce_mtr_find(hr_dev, &hr_qp->mtr,
-					  hr_qp->sge.wqe_offset, &sge_cur_blk,
-					  1);
+		ret = hns_roce_mtr_find(hr_dev, hr_qp->mtr,
+					hr_qp->sge.wqe_offset, &sge_cur_blk, 1);
 		if (ret) {
 			ibdev_err(ibdev, "failed to find QP(0x%lx) SGE buf, ret = %d.\n",
 				  hr_qp->qpn, ret);
@@ -6416,7 +6415,7 @@ static int hns_roce_v2_write_srqc_index_queue(struct hns_roce_srq *srq,
 	int ret;
 
 	/* Get physical address of idx que buf */
-	ret = hns_roce_mtr_find(hr_dev, &idx_que->mtr, 0, mtts_idx,
+	ret = hns_roce_mtr_find(hr_dev, idx_que->mtr, 0, mtts_idx,
 				ARRAY_SIZE(mtts_idx));
 	if (ret) {
 		ibdev_err(ibdev, "failed to find mtr for SRQ idx, ret = %d.\n",
@@ -6424,7 +6423,7 @@ static int hns_roce_v2_write_srqc_index_queue(struct hns_roce_srq *srq,
 		return ret;
 	}
 
-	dma_handle_idx = hns_roce_get_mtr_ba(&idx_que->mtr);
+	dma_handle_idx = hns_roce_get_mtr_ba(idx_que->mtr);
 
 	hr_reg_write(ctx, SRQC_IDX_HOP_NUM,
 		     to_hr_hem_hopnum(hr_dev->caps.idx_hop_num, srq->wqe_cnt));
@@ -6434,9 +6433,9 @@ static int hns_roce_v2_write_srqc_index_queue(struct hns_roce_srq *srq,
 		     upper_32_bits(dma_handle_idx >> DMA_IDX_SHIFT));
 
 	hr_reg_write(ctx, SRQC_IDX_BA_PG_SZ,
-		     to_hr_hw_page_shift(idx_que->mtr.hem_cfg.ba_pg_shift));
+		     to_hr_hw_page_shift(idx_que->mtr->hem_cfg.ba_pg_shift));
 	hr_reg_write(ctx, SRQC_IDX_BUF_PG_SZ,
-		     to_hr_hw_page_shift(idx_que->mtr.hem_cfg.buf_pg_shift));
+		     to_hr_hw_page_shift(idx_que->mtr->hem_cfg.buf_pg_shift));
 
 	hr_reg_write(ctx, SRQC_IDX_CUR_BLK_ADDR_L,
 		     to_hr_hw_page_addr(mtts_idx[0]));
@@ -6463,7 +6462,7 @@ static int hns_roce_v2_write_srqc(struct hns_roce_srq *srq, void *mb_buf)
 	memset(ctx, 0, sizeof(*ctx));
 
 	/* Get the physical address of srq buf */
-	ret = hns_roce_mtr_find(hr_dev, &srq->buf_mtr, 0, mtts_wqe,
+	ret = hns_roce_mtr_find(hr_dev, srq->buf_mtr, 0, mtts_wqe,
 				ARRAY_SIZE(mtts_wqe));
 	if (ret) {
 		ibdev_err(ibdev, "failed to find mtr for SRQ WQE, ret = %d.\n",
@@ -6471,7 +6470,7 @@ static int hns_roce_v2_write_srqc(struct hns_roce_srq *srq, void *mb_buf)
 		return ret;
 	}
 
-	dma_handle_wqe = hns_roce_get_mtr_ba(&srq->buf_mtr);
+	dma_handle_wqe = hns_roce_get_mtr_ba(srq->buf_mtr);
 
 	hr_reg_write(ctx, SRQC_SRQ_ST, 1);
 	hr_reg_write_bool(ctx, SRQC_SRQ_TYPE,
@@ -6493,9 +6492,9 @@ static int hns_roce_v2_write_srqc(struct hns_roce_srq *srq, void *mb_buf)
 		     upper_32_bits(dma_handle_wqe >> DMA_WQE_SHIFT));
 
 	hr_reg_write(ctx, SRQC_WQE_BA_PG_SZ,
-		     to_hr_hw_page_shift(srq->buf_mtr.hem_cfg.ba_pg_shift));
+		     to_hr_hw_page_shift(srq->buf_mtr->hem_cfg.ba_pg_shift));
 	hr_reg_write(ctx, SRQC_WQE_BUF_PG_SZ,
-		     to_hr_hw_page_shift(srq->buf_mtr.hem_cfg.buf_pg_shift));
+		     to_hr_hw_page_shift(srq->buf_mtr->hem_cfg.buf_pg_shift));
 
 	if (srq->cap_flags & HNS_ROCE_SRQ_CAP_RECORD_DB) {
 		hr_reg_enable(ctx, SRQC_DB_RECORD_EN);
@@ -6848,7 +6847,7 @@ static struct hns_roce_aeqe *next_aeqe_sw_v2(struct hns_roce_eq *eq)
 {
 	struct hns_roce_aeqe *aeqe;
 
-	aeqe = hns_roce_buf_offset(eq->mtr.kmem,
+	aeqe = hns_roce_buf_offset(eq->mtr->kmem,
 				   (eq->cons_index & (eq->entries - 1)) *
 				   eq->eqe_size);
 
@@ -6915,7 +6914,7 @@ static struct hns_roce_ceqe *next_ceqe_sw_v2(struct hns_roce_eq *eq)
 {
 	struct hns_roce_ceqe *ceqe;
 
-	ceqe = hns_roce_buf_offset(eq->mtr.kmem,
+	ceqe = hns_roce_buf_offset(eq->mtr->kmem,
 				   (eq->cons_index & (eq->entries - 1)) *
 				   eq->eqe_size);
 
@@ -7155,7 +7154,7 @@ static void hns_roce_v2_int_mask_enable(struct hns_roce_dev *hr_dev,
 
 static void free_eq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq)
 {
-	hns_roce_mtr_destroy(hr_dev, &eq->mtr);
+	hns_roce_mtr_destroy(hr_dev, eq->mtr);
 }
 
 static void hns_roce_v2_destroy_eqc(struct hns_roce_dev *hr_dev,
@@ -7202,14 +7201,14 @@ static int config_eqc(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq,
 	init_eq_config(hr_dev, eq);
 
 	/* if not multi-hop, eqe buffer only use one trunk */
-	ret = hns_roce_mtr_find(hr_dev, &eq->mtr, 0, eqe_ba,
+	ret = hns_roce_mtr_find(hr_dev, eq->mtr, 0, eqe_ba,
 				ARRAY_SIZE(eqe_ba));
 	if (ret) {
 		dev_err(hr_dev->dev, "failed to find EQE mtr, ret = %d\n", ret);
 		return ret;
 	}
 
-	bt_ba = hns_roce_get_mtr_ba(&eq->mtr);
+	bt_ba = hns_roce_get_mtr_ba(eq->mtr);
 
 	hr_reg_write(eqc, EQC_EQ_ST, HNS_ROCE_V2_EQ_STATE_VALID);
 	hr_reg_write(eqc, EQC_EQE_HOP_NUM, eq->hop_num);
@@ -7219,9 +7218,9 @@ static int config_eqc(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq,
 	hr_reg_write(eqc, EQC_EQN, eq->eqn);
 	hr_reg_write(eqc, EQC_EQE_CNT, HNS_ROCE_EQ_INIT_EQE_CNT);
 	hr_reg_write(eqc, EQC_EQE_BA_PG_SZ,
-		     to_hr_hw_page_shift(eq->mtr.hem_cfg.ba_pg_shift));
+		     to_hr_hw_page_shift(eq->mtr->hem_cfg.ba_pg_shift));
 	hr_reg_write(eqc, EQC_EQE_BUF_PG_SZ,
-		     to_hr_hw_page_shift(eq->mtr.hem_cfg.buf_pg_shift));
+		     to_hr_hw_page_shift(eq->mtr->hem_cfg.buf_pg_shift));
 	hr_reg_write(eqc, EQC_EQ_PROD_INDX, HNS_ROCE_EQ_INIT_PROD_IDX);
 	hr_reg_write(eqc, EQC_EQ_MAX_CNT, eq->eq_max_cnt);
 
@@ -7254,7 +7253,7 @@ static int config_eqc(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq,
 static int alloc_eq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq)
 {
 	struct hns_roce_buf_attr buf_attr = {};
-	int err;
+	int err = 0;
 
 	if (hr_dev->caps.eqe_hop_num == HNS_ROCE_HOP_NUM_0)
 		eq->hop_num = 0;
@@ -7266,11 +7265,13 @@ static int alloc_eq_buf(struct hns_roce_dev *hr_dev, struct hns_roce_eq *eq)
 	buf_attr.region[0].hopnum = eq->hop_num;
 	buf_attr.region_count = 1;
 
-	err = hns_roce_mtr_create(hr_dev, &eq->mtr, &buf_attr,
-				  hr_dev->caps.eqe_ba_pg_sz + PAGE_SHIFT, NULL,
-				  0);
-	if (err)
+	eq->mtr = hns_roce_mtr_create(hr_dev, &buf_attr,
+				      hr_dev->caps.eqe_ba_pg_sz + PAGE_SHIFT,
+				      NULL, 0);
+	if (IS_ERR(eq->mtr)) {
+		err = PTR_ERR(eq->mtr);
 		dev_err(hr_dev->dev, "Failed to alloc EQE mtr, err %d\n", err);
+	}
 
 	return err;
 }
