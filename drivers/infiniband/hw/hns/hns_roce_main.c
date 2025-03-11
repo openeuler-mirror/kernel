@@ -633,10 +633,10 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	return 0;
 
 error_fail_copy_to_udata:
-	hns_roce_unregister_udca(hr_dev, context);
 	hns_roce_dealloc_reset_entry(context);
 
 error_fail_reset_entry:
+	hns_roce_unregister_udca(hr_dev, context);
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB)
 		mutex_destroy(&context->page_mutex);
@@ -656,20 +656,20 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	struct hns_roce_ucontext *context = to_hr_ucontext(ibcontext);
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibcontext->device);
 
+	hns_roce_put_cq_bankid_for_uctx(context);
+	hns_roce_unregister_uctx_debugfs(context);
+
 	mutex_lock(&hr_dev->uctx_list_mutex);
 	list_del(&context->list);
 	mutex_unlock(&hr_dev->uctx_list_mutex);
 
-	hns_roce_unregister_uctx_debugfs(context);
-
+	hns_roce_dealloc_reset_entry(context);
 	hns_roce_unregister_udca(hr_dev, context);
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB)
 		mutex_destroy(&context->page_mutex);
 
-	hns_roce_put_cq_bankid_for_uctx(context);
 	hns_roce_dealloc_uar_entry(context);
-	hns_roce_dealloc_reset_entry(context);
 
 	ida_free(&hr_dev->uar_ida.ida, (int)context->uar.logic_idx);
 }
