@@ -866,11 +866,12 @@ static int alloc_wqe_buf(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 	if (IS_ERR(hr_qp->mtr)) {
 		ret = PTR_ERR(hr_qp->mtr);
 		ibdev_err(ibdev, "failed to create WQE mtr, ret = %d.\n", ret);
-		if (dca_en)
-			hns_roce_disable_dca(hr_dev, hr_qp, udata);
 	} else if (dca_en) {
 		ret = hns_roce_map_dca_safe_page(hr_dev, hr_qp);
 	}
+
+	if (ret && dca_en)
+		hns_roce_disable_dca(hr_dev, hr_qp, udata);
 
 	return ret;
 }
