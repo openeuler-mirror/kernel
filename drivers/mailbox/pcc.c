@@ -304,6 +304,12 @@ static irqreturn_t pcc_mbox_irq(int irq, void *p)
 	if (pcc_chan_reg_read_modify_write(&pchan->plat_irq_ack))
 		return IRQ_NONE;
 
+	/*
+	* Clear this flag immediately after updating interrupt ack register
+	* to avoid possible race in updatation of the flag from
+	* pcc_send_data() that could execute from mbox_chan_received_data()
+	*/
+	pchan->chan_in_use = false;
 	mbox_chan_received_data(chan, NULL);
 
 	/*
@@ -314,7 +320,6 @@ static irqreturn_t pcc_mbox_irq(int irq, void *p)
 	 */
 	if (pchan->type == ACPI_PCCT_TYPE_EXT_PCC_SLAVE_SUBSPACE)
 		pcc_send_data(chan, NULL);
-	pchan->chan_in_use = false;
 
 	return IRQ_HANDLED;
 }
