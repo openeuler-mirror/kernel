@@ -1326,17 +1326,17 @@ static int set_qp_param(struct hns_roce_dev *hr_dev, struct hns_roce_qp *hr_qp,
 						ibucontext);
 		hr_qp->config = uctx->config;
 		ret = set_user_sq_size(hr_dev, &init_attr->cap, hr_qp, ucmd);
-		if (ret)
+		if (ret) {
 			ibdev_err(ibdev, "Failed to set user SQ size, ret = %d\n",
 				  ret);
+			return ret;
+		}
 
 		ret = set_uqp_create_flag_param(hr_dev, hr_qp, init_attr, ucmd);
 		if (ret)
 			return ret;
 
 		ret = set_congest_param(hr_dev, hr_qp, ucmd);
-		if (ret)
-			return ret;
 	} else {
 		if (init_attr->create_flags &
 		    IB_QP_CREATE_BLOCK_MULTICAST_LOOPBACK) {
