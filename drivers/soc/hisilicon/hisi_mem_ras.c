@@ -43,16 +43,20 @@ static int hisi_mem_get_pcc_chan_id(struct hisi_mem_dev *hdev)
 	struct platform_device *pdev = hdev->pdev;
 	struct acpi_device *adev = ACPI_COMPANION(&pdev->dev);
 	struct hisi_mem_register_ctx ctx = {0};
-	acpi_handle handle = adev->handle;
 	acpi_status status;
 
-	if (!acpi_has_method(handle, METHOD_NAME__CRS)) {
+	if (!adev) {
+		dev_err(&pdev->dev, "ACPI companion missing\n");
+		return -ENODEV;
+	}
+
+	if (!acpi_has_method(adev->handle, METHOD_NAME__CRS)) {
 		dev_err(&pdev->dev, "No _CRS method.\n");
 		return -ENODEV;
 	}
 
 	ctx.dev = &pdev->dev;
-	status = acpi_walk_resources(handle, METHOD_NAME__CRS,
+	status = acpi_walk_resources(adev->handle, METHOD_NAME__CRS,
 				     hisi_mem_get_chan_id_cb, &ctx);
 	if (ACPI_FAILURE(status))
 		return ctx.err;
