@@ -42,6 +42,8 @@ struct cpu_autoplug_info {
 
 struct cpu_autoplug_info ap_info;
 
+static cputime64_t b_time[NR_CPUS];
+
 static ssize_t enabled_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -232,7 +234,7 @@ static cputime64_t calc_busy_time(unsigned int cpu)
 	return busy_time;
 }
 
-static inline cputime64_t get_idle_time_jiffy(cputime64_t *wall)
+static inline cputime64_t sw64_get_idle_time_jiffy(cputime64_t *wall)
 {
 	unsigned int cpu;
 	cputime64_t idle_time = 0;
@@ -261,7 +263,7 @@ static inline cputime64_t sw64_get_idle_time(cputime64_t *wall)
 	for_each_online_cpu(cpu) {
 		idle_time += get_cpu_idle_time_us(cpu, wall);
 		if (idle_time == -1ULL)
-			return get_idle_time_jiffy(wall);
+			return sw64_get_idle_time_jiffy(wall);
 	}
 
 	return idle_time;
@@ -287,7 +289,6 @@ static int find_min_busy_cpu(void)
 	int nr_all_cpus = num_possible_cpus();
 	unsigned int cpus, target_cpu;
 	cputime64_t busy_time;
-	cputime64_t b_time[nr_all_cpus];
 
 	memset(b_time, 0, sizeof(b_time));
 	for_each_online_cpu(cpus) {
@@ -303,7 +304,7 @@ static void up_core(int target_cpu)
 	if (target_cpu > 0 && target_cpu < CONFIG_NR_CPUS) {
 		per_cpu(cpu_adjusting, target_cpu) = 1;
 		lock_device_hotplug();
-		cpu_up(target_cpu);
+		cpu_device_up(get_cpu_device(target_cpu));
 		pr_debug("The target_cpu is %d, After cpu_up, the cpu_num is %d\n",
 				target_cpu, num_online_cpus());
 		get_cpu_device(target_cpu)->offline = false;
@@ -317,7 +318,7 @@ static void down_core(int target_cpu)
 	if (target_cpu > 0 && target_cpu < CONFIG_NR_CPUS) {
 		per_cpu(cpu_adjusting, target_cpu) = -1;
 		lock_device_hotplug();
-		cpu_down(target_cpu);
+		cpu_device_down(get_cpu_device(target_cpu));
 		pr_debug("The target_cpu is %d. After cpu_down, the cpu_num is %d\n",
 				target_cpu, num_online_cpus());
 		get_cpu_device(target_cpu)->offline = true;
@@ -448,7 +449,7 @@ static void do_autoplug_timer(struct work_struct *work)
 #else
 	active = atomic_long_read(&calc_load_tasks);
 	active = active > 0 ? active * FIXED_1 : 0;
-	CALC_LOAD(avenrun[0], EXP_1, active);
+	calc_load(avenrun[0], EXP_1, active);
 	load = avenrun[0] / 2;
 #endif
 
