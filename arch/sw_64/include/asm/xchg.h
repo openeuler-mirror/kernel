@@ -364,7 +364,7 @@ ____cmpxchg(_u8, volatile char *m, unsigned char old, unsigned char new)
 	"	extlb	%[new_v], %[m], %[prev]\n"
 	: [prev]"=&r" (prev), [new_v]"=&r" (new), [tmp]"=&r" (tmp),
 	[cmp]"=&r" (cmp), [addr64]"=&r" (addr64)
-	: [m]"r" ((long)m), [old]"Ir" (old), "1" (new) : "memory");
+	: [m]"r" ((long)m), [old]"r" (old), "1" (new) : "memory");
 
 	return prev;
 }
@@ -386,7 +386,7 @@ ____cmpxchg(_u16, volatile short *m, unsigned short old, unsigned short new)
 	"	extlh	%[new_v], %[m], %[prev]\n"
 	: [prev]"=&r" (prev), [new_v]"=&r" (new), [tmp]"=&r" (tmp),
 	[cmp]"=&r" (cmp), [addr64]"=&r" (addr64)
-	: [m]"r" ((long)m), [old]"Ir" (old), "1" (new) : "memory");
+	: [m]"r" ((long)m), [old]"r" (old), "1" (new) : "memory");
 	return prev;
 }
 
