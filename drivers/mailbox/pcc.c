@@ -284,6 +284,10 @@ static irqreturn_t pcc_mbox_irq(int irq, void *p)
 	int ret;
 
 	pchan = chan->con_priv;
+
+	if (pcc_chan_reg_read_modify_write(&pchan->plat_irq_ack))
+		return IRQ_NONE;
+
 	if (pchan->type == ACPI_PCCT_TYPE_EXT_PCC_MASTER_SUBSPACE &&
 	    !pchan->chan_in_use)
 		return IRQ_NONE;
@@ -300,9 +304,6 @@ static irqreturn_t pcc_mbox_irq(int irq, void *p)
 		pcc_chan_reg_write(&pchan->error, val);
 		return IRQ_NONE;
 	}
-
-	if (pcc_chan_reg_read_modify_write(&pchan->plat_irq_ack))
-		return IRQ_NONE;
 
 	/*
 	* Clear this flag immediately after updating interrupt ack register
