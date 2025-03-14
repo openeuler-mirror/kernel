@@ -21,6 +21,7 @@
 #include <drm/drm_edid.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_framebuffer.h>
+#include "dp/dp_hw.h"
 
 struct drm_device;
 
@@ -45,6 +46,7 @@ struct hibmc_drm_private {
 	struct drm_crtc crtc;
 	bool mode_config_initialized;
 	struct hibmc_vdac vdac;
+	struct hibmc_dp dp;
 };
 
 static inline struct hibmc_vdac *to_hibmc_vdac(struct drm_connector *connector)
@@ -70,6 +72,7 @@ void hibmc_mm_fini(struct hibmc_drm_private *hibmc);
 int hibmc_dumb_create(struct drm_file *file, struct drm_device *dev,
 		      struct drm_mode_create_dumb *args);
 int hibmc_ddc_create(struct drm_device *drm_dev, struct hibmc_vdac *connector);
+int hibmc_dp_init(struct hibmc_drm_private *priv);
 
 extern const struct drm_mode_config_funcs hibmc_mode_funcs;
 
