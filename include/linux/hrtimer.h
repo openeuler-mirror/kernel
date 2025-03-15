@@ -234,8 +234,8 @@ struct hrtimer_cpu_base {
 	unsigned int			hres_active		: 1,
 					in_hrtirq		: 1,
 					hang_detected		: 1,
-					softirq_activated       : 1,
-					online			: 1;
+					softirq_activated       : 1;
+	KABI_FILL_HOLE(unsigned int	online:1)
 #ifdef CONFIG_HIGH_RES_TIMERS
 	unsigned int			nr_events;
 	unsigned short			nr_retries;
@@ -251,10 +251,10 @@ struct hrtimer_cpu_base {
 	ktime_t				softirq_expires_next;
 	struct hrtimer			*softirq_next_timer;
 	struct hrtimer_clock_base	clock_base[HRTIMER_MAX_CLOCK_BASES];
-	call_single_data_t		csd;
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+	KABI_EXTEND(call_single_data_t csd)
 } ____cacheline_aligned;
 
 static inline void hrtimer_set_expires(struct hrtimer *timer, ktime_t time)
