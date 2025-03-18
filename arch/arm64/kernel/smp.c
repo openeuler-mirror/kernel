@@ -53,6 +53,9 @@
 #include <asm/tlbflush.h>
 #include <asm/ptrace.h>
 #include <asm/virt.h>
+#ifdef CONFIG_IEE
+#include <asm/haoc/iee.h>
+#endif
 
 #include <trace/events/ipi.h>
 
@@ -212,6 +215,10 @@ asmlinkage notrace void secondary_start_kernel(void)
 
 #ifdef CONFIG_ARM64_TLBI_IPI
 	cpumask_set_cpu(cpu, mm_cpumask(mm));
+#endif
+#ifdef CONFIG_IEE
+	if (haoc_enabled)
+		iee_setup_asid();
 #endif
 	/*
 	 * Setup per-NUMA node page table if kernel
