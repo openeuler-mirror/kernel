@@ -214,9 +214,6 @@ static u64 new_context(struct mm_struct *mm)
 set_asid:
 	__set_bit(asid, asid_map);
 	cur_idx = asid;
-#ifdef CONFIG_ARM64_TLBI_IPI
-	cpumask_clear(mm_cpumask(mm));
-#endif
 	return asid2ctxid(asid, generation);
 }
 
@@ -269,9 +266,6 @@ void check_and_switch_context(struct mm_struct *mm)
 switch_mm_fastpath:
 
 	arm64_apply_bp_hardening();
-#ifdef CONFIG_ARM64_TLBI_IPI
-	cpumask_set_cpu(cpu, mm_cpumask(mm));
-#endif
 
 	/*
 	 * Defer TTBR0_EL1 setting for user threads to uaccess_enable() when
