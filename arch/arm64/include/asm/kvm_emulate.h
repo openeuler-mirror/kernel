@@ -66,6 +66,10 @@ static __always_inline bool vcpu_el1_is_32bit(struct kvm_vcpu *vcpu)
 }
 #endif
 
+#ifdef CONFIG_ARM64_KVM_HCR_NOFB
+extern bool kvm_hcr_nofb;
+#endif
+
 static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
 {
 	vcpu->arch.hcr_el2 = HCR_GUEST_FLAGS;
@@ -101,6 +105,11 @@ static inline void vcpu_reset_hcr(struct kvm_vcpu *vcpu)
 
 	if (kvm_has_mte(vcpu->kvm))
 		vcpu->arch.hcr_el2 |= HCR_ATA;
+
+#ifdef CONFIG_ARM64_KVM_HCR_NOFB
+	if (unlikely(kvm_hcr_nofb))
+		vcpu->arch.hcr_el2 &= ~HCR_FB;
+#endif
 }
 
 static inline unsigned long *vcpu_hcr(struct kvm_vcpu *vcpu)

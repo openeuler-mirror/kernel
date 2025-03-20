@@ -99,4 +99,19 @@ config VIRT_VTIMER_IRQ_BYPASS
 	depends on KVM && ARM64 && ARCH_HISI && HISILICON_IRQ_MBIGEN
 	default n
 
+config ARM64_KVM_HCR_NOFB
+	bool "Disable HCR_EL2.FB on kvm(EXPERIMENTAL)"
+	depends on ARM64
+	default n
+	help
+	  Add new boot parameter 'kvm-arm.hcr_nofb' to allow all vcpus running
+	  without HCR_EL2.FB.
+
+	  NOTE(Important)
+	  This feature is used for learning and debugging only. Please don't
+	  enable it on commercial products.
+	  If you know exactly what the impact of the feature is, you can
+	  configure it as you do.
+
+	  If unsure, say N.
 endif # VIRTUALIZATION

@@ -67,6 +67,16 @@ bool kvm_ncsnp_support;
 /* Capability of DVMBM */
 bool kvm_dvmbm_support;
 
+#ifdef CONFIG_ARM64_KVM_HCR_NOFB
+bool kvm_hcr_nofb;
+
+static int __init early_hcr_nofb_cfg(char *buf)
+{
+	return strtobool(buf, &kvm_hcr_nofb);
+}
+early_param("kvm-arm.hcr_nofb", early_hcr_nofb_cfg);
+#endif
+
 static DEFINE_PER_CPU(unsigned char, kvm_hyp_initialized);
 DEFINE_STATIC_KEY_FALSE(userspace_irqchip_in_use);
 
@@ -563,6 +573,9 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 {
 	struct kvm_s2_mmu *mmu;
 	int *last_ran;
+#ifdef CONFIG_ARM64_KVM_HCR_NOFB
+	bool flushed = false;
+#endif
 
 	mmu = vcpu->arch.hw_mmu;
 	last_ran = this_cpu_ptr(mmu->last_vcpu_ran);
@@ -579,7 +592,20 @@ void kvm_arch_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 	if (*last_ran != vcpu->vcpu_id) {
 		kvm_call_hyp(__kvm_flush_cpu_context, mmu);
 		*last_ran = vcpu->vcpu_id;
+#ifdef CONFIG_ARM64_KVM_HCR_NOFB
+		flushed = true;
+#endif
 	}
+
+#ifdef CONFIG_ARM64_KVM_HCR_NOFB
+	/*
+	 * If FB (Force broadcast) is cleared, we have to nuke the
+	 * vcpu context as well in case it is loaded on to the new
+	 * physical CPU.
+	 */
+	if (unlikely(kvm_hcr_nofb) && vcpu->pre_pcpu != cpu && !flushed)
+		kvm_call_hyp(__kvm_flush_cpu_context, mmu);
+#endif
 
 	vcpu->cpu = cpu;
 
@@ -646,6 +672,9 @@ void kvm_arch_vcpu_put(struct kvm_vcpu *vcpu)
 	kvm_arm_vmid_clear_active();
 
 	vcpu_clear_on_unsupported_cpu(vcpu);
+#ifdef CONFIG_ARM64_KVM_HCR_NOFB
+	vcpu->pre_pcpu = vcpu->cpu;
+#endif
 	vcpu->cpu = -1;
 
 	kvm_tlbi_dvmbm_vcpu_put(vcpu);

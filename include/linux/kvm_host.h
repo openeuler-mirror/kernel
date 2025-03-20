@@ -336,6 +336,9 @@ struct kvm_vcpu {
 	u64 requests;
 	unsigned long guest_debug;
 
+#ifdef CONFIG_ARM64_KVM_HCR_NOFB
+	int pre_pcpu;
+#endif
 	struct mutex mutex;
 	struct kvm_run *run;
 
