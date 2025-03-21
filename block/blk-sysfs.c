@@ -961,15 +961,21 @@ int blk_register_queue(struct gendisk *disk)
 		return ret;
 
 	mutex_lock(&queue_to_wrapper(q)->sysfs_dir_lock);
-
 	ret = kobject_add(&q->kobj, kobject_get(&dev->kobj), "%s", "queue");
 	if (ret < 0) {
 		blk_trace_remove_sysfs(dev);
 		goto unlock;
 	}
 
-	if (q->mq_ops)
-		__blk_mq_register_dev(dev, q);
+	if (q->mq_ops) {
+		ret = __blk_mq_register_dev(dev, q);
+		if (ret) {
+			blk_trace_remove_sysfs(dev);
+			kobject_del(&q->kobj);
+			kobject_put(&dev->kobj);
+			goto unlock;
+		}
+	}
 	mutex_lock(&q->sysfs_lock);
 
 	mutex_lock(&q->debugfs_mutex);
