@@ -80,9 +80,14 @@ void __init reserve_crashkernel(void)
 		pr_warn("size of crash kernel memory unspecified, no memory reserved for crash kernel\n");
 		return;
 	}
-	if (!crash_base) {
-		pr_warn("base of crash kernel memory unspecified, no memory reserved for crash kernel\n");
-		return;
+
+	if (crash_base == 0) {
+		crash_base = memblock_find_in_range(0, SZ_4G, crash_size, SZ_8M);
+		if (crash_base == 0) {
+			pr_warn("cannot allocate crashkernel (size:0x%llx)\n",
+				crash_size);
+			return;
+		}
 	}
 
 	if (!memblock_is_region_memory(crash_base, crash_size))
@@ -104,9 +109,6 @@ void __init reserve_crashkernel(void)
 	if (ret)
 		pr_warn("Add crash kernel area [mem %#018llx-%#018llx] to memmap region failed.\n",
 				crash_base, crash_base + crash_size - 1);
-
-	if (crash_base < PCI_LEGACY_IO_SIZE)
-		pr_warn("Crash base should be greater than or equal to %#lx\n", PCI_LEGACY_IO_SIZE);
 
 	crashk_res.start = crash_base;
 	crashk_res.end = crash_base + crash_size - 1;
