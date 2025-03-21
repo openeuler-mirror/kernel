@@ -946,11 +946,7 @@ static inline int __ptep_clear_flush_young(struct vm_area_struct *vma,
 		 * context-switch, which provides a DSB to complete the TLB
 		 * invalidation.
 		 */
-#ifdef CONFIG_ARM64_TLBI_IPI
-		flush_tlb_page_nosync_ipi(vma, address);
-#else
 		flush_tlb_page_nosync(vma, address);
-#endif
 	}
 
 	return young;

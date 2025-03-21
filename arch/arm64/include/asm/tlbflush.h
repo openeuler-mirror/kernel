@@ -16,8 +16,6 @@
 #include <linux/mmu_notifier.h>
 #include <asm/cputype.h>
 #include <asm/mmu.h>
-#include <linux/smp.h>
-#include <linux/ctype.h>
 
 /*
  * Raw TLBI operations.
@@ -253,99 +251,17 @@ static inline void flush_tlb_all(void)
 }
 
 #ifdef CONFIG_ARM64_TLBI_IPI
-static unsigned int disable_tlbflush_is;
-
-#define FLAG_TLBFLUSH_PAGE      0x0002
-#define FLAG_TLBFLUSH_SWITCH    0x0004
-#define FLAG_TLBFLUSH_MM        0x0008
-
-#define TEST_TLBFLUSH_FLAG_EXTERN(flag, FLAG)                   \
-bool test_tlbi_ipi_##flag(void)                                 \
-{                                                               \
-    return !!(disable_tlbflush_is & FLAG_TLBFLUSH_##FLAG);  \
-}
-
-#define TEST_TLBFLUSH_FLAG(flag, FLAG)                          \
-static __always_inline TEST_TLBFLUSH_FLAG_EXTERN(flag, FLAG)
-
-TEST_TLBFLUSH_FLAG(mm, MM)
-TEST_TLBFLUSH_FLAG(page, PAGE)
-TEST_TLBFLUSH_FLAG(switch, SWITCH)
-
-static inline void local_flush_tlb_mm(struct mm_struct *mm)
+static inline void flush_tlb_mm_nosync(struct mm_struct *mm)
 {
-    unsigned long asid = __TLBI_VADDR(0, ASID(mm));
+	unsigned long asid;
 
-    dsb(nshst);
-    __tlbi(aside1, asid);
-    __tlbi_user(aside1, asid);
-    dsb(nsh);
+	dsb(ishst);
+	asid = __TLBI_VADDR(0, ASID(mm));
+	__tlbi(aside1is, asid);
+	__tlbi_user(aside1is, asid);
+	mmu_notifier_arch_invalidate_secondary_tlbs(mm, 0, -1UL);
 }
-
-static inline void __flush_tlb_mm(struct mm_struct *mm)
-{
-    unsigned long asid = __TLBI_VADDR(0, ASID(mm));
-
-    dsb(ishst);
-    __tlbi(aside1is, asid);
-    __tlbi_user(aside1is, asid);
-    dsb(ish);
-}
-
-static inline void ipi_flush_tlb_mm(void *arg)
-{
-    struct mm_struct *mm = arg;
-
-    local_flush_tlb_mm(mm);
-}
-
-static inline void flush_tlb_mm(struct mm_struct *mm)
-{
-    if (unlikely(test_tlbi_ipi_mm()))
-		on_each_cpu_mask(mm_cpumask(mm), ipi_flush_tlb_mm,
-				(void *)mm, true);
-    else
-		__flush_tlb_mm(mm);
-    mmu_notifier_arch_invalidate_secondary_tlbs(mm, 0, -1UL);
-}
-
-static inline void __flush_tlb_page_nosync_ipi(unsigned long addr)
-{
-    dsb(ishst);
-    __tlbi(vale1is, addr);
-    __tlbi_user(vale1is, addr);
-}
-
-static inline void __local_flush_tlb_page_nosync(unsigned long addr)
-{
-    dsb(nshst);
-    __tlbi(vale1, addr);
-    __tlbi_user(vale1, addr);
-    dsb(nsh);
-}
-
-static inline void ipi_flush_tlb_page_nosync(void *arg)
-{
-    unsigned long addr = *(unsigned long *)arg;
-
-    __local_flush_tlb_page_nosync(addr);
-}
-
-static inline void flush_tlb_page_nosync_ipi(struct vm_area_struct *vma, unsigned long uaddr)
-{
-    unsigned long addr = __TLBI_VADDR(uaddr, ASID(vma->vm_mm));
-
-    if (unlikely(test_tlbi_ipi_page()))
-		on_each_cpu_mask(mm_cpumask(vma->vm_mm),
-				ipi_flush_tlb_page_nosync, &addr, true);
-    else
-		__flush_tlb_page_nosync_ipi(addr);
-    mmu_notifier_arch_invalidate_secondary_tlbs(vma->vm_mm, uaddr & PAGE_MASK,
-					(uaddr & PAGE_MASK) + PAGE_SIZE);
-}
-
-#else /* CONFIG_ARM64_TLBI_IPI */
-
+#else
 static inline void flush_tlb_mm(struct mm_struct *mm)
 {
 	unsigned long asid;
@@ -357,7 +273,7 @@ static inline void flush_tlb_mm(struct mm_struct *mm)
 	dsb(ish);
 	mmu_notifier_arch_invalidate_secondary_tlbs(mm, 0, -1UL);
 }
-#endif /* CONFIG_ARM64_TLBI_IPI */
+#endif
 
 static inline void __flush_tlb_page_nosync(struct mm_struct *mm,
 					   unsigned long uaddr)
@@ -372,6 +288,54 @@ static inline void __flush_tlb_page_nosync(struct mm_struct *mm,
 						(uaddr & PAGE_MASK) + PAGE_SIZE);
 }
 
+#ifdef CONFIG_ARM64_TLBI_IPI
+static inline void local_flush_tlb_mm(struct mm_struct *mm)
+{
+	unsigned long asid = __TLBI_VADDR(0, ASID(mm));
+
+	dsb(nshst);
+	__tlbi(aside1, asid);
+	dsb(nsh);
+	mmu_notifier_arch_invalidate_secondary_tlbs(mm, 0, -1UL);
+}
+
+static inline void flush_tlb_mm(struct mm_struct *mm)
+{
+	if (unlikely(cpumask_full(mm_cpumask(mm)))) {
+		flush_tlb_mm_nosync(mm);
+		dsb(ish);
+	} else {
+		on_each_cpu_mask(mm_cpumask(mm), (smp_call_func_t)local_flush_tlb_mm, mm, 1);
+	}
+}
+
+struct tlb_args {
+	struct vm_area_struct *ta_vma;
+	unsigned long ta_start;
+	unsigned long ta_end;
+};
+
+static inline void local_flush_tlb_page(struct vm_area_struct *vma,
+	unsigned long uaddr)
+{
+	unsigned long addr = __TLBI_VADDR(uaddr, ASID(vma->vm_mm));
+
+	dsb(nshst);
+	__tlbi(vale1, addr);
+	__tlbi_user(vale1, addr);
+	dsb(nsh);
+	mmu_notifier_arch_invalidate_secondary_tlbs(vma->vm_mm, uaddr & PAGE_MASK,
+						(uaddr & PAGE_MASK) + PAGE_SIZE);
+}
+
+static inline void ipi_flush_tlb_page(void *arg)
+{
+	struct tlb_args *ta = arg;
+
+	local_flush_tlb_page(ta->ta_vma, ta->ta_start);
+}
+#endif /* CONFIG_ARM64_TLBI_IPI */
+
 static inline void flush_tlb_page_nosync(struct vm_area_struct *vma,
 					 unsigned long uaddr)
 {
@@ -382,11 +346,21 @@ static inline void flush_tlb_page(struct vm_area_struct *vma,
 				  unsigned long uaddr)
 {
 #ifdef CONFIG_ARM64_TLBI_IPI
-	flush_tlb_page_nosync_ipi(vma, uaddr);
+	struct tlb_args ta = {
+		.ta_vma = vma,
+		.ta_start = uaddr
+	};
+
+	if (unlikely(cpumask_full(mm_cpumask(vma->vm_mm)))) {
+		flush_tlb_page_nosync(vma, uaddr);
+		dsb(ish);
+	} else {
+		on_each_cpu_mask(mm_cpumask(vma->vm_mm), ipi_flush_tlb_page, &ta, 1);
+	}
 #else
 	flush_tlb_page_nosync(vma, uaddr);
-#endif
 	dsb(ish);
+#endif
 }
 
 static inline bool arch_tlbbatch_should_defer(struct mm_struct *mm)

@@ -2679,10 +2679,8 @@ config ARM64_TLBI_IPI
 	depends on ARM64
 	default n
 	help
-	  adds new boot parameter 'disable_tlbflush_is' to disable TLB flush
-	  within the same inner shareable domain for performance tuning.
-
-	  When this new parameter is specified, TLB entry is invalidated by
+	  Disable TLB flush within the same inner shareable domain for performance
+	  tuning. When this new parameter is specified, TLB entry is invalidated by
 	  __tlbi(aside1, asid) only on the CPUs specified by mm_cpumask(mm).
 
 	  By using TLB.IS, all CPUs within the same inner shareable domain

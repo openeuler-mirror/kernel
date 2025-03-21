@@ -213,9 +213,6 @@ asmlinkage notrace void secondary_start_kernel(void)
 	mmgrab(mm);
 	current->active_mm = mm;
 
-#ifdef CONFIG_ARM64_TLBI_IPI
-	cpumask_set_cpu(cpu, mm_cpumask(mm));
-#endif
 #ifdef CONFIG_IEE
 	if (haoc_enabled)
 		iee_setup_asid();
@@ -227,6 +224,9 @@ asmlinkage notrace void secondary_start_kernel(void)
 	 */
 	numa_setup_pgd();
 
+#ifdef CONFIG_ARM64_TLBI_IPI
+	cpumask_set_cpu(cpu, mm_cpumask(mm));
+#endif
 	/*
 	 * TTBR0 is only used for the identity mapping at this stage. Make it
 	 * point to zero page to avoid speculatively fetching new entries.
@@ -333,13 +333,6 @@ int __cpu_disable(void)
 	 * OK - migrate IRQs away from this CPU
 	 */
 	irq_migrate_all_off_this_cpu();
-
-#ifdef CONFIG_ARM64_TLBI_IPI
-	/*
-	 * Remove this CPU from the vm mask set of all processes.
-	 */
-	clear_tasks_mm_cpumask(cpu);
-#endif
 
 	return 0;
 }

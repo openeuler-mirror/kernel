@@ -36,7 +36,6 @@ obj-y			:= debug-monitors.o entry.o irq.o fpsimd.o		\
 			   syscall.o proton-pack.o idreg-override.o idle.o	\
 			   patching.o
 
-obj-$(CONFIG_ARM64_TLBI_IPI)		+= tlbflush.o
 obj-$(CONFIG_IEE)				+= haoc/
 obj-$(CONFIG_AARCH32_EL0)		+= binfmt_elf32.o sys32.o signal32.o			\
 					   sys_compat.o
