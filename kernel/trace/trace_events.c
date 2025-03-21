@@ -764,9 +764,41 @@ void event_file_put(struct trace_event_file *file)
 	}
 }
 
+static bool file_op_depends_on_i_priv(const struct dentry *dentry)
+{
+	const struct file_operations *fop = NULL;
+
+	if (!d_really_is_positive(dentry) || !d_inode(dentry)->i_fop)
+		return false;
+
+	fop = d_inode(dentry)->i_fop;
+	if (fop->open == tracing_open_file_tr)
+		return true;
+#ifdef CONFIG_HIST_TRIGGERS
+	if (fop == &event_hist_fops)
+		return true;
+#endif
+#ifdef CONFIG_HIST_TRIGGERS_DEBUG
+	if (fop == &event_hist_debug_fops)
+		return true;
+#endif
+
+	return false;
+}
+
 static void remove_event_file_dir(struct trace_event_file *file)
 {
 	struct dentry *dir = file->dir;
+	struct dentry *child;
+
+	if (dir) {
+		spin_lock(&dir->d_lock);	/* probably unneeded */
+		list_for_each_entry(child, &dir->d_subdirs, d_child) {
+			if (file_op_depends_on_i_priv(child))
+				d_inode(child)->i_private = NULL;
+		}
+		spin_unlock(&dir->d_lock);
+	}
 
 	tracefs_remove(dir);
 

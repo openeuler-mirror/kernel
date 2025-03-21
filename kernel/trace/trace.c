@@ -4508,14 +4508,21 @@ int tracing_open_generic_tr(struct inode *inode, struct file *filp)
  */
 int tracing_open_file_tr(struct inode *inode, struct file *filp)
 {
-	struct trace_event_file *file = inode->i_private;
+	struct trace_event_file *file;
 	int ret;
 
-	ret = tracing_check_open_get_tr(file->tr);
-	if (ret)
-		return ret;
-
 	mutex_lock(&event_mutex);
+	file = inode->i_private;
+	if (!file) {
+		mutex_unlock(&event_mutex);
+		return -ENODEV;
+	}
+
+	ret = tracing_check_open_get_tr(file->tr);
+	if (ret) {
+		mutex_unlock(&event_mutex);
+		return ret;
+	}
 
 	/* Fail if the file is marked for removal */
 	if (file->flags & EVENT_FILE_FL_FREED) {
@@ -4529,14 +4536,14 @@ int tracing_open_file_tr(struct inode *inode, struct file *filp)
 	if (ret)
 		return ret;
 
-	filp->private_data = inode->i_private;
+	filp->private_data = file;
 
 	return 0;
 }
 
 int tracing_release_file_tr(struct inode *inode, struct file *filp)
 {
-	struct trace_event_file *file = inode->i_private;
+	struct trace_event_file *file = filp->private_data;
 
 	trace_array_put(file->tr);
 	event_file_put(file);
