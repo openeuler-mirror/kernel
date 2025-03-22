@@ -139,20 +139,18 @@ int rtc_set_time(struct rtc_device *rtc, struct rtc_time *tm)
 
 	rtc_subtract_offset(rtc, tm);
 
-#ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
-	uie = rtc->uie_rtctimer.enabled || rtc->uie_irq_active;
-#else
-	uie = rtc->uie_rtctimer.enabled;
-#endif
-	if (uie) {
-		err = rtc_update_irq_enable(rtc, 0);
-		if (err)
-			return err;
-	}
-
 	err = mutex_lock_interruptible(&rtc->ops_lock);
 	if (err)
 		return err;
+
+	uie = rtc->uie_rtctimer.enabled;
+	if (uie) {
+		err = __rtc_update_irq_enable(rtc, 0);
+		if (err) {
+			mutex_unlock(&rtc->ops_lock);
+			return err;
+		}
+	}
 
 	if (!rtc->ops)
 		err = -ENODEV;
@@ -169,15 +167,13 @@ int rtc_set_time(struct rtc_device *rtc, struct rtc_time *tm)
 		err = -EINVAL;
 
 	pm_stay_awake(rtc->dev.parent);
+
+	if (uie)
+		err = __rtc_update_irq_enable(rtc, 1);
+
 	mutex_unlock(&rtc->ops_lock);
 	/* A timer might have just expired */
 	schedule_work(&rtc->irqwork);
-
-	if (uie) {
-		err = rtc_update_irq_enable(rtc, 1);
-		if (err)
-			return err;
-	}
 
 	trace_rtc_set_time(rtc_tm_to_time64(tm), err);
 	return err;
@@ -554,18 +550,10 @@ int rtc_alarm_irq_enable(struct rtc_device *rtc, unsigned int enabled)
 }
 EXPORT_SYMBOL_GPL(rtc_alarm_irq_enable);
 
-int rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled)
+int __rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled)
 {
-	int err = mutex_lock_interruptible(&rtc->ops_lock);
-	if (err)
-		return err;
+	int err = 0;
 
-#ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
-	if (enabled == 0 && rtc->uie_irq_active) {
-		mutex_unlock(&rtc->ops_lock);
-		return rtc_dev_update_irq_enable_emul(rtc, 0);
-	}
-#endif
 	/* make sure we're changing state */
 	if (rtc->uie_rtctimer.enabled == enabled)
 		goto out;
@@ -589,6 +577,24 @@ int rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled)
 		rtc_timer_remove(rtc, &rtc->uie_rtctimer);
 
 out:
+	return err;
+
+}
+
+int rtc_update_irq_enable(struct rtc_device *rtc, unsigned int enabled)
+{
+	int err = mutex_lock_interruptible(&rtc->ops_lock);
+	if (err)
+		return err;
+
+#ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
+	if (enabled == 0 && rtc->uie_irq_active) {
+		mutex_unlock(&rtc->ops_lock);
+		return rtc_dev_update_irq_enable_emul(rtc, 0);
+	}
+#endif
+
+	err = __rtc_update_irq_enable(rtc, enabled);
 	mutex_unlock(&rtc->ops_lock);
 #ifdef CONFIG_RTC_INTF_DEV_UIE_EMUL
 	/*
