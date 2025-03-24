@@ -170,7 +170,9 @@ static inline void sdma_channel_set_pause(struct hisi_sdma_channel *pchan)
 
 static inline bool sdma_channel_is_paused(struct hisi_sdma_channel *pchan)
 {
-	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_PAUSE_MSK) == 1;
+	u32 reg_val = readl(pchan->io_base + HISI_SDMA_CH_STATUS_REG);
+
+	return FIELD_GET(HISI_SDMA_CHN_FSM_PAUSE_MSK, reg_val) == 1;
 }
 
 static inline bool sdma_channel_is_idle(struct hisi_sdma_channel *pchan)
@@ -190,7 +192,9 @@ static inline bool sdma_channel_is_abort(struct hisi_sdma_channel *pchan)
 
 static inline bool sdma_channel_is_quiescent(struct hisi_sdma_channel *pchan)
 {
-	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_QUIESCENT_MSK) == 1;
+	u32 reg_val = readl(pchan->io_base + HISI_SDMA_CH_STATUS_REG);
+
+	return FIELD_GET(HISI_SDMA_CHN_FSM_QUIESCENT_MSK, reg_val) == 1;
 }
 
 static inline void sdma_channel_write_reset(struct hisi_sdma_channel *pchan)
@@ -200,7 +204,13 @@ static inline void sdma_channel_write_reset(struct hisi_sdma_channel *pchan)
 
 static inline void sdma_channel_write_resume(struct hisi_sdma_channel *pchan)
 {
-	chn_set_val(pchan, HISI_SDMA_CH_TEST_REG, 1, HISI_SDMA_CH_RESUME_MSK);
+	u32 reg_val = readl(pchan->io_base + HISI_SDMA_CH_TEST_REG);
+
+	reg_val &= ~HISI_SDMA_CH_RESUME_MSK;
+	reg_val |= FIELD_PREP(HISI_SDMA_CH_RESUME_MSK, 1);
+	wmb();
+
+	writel(reg_val, pchan->io_base + HISI_SDMA_CH_TEST_REG);
 }
 
 static inline void sdma_channel_enable(struct hisi_sdma_channel *pchan)

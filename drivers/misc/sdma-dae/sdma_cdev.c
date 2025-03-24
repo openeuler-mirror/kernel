@@ -263,8 +263,6 @@ static void sdma_pause_single_channel(struct hisi_sdma_channel *pchannel,
 	else
 		pr_warn("SDMA %u chn %hu hardware not write back all cqes!\n",
 			psdma_dev->idx, idx);
-
-	return;
 }
 
 static void sdma_pause_channels(struct hisi_sdma_device *psdma_dev)
@@ -276,8 +274,6 @@ static void sdma_pause_channels(struct hisi_sdma_device *psdma_dev)
 		pchannel = psdma_dev->channels + i;
 		sdma_pause_single_channel(pchannel, psdma_dev);
 	}
-
-	return;
 }
 
 static void sdma_wait_channel_quiescent(struct hisi_sdma_device *psdma_dev)
@@ -296,8 +292,6 @@ static void sdma_wait_channel_quiescent(struct hisi_sdma_device *psdma_dev)
 			pr_warn("SDMA %u chn %d hardware not write back all cqes!\n",
 				psdma_dev->idx, i);
 	}
-
-	return;
 }
 
 static void sdma_resume_channel(struct hisi_sdma_device *psdma_dev)
@@ -316,8 +310,6 @@ static void sdma_resume_channel(struct hisi_sdma_device *psdma_dev)
 		if (sdma_channel_is_paused(pchannel) && sdma_channel_is_quiescent(pchannel))
 			sdma_channel_write_resume(pchannel);
 	}
-
-	return;
 }
 
 static void sdma_mmu_release_pause(struct mmu_notifier *mn, struct mm_struct *mm)
@@ -343,8 +335,6 @@ static void sdma_mmu_release_pause(struct mmu_notifier *mn, struct mm_struct *mm
 			sdma_wait_channel_quiescent(psdma_dev);
 		}
 	}
-
-	return;
 }
 
 static void sdma_mmu_release_resume(struct mmu_notifier *mn, struct mm_struct *mm)
@@ -368,8 +358,6 @@ static void sdma_mmu_release_resume(struct mmu_notifier *mn, struct mm_struct *m
 		}
 		atomic_set(&exit_processes, 0);
 	}
-
-	return;
 }
 
 static void sdma_mmu_notifier_free(struct mmu_notifier *mn)
@@ -492,8 +480,6 @@ static void sdma_put_mmu_notifier(struct hisi_sdma_mn *sdma_mn)
 
 	list_del(&sdma_mn->list);
 	mmu_notifier_put(&sdma_mn->mn);
-
-	return;
 }
 
 static void sdma_put_resume_mmu_notifier(void)
