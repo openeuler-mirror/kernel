@@ -811,9 +811,6 @@ static void clean_demultiplex_info(struct TCP_Server_Info *server)
 	if (server->ssocket) {
 		sock_release(server->ssocket);
 		server->ssocket = NULL;
-
-		/* Release netns reference for the socket. */
-		put_net(cifs_net_ns(server));
 	}
 
 	if (!list_empty(&server->pending_mid_q)) {
@@ -862,7 +859,6 @@ static void clean_demultiplex_info(struct TCP_Server_Info *server)
 		 */
 	}
 
-	/* Release netns reference for this server. */
 	put_net(cifs_net_ns(server));
 	kfree(server->hostname);
 	kfree(server);
@@ -2531,8 +2527,6 @@ cifs_get_tcp_session(struct smb_vol *volume_info)
 
 	tcp_ses->ops = volume_info->ops;
 	tcp_ses->vals = volume_info->vals;
-
-	/* Grab netns reference for this server. */
 	cifs_set_net_ns(tcp_ses, get_net(current->nsproxy->net_ns));
 	tcp_ses->hostname = extract_hostname(volume_info->UNC);
 	if (IS_ERR(tcp_ses->hostname)) {
@@ -2634,17 +2628,14 @@ smbd_connected:
 out_err_crypto_release:
 	cifs_crypto_secmech_release(tcp_ses);
 
-	/* Release netns reference for this server. */
 	put_net(cifs_net_ns(tcp_ses));
 
 out_err:
 	if (tcp_ses) {
 		if (!IS_ERR(tcp_ses->hostname))
 			kfree(tcp_ses->hostname);
-		if (tcp_ses->ssocket) {
+		if (tcp_ses->ssocket)
 			sock_release(tcp_ses->ssocket);
-			put_net(cifs_net_ns(tcp_ses));
-		}
 		kfree(tcp_ses);
 	}
 	return ERR_PTR(rc);
@@ -3639,22 +3630,22 @@ generic_ip_connect(struct TCP_Server_Info *server)
 
 	if (socket == NULL) {
 		struct net *net = cifs_net_ns(server);
+		struct sock *sk;
 
-		rc = sock_create_kern(net, sfamily, SOCK_STREAM,
-				   IPPROTO_TCP, &socket);
+		rc = __sock_create(net, sfamily, SOCK_STREAM,
+				   IPPROTO_TCP, &socket, 1);
 		if (rc < 0) {
 			cifs_dbg(VFS, "Error %d creating socket\n", rc);
 			server->ssocket = NULL;
 			return rc;
 		}
 
-		/*
-		 * Grab netns reference for the socket.
-		 *
-		 * It'll be released here, on error, or in clean_demultiplex_info() upon server
-		 * teardown.
-		 */
+		sk = socket->sk;
+		sk->sk_net_refcnt = 1;
 		get_net(net);
+#ifdef CONFIG_PROC_FS
+		this_cpu_add(*net->core.sock_inuse, 1);
+#endif
 
 		/* BB other socket options to set KEEPALIVE, NODELAY? */
 		cifs_dbg(FYI, "Socket created\n");
@@ -3667,10 +3658,8 @@ generic_ip_connect(struct TCP_Server_Info *server)
 	}
 
 	rc = bind_socket(server);
-	if (rc < 0) {
-		put_net(cifs_net_ns(server));
+	if (rc < 0)
 		return rc;
-	}
 
 	/*
 	 * Eventually check for other socket options to change from
@@ -3704,7 +3693,6 @@ generic_ip_connect(struct TCP_Server_Info *server)
 	rc = socket->ops->connect(socket, saddr, slen, 0);
 	if (rc < 0) {
 		cifs_dbg(FYI, "Error %d connecting to server\n", rc);
-		put_net(cifs_net_ns(server));
 		sock_release(socket);
 		server->ssocket = NULL;
 		return rc;
@@ -3712,9 +3700,6 @@ generic_ip_connect(struct TCP_Server_Info *server)
 
 	if (sport == htons(RFC1001_PORT))
 		rc = ip_rfc1001_connect(server);
-
-	if (rc < 0)
-		put_net(cifs_net_ns(server));
 
 	return rc;
 }
