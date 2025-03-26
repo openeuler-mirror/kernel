@@ -1823,6 +1823,7 @@ retry:
 	if (!page_count(page)) {
 		struct page *head = compound_head(page);
 		struct hstate *h = page_hstate(head);
+		bool adjust_surplus = false;
 		if (h->free_huge_pages - h->resv_huge_pages == 0)
 			goto out;
 
@@ -1853,7 +1854,9 @@ retry:
 			SetPageHWPoison(page);
 			ClearPageHWPoison(head);
 		}
-		remove_hugetlb_page(h, head, false);
+		if (h->surplus_huge_pages_node[page_to_nid(head)])
+			adjust_surplus = true;
+		remove_hugetlb_page(h, head, adjust_surplus);
 		h->max_huge_pages--;
 		spin_unlock_irq(&hugetlb_lock);
 		update_and_free_page(h, head);
