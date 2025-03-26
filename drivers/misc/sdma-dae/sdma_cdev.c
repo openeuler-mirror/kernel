@@ -6,12 +6,19 @@
 #include <linux/platform_device.h>
 #include <linux/sort.h>
 #include <linux/mm.h>
+#include <linux/refcount.h>
+#include <linux/atomic.h>
 
 #include "sdma_hal.h"
 #include "sdma_umem.h"
 #include "sdma_auth.h"
 
+#define mn_to_sdma(mn)	container_of(mn, struct hisi_sdma_mn, mn)
+
 static struct hisi_sdma_global_info g_info;
+
+static atomic_t ttl_processes;
+static atomic_t exit_processes;
 
 struct hisi_sdma_channel_list {
 	struct list_head chn_list;
@@ -25,6 +32,14 @@ struct file_open_data {
 	struct hisi_sdma_device *psdma_dev;
 	struct list_head non_share_chn_list;
 	struct list_head share_chn_list;
+};
+
+struct hisi_sdma_mn {
+	uint32_t pid;
+	refcount_t refs;
+	struct mmu_notifier mn;
+	struct file_open_data *data;
+	struct list_head list;
 };
 
 struct hisi_sdma_numa_domain {
@@ -200,6 +215,303 @@ void sdma_clear_ida_ref(struct hisi_sdma_channel *pchannel)
 	spin_unlock(&pchannel->owner_chn_lock);
 }
 
+static bool sdma_wait_hardware_done(struct hisi_sdma_channel *pchannel)
+{
+	u32 sq_tail, sq_head;
+	u32 cnt = 0;
+
+	sq_head = sdma_channel_get_sq_head(pchannel);
+	sq_tail = sdma_channel_get_sq_tail(pchannel);
+	while (sq_head != sq_tail && cnt <= SDMA_POLL_TIMEOUT) {
+		sq_head = sdma_channel_get_sq_head(pchannel);
+		sq_tail = sdma_channel_get_sq_tail(pchannel);
+		cnt++;
+		msleep(SDMA_POLL_DELAY);
+	}
+
+	return (cnt <= SDMA_POLL_TIMEOUT);
+}
+
+static bool sdma_wait_cq_writeback(struct hisi_sdma_channel *pchannel)
+{
+	u32 cq_tail, sq_tail;
+	u32 cnt = 0;
+
+	cq_tail = sdma_channel_get_cq_tail(pchannel);
+	sq_tail = sdma_channel_get_sq_tail(pchannel);
+	while (cq_tail != sq_tail && cnt <= SDMA_POLL_TIMEOUT) {
+		cq_tail = sdma_channel_get_cq_tail(pchannel);
+		cnt++;
+		msleep(SDMA_POLL_DELAY);
+	}
+
+	return (cnt <= SDMA_POLL_TIMEOUT);
+}
+
+static void sdma_pause_single_channel(struct hisi_sdma_channel *pchannel,
+				      struct hisi_sdma_device *psdma_dev)
+{
+	u16 idx = pchannel->idx;
+
+	if (!sdma_wait_hardware_done(pchannel))
+		pr_warn("SDMA %u chn %hu hardware not finish all sqes!\n",
+			psdma_dev->idx, idx);
+
+	sdma_channel_set_pause(pchannel);
+	if (sdma_wait_cq_writeback(pchannel))
+		sdma_channel_reset_sq_cq(pchannel);
+	else
+		pr_warn("SDMA %u chn %hu hardware not write back all cqes!\n",
+			psdma_dev->idx, idx);
+}
+
+static void sdma_pause_channels(struct hisi_sdma_device *psdma_dev)
+{
+	struct hisi_sdma_channel *pchannel;
+	int i;
+
+	for (i = 0; i < HISI_SDMA_DEFAULT_CHANNEL_NUM; i++) {
+		pchannel = psdma_dev->channels + i;
+		sdma_pause_single_channel(pchannel, psdma_dev);
+	}
+}
+
+static void sdma_wait_channel_quiescent(struct hisi_sdma_device *psdma_dev)
+{
+	struct hisi_sdma_channel *pchannel;
+	int i;
+
+	for (i = 0; i < HISI_SDMA_DEFAULT_CHANNEL_NUM; i++) {
+		pchannel = psdma_dev->channels + i;
+		if (sdma_channel_is_quiescent(pchannel))
+			continue;
+
+		if (sdma_wait_cq_writeback(pchannel))
+			sdma_channel_reset_sq_cq(pchannel);
+		else
+			pr_warn("SDMA %u chn %d hardware not write back all cqes!\n",
+				psdma_dev->idx, i);
+	}
+}
+
+static void sdma_resume_channel(struct hisi_sdma_device *psdma_dev)
+{
+	struct hisi_sdma_channel *pchannel;
+	int i;
+
+	for (i = 0; i < HISI_SDMA_DEFAULT_CHANNEL_NUM; i++) {
+		pchannel = psdma_dev->channels + i;
+		if (!sdma_channel_is_paused(pchannel)) {
+			pr_warn("SDMA %u chn %d not paused\n", psdma_dev->idx, i);
+			continue;
+		}
+		if (!sdma_channel_is_quiescent(pchannel))
+			sdma_channel_reset_sq_cq(pchannel);
+		if (sdma_channel_is_paused(pchannel) && sdma_channel_is_quiescent(pchannel))
+			sdma_channel_write_resume(pchannel);
+	}
+}
+
+static void sdma_mmu_release_pause(struct mmu_notifier *mn, struct mm_struct *mm)
+{
+	struct hisi_sdma_device *psdma_dev;
+	struct hisi_sdma_mn *sdma_mn;
+	int i;
+
+	sdma_mn = mn_to_sdma(mn);
+	if (!sdma_mn->data)
+		return;
+
+	if (atomic_read(&exit_processes) == 0) {
+		atomic_set(&exit_processes, 1);
+		pr_warn("SDMA exit exceptionally, stop SDMA tasks before mm exit.\n");
+		for (i = 0; i < g_info.core_dev->sdma_device_num; i++) {
+			psdma_dev = g_info.core_dev->sdma_devices[i];
+			sdma_pause_channels(psdma_dev);
+		}
+	} else {
+		for (i = 0; i < g_info.core_dev->sdma_device_num; i++) {
+			psdma_dev = g_info.core_dev->sdma_devices[i];
+			sdma_wait_channel_quiescent(psdma_dev);
+		}
+	}
+}
+
+static void sdma_mmu_release_resume(struct mmu_notifier *mn, struct mm_struct *mm)
+{
+	struct hisi_sdma_device *psdma_dev;
+	struct hisi_sdma_mn *sdma_mn;
+	int refcount;
+	int i;
+
+	sdma_mn = mn_to_sdma(mn);
+	refcount = refcount_read(&sdma_mn->refs);
+	atomic_sub(refcount, &ttl_processes);
+	if (!sdma_mn->data)
+		return;
+
+	if (atomic_read(&ttl_processes) == 0) {
+		pr_warn("Now resume SDMA channels after mm exit\n");
+		for (i = 0; i < g_info.core_dev->sdma_device_num; i++) {
+			psdma_dev = g_info.core_dev->sdma_devices[i];
+			sdma_resume_channel(psdma_dev);
+		}
+		atomic_set(&exit_processes, 0);
+	}
+}
+
+static void sdma_mmu_notifier_free(struct mmu_notifier *mn)
+{
+	kfree(mn_to_sdma(mn));
+}
+
+static const struct mmu_notifier_ops sdma_pause_mmu_notifier_ops = {
+	.release	= sdma_mmu_release_pause,
+	.free_notifier	= sdma_mmu_notifier_free,
+};
+
+static const struct mmu_notifier_ops sdma_resume_mmu_notifier_ops = {
+	.release	= sdma_mmu_release_resume,
+	.free_notifier	= sdma_mmu_notifier_free,
+};
+
+static struct hisi_sdma_mn *search_resume_mmu_notifier(struct mm_struct *mm)
+{
+	struct hisi_sdma_mn *sdma_mn;
+
+	list_for_each_entry(sdma_mn, &g_info.sdma_resume_mm_list, list) {
+		if (sdma_mn->mn.mm == mm) {
+			refcount_inc(&sdma_mn->refs);
+			return sdma_mn;
+		}
+	}
+
+	return NULL;
+}
+
+static struct hisi_sdma_mn *search_pause_mmu_notifier(struct mm_struct *mm)
+{
+	struct hisi_sdma_mn *sdma_mn;
+
+	list_for_each_entry(sdma_mn, &g_info.sdma_pause_mm_list, list) {
+		if (sdma_mn->mn.mm == mm) {
+			refcount_inc(&sdma_mn->refs);
+			return sdma_mn;
+		}
+	}
+
+	return NULL;
+}
+
+static int sdma_pause_mmu_handler(struct mm_struct *mm, struct file_open_data *data)
+{
+	struct hisi_sdma_mn *sdma_mn;
+	int ret = 0;
+
+	mutex_lock(g_info.mutex_lock);
+	sdma_mn = search_pause_mmu_notifier(mm);
+	if (sdma_mn) {
+		mutex_unlock(g_info.mutex_lock);
+		return ret;
+	}
+
+	sdma_mn = kzalloc(sizeof(*sdma_mn), GFP_KERNEL);
+	if (!sdma_mn) {
+		mutex_unlock(g_info.mutex_lock);
+		return -ENOMEM;
+	}
+
+	refcount_set(&sdma_mn->refs, 1);
+	sdma_mn->pid = current->tgid;
+	sdma_mn->data = data;
+	sdma_mn->mn.ops = &sdma_pause_mmu_notifier_ops;
+	ret = mmu_notifier_register(&sdma_mn->mn, mm);
+	if (ret) {
+		mutex_unlock(g_info.mutex_lock);
+		kfree(sdma_mn);
+		return ret;
+	}
+
+	list_add(&sdma_mn->list, &g_info.sdma_pause_mm_list);
+	mutex_unlock(g_info.mutex_lock);
+
+	return ret;
+}
+
+static int sdma_resume_mmu_handler(struct mm_struct *mm, struct file_open_data *data)
+{
+	struct hisi_sdma_mn *sdma_mn;
+	int ret = 0;
+
+	mutex_lock(g_info.mutex_lock);
+	sdma_mn = search_resume_mmu_notifier(mm);
+	if (sdma_mn) {
+		mutex_unlock(g_info.mutex_lock);
+		return ret;
+	}
+
+	sdma_mn = kzalloc(sizeof(*sdma_mn), GFP_KERNEL);
+	if (!sdma_mn) {
+		mutex_unlock(g_info.mutex_lock);
+		return -ENOMEM;
+	}
+
+	refcount_set(&sdma_mn->refs, 1);
+	sdma_mn->pid = current->tgid;
+	sdma_mn->data = data;
+	sdma_mn->mn.ops = &sdma_resume_mmu_notifier_ops;
+	ret = mmu_notifier_register(&sdma_mn->mn, current->mm);
+	if (ret) {
+		mutex_unlock(g_info.mutex_lock);
+		kfree(sdma_mn);
+		return ret;
+	}
+
+	list_add(&sdma_mn->list, &g_info.sdma_resume_mm_list);
+	mutex_unlock(g_info.mutex_lock);
+
+	return ret;
+}
+
+static void sdma_put_mmu_notifier(struct hisi_sdma_mn *sdma_mn)
+{
+	if (!refcount_dec_and_test(&sdma_mn->refs))
+		return;
+
+	list_del(&sdma_mn->list);
+	mmu_notifier_put(&sdma_mn->mn);
+}
+
+static void sdma_put_resume_mmu_notifier(void)
+{
+	struct hisi_sdma_mn *sdma_mn;
+	int pid = current->tgid;
+
+	mutex_lock(g_info.mutex_lock);
+	list_for_each_entry(sdma_mn, &g_info.sdma_resume_mm_list, list) {
+		if (sdma_mn->pid == pid) {
+			sdma_put_mmu_notifier(sdma_mn);
+			break;
+		}
+	}
+	mutex_unlock(g_info.mutex_lock);
+}
+
+static void sdma_put_pause_mmu_notifier(void)
+{
+	struct hisi_sdma_mn *sdma_mn;
+	int pid = current->tgid;
+
+	mutex_lock(g_info.mutex_lock);
+	list_for_each_entry(sdma_mn, &g_info.sdma_pause_mm_list, list) {
+		if (sdma_mn->pid == pid) {
+			sdma_put_mmu_notifier(sdma_mn);
+			break;
+		}
+	}
+	mutex_unlock(g_info.mutex_lock);
+}
+
 static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 {
 	struct file_open_data *data;
@@ -224,11 +536,15 @@ static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 		goto free_pid_ref_ht;
 	}
 
+	ret = sdma_resume_mmu_handler(current->mm, data);
+	if (ret != 0)
+		goto free_privt_data;
+
 	handle = iommu_sva_bind_device(&psdma_dev->pdev->dev, current->mm, NULL);
 	if (IS_ERR(handle)) {
 		dev_err(&psdma_dev->pdev->dev, "failed to bind sva, %ld\n", PTR_ERR(handle));
 		ret = (int)PTR_ERR(handle);
-		goto free_privt_data;
+		goto mmu_resume_unreg;
 	}
 
 	pasid = iommu_sva_get_pasid(handle);
@@ -236,6 +552,12 @@ static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 		ret = -ENODEV;
 		goto sva_unbind;
 	}
+
+	ret = sdma_pause_mmu_handler(current->mm, data);
+	if (ret != 0)
+		goto sva_unbind;
+
+	atomic_add(1, &ttl_processes);
 
 	data->ida = id;
 	data->pasid = pasid;
@@ -250,6 +572,8 @@ static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 
 sva_unbind:
 	iommu_sva_unbind_device(handle);
+mmu_resume_unreg:
+	sdma_put_resume_mmu_notifier();
 free_privt_data:
 	kfree(data);
 free_pid_ref_ht:
@@ -547,11 +871,11 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 
 	if (copy_from_user(&share_chn, (struct hisi_sdma_share_chn __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_share_chn))) {
-		dev_err(dev, "get share chn failed\n");
+		dev_err(dev, "Get share chn failed\n");
 		return -EFAULT;
 	}
 	if (share_chn.chn_idx >= share_chns) {
-		dev_err(dev, "get share chn index = %u is err\n", share_chn.chn_idx);
+		dev_err(dev, "Get share chn index = %u is err\n", share_chn.chn_idx);
 		return -EFAULT;
 	}
 
@@ -564,22 +888,23 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 			spin_unlock(&pdev->channel_lock);
 			return -ENOMEM;
 		}
-		list_node->chn_idx = share_chn.chn_idx;
-		list_add(&list_node->chn_list, &data->share_chn_list);
-		pchannel->cnt_used++;
-		if (sdma_add_ida_ref(pchannel, ida) != 0) {
+
+		if (sdma_add_ida_ref(pchannel, ida)) {
 			kfree(list_node);
-			dev_err(dev, "alloc channel node error\n");
+			dev_err(dev, "Alloc channel node error\n");
 			spin_unlock(&pdev->channel_lock);
 			return -ENOMEM;
 		}
+		list_node->chn_idx = share_chn.chn_idx;
+		list_add(&list_node->chn_list, &data->share_chn_list);
+		pchannel->cnt_used++;
 	}
 
 	if (!share_chn.init_flag && pchannel->cnt_used > 0) {
 		list_for_each_entry_safe(c, n, &data->share_chn_list, chn_list) {
 			if (c->chn_idx == share_chn.chn_idx) {
 				if (!sdma_del_ida_ref(pchannel, ida)) {
-					dev_err(dev, "invalid process deinit share chn!\n");
+					dev_err(dev, "Invalid process deinit share chn!\n");
 					spin_unlock(&pdev->channel_lock);
 					return -EPERM;
 				}
@@ -591,7 +916,7 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 					wmb();
 					pchannel->sync_info_base->lock = 0;
 				}
-				dev_dbg(dev, "release share_chn%u\n", c->chn_idx);
+				dev_dbg(dev, "Release share_chn%u\n", c->chn_idx);
 				list_del(&c->chn_list);
 				kfree(c);
 				break;
@@ -734,7 +1059,7 @@ static int sdma_send_task_kernel(struct file_open_data *data,
 	spin_lock(&pchannel->owner_chn_lock);
 	ret = sdma_check_channel_permission(pchannel, data->ida, task_info->chn);
 	if (ret != 0) {
-		dev_err(&pdev->pdev->dev, "invalid process send task by channel %u",
+		dev_err(&pdev->pdev->dev, "Invalid process send task by channel %u\n",
 			task_info->chn);
 		spin_unlock(&pchannel->owner_chn_lock);
 		return -EPERM;
@@ -742,7 +1067,7 @@ static int sdma_send_task_kernel(struct file_open_data *data,
 	sq_tail = sdma_channel_get_sq_tail(pchannel);
 	if (sq_tail >= HISI_SDMA_SQ_LENGTH) {
 		spin_unlock(&pchannel->owner_chn_lock);
-		dev_err(&pdev->pdev->dev, "sq_tail in share mem wrong, sq_tail = %u\n", sq_tail);
+		dev_err(&pdev->pdev->dev, "Sq_tail in share mem wrong, sq_tail = %u\n", sq_tail);
 		return -EINVAL;
 	}
 	for (i = 0; i < task_info->task_cnt; i++) {
@@ -756,7 +1081,7 @@ static int sdma_send_task_kernel(struct file_open_data *data,
 		ret = sdma_verify_src_dst(data, &pasid, task_list[i]);
 		if (ret < 0) {
 			spin_unlock(&pchannel->owner_chn_lock);
-			dev_err(&pdev->pdev->dev, "no correct pid\n");
+			dev_err(&pdev->pdev->dev, "No correct pid\n");
 			return ret;
 		}
 		sqe = pchannel->sq_base + sq_tail;
@@ -1169,8 +1494,12 @@ static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 	}
 	spin_unlock(&pdev->channel_lock);
 
+	sdma_put_pause_mmu_notifier();
 	if (data->handle)
 		iommu_sva_unbind_device(data->handle);
+	sdma_put_resume_mmu_notifier();
+	if (current->mm)
+		atomic_sub(1, &ttl_processes);
 
 	sdma_hash_free_entry(data->ida);
 	sdma_del_pid_ref(pdev, pid);
@@ -1313,10 +1642,16 @@ void sdma_cdev_init(struct cdev *cdev)
 }
 
 void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida,
-			 bool *safe_mode)
+			 bool *safe_mode, struct mutex *mutex_lock)
 {
 	g_info.core_dev = p;
 	g_info.fd_ida = fd_ida;
 	g_info.share_chns = share_chns;
 	g_info.sdma_mode = safe_mode;
+	g_info.mutex_lock = mutex_lock;
+	INIT_LIST_HEAD(&g_info.sdma_pause_mm_list);
+	INIT_LIST_HEAD(&g_info.sdma_resume_mm_list);
+
+	atomic_set(&ttl_processes, 0);
+	atomic_set(&exit_processes, 0);
 }

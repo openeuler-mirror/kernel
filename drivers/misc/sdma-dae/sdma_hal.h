@@ -8,6 +8,8 @@
 #include <linux/types.h>
 #include <linux/hashtable.h>
 #include <linux/io.h>
+#include <linux/delay.h>
+#include <linux/mmu_notifier.h>
 
 #include "hisi_sdma.h"
 #include "sdma_reg.h"
@@ -17,6 +19,26 @@
 #define SDMA_IRQ_NUM_MAX	512
 #define ALIGN_NUM		1
 #define HISI_SDMA_HAL_HASH_BUCKETS_BITS 8
+
+/* HISI_SDMA_POLL_TIMOUT_VAL */
+#define SDMA_POLL_ERR_TIMEOUT	110
+#define SDMA_POLL_DELAY		1
+#define SDMA_POLL_TIMEOUT	80
+
+#define HISI_SDMA_IO_READ32_POLL_TIMEOUT(_addr, _val, _cond, _delay_us, _timeout_us) \
+	({ \
+		uint32_t __timeout = 0; \
+		uint32_t __delay = (_delay_us); \
+		while (__timeout < (_timeout_us)) { \
+			(_val) = readl(_addr); \
+			if (_cond) \
+				break; \
+			__timeout += (__delay); \
+			mdelay(__delay); \
+		} \
+		(_val) = readl(_addr); \
+		(_cond) ? 0 : -SDMA_POLL_ERR_TIMEOUT; \
+	})
 
 /**
  * struct hisi_sdma_channel - Information about one channel in the SDMA device
@@ -108,14 +130,18 @@ struct hisi_sdma_global_info {
 	bool *sdma_mode;
 	struct hisi_sdma_core_device *core_dev;
 	struct ida *fd_ida;
+	struct mutex *mutex_lock;
+	struct list_head sdma_pause_mm_list;
+	struct list_head sdma_resume_mm_list;
 };
 
+void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan);
 void sdma_clear_pid_ref(struct hisi_sdma_device *psdma_dev);
 void sdma_clear_ida_ref(struct hisi_sdma_channel *pchannel);
 int sdma_create_dbg_node(struct dentry *sdma_dbgfs_dir);
 void sdma_cdev_init(struct cdev *cdev);
 void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida,
-			 bool *safe_mode);
+			 bool *safe_mode, struct mutex *mutex_lock);
 void sdma_info_sync_dbg(struct hisi_sdma_core_device *p, u32 *share_chns);
 
 static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val, u32 mask)
@@ -144,7 +170,9 @@ static inline void sdma_channel_set_pause(struct hisi_sdma_channel *pchan)
 
 static inline bool sdma_channel_is_paused(struct hisi_sdma_channel *pchan)
 {
-	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_PAUSE_MSK) == 1;
+	u32 reg_val = readl(pchan->io_base + HISI_SDMA_CH_STATUS_REG);
+
+	return FIELD_GET(HISI_SDMA_CHN_FSM_PAUSE_MSK, reg_val) == 1;
 }
 
 static inline bool sdma_channel_is_idle(struct hisi_sdma_channel *pchan)
@@ -164,12 +192,25 @@ static inline bool sdma_channel_is_abort(struct hisi_sdma_channel *pchan)
 
 static inline bool sdma_channel_is_quiescent(struct hisi_sdma_channel *pchan)
 {
-	return chn_get_val(pchan, HISI_SDMA_CH_STATUS_REG, HISI_SDMA_CHN_FSM_QUIESCENT_MSK) == 1;
+	u32 reg_val = readl(pchan->io_base + HISI_SDMA_CH_STATUS_REG);
+
+	return FIELD_GET(HISI_SDMA_CHN_FSM_QUIESCENT_MSK, reg_val) == 1;
 }
 
 static inline void sdma_channel_write_reset(struct hisi_sdma_channel *pchan)
 {
 	chn_set_val(pchan, HISI_SDMA_CH_TEST_REG, 1, HISI_SDMA_CH_RESET_MSK);
+}
+
+static inline void sdma_channel_write_resume(struct hisi_sdma_channel *pchan)
+{
+	u32 reg_val = readl(pchan->io_base + HISI_SDMA_CH_TEST_REG);
+
+	reg_val &= ~HISI_SDMA_CH_RESUME_MSK;
+	reg_val |= FIELD_PREP(HISI_SDMA_CH_RESUME_MSK, 1);
+	wmb();
+
+	writel(reg_val, pchan->io_base + HISI_SDMA_CH_TEST_REG);
 }
 
 static inline void sdma_channel_enable(struct hisi_sdma_channel *pchan)

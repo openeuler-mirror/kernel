@@ -9,6 +9,7 @@
 #include <linux/printk.h>
 #include <linux/delay.h>
 #include <linux/device.h>
+#include <linux/mutex.h>
 
 #include "sdma_hal.h"
 #include "sdma_irq.h"
@@ -18,6 +19,7 @@
 #define BASE_DIR		"sdma" /* Subdir in /sys/kernel/debug/  */
 #define UPPER_SHIFT		32
 #define MAX_INPUT_LENGTH	128
+#define SDMA_VERSION		"1.0.1"
 
 u32 share_chns = 16;
 module_param(share_chns, uint, RW_R_R);
@@ -28,6 +30,7 @@ module_param(safe_mode, bool, RW_R_R);
 MODULE_PARM_DESC(safe_mode, "| 0 - fast_mode| 1 - safe_mode(default)|");
 
 struct ida fd_ida;
+struct mutex g_mutex_lock;
 struct hisi_sdma_core_device hisi_sdma_core_device = {0};
 static struct class *sdma_class;
 static struct dentry *sdma_dbgfs_dir;
@@ -87,7 +90,7 @@ static void sdma_channel_init(struct hisi_sdma_channel *pchan)
 	sdma_channel_enable(pchan);
 }
 
-static void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan)
+void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan)
 {
 	u32 cq_head, cq_tail;
 
@@ -96,7 +99,7 @@ static void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan)
 
 	while (cq_head != cq_tail) {
 		sdma_channel_set_cq_head(pchan, cq_tail);
-		msleep(HISI_SDMA_FSM_INTERVAL);
+		msleep(SDMA_POLL_DELAY);
 
 		cq_head = sdma_channel_get_cq_head(pchan);
 		cq_tail = sdma_channel_get_cq_tail(pchan);
@@ -523,7 +526,8 @@ static int __init sdma_driver_init(void)
 	long ret;
 
 	ida_init(&fd_ida);
-	sdma_info_sync_cdev(&hisi_sdma_core_device, &share_chns, &fd_ida, &safe_mode);
+	sdma_info_sync_cdev(&hisi_sdma_core_device, &share_chns, &fd_ida, &safe_mode,
+			    &g_mutex_lock);
 	sdma_info_sync_dbg(&hisi_sdma_core_device, &share_chns);
 
 	sdma_class = class_create(THIS_MODULE, "sdma");
@@ -559,6 +563,8 @@ static int __init sdma_driver_init(void)
 		goto umem_hash_free;
 	}
 
+	mutex_init(&g_mutex_lock);
+
 	return 0;
 
 umem_hash_free:
@@ -579,6 +585,7 @@ destroy_ida:
 
 static void __exit sdma_driver_exit(void)
 {
+	mutex_destroy(&g_mutex_lock);
 	sdma_authority_ht_free();
 	sdma_hash_free();
 	platform_driver_unregister(&sdma_driver);
@@ -595,3 +602,4 @@ module_exit(sdma_driver_exit);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("HiSilicon Tech. Co., Ltd.");
 MODULE_DESCRIPTION("SDMA data accelerator engine for Userland applications");
+MODULE_VERSION(SDMA_VERSION);
