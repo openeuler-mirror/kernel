@@ -885,17 +885,14 @@ static int amd_pstate_init_freq(struct amd_cpudata *cpudata)
 	return 0;
 }
 
-static void amd_pstate_update_limits(unsigned int cpu)
+static void amd_pstate_update_limits(struct cpufreq_policy *policy)
 {
-	struct cpufreq_policy *policy __free(put_cpufreq_policy) = cpufreq_cpu_get(cpu);
 	struct amd_cpudata *cpudata;
 	u32 prev_high = 0, cur_high = 0;
 	bool highest_perf_changed = false;
+	unsigned int cpu = policy->cpu;
 
 	if (!amd_pstate_prefcore)
-		return;
-
-	if (!policy)
 		return;
 
 	if (amd_get_highest_perf(cpu, &cur_high))
