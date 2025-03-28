@@ -15,25 +15,23 @@ lib-y =	__divlu.o __remlu.o __divwu.o __remwu.o \
         strcpy.o \
         strncpy.o \
         fls.o \
-        csum_ipv6_magic.o
+        csum_ipv6_magic.o \
+	string.o \
+	uaccess.o
 
 lib-clear_page-y := clear_page.o
-lib-clear_page-$(CONFIG_DEEP_CLEAR_PAGE) := deep-clear_page.o
+lib-clear_page-$(CONFIG_DEEP_CLEAR_PAGE) := clear_page_simd.o
 
-lib-clear_user-y := clear_user.o
-lib-clear_user-$(CONFIG_DEEP_CLEAR_USER) := deep-clear_user.o
+lib-clear_user-y := clear_user.o clear_user_simd.o clear_user_simd_align.o
 
 lib-copy_page-y := copy_page.o
-lib-copy_page-$(CONFIG_DEEP_COPY_PAGE) := deep-copy_page.o
+lib-copy_page-$(CONFIG_DEEP_COPY_PAGE) := copy_page_simd.o
 
-lib-copy_user-y := copy_user.o
-lib-copy_user-$(CONFIG_DEEP_COPY_USER) := deep-copy_user.o
+lib-copy_user-y := copy_user.o copy_user_simd.o copy_user_simd_align.o
 
-lib-memcpy-y := memcpy.o
-lib-memcpy-$(CONFIG_DEEP_MEMCPY) := deep-memcpy.o
+lib-memcpy-y := memcpy.o memcpy_simd.o memcpy_simd_align.o
 
-lib-memset-y := memset.o
-lib-memset-$(CONFIG_DEEP_MEMSET) := deep-memset.o
+lib-memset-y := memset.o memset_simd.o memset_simd_align.o
 
 lib-$(CONFIG_ARCH_HAS_UACCESS_FLUSHCACHE) += uaccess_flushcache.o
 

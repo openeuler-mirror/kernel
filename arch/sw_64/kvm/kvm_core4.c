@@ -17,16 +17,15 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_mmu.h>
 #include <asm/barrier.h>
+#include <asm/pci_impl.h>
 #include "trace.h"
-
-#include "../kernel/pci_impl.h"
 
 static unsigned long shtclock_offset;
 
 void update_aptp(unsigned long pgd)
 {
 	imemb();
-	write_csr_imb(pgd, CSR_APTP);
+	sw64_write_csr_imb(pgd, CSR_APTP);
 }
 
 void kvm_sw64_update_vpn(struct kvm_vcpu *vcpu, unsigned long vpn)
@@ -64,8 +63,6 @@ int kvm_sw64_vcpu_reset(struct kvm_vcpu *vcpu)
 		apt_unmap_vm(vcpu->kvm);
 
 	hrtimer_cancel(&vcpu->arch.hrt);
-	vcpu->arch.vcb.soft_cid = vcpu->vcpu_id;
-	vcpu->arch.vcb.vcpu_irq_disabled = 1;
 	vcpu->arch.pcpu_id = -1; /* force flush tlb for the first time */
 	vcpu->arch.power_off = 0;
 	memset(&vcpu->arch.irqs_pending, 0, sizeof(vcpu->arch.irqs_pending));
@@ -77,9 +74,9 @@ long kvm_sw64_get_vcb(struct file *filp, unsigned long arg)
 {
 	struct kvm_vcpu *vcpu = filp->private_data;
 
-	if (vcpu->arch.migration_mark)
-		vcpu->arch.shtclock = read_csr(CSR_SHTCLOCK)
-			+ vcpu->arch.vcb.shtclock_offset;
+	if (vcpu->arch.vcb.migration_mark)
+		vcpu->arch.vcb.shtclock = sw64_read_csr(CSR_SHTCLOCK) +
+			vcpu->arch.vcb.shtclock_offset;
 	if (copy_to_user((void __user *)arg, &(vcpu->arch.vcb), sizeof(struct vcpucb)))
 		return -EINVAL;
 
@@ -94,13 +91,14 @@ long kvm_sw64_set_vcb(struct file *filp, unsigned long arg)
 	kvm_vcb = memdup_user((void __user *)arg, sizeof(*kvm_vcb));
 	memcpy(&(vcpu->arch.vcb), kvm_vcb, sizeof(struct vcpucb));
 
-	if (vcpu->arch.migration_mark) {
+	if (vcpu->arch.vcb.migration_mark) {
 		/* synchronize the longtime of source and destination */
 		if (vcpu->arch.vcb.soft_cid == 0)
-			shtclock_offset = vcpu->arch.shtclock - read_csr(CSR_SHTCLOCK);
+			shtclock_offset = vcpu->arch.vcb.shtclock -
+						sw64_read_csr(CSR_SHTCLOCK);
 		vcpu->arch.vcb.shtclock_offset = shtclock_offset;
 		set_timer(vcpu, 200000000);
-		vcpu->arch.migration_mark = 0;
+		vcpu->arch.vcb.migration_mark = 0;
 	}
 	return 0;
 }

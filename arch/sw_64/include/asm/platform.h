@@ -19,6 +19,8 @@ extern unsigned long bios_version;
 #endif
 
 extern struct boot_params *sunway_boot_params;
+extern unsigned long sunway_boot_magic;
+extern unsigned long sunway_dtb_address;
 
 extern void sw64_halt(void);
 extern void sw64_poweroff(void);
@@ -28,5 +30,7 @@ extern void (*pm_halt)(void);
 extern int i2c_set_adapter(void);
 extern void cpld_write(uint8_t slave_addr, uint8_t reg, uint8_t data);
 extern void fix_jm585_reset(void);
+extern void early_parse_fdt_property(const void *fdt, const char *path,
+		const char *prop_name, u64 *property, int size);
 
 #endif /* _ASM_SW64_PLATFORM_H */

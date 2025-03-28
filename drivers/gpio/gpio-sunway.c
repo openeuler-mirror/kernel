@@ -425,6 +425,7 @@ static void sunway_configure_irqs(struct sunway_gpio *gpio,
 
 	for (i = 0; i < 2; i++) {
 		ct = &irq_gc->chip_types[i];
+		ct->chip.name = "GPIO-INT";
 		ct->chip.irq_ack = irq_gc_ack_set_bit;
 		ct->chip.irq_mask = irq_gc_mask_set_bit;
 		ct->chip.irq_unmask = irq_gc_mask_clr_bit;
@@ -647,13 +648,16 @@ static const struct of_device_id sunway_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, sunway_of_match);
 
+#ifdef CONFIG_ACPI
 static const struct acpi_device_id sunway_acpi_match[] = {
 	{"HISI0181", 0},
 	{"APMC0D07", 0},
 	{"APMC0D81", GPIO_REG_OFFSET_V2},
+	{"SUNW0002", 0},
 	{ }
 };
 MODULE_DEVICE_TABLE(acpi, sunway_acpi_match);
+#endif
 
 static int sunway_gpio_probe(struct platform_device *pdev)
 {
@@ -725,6 +729,8 @@ static int sunway_gpio_probe(struct platform_device *pdev)
 			goto out_unregister;
 	}
 	platform_set_drvdata(pdev, gpio);
+
+	def_info(&pdev->dev, "GPIO probe succeed\n");
 
 	return 0;
 

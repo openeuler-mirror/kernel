@@ -28,12 +28,6 @@ read_vpcr(void)
 	return __r0;
 }
 
-#ifdef CONFIG_SMP
-/* SMP initialization hook for setup_arch */
-void __init setup_smp(void);
-
-#include <asm/irq.h>
-
 /* smp reset control block */
 struct smp_rcb_struct {
 	void (*restart_entry)(unsigned long args);
@@ -42,8 +36,14 @@ struct smp_rcb_struct {
 	unsigned long init_done;
 };
 
-#define INIT_SMP_RCB ((struct smp_rcb_struct *) __va(0x820000UL))
+#ifdef CONFIG_SMP
+/* SMP initialization hook for setup_arch */
+void __init setup_smp(void);
 
+#include <asm/irq.h>
+
+#define INIT_SMP_RCB ((struct smp_rcb_struct *) __va(0x820000UL))
+extern void __init smp_rcb_init(struct smp_rcb_struct *smp_rcb_base_addr);
 
 #ifdef GENERATING_ASM_OFFSETS
 #define raw_smp_processor_id() (0)
@@ -58,6 +58,11 @@ extern int __cpu_to_rcid[NR_CPUS];
 #define cpu_to_rcid(cpu)  __cpu_to_rcid[cpu]
 #define cpu_physical_id(cpu)    __cpu_to_rcid[cpu]
 
+static inline void set_rcid_map(unsigned int logical, int rcid)
+{
+	__cpu_to_rcid[logical] = rcid;
+}
+
 extern unsigned long tidle_pcb[NR_CPUS];
 extern void arch_send_call_function_single_ipi(int cpu);
 extern void arch_send_call_function_ipi_mask(const struct cpumask *mask);
@@ -67,6 +72,23 @@ int __cpu_disable(void);
 void __cpu_die(unsigned int cpu);
 #endif /* CONFIG_HOTPLUG_CPU */
 
+struct rcid_information {
+	unsigned long thread_bits  : 8;    /* which thread */
+	unsigned long thread_shift : 8;
+	unsigned long core_bits    : 8;    /* which core */
+	unsigned long core_shift   : 8;
+	unsigned long domain_bits  : 8;    /* which node */
+	unsigned long domain_shift : 8;
+	unsigned long initialized  : 1;
+};
+
+extern struct rcid_information rcid_info;
+extern void rcid_information_init(int core_version);
+
+extern int get_core_id_from_rcid(int rcid);
+extern int get_thread_id_from_rcid(int rcid);
+extern int get_domain_id_from_rcid(int rcid);
+
 #else /* CONFIG_SMP */
 #define hard_smp_processor_id()		0
 #define smp_call_function_on_cpu(func, info, wait, cpu)    ({ 0; })
@@ -74,6 +96,18 @@ void __cpu_die(unsigned int cpu);
 extern int __cpu_to_rcid[NR_CPUS];
 #define cpu_to_rcid(cpu)  __cpu_to_rcid[0]
 #define cpu_physical_id(cpu)    __cpu_to_rcid[0]
+
+static inline void smp_rcb_init(struct smp_rcb_struct *smp_rcb_base_addr) { }
+
+static inline void set_rcid_map(unsigned int logical, int rcid)
+{
+	__cpu_to_rcid[0] = 0;
+}
+
+static inline void rcid_information_init(int core_version) { }
+static inline int get_core_id_from_rcid(int rcid) { return 0; }
+static inline int get_thread_id_from_rcid(int rcid) { return 0; }
+static inline int get_domain_id_from_rcid(int rcid) { return 0; }
 #endif /* CONFIG_SMP */
 
 #define NO_PROC_ID	(-1)

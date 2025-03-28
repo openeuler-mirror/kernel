@@ -19,7 +19,7 @@ nodemask_t numa_nodes_parsed __initdata;
 
 static int numa_distance_cnt;
 static u8 *numa_distance;
-static bool numa_off;
+int numa_off;
 
 static __init int numa_setup(char *opt)
 {
@@ -347,16 +347,30 @@ static int __init manual_numa_init(void)
 	return 0;
 }
 
-/* We do not have acpi support. */
-int acpi_numa_init(void)
+#ifdef CONFIG_ACPI_NUMA
+static int __init sw64_acpi_numa_init(void)
 {
-	return -1;
+	int ret;
+
+	ret = acpi_numa_init();
+	if (ret) {
+		pr_info("Failed to initialise from firmware\n");
+		return ret;
+	}
+
+	return srat_disabled() ? -EINVAL : 0;
 }
+#else
+static int __init sw64_acpi_numa_init(void)
+{
+	return -EOPNOTSUPP;
+}
+#endif
 
 void __init sw64_numa_init(void)
 {
 	if (!numa_off) {
-		if (!acpi_disabled && !numa_init(acpi_numa_init))
+		if (!acpi_disabled && !numa_init(sw64_acpi_numa_init))
 			return;
 		if (acpi_disabled && !numa_init(of_numa_init))
 			return;
@@ -399,6 +413,23 @@ void cpu_set_node(void)
 void numa_store_cpu_info(unsigned int cpu)
 {
 	set_cpu_numa_node(cpu, cpu_to_node_map[cpu]);
+}
+
+void __init early_map_cpu_to_node(unsigned int cpu, int nid)
+{
+	/* fallback to node 0 */
+	if (nid < 0 || nid >= MAX_NUMNODES || numa_off)
+		nid = 0;
+
+	cpu_to_node_map[cpu] = nid;
+
+	/*
+	 * We should set the numa node of cpu0 as soon as possible, because it
+	 * has already been set up online before. cpu_to_node(0) will soon be
+	 * called.
+	 */
+	if (!cpu)
+		set_cpu_numa_node(cpu, nid);
 }
 
 #ifdef CONFIG_DEBUG_PER_CPU_MAPS
@@ -449,4 +480,10 @@ void numa_add_cpu(unsigned int cpu)
 void numa_remove_cpu(unsigned int cpu)
 {
 	numa_update_cpu(cpu, true);
+}
+
+void numa_clear_node(unsigned int cpu)
+{
+	numa_remove_cpu(cpu);
+	set_cpu_numa_node(cpu, NUMA_NO_NODE);
 }

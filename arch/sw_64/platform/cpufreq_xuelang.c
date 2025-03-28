@@ -46,7 +46,7 @@ static int __init sw64_cpufreq_init(void)
 
 	max_rate = get_cpu_freq() / 1000;
 
-	external_clk = *((unsigned char *)__va(0x908011));
+	external_clk = *((unsigned char *)__va(MB_EXTCLK));
 
 	if (external_clk == 240)
 		freq_off = 60000;
@@ -69,8 +69,6 @@ static int __init sw64_cpufreq_init(void)
 	return platform_device_register(&sw64_cpufreq_device);
 }
 arch_initcall(sw64_cpufreq_init);
-
-char curruent_policy[CPUFREQ_NAME_LEN];
 
 static struct clk cpu_clk = {
 	.name = "cpu_clk",
@@ -99,12 +97,6 @@ unsigned int __sw64_cpufreq_get(struct cpufreq_policy *policy)
 	return 0;
 }
 EXPORT_SYMBOL(__sw64_cpufreq_get);
-
-void sw64_store_policy(struct cpufreq_policy *policy)
-{
-	memcpy(curruent_policy, policy->governor->name, CPUFREQ_NAME_LEN);
-}
-EXPORT_SYMBOL_GPL(sw64_store_policy);
 
 void sw64_set_rate(unsigned int index)
 {

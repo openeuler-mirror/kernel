@@ -528,6 +528,21 @@ enum acpi_madt_type {
 	ACPI_MADT_TYPE_LPC_PIC = 23,
 	ACPI_MADT_TYPE_RESERVED = 24,	/* 24 to 0x7F are reserved */
     ACPI_MADT_TYPE_PHYTIUM_2500 = 128
+
+#ifdef CONFIG_SW64
+	,
+	/**
+	 * Add for SW64
+	 * Due to the fact that the interrupt controller structures
+	 * of SW64 have not yet been added to the ACPI specification,
+	 * interrupt controller structure types reserved for OEM are
+	 * used(start from 0x80).
+	 */
+	ACPI_MADT_TYPE_SW_CINTC = 0x80,
+	ACPI_MADT_TYPE_SW_PINTC = 0x81,
+	ACPI_MADT_TYPE_SW_MSIC = 0x82,
+	ACPI_MADT_TYPE_SW_LPC_INTC = 0x83
+#endif
 };
 
 /*
@@ -734,6 +749,116 @@ struct acpi_madt_generic_translator {
 	u64 base_address;
 	u32 reserved2;
 };
+
+#ifdef CONFIG_SW64
+/* 0x80: Sunway Core Interrupt Controller (To be added to ACPI spec) */
+
+struct acpi_madt_sw_cintc {
+	struct acpi_subtable_header header;
+	u8 version;
+	u8 reserved0;
+	u32 flags;
+	u32 reserved1;
+	u32 hardware_id;
+	u32 uid;
+	u64 boot_flag_address;
+};
+
+/* Values for version field above */
+
+enum acpi_madt_sw_cintc_version {
+	ACPI_MADT_SW_CINTC_VERSION_NONE = 0,
+	ACPI_MADT_SW_CINTC_VERSION_V1 = 1,
+	ACPI_MADT_SW_CINTC_VERSION_V2 = 2,
+	ACPI_MADT_SW_CINTC_VERSION_RESERVED = 3 /* 3 and greater are reserved */
+};
+
+/* 0x81: Sunway Platform Interrupt Controller (To be added to ACPI spec) */
+
+struct acpi_madt_sw_sub_pintc {
+	u8 type;
+	u8 status;
+	u16 reserved;
+	u32 hardware_id;
+	u64 address;
+	u32 size;
+	u32 gsi_base;
+	u32 gsi_count;
+	u32 cascade_vector;
+};
+
+struct acpi_madt_sw_pintc {
+	struct acpi_subtable_header header;
+	u8 version;
+	u8 reserved;
+	u32 flags;
+	u32 node;
+	u64 address;
+	u32 size;
+	u32 sub_num;
+	struct acpi_madt_sw_sub_pintc sub[];
+};
+
+/* Values for version field above */
+
+enum acpi_madt_sw_pintc_version {
+	ACPI_MADT_SW_PINTC_VERSION_NONE = 0,
+	ACPI_MADT_SW_PINTC_VERSION_V1 = 1,
+	ACPI_MADT_SW_PINTC_VERSION_V2 = 2,
+	ACPI_MADT_SW_PINTC_VERSION_RESERVED = 3 /* 3 and greater are reserved */
+};
+
+/* 0x82: Sunway MSI Controller (To be added to ACPI spec) */
+
+struct acpi_madt_sw_msic {
+	struct acpi_subtable_header header;
+	u8 version;
+	u8 reserved0;
+	u32 hardware_id;
+	u32 flags;
+	u64 address;
+	u32 size;
+	u32 cascade_vector;
+	u32 node;
+	u32 rc;
+	u32 num;
+	u64 message_address;
+	u32 reserved1[2];
+};
+
+/* Values for version field above */
+
+enum acpi_madt_sw_msic_version {
+	ACPI_MADT_SW_MSIC_VERSION_NONE = 0,
+	ACPI_MADT_SW_MSIC_VERSION_V1 = 1,
+	ACPI_MADT_SW_MSIC_VERSION_V2 = 2,
+	ACPI_MADT_SW_MSIC_VERSION_RESERVED = 3 /* 3 and greater are reserved */
+};
+
+/* 0x83: Sunway LPC Interrupt Controller (To be added to ACPI spec) */
+
+struct acpi_madt_sw_lpc_intc {
+	struct acpi_subtable_header header;
+	u8 version;
+	u8 reserved;
+	u32 hardware_id;
+	u32 flags;
+	u64 address;
+	u32 size;
+	u32 node;
+	u32 cascade_vector;
+	u32 gsi_base;
+	u32 gsi_count;
+};
+
+/* Values for version field above */
+
+enum acpi_madt_sw_lpc_intc_version {
+	ACPI_MADT_SW_LPC_INTC_VERSION_NONE = 0,
+	ACPI_MADT_SW_LPC_INTC_VERSION_V1 = 1,
+	ACPI_MADT_SW_LPC_INTC_VERSION_RESERVED = 2 /* 2 and greater are reserved */
+};
+#endif
 
 /* Values for Version field above */
 

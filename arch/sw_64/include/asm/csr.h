@@ -20,11 +20,19 @@
 #define CSR_EXC_PC		0xe
 #define CSR_AS_INFO		0x3c
 #define CSR_DS_STAT		0x48
+#define CSR_PFH_CTL		0x4f
 #define CSR_SOFTCID		0xc9
 #define CSR_DVA			0x54
+#define CSR_PFH_CNT		0x5c
+#define CSR_BRRETC		0x5e
+#define CSR_BRFAILC		0x5f
 #define CSR_PTBR_SYS		0x68
 #define CSR_PTBR_USR		0x69
 #define CSR_APTP		0x6a
+#define CSR_IDR_PCCTL		0x7a
+#define CSR_IACC		0x7b
+#define CSR_IMISC		0x7c
+#define CSR_RETIC		0x7f
 #define CSR_CID			0xc4
 #define CSR_WR_FREGS		0xc8
 #define CSR_SHTCLOCK		0xca
@@ -46,6 +54,15 @@
 #define CSR_DV_MASK		0x57
 #define CSR_IDA_MATCH		0xc5
 #define CSR_IDA_MASK		0xc6
+#define CSR_BASE_KREGS		0xe0
+#define CSR_PS			0xe8
+#define CSR_PC			0xe9
+#define CSR_EARG0		0xea
+#define CSR_EARG1		0xeb
+#define CSR_EARG2		0xec
+#define CSR_SCRATCH		0xed
+#define CSR_SP			0xee
+#define CSR_KTP			0xef
 
 #define DA_MATCH_EN_S		4
 #define DV_MATCH_EN_S		6
@@ -61,30 +78,36 @@
 
 
 #ifdef CONFIG_HAVE_CSRRW
-#define read_csr(x)					\
-	({ unsigned long __val;				\
-	 __asm__ __volatile__("csrr %0,%1" : "=r"(__val) : "i"(x));	\
-	 __val; })
-
-#define write_csr(x, y)					\
-	({ __asm__ __volatile__("csrw %0,%1" ::"r"(x), "i"(y)); })
-
-#define write_csr_imb(x, y)				\
-	({ __asm__ __volatile__("csrw %0,%1; imemb" ::"r"(x), "i"(y)); })
-
-
 #ifndef __ASSEMBLY__
+static inline unsigned long sw64_read_csr(unsigned long x)
+{
+	unsigned long __val;
+	__asm__ __volatile__("csrr %0,%1" : "=r"(__val) : "i"(x));
+	return __val;
+}
+
+static inline void sw64_write_csr(unsigned long x, unsigned long y)
+{
+	__asm__ __volatile__("csrw %0,%1" ::"r"(x), "i"(y));
+}
+
+static inline void sw64_write_csr_imb(unsigned long x, unsigned long y)
+{
+	__asm__ __volatile__("csrw %0,%1; imemb" ::"r"(x), "i"(y));
+}
+
 #include <asm/barrier.h>
 static inline void update_ptbr_sys(unsigned long ptbr)
 {
 	imemb();
-	write_csr_imb(ptbr, CSR_PTBR_SYS);
+	sw64_write_csr_imb(ptbr, CSR_PTBR_SYS);
 }
+
 #endif
 #else
-#define read_csr(x)			(0)
-#define write_csr(x, y)			do { } while (0)
-#define write_csr_imb(x, y)		do { } while (0)
+#define sw64_read_csr(x)                     (0)
+#define sw64_write_csr(x, y)                 do { } while (0)
+#define sw64_write_csr_imb(x, y)             do { } while (0)
 
 #ifndef __ASSEMBLY__
 static inline void update_ptbr_sys(unsigned long ptbr)

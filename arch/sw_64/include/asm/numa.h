@@ -8,6 +8,8 @@
 
 #ifdef CONFIG_NUMA
 extern nodemask_t numa_nodes_parsed __initdata;
+extern int numa_off;
+
 struct numa_memblk {
 	u64			start;
 	u64			end;
@@ -20,15 +22,14 @@ struct numa_meminfo {
 	struct numa_memblk	blk[NR_NODE_MEMBLKS];
 };
 extern int __init numa_add_memblk(int nodeid, u64 start, u64 end);
-extern s16 __cpuid_to_node[CONFIG_NR_CPUS];
-static inline void numa_clear_node(int cpu)
-{
-}
+extern void numa_clear_node(unsigned int cpu);
+extern void __init numa_set_distance(int from, int to, int distance);
+extern void __init early_map_cpu_to_node(unsigned int cpu, int nid);
 
-static inline void  set_cpuid_to_node(int cpuid, s16 node)
-{
-	__cpuid_to_node[cpuid] = node;
-}
+#else  /* CONFIG_NUMA */
+
+static inline void numa_clear_node(unsigned int cpu) { }
+static inline void early_map_cpu_to_node(unsigned int cpu, int nid) { }
 
 #endif /* CONFIG_NUMA */
 

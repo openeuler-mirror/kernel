@@ -20,6 +20,7 @@
 #define HMC_rdhtctl		0x0D
 #define HMC_wrksp		0x0E
 #define HMC_mtinten		0x0F
+#define HMC_wrap_asid		0x10
 #define HMC_load_mm		0x11
 #define HMC_tbisasid		0x14
 #define HMC_tbivpn		0x19
@@ -154,11 +155,10 @@ __CALL_HMC_VOID(sleepen);
 __CALL_HMC_VOID(mtinten);
 
 __CALL_HMC_VOID(rdktp);
-#define restore_ktp()	rdktp()
 __CALL_HMC_VOID(wrktp);
-#define save_ktp()	wrktp()
 
 __CALL_HMC_R0(rdps, unsigned long);
+__CALL_HMC_R0(rvpcr, unsigned long);
 
 __CALL_HMC_R0(rdusp, unsigned long);
 __CALL_HMC_W1(wrusp, unsigned long);
@@ -229,6 +229,20 @@ __CALL_HMC_W1(wrtp, unsigned long);
 
 /* Invalidate all user TLB with current UPN and VPN */
 #define tbiu()		__tbi(4, /* no second argument */)
+
+#if defined(CONFIG_SUBARCH_C4)
+__CALL_HMC_W2(wrap_asid, unsigned long, unsigned long);
+static inline void save_ktp(void)
+{
+	__asm__ __volatile__("csrw $8, 0xef");
+}
+#elif defined(CONFIG_SUBARCH_C3B)
+static inline void wrap_asid(unsigned long asid, unsigned long ptbr)
+{
+	tbivp();
+}
+#define save_ktp()     wrktp()
+#endif
 
 #endif /* !__ASSEMBLY__ */
 #endif /* __KERNEL__ */

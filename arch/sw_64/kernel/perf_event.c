@@ -8,17 +8,6 @@
 #include <linux/perf_event.h>
 #include <asm/stacktrace.h>
 
-/* For tracking PMCs and the hw events they monitor on each CPU. */
-struct cpu_hw_events {
-	/*
-	 * Set the bit (indexed by the counter number) when the counter
-	 * is used for an event.
-	 */
-	unsigned long		used_mask[BITS_TO_LONGS(MAX_HWEVENTS)];
-	/* Array of events current scheduled on this cpu. */
-	struct perf_event	*event[MAX_HWEVENTS];
-};
-
 DEFINE_PER_CPU(struct cpu_hw_events, cpu_hw_events);
 
 struct sw64_perf_event {
@@ -378,7 +367,7 @@ static void sw64_pmu_start(struct perf_event *event, int flags)
 
 	/* counting in selected modes, for both counters */
 	wrperfmon(PMC_CMD_PM, hwc->config_base);
-	wrperfmon(PMC_CMD_EVENT_BASE + hwc->idx, hwc->event_base);
+	wrperfmon(PMC_CMD_EVENT_BASE + hwc->idx, hwc->config);
 	wrperfmon(PMC_CMD_ENABLE, PMC_ENABLE_BASE + hwc->idx);
 }
 
@@ -474,49 +463,10 @@ static void hw_perf_event_destroy(struct perf_event *event)
 	/* Nothing to be done! */
 }
 
-static int __hw_perf_event_init(struct perf_event *event)
+static void __hw_perf_event_init(struct perf_event *event)
 {
 	struct perf_event_attr *attr = &event->attr;
 	struct hw_perf_event *hwc = &event->hw;
-	const struct sw64_perf_event *event_type;
-
-
-	/*
-	 * SW64 does not have per-counter usr/os/guest/host bits,
-	 * we can distinguish exclude_user and exclude_kernel by
-	 * sample mode.
-	 */
-	if (event->attr.exclude_hv || event->attr.exclude_idle ||
-			event->attr.exclude_host || event->attr.exclude_guest)
-		return -EINVAL;
-
-	/*
-	 * SW64 does not support precise ip feature, and system hang when
-	 * detecting precise_ip by perf_event_attr__set_max_precise_ip
-	 * in userspace
-	 */
-	if (attr->precise_ip != 0)
-		return -EOPNOTSUPP;
-
-	/* SW64 has fixed counter for given event type */
-	if (attr->type == PERF_TYPE_HARDWARE) {
-		if (attr->config >= sw64_pmu->max_events)
-			return -EINVAL;
-		event_type = sw64_pmu->map_hw_event(attr->config);
-		hwc->idx = event_type->counter;
-		hwc->event_base = event_type->event;
-	} else if (attr->type == PERF_TYPE_HW_CACHE) {
-		event_type = sw64_pmu->map_cache_event(attr->config);
-		if (IS_ERR(event_type))	/* */
-			return PTR_ERR(event_type);
-		hwc->idx = event_type->counter;
-		hwc->event_base = event_type->event;
-	} else { /* PERF_TYPE_RAW */
-		if (!sw64_pmu->raw_event_valid(attr->config))
-			return -EINVAL;
-		hwc->idx = attr->config >> 8;	/* counter selector */
-		hwc->event_base = attr->config & 0xff;	/* event selector */
-	}
 
 	hwc->config_base = SW64_PERFCTRL_AM;
 
@@ -524,8 +474,6 @@ static int __hw_perf_event_init(struct perf_event *event)
 		hwc->config_base = SW64_PERFCTRL_KM;
 	if (attr->exclude_kernel)
 		hwc->config_base = SW64_PERFCTRL_UM;
-
-	hwc->config = attr->config;
 
 	if (!is_sampling_event(event))
 		pr_debug("not sampling event\n");
@@ -537,8 +485,6 @@ static int __hw_perf_event_init(struct perf_event *event)
 		hwc->last_period = hwc->sample_period;
 		local64_set(&hwc->period_left, hwc->sample_period);
 	}
-
-	return 0;
 }
 
 /*
@@ -546,28 +492,66 @@ static int __hw_perf_event_init(struct perf_event *event)
  */
 static int sw64_pmu_event_init(struct perf_event *event)
 {
-	int err;
+	struct perf_event_attr *attr = &event->attr;
+	struct hw_perf_event *hwc = &event->hw;
+	const struct sw64_perf_event *event_type;
+
+	if (!sw64_pmu)
+		return -ENODEV;
 
 	/* does not support taken branch sampling */
 	if (has_branch_stack(event))
 		return -EOPNOTSUPP;
 
-	switch (event->attr.type) {
-	case PERF_TYPE_RAW:
+	/*
+	 * SW64 does not have per-counter usr/os/guest/host bits,
+	 * we can distinguish exclude_user and exclude_kernel by
+	 * sample mode.
+	 */
+	if (attr->exclude_hv || attr->exclude_idle ||
+			attr->exclude_host || attr->exclude_guest)
+		return -EINVAL;
+
+	if (attr->exclude_user && attr->exclude_kernel)
+		return -EOPNOTSUPP;
+	/*
+	 * SW64 does not support precise ip feature, and system hang when
+	 * detecting precise_ip by perf_event_attr__set_max_precise_ip
+	 * in userspace
+	 */
+	if (attr->precise_ip != 0)
+		return -EOPNOTSUPP;
+
+	/* SW64 has fixed counter for given event type */
+	switch (attr->type) {
 	case PERF_TYPE_HARDWARE:
+		if (attr->config >= sw64_pmu->max_events)
+			return -EINVAL;
+		event_type = sw64_pmu->map_hw_event(attr->config);
+		hwc->idx = event_type->counter;
+		hwc->config = event_type->event;
+		break;
 	case PERF_TYPE_HW_CACHE:
+		event_type = sw64_pmu->map_cache_event(attr->config);
+		if (IS_ERR(event_type))
+			return PTR_ERR(event_type);
+		hwc->idx = event_type->counter;
+		hwc->config = event_type->event;
+		break;
+	case PERF_TYPE_RAW:
+		if (!sw64_pmu->raw_event_valid(attr->config))
+			return -EINVAL;
+		hwc->idx = attr->config >> 8;	/* counter selector */
+		hwc->config = attr->config & 0xff;	/* event selector */
 		break;
 	default:
 		return -ENOENT;
 	}
 
-	if (!sw64_pmu)
-		return -ENODEV;
-
 	/* Do the real initialisation work. */
-	err = __hw_perf_event_init(event);
+	__hw_perf_event_init(event);
 
-	return err;
+	return 0;
 }
 
 static struct pmu pmu = {
@@ -634,144 +618,24 @@ static void sw64_perf_event_irq_handler(unsigned long idx,
 	}
 }
 
-bool valid_utext_addr(unsigned long addr)
-{
-	return addr >= current->mm->start_code && addr <= current->mm->end_code;
-}
-
-bool valid_dy_addr(unsigned long addr)
-{
-	bool ret = false;
-	struct vm_area_struct *vma;
-	struct mm_struct *mm = current->mm;
-
-	if (addr > TASK_SIZE || addr < TASK_UNMAPPED_BASE)
-		return ret;
-	vma = find_vma(mm, addr);
-	if (vma && vma->vm_start <= addr && (vma->vm_flags & VM_EXEC))
-		ret = true;
-	return ret;
-}
-
-#ifdef CONFIG_FRAME_POINTER
-void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
-		struct pt_regs *regs)
-{
-
-	struct stack_frame frame;
-	unsigned long __user *fp;
-	int err;
-
-	perf_callchain_store(entry, regs->pc);
-
-	fp = (unsigned long __user *)regs->regs[15];
-
-	while (entry->nr < entry->max_stack && (unsigned long)fp < current->mm->start_stack) {
-		if (!access_ok(fp, sizeof(frame)))
-			break;
-
-		pagefault_disable();
-		err =  __copy_from_user_inatomic(&frame, fp, sizeof(frame));
-		pagefault_enable();
-
-		if (err)
-			break;
-
-		if (valid_utext_addr(frame.return_address) || valid_dy_addr(frame.return_address))
-			perf_callchain_store(entry, frame.return_address);
-		fp = (void __user *)frame.next_frame;
-	}
-}
-#else /* !CONFIG_FRAME_POINTER */
-void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
-		struct pt_regs *regs)
-{
-	unsigned long usp = rdusp();
-	unsigned long user_addr;
-	int err;
-
-	perf_callchain_store(entry, regs->pc);
-
-	while (entry->nr < entry->max_stack && usp < current->mm->start_stack) {
-		if (!access_ok(usp, 8))
-			break;
-
-		pagefault_disable();
-		err = __get_user(user_addr, (unsigned long *)usp);
-		pagefault_enable();
-
-		if (err)
-			break;
-
-		if (valid_utext_addr(user_addr) || valid_dy_addr(user_addr))
-			perf_callchain_store(entry, user_addr);
-		usp = usp + 8;
-	}
-}
-#endif/* CONFIG_FRAME_POINTER */
-
-/*
- * Gets called by walk_stackframe() for every stackframe. This will be called
- * whist unwinding the stackframe and is like a subroutine return so we use
- * the PC.
- */
-static int callchain_trace(unsigned long pc, void *data)
-{
-	struct perf_callchain_entry_ctx *entry = data;
-
-	perf_callchain_store(entry, pc);
-	return 0;
-}
-
-void perf_callchain_kernel(struct perf_callchain_entry_ctx *entry,
-			   struct pt_regs *regs)
-{
-	walk_stackframe(NULL, regs, callchain_trace, entry);
-}
-
-/*
- * Gets the perf_instruction_pointer and perf_misc_flags for guest os.
- */
-#undef is_in_guest
-
-unsigned long perf_instruction_pointer(struct pt_regs *regs)
-{
-	if (perf_guest_cbs && perf_guest_cbs->is_in_guest())
-		return perf_guest_cbs->get_guest_ip();
-
-	return instruction_pointer(regs);
-}
-
-unsigned long perf_misc_flags(struct pt_regs *regs)
-{
-	int misc = 0;
-
-	if (perf_guest_cbs && perf_guest_cbs->is_in_guest()) {
-		if (perf_guest_cbs->is_user_mode())
-			misc |= PERF_RECORD_MISC_GUEST_USER;
-		else
-			misc |= PERF_RECORD_MISC_GUEST_KERNEL;
-	} else {
-		if (user_mode(regs))
-			misc |= PERF_RECORD_MISC_USER;
-		else
-			misc |= PERF_RECORD_MISC_KERNEL;
-	}
-
-	return misc;
-}
-
 /*
  * Init call to initialise performance events at kernel startup.
  */
 int __init init_hw_perf_events(void)
 {
+	pr_info("Performance Events: ");
+
 	if (!supported_cpu()) {
-		pr_info("Performance events: Unsupported CPU type!\n");
+		pr_cont("Unsupported CPU type!\n");
 		return 0;
 	}
 
-	pr_info("Performance events: Supported CPU type!\n");
+	if (is_in_guest()) {
+		pr_cont("No PMU driver, software events only.\n");
+		return 0;
+	}
+
+	pr_cont("Supported CPU type!\n");
 
 	/* Override performance counter IRQ vector */
 

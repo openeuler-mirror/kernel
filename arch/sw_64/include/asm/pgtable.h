@@ -257,6 +257,12 @@ static inline void set_pte_at(struct mm_struct *mm, unsigned long addr,
 	set_pte(ptep, pteval);
 }
 
+#define pud_write pud_write
+static inline int pud_write(pud_t pud)
+{
+	return !(pud_val(pud) & _PAGE_FOW);
+}
+
 static inline pte_t pfn_pte(unsigned long pfn, pgprot_t prot)
 {
 	pte_t pte;
@@ -332,12 +338,12 @@ static inline int pte_none(pte_t pte)
 
 static inline int pte_present(pte_t pte)
 {
-	return pte_val(pte) & (_PAGE_VALID | _PAGE_PROTNONE);
+	return !!(pte_val(pte) & (_PAGE_VALID | _PAGE_PROTNONE));
 }
 
 static inline int pte_huge(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_LEAF;
+	return !!(pte_val(pte) & _PAGE_LEAF);
 }
 
 static inline void pte_clear(struct mm_struct *mm,
@@ -377,7 +383,7 @@ static inline int pmd_present(pmd_t pmd)
 	 * the _PAGE_LEAF flag will remain set at all times while the
 	 * _PAGE_VALID bit is clear).
 	 */
-	return pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE | _PAGE_LEAF);
+	return !!(pmd_val(pmd) & (_PAGE_VALID | _PAGE_PROTNONE | _PAGE_LEAF));
 }
 
 static inline void pmd_clear(pmd_t *pmdp)
@@ -387,12 +393,12 @@ static inline void pmd_clear(pmd_t *pmdp)
 
 static inline int pmd_dirty(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_DIRTY;
+	return !!(pmd_val(pmd) & _PAGE_DIRTY);
 }
 
 static inline int pmd_young(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_ACCESSED;
+	return !!(pmd_val(pmd) & _PAGE_ACCESSED);
 }
 
 #define __HAVE_ARCH_PMD_WRITE
@@ -475,7 +481,7 @@ static inline int pud_bad(pud_t pud)
 
 static inline int pud_present(pud_t pud)
 {
-	return pud_val(pud) & _PAGE_VALID;
+	return !!(pud_val(pud) & _PAGE_VALID);
 }
 
 static inline void pud_clear(pud_t *pudp)
@@ -530,22 +536,22 @@ static inline int pte_write(pte_t pte)
 
 static inline int pte_dirty(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_DIRTY;
+	return !!(pte_val(pte) & _PAGE_DIRTY);
 }
 
 static inline int pte_young(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_ACCESSED;
+	return !!(pte_val(pte) & _PAGE_ACCESSED);
 }
 
 static inline int pte_special(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_SPECIAL;
+	return !!(pte_val(pte) & _PAGE_SPECIAL);
 }
 
 static inline int pte_cont(pte_t pte)
 {
-	return pte_val(pte) & _PAGE_CONT;
+	return !!(pte_val(pte) & _PAGE_CONT);
 }
 
 static inline pte_t pte_wrprotect(pte_t pte)
@@ -627,6 +633,11 @@ static inline int pte_devmap(pte_t a)
 }
 #endif
 
+static inline int pmd_cont(pmd_t pmd)
+{
+	return !!(pmd_val(pmd) & _PAGE_CONT);
+}
+
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 
 /* We don't have hardware dirty/accessed bits, generic_pmdp_establish is fine.*/
@@ -634,17 +645,12 @@ static inline int pte_devmap(pte_t a)
 
 static inline int pmd_trans_splitting(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_SPLITTING;
-}
-
-static inline int pmd_trans_cont(pmd_t pmd)
-{
-	return pmd_val(pmd) & _PAGE_CONT;
+	return !!(pmd_val(pmd) & _PAGE_SPLITTING);
 }
 
 static inline int pmd_trans_huge(pmd_t pmd)
 {
-	return pmd_val(pmd) & _PAGE_LEAF;
+	return !!(pmd_val(pmd) & _PAGE_LEAF);
 }
 
 static inline int has_transparent_hugepage(void)
@@ -743,16 +749,17 @@ extern pgd_t swapper_pg_dir[1024];
  *
  * Format of swap PTE:
  *	bit  0:		_PAGE_VALID (must be zero)
- *	bits 6-10:	swap type
- *	bits 11-58:	swap offset
+ *	bit  6:		_PAGE_LEAF (must be zero)
+ *	bits 7-11:	swap type
+ *	bits 12-58:	swap offset
  *	bit  63:	_PAGE_PROTNONE (must be zero)
  */
-#define __SWP_TYPE_SHIFT	6
+#define __SWP_TYPE_SHIFT	7
 #define __SWP_TYPE_BITS		5
 
 #endif
 
-#define __SWP_OFFSET_BITS	48
+#define __SWP_OFFSET_BITS	47
 #define __SWP_TYPE_MASK		((1UL << __SWP_TYPE_BITS) - 1)
 #define __SWP_OFFSET_SHIFT	(__SWP_TYPE_BITS + __SWP_TYPE_SHIFT)
 #define __SWP_OFFSET_MASK	((1UL << __SWP_OFFSET_BITS) - 1)

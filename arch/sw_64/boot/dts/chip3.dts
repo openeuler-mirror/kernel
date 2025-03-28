@@ -5,10 +5,13 @@
 
 /dts-v1/;
 / {
-		compatible = "sunway,chip3";
-		model = "chip3";
-		#address-cells = <2>;
-		#size-cells = <2>;
+	compatible = "sunway,chip3";
+	model = "chip3";
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	chosen {
+	};
 
 	soc {
 		compatible = "simple-bus";
@@ -32,9 +35,14 @@
 
 		};
 
-		intc: interrupt-controller {
-			compatible = "sw64,sw6_irq_controller";
+		pintc: interrupt-controller {
+			compatible = "sw64,pintc", "sw64,sw6_irq_controller";
 			interrupt-controller;
+			sw64,node = <0>;
+			sw64,irq-num = <8>;
+			sw64,ver = <1>;
+			reg = <0x802a 0x0 0x0 0x1680>,
+			      <0x8030 0x0 0x0 0x8f00>;
 			#interrupt-cells = <1>;
 		};
 
@@ -42,8 +50,11 @@
 			compatible = "sw64,lpc_intc";
 			reg = <0x8037 0x40000000 0x0 0x8000>;
 			interrupt-controller;
+			sw64,node = <0>;
+			sw64,irq-num = <16>;
+			sw64,ver = <1>;
 			#interrupt-cells = <1>;
-			interrupt-parent = <&intc>;
+			interrupt-parent = <&pintc>;
 			interrupts = <2>;
 		};
 
@@ -52,7 +63,7 @@
 			#size-cells = <2>;
 			compatible = "sw6,sunway-apb-uart";
 			reg = <0x8033 0x0 0x0 0x1000>;
-			interrupt-parent=<&intc>;
+			interrupt-parent=<&pintc>;
 			interrupts = <3>;
 			reg-shift = <9>;
 			reg-io-width = <4>;
@@ -75,11 +86,11 @@
 		i2c0@0x8031 {
 			#address-cells = <2>;
 			#size-cells = <2>;
-			compatible = "snps,designware-i2c";
+			compatible = "sunway,suntai-i2c", "snps,designware-i2c";
 			reg = <0x8031 0x0 0x0 0x8000>;
 			clock-frequency = <100000>;
 			clocks = <&i2cclk>;
-			interrupt-parent=<&intc>;
+			interrupt-parent = <&pintc>;
 			interrupts = <5>;
 			status = "okay";
 		};
@@ -87,11 +98,11 @@
 		i2c1@0x8034 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "snps,designware-i2c";
+			compatible = "sunway,suntai-i2c", "snps,designware-i2c";
 			reg = <0x8034 0x0 0x0 0x8000>;
 			clock-frequency = <100000>;
 			clocks = <&i2cclk>;
-			interrupt-parent=<&intc>;
+			interrupt-parent = <&pintc>;
 			interrupts = <6>;
 			status = "okay";
 		};
@@ -99,11 +110,11 @@
 		i2c2@0x8035 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "snps,designware-i2c";
+			compatible = "sunway,suntai-i2c", "snps,designware-i2c";
 			reg = <0x8035 0x0 0x0 0x8000>;
 			clock-frequency = <100000>;
 			clocks = <&i2cclk>;
-			interrupt-parent=<&intc>;
+			interrupt-parent = <&pintc>;
 			interrupts = <7>;
 			status = "okay";
 
@@ -127,24 +138,20 @@
 			};
 
 		spi: spi@0x8032 {
-			#address-cells = <2>;
-			#size-cells = <2>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			compatible = "sunway,chip3-spi";
 			reg = <0x8032 0x0 0x0 0x8000>;
 			clocks = <&spiclk>;
-			interrupt-parent=<&intc>;
-			interrupts = <4>;
+			poll_mode = <1>;    /* poll_mode:1  interrupt mode: 0 */
+			reg-io-width = <2>;
 			status = "okay";
 
 			flash@0 {
-				compatible = "winbond,w25q32dw", "jedec,spi-flash";
+				compatible = "winbond,w25q32dw", "jedec,spi-nor";
 				spi-max-frequency = <25000000>;
 				m25p,fast-read;
-				spi-cpha;
-				spi-cpol;
-				poll_mode = <1>; /* poll_mode:1  interrupt mode: 0 */
-				reg-io-width = <2>;
-				reg = <0 0 0 0 >; /* 0: flash chip selected bit */
+				reg = <0>; /* 0: flash chip selected bit */
 
 				partitions {
 					compatible = "fixed-partitions";
@@ -159,14 +166,10 @@
 			};
 
 			flash@1 {
-				compatible = "winbond,w25q32dw", "jedec,spi-flash";
+				compatible = "winbond,w25q32dw", "jedec,spi-nor";
 				spi-max-frequency = <25000000>;
 				m25p,fast-read;
-				spi-cpha;
-				spi-cpol;
-				poll_mode = <1>; /* poll_mode:1  interrupt mode: 0 */
-				reg-io-width = <2>;
-				reg = <1 0 0 0 >; /* 1: flash chip selected bit */
+				reg = <1>; /* 1: flash chip selected bit */
 
 				partitions {
 					compatible = "fixed-partitions";
@@ -231,10 +234,9 @@
 				reg = <0 0 0 0>;
 				interrupt-controller;
 				#interrupt-cells = <2>;
-				interrupt-parent=<&intc>;
-				interrupts = <0>;
-				};
+				interrupts-extended = <&pintc 0>, <&pintc 1>;
 			};
+		};
 
 	};
 };

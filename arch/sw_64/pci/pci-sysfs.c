@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/*
- * arch/sw_64/kernel/pci-sysfs.c
- *
- * Copyright (C) 2009 Ivan Kokshaysky
- *
+/**
  * Sw_64 PCI resource files.
  *
  * Loosely based on generic HAVE_PCI_MMAP implementation in
@@ -132,7 +128,7 @@ void pci_remove_resource_files(struct pci_dev *pdev)
 static int sparse_mem_mmap_fits(struct pci_dev *pdev, int num)
 {
 	struct pci_bus_region bar;
-	struct pci_controller *hose = pdev->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(pdev->bus);
 	long dense_offset;
 	unsigned long sparse_size;
 
@@ -172,7 +168,7 @@ static int pci_create_attr(struct pci_dev *pdev, int num)
 	int retval, nlen1, nlen2 = 0, res_count = 1;
 	unsigned long sparse_base, dense_base;
 	struct bin_attribute *attr;
-	struct pci_controller *hose = pdev->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(pdev->bus);
 	char *suffix, *attr_name;
 
 	suffix = "";
@@ -205,6 +201,7 @@ static int pci_create_attr(struct pci_dev *pdev, int num)
 		return -ENOMEM;
 
 	attr_name = (char *)(attr + res_count);
+	sysfs_bin_attr_init(attr);
 	pdev->res_attr[num] = attr;
 	retval = pci_create_one_attr(pdev, num, attr_name, suffix, attr,
 				     sparse_base);
@@ -280,7 +277,7 @@ static inline int has_sparse(struct pci_controller *hose,
 int pci_mmap_legacy_page_range(struct pci_bus *bus, struct vm_area_struct *vma,
 			       enum pci_mmap_state mmap_type)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 	int sparse = has_sparse(hose, mmap_type);
 	unsigned long res_size;
 
@@ -301,7 +298,7 @@ int pci_mmap_legacy_page_range(struct pci_bus *bus, struct vm_area_struct *vma,
  */
 void pci_adjust_legacy_attr(struct pci_bus *bus, enum pci_mmap_state mmap_type)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 
 	if (!has_sparse(hose, mmap_type))
 		return;
@@ -318,7 +315,7 @@ void pci_adjust_legacy_attr(struct pci_bus *bus, enum pci_mmap_state mmap_type)
 /* Legacy I/O bus read/write functions */
 int pci_legacy_read(struct pci_bus *bus, loff_t port, u32 *val, size_t size)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 
 	port += hose->io_space->start;
 
@@ -342,7 +339,7 @@ int pci_legacy_read(struct pci_bus *bus, loff_t port, u32 *val, size_t size)
 
 int pci_legacy_write(struct pci_bus *bus, loff_t port, u32 val, size_t size)
 {
-	struct pci_controller *hose = bus->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 
 	port += hose->io_space->start;
 

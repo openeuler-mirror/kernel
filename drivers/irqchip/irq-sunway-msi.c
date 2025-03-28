@@ -3,9 +3,12 @@
 #include <linux/module.h>
 #include <linux/msi.h>
 #include <linux/irqdomain.h>
+#include <linux/acpi.h>
 
 #include <asm/irq_impl.h>
 #include <asm/kvm_emulate.h>
+
+#define PREFIX "MSIC: "
 
 static struct irq_domain *msi_default_domain;
 static DEFINE_RAW_SPINLOCK(vector_lock);
@@ -45,13 +48,8 @@ bool find_free_cpu_vector(const struct cpumask *search_mask,
 
 	cpu = cpumask_first(search_mask);
 try_again:
-	if (is_guest_or_emul()) {
-		vector = IRQ_PENDING_MSI_VECTORS_SHIFT;
-		max_vector = SWVM_IRQS;
-	} else {
-		vector = 0;
-		max_vector = 256;
-	}
+	vector = 0;
+	max_vector = 256;
 	for (; vector < max_vector; vector++) {
 		while (per_cpu(vector_irq, cpu)[vector]) {
 			cpu = cpumask_next(cpu, search_mask);
@@ -138,7 +136,7 @@ static int sw64_set_affinity(struct irq_data *d, const struct cpumask *cpumask, 
 
 	/* update new setting */
 	entry = irq_get_msi_desc(irqd->irq);
-	hose = (struct pci_controller *)msi_desc_to_pci_sysdata(entry);
+	hose = pci_bus_to_pci_controller(msi_desc_to_pci_dev(entry)->bus);
 	spin_lock(&cdata->cdata_lock);
 	per_cpu(vector_irq, cpu)[vector] = irqd->irq;
 	msi_config = set_piu_msi_config(hose, cpu, cdata->msi_config_index, vector);
@@ -273,7 +271,7 @@ static void sw64_vector_free_irqs(struct irq_domain *domain,
 			cdata = irq_data->chip_data;
 			entry = irq_get_msi_desc(virq + i);
 			if (entry) {
-				hose = (struct pci_controller *)msi_desc_to_pci_sysdata(entry);
+				hose = pci_bus_to_pci_controller(msi_desc_to_pci_dev(entry)->bus);
 				clear_bit(cdata->msi_config_index, hose->piu_msiconfig);
 			}
 			irq_domain_reset_irq_data(irq_data);
@@ -286,11 +284,6 @@ static void sw64_vector_free_irqs(struct irq_domain *domain,
 
 static void sw64_irq_free_descs(unsigned int virq, unsigned int nr_irqs)
 {
-	if (is_guest_or_emul()) {
-		vt_sw64_vector_free_irqs(virq, nr_irqs);
-		return irq_free_descs(virq, nr_irqs);
-	}
-
 	return irq_domain_free_irqs(virq, nr_irqs);
 }
 
@@ -317,7 +310,8 @@ static int sw64_vector_alloc_irqs(struct irq_domain *domain, unsigned int virq,
 
 	if (arg == NULL)
 		return -ENODEV;
-	hose = info->msi_dev->sysdata;
+
+	hose = pci_bus_to_pci_controller(info->msi_dev->bus);
 	err = assign_irq_vector(virq, nr_irqs, domain, hose);
 	if (err)
 		goto error;
@@ -388,7 +382,7 @@ void arch_init_msi_domain(struct irq_domain *parent)
 	struct irq_domain *sw64_irq_domain;
 
 	if (is_guest_or_emul())
-		return;
+		return sw64_init_vt_msi_domain(parent);
 
 	sw64_irq_domain = irq_domain_add_tree(NULL, &sw64_msi_domain_ops, NULL);
 	BUG_ON(sw64_irq_domain == NULL);
@@ -420,13 +414,6 @@ void handle_pci_msi_interrupt(unsigned long type, unsigned long vector, unsigned
 	unsigned long *ptr;
 	struct irq_data *irq_data;
 	struct sw64_msi_chip_data *cdata;
-
-	if (is_guest_or_emul()) {
-		cpu = smp_processor_id();
-		irq = per_cpu(vector_irq, cpu)[vector];
-		handle_irq(irq);
-		return;
-	}
 
 	ptr = (unsigned long *)pci_msi1_addr;
 	int_pci_msi[0] = *ptr;
@@ -463,3 +450,33 @@ void handle_pci_msi_interrupt(unsigned long type, unsigned long vector, unsigned
 }
 
 MODULE_LICENSE("GPL v2");
+
+#ifdef CONFIG_ACPI
+#define SW_MSIC_FLAG_ENABLED ACPI_MADT_ENABLED /* 0x1 */
+#define SW_MSIC_FLAG_VIRTUAL 0x2               /* virtual MSIC */
+
+#define is_msic_enabled(flags) ((flags) & SW_MSIC_FLAG_ENABLED)
+#define is_msic_virtual(flags) ((flags) & SW_MSIC_FLAG_VIRTUAL)
+
+int __init msic_acpi_init(struct irq_domain *parent,
+		struct acpi_madt_sw_msic *msic)
+{
+	bool enabled, virtual;
+
+	enabled = is_msic_enabled(msic->flags);
+	virtual = is_msic_virtual(msic->flags);
+
+	pr_info(PREFIX "version [%u] on node [%u] Root Complex [%u] (%s) %s\n",
+			msic->version, msic->node, msic->rc,
+			virtual ? "virtual" : "physical",
+			enabled ? "found" : "disabled");
+
+	if (!enabled)
+		return 0;
+
+	if (!msi_default_domain)
+		arch_init_msi_domain(parent);
+
+	return 0;
+}
+#endif

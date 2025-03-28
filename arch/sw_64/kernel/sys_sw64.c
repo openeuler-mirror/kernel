@@ -62,7 +62,7 @@ SYSCALL_DEFINE5(setsysinfo, unsigned long, op, void __user *, buffer,
 		if (get_user(exc, (unsigned long __user *)buffer))
 			return -EFAULT;
 		state = &current_thread_info()->ieee_state;
-		exc &= IEEE_STATUS_MASK;
+		exc &= IEEE_STATUS_MASK_ALL;
 
 		/* Update softare trap enable bits.  */
 		swcr = (*state & IEEE_SW_MASK) | exc;
@@ -76,7 +76,7 @@ SYSCALL_DEFINE5(setsysinfo, unsigned long, op, void __user *, buffer,
 		/* If any exceptions set by this call, and are unmasked,
 		 * send a signal.  Old exceptions are not signaled.
 		 */
-		fex = (exc >> IEEE_STATUS_TO_EXCSUM_SHIFT) & swcr;
+		fex = swcr_status_to_fex(exc, -1) & swcr;
 		if (fex) {
 			int si_code = FPE_FLTUNK;
 
@@ -92,6 +92,8 @@ SYSCALL_DEFINE5(setsysinfo, unsigned long, op, void __user *, buffer,
 				si_code = FPE_FLTDIV;
 			if (fex & IEEE_TRAP_ENABLE_INV)
 				si_code = FPE_FLTINV;
+			if (fex & IEEE_TRAP_ENABLE_OVI)
+				si_code = FPE_INTOVF;
 
 			send_sig_fault(SIGFPE, si_code, (void __user *)NULL, current);
 		}
@@ -149,3 +151,64 @@ SYSCALL_DEFINE0(sw64_pipe)
 	}
 	return res;
 }
+
+#ifdef CONFIG_SUBARCH_C4
+
+struct pfh_val {
+	unsigned long pfh_ctl;
+	unsigned long pfh_cnt;
+};
+
+static void local_set_pfh(void *info)
+{
+	struct pfh_val *kbuf = info;
+
+	if (kbuf->pfh_ctl)
+		sw64_write_csr(kbuf->pfh_ctl, CSR_PFH_CTL);
+	if (kbuf->pfh_cnt)
+		sw64_write_csr(kbuf->pfh_cnt, CSR_PFH_CNT);
+}
+
+SYSCALL_DEFINE3(pfh_ops, unsigned long, op,
+		unsigned long __user *, pfh_ctl_p,
+		unsigned long __user *, pfh_cnt_p)
+{
+	struct pfh_val kbuf = {0, 0};
+	long error = 0;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	if (op) {	// op != 0, set
+		if (pfh_ctl_p)
+			error |= get_user(kbuf.pfh_ctl, pfh_ctl_p);
+		if (pfh_cnt_p)
+			error |= get_user(kbuf.pfh_cnt, pfh_cnt_p);
+
+		if (!error && (kbuf.pfh_ctl || kbuf.pfh_cnt)) {
+			smp_call_function(local_set_pfh, &kbuf, 1);
+			local_set_pfh(&kbuf);
+		}
+	} else {	// op == 0, get
+		if (pfh_ctl_p) {
+			kbuf.pfh_ctl = sw64_read_csr(CSR_PFH_CTL);
+			error |= put_user(kbuf.pfh_ctl, pfh_ctl_p);
+		}
+
+		if (pfh_cnt_p) {
+			kbuf.pfh_cnt = sw64_read_csr(CSR_PFH_CNT);
+			error |= put_user(kbuf.pfh_cnt, pfh_cnt_p);
+		}
+	}
+
+	return error;
+}
+
+#else
+
+SYSCALL_DEFINE0(pfh_ops)
+{
+	return -ENOSYS;
+}
+
+#endif /* CONFIG_SUBARCH_C4 */

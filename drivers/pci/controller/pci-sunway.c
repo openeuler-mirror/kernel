@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <linux/pci.h>
+#include <linux/pci-acpi.h>
+#include <linux/pci-ecam.h>
+#include <linux/acpi.h>
 
 #include <asm/sw64_init.h>
 
@@ -23,10 +27,12 @@ void set_adr_int(int node)
 void set_pcieport_service_irq(int node, int index)
 {
 	if (IS_ENABLED(CONFIG_PCIE_PME))
-		write_piu_ior0(node, index, PMEINTCONFIG, PME_ENABLE_INTD_CORE0);
+		write_piu_ior0(node, index,
+				PMEINTCONFIG, PME_ENABLE_INTD_CORE0);
 
 	if (IS_ENABLED(CONFIG_PCIEAER))
-		write_piu_ior0(node, index, AERERRINTCONFIG, AER_ENABLE_INTD_CORE0);
+		write_piu_ior0(node, index,
+				AERERRINTCONFIG, AER_ENABLE_INTD_CORE0);
 }
 
 int chip_pcie_configure(struct pci_controller *hose)
@@ -129,7 +135,7 @@ int chip_pcie_configure(struct pci_controller *hose)
 		write_piu_ior0(node, rc_index, PIUCONFIG0, piuconfig0);
 	}
 
-	printk("Node%ld RC%ld MPSS %luB, MRRS %luB, Piuconfig0 %#lx, ARI %s\n",
+	pr_info("Node%ld RC%ld MPSS %luB, MRRS %luB, Piuconfig0 %#lx, ARI %s\n",
 			node, rc_index, (1UL << smallest_max_payload) << 7,
 			(1UL << max_read_size) << 7, piuconfig0,
 			rc_ari_disabled ? "disabled" : "enabled");
@@ -158,10 +164,12 @@ int chip_pcie_configure(struct pci_controller *hose)
 		if (pcie_caps_offset == 0)
 			continue;
 
-		pci_read_config_word(dev, pcie_caps_offset + PCI_EXP_DEVCTL, &devctl);
+		pci_read_config_word(dev,
+				pcie_caps_offset + PCI_EXP_DEVCTL, &devctl);
 		devctl &= ~(PCI_EXP_DEVCTL_PAYLOAD | PCI_EXP_DEVCTL_READRQ);
 		devctl |= new_values;
-		pci_write_config_word(dev, pcie_caps_offset + PCI_EXP_DEVCTL, devctl);
+		pci_write_config_word(dev,
+				pcie_caps_offset + PCI_EXP_DEVCTL, devctl);
 	}
 
 	return bus_max_num;
@@ -197,7 +205,9 @@ static void set_rc_piu(unsigned long node, unsigned long index)
 	write_rc_conf(node, index, RC_PORT_LINK_CTL, 0x1f0020);
 	write_rc_conf(node, index, RC_EXP_DEVCTL, 0x2850);
 	write_rc_conf(node, index, RC_EXP_DEVCTL2, 0x6);
+#ifdef CONFIG_UNCORE_XUELANG
 	write_rc_conf(node, index, RC_ORDER_RULE_CTL, 0x0100);
+#endif
 
 	/* enable DBI_RO_WR_EN */
 	rc_misc_ctrl = read_rc_conf(node, index, RC_MISC_CONTROL_1);
@@ -209,7 +219,8 @@ static void set_rc_piu(unsigned long node, unsigned long index)
 
 	/* set PCI-E root class code */
 	value = read_rc_conf(node, index, RC_REVISION_ID);
-	write_rc_conf(node, index, RC_REVISION_ID, (PCI_CLASS_BRIDGE_HOST << 16) | value);
+	write_rc_conf(node, index, RC_REVISION_ID,
+			(PCI_CLASS_BRIDGE_HOST << 16) | value);
 
 	/* disable DBI_RO_WR_EN */
 	write_rc_conf(node, index, RC_MISC_CONTROL_1, rc_misc_ctrl);
@@ -225,8 +236,8 @@ static void set_rc_piu(unsigned long node, unsigned long index)
 	if (IS_ENABLED(CONFIG_PCI_MSI)) {
 		write_piu_ior0(node, index, MSIADDR, MSIX_MSG_ADDR);
 #ifdef CONFIG_UNCORE_XUELANG
-			for (i = 0; i < 256; i++)
-				write_piu_ior0(node, index, MSICONFIG0 + (i << 7), 0);
+		for (i = 0; i < 256; i++)
+			write_piu_ior0(node, index, MSICONFIG0 + (i << 7), 0);
 #endif
 	}
 }
@@ -264,7 +275,7 @@ static unsigned long get_rc_enable(unsigned long node)
 
 static int map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
-	struct pci_controller *hose = dev->sysdata;
+	struct pci_controller *hose = pci_bus_to_pci_controller(dev->bus);
 
 	if (pci_pcie_type(dev) == PCI_EXP_TYPE_ROOT_PORT)
 		return hose->service_irq;
@@ -299,7 +310,8 @@ static void hose_init(struct pci_controller *hose)
 	hose->pre_mem_space->flags = IORESOURCE_MEM | IORESOURCE_PREFETCH | IORESOURCE_MEM_64;
 
 	if (request_resource(&iomem_resource, hose->pre_mem_space) < 0)
-		pr_err("Failed to request 64bit MEM on hose %ld\n", hose->index);
+		pr_err("Failed to request 64bit MEM on hose %ld\n",
+				hose->index);
 	hose->io_space->start = pci_io_base | PCI_LEGACY_IO;
 	hose->io_space->end = hose->io_space->start + PCI_LEGACY_IO_SIZE - 1;
 	hose->io_space->name = "pci io space";
@@ -333,3 +345,457 @@ void __init setup_chip_pci_ops(void)
 {
 	sw64_chip_init->pci_init = chip_pci_init_ops;
 }
+
+static struct pci_controller *head, **tail = &head;
+
+static DECLARE_BITMAP(rc_linkup, (MAX_NUMNODES * MAX_NR_RCS_PER_NODE));
+
+void pci_mark_rc_linkup(unsigned long node, unsigned long index)
+{
+	set_bit(node * MAX_NR_RCS_PER_NODE + index, rc_linkup);
+}
+EXPORT_SYMBOL(pci_mark_rc_linkup);
+
+void pci_clear_rc_linkup(unsigned long node, unsigned long index)
+{
+	clear_bit(node * MAX_NR_RCS_PER_NODE + index, rc_linkup);
+}
+EXPORT_SYMBOL(pci_clear_rc_linkup);
+
+int pci_get_rc_linkup(unsigned long node, unsigned long index)
+{
+	return test_bit(node * MAX_NR_RCS_PER_NODE + index, rc_linkup);
+}
+EXPORT_SYMBOL(pci_get_rc_linkup);
+
+/**
+ * Link the specified pci controller to list
+ */
+extern struct pci_controller *hose_head;
+static void pci_link_controller(struct pci_controller *hose)
+{
+	if (unlikely(!hose))
+		return;
+
+	*tail = hose;
+	tail = &hose->next;
+
+	if (!hose_head)
+		hose_head = head;
+}
+
+struct pci_controller *bus_num_to_pci_controller(unsigned long bus_num)
+{
+	struct pci_controller *hose;
+
+	for (hose = head; hose; hose = hose->next) {
+		if (bus_num >= hose->first_busno && bus_num <= hose->last_busno)
+			return hose;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(bus_num_to_pci_controller);
+
+struct pci_controller *pci_bus_to_pci_controller(const struct pci_bus *bus)
+{
+	struct pci_config_window *cfg = NULL;
+
+	if (unlikely(!bus))
+		return NULL;
+
+	if (acpi_disabled)
+		return (struct pci_controller *)(bus->sysdata);
+
+	cfg = (struct pci_config_window *)bus->sysdata;
+	return (struct pci_controller *)(cfg->priv);
+}
+EXPORT_SYMBOL(pci_bus_to_pci_controller);
+
+/**
+ *  PCIe Root Complex read config space operations
+ */
+static int sw64_pcie_read_rc_cfg(struct pci_bus *bus, unsigned int devfn,
+		int where, int size, u32 *val)
+{
+	u32 data;
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
+	void __iomem *cfg_iobase = hose->rc_config_space_base;
+
+	if (IS_ENABLED(CONFIG_PCI_DEBUG))
+		pr_debug("rc read addr:%px bus %d, devfn %#x, where %#x size=%d\t",
+				cfg_iobase + ((where & ~3) << 5),
+				bus->number,
+				devfn, where, size);
+
+	if ((uintptr_t)where & (size - 1)) {
+		*val = 0;
+		return PCIBIOS_BAD_REGISTER_NUMBER;
+	}
+
+	/**
+	 * Workaround for sw6a chipset due to only support scan with devfn = 0,
+	 * while sw6b does not have this limit.
+	 */
+	if (unlikely(devfn > 0)) {
+		*val = ~0;
+		return PCIBIOS_DEVICE_NOT_FOUND;
+	}
+
+	data = readl(cfg_iobase + ((where & ~3) << 5));
+
+	switch (size) {
+	case 1:
+		*val = (data >> (8 * (where & 0x3))) & 0xff;
+		break;
+	case 2:
+		*val = (data >> (8 * (where & 0x2))) & 0xffff;
+		break;
+	default:
+		*val = data;
+		break;
+	}
+
+	if (IS_ENABLED(CONFIG_PCI_DEBUG))
+		pr_debug("*val %#x\n ", *val);
+
+	return PCIBIOS_SUCCESSFUL;
+}
+
+/**
+ * PCIe Root Complex write config space operations
+ */
+static int sw64_pcie_write_rc_cfg(struct pci_bus *bus, unsigned int devfn,
+		int where, int size, u32 val)
+{
+	u32 data;
+	u32 shift = 8 * (where & 3);
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
+	void __iomem *cfg_iobase = (void *)hose->rc_config_space_base;
+
+	if ((uintptr_t)where & (size - 1))
+		return PCIBIOS_BAD_REGISTER_NUMBER;
+
+	switch (size) {
+	case 1:
+		data = readl(cfg_iobase + ((where & ~3) << 5));
+		data &= ~(0xff << shift);
+		data |= (val & 0xff) << shift;
+		break;
+	case 2:
+		data = readl(cfg_iobase + ((where & ~3) << 5));
+		data &= ~(0xffff << shift);
+		data |= (val & 0xffff) << shift;
+		break;
+	default:
+		data = val;
+		break;
+	}
+
+	if (IS_ENABLED(CONFIG_PCI_DEBUG))
+		pr_debug("rc write addr:%px bus %d, devfn %#x, where %#x *val %#x size %d\n",
+				cfg_iobase + ((where & ~3) << 5),
+				bus->number,
+				devfn, where, val, size);
+
+	writel(data, cfg_iobase + ((where & ~3) << 5));
+
+	return PCIBIOS_SUCCESSFUL;
+}
+
+/**
+ * sw64_pcie_valid_device - check if a valid device is present
+ *                          on bus
+ *
+ * @bus  : PCI bus structure
+ * @devfn: device/function
+ *
+ * @return: 'true' on success and 'false' if invalid device is found
+ */
+static bool sw64_pcie_valid_device(struct pci_bus *bus, unsigned int devfn)
+{
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
+
+	if (is_in_host()) {
+		/* Only one device down on each root complex */
+		if (bus->number == hose->self_busno && devfn > 0)
+			return false;
+	}
+
+	return true;
+}
+
+/**
+ * sw64_pcie_config_read - read val from config space of
+ *                         PCI host controller or device
+ *
+ * @bus  : PCI bus structure
+ * @devfn: device/function
+ * @where: offset from base
+ * @size : size of val
+ * @val[out]: the value read from PCI host controller or device
+ *
+ * @return: Whether read operation success
+ */
+int sw64_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
+		int where, int size, u32 *val)
+{
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
+	int ret = PCIBIOS_DEVICE_NOT_FOUND;
+
+	if (is_guest_or_emul())
+		return pci_generic_config_read(bus, devfn, where, size, val);
+
+	hose->self_busno = hose->busn_space->start;
+
+	if (unlikely(bus->number == hose->self_busno)) {
+		ret = sw64_pcie_read_rc_cfg(bus, devfn, where, size, val);
+	} else {
+		if (pci_get_rc_linkup(hose->node, hose->index)) {
+			ret = pci_generic_config_read(bus, devfn,
+					where, size, val);
+		} else {
+			return ret;
+		}
+	}
+	return ret;
+}
+EXPORT_SYMBOL(sw64_pcie_config_read);
+
+/**
+ * sw64_pcie_config_write - write val to config space of PCI
+ *                          host controller or device
+ *
+ * @bus  : PCI bus structure
+ * @devfn: device/function
+ * @where: offset from base
+ * @size : size of val
+ * @val  : the value write to PCI host controller or device
+ *
+ * @return: Whether write operation success
+ */
+int sw64_pcie_config_write(struct pci_bus *bus, unsigned int devfn,
+		int where, int size, u32 val)
+{
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
+
+	if (is_guest_or_emul())
+		return pci_generic_config_write(bus, devfn, where, size, val);
+
+	hose->self_busno = hose->busn_space->start;
+
+	if (unlikely(bus->number == hose->self_busno))
+		return sw64_pcie_write_rc_cfg(bus, devfn, where, size, val);
+	else
+		return pci_generic_config_write(bus, devfn, where, size, val);
+}
+EXPORT_SYMBOL(sw64_pcie_config_write);
+
+/**
+ * sw64_pcie_map_bus - get configuration base address
+ * @bus  : PCI bus structure
+ * @devfn: device/function
+ * @where: offset from base
+ *
+ * @return: base address of the configuration space needed to be
+ * accessed.
+ */
+void __iomem *sw64_pcie_map_bus(struct pci_bus *bus,
+		unsigned int devfn, int where)
+{
+	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
+	void __iomem *cfg_iobase;
+	unsigned long relbus;
+
+	if (!sw64_pcie_valid_device(bus, devfn))
+		return NULL;
+
+	/**
+	 * ECAM of Sunway PCI host controller is slightly
+	 * different from the standrad:
+	 * [31:24]: bus number
+	 * [23:19]: device number
+	 * [18:16]: function number
+	 * [15:12]: reserved
+	 * [11:8] : extended config space registers
+	 * [7:2]  : legacy config space registers
+	 */
+	relbus = (bus->number << 24) | (devfn << 16) | where;
+
+	cfg_iobase = hose->ep_config_space_base + relbus;
+
+	if (IS_ENABLED(CONFIG_PCI_DEBUG))
+		pr_debug("addr:%px bus %d, devfn %d, where %d\n",
+				cfg_iobase, bus->number, devfn, where);
+	return cfg_iobase;
+}
+EXPORT_SYMBOL(sw64_pcie_map_bus);
+
+int sw64_pci_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
+{
+	return map_irq(dev, slot, pin);
+}
+
+#ifdef CONFIG_ACPI
+
+enum pci_props {
+	PROP_RC_CONFIG_BASE = 0,
+	PROP_EP_CONFIG_BASE,
+	PROP_EP_MEM_32_BASE,
+	PROP_EP_MEM_64_BASE,
+	PROP_EP_IO_BASE,
+	PROP_PIU_IOR0_BASE,
+	PROP_PIU_IOR1_BASE,
+	PROP_RC_INDEX,
+	PROP_PCIE_IO_BASE,
+	PROP_NUM
+};
+
+const char *prop_names[PROP_NUM] = {
+	"sw64,rc_config_base",
+	"sw64,ep_config_base",
+	"sw64,ep_mem_32_base",
+	"sw64,ep_mem_64_base",
+	"sw64,ep_io_base",
+	"sw64,piu_ior0_base",
+	"sw64,piu_ior1_base",
+	"sw64,rc_index",
+	"sw64,pcie_io_base"
+};
+
+static int sw64_pci_prepare_controller(struct pci_controller *hose,
+		struct fwnode_handle *fwnode)
+{
+	u64 props[PROP_NUM];
+	int i, ret;
+
+	/* Get properties of Root Complex */
+	for (i = 0; i < PROP_NUM; ++i) {
+		ret = fwnode_property_read_u64_array(fwnode, prop_names[i],
+			&props[i], 1);
+		if (ret) {
+			pr_err("unable to retrieve \"%s\"\n",
+					prop_names[i]);
+			return ret;
+		}
+	}
+
+	hose->iommu_enable = false;
+
+	hose->index = props[PROP_RC_INDEX];
+
+	hose->sparse_mem_base = 0;
+	hose->sparse_io_base  = 0;
+	hose->dense_mem_base  = props[PROP_PCIE_IO_BASE];
+	hose->dense_io_base   = props[PROP_EP_IO_BASE];
+
+	hose->rc_config_space_base = __va(props[PROP_RC_CONFIG_BASE]);
+	hose->ep_config_space_base = __va(props[PROP_EP_CONFIG_BASE]);
+	hose->piu_ior0_base = __va(props[PROP_PIU_IOR0_BASE]);
+	hose->piu_ior1_base = __va(props[PROP_PIU_IOR1_BASE]);
+
+	hose->first_busno = 0xff;
+	hose->last_busno  = 0xff;
+	hose->self_busno  = 0xff;
+
+	hose->need_domain_info = 0;
+
+#if IS_ENABLED(CONFIG_PCI_MSI)
+	if (is_in_host())
+		memset(hose->piu_msiconfig, 0, 256 / 8); /* 256 bits bitmap */
+#endif
+
+	/**
+	 * There are two prerequisites for Root Complex
+	 * of Sunway to work:
+	 * 1. Root Complex enable
+	 * 2. Root Complex link up
+	 */
+	set_rc_piu(hose->node, hose->index);
+	if (check_pci_linkup(hose->node, hose->index)) {
+		/**
+		 * Root Complex link up failed.
+		 * This usually means that no device on the slot.
+		 */
+		pr_info("<Node [%ld], RC [%ld]>: link down\n",
+				hose->node, hose->index);
+	} else {
+		pci_mark_rc_linkup(hose->node, hose->index);
+		pr_info("<Node [%ld], RC [%ld]>: successfully link up\n",
+				hose->node, hose->index);
+	}
+
+	setup_intx_irqs(hose);
+
+	pci_link_controller(hose);
+
+	return 0;
+}
+
+/**
+ * Use the info from ACPI to init pci_controller
+ */
+static int sw64_pci_ecam_init(struct pci_config_window *cfg)
+{
+	struct pci_controller *hose = NULL;
+	struct device *dev = cfg->parent;
+	struct acpi_device *adev = to_acpi_device(dev);
+	int ret;
+
+	/**
+	 * First, check whether Root Complex is enabled.
+	 * If Root Complex disabled, there's no need to continue.
+	 *
+	 * In ACPI namespace, we use _STA method to indicate
+	 * whether Root Complex is enabled.
+	 *
+	 * The _STA has been checked when creating acpi_device.
+	 * Double check here to get the latest hardware status.
+	 */
+	ret = acpi_bus_get_status(adev);
+	if (ret) {
+		dev_err(dev, "unable to retrieve _STA\n");
+		return ret;
+	}
+
+	if (!adev->status.present) {
+		dev_err(dev, "RC is not enabled\n");
+		return -ENODEV;
+	}
+
+	hose = kzalloc(sizeof(*hose), GFP_KERNEL);
+	if (!hose)
+		return -ENOMEM;
+
+	/* Get node from ACPI namespace (_PXM) */
+	hose->node = acpi_get_node(adev->handle);
+	if (hose->node == NUMA_NO_NODE) {
+		kfree(hose);
+		dev_err(&adev->dev, "unable to get node ID\n");
+		return -EINVAL;
+	}
+
+	/* Init pci_controller */
+	ret = sw64_pci_prepare_controller(hose, &adev->fwnode);
+	if (ret) {
+		kfree(hose);
+		dev_err(&adev->dev, "failed to init pci controller\n");
+		return ret;
+	}
+
+	cfg->priv = (void *)hose;
+
+	return 0;
+}
+
+const struct pci_ecam_ops sw64_pci_ecam_ops = {
+	.bus_shift = 24,
+	.init      = sw64_pci_ecam_init,
+	.pci_ops   = {
+		.map_bus = sw64_pcie_map_bus,
+		.read    = sw64_pcie_config_read,
+		.write   = sw64_pcie_config_write,
+	}
+};
+#endif
+

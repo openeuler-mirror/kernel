@@ -9,26 +9,33 @@
 #include <asm/errno.h>
 #include <asm/unistd.h>
 #include <asm/ptrace.h>
+#include <asm/csr.h>
 
 	.text
 	.set noat
-/*
- * This defines the normal kernel pt-regs layout.
- *
- * regs 9-15 preserved by C code, saving to pt_regs will make
- * them easier to be accessed in an unified way.
- * regs 16-18 saved by HMcode
- * regs 29-30 saved and set up by HMcode
- */
 
 	.macro SAVE_ALL
-	ldi	$sp, -PT_REGS_HM_PS($sp)
+	csrw	$sp, CSR_SP
+	csrw	$1, CSR_SCRATCH
+	csrr	$1, CSR_PS
+	and	$1, 8, $1
+	beq	$1, 1f
+	csrr	$1, CSR_KTP
+	ldl	$sp, TI_PCB_KSP($1)
+1:
+	/* Due to a flaw in the CSR design, in some cases the
+	 * read CSR instruction is sent before the write instruction,
+	 * so it needs to be read twice to ensure that the correct
+	 * CSR value is read. Don`t delete it!
+	 */
+	csrr	$1, CSR_SCRATCH
+	csrr	$1, CSR_SCRATCH
+	ldi	$sp, -PT_REGS_SIZE($sp)
 	stl	$0, PT_REGS_R0($sp)
 	stl	$1, PT_REGS_R1($sp)
 	stl	$2, PT_REGS_R2($sp)
 	stl	$3, PT_REGS_R3($sp)
 	stl	$4, PT_REGS_R4($sp)
-	stl	$28, PT_REGS_R28($sp)
 	stl	$5, PT_REGS_R5($sp)
 	stl	$6, PT_REGS_R6($sp)
 	stl	$7, PT_REGS_R7($sp)
@@ -40,6 +47,9 @@
 	stl	$13, PT_REGS_R13($sp)
 	stl	$14, PT_REGS_R14($sp)
 	stl	$15, PT_REGS_R15($sp)
+	stl	$16, PT_REGS_R16($sp)
+	stl	$17, PT_REGS_R17($sp)
+	stl	$18, PT_REGS_R18($sp)
 	stl	$19, PT_REGS_R19($sp)
 	stl	$20, PT_REGS_R20($sp)
 	stl	$21, PT_REGS_R21($sp)
@@ -49,46 +59,49 @@
 	stl	$25, PT_REGS_R25($sp)
 	stl	$26, PT_REGS_R26($sp)
 	stl	$27, PT_REGS_R27($sp)
-	ldl	$1, PT_REGS_HM_R16($sp)
-	ldl	$2, PT_REGS_HM_R17($sp)
-	ldl	$3, PT_REGS_HM_R18($sp)
-	ldl	$4, PT_REGS_HM_GP($sp)
-	ldl	$5, PT_REGS_HM_PC($sp)
-	ldl	$6, PT_REGS_HM_PS($sp)
-	stl	$1, PT_REGS_R16($sp)
-	stl	$2, PT_REGS_R17($sp)
-	stl	$3, PT_REGS_R18($sp)
-	stl	$4, PT_REGS_GP($sp)
-	stl	$5, PT_REGS_PC($sp)
-	stl	$6, PT_REGS_PS($sp)
-	and	$6, 0x8, $7
-	beq	$7, 1f
-	sys_call HMC_rdusp
-	br	2f
-1:	ldi	$0, PT_REGS_SIZE($sp)
-2:	stl	$0, PT_REGS_SP($sp)
+	stl	$28, PT_REGS_R28($sp)
+	stl	$29, PT_REGS_GP($sp)
+
+	csrr	$1, CSR_SP
+	csrr	$1, CSR_SP
+	csrr	$2, CSR_PS
+	csrr	$3, CSR_PC
+	csrr	$16, CSR_EARG0
+	csrr	$17, CSR_EARG1
+	csrr	$18, CSR_EARG2
+	stl	$16, PT_REGS_EARG0($sp)
+	stl	$17, PT_REGS_EARG1($sp)
+	stl	$18, PT_REGS_EARG2($sp)
+
+	stl     $1, PT_REGS_SP($sp)
+	stl	$2, PT_REGS_PS($sp)
+	stl	$3, PT_REGS_PC($sp)
 	ldi	$1, NO_SYSCALL
 	stl	$1, PT_REGS_ORIG_R0($sp)
-	sys_call HMC_rdktp
+	csrr	$8, CSR_KTP
+#ifdef CONFIG_FRAME_POINTER
+	ldi	$sp, -STACKFRAME_SIZE($sp)
+	stl	$3, STACKFRAME_PC($sp)
+	stl	$15, STACKFRAME_FP($sp)
+	mov	$sp, $15
+#endif
 	.endm
 
 	.macro RESTORE_ALL
-	ldl	$16, PT_REGS_SP($sp)
-	/* skip wrusp if returning to kernel */
-	blt	$16, 1f
-	sys_call HMC_wrusp
-1:	ldl	$1, PT_REGS_R16($sp)
-	ldl	$2, PT_REGS_R17($sp)
-	ldl	$3, PT_REGS_R18($sp)
-	ldl	$4, PT_REGS_GP($sp)
-	ldl	$5, PT_REGS_PC($sp)
-	ldl	$6, PT_REGS_PS($sp)
-	stl	$1, PT_REGS_HM_R16($sp)
-	stl	$2, PT_REGS_HM_R17($sp)
-	stl	$3, PT_REGS_HM_R18($sp)
-	stl	$4, PT_REGS_HM_GP($sp)
-	stl	$5, PT_REGS_HM_PC($sp)
-	stl	$6, PT_REGS_HM_PS($sp)
+	ldi     $16, 7
+	sys_call HMC_swpipl
+
+	ldi	$sp, STACKFRAME_SIZE($sp)
+
+	ldl	$1, PT_REGS_PS($sp)
+	ldl	$2, PT_REGS_PC($sp)
+	csrw	$1, CSR_PS
+	csrw	$2, CSR_PC
+	and     $1, 0x8, $1
+	beq	$1, 1f
+	ldi	$16,PT_REGS_SIZE($sp)
+	stl	$16, TI_PCB_KSP($8)
+1:
 	ldl	$0, PT_REGS_R0($sp)
 	ldl	$1, PT_REGS_R1($sp)
 	ldl	$2, PT_REGS_R2($sp)
@@ -105,6 +118,9 @@
 	ldl	$13, PT_REGS_R13($sp)
 	ldl	$14, PT_REGS_R14($sp)
 	ldl	$15, PT_REGS_R15($sp)
+	ldl	$16, PT_REGS_R16($sp)
+	ldl	$17, PT_REGS_R17($sp)
+	ldl	$18, PT_REGS_R18($sp)
 	ldl	$19, PT_REGS_R19($sp)
 	ldl	$20, PT_REGS_R20($sp)
 	ldl	$21, PT_REGS_R21($sp)
@@ -115,9 +131,15 @@
 	ldl	$26, PT_REGS_R26($sp)
 	ldl	$27, PT_REGS_R27($sp)
 	ldl	$28, PT_REGS_R28($sp)
-	ldi	$sp, PT_REGS_HM_PS($sp)
+	ldl     $29, PT_REGS_GP($sp)
+	ldl	$sp, PT_REGS_SP($sp)
 	.endm
 
+	.macro RESTORE_IRQ
+	csrr	$16, CSR_PS
+	sys_call HMC_swpipl
+	ldl	$16, (PT_REGS_EARG0 + STACKFRAME_SIZE)($sp)
+	.endm
 /*
  * Non-syscall kernel entry points.
  */
@@ -127,7 +149,9 @@
 	.ent entInt
 entInt:
 	SAVE_ALL
-	mov	$sp, $19
+	br      $27, 1f
+1:      ldgp    $29, 0($27)
+	ldi	$19, STACKFRAME_SIZE($sp)
 	call	$26, do_entInt
 	br	ret_from_sys_call
 	.end entInt
@@ -137,7 +161,13 @@ entInt:
 	.ent entArith
 entArith:
 	SAVE_ALL
-	mov	$sp, $18
+	ldl     $1, (PT_REGS_PC + STACKFRAME_SIZE)($sp)
+	ldi	$1, 4($1)
+	stl     $1, (PT_REGS_PC + STACKFRAME_SIZE)($sp)
+	br      $27, 1f
+1:      ldgp    $29, 0($27)
+	RESTORE_IRQ
+	ldi	$18, STACKFRAME_SIZE($sp)
 	call	$26, do_entArith
 	br	ret_from_sys_call
 	.end entArith
@@ -147,7 +177,10 @@ entArith:
 	.ent entMM
 entMM:
 	SAVE_ALL
-	mov	$sp, $19
+	br      $27, 1f
+1:      ldgp    $29, 0($27)
+	RESTORE_IRQ
+	ldi	$19, STACKFRAME_SIZE($sp)
 	call	$26, do_page_fault
 	br	ret_from_sys_call
 	.end entMM
@@ -157,7 +190,13 @@ entMM:
 	.ent entIF
 entIF:
 	SAVE_ALL
-	mov	$sp, $18
+	ldl     $1, (PT_REGS_PC + STACKFRAME_SIZE)($sp)
+	ldi	$1, 4($1)
+	stl     $1, (PT_REGS_PC + STACKFRAME_SIZE)($sp)
+	br      $27, 1f
+1:      ldgp    $29, 0($27)
+	RESTORE_IRQ
+	ldi	$18, STACKFRAME_SIZE($sp)
 	call	$26, do_entIF
 	br	ret_from_sys_call
 	.end entIF
@@ -173,15 +212,21 @@ entIF:
 	.ent entUna
 entUna:
 	SAVE_ALL
-	mov	$sp, $19
-	ldl	$0, PT_REGS_PS($sp)
+	ldl     $1, (PT_REGS_PC + STACKFRAME_SIZE)($sp)
+	ldi	$1, 4($1)
+	stl     $1, (PT_REGS_PC + STACKFRAME_SIZE)($sp)
+	br      $27, 1f
+1:      ldgp    $29, 0($27)
+	RESTORE_IRQ
+	ldi	$19, STACKFRAME_SIZE($sp)
+	ldl	$0, (PT_REGS_PS + STACKFRAME_SIZE)($sp)
 	and	$0, 8, $0		/* user mode ? */
 	beq	$0, 1f
 	call	$26, do_entUnaUser	/* return to ret_from_syscall */
 	br	ret_from_sys_call
-1:	ldl	$9, PT_REGS_GP($sp)
+1:	ldl	$9, (PT_REGS_GP + STACKFRAME_SIZE)($sp)
 	call	$26, do_entUna
-	stl	$9, PT_REGS_GP($sp)
+	stl	$9, (PT_REGS_GP + STACKFRAME_SIZE)($sp)
 	RESTORE_ALL
 	sys_call HMC_rti
 	.end entUna
@@ -202,10 +247,13 @@ entUna:
 	.ent entSys
 entSys:
 	SAVE_ALL
-	stl	$16, PT_REGS_R16($sp)
-	stl	$17, PT_REGS_R17($sp)
-	stl	$18, PT_REGS_R18($sp)
-	mov	$sp, $16
+	ldl     $1, (PT_REGS_PC + STACKFRAME_SIZE)($sp)
+	ldi	$1, 4($1)
+	stl     $1, (PT_REGS_PC + STACKFRAME_SIZE)($sp)
+	br      $27, 1f
+1:      ldgp    $29, 0($27)
+	RESTORE_IRQ
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_entSys
 	br	ret_from_sys_call
 	.end entSys
@@ -214,24 +262,20 @@ entSys:
 	.globl ret_from_sys_call
 	.ent ret_from_sys_call
 ret_from_sys_call:
-#ifdef CONFIG_SUBARCH_C3B
-	fillcs	0($sp)			/* prefetch */
-	fillcs	128($sp)		/* prefetch */
-#endif
 	br	$27, 1f
 1:	ldgp	$29, 0($27)
 	/* Make sure need_resched and sigpending don't change between
 		sampling and the rti.  */
 	ldi	$16, 7
 	sys_call HMC_swpipl
-	ldl	$0, PT_REGS_PS($sp)
+	ldl	$0, (PT_REGS_PS + STACKFRAME_SIZE)($sp)
 	and	$0, 8, $0
 	beq	$0, restore_all
 ret_to_user:
 	ldw	$17, TI_FLAGS($8)
 	and	$17, _TIF_WORK_MASK, $2
 	beq	$2, restore_all
-	mov	$sp, $16
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_notify_resume
 restore_all:
 	RESTORE_ALL
@@ -274,7 +318,7 @@ __switch_to:
 	ldl	$14, TASK_THREAD_S5($17)
 	ldl	$15, TASK_THREAD_S6($17)
 	mov	$17, $8
-	sys_call HMC_wrktp
+	csrw	$8, CSR_KTP
 	mov	$16, $0
 	ret
 	.end __switch_to

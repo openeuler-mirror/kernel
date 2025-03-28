@@ -71,8 +71,6 @@ static int sw64_cpufreq_target(struct cpufreq_policy *policy,
 	if (!cpu_online(cpu))
 		return -ENODEV;
 
-	sw64_store_policy(policy);
-
 	/* setting the cpu frequency */
 	sw64_set_rate(index);
 	update_cpu_freq(freq_table[index].frequency);
@@ -89,8 +87,6 @@ static int sw64_cpufreq_cpu_init(struct cpufreq_policy *policy)
 	}
 
 	policy->clk = cpuclk;
-
-	sw64_store_policy(policy);
 
 	cpufreq_generic_init(policy, freq_table, 0);
 
