@@ -7330,12 +7330,15 @@ static int select_idle_core(struct task_struct *p, int core, struct cpumask *cpu
 #ifdef CONFIG_SCHED_KEEP_ON_CORE
 int sysctl_sched_util_ratio = 100;
 
-static int core_has_spare(int cpu)
+static bool core_has_spare(int cpu)
 {
 	int core_id = cpumask_first(cpu_smt_mask(cpu));
 	struct rq *rq = cpu_rq(core_id);
-	unsigned long util = rq->cfs.avg.util_avg;
+	unsigned long util = cpu_util(cpu);
 	unsigned long capacity = rq->cpu_capacity;
+
+	if (sysctl_sched_util_ratio == 100)
+		return true;
 
 	return util * 100 < capacity * sysctl_sched_util_ratio;
 }

@@ -1370,8 +1370,15 @@ config SCHED_STEAL
 
 	  If unsure, say N here.
 
+#
+# For architectures that want to enable the support for SCHED_KEEP_ON_CORE
+#
+config ARCH_SUPPORTS_SCHED_KEEP_ON_CORE
+	bool
+
 config SCHED_KEEP_ON_CORE
 	bool "Prefer physical cores when migrating tasks"
+	depends on ARCH_SUPPORTS_SCHED_KEEP_ON_CORE
 	depends on SCHED_SMT
 	default n
 	help
