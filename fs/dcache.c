@@ -1118,7 +1118,7 @@ static bool shrink_lock_dentry(struct dentry *dentry)
 		goto out;
 	}
 	spin_lock_nested(&dentry->d_lock, DENTRY_D_LOCK_NESTED);
-	if (likely(!dentry->d_lockref.count))
+	if (likely(!dentry->d_lockref.count && inode == dentry->d_inode))
 		return true;
 	spin_unlock(&parent->d_lock);
 out:
