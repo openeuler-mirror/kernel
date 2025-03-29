@@ -924,6 +924,7 @@ void nmi_shootdown_cpus(nmi_shootdown_cb callback)
 		mdelay(1);
 		msecs--;
 	}
+	zap_locks();
 
 	/*
 	 * Leave the nmi callback set, shootdown is a one-time thing.  Clearing
