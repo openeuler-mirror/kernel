@@ -246,6 +246,10 @@ void printk_safe_flush(void)
 {
 	int cpu;
 
+	if (raw_spin_is_locked(&logbuf_lock) &&
+	    (this_cpu_read(printk_context) & PRINTK_SAFE_CONTEXT_MASK))
+		return;
+
 	for_each_possible_cpu(cpu) {
 #ifdef CONFIG_PRINTK_NMI
 		__printk_safe_flush(&per_cpu(nmi_print_seq, cpu).work);
