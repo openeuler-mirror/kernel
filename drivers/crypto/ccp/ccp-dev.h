@@ -70,6 +70,7 @@
 #define LSB_PRIVATE_MASK_LO_OFFSET	0x20
 #define LSB_PRIVATE_MASK_HI_OFFSET	0x24
 #define CMD5_PSP_CCP_VERSION		0x100
+#define CMD5_PSP_CCP_ENG_VERSION	0x104
 
 #define CMD5_Q_CONTROL_BASE		0x0000
 #define CMD5_Q_TAIL_LO_BASE		0x0004
@@ -123,6 +124,14 @@
 #define SLSB_MAP_SIZE			(MAX_LSB_CNT * LSB_SIZE)
 
 #define LSB_ENTRY_NUMBER(LSB_ADDR)	(LSB_ADDR / LSB_ITEM_SIZE)
+
+/* indicates whether there are some crypto engine for Hygon CCP */
+#define RI_AES_PRESENT			0x0800
+#define RI_SHA2_PRESENT			0x01000
+#define RI_SM4GCM_PRESENT		0x04000
+
+/* ccp sm4 engine version number mask */
+#define RI_SM4VersionNum		(0x7 << 6)
 
 /* ------------------------ CCP Version 3 Specifics ------------------------ */
 #define REQ0_WAIT_FOR_WRITE		0x00000004

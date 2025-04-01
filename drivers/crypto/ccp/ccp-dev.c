@@ -271,6 +271,33 @@ unsigned int ccp_version(void)
 EXPORT_SYMBOL_GPL(ccp_version);
 
 /**
+ * get_ccp_engine_version_reg_val - get the ccp engine version register of the CCP device
+ *
+ * Returns the ccp engine version register value of the first unit on the list;
+ */
+unsigned int get_ccp_engine_version_reg_val(void)
+{
+	unsigned int ret = 0;
+	/* Hygon ccp only */
+#ifdef CONFIG_HYGON_GM
+	struct ccp_device *dp;
+	unsigned long flags;
+
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON) {
+		read_lock_irqsave(&ccp_unit_lock, flags);
+		if (!list_empty(&ccp_units)) {
+			dp = list_first_entry(&ccp_units, struct ccp_device, entry);
+			ret = ioread32(dp->io_regs + CMD5_PSP_CCP_ENG_VERSION);
+		}
+		read_unlock_irqrestore(&ccp_unit_lock, flags);
+	}
+#endif
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(get_ccp_engine_version_reg_val);
+
+/**
  * get_ccp_version_reg_val - get PspCcpVersion register value
  *
  * Returns the PspCcpVersion register value of the fist CCP on list;
@@ -278,16 +305,21 @@ EXPORT_SYMBOL_GPL(ccp_version);
  */
 unsigned int get_ccp_version_reg_val(void)
 {
+	unsigned int ret = 0;
+	/* Hygon ccp only */
+#ifdef CONFIG_HYGON_GM
 	struct ccp_device *dp;
 	unsigned long flags;
-	int ret = 0;
 
-	read_lock_irqsave(&ccp_unit_lock, flags);
-	if (!list_empty(&ccp_units)) {
-		dp = list_first_entry(&ccp_units, struct ccp_device, entry);
-		ret = ioread32(dp->io_regs + CMD5_PSP_CCP_VERSION);
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON) {
+		read_lock_irqsave(&ccp_unit_lock, flags);
+		if (!list_empty(&ccp_units)) {
+			dp = list_first_entry(&ccp_units, struct ccp_device, entry);
+			ret = ioread32(dp->io_regs + CMD5_PSP_CCP_VERSION);
+		}
+		read_unlock_irqrestore(&ccp_unit_lock, flags);
 	}
-	read_unlock_irqrestore(&ccp_unit_lock, flags);
+#endif
 
 	return ret;
 }
