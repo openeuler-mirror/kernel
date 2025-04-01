@@ -20,8 +20,6 @@
 #include "ccp-crypto.h"
 #include "ccp-dev.h"
 
-#define RI_SM4GCM_PRESENT_BIT	14
-
 static int ccp_sm4_gcm_complete(struct crypto_async_request *async_req, int ret)
 {
 	return ret;
@@ -216,10 +214,10 @@ int ccp_register_sm4_hygon_aeads(struct list_head *head)
 {
 	int i, ret;
 	unsigned int ccpversion = ccp_version();
-	unsigned int pspccp_version_reg;
+	unsigned int pspccp_version_reg = 0;
 
 	pspccp_version_reg = get_ccp_version_reg_val();
-	if (!test_bit(RI_SM4GCM_PRESENT_BIT, (unsigned long *)&pspccp_version_reg)) {
+	if (!(pspccp_version_reg & RI_SM4GCM_PRESENT)) {
 		pr_warn("SM4 GCM CCP ENGINE NOT SUPPORTED!\n");
 		return 0;
 	}
