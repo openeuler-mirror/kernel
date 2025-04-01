@@ -18,6 +18,7 @@
 #include <crypto/scatterwalk.h>
 
 #include "ccp-crypto.h"
+#include "ccp-dev.h"
 
 enum ccp_sm4_alg_mode {
 	CCP_SM4_ALG_MODE_ECB = CCP_SM4_MODE_ECB,
@@ -309,10 +310,18 @@ int ccp_register_sm4_hygon_algs(struct list_head *head)
 {
 	int i, ret;
 	unsigned int ccpversion = ccp_version();
+	unsigned int ccp_engine_version_reg = 0;
 
 	for (i = 0; i < ARRAY_SIZE(sm4_algs); i++) {
 		if (sm4_algs[i].version > ccpversion)
 			continue;
+		if (sm4_algs[i].mode == CCP_SM4_ALG_MODE_XTS) {
+			ccp_engine_version_reg = get_ccp_engine_version_reg_val();
+			if (!(ccp_engine_version_reg & RI_SM4VersionNum)) {
+				pr_warn("SM4 XTS CCP ENGINE NOT SUPPORTED!\n");
+				continue;
+			}
+		}
 		ret = ccp_register_sm4_hygon_alg(head, &sm4_algs[i]);
 		if (ret)
 			return ret;

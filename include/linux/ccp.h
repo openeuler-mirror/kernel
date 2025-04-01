@@ -44,6 +44,13 @@ int ccp_present(void);
 unsigned int ccp_version(void);
 
 /**
+ * get_ccp_engine_version_reg_val - get the ccp engine version register of the CCP device
+ *
+ * Returns the ccp engine version register value of the first unit on the list;
+ */
+unsigned int get_ccp_engine_version_reg_val(void);
+
+/**
  * get_ccp_version_reg_val - read PspCcpVersion register value of CCP
  *
  * Returns PspCcpVersion register value , or zero if no CCP
@@ -83,6 +90,11 @@ static inline int ccp_present(void)
 }
 
 static inline unsigned int ccp_version(void)
+{
+	return 0;
+}
+
+static inline unsigned int get_ccp_engine_version_reg_val(void)
 {
 	return 0;
 }
