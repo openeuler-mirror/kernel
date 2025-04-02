@@ -946,6 +946,7 @@ static int ccp5_init(struct ccp_device *ccp)
 	unsigned int qmr, i;
 	u64 status;
 	u32 status_lo, status_hi;
+	int ecc_support = 0, is_trng2 = 0;
 	int ret;
 
 	/* Find available queues */
@@ -962,9 +963,16 @@ static int ccp5_init(struct ccp_device *ccp)
 		return 1;
 	}
 
-	/*  check if ccp support both sm2 and ecc. */
-	ccp->support_sm2_ecc = !!(ioread32(ccp->io_regs + CMD5_PSP_CCP_VERSION)
-		& RI_ECC_PRESENT);
+	/* check if ccp support both sm2 and ecc, or not support ecc
+	 * but use new function structure.
+	 */
+	if (is_vendor_hygon()) {
+		ecc_support = !!(ioread32(ccp->io_regs + CMD5_PSP_CCP_VERSION) & RI_ECC_PRESENT);
+		is_trng2 = !!(((ioread32(ccp->io_regs + CMD5_PSP_CCP_ENG_VERSION)
+				>> RI_TRNGVersionOffset) & RI_TRNGVersionMask)
+				== RI_TRNGVersion_002);
+		ccp->support_sm2_ecc = ecc_support || is_trng2;
+	}
 
 	for (i = 0; (i < MAX_HW_QUEUES) && (ccp->cmd_q_count < ccp->max_q_count); i++) {
 		if (!(qmr & (1 << i)))
