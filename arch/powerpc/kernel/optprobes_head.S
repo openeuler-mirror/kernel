@@ -36,8 +36,9 @@ optprobe_template_entry:
 	addi	r0,r1,INT_FRAME_SIZE
 	std	r0,GPR1(r1)
 	SAVE_10GPRS(2,r1)
-	SAVE_10GPRS(12,r1)
-	SAVE_10GPRS(22,r1)
+	SAVE_GPR(12,r1)
+	SAVE_10GPRS(14,r1)
+	SAVE_8GPRS(24,r1)
 	/* Save SPRS */
 	mfmsr	r5
 	std	r5,_MSR(r1)
@@ -119,8 +120,9 @@ optprobe_template_call_emulate:
 	mtcr	r5
 	REST_GPR(0,r1)
 	REST_10GPRS(2,r1)
-	REST_10GPRS(12,r1)
-	REST_10GPRS(22,r1)
+	REST_GPR(12,r1)
+	REST_10GPRS(14,r1)
+	REST_8GPRS(24,r1)
 	/* Restore the previous SP */
 	addi	r1,r1,INT_FRAME_SIZE
 

@@ -51,8 +51,9 @@ _GLOBAL(ftrace_regs_caller)
 	cmpdi	r3, 0
 	beq	ftrace_no_trace
 
-	SAVE_10GPRS(12, r1)
-	SAVE_10GPRS(22, r1)
+	SAVE_GPR(12,r1)
+	SAVE_10GPRS(14,r1)
+	SAVE_8GPRS(24,r1)
 
 	/* Save previous stack pointer (r1) */
 	addi	r8, r1, SWITCH_FRAME_SIZE+STACK_FRAME_MIN_SIZE
@@ -115,8 +116,9 @@ ftrace_regs_call:
 	/* Restore gprs */
 	REST_GPR(0,r1)
 	REST_10GPRS(2,r1)
-	REST_10GPRS(12,r1)
-	REST_10GPRS(22,r1)
+	REST_GPR(12,r1)
+	REST_10GPRS(14,r1)
+	REST_8GPRS(24,r1)
 
 	/* Restore possibly modified LR */
 	ld	r0, _LINK(r1)
