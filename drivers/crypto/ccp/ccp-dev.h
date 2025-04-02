@@ -130,8 +130,13 @@
 #define RI_SHA2_PRESENT			0x01000
 #define RI_SM4GCM_PRESENT		0x04000
 
-/* ccp sm4 engine version number mask */
+/* Hygon ccp sm4 engine version mask */
 #define RI_SM4VersionNum		(0x7 << 6)
+
+/* Hygon ccp TRNG version mask */
+#define RI_TRNGVersionOffset		21
+#define RI_TRNGVersionMask		0x03
+#define RI_TRNGVersion_002		2
 
 /* ------------------------ CCP Version 3 Specifics ------------------------ */
 #define REQ0_WAIT_FOR_WRITE		0x00000004
