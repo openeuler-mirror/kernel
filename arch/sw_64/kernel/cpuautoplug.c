@@ -12,10 +12,16 @@
 #include <linux/kernel_stat.h>
 #include <linux/platform_device.h>
 #include <linux/delay.h>
+#include <linux/cpumask.h>
+#include <linux/kernel.h>
+#include <linux/sched/loadavg.h>
+#include <linux/sched/nohz.h>
+#include <linux/jiffies.h>
 
 #include <asm/cpufreq.h>
 #include <asm/cputime.h>
 #include <asm/smp.h>
+#include "../../../kernel/sched/sched.h"
 
 int autoplug_enabled;
 int autoplug_verbose;
@@ -266,7 +272,7 @@ static cputime64_t get_min_busy_time(cputime64_t arr[], int size)
 	int i, min_cpu_idx;
 	cputime64_t min_time = arr[0];
 
-	for (i = 0; i < size; i++) {
+	for (i = 1; i < size; i++) {
 		if (arr[i] > 0 && arr[i] < min_time) {
 			min_time = arr[i];
 			min_cpu_idx = i;
@@ -366,14 +372,18 @@ static void decrease_cores(int cur_cpus)
 
 static void do_autoplug_timer(struct work_struct *work)
 {
-	cputime64_t cur_wall_time = 0, cur_idle_time;
-	unsigned long idle_time, wall_time;
 	int delay, load;
 	int nr_cur_cpus = num_online_cpus();
-	int nr_all_cpus = num_possible_cpus();
 	int inc_req = 1, dec_req = 2;
 	struct cpufreq_policy *policy = cpufreq_cpu_get_raw(smp_processor_id());
-
+#ifdef CONFIG_NO_HZ_COMMON
+	int nr_all_cpus = num_possible_cpus();
+	cputime64_t cur_wall_time = 0, cur_idle_time;
+	unsigned long idle_time, wall_time;
+#else
+	long active;
+	atomic_long_t calc_load_tasks;
+#endif
 	if (!policy || IS_ERR(policy->clk)) {
 		pr_err("%s: No %s associated to cpu: %d\n",
 			__func__, policy ? "clk" : "policy", 0);
@@ -416,6 +426,7 @@ static void do_autoplug_timer(struct work_struct *work)
 		goto out;
 	}
 
+#ifdef CONFIG_NO_HZ_COMMON
 	cur_idle_time = sw64_get_idle_time(&cur_wall_time);
 	if (cur_wall_time == 0)
 		cur_wall_time = jiffies64_to_cputime64(get_jiffies_64());
@@ -433,8 +444,14 @@ static void do_autoplug_timer(struct work_struct *work)
 	}
 
 	load = (100 * (wall_time * nr_all_cpus - idle_time)) / wall_time;
+#else
+	active = atomic_long_read(&calc_load_tasks);
+	active = active > 0 ? active * FIXED_1 : 0;
+	CALC_LOAD(avenrun[0], EXP_1, active);
+	load = avenrun[0] / 2;
+#endif
 
-	if (load < (nr_cur_cpus - 1) * 100 - DEC_THRESHOLD) {
+	if (load < (nr_cur_cpus - 1) * (100 - DEC_THRESHOLD)) {
 		ap_info.inc_reqs = 0;
 		if (ap_info.dec_reqs < dec_req)
 			ap_info.dec_reqs++;
