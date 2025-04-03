@@ -32,6 +32,7 @@ struct file_open_data {
 	struct hisi_sdma_device *psdma_dev;
 	struct list_head non_share_chn_list;
 	struct list_head share_chn_list;
+	struct mm_struct *cur_file_mm;
 };
 
 struct hisi_sdma_mn {
@@ -460,7 +461,7 @@ static int sdma_resume_mmu_handler(struct mm_struct *mm, struct file_open_data *
 	sdma_mn->pid = current->tgid;
 	sdma_mn->data = data;
 	sdma_mn->mn.ops = &sdma_resume_mmu_notifier_ops;
-	ret = mmu_notifier_register(&sdma_mn->mn, current->mm);
+	ret = mmu_notifier_register(&sdma_mn->mn, mm);
 	if (ret) {
 		mutex_unlock(g_info.mutex_lock);
 		kfree(sdma_mn);
@@ -559,6 +560,7 @@ static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 
 	atomic_add(1, &ttl_processes);
 
+	data->cur_file_mm = current->mm;
 	data->ida = id;
 	data->pasid = pasid;
 	data->psdma_dev = psdma_dev;
@@ -1498,7 +1500,7 @@ static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 	if (data->handle)
 		iommu_sva_unbind_device(data->handle);
 	sdma_put_resume_mmu_notifier();
-	if (current->mm)
+	if (current->mm == data->cur_file_mm)
 		atomic_sub(1, &ttl_processes);
 
 	sdma_hash_free_entry(data->ida);
