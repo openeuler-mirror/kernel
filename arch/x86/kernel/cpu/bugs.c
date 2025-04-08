@@ -70,7 +70,6 @@ DEFINE_PER_CPU(bool, x86_ibpb_exit_to_user);
 EXPORT_PER_CPU_SYMBOL_GPL(x86_ibpb_exit_to_user);
 
 u64 x86_pred_cmd __ro_after_init = PRED_CMD_IBPB;
-EXPORT_SYMBOL_GPL(x86_pred_cmd);
 
 static u64 __ro_after_init x86_arch_cap_msr;
 
