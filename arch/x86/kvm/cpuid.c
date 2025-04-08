@@ -1108,6 +1108,7 @@ void kvm_set_cpu_caps(void)
 		/* SmmPgCfgLock */
 		F(NULL_SEL_CLR_BASE),
 		F(AUTOIBRS),
+		F(PREFETCHI),
 		EMULATED_F(NO_SMM_CTL_MSR),
 		/* PrefetchCtlMsr */
 		F(WRMSR_XX_BASE_NS),
