@@ -1713,9 +1713,16 @@ static struct cpuhp_step cpuhp_hp_states[] = {
 	 * Please ensure that there are no other steps with teardown handler
 	 * between smpcfd:dying and cpu:teardown.
 	 */
+	/*
+	 * In the past, the implementation of CPUHP_AP_HRTIMERS_DYING is deleted because
+	 * the Kabi is fixed. The teardown operation and teardown of CPUHP_AP_SMPCFD_DYING
+	 * are combined into smpcfd_and_hrtimer_dying_cpu. The startup operation of
+	 * CPUHP_AP_SMPCFD_DYING is empty. Therefore, the startup operation of
+	 * hrtimers_cpu_starting is set to the startup operation of CPUHP_AP_SMPCFD_DYING.
+	 */
 	[CPUHP_AP_SMPCFD_DYING] = {
 		.name			= "smpcfd:dying",
-		.startup.single		= NULL,
+		.startup.single		= hrtimers_cpu_starting,
 		.teardown.single	= smpcfd_and_hrtimer_dying_cpu,
 	},
 
