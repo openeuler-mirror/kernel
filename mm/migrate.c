@@ -820,7 +820,6 @@ static int __buffer_migrate_page(struct address_space *mapping,
 	struct buffer_head *bh, *head;
 	int rc;
 	int expected_count;
-	bool copy_done = false;
 
 	if (!page_has_buffers(page))
 		return migrate_page(mapping, newpage, page, mode);
@@ -861,13 +860,7 @@ recheck_buffers:
 		}
 	}
 
-	if (IS_ENABLED(CONFIG_ARM64) && IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC) &&
-	    (mode != MIGRATE_SYNC_NO_COPY)) {
-		rc = migrate_page_mc_extra(mapping, newpage, page, mode, 0);
-		copy_done = true;
-	} else {
-		rc = migrate_page_move_mapping(mapping, newpage, page, 0);
-	}
+	rc = migrate_page_move_mapping(mapping, newpage, page, 0);
 	if (rc != MIGRATEPAGE_SUCCESS)
 		goto unlock_buffers;
 
@@ -879,9 +872,6 @@ recheck_buffers:
 		bh = bh->b_this_page;
 
 	} while (bh != head);
-
-	if (copy_done)
-		goto unlock_buffers;
 
 	if (mode != MIGRATE_SYNC_NO_COPY)
 		migrate_page_copy(newpage, page);
