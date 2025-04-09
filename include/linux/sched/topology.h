@@ -231,6 +231,8 @@ struct sched_domain_topology_level {
 };
 
 extern void __init set_sched_topology(struct sched_domain_topology_level *tl);
+extern void sched_update_asym_prefer_cpu(int cpu, int old_prio, int new_prio);
+
 
 #define SDTL_INIT(maskfn, flagsfn, dname) ((struct sched_domain_topology_level) \
 	    { .mask = maskfn, .sd_flags = flagsfn, .name = #dname })
@@ -259,6 +261,10 @@ static inline bool cpus_share_cache(int this_cpu, int that_cpu)
 static inline bool cpus_share_resources(int this_cpu, int that_cpu)
 {
 	return true;
+}
+
+static inline void sched_update_asym_prefer_cpu(int cpu, int old_prio, int new_prio)
+{
 }
 
 #endif	/* !CONFIG_SMP */
