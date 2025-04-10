@@ -529,6 +529,9 @@ struct kvm_pmu_event_filter {
 #define KVM_PMU_EVENT_FLAG_MASKED_EVENTS BIT(0)
 #define KVM_PMU_EVENT_FLAGS_VALID_MASK (KVM_PMU_EVENT_FLAG_MASKED_EVENTS)
 
+#define KVM_XEN_MSR_MIN_INDEX			0x40000000u
+#define KVM_XEN_MSR_MAX_INDEX			0x4fffffffu
+
 /*
  * Masked event layout.
  * Bits   Description
@@ -561,5 +564,6 @@ struct kvm_pmu_event_filter {
 
 /* x86-specific KVM_EXIT_HYPERCALL flags. */
 #define KVM_EXIT_HYPERCALL_LONG_MODE	BIT(0)
+#define KVM_X86_TDX_VM		5
 
 #endif /* _ASM_X86_KVM_H */
