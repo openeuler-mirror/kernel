@@ -56,6 +56,17 @@ Example usage of perf::
   $# perf stat -a -e hisi_sccl3_l3c0/rd_hit_cpipe/ sleep 5
   $# perf stat -a -e hisi_sccl3_l3c0/config=0x02/ sleep 5
 
+6. ch: NoC PMU supports filtering the event counts of certain transaction
+channel with this option. The current supported channels are as follows:
+
+- 3'b010: Request channel
+- 3'b100: Snoop channel
+- 3'b110: Response channel
+- 3'b111: Data channel
+
+7. tt_en: NoC PMU supports counting only transactions that have tracetag set
+if this option is set. See the 2nd list for more information about tracetag.
+
 The current driver does not support sampling. So "perf record" is unsupported.
 Also attach to a task is unsupported as the events are all uncore.
 
