@@ -9,6 +9,7 @@
 #include <linux/acpi.h>
 #include <linux/cpu.h>
 #include <linux/cpufreq.h>
+#include <linux/cpu_smt.h>
 #include <linux/device.h>
 #include <linux/of.h>
 #include <linux/slab.h>
@@ -340,6 +341,10 @@ core_initcall(free_raw_capacity);
 #endif
 
 #if defined(CONFIG_ARM64) || defined(CONFIG_RISCV)
+
+/* Used to enable the SMT control */
+static unsigned int max_smt_thread_num = 1;
+
 /*
  * This function returns the logic cpu number of the node.
  * There are basically three kinds of return values:
@@ -398,6 +403,8 @@ static int __init parse_core(struct device_node *core, int package_id,
 		}
 		i++;
 	} while (t);
+
+	max_smt_thread_num = max_t(unsigned int, max_smt_thread_num, i);
 
 	cpu = get_cpu_for_node(core);
 	if (cpu >= 0) {
@@ -481,6 +488,17 @@ static int __init parse_cluster(struct device_node *cluster, int depth)
 
 	if (leaf)
 		package_id++;
+
+	/*
+	 * Reset the max_smt_thread_num to 1 on failure. Since on failure
+	 * we need to notify the framework the SMT is not supported, but
+	 * max_smt_thread_num can be initialized to the SMT thread number
+	 * of the cores which are successfully parsed.
+	 */
+	if (ret)
+		max_smt_thread_num = 1;
+
+	cpu_smt_set_num_threads(max_smt_thread_num, max_smt_thread_num);
 
 	return 0;
 }
