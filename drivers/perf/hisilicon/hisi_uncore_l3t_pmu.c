@@ -181,13 +181,13 @@ static int hisi_l3t_pmu_init_data(struct platform_device *pdev,
 	 * SCCL_ID is in MPIDR[aff2] and CCL_ID is in MPIDR[aff1].
 	 */
 	if (device_property_read_u32(&pdev->dev, "hisilicon,scl-id",
-				     &l3t_pmu->sccl_id)) {
+				     &l3t_pmu->topo.sccl_id)) {
 		dev_err(&pdev->dev, "Can not read l3t sccl-id!\n");
 		return -EINVAL;
 	}
 
 	if (device_property_read_u32(&pdev->dev, "hisilicon,ccl-id",
-				     &l3t_pmu->ccl_id)) {
+				     &l3t_pmu->topo.ccl_id)) {
 		dev_err(&pdev->dev, "Can not read l3t ccl-id!\n");
 		return -EINVAL;
 	}
@@ -322,7 +322,7 @@ static int hisi_l3t_pmu_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	if (device_property_read_u32(&pdev->dev, "hisilicon,index-id", &l3t_pmu->index_id)) {
+	if (device_property_read_u32(&pdev->dev, "hisilicon,index-id", &l3t_pmu->topo.index_id)) {
 		dev_err(&pdev->dev, "Can not read l3t index-id!\n");
 		return -EINVAL;
 	}
@@ -332,7 +332,7 @@ static int hisi_l3t_pmu_probe(struct platform_device *pdev)
 	 * used _UID by mistake.
 	 */
 	name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "hisi_sccl%u_l3t%u",
-			      l3t_pmu->sccl_id, l3t_pmu->index_id);
+			      l3t_pmu->topo.sccl_id, l3t_pmu->topo.index_id);
 	l3t_pmu->pmu = (struct pmu) {
 		.name		= name,
 		.module		= THIS_MODULE,

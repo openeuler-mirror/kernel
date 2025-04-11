@@ -197,18 +197,18 @@ static int hisi_lpddrc_pmu_init_data(struct platform_device *pdev,
 	 * LPDDRC PMU, while SCCL_ID is in MPIDR[aff2].
 	 */
 	if (device_property_read_u32(&pdev->dev, "hisilicon,ch-id",
-				     &lpddrc_pmu->index_id)) {
+				     &lpddrc_pmu->topo.index_id)) {
 		dev_err(&pdev->dev, "Can not read lpddrc channel-id!\n");
 		return -EINVAL;
 	}
 
 	if (device_property_read_u32(&pdev->dev, "hisilicon,scl-id",
-				     &lpddrc_pmu->sccl_id)) {
+				     &lpddrc_pmu->topo.sccl_id)) {
 		dev_err(&pdev->dev, "Can not read lpddrc sccl-id!\n");
 		return -EINVAL;
 	}
 	/* LPDDRC PMUs only share the same SCCL */
-	lpddrc_pmu->ccl_id = -1;
+	lpddrc_pmu->topo.ccl_id = -1;
 
 	lpddrc_pmu->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(lpddrc_pmu->base)) {
@@ -336,8 +336,8 @@ static int hisi_lpddrc_pmu_probe(struct platform_device *pdev)
 		return ret;
 
 	name = devm_kasprintf(&pdev->dev, GFP_KERNEL,
-			      "hisi_sccl%u_lpddrc%u", lpddrc_pmu->sccl_id,
-			      lpddrc_pmu->index_id);
+			      "hisi_sccl%u_lpddrc%u", lpddrc_pmu->topo.sccl_id,
+			      lpddrc_pmu->topo.index_id);
 
 	lpddrc_pmu->pmu = (struct pmu) {
 		.name		= name,
