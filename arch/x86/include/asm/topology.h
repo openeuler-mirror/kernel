@@ -143,6 +143,9 @@ int topology_phys_to_logical_pkg(unsigned int pkg);
 int topology_phys_to_logical_die(unsigned int die, unsigned int cpu);
 bool topology_is_primary_thread(unsigned int cpu);
 bool topology_smt_supported(void);
+
+#define topology_is_primary_thread topology_is_primary_thread
+
 #else
 #define topology_max_packages()			(1)
 static inline int
@@ -154,7 +157,6 @@ static inline int topology_phys_to_logical_die(unsigned int die,
 		unsigned int cpu) { return 0; }
 static inline int topology_max_die_per_package(void) { return 1; }
 static inline int topology_max_smt_threads(void) { return 1; }
-static inline bool topology_is_primary_thread(unsigned int cpu) { return true; }
 static inline bool topology_smt_supported(void) { return false; }
 #endif
 
