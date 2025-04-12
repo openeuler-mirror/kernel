@@ -989,12 +989,12 @@ int blk_register_queue(struct gendisk *disk)
 		ret = elv_register_queue(q, false);
 		if (ret) {
 			mutex_unlock(&q->sysfs_lock);
-			mutex_unlock(&q->sysfs_dir_lock);
 			if (queue_is_mq(q))
 				blk_mq_unregister_dev(dev, q);
 			kobject_del(&q->kobj);
 			blk_trace_remove_sysfs(dev);
 			kobject_put(&dev->kobj);
+			mutex_unlock(&q->sysfs_dir_lock);
 			return ret;
 		}
 	}
