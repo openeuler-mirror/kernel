@@ -359,6 +359,11 @@ static ssize_t power_state_show(struct device *dev,
 
 static DEVICE_ATTR_RO(power_state);
 
+static struct acpi_platform_list no_eject_plat_info[] = {
+	{"HISI  ", "HIP11   ", 0, ACPI_SIG_IORT, all_versions, NULL, 0},
+	{ }
+};
+
 static ssize_t
 eject_store(struct device *d, struct device_attribute *attr,
 	    const char *buf, size_t count)
@@ -376,6 +381,9 @@ eject_store(struct device *d, struct device_attribute *attr,
 
 	status = acpi_get_type(acpi_device->handle, &not_used);
 	if (ACPI_FAILURE(status) || !acpi_device->flags.ejectable)
+		return -ENODEV;
+
+	if (acpi_match_platform_list(no_eject_plat_info) >= 0)
 		return -ENODEV;
 
 	get_device(&acpi_device->dev);
