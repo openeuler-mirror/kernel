@@ -332,12 +332,12 @@ static int hisi_ptp_get_rx_resource(struct platform_device *pdev,
 
 	if (ptp->rx_total != rx_total || ptp->rx_cnt > ptp->rx_total) {
 		ptp->rx_cnt--;
-		write_unlock_irqrestore(&ptp->rw_lock, flags);
 		dev_err(&pdev->dev,
 			"failed to probe rx device, please check the asl file!\n");
 		dev_err(&pdev->dev,
 			"rx_total:%u, current rx_total:%u, rx_cnt:%u\n",
 			ptp->rx_total, rx_total, ptp->rx_cnt + 1);
+		write_unlock_irqrestore(&ptp->rw_lock, flags);
 
 		return -EINVAL;
 	}
@@ -674,10 +674,10 @@ static int hisi_ptp_probe(struct platform_device *pdev)
 
 	if (ptp->rx_total == 0 || ptp->rx_total != ptp->rx_cnt ||
 	    ptp->tx_cnt != 1) {
-		write_unlock_irqrestore(&ptp->rw_lock, flags);
 		dev_info(&pdev->dev,
 			 "waiting for devices...rx total:%u, now:%u. tx total:1, now:%u\n",
 			 ptp->rx_total, ptp->rx_cnt, ptp->tx_cnt);
+		write_unlock_irqrestore(&ptp->rw_lock, flags);
 		return 0;
 	}
 
