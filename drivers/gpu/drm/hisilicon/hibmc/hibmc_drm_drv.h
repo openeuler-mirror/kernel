@@ -24,6 +24,8 @@
 #include "dp/dp_hw.h"
 
 struct drm_device;
+#define HIBMC_MIN_VECTORS	1
+#define HIBMC_MAX_VECTORS	2
 
 struct hibmc_vdac {
 	struct drm_device *dev;
