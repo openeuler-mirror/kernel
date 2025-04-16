@@ -131,9 +131,36 @@ static bool is_pptt_cache_info_valid(void)
 	return true;
 }
 
+static void setup_shared_cpu_map(unsigned int cpu)
+{
+	unsigned int i, index;
+	struct cacheinfo *sib_leaf, *this_leaf;
+	struct cpu_topology *topo = &cpu_topology[cpu];
+	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
+
+	for (index = 0; index < this_cpu_ci->num_leaves; index++) {
+		this_leaf = this_cpu_ci->info_list + index;
+
+		cpumask_set_cpu(cpu, &this_leaf->shared_cpu_map);
+
+		for_each_online_cpu(i) {
+			struct cpu_cacheinfo *sib_cpu_ci = get_cpu_cacheinfo(i);
+			struct cpu_topology *sib_topo = &cpu_topology[i];
+			if (i == cpu || !sib_cpu_ci->info_list)
+				continue; /* skip if itself or no cacheinfo */
+			sib_leaf = sib_cpu_ci->info_list + index;
+			if (topo->llc_id == sib_topo->llc_id || (this_leaf->level == 3)) {
+				cpumask_set_cpu(cpu, &sib_leaf->shared_cpu_map);
+				cpumask_set_cpu(i, &this_leaf->shared_cpu_map);
+			}
+		}
+	}
+}
+
 int populate_cache_leaves(unsigned int cpu)
 {
 	enum sunway_cache_type type;
+	unsigned long cache_id;
 	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
 	struct cacheinfo *this_leaf = this_cpu_ci->info_list;
 	struct cpu_topology *topo = &cpu_topology[cpu];
@@ -143,19 +170,12 @@ int populate_cache_leaves(unsigned int cpu)
 		if (!cache_size(type))
 			continue;
 
-		/* L3 Cache is shared */
-		if (type == L3_CACHE) {
-			if (!pptt_valid)
-				cpumask_copy(&this_leaf->shared_cpu_map,
-						topology_llc_cpumask(cpu));
-			populate_cache(get_cache_info(type), this_leaf, cache_level(type),
-					kernel_cache_type(type), topo->package_id);
-		} else {
-			if (!pptt_valid)
-				cpumask_set_cpu(cpu, &this_leaf->shared_cpu_map);
-			populate_cache(get_cache_info(type), this_leaf, cache_level(type),
-					kernel_cache_type(type), cpu);
-		}
+		cache_id = (type == L3_CACHE) ? topo->package_id : cpu;
+		populate_cache(get_cache_info(type), this_leaf, cache_level(type),
+				kernel_cache_type(type), cache_id);
+
+		if (!pptt_valid)
+			setup_shared_cpu_map(cpu);
 	}
 
 	this_cpu_ci->cpu_map_populated = true;
