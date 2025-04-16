@@ -78,4 +78,6 @@ extern const struct drm_mode_config_funcs hibmc_mode_funcs;
 
 void hibmc_debugfs_init(struct drm_connector *connector, struct dentry *root);
 
+irqreturn_t hibmc_dp_hpd_isr(int irq, void *arg);
+
 #endif
