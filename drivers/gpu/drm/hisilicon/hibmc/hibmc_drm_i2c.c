@@ -80,6 +80,7 @@ static int hibmc_ddc_getscl(void *data)
 int hibmc_ddc_create(struct drm_device *drm_dev, struct hibmc_vdac *vdac)
 {
 	vdac->adapter.owner = THIS_MODULE;
+	vdac->adapter.class = I2C_CLASS_DDC;
 	snprintf(vdac->adapter.name, I2C_NAME_SIZE, "HIS i2c bit bus");
 	vdac->adapter.dev.parent = drm_dev->dev;
 	i2c_set_adapdata(&vdac->adapter, vdac);
