@@ -2311,9 +2311,7 @@ static void arm_smmu_tlb_inv_walk(unsigned long iova, size_t size,
 				  size_t granule, void *cookie)
 {
 #ifdef CONFIG_HISILICON_ERRATUM_162100602
-	struct arm_smmu_domain *smmu_domain = cookie;
-
-	if (!size && smmu_domain->smmu->options & ARM_SMMU_OPT_SYNC_BATCH) {
+	if (!size) {
 		arm_smmu_tlb_inv_range_domain(iova, granule, granule, true, cookie);
 		return;
 	}
@@ -2583,6 +2581,9 @@ static int arm_smmu_domain_finalise(struct iommu_domain *domain,
 		pgtbl_cfg.quirks |= IO_PGTABLE_QUIRK_ARM_BBML1;
 	else if (smmu->features & ARM_SMMU_FEAT_BBML2)
 		pgtbl_cfg.quirks |= IO_PGTABLE_QUIRK_ARM_BBML2;
+
+	if (smmu->options & ARM_SMMU_OPT_SYNC_BATCH)
+		pgtbl_cfg.quirks |= IO_PGTABLE_QUIRK_HISI_ERRATA;
 
 	pgtbl_ops = alloc_io_pgtable_ops(fmt, &pgtbl_cfg, smmu_domain);
 	if (!pgtbl_ops)
