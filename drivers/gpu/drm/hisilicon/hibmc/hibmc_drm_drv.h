@@ -76,4 +76,6 @@ int hibmc_dp_init(struct hibmc_drm_private *priv);
 
 extern const struct drm_mode_config_funcs hibmc_mode_funcs;
 
+void hibmc_debugfs_init(struct drm_connector *connector, struct dentry *root);
+
 #endif
