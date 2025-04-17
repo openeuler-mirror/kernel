@@ -1416,12 +1416,14 @@ static inline void acpi_init_pcc(void) { }
 
 #ifdef CONFIG_ACPI
 extern int acpi_platform_notify(struct device *dev, enum kobject_action action);
+extern void flush_hotplug_workqueue(void);
 #else
 static inline int
 acpi_platform_notify(struct device *dev, enum kobject_action action)
 {
 	return 0;
 }
+static inline void flush_hotplug_workqueue(void) {}
 #endif
 
 struct acpi_pptt_processor *

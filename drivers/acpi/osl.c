@@ -1194,6 +1194,11 @@ bool acpi_queue_hotplug_work(struct work_struct *work)
 	return queue_work(kacpi_hotplug_wq, work);
 }
 
+void flush_hotplug_workqueue(void)
+{
+	flush_workqueue(kacpi_hotplug_wq);
+}
+
 acpi_status
 acpi_os_create_semaphore(u32 max_units, u32 initial_units, acpi_handle * handle)
 {

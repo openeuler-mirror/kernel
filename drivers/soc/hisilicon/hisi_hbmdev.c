@@ -19,6 +19,7 @@ struct cdev_node {
 	struct list_head clist;
 };
 
+static struct mutex dev_lock;
 struct cdev_node cdev_list;
 
 static int get_pxm(struct acpi_device *acpi_device, void *arg)
@@ -54,10 +55,34 @@ static ssize_t pxms_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(pxms);
 
+static int hbmdev_check(struct acpi_device *adev, void *arg)
+{
+	const char *hid = acpi_device_hid(adev);
+
+	if (!strcmp(hid, ACPI_MEMORY_DEVICE_HID)) {
+		if (arg) {
+			bool *found = arg;
+			*found = true;
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
 static int memdev_power_on(struct acpi_device *adev)
 {
 	acpi_handle handle = adev->handle;
+	struct acpi_device *child;
 	acpi_status status;
+
+	list_for_each_entry(child, &adev->children, node) {
+		unsigned long long sta = 0;
+
+		status = acpi_evaluate_integer(child->handle, "_STA", NULL, &sta);
+		if (ACPI_FAILURE(status) || (sta & ACPI_STA_DEVICE_ENABLED))
+			return -EINVAL;
+	}
 
 	/* Power on and online the devices */
 	status = acpi_evaluate_object(handle, "_ON", NULL, NULL);
@@ -69,42 +94,30 @@ static int memdev_power_on(struct acpi_device *adev)
 	return 0;
 }
 
-static int hbmdev_check(struct acpi_device *adev, void *arg)
+static void memdev_power_off(struct acpi_device *adev)
 {
-	const char *hid = acpi_device_hid(adev);
+	struct acpi_device *child;
 
-	if (!strcmp(hid, ACPI_MEMORY_DEVICE_HID)) {
-		if (arg) {
-			bool *found = arg;
-			*found = true;
-			return -1;
-		}
+	list_for_each_entry(child, &adev->children, node) {
+		const char *hid = acpi_device_hid(child);
+		acpi_status status;
 
-		/* There might be devices have not attached */
-		if (!adev->handler)
-			return 0;
+		if (strcmp(hid, ACPI_MEMORY_DEVICE_HID))
+			continue;
 
-		adev->handler->hotplug.demand_offline = true;
+		if (!child->handler)
+			continue;
+
+		child->handler->hotplug.demand_offline = true;
+
+		get_device(&child->dev);
+		status = acpi_hotplug_schedule(child, ACPI_OST_EC_OSPM_EJECT);
+		if (ACPI_SUCCESS(status))
+			continue;
+
+		put_device(&child->dev);
+
 	}
-
-	return 0;
-}
-
-static int memdev_power_off(struct acpi_device *adev)
-{
-	acpi_handle handle = adev->handle;
-	acpi_status status;
-
-	acpi_scan_lock_acquire();
-	acpi_dev_for_each_child(adev, hbmdev_check, NULL);
-	acpi_scan_lock_release();
-
-	/* Eject the devices and power off */
-	status = acpi_evaluate_object(handle, "_OFF", NULL, NULL);
-	if (ACPI_FAILURE(status)) {
-		return -ENODEV;
-	}
-	return 0;
 }
 
 static ssize_t state_store(struct device *dev, struct device_attribute *attr,
@@ -114,23 +127,33 @@ static ssize_t state_store(struct device *dev, struct device_attribute *attr,
 	const int type = online_type_from_str(buf);
 	int ret;
 
+	if (!mutex_trylock(&dev_lock))
+		return -EBUSY;
+
 	/* Disallow pending on the mutex to avoid potential hung task*/
 	ret = lock_device_hotplug_sysfs();
-	if (ret)
+	if (ret) {
+		mutex_unlock(&dev_lock);
 		return ret;
+	}
 
 	switch (type) {
 	case STATE_ONLINE:
 		ret = memdev_power_on(adev);
 		break;
 	case STATE_OFFLINE:
-		ret  = memdev_power_off(adev);
+		memdev_power_off(adev);
 		break;
 	default:
 		break;
 	}
+
 	unlock_device_hotplug();
 
+	acpi_os_wait_events_complete();
+	flush_hotplug_workqueue();
+
+	mutex_unlock(&dev_lock);
 	if (ret)
 		return ret;
 
@@ -211,6 +234,8 @@ static int __init hbmdev_init(void)
 {
 	if (acpi_match_platform_list(hbm_plat_info) < 0)
 		return 0;
+
+	mutex_init(&dev_lock);
 
 	return container_init();
 }
