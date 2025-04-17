@@ -60,6 +60,8 @@ struct cifs_sb_info {
 	struct nls_table *local_nls;
 	unsigned int rsize;
 	unsigned int wsize;
+	unsigned int vol_rsize;
+	unsigned int vol_wsize;
 	unsigned long actimeo; /* attribute cache timeout (jiffies) */
 	atomic_t active;
 	kuid_t	mnt_uid;

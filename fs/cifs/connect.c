@@ -3849,6 +3849,9 @@ int cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
 	cifs_sb->rsize = pvolume_info->rsize;
 	cifs_sb->wsize = pvolume_info->wsize;
 
+	cifs_sb->vol_rsize = pvolume_info->rsize;
+	cifs_sb->vol_wsize = pvolume_info->wsize;
+
 	cifs_sb->mnt_uid = pvolume_info->linux_uid;
 	cifs_sb->mnt_gid = pvolume_info->linux_gid;
 	cifs_sb->mnt_file_mode = pvolume_info->file_mode;
@@ -4243,8 +4246,8 @@ try_mount_again:
 	if (!tcon->pipe && server->ops->qfs_tcon)
 		server->ops->qfs_tcon(xid, tcon);
 
-	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, volume_info);
-	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, volume_info);
+	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, cifs_sb->vol_wsize);
+	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, cifs_sb->vol_rsize);
 
 remote_path_check:
 #ifdef CONFIG_CIFS_DFS_UPCALL
