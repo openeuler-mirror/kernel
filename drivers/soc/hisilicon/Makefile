@@ -10,3 +10,4 @@ obj-$(CONFIG_HISI_L0)		+= hisi_l0.o
 obj-$(CONFIG_HISI_MEM_RAS)	+= hisi_mem_ras.o
 
 obj-$(CONFIG_HISI_SOC_CACHE)	+= hisi_soc_cache_framework.o
+obj-$(CONFIG_HISI_SOC_HHA)	+= hisi_soc_hha.o

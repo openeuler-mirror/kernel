@@ -10,7 +10,6 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <linux/cleanup.h>
 #include <linux/debugfs.h>
 #include <linux/fs.h>
 #include <linux/init.h>
@@ -51,23 +50,28 @@ int hisi_soc_cache_maintain(phys_addr_t addr, size_t size,
 	if (mnt_type >= HISI_CACHE_MAINT_MAX)
 		return -EINVAL;
 
-	guard(spinlock)(&soc_cache_devs[HISI_SOC_HHA].lock);
+	spin_lock(&soc_cache_devs[HISI_SOC_HHA].lock);
 
 	head = &soc_cache_devs[HISI_SOC_HHA].node;
 	list_for_each_entry(inst, head, node) {
 		ret = inst->comp->ops->do_maintain(inst->comp, addr, size,
 						   mnt_type);
-		if (ret)
+		if (ret) {
+			spin_unlock(&soc_cache_devs[HISI_SOC_HHA].lock);
 			return ret;
+		}
 	}
 
 	list_for_each_entry(inst, head, node) {
 		ret = inst->comp->ops->poll_maintain_done(inst->comp, addr,
 							  size, mnt_type);
-		if (ret)
+		if (ret) {
+			spin_unlock(&soc_cache_devs[HISI_SOC_HHA].lock);
 			return ret;
+		}
 	}
 
+	spin_unlock(&soc_cache_devs[HISI_SOC_HHA].lock);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(hisi_soc_cache_maintain);
@@ -127,11 +131,10 @@ static int hisi_soc_cache_inst_add(struct hisi_soc_comp *comp,
 
 	comp_inst->comp = comp;
 
-	scoped_guard(spinlock, &soc_cache_devs[comp_type].lock) {
-		list_add_tail(&comp_inst->node,
-			      &soc_cache_devs[comp_type].node);
-		soc_cache_devs[comp_type].inst_num++;
-	}
+	spin_lock(&soc_cache_devs[comp_type].lock);
+	list_add_tail(&comp_inst->node, &soc_cache_devs[comp_type].node);
+	soc_cache_devs[comp_type].inst_num++;
+	spin_unlock(&soc_cache_devs[comp_type].lock);
 
 	return 0;
 }
@@ -144,7 +147,7 @@ static void hisi_soc_cache_inst_del(struct hisi_soc_comp *comp,
 {
 	struct hisi_soc_comp_inst *inst, *tmp;
 
-	guard(spinlock)(&soc_cache_devs[comp_type].lock);
+	spin_lock(&soc_cache_devs[comp_type].lock);
 	list_for_each_entry_safe(inst, tmp, &soc_cache_devs[comp_type].node,
 				 node) {
 		if (comp && comp != inst->comp)
@@ -160,6 +163,8 @@ static void hisi_soc_cache_inst_del(struct hisi_soc_comp *comp,
 		if (comp)
 			break;
 	}
+
+	spin_unlock(&soc_cache_devs[comp_type].lock);
 }
 
 int hisi_soc_comp_inst_add(struct hisi_soc_comp *comp)
@@ -313,11 +318,12 @@ static ssize_t hisi_soc_cache_dbg_get_inst_num(struct file *file,
 	len = HISI_SOC_CACHE_DBGFS_REG_LEN;
 
 	for (i = 0; i < ARRAY_SIZE(soc_cache_devs); i++) {
-		guard(spinlock)(&soc_cache_devs[i].lock);
+		spin_lock(&soc_cache_devs[i].lock);
 		pos += scnprintf(read_buff + pos, len - pos,
 				 "%s inst num: %u\n",
 				 hisi_soc_cache_item_str[i],
 				 soc_cache_devs[i].inst_num);
+		spin_unlock(&soc_cache_devs[i].lock);
 	}
 
 	ret = simple_read_from_buffer(buff, cnt, ppos, read_buff,
