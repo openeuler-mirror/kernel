@@ -3837,6 +3837,7 @@ int cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
 			struct cifs_sb_info *cifs_sb)
 {
 	INIT_DELAYED_WORK(&cifs_sb->prune_tlinks, cifs_prune_tlinks);
+	INIT_LIST_HEAD(&cifs_sb->tcon_sb_link);
 
 	spin_lock_init(&cifs_sb->tlink_tree_lock);
 	cifs_sb->tlink_tree = RB_ROOT;
@@ -4347,6 +4348,10 @@ remote_path_check:
 	tlink_rb_insert(&cifs_sb->tlink_tree, tlink);
 	spin_unlock(&cifs_sb->tlink_tree_lock);
 
+	spin_lock(&tcon->sb_list_lock);
+	list_add(&cifs_sb->tcon_sb_link, &tcon->cifs_sb_list);
+	spin_unlock(&tcon->sb_list_lock);
+
 	queue_delayed_work(cifsiod_wq, &cifs_sb->prune_tlinks,
 				TLINK_IDLE_EXPIRE);
 
@@ -4544,8 +4549,18 @@ cifs_umount(struct cifs_sb_info *cifs_sb)
 	struct rb_root *root = &cifs_sb->tlink_tree;
 	struct rb_node *node;
 	struct tcon_link *tlink;
+	struct cifs_tcon *tcon = NULL;
 
 	cancel_delayed_work_sync(&cifs_sb->prune_tlinks);
+
+	if (cifs_sb->master_tlink) {
+		tcon = cifs_sb->master_tlink->tl_tcon;
+		if (tcon) {
+			spin_lock(&tcon->sb_list_lock);
+			list_del_init(&cifs_sb->tcon_sb_link);
+			spin_unlock(&tcon->sb_list_lock);
+		}
+	}
 
 	spin_lock(&cifs_sb->tlink_tree_lock);
 	while ((node = rb_first(root))) {
