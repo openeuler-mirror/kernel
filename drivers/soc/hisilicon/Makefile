@@ -8,3 +8,5 @@ hisi_l3t-objs			:= hisi_lockdown.o l3t.o
 obj-$(CONFIG_HISI_L3T)		+= hisi_l3t.o
 obj-$(CONFIG_HISI_L0)		+= hisi_l0.o
 obj-$(CONFIG_HISI_MEM_RAS)	+= hisi_mem_ras.o
+
+obj-$(CONFIG_HISI_SOC_CACHE)	+= hisi_soc_cache_framework.o
