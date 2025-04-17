@@ -3980,6 +3980,9 @@ int cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
 	cifs_sb->rsize = pvolume_info->rsize;
 	cifs_sb->wsize = pvolume_info->wsize;
 
+	cifs_sb->vol_rsize = pvolume_info->rsize;
+	cifs_sb->vol_wsize = pvolume_info->wsize;
+
 	cifs_sb->mnt_uid = pvolume_info->linux_uid;
 	cifs_sb->mnt_gid = pvolume_info->linux_gid;
 	cifs_sb->mnt_file_mode = pvolume_info->file_mode;
@@ -4206,8 +4209,8 @@ static int mount_get_conns(struct smb_vol *vol, struct cifs_sb_info *cifs_sb,
 		}
 	}
 
-	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, vol);
-	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, vol);
+	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, cifs_sb->vol_wsize);
+	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, cifs_sb->vol_rsize);
 
 	return 0;
 }
