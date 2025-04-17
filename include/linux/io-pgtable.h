@@ -100,6 +100,7 @@ struct io_pgtable_cfg {
 	#define IO_PGTABLE_QUIRK_ARM_HD		BIT(6)
 	#define IO_PGTABLE_QUIRK_ARM_BBML1	BIT(7)
 	#define IO_PGTABLE_QUIRK_ARM_BBML2	BIT(8)
+	#define IO_PGTABLE_QUIRK_HISI_ERRATA	BIT(9)
 	unsigned long			quirks;
 	unsigned long			pgsize_bitmap;
 	unsigned int			ias;

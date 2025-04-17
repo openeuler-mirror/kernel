@@ -365,7 +365,7 @@ static int __arm_lpae_map(struct arm_lpae_io_pgtable *data, unsigned long iova,
 		if (pte)
 			__arm_lpae_free_pages(cptep, tblsz, cfg);
 #ifdef CONFIG_HISILICON_ERRATUM_162100602
-		if (lvl <= 2)
+		if (lvl <= 2 && (cfg->quirks & IO_PGTABLE_QUIRK_HISI_ERRATA))
 			io_pgtable_tlb_flush_walk(&data->iop, iova, 0, ARM_LPAE_GRANULE(data));
 #endif
 	} else if (!cfg->coherent_walk && !(pte & ARM_LPAE_PTE_SW_SYNC)) {
@@ -1163,7 +1163,8 @@ arm_64_lpae_alloc_pgtable_s1(struct io_pgtable_cfg *cfg, void *cookie)
 			    IO_PGTABLE_QUIRK_ARM_TTBR1 |
 			    IO_PGTABLE_QUIRK_ARM_HD |
 			    IO_PGTABLE_QUIRK_ARM_BBML1 |
-			    IO_PGTABLE_QUIRK_ARM_BBML2))
+			    IO_PGTABLE_QUIRK_ARM_BBML2 |
+			    IO_PGTABLE_QUIRK_HISI_ERRATA))
 		return NULL;
 
 	data = arm_lpae_alloc_pgtable(cfg);
@@ -1263,7 +1264,8 @@ arm_64_lpae_alloc_pgtable_s2(struct io_pgtable_cfg *cfg, void *cookie)
 	if (cfg->quirks & ~(IO_PGTABLE_QUIRK_NON_STRICT |
 			    IO_PGTABLE_QUIRK_ARM_HD |
 			    IO_PGTABLE_QUIRK_ARM_BBML1 |
-			    IO_PGTABLE_QUIRK_ARM_BBML2))
+			    IO_PGTABLE_QUIRK_ARM_BBML2 |
+			    IO_PGTABLE_QUIRK_HISI_ERRATA))
 		return NULL;
 
 	data = arm_lpae_alloc_pgtable(cfg);
