@@ -1285,8 +1285,10 @@ loop_set_status(struct loop_device *lo, const struct loop_info64 *info)
 		}
 
 		/* Avoid assigning overflow values */
-		if (info->lo_offset > LLONG_MAX || info->lo_sizelimit > LLONG_MAX)
-			return -EOVERFLOW;
+		if (info->lo_offset > LLONG_MAX || info->lo_sizelimit > LLONG_MAX) {
+			err = -EOVERFLOW;
+			goto out_unfreeze;
+		}
 
 		if (figure_loop_size(lo, info->lo_offset, info->lo_sizelimit)) {
 			err = -EFBIG;
