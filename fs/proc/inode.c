@@ -462,6 +462,14 @@ struct inode *proc_get_inode(struct super_block *sb, struct proc_dir_entry *de)
 			make_empty_dir_inode(inode);
 			return inode;
 		}
+
+		if (!use_pde(de)) {
+			PROC_I(inode)->pde = NULL;
+			pde_put(de);
+			iput(inode);
+			return NULL;
+		}
+
 		if (de->mode) {
 			inode->i_mode = de->mode;
 			inode->i_uid = de->uid;
@@ -486,6 +494,7 @@ struct inode *proc_get_inode(struct super_block *sb, struct proc_dir_entry *de)
 				inode->i_fop = de->proc_fops;
 			}
 		}
+		unuse_pde(de);
 	} else
 	       pde_put(de);
 	return inode;
