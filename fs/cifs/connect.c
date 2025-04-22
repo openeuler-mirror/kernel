@@ -3837,6 +3837,7 @@ int cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
 			struct cifs_sb_info *cifs_sb)
 {
 	INIT_DELAYED_WORK(&cifs_sb->prune_tlinks, cifs_prune_tlinks);
+	INIT_LIST_HEAD(&cifs_sb->tcon_sb_link);
 
 	spin_lock_init(&cifs_sb->tlink_tree_lock);
 	cifs_sb->tlink_tree = RB_ROOT;
@@ -3847,6 +3848,9 @@ int cifs_setup_cifs_sb(struct smb_vol *pvolume_info,
 	 */
 	cifs_sb->rsize = pvolume_info->rsize;
 	cifs_sb->wsize = pvolume_info->wsize;
+
+	cifs_sb->vol_rsize = pvolume_info->rsize;
+	cifs_sb->vol_wsize = pvolume_info->wsize;
 
 	cifs_sb->mnt_uid = pvolume_info->linux_uid;
 	cifs_sb->mnt_gid = pvolume_info->linux_gid;
@@ -4242,13 +4246,8 @@ try_mount_again:
 	if (!tcon->pipe && server->ops->qfs_tcon)
 		server->ops->qfs_tcon(xid, tcon);
 
-	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, volume_info);
-	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, volume_info);
-	if (cifs_sb->rsize == 0) {
-		cifs_dbg(VFS, "Negotiated rsize is 0, mount failed\n");
-		rc = -EINVAL;
-		goto mount_fail_check;
-	}
+	cifs_sb->wsize = server->ops->negotiate_wsize(tcon, cifs_sb->vol_wsize);
+	cifs_sb->rsize = server->ops->negotiate_rsize(tcon, cifs_sb->vol_rsize);
 
 remote_path_check:
 #ifdef CONFIG_CIFS_DFS_UPCALL
@@ -4351,6 +4350,10 @@ remote_path_check:
 	spin_lock(&cifs_sb->tlink_tree_lock);
 	tlink_rb_insert(&cifs_sb->tlink_tree, tlink);
 	spin_unlock(&cifs_sb->tlink_tree_lock);
+
+	spin_lock(&tcon->sb_list_lock);
+	list_add(&cifs_sb->tcon_sb_link, &tcon->cifs_sb_list);
+	spin_unlock(&tcon->sb_list_lock);
 
 	queue_delayed_work(cifsiod_wq, &cifs_sb->prune_tlinks,
 				TLINK_IDLE_EXPIRE);
@@ -4549,8 +4552,18 @@ cifs_umount(struct cifs_sb_info *cifs_sb)
 	struct rb_root *root = &cifs_sb->tlink_tree;
 	struct rb_node *node;
 	struct tcon_link *tlink;
+	struct cifs_tcon *tcon = NULL;
 
 	cancel_delayed_work_sync(&cifs_sb->prune_tlinks);
+
+	if (cifs_sb->master_tlink) {
+		tcon = cifs_sb->master_tlink->tl_tcon;
+		if (tcon) {
+			spin_lock(&tcon->sb_list_lock);
+			list_del_init(&cifs_sb->tcon_sb_link);
+			spin_unlock(&tcon->sb_list_lock);
+		}
+	}
 
 	spin_lock(&cifs_sb->tlink_tree_lock);
 	while ((node = rb_first(root))) {
