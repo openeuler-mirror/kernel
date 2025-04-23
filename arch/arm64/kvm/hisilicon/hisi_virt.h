@@ -15,6 +15,8 @@ enum hisi_cpu_type {
 	UNKNOWN_HI_TYPE
 };
 
+/* HIP12 */
+#define AIDR_EL1_IPIV_MASK	GENMASK_ULL(17, 16)
 /* HIP09 */
 #define AIDR_EL1_DVMBM_MASK	GENMASK_ULL(13, 12)
 #define SYS_LSUDVM_CTRL_EL2	sys_reg(3, 4, 15, 7, 4)
@@ -87,7 +89,9 @@ enum hisi_cpu_type {
 void probe_hisi_cpu_type(void);
 bool hisi_ncsnp_supported(void);
 bool hisi_dvmbm_supported(void);
+bool hisi_ipiv_supported(void);
 void kvm_get_pg_cfg(void);
+void ipiv_gicd_init(void);
 
 int kvm_hisi_dvmbm_vcpu_init(struct kvm_vcpu *vcpu);
 void kvm_hisi_dvmbm_vcpu_destroy(struct kvm_vcpu *vcpu);
@@ -97,4 +101,6 @@ int kvm_hisi_init_dvmbm(struct kvm *kvm);
 void kvm_hisi_destroy_dvmbm(struct kvm *kvm);
 void kvm_hisi_reload_lsudvmbm(struct kvm *kvm);
 
+extern bool gic_dist_enable_ipiv(void);
+extern bool is_gicv4p1(void);
 #endif /* __HISI_VIRT_H__ */

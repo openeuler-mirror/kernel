@@ -762,5 +762,6 @@ extern unsigned int twedel;
 extern bool force_wfi_trap;
 extern bool kvm_ncsnp_support;
 extern bool kvm_dvmbm_support;
+extern bool kvm_ipiv_support;
 
 #endif /* __ARM64_KVM_HOST_H__ */
