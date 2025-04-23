@@ -27,6 +27,7 @@ struct its_vm {
 	int			nr_db_lpis;
 	u32			vlpi_count[GICv4_ITS_LIST_MAX];
 	struct page		*vpeid_page;
+	bool			nassgireq;
 };
 
 /* Embedded in kvm_vcpu.arch */
