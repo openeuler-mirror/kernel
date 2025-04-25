@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# sxe network device configuration
+#
+
+config SXE
+	tristate "sxe PCI Express adapters support"
+	depends on (X86 || ARM64) && PCI
+	select MDIO
+        select PHYLIB
+        select PTP_1588_CLOCK
+        default m
+	help
+	  This driver supports sxe PCI Express family of adapters.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called ngbe.
