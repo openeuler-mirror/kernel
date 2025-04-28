@@ -149,7 +149,7 @@ static bool mtip_check_surprise_removal(struct pci_dev *pdev)
 	if (vendor_id == 0xFFFF) {
 		dd->sr = true;
 		if (dd->queue)
-			blk_queue_flag_set(QUEUE_FLAG_DEAD, dd->queue);
+			blk_queue_flag_set(QUEUE_FLAG_DYING, dd->queue);
 		else
 			dev_warn(&dd->pdev->dev,
 				"%s: dd->queue is NULL\n", __func__);
