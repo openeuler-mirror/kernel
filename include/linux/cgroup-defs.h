@@ -237,10 +237,7 @@ struct css_set {
 	 */
 	struct list_head cgrp_links;
 
-	/*
-	 * List of csets participating in the on-going migration either as
-	 * source or destination.  Protected by cgroup_mutex.
-	 */
+	/* No use, just keep the KABI same. */
 	struct list_head mg_preload_node;
 	struct list_head mg_node;
 
@@ -260,6 +257,15 @@ struct css_set {
 
 	/* For RCU-protected deletion */
 	struct rcu_head rcu_head;
+
+#ifndef __GENKSYMS__
+	/*
+	 * List of csets participating in the on-going migration either as
+	 * source or destination.  Protected by cgroup_mutex.
+	 */
+	struct list_head mg_src_preload_node;
+	struct list_head mg_dst_preload_node;
+#endif
 };
 
 struct cgroup_base_stat {
