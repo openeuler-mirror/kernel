@@ -2242,9 +2242,14 @@ void sev_guest_memory_reclaimed(struct kvm *kvm)
 	wbinvd_on_all_cpus();
 }
 
+static u64 kvm_ghcb_get_sw_exit_code(struct vmcb_control_area *control)
+{
+	return (((u64)control->exit_code_hi) << 32) | control->exit_code;
+}
+
 static void dump_ghcb(struct vcpu_svm *svm)
 {
-	struct ghcb *ghcb = svm->ghcb;
+	struct vmcb_control_area *control = &svm->vmcb->control;
 	unsigned int nbits;
 
 	/* Re-use the dump_invalid_vmcb module parameter */
@@ -2253,18 +2258,24 @@ static void dump_ghcb(struct vcpu_svm *svm)
 		return;
 	}
 
-	nbits = sizeof(ghcb->save.valid_bitmap) * 8;
+	nbits = sizeof(svm->valid_bitmap) * 8;
 
-	pr_err("GHCB (GPA=%016llx):\n", svm->vmcb->control.ghcb_gpa);
+	/*
+	 * Print KVM's snapshot of the GHCB values that were (unsuccessfully)
+	 * used to handle the exit.  If the guest has since modified the GHCB
+	 * itself, dumping the raw GHCB won't help debug why KVM was unable to
+	 * handle the VMGEXIT that KVM observed.
+	 */
+	pr_err("GHCB (GPA=%016llx) snapshot:\n", svm->vmcb->control.ghcb_gpa);
 	pr_err("%-20s%016llx is_valid: %u\n", "sw_exit_code",
-	       ghcb->save.sw_exit_code, ghcb_sw_exit_code_is_valid(ghcb));
+	       kvm_ghcb_get_sw_exit_code(control), kvm_ghcb_sw_exit_code_is_valid(svm));
 	pr_err("%-20s%016llx is_valid: %u\n", "sw_exit_info_1",
-	       ghcb->save.sw_exit_info_1, ghcb_sw_exit_info_1_is_valid(ghcb));
+	       control->exit_info_1, kvm_ghcb_sw_exit_info_1_is_valid(svm));
 	pr_err("%-20s%016llx is_valid: %u\n", "sw_exit_info_2",
-	       ghcb->save.sw_exit_info_2, ghcb_sw_exit_info_2_is_valid(ghcb));
+	       control->exit_info_2, kvm_ghcb_sw_exit_info_2_is_valid(svm));
 	pr_err("%-20s%016llx is_valid: %u\n", "sw_scratch",
-	       ghcb->save.sw_scratch, ghcb_sw_scratch_is_valid(ghcb));
-	pr_err("%-20s%*pb\n", "valid_bitmap", nbits, ghcb->save.valid_bitmap);
+	       svm->sw_scratch, kvm_ghcb_sw_scratch_is_valid(svm));
+	pr_err("%-20s%*pb\n", "valid_bitmap", nbits, svm->valid_bitmap);
 }
 
 static void sev_es_sync_to_ghcb(struct vcpu_svm *svm)
@@ -2333,11 +2344,6 @@ static void sev_es_sync_from_ghcb(struct vcpu_svm *svm)
 
 	/* Clear the valid entries fields */
 	memset(ghcb->save.valid_bitmap, 0, sizeof(ghcb->save.valid_bitmap));
-}
-
-static u64 kvm_ghcb_get_sw_exit_code(struct vmcb_control_area *control)
-{
-	return (((u64)control->exit_code_hi) << 32) | control->exit_code;
 }
 
 static int sev_es_validate_vmgexit(struct vcpu_svm *svm)
