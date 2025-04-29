@@ -115,6 +115,14 @@ struct proto smc_proto6 = {
 };
 EXPORT_SYMBOL_GPL(smc_proto6);
 
+static void smc_restore_fallback_changes(struct smc_sock *smc)
+{
+	if (smc->clcsock->file) { /* non-accepted sockets have no file yet */
+		smc->clcsock->file->private_data = smc->sk.sk_socket;
+		smc->clcsock->file = NULL;
+	}
+}
+
 static int smc_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
@@ -162,6 +170,7 @@ static int smc_release(struct socket *sock)
 			sock_put(sk); /* passive closing */
 		sk->sk_state = SMC_CLOSED;
 		sk->sk_state_change(sk);
+		smc_restore_fallback_changes(smc);
 	}
 
 	/* detach socket */
@@ -432,10 +441,19 @@ static void smc_link_save_peer_info(struct smc_link *link,
 	link->peer_mtu = clc->qp_mtu;
 }
 
+static void smc_switch_to_fallback(struct smc_sock *smc)
+{
+	smc->use_fallback = true;
+	if (smc->sk.sk_socket && smc->sk.sk_socket->file) {
+		smc->clcsock->file = smc->sk.sk_socket->file;
+		smc->clcsock->file->private_data = smc->clcsock;
+	}
+}
+
 /* fall back during connect */
 static int smc_connect_fallback(struct smc_sock *smc, int reason_code)
 {
-	smc->use_fallback = true;
+	smc_switch_to_fallback(smc);
 	smc->fallback_rsn = reason_code;
 	smc_copy_sock_settings_to_clc(smc);
 	if (smc->sk.sk_state == SMC_INIT)
@@ -751,10 +769,14 @@ static void smc_connect_work(struct work_struct *work)
 		smc->sk.sk_err = -rc;
 
 out:
-	if (smc->sk.sk_err)
-		smc->sk.sk_state_change(&smc->sk);
-	else
-		smc->sk.sk_write_space(&smc->sk);
+	if (!sock_flag(&smc->sk, SOCK_DEAD)) {
+		if (smc->sk.sk_err) {
+			smc->sk.sk_state_change(&smc->sk);
+		} else { /* allow polling before and after fallback decision */
+			smc->clcsock->sk->sk_write_space(smc->clcsock->sk);
+			smc->sk.sk_write_space(&smc->sk);
+		}
+	}
 	kfree(smc->connect_info);
 	smc->connect_info = NULL;
 	release_sock(&smc->sk);
@@ -911,8 +933,13 @@ struct sock *smc_accept_dequeue(struct sock *parent,
 			sock_put(new_sk); /* final */
 			continue;
 		}
-		if (new_sock)
+		if (new_sock) {
 			sock_graft(new_sk, new_sock);
+			if (isk->use_fallback) {
+				smc_sk(new_sk)->clcsock->file = new_sock->file;
+				isk->clcsock->file->private_data = isk->clcsock;
+			}
+		}
 		return new_sk;
 	}
 	return NULL;
@@ -1063,7 +1090,7 @@ static void smc_listen_decline(struct smc_sock *new_smc, int reason_code,
 		return;
 	}
 	smc_conn_free(&new_smc->conn);
-	new_smc->use_fallback = true;
+	smc_switch_to_fallback(new_smc);
 	new_smc->fallback_rsn = reason_code;
 	if (reason_code && reason_code != SMC_CLC_DECL_PEERDECL) {
 		if (smc_clc_send_decline(new_smc, reason_code) < 0) {
@@ -1223,7 +1250,7 @@ static void smc_listen_work(struct work_struct *work)
 
 	/* check if peer is smc capable */
 	if (!tcp_sk(newclcsock->sk)->syn_smc) {
-		new_smc->use_fallback = true;
+		smc_switch_to_fallback(new_smc);
 		new_smc->fallback_rsn = SMC_CLC_DECL_PEERNOSMC;
 		smc_listen_out_connected(new_smc);
 		return;
@@ -1475,7 +1502,7 @@ static int smc_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
 
 	if (msg->msg_flags & MSG_FASTOPEN) {
 		if (sk->sk_state == SMC_INIT) {
-			smc->use_fallback = true;
+			smc_switch_to_fallback(smc);
 			smc->fallback_rsn = SMC_CLC_DECL_OPTUNSUPP;
 		} else {
 			rc = -EINVAL;
@@ -1672,7 +1699,7 @@ static int smc_setsockopt(struct socket *sock, int level, int optname,
 	case TCP_FASTOPEN_NO_COOKIE:
 		/* option not supported by SMC */
 		if (sk->sk_state == SMC_INIT) {
-			smc->use_fallback = true;
+			smc_switch_to_fallback(smc);
 			smc->fallback_rsn = SMC_CLC_DECL_OPTUNSUPP;
 		} else {
 			if (!smc->use_fallback)
