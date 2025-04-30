@@ -394,6 +394,7 @@ mpage_readpages(struct address_space *mapping, struct list_head *pages,
 	for (page_idx = 0; page_idx < nr_pages; page_idx++) {
 		struct page *page = lru_to_page(pages);
 
+		cond_resched();
 		prefetchw(&page->flags);
 		list_del(&page->lru);
 		if (!add_to_page_cache_lru(page, mapping,
