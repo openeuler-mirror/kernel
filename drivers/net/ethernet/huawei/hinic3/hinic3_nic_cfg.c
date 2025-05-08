@@ -20,9 +20,125 @@
 #include "hinic3_nic_io.h"
 #include "hinic3_srv_nic.h"
 #include "hinic3_nic.h"
-#include "hinic3_nic_cmd.h"
+#include "nic_mpu_cmd.h"
+#include "nic_npu_cmd.h"
 #include "hinic3_common.h"
 #include "hinic3_nic_cfg.h"
+
+#include "vram_common.h"
+
+int hinic3_delete_bond(void *hwdev)
+{
+	struct hinic3_cmd_delete_bond cmd_delete_bond;
+	u16 out_size = sizeof(cmd_delete_bond);
+	struct hinic3_nic_io *nic_io = NULL;
+	int err = 0;
+
+	if (!hwdev) {
+		pr_err("hwdev is null.\n");
+		return -EINVAL;
+	}
+
+	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io) {
+		pr_err("nic_io is null.\n");
+		return -EINVAL;
+	}
+
+	memset(&cmd_delete_bond, 0, sizeof(cmd_delete_bond));
+	cmd_delete_bond.bond_id = HINIC3_INVALID_BOND_ID;
+
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC3_NIC_CMD_BOND_DEV_DELETE,
+				     &cmd_delete_bond, sizeof(cmd_delete_bond),
+				     &cmd_delete_bond, &out_size);
+	if (err || !out_size || cmd_delete_bond.head.status) {
+		nic_err(nic_io->dev_hdl, "Failed to delete bond, err: %d, status: 0x%x, out_size: 0x%x\n",
+			err, cmd_delete_bond.head.status, out_size);
+		return -EFAULT;
+	}
+
+	if (cmd_delete_bond.bond_id != HINIC3_INVALID_BOND_ID) {
+		nic_info(nic_io->dev_hdl, "Delete bond success\n");
+	}
+
+	return 0;
+}
+
+int hinic3_open_close_bond(void *hwdev, u32 bond_en)
+{
+	struct hinic3_cmd_open_close_bond cmd_open_close_bond;
+	u16 out_size = sizeof(cmd_open_close_bond);
+	struct hinic3_nic_io *nic_io = NULL;
+	int err = 0;
+
+	if (!hwdev) {
+		pr_err("hwdev is null.\n");
+		return -EINVAL;
+	}
+
+	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io) {
+		pr_err("nic_io is null.\n");
+		return -EINVAL;
+	}
+
+	memset(&cmd_open_close_bond, 0, sizeof(cmd_open_close_bond));
+	cmd_open_close_bond.open_close_bond_info.bond_id = HINIC3_INVALID_BOND_ID;
+	cmd_open_close_bond.open_close_bond_info.open_close_flag = bond_en;
+
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC3_NIC_CMD_BOND_DEV_OPEN_CLOSE,
+				     &cmd_open_close_bond, sizeof(cmd_open_close_bond),
+				     &cmd_open_close_bond, &out_size);
+	if (err || !out_size || cmd_open_close_bond.head.status) {
+		nic_err(nic_io->dev_hdl, "Failed to %s bond, err: %d, status: 0x%x, out_size: 0x%x\n",
+			bond_en == true ? "open" : "close", err, cmd_open_close_bond.head.status, out_size);
+		return -EFAULT;
+	}
+
+	if (cmd_open_close_bond.open_close_bond_info.bond_id != HINIC3_INVALID_BOND_ID) {
+		nic_info(nic_io->dev_hdl, "%s bond success\n", bond_en == true ? "Open" : "Close");
+	}
+
+	return 0;
+}
+
+int hinic3_create_bond(void *hwdev, u32 *bond_id)
+{
+	struct hinic3_cmd_create_bond cmd_create_bond;
+	u16 out_size = sizeof(cmd_create_bond);
+	struct hinic3_nic_io *nic_io = NULL;
+	int err = 0;
+
+	if (!hwdev) {
+		pr_err("hwdev is null.\n");
+		return -EINVAL;
+	}
+
+	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io) {
+		pr_err("nic_io is null.\n");
+		return -EINVAL;
+	}
+
+	memset(&cmd_create_bond, 0, sizeof(cmd_create_bond));
+	cmd_create_bond.create_bond_info.default_param_flag = true;
+
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC3_NIC_CMD_BOND_DEV_CREATE,
+				     &cmd_create_bond, sizeof(cmd_create_bond),
+				     &cmd_create_bond, &out_size);
+	if (err || !out_size || cmd_create_bond.head.status) {
+		nic_err(nic_io->dev_hdl, "Failed to create default bond, err: %d, status: 0x%x, out_size: 0x%x\n",
+			err, cmd_create_bond.head.status, out_size);
+		return -EFAULT;
+	}
+
+	if (cmd_create_bond.create_bond_info.bond_id != HINIC3_INVALID_BOND_ID) {
+		*bond_id = cmd_create_bond.create_bond_info.bond_id;
+		nic_info(nic_io->dev_hdl, "Create bond success\n");
+	}
+
+	return 0;
+}
 
 int hinic3_set_ci_table(void *hwdev, struct hinic3_sq_attr *attr)
 {
@@ -37,6 +153,8 @@ int hinic3_set_ci_table(void *hwdev, struct hinic3_sq_attr *attr)
 	memset(&cons_idx_attr, 0, sizeof(cons_idx_attr));
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	cons_idx_attr.func_idx = hinic3_global_func_id(hwdev);
 
@@ -152,6 +270,8 @@ int hinic3_del_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id,
 	memset(&mac_info, 0, sizeof(mac_info));
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	if ((vlan_id & HINIC_VLAN_ID_MASK) >= VLAN_N_VID) {
 		nic_err(nic_io->dev_hdl, "Invalid VLAN number: %d\n",
@@ -183,7 +303,7 @@ int hinic3_del_mac(void *hwdev, const u8 *mac_addr, u16 vlan_id, u16 func_id,
 }
 EXPORT_SYMBOL(hinic3_del_mac);
 
-int hinic3_update_mac(void *hwdev, u8 *old_mac, u8 *new_mac, u16 vlan_id,
+int hinic3_update_mac(void *hwdev, const u8 *old_mac, u8 *new_mac, u16 vlan_id,
 		      u16 func_id)
 {
 	struct hinic3_port_mac_update mac_info;
@@ -197,6 +317,8 @@ int hinic3_update_mac(void *hwdev, u8 *old_mac, u8 *new_mac, u16 vlan_id,
 	memset(&mac_info, 0, sizeof(mac_info));
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	if ((vlan_id & HINIC_VLAN_ID_MASK) >= VLAN_N_VID) {
 		nic_err(nic_io->dev_hdl, "Invalid VLAN number: %d\n",
@@ -247,6 +369,8 @@ int hinic3_get_default_mac(void *hwdev, u8 *mac_addr)
 	memset(&mac_info, 0, sizeof(mac_info));
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	mac_info.func_id = hinic3_global_func_id(hwdev);
 
@@ -292,6 +416,45 @@ static int hinic3_config_vlan(struct hinic3_nic_io *nic_io, u8 opcode,
 	return 0;
 }
 
+#if defined(HAVE_NDO_UDP_TUNNEL_ADD) || defined(HAVE_UDP_TUNNEL_NIC_INFO)
+int hinic3_vlxan_port_config(void *hwdev, u16 func_id, u16 port, u8 action)
+{
+	struct hinic3_cmd_vxlan_port_info vxlan_port_info;
+	u16 out_size = sizeof(vxlan_port_info);
+	struct hinic3_nic_io *nic_io = NULL;
+	int err;
+
+	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
+	memset(&vxlan_port_info, 0, sizeof(vxlan_port_info));
+	vxlan_port_info.opcode = action;
+	vxlan_port_info.cfg_mode = 0; // other ethtool set
+	vxlan_port_info.func_id = func_id;
+	vxlan_port_info.vxlan_port = port;
+
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC3_NIC_CMD_CFG_VXLAN_PORT,
+				     &vxlan_port_info, sizeof(vxlan_port_info),
+				     &vxlan_port_info, &out_size);
+	if (err || !out_size || vxlan_port_info.msg_head.status) {
+		if (vxlan_port_info.msg_head.status == 0x2) {
+			nic_warn(nic_io->dev_hdl,
+				"Failed to %s vxlan dst port because it has already been set by hinicadm\n",
+				action == HINIC3_CMD_OP_ADD ? "add" : "delete");
+		} else {
+			nic_err(nic_io->dev_hdl,
+			"Failed to %s vxlan dst port, err: %d, status: 0x%x, out size: 0x%x\n",
+			action == HINIC3_CMD_OP_ADD ? "add" : "delete",
+			err, vxlan_port_info.msg_head.status, out_size);
+		}
+		return -EINVAL;
+	}
+
+	return 0;
+}
+#endif /* HAVE_NDO_UDP_TUNNEL_ADD || HAVE_UDP_TUNNEL_NIC_INFO */
+
 int hinic3_add_vlan(void *hwdev, u16 vlan_id, u16 func_id)
 {
 	struct hinic3_nic_io *nic_io = NULL;
@@ -300,6 +463,9 @@ int hinic3_add_vlan(void *hwdev, u16 vlan_id, u16 func_id)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	return hinic3_config_vlan(nic_io, HINIC3_CMD_OP_ADD, vlan_id, func_id);
 }
 
@@ -311,6 +477,9 @@ int hinic3_del_vlan(void *hwdev, u16 vlan_id, u16 func_id)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	return hinic3_config_vlan(nic_io, HINIC3_CMD_OP_DEL, vlan_id, func_id);
 }
 
@@ -354,6 +523,9 @@ int hinic3_set_dcb_state(void *hwdev, struct hinic3_dcb_state *dcb_state)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	if (!memcmp(&nic_io->dcb_state, dcb_state, sizeof(nic_io->dcb_state)))
 		return 0;
 
@@ -515,6 +687,8 @@ int hinic3_set_pause_info(void *hwdev, struct nic_pause_config nic_pause)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	nic_cfg = &nic_io->nic_cfg;
 
@@ -540,7 +714,6 @@ int hinic3_set_pause_info(void *hwdev, struct nic_pause_config nic_pause)
 
 int hinic3_get_pause_info(void *hwdev, struct nic_pause_config *nic_pause)
 {
-	struct hinic3_nic_cfg *nic_cfg = NULL;
 	struct hinic3_nic_io *nic_io = NULL;
 	int err = 0;
 
@@ -548,16 +721,12 @@ int hinic3_get_pause_info(void *hwdev, struct nic_pause_config *nic_pause)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
-	nic_cfg = &nic_io->nic_cfg;
+	if (!nic_io)
+		return -EINVAL;
 
 	err = hinic3_cfg_hw_pause(nic_io, HINIC3_CMD_OP_GET, nic_pause);
 	if (err)
 		return err;
-
-	if (nic_cfg->pause_set || !nic_pause->auto_neg) {
-		nic_pause->rx_pause = nic_cfg->nic_pause.rx_pause;
-		nic_pause->tx_pause = nic_cfg->nic_pause.tx_pause;
-	}
 
 	return 0;
 }
@@ -573,6 +742,8 @@ int hinic3_sync_dcb_state(void *hwdev, u8 op_code, u8 state)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	memset(&dcb_state, 0, sizeof(dcb_state));
 
@@ -659,44 +830,6 @@ int hinic3_cache_out_qps_res(void *hwdev)
 	return 0;
 }
 
-int hinic3_get_fpga_phy_port_stats(void *hwdev, struct hinic3_phy_fpga_port_stats *stats)
-{
-	struct hinic3_port_stats *port_stats = NULL;
-	struct hinic3_port_stats_info stats_info;
-	u16 out_size = sizeof(*port_stats);
-	struct hinic3_nic_io *nic_io = NULL;
-	int err;
-
-	port_stats = kzalloc(sizeof(*port_stats), GFP_KERNEL);
-	if (!port_stats)
-		return -ENOMEM;
-
-	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
-	if (!nic_io)
-		return -EINVAL;
-
-	memset(&stats_info, 0, sizeof(stats_info));
-
-	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC3_NIC_CMD_GET_PORT_STAT,
-				     &stats_info, sizeof(stats_info),
-				     port_stats, &out_size);
-	if (err || !out_size || port_stats->msg_head.status) {
-		nic_err(nic_io->dev_hdl,
-			"Failed to get port statistics, err: %d, status: 0x%x, out size: 0x%x\n",
-			err, port_stats->msg_head.status, out_size);
-		err = -EIO;
-		goto out;
-	}
-
-	memcpy(stats, &port_stats->stats, sizeof(*stats));
-
-out:
-	kfree(port_stats);
-
-	return err;
-}
-EXPORT_SYMBOL(hinic3_get_fpga_phy_port_stats);
-
 int hinic3_get_vport_stats(void *hwdev, u16 func_id, struct hinic3_vport_stats *stats)
 {
 	struct hinic3_port_stats_info stats_info;
@@ -712,6 +845,8 @@ int hinic3_get_vport_stats(void *hwdev, u16 func_id, struct hinic3_vport_stats *
 	memset(&vport_stats, 0, sizeof(vport_stats));
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	stats_info.func_id = func_id;
 
@@ -778,6 +913,8 @@ int hinic3_set_port_mtu(void *hwdev, u16 new_mtu)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	if (new_mtu < HINIC3_MIN_MTU_SIZE) {
 		nic_err(nic_io->dev_hdl,
@@ -808,6 +945,9 @@ static int nic_feature_nego(void *hwdev, u8 opcode, u64 *s_feature, u16 size)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	memset(&feature_nego, 0, sizeof(feature_nego));
 	feature_nego.func_id = hinic3_global_func_id(hwdev);
 	feature_nego.opcode = opcode;
@@ -829,29 +969,21 @@ static int nic_feature_nego(void *hwdev, u8 opcode, u64 *s_feature, u16 size)
 	return 0;
 }
 
-static int hinic3_get_bios_pf_bw_limit(void *hwdev, u32 *pf_bw_limit)
+static int hinic3_get_bios_pf_bw_tx_limit(void *hwdev, struct hinic3_nic_io *nic_io, u16 func_id, u32 *pf_rate)
 {
-	struct hinic3_nic_io *nic_io = NULL;
+	int err = 0; // default success
 	struct nic_cmd_bios_cfg cfg = {{0}};
 	u16 out_size = sizeof(cfg);
-	int err;
 
-	if (!hwdev || !pf_bw_limit)
-		return -EINVAL;
-
-	if (hinic3_func_type(hwdev) == TYPE_VF || !HINIC3_SUPPORT_RATE_LIMIT(hwdev))
-		return 0;
-
-	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
-	cfg.bios_cfg.func_id = (u8)hinic3_global_func_id(hwdev);
+	cfg.bios_cfg.func_id = (u8)func_id;
 	cfg.bios_cfg.func_valid = 1;
-	cfg.op_code = 0 | NIC_NVM_DATA_PF_SPEED_LIMIT;
+	cfg.op_code = 0 | NIC_NVM_DATA_PF_TX_SPEED_LIMIT;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC3_NIC_CMD_BIOS_CFG, &cfg, sizeof(cfg),
 				     &cfg, &out_size);
 	if (err || !out_size || cfg.head.status) {
 		nic_err(nic_io->dev_hdl,
-			"Failed to get bios pf bandwidth limit, err: %d, status: 0x%x, out size: 0x%x\n",
+			"Failed to get bios pf bandwidth tx limit, err: %d, status: 0x%x, out size: 0x%x\n",
 			err, cfg.head.status, out_size);
 		return -EIO;
 	}
@@ -861,13 +993,77 @@ static int hinic3_get_bios_pf_bw_limit(void *hwdev, u32 *pf_bw_limit)
 		nic_warn(nic_io->dev_hdl, "Invalid bios configuration data, signature: 0x%x\n",
 			 cfg.bios_cfg.signature);
 
-	if (cfg.bios_cfg.pf_bw > MAX_LIMIT_BW) {
+	if (cfg.bios_cfg.pf_tx_bw > MAX_LIMIT_BW) {
 		nic_err(nic_io->dev_hdl, "Invalid bios cfg pf bandwidth limit: %u\n",
-			cfg.bios_cfg.pf_bw);
+			cfg.bios_cfg.pf_tx_bw);
 		return -EINVAL;
 	}
 
-	*pf_bw_limit = cfg.bios_cfg.pf_bw;
+	(*pf_rate) = cfg.bios_cfg.pf_tx_bw;
+	return err;
+}
+
+static int hinic3_get_bios_pf_bw_rx_limit(void *hwdev, struct hinic3_nic_io *nic_io, u16 func_id, u32 *pf_rate)
+{
+	int err = 0; // default success
+	struct nic_rx_rate_bios_cfg rx_bios_conf = {{0}};
+	u16 out_size = sizeof(rx_bios_conf);
+
+	rx_bios_conf.func_id = (u8)func_id;
+	rx_bios_conf.op_code = 0; /* 1-save, 0-read */
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC3_NIC_CMD_RX_RATE_CFG, &rx_bios_conf, sizeof(rx_bios_conf),
+					&rx_bios_conf, &out_size);
+	if (rx_bios_conf.msg_head.status == HINIC3_MGMT_CMD_UNSUPPORTED && err == 0) { // Compatible older firmware
+		nic_warn(nic_io->dev_hdl, "Not support get bios pf bandwidth rx limit\n");
+		return 0;
+	} else if (err || !out_size || rx_bios_conf.msg_head.status) {
+		nic_err(nic_io->dev_hdl,
+			"Failed to get bios pf bandwidth rx limit, err: %d, status: 0x%x, out size: 0x%x\n",
+			err, rx_bios_conf.msg_head.status, out_size);
+		return -EIO;
+	}
+	if (rx_bios_conf.rx_rate_limit > MAX_LIMIT_BW) {
+		nic_err(nic_io->dev_hdl, "Invalid bios cfg pf bandwidth limit: %u\n",
+			rx_bios_conf.rx_rate_limit);
+		return -EINVAL;
+	}
+
+	(*pf_rate) = rx_bios_conf.rx_rate_limit;
+	return err;
+}
+
+static int hinic3_get_bios_pf_bw_limit(void *hwdev, u32 *pf_bw_limit, u8 direct)
+{
+	struct hinic3_nic_io *nic_io = NULL;
+	u32 pf_rate = 0;
+	int err = 0;
+    u16 func_id;
+	func_id = hinic3_global_func_id(hwdev);
+
+	if (!hwdev || !pf_bw_limit)
+		return -EINVAL;
+
+	if (hinic3_func_type(hwdev) == TYPE_VF || !HINIC3_SUPPORT_RATE_LIMIT(hwdev))
+		return 0;
+
+	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
+	if (direct == HINIC3_NIC_TX) {
+		err = hinic3_get_bios_pf_bw_tx_limit(hwdev, nic_io, func_id, &pf_rate);
+	} else if (direct == HINIC3_NIC_RX) {
+		err = hinic3_get_bios_pf_bw_rx_limit(hwdev, nic_io, func_id, &pf_rate);
+	}
+
+	if (err != 0)
+		return err;
+
+	if (pf_rate > MAX_LIMIT_BW) {
+		nic_err(nic_io->dev_hdl, "Invalid bios cfg pf bandwidth limit: %u\n", pf_rate);
+		return -EINVAL;
+	}
+	*pf_bw_limit = pf_rate;
 
 	return 0;
 }
@@ -876,8 +1072,9 @@ int hinic3_set_pf_rate(void *hwdev, u8 speed_level)
 {
 	struct hinic3_cmd_tx_rate_cfg rate_cfg = {{0}};
 	struct hinic3_nic_io *nic_io = NULL;
+	u32 rate_limit;
 	u16 out_size = sizeof(rate_cfg);
-	u32 pf_rate;
+	u32 pf_rate = 0;
 	int err;
 	u32 speed_convert[PORT_SPEED_UNKNOWN] = {
 		0, 10, 100, 1000, 10000, 25000, 40000, 50000, 100000, 200000
@@ -892,19 +1089,21 @@ int hinic3_set_pf_rate(void *hwdev, u8 speed_level)
 		return -EINVAL;
 	}
 
-	if (nic_io->nic_cfg.pf_bw_limit == MAX_LIMIT_BW) {
-		pf_rate = 0;
-	} else {
+	rate_limit = (nic_io->direct == HINIC3_NIC_TX) ?
+		nic_io->nic_cfg.pf_bw_tx_limit : nic_io->nic_cfg.pf_bw_rx_limit;
+
+	if (rate_limit != MAX_LIMIT_BW) {
 		/* divided by 100 to convert to percentage */
-		pf_rate = (speed_convert[speed_level] / 100) * nic_io->nic_cfg.pf_bw_limit;
+		pf_rate = (speed_convert[speed_level] / 100) * rate_limit;
 		/* bandwidth limit is very small but not unlimit in this case */
-		if (pf_rate == 0 && speed_level != PORT_SPEED_NOT_SET)
+		if ((pf_rate == 0) && (speed_level != PORT_SPEED_NOT_SET))
 			pf_rate = 1;
 	}
 
 	rate_cfg.func_id = hinic3_global_func_id(hwdev);
 	rate_cfg.min_rate = 0;
 	rate_cfg.max_rate = pf_rate;
+	rate_cfg.direct = nic_io->direct;
 
 	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC3_NIC_CMD_SET_MAX_MIN_RATE, &rate_cfg,
 				     sizeof(rate_cfg), &rate_cfg, &out_size);
@@ -927,6 +1126,8 @@ int hinic3_set_nic_feature_to_hw(void *hwdev)
 	struct hinic3_nic_io *nic_io = NULL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	return nic_feature_nego(hwdev, HINIC3_CMD_OP_SET, &nic_io->feature_cap, 1);
 }
@@ -936,6 +1137,8 @@ u64 hinic3_get_feature_cap(void *hwdev)
 	struct hinic3_nic_io *nic_io = NULL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return 0;
 
 	return nic_io->feature_cap;
 }
@@ -945,6 +1148,9 @@ void hinic3_update_nic_feature(void *hwdev, u64 s_feature)
 	struct hinic3_nic_io *nic_io = NULL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return;
+
 	nic_io->feature_cap = s_feature;
 
 	nic_info(nic_io->dev_hdl, "Update nic feature to 0x%llx\n", nic_io->feature_cap);
@@ -978,6 +1184,7 @@ static int hinic3_init_nic_io(void *hwdev, void *pcidev_hdl, void *dev_hdl,
 
 	(*nic_io)->nic_cfg.rt_cmd.mpu_send_sfp_abs = false;
 	(*nic_io)->nic_cfg.rt_cmd.mpu_send_sfp_info = false;
+	(*nic_io)->nic_cfg.rt_cmd_ext.mpu_send_xsfp_tlv_info = false;
 
 	return 0;
 }
@@ -994,10 +1201,13 @@ int hinic3_init_nic_hwdev(void *hwdev, void *pcidev_hdl, void *dev_hdl,
 {
 	struct hinic3_nic_io *nic_io = NULL;
 	int err;
+	int is_in_kexec = vram_get_kexec_flag();
 
 	err = hinic3_init_nic_io(hwdev, pcidev_hdl, dev_hdl, &nic_io);
 	if (err)
 		return err;
+
+	nic_io->rx_buff_len = rx_buff_len;
 
 	err = hinic3_register_service_adapter(hwdev, nic_io, SERVICE_T_NIC);
 	if (err) {
@@ -1011,10 +1221,12 @@ int hinic3_init_nic_hwdev(void *hwdev, void *pcidev_hdl, void *dev_hdl,
 		goto set_used_state_err;
 	}
 
-	err = hinic3_init_function_table(nic_io);
-	if (err) {
-		nic_err(nic_io->dev_hdl, "Failed to init function table\n");
-		goto err_out;
+	if (is_in_kexec == 0) {
+		err = hinic3_init_function_table(nic_io);
+		if (err != 0) {
+			nic_err(nic_io->dev_hdl, "Failed to init function table\n");
+			goto err_out;
+		}
 	}
 
 	err = hinic3_get_nic_feature_from_hw(hwdev, &nic_io->feature_cap, 1);
@@ -1025,9 +1237,19 @@ int hinic3_init_nic_hwdev(void *hwdev, void *pcidev_hdl, void *dev_hdl,
 
 	sdk_info(dev_hdl, "nic features: 0x%llx\n", nic_io->feature_cap);
 
-	err = hinic3_get_bios_pf_bw_limit(hwdev, &nic_io->nic_cfg.pf_bw_limit);
-	if (err) {
-		nic_err(nic_io->dev_hdl, "Failed to get pf bandwidth limit\n");
+	err = hinic3_get_bios_pf_bw_limit(hwdev,
+					  &nic_io->nic_cfg.pf_bw_tx_limit,
+					  HINIC3_NIC_TX);
+	if (err != 0) {
+		nic_err(nic_io->dev_hdl, "Failed to get pf tx bandwidth limit\n");
+		goto err_out;
+	}
+
+	err = hinic3_get_bios_pf_bw_limit(hwdev,
+					  &nic_io->nic_cfg.pf_bw_rx_limit,
+					  HINIC3_NIC_RX);
+	if (err != 0) {
+		nic_err(nic_io->dev_hdl, "Failed to get pf rx bandwidth limit\n");
 		goto err_out;
 	}
 
@@ -1037,12 +1259,13 @@ int hinic3_init_nic_hwdev(void *hwdev, void *pcidev_hdl, void *dev_hdl,
 		goto err_out;
 	}
 
-	nic_io->rx_buff_len = rx_buff_len;
-
 	return 0;
 
 err_out:
-	hinic3_set_func_svc_used_state(hwdev, SVC_T_NIC, 0, HINIC3_CHANNEL_NIC);
+	if (hinic3_set_func_svc_used_state(hwdev, SVC_T_NIC, 0,
+					   HINIC3_CHANNEL_NIC) != 0) {
+		nic_err(nic_io->dev_hdl, "Failed to set function svc used state\n");
+	}
 
 set_used_state_err:
 	hinic3_unregister_service_adapter(hwdev, SERVICE_T_NIC);
@@ -1092,6 +1315,8 @@ int hinic3_force_drop_tx_pkt(void *hwdev)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	memset(&pkt_drop, 0, sizeof(pkt_drop));
 	pkt_drop.port = hinic3_physical_port_id(hwdev);
@@ -1120,6 +1345,8 @@ int hinic3_set_rx_mode(void *hwdev, u32 enable)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	memset(&rx_mode_cfg, 0, sizeof(rx_mode_cfg));
 	rx_mode_cfg.func_id = hinic3_global_func_id(hwdev);
@@ -1148,6 +1375,8 @@ int hinic3_set_rx_vlan_offload(void *hwdev, u8 en)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	memset(&vlan_cfg, 0, sizeof(vlan_cfg));
 	vlan_cfg.func_id = hinic3_global_func_id(hwdev);
@@ -1176,6 +1405,9 @@ int hinic3_update_mac_vlan(void *hwdev, u16 old_vlan, u16 new_vlan, int vf_id)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	vf_info = nic_io->vf_infos + HW_VF_ID_TO_OS(vf_id);
 	if (!nic_io->vf_infos || is_zero_ether_addr(vf_info->drv_mac_addr))
 		return 0;
@@ -1215,6 +1447,8 @@ static int hinic3_set_rx_lro(void *hwdev, u8 ipv4_en, u8 ipv6_en,
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	memset(&lro_cfg, 0, sizeof(lro_cfg));
 	lro_cfg.func_id = hinic3_global_func_id(hwdev);
@@ -1246,6 +1480,8 @@ static int hinic3_set_rx_lro_timer(void *hwdev, u32 timer_value)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	memset(&lro_timer, 0, sizeof(lro_timer));
 	lro_timer.opcode = HINIC3_CMD_OP_SET;
@@ -1278,6 +1514,8 @@ int hinic3_set_rx_lro_state(void *hwdev, u8 lro_en, u32 lro_timer,
 	ipv6_en = lro_en ? 1 : 0;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	nic_info(nic_io->dev_hdl, "Set LRO max coalesce packet size to %uK\n",
 		 lro_max_pkt_len);
@@ -1306,6 +1544,8 @@ int hinic3_set_vlan_fliter(void *hwdev, u32 vlan_filter_ctrl)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	memset(&vlan_filter, 0, sizeof(vlan_filter));
 	vlan_filter.func_id = hinic3_global_func_id(hwdev);
@@ -1325,7 +1565,6 @@ int hinic3_set_vlan_fliter(void *hwdev, u32 vlan_filter_ctrl)
 
 int hinic3_set_func_capture_en(void *hwdev, u16 func_id, bool cap_en)
 {
-	// struct hinic_hwdev *dev = hwdev;
 	struct nic_cmd_capture_info cap_info = {{0}};
 	u16 out_size = sizeof(cap_info);
 	int err;
@@ -1334,7 +1573,6 @@ int hinic3_set_func_capture_en(void *hwdev, u16 func_id, bool cap_en)
 		return -EINVAL;
 
 	/* 2 function capture types */
-	// cap_info.op_type = UP_UCAPTURE_OP_TYPE_FUNC;
 	cap_info.is_en_trx = cap_en;
 	cap_info.func_port = func_id;
 
@@ -1359,6 +1597,8 @@ int hinic3_add_tcam_rule(void *hwdev, struct nic_tcam_cfg_rule *tcam_rule)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 	if (tcam_rule->index >= HINIC3_MAX_TCAM_RULES_NUM) {
 		nic_err(nic_io->dev_hdl, "Tcam rules num to add is invalid\n");
 		return -EINVAL;
@@ -1394,6 +1634,8 @@ int hinic3_del_tcam_rule(void *hwdev, u32 index)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 	if (index >= HINIC3_MAX_TCAM_RULES_NUM) {
 		nic_err(nic_io->dev_hdl, "Tcam rules num to del is invalid\n");
 		return -EINVAL;
@@ -1443,6 +1685,8 @@ static int hinic3_mgmt_tcam_block(void *hwdev, u8 alloc_en, u16 *index)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 	memset(&tcam_block_info, 0,
 	       sizeof(struct nic_cmd_ctrl_tcam_block_out));
 
@@ -1488,6 +1732,8 @@ int hinic3_set_fdir_tcam_rule_filter(void *hwdev, bool enable)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 	memset(&port_tcam_cmd, 0, sizeof(port_tcam_cmd));
 	port_tcam_cmd.func_id = hinic3_global_func_id(hwdev);
 	port_tcam_cmd.tcam_enable = (u8)enable;
@@ -1516,6 +1762,9 @@ int hinic3_flush_tcam_rule(void *hwdev)
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	memset(&tcam_flush, 0, sizeof(struct nic_cmd_flush_tcam_rules));
 	tcam_flush.func_id = hinic3_global_func_id(hwdev);
 
@@ -1546,6 +1795,9 @@ int hinic3_get_rxq_hw_info(void *hwdev, struct rxq_check_info *rxq_info, u16 num
 		return -EINVAL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	cmd_buf = hinic3_alloc_cmd_buf(hwdev);
 	if (!cmd_buf) {
 		nic_err(nic_io->dev_hdl, "Failed to allocate cmd_buf.\n");
@@ -1588,8 +1840,10 @@ int hinic3_pf_set_vf_link_state(void *hwdev, bool vf_link_forced, bool link_stat
 		return -EINVAL;
 	}
 
-	if (hinic3_func_type(hwdev) == TYPE_VF)
+	if (hinic3_func_type(hwdev) == TYPE_VF) {
+		pr_err("VF are not supported to set link state.\n");
 		return -EINVAL;
+	}
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
 	if (!nic_io) {
@@ -1606,3 +1860,35 @@ int hinic3_pf_set_vf_link_state(void *hwdev, bool vf_link_forced, bool link_stat
 	return 0;
 }
 EXPORT_SYMBOL(hinic3_pf_set_vf_link_state);
+
+int hinic3_get_outband_vlan_cfg(void *hwdev, u16 *outband_default_vid)
+{
+	struct hinic3_outband_cfg_info outband_cfg_info;
+	u16 out_size = sizeof(outband_cfg_info);
+	struct hinic3_nic_io *nic_io = NULL;
+	int err;
+
+	if (!hwdev || !outband_default_vid)
+		return -EINVAL;
+
+	memset(&outband_cfg_info, 0, sizeof(outband_cfg_info));
+
+	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
+	err = l2nic_msg_to_mgmt_sync(hwdev, HINIC3_NIC_CMD_GET_OUTBAND_CFG,
+				     &outband_cfg_info,
+				     sizeof(outband_cfg_info),
+				     &outband_cfg_info, &out_size);
+	if (err || !out_size || outband_cfg_info.msg_head.status) {
+		nic_err(nic_io->dev_hdl,
+			"Failed to get outband cfg, err: %d, status: 0x%x, out size: 0x%x\n",
+			err, outband_cfg_info.msg_head.status, out_size);
+		return -EINVAL;
+	}
+
+	*outband_default_vid = outband_cfg_info.outband_default_vid;
+
+	return 0;
+}

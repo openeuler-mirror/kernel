@@ -40,6 +40,7 @@ enum hinic3_channel_id {
 	HINIC3_CHANNEL_DSW,
 	HINIC3_CHANNEL_MIG,
 	HINIC3_CHANNEL_CRYPT,
+	HINIC3_CHANNEL_VROCE,
 
 	HINIC3_CHANNEL_MAX = 32,
 };
@@ -396,6 +397,16 @@ void hinic3_free_cmd_buf(void *hwdev, struct hinic3_cmd_buf *cmd_buf);
  * Return: 0 - success, negative - failure
  **/
 int hinic3_sm_ctr_rd16(void *hwdev, u8 node, u8 instance, u32 ctr_id, u16 *value);
+
+/**
+ * hinic3_sm_ctr_rd16_clear - small single 16 counter read clear
+ * @hwdev: the hardware device
+ * @node: the node id
+ * @ctr_id: counter id
+ * @value: read counter value ptr
+ * Return: 0 - success, negative - failure
+ **/
+int hinic3_sm_ctr_rd16_clear(void *hwdev, u8 node, u8 instance, u32 ctr_id, u16 *value);
 
 /**
  * @brief hinic3_sm_ctr_rd32 - small single 32 counter read
@@ -809,6 +820,13 @@ int hinic3_dbg_lt_wr_16byte_mask(void *hwdev, u8 dest, u8 instance,
  * @param link: link status
  */
 void hinic3_link_event_stats(void *dev, u8 link);
+
+/**
+ * @brief hinic3_get_link_event_stats - link event stats
+ * @param hwdev: device pointer to hwdev
+ * @param link: link status
+ */
+int hinic3_get_link_event_stats(void *dev, int *link_state);
 
 /**
  * @brief hinic3_get_hw_pf_infos - get pf infos

@@ -1,5 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2024 Huawei Technologies Co., Ltd */
+/*
+ * Copyright (C), 2001-2021, Huawei Tech. Co., Ltd.
+ * File Name     : nic_cfg_comm.h
+ * Version       : Initial Draft
+ * Description   : nic config common header file
+ * Function List :
+ * History       :
+ *   Modification: Created file
+ */
 
 #ifndef NIC_CFG_COMM_H
 #define NIC_CFG_COMM_H
@@ -26,7 +34,7 @@ enum nic_rss_hash_type {
 };
 
 #define NIC_RSS_INDIR_SIZE	256
-#define NIC_RSS_KEY_SIZE		40
+#define NIC_RSS_KEY_SIZE	40
 
 /* *
  * Definition of the NIC receiving mode
@@ -36,6 +44,7 @@ enum nic_rss_hash_type {
 #define NIC_RX_MODE_BC		0x04
 #define NIC_RX_MODE_MC_ALL	0x08
 #define NIC_RX_MODE_PROMISC	0x10
+#define NIC_RX_DB_COS_MAX       0x4
 
 /* IEEE 802.1Qaz std */
 #define NIC_DCB_COS_MAX		0x8
@@ -52,4 +61,7 @@ enum nic_rss_hash_type {
 #define NIC_DCB_PRIO_STRICT	0x1
 
 #define NIC_DCB_MAX_PFC_NUM	0x4
+
+#define NIC_ETS_PERCENT_WEIGHT    100
+
 #endif

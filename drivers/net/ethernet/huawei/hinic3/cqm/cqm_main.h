@@ -362,6 +362,7 @@ s32 cqm_fake_vf_num_set(void *ex_handle, u16 fake_vf_num_cfg);
 #define CQM_LOG_ID 0
 
 #define CQM_PTR_NULL(x)      "%s: " #x " is null\n", __func__
+#define CQM_ALLOC_FAIL(x)    "%s: " #x " alloc fail\n", __func__
 #define CQM_MAP_FAIL(x)      "%s: " #x " map fail\n", __func__
 #define CQM_FUNCTION_FAIL(x) "%s: " #x " return failure\n", __func__
 #define CQM_WRONG_VALUE(x)   "%s: " #x " %u is wrong\n", __func__, (u32)(x)

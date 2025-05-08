@@ -9,6 +9,7 @@
 
 #include "cqm_bitmap_table.h"
 #include "cqm_object.h"
+#include "vram_common.h"
 
 /* When the connection check is enabled, the maximum number of connections
  * supported by the chip is 1M - 63, which cannot reach 1M
@@ -19,6 +20,7 @@
 #define CLA_TABLE_PAGE_ORDER       0
 #define CQM_4K_PAGE_ORDER          0
 #define CQM_4K_PAGE_SIZE           4096
+#define CQM_8K_PAGE_ORDER          1
 
 #define CQM_BAT_ENTRY_MAX          16
 #define CQM_BAT_ENTRY_SIZE         16

@@ -15,9 +15,10 @@
 #include "hinic3_tx.h"
 #include "hinic3_rx.h"
 #include "hinic3_dcb.h"
+#include "vram_common.h"
 
 #define HINIC3_NIC_DRV_NAME	"hinic3"
-#define HINIC3_NIC_DRV_VERSION	"15.17.1.1"
+#define HINIC3_NIC_DRV_VERSION	"17.7.8.1"
 
 #define HINIC3_FUNC_IS_VF(hwdev)	(hinic3_func_type(hwdev) == TYPE_VF)
 
@@ -25,6 +26,10 @@
 #define HINIC3_MODERATONE_DELAY   HZ
 
 #define LP_PKT_CNT 64
+#define LP_PKT_LEN 60
+
+#define NAPI_IS_REGIN 1
+#define NAPI_NOT_REGIN 0
 
 enum hinic3_flags {
 	HINIC3_INTF_UP,
@@ -91,6 +96,8 @@ struct hinic3_irq {
 	u16			rsvd1;
 	u32			irq_id;         /* The IRQ number from OS */
 
+	u32			napi_reign;
+
 	char			irq_name[IFNAMSIZ + 16];
 	struct napi_struct	napi;
 	cpumask_t		affinity_mask;
@@ -123,6 +130,41 @@ struct hinic3_dyna_txrxq_params {
 	struct hinic3_dyna_txq_res	*txqs_res;
 	struct hinic3_dyna_rxq_res	*rxqs_res;
 	struct hinic3_irq		*irq_cfg;
+	char irq_cfg_vram_name[VRAM_NAME_MAX_LEN];
+};
+
+struct hinic3_flush_rq {
+	union {
+		struct {
+#if defined(BYTE_ORDER) && (BYTE_ORDER == BIG_ENDIAN)
+			u32 lb_proc : 1;
+			u32 rsvd : 10;
+			u32 rq_id : 8;
+			u32 func_id : 13;
+#else
+			u32 func_id : 13;
+			u32 rq_id : 8;
+			u32 rsvd : 10;
+			u32 lb_proc : 1;
+#endif
+		} bs;
+		u32 value;
+	} dw;
+
+	union {
+		struct {
+#if defined(BYTE_ORDER) && (BYTE_ORDER == BIG_ENDIAN)
+			u32 rsvd2 : 2;
+			u32 src_chnl : 12;
+			u32 pkt_len : 18;
+#else
+			u32 pkt_len : 18;
+			u32 src_chnl : 12;
+			u32 rsvd2 : 2;
+#endif
+		} bs;
+		u32 value;
+	} lb_info0; /* loop back information, used by uCode */
 };
 
 #define HINIC3_NIC_STATS_INC(nic_dev, field)			\
@@ -145,6 +187,10 @@ struct hinic3_nic_stats {
 #else
 	struct u64_stats_sync_empty syncp;
 #endif
+};
+
+struct hinic3_nic_vport_stats {
+	u64 rx_discard_vport;
 };
 
 #define HINIC3_TCAM_DYNAMIC_BLOCK_SIZE 16
@@ -185,104 +231,123 @@ struct hinic3_tcam_info {
 	struct hinic3_tcam_dynamic_block_info tcam_dynamic_info;
 };
 
-struct hinic3_nic_dev {
-	struct pci_dev		*pdev;
-	struct net_device	*netdev;
-	struct hinic3_lld_dev	*lld_dev;
-	void			*hwdev;
-
-	int			poll_weight;
-	u32			rsvd1;
-	unsigned long		*vlan_bitmap;
-
-	u16			max_qps;
-
-	u32			msg_enable;
-	unsigned long		flags;
-
-	u32			lro_replenish_thld;
-	u32			dma_rx_buff_size;
-	u16			rx_buff_len;
-	u32			page_order;
-
-	/* Rss related varibles */
-	u8			rss_hash_engine;
-	struct nic_rss_type	rss_type;
-	u8			*rss_hkey;
-	/* hkey in big endian */
-	u32			*rss_hkey_be;
-	u32			*rss_indir;
-
-	u8			cos_config_num_max;
-	u8			func_dft_cos_bitmap;
-	u16			port_dft_cos_bitmap; /* used to tool validity check */
+struct hinic3_dcb {
+	u8			 cos_config_num_max;
+	u8			 func_dft_cos_bitmap;
+	/* used to tool validity check */
+	u16			 port_dft_cos_bitmap;
 
 	struct hinic3_dcb_config hw_dcb_cfg;
 	struct hinic3_dcb_config wanted_dcb_cfg;
-	struct hinic3_dcb_config dcb_cfg;
-	unsigned long		dcb_flags;
-	int			disable_port_cnt;
-	/* lock for disable or enable traffic flow */
-	struct semaphore	dcb_sem;
+	unsigned long		 dcb_flags;
+};
 
-	struct hinic3_intr_coal_info *intr_coalesce;
-	unsigned long		last_moder_jiffies;
-	u32			adaptive_rx_coal;
-	u8			intr_coal_set_flag;
+struct hinic3_vram {
+	u32 vram_mtu;
+	u16 vram_num_qps;
+	unsigned long flags;
+};
+
+struct hinic3_outband_cfg {
+	u16 outband_default_vid;
+	u16 rsvd;
+};
+
+struct hinic3_nic_dev {
+	struct pci_dev			*pdev;
+	struct net_device		*netdev;
+	struct hinic3_lld_dev		*lld_dev;
+	void				*hwdev;
+
+	int				poll_weight;
+	u32				rsvd1;
+	unsigned long			*vlan_bitmap;
+
+	u16				max_qps;
+
+	u32				msg_enable;
+	unsigned long			flags;
+
+	u32				lro_replenish_thld;
+	u32				dma_rx_buff_size;
+	u16				rx_buff_len;
+	u32				page_order;
+	bool				page_pool_enabled;
+
+	/* Rss related varibles */
+	u8				rss_hash_engine;
+	struct nic_rss_type		rss_type;
+	u8				*rss_hkey;
+	/* hkey in big endian */
+	u32				*rss_hkey_be;
+	u32				*rss_indir;
+
+	struct hinic3_dcb		*dcb;
+	char dcb_name[VRAM_NAME_MAX_LEN];
+
+	struct hinic3_vram		*nic_vram;
+	char nic_vram_name[VRAM_NAME_MAX_LEN];
+
+	int				disable_port_cnt;
+
+	struct hinic3_intr_coal_info	*intr_coalesce;
+	unsigned long			last_moder_jiffies;
+	u32				adaptive_rx_coal;
+	u8				intr_coal_set_flag;
 
 #ifndef HAVE_NETDEV_STATS_IN_NETDEV
-	struct net_device_stats net_stats;
+	struct net_device_stats		net_stats;
 #endif
 
-	struct hinic3_nic_stats	stats;
+	struct hinic3_nic_stats		stats;
+	struct hinic3_nic_vport_stats	vport_stats;
 
 	/* lock for nic resource */
-	struct mutex		nic_mutex;
-	bool			force_port_disable;
-	struct semaphore	port_state_sem;
-	u8			link_status;
+	struct mutex			nic_mutex;
+	u8				link_status;
 
-	struct nic_service_cap	nic_cap;
+	struct nic_service_cap		nic_cap;
 
-	struct hinic3_txq	*txqs;
-	struct hinic3_rxq	*rxqs;
+	struct hinic3_txq		*txqs;
+	struct hinic3_rxq		*rxqs;
 	struct hinic3_dyna_txrxq_params q_params;
 
-	u16			num_qp_irq;
-	struct irq_info		*qps_irq_info;
+	u16				num_qp_irq;
+	struct irq_info			*qps_irq_info;
 
-	struct workqueue_struct *workq;
+	struct workqueue_struct		*workq;
 
-	struct work_struct	rx_mode_work;
-	struct delayed_work	moderation_task;
+	struct work_struct		rx_mode_work;
+	struct delayed_work		moderation_task;
 
-	struct list_head	uc_filter_list;
-	struct list_head	mc_filter_list;
-	unsigned long		rx_mod_state;
-	int			netdev_uc_cnt;
-	int			netdev_mc_cnt;
+	struct list_head		uc_filter_list;
+	struct list_head		mc_filter_list;
+	unsigned long			rx_mod_state;
+	int				netdev_uc_cnt;
+	int				netdev_mc_cnt;
 
-	int			lb_test_rx_idx;
-	int			lb_pkt_len;
-	u8			*lb_test_rx_buf;
+	int				lb_test_rx_idx;
+	int				lb_pkt_len;
+	u8				*lb_test_rx_buf;
 
-	struct hinic3_tcam_info tcam;
-	struct hinic3_rx_flow_rule rx_flow_rule;
+	struct hinic3_tcam_info		tcam;
+	struct hinic3_rx_flow_rule	rx_flow_rule;
 
 #ifdef HAVE_XDP_SUPPORT
-	struct bpf_prog		*xdp_prog;
+	struct bpf_prog			*xdp_prog;
 #endif
 
-	struct delayed_work	periodic_work;
+	struct delayed_work		periodic_work;
 	/* reference to enum hinic3_event_work_flags */
-	unsigned long		event_flag;
+	unsigned long			event_flag;
 
-	struct hinic3_nic_prof_attr *prof_attr;
-	struct hinic3_prof_adapter *prof_adap;
-	u64			rsvd8[7];
-	u32			rsvd9;
-	u32			rxq_get_err_times;
-	struct delayed_work	rxq_check_work;
+	struct hinic3_nic_prof_attr	*prof_attr;
+	struct hinic3_prof_adapter	*prof_adap;
+	u64				rsvd8[7];
+	struct hinic3_outband_cfg	outband_cfg;
+	u32				rxq_get_err_times;
+	struct delayed_work		rxq_check_work;
+	struct delayed_work		vport_stats_work;
 };
 
 #define hinic_msg(level, nic_dev, msglvl, format, arg...)	\
@@ -309,7 +374,7 @@ struct hinic3_uld_info *get_nic_uld_info(void);
 
 u32 hinic3_get_io_stats_size(const struct hinic3_nic_dev *nic_dev);
 
-void hinic3_get_io_stats(const struct hinic3_nic_dev *nic_dev, void *stats);
+int hinic3_get_io_stats(const struct hinic3_nic_dev *nic_dev, void *stats);
 
 int hinic3_open(struct net_device *netdev);
 
@@ -328,6 +393,8 @@ int hinic3_qps_irq_init(struct hinic3_nic_dev *nic_dev);
 
 void hinic3_qps_irq_deinit(struct hinic3_nic_dev *nic_dev);
 
+void qp_del_napi(struct hinic3_irq *irq_cfg);
+
 void hinic3_set_netdev_ops(struct hinic3_nic_dev *nic_dev);
 
 bool hinic3_is_netdev_ops_match(const struct net_device *netdev);
@@ -344,10 +411,6 @@ void hinic3_get_ethtool_stats(struct net_device *netdev,
 			      struct ethtool_stats *stats, u64 *data);
 
 int hinic3_get_sset_count(struct net_device *netdev, int sset);
-
-int hinic3_force_port_disable(struct hinic3_nic_dev *nic_dev);
-
-int hinic3_force_set_port_state(struct hinic3_nic_dev *nic_dev, bool enable);
 
 int hinic3_maybe_set_port_state(struct hinic3_nic_dev *nic_dev, bool enable);
 
@@ -381,6 +444,18 @@ void hinic3_link_status_change(struct hinic3_nic_dev *nic_dev, bool status);
 #ifdef HAVE_XDP_SUPPORT
 bool hinic3_is_xdp_enable(struct hinic3_nic_dev *nic_dev);
 int hinic3_xdp_max_mtu(struct hinic3_nic_dev *nic_dev);
+#endif
+
+#ifdef HAVE_UDP_TUNNEL_NIC_INFO
+int hinic3_udp_tunnel_set_port(struct net_device *netdev, unsigned int table,
+			unsigned int entry, struct udp_tunnel_info *ti);
+int hinic3_udp_tunnel_unset_port(struct net_device *netdev, unsigned int table,
+			unsigned int entry, struct udp_tunnel_info *ti);
+#endif /* HAVE_UDP_TUNNEL_NIC_INFO */
+
+#if defined(ETHTOOL_GFECPARAM) && defined(ETHTOOL_SFECPARAM)
+int set_fecparam(void *hwdev, u8 fecparam);
+int get_fecparam(void *hwdev, u8 *advertised_fec, u8 *supported_fec);
 #endif
 
 #endif

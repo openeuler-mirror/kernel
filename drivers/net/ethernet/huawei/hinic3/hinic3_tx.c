@@ -218,53 +218,6 @@ static void get_inner_l4_info(struct sk_buff *skb, union hinic3_l4 *l4,
 	}
 }
 
-static int hinic3_tx_csum(struct hinic3_txq *txq, struct hinic3_sq_task *task,
-			  struct sk_buff *skb)
-{
-	if (skb->ip_summed != CHECKSUM_PARTIAL)
-		return 0;
-
-	if (skb->encapsulation) {
-		union hinic3_ip ip;
-		u8 l4_proto;
-
-		task->pkt_info0 |= SQ_TASK_INFO0_SET(1U, TUNNEL_FLAG);
-
-		ip.hdr = skb_network_header(skb);
-		if (ip.v4->version == IPV4_VERSION) {
-			l4_proto = ip.v4->protocol;
-		} else if (ip.v4->version == IPV6_VERSION) {
-			union hinic3_l4 l4;
-			unsigned char *exthdr;
-			__be16 frag_off;
-
-#ifdef HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
-			task->pkt_info0 |= SQ_TASK_INFO0_SET(1U, OUT_L4_EN);
-#endif
-			exthdr = ip.hdr + sizeof(*ip.v6);
-			l4_proto = ip.v6->nexthdr;
-			l4.hdr = skb_transport_header(skb);
-			if (l4.hdr != exthdr)
-				ipv6_skip_exthdr(skb, exthdr - skb->data,
-						 &l4_proto, &frag_off);
-		} else {
-			l4_proto = IPPROTO_RAW;
-		}
-
-		if (l4_proto != IPPROTO_UDP ||
-		    ((struct udphdr *)skb_transport_header(skb))->dest != VXLAN_OFFLOAD_PORT_LE) {
-			TXQ_STATS_INC(txq, unknown_tunnel_pkt);
-			/* Unsupport tunnel packet, disable csum offload */
-			skb_checksum_help(skb);
-			return 0;
-		}
-	}
-
-	task->pkt_info0 |= SQ_TASK_INFO0_SET(1U, INNER_L4_EN);
-
-	return 1;
-}
-
 static void get_inner_l3_l4_type(struct sk_buff *skb, union hinic3_ip *ip,
 				 union hinic3_l4 *l4,
 				 enum sq_l3_type *l3_type, u8 *l4_proto)
@@ -301,6 +254,84 @@ static void get_inner_l3_l4_type(struct sk_buff *skb, union hinic3_ip *ip,
 		*l3_type = UNKNOWN_L3TYPE;
 		*l4_proto = 0;
 	}
+}
+
+static u8 hinic3_get_inner_l4_type(struct sk_buff *skb)
+{
+	enum sq_l3_type l3_type;
+	u8 l4_proto;
+	union hinic3_ip ip;
+	union hinic3_l4 l4;
+
+	ip.hdr = skb_inner_network_header(skb);
+	l4.hdr = skb_inner_transport_header(skb);
+
+	get_inner_l3_l4_type(skb, &ip, &l4, &l3_type, &l4_proto);
+	return l4_proto;
+}
+
+static void hinic3_set_unknown_tunnel_csum(struct sk_buff *skb)
+{
+	int csum_offset;
+	__sum16 skb_csum;
+	u8 l4_proto;
+
+	l4_proto = hinic3_get_inner_l4_type(skb);
+	/* Unsupport tunnel packet, disable csum offload */
+	skb_checksum_help(skb);
+	/* The value of csum is changed from 0xffff to 0 according to RFC1624 */
+	if (skb->ip_summed == CHECKSUM_NONE && l4_proto != IPPROTO_UDP) {
+		csum_offset = skb_checksum_start_offset(skb) + skb->csum_offset;
+		skb_csum = *(__sum16 *)(skb->data + csum_offset);
+		if (skb_csum == 0xffff) {
+			*(__sum16 *)(skb->data + csum_offset) = 0;
+		}
+	}
+}
+
+static int hinic3_tx_csum(struct hinic3_txq *txq, struct hinic3_sq_task *task,
+			  struct sk_buff *skb)
+{
+	if (skb->ip_summed != CHECKSUM_PARTIAL)
+		return 0;
+
+	if (skb->encapsulation) {
+		union hinic3_ip ip;
+		u8 l4_proto;
+
+		task->pkt_info0 |= SQ_TASK_INFO0_SET(1U, TUNNEL_FLAG);
+
+		ip.hdr = skb_network_header(skb);
+		if (ip.v4->version == IPV4_VERSION) {
+			l4_proto = ip.v4->protocol;
+		} else if (ip.v4->version == IPV6_VERSION) {
+			union hinic3_l4 l4;
+			unsigned char *exthdr;
+			__be16 frag_off;
+
+#ifdef HAVE_OUTER_IPV6_TUNNEL_OFFLOAD
+			task->pkt_info0 |= SQ_TASK_INFO0_SET(1U, OUT_L4_EN);
+#endif
+			exthdr = ip.hdr + sizeof(*ip.v6);
+			l4_proto = ip.v6->nexthdr;
+			l4.hdr = skb_transport_header(skb);
+			if (l4.hdr != exthdr)
+				ipv6_skip_exthdr(skb, exthdr - skb->data,
+						 &l4_proto, &frag_off);
+		} else {
+			l4_proto = IPPROTO_RAW;
+		}
+
+		if (l4_proto != IPPROTO_UDP) {
+			TXQ_STATS_INC(txq, unknown_tunnel_pkt);
+			hinic3_set_unknown_tunnel_csum(skb);
+			return 0;
+		}
+	}
+
+	task->pkt_info0 |= SQ_TASK_INFO0_SET(1U, INNER_L4_EN);
+
+	return 1;
 }
 
 static void hinic3_set_tso_info(struct hinic3_sq_task *task, u32 *queue_info,
@@ -463,7 +494,8 @@ static void get_pkt_stats(struct hinic3_tx_info *tx_info, struct sk_buff *skb)
 #endif
 		} else {
 #endif
-			ihs = skb_transport_offset(skb) + tcp_hdrlen(skb);
+			ihs = (u32)(skb_transport_offset(skb)) +
+							tcp_hdrlen(skb);
 #if (defined(HAVE_SKB_INNER_TRANSPORT_HEADER) && \
 	defined(HAVE_SK_BUFF_ENCAPSULATION))
 		}
@@ -471,7 +503,8 @@ static void get_pkt_stats(struct hinic3_tx_info *tx_info, struct sk_buff *skb)
 		hdr_len = (skb_shinfo(skb)->gso_segs - 1) * ihs;
 		tx_info->num_bytes = skb->len + (u64)hdr_len;
 	} else {
-		tx_info->num_bytes = skb->len > ETH_ZLEN ? skb->len : ETH_ZLEN;
+		tx_info->num_bytes = (skb->len > ETH_ZLEN) ?
+							skb->len : ETH_ZLEN;
 	}
 
 	tx_info->num_pkts = 1;
@@ -624,6 +657,14 @@ static netdev_tx_t hinic3_send_one_skb(struct sk_buff *skb,
 	if (unlikely(hinic3_maybe_stop_tx(txq, wqebb_cnt))) {
 		TXQ_STATS_INC(txq, busy);
 		return NETDEV_TX_BUSY;
+	}
+
+	/* l2nic outband vlan cfg enable */
+	if ((!skb_vlan_tag_present(skb)) &&
+	    (nic_dev->nic_cap.outband_vlan_cfg_en == 1) &&
+	     nic_dev->outband_cfg.outband_default_vid != 0) {
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
+				(u16)nic_dev->outband_cfg.outband_default_vid);
 	}
 
 	offload = hinic3_tx_offload(skb, &task, &queue_info, txq);
@@ -834,6 +875,7 @@ int hinic3_alloc_txqs_res(struct hinic3_nic_dev *nic_dev, u16 num_sq,
 		tqres->bds = kzalloc(size, GFP_KERNEL);
 		if (!tqres->bds) {
 			kfree(tqres->tx_info);
+			tqres->tx_info = NULL;
 			nicif_err(nic_dev, drv, nic_dev->netdev,
 				  "Failed to alloc txq%d bds info\n", idx);
 			goto err_out;
@@ -847,7 +889,9 @@ err_out:
 		tqres = &txqs_res[i];
 
 		kfree(tqres->bds);
+		tqres->bds = NULL;
 		kfree(tqres->tx_info);
+		tqres->tx_info = NULL;
 	}
 
 	return -ENOMEM;
@@ -864,7 +908,9 @@ void hinic3_free_txqs_res(struct hinic3_nic_dev *nic_dev, u16 num_sq,
 
 		free_all_tx_skbs(nic_dev, sq_depth, tqres->tx_info);
 		kfree(tqres->bds);
+		tqres->bds = NULL;
 		kfree(tqres->tx_info);
+		tqres->tx_info = NULL;
 	}
 }
 
@@ -938,6 +984,7 @@ void hinic3_free_txqs(struct net_device *netdev)
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
 
 	kfree(nic_dev->txqs);
+	nic_dev->txqs = NULL;
 }
 
 static bool is_hw_complete_sq_process(struct hinic3_io_queue *sq)
@@ -954,7 +1001,7 @@ static bool is_hw_complete_sq_process(struct hinic3_io_queue *sq)
 static int hinic3_stop_sq(struct hinic3_txq *txq)
 {
 	struct hinic3_nic_dev *nic_dev = netdev_priv(txq->netdev);
-	unsigned long timeout;
+	u64 timeout;
 	int err;
 
 	timeout = msecs_to_jiffies(HINIC3_FLUSH_QUEUE_TIMEOUT) + jiffies;
@@ -963,7 +1010,7 @@ static int hinic3_stop_sq(struct hinic3_txq *txq)
 			return 0;
 
 		usleep_range(900, 1000); /* sleep 900 us ~ 1000 us */
-	} while (time_before(jiffies, timeout));
+	} while (time_before(jiffies, (unsigned long)timeout));
 
 	/* force hardware to drop packets */
 	timeout = msecs_to_jiffies(HINIC3_FLUSH_QUEUE_TIMEOUT) + jiffies;
@@ -976,7 +1023,7 @@ static int hinic3_stop_sq(struct hinic3_txq *txq)
 			break;
 
 		usleep_range(9900, 10000); /* sleep 9900 us ~ 10000 us */
-	} while (time_before(jiffies, timeout));
+	} while (time_before(jiffies, (unsigned long)timeout));
 
 	/* Avoid msleep takes too long and get a fake result */
 	if (is_hw_complete_sq_process(txq->sq))

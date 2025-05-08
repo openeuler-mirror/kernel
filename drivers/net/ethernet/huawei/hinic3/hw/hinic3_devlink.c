@@ -101,7 +101,8 @@ static bool check_image_device_type(struct hinic3_hwdev *hwdev, u32 device_type)
 
 static void encapsulate_update_cmd(struct hinic3_cmd_update_firmware *msg,
 				   struct firmware_section *section_info,
-				   int *remain_len, u32 *send_len, u32 *send_pos)
+				   const int *remain_len, u32 *send_len,
+				   u32 *send_pos)
 {
 	memset(msg->data, 0, sizeof(msg->data));
 	msg->ctl_info.sf = (*remain_len == section_info->section_len) ? true : false;
@@ -380,6 +381,7 @@ int hinic3_init_devlink(struct hinic3_hwdev *hwdev)
 	struct pci_dev *pdev = NULL;
 	int err;
 
+	pdev = hwdev->hwif->pdev;
 	devlink = devlink_alloc(&hinic3_devlink_ops, sizeof(struct hinic3_devlink));
 	if (!devlink) {
 		sdk_err(hwdev->dev_hdl, "Failed to alloc devlink\n");
@@ -391,7 +393,6 @@ int hinic3_init_devlink(struct hinic3_hwdev *hwdev)
 	hwdev->devlink_dev->activate_fw = FW_CFG_DEFAULT_INDEX;
 	hwdev->devlink_dev->switch_cfg = FW_CFG_DEFAULT_INDEX;
 
-	pdev = hwdev->hwif->pdev;
 	err = devlink_register(devlink, &pdev->dev);
 	if (err) {
 		sdk_err(hwdev->dev_hdl, "Failed to register devlink\n");

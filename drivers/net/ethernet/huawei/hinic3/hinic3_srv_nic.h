@@ -11,9 +11,10 @@
 #ifndef HINIC3_SRV_NIC_H
 #define HINIC3_SRV_NIC_H
 
-#include "hinic3_mgmt_interface.h"
+#include <linux/netdevice.h>
+#include "nic_mpu_cmd_defs.h"
 #include "mag_mpu_cmd.h"
-#include "mag_cmd.h"
+#include "mag_mpu_cmd_defs.h"
 #include "hinic3_lld.h"
 
 enum hinic3_queue_type {
@@ -64,6 +65,7 @@ enum hinic3_nic_event_type {
 	EVENT_NIC_DCB_STATE_CHANGE,
 	EVENT_NIC_BOND_DOWN,
 	EVENT_NIC_BOND_UP,
+	EVENT_NIC_OUTBAND_CFG,
 };
 
 /* *

@@ -22,11 +22,15 @@
 #include "hinic3_sriov.h"
 #include "hinic3_nictool.h"
 #include "hinic3_pci_id_tbl.h"
+#include "hinic3_hwdev.h"
+#include "cfg_mgmt_mpu_cmd_defs.h"
+#include "mpu_cmd_base_defs.h"
 #include "hinic3_dev_mgmt.h"
 
 #define HINIC3_WAIT_TOOL_CNT_TIMEOUT	10000
 #define HINIC3_WAIT_TOOL_MIN_USLEEP_TIME	9900
 #define HINIC3_WAIT_TOOL_MAX_USLEEP_TIME	10000
+#define HIGHT_BDF 8
 
 static unsigned long card_bit_map;
 
@@ -60,15 +64,23 @@ void lld_dev_cnt_init(struct hinic3_pcidev *pci_adapter)
 
 void lld_dev_hold(struct hinic3_lld_dev *dev)
 {
-	struct hinic3_pcidev *pci_adapter = pci_get_drvdata(dev->pdev);
+	struct hinic3_pcidev *pci_adapter = NULL;
 
+	if (!dev)
+		return;
+
+	pci_adapter = pci_get_drvdata(dev->pdev);
 	atomic_inc(&pci_adapter->ref_cnt);
 }
 
 void lld_dev_put(struct hinic3_lld_dev *dev)
 {
-	struct hinic3_pcidev *pci_adapter = pci_get_drvdata(dev->pdev);
+	struct hinic3_pcidev *pci_adapter = NULL;
 
+	if (!dev)
+		return;
+
+	pci_adapter = pci_get_drvdata(dev->pdev);
 	atomic_dec(&pci_adapter->ref_cnt);
 }
 
@@ -236,6 +248,40 @@ void hinic3_get_all_chip_id(void *id_info)
 	card_id->num = (u32)i;
 }
 
+int hinic3_bar_mmap_param_valid(phys_addr_t phy_addr, unsigned long vmsize)
+{
+	struct card_node *chip_node = NULL;
+	struct hinic3_pcidev *dev = NULL;
+	u64 bar1_phy_addr = 0;
+	u64 bar3_phy_addr = 0;
+	u64 bar1_size = 0;
+	u64 bar3_size = 0;
+
+	lld_hold();
+
+	/* get PF bar1 or bar3 physical address to verify */
+	list_for_each_entry(chip_node, &g_hinic3_chip_list, node) {
+		list_for_each_entry(dev, &chip_node->func_list, node) {
+			if (hinic3_func_type(dev->hwdev) == TYPE_VF)
+				continue;
+
+			bar1_phy_addr = pci_resource_start(dev->pcidev, HINIC3_PF_PCI_CFG_REG_BAR);
+			bar1_size = pci_resource_len(dev->pcidev, HINIC3_PF_PCI_CFG_REG_BAR);
+
+			bar3_phy_addr = pci_resource_start(dev->pcidev, HINIC3_PCI_MGMT_REG_BAR);
+			bar3_size = pci_resource_len(dev->pcidev, HINIC3_PCI_MGMT_REG_BAR);
+			if ((phy_addr == bar1_phy_addr && vmsize <= bar1_size) ||
+			    (phy_addr == bar3_phy_addr && vmsize <= bar3_size)) {
+				lld_put();
+				return 0;
+			}
+		}
+	}
+
+	lld_put();
+	return -EINVAL;
+}
+
 void hinic3_get_card_func_info_by_card_name(const char *chip_name,
 					    struct hinic3_card_func_info *card_func)
 {
@@ -328,7 +374,6 @@ out:
 	if (dev)
 		lld_dev_hold(dev);
 	lld_put();
-
 	return dev;
 }
 
@@ -421,6 +466,28 @@ struct hinic3_lld_dev *hinic3_get_lld_dev_by_chip_and_port(const char *chip_name
 
 	return NULL;
 }
+
+void *hinic3_get_ppf_dev(void)
+{
+	struct card_node *chip_node = NULL;
+	struct hinic3_pcidev *pci_adapter = NULL;
+	struct list_head *chip_list = NULL;
+
+	lld_hold();
+	chip_list = get_hinic3_chip_list();
+
+	list_for_each_entry(chip_node, chip_list, node)
+		list_for_each_entry(pci_adapter, &chip_node->func_list, node)
+			if (hinic3_func_type(pci_adapter->hwdev) == TYPE_PPF) {
+				pr_info("Get ppf_func_id:%u", hinic3_global_func_id(pci_adapter->hwdev));
+				lld_put();
+				return pci_adapter->lld_dev.hwdev;
+			}
+
+	lld_put();
+	return NULL;
+}
+EXPORT_SYMBOL(hinic3_get_ppf_dev);
 
 struct hinic3_lld_dev *hinic3_get_lld_dev_by_dev_name(const char *dev_name,
 						      enum hinic3_service_type type)
@@ -518,6 +585,7 @@ EXPORT_SYMBOL(hinic3_get_ppf_lld_dev_unsafe);
 int hinic3_get_chip_name(struct hinic3_lld_dev *lld_dev, char *chip_name, u16 max_len)
 {
 	struct hinic3_pcidev *pci_adapter = NULL;
+	int ret = 0;
 
 	if (!lld_dev || !chip_name || !max_len)
 		return -EINVAL;
@@ -527,18 +595,99 @@ int hinic3_get_chip_name(struct hinic3_lld_dev *lld_dev, char *chip_name, u16 ma
 		return -EFAULT;
 
 	lld_hold();
-	strncpy(chip_name, pci_adapter->chip_node->chip_name, max_len);
+	if (strscpy(chip_name, pci_adapter->chip_node->chip_name, max_len) < 0)
+		goto RELEASE;
 	chip_name[max_len - 1] = '\0';
 
 	lld_put();
 
 	return 0;
+
+RELEASE:
+	lld_put();
+
+	return ret;
 }
 EXPORT_SYMBOL(hinic3_get_chip_name);
 
 struct hinic3_hwdev *hinic3_get_sdk_hwdev_by_lld(struct hinic3_lld_dev *lld_dev)
 {
 	return lld_dev->hwdev;
+}
+
+void hinic3_write_oshr_info(struct os_hot_replace_info *out_oshr_info,
+			    struct hw_pf_info *info,
+			    struct hinic3_board_info *board_info,
+			    struct card_node *chip_node, u32 serivce_enable,
+			    u32 func_info_idx)
+{
+	out_oshr_info->func_infos[func_info_idx].pf_idx = info->glb_func_idx;
+	out_oshr_info->func_infos[func_info_idx].backup_pf =
+		(((info->glb_func_idx) / (board_info->port_num)) % HOT_REPLACE_PARTITION_NUM == 0) ?
+		((info->glb_func_idx) + (board_info->port_num)) :
+		((info->glb_func_idx) - (board_info->port_num));
+	out_oshr_info->func_infos[func_info_idx].partition =
+		((info->glb_func_idx) / (board_info->port_num)) % HOT_REPLACE_PARTITION_NUM;
+	out_oshr_info->func_infos[func_info_idx].port_id = info->port_id;
+	out_oshr_info->func_infos[func_info_idx].bdf = (info->bus_num << HIGHT_BDF) + info->glb_func_idx;
+	out_oshr_info->func_infos[func_info_idx].bus_num = chip_node->bus_num;
+	out_oshr_info->func_infos[func_info_idx].valid = serivce_enable;
+	memcpy(out_oshr_info->func_infos[func_info_idx].card_name,
+	       chip_node->chip_name, IFNAMSIZ);
+}
+
+void hinic3_get_os_hot_replace_info(void *oshr_info)
+{
+	struct os_hot_replace_info *out_oshr_info = (struct os_hot_replace_info *)oshr_info;
+	struct card_node *chip_node = NULL;
+	struct hinic3_pcidev *dst_dev = NULL;
+	struct hinic3_board_info *board_info = NULL;
+	struct hw_pf_info *infos = NULL;
+	struct hinic3_hw_pf_infos *pf_infos = NULL;
+	u32 func_info_idx = 0, func_id = 0, func_num, serivce_enable = 0;
+	struct list_head *hinic3_chip_list = get_hinic3_chip_list();
+	int err;
+
+	lld_hold();
+	pf_infos = kzalloc(sizeof(struct hinic3_hw_pf_infos), GFP_KERNEL);
+	if (!pf_infos) {
+		pr_err("kzalloc pf_infos fail\n");
+		lld_put();
+		return;
+	}
+	list_for_each_entry(chip_node, hinic3_chip_list, node) {
+		list_for_each_entry(dst_dev, &chip_node->func_list, node) { // get all pf infos in one time by one pf_id
+			err = hinic3_get_hw_pf_infos(dst_dev->hwdev, pf_infos, HINIC3_CHANNEL_COMM);
+			if (err != 0) {
+				pr_err("get pf info failed\n");
+				break;
+			}
+
+			serivce_enable = 0;
+			infos = pf_infos->infos;
+			board_info = &((struct hinic3_hwdev *)(dst_dev->hwdev))->board_info;
+			if (((struct hinic3_hwdev *)(dst_dev->hwdev))->hot_replace_mode == HOT_REPLACE_ENABLE) {
+				serivce_enable = 1;
+			}
+			break;
+		}
+
+		func_num = pf_infos->num_pfs;
+		if (func_num <= 0) {
+			pr_err("get pf num failed\n");
+			break;
+		}
+
+		for (func_id = 0; func_id < func_num; func_id++) {
+			hinic3_write_oshr_info(out_oshr_info, &infos[func_id],
+					       board_info, chip_node,
+					       serivce_enable, func_info_idx);
+			func_info_idx++;
+		}
+	}
+	out_oshr_info->func_cnt = func_info_idx;
+	kfree(pf_infos);
+	lld_put();
 }
 
 struct card_node *hinic3_get_chip_node_by_lld(struct hinic3_lld_dev *lld_dev)
@@ -620,9 +769,13 @@ void hinic3_get_card_info(const void *hwdev, void *bufin)
 		}
 
 		if (hinic3_func_for_mgmt(fun_hwdev))
-			strlcpy(info->pf[i].name, "FOR_MGMT", IFNAMSIZ);
+			strscpy(info->pf[i].name, "FOR_MGMT", IFNAMSIZ);
 
-		strlcpy(info->pf[i].bus_info, pci_name(dev->pcidev),
+		if (dev->lld_dev.pdev->subsystem_device == BIFUR_RESOURCE_PF_SSID) {
+			strscpy(info->pf[i].name, "bifur", IFNAMSIZ);
+		}
+
+		strscpy(info->pf[i].bus_info, pci_name(dev->pcidev),
 			sizeof(info->pf[i].bus_info));
 		info->pf_num++;
 		i = info->pf_num;
@@ -719,6 +872,7 @@ int alloc_chip_node(struct hinic3_pcidev *pci_adapter)
 	struct card_node *chip_node = NULL;
 	unsigned char i;
 	unsigned char bus_number = 0;
+	int err;
 
 	if (chip_node_is_exist(pci_adapter, &bus_number))
 		return 0;
@@ -745,6 +899,13 @@ int alloc_chip_node(struct hinic3_pcidev *pci_adapter)
 	chip_node->bus_num = bus_number;
 
 	if (snprintf(chip_node->chip_name, IFNAMSIZ, "%s%u", HINIC3_CHIP_NAME, i) < 0) {
+		clear_bit(i, &card_bit_map);
+		kfree(chip_node);
+		return -EINVAL;
+	}
+
+	err = sscanf(chip_node->chip_name, HINIC3_CHIP_NAME "%d", &(chip_node->chip_id));
+	if (err <= 0) {
 		clear_bit(i, &card_bit_map);
 		kfree(chip_node);
 		return -EINVAL;
@@ -800,4 +961,37 @@ int hinic3_get_pf_id(struct card_node *chip_node, u32 port_id, u32 *pf_id, u32 *
 	lld_put();
 
 	return 0;
+}
+
+void hinic3_get_mbox_cnt(const void *hwdev, void *bufin)
+{
+	struct card_node *chip_node = NULL;
+	struct card_mbox_cnt_info *info = (struct card_mbox_cnt_info *)bufin;
+	struct hinic3_pcidev *dev = NULL;
+	struct hinic3_hwdev *func_hwdev = NULL;
+	u32 i = 0;
+
+	info->func_num = 0;
+	chip_node = hinic3_get_chip_node_by_hwdev(hwdev);
+	if (chip_node == NULL)
+		return;
+
+	lld_hold();
+
+	list_for_each_entry(dev, &chip_node->func_list, node) {
+		func_hwdev = (struct hinic3_hwdev *)dev->hwdev;
+		strscpy(info->func_info[i].bus_info, pci_name(dev->pcidev),
+			sizeof(info->func_info[i].bus_info));
+
+		info->func_info[i].send_cnt = func_hwdev->mbox_send_cnt;
+		info->func_info[i].ack_cnt = func_hwdev->mbox_ack_cnt;
+		info->func_num++;
+		i = info->func_num;
+		if (i >= ARRAY_SIZE(info->func_info)) {
+			sdk_err(&dev->pcidev->dev, "chip_node->func_list bigger than pf_max + vf_max\n");
+			break;
+		}
+	}
+
+	lld_put();
 }

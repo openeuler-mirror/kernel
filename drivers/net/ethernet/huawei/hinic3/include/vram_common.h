@@ -23,7 +23,11 @@
 #define VRAM_CQM_BITMAP_BASE		"B"
 
 #define VRAM_NIC_DCB			"DCB"
+#define VRAM_NIC_MHOST_MGMT		"MHOST_MGMT"
 #define VRAM_NIC_VRAM			"NIC_VRAM"
+#define VRAM_NIC_IRQ_VRAM		"NIC_IRQ"
+
+#define VRAM_NIC_MQM			"NM"
 
 #define VRAM_VBS_BASE_IOCB		"BASE_IOCB"
 #define VRAM_VBS_EX_IOCB		"EX_IOCB"
@@ -55,11 +59,16 @@ enum KUP_HOOK_POINT {
 	PRE_FREEZE,
 	FREEZE_TO_KILL,
 	PRE_UPDATE_KERNEL,
-	FLUSH_DURING_KUP,
 	POST_UPDATE_KERNEL,
 	UNFREEZE_TO_RUN,
 	POST_RUN,
 	KUP_HOOK_MAX,
 };
+
+#define hi_vram_kalloc(name, size) 0
+#define hi_vram_kfree(vaddr, name, size)
+#define get_use_vram_flag(void) 0
+#define vram_get_kexec_flag(void) 0
+#define hi_vram_get_gfp_vram(void) 0
 
 #endif /* VRAM_COMMON_H */

@@ -83,6 +83,48 @@ int hinic3_sm_ctr_rd16(void *hwdev, u8 node, u8 instance, u32 ctr_id,
 }
 
 /**
+ * hinic3_sm_ctr_rd16_clear - small single 16 counter read and clear to zero
+ * @hwdev: the hardware device
+ * @node: the node id
+ * @ctr_id: counter id
+ * @value: read counter value ptr
+ * Return: 0 - success, negative - failure
+ **/
+int hinic3_sm_ctr_rd16_clear(void *hwdev, u8 node, u8 instance, u32 ctr_id,
+			     u16 *value)
+{
+	struct chipif_sml_ctr_rd_req req;
+	union ctr_rd_rsp rsp;
+	int ret;
+
+	if (!hwdev || !value)
+		return -EFAULT;
+
+	if (!COMM_SUPPORT_API_CHAIN((struct hinic3_hwdev *)hwdev))
+		return -EPERM;
+
+	memset(&req, 0, sizeof(req));
+
+	hinic3_sml_ctr_read_build_req(&req, instance,
+				      CHIPIF_SM_CTR_OP_READ_CLEAR,
+				      CHIPIF_ACK, ctr_id, 0);
+
+	ret = hinic3_api_cmd_read_ack(hwdev, node, (u8 *)&req,
+				      (unsigned short)sizeof(req),
+				      (void *)&rsp,
+				      (unsigned short)sizeof(rsp));
+	if (ret) {
+		sdk_err(((struct hinic3_hwdev *)hwdev)->dev_hdl,
+			"Sm 16bit counter clear fail, err(%d)\n", ret);
+		return ret;
+	}
+	sml_ctr_htonl_n((u32 *)&rsp, sizeof(rsp) / sizeof(u32));
+	*value = rsp.bs_ss16_rsp.value1;
+
+	return 0;
+}
+
+/**
  * hinic3_sm_ctr_rd32 - small single 32 counter read
  * @hwdev: the hardware device
  * @node: the node id

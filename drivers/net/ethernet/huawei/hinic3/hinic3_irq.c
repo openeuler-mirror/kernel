@@ -12,6 +12,7 @@
 #include <linux/netdevice.h>
 #include <linux/debugfs.h>
 
+#include "ossl_knl.h"
 #include "hinic3_hw.h"
 #include "hinic3_crm.h"
 #include "hinic3_nic_io.h"
@@ -47,12 +48,16 @@ static void qp_add_napi(struct hinic3_irq *irq_cfg)
 	netif_napi_add(nic_dev->netdev, &irq_cfg->napi,
 		       hinic3_poll, nic_dev->poll_weight);
 	napi_enable(&irq_cfg->napi);
+	irq_cfg->napi_reign = NAPI_IS_REGIN;
 }
 
-static void qp_del_napi(struct hinic3_irq *irq_cfg)
+void qp_del_napi(struct hinic3_irq *irq_cfg)
 {
-	napi_disable(&irq_cfg->napi);
-	netif_napi_del(&irq_cfg->napi);
+	if (irq_cfg->napi_reign == NAPI_IS_REGIN) {
+		napi_disable(&irq_cfg->napi);
+		netif_napi_del(&irq_cfg->napi);
+		irq_cfg->napi_reign = NAPI_NOT_REGIN;
+	}
 }
 
 static irqreturn_t qp_irq(int irq, void *data)

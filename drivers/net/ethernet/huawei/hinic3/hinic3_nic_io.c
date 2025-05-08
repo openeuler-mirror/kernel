@@ -16,7 +16,8 @@
 #include "hinic3_nic_cfg.h"
 #include "hinic3_srv_nic.h"
 #include "hinic3_nic.h"
-#include "hinic3_nic_cmd.h"
+#include "nic_mpu_cmd.h"
+#include "nic_npu_cmd.h"
 #include "hinic3_nic_io.h"
 
 #define HINIC3_DEAULT_TX_CI_PENDING_LIMIT    1
@@ -34,7 +35,7 @@ MODULE_PARM_DESC(tx_coalescing_time, "TX CI coalescing parameter coalescing_time
 
 static unsigned char rq_wqe_type = HINIC3_NORMAL_RQ_WQE;
 module_param(rq_wqe_type, byte, 0444);
-MODULE_PARM_DESC(rq_wqe_type, "RQ WQE type 0-8Bytes, 1-16Bytes, 2-32Bytes (default=2)");
+MODULE_PARM_DESC(rq_wqe_type, "RQ WQE type 1-16Bytes, 2-32Bytes (default=2)");
 
 /*lint +e806*/
 static u32 tx_drop_thd_on = HINIC3_DEAULT_DROP_THD_ON;
@@ -45,7 +46,7 @@ static u32 tx_drop_thd_off = HINIC3_DEAULT_DROP_THD_OFF;
 module_param(tx_drop_thd_off, uint, 0644);
 MODULE_PARM_DESC(tx_drop_thd_off, "TX parameter drop_thd_off (default=0)");
 /* performance: ci addr RTE_CACHE_SIZE(64B) alignment */
-#define HINIC3_CI_Q_ADDR_SIZE			(64)
+#define HINIC3_CI_Q_ADDR_SIZE			(64U)
 
 #define CI_TABLE_SIZE(num_qps, pg_sz)	\
 			(ALIGN((num_qps) * HINIC3_CI_Q_ADDR_SIZE, pg_sz))
@@ -349,6 +350,13 @@ static int hinic3_create_rq(struct hinic3_nic_io *nic_io, struct hinic3_io_queue
 			    u16 q_id, u32 rq_depth, u16 rq_msix_idx)
 {
 	int err;
+
+	/* rq_wqe_type Only support type 1-16Bytes, 2-32Bytes */
+	if (rq_wqe_type != HINIC3_NORMAL_RQ_WQE && rq_wqe_type != HINIC3_EXTEND_RQ_WQE) {
+		sdk_warn(nic_io->dev_hdl, "Module Parameter rq_wqe_type value %d is out of range: [%d, %d].",
+			 rq_wqe_type, HINIC3_NORMAL_RQ_WQE, HINIC3_EXTEND_RQ_WQE);
+		rq_wqe_type = HINIC3_NORMAL_RQ_WQE;
+	}
 
 	rq->wqe_type = rq_wqe_type;
 	rq->q_id = q_id;
@@ -1044,8 +1052,8 @@ static int clean_queue_offload_ctxt(struct hinic3_nic_io *nic_io,
 static int clean_qp_offload_ctxt(struct hinic3_nic_io *nic_io)
 {
 	/* clean LRO/TSO context space */
-	return (clean_queue_offload_ctxt(nic_io, HINIC3_QP_CTXT_TYPE_SQ) ||
-		clean_queue_offload_ctxt(nic_io, HINIC3_QP_CTXT_TYPE_RQ));
+	return ((clean_queue_offload_ctxt(nic_io, HINIC3_QP_CTXT_TYPE_SQ) != 0) ||
+		(clean_queue_offload_ctxt(nic_io, HINIC3_QP_CTXT_TYPE_RQ) != 0));
 }
 
 /* init qps ctxt and set sq ci attr and arm all sq */

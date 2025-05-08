@@ -400,12 +400,16 @@ static int wait_for_status_poll(struct hinic3_api_cmd_chain *chain)
 				      API_CMD_STATUS_TIMEOUT, 100); /* wait 100 us once */
 }
 
-static void copy_resp_data(struct hinic3_api_cmd_cell_ctxt *ctxt, void *ack,
-			   u16 ack_size)
+static void copy_resp_data(struct hinic3_api_cmd_chain *chain,
+			  struct hinic3_api_cmd_cell_ctxt *ctxt,
+			  void *ack, u16 ack_size)
 {
 	struct hinic3_api_cmd_resp_fmt *resp = ctxt->resp;
+	int rsp_size_align = chain->rsp_size_align - 0x8;
+	int rsp_size = (ack_size > rsp_size_align) ? rsp_size_align : ack_size;
 
-	memcpy(ack, &resp->resp_data, ack_size);
+	memcpy(ack, &resp->resp_data, rsp_size);
+
 	ctxt->status = 0;
 }
 
@@ -464,7 +468,7 @@ static int wait_for_api_cmd_completion(struct hinic3_api_cmd_chain *chain,
 	case HINIC3_API_CMD_POLL_READ:
 		err = wait_for_resp_polling(ctxt);
 		if (err == 0)
-			copy_resp_data(ctxt, ack, ack_size);
+			copy_resp_data(chain, ctxt, ack, ack_size);
 		else
 			sdk_err(dev, "API CMD poll response timeout\n");
 		break;
@@ -1055,13 +1059,11 @@ alloc_cells_buf_err:
 alloc_wb_status_err:
 	kfree(chain->cell_ctxt);
 
-/*lint -save -e548*/
 alloc_cell_ctxt_err:
 	if (chain->chain_type == HINIC3_API_CMD_WRITE_ASYNC_TO_MGMT_CPU)
 		spin_lock_deinit(&chain->async_lock);
 	else
 		sema_deinit(&chain->sem);
-/*lint -restore*/
 	return err;
 }
 
@@ -1078,6 +1080,7 @@ static void api_chain_free(struct hinic3_api_cmd_chain *chain)
 	dma_free_coherent(dev, sizeof(*chain->wb_status),
 			  chain->wb_status, chain->wb_status_paddr);
 	kfree(chain->cell_ctxt);
+	chain->cell_ctxt = NULL;
 
 	if (chain->chain_type == HINIC3_API_CMD_WRITE_ASYNC_TO_MGMT_CPU)
 		spin_lock_deinit(&chain->async_lock);

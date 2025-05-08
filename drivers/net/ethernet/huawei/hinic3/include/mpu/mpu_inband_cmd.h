@@ -89,6 +89,10 @@ enum hinic3_mgmt_cmd {
 					 * @see comm_read_ucode_sm_resp
 					 */
 	COMM_MGMT_CMD_CLEAR_LOG, /**< clear log @see comm_cmd_clear_log_s */
+	COMM_MGMT_CMD_UCODE_SM_COUNTER_PER,
+	/**< get ucode sm counter @see struct comm_read_ucode_sm_per_req
+	 * @see struct comm_read_ucode_sm_per_resp
+	 */
 
 	COMM_MGMT_CMD_CHECK_IF_SWITCH_WORKMODE = 140, /* check if switch workmode reserved
 						       * @see comm_cmd_check_if_switch_workmode
@@ -101,6 +105,7 @@ enum hinic3_mgmt_cmd {
 	COMM_MGMT_CMD_CPI_TCAM_DBG, /* enable or disable the scheduled cpi tcam task,
 				     * set task interval time @see comm_cmd_cpi_tcam_dbg_s
 				     */
+	COMM_MGMT_CMD_LLDP_TX_FUNC_SET,
 
 	COMM_MGMT_CMD_SECTION_RSVD_0 = 160, /**< rsvd0 section */
 	COMM_MGMT_CMD_SECTION_RSVD_1 = 170, /**< rsvd1 section */

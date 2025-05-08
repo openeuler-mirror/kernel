@@ -196,6 +196,12 @@ void *cqm_get_db_addr(void *ex_handle, u32 service_type)
 		pr_err("[CQM]%s: ex_handle is null\n", __func__);
 		return NULL;
 	}
+
+	if (service_type >= CQM_SERVICE_T_MAX) {
+		pr_err("%s service_type = %d state is error\n", __func__,
+		       service_type);
+		return NULL;
+	}
 	handle = (struct hinic3_hwdev *)ex_handle;
 	cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);
 	service = &cqm_handle->service[service_type];
@@ -217,6 +223,17 @@ s32 cqm_ring_hardware_db(void *ex_handle, u32 service_type, u8 db_count, u64 db)
 	struct tag_cqm_handle *cqm_handle = NULL;
 	struct tag_cqm_service *service = NULL;
 	struct hinic3_hwdev *handle = NULL;
+
+	if (unlikely(!ex_handle)) {
+		pr_err("[CQM]%s: ex_handle is null\n", __func__);
+		return CQM_FAIL;
+	}
+
+	if (service_type >= CQM_SERVICE_T_MAX) {
+		pr_err("%s service_type = %d state is error\n", __func__,
+		       service_type);
+		return CQM_FAIL;
+	}
 
 	handle = (struct hinic3_hwdev *)ex_handle;
 	cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);
@@ -277,6 +294,17 @@ s32 cqm_ring_direct_wqe_db(void *ex_handle, u32 service_type, u8 db_count,
 	struct hinic3_hwdev *handle = NULL;
 	u64 *tmp = (u64 *)direct_wqe;
 	int i;
+
+	if (unlikely(!ex_handle)) {
+		pr_err("[CQM]%s: ex_handle is null\n", __func__);
+		return CQM_FAIL;
+	}
+
+	if (service_type >= CQM_SERVICE_T_MAX) {
+		pr_err("%s service_type = %d state is error\n", __func__,
+		       service_type);
+		return CQM_FAIL;
+	}
 
 	handle = (struct hinic3_hwdev *)ex_handle;
 	cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);

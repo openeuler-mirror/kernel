@@ -15,7 +15,6 @@
 #include "cqm_bitmap_table.h"
 #include "cqm_bat_cla.h"
 #include "cqm_main.h"
-#include "cqm_cmd.h"
 
 /**
  * cqm_cmd_alloc - Apply for a cmd buffer. The buffer size is fixed to 2 KB,

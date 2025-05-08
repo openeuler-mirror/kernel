@@ -180,8 +180,10 @@ struct tag_cqm_queue *cqm_object_recv_queue_create(void *ex_handle, u32 service_
 	rq_qinfo->common.q_header_vaddr =
 	    cqm_kmalloc_align(sizeof(struct tag_cqm_queue_header),
 			      GFP_KERNEL | __GFP_ZERO, CQM_QHEAD_ALIGN_ORDER);
-	if (!rq_qinfo->common.q_header_vaddr)
+	if (!rq_qinfo->common.q_header_vaddr) {
+		cqm_err(handle->dev_hdl, CQM_ALLOC_FAIL(q_header_vaddr));
 		goto err1;
+	}
 
 	rq_qinfo->common.q_header_paddr =
 	    pci_map_single(cqm_handle->dev, rq_qinfo->common.q_header_vaddr,
@@ -484,7 +486,8 @@ static bool cqm_object_nonrdma_queue_param_check(struct hinic3_hwdev *handle, u3
 	struct tag_cqm_handle *cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);
 
 	/* exception of service registrion check */
-	if (!cqm_handle->service[service_type].has_register) {
+	if (service_type >= CQM_SERVICE_T_MAX ||
+	    !cqm_handle->service[service_type].has_register) {
 		cqm_err(handle->dev_hdl, CQM_WRONG_VALUE(service_type));
 		return false;
 	}

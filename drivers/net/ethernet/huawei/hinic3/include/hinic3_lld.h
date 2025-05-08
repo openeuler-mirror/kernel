@@ -219,5 +219,7 @@ void hinic3_detach_nic(const struct hinic3_lld_dev *lld_dev);
 int hinic3_attach_service(const struct hinic3_lld_dev *lld_dev, enum hinic3_service_type type);
 void hinic3_detach_service(const struct hinic3_lld_dev *lld_dev, enum hinic3_service_type type);
 const char **hinic3_get_uld_names(void);
+int hinic3_lld_init(void);
+void hinic3_lld_exit(void);
 #endif
 #endif

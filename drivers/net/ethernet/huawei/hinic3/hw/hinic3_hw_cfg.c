@@ -34,13 +34,16 @@ static void parse_pub_res_cap_dfx(struct hinic3_hwdev *hwdev,
 		 cap->max_vf);
 	sdk_info(hwdev->dev_hdl, "Host_pf_num: 0x%x, pf_id_start: 0x%x, host_vf_num: 0x%x, vf_id_start: 0x%x\n",
 		 cap->pf_num, cap->pf_id_start, cap->vf_num, cap->vf_id_start);
-	sdk_info(hwdev->dev_hdl, "host_valid_bitmap: 0x%x, master_host_id: 0x%x, srv_multi_host_mode: 0x%x\n",
-		 cap->host_valid_bitmap, cap->master_host_id, cap->srv_multi_host_mode);
 	sdk_info(hwdev->dev_hdl,
-		 "fake_vf_start_id: 0x%x, fake_vf_num: 0x%x, fake_vf_max_pctx: 0x%x\n",
-		 cap->fake_vf_start_id, cap->fake_vf_num, cap->fake_vf_max_pctx);
-	sdk_info(hwdev->dev_hdl, "fake_vf_bfilter_start_addr: 0x%x, fake_vf_bfilter_len: 0x%x\n",
-		 cap->fake_vf_bfilter_start_addr, cap->fake_vf_bfilter_len);
+		 "host_valid_bitmap: 0x%x, master_host_id: 0x%x, srv_multi_host_mode: 0x%x, hot_plug_disable: 0x%x\n",
+		 cap->host_valid_bitmap, cap->master_host_id, cap->srv_multi_host_mode,
+		 cap->hot_plug_disable);
+	sdk_info(hwdev->dev_hdl,
+		 "os_hot_replace: 0x%x, fake_vf_start_id: 0x%x, fake_vf_num: 0x%x, fake_vf_max_pctx: 0x%x\n",
+		 cap->os_hot_replace, cap->fake_vf_start_id, cap->fake_vf_num, cap->fake_vf_max_pctx);
+	sdk_info(hwdev->dev_hdl,
+		 "fake_vf_bfilter_start_addr: 0x%x, fake_vf_bfilter_len: 0x%x, bond_create_mode: 0x%x\n",
+		 cap->fake_vf_bfilter_start_addr, cap->fake_vf_bfilter_len, cap->bond_create_mode);
 }
 
 static void parse_cqm_res_cap(struct hinic3_hwdev *hwdev, struct service_cap *cap,
@@ -109,6 +112,9 @@ static void parse_pub_res_cap(struct hinic3_hwdev *hwdev,
 	cap->host_valid_bitmap = dev_cap->host_valid_bitmap;
 	cap->master_host_id = dev_cap->master_host_id;
 	cap->srv_multi_host_mode = dev_cap->srv_multi_host_mode;
+	cap->hot_plug_disable = dev_cap->hot_plug_disable;
+	cap->bond_create_mode = dev_cap->bond_create_mode;
+	cap->os_hot_replace = dev_cap->os_hot_replace;
 	cap->fake_vf_en = dev_cap->fake_vf_en;
 	cap->fake_vf_start_bit = dev_cap->fake_vf_start_bit;
 	cap->fake_vf_end_bit = dev_cap->fake_vf_end_bit;
@@ -148,18 +154,27 @@ static void parse_l2nic_res_cap(struct hinic3_hwdev *hwdev,
 	nic_cap->max_sqs = dev_cap->nic_max_sq_id + 1;
 	nic_cap->max_rqs = dev_cap->nic_max_rq_id + 1;
 	nic_cap->default_num_queues = dev_cap->nic_default_num_queues;
+	nic_cap->outband_vlan_cfg_en = dev_cap->outband_vlan_cfg_en;
+	nic_cap->lro_enable = dev_cap->lro_enable;
 
 	sdk_info(hwdev->dev_hdl, "L2nic resource capbility, max_sqs: 0x%x, max_rqs: 0x%x\n",
 		 nic_cap->max_sqs, nic_cap->max_rqs);
 
 	/* Check parameters from firmware */
-	if (nic_cap->max_sqs > HINIC3_CFG_MAX_QP ||
-	    nic_cap->max_rqs > HINIC3_CFG_MAX_QP) {
-		sdk_info(hwdev->dev_hdl, "Number of qp exceed limit[1-%d]: sq: %u, rq: %u\n",
-			 HINIC3_CFG_MAX_QP, nic_cap->max_sqs, nic_cap->max_rqs);
+	if (nic_cap->max_sqs > HINIC3_CFG_MAX_QP) {
+		sdk_info(hwdev->dev_hdl, "Number of sq exceed limit[1-%d]: sq: %u\n",
+			   HINIC3_CFG_MAX_QP, nic_cap->max_sqs);
 		nic_cap->max_sqs = HINIC3_CFG_MAX_QP;
+	}
+
+	if (nic_cap->max_rqs > HINIC3_CFG_MAX_QP) {
+		sdk_info(hwdev->dev_hdl, "Number of rq exceed limit[1-%d]: rq: %u\n",
+			   HINIC3_CFG_MAX_QP, nic_cap->max_rqs);
 		nic_cap->max_rqs = HINIC3_CFG_MAX_QP;
 	}
+
+	if (nic_cap->outband_vlan_cfg_en)
+		sdk_info(hwdev->dev_hdl, "L2nic outband vlan cfg enabled\n");
 }
 
 static void parse_fc_res_cap(struct hinic3_hwdev *hwdev,
@@ -333,6 +348,28 @@ static void parse_ipsec_res_cap(struct hinic3_hwdev *hwdev,
 		 dev_cap->ipsec_max_sactx, dev_cap->ipsec_max_cq);
 }
 
+static void parse_vbs_res_cap(struct hinic3_hwdev *hwdev,
+			      struct service_cap *cap,
+			      struct cfg_cmd_dev_cap *dev_cap,
+			      enum func_type type)
+{
+	struct vbs_service_cap *vbs_cap = &cap->vbs_cap;
+
+	vbs_cap->vbs_max_volq = dev_cap->vbs_max_volq;
+	vbs_cap->vbs_main_pf_enable = dev_cap->vbs_main_pf_enable;
+	vbs_cap->vbs_vsock_pf_enable = dev_cap->vbs_vsock_pf_enable;
+	vbs_cap->vbs_fushion_queue_pf_enable = dev_cap->vbs_fushion_queue_pf_enable;
+
+	sdk_info(hwdev->dev_hdl,
+		 "Get VBS resource capbility, vbs_max_volq: 0x%x\n",
+		 dev_cap->vbs_max_volq);
+	sdk_info(hwdev->dev_hdl,
+		 "Get VBS pf info, vbs_main_pf_enable: 0x%x, vbs_vsock_pf_enable: 0x%x, vbs_fushion_queue_pf_enable: 0x%x\n",
+		 dev_cap->vbs_main_pf_enable,
+		 dev_cap->vbs_vsock_pf_enable,
+		 dev_cap->vbs_fushion_queue_pf_enable);
+}
+
 static void parse_dev_cap(struct hinic3_hwdev *dev,
 			  struct cfg_cmd_dev_cap *dev_cap, enum func_type type)
 {
@@ -375,6 +412,9 @@ static void parse_dev_cap(struct hinic3_hwdev *dev,
 
 	if (IS_PPA_TYPE(dev))
 		parse_ppa_res_cap(dev, cap, dev_cap, type);
+
+	if (IS_VBS_TYPE(dev))
+		parse_vbs_res_cap(dev, cap, dev_cap, type);
 }
 
 static int get_cap_from_fw(struct hinic3_hwdev *dev, enum func_type type)
@@ -403,6 +443,23 @@ static int get_cap_from_fw(struct hinic3_hwdev *dev, enum func_type type)
 
 	return 0;
 }
+
+u8 hinic3_get_bond_create_mode(void *dev)
+{
+	struct hinic3_hwdev *hwdev = NULL;
+	struct service_cap *cap = NULL;
+
+	if (!dev) {
+		pr_err("pointer dev is NULL\n");
+		return -EINVAL;
+	}
+
+	hwdev = (struct hinic3_hwdev *)dev;
+	cap = &hwdev->cfg_mgmt->svc_cap;
+
+	return cap->bond_create_mode;
+}
+EXPORT_SYMBOL(hinic3_get_bond_create_mode);
 
 int hinic3_get_dev_cap(void *dev)
 {
@@ -1172,6 +1229,20 @@ bool hinic3_support_ppa(void *hwdev, struct ppa_service_cap *cap)
 	return true;
 }
 EXPORT_SYMBOL(hinic3_support_ppa);
+
+bool hinic3_support_bifur(void *hwdev, struct bifur_service_cap *cap)
+{
+	struct hinic3_hwdev *dev = (struct hinic3_hwdev *)hwdev;
+
+	if (!hwdev)
+		return false;
+
+	if (!IS_BIFUR_TYPE(dev))
+		return false;
+
+	return true;
+}
+EXPORT_SYMBOL(hinic3_support_bifur);
 
 bool hinic3_support_migr(void *hwdev, struct migr_service_cap *cap)
 {

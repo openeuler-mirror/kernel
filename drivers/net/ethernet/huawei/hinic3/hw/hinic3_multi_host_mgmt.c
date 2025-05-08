@@ -676,6 +676,11 @@ static int hinic3_register_slave_ppf(struct hinic3_hwdev *hwdev, bool registered
 	if (!IS_SLAVE_HOST(hwdev))
 		return -EINVAL;
 
+	/* if unsupport hot plug, return true. */
+	if (UNSUPPORT_HOT_PLUG((struct hinic3_hwdev *)hwdev)) {
+		return 0;
+	}
+
 	host_info = kcalloc(1, sizeof(struct register_slave_host), GFP_KERNEL);
 	if (!host_info)
 		return -ENOMEM;
@@ -1074,8 +1079,9 @@ int hinic3_get_func_nic_enable(void *hwdev, u16 glb_func_idx, bool *en)
 	if (!hwdev || !en)
 		return -EINVAL;
 
-	/* if single host, return true. */
-	if (!IS_MULTI_HOST((struct hinic3_hwdev *)hwdev)) {
+	/* if single host or unsupport hot plug, return true. */
+	if (!IS_MULTI_HOST((struct hinic3_hwdev *)hwdev) ||
+	    UNSUPPORT_HOT_PLUG((struct hinic3_hwdev *)hwdev)) {
 		*en = true;
 		return 0;
 	}
@@ -1145,11 +1151,18 @@ int hinic3_multi_host_mgmt_init(struct hinic3_hwdev *hwdev)
 {
 	int err;
 	struct service_cap *cap = &hwdev->cfg_mgmt->svc_cap;
+	int is_use_vram, is_in_kexec;
 
 	if (!IS_MULTI_HOST(hwdev) || !HINIC3_IS_PPF(hwdev))
 		return 0;
 
-	hwdev->mhost_mgmt = kcalloc(1, sizeof(*hwdev->mhost_mgmt), GFP_KERNEL);
+	is_use_vram = get_use_vram_flag();
+	if (is_use_vram != 0) {
+		snprintf(hwdev->mhost_mgmt_name, VRAM_NAME_MAX_LEN, "%s", VRAM_NIC_MHOST_MGMT);
+		hwdev->mhost_mgmt = hi_vram_kalloc(hwdev->mhost_mgmt_name, sizeof(*hwdev->mhost_mgmt));
+	} else {
+		hwdev->mhost_mgmt = kcalloc(1, sizeof(*hwdev->mhost_mgmt), GFP_KERNEL);
+	}
 	if (!hwdev->mhost_mgmt)
 		return -ENOMEM;
 
@@ -1165,8 +1178,11 @@ int hinic3_multi_host_mgmt_init(struct hinic3_hwdev *hwdev)
 	hinic3_register_ppf_mbox_cb(hwdev, HINIC3_MOD_HILINK, hwdev, hilink_ppf_mbox_handler);
 	hinic3_register_ppf_mbox_cb(hwdev, HINIC3_MOD_SW_FUNC, hwdev, sw_func_ppf_mbox_handler);
 
-	bitmap_zero(hwdev->mhost_mgmt->func_nic_en, HINIC3_MAX_MGMT_FUNCTIONS);
-	bitmap_zero(hwdev->mhost_mgmt->func_vroce_en, HINIC3_MAX_MGMT_FUNCTIONS);
+	is_in_kexec = vram_get_kexec_flag();
+	if (is_in_kexec == 0) {
+		bitmap_zero(hwdev->mhost_mgmt->func_nic_en, HINIC3_MAX_MGMT_FUNCTIONS);
+		bitmap_zero(hwdev->mhost_mgmt->func_vroce_en, HINIC3_MAX_MGMT_FUNCTIONS);
+	}
 
 	/* Slave host:
 	 * register slave host ppf functions
@@ -1179,7 +1195,13 @@ int hinic3_multi_host_mgmt_init(struct hinic3_hwdev *hwdev)
 	return 0;
 
 out_free_mhost_mgmt:
-	kfree(hwdev->mhost_mgmt);
+	if (is_use_vram != 0) {
+		hi_vram_kfree((void *)hwdev->mhost_mgmt,
+			      hwdev->mhost_mgmt_name,
+			      sizeof(*hwdev->mhost_mgmt));
+	} else {
+		kfree(hwdev->mhost_mgmt);
+	}
 	hwdev->mhost_mgmt = NULL;
 
 	return err;
@@ -1187,6 +1209,7 @@ out_free_mhost_mgmt:
 
 int hinic3_multi_host_mgmt_free(struct hinic3_hwdev *hwdev)
 {
+	int is_use_vram;
 	if (!IS_MULTI_HOST(hwdev) || !HINIC3_IS_PPF(hwdev))
 		return 0;
 
@@ -1203,7 +1226,14 @@ int hinic3_multi_host_mgmt_free(struct hinic3_hwdev *hwdev)
 	hinic3_unregister_ppf_mbox_cb(hwdev, HINIC3_MOD_HILINK);
 	hinic3_unregister_ppf_mbox_cb(hwdev, HINIC3_MOD_SW_FUNC);
 
-	kfree(hwdev->mhost_mgmt);
+	is_use_vram = get_use_vram_flag();
+	if (is_use_vram != 0) {
+		hi_vram_kfree((void *)hwdev->mhost_mgmt,
+			      hwdev->mhost_mgmt_name,
+			      sizeof(*hwdev->mhost_mgmt));
+	} else {
+		kfree(hwdev->mhost_mgmt);
+	}
 	hwdev->mhost_mgmt = NULL;
 
 	return 0;

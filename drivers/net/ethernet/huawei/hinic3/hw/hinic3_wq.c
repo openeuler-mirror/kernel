@@ -128,7 +128,7 @@ int hinic3_wq_create(void *hwdev, struct hinic3_wq *wq, u32 q_depth,
 
 	wq_page_size = ALIGN(dev->wq_page_size, PAGE_SIZE);
 
-	memset(wq, 0, sizeof(*wq));
+	memset(wq, 0, sizeof(struct hinic3_wq));
 	wq->dev_hdl = dev->dev_hdl;
 	wq->q_depth = q_depth;
 	wq->idx_mask = (u16)(q_depth - 1);

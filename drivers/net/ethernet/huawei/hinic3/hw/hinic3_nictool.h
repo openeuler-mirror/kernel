@@ -18,6 +18,8 @@
 int nictool_k_init(void *hwdev, void *chip_node);
 void nictool_k_uninit(void *hwdev, void *chip_node);
 
+void hinic3_get_os_hot_replace_info(void *oshr_info);
+
 void hinic3_get_all_chip_id(void *id_info);
 
 void hinic3_get_card_func_info_by_card_name
@@ -28,6 +30,8 @@ void hinic3_get_card_info(const void *hwdev, void *bufin);
 bool hinic3_is_in_host(void);
 
 int hinic3_get_pf_id(struct card_node *chip_node, u32 port_id, u32 *pf_id, u32 *isvalid);
+
+void hinic3_get_mbox_cnt(const void *hwdev, void *bufin);
 
 extern struct hinic3_uld_info g_uld_info[SERVICE_T_MAX];
 

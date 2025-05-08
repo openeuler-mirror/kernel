@@ -14,11 +14,6 @@
 #include "hinic3_common.h"
 #include "hinic3_hwdev.h"
 
-struct dma_pool {
-	unsigned int size;
-	void *dev_hdl;
-};
-
 #define HINIC3_SCMD_DATA_LEN		16
 
 #define	HINIC3_CMDQ_DEPTH		4096

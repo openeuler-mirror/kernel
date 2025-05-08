@@ -15,6 +15,7 @@
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/dcbnl.h>
+#include <linux/init.h>
 
 #include "ossl_knl.h"
 #include "hinic3_crm.h"
@@ -23,7 +24,8 @@
 #include "hinic3_hw.h"
 #include "hinic3_rss.h"
 
-/*lint -e806*/
+#include "vram_common.h"
+
 static u16 num_qps;
 module_param(num_qps, ushort, 0444);
 MODULE_PARM_DESC(num_qps, "Number of Queue Pairs (default=0)");
@@ -104,88 +106,84 @@ static int hinic3_get_rq2iq_map(struct hinic3_nic_dev *nic_dev,
 	return 0;
 }
 
-static void hinic3_fillout_indir_tbl(struct hinic3_nic_dev *nic_dev, u8 num_cos, u32 *indir)
+static void hinic3_fillout_indir_tbl(struct hinic3_nic_dev *nic_dev,
+				     u8 group_num, u32 *indir)
 {
-	u16 k, group_size, start_qid = 0, qp_num = 0;
-	int i = 0;
-	u8 j, cur_cos = 0, default_cos;
+	struct hinic3_dcb *dcb = nic_dev->dcb;
+	u16 k, group_size, start_qid = 0, cur_cos_qnum = 0;
+	u32 i = 0;
+	u8 j, cur_cos = 0, group = 0;
 	u8 valid_cos_map = hinic3_get_dev_valid_cos_map(nic_dev);
 
-	if (num_cos == 0) {
+	if (group_num == 0) {
 		for (i = 0; i < NIC_RSS_INDIR_SIZE; i++)
 			indir[i] = i % nic_dev->q_params.num_qps;
 	} else {
-		group_size = NIC_RSS_INDIR_SIZE / num_cos;
+		group_size = NIC_RSS_INDIR_SIZE / group_num;
 
-		for (j = 0; j < num_cos; j++) {
-			while (cur_cos < NIC_DCB_COS_MAX &&
-			       nic_dev->hw_dcb_cfg.cos_qp_num[cur_cos] == 0)
-				cur_cos++;
+		for (group = 0; group < group_num; group++) {
+			cur_cos = dcb->hw_dcb_cfg.default_cos;
+			for (j = 0; j < NIC_DCB_COS_MAX; j++) {
+				if ((BIT(j) & valid_cos_map) != 0) {
+					cur_cos = j;
+					valid_cos_map -= (u8)BIT(j);
+					break;
+				}
+			}
 
-			if (cur_cos >= NIC_DCB_COS_MAX) {
-				if (BIT(nic_dev->hw_dcb_cfg.default_cos) & valid_cos_map)
-					default_cos = nic_dev->hw_dcb_cfg.default_cos;
-				else
-					default_cos = (u8)fls(valid_cos_map) - 1;
-
-				start_qid = nic_dev->hw_dcb_cfg.cos_qp_offset[default_cos];
-				qp_num = nic_dev->hw_dcb_cfg.cos_qp_num[default_cos];
+			cur_cos_qnum = dcb->hw_dcb_cfg.cos_qp_num[cur_cos];
+			if (cur_cos_qnum > 0) {
+				start_qid =
+					dcb->hw_dcb_cfg.cos_qp_offset[cur_cos];
 			} else {
-				start_qid = nic_dev->hw_dcb_cfg.cos_qp_offset[cur_cos];
-				qp_num = nic_dev->hw_dcb_cfg.cos_qp_num[cur_cos];
+				start_qid = cur_cos % nic_dev->q_params.num_qps;
+				/* Ensure that the offset of start_id is 0. */
+				cur_cos_qnum = 1;
 			}
 
 			for (k = 0; k < group_size; k++)
-				indir[i++] = start_qid + k % qp_num;
-
-			cur_cos++;
+				indir[i++] = start_qid + k % cur_cos_qnum;
 		}
 	}
 }
 
-/*lint -e528*/
 int hinic3_rss_init(struct hinic3_nic_dev *nic_dev, u8 *rq2iq_map, u32 map_size, u8 dcb_en)
 {
 	struct net_device *netdev = nic_dev->netdev;
-	u8 i, cos_num;
-	u8 cos_map[NIC_DCB_UP_MAX] = {0};
-	u8 cfg_map[NIC_DCB_UP_MAX] = {0};
+	u8 i, group_num, cos_bitmap, group = 0;
+	u8 cos_group[NIC_DCB_UP_MAX] = {0};
 	int err;
 
-	if (dcb_en) {
-		cos_num = hinic3_get_dev_user_cos_num(nic_dev);
+	if (dcb_en != 0) {
+		group_num = (u8)roundup_pow_of_two(
+					hinic3_get_dev_user_cos_num(nic_dev));
 
-		if (nic_dev->hw_dcb_cfg.trust == 0) {
-			memcpy(cfg_map, nic_dev->hw_dcb_cfg.pcp2cos, sizeof(cfg_map));
-		} else if (nic_dev->hw_dcb_cfg.trust == 1) {
-			for (i = 0; i < NIC_DCB_UP_MAX; i++)
-				cfg_map[i] = nic_dev->hw_dcb_cfg.dscp2cos[i * NIC_DCB_DSCP_NUM];
+		cos_bitmap = hinic3_get_dev_valid_cos_map(nic_dev);
+
+		for (i = 0; i < NIC_DCB_UP_MAX; i++) {
+			if ((BIT(i) & cos_bitmap) != 0)
+				cos_group[NIC_DCB_UP_MAX - i - 1] = group++;
+			else
+				cos_group[NIC_DCB_UP_MAX - i - 1] =
+								group_num - 1;
 		}
-#define COS_CHANGE_OFFSET 4
-		for (i = 0; i < COS_CHANGE_OFFSET; i++)
-			cos_map[COS_CHANGE_OFFSET + i] = cfg_map[i];
-
-		for (i = 0; i < COS_CHANGE_OFFSET; i++)
-			cos_map[i] = cfg_map[NIC_DCB_UP_MAX - (i + 1)];
-
-		while (cos_num & (cos_num - 1))
-			cos_num++;
 	} else {
-		cos_num = 0;
+		group_num = 0;
 	}
 
-	err = hinic3_set_hw_rss_parameters(netdev, 1, cos_num, cos_map, dcb_en);
+	err = hinic3_set_hw_rss_parameters(netdev, 1, group_num,
+					   cos_group, dcb_en);
 	if (err)
 		return err;
 
-	err = hinic3_get_rq2iq_map(nic_dev, nic_dev->q_params.num_qps, cos_num, cos_map,
-				   NIC_DCB_UP_MAX, nic_dev->rss_indir, rq2iq_map, map_size);
+	err = hinic3_get_rq2iq_map(nic_dev, nic_dev->q_params.num_qps,
+				   group_num, cos_group, NIC_DCB_UP_MAX,
+				   nic_dev->rss_indir, rq2iq_map, map_size);
 	if (err)
 		nicif_err(nic_dev, drv, netdev, "Failed to get rq map\n");
 	return err;
 }
 
-/*lint -e528*/
 void hinic3_rss_deinit(struct hinic3_nic_dev *nic_dev)
 {
 	u8 cos_map[NIC_DCB_UP_MAX] = {0};
@@ -246,11 +244,29 @@ discard_user_rss_indir:
 	hinic3_set_default_rss_indir(netdev);
 }
 
+#ifdef HAVE_HOT_REPLACE_FUNC
+bool partition_slave_doing_hotupgrade(void)
+{
+	return get_partition_role() && partition_doing_hotupgrade();
+}
+#endif
+
 static void decide_num_qps(struct hinic3_nic_dev *nic_dev)
 {
 	u16 tmp_num_qps = nic_dev->max_qps;
 	u16 num_cpus = 0;
+	u16 max_num_cpus;
 	int i, node;
+
+	int is_in_kexec = vram_get_kexec_flag();
+	if (is_in_kexec != 0) {
+		nic_dev->q_params.num_qps = nic_dev->nic_vram->vram_num_qps;
+		nicif_info(nic_dev, drv, nic_dev->netdev,
+			   "Os hotreplace use vram to init num qps 1:%hu 2:%hu\n",
+			   nic_dev->q_params.num_qps,
+			   nic_dev->nic_vram->vram_num_qps);
+		return;
+	}
 
 	if (nic_dev->nic_cap.default_num_queues != 0 &&
 	    nic_dev->nic_cap.default_num_queues < nic_dev->max_qps)
@@ -258,16 +274,29 @@ static void decide_num_qps(struct hinic3_nic_dev *nic_dev)
 
 	MOD_PARA_VALIDATE_NUM_QPS(nic_dev, num_qps, tmp_num_qps);
 
-	for (i = 0; i < (int)num_online_cpus(); i++) {
+#ifdef HAVE_HOT_REPLACE_FUNC
+	if (partition_slave_doing_hotupgrade())
+		max_num_cpus = (u16)num_present_cpus();
+	else
+		max_num_cpus = (u16)num_online_cpus();
+#else
+	max_num_cpus = (u16)num_online_cpus();
+#endif
+
+	for (i = 0; i < max_num_cpus; i++) {
 		node = (int)cpu_to_node(i);
 		if (node == dev_to_node(&nic_dev->pdev->dev))
 			num_cpus++;
 	}
 
 	if (!num_cpus)
-		num_cpus = (u16)num_online_cpus();
+		num_cpus = max_num_cpus;
 
 	nic_dev->q_params.num_qps = (u16)min_t(u16, tmp_num_qps, num_cpus);
+	nic_dev->nic_vram->vram_num_qps = nic_dev->q_params.num_qps;
+	nicif_info(nic_dev, drv, nic_dev->netdev,
+		"init num qps 1:%u 2:%u\n",
+		nic_dev->q_params.num_qps, nic_dev->nic_vram->vram_num_qps);
 }
 
 static void copy_value_to_rss_hkey(struct hinic3_nic_dev *nic_dev,
@@ -324,7 +353,6 @@ static int alloc_rss_resource(struct hinic3_nic_dev *nic_dev)
 	return 0;
 }
 
-/*lint -e528*/
 void hinic3_try_to_enable_rss(struct hinic3_nic_dev *nic_dev)
 {
 	u8 cos_map[NIC_DCB_UP_MAX] = {0};
@@ -363,6 +391,7 @@ void hinic3_try_to_enable_rss(struct hinic3_nic_dev *nic_dev)
 set_q_params:
 	clear_bit(HINIC3_RSS_ENABLE, &nic_dev->flags);
 	nic_dev->q_params.num_qps = nic_dev->max_qps;
+	nic_dev->nic_vram->vram_num_qps = nic_dev->max_qps;
 }
 
 static int hinic3_config_rss_hw_resource(struct hinic3_nic_dev *nic_dev,
@@ -756,6 +785,7 @@ int hinic3_set_channels(struct net_device *netdev,
 		nic_dev->q_params.num_qps = (u16)count;
 	}
 
+	nic_dev->nic_vram->vram_num_qps = nic_dev->q_params.num_qps;
 	return 0;
 }
 
@@ -816,7 +846,7 @@ int hinic3_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key)
 	int err = 0;
 
 	if (!test_bit(HINIC3_RSS_ENABLE, &nic_dev->flags)) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Rss is disable\n");
+		netdev_warn_once(nic_dev->netdev, "Rss is disable\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -923,7 +953,7 @@ int hinic3_get_rxfh_indir(struct net_device *netdev, u32 *indir)
 	indir = indir1->ring_index;
 #endif
 	if (!test_bit(HINIC3_RSS_ENABLE, &nic_dev->flags)) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Rss is disable\n");
+		netdev_warn_once(nic_dev->netdev, "Rss is disable\n");
 		return -EOPNOTSUPP;
 	}
 

@@ -19,8 +19,10 @@
 #define PRINT_ULD_DETACH_TIMEOUT_INTERVAL	1000 /* 1 second */
 #define ULD_LOCK_MIN_USLEEP_TIME		900
 #define ULD_LOCK_MAX_USLEEP_TIME		1000
+#define BIFUR_RESOURCE_PF_SSID			0x05a1
 
-#define HINIC3_IS_VF_DEV(pdev)	((pdev)->device == HINIC3_DEV_ID_VF)
+#define HINIC3_IS_VF_DEV(pdev)	((pdev)->device == HINIC3_DEV_ID_VF || \
+				 (pdev)->device == HINIC3_DEV_SDI_5_1_ID_VF)
 #define HINIC3_IS_SPU_DEV(pdev)	\
 	(((pdev)->device == HINIC3_DEV_ID_SPU) || ((pdev)->device == HINIC3_DEV_ID_SDI_5_0_PF) || \
 	(((pdev)->device == HINIC3_DEV_ID_DPU_PF)))
@@ -79,6 +81,13 @@ struct hinic3_pcidev {
 	u16 probe_fault_level;
 	u16	rsvd2;
 	u64	rsvd4;
+
+	struct workqueue_struct *multi_host_mgmt_workq;
+	struct work_struct slave_nic_work;
+	struct work_struct slave_vroce_work;
+
+	struct workqueue_struct *migration_probe_workq;
+	struct delayed_work migration_probe_dwork;
 };
 
 struct hinic_chip_info {
@@ -103,5 +112,7 @@ void lld_dev_cnt_init(struct hinic3_pcidev *pci_adapter);
 void wait_lld_dev_unused(struct hinic3_pcidev *pci_adapter);
 
 void *hinic3_get_hwdev_by_pcidev(struct pci_dev *pdev);
+
+int hinic3_bar_mmap_param_valid(phys_addr_t phy_addr, unsigned long vmsize);
 
 #endif

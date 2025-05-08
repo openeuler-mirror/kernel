@@ -303,7 +303,7 @@ static inline void hinic3_write_db(struct hinic3_io_queue *queue, int cos,
 
 	wmb(); /* Write all before the doorbell */
 
-	writeq(*((u64 *)&db), DB_ADDR(queue, pi));
+	writeq(*((u64 *)(u8 *)&db), DB_ADDR(queue, pi));
 }
 
 struct hinic3_dyna_qp_params {

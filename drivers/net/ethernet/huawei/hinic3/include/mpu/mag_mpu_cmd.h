@@ -43,6 +43,10 @@ enum mag_cmd {
 	MAG_CMD_GET_XSFP_PRESENT = 62, /* get xsfp present status @see mag_cmd_get_xsfp_present */
 	MAG_CMD_SET_XSFP_RW = 63, /* sfp/qsfp single byte read/write, @see mag_cmd_set_xsfp_rw */
 	MAG_CMD_CFG_XSFP_TEMPERATURE = 64, /* get xsfp temp @see mag_cmd_sfp_temp_out_info */
+	/**< set xsfp tlv info @see struct mag_cmd_set_xsfp_tlv_req */
+	MAG_CMD_SET_XSFP_TLV_INFO = 65,
+	/**< get xsfp tlv info @see struct drv_mag_cmd_get_xsfp_tlv_rsp */
+	MAG_CMD_GET_XSFP_TLV_INFO = 66,
 
 	/* Event reported 100-149 */
 	MAG_CMD_WIRE_EVENT = 100,

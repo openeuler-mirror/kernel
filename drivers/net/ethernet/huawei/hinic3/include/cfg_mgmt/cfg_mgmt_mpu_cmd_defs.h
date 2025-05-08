@@ -21,6 +21,7 @@ enum servic_bit_define {
 	SERVICE_BIT_PPA		= 11,
 	SERVICE_BIT_MIGRATE	= 12,
 	SERVICE_BIT_VROCE	= 13,
+	SERVICE_BIT_BIFUR	= 14,
 	SERVICE_BIT_MAX
 };
 
@@ -38,6 +39,7 @@ enum servic_bit_define {
 #define CFG_SERVICE_MASK_PPA		(0x1 << SERVICE_BIT_PPA)
 #define CFG_SERVICE_MASK_MIGRATE	(0x1 << SERVICE_BIT_MIGRATE)
 #define CFG_SERVICE_MASK_VROCE		(0x1 << SERVICE_BIT_VROCE)
+#define CFG_SERVICE_MASK_BIFUR		(0x1 << SERVICE_BIT_BIFUR)
 
 /* Definition of the scenario ID in the cfg_data, which is used for SML memory allocation. */
 enum scenes_id_define {
@@ -50,6 +52,8 @@ enum scenes_id_define {
 	SCENES_ID_STORAGE_ROCE		= 6,
 	SCENES_ID_COMPUTE_ROCE		= 7,
 	SCENES_ID_STORAGE_TOE		= 8,
+	SCENES_ID_COMPUTE_DPU           = 100,
+	SCENES_ID_COMPUTE_SMART_NIC     = 101,
 	SCENES_ID_MAX
 };
 
@@ -120,13 +124,18 @@ struct cfg_cmd_dev_cap {
 	u8 srv_multi_host_mode;
 	u8 virtio_vq_size;
 
-	u32 rsvd_func3[5];
+	u8 hot_plug_disable;
+	u8 bond_create_mode;
+	u8 lro_enable;
+	u8 os_hot_replace;
+
+	u32 rsvd_func3[4];
 
 	/* l2nic */
 	u16 nic_max_sq_id;
 	u16 nic_max_rq_id;
 	u16 nic_default_num_queues;
-	u16 rsvd1_nic;
+	u16 outband_vlan_cfg_en;
 	u32 rsvd2_nic[2];
 
 	/* RoCE */

@@ -21,11 +21,12 @@
 #include "hinic3_nic_cfg.h"
 #include "hinic3_srv_nic.h"
 #include "hinic3_nic.h"
-#include "hinic3_nic_cmd.h"
+#include "nic_mpu_cmd.h"
+#include "nic_npu_cmd.h"
 
 static int hinic3_init_vf_config(struct hinic3_nic_io *nic_io, u16 vf_id)
 {
-	struct vf_data_storage *vf_info;
+	struct vf_data_storage *vf_info = NULL;
 	u16 func_id;
 	int err = 0;
 
@@ -38,7 +39,7 @@ static int hinic3_init_vf_config(struct hinic3_nic_io *nic_io, u16 vf_id)
 		err = hinic3_set_mac(nic_io->hwdev, vf_info->drv_mac_addr,
 				     vf_info->pf_vlan, func_id,
 				     HINIC3_CHANNEL_NIC);
-		if (err) {
+		if (err != 0) {
 			nic_err(nic_io->dev_hdl, "Failed to set VF %d MAC\n",
 				HW_VF_ID_TO_OS(vf_id));
 			return err;
@@ -51,7 +52,7 @@ static int hinic3_init_vf_config(struct hinic3_nic_io *nic_io, u16 vf_id)
 		err = hinic3_cfg_vf_vlan(nic_io, HINIC3_CMD_OP_ADD,
 					 vf_info->pf_vlan, vf_info->pf_qos,
 					 vf_id);
-		if (err) {
+		if (err != 0) {
 			nic_err(nic_io->dev_hdl, "Failed to add VF %d VLAN_QOS\n",
 				HW_VF_ID_TO_OS(vf_id));
 			return err;
@@ -62,7 +63,7 @@ static int hinic3_init_vf_config(struct hinic3_nic_io *nic_io, u16 vf_id)
 		err = hinic3_set_vf_tx_rate(nic_io->hwdev, vf_id,
 					    vf_info->max_rate,
 					    vf_info->min_rate);
-		if (err) {
+		if (err != 0) {
 			nic_err(nic_io->dev_hdl, "Failed to set VF %d max rate %u, min rate %u\n",
 				HW_VF_ID_TO_OS(vf_id), vf_info->max_rate,
 				vf_info->min_rate);
@@ -84,7 +85,7 @@ static int register_vf_msg_handler(struct hinic3_nic_io *nic_io, u16 vf_id)
 	}
 
 	err = hinic3_init_vf_config(nic_io, vf_id);
-	if (err)
+	if (err != 0)
 		return err;
 
 	nic_io->vf_infos[HW_VF_ID_TO_OS(vf_id)].registered = true;
@@ -137,6 +138,9 @@ static int hinic3_register_vf_msg_handler(struct hinic3_nic_io *nic_io,
 	struct vf_data_storage *vf_info = nic_io->vf_infos + HW_VF_ID_TO_OS(vf_id);
 	int err;
 
+	if (!vf_info)
+		return -EINVAL;
+
 	if (register_vf->op_register) {
 		vf_info->support_extra_feature = register_vf->support_extra_feature;
 		err = register_vf_msg_handler(nic_io, vf_id);
@@ -145,7 +149,7 @@ static int hinic3_register_vf_msg_handler(struct hinic3_nic_io *nic_io,
 		vf_info->support_extra_feature = 0;
 	}
 
-	if (err)
+	if (err != 0)
 		register_info->msg_head.status = EFAULT;
 
 	*out_size = sizeof(*register_info);
@@ -156,6 +160,9 @@ static int hinic3_register_vf_msg_handler(struct hinic3_nic_io *nic_io,
 void hinic3_unregister_vf(struct hinic3_nic_io *nic_io, u16 vf_id)
 {
 	struct vf_data_storage *vf_info = nic_io->vf_infos + HW_VF_ID_TO_OS(vf_id);
+
+	if (!vf_info)
+		return;
 
 	unregister_vf_msg_handler(nic_io, vf_id);
 	vf_info->support_extra_feature = 0;
@@ -181,14 +188,21 @@ static int hinic3_get_vf_mac_msg_handler(struct hinic3_nic_io *nic_io, u16 vf,
 					 void *buf_out, u16 *out_size)
 {
 	struct vf_data_storage *vf_info = nic_io->vf_infos + HW_VF_ID_TO_OS(vf);
+	struct hinic3_port_mac_set *mac_in =
+		(struct hinic3_port_mac_set *)buf_in;
 	struct hinic3_port_mac_set *mac_info = buf_out;
 
 	int err;
 
-	if (HINIC3_SUPPORT_VF_MAC(nic_io->hwdev)) {
+	if (!mac_info || !vf_info)
+		return -EINVAL;
+
+	mac_in->func_id = hinic3_glb_pf_vf_offset(nic_io->hwdev) + vf;
+
+	if (HINIC3_SUPPORT_VF_MAC(nic_io->hwdev) != 0) {
 		err = l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC3_NIC_CMD_GET_MAC, buf_in,
 					     in_size, buf_out, out_size);
-		if (!err) {
+		if (err == 0) {
 			if (is_zero_ether_addr(mac_info->mac))
 				ether_addr_copy(mac_info->mac, vf_info->drv_mac_addr);
 		}
@@ -210,6 +224,11 @@ static int hinic3_set_vf_mac_msg_handler(struct hinic3_nic_io *nic_io, u16 vf,
 	struct hinic3_port_mac_set *mac_in = buf_in;
 	struct hinic3_port_mac_set *mac_out = buf_out;
 	int err;
+
+	if (!vf_info)
+		return -EINVAL;
+
+	mac_in->func_id = hinic3_glb_pf_vf_offset(nic_io->hwdev) + vf;
 
 	if (vf_info->use_specified_mac && !vf_info->trust &&
 	    is_valid_ether_addr(mac_in->mac)) {
@@ -247,6 +266,11 @@ static int hinic3_del_vf_mac_msg_handler(struct hinic3_nic_io *nic_io, u16 vf,
 	struct hinic3_port_mac_set *mac_out = buf_out;
 	int err;
 
+	if (!vf_info)
+		return -EINVAL;
+
+	mac_in->func_id = hinic3_glb_pf_vf_offset(nic_io->hwdev) + vf;
+
 	if (vf_info->use_specified_mac && !vf_info->trust &&
 	    is_valid_ether_addr(mac_in->mac)) {
 		nic_warn(nic_io->dev_hdl, "PF has already set VF %d MAC address, and vf trust is off.\n",
@@ -283,12 +307,15 @@ static int hinic3_update_vf_mac_msg_handler(struct hinic3_nic_io *nic_io,
 	struct hinic3_port_mac_update *mac_out = buf_out;
 	int err;
 
+	if (!vf_info)
+		return -EINVAL;
+
 	if (!is_valid_ether_addr(mac_in->new_mac)) {
 		nic_err(nic_io->dev_hdl, "Update VF MAC is invalid.\n");
 		return -EINVAL;
 	}
+	mac_in->func_id = hinic3_glb_pf_vf_offset(nic_io->hwdev) + vf;
 
-#ifndef __VMWARE__
 	if (vf_info->use_specified_mac && !vf_info->trust) {
 		nic_warn(nic_io->dev_hdl, "PF has already set VF %d MAC address, and vf trust is off.\n",
 			 HW_VF_ID_TO_OS(vf));
@@ -296,17 +323,7 @@ static int hinic3_update_vf_mac_msg_handler(struct hinic3_nic_io *nic_io,
 		*out_size = sizeof(*mac_out);
 		return 0;
 	}
-#else
-	err = hinic_config_vf_request(nic_io->hwdev->pcidev_hdl,
-				      HW_VF_ID_TO_OS(vf),
-				      HINIC_CFG_VF_MAC_CHANGED,
-				      (void *)mac_in->new_mac);
-	if (err) {
-		nic_err(nic_io->dev_hdl, "Failed to config VF %d MAC request, err: %d\n",
-			HW_VF_ID_TO_OS(vf), err);
-		return err;
-	}
-#endif
+
 	mac_in->vlan_id = vf_info->pf_vlan;
 	err = l2nic_msg_to_mgmt_sync(nic_io->hwdev, HINIC3_NIC_CMD_UPDATE_MAC,
 				     buf_in, in_size, buf_out, out_size);
@@ -362,7 +379,8 @@ static int _l2nic_msg_to_mgmt_sync(void *hwdev, u16 cmd, void *buf_in,
 	u32 i, cmd_cnt = ARRAY_LEN(vf_cmd_handler);
 	bool cmd_to_pf = false;
 
-	if (hinic3_func_type(hwdev) == TYPE_VF) {
+	if (hinic3_func_type(hwdev) == TYPE_VF &&
+	    !hinic3_is_slave_host(hwdev)) {
 		for (i = 0; i < cmd_cnt; i++) {
 			if (cmd == vf_cmd_handler[i].cmd)
 				cmd_to_pf = true;
@@ -404,6 +422,8 @@ int hinic3_pf_mbox_handler(void *hwdev,
 		return -EFAULT;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	for (index = 0; index < cmd_size; index++) {
 		if (cmd == vf_cmd_handler[index].cmd)
@@ -460,10 +480,14 @@ void hinic3_notify_dcb_state_event(struct hinic3_nic_io *nic_io,
 static void dcb_state_event(void *hwdev, void *buf_in, u16 in_size,
 			    void *buf_out, u16 *out_size)
 {
-	struct hinic3_cmd_vf_dcb_state *vf_dcb;
-	struct hinic3_nic_io *nic_io;
+	struct hinic3_cmd_vf_dcb_state *vf_dcb = NULL;
+	struct hinic3_nic_io *nic_io = NULL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io) {
+		pr_err("nic_io is NULL\n");
+		return;
+	}
 
 	vf_dcb = buf_in;
 	if (!vf_dcb)
@@ -479,9 +503,13 @@ static void tx_pause_excp_event_handler(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic3_nic_io *nic_io = NULL;
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io) {
+		pr_err("nic_io is NULL\n");
+		return;
+	}
 
 	if (in_size != sizeof(*excp_info)) {
-		nic_err(nic_io->dev_hdl, "Invalid in_size: %u, should be %ld\n",
+		nic_err(nic_io->dev_hdl, "Invalid in_size: %u, should be %lu\n",
 			in_size, sizeof(*excp_info));
 		return;
 	}
@@ -501,6 +529,10 @@ static void bond_active_event_handler(void *hwdev, void *buf_in, u16 in_size,
 	struct hinic3_event_info event_info = {0};
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io) {
+		pr_err("nic_io is NULL\n");
+		return;
+	}
 
 	if (in_size != sizeof(*active_info)) {
 		nic_err(nic_io->dev_hdl, "Invalid in_size: %u, should be %ld\n",
@@ -511,6 +543,36 @@ static void bond_active_event_handler(void *hwdev, void *buf_in, u16 in_size,
 	event_info.service = EVENT_SRV_NIC;
 	event_info.type = HINIC3_NIC_CMD_BOND_ACTIVE_NOTICE;
 	memcpy((void *)event_info.event_data, active_info, sizeof(*active_info));
+
+	hinic3_event_callback(nic_io->hwdev, &event_info);
+}
+
+static void outband_vlan_cfg_event_handler(void *hwdev, void *buf_in,
+					   u16 in_size, void *buf_out,
+					   u16 *out_size)
+{
+	struct hinic3_outband_cfg_info *outband_cfg_info = buf_in;
+	struct hinic3_nic_io *nic_io = NULL;
+	struct hinic3_event_info event_info = {0};
+
+	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io) {
+		pr_err("nic_io is NULL\n");
+		return;
+	}
+
+	nic_info(nic_io->dev_hdl, "outband vlan cfg event received\n");
+
+	if (in_size != sizeof(*outband_cfg_info)) {
+		nic_err(nic_io->dev_hdl, "outband cfg info invalid in_size: %u, should be %lu\n",
+			in_size, sizeof(*outband_cfg_info));
+		return;
+	}
+
+	event_info.service = EVENT_SRV_NIC;
+	event_info.type = EVENT_NIC_OUTBAND_CFG;
+	memcpy((void *)event_info.event_data,
+	       outband_cfg_info, sizeof(*outband_cfg_info));
 
 	hinic3_event_callback(nic_io->hwdev, &event_info);
 }
@@ -529,6 +591,11 @@ static const struct nic_event_handler nic_cmd_handler[] = {
 		.cmd = HINIC3_NIC_CMD_BOND_ACTIVE_NOTICE,
 		.handler = bond_active_event_handler,
 	},
+
+	{
+		.cmd = HINIC3_NIC_CMD_OUTBAND_CFG_NOTICE,
+		.handler = outband_vlan_cfg_event_handler,
+	},
 };
 
 static int _event_handler(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
@@ -543,6 +610,8 @@ static int _event_handler(void *hwdev, u16 cmd, void *buf_in, u16 in_size,
 
 	*out_size = 0;
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
 
 	for (i = 0; i < size; i++) {
 		if (cmd == nic_cmd_handler[i].cmd) {

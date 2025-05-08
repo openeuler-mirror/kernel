@@ -394,7 +394,8 @@ hinic3_alloc_dynamic_block_resource(struct hinic3_nic_dev *nic_dev,
 
 	dynamic_block_ptr = kzalloc(sizeof(*dynamic_block_ptr), GFP_KERNEL);
 	if (!dynamic_block_ptr) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "fdir filter dynamic alloc block index %d memory failed\n",
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "fdir filter dynamic alloc block index %u memory failed\n",
 			  dynamic_block_id);
 		return NULL;
 	}
@@ -433,7 +434,8 @@ hinic3_dynamic_lookup_tcam_filter(struct hinic3_nic_dev *nic_dev,
 	list_for_each_entry(tmp,
 			    &tcam_info->tcam_dynamic_info.tcam_dynamic_list,
 			     block_list)
-		if (tmp->dynamic_index_cnt < HINIC3_TCAM_DYNAMIC_BLOCK_SIZE)
+		if (!tmp ||
+		    tmp->dynamic_index_cnt < HINIC3_TCAM_DYNAMIC_BLOCK_SIZE)
 			break;
 
 	if (!tmp || tmp->dynamic_index_cnt >= HINIC3_TCAM_DYNAMIC_BLOCK_SIZE) {
@@ -515,7 +517,7 @@ static int hinic3_add_tcam_filter(struct hinic3_nic_dev *nic_dev,
 	}
 
 	nicif_info(nic_dev, drv, nic_dev->netdev,
-		   "Add fdir tcam rule, function_id: 0x%x, tcam_block_id: %d, local_index: %d, global_index: %d, queue: %d, tcam_rule_nums: %d succeed\n",
+		   "Add fdir tcam rule, function_id: 0x%x, tcam_block_id: %u, local_index: %u, global_index: %u, queue: %u, tcam_rule_nums: %u succeed\n",
 		   hinic3_global_func_id(nic_dev->hwdev),
 		   tcam_filter->dynamic_block_id, index, fdir_tcam_rule->index,
 		   fdir_tcam_rule->data.qid, tcam_info->tcam_rule_nums + 1);
@@ -582,7 +584,7 @@ static int hinic3_del_tcam_filter(struct hinic3_nic_dev *nic_dev,
 	}
 
 	nicif_info(nic_dev, drv, nic_dev->netdev,
-		   "Del fdir_tcam_dynamic_rule function_id: 0x%x, tcam_block_id: %d, local_index: %d, global_index: %d, local_rules_nums: %d, global_rule_nums: %d succeed\n",
+		   "Del fdir_tcam_dynamic_rule function_id: 0x%x, tcam_block_id: %u, local_index: %u, global_index: %u, local_rules_nums: %u, global_rule_nums: %u succeed\n",
 		   hinic3_global_func_id(nic_dev->hwdev), dynamic_block_id,
 		   tcam_filter->index, index, tmp->dynamic_index_cnt - 1,
 		   tcam_info->tcam_rule_nums - 1);
@@ -608,7 +610,7 @@ static inline struct hinic3_tcam_filter *
 hinic3_tcam_filter_lookup(const struct list_head *filter_list,
 			  struct tag_tcam_key *key)
 {
-	struct hinic3_tcam_filter *iter;
+	struct hinic3_tcam_filter *iter = NULL;
 
 	list_for_each_entry(iter, filter_list, tcam_filter_list) {
 		if (memcmp(key, &iter->tcam_key,
@@ -633,7 +635,7 @@ static int hinic3_remove_one_rule(struct hinic3_nic_dev *nic_dev,
 				  struct hinic3_ethtool_rx_flow_rule *eth_rule)
 {
 	struct hinic3_tcam_info *tcam_info = &nic_dev->tcam;
-	struct hinic3_tcam_filter *tcam_filter;
+	struct hinic3_tcam_filter *tcam_filter = NULL;
 	struct nic_tcam_cfg_rule fdir_tcam_rule;
 	struct tag_tcam_key tcam_key;
 	int err;
@@ -754,7 +756,7 @@ static int validate_flow(struct hinic3_nic_dev *nic_dev,
 {
 	if (fs->location >= MAX_NUM_OF_ETHTOOL_NTUPLE_RULES) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "loc exceed limit[0,%lu]\n",
-			  MAX_NUM_OF_ETHTOOL_NTUPLE_RULES);
+			  MAX_NUM_OF_ETHTOOL_NTUPLE_RULES - 1);
 		return -EINVAL;
 	}
 
@@ -875,7 +877,7 @@ int hinic3_ethtool_get_flow(const struct hinic3_nic_dev *nic_dev,
 int hinic3_ethtool_get_all_flows(const struct hinic3_nic_dev *nic_dev,
 				 struct ethtool_rxnfc *info, u32 *rule_locs)
 {
-	int idx = 0;
+	u32 idx = 0;
 	struct hinic3_ethtool_rx_flow_rule *eth_rule = NULL;
 
 	if (!HINIC3_SUPPORT_FDIR(nic_dev->hwdev)) {

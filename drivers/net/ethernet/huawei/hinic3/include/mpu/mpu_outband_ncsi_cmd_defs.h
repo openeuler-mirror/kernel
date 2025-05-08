@@ -114,6 +114,14 @@ struct tag_ncsi_client_info {
 #define AEN_CTRL_CONFIG_REQ_SHIFT 1
 #define AEN_CTRL_DRV_CHANGE_SHIFT 2
 
+/* AEN Type */
+enum aen_type_e{
+	AEN_LINK_STATUS_CHANGE_TYPE = 0x0,
+	AEN_CONFIG_REQUIRED_TYPE    = 0x1,
+	OEM_AEN_CONFIG_REQUEST_TYPE = 0x80,
+	AEN_TYPE_MAX = 0x100
+} ;
+
 /* get link status 0x0A */
 #define GET_LINK_STATUS_REQ_LEN 0
 #define GET_LINK_STATUS_RSP_LEN 16

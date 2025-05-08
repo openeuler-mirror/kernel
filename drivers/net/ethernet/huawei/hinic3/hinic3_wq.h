@@ -29,7 +29,7 @@ struct hinic3_wq {
 
 #define WQ_MASK_IDX(wq, idx)		((idx) & (wq)->idx_mask)
 #define WQ_MASK_PAGE(wq, pg_idx)	\
-		((pg_idx) < (wq)->num_wq_pages ? (pg_idx) : 0)
+		(((pg_idx) < ((wq)->num_wq_pages)) ? (pg_idx) : 0)
 #define WQ_PAGE_IDX(wq, idx)		((idx) >> (wq)->wqebbs_per_page_shift)
 #define WQ_OFFSET_IN_PAGE(wq, idx)	((idx) & (wq)->wqebbs_per_page_mask)
 #define WQ_GET_WQEBB_ADDR(wq, pg_idx, idx_in_pg)		\
@@ -75,7 +75,7 @@ static inline void *hinic3_wq_get_multi_wqebbs(struct hinic3_wq *wq,
 	pg_idx = WQ_PAGE_IDX(wq, *prod_idx);
 	off_in_page = WQ_OFFSET_IN_PAGE(wq, *prod_idx);
 
-	if (off_in_page + num_wqebbs > wq->wqebbs_per_page) {
+	if ((off_in_page + num_wqebbs) > wq->wqebbs_per_page) {
 		/* wqe across wq page boundary */
 		*second_part_wqebbs_addr =
 			WQ_GET_WQEBB_ADDR(wq, WQ_MASK_PAGE(wq, pg_idx + 1), 0);

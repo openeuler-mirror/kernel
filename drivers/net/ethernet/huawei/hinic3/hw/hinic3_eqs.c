@@ -26,6 +26,8 @@
 #include "hinic3_prof_adap.h"
 #include "hinic3_eqs.h"
 
+#include "vram_common.h"
+
 #define HINIC3_EQS_WQ_NAME			"hinic3_eqs"
 
 #define AEQ_CTRL_0_INTR_IDX_SHIFT		0
@@ -66,7 +68,6 @@
 #define HINIC3_TASK_PROCESS_EQE_LIMIT		1024
 #define HINIC3_EQ_UPDATE_CI_STEP		64
 
-/*lint -e806*/
 static uint g_aeq_len = HINIC3_DEFAULT_AEQ_LEN;
 module_param(g_aeq_len, uint, 0444);
 MODULE_PARM_DESC(g_aeq_len,
@@ -83,7 +84,6 @@ static uint g_num_ceqe_in_tasklet = HINIC3_TASK_PROCESS_EQE_LIMIT;
 module_param(g_num_ceqe_in_tasklet, uint, 0444);
 MODULE_PARM_DESC(g_num_ceqe_in_tasklet,
 		 "The max number of ceqe can be processed in tasklet, default = 1024");
-/*lint +e806*/
 
 #define CEQ_CTRL_0_INTR_IDX_SHIFT		0
 #define CEQ_CTRL_0_DMA_ATTR_SHIFT		12
@@ -801,6 +801,7 @@ static int alloc_eq_pages(struct hinic3_eq *eq)
 	u32 reg, init_val;
 	u16 pg_idx, i;
 	int err;
+	gfp_t gfp_vram;
 
 	eq->eq_pages = kcalloc(eq->num_pages, sizeof(*eq->eq_pages),
 			       GFP_KERNEL);
@@ -809,12 +810,15 @@ static int alloc_eq_pages(struct hinic3_eq *eq)
 		return -ENOMEM;
 	}
 
+	gfp_vram = hi_vram_get_gfp_vram();
+
 	for (pg_idx = 0; pg_idx < eq->num_pages; pg_idx++) {
 		eq_page = &eq->eq_pages[pg_idx];
 		err = hinic3_dma_zalloc_coherent_align(eq->hwdev->dev_hdl,
 						       eq->page_size,
 						       HINIC3_MIN_EQ_PAGE_SIZE,
-						       GFP_KERNEL, eq_page);
+						       GFP_KERNEL | gfp_vram,
+						       eq_page);
 		if (err) {
 			sdk_err(eq->hwdev->dev_hdl, "Failed to alloc eq page, page index: %hu\n",
 				pg_idx);
@@ -865,6 +869,7 @@ static void free_eq_pages(struct hinic3_eq *eq)
 					       &eq->eq_pages[pg_idx]);
 
 	kfree(eq->eq_pages);
+	eq->eq_pages = NULL;
 }
 
 static inline u32 get_page_size(const struct hinic3_eq *eq)
@@ -1104,7 +1109,8 @@ int hinic3_aeqs_init(struct hinic3_hwdev *hwdev, u16 num_aeqs,
 	hwdev->aeqs = aeqs;
 	aeqs->hwdev = hwdev;
 	aeqs->num_aeqs = num_aeqs;
-	aeqs->workq = alloc_workqueue(HINIC3_EQS_WQ_NAME, WQ_MEM_RECLAIM,
+	aeqs->workq = alloc_workqueue(HINIC3_EQS_WQ_NAME,
+				      WQ_MEM_RECLAIM | WQ_HIGHPRI,
 				      HINIC3_MAX_AEQS);
 	if (!aeqs->workq) {
 		sdk_err(hwdev->dev_hdl, "Failed to initialize aeq workqueue\n");

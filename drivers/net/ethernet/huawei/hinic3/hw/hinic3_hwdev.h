@@ -10,6 +10,7 @@
 #include "hinic3_hw.h"
 #include "mpu_inband_cmd_defs.h"
 #include "hinic3_profile.h"
+#include "vram_common.h"
 
 struct cfg_mgmt_info;
 
@@ -82,6 +83,22 @@ enum hinic3_host_mode_e {
 	HINIC3_SDI_MODE_MAX,
 };
 
+enum hinic3_hot_plug_mode {
+	HOT_PLUG_ENABLE,
+	HOT_PLUG_DISABLE,
+};
+
+enum hinic3_os_hot_replace_mode {
+	HOT_REPLACE_DISABLE,
+	HOT_REPLACE_ENABLE,
+};
+
+#define UNSUPPORT_HOT_PLUG(hwdev)	\
+		((hwdev)->hot_plug_mode == HOT_PLUG_DISABLE)
+
+#define SUPPORT_HOT_PLUG(hwdev)	\
+		((hwdev)->hot_plug_mode == HOT_PLUG_ENABLE)
+
 #define MULTI_HOST_CHIP_MODE_SHIFT		0
 #define MULTI_HOST_MASTER_MBX_STS_SHIFT		17
 #define MULTI_HOST_PRIV_DATA_SHIFT		0x8
@@ -99,6 +116,10 @@ enum hinic3_host_mode_e {
 #define MULTI_HOST_REG_CLEAR(val, member)	\
 				((val) & (~(MULTI_HOST_##member##_MASK \
 					<< MULTI_HOST_##member##_SHIFT)))
+
+struct mqm_eqm_vram_name_s {
+	char vram_name[VRAM_NAME_MAX_LEN];
+};
 
 struct hinic3_hwdev {
 	void *adapter_hdl;  /* pointer to hinic3_pcidev or NDIS_Adapter */
@@ -138,6 +159,9 @@ struct hinic3_hwdev {
 	u32 rsvd2;
 
 	struct hinic3_multi_host_mgmt *mhost_mgmt;
+	char mhost_mgmt_name[VRAM_NAME_MAX_LEN];
+
+	struct mqm_eqm_vram_name_s *mqm_eqm_vram_name;
 
 	struct mutex stateful_mutex; /* protect cqm init and deinit */
 
@@ -170,7 +194,10 @@ struct hinic3_hwdev {
 	struct hinic3_devlink *devlink_dev;
 
 	enum hinic3_func_mode	func_mode;
-	u32 rsvd3;
+	enum hinic3_hot_plug_mode hot_plug_mode;
+
+	enum hinic3_os_hot_replace_mode hot_replace_mode;
+	u32 rsvd5;
 
 	DECLARE_BITMAP(func_probe_in_host, MAX_FUNCTION_NUM);
 	DECLARE_BITMAP(netdev_setup_state, MAX_FUNCTION_NUM);
@@ -179,7 +206,10 @@ struct hinic3_hwdev {
 	u64 last_recv_aeq_cnt;
 	u16 aeq_busy_cnt;
 
-	u64 rsvd4[8];
+	u64 mbox_send_cnt;
+	u64 mbox_ack_cnt;
+
+	u64 rsvd4[5];
 };
 
 #define HINIC3_DRV_FEATURE_QW0 \

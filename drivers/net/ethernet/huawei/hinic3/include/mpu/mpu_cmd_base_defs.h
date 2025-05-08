@@ -1,10 +1,10 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2024 Huawei Technologies Co., Ltd */
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2021-2023. All rights reserved.
+ * Description   : common definitions
+ */
 
 #ifndef COMM_DEFS_H
 #define COMM_DEFS_H
-
-#include "mgmt_msg_base.h"
 
 /** MPU CMD MODULE TYPE */
 enum hinic3_mod_type {
@@ -33,16 +33,16 @@ enum hinic3_mod_type {
 	HINIC3_MOD_MAX,
 };
 
-/* Func reset flag, Specifies the resource to be cleaned.*/
-enum func_reset_flag_e {
+/* func reset的flag ,用于指示清理哪种资源 */
+enum func_reset_flag_e{
 	RES_TYPE_FLUSH_BIT = 0,
 	RES_TYPE_MQM,
 	RES_TYPE_SMF,
 	RES_TYPE_PF_BW_CFG,
 
 	RES_TYPE_COMM = 10,
-	RES_TYPE_COMM_MGMT_CH,	/* clear mbox and aeq, The RES_TYPE_COMM bit must be set */
-	RES_TYPE_COMM_CMD_CH,	/* clear cmdq and ceq, The RES_TYPE_COMM bit must be set */
+	RES_TYPE_COMM_MGMT_CH, /* clear mbox and aeq, The RES_TYPE_COMM bit must be set */
+	RES_TYPE_COMM_CMD_CH,  /* clear cmdq and ceq, The RES_TYPE_COMM bit must be set */
 	RES_TYPE_NIC,
 	RES_TYPE_OVS,
 	RES_TYPE_VBS,
@@ -53,33 +53,48 @@ enum func_reset_flag_e {
 	RES_TYPE_MAX,
 };
 
-#define HINIC3_COMM_RES						\
-	((1 << RES_TYPE_COMM) | (1 << RES_TYPE_COMM_CMD_CH) |	\
-	 (1 << RES_TYPE_FLUSH_BIT) | (1 << RES_TYPE_MQM) | \
-	 (1 << RES_TYPE_SMF) | (1 << RES_TYPE_PF_BW_CFG))
+#define HINIC3_COMM_RES \
+	((1 << RES_TYPE_COMM) | (1 << RES_TYPE_COMM_CMD_CH) |   \
+	(1 << RES_TYPE_FLUSH_BIT) | (1 << RES_TYPE_MQM) | \
+	(1 << RES_TYPE_SMF) | (1 << RES_TYPE_PF_BW_CFG))
 
-#define HINIC3_NIC_RES		BIT(RES_TYPE_NIC)
-#define HINIC3_OVS_RES		BIT(RES_TYPE_OVS)
-#define HINIC3_VBS_RES		BIT(RES_TYPE_VBS)
-#define HINIC3_ROCE_RES		BIT(RES_TYPE_ROCE)
-#define HINIC3_FC_RES		BIT(RES_TYPE_FC)
-#define HINIC3_TOE_RES		BIT(RES_TYPE_TOE)
-#define HINIC3_IPSEC_RES	BIT(RES_TYPE_IPSEC)
+#define HINIC3_NIC_RES      (1 << RES_TYPE_NIC)
+#define HINIC3_OVS_RES      (1 << RES_TYPE_OVS)
+#define HINIC3_VBS_RES      (1 << RES_TYPE_VBS)
+#define HINIC3_ROCE_RES     (1 << RES_TYPE_ROCE)
+#define HINIC3_FC_RES       (1 << RES_TYPE_FC)
+#define HINIC3_TOE_RES      (1 << RES_TYPE_TOE)
+#define HINIC3_IPSEC_RES    (1 << RES_TYPE_IPSEC)
 
 /* MODE OVS、NIC、UNKNOWN */
 #define HINIC3_WORK_MODE_OVS 0
 #define HINIC3_WORK_MODE_UNKNOWN 1
 #define HINIC3_WORK_MODE_NIC 2
 
-#define DEVICE_TYPE_L2NIC			0
-#define DEVICE_TYPE_NVME			1
-#define DEVICE_TYPE_VIRTIO_NET			2
-#define DEVICE_TYPE_VIRTIO_BLK			3
-#define DEVICE_TYPE_VIRTIO_VSOCK		4
-#define DEVICE_TYPE_VIRTIO_NET_TRANSITION	5
-#define DEVICE_TYPE_VIRTIO_BLK_TRANSITION	6
-#define DEVICE_TYPE_VIRTIO_SCSI_TRANSITION	7
-#define DEVICE_TYPE_VIRTIO_HPC			8
+#define DEVICE_TYPE_L2NIC                   0
+#define DEVICE_TYPE_NVME                    1
+#define DEVICE_TYPE_VIRTIO_NET              2
+#define DEVICE_TYPE_VIRTIO_BLK              3
+#define DEVICE_TYPE_VIRTIO_VSOCK            4
+#define DEVICE_TYPE_VIRTIO_NET_TRANSITION   5
+#define DEVICE_TYPE_VIRTIO_BLK_TRANSITION   6
+#define DEVICE_TYPE_VIRTIO_SCSI_TRANSITION  7
+#define DEVICE_TYPE_VIRTIO_HPC              8
+#define DEVICE_TYPE_VIRTIO_FS               9
+
+#define IS_STORAGE_DEVICE_TYPE(dev_type) \
+    ((dev_type) == DEVICE_TYPE_VIRTIO_BLK || \
+     (dev_type) == DEVICE_TYPE_VIRTIO_BLK_TRANSITION || \
+     (dev_type) == DEVICE_TYPE_VIRTIO_SCSI_TRANSITION || \
+     (dev_type) == DEVICE_TYPE_VIRTIO_FS)
+
+#define MGMT_MSG_CMD_OP_SET	1
+#define MGMT_MSG_CMD_OP_GET	0
+
+#define MGMT_MSG_CMD_OP_START	1
+#define MGMT_MSG_CMD_OP_STOP	0
+
+#define HOT_REPLACE_PARTITION_NUM 2
 
 enum hinic3_svc_type {
 	SVC_T_COMM = 0,
@@ -98,8 +113,17 @@ enum hinic3_svc_type {
 };
 
 /**
- * Common header control information of the COMM message interaction command word
- * between the driver and PF.
+ * Common header control information of the COMM message interaction command word between the driver and PF
+ * stuct mgmt_msg_head and struct comm_info_head are the same stucture
+ */
+struct mgmt_msg_head {
+	u8 status;
+	u8 version;
+	u8 rsvd0[6];
+};
+
+/**
+ * Common header control information of the COMM message interaction command word between the driver and PF
  */
 struct comm_info_head {
 	/** response status code, 0: success, others: error code */
@@ -112,5 +136,30 @@ struct comm_info_head {
 	u8 rep_aeq_num;
 	u8 rsvd[5];
 };
+
+
+static inline u32 get_function_partition(u32 function_id, u32 port_num)
+{
+	return (function_id / port_num) % HOT_REPLACE_PARTITION_NUM;
+}
+
+static inline u32 is_primary_function(u32 function_id, u32 port_num)
+{
+	return (function_id / port_num) % HOT_REPLACE_PARTITION_NUM == 0;
+}
+
+static inline u32 mpu_nic_get_primary_function(u32 function_id, u32 port_num)
+{
+	return ((function_id / port_num) % HOT_REPLACE_PARTITION_NUM == 0) ?
+		 function_id : (function_id - port_num);
+}
+
+// when func_id is in partition 0/1, it will get its another func_id in partition 1/0
+static inline u32 mpu_nic_get_backup_function(u32 function_id, u32 port_num)
+{
+	return ((function_id / port_num) % HOT_REPLACE_PARTITION_NUM == 0) ?
+		 (function_id + port_num) : (function_id - port_num);
+}
+
 
 #endif

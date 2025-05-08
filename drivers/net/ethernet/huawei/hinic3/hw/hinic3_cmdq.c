@@ -657,7 +657,7 @@ static int cmdq_sync_cmd_direct_resp(struct hinic3_cmdq *cmdq, u8 mod,
 	cmd_info->channel = channel;
 	cmdq_set_cmd_buf(cmd_info, cmdq->hwdev, buf_in, NULL);
 
-	memcpy(&saved_cmd_info, cmd_info, sizeof(*cmd_info));
+	memcpy(&saved_cmd_info, cmd_info, sizeof(struct hinic3_cmdq_cmd_info));
 
 	cmdq_set_lcmd_wqe(&wqe, SYNC_CMD_DIRECT_RESP, buf_in, NULL,
 			  wrapped, mod, cmd, curr_prod_idx);
@@ -745,7 +745,7 @@ static int cmdq_sync_cmd_detail_resp(struct hinic3_cmdq *cmdq, u8 mod, u8 cmd,
 	cmd_info->channel = channel;
 	cmdq_set_cmd_buf(cmd_info, cmdq->hwdev, buf_in, buf_out);
 
-	memcpy(&saved_cmd_info, cmd_info, sizeof(*cmd_info));
+	memcpy(&saved_cmd_info, cmd_info, sizeof(struct hinic3_cmdq_cmd_info));
 
 	cmdq_set_lcmd_wqe(&wqe, SYNC_CMD_SGE_RESP, buf_in, buf_out,
 			  wrapped, mod, cmd, curr_prod_idx);
@@ -994,9 +994,11 @@ int hinic3_cmdq_async(void *hwdev, u8 mod, u8 cmd, struct hinic3_cmd_buf *buf_in
 	return cmdq_async_cmd(&cmdqs->cmdq[HINIC3_CMDQ_SYNC], mod,
 			      cmd, buf_in, channel);
 }
+EXPORT_SYMBOL(hinic3_cmdq_async);
 
 int hinic3_cmdq_async_cos(void *hwdev, u8 mod, u8 cmd,
-			  u8 cos_id, struct hinic3_cmd_buf *buf_in, u16 channel)
+			  u8 cos_id, struct hinic3_cmd_buf *buf_in,
+			  u16 channel)
 {
 	struct hinic3_cmdqs *cmdqs = NULL;
 	int err;
@@ -1136,7 +1138,7 @@ void hinic3_cmdq_ceq_handler(void *handle, u32 ceqe_data)
 			break;
 		case HINIC3_CMD_TYPE_SET_ARM:
 			/* arm_bit was set until here */
-			if (cmdq_arm_ceq_handler(cmdq, wqe, ci))
+			if (cmdq_arm_ceq_handler(cmdq, wqe, ci) != 0)
 				return;
 			break;
 		default:
@@ -1221,6 +1223,7 @@ cmd_infos_err:
 static void free_cmdq(struct hinic3_cmdq *cmdq)
 {
 	kfree(cmdq->cmd_infos);
+	cmdq->cmd_infos = NULL;
 	spin_lock_deinit(&cmdq->cmdq_lock);
 }
 
@@ -1425,7 +1428,7 @@ static int create_cmdq_wq(struct hinic3_cmdqs *cmdqs)
 		type = HINIC3_CMDQ_SYNC;
 		for (; type < cmdqs->cmdq_num; type++)
 			memcpy((u8 *)cmdqs->wq_block_vaddr +
-			       CMDQ_WQ_CLA_SIZE * type,
+			       ((u64)type * CMDQ_WQ_CLA_SIZE),
 			       cmdqs->cmdq[type].wq.wq_block_vaddr,
 			       cmdqs->cmdq[type].wq.num_wq_pages * sizeof(u64));
 	}

@@ -37,7 +37,7 @@ static inline void hinic3_cpu_to_be32(void *data, int len)
 {
 	int i, chunk_sz = sizeof(u32);
 	int data_len = len;
-	u32 *mem = data;
+	u32 *mem = (u32 *)data;
 
 	if (!data)
 		return;
@@ -59,7 +59,7 @@ static inline void hinic3_be32_to_cpu(void *data, int len)
 {
 	int i, chunk_sz = sizeof(u32);
 	int data_len = len;
-	u32 *mem = data;
+	u32 *mem = (u32 *)data;
 
 	if (!data)
 		return;
@@ -86,52 +86,16 @@ static inline void hinic3_set_sge(struct hinic3_sge *sge, dma_addr_t addr,
 	sge->len = (u32)len;
 }
 
-#ifdef HW_CONVERT_ENDIAN
 #define hinic3_hw_be32(val) (val)
 #define hinic3_hw_cpu32(val) (val)
 #define hinic3_hw_cpu16(val) (val)
-#else
-#define hinic3_hw_be32(val) cpu_to_be32(val)
-#define hinic3_hw_cpu32(val) be32_to_cpu(val)
-#define hinic3_hw_cpu16(val) be16_to_cpu(val)
-#endif
 
 static inline void hinic3_hw_be32_len(void *data, int len)
 {
-#ifndef HW_CONVERT_ENDIAN
-	int i, chunk_sz = sizeof(u32);
-	int data_len = len;
-	u32 *mem = data;
-
-	if (!data)
-		return;
-
-	data_len = data_len / chunk_sz;
-
-	for (i = 0; i < data_len; i++) {
-		*mem = hinic3_hw_be32(*mem);
-		mem++;
-	}
-#endif
 }
 
 static inline void hinic3_hw_cpu32_len(void *data, int len)
 {
-#ifndef HW_CONVERT_ENDIAN
-	int i, chunk_sz = sizeof(u32);
-	int data_len = len;
-	u32 *mem = data;
-
-	if (!data)
-		return;
-
-	data_len = data_len / chunk_sz;
-
-	for (i = 0; i < data_len; i++) {
-		*mem = hinic3_hw_cpu32(*mem);
-		mem++;
-	}
-#endif
 }
 
 int hinic3_dma_zalloc_coherent_align(void *dev_hdl, u64 size, u64 align,
@@ -148,6 +112,8 @@ int hinic3_wait_for_timeout(void *priv_data, wait_cpl_handler handler,
 
 /* func_attr.glb_func_idx, global function index */
 u16 hinic3_global_func_id(void *hwdev);
+
+int hinic3_global_func_id_get(void *hwdev, u16 *func_id);
 
 /* func_attr.p2p_idx, belongs to which pf */
 u8 hinic3_pf_id_of_vf(void *hwdev);

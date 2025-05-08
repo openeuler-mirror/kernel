@@ -44,9 +44,9 @@ static void hinic3_get_drvinfo(struct net_device *netdev,
 	u8 mgmt_ver[HINIC3_MGMT_VERSION_MAX_LEN] = {0};
 	int err;
 
-	strlcpy(info->driver, HINIC3_NIC_DRV_NAME, sizeof(info->driver));
-	strlcpy(info->version, HINIC3_NIC_DRV_VERSION, sizeof(info->version));
-	strlcpy(info->bus_info, pci_name(pdev), sizeof(info->bus_info));
+	strscpy(info->driver, HINIC3_NIC_DRV_NAME, sizeof(info->driver));
+	strscpy(info->version, HINIC3_NIC_DRV_VERSION, sizeof(info->version));
+	strscpy(info->bus_info, pci_name(pdev), sizeof(info->bus_info));
 
 	err = hinic3_get_mgmt_version(nic_dev->hwdev, mgmt_ver,
 				      HINIC3_MGMT_VERSION_MAX_LEN,
@@ -123,10 +123,15 @@ reset_err:
 	return err;
 }
 
+#ifdef HAVE_ETHTOOL_RINGPARAM_EXTACK
 static void hinic3_get_ringparam(struct net_device *netdev,
 				 struct ethtool_ringparam *ring,
 				 struct kernel_ethtool_ringparam *kernel_ring,
 				 struct netlink_ext_ack *extack)
+#else
+static void hinic3_get_ringparam(struct net_device *netdev,
+				 struct ethtool_ringparam *ring)
+#endif
 {
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
 
@@ -176,10 +181,15 @@ static int check_ringparam_valid(struct net_device *netdev,
 	return 0;
 }
 
+#ifdef HAVE_ETHTOOL_RINGPARAM_EXTACK
 static int hinic3_set_ringparam(struct net_device *netdev,
 				struct ethtool_ringparam *ring,
 				struct kernel_ethtool_ringparam *kernel_ring,
 				struct netlink_ext_ack *extack)
+#else
+static int hinic3_set_ringparam(struct net_device *netdev,
+				struct ethtool_ringparam *ring)
+#endif
 {
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic3_dyna_txrxq_params q_params = {0};
@@ -273,7 +283,7 @@ static int get_coalesce(struct net_device *netdev,
 static int set_queue_coalesce(struct hinic3_nic_dev *nic_dev, u16 q_id,
 			      struct hinic3_intr_coal_info *coal)
 {
-	struct hinic3_intr_coal_info *intr_coal;
+	struct hinic3_intr_coal_info *intr_coal = NULL;
 	struct interrupt_info info = {0};
 	struct net_device *netdev = nic_dev->netdev;
 	int err;
@@ -367,24 +377,11 @@ static int is_coalesce_exceed_limit(struct net_device *netdev,
 	return 0;
 }
 
-static int is_coalesce_legal(struct net_device *netdev,
-			     const struct ethtool_coalesce *coal)
+static int is_coalesce_allowed_change(struct net_device *netdev,
+				const struct ethtool_coalesce *coal)
 {
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
 	struct ethtool_coalesce tmp_coal = {0};
-	int err;
-
-	if (coal->rx_coalesce_usecs != coal->tx_coalesce_usecs) {
-		nicif_err(nic_dev, drv, netdev,
-			  "tx-usecs must be equal to rx-usecs\n");
-		return -EINVAL;
-	}
-
-	if (coal->rx_max_coalesced_frames != coal->tx_max_coalesced_frames) {
-		nicif_err(nic_dev, drv, netdev,
-			  "tx-frames must be equal to rx-frames\n");
-		return -EINVAL;
-	}
 
 	tmp_coal.cmd = coal->cmd;
 	tmp_coal.rx_coalesce_usecs = coal->rx_coalesce_usecs;
@@ -408,6 +405,31 @@ static int is_coalesce_legal(struct net_device *netdev,
 			  "Only support to change rx/tx-usecs and rx/tx-frames\n");
 		return -EOPNOTSUPP;
 	}
+
+	return 0;
+}
+
+static int is_coalesce_legal(struct net_device *netdev,
+			     const struct ethtool_coalesce *coal)
+{
+	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
+	int err;
+
+	if (coal->rx_coalesce_usecs != coal->tx_coalesce_usecs) {
+		nicif_err(nic_dev, drv, netdev,
+			  "tx-usecs must be equal to rx-usecs\n");
+		return -EINVAL;
+	}
+
+	if (coal->rx_max_coalesced_frames != coal->tx_max_coalesced_frames) {
+		nicif_err(nic_dev, drv, netdev,
+			  "tx-frames must be equal to rx-frames\n");
+		return -EINVAL;
+	}
+
+	err = is_coalesce_allowed_change(netdev, coal);
+	if (err)
+		return err;
 
 	err = is_coalesce_exceed_limit(netdev, coal);
 	if (err)
@@ -491,19 +513,10 @@ static int set_hw_coal_param(struct hinic3_nic_dev *nic_dev,
 	return 0;
 }
 
-static int set_coalesce(struct net_device *netdev,
-			struct ethtool_coalesce *coal, u16 queue)
+static void check_coalesce_align(struct net_device *netdev,
+				struct ethtool_coalesce *coal)
 {
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
-	struct hinic3_intr_coal_info intr_coal = {0};
-	struct hinic3_intr_coal_info *ori_intr_coal = NULL;
-	u32 last_adaptive_rx;
-	char obj_str[32] = {0};
-	int err = 0;
-
-	err = is_coalesce_legal(netdev, coal);
-	if (err)
-		return err;
 
 	CHECK_COALESCE_ALIGN(coal, rx_coalesce_usecs, COALESCE_TIMER_CFG_UNIT);
 	CHECK_COALESCE_ALIGN(coal, rx_max_coalesced_frames,
@@ -516,6 +529,14 @@ static int set_coalesce(struct net_device *netdev,
 			     COALESCE_TIMER_CFG_UNIT);
 	CHECK_COALESCE_ALIGN(coal, rx_max_coalesced_frames_low,
 			     COALESCE_PENDING_LIMIT_UNIT);
+}
+
+static int check_coalesce_change(struct net_device *netdev,
+				u16 queue, struct ethtool_coalesce *coal)
+{
+	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic3_intr_coal_info *ori_intr_coal = NULL;
+	char obj_str[32] = {0};
 
 	if (queue == COALESCE_ALL_QUEUE) {
 		ori_intr_coal = &nic_dev->intr_coalesce[0];
@@ -524,6 +545,7 @@ static int set_coalesce(struct net_device *netdev,
 		ori_intr_coal = &nic_dev->intr_coalesce[queue];
 		snprintf(obj_str, sizeof(obj_str), "for queue %u", queue);
 	}
+
 	CHECK_COALESCE_CHANGED(coal, rx_coalesce_usecs, COALESCE_TIMER_CFG_UNIT,
 			       ori_intr_coal->coalesce_timer_cfg, obj_str);
 	CHECK_COALESCE_CHANGED(coal, rx_max_coalesced_frames,
@@ -545,28 +567,52 @@ static int set_coalesce(struct net_device *netdev,
 	CHECK_COALESCE_CHANGED(coal, rx_max_coalesced_frames_low,
 			       COALESCE_PENDING_LIMIT_UNIT,
 			       ori_intr_coal->rx_pending_limt_low, obj_str);
+	return 0;
+}
 
-	intr_coal.coalesce_timer_cfg =
+static void init_intr_coal_params(struct hinic3_intr_coal_info *intr_coal,
+				  struct ethtool_coalesce *coal)
+{
+	intr_coal->coalesce_timer_cfg =
 		(u8)(coal->rx_coalesce_usecs / COALESCE_TIMER_CFG_UNIT);
-	intr_coal.pending_limt = (u8)(coal->rx_max_coalesced_frames /
-				      COALESCE_PENDING_LIMIT_UNIT);
+	intr_coal->pending_limt = (u8)(coal->rx_max_coalesced_frames /
+				       COALESCE_PENDING_LIMIT_UNIT);
 
-	last_adaptive_rx = nic_dev->adaptive_rx_coal;
-	nic_dev->adaptive_rx_coal = coal->use_adaptive_rx_coalesce;
-
-	intr_coal.pkt_rate_high = coal->pkt_rate_high;
-	intr_coal.rx_usecs_high =
+	intr_coal->pkt_rate_high = coal->pkt_rate_high;
+	intr_coal->rx_usecs_high =
 		(u8)(coal->rx_coalesce_usecs_high / COALESCE_TIMER_CFG_UNIT);
-	intr_coal.rx_pending_limt_high =
+	intr_coal->rx_pending_limt_high =
 		(u8)(coal->rx_max_coalesced_frames_high /
 		     COALESCE_PENDING_LIMIT_UNIT);
 
-	intr_coal.pkt_rate_low = coal->pkt_rate_low;
-	intr_coal.rx_usecs_low =
+	intr_coal->pkt_rate_low = coal->pkt_rate_low;
+	intr_coal->rx_usecs_low =
 		(u8)(coal->rx_coalesce_usecs_low / COALESCE_TIMER_CFG_UNIT);
-	intr_coal.rx_pending_limt_low =
+	intr_coal->rx_pending_limt_low =
 		(u8)(coal->rx_max_coalesced_frames_low /
 		     COALESCE_PENDING_LIMIT_UNIT);
+}
+
+static int set_coalesce(struct net_device *netdev,
+			struct ethtool_coalesce *coal, u16 queue)
+{
+	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic3_intr_coal_info intr_coal = {0};
+	u32 last_adaptive_rx;
+	int err = 0;
+
+	err = is_coalesce_legal(netdev, coal);
+	if (err)
+		return err;
+
+	check_coalesce_align(netdev, coal);
+
+	check_coalesce_change(netdev, queue,    coal);
+
+	init_intr_coal_params(&intr_coal, coal);
+
+	last_adaptive_rx = nic_dev->adaptive_rx_coal;
+	nic_dev->adaptive_rx_coal = coal->use_adaptive_rx_coalesce;
 
 	/* coalesce timer or pending set to zero will disable coalesce */
 	if (!nic_dev->adaptive_rx_coal &&
@@ -588,18 +634,28 @@ static int set_coalesce(struct net_device *netdev,
 	return set_hw_coal_param(nic_dev, &intr_coal, queue);
 }
 
+#ifdef HAVE_ETHTOOL_COALESCE_EXTACK
 static int hinic3_get_coalesce(struct net_device *netdev,
 			       struct ethtool_coalesce *coal,
 			       struct kernel_ethtool_coalesce *kernel_coal,
 			       struct netlink_ext_ack *extack)
+#else
+static int hinic3_get_coalesce(struct net_device *netdev,
+			       struct ethtool_coalesce *coal)
+#endif
 {
 	return get_coalesce(netdev, coal, COALESCE_ALL_QUEUE);
 }
 
+#ifdef HAVE_ETHTOOL_COALESCE_EXTACK
 static int hinic3_set_coalesce(struct net_device *netdev,
 			       struct ethtool_coalesce *coal,
 			       struct kernel_ethtool_coalesce *kernel_coal,
 			       struct netlink_ext_ack *extack)
+#else
+static int hinic3_set_coalesce(struct net_device *netdev,
+			       struct ethtool_coalesce *coal)
+#endif
 {
 	return set_coalesce(netdev, coal, COALESCE_ALL_QUEUE);
 }
@@ -762,6 +818,14 @@ static int hinic3_get_module_info(struct net_device *netdev,
 		modinfo->type = ETH_MODULE_SFF_8636;
 		modinfo->eeprom_len = ETH_MODULE_SFF_8636_MAX_LEN;
 		break;
+	case MODULE_TYPE_DSFP:
+		modinfo->type = ETH_MODULE_SFF_8636;
+		modinfo->eeprom_len = ETH_MODULE_SFF_8636_MAX_LEN;
+		break;
+	case MODULE_TYPE_QSFP_CMIS:
+		modinfo->type = ETH_MODULE_SFF_8636;
+		modinfo->eeprom_len = ETH_MODULE_SFF_8636_MAX_LEN;
+		break;
 	default:
 		nicif_warn(nic_dev, drv, netdev,
 			   "Optical module unknown: 0x%x\n", sfp_type);
@@ -784,6 +848,9 @@ static int hinic3_get_module_eeprom(struct net_device *netdev,
 	memset(data, 0, ee->len);
 
 	err = hinic3_get_sfp_eeprom(nic_dev->hwdev, (u8 *)sfp_data, ee->len);
+	if (err == HINIC3_MGMT_CMD_UNSUPPORTED)
+		err = hinic3_get_tlv_xsfp_eeprom(nic_dev->hwdev, (u8 *)sfp_data, sizeof(sfp_data));
+
 	if (err)
 		return err;
 
@@ -814,7 +881,7 @@ static u32 hinic3_get_priv_flags(struct net_device *netdev)
 	return priv_flags;
 }
 
-int hinic3_set_rxq_recovery_flag(struct net_device *netdev, u32 priv_flags)
+static int hinic3_set_rxq_recovery_flag(struct net_device *netdev, u32 priv_flags)
 {
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
 
@@ -844,12 +911,14 @@ static int hinic3_set_symm_rss_flag(struct net_device *netdev, u32 priv_flags)
 
 	if (priv_flags & HINIC3_PRIV_FLAGS_SYMM_RSS) {
 		if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags)) {
-			nicif_err(nic_dev, drv, netdev, "Failed to open Symmetric RSS while DCB is enabled\n");
+			nicif_err(nic_dev, drv, netdev,
+				  "Failed to open Symmetric RSS while DCB is enabled\n");
 			return -EOPNOTSUPP;
 		}
 
 		if (!test_bit(HINIC3_RSS_ENABLE, &nic_dev->flags)) {
-			nicif_err(nic_dev, drv, netdev, "Failed to open Symmetric RSS while RSS is disabled\n");
+			nicif_err(nic_dev, drv, netdev,
+				  "Failed to open Symmetric RSS while RSS is disabled\n");
 			return -EOPNOTSUPP;
 		}
 
@@ -1129,10 +1198,61 @@ static void hinic3_diag_test(struct net_device *netdev,
 	hinic3_lp_test(netdev, eth_test, data, 0);
 }
 
+#if defined(ETHTOOL_GFECPARAM) && defined(ETHTOOL_SFECPARAM)
+static int hinic3_get_fecparam(struct net_device *netdev, struct ethtool_fecparam *fecparam)
+{
+	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
+	u8 advertised_fec = 0;
+	u8 supported_fec = 0;
+	int err;
+
+	if (fecparam->cmd != ETHTOOL_GFECPARAM) {
+		nicif_err(nic_dev, drv, netdev,
+			  "get fecparam cmd err.exp:0x%x,real:0x%x\n",
+			  ETHTOOL_GFECPARAM, fecparam->cmd);
+		return -EINVAL;
+	}
+
+	err = get_fecparam(nic_dev->hwdev, &advertised_fec, &supported_fec);
+	if (err) {
+		nicif_err(nic_dev, drv, netdev, "Get fec param failed\n");
+		return err;
+	}
+	fecparam->active_fec = (u32)advertised_fec;
+	fecparam->fec = (u32)supported_fec;
+
+	nicif_info(nic_dev, drv, netdev, "Get fec param success\n");
+	return 0;
+}
+
+static int hinic3_set_fecparam(struct net_device *netdev, struct ethtool_fecparam *fecparam)
+{
+	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
+	int err;
+
+	if (fecparam->cmd != ETHTOOL_SFECPARAM) {
+		nicif_err(nic_dev, drv, netdev, "Set fecparam cmd err.exp:0x%x,real:0x%x\n", ETHTOOL_SFECPARAM, fecparam->cmd);
+		return -EINVAL;
+	}
+
+	err = set_fecparam(nic_dev->hwdev, (u8)fecparam->fec);
+	if (err) {
+		nicif_err(nic_dev, drv, netdev, "Set fec param failed\n");
+		return err;
+	}
+
+	nicif_info(nic_dev, drv, netdev, "Set fec param success\n");
+	return 0;
+}
+#endif
+
 static const struct ethtool_ops hinic3_ethtool_ops = {
 #ifdef SUPPORTED_COALESCE_PARAMS
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
-				     ETHTOOL_COALESCE_PKT_RATE_RX_USECS,
+				     ETHTOOL_COALESCE_PKT_RATE_RX_USECS |
+				     ETHTOOL_COALESCE_MAX_FRAMES |
+				     ETHTOOL_COALESCE_USECS_LOW_HIGH |
+				     ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH,
 #endif
 #ifdef ETHTOOL_GLINKSETTINGS
 #ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
@@ -1177,6 +1297,11 @@ static const struct ethtool_ops hinic3_ethtool_ops = {
 #if defined(ETHTOOL_PERQUEUE) && defined(ETHTOOL_GCOALESCE)
 	.get_per_queue_coalesce = hinic3_get_per_queue_coalesce,
 	.set_per_queue_coalesce = hinic3_set_per_queue_coalesce,
+#endif
+
+#if defined(ETHTOOL_GFECPARAM) && defined(ETHTOOL_SFECPARAM)
+	.get_fecparam = hinic3_get_fecparam,
+	.set_fecparam = hinic3_set_fecparam,
 #endif
 
 	.get_rxnfc = hinic3_get_rxnfc,
@@ -1239,7 +1364,10 @@ static const struct ethtool_ops_ext hinic3_ethtool_ops_ext = {
 static const struct ethtool_ops hinic3vf_ethtool_ops = {
 #ifdef SUPPORTED_COALESCE_PARAMS
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
-				     ETHTOOL_COALESCE_PKT_RATE_RX_USECS,
+				     ETHTOOL_COALESCE_PKT_RATE_RX_USECS |
+				     ETHTOOL_COALESCE_MAX_FRAMES |
+				     ETHTOOL_COALESCE_USECS_LOW_HIGH |
+				     ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH,
 #endif
 #ifdef ETHTOOL_GLINKSETTINGS
 #ifndef XENSERVER_HAVE_NEW_ETHTOOL_OPS
@@ -1264,6 +1392,11 @@ static const struct ethtool_ops hinic3vf_ethtool_ops = {
 #if defined(ETHTOOL_PERQUEUE) && defined(ETHTOOL_GCOALESCE)
 	.get_per_queue_coalesce = hinic3_get_per_queue_coalesce,
 	.set_per_queue_coalesce = hinic3_set_per_queue_coalesce,
+#endif
+
+#if defined(ETHTOOL_GFECPARAM) && defined(ETHTOOL_SFECPARAM)
+	.get_fecparam = hinic3_get_fecparam,
+	.set_fecparam = hinic3_set_fecparam,
 #endif
 
 	.get_rxnfc = hinic3_get_rxnfc,

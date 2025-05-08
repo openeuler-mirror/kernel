@@ -15,6 +15,9 @@
 #include <linux/ip.h>
 
 #include "ossl_knl.h"
+#if defined(HAVE_NDO_UDP_TUNNEL_ADD) || defined(HAVE_UDP_TUNNEL_NIC_INFO)
+#include <net/udp_tunnel.h>
+#endif /* HAVE_NDO_UDP_TUNNEL_ADD || HAVE_UDP_TUNNEL_NIC_INFO */
 #ifdef HAVE_XDP_SUPPORT
 #include <linux/bpf.h>
 #endif
@@ -27,6 +30,10 @@
 #include "hinic3_rx.h"
 #include "hinic3_dcb.h"
 #include "hinic3_nic_prof.h"
+
+#include "nic_npu_cmd.h"
+
+#include "vram_common.h"
 
 #define HINIC3_DEFAULT_RX_CSUM_OFFLOAD	0xFFF
 
@@ -47,8 +54,64 @@ static void hinic3_nic_set_rx_mode(struct net_device *netdev)
 	queue_work(nic_dev->workq, &nic_dev->rx_mode_work);
 }
 
+static void hinic3_free_irq_vram(struct hinic3_nic_dev *nic_dev, struct hinic3_dyna_txrxq_params *in_q_params)
+{
+	u32 size;
+	int is_use_vram = get_use_vram_flag();
+	struct hinic3_dyna_txrxq_params q_params = nic_dev->q_params;
+
+	if (q_params.irq_cfg == NULL)
+		return;
+
+	size = sizeof(struct hinic3_irq) * (q_params.num_qps);
+
+	if (is_use_vram != 0) {
+		hi_vram_kfree((void *)q_params.irq_cfg, q_params.irq_cfg_vram_name, size);
+		q_params.irq_cfg = NULL;
+	} else {
+		kfree(in_q_params->irq_cfg);
+		in_q_params->irq_cfg = NULL;
+	}
+}
+
+static int hinic3_alloc_irq_vram(struct hinic3_nic_dev *nic_dev,
+	struct hinic3_dyna_txrxq_params *q_params, bool is_up_eth)
+{
+	u32 size;
+	int is_use_vram = get_use_vram_flag();
+	u16 func_id;
+
+	size = sizeof(struct hinic3_irq) * q_params->num_qps;
+
+	if (is_use_vram != 0) {
+		func_id = hinic3_global_func_id(nic_dev->hwdev);
+		snprintf(q_params->irq_cfg_vram_name,
+			       VRAM_NAME_MAX_LEN, "%s%u",
+			       VRAM_NIC_IRQ_VRAM, func_id);
+		q_params->irq_cfg = (struct hinic3_irq *)hi_vram_kalloc(
+			q_params->irq_cfg_vram_name, size);
+		if (q_params->irq_cfg == NULL) {
+			nicif_err(nic_dev, drv, nic_dev->netdev, "NIC irq vram alloc failed.\n");
+			return -ENOMEM;
+		}
+		/* in order to clear napi stored in vram, irq need to init when eth up */
+		if (is_up_eth) {
+			memset(q_params->irq_cfg, 0, size);
+		}
+	} else {
+		q_params->irq_cfg = kzalloc(size, GFP_KERNEL);
+		if (q_params->irq_cfg == NULL) {
+			nicif_err(nic_dev, drv, nic_dev->netdev, "NIC irq alloc failed.\n");
+			return -ENOMEM;
+		}
+	}
+
+	return 0;
+}
+
 static int hinic3_alloc_txrxq_resources(struct hinic3_nic_dev *nic_dev,
-					struct hinic3_dyna_txrxq_params *q_params)
+				struct hinic3_dyna_txrxq_params *q_params,
+				bool is_up_eth)
 {
 	u32 size;
 	int err;
@@ -70,12 +133,9 @@ static int hinic3_alloc_txrxq_resources(struct hinic3_nic_dev *nic_dev,
 		goto alloc_rxqs_res_arr_err;
 	}
 
-	size = sizeof(*q_params->irq_cfg) * q_params->num_qps;
-	q_params->irq_cfg = kzalloc(size, GFP_KERNEL);
-	if (!q_params->irq_cfg) {
-		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Failed to alloc irq resource array\n");
-		err = -ENOMEM;
+	err = hinic3_alloc_irq_vram(nic_dev, q_params, is_up_eth);
+	if  (err != 0) {
+		nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to alloc irq resource array\n");
 		goto alloc_irq_cfg_err;
 	}
 
@@ -102,8 +162,7 @@ alloc_rxqs_res_err:
 			     q_params->txqs_res);
 
 alloc_txqs_res_err:
-	kfree(q_params->irq_cfg);
-	q_params->irq_cfg = NULL;
+	hinic3_free_irq_vram(nic_dev, q_params);
 
 alloc_irq_cfg_err:
 	kfree(q_params->rxqs_res);
@@ -119,13 +178,14 @@ alloc_rxqs_res_arr_err:
 static void hinic3_free_txrxq_resources(struct hinic3_nic_dev *nic_dev,
 					struct hinic3_dyna_txrxq_params *q_params)
 {
+	int is_in_kexec = vram_get_kexec_flag();
 	hinic3_free_rxqs_res(nic_dev, q_params->num_qps, q_params->rq_depth,
 			     q_params->rxqs_res);
 	hinic3_free_txqs_res(nic_dev, q_params->num_qps, q_params->sq_depth,
 			     q_params->txqs_res);
 
-	kfree(q_params->irq_cfg);
-	q_params->irq_cfg = NULL;
+	if (is_in_kexec == 0)
+		hinic3_free_irq_vram(nic_dev, q_params);
 
 	kfree(q_params->rxqs_res);
 	q_params->rxqs_res = NULL;
@@ -161,6 +221,7 @@ static int hinic3_configure_txrxqs(struct hinic3_nic_dev *nic_dev,
 static void config_dcb_qps_map(struct hinic3_nic_dev *nic_dev)
 {
 	struct net_device *netdev = nic_dev->netdev;
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	u8 num_cos;
 
 	if (!test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags)) {
@@ -171,12 +232,13 @@ static void config_dcb_qps_map(struct hinic3_nic_dev *nic_dev)
 	num_cos = hinic3_get_dev_user_cos_num(nic_dev);
 	hinic3_update_qp_cos_cfg(nic_dev, num_cos);
 	/* For now, we don't support to change num_cos */
-	if (num_cos > nic_dev->cos_config_num_max ||
+	if (num_cos > dcb->cos_config_num_max ||
 	    nic_dev->q_params.num_qps < num_cos) {
 		nicif_err(nic_dev, drv, netdev, "Invalid num_cos: %u or num_qps: %u, disable DCB\n",
 			  num_cos, nic_dev->q_params.num_qps);
 		nic_dev->q_params.num_cos = 0;
 		clear_bit(HINIC3_DCB_ENABLE, &nic_dev->flags);
+		clear_bit(HINIC3_DCB_ENABLE, &nic_dev->nic_vram->flags);
 		/* if we can't enable rss or get enough num_qps,
 		 * need to sync default configure to hw
 		 */
@@ -190,11 +252,14 @@ static int hinic3_configure(struct hinic3_nic_dev *nic_dev)
 {
 	struct net_device *netdev = nic_dev->netdev;
 	int err;
+	int is_in_kexec = vram_get_kexec_flag();
 
-	err = hinic3_set_port_mtu(nic_dev->hwdev, (u16)netdev->mtu);
-	if (err) {
-		nicif_err(nic_dev, drv, netdev, "Failed to set mtu\n");
-		return err;
+	if (is_in_kexec == 0) {
+		err = hinic3_set_port_mtu(nic_dev->hwdev, (u16)netdev->mtu);
+		if (err != 0) {
+			nicif_err(nic_dev, drv, netdev, "Failed to set mtu\n");
+			return err;
+		}
 	}
 
 	config_dcb_qps_map(nic_dev);
@@ -256,10 +321,11 @@ static void config_dcb_num_qps(struct hinic3_nic_dev *nic_dev,
 			       const struct hinic3_dyna_txrxq_params *q_params,
 			       u16 max_qps)
 {
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	u8 num_cos = q_params->num_cos;
 	u8 user_cos_num = hinic3_get_dev_user_cos_num(nic_dev);
 
-	if (!num_cos || num_cos > nic_dev->cos_config_num_max || num_cos > max_qps)
+	if (!num_cos || num_cos > dcb->cos_config_num_max || num_cos > max_qps)
 		return; /* will disable DCB in config_dcb_qps_map() */
 
 	hinic3_update_qp_cos_cfg(nic_dev, user_cos_num);
@@ -334,57 +400,10 @@ static void hinic3_destroy_num_qps(struct hinic3_nic_dev *nic_dev)
 	kfree(nic_dev->qps_irq_info);
 }
 
-int hinic3_force_port_disable(struct hinic3_nic_dev *nic_dev)
-{
-	int err;
-
-	down(&nic_dev->port_state_sem);
-
-	err = hinic3_set_port_enable(nic_dev->hwdev, false, HINIC3_CHANNEL_NIC);
-	if (!err)
-		nic_dev->force_port_disable = true;
-
-	up(&nic_dev->port_state_sem);
-
-	return err;
-}
-
-int hinic3_force_set_port_state(struct hinic3_nic_dev *nic_dev, bool enable)
-{
-	int err = 0;
-
-	down(&nic_dev->port_state_sem);
-
-	nic_dev->force_port_disable = false;
-	err = hinic3_set_port_enable(nic_dev->hwdev, enable,
-				     HINIC3_CHANNEL_NIC);
-
-	up(&nic_dev->port_state_sem);
-
-	return err;
-}
-
 int hinic3_maybe_set_port_state(struct hinic3_nic_dev *nic_dev, bool enable)
 {
-	int err;
-
-	down(&nic_dev->port_state_sem);
-
-	/* Do nothing when force disable
-	 * Port will disable when call force port disable
-	 * and should not enable port when in force mode
-	 */
-	if (nic_dev->force_port_disable) {
-		up(&nic_dev->port_state_sem);
-		return 0;
-	}
-
-	err = hinic3_set_port_enable(nic_dev->hwdev, enable,
+	return hinic3_set_port_enable(nic_dev->hwdev, enable,
 				     HINIC3_CHANNEL_NIC);
-
-	up(&nic_dev->port_state_sem);
-
-	return err;
 }
 
 static void hinic3_print_link_message(struct hinic3_nic_dev *nic_dev,
@@ -401,7 +420,8 @@ static void hinic3_print_link_message(struct hinic3_nic_dev *nic_dev,
 
 static int hinic3_alloc_channel_resources(struct hinic3_nic_dev *nic_dev,
 					  struct hinic3_dyna_qp_params *qp_params,
-					  struct hinic3_dyna_txrxq_params *trxq_params)
+					  struct hinic3_dyna_txrxq_params *trxq_params,
+					  bool is_up_eth)
 {
 	int err;
 
@@ -416,7 +436,7 @@ static int hinic3_alloc_channel_resources(struct hinic3_nic_dev *nic_dev,
 		return err;
 	}
 
-	err = hinic3_alloc_txrxq_resources(nic_dev, trxq_params);
+	err = hinic3_alloc_txrxq_resources(nic_dev, trxq_params, is_up_eth);
 	if (err) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to alloc txrxq resources\n");
 		hinic3_free_qps(nic_dev->hwdev, qp_params);
@@ -544,9 +564,53 @@ vport_enable_err:
 	return err;
 }
 
+static int hinic3_flush_rq_and_check(struct hinic3_nic_dev *nic_dev,
+				     u16 glb_func_id)
+{
+	struct hinic3_flush_rq *rq_flush_msg = NULL;
+	struct hinic3_cmd_buf *cmd_buf = NULL;
+	int out_buf_len = sizeof(struct hinic3_flush_rq);
+	u16 rq_id;
+	u64 out_param = 0;
+	int ret;
+
+	cmd_buf = hinic3_alloc_cmd_buf(nic_dev->hwdev);
+	if (!cmd_buf) {
+		nic_err(&nic_dev->pdev->dev, "Failed to allocate cmd buf\n");
+		return -ENOMEM;
+	}
+
+	cmd_buf->size = sizeof(struct hinic3_flush_rq);
+	rq_flush_msg = (struct hinic3_flush_rq *)cmd_buf->buf;
+	rq_flush_msg->dw.bs.func_id = glb_func_id;
+	for (rq_id = 0; rq_id < nic_dev->q_params.num_qps; rq_id++) {
+		rq_flush_msg->dw.bs.rq_id = rq_id;
+		hinic3_cpu_to_be32(rq_flush_msg, out_buf_len);
+		ret = hinic3_cmdq_direct_resp(nic_dev->hwdev, HINIC3_MOD_L2NIC,
+					      HINIC3_UCODE_CHK_RQ_STOP,
+					      cmd_buf, &out_param, 0,
+					      HINIC3_CHANNEL_NIC);
+		if (ret != 0 || out_param != 0) {
+			nic_err(&nic_dev->pdev->dev, "Failed to flush rq, ret:%d, func:%u, rq:%u\n",
+				ret, glb_func_id, rq_id);
+			goto err;
+		}
+		hinic3_be32_to_cpu(rq_flush_msg, out_buf_len);
+	}
+
+	nic_info(&nic_dev->pdev->dev, "Func:%u rq_num:%u flush rq success\n",
+		 glb_func_id, nic_dev->q_params.num_qps);
+	hinic3_free_cmd_buf(nic_dev->hwdev, cmd_buf);
+	return 0;
+err:
+	hinic3_free_cmd_buf(nic_dev->hwdev, cmd_buf);
+	return -1;
+}
+
 void hinic3_vport_down(struct hinic3_nic_dev *nic_dev)
 {
 	u16 glb_func_id;
+	int is_in_kexec = vram_get_kexec_flag();
 
 	netif_carrier_off(nic_dev->netdev);
 	netif_tx_disable(nic_dev->netdev);
@@ -559,18 +623,21 @@ void hinic3_vport_down(struct hinic3_nic_dev *nic_dev)
 		if (!HINIC3_FUNC_IS_VF(nic_dev->hwdev))
 			hinic3_notify_all_vfs_link_changed(nic_dev->hwdev, 0);
 
-		hinic3_maybe_set_port_state(nic_dev, false);
+		if (is_in_kexec != 0)
+			nicif_info(nic_dev, drv, nic_dev->netdev, "Skip changing mag status!\n");
+		else
+			hinic3_maybe_set_port_state(nic_dev, false);
 
 		glb_func_id = hinic3_global_func_id(nic_dev->hwdev);
 		hinic3_set_vport_enable(nic_dev->hwdev, glb_func_id, false,
 					HINIC3_CHANNEL_NIC);
 
 		hinic3_flush_txqs(nic_dev->netdev);
-		/* After set vport disable 100ms,
-		 * no packets will be send to host
-		 * FPGA set 2000ms
-		 */
-		msleep(HINIC3_WAIT_FLUSH_QP_RESOURCE_TIMEOUT);
+		if (is_in_kexec == 0) {
+			msleep(HINIC3_WAIT_FLUSH_QP_RESOURCE_TIMEOUT);
+		} else {
+			(void)hinic3_flush_rq_and_check(nic_dev, glb_func_id);
+		}
 		hinic3_flush_qps_res(nic_dev->hwdev);
 	}
 }
@@ -583,11 +650,12 @@ int hinic3_change_channel_settings(struct hinic3_nic_dev *nic_dev,
 	struct hinic3_dyna_qp_params new_qp_params = {0};
 	struct hinic3_dyna_qp_params cur_qp_params = {0};
 	int err;
+	bool is_free_resources = false;
 
 	hinic3_config_num_qps(nic_dev, trxq_params);
 
 	err = hinic3_alloc_channel_resources(nic_dev, &new_qp_params,
-					     trxq_params);
+					     trxq_params, false);
 	if (err) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Failed to alloc channel resources\n");
@@ -599,10 +667,19 @@ int hinic3_change_channel_settings(struct hinic3_nic_dev *nic_dev,
 		hinic3_close_channel(nic_dev, &cur_qp_params);
 		hinic3_free_channel_resources(nic_dev, &cur_qp_params,
 					      &nic_dev->q_params);
+		is_free_resources = true;
 	}
 
 	if (nic_dev->num_qp_irq > trxq_params->num_qps)
 		hinic3_qp_irq_change(nic_dev, trxq_params->num_qps);
+
+	if (is_free_resources) {
+		err = hinic3_alloc_irq_vram(nic_dev, trxq_params, false);
+		if (err != 0) {
+			nicif_err(nic_dev, drv, nic_dev->netdev, "Change chl alloc irq failed\n");
+			goto alloc_irq_err;
+		}
+	}
 	nic_dev->q_params = *trxq_params;
 
 	if (reopen_handler)
@@ -623,7 +700,7 @@ int hinic3_change_channel_settings(struct hinic3_nic_dev *nic_dev,
 
 vport_up_err:
 	hinic3_close_channel(nic_dev, &new_qp_params);
-
+alloc_irq_err:
 open_channel_err:
 	hinic3_free_channel_resources(nic_dev, &new_qp_params, trxq_params);
 
@@ -654,7 +731,7 @@ int hinic3_open(struct net_device *netdev)
 	}
 
 	err = hinic3_alloc_channel_resources(nic_dev, &qp_params,
-					     &nic_dev->q_params);
+					     &nic_dev->q_params, true);
 	if (err)
 		goto alloc_channel_res_err;
 
@@ -693,12 +770,31 @@ setup_qps_err:
 	return err;
 }
 
+static void hinic3_delete_napi(struct hinic3_nic_dev *nic_dev)
+{
+	u16 q_id;
+	int is_in_kexec = vram_get_kexec_flag();
+	struct hinic3_irq *irq_cfg = NULL;
+
+	if (is_in_kexec == 0 || nic_dev->q_params.irq_cfg == NULL)
+		return;
+
+	for (q_id = 0; q_id < nic_dev->q_params.num_qps; q_id++) {
+		irq_cfg = &(nic_dev->q_params.irq_cfg[q_id]);
+		qp_del_napi(irq_cfg);
+	}
+
+	hinic3_free_irq_vram(nic_dev, &nic_dev->q_params);
+}
+
 int hinic3_close(struct net_device *netdev)
 {
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
 	struct hinic3_dyna_qp_params qp_params = {0};
 
 	if (!test_and_clear_bit(HINIC3_INTF_UP, &nic_dev->flags)) {
+		/* delete napi in os hotreplace rollback */
+		hinic3_delete_napi(nic_dev);
 		nicif_info(nic_dev, drv, netdev, "Netdev already close, do nothing\n");
 		return 0;
 	}
@@ -835,6 +931,7 @@ static u16 select_queue_by_hash_func(struct net_device *dev, struct sk_buff *skb
 #define GET_DSCP_PRI_OFFSET 2
 static u8 hinic3_get_dscp_up(struct hinic3_nic_dev *nic_dev, struct sk_buff *skb)
 {
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	int dscp_cp;
 
 	if (skb->protocol == htons(ETH_P_IP))
@@ -842,8 +939,8 @@ static u8 hinic3_get_dscp_up(struct hinic3_nic_dev *nic_dev, struct sk_buff *skb
 	else if (skb->protocol == htons(ETH_P_IPV6))
 		dscp_cp = ipv6_get_dsfield(ipv6_hdr(skb)) >> GET_DSCP_PRI_OFFSET;
 	else
-		return nic_dev->hw_dcb_cfg.default_cos;
-	return nic_dev->hw_dcb_cfg.dscp2cos[dscp_cp];
+		return dcb->hw_dcb_cfg.default_cos;
+	return dcb->hw_dcb_cfg.dscp2cos[dscp_cp];
 }
 
 #if defined(HAVE_NDO_SELECT_QUEUE_SB_DEV_ONLY)
@@ -869,6 +966,7 @@ static u16 hinic3_select_queue(struct net_device *netdev, struct sk_buff *skb)
 #endif /* end of HAVE_NDO_SELECT_QUEUE_ACCEL_FALLBACK */
 {
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	u16 txq;
 	u8 cos, qp_num;
 
@@ -889,18 +987,19 @@ static u16 hinic3_select_queue(struct net_device *netdev, struct sk_buff *skb)
 #endif
 
 	if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags)) {
-		if (nic_dev->hw_dcb_cfg.trust == DCB_PCP) {
+		if (dcb->hw_dcb_cfg.trust == HINIC3_DCB_PCP) {
 			if (skb->vlan_tci)
-				cos = nic_dev->hw_dcb_cfg.pcp2cos[skb->vlan_tci >> VLAN_PRIO_SHIFT];
+				cos = dcb->hw_dcb_cfg.pcp2cos[skb->vlan_tci >>
+							      VLAN_PRIO_SHIFT];
 			else
-				cos = nic_dev->hw_dcb_cfg.default_cos;
+				cos = dcb->hw_dcb_cfg.default_cos;
 		} else {
 			cos = hinic3_get_dscp_up(nic_dev, skb);
 		}
 
-		qp_num = nic_dev->hw_dcb_cfg.cos_qp_num[cos] ?
-			txq % nic_dev->hw_dcb_cfg.cos_qp_num[cos] : 0;
-		txq = nic_dev->hw_dcb_cfg.cos_qp_offset[cos] + qp_num;
+		qp_num = dcb->hw_dcb_cfg.cos_qp_num[cos] ?
+			txq % dcb->hw_dcb_cfg.cos_qp_num[cos] : 0;
+		txq = dcb->hw_dcb_cfg.cos_qp_offset[cos] + qp_num;
 	}
 
 	return txq;
@@ -978,7 +1077,7 @@ static struct net_device_stats *hinic3_get_stats(struct net_device *netdev)
 	stats->rx_packets = packets;
 	stats->rx_bytes   = bytes;
 	stats->rx_errors  = errors;
-	stats->rx_dropped = dropped;
+	stats->rx_dropped = dropped + nic_dev->vport_stats.rx_discard_vport;
 
 #ifndef HAVE_VOID_NDO_GET_STATS64
 	return stats;
@@ -1025,10 +1124,17 @@ static int hinic3_change_mtu(struct net_device *netdev, int new_mtu)
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
 	u32 mtu = (u32)new_mtu;
 	int err = 0;
-
+	int is_in_kexec = vram_get_kexec_flag();
 #ifdef HAVE_XDP_SUPPORT
 	u32 xdp_max_mtu;
+#endif
 
+	if (is_in_kexec != 0) {
+		nicif_info(nic_dev, drv, netdev, "Hotreplace skip change mtu\n");
+		return err;
+	}
+
+#ifdef HAVE_XDP_SUPPORT
 	if (hinic3_is_xdp_enable(nic_dev)) {
 		xdp_max_mtu = hinic3_xdp_max_mtu(nic_dev);
 		if (mtu > xdp_max_mtu) {
@@ -1047,6 +1153,7 @@ static int hinic3_change_mtu(struct net_device *netdev, int new_mtu)
 		nicif_info(nic_dev, drv, nic_dev->netdev, "Change mtu from %u to %d\n",
 			   netdev->mtu, new_mtu);
 		netdev->mtu = mtu;
+		nic_dev->nic_vram->vram_mtu = mtu;
 	}
 
 	return err;
@@ -1079,6 +1186,71 @@ static int hinic3_set_mac_addr(struct net_device *netdev, void *addr)
 
 	return 0;
 }
+
+#if defined(HAVE_NDO_UDP_TUNNEL_ADD) || defined(HAVE_UDP_TUNNEL_NIC_INFO)
+static int hinic3_udp_tunnel_port_config(struct net_device *netdev,
+					 struct udp_tunnel_info *ti,
+					 u8 action)
+{
+	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
+	u16 func_id = hinic3_global_func_id(nic_dev->hwdev);
+	u16 dst_port;
+	int ret = 0;
+
+	switch (ti->type) {
+	case UDP_TUNNEL_TYPE_VXLAN:
+		dst_port = ntohs(ti->port);
+		ret = hinic3_vlxan_port_config(nic_dev->hwdev, func_id,
+					       dst_port, action);
+		if (ret != 0) {
+			nicif_warn(nic_dev, drv, netdev,
+				  "Failed to set vxlan port %u to device(%d)\n",
+				  dst_port, ret);
+			break;
+		}
+		nicif_info(nic_dev, link, netdev, "Vxlan dst port set to %u\n",
+			   action == HINIC3_CMD_OP_ADD ?
+			   dst_port : ntohs(VXLAN_OFFLOAD_PORT_LE));
+			break;
+	default:
+		nicif_err(nic_dev, drv, netdev,
+			  "Failed to add port, only vxlan dst port is supported\n");
+		ret = -EINVAL;
+	}
+	return ret;
+}
+#endif /* HAVE_NDO_UDP_TUNNEL_ADD || HAVE_UDP_TUNNEL_NIC_INFO */
+#ifdef HAVE_NDO_UDP_TUNNEL_ADD
+static void hinic3_udp_tunnel_add(struct net_device *netdev, struct udp_tunnel_info *ti)
+{
+	if (ti->sa_family != AF_INET && ti->sa_family != AF_INET6)
+		return;
+
+	hinic3_udp_tunnel_port_config(netdev, ti, HINIC3_CMD_OP_ADD);
+}
+
+static void hinic3_udp_tunnel_del(struct net_device *netdev, struct udp_tunnel_info *ti)
+{
+	if (ti->sa_family != AF_INET && ti->sa_family != AF_INET6)
+		return;
+
+	hinic3_udp_tunnel_port_config(netdev, ti, HINIC3_CMD_OP_DEL);
+}
+#endif /* HAVE_NDO_UDP_TUNNEL_ADD */
+
+#ifdef HAVE_UDP_TUNNEL_NIC_INFO
+int hinic3_udp_tunnel_set_port(struct net_device *netdev, __attribute__((unused)) unsigned int table,
+	__attribute__((unused))unsigned int entry, struct udp_tunnel_info *ti)
+{
+	return hinic3_udp_tunnel_port_config(netdev, ti, HINIC3_CMD_OP_ADD);
+}
+
+int hinic3_udp_tunnel_unset_port(struct net_device *netdev, __attribute__((unused)) unsigned int table,
+	__attribute__((unused)) unsigned int entry, struct udp_tunnel_info *ti)
+{
+	return hinic3_udp_tunnel_port_config(netdev, ti, HINIC3_CMD_OP_DEL);
+}
+#endif /* HAVE_UDP_TUNNEL_NIC_INFO */
 
 static int
 hinic3_vlan_rx_add_vid(struct net_device *netdev,
@@ -1126,7 +1298,7 @@ hinic3_vlan_rx_kill_vid(struct net_device *netdev,
 	int err = 0;
 
 	col  = VID_COL(nic_dev, vid);
-	line = VID_LINE(nic_dev, vid);
+	line = (int)VID_LINE(nic_dev, vid);
 
 	/* In the broadcast scenario, ucode finds the corresponding function
 	 * based on VLAN 0 of vlan table. If we delete VLAN 0, the VLAN function
@@ -1165,14 +1337,12 @@ static int hinic3_vlan_restore(struct net_device *netdev)
 		return -EFAULT;
 	rcu_read_lock();
 	for (i = 0; i < VLAN_N_VID; i++) {
-/* lint -e778 */
 #ifdef HAVE_VLAN_FIND_DEV_DEEP_RCU
 		vlandev =
 			__vlan_find_dev_deep_rcu(netdev, htons(ETH_P_8021Q), i);
 #else
 		vlandev = __vlan_find_dev_deep(netdev, htons(ETH_P_8021Q), i);
 #endif
-/* lint +e778 */
 		col = VID_COL(nic_dev, i);
 		line = VID_LINE(nic_dev, i);
 		if (!vlandev && (vlan_bitmap[line] & (1UL << col)) != 0) {
@@ -1330,12 +1500,17 @@ static int set_feature_vlan_filter(struct hinic3_nic_dev *nic_dev,
 		return 0;
 
 #ifdef NEED_VLAN_RESTORE
-	if (en)
+	if (en) {
 		err = hinic3_vlan_restore(nic_dev->netdev);
+		if (err) {
+			hinic3_err(nic_dev, drv, "vlan restore failed\n");
+			*failed_features |= vlan_filter_feature;
+			return err;
+		}
+	}
 #endif
 
-	if (err == 0)
-		err = hinic3_set_vlan_fliter(nic_dev->hwdev, en);
+	err = hinic3_set_vlan_fliter(nic_dev->hwdev, en);
 	if (err) {
 		hinic3_err(nic_dev, drv, "%s rx vlan filter failed\n",
 			   SET_FEATURES_OP_STR(en));
@@ -1429,8 +1604,8 @@ static int hinic3_ndo_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 	struct hinic3_nic_dev *adapter = netdev_priv(netdev);
 	int err;
 
-	if (is_multicast_ether_addr(mac) || /*lint !e574*/
-	    vf >= pci_num_vf(adapter->pdev)) /*lint !e574*/
+	if (is_multicast_ether_addr(mac) ||
+	    vf >= pci_num_vf(adapter->pdev))
 		return -EINVAL;
 
 	err = hinic3_set_vf_mac(adapter->hwdev, OS_VF_ID_TO_HW(vf), mac);
@@ -1448,7 +1623,6 @@ static int hinic3_ndo_set_vf_mac(struct net_device *netdev, int vf, u8 *mac)
 	return 0;
 }
 
-/*lint -save -e574 -e734*/
 #ifdef IFLA_VF_MAX
 static int set_hw_vf_vlan(void *hwdev, u16 cur_vlanprio, int vf,
 			  u16 vlan, u8 qos)
@@ -1670,7 +1844,7 @@ static int hinic3_ndo_set_vf_bw(struct net_device *netdev, int vf,
 		return -EIO;
 
 	/* rate limit cannot be less than 0 and greater than link speed */
-	if (max_tx_rate < 0 || max_tx_rate > speeds[port_info.speed]) {
+	if (max_tx_rate < 0 || max_tx_rate > (int)(speeds[port_info.speed])) {
 		nicif_err(adapter, drv, netdev, "Set vf max tx rate must be in [0 - %u]\n",
 			  speeds[port_info.speed]);
 		return -EINVAL;
@@ -1719,7 +1893,7 @@ static int hinic3_xdp_setup(struct hinic3_nic_dev *nic_dev,
 	int max_mtu = hinic3_xdp_max_mtu(nic_dev);
 	int q_id;
 
-	if (nic_dev->netdev->mtu > max_mtu) {
+	if (nic_dev->netdev->mtu > (u32)max_mtu) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Failed to setup xdp program, the current MTU %d is larger than max allowed MTU %d\n",
 			  nic_dev->netdev->mtu, max_mtu);
@@ -1844,6 +2018,10 @@ static const struct net_device_ops hinic3_netdev_ops = {
 	.ndo_xdp = hinic3_xdp,
 #endif
 #endif
+#ifdef HAVE_NDO_UDP_TUNNEL_ADD
+    .ndo_udp_tunnel_add = hinic3_udp_tunnel_add,
+    .ndo_udp_tunnel_del = hinic3_udp_tunnel_del,
+#endif /* HAVE_NDO_UDP_TUNNEL_ADD */
 #ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
 };
 

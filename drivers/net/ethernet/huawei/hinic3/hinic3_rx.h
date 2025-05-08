@@ -4,6 +4,9 @@
 #ifndef HINIC3_RX_H
 #define HINIC3_RX_H
 
+#ifdef HAVE_PAGE_POOL_SUPPORT
+#include <net/page_pool.h>
+#endif
 #include <linux/types.h>
 #include <linux/device.h>
 #include <linux/mm_types.h>
@@ -27,22 +30,22 @@
 #define HINIC3_RX_CSUM_IPSU_OTHER_ERR	BIT(8)
 
 #define HINIC3_HEADER_DATA_UNIT 2
+#define HINIC3_CQE_LEN 32
 
 struct hinic3_rxq_stats {
-	u64	packets;
-	u64	bytes;
-	u64	errors;
-	u64	csum_errors;
-	u64	other_errors;
-	u64	dropped;
-	u64	xdp_dropped;
-	u64	rx_buf_empty;
-
-	u64	alloc_skb_err;
-	u64	alloc_rx_buf_err;
-	u64	xdp_large_pkt;
-	u64	restore_drop_sge;
-	u64	rsvd2;
+	u64				packets;
+	u64				bytes;
+	u64				errors;
+	u64				csum_errors;
+	u64				other_errors;
+	u64				dropped;
+	u64				xdp_dropped;
+	u64				rx_buf_empty;
+	u64				alloc_skb_err;
+	u64				alloc_rx_buf_err;
+	u64				xdp_large_pkt;
+	u64				restore_drop_sge;
+	u64				rsvd2;
 #ifdef HAVE_NDO_GET_STATS64
 	struct u64_stats_sync		syncp;
 #else
@@ -56,6 +59,9 @@ struct hinic3_rx_info {
 	struct hinic3_rq_cqe	*cqe;
 	dma_addr_t		cqe_dma;
 	struct page		*page;
+#ifdef HAVE_PAGE_POOL_SUPPORT
+	struct page_pool *page_pool;
+#endif
 	u32			page_offset;
 	u32			rsvd1;
 	struct hinic3_rq_wqe	*rq_wqe;
@@ -96,7 +102,7 @@ struct hinic3_rxq {
 	u16			next_to_update;
 	struct device		*dev; /* device for DMA mapping */
 
-	unsigned long		status;
+	u64			status;
 	dma_addr_t		cqe_start_paddr;
 	void			*cqe_start_vaddr;
 
@@ -124,6 +130,9 @@ struct hinic3_dyna_rxq_res {
 	struct hinic3_rx_info	*rx_info;
 	dma_addr_t		cqe_start_paddr;
 	void			*cqe_start_vaddr;
+#ifdef HAVE_PAGE_POOL_SUPPORT
+	struct page_pool	*page_pool;
+#endif
 };
 
 int hinic3_alloc_rxqs(struct net_device *netdev);
