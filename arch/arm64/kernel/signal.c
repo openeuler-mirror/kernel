@@ -175,6 +175,7 @@ int restore_fpsimd_context(struct user_ctxs *user)
 		return err;
 
 	clear_thread_flag(TIF_SVE);
+	current->thread.svcr &= ~SVCR_SM_MASK;
 	current->thread.fp_type = FP_STATE_FPSIMD;
 
 	/* load the hardware registers from the fpsimd_state structure */
