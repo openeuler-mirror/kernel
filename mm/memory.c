@@ -2692,7 +2692,7 @@ static inline int cow_user_page(struct page *dst, struct page *src,
 	if (likely(src)) {
 		if (copy_user_highpage_mc(dst, src, addr, vma))
 			return -EHWPOISON;
-		return true;
+		return 0;
 	}
 
 	/*
@@ -2947,7 +2947,7 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 			goto oom;
 
 		err = cow_user_page(new_page, old_page, vmf);
-		if (!err || err == -EHWPOISON) {
+		if (err) {
 			/*
 			 * COW failed, if the fault was solved by other,
 			 * it's fine. If not, userspace would re-fault on
