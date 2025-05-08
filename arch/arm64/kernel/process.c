@@ -287,7 +287,14 @@ void arch_release_task_struct(struct task_struct *tsk)
 
 int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 {
-	fpsimd_preserve_current_state();
+	/*
+	 * The current/src task's FPSIMD state may or may not be live, and may
+	 * have been altered by ptrace after entry to the kernel. Save the
+	 * effective FPSIMD state so that this will be copied into dst.
+	 */
+	fpsimd_save_and_flush_current_state();
+	sve_sync_to_fpsimd(src);
+
 	*dst = *src;
 
 	/* We rely on the above assignment to initialize dst's thread_flags: */
