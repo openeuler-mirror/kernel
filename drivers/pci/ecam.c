@@ -80,7 +80,12 @@ struct pci_config_window *pci_ecam_create(struct device *dev,
 				goto err_exit_iomap;
 		}
 	} else {
+#if IS_ENABLED(CONFIG_SW64)
+		cfg->win = pci_remap_cfgspace(cfgres->start,
+				(unsigned long)bus_range * (unsigned long)bsz);
+#else
 		cfg->win = pci_remap_cfgspace(cfgres->start, bus_range * bsz);
+#endif
 		if (!cfg->win)
 			goto err_exit_iomap;
 	}
