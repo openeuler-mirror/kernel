@@ -82,6 +82,7 @@ struct hinic3_bond_cmd {
 	char bond_name[16];
 };
 
+bool hinic3_is_bond_dev_status_actived(struct net_device *ndev);
 void hinic3_bond_set_user_bitmap(struct bond_attr *attr, enum hinic3_bond_user user);
 int hinic3_bond_attach(const char *name, enum hinic3_bond_user user, u16 *bond_id);
 int hinic3_bond_detach(u16 bond_id, enum hinic3_bond_user user);

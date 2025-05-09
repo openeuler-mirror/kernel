@@ -20,6 +20,9 @@
 #include <linux/debugfs.h>
 
 #include "ossl_knl.h"
+#if defined(HAVE_NDO_UDP_TUNNEL_ADD) || defined(HAVE_UDP_TUNNEL_NIC_INFO)
+#include <net/udp_tunnel.h>
+#endif /* HAVE_NDO_UDP_TUNNEL_ADD || HAVE_UDP_TUNNEL_NIC_INFO */
 #include "hinic3_hw.h"
 #include "hinic3_crm.h"
 #include "hinic3_mt.h"
@@ -35,8 +38,8 @@
 #include "hinic3_dcb.h"
 #include "hinic3_nic_prof.h"
 #include "hinic3_profile.h"
+#include "hinic3_bond.h"
 
-/*lint -e806*/
 #define DEFAULT_POLL_WEIGHT	64
 static unsigned int poll_weight = DEFAULT_POLL_WEIGHT;
 module_param(poll_weight, uint, 0444);
@@ -68,7 +71,9 @@ static unsigned char set_link_status_follow = HINIC3_LINK_FOLLOW_STATUS_MAX;
 module_param(set_link_status_follow, byte, 0444);
 MODULE_PARM_DESC(set_link_status_follow, "Set link status follow port status (0=default,1=follow,2=separate,3=unset");
 
-/*lint +e806*/
+static bool page_pool_enabled = true;
+module_param(page_pool_enabled, bool, 0444);
+MODULE_PARM_DESC(page_pool_enabled, "enable/disable page_pool feature for rxq page management (default enable)");
 
 #define HINIC3_NIC_DEV_WQ_NAME		"hinic3_nic_dev_wq"
 
@@ -80,6 +85,8 @@ MODULE_PARM_DESC(set_link_status_follow, "Set link status follow port status (0=
 #define HINIC3_SQ_DEPTH			1024
 #define HINIC3_RQ_DEPTH			1024
 
+#define LRO_ENABLE			1
+
 enum hinic3_rx_buff_len {
 	RX_BUFF_VALID_2KB		= 2,
 	RX_BUFF_VALID_4KB		= 4,
@@ -88,6 +95,9 @@ enum hinic3_rx_buff_len {
 };
 
 #define CONVERT_UNIT			1024
+#define NIC_MAX_PF_NUM			32
+
+#define BIFUR_RESOURCE_PF_SSID		0x5a1
 
 #ifdef HAVE_MULTI_VLAN_OFFLOAD_EN
 static int hinic3_netdev_event(struct notifier_block *notifier, unsigned long event, void *ptr);
@@ -98,6 +108,17 @@ static int hinic3_netdev_notifiers_ref_cnt;
 static struct notifier_block hinic3_netdev_notifier = {
 	.notifier_call = hinic3_netdev_event,
 };
+
+#ifdef HAVE_UDP_TUNNEL_NIC_INFO
+static const struct udp_tunnel_nic_info hinic3_udp_tunnels = {
+	.set_port	= hinic3_udp_tunnel_set_port,
+	.unset_port	= hinic3_udp_tunnel_unset_port,
+	.flags		= UDP_TUNNEL_NIC_INFO_MAY_SLEEP,
+	.tables		= {
+		{ .n_entries = 1, .tunnel_types = UDP_TUNNEL_TYPE_VXLAN, },
+	},
+};
+#endif /* HAVE_UDP_TUNNEL_NIC_INFO */
 
 static void hinic3_register_notifier(struct hinic3_nic_dev *nic_dev)
 {
@@ -264,6 +285,11 @@ static void netdev_feature_init(struct net_device *netdev)
 	netdev->features |= dft_fts | cso_fts | tso_fts | vlan_fts;
 	netdev->vlan_features |= dft_fts | cso_fts | tso_fts;
 
+	if (nic_dev->nic_cap.lro_enable == LRO_ENABLE) {
+		netdev->features |= NETIF_F_LRO;
+		netdev->vlan_features |= NETIF_F_LRO;
+	}
+
 #ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
 	hw_features |= get_netdev_hw_features(netdev);
 #else
@@ -350,6 +376,7 @@ static int hinic3_init_intr_coalesce(struct hinic3_nic_dev *nic_dev)
 static void hinic3_free_intr_coalesce(struct hinic3_nic_dev *nic_dev)
 {
 	kfree(nic_dev->intr_coalesce);
+	nic_dev->intr_coalesce = NULL;
 }
 
 static int hinic3_alloc_txrxqs(struct hinic3_nic_dev *nic_dev)
@@ -404,8 +431,85 @@ static void hinic3_sw_deinit(struct hinic3_nic_dev *nic_dev)
 		       HINIC3_CHANNEL_NIC);
 
 	hinic3_clear_rss_config(nic_dev);
-	if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags))
-		hinic3_sync_dcb_state(nic_dev->hwdev, 1, 0);
+	hinic3_dcb_deinit(nic_dev);
+}
+
+static void hinic3_netdev_mtu_init(struct net_device *netdev)
+{
+	/* MTU range: 384 - 9600 */
+#ifdef HAVE_NETDEVICE_MIN_MAX_MTU
+	netdev->min_mtu = HINIC3_MIN_MTU_SIZE;
+	netdev->max_mtu = HINIC3_MAX_JUMBO_FRAME_SIZE;
+#endif
+
+#ifdef HAVE_NETDEVICE_EXTENDED_MIN_MAX_MTU
+	netdev->extended->min_mtu = HINIC3_MIN_MTU_SIZE;
+	netdev->extended->max_mtu = HINIC3_MAX_JUMBO_FRAME_SIZE;
+#endif
+}
+
+static int hinic3_set_default_mac(struct hinic3_nic_dev *nic_dev)
+{
+	struct net_device *netdev = nic_dev->netdev;
+	u8 mac_addr[ETH_ALEN];
+	int err = 0;
+
+	err = hinic3_get_default_mac(nic_dev->hwdev, mac_addr);
+	if (err) {
+		nic_err(&nic_dev->pdev->dev, "Failed to get MAC address\n");
+		return err;
+	}
+
+	ether_addr_copy(netdev->dev_addr, mac_addr);
+
+	if (!is_valid_ether_addr(netdev->dev_addr)) {
+		if (!HINIC3_FUNC_IS_VF(nic_dev->hwdev)) {
+			nic_err(&nic_dev->pdev->dev,
+				"Invalid MAC address %pM\n",
+				netdev->dev_addr);
+			return -EIO;
+		}
+
+		nic_info(&nic_dev->pdev->dev,
+			 "Invalid MAC address %pM, using random\n",
+			 netdev->dev_addr);
+		eth_hw_addr_random(netdev);
+	}
+
+	err = hinic3_set_mac(nic_dev->hwdev, netdev->dev_addr, 0,
+			     hinic3_global_func_id(nic_dev->hwdev),
+			     HINIC3_CHANNEL_NIC);
+	/* When this is VF driver, we must consider that PF has already set VF
+	* MAC, and we can't consider this condition is error status during
+	* driver probe procedure.
+	*/
+	if (err && err != HINIC3_PF_SET_VF_ALREADY) {
+		nic_err(&nic_dev->pdev->dev, "Failed to set default MAC\n");
+	}
+
+	if (err == HINIC3_PF_SET_VF_ALREADY)
+		return 0;
+
+	return err;
+}
+
+static void hinic3_outband_cfg_init(struct hinic3_nic_dev *nic_dev)
+{
+	u16 outband_default_vid = 0;
+	int err = 0;
+
+	if (!nic_dev->nic_cap.outband_vlan_cfg_en)
+		return;
+
+	err = hinic3_get_outband_vlan_cfg(nic_dev->hwdev, &outband_default_vid);
+	if (err) {
+		nic_err(&nic_dev->pdev->dev, "Failed to get_outband_cfg, err: %d\n", err);
+		return;
+	}
+
+	nic_dev->outband_cfg.outband_default_vid = outband_default_vid;
+
+	return;
 }
 
 static int hinic3_sw_init(struct hinic3_nic_dev *nic_dev)
@@ -421,8 +525,6 @@ static int hinic3_sw_init(struct hinic3_nic_dev *nic_dev)
 	nic_features &= NIC_DRV_DEFAULT_FEATURE;
 	hinic3_update_nic_feature(nic_dev->hwdev, nic_features);
 
-	sema_init(&nic_dev->port_state_sem, 1);
-
 	err = hinic3_dcb_init(nic_dev);
 	if (err) {
 		nic_err(&nic_dev->pdev->dev, "Failed to init dcb\n");
@@ -434,53 +536,20 @@ static int hinic3_sw_init(struct hinic3_nic_dev *nic_dev)
 
 	hinic3_try_to_enable_rss(nic_dev);
 
-	err = hinic3_get_default_mac(nic_dev->hwdev, netdev->dev_addr);
+	err = hinic3_set_default_mac(nic_dev);
 	if (err) {
-		nic_err(&nic_dev->pdev->dev, "Failed to get MAC address\n");
-		goto get_mac_err;
-	}
-
-	if (!is_valid_ether_addr(netdev->dev_addr)) {
-		if (!HINIC3_FUNC_IS_VF(nic_dev->hwdev)) {
-			nic_err(&nic_dev->pdev->dev, "Invalid MAC address %pM\n",
-				netdev->dev_addr);
-			err = -EIO;
-			goto err_mac;
-		}
-
-		nic_info(&nic_dev->pdev->dev, "Invalid MAC address %pM, using random\n",
-			 netdev->dev_addr);
-		eth_hw_addr_random(netdev);
-	}
-
-	err = hinic3_set_mac(nic_dev->hwdev, netdev->dev_addr, 0,
-			     hinic3_global_func_id(nic_dev->hwdev),
-			     HINIC3_CHANNEL_NIC);
-	/* When this is VF driver, we must consider that PF has already set VF
-	 * MAC, and we can't consider this condition is error status during
-	 * driver probe procedure.
-	 */
-	if (err && err != HINIC3_PF_SET_VF_ALREADY) {
-		nic_err(&nic_dev->pdev->dev, "Failed to set default MAC\n");
 		goto set_mac_err;
 	}
 
-	/* MTU range: 384 - 9600 */
-#ifdef HAVE_NETDEVICE_MIN_MAX_MTU
-	netdev->min_mtu = HINIC3_MIN_MTU_SIZE;
-	netdev->max_mtu = HINIC3_MAX_JUMBO_FRAME_SIZE;
-#endif
-
-#ifdef HAVE_NETDEVICE_EXTENDED_MIN_MAX_MTU
-	netdev->extended->min_mtu = HINIC3_MIN_MTU_SIZE;
-	netdev->extended->max_mtu = HINIC3_MAX_JUMBO_FRAME_SIZE;
-#endif
+	hinic3_netdev_mtu_init(netdev);
 
 	err = hinic3_alloc_txrxqs(nic_dev);
 	if (err) {
 		nic_err(&nic_dev->pdev->dev, "Failed to alloc qps\n");
 		goto alloc_qps_err;
 	}
+
+	hinic3_outband_cfg_init(nic_dev);
 
 	return 0;
 
@@ -490,8 +559,6 @@ alloc_qps_err:
 		       HINIC3_CHANNEL_NIC);
 
 set_mac_err:
-err_mac:
-get_mac_err:
 	hinic3_clear_rss_config(nic_dev);
 
 	return err;
@@ -690,20 +757,51 @@ static void hinic3_periodic_work_handler(struct work_struct *work)
 	queue_delayed_work(nic_dev->workq, &nic_dev->periodic_work, HZ);
 }
 
+static void hinic3_vport_stats_work_handler(struct work_struct *work)
+{
+	int err;
+	struct hinic3_vport_stats vport_stats = {0};
+	struct delayed_work *delay = to_delayed_work(work);
+	struct hinic3_nic_dev *nic_dev = container_of(delay, struct hinic3_nic_dev, vport_stats_work);
+	err = hinic3_get_vport_stats(nic_dev->hwdev, hinic3_global_func_id(nic_dev->hwdev), &vport_stats);
+	if (err)
+		nic_err(&nic_dev->pdev->dev, "Failed to get dropped stats from fw\n");
+	else
+		nic_dev->vport_stats.rx_discard_vport = vport_stats.rx_discard_vport;
+	queue_delayed_work(nic_dev->workq, &nic_dev->vport_stats_work, HZ);
+}
+
+static void free_nic_dev_vram(struct hinic3_nic_dev *nic_dev)
+{
+	int is_use_vram = get_use_vram_flag();
+	if (is_use_vram != 0)
+		hi_vram_kfree((void *)nic_dev->nic_vram, nic_dev->nic_vram_name,
+			sizeof(struct hinic3_vram));
+	else
+		kfree(nic_dev->nic_vram);
+	nic_dev->nic_vram = NULL;
+}
+
 static void free_nic_dev(struct hinic3_nic_dev *nic_dev)
 {
 	hinic3_deinit_nic_prof_adapter(nic_dev);
 	destroy_workqueue(nic_dev->workq);
 	kfree(nic_dev->vlan_bitmap);
+	nic_dev->vlan_bitmap = NULL;
+	free_nic_dev_vram(nic_dev);
 }
 
 static int setup_nic_dev(struct net_device *netdev,
 			 struct hinic3_lld_dev *lld_dev)
 {
 	struct pci_dev *pdev = lld_dev->pdev;
-	struct hinic3_nic_dev *nic_dev;
-	char *netdev_name_fmt;
+	struct hinic3_nic_dev *nic_dev = NULL;
+	char *netdev_name_fmt = NULL;
 	u32 page_num;
+	u16 func_id;
+	int ret;
+	int is_in_kexec = vram_get_kexec_flag();
+	int is_use_vram = get_use_vram_flag();
 
 	nic_dev = (struct hinic3_nic_dev *)netdev_priv(netdev);
 	nic_dev->netdev = netdev;
@@ -718,24 +816,65 @@ static int setup_nic_dev(struct net_device *netdev,
 	nic_dev->dma_rx_buff_size = RX_BUFF_NUM_PER_PAGE * nic_dev->rx_buff_len;
 	page_num = nic_dev->dma_rx_buff_size / PAGE_SIZE;
 	nic_dev->page_order = page_num > 0 ? ilog2(page_num) : 0;
+	nic_dev->page_pool_enabled = page_pool_enabled;
+	nic_dev->outband_cfg.outband_default_vid = 0;
+
+	// value other than 0 indicates hot replace
+	if (is_use_vram != 0) {
+		func_id = hinic3_global_func_id(nic_dev->hwdev);
+		ret = snprintf(nic_dev->nic_vram_name,
+				 VRAM_NAME_MAX_LEN,
+				 "%s%u", VRAM_NIC_VRAM, func_id);
+		if (ret < 0) {
+			nic_err(&pdev->dev, "NIC vram name snprintf failed, ret:%d.\n",
+				ret);
+			return -EINVAL;
+		}
+
+		nic_dev->nic_vram = (struct hinic3_vram *)hi_vram_kalloc(nic_dev->nic_vram_name,
+			sizeof(struct hinic3_vram));
+		if (!nic_dev->nic_vram) {
+			nic_err(&pdev->dev, "Failed to allocate nic vram\n");
+			return -ENOMEM;
+		}
+
+		if (is_in_kexec == 0)
+			nic_dev->nic_vram->vram_mtu = netdev->mtu;
+		else
+			netdev->mtu = nic_dev->nic_vram->vram_mtu;
+	} else {
+		nic_dev->nic_vram = kzalloc(sizeof(struct hinic3_vram),
+					    GFP_KERNEL);
+		if (!nic_dev->nic_vram) {
+			nic_err(&pdev->dev, "Failed to allocate nic vram\n");
+			return -ENOMEM;
+		}
+		nic_dev->nic_vram->vram_mtu = netdev->mtu;
+	}
 
 	mutex_init(&nic_dev->nic_mutex);
 
 	nic_dev->vlan_bitmap = kzalloc(VLAN_BITMAP_SIZE(nic_dev), GFP_KERNEL);
 	if (!nic_dev->vlan_bitmap) {
 		nic_err(&pdev->dev, "Failed to allocate vlan bitmap\n");
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto vlan_bitmap_error;
 	}
 
 	nic_dev->workq = create_singlethread_workqueue(HINIC3_NIC_DEV_WQ_NAME);
 	if (!nic_dev->workq) {
 		nic_err(&pdev->dev, "Failed to initialize nic workqueue\n");
-		kfree(nic_dev->vlan_bitmap);
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto create_workq_error;
 	}
 
-	INIT_DELAYED_WORK(&nic_dev->periodic_work, hinic3_periodic_work_handler);
-	INIT_DELAYED_WORK(&nic_dev->rxq_check_work, hinic3_rxq_check_work_handler);
+	INIT_DELAYED_WORK(&nic_dev->periodic_work,
+			  hinic3_periodic_work_handler);
+	INIT_DELAYED_WORK(&nic_dev->rxq_check_work,
+			  hinic3_rxq_check_work_handler);
+	if (!HINIC3_FUNC_IS_VF(nic_dev->hwdev))
+		INIT_DELAYED_WORK(&nic_dev->vport_stats_work,
+				  hinic3_vport_stats_work_handler);
 
 	INIT_LIST_HEAD(&nic_dev->uc_filter_list);
 	INIT_LIST_HEAD(&nic_dev->mc_filter_list);
@@ -748,10 +887,23 @@ static int setup_nic_dev(struct net_device *netdev,
 	hinic3_init_nic_prof_adapter(nic_dev);
 
 	netdev_name_fmt = hinic3_get_dft_netdev_name_fmt(nic_dev);
-	if (netdev_name_fmt)
-		strncpy(netdev->name, netdev_name_fmt, IFNAMSIZ);
+	if (netdev_name_fmt) {
+		ret = strscpy(netdev->name, netdev_name_fmt, IFNAMSIZ);
+		if (ret < 0)
+			goto get_netdev_name_error;
+	}
 
 	return 0;
+
+get_netdev_name_error:
+	hinic3_deinit_nic_prof_adapter(nic_dev);
+	destroy_workqueue(nic_dev->workq);
+create_workq_error:
+	kfree(nic_dev->vlan_bitmap);
+	nic_dev->vlan_bitmap = NULL;
+vlan_bitmap_error:
+	free_nic_dev_vram(nic_dev);
+	return ret;
 }
 
 static int hinic3_set_default_hw_feature(struct hinic3_nic_dev *nic_dev)
@@ -790,6 +942,32 @@ static int hinic3_set_default_hw_feature(struct hinic3_nic_dev *nic_dev)
 	return 0;
 }
 
+static void hinic3_bond_init(struct hinic3_nic_dev *nic_dev)
+{
+	u32 bond_id = HINIC3_INVALID_BOND_ID;
+	int err = hinic3_create_bond(nic_dev->hwdev, &bond_id);
+	if (err != 0) {
+		goto bond_init_failed;
+	}
+
+	/* bond id does not change, means this pf is not bond active pf, no log is generated */
+	if (bond_id == HINIC3_INVALID_BOND_ID) {
+		return;
+	}
+
+	err = hinic3_open_close_bond(nic_dev->hwdev, true);
+	if (err != 0) {
+		hinic3_delete_bond(nic_dev->hwdev);
+		goto bond_init_failed;
+	}
+
+	nic_info(&nic_dev->pdev->dev, "Bond %d init success\n", bond_id);
+	return;
+
+bond_init_failed:
+	nic_err(&nic_dev->pdev->dev, "Bond init failed\n");
+}
+
 static int nic_probe(struct hinic3_lld_dev *lld_dev, void **uld_dev,
 		     char *uld_dev_name)
 {
@@ -817,6 +995,12 @@ static int nic_probe(struct hinic3_lld_dev *lld_dev, void **uld_dev,
 				HINIC3_CHANNEL_NIC);
 	if (err) {
 		nic_err(&pdev->dev, "Failed to reset function\n");
+		goto err_out;
+	}
+
+	err = hinic3_get_dev_cap(lld_dev->hwdev);
+	if (err != 0) {
+		nic_err(&pdev->dev, "Failed to get dev cap\n");
 		goto err_out;
 	}
 
@@ -851,23 +1035,35 @@ static int nic_probe(struct hinic3_lld_dev *lld_dev, void **uld_dev,
 
 	hinic3_assign_netdev_ops(nic_dev);
 	netdev_feature_init(netdev);
-
+#ifdef HAVE_UDP_TUNNEL_NIC_INFO
+    netdev->udp_tunnel_nic_info = &hinic3_udp_tunnels;
+#endif /* HAVE_UDP_TUNNEL_NIC_INFO */
 	err = hinic3_set_default_hw_feature(nic_dev);
 	if (err)
 		goto set_features_err;
+
+	if (hinic3_get_bond_create_mode(lld_dev->hwdev) != 0) {
+		hinic3_bond_init(nic_dev);
+	}
 
 #ifdef HAVE_MULTI_VLAN_OFFLOAD_EN
 	hinic3_register_notifier(nic_dev);
 #endif
 
-	err = register_netdev(netdev);
-	if (err) {
-		nic_err(&pdev->dev, "Failed to register netdev\n");
-		err = -ENOMEM;
-		goto netdev_err;
+	if (pdev->subsystem_device != BIFUR_RESOURCE_PF_SSID) {
+		err = register_netdev(netdev);
+		if (err) {
+			nic_err(&pdev->dev, "Failed to register netdev\n");
+			err = -ENOMEM;
+			goto netdev_err;
+		}
 	}
 
 	queue_delayed_work(nic_dev->workq, &nic_dev->periodic_work, HZ);
+	if (!HINIC3_FUNC_IS_VF(nic_dev->hwdev))
+		queue_delayed_work(nic_dev->workq,
+				   &nic_dev->vport_stats_work, HZ);
+
 	netif_carrier_off(netdev);
 
 	*uld_dev = nic_dev;
@@ -900,6 +1096,27 @@ err_out:
 	return err;
 }
 
+static void hinic3_bond_deinit(struct hinic3_nic_dev *nic_dev)
+{
+	int ret = 0;
+
+	ret = hinic3_open_close_bond(nic_dev->hwdev, false);
+	if (ret != 0) {
+		goto bond_deinit_failed;
+	}
+
+	ret = hinic3_delete_bond(nic_dev->hwdev);
+	if (ret != 0) {
+		goto bond_deinit_failed;
+	}
+
+	nic_info(&nic_dev->pdev->dev, "Bond deinit success\n");
+	return;
+
+bond_deinit_failed:
+	nic_err(&nic_dev->pdev->dev, "Bond deinit failed\n");
+}
+
 static void nic_remove(struct hinic3_lld_dev *lld_dev, void *adapter)
 {
 	struct hinic3_nic_dev *nic_dev = adapter;
@@ -912,10 +1129,15 @@ static void nic_remove(struct hinic3_lld_dev *lld_dev, void *adapter)
 
 	netdev = nic_dev->netdev;
 
-	unregister_netdev(netdev);
+	if (lld_dev->pdev->subsystem_device != BIFUR_RESOURCE_PF_SSID) {
+		unregister_netdev(netdev);
+	}
 #ifdef HAVE_MULTI_VLAN_OFFLOAD_EN
 	hinic3_unregister_notifier(nic_dev);
 #endif
+
+	if (!HINIC3_FUNC_IS_VF(nic_dev->hwdev))
+		cancel_delayed_work_sync(&nic_dev->vport_stats_work);
 
 	cancel_delayed_work_sync(&nic_dev->periodic_work);
 	cancel_delayed_work_sync(&nic_dev->rxq_check_work);
@@ -923,6 +1145,10 @@ static void nic_remove(struct hinic3_lld_dev *lld_dev, void *adapter)
 	destroy_workqueue(nic_dev->workq);
 
 	hinic3_flush_rx_flow_rule(nic_dev);
+
+	if (hinic3_get_bond_create_mode(lld_dev->hwdev) != 0) {
+		hinic3_bond_deinit(nic_dev);
+	}
 
 	hinic3_update_nic_feature(nic_dev->hwdev, 0);
 	hinic3_set_nic_feature_to_hw(nic_dev->hwdev);
@@ -933,6 +1159,7 @@ static void nic_remove(struct hinic3_lld_dev *lld_dev, void *adapter)
 
 	hinic3_deinit_nic_prof_adapter(nic_dev);
 	kfree(nic_dev->vlan_bitmap);
+	nic_dev->vlan_bitmap = NULL;
 
 	free_netdev(netdev);
 
@@ -981,6 +1208,120 @@ static void hinic3_port_module_event_handler(struct hinic3_nic_dev *nic_dev,
 	}
 }
 
+bool hinic3_need_proc_link_event(struct hinic3_lld_dev *lld_dev)
+{
+	int ret = 0;
+	u16 func_id;
+	u8 roce_enable = false;
+	bool is_slave_func = false;
+	struct hinic3_hw_bond_infos hw_bond_infos = {0};
+
+	if (!lld_dev)
+		return false;
+
+	/* 非slave设备需要处理link down事件 */
+	ret = hinic3_is_slave_func(lld_dev->hwdev, &is_slave_func);
+	if (ret != 0) {
+		nic_err(&lld_dev->pdev->dev, "NIC get info, lld_dev is null\n");
+		return true;
+	}
+
+	if (!is_slave_func)
+		return true;
+
+	/* 未使能了vroce功能，需处理link down事件 */
+	func_id = hinic3_global_func_id(lld_dev->hwdev);
+	ret = hinic3_get_func_vroce_enable(lld_dev->hwdev, func_id,
+					   &roce_enable);
+	if (ret != 0)
+		return true;
+
+	if (!roce_enable)
+		return true;
+
+	/* 未创建bond,需要处理link down事件 */
+	hw_bond_infos.bond_id = HINIC_OVS_BOND_DEFAULT_ID;
+
+	ret = hinic3_get_hw_bond_infos(lld_dev->hwdev, &hw_bond_infos,
+				       HINIC3_CHANNEL_COMM);
+	if (ret != 0) {
+		pr_err("[ROCE, ERR] Get chipf bond info failed (%d)\n", ret);
+		return true;
+	}
+
+	if (!hw_bond_infos.valid)
+		return true;
+
+	return false;
+}
+
+bool hinic3_need_proc_bond_event(struct hinic3_lld_dev *lld_dev)
+{
+	return !hinic3_need_proc_link_event(lld_dev);
+}
+
+static void hinic_porc_bond_state_change(struct hinic3_lld_dev *lld_dev,
+					 void *adapter,
+					 struct hinic3_event_info *event)
+{
+	struct hinic3_nic_dev *nic_dev = adapter;
+
+	if (!nic_dev || !event || !hinic3_support_nic(lld_dev->hwdev, NULL))
+		return;
+
+	switch (HINIC3_SRV_EVENT_TYPE(event->service, event->type)) {
+	case HINIC3_SRV_EVENT_TYPE(EVENT_SRV_NIC, EVENT_NIC_BOND_DOWN):
+		if (!hinic3_need_proc_bond_event(lld_dev)) {
+			nic_info(&lld_dev->pdev->dev, "NIC don't need proc bond event\n");
+			return;
+		}
+		nic_info(&lld_dev->pdev->dev, "NIC proc bond down\n");
+		hinic3_link_status_change(nic_dev, false);
+		break;
+	case HINIC3_SRV_EVENT_TYPE(EVENT_SRV_NIC, EVENT_NIC_BOND_UP):
+		if (!hinic3_need_proc_bond_event(lld_dev)) {
+			nic_info(&lld_dev->pdev->dev, "NIC don't need proc bond event\n");
+			return;
+		}
+		nic_info(&lld_dev->pdev->dev, "NIC proc bond up\n");
+		hinic3_link_status_change(nic_dev, true);
+		break;
+	default:
+		break;
+	}
+}
+
+static void hinic3_outband_cfg_event_handler(struct hinic3_nic_dev *nic_dev,
+					struct hinic3_outband_cfg_info *info)
+{
+	int err = 0;
+	if (!nic_dev || !info || !hinic3_support_nic(nic_dev->hwdev, NULL)) {
+		pr_err("Outband cfg event invalid param\n");
+		return;
+	}
+
+	if (hinic3_func_type(nic_dev->hwdev) != TYPE_VF &&
+	    info->func_id >= NIC_MAX_PF_NUM) {
+		err = hinic3_notify_vf_outband_cfg(nic_dev->hwdev,
+						   info->func_id,
+						   info->outband_default_vid);
+		if (err)
+			nic_err(&nic_dev->pdev->dev, "Outband cfg event notify vf err: %d,"
+				"func_id: 0x%x, vid: 0x%x\n",
+				err, info->func_id, info->outband_default_vid);
+		return;
+	}
+
+	nic_info(&nic_dev->pdev->dev,
+		 "Change outband default vid from %u to %u\n",
+		 nic_dev->outband_cfg.outband_default_vid,
+		 info->outband_default_vid);
+
+	nic_dev->outband_cfg.outband_default_vid = info->outband_default_vid;
+
+	return;
+}
+
 static void nic_event(struct hinic3_lld_dev *lld_dev, void *adapter,
 		      struct hinic3_event_info *event)
 {
@@ -992,13 +1333,24 @@ static void nic_event(struct hinic3_lld_dev *lld_dev, void *adapter,
 
 	switch (HINIC3_SRV_EVENT_TYPE(event->service, event->type)) {
 	case HINIC3_SRV_EVENT_TYPE(EVENT_SRV_NIC, EVENT_NIC_LINK_DOWN):
+		if (!hinic3_need_proc_link_event(lld_dev)) {
+			nic_info(&lld_dev->pdev->dev, "NIC don't need proc link event\n");
+			return;
+		}
 		hinic3_link_status_change(nic_dev, false);
 		break;
 	case HINIC3_SRV_EVENT_TYPE(EVENT_SRV_NIC, EVENT_NIC_LINK_UP):
 		hinic3_link_status_change(nic_dev, true);
 		break;
+	case HINIC3_SRV_EVENT_TYPE(EVENT_SRV_NIC, EVENT_NIC_BOND_DOWN):
+	case HINIC3_SRV_EVENT_TYPE(EVENT_SRV_NIC, EVENT_NIC_BOND_UP):
+		hinic_porc_bond_state_change(lld_dev, adapter, event);
+		break;
 	case HINIC3_SRV_EVENT_TYPE(EVENT_SRV_NIC, EVENT_NIC_PORT_MODULE_EVENT):
 		hinic3_port_module_event_handler(nic_dev, event);
+		break;
+	case HINIC3_SRV_EVENT_TYPE(EVENT_SRV_NIC, EVENT_NIC_OUTBAND_CFG):
+		hinic3_outband_cfg_event_handler(nic_dev, (void *)event->event_data);
 		break;
 	case HINIC3_SRV_EVENT_TYPE(EVENT_SRV_COMM, EVENT_COMM_SRIOV_STATE_CHANGE):
 		sriov_state_change(nic_dev, (void *)event->event_data);
@@ -1059,7 +1411,7 @@ struct hinic3_uld_info g_nic_uld_info = {
 	.resume = NULL,
 	.event = nic_event,
 	.ioctl = nic_ioctl,
-}; /*lint -e766*/
+};
 
 struct hinic3_uld_info *get_nic_uld_info(void)
 {

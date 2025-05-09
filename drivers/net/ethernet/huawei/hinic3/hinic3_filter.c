@@ -82,7 +82,7 @@ static struct hinic3_mac_filter *hinic3_add_filter(struct hinic3_nic_dev *nic_de
 						   struct list_head *mac_filter_list,
 						   u8 *addr)
 {
-	struct hinic3_mac_filter *f;
+	struct hinic3_mac_filter *f = NULL;
 
 	f = kzalloc(sizeof(*f), GFP_ATOMIC);
 	if (!f)
@@ -117,7 +117,7 @@ static void hinic3_del_filter(struct hinic3_nic_dev *nic_dev,
 
 static struct hinic3_mac_filter *hinic3_mac_filter_entry_clone(const struct hinic3_mac_filter *src)
 {
-	struct hinic3_mac_filter *f;
+	struct hinic3_mac_filter *f = NULL;
 
 	f = kzalloc(sizeof(*f), GFP_ATOMIC);
 	if (!f)

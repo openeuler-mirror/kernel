@@ -10,6 +10,10 @@
 #define OVS_PORT_NUM_MAX	BOND_PORT_MAX_NUM
 #define DEFAULT_ROCE_BOND_FUNC	0xFFFFFFFF
 
+#define BOND_ID_IS_VALID(_id)	\
+	(((_id) >= BOND_FIRST_ID) && ((_id) <= BOND_MAX_ID))
+#define BOND_ID_IS_INVALID(_id) (!(BOND_ID_IS_VALID(_id)))
+
 enum bond_group_id {
 	BOND_FIRST_ID = 1,
 	BOND_MAX_ID = 4,

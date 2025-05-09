@@ -4,8 +4,8 @@
 #ifndef OSSL_KNL_LINUX_H_
 #define OSSL_KNL_LINUX_H_
 
-#include <net/checksum.h>
 #include <net/ipv6.h>
+#include <net/devlink.h>
 #include <linux/string.h>
 #include <linux/pci.h>
 #include <linux/device.h>
@@ -19,6 +19,12 @@
 #include <linux/list.h>
 #include <linux/bitmap.h>
 #include <linux/slab.h>
+#include <linux/proc_fs.h>
+#include <linux/skbuff.h>
+#include <linux/netdevice.h>
+#include <linux/filter.h>
+#include <linux/aer.h>
+#include <linux/socket.h>
 
 #ifndef NETIF_F_SCTP_CSUM
 #define NETIF_F_SCTP_CSUM 0
@@ -37,6 +43,17 @@
 
 #define ossl_get_free_pages __get_free_pages
 
+#ifndef ETHTOOL_LINK_MODE_100000baseKR_Full_BIT
+#define ETHTOOL_LINK_MODE_100000baseKR_Full_BIT 75
+#define ETHTOOL_LINK_MODE_100000baseCR_Full_BIT 78
+#define ETHTOOL_LINK_MODE_100000baseSR_Full_BIT 76
+#endif
+#ifndef ETHTOOL_LINK_MODE_200000baseKR2_Full_BIT
+#define ETHTOOL_LINK_MODE_200000baseKR2_Full_BIT 80
+#define ETHTOOL_LINK_MODE_200000baseSR2_Full_BIT 81
+#define ETHTOOL_LINK_MODE_200000baseCR2_Full_BIT 84
+#endif
+
 #ifndef high_16_bits
 #define low_16_bits(x) ((x) & 0xFFFF)
 #define high_16_bits(x) (((x) & 0xFFFF0000) >> 16)
@@ -54,13 +71,11 @@
 #endif
 
 #define HAVE_INET6_IFADDR_LIST
-
 #define HAVE_NDO_GET_STATS64
 
 #ifndef HAVE_MQPRIO
 #define HAVE_MQPRIO
 #endif
-
 #ifndef HAVE_SETUP_TC
 #define HAVE_SETUP_TC
 #endif
@@ -68,25 +83,20 @@
 #ifndef HAVE_NDO_SET_FEATURES
 #define HAVE_NDO_SET_FEATURES
 #endif
-
 #define HAVE_IRQ_AFFINITY_NOTIFY
-
 #define HAVE_ETHTOOL_SET_PHYS_ID
-
 #define HAVE_NETDEV_WANTED_FEAUTES
 
 #ifndef HAVE_PCI_DEV_FLAGS_ASSIGNED
 #define HAVE_PCI_DEV_FLAGS_ASSIGNED
 #define HAVE_VF_SPOOFCHK_CONFIGURE
 #endif
-
 #ifndef HAVE_SKB_L4_RXHASH
 #define HAVE_SKB_L4_RXHASH
 #endif
 
 #define HAVE_ETHTOOL_GRXFHINDIR_SIZE
 #define HAVE_INT_NDO_VLAN_RX_ADD_VID
-
 #ifdef ETHTOOL_SRXNTUPLE
 #undef ETHTOOL_SRXNTUPLE
 #endif
@@ -95,9 +105,9 @@
 #define _kc_kunmap_atomic(addr) kunmap_atomic(addr)
 
 #include <linux/of_net.h>
-
 #define HAVE_FDB_OPS
 #define HAVE_ETHTOOL_GET_TS_INFO
+
 #define HAVE_NAPI_GRO_FLUSH_OLD
 
 #ifndef HAVE_SRIOV_CONFIGURE
@@ -107,6 +117,7 @@
 #define HAVE_ENCAP_TSO_OFFLOAD
 #define HAVE_SKB_INNER_NETWORK_HEADER
 
+
 #define HAVE_NDO_SET_VF_LINK_STATE
 #define HAVE_SKB_INNER_PROTOCOL
 #define HAVE_MPLS_FEATURES
@@ -115,11 +126,11 @@
 #define HAVE_NETIF_SET_XPS_QUEUE_CONST_MASK
 
 #define HAVE_VXLAN_CHECKS
-#define HAVE_NDO_SELECT_QUEUE_ACCEL
 #define HAVE_NET_GET_RANDOM_ONCE
 #define HAVE_HWMON_DEVICE_REGISTER_WITH_GROUPS
 
 #define HAVE_NDO_SELECT_QUEUE_ACCEL_FALLBACK
+
 
 #define HAVE_NDO_SET_VF_MIN_MAX_TX_RATE
 #define HAVE_VLAN_FIND_DEV_DEEP_RCU
@@ -128,8 +139,8 @@
 #define HAVE_MULTI_VLAN_OFFLOAD_EN
 #define HAVE_ETH_GET_HEADLEN_FUNC
 
-#define HAVE_RXFH_HASHFUNC
 
+#define HAVE_RXFH_HASHFUNC
 #define HAVE_NDO_SET_VF_TRUST
 
 #include <net/devlink.h>
@@ -137,6 +148,7 @@
 #define HAVE_IO_MAP_WC_SIZE
 
 #define HAVE_NETDEVICE_MIN_MAX_MTU
+
 
 #define HAVE_VOID_NDO_GET_STATS64
 #define HAVE_VM_OPS_FAULT_NO_VMA
@@ -146,9 +158,13 @@
 #define HAVE_PCI_ERROR_HANDLER_RESET_PREPARE
 #define HAVE_PTP_CLOCK_DO_AUX_WORK
 
+
 #define HAVE_NDO_SETUP_TC_REMOVE_TC_TO_NETDEV
 
 #define HAVE_XDP_SUPPORT
+#if (KERNEL_VERSION(5, 9, 0) > LINUX_VERSION_CODE)
+#define HAVE_XDP_QUERY_PROG
+#endif
 
 #define HAVE_NDO_BPF_NETDEV_BPF
 #define HAVE_TIMER_SETUP
@@ -157,6 +173,7 @@
 #define HAVE_MACRO_VM_FAULT_T
 
 #define HAVE_NDO_SELECT_QUEUE_SB_DEV
+
 
 #define dev_open(x) dev_open(x, NULL)
 #define HAVE_NEW_ETHTOOL_LINK_SETTINGS_ONLY
@@ -180,11 +197,13 @@ static inline void *_hinic3_dma_zalloc_coherent(struct device *dev,
 }
 #endif
 
+#if (KERNEL_VERSION(5, 6, 0) <= LINUX_VERSION_CODE)
 #ifndef DT_KNL_EMU
 struct timeval {
 	__kernel_old_time_t     tv_sec;         /* seconds */
 	__kernel_suseconds_t    tv_usec;        /* microseconds */
 };
+#endif
 #endif
 
 #ifndef do_gettimeofday
@@ -199,6 +218,8 @@ static inline void _kc_do_gettimeofday(struct timeval *tv)
 }
 #endif
 
+
+
 #define HAVE_NDO_SELECT_QUEUE_SB_DEV_ONLY
 #define ETH_GET_HEADLEN_NEED_DEV
 #define HAVE_GENL_OPS_FIELD_VALIDATE
@@ -207,32 +228,75 @@ static inline void _kc_do_gettimeofday(struct timeval *tv)
 #define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
 #endif
 
+/*****************************************************************************/
+#if (KERNEL_VERSION(5, 5, 0) > LINUX_VERSION_CODE)
+#else /* >= 5.5.0 */
 #define HAVE_DEVLINK_FLASH_UPDATE_PARAMS
+#endif /* 5.5.0 */
 
+/*****************************************************************************/
+#if (KERNEL_VERSION(5, 6, 0) > LINUX_VERSION_CODE)
+#else /* >= 5.6.0 */
 #ifndef rtc_time_to_tm
 #define rtc_time_to_tm rtc_time64_to_tm
 #endif
 #define HAVE_NDO_TX_TIMEOUT_TXQ
 #define HAVE_PROC_OPS
+#endif /* 5.6.0 */
 
+/*****************************************************************************/
+#if (KERNEL_VERSION(5, 7, 0) > LINUX_VERSION_CODE)
+#else /* >= 5.7.0 */
 #define SUPPORTED_COALESCE_PARAMS
 
 #ifndef pci_cleanup_aer_uncorrect_error_status
 #define pci_cleanup_aer_uncorrect_error_status pci_aer_clear_nonfatal_status
 #endif
+#endif /* 5.7.0 */
 
+/* ************************************************************************ */
+#if (KERNEL_VERSION(5, 9, 0) > LINUX_VERSION_CODE)
+
+#else /* >= 5.9.0 */
 #define HAVE_XDP_FRAME_SZ
+#endif /* 5.9.0 */
+
+/* ************************************************************************ */
+#if (KERNEL_VERSION(5, 10, 0) > LINUX_VERSION_CODE)
+#define HAVE_DEVLINK_FW_FILE_NAME_PARAM
+#else /* >= 5.10.0 */
+#endif /* 5.10.0 */
 
 #define HAVE_DEVLINK_FW_FILE_NAME_MEMBER
 
-#define HAVE_ENCAPSULATION_TSO
+/* ************************************************************************ */
+#if (KERNEL_VERSION(5, 10, 0) > LINUX_VERSION_CODE)
 
+#else /* >= 5.10.0 */
+#if !defined(HAVE_ETHTOOL_COALESCE_EXTACK) && \
+    !defined(NO_ETHTOOL_COALESCE_EXTACK)
+#define HAVE_ETHTOOL_COALESCE_EXTACK
+#endif
+#endif /* 5.10.0 */
+
+/* ************************************************************************ */
+#if (KERNEL_VERSION(5, 10, 0) > LINUX_VERSION_CODE)
+
+#else /* >= 5.10.0 */
+#if !defined(HAVE_ETHTOOL_RINGPARAM_EXTACK) && \
+    !defined(NO_ETHTOOL_RINGPARAM_EXTACK)
+#define HAVE_ETHTOOL_RINGPARAM_EXTACK
+#endif
+#endif /* 5.10.0 */
+/* ************************************************************************ */
+#define HAVE_NDO_UDP_TUNNEL_ADD
+#define HAVE_ENCAPSULATION_TSO
 #define HAVE_ENCAPSULATION_CSUM
 
 #ifndef eth_zero_addr
 static inline void hinic3_eth_zero_addr(u8 *addr)
 {
-	memset(addr, 0x00, ETH_ALEN);
+	(void)memset(addr, 0x00, ETH_ALEN);
 }
 
 #define eth_zero_addr(_addr) hinic3_eth_zero_addr(_addr)
@@ -273,13 +337,10 @@ int creat_thread(struct sdk_thread_info *thread_info);
 void stop_thread(struct sdk_thread_info *thread_info);
 
 #define destroy_work(work)
-
 void utctime_to_localtime(u64 utctime, u64 *localtime);
-
 #ifndef HAVE_TIMER_SETUP
 void initialize_timer(const void *adapter_hdl, struct timer_list *timer);
 #endif
-
 void add_to_timer(struct timer_list *timer, u64 period);
 void stop_timer(struct timer_list *timer);
 void delete_timer(struct timer_list *timer);
@@ -304,3 +365,4 @@ u64 ossl_get_real_time(void);
 #define tasklet_state(tasklet) ((tasklet)->state)
 
 #endif
+/* ************************************************************************ */

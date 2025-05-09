@@ -23,6 +23,8 @@
 #include "cqm_memsec.h"
 #include "cqm_main.h"
 
+#include "vram_common.h"
+
 static unsigned char roce_qpc_rsv_mode = CQM_QPC_ROCE_NORMAL;
 module_param(roce_qpc_rsv_mode, byte, 0644);
 MODULE_PARM_DESC(roce_qpc_rsv_mode,
@@ -98,9 +100,16 @@ static s32 cqm_set_timer_enable(void *ex_handle)
 {
 	struct hinic3_hwdev *handle = (struct hinic3_hwdev *)ex_handle;
 	struct tag_cqm_handle *cqm_handle = NULL;
+	int is_in_kexec;
 
 	if (!ex_handle)
 		return CQM_FAIL;
+
+	is_in_kexec = vram_get_kexec_flag();
+	if (is_in_kexec != 0) {
+		cqm_info(handle->dev_hdl, "Skip starting cqm timer during kexec\n");
+		return CQM_SUCCESS;
+	}
 
 	cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);
 	if (cqm_handle->func_capability.fake_func_type == CQM_FAKE_FUNC_PARENT &&
@@ -456,7 +465,7 @@ static void cqm_service_capability_init_roce(struct tag_cqm_handle *cqm_handle, 
 	cqm_info(handle->dev_hdl, "Cap init: roce qpc 0x%x, scqc 0x%x, srqc 0x%x, drc_qp 0x%x\n",
 		 roce_own_cap->max_qps, roce_own_cap->max_cqs,
 		 roce_own_cap->max_srqs, roce_own_cap->max_drc_qps);
-	cqm_info(handle->dev_hdl, "Cap init: type 0x%x, scenes:0x%x, qpc_rsv:0x%x, srv_bmp:0x%x\n",
+	cqm_info(handle->dev_hdl, "Cap init: board_type 0x%x, scenes_id:0x%x, qpc_rsv_mode:0x%x, srv_bmp:0x%x\n",
 		 board_info->board_type, board_info->scenes_id,
 		 roce_qpc_rsv_mode, board_info->service_en_bitmap);
 
@@ -610,7 +619,7 @@ static void cqm_service_capability_init_ipsec(struct tag_cqm_handle *cqm_handle,
 					    func_cap->scqc_basic_size);
 	func_cap->scqc_alloc_static = true;
 	cqm_info(handle->dev_hdl, "Cap init: ipsec is valid\n");
-	cqm_info(handle->dev_hdl, "Cap init: ipsec 0x%x, childc %d, scqc 0x%x, scqc_bsize %d\n",
+	cqm_info(handle->dev_hdl, "Cap init: ipsec childc_num 0x%x, childc_bsize %d, scqc_num 0x%x, scqc_bsize %d\n",
 		 ipsec_srvcap->max_sactxs, func_cap->childc_basic_size,
 		 ipsec_srvcap->max_cqs, func_cap->scqc_basic_size);
 }
@@ -812,7 +821,7 @@ static int cqm_capability_init_bloomfilter(struct hinic3_hwdev *handle)
 		func_cap->bloomfilter_addr = service_capability->bfilter_start_addr;
 		if (func_cap->bloomfilter_length != 0 &&
 		    !cqm_check_align(func_cap->bloomfilter_length)) {
-			cqm_err(handle->dev_hdl, "Cap bloomfilter len %u is not the power of 2\n",
+			cqm_err(handle->dev_hdl, "Cap init: bloomfilter_length %u is not the power of 2\n",
 				func_cap->bloomfilter_length);
 
 			return CQM_FAIL;
@@ -883,7 +892,7 @@ static int cqm_capability_init_timer(struct hinic3_hwdev *handle)
 		func_cap->timer_vf_num = service_capability->timer_vf_num;
 		func_cap->timer_vf_id_start = service_capability->timer_vf_id_start;
 		cqm_info(handle->dev_hdl,
-			 "timer init: pf_num 0x%x, pf_start 0x%x, vf_num 0x%x, vf_start 0x%x\n",
+			 "host timer init: timer_pf_num 0x%x, timer_pf_id_start 0x%x, timer_vf_num 0x%x, timer_vf_id_start 0x%x\n",
 			 func_cap->timer_pf_num, func_cap->timer_pf_id_start,
 			 func_cap->timer_vf_num, func_cap->timer_vf_id_start);
 
@@ -891,7 +900,7 @@ static int cqm_capability_init_timer(struct hinic3_hwdev *handle)
 		if (IS_SLAVE_HOST(handle)) {
 			total_timer_num *= CQM_TIMER_NUM_MULTI;
 			cqm_info(handle->dev_hdl,
-				 "timer init: need double tw resources, total_timer_num=0x%x\n",
+				 "host timer init: need double tw resources, total_timer_num=0x%x\n",
 				 total_timer_num);
 		}
 	}
@@ -1059,8 +1068,10 @@ static s32 cqm_fake_init(struct tag_cqm_handle *cqm_handle)
 
 	for (i = 0; i < (u32)child_func_number; i++) {
 		fake_cqm_handle = kmalloc(sizeof(*fake_cqm_handle), GFP_KERNEL | __GFP_ZERO);
-		if (!fake_cqm_handle)
+		if (!fake_cqm_handle) {
+			cqm_err(handle->dev_hdl, CQM_ALLOC_FAIL(fake_cqm_handle));
 			goto err;
+		}
 
 		/* Copy the attributes of the parent CQM handle to the child CQM
 		 * handle and modify the values of function.
@@ -1129,7 +1140,7 @@ static s32 cqm_fake_mem_init(struct tag_cqm_handle *cqm_handle)
 
 	for (i = 0; i < (u32)child_func_number; i++) {
 		fake_cqm_handle = cqm_handle->fake_cqm_handle[i];
-		snprintf(fake_cqm_handle->name, VRAM_NAME_MAX_LEN - 1,
+		snprintf(fake_cqm_handle->name, VRAM_NAME_APPLY_LEN,
 			 "%s%s%02u", cqm_handle->name, VRAM_CQM_FAKE_MEM_BASE, i);
 
 		if (cqm_bat_init(fake_cqm_handle) != CQM_SUCCESS) {
@@ -1174,7 +1185,7 @@ s32 cqm_mem_init(void *ex_handle)
 	struct tag_cqm_handle *cqm_handle = NULL;
 
 	cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);
-	snprintf(cqm_handle->name, VRAM_NAME_MAX_LEN - 1,
+	snprintf(cqm_handle->name, VRAM_NAME_APPLY_LEN,
 		 "%s%02u", VRAM_CQM_GLB_FUNC_BASE, hinic3_global_func_id(handle));
 
 	if (cqm_fake_init(cqm_handle) != CQM_SUCCESS) {

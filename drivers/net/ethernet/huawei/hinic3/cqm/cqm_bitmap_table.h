@@ -9,6 +9,7 @@
 #include <linux/spinlock.h>
 
 #include "cqm_object.h"
+#include "vram_common.h"
 
 struct tag_cqm_bitmap {
 	ulong *table;

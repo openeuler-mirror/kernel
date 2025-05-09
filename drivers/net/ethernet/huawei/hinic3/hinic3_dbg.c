@@ -18,9 +18,8 @@
 #include "hinic3_tx.h"
 #include "hinic3_dcb.h"
 #include "hinic3_nic.h"
-#include "hinic3_mgmt_interface.h"
-#include "mag_mpu_cmd.h"
-#include "mag_cmd.h"
+#include "hinic3_bond.h"
+#include "nic_mpu_cmd_defs.h"
 
 typedef int (*nic_driv_module)(struct hinic3_nic_dev *nic_dev,
 			       const void *buf_in, u32 in_size,
@@ -48,7 +47,7 @@ static int get_nic_drv_version(void *buf_out, const u32 *out_size)
 	}
 
 	err = snprintf(ver_info->ver, sizeof(ver_info->ver), "%s  %s",
-		       HINIC3_NIC_DRV_VERSION, "2024-07-03_09:33:00");
+		       HINIC3_NIC_DRV_VERSION, "2025-05-01_00:00:03");
 	if (err < 0)
 		return -EINVAL;
 
@@ -94,13 +93,13 @@ static int get_q_num(struct hinic3_nic_dev *nic_dev,
 		return -EFAULT;
 	}
 
-	if (!buf_out) {
+	if (!buf_out || !out_size) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Get queue number para buf_out is NULL.\n");
 		return -EINVAL;
 	}
 
-	if (!out_size || *out_size != sizeof(u16)) {
+	if (*out_size != sizeof(u16)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect out buf size from user: %u, expect: %lu\n",
 			  *out_size, sizeof(u16));
@@ -126,7 +125,8 @@ static int get_tx_wqe_info(struct hinic3_nic_dev *nic_dev,
 	}
 
 	if (!buf_in || !buf_out) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Buf_in or buf_out is NULL.\n");
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+		"Buf_in or buf_out is NULL.\n");
 		return -EINVAL;
 	}
 
@@ -178,7 +178,8 @@ static int get_rx_info(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	}
 
 	rq_info->delta = (u16)nic_dev->rxqs[q_id].delta;
-	rq_info->ci = (u16)(nic_dev->rxqs[q_id].cons_idx & nic_dev->rxqs[q_id].q_mask);
+	rq_info->ci = (u16)(nic_dev->rxqs[q_id].cons_idx &
+		nic_dev->rxqs[q_id].q_mask);
 	rq_info->sw_pi = nic_dev->rxqs[q_id].next_to_update;
 	rq_info->msix_vector = nic_dev->rxqs[q_id].irq_id;
 
@@ -201,7 +202,8 @@ static int get_rx_wqe_info(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	}
 
 	if (!buf_in || !buf_out) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Buf_in or buf_out is NULL.\n");
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+		"Buf_in or buf_out is NULL.\n");
 		return -EINVAL;
 	}
 
@@ -230,7 +232,7 @@ static int get_rx_cqe_info(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 		return -EFAULT;
 	}
 
-	if (!buf_in || !buf_out) {
+	if (!buf_in || !buf_out || !out_size) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Buf_in or buf_out is NULL.\n");
 		return -EINVAL;
@@ -243,7 +245,7 @@ static int get_rx_cqe_info(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 		return -EINVAL;
 	}
 
-	if (!out_size || *out_size != sizeof(struct hinic3_rq_cqe)) {
+	if (*out_size != sizeof(struct hinic3_rq_cqe)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect out buf size from user :%u, expect: %lu\n",
 			  *out_size, sizeof(struct hinic3_rq_cqe));
@@ -252,10 +254,16 @@ static int get_rx_cqe_info(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	q_id = (u16)info->q_id;
 	idx = (u16)info->wqe_id;
 
-	if (q_id >= nic_dev->q_params.num_qps || idx >= nic_dev->rxqs[q_id].q_depth) {
+	if (q_id >= nic_dev->q_params.num_qps) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
-			  "Invalid q_id[%u] >= %u, or wqe idx[%u] >= %u.\n",
-			  q_id, nic_dev->q_params.num_qps, idx, nic_dev->rxqs[q_id].q_depth);
+			  "Invalid q_id[%u] >= %u.\n", q_id,
+			  nic_dev->q_params.num_qps);
+		return -EFAULT;
+	}
+	if (idx >= nic_dev->rxqs[q_id].q_depth) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Invalid wqe idx[%u] >= %u.\n", idx,
+			  nic_dev->rxqs[q_id].q_depth);
 		return -EFAULT;
 	}
 
@@ -338,7 +346,8 @@ static int set_loopback_mode(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	err = hinic3_set_loopback_mode(nic_dev->hwdev, (u8)mode->loop_mode,
 				       (u8)mode->loop_ctrl);
 	if (err == 0)
-		nicif_info(nic_dev, drv, nic_dev->netdev, "Set loopback mode %u en %u succeed\n",
+		nicif_info(nic_dev, drv, nic_dev->netdev,
+			   "Set loopback mode %u en %u succeed\n",
 			   mode->loop_mode, mode->loop_ctrl);
 
 	return err;
@@ -417,6 +426,59 @@ static int set_pf_bw_limit(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 {
 	u32 pf_bw_limit;
 	int err;
+	struct hinic3_nic_io *nic_io = NULL;
+	struct net_device *net_dev = nic_dev->netdev;
+
+	if (hinic3_support_roce(nic_dev->hwdev, NULL) &&
+	    hinic3_is_bond_dev_status_actived(net_dev)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "The rate limit func is not supported when RoCE bonding is enabled\n");
+		return -EINVAL;
+	}
+
+	if (HINIC3_FUNC_IS_VF(nic_dev->hwdev)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "To set VF bandwidth rate, please use ip link cmd\n");
+		return -EINVAL;
+	}
+
+	if (!buf_in || !buf_out || in_size != sizeof(u32) ||
+	    !out_size || *out_size != sizeof(u8))
+		return -EINVAL;
+
+	nic_io = hinic3_get_service_adapter(nic_dev->hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+	nic_io->direct = HINIC3_NIC_TX;
+	pf_bw_limit = *((u32 *)buf_in);
+
+	err = hinic3_set_pf_bw_limit(nic_dev->hwdev, pf_bw_limit);
+	if (err) {
+		nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to set pf bandwidth limit to %u%%\n",
+			  pf_bw_limit);
+		if (err < 0)
+			return err;
+	}
+
+	*((u8 *)buf_out) = (u8)err;
+
+	return 0;
+}
+
+static int set_rx_pf_bw_limit(struct hinic3_nic_dev *nic_dev, const void *buf_in,
+	u32 in_size, void *buf_out, u32 *out_size)
+{
+	u32 pf_bw_limit;
+	int err;
+	struct hinic3_nic_io *nic_io = NULL;
+	struct net_device *net_dev = nic_dev->netdev;
+
+	if (hinic3_support_roce(nic_dev->hwdev, NULL) &&
+	    hinic3_is_bond_dev_status_actived(net_dev)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "The rate limit func is not supported when RoCE bonding is enabled\n");
+		return -EINVAL;
+	}
 
 	if (HINIC3_FUNC_IS_VF(nic_dev->hwdev)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev, "To set VF bandwidth rate, please use ip link cmd\n");
@@ -426,11 +488,16 @@ static int set_pf_bw_limit(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	if (!buf_in || !buf_out || in_size != sizeof(u32) || !out_size || *out_size != sizeof(u8))
 		return -EINVAL;
 
+	nic_io = hinic3_get_service_adapter(nic_dev->hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+	nic_io->direct = HINIC3_NIC_RX;
 	pf_bw_limit = *((u32 *)buf_in);
 
 	err = hinic3_set_pf_bw_limit(nic_dev->hwdev, pf_bw_limit);
 	if (err) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Failed to set pf bandwidth limit to %d%%\n",
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Failed to set pf bandwidth limit to %d%%\n",
 			  pf_bw_limit);
 		if (err < 0)
 			return err;
@@ -445,19 +512,21 @@ static int get_pf_bw_limit(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 			   u32 in_size, void *buf_out, u32 *out_size)
 {
 	struct hinic3_nic_io *nic_io = NULL;
+	u32 *rate_limit = (u32 *)buf_out;
 
 	if (HINIC3_FUNC_IS_VF(nic_dev->hwdev)) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "To get VF bandwidth rate, please use ip link cmd\n");
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "To get VF bandwidth rate, please use ip link cmd\n");
 		return -EINVAL;
 	}
 
 	if (!buf_out || !out_size)
 		return -EINVAL;
 
-	if (*out_size != sizeof(u32)) {
+	if (*out_size != sizeof(u32) * 2) { // 2:Stored in an array, TX and RX, both length are u32
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect out buf size from user: %d, expect: %lu\n",
-			  *out_size, sizeof(u32));
+			  *out_size, sizeof(u32) * 2);
 		return -EFAULT;
 	}
 
@@ -465,8 +534,12 @@ static int get_pf_bw_limit(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	if (!nic_io)
 		return -EINVAL;
 
-	*((u32 *)buf_out) = nic_io->nic_cfg.pf_bw_limit;
+	rate_limit[HINIC3_NIC_RX] = nic_io->nic_cfg.pf_bw_rx_limit;
+	rate_limit[HINIC3_NIC_TX] = nic_io->nic_cfg.pf_bw_tx_limit;
 
+	nicif_info(nic_dev, drv, nic_dev->netdev,
+		   "read rate cfg success rx rate is: %u, tx rate is : %u\n",
+		   rate_limit[HINIC3_NIC_RX], rate_limit[HINIC3_NIC_TX]);
 	return 0;
 }
 
@@ -477,8 +550,8 @@ static int get_sset_count(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 
 	if (!buf_in || in_size != sizeof(u32) || !out_size ||
 	    *out_size != sizeof(u32) || !buf_out) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Invalid parameters, in_size: %u\n",
-			  in_size);
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Invalid parameters, in_size: %u\n", in_size);
 		return -EINVAL;
 	}
 
@@ -504,16 +577,16 @@ static int get_sset_stats(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	int err;
 
 	if (!buf_in || in_size != sizeof(u32) || !out_size || !buf_out) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Invalid parameters, in_size: %u\n",
-			  in_size);
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Invalid parameters, in_size: %u\n", in_size);
 		return -EINVAL;
 	}
 
 	size = sizeof(u32);
 	err = get_sset_count(nic_dev, buf_in, in_size, &count, &size);
 	if (err) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Get sset count failed, ret=%d\n",
-			  err);
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Get sset count failed, ret=%d\n", err);
 		return -EINVAL;
 	}
 	if (count * sizeof(*items) != *out_size) {
@@ -527,12 +600,14 @@ static int get_sset_stats(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 
 	switch (sset) {
 	case HINIC3_SHOW_SSET_IO_STATS:
-		hinic3_get_io_stats(nic_dev, items);
+		err = hinic3_get_io_stats(nic_dev, items);
+		if (err < 0)
+			return -EINVAL;
 		break;
 
 	default:
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Unknown %u to get stats\n",
-			  sset);
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Unknown %u to get stats\n", sset);
 		err = -EINVAL;
 		break;
 	}
@@ -544,15 +619,18 @@ static int update_pcp_dscp_cfg(struct hinic3_nic_dev *nic_dev,
 			       struct hinic3_dcb_config *wanted_dcb_cfg,
 			       const struct hinic3_mt_qos_dev_cfg *qos_in)
 {
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	int i;
 	u8 cos_num = 0, valid_cos_bitmap = 0;
 
 	if (qos_in->cfg_bitmap & CMD_QOS_DEV_PCP2COS) {
 		for (i = 0; i < NIC_DCB_UP_MAX; i++) {
-			if (!(nic_dev->func_dft_cos_bitmap & BIT(qos_in->pcp2cos[i]))) {
+			if (!(dcb->func_dft_cos_bitmap &
+			      BIT(qos_in->pcp2cos[i]))) {
 				nicif_err(nic_dev, drv, nic_dev->netdev,
 					  "Invalid cos=%u, func cos valid map is %u",
-					  qos_in->pcp2cos[i], nic_dev->func_dft_cos_bitmap);
+					  qos_in->pcp2cos[i],
+					  dcb->func_dft_cos_bitmap);
 				return -EINVAL;
 			}
 
@@ -562,7 +640,8 @@ static int update_pcp_dscp_cfg(struct hinic3_nic_dev *nic_dev,
 			}
 		}
 
-		memcpy(wanted_dcb_cfg->pcp2cos, qos_in->pcp2cos, sizeof(qos_in->pcp2cos));
+		memcpy(wanted_dcb_cfg->pcp2cos, qos_in->pcp2cos,
+		       sizeof(qos_in->pcp2cos));
 		wanted_dcb_cfg->pcp_user_cos_num = cos_num;
 		wanted_dcb_cfg->pcp_valid_cos_map = valid_cos_bitmap;
 	}
@@ -572,12 +651,14 @@ static int update_pcp_dscp_cfg(struct hinic3_nic_dev *nic_dev,
 		valid_cos_bitmap = 0;
 		for (i = 0; i < NIC_DCB_IP_PRI_MAX; i++) {
 			u8 cos = qos_in->dscp2cos[i] == DBG_DFLT_DSCP_VAL ?
-				nic_dev->wanted_dcb_cfg.dscp2cos[i] : qos_in->dscp2cos[i];
+				 dcb->wanted_dcb_cfg.dscp2cos[i] :
+				 qos_in->dscp2cos[i];
 
-			if (cos >= NIC_DCB_UP_MAX || !(nic_dev->func_dft_cos_bitmap & BIT(cos))) {
+			if (cos >= NIC_DCB_UP_MAX ||
+			    !(dcb->func_dft_cos_bitmap & BIT(cos))) {
 				nicif_err(nic_dev, drv, nic_dev->netdev,
 					  "Invalid cos=%u, func cos valid map is %u",
-					  cos, nic_dev->func_dft_cos_bitmap);
+					  cos, dcb->func_dft_cos_bitmap);
 				return -EINVAL;
 			}
 
@@ -588,8 +669,10 @@ static int update_pcp_dscp_cfg(struct hinic3_nic_dev *nic_dev,
 		}
 
 		for (i = 0; i < NIC_DCB_IP_PRI_MAX; i++)
-			wanted_dcb_cfg->dscp2cos[i] = qos_in->dscp2cos[i] == DBG_DFLT_DSCP_VAL ?
-				nic_dev->hw_dcb_cfg.dscp2cos[i] : qos_in->dscp2cos[i];
+			wanted_dcb_cfg->dscp2cos[i] =
+				qos_in->dscp2cos[i] == DBG_DFLT_DSCP_VAL ?
+				dcb->hw_dcb_cfg.dscp2cos[i] :
+				qos_in->dscp2cos[i];
 		wanted_dcb_cfg->dscp_user_cos_num = cos_num;
 		wanted_dcb_cfg->dscp_valid_cos_map = valid_cos_bitmap;
 	}
@@ -601,11 +684,12 @@ static int update_wanted_qos_cfg(struct hinic3_nic_dev *nic_dev,
 				 struct hinic3_dcb_config *wanted_dcb_cfg,
 				 const struct hinic3_mt_qos_dev_cfg *qos_in)
 {
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	int ret;
 	u8 cos_num, valid_cos_bitmap;
 
 	if (qos_in->cfg_bitmap & CMD_QOS_DEV_TRUST) {
-		if (qos_in->trust > DCB_DSCP) {
+		if (qos_in->trust > HINIC3_DCB_DSCP) {
 			nicif_err(nic_dev, drv, nic_dev->netdev,
 				  "Invalid trust=%u\n", qos_in->trust);
 			return -EINVAL;
@@ -615,7 +699,7 @@ static int update_wanted_qos_cfg(struct hinic3_nic_dev *nic_dev,
 	}
 
 	if (qos_in->cfg_bitmap & CMD_QOS_DEV_DFT_COS) {
-		if (!(BIT(qos_in->dft_cos) & nic_dev->func_dft_cos_bitmap)) {
+		if (!(BIT(qos_in->dft_cos) & dcb->func_dft_cos_bitmap)) {
 			nicif_err(nic_dev, drv, nic_dev->netdev,
 				  "Invalid dft_cos=%u\n", qos_in->dft_cos);
 			return -EINVAL;
@@ -628,7 +712,7 @@ static int update_wanted_qos_cfg(struct hinic3_nic_dev *nic_dev,
 	if (ret)
 		return ret;
 
-	if (wanted_dcb_cfg->trust == DCB_PCP) {
+	if (wanted_dcb_cfg->trust == HINIC3_DCB_PCP) {
 		cos_num = wanted_dcb_cfg->pcp_user_cos_num;
 		valid_cos_bitmap = wanted_dcb_cfg->pcp_valid_cos_map;
 	} else {
@@ -636,18 +720,11 @@ static int update_wanted_qos_cfg(struct hinic3_nic_dev *nic_dev,
 		valid_cos_bitmap = wanted_dcb_cfg->dscp_valid_cos_map;
 	}
 
-	if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags)) {
-		if (cos_num > nic_dev->q_params.num_qps) {
-			nicif_err(nic_dev, drv, nic_dev->netdev,
-				  "DCB is on, cos num should not more than channel num:%u\n",
-				  nic_dev->q_params.num_qps);
-			return -EOPNOTSUPP;
-		}
-	}
-
 	if (!(BIT(wanted_dcb_cfg->default_cos) & valid_cos_bitmap)) {
-		nicif_info(nic_dev, drv, nic_dev->netdev, "Current default_cos=%u, change to %u\n",
-			   wanted_dcb_cfg->default_cos, (u8)fls(valid_cos_bitmap) - 1);
+		nicif_info(nic_dev, drv, nic_dev->netdev,
+			   "Current default_cos=%u, change to %u\n",
+			   wanted_dcb_cfg->default_cos,
+			   (u8)fls(valid_cos_bitmap) - 1);
 		wanted_dcb_cfg->default_cos = (u8)fls(valid_cos_bitmap) - 1;
 	}
 
@@ -657,6 +734,7 @@ static int update_wanted_qos_cfg(struct hinic3_nic_dev *nic_dev,
 static int dcb_mt_qos_map(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 			  u32 in_size, void *buf_out, u32 *out_size)
 {
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	const struct hinic3_mt_qos_dev_cfg *qos_in = buf_in;
 	struct hinic3_mt_qos_dev_cfg *qos_out = buf_out;
 	u8 i;
@@ -675,9 +753,10 @@ static int dcb_mt_qos_map(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	memcpy(qos_out, qos_in, sizeof(*qos_in));
 	qos_out->head.status = 0;
 	if (qos_in->op_code & MT_DCB_OPCODE_WR) {
-		memcpy(&nic_dev->wanted_dcb_cfg, &nic_dev->hw_dcb_cfg,
+		memcpy(&dcb->wanted_dcb_cfg, &dcb->hw_dcb_cfg,
 		       sizeof(struct hinic3_dcb_config));
-		err = update_wanted_qos_cfg(nic_dev, &nic_dev->wanted_dcb_cfg, qos_in);
+		err = update_wanted_qos_cfg(nic_dev, &dcb->wanted_dcb_cfg,
+					    qos_in);
 		if (err) {
 			qos_out->head.status = MT_EINVAL;
 			return 0;
@@ -687,12 +766,12 @@ static int dcb_mt_qos_map(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 		if (err)
 			qos_out->head.status = MT_EIO;
 	} else {
-		qos_out->dft_cos = nic_dev->hw_dcb_cfg.default_cos;
-		qos_out->trust = nic_dev->hw_dcb_cfg.trust;
+		qos_out->dft_cos = dcb->hw_dcb_cfg.default_cos;
+		qos_out->trust = dcb->hw_dcb_cfg.trust;
 		for (i = 0; i < NIC_DCB_UP_MAX; i++)
-			qos_out->pcp2cos[i] = nic_dev->hw_dcb_cfg.pcp2cos[i];
+			qos_out->pcp2cos[i] = dcb->hw_dcb_cfg.pcp2cos[i];
 		for (i = 0; i < NIC_DCB_IP_PRI_MAX; i++)
-			qos_out->dscp2cos[i] = nic_dev->hw_dcb_cfg.dscp2cos[i];
+			qos_out->dscp2cos[i] = dcb->hw_dcb_cfg.dscp2cos[i];
 	}
 
 	return 0;
@@ -721,27 +800,17 @@ static int dcb_mt_dcb_state(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	memcpy(dcb_out, dcb_in, sizeof(*dcb_in));
 	dcb_out->head.status = 0;
 	if (dcb_in->op_code & MT_DCB_OPCODE_WR) {
-		if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags) == dcb_in->state)
+		if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags) ==
+			     dcb_in->state)
 			return 0;
 
-		if (dcb_in->state) {
-			if (user_cos_num > nic_dev->q_params.num_qps) {
-				nicif_err(nic_dev, drv, nic_dev->netdev,
-					  "cos num %u should not more than channel num %u\n",
-					  user_cos_num,
-					  nic_dev->q_params.num_qps);
-
-				return -EOPNOTSUPP;
-			}
-		}
-
-		rtnl_lock();
 		if (netif_running(nic_dev->netdev)) {
 			netif_run = 1;
 			hinic3_vport_down(nic_dev);
 		}
 
-		err = hinic3_setup_cos(nic_dev->netdev, dcb_in->state ? user_cos_num : 0,
+		err = hinic3_setup_cos(nic_dev->netdev,
+				       dcb_in->state ? user_cos_num : 0,
 				       netif_run);
 		if (err)
 			goto setup_cos_fail;
@@ -751,7 +820,6 @@ static int dcb_mt_dcb_state(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 			if (err)
 				goto vport_up_fail;
 		}
-		rtnl_unlock();
 	} else {
 		dcb_out->state = !!test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags);
 	}
@@ -759,12 +827,12 @@ static int dcb_mt_dcb_state(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	return 0;
 
 vport_up_fail:
-	hinic3_setup_cos(nic_dev->netdev, dcb_in->state ? 0 : user_cos_num, netif_run);
+	hinic3_setup_cos(nic_dev->netdev, dcb_in->state ? 0 : user_cos_num,
+			 netif_run);
 
 setup_cos_fail:
 	if (netif_run)
 		hinic3_vport_up(nic_dev);
-	rtnl_unlock();
 
 	return err;
 }
@@ -772,13 +840,15 @@ setup_cos_fail:
 static int dcb_mt_hw_qos_get(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 			     u32 in_size, void *buf_out, u32 *out_size)
 {
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	const struct hinic3_mt_qos_cos_cfg *cos_cfg_in = buf_in;
 	struct hinic3_mt_qos_cos_cfg *cos_cfg_out = buf_out;
 
 	if (!buf_in || !buf_out || !out_size)
 		return -EINVAL;
 
-	if (*out_size != sizeof(*cos_cfg_out) || in_size != sizeof(*cos_cfg_in)) {
+	if (*out_size != sizeof(*cos_cfg_out) ||
+	    in_size != sizeof(*cos_cfg_in)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect buf size from user, in_size: %u, out_size: %u, expect: %lu\n",
 			  in_size, *out_size, sizeof(*cos_cfg_in));
@@ -789,9 +859,9 @@ static int dcb_mt_hw_qos_get(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 	cos_cfg_out->head.status = 0;
 
 	cos_cfg_out->port_id = hinic3_physical_port_id(nic_dev->hwdev);
-	cos_cfg_out->func_cos_bitmap = (u8)nic_dev->func_dft_cos_bitmap;
-	cos_cfg_out->port_cos_bitmap = (u8)nic_dev->port_dft_cos_bitmap;
-	cos_cfg_out->func_max_cos_num = nic_dev->cos_config_num_max;
+	cos_cfg_out->func_cos_bitmap = (u8)dcb->func_dft_cos_bitmap;
+	cos_cfg_out->port_cos_bitmap = (u8)dcb->port_dft_cos_bitmap;
+	cos_cfg_out->func_max_cos_num = dcb->cos_config_num_max;
 
 	return 0;
 }
@@ -803,7 +873,13 @@ static int get_inter_num(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 
 	intr_num = hinic3_intr_num(nic_dev->hwdev);
 
-	if (!buf_out || !out_size || *out_size != sizeof(u16)) {
+	if (!buf_out || !out_size) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Buf_out or out_size is NULL.\n");
+		return -EINVAL;
+	}
+
+	if (*out_size != sizeof(u16)) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect out buf size from user :%u, expect: %lu\n",
 			  *out_size, sizeof(u16));
@@ -817,20 +893,27 @@ static int get_inter_num(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 static int get_netdev_name(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 			   u32 in_size, void *buf_out, u32 *out_size)
 {
-	if (!buf_out || !out_size || *out_size != IFNAMSIZ) {
+	if (!buf_out || !out_size) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Buf_out or out_size is NULL.\n");
+		return -EINVAL;
+	}
+
+	if (*out_size != IFNAMSIZ) {
 		nicif_err(nic_dev, drv, nic_dev->netdev,
 			  "Unexpect out buf size from user :%u, expect: %u\n",
 			  *out_size, IFNAMSIZ);
 		return -EFAULT;
 	}
 
-	strlcpy(buf_out, nic_dev->netdev->name, IFNAMSIZ);
+	strscpy(buf_out, nic_dev->netdev->name, IFNAMSIZ);
 
 	return 0;
 }
 
-static int get_netdev_tx_timeout(struct hinic3_nic_dev *nic_dev, const void *buf_in,
-				 u32 in_size, void *buf_out, u32 *out_size)
+static int get_netdev_tx_timeout(struct hinic3_nic_dev *nic_dev,
+				 const void *buf_in, u32 in_size,
+				 void *buf_out, u32 *out_size)
 {
 	struct net_device *net_dev = nic_dev->netdev;
 	int *tx_timeout = buf_out;
@@ -839,7 +922,8 @@ static int get_netdev_tx_timeout(struct hinic3_nic_dev *nic_dev, const void *buf
 		return -EINVAL;
 
 	if (*out_size != sizeof(int)) {
-		nicif_err(nic_dev, drv, net_dev, "Unexpect buf size from user, out_size: %u, expect: %lu\n",
+		nicif_err(nic_dev, drv, net_dev,
+			  "Unexpect buf size from user, out_size: %u, expect: %lu\n",
 			  *out_size, sizeof(int));
 		return -EINVAL;
 	}
@@ -849,8 +933,9 @@ static int get_netdev_tx_timeout(struct hinic3_nic_dev *nic_dev, const void *buf
 	return 0;
 }
 
-static int set_netdev_tx_timeout(struct hinic3_nic_dev *nic_dev, const void *buf_in,
-				 u32 in_size, void *buf_out, u32 *out_size)
+static int set_netdev_tx_timeout(struct hinic3_nic_dev *nic_dev,
+				 const void *buf_in, u32 in_size,
+				 void *buf_out, u32 *out_size)
 {
 	struct net_device *net_dev = nic_dev->netdev;
 	const int *tx_timeout = buf_in;
@@ -859,13 +944,15 @@ static int set_netdev_tx_timeout(struct hinic3_nic_dev *nic_dev, const void *buf
 		return -EINVAL;
 
 	if (in_size != sizeof(int)) {
-		nicif_err(nic_dev, drv, net_dev, "Unexpect buf size from user, in_size: %u, expect: %lu\n",
+		nicif_err(nic_dev, drv, net_dev,
+			  "Unexpect buf size from user, in_size: %u, expect: %lu\n",
 			  in_size, sizeof(int));
 		return -EINVAL;
 	}
 
 	net_dev->watchdog_timeo = *tx_timeout * HZ;
-	nicif_info(nic_dev, drv, net_dev, "Set tx timeout check period to %ds\n", *tx_timeout);
+	nicif_info(nic_dev, drv, net_dev,
+		   "Set tx timeout check period to %ds\n", *tx_timeout);
 
 	return 0;
 }
@@ -887,6 +974,34 @@ static int get_xsfp_present(struct hinic3_nic_dev *nic_dev, const void *buf_in,
 
 	sfp_abs->head.status = 0;
 	sfp_abs->abs_status = hinic3_if_sfp_absent(nic_dev->hwdev);
+
+	return 0;
+}
+
+static int get_xsfp_tlv_info(struct hinic3_nic_dev *nic_dev, const void *buf_in,
+			 u32 in_size, void *buf_out, u32 *out_size)
+{
+	struct drv_mag_cmd_get_xsfp_tlv_rsp *sfp_tlv_info = buf_out;
+	const struct mag_cmd_get_xsfp_tlv_req *sfp_tlv_info_req = buf_in;
+	int err;
+
+	if ((buf_in == NULL) || (buf_out == NULL) || (out_size == NULL))
+		return -EINVAL;
+
+	if (*out_size != sizeof(*sfp_tlv_info) ||
+	    in_size != sizeof(*sfp_tlv_info_req)) {
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Unexpect buf size from user, in_size: %u, out_size: %u, expect: %lu\n",
+			  in_size, *out_size, sizeof(*sfp_tlv_info));
+		return -EINVAL;
+	}
+
+	err = hinic3_get_sfp_tlv_info(nic_dev->hwdev,
+				      sfp_tlv_info, sfp_tlv_info_req);
+	if (err != 0) {
+		sfp_tlv_info->head.status = MT_EIO;
+		return 0;
+	}
 
 	return 0;
 }
@@ -928,7 +1043,7 @@ static const struct nic_drv_module_handle nic_driv_module_cmd_handle[] = {
 	{GET_LOOPBACK_MODE,	get_loopback_mode},
 	{SET_LOOPBACK_MODE,	set_loopback_mode},
 	{SET_LINK_MODE,		set_link_mode},
-	{SET_PF_BW_LIMIT,	set_pf_bw_limit},
+	{SET_TX_PF_BW_LIMIT,	set_pf_bw_limit},
 	{GET_PF_BW_LIMIT,	get_pf_bw_limit},
 	{GET_SSET_COUNT,	get_sset_count},
 	{GET_SSET_ITEMS,	get_sset_stats},
@@ -940,16 +1055,21 @@ static const struct nic_drv_module_handle nic_driv_module_cmd_handle[] = {
 	{SET_TX_TIMEOUT,	set_netdev_tx_timeout},
 	{GET_XSFP_PRESENT,	get_xsfp_present},
 	{GET_XSFP_INFO,		get_xsfp_info},
+	{GET_XSFP_INFO_COMP_CMIS,	get_xsfp_tlv_info},
+	{SET_RX_PF_BW_LIMIT,	set_rx_pf_bw_limit}
 };
 
 static int send_to_nic_driver(struct hinic3_nic_dev *nic_dev,
 			      u32 cmd, const void *buf_in,
 			      u32 in_size, void *buf_out, u32 *out_size)
 {
-	int index, num_cmds = sizeof(nic_driv_module_cmd_handle) /
-				sizeof(nic_driv_module_cmd_handle[0]);
+	int index, num_cmds = (int)(sizeof(nic_driv_module_cmd_handle) /
+			      sizeof(nic_driv_module_cmd_handle[0]));
 	enum driver_cmd_type cmd_type = (enum driver_cmd_type)cmd;
 	int err = 0;
+
+	if (cmd_type == DCB_STATE || cmd_type == QOS_DEV)
+		rtnl_lock();
 
 	mutex_lock(&nic_dev->nic_mutex);
 	for (index = 0; index < num_cmds; index++) {
@@ -962,6 +1082,9 @@ static int send_to_nic_driver(struct hinic3_nic_dev *nic_dev,
 		}
 	}
 	mutex_unlock(&nic_dev->nic_mutex);
+
+	if (cmd_type == DCB_STATE || cmd_type == QOS_DEV)
+		rtnl_unlock();
 
 	if (index == num_cmds) {
 		pr_err("Can't find callback for %d\n", cmd_type);

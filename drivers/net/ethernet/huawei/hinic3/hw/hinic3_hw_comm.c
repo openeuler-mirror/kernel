@@ -21,7 +21,9 @@
 #include "hinic3_hw_cfg.h"
 #include "hinic3_cmdq.h"
 #include "mpu_inband_cmd_defs.h"
+#include "mpu_board_defs.h"
 #include "hinic3_hw_comm.h"
+#include "vram_common.h"
 
 #define	HINIC3_MSIX_CNT_LLI_TIMER_SHIFT			0
 #define	HINIC3_MSIX_CNT_LLI_CREDIT_SHIFT		8
@@ -242,10 +244,17 @@ int hinic3_func_reset(void *dev, u16 func_id, u64 reset_flag, u16 channel)
 	struct hinic3_hwdev *hwdev = dev;
 	u16 out_size = sizeof(func_reset);
 	int err = 0;
+	int is_in_kexec;
 
 	if (!dev) {
 		pr_err("Invalid para: dev is null.\n");
 		return -EINVAL;
+	}
+
+	is_in_kexec = vram_get_kexec_flag();
+	if (is_in_kexec != 0) {
+		sdk_info(hwdev->dev_hdl, "Skip function reset!\n");
+		return 0;
 	}
 
 	sdk_info(hwdev->dev_hdl, "Function is reset, flag: 0x%llx, channel:0x%x\n",
@@ -523,7 +532,7 @@ EXPORT_SYMBOL(hinic3_set_ppf_flr_type);
 
 int hinic3_set_ppf_tbl_hotreplace_flag(void *hwdev, u8 flag)
 {
-	struct comm_cmd_ppf_tbl_htrp_config htr_info = {0};
+	struct comm_cmd_ppf_tbl_htrp_config htr_info = {};
 	u16 out_size = sizeof(struct comm_cmd_ppf_tbl_htrp_config);
 	struct hinic3_hwdev *dev = hwdev;
 	int ret;
@@ -868,9 +877,17 @@ static int set_ppf_tmr_status(struct hinic3_hwdev *hwdev,
 
 int hinic3_ppf_tmr_start(void *hwdev)
 {
+	int is_in_kexec;
+
 	if (!hwdev) {
 		pr_err("Hwdev pointer is NULL for starting ppf timer\n");
 		return -EINVAL;
+	}
+
+	is_in_kexec = vram_get_kexec_flag();
+	if (is_in_kexec != 0) {
+		pr_info("Skip starting ppt timer during kexec");
+		return 0;
 	}
 
 	return set_ppf_tmr_status(hwdev, HINIC_PPF_TMR_FLAG_START);
@@ -888,18 +905,110 @@ int hinic3_ppf_tmr_stop(void *hwdev)
 }
 EXPORT_SYMBOL(hinic3_ppf_tmr_stop);
 
+static int hi_vram_kalloc_align(struct hinic3_hwdev *hwdev, char *name,
+				u32 page_size, u32 page_num,
+				struct hinic3_dma_addr_align *mem_align)
+{
+	void *vaddr = NULL, *align_vaddr = NULL;
+	dma_addr_t paddr, align_paddr;
+	u64 real_size = page_size;
+	u64 align = page_size;
+
+	vaddr = (void *)hi_vram_kalloc(name, real_size);
+	if (vaddr == NULL) {
+		sdk_err(hwdev->dev_hdl, "vram kalloc failed, name:%s.\n", name);
+		return -ENOMEM;
+	}
+
+	paddr = (dma_addr_t)virt_to_phys(vaddr);
+	align_paddr = ALIGN(paddr, align);
+	/* align */
+	if (align_paddr == paddr) {
+		align_vaddr = vaddr;
+		goto out;
+	}
+
+	hi_vram_kfree((void *)vaddr, name, real_size);
+
+	/* realloc memory for align */
+	real_size = page_size + align;
+	vaddr = (void *)hi_vram_kalloc(name, real_size);
+	if (vaddr == NULL) {
+		sdk_err(hwdev->dev_hdl, "vram kalloc align failed, name:%s.\n", name);
+		return -ENOMEM;
+	}
+
+	paddr = (dma_addr_t)virt_to_phys(vaddr);
+	align_paddr = ALIGN(paddr, align);
+	align_vaddr = (void *)((u64)vaddr + (align_paddr - paddr));
+
+out:
+	mem_align->real_size = (u32)real_size;
+	mem_align->ori_vaddr = vaddr;
+	mem_align->ori_paddr = paddr;
+	mem_align->align_vaddr = align_vaddr;
+	mem_align->align_paddr = align_paddr;
+
+	return 0;
+}
+
+static void mqm_eqm_free_page_mem(struct hinic3_hwdev *hwdev)
+{
+	u32 i;
+	struct hinic3_dma_addr_align *page_addr;
+	int is_use_vram = get_use_vram_flag();
+	struct mqm_eqm_vram_name_s *mqm_eqm_vram_name = hwdev->mqm_eqm_vram_name;
+
+	page_addr = hwdev->mqm_att.brm_srch_page_addr;
+
+	for (i = 0; i < hwdev->mqm_att.page_num; i++) {
+		if (is_use_vram != 0) {
+			hi_vram_kfree(page_addr->ori_vaddr, mqm_eqm_vram_name[i].vram_name,
+				page_addr->real_size);
+		} else {
+			hinic3_dma_free_coherent_align(hwdev->dev_hdl, page_addr);
+		}
+		page_addr->ori_vaddr = NULL;
+		page_addr++;
+	}
+
+	kfree(mqm_eqm_vram_name);
+	hwdev->mqm_eqm_vram_name = NULL;
+}
+
 static int mqm_eqm_try_alloc_mem(struct hinic3_hwdev *hwdev, u32 page_size,
 				 u32 page_num)
 {
 	struct hinic3_dma_addr_align *page_addr = hwdev->mqm_att.brm_srch_page_addr;
+	int is_use_vram = get_use_vram_flag();
+	struct mqm_eqm_vram_name_s *mqm_eqm_vram_name = NULL;
 	u32 valid_num = 0;
 	u32 flag = 1;
 	u32 i = 0;
 	int err;
+	u16 func_id;
+
+	mqm_eqm_vram_name = kzalloc(sizeof(struct mqm_eqm_vram_name_s) * page_num, GFP_KERNEL);
+	if (mqm_eqm_vram_name == NULL) {
+		sdk_err(hwdev->dev_hdl, "mqm eqm alloc vram name failed.\n");
+		return -ENOMEM;
+	}
+
+	hwdev->mqm_eqm_vram_name = mqm_eqm_vram_name;
+	func_id = hinic3_global_func_id(hwdev);
 
 	for (i = 0; i < page_num; i++) {
-		err = hinic3_dma_zalloc_coherent_align(hwdev->dev_hdl, page_size,
-						       page_size, GFP_KERNEL, page_addr);
+		if (is_use_vram != 0) {
+			snprintf(mqm_eqm_vram_name[i].vram_name,
+				 VRAM_NAME_MAX_LEN, "%s%u%s%u",
+				 VRAM_CQM_GLB_FUNC_BASE, func_id, VRAM_NIC_MQM, i);
+			err = hi_vram_kalloc_align(
+					hwdev, mqm_eqm_vram_name[i].vram_name,
+					page_size, page_num, page_addr);
+		} else {
+			err = hinic3_dma_zalloc_coherent_align(hwdev->dev_hdl, page_size,
+				page_size, GFP_KERNEL, page_addr);
+		}
 		if (err) {
 			flag = 0;
 			break;
@@ -908,15 +1017,12 @@ static int mqm_eqm_try_alloc_mem(struct hinic3_hwdev *hwdev, u32 page_size,
 		page_addr++;
 	}
 
+	hwdev->mqm_att.page_num = valid_num;
+
 	if (flag == 1) {
 		hwdev->mqm_att.page_size = page_size;
-		hwdev->mqm_att.page_num = page_num;
 	} else {
-		page_addr = hwdev->mqm_att.brm_srch_page_addr;
-		for (i = 0; i < valid_num; i++) {
-			hinic3_dma_free_coherent_align(hwdev->dev_hdl, page_addr);
-			page_addr++;
-		}
+		mqm_eqm_free_page_mem(hwdev);
 		return -EFAULT;
 	}
 
@@ -953,19 +1059,6 @@ static int mqm_eqm_alloc_page_mem(struct hinic3_hwdev *hwdev)
 	}
 
 	return ret;
-}
-
-static void mqm_eqm_free_page_mem(struct hinic3_hwdev *hwdev)
-{
-	u32 i;
-	struct hinic3_dma_addr_align *page_addr;
-
-	page_addr = hwdev->mqm_att.brm_srch_page_addr;
-
-	for (i = 0; i < hwdev->mqm_att.page_num; i++) {
-		hinic3_dma_free_coherent_align(hwdev->dev_hdl, page_addr);
-		page_addr++;
-	}
 }
 
 static int mqm_eqm_set_cfg_2_hw(struct hinic3_hwdev *hwdev, u8 valid)
@@ -1098,6 +1191,7 @@ static int mqm_eqm_init(struct hinic3_hwdev *hwdev)
 {
 	struct comm_cmd_get_eqm_num info_eqm_fix;
 	int ret;
+	int is_in_kexec;
 
 	if (hwdev->hwif->attr.func_type != TYPE_PPF)
 		return 0;
@@ -1127,10 +1221,15 @@ static int mqm_eqm_init(struct hinic3_hwdev *hwdev)
 		goto err_page;
 	}
 
-	ret = mqm_eqm_set_page_2_hw(hwdev);
-	if (ret) {
-		sdk_err(hwdev->dev_hdl, "Set page to hw failed\r\n");
-		goto err_ecmd;
+	is_in_kexec = vram_get_kexec_flag();
+	if (is_in_kexec == 0) {
+		ret = mqm_eqm_set_page_2_hw(hwdev);
+		if (ret) {
+			sdk_err(hwdev->dev_hdl, "Set page to hw failed\r\n");
+			goto err_ecmd;
+		}
+	} else {
+		sdk_info(hwdev->dev_hdl, "Mqm db don't set to chip when os hot replace.\r\n");
 	}
 
 	ret = mqm_eqm_set_cfg_2_hw(hwdev, 1);
@@ -1567,4 +1666,16 @@ int hinic3_switch_config(void *hwdev, u8 cfg_index)
 	}
 
 	return 0;
+}
+
+bool hinic3_is_optical_module_mode(void *hwdev)
+{
+	struct hinic3_hwdev *dev = hwdev;
+
+	if (dev->board_info.board_type == BOARD_TYPE_STRG_4X25G_COMSTORAGE ||
+	    dev->board_info.board_type == BOARD_TYPE_CAL_4X25G_COMSTORAGE ||
+	    dev->board_info.board_type == BOARD_TYPE_CAL_2X100G_TCE_BACKPLANE)
+		return false;
+
+	return true;
 }

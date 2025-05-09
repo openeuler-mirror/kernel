@@ -21,6 +21,7 @@
 #include "cqm_bloomfilter.h"
 #include "cqm_db.h"
 #include "cqm_main.h"
+#include "vram_common.h"
 #include "vmsec_mpu_common.h"
 #include "cqm_memsec.h"
 
@@ -34,6 +35,8 @@
 #define STD_INPUT_ONE_PARA 1
 #define STD_INPUT_TWO_PARA 2
 #define MR_KEY_2_INDEX_SHIFT 8
+#define IS_ADDR_IN_MEMSEC(va, len, start, end) \
+			  ((va) >= (start) && (va) + (len) < (end))
 
 static int memsec_proc_show(struct seq_file *seq, void *offset);
 static int memsec_proc_open(struct inode *inode, struct file *file);
@@ -49,12 +52,21 @@ static ssize_t memsec_proc_write(struct file *file, const char __user *data, siz
 static struct proc_dir_entry *g_hinic3_memsec_proc_ent; /* proc dir */
 static atomic_t g_memsec_proc_refcnt = ATOMIC_INIT(0);
 
+#if KERNEL_VERSION(5, 10, 0) > LINUX_VERSION_CODE
+static const struct file_operations memsec_proc_fops = {
+	.open = memsec_proc_open,
+	.read = seq_read,
+	.write = memsec_proc_write,
+	.release = memsec_proc_release,
+};
+#else
 static const struct proc_ops memsec_proc_fops = {
 	.proc_open = memsec_proc_open,
 	.proc_read = seq_read,
 	.proc_write = memsec_proc_write,
 	.proc_release = memsec_proc_release,
 };
+#endif
 
 bool cqm_need_secure_mem(void *hwdev)
 {
@@ -63,6 +75,9 @@ bool cqm_need_secure_mem(void *hwdev)
 	struct hinic3_hwdev *handle = (struct hinic3_hwdev *)hwdev;
 
 	cqm_handle = (struct tag_cqm_handle *)(handle->cqm_hdl);
+	if (cqm_handle == NULL) {
+		return false;
+	}
 	info = &cqm_handle->secure_mem;
 	return ((info->need_secure_mem) && hinic3_is_guest_vmsec_enable(hwdev));
 }
@@ -275,9 +290,10 @@ static int test_query_context(struct hinic3_hwdev *handle, char *data, size_t le
 	case CQM_OBJECT_SERVICE_CTX:
 	case CQM_OBJECT_MPT:
 		qpc_mpt = (struct tag_cqm_qpc_mpt *)cqm_obj;
-		if (qpc_mpt->vaddr >= (u8 *)info->va_base &&
-		    (qpc_mpt->vaddr + cqm_obj->object_size) < (u8 *)info->va_end)
-			in_secmem = true;
+		in_secmem = IS_ADDR_IN_MEMSEC(qpc_mpt->vaddr,
+					      cqm_obj->object_size,
+					      (u8 *)info->va_base,
+					      (u8 *)info->va_end);
 		cqm_info(handle->dev_hdl,
 			 "[memsec_dfx]Query %s:0x%x, va=%p %sin secure mem\n",
 			 query_type == CQM_OBJECT_MPT ? "MPT, mpt_index" : "QPC, qpn",
@@ -286,9 +302,10 @@ static int test_query_context(struct hinic3_hwdev *handle, char *data, size_t le
 	case CQM_OBJECT_RDMA_SRQ:
 	case CQM_OBJECT_RDMA_SCQ:
 		cqm_queue = (struct tag_cqm_queue *)cqm_obj;
-		if (cqm_queue->q_ctx_vaddr >= (u8 *)info->va_base &&
-		    (cqm_queue->q_ctx_vaddr + cqm_obj->object_size) < (u8 *)info->va_end)
-			in_secmem = true;
+		in_secmem = IS_ADDR_IN_MEMSEC(cqm_queue->q_ctx_vaddr,
+					      cqm_obj->object_size,
+					      (u8 *)info->va_base,
+					      (u8 *)info->va_end);
 		cqm_info(handle->dev_hdl,
 			 "[memsec_dfx]Query %s:0x%x, va=%p %sin secure mem\n",
 			 query_type == CQM_OBJECT_RDMA_SRQ ? "SRQC, srqn " : "SCQC, scqn",
@@ -378,7 +395,7 @@ static int hinic3_secure_mem_proc_node_remove(void *hwdev)
 
 	atomic_dec(&g_memsec_proc_refcnt);
 
-	snprintf(pci_name, PCI_PROC_NAME_LEN - 1,
+	snprintf(pci_name, PCI_PROC_NAME_LEN,
 		 "%02x:%02x:%x", pdev->bus->number, pdev->slot->number,
 		 PCI_FUNC(pdev->devfn));
 
@@ -401,7 +418,7 @@ static int hinic3_secure_mem_proc_node_add(void *hwdev)
 
 	atomic_inc(&g_memsec_proc_refcnt);
 
-	snprintf(pci_name, PCI_PROC_NAME_LEN - 1,
+	snprintf(pci_name, PCI_PROC_NAME_LEN,
 		 "%02x:%02x:%x", pdev->bus->number, pdev->slot->number,
 		 PCI_FUNC(pdev->devfn));
 	/* 0400 Read by owner */
@@ -653,7 +670,7 @@ void cqm_free_secure_mem_pages(struct hinic3_hwdev *handle, void *va, u32 order)
 		return;
 	}
 
-	if (va < info->va_base || va > (info->va_end - PAGE_SIZE) ||
+	if (va < info->va_base || (va > (info->va_end - PAGE_SIZE)) ||
 	    !PAGE_ALIGNED((va - info->va_base)))
 		cqm_err(handle->dev_hdl, "%s va wrong value\n", __func__);
 

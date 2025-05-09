@@ -313,7 +313,8 @@ struct comm_cmd_get_fw_version {
 	struct mgmt_msg_head head;
 
 	u16 fw_type; /**< firmware type  @see enum hinic3_fw_ver_type */
-	u16 rsvd1;
+	u16 fw_dfx_vld : 1; /**< 0: release, 1: debug */
+	u16 rsvd1 : 15;
 	u8 ver[HINIC3_FW_VERSION_LEN]; /**< firmware version */
 	u8 time[HINIC3_FW_COMPILE_TIME_LEN]; /**< firmware compile time */
 };
@@ -558,6 +559,7 @@ struct nic_log_info_request {
 
 #define MPU_TEMP_OP_GET 0
 #define MPU_TEMP_THRESHOLD_OP_CFG 1
+#define MPU_TEMP_MCTP_DFX_INFO_GET 2
 struct comm_temp_in_info {
 	struct comm_info_head head;
 	u8 opt_type;	/**< operation type 0:read operation 1:cfg operation */
@@ -658,6 +660,28 @@ struct comm_read_ucode_sm_resp {
 
 	u64 val1;
 	u64 val2;
+};
+
+#define PER_REQ_MAX_DATA_LEN 0x600
+
+struct comm_read_ucode_sm_per_req {
+	struct mgmt_msg_head msg_head;
+
+	u32 tbl_type;
+	u32 count_id;
+};
+
+struct comm_read_ucode_sm_per_resp {
+	struct mgmt_msg_head msg_head;
+
+	u8 data[PER_REQ_MAX_DATA_LEN];
+};
+
+struct ucode_sm_counter_get_info {
+	u32 width_type;
+	u32 tbl_type;
+	unsigned int base_count;
+	unsigned int count_num;
 };
 
 enum log_type {
@@ -1057,7 +1081,9 @@ struct comm_cmd_ncsi_settings {
 	u8 lldp_over_ncsi_enable;
 	u8 lldp_over_mctp_enable;
 	u32 magicwd;
-	u8 rsvd[8];
+	u8 lldp_tx_enable;
+	u8 rsvd[3];
+	u32 crc;
 	struct tag_ncsi_chan_info ncsi_chan_info;
 };
 

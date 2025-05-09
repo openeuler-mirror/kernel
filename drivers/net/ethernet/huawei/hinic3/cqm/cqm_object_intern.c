@@ -127,8 +127,10 @@ s32 cqm_container_create(struct tag_cqm_object *object, u8 **container_addr, boo
 	 * of the Container.
 	 */
 	new_container = kmalloc(qinfo->container_size, GFP_ATOMIC | __GFP_ZERO);
-	if (!new_container)
+	if (!new_container) {
+		cqm_err(handle->dev_hdl, CQM_ALLOC_FAIL(new_container));
 		return CQM_FAIL;
+	}
 
 	/* Container PCI mapping */
 	new_container_pa = pci_map_single(cqm_handle->dev, new_container,
@@ -299,8 +301,10 @@ s32 cqm_share_recv_queue_create(struct tag_cqm_object *object)
 	/* apply for buffer for SRQC */
 	common->q_ctx_vaddr = kmalloc(qinfo->q_ctx_size,
 				      GFP_KERNEL | __GFP_ZERO);
-	if (!common->q_ctx_vaddr)
+	if (!common->q_ctx_vaddr) {
+		cqm_err(handle->dev_hdl, CQM_ALLOC_FAIL(q_ctx_vaddr));
 		goto err2;
+	}
 	return CQM_SUCCESS;
 
 err2:
@@ -808,8 +812,10 @@ static s32 cqm_nonrdma_queue_ctx_create(struct tag_cqm_object *object)
 		common->q_ctx_vaddr = cqm_kmalloc_align(qinfo->q_ctx_size,
 							GFP_KERNEL | __GFP_ZERO,
 							(u16)shift);
-		if (!common->q_ctx_vaddr)
+		if (!common->q_ctx_vaddr) {
+			cqm_err(handle->dev_hdl, CQM_ALLOC_FAIL(q_ctx_vaddr));
 			return CQM_FAIL;
+		}
 
 		common->q_ctx_paddr = pci_map_single(cqm_handle->dev, common->q_ctx_vaddr,
 						     qinfo->q_ctx_size, PCI_DMA_BIDIRECTIONAL);

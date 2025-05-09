@@ -10,6 +10,8 @@
 #include "hinic3_common.h"
 #include "hinic3_nic_io.h"
 #include "hinic3_nic_cfg.h"
+#include "mag_mpu_cmd.h"
+#include "mag_mpu_cmd_defs.h"
 
 /* ************************ array index define ********************* */
 #define ARRAY_INDEX_0 0
@@ -20,6 +22,35 @@
 #define ARRAY_INDEX_5 5
 #define ARRAY_INDEX_6 6
 #define ARRAY_INDEX_7 7
+
+#define XSFP_TLV_PRE_INFO_LEN 4
+
+enum hinic3_link_port_type {
+	LINK_PORT_UNKNOWN,
+	LINK_PORT_OPTICAL_MM,
+	LINK_PORT_OPTICAL_SM,
+	LINK_PORT_PAS_COPPER,
+	LINK_PORT_ACC,
+	LINK_PORT_BASET,
+	LINK_PORT_AOC = 0x40,
+	LINK_PORT_ELECTRIC,
+	LINK_PORT_BACKBOARD_INTERFACE,
+};
+
+enum hilink_fibre_subtype {
+	FIBRE_SUBTYPE_SR = 1,
+	FIBRE_SUBTYPE_LR,
+	FIBRE_SUBTYPE_MAX,
+};
+
+enum hilink_fec_type {
+	HILINK_FEC_NOT_SET,
+	HILINK_FEC_RSFEC,
+	HILINK_FEC_BASEFEC,
+	HILINK_FEC_NOFEC,
+	HILINK_FEC_LLRSFE,
+	HILINK_FEC_MAX_TYPE,
+};
 
 struct hinic3_sq_attr {
 	u8 dma_attr_off;
@@ -58,24 +89,32 @@ struct hinic3_port_routine_cmd {
 	struct mag_cmd_get_xsfp_present abs;
 };
 
+struct hinic3_port_routine_cmd_extern {
+	bool					mpu_send_xsfp_tlv_info;
+
+	struct drv_mag_cmd_get_xsfp_tlv_rsp	std_xsfp_tlv_info;
+};
+
 struct hinic3_nic_cfg {
-	struct semaphore	cfg_lock;
+	struct semaphore			cfg_lock;
 
 	/* Valid when pfc is disable */
-	bool			pause_set;
-	struct nic_pause_config	nic_pause;
+	bool					pause_set;
+	struct nic_pause_config			nic_pause;
 
-	u8			pfc_en;
-	u8			pfc_bitmap;
+	u8					pfc_en;
+	u8					pfc_bitmap;
 
-	struct nic_port_info	port_info;
+	struct nic_port_info			port_info;
 
 	/* percentage of pf link bandwidth */
-	u32			pf_bw_limit;
-	u32			rsvd2;
+	u32					pf_bw_tx_limit;
+	u32					pf_bw_rx_limit;
 
-	struct hinic3_port_routine_cmd rt_cmd;
-	struct mutex sfp_mutex; /* mutex used for copy sfp info */
+	struct hinic3_port_routine_cmd		rt_cmd;
+	struct hinic3_port_routine_cmd_extern	rt_cmd_ext;
+	/* mutex used for copy sfp info */
+	struct mutex				sfp_mutex;
 };
 
 struct hinic3_nic_io {
@@ -84,7 +123,7 @@ struct hinic3_nic_io {
 	void				*dev_hdl;
 
 	u8				link_status;
-	u8				rsvd1;
+	u8				direct;
 	u32				rsvd2;
 
 	struct hinic3_io_queue		*sq;

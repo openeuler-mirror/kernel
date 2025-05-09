@@ -9,14 +9,18 @@
 #include <linux/net.h>
 #include <linux/mutex.h>
 #include <linux/netdevice.h>
+#include <linux/version.h>
 
+#include "ossl_knl.h"
 #include "hinic3_lld.h"
 #include "hinic3_srv_nic.h"
 #include "hinic3_nic_dev.h"
 #include "hinic3_hw.h"
-#include "mpu_inband_cmd.h"
-#include "hinic3_hwdev.h"
 #include "hinic3_bond.h"
+#include "hinic3_hwdev.h"
+
+#include "bond_common_defs.h"
+#include "vram_common.h"
 
 #define PORT_INVALID_ID         0xFF
 
@@ -214,10 +218,10 @@ static void bond_dev_untrack_port(struct hinic3_bond_dev *bdev, u8 idx)
 	spin_lock(&bdev->lock);
 
 	if (bdev->tracker.ndev[idx]) {
-		pr_info("hinic3_bond: untrack port:%u ndev:%s cnt:%d\n", idx,
-			bdev->tracker.ndev[idx]->name, bdev->tracker.cnt);
 		bdev->tracker.ndev[idx] = NULL;
 		bdev->tracker.cnt--;
+		pr_info("hinic3_bond: untrack port:%u ndev:%s cnt:%d\n", idx,
+			bdev->tracker.ndev[idx]->name, bdev->tracker.cnt);
 	}
 
 	spin_unlock(&bdev->lock);
@@ -268,10 +272,15 @@ static void bond_master_event(struct hinic3_bond_dev *bdev,
 	queue_delayed_work(bdev->wq, &bdev->bond_work, 0);
 }
 
-static struct hinic3_bond_dev *bond_get_bdev(const struct bonding *bond)
+static struct hinic3_bond_dev *bond_get_bdev(struct bonding *bond)
 {
 	struct hinic3_bond_dev *bdev = NULL;
 	int bid;
+
+	if (bond == NULL) {
+		pr_err("hinic3_bond: bond is NULL\n");
+		return NULL;
+	}
 
 	mutex_lock(&g_bond_mutex);
 	for (bid = BOND_FIRST_ID; bid <= BOND_MAX_ID; bid++) {
@@ -283,10 +292,52 @@ static struct hinic3_bond_dev *bond_get_bdev(const struct bonding *bond)
 			mutex_unlock(&g_bond_mutex);
 			return bdev;
 		}
+
+		if (strncmp(bond->dev->name, bdev->name, BOND_NAME_MAX_LEN) == 0) {
+			bdev->bond = bond;
+			return bdev;
+		}
 	}
 	mutex_unlock(&g_bond_mutex);
 	return NULL;
 }
+
+static struct bonding *get_bonding_by_netdev(struct net_device *ndev)
+{
+	struct bonding *bond = NULL;
+	struct slave *slave = NULL;
+
+	if (netif_is_bond_master(ndev)) {
+		bond = netdev_priv(ndev);
+	} else if (netif_is_bond_slave(ndev)) {
+		slave = bond_slave_get_rtnl(ndev);
+		if (slave) {
+			bond = bond_get_bond_by_slave(slave);
+		}
+	}
+
+	return bond;
+}
+/*lint -e580 -e546*/
+bool hinic3_is_bond_dev_status_actived(struct net_device *ndev)
+{
+	struct hinic3_bond_dev *bdev = NULL;
+	struct bonding *bond = NULL;
+
+	if (!ndev) {
+		pr_err("hinic3_bond: netdev is NULL\n");
+		return false;
+	}
+
+	bond = get_bonding_by_netdev(ndev);
+	bdev = bond_get_bdev(bond);
+	if (!bdev)
+		return false;
+
+	return bdev->status == BOND_DEV_STATUS_ACTIVATED;
+}
+EXPORT_SYMBOL(hinic3_is_bond_dev_status_actived);
+/*lint +e580 +e546*/
 
 static void bond_handle_rtnl_event(struct net_device *ndev)
 {
@@ -294,27 +345,19 @@ static void bond_handle_rtnl_event(struct net_device *ndev)
 	struct bonding *bond = NULL;
 	struct slave *slave = NULL;
 
-	if (netif_is_bond_master(ndev)) {
-		bond = netdev_priv(ndev);
-		bdev = bond_get_bdev(bond);
-	} else if (netif_is_bond_slave(ndev)) {
-		/*lint -e(160) */
-		slave = bond_slave_get_rtnl(ndev);
-		if (slave) {
-			bond = bond_get_bond_by_slave(slave);
-			bdev = bond_get_bdev(bond);
-		}
-	}
-
-	if (!bond || !bdev)
+	bond = get_bonding_by_netdev(ndev);
+	bdev = bond_get_bdev(bond);
+	if (!bdev)
 		return;
 
 	bond_update_attr(bdev, bond);
 
-	if (slave)
+	if (netif_is_bond_slave(ndev)) {
+		slave = bond_slave_get_rtnl(ndev);
 		bond_slave_event(bdev, slave);
-	else
+	} else {
 		bond_master_event(bdev, bond);
+	}
 }
 
 static void bond_rtnl_data_ready(struct sock *sk)
@@ -478,7 +521,11 @@ static void bond_update_slave_info(struct hinic3_bond_dev *bdev,
 			continue;
 		}
 
+		if (!bdev->tracker.ndev[i])
+			continue;
+
 		bond_pf_bitmap_set(bdev, i);
+
 		if (!bdev->tracker.netdev_state[i].tx_enabled)
 			continue;
 
@@ -516,6 +563,7 @@ static int bond_upcmd_config(struct hinic3_bond_dev *bdev,
 		attr->active_slaves,
 		attr->lacp_collect_slaves);
 	pr_info("bond_pf_bitmap: 0x%x\n", attr->bond_pf_bitmap);
+	pr_info("bond user_bitmap 0x%x\n", attr->user_bitmap);
 
 	err = bond_send_upcmd(bdev, attr, MPU_CMD_BOND_SET_ATTR);
 	if (!err)
@@ -560,17 +608,36 @@ static void bond_call_service_func(struct hinic3_bond_dev *bdev, struct bond_att
 	mutex_unlock(&g_bond_service_func_mutex);
 }
 
+static u32 bond_get_user_bitmap(struct hinic3_bond_dev *bdev)
+{
+	u32 user_bitmap = 0;
+	u8 user;
+
+	for (user = HINIC3_BOND_USER_OVS; user < HINIC3_BOND_USER_NUM; user++) {
+		if (bdev->slot_used[user] == 1)
+			BITMAP_SET(user_bitmap, user);
+	}
+	return user_bitmap;
+}
+
 static void bond_do_work(struct hinic3_bond_dev *bdev)
 {
 	bool is_bonded = 0;
 	struct bond_attr attr;
+	int is_in_kexec;
 	int err = 0;
+
+	is_in_kexec = vram_get_kexec_flag();
+	if (is_in_kexec != 0) {
+		pr_info("Skip changing bond status during os replace\n");
+		return;
+	}
 
 	spin_lock(&bdev->lock);
 	is_bonded = bdev->tracker.is_bonded;
 	attr = bdev->new_attr;
 	spin_unlock(&bdev->lock);
-	attr.user_bitmap = 0;
+	attr.user_bitmap = bond_get_user_bitmap(bdev);
 
 	/* is_bonded indicates whether bond should be activated. */
 	if (is_bonded && !bond_dev_is_activated(bdev)) {
@@ -591,17 +658,21 @@ static void bond_do_work(struct hinic3_bond_dev *bdev)
 		pr_err("hinic3_bond: Do bond failed\n");
 }
 
-#define MIN_BOND_SLAVE_CNT 2
 static void bond_try_do_work(struct work_struct *work)
 {
 	struct delayed_work *delayed_work = to_delayed_work(work);
 	struct hinic3_bond_dev *bdev =
 		container_of(delayed_work, struct hinic3_bond_dev, bond_work);
+	int status;
 
-	if (g_bond_service_func[HINIC3_BOND_USER_ROCE] && bdev->tracker.cnt < MIN_BOND_SLAVE_CNT)
+	status = mutex_trylock(&g_bond_mutex);
+	if (status == 0) {
+		/* Delay 1 sec and retry */
 		queue_delayed_work(bdev->wq, &bdev->bond_work, HZ);
-	else
+	} else {
 		bond_do_work(bdev);
+		mutex_unlock(&g_bond_mutex);
+	}
 }
 
 static int bond_dev_init(struct hinic3_bond_dev *bdev, const char *name)
@@ -630,6 +701,7 @@ static int bond_dev_release(struct hinic3_bond_dev *bdev)
 	err = bond_upcmd_deactivate(bdev);
 	if (err) {
 		pr_err("hinic3_bond: Failed to deactivate dev\n");
+		mutex_unlock(&g_bond_mutex);
 		return err;
 	}
 
@@ -764,20 +836,28 @@ static struct hinic3_bond_dev *bond_dev_by_name(const char *name)
 static void bond_dev_user_attach(struct hinic3_bond_dev *bdev,
 				 enum hinic3_bond_user user)
 {
+	u32 user_bitmap;
+
+	if (user < 0 || user >= HINIC3_BOND_USER_NUM)
+		return;
+
 	if (bdev->slot_used[user])
 		return;
 
 	bdev->slot_used[user] = 1;
 	if (!kref_get_unless_zero(&bdev->ref))
 		kref_init(&bdev->ref);
+	else {
+		user_bitmap = bond_get_user_bitmap(bdev);
+		pr_info("hinic3_bond: user %u attach bond %s, user_bitmap %#x\n",
+		user, bdev->name, user_bitmap);
+		queue_delayed_work(bdev->wq, &bdev->bond_work, 0);
+	}
 }
 
 static void bond_dev_user_detach(struct hinic3_bond_dev *bdev,
 				 enum hinic3_bond_user user, bool *freed)
 {
-	if (user < 0 || user >= HINIC3_BOND_USER_NUM)
-		return;
-
 	if (bdev->slot_used[user]) {
 		bdev->slot_used[user] = 0;
 		if (kref_read(&bdev->ref) == 1)
@@ -790,12 +870,15 @@ static struct bonding *bond_get_knl_bonding(const char *name)
 {
 	struct net_device *ndev_tmp = NULL;
 
+	rcu_read_lock();
 	for_each_netdev(&init_net, ndev_tmp) {
 		if (netif_is_bond_master(ndev_tmp) &&
-		    !strcmp(ndev_tmp->name, name))
+		    !strcmp(ndev_tmp->name, name)) {
+			rcu_read_unlock();
 			return netdev_priv(ndev_tmp);
+			}
 	}
-
+	rcu_read_unlock();
 	return NULL;
 }
 
@@ -852,8 +935,9 @@ int hinic3_bond_detach(u16 bond_id, enum hinic3_bond_user user)
 	int err = 0;
 	bool lock_freed = false;
 
-	if (bond_id < BOND_FIRST_ID || bond_id > BOND_MAX_ID) {
-		pr_warn("hinic3_bond: Invalid bond id:%u to delete\n", bond_id);
+	if (!BOND_ID_IS_VALID(bond_id) || user >= HINIC3_BOND_USER_NUM) {
+		pr_warn("hinic3_bond: Invalid bond id or user, bond_id: %u, user: %d\n",
+			bond_id, user);
 		return -EINVAL;
 	}
 
@@ -891,7 +975,7 @@ EXPORT_SYMBOL(hinic3_bond_clean_user);
 
 int hinic3_bond_get_uplink_id(u16 bond_id, u32 *uplink_id)
 {
-	if (bond_id < BOND_FIRST_ID || bond_id > BOND_MAX_ID || !uplink_id) {
+	if (!BOND_ID_IS_VALID(bond_id) || !uplink_id) {
 		pr_warn("hinic3_bond: Invalid args, id: %u, uplink: %d\n",
 			bond_id, !!uplink_id);
 		return -EINVAL;
@@ -941,7 +1025,7 @@ int hinic3_bond_get_slaves(u16 bond_id, struct hinic3_bond_info_s *info)
 	int i;
 	int len;
 
-	if (!info || bond_id < BOND_FIRST_ID || bond_id > BOND_MAX_ID) {
+	if (!info || !BOND_ID_IS_VALID(bond_id)) {
 		pr_warn("hinic3_bond: Invalid args, info: %d,id: %u\n",
 			!!info, bond_id);
 		return -EINVAL;

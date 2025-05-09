@@ -30,6 +30,9 @@ int hinic3_dbg_get_wqe_info(void *hwdev, u16 q_id, u16 idx, u16 wqebb_cnt,
 	}
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	if (q_id >= nic_io->num_qps) {
 		pr_err("q_id[%u] > num_qps_cfg[%u].\n", q_id, nic_io->num_qps);
 		return -EINVAL;
@@ -69,6 +72,9 @@ int hinic3_dbg_get_sq_info(void *hwdev, u16 q_id, struct nic_sq_info *sq_info,
 	}
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	if (q_id >= nic_io->num_qps) {
 		nic_err(nic_io->dev_hdl, "Input queue id(%u) is larger than the actual queue number\n",
 			q_id);
@@ -82,6 +88,8 @@ int hinic3_dbg_get_sq_info(void *hwdev, u16 q_id, struct nic_sq_info *sq_info,
 	}
 
 	sq = &nic_io->sq[q_id];
+	if (!sq)
+		return -EINVAL;
 
 	sq_info->q_id = q_id;
 	sq_info->pi = hinic3_get_sq_local_pi(sq);
@@ -112,6 +120,9 @@ int hinic3_dbg_get_rq_info(void *hwdev, u16 q_id, struct nic_rq_info *rq_info,
 	}
 
 	nic_io = hinic3_get_service_adapter(hwdev, SERVICE_T_NIC);
+	if (!nic_io)
+		return -EINVAL;
+
 	if (q_id >= nic_io->num_qps) {
 		nic_err(nic_io->dev_hdl, "Input queue id(%u) is larger than the actual queue number\n",
 			q_id);
@@ -125,6 +136,8 @@ int hinic3_dbg_get_rq_info(void *hwdev, u16 q_id, struct nic_rq_info *rq_info,
 	}
 
 	rq = &nic_io->rq[q_id];
+	if (!rq)
+		return -EINVAL;
 
 	rq_info->q_id = q_id;
 

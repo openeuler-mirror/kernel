@@ -101,6 +101,12 @@ enum hinic3_pcie_tph {
 #define SLAVE_HOST_STATUS_SET(host_id, enable)	(((u8)(enable) & 1U) << (host_id))
 #define SLAVE_HOST_STATUS_GET(host_id, val)	(!!((val) & (1U << (host_id))))
 
+#ifdef HAVE_HOT_REPLACE_FUNC
+	extern int get_partition_id(void);
+#else
+	static int get_partition_id(void) { return 0; }
+#endif
+
 void set_slave_host_enable(void *hwdev, u8 host_id, bool enable)
 {
 	u32 reg_val;
@@ -207,6 +213,28 @@ static void hinic3_init_host_mode_pre(struct hinic3_hwdev *hwdev)
 	}
 }
 
+static void hinic3_init_hot_plug_status(struct hinic3_hwdev *hwdev)
+{
+	struct service_cap *cap = &hwdev->cfg_mgmt->svc_cap;
+
+	if (cap->hot_plug_disable) {
+		hwdev->hot_plug_mode = HOT_PLUG_DISABLE;
+	} else {
+		hwdev->hot_plug_mode = HOT_PLUG_ENABLE;
+	}
+}
+
+static void hinic3_init_os_hot_replace(struct hinic3_hwdev *hwdev)
+{
+	struct service_cap *cap = &hwdev->cfg_mgmt->svc_cap;
+
+	if (cap->os_hot_replace) {
+		hwdev->hot_replace_mode = HOT_REPLACE_ENABLE;
+	} else {
+		hwdev->hot_replace_mode = HOT_REPLACE_DISABLE;
+	}
+}
+
 static u8 hinic3_nic_sw_aeqe_handler(void *hwdev, u8 event, u8 *data)
 {
 	struct hinic3_hwdev *dev = hwdev;
@@ -270,14 +298,20 @@ static void chip_fault_show(struct hinic3_hwdev *hwdev,
 		"fatal", "reset", "host", "flr", "general", "suggestion"};
 	char level_str[FAULT_SHOW_STR_LEN + 1];
 	u8 level;
+	int ret;
 
 	memset(level_str, 0, FAULT_SHOW_STR_LEN + 1);
 	level = event->event.chip.err_level;
-	if (level < FAULT_LEVEL_MAX)
-		strncpy(level_str, fault_level[level],
-			FAULT_SHOW_STR_LEN);
-	else
-		strncpy(level_str, "Unknown", FAULT_SHOW_STR_LEN);
+	if (level < FAULT_LEVEL_MAX) {
+		ret = strscpy(level_str, fault_level[level],
+			      FAULT_SHOW_STR_LEN);
+		if (ret < 0)
+			return;
+	} else {
+		ret = strscpy(level_str, "Unknown", FAULT_SHOW_STR_LEN);
+		if (ret < 0)
+			return;
+	}
 
 	if (level == FAULT_LEVEL_SERIOUS_FLR)
 		dev_err(hwdev->dev_hdl, "err_level: %u [%s], flr func_id: %u\n",
@@ -299,6 +333,7 @@ static void fault_report_show(struct hinic3_hwdev *hwdev,
 		"reg rd timeout", "reg wr timeout", "phy fault", "tsensor fault"};
 	char type_str[FAULT_SHOW_STR_LEN + 1] = {0};
 	struct fault_event_stats *fault = NULL;
+	int ret;
 
 	sdk_err(hwdev->dev_hdl, "Fault event report received, func_id: %u\n",
 		hinic3_global_func_id(hwdev));
@@ -306,10 +341,14 @@ static void fault_report_show(struct hinic3_hwdev *hwdev,
 	fault = &hwdev->hw_stats.fault_event_stats;
 
 	if (event->type < FAULT_TYPE_MAX) {
-		strncpy(type_str, fault_type[event->type], sizeof(type_str));
+		ret = strscpy(type_str, fault_type[event->type], sizeof(type_str));
+		if (ret < 0)
+			return;
 		atomic_inc(&fault->fault_type_stat[event->type]);
 	} else {
-		strncpy(type_str, "Unknown", sizeof(type_str));
+		ret = strscpy(type_str, "Unknown", sizeof(type_str));
+		if (ret < 0)
+			return;
 	}
 
 	sdk_err(hwdev->dev_hdl, "Fault type: %u [%s]\n", event->type, type_str);
@@ -1536,15 +1575,30 @@ int hinic3_init_hwdev(struct hinic3_init_para *para)
 
 	hinic3_init_host_mode_pre(hwdev);
 
+	hinic3_init_hot_plug_status(hwdev);
+
+	hinic3_init_os_hot_replace(hwdev);
+
 	err = hinic3_multi_host_mgmt_init(hwdev);
 	if (err != 0) {
 		sdk_err(hwdev->dev_hdl, "Failed to init function mode\n");
 		goto init_multi_host_fail;
 	}
 
-	err = hinic3_init_ppf_work(hwdev);
-	if (err != 0)
-		goto init_ppf_work_fail;
+	// hot_replace_mode is enable, run ppf function only when partition_id is 0
+	// or run ppf function directly
+	if (hwdev->hot_replace_mode == HOT_REPLACE_ENABLE) {
+		if (get_partition_id() == 0) {
+			err = hinic3_init_ppf_work(hwdev);
+			if (err != 0) {
+				goto init_ppf_work_fail;
+			}
+		}
+	} else {
+		err = hinic3_init_ppf_work(hwdev);
+		if (err != 0)
+			goto init_ppf_work_fail;
+	}
 
 	err = hinic3_set_comm_features(hwdev, hwdev->features, COMM_MAX_FEATURE_QWORD);
 	if (err != 0) {
@@ -1947,6 +2001,19 @@ void hinic3_link_event_stats(void *dev, u8 link)
 		atomic_inc(&hwdev->hw_stats.link_event_stats.link_down_stats);
 }
 EXPORT_SYMBOL(hinic3_link_event_stats);
+
+int hinic3_get_link_event_stats(void *dev, int *link_state)
+{
+	struct hinic3_hwdev *hwdev = dev;
+
+	if (!hwdev || !link_state)
+		return -EINVAL;
+
+	*link_state = hwdev->hw_stats.link_event_stats.link_down_stats.counter;
+
+	return 0;
+}
+EXPORT_SYMBOL(hinic3_get_link_event_stats);
 
 u8 hinic3_max_pf_num(void *hwdev)
 {

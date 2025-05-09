@@ -32,7 +32,7 @@ struct hinic3_prof_adapter nic_prof_adap_objs[] = {
 
 void hinic3_init_nic_prof_adapter(struct hinic3_nic_dev *nic_dev)
 {
-	u16 num_adap = ARRAY_SIZE(nic_prof_adap_objs);
+	int num_adap = ARRAY_LEN(nic_prof_adap_objs);
 
 	nic_dev->prof_adap = hinic3_prof_init(nic_dev, nic_prof_adap_objs, num_adap,
 					      (void *)&nic_dev->prof_attr);

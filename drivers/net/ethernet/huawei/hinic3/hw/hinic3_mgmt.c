@@ -348,7 +348,7 @@ int hinic3_pf_to_mgmt_sync(void *hwdev, u8 mod, u16 cmd, void *buf_in,
 	if (!COMM_SUPPORT_API_CHAIN((struct hinic3_hwdev *)hwdev))
 		return -EPERM;
 
-	if (!buf_in || in_size == 0)
+	if ((buf_in == NULL) || (in_size == 0))
 		return -EINVAL;
 
 	ret = msg_to_mgmt_pre(mod, buf_in, in_size);
@@ -864,6 +864,7 @@ static int alloc_recv_msg(struct hinic3_recv_msg *recv_msg)
 static void free_recv_msg(struct hinic3_recv_msg *recv_msg)
 {
 	kfree(recv_msg->msg);
+	recv_msg->msg = NULL;
 }
 
 /**
@@ -935,6 +936,9 @@ static void free_msg_buf(struct hinic3_msg_pf_to_mgmt *pf_to_mgmt)
 
 	free_recv_msg(&pf_to_mgmt->recv_resp_msg_from_mgmt);
 	free_recv_msg(&pf_to_mgmt->recv_msg_from_mgmt);
+	pf_to_mgmt->mgmt_ack_buf = NULL;
+	pf_to_mgmt->sync_msg_buf = NULL;
+	pf_to_mgmt->async_msg_buf = NULL;
 }
 
 /**

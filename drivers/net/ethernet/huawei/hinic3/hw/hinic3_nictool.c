@@ -14,6 +14,7 @@
 #include "hinic3_crm.h"
 #include "hinic3_hw.h"
 #include "hinic3_hw_cfg.h"
+#include "hinic3_dev_mgmt.h"
 #include "hinic3_hwdev.h"
 #include "hinic3_lld.h"
 #include "hinic3_hw_mt.h"
@@ -22,9 +23,7 @@
 static int g_nictool_ref_cnt;
 
 static dev_t g_dev_id = {0};
-/*lint -save -e104 -e808*/
 static struct class *g_nictool_class;
-/*lint -restore*/
 static struct cdev g_nictool_cdev;
 
 #define HINIC3_MAX_BUF_SIZE (2048 * 1024)
@@ -92,6 +91,21 @@ static int get_all_chip_id_cmd(struct hinic3_lld_dev *lld_dev, const void *buf_i
 	return 0;
 }
 
+static int get_os_hot_replace_info(struct hinic3_lld_dev *lld_dev,
+				   const void *buf_in, u32 in_size,
+				   void *buf_out, u32 *out_size)
+{
+	if (*out_size != sizeof(struct os_hot_replace_info) || !buf_out) {
+		pr_err("Invalid parameter: out_buf_size %u, expect %lu\n",
+		       *out_size, sizeof(struct os_hot_replace_info));
+		return -EFAULT;
+	}
+
+	hinic3_get_os_hot_replace_info(buf_out);
+
+	return 0;
+}
+
 static int get_card_usr_api_chain_mem(int card_idx)
 {
 	unsigned char *tmp = NULL;
@@ -100,8 +114,8 @@ static int get_card_usr_api_chain_mem(int card_idx)
 	card_id = card_idx;
 	if (!g_card_vir_addr[card_idx]) {
 		g_card_vir_addr[card_idx] =
-			(void *)__get_free_pages(GFP_KERNEL,
-						 DBGTOOL_PAGE_ORDER);
+			(void *)ossl_get_free_pages(GFP_KERNEL,
+						     DBGTOOL_PAGE_ORDER);
 		if (!g_card_vir_addr[card_idx]) {
 			pr_err("Alloc api chain memory fail for card %d!\n", card_idx);
 			return -EFAULT;
@@ -166,7 +180,7 @@ static int get_pf_dev_info(struct hinic3_lld_dev *lld_dev, const void *buf_in, u
 
 	if (!buf_out || *out_size != sizeof(struct pf_dev_info) * PF_DEV_INFO_NUM) {
 		pr_err("Invalid parameter: out_buf_size %u, expect %lu\n",
-		       *out_size, sizeof(dev_info) * PF_DEV_INFO_NUM);
+		       *out_size, sizeof(*dev_info) * PF_DEV_INFO_NUM);
 		return -EFAULT;
 	}
 
@@ -193,13 +207,18 @@ static int get_pf_dev_info(struct hinic3_lld_dev *lld_dev, const void *buf_in, u
 	return 0;
 }
 
-static long dbgtool_knl_free_mem(int id)
+static void dbgtool_knl_free_mem(int id)
 {
 	unsigned char *tmp = NULL;
 	int i;
 
+	if (id < 0 || id >= MAX_CARD_NUM) {
+		pr_err("Invalid card id\n");
+		return;
+	}
+
 	if (!g_card_vir_addr[id])
-		return 0;
+		return;
 
 	tmp = g_card_vir_addr[id];
 	for (i = 0; i < (1 << DBGTOOL_PAGE_ORDER); i++) {
@@ -210,8 +229,6 @@ static long dbgtool_knl_free_mem(int id)
 	free_pages((unsigned long)g_card_vir_addr[id], DBGTOOL_PAGE_ORDER);
 	g_card_vir_addr[id] = NULL;
 	g_card_phy_addr[id] = 0;
-
-	return 0;
 }
 
 static int free_knl_mem(struct hinic3_lld_dev *lld_dev, const void *buf_in, u32 in_size,
@@ -236,7 +253,8 @@ static int free_knl_mem(struct hinic3_lld_dev *lld_dev, const void *buf_in, u32 
 	return 0;
 }
 
-static int card_info_param_valid(char *dev_name, const void *buf_out, u32 buf_out_size, int *id)
+static int card_info_param_valid(const char *dev_name, const void *buf_out,
+				 u32 buf_out_size, int *id)
 {
 	int err;
 
@@ -351,7 +369,7 @@ static int get_hw_drv_version(struct hinic3_lld_dev *lld_dev, const void *buf_in
 	}
 
 	err = snprintf(ver_info->ver, sizeof(ver_info->ver), "%s  %s", HINIC3_DRV_VERSION,
-		       "2023-05-17_19:56:38");
+		       "2025-05-01_00:00:03");
 	if (err < 0)
 		return -EINVAL;
 
@@ -386,22 +404,38 @@ static int get_pf_id(struct hinic3_lld_dev *lld_dev, const void *buf_in, u32 in_
 	return 0;
 }
 
+static int get_mbox_cnt(struct hinic3_lld_dev *lld_dev, const void *buf_in,
+				u32 in_size, void *buf_out, u32 *out_size)
+{
+	if (buf_out == NULL || *out_size != sizeof(struct card_mbox_cnt_info)) {
+		pr_err("buf_out is NULL, or out_size != %lu\n",
+		       sizeof(struct card_info));
+		return -EINVAL;
+	}
+
+	hinic3_get_mbox_cnt(hinic3_get_sdk_hwdev_by_lld(lld_dev), buf_out);
+
+	return 0;
+}
+
 struct hw_drv_module_handle hw_driv_module_cmd_handle[] = {
-	{FUNC_TYPE,		get_func_type},
-	{GET_FUNC_IDX,		get_func_id},
-	{GET_HW_STATS,		(hw_driv_module)get_hw_driver_stats},
-	{CLEAR_HW_STATS,	clear_hw_driver_stats},
-	{GET_SELF_TEST_RES,	get_self_test_result},
-	{GET_CHIP_FAULT_STATS,	(hw_driv_module)get_chip_faults_stats},
-	{GET_SINGLE_CARD_INFO,	(hw_driv_module)get_single_card_info},
-	{IS_DRV_IN_VM,		is_driver_in_vm},
-	{GET_CHIP_ID,		get_all_chip_id_cmd},
-	{GET_PF_DEV_INFO,	get_pf_dev_info},
-	{CMD_FREE_MEM,		free_knl_mem},
-	{GET_CHIP_INFO,		get_card_func_info},
-	{GET_FUNC_CAP,		get_pf_cap_info},
-	{GET_DRV_VERSION,	get_hw_drv_version},
-	{GET_PF_ID,		get_pf_id},
+	{FUNC_TYPE,		  get_func_type},
+	{GET_FUNC_IDX,		  get_func_id},
+	{GET_HW_STATS,		  (hw_driv_module)get_hw_driver_stats},
+	{CLEAR_HW_STATS,	  clear_hw_driver_stats},
+	{GET_SELF_TEST_RES,	  get_self_test_result},
+	{GET_CHIP_FAULT_STATS,	  (hw_driv_module)get_chip_faults_stats},
+	{GET_SINGLE_CARD_INFO,	  (hw_driv_module)get_single_card_info},
+	{IS_DRV_IN_VM,		  is_driver_in_vm},
+	{GET_CHIP_ID,		  get_all_chip_id_cmd},
+	{GET_PF_DEV_INFO,	  get_pf_dev_info},
+	{CMD_FREE_MEM,		  free_knl_mem},
+	{GET_CHIP_INFO,		  get_card_func_info},
+	{GET_FUNC_CAP,		  get_pf_cap_info},
+	{GET_DRV_VERSION,	  get_hw_drv_version},
+	{GET_PF_ID,		  get_pf_id},
+	{GET_OS_HOT_REPLACE_INFO, get_os_hot_replace_info},
+	{GET_MBOX_CNT,		  (hw_driv_module)get_mbox_cnt},
 };
 
 static int alloc_tmp_buf(void *hwdev, struct msg_module *nt_msg, u32 in_size,
@@ -439,8 +473,8 @@ static void free_tmp_buf(void *hwdev, struct msg_module *nt_msg,
 static int send_to_hw_driver(struct hinic3_lld_dev *lld_dev, struct msg_module *nt_msg,
 			     const void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
 {
-	int index, num_cmds = sizeof(hw_driv_module_cmd_handle) /
-				sizeof(hw_driv_module_cmd_handle[0]);
+	int index, num_cmds = (int)(sizeof(hw_driv_module_cmd_handle) /
+				sizeof(hw_driv_module_cmd_handle[0]));
 	enum driver_cmd_type cmd_type =
 				(enum driver_cmd_type)(nt_msg->msg_formate);
 	int err = 0;
@@ -482,8 +516,8 @@ static int send_to_service_driver(struct hinic3_lld_dev *lld_dev, struct msg_mod
 		if (nt_msg->msg_formate == GET_DRV_VERSION)
 			return 0;
 
-		pr_err("Can not get the uld dev correctly: %s, %s driver may be not register\n",
-		       nt_msg->device_name, service_name[type]);
+		pr_err("Can not get the uld dev correctly: %s driver may be not register\n",
+		       service_name[type]);
 		return -EINVAL;
 	}
 
@@ -550,25 +584,28 @@ static struct hinic3_lld_dev *get_lld_dev_by_nt_msg(struct msg_module *nt_msg)
 {
 	struct hinic3_lld_dev *lld_dev = NULL;
 
-	if (nt_msg->module >= SEND_TO_SRV_DRV_BASE && nt_msg->module < SEND_TO_DRIVER_MAX &&
-	    nt_msg->module != SEND_TO_HW_DRIVER && nt_msg->msg_formate != GET_DRV_VERSION) {
+	if (nt_msg->module == SEND_TO_NIC_DRIVER &&
+	    (nt_msg->msg_formate == GET_XSFP_INFO ||
+	    nt_msg->msg_formate == GET_XSFP_PRESENT ||
+	    nt_msg->msg_formate == GET_XSFP_INFO_COMP_CMIS)) {
+		lld_dev = hinic3_get_lld_dev_by_chip_and_port(nt_msg->device_name, nt_msg->port_id);
+	} else if (nt_msg->module == SEND_TO_CUSTOM_DRIVER &&
+		   nt_msg->msg_formate == CMD_CUSTOM_BOND_GET_CHIP_NAME) {
+		   lld_dev = hinic3_get_lld_dev_by_dev_name(nt_msg->device_name,
+							 SERVICE_T_MAX);
+	} else if (nt_msg->module == SEND_TO_VBS_DRIVER ||
+		   nt_msg->module == SEND_TO_BIFUR_DRIVER) {
+		lld_dev = hinic3_get_lld_dev_by_chip_name(nt_msg->device_name);
+	} else  if (nt_msg->module >= SEND_TO_SRV_DRV_BASE &&
+		    nt_msg->module < SEND_TO_DRIVER_MAX &&
+		    nt_msg->msg_formate != GET_DRV_VERSION) {
 		lld_dev = hinic3_get_lld_dev_by_dev_name(nt_msg->device_name,
 							 nt_msg->module - SEND_TO_SRV_DRV_BASE);
 	} else {
 		lld_dev = hinic3_get_lld_dev_by_chip_name(nt_msg->device_name);
 		if (!lld_dev)
-			lld_dev = hinic3_get_lld_dev_by_dev_name(nt_msg->device_name,
-								 SERVICE_T_MAX);
+			lld_dev = hinic3_get_lld_dev_by_dev_name(nt_msg->device_name, SERVICE_T_MAX);
 	}
-
-	if (nt_msg->module == SEND_TO_NIC_DRIVER && (nt_msg->msg_formate == GET_XSFP_INFO ||
-						     nt_msg->msg_formate == GET_XSFP_PRESENT))
-		lld_dev = hinic3_get_lld_dev_by_chip_and_port(nt_msg->device_name,
-							      nt_msg->port_id);
-
-	if (nt_msg->module == SEND_TO_CUSTOM_DRIVER &&
-	    nt_msg->msg_formate == CMD_CUSTOM_BOND_GET_CHIP_NAME)
-		lld_dev = hinic3_get_lld_dev_by_dev_name(nt_msg->device_name, SERVICE_T_MAX);
 
 	return lld_dev;
 }
@@ -591,14 +628,16 @@ static long hinicadm_k_unlocked_ioctl(struct file *pfile, unsigned long arg)
 	lld_dev = get_lld_dev_by_nt_msg(&nt_msg);
 	if (!lld_dev) {
 		if (nt_msg.msg_formate != DEV_NAME_TEST)
-			pr_err("Can not find device %s for module %d\n",
+			pr_err("Can not find device %s for module %u\n",
 			       nt_msg.device_name, nt_msg.module);
 
 		return -ENODEV;
 	}
 
-	if (nt_msg.msg_formate == DEV_NAME_TEST)
+	if (nt_msg.msg_formate == DEV_NAME_TEST) {
+		lld_dev_put(lld_dev);
 		return 0;
+	}
 
 	ret = alloc_tmp_buf(hinic3_get_sdk_hwdev_by_lld(lld_dev), &nt_msg,
 			    in_size, &buf_in, out_size_expect, &buf_out);
@@ -642,6 +681,9 @@ out_free_lock:
 static long dbgtool_knl_ffm_info_rd(struct dbgtool_param *para,
 				    struct dbgtool_k_glb_info *dbgtool_info)
 {
+	if (!para->param.ffm_rd || !dbgtool_info->ffm)
+		return -EINVAL;
+
 	/* Copy the ffm_info to user mode */
 	if (copy_to_user(para->param.ffm_rd, dbgtool_info->ffm,
 			 (unsigned int)sizeof(struct ffm_record_info))) {
@@ -674,13 +716,14 @@ static long dbgtool_k_unlocked_ioctl(struct file *pfile,
 		card_info = (struct card_node *)g_card_node_array[i];
 		if (!card_info)
 			continue;
-		if (!strncmp(param.chip_name, card_info->chip_name, IFNAMSIZ))
+		if (memcmp(param.chip_name, card_info->chip_name,
+			   strlen(card_info->chip_name) + 1) == 0)
 			break;
 	}
 
 	if (i == MAX_CARD_NUM || !card_info) {
 		lld_put();
-		pr_err("Can't find this card %s\n", param.chip_name);
+		pr_err("Can't find this card.\n");
 		return -EFAULT;
 	}
 
@@ -701,6 +744,7 @@ static long dbgtool_k_unlocked_ioctl(struct file *pfile,
 	default:
 		pr_err("Dbgtool cmd(0x%x) not support now\n", real_cmd);
 		ret = -EFAULT;
+		break;
 	}
 
 	up(&dbgtool_info->dbgtool_sem);
@@ -746,9 +790,11 @@ static long nictool_k_unlocked_ioctl(struct file *pfile,
 
 static int hinic3_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 {
+	pgprot_t vm_page_prot;
 	unsigned long vmsize = vma->vm_end - vma->vm_start;
 	phys_addr_t offset = (phys_addr_t)vma->vm_pgoff << PAGE_SHIFT;
 	phys_addr_t phy_addr;
+	int err = 0;
 
 	if (vmsize > (PAGE_SIZE * (1 << DBGTOOL_PAGE_ORDER))) {
 		pr_err("Map size = %lu is bigger than alloc\n", vmsize);
@@ -757,14 +803,18 @@ static int hinic3_mem_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	/* old version of tool set vma->vm_pgoff to 0 */
 	phy_addr = offset ? offset : g_card_phy_addr[card_id];
-
-	if (!phy_addr) {
-		pr_err("Card_id = %d physical address is 0\n", card_id);
-		return -EAGAIN;
+	/* check phy_addr valid */
+	if (phy_addr != g_card_phy_addr[card_id]) {
+		err = hinic3_bar_mmap_param_valid(phy_addr, vmsize);
+		if (err != 0) {
+			pr_err("mmap param invalid, err: %d\n", err);
+			return err;
+		}
 	}
 
 	/* Disable cache and write buffer in the mapping area */
-	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+	vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+	vma->vm_page_prot = vm_page_prot;
 	if (remap_pfn_range(vma, vma->vm_start, (phy_addr >> PAGE_SHIFT),
 			    vmsize, vma->vm_page_prot)) {
 		pr_err("Remap pfn range failed.\n");
@@ -787,7 +837,6 @@ static const struct file_operations fifo_operations = {
 static void free_dbgtool_info(void *hwdev, struct card_node *chip_info)
 {
 	struct dbgtool_k_glb_info *dbgtool_info = NULL;
-	int err, id;
 
 	if (hinic3_func_type(hwdev) != TYPE_VF)
 		chip_info->func_handle_array[hinic3_global_func_id(hwdev)] = NULL;
@@ -795,23 +844,23 @@ static void free_dbgtool_info(void *hwdev, struct card_node *chip_info)
 	if (--chip_info->func_num)
 		return;
 
-	err = sscanf(chip_info->chip_name, HINIC3_CHIP_NAME "%d", &id);
-	if (err < 0)
-		pr_err("Failed to get card id\n");
-
-	if (id < MAX_CARD_NUM)
-		g_card_node_array[id] = NULL;
+	if (chip_info->chip_id >= 0 && chip_info->chip_id < MAX_CARD_NUM)
+		g_card_node_array[chip_info->chip_id] = NULL;
 
 	dbgtool_info = chip_info->dbgtool_info;
 	/* FFM deinit */
-	kfree(dbgtool_info->ffm);
-	dbgtool_info->ffm = NULL;
+	if (dbgtool_info && dbgtool_info->ffm) {
+		kfree(dbgtool_info->ffm);
+		dbgtool_info->ffm = NULL;
+	}
 
-	kfree(dbgtool_info);
+	if (dbgtool_info)
+		kfree(dbgtool_info);
+
 	chip_info->dbgtool_info = NULL;
 
-	if (id < MAX_CARD_NUM)
-		(void)dbgtool_knl_free_mem(id);
+	if (chip_info->chip_id >= 0 && chip_info->chip_id < MAX_CARD_NUM)
+		dbgtool_knl_free_mem(chip_info->chip_id);
 }
 
 static int alloc_dbgtool_info(void *hwdev, struct card_node *chip_info)
@@ -872,7 +921,6 @@ dbgtool_info_fail:
  * nictool_k_init - initialize the hw interface
  **/
 /* temp for dbgtool_info */
-/*lint -e438*/
 int nictool_k_init(void *hwdev, void *chip_node)
 {
 	struct card_node *chip_info = (struct card_node *)chip_node;
@@ -895,9 +943,7 @@ int nictool_k_init(void *hwdev, void *chip_node)
 	}
 
 	/* Create equipment */
-	/*lint -save -e160*/
 	g_nictool_class = class_create(THIS_MODULE, HIADM3_DEV_CLASS);
-	/*lint -restore*/
 	if (IS_ERR(g_nictool_class)) {
 		pr_err("Create nictool_class fail\n");
 		err = -EFAULT;
@@ -944,7 +990,7 @@ alloc_chdev_fail:
 	free_dbgtool_info(hwdev, chip_info);
 
 	return err;
-} /*lint +e438*/
+}
 
 void nictool_k_uninit(void *hwdev, void *chip_node)
 {

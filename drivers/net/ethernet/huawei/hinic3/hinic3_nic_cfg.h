@@ -7,9 +7,9 @@
 #include <linux/types.h>
 #include <linux/netdevice.h>
 
-#include "hinic3_mgmt_interface.h"
+#include "nic_mpu_cmd_defs.h"
 #include "mag_mpu_cmd.h"
-#include "mag_cmd.h"
+#include "mag_mpu_cmd_defs.h"
 
 #define OS_VF_ID_TO_HW(os_vf_id) ((os_vf_id) + 1)
 #define HW_VF_ID_TO_OS(hw_vf_id) ((hw_vf_id) - 1)
@@ -54,6 +54,8 @@
 
 #define MAX_LIMIT_BW 100
 
+#define HINIC3_INVALID_BOND_ID 0xffffffff
+
 enum hinic3_valid_link_settings {
 	HILINK_LINK_SET_SPEED = 0x1,
 	HILINK_LINK_SET_AUTONEG = 0x2,
@@ -65,6 +67,11 @@ enum hinic3_link_follow_status {
 	HINIC3_LINK_FOLLOW_PORT,
 	HINIC3_LINK_FOLLOW_SEPARATE,
 	HINIC3_LINK_FOLLOW_STATUS_MAX,
+};
+
+enum hinic3_nic_pf_direct {
+	HINIC3_NIC_RX = 0,
+	HINIC3_NIC_TX,
 };
 
 struct hinic3_link_ksettings {
@@ -150,8 +157,12 @@ struct nic_port_info {
 	u8 duplex;
 	u8 speed;
 	u8 fec;
+	u8 lanes;
+	u8 rsvd;
 	u32 supported_mode;
 	u32 advertised_mode;
+	u32 supported_fec_mode;
+	u32 bond_speed;
 };
 
 struct nic_pause_config {
@@ -176,10 +187,16 @@ struct hinic3_rxq_hw {
 #define MODULE_TYPE_QSFP28 0x11
 #define MODULE_TYPE_QSFP 0x0C
 #define MODULE_TYPE_QSFP_PLUS 0x0D
+#define MODULE_TYPE_DSFP 0x1B
+#define MODULE_TYPE_QSFP_CMIS 0x1E
 
 #define TCAM_IP_TYPE_MASK     0x1
 #define TCAM_TUNNEL_TYPE_MASK 0xF
 #define TCAM_FUNC_ID_MASK     0x7FFF
+
+int hinic3_delete_bond(void *hwdev);
+int hinic3_open_close_bond(void *hwdev, u32 bond_en);
+int hinic3_create_bond(void *hwdev, u32 *bond_id);
 
 int hinic3_add_tcam_rule(void *hwdev, struct nic_tcam_cfg_rule *tcam_rule);
 int hinic3_del_tcam_rule(void *hwdev, u32 index);
@@ -201,7 +218,7 @@ int hinic3_flush_tcam_rule(void *hwdev);
  * @retval zero: success
  * @retval non-zero: failure
  */
-int hinic3_update_mac(void *hwdev, u8 *old_mac, u8 *new_mac, u16 vlan_id,
+int hinic3_update_mac(void *hwdev, const u8 *old_mac, u8 *new_mac, u16 vlan_id,
 		      u16 func_id);
 
 /* *
@@ -333,7 +350,7 @@ int hinic3_kill_vf_vlan(void *hwdev, int vf_id);
  * @retval zero: success
  * @retval non-zero: failure
  */
-int hinic3_set_vf_mac(void *hwdev, int vf_id, unsigned char *mac_addr);
+int hinic3_set_vf_mac(void *hwdev, int vf_id, const unsigned char *mac_addr);
 
 /* *
  * @brief hinic3_vf_info_vlanprio - get vf vlan priority
@@ -508,7 +525,14 @@ int hinic3_rss_get_indir_tbl(void *hwdev, u32 *indir_table);
  */
 int hinic3_get_phy_port_stats(void *hwdev, struct mag_cmd_port_stats *stats);
 
-int hinic3_get_fpga_phy_port_stats(void *hwdev, struct hinic3_phy_fpga_port_stats *stats);
+/* *
+ * @brief hinic3_get_phy_rsfec_stats - get rsfec stats
+ * @param hwdev: device pointer to hwdev
+ * @param stats: rsfec(Reed-Solomon Forward Error Correction) stats
+ * @retval zero: success
+ * @retval non-zero: failure
+ */
+int hinic3_get_phy_rsfec_stats(void *hwdev, struct mag_cmd_rsfec_stats *stats);
 
 int hinic3_set_port_funcs_state(void *hwdev, bool enable);
 
@@ -544,6 +568,8 @@ int hinic3_set_vlan_fliter(void *hwdev, u32 vlan_filter_ctrl);
 
 void hinic3_clear_vfs_info(void *hwdev);
 
+int hinic3_notify_vf_outband_cfg(void *hwdev, u16 func_id, u16 vlan_id);
+
 int hinic3_update_mac_vlan(void *hwdev, u16 old_vlan, u16 new_vlan, int vf_id);
 
 int hinic3_set_led_status(void *hwdev, enum mag_led_type type,
@@ -563,10 +589,13 @@ int hinic3_set_autoneg(void *hwdev, bool enable);
 
 int hinic3_get_sfp_type(void *hwdev, u8 *sfp_type, u8 *sfp_type_ext);
 int hinic3_get_sfp_eeprom(void *hwdev, u8 *data, u32 len);
+int hinic3_get_tlv_xsfp_eeprom(void *hwdev, u8 *data, u32 len);
 
 bool hinic3_if_sfp_absent(void *hwdev);
 int hinic3_get_sfp_info(void *hwdev, struct mag_cmd_get_xsfp_info *sfp_info);
-
+int hinic3_get_sfp_tlv_info(void *hwdev,
+		struct drv_mag_cmd_get_xsfp_tlv_rsp *sfp_tlv_info,
+		const struct mag_cmd_get_xsfp_tlv_req *sfp_tlv_info_req);
 /* *
  * @brief hinic3_set_nic_feature_to_hw - sync nic feature to hardware
  * @param hwdev: device pointer to hwdev
@@ -618,4 +647,18 @@ int hinic3_set_pf_rate(void *hwdev, u8 speed_level);
 
 int hinic3_get_rxq_hw_info(void *hwdev, struct rxq_check_info *rxq_info, u16 num_qps, u16 wqe_type);
 
+#if defined(HAVE_NDO_UDP_TUNNEL_ADD) || defined(HAVE_UDP_TUNNEL_NIC_INFO)
+/* *
+ * @brief hinic3_vlxan_port_config - add/del vxlan dst port
+ * @param hwdev: device pointer to hwdev
+ * @param func_id: function id
+ * @param port: vxlan dst port
+ * @param action: add or del, del will set to default value (0x12B5)
+ * @retval zero: success
+ * @retval non-zero: failure
+ */
+int hinic3_vlxan_port_config(void *hwdev, u16 func_id, u16 port, u8 action);
+#endif /* HAVE_NDO_UDP_TUNNEL_ADD || HAVE_UDP_TUNNEL_NIC_INFO */
+
+int hinic3_get_outband_vlan_cfg(void *hwdev, u16 *outband_default_vid);
 #endif

@@ -24,82 +24,80 @@
 
 u8 hinic3_get_dev_user_cos_num(struct hinic3_nic_dev *nic_dev)
 {
-	if (nic_dev->hw_dcb_cfg.trust == 0)
-		return nic_dev->hw_dcb_cfg.pcp_user_cos_num;
-	if (nic_dev->hw_dcb_cfg.trust == 1)
-		return nic_dev->hw_dcb_cfg.dscp_user_cos_num;
+	struct hinic3_dcb *dcb = nic_dev->dcb;
+
+	if (dcb->hw_dcb_cfg.trust == HINIC3_DCB_PCP)
+		return dcb->hw_dcb_cfg.pcp_user_cos_num;
+	if (dcb->hw_dcb_cfg.trust == HINIC3_DCB_DSCP)
+		return dcb->hw_dcb_cfg.dscp_user_cos_num;
 	return 0;
 }
 
 u8 hinic3_get_dev_valid_cos_map(struct hinic3_nic_dev *nic_dev)
 {
-	if (nic_dev->hw_dcb_cfg.trust == 0)
-		return nic_dev->hw_dcb_cfg.pcp_valid_cos_map;
-	if (nic_dev->hw_dcb_cfg.trust == 1)
-		return nic_dev->hw_dcb_cfg.dscp_valid_cos_map;
+	struct hinic3_dcb *dcb = nic_dev->dcb;
+
+	if (dcb->hw_dcb_cfg.trust == HINIC3_DCB_PCP)
+		return dcb->hw_dcb_cfg.pcp_valid_cos_map;
+	if (dcb->hw_dcb_cfg.trust == HINIC3_DCB_DSCP)
+		return dcb->hw_dcb_cfg.dscp_valid_cos_map;
 	return 0;
 }
 
 void hinic3_update_qp_cos_cfg(struct hinic3_nic_dev *nic_dev, u8 num_cos)
 {
-	struct hinic3_dcb_config *dcb_cfg = &nic_dev->hw_dcb_cfg;
-	u8 i, remainder, num_sq_per_cos, cur_cos_num = 0;
+	struct hinic3_dcb_config *hw_dcb_cfg = &nic_dev->dcb->hw_dcb_cfg;
+	struct hinic3_dcb_config *wanted_dcb_cfg =
+		&nic_dev->dcb->wanted_dcb_cfg;
 	u8 valid_cos_map = hinic3_get_dev_valid_cos_map(nic_dev);
+	u8 cos_qp_num, cos_qp_offset = 0;
+	u8 i, remainder, num_qp_per_cos;
 
-	if (num_cos == 0)
+	if (num_cos == 0 || nic_dev->q_params.num_qps == 0)
 		return;
 
-	num_sq_per_cos = (u8)(nic_dev->q_params.num_qps / num_cos);
-	if (num_sq_per_cos == 0)
-		return;
+	num_qp_per_cos = (u8)(nic_dev->q_params.num_qps / num_cos);
+	remainder = nic_dev->q_params.num_qps % num_cos;
 
-	remainder = nic_dev->q_params.num_qps % num_sq_per_cos;
-
-	memset(dcb_cfg->cos_qp_offset, 0, sizeof(dcb_cfg->cos_qp_offset));
-	memset(dcb_cfg->cos_qp_num, 0, sizeof(dcb_cfg->cos_qp_num));
+	memset(hw_dcb_cfg->cos_qp_offset, 0, sizeof(hw_dcb_cfg->cos_qp_offset));
+	memset(hw_dcb_cfg->cos_qp_num, 0, sizeof(hw_dcb_cfg->cos_qp_num));
 
 	for (i = 0; i < PCP_MAX_UP; i++) {
 		if (BIT(i) & valid_cos_map) {
-			u8 cos_qp_num = num_sq_per_cos;
-			u8 cos_qp_offset = (u8)(cur_cos_num * num_sq_per_cos);
+			cos_qp_num = num_qp_per_cos + ((remainder > 0) ?
+				 (remainder--, 1) : 0);
 
-			if (cur_cos_num < remainder) {
-				cos_qp_num++;
-				cos_qp_offset += cur_cos_num;
-			} else {
-				cos_qp_offset += remainder;
-			}
-
-			cur_cos_num++;
-			valid_cos_map -= (u8)BIT(i);
-
-			dcb_cfg->cos_qp_offset[i] = cos_qp_offset;
-			dcb_cfg->cos_qp_num[i] = cos_qp_num;
+			hw_dcb_cfg->cos_qp_offset[i] = cos_qp_offset;
+			hw_dcb_cfg->cos_qp_num[i] = cos_qp_num;
 			hinic3_info(nic_dev, drv, "cos %u, cos_qp_offset=%u cos_qp_num=%u\n",
 				    i, cos_qp_offset, cos_qp_num);
+
+			cos_qp_offset += cos_qp_num;
+			valid_cos_map -= (int)BIT(i);
 		}
 	}
 
-	memcpy(nic_dev->wanted_dcb_cfg.cos_qp_offset, dcb_cfg->cos_qp_offset,
-	       sizeof(dcb_cfg->cos_qp_offset));
-	memcpy(nic_dev->wanted_dcb_cfg.cos_qp_num, dcb_cfg->cos_qp_num,
-	       sizeof(dcb_cfg->cos_qp_num));
+	memcpy(wanted_dcb_cfg->cos_qp_offset, hw_dcb_cfg->cos_qp_offset,
+	       sizeof(hw_dcb_cfg->cos_qp_offset));
+	memcpy(wanted_dcb_cfg->cos_qp_num, hw_dcb_cfg->cos_qp_num,
+	       sizeof(hw_dcb_cfg->cos_qp_num));
 }
 
 void hinic3_update_tx_db_cos(struct hinic3_nic_dev *nic_dev, u8 dcb_en)
 {
+	struct hinic3_dcb_config *hw_dcb_cfg = &nic_dev->dcb->hw_dcb_cfg;
 	u8 i;
 	u16 start_qid, q_num;
 
 	hinic3_set_txq_cos(nic_dev, 0, nic_dev->q_params.num_qps,
-			   nic_dev->hw_dcb_cfg.default_cos);
+			   hw_dcb_cfg->default_cos);
 	if (!dcb_en)
 		return;
 
 	for (i = 0; i < NIC_DCB_COS_MAX; i++) {
-		q_num = (u16)nic_dev->hw_dcb_cfg.cos_qp_num[i];
+		q_num = (u16)hw_dcb_cfg->cos_qp_num[i];
 		if (q_num) {
-			start_qid = (u16)nic_dev->hw_dcb_cfg.cos_qp_offset[i];
+			start_qid = (u16)hw_dcb_cfg->cos_qp_offset[i];
 
 			hinic3_set_txq_cos(nic_dev, start_qid, q_num, i);
 			hinic3_info(nic_dev, drv, "update tx db cos, start_qid %u, q_num=%u cos=%u\n",
@@ -110,30 +108,29 @@ void hinic3_update_tx_db_cos(struct hinic3_nic_dev *nic_dev, u8 dcb_en)
 
 static int hinic3_set_tx_cos_state(struct hinic3_nic_dev *nic_dev, u8 dcb_en)
 {
-	struct hinic3_dcb_config *dcb_cfg = &nic_dev->hw_dcb_cfg;
+	struct hinic3_dcb *dcb = nic_dev->dcb;
+	struct hinic3_dcb_config *hw_dcb_cfg = &dcb->hw_dcb_cfg;
 	struct hinic3_dcb_state dcb_state = {0};
 	u8 i;
 	int err;
 
-	if (HINIC3_FUNC_IS_VF(nic_dev->hwdev)) {
-		/* VF does not support DCB, use the default cos */
-		dcb_cfg->default_cos = (u8)fls(nic_dev->func_dft_cos_bitmap) - 1;
-
-		return 0;
-	}
+	u32 pcp2cos_size = sizeof(dcb_state.pcp2cos);
+	u32 dscp2cos_size = sizeof(dcb_state.dscp2cos);
 
 	dcb_state.dcb_on = dcb_en;
-	dcb_state.default_cos = dcb_cfg->default_cos;
-	dcb_state.trust = dcb_cfg->trust;
+	dcb_state.default_cos = hw_dcb_cfg->default_cos;
+	dcb_state.trust = hw_dcb_cfg->trust;
 
 	if (dcb_en) {
 		for (i = 0; i < NIC_DCB_COS_MAX; i++)
-			dcb_state.pcp2cos[i] = dcb_cfg->pcp2cos[i];
+			dcb_state.pcp2cos[i] = hw_dcb_cfg->pcp2cos[i];
 		for (i = 0; i < NIC_DCB_IP_PRI_MAX; i++)
-			dcb_state.dscp2cos[i] = dcb_cfg->dscp2cos[i];
+			dcb_state.dscp2cos[i] = hw_dcb_cfg->dscp2cos[i];
 	} else {
-		memset(dcb_state.pcp2cos, dcb_cfg->default_cos, sizeof(dcb_state.pcp2cos));
-		memset(dcb_state.dscp2cos, dcb_cfg->default_cos, sizeof(dcb_state.dscp2cos));
+		memset(dcb_state.pcp2cos, hw_dcb_cfg->default_cos,
+		       pcp2cos_size);
+		memset(dcb_state.dscp2cos, hw_dcb_cfg->default_cos,
+		       dscp2cos_size);
 	}
 
 	err = hinic3_set_dcb_state(nic_dev->hwdev, &dcb_state);
@@ -143,7 +140,7 @@ static int hinic3_set_tx_cos_state(struct hinic3_nic_dev *nic_dev, u8 dcb_en)
 	return err;
 }
 
-static int hinic3_configure_dcb_hw(struct hinic3_nic_dev *nic_dev, u8 dcb_en)
+int hinic3_configure_dcb_hw(struct hinic3_nic_dev *nic_dev, u8 dcb_en)
 {
 	int err;
 	u8 user_cos_num = hinic3_get_dev_user_cos_num(nic_dev);
@@ -169,11 +166,13 @@ static int hinic3_configure_dcb_hw(struct hinic3_nic_dev *nic_dev, u8 dcb_en)
 		goto rx_configure_fail;
 	}
 
-	if (dcb_en)
+	if (dcb_en) {
 		set_bit(HINIC3_DCB_ENABLE, &nic_dev->flags);
-	else
+		set_bit(HINIC3_DCB_ENABLE, &nic_dev->nic_vram->flags);
+	} else {
 		clear_bit(HINIC3_DCB_ENABLE, &nic_dev->flags);
-
+		clear_bit(HINIC3_DCB_ENABLE, &nic_dev->nic_vram->flags);
+	}
 	return 0;
 rx_configure_fail:
 	hinic3_set_tx_cos_state(nic_dev, dcb_en ? 0 : 1);
@@ -188,6 +187,7 @@ set_tx_cos_fail:
 int hinic3_setup_cos(struct net_device *netdev, u8 cos, u8 netif_run)
 {
 	struct hinic3_nic_dev *nic_dev = netdev_priv(netdev);
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	int err;
 
 	if (cos && test_bit(HINIC3_SAME_RXTX, &nic_dev->flags)) {
@@ -195,9 +195,10 @@ int hinic3_setup_cos(struct net_device *netdev, u8 cos, u8 netif_run)
 		return -EOPNOTSUPP;
 	}
 
-	if (cos > nic_dev->cos_config_num_max) {
-		nicif_err(nic_dev, drv, netdev, "Invalid num_tc: %u, max cos: %u\n",
-			  cos, nic_dev->cos_config_num_max);
+	if (cos > dcb->cos_config_num_max) {
+		nicif_err(nic_dev, drv, netdev,
+			  "Invalid num_tc: %u, max cos: %u\n",
+			  cos, dcb->cos_config_num_max);
 		return -EINVAL;
 	}
 
@@ -223,36 +224,48 @@ static u8 get_cos_num(u8 hw_valid_cos_bitmap)
 static void hinic3_sync_dcb_cfg(struct hinic3_nic_dev *nic_dev,
 				const struct hinic3_dcb_config *dcb_cfg)
 {
-	struct hinic3_dcb_config *hw_cfg = &nic_dev->hw_dcb_cfg;
+	struct hinic3_dcb_config *hw_dcb_cfg = &nic_dev->dcb->hw_dcb_cfg;
 
-	memcpy(hw_cfg, dcb_cfg, sizeof(struct hinic3_dcb_config));
+	memcpy(hw_dcb_cfg, dcb_cfg, sizeof(struct hinic3_dcb_config));
 }
 
 static int init_default_dcb_cfg(struct hinic3_nic_dev *nic_dev,
 				struct hinic3_dcb_config *dcb_cfg)
 {
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	u8 i, hw_dft_cos_map, port_cos_bitmap, dscp_ind;
 	int err;
+	int is_in_kexec;
 
-	err = hinic3_cos_valid_bitmap(nic_dev->hwdev, &hw_dft_cos_map, &port_cos_bitmap);
+	err = hinic3_cos_valid_bitmap(nic_dev->hwdev,
+				      &hw_dft_cos_map, &port_cos_bitmap);
 	if (err) {
 		hinic3_err(nic_dev, drv, "None cos supported\n");
 		return -EFAULT;
 	}
-	nic_dev->func_dft_cos_bitmap = hw_dft_cos_map;
-	nic_dev->port_dft_cos_bitmap = port_cos_bitmap;
 
-	nic_dev->cos_config_num_max = get_cos_num(hw_dft_cos_map);
+	is_in_kexec = vram_get_kexec_flag();
 
-	dcb_cfg->trust = DCB_PCP;
-	dcb_cfg->pcp_user_cos_num = nic_dev->cos_config_num_max;
-	dcb_cfg->dscp_user_cos_num = nic_dev->cos_config_num_max;
-	dcb_cfg->default_cos = (u8)fls(nic_dev->func_dft_cos_bitmap) - 1;
+	dcb->func_dft_cos_bitmap = hw_dft_cos_map;
+	dcb->port_dft_cos_bitmap = port_cos_bitmap;
+
+	dcb->cos_config_num_max = get_cos_num(hw_dft_cos_map);
+
+	if (is_in_kexec == 0) {
+		dcb_cfg->trust = HINIC3_DCB_PCP;
+		dcb_cfg->default_cos = (u8)fls(dcb->func_dft_cos_bitmap) - 1;
+	} else {
+		dcb_cfg->trust = nic_dev->dcb->hw_dcb_cfg.trust;
+		dcb_cfg->default_cos = nic_dev->dcb->hw_dcb_cfg.default_cos;
+	}
+	dcb_cfg->pcp_user_cos_num = dcb->cos_config_num_max;
+	dcb_cfg->dscp_user_cos_num = dcb->cos_config_num_max;
 	dcb_cfg->pcp_valid_cos_map = hw_dft_cos_map;
 	dcb_cfg->dscp_valid_cos_map = hw_dft_cos_map;
 
 	for (i = 0; i < NIC_DCB_COS_MAX; i++) {
-		dcb_cfg->pcp2cos[i] = hw_dft_cos_map & BIT(i) ? i : dcb_cfg->default_cos;
+		dcb_cfg->pcp2cos[i] = hw_dft_cos_map & BIT(i)
+		? i : (u8)fls(dcb->func_dft_cos_bitmap) - 1;
 		for (dscp_ind = 0; dscp_ind < NIC_DCB_COS_MAX; dscp_ind++)
 			dcb_cfg->dscp2cos[i * NIC_DCB_DSCP_NUM + dscp_ind] = dcb_cfg->pcp2cos[i];
 	}
@@ -276,58 +289,121 @@ int hinic3_configure_dcb(struct net_device *netdev)
 	int err;
 
 	err = hinic3_sync_dcb_state(nic_dev->hwdev, 1,
-				    test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags) ? 1 : 0);
+				    test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags)
+				    ? 1 : 0);
 	if (err) {
 		hinic3_err(nic_dev, drv, "Set dcb state failed\n");
 		return err;
 	}
 
 	if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags))
-		hinic3_sync_dcb_cfg(nic_dev, &nic_dev->wanted_dcb_cfg);
+		hinic3_sync_dcb_cfg(nic_dev, &nic_dev->dcb->wanted_dcb_cfg);
 	else
 		hinic3_dcb_reset_hw_config(nic_dev);
 
 	return 0;
 }
 
-int hinic3_dcb_init(struct hinic3_nic_dev *nic_dev)
+static int hinic3_dcb_alloc(struct hinic3_nic_dev *nic_dev)
 {
-	struct hinic3_dcb_config *dcb_cfg = &nic_dev->hw_dcb_cfg;
-	int err;
-	u8 dcb_en = test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags) ? 1 : 0;
+	u16 func_id;
+	int is_use_vram;
+	int ret;
 
-	if (HINIC3_FUNC_IS_VF(nic_dev->hwdev))
-		return hinic3_set_tx_cos_state(nic_dev, dcb_en);
+	is_use_vram = get_use_vram_flag();
+	if (is_use_vram) {
+		func_id = hinic3_global_func_id(nic_dev->hwdev);
+		ret = snprintf(nic_dev->dcb_name, VRAM_NAME_MAX_LEN,
+				 "%s%u%s", VRAM_CQM_GLB_FUNC_BASE, func_id,
+				 VRAM_NIC_DCB);
+		if (ret < 0) {
+			hinic3_err(nic_dev, drv, "Nic dcb snprintf failed, ret:%d.\n", ret);
+			return ret;
+		}
 
-	err = init_default_dcb_cfg(nic_dev, dcb_cfg);
-	if (err) {
-		hinic3_err(nic_dev, drv, "Initialize dcb configuration failed\n");
-		return err;
+		nic_dev->dcb = (struct hinic3_dcb *)hi_vram_kalloc(nic_dev->dcb_name,
+			sizeof(*nic_dev->dcb));
+		if (!nic_dev->dcb) {
+			hinic3_err(nic_dev, drv, "Failed to vram alloc dcb.\n");
+			return -EFAULT;
+		}
+	} else {
+		nic_dev->dcb = kzalloc(sizeof(*nic_dev->dcb), GFP_KERNEL);
+		if (!nic_dev->dcb) {
+			hinic3_err(nic_dev, drv, "Failed to create dcb.\n");
+			return -EFAULT;
+		}
 	}
-
-	memcpy(&nic_dev->wanted_dcb_cfg, &nic_dev->hw_dcb_cfg, sizeof(struct hinic3_dcb_config));
-
-	hinic3_info(nic_dev, drv, "Support num cos %u, default cos %u\n",
-		    nic_dev->cos_config_num_max, dcb_cfg->default_cos);
-
-	err = hinic3_set_tx_cos_state(nic_dev, dcb_en);
-	if (err) {
-		hinic3_err(nic_dev, drv, "Set tx cos state failed\n");
-		return err;
-	}
-
-	sema_init(&nic_dev->dcb_sem, 1);
 
 	return 0;
 }
 
-static int change_qos_cfg(struct hinic3_nic_dev *nic_dev, const struct hinic3_dcb_config *dcb_cfg)
+static void hinic3_dcb_free(struct hinic3_nic_dev *nic_dev)
+{
+	int is_use_vram;
+
+	is_use_vram = get_use_vram_flag();
+	if (is_use_vram)
+		hi_vram_kfree((void *)nic_dev->dcb, nic_dev->dcb_name, sizeof(*nic_dev->dcb));
+	else
+		kfree(nic_dev->dcb);
+	nic_dev->dcb = NULL;
+}
+
+void hinic3_dcb_deinit(struct hinic3_nic_dev *nic_dev)
+{
+	if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags))
+		hinic3_sync_dcb_state(nic_dev->hwdev, 1, 0);
+
+	hinic3_dcb_free(nic_dev);
+}
+
+int hinic3_dcb_init(struct hinic3_nic_dev *nic_dev)
+{
+	struct hinic3_dcb_config *hw_dcb_cfg = NULL;
+	int err;
+	u8 dcb_en = test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags) ? 1 : 0;
+
+	err = hinic3_dcb_alloc(nic_dev);
+	if (err != 0) {
+		hinic3_err(nic_dev, drv, "Dcb alloc failed.\n");
+		return err;
+	}
+
+	hw_dcb_cfg = &nic_dev->dcb->hw_dcb_cfg;
+	err = init_default_dcb_cfg(nic_dev, hw_dcb_cfg);
+	if (err) {
+		hinic3_err(nic_dev, drv,
+			   "Initialize dcb configuration failed\n");
+		hinic3_dcb_free(nic_dev);
+		return err;
+	}
+
+	memcpy(&nic_dev->dcb->wanted_dcb_cfg, hw_dcb_cfg,
+	       sizeof(struct hinic3_dcb_config));
+
+	hinic3_info(nic_dev, drv, "Support num cos %u, default cos %u\n",
+		    nic_dev->dcb->cos_config_num_max, hw_dcb_cfg->default_cos);
+
+	err = hinic3_set_tx_cos_state(nic_dev, dcb_en);
+	if (err) {
+		hinic3_err(nic_dev, drv, "Set tx cos state failed\n");
+		hinic3_dcb_free(nic_dev);
+		return err;
+	}
+
+	return 0;
+}
+
+static int change_qos_cfg(struct hinic3_nic_dev *nic_dev,
+			  const struct hinic3_dcb_config *dcb_cfg)
 {
 	struct net_device *netdev = nic_dev->netdev;
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	int err = 0;
 	u8 user_cos_num = hinic3_get_dev_user_cos_num(nic_dev);
 
-	if (test_and_set_bit(HINIC3_DCB_UP_COS_SETTING, &nic_dev->dcb_flags)) {
+	if (test_and_set_bit(HINIC3_DCB_UP_COS_SETTING, &dcb->dcb_flags)) {
 		nicif_warn(nic_dev, drv, netdev,
 			   "Cos_up map setting in inprocess, please try again later\n");
 		return -EFAULT;
@@ -337,40 +413,44 @@ static int change_qos_cfg(struct hinic3_nic_dev *nic_dev, const struct hinic3_dc
 
 	hinic3_update_qp_cos_cfg(nic_dev, user_cos_num);
 
-	clear_bit(HINIC3_DCB_UP_COS_SETTING, &nic_dev->dcb_flags);
+	clear_bit(HINIC3_DCB_UP_COS_SETTING, &dcb->dcb_flags);
 
 	return err;
 }
 
 int hinic3_dcbcfg_set_up_bitmap(struct hinic3_nic_dev *nic_dev)
 {
+	struct hinic3_dcb *dcb = nic_dev->dcb;
 	int err, rollback_err;
 	u8 netif_run = 0;
 	struct hinic3_dcb_config old_dcb_cfg;
 	u8 user_cos_num = hinic3_get_dev_user_cos_num(nic_dev);
 
-	memcpy(&old_dcb_cfg, &nic_dev->hw_dcb_cfg, sizeof(struct hinic3_dcb_config));
+	memcpy(&old_dcb_cfg, &dcb->hw_dcb_cfg,
+	       sizeof(struct hinic3_dcb_config));
 
-	if (!memcmp(&nic_dev->wanted_dcb_cfg, &old_dcb_cfg, sizeof(struct hinic3_dcb_config))) {
+	if (!memcmp(&dcb->wanted_dcb_cfg, &old_dcb_cfg,
+		    sizeof(struct hinic3_dcb_config))) {
 		nicif_info(nic_dev, drv, nic_dev->netdev,
 			   "Same valid up bitmap, don't need to change anything\n");
 		return 0;
 	}
 
-	rtnl_lock();
 	if (netif_running(nic_dev->netdev)) {
 		netif_run = 1;
 		hinic3_vport_down(nic_dev);
 	}
 
-	err = change_qos_cfg(nic_dev, &nic_dev->wanted_dcb_cfg);
+	err = change_qos_cfg(nic_dev, &dcb->wanted_dcb_cfg);
 	if (err) {
-		nicif_err(nic_dev, drv, nic_dev->netdev, "Set cos_up map to hw failed\n");
+		nicif_err(nic_dev, drv, nic_dev->netdev,
+			  "Set cos_up map to hw failed\n");
 		goto change_qos_cfg_fail;
 	}
 
 	if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags)) {
-		err = hinic3_setup_cos(nic_dev->netdev, user_cos_num, netif_run);
+		err = hinic3_setup_cos(nic_dev->netdev,
+				       user_cos_num, netif_run);
 		if (err)
 			goto set_err;
 	}
@@ -381,13 +461,12 @@ int hinic3_dcbcfg_set_up_bitmap(struct hinic3_nic_dev *nic_dev)
 			goto vport_up_fail;
 	}
 
-	rtnl_unlock();
-
 	return 0;
 
 vport_up_fail:
 	if (test_bit(HINIC3_DCB_ENABLE, &nic_dev->flags))
-		hinic3_setup_cos(nic_dev->netdev, user_cos_num ? 0 : user_cos_num, netif_run);
+		hinic3_setup_cos(nic_dev->netdev, user_cos_num
+				 ? 0 : user_cos_num, netif_run);
 
 set_err:
 	rollback_err = change_qos_cfg(nic_dev, &old_dcb_cfg);
@@ -398,8 +477,6 @@ set_err:
 change_qos_cfg_fail:
 	if (netif_run)
 		hinic3_vport_up(nic_dev);
-
-	rtnl_unlock();
 
 	return err;
 }

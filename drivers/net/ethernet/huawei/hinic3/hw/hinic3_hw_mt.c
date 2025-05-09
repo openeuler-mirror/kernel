@@ -252,98 +252,6 @@ static u32 get_up_timeout_val(enum hinic3_mod_type mod, u16 cmd)
 	return 0; /* use default mbox/apichain timeout time */
 }
 
-static int api_csr_read(void *hwdev, struct msg_module *nt_msg,
-			void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
-{
-	struct up_log_msg_st *up_log_msg = (struct up_log_msg_st *)buf_in;
-	u8 *buf_out_tmp = (u8 *)buf_out;
-	int ret = 0;
-	u32 rd_len;
-	u32 rd_addr;
-	u32 rd_cnt = 0;
-	u32 offset = 0;
-	u8 node_id;
-	u32 i;
-
-	if (!buf_in || !buf_out || in_size != sizeof(*up_log_msg) ||
-	    *out_size != up_log_msg->rd_len || up_log_msg->rd_len % DW_WIDTH != 0)
-		return -EINVAL;
-
-	rd_len = up_log_msg->rd_len;
-	rd_addr = up_log_msg->addr;
-	node_id = (u8)nt_msg->mpu_cmd.mod;
-
-	rd_cnt = rd_len / DW_WIDTH;
-
-	for (i = 0; i < rd_cnt; i++) {
-		ret = hinic3_api_csr_rd32(hwdev, node_id,
-					  rd_addr + offset,
-					  (u32 *)(buf_out_tmp + offset));
-		if (ret) {
-			pr_err("Csr rd fail, err: %d, node_id: %u, csr addr: 0x%08x\n",
-			       ret, node_id, rd_addr + offset);
-			return ret;
-		}
-		offset += DW_WIDTH;
-	}
-	*out_size = rd_len;
-
-	return ret;
-}
-
-static int api_csr_write(void *hwdev, struct msg_module *nt_msg,
-			 void *buf_in, u32 in_size, void *buf_out,
-			 u32 *out_size)
-{
-	struct csr_write_st *csr_write_msg = (struct csr_write_st *)buf_in;
-	int ret = 0;
-	u32 rd_len;
-	u32 rd_addr;
-	u32 rd_cnt = 0;
-	u32 offset = 0;
-	u8 node_id;
-	u32 i;
-	u8 *data = NULL;
-
-	if (!buf_in || in_size != sizeof(*csr_write_msg) || csr_write_msg->rd_len == 0 ||
-	    csr_write_msg->rd_len > API_CSR_MAX_RD_LEN || csr_write_msg->rd_len % DW_WIDTH != 0)
-		return -EINVAL;
-
-	rd_len = csr_write_msg->rd_len;
-	rd_addr = csr_write_msg->addr;
-	node_id = (u8)nt_msg->mpu_cmd.mod;
-
-	rd_cnt = rd_len / DW_WIDTH;
-
-	data = kzalloc(rd_len, GFP_KERNEL);
-	if (!data) {
-		pr_err("No more memory\n");
-		return -EFAULT;
-	}
-	if (copy_from_user(data, (void *)csr_write_msg->data, rd_len)) {
-		pr_err("Copy information from user failed\n");
-		kfree(data);
-		return -EFAULT;
-	}
-
-	for (i = 0; i < rd_cnt; i++) {
-		ret = hinic3_api_csr_wr32(hwdev, node_id,
-					  rd_addr + offset,
-					  *((u32 *)(data + offset)));
-		if (ret) {
-			pr_err("Csr wr fail, ret: %d, node_id: %u, csr addr: 0x%08x\n",
-			       ret, rd_addr + offset, node_id);
-			kfree(data);
-			return ret;
-		}
-		offset += DW_WIDTH;
-	}
-
-	*out_size = 0;
-	kfree(data);
-	return ret;
-}
-
 int send_to_mpu(void *hwdev, struct msg_module *nt_msg,
 		void *buf_in, u32 in_size, void *buf_out, u32 *out_size)
 {
@@ -370,10 +278,8 @@ int send_to_mpu(void *hwdev, struct msg_module *nt_msg,
 			return ret;
 		}
 	} else if (nt_msg->mpu_cmd.api_type == API_TYPE_API_CHAIN_BYPASS) {
-		if (nt_msg->mpu_cmd.cmd == API_CSR_WRITE)
-			return api_csr_write(hwdev, nt_msg, buf_in, in_size, buf_out, out_size);
-
-		ret = api_csr_read(hwdev, nt_msg, buf_in, in_size, buf_out, out_size);
+		pr_err("Unsupported api_type %u\n", nt_msg->mpu_cmd.api_type);
+		return -EINVAL;
 	} else if (nt_msg->mpu_cmd.api_type == API_TYPE_API_CHAIN_TO_MPU) {
 		timeout = get_up_timeout_val(mod, cmd);
 		if (hinic3_pcie_itf_id(hwdev) != SPU_HOST_ID)
@@ -432,6 +338,23 @@ static int sm_rd16(void *hwdev, u32 id, u8 instance,
 	ret = hinic3_sm_ctr_rd16(hwdev, node, instance, id, &val1);
 	if (ret != 0) {
 		pr_err("Get sm ctr information (16 bits)failed!\n");
+		val1 = 0xffff;
+	}
+
+	buf_out->val1 = val1;
+
+	return ret;
+}
+
+static int sm_rd16_clear(void *hwdev, u32 id, u8 instance,
+			 u8 node, struct sm_out_st *buf_out)
+{
+	u16 val1;
+	int ret;
+
+	ret = hinic3_sm_ctr_rd16_clear(hwdev, node, instance, id, &val1);
+	if (ret != 0) {
+		pr_err("Get sm ctr clear information (16 bits)failed!\n");
 		val1 = 0xffff;
 	}
 
@@ -559,6 +482,7 @@ const struct sm_module_handle sm_module_cmd_handle[] = {
 	{SM_CTR_RD32,		 sm_rd32},
 	{SM_CTR_RD64_PAIR,	 sm_rd64_pair},
 	{SM_CTR_RD64,		 sm_rd64},
+	{SM_CTR_RD16_CLEAR,	 sm_rd16_clear},
 	{SM_CTR_RD32_CLEAR,	 sm_rd32_clear},
 	{SM_CTR_RD64_PAIR_CLEAR, sm_rd64_pair_clear},
 	{SM_CTR_RD64_CLEAR,	 sm_rd64_clear}

@@ -9,6 +9,7 @@
 /* serdes cmd struct define */
 #define CMD_ARRAY_BUF_SIZE 64
 #define SERDES_CMD_DATA_BUF_SIZE 512
+#define RATE_MBPS_TO_GBPS 1000
 struct serdes_in_info {
 	u32 chip_id : 16;
 	u32 macro_id : 16;
@@ -127,6 +128,7 @@ enum mag_cmd_cnt_type {
 	MAG_RX_PCS_E_BLK_CNT = 5,
 	MAG_RX_PCS_DEC_ERR_BLK_CNT = 6,
 	MAG_RX_PCS_LANE_BIP_ERR_CNT = 7,
+	MAG_RX_RSFEC_ERR_CW_CNT = 8,
 	MAG_CNT_NUM
 };
 
@@ -208,7 +210,9 @@ struct mag_cmd_get_port_info {
 
 	u32 supported_mode;
 	u32 advertised_mode;
-	u8 rsvd2[8];
+	u32 supported_fec_mode;
+	u16 bond_speed;
+	u8 rsvd2[2];
 };
 
 #define MAG_CMD_OPCODE_GET 0
@@ -330,8 +334,8 @@ struct mag_cmd_cfg_fec_mode {
 
 	u8 port_id;
 	u8 opcode; /* 0:get fec mode  1:set fec mode */
-	u8 fec;
-	u8 rsvd0;
+	u8 advertised_fec;
+	u8 supported_fec;
 };
 
 /* speed */
@@ -641,7 +645,7 @@ struct mag_cmd_event_port_info {
 	u32 cable_length;	/* 1/3/5m */
 	u8 cable_temp;		/* temp */
 	u8 max_speed;		/* Maximum rate of an optical module */
-	u8 sfp_type;		/* sfp/qsfp */
+	u8 sfp_type;		/* sfp/qsfp/dsfp */
 	u8 rsvd1;
 	u32 power[4];		/* Optical Power */
 
@@ -676,6 +680,10 @@ struct mag_cmd_event_port_info {
 
 	struct mag_port_param_info param_info;
 	u8 rsvd3[360];
+};
+
+struct mag_cmd_rsfec_stats {
+	u32 rx_err_lane_phy;
 };
 
 struct mag_cmd_port_stats {
@@ -913,10 +921,223 @@ struct mag_cmd_sfp_temp_in_info {
 };
 
 struct mag_cmd_sfp_temp_out_info {
-	struct mgmt_msg_head head;		/* 8B */
-	s16 sfp_temp_data[MAG_SFP_PORT_NUM];	/* Temperature read */
-	s32 max_temp;				/* Chip optical module threshold */
-	s32 min_temp;				/* Chip optical module threshold */
+	struct mgmt_msg_head head;	     /* 8B */
+	s16 sfp_temp_data[MAG_SFP_PORT_NUM]; /* Temperature read */
+	s32 max_temp;			     /* Chip optical module threshold */
+	s32 min_temp;			     /* Chip optical module threshold */
+};
+
+#define XSFP_CMIS_PARSE_PAGE_NUM	6
+#define XSFP_CMIS_INFO_MAX_SIZE		1536
+#define QSFP_CMIS_PAGE_SIZE		128
+#define QSFP_CMIS_MAX_CHANNEL_NUM	0x8
+
+/* Lower: Control and Essentials, Upper: Administrative Information */
+#define QSFP_CMIS_PAGE_00H		    0x00
+/* Advertising */
+#define QSFP_CMIS_PAGE_01H		    0x01
+/* Module and lane Thresholds */
+#define QSFP_CMIS_PAGE_02H		    0x02
+/* User EEPROM */
+#define QSFP_CMIS_PAGE_03H		    0x03
+/* Laser Capabilities Advertising (Page 04h, Optional) */
+#define QSFP_CMIS_PAGE_04H		    0x04
+#define QSFP_CMIS_PAGE_05H		    0x05
+/* Lane and Data Path Control */
+#define QSFP_CMIS_PAGE_10H		    0x10
+/* Lane Status */
+#define QSFP_CMIS_PAGE_11H		    0x11
+#define QSFP_CMIS_PAGE_12H		    0x12
+
+#define MGMT_TLV_U8_SIZE	1
+#define MGMT_TLV_U16_SIZE	2
+#define MGMT_TLV_U32_SIZE	4
+
+#define MGMT_TLV_GET_U8(addr)          (*((u8 *)(void *)(addr)))
+#define MGMT_TLV_SET_U8(addr, value) \
+	((*((u8 *)(void *)(addr))) = ((u8)(value)))
+
+#define MGMT_TLV_GET_U16(addr)         (*((u16 *)(void *)(addr)))
+#define MGMT_TLV_SET_U16(addr, value) \
+	((*((u16 *)(void *)(addr))) = ((u16)(value)))
+
+#define MGMT_TLV_GET_U32(addr)         (*((u32 *)(void *)(addr)))
+#define MGMT_TLV_SET_U32(addr, value) \
+	((*((u32 *)(void *)(addr))) = ((u32)(value)))
+
+#define MGMT_TLV_TYPE_END       0xFFFF
+
+enum mag_xsfp_type {
+	MAG_XSFP_TYPE_PAGE      = 0x01,
+	MAG_XSFP_TYPE_WIRE_TYPE = 0x02,
+	MAG_XSFP_TYPE_END       = MGMT_TLV_TYPE_END
+};
+
+struct qsfp_cmis_lower_page_00_s {
+	u8 resv0[14];
+	u8 temperature_msb;
+	u8 temperature_lsb;
+	u8 volt_supply[2];
+	u8 resv1[67];
+	u8 media_type;
+	u8 electrical_interface_id;
+	u8 media_interface_id;
+	u8 lane_count;
+	u8 resv2[39];
+};
+
+struct qsfp_cmis_upper_page_00_s {
+	u8 identifier;
+	u8 vendor_name[16];
+	u8 vendor_oui[3];
+	u8 vendor_pn[16];
+	u8 vendor_rev[2];
+	u8 vendor_sn[16];
+	u8 date_code[8];
+	u8 clei_code[10];
+	u8 power_character[2];
+	u8 cable_len;
+	u8 connector;
+	u8 copper_cable_attenuation[6];
+	u8 near_end_implementation;
+	u8 far_end_config;
+	u8 media_technology;
+	u8 resv0[43];
+};
+
+struct qsfp_cmis_upper_page_01_s {
+	u8 firmware_rev[2];
+	u8 hardware_rev[2];
+	u8 smf_len_km;
+	u8 om5_len;
+	u8 om4_len;
+	u8 om3_len;
+	u8 om2_len;
+	u8 resv0;
+	u8 wavelength[2];
+	u8 wavelength_tolerance[2];
+	u8 pages_implement;
+	u8 resv1[16];
+	u8 monitor_implement[2];
+	u8 resv2[95];
+};
+
+struct qsfp_cmis_upper_page_02_s {
+	u8 temperature_high_alarm[2];
+	u8 temperature_low_alarm[2];
+	u8 temperature_high_warn[2];
+	u8 temperature_low_warn[2];
+	u8 volt_high_alarm[2];
+	u8 volt_low_alarm[2];
+	u8 volt_high_warn[2];
+	u8 volt_low_warn[2];
+	u8 resv0[32];
+	u8 tx_power_high_alarm[2];
+	u8 tx_power_low_alarm[2];
+	u8 tx_power_high_warn[2];
+	u8 tx_power_low_warn[2];
+	u8 tx_bias_high_alarm[2];
+	u8 tx_bias_low_alarm[2];
+	u8 tx_bias_high_warn[2];
+	u8 tx_bias_low_warn[2];
+	u8 rx_power_high_alarm[2];
+	u8 rx_power_low_alarm[2];
+	u8 rx_power_high_warn[2];
+	u8 rx_power_low_warn[2];
+	u8 resv1[56];
+};
+
+struct qsfp_cmis_upper_page_03_s {
+	u8 resv0[QSFP_CMIS_PAGE_SIZE]; /* Reg 128-255: Upper Memory: Page 03H */
+};
+
+struct qsfp_cmis_upper_page_10_s {
+	u8 resv0[2];	/* Reg 128-129: Upper Memory: Page 10H */
+	u8 tx_disable;	/* Reg 130: Tx disable, 0b=enabled, 1b=disabled */
+	u8 resv1[125];	/* Reg 131-255 */
+};
+
+struct qsfp_cmis_upper_page_11_s {
+	u8 resv0[7];
+	u8 tx_fault;
+	u8 tx_los;
+	u8 resv1[10];
+	u8 rx_los;
+	u8 resv2[6];
+	u8 tx_power[16];
+	u8 tx_bias[16];
+	u8 rx_power[16];
+	u8 resv3[54];
+};
+
+struct qsfp_cmis_info_s {
+	struct qsfp_cmis_lower_page_00_s lower_page_00;
+	struct qsfp_cmis_upper_page_00_s upper_page_00;
+	struct qsfp_cmis_upper_page_01_s upper_page_01;
+	struct qsfp_cmis_upper_page_02_s upper_page_02;
+	struct qsfp_cmis_upper_page_10_s upper_page_10;
+	struct qsfp_cmis_upper_page_11_s upper_page_11;
+};
+
+struct qsfp_cmis_comm_power_s {
+	u32 chl_power[QSFP_CMIS_MAX_CHANNEL_NUM];
+};
+
+struct qsfp_cmis_wire_info_s {
+	struct qsfp_cmis_comm_power_s rx_power;
+	u8			      rx_los;
+	u8			      resv0[3];
+};
+
+struct mgmt_tlv_info {
+	u16 type;
+	u16 length;
+	u8 value[];
+};
+
+struct mag_cmd_set_xsfp_tlv_req {
+	struct mgmt_msg_head head;
+
+	u8 tlv_buf[];
+};
+
+struct mag_cmd_set_xsfp_tlv_rsp {
+	struct mgmt_msg_head head;
+};
+
+struct mag_cmd_get_xsfp_tlv_req {
+	struct mgmt_msg_head head;
+
+	u8 port_id;
+	u8 rsvd;
+	u16 rsp_buf_len;
+};
+
+struct mag_cmd_get_xsfp_tlv_rsp {
+	struct mgmt_msg_head head;
+
+	u8 port_id;
+	u8 rsvd[3];
+
+	u8 tlv_buf[];
+};
+
+
+struct parse_tlv_info {
+	u8 tlv_page_info[XSFP_CMIS_INFO_MAX_SIZE + 1];
+	u32 tlv_page_info_len;
+	u32 tlv_page_num[XSFP_CMIS_PARSE_PAGE_NUM];
+	u32 wire_type;
+	u8 id;
+};
+
+struct drv_mag_cmd_get_xsfp_tlv_rsp {
+	struct mgmt_msg_head head;
+
+	u8 port_id;
+	u8 rsvd[3];
+
+	u8 tlv_buf[XSFP_CMIS_INFO_MAX_SIZE];
 };
 
 #endif

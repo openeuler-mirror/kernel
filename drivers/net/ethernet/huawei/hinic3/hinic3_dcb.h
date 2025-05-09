@@ -24,11 +24,6 @@ struct hinic3_tc_cfg {
 	u16	rsvd;
 };
 
-enum HINIC3_DCB_TRUST {
-	DCB_PCP,
-	DCB_DSCP,
-};
-
 #define PCP_MAX_UP 8
 #define DSCP_MAC_UP 64
 #define DBG_DFLT_DSCP_VAL  0xFF
@@ -50,6 +45,7 @@ struct hinic3_dcb_config {
 u8 hinic3_get_dev_user_cos_num(struct hinic3_nic_dev *nic_dev);
 u8 hinic3_get_dev_valid_cos_map(struct hinic3_nic_dev *nic_dev);
 int hinic3_dcb_init(struct hinic3_nic_dev *nic_dev);
+void hinic3_dcb_deinit(struct hinic3_nic_dev *nic_dev);
 void hinic3_dcb_reset_hw_config(struct hinic3_nic_dev *nic_dev);
 int hinic3_configure_dcb(struct net_device *netdev);
 int hinic3_setup_cos(struct net_device *netdev, u8 cos, u8 netif_run);
@@ -75,4 +71,5 @@ void hinic3_update_tx_db_cos(struct hinic3_nic_dev *nic_dev, u8 dcb_en);
 void hinic3_update_qp_cos_cfg(struct hinic3_nic_dev *nic_dev, u8 num_cos);
 void hinic3_vport_down(struct hinic3_nic_dev *nic_dev);
 int hinic3_vport_up(struct hinic3_nic_dev *nic_dev);
+int hinic3_configure_dcb_hw(struct hinic3_nic_dev *nic_dev, u8 dcb_en);
 #endif

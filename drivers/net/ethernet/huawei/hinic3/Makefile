@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/
 ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/hw/
+ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/bond/
 ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/cqm/
 ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/
 ccflags-y += -I$(srctree)/drivers/net/ethernet/huawei/hinic3/include/cqm/

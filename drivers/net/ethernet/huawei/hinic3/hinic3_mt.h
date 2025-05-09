@@ -4,11 +4,12 @@
 #ifndef HINIC3_MT_H
 #define HINIC3_MT_H
 
-#define HINIC3_DRV_NAME "hisdk3"
+#define HINIC3_DRV_NAME "hinic3"
 #define HINIC3_CHIP_NAME "hinic"
 /* Interrupt at most records, interrupt will be recorded in the FFM */
 
 #define NICTOOL_CMD_TYPE (0x18)
+#define HINIC3_CARD_NAME_MAX_LEN (128)
 
 struct api_cmd_rd {
 	u32 pf_id;
@@ -110,7 +111,8 @@ enum dbgtool_cmd {
 	DBGTOOL_CMD_NUM
 };
 
-#define PF_MAX_SIZE (16)
+#define HINIC_PF_MAX_SIZE (16)
+#define HINIC_VF_MAX_SIZE (4096)
 #define BUSINFO_LEN (32)
 
 enum module_name {
@@ -132,7 +134,9 @@ enum module_name {
 	SEND_TO_MIGRATE_DRIVER,
 	SEND_TO_PPA_DRIVER,
 	SEND_TO_CUSTOM_DRIVER = SEND_TO_SRV_DRV_BASE + 11,
-	SEND_TO_DRIVER_MAX = SEND_TO_SRV_DRV_BASE + 15, /* reserved */
+	SEND_TO_VSOCK_DRIVER = SEND_TO_SRV_DRV_BASE + 14,
+	SEND_TO_BIFUR_DRIVER,
+	SEND_TO_DRIVER_MAX = SEND_TO_SRV_DRV_BASE + 16, /* reserved */
 };
 
 enum driver_cmd_type {
@@ -159,7 +163,7 @@ enum driver_cmd_type {
 	GET_CHIP_FAULT_STATS,
 	NIC_RSVD1,
 	NIC_RSVD2,
-	NIC_RSVD3,
+	GET_OS_HOT_REPLACE_INFO,
 	GET_CHIP_ID,
 	GET_SINGLE_CARD_INFO,
 	GET_FIRMWARE_ACTIVE_STATUS,
@@ -170,7 +174,7 @@ enum driver_cmd_type {
 	GET_LOOPBACK_MODE = 32,
 	SET_LOOPBACK_MODE,
 	SET_LINK_MODE,
-	SET_PF_BW_LIMIT,
+	SET_TX_PF_BW_LIMIT,
 	GET_PF_BW_LIMIT,
 	ROCE_CMD,
 	GET_POLL_WEIGHT,
@@ -188,6 +192,7 @@ enum driver_cmd_type {
 	GET_NIC_STATS_STRING,
 	GET_NIC_STATS_INFO,
 	GET_PF_ID,
+	GET_MBOX_CNT,
 	NIC_RSVD4,
 	NIC_RSVD5,
 	DCB_QOS_INFO,
@@ -204,15 +209,25 @@ enum driver_cmd_type {
 	RSS_INDIR,
 	PORT_ID,
 
+	SET_RX_PF_BW_LIMIT = 0x43,
+
 	GET_FUNC_CAP = 0x50,
 	GET_XSFP_PRESENT = 0x51,
 	GET_XSFP_INFO = 0x52,
 	DEV_NAME_TEST = 0x53,
+	GET_XSFP_INFO_COMP_CMIS = 0x54,
 
 	GET_WIN_STAT = 0x60,
 	WIN_CSR_READ = 0x61,
 	WIN_CSR_WRITE = 0x62,
 	WIN_API_CMD_RD = 0x63,
+
+	GET_FUSION_Q = 0x64,
+
+	ROCE_CMD_BOND_HASH_TYPE_SET = 0xb2,
+
+	BIFUR_SET_ENABLE = 0xc0,
+	BIFUR_GET_ENABLE = 0xc1,
 
 	VM_COMPAT_TEST = 0xFF
 };
@@ -229,7 +244,8 @@ enum sm_cmd_type {
 	SM_CTR_RD64,
 	SM_CTR_RD32_CLEAR,
 	SM_CTR_RD64_PAIR_CLEAR,
-	SM_CTR_RD64_CLEAR
+	SM_CTR_RD64_CLEAR,
+	SM_CTR_RD16_CLEAR,
 };
 
 struct cqm_stats {
@@ -317,8 +333,20 @@ struct pf_info {
 };
 
 struct card_info {
-	struct pf_info pf[PF_MAX_SIZE];
+	struct pf_info pf[HINIC_PF_MAX_SIZE];
 	u32 pf_num;
+};
+
+struct func_mbox_cnt_info {
+	char bus_info[BUSINFO_LEN];
+	u64 send_cnt;
+	u64 ack_cnt;
+};
+
+struct card_mbox_cnt_info {
+	struct func_mbox_cnt_info func_info[HINIC_PF_MAX_SIZE +
+					    HINIC_VF_MAX_SIZE];
+	u32 func_num;
 };
 
 struct hinic3_nic_loop_mode {
@@ -659,6 +687,161 @@ struct bond_all_msg_s {
 struct get_card_bond_msg_s {
 	u32 bond_cnt;
 	struct bond_all_msg_s all_msg[MAX_BONDING_CNT_PER_CARD];
+};
+
+#define MAX_FUSION_Q_STATS_STR_LEN	16
+#define MAX_FUSION_Q_NUM		256
+struct queue_status_s {
+	pid_t tgid;
+	char status[MAX_FUSION_Q_STATS_STR_LEN];
+};
+struct fusion_q_status_s {
+	u16 queue_num;
+	struct queue_status_s queue[MAX_FUSION_Q_NUM];
+};
+
+struct fusion_q_tx_hw_page {
+	u64 phy_addr;
+	u64 *map_addr;
+};
+
+struct fusion_sq_info {
+	u16 q_id;
+	u16 pi;
+	u16 ci; /* sw_ci */
+	u16 fi; /* hw_ci */
+	u32 q_depth;
+	u16 pi_reverse;
+	u16 wqebb_size;
+	u8 priority;
+	u16 *ci_addr;
+	u64 cla_addr;
+	void *slq_handle;
+	struct fusion_q_tx_hw_page direct_wqe;
+	struct fusion_q_tx_hw_page doorbell;
+	u32 page_idx;
+	u32 glb_sq_id;
+};
+
+struct fusion_q_tx_wqe {
+	u32 data[4];
+};
+
+struct fusion_rq_info {
+	u16 q_id;
+	u16 delta;
+	u16 hw_pi;
+	u16 ci; /* sw_ci */
+	u16 sw_pi;
+	u16 wqebb_size;
+	u16 q_depth;
+	u16 buf_len;
+
+	void *slq_handle;
+	u64 ci_wqe_page_addr;
+	u64 ci_cla_tbl_addr;
+
+	u8 coalesc_timer_cfg;
+	u8 pending_limt;
+	u16 msix_idx;
+	u32 msix_vector;
+};
+
+struct fusion_q_rx_wqe {
+	u32 data[8];
+};
+
+struct fusion_q_rx_cqe {
+	union {
+		struct {
+			unsigned int checksum_err : 16;
+			unsigned int lro_num : 8;
+			unsigned int rsvd1 : 7;
+			unsigned int rx_done : 1;
+		} bs;
+		unsigned int value;
+	} dw0;
+
+	union {
+		struct {
+			unsigned int vlan : 16;
+			unsigned int length : 16;
+		} bs;
+		unsigned int value;
+	} dw1;
+
+	union {
+		struct {
+			unsigned int pkt_types : 12;
+			unsigned int rsvd : 4;
+			unsigned int udp_0 : 1;
+			unsigned int ipv6_ex_add : 1;
+			unsigned int loopback : 1;
+			unsigned int umbcast : 2;
+			unsigned int vlan_offload_en : 1;
+			unsigned int tag_num : 2;
+			unsigned int rss_type : 8;
+		} bs;
+		unsigned int value;
+	} dw2;
+
+	union {
+		struct {
+			unsigned int rss_hash_value;
+		} bs;
+		unsigned int value;
+	} dw3;
+
+	union {
+		struct {
+			unsigned int tx_ts_seq : 16;
+			unsigned int message_1588_offset : 8;
+			unsigned int message_1588_type : 4;
+			unsigned int rsvd : 1;
+			unsigned int if_rx_ts : 1;
+			unsigned int if_tx_ts : 1;
+			unsigned int if_1588 : 1;
+		} bs;
+		unsigned int value;
+	} dw4;
+
+	union {
+		struct {
+			unsigned int ts;
+		} bs;
+		unsigned int value;
+	} dw5;
+
+	union {
+		struct {
+			unsigned int lro_ts;
+		} bs;
+		unsigned int value;
+	} dw6;
+
+	union {
+		struct {
+			unsigned int rsvd0;
+		} bs;
+		unsigned int value;
+	} dw7; /* 16Bytes Align */
+};
+
+struct os_hot_repalce_func_info {
+	char card_name[HINIC3_CARD_NAME_MAX_LEN];
+	int bus_num;
+	int valid;
+	int bdf;
+	int partition;
+	int backup_pf;
+	int pf_idx;
+	int port_id;
+};
+
+#define ALL_CARD_PF_NUM 2048 /* 64 card * 32 pf */
+struct os_hot_replace_info {
+	struct os_hot_repalce_func_info func_infos[ALL_CARD_PF_NUM];
+	u32 func_cnt;
 };
 
 int alloc_buff_in(void *hwdev, struct msg_module *nt_msg, u32 in_size, void **buf_in);

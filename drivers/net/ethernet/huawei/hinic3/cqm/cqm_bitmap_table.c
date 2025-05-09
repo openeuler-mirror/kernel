@@ -254,8 +254,10 @@ s32 cqm_buf_alloc_direct(struct tag_cqm_handle *cqm_handle, struct tag_cqm_buf *
 	}
 
 	pages = vmalloc(sizeof(struct page *) * buf->page_number);
-	if (!pages)
+	if (!pages) {
+		cqm_err(handle->dev_hdl, CQM_ALLOC_FAIL(pages));
 		return CQM_FAIL;
+	}
 
 	for (i = 0; i < buf->buf_number; i++) {
 		for (j = 0; j < ((u32)1 << order); j++)
@@ -271,6 +273,11 @@ s32 cqm_buf_alloc_direct(struct tag_cqm_handle *cqm_handle, struct tag_cqm_buf *
 	}
 
 	return CQM_SUCCESS;
+}
+
+static bool check_use_vram(struct hinic3_hwdev *handle, struct tag_cqm_buf *buf)
+{
+	return buf->buf_info.use_vram ? true : false;
 }
 
 static bool check_use_non_vram(struct hinic3_hwdev *handle, struct tag_cqm_buf *buf)
@@ -294,10 +301,47 @@ static bool check_for_nouse_node_alloc(struct hinic3_hwdev *handle, struct tag_c
 	return false;
 }
 
+static s32 cqm_buf_vram_kalloc(struct hinic3_hwdev *handle, struct tag_cqm_buf *buf)
+{
+	void *vaddr = NULL;
+	int i;
+
+	vaddr = hi_vram_kalloc(buf->buf_info.buf_vram_name, (u64)buf->buf_size * buf->buf_number);
+	if (!vaddr) {
+		cqm_err(handle->dev_hdl, CQM_ALLOC_FAIL(buf_page));
+		return CQM_FAIL;
+	}
+
+	for (i = 0; i < (s32)buf->buf_number; i++)
+		buf->buf_list[i].va = (void *)((char *)vaddr + i * (u64)buf->buf_size);
+
+	return CQM_SUCCESS;
+}
+
+static void cqm_buf_vram_free(struct tag_cqm_buf *buf)
+{
+	s32 i;
+
+	if (buf->buf_list == NULL) {
+		return;
+	}
+
+	if (buf->buf_list[0].va)
+		hi_vram_kfree(buf->buf_list[0].va, buf->buf_info.buf_vram_name,
+			      (u64)buf->buf_size * buf->buf_number);
+
+	for (i = 0; i < (s32)buf->buf_number; i++)
+		buf->buf_list[i].va = NULL;
+}
+
 static void cqm_buf_free_page_common(struct tag_cqm_buf *buf)
 {
 	u32 order;
 	s32 i;
+
+	if (buf->buf_list == NULL) {
+		return;
+	}
 
 	order = (u32)get_order(buf->buf_size);
 
@@ -320,8 +364,10 @@ static s32 cqm_buf_use_node_alloc_page(struct hinic3_hwdev *handle, struct tag_c
 	node = dev_to_node(handle->dev_hdl);
 	for (i = 0; i < (s32)buf->buf_number; i++) {
 		newpage = alloc_pages_node(node, GFP_KERNEL | __GFP_ZERO, order);
-		if (!newpage)
+		if (!newpage) {
+			cqm_err(handle->dev_hdl, CQM_ALLOC_FAIL(buf_page));
 			break;
+		}
 		va = (void *)page_address(newpage);
 		/* Initialize the page after the page is applied for.
 		 * If hash entries are involved, the initialization
@@ -349,8 +395,10 @@ static s32 cqm_buf_unused_node_alloc_page(struct hinic3_hwdev *handle, struct ta
 
 	for (i = 0; i < (s32)buf->buf_number; i++) {
 		va = (void *)ossl_get_free_pages(GFP_KERNEL | __GFP_ZERO, order);
-		if (!va)
+		if (!va) {
+			cqm_err(handle->dev_hdl, CQM_ALLOC_FAIL(buf_page));
 			break;
+		}
 		/* Initialize the page after the page is applied for.
 		 * If hash entries are involved, the initialization
 		 * value must be 0.
@@ -367,21 +415,21 @@ static s32 cqm_buf_unused_node_alloc_page(struct hinic3_hwdev *handle, struct ta
 	return CQM_SUCCESS;
 }
 
-#define MALLOC_FUNCS_COUNT 2
-#define FREE_FUNCS_COUNT 1
-static const struct malloc_memory g_malloc_funcs[MALLOC_FUNCS_COUNT] = {
+static const struct malloc_memory g_malloc_funcs[] = {
+	{check_use_vram, cqm_buf_vram_kalloc},
 	{check_for_use_node_alloc, cqm_buf_use_node_alloc_page},
 	{check_for_nouse_node_alloc, cqm_buf_unused_node_alloc_page}
 };
 
-static const struct free_memory g_free_funcs[FREE_FUNCS_COUNT] = {
+static const struct free_memory g_free_funcs[] = {
+	{check_use_vram, cqm_buf_vram_free},
 	{check_use_non_vram, cqm_buf_free_page_common}
 };
 
 static s32 cqm_buf_alloc_page(struct tag_cqm_handle *cqm_handle, struct tag_cqm_buf *buf)
 {
 	struct hinic3_hwdev *handle = cqm_handle->ex_handle;
-	u32 malloc_funcs_num = MALLOC_FUNCS_COUNT;
+	u32 malloc_funcs_num = ARRAY_SIZE(g_malloc_funcs);
 	u32 i;
 
 	for (i = 0; i < malloc_funcs_num; i++) {
@@ -398,7 +446,7 @@ static s32 cqm_buf_alloc_page(struct tag_cqm_handle *cqm_handle, struct tag_cqm_
 
 static void cqm_buf_free_page(struct tag_cqm_buf *buf)
 {
-	u32 free_funcs_num = FREE_FUNCS_COUNT;
+	u32 free_funcs_num = ARRAY_SIZE(g_free_funcs);
 	u32 i;
 
 	for (i = 0; i < free_funcs_num; i++) {
@@ -447,8 +495,11 @@ static s32 cqm_buf_get_secure_mem_pages(struct tag_cqm_handle *cqm_handle, struc
 		    cqm_get_secure_mem_pages(handle,
 					     (u32)get_order(buf->buf_size),
 					     &buf->buf_list[i].pa);
-		if (!buf->buf_list[i].va)
+		if (!buf->buf_list[i].va) {
+			cqm_err(handle->dev_hdl,
+				CQM_ALLOC_FAIL(cqm_get_secure_mem_pages));
 			break;
+		}
 	}
 
 	if (i != buf->buf_number) {
@@ -780,7 +831,10 @@ static s32 cqm_single_bitmap_init(struct tag_cqm_bitmap *bitmap)
 	 */
 	bit_number = (ALIGN(bitmap->max_num, CQM_NUM_BIT_BYTE) >>
 		      CQM_BYTE_BIT_SHIFT);
-	bitmap->table = vmalloc(bit_number);
+	if (bitmap->bitmap_info.use_vram != 0)
+		bitmap->table = hi_vram_kalloc(bitmap->bitmap_info.buf_vram_name, bit_number);
+	else
+		bitmap->table = vmalloc(bit_number);
 	if (!bitmap->table)
 		return CQM_FAIL;
 	memset(bitmap->table, 0, bit_number);
@@ -859,7 +913,7 @@ s32 cqm_bitmap_init(struct tag_cqm_handle *cqm_handle)
 		}
 
 		bitmap = &cla_table->bitmap;
-		snprintf(bitmap->bitmap_info.buf_vram_name, VRAM_NAME_MAX_LEN - 1,
+		snprintf(bitmap->bitmap_info.buf_vram_name, VRAM_NAME_APPLY_LEN,
 			 "%s%s%02d", cla_table->name,
 			 VRAM_CQM_BITMAP_BASE, cla_table->type);
 
@@ -869,6 +923,7 @@ s32 cqm_bitmap_init(struct tag_cqm_handle *cqm_handle)
 			bitmap->reserved_top = capability->qpc_reserved;
 			bitmap->reserved_back = capability->qpc_reserved_back;
 			bitmap->last = capability->qpc_reserved;
+			bitmap->bitmap_info.use_vram = get_use_vram_flag();
 			cqm_info(handle->dev_hdl,
 				 "Bitmap init: cla_table_type=%u, max_num=0x%x\n",
 				 cla_table->type, bitmap->max_num);
@@ -948,7 +1003,12 @@ void cqm_bitmap_uninit(struct tag_cqm_handle *cqm_handle)
 		if (cla_table->type != CQM_BAT_ENTRY_T_INVALID &&
 		    bitmap->table) {
 			spin_lock_deinit(&bitmap->lock);
-			vfree(bitmap->table);
+			if (bitmap->bitmap_info.use_vram != 0)
+				hi_vram_kfree(bitmap->table, bitmap->bitmap_info.buf_vram_name,
+					      ALIGN(bitmap->max_num, CQM_NUM_BIT_BYTE) >>
+					      CQM_BYTE_BIT_SHIFT);
+			else
+				vfree(bitmap->table);
 			bitmap->table = NULL;
 		}
 	}

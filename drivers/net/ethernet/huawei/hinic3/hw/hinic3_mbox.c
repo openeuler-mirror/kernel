@@ -584,6 +584,7 @@ static void free_recv_mbox(struct hinic3_recv_mbox *recv_msg)
 	kfree(recv_msg->resp_buff);
 	kfree(recv_msg->msg);
 	kfree(recv_msg);
+	recv_msg = NULL;
 }
 
 static void recv_func_mbox_work_handler(struct work_struct *work)
@@ -1233,6 +1234,7 @@ int hinic3_mbox_to_func(struct hinic3_mbox *func_to_func, u8 mod, u16 cmd,
 		set_mbox_to_func_event(func_to_func, EVENT_FAIL);
 		goto send_err;
 	}
+	func_to_func->hwdev->mbox_send_cnt++;
 
 	if (wait_mbox_msg_completion(func_to_func, timeout) != 0) {
 		sdk_err(func_to_func->hwdev->dev_hdl,
@@ -1241,6 +1243,7 @@ int hinic3_mbox_to_func(struct hinic3_mbox *func_to_func, u8 mod, u16 cmd,
 		err = -ETIMEDOUT;
 		goto send_err;
 	}
+	func_to_func->hwdev->mbox_ack_cnt++;
 
 	if (mod != msg_desc->mod || cmd != msg_desc->cmd) {
 		sdk_err(func_to_func->hwdev->dev_hdl,
