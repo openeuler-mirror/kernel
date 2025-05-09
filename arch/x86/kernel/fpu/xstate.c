@@ -703,6 +703,11 @@ static bool is_supported_xstate_size(unsigned int test_xstate_size)
 
 static int init_xstate_size(void)
 {
+#if defined(CONFIG_X86_HYGON_LMC_SSE2_ON) || \
+	defined(CONFIG_X86_HYGON_LMC_AVX2_ON)
+	extern unsigned int fpu_kernel_nonatomic_xstate_size;
+#endif
+
 	/* Recompute the context size for enabled features: */
 	unsigned int possible_xstate_size;
 	unsigned int xsave_size;
@@ -729,6 +734,12 @@ static int init_xstate_size(void)
 	 * User space is always in standard format.
 	 */
 	fpu_user_xstate_size = xsave_size;
+
+#if defined(CONFIG_X86_HYGON_LMC_SSE2_ON) || \
+	defined(CONFIG_X86_HYGON_LMC_AVX2_ON)
+	fpu_kernel_nonatomic_xstate_size = KERNEL_FPU_NONATOMIC_SIZE;
+#endif
+
 	return 0;
 }
 
