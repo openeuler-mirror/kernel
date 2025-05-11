@@ -1724,8 +1724,8 @@ static int userfaultfd_copy(struct userfaultfd_ctx *ctx,
 		goto out;
 	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE |
 				 UFFDIO_COPY_MODE_WP |
-				 IS_ENABLED(CONFIG_USERSWAP) ?
-				 UFFDIO_COPY_MODE_DIRECT_MAP : 0))
+				 (IS_ENABLED(CONFIG_USERSWAP) ?
+				 UFFDIO_COPY_MODE_DIRECT_MAP : 0)))
 		goto out;
 	if (mmget_not_zero(ctx->mm)) {
 		ret = mcopy_atomic(ctx->mm, uffdio_copy.dst, uffdio_copy.src,
