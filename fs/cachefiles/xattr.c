@@ -45,7 +45,8 @@ static int cachefiles_check_new_obj_xattr(struct cachefiles_object *object);
  * check the type label on an object
  * - done using xattrs
  */
-int cachefiles_check_object_type(struct cachefiles_object *object)
+int cachefiles_check_object_type(struct cachefiles_object *object,
+				 struct cachefiles_cache *cache)
 {
 	struct dentry *dentry = object->dentry;
 	char type[3], xtype[3];
@@ -62,8 +63,12 @@ int cachefiles_check_object_type(struct cachefiles_object *object)
 	_enter("%p{%s}", object, type);
 
 	/* attempt to install a type label directly */
-	ret = vfs_setxattr(dentry, cachefiles_xattr_cache, type, 2,
-			   XATTR_CREATE);
+	ret = mnt_want_write(cache->mnt);
+	if (ret == 0) {
+		ret = vfs_setxattr(dentry, cachefiles_xattr_cache, type, 2,
+				   XATTR_CREATE);
+		mnt_drop_write(cache->mnt);
+	}
 	if (ret == 0) {
 		_debug("SET"); /* we succeeded */
 		goto error;
@@ -123,6 +128,7 @@ int cachefiles_set_object_xattr(struct cachefiles_object *object,
 				struct cachefiles_xattr *auxdata)
 {
 	struct dentry *dentry = object->dentry;
+	struct cachefiles_cache *cache;
 	int ret;
 
 	ASSERT(dentry);
@@ -132,15 +138,22 @@ int cachefiles_set_object_xattr(struct cachefiles_object *object,
 	/* attempt to install the cache metadata directly */
 	_debug("SET #%u", auxdata->len);
 
+	cache = container_of(object->fscache.cache,
+			     struct cachefiles_cache, cache);
+
 	clear_bit(FSCACHE_COOKIE_AUX_UPDATED, &object->fscache.cookie->flags);
-	if (data_new_version(object->fscache.cookie))
-		ret = cachefiles_set_new_obj_xattr(object);
-	else if (volume_new_version(object->fscache.cookie))
-		ret = cachefiles_set_new_vol_xattr(object);
-	else
-		ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
-				   &auxdata->type, auxdata->len,
-				   XATTR_CREATE);
+	ret = mnt_want_write(cache->mnt);
+	if (ret == 0) {
+		if (data_new_version(object->fscache.cookie))
+			ret = cachefiles_set_new_obj_xattr(object);
+		else if (volume_new_version(object->fscache.cookie))
+			ret = cachefiles_set_new_vol_xattr(object);
+		else
+			ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
+					   &auxdata->type, auxdata->len,
+					   XATTR_CREATE);
+		mnt_drop_write(cache->mnt);
+	}
 	if (ret < 0 && ret != -ENOMEM)
 		cachefiles_io_error_obj(
 			object,
@@ -157,6 +170,7 @@ int cachefiles_update_object_xattr(struct cachefiles_object *object,
 				   struct cachefiles_xattr *auxdata)
 {
 	struct dentry *dentry = object->dentry;
+	struct cachefiles_cache *cache;
 	int ret;
 
 	if (!dentry)
@@ -167,10 +181,17 @@ int cachefiles_update_object_xattr(struct cachefiles_object *object,
 	/* attempt to install the cache metadata directly */
 	_debug("SET #%u", auxdata->len);
 
+	cache = container_of(object->fscache.cache,
+			     struct cachefiles_cache, cache);
+
 	clear_bit(FSCACHE_COOKIE_AUX_UPDATED, &object->fscache.cookie->flags);
-	ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
-			   &auxdata->type, auxdata->len,
-			   XATTR_REPLACE);
+	ret = mnt_want_write(cache->mnt);
+	if (ret == 0) {
+		ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
+				   &auxdata->type, auxdata->len,
+				   XATTR_REPLACE);
+		mnt_drop_write(cache->mnt);
+	}
 	if (ret < 0 && ret != -ENOMEM)
 		cachefiles_io_error_obj(
 			object,
@@ -222,6 +243,7 @@ int cachefiles_check_old_object_xattr(struct cachefiles_object *object,
 				      struct cachefiles_xattr *auxdata)
 {
 	struct cachefiles_xattr *auxbuf;
+	struct cachefiles_cache *cache;
 	unsigned int len = sizeof(struct cachefiles_xattr) + 512;
 	struct dentry *dentry = object->dentry;
 	int ret;
@@ -279,10 +301,17 @@ int cachefiles_check_old_object_xattr(struct cachefiles_object *object,
 			BUG();
 		}
 
+		cache = container_of(object->fscache.cache,
+				     struct cachefiles_cache, cache);
+
 		/* update the current label */
-		ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
-				   &auxdata->type, auxdata->len,
-				   XATTR_REPLACE);
+		ret = mnt_want_write(cache->mnt);
+		if (ret == 0) {
+			ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
+					   &auxdata->type, auxdata->len,
+					   XATTR_REPLACE);
+			mnt_drop_write(cache->mnt);
+		}
 		if (ret < 0) {
 			cachefiles_io_error_obj(object,
 						"Can't update xattr on %lu"
@@ -364,7 +393,11 @@ int cachefiles_remove_object_xattr(struct cachefiles_cache *cache,
 {
 	int ret;
 
-	ret = vfs_removexattr(dentry, cachefiles_xattr_cache);
+	ret = mnt_want_write(cache->mnt);
+	if (ret == 0) {
+		ret = vfs_removexattr(dentry, cachefiles_xattr_cache);
+		mnt_drop_write(cache->mnt);
+	}
 	if (ret < 0) {
 		if (ret == -ENOENT || ret == -ENODATA)
 			ret = 0;
