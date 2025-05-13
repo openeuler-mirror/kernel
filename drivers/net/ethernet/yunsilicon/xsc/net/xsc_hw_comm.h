@@ -7,4 +7,5 @@
 #define XSC_HW_COMMON_H
 
 int xsc_hw_kernel_call(struct xsc_core_device *xdev, u16 opcode, void *req, void *rsp);
-#endif /* XSC_HW_COMMON_H */
+
+#endif

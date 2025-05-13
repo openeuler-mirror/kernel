@@ -34,7 +34,9 @@ enum {
 	XSC_ST_LINK_STATE,
 	XSC_ST_LINK_SPEED,
 	XSC_ST_HEALTH_INFO,
+#ifdef CONFIG_INET
 	XSC_ST_LOOPBACK,
+#endif
 	XSC_ST_NUM,
 };
 
@@ -42,7 +44,9 @@ const char xsc_self_tests[XSC_ST_NUM][ETH_GSTRING_LEN] = {
 	"Link Test",
 	"Speed Test",
 	"Health Test",
+#ifdef CONFIG_INET
 	"Loopback Test",
+#endif
 };
 
 static int xsc_test_loopback(struct xsc_adapter *adapter)
@@ -175,16 +179,6 @@ static const struct pflag_desc xsc_priv_flags[XSC_NUM_PFLAGS] = {
 	{ "tx_cqe_moder",		set_pflag_tx_cqe_moder},
 };
 
-int xsc_priv_flags_num(void)
-{
-	return ARRAY_SIZE(xsc_priv_flags);
-}
-
-const char *xsc_priv_flags_name(int flag)
-{
-	return xsc_priv_flags[flag].name;
-}
-
 static int xsc_handle_pflag(struct net_device *dev,
 			    u32 wanted_flags,
 			    enum xsc_eth_priv_flag flag)
@@ -206,7 +200,7 @@ static int xsc_handle_pflag(struct net_device *dev,
 	return err;
 }
 
-int xsc_set_priv_flags(struct net_device *dev, u32 pflags)
+static int xsc_set_priv_flags(struct net_device *dev, u32 pflags)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	enum xsc_eth_priv_flag pflag;
@@ -319,7 +313,7 @@ static int xsc_get_module_eeprom(struct net_device *netdev,
 	return 0;
 }
 
-u32 xsc_get_priv_flags(struct net_device *dev)
+static u32 xsc_get_priv_flags(struct net_device *dev)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 
@@ -391,21 +385,21 @@ static void xsc_ethtool_get_strings(struct xsc_adapter *adapter, u32 stringset, 
 	case ETH_SS_STATS:
 		xsc_fill_stats_strings(adapter, data);
 		break;
-
+	case ETH_SS_PHY_STATS:
+		xsc_get_prs_chk_err_stats_strings(adapter, data);
+		break;
 	case ETH_SS_TEST:
 		for (i = 0; i < xsc_self_test_num(adapter); i++)
 			strscpy(data + i * ETH_GSTRING_LEN,
 				xsc_self_tests[i],
 				ETH_GSTRING_LEN);
 		break;
-
 	case ETH_SS_PRIV_FLAGS:
 		for (i = 0; i < XSC_NUM_PFLAGS; i++)
 			strscpy(data + i * ETH_GSTRING_LEN,
 				xsc_priv_flags[i].name,
 				ETH_GSTRING_LEN);
 		break;
-
 	default:
 		ETH_DEBUG_LOG("wrong stringset\n");
 		break;
@@ -428,6 +422,8 @@ static int xsc_ethtool_get_sset_count(struct xsc_adapter *adapter, int sset)
 		for (i = 0; i < xsc_num_stats_grps; i++)
 			num_stats += xsc_stats_grps[i].get_num_stats(adapter);
 		return num_stats;
+	case ETH_SS_PHY_STATS:
+		return xsc_get_prs_chk_err_stats_count(adapter);
 	case ETH_SS_PRIV_FLAGS:
 		return XSC_NUM_PFLAGS;
 	case ETH_SS_TEST:
@@ -448,7 +444,9 @@ static int (*xsc_st_func[XSC_ST_NUM])(struct xsc_adapter *) = {
 	xsc_test_link_state,
 	xsc_test_link_speed,
 	xsc_test_health_info,
+#ifdef CONFIG_INET
 	xsc_test_loopback,
+#endif
 };
 
 static void xsc_self_test(struct net_device *ndev, struct ethtool_test *etest, u64 *buf)
@@ -509,6 +507,14 @@ static void xsc_get_ethtool_stats(struct net_device *dev,
 	struct xsc_adapter *adapter = netdev_priv(dev);
 
 	xsc_ethtool_get_ethtool_stats(adapter, stats, data);
+}
+
+static void xsc_get_ethtool_phy_stats(struct net_device *dev,
+				      struct ethtool_stats *stats, u64 *data)
+{
+	struct xsc_adapter *adapter = netdev_priv(dev);
+
+	xsc_fill_prs_chk_err_stats(adapter, data);
 }
 
 static u32 xsc_get_msglevel(struct net_device *dev)
@@ -797,7 +803,7 @@ static int xsc_set_rss_hash_opt(struct xsc_adapter *priv,
 	return ret;
 }
 
-int xsc_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *info, u32 *rule_locs)
+static int xsc_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *info, u32 *rule_locs)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	struct xsc_eth_params *params = &priv->nic_param;
@@ -820,7 +826,7 @@ int xsc_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *info, u32 *rule_
 	return err;
 }
 
-int xsc_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
+static int xsc_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	int err = 0;
@@ -849,7 +855,7 @@ static u32 xsc_get_rxfh_indir_size(struct net_device *netdev)
 	return XSC_INDIR_RQT_SIZE;
 }
 
-int xsc_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key, u8 *hfunc)
+static int xsc_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key, u8 *hfunc)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_rss_params *rss = &priv->rss_params;
@@ -868,7 +874,7 @@ int xsc_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key, u8 *hfunc)
 	return 0;
 }
 
-int xsc_set_rxfh(struct net_device *dev, const u32 *indir, const u8 *key, const u8 hfunc)
+static int xsc_set_rxfh(struct net_device *dev, const u32 *indir, const u8 *key, const u8 hfunc)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	struct xsc_rss_params *rss = &priv->rss_params;
@@ -906,6 +912,7 @@ static int xsc_get_link_ksettings(struct net_device *netdev,
 {
 	struct xsc_adapter *adapter = netdev_priv(netdev);
 	struct xsc_event_linkinfo linkinfo;
+	u32 nbits = 0;
 
 	if (xsc_eth_get_link_info(adapter, &linkinfo))
 		return -EINVAL;
@@ -939,6 +946,7 @@ static int xsc_get_link_ksettings(struct net_device *netdev,
 		cmd->base.speed = LINKSPEED_MODE_200G;
 		break;
 	case MODULE_SPEED_400G_R8:
+	case MODULE_SPEED_400G_R4:
 		cmd->base.speed = LINKSPEED_MODE_400G;
 		break;
 	default:
@@ -955,15 +963,25 @@ static int xsc_get_link_ksettings(struct net_device *netdev,
 	ethtool_link_ksettings_zero_link_mode(cmd, supported);
 	ethtool_link_ksettings_zero_link_mode(cmd, advertising);
 
-	bitmap_copy(cmd->link_modes.supported, (unsigned long *)linkinfo.supported_speed,
-		    __ETHTOOL_LINK_MODE_MASK_NBITS);
-	bitmap_copy(cmd->link_modes.advertising, (unsigned long *)linkinfo.advertising_speed,
-		    __ETHTOOL_LINK_MODE_MASK_NBITS);
+	nbits = min_t(u32, __ETHTOOL_LINK_MODE_MASK_NBITS,
+		      sizeof(linkinfo.supported_speed) * 8);
+	bitmap_copy(cmd->link_modes.supported,
+		    (unsigned long *)linkinfo.supported_speed, nbits);
 
+	nbits = min_t(u32, __ETHTOOL_LINK_MODE_MASK_NBITS,
+		      sizeof(linkinfo.advertising_speed) * 8);
+	bitmap_copy(cmd->link_modes.advertising,
+		    (unsigned long *)linkinfo.advertising_speed, nbits);
+
+	nbits = min_t(u32, __ETHTOOL_LINK_MODE_MASK_NBITS,
+		      sizeof(linkinfo.supported) * 8);
 	bitmap_or(cmd->link_modes.supported, cmd->link_modes.supported,
-		  (unsigned long *)&linkinfo.supported, __ETHTOOL_LINK_MODE_MASK_NBITS);
+		  (unsigned long *)&linkinfo.supported, nbits);
+
+	nbits = min_t(u32, __ETHTOOL_LINK_MODE_MASK_NBITS,
+		      sizeof(linkinfo.advertising) * 8);
 	bitmap_or(cmd->link_modes.advertising, cmd->link_modes.advertising,
-		  (unsigned long *)&linkinfo.advertising, __ETHTOOL_LINK_MODE_MASK_NBITS);
+		  (unsigned long *)&linkinfo.advertising, nbits);
 
 	return 0;
 }
@@ -1004,6 +1022,115 @@ static int xsc_set_link_ksettings(struct net_device *netdev,
 	return err;
 }
 
+struct xsc_ethtool_link_ext_state_opcode_mapping {
+	u32 state_opcode;
+	enum ethtool_link_ext_state link_ext_state;
+	u8 link_ext_substate;
+};
+
+static const struct xsc_ethtool_link_ext_state_opcode_mapping
+xsc_link_ext_state_opcode_map[] = {
+	{1, ETHTOOL_LINK_EXT_STATE_EEPROM_ISSUE, 0},
+	{2, ETHTOOL_LINK_EXT_STATE_CABLE_ISSUE,
+		ETHTOOL_LINK_EXT_SUBSTATE_CI_UNSUPPORTED_CABLE},
+	{6, ETHTOOL_LINK_EXT_STATE_AUTONEG,
+		ETHTOOL_LINK_EXT_SUBSTATE_AN_NO_PARTNER_DETECTED},
+	{7, ETHTOOL_LINK_EXT_STATE_AUTONEG,
+		ETHTOOL_LINK_EXT_SUBSTATE_AN_ACK_NOT_RECEIVED},
+	{8, ETHTOOL_LINK_EXT_STATE_AUTONEG,
+		ETHTOOL_LINK_EXT_SUBSTATE_AN_NO_HCD},
+	{10, ETHTOOL_LINK_EXT_STATE_LINK_TRAINING_FAILURE,
+		ETHTOOL_LINK_EXT_SUBSTATE_LT_KR_LINK_INHIBIT_TIMEOUT},
+	{19, ETHTOOL_LINK_EXT_STATE_LINK_TRAINING_FAILURE,
+		ETHTOOL_LINK_EXT_SUBSTATE_LT_KR_FRAME_LOCK_NOT_ACQUIRED},
+	{20, ETHTOOL_LINK_EXT_STATE_LINK_TRAINING_FAILURE,
+		ETHTOOL_LINK_EXT_SUBSTATE_LT_KR_LINK_PARTNER_DID_NOT_SET_RECEIVER_READY},
+	{21, ETHTOOL_LINK_EXT_STATE_LINK_LOGICAL_MISMATCH,
+		ETHTOOL_LINK_EXT_SUBSTATE_LLM_FC_FEC_IS_NOT_LOCKED},
+	{22, ETHTOOL_LINK_EXT_STATE_LINK_LOGICAL_MISMATCH,
+		ETHTOOL_LINK_EXT_SUBSTATE_LLM_RS_FEC_IS_NOT_LOCKED},
+	{23, ETHTOOL_LINK_EXT_STATE_LINK_LOGICAL_MISMATCH,
+		ETHTOOL_LINK_EXT_SUBSTATE_LLM_PCS_DID_NOT_GET_ALIGN_STATUS},
+	{24, ETHTOOL_LINK_EXT_STATE_LINK_LOGICAL_MISMATCH,
+		ETHTOOL_LINK_EXT_SUBSTATE_LLM_PCS_DID_NOT_ACQUIRE_AM_LOCK},
+	{25, ETHTOOL_LINK_EXT_STATE_LINK_LOGICAL_MISMATCH,
+		ETHTOOL_LINK_EXT_SUBSTATE_LLM_PCS_DID_NOT_ACQUIRE_BLOCK_LOCK},
+	{26, ETHTOOL_LINK_EXT_STATE_BAD_SIGNAL_INTEGRITY,
+		ETHTOOL_LINK_EXT_SUBSTATE_BSI_LARGE_NUMBER_OF_PHYSICAL_ERRORS},
+	{27, ETHTOOL_LINK_EXT_STATE_BAD_SIGNAL_INTEGRITY,
+		ETHTOOL_LINK_EXT_SUBSTATE_BSI_UNSUPPORTED_RATE},
+};
+
+static void
+xsc_set_link_ext_state(struct xsc_ethtool_link_ext_state_opcode_mapping
+		       link_ext_state_mapping,
+		       struct ethtool_link_ext_state_info *link_ext_state_info)
+{
+	switch (link_ext_state_mapping.link_ext_state) {
+	case ETHTOOL_LINK_EXT_STATE_AUTONEG:
+		link_ext_state_info->autoneg =
+			link_ext_state_mapping.link_ext_substate;
+		break;
+	case ETHTOOL_LINK_EXT_STATE_LINK_TRAINING_FAILURE:
+		link_ext_state_info->link_training =
+			link_ext_state_mapping.link_ext_substate;
+		break;
+	case ETHTOOL_LINK_EXT_STATE_LINK_LOGICAL_MISMATCH:
+		link_ext_state_info->link_logical_mismatch =
+			link_ext_state_mapping.link_ext_substate;
+		break;
+	case ETHTOOL_LINK_EXT_STATE_BAD_SIGNAL_INTEGRITY:
+		link_ext_state_info->bad_signal_integrity =
+			link_ext_state_mapping.link_ext_substate;
+		break;
+	case ETHTOOL_LINK_EXT_STATE_CABLE_ISSUE:
+		link_ext_state_info->cable_issue =
+			link_ext_state_mapping.link_ext_substate;
+		break;
+	default:
+		break;
+	}
+
+	link_ext_state_info->link_ext_state = link_ext_state_mapping.link_ext_state;
+}
+
+static int xsc_get_link_ext_state(struct net_device *dev,
+				  struct ethtool_link_ext_state_info *link_ext_state_info)
+{
+	struct xsc_ethtool_link_ext_state_opcode_mapping link_ext_state_mapping;
+	struct xsc_adapter *adapter = netdev_priv(dev);
+	struct xsc_link_sub_state_mbox_in in;
+	struct xsc_link_sub_state_mbox_out out;
+	int i, err;
+	u32 state_code;
+
+	if (netif_carrier_ok(dev))
+		return -ENODATA;
+
+	memset(&in, 0, sizeof(in));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_GET_LINK_SUB_STATE);
+
+	err = xsc_cmd_exec(adapter->xdev, &in, sizeof(in), &out, sizeof(out));
+	if (err || out.hdr.status) {
+		xsc_core_err(adapter->xdev, "failed to get link ext state, err=%d, status=%d\n",
+			     err, out.hdr.status);
+		return -ENOEXEC;
+	}
+
+	state_code = be32_to_cpu(out.state_code);
+
+	for (i = 0; i < ARRAY_SIZE(xsc_link_ext_state_opcode_map); i++) {
+		link_ext_state_mapping = xsc_link_ext_state_opcode_map[i];
+		if (link_ext_state_mapping.state_opcode == state_code) {
+			xsc_set_link_ext_state(link_ext_state_mapping,
+					       link_ext_state_info);
+			return 0;
+		}
+	}
+
+	return -ENODATA;
+}
+
 static int xsc_set_phys_id(struct net_device *dev, enum ethtool_phys_id_state state)
 {
 	struct xsc_adapter *adapter = netdev_priv(dev);
@@ -1033,6 +1160,7 @@ static int xsc_set_fecparam(struct net_device *netdev,
 	u32 new_fec = fec->fec;
 	int err = 0;
 
+	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_FEC_PARAM);
 	in.fec = cpu_to_be32(new_fec);
 
@@ -1054,6 +1182,7 @@ static int xsc_get_fecparam(struct net_device *netdev,
 	struct xsc_event_query_fecparam_mbox_out out;
 	int err = 0;
 
+	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_FEC_PARAM);
 
 	err = xsc_cmd_exec(adapter->xdev, &in, sizeof(in), &out, sizeof(out));
@@ -1185,17 +1314,44 @@ out:
 	return err;
 }
 
+static void xsc_get_pauseparam(struct net_device *netdev,
+			       struct ethtool_pauseparam *pause)
+{
+	pause->autoneg = 0;
+	pause->rx_pause = 0;
+	pause->tx_pause = 0;
+}
+
+static void xsc_get_pause_stats(struct net_device *netdev,
+				struct ethtool_pause_stats *stats)
+{
+	stats->tx_pause_frames = 0;
+	stats->rx_pause_frames = 0;
+}
+
+static int xsc_set_pauseparam(struct net_device *netdev,
+			      struct ethtool_pauseparam *pause)
+{
+	return -EOPNOTSUPP;
+}
+
 static const struct ethtool_ops xsc_ethtool_ops = {
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
 				     ETHTOOL_COALESCE_MAX_FRAMES |
+#ifdef ETHTOOL_COALESCE_USECS_LOW_HIGH
 				     ETHTOOL_COALESCE_USECS_LOW_HIGH |
+#endif
+#ifdef ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH
 				     ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH |
+#endif
 				     ETHTOOL_COALESCE_USE_ADAPTIVE,
 	.get_drvinfo = xsc_get_drvinfo,
 	.get_link = ethtool_op_get_link,
+	.get_link_ext_state  = xsc_get_link_ext_state,
 	.get_strings = xsc_get_strings,
 	.get_sset_count = xsc_get_sset_count,
 	.get_ethtool_stats = xsc_get_ethtool_stats,
+	.get_ethtool_phy_stats = xsc_get_ethtool_phy_stats,
 	.get_ringparam = xsc_get_ringparam,
 	.set_ringparam = xsc_set_ringparam,
 	.set_channels = xsc_set_channels,
@@ -1213,6 +1369,9 @@ static const struct ethtool_ops xsc_ethtool_ops = {
 	.set_rxnfc = xsc_set_rxnfc,
 	.get_module_info   = xsc_get_module_info,
 	.get_module_eeprom = xsc_get_module_eeprom,
+	.get_pauseparam = xsc_get_pauseparam,
+	.set_pauseparam = xsc_set_pauseparam,
+	.get_pause_stats = xsc_get_pause_stats,
 	.get_priv_flags = xsc_get_priv_flags,
 	.set_priv_flags = xsc_set_priv_flags,
 	.get_msglevel = xsc_get_msglevel,

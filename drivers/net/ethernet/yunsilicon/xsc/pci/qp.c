@@ -209,11 +209,112 @@ void xsc_qp_event(struct xsc_core_device *xdev, u32 qpn, int event_type)
 		return;
 	}
 
+	qp->err_occurred = 1;
 	qp->event(qp, event_type);
 
 	if (atomic_dec_and_test(&qp->refcount))
 		complete(&qp->free);
 }
+
+int xsc_alloc_qpn(struct xsc_core_device *xdev, u16 *qpn_base, u16 qp_cnt, u8 qp_type)
+{
+	struct xsc_alloc_qpn_mbox_in in;
+	struct xsc_alloc_qpn_mbox_out out;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_ALLOC_QPN);
+	in.qp_cnt = cpu_to_be16(qp_cnt);
+	in.qp_type = qp_type;
+
+	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return xsc_cmd_status_to_err(&out.hdr);
+	*qpn_base = be16_to_cpu(out.qpn_base);
+	return 0;
+}
+EXPORT_SYMBOL(xsc_alloc_qpn);
+
+int xsc_dealloc_qpn(struct xsc_core_device *xdev, u16 qpn_base, u16 qp_cnt, u8 qp_type)
+{
+	struct xsc_dealloc_qpn_mbox_in in;
+	struct xsc_dealloc_qpn_mbox_out out;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DEALLOC_QPN);
+	in.qp_cnt = cpu_to_be16(qp_cnt);
+	in.qpn_base = cpu_to_be16(qpn_base);
+
+	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return xsc_cmd_status_to_err(&out.hdr);
+	return 0;
+}
+EXPORT_SYMBOL(xsc_dealloc_qpn);
+
+int xsc_unset_qp_info(struct xsc_core_device *xdev, u16 qpn)
+{
+	struct xsc_destroy_qp_mbox_in in;
+	struct xsc_destroy_qp_mbox_out out;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_QP_UNSET_QP_INFO);
+	in.qpn = cpu_to_be16(qpn);
+
+	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return xsc_cmd_status_to_err(&out.hdr);
+	return 0;
+}
+EXPORT_SYMBOL(xsc_unset_qp_info);
+
+int xsc_set_qp_info(struct xsc_core_device *xdev, struct xsc_create_qp_request *qp_info,
+		    size_t pas_buf_size)
+{
+	struct xsc_set_qp_info_in *in;
+	struct xsc_set_qp_info_out out;
+	size_t in_size;
+	int err;
+
+	in_size = sizeof(*in) + pas_buf_size;
+	in = kvzalloc(in_size, GFP_KERNEL);
+	if (!in)
+		return -ENOMEM;
+
+	memset(&out, 0, sizeof(out));
+	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_SET_QP_INFO);
+	memcpy(&in->qp_info, qp_info, sizeof(*qp_info) + pas_buf_size);
+
+	err = xsc_cmd_exec(xdev, in, in_size, &out, sizeof(out));
+	if (err)
+		goto out;
+
+	if (out.hdr.status) {
+		err = xsc_cmd_status_to_err(&out.hdr);
+		goto out;
+	}
+	kfree(in);
+	return 0;
+out:
+	kfree(in);
+	return err;
+}
+EXPORT_SYMBOL(xsc_set_qp_info);
 
 int xsc_core_create_qp(struct xsc_core_device *xdev,
 		       struct xsc_core_qp *qp,
@@ -317,7 +418,7 @@ int xsc_modify_qp(struct xsc_core_device *xdev,
 
 	in->hdr.opcode = cpu_to_be16(status);
 	in->qpn = cpu_to_be32(qpn);
-	in->no_need_wait = 1;
+	in->ctx.no_need_wait = 1;
 
 	ret = xsc_cmd_exec(xdev, in, sizeof(*in), out, sizeof(*out));
 	if ((status == XSC_CMD_OP_2RST_QP || status == XSC_CMD_OP_2ERR_QP) &&

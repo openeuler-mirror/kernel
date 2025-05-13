@@ -26,6 +26,19 @@ enum xsc_vlan_rule_type {
 	XSC_VLAN_RULE_TYPE_MATCH_STAG_VID,
 };
 
+enum {
+	XSC_ACTION_NONE = 0,
+	XSC_ACTION_ADD  = 1,
+	XSC_ACTION_DEL  = 2,
+};
+
+struct xsc_l2_hash_node {
+	struct hlist_node	hlist;
+	u8			action;
+	u8			mac_addr[ETH_ALEN];
+	u16			pct_prio;
+};
+
 struct xsc_vlan_table {
 	DECLARE_BITMAP(active_cvlans, VLAN_N_VID);
 	DECLARE_BITMAP(active_svlans, VLAN_N_VID);
@@ -52,4 +65,4 @@ int xsc_vlan_rx_add_vid(struct net_device *dev, __always_unused __be16 proto,
 int xsc_vlan_rx_kill_vid(struct net_device *dev, __always_unused __be16 proto,
 			 u16 vid);
 void xsc_set_rx_mode_work(struct work_struct *work);
-#endif /* XSC_FS_H */
+#endif

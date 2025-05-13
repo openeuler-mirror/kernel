@@ -3,6 +3,7 @@
  * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
+
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/uverbs_types.h>
@@ -13,7 +14,6 @@
 #define UVERBS_MODULE_NAME xsc_ib
 #include <rdma/uverbs_named_ioctl.h>
 #include "user.h"
-
 static struct xsc_ib_ucontext *devx_uattrs2uctx(struct uverbs_attr_bundle *attrs)
 {
 	return to_xucontext(ib_uverbs_get_ucontext(attrs));
@@ -35,7 +35,7 @@ static bool devx_is_general_cmd(void *in)
 
 static int UVERBS_HANDLER(XSC_IB_METHOD_DEVX_OTHER)(struct uverbs_attr_bundle *attrs)
 {
-	struct xsc_ib_ucontext *c;
+	struct xsc_ib_ucontext *c = NULL;
 	struct xsc_ib_dev *dev;
 	void *cmd_in = uverbs_attr_get_alloced_ptr(attrs, XSC_IB_ATTR_DEVX_OTHER_CMD_IN);
 	int cmd_out_len = uverbs_attr_get_len(attrs, XSC_IB_ATTR_DEVX_OTHER_CMD_OUT);

@@ -21,12 +21,6 @@
 
 #define XSC_VPORT_MANAGER(dev)	(xsc_core_is_vport_manager(dev))
 
-enum {
-	XSC_CAP_INLINE_MODE_L2,
-	XSC_CAP_INLINE_MODE_VPORT_CONTEXT,
-	XSC_CAP_INLINE_MODE_NOT_REQUIRED,
-};
-
 /* Vport number for each function must keep unchanged */
 enum {
 	XSC_VPORT_PF			= 0x0,
@@ -39,6 +33,11 @@ enum {
 	XSC_VPORT_ADMIN_STATE_DOWN  = 0x0,
 	XSC_VPORT_ADMIN_STATE_UP    = 0x1,
 	XSC_VPORT_ADMIN_STATE_AUTO  = 0x2,
+};
+
+enum {
+	XSC_LEAVE,
+	XSC_JOIN,
 };
 
 u8 xsc_query_vport_state(struct xsc_core_device *dev, u16 opmod, u16 vport);
@@ -90,6 +89,10 @@ int xsc_modify_nic_vport_mac_list(struct xsc_core_device *dev,
 				  enum xsc_list_type list_type,
 				  u8 addr_list[][ETH_ALEN],
 				  int list_size);
+int xsc_nic_vport_add_uc_mac(struct xsc_core_device *xdev,
+			     u8 *mac_addr, u16 *pct_prio);
+int xsc_nic_vport_del_uc_mac(struct xsc_core_device *xdev, u16 pct_prio);
+int xsc_nic_vport_modify_mc_mac(struct xsc_core_device *xdev, u8 *mac, u8 action);
 int xsc_query_nic_vport_promisc(struct xsc_core_device *dev,
 				u16 vport,
 				int *promisc,

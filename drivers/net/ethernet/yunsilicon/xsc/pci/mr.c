@@ -15,15 +15,18 @@ int xsc_core_create_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 	int err;
 	u8 key;
 
+	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
 	spin_lock(&dev->dev_res->mkey_lock);
 	key = 0x80 + dev->dev_res->mkey_key++;
 	spin_unlock(&dev->dev_res->mkey_lock);
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_CREATE_MKEY);
-	if (dev->reg_mr_via_cmdq)
+	read_lock(&dev->board_info->mr_sync_lock);
+	if (dev->board_info->resource_access_mode == SHARE_MODE)
 		err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	else
 		err = xsc_create_mkey(dev, &in, &out);
+	read_unlock(&dev->board_info->mr_sync_lock);
 
 	if (err) {
 		xsc_core_err(dev, "cmd exec faile %d\n", err);
@@ -35,7 +38,7 @@ int xsc_core_create_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 		return xsc_cmd_status_to_err(&out.hdr);
 	}
 
-	mr->key = xsc_idx_to_mkey(be32_to_cpu(out.mkey) & 0xffffff) | key;
+	mr->key = xsc_idx_to_mkey(dev, be32_to_cpu(out.mkey) & 0xffffff) | key;
 	xsc_core_dbg(dev, "out 0x%x, key 0x%x, mkey 0x%x\n", be32_to_cpu(out.mkey), key, mr->key);
 
 	return err;
@@ -53,10 +56,12 @@ int xsc_core_destroy_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DESTROY_MKEY);
 	in.mkey = cpu_to_be32(mr->key);
-	if (dev->reg_mr_via_cmdq)
+	read_lock(&dev->board_info->mr_sync_lock);
+	if (dev->board_info->resource_access_mode == SHARE_MODE)
 		err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	else
 		err = xsc_destroy_mkey(dev, &in, &out);
+	read_unlock(&dev->board_info->mr_sync_lock);
 
 	if (err)
 		return err;
@@ -68,13 +73,15 @@ int xsc_core_destroy_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 }
 EXPORT_SYMBOL(xsc_core_destroy_mkey);
 
-int xsc_set_mpt_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbox_in *in_cmd,
-			 u32 *mtt_base)
+static int xsc_set_mpt_via_cmdq(struct xsc_core_device *dev,
+				struct xsc_register_mr_mbox_in *in_cmd,
+				u32 *mtt_base)
 {
 	struct xsc_set_mpt_mbox_in *in;
 	struct xsc_set_mpt_mbox_out out;
 	struct xsc_register_mr_request *req = &in_cmd->req;
 	int err;
+	u64 mem_size;
 
 	in = kzalloc(sizeof(*in), GFP_KERNEL);
 	if (!in) {
@@ -83,7 +90,9 @@ int xsc_set_mpt_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbo
 	}
 	in->mpt_item.pdn = req->pdn;
 	in->mpt_item.pa_num = req->pa_num;
-	in->mpt_item.len = req->len;
+	mem_size = be64_to_cpu(req->len);
+	in->mpt_item.len = (u32)mem_size;
+	in->mpt_item.len = cpu_to_be32(in->mpt_item.len);
 	in->mpt_item.mkey = req->mkey;
 	in->mpt_item.acc = req->acc;
 	in->mpt_item.page_mode = req->page_mode;
@@ -103,8 +112,9 @@ int xsc_set_mpt_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbo
 	return 0;
 }
 
-int xsc_set_mtt_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbox_in *in_cmd,
-			 u32 mtt_base)
+static int xsc_set_mtt_via_cmdq(struct xsc_core_device *dev,
+				struct xsc_register_mr_mbox_in *in_cmd,
+				u32 mtt_base)
 {
 #define PA_NUM_PER_CMD 1024
 	struct xsc_set_mtt_mbox_in *seg_in;
@@ -150,12 +160,14 @@ int xsc_set_mtt_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbo
 	return 0;
 }
 
-int xsc_dereg_mr_via_cmdq(struct xsc_core_device *dev,  struct xsc_register_mr_mbox_in *in_cmd)
+static int xsc_dereg_mr_via_cmdq(struct xsc_core_device *dev,
+				 struct xsc_register_mr_mbox_in *in_cmd)
 {
 	struct xsc_unregister_mr_mbox_in in;
 	struct xsc_unregister_mr_mbox_out out;
 	int err;
 
+	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DEREG_MR);
 	in.mkey = in_cmd->req.mkey;
@@ -167,7 +179,7 @@ int xsc_dereg_mr_via_cmdq(struct xsc_core_device *dev,  struct xsc_register_mr_m
 	return 0;
 }
 
-int xsc_reg_mr_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbox_in *in)
+static int xsc_reg_mr_via_cmdq(struct xsc_core_device *dev, struct xsc_register_mr_mbox_in *in)
 {
 	u32 mtt_base;
 	int err;
@@ -200,10 +212,12 @@ int xsc_core_register_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr,
 
 	memset(&out, 0, sizeof(out));
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_REG_MR);
-	if (dev->reg_mr_via_cmdq)
+	read_lock(&dev->board_info->mr_sync_lock);
+	if (dev->board_info->resource_access_mode == SHARE_MODE)
 		err = xsc_reg_mr_via_cmdq(dev, in);
 	else
 		err = xsc_reg_mr(dev, in, &out);
+	read_unlock(&dev->board_info->mr_sync_lock);
 
 	if (err) {
 		xsc_core_err(dev, "cmd exec failed %d\n", err);
@@ -224,13 +238,17 @@ int xsc_core_dereg_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 	struct xsc_unregister_mr_mbox_out out;
 	int err;
 
+	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DEREG_MR);
-	in.mkey = cpu_to_be32(xsc_mkey_to_idx(mr->key));
-	if (dev->reg_mr_via_cmdq)
+	/*covert mkey to mpt_idx*/
+	in.mkey = cpu_to_be32(xsc_mkey_to_idx(dev, mr->key));
+	read_lock(&dev->board_info->mr_sync_lock);
+	if (dev->board_info->resource_access_mode == SHARE_MODE)
 		err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	else
 		err = xsc_dereg_mr(dev, &in, &out);
+	read_unlock(&dev->board_info->mr_sync_lock);
 
 	if (err) {
 		xsc_core_err(dev, "cmd exec failed %d\n", err);

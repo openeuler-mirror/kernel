@@ -7,7 +7,6 @@
 #define XSC_QUEUE_H
 
 #include <net/page_pool.h>
-
 #include <linux/dim.h>
 
 #include "../pci/wq.h"
@@ -65,6 +64,7 @@ struct xsc_rq_frags_info {
 	u8 wqe_bulk;
 	u8 wqe_bulk_min;
 	u8 frags_max_num;
+	u8 page_order;
 };
 
 #define xsc_dim_t struct dim
@@ -133,7 +133,7 @@ struct xsc_rq;
 struct xsc_cqe;
 typedef void (*xsc_fp_handle_rx_cqe)(struct xsc_cqwq *cqwq, struct xsc_rq *rq,
 				     struct xsc_cqe *cqe);
-typedef bool (*xsc_fp_post_rx_wqes)(struct xsc_rq *rq);
+typedef bool (*xsc_fp_post_rx_wqes)(struct xsc_rq *rq, bool force);
 typedef void (*xsc_fp_dealloc_wqe)(struct xsc_rq *rq, u16 ix);
 typedef struct sk_buff * (*xsc_fp_skb_from_cqe)(struct xsc_rq *rq,
 			  struct xsc_wqe_frag_info *wi, u32 cqe_bcnt, u8 has_pph);
@@ -151,6 +151,8 @@ struct xsc_rq {
 	struct {
 		u16	headroom;
 		u8	map_dir;	/* dma map direction */
+		u8	page_order;
+
 	} buff;
 
 	struct page_pool	*page_pool;
@@ -263,11 +265,6 @@ struct xsc_wqe_ctrl_seg {
 	u32                      ce : 1;
 	u32                      rsv : 30;
 };
-
-static inline u8 get_cqe_opcode(struct xsc_cqe *cqe)
-{
-	return cqe->msg_opcode;
-}
 
 static inline void xsc_dump_err_cqe(struct xsc_core_device *dev,
 				    struct xsc_cqe *cqe)

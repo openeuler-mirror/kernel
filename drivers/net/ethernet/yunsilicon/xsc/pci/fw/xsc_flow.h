@@ -6,11 +6,8 @@
 #ifndef XSC_FLOW_H
 #define XSC_FLOW_H
 
-#include "osdep.h"
-
 #define XSC_DMA_LEN     64
 #define XSC_DMA_WR_MAX  128
-#define XSC_DMA_WR_SUCCESS  0x3
 
 /* key */
 struct tdi_dma_write_key_bits {
@@ -62,4 +59,5 @@ int xsc_flow_add(struct xsc_core_device *xdev,
 		 int table, int length, void *data);
 
 void xsc_dma_read_done_complete(void);
-#endif /* XSC_FLOW_H */
+
+#endif

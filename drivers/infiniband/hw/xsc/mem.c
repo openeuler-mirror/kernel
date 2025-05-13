@@ -18,9 +18,9 @@ static inline int xsc_count_trailing_zeros(unsigned long x)
 		return (x != 0) ? __ffs(x) : COUNT_TRAILING_ZEROS_0;
 }
 
-int xsc_find_chunk_cont_0(struct xsc_pa_chunk *chunk,
-			  int is_first,
-			  int is_last)
+static int xsc_find_chunk_cont_0(struct xsc_pa_chunk *chunk,
+				 int is_first,
+				 int is_last)
 {
 	static const int max_count =  sizeof(int) << 3;
 	dma_addr_t pa, end_pa;
@@ -190,10 +190,10 @@ err_alloc:
  * @ncont: number of compund pages
  * @order: log2 of the number of compound pages
  */
-void __xsc_ib_cont_pages(struct ib_umem *umem, u64 addr,
-			 unsigned long max_page_shift,
-			 int *count, int *shift,
-			 int *ncont, int *order)
+static void __xsc_ib_cont_pages(struct ib_umem *umem, u64 addr,
+				unsigned long max_page_shift,
+				int *count, int *shift,
+				int *ncont, int *order)
 {
 	unsigned long tmp;
 	unsigned long m;
@@ -256,9 +256,9 @@ void xsc_ib_cont_pages(struct ib_umem *umem, u64 addr,
 	__xsc_ib_cont_pages(umem, addr, 0, count, shift, ncont, order);
 }
 
-void __xsc_ib_populate_pas(struct xsc_ib_dev *dev, struct ib_umem *umem,
-			   int page_shift, size_t offset, size_t num_pages,
-			   __be64 *pas, int access_flags, bool need_to_devide)
+static void __xsc_ib_populate_pas(struct xsc_ib_dev *dev, struct ib_umem *umem,
+				  int page_shift, size_t offset, size_t num_pages,
+				  __be64 *pas, int access_flags, bool need_to_devide)
 {
 	unsigned long umem_page_shift = PAGE_SHIFT;
 	int shift = page_shift - umem_page_shift;

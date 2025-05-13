@@ -48,6 +48,10 @@ struct xsc_wct_obj {
 	unsigned int wct_idx;
 };
 
+struct xsc_user_mode_obj {
+	struct xsc_res_obj obj;
+};
+
 struct xsc_em_obj {
 	struct xsc_res_obj obj;
 	unsigned int em_idx[54];
@@ -87,6 +91,7 @@ enum RES_OBJ_TYPE {
 	RES_OBJ_PCT,
 	RES_OBJ_WCT,
 	RES_OBJ_EM,
+	RES_OBJ_USER_MODE,
 	RES_OBJ_MAX
 };
 
@@ -118,4 +123,9 @@ void xsc_destroy_pct_obj(struct xsc_bdf_file *file, unsigned int priority);
 void xsc_close_bdf_file(struct xsc_bdf_file *file);
 
 void xsc_send_cmd_2rst_qp(struct xsc_core_device *xdev, unsigned int qpn);
-#endif /* RES_OBJ_H */
+int xsc_alloc_user_mode_obj(struct xsc_bdf_file *file, void (*release_func)(void *),
+			    unsigned int mode, char *data, unsigned int len);
+void xsc_free_user_mode_obj(struct xsc_bdf_file *file, unsigned int mode);
+void xsc_release_user_mode(struct xsc_bdf_file *file, unsigned int mode);
+
+#endif

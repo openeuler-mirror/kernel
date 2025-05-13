@@ -48,6 +48,13 @@ static const struct counter_desc hw_rdma_stats_pf_desc[] = {
 	/*global*/
 	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_loopback_pkts) },
 	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_loopback_bytes) },
+
+	/*for diamond*/
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  out_of_sequence_sr) },
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  packet_seq_err_sr) },
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_ndp_rx_pkts) },
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_ndp_rx_trimmed_pkts) },
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_ndp_trimmed_pkts_sr) },
 };
 
 static const struct counter_desc hw_rdma_stats_vf_desc[] = {
@@ -129,6 +136,7 @@ static ssize_t counters_names_show(struct kobject *kobjs,
 	ssize_t count = 0;
 	const struct counter_desc *desc;
 	struct xsc_counters_attribute *xsc_counters_name_attr;
+	u32 mask = 0;
 
 	xsc_counters_name_attr = container_of(attr,
 					      struct xsc_counters_attribute,
@@ -142,8 +150,12 @@ static ssize_t counters_names_show(struct kobject *kobjs,
 		desc_size = ARRAY_SIZE(hw_rdma_stats_vf_desc);
 	}
 
-	for (i = 0; i < desc_size; ++i)
+	mask = xsc_get_rdma_stat_mask(xsc_counters_name_attr->dev);
+	for (i = 0 ; i < desc_size; i++) {
+		if (!((1 << i) & mask))
+			continue;
 		count += sprintf(&buf[count], "%s\n", desc[i].format);
+	}
 
 	return count;
 }
@@ -160,6 +172,7 @@ static ssize_t counters_show(struct kobject *kobjs,
 	const struct counter_desc *desc;
 	struct xsc_hw_stats_rdma stats_rdma;
 	struct xsc_counters_attribute *xsc_counters_attr;
+	u32 mask = 0;
 
 	xsc_counters_attr = container_of(attr,
 					 struct xsc_counters_attribute,
@@ -179,7 +192,10 @@ static ssize_t counters_show(struct kobject *kobjs,
 		stats = (u8 *)&stats_rdma.stats.vf_stats;
 	}
 
+	mask = xsc_get_rdma_stat_mask(xsc_counters_attr->dev);
 	for (i = 0 ; i < desc_size; i++) {
+		if (!((1 << i) & mask))
+			continue;
 		value = *(u64 *)(stats + desc[i].offset);
 		value = be64_to_cpu(value);
 		count += sprintf(&buf[count], "%-26s    %-20llu\n",
@@ -194,7 +210,8 @@ static ssize_t counters_value_read(struct file *file,
 				   struct bin_attribute *bin_attr,
 				   char *buf, loff_t loff, size_t size)
 {
-	int i;
+	int i = 0;
+	int j = 0;
 	int ret;
 	u8 *stats;
 	int bin_size;
@@ -204,6 +221,7 @@ static ssize_t counters_value_read(struct file *file,
 	const struct counter_desc *desc;
 	struct xsc_hw_stats_rdma stats_rdma;
 	struct xsc_counters_bin_attribute *xsc_counters_bin_attr;
+	u32 mask = 0;
 
 	xsc_counters_bin_attr = container_of(&bin_attr->attr,
 					     struct xsc_counters_bin_attribute,
@@ -235,9 +253,14 @@ static ssize_t counters_value_read(struct file *file,
 	if (!tmp_value)
 		return 0;
 
+	mask = xsc_get_rdma_stat_mask(xdev);
+	j = 0;
 	for (i = 0; i < desc_size; i++) {
-		tmp_value[i] = *(u64 *)(stats + desc[i].offset);
-		tmp_value[i] = be64_to_cpu(tmp_value[i]);
+		if (!((1 << i) & mask))
+			continue;
+		tmp_value[j] = *(u64 *)(stats + desc[i].offset);
+		tmp_value[j] = be64_to_cpu(tmp_value[i]);
+		j++;
 	}
 
 	memcpy(buf, tmp_value, xsc_counters_bin_attr->size);

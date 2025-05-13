@@ -17,7 +17,6 @@
 #include <linux/debugfs.h>
 #include "common/xsc_hsi.h"
 #include "common/xsc_core.h"
-#include "tmp_cmdq_defines.h"
 
 enum {
 	CMD_IF_REV = 3,
@@ -390,6 +389,12 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_MODIFY_FEC_PARAM:
 		return "MODIFY_FEC_PARAM";
 
+	case XSC_CMD_OP_MODIFY_NIC_VPORT_UC_MAC:
+		return "MODIFY_NIC_VPORT_UC_MAC";
+
+	case XSC_CMD_OP_MODIFY_NIC_VPORT_MC_MAC:
+		return "MODIFY_NIC_VPORT_MC_MAC";
+
 	case XSC_CMD_OP_QUERY_FEC_PARAM:
 		return "QUERY_FEC_PARAM";
 
@@ -447,14 +452,11 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_IOCTL_SET_PFC:
 		return "SET_PFC";
 
-	case XSC_CMD_OP_IOCTL_SET_PFC_DROP_TH:
-		return "SET_PFC_DROP_TH";
+	case XSC_CMD_OP_IOCTL_GET_PFC_CFG_STATUS:
+		return "GET_PFC_CFG_STATUS";
 
 	case XSC_CMD_OP_IOCTL_GET_PFC:
 		return "GET_PFC";
-
-	case XSC_CMD_OP_IOCTL_GET_PFC_CFG_STATUS:
-		return "GET_PFC_CFG_STATUS";
 
 	case XSC_CMD_OP_IOCTL_SET_RATE_LIMIT:
 		return "SET_RATE_LIMIT";
@@ -630,8 +632,56 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_QUERY_HW_STATS_ETH:
 		return "QUERY_HW_STATS_ETH";
 
+	case XSC_CMD_OP_QUERY_HW_PF_UC_STATS:
+		return "QUERY_HW_PF_UC_STATS";
+
 	case XSC_CMD_OP_SET_VPORT_RATE_LIMIT:
 		return "SET_VPORT_RATE_LIMIT";
+
+	case XSC_CMD_OP_GET_LINK_SUB_STATE:
+		return "GET_LINK_SUB_STATE";
+
+	case XSC_CMD_OP_IOCTL_SET_ROCE_ACCL_NEXT:
+		return "SET_ROCE_ACCL_NEXT";
+
+	case XSC_CMD_OP_IOCTL_GET_ROCE_ACCL_NEXT:
+		return "GET_ROCE_ACCL_NEXT";
+
+	case XSC_CMD_OP_ENABLE_RELAXED_ORDER:
+		return "ENABLE_RELAXED_ORDER";
+
+	case XSC_CMD_OP_QUERY_GUID:
+		return "QUERY_GUID";
+
+	case XSC_CMD_OP_ACTIVATE_HW_CONFIG:
+		return "ACTIVATE_HW_CONFIG";
+
+	case XSC_CMD_OP_QUERY_READ_FLUSH:
+		return "QUERY_READ_FLUSH";
+
+	case XSC_CMD_OP_SEND_TUNNEL_CMD_REQ:
+		return "SEND_TUNNEL_CMD_REQ";
+
+	case XSC_CMD_OP_RECV_TUNNEL_CMD_REQ:
+		return "RECV_TUNNEL_CMD_REQ";
+
+	case XSC_CMD_OP_SEND_TUNNEL_CMD_RESP:
+		return "SEND_TUNNEL_CMD_RESP";
+
+	case XSC_CMD_OP_RECV_TUNNEL_CMD_RESP:
+		return "RECV_TUNNEL_CMD_RESP";
+
+	case XSC_CMD_OP_GET_IOCTL_INFO:
+		return "GET_IOCTL_INFO";
+
+	case XSC_CMD_OP_ANNOUNCE_DRIVER_INSTANCE:
+		return "ANNOUNCE_DRIVER_INSTANCE";
+
+	case XSC_CMD_OP_SYNC_MR_TO_FW:
+		return "SYNC_MR_TO_FW";
+
+	case XSC_CMD_OP_SYNC_MR_FROM_FW:
+		return "SYNC_MR_FROM_FW";
 
 	default: return "unknown command opcode";
 	}
@@ -712,7 +762,7 @@ static void cmd_work_handler(struct work_struct *work)
 	wmb();
 
 	cmd->cmd_pid = (cmd->cmd_pid + 1) % (1 << cmd->log_sz);
-	writel(cmd->cmd_pid, REG_ADDR(xdev, cmd->reg.req_pid_addr));
+	xsc_update_cmdq_req_pid(xdev, cmd->cmd_pid);
 	mmiowb();
 	spin_unlock_irqrestore(&cmd->doorbell_lock, flags);
 
@@ -808,8 +858,11 @@ static int xsc_cmd_invoke(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
 	}
 
 	err = wait_func(xdev, ent);
-	if (err == -ETIMEDOUT)
+	if (err == -ETIMEDOUT) {
+		xsc_core_err(xdev, "cmd(%s) timeout\n", xsc_command_str(msg_to_opcode(in)));
 		goto out;
+	}
+
 	t1 = timespec64_to_ktime(ent->ts1);
 	t2 = timespec64_to_ktime(ent->ts2);
 	delta = ktime_sub(t2, t1);
@@ -1426,9 +1479,8 @@ static int dummy_work(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
 
 	/* ring doorbell after the descriptor is valid */
 	wmb();
-	writel(cmd->cmd_pid, REG_ADDR(xdev, cmd->reg.req_pid_addr));
-	if (readl(REG_ADDR(xdev, cmd->reg.interrupt_stat_addr)) != 0)
-		writel(0xF, REG_ADDR(xdev, cmd->reg.interrupt_stat_addr));
+	xsc_update_cmdq_req_pid(xdev, cmd->cmd_pid);
+	xsc_check_cmdq_status(xdev);
 
 	mmiowb();
 	xsc_core_dbg(xdev, "write 0x%x to command doorbell, idx %u ~ %u\n", cmd->cmd_pid,
@@ -1540,8 +1592,8 @@ static int request_pid_cid_mismatch_restore(struct xsc_core_device *xdev)
 
 	int err;
 
-	req_pid = readl(REG_ADDR(xdev, cmd->reg.req_pid_addr));
-	req_cid = readl(REG_ADDR(xdev, cmd->reg.req_cid_addr));
+	req_pid = xsc_get_cmdq_req_pid(xdev);
+	req_cid = xsc_get_cmdq_req_cid(xdev);
 	if (req_pid >= (1 << cmd->log_sz) || req_cid >= (1 << cmd->log_sz)) {
 		xsc_core_err(xdev, "req_pid %d, req_cid %d, out of normal range!!! max value is %d\n",
 			     req_pid, req_cid, (1 << cmd->log_sz));
@@ -1574,8 +1626,10 @@ int _xsc_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out
 	u8 status = 0;
 	struct xsc_cmd *cmd = &xdev->cmd;
 
-	if (cmd->cmd_status == XSC_CMD_STATUS_TIMEDOUT)
+	if (cmd->cmd_status == XSC_CMD_STATUS_TIMEDOUT) {
+		xsc_core_warn(xdev, "cmd queue is blocked, return directly\n");
 		return -ETIMEDOUT;
+	}
 
 	inb = alloc_msg(xdev, in_size);
 	if (IS_ERR(inb)) {
@@ -1673,6 +1727,14 @@ ex_err:
 	return err;
 }
 
+static inline void xsc_cmd_reset_err_handler_retry_cnt(struct xsc_core_device  *xdev)
+{
+	if (xdev->cmd.retry_cnt) {
+		xdev->cmd.retry_cnt = 0;
+		xsc_core_info(xdev, "get the retry cmd response, so reset retry cnt.\n");
+	}
+}
+
 static void xsc_cmd_comp_handler(struct xsc_core_device *xdev, u8 idx, struct xsc_rsp_layout *rsp)
 {
 	struct xsc_cmd *cmd = &xdev->cmd;
@@ -1703,6 +1765,7 @@ static void xsc_cmd_comp_handler(struct xsc_core_device *xdev, u8 idx, struct xs
 	free_ent(cmd, ent->idx);
 	complete(&ent->done);
 	up(&cmd->sem);
+	xsc_cmd_reset_err_handler_retry_cnt(xdev);
 }
 
 static int cmd_cq_polling(void *data)
@@ -1715,7 +1778,7 @@ static int cmd_cq_polling(void *data)
 	while (!kthread_should_stop()) {
 		if (need_resched())
 			schedule();
-		cq_pid = readl(REG_ADDR(xdev, cmd->reg.rsp_pid_addr));
+		cq_pid = xsc_get_cmdq_rsp_pid(xdev);
 		if (cmd->cq_cid == cq_pid) {
 			mdelay(3);
 			continue;
@@ -1729,8 +1792,9 @@ static int cmd_cq_polling(void *data)
 		}
 		if (cmd->owner_bit != rsp->owner_bit) {
 			//hw update cq doorbell but buf may not ready
-			xsc_core_err(xdev, "hw update cq doorbell but buf not ready %u %u\n",
-				     cmd->cq_cid, cq_pid);
+			xsc_core_err_rl(xdev, "hw update cq doorbell but buf not ready %u %u\n",
+					cmd->cq_cid, cq_pid);
+			msleep(20);
 			continue;
 		}
 
@@ -1738,7 +1802,7 @@ static int cmd_cq_polling(void *data)
 
 		cmd->cq_cid = (cmd->cq_cid + 1) % (1 << cmd->log_sz);
 
-		writel(cmd->cq_cid, REG_ADDR(xdev, cmd->reg.rsp_cid_addr));
+		xsc_update_cmdq_rsp_cid(xdev, cmd->cq_cid);
 		if (cmd->cq_cid == 0)
 			cmd->owner_bit = !cmd->owner_bit;
 	}
@@ -1747,48 +1811,7 @@ static int cmd_cq_polling(void *data)
 
 int xsc_cmd_err_handler(struct xsc_core_device *xdev)
 {
-	union interrupt_stat {
-		struct {
-			u32	hw_read_req_err:1;
-			u32	hw_write_req_err:1;
-			u32	req_pid_err:1;
-			u32	rsp_cid_err:1;
-		};
-		u32	raw;
-	} stat;
-	int err = 0;
-	int retry = 0;
-
-	stat.raw = readl(REG_ADDR(xdev, xdev->cmd.reg.interrupt_stat_addr));
-	while (stat.raw != 0) {
-		err++;
-		if (stat.hw_read_req_err) {
-			retry = 1;
-			stat.hw_read_req_err = 0;
-			xsc_core_err(xdev, "hw report read req from host failed!\n");
-		} else if (stat.hw_write_req_err) {
-			retry = 1;
-			stat.hw_write_req_err = 0;
-			xsc_core_err(xdev, "hw report write req to fw failed!\n");
-		} else if (stat.req_pid_err) {
-			stat.req_pid_err = 0;
-			xsc_core_err(xdev, "hw report unexpected req pid!\n");
-		} else if (stat.rsp_cid_err) {
-			stat.rsp_cid_err = 0;
-			xsc_core_err(xdev, "hw report unexpected rsp cid!\n");
-		} else {
-			stat.raw = 0;
-			xsc_core_err(xdev, "ignore unknown interrupt!\n");
-		}
-	}
-
-	if (retry)
-		writel(xdev->cmd.cmd_pid, REG_ADDR(xdev, xdev->cmd.reg.req_pid_addr));
-
-	if (err)
-		writel(0xf, REG_ADDR(xdev, xdev->cmd.reg.interrupt_stat_addr));
-
-	return err;
+	return xsc_handle_cmdq_interrupt(xdev);
 }
 
 void xsc_cmd_resp_handler(struct xsc_core_device *xdev)
@@ -1800,7 +1823,7 @@ void xsc_cmd_resp_handler(struct xsc_core_device *xdev)
 	int count = 0;
 
 	while (count < budget) {
-		cq_pid = readl(REG_ADDR(xdev, cmd->reg.rsp_pid_addr));
+		cq_pid = xsc_get_cmdq_rsp_pid(xdev);
 		if (cq_pid == cmd->cq_cid)
 			return;
 
@@ -1818,7 +1841,7 @@ void xsc_cmd_resp_handler(struct xsc_core_device *xdev)
 		xsc_cmd_comp_handler(xdev, rsp->idx, rsp);
 
 		cmd->cq_cid = (cmd->cq_cid + 1) % (1 << cmd->log_sz);
-		writel(cmd->cq_cid, REG_ADDR(xdev, cmd->reg.rsp_cid_addr));
+		xsc_update_cmdq_rsp_cid(xdev, cmd->cq_cid);
 		if (cmd->cq_cid == 0)
 			cmd->owner_bit = !cmd->owner_bit;
 
@@ -1831,14 +1854,14 @@ static void xsc_cmd_handle_rsp_before_reload
 {
 	u32 rsp_pid, rsp_cid;
 
-	rsp_pid = readl(REG_ADDR(xdev, cmd->reg.rsp_pid_addr));
-	rsp_cid = readl(REG_ADDR(xdev, cmd->reg.rsp_cid_addr));
+	rsp_pid = xsc_get_cmdq_rsp_pid(xdev);
+	rsp_cid = xsc_get_cmdq_rsp_cid(xdev);
 	if (rsp_pid == rsp_cid)
 		return;
 
 	cmd->cq_cid = rsp_pid;
 
-	writel(cmd->cq_cid, REG_ADDR(xdev, cmd->reg.rsp_cid_addr));
+	xsc_update_cmdq_rsp_cid(xdev, cmd->cq_cid);
 }
 
 int xsc_cmd_init(struct xsc_core_device *xdev)
@@ -1847,39 +1870,8 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 	int align = roundup_pow_of_two(size);
 	struct xsc_cmd *cmd = &xdev->cmd;
 	u32 cmd_h, cmd_l;
-	u32 err_stat;
 	int err;
 	int i;
-
-	//sriov need adapt for this process.
-	//now there is 544 cmdq resource, soc using from id 514
-	if (xsc_core_is_pf(xdev)) {
-		cmd->reg.req_pid_addr = HIF_CMDQM_HOST_REQ_PID_MEM_ADDR;
-		cmd->reg.req_cid_addr = HIF_CMDQM_HOST_REQ_CID_MEM_ADDR;
-		cmd->reg.rsp_pid_addr = HIF_CMDQM_HOST_RSP_PID_MEM_ADDR;
-		cmd->reg.rsp_cid_addr = HIF_CMDQM_HOST_RSP_CID_MEM_ADDR;
-		cmd->reg.req_buf_h_addr = HIF_CMDQM_HOST_REQ_BUF_BASE_H_ADDR_MEM_ADDR;
-		cmd->reg.req_buf_l_addr = HIF_CMDQM_HOST_REQ_BUF_BASE_L_ADDR_MEM_ADDR;
-		cmd->reg.rsp_buf_h_addr = HIF_CMDQM_HOST_RSP_BUF_BASE_H_ADDR_MEM_ADDR;
-		cmd->reg.rsp_buf_l_addr = HIF_CMDQM_HOST_RSP_BUF_BASE_L_ADDR_MEM_ADDR;
-		cmd->reg.msix_vec_addr = HIF_CMDQM_VECTOR_ID_MEM_ADDR;
-		cmd->reg.element_sz_addr = HIF_CMDQM_Q_ELEMENT_SZ_REG_ADDR;
-		cmd->reg.q_depth_addr = HIF_CMDQM_HOST_Q_DEPTH_REG_ADDR;
-		cmd->reg.interrupt_stat_addr = HIF_CMDQM_HOST_VF_ERR_STS_MEM_ADDR;
-	} else {
-		cmd->reg.req_pid_addr = CMDQM_HOST_REQ_PID_MEM_ADDR;
-		cmd->reg.req_cid_addr = CMDQM_HOST_REQ_CID_MEM_ADDR;
-		cmd->reg.rsp_pid_addr = CMDQM_HOST_RSP_PID_MEM_ADDR;
-		cmd->reg.rsp_cid_addr = CMDQM_HOST_RSP_CID_MEM_ADDR;
-		cmd->reg.req_buf_h_addr = CMDQM_HOST_REQ_BUF_BASE_H_ADDR_MEM_ADDR;
-		cmd->reg.req_buf_l_addr = CMDQM_HOST_REQ_BUF_BASE_L_ADDR_MEM_ADDR;
-		cmd->reg.rsp_buf_h_addr = CMDQM_HOST_RSP_BUF_BASE_H_ADDR_MEM_ADDR;
-		cmd->reg.rsp_buf_l_addr = CMDQM_HOST_RSP_BUF_BASE_L_ADDR_MEM_ADDR;
-		cmd->reg.msix_vec_addr = CMDQM_VECTOR_ID_MEM_ADDR;
-		cmd->reg.element_sz_addr = CMDQM_Q_ELEMENT_SZ_REG_ADDR;
-		cmd->reg.q_depth_addr = CMDQM_HOST_Q_DEPTH_REG_ADDR;
-		cmd->reg.interrupt_stat_addr = CMDQM_HOST_VF_ERR_STS_MEM_ADDR;
-	}
 
 	cmd->pool = pci_pool_create("xsc_cmd", xdev->pdev, size, align, 0);
 	if (!cmd->pool)
@@ -1910,8 +1902,8 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 		goto err_map_cmd;
 	}
 
-	cmd->cmd_pid = readl(REG_ADDR(xdev, cmd->reg.req_pid_addr));
-	cmd->cq_cid = readl(REG_ADDR(xdev, cmd->reg.rsp_cid_addr));
+	cmd->cmd_pid = xsc_get_cmdq_req_pid(xdev);
+	cmd->cq_cid = xsc_get_cmdq_rsp_cid(xdev);
 	cmd->ownerbit_learned = 0;
 
 	xsc_cmd_handle_rsp_before_reload(cmd, xdev);
@@ -1920,8 +1912,8 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 #define Q_DEPTH_LOG	5 //32
 
 	cmd->log_sz = Q_DEPTH_LOG;
-	cmd->log_stride = readl(REG_ADDR(xdev, cmd->reg.element_sz_addr));
-	writel(1 << cmd->log_sz, REG_ADDR(xdev, cmd->reg.q_depth_addr));
+	cmd->log_stride = xsc_get_cmdq_log_stride(xdev);
+	xsc_set_cmdq_depth(xdev, 1 << cmd->log_sz);
 	if (cmd->log_stride != ELEMENT_SIZE_LOG) {
 		dev_err(&xdev->pdev->dev, "firmware failed to init cmdq, log_stride=(%d, %d)\n",
 			cmd->log_stride, ELEMENT_SIZE_LOG);
@@ -1961,9 +1953,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 		err = -ENOMEM;
 		goto err_map;
 	}
-
-	writel(cmd_h, REG_ADDR(xdev, cmd->reg.req_buf_h_addr));
-	writel(cmd_l, REG_ADDR(xdev, cmd->reg.req_buf_l_addr));
+	xsc_set_cmdq_req_buf_addr(xdev, cmd_h, cmd_l);
 
 	cmd_h = (u32)((u64)(cmd->cq_dma) >> 32);
 	cmd_l = (u32)(cmd->cq_dma);
@@ -1972,8 +1962,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 		err = -ENOMEM;
 		goto err_map;
 	}
-	writel(cmd_h, REG_ADDR(xdev, cmd->reg.rsp_buf_h_addr));
-	writel(cmd_l, REG_ADDR(xdev, cmd->reg.rsp_buf_l_addr));
+	xsc_set_cmdq_rsp_buf_addr(xdev, cmd_h, cmd_l);
 
 	/* Make sure firmware sees the complete address before we proceed */
 	wmb();
@@ -2019,11 +2008,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 	}
 
 	// clear abnormal state to avoid the impact of previous error
-	err_stat = readl(REG_ADDR(xdev, xdev->cmd.reg.interrupt_stat_addr));
-	if (err_stat) {
-		xsc_core_warn(xdev, "err_stat 0x%x when initializing, clear it\n", err_stat);
-		writel(0xf, REG_ADDR(xdev, xdev->cmd.reg.interrupt_stat_addr));
-	}
+	xsc_check_cmdq_status(xdev);
 
 	return 0;
 
@@ -2076,72 +2061,55 @@ void xsc_cmd_cleanup(struct xsc_core_device *xdev)
 }
 EXPORT_SYMBOL(xsc_cmd_cleanup);
 
-static const char *cmd_status_str(u8 status)
-{
-	switch (status) {
-	case XSC_CMD_STAT_OK:
-		return "OK";
-	case XSC_CMD_STAT_INT_ERR:
-		return "internal error";
-	case XSC_CMD_STAT_BAD_OP_ERR:
-		return "bad operation";
-	case XSC_CMD_STAT_BAD_PARAM_ERR:
-		return "bad parameter";
-	case XSC_CMD_STAT_BAD_SYS_STATE_ERR:
-		return "bad system state";
-	case XSC_CMD_STAT_BAD_RES_ERR:
-		return "bad resource";
-	case XSC_CMD_STAT_RES_BUSY:
-		return "resource busy";
-	case XSC_CMD_STAT_LIM_ERR:
-		return "limits exceeded";
-	case XSC_CMD_STAT_BAD_RES_STATE_ERR:
-		return "bad resource state";
-	case XSC_CMD_STAT_IX_ERR:
-		return "bad index";
-	case XSC_CMD_STAT_NO_RES_ERR:
-		return "no resources";
-	case XSC_CMD_STAT_BAD_INP_LEN_ERR:
-		return "bad input length";
-	case XSC_CMD_STAT_BAD_OUTP_LEN_ERR:
-		return "bad output length";
-	case XSC_CMD_STAT_BAD_QP_STATE_ERR:
-		return "bad QP state";
-	case XSC_CMD_STAT_BAD_PKT_ERR:
-		return "bad packet (discarded)";
-	case XSC_CMD_STAT_BAD_SIZE_OUTS_CQES_ERR:
-		return "bad size too many outstanding CQEs";
-	default:
-		return "unknown status";
-	}
-}
+static const struct xsc_cmd_status_code_map cmd_status_code_map[XSC_CMD_STATUS_CODE_COUNT] = {
+	/* common status code */
+	[XSC_CMD_STATUS_OK]		= { 0, "OK" },
+	[XSC_CMD_STATUS_FAIL]		= { -EIO, "operation failed" },
+	[XSC_CMD_STATUS_NOT_SUPPORTED]	= { -EOPNOTSUPP, "operation not supported" },
+	[XSC_CMD_STATUS_BAD_PARAM]	= { -EINVAL, "bad parameter" },
+	[XSC_CMD_STATUS_INVAL_RES]	= { -EIO, "invalid resource" },
+	[XSC_CMD_STATUS_BUSY]		= { -EBUSY, "operation busy" },
+	[XSC_CMD_STATUS_PENDING]	= { -EIO, "operation pending" },
+	[XSC_CMD_STATUS_INVAL_DATA]	= { -EIO, "invalid data" },
+	[XSC_CMD_STATUS_NOT_FOUND]	= { -ENODEV, "function or resource not found" },
+	[XSC_CMD_STATUS_NO_RES]		= { -EIO, "out of resources" },
+
+	/* extended status code */
+	[XSC_CMD_STATUS_INVAL_FUNC]	= { -ENODEV, "invalid function" },
+	[XSC_CMD_STATUS_NO_MPT_RES]	= { -EIO, "no MPT resources" },
+	[XSC_CMD_STATUS_NO_MTT_RES]	= { -EIO, "no MTT resources" },
+	[XSC_CMD_STATUS_NO_EQN_RES]	= { -EIO, "no EQN resource" },
+	[XSC_CMD_STATUS_NO_EQ_PA_RES]	= { -EIO, "no EQ PA resource" },
+	[XSC_CMD_STATUS_NO_CQN_RES]	= { -EIO, "no CQN resource" },
+	[XSC_CMD_STATUS_NO_CQ_PA_RES]	= { -EIO, "no CQ PA resource" },
+	[XSC_CMD_STATUS_NO_QPN_RES]	= { -EIO, "no QPN resource" },
+	[XSC_CMD_STATUS_NO_QP_PA_RES]	= { -EIO, "no QP PA resource" },
+	[XSC_CMD_STATUS_NO_PDN_RES]	= { -EIO, "no PDN resource" },
+	[XSC_CMD_STATUS_QP_FLUSH_BUSY]	= { -EBUSY, "QP flushing busy" },
+	[XSC_CMD_STATUS_QP_FLUSH_PENDING] = { -EIO, "QP flushing pending" },
+
+	/* Cmdq prototol status code */
+	[XSC_CMD_STATUS_BAD_INBUF]	= { -EIO, "bad input buffer size" },
+	[XSC_CMD_STATUS_BAD_OUTBUF]	= { -EIO, "bad output buffer size" },
+	[XSC_CMD_STATUS_INVAL_OPCODE]	= { -EOPNOTSUPP, "invalid operation code" },
+};
 
 int xsc_cmd_status_to_err(struct xsc_outbox_hdr *hdr)
 {
+	const struct xsc_cmd_status_code_map *map;
+
 	if (!hdr->status)
 		return 0;
 
-	pr_warn("command failed, status %s(0x%x)\n",
-		cmd_status_str(hdr->status), hdr->status);
+	map = &cmd_status_code_map[hdr->status];
 
-	switch (hdr->status) {
-	case XSC_CMD_STAT_OK:				return 0;
-	case XSC_CMD_STAT_INT_ERR:			return -EIO;
-	case XSC_CMD_STAT_BAD_OP_ERR:			return -EOPNOTSUPP;
-	case XSC_CMD_STAT_BAD_PARAM_ERR:		return -EINVAL;
-	case XSC_CMD_STAT_BAD_SYS_STATE_ERR:		return -EIO;
-	case XSC_CMD_STAT_BAD_RES_ERR:			return -EINVAL;
-	case XSC_CMD_STAT_RES_BUSY:			return -EBUSY;
-	case XSC_CMD_STAT_LIM_ERR:			return -EINVAL;
-	case XSC_CMD_STAT_BAD_RES_STATE_ERR:		return -EINVAL;
-	case XSC_CMD_STAT_IX_ERR:			return -EINVAL;
-	case XSC_CMD_STAT_NO_RES_ERR:			return -EAGAIN;
-	case XSC_CMD_STAT_BAD_INP_LEN_ERR:		return -EIO;
-	case XSC_CMD_STAT_BAD_OUTP_LEN_ERR:		return -EIO;
-	case XSC_CMD_STAT_BAD_QP_STATE_ERR:		return -EINVAL;
-	case XSC_CMD_STAT_BAD_PKT_ERR:			return -EINVAL;
-	case XSC_CMD_STAT_BAD_SIZE_OUTS_CQES_ERR:	return -EINVAL;
-	default:					return -EIO;
-	}
+	if (hdr->status != XSC_CMD_STATUS_NOT_SUPPORTED)
+		pr_warn("command failed, status %s(0x%x)\n",
+			map->str ? map->str : "unknown", hdr->status);
+
+	if (map->str)
+		return map->errno;
+
+	return -EIO;
 }
-
+EXPORT_SYMBOL(xsc_cmd_status_to_err);

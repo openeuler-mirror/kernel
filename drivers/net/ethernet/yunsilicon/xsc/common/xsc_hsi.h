@@ -15,8 +15,12 @@
 #define PAGE_SIZE_4K           (_AC(1, UL) << PAGE_SHIFT_4K)
 #define PAGE_MASK_4K           (~(PAGE_SIZE_4K - 1))
 
+#ifndef EQ_NUM_MAX
 #define EQ_NUM_MAX		1024
+#endif
+#ifndef EQ_SIZE_MAX
 #define EQ_SIZE_MAX		1024
+#endif
 
 #define XSC_RSS_INDIR_TBL_S     256
 #define XSC_MAX_TSO_PAYLOAD     0x10000/*64kb*/
@@ -86,8 +90,9 @@ enum {
 	XSC_OPCODE_RDMA_REQ_ERROR	= 8,
 	XSC_OPCODE_RDMA_RSP_ERROR	= 9,
 	XSC_OPCODE_RDMA_CQE_ERROR	= 10,
-	XSC_OPCODE_RDMA_MAD_REQ_SEND,
-	XSC_OPCODE_RDMA_MAD_RSP_RECV,
+	XSC_OPCODE_RDMA_MAD_REQ_SEND    = 11,
+	XSC_OPCODE_RDMA_MAD_RSP_RECV    = 12,
+	XSC_OPCODE_RDMA_CQE_RAW_SNF     = 13,
 };
 
 enum {
@@ -135,6 +140,7 @@ enum {
 	XSC_QUEUE_TYPE_RAW_TPE		= 5,
 	XSC_QUEUE_TYPE_RAW_TSO		= 6,
 	XSC_QUEUE_TYPE_RAW_TX		= 7,
+	XSC_QUEUE_TYPE_SNIFFER		= 8,
 	XSC_QUEUE_TYPE_INVALID		= 0xFF,
 };
 
@@ -185,13 +191,7 @@ struct regpair {
 };
 
 struct xsc_cqe {
-	union {
-		u8		msg_opcode;
-		struct {
-			u8		error_code:7;
-			u8		is_error:1;
-		};
-	};
+	u8		placeholder1;
 	__le32		qp_id:15;
 	u8		rsv1:1;
 	u8		se:1;
@@ -204,19 +204,11 @@ struct xsc_cqe {
 	__le32		vni;
 	__le64		ts:48;
 	__le16		wqe_id;
-	__le16		rsv[3];
+	u8		placeholder2;
+	u8		rsv3;
+	__le16		rsv[2];
 	__le16		rsv2:15;
 	u8		owner:1;
-};
-
-/* CQ doorbell */
-union xsc_cq_doorbell {
-	struct{
-	u32	cq_next_cid:16;
-	u32	cq_id:15;
-	u32	arm:1;
-	};
-	u32	val;
 };
 
 /* EQE TBD */
@@ -229,16 +221,6 @@ struct xsc_eqe {
 	u8 rsvd[2];
 	u8 rsv2:7;
 	u8 owner:1;
-};
-
-/* EQ doorbell */
-union xsc_eq_doorbell {
-	struct{
-		u32 eq_next_cid : 11;
-		u32 eq_id : 11;
-		u32 arm : 1;
-	};
-	u32 val;
 };
 
 /*for beryl tcam table .begin*/
@@ -315,26 +297,6 @@ enum xsc_tbm_pct_inport {
 /* Size of WQE */
 #define XSC_SEND_WQE_SIZE BIT(XSC_SEND_WQE_SHIFT)
 #define XSC_RECV_WQE_SIZE BIT(XSC_RECV_WQE_SHIFT)
-
-union xsc_db_data {
-	struct {
-		__le32 sq_next_pid:16;
-		__le32 sqn:15;
-		__le32:1;
-	};
-	struct {
-		__le32 rq_next_pid:13;
-		__le32 rqn:15;
-		__le32:4;
-	};
-	struct {
-		__le32 cq_next_cid:16;
-		__le32 cqn:15;
-		__le32 solicited:1;
-
-	};
-	__le32 raw_data;
-};
 
 #define XSC_BROADCASTID_MAX		2
 #define XSC_TBM_BOMT_DESTINFO_SHIFT	(XSC_BROADCASTID_MAX / 2)

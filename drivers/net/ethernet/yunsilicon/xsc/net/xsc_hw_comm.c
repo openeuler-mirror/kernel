@@ -14,6 +14,7 @@
 #include "common/xsc_cmd.h"
 #include "xsc_eth.h"
 #include "xsc_eth_debug.h"
+#include "xsc_hw_comm.h"
 
 static void precmd_rlimit_set(void *data, u32 mac_port)
 {
@@ -103,98 +104,92 @@ static int xsc_dcbx_hw_common(struct xsc_core_device *xdev, u16 opcode,
 
 int xsc_hw_kernel_call(struct xsc_core_device *xdev, u16 opcode, void *req, void *rsp)
 {
+	int ret = 0;
+
 	switch (opcode) {
 	case XSC_CMD_OP_IOCTL_GET_RATE_LIMIT:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    sizeof(struct xsc_rate_limit_get),
 					    sizeof(struct xsc_rate_limit_get),
 					    NULL, postcmd_rlimit_get);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_SET_RATE_LIMIT:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    sizeof(struct xsc_rate_limit_set),
 					    0, precmd_rlimit_set, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_GET_PFC:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    0, sizeof(struct xsc_pfc_get),
 					    NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_SET_PFC:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    sizeof(struct xsc_pfc_set),
 					    sizeof(struct xsc_pfc_set),
 					    NULL, NULL);
-		fallthrough;
+	case XSC_CMD_OP_IOCTL_SET_PFC_NEW:
+		ret = xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
+					   sizeof(struct xsc_pfc_set_new),
+					   sizeof(struct xsc_pfc_set_new),
+					   NULL, NULL);
+		break;
 	case XSC_CMD_OP_IOCTL_GET_TRUST_MODE:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp, 0,
 					    sizeof(struct xsc_trust_mode_get),
 					    NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_SET_TRUST_MODE:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    sizeof(struct xsc_trust_mode_set), 0,
 					    NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_GET_DSCP_PMT:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    0, sizeof(struct xsc_dscp_pmt_get),
 					    NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_SET_DSCP_PMT:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    sizeof(struct xsc_dscp_pmt_set),
 					    0, NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_GET_SP:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    0, sizeof(struct xsc_sp_get),
 					    NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_SET_SP:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    sizeof(struct xsc_sp_set),
 					    0, NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_GET_WEIGHT:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    0, sizeof(struct xsc_weight_get),
 					    NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_SET_WEIGHT:
 		return xsc_dcbx_hw_qos_cmdq(xdev, opcode, req, rsp,
 					    sizeof(struct xsc_weight_set),
 					    0, NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_QUERY_PFC_PRIO_STATS:
 		return xsc_dcbx_hw_common(xdev, opcode, req, rsp,
 					  sizeof(struct xsc_pfc_prio_stats_mbox_in),
 					  sizeof(struct xsc_pfc_prio_stats_mbox_out),
 					  NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_GET_LLDP_STATUS:
 	case XSC_CMD_OP_SET_LLDP_STATUS:
 		return xsc_dcbx_hw_common(xdev, opcode, req, rsp,
 					  sizeof(struct xsc_lldp_status_mbox_in),
 					  sizeof(struct xsc_lldp_status_mbox_out),
 					  NULL, NULL);
-		fallthrough;
 	case XSC_CMD_OP_IOCTL_SET_PFC_DROP_TH:
-		return xsc_dcbx_hw_common(xdev, opcode, req, rsp,
-					  sizeof(struct xsc_pfc_set_drop_th_mbox_in),
-					  sizeof(struct xsc_pfc_set_drop_th_mbox_out),
-					  NULL, NULL);
-		fallthrough;
+		ret = xsc_dcbx_hw_common(xdev, opcode, req, rsp,
+					 sizeof(struct xsc_pfc_set_drop_th_mbox_in),
+					 sizeof(struct xsc_pfc_set_drop_th_mbox_out),
+					 NULL, NULL);
+		break;
 	case XSC_CMD_OP_IOCTL_GET_PFC_CFG_STATUS:
-		return xsc_dcbx_hw_common(xdev, opcode, req, rsp,
-					  sizeof(struct xsc_pfc_get_cfg_status_mbox_in),
-					  sizeof(struct xsc_pfc_get_cfg_status_mbox_out),
-					  NULL, NULL);
-		fallthrough;
+		ret = xsc_dcbx_hw_common(xdev, opcode, req, rsp,
+					 sizeof(struct xsc_pfc_get_cfg_status_mbox_in),
+					 sizeof(struct xsc_pfc_get_cfg_status_mbox_out),
+					 NULL, NULL);
+		break;
 	default:
 		xsc_core_dbg(xdev, "unknown type=%d\n", opcode);
 	}
 
-	return 0;
+	return ret;
 }
 

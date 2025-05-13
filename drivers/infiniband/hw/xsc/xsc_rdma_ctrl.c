@@ -12,7 +12,9 @@
 #include "common/xsc_ioctl.h"
 #include "common/xsc_hsi.h"
 #include "common/xsc_port_ctrl.h"
+#include "common/tunnel_cmd.h"
 #include "xsc_ib.h"
+#include "xsc_rdma_ctrl.h"
 
 #define XSC_RDMA_CTRL_NAME	"rdma_ctrl"
 
@@ -280,7 +282,7 @@ static int xsc_priv_dev_ioctl_get_force_pcp(struct xsc_core_device *xdev, void *
 	struct xsc_ioctl_force_pcp *resp = (struct xsc_ioctl_force_pcp *)out;
 
 	if (!xsc_core_is_pf(xdev))
-		return -EOPNOTSUPP;
+		return XSC_CMD_STATUS_NOT_SUPPORTED;
 
 	resp->pcp = ib_dev->force_pcp;
 	return 0;
@@ -292,7 +294,7 @@ static int xsc_priv_dev_ioctl_get_force_dscp(struct xsc_core_device *xdev, void 
 	struct xsc_ioctl_force_dscp *resp = (struct xsc_ioctl_force_dscp *)out;
 
 	if (!xsc_core_is_pf(xdev))
-		return -EOPNOTSUPP;
+		return XSC_CMD_STATUS_NOT_SUPPORTED;
 
 	resp->dscp = ib_dev->force_dscp;
 	return 0;
@@ -304,7 +306,7 @@ static int xsc_priv_dev_ioctl_set_force_pcp(struct xsc_core_device *xdev, void *
 	struct xsc_ioctl_force_pcp *req = (struct xsc_ioctl_force_pcp *)out;
 
 	if (!xsc_core_is_pf(xdev))
-		return -EOPNOTSUPP;
+		return XSC_CMD_STATUS_NOT_SUPPORTED;
 
 	if (req->pcp < 0 || (req->pcp > QOS_PCP_MAX && req->pcp != DSCP_PCP_UNSET))
 		return -EINVAL;
@@ -319,7 +321,7 @@ static int xsc_priv_dev_ioctl_set_force_dscp(struct xsc_core_device *xdev, void 
 	struct xsc_ioctl_force_dscp *req = (struct xsc_ioctl_force_dscp *)out;
 
 	if (!xsc_core_is_pf(xdev))
-		return -EOPNOTSUPP;
+		return XSC_CMD_STATUS_NOT_SUPPORTED;
 
 	if (req->dscp < 0 || (req->dscp > QOS_DSCP_MAX && req->dscp != DSCP_PCP_UNSET))
 		return -EINVAL;
@@ -334,7 +336,7 @@ static int xsc_priv_dev_ioctl_get_cma_pcp(struct xsc_core_device *xdev, void *in
 	struct xsc_ioctl_cma_pcp *resp = (struct xsc_ioctl_cma_pcp *)out;
 
 	if (!xsc_core_is_pf(xdev))
-		return -EOPNOTSUPP;
+		return XSC_CMD_STATUS_NOT_SUPPORTED;
 
 	resp->pcp = ib_dev->cm_pcp;
 	return 0;
@@ -346,7 +348,7 @@ static int xsc_priv_dev_ioctl_get_cma_dscp(struct xsc_core_device *xdev, void *i
 	struct xsc_ioctl_cma_dscp *resp = (struct xsc_ioctl_cma_dscp *)out;
 
 	if (!xsc_core_is_pf(xdev))
-		return -EOPNOTSUPP;
+		return XSC_CMD_STATUS_NOT_SUPPORTED;
 
 	resp->dscp = ib_dev->cm_dscp;
 	return 0;
@@ -358,7 +360,7 @@ static int xsc_priv_dev_ioctl_set_cma_pcp(struct xsc_core_device *xdev, void *in
 	struct xsc_ioctl_cma_pcp *req = (struct xsc_ioctl_cma_pcp *)out;
 
 	if (!xsc_core_is_pf(xdev))
-		return -EOPNOTSUPP;
+		return XSC_CMD_STATUS_NOT_SUPPORTED;
 
 	if (req->pcp < 0 || (req->pcp > QOS_PCP_MAX && req->pcp != DSCP_PCP_UNSET))
 		return -EINVAL;
@@ -373,7 +375,7 @@ static int xsc_priv_dev_ioctl_set_cma_dscp(struct xsc_core_device *xdev, void *i
 	struct xsc_ioctl_cma_dscp *req = (struct xsc_ioctl_cma_dscp *)out;
 
 	if (!xsc_core_is_pf(xdev))
-		return -EOPNOTSUPP;
+		return XSC_CMD_STATUS_NOT_SUPPORTED;
 
 	if (req->dscp < 0 || (req->dscp > QOS_DSCP_MAX && req->dscp != DSCP_PCP_UNSET))
 		return -EINVAL;
@@ -391,6 +393,10 @@ static int _rdma_ctrl_ioctl_cc(struct xsc_core_device *xdev,
 	struct xsc_cc_mbox_out *out;
 	u16 user_size;
 	int err;
+	struct xsc_ioctl_tunnel_hdr tunnel_hdr = {0};
+
+	if (hdr->attr.tunnel_cmd)
+		hdr->attr.length -= sizeof(tunnel_hdr);
 
 	user_size = expect_req_size > expect_resp_size ? expect_req_size : expect_resp_size;
 	if (hdr->attr.length != user_size)
@@ -403,19 +409,33 @@ static int _rdma_ctrl_ioctl_cc(struct xsc_core_device *xdev,
 	if (!out)
 		goto err_out;
 
-	err = copy_from_user(&in->data, user_hdr->attr.data, expect_req_size);
-	if (err)
-		goto err;
+	if (hdr->attr.tunnel_cmd) {
+		err = copy_from_user(&tunnel_hdr, user_hdr->attr.data, sizeof(tunnel_hdr));
+		if (err)
+			goto err;
+		err = copy_from_user(&in->data, user_hdr->attr.data + sizeof(tunnel_hdr),
+				     expect_req_size);
+		if (err)
+			goto err;
+	} else {
+		err = copy_from_user(&in->data, user_hdr->attr.data, expect_req_size);
+		if (err)
+			goto err;
+	}
 
 	in->hdr.opcode = __cpu_to_be16(hdr->attr.opcode);
 	in->hdr.ver = cpu_to_be16(hdr->attr.ver);
 	if (encode)
 		encode((void *)in->data, xdev->mac_port);
 
-	err = xsc_cmd_exec(xdev, in, sizeof(*in) + expect_req_size, out,
-			   sizeof(*out) + expect_resp_size);
+	if (hdr->attr.tunnel_cmd)
+		err = xsc_tunnel_cmd_exec(xdev, in, sizeof(*in) + expect_req_size, out,
+					  sizeof(*out) + expect_resp_size, &tunnel_hdr);
+	else
+		err = xsc_cmd_exec(xdev, in, sizeof(*in) + expect_req_size, out,
+				   sizeof(*out) + expect_resp_size);
 
-	hdr->attr.error = __be32_to_cpu(out->hdr.status);
+	hdr->attr.error = out->hdr.status;
 	if (decode)
 		decode((void *)out->data);
 
@@ -436,8 +456,54 @@ err_in:
 	return -EFAULT;
 }
 
-int _rdma_ctrl_exec_ioctl(struct xsc_core_device *xdev, void *in, int in_size, void *out,
-			  int out_size)
+static int _rdma_ctrl_exec_tunnel_ioctl(struct xsc_core_device *xdev,
+					void *in, int in_size,
+					void *out, int out_size,
+					struct xsc_ioctl_tunnel_hdr *tunnel_hdr)
+{
+	struct xsc_cmd_get_ioctl_info_mbox_in *_in;
+	struct xsc_cmd_get_ioctl_info_mbox_out *_out;
+	int inlen;
+	int outlen;
+	int err;
+	struct xsc_ioctl_attr *hdr = (struct xsc_ioctl_attr *)in;
+
+	inlen = sizeof(*_in) + out_size;
+	_in = kvzalloc(inlen, GFP_KERNEL);
+	if (!_in) {
+		err = -ENOMEM;
+		goto err_in;
+	}
+
+	outlen = sizeof(*_out) + out_size;
+	_out = kvzalloc(outlen, GFP_KERNEL);
+	if (!_out) {
+		err = -ENOMEM;
+		goto err_out;
+	}
+
+	memset(_in, 0, sizeof(*_in));
+	_in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_GET_IOCTL_INFO);
+	_in->ioctl_opcode = cpu_to_be16(hdr->opcode);
+	_in->length = cpu_to_be16(out_size);
+	memcpy(_in->data, out, out_size);
+	err = xsc_tunnel_cmd_exec(xdev, _in, inlen, _out, outlen, tunnel_hdr);
+	if (err)
+		goto out;
+	memcpy(out, _out->data, out_size);
+
+	return 0;
+out:
+	kvfree(_out);
+err_out:
+	kvfree(_in);
+err_in:
+	return err;
+}
+
+static int _rdma_ctrl_exec_ioctl(struct xsc_core_device *xdev,
+				 void *in, int in_size,
+				 void *out, int out_size)
 {
 	int opcode, ret = 0;
 	struct xsc_ioctl_attr *hdr;
@@ -478,6 +544,14 @@ int _rdma_ctrl_exec_ioctl(struct xsc_core_device *xdev, void *in, int in_size, v
 	return ret;
 }
 
+int xsc_get_rdma_ctrl_info(struct xsc_core_device *xdev, u16 opcode, void *out, int out_size)
+{
+	struct xsc_ioctl_attr attr;
+
+	attr.opcode = opcode;
+	return _rdma_ctrl_exec_ioctl(xdev, &attr, sizeof(attr), out, out_size);
+}
+
 static long _rdma_ctrl_ioctl_getinfo(struct xsc_core_device *xdev,
 				     struct xsc_ioctl_hdr __user *user_hdr)
 {
@@ -485,6 +559,7 @@ static long _rdma_ctrl_ioctl_getinfo(struct xsc_core_device *xdev,
 	struct xsc_ioctl_hdr *in;
 	int in_size;
 	int err;
+	struct xsc_ioctl_tunnel_hdr tunnel_hdr;
 
 	err = copy_from_user(&hdr, user_hdr, sizeof(hdr));
 	if (err)
@@ -504,24 +579,181 @@ static long _rdma_ctrl_ioctl_getinfo(struct xsc_core_device *xdev,
 	default:
 		return -EINVAL;
 	}
+	if (hdr.attr.tunnel_cmd)
+		hdr.attr.length -= sizeof(tunnel_hdr);
 	in_size = sizeof(struct xsc_ioctl_hdr) + hdr.attr.length;
 	in = kvzalloc(in_size, GFP_KERNEL);
 	if (!in)
 		return -EFAULT;
 	in->attr.opcode = hdr.attr.opcode;
 	in->attr.length = hdr.attr.length;
-	err = copy_from_user(in->attr.data, user_hdr->attr.data, hdr.attr.length);
-	if (err) {
-		kvfree(in);
-		return -EFAULT;
-	}
 
-	err = _rdma_ctrl_exec_ioctl(xdev, &in->attr, (in_size - sizeof(u32)), in->attr.data,
-				    hdr.attr.length);
+	if (hdr.attr.tunnel_cmd) {
+		err = copy_from_user(&tunnel_hdr, user_hdr->attr.data, sizeof(tunnel_hdr));
+		if (err) {
+			err = -EFAULT;
+			goto out;
+		}
+		err = copy_from_user(in->attr.data, user_hdr->attr.data + sizeof(tunnel_hdr),
+				     hdr.attr.length);
+		if (err) {
+			err = -EFAULT;
+			goto out;
+		}
+		err = _rdma_ctrl_exec_tunnel_ioctl(xdev, &in->attr, (in_size - sizeof(u32)),
+						   in->attr.data, hdr.attr.length, &tunnel_hdr);
+	} else {
+		err = copy_from_user(in->attr.data, user_hdr->attr.data, hdr.attr.length);
+		if (err) {
+			err = -EFAULT;
+			goto out;
+		}
+		err = _rdma_ctrl_exec_ioctl(xdev, &in->attr, (in_size - sizeof(u32)), in->attr.data,
+					    hdr.attr.length);
+	}
 	in->attr.error = err;
 	if (copy_to_user(user_hdr, in, in_size))
 		err = -EFAULT;
+out:
 	kvfree(in);
+	return err;
+}
+
+static long _rdma_ctrl_ioctl_get_rdma_counters(struct xsc_core_device *xdev,
+					       struct xsc_ioctl_hdr __user *user_hdr,
+					       struct xsc_ioctl_hdr *hdr)
+{
+	struct xsc_ioctl_tunnel_hdr tunnel_hdr;
+	int err;
+	struct xsc_hw_stats_mbox_in in;
+	struct xsc_hw_stats_rdma_mbox_out out;
+
+	err = copy_from_user(&tunnel_hdr, user_hdr->attr.data, sizeof(tunnel_hdr));
+	if (err)
+		return err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_HW_STATS_RDMA);
+	err = xsc_tunnel_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out), &tunnel_hdr);
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return -EINVAL;
+
+	err = copy_to_user(user_hdr->attr.data, &out.hw_stats, sizeof(out.hw_stats));
+	if (err)
+		return err;
+	return 0;
+}
+
+static long _rdma_ctrl_ioctl_get_prio_counters(struct xsc_core_device *xdev,
+					       struct xsc_ioctl_hdr __user *user_hdr,
+					       struct xsc_ioctl_hdr *hdr)
+{
+	struct xsc_ioctl_tunnel_hdr tunnel_hdr;
+	int err;
+	struct xsc_prio_stats_mbox_in in;
+	struct xsc_prio_stats_mbox_out out;
+
+	err = copy_from_user(&tunnel_hdr, user_hdr->attr.data, sizeof(tunnel_hdr));
+	if (err)
+		return err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_PRIO_STATS);
+	err = xsc_tunnel_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out), &tunnel_hdr);
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return -EINVAL;
+
+	err = copy_to_user(user_hdr->attr.data, &out.prio_stats, sizeof(out.prio_stats));
+	if (err)
+		return err;
+	return 0;
+}
+
+static long _rdma_ctrl_ioctl_get_pfc_counters(struct xsc_core_device *xdev,
+					      struct xsc_ioctl_hdr __user *user_hdr,
+					      struct xsc_ioctl_hdr *hdr)
+{
+	struct xsc_ioctl_tunnel_hdr tunnel_hdr;
+	int err;
+	struct xsc_pfc_prio_stats_mbox_in in;
+	struct xsc_pfc_prio_stats_mbox_out out;
+
+	err = copy_from_user(&tunnel_hdr, user_hdr->attr.data, sizeof(tunnel_hdr));
+	if (err)
+		return err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_PFC_PRIO_STATS);
+	err = xsc_tunnel_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out), &tunnel_hdr);
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return -EINVAL;
+
+	err = copy_to_user(user_hdr->attr.data, &out.prio_stats, sizeof(out.prio_stats));
+	if (err)
+		return err;
+	return 0;
+}
+
+static long _rdma_ctrl_ioctl_get_hw_counters(struct xsc_core_device *xdev,
+					     struct xsc_ioctl_hdr __user *user_hdr,
+					     struct xsc_ioctl_hdr *hdr)
+{
+	struct xsc_ioctl_tunnel_hdr tunnel_hdr;
+	int err;
+	struct xsc_cmd_ioctl_get_hw_counters_mbox_in *in;
+	struct xsc_cmd_ioctl_get_hw_counters_mbox_out *out;
+	int inlen;
+	int outlen;
+
+	err = copy_from_user(&tunnel_hdr, user_hdr->attr.data, sizeof(tunnel_hdr));
+	if (err)
+		return err;
+
+	hdr->attr.length -= sizeof(tunnel_hdr);
+	inlen = sizeof(*in) + hdr->attr.length;
+	in = kvzalloc(inlen, GFP_KERNEL);
+	if (!in)
+		return -ENOMEM;
+	outlen = sizeof(*out) + hdr->attr.length;
+	out = kvzalloc(outlen, GFP_KERNEL);
+	if (!out) {
+		err = -ENOMEM;
+		goto out;
+	}
+	memset(in, 0, inlen);
+	memset(out, 0, outlen);
+	err = copy_from_user(in->data, user_hdr->attr.data + sizeof(tunnel_hdr), hdr->attr.length);
+	if (err)
+		goto out;
+	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_IOCTL_GET_HW_COUNTERS);
+	in->length = cpu_to_be32(hdr->attr.length);
+	err = xsc_tunnel_cmd_exec(xdev, in, inlen, out, outlen, &tunnel_hdr);
+	if (err)
+		goto out;
+
+	if (out->hdr.status) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	err = copy_to_user(user_hdr->attr.data, out->data, hdr->attr.length);
+	if (err)
+		goto out;
+out:
+	kvfree(in);
+	kvfree(out);
 	return err;
 }
 
@@ -634,6 +866,14 @@ static long _rdma_ctrl_ioctl_cmdq(struct xsc_core_device *xdev,
 		return _rdma_ctrl_ioctl_cc(xdev, user_hdr, &hdr, sizeof(struct xsc_cc_cmd_get_stat),
 					   sizeof(struct xsc_cc_cmd_stat),
 					   encode_cc_get_stat, decode_cc_get_stat);
+	case XSC_CMD_OP_QUERY_HW_STATS_RDMA:
+		return _rdma_ctrl_ioctl_get_rdma_counters(xdev, user_hdr, &hdr);
+	case XSC_CMD_OP_QUERY_PRIO_STATS:
+		return _rdma_ctrl_ioctl_get_prio_counters(xdev, user_hdr, &hdr);
+	case XSC_CMD_OP_QUERY_PFC_PRIO_STATS:
+		return _rdma_ctrl_ioctl_get_pfc_counters(xdev, user_hdr, &hdr);
+	case XSC_CMD_OP_IOCTL_GET_HW_COUNTERS:
+		return _rdma_ctrl_ioctl_get_hw_counters(xdev, user_hdr, &hdr);
 	default:
 		return -EINVAL;
 	}

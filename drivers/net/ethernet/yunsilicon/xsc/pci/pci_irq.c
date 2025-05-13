@@ -11,14 +11,19 @@
 #include "common/driver.h"
 #include "common/xsc_hsi.h"
 #include "common/xsc_core.h"
+#ifdef CONFIG_RFS_ACCEL
 #include <linux/cpu_rmap.h>
+#endif
 #include "fw/xsc_flow.h"
 #include "fw/xsc_fw.h"
+#include "common/tunnel_cmd.h"
 
 enum xsc_eq_type {
 	XSC_EQ_TYPE_COMP,
 	XSC_EQ_TYPE_ASYNC,
+#ifdef CONFIG_INFINIBAND_ON_DEMAND_PAGING
 	XSC_EQ_TYPE_PF,
+#endif
 };
 
 struct xsc_irq {
@@ -30,7 +35,9 @@ struct xsc_irq {
 struct xsc_irq_table {
 	struct xsc_irq *irq;
 	int nvec;
+#ifdef CONFIG_RFS_ACCEL
 	struct cpu_rmap *rmap;
+#endif
 };
 
 
@@ -48,7 +55,6 @@ static int xsc_dma_read_msix_init(struct xsc_core_device *xdev)
 	char *name = "xsc_dma_read_done";
 	struct xsc_dev_resource *dev_res = xdev->dev_res;
 	int irqn;
-	u32 value = 0;
 	int vecid = 0;
 
 	snprintf(dev_res->irq_info[XSC_DMA_READ_DONE_VEC].name, XSC_MAX_IRQ_NAME, "%s@pci:%s",
@@ -58,8 +64,7 @@ static int xsc_dma_read_msix_init(struct xsc_core_device *xdev)
 			  dev_res->irq_info[XSC_DMA_READ_DONE_VEC].name, (void *)xdev);
 
 	vecid = (xdev->msix_vec_base + XSC_DMA_READ_DONE_VEC);
-	value = ((1 << 12) | (vecid & 0xfff));
-	REG_WR32(xdev, HIF_IRQ_TBL2IRQ_TBL_RD_DONE_INT_MSIX_REG_ADDR, value);
+	xsc_set_read_done_msix_vector(xdev, vecid);
 
 	return err;
 }
@@ -347,11 +352,11 @@ static irqreturn_t xsc_cmd_handler(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
-int xsc_request_irq_for_cmdq(struct xsc_core_device *dev, u8 vecidx)
+static int xsc_request_irq_for_cmdq(struct xsc_core_device *dev, u8 vecidx)
 {
 	struct xsc_dev_resource *dev_res = dev->dev_res;
 
-	writel(dev->msix_vec_base + vecidx, REG_ADDR(dev, dev->cmd.reg.msix_vec_addr));
+	xsc_set_cmdq_msix_vector(dev, dev->msix_vec_base + vecidx);
 
 	snprintf(dev_res->irq_info[vecidx].name, XSC_MAX_IRQ_NAME, "%s@pci:%s",
 		 "xsc_cmd", pci_name(dev->pdev));
@@ -360,9 +365,82 @@ int xsc_request_irq_for_cmdq(struct xsc_core_device *dev, u8 vecidx)
 		dev_res->irq_info[vecidx].name, dev);
 }
 
-void xsc_free_irq_for_cmdq(struct xsc_core_device *dev)
+static void xsc_free_irq_for_cmdq(struct xsc_core_device *dev)
 {
 	xsc_free_irq(dev, XSC_VEC_CMD);
+}
+
+static void xsc_change_to_share_mode(struct xsc_core_device *dev)
+{
+	write_lock(&dev->board_info->mr_sync_lock);
+	if (dev->board_info->resource_access_mode == EXCLUSIVE_MODE) {
+		xsc_sync_mr_to_fw(dev);
+		dev->board_info->resource_access_mode = SHARE_MODE;
+		xsc_destroy_res(dev);
+	}
+	write_unlock(&dev->board_info->mr_sync_lock);
+}
+
+static void xsc_change_to_exclusive_mode(struct xsc_core_device *dev)
+{
+	write_lock(&dev->board_info->mr_sync_lock);
+	if (dev->board_info->resource_access_mode == SHARE_MODE) {
+		xsc_create_res(dev);
+		xsc_sync_mr_from_fw(dev);
+		dev->board_info->resource_access_mode = EXCLUSIVE_MODE;
+	}
+	write_unlock(&dev->board_info->mr_sync_lock);
+}
+
+static void xsc_event_work(struct work_struct *work)
+{
+	int err;
+	struct xsc_event_query_type_mbox_in in;
+	struct xsc_event_query_type_mbox_out out;
+	struct xsc_core_device *dev = container_of(work, struct xsc_core_device, event_work);
+	u8 event;
+
+	/*query cmd_type cmd*/
+	memset(&in, 0, sizeof(in));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_EVENT_TYPE);
+
+	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (err || out.hdr.status) {
+		xsc_core_err(dev, "failed to query event type, err=%d, stats=%d\n",
+			     err, out.hdr.status);
+		return;
+	}
+
+	event = out.ctx.resp_cmd_type;
+	while (event) {
+		if (event & XSC_CMD_EVENT_RESP_CHANGE_LINK) {
+			if (dev->link_event_handler)
+				dev->link_event_handler(dev);
+			xsc_core_dbg(dev, "event cmdtype=%04x\n", out.ctx.resp_cmd_type);
+			event &= ~XSC_CMD_EVENT_RESP_CHANGE_LINK;
+		} else if (event & XSC_CMD_EVENT_RESP_TEMP_WARN) {
+			xsc_core_warn(dev, "[Minor]nic chip temperature high warning\n");
+			event &= ~XSC_CMD_EVENT_RESP_TEMP_WARN;
+		} else if (event & XSC_CMD_EVENT_RESP_OVER_TEMP_PROTECTION) {
+			xsc_core_warn(dev, "[Critical]nic chip was over-temperature\n");
+			event &= ~XSC_CMD_EVENT_RESP_OVER_TEMP_PROTECTION;
+		} else if (event & XSC_CMD_EVENT_RECV_TUNNEL_CMD_REQ) {
+			xsc_tunnel_cmd_recv_req(dev);
+			event &= ~XSC_CMD_EVENT_RECV_TUNNEL_CMD_REQ;
+		} else if (event & XSC_CMD_EVENT_RECV_TUNNEL_CMD_RSP) {
+			xsc_tunnel_cmd_recv_resp(dev);
+			event &= ~XSC_CMD_EVENT_RECV_TUNNEL_CMD_RSP;
+		} else if (event & XSC_CMD_EVENT_CHANGE_TO_SHARE) {
+			xsc_change_to_share_mode(dev);
+			event &= ~XSC_CMD_EVENT_CHANGE_TO_SHARE;
+		} else if (event & XSC_CMD_EVENT_CHANGE_TO_EXCLUSIVE) {
+			xsc_change_to_exclusive_mode(dev);
+			event &= ~XSC_CMD_EVENT_CHANGE_TO_EXCLUSIVE;
+		} else {
+			xsc_core_info(dev, "unknown event cmdtype=%04x\n", out.ctx.resp_cmd_type);
+			event = 0;
+		}
+	}
 }
 
 static irqreturn_t xsc_event_handler(int irq, void *arg)
@@ -371,18 +449,12 @@ static irqreturn_t xsc_event_handler(int irq, void *arg)
 
 	xsc_core_dbg(dev, "cmd event hint irq: %d\n", irq);
 
-	if (!dev->eth_priv)
-		return IRQ_NONE;
-
-	if (!dev->event_handler)
-		return IRQ_NONE;
-
-	dev->event_handler(dev->eth_priv);
+	schedule_work(&dev->event_work);
 
 	return IRQ_HANDLED;
 }
 
-int xsc_request_irq_for_event(struct xsc_core_device *dev)
+static int xsc_request_irq_for_event(struct xsc_core_device *dev)
 {
 	struct xsc_dev_resource *dev_res = dev->dev_res;
 
@@ -392,12 +464,12 @@ int xsc_request_irq_for_event(struct xsc_core_device *dev)
 			dev_res->irq_info[XSC_VEC_CMD_EVENT].name, dev);
 }
 
-void xsc_free_irq_for_event(struct xsc_core_device *dev)
+static void xsc_free_irq_for_event(struct xsc_core_device *dev)
 {
 	xsc_free_irq(dev, XSC_VEC_CMD_EVENT);
 }
 
-int xsc_cmd_enable_msix(struct xsc_core_device *xdev)
+static int xsc_cmd_enable_msix(struct xsc_core_device *xdev)
 {
 	struct xsc_msix_table_info_mbox_in in;
 	struct xsc_msix_table_info_mbox_out out;
@@ -452,6 +524,7 @@ int xsc_irq_eq_create(struct xsc_core_device *dev)
 		xsc_core_err(dev, "failed to request irq for event, err=%d\n", err);
 		goto err_request_event_irq;
 	}
+	INIT_WORK(&dev->event_work, xsc_event_work);
 
 	if (dev->caps.msix_enable && xsc_core_is_pf(dev)) {
 		err = xsc_dma_read_msix_init(dev);
@@ -508,3 +581,4 @@ int xsc_irq_eq_destroy(struct xsc_core_device *dev)
 
 	return 0;
 }
+

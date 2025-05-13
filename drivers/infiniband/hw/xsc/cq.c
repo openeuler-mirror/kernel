@@ -35,23 +35,6 @@ enum {
 	XSC_CQE_APP_OP_TM_MSG_COMPLETION_CANCELED = 0xC,
 };
 
-static const u32 xsc_msg_opcode[][2][2] = {
-	[XSC_MSG_OPCODE_SEND][XSC_REQ][XSC_WITHOUT_IMMDT] = XSC_OPCODE_RDMA_REQ_SEND,
-	[XSC_MSG_OPCODE_SEND][XSC_REQ][XSC_WITH_IMMDT] = XSC_OPCODE_RDMA_REQ_SEND_IMMDT,
-	[XSC_MSG_OPCODE_SEND][XSC_RSP][XSC_WITHOUT_IMMDT] = XSC_OPCODE_RDMA_RSP_RECV,
-	[XSC_MSG_OPCODE_SEND][XSC_RSP][XSC_WITH_IMMDT] = XSC_OPCODE_RDMA_RSP_RECV_IMMDT,
-	[XSC_MSG_OPCODE_RDMA_WRITE][XSC_REQ][XSC_WITHOUT_IMMDT] = XSC_OPCODE_RDMA_REQ_WRITE,
-	[XSC_MSG_OPCODE_RDMA_WRITE][XSC_REQ][XSC_WITH_IMMDT] = XSC_OPCODE_RDMA_REQ_WRITE_IMMDT,
-	[XSC_MSG_OPCODE_RDMA_WRITE][XSC_RSP][XSC_WITHOUT_IMMDT] = XSC_OPCODE_RDMA_CQE_ERROR,
-	[XSC_MSG_OPCODE_RDMA_WRITE][XSC_RSP][XSC_WITH_IMMDT] = XSC_OPCODE_RDMA_RSP_WRITE_IMMDT,
-	[XSC_MSG_OPCODE_RDMA_READ][XSC_REQ][XSC_WITHOUT_IMMDT] = XSC_OPCODE_RDMA_REQ_READ,
-	[XSC_MSG_OPCODE_RDMA_READ][XSC_REQ][XSC_WITH_IMMDT] = XSC_OPCODE_RDMA_CQE_ERROR,
-	[XSC_MSG_OPCODE_RDMA_READ][XSC_RSP][XSC_WITHOUT_IMMDT] = XSC_OPCODE_RDMA_CQE_ERROR,
-	[XSC_MSG_OPCODE_RDMA_READ][XSC_RSP][XSC_WITH_IMMDT] = XSC_OPCODE_RDMA_CQE_ERROR,
-	[XSC_MSG_OPCODE_MAD][XSC_REQ][XSC_WITHOUT_IMMDT] = XSC_OPCODE_RDMA_MAD_REQ_SEND,
-	[XSC_MSG_OPCODE_MAD][XSC_RSP][XSC_WITHOUT_IMMDT] = XSC_OPCODE_RDMA_MAD_RSP_RECV,
-};
-
 static const u32 xsc_cqe_opcode[] = {
 	[XSC_OPCODE_RDMA_REQ_SEND]		= IB_WC_SEND,
 	[XSC_OPCODE_RDMA_REQ_SEND_IMMDT]	= IB_WC_SEND,
@@ -70,15 +53,6 @@ int xsc_stall_cq_poll_min = 60;
 int xsc_stall_cq_poll_max = 100000;
 int xsc_stall_cq_inc_step = 100;
 int xsc_stall_cq_dec_step = 10;
-
-static inline u8 xsc_get_cqe_opcode(struct xsc_cqe *cqe)
-{
-	if (cqe->is_error)
-		return cqe->type ? XSC_OPCODE_RDMA_RSP_ERROR : XSC_OPCODE_RDMA_REQ_ERROR;
-	if (cqe->msg_opcode > XSC_MSG_OPCODE_MAD)
-		return XSC_OPCODE_RDMA_CQE_ERROR;
-	return xsc_msg_opcode[cqe->msg_opcode][cqe->type][cqe->with_immdt];
-}
 
 static void xsc_ib_cq_comp(struct xsc_core_cq *cq)
 {
@@ -150,6 +124,7 @@ static void handle_responder(struct ib_wc *wc, struct xsc_cqe *cqe,
 
 	idx = wq->tail & (wq->wqe_cnt - 1);
 	wc->wr_id = wq->wrid[idx];
+	atomic_dec(&wq->flush_wqe_cnt);
 	++wq->tail;
 }
 
@@ -287,8 +262,11 @@ static int xsc_poll_one(struct xsc_ib_cq *cq,
 
 	memset(wc, 0, sizeof(*wc));
 	wc->qp = &(*cur_qp)->ibqp;
-	opcode = xsc_get_cqe_opcode(cqe);
+	opcode = xsc_get_cqe_opcode(dev->xdev, cqe);
 	switch (opcode) {
+	case XSC_OPCODE_RDMA_REQ_SEND_IMMDT:
+	case XSC_OPCODE_RDMA_REQ_WRITE_IMMDT:
+		wc->wc_flags |= IB_WC_WITH_IMM;
 	case XSC_OPCODE_RDMA_REQ_SEND:
 	case XSC_OPCODE_RDMA_REQ_WRITE:
 	case XSC_OPCODE_RDMA_REQ_READ:
@@ -299,9 +277,16 @@ static int xsc_poll_one(struct xsc_ib_cq *cq,
 		handle_good_req(wc, cqe, opcode);
 		wc->wr_id = wq->wrid[idx];
 		wq->tail = wq->wqe_head[idx] + 1;
+		if (opcode != XSC_OPCODE_RDMA_MAD_REQ_SEND)
+			atomic_dec(&wq->flush_wqe_cnt);
+		wq->need_flush[idx] = 0;
 		xsc_ib_dbg(dev, "wqeid:%u, wq tail:%u qpn:%u\n", idx, wq->tail, qpn);
 		wc->status = IB_WC_SUCCESS;
 		break;
+	case XSC_OPCODE_RDMA_RSP_RECV_IMMDT:
+	case XSC_OPCODE_RDMA_RSP_WRITE_IMMDT:
+		wc->wc_flags |= IB_WC_WITH_IMM;
+		WR_BE_32(wc->ex.imm_data, RD_LE_32(cqe->imm_data));
 	case XSC_OPCODE_RDMA_RSP_RECV:
 		wq = &(*cur_qp)->rq;
 		handle_responder(wc, cqe, *cur_qp, opcode);
@@ -314,12 +299,132 @@ static int xsc_poll_one(struct xsc_ib_cq *cq,
 		xsc_handle_rdma_mad_resp_recv(cq, cur_qp, wc, cqe, opcode);
 		break;
 
+	case XSC_OPCODE_RDMA_REQ_ERROR:
+		wq = &(*cur_qp)->sq;
+		idx = cqe->wqe_id >> (wq->wqe_shift - XSC_BASE_WQE_SHIFT);
+		idx &= (wq->wqe_cnt - 1);
+		wc->wr_id = wq->wrid[idx];
+		wq->tail = wq->wqe_head[idx] + 1;
+		if (wq->need_flush[idx])
+			atomic_dec(&wq->flush_wqe_cnt);
+		wq->need_flush[idx] = 0;
+		xsc_ib_err(dev, "req error\n%08x %08x %08x %08x %08x %08x\n",
+			   p[0], p[1], p[2], p[3], p[5], p[6]);
+		wc->status = IB_WC_GENERAL_ERR;
+		break;
+	case XSC_OPCODE_RDMA_RSP_ERROR:
+		wq = &(*cur_qp)->rq;
+		idx = wq->tail & (wq->wqe_cnt - 1);
+		wc->wr_id = wq->wrid[idx];
+		wq->tail++;
+		atomic_dec(&wq->flush_wqe_cnt);
+		xsc_ib_err(dev, "rsp error\n%08x %08x %08x %08x %08x %08x\n",
+			   p[0], p[1], p[2], p[3], p[5], p[6]);
+		wc->status = IB_WC_GENERAL_ERR;
+		break;
+
 	default:
 		xsc_ib_err(dev, "completion error\n%08x %08x %08x %08x %08x %08x\n",
 			   p[0], p[1], p[2], p[3], p[5], p[6]);
 		wc->status = IB_WC_GENERAL_ERR;
 		wc->wr_id = 0;
 		break;
+	}
+
+	return 0;
+}
+
+static inline void gen_flush_err_cqe(struct xsc_err_state_qp_node *err_node,
+				     struct ib_qp *ibqp, struct xsc_ib_wq *wq, u32 idx,
+				     struct ib_wc *wc)
+{
+	memset(wc, 0, sizeof(*wc));
+	if (err_node->is_sq) {
+		switch (wq->wr_opcode[idx]) {
+		case IB_WR_SEND:
+		case IB_WR_SEND_WITH_IMM:
+		case IB_WR_SEND_WITH_INV:
+			wc->opcode = IB_WC_SEND;
+			break;
+		case IB_WR_RDMA_WRITE:
+		case IB_WR_RDMA_WRITE_WITH_IMM:
+			wc->opcode = IB_WC_RDMA_WRITE;
+			break;
+		case IB_WR_RDMA_READ:
+			wc->opcode = IB_WC_RDMA_READ;
+		}
+	} else {
+		wc->opcode = IB_WC_RECV;
+	}
+
+	wc->qp = ibqp;
+	wc->status = IB_WC_WR_FLUSH_ERR;
+	wc->vendor_err = XSC_ERR_CODE_FLUSH;
+	wc->wr_id = wq->wrid[idx];
+	wq->tail++;
+	atomic_dec(&wq->flush_wqe_cnt);
+	if (err_node->is_sq)
+		wq->need_flush[idx] = 0;
+}
+
+static inline int xsc_generate_flush_err_cqe(struct ib_cq *ibcq,
+					     int ne, int *npolled, struct ib_wc *wc)
+{
+	u32 qp_id = 0;
+	int flush_wqe_cnt = 0;
+	int sw_npolled = 0;
+	u32 idx = 0;
+	struct xsc_err_state_qp_node *err_qp_node;
+	struct xsc_core_qp *xqp;
+	struct xsc_ib_cq *cq = to_xcq(ibcq);
+	struct xsc_ib_wq *wq;
+	struct xsc_ib_dev *dev = to_mdev(cq->ibcq.device);
+
+	list_for_each_entry(err_qp_node, &cq->err_state_qp_list, entry) {
+		if (!err_qp_node)
+			break;
+
+		sw_npolled = 0;
+		qp_id = err_qp_node->qp_id;
+		xqp = __xsc_qp_lookup(dev->xdev, qp_id);
+		if (unlikely(!xqp)) {
+			xsc_ib_warn(dev, "CQE@CQ %d for unknown QPN %d\n",
+				    cq->xcq.cqn, qp_id);
+			continue;
+		}
+		wq = err_qp_node->is_sq ? &(to_xibqp(xqp)->sq) : &(to_xibqp(xqp)->rq);
+		flush_wqe_cnt = atomic_read(&wq->flush_wqe_cnt);
+		xsc_ib_dbg(dev, "is_sq %d, flush_wq_cnt %d, ne %d, npolled %d, qp_id %d\n",
+			   err_qp_node->is_sq, flush_wqe_cnt, ne, *npolled, qp_id);
+
+		if (flush_wqe_cnt <= (ne - *npolled)) {
+			while (sw_npolled < flush_wqe_cnt) {
+				idx = wq->tail & (wq->wqe_cnt - 1);
+				if (err_qp_node->is_sq && !wq->need_flush[idx]) {
+					wq->tail++;
+					continue;
+				} else {
+					gen_flush_err_cqe(err_qp_node, &(to_xibqp(xqp)->ibqp), wq,
+							  idx, wc + *npolled + sw_npolled);
+					++sw_npolled;
+				}
+			}
+			*npolled += sw_npolled;
+		} else {
+			while (sw_npolled < (ne - *npolled)) {
+				idx = wq->tail & (wq->wqe_cnt - 1);
+				if (err_qp_node->is_sq && !wq->need_flush[idx]) {
+					wq->tail++;
+					continue;
+				} else {
+					gen_flush_err_cqe(err_qp_node, &(to_xibqp(xqp)->ibqp), wq,
+							  idx, wc + *npolled + sw_npolled);
+					++sw_npolled;
+				}
+			}
+			*npolled = ne;
+			break;
+		}
 	}
 
 	return 0;
@@ -344,18 +449,20 @@ int xsc_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc)
 			break;
 	}
 
-	/* make sure cqe read out before update ci */
-	rmb();
+	if (err) {
+		if (npolled < num_entries && !(list_empty(&cq->err_state_qp_list)))
+			xsc_generate_flush_err_cqe(ibcq, num_entries, &npolled, wc);
+	}
 
 	if (next_cid != xcq->cons_index)
-		xsc_cq_set_ci(xcq);
+		xsc_update_cq_ci(xcq->dev, xcq->cqn, xcq->cons_index);
 
 	spin_unlock_irqrestore(&cq->lock, flags);
 
 	return npolled;
 }
 
-int xsc_cqe_is_empty(struct xsc_ib_cq *cq)
+static int xsc_cqe_is_empty(struct xsc_ib_cq *cq)
 {
 	struct xsc_cqe *cqe = get_sw_cqe(cq, cq->xcq.cons_index);
 
@@ -367,29 +474,24 @@ int xsc_cqe_is_empty(struct xsc_ib_cq *cq)
 
 int xsc_ib_arm_cq(struct ib_cq *ibcq, enum ib_cq_notify_flags flags)
 {
-	union xsc_cq_doorbell db;
 	struct xsc_ib_cq *xcq = to_xcq(ibcq);
 	struct xsc_core_cq *cq = &xcq->xcq;
 	int ret = 0;
 	unsigned long irq_flags;
+	u8 solicited = 0;
 
 	spin_lock_irqsave(&xcq->lock, irq_flags);
-	db.val = 0;
-	db.cq_next_cid = cq->cons_index;
-	db.cq_id = cq->cqn;
 	if (flags & IB_CQ_NEXT_COMP)
-		db.arm = 0;
+		solicited = 0;
 	else if (flags & IB_CQ_SOLICITED)
-		db.arm = 1;/* arm next:0 arm solicited:1 */
+		solicited = 1;/* arm next:0 arm solicited:1 */
 
 	if ((flags & IB_CQ_REPORT_MISSED_EVENTS) && (!xsc_cqe_is_empty(xcq))) {
 		ret = 1;
 		goto out;
 	}
 
-	/* make sure val write to memory done */
-	wmb();
-	writel(db.val, REG_ADDR(cq->dev, cq->arm_db));
+	xsc_arm_cq(cq->dev, cq->cqn, cq->cons_index, solicited);
 out:
 	spin_unlock_irqrestore(&xcq->lock, irq_flags);
 	return ret;
@@ -417,7 +519,7 @@ static void free_cq_buf(struct xsc_ib_dev *dev, struct xsc_ib_cq_buf *buf)
 
 static int create_cq_user(struct xsc_ib_dev *dev, struct ib_udata *udata,
 			  struct ib_ucontext *context, struct xsc_ib_cq *cq,
-			  int entries, struct xsc_create_cq_mbox_in **cqb,
+			  int entries, struct xsc_create_cq_ex_mbox_in **cqb,
 			  int *cqe_size, int *index, int *inlen)
 {
 	struct xsc_ib_create_cq ucmd;
@@ -462,7 +564,7 @@ static int create_cq_user(struct xsc_ib_dev *dev, struct ib_udata *udata,
 		goto err_umem;
 	}
 	xsc_ib_populate_pas(dev, cq->buf.umem, page_shift, (*cqb)->pas, hw_npages, true);
-	(*cqb)->ctx.pa_num = cpu_to_be16(hw_npages);
+	(*cqb)->ctx_ex.ctx.pa_num = cpu_to_be16(hw_npages);
 
 	return 0;
 
@@ -478,7 +580,7 @@ static void destroy_cq_user(struct xsc_ib_cq *cq, struct ib_udata *udata)
 
 static int create_cq_kernel(struct xsc_ib_dev *dev, struct xsc_ib_cq *cq,
 			    int entries, int cqe_size,
-			    struct xsc_create_cq_mbox_in **cqb,
+			    struct xsc_create_cq_ex_mbox_in **cqb,
 			    int *index, int *inlen)
 {
 	int err;
@@ -505,7 +607,7 @@ static int create_cq_kernel(struct xsc_ib_dev *dev, struct xsc_ib_cq *cq,
 		goto err_buf;
 	}
 	xsc_fill_page_array(&cq->buf.buf, (*cqb)->pas, hw_npages);
-	(*cqb)->ctx.pa_num = cpu_to_be16(hw_npages);
+	(*cqb)->ctx_ex.ctx.pa_num = cpu_to_be16(hw_npages);
 
 	return 0;
 
@@ -519,16 +621,18 @@ static void destroy_cq_kernel(struct xsc_ib_dev *dev, struct xsc_ib_cq *cq)
 	free_cq_buf(dev, &cq->buf);
 }
 
-xsc_ib_create_cq_def()
+int xsc_ib_create_cq(struct ib_cq *ibcq,
+		     const struct ib_cq_init_attr *attr,
+		     struct ib_udata *udata)
 {
 	struct ib_device *ibdev = ibcq->device;
 	int entries = attr->cqe;
 	int vector = attr->comp_vector;
-	struct xsc_create_cq_mbox_in *cqb = NULL;
+	struct xsc_create_cq_ex_mbox_in *cqb = NULL;
 	struct xsc_ib_dev *dev = to_mdev(ibdev);
 	struct xsc_ib_cq *cq;
 	int index;
-	int inlen;
+	int inlen = 0;
 	int cqe_size;
 	int irqn;
 	int err;
@@ -561,15 +665,16 @@ xsc_ib_create_cq_def()
 	}
 
 	cq->cqe_size = cqe_size;
-	cqb->ctx.log_cq_sz = ilog2(entries);
-	cqb->ctx.glb_func_id = cpu_to_be16(dev->xdev->glb_func_id);
+	cqb->ctx_ex.ctx.log_cq_sz = ilog2(entries);
+	cqb->ctx_ex.ctx.glb_func_id = cpu_to_be16(dev->xdev->glb_func_id);
 
 	err = xsc_vector2eqn(dev->xdev, vector, &eqn, &irqn);
 	if (err)
 		goto err_cqb;
 
-	cqb->ctx.eqn = eqn;
-	cqb->ctx.eqn = cpu_to_be16(cqb->ctx.eqn);
+	cqb->ctx_ex.ctx.eqn = eqn;
+	cqb->ctx_ex.ctx.eqn = cpu_to_be16(cqb->ctx_ex.ctx.eqn);
+	cqb->ctx_ex.page_shift = PAGE_SHIFT;
 
 	err = xsc_core_create_cq(dev->xdev, &cq->xcq, cqb, inlen);
 	if (err)
@@ -588,6 +693,7 @@ xsc_ib_create_cq_def()
 		}
 	}
 
+	INIT_LIST_HEAD(&cq->err_state_qp_list);
 	xsc_vfree(cqb);
 
 	return 0;
@@ -604,13 +710,19 @@ err_cqb:
 
 err_create:
 
-	return RET_VALUE(err);
+	return err;
 }
 
 xsc_ib_destroy_cq_def()
 {
 	struct xsc_ib_dev *dev = to_mdev(cq->device);
 	struct xsc_ib_cq *xcq = to_xcq(cq);
+	struct xsc_err_state_qp_node *tmp = NULL, *err_qp_node = NULL;
+
+	list_for_each_entry_safe(err_qp_node, tmp, &xcq->err_state_qp_list, entry) {
+		list_del(&err_qp_node->entry);
+		kfree(err_qp_node);
+	}
 
 	xsc_core_destroy_cq(dev->xdev, &xcq->xcq);
 	if (udata)
@@ -666,11 +778,7 @@ void __xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 rsn)
 
 	if (nfreed) {
 		cq->xcq.cons_index += nfreed;
-		/* Make sure update of buffer contents is done before
-		 * updating consumer index.
-		 */
-		wmb();
-		xsc_cq_set_ci(&cq->xcq);
+		xsc_update_cq_ci(cq->xcq.dev, cq->xcq.cqn, cq->xcq.cons_index);
 	}
 }
 

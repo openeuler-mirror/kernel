@@ -7,7 +7,6 @@
 #include "common/vport.h"
 #include "common/xsc_fs.h"
 
-
 static int xsc_vport_context_update_vlans(struct xsc_adapter *adapter,
 					  enum xsc_vlan_rule_type rule_type,
 					  u16 vid, bool add)
@@ -100,6 +99,190 @@ int xsc_vlan_rx_kill_vid(struct net_device *dev, __be16 proto, u16 vid)
 	return 0;
 }
 
+static inline int xsc_hash_l2(const u8 *addr)
+{
+	return addr[5];
+}
+
+static void xsc_add_l2_to_hash(struct hlist_head *hash, const u8 *addr)
+{
+	struct xsc_l2_hash_node *hn;
+	int ix = xsc_hash_l2(addr);
+	int found = 0;
+
+	hlist_for_each_entry(hn, &hash[ix], hlist)
+		if (ether_addr_equal(hn->mac_addr, addr)) {
+			found = 1;
+			break;
+		}
+
+	if (found) {
+		hn->action = XSC_ACTION_NONE;
+		return;
+	}
+
+	hn = kzalloc(sizeof(*hn), GFP_ATOMIC);
+	if (!hn)
+		return;
+
+	ether_addr_copy(hn->mac_addr, addr);
+	hn->action = XSC_ACTION_ADD;
+
+	hlist_add_head(&hn->hlist, &hash[ix]);
+}
+
+static void xsc_del_l2_from_hash(struct xsc_l2_hash_node *hn)
+{
+	hlist_del(&hn->hlist);
+	kfree(hn);
+}
+
+static void xsc_sync_netdev_uc_addr(struct xsc_core_device *xdev,
+				    struct net_device *netdev,
+				    struct xsc_flow_steering *fs)
+{
+	struct netdev_hw_addr *ha;
+
+	netif_addr_lock_bh(netdev);
+
+	netdev_for_each_uc_addr(ha, netdev) {
+		xsc_add_l2_to_hash(fs->l2.netdev_uc, ha->addr);
+	}
+
+	netif_addr_unlock_bh(netdev);
+}
+
+static void xsc_vport_context_update_uc_mac(struct xsc_core_device *xdev,
+					    struct xsc_flow_steering *fs,
+					    struct xsc_l2_hash_node *hn)
+{
+	int err = 0;
+	u16 pct_prio;
+
+	switch (hn->action) {
+	case XSC_ACTION_ADD:
+		err = xsc_nic_vport_add_uc_mac(xdev, hn->mac_addr, &pct_prio);
+		if (err) {
+			xsc_core_err(xdev, "failed to add pct entry for uc mac %pM\n",
+				     hn->mac_addr);
+			xsc_del_l2_from_hash(hn);
+		} else {
+			hn->action = XSC_ACTION_NONE;
+			hn->pct_prio = pct_prio;
+		}
+		xsc_core_info(xdev, "pct add for uc mac %pM, priority: %d\n",
+			      hn->mac_addr, pct_prio);
+		break;
+	case XSC_ACTION_DEL:
+		xsc_core_info(xdev, "pct del for uc mac %pM, priority: %d\n",
+			      hn->mac_addr, hn->pct_prio);
+		err = xsc_nic_vport_del_uc_mac(xdev, hn->pct_prio);
+		if (err)
+			xsc_core_err(xdev, "failed to del pct entry for uc mac %pM\n",
+				     hn->mac_addr);
+		xsc_del_l2_from_hash(hn);
+		break;
+	}
+}
+
+static void xsc_apply_netdev_uc_addr(struct xsc_core_device *xdev,
+				     struct xsc_flow_steering *fs)
+{
+	struct xsc_l2_hash_node *hn;
+	struct hlist_node *tmp;
+	int i;
+
+	for (i = 0; i < XSC_L2_ADDR_HASH_SIZE; i++)
+		hlist_for_each_entry_safe(hn, tmp, &fs->l2.netdev_uc[i], hlist)
+			xsc_vport_context_update_uc_mac(xdev, fs, hn);
+}
+
+static void xsc_vport_context_update_mc_mac(struct xsc_core_device *xdev,
+					    struct xsc_flow_steering *fs,
+					    struct xsc_l2_hash_node *hn)
+{
+	int err = 0;
+
+	switch (hn->action) {
+	case XSC_ACTION_ADD:
+		err = xsc_nic_vport_modify_mc_mac(xdev, hn->mac_addr, XSC_JOIN);
+		if (err) {
+			xsc_core_err(xdev, "failed to join mcg\n");
+			xsc_del_l2_from_hash(hn);
+		} else {
+			hn->action = XSC_ACTION_NONE;
+		}
+		break;
+	case XSC_ACTION_DEL:
+		xsc_del_l2_from_hash(hn);
+		err = xsc_nic_vport_modify_mc_mac(xdev, hn->mac_addr, XSC_LEAVE);
+		if (err) {
+			xsc_core_err(xdev, "failed to leave mcg\n");
+			xsc_add_l2_to_hash(fs->l2.netdev_mc, hn->mac_addr);
+		}
+		break;
+	default:
+		break;
+	}
+
+	if (err)
+		xsc_core_info(xdev, "action=%u, mac=%02X:%02X:%02X:%02X:%02X:%02X\n",
+			      hn->action, hn->mac_addr[0], hn->mac_addr[1], hn->mac_addr[2],
+			      hn->mac_addr[3], hn->mac_addr[4], hn->mac_addr[5]);
+}
+
+static void xsc_sync_netdev_mc_addr(struct xsc_core_device *xdev,
+				    struct net_device *netdev,
+				    struct xsc_flow_steering *fs)
+{
+	struct netdev_hw_addr *ha;
+
+	netif_addr_lock_bh(netdev);
+
+	netdev_for_each_mc_addr(ha, netdev) {
+		xsc_add_l2_to_hash(fs->l2.netdev_mc, ha->addr);
+	}
+
+	netif_addr_unlock_bh(netdev);
+}
+
+static void xsc_apply_netdev_mc_addr(struct xsc_core_device *xdev,
+				     struct xsc_flow_steering *fs)
+{
+	struct xsc_l2_hash_node *hn;
+	struct hlist_node *tmp;
+	int i;
+
+	for (i = 0; i < XSC_L2_ADDR_HASH_SIZE; i++)
+		hlist_for_each_entry_safe(hn, tmp, &fs->l2.netdev_mc[i], hlist)
+			xsc_vport_context_update_mc_mac(xdev, fs, hn);
+}
+
+static void xsc_handle_netdev_addr(struct xsc_core_device *xdev,
+				   struct net_device *netdev,
+				   struct xsc_flow_steering *fs)
+{
+	struct xsc_l2_hash_node *hn;
+	struct hlist_node *tmp;
+	int i;
+
+	for (i = 0; i < XSC_L2_ADDR_HASH_SIZE; i++)
+		hlist_for_each_entry_safe(hn, tmp, &fs->l2.netdev_uc[i], hlist)
+			hn->action = XSC_ACTION_DEL;
+
+	xsc_sync_netdev_uc_addr(xdev, netdev, fs);
+
+	xsc_apply_netdev_uc_addr(xdev, fs);
+
+	for (i = 0; i < XSC_L2_ADDR_HASH_SIZE; i++)
+		hlist_for_each_entry_safe(hn, tmp, &fs->l2.netdev_mc[i], hlist)
+			hn->action = XSC_ACTION_DEL;
+
+	xsc_sync_netdev_mc_addr(xdev, netdev, fs);
+
+	xsc_apply_netdev_mc_addr(xdev, fs);
+}
+
 void xsc_set_rx_mode_work(struct work_struct *work)
 {
 	int err = 0;
@@ -131,5 +314,7 @@ void xsc_set_rx_mode_work(struct work_struct *work)
 
 	l2->promisc_enabled   = promisc_enabled;
 	l2->allmulti_enabled  = allmulti_enabled;
+
+	xsc_handle_netdev_addr(adapter->xdev, dev, &adapter->fs);
 }
 

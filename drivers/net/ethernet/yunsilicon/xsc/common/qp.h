@@ -7,6 +7,7 @@
 #define XSC_QP_H
 
 #include "common/xsc_hsi.h"
+#include "common/xsc_cmd.h"
 #include "common/device.h"
 #include "common/driver.h"
 
@@ -117,6 +118,7 @@ struct xsc_core_qp {
 	u16	qp_type_internal;
 	u16	grp_id;
 	u8	mac_id;
+	u8	err_occurred;
 };
 
 struct xsc_qp_rsc {
@@ -165,7 +167,11 @@ int create_resource_common(struct xsc_core_device *xdev,
 			   struct xsc_core_qp *qp);
 void destroy_resource_common(struct xsc_core_device *xdev,
 			     struct xsc_core_qp *qp);
-
+int xsc_alloc_qpn(struct xsc_core_device *xdev, u16 *qpn_base, u16 qp_cnt, u8 qp_type);
+int xsc_dealloc_qpn(struct xsc_core_device *xdev, u16 qpn_base, u16 qp_cnt, u8 qp_type);
+int xsc_unset_qp_info(struct xsc_core_device *xdev, u16 qpn);
+int xsc_set_qp_info(struct xsc_core_device *xdev, struct xsc_create_qp_request *qp_info,
+		    size_t pas_buf_size);
 int xsc_core_create_qp(struct xsc_core_device *xdev,
 		       struct xsc_core_qp *qp,
 		       struct xsc_create_qp_mbox_in *in,

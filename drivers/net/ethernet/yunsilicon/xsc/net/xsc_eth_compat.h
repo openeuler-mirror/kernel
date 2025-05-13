@@ -7,4 +7,5 @@
 #define XSC_ETH_COMPAT_H
 
 #define xsc_netdev_xmit_more(skb) netdev_xmit_more()
-#endif /* XSC_ETH_COMPAT_H */
+
+#endif

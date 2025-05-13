@@ -17,8 +17,6 @@ enum {
 	XSC_ETH_WQE_INNER_AND_OUTER_CSUM,
 };
 
-#define ANDES_DRIVER
-
 static inline u32 xsc_cqwq_get_size(struct xsc_cqwq *wq)
 {
 	return wq->fbc.sz_m1 + 1;
@@ -67,7 +65,7 @@ struct sk_buff *xsc_skb_from_cqe_linear(struct xsc_rq *rq,
 struct sk_buff *xsc_skb_from_cqe_nonlinear(struct xsc_rq *rq,
 					   struct xsc_wqe_frag_info *wi,
 					   u32 cqe_bcnt, u8 has_pph);
-bool xsc_eth_post_rx_wqes(struct xsc_rq *rq);
+bool xsc_eth_post_rx_wqes(struct xsc_rq *rq, bool force);
 void xsc_cq_notify_hw(struct xsc_cq *cq);
 void xsc_cq_notify_hw_rearm(struct xsc_cq *cq);
 void xsc_eth_dealloc_rx_wqe(struct xsc_rq *rq, u16 ix);
@@ -78,4 +76,5 @@ void xsc_page_release_dynamic(struct xsc_rq *rq,
 			      bool recycle);
 
 enum hrtimer_restart xsc_dim_reduce_timer_fn(struct hrtimer *timer);
+
 #endif /* XSC_RXTX_H */

@@ -74,6 +74,26 @@ static int xsc_query_nic_vport_context(struct xsc_core_device *dev, u16 vport,
 	return __xsc_query_nic_vport_context(dev, vport, out, outlen, 0);
 }
 
+static void xsc_nic_isolate_and_drop_modify(struct xsc_core_device *dev,
+					    struct xsc_modify_nic_vport_context_in *in)
+{
+	u16 caps = 0;
+	u16 caps_mask = 0;
+
+	if (xsc_get_pf_isolate_config(dev, true)) {
+		caps = BIT(XSC_TBM_CAP_PF_ISOLATE_CONFIG);
+		caps_mask = BIT(XSC_TBM_CAP_PF_ISOLATE_CONFIG);
+	}
+
+	if (xsc_get_mac_drop_config(dev, true)) {
+		caps |= BIT(XSC_TBM_CAP_MAC_DROP_CONFIG);
+		caps_mask |= BIT(XSC_TBM_CAP_MAC_DROP_CONFIG);
+	}
+
+	in->caps |= cpu_to_be16(caps);
+	in->caps_mask |= cpu_to_be16(caps_mask);
+}
+
 int xsc_modify_nic_vport_context(struct xsc_core_device *dev, void *in,
 				 int inlen)
 {
@@ -92,38 +112,6 @@ int xsc_modify_nic_vport_context(struct xsc_core_device *dev, void *in,
 	}
 	return err;
 }
-
-int xsc_query_nic_vport_min_inline(struct xsc_core_device *dev,
-				   u16 vport, u8 *min_inline)
-{
-	struct xsc_query_nic_vport_context_out out;
-	int err;
-
-	memset(&out, 0, sizeof(out));
-	err = xsc_query_nic_vport_context(dev, vport, &out, sizeof(out));
-	if (!err)
-		*min_inline = out.nic_vport_ctx.min_wqe_inline_mode;
-	return err;
-}
-EXPORT_SYMBOL_GPL(xsc_query_nic_vport_min_inline);
-
-void xsc_query_min_inline(struct xsc_core_device *dev,
-			  u8 *min_inline_mode)
-{
-	switch (dev->caps.wqe_inline_mode) {
-	case XSC_CAP_INLINE_MODE_VPORT_CONTEXT:
-		if (!xsc_query_nic_vport_min_inline(dev, 0, min_inline_mode))
-			break;
-		fallthrough;
-	case XSC_CAP_INLINE_MODE_L2:
-		*min_inline_mode = XSC_INLINE_MODE_L2;
-		break;
-	case XSC_CAP_INLINE_MODE_NOT_REQUIRED:
-		*min_inline_mode = XSC_INLINE_MODE_NONE;
-		break;
-	}
-}
-EXPORT_SYMBOL_GPL(xsc_query_min_inline);
 
 int xsc_modify_nic_vport_min_inline(struct xsc_core_device *dev,
 				    u16 vport, u8 min_inline)
@@ -179,11 +167,14 @@ static int __xsc_modify_nic_vport_mac_address(struct xsc_core_device *dev,
 	struct xsc_modify_nic_vport_context_out out;
 	struct xsc_adapter *adapter = netdev_priv(dev->netdev);
 	struct xsc_vport *evport = NULL;
-	int err, in_sz, i;
+	int err, in_sz;
+	int i = 0;
 	u8 *mac_addr;
 	u16 caps = 0;
 	u16 caps_mask = 0;
 	u16 lag_id = xsc_get_lag_id(dev);
+
+	memset(&out, 0, sizeof(out));
 
 	in_sz = sizeof(struct xsc_modify_nic_vport_context_in) + 2;
 
@@ -212,6 +203,8 @@ static int __xsc_modify_nic_vport_mac_address(struct xsc_core_device *dev,
 	caps_mask |= BIT(XSC_TBM_CAP_PP_BYPASS);
 	in->caps = cpu_to_be16(caps);
 	in->caps_mask = cpu_to_be16(caps_mask);
+
+	xsc_nic_isolate_and_drop_modify(dev, in);
 
 	ether_addr_copy(mac_addr, addr);
 
@@ -419,6 +412,82 @@ int xsc_modify_nic_vport_mac_list(struct xsc_core_device *dev,
 }
 EXPORT_SYMBOL_GPL(xsc_modify_nic_vport_mac_list);
 
+int xsc_nic_vport_add_uc_mac(struct xsc_core_device *xdev,
+			     u8 *mac_addr, u16 *pct_prio)
+{
+	struct xsc_modify_nic_vport_uc_mac_in in;
+	struct xsc_modify_nic_vport_uc_mac_out out;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_NIC_VPORT_UC_MAC);
+	in.add_mac = true;
+	ether_addr_copy(in.mac_addr, mac_addr);
+
+	memset(&out, 0, sizeof(out));
+	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
+
+	if (err || (out.hdr.status && out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED)) {
+		xsc_core_err(xdev, "Failed to add uc mac err=%d out.status=%u",
+			     err, out.hdr.status);
+		return -ENOEXEC;
+	}
+
+	*pct_prio = be16_to_cpu(out.out_pct_prio);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xsc_nic_vport_add_uc_mac);
+
+int xsc_nic_vport_del_uc_mac(struct xsc_core_device *xdev, u16 pct_prio)
+{
+	struct xsc_modify_nic_vport_uc_mac_in in;
+	struct xsc_modify_nic_vport_uc_mac_out out;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_NIC_VPORT_UC_MAC);
+	in.add_mac = false;
+	in.in_pct_prio = cpu_to_be16(pct_prio);
+
+	memset(&out, 0, sizeof(out));
+	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
+
+	if (err || (out.hdr.status && out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED)) {
+		xsc_core_err(xdev, "Failed to del uc mac err=%d out.status=%u",
+			     err, out.hdr.status);
+		return -ENOEXEC;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xsc_nic_vport_del_uc_mac);
+
+int xsc_nic_vport_modify_mc_mac(struct xsc_core_device *xdev, u8 *mac, u8 action)
+{
+	struct xsc_modify_nic_vport_mc_mac_in in;
+	struct xsc_modify_nic_vport_mc_mac_out out;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_NIC_VPORT_MC_MAC);
+	ether_addr_copy(in.mac, mac);
+	in.action = action;
+
+	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
+
+	if (err || (out.hdr.status && out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED)) {
+		xsc_core_err(xdev, "Failed to mod mc mac err=%d out.status=%u",
+			     err, out.hdr.status);
+		return -ENOEXEC;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xsc_nic_vport_modify_mc_mac);
+
 int xsc_query_nic_vport_vlans(struct xsc_core_device *dev, u32 vport,
 			      unsigned long *vlans)
 {
@@ -481,6 +550,8 @@ int xsc_modify_nic_vport_vlans(struct xsc_core_device *dev,
 	in->nic_vport_ctx.vlan_allowed = add;
 	in->nic_vport_ctx.allowed_list_type = XSC_NVPRT_LIST_TYPE_VLAN;
 	in->nic_vport_ctx.vlan = cpu_to_be16(vid);
+
+	xsc_nic_isolate_and_drop_modify(dev, in);
 
 	memset(&out, 0, sizeof(out));
 	err = xsc_cmd_exec(dev, in, in_sz, &out, sizeof(out));
@@ -780,7 +851,7 @@ int xsc_query_nic_vport_promisc(struct xsc_core_device *dev,
 	struct xsc_query_nic_vport_context_out *out;
 	int err;
 
-	out = kzalloc(sizeof(out), GFP_KERNEL);
+	out = kzalloc(sizeof(*out), GFP_KERNEL);
 	if (!out)
 		return -ENOMEM;
 

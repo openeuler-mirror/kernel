@@ -178,6 +178,10 @@ struct xsc_stats {
 extern const struct xsc_stats_grp xsc_stats_grps[];
 extern const int xsc_num_stats_grps;
 
+int xsc_get_prs_chk_err_stats_count(struct xsc_adapter *adapter);
+void xsc_get_prs_chk_err_stats_strings(struct xsc_adapter *adapter, u8 *data);
+int xsc_fill_prs_chk_err_stats(struct xsc_adapter *adapter, u64 *data);
+
 void xsc_fold_sw_stats64(struct xsc_adapter *adapter, struct rtnl_link_stats64 *s);
 
 #endif /* XSC_EN_STATS_H */

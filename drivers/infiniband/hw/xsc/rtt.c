@@ -37,7 +37,10 @@ static ssize_t enable_show(struct xsc_rtt_interface *g, struct xsc_rtt_attribute
 	in.opcode = __cpu_to_be16(XSC_CMD_OP_GET_RTT_EN);
 	err = xsc_cmd_exec(g->xdev, (void *)&in, sizeof(struct xsc_inbox_hdr),
 			   (void *)&out, sizeof(struct xsc_rtt_en_mbox_out));
-	if (err || out.hdr.status) {
+	if (!err && out.hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED) {
+		xsc_core_err(g->xdev, "Operation not supported\n");
+		return -EOPNOTSUPP;
+	} else if (err || out.hdr.status) {
 		xsc_core_err(g->xdev, "Failed to get rtt en, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 		return -EINVAL;
@@ -72,7 +75,10 @@ static ssize_t enable_store(struct xsc_rtt_interface *g, struct xsc_rtt_attribut
 
 	err = xsc_cmd_exec(g->xdev, (void *)&in, sizeof(struct xsc_rtt_en_mbox_in),
 			   (void *)&out, sizeof(struct xsc_rtt_en_mbox_out));
-	if (err || out.hdr.status) {
+	if (!err && out.hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED) {
+		xsc_core_err(g->xdev, "Operation not supported\n");
+		return -EOPNOTSUPP;
+	} else if (err || out.hdr.status) {
 		xsc_core_err(g->xdev, "Failed to set rtt en, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 		return -EINVAL;
@@ -95,7 +101,10 @@ static ssize_t qpn_show(struct xsc_rtt_interface *g, struct xsc_rtt_attributes *
 	in.opcode = __cpu_to_be16(XSC_CMD_OP_GET_RTT_QPN);
 	err = xsc_cmd_exec(g->xdev, (void *)&in, sizeof(struct xsc_inbox_hdr),
 			   (void *)&out, sizeof(struct xsc_get_rtt_qpn_mbox_out));
-	if (err || out.hdr.status) {
+	if (!err && out.hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED) {
+		xsc_core_err(g->xdev, "Operation not supported\n");
+		return -EOPNOTSUPP;
+	} else if (err || out.hdr.status) {
 		xsc_core_err(g->xdev, "Failed to get rtt qpn, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 		return -EINVAL;
@@ -138,7 +147,10 @@ static ssize_t qpn_store(struct xsc_rtt_interface *g, struct xsc_rtt_attributes 
 
 	err = xsc_cmd_exec(g->xdev, (void *)&in, sizeof(struct xsc_rtt_qpn_mbox_in),
 			   (void *)&out, sizeof(struct xsc_rtt_qpn_mbox_out));
-	if (err || out.hdr.status) {
+	if (!err && out.hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED) {
+		xsc_core_err(g->xdev, "Operation not supported\n");
+		return -EOPNOTSUPP;
+	} else if (err || out.hdr.status) {
 		xsc_core_err(g->xdev, "Failed to set rtt qpn, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 		return -EINVAL;
@@ -160,7 +172,10 @@ static ssize_t period_show(struct xsc_rtt_interface *g, struct xsc_rtt_attribute
 	in.opcode = __cpu_to_be16(XSC_CMD_OP_GET_RTT_PERIOD);
 	err = xsc_cmd_exec(g->xdev, (void *)&in, sizeof(struct xsc_inbox_hdr),
 			   (void *)&out, sizeof(struct xsc_rtt_period_mbox_out));
-	if (err || out.hdr.status) {
+	if (!err && out.hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED) {
+		xsc_core_err(g->xdev, "Operation not supported\n");
+		return -EOPNOTSUPP;
+	} else if (err || out.hdr.status) {
 		xsc_core_err(g->xdev, "Failed to get rtt period, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 		return -EINVAL;
@@ -194,7 +209,10 @@ static ssize_t period_store(struct xsc_rtt_interface *g, struct xsc_rtt_attribut
 
 	err = xsc_cmd_exec(g->xdev, (void *)&in, sizeof(struct xsc_rtt_period_mbox_in),
 			   (void *)&out, sizeof(struct xsc_rtt_period_mbox_out));
-	if (err || out.hdr.status) {
+	if (!err && out.hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED) {
+		xsc_core_err(g->xdev, "Operation not supported\n");
+		return -EOPNOTSUPP;
+	} else if (err || out.hdr.status) {
 		xsc_core_err(g->xdev, "Failed to set rtt period, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 		return -EINVAL;
@@ -218,7 +236,10 @@ static ssize_t result_show(struct xsc_rtt_interface *g, struct xsc_rtt_attribute
 
 	err = xsc_cmd_exec(g->xdev, (void *)&in, sizeof(struct xsc_inbox_hdr),
 			   (void *)&out, sizeof(struct xsc_rtt_result_mbox_out));
-	if (err || out.hdr.status) {
+	if (!err && out.hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED) {
+		xsc_core_err(g->xdev, "Operation not supported\n");
+		return -EOPNOTSUPP;
+	} else if (err || out.hdr.status) {
 		xsc_core_err(g->xdev, "Failed to get rtt result, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 		return -EINVAL;
@@ -253,7 +274,10 @@ static ssize_t stats_show(struct xsc_rtt_interface *g, struct xsc_rtt_attributes
 
 	err = xsc_cmd_exec(g->xdev, (void *)&in, sizeof(struct xsc_inbox_hdr),
 			   (void *)&out, sizeof(struct xsc_rtt_stats_mbox_out));
-	if (err || out.hdr.status) {
+	if (!err && out.hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED) {
+		xsc_core_err(g->xdev, "Operation not supported\n");
+		return -EOPNOTSUPP;
+	} else if (err || out.hdr.status) {
 		xsc_core_err(g->xdev, "Failed to get rtt stats, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 		return -EINVAL;
@@ -389,7 +413,7 @@ void xsc_rtt_sysfs_fini(struct xsc_core_device *xdev)
 
 	err = xsc_cmd_exec(xdev, (void *)&in, sizeof(struct xsc_rtt_en_mbox_in),
 			   (void *)&out, sizeof(struct xsc_rtt_en_mbox_out));
-	if (err || out.hdr.status)
+	if (err || (out.hdr.status && out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED))
 		xsc_core_err(xdev, "Failed to set rtt disable, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 
@@ -401,7 +425,7 @@ void xsc_rtt_sysfs_fini(struct xsc_core_device *xdev)
 
 	err = xsc_cmd_exec(xdev, (void *)&period_in, sizeof(struct xsc_rtt_period_mbox_in),
 			   (void *)&period_out, sizeof(struct xsc_rtt_period_mbox_out));
-	if (err || period_out.hdr.status)
+	if (err || (period_out.hdr.status && out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED))
 		xsc_core_err(xdev, "Failed to set rtt period default, err(%u), status(%u)\n",
 			     err, out.hdr.status);
 

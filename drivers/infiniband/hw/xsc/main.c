@@ -8,6 +8,9 @@
 #include <linux/init.h>
 #include <linux/errno.h>
 #include <linux/pci.h>
+#include <linux/namei.h>
+#include <linux/kobject.h>
+#include <linux/kernfs.h>
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
 #include <linux/io-mapping.h>
@@ -27,18 +30,13 @@
 #include "user.h"
 #include "xsc_ib.h"
 #include "xsc_rdma_ctrl.h"
+#include "xsc_rdma_prgrmmbl_cc_ctrl.h"
 
 #define DRIVER_NAME "xsc_ib"
-#define DRIVER_VERSION "1.0"
-#define DRIVER_RELDATE	"Jan 2022"
 
-MODULE_DESCRIPTION("Yunsilicon Amber HCA IB driver");
+MODULE_DESCRIPTION("Yunsilicon HCA IB driver");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRIVER_VERSION);
-
-static char xsc_version[] =
-	DRIVER_NAME ": Yunsilicon Infiniband driver"
-	DRIVER_VERSION " (" DRIVER_RELDATE ")\n";
 
 static int xsc_ib_query_device(struct ib_device *ibdev,
 			       struct ib_device_attr *props,
@@ -93,9 +91,9 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	props->device_cap_flags |= IB_DEVICE_MEM_MGT_EXTENSIONS;
 
 	props->page_size_cap	   = dev->xdev->caps.min_page_sz;
-	props->max_mr_size	   = (1 << dev->xdev->caps.log_max_mtt) * PAGE_SIZE;
-	props->max_qp		   = 1 << dev->xdev->caps.log_max_qp;
-	props->max_qp_wr	   = (32 * 1024); /* hack for GPFS */
+	props->max_mr_size	   = dev->xdev->caps.max_mtt * PAGE_SIZE;
+	props->max_qp		   = dev->xdev->caps.max_qp;
+	props->max_qp_wr	   = xsc_get_max_qp_depth(dev->xdev);
 	max_rq_sg = dev->xdev->caps.max_rq_desc_sz / sizeof(struct xsc_wqe_data_seg);
 	max_sq_sg = (dev->xdev->caps.max_sq_desc_sz - sizeof(struct xsc_wqe_ctrl_seg_2)) /
 		sizeof(struct xsc_wqe_data_seg_2);
@@ -104,10 +102,10 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 		XSC_RADDR_SEG_NUM;
 	props->max_recv_sge = dev->xdev->caps.recv_ds_num;
 	props->max_sge_rd	   = 1;/*max sge per read wqe*/
-	props->max_cq		   = 1 << dev->xdev->caps.log_max_cq;
-	props->max_cqe		   = dev->xdev->caps.max_cqes - 1;
+	props->max_cq		   = dev->xdev->caps.max_cq;
+	props->max_cqe		   = dev->xdev->caps.max_cqes;
 	props->max_mr		   = 1 << dev->xdev->caps.log_max_mkey;
-	props->max_pd		   = 1 << dev->xdev->caps.log_max_pd;
+	props->max_pd		   = dev->xdev->caps.max_pd;
 	props->max_qp_rd_atom	   = dev->xdev->caps.max_ra_req_qp;
 	props->max_qp_init_rd_atom = dev->xdev->caps.max_ra_res_qp;
 	props->max_res_rd_atom	   = props->max_qp_rd_atom * props->max_qp;
@@ -132,7 +130,7 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	props->hw_ver = ((dev->xdev->chip_ver_l & 0xffff) << 16) |
 		(dev->xdev->hotfix_num & 0xffff);
 	props->max_pkeys = 0x80;
-	props->max_wq_type_rq = 1 << dev->xdev->caps.log_max_qp;
+	props->max_wq_type_rq = dev->xdev->caps.max_qp;
 
 	props->hca_core_clock = dev->xdev->caps.hca_core_clock * 1000;//KHz
 	props->rss_caps.max_rwq_indirection_tables =
@@ -190,8 +188,8 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	return 0;
 }
 
-void xsc_calc_link_info(struct xsc_core_device *xdev,
-			struct ib_port_attr *props)
+static void xsc_calc_link_info(struct xsc_core_device *xdev,
+			       struct ib_port_attr *props)
 {
 	switch (xsc_get_link_speed(xdev)) {
 	case MODULE_SPEED_10G:
@@ -233,6 +231,10 @@ void xsc_calc_link_info(struct xsc_core_device *xdev,
 	case MODULE_SPEED_400G_R8:
 		props->active_speed = XSC_RDMA_LINK_SPEED_50GB;
 		props->active_width = 4;
+		break;
+	case MODULE_SPEED_400G_R4:
+		props->active_speed = XSC_RDMA_LINK_SPEED_100GB;
+		props->active_width = 2;
 		break;
 	default:
 		props->active_speed = XSC_RDMA_LINK_SPEED_25GB;
@@ -313,6 +315,11 @@ static int xsc_ib_del_gid(const struct ib_gid_attr *attr, void **context)
 	struct xsc_gid *gid_raw = (struct xsc_gid *)&attr->gid;
 	struct xsc_sgid_tbl *sgid_tbl = &dev->ib_res.sgid_tbl;
 
+	if (attr->port_num > XSC_MAX_PORTS ||
+	    (!rdma_cap_roce_gid_table(attr->device, attr->port_num)) ||
+	    attr->index >= sgid_tbl->max)
+		return -EINVAL;
+
 	if (!sgid_tbl)
 		return -EINVAL;
 
@@ -334,7 +341,7 @@ static int xsc_ib_del_gid(const struct ib_gid_attr *attr, void **context)
 	return 0;
 }
 
-int xsc_ib_add_gid(const struct ib_gid_attr *attr, void **context)
+static int xsc_ib_add_gid(const struct ib_gid_attr *attr, void **context)
 {
 	int i = 0;
 	u32 free_idx = 0;
@@ -348,6 +355,10 @@ int xsc_ib_add_gid(const struct ib_gid_attr *attr, void **context)
 	if (sgid_tbl->count == sgid_tbl->max)
 		return -ENOMEM;
 
+	if (attr->port_num > XSC_MAX_PORTS ||
+	    !rdma_cap_roce_gid_table(attr->device, attr->port_num) ||
+	    !context)
+		return -EINVAL;
 	free_idx = sgid_tbl->max;
 	for (i = 0; i < sgid_tbl->max; i++) {
 		if (!memcmp(&sgid_tbl->tbl[i], gid_raw, sizeof(*gid_raw))) {
@@ -453,19 +464,18 @@ xsc_ib_alloc_ucontext_def()
 	if (err)
 		return RET_VALUE(err);
 
-	resp.qp_tab_size      = 1 << dev->xdev->caps.log_max_qp;
+	resp.qp_tab_size      = dev->xdev->caps.max_qp;
 	resp.cache_line_size  = L1_CACHE_BYTES;
 	resp.max_sq_desc_sz = dev->xdev->caps.max_sq_desc_sz;
 	resp.max_rq_desc_sz = dev->xdev->caps.max_rq_desc_sz;
 	resp.max_send_wqebb = dev->xdev->caps.max_wqes;
 	resp.max_recv_wr = dev->xdev->caps.max_wqes;
-	resp.qpm_tx_db = dev->xdev->regs.tx_db;
-	resp.qpm_rx_db = dev->xdev->regs.rx_db;
-	resp.cqm_next_cid_reg = dev->xdev->regs.complete_reg;
-	resp.cqm_armdb = dev->xdev->regs.complete_db;
+	xsc_get_db_addr(dev->xdev, &resp.qpm_tx_db, &resp.qpm_rx_db,
+			&resp.cqm_armdb, &resp.cqm_next_cid_reg, NULL);
 	resp.send_ds_num = dev->xdev->caps.send_ds_num;
 	resp.recv_ds_num = dev->xdev->caps.recv_ds_num;
 	resp.cmds_supp_uhw |= XSC_USER_CMDS_SUPP_UHW_QUERY_DEVICE;
+	resp.device_id = dev->xdev->pdev->device;
 
 	context = to_xucontext(uctx);
 
@@ -495,27 +505,29 @@ static int xsc_ib_mmap(struct ib_ucontext *ibcontext, struct vm_area_struct *vma
 	unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
 	resource_size_t reg_base;
 	resource_size_t reg_size = vma->vm_end - vma->vm_start;
+	u64 tx_db = 0;
+	u64 rx_db = 0;
+	u64 cq_db = 0;
+	u64 cq_reg = 0;
 
+	xsc_get_db_addr(xdev, &tx_db, &rx_db, &cq_db, &cq_reg, NULL);
 	xsc_core_dbg(xdev, "offset:0x%lx", offset);
 
-	if (offset == (xdev->regs.tx_db & PAGE_MASK))
-		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) +
-			(xdev->regs.tx_db & PAGE_MASK);
-	else if (offset == (xdev->regs.rx_db & PAGE_MASK))
-		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) +
-			(xdev->regs.rx_db & PAGE_MASK);
-	else if (offset == (xdev->regs.complete_reg & PAGE_MASK))
-		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) +
-			(xdev->regs.complete_reg & PAGE_MASK);
-	else if (offset == (xdev->regs.complete_db & PAGE_MASK))
-		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) +
-			(xdev->regs.complete_db & PAGE_MASK);
+	if (offset == (tx_db & PAGE_MASK))
+		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) + (tx_db & PAGE_MASK);
+	else if (offset == (rx_db & PAGE_MASK))
+		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) + (rx_db & PAGE_MASK);
+	else if (offset == (cq_reg & PAGE_MASK))
+		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) + (cq_reg & PAGE_MASK);
+	else if (offset == (cq_db & PAGE_MASK))
+		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) + (cq_db & PAGE_MASK);
 	else
 		return -EINVAL;
 
 	xsc_core_dbg(xdev, "regbase:0x%llx", reg_base);
 
-	reg_base = xsc_core_is_pf(xdev) ? reg_base - 0xA0000000 : reg_base;
+	reg_base = (xsc_core_is_pf(xdev) && !is_pf_bar_compressed(xdev)) ?
+		reg_base - 0xA0000000 : reg_base;
 
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 	return remap_pfn_range(vma, vma->vm_start, reg_base >> PAGE_SHIFT,
@@ -535,7 +547,6 @@ xsc_ib_alloc_pd_def()
 
 	err = xsc_core_alloc_pd(to_mdev(ibdev)->xdev, &pd->pdn);
 	if (err) {
-		kfree(pd);
 		return RET_VALUE(err);
 	}
 
@@ -617,7 +628,7 @@ static struct net_device *xsc_get_netdev(struct ib_device *ibdev, u8 port_num)
 	return dev;
 }
 
-void xsc_get_guid(const u8 *dev_addr, u8 *guid)
+static void xsc_get_guid(const u8 *dev_addr, u8 *guid)
 {
 	u8 mac[ETH_ALEN];
 
@@ -646,8 +657,8 @@ static int init_node_data(struct xsc_ib_dev *dev)
 	return err;
 }
 
-void xsc_core_event(struct xsc_core_device *xdev, enum xsc_dev_event event,
-		    unsigned long param)
+static void xsc_core_event(struct xsc_core_device *xdev, enum xsc_dev_event event,
+			   unsigned long param)
 {
 	struct xsc_priv *priv = &xdev->priv;
 	struct xsc_device_context *dev_ctx;
@@ -929,13 +940,65 @@ static int xsc_unregister_netdev_notifier(struct xsc_ib_dev *ibdev)
 	return unregister_netdevice_notifier(&ibdev->nb);
 }
 
+static void xsc_get_ibdev_name(void *xdev, u8 *name, int len)
+{
+	struct xsc_ib_dev *dev = (struct xsc_ib_dev *)((struct xsc_core_device *)xdev)->xsc_ib_dev;
+
+	memcpy(name, dev->ib_dev.name, len);
+}
+
+static void xsc_get_mdev_ibdev_name(struct net_device *netdev, char *name, int len)
+{
+	struct ib_device *ibdev;
+	struct device *dev;
+	const char *path = "/sys/class/infiniband/";
+	struct path parent_path;
+	struct path child_path;
+	struct kobject *kobj;
+	struct dentry *parent;
+	struct dentry *child;
+	struct inode *inode;
+	struct kernfs_node *kn;
+	char child_name[128];
+
+	if (kern_path(path, LOOKUP_FOLLOW, &parent_path))
+		return;
+
+	parent = parent_path.dentry;
+	inode_lock(parent->d_inode);
+	list_for_each_entry(child, &parent->d_subdirs, d_child) {
+		sprintf(child_name, "/sys/class/infiniband/%s", child->d_iname);
+		if (kern_path(child_name, LOOKUP_FOLLOW, &child_path))
+			continue;
+		inode = child_path.dentry->d_inode;
+		inode_lock(inode);
+		kn = inode->i_private;
+		if (!kn)
+			goto next;
+		kobj = kn->priv;
+		if (!kobj)
+			goto next;
+		dev = container_of(kobj, struct device, kobj);
+		ibdev = container_of(dev, struct ib_device, dev);
+		if (ibdev->dev.parent == netdev->dev.parent) {
+			memcpy(name, ibdev->name, len);
+			inode_unlock(inode);
+			path_put(&child_path);
+			break;
+		}
+next:
+		inode_unlock(inode);
+		path_put(&child_path);
+	}
+	inode_unlock(parent->d_inode);
+	path_put(&parent_path);
+}
+
 static int init_one(struct xsc_core_device *xdev,
 		    struct xsc_ib_dev **m_ibdev)
 {
 	struct xsc_ib_dev *dev;
 	int err;
-
-	pr_info_once("%s", xsc_version);
 
 	dev = (struct xsc_ib_dev *)ib_alloc_device(xsc_ib_dev, ib_dev);
 	if (!dev)
@@ -953,9 +1016,9 @@ static int init_one(struct xsc_core_device *xdev,
 		dev->num_comp_vectors = xdev->dev_res->eq_table.num_comp_vectors;
 
 	if (xsc_lag_is_roce(xdev))
-		strlcpy(dev->ib_dev.name, "xscale_bond_%d", IB_DEVICE_NAME_MAX);
+		strscpy(dev->ib_dev.name, "xscale_bond_%d", IB_DEVICE_NAME_MAX);
 	else
-		strlcpy(dev->ib_dev.name, "xscale_%d", IB_DEVICE_NAME_MAX);
+		strscpy(dev->ib_dev.name, "xscale_%d", IB_DEVICE_NAME_MAX);
 
 	dev->ib_dev.node_type		= RDMA_NODE_IB_CA;
 	dev->ib_dev.local_dma_lkey	= 0xFF;
@@ -1027,11 +1090,13 @@ static int init_one(struct xsc_core_device *xdev,
 
 	xdev->xsc_ib_dev = dev;
 
+	xdev->get_ibdev_name = xsc_get_ibdev_name;
+	xdev->get_rdma_ctrl_info = xsc_get_rdma_ctrl_info;
+	xsc_register_get_mdev_ibdev_name_func(xsc_get_mdev_ibdev_name);
+
 	xsc_register_netdev_notifier(dev);
 
 	xsc_counters_init(&dev->ib_dev, xdev);
-
-	xsc_priv_dev_init(&dev->ib_dev, xdev);
 
 	xsc_rtt_sysfs_init(&dev->ib_dev, xdev);
 
@@ -1054,7 +1119,6 @@ static void remove_one(struct xsc_core_device *xdev, void *intf_ctx)
 
 	xsc_rtt_sysfs_fini(xdev);
 	xsc_ib_sysfs_fini(&dev->ib_dev, xdev);
-	xsc_priv_dev_fini(&dev->ib_dev, xdev);
 	xsc_counters_fini(&dev->ib_dev, xdev);
 	xsc_unregister_netdev_notifier(dev);
 	ib_unregister_device(&dev->ib_dev);
@@ -1137,7 +1201,7 @@ static struct xsc_interface xsc_interface = {
 	.protocol  = XSC_INTERFACE_PROTOCOL_IB,
 };
 
-int xsc_ib_reboot_event_handler(struct notifier_block *nb, unsigned long action, void *data)
+static int xsc_ib_reboot_event_handler(struct notifier_block *nb, unsigned long action, void *data)
 {
 	pr_info("xsc ib driver recv %lu event\n", action);
 
@@ -1160,29 +1224,29 @@ struct notifier_block xsc_ib_nb = {
 void xsc_remove_rdma_driver(void)
 {
 	xsc_rdma_ctrl_fini();
+	xsc_rdma_prgrmmbl_cc_ctrl_fini();
 	xsc_unregister_interface(&xsc_interface);
-	xsc_priv_unregister_chrdev_region();
 }
 
 static int __init xsc_ib_init(void)
 {
 	int ret;
 
-	ret = xsc_priv_alloc_chrdev_region();
+	ret = xsc_register_interface(&xsc_interface);
 	if (ret)
 		goto out;
-
-	ret = xsc_register_interface(&xsc_interface);
-	if (ret) {
-		xsc_priv_unregister_chrdev_region();
-		goto out;
-	}
 
 	ret = xsc_rdma_ctrl_init();
 	if (ret != 0) {
 		pr_err("failed to register port control node\n");
 		xsc_unregister_interface(&xsc_interface);
-		xsc_priv_unregister_chrdev_region();
+		goto out;
+	}
+
+	ret = xsc_rdma_prgrmmbl_cc_ctrl_init();
+	if (ret != 0) {
+		pr_err("failed to register programmable cc control node\n");
+		xsc_unregister_interface(&xsc_interface);
 		goto out;
 	}
 

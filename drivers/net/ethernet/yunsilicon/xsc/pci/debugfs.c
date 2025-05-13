@@ -62,147 +62,15 @@ static char *cq_fields[] = {
 struct dentry *xsc_debugfs_root;
 EXPORT_SYMBOL(xsc_debugfs_root);
 
-static ssize_t xsc_debugfs_reg_read(struct file *filp, char __user *buffer,
-				    size_t count, loff_t *ppos)
-{
-	char *buf;
-	int len;
-	char xsc_debugfs_reg_buf[256] = "";
-
-	/* don't allow partial reads */
-	if (*ppos != 0)
-		return 0;
-
-	buf = kasprintf(GFP_KERNEL, "%s: %s\n",
-			"xsc debugfs",
-			xsc_debugfs_reg_buf);
-	if (!buf)
-		return -ENOMEM;
-
-	if (count < strlen(buf)) {
-		kfree(buf);
-		return -ENOSPC;
-	}
-
-	len = simple_read_from_buffer(buffer, count, ppos, buf, strlen(buf));
-
-	kfree(buf);
-
-	return len;
-}
-
-static ssize_t xsc_debugfs_reg_write(struct file *filp,
-				     const char __user *buffer,
-				     size_t count, loff_t *ppos)
-{
-	struct xsc_core_device *xdev = filp->private_data;
-	u64 reg;
-	int cnt, len;
-	int num;
-	int offset;
-	char xsc_debugfs_reg_buf[256] = "";
-
-	/* don't allow partial writes */
-	if (*ppos != 0)
-		return 0;
-
-	if (count >= sizeof(xsc_debugfs_reg_buf))
-		return -ENOSPC;
-
-	len = simple_write_to_buffer(xsc_debugfs_reg_buf,
-				     sizeof(xsc_debugfs_reg_buf) - 1,
-				     ppos, buffer, count);
-	if (len < 0)
-		return len;
-
-	xsc_debugfs_reg_buf[len] = '\0';
-
-	if (strncmp(xsc_debugfs_reg_buf, "write", 5) == 0) {
-		cnt = sscanf(&xsc_debugfs_reg_buf[5], "%llx %n",
-			     &reg, &offset);
-		if (cnt == 1) {
-			int tmp;
-			int value;
-			int buf[8];
-			int *ptr;
-
-			offset += 5;
-			num = 0;
-			while (1) {
-				cnt = sscanf(&xsc_debugfs_reg_buf[offset], "%x %n", &value, &tmp);
-				if (cnt < 2)
-					break;
-				xsc_core_info(xdev, "write: 0x%llx = 0x%x\n",
-					      (reg + sizeof(int) * num), value);
-				offset += tmp;
-				buf[num++] = value;
-				if (num == 8)
-					break;
-			}
-			if (num > 1) {
-				ptr = &buf[0];
-				IA_WRITE(xdev, reg, ptr, num);
-			} else if (num == 1) {
-				REG_WR32(xdev, reg, buf[0]);
-			}
-		} else {
-			xsc_core_err(xdev, "write <reg> <value>\n");
-		}
-	} else if (strncmp(xsc_debugfs_reg_buf, "read", 4) == 0) {
-		cnt = sscanf(&xsc_debugfs_reg_buf[4], "%llx %d %n", &reg, &num, &offset);
-		if (cnt == 2) {
-			int *buf;
-			int i;
-			int *ptr;
-
-			buf = kcalloc(num, sizeof(int), GFP_KERNEL);
-			if (!buf)
-				return -ENOMEM;
-			ptr = buf;
-			IA_READ(xdev, reg, ptr, num);
-			xsc_core_info(xdev, "read: 0x%llx num:%d\n", reg, num);
-			for (i = 0; i < num; i++)
-				xsc_core_info(xdev, "read:0x%llx = %#x\n",
-					      (reg + sizeof(int) * i), buf[i]);
-		} else if (cnt == 1) {
-			int value = REG_RD32(xdev, reg);
-
-			xsc_core_info(xdev, "read: 0x%llx = %#x\n", reg, value);
-		} else {
-			xsc_core_err(xdev, "read <reg>\n");
-		}
-	} else {
-		xsc_core_err(xdev, "Unknown command %s\n", xsc_debugfs_reg_buf);
-		xsc_core_err(xdev, "Available commands:\n");
-		xsc_core_err(xdev, "read <reg>\n");
-		xsc_core_err(xdev, "write <reg> <value>\n");
-	}
-	return count;
-}
-
-static const struct file_operations xsc_debugfs_reg_fops = {
-	.owner = THIS_MODULE,
-	.open = simple_open,
-	.read =  xsc_debugfs_reg_read,
-	.write = xsc_debugfs_reg_write,
-};
-
 int xsc_debugfs_init(struct xsc_core_device *dev)
 {
 	const char *name = pci_name(dev->pdev);
-	struct dentry *pfile;
 
 	if (!xsc_debugfs_root)
 		return -ENOMEM;
 
 	dev->dev_res->dbg_root = debugfs_create_dir(name, xsc_debugfs_root);
-	if (dev->dev_res->dbg_root) {
-		pfile = debugfs_create_file("reg_ops", 0600,
-					    dev->dev_res->dbg_root, dev,
-					    &xsc_debugfs_reg_fops);
-		if (!pfile)
-			xsc_core_err(dev, "failed to create debugfs ops for %s\n", name);
-	} else {
+	if (!dev->dev_res->dbg_root) {
 		xsc_core_err(dev, "failed to create debugfs dir for %s\n", name);
 		return -ENOMEM;
 	}

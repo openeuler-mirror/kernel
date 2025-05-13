@@ -14,8 +14,6 @@
 struct xsc_core_cq {
 	u32			cqn;
 	int			cqe_sz;
-	u64			arm_db;
-	u64			ci_db;
 	struct xsc_core_device *dev;
 	atomic_t		refcount;
 	struct completion	free;
@@ -48,37 +46,10 @@ enum {
 	XSC_CQ_DB_REQ_NOT		= 0,
 };
 
-static inline void xsc_cq_arm(struct xsc_core_cq *cq, u8 solicited)
-{
-	union xsc_cq_doorbell db;
-
-	db.val = 0;
-	db.cq_next_cid = cq->cons_index;
-	db.cq_id = cq->cqn;
-	db.arm = solicited;
-
-	/* Make sure that the doorbell record in host memory is
-	 * written before ringing the doorbell via PCI MMIO.
-	 */
-	wmb();
-	writel(db.val, REG_ADDR(cq->dev, cq->arm_db));
-}
-
-static inline void xsc_cq_set_ci(struct xsc_core_cq *cq)
-{
-	struct xsc_core_device *xdev = cq->dev;
-	union xsc_cq_doorbell db;
-
-	db.cq_next_cid = cq->cons_index;
-	db.cq_id = cq->cqn;
-	/* ensure write val visable before doorbell */
-	wmb();
-
-	writel(db.val, REG_ADDR(xdev, cq->ci_db));
-}
-
 int xsc_core_create_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq,
-		       struct xsc_create_cq_mbox_in *in, int inlen);
+		       struct xsc_create_cq_ex_mbox_in *in, int inlen);
+int xsc_create_cq_compat_handler(struct xsc_core_device *dev, struct xsc_create_cq_ex_mbox_in *in,
+				 struct xsc_create_cq_mbox_out *out);
 int xsc_core_destroy_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq);
 int xsc_core_query_cq(struct xsc_core_device *dev, struct xsc_core_cq *cq,
 		      struct xsc_query_cq_mbox_out *out);

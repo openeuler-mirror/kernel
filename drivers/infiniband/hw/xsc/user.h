@@ -11,6 +11,10 @@
 #include <linux/if_ether.h>	/* For ETH_ALEN. */
 #include <rdma/ib_user_ioctl_cmds.h>
 
+#ifndef UVERBS_ID_NS_SHIFT
+#define UVERBS_ID_NS_SHIFT 12
+#endif
+
 enum xsc_ib_devx_methods {
 	XSC_IB_METHOD_DEVX_OTHER  = (1U << UVERBS_ID_NS_SHIFT),
 	XSC_IB_METHOD_DEVX_QUERY_UAR,
@@ -53,6 +57,7 @@ enum {
 	XSC_QP_FLAG_ALLOW_SCATTER_CQE	= 1 << 8,
 	XSC_QP_FLAG_RAWPACKET_TSO       = 1 << 9,
 	XSC_QP_FLAG_RAWPACKET_TX	= 1 << 10,
+	XSC_QP_FLAG_RAWPACKET_SNIFFER	= 1 << 11,
 };
 
 struct xsc_ib_alloc_ucontext_req {
@@ -73,7 +78,7 @@ struct xsc_ib_alloc_ucontext_resp {
 	__u32	max_send_wqebb;
 	__u32	max_recv_wr;
 	__u16	num_ports;
-	__u16	reserved;
+	__u16	device_id;
 	__u64	qpm_tx_db;
 	__u64	qpm_rx_db;
 	__u64	cqm_next_cid_reg;
@@ -273,4 +278,5 @@ struct xsc_ib_query_device_resp {
 	__u32	tunnel_offloads_caps; /* enum xsc_ib_tunnel_offloads */
 	__u32	reserved;
 };
+
 #endif /* XSC_IB_USER_H */

@@ -69,6 +69,7 @@ struct xsc_lag {
 	u32		board_id;
 	int		mode_changes_in_progress;
 	u8		not_roce_lag_xdev_mask;
+	struct	slave_func_data func_data;
 };
 
 struct xsc_lag_event {
@@ -84,6 +85,8 @@ struct xsc_lag_event {
 	enum	lag_slave_status slave_status;
 	u8		is_roce_lag_xdev;
 	u8		not_roce_lag_xdev_mask;
+	struct	slave_func_data roce_pf_func_data;
+	struct	slave_func_data func_data[6];
 };
 
 struct lag_event_list {
@@ -116,6 +119,8 @@ struct xsc_lag *xsc_get_lag(struct xsc_core_device *xdev);
 struct xsc_core_device *xsc_get_roce_lag_xdev(struct xsc_core_device *xdev);
 u16 xsc_get_lag_id(struct xsc_core_device *xdev);
 struct xsc_board_lag *xsc_board_lag_get(struct xsc_core_device *xdev);
+bool xsc_lag_is_kernel(struct xsc_core_device *xdev);
+u16 xsc_lag_set_user_mode(struct xsc_core_device *xdev, u8 mode);
 
 static inline void xsc_board_lag_lock(struct xsc_core_device *xdev)
 {
