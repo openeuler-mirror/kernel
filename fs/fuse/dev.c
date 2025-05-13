@@ -22,6 +22,12 @@
 #include <linux/splice.h>
 #include <linux/sched.h>
 
+#ifdef CONFIG_FUSE_FASTPATH
+#include <linux/preempt.h>
+#include <linux/sched/task.h>
+#include <linux/fast_ipc.h>
+#endif
+
 MODULE_ALIAS_MISCDEV(FUSE_MINOR);
 MODULE_ALIAS("devname:fuse");
 
@@ -102,6 +108,283 @@ static void fuse_drop_waiting(struct fuse_conn *fc)
 }
 
 static void fuse_put_request(struct fuse_req *req);
+
+#ifdef CONFIG_FUSE_FASTPATH
+
+#define MEM_PREFL1_64B(ptr) __builtin_prefetch((ptr), 0, 0)
+#define MEM_PREFL2_64B(ptr) __builtin_prefetch((ptr), 0, 2)
+#define MEM_PREFL1_256B(l1ptr) do { \
+	MEM_PREFL1_64B((l1ptr) + 0 * 64);  \
+	MEM_PREFL1_64B((l1ptr) + 1 * 64);  \
+	MEM_PREFL1_64B((l1ptr) + 2 * 64);  \
+	MEM_PREFL1_64B((l1ptr) + 3 * 64);  \
+} while (0)
+#define MEM_PREFL2_256B(l2ptr) do { \
+	MEM_PREFL2_64B((l2ptr) + 0 * 64);  \
+	MEM_PREFL2_64B((l2ptr) + 1 * 64);  \
+	MEM_PREFL2_64B((l2ptr) + 2 * 64);  \
+	MEM_PREFL2_64B((l2ptr) + 3 * 64);  \
+} while (0)
+#define MEM_PREFL1_128B(l1ptr) do { \
+	MEM_PREFL1_64B((l1ptr) + 0 * 64);  \
+	MEM_PREFL1_64B((l1ptr) + 1 * 64);  \
+} while (0)
+#define MEM_PREFL2_128B(l2ptr) do { \
+	MEM_PREFL2_64B((l2ptr) + 0 * 64);  \
+	MEM_PREFL2_64B((l2ptr) + 1 * 64);  \
+} while (0)
+#define LOAD_64B(reg, src) do { \
+	(reg)[0] = *((src) + 0); \
+	(reg)[1] = *((src) + 1); \
+	(reg)[2] = *((src) + 2); \
+	(reg)[3] = *((src) + 3); \
+} while (0)
+#define STORE_64B(dst, reg) do { \
+	*((dst) + 0) = (reg)[0]; \
+	*((dst) + 1) = (reg)[1]; \
+	*((dst) + 2) = (reg)[2]; \
+	*((dst) + 3) = (reg)[3]; \
+} while (0)
+
+#define MEMCPY_256B(dst, reg, src) do { \
+	LOAD_64B((reg) + 0, (src) + 0); \
+	LOAD_64B((reg) + 4, (src) + 4); \
+	LOAD_64B((reg) + 8, (src) + 8); \
+	LOAD_64B((reg) + 12, (src) + 12); \
+	STORE_64B((dst) + 0, (reg) + 0); \
+	STORE_64B((dst) + 4, (reg) + 4); \
+	STORE_64B((dst) + 8, (reg) + 8); \
+	STORE_64B((dst) + 12, (reg) + 12); \
+} while (0)
+#define MEMCPY_128B(dst, reg, src) do { \
+	LOAD_64B((reg) + 0, (src) + 0); \
+	LOAD_64B((reg) + 4, (src) + 4); \
+	STORE_64B((dst) + 0, (reg) + 0); \
+	STORE_64B((dst) + 4, (reg) + 4); \
+} while (0)
+#define MAX_REG_NUM (16)
+#define MAX_L1_PREF_SIZE (512)
+#define MAX_L2_PREF_SIZE (1024)
+#define MID1_OP_SIZE (128)
+#define MID1_MEM_REG_NUM (128 / 16)
+#define MAX_OP_SIZE (256)
+#define MAX_MEM_REG_NUM (256 / 16)
+#define MID_OP_SIZE (64)
+#define MID_MEM_REG_NUM (64 / 16)
+#define MIN_OP_SIZE (16)
+
+static void *memcpy_acl(void *dest, const void *src, size_t n)
+{
+	__uint128_t *dstp = (__uint128_t *)dest;
+	__uint128_t *srcp = (__uint128_t *)src;
+	__uint128_t regs[MAX_REG_NUM];
+	size_t num = n;
+
+	while (num >= MAX_OP_SIZE) {
+		MEM_PREFL1_256B(((char *)srcp) + MAX_L1_PREF_SIZE);
+		MEM_PREFL2_256B(((char *)srcp) + MAX_L2_PREF_SIZE);
+		MEMCPY_256B(dstp, regs, srcp);
+		num -= MAX_OP_SIZE;
+		dstp += MAX_MEM_REG_NUM;
+		srcp += MAX_MEM_REG_NUM;
+	}
+	while (num >= MID1_OP_SIZE) {
+		MEM_PREFL1_128B(((char *)srcp) + MAX_L1_PREF_SIZE);
+		MEM_PREFL2_128B(((char *)srcp) + MAX_L2_PREF_SIZE);
+		MEMCPY_128B(dstp, regs, srcp);
+		num -= MID1_OP_SIZE;
+		dstp += MID1_MEM_REG_NUM;
+		srcp += MID1_MEM_REG_NUM;
+	}
+	while (num >= MID_OP_SIZE) {
+		LOAD_64B(regs, srcp);
+		STORE_64B(dstp, regs);
+		num -= MID_OP_SIZE;
+		dstp += MID_MEM_REG_NUM;
+		srcp += MID_MEM_REG_NUM;
+	}
+
+	while (num >= MIN_OP_SIZE) {
+		*dstp = *srcp;
+		num -= MIN_OP_SIZE;
+		dstp += 1;
+		srcp += 1;
+	}
+
+	if (num > 0) {
+		char *pdst = (char *)dstp;
+		char *psrc = (char *)srcp;
+
+		while (num > 0) {
+			*pdst = *psrc;
+			num--;
+			pdst++;
+			psrc++;
+		}
+	}
+
+	return dest;
+}
+
+static inline int fuse_req_cred_init(struct fuse_conn *fc, struct fuse_req *req)
+{
+	req->in.h.uid = from_kuid(fc->user_ns, current_fsuid());
+	req->in.h.gid = from_kgid(fc->user_ns, current_fsgid());
+	req->in.h.pid = pid_nr_ns(task_pid(current), fc->pid_ns);
+
+	if (unlikely(req->in.h.uid == ((uid_t)-1) ||
+		     req->in.h.gid == ((gid_t)-1))) {
+		fuse_drop_waiting(fc);
+		return -EOVERFLOW;
+	}
+
+	return 0;
+}
+
+static void fuse_force_creds(struct fuse_req *req);
+
+static struct fuse_req *fuse_get_req_sync(struct fuse_mount *fm,
+		struct fuse_ipc_info *ipc_info, struct fuse_args *args)
+{
+	struct fuse_conn *fc = fm->fc;
+	struct fuse_req *req;
+	int err;
+
+	atomic_inc(&fc->num_waiting);
+	if (!fc->initialized) {
+		err = -EINTR;
+		if (wait_event_killable_exclusive(fc->blocked_waitq, fc->initialized))
+			goto out;
+	}
+	/* Matches smp_wmb() in fuse_set_initialized() */
+	smp_rmb();
+
+	err = -ENOTCONN;
+	if (!fc->connected)
+		goto out;
+
+	err = -ECONNREFUSED;
+	if (fc->conn_error)
+		goto out;
+
+	req = &ipc_info->req;
+	req->fm = fm;
+
+	if (args->force) {
+		if (!args->nocreds)
+			fuse_force_creds(req);
+	} else {
+		err = fuse_req_cred_init(fc, req);
+		if (err)
+			goto out;
+	}
+	return req;
+
+ out:
+	fuse_drop_waiting(fc);
+	return ERR_PTR(err);
+}
+
+u64 fuse_get_unique_from_fc(struct fuse_conn *fc)
+{
+	fc->reqctr += FUSE_REQ_ID_STEP;
+	return fc->reqctr;
+}
+
+static void __fuse_ipc_send(struct fuse_req *req, struct task_struct *tsk,
+		struct fuse_ipc_info *ipc_info)
+{
+	ssize_t ret;
+
+	FUSE_DEBUG("[cpu/%d][%s/%d] fuse ipc  send begin: unique: %d,opcode: %d\n",
+			   smp_processor_id(), current->comm, current->pid,
+			   req->in.h.unique, req->in.h.opcode);
+	ret = fast_ipc_do_call(ipc_info->bind_info, tsk);
+
+	FUSE_DEBUG("[cpu/%d][%s/%d] end\n", smp_processor_id(), current->comm,
+			   current->pid);
+
+	if (ret) {
+		pr_warn("[cpu/%d][%s/%d] fuse_simple_request send failed: ",
+				smp_processor_id(), current->comm, current->pid);
+		pr_warn("unique: %lld, opcode: %d, return value: %ld\n",
+				req->in.h.unique, req->in.h.opcode, ret);
+		req->out.h.error = ret;
+	}
+}
+
+static void fuse_adjust_compat(struct fuse_conn *fc, struct fuse_args *args);
+
+ssize_t fuse_simple_request_fast(struct fuse_mount *fm, struct fuse_args *args)
+{
+	struct fuse_conn *fc = fm->fc;
+	struct fuse_req *req;
+	ssize_t ret;
+	struct fuse_ipc_info *ipc_info;
+	cpumask_t old_mask;
+	cpumask_t new_mask;
+
+	ipc_info = this_cpu_ptr(fc->percpu_ipc_info);
+
+	old_mask = current->cpus_mask;
+	cpumask_clear(&new_mask);
+	cpumask_set_cpu(raw_smp_processor_id(), &new_mask);
+	set_cpus_allowed_ptr(current, &new_mask);
+
+	mutex_lock(&ipc_info->mutex_lock);
+
+	req = fuse_get_req_sync(fm, ipc_info, args);
+	if (IS_ERR(req)) {
+		mutex_unlock(&ipc_info->mutex_lock);
+		return PTR_ERR(req);
+	}
+
+	/* Needs to be done after fuse_get_req() so that fc->minor is valid */
+	fuse_adjust_compat(fc, args);
+
+	req->in.h.opcode = args->opcode;
+	req->in.h.nodeid = args->nodeid;
+	req->args = args;
+	req->in.h.unique = fuse_get_unique_from_fc(req->fm->fc);
+	req->in.h.len = sizeof(struct fuse_in_header) +
+			fuse_len_args(req->args->in_numargs,
+						  (struct fuse_arg *) req->args->in_args);
+
+	if (!args->noreply)
+		__set_bit(FR_ISREPLY, &req->flags);
+
+	__fuse_ipc_send(req, current, ipc_info);
+
+	set_cpus_allowed_ptr(current, &old_mask);
+	ret = req->out.h.error;
+	if (!ret && args->out_argvar) {
+		WARN_ON(args->out_numargs == 0);
+		ret = args->out_args[args->out_numargs - 1].size;
+	}
+	fuse_drop_waiting(fc);
+
+	mutex_unlock(&ipc_info->mutex_lock);
+
+	return ret;
+}
+
+static void fuse_wakeup_server(struct fuse_conn *fc)
+{
+	int cpu;
+
+	if (!fc->percpu_ipc_info)
+		return;
+	for_each_possible_cpu(cpu) {
+		struct fuse_ipc_info *ipc_info;
+
+		ipc_info = per_cpu_ptr(fc->percpu_ipc_info, cpu);
+
+		if (ipc_info && ipc_info->bind_info) {
+			fast_ipc_wakeup_server_task(ipc_info->bind_info);
+		}
+	}
+}
+#endif
 
 static struct fuse_req *fuse_get_req(struct fuse_mount *fm, bool for_background)
 {
@@ -237,6 +520,11 @@ void fuse_queue_forget(struct fuse_conn *fc, struct fuse_forget_link *forget,
 		       u64 nodeid, u64 nlookup)
 {
 	struct fuse_iqueue *fiq = &fc->iq;
+
+#ifdef CONFIG_FUSE_FASTPATH
+	if (fc->no_forget)
+		return;
+#endif
 
 	forget->forget_one.nodeid = nodeid;
 	forget->forget_one.nlookup = nlookup;
@@ -490,6 +778,11 @@ ssize_t fuse_simple_request(struct fuse_mount *fm, struct fuse_args *args)
 	struct fuse_req *req;
 	ssize_t ret;
 
+#ifdef CONFIG_FUSE_FASTPATH
+	if (fc->use_fastpath)
+		return fuse_simple_request_fast(fm, args);
+#endif
+
 	if (args->force) {
 		atomic_inc(&fc->num_waiting);
 		req = fuse_request_alloc(fm, GFP_KERNEL | __GFP_NOFAIL);
@@ -557,6 +850,14 @@ int fuse_simple_background(struct fuse_mount *fm, struct fuse_args *args,
 			    gfp_t gfp_flags)
 {
 	struct fuse_req *req;
+
+#ifdef CONFIG_FUSE_FASTPATH
+	if (fm && fm->fc && fm->fc->use_fastpath && args->opcode != FUSE_INIT) {
+		pr_warn("there is a %s: opcode: %d, nodeid: %lld\n",
+			__func__, args->opcode, args->nodeid);
+		return -EINVAL;
+	}
+#endif
 
 	if (args->force) {
 		WARN_ON(!args->nocreds);
@@ -759,10 +1060,24 @@ static int fuse_copy_do(struct fuse_copy_state *cs, void **val, unsigned *size)
 		void *pgaddr = kmap_atomic(cs->pg);
 		void *buf = pgaddr + cs->offset;
 
+#ifdef CONFIG_FUSE_FASTPATH
+		if (likely(cs->req && cs->req->fm->fc->use_fastpath)) {
+			if (cs->write)
+				memcpy_acl(buf, *val, ncpy);
+			else
+				memcpy_acl(*val, buf, ncpy);
+		} else {
+			if (cs->write)
+				memcpy(buf, *val, ncpy);
+			else
+				memcpy(*val, buf, ncpy);
+		}
+#else
 		if (cs->write)
 			memcpy(buf, *val, ncpy);
 		else
 			memcpy(*val, buf, ncpy);
+#endif
 
 		kunmap_atomic(pgaddr);
 		*val += ncpy;
@@ -2144,6 +2459,10 @@ void fuse_abort_conn(struct fuse_conn *fc)
 		LIST_HEAD(to_end);
 		unsigned int i;
 
+#ifdef CONFIG_FUSE_FASTPATH
+		if (fc->use_fastpath)
+			fuse_wakeup_server(fc);
+#endif
 		/* Background queuing checks fc->connected under bg_lock */
 		spin_lock(&fc->bg_lock);
 		fc->connected = 0;
@@ -2262,6 +2581,422 @@ static int fuse_device_clone(struct fuse_conn *fc, struct file *new)
 	return 0;
 }
 
+#ifdef CONFIG_FUSE_FASTPATH
+static long fuse_ipc_bind(struct fuse_conn *fc, struct task_struct *tsk)
+{
+	struct fuse_ipc_info *ipc_info = this_cpu_ptr(fc->percpu_ipc_info);
+	void *data = NULL;
+
+	mutex_lock(&ipc_info->mutex_lock);
+	if (ipc_info->bind_info) {
+		FUSE_DEBUG("server %s/%d bind already\n", tsk->comm, tsk->pid);
+		mutex_unlock(&ipc_info->mutex_lock);
+		return -EEXIST;
+	}
+
+	data = fast_ipc_bind(tsk);
+	if (IS_ERR(data)) {
+		mutex_unlock(&ipc_info->mutex_lock);
+		return PTR_ERR(data);
+	}
+
+	ipc_info->bind_info = data;
+	mutex_unlock(&ipc_info->mutex_lock);
+
+	FUSE_DEBUG("%s/%d bind to fuse_conn success\n", tsk->comm, tsk->pid);
+	return 0;
+}
+
+static long fuse_ipc_unbind(struct fuse_conn *fc, struct task_struct *tsk)
+{
+	struct fuse_ipc_info *ipc_info = this_cpu_ptr(fc->percpu_ipc_info);
+
+	fast_ipc_unbind(ipc_info->bind_info, tsk);
+	ipc_info->bind_info = NULL;
+
+	FUSE_DEBUG("%s/%d unbind success\n", tsk->comm, tsk->pid);
+	return 0;
+}
+
+static int fuse_read_copy(struct fuse_ipc_info *ipc_info,
+		struct fuse_copy_state *cs, struct fuse_req *req, struct fuse_arg *args,
+		int reqsize, unsigned int argpages, int numargs)
+{
+	unsigned int i;
+	int offset = 0;
+	int err = 0;
+
+	struct fuse_arg *last_arg = &args[numargs - 1];
+	void *data_page = ipc_info->data_page;
+
+	if (reqsize > FUSE_DATA_PAGE_SIZE) {
+		if (argpages) {
+			int size_without_pages = reqsize - last_arg->size;
+
+			if (size_without_pages > FUSE_DATA_PAGE_SIZE) {
+				pr_err("arg size is greater than 4K, have pages\n");
+				return -1;
+			}
+		} else {
+			pr_warn("arg size is greater than 4K, no pages\n");
+			return -1;
+		}
+	}
+
+	memcpy(data_page, &req->in.h, sizeof(req->in.h));
+	offset += sizeof(req->in.h);
+	for (i = 0; i < numargs; i++) {
+		struct fuse_arg *arg = &args[i];
+
+		if (i == numargs - 1 && argpages) {
+			err = fuse_copy_pages(cs, arg->size, 0);
+		} else {
+			memcpy(((char *)data_page + offset), arg->value, arg->size);
+			offset += arg->size;
+		}
+	}
+
+	return 0;
+}
+
+static ssize_t fuse_ipc_do_read(struct fuse_ipc_info *ipc_info,
+		struct fuse_copy_state *cs, size_t nbytes)
+{
+	struct fuse_req *req;
+	struct fuse_args *args;
+	unsigned int reqsize;
+	ssize_t err;
+
+	req = &ipc_info->req;
+	args = req->args;
+	reqsize = req->in.h.len;
+
+	if (nbytes < reqsize) {
+		req->out.h.error = -EIO;
+		if (args->opcode == FUSE_SETXATTR)
+			req->out.h.error = -E2BIG;
+		fuse_request_end(req);
+		return -EINVAL;
+	}
+
+	cs->req = req;
+	err = fuse_read_copy(ipc_info, cs, req, (struct fuse_arg *) args->in_args,
+						 reqsize, args->in_pages, args->in_numargs);
+	fuse_copy_finish(cs);
+	clear_bit(FR_LOCKED, &req->flags);
+	if (err) {
+		req->out.h.error = -EIO;
+		goto out_end;
+	}
+	if (!test_bit(FR_ISREPLY, &req->flags)) {
+		err = reqsize;
+		goto out_end;
+	}
+	FUSE_DEBUG(
+		"[%s] opcode: %d, unique: %d, return reqsize is %d\n",
+		__func__, args->opcode, req->in.h.unique, reqsize);
+	return reqsize;
+
+out_end:
+	fuse_drop_waiting(req->fm->fc);
+	FUSE_DEBUG("[%s] error: %ld\n", __func__, err);
+	return err;
+}
+
+static ssize_t fuse_ipc_read(struct fuse_ipc_info *ipc_info,
+		struct fuse_ipc_io *ipc_in_data)
+{
+	struct iov_iter iter;
+	struct fuse_copy_state cs;
+	struct iovec iov = {.iov_base = ipc_in_data->buf,
+			.iov_len = ipc_in_data->buf_len};
+
+	iov_iter_init(&iter, READ, &iov, 1, iov.iov_len);
+
+	fuse_copy_init(&cs, 1, &iter);
+
+	return fuse_ipc_do_read(ipc_info, &cs, iov_iter_count(&iter));
+}
+
+static long fuse_ipc_wait_call(struct file *file, struct fuse_conn *fc,
+		struct task_struct *tsk, struct fuse_ipc_io *ipc_in_data)
+{
+	long ret = 0;
+	struct fuse_ipc_info *ipc_info = this_cpu_ptr(fc->percpu_ipc_info);
+
+	FUSE_DEBUG("[cpu/%d][%s/%d] wait call slow start\n", smp_processor_id(),
+			   tsk->comm, tsk->pid);
+	ret = fast_ipc_wait_call(ipc_info->bind_info, tsk);
+	if (ret < 0) {
+		pr_err("error[%d/%s]: fast_ipc_wait_call error: %ld\n",
+			smp_processor_id(), tsk->comm, ret);
+		return ret;
+	}
+
+	ret = fuse_ipc_read(ipc_info, ipc_in_data);
+
+	FUSE_DEBUG("[cpu/%d][%s/%d] wait call slow end, ret = %ld\n",
+			   smp_processor_id(), tsk->comm, tsk->pid, ret);
+	return ret;
+}
+
+static ssize_t fuse_ipc_write(struct fuse_ipc_info *ipc_info,
+		struct fuse_ipc_io *ipc_out_data)
+{
+	struct fuse_copy_state cs;
+	struct iovec iovstack[UIO_FASTIOV];
+	struct iovec *iov = iovstack;
+	struct iov_iter iter;
+	ssize_t ret;
+	size_t nbytes;
+	struct fuse_out_header *oh;
+	struct fuse_req *req;
+
+
+	ret = import_iovec(WRITE, ipc_out_data->iov, ipc_out_data->count,
+					   ARRAY_SIZE(iovstack), &iov, &iter);
+	if (ret < 0) {
+		pr_warn("[cpu/%d] [%s/%d] %s: import_iovec failed: %ld\n",
+				smp_processor_id(), current->comm, current->pid, __func__, ret);
+		return ret;
+	}
+
+	fuse_copy_init(&cs, 0, &iter);
+
+	nbytes = iov_iter_count(&iter);
+
+	oh = (struct fuse_out_header *) ipc_info->data_page;
+
+	ret = -EINVAL;
+	if (oh->len != (nbytes + sizeof(struct fuse_out_header))) {
+		pr_warn(
+		"[cpu/%d][%s/%d]failed %s:oh.unique:%lld, oh.len: %d nbytes: %lu\n",
+			smp_processor_id(), current->comm, current->pid, __func__,
+			oh->unique, oh->len, nbytes);
+		goto copy_finish;
+	}
+
+	/*
+	 * Zero oh.unique indicates unsolicited notification message
+	 * and error contains notification code.
+	 */
+	if (!oh->unique) {
+		pr_warn("[cpu/%d] [%s/%d] %s: failed oh.unique is zero\n",
+			    smp_processor_id(), current->comm, current->pid, __func__);
+		goto out;
+	}
+
+	ret = -EINVAL;
+	if (oh->error <= -512 || oh->error > 0) {
+		pr_err("[cpu/%d] [%s/%d] failed %s: oh.error: %d\n",
+				 smp_processor_id(), current->comm,
+				 current->pid, __func__, oh->error);
+		goto copy_finish;
+	}
+
+	ret = -ENOENT;
+	req = &ipc_info->req;
+	FUSE_DEBUG(
+			"[cpu/%d] [%s/%d] %s: req opcode: %d, unique: %d, nodeid: %llu\n",
+			smp_processor_id(), current->comm, current->pid, __func__,
+			req->in.h.opcode, req->in.h.unique, req->in.h.nodeid);
+	if (!req) {
+		FUSE_DEBUG("failed %s: req is null\n", __func__);
+		goto copy_finish;
+	}
+
+	if (oh->unique & FUSE_INT_REQ_BIT) {
+		FUSE_DEBUG("failed %s: interrupt\n", __func__);
+		goto copy_finish;
+	}
+	req->out.h = *oh;
+	cs.req = req;
+	if (!req->args->page_replace)
+		cs.move_pages = 0;
+
+	if (oh->error)
+		ret = (nbytes + sizeof(struct fuse_out_header)) != sizeof(*oh) ?
+			-EINVAL : 0;
+	else
+		ret = copy_out_args(&cs, req->args,
+							nbytes + sizeof(struct fuse_out_header));
+	fuse_copy_finish(&cs);
+
+ out:
+	return ret ? ret : nbytes;
+
+ copy_finish:
+	fuse_copy_finish(&cs);
+	goto out;
+}
+
+static long fuse_ipc_ret_call(struct file *file, struct fuse_conn *fc,
+		struct task_struct *tsk, struct fuse_ipc_io *ipc_out_data)
+{
+	long ret;
+	long num_written;
+	struct fuse_ipc_info *ipc_info = this_cpu_ptr(fc->percpu_ipc_info);
+
+	num_written = fuse_ipc_write(ipc_info, ipc_out_data);
+	FUSE_DEBUG("[cpu/%d] [%s/%d] fuse_ipc_write end\n", smp_processor_id(),
+			   tsk->comm, tsk->pid);
+	if (num_written < 0) {
+		pr_err("[cpu/%d] [%s/%d]fuse_ipc_write failed %ld\n",
+			   smp_processor_id(), tsk->comm, tsk->pid, num_written);
+		return num_written;
+	}
+
+	ret = fast_ipc_ret_call(ipc_info->bind_info, tsk);
+	if (ret) {
+		pr_err("error: fast_ipc_ret_call error: %ld\n", ret);
+		return ret;
+	}
+
+	FUSE_DEBUG("[cpu/%d] [%s/%d] ret call end\n", smp_processor_id(),
+		tsk->comm, tsk->pid);
+	return num_written;
+}
+
+static long fuse_ipc_wait_and_ret_call(struct file *file, struct fuse_conn *fc,
+		struct task_struct *tsk, unsigned long arg)
+{
+	struct fast_ipc_bind_info *bind_info;
+	struct fuse_ipc_io ipc_io_data;
+	long ret = 0;
+	struct fuse_ipc_info *ipc_info = this_cpu_ptr(fc->percpu_ipc_info);
+
+	bind_info = ipc_info->bind_info;
+	if (!bind_info)
+		return -ENOENT;
+
+	if (copy_from_user(&ipc_io_data, (struct fuse_ipc_io __user *)arg,
+					   sizeof(ipc_io_data)))
+		return -EFAULT;
+
+	if (bind_info->is_calling) {
+
+		ret = fuse_ipc_ret_call(file, fc, tsk, &ipc_io_data);
+		if (ret) {
+			FUSE_DEBUG("[cpu/%d] [%s/%d] error: fuse_ipc_ret_call :%d\n",
+					   smp_processor_id(),
+					   current->comm, current->pid, ret);
+			return ret;
+		}
+	}
+
+	return fuse_ipc_wait_call(file, fc, tsk, &ipc_io_data);
+}
+
+static long fuse_ipc_ioctl(struct file *file, unsigned int cmd,
+		unsigned long arg)
+{
+	struct fuse_dev *fud = NULL;
+	struct fuse_conn *fc = NULL;
+	long err = -ENOTTY;
+	struct fuse_ipc_io ipc_io_data;
+
+	fud = fuse_get_dev(file);
+	if (fud == NULL)
+		return -EINVAL;
+
+	fc = fud->fc;
+	if (fc == NULL)
+		return -EINVAL;
+
+	switch (cmd) {
+	case FUSE_DEV_IOC_IPC_BIND:
+		err = fuse_ipc_bind(fc, current);
+		break;
+	case FUSE_DEV_IOC_WAIT_RET_CALL:
+		FUSE_DEBUG("[cpu/%d][%s/%d] fuse ipc wait and ret call begin\n",
+				   smp_processor_id(), current->comm, current->pid);
+		err = fuse_ipc_wait_and_ret_call(file, fc, current, arg);
+		FUSE_DEBUG("[cpu/%d][%s/%d] fuse ipc wait and ret endd: ret:%d\n",
+				   smp_processor_id(), current->comm, current->pid, err);
+		break;
+	case FUSE_DEV_IOC_IPC_UNBIND:
+		err = fuse_ipc_unbind(fc, current);
+		break;
+	case FUSE_DEV_IOC_WAIT_CALL:
+		if (copy_from_user(&ipc_io_data, (struct fuse_ipc_io __user *)arg,
+						   sizeof(ipc_io_data)))
+			return -EFAULT;
+		err = fuse_ipc_wait_call(file, fc, current, &ipc_io_data);
+		break;
+	case FUSE_DEV_IOC_RET_CALL:
+		if (copy_from_user(&ipc_io_data, (struct fuse_ipc_io __user *)arg,
+						   sizeof(ipc_io_data)))
+			return -EFAULT;
+		err = fuse_ipc_ret_call(file, fc, current, &ipc_io_data);
+		break;
+	}
+
+	return err;
+}
+
+void fuse_ipc_free_data_page(struct fuse_ipc_info *ipc_info)
+{
+	void *data_page;
+
+	data_page = ipc_info->data_page;
+	if (data_page) {
+		ipc_info->data_page = NULL;
+		ClearPageReserved(virt_to_page(data_page));
+		free_page((uintptr_t)data_page);
+	}
+}
+
+static int fuse_mmap(struct file *filp, struct vm_area_struct *vma)
+{
+	void *data_page;
+	unsigned long pfn;
+	unsigned long vmsize;
+	struct fuse_dev *fud = NULL;
+	struct fuse_conn *fc = NULL;
+	struct fuse_ipc_info *ipc_info;
+
+	fud = fuse_get_dev(filp);
+	if (fud == NULL)
+		return -EINVAL;
+
+	fc = fud->fc;
+
+	if (fc->percpu_ipc_info == NULL)
+		return -EINVAL;
+
+	ipc_info = this_cpu_ptr(fc->percpu_ipc_info);
+
+	data_page = ipc_info->data_page;
+
+	if (data_page)
+		return -EEXIST;
+	data_page = (void *) get_zeroed_page(GFP_KERNEL);
+	if (!data_page) {
+		pr_err("get zero page failed\n");
+		return -ENOMEM;
+	}
+	SetPageReserved(virt_to_page(data_page));
+	ipc_info->data_page = data_page;
+
+	pfn = virt_to_pfn(data_page);
+	vmsize = vma->vm_end - vma->vm_start;
+	/* allocated memory size should not be less than ipc data page size */
+	if (vmsize < FUSE_DATA_PAGE_SIZE) {
+		fuse_ipc_free_data_page(ipc_info);
+		pr_err("free_data_page");
+		return -ENXIO;
+	}
+	if (remap_pfn_range(vma, vma->vm_start, pfn, vmsize, vma->vm_page_prot)) {
+		fuse_ipc_free_data_page(ipc_info);
+		pr_err("again\n");
+		return -EAGAIN;
+	}
+
+	FUSE_DEBUG("fuse mmap success\n");
+	return 0;
+}
+#endif
+
 static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 			   unsigned long arg)
 {
@@ -2295,7 +3030,11 @@ static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 		}
 		break;
 	default:
+#ifdef CONFIG_FUSE_FASTPATH
+		res = fuse_ipc_ioctl(file, cmd, arg);
+#else
 		res = -ENOTTY;
+#endif
 		break;
 	}
 	return res;
@@ -2314,6 +3053,9 @@ const struct file_operations fuse_dev_operations = {
 	.fasync		= fuse_dev_fasync,
 	.unlocked_ioctl = fuse_dev_ioctl,
 	.compat_ioctl   = compat_ptr_ioctl,
+#ifdef CONFIG_FUSE_FASTPATH
+	.mmap		= fuse_mmap,
+#endif
 };
 EXPORT_SYMBOL_GPL(fuse_dev_operations);
 

@@ -902,9 +902,21 @@ struct fuse_notify_retrieve_in {
 	uint64_t	dummy4;
 };
 
+struct fuse_ipc_io {
+	char __user *buf;
+	uint64_t buf_len;
+	struct iovec *iov;
+	int count;
+};
+
 /* Device ioctls: */
 #define FUSE_DEV_IOC_MAGIC		229
 #define FUSE_DEV_IOC_CLONE		_IOR(FUSE_DEV_IOC_MAGIC, 0, uint32_t)
+#define FUSE_DEV_IOC_IPC_BIND   _IO(FUSE_DEV_IOC_MAGIC, 1)
+#define FUSE_DEV_IOC_WAIT_RET_CALL   _IOR(FUSE_DEV_IOC_MAGIC, 2, struct fuse_ipc_io)
+#define FUSE_DEV_IOC_IPC_UNBIND   _IO(FUSE_DEV_IOC_MAGIC, 4)
+#define FUSE_DEV_IOC_WAIT_CALL  _IOR(FUSE_DEV_IOC_MAGIC, 5, struct fuse_ipc_io)
+#define FUSE_DEV_IOC_RET_CALL   _IOR(FUSE_DEV_IOC_MAGIC, 6, struct fuse_ipc_io)
 
 struct fuse_lseek_in {
 	uint64_t	fh;
