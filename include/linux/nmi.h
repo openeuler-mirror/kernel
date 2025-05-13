@@ -115,6 +115,7 @@ extern void hardlockup_detector_perf_disable(void);
 extern void hardlockup_detector_perf_enable(void);
 extern void hardlockup_detector_perf_cleanup(void);
 extern int hardlockup_detector_perf_init(void);
+extern void hardlockup_detector_perf_adjust_period(int cpu, u64 period);
 #else
 static inline void hardlockup_detector_perf_stop(void) { }
 static inline void hardlockup_detector_perf_restart(void) { }
@@ -126,6 +127,7 @@ static inline int hardlockup_detector_perf_init(void) { return -ENODEV; }
 # else
 static inline int hardlockup_detector_perf_init(void) { return 0; }
 # endif
+static inline void hardlockup_detector_perf_adjust_period(int cpu, u64 period) { }
 #endif
 
 #ifdef CONFIG_CORELOCKUP_DETECTOR
