@@ -6660,6 +6660,7 @@ CONFIG_FILE_MITIGATION_FALSE_SHARING=y
 # end of File systems
 
 CONFIG_RESCTRL=y
+CONFIG_FAST_IPC=m
 
 #
 # Security options
