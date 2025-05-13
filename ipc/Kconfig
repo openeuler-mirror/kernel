@@ -1,0 +1,6 @@
+config FAST_IPC
+    tristate "Fast IPC support"
+    default n
+    depends on ARM64
+    help
+       Fast Inter-process call, used to switch threads quickly.

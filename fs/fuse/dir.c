@@ -221,10 +221,15 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 
 		fm = get_fuse_mount(inode);
 
-		forget = fuse_alloc_forget();
-		ret = -ENOMEM;
-		if (!forget)
-			goto out;
+#ifdef CONFIG_FUSE_FASTPATH
+		if (!fm->fc->no_forget)
+#endif
+		{
+			forget = fuse_alloc_forget();
+			ret = -ENOMEM;
+			if (!forget)
+				goto out;
+		}
 
 		attr_version = fuse_get_attr_version(fm->fc);
 
@@ -244,11 +249,19 @@ static int fuse_dentry_revalidate(struct dentry *entry, unsigned int flags)
 						  outarg.nodeid, 1);
 				goto invalid;
 			}
+#ifdef CONFIG_FUSE_FASTPATH
+			fuse_inc_nlookup(fm->fc, fi);
+#else
 			spin_lock(&fi->lock);
 			fi->nlookup++;
 			spin_unlock(&fi->lock);
+#endif
 		}
-		kfree(forget);
+#ifdef CONFIG_FUSE_FASTPATH
+		if (!fm->fc->no_forget)
+#endif
+			kfree(forget);
+
 		if (ret == -ENOMEM || ret == -EINTR)
 			goto out;
 		if (ret || fuse_invalid_attr(&outarg.attr) ||
@@ -432,11 +445,15 @@ int fuse_lookup_name(struct super_block *sb, u64 nodeid, const struct qstr *name
 	if (name->len > FUSE_NAME_MAX)
 		goto out;
 
-
-	forget = fuse_alloc_forget();
-	err = -ENOMEM;
-	if (!forget)
-		goto out;
+#ifdef CONFIG_FUSE_FASTPATH
+	if (!fm->fc->no_forget)
+#endif
+	{
+		forget = fuse_alloc_forget();
+		err = -ENOMEM;
+		if (!forget)
+			goto out;
+	}
 
 	attr_version = fuse_get_attr_version(fm->fc);
 
@@ -467,7 +484,10 @@ int fuse_lookup_name(struct super_block *sb, u64 nodeid, const struct qstr *name
 	err = 0;
 
  out_put_forget:
-	kfree(forget);
+#ifdef CONFIG_FUSE_FASTPATH
+	if (!fm->fc->no_forget)
+#endif
+		kfree(forget);
  out:
 	return err;
 }
@@ -546,10 +566,15 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 	/* Userspace expects S_IFREG in create mode */
 	BUG_ON((mode & S_IFMT) != S_IFREG);
 
-	forget = fuse_alloc_forget();
-	err = -ENOMEM;
-	if (!forget)
-		goto out_err;
+#ifdef CONFIG_FUSE_FASTPATH
+	if (!fm->fc->no_forget)
+#endif
+	{
+		forget = fuse_alloc_forget();
+		err = -ENOMEM;
+		if (!forget)
+			goto out_err;
+	}
 
 	err = -ENOMEM;
 	ff = fuse_file_alloc(fm);
@@ -604,7 +629,10 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 		err = -ENOMEM;
 		goto out_err;
 	}
-	kfree(forget);
+#ifdef CONFIG_FUSE_FASTPATH
+	if (!fm->fc->no_forget)
+#endif
+		kfree(forget);
 	d_instantiate(entry, inode);
 	fuse_change_entry_timeout(entry, &outentry);
 	fuse_dir_changed(dir);
@@ -621,11 +649,13 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 			invalidate_inode_pages2(inode->i_mapping);
 	}
 	return err;
-
 out_free_ff:
 	fuse_file_free(ff);
 out_put_forget_req:
-	kfree(forget);
+#ifdef CONFIG_FUSE_FASTPATH
+	if (!fm->fc->no_forget)
+#endif
+		kfree(forget);
 out_err:
 	return err;
 }
@@ -693,9 +723,14 @@ static int create_new_entry(struct fuse_mount *fm, struct fuse_args *args,
 	if (fuse_is_bad(dir))
 		return -EIO;
 
-	forget = fuse_alloc_forget();
-	if (!forget)
-		return -ENOMEM;
+#ifdef CONFIG_FUSE_FASTPATH
+	if (!fm->fc->no_forget)
+#endif
+	{
+		forget = fuse_alloc_forget();
+		if (!forget)
+			return -ENOMEM;
+	}
 
 	memset(&outarg, 0, sizeof(outarg));
 	args->nodeid = get_node_id(dir);
@@ -719,7 +754,10 @@ static int create_new_entry(struct fuse_mount *fm, struct fuse_args *args,
 		fuse_queue_forget(fm->fc, forget, outarg.nodeid, 1);
 		return -ENOMEM;
 	}
-	kfree(forget);
+#ifdef CONFIG_FUSE_FASTPATH
+	if (!fm->fc->no_forget)
+#endif
+		kfree(forget);
 
 	d_drop(entry);
 	d = d_splice_alias(inode, entry);
@@ -736,7 +774,10 @@ static int create_new_entry(struct fuse_mount *fm, struct fuse_args *args,
 	return 0;
 
  out_put_forget_req:
-	kfree(forget);
+#ifdef CONFIG_FUSE_FASTPATH
+	if (!fm->fc->no_forget)
+#endif
+		kfree(forget);
 	return err;
 }
 

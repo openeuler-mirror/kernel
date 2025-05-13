@@ -23,6 +23,9 @@
 #include <linux/exportfs.h>
 #include <linux/posix_acl.h>
 #include <linux/pid_namespace.h>
+#ifdef CONFIG_FUSE_FASTPATH
+#include <linux/fast_ipc.h>
+#endif
 
 MODULE_AUTHOR("Miklos Szeredi <miklos@szeredi.hu>");
 MODULE_DESCRIPTION("Filesystem in Userspace");
@@ -370,9 +373,13 @@ retry:
 	}
 done:
 	fi = get_fuse_inode(inode);
+#ifdef CONFIG_FUSE_FASTPATH
+	fuse_inc_nlookup(fc, fi);
+#else
 	spin_lock(&fi->lock);
 	fi->nlookup++;
 	spin_unlock(&fi->lock);
+#endif
 	fuse_change_attributes(inode, attr, attr_valid, attr_version);
 
 	return inode;
@@ -528,6 +535,10 @@ enum {
 	OPT_ALLOW_OTHER,
 	OPT_MAX_READ,
 	OPT_BLKSIZE,
+#ifdef CONFIG_FUSE_FASTPATH
+	OPT_NO_FORGET,
+	OPT_USE_FASTPATH,
+#endif
 	OPT_ERR
 };
 
@@ -542,6 +553,10 @@ static const struct fs_parameter_spec fuse_fs_parameters[] = {
 	fsparam_u32	("max_read",		OPT_MAX_READ),
 	fsparam_u32	("blksize",		OPT_BLKSIZE),
 	fsparam_string	("subtype",		OPT_SUBTYPE),
+#ifdef CONFIG_FUSE_FASTPATH
+	fsparam_flag("no_forget", OPT_NO_FORGET),
+	fsparam_flag("use_fastpath", OPT_USE_FASTPATH),
+#endif
 	{}
 };
 
@@ -624,6 +639,18 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 			return invalfc(fc, "blksize only supported for fuseblk");
 		ctx->blksize = result.uint_32;
 		break;
+
+#ifdef CONFIG_FUSE_FASTPATH
+	case OPT_NO_FORGET:
+		ctx->no_forget = true;
+		pr_info("enable no_forget");
+		break;
+
+	case OPT_USE_FASTPATH:
+		ctx->use_fastpath = true;
+		pr_info("enable use_fastpath");
+		break;
+#endif
 
 	default:
 		return -EINVAL;
@@ -732,11 +759,77 @@ void fuse_conn_init(struct fuse_conn *fc, struct fuse_mount *fm,
 }
 EXPORT_SYMBOL_GPL(fuse_conn_init);
 
+#ifdef CONFIG_FUSE_FASTPATH
+static int fuse_alloc_ipc_info(struct fuse_conn *fc)
+{
+	int cpu;
+
+	fc->percpu_ipc_info = alloc_percpu(struct fuse_ipc_info);
+	if (fc->percpu_ipc_info == NULL)
+		return -ENOMEM;
+
+	for_each_possible_cpu(cpu) {
+		struct fuse_ipc_info *ipc_info;
+
+		ipc_info = per_cpu_ptr(fc->percpu_ipc_info, cpu);
+		ipc_info->bind_info = NULL;
+		ipc_info->ia = NULL;
+		ipc_info->data_page = NULL;
+		mutex_init(&ipc_info->mutex_lock);
+		mutex_init(&ipc_info->ia_mutex_lock);
+	}
+
+	return 0;
+}
+
+static void fuse_free_ipc_info(struct fuse_conn *fc)
+{
+	int cpu;
+
+	if (!fc->percpu_ipc_info)
+		return;
+
+	for_each_possible_cpu(cpu) {
+		struct fuse_ipc_info *ipc_info;
+
+		ipc_info = per_cpu_ptr(fc->percpu_ipc_info, cpu);
+
+		if (ipc_info && ipc_info->bind_info)
+			fast_ipc_release(ipc_info->bind_info);
+
+		if (ipc_info && ipc_info->ia)
+			fuse_io_free(ipc_info->ia);
+
+		fuse_ipc_free_data_page(ipc_info);
+	}
+	free_percpu(fc->percpu_ipc_info);
+}
+
+static void ipc_info_init(struct fuse_conn *fc, bool *ok)
+{
+	int cpu;
+	struct fuse_ipc_info *ipc_info;
+
+	for_each_possible_cpu(cpu) {
+
+		ipc_info = per_cpu_ptr(fc->percpu_ipc_info, cpu);
+		ipc_info->ia = fuse_io_alloc(NULL, fc->max_pages);
+		if (ipc_info->ia == NULL) {
+			*ok = false;
+			break;
+		}
+	}
+}
+#endif
+
 void fuse_conn_put(struct fuse_conn *fc)
 {
 	if (refcount_dec_and_test(&fc->count)) {
 		struct fuse_iqueue *fiq = &fc->iq;
 
+#ifdef CONFIG_FUSE_FASTPATH
+		fuse_free_ipc_info(fc);
+#endif
 		if (IS_ENABLED(CONFIG_FUSE_DAX))
 			fuse_dax_conn_free(fc);
 		if (fiq->ops->release)
@@ -1097,6 +1190,11 @@ static void process_init_reply(struct fuse_mount *fm, struct fuse_args *args,
 	}
 	kfree(ia);
 
+#ifdef CONFIG_FUSE_FASTPATH
+	if (fc->use_fastpath)
+		ipc_info_init(fc, &ok);
+#endif
+
 	if (!ok) {
 		fc->conn_init = 0;
 		fc->conn_error = 1;
@@ -1332,7 +1430,11 @@ int fuse_fill_super_submount(struct super_block *sb,
 	 * its nlookup should not be incremented.  fuse_iget() does
 	 * that, though, so undo it here.
 	 */
+#ifdef CONFIG_FUSE_FASTPATH
+	fuse_dec_nlookup(fm->fc, get_fuse_inode(root));
+#else
 	get_fuse_inode(root)->nlookup--;
+#endif
 	sb->s_d_op = &fuse_dentry_operations;
 	sb->s_root = d_make_root(root);
 	if (!sb->s_root)
@@ -1402,6 +1504,10 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	fc->destroy = ctx->destroy;
 	fc->no_control = ctx->no_control;
 	fc->no_force_umount = ctx->no_force_umount;
+#ifdef CONFIG_FUSE_FASTPATH
+	fc->no_forget = ctx->no_forget;
+	fc->use_fastpath = ctx->use_fastpath;
+#endif
 
 	err = -ENOMEM;
 	root = fuse_get_root_inode(sb, ctx->rootmode);
@@ -1477,6 +1583,14 @@ static int fuse_fill_super(struct super_block *sb, struct fs_context *fsc)
 
 	fuse_conn_init(fc, fm, sb->s_user_ns, &fuse_dev_fiq_ops, NULL);
 	fc->release = fuse_free_conn;
+
+#ifdef CONFIG_FUSE_FASTPATH
+	if (ctx->use_fastpath) {
+		err = fuse_alloc_ipc_info(fc);
+		if (err)
+			goto err_put_conn;
+	}
+#endif
 
 	sb->s_fs_info = fm;
 

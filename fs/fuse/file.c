@@ -331,7 +331,12 @@ void fuse_release_common(struct file *file, bool isdir)
 	 * synchronous RELEASE is allowed (and desirable) in this case
 	 * because the server can be trusted not to screw up.
 	 */
-	fuse_file_put(ff, ff->fm->fc->destroy, isdir);
+#ifdef CONFIG_FUSE_FASTPATH
+	if (ff->fm->fc->use_fastpath)
+		fuse_file_put(ff, true, isdir);
+	else
+#endif
+		fuse_file_put(ff, ff->fm->fc->destroy, isdir);
 }
 
 static int fuse_open(struct inode *inode, struct file *file)
@@ -421,15 +426,15 @@ static struct fuse_writepage_args *fuse_find_writeback(struct fuse_inode *fi,
 
 /*
  * Check if any page in a range is under writeback
- *
- * This is currently done by walking the list of writepage requests
- * for the inode, which can be pretty inefficient.
  */
 static bool fuse_range_is_writeback(struct inode *inode, pgoff_t idx_from,
 				   pgoff_t idx_to)
 {
 	struct fuse_inode *fi = get_fuse_inode(inode);
 	bool found;
+
+	if (RB_EMPTY_ROOT(&fi->writepages))
+		return false;
 
 	spin_lock(&fi->lock);
 	found = fuse_find_writeback(fi, idx_from, idx_to);
@@ -696,8 +701,13 @@ static void fuse_aio_complete(struct fuse_io_priv *io, int err, ssize_t pos)
 	kref_put(&io->refcnt, fuse_io_release);
 }
 
+#ifdef CONFIG_FUSE_FASTPATH
+struct fuse_io_args *fuse_io_alloc(struct fuse_io_priv *io,
+	unsigned int npages)
+#else
 static struct fuse_io_args *fuse_io_alloc(struct fuse_io_priv *io,
 					  unsigned int npages)
+#endif
 {
 	struct fuse_io_args *ia;
 
@@ -714,7 +724,11 @@ static struct fuse_io_args *fuse_io_alloc(struct fuse_io_priv *io,
 	return ia;
 }
 
+#ifdef CONFIG_FUSE_FASTPATH
+void fuse_io_free(struct fuse_io_args *ia)
+#else
 static void fuse_io_free(struct fuse_io_args *ia)
+#endif
 {
 	kfree(ia->ap.pages);
 	kfree(ia);
@@ -1473,6 +1487,195 @@ static int fuse_get_user_pages(struct fuse_args_pages *ap, struct iov_iter *ii,
 	return ret < 0 ? ret : 0;
 }
 
+#ifdef CONFIG_FUSE_FASTPATH
+static ssize_t fuse_send_write_sync(struct fuse_io_args *ia, loff_t pos,
+			       size_t count, fl_owner_t owner, struct kiocb *iocb)
+{
+	struct file *file = iocb->ki_filp;
+	struct fuse_file *ff = file->private_data;
+	struct fuse_mount *fm = ff->fm;
+	struct fuse_write_in *inarg = &ia->write.in;
+	ssize_t err;
+
+	fuse_write_args_fill(ia, ff, pos, count);
+	inarg->flags = fuse_write_flags(iocb);
+	if (owner != NULL) {
+		inarg->write_flags |= FUSE_WRITE_LOCKOWNER;
+		inarg->lock_owner = fuse_lock_owner_id(fm->fc, owner);
+	}
+
+	err = fuse_simple_request(fm, &ia->ap.args);
+	if (!err && ia->write.out.size > count)
+		err = -EIO;
+
+	return err ?: ia->write.out.size;
+}
+
+static ssize_t fuse_send_read_sync(struct fuse_io_args *ia, loff_t pos,
+	size_t count, fl_owner_t owner, struct kiocb *iocb)
+{
+	struct file *file = iocb->ki_filp;
+	struct fuse_file *ff = file->private_data;
+	struct fuse_mount *fm = ff->fm;
+
+	fuse_read_args_fill(ia, file, pos, count, FUSE_READ);
+	if (owner != NULL) {
+		ia->read.in.read_flags |= FUSE_READ_LOCKOWNER;
+		ia->read.in.lock_owner = fuse_lock_owner_id(fm->fc, owner);
+	}
+
+	return fuse_simple_request(fm, &ia->ap.args);
+}
+
+static void fuse_memset_ia(struct fuse_io_args *ia)
+{
+	struct page **pages;
+	struct fuse_page_desc *descs;
+
+	pages = ia->ap.pages;
+	descs = ia->ap.descs;
+	memset(ia, 0, sizeof(*ia));
+	ia->ap.pages = pages;
+	ia->ap.descs = descs;
+}
+
+ssize_t fuse_direct_io_fast(struct kiocb *iocb, struct iov_iter *iter,
+		loff_t *ppos, int flags)
+{
+	int write = flags & FUSE_DIO_WRITE;
+	int cuse = flags & FUSE_DIO_CUSE;
+	struct file *file = iocb->ki_filp;
+	struct inode *inode = file->f_mapping->host;
+	struct fuse_file *ff = file->private_data;
+	struct fuse_conn *fc = ff->fm->fc;
+	size_t nmax = write ? fc->max_write : fc->max_read;
+	loff_t pos = *ppos;
+	size_t count = iov_iter_count(iter);
+	pgoff_t idx_from = pos >> PAGE_SHIFT;
+	pgoff_t idx_to = (pos + count - 1) >> PAGE_SHIFT;
+	ssize_t res = 0;
+	int err = 0;
+	struct fuse_io_args *ia;
+	unsigned int max_pages;
+	bool should_dirty;
+	struct fuse_ipc_info *ipc_info;
+
+	max_pages = iov_iter_npages(iter, fc->max_pages);
+	ipc_info = this_cpu_ptr(fc->percpu_ipc_info);
+	mutex_lock(&ipc_info->ia_mutex_lock);
+	ia = ipc_info->ia;
+	if (!cuse && fuse_range_is_writeback(inode, idx_from, idx_to)) {
+		if (!write)
+			inode_lock(inode);
+		fuse_sync_writes(inode);
+		if (!write)
+			inode_unlock(inode);
+	}
+
+	should_dirty = !write && iter_is_iovec(iter);
+	while (count) {
+		ssize_t nres;
+		fl_owner_t owner = current->files;
+		size_t nbytes = min(count, nmax);
+
+		err = fuse_get_user_pages(&ia->ap, iter, &nbytes, write,
+					  max_pages, fc->use_pages_for_kvec_io);
+		if (err && !nbytes)
+			break;
+
+		if (write) {
+			if (!capable(CAP_FSETID))
+				ia->write.in.write_flags |= FUSE_WRITE_KILL_SUIDGID;
+			nres = fuse_send_write_sync(ia, pos, nbytes, owner, iocb);
+		} else {
+			nres = fuse_send_read_sync(ia, pos, nbytes, owner, iocb);
+		}
+
+		fuse_release_user_pages(&ia->ap, 0, should_dirty);
+
+		if (nres < 0) {
+			iov_iter_revert(iter, nbytes);
+			err = nres;
+			break;
+		}
+		WARN_ON(nres > nbytes);
+
+		count -= nres;
+		res += nres;
+		pos += nres;
+		if (nres != nbytes) {
+			iov_iter_revert(iter, nbytes - nres);
+			break;
+		}
+		if (count) {
+			fuse_memset_ia(ia);
+			max_pages = iov_iter_npages(iter, fc->max_pages);
+		}
+
+	}
+
+	fuse_memset_ia(ia);
+	mutex_unlock(&ipc_info->ia_mutex_lock);
+
+	if (res > 0)
+		*ppos = pos;
+
+	return res > 0 ? res : err;
+}
+
+static ssize_t __fuse_direct_read_fast(struct kiocb *iocb,
+		struct iov_iter *iter,
+		loff_t *ppos)
+{
+	ssize_t res;
+	struct inode *inode = file_inode(iocb->ki_filp);
+
+	res = fuse_direct_io_fast(iocb, iter, ppos, 0);
+
+	fuse_invalidate_atime(inode);
+
+	return res;
+}
+
+static void fuse_do_truncate(struct file *file);
+
+static ssize_t
+fuse_direct_IO_fast(struct kiocb *iocb, struct iov_iter *iter)
+{
+	ssize_t ret = 0;
+	struct file *file = iocb->ki_filp;
+	loff_t pos = 0;
+	struct inode *inode;
+	loff_t i_size;
+	size_t count = iov_iter_count(iter), shortened = 0;
+	loff_t offset = iocb->ki_pos;
+
+	pos = offset;
+	inode = file->f_mapping->host;
+	i_size = i_size_read(inode);
+
+	if ((iov_iter_rw(iter) == READ) && (offset >= i_size))
+		return 0;
+
+	if (iov_iter_rw(iter) == WRITE) {
+		ret = fuse_direct_io_fast(iocb, iter, &pos, FUSE_DIO_WRITE);
+		fuse_invalidate_attr(inode);
+	} else {
+		ret = __fuse_direct_read_fast(iocb, iter, &pos);
+	}
+	iov_iter_reexpand(iter, iov_iter_count(iter) + shortened);
+
+	if (iov_iter_rw(iter) == WRITE) {
+		if (ret > 0)
+			fuse_write_update_size(inode, pos);
+		else if (ret < 0 && offset + count > i_size)
+			fuse_do_truncate(file);
+	}
+
+	return ret;
+}
+#endif
+
 ssize_t fuse_direct_io(struct fuse_io_priv *io, struct iov_iter *iter,
 		       loff_t *ppos, int flags)
 {
@@ -1584,6 +1787,13 @@ static ssize_t fuse_direct_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	if (!is_sync_kiocb(iocb) && iocb->ki_flags & IOCB_DIRECT) {
 		res = fuse_direct_IO(iocb, to);
 	} else {
+#ifdef CONFIG_FUSE_FASTPATH
+		struct inode *inode = file_inode(iocb->ki_filp);
+		struct fuse_conn *fc = get_fuse_conn(inode);
+
+		if (fc->use_fastpath)
+			return __fuse_direct_read_fast(iocb, to, &iocb->ki_pos);
+#endif
 		struct fuse_io_priv io = FUSE_IO_PRIV_SYNC(iocb);
 
 		res = __fuse_direct_read(&io, to, &iocb->ki_pos);
@@ -1605,8 +1815,16 @@ static ssize_t fuse_direct_write_iter(struct kiocb *iocb, struct iov_iter *from)
 		if (!is_sync_kiocb(iocb) && iocb->ki_flags & IOCB_DIRECT) {
 			res = fuse_direct_IO(iocb, from);
 		} else {
-			res = fuse_direct_io(&io, from, &iocb->ki_pos,
-					     FUSE_DIO_WRITE);
+#ifdef CONFIG_FUSE_FASTPATH
+			struct fuse_conn *fc = get_fuse_conn(inode);
+
+			if (fc->use_fastpath)
+				res = fuse_direct_io_fast(iocb, from, &iocb->ki_pos,
+							 FUSE_DIO_WRITE);
+			else
+#endif
+				res = fuse_direct_io(&io, from, &iocb->ki_pos,
+							 FUSE_DIO_WRITE);
 		}
 	}
 	fuse_invalidate_attr(inode);
@@ -3211,6 +3429,11 @@ fuse_direct_IO(struct kiocb *iocb, struct iov_iter *iter)
 	size_t count = iov_iter_count(iter), shortened = 0;
 	loff_t offset = iocb->ki_pos;
 	struct fuse_io_priv *io;
+
+#ifdef CONFIG_FUSE_FASTPATH
+	if (ff->fm->fc->use_fastpath)
+		return fuse_direct_IO_fast(iocb, iter);
+#endif
 
 	pos = offset;
 	inode = file->f_mapping->host;

@@ -515,6 +515,10 @@ struct fuse_fs_context {
 	bool no_force_umount:1;
 	bool legacy_opts_show:1;
 	bool dax:1;
+#ifdef CONFIG_FUSE_FASTPATH
+	bool no_forget:1;
+	bool use_fastpath:1;
+#endif
 	unsigned int max_read;
 	unsigned int blksize;
 	const char *subtype;
@@ -525,6 +529,17 @@ struct fuse_fs_context {
 	/* fuse_dev pointer to fill in, should contain NULL on entry */
 	void **fudptr;
 };
+
+#ifdef CONFIG_FUSE_FASTPATH
+struct fuse_ipc_info {
+	struct fuse_req req;
+	struct fuse_io_args *ia;
+	void *bind_info;
+	struct mutex mutex_lock;
+	struct mutex ia_mutex_lock;
+	void *data_page;
+};
+#endif
 
 /**
  * A Fuse connection.
@@ -815,6 +830,13 @@ struct fuse_conn {
 
 	/** List of filesystems using this connection */
 	struct list_head mounts;
+
+#ifdef CONFIG_FUSE_FASTPATH
+	unsigned int no_forget:1;
+	unsigned int use_fastpath:1;
+	struct fuse_ipc_info __percpu *percpu_ipc_info;
+	u64 reqctr;
+#endif
 
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
@@ -1260,5 +1282,38 @@ void fuse_dax_inode_init(struct inode *inode);
 void fuse_dax_inode_cleanup(struct inode *inode);
 bool fuse_dax_check_alignment(struct fuse_conn *fc, unsigned int map_alignment);
 void fuse_dax_cancel_work(struct fuse_conn *fc);
+
+#ifdef CONFIG_FUSE_FASTPATH
+
+#define FUSE_DEBUG(fmt, args...)
+//#define FUSE_DEBUG(fmt, args...) pr_debug(fmt, ##args)
+
+#define FUSE_DATA_PAGE_SIZE 4096
+
+struct fuse_io_args *fuse_io_alloc(struct fuse_io_priv *io,
+								   unsigned int npages);
+void fuse_io_free(struct fuse_io_args *ia);
+void fuse_ipc_free_data_page(struct fuse_ipc_info *ipc_info);
+
+static inline void fuse_inc_nlookup(struct fuse_conn *fc, struct fuse_inode *fi)
+{
+	if (fc->no_forget)
+		return;
+
+	spin_lock(&fi->lock);
+	fi->nlookup++;
+	spin_unlock(&fi->lock);
+}
+
+static inline void fuse_dec_nlookup(struct fuse_conn *fc, struct fuse_inode *fi)
+{
+	if (fc->no_forget)
+		return;
+
+	spin_lock(&fi->lock);
+	fi->nlookup--;
+	spin_lock(&fi->lock);
+}
+#endif /* CONFIG_FUSE_FASTPATH */
 
 #endif /* _FS_FUSE_I_H */

@@ -52,3 +52,12 @@ config FUSE_DAX
 
 	  If you want to allow mounting a Virtio Filesystem with the "dax"
 	  option, answer Y.
+
+config FUSE_FASTPATH
+	bool "fuse fastpath support"
+	default n
+	depends on FUSE_FS
+	depends on FAST_IPC
+	depends on ARM64
+	help
+      This allows using option "use_fastpath" to accelerate fuse io.
