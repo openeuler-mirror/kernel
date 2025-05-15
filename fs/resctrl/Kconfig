@@ -1,6 +1,6 @@
 config RESCTRL_FS
 	bool "CPU Resource Control Filesystem (resctrl)"
-	depends on ARCH_HAS_CPU_RESCTRL
+	depends on ARCH_HAS_CPU_RESCTRL && ARM_CPU_RESCTRL
 	select KERNFS
 	select PROC_CPU_RESCTRL               if PROC_FS
 	help
