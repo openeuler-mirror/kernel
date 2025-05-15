@@ -136,4 +136,5 @@ obj-$(CONFIG_EROFS_FS)		+= erofs/
 obj-$(CONFIG_VBOXSF_FS)		+= vboxsf/
 obj-$(CONFIG_ZONEFS_FS)		+= zonefs/
 obj-$(CONFIG_RESCTRL_FS)	+= resctrl/
+obj-$(CONFIG_RESCTRL_FS_X86)	+= resctrl_x86/
 obj-$(CONFIG_MFS_FS)		+= mfs/
