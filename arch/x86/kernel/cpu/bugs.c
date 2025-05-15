@@ -109,6 +109,20 @@ EXPORT_SYMBOL_GPL(mds_idle_clear);
 DEFINE_STATIC_KEY_FALSE(mmio_stale_data_clear);
 EXPORT_SYMBOL_GPL(mmio_stale_data_clear);
 
+DEFINE_STATIC_KEY_FALSE(hygon_lmc_key);
+EXPORT_SYMBOL_GPL(hygon_lmc_key);
+
+#if defined(CONFIG_X86_HYGON_LMC_SSE2_ON) || \
+	defined(CONFIG_X86_HYGON_LMC_AVX2_ON)
+static inline void update_lmc_branch_cond(void)
+{
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+		static_branch_enable(&hygon_lmc_key);
+}
+#else
+static inline void update_lmc_branch_cond(void) { }
+#endif
+
 void __init check_bugs(void)
 {
 	identify_boot_cpu();
@@ -162,6 +176,8 @@ void __init check_bugs(void)
 	gds_select_mitigation();
 
 	arch_smt_update();
+
+	update_lmc_branch_cond();
 
 #ifdef CONFIG_X86_32
 	/*

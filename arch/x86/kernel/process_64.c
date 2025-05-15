@@ -61,6 +61,8 @@
 
 #include "process.h"
 
+extern struct static_key_false hygon_lmc_key;
+
 __visible DEFINE_PER_CPU(unsigned long, rsp_scratch);
 
 /* Prints also some state that isn't saved in the pt_regs */
@@ -438,6 +440,9 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 
 	switch_fpu_prepare(prev_fpu, cpu);
 
+	if (static_branch_unlikely(&hygon_lmc_key))
+		switch_kernel_fpu_prepare(prev_p, cpu);
+
 	/* We must save %fs and %gs before load_TLS() because
 	 * %fs and %gs may be cleared by load_TLS().
 	 *
@@ -488,6 +493,9 @@ __switch_to(struct task_struct *prev_p, struct task_struct *next_p)
 			next->gsindex, next->gsbase, GS);
 
 	switch_fpu_finish(next_fpu, cpu);
+
+	if (static_branch_unlikely(&hygon_lmc_key))
+		switch_kernel_fpu_finish(next_p);
 
 	/*
 	 * Switch the PDA and FPU contexts.

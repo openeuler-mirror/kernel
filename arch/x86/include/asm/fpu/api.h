@@ -10,6 +10,7 @@
 
 #ifndef _ASM_X86_FPU_API_H
 #define _ASM_X86_FPU_API_H
+#include <linux/bottom_half.h>
 
 /*
  * Use kernel_fpu_begin/end() if you intend to use FPU in kernel context. It
@@ -21,6 +22,32 @@
 extern void kernel_fpu_begin(void);
 extern void kernel_fpu_end(void);
 extern bool irq_fpu_usable(void);
+
+#if defined(CONFIG_X86_HYGON_LMC_SSE2_ON) || \
+	defined(CONFIG_X86_HYGON_LMC_AVX2_ON)
+extern int kernel_fpu_begin_nonatomic_mask(void);
+extern void kernel_fpu_end_nonatomic(void);
+
+/* Code that is unaware of kernel_fpu_begin_nonatomic_mask() can use this */
+static inline int kernel_fpu_begin_nonatomic(void)
+{
+	return kernel_fpu_begin_nonatomic_mask();
+}
+
+/*
+ * It means we call kernel_fpu_end after kernel_fpu_begin_nonatomic
+ * func, but before kernel_fpu_end_nonatomic
+ */
+static inline void check_using_kernel_fpu(void)
+{
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+		WARN_ON_ONCE(test_thread_flag(TIF_USING_FPU_NONATOMIC));
+}
+
+#else
+static inline void check_using_kernel_fpu(void) { }
+
+#endif
 
 /*
  * Query the presence of one or more xfeatures. Works on any legacy CPU as well.

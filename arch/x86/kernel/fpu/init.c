@@ -138,6 +138,13 @@ static void __init fpu__init_system_generic(void)
 unsigned int fpu_kernel_xstate_size;
 EXPORT_SYMBOL_GPL(fpu_kernel_xstate_size);
 
+#if defined(CONFIG_X86_HYGON_LMC_SSE2_ON) || \
+	defined(CONFIG_X86_HYGON_LMC_AVX2_ON)
+unsigned int fpu_kernel_nonatomic_xstate_size;
+EXPORT_SYMBOL_GPL(fpu_kernel_nonatomic_xstate_size);
+#endif
+
+
 /* Get alignment of the TYPE. */
 #define TYPE_ALIGN(TYPE) offsetof(struct { char x; TYPE test; }, test)
 
@@ -169,6 +176,12 @@ static void __init fpu__init_task_struct_size(void)
 	 * size.
 	 */
 	task_size += fpu_kernel_xstate_size;
+
+#if defined(CONFIG_X86_HYGON_LMC_SSE2_ON) || \
+	defined(CONFIG_X86_HYGON_LMC_AVX2_ON)
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+		task_size += fpu_kernel_nonatomic_xstate_size;
+#endif
 
 	/*
 	 * We dynamically size 'struct fpu', so we require that
