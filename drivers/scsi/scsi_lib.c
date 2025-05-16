@@ -1370,7 +1370,7 @@ void scsi_init_command(struct scsi_device *dev, struct scsi_cmnd *cmd)
 	retries = cmd->retries;
 	/* zero out the cmd, except for the embedded scsi_request */
 	memset((char *)cmd + sizeof(cmd->req), 0,
-		sizeof(*cmd) - sizeof(cmd->req) + dev->host->hostt->cmd_size);
+		sizeof(*cmd) - sizeof(cmd->req));
 
 	cmd->device = dev;
 	cmd->sense_buffer = buf;
@@ -2195,6 +2195,9 @@ static blk_status_t scsi_queue_rq(struct blk_mq_hw_ctx *hctx,
 		goto out_put_budget;
 	if (!scsi_host_queue_ready(q, shost, sdev))
 		goto out_dec_target_busy;
+
+	if (shost->hostt->cmd_size)
+		memset(cmd + 1, 0, shost->hostt->cmd_size);
 
 	if (!(req->rq_flags & RQF_DONTPREP)) {
 		ret = prep_to_mq(scsi_mq_prep_fn(req));
