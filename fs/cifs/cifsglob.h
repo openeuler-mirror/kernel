@@ -271,9 +271,11 @@ struct smb_version_operations {
 	/* negotiate to the server */
 	int (*negotiate)(const unsigned int, struct cifs_ses *);
 	/* set negotiated write size */
-	unsigned int (*negotiate_wsize)(struct cifs_tcon *, struct smb_vol *);
+	unsigned int (*negotiate_wsize)(struct cifs_tcon *tcon,
+					unsigned int vol_wsize);
 	/* set negotiated read size */
-	unsigned int (*negotiate_rsize)(struct cifs_tcon *, struct smb_vol *);
+	unsigned int (*negotiate_rsize)(struct cifs_tcon *tcon,
+					unsigned int vol_rsize);
 	/* setup smb sessionn */
 	int (*sess_setup)(const unsigned int, struct cifs_ses *,
 			  const struct nls_table *);
@@ -916,6 +918,9 @@ compare_mid(__u16 mid, const struct smb_hdr *smb)
 #define CIFS_DEFAULT_IOSIZE (1024 * 1024)
 #define SMB3_DEFAULT_IOSIZE (4 * 1024 * 1024)
 
+/* According to MS-SMB2 specification The minimum recommended value is 65536.*/
+#define CIFS_MIN_DEFAULT_IOSIZE (65536)
+
 /*
  * Windows only supports a max of 60kb reads and 65535 byte writes. Default to
  * those values when posix extensions aren't in force. In actuality here, we
@@ -1174,7 +1179,8 @@ struct cifs_tcon {
 #endif
 	struct list_head pending_opens;	/* list of incomplete opens */
 	struct cached_fid crfid; /* Cached root fid */
-	/* BB add field for back pointer to sb struct(s)? */
+	struct list_head cifs_sb_list;
+	spinlock_t sb_list_lock;
 #ifdef CONFIG_CIFS_DFS_UPCALL
 	char *dfs_path;
 	int remap:2;

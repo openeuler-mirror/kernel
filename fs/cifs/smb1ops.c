@@ -428,15 +428,15 @@ cifs_negotiate(const unsigned int xid, struct cifs_ses *ses)
 }
 
 static unsigned int
-cifs_negotiate_wsize(struct cifs_tcon *tcon, struct smb_vol *volume_info)
+cifs_negotiate_wsize(struct cifs_tcon *tcon, unsigned int vol_wsize)
 {
 	__u64 unix_cap = le64_to_cpu(tcon->fsUnixInfo.Capability);
 	struct TCP_Server_Info *server = tcon->ses->server;
 	unsigned int wsize;
 
 	/* start with specified wsize, or default */
-	if (volume_info->wsize)
-		wsize = volume_info->wsize;
+	if (vol_wsize)
+		wsize = vol_wsize;
 	else if (tcon->unix_ext && (unix_cap & CIFS_UNIX_LARGE_WRITE_CAP))
 		wsize = CIFS_DEFAULT_IOSIZE;
 	else
@@ -463,7 +463,7 @@ cifs_negotiate_wsize(struct cifs_tcon *tcon, struct smb_vol *volume_info)
 }
 
 static unsigned int
-cifs_negotiate_rsize(struct cifs_tcon *tcon, struct smb_vol *volume_info)
+cifs_negotiate_rsize(struct cifs_tcon *tcon, unsigned int vol_rsize)
 {
 	__u64 unix_cap = le64_to_cpu(tcon->fsUnixInfo.Capability);
 	struct TCP_Server_Info *server = tcon->ses->server;
@@ -488,7 +488,7 @@ cifs_negotiate_rsize(struct cifs_tcon *tcon, struct smb_vol *volume_info)
 	else
 		defsize = server->maxBuf - sizeof(READ_RSP);
 
-	rsize = volume_info->rsize ? volume_info->rsize : defsize;
+	rsize = vol_rsize ? vol_rsize : defsize;
 
 	/*
 	 * no CAP_LARGE_READ_X? Then MS-CIFS states that we must limit this to
