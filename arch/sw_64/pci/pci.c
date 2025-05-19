@@ -178,11 +178,6 @@ sys_pciconfig_iobase(long which, unsigned long bus, unsigned long dfn)
 	return -EOPNOTSUPP;
 }
 
-void pci_iounmap(struct pci_dev *dev, void __iomem *addr)
-{
-}
-EXPORT_SYMBOL(pci_iounmap);
-
 void __init reserve_mem_for_pci(void)
 {
 	int ret;
