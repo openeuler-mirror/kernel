@@ -85,7 +85,7 @@
 /* CPU types for specific tunings: */
 #define X86_FEATURE_K8			( 3*32+ 4) /* "" Opteron, Athlon64 */
 /* FREE, was #define X86_FEATURE_K7			( 3*32+ 5) "" Athlon */
-/* Free                                 ( 3*32+ 6) */
+#define X86_FEATURE_ZEN6		( 3*32+ 6) /* CPU based on Zen6 microarchitecture */
 /* Free                                 ( 3*32+ 7) */
 #define X86_FEATURE_CONSTANT_TSC	( 3*32+ 8) /* TSC ticks at a constant rate */
 #define X86_FEATURE_UP			( 3*32+ 9) /* SMP kernel running on UP */
