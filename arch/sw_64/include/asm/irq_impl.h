@@ -24,12 +24,9 @@
 
 enum sw64_irq_type {
 	INT_IPI		= 1,
- #if defined(CONFIG_SUBARCH_C3B)
-	INT_PC0		= 2,
-	INT_PC1		= 3,
-#elif defined(CONFIG_SUBARCH_C4)
-	INT_PC		= 2,
-#endif
+	INT_PC		= 2,	/* C4 PMI */
+	INT_PC0		= 2,	/* C3 PMI 0 */
+	INT_PC1		= 3,	/* C3 PMI 1 */
 	INT_INTx	= 5,
 	INT_MSI		= 6,
 	INT_MT		= 7,
@@ -37,6 +34,7 @@ enum sw64_irq_type {
 	INT_FAULT	= 10,
 	INT_VT_SERIAL	= 12,
 	INT_VT_HOTPLUG	= 13,
+	INT_VT_GPIOA_PIN0 = 15,
 	INT_DEV		= 17,
 	INT_NMI		= 18,
 	INT_LEGACY	= 31,
@@ -46,7 +44,7 @@ extern struct irqaction timer_irqaction;
 extern void init_rtc_irq(irq_handler_t handler);
 extern void handle_irq(int irq);
 extern void handle_ipi(struct pt_regs *regs);
-extern void __init sw64_init_irq(void);
+extern void __init sunway_init_pci_intx(void);
 extern irqreturn_t timer_interrupt(int irq, void *dev);
 
 #endif /* _ASM_SW64_IRQ_IMPL_H */

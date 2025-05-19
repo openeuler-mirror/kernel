@@ -515,6 +515,18 @@ static int __hw_perf_event_init(struct perf_event *event)
 
 	if (!is_sampling_event(event))
 		pr_debug("not sampling event\n");
+	else {
+		switch (hwc->config) {
+		case SW64_L1I_CACHE:
+		case SW64_L1I_CACHE_MISSES:
+		case SW64_PMU_INSTRUCTIONS:
+		case SW64_PMU_BRANCH:
+		case SW64_PMU_BRANCH_MISSES:
+			return -EOPNOTSUPP;
+		default:
+			break;
+		}
+	}
 
 	event->destroy = hw_perf_event_destroy;
 
@@ -542,13 +554,6 @@ static int sw64_pmu_event_init(struct perf_event *event)
 	/* does not support taken branch sampling */
 	if (has_branch_stack(event))
 		return -EOPNOTSUPP;
-
-	/*
-	 * SW64 does not have per-counter usr/os/guest/host bits
-	 */
-	if (attr->exclude_hv || attr->exclude_idle ||
-			attr->exclude_host || attr->exclude_guest)
-		return -EINVAL;
 
 	/*
 	 * SW64 does not support precise ip feature, and system hang when
@@ -581,11 +586,16 @@ static int sw64_pmu_event_init(struct perf_event *event)
 	if (config < 0)
 		return config;
 
+	/*
+	 * SW64 does not have per-counter usr/os/guest/host bits
+	 */
+	if (attr->exclude_hv || attr->exclude_idle ||
+			attr->exclude_host || attr->exclude_guest)
+		return -EINVAL;
+
 	hwc->config = config;
 	/* Do the real initialisation work. */
-	__hw_perf_event_init(event);
-
-	return 0;
+	return __hw_perf_event_init(event);
 }
 
 static struct pmu pmu = {
@@ -632,6 +642,7 @@ static void sw64_perf_event_irq_handler(unsigned long perfmon_num,
 	int idx;
 	u64 val;
 
+	__this_cpu_inc(irq_pmi_count);
 	cpuc = this_cpu_ptr(&cpu_hw_events);
 
 	for (idx = 0; idx < sw64_pmu->num_pmcs; ++idx) {
@@ -660,8 +671,6 @@ static void sw64_perf_event_irq_handler(unsigned long perfmon_num,
 		if (perf_event_overflow(event, &data, regs))
 			sw64_pmu_stop(event, 0);
 	}
-
-
 }
 
 /*
@@ -669,12 +678,18 @@ static void sw64_perf_event_irq_handler(unsigned long perfmon_num,
  */
 int __init init_hw_perf_events(void)
 {
+	pr_info("Performance Events: ");
 	if (!supported_cpu()) {
 		pr_info("Performance events: Unsupported CPU type!\n");
 		return 0;
 	}
 
-	pr_info("Performance events: Supported CPU type!\n");
+	if (is_in_guest()) {
+		pr_cont("No PMU driver, software events only.\n");
+		return 0;
+	}
+
+	pr_cont("Supported CPU type!\n");
 
 	/* Override performance counter IRQ vector */
 

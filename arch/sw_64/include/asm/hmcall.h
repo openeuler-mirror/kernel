@@ -44,6 +44,9 @@
 #define HMC_sendii		0x3E
 #define HMC_rti			0x3F
 
+/* 0x40  - 0x7F : Hypervisor Level HMC routine */
+#define HMC_rti_nmi             0x40
+#define HMC_setup_nmi           0x41
 
 /* 0x80  - 0xBF : User Level HMC routine */
 #include <uapi/asm/hmcall.h>
@@ -51,6 +54,7 @@
 /* Following will be deprecated from user level invocation */
 #define HMC_rwreg		0x87
 #define HMC_sz_uflush		0xA8
+#define HMC_uwhami		0xA0
 #define HMC_longtime		0xB1
 
 #ifdef __KERNEL__
@@ -159,6 +163,7 @@ __CALL_HMC_VOID(wrktp);
 
 __CALL_HMC_R0(rdps, unsigned long);
 __CALL_HMC_R0(rvpcr, unsigned long);
+__CALL_HMC_R0(uwhami, unsigned long);
 
 __CALL_HMC_R0(rdusp, unsigned long);
 __CALL_HMC_W1(wrusp, unsigned long);
@@ -185,6 +190,7 @@ __CALL_HMC_RW1(rdio64, unsigned long, unsigned long);
 __CALL_HMC_RW1(rdio32, unsigned int, unsigned long);
 __CALL_HMC_W2(wrent, void*, unsigned long);
 __CALL_HMC_W2(tbisasid, unsigned long, unsigned long);
+__CALL_HMC_W2(setup_nmi, unsigned long, unsigned long);
 __CALL_HMC_W1(wrkgp, unsigned long);
 __CALL_HMC_RW2(wrperfmon, unsigned long, unsigned long, unsigned long);
 __CALL_HMC_RW3(sendii, unsigned long, unsigned long, unsigned long, unsigned long);
@@ -243,6 +249,9 @@ static inline void wrap_asid(unsigned long asid, unsigned long ptbr)
 }
 #define save_ktp()     wrktp()
 #endif
+
+#define set_nmi(irq)	setup_nmi(1, (irq))
+#define clear_nmi(irq)	setup_nmi(0, (irq))
 
 #endif /* !__ASSEMBLY__ */
 #endif /* __KERNEL__ */

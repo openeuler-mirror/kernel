@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0
-#include <linux/module.h>
 #include <linux/irq.h>
 #include <linux/msi.h>
 #include <asm/sw64io.h>
@@ -19,16 +18,3 @@ void sw64_irq_noop(struct irq_data *d)
 void arch_teardown_msi_irq(unsigned int irq)
 {
 }
-
-static int __init msi_init(void)
-{
-	return 0;
-}
-
-static void __exit msi_exit(void)
-{
-}
-
-module_init(msi_init);
-module_exit(msi_exit);
-MODULE_LICENSE("GPL v2");

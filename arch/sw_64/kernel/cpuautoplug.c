@@ -492,15 +492,4 @@ static int __init cpuautoplug_init(void)
 
 	return ret;
 }
-
-static void __exit cpuautoplug_exit(void)
-{
-	cancel_delayed_work_sync(&ap_info.work);
-	platform_driver_unregister(&platform_driver);
-	sysfs_remove_group(&cpu_subsys.dev_root->kobj, &cpuclass_attr_group);
-}
-
 late_initcall(cpuautoplug_init);
-module_exit(cpuautoplug_exit);
-
-MODULE_DESCRIPTION("cpuautoplug driver for SW64");

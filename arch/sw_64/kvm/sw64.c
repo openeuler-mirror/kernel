@@ -15,6 +15,7 @@
 #include <asm/barrier.h>
 #include <asm/core.h>
 #include <asm/pci_impl.h>
+#include <asm/cpu.h>
 
 #define CREATE_TRACE_POINTS
 #include "trace.h"
@@ -35,6 +36,21 @@ static unsigned long get_new_vpn_context(struct kvm_vcpu *vcpu, long cpu)
 	}
 	last_vpn(cpu) = next;
 	return next;
+}
+
+int kvm_arch_set_irq_inatomic(struct kvm_kernel_irq_routing_entry *e,
+		struct kvm *kvm, int irq_source_id,
+		int level, bool line_status)
+{
+	switch (e->type) {
+	case KVM_IRQ_ROUTING_MSI:
+		if (!kvm_set_msi(e, kvm, irq_source_id, level, line_status))
+			return 0;
+		break;
+	default:
+		break;
+	}
+	return -EWOULDBLOCK;
 }
 
 int vcpu_interrupt_line(struct kvm_vcpu *vcpu, int number, bool level)
@@ -164,6 +180,12 @@ struct dfx_kvm_stats_debugfs_item dfx_debugfs_entries[] = {
 
 int kvm_arch_vcpu_runnable(struct kvm_vcpu *vcpu)
 {
+	if (vcpu->arch.restart)
+		return 1;
+
+	if (vcpu->arch.vcb.vcpu_irq_disabled)
+		return 0;
+
 	return ((!bitmap_empty(vcpu->arch.irqs_pending, SWVM_IRQS) || !vcpu->arch.halted)
 			&& !vcpu->arch.power_off);
 }
@@ -205,6 +227,8 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_IRQCHIP:
 	case KVM_CAP_IOEVENTFD:
 	case KVM_CAP_SYNC_MMU:
+	case KVM_CAP_READONLY_MEM:
+	case KVM_CAP_SET_GUEST_DEBUG:
 		r = 1;
 		break;
 	case KVM_CAP_NR_VCPUS:
@@ -582,8 +606,7 @@ vm_fault_t kvm_arch_vcpu_fault(struct kvm_vcpu *vcpu, struct vm_fault *vmf)
 void kvm_arch_flush_remote_tlbs_memslot(struct kvm *kvm,
 					struct kvm_memory_slot *memslot)
 {
-	/* Let implementation handle TLB/GVA invalidation */
-	kvm_arch_flush_shadow_memslot(kvm, memslot);
+	kvm_flush_remote_tlbs(kvm);
 }
 
 int kvm_dev_ioctl_check_extension(long ext)

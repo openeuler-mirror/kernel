@@ -41,7 +41,7 @@
 
 static bool memslot_is_logging(struct kvm_memory_slot *memslot)
 {
-	return memslot->dirty_bitmap && !(memslot->flags & KVM_MEM_READONLY);
+	return memslot->dirty_bitmap && (memslot->flags & KVM_MEM_LOG_DIRTY_PAGES);
 }
 
 /*
@@ -66,21 +66,35 @@ enum {
  *
  * Function clears a PMD entry, flushes TLBs.
  */
-static void apt_dissolve_pmd(struct kvm *kvm, phys_addr_t addr, pmd_t *pmd)
+static void apt_dissolve_pmd(struct kvm *kvm, pmd_t *pmd)
 {
-	int i;
-
 	if (!pmd_trans_huge(*pmd))
 		return;
 
-	if (pmd_cont(*pmd)) {
-		for (i = 0; i < CONT_PMDS; i++, pmd++)
-			pmd_clear(pmd);
-	} else
+	pmd_clear(pmd);
+	kvm_flush_remote_tlbs(kvm);
+	put_page(virt_to_page(pmd));
+}
+
+/**
+ * apt_dissolve_cont_pmd() - clear and flush huge cont PMD entry
+ * @kvm:	pointer to kvm structure.
+ * @addr:	IPA
+ * @pmd:	pmd pointer for IPA
+ *
+ * Function clears a cont PMD entry, flushes TLBs.
+ */
+static void apt_dissolve_cont_pmd(struct kvm *kvm, pmd_t *pmd)
+{
+	int i;
+	pmd_t *start_pmd;
+
+	start_pmd = pmd;
+	for (i = 0; i < CONT_PMDS; i++, pmd++)
 		pmd_clear(pmd);
 
 	kvm_flush_remote_tlbs(kvm);
-	put_page(virt_to_page(pmd));
+	put_page(virt_to_page(start_pmd));
 }
 
 /**
@@ -91,7 +105,7 @@ static void apt_dissolve_pmd(struct kvm *kvm, phys_addr_t addr, pmd_t *pmd)
  *
  * Function clears a PUD entry, flushes TLBs.
  */
-static void apt_dissolve_pud(struct kvm *kvm, phys_addr_t addr, pud_t *pudp)
+static void apt_dissolve_pud(struct kvm *kvm, pud_t *pudp)
 {
 	if (!pud_huge(*pudp))
 		return;
@@ -142,8 +156,10 @@ static void unmap_apt_pmds(struct kvm *kvm, pud_t *pud,
 		if (!pmd_none(*pmd)) {
 			if (pmd_trans_huge(*pmd)) {
 				if (pmd_cont(*pmd)) {
-					for (i = 0; i < CONT_PMDS; i++, pmd++)
-						pmd_clear(pmd);
+					for (i = 0; i < CONT_PMDS; i++)
+						pmd_clear(pmd + i);
+					pmd += CONT_PMDS - 1;
+					next += CONT_PMD_SIZE - PMD_SIZE;
 				} else
 					pmd_clear(pmd);
 				/* Do we need flush tlb???? edited by lff */
@@ -797,7 +813,7 @@ dissolve:
 	 * on to allocate page.
 	 */
 	if (logging_active)
-		apt_dissolve_pud(kvm, addr, pud);
+		apt_dissolve_pud(kvm, pud);
 
 find_pud:
 	if (pud_none(*pud)) {
@@ -821,8 +837,13 @@ find_pud:
 	 * While dirty page logging - dissolve huge PMD, then continue on to
 	 * allocate page.
 	 */
-	if (logging_active)
-		apt_dissolve_pmd(kvm, addr, pmd);
+	if (logging_active) {
+		if (pmd_cont(*pmd))
+			apt_dissolve_cont_pmd(kvm,
+					pmd_offset(pud, addr & CONT_PMD_MASK));
+		else
+			apt_dissolve_pmd(kvm, pmd);
+	}
 
 find_pmd:
 	/* Create stage-2 page mappings - Level 2 */
@@ -886,7 +907,7 @@ static int apt_set_pte(struct kvm *kvm, struct kvm_mmu_memory_cache *cache,
 	 * on to allocate page.
 	 */
 	if (logging_active)
-		apt_dissolve_pud(kvm, addr, pud);
+		apt_dissolve_pud(kvm, pud);
 
 	if (pud_none(*pud)) {
 		if (!cache)
@@ -909,8 +930,13 @@ static int apt_set_pte(struct kvm *kvm, struct kvm_mmu_memory_cache *cache,
 	 * While dirty page logging - dissolve huge PMD, then continue on to
 	 * allocate page.
 	 */
-	if (logging_active)
-		apt_dissolve_pmd(kvm, addr, pmd);
+	if (logging_active) {
+		if (pmd_cont(*pmd))
+			apt_dissolve_cont_pmd(kvm,
+					pmd_offset(pud, addr & CONT_PMD_MASK));
+		else
+			apt_dissolve_pmd(kvm, pmd);
+	}
 
 	/* Create stage-2 page mappings - Level 2 */
 	if (pmd_none(*pmd)) {
@@ -948,11 +974,12 @@ static int apt_set_pte(struct kvm *kvm, struct kvm_mmu_memory_cache *cache,
 
 
 
-static int apt_set_pmd_huge(struct kvm *kvm, struct kvm_mmu_memory_cache
-					*cache, phys_addr_t addr, const pmd_t *new_pmd, unsigned long sz)
+static int apt_set_pmd_huge(struct kvm *kvm, struct kvm_mmu_memory_cache *cache,
+			    phys_addr_t addr, pmd_t *new_pmd, unsigned long sz)
 {
 	pmd_t *pmd, old_pmd, *ori_pmd;
 	int i;
+	unsigned long dpfn;
 retry:
 	pmd = apt_get_pmd(kvm, cache, addr, sz);
 	VM_BUG_ON(!pmd);
@@ -1015,8 +1042,11 @@ retry:
 
 	/* Do we need WRITE_ONCE(pmd, new_pmd)? */
 	if (sz == CONT_PMD_SIZE) {
-		for (i = 0; i < CONT_PMDS; i++, ori_pmd++)
+		dpfn = 1UL << (_PFN_SHIFT + PMD_SHIFT - PAGE_SHIFT);
+		for (i = 0; i < CONT_PMDS; i++, ori_pmd++) {
 			set_pmd(ori_pmd, *new_pmd);
+			new_pmd->pmd += dpfn;
+		}
 	} else
 		set_pmd(pmd, *new_pmd);
 	return 0;
@@ -1170,16 +1200,18 @@ static int user_mem_abort(struct kvm_vcpu *vcpu,
 	mmu_seq = vcpu->kvm->mmu_notifier_seq;
 	/*
 	 * Ensure the read of mmu_notifier_seq happens before we call
-	 * gfn_to_pfn_prot (which calls get_user_pages), so that we don't risk
-	 * the page we just got a reference to gets unmapped before we have a
-	 * chance to grab the mmu_lock, which ensure that if the page gets
-	 * unmapped afterwards, the call to kvm_unmap_hva will take it away
+	 * __gfn_to_pfn_memslot (which calls get_user_pages), so that we don't
+	 * risk the page we just got a reference to gets unmapped before we have
+	 * a chance to grab the mmu_lock, which ensure that if the page gets
+	 * unmapped afterwards, the call to kvm_unmap_gfn will take it away
 	 * from us again properly. This smp_rmb() interacts with the smp_wmb()
 	 * in kvm_mmu_notifier_invalidate_<page|range_end>.
 	 */
 	smp_rmb();
 
-	pfn = gfn_to_pfn_prot(kvm, gfn, write_fault, &writable);
+	pfn = __gfn_to_pfn_memslot(memslot, gfn, false, NULL,
+				   write_fault, &writable, NULL);
+
 	if (pfn == KVM_PFN_ERR_HWPOISON) {
 		kvm_send_hwpoison_signal(hva, vma);
 		return 0;
@@ -1280,7 +1312,7 @@ static int user_mem_abort(struct kvm_vcpu *vcpu,
 		if (writable) {
 			new_pte = kvm_pte_mkwrite(new_pte);
 			kvm_set_pfn_dirty(pfn);
-			mark_page_dirty(kvm, gfn);
+			mark_page_dirty_in_slot(kvm, memslot, gfn);
 		}
 
 		if (exec_fault && fault_status == AF_STATUS_INV) {
@@ -1350,7 +1382,8 @@ int kvm_handle_guest_abort(struct kvm_vcpu *vcpu, struct kvm_run *run,
 	 * needs emulation.
 	 */
 
-	if (hva == KVM_HVA_ERR_BAD) {
+	if (hva == KVM_HVA_ERR_BAD || (write_fault && !writable)) {
+		hargs->arg1 = fault_gpa | (hargs->arg1 & 0x1fffUL);
 		ret = io_mem_abort(vcpu, run, hargs);
 		goto out_unlock;
 	}
@@ -1365,71 +1398,38 @@ out_unlock:
 	return ret;
 }
 #endif
-static int handle_hva_to_gpa(struct kvm *kvm, unsigned long start, unsigned long end,
-		int (*handler)(struct kvm *kvm, gpa_t gpa, u64 size, void *data),
-		void *data)
-{
-	struct kvm_memslots *slots;
-	struct kvm_memory_slot *memslot;
-	int ret = 0;
 
-	slots = kvm_memslots(kvm);
-
-	/* we only care about the pages that the guest sees */
-	kvm_for_each_memslot(memslot, slots) {
-		unsigned long hva_start, hva_end;
-		gfn_t gpa;
-
-		hva_start = max(start, memslot->userspace_addr);
-		hva_end = min(end, memslot->userspace_addr +
-				(memslot->npages << PAGE_SHIFT));
-		if (hva_start >= hva_end)
-			continue;
-
-		gpa = hva_to_gfn_memslot(hva_start, memslot) << PAGE_SHIFT;
-		ret |= handler(kvm, gpa, (u64)(hva_end - hva_start), data);
-	}
-
-	return ret;
-}
-
-static int kvm_unmap_hva_handler(struct kvm *kvm, gpa_t gpa, u64 size, void *data)
-{
-	unmap_apt_range(kvm, gpa, size);
-	return 0;
-}
-
-int kvm_unmap_hva_range(struct kvm *kvm,
-		unsigned long start, unsigned long end, bool blockable)
+bool kvm_unmap_gfn_range(struct kvm *kvm, struct kvm_gfn_range *range)
 {
 	if (!kvm->arch.pgd)
-		return 0;
+		return false;
 
-	trace_kvm_unmap_hva_range(start, end);
-	handle_hva_to_gpa(kvm, start, end, &kvm_unmap_hva_handler, NULL);
-	return 1;
+	unmap_apt_range(kvm, range->start << PAGE_SHIFT,
+			(range->end - range->start) << PAGE_SHIFT);
+
+	return false;
 }
 
-static int apt_ptep_test_and_clear_young(pte_t *pte)
+static bool apt_ptep_test_and_clear_young(pte_t *pte)
 {
 	if (pte_young(*pte)) {
 		*pte = pte_mkold(*pte);
-		return 1;
+		return true;
 	}
-	return 0;
+	return false;
 }
 
-static int apt_pmdp_test_and_clear_young(pmd_t *pmd)
+static bool apt_pmdp_test_and_clear_young(pmd_t *pmd)
 {
 	return apt_ptep_test_and_clear_young((pte_t *)pmd);
 }
 
-static int apt_pudp_test_and_clear_young(pud_t *pud)
+static bool apt_pudp_test_and_clear_young(pud_t *pud)
 {
 	return apt_ptep_test_and_clear_young((pte_t *)pud);
 }
 
-static int kvm_age_hva_handler(struct kvm *kvm, gpa_t gpa, u64 size, void *data)
+static bool kvm_apt_test_clear_young(struct kvm *kvm, gpa_t gpa, u64 size, void *data)
 {
 	pud_t *pud;
 	pmd_t *pmd;
@@ -1437,7 +1437,7 @@ static int kvm_age_hva_handler(struct kvm *kvm, gpa_t gpa, u64 size, void *data)
 
 	WARN_ON(size != PAGE_SIZE && size != PMD_SIZE && size != PUD_SIZE);
 	if (!apt_get_leaf_entry(kvm, gpa, &pud, &pmd, &pte))
-		return 0;
+		return false;
 
 	if (pud)
 		return apt_pudp_test_and_clear_young(pud);
@@ -1447,63 +1447,42 @@ static int kvm_age_hva_handler(struct kvm *kvm, gpa_t gpa, u64 size, void *data)
 		return apt_ptep_test_and_clear_young(pte);
 }
 
-static int kvm_test_age_hva_handler(struct kvm *kvm, gpa_t gpa, u64 size, void *data)
+bool kvm_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 {
-	pud_t *pud;
-	pmd_t *pmd;
-	pte_t *pte;
-
-	WARN_ON(size != PAGE_SIZE && size != PMD_SIZE && size != PUD_SIZE);
-	if (!apt_get_leaf_entry(kvm, gpa, &pud, &pmd, &pte))
-		return 0;
-
-	if (pud)
-		return apt_pudp_test_and_clear_young(pud);
-	else if (pmd)
-		return apt_pmdp_test_and_clear_young(pmd);
-	else
-		return apt_ptep_test_and_clear_young(pte);
-}
-
-int kvm_age_hva(struct kvm *kvm, unsigned long start, unsigned long end)
-{
-	if (!kvm->arch.pgd)
-		return 0;
-	trace_kvm_age_hva(start, end);
-	return handle_hva_to_gpa(kvm, start, end, kvm_age_hva_handler, NULL);
-}
-
-int kvm_test_age_hva(struct kvm *kvm, unsigned long hva)
-{
-	if (!kvm->arch.pgd)
-		return 0;
-	trace_kvm_test_age_hva(hva);
-	return handle_hva_to_gpa(kvm, hva, hva, kvm_test_age_hva_handler, NULL);
-}
-
-static int kvm_set_apte_handler(struct kvm *kvm, gpa_t gpa, u64 size, void *data)
-{
-	pte_t *pte = (pte_t *)data;
-
-	WARN_ON(size != PAGE_SIZE);
-
-	apt_set_pte(kvm, NULL, gpa, pte, 0);
-	return 0;
-}
-
-int kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte)
-{
-	unsigned long end = hva + PAGE_SIZE;
-	pte_t apt_pte;
+	gpa_t gpa = range->start << PAGE_SHIFT;
+	u64 size = (range->end - range->start) << PAGE_SHIFT;
 
 	if (!kvm->arch.pgd)
-		return 0;
+		return false;
 
-	trace_kvm_set_spte_hva(hva);
+	return kvm_apt_test_clear_young(kvm, gpa, size, NULL);
+}
 
-	apt_pte = pte_wrprotect(pte);
-	handle_hva_to_gpa(kvm, hva, end, &kvm_set_apte_handler, &apt_pte);
-	return 0;
+bool kvm_test_age_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	gpa_t gpa = range->start << PAGE_SHIFT;
+	u64 size = (range->end - range->start) << PAGE_SHIFT;
+
+	if (!kvm->arch.pgd)
+		return false;
+
+	return kvm_apt_test_clear_young(kvm, gpa, size, NULL);
+}
+
+bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
+{
+	gpa_t gpa = range->start << PAGE_SHIFT;
+	pte_t apt_pte = range->pte;
+	if (!kvm->arch.pgd)
+		return false;
+
+	WARN_ON(range->end - range->start != 1);
+
+	apt_pte = pte_wrprotect(apt_pte);
+
+	apt_set_pte(kvm, NULL, gpa, &apt_pte, 0);
+
+	return false;
 }
 
 /**

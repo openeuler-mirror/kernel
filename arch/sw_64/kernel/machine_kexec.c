@@ -14,11 +14,11 @@
 #include <linux/of.h>
 #include <linux/of_fdt.h>
 #include <linux/efi.h>
+#include <linux/memblock.h>
 
 #include <asm/cacheflush.h>
 #include <asm/platform.h>
 
-extern void *kexec_control_page;
 extern const unsigned char relocate_new_kernel[];
 extern const size_t relocate_new_kernel_size;
 
@@ -26,6 +26,7 @@ extern unsigned long kexec_start_address;
 extern unsigned long kexec_indirection_page;
 
 static atomic_t waiting_for_crash_ipi;
+static void *kexec_control_page;
 
 #ifdef CONFIG_SMP
 extern struct smp_rcb_struct *smp_rcb;
@@ -45,6 +46,72 @@ static void kexec_smp_down(void *ignored)
 	reset_cpu(cpu);
 }
 #endif
+
+#define KTEXT_MAX	KERNEL_IMAGE_SIZE
+
+void __init kexec_control_page_init(void)
+{
+	phys_addr_t addr;
+
+	addr = memblock_phys_alloc_range(KEXEC_CONTROL_PAGE_SIZE, PAGE_SIZE,
+					0, 0);
+	kexec_control_page = (void *)(__START_KERNEL_map + addr);
+}
+
+/*
+ * reserve_crashkernel() - reserves memory are for crash kernel
+ *
+ * This function reserves memory area given in "crashkernel=" kernel command
+ * line parameter. The memory reserved is used by a dump capture kernel when
+ * primary kernel is crashing.
+ */
+void __init reserve_crashkernel(void)
+{
+	unsigned long long crash_size, crash_base;
+	unsigned long long mem_size = memblock_phys_mem_size();
+	int ret;
+
+	ret = parse_crashkernel(boot_command_line, mem_size,
+			&crash_size, &crash_base);
+	if (ret || !crash_size)
+		return;
+
+	if (!crash_size) {
+		pr_warn("size of crash kernel memory unspecified, no memory reserved for crash kernel\n");
+		return;
+	}
+	if (!crash_base) {
+		pr_warn("base of crash kernel memory unspecified, no memory reserved for crash kernel\n");
+		return;
+	}
+
+	if (!memblock_is_region_memory(crash_base, crash_size))
+		memblock_add(crash_base, crash_size);
+
+	ret = memblock_reserve(crash_base, crash_size);
+	if (ret < 0) {
+		pr_warn("crashkernel reservation failed - memory is in use [mem %#018llx-%#018llx]\n",
+				crash_base, crash_base + crash_size - 1);
+		return;
+	}
+
+	pr_info("Reserving %ldMB of memory at %ldMB for crashkernel (System RAM: %ldMB)\n",
+			(unsigned long)(crash_size >> 20),
+			(unsigned long)(crash_base >> 20),
+			(unsigned long)(mem_size >> 20));
+
+	ret = add_memmap_region(crash_base, crash_size, memmap_crashkernel);
+	if (ret)
+		pr_warn("Add crash kernel area [mem %#018llx-%#018llx] to memmap region failed.\n",
+				crash_base, crash_base + crash_size - 1);
+
+	if (crash_base < PCI_LEGACY_IO_SIZE)
+		pr_warn("Crash base should be greater than or equal to %#lx\n", PCI_LEGACY_IO_SIZE);
+
+	crashk_res.start = crash_base;
+	crashk_res.end = crash_base + crash_size - 1;
+	insert_resource(&iomem_resource, &crashk_res);
+}
 
 int machine_kexec_prepare(struct kimage *kimage)
 {
@@ -125,7 +192,6 @@ void machine_crash_shutdown(struct pt_regs *regs)
 
 	cpu = smp_processor_id();
 	local_irq_disable();
-	kernel_restart_prepare(NULL);
 	atomic_set(&waiting_for_crash_ipi, num_online_cpus() - 1);
 	smp_call_function(machine_crash_nonpanic_core, NULL, false);
 	msecs = 1000; /* Wait at most a second for the other cpus to stop */
@@ -218,53 +284,6 @@ out:
 	return NULL;
 }
 
-#ifdef CONFIG_EFI
-static int update_efi_properties(const struct boot_params *params)
-{
-	int chosen_node, ret;
-	void *dtb_start = (void *)params->dtb_start;
-
-	if (!dtb_start)
-		return -EINVAL;
-
-	chosen_node = fdt_path_offset(dtb_start, "/chosen");
-	if (chosen_node < 0)
-		return -EINVAL;
-
-	ret = fdt_setprop_u64(dtb_start, chosen_node,
-			"linux,uefi-system-table",
-			params->efi_systab);
-	if (ret)
-		return ret;
-
-	ret = fdt_setprop_u64(dtb_start, chosen_node,
-			"linux,uefi-mmap-start",
-			params->efi_memmap);
-	if (ret)
-		return ret;
-
-	ret = fdt_setprop_u64(dtb_start, chosen_node,
-			"linux,uefi-mmap-size",
-			params->efi_memmap_size);
-	if (ret)
-		return ret;
-
-	ret = fdt_setprop_u64(dtb_start, chosen_node,
-			"linux,uefi-mmap-desc-size",
-			params->efi_memdesc_size);
-	if (ret)
-		return ret;
-
-	ret = fdt_setprop_u64(dtb_start, chosen_node,
-			"linux,uefi-mmap-desc-ver",
-			params->efi_memdesc_version);
-	if (ret)
-		return ret;
-
-	return 0;
-}
-#endif
-
 static void update_boot_params(void)
 {
 	struct boot_params params = { 0 };
@@ -297,19 +316,6 @@ static void update_boot_params(void)
 		params.efi_memmap_size = efi.memmap.map_end - efi.memmap.map;
 		params.efi_memdesc_size = efi.memmap.desc_size;
 		params.efi_memdesc_version = efi.memmap.desc_version;
-
-		/**
-		 * If current kernel take built-in DTB, it's possible that
-		 * there are no efi related properties in "chosen" node. So,
-		 * update these properties here.
-		 *
-		 * Harmless for the following cases:
-		 * 1. Current kernel take DTB from firmware
-		 * 2. New kernel with CONFIG_EFI=n
-		 * 3. New kernel take built-in DTB
-		 */
-		if (update_efi_properties(&params))
-			pr_err("Note: failed to update efi properties\n");
 #endif
 		/* update dtb base address */
 		sunway_dtb_address = params.dtb_start;

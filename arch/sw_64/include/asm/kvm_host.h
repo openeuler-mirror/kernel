@@ -27,24 +27,26 @@
 #include <asm/ptrace.h>
 
 #include <asm/kvm_mmio.h>
+#include <asm/cpu.h>
 
 #define last_vpn(cpu)	(cpu_data[cpu].last_vpn)
 
 #ifdef CONFIG_SUBARCH_C3B
 #define VPN_BITS	8
 #define GUEST_RESET_PC          0xffffffff80011100
+#define KVM_MAX_VCPUS   64
 #endif
 
 #ifdef CONFIG_SUBARCH_C4
 #define VPN_BITS	10
 #define GUEST_RESET_PC          0xfff0000000011002
+#define KVM_MAX_VCPUS   256
 #endif
 
 #define VPN_FIRST_VERSION	(1UL << VPN_BITS)
 #define VPN_MASK		((1UL << VPN_BITS) - 1)
 #define VPN_SHIFT		(64 - VPN_BITS)
 
-#define KVM_MAX_VCPUS 64
 #define KVM_USER_MEM_SLOTS 512
 
 #define KVM_HALT_POLL_NS_DEFAULT 0
@@ -154,11 +156,8 @@ struct kvm_vcpu_stat {
 
 #ifdef CONFIG_SUBARCH_C4
 #define KVM_ARCH_WANT_MMU_NOTIFIER
+#define KVM_ARCH_WANT_NEW_MMU_NOTIFIER_APIS
 #endif
-int kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
-int kvm_unmap_hva_range(struct kvm *kvm, unsigned long start, unsigned long end, bool blockable);
-int kvm_age_hva(struct kvm *kvm, unsigned long start, unsigned long end);
-int kvm_test_age_hva(struct kvm *kvm, unsigned long hva);
 
 void update_vcpu_stat_time(struct kvm_vcpu_stat *vcpu_stat);
 void check_vcpu_requests(struct kvm_vcpu *vcpu);

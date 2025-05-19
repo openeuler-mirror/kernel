@@ -23,10 +23,32 @@ static void vt_mode_kill_arch(int mode)
 	}
 }
 
+static void emul_mode_kill_arch(int mode)
+{
+	void __iomem *addr = __va(QEMU_RESTART_SHUTDOWN_BASE);
+	u64 data;
+
+	switch (mode) {
+	case LINUX_REBOOT_CMD_RESTART:
+		data = 2;
+		*(u64 *)addr = data;
+		break;
+	case LINUX_REBOOT_CMD_HALT:
+	case LINUX_REBOOT_CMD_POWER_OFF:
+		data = 1;
+		*(u64 *)addr = data;
+		break;
+	default:
+		break;
+	}
+}
+
 void sw64_halt(void)
 {
 	if (is_in_host())
 		cpld_write(0x64, 0x00, 0xf0);
+	else if (is_in_emul())
+		emul_mode_kill_arch(LINUX_REBOOT_CMD_POWER_OFF);
 	else
 		vt_mode_kill_arch(LINUX_REBOOT_CMD_HALT);
 }
@@ -35,16 +57,19 @@ void sw64_poweroff(void)
 {
 	if (is_in_host())
 		cpld_write(0x64, 0x00, 0xf0);
+	else if (is_in_emul())
+		emul_mode_kill_arch(LINUX_REBOOT_CMD_POWER_OFF);
 	else
 		vt_mode_kill_arch(LINUX_REBOOT_CMD_POWER_OFF);
 }
 
 void sw64_restart(void)
 {
-	if (is_in_host()) {
-		fix_jm585_reset();
+	if (is_in_host())
 		cpld_write(0x64, 0x00, 0xc3);
-	} else
+	else if (is_in_emul())
+		emul_mode_kill_arch(LINUX_REBOOT_CMD_RESTART);
+	else
 		vt_mode_kill_arch(LINUX_REBOOT_CMD_RESTART);
 }
 

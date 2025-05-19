@@ -196,7 +196,7 @@ void flush_ptlb_by_addr(struct sunway_iommu_domain *sdomain, unsigned long flush
 		if (sdev->alias != sdev->devid) {
 			alias = sdev->alias;
 			bus_number = PCI_BUS_NUM(alias);
-			devfn = PCI_SLOT(alias) | PCI_FUNC(alias);
+			devfn = alias & 0xff;
 
 			address = (bus_number << 8)
 				| devfn | (flush_addr << 16);
@@ -411,7 +411,7 @@ static int set_entry_by_devid(u16 devid,
 	int node;
 
 	bus_number = PCI_BUS_NUM(devid);
-	devfn = PCI_SLOT(devid) | PCI_FUNC(devid);
+	devfn = devid & 0xff;
 
 	dte_l1 = iommu->iommu_dtbr + bus_number;
 	dte_l1_val = *dte_l1;
@@ -611,7 +611,7 @@ static struct sunway_iommu *sunway_iommu_early_init(struct pci_controller *hose)
 
 	iommu->iommu_dtbr = page_address(page);
 	base = __pa(iommu->iommu_dtbr) & PAGE_MASK;
-	iommu->reg_base_addr = __va(MK_PIU_IOR0(iommu->node, iommu->index));
+	iommu->reg_base_addr = hose->piu_ior0_base;
 	writeq(base, iommu->reg_base_addr + DTBASEADDR);
 
 	hose->pci_iommu = iommu;
@@ -992,14 +992,18 @@ static int sunway_iommu_acpi_init(void)
 		return ret;
 
 	for_each_iommu(iommu) {
-		if (!iommu->enabled)
+		hose = find_hose_by_rcid(iommu->node, iommu->index);
+		if (!hose)
 			continue;
+
+		if (!iommu->enabled || hose->iommu_enable)
+			continue;
+
 		iommu_device_sysfs_add(&iommu->iommu, NULL, NULL, "%d",
 				iommu_index);
 		iommu_device_set_ops(&iommu->iommu, &sunway_iommu_ops);
 		iommu_device_register(&iommu->iommu);
 		iommu_index++;
-		hose = find_hose_by_rcid(iommu->node, iommu->index);
 		sunway_enable_iommu_func(hose);
 		hose->iommu_enable = true;
 		piu_flush_all(iommu);
@@ -1033,6 +1037,9 @@ static int sunway_iommu_legacy_init(void)
 			hose->iommu_enable = false;
 			continue;
 		}
+
+		if (hose->iommu_enable)
+			continue;
 
 		iommu = sunway_iommu_early_init(hose);
 		iommu_device_sysfs_add(&iommu->iommu, NULL, NULL, "%d",
@@ -1390,7 +1397,7 @@ sunway_iommu_iova_to_phys(struct iommu_domain *dom, dma_addr_t iova)
 	unsigned long paddr, grn;
 	unsigned long is_last;
 
-	if (iova > SW64_BAR_ADDRESS)
+	if (iova >= SW64_BAR_ADDRESS)
 		return iova;
 
 	paddr = fetch_pte(sdomain, iova, PTE_LEVEL1_VAL);
@@ -1483,7 +1490,7 @@ sunway_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 
 	/* IOMMU v2 supports 42 bit mapped address width*/
 	if (iova >= MAX_IOVA_WIDTH) {
-		pr_err("IOMMU cannot map provided address: %lx\n", iova);
+		pr_err("Trying to unmap illegal IOVA : %lx\n", iova);
 		return -EFAULT;
 	}
 

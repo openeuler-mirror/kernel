@@ -8,6 +8,7 @@
 #include <linux/seq_file.h>
 #include <linux/clk.h>
 #include <linux/cpufreq.h>
+#include <asm/cpu.h>
 
 struct clk;
 
@@ -38,23 +39,47 @@ struct clk {
 #define CLK_ALWAYS_ENABLED	(1 << 0)
 #define CLK_RATE_PROPAGATES	(1 << 1)
 
-#define CLK_PRT         0x1UL
-#define CORE_CLK0_V     (0x1UL << 1)
-#define CORE_CLK0_R     (0x1UL << 2)
-#define CORE_CLK2_V     (0x1UL << 15)
-#define CORE_CLK2_R     (0x1UL << 16)
+#define CORE_CLK0_VALID		(0x1UL << 1)
+#define CORE_CLK0_RESET		(0x1UL << 2)
 
-#define CLK_LV1_SEL_PRT         0x1UL
-#define CLK_LV1_SEL_MUXA        (0x1UL << 2)
-#define CLK_LV1_SEL_MUXB        (0x1UL << 3)
+#define CLK_LV1_SEL_PROTECT	(0x1UL << 0)
+#define CLK_LV1_SEL_MUXA	(0x1UL << 2)
+#define CLK_LV1_SEL_MUXB	(0x1UL << 3)
 
+#ifdef CONFIG_UNCORE_JUNZHANG
+#define CLK0_PROTECT		(0x1UL << 0)
+#define CLK2_PROTECT		(0x1UL << 32)
+#define CORE_CLK2_VALID		(0x1UL << 33)
+#define CORE_CLK2_RESET		(0x1UL << 34)
+#define CORE_CLK2_LOCK		(0x1UL << 35)
 #define CORE_PLL0_CFG_SHIFT     4
+#define CORE_PLL1_CFG_SHIFT     20
+#define CORE_PLL2_CFG_SHIFT     36
+#define CORE_PLL2_CFG_MASK	0x1f
+#define STARTUP_RATE		(2000UL * 1000 * 1000)
+#endif
+
+#ifdef CONFIG_UNCORE_XUELANG
+#define CLK_PROTECT		(0x1UL << 0)
+#define CLK0_PROTECT		CLK_PROTECT
+#define CLK2_PROTECT		CLK_PROTECT
+#define CORE_CLK2_VALID         (0x1UL << 15)
+#define CORE_CLK2_RESET         (0x1UL << 16)
+#define CORE_CLK2_LOCK		(0x1UL << 17)
+#define CORE_PLL0_CFG_SHIFT     4
+#define CORE_PLL1_CFG_SHIFT     11
 #define CORE_PLL2_CFG_SHIFT     18
+#define CORE_PLL2_CFG_MASK	0xf
+#define STARTUP_RATE		(2400UL * 1000 * 1000)
+#endif
+
+#define OFFSET_CLU_LV1_SEL	0x3a80UL
+#define OFFSET_CLK_CTL		0x3b80UL
 
 extern struct cpufreq_frequency_table freq_table[];
 
 int clk_init(void);
-void sw64_set_rate(unsigned int index);
+int sw64_set_rate(unsigned int index);
 
 struct clk *sw64_clk_get(struct device *dev, const char *id);
 

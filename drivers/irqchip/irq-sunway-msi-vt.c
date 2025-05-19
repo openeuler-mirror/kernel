@@ -4,7 +4,6 @@
 #include <linux/msi.h>
 #include <linux/pci.h>
 #include <linux/smp.h>
-#include <linux/module.h>
 
 #include <asm/irq_impl.h>
 #include <asm/kvm_emulate.h>
@@ -33,6 +32,9 @@ void vt_handle_pci_msi_interrupt(unsigned long type, unsigned long vector,
 
 	cpu = smp_processor_id();
 	irq = per_cpu(vector_irq, cpu)[vector];
+	if (unlikely(!irq))
+		return;
+
 	irq_data = irq_domain_get_irq_data(vt_msi_default_domain->parent, irq);
 	cdata = irq_data_get_irq_chip_data(irq_data);
 

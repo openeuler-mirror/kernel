@@ -14,10 +14,14 @@
 #include <linux/of_fdt.h>
 #include <linux/libfdt.h>
 #include <linux/initrd.h>
+#include <linux/genalloc.h>
 
 #include <asm/pgalloc.h>
 #include <asm/mmu_context.h>
 #include <asm/platform.h>
+#include <asm/kexec.h>
+#include <asm/sw64_init.h>
+#include <asm/kvm_cma.h>
 
 struct mem_desc_t mem_desc;
 #ifndef CONFIG_NUMA
@@ -62,6 +66,13 @@ static int __init setup_mem_size(char *p)
 
 	mem_start = start;
 	mem_size_limit = size;
+
+	if (mem_start < NODE0_START) {
+		mem_size_limit -= min(mem_size_limit,
+				NODE0_START - mem_start);
+		mem_start = NODE0_START;
+	}
+
 	return 0;
 }
 early_param("mem", setup_mem_size);
@@ -98,6 +109,9 @@ switch_to_system_map(void)
 {
 	memset(swapper_pg_dir, 0, PAGE_SIZE);
 	update_ptbr_sys(virt_to_phys(swapper_pg_dir));
+#ifdef CONFIG_SUBARCH_C4
+	update_ptbr_usr(__pa_symbol(empty_zero_page));
+#endif
 	tbiv();
 }
 
@@ -135,7 +149,41 @@ void __init paging_init(void)
 {
 }
 
-void __init mem_detect(void)
+static void __init setup_socket_info(void)
+{
+	int i;
+	int numsockets = sw64_chip->get_cpu_num();
+
+	memset(socket_desc, 0, MAX_NUMSOCKETS * sizeof(struct socket_desc_t));
+
+	for (i = 0; i < numsockets; i++) {
+		socket_desc[i].is_online = 1;
+		if (sw64_chip_init->early_init.get_node_mem)
+			socket_desc[i].socket_mem = sw64_chip_init->early_init.get_node_mem(i);
+	}
+}
+
+static void __init show_socket_mem_layout(void)
+{
+	int i;
+	phys_addr_t base, size, end;
+
+	base = 0;
+
+	pr_info("Socket memory layout:\n");
+	for (i = 0; i < MAX_NUMSOCKETS; i++) {
+		if (socket_desc[i].is_online) {
+			size = socket_desc[i].socket_mem;
+			end = base + size - 1;
+			pr_info("Socket %d: [mem %#018llx-%#018llx], size %llu\n",
+					i, base, end, size);
+			base = end + 1;
+		}
+	}
+	pr_info("Reserved memory size for Socket 0: %#lx\n", NODE0_START);
+}
+
+static void __init mem_detect(void)
 {
 	int i;
 
@@ -145,17 +193,8 @@ void __init mem_detect(void)
 			mem_desc.phys_size += socket_desc[i].socket_mem;
 	}
 
-	if (mem_start >= NODE0_START) {
-		mem_desc.base = mem_start;
-	} else {
-		mem_desc.base = NODE0_START;
-		mem_size_limit -= NODE0_START - mem_start;
-	}
-
-	if (mem_size_limit && mem_size_limit < mem_desc.phys_size - NODE0_START)
-		mem_desc.size = mem_size_limit;
-	else
-		mem_desc.size = mem_desc.phys_size - NODE0_START;
+	mem_desc.base = NODE0_START;
+	mem_desc.size = mem_desc.phys_size - NODE0_START;
 }
 
 #ifdef CONFIG_BLK_DEV_INITRD
@@ -213,13 +252,109 @@ static void __init reserve_mem_for_initrd(void)
 }
 #endif /* CONFIG_BLK_DEV_INITRD */
 
+#ifdef CONFIG_SUBARCH_C3B
+#if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
+struct cma *sw64_kvm_cma;
+EXPORT_SYMBOL(sw64_kvm_cma);
+
+static phys_addr_t kvm_mem_size;
+static phys_addr_t kvm_mem_base;
+
+struct gen_pool *sw64_kvm_pool;
+EXPORT_SYMBOL(sw64_kvm_pool);
+
+static int __init early_kvm_reserved_mem(char *p)
+{
+	if (!p) {
+		pr_err("Config string not provided\n");
+		return -EINVAL;
+	}
+
+	kvm_mem_size = memparse(p, &p);
+	if (*p != '@')
+		return -EINVAL;
+	kvm_mem_base = memparse(p + 1, &p);
+	return 0;
+}
+early_param("kvm_mem", early_kvm_reserved_mem);
+
+void __init sw64_kvm_reserve(void)
+{
+	kvm_cma_declare_contiguous(kvm_mem_base, kvm_mem_size, 0,
+			PAGE_SIZE, 0, "sw64_kvm_cma", &sw64_kvm_cma);
+}
+
+static int __init sw64_kvm_pool_init(void)
+{
+	int status = 0;
+	unsigned long kvm_pool_virt;
+	struct page *base_page, *end_page, *p;
+
+	if (!sw64_kvm_cma)
+		goto out;
+
+	kvm_pool_virt = (unsigned long)kvm_mem_base;
+
+	sw64_kvm_pool = gen_pool_create(PAGE_SHIFT, -1);
+	if (!sw64_kvm_pool)
+		goto out;
+
+	status = gen_pool_add_virt(sw64_kvm_pool, kvm_pool_virt, kvm_mem_base,
+			kvm_mem_size, -1);
+	if (status < 0) {
+		pr_err("failed to add memory chunks to sw64 kvm pool\n");
+		gen_pool_destroy(sw64_kvm_pool);
+		sw64_kvm_pool = NULL;
+		goto out;
+	}
+	gen_pool_set_algo(sw64_kvm_pool, gen_pool_best_fit, NULL);
+
+	base_page = pfn_to_page(kvm_mem_base >> PAGE_SHIFT);
+	end_page  = pfn_to_page((kvm_mem_base + kvm_mem_size - 1) >> PAGE_SHIFT);
+
+	p = base_page;
+	while (p <= end_page && page_ref_count(p) == 0) {
+		set_page_count(p, 1);
+		page_mapcount_reset(p);
+		SetPageReserved(p);
+		p++;
+	}
+
+	return status;
+
+out:
+	return -ENOMEM;
+}
+core_initcall_sync(sw64_kvm_pool_init);
+#endif
+#endif
+
 void __init sw64_memblock_init(void)
 {
-	memblock_add(mem_desc.base, mem_desc.size);
+	if (sunway_boot_magic != 0xDEED2024UL) {
+		/**
+		 * Detect all memory on all nodes, used in the following
+		 * cases:
+		 * 1. Legacy memory detect
+		 * 2. Legacy NUMA initialization
+		 */
+		setup_socket_info();
+		show_socket_mem_layout();
+
+		/* Find our usable memory */
+		mem_detect();
+
+		/* Add usable memory */
+		memblock_add(mem_desc.base, mem_desc.size);
+	}
 
 	memblock_remove(1ULL << MAX_PHYSMEM_BITS, PHYS_ADDR_MAX);
 
 	max_pfn = max_low_pfn = PFN_DOWN(memblock_end_of_DRAM());
+
+#ifdef CONFIG_PCI
+	reserve_mem_for_pci();
+#endif
 
 	memblock_allow_resize();
 	memblock_initialized = true;
@@ -233,17 +368,27 @@ void __init sw64_memblock_init(void)
 	/* Make sure initrd is in memory range. */
 	reserve_mem_for_initrd();
 #endif
-	/**
-	 * When using non built-in DTB, we need to reserve
-	 * it but avoid using early_init_fdt_reserve_self()
-	 * since __pa() does not work for some old firmware.
-	 *
-	 * We can use early_init_fdt_reserve_self() instead
-	 * when kernel no longer support C3B.
-	 */
-	if (!IS_ENABLED(CONFIG_BUILTIN_DTB))
-		memblock_reserve(__boot_pa(initial_boot_params),
-				fdt_totalsize(initial_boot_params));
+
+#ifdef CONFIG_SUBARCH_C3B
+#if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
+	/* Reserve large chunks of memory for use by CMA for KVM. */
+	sw64_kvm_reserve();
+#endif
+#endif
+
+	reserve_crashkernel();
+
+	/* All memory has been added, it's time to handle memory limitation */
+	if (mem_size_limit) {
+		memblock_remove(0, mem_start);
+		memblock_remove(mem_start + mem_size_limit, PHYS_ADDR_MAX);
+		if (sunway_boot_magic != 0xDEED2024UL) {
+			mem_desc.base = mem_start;
+			mem_desc.size = memblock_phys_mem_size();
+		}
+	}
+
+	early_init_fdt_scan_reserved_mem();
 
 	/* end of DRAM range may have been changed */
 	max_pfn = max_low_pfn = PFN_DOWN(memblock_end_of_DRAM());
@@ -252,12 +397,14 @@ void __init sw64_memblock_init(void)
 #ifndef CONFIG_NUMA
 void __init sw64_numa_init(void)
 {
+	phys_addr_t mem_base = memblock_start_of_DRAM();
+	phys_addr_t mem_size = memblock_phys_mem_size();
 	const size_t nd_size = roundup(sizeof(pg_data_t), SMP_CACHE_BYTES);
 	u64 nd_pa;
 	void *nd;
 	int tnid;
 
-	memblock_set_node(mem_desc.base, mem_desc.size, &memblock.memory, 0);
+	memblock_set_node(mem_base, mem_size, &memblock.memory, 0);
 	nd_pa = memblock_phys_alloc(nd_size, SMP_CACHE_BYTES);
 	nd = __va(nd_pa);
 
@@ -271,8 +418,8 @@ void __init sw64_numa_init(void)
 	node_data[0] = nd;
 	memset(NODE_DATA(0), 0, sizeof(pg_data_t));
 	NODE_DATA(0)->node_id = 0;
-	NODE_DATA(0)->node_start_pfn = mem_desc.base >> PAGE_SHIFT;
-	NODE_DATA(0)->node_spanned_pages = mem_desc.size >> PAGE_SHIFT;
+	NODE_DATA(0)->node_start_pfn = mem_base >> PAGE_SHIFT;
+	NODE_DATA(0)->node_spanned_pages = mem_size >> PAGE_SHIFT;
 	node_set_online(0);
 }
 #endif /* CONFIG_NUMA */
@@ -299,59 +446,6 @@ int __meminit vmemmap_populate(unsigned long start, unsigned long end, int node,
 void vmemmap_free(unsigned long start, unsigned long end,
 		struct vmem_altmap *altmap)
 {
-}
-#endif
-
-#ifdef CONFIG_HAVE_MEMBLOCK
-#ifndef MIN_MEMBLOCK_ADDR
-#define MIN_MEMBLOCK_ADDR       __pa(PAGE_OFFSET)
-#endif
-#ifndef MAX_MEMBLOCK_ADDR
-#define MAX_MEMBLOCK_ADDR       ((phys_addr_t)~0)
-#endif
-void __init early_init_dt_add_memory_arch(u64 base, u64 size)
-{
-	const u64 phys_offset = MIN_MEMBLOCK_ADDR;
-
-	if (acpi_disabled) {
-		if (!PAGE_ALIGNED(base)) {
-			if (size < PAGE_SIZE - (base & ~PAGE_MASK)) {
-				pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
-					base, base + size);
-				return;
-			}
-			size -= PAGE_SIZE - (base & ~PAGE_MASK);
-			base = PAGE_ALIGN(base);
-		}
-		size &= PAGE_MASK;
-
-		if (base > MAX_MEMBLOCK_ADDR) {
-			pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
-				base, base + size);
-			return;
-		}
-
-		if (base + size - 1 > MAX_MEMBLOCK_ADDR) {
-			pr_warn("Ignoring memory range 0x%llx - 0x%llx\n",
-				((u64)MAX_MEMBLOCK_ADDR) + 1, base + size);
-					size = MAX_MEMBLOCK_ADDR - base + 1;
-		}
-
-		if (base + size < phys_offset) {
-			pr_warn("Ignoring memory block 0x%llx - 0x%llx\n",
-				base, base + size);
-		return;
-		}
-
-		if (base < phys_offset) {
-			pr_warn("Ignoring memory range 0x%llx - 0x%llx\n",
-				base, phys_offset);
-			size -= phys_offset - base;
-			base = phys_offset;
-		}
-		memblock_add(base, size);
-	} else
-		return;
 }
 #endif
 

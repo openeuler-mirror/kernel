@@ -36,6 +36,41 @@ struct vdso_data *vdso_data = &vdso_data_store.data;
 
 static struct vm_special_mapping vdso_spec[2];
 
+#ifdef CONFIG_SUBARCH_C3B
+#define V_NODE_SHIFT	6
+static void init_cpu_map(void)
+{
+
+	int i, whami, domain;
+	unsigned int shift, mask;
+
+	if (is_in_host())
+		shift = DOMAIN_ID_SHIFT;
+	else
+		shift = V_NODE_SHIFT;
+	mask = (1 << shift) - 1;
+
+	vdso_data_write_begin(vdso_data);
+	for (i = 0; i < num_possible_cpus(); i++) {
+		domain = cpu_to_rcid(i) >> shift;
+		whami = (domain << DOMAIN_ID_SHIFT) | (cpu_to_rcid(i) & mask);
+		vdso_data->vdso_whami_to_cpu[whami] = i;
+		vdso_data->vdso_whami_to_node[whami] = domain;
+	}
+	vdso_data_write_end(vdso_data);
+}
+#else
+static void init_cpu_map(void)
+{
+	int i;
+
+	vdso_data_write_begin(vdso_data);
+	for (i = 0; i < num_possible_cpus(); i++)
+		vdso_data->vdso_cpu_to_node[i] = (cpu_to_rcid(i) & DOMAIN_ID_MASK) >> DOMAIN_ID_SHIFT;
+	vdso_data_write_end(vdso_data);
+}
+#endif
+
 static int __init vdso_init(void)
 {
 	int i;
@@ -72,6 +107,8 @@ static int __init vdso_init(void)
 		.name	= "[vdso]",
 		.pages	= &vdso_pagelist[1],
 	};
+
+	init_cpu_map();
 
 	return 0;
 }
@@ -119,25 +156,3 @@ up_fail:
 	return PTR_ERR(ret);
 }
 
-void update_vsyscall(struct timekeeper *tk)
-{
-	vdso_data_write_begin(vdso_data);
-
-	vdso_data->xtime_sec = tk->xtime_sec;
-	vdso_data->xtime_nsec = tk->tkr_mono.xtime_nsec;
-	vdso_data->wall_to_mono_sec = tk->wall_to_monotonic.tv_sec;
-	vdso_data->wall_to_mono_nsec = tk->wall_to_monotonic.tv_nsec;
-	vdso_data->cs_shift = tk->tkr_mono.shift;
-
-	vdso_data->cs_mult = tk->tkr_mono.mult;
-	vdso_data->cs_cycle_last = tk->tkr_mono.cycle_last;
-	vdso_data->cs_mask = tk->tkr_mono.mask;
-
-	vdso_data_write_end(vdso_data);
-}
-
-void update_vsyscall_tz(void)
-{
-	vdso_data->tz_minuteswest = sys_tz.tz_minuteswest;
-	vdso_data->tz_dsttime = sys_tz.tz_dsttime;
-}

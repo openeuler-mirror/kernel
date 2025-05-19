@@ -17,6 +17,7 @@
 #include <linux/irqchip.h>
 #include <linux/seq_file.h>
 
+#include <asm/cpu.h>
 #include <asm/irq_impl.h>
 
 volatile unsigned long irq_err_count;
@@ -98,9 +99,7 @@ handle_irq(int irq)
 		return;
 	}
 
-	irq_enter();
 	generic_handle_irq_desc(desc);
-	irq_exit();
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -108,6 +107,55 @@ void fixup_irqs(void)
 {
 	irq_migrate_all_off_this_cpu();
 }
+
+#ifdef CONFIG_SW64_IRQ_MSI
+static int cpu_vector_available(int cpu)
+{
+	int vector, max_vector = 256;
+	int avl_vector = 0;
+
+	for (vector = 0; vector < max_vector; vector++)
+		if (per_cpu(vector_irq, cpu)[vector] == 0)
+			avl_vector++;
+
+	return avl_vector;
+}
+
+static int cpu_vector_tomove(int cpu)
+{
+	int max_vector = 256;
+
+	return max_vector - cpu_vector_available(cpu);
+}
+
+static int vector_available(void)
+{
+	int cpu, avl_vector = 0;
+
+	for_each_online_cpu(cpu)
+		avl_vector += cpu_vector_available(cpu);
+
+	return avl_vector;
+}
+
+int can_unplug_cpu(void)
+{
+	unsigned int free, tomove;
+	unsigned int cpu = smp_processor_id();
+
+	tomove = cpu_vector_tomove(cpu);
+	free = vector_available();
+	if (free < tomove) {
+		pr_info("CPU %u has %u vectors, %u available, Cannot disable CPU\n",
+				cpu, tomove, free);
+		return -ENOSPC;
+	}
+
+	return 0;
+}
+#else
+int can_unplug_cpu(void) { return 0; }
+#endif
 #endif
 
 void __init init_IRQ(void)
@@ -116,9 +164,20 @@ void __init init_IRQ(void)
 	 * Just in case the platform init_irq() causes interrupts/mchecks
 	 * (as is the case with RAWHIDE, at least).
 	 */
-	wrent(entInt, 0);
+	struct page __maybe_unused *nmi_stack_page = alloc_pages_node(
+		cpu_to_node(smp_processor_id()),
+		THREADINFO_GFP, THREAD_SIZE_ORDER);
+	unsigned long nmi_stack __maybe_unused = nmi_stack_page ?
+		(unsigned long)page_address(nmi_stack_page) : 0;
 
-	sw64_init_irq();
+	wrent(entInt, 0);
+	if (IS_ENABLED(CONFIG_SUBARCH_C4) && is_in_host()) {
+		sw64_write_csr_imb(nmi_stack + THREAD_SIZE, CSR_NMI_STACK);
+		wrent(entNMI, 6);
+		set_nmi(INT_PC);
+	}
+
+	sunway_init_pci_intx();
 	irqchip_init();
 }
 

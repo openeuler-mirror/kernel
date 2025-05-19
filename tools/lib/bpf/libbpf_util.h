@@ -32,6 +32,11 @@ extern "C" {
 # define libbpf_smp_wmb() asm volatile("dmb ishst" : : : "memory")
 # define libbpf_smp_mb() asm volatile("dmb ish" : : : "memory")
 # define libbpf_smp_rwmb() libbpf_smp_mb()
+#elif defined(__sw_64__)
+# define libbpf_smp_rmb() asm volatile("memb" : : : "memory")
+# define libbpf_smp_wmb() asm volatile("memb" : : : "memory")
+# define libbpf_smp_mb() asm volatile("memb" : : : "memory")
+# define libbpf_smp_rwmb() libbpf_smp_mb()
 #else
 /* Architecture missing native barrier functions. */
 # define libbpf_smp_rmb() __sync_synchronize()

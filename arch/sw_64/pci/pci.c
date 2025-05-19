@@ -2,6 +2,8 @@
 #include <linux/list.h>
 #include <linux/pci.h>
 #include <linux/pci-ecam.h>
+#include <linux/acpi.h>
+#include <linux/reboot.h>
 
 #include <asm/pci.h>
 #include <asm/sw64_init.h>
@@ -119,7 +121,7 @@ void pcibios_fixup_bus(struct pci_bus *bus)
 	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 	struct pci_dev *dev = bus->self;
 
-	if (!dev || bus->number == hose->first_busno) {
+	if (!dev) {
 		bus->resource[0] = hose->io_space;
 		bus->resource[1] = hose->mem_space;
 		bus->resource[2] = hose->pre_mem_space;
@@ -194,28 +196,21 @@ DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82378,
  */
 static void fixup_root_complex(struct pci_dev *dev)
 {
-	int i;
 	struct pci_bus *bus = dev->bus;
 	struct pci_controller *hose = pci_bus_to_pci_controller(bus);
 
 	hose->self_busno = hose->busn_space->start;
 
 	if (likely(bus->number == hose->self_busno)) {
-		if (IS_ENABLED(CONFIG_HOTPLUG_PCI_PCIE)) {
+		if (IS_ENABLED(CONFIG_HOTPLUG_PCI_PCIE_SUNWAY)) {
 			/* Check Root Complex port again */
-			dev->is_hotplug_bridge = 0;
+			dev->is_hotplug_bridge = 1;
 			dev->current_state = PCI_D0;
 		}
 
 		dev->class &= 0xff;
 		dev->class |= PCI_CLASS_BRIDGE_PCI << 8;
-		for (i = 0; i < PCI_NUM_RESOURCES; i++) {
-			dev->resource[i].start = 0;
-			dev->resource[i].end   = 0;
-			dev->resource[i].flags = IORESOURCE_PCI_FIXED;
-		}
 	}
-	atomic_inc(&dev->enable_cnt);
 
 	dev->no_msi = 1;
 }
@@ -244,28 +239,56 @@ static void enable_sw_dca(struct pci_dev *dev)
 	rc_index = hose->index;
 
 	for (i = 0; i < 256; i++) {
-		dca_conf = read_piu_ior1(node, rc_index, DEVICEID0 + (i << 7));
+		dca_conf = readq(hose->piu_ior1_base + DEVICEID0 + (i << 7));
 		if (dca_conf >> 63)
 			continue;
 		else {
 			dca_conf = (1UL << 63) | (dev->bus->number << 8) | dev->devfn;
 			pr_info("dca device index %d, dca_conf = %#lx\n",
 					i, dca_conf);
-			write_piu_ior1(node, rc_index,
-					DEVICEID0 + (i << 7), dca_conf);
+			writeq(dca_conf, (hose->piu_ior1_base + DEVICEID0 + (i << 7)));
 			break;
 		}
 	}
 
-	dca_ctl = read_piu_ior1(node, rc_index, DCACONTROL);
+	dca_ctl = readq(hose->piu_ior1_base + DCACONTROL);
 	if (dca_ctl & 0x1) {
 		dca_ctl = 0x2;
-		write_piu_ior1(node, rc_index, DCACONTROL, dca_ctl);
+		writeq(dca_ctl, (hose->piu_ior1_base + DCACONTROL));
 		pr_info("Node %ld RC %ld enable DCA 1.0\n", node, rc_index);
 	}
 }
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, PCI_ANY_ID, enable_sw_dca);
 #endif
+
+static int jm585_restart_notify(struct notifier_block *nb, unsigned long action,
+		void *data)
+{
+	struct pci_dev *pdev;
+	struct pci_controller *hose;
+	int val;
+
+	pdev = pci_get_device(PCI_VENDOR_ID_JMICRON, 0x0585, NULL);
+	if (pdev) {
+		hose = pci_bus_to_pci_controller(pdev->bus);
+		val = readl(hose->rc_config_space_base + RC_PORT_LINK_CTL);
+		writel((val | 0x8), (hose->rc_config_space_base + RC_PORT_LINK_CTL));
+		writel(val, (hose->rc_config_space_base + RC_PORT_LINK_CTL));
+	}
+
+	return NOTIFY_DONE;
+}
+
+static void quirk_jm585_restart(struct pci_dev *dev)
+{
+	static struct notifier_block jm585_restart_nb = {
+		.notifier_call = jm585_restart_notify,
+		.priority = 128,
+	};
+
+	register_restart_handler(&jm585_restart_nb);
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_JMICRON, 0x0585, quirk_jm585_restart);
 
 /**
  * There are some special aspects to the Root Complex of Sunway:
@@ -290,7 +313,7 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_INTEL, PCI_ANY_ID, enable_sw_dca);
  */
 static unsigned char last_bus;
 
-void sw64_pci_root_bridge_prepare(struct pci_host_bridge *bridge)
+static void sunway_pci_root_bridge_prepare(struct pci_host_bridge *bridge)
 {
 	struct pci_controller *hose = NULL;
 	struct resource_entry *entry = NULL;
@@ -334,47 +357,17 @@ void sw64_pci_root_bridge_prepare(struct pci_host_bridge *bridge)
 	bus->number = last_bus;
 
 	bridge->swizzle_irq = pci_common_swizzle;
-	bridge->map_irq = sw64_pci_map_irq;
+	bridge->map_irq = sunway_pci_map_irq;
 
 	init_busnr = (0xff << 16) + ((last_bus + 1) << 8) + (last_bus);
-	write_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS, init_busnr);
+	writel(init_busnr, (hose->rc_config_space_base + RC_PRIMARY_BUS));
 
 	hose->first_busno = last_bus + (is_in_host() ? 1 : 0);
 
 	pci_add_flags(PCI_REASSIGN_ALL_BUS);
 }
 
-static void
-sw64_pci_root_bridge_reserve_legacy_io(struct pci_host_bridge *bridge)
-{
-	struct pci_bus *bus = bridge->bus;
-	struct resource_entry *entry = NULL;
-	struct resource *res = NULL;
-
-	resource_list_for_each_entry(entry, &bridge->windows) {
-		if (!(entry->res->flags & IORESOURCE_IO))
-			continue;
-
-		res = kzalloc(sizeof(struct resource), GFP_KERNEL);
-		if (WARN_ON(!res))
-			return;
-
-		res->name  = "legacy io";
-		res->flags = IORESOURCE_IO;
-		res->start = entry->res->start;
-		res->end   = (res->start + 0xFFF) & 0xFFFFFFFFFFFFFFFFUL;
-
-		pr_info("reserving legacy io %pR for domain %04x\n",
-			res, pci_domain_nr(bus));
-		if (request_resource(entry->res, res)) {
-			pr_err("pci %04x:%02x reserve legacy io %pR failed\n",
-				pci_domain_nr(bus), bus->number, res);
-			kfree(res);
-		}
-	}
-}
-
-void sw64_pci_root_bridge_scan_finish_up(struct pci_host_bridge *bridge)
+void sunway_pci_root_bridge_scan_finish(struct pci_host_bridge *bridge)
 {
 	struct pci_controller *hose = NULL;
 	struct pci_bus *bus = NULL;
@@ -395,18 +388,13 @@ void sw64_pci_root_bridge_scan_finish_up(struct pci_host_bridge *bridge)
 	hose->last_busno = last_bus;
 	hose->busn_space->end = last_bus;
 
-	init_busnr = read_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS);
+	init_busnr = readl(hose->rc_config_space_base + RC_PRIMARY_BUS);
 	init_busnr &= ~(0xff << 16);
 	init_busnr |= last_bus << 16;
-	write_rc_conf(hose->node, hose->index, RC_PRIMARY_BUS, init_busnr);
+	writel(init_busnr, (hose->rc_config_space_base + RC_PRIMARY_BUS));
 
 	pci_bus_update_busn_res_end(bus, last_bus);
 	last_bus++;
-
-	pr_info("bus number update to %u\n", last_bus);
-
-	if (is_in_host())
-		sw64_pci_root_bridge_reserve_legacy_io(bridge);
 
 	/**
 	 * Root Complex of SW64 does not support ASPM, causing
@@ -433,5 +421,27 @@ void sw64_pci_root_bridge_scan_finish_up(struct pci_host_bridge *bridge)
 	 * before scanning Root Complex and cleared after scanning Root Complex.
 	 */
 	pci_clear_flags(PCI_REASSIGN_ALL_BUS);
+}
+
+int pcibios_root_bridge_prepare(struct pci_host_bridge *bridge)
+{
+	struct pci_config_window *cfg = bridge->sysdata;
+	struct acpi_device *adev = NULL;
+	struct pci_controller *hose = cfg->priv;
+	struct device *bus_dev = &bridge->bus->dev;
+
+	if (sunway_legacy_pci)
+		return 0;
+
+	if (!acpi_disabled)
+		adev = to_acpi_device(cfg->parent);
+
+	ACPI_COMPANION_SET(&bridge->dev, adev);
+	set_dev_node(bus_dev, hose->node);
+
+	/* Some quirks for Sunway PCIe controller before scanning */
+	sunway_pci_root_bridge_prepare(bridge);
+
+	return 0;
 }
 

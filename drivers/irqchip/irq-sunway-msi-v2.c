@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
+
+#define pr_fmt(fmt) "MSIC: " fmt
+
 #include <linux/pci.h>
 #include <linux/module.h>
 #include <linux/msi.h>
@@ -8,8 +11,6 @@
 
 #include <asm/irq_impl.h>
 #include <asm/kvm_emulate.h>
-
-#define PREFIX "MSIC: "
 
 static struct irq_domain *msi_default_domain;
 static DEFINE_RAW_SPINLOCK(vector_lock);
@@ -60,10 +61,11 @@ try_again:
 			if (cpu >= nr_cpu_ids) {
 				if (vector == 255) {
 					if (find_once_global) {
-						printk("No global free vector\n");
+						pr_info("No global free vector\n");
 						return false;
 					}
-					printk("No local free vector\n");
+					pr_info("No local free vector, search_mask:%*pbl\n",
+							cpumask_pr_args(search_mask));
 					search_mask = cpu_online_mask;
 					cpu = cpumask_first(search_mask);
 					find_once_global = true;
@@ -107,10 +109,11 @@ try_again:
 		goto try_again;
 	else {
 		if (find_once_global) {
-			printk("No global free vectors\n");
+			pr_info("No global free vectors\n");
 			return found;
 		}
-		printk("No local free vectors\n");
+		pr_info("No local free vectors, search_mask:%*pbl\n",
+				cpumask_pr_args(search_mask));
 		search_mask = cpu_online_mask;
 		cpu = cpumask_first(search_mask);
 		find_once_global = true;
@@ -142,6 +145,9 @@ static int sw64_set_affinity(struct irq_data *d, const struct cpumask *cpumask, 
 	if (!cdata)
 		return -ENOMEM;
 
+	if (cdata->move_in_progress)
+		return -EBUSY;
+
 	/*
 	 * If existing target cpu is already in the new mask and is online
 	 * then do nothing.
@@ -168,13 +174,20 @@ static int sw64_set_affinity(struct irq_data *d, const struct cpumask *cpumask, 
 	/* update new setting */
 	entry = irq_get_msi_desc(irqd->irq);
 	spin_lock(&cdata->cdata_lock);
+	if (cpu_online(cdata->dst_cpu)) {
+		cdata->move_in_progress = true;
+		cdata->prev_vector = cdata->vector;
+		cdata->prev_cpu = cdata->dst_cpu;
+	} else {
+		for (i = 0; i < cdata->multi_msi; i++)
+			per_cpu(vector_irq, cdata->dst_cpu)[cdata->vector] = 0;
+	}
+
+	cdata->vector = vector;
+	cdata->dst_cpu = cpu;
 	for (i = 0; i < cdata->multi_msi; i++)
 		per_cpu(vector_irq, cpu)[vector + i] = entry->irq + i;
-	cdata->prev_vector = cdata->vector;
-	cdata->prev_cpu = cdata->dst_cpu;
-	cdata->dst_cpu = cpu;
-	cdata->vector = vector;
-	cdata->move_in_progress = true;
+
 	irq_msi_compose_msg(d, &msg);
 	__pci_write_msi_msg(entry, &msg);
 	spin_unlock(&cdata->cdata_lock);
@@ -234,7 +247,7 @@ static int __assign_irq_vector(int virq, unsigned int nr_irqs,
 
 		cdata = alloc_sw_msi_chip_data(irq_data);
 		if (!cdata) {
-			printk("error alloc irq chip data\n");
+			pr_info("error alloc irq chip data\n");
 			return -ENOMEM;
 		}
 
@@ -270,7 +283,7 @@ static int __assign_irq_vector(int virq, unsigned int nr_irqs,
 
 			cdata = alloc_sw_msi_chip_data(irq_data);
 			if (!cdata) {
-				printk("error alloc irq chip data\n");
+				pr_info("error alloc irq chip data\n");
 				return -ENOMEM;
 			}
 
@@ -475,8 +488,6 @@ void handle_pci_msi_interrupt(unsigned long type, unsigned long vector, unsigned
 	for (i = 0; i < 4; i++) {
 		vector_index = i * 64;
 		while (vector != 0) {
-			int irq = 0;
-
 			msi_index = find_next_bit(&vector, 64, msi_index);
 			if (msi_index == 64) {
 				msi_index = 0;
@@ -484,6 +495,11 @@ void handle_pci_msi_interrupt(unsigned long type, unsigned long vector, unsigned
 			}
 
 			irq = per_cpu(vector_irq, cpu)[vector_index + msi_index];
+			if (unlikely(!irq)) {
+				vector = vector & (~(1UL << msi_index));
+				continue;
+			}
+
 			irq_data = irq_domain_get_irq_data(msi_default_domain->parent, irq);
 			cdata = irq_data_get_irq_chip_data(irq_data);
 			spin_lock(&cdata->cdata_lock);
@@ -515,7 +531,7 @@ int __init msic_acpi_init(struct irq_domain *parent,
 	enabled = is_msic_enabled(msic->flags);
 	virtual = is_msic_virtual(msic->flags);
 
-	pr_info(PREFIX "version [%u] on node [%u] Root Complex [%u] (%s) %s\n",
+	pr_info("version [%u] on node [%u] Root Complex [%u] (%s) %s\n",
 			msic->version, msic->node, msic->rc,
 			virtual ? "virtual" : "physical",
 			enabled ? "found" : "disabled");

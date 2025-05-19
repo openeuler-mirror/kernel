@@ -29,6 +29,7 @@ SECTIONS
 		IRQENTRY_TEXT
 		SOFTIRQENTRY_TEXT
 		KPROBES_TEXT
+		ENTRY_TEXT
 		*(.fixup)
 		*(.gnu.warning)
 	} :text

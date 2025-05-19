@@ -24,6 +24,9 @@
 #elif defined(__TARGET_ARCH_sparc)
 	#define bpf_target_sparc
 	#define bpf_target_defined
+#elif defined(__TARGET_ARCH_sw_64)
+	#define bpf_target_sw64
+	#define bpf_target_defined
 #else
 	#undef bpf_target_defined
 #endif
@@ -44,6 +47,8 @@
 	#define bpf_target_powerpc
 #elif defined(__sparc__)
 	#define bpf_target_sparc
+#elif defined(__sw_64__)
+	#define bpf_target_sw64
 #endif
 #endif
 
@@ -278,6 +283,34 @@ struct pt_regs;
 #define PT_REGS_IP(x) ((x)->pc)
 #define PT_REGS_IP_CORE(x) BPF_CORE_READ((x), pc)
 #endif
+
+#elif defined(bpf_target_sw64)
+
+/* sw64 provides struct user_pt_regs instead of struct pt_regs to userspace */
+struct pt_regs;
+#define PT_REGS_SW64 const volatile struct user_pt_regs
+#define PT_REGS_PARM1(x) (((PT_REGS_SW64 *)(x))->regs[16])
+#define PT_REGS_PARM2(x) (((PT_REGS_SW64 *)(x))->regs[17])
+#define PT_REGS_PARM3(x) (((PT_REGS_SW64 *)(x))->regs[18])
+#define PT_REGS_PARM4(x) (((PT_REGS_SW64 *)(x))->regs[19])
+#define PT_REGS_PARM5(x) (((PT_REGS_SW64 *)(x))->regs[20])
+#define PT_REGS_RET(x) (((PT_REGS_SW64 *)(x))->regs[26])
+/* Works only with CONFIG_FRAME_POINTER */
+#define PT_REGS_FP(x) (((PT_REGS_SW64 *)(x))->regs[15])
+#define PT_REGS_RC(x) (((PT_REGS_SW64 *)(x))->regs[0])
+#define PT_REGS_SP(x) (((PT_REGS_SW64 *)(x))->regs[30])
+#define PT_REGS_IP(x) (((PT_REGS_SW64 *)(x))->pc)
+
+#define PT_REGS_PARM1_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), regs[16])
+#define PT_REGS_PARM2_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), regs[17])
+#define PT_REGS_PARM3_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), regs[18])
+#define PT_REGS_PARM4_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), regs[19])
+#define PT_REGS_PARM5_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), regs[20])
+#define PT_REGS_RET_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), regs[26])
+#define PT_REGS_FP_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), regs[15])
+#define PT_REGS_RC_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), regs[0])
+#define PT_REGS_SP_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), regs[30])
+#define PT_REGS_IP_CORE(x) BPF_CORE_READ((PT_REGS_SW64 *)(x), pc)
 
 #endif
 

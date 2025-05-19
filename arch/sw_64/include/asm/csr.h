@@ -55,6 +55,9 @@
 #define CSR_IDA_MATCH		0xc5
 #define CSR_IDA_MASK		0xc6
 #define CSR_BASE_KREGS		0xe0
+#define CSR_NMI_STACK		0xe5
+#define CSR_NMI_SCRATCH		0xe6
+#define CSR_NMI_MASK		0xe7
 #define CSR_PS			0xe8
 #define CSR_PC			0xe9
 #define CSR_EARG0		0xea
@@ -63,6 +66,7 @@
 #define CSR_SCRATCH		0xed
 #define CSR_SP			0xee
 #define CSR_KTP			0xef
+#define CSR_CAUSE		0xf0
 
 #define DA_MATCH_EN_S		4
 #define DV_MATCH_EN_S		6
@@ -82,7 +86,8 @@
 static inline unsigned long sw64_read_csr(unsigned long x)
 {
 	unsigned long __val;
-	__asm__ __volatile__("csrr %0,%1" : "=r"(__val) : "i"(x));
+
+	__asm__ __volatile__("csrr %0,%1; csrr %0,%1" : "=r"(__val) : "i"(x));
 	return __val;
 }
 
@@ -101,6 +106,12 @@ static inline void update_ptbr_sys(unsigned long ptbr)
 {
 	imemb();
 	sw64_write_csr_imb(ptbr, CSR_PTBR_SYS);
+}
+
+static inline void update_ptbr_usr(unsigned long ptbr)
+{
+	imemb();
+	sw64_write_csr_imb(ptbr, CSR_PTBR_USR);
 }
 
 #endif

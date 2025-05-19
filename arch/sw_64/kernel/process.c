@@ -79,7 +79,7 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 
 	p->thread.sp = (unsigned long) childregs - STACKFRAME_SIZE;
 
-	if (unlikely(p->flags & PF_KTHREAD)) {
+	if (unlikely(p->flags & (PF_KTHREAD | PF_IO_WORKER))) {
 		/* kernel thread */
 		memset(childregs, 0, sizeof(struct pt_regs));
 		p->thread.ra = (unsigned long) ret_from_kernel_thread;

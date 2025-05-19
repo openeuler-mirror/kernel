@@ -6,13 +6,14 @@
 #include <linux/memblock.h>
 #include <linux/smp.h>
 
+#include <asm/cpu.h>
 #include <asm/early_ioremap.h>
 
-int acpi_disabled = 1;
+int acpi_disabled;
 EXPORT_SYMBOL(acpi_disabled);
 
-int acpi_noirq = 1;		/* skip ACPI IRQ initialization */
-int acpi_pci_disabled = 1;	/* skip ACPI PCI scan and IRQ initialization */
+int acpi_noirq;		/* skip ACPI IRQ initialization */
+int acpi_pci_disabled;	/* skip ACPI PCI scan and IRQ initialization */
 EXPORT_SYMBOL(acpi_pci_disabled);
 
 static bool param_acpi_on  __initdata;
@@ -144,7 +145,7 @@ acpi_numa_x2apic_affinity_init(struct acpi_srat_x2apic_cpu_affinity *pa)
 	/* Record the mapping from logical core id to node id */
 	cpu = rcid_to_cpu(rcid);
 	if (cpu < 0) {
-		pr_err("SRAT: Can not find the logical id for physical Core 0x%04x\n",
+		pr_warn_once("SRAT: Can not find the logical id for physical Core 0x%04x\n",
 				rcid);
 		return;
 	}
@@ -223,7 +224,7 @@ int acpi_unmap_cpu(int cpu)
 EXPORT_SYMBOL(acpi_unmap_cpu);
 #endif /* CONFIG_ACPI_HOTPLUG_CPU */
 
-static bool __init is_rcid_duplicate(int rcid)
+bool __init is_rcid_duplicate(int rcid)
 {
 	int i;
 
@@ -246,14 +247,14 @@ setup_rcid_and_core_mask(struct acpi_madt_sw_cintc *sw_cintc)
 	 * represents the maximum number of cores in the system.
 	 */
 	if (possible_cores >= nr_cpu_ids) {
-		pr_err(PREFIX "Max core num [%u] reached, core [0x%x] ignored\n",
-			nr_cpu_ids, rcid);
-		return -ENODEV;
+		pr_warn_once(PREFIX "Core [0x%x] exceeds max core num [%u]\n",
+			rcid, nr_cpu_ids);
+		return 0;
 	}
 
 	/* The rcid of each core is unique */
 	if (is_rcid_duplicate(rcid)) {
-		pr_err(PREFIX "Duplicate core [0x%x] in MADT\n", rcid);
+		pr_err(PREFIX "Duplicate core [0x%x]\n", rcid);
 		return -EINVAL;
 	}
 
@@ -354,12 +355,18 @@ void __init acpi_boot_table_init(void)
 	}
 
 	/**
-	 * ACPI is disabled by default.
-	 * ACPI is only enabled when firmware passes ACPI table
-	 * and sets boot parameter "acpi=on".
+	 * ACPI is enabled by default.
+	 *
+	 * ACPI is disabled only when firmware explicitly passes
+	 * the boot cmdline "acpi=off".
+	 *
+	 * Note: If no valid ACPI table is found, it will eventually
+	 * be disabled.
 	 */
 	if (param_acpi_on)
 		enable_acpi();
+	else if (param_acpi_off)
+		disable_acpi();
 
 	/*
 	 * If acpi_disabled, bail out

@@ -15,8 +15,8 @@
 #ifndef _ASM_SW64_SPINLOCK_H
 #define _ASM_SW64_SPINLOCK_H
 
-#include <asm/qrwlock.h>
 #include <asm/qspinlock.h>
+#include <asm/qrwlock.h>
 
 /* See include/linux/spinlock.h */
 #define smp_mb__after_spinlock()	smp_mb()

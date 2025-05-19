@@ -56,6 +56,8 @@ void perf_callchain_user(struct perf_callchain_entry_ctx *entry,
 		if (valid_utext_addr(frame.return_address) ||
 			valid_dy_addr(frame.return_address))
 			perf_callchain_store(entry, frame.return_address);
+		else
+			break;
 		fp = (void __user *)frame.next_frame;
 	}
 }

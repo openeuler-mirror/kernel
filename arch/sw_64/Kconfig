@@ -5,7 +5,9 @@ config SW64
 	select ACPI
 	select ACPI_GENERIC_GSI if ACPI
 	select ACPI_MCFG if (ACPI && PCI)
+	select ACPI_PPTT if ACPI
 	select ACPI_REDUCED_HARDWARE_ONLY
+	select ARCH_CLOCKSOURCE_INIT
 	select ARCH_HAS_ACPI_TABLE_UPGRADE if ACPI
 	select ARCH_HAS_ELF_RANDOMIZE
 	select ARCH_HAS_PHYS_TO_DMA
@@ -42,6 +44,7 @@ config SW64
 	select ARCH_INLINE_WRITE_UNLOCK_BH
 	select ARCH_INLINE_WRITE_UNLOCK_IRQ
 	select ARCH_INLINE_WRITE_UNLOCK_IRQRESTORE
+	select ARCH_KEEP_MEMBLOCK
 	select ARCH_NO_PREEMPT
 	select ARCH_SUPPORTS_ACPI
 	select ARCH_SUPPORTS_ATOMIC_RMW
@@ -56,7 +59,9 @@ config SW64
 	select AUDIT_ARCH
 	select COMMON_CLK
 	select DMA_OPS if PCI
+	select GENERIC_ARCH_TOPOLOGY
 	select GENERIC_CLOCKEVENTS
+	select GENERIC_GETTIMEOFDAY if HAVE_GENERIC_VDSO
 	select GENERIC_IRQ_LEGACY
 	select GENERIC_IRQ_MIGRATION if SMP
 	select GENERIC_IRQ_PROBE
@@ -66,6 +71,7 @@ config SW64
 	select GENERIC_STRNCPY_FROM_USER
 	select GENERIC_STRNLEN_USER
 	select GENERIC_TIME_VSYSCALL
+	select GPIOLIB if ACPI
 	select HANDLE_DOMAIN_IRQ
 	select HARDIRQS_SW_RESEND
 	select HAVE_ARCH_AUDITSYSCALL
@@ -84,6 +90,7 @@ config SW64
 	select HAVE_FTRACE_MCOUNT_RECORD
 	select HAVE_FUNCTION_GRAPH_TRACER
 	select HAVE_FUNCTION_TRACER
+	select HAVE_GENERIC_VDSO if MMU && 64BIT
 	select HAVE_IDE
 	select HAVE_KPROBES
 	select HAVE_KPROBES_ON_FTRACE
@@ -96,6 +103,8 @@ config SW64
 	select HAVE_PCI
 	select HAVE_PCSPKR_PLATFORM
 	select HAVE_PERF_EVENTS
+	select HAVE_PERF_EVENTS_NMI if SUBARCH_C4
+	select HAVE_HARDLOCKUP_DETECTOR_PERF if PERF_EVENTS && HAVE_PERF_EVENTS_NMI
 	select HAVE_PERF_REGS
 	select HAVE_PERF_USER_STACK_DUMP
 	select HAVE_REGS_AND_STACK_ACCESS_API
@@ -117,8 +126,6 @@ config SW64
 	select SET_FS
 	select SPARSEMEM_EXTREME if SPARSEMEM
 	select SW64_IRQ_CPU
-	select SW64_IRQ_MSI if PCI_MSI
-	select SW64_IRQ_MSI_VT if PCI_MSI
 	select SW64_TIMER
 	select SWIOTLB
 	select THREAD_INFO_IN_TASK
@@ -426,6 +433,7 @@ config NUMA
 	bool "NUMA Support"
 	depends on SMP && !FLATMEM
 	select ACPI_NUMA if ACPI
+	select OF_NUMA
 	help
 	  Say Y to compile the kernel to support NUMA (Non-Uniform Memory
 	  Access). This option is for configuring high-end multiprocessor
@@ -437,7 +445,7 @@ config USE_PERCPU_NUMA_NODE_ID
 
 config NODES_SHIFT
 	int
-	default "7"
+	default "3"
 	depends on NEED_MULTIPLE_NODES
 
 config RELOCATABLE
@@ -511,6 +519,7 @@ menu "Boot options"
 config BUILTIN_DTB
 	bool "Embed DTB in kernel image"
 	depends on OF
+	depends on SUBARCH_C3B
 	default n
 	help
 	  Embeds a device tree binary in the kernel image.
@@ -602,7 +611,7 @@ endchoice
 
 config FORCE_MAX_ZONEORDER
 	int
-	default "16" if (HUGETLB_PAGE)
+	default "16" if (HUGETLB_PAGE && SUBARCH_C3B)
 	default "11"
 	help
 	  The kernel memory allocator divides physically contiguous memory

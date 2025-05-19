@@ -500,12 +500,14 @@ static int follow_fault_pfn(struct vm_area_struct *vma, struct mm_struct *mm,
 		if (ret)
 			return ret;
 	}
-
+#ifdef CONFIG_SW64
+	*pfn = pte_pfn(*ptep);
+#else
 	if (write_fault && !pte_write(*ptep))
 		ret = -EFAULT;
 	else
 		*pfn = pte_pfn(*ptep);
-
+#endif
 	pte_unmap_unlock(ptep, ptl);
 	return ret;
 }

@@ -207,7 +207,7 @@ void set_huge_pte_at(struct mm_struct *mm, unsigned long addr,
 	size_t pgsize;
 	int i;
 	int ncontig;
-	unsigned long pfn;
+	unsigned long pfn, dpfn;
 	pgprot_t hugeprot;
 
 	/*
@@ -223,11 +223,12 @@ void set_huge_pte_at(struct mm_struct *mm, unsigned long addr,
 
 	ncontig = CONT_PMDS;
 	pfn = pte_pfn(pte);
+	dpfn = PMD_SIZE >> PAGE_SHIFT;
 	hugeprot = pte_pgprot(pte);
 
 	get_and_clear(mm, addr, ptep, pgsize, ncontig);
 
-	for (i = 0; i < ncontig; i++, ptep++, addr += pgsize)
+	for (i = 0; i < ncontig; i++, ptep++, addr += pgsize, pfn += dpfn)
 		set_pte_at(mm, addr, ptep, pfn_pte(pfn, hugeprot));
 }
 
@@ -246,7 +247,7 @@ void set_huge_swap_pte_at(struct mm_struct *mm, unsigned long addr,
 void huge_ptep_set_wrprotect(struct mm_struct *mm,
 		unsigned long addr, pte_t *ptep)
 {
-	unsigned long pfn;
+	unsigned long pfn, dpfn;
 	pgprot_t hugeprot;
 	int ncontig, i;
 	size_t pgsize;
@@ -258,6 +259,7 @@ void huge_ptep_set_wrprotect(struct mm_struct *mm,
 	}
 
 	ncontig = CONT_PMDS;
+	dpfn = PMD_SIZE >> PAGE_SHIFT;
 
 	pte = get_and_clear(mm, addr, ptep, pgsize, ncontig);
 	pte = pte_wrprotect(pte);
@@ -265,7 +267,7 @@ void huge_ptep_set_wrprotect(struct mm_struct *mm,
 	hugeprot = pte_pgprot(pte);
 	pfn = pte_pfn(pte);
 
-	for (i = 0; i < ncontig; i++, ptep++, addr += pgsize)
+	for (i = 0; i < ncontig; i++, ptep++, addr += pgsize, pfn += dpfn)
 		set_pte_at(mm, addr, ptep, pfn_pte(pfn, hugeprot));
 }
 
@@ -325,7 +327,7 @@ int huge_ptep_set_access_flags(struct vm_area_struct *vma,
 {
 	int ncontig, i;
 	size_t pgsize = 0;
-	unsigned long pfn = pte_pfn(pte);
+	unsigned long pfn = pte_pfn(pte), dpfn;
 	pgprot_t hugeprot;
 	pte_t orig_pte;
 
@@ -333,6 +335,7 @@ int huge_ptep_set_access_flags(struct vm_area_struct *vma,
 		return ptep_set_access_flags(vma, addr, ptep, pte, dirty);
 
 	ncontig = CONT_PMDS;
+	dpfn = PMD_SIZE >> PAGE_SHIFT;
 
 	if (!__cont_access_flags_changed(ptep, pte, ncontig))
 		return 0;
@@ -348,7 +351,7 @@ int huge_ptep_set_access_flags(struct vm_area_struct *vma,
 		pte = pte_mkyoung(pte);
 
 	hugeprot = pte_pgprot(pte);
-	for (i = 0; i < ncontig; i++, ptep++, addr += pgsize)
+	for (i = 0; i < ncontig; i++, ptep++, addr += pgsize, pfn += dpfn)
 		set_pte_at(vma->vm_mm, addr, ptep, pfn_pte(pfn, hugeprot));
 
 	return 1;
@@ -439,20 +442,14 @@ hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 }
 #endif /* CONFIG_HUGETLB_PAGE */
 
-static __init int setup_hugepagesz(char *opt)
+bool __init arch_hugetlb_valid_size(unsigned long size)
 {
-	unsigned long ps = memparse(opt, &opt);
-
-	switch (ps) {
+	switch (size) {
 	case PUD_SIZE:
 	case PMD_SIZE * CONT_PMDS:
 	case PMD_SIZE:
-		hugetlb_add_hstate(ilog2(ps) - PAGE_SHIFT);
-		return 1;
+		return true;
 	}
 
-	pr_err("hugepagesz: Unsupported page size %lu M\n",
-			ps >> 20);
-	return 0;
+	return false;
 }
-__setup("hugepagesz=", setup_hugepagesz);
