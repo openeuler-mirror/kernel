@@ -297,7 +297,7 @@ int kvm_arch_vcpu_dump_regs(struct kvm_vcpu *vcpu);
 /* MMU handling */
 void kvm_flush_tlb_all(void);
 void kvm_flush_tlb_gpa(struct kvm_vcpu *vcpu, unsigned long gpa);
-int kvm_handle_mm_fault(struct kvm_vcpu *vcpu, unsigned long badv, bool write);
+int kvm_handle_mm_fault(struct kvm_vcpu *vcpu, unsigned long badv, bool write, int ecode);
 
 #define KVM_ARCH_WANT_MMU_NOTIFIER
 void kvm_set_spte_hva(struct kvm *kvm, unsigned long hva, pte_t pte);
