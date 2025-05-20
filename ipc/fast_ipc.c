@@ -10,6 +10,7 @@
 #include <linux/types.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
+#include <linux/delay.h>
 #include <linux/printk.h>
 #include <linux/preempt.h>
 #include <linux/sched/signal.h>
@@ -185,11 +186,14 @@ ssize_t fast_ipc_do_call(struct fast_ipc_bind_info *bind_info,
 				  tsk->comm, tsk->pid);
 		if (signal_pending(current)) {
 			ret = -EINTR;
-			pr_err("[cpu/%d][%s/%d] client has signal pending break\n",
+			pr_err("[cpu/%d][%s/%d] client has signal, wait server finish\n",
 				   smp_processor_id(), tsk->comm, tsk->pid);
-			break;
+			msleep(20);
+			set_current_state(TASK_RUNNING);
+			/* for next loop, server change the is_calling flags */
+			if (!bind_info->is_calling)
+				pr_err("server finish\n");
 		}
-		set_current_state(TASK_INTERRUPTIBLE);
 	}
 	set_current_state(TASK_RUNNING);
 
@@ -216,12 +220,15 @@ long fast_ipc_ret_call(struct fast_ipc_bind_info *bind_info,
 {
 	struct task_struct *client_task;
 
-	if (!bind_info->is_calling)
+	if (!bind_info->is_calling) {
+		pr_err("confusing bug is_no_calling\n");
 		return 0;
+	}
 
 	bind_info_lock(bind_info);
 	client_task = bind_info->client_task;
 	if (!client_task) {
+		pr_err("confusing bug no_client\n");
 		bind_info_unlock(bind_info);
 		return -ESRCH;
 	}
@@ -250,8 +257,14 @@ long fast_ipc_wait_call(struct fast_ipc_bind_info *bind_info,
 
 	for (;;) {
 		set_current_state(TASK_INTERRUPTIBLE);
-		if (bind_info->is_calling)
-			break;
+		if (bind_info->is_calling) {
+			/* client send a no reply request to userspace,we must handle it */
+			if (bind_info->no_reply) {
+				bind_info->no_reply = false;
+				fast_ipc_ret_call(bind_info, tsk);
+			} else
+				break;
+		}
 
 		if (bind_info->server_need_exit) {
 			ret = -ENODEV;

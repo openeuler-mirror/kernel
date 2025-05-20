@@ -15,6 +15,7 @@ struct fast_ipc_bind_info {
 	struct task_struct *server_task;
 
 	bool is_calling;
+	bool no_reply;
 	bool client_need_exit;
 	bool server_need_exit;
 
@@ -41,5 +42,10 @@ long fast_ipc_wait_call(struct fast_ipc_bind_info *bind_info,
 		struct task_struct *tsk);
 
 void fast_ipc_release(struct fast_ipc_bind_info *bind_info);
+
+static inline void fast_ipc_set_call_no_reply(struct fast_ipc_bind_info *bind_info)
+{
+	bind_info->no_reply = true;
+};
 
 #endif
