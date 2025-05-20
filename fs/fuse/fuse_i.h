@@ -1290,6 +1290,9 @@ void fuse_dax_cancel_work(struct fuse_conn *fc);
 
 #define FUSE_DATA_PAGE_SIZE 4096
 
+void fuse_fast_forget(struct fuse_mount *fm, struct fuse_forget_link *forget,
+						u64 nodeid, u64 nlookup);
+
 struct fuse_io_args *fuse_io_alloc(struct fuse_io_priv *io,
 								   unsigned int npages);
 void fuse_io_free(struct fuse_io_args *ia);

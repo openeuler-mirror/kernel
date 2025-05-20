@@ -250,8 +250,14 @@ long fast_ipc_wait_call(struct fast_ipc_bind_info *bind_info,
 
 	for (;;) {
 		set_current_state(TASK_INTERRUPTIBLE);
-		if (bind_info->is_calling)
-			break;
+		if (bind_info->is_calling) {
+			/* client send a no reply request to userspace,we must handle it */
+			if (bind_info->no_reply) {
+				bind_info->no_reply = false;
+				fast_ipc_ret_call(bind_info, tsk);
+			} else
+				break;
+		}
 
 		if (bind_info->server_need_exit) {
 			ret = -ENODEV;

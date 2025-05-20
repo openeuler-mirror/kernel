@@ -352,6 +352,8 @@ ssize_t fuse_simple_request_fast(struct fuse_mount *fm, struct fuse_args *args)
 
 	if (!args->noreply)
 		__set_bit(FR_ISREPLY, &req->flags);
+	else
+		__clear_bit(FR_ISREPLY, &req->flags);
 
 	__fuse_ipc_send(req, current, ipc_info);
 
@@ -516,15 +518,41 @@ __releases(fiq->lock)
 	fiq->ops->wake_pending_and_unlock(fiq);
 }
 
+#ifdef CONFIG_FUSE_FASTPATH
+void fuse_fast_forget(struct fuse_mount *fm, struct fuse_forget_link *forget,
+							u64 nodeid, u64 nlookup)
+{
+	struct fuse_forget_in inarg;
+
+	FUSE_ARGS(args);
+
+	if (fm->fc->no_forget)
+		return;
+
+	if (!fm->fc->use_fastpath) {
+		fuse_queue_forget(fm->fc, forget, nodeid, nlookup);
+		return;
+	}
+
+	memset(&inarg, 0, sizeof(inarg));
+	inarg.nlookup = nlookup;
+	args.opcode = FUSE_FORGET;
+	args.nodeid = nodeid;
+	args.in_numargs = 1;
+	args.in_args[0].size = sizeof(inarg);
+	args.in_args[0].value = &inarg;
+	args.force = true;
+	args.noreply = true;
+
+	fuse_simple_request(fm, &args);
+	/* ignore errors */
+}
+#endif
+
 void fuse_queue_forget(struct fuse_conn *fc, struct fuse_forget_link *forget,
 		       u64 nodeid, u64 nlookup)
 {
 	struct fuse_iqueue *fiq = &fc->iq;
-
-#ifdef CONFIG_FUSE_FASTPATH
-	if (fc->no_forget)
-		return;
-#endif
 
 	forget->forget_one.nodeid = nodeid;
 	forget->forget_one.nlookup = nlookup;
@@ -2698,7 +2726,6 @@ static ssize_t fuse_ipc_do_read(struct fuse_ipc_info *ipc_info,
 	return reqsize;
 
 out_end:
-	fuse_drop_waiting(req->fm->fc);
 	FUSE_DEBUG("[%s] error: %ld\n", __func__, err);
 	return err;
 }
@@ -2732,6 +2759,9 @@ static long fuse_ipc_wait_call(struct file *file, struct fuse_conn *fc,
 			smp_processor_id(), tsk->comm, ret);
 		return ret;
 	}
+
+	if (!test_bit(FR_ISREPLY, &ipc_info->req.flags))
+		fast_ipc_set_call_no_reply(ipc_info->bind_info);
 
 	ret = fuse_ipc_read(ipc_info, ipc_in_data);
 

@@ -133,8 +133,13 @@ static void fuse_evict_inode(struct inode *inode)
 		if (FUSE_IS_DAX(inode))
 			fuse_dax_inode_cleanup(inode);
 		if (fi->nlookup) {
+#ifdef CONFIG_FUSE_FASTPATH
+			fuse_fast_forget(get_fuse_mount(inode), fi->forget,
+					  fi->nodeid, fi->nlookup);
+#else
 			fuse_queue_forget(fc, fi->forget, fi->nodeid,
 					  fi->nlookup);
+#endif
 			fi->forget = NULL;
 		}
 	}
