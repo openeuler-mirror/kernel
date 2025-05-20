@@ -2873,7 +2873,9 @@ static long fuse_ipc_ret_call(struct file *file, struct fuse_conn *fc,
 	if (num_written < 0) {
 		pr_err("[cpu/%d] [%s/%d]fuse_ipc_write failed %ld\n",
 			   smp_processor_id(), tsk->comm, tsk->pid, num_written);
-		return num_written;
+		/* no return, we report the error msg to client in
+		 * fuse_ipc_write and continue handle the next request
+		 */
 	}
 
 	ret = fast_ipc_ret_call(ipc_info->bind_info, tsk);
