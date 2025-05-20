@@ -1589,7 +1589,7 @@ static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
 	size = vma->vm_end - vma->vm_start;
 	offset = vma->vm_pgoff;
 	vma->vm_ops = &sdma_vm_ops;
-	vma->vm_flags |= VM_DONTEXPAND | VM_WIPEONFORK | VM_DONTCOPY;
+	vma->vm_flags |= VM_DONTEXPAND | VM_WIPEONFORK | VM_DONTCOPY | VM_IO;
 
 	dev_dbg(dev, "sdma total channel num = %u, user mmap offset = 0x%llx", chn_num, offset);
 	switch (remap_addr_range(chn_num, offset, size, chn_base, data->ida)) {
