@@ -1034,7 +1034,7 @@ static void sxe_shutdown(struct pci_dev *pdev)
 	}
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 static int sxe_suspend(struct device *dev)
 {
 	struct pci_dev *pdev = to_pci_dev(dev);
