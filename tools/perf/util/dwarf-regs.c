@@ -18,6 +18,10 @@
 #define EM_LOONGARCH	258 /* LoongArch */
 #endif
 
+#ifndef EM_SW64
+#define EM_SW64		0x9916 /* SW64 */
+#endif
+
 /* Define const char * {arch}_register_tbl[] */
 #define DEFINE_DWARF_REGSTR_TABLE
 #include "../arch/x86/include/dwarf-regs-table.h"
@@ -57,7 +61,7 @@ const char *get_dwarf_regstr(unsigned int n, unsigned int machine)
 	case EM_SPARC:
 	case EM_SPARCV9:
 		return __get_dwarf_regstr(sparc_regstr_tbl, n);
-	case EM_SW_64:
+	case EM_SW64:
 		return __get_dwarf_regstr(sw_64_regstr_tbl, n);
 	case EM_XTENSA:
 		return __get_dwarf_regstr(xtensa_regstr_tbl, n);
