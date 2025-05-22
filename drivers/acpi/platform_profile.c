@@ -679,6 +679,9 @@ static int __init platform_profile_init(void)
 {
 	int err;
 
+	if (acpi_disabled)
+		return -EOPNOTSUPP;
+
 	err = class_register(&platform_profile_class);
 	if (err)
 		return err;
