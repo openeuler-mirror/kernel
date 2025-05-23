@@ -2179,15 +2179,9 @@ int kvm_arch_init(void *opaque)
 	if (kvm_dvmbm_support)
 		kvm_get_pg_cfg();
 
-#ifdef CONFIG_ARM64_HISI_IPIV
-	kvm_ipiv_support = hisi_ipiv_supported();
-	if (kvm_ipiv_support)
-		ipiv_gicd_init();
-#endif
 #endif
 	kvm_info("KVM ncsnp %s\n", kvm_ncsnp_support ? "enabled" : "disabled");
 	kvm_info("KVM dvmbm %s\n", kvm_dvmbm_support ? "enabled" : "disabled");
-	kvm_info("KVM ipiv %s\n", kvm_ipiv_support ? "enabled" : "disabled");
 
 	in_hyp_mode = is_kernel_in_hyp_mode();
 

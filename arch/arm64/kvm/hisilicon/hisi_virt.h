@@ -109,6 +109,5 @@ void kvm_hisi_reload_lsudvmbm(struct kvm *kvm);
 
 #ifdef CONFIG_ARM64_HISI_IPIV
 extern bool gic_dist_enable_ipiv(void);
-extern bool is_gicv4p1(void);
 #endif /* CONFIG_ARM64_HISI_IPIV */
 #endif /* __HISI_VIRT_H__ */
