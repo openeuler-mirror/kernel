@@ -1328,6 +1328,16 @@ static int kvm_vcpu_set_target(struct kvm_vcpu *vcpu,
 	if (vcpu->arch.target != -1 && vcpu->arch.target != init->target)
 		return -EINVAL;
 
+#ifdef CONFIG_ARM64_HISI_IPIV
+	if (static_branch_unlikely(&ipiv_enable) &&
+	    vcpu->kvm->arch.vgic.its_vm.enable_ipiv_from_vmm &&
+	    vcpu->vcpu_id != vcpu->vcpu_idx) {
+		kvm_err("IPIV ERROR: vcpu_id %d != vcpu_idx %d\n",
+					vcpu->vcpu_id, vcpu->vcpu_idx);
+		return -EINVAL;
+	}
+#endif
+
 	/* -ENOENT for unknown features, -EINVAL for invalid combinations. */
 	for (i = 0; i < sizeof(init->features) * 8; i++) {
 		bool set = (init->features[i / 32] & (1 << (i % 32)));
