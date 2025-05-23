@@ -640,7 +640,7 @@ struct drm_dp_mst_topology_mgr {
 	 * receiver state must be reset, after the topology manager got
 	 * removed. Protected by @lock.
 	 */
-	bool reset_rx_state : 1;
+	KABI_FILL_HOLE(bool reset_rx_state : 1)
 
 	/**
 	 * @mst_primary: Pointer to the primary/first branch device.
