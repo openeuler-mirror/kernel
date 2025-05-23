@@ -521,6 +521,12 @@ static int nr_gicr;
 
 #ifdef CONFIG_ARM64_HISI_IPIV
 extern struct static_key_false ipiv_enable;
+
+void __iomem *gic_data_rdist_get_vlpi_base(void)
+{
+	return gic_data_rdist_vlpi_base();
+}
+EXPORT_SYMBOL(gic_data_rdist_get_vlpi_base);
 #endif
 
 /*
