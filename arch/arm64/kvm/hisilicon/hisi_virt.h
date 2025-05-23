@@ -93,6 +93,8 @@ bool hisi_ncsnp_supported(void);
 bool hisi_dvmbm_supported(void);
 #ifdef CONFIG_ARM64_HISI_IPIV
 bool hisi_ipiv_supported(void);
+bool hisi_ipiv_supported_per_vm(struct kvm_vcpu *vcpu);
+void hisi_ipiv_enable_per_vm(struct kvm_vcpu *vcpu);
 void ipiv_gicd_init(void);
 #endif /* CONFIG_ARM64_HISI_IPIV */
 void kvm_get_pg_cfg(void);

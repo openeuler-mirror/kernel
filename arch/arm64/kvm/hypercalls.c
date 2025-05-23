@@ -9,6 +9,10 @@
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
 
+#ifdef CONFIG_ARM64_HISI_IPIV
+#include "hisilicon/hisi_virt.h"
+#endif
+
 static void kvm_ptp_get_time(struct kvm_vcpu *vcpu, u64 *val)
 {
 	struct system_time_snapshot systime_snapshot;
@@ -135,6 +139,22 @@ int kvm_hvc_call_handler(struct kvm_vcpu *vcpu)
 		if (gpa != GPA_INVALID)
 			val[0] = gpa;
 		break;
+#ifdef CONFIG_ARM64_HISI_IPIV
+	case ARM_SMCCC_VENDOR_PV_SGI_FEATURES:
+		if (hisi_ipiv_supported_per_vm(vcpu))
+			val[0] = SMCCC_RET_SUCCESS;
+		else
+			val[0] = SMCCC_RET_NOT_SUPPORTED;
+		break;
+	case ARM_SMCCC_VENDOR_PV_SGI_ENABLE:
+		if (hisi_ipiv_supported_per_vm(vcpu)) {
+			hisi_ipiv_enable_per_vm(vcpu);
+			val[0] = SMCCC_RET_SUCCESS;
+		} else {
+			val[0] = SMCCC_RET_NOT_SUPPORTED;
+		}
+		break;
+#endif
 	case ARM_SMCCC_VENDOR_HYP_CALL_UID_FUNC_ID:
 		val[0] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_0;
 		val[1] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_1;
