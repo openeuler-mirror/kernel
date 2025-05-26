@@ -636,6 +636,13 @@ struct drm_dp_mst_topology_mgr {
 	bool payload_id_table_cleared : 1;
 
 	/**
+	 * @reset_rx_state: The down request's reply and up request message
+	 * receiver state must be reset, after the topology manager got
+	 * removed. Protected by @lock.
+	 */
+	KABI_FILL_HOLE(bool reset_rx_state : 1)
+
+	/**
 	 * @mst_primary: Pointer to the primary/first branch device.
 	 */
 	struct drm_dp_mst_branch *mst_primary;
