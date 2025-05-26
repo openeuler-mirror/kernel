@@ -960,7 +960,8 @@ out_err:
 	return -EINVAL;
 }
 
-static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sys_addr)
+static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc,
+					 u8 sub_channel, u64 *sys_addr)
 {
 	u64 dram_base_addr, dram_limit_addr, dram_hole_base;
 	/* We start from the normalized address */
@@ -968,10 +969,11 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 
 	u32 tmp;
 
-	u16 die_id_mask, socket_id_mask, cs_id = 0;
+	u16 die_id_mask, socket_id_mask, dst_fabric_id, cs_id = 0;
 	u8 die_id_shift, socket_id_shift;
 	u8 intlv_num_dies, intlv_num_chan, intlv_num_sockets;
 	u8 intlv_addr_sel, intlv_addr_bit;
+	u8 chan_addr_sel, chan_hash_enable, ddr5_enable, start_bit;
 	u8 num_intlv_bits, hashed_bit;
 	u8 lgcy_mmio_hole_en, base = 0;
 	u8 cs_mask;
@@ -1021,6 +1023,8 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 
 	intlv_num_dies	  = (tmp >> 10) & 0x3;
 	dram_limit_addr	  = ((tmp & GENMASK_ULL(31, 12)) << 16) | GENMASK_ULL(27, 0);
+	if (boot_cpu_data.x86_model == 0x4)
+		dst_fabric_id = tmp & GENMASK_ULL(9, 0);
 
 	intlv_addr_bit = intlv_addr_sel + 8;
 
@@ -1028,6 +1032,31 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 		if (amd_df_indirect_read(nid, 0, 0x60, umc, &tmp))
 			goto out_err;
 		intlv_num_dies = tmp & 0x3;
+	}
+
+	if (boot_cpu_data.x86_model == 0x4) {
+		if (amd_df_indirect_read(nid, 2, 0x48, umc, &tmp))
+			goto out_err;
+		chan_addr_sel = (tmp >> 24) & 0x1;
+		chan_hash_enable = (tmp >> 23) & 0x1;
+		ddr5_enable = (tmp >> 19) & 0x1;
+		if (ddr5_enable) {
+			u64 low_addr, high_addr;
+
+			if (chan_addr_sel)
+				start_bit = 8;
+			else
+				start_bit = 7;
+
+			low_addr = ret_addr & GENMASK_ULL(start_bit - 1, 0);
+			/*
+			 * Reserve the sub-channel bit filed(ret_addr[start_bit]),
+			 * and fill the sub-channel bit in the later channel hashing
+			 * process.
+			 */
+			high_addr = (ret_addr & GENMASK_ULL(63, start_bit)) << 1;
+			ret_addr = high_addr | low_addr;
+		}
 	}
 
 	/* Re-use intlv_num_chan by setting it equal to log2(#channels) */
@@ -1082,7 +1111,7 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 	}
 
 	if (num_intlv_bits > 0) {
-		u64 temp_addr_x, temp_addr_i, temp_addr_y;
+		u64 temp_addr_x, temp_addr_i, temp_addr_y, addr_mul3;
 		u8 die_id_bit, sock_id_bit;
 		u16 cs_fabric_id;
 
@@ -1101,8 +1130,30 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 		/* If interleaved over more than 1 channel: */
 		if (intlv_num_chan) {
 			die_id_bit = intlv_num_chan;
-			cs_mask	   = (1 << die_id_bit) - 1;
-			cs_id	   = cs_fabric_id & cs_mask;
+
+			/*
+			 * In the 3 channels interleaving scenario, the calculation
+			 * of cs id is different from other scenarios.
+			 */
+			if (boot_cpu_data.x86_model == 0x4 && intlv_num_chan == 2) {
+				u8 cs_offset;
+
+				cs_offset = (cs_fabric_id & 0x3) - (dst_fabric_id & 0x3);
+				if (cs_offset > 3) {
+					pr_err("%s: Invalid cs offset: 0x%x cs_fabric_id: 0x%x dst_fabric_id: 0x%x.\n",
+						__func__, cs_offset, cs_fabric_id, dst_fabric_id);
+					goto out_err;
+				}
+				temp_addr_x = (ret_addr & GENMASK_ULL(63, intlv_addr_bit)) >>
+						intlv_addr_bit;
+				temp_addr_y = ret_addr & GENMASK_ULL(intlv_addr_bit - 1, 0);
+
+				addr_mul3 = temp_addr_x * 3 + cs_offset;
+				cs_id = addr_mul3 & GENMASK_ULL(intlv_num_chan - 1, 0);
+			} else {
+				cs_mask	   = (1 << die_id_bit) - 1;
+				cs_id	   = cs_fabric_id & cs_mask;
+			}
 		}
 
 		sock_id_bit = die_id_bit;
@@ -1137,10 +1188,16 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 		 * bits there are. "intlv_addr_bit" tells us how many "Y" bits
 		 * there are (where "I" starts).
 		 */
-		temp_addr_y = ret_addr & GENMASK_ULL(intlv_addr_bit-1, 0);
-		temp_addr_i = (cs_id << intlv_addr_bit);
-		temp_addr_x = (ret_addr & GENMASK_ULL(63, intlv_addr_bit)) << num_intlv_bits;
-		ret_addr    = temp_addr_x | temp_addr_i | temp_addr_y;
+		if (boot_cpu_data.x86_model == 0x4 && intlv_num_chan == 2) {
+			temp_addr_i = ((addr_mul3 >> intlv_num_chan) << intlv_num_chan) | cs_id;
+			ret_addr = temp_addr_y | (temp_addr_i << intlv_addr_bit);
+		} else {
+			temp_addr_y = ret_addr & GENMASK_ULL(intlv_addr_bit - 1, 0);
+			temp_addr_i = (cs_id << intlv_addr_bit);
+			temp_addr_x = (ret_addr & GENMASK_ULL(63, intlv_addr_bit)) <<
+					num_intlv_bits;
+			ret_addr    = temp_addr_x | temp_addr_i | temp_addr_y;
+		}
 	}
 
 	/* Add dram base address */
@@ -1168,6 +1225,21 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 
 		if (hashed_bit != ((ret_addr >> intlv_addr_bit) & BIT(0)))
 			ret_addr ^= BIT(intlv_addr_bit);
+	}
+
+	/* The channel hashing process. */
+	if (boot_cpu_data.x86_model == 0x4 && ddr5_enable) {
+		if (chan_hash_enable) {
+			hashed_bit =	(ret_addr >> 12) ^
+					(ret_addr >> 21) ^
+					(ret_addr >> 30) ^
+					sub_channel;
+			hashed_bit &= BIT(0);
+			ret_addr |= hashed_bit << start_bit;
+
+		} else {
+			ret_addr |= sub_channel << start_bit;
+		}
 	}
 
 	/* Is calculated system address is above DRAM limit address? */
@@ -2971,7 +3043,7 @@ static void decode_umc_error(int node_id, struct mce *m)
 	struct amd64_pvt *pvt;
 	struct err_info err;
 	u64 sys_addr;
-	u8 umc;
+	u8 umc, sub_channel = 0;
 
 	mci = edac_mc_find(node_id);
 	if (!mci)
@@ -3003,11 +3075,14 @@ static void decode_umc_error(int node_id, struct mce *m)
 	err.csrow = m->synd & 0x7;
 
 	if (hygon_f18h_m4h() || hygon_f18h_m10h()) {
+		sub_channel = (m->ipid & BIT(13)) >> 13;
 		if (boot_cpu_data.x86_model >= 0x6)
-			umc = (err.channel << 1) + ((m->ipid & BIT(13)) >> 13);
+			umc = (err.channel << 1) + sub_channel;
 		else
 			umc = err.channel;
-		if (hygon_umc_normaddr_to_sysaddr(m->addr, pvt->mc_node_id, umc, &sys_addr)) {
+
+		if (hygon_umc_normaddr_to_sysaddr(m->addr, pvt->mc_node_id, umc,
+						  sub_channel, &sys_addr)) {
 			err.err_code = ERR_NORM_ADDR;
 			goto log_error;
 		}
