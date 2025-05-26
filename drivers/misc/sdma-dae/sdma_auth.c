@@ -137,7 +137,7 @@ static int sdma_add_authority_ht(struct hisi_sdma_own_pid_hte *entry, u32 count,
 	bool *stored;
 	u32 i;
 
-	stored = kcalloc(count, sizeof(bool), GFP_KERNEL);
+	stored = kcalloc(count, sizeof(bool), GFP_ATOMIC);
 	if (!stored)
 		return -ENOMEM;
 
@@ -146,7 +146,7 @@ static int sdma_add_authority_ht(struct hisi_sdma_own_pid_hte *entry, u32 count,
 		if (sub_entry)
 			continue;
 
-		sub_entry = kzalloc(sizeof(struct hisi_sdma_sub_pid_hte), GFP_KERNEL);
+		sub_entry = kzalloc(sizeof(struct hisi_sdma_sub_pid_hte), GFP_ATOMIC);
 		if (!sub_entry) {
 			sdma_clear_residual_auth_ht(entry, list, i, stored);
 			kfree(stored);
