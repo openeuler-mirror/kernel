@@ -577,7 +577,9 @@ get_next:
 		/* handle a whole dependent link */
 		do {
 			struct io_wq_work *next_hashed, *linked;
-			unsigned int hash = io_get_work_hash(work);
+			unsigned int hash = io_wq_is_hashed(work)
+				? io_get_work_hash(work)
+				: -1U;
 
 			next_hashed = wq_next_work(work);
 
@@ -622,7 +624,7 @@ static int io_wqe_worker(void *data)
 	struct io_wqe_acct *acct = io_wqe_get_acct(worker);
 	struct io_wqe *wqe = worker->wqe;
 	struct io_wq *wq = wqe->wq;
-	bool last_timeout = false;
+	bool exit_mask = false, last_timeout = false;
 	char buf[TASK_COMM_LEN];
 
 	set_mask_bits(&worker->flags, 0,
@@ -641,8 +643,11 @@ loop:
 			io_worker_handle_work(worker);
 			goto loop;
 		}
-		/* timed out, exit unless we're the last worker */
-		if (last_timeout && acct->nr_workers > 1) {
+		/*
+		 * Last sleep timed out. Exit if we're not the last worker,
+		 * or if someone modified our affinity.
+		 */
+		if (last_timeout && (exit_mask || acct->nr_workers > 1)) {
 			acct->nr_workers--;
 			raw_spin_unlock(&wqe->lock);
 			__set_current_state(TASK_RUNNING);
@@ -661,7 +666,11 @@ loop:
 				continue;
 			break;
 		}
-		last_timeout = !ret;
+		if (!ret) {
+			last_timeout = true;
+			exit_mask = !cpumask_test_cpu(raw_smp_processor_id(),
+							wqe->cpu_mask);
+		}
 	}
 
 	if (test_bit(IO_WQ_BIT_EXIT, &wq->state)) {
@@ -718,7 +727,6 @@ static void io_init_new_worker(struct io_wqe *wqe, struct io_worker *worker,
 	tsk->pf_io_worker = worker;
 	worker->task = tsk;
 	set_cpus_allowed_ptr(tsk, wqe->cpu_mask);
-	tsk->flags |= PF_NO_SETAFFINITY;
 
 	raw_spin_lock(&wqe->lock);
 	hlist_nulls_add_head_rcu(&worker->nulls_node, &wqe->free_list);
@@ -1144,9 +1152,6 @@ struct io_wq *io_wq_create(unsigned bounded, struct io_wq_data *data)
 	wq = kzalloc(struct_size(wq, wqes, nr_node_ids), GFP_KERNEL);
 	if (!wq)
 		return ERR_PTR(-ENOMEM);
-	ret = cpuhp_state_add_instance_nocalls(io_wq_online, &wq->cpuhp_node);
-	if (ret)
-		goto err_wq;
 
 	refcount_inc(&data->hash->refs);
 	wq->hash = data->hash;
@@ -1189,17 +1194,19 @@ struct io_wq *io_wq_create(unsigned bounded, struct io_wq_data *data)
 	wq->task = get_task_struct(data->task);
 	atomic_set(&wq->worker_refs, 1);
 	init_completion(&wq->worker_done);
+	ret = cpuhp_state_add_instance_nocalls(io_wq_online, &wq->cpuhp_node);
+	if (ret)
+		goto err;
+
 	return wq;
 err:
 	io_wq_put_hash(data->hash);
-	cpuhp_state_remove_instance_nocalls(io_wq_online, &wq->cpuhp_node);
 	for_each_node(node) {
 		if (!wq->wqes[node])
 			continue;
 		free_cpumask_var(wq->wqes[node]->cpu_mask);
 		kfree(wq->wqes[node]);
 	}
-err_wq:
 	kfree(wq);
 	return ERR_PTR(ret);
 }
