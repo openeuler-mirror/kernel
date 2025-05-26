@@ -1109,6 +1109,7 @@ static int io_close_fixed(struct io_kiocb *req, unsigned int issue_flags);
 static enum hrtimer_restart io_link_timeout_fn(struct hrtimer *timer);
 
 static struct kmem_cache *req_cachep;
+static struct workqueue_struct *iou_wq __ro_after_init;
 
 static const struct file_operations io_uring_fops;
 
@@ -9494,7 +9495,7 @@ static void io_ring_ctx_wait_and_kill(struct io_ring_ctx *ctx)
 	 * noise and overhead, there's no discernable change in runtime
 	 * over using system_wq.
 	 */
-	queue_work(system_unbound_wq, &ctx->exit_work);
+	queue_work(iou_wq, &ctx->exit_work);
 }
 
 static int io_uring_release(struct inode *inode, struct file *file)
@@ -10999,6 +11000,8 @@ static int __init io_uring_init(void)
 
 	req_cachep = KMEM_CACHE(io_kiocb, SLAB_HWCACHE_ALIGN | SLAB_PANIC |
 				SLAB_ACCOUNT);
+
+	iou_wq = alloc_workqueue("iou_exit", WQ_UNBOUND, 64);
 	return 0;
 };
 __initcall(io_uring_init);
