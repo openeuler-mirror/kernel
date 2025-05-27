@@ -79,6 +79,7 @@ void hibmc_mm_fini(struct hibmc_drm_private *hibmc);
 int hibmc_dumb_create(struct drm_file *file, struct drm_device *dev,
 		      struct drm_mode_create_dumb *args);
 int hibmc_ddc_create(struct drm_device *drm_dev, struct hibmc_vdac *connector);
+void hibmc_ddc_del(struct hibmc_vdac *vdac);
 int hibmc_dp_init(struct hibmc_drm_private *priv);
 
 extern const struct drm_mode_config_funcs hibmc_mode_funcs;

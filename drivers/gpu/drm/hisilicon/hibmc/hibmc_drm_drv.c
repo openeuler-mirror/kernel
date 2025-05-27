@@ -20,6 +20,7 @@
 #include <drm/drm_irq.h>
 #include <drm/drm_managed.h>
 #include <drm/drm_vblank.h>
+#include <drm/drm_probe_helper.h>
 
 #include "hibmc_drm_drv.h"
 #include "hibmc_drm_regs.h"
@@ -119,7 +120,7 @@ static int hibmc_kms_init(struct hibmc_drm_private *priv)
 	ret = hibmc_de_init(priv);
 	if (ret) {
 		drm_err(priv->dev, "failed to init de: %d\n", ret);
-		return ret;
+		goto err;
 	}
 
 	/*
@@ -129,17 +130,25 @@ static int hibmc_kms_init(struct hibmc_drm_private *priv)
 	ret = readl(priv->mmio + HIBMC_DP_HOST_SERDES_CTRL);
 	if (ret) {
 		ret = hibmc_dp_init(priv);
-		if (ret)
+		if (ret) {
 			drm_err(priv->dev, "failed to init dp: %d\n", ret);
+			goto err;
+		}
 	}
 
 	ret = hibmc_vdac_init(priv);
 	if (ret) {
 		drm_err(priv->dev, "failed to init vdac: %d\n", ret);
-		return ret;
+		goto err;
 	}
 
+	drm_kms_helper_poll_init(priv->dev);
 	return 0;
+
+err:
+	drm_atomic_helper_shutdown(priv->dev);
+
+	return ret;
 }
 
 static void hibmc_kms_fini(struct hibmc_drm_private *priv)
@@ -291,6 +300,7 @@ static int hibmc_hw_init(struct hibmc_drm_private *priv)
 static void hibmc_unload(struct drm_device *dev)
 {
 	drm_atomic_helper_shutdown(dev);
+	drm_kms_helper_poll_fini(dev);
 }
 
 static int hibmc_msi_init(struct drm_device *dev)
@@ -345,21 +355,19 @@ static int hibmc_load(struct drm_device *dev)
 	priv->dev = dev;
 
 	ret = hibmc_hw_init(priv);
-	if (ret) {
-		drm_err(dev, "failed to initialize hardware: %d\n", ret);
-		goto err_alloc;
-	}
+	if (ret)
+		return ret;
 
 	ret = hibmc_mm_init(priv);
 	if (ret) {
-		drm_err(dev, "failed to initialize mm: %d\n", ret);
-		goto err_hw;
+		drm_err(dev, "Error initializing VRAM MM; %d\n", ret);
+		return ret;
 	}
 
 	ret = hibmc_kms_init(priv);
 	if (ret) {
-		drm_err(dev, "failed to initialize kms: %d\n", ret);
-		goto err_mm;
+		drm_err(dev, "hibmc kms init failed, ret:%d\n", ret);
+		return ret;
 	}
 
 	ret = drm_vblank_init(dev, dev->mode_config.num_crtc);
@@ -381,11 +389,8 @@ static int hibmc_load(struct drm_device *dev)
 
 err_kms:
 	hibmc_kms_fini(priv);
-err_mm:
 	hibmc_mm_fini(priv);
-err_hw:
 	hibmc_hw_unmap(priv);
-err_alloc:
 	dev->dev_private = NULL;
 
 	return ret;
@@ -395,6 +400,7 @@ static int hibmc_pci_probe(struct pci_dev *pdev,
 			   const struct pci_device_id *ent)
 {
 	struct drm_device *dev;
+	struct hibmc_drm_private *priv;
 	int ret;
 
 	ret = drm_fb_helper_remove_conflicting_pci_framebuffers(pdev,
@@ -433,6 +439,9 @@ static int hibmc_pci_probe(struct pci_dev *pdev,
 	}
 
 	drm_fbdev_generic_setup(dev, dev->mode_config.preferred_depth);
+
+	priv = to_hibmc_drm_private(dev);
+	hibmc_debugfs_init(&priv->dp.connector, dev->primary->debugfs_root);
 
 	return 0;
 
