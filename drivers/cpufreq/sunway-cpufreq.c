@@ -1,24 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0
+/*
+ *  Copyright (C) 2025 WXIAT
+ */
 
-#include <linux/clk.h>
+#define pr_fmt(fmt) "cpufreq: " fmt
+
 #include <linux/cpufreq.h>
-#include <linux/errno.h>
-#include <linux/export.h>
+#include <linux/err.h>
 #include <linux/delay.h>
-#include <linux/platform_device.h>
 
 #include <asm/sw64_init.h>
 #include <asm/cpu.h>
-#include <asm/debug.h>
-#include <asm/cpufreq.h>
-#include <asm/platform.h>
 
 #define MAX_RETRY	10
 
-static struct platform_device sw64_cpufreq_device = {
-	.name = "sw64_cpufreq",
-	.id = -1,
-};
+#define CLK_LV1_SEL_PROTECT	(0x1UL << 0)
+#define CLK_LV1_SEL_MUXA	(0x1UL << 2)
+#define CLK_LV1_SEL_MUXB	(0x1UL << 3)
+
+#define OFFSET_CLU_LV1_SEL	0x3a80UL
+#define OFFSET_CLK_CTL		0x3b80UL
 
 /*
  * frequency in MHz, volts in mV and stored as "driver_data" in the structure.
@@ -31,6 +32,16 @@ static struct platform_device sw64_cpufreq_device = {
 	}
 
 #ifdef CONFIG_PLATFORM_JUNZHANG
+#define CLK0_PROTECT		(0x1UL << 0)
+#define CLK2_PROTECT		(0x1UL << 32)
+#define CORE_CLK2_VALID		(0x1UL << 33)
+#define CORE_CLK2_RESET		(0x1UL << 34)
+#define CORE_CLK2_LOCK		(0x1UL << 35)
+#define CORE_PLL0_CFG_SHIFT     4
+#define CORE_PLL1_CFG_SHIFT     20
+#define CORE_PLL2_CFG_SHIFT     36
+#define CORE_PLL2_CFG_MASK	0x1f
+
 struct cpufreq_frequency_table freq_table[] = {
 	{0, 0, CPUFREQ_ENTRY_INVALID}, /* 200Mhz is ignored */
 	FV(1200, 850),
@@ -69,7 +80,20 @@ struct cpufreq_frequency_table freq_table[] = {
 static void __init fill_freq_table(struct cpufreq_frequency_table *ft)
 {
 }
-#elif CONFIG_PLATFORM_XUELANG
+#endif
+
+#ifdef CONFIG_PLATFORM_XUELANG
+#define CLK_PROTECT		(0x1UL << 0)
+#define CLK0_PROTECT		CLK_PROTECT
+#define CLK2_PROTECT		CLK_PROTECT
+#define CORE_CLK2_VALID         (0x1UL << 15)
+#define CORE_CLK2_RESET         (0x1UL << 16)
+#define CORE_CLK2_LOCK		(0x1UL << 17)
+#define CORE_PLL0_CFG_SHIFT     4
+#define CORE_PLL1_CFG_SHIFT     11
+#define CORE_PLL2_CFG_SHIFT     18
+#define CORE_PLL2_CFG_MASK	0xf
+
 struct cpufreq_frequency_table freq_table[] = {
 	{0, 0, CPUFREQ_ENTRY_INVALID}, /* 200Mhz is ignored */
 	{0, 0, CPUFREQ_ENTRY_INVALID}, /* 1200Mhz is ignored */
@@ -95,6 +119,7 @@ static void __init fill_freq_table(struct cpufreq_frequency_table *ft)
 	int i;
 	unsigned long freq_off;
 	unsigned char external_clk;
+
 	external_clk = *((unsigned char *)__va(MB_EXTCLK));
 
 	if (external_clk == 240)
@@ -108,33 +133,7 @@ static void __init fill_freq_table(struct cpufreq_frequency_table *ft)
 }
 #endif
 
-static int __init sw64_cpufreq_init(void)
-{
-	int i;
-	unsigned long max_rate = get_cpu_freq() / 1000;
-
-	fill_freq_table(freq_table);
-	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
-		if (max_rate == freq_table[i].frequency)
-			freq_table[i+1].frequency = CPUFREQ_TABLE_END;
-	}
-	return platform_device_register(&sw64_cpufreq_device);
-}
-arch_initcall(sw64_cpufreq_init);
-
-static struct clk cpu_clk = {
-	.name = "cpu_clk",
-	.flags = CLK_ALWAYS_ENABLED | CLK_RATE_PROPAGATES,
-	.rate = STARTUP_RATE,
-};
-
-struct clk *sw64_clk_get(struct device *dev, const char *id)
-{
-	return &cpu_clk;
-}
-EXPORT_SYMBOL(sw64_clk_get);
-
-unsigned int __sw64_cpufreq_get(struct cpufreq_policy *policy)
+static unsigned int sunway_get_rate(struct cpufreq_policy *policy)
 {
 	int i, clu_lv1_sel;
 	u64 val;
@@ -158,9 +157,8 @@ unsigned int __sw64_cpufreq_get(struct cpufreq_policy *policy)
 	}
 	return 0;
 }
-EXPORT_SYMBOL(__sw64_cpufreq_get);
 
-int sw64_set_rate(unsigned int index)
+static int sunway_set_rate(unsigned int index)
 {
 	int i, retry, cpu_num;
 	void __iomem *spbu_base;
@@ -196,4 +194,93 @@ int sw64_set_rate(unsigned int index)
 	}
 	return 0;
 }
-EXPORT_SYMBOL_GPL(sw64_set_rate);
+
+static unsigned int sunway_cpufreq_get(unsigned int cpu)
+{
+	struct cpufreq_policy *policy = cpufreq_cpu_get_raw(cpu);
+
+	if (!policy) {
+		pr_err("%s: no policy associated to cpu: %d\n",
+				__func__, cpu);
+		return 0;
+	}
+
+	return sunway_get_rate(policy);
+}
+
+/*
+ * Here we notify other drivers of the proposed change and the final change.
+ */
+static int sunway_cpufreq_target(struct cpufreq_policy *policy,
+				     unsigned int index)
+{
+	int ret;
+	unsigned int cpu = policy->cpu;
+
+	if (!cpu_online(cpu))
+		return -ENODEV;
+
+	/* setting the cpu frequency */
+	ret = sunway_set_rate(index);
+	if (ret)
+		return ret;
+	update_cpu_freq(freq_table[index].frequency);
+
+	return 0;
+}
+
+static int sunway_cpufreq_init(struct cpufreq_policy *policy)
+{
+	cpufreq_generic_init(policy, freq_table, 0);
+
+	return 0;
+}
+
+static int sunway_cpufreq_verify(struct cpufreq_policy_data *policy)
+{
+	return cpufreq_frequency_table_verify(policy, freq_table);
+}
+
+static int sunway_cpufreq_exit(struct cpufreq_policy *policy)
+{
+	return 0;
+}
+
+static struct freq_attr *sunway_table_attr[] = {
+	&cpufreq_freq_attr_scaling_available_freqs, NULL,
+};
+
+static struct cpufreq_driver sunway_cpufreq_driver = {
+	.name = "sunway-cpufreq",
+	.init = sunway_cpufreq_init,
+	.verify = sunway_cpufreq_verify,
+	.target_index = sunway_cpufreq_target,
+	.get = sunway_cpufreq_get,
+	.exit = sunway_cpufreq_exit,
+	.attr = sunway_table_attr,
+};
+
+static int __init cpufreq_init(void)
+{
+	int i, ret;
+	unsigned long max_rate = get_cpu_freq() / 1000;
+
+	if (!is_in_host()) {
+		pr_warn("cpufreq driver of Sunway platforms is only supported in host mode\n");
+		return -ENODEV;
+	}
+
+	fill_freq_table(freq_table);
+	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
+		if (max_rate == freq_table[i].frequency)
+			freq_table[i+1].frequency = CPUFREQ_TABLE_END;
+	}
+
+	ret = cpufreq_register_driver(&sunway_cpufreq_driver);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+device_initcall(cpufreq_init);
+

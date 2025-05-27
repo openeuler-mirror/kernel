@@ -14,78 +14,47 @@ extern unsigned long legacy_io_shift;
 /*
  * Here comes the sw64 implementation of the IOMAP interfaces.
  */
-unsigned int ioread8(const void __iomem *addr)
-{
-	return readb(addr);
-}
-EXPORT_SYMBOL(ioread8);
-
-unsigned int ioread16(const void __iomem *addr)
-{
-	return readw(addr);
-}
-EXPORT_SYMBOL(ioread16);
-
-unsigned int ioread32(const void __iomem *addr)
-{
-	return readl(addr);
-}
-EXPORT_SYMBOL(ioread32);
-
-void iowrite8(u8 b, void __iomem *addr)
-{
-	writeb(b, addr);
-}
-EXPORT_SYMBOL(iowrite8);
-
-void iowrite16(u16 b, void __iomem *addr)
-{
-	writew(b, addr);
-}
-EXPORT_SYMBOL(iowrite16);
-
-void iowrite32(u32 b, void __iomem *addr)
-{
-	writel(b, addr);
-}
-EXPORT_SYMBOL(iowrite32);
-
+#undef inb
 u8 inb(unsigned long port)
 {
 	return ioread8(ioport_map(port, 1));
 }
 EXPORT_SYMBOL(inb);
 
+#undef inw
 u16 inw(unsigned long port)
 {
 	return ioread16(ioport_map(port, 2));
 }
 EXPORT_SYMBOL(inw);
 
+#undef inl
 u32 inl(unsigned long port)
 {
 	return ioread32(ioport_map(port, 4));
 }
 EXPORT_SYMBOL(inl);
 
+#undef outb
 void outb(u8 b, unsigned long port)
 {
 	iowrite8(b, ioport_map(port, 1));
 }
 EXPORT_SYMBOL(outb);
 
+#undef outw
 void outw(u16 b, unsigned long port)
 {
 	iowrite16(b, ioport_map(port, 2));
 }
 EXPORT_SYMBOL(outw);
 
+#undef outl
 void outl(u32 b, unsigned long port)
 {
 	iowrite32(b, ioport_map(port, 4));
 }
 EXPORT_SYMBOL(outl);
-
 
 /*
  * Read COUNT 8-bit bytes from port PORT into memory starting at SRC.
@@ -464,13 +433,8 @@ EXPORT_SYMBOL(_memset_c_io);
 void __iomem *ioport_map(unsigned long port, unsigned int size)
 {
 	if (port >= 0x100000)
-		return __va(port);
+		return ioremap(port, size);
 
-	return __va((port << legacy_io_shift) | legacy_io_base);
+	return ioremap((port << legacy_io_shift) | legacy_io_base, size);
 }
 EXPORT_SYMBOL(ioport_map);
-
-void ioport_unmap(void __iomem *addr)
-{
-}
-EXPORT_SYMBOL(ioport_unmap);

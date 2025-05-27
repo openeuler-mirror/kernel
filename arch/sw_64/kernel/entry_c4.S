@@ -67,7 +67,7 @@
 	stl	$17, PT_REGS_EARG1($sp)
 	stl	$18, PT_REGS_EARG2($sp)
 
-	stl     $1, PT_REGS_SP($sp)
+	stl     $1, PT_REGS_R30($sp)
 	stl	$2, PT_REGS_PS($sp)
 	stl	$3, PT_REGS_PC($sp)
 	stl     $4, PT_REGS_CAUSE($sp)
@@ -128,7 +128,7 @@
 	ldl	$27, PT_REGS_R27($sp)
 	ldl	$28, PT_REGS_R28($sp)
 	ldl     $29, PT_REGS_GP($sp)
-	ldl	$sp, PT_REGS_SP($sp)
+	ldl	$sp, PT_REGS_R30($sp)
 	.endm
 
 	.macro SAVE_ALL
@@ -191,7 +191,7 @@
 	stl	$17, PT_REGS_EARG1($sp)
 	stl	$18, PT_REGS_EARG2($sp)
 
-	stl     $1, PT_REGS_SP($sp)
+	stl     $1, PT_REGS_R30($sp)
 	stl	$2, PT_REGS_PS($sp)
 	stl	$3, PT_REGS_PC($sp)
 	stl	$4, PT_REGS_CAUSE($sp)
@@ -251,7 +251,7 @@
 	ldl	$27, PT_REGS_R27($sp)
 	ldl	$28, PT_REGS_R28($sp)
 	ldl     $29, PT_REGS_GP($sp)
-	ldl	$sp, PT_REGS_SP($sp)
+	ldl	$sp, PT_REGS_R30($sp)
 	.endm
 
 	.macro RESTORE_IRQ
@@ -271,7 +271,7 @@ entNMI:
 	SAVE_ALL_NMI
 	br      $27, 1f
 1:      ldgp    $29, 0($27)
-	ldi	$19, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_entInt
 	br	ret_from_nmi
 	.end entNMI
@@ -283,7 +283,7 @@ entInt:
 	SAVE_ALL
 	br      $27, 1f
 1:      ldgp    $29, 0($27)
-	ldi	$19, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_entInt
 	br	ret_from_sys_call
 	.end entInt
@@ -299,7 +299,7 @@ entArith:
 	br      $27, 1f
 1:      ldgp    $29, 0($27)
 	RESTORE_IRQ
-	ldi	$18, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_entArith
 	br	ret_from_sys_call
 	.end entArith
@@ -312,7 +312,7 @@ entMM:
 	br      $27, 1f
 1:      ldgp    $29, 0($27)
 	RESTORE_IRQ
-	ldi	$19, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_page_fault
 	br	ret_from_sys_call
 	.end entMM
@@ -328,7 +328,7 @@ entIF:
 	br      $27, 1f
 1:      ldgp    $29, 0($27)
 	RESTORE_IRQ
-	ldi	$18, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_entIF
 	br	ret_from_sys_call
 	.end entIF
@@ -350,15 +350,13 @@ entUna:
 	br      $27, 1f
 1:      ldgp    $29, 0($27)
 	RESTORE_IRQ
-	ldi	$19, STACKFRAME_SIZE($sp)
-	ldl	$0, (PT_REGS_PS + STACKFRAME_SIZE)($sp)
-	and	$0, 8, $0		/* user mode ? */
-	beq	$0, 1f
-	call	$26, do_entUnaUser	/* return to ret_from_syscall */
-	br	ret_from_sys_call
-1:	ldl	$9, (PT_REGS_GP + STACKFRAME_SIZE)($sp)
-	call	$26, do_entUna
-	stl	$9, (PT_REGS_GP + STACKFRAME_SIZE)($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
+	ldl	$9, (PT_REGS_PS + STACKFRAME_SIZE)($sp)
+	and	$9, 8, $9		/* user mode ? */
+	ldi	$1, do_entUnaUser
+	ldi	$2, do_entUna
+	seleq	$9, $2, $1, $27
+	call	$26, ($27), 0
 	RESTORE_ALL
 	sys_call HMC_rti
 	.end entUna

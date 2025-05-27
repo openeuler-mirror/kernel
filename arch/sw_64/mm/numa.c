@@ -292,7 +292,7 @@ static void __init get_numa_info_socket(void)
 	}
 }
 
-static void cpu_set_node(void)
+static void __init cpu_set_node(void)
 {
 	int i;
 

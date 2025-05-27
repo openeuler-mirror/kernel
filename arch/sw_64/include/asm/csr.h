@@ -32,6 +32,8 @@
 #define CSR_IDR_PCCTL		0x7a
 #define CSR_IACC		0x7b
 #define CSR_IMISC		0x7c
+#define CSR_DACC		0x7d
+#define CSR_DMISC		0x7e
 #define CSR_RETIC		0x7f
 #define CSR_CID			0xc4
 #define CSR_WR_FREGS		0xc8
@@ -83,7 +85,7 @@
 
 #ifdef CONFIG_HAVE_CSRRW
 #ifndef __ASSEMBLY__
-static inline unsigned long sw64_read_csr(unsigned long x)
+static __always_inline unsigned long sw64_read_csr(unsigned long x)
 {
 	unsigned long __val;
 
@@ -91,12 +93,12 @@ static inline unsigned long sw64_read_csr(unsigned long x)
 	return __val;
 }
 
-static inline void sw64_write_csr(unsigned long x, unsigned long y)
+static __always_inline void sw64_write_csr(unsigned long x, unsigned long y)
 {
 	__asm__ __volatile__("csrw %0,%1" ::"r"(x), "i"(y));
 }
 
-static inline void sw64_write_csr_imb(unsigned long x, unsigned long y)
+static __always_inline void sw64_write_csr_imb(unsigned long x, unsigned long y)
 {
 	__asm__ __volatile__("csrw %0,%1; imemb" ::"r"(x), "i"(y));
 }
@@ -104,8 +106,10 @@ static inline void sw64_write_csr_imb(unsigned long x, unsigned long y)
 #include <asm/barrier.h>
 static inline void update_ptbr_sys(unsigned long ptbr)
 {
+	mb();
 	imemb();
 	sw64_write_csr_imb(ptbr, CSR_PTBR_SYS);
+	tbiv();
 }
 
 static inline void update_ptbr_usr(unsigned long ptbr)

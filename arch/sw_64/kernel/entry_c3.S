@@ -61,12 +61,15 @@
 	stl	$4, PT_REGS_GP($sp)
 	stl	$5, PT_REGS_PC($sp)
 	stl	$6, PT_REGS_PS($sp)
+	stl	$16, PT_REGS_EARG0($sp)
+	stl	$17, PT_REGS_EARG1($sp)
+	stl	$18, PT_REGS_EARG2($sp)
 	and	$6, 0x8, $7
 	beq	$7, 1f
 	sys_call HMC_rdusp
 	br	2f
 1:	ldi	$0, PT_REGS_SIZE($sp)
-2:	stl	$0, PT_REGS_SP($sp)
+2:	stl	$0, PT_REGS_R30($sp)
 	ldi	$1, NO_SYSCALL
 	stl	$1, PT_REGS_ORIG_R0($sp)
 	sys_call HMC_rdktp
@@ -81,7 +84,7 @@
 	.macro RESTORE_ALL
 	ldi	$sp, STACKFRAME_SIZE($sp)
 
-	ldl	$16, PT_REGS_SP($sp)
+	ldl	$16, PT_REGS_R30($sp)
 	/* skip wrusp if returning to kernel */
 	blt	$16, 1f
 	sys_call HMC_wrusp
@@ -136,7 +139,7 @@
 	.ent entInt
 entInt:
 	SAVE_ALL
-	ldi	$19, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_entInt
 	br	ret_from_sys_call
 	.end entInt
@@ -146,7 +149,7 @@ entInt:
 	.ent entArith
 entArith:
 	SAVE_ALL
-	ldi	$18, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_entArith
 	br	ret_from_sys_call
 	.end entArith
@@ -156,7 +159,7 @@ entArith:
 	.ent entMM
 entMM:
 	SAVE_ALL
-	ldi	$19, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_page_fault
 	br	ret_from_sys_call
 	.end entMM
@@ -166,7 +169,7 @@ entMM:
 	.ent entIF
 entIF:
 	SAVE_ALL
-	ldi	$18, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	call	$26, do_entIF
 	br	ret_from_sys_call
 	.end entIF
@@ -182,7 +185,7 @@ entIF:
 	.ent entUna
 entUna:
 	SAVE_ALL
-	ldi	$19, STACKFRAME_SIZE($sp)
+	ldi	$16, STACKFRAME_SIZE($sp)
 	ldl	$0, (PT_REGS_PS + STACKFRAME_SIZE)($sp)
 	and	$0, 8, $0		/* user mode ? */
 	beq	$0, 1f

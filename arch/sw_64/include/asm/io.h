@@ -9,11 +9,6 @@
 #include <asm/compiler.h>
 #include <asm/pgtable.h>
 
-/* The generic header contains only prototypes.  Including it ensures that
- * the implementation we have here matches that interface.
- */
-#include <asm-generic/iomap.h>
-
 /* We don't use IO slowdowns on the sw64, but.. */
 #define __SLOW_DOWN_IO	do { } while (0)
 #define SLOW_DOWN_IO	do { } while (0)
@@ -21,11 +16,13 @@
 /*
  * Change virtual addresses to physical addresses and vv.
  */
+#define virt_to_phys virt_to_phys
 static inline unsigned long virt_to_phys(void *address)
 {
 	return __pa(address);
 }
 
+#define phys_to_virt phys_to_virt
 static inline void *phys_to_virt(unsigned long address)
 {
 	return __va(address);
@@ -175,6 +172,7 @@ extern void		outb(u8 b, unsigned long port);
 extern void		outw(u16 b, unsigned long port);
 extern void		outl(u32 b, unsigned long port);
 
+#ifndef CONFIG_GENERIC_IOREMAP
 static inline void __iomem *__ioremap(phys_addr_t addr, size_t size,
 				      pgprot_t prot)
 {
@@ -182,17 +180,20 @@ static inline void __iomem *__ioremap(phys_addr_t addr, size_t size,
 
 	return (void __iomem *)(tmp);
 }
-
-#define ioremap(addr, size)		__ioremap((addr), (size), PAGE_KERNEL)
-#define ioremap_nocache(addr, size)	__ioremap((addr), (size), PAGE_KERNEL)
-#define ioremap_cache(addr, size)	__ioremap((addr), (size), PAGE_KERNEL)
-#define ioremap_uc			ioremap_nocache
+#define ioremap(addr, size)            __ioremap((addr), (size), PAGE_KERNEL)
 
 static inline void __iounmap(volatile void __iomem *addr)
 {
 }
-
 #define iounmap				__iounmap
+#endif
+
+#define ioremap_nocache(addr, size)	ioremap((addr), (size))
+#define ioremap_cache(addr, size)	ioremap((addr), (size))
+#define ioremap_uc			ioremap_nocache
+
+#define ioport_map ioport_map
+extern void __iomem *ioport_map(unsigned long port, unsigned int nr);
 
 #define ioread16be(p) be16_to_cpu(ioread16(p))
 #define ioread32be(p) be32_to_cpu(ioread32(p))
@@ -206,14 +207,16 @@ static inline void __iounmap(volatile void __iomem *addr)
 #define outw_p		outw
 #define outl_p		outl
 
-
 /*
  * String version of IO memory access ops:
  */
+#define memcpy_fromio memcpy_fromio
 extern void memcpy_fromio(void *, const volatile void __iomem *, long);
+#define memcpy_toio memcpy_toio
 extern void memcpy_toio(volatile void __iomem *, const void *, long);
 extern void _memset_c_io(volatile void __iomem *, unsigned long, long);
 
+#define memset_io memset_io
 static inline void memset_io(volatile void __iomem *addr, u8 c, long len)
 {
 	_memset_c_io(addr, 0x0101010101010101UL * c, len);
@@ -228,6 +231,13 @@ static inline void memsetw_io(volatile void __iomem *addr, u16 c, long len)
 /*
  * String versions of in/out ops:
  */
+#define insb insb
+#define insw insw
+#define insl insl
+#define outsb outsb
+#define outsw outsw
+#define outsl outsl
+
 extern void insb(unsigned long port, void *dst, unsigned long count);
 extern void insw(unsigned long port, void *dst, unsigned long count);
 extern void insl(unsigned long port, void *dst, unsigned long count);
@@ -235,23 +245,35 @@ extern void outsb(unsigned long port, const void *src, unsigned long count);
 extern void outsw(unsigned long port, const void *src, unsigned long count);
 extern void outsl(unsigned long port, const void *src, unsigned long count);
 
+#define ioread8_rep ioread8_rep
+#define ioread16_rep ioread16_rep
+#define ioread32_rep ioread32_rep
+#define iowrite8_rep iowrite8_rep
+#define iowrite16_rep iowrite16_rep
+#define iowrite32_rep iowrite32_rep
+
+extern void ioread8_rep(const void __iomem *port, void *dst,
+		unsigned long count);
+extern void ioread16_rep(const void __iomem *port, void *dst,
+		unsigned long count);
+extern void ioread32_rep(const void __iomem *port, void *dst,
+		unsigned long count);
+extern void iowrite8_rep(void __iomem *port, const void *xsrc,
+		unsigned long count);
+extern void iowrite16_rep(void __iomem *port, const void *src,
+		unsigned long count);
+extern void iowrite32_rep(void __iomem *port, const void *src,
+		unsigned long count);
+
+#include <asm-generic/io.h>
+#undef PCI_IOBASE
+
 /*
  * These defines will override the defaults when doing RTC queries
  */
 
 #define RTC_PORT(x)	(0x70 + (x))
 #define RTC_ALWAYS_BCD	0
-
-/*
- * Convert a physical pointer to a virtual kernel pointer for /dev/mem
- * access
- */
-#define xlate_dev_mem_ptr(p)	__va(p)
-
-/*
- * Convert a virtual cached pointer to an uncached pointer
- */
-#define xlate_dev_kmem_ptr(p)	p
 
 static inline int pci_remap_iospace(const struct resource *res,
 		phys_addr_t phys_addr)

@@ -58,6 +58,8 @@ enum exceptype {
 	PTE_LEVEL2,
 	UNAUTHORIZED_ACCESS,
 	ILLEGAL_RESPONSE,
+	SEGMENT_TRANSLATION_MISS,
+	SEGMENT_TRANSLATION_UNAUTHORIZED_ACCESS,
 	DTE_LEVEL1_VAL,
 	DTE_LEVEL2_VAL,
 	PTE_LEVEL1_VAL,
@@ -77,7 +79,6 @@ LIST_HEAD(sunway_domain_list);
 
 struct dma_domain {
 	struct sunway_iommu_domain sdomain;
-	struct iova_domain iovad;
 };
 const struct iommu_ops sunway_iommu_ops;
 static const struct dma_map_ops sunway_dma_ops;
@@ -250,11 +251,11 @@ static void dma_domain_free(struct dma_domain *dma_dom)
 		return;
 
 	del_domain_from_list(&dma_dom->sdomain);
-	put_iova_domain(&dma_dom->iovad);
 	free_pagetable(&dma_dom->sdomain);
 	if (dma_dom->sdomain.id)
 		domain_id_free(dma_dom->sdomain.id);
 
+	iommu_put_dma_cookie(&dma_dom->sdomain.domain);
 	kfree(dma_dom);
 }
 
@@ -328,7 +329,6 @@ static struct dma_domain *dma_domain_alloc(void)
 		return ERR_PTR(ret);
 
 	dma_dom->sdomain.type = IOMMU_DOMAIN_DMA;
-	init_iova_domain(&dma_dom->iovad, PAGE_SIZE, IOVA_PFN(SW64_DMA_START));
 
 	dma_dom->sdomain.pt_root = (void *)get_zeroed_page(GFP_KERNEL);
 	if (!dma_dom->sdomain.pt_root) {
@@ -659,6 +659,8 @@ irqreturn_t iommu_interrupt(int irq, void *dev)
 	}
 
 	sdomain = sdev->domain;
+	pr_info("iommu exception type:%#lx\n", type);
+
 	switch (type) {
 	case DTE_LEVEL1:
 		pr_info("invalid level1 dte, addr:%#lx, val:%#lx\n",
@@ -679,21 +681,27 @@ irqreturn_t iommu_interrupt(int irq, void *dev)
 		pr_info("invalid level2 pte, addr: %#lx, val: %#lx\n",
 			fetch_pte(sdomain, dva, PTE_LEVEL2),
 			fetch_pte(sdomain, dva, PTE_LEVEL2_VAL));
-
-		iommu_status &= ~(1UL << 62);
-		writeq(iommu_status, iommu->reg_base_addr + IOMMUEXCPT_STATUS);
 		break;
-
 	case UNAUTHORIZED_ACCESS:
-		pr_info("unauthorized access\n");
+		pr_info("page translation unauthorized access\n");
 		break;
 	case ILLEGAL_RESPONSE:
-		pr_info("illegal response\n");
+		pr_info("accessing the device table or page table \
+				return an illegal response\n");
+		break;
+	case SEGMENT_TRANSLATION_MISS:
+		pr_info("segment translation miss\n");
+		break;
+	case SEGMENT_TRANSLATION_UNAUTHORIZED_ACCESS:
+		pr_info("segment translation unauthorized access\n");
 		break;
 	default:
 		pr_info("unknown error\n");
 		break;
 	}
+
+	iommu_status &= ~(1UL << 62);
+	writeq(iommu_status, iommu->reg_base_addr + IOMMUEXCPT_STATUS);
 
 	return IRQ_HANDLED;
 }
@@ -1037,6 +1045,10 @@ static struct iommu_domain *sunway_iommu_domain_alloc(unsigned type)
 		}
 
 		sdomain = &dma_dom->sdomain;
+		sdomain->domain.geometry.aperture_start = 0ULL;
+		sdomain->domain.geometry.aperture_end	= DMA_BIT_MASK(32);
+		sdomain->domain.geometry.force_aperture	= true;
+
 		if (iommu_get_dma_cookie(&sdomain->domain) == -ENOMEM)
 			return NULL;
 		break;
@@ -1352,6 +1364,32 @@ static void sunway_iommu_probe_finalize(struct device *dev)
 		set_dma_ops(dev, get_arch_dma_ops(dev->bus));
 }
 
+static void sunway_iommu_get_resv_regions(struct device *dev,
+					  struct list_head *head)
+{
+	struct iommu_resv_region *region;
+	int prot = IOMMU_NOEXEC | IOMMU_MMIO;
+
+	region = iommu_alloc_resv_region(SW64_DMA_LIMIT,
+					 (DMA_BIT_MASK(32) - SW64_DMA_LIMIT),
+					 prot, IOMMU_RESV_RESERVED);
+	if (!region)
+		return;
+	list_add_tail(&region->list, head);
+
+	if (dev_is_pci(dev)) {
+		struct pci_dev *pdev = to_pci_dev(dev);
+
+		if ((pdev->class >> 8) == PCI_CLASS_BRIDGE_ISA) {
+			region = iommu_alloc_resv_region(0, 1UL << 24,
+					IOMMU_READ | IOMMU_WRITE,
+					IOMMU_RESV_DIRECT_RELAXABLE);
+			if (region)
+				list_add_tail(&region->list, head);
+		}
+	}
+}
+
 const struct iommu_ops sunway_iommu_ops = {
 	.capable = sunway_iommu_capable,
 	.domain_alloc = sunway_iommu_domain_alloc,
@@ -1365,6 +1403,8 @@ const struct iommu_ops sunway_iommu_ops = {
 	.unmap = sunway_iommu_unmap,
 	.iova_to_phys = sunway_iommu_iova_to_phys,
 	.device_group = sunway_iommu_device_group,
+	.get_resv_regions = sunway_iommu_get_resv_regions,
+	.put_resv_regions = generic_iommu_put_resv_regions,
 	.pgsize_bitmap = SW64_IOMMU_PGSIZES,
 	.def_domain_type = sunway_iommu_def_domain_type,
 };

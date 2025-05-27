@@ -78,8 +78,16 @@ enum exceptype {
 	PTE_LEVEL1,
 	PTE_LEVEL2,
 	PTE_LEVEL3,
-	UNAUTHORIZED_ACCESS,
+	LEVEL1_PTE_UNAUTHORIZED_ACCESS,
+	LEVEL2_PTE_UNAUTHORIZED_ACCESS,
+	LEVEL3_PTE_UNAUTHORIZED_ACCESS,
+	LEVEL1_PTE_GRANULARITY_ERROR,
+	LEVEL2_PTE_GRANULARITY_ERROR,
+	LEVEL3_PTE_GRANULARITY_ERROR,
 	ILLEGAL_RESPONSE,
+	INVALID_HIGH_ADDRESS,
+	SEGMENT_TRANSLATION_MISS,
+	SEGMENT_TRANSLATION_UNAUTHORIZED_ACCESS,
 	DTE_LEVEL1_VAL,
 	DTE_LEVEL2_VAL,
 	PTE_LEVEL1_VAL,
@@ -102,8 +110,8 @@ struct acpi_table_header *dmar_tbl;
 
 struct dma_domain {
 	struct sunway_iommu_domain sdomain;
-	struct iova_domain iovad;
 };
+
 const struct iommu_ops sunway_iommu_ops;
 static const struct dma_map_ops sunway_dma_ops;
 
@@ -282,11 +290,11 @@ static void dma_domain_free(struct dma_domain *dma_dom)
 		return;
 
 	del_domain_from_list(&dma_dom->sdomain);
-	put_iova_domain(&dma_dom->iovad);
 	free_pagetable(&dma_dom->sdomain);
 	if (dma_dom->sdomain.id)
 		domain_id_free(dma_dom->sdomain.id);
 
+	iommu_put_dma_cookie(&dma_dom->sdomain.domain);
 	kfree(dma_dom);
 }
 
@@ -359,8 +367,6 @@ static struct dma_domain *dma_domain_alloc(void)
 
 	sunway_domain_init(&dma_dom->sdomain);
 	dma_dom->sdomain.type = IOMMU_DOMAIN_DMA;
-	init_iova_domain(&dma_dom->iovad, PAGE_SIZE, IOVA_PFN(SW64_DMA_START));
-	reserve_iova(&dma_dom->iovad, (0xe0000000UL >> PAGE_SHIFT), (0x100000000UL >> PAGE_SHIFT));
 
 	add_domain_to_list(&dma_dom->sdomain);
 
@@ -444,7 +450,8 @@ static int set_entry_by_devid(u16 devid,
 		dte_l2_val |= 0x1;
 
 	*dte_l2 = dte_l2_val;
-	pr_debug("iommu: device with id %d added to domain: %d\n", devid, sdomain->id);
+	pr_debug("device with id %d added to domain: %d with pte_root: %lx\n",
+			devid, sdomain->id, dte_l2_val);
 
 	return 0;
 }
@@ -738,6 +745,8 @@ irqreturn_t iommu_interrupt(int irq, void *dev)
 	}
 
 	sdomain = sdev->domain;
+	pr_info("iommu exception type:%#lx\n", type);
+
 	switch (type) {
 	case DTE_LEVEL1:
 		pr_info("invalid level1 dte, addr:%#lx, val:%#lx\n",
@@ -753,31 +762,55 @@ irqreturn_t iommu_interrupt(int irq, void *dev)
 		pr_info("invalid level1 pte, addr: %#lx, val:%#lx\n",
 			fetch_pte(sdomain, dva, PTE_LEVEL1),
 			fetch_pte(sdomain, dva, PTE_LEVEL1_VAL));
-
-		iommu_status &= ~(1UL << 62);
-		writeq(iommu_status, iommu->reg_base_addr + IOMMUEXCPT_STATUS);
 		break;
 	case PTE_LEVEL2:
 		pr_info("invalid level2 pte, addr: %#lx, val: %#lx\n",
 			fetch_pte(sdomain, dva, PTE_LEVEL2),
 			fetch_pte(sdomain, dva, PTE_LEVEL2_VAL));
-
-		iommu_status &= ~(1UL << 62);
-		writeq(iommu_status, iommu->reg_base_addr + IOMMUEXCPT_STATUS);
 		break;
-
 	case PTE_LEVEL3:
 		pr_info("invalid level3 pte, addr: %#lx, val: %#lx\n",
 			fetch_pte(sdomain, dva, PTE_LEVEL3),
 			fetch_pte(sdomain, dva, PTE_LEVEL3_VAL));
-
-		iommu_status &= ~(1UL << 62);
-		writeq(iommu_status, iommu->reg_base_addr + IOMMUEXCPT_STATUS);
+		break;
+	case LEVEL1_PTE_UNAUTHORIZED_ACCESS:
+		pr_info("level1 pte unauthorized access\n");
+		break;
+	case LEVEL2_PTE_UNAUTHORIZED_ACCESS:
+		pr_info("level2 pte unauthorized access\n");
+		break;
+	case LEVEL3_PTE_UNAUTHORIZED_ACCESS:
+		pr_info("level3 pte unauthorized access\n");
+		break;
+	case LEVEL1_PTE_GRANULARITY_ERROR:
+		pr_info("level1 pte granularity error\n");
+		break;
+	case LEVEL2_PTE_GRANULARITY_ERROR:
+		pr_info("level2 pte granularity error\n");
+		break;
+	case LEVEL3_PTE_GRANULARITY_ERROR:
+		pr_info("level3 pte granularity error\n");
+		break;
+	case ILLEGAL_RESPONSE:
+		pr_info("accessing the device table or page table \
+				return an illegal response\n");
+		break;
+	case INVALID_HIGH_ADDRESS:
+		pr_info("IOVA[63:42] is not zero\n");
+		break;
+	case SEGMENT_TRANSLATION_MISS:
+		pr_info("segment translation miss\n");
+		break;
+	case SEGMENT_TRANSLATION_UNAUTHORIZED_ACCESS:
+		pr_info("segment translation unauthorized access\n");
 		break;
 	default:
-		pr_info("iommu exception type %ld\n", type);
+		pr_info("unknown error\n");
 		break;
 	}
+
+	iommu_status &= ~(1UL << 62);
+	writeq(iommu_status, iommu->reg_base_addr + IOMMUEXCPT_STATUS);
 
 	return IRQ_HANDLED;
 }
@@ -1270,8 +1303,8 @@ static struct iommu_domain *sunway_iommu_domain_alloc(unsigned int type)
 		}
 
 		sdomain->domain.geometry.aperture_start = 0UL;
-		sdomain->domain.geometry.aperture_end	= ~0ULL;
-		sdomain->domain.geometry.force_aperture = true;
+		sdomain->domain.geometry.aperture_end	= ~0UL;
+		sdomain->domain.geometry.force_aperture	= true;
 		sdomain->type = IOMMU_DOMAIN_UNMANAGED;
 		break;
 
@@ -1283,6 +1316,9 @@ static struct iommu_domain *sunway_iommu_domain_alloc(unsigned int type)
 		}
 
 		sdomain = &dma_dom->sdomain;
+		sdomain->domain.geometry.aperture_start = 0UL;
+		sdomain->domain.geometry.aperture_end	= SW64_64BIT_DMA_LIMIT;
+		sdomain->domain.geometry.force_aperture = true;
 		if (iommu_get_dma_cookie(&sdomain->domain) == -ENOMEM)
 			return NULL;
 		break;
@@ -1400,6 +1436,9 @@ sunway_iommu_iova_to_phys(struct iommu_domain *dom, dma_addr_t iova)
 	if (iova >= SW64_BAR_ADDRESS)
 		return iova;
 
+	if (iova >= MAX_IOVA_WIDTH)
+		return 0;
+
 	paddr = fetch_pte(sdomain, iova, PTE_LEVEL1_VAL);
 	if ((paddr & SW64_IOMMU_ENTRY_VALID) == 0)
 		return 0;
@@ -1459,16 +1498,41 @@ sunway_iommu_map(struct iommu_domain *dom, unsigned long iova,
 	int ret;
 
 	/*
-	 * As VFIO cannot distinguish between normal DMA request
-	 * and pci device BAR, check should be introduced manually
-	 * to avoid VFIO trying to map pci config space.
+	 * 3.5G ~ 4G currently is seen as PCI 32-bit MEMIO space. In theory,
+	 * this space should be excluded from memory space addressing (using
+	 * resv_region APIs), which will leave a memory hole on the entire memory
+	 * space naturally.
+	 *
+	 * However, some applications(especially qemu) under sunway do not
+	 * support incontiguous memory allocation right now. This memory
+	 * hole has to be seen as one of the valid IOVA ranges to pass VFIO
+	 * validness check for qemu. In this case, CPU is still capable of
+	 * allocating IOVA in this space, which is, frankly speaking, dangerous
+	 * and buggy.
+	 *
+	 * We manage to find a compromise solution, which is allow these IOVA
+	 * being allocated and mapped as usual, and with a warning issued to
+	 * users at the same time. So users can quickly learn if they are using
+	 * these "illegal" IOVA and thus change their strategies accordingly.
 	 */
-	if (iova >= SW64_BAR_ADDRESS)
+	if ((SW64_32BIT_DMA_LIMIT < iova + page_size)
+		&& (iova <= DMA_BIT_MASK(32))) {
+		pr_warn_once("process %s (pid:%d) is using domain %d with IOVA: %lx\n",
+			current->comm, current->pid, sdomain->id, iova);
+	}
+
+	/*
+	 * For the same reason, IOVA allocated from PCI dev BAR address should
+	 * be warned as well.
+	 */
+	if (iova >= SW64_BAR_ADDRESS) {
+		pr_warn_once("Domain %d are using IOVA: %lx\n", sdomain->id, iova);
 		return 0;
+	}
 
 	/* IOMMU v2 supports 42 bit mapped address width*/
 	if (iova >= MAX_IOVA_WIDTH) {
-		pr_err("IOMMU cannot map provided address: %lx\n", iova);
+		pr_err("The IOMMU hardware cannot map provided address: %lx\n", iova);
 		return -EFAULT;
 	}
 
@@ -1488,10 +1552,10 @@ sunway_iommu_unmap(struct iommu_domain *dom, unsigned long iova,
 	if (iova >= SW64_BAR_ADDRESS)
 		return page_size;
 
-	/* IOMMU v2 supports 42 bit mapped address width*/
+	/* IOMMU v2 supports 42 bit mapped address width */
 	if (iova >= MAX_IOVA_WIDTH) {
 		pr_err("Trying to unmap illegal IOVA : %lx\n", iova);
-		return -EFAULT;
+		return 0;
 	}
 
 	unmap_size = sunway_iommu_unmap_page(sdomain, iova, page_size);
@@ -1622,12 +1686,49 @@ static void sunway_iommu_probe_finalize(struct device *dev)
 
 	domain = iommu_get_domain_for_dev(dev);
 	if (domain->type == IOMMU_DOMAIN_DMA) {
-		if (min(dev->coherent_dma_mask, *dev->dma_mask) == DMA_BIT_MASK(32))
-			iommu_setup_dma_ops(dev, SW64_DMA_START, SW64_32BIT_DMA_LIMIT);
-		else
-			iommu_setup_dma_ops(dev, SW64_DMA_START, SW64_64BIT_DMA_LIMIT);
+		iommu_setup_dma_ops(dev, SW64_DMA_START,
+				(SW64_64BIT_DMA_LIMIT - SW64_DMA_START));
 	} else
 		set_dma_ops(dev, get_arch_dma_ops(dev->bus));
+}
+
+static void sunway_iommu_get_resv_regions(struct device *dev,
+					  struct list_head *head)
+{
+	struct iommu_resv_region *region;
+	int prot = IOMMU_NOEXEC | IOMMU_MMIO;
+	struct iommu_domain *domain;
+
+	/*
+	 * Allow user applications have access to a contiguous memory space,
+	 * so no reserves for unmanaged domains.
+	 *
+	 * See comments in map API for more detail.
+	 */
+	domain = iommu_get_domain_for_dev(dev);
+	if (domain->type == IOMMU_DOMAIN_UNMANAGED)
+		return;
+
+	/* Reserve 3.5~4G for MEMIO */
+	region = iommu_alloc_resv_region(SW64_32BIT_DMA_LIMIT,
+					 (DMA_BIT_MASK(32) - SW64_32BIT_DMA_LIMIT),
+					 prot, IOMMU_RESV_RESERVED);
+	if (!region)
+		return;
+
+	list_add_tail(&region->list, head);
+
+	if (dev_is_pci(dev)) {
+		struct pci_dev *pdev = to_pci_dev(dev);
+
+		if ((pdev->class >> 8) == PCI_CLASS_BRIDGE_ISA) {
+			region = iommu_alloc_resv_region(0, 1UL << 24,
+					IOMMU_READ | IOMMU_WRITE,
+					IOMMU_RESV_DIRECT_RELAXABLE);
+			if (region)
+				list_add_tail(&region->list, head);
+		}
+	}
 }
 
 const struct iommu_ops sunway_iommu_ops = {
@@ -1643,6 +1744,8 @@ const struct iommu_ops sunway_iommu_ops = {
 	.unmap = sunway_iommu_unmap,
 	.iova_to_phys = sunway_iommu_iova_to_phys,
 	.device_group = sunway_iommu_device_group,
+	.get_resv_regions = sunway_iommu_get_resv_regions,
+	.put_resv_regions = generic_iommu_put_resv_regions,
 	.pgsize_bitmap = SW64_IOMMU_PGSIZES,
 	.def_domain_type = sunway_iommu_def_domain_type,
 };

@@ -76,23 +76,25 @@ static void handle_nmi_int(void)
 
 int pme_state;
 
-asmlinkage void noinstr do_entInt(unsigned long type, unsigned long vector,
-			  unsigned long irq_arg, struct pt_regs *regs)
+asmlinkage void noinstr do_entInt(struct pt_regs *regs)
 {
 	struct pt_regs *old_regs;
 	extern char __idle_start[], __idle_end[];
+	unsigned long type = regs->earg0;
+	unsigned long vector = regs->earg1;
+	unsigned long irq_arg = regs->earg2;
 
 	/* restart idle routine if it is interrupted */
 	if (regs->pc > (u64)__idle_start && regs->pc < (u64)__idle_end)
 		regs->pc = (u64)__idle_start;
-	if (regs->cause != -2)
-		irq_enter();
-	else
+	if (unlikely(regs->cause == -2 && IS_ENABLED(CONFIG_SUBARCH_C4)))
 		nmi_enter();
+	else
+		irq_enter();
 	old_regs = set_irq_regs(regs);
 
 #ifdef CONFIG_PM
-	if (is_junzhang_v1()) {
+	if (is_in_host() && is_junzhang_v1()) {
 		if (pme_state == PME_WFW) {
 			pme_state = PME_PENDING;
 			goto out;
@@ -174,10 +176,10 @@ asmlinkage void noinstr do_entInt(unsigned long type, unsigned long vector,
 
 out:
 	set_irq_regs(old_regs);
-	if (regs->cause != -2)
-		irq_exit();
-	else
+	if (unlikely(regs->cause == -2 && IS_ENABLED(CONFIG_SUBARCH_C4)))
 		nmi_exit();
+	else
+		irq_exit();
 }
 EXPORT_SYMBOL(do_entInt);
 

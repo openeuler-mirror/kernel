@@ -19,6 +19,19 @@
 
 #define FTRACE_SP_OFF	0x50
 	.macro mcount_enter
+	/* save $26 & fp of the function before caller */
+	subl	$sp, 0x10, $sp
+	stl	$26, 0($sp)
+	stl	$15, 0x8($sp)
+	ldi	$15, 0($sp)
+
+	/* save $28 & fp of caller */
+	subl	$sp, 0x10, $sp
+	stl	$28, 0($sp)
+	stl	$15, 0x8($sp)
+	ldi	$15, 0($sp)
+
+	/* save other regs */
 	subl	$sp, FTRACE_SP_OFF, $sp
 	stl	$16, 0($sp)
 	stl	$17, 0x8($sp)
@@ -35,6 +48,7 @@
 	.endm
 
 	.macro mcount_end
+	/* restore all regs */
 	ldl	$16, 0($sp)
 	ldl	$17, 0x8($sp)
 	ldl	$18, 0x10($sp)
@@ -48,6 +62,9 @@
 	ldl	$20, 0x40($sp)
 	ldl	$21, 0x48($sp)
 	addl	$sp, FTRACE_SP_OFF, $sp
+
+	ldl	$15, 0x18($sp)
+	addl	$sp, 0x20, $sp
 	.endm
 
 	.macro RESTORE_GRAPH_ARGS
@@ -59,6 +76,19 @@
 	.endm
 
 	.macro SAVE_PT_REGS
+	/* save $26 & fp of the function before caller */
+	subl	$sp, 0x10, $sp
+	stl	$26, 0($sp)
+	stl	$15, 0x8($sp)
+	ldi	$15, 0($sp)
+
+	/* save $28 & fp of caller */
+	subl	$sp, 0x10, $sp
+	stl	$28, 0($sp)
+	stl	$15, 0x8($sp)
+	ldi	$15, 0($sp)
+
+	/* save pt_regs */
 	ldi	$sp, -PT_REGS_SIZE($sp)
 	stl	$0, PT_REGS_R0($sp)
 	stl	$1, PT_REGS_R1($sp)
@@ -91,10 +121,11 @@
 	stl	$28, PT_REGS_R28($sp)
 	stl	$29, PT_REGS_GP($sp)
 	ldi	$0, PT_REGS_SIZE($sp)
-	stl	$0, PT_REGS_SP($sp)
+	stl	$0, PT_REGS_R30($sp)
 	.endm
 
 	.macro RESTORE_PT_REGS
+	/* restore pt_regs */
 	ldl	$0, PT_REGS_R0($sp)
 	ldl	$1, PT_REGS_R1($sp)
 	ldl	$2, PT_REGS_R2($sp)
@@ -126,6 +157,10 @@
 	ldl	$28, PT_REGS_R28($sp)
 	ldl	$29, PT_REGS_GP($sp)
 	ldi	$sp, PT_REGS_SIZE($sp)
+
+	/* only restore $fp */
+	ldl	$15, 0x18($sp)
+	addl	$sp, 0x20, $sp
 	.endm
 
 	.macro RESTORE_GRAPH_REG_ARGS
@@ -296,6 +331,7 @@ ftrace_regs_caller:
 1:	ldgp	$29, 0($27)
 
 	subl	$28, MCOUNT_INSN_SIZE, $16
+	stl     $16, PT_REGS_PC($sp)
 	bis	$26, $31, $17
 	ldi	$4, function_trace_op
 	ldl	$18, 0($4)

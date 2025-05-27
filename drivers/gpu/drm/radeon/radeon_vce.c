@@ -239,7 +239,7 @@ int radeon_vce_resume(struct radeon_device *rdev)
 		return r;
 	}
 
-#ifdef __sw_64__
+#if IS_ENABLED(CONFIG_SW64)
 	memset_io(cpu_addr, 0, radeon_bo_size(rdev->vce.vcpu_bo));
 #else
 	memset(cpu_addr, 0, radeon_bo_size(rdev->vce.vcpu_bo));

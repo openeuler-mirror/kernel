@@ -506,6 +506,10 @@ static void truncate_msg(u16 *text_len, u16 *trunc_msg_len)
 		*trunc_msg_len = 0;
 }
 
+#ifdef CONFIG_SW64_RRK
+extern void sw64_rrk_store(const char *text, u16 text_len, u64 ts_nsec, int level,
+		unsigned long id, bool final);
+#endif
 /* insert record into the buffer, discard old ones, update heads */
 static int log_store(u32 caller_id, int facility, int level,
 		     enum log_flags flags, u64 ts_nsec,
@@ -548,6 +552,11 @@ static int log_store(u32 caller_id, int facility, int level,
 		prb_commit(&e);
 	else
 		prb_final_commit(&e);
+
+#ifdef CONFIG_SW64_RRK
+	sw64_rrk_store(&r.text_buf[0], r.info->text_len, r.info->ts_nsec, r.info->level,
+			e.id, !!(flags & LOG_NEWLINE));
+#endif
 
 	return (text_len + trunc_msg_len);
 }
@@ -2011,6 +2020,10 @@ static size_t log_output(int facility, int level, enum log_flags lflags,
 			} else {
 				prb_commit(&e);
 			}
+#ifdef CONFIG_SW64_RRK
+			sw64_rrk_store(text, text_len, r.info->ts_nsec, -1,
+					e.id, !!(lflags & LOG_NEWLINE));
+#endif
 			return text_len;
 		}
 	}

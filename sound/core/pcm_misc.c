@@ -23,6 +23,9 @@
 #include <linux/export.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
+#ifdef CONFIG_SW64
+#include <linux/io.h>
+#endif
 
 #include "pcm_local.h"
 
@@ -434,7 +437,11 @@ int snd_pcm_format_set_silence(snd_pcm_format_t format, void *data, unsigned int
 	/* signed or 1 byte data */
 	if (pcm_formats[(INT)format].signd == 1 || width <= 8) {
 		unsigned int bytes = samples * width / 8;
+#ifdef CONFIG_SW64
+		memset_io(data, *pat, bytes);
+#else
 		memset(data, *pat, bytes);
+#endif
 		return 0;
 	}
 	/* non-zero samples, fill using a loop */
