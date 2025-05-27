@@ -38,6 +38,7 @@
 #include "hns_roce_device.h"
 #include "hns_roce_cmd.h"
 #include "hns_roce_hem.h"
+#include "hns_roce_trace.h"
 
 static u32 hw_index_to_key(int ind)
 {
@@ -168,6 +169,7 @@ static int hns_roce_mr_enable(struct hns_roce_dev *hr_dev,
 	if (IS_ERR(mailbox))
 		return PTR_ERR(mailbox);
 
+	trace_hns_mr(mr);
 	if (mr->type != MR_TYPE_FRMR)
 		ret = hr_dev->hw->write_mtpt(hr_dev, mailbox->buf, mr);
 	else
@@ -1201,6 +1203,8 @@ struct hns_roce_mtr *hns_roce_mtr_create(struct hns_roce_dev *hr_dev,
 	struct ib_device *ibdev = &hr_dev->ib_dev;
 	struct hns_roce_mtr *mtr;
 	int ret;
+
+	trace_hns_buf_attr(buf_attr);
 
 	mtr = kvzalloc(sizeof(*mtr), GFP_KERNEL);
 	if (!mtr)

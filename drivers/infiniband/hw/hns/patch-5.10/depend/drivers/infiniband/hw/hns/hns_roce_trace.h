@@ -139,6 +139,68 @@ DEFINE_EVENT(wqe_template, hns_srq_wqe,
 		      enum hns_roce_trace_type type),
 	     TP_ARGS(qpn, idx, wqe, len, id, type));
 
+TRACE_EVENT(hns_mr,
+	    TP_PROTO(struct hns_roce_mr *mr),
+	    TP_ARGS(mr),
+
+	    TP_STRUCT__entry(__field(u64, iova)
+			     __field(u64, size)
+			     __field(u32, key)
+			     __field(u32, pd)
+			     __field(u32, pbl_hop_num)
+			     __field(u32, npages)
+			     __field(int, type)
+	    ),
+
+	    TP_fast_assign(__entry->iova = mr->iova;
+			   __entry->size = mr->size;
+			   __entry->key = mr->key;
+			   __entry->pd = mr->pd;
+			   __entry->pbl_hop_num = mr->pbl_hop_num;
+			   __entry->npages = mr->npages;
+			   __entry->type = mr->type;
+	    ),
+
+	    TP_printk("iova:0x%llx, size:%llu, key:%u, pd:%u, pbl_hop:%u, npages:%u, type:%d",
+		      __entry->iova, __entry->size, __entry->key,
+		      __entry->pd, __entry->pbl_hop_num, __entry->npages,
+		      __entry->type)
+);
+
+TRACE_EVENT(hns_buf_attr,
+	    TP_PROTO(struct hns_roce_buf_attr *attr),
+	    TP_ARGS(attr),
+
+	    TP_STRUCT__entry(__field(unsigned int, region_count)
+			     __field(unsigned int, region0_size)
+			     __field(int, region0_hopnum)
+			     __field(unsigned int, region1_size)
+			     __field(int, region1_hopnum)
+			     __field(unsigned int, region2_size)
+			     __field(int, region2_hopnum)
+			     __field(unsigned int, page_shift)
+			     __field(bool, mtt_only)
+	    ),
+
+	    TP_fast_assign(__entry->region_count = attr->region_count;
+			   __entry->region0_size = attr->region[0].size;
+			   __entry->region0_hopnum = attr->region[0].hopnum;
+			   __entry->region1_size = attr->region[1].size;
+			   __entry->region1_hopnum = attr->region[1].hopnum;
+			   __entry->region2_size = attr->region[2].size;
+			   __entry->region2_hopnum = attr->region[2].hopnum;
+			   __entry->page_shift = attr->page_shift;
+			   __entry->mtt_only = attr->mtt_only;
+	    ),
+
+	    TP_printk("rg cnt:%u, pg_sft:0x%x, mtt_only:%s, rg 0 (sz:%u, hop:%u), rg 1 (sz:%u, hop:%u), rg 2 (sz:%u, hop:%u)\n",
+		      __entry->region_count, __entry->page_shift,
+		      __entry->mtt_only ? "yes" : "no",
+		      __entry->region0_size, __entry->region0_hopnum,
+		      __entry->region1_size, __entry->region1_hopnum,
+		      __entry->region2_size, __entry->region2_hopnum)
+);
+
 #endif /* __HNS_ROCE_TRACE_H */
 
 #undef TRACE_INCLUDE_FILE
