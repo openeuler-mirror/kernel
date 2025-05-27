@@ -3,7 +3,6 @@
  * Copyright (c) 2022 Hisilicon Limited.
  */
 
-#include "hnae3.h"
 #include "hns_roce_device.h"
 #include "hns_roce_hw_v2.h"
 #include "hns_roce_bond.h"
