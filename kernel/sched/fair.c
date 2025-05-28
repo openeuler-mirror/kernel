@@ -7333,9 +7333,8 @@ int sysctl_sched_util_ratio = 100;
 static bool core_has_spare(int cpu)
 {
 	int core_id = cpumask_first(cpu_smt_mask(cpu));
-	struct rq *rq = cpu_rq(core_id);
-	unsigned long util = cpu_util(cpu);
-	unsigned long capacity = rq->cpu_capacity;
+	unsigned long util = cpu_util(core_id);
+	unsigned long capacity = capacity_of(core_id);
 
 	if (sysctl_sched_util_ratio == 100)
 		return true;
