@@ -73,7 +73,7 @@ static int sdma_add_pid_ref(struct hisi_sdma_device *psdma_dev, u32 pid)
 	spin_lock(&psdma_dev->pid_lock);
 	entry = sdma_search_pid_ref(psdma_dev, pid);
 	if (!entry) {
-		entry = kmalloc_node(sizeof(struct hisi_sdma_pid_ref_hte), GFP_KERNEL,
+		entry = kmalloc_node(sizeof(struct hisi_sdma_pid_ref_hte), GFP_ATOMIC,
 				     psdma_dev->node_idx);
 		if (!entry) {
 			spin_unlock(&psdma_dev->pid_lock);
@@ -884,7 +884,7 @@ static int ioctl_sdma_chn_used_refcount(struct file *file, unsigned long arg)
 	spin_lock(&pdev->channel_lock);
 	pchannel = pdev->channels + share_chn.chn_idx;
 	if (share_chn.init_flag) {
-		list_node = kmalloc_node(sizeof(struct hisi_sdma_channel_list), GFP_KERNEL,
+		list_node = kmalloc_node(sizeof(struct hisi_sdma_channel_list), GFP_ATOMIC,
 					 pdev->node_idx);
 		if (!list_node) {
 			spin_unlock(&pdev->channel_lock);

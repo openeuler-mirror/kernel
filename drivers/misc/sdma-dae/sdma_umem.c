@@ -111,7 +111,7 @@ static int record_umem(u64 addr, struct list_head *list_head, int ida, u64 *cook
 	spin_lock(&g_hash_table->hash_lock);
 	entry = hash_lookup_entry(ida);
 	if (!entry) {
-		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+		entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
 		if (!entry) {
 			ret = -ENOMEM;
 			spin_unlock(&g_hash_table->hash_lock);
