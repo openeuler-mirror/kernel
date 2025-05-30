@@ -84,6 +84,8 @@ static int __init exynos_chipid_early_init(void)
 	of_node_put(root);
 
 	soc_dev_attr->revision = kasprintf(GFP_KERNEL, "%x", revision);
+	if (!soc_dev_attr->revision)
+		return -ENOMEM;
 	soc_dev_attr->soc_id = product_id_to_soc_id(product_id);
 	if (!soc_dev_attr->soc_id) {
 		pr_err("Unknown SoC\n");
