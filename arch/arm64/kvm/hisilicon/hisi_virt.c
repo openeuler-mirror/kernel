@@ -194,9 +194,14 @@ int kvm_hisi_dvmbm_vcpu_init(struct kvm_vcpu *vcpu)
 		return 0;
 
 	vcpu->arch.cpus_ptr = kzalloc(sizeof(cpumask_t), GFP_ATOMIC);
-	vcpu->arch.pre_cpus_ptr = kzalloc(sizeof(cpumask_t), GFP_ATOMIC);
-	if (!vcpu->arch.cpus_ptr || !vcpu->arch.pre_cpus_ptr)
+	if (!vcpu->arch.cpus_ptr)
 		return -ENOMEM;
+
+	vcpu->arch.pre_cpus_ptr = kzalloc(sizeof(cpumask_t), GFP_ATOMIC);
+	if (!vcpu->arch.pre_cpus_ptr) {
+		kfree(vcpu->arch.cpus_ptr);
+		return -ENOMEM;
+	}
 
 	return 0;
 }
