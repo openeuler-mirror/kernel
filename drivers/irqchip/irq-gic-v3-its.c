@@ -48,6 +48,37 @@
 
 #include "irq-gic-common.h"
 
+#ifdef CONFIG_VIRT_PLAT_DEV
+#include <linux/pci.h>
+
+static int iort_get_used_bus_bitmap(unsigned long **bus_bm, resource_size_t *len)
+{
+	resource_size_t idx;
+	/* PCIe bus has 8 bits */
+	const size_t BUS_MAX_NUM = 0x100;
+
+	if (bus_bm == NULL || len == NULL)
+		return -EINVAL;
+
+	*bus_bm = bitmap_zalloc(BUS_MAX_NUM, GFP_KERNEL);
+	if (*bus_bm == NULL)
+		return -ENOMEM;
+
+	*len = BUS_MAX_NUM;
+
+	if (iort_gen_used_DeviceID_bitmap(*bus_bm, *len)) {
+		bitmap_free(*bus_bm);
+		return -EINVAL;
+	}
+
+	pr_debug("generated bus bitmap :");
+	for (idx = 0; idx != BUS_MAX_NUM; ++idx)
+		pr_debug("idx[%llx] %x", idx, test_bit(idx, *bus_bm));
+
+	return 0;
+}
+#endif
+
 /* a reserved bus id region */
 struct plat_rsv_buses {
 	u8	start;	/* the first reserved bus id */
@@ -72,56 +103,21 @@ struct rsv_devid_pool {
 static LIST_HEAD(rsv_devid_pools);
 static DEFINE_RAW_SPINLOCK(rsv_devid_pools_lock);
 
-/* Do we have usable rsv_devid_pool? Initialized to be true. */
-bool rsv_devid_pool_cap = true;
-static u8 rsv_buses_start, rsv_buses_count;
+/* Do we have usable rsv_devid_pool? Initialized to be false. */
+bool rsv_devid_pool_cap;
 
-static int __init rsv_buses_start_cfg(char *buf)
-{
-	return kstrtou8(buf, 0, &rsv_buses_start);
-}
-early_param("irqchip.gicv3_rsv_buses_start", rsv_buses_start_cfg);
-
-static int __init rsv_buses_count_cfg(char *buf)
-{
-	return kstrtou8(buf, 0, &rsv_buses_count);
-}
-early_param("irqchip.gicv3_rsv_buses_count", rsv_buses_count_cfg);
-
-static void get_rsv_buses_resource(struct plat_rsv_buses *buses)
-{
-	buses->start = rsv_buses_start;
-	buses->count = rsv_buses_count;
-
-	/*
-	 * FIXME: There is no architectural way to get the *correct*
-	 * reserved bus id info.
-	 *
-	 * The first thought is to increase the GITS_TYPER.Devbits for
-	 * the usage for virtualization, but this will break all
-	 * command layouts with DeviceID as an argument (e.g., INT).
-	 *
-	 * The second way is to decrease the GITS_TYPER.Devids so that
-	 * SW can pick the unused device IDs for use (these IDs should
-	 * actually be supported at HW level, though not exposed).
-	 * *Or* fetch the information with the help of firmware. They
-	 * are essentially the same way.
-	 */
-}
-
-static int probe_devid_pool_one(void)
+#ifdef CONFIG_VIRT_PLAT_DEV
+static int add_bus_range_to_pool(resource_size_t start_bus, resource_size_t end_bus)
 {
 	struct rsv_devid_pool *devid_pool;
 
 	devid_pool = kzalloc(sizeof(*devid_pool), GFP_KERNEL);
 	if (!devid_pool)
 		return -ENOMEM;
-
-	get_rsv_buses_resource(&devid_pool->buses);
 	raw_spin_lock_init(&devid_pool->devid_bm_lock);
 
-	devid_pool->start = PCI_DEVID(devid_pool->buses.start, 0);
-	devid_pool->end = PCI_DEVID(devid_pool->buses.start + devid_pool->buses.count, 0);
+	devid_pool->start = PCI_DEVID(start_bus, 0);
+	devid_pool->end = PCI_DEVID(end_bus, 0);
 
 	if (devid_pool->end == devid_pool->start) {
 		kfree(devid_pool);
@@ -129,18 +125,73 @@ static int probe_devid_pool_one(void)
 	}
 
 	devid_pool->devid_bm = bitmap_zalloc(devid_pool->end - devid_pool->start,
-					     GFP_KERNEL);
+										GFP_KERNEL);
 	if (!devid_pool->devid_bm) {
 		kfree(devid_pool);
 		return -ENOMEM;
 	}
-
-	raw_spin_lock(&rsv_devid_pools_lock);
+	/* here we need'nt get the rsv_devid_pools_lock. only the consumer needs. */
 	list_add(&devid_pool->entry, &rsv_devid_pools);
-	raw_spin_unlock(&rsv_devid_pools_lock);
 
+	pr_debug("ITS: add [%x-%x] to bus pool\n", devid_pool->start, devid_pool->end);
 	return 0;
 }
+
+static int probe_devid_pool_one(void)
+{
+	resource_size_t idx, begin_idx, end_idx, bm_len;
+	unsigned long *devid_bm;
+	bool found_begin = false, found_end = false;
+
+	if (iort_get_used_bus_bitmap(&devid_bm, &bm_len))
+		return -EINVAL;
+
+	for (idx = 0; idx != bm_len; ++idx) {
+		bool cur_bit_set = test_bit(idx, devid_bm);
+
+		if (!cur_bit_set && found_begin == false) {
+			/* found the empty bits begin */
+			begin_idx = idx;
+			found_begin = true;
+
+			/* for the case that first zero is last bit */
+			if (idx == bm_len - 1) {
+				/* found the empts bits end */
+				end_idx = bm_len;
+				found_end = true;
+			} else {
+				/* let's find the end */
+				continue;
+			}
+		} else if (cur_bit_set && found_begin == true) {
+			/* found the empts bits end */
+			end_idx = idx;
+			found_end = true;
+		} else if (idx == bm_len - 1 && found_begin == true) {
+			/* found the empts bits end */
+			end_idx = bm_len;
+			found_end = true;
+		} else {
+			/* nothing special found, all zero or all one, skip */
+			continue;
+		}
+
+		/* here we found the begin & end, let's build a pool and add to pool list */
+		add_bus_range_to_pool(begin_idx, end_idx);
+		found_begin = found_end = false;
+	}
+	bitmap_free(devid_bm);
+	/* here we need'nt get the rsv_devid_pools_lock. only the consumer needs. */
+	if (list_empty(&rsv_devid_pools))
+		return -EINVAL;
+	return 0;
+}
+#else
+static int probe_devid_pool_one(void)
+{
+	return -EINVAL;
+}
+#endif
 
 #define ITS_FLAGS_CMDQ_NEEDS_FLUSHING		(1ULL << 0)
 #define ITS_FLAGS_WORKAROUND_CAVIUM_22375	(1ULL << 1)
@@ -470,15 +521,19 @@ static int nr_gicr;
 /*
  * Currently we only build *one* devid pool.
  */
-static int build_devid_pools(void)
+void build_devid_pools(void)
 {
 	struct its_node *its;
 
 	its = list_first_entry(&its_nodes, struct its_node, entry);
 	if (readl_relaxed(its->base + GITS_IIDR) != 0x00051736)
-		return -EINVAL;
+		return;
 
-	return probe_devid_pool_one();
+	if (!probe_devid_pool_one())
+		rsv_devid_pool_cap = true;
+
+	if (rsv_devid_pool_cap)
+		pr_info("ITS: reserved device id pools enabled\n");
 }
 
 /*
@@ -6212,11 +6267,6 @@ int __init its_init(struct fwnode_handle *handle, struct rdists *rdists,
 			pr_err("ITS: Disabling GICv4 support\n");
 		}
 
-		if (build_devid_pools())
-			rsv_devid_pool_cap = false;
-
-		if (rsv_devid_pool_cap)
-			pr_info("ITS: reserved device id pools enabled\n");
 	}
 
 	register_syscore_ops(&its_syscore_ops);
