@@ -20,4 +20,14 @@ config VENDOR_BOND_HOOKS
           Allow vendor modules to attach bonding driver hooks defined via
           DECLARE_HOOK or DECLARE_RESTRICTED_HOOK.
 
+config OENETCLS_HOOKS
+        bool "Oenetcls driver Hooks"
+        depends on VENDOR_HOOKS
+        default n
+        help
+          Enable oenetcls vendor hooks
+          Allow vendor modules to attach oenetcls hooks defined via
+          DECLARE_HOOK or DECLARE_RESTRICTED_HOOK.
+          Use OENETCLS && OENETCLS_HOOKS to enable oenetcls feature.
+
 endmenu

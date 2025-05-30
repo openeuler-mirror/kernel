@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config OENETCLS
+	tristate "Network classification"
+	depends on HISI_L0 && OENETCLS_HOOKS
+	default n
+	help
+	  Allows to configure ntuple rule, and bind interrupt to netdev
+	  automatically.
+	  Use OENETCLS && OENETCLS_HOOKS to enable oenetcls feature.
+	  Use parameter mode to decide running mode.
