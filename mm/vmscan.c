@@ -1169,6 +1169,13 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		if (!trylock_page(page))
 			goto keep;
 
+		if (PageHWPoison(page)) {
+			try_to_unmap(page, TTU_IGNORE_MLOCK | TTU_IGNORE_ACCESS);
+			unlock_page(page);
+			put_page(page);
+			continue;
+		}
+
 		VM_BUG_ON_PAGE(PageActive(page), page);
 
 		sc->nr_scanned++;
