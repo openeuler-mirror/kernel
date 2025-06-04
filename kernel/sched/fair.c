@@ -31,6 +31,9 @@
 #include <linux/sched/grid_qos.h>
 #include <linux/bpf_sched.h>
 #include <linux/mem_sampling.h>
+#ifdef CONFIG_SCHED_PARAL
+#include <asm/prefer_numa.h>
+#endif
 
 /*
  * Targeted preemption latency for CPU-bound tasks:
@@ -8062,6 +8065,16 @@ fail:
 }
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+bool sched_paral_used(void)
+{
+#ifdef CONFIG_SCHED_PARAL
+	if (sched_feat(PARAL))
+		return true;
+#endif
+
+	return false;
+}
+
 static DEFINE_STATIC_KEY_FALSE(__dynamic_affinity_used);
 
 static __always_inline bool dynamic_affinity_used(void)
@@ -8167,6 +8180,14 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 	}
 	rcu_read_unlock();
 
+	/* In extreme cases, it may cause uneven system load. */
+	if (sched_paral_used() && sysctl_sched_util_low_pct == 100 && nr_cpus_valid > 0) {
+		p->select_cpus = p->prefer_cpus;
+		if (sd_flag & SD_BALANCE_WAKE)
+			schedstat_inc(p->se.statistics.nr_wakeups_preferred_cpus);
+		return;
+	}
+
 	/*
 	 * Follow cases should select cpus_ptr, checking by condition of
 	 * tg_capacity > nr_cpus_valid:
@@ -8224,7 +8245,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 #endif
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	if (dynamic_affinity_used() || smart_grid_used())
+	if (dynamic_affinity_used() || smart_grid_used() || sched_paral_used())
 		set_task_select_cpus(p, &idlest_cpu, sd_flag);
 #endif
 
@@ -9866,7 +9887,7 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	p->select_cpus = p->cpus_ptr;
-	if (dynamic_affinity_used() || smart_grid_used())
+	if (dynamic_affinity_used() || smart_grid_used() || sched_paral_used())
 		set_task_select_cpus(p, NULL, 0);
 	if (!cpumask_test_cpu(env->dst_cpu, p->select_cpus)) {
 #else
@@ -13548,6 +13569,12 @@ static void task_fork_fair(struct task_struct *p)
 	}
 
 	se->vruntime -= cfs_rq->min_vruntime;
+
+#ifdef CONFIG_SCHED_PARAL
+	if (sched_paral_used())
+		set_task_paral_node(p);
+#endif
+
 	rq_unlock(rq, &rf);
 }
 

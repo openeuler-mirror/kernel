@@ -1389,6 +1389,28 @@ config SCHED_KEEP_ON_CORE
 	  otherwise the task will not be migrated and the cpu0 will still be
 	  used.
 
+#
+# For architectures that want to enable the support for SCHED_PARAL
+#
+config ARCH_SUPPORTS_SCHED_PARAL
+	bool
+
+config SCHED_PARAL
+	bool "Parallelly schedule processes on different NUMA nodes"
+	depends on ARCH_SUPPORTS_SCHED_PARAL
+	depends on QOS_SCHED_DYNAMIC_AFFINITY
+	default n
+	help
+	  By enabling this feature, processes can be scheduled in parallel
+	  on various NUMA nodes to better utilize the cache in NUMA node.
+	  The usage is restricted to the following scenarios:
+	  1. No CPU binding is performed for user-space processes;
+	  2. It is applicable to distributed applications, such as business
+	     architectures with one master and multiple slaves running in
+	     parallel;
+	  3. The existing "qos dynamic affinity" and "qos smart grid"
+	     features must not be used simultaneously.
+
 config CHECKPOINT_RESTORE
 	bool "Checkpoint/restore support"
 	select PROC_CHILDREN

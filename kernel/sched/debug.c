@@ -6,6 +6,11 @@
  *
  * Copyright(C) 2007, Red Hat, Inc., Ingo Molnar
  */
+
+#ifdef CONFIG_SCHED_PARAL
+#include <asm/prefer_numa.h>
+#endif
+
 #include "sched.h"
 
 /*
@@ -96,6 +101,39 @@ static void sched_feat_disable(int i) { };
 static void sched_feat_enable(int i) { };
 #endif /* CONFIG_JUMP_LABEL */
 
+#ifdef CONFIG_SCHED_PARAL
+static void sched_feat_disable_paral(char *cmp)
+{
+	struct task_struct *tsk, *t;
+
+	if (strncmp(cmp, "PARAL", 5) == 0) {
+		read_lock(&tasklist_lock);
+		for_each_process(tsk) {
+			if (tsk->flags & PF_KTHREAD || is_global_init(tsk))
+				continue;
+
+			for_each_thread(tsk, t)
+				cpumask_clear(t->prefer_cpus);
+		}
+		read_unlock(&tasklist_lock);
+	}
+}
+
+static bool sched_feat_enable_paral(char *cmp)
+{
+	if (strncmp(cmp, "PARAL", 5) != 0)
+		return true;
+
+	if (probe_pmu_numa_event() != 0)
+		return false;
+
+	return true;
+}
+#else
+static void sched_feat_disable_paral(char *cmp) {};
+static bool sched_feat_enable_paral(char *cmp) { return true; };
+#endif /* CONFIG_SCHED_PARAL */
+
 static int sched_feat_set(char *cmp)
 {
 	int i;
@@ -112,8 +150,12 @@ static int sched_feat_set(char *cmp)
 
 	if (neg) {
 		sysctl_sched_features &= ~(1UL << i);
+		sched_feat_disable_paral(cmp);
 		sched_feat_disable(i);
 	} else {
+		if (!sched_feat_enable_paral(cmp))
+			return -EPERM;
+
 		sysctl_sched_features |= (1UL << i);
 		sched_feat_enable(i);
 	}
