@@ -13167,6 +13167,19 @@ unlock:
 }
 device_initcall(perf_event_sysfs_init);
 
+int perf_pmu_type_of_name(const char *name)
+{
+	unsigned int i;
+	struct pmu *pmu;
+
+	idr_for_each_entry(&pmu_idr, pmu, i) {
+		if (!strcmp(pmu->name, name))
+			return pmu->type;
+	}
+
+	return -1;
+}
+
 #ifdef CONFIG_CGROUP_PERF
 static struct cgroup_subsys_state *
 perf_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)

@@ -2423,7 +2423,8 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 		 */
 		WARN_ON_ONCE(set_cpus_allowed_ptr(task, cpus_attach));
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-		set_prefer_cpus_ptr(task, prefer_cpus_attach);
+		if (!sched_paral_used() || !cpumask_empty(prefer_cpus_attach))
+			set_prefer_cpus_ptr(task, prefer_cpus_attach);
 #endif
 
 		cpuset_change_task_nodemask(task, &cpuset_attach_nodemask_to);
@@ -3131,7 +3132,10 @@ static void cpuset_fork(struct task_struct *task)
 
 	set_cpus_allowed_ptr(task, current->cpus_ptr);
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	set_prefer_cpus_ptr(task, current->prefer_cpus);
+	rcu_read_lock();
+	if (!sched_paral_used() || !cpumask_empty(task_cs(current)->prefer_cpus))
+		set_prefer_cpus_ptr(task, current->prefer_cpus);
+	rcu_read_unlock();
 #endif
 	task->mems_allowed = current->mems_allowed;
 }
