@@ -12,10 +12,21 @@
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
 #include <linux/pid.h>
+#include <linux/ptrace.h>
 
 #include "common/driver.h"
 
 #define QPTS_ELEMENT_MAX_NUM   0x4000 //16384 = 16k
+
+#ifndef EPOLLIN
+#define EPOLLIN		0x00000001
+#endif
+#ifndef EPOLLHUP
+#define EPOLLHUP	0x00000010
+#endif
+#ifndef EPOLLRDNORM
+#define EPOLLRDNORM	0x00000040
+#endif
 
 static struct proc_dir_entry *g_entry;
 static DECLARE_WAIT_QUEUE_HEAD(g_ring_buff_wait);

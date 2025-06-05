@@ -68,4 +68,5 @@ enum {
 int qpts_init(void);
 void qpts_fini(void);
 int qpts_write_one_msg(struct xsc_qpt_update_msg *msg);
-#endif /* __QPTS_H__ */
+
+#endif

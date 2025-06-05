@@ -11,14 +11,16 @@
 #include "common/xsc_pph.h"
 #include "common/xsc_hsi.h"
 
-#define SW_MIN_MTU		64
+#define SW_MIN_MTU		ETH_MIN_MTU
 #define SW_DEFAULT_MTU		1500
 #define SW_MAX_MTU		9600
 
 #define XSC_ETH_HW_MTU_SEND	9800		/*need to obtain from hardware*/
 #define XSC_ETH_HW_MTU_RECV	9800		/*need to obtain from hardware*/
 #define XSC_SW2HW_MTU(mtu)	((mtu) + 14 + 4)
-#define XSC_SW2HW_FRAG_SIZE(mtu)	((mtu) + 14 + 8 + 4 + XSC_PPH_HEAD_LEN)
+#define XSC_SW2HW_HLEN          (14 + 8 + 4 + XSC_PPH_HEAD_LEN)
+#define XSC_SW2HW_FRAG_SIZE(mtu)	((mtu) + XSC_SW2HW_HLEN)
+#define XSC_HW2SW_MTU_SIZE(buf)		((buf) - XSC_SW2HW_HLEN)
 #define XSC_SW2HW_RX_PKT_LEN(mtu)	((mtu) + 14 + 256)
 
 #define XSC_RX_MAX_HEAD			(256)
@@ -127,7 +129,11 @@ struct xsc_eth_qp_attr {
 };
 
 struct xsc_eth_rx_wqe_cyc {
+#ifdef DECLARE_FLEX_ARRAY
 	DECLARE_FLEX_ARRAY(struct xsc_wqe_data_seg, data);
+#else
+	struct xsc_wqe_data_seg      data[0];
+#endif
 };
 
 struct xsc_eq_param {
@@ -267,22 +273,6 @@ struct xsc_eth_redirect_rqt_param {
 			struct xsc_eth_channels *channels;
 		} rss; /* RSS data */
 	};
-};
-
-union xsc_send_doorbell {
-	struct{
-		s32  next_pid : 16;
-		u32 qp_num : 15;
-	};
-	u32 send_data;
-};
-
-union xsc_recv_doorbell {
-	struct{
-		s32  next_pid : 13;
-		u32 qp_num : 15;
-	};
-	u32 recv_data;
 };
 
 #endif /* XSC_ETH_COMMON_H */

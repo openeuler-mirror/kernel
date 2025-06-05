@@ -22,6 +22,7 @@
 #include <linux/dma-direct.h>
 #include <linux/dma-mapping.h>
 #include <crypto/hash.h>
+#include <rdma/uverbs_ioctl.h>
 
 #include "xsc_ib_compat.h"
 
@@ -65,6 +66,19 @@ struct xsc_ib_ucontext {
 #define field_avail(type, fld, sz) (offsetof(type, fld) +		\
 		sizeof(((type *)0)->fld) <= (sz))
 
+#define	XSC_PAGE_SHIFT_4K	12
+#define	XSC_PAGE_SHIFT_64K	16
+#define	XSC_PAGE_SHIFT_2M	21
+#define	XSC_PAGE_SHIFT_1G	30
+#define XSC_PAGE_SZ_4K		BIT(XSC_PAGE_SHIFT_4K)
+#define XSC_PAGE_SZ_64K		BIT(XSC_PAGE_SHIFT_64K)
+#define XSC_PAGE_SZ_2M		BIT(XSC_PAGE_SHIFT_2M)
+#define XSC_PAGE_SZ_1G		BIT(XSC_PAGE_SHIFT_1G)
+#define XSC_MR_PAGE_CAP_MASK	(XSC_PAGE_SZ_4K |	\
+				XSC_PAGE_SZ_64K |	\
+				XSC_PAGE_SZ_2M |	\
+				XSC_PAGE_SZ_1G)
+
 static inline struct xsc_ib_ucontext *to_xucontext(struct ib_ucontext *ibucontext)
 {
 	return container_of(ibucontext, struct xsc_ib_ucontext, ibucontext);
@@ -81,20 +95,6 @@ struct xsc_ib_pd {
  */
 
 #define XSC_IB_QPT_REG_UMR	IB_QPT_RESERVED1
-
-enum {
-	XSC_PAGE_SHIFT_4K	= 12,
-	XSC_PAGE_SHIFT_64K	= 16,
-	XSC_PAGE_SHIFT_2M	= 21,
-	XSC_PAGE_SHIFT_1G	= 30,
-};
-
-enum {
-	XSC_PAGE_MODE_4K	= 0,
-	XSC_PAGE_MODE_64K	= 1,
-	XSC_PAGE_MODE_2M	= 2,
-	XSC_PAGE_MODE_1G	= 3,
-};
 
 struct wr_list {
 	u16	opcode;
@@ -127,6 +127,9 @@ struct xsc_ib_wq {
 	dma_addr_t	hdr_dma;
 	int			mad_queue_depth;
 	int			mad_index;
+	u32			*wr_opcode;
+	u32			*need_flush;
+	atomic_t	flush_wqe_cnt;
 };
 
 enum {
@@ -213,6 +216,7 @@ struct xsc_ib_cq {
 	struct xsc_ib_cq_resize *resize_buf;
 	struct ib_umem	       *resize_umem;
 	int			cqe_size;
+	struct list_head	err_state_qp_list;
 };
 
 struct xsc_ib_xrcd {
@@ -234,9 +238,9 @@ struct xsc_ib_mr {
 	int			npages;
 	struct completion	done;
 	enum ib_wc_status	status;
-	struct xsc_ib_peer_id *peer_id;
-	atomic_t      invalidated;
-	struct completion invalidation_comp;
+	struct xsc_ib_peer_id	*peer_id;
+	atomic_t		invalidated;
+	struct completion	invalidation_comp;
 };
 
 struct xsc_ib_peer_id {
@@ -303,7 +307,6 @@ struct xsc_ib_dev {
 	struct uverbs_object_tree_def *driver_trees[6];
 	struct net_device	*netdev;
 	struct xsc_core_device *xdev;
-	XSC_DECLARE_DOORBELL_LOCK(uar_lock);
 	struct list_head		eqs_list;
 	int				num_ports;
 	int				num_comp_vectors;
@@ -341,6 +344,12 @@ struct xsc_pa_chunk {
 	u64 va;
 	dma_addr_t pa;
 	size_t length;
+};
+
+struct xsc_err_state_qp_node {
+	struct list_head	entry;
+	u32					qp_id;
+	bool				is_sq;
 };
 
 static inline struct xsc_ib_cq *to_xibcq(struct xsc_core_cq *xcq)
@@ -623,4 +632,7 @@ static inline void *xsc_ib_recv_mad_sg_virt_addr(struct ib_device *ibdev,
 	recv = container_of(mad_priv_hdr, struct ib_mad_private, header);
 	return &recv->grh;
 }
+
+int xsc_get_rdma_ctrl_info(struct xsc_core_device *xdev, u16 opcode, void *out, int out_size);
+
 #endif /* XSC_IB_H */

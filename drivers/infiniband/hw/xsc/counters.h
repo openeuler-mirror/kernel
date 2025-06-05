@@ -49,4 +49,5 @@ struct xsc_global_cnt_attributes {
 	ssize_t (*store)(struct xsc_global_cnt_interface *g, struct xsc_global_cnt_attributes *a,
 			 const char *buf, size_t count);
 };
-#endif /* __COUNTERS_H__ */
+
+#endif

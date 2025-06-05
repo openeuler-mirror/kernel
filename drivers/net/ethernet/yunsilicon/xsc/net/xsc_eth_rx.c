@@ -20,21 +20,12 @@ static inline void xsc_rq_notify_hw(struct xsc_rq *rq)
 {
 	struct xsc_core_device *xdev = rq->cq.xdev;
 	struct xsc_wq_cyc *wq = &rq->wqe.wq;
-	union xsc_recv_doorbell doorbell_value;
 	u64 rqwqe_id = wq->wqe_ctr << (ilog2(xdev->caps.recv_ds_num));
 
-	ETH_DEBUG_LOG("rq%d_db_val=0x%x, recv_ds=%d\n",
-		      rq->rqn, doorbell_value.recv_data,
-		      xdev->caps.recv_ds_num);
-	/*reverse wqe index to ds index*/
-	doorbell_value.next_pid = rqwqe_id;
-	doorbell_value.qp_num = rq->rqn;
+	ETH_DEBUG_LOG("rq=%d, next_pid=%#x, recv_ds=%d\n",
+		      rq->rqn, rqwqe_id, xdev->caps.recv_ds_num);
 
-	/* Make sure that descriptors are written before
-	 * updating doorbell record and ringing the doorbell
-	 */
-	wmb();
-	writel(doorbell_value.recv_data, REG_ADDR(xdev, xdev->regs.rx_db));
+	xsc_update_rx_db(xdev, rq->rqn, rqwqe_id);
 }
 
 static inline void xsc_skb_set_hash(struct xsc_adapter *adapter,
@@ -88,6 +79,88 @@ static inline unsigned short from32to16(unsigned int x)
 
 static inline bool handle_udp_frag_csum(struct sk_buff *skb, struct epp_pph *pph)
 {
+#ifdef XSC_UDP_FRAG_CSUM
+	char *head = (char *)pph;
+	struct iphdr *iph;
+	u8 l3_proto = PPH_OUTER_IP_TYPE(head);
+	u8 l4_proto = PPH_OUTER_TP_TYPE(head);
+	u16 csum_off = (u16)PPH_CSUM_OFST(head);
+	u16 csum_plen = (u16)PPH_CSUM_PLEN(head);
+	u8 payload_off = PPH_PAYLOAD_OFST(head);
+	u32 hw_csum = PPH_CSUM_VAL(head);
+	u16 udp_check = 0;
+	u16 udp_len = 0;
+	u32 off = 64;
+	__wsum csum1, csum2, csum3, csum;
+
+#ifdef CUM_SKB_DATA
+	head = (char *)skb->data;
+	off = 0;
+#endif
+
+	if (l4_proto != L4_PROTO_UDP && l4_proto != L4_PROTO_NONE)
+		return false;
+
+	off += ETH_HLEN;
+	if (l3_proto == L3_PROTO_IP) {
+		iph = (struct iphdr *)(head + off);
+		if (!ip_is_fragment(iph))
+			return false;
+
+#ifdef UDP_CSUM_DEBUG
+	netdev_dbg("ip_id=%d frag_off=0x%x l4_prt=%d l3_prt=%d iph_off=%d ip_len=%d csum_off=%d pload_off=%d\n",
+		   ntohs(iph->id), ntohs(iph->frag_off),
+		   l4_proto, l3_proto, PPH_OUTER_IP_OFST(head), PPH_OUTER_IP_LEN(pph),
+		   csum_off, payload_off);
+#endif
+
+		off += iph->ihl * 4;
+		if (l4_proto == L4_PROTO_UDP) {
+			struct udphdr *uh = (struct udphdr *)(head + off);
+
+			udp_check = uh->check;
+			udp_len = ntohs(uh->len);
+		}
+
+		if (csum_off == 0)
+			csum_off = 256;
+
+		netdev_dbg("%s: ip_id=%d frag_off=0x%x skb_len=%d data_len=%d csum_off=%d csum_plen=%d payload_off=%d udp_off=%d udp_len=%d udp_check=0x%x\n",
+			   __func__, ntohs(iph->id), ntohs(iph->frag_off),
+			   skb->len, skb->data_len,
+			   csum_off, csum_plen, payload_off, off, udp_len, udp_check);
+#ifdef CUM_RAW_DATA_DUMP
+		xsc_pkt_pph_dump((char *)head, 272);
+#endif
+
+		if (csum_off < off) {
+			csum1 = csum_partial((char *)(head + csum_off), (off - csum_off), 0);
+			csum2 = htons(from32to16(hw_csum));
+			csum = csum_sub(csum2, csum1);
+		} else if (csum_off > off) {
+			csum2 = csum_partial((char *)(head + csum_off), csum_plen, 0);
+			csum1 = csum_partial((char *)(head + off), (csum_off - off), 0);
+			csum = htons(from32to16(hw_csum));
+			csum = csum_partial((char *)(head + off), (csum_off - off), csum);
+			csum3 = csum_partial((char *)(head + off), (skb->len - off + 64), 0);
+		} else {
+			csum = htons(from32to16(hw_csum));
+		}
+		skb->csum = csum_unfold(from32to16(csum));
+
+		ETH_DEBUG_LOG("%s: sw_cal_csum[%d:%d]=0x%x -> 0x%x\n",
+			      __func__, off, csum_off, csum1, from32to16(csum1));
+		ETH_DEBUG_LOG("%s: sw_cal_hw_csum[%d:%d]=0x%x -> 0x%x, hw_csum=0x%x -> 0x%x\n",
+			      __func__, csum_off, csum_plen, csum2, from32to16(csum2),
+			      hw_csum, from32to16(hw_csum));
+		ETH_DEBUG_LOG("%s: sw_cal_tot_csum[%d:%d]=0x%x -> 0x%x, skb_csum=0x%x -> 0x%x\n",
+			      __func__, off, skb->len, csum3, from32to16(csum3), csum, skb->csum);
+
+		skb->ip_summed = CHECKSUM_COMPLETE;
+
+		return true;
+	}
+#endif
 
 	return false;
 }
@@ -277,7 +350,11 @@ struct sk_buff *xsc_skb_from_cqe_nonlinear(struct xsc_rq *rq,
 	u16 frag_consumed_bytes = 0;
 	int i = 0;
 
+#ifndef NEED_CREATE_RX_THREAD
 	skb = napi_alloc_skb(rq->cq.napi, ALIGN(XSC_RX_MAX_HEAD, sizeof(long)));
+#else
+	skb = netdev_alloc_skb(netdev, ALIGN(XSC_RX_MAX_HEAD, sizeof(long)));
+#endif
 	if (unlikely(!skb)) {
 		rq->stats->buff_alloc_err++;
 		return NULL;
@@ -405,12 +482,13 @@ static inline bool xsc_rx_cache_put(struct xsc_rq *rq,
 	return true;
 }
 
-void xsc_page_dma_unmap(struct xsc_rq *rq, struct xsc_dma_info *dma_info)
+static void xsc_page_dma_unmap(struct xsc_rq *rq, struct xsc_dma_info *dma_info)
 {
 	struct xsc_channel *c = rq->cq.channel;
 	struct device *dev = c->adapter->dev;
 
-	dma_unmap_page(dev, dma_info->addr, XSC_RX_FRAG_SZ, rq->buff.map_dir);
+	dma_unmap_page(dev, dma_info->addr,
+		       PAGE_SIZE << rq->buff.page_order, rq->buff.map_dir);
 }
 
 static inline void xsc_put_page(struct xsc_dma_info *dma_info)
@@ -422,8 +500,10 @@ void xsc_page_release_dynamic(struct xsc_rq *rq,
 			      struct xsc_dma_info *dma_info, bool recycle)
 {
 	if (likely(recycle)) {
+#ifdef XSC_PAGE_CACHE
 		if (xsc_rx_cache_put(rq, dma_info))
 			return;
+#endif
 
 		xsc_page_dma_unmap(rq, dma_info);
 		page_pool_recycle_direct(rq->page_pool, dma_info->page);
@@ -467,7 +547,7 @@ static void xsc_dump_error_rqcqe(struct xsc_rq *rq,
 
 	net_err_ratelimited("Error cqe on dev=%s, cqn=%d, ci=%d, rqn=%d, qpn=%d, error_code=0x%x\n",
 			    netdev->name, rq->cq.xcq.cqn, ci,
-			    rq->rqn, cqe->qp_id, get_cqe_opcode(cqe));
+			    rq->rqn, cqe->qp_id, xsc_get_cqe_error_code(rq->cq.xdev, cqe));
 
 }
 
@@ -476,7 +556,6 @@ void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
 {
 	struct xsc_wq_cyc *wq = &rq->wqe.wq;
 	struct xsc_channel *c = rq->cq.channel;
-	u8 cqe_opcode = get_cqe_opcode(cqe);
 	struct xsc_wqe_frag_info *wi;
 	struct sk_buff *skb;
 	u32 cqe_bcnt;
@@ -484,7 +563,7 @@ void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
 
 	ci = xsc_wq_cyc_ctr2ix(wq, cqwq->cc);
 	wi = get_frag(rq, ci);
-	if (unlikely(cqe_opcode & BIT(7))) {
+	if (unlikely(xsc_is_err_cqe(rq->cq.xdev, cqe))) {
 		xsc_dump_error_rqcqe(rq, cqe);
 		rq->stats->cqe_err++;
 		goto free_wqe;
@@ -514,7 +593,11 @@ void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
 			    cqe->has_pph == 1 ? cqe_bcnt - XSC_PPH_HEAD_LEN : cqe_bcnt,
 			    skb, wi);
 
+#ifdef NEED_CREATE_RX_THREAD
+	netif_rx_ni(skb);
+#else
 	napi_gro_receive(rq->cq.napi, skb);
+#endif
 
 free_wqe:
 	xsc_free_rx_wqe(rq, wi, true);
@@ -572,17 +655,20 @@ static inline int xsc_page_alloc_mapped(struct xsc_rq *rq,
 	struct xsc_channel *c = rq->cq.channel;
 	struct device *dev = c->adapter->dev;
 
+#ifdef XSC_PAGE_CACHE
 	if (xsc_rx_cache_get(rq, dma_info))
 		return 0;
 
 	rq->stats->cache_alloc++;
+#endif
 
 	dma_info->page = page_pool_dev_alloc_pages(rq->page_pool);
 	if (unlikely(!dma_info->page))
 		return -ENOMEM;
 
 	dma_info->addr = dma_map_page(dev, dma_info->page, 0,
-				      XSC_RX_FRAG_SZ, rq->buff.map_dir);
+				      PAGE_SIZE << rq->buff.page_order,
+				      rq->buff.map_dir);
 	if (unlikely(dma_mapping_error(dev, dma_info->addr))) {
 		page_pool_recycle_direct(rq->page_pool, dma_info->page);
 		dma_info->page = NULL;
@@ -672,13 +758,16 @@ free_wqes:
 	return err;
 }
 
-bool xsc_eth_post_rx_wqes(struct xsc_rq *rq)
+bool xsc_eth_post_rx_wqes(struct xsc_rq *rq, bool force)
 {
 	struct xsc_wq_cyc *wq = &rq->wqe.wq;
 	u8 wqe_bulk, wqe_bulk_min;
 	int alloc;
 	u16 head;
 	int err;
+
+	if (!force && !test_bit(XSC_ETH_RQ_STATE_ENABLED, &rq->state))
+		return false;
 
 	wqe_bulk = rq->wqe.info.wqe_bulk;
 	wqe_bulk_min = rq->wqe.info.wqe_bulk_min;

@@ -13,6 +13,7 @@
 #include "common/xsc_core.h"
 #include "common/driver.h"
 #include "common/xsc_port_ctrl.h"
+#include "common/xsc_prgrmmbl_cc_ctrl.h"
 #include "common/res_obj.h"
 
 
@@ -100,13 +101,19 @@ static int _port_ctrl_release(struct inode *inode, struct file *filp)
 
 static bool is_db_ofst(struct xsc_core_device *xdev, unsigned long offset)
 {
-	if (offset == (xdev->regs.tx_db & PAGE_MASK))
+	u64 tx_db = 0;
+	u64 rx_db = 0;
+	u64 cq_db = 0;
+	u64 cq_reg = 0;
+
+	xsc_get_db_addr(xdev, &tx_db, &rx_db, &cq_db, &cq_reg, NULL);
+	if (offset == (tx_db & PAGE_MASK))
 		return true;
-	else if (offset == (xdev->regs.rx_db & PAGE_MASK))
+	else if (offset == (rx_db & PAGE_MASK))
 		return true;
-	else if (offset == (xdev->regs.complete_db & PAGE_MASK))
+	else if (offset == (cq_db & PAGE_MASK))
 		return true;
-	else if (offset == (xdev->regs.complete_reg & PAGE_MASK))
+	else if (offset == (cq_reg & PAGE_MASK))
 		return true;
 	return false;
 }
@@ -126,6 +133,10 @@ static int _port_ctrl_mmap(struct file *filp, struct vm_area_struct *vma)
 	struct xsc_core_device *xdev;
 	struct xsc_core_device *rl_xdev;
 	u32 bdf;
+	u64 tx_db = 0;
+	u64 rx_db = 0;
+	u64 cq_db = 0;
+	u64 cq_reg = 0;
 
 	file = filp->private_data;
 	xdev = container_of(file->ctrl, struct xsc_core_device, port_ctrl);
@@ -144,14 +155,15 @@ static int _port_ctrl_mmap(struct file *filp, struct vm_area_struct *vma)
 		if (!rl_xdev)
 			return -1;
 
+		xsc_get_db_addr(rl_xdev, &tx_db, &rx_db, &cq_db, &cq_reg, NULL);
 		if (db_type == XSC_MMAP_MSG_SQDB) {
-			addr = rl_xdev->regs.tx_db;
+			addr = tx_db;
 		} else if (db_type == XSC_MMAP_MSG_RQDB) {
-			addr = rl_xdev->regs.rx_db;
+			addr = rx_db;
 		} else if (db_type == XSC_MMAP_MSG_CQDB) {
-			addr = rl_xdev->regs.complete_db;
+			addr = cq_db;
 		} else if (db_type == XSC_MMAP_MSG_ARM_CQDB) {
-			addr = rl_xdev->regs.complete_reg;
+			addr = cq_reg;
 		} else {
 			pr_err("[%s:%d] mmap err\n", __func__, __LINE__);
 			return -1;
@@ -165,17 +177,12 @@ static int _port_ctrl_mmap(struct file *filp, struct vm_area_struct *vma)
 	}
 
 	xsc_core_dbg(xdev, "tx_db=%llx,rx_db=%llx,cq_db=%llx,cq_reg=%llx\n",
-		     rl_xdev->regs.tx_db, rl_xdev->regs.rx_db,
-		     rl_xdev->regs.complete_db, rl_xdev->regs.complete_reg);
+		     tx_db, rx_db, cq_db, cq_reg);
 
 	reg_base = (pci_resource_start(rl_xdev->pdev, rl_xdev->bar_num) + (addr & PAGE_MASK));
 
-	if (addr) {
-		if (xdev->chip_ver_h == 0x100)
-			reg_base = xsc_core_is_pf(rl_xdev) ? reg_base - 0xA0000000 : reg_base;
-		else
-			reg_base = reg_base - 0xA0000000;
-	}
+	if (addr)
+		reg_base = xsc_core_is_pf(rl_xdev) ? reg_base - 0xA0000000 : reg_base;
 
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 	if (remap_pfn_range(vma, start, (reg_base >> PAGE_SHIFT), size, vma->vm_page_prot)) {
@@ -413,7 +420,6 @@ static void _port_ctrl_cb_fini(void)
 static int _port_ctrl_cb_init(void)
 {
 	mutex_init(&g_port_ctrl_cbs_lock);
-
 	return 0;
 }
 
@@ -426,6 +432,7 @@ void xsc_port_ctrl_fini(void)
 	_port_ctrl_dev_flush();
 	_port_ctrl_data_fini();
 	_port_ctrl_cb_fini();
+	xsc_prgrmmbl_cc_ctrl_cb_fini();
 }
 
 int xsc_port_ctrl_init(void)
@@ -445,12 +452,56 @@ int xsc_port_ctrl_init(void)
 		return -1;
 	}
 
+	ret = xsc_prgrmmbl_cc_ctrl_cb_init();
+	if (ret != 0) {
+		pr_err("failed to initialize prgrmmbl cc ctrl cb\n");
+		_port_ctrl_data_fini();
+		return -1;
+	}
 	return 0;
+}
+
+static void xsc_prgrmmbl_cc_ctrl_dev_del_wrapper(struct xsc_core_device *dev)
+{
+	int dev_id = 0;
+
+	if (!xsc_prgrmmble_cc_ctrl_is_supported(dev))
+		return;
+
+	if (xsc_prgrmmbl_cc_ctrl_dev_del(dev, g_port_ctrl_class, &dev_id))
+		return;
+
+	clear_bit(dev_id, g_bitmap_dev_id);
+	g_port_ctrl_dev_cnt--;
+}
+
+static int xsc_prgrmmbl_cc_ctrl_dev_add_wrapper(struct xsc_core_device *dev)
+{
+	int ret = 0;
+	int dev_id = 0;
+
+	if (!xsc_prgrmmble_cc_ctrl_is_supported(dev))
+		return ret;
+
+	if (g_port_ctrl_dev_cnt >= XSC_PORT_CTRL_MAX) {
+		xsc_core_err(dev, "too many port control devices\n");
+		return -ENOMEM;
+	}
+
+	dev_id = find_first_zero_bit(g_bitmap_dev_id, XSC_PORT_CTRL_MAX);
+	ret = xsc_prgrmmbl_cc_ctrl_dev_add(dev, g_port_ctrl_class, g_port_ctrl_root_dev + dev_id);
+	if (!ret) {
+		g_port_ctrl_dev_cnt++;
+		set_bit(dev_id, g_bitmap_dev_id);
+	}
+
+	return ret;
 }
 
 void xsc_port_ctrl_remove(struct xsc_core_device *dev)
 {
 	_port_ctrl_dev_del(dev);
+	xsc_prgrmmbl_cc_ctrl_dev_del_wrapper(dev);
 }
 
 int xsc_port_ctrl_probe(struct xsc_core_device *dev)
@@ -458,8 +509,14 @@ int xsc_port_ctrl_probe(struct xsc_core_device *dev)
 	int ret = 0;
 
 	ret = _port_ctrl_dev_add(dev);
-	if (ret != 0)
+	if (ret != 0) {
 		xsc_core_err(dev, "failed to add new port control device\n");
+		return ret;
+	}
+
+	ret = xsc_prgrmmbl_cc_ctrl_dev_add_wrapper(dev);
+	if (ret != 0)
+		xsc_core_err(dev, "failed to add programmable cc control device\n");
 
 	return ret;
 }

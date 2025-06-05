@@ -14,7 +14,6 @@
 #include <linux/vmalloc.h>
 #include <linux/radix-tree.h>
 #include "common/device.h"
-#include "common/doorbell.h"
 #include "common/xsc_core.h"
 #include "common/xsc_cmd.h"
 #include "common/xsc_hsi.h"
@@ -118,7 +117,6 @@ struct xsc_cq_table {
 struct xsc_eq {
 	struct xsc_core_device   *dev;
 	struct xsc_cq_table	cq_table;
-	u32			doorbell;//offset from bar0/2 space start
 	u32			cons_index;
 	struct xsc_buf		buf;
 	int			size;
@@ -253,7 +251,7 @@ static inline void xsc_vfree(const void *addr)
 		kfree(addr);
 }
 
-int xsc_dev_init(struct xsc_core_device *xdev);
+int xsc_dev_init(struct xsc_core_device *dev);
 void xsc_dev_cleanup(struct xsc_core_device *xdev);
 int xsc_cmd_init(struct xsc_core_device *xdev);
 void xsc_cmd_cleanup(struct xsc_core_device *xdev);
@@ -317,20 +315,11 @@ int xsc_qptrace_debugfs_init(struct xsc_core_device *dev);
 void xsc_qptrace_debugfs_cleanup(struct xsc_core_device *dev);
 
 int xsc_db_alloc_node(struct xsc_core_device *xdev, struct xsc_db *db, int node);
+int xsc_db_alloc(struct xsc_core_device *xdev, struct xsc_db *db);
 int xsc_frag_buf_alloc_node(struct xsc_core_device *xdev, int size,
 			    struct xsc_frag_buf *buf, int node);
 void xsc_db_free(struct xsc_core_device *xdev, struct xsc_db *db);
 void xsc_frag_buf_free(struct xsc_core_device *xdev, struct xsc_frag_buf *buf);
-
-static inline u32 xsc_mkey_to_idx(u32 mkey)
-{
-	return mkey >> ((MMC_MPT_TBL_MEM_DEPTH == 32768) ? 17 : 18);
-}
-
-static inline u32 xsc_idx_to_mkey(u32 mkey_idx)
-{
-	return mkey_idx << ((MMC_MPT_TBL_MEM_DEPTH == 32768) ? 17 : 18);
-}
 
 enum {
 	XSC_PROF_MASK_QP_SIZE		= (u64)1 << 0,

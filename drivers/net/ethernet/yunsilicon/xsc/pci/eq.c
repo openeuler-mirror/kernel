@@ -64,20 +64,7 @@ static struct xsc_eqe *next_eqe_sw(struct xsc_eq *eq)
 	return ((eqe->owner & 1) ^ !!(eq->cons_index & eq->nent)) ? NULL : eqe;
 }
 
-static void eq_update_ci(struct xsc_eq *eq, int arm)
-{
-	union xsc_eq_doorbell db;
-
-	db.val = 0;
-	db.arm = !!arm;
-	db.eq_next_cid = eq->cons_index;
-	db.eq_id = eq->eqn;
-	writel(db.val, REG_ADDR(eq->dev, eq->doorbell));
-	/* We still want ordering, just not swabbing, so add a barrier */
-	mb();
-}
-
-void xsc_cq_completion(struct xsc_core_device *dev, u32 cqn)
+static void xsc_cq_completion(struct xsc_core_device *dev, u32 cqn)
 {
 	struct xsc_core_cq *cq;
 	struct xsc_cq_table *table = &dev->dev_res->cq_table;
@@ -104,7 +91,7 @@ void xsc_cq_completion(struct xsc_core_device *dev, u32 cqn)
 		complete(&cq->free);
 }
 
-void xsc_eq_cq_event(struct xsc_core_device *dev, u32 cqn, int event_type)
+static void xsc_eq_cq_event(struct xsc_core_device *dev, u32 cqn, int event_type)
 {
 	struct xsc_core_cq *cq;
 	struct xsc_cq_table *table = &dev->dev_res->cq_table;
@@ -132,6 +119,7 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 	int eqes_found = 0;
 	int set_ci = 0;
 	u32 cqn, qpn, queue_id;
+	int eq_db_arm = 1;
 
 	while ((eqe = next_eqe_sw(eq))) {
 		/* Make sure we read EQ entry contents after we've
@@ -177,12 +165,13 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 		if (unlikely(set_ci >= XSC_NUM_SPARE_EQE)) {
 			xsc_core_dbg(dev, "EQ%d eq_num=%d qpn=%d, db_noarm\n",
 				     eq->eqn, set_ci, eqe->queue_id);
-			eq_update_ci(eq, 0);
+			xsc_update_eq_ci(eq->dev, eq->eqn, eq->cons_index, 0);
 			set_ci = 0;
 		}
 	}
 
-	eq_update_ci(eq, 1);
+	xsc_update_eq_ci(eq->dev, eq->eqn, eq->cons_index, eq_db_arm);
+
 
 	return eqes_found;
 }
@@ -243,6 +232,7 @@ int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
 	in->ctx.pa_num = cpu_to_be16(hw_npages);
 	in->ctx.glb_func_id = cpu_to_be16(dev->glb_func_id);
 	in->ctx.is_async_eq = (vecidx == XSC_EQ_VEC_ASYNC ? 1 : 0);
+	in->ctx.page_shift = PAGE_SHIFT;
 
 	err = xsc_cmd_exec(dev, in, inlen, &out, sizeof(out));
 	if (err)
@@ -259,7 +249,6 @@ int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
 	eq->eqn = be32_to_cpu(out.eqn);
 	eq->irqn = pci_irq_vector(dev->pdev, vecidx);
 	eq->dev = dev;
-	eq->doorbell = dev->regs.event_db;
 	eq->index = vecidx;
 	xsc_core_dbg(dev, "msix%d request vector%d eq%d irq%d\n",
 		     vecidx, msix_vec_offset, eq->eqn, eq->irqn);
@@ -271,7 +260,7 @@ int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
 
 	/* EQs are created in ARMED state
 	 */
-	eq_update_ci(eq, 1);
+	xsc_update_eq_ci(eq->dev, eq->eqn, eq->cons_index, 1);
 	xsc_vfree(in);
 	return 0;
 

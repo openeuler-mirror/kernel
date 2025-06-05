@@ -43,4 +43,5 @@ void xsc_rx_dim_work(struct work_struct *work);
 
 void xsc_handle_tx_dim(struct xsc_sq *sq);
 void xsc_handle_rx_dim(struct xsc_rq *rq);
+
 #endif /* XSC_ETH_DIM_H */

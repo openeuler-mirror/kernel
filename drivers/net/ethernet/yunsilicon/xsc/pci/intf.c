@@ -7,7 +7,7 @@
 
 LIST_HEAD(intf_list);
 LIST_HEAD(xsc_dev_list);
-DEFINE_MUTEX(xsc_intf_mutex); // protect intf_list and xsc_dev_list
+DEFINE_MUTEX(xsc_intf_mutex); /* protect intf_list and xsc_dev_list */
 
 static void xsc_add_device(struct xsc_interface *intf, struct xsc_priv *priv)
 {
@@ -159,18 +159,6 @@ void xsc_attach_device(struct xsc_core_device *dev)
 }
 EXPORT_SYMBOL(xsc_attach_device);
 
-void xsc_attach_device_by_protocol(struct xsc_core_device *dev, int protocol)
-{
-	struct xsc_priv *priv = &dev->priv;
-	struct xsc_interface *intf;
-
-	mutex_lock(&xsc_intf_mutex);
-	list_for_each_entry(intf, &intf_list, list)
-		if (intf->protocol == protocol)
-			xsc_attach_interface(intf, priv);
-	mutex_unlock(&xsc_intf_mutex);
-}
-
 void xsc_detach_device(struct xsc_core_device *dev)
 {
 	struct xsc_priv *priv = &dev->priv;
@@ -266,4 +254,57 @@ int xsc_dev_list_trylock(void)
 	return mutex_trylock(&xsc_intf_mutex);
 }
 EXPORT_SYMBOL(xsc_dev_list_trylock);
+
+static int (*_xsc_get_mdev_info_func)(void *data);
+
+void xsc_register_get_mdev_info_func(int (*get_mdev_info)(void *data))
+{
+	_xsc_get_mdev_info_func = get_mdev_info;
+}
+EXPORT_SYMBOL(xsc_register_get_mdev_info_func);
+
+void xsc_get_devinfo(u8 *data, u32 len)
+{
+	struct xsc_cmd_get_ioctl_info_mbox_out *out =
+		(struct xsc_cmd_get_ioctl_info_mbox_out *)data;
+	struct xsc_ioctl_get_devinfo *info;
+	struct xsc_devinfo *devinfo;
+	struct xsc_priv *priv;
+	struct xsc_core_device *xdev;
+	int used = 0;
+
+	out->hdr.status = 0;
+	used += sizeof(struct xsc_outbox_hdr) + sizeof(u64);
+	info = (struct xsc_ioctl_get_devinfo *)(data + used);
+	info->dev_num = 0;
+	used += sizeof(u32);
+	devinfo = (struct xsc_devinfo *)info->data;
+	mutex_lock(&xsc_intf_mutex);
+	list_for_each_entry(priv, &xsc_dev_list, dev_list) {
+		if (used + sizeof(*devinfo) > len)
+			break;
+
+		xdev = container_of(priv, struct xsc_core_device, priv);
+		if (!xsc_core_is_pf(xdev))
+			continue;
+		devinfo->domain = cpu_to_be32(pci_domain_nr(xdev->pdev->bus));
+		devinfo->bus = cpu_to_be32(xdev->pdev->bus->number);
+		devinfo->devfn = cpu_to_be32(xdev->pdev->devfn);
+		if (xdev->get_ifname)
+			xdev->get_ifname(xdev, devinfo->ifname, MAX_IFNAME_LEN);
+		if (xdev->get_ibdev_name)
+			xdev->get_ibdev_name(xdev, devinfo->ibdev_name, MAX_IFNAME_LEN);
+		if (xdev->get_ip_addr) {
+			xdev->get_ip_addr(xdev, &devinfo->ip_addr);
+			devinfo->ip_addr = cpu_to_be32(devinfo->ip_addr);
+		}
+		devinfo->vendor_id = cpu_to_be32(xdev->pdev->vendor);
+		devinfo += 1;
+		info->dev_num++;
+	}
+	mutex_unlock(&xsc_intf_mutex);
+
+	info->dev_num += _xsc_get_mdev_info_func((void *)devinfo);
+	info->dev_num = cpu_to_be32(info->dev_num);
+}
 

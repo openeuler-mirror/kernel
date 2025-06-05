@@ -41,6 +41,7 @@ enum {
 	XSC_IOCTL_GET_CMA_PCP		= 0x103,
 	XSC_IOCTL_GET_CMA_DSCP		= 0x104,
 	XSC_IOCTL_GET_CONTEXT		= 0x105,
+	XSC_IOCTL_GET_DEVINFO	= 0x106,
 	XSC_IOCTL_GAT_MAX
 };
 
@@ -67,7 +68,15 @@ enum {
 };
 
 enum {
-	XSC_IOCTL_OPCODE_ENABLE_USER_MODE = 0x600,
+	XSC_IOCTL_OPCODE_VF_USER_MODE = 0x600,
+	XSC_IOCTL_OPCODE_PF_USER_MODE = 0x601,
+	XSC_IOCTL_OPCODE_BOND_USER_MODE = 0x602,
+};
+
+enum {
+	XSC_USER_MODE_FWD_BCAST_PKT_BIT = 0,
+	XSC_USER_MODE_FWD_LLDP_PKT_BIT,
+	XSC_USER_MODE_FWD_PKT_NUM,
 };
 
 enum  xsc_flow_tbl_id {
@@ -182,6 +191,22 @@ struct xsc_ioctl_mem_info {
 	u64 phy_addr;
 };
 
+#define	MAX_IFNAME_LEN	31
+struct xsc_devinfo {
+	u32	domain;
+	u32	bus;
+	u32	devfn;
+	u8	ifname[MAX_IFNAME_LEN + 1];
+	u8	ibdev_name[MAX_IFNAME_LEN + 1];
+	u32	ip_addr;
+	u32	vendor_id;
+};
+
+struct xsc_ioctl_get_devinfo {
+	u32	dev_num;
+	struct xsc_devinfo data[];
+};
+
 /* get phy info */
 struct xsc_ioctl_get_phy_info_attr {
 	u16 bdf;
@@ -281,6 +306,10 @@ struct xsc_ioctl_set_debug_info {
 
 struct xsc_ioctl_user_mode_attr {
 	u8  enable;
+	u8  mac_bitmap;
+	u16 pkt_bitmap;
+	u16 dst_info;
+	u32 resv0;
 };
 
 /* type-value */
@@ -297,8 +326,15 @@ struct xsc_ioctl_attr {
 	u16 length;		/* data length */
 	u32 error;		/* ioctl error info */
 	u16 ver;
-	u16 rsvd;
+	u8 tunnel_cmd;
+	u8 rsvd;
 	u8 data[];		/* specific table info */
+};
+
+struct xsc_ioctl_tunnel_hdr {
+	u32	domain;
+	u32	bus;
+	u32	devfn;
 };
 
 struct xsc_ioctl_emu_hdr {
@@ -315,4 +351,4 @@ struct xsc_ioctl_hdr {
 	struct xsc_ioctl_attr attr;
 };
 
-#endif /* XSC_IOCTL_H */
+#endif

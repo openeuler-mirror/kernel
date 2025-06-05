@@ -93,7 +93,7 @@ static int xsc_grp_sw_fill_stats(struct xsc_adapter *adapter, u64 *data, int idx
 	return idx;
 }
 
-void xsc_grp_sw_update_stats(struct xsc_adapter *adapter)
+static void xsc_grp_sw_update_stats(struct xsc_adapter *adapter)
 {
 	struct xsc_sw_stats *s = &adapter->stats->sw;
 	int max_tc = xsc_get_netdev_max_tc(adapter);
@@ -426,6 +426,12 @@ static const struct counter_desc pfc_stall_stats_desc[] = {
 	{ XSC_DECLARE_STAT(struct xsc_pfc_stall_stats, tx_pause_storm_triggered) },
 };
 
+static const struct counter_desc hw_eth_uc_stats_pf_desc[] = {
+	/*for uc statistcs*/
+	{ XSC_DECLARE_STAT(struct xsc_hw_uc_stats_eth,  tx_unicast_phy) },
+	{ XSC_DECLARE_STAT(struct xsc_hw_uc_stats_eth,  rx_unicast_phy) },
+};
+
 static int get_hw_stats_eth(struct xsc_core_device *dev, struct xsc_hw_stats_eth *stats_eth)
 {
 	int ret;
@@ -450,18 +456,34 @@ static int get_hw_stats_eth(struct xsc_core_device *dev, struct xsc_hw_stats_eth
 	return 0;
 }
 
+static u32 mask2size(u32 mask)
+{
+	u32 size = 0;
+
+	while (mask) {
+		size += mask & 0x1;
+		mask >>= 1;
+	}
+
+	return size;
+}
+
 static int xsc_hw_get_num_stats(struct xsc_adapter *adapter)
 {
 	int ret = 0;
+	u32 mask = xsc_get_eth_stat_mask(adapter->xdev);
+	u32 eth_stats_size = mask2size(mask);
 
 	if (is_support_hw_pf_stats(adapter->xdev)) {
-		ret = ARRAY_SIZE(hw_prio_stats_desc) + ARRAY_SIZE(hw_eth_stats_pf_desc) +
+		ret = ARRAY_SIZE(hw_prio_stats_desc) + eth_stats_size +
 		      (is_support_pfc_prio_statistic(adapter->xdev) ?
 		      ARRAY_SIZE(hw_pfc_prio_stats_desc) : 0) +
+			  (is_support_pf_uc_statistic(adapter->xdev) ?
+			  ARRAY_SIZE(hw_eth_uc_stats_pf_desc) : 0) +
 		      (is_support_pfc_stall_stats(adapter->xdev) ?
 		      ARRAY_SIZE(pfc_stall_stats_desc) : 0);
 	} else {
-		ret = ARRAY_SIZE(hw_eth_stats_vf_desc);
+		ret = eth_stats_size;
 	}
 
 	return ret;
@@ -471,8 +493,10 @@ static int xsc_hw_fill_strings(struct xsc_adapter *adapter, u8 *data, int idx)
 {
 	int i;
 	struct xsc_core_device *xdev;
+	u32 mask = 0;
 
 	xdev = adapter->xdev;
+	mask = xsc_get_eth_stat_mask(xdev);
 
 	if (is_support_hw_pf_stats(xdev)) {
 		for (i = 0; i < ARRAY_SIZE(hw_prio_stats_desc); i++)
@@ -486,10 +510,19 @@ static int xsc_hw_fill_strings(struct xsc_adapter *adapter, u8 *data, int idx)
 					hw_pfc_prio_stats_desc[i].format,
 					ETH_GSTRING_LEN);
 
-		for (i = 0 ; i < ARRAY_SIZE(hw_eth_stats_pf_desc); i++)
+		for (i = 0 ; i < ARRAY_SIZE(hw_eth_stats_pf_desc); i++) {
+			if (!((1 << i) & mask))
+				continue;
 			strscpy(data + (idx++) * ETH_GSTRING_LEN,
 				hw_eth_stats_pf_desc[i].format,
 				ETH_GSTRING_LEN);
+		}
+
+		if (is_support_pf_uc_statistic(xdev))
+			for (i = 0; i < ARRAY_SIZE(hw_eth_uc_stats_pf_desc); i++)
+				strscpy(data + (idx++) * ETH_GSTRING_LEN,
+					hw_eth_uc_stats_pf_desc[i].format,
+					ETH_GSTRING_LEN);
 
 		if (is_support_pfc_stall_stats(xdev))
 			for (i = 0; i < ARRAY_SIZE(pfc_stall_stats_desc); i++)
@@ -497,10 +530,13 @@ static int xsc_hw_fill_strings(struct xsc_adapter *adapter, u8 *data, int idx)
 					pfc_stall_stats_desc[i].format,
 					ETH_GSTRING_LEN);
 	} else {
-		for (i = 0 ; i < ARRAY_SIZE(hw_eth_stats_vf_desc); i++)
+		for (i = 0 ; i < ARRAY_SIZE(hw_eth_stats_vf_desc); i++) {
+			if (!((1 << i) & mask))
+				continue;
 			strscpy(data + (idx++) * ETH_GSTRING_LEN,
 				hw_eth_stats_vf_desc[i].format,
 				ETH_GSTRING_LEN);
+		}
 	}
 
 	return idx;
@@ -514,6 +550,8 @@ static int xsc_hw_fill_stats(struct xsc_adapter *adapter, u64 *data, int idx)
 	struct xsc_pfc_prio_stats_mbox_out pfc_prio_out;
 	struct xsc_pfc_stall_stats_mbox_in pfc_stall_in;
 	struct xsc_pfc_stall_stats_mbox_out pfc_stall_out;
+	struct xsc_hw_uc_stats_mbox_in hw_ucstats_in;
+	struct xsc_hw_uc_stats_mbox_out hw_ucstats_out;
 	struct xsc_core_device *xdev;
 	int ret;
 	u32 i;
@@ -521,9 +559,11 @@ static int xsc_hw_fill_stats(struct xsc_adapter *adapter, u64 *data, int idx)
 	u8 *stats;
 	struct xsc_hw_stats_eth stats_eth;
 	int ret_s;
+	u32 mask = 0;
 
 	xdev = adapter->xdev;
 	ret_s = get_hw_stats_eth(xdev, &stats_eth);
+	mask = xsc_get_eth_stat_mask(xdev);
 
 	if (is_support_hw_pf_stats(xdev)) {
 		memset(&in, 0, sizeof(in));
@@ -567,8 +607,34 @@ static int xsc_hw_fill_stats(struct xsc_adapter *adapter, u64 *data, int idx)
 		if (!ret_s && stats_eth.is_pf) {
 			stats = (u8 *)&stats_eth.stats.pf_stats;
 			for (i = 0 ; i < ARRAY_SIZE(hw_eth_stats_pf_desc); i++) {
+				if (!((1 << i) & mask))
+					continue;
 				val = XSC_READ_CTR64_CPU(stats, hw_eth_stats_pf_desc, i);
 				data[idx++] = __be64_to_cpu(val);
+			}
+		}
+
+		if (is_support_pf_uc_statistic(xdev)) {
+			memset(&hw_ucstats_in, 0, sizeof(hw_ucstats_in));
+			memset(&hw_ucstats_out, 0, sizeof(hw_ucstats_out));
+			hw_ucstats_in.hdr.opcode =
+				__cpu_to_be16(XSC_CMD_OP_QUERY_HW_PF_UC_STATS);
+			hw_ucstats_in.mac_port = xdev->mac_port;
+
+			ret = xsc_cmd_exec(adapter->xdev,
+					   (void *)&hw_ucstats_in,
+					   sizeof(struct xsc_hw_uc_stats_mbox_in),
+					   (void *)&hw_ucstats_out,
+					   sizeof(struct xsc_hw_uc_stats_mbox_out));
+			if (ret == 0 && hw_ucstats_out.hdr.status == 0 &&
+			    hw_ucstats_out.hw_uc_stats.is_pf) {
+				stats = (u8 *)&hw_ucstats_out.hw_uc_stats.eth_uc_stats;
+				for (i = 0; i < ARRAY_SIZE(hw_eth_uc_stats_pf_desc); i++) {
+					val = XSC_READ_CTR64_CPU(stats,
+								 hw_eth_uc_stats_pf_desc,
+								 i);
+					data[idx++] = __be64_to_cpu(val);
+				}
 			}
 		}
 
@@ -596,6 +662,8 @@ static int xsc_hw_fill_stats(struct xsc_adapter *adapter, u64 *data, int idx)
 		if (!ret_s && !stats_eth.is_pf) {
 			stats = (u8 *)&stats_eth.stats.vf_stats;
 			for (i = 0 ; i < ARRAY_SIZE(hw_eth_stats_vf_desc); i++) {
+				if (!((1 << i) & mask))
+					continue;
 				val = XSC_READ_CTR64_CPU(stats, hw_eth_stats_vf_desc, i);
 				data[idx++] = __be64_to_cpu(val);
 			}
@@ -648,4 +716,76 @@ void xsc_fold_sw_stats64(struct xsc_adapter *adapter, struct rtnl_link_stats64 *
 			s->tx_dropped    += sq_stats->dropped;
 		}
 	}
+}
+
+static const struct counter_desc xsc_prs_chk_err_stats_desc[] = {
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_sip_dip_eq) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_sip_invalid) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_smac_invalid) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_ip_ver) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_smac_dmac_eq) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_dmac_zero) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_sip_dip_eq) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_sip_invalid) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_smac_invalid) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_ip_ver) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_smac_dmac_eq) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_dmac_zero) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_udp_len) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_tp_checksum) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_ipv4_checksum) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_ip_ttl) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_ip_len) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, inner_ipv4_ihl) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_udp_len) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_tp_checksum) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_ipv4_checksum) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_ip_ttl) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_ip_len) },
+	{ XSC_DECLARE_STAT(struct xsc_prs_chk_err_stats, outer_ipv4_ihl) },
+};
+
+#define XSC_PHY_STATS_CNT	ARRAY_SIZE(xsc_prs_chk_err_stats_desc)
+
+int xsc_get_prs_chk_err_stats_count(struct xsc_adapter *adapter)
+{
+	return XSC_PHY_STATS_CNT;
+}
+
+void xsc_get_prs_chk_err_stats_strings(struct xsc_adapter *adapter, u8 *data)
+{
+	int i;
+
+	for (i = 0; i < XSC_PHY_STATS_CNT; i++)
+		strscpy(data + i * ETH_GSTRING_LEN,
+			xsc_prs_chk_err_stats_desc[i].format,
+			ETH_GSTRING_LEN);
+}
+
+int xsc_fill_prs_chk_err_stats(struct xsc_adapter *adapter, u64 *data)
+{
+	struct xsc_query_hw_prs_chk_err_stats_mbox_out out;
+	struct xsc_query_hw_prs_chk_err_stats_mbox_in in;
+	__be64 val;
+	int err;
+	int i;
+
+	memset(&out, 0, sizeof(out));
+	memset(&in, 0, sizeof(in));
+	in.hdr.opcode = __cpu_to_be16(XSC_CMD_OP_QUERY_HW_PRS_CHK_ERR_STATS);
+
+	err = xsc_cmd_exec(adapter->xdev, (void *)&in, sizeof(in),
+			   (void *)&out, sizeof(out));
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		return xsc_cmd_status_to_err(&out.hdr);
+
+	for (i = 0; i < XSC_PHY_STATS_CNT; i++) {
+		val = XSC_READ_CTR64_CPU(&out.stats,
+					 xsc_prs_chk_err_stats_desc, i);
+		data[i] = __be64_to_cpu(val);
+	}
+	return 0;
 }

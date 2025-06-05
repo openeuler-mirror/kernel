@@ -11,6 +11,7 @@
 #include <rdma/ib_umem.h>
 #include "common/xsc_cmd.h"
 #include <linux/dma-direct.h>
+
 #include "ib_umem_ex.h"
 #include "xsc_ib.h"
 
@@ -72,7 +73,7 @@ err_free:
 	return ERR_PTR(err);
 }
 
-void xsc_fill_pas(int npages, u64 *pas, __be64 *req_pas)
+static void xsc_fill_pas(int npages, u64 *pas, __be64 *req_pas)
 {
 	int i;
 
@@ -83,7 +84,7 @@ void xsc_fill_pas(int npages, u64 *pas, __be64 *req_pas)
 static struct xsc_ib_mr *reg_create(struct ib_pd *pd, u64 virt_addr,
 				    u64 length, struct ib_umem *umem,
 				    int npages, u64 *pas, int page_shift,
-				    int access_flags)
+				    int access_flags, int using_peer_mem)
 {
 	struct xsc_ib_dev *dev = to_mdev(pd->device);
 	struct xsc_register_mr_mbox_in *in;
@@ -116,10 +117,14 @@ static struct xsc_ib_mr *reg_create(struct ib_pd *pd, u64 virt_addr,
 	in->req.pdn = cpu_to_be32(to_mpd(pd)->pdn);
 	in->req.va_base = cpu_to_be64(virt_addr);
 	in->req.map_en = XSC_MPT_MAP_EN;
-	in->req.len = cpu_to_be32((u32)length);
-	in->req.page_mode = (page_shift == XSC_PAGE_SHIFT_4K ? XSC_PAGE_MODE_4K :
-			(page_shift == XSC_PAGE_SHIFT_64K ? XSC_PAGE_MODE_64K :
-			(page_shift == XSC_PAGE_SHIFT_2M ? XSC_PAGE_MODE_2M : XSC_PAGE_MODE_1G)));
+	in->req.len = cpu_to_be64(length);
+	in->req.page_mode = xsc_get_mr_page_mode(dev->xdev, page_shift);
+	xsc_ib_info(dev, "read_flush hwconfig %s\n",
+		    dev->xdev->read_flush ? "enable" : "disable");
+	if (dev->xdev->read_flush)
+		in->req.is_gpu = using_peer_mem;
+	else
+		in->req.is_gpu = 0;
 	in->req.mkey = cpu_to_be32(mr->mmr.key);
 	err = xsc_core_register_mr(dev->xdev, &mr->mmr, in, inlen);
 	if (err) {
@@ -157,8 +162,14 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 	int npages;
 	u64 *pas;
 	int err;
+	int using_peer_mem = 0;
 	struct ib_peer_memory_client *ib_peer_mem = NULL;
 	struct xsc_ib_peer_id *xsc_ib_peer_id = NULL;
+
+	if (length > dev->xdev->caps.max_mr_size) {
+		xsc_ib_err(dev, "reg user mr length(%llu) exceeded.\n", length);
+		return ERR_PTR(-EINVAL);
+	}
 
 	xsc_ib_dbg(dev, "start 0x%llx, virt_addr 0x%llx, length 0x%llx\n",
 		   start, virt_addr, length);
@@ -171,10 +182,8 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 #endif
 	if (IS_ERR(umem)) {
 #ifdef CONFIG_INFINIBAND_PEER_MEMORY
-		xsc_ib_warn(dev, "umem get failed\n");
 		return (void *)umem;
 #else
-		// check client peer memory
 		u8 peer_exists = 0;
 
 		umem_ex = ib_client_umem_get(pd->uobject->context,
@@ -195,18 +204,22 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 								    xsc_ib_peer_id);
 		if (err)
 			goto error;
+		using_peer_mem = 1;
 #endif
-
 	} else {
 		umem_ex = ib_umem_ex(umem);
 		if (IS_ERR(umem_ex)) {
 			err = -ENOMEM;
 			goto error;
 		}
+#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+		if (umem->is_peer)
+			using_peer_mem = 1;
+#endif
 	}
 	umem = &umem_ex->umem;
 
-	err = xsc_find_best_pgsz(umem, 0x40211000, start, &npages, &page_shift, &pas);
+	err = xsc_find_best_pgsz(umem, XSC_MR_PAGE_CAP_MASK, start, &npages, &page_shift, &pas);
 	if (err) {
 		vfree(pas);
 		pas = NULL;
@@ -221,7 +234,8 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 
 	xsc_ib_dbg(dev, "npages %d, page_shift %d\n", npages, page_shift);
 
-	mr = reg_create(pd, virt_addr, length, umem, npages, pas, page_shift, access_flags);
+	mr = reg_create(pd, virt_addr, length, umem, npages, pas,
+			page_shift, access_flags, using_peer_mem);
 	if (IS_ERR(mr)) {
 		err = PTR_ERR(mr);
 		goto error;
@@ -379,17 +393,6 @@ static int xsc_set_page(struct ib_mr *ibmr, u64 pa)
 	return 0;
 }
 
-u8 xsc_get_mr_page_mode(struct xsc_core_device *xdev, u32 page_shift)
-{
-	u8 page_mode = 0;
-
-	page_mode = (page_shift == XSC_PAGE_SHIFT_4K ? XSC_PAGE_MODE_4K :
-		(page_shift == XSC_PAGE_SHIFT_64K ? XSC_PAGE_MODE_64K :
-		(page_shift == XSC_PAGE_SHIFT_2M ? XSC_PAGE_MODE_2M : XSC_PAGE_MODE_1G)));
-
-	return page_mode;
-}
-
 int xsc_ib_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg,
 		     int sg_nents, unsigned int *sg_offset)
 {
@@ -398,6 +401,10 @@ int xsc_ib_map_mr_sg(struct ib_mr *ibmr, struct scatterlist *sg,
 	mmr->npages = 0;
 	return ib_sg_to_pages(ibmr, sg, sg_nents, sg_offset, xsc_set_page);
 }
+
+#ifndef ALIGN_DOWN
+#define ALIGN_DOWN(x, align_to) ((x) & ~((align_to) - 1))
+#endif
 
 int xsc_wr_reg_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr)
 {
@@ -410,6 +417,11 @@ int xsc_wr_reg_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr)
 	int err;
 	__be64 *pas;
 
+	if (ibmr->length > dev->xdev->caps.max_mr_size) {
+		xsc_ib_err(dev, "wr reg mr length exceeded.\n");
+		return -EINVAL;
+	}
+
 	inlen = sizeof(*in) + sizeof(__be64) * mmr->npages;
 	in = kzalloc(inlen, GFP_ATOMIC);
 	if (!in)
@@ -418,14 +430,14 @@ int xsc_wr_reg_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr)
 	in->req.pdn = cpu_to_be32(mmr->mmr.pd);
 	in->req.mkey = cpu_to_be32(ibmr->rkey);
 	in->req.acc = convert_access(reg_wr->access);
-	in->req.page_mode = 0;
+	in->req.is_gpu = 0;
 	in->req.map_en = XSC_MPT_MAP_EN;
 
 	if (xsc_ib_iommu_dma_map(ibmr->device)) {
 		static u32 support_page_shift[] = {12, 16, 21, 30};
 		u64 va_base;
 		u64 pa_base;
-		int len;
+		u64 len;
 		int i;
 		u32 page_shift;
 
@@ -438,7 +450,7 @@ int xsc_wr_reg_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr)
 				pa_base = ALIGN_DOWN(mmr->pas[0], (1 << page_shift));
 				in->req.page_mode = xsc_get_mr_page_mode(dev->xdev, page_shift);
 				in->req.pa_num = cpu_to_be32(1);
-				in->req.len = cpu_to_be32(len);
+				in->req.len = cpu_to_be64(len);
 				in->req.va_base = cpu_to_be64(va_base);
 				in->req.pas[0] = cpu_to_be64(pa_base);
 				goto out;
@@ -451,19 +463,19 @@ int xsc_wr_reg_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr)
 	in->req.page_mode = xsc_get_mr_page_mode(dev->xdev, PAGE_SHIFT_4K);
 	in->req.va_base = cpu_to_be64(ibmr->iova);
 	in->req.pa_num = cpu_to_be32(mmr->npages);
-	in->req.len = cpu_to_be32(ibmr->length);
+	in->req.len = cpu_to_be64(ibmr->length);
 	pas = in->req.pas;
 	for (i = 0; i < mmr->npages; i++)
 		pas[i] = cpu_to_be64(mmr->pas[i]);
 
 out:
-	xsc_ib_dbg(dev, "iova=%llx, pas=%llx, req.page_mode=%u, req.va_base=%llx, req.pas=%llx, req.len=%d, req.pa_num=%d\n",
+	xsc_ib_dbg(dev, "iova=%llx, pas=%llx, req.page_mode=%u, req.va_base=%llx, req.pas=%llx, req.len=%lld, req.pa_num=%d\n",
 		   ibmr->iova,
 		   mmr->pas[0],
 		   in->req.page_mode,
 		   be64_to_cpu(in->req.va_base),
 		   be64_to_cpu(in->req.pas[0]),
-		   be32_to_cpu(in->req.len),
+		   be64_to_cpu(in->req.len),
 		   be32_to_cpu(in->req.pa_num));
 
 	err = xsc_core_register_mr(dev->xdev, &mmr->mmr, in, sizeof(*in));
@@ -494,7 +506,8 @@ void xsc_reg_local_dma_mr(struct xsc_core_device *dev)
 	in.req.len = 0;
 	in.req.mkey = cpu_to_be32(0xFF);
 	in.req.acc = XSC_PERM_LOCAL_WRITE | XSC_PERM_LOCAL_READ;
-	in.req.page_mode = 0;
+	in.req.page_mode = xsc_get_mr_page_mode(dev, PAGE_SHIFT_4K);
+	in.req.is_gpu = 0;
 	in.req.map_en = !(XSC_MPT_MAP_EN);
 	in.req.va_base = 0;
 

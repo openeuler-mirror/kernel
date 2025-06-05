@@ -9,6 +9,7 @@
 #include "common/xsc_cmd.h"
 #include "common/qp.h"
 #include "common/driver.h"
+#include "common/xsc_lag.h"
 
 static int xsc_alloc_obj(struct xsc_res_obj *obj, struct xsc_bdf_file *file,
 			 void (*release_func)(void *), unsigned long key,
@@ -43,12 +44,21 @@ static inline void xsc_free_obj(struct xsc_bdf_file *file, unsigned long key,
 		kfree((*obj)->data);
 }
 
+static inline struct xsc_res_obj *xsc_get_obj(struct xsc_bdf_file *file,
+					      unsigned long key)
+{
+	struct xsc_res_obj *obj = radix_tree_lookup(&file->obj_tree, key);
+
+	return obj;
+}
+
 static void xsc_send_cmd_dealloc_pd(struct xsc_core_device *xdev, unsigned int pdn)
 {
 	struct xsc_dealloc_pd_mbox_in in;
 	struct xsc_dealloc_pd_mbox_out out;
 	int ret;
 
+	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DEALLOC_PD);
 	in.pdn = cpu_to_be32(pdn);
 	ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
@@ -66,7 +76,7 @@ static void xsc_free_pd_obj(void *obj)
 	xsc_send_cmd_dealloc_pd(file->xdev, pd_obj->pdn);
 	key = xsc_idx_to_key(RES_OBJ_PD, pd_obj->pdn);
 	xsc_free_obj(file, key, &_obj);
-	xsc_core_warn(pd_obj->obj.file->xdev, "free pd obj: %d\n", pd_obj->pdn);
+	xsc_core_info(pd_obj->obj.file->xdev, "free pd obj: %d\n", pd_obj->pdn);
 	kfree(pd_obj);
 }
 
@@ -115,9 +125,10 @@ static void xsc_send_cmd_destroy_mkey(struct xsc_core_device *xdev, unsigned int
 	struct xsc_destroy_mkey_mbox_out out;
 	int ret;
 
+	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DESTROY_MKEY);
 	in.mkey = cpu_to_be32(mkey);
-	if (xdev->reg_mr_via_cmdq)
+	if (xdev->board_info->resource_access_mode == SHARE_MODE)
 		ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
 	else
 		ret = xsc_destroy_mkey(xdev, &in, &out);
@@ -132,9 +143,10 @@ static void xsc_send_cmd_dereg_mr(struct xsc_core_device *xdev, unsigned int mke
 	struct xsc_unregister_mr_mbox_out out;
 	int ret;
 
+	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DEREG_MR);
-	in.mkey = cpu_to_be32(mkey);
-	if (xdev->reg_mr_via_cmdq)
+	in.mkey = cpu_to_be32(xsc_mkey_to_idx(xdev, mkey));
+	if (xdev->board_info->resource_access_mode == SHARE_MODE)
 		ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
 	else
 		ret = xsc_dereg_mr(xdev, &in, &out);
@@ -154,8 +166,18 @@ static void xsc_free_mr_obj(void *obj)
 	xsc_send_cmd_dereg_mr(file->xdev, mr_obj->mkey);
 
 	xsc_free_obj(file, key, &_obj);
-	xsc_core_warn(file->xdev, "free mr obj: %d\n", mr_obj->mkey);
+	xsc_core_info(file->xdev, "free mr obj: %d\n", mr_obj->mkey);
 	kfree(mr_obj);
+}
+
+static void xsc_handle_user_mode(struct xsc_core_device *xdev, u8 mode)
+{
+	struct net_device *ndev = xdev->netdev;
+
+	if (netif_is_bond_slave(ndev))
+		xsc_lag_set_user_mode(xdev, mode);
+	else
+		xsc_set_user_mode(xdev, mode);
 }
 
 int xsc_alloc_mr_obj(struct xsc_bdf_file *file,
@@ -202,6 +224,7 @@ static void xsc_send_cmd_destroy_cq(struct xsc_core_device *xdev, unsigned int c
 	struct xsc_destroy_cq_mbox_out out;
 	int ret;
 
+	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DESTROY_CQ);
 	in.cqn = cpu_to_be32(cqn);
 	ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
@@ -218,7 +241,7 @@ static void xsc_free_cq_obj(void *obj)
 
 	xsc_send_cmd_destroy_cq(file->xdev, cq_obj->cqn);
 	xsc_free_obj(file, key, &_obj);
-	xsc_core_warn(file->xdev, "free cq obj: %d\n", cq_obj->cqn);
+	xsc_core_info(file->xdev, "free cq obj: %d\n", cq_obj->cqn);
 	kfree(cq_obj);
 }
 
@@ -266,6 +289,8 @@ void xsc_send_cmd_2rst_qp(struct xsc_core_device *xdev, unsigned int qpn)
 	struct xsc_modify_qp_mbox_out out;
 	int ret;
 
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
 	ret = xsc_modify_qp(xdev, &in, &out, qpn, XSC_CMD_OP_2RST_QP);
 	if (ret)
 		xsc_core_err(xdev, "failed to reset qp %u\n", qpn);
@@ -277,6 +302,7 @@ static void xsc_send_cmd_destroy_qp(struct xsc_core_device *xdev, unsigned int q
 	struct xsc_destroy_qp_mbox_out out;
 	int ret;
 
+	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DESTROY_QP);
 	in.qpn = cpu_to_be32(qpn);
 	ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
@@ -296,7 +322,7 @@ static void xsc_free_qp_obj(void *obj)
 
 	key = xsc_idx_to_key(RES_OBJ_QP, qp_obj->qpn);
 	xsc_free_obj(file, key, &_obj);
-	xsc_core_warn(file->xdev, "free qp obj: %d\n", qp_obj->qpn);
+	xsc_core_info(file->xdev, "free qp obj: %d\n", qp_obj->qpn);
 	kfree(qp_obj);
 }
 
@@ -391,7 +417,7 @@ static void xsc_free_pct_obj(void *obj)
 
 	xsc_send_cmd_del_pct(file->xdev, pct_obj->pct_idx);
 	xsc_free_obj(file, key, &_obj);
-	xsc_core_warn(file->xdev, "free pct obj, priority:%d\n", pct_obj->pct_idx);
+	xsc_core_info(file->xdev, "free pct obj, priority:%d\n", pct_obj->pct_idx);
 	kfree(pct_obj);
 }
 
@@ -433,13 +459,70 @@ void xsc_destroy_pct_obj(struct xsc_bdf_file *file, unsigned int priority)
 }
 EXPORT_SYMBOL_GPL(xsc_destroy_pct_obj);
 
+int xsc_alloc_user_mode_obj(struct xsc_bdf_file *file, void (*release_func)(void *),
+			    unsigned int mode, char *data, unsigned int len)
+{
+	unsigned long key = xsc_idx_to_key(RES_OBJ_USER_MODE, mode);
+	struct xsc_user_mode_obj *user_mode_obj;
+	int ret;
+
+	user_mode_obj = kzalloc(sizeof(*user_mode_obj), GFP_KERNEL);
+	if (!user_mode_obj)
+		return -ENOMEM;
+
+	ret = xsc_alloc_obj(&user_mode_obj->obj, file, release_func,
+			    key, data, len);
+
+	if (!ret) {
+		if (mode == XSC_IOCTL_OPCODE_PF_USER_MODE)
+			xsc_handle_user_mode(file->xdev, true);
+	} else {
+		kfree(user_mode_obj);
+	}
+
+	xsc_core_dbg(file->xdev, "alloc user mode %d obj, ret=%d\n", mode, ret);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(xsc_alloc_user_mode_obj);
+
+void xsc_free_user_mode_obj(struct xsc_bdf_file *file, unsigned int mode)
+{
+	unsigned long key = xsc_idx_to_key(RES_OBJ_USER_MODE, mode);
+	struct xsc_user_mode_obj *user_mode_obj;
+	struct xsc_res_obj *obj;
+
+	xsc_free_obj(file, key, &obj);
+	user_mode_obj = container_of(obj, struct xsc_user_mode_obj, obj);
+	kfree(user_mode_obj);
+
+	if (mode == XSC_IOCTL_OPCODE_PF_USER_MODE)
+		xsc_handle_user_mode(file->xdev, false);
+
+	xsc_core_dbg(file->xdev, "destroy user mode %d obj\n", mode);
+}
+EXPORT_SYMBOL_GPL(xsc_free_user_mode_obj);
+
+void xsc_release_user_mode(struct xsc_bdf_file *file, unsigned int mode)
+{
+	unsigned long key = xsc_idx_to_key(RES_OBJ_USER_MODE, mode);
+	struct xsc_res_obj *obj;
+
+	spin_lock(&file->obj_lock);
+	obj = xsc_get_obj(file, key);
+	obj->release_method(obj);
+	spin_unlock(&file->obj_lock);
+
+	xsc_core_dbg(file->xdev, "release user mode %d obj\n", mode);
+}
+EXPORT_SYMBOL_GPL(xsc_release_user_mode);
+
 void xsc_close_bdf_file(struct xsc_bdf_file *file)
 {
 	struct radix_tree_iter iter;
 	void **slot;
 	struct xsc_res_obj *obj;
 
-	xsc_core_warn(file->xdev, "release bdf file:%lx\n", file->key);
+	xsc_core_info(file->xdev, "release bdf file:%lx\n", file->key);
 	spin_lock(&file->obj_lock);
 	radix_tree_for_each_slot(slot, &file->obj_tree, &iter, 0) {
 		obj = (struct xsc_res_obj *)(*slot);

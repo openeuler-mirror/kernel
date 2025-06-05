@@ -26,23 +26,38 @@
 #include <linux/version.h>
 #include <linux/if_vlan.h>
 #include <linux/reboot.h>
+#include <linux/rwlock.h>
 
 #include "common/xsc_cmd.h"
 #include "common/xsc_ioctl.h"
-#include "common/xsc_auto_hw.h"
 #include "common/driver.h"
 #include "common/xsc_reg.h"
 #include "common/xsc_eswitch.h"
+#include "common/version.h"
+
+#if (HOTFIX_NUM == 0)
+#define DRIVER_VERSION __stringify(BRANCH_VERSION) "." __stringify(MAJOR_VERSION) "." \
+		__stringify(MINOR_VERSION) "." __stringify(BUILD_VERSION)
+#else
+#define DRIVER_VERSION __stringify(BRANCH_VERSION) "." __stringify(MAJOR_VERSION) "." \
+		__stringify(MINOR_VERSION) "." __stringify(BUILD_VERSION) ".H" \
+		__stringify(HOTFIX_NUM)
+#endif
 
 extern uint xsc_debug_mask;
 extern unsigned int xsc_log_level;
 
+#ifndef mmiowb
 #define mmiowb()
+#endif
+
 
 #define XSC_PCI_VENDOR_ID		0x1f67
 
 #define XSC_MC_PF_DEV_ID		0x1011
 #define XSC_MC_VF_DEV_ID		0x1012
+#define XSC_MC_PF_DEV_ID_DIAMOND	0x1021
+#define XSC_MC_PF_DEV_ID_DIAMOND_NEXT	0x1023
 
 #define XSC_MF_HOST_PF_DEV_ID		0x1051
 #define XSC_MF_HOST_VF_DEV_ID		0x1052
@@ -54,15 +69,6 @@ extern unsigned int xsc_log_level;
 #define XSC_MV_HOST_PF_DEV_ID		0x1151
 #define XSC_MV_HOST_VF_DEV_ID		0x1152
 #define XSC_MV_SOC_PF_DEV_ID		0x1153
-
-#define REG_ADDR(dev, offset)						\
-	(xsc_core_is_pf(dev) ? ((dev->bar) + ((offset) - 0xA0000000)) : ((dev->bar) + (offset)))
-
-#define REG_WIDTH_TO_STRIDE(width)	((width) / 8)
-#define QPM_PAM_TBL_NUM					4
-#define QPM_PAM_TBL_NUM_MASK				3
-#define QPM_PAM_TBL_INDEX_SHIFT				2
-#define QPM_PAM_PAGE_SHIFT				12
 
 #define XSC_SUB_DEV_ID_MC_50		0xC050
 #define XSC_SUB_DEV_ID_MC_100		0xC100
@@ -76,6 +82,7 @@ extern unsigned int xsc_log_level;
 #define XSC_SUB_DEV_ID_MS_200S		0xA201
 #define XSC_SUB_DEV_ID_MS_400M		0xA202
 #define XSC_SUB_DEV_ID_MS_200_OCP	0xA203
+#define XSC_SUB_DEV_ID_MS_100S_OCP	0xA204
 #define XSC_SUB_DEV_ID_MV_100		0xD100
 #define XSC_SUB_DEV_ID_MV_200		0xD200
 
@@ -96,6 +103,9 @@ enum {
 	XSC_CHIP_UNKNOWN,
 };
 
+#ifndef dev_fmt
+#define dev_fmt(fmt) fmt
+#endif
 
 #define xsc_dev_log(condition, level, dev, fmt, ...)			\
 do {									\
@@ -161,13 +171,6 @@ do {									\
 #define XSC_PCIE_NO_SOC		0x1
 #define XSC_PCIE_NO_UNSET	0xFF
 
-enum xsc_driver_mode {
-	HOST_MODE,
-	SOC_MODE,
-};
-
-u8 xsc_get_driver_work_mode(void);
-
 enum xsc_dev_event {
 	XSC_DEV_EVENT_SYS_ERROR,
 	XSC_DEV_EVENT_PORT_UP,
@@ -220,16 +223,6 @@ struct qp_group_refer {
 	u16 refer_cnt[GROUP_REFER_CNT_SIZE];
 };
 
-struct xsc_priv_device {
-	char	device_name[IB_DEVICE_NAME_MAX];
-	dev_t	devno;
-	struct cdev	cdev;
-	struct list_head	mem_list;
-	spinlock_t		mem_lock;	/* protect mem_list */
-	struct radix_tree_root	bdf_tree;
-	spinlock_t		bdf_lock;	/* protect bdf_tree */
-};
-
 enum xsc_pci_status {
 	XSC_PCI_STATUS_DISABLED,
 	XSC_PCI_STATUS_ENABLED,
@@ -256,7 +249,6 @@ enum {
 	XSC_INTERFACE_ATTACHED,
 };
 
-#define CONFIG_XSC_SRIOV	1
 
 enum xsc_coredev_type {
 	XSC_COREDEV_PF,
@@ -360,7 +352,7 @@ struct xsc_vport_info {
 	u32			group;
 };
 
-#define XSC_L2_ADDR_HASH_SIZE	8
+#define XSC_L2_ADDR_HASH_SIZE	BIT(BITS_PER_BYTE)
 
 enum xsc_eswitch_vport_event {
 	XSC_VPORT_UC_ADDR_CHANGE = BIT(0),
@@ -472,12 +464,12 @@ struct xsc_port_caps {
 
 struct xsc_caps {
 	u8		log_max_eq;
-	u8		log_max_cq;
-	u8		log_max_qp;
 	u8		log_max_mkey;
-	u8		log_max_pd;
 	u8		log_max_srq;
 	u8		log_max_msix;
+	u32		max_cq;
+	u32		max_qp;
+	u32		max_pd;
 	u32		max_cqes;
 	u32		max_wqes;
 	u32		max_sq_desc_sz;
@@ -541,7 +533,7 @@ struct xsc_caps {
 	u32		raweth_rss_qp_id_base:16;
 	u16		msix_base;
 	u16		msix_num;
-	u8		log_max_mtt;
+	u32		max_mtt;
 	u8		log_max_tso;
 	u32		hca_core_clock;
 	u32		max_rwq_indirection_tables;/*rss_caps*/
@@ -562,7 +554,17 @@ struct xsc_caps {
 	u8		pcie_host;
 	u8		mac_bit;
 	u16		funcid_to_logic_port;
+	u16		max_cmd_in_len;
+	u16		max_cmd_out_len;
+	u64		max_mr_size;
 	u8		lag_logic_port_ofst;
+	u32		mpt_tbl_addr;
+	u32		mpt_tbl_depth;
+	u32		mpt_tbl_width;
+	u32		mtt_inst_base_addr;
+	u32		mtt_inst_stride;
+	u32		mtt_inst_num_log;
+	u32		mtt_inst_depth;
 };
 
 struct cache_ent {
@@ -685,28 +687,14 @@ struct xsc_cmd_stats {
 	spinlock_t	lock;
 };
 
-struct xsc_cmd_reg {
-	u32 req_pid_addr;
-	u32 req_cid_addr;
-	u32 rsp_pid_addr;
-	u32 rsp_cid_addr;
-	u32 req_buf_h_addr;
-	u32 req_buf_l_addr;
-	u32 rsp_buf_h_addr;
-	u32 rsp_buf_l_addr;
-	u32 msix_vec_addr;
-	u32 element_sz_addr;
-	u32 q_depth_addr;
-	u32 interrupt_stat_addr;
-};
-
 enum xsc_cmd_status {
 	XSC_CMD_STATUS_NORMAL,
 	XSC_CMD_STATUS_TIMEDOUT,
 };
 
+#define	XSC_CMD_MAX_RETRY_CNT	3
+
 struct xsc_cmd {
-	struct xsc_cmd_reg reg;
 	void	       *cmd_buf;
 	void	       *cq_buf;
 	dma_addr_t	dma;
@@ -740,10 +728,7 @@ struct xsc_cmd {
 	unsigned int	irqn;
 	u8	ownerbit_learned;
 	u8	cmd_status;
-};
-
-struct xsc_lock {
-	spinlock_t lock;	/* xsc spin lock */
+	u8	retry_cnt;
 };
 
 struct xsc_reg_addr {
@@ -762,11 +747,14 @@ struct xsc_reg_addr {
 };
 
 struct xsc_board_info {
+	u32			ref_cnt;
 	u32			board_id;
 	char			board_sn[XSC_BOARD_SN_LEN];
 	__be64			guid;
-	u8			guid_valid;
-	u8			hw_config_activated;
+	u32			resource_access_mode;
+	rwlock_t		mr_sync_lock;	/* protect mr sync */
+	struct list_head	func_list;
+	u32			rep_func_id;
 };
 
 /* our core device */
@@ -785,6 +773,8 @@ struct xsc_core_device {
 	u8			mac_port;	/* mac port */
 	u8			pcie_no;	/* pcie number */
 	u8			pf_id;
+	u8			pcie_host_num;
+	u8			pf_num_per_pcie;
 	u16			vf_id;
 	u16			glb_func_id;	/* function id */
 
@@ -799,17 +789,16 @@ struct xsc_core_device {
 	struct xsc_caps		caps;
 	atomic_t		num_qps;
 	struct xsc_cmd		cmd;
-	struct xsc_lock		reg_access_lock;
+	spinlock_t		reg_access_lock;	/* reg access lock */
 
 	void			*counters_priv;
-	struct xsc_priv_device	priv_device;
 	struct xsc_board_info	*board_info;
 	void (*event)(struct xsc_core_device *dev,
 		      enum xsc_dev_event event, unsigned long param);
 
-	void (*event_handler)(void *adapter);
+	void (*link_event_handler)(void *adapter);
+	struct work_struct	event_work;
 
-	struct xsc_reg_addr	regs;
 	u32			chip_ver_h;
 	u32			chip_ver_m;
 	u32			chip_ver_l;
@@ -825,15 +814,27 @@ struct xsc_core_device {
 
 	u8	reg_mr_via_cmdq;
 	u8	user_mode;
+	u8	read_flush;
 
 	struct xsc_port_ctrl port_ctrl;
+	struct xsc_port_ctrl prgrmmbl_cc_ctrl;
 
 	void	*rtt_priv;
 	void	*ap_priv;
 	void	*pcie_lat;
 
+	void	*hal;
 	u8	bond_id;
 	struct list_head slave_node;
+	struct	completion	recv_tunnel_resp_event;
+	void	(*get_ifname)(void *xdev, u8 *ifname, int len);
+	void	(*get_ibdev_name)(void *xdev, u8 *ibdev_name, int len);
+	void	(*get_ip_addr)(void *xdev, u32 *ip_addr);
+	int	(*get_rdma_ctrl_info)(struct xsc_core_device *xdev,
+				      u16 opcode, void *out, int out_size);
+	void	(*handle_netlink_cmd)(struct xsc_core_device *xdev, void *in, void *out);
+	void	*sock;
+	struct list_head func_node;
 };
 
 struct xsc_feature_flag {
@@ -913,6 +914,7 @@ void xsc_add_dev_by_protocol(struct xsc_core_device *dev, int protocol);
 void xsc_dev_list_lock(void);
 void xsc_dev_list_unlock(void);
 int xsc_dev_list_trylock(void);
+void xsc_get_devinfo(u8 *data, u32 len);
 
 int xsc_cmd_write_reg_directly(struct xsc_core_device *dev, void *in, int in_size, void *out,
 			       int out_size, int func_id);
@@ -940,12 +942,6 @@ int xsc_counters_init(struct ib_device *ib_dev,
 void xsc_counters_fini(struct ib_device *ib_dev,
 		       struct xsc_core_device *dev);
 
-int xsc_priv_dev_init(struct ib_device *ib_dev, struct xsc_core_device *dev);
-void xsc_priv_dev_fini(struct ib_device *ib_dev, struct xsc_core_device *dev);
-
-int xsc_priv_alloc_chrdev_region(void);
-void xsc_priv_unregister_chrdev_region(void);
-
 int xsc_eth_sysfs_create(struct net_device *netdev, struct xsc_core_device *dev);
 void xsc_eth_sysfs_remove(struct net_device *netdev, struct xsc_core_device *dev);
 int xsc_rtt_sysfs_init(struct ib_device *ib_dev, struct xsc_core_device *xdev);
@@ -959,7 +955,6 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 int xsc_cmd_enable_hca(struct xsc_core_device *dev, u16 vf_num, u16 max_msix);
 int xsc_cmd_disable_hca(struct xsc_core_device *dev, u16 vf_num);
 int xsc_cmd_modify_hca(struct xsc_core_device *dev);
-int xsc_query_guid(struct xsc_core_device *dev);
 void xsc_free_board_info(void);
 
 int xsc_irq_eq_create(struct xsc_core_device *dev);
@@ -986,7 +981,6 @@ struct cpumask *xsc_comp_irq_get_affinity_mask(struct xsc_core_device *dev, int 
 void mask_cpu_by_node(int node, struct cpumask *dstp);
 int xsc_get_link_speed(struct xsc_core_device *dev);
 int xsc_chip_type(struct xsc_core_device *dev);
-int xsc_eth_restore_nic_hca(struct xsc_core_device *dev);
 
 #define XSC_ESWITCH_MANAGER(dev) ((dev)->caps.eswitch_manager)
 
@@ -1046,176 +1040,6 @@ static inline bool xsc_rl_is_supported(struct xsc_core_device *dev)
 	return false;
 }
 
-/* define in andes */
-#define HIF_CPM_IDA_DATA_MEM_STRIDE		0x40
-
-#define CPM_IAE_CMD_READ			0
-#define CPM_IAE_CMD_WRITE			1
-
-#define CPM_IAE_ADDR_REG_STRIDE			HIF_CPM_IDA_ADDR_REG_STRIDE
-
-#define CPM_IAE_DATA_MEM_STRIDE			HIF_CPM_IDA_DATA_MEM_STRIDE
-
-#define CPM_IAE_DATA_MEM_MAX_LEN		16
-
-struct iae_cmd {
-	union {
-		struct {
-			u32	iae_idx:HIF_CPM_IDA_CMD_REG_IDA_IDX_WIDTH;
-			u32	iae_len:HIF_CPM_IDA_CMD_REG_IDA_LEN_WIDTH;
-			u32	iae_r0w1:HIF_CPM_IDA_CMD_REG_IDA_R0W1_WIDTH;
-		};
-		unsigned int raw_data;
-	};
-};
-
-static inline void acquire_ia_lock(struct xsc_core_device *xdev, int *iae_idx)
-{
-	int lock_val;
-	int lock_vld;
-
-	lock_val = readl(REG_ADDR(xdev, xdev->regs.cpm_get_lock));
-	lock_vld = lock_val >> HIF_CPM_LOCK_GET_REG_LOCK_VLD_SHIFT;
-	if (lock_vld)
-		*iae_idx = lock_val & HIF_CPM_LOCK_GET_REG_LOCK_IDX_MASK;
-	else
-		*iae_idx = -1;
-}
-
-#define ACQUIRE_IA_LOCK(bp, iae_idx)		\
-	do {					\
-		int idx;			\
-		acquire_ia_lock(bp, &idx);	\
-		iae_idx = idx;			\
-	} while (0)
-
-static inline void release_ia_lock(struct xsc_core_device *xdev, int lock_idx)
-{
-	writel(lock_idx, REG_ADDR(xdev, xdev->regs.cpm_put_lock));
-}
-
-#define RELEASE_IA_LOCK(bp, iae_idx)	release_ia_lock(bp, iae_idx)
-
-static inline void ia_write_data(struct xsc_core_device *xdev, u32 *ptr, int n, int iae_idx)
-{
-	int i;
-	int offset = xdev->regs.cpm_data_mem + (iae_idx) * CPM_IAE_DATA_MEM_STRIDE;
-
-	for (i = 0; i < n; i++) {
-		writel(*(ptr++), REG_ADDR(xdev, offset));
-		offset += sizeof(*ptr);
-	}
-}
-
-static inline void ia_read_data(struct xsc_core_device *xdev, u32 *ptr, int n, int iae_idx)
-{
-	int i;
-	int offset = xdev->regs.cpm_data_mem + (iae_idx) * CPM_IAE_DATA_MEM_STRIDE;
-	u32 *pptr = ptr;
-
-	for (i = 0; i < n; i++) {
-		*(pptr) = readl(REG_ADDR(xdev, offset));
-		offset += sizeof(*ptr);
-		pptr = pptr + 1;
-	}
-}
-
-static inline void ia_write_reg_addr(struct xsc_core_device *xdev, u32 reg, int iae_idx)
-{
-	int offset = xdev->regs.cpm_addr + (iae_idx) * CPM_IAE_ADDR_REG_STRIDE;
-
-	writel(reg, REG_ADDR(xdev, offset));
-}
-
-static inline void initiate_ia_cmd(struct xsc_core_device *xdev, int iae_idx, int length, int r0w1)
-{
-	struct iae_cmd cmd;
-	int addr = xdev->regs.cpm_cmd;
-
-	cmd.iae_r0w1 = r0w1;
-	cmd.iae_len = length - 1;
-	cmd.iae_idx = iae_idx;
-	writel(cmd.raw_data, REG_ADDR(xdev, addr));
-}
-
-static inline void initiate_ia_write_cmd(struct xsc_core_device *xdev, int iae_idx, int length)
-{
-	initiate_ia_cmd(xdev, iae_idx, length, CPM_IAE_CMD_WRITE);
-}
-
-static inline void initiate_ia_read_cmd(struct xsc_core_device *xdev, int iae_idx, int length)
-{
-	initiate_ia_cmd(xdev, iae_idx, length, CPM_IAE_CMD_READ);
-}
-
-static inline void wait_for_complete(struct xsc_core_device *xdev, int iae_idx)
-{
-	while ((readl(REG_ADDR(xdev, xdev->regs.cpm_busy)) & (1 << iae_idx)))
-		;
-}
-
-static inline void ia_write_reg_mr(struct xsc_core_device *xdev, u32 reg,
-				   u32 *ptr, int n, int idx)
-{
-	ia_write_data(xdev, ptr, n, idx);
-	ia_write_reg_addr(xdev, reg, idx);
-	initiate_ia_write_cmd(xdev, idx, n);
-}
-
-#define IA_WRITE_REG_MR(bp, reg, ptr, n, idx) ia_write_reg_mr(bp, reg, ptr, n, idx)
-
-static inline void ia_write(struct xsc_core_device *xdev, u32 reg, u32 *ptr, int n)
-{
-	int iae_idx;
-
-	acquire_ia_lock(xdev, &iae_idx);
-	ia_write_data(xdev, ptr, n, iae_idx);
-	ia_write_reg_addr(xdev, reg, iae_idx);
-	initiate_ia_write_cmd(xdev, iae_idx, n);
-	release_ia_lock(xdev, iae_idx);
-}
-
-#define IA_WRITE(bp, reg, ptr, n)	ia_write(bp, reg, ptr, n)
-
-static inline void ia_read(struct xsc_core_device *xdev, u32 reg, u32 *ptr, int n)
-{
-	int iae_idx;
-
-	acquire_ia_lock(xdev, &iae_idx);
-	ia_write_reg_addr(xdev, reg, iae_idx);
-	initiate_ia_read_cmd(xdev, iae_idx, n);
-	wait_for_complete(xdev, iae_idx);
-	ia_read_data(xdev, ptr, n, iae_idx);
-	release_ia_lock(xdev, iae_idx);
-}
-
-#define IA_READ(bp, reg, ptr, n) ia_read(bp, reg, ptr, n)
-
-static inline u32 reg_read32(struct xsc_core_device *dev, u32 offset)
-{
-	u32 val = 0;
-
-	if (xsc_core_is_pf(dev))
-		val = readl(REG_ADDR(dev, offset));
-	else
-		IA_READ(dev, offset, &val, 1);
-
-	return val;
-}
-
-static inline void reg_write32(struct xsc_core_device *dev, u32 offset, u32 val)
-{
-	u32 *ptr = &val;
-
-	if (xsc_core_is_pf(dev))
-		writel(val, REG_ADDR(dev, offset));
-	else
-		IA_WRITE(dev, offset, ptr, 1);
-}
-
-#define REG_RD32(dev, offset) reg_read32(dev, offset)
-#define REG_WR32(dev, offset, val) reg_write32(dev, offset, val)
-
 static inline unsigned long bdf_to_key(unsigned int domain, unsigned int bus, unsigned int devfn)
 {
 	return ((unsigned long)domain << 32) | ((bus & 0xff) << 16) | (devfn & 0xff);
@@ -1272,6 +1096,21 @@ is_support_pfc_prio_statistic(struct xsc_core_device *dev)
 	return false;
 }
 
+static inline bool is_dpu_soc_pf(u32 device_id)
+{
+	return device_id == XSC_MV_SOC_PF_DEV_ID;
+}
+
+static inline bool is_dpu_host_pf(u32 device_id)
+{
+	return device_id == XSC_MV_HOST_PF_DEV_ID;
+}
+
+static inline bool is_host_pf(struct xsc_core_device *xdev)
+{
+	return xsc_core_is_pf(xdev) && !is_dpu_soc_pf(xdev->pdev->device);
+}
+
 static inline bool
 is_support_pfc_stall_stats(struct xsc_core_device *dev)
 {
@@ -1289,9 +1128,26 @@ static inline bool is_support_hw_pf_stats(struct xsc_core_device *dev)
 	return xsc_core_is_pf(dev);
 }
 
+static inline bool
+is_support_pf_uc_statistic(struct xsc_core_device *dev)
+{
+	if (!dev)
+		return false;
+
+	if (dev->caps.hw_feature_flag & XSC_HW_PF_UC_STATISTIC_SUPPORT)
+		return true;
+
+	return false;
+}
+
 static inline void xsc_set_user_mode(struct xsc_core_device *dev, u8 mode)
 {
 	dev->user_mode = mode;
+}
+
+static inline bool xsc_support_hw_feature(struct xsc_core_device *dev, u32 feature)
+{
+	return dev->caps.hw_feature_flag & feature;
 }
 
 static inline u8 xsc_get_user_mode(struct xsc_core_device *dev)
@@ -1299,13 +1155,84 @@ static inline u8 xsc_get_user_mode(struct xsc_core_device *dev)
 	return dev->user_mode;
 }
 
+#define XSC_ORIGIN_PF_BAR_SIZE	(256 * 1024 * 1024)
+static inline bool is_pf_bar_compressed(struct xsc_core_device *dev)
+{
+	return pci_resource_len(dev->pdev, 0) != XSC_ORIGIN_PF_BAR_SIZE;
+}
+
 void xsc_pci_exit(void);
 
 void xsc_remove_eth_driver(void);
-
 void xsc_remove_rdma_driver(void);
+
+void xsc_init_hal(struct xsc_core_device *xdev, u32 device_id);
+void xsc_set_pf_db_addr(struct xsc_core_device *xdev,
+			u64 tx_db, u64 rx_db, u64 cq_db, u64 cq_reg, u64 eq_db);
+void xsc_get_db_addr(struct xsc_core_device *xdev,
+		     u64 *tx_db, u64 *rx_db, u64 *cq_db, u64 *cq_reg, u64 *eq_db);
+void xsc_read_reg(struct xsc_core_device *xdev, u32 addr, void *data, int len);
+void xsc_write_reg(struct xsc_core_device *xdev, u32 addr, void *data);
+void xsc_ia_read(struct xsc_core_device *xdev, u32 addr, void *data, int nr);
+void xsc_ia_write(struct xsc_core_device *xdev, u32 addr, void *data, int nr);
+void xsc_update_tx_db(struct xsc_core_device *xdev, u32 sqn, u32 next_pid);
+void xsc_update_rx_db(struct xsc_core_device *xdev, u32 rqn, u32 next_pid);
+
+void xsc_arm_cq(struct xsc_core_device *xdev, u32 cqn, u32 next_cid, u8 solicited);
+void xsc_update_cq_ci(struct xsc_core_device *xdev, u32 cqn, u32 next_cid);
+void xsc_update_eq_ci(struct xsc_core_device *xdev, u32 eqn, u32 next_cid, u8 arm);
+
+void xsc_update_cmdq_req_pid(struct xsc_core_device *xdev, u32 req_pid);
+void xsc_update_cmdq_req_cid(struct xsc_core_device *xdev, u32 req_cid);
+void xsc_update_cmdq_rsp_pid(struct xsc_core_device *xdev, u32 rsp_pid);
+void xsc_update_cmdq_rsp_cid(struct xsc_core_device *xdev, u32 rsp_cid);
+u32 xsc_get_cmdq_req_pid(struct xsc_core_device *xdev);
+u32 xsc_get_cmdq_req_cid(struct xsc_core_device *xdev);
+u32 xsc_get_cmdq_rsp_pid(struct xsc_core_device *xdev);
+u32 xsc_get_cmdq_rsp_cid(struct xsc_core_device *xdev);
+u32 xsc_get_cmdq_log_stride(struct xsc_core_device *xdev);
+void xsc_set_cmdq_depth(struct xsc_core_device *xdev, u32 depth);
+void xsc_set_cmdq_req_buf_addr(struct xsc_core_device *xdev, u32 haddr, u32 laddr);
+void xsc_set_cmdq_rsp_buf_addr(struct xsc_core_device *xdev, u32 haddr, u32 laddr);
+void xsc_set_cmdq_msix_vector(struct xsc_core_device *xdev, u32 vector);
+void xsc_check_cmdq_status(struct xsc_core_device *xdev);
+int xsc_handle_cmdq_interrupt(struct xsc_core_device *xdev);
+u8 xsc_get_mr_page_mode(struct xsc_core_device *xdev, u8 page_shift);
+u32 xsc_mkey_to_idx(struct xsc_core_device *xdev, u32 mkey);
+u32 xsc_idx_to_mkey(struct xsc_core_device *xdev, u32 mkey_idx);
+void xsc_set_mpt(struct xsc_core_device *xdev, int iae_idx, u32 mtt_base, void *mr_request);
+void xsc_clear_mpt(struct xsc_core_device *xdev, int iae_idx, u32 mtt_base, void *mr_request);
+void xsc_set_mtt(struct xsc_core_device *xdev, int iae_idx, u32 mtt_base, void *mr_request);
+void xsc_set_read_done_msix_vector(struct xsc_core_device *xdev, u32 vector);
+int xsc_dma_write_tbl_once(struct xsc_core_device *xdev, u32 data_len, u64 dma_wr_addr,
+			   u32 host_id, u32 func_id, u64 success[2], u32 size);
+void xsc_dma_read_tbl(struct xsc_core_device *xdev, u32 host_id, u32 func_id, u64 data_addr,
+		      u32 tbl_id, u32 burst_num, u32 tbl_start_addr);
+bool xsc_skb_need_linearize(struct xsc_core_device *xdev, int ds_num);
+bool xsc_is_err_cqe(struct xsc_core_device *xdev, void *cqe);
+u8 xsc_get_cqe_error_code(struct xsc_core_device *xdev, void *cqe);
+u8 xsc_get_cqe_opcode(struct xsc_core_device *xdev, void *cqe);
+u16 xsc_get_eth_channel_num(struct xsc_core_device *xdev);
+u32 xsc_get_max_mtt_num(struct xsc_core_device *xdev);
+u32 xsc_get_max_mpt_num(struct xsc_core_device *xdev);
+u32 xsc_get_rdma_stat_mask(struct xsc_core_device *xdev);
+u32 xsc_get_eth_stat_mask(struct xsc_core_device *xdev);
+void xsc_set_data_seg(struct xsc_core_device *xdev, void *data_seg, u64 addr, u32 key, u32 length);
+u8 xsc_get_mad_msg_opcode(struct xsc_core_device *xdev);
+u32 xsc_get_max_qp_depth(struct xsc_core_device *xdev);
+bool xsc_check_max_qp_depth(struct xsc_core_device *xdev, u32 *wqe_cnt, u32 max_qp_depth);
+void xsc_set_mtt_info(struct xsc_core_device *xdev);
 
 void xsc_set_exit_flag(void);
 bool xsc_get_exit_flag(void);
 bool exist_incomplete_qp_flush(void);
+int xsc_cmd_query_read_flush(struct xsc_core_device *dev);
+
+int xsc_register_devinfo(struct xsc_core_device *xdev, char *ifname, char *ibdev_name);
+void xsc_register_get_mdev_info_func(int (*get_mdev_info)(void *data));
+
+typedef void (*get_ibdev_name_func_t)(struct net_device *netdev, char *ibdev_name, int len);
+void xsc_register_get_mdev_ibdev_name_func(get_ibdev_name_func_t fn);
+
 #endif /* XSC_CORE_H */
+

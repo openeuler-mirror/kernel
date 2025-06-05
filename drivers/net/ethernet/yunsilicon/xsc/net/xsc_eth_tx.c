@@ -11,6 +11,7 @@
 #include "common/qp.h"
 #include "xsc_eth.h"
 #include "xsc_eth_txrx.h"
+#include "xsc_accel.h"
 
 #define XSC_OPCODE_RAW     0x7
 
@@ -19,7 +20,6 @@ static inline void *xsc_sq_fetch_wqe(struct xsc_sq *sq, size_t size, u16 *pi)
 	struct xsc_wq_cyc *wq = &sq->wq;
 	void *wqe;
 
-	/*caution, sp->pc is default to be zero*/
 	*pi  = xsc_wq_cyc_ctr2ix(wq, sq->pc);
 	wqe = xsc_wq_cyc_get_wqe(wq, *pi);
 	memset(wqe, 0, size);
@@ -27,7 +27,7 @@ static inline void *xsc_sq_fetch_wqe(struct xsc_sq *sq, size_t size, u16 *pi)
 	return wqe;
 }
 
-u16 xsc_tx_get_gso_ihs(struct xsc_sq *sq, struct sk_buff *skb)
+static u16 xsc_tx_get_gso_ihs(struct xsc_sq *sq, struct sk_buff *skb)
 {
 	struct xsc_sq_stats *stats = sq->stats;
 	u16 ihs;
@@ -48,9 +48,9 @@ u16 xsc_tx_get_gso_ihs(struct xsc_sq *sq, struct sk_buff *skb)
 	return ihs;
 }
 
-void xsc_txwqe_build_cseg_csum(struct xsc_sq *sq,
-			       struct sk_buff *skb,
-			       struct xsc_send_wqe_ctrl_seg *cseg)
+static void xsc_txwqe_build_cseg_csum(struct xsc_sq *sq,
+				      struct sk_buff *skb,
+				      struct xsc_send_wqe_ctrl_seg *cseg)
 {
 	if (likely(skb->ip_summed == CHECKSUM_PARTIAL)) {
 		if (skb->encapsulation) {
@@ -79,7 +79,6 @@ static inline void xsc_dma_push(struct xsc_sq *sq, dma_addr_t addr, u32 size,
 	dma->addr = addr;
 	dma->size = size;
 	dma->type = map_type;
-	ETH_DEBUG_LOG("dma = %p, dma->addr = %#llx\n", dma, dma->addr);
 }
 
 static inline void xsc_tx_dma_unmap(struct device *dev, struct xsc_sq_dma *dma)
@@ -92,7 +91,7 @@ static inline void xsc_tx_dma_unmap(struct device *dev, struct xsc_sq_dma *dma)
 		dma_unmap_page(dev, dma->addr, dma->size, DMA_TO_DEVICE);
 		break;
 	default:
-		ETH_DEBUG_LOG("%s\n", "xsc_tx_dma_unmap unknown DMA type!\n");
+		net_err_ratelimited("%s: unknown DMA type=%d\n", __func__, dma->type);
 	}
 }
 
@@ -152,9 +151,8 @@ static int xsc_txwqe_build_dsegs(struct xsc_sq *sq, struct sk_buff *skb,
 		if (unlikely(dma_mapping_error(dev, dma_addr)))
 			goto dma_unmap_wqe_err;
 
-		dseg->va = cpu_to_le64(dma_addr);
-		dseg->mkey  = cpu_to_le32(sq->mkey_be);
-		dseg->seg_len = cpu_to_le32(headlen);
+		xsc_set_data_seg(adapter->xdev, dseg, cpu_to_le64(dma_addr),
+				 cpu_to_le32(sq->mkey_be), cpu_to_le32(headlen));
 
 		WQE_DSEG_DUMP("dseg-headlen", dseg);
 
@@ -171,9 +169,8 @@ static int xsc_txwqe_build_dsegs(struct xsc_sq *sq, struct sk_buff *skb,
 		if (unlikely(dma_mapping_error(dev, dma_addr)))
 			goto dma_unmap_wqe_err;
 
-		dseg->va = cpu_to_le64(dma_addr);
-		dseg->mkey = cpu_to_le32(sq->mkey_be);
-		dseg->seg_len = cpu_to_le32(fsz);
+		xsc_set_data_seg(adapter->xdev, dseg, cpu_to_le64(dma_addr),
+				 cpu_to_le32(sq->mkey_be), cpu_to_le32(fsz));
 
 		WQE_DSEG_DUMP("dseg-frag", dseg);
 
@@ -200,25 +197,15 @@ static inline void xsc_sq_notify_hw(struct xsc_wq_cyc *wq, u16 pc,
 {
 	struct xsc_adapter *adapter = sq->channel->adapter;
 	struct xsc_core_device *xdev  = adapter->xdev;
-	union xsc_send_doorbell doorbell_value;
 	int send_ds_num_log = ilog2(xdev->caps.send_ds_num);
 
-	/*reverse wqe index to ds index*/
-	doorbell_value.next_pid = pc << send_ds_num_log;
-	doorbell_value.qp_num = sq->sqn;
-
-	/* Make sure that descriptors are written before
-	 * updating doorbell record and ringing the doorbell
-	 */
-	wmb();
-	ETH_DEBUG_LOG("pc = %d sqn = %d\n", pc, sq->sqn);
-	ETH_DEBUG_LOG("doorbell_value = %#x\n", doorbell_value.send_data);
-	writel(doorbell_value.send_data, REG_ADDR(xdev, xdev->regs.tx_db));
+	xsc_update_tx_db(xdev, sq->sqn, pc << send_ds_num_log);
 }
 
-void xsc_txwqe_complete(struct xsc_sq *sq, struct sk_buff *skb,
-			u8 opcode, u16 ds_cnt, u8 num_wqebbs, u32 num_bytes, u8 num_dma,
-			struct xsc_tx_wqe_info *wi)
+static void xsc_txwqe_complete(struct xsc_sq *sq, struct sk_buff *skb,
+			       u8 opcode, u16 ds_cnt, u8 num_wqebbs,
+			       u32 num_bytes, u8 num_dma,
+			       struct xsc_tx_wqe_info *wi)
 {
 	struct xsc_wq_cyc *wq = &sq->wq;
 
@@ -231,22 +218,15 @@ void xsc_txwqe_complete(struct xsc_sq *sq, struct sk_buff *skb,
 	netdev_tx_sent_queue(sq->txq, num_bytes);
 	ETH_SQ_STATE(sq);
 
-	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP)) {
+	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP))
 		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
-		ETH_DEBUG_LOG("%s\n", "hw tstamp\n");
-	}
 
-	/*1*/
 	sq->pc += wi->num_wqebbs;
-	ETH_DEBUG_LOG("%d\n", sq->pc);
 
 	if (unlikely(!xsc_wqc_has_room_for(wq, sq->cc, sq->pc, sq->stop_room))) {
 		netif_tx_stop_queue(sq->txq);
 		sq->stats->stopped++;
-		ETH_DEBUG_LOG("%p %d %d %d\n", wq, sq->cc, sq->pc, sq->stop_room);
 	}
-
-	ETH_DEBUG_LOG("%d %d\n", xsc_netdev_xmit_more(skb), netif_xmit_stopped(sq->txq));
 
 	if (!xsc_netdev_xmit_more(skb) || netif_xmit_stopped(sq->txq))
 		xsc_sq_notify_hw(wq, sq->pc, sq);
@@ -260,7 +240,7 @@ static void xsc_dump_error_sqcqe(struct xsc_sq *sq,
 
 	net_err_ratelimited("Err cqe on dev %s cqn=0x%x ci=0x%x sqn=0x%x err_code=0x%x qpid=0x%x\n",
 			    netdev->name, sq->cq.xcq.cqn, ci,
-			    sq->sqn, get_cqe_opcode(cqe), cqe->qp_id);
+			    sq->sqn, xsc_get_cqe_error_code(sq->cq.xdev, cqe), cqe->qp_id);
 
 }
 
@@ -298,6 +278,9 @@ void xsc_free_tx_wqe(struct device *dev, struct xsc_sq *sq)
 	netdev_tx_completed_queue(sq->txq, npkts, nbytes);
 }
 
+#ifdef NEED_CREATE_RX_THREAD
+	DECLARE_PER_CPU(bool, txcqe_get);
+#endif
 
 bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 {
@@ -325,12 +308,15 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 
 	stats = sq->stats;
 
-	if (unlikely(get_cqe_opcode(cqe) & BIT(7))) {
+	if (unlikely(xsc_is_err_cqe(sq->cq.xdev, cqe))) {
 		xsc_dump_error_sqcqe(sq, cqe);
 		stats->cqe_err++;
 		return false;
 	}
 
+#ifdef NEED_CREATE_RX_THREAD
+	__this_cpu_write(txcqe_get, true);
+#endif
 
 	sqcc = sq->cc;
 
@@ -361,12 +347,19 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 			xsc_tx_dma_unmap(dev, dma);
 		}
 
+#ifndef NEED_CREATE_RX_THREAD
 		npkts++;
 		nbytes += wi->num_bytes;
 		sqcc += wi->num_wqebbs;
 		napi_consume_skb(skb, napi_budget);
-		ETH_DEBUG_LOG("ci=%d, sqcc=%d, pkts=%d\n", ci, sqcc, npkts);
-
+#else
+		npkts++;
+		nbytes += wi->num_bytes;
+		sqcc += wi->num_wqebbs;
+		if (refcount_read(&skb->users) < 1)
+			stats->txdone_skb_refcnt_err++;
+		napi_consume_skb(skb, 0);
+#endif
 	} while ((++i <= napi_budget) && (cqe = xsc_cqwq_get_cqe(&cq->wq)));
 
 	stats->cqes += i;
@@ -378,7 +371,6 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 
 	sq->dma_fifo_cc = dma_fifo_cc;
 	sq->cc = sqcc;
-	ETH_DEBUG_LOG("dma_fifo_cc=%d, sqcc=%d\n", dma_fifo_cc, sqcc);
 
 	ETH_SQ_STATE(sq);
 	netdev_tx_completed_queue(sq->txq, npkts, nbytes);
@@ -407,8 +399,9 @@ static uint32_t xsc_eth_xmit_frame(struct sk_buff *skb,
 	u16 ds_cnt;
 	u16 mss, ihs, headlen;
 	u8 opcode;
-	u32 num_bytes, num_dma;
-	u8 num_wqebbs;
+	u32 num_bytes;
+	u32 num_dma = 0;
+	u8 num_wqebbs = 0;
 
 retry_send:
 	/* Calc ihs and ds cnt, no writes to wqe yet */
@@ -434,9 +427,6 @@ retry_send:
 	headlen = skb->len - skb->data_len;
 	ds_cnt += !!headlen;
 	ds_cnt += skb_shinfo(skb)->nr_frags;
-	ETH_DEBUG_LOG("skb_len=%d data_len=%d nr_frags=%d mss=%d ihs=%d headlen=%d ds_cnt=%d\n",
-		      skb->len, skb->data_len, skb_shinfo(skb)->nr_frags,
-		      mss, ihs, headlen, ds_cnt);
 
 	/*to make the connection, only linear data is present*/
 	skbdata_debug_dump(skb, headlen, 1);
@@ -449,7 +439,7 @@ retry_send:
 
 	num_wqebbs = DIV_ROUND_UP(ds_cnt, xdev->caps.send_ds_num);
 	/*if ds_cnt exceed one wqe, drop it*/
-	if (num_wqebbs != 1) {
+	if (num_wqebbs != 1 || xsc_skb_need_linearize(xdev, ds_cnt)) {
 		sq->stats->skb_linear++;
 		if (skb_linearize(skb))
 			goto err_drop;
@@ -484,8 +474,8 @@ retry_send:
 	return NETDEV_TX_OK;
 
 err_drop:
-	ETH_DEBUG_LOG("%s: drop skb, ds_cnt=%d, num_wqebbs=%d, num_dma=%d\n",
-		      __func__, ds_cnt, num_wqebbs, num_dma);
+	net_err_ratelimited("%s: drop skb, ds_cnt=%d, num_wqebbs=%d, num_dma=%d\n",
+			    __func__, ds_cnt, num_wqebbs, num_dma);
 	stats->dropped++;
 	dev_kfree_skb_any(skb);
 
@@ -494,48 +484,20 @@ err_drop:
 
 netdev_tx_t xsc_eth_xmit_start(struct sk_buff *skb, struct net_device *netdev)
 {
-	u32 ret;
-	u32 queue_id;
+	struct xsc_adapter *adapter = netdev_priv(netdev);
 	struct xsc_sq *sq;
 	struct xsc_tx_wqe *wqe;
 	u16 pi;
-	struct xsc_adapter *adapter = netdev_priv(netdev);
-	struct xsc_core_device *xdev = adapter->xdev;
 
-	if (!skb) {
-		ETH_DEBUG_LOG("skb == NULL\n");
-		return NETDEV_TX_OK;
-	}
-
-	if (!adapter) {
-		ETH_DEBUG_LOG("adapter == NULL\n");
+	if (!adapter || !adapter->xdev || adapter->status != XSCALE_ETH_DRIVER_OK)
 		return NETDEV_TX_BUSY;
-	}
 
-	if (adapter->status != XSCALE_ETH_DRIVER_OK) {
-		ETH_DEBUG_LOG("adapter->status = %d\n", adapter->status);
+	sq = adapter->txq2sq[skb_get_queue_mapping(skb)];
+	if (unlikely(!sq))
 		return NETDEV_TX_BUSY;
-	}
 
-	queue_id = skb_get_queue_mapping(skb);
-	ETH_DEBUG_LOG("queue_id = %d\n", queue_id);
-	assert(adapter->xdev, queue_id < XSC_ETH_MAX_TC_TOTAL);
+	wqe = xsc_sq_fetch_wqe(sq, adapter->xdev->caps.send_ds_num * XSC_SEND_WQE_DS, &pi);
+	skb = xsc_accel_handle_tx(skb);
 
-	sq = adapter->txq2sq[queue_id];
-	if (!sq) {
-		ETH_DEBUG_LOG("sq = NULL\n");
-		return NETDEV_TX_BUSY;
-	}
-	ETH_DEBUG_LOG("sqn = %d\n", sq->sqn);
-
-	wqe = xsc_sq_fetch_wqe(sq, xdev->caps.send_ds_num * XSC_SEND_WQE_DS, &pi);
-	ETH_DEBUG_LOG("wqe = %p pi = %d\n", wqe, pi);
-	assert(adapter->xdev, wqe);
-
-
-	ret = xsc_eth_xmit_frame(skb, sq, wqe, pi);
-
-	ETH_DEBUG_LOG("ret = %d\n", ret);
-
-	return ret;
+	return xsc_eth_xmit_frame(skb, sq, wqe, pi);
 }
