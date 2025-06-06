@@ -1461,9 +1461,11 @@ proto_memory_pressure(struct proto *prot)
 
 #ifdef CONFIG_PROC_FS
 #define PROTO_INUSE_NR	64	/* should be enough for the first time */
+#ifndef __GENKSYMS__
 struct prot_inuse {
 	int val[PROTO_INUSE_NR];
 };
+#endif
 /* Called with local bh disabled */
 static inline void sock_prot_inuse_add(const struct net *net,
 				       const struct proto *prot, int val)
