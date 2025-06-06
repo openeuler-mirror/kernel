@@ -19,7 +19,7 @@
 
 #include "smc_clc.h"
 
-#define SMC_MAX_FBACK_RSN_CNT 30
+#define SMC_MAX_FBACK_RSN_CNT 36
 
 extern struct smc_stats __percpu *smc_stats;	/* per cpu counters for SMC */
 extern struct smc_stats_reason fback_rsn;
