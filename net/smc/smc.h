@@ -20,7 +20,11 @@
 
 #define SMC_V1		1		/* SMC version V1 */
 #define SMC_V2		2		/* SMC version V2 */
-#define SMC_RELEASE	0
+
+#define SMC_RELEASE_0 0
+#define SMC_RELEASE_1 1
+#define SMC_RELEASE	SMC_RELEASE_1 /* the latest release version */
+
 #define SMC_MAX_ISM_DEVS	8	/* max # of proposed non-native ISM
 					 * devices
 					 */
