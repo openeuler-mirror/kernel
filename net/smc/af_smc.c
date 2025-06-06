@@ -3403,6 +3403,7 @@ out_pnet:
 out_nl:
 	smc_nl_exit();
 out_ism:
+	smc_clc_exit();
 	smc_ism_exit();
 out_pernet_subsys:
 	unregister_pernet_subsys(&smc_net_ops);
