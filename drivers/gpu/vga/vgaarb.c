@@ -1123,12 +1123,12 @@ static ssize_t vga_arb_write(struct file *file, const char __user *buf,
 			goto done;
 		}
 
-		vga_put(pdev, io_state);
-
 		if (io_state & VGA_RSRC_LEGACY_IO)
 			uc->io_cnt--;
 		if (io_state & VGA_RSRC_LEGACY_MEM)
 			uc->mem_cnt--;
+
+		vga_put(pdev, io_state);
 
 		ret_val = count;
 		goto done;
