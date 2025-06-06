@@ -1999,41 +1999,29 @@ out:
 	return rc;
 }
 
-#define SMCD_DMBE_SIZES         6 /* 0 -> 16KB, 1 -> 32KB, .. 6 -> 1MB */
-#define SMCR_RMBE_SIZES         14 /* 0 -> 16KB, 1 -> 32KB, .. 14 -> 256MB */
+#define SMCD_DMBE_SIZES		6 /* 0 -> 16KB, 1 -> 32KB, .. 6 -> 1MB */
+#define SMCR_RMBE_SIZES		5 /* 0 -> 16KB, 1 -> 32KB, .. 5 -> 512KB */
 
 /* convert the RMB size into the compressed notation (minimum 16K, see
  * SMCD/R_DMBE_SIZES.
  * In contrast to plain ilog2, this rounds towards the next power of 2,
  * so the socket application gets at least its desired sndbuf / rcvbuf size.
  */
-static u8 smc_compress_bufsize(struct smc_link_group *lgr, int size, bool is_smcd, bool is_rmb)
+static u8 smc_compress_bufsize(int size, bool is_smcd, bool is_rmb)
 {
 	const unsigned int max_scat = SG_MAX_SINGLE_ALLOC * PAGE_SIZE;
-	u8 compressed, max_phy_compressed;
+	u8 compressed;
 
 	if (size <= SMC_BUF_MIN_SIZE)
 		return 0;
 
 	size = (size - 1) >> 14;  /* convert to 16K multiple */
 	compressed = min_t(u8, ilog2(size) + 1,
-			is_smcd ? SMCD_DMBE_SIZES : SMCR_RMBE_SIZES);
+			   is_smcd ? SMCD_DMBE_SIZES : SMCR_RMBE_SIZES);
 
-	if (!is_smcd && is_rmb && lgr->buf_type != SMCR_VIRT_CONT_BUFS) {
-		max_phy_compressed = ilog2(max_scat >> 14);
-		switch (lgr->buf_type) {
-		case SMCR_MIXED_BUFS:
-			if (compressed > max_phy_compressed)
-				break;
-			fallthrough;    // try phys continguous buf
-		case SMCR_PHYS_CONT_BUFS:
-			/* RMBs are backed by & limited to max size of scatterlists */
-			compressed = min_t(u8, compressed, max_phy_compressed);
-			break;
-		default:
-			break;
-		}
-	}
+	if (!is_smcd && is_rmb)
+		/* RMBs are backed by & limited to max size of scatterlists */
+		compressed = min_t(u8, compressed, ilog2(max_scat >> 14));
 
 	return compressed;
 }
@@ -2379,7 +2367,7 @@ static int __smc_buf_create(struct smc_sock *smc, bool is_smcd, bool is_rmb)
 		/* use socket send buffer size (w/o overhead) as start value */
 		bufsize = smc->sk.sk_sndbuf / 2;
 
-	for (bufsize_comp = smc_compress_bufsize(lgr, bufsize, is_smcd, is_rmb);
+	for (bufsize_comp = smc_compress_bufsize(bufsize, is_smcd, is_rmb);
 	     bufsize_comp >= 0; bufsize_comp--) {
 		if (is_rmb) {
 			lock = &lgr->rmbs_lock;

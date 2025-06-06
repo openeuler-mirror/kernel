@@ -24,8 +24,7 @@ wmem - INTEGER
 	Initial size of send buffer used by SMC sockets.
 
 	The minimum value is 16KiB and there is no hard limit for max value, but
-        only allowed 512KiB for SMC-R using physically contiguous buffers, 256MiB
-        for SMC-R using other buf type and 1MiB for SMC-D.
+	only allowed 512KiB for SMC-R and 1MiB for SMC-D.
 
 	Default: 64KiB
 
@@ -33,7 +32,6 @@ rmem - INTEGER
 	Initial size of receive buffer (RMB) used by SMC sockets.
 
 	The minimum value is 16KiB and there is no hard limit for max value, but
-	only allowed 512KiB for SMC-R using physically contiguous buffers, 256MiB
-	for SMC-R using other buf type and 1MiB for SMC-D.
+	only allowed 512KiB for SMC-R and 1MiB for SMC-D.
 
 	Default: 64KiB
