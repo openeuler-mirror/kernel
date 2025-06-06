@@ -5014,11 +5014,11 @@ static int __init probe_acpi_namespace_devices(void)
 		for_each_active_dev_scope(drhd->devices,
 					  drhd->devices_cnt, i, dev) {
 			struct acpi_device_physical_node *pn;
-			struct iommu_group *group;
 			struct acpi_device *adev;
 
 			struct device *pn_dev = NULL;
 			struct device_domain_info *info = NULL;
+			struct pci_dev *pci_device = NULL;
 			if (dev->bus != &acpi_bus_type)
 				continue;
 
@@ -5026,18 +5026,20 @@ static int __init probe_acpi_namespace_devices(void)
 			mutex_lock(&adev->physical_node_lock);
 			list_for_each_entry(pn,
 					    &adev->physical_node_list, node) {
-				group = iommu_group_get(pn->dev);
-				if (group) {
-					pn_dev = pn->dev;
-					iommu_group_put(group);
-					continue;
-				}
-
 				iommu = device_to_iommu(dev, &bus, &devfn);
 				if (!iommu) {
 					ret = -ENODEV;
 					goto unlock;
 				}
+				pci_device = pci_get_domain_bus_and_slot(iommu->segment,
+						bus, devfn);
+
+				if (!pci_device) {
+					pr_info("cannot get the corresponding pci_device\n");
+					ret = -ENODEV;
+					goto unlock;
+				}
+
 				info = dmar_search_domain_by_dev_info(iommu->segment, bus, devfn);
 				if (!info) {
 					pn->dev->bus->iommu_ops = &intel_iommu_ops;
@@ -5069,7 +5071,7 @@ static int __init probe_acpi_namespace_devices(void)
 				}
 			}
 			if (!info)
-				ret = acpi_device_create_direct_mappings(pn_dev, dev);
+				ret = acpi_device_create_direct_mappings(&pci_device->dev, dev);
 			else
 				ret = acpi_device_create_direct_mappings(info->dev, dev);
 unlock:
