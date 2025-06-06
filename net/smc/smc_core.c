@@ -2256,6 +2256,7 @@ static int __smc_buf_create(struct smc_sock *smc, bool is_smcd, bool is_rmb)
 		/* check for reusable slot in the link group */
 		buf_desc = smc_buf_get_slot(bufsize, lock, buf_list);
 		if (buf_desc) {
+			buf_desc->is_dma_need_sync = 0;
 			SMC_STAT_RMB_SIZE(is_smcd, is_rmb, bufsize);
 			SMC_STAT_BUF_REUSE(is_smcd, is_rmb);
 			break; /* found reusable slot */
