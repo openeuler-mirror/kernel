@@ -49,6 +49,9 @@
 #include <asm/cpu_park.h>
 #include <asm/set_memory.h>
 
+#ifdef CONFIG_PSWIOTLB
+#include <linux/pswiotlb.h>
+#endif
 #include "internal.h"
 
 /*
@@ -694,6 +697,13 @@ void __init mem_init(void)
 	swiotlb_cvm_update_mem_attributes();
 
 	set_max_mapnr(max_pfn - PHYS_PFN_OFFSET);
+
+#ifdef CONFIG_PSWIOTLB
+	/* enable pswiotlb default */
+	if ((pswiotlb_force_disable != true) &&
+		is_phytium_ps_socs())
+		pswiotlb_init(1, PSWIOTLB_VERBOSE);
+#endif
 
 #ifndef CONFIG_SPARSEMEM_VMEMMAP
 	free_unused_memmap();

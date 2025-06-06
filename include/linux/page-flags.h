@@ -191,6 +191,12 @@ enum pageflags {
 
 	/* Only valid for buddy pages. Used to track pages that are reported */
 	PG_reported = PG_uptodate,
+#ifdef CONFIG_PSWIOTLB
+	/* check if pswiotlb is sync already */
+	PG_pswiotlbsync = __NR_PAGEFLAGS + 1,
+	/* check if the page is used for pswiotlb */
+	PG_pswiotlb,
+#endif
 };
 
 #ifndef __GENERATING_BOUNDS_H

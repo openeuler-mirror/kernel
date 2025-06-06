@@ -428,6 +428,8 @@ struct device_extended_resvd {
  * @dma_pools:	Dma pools (if dma'ble device).
  * @dma_mem:	Internal for coherent mem override.
  * @cma_area:	Contiguous memory area for dma allocations
+ * @dma_p_io_tlb_mem: Phytium Software IO TLB allocator.  Not for driver use.
+ * @dma_uses_p_io_tlb: %true if device has used the Phytium software IO TLB.
  * @archdata:	For arch-specific additions.
  * @of_node:	Associated device tree node.
  * @fwnode:	Associated device node supplied by platform firmware.
@@ -541,6 +543,7 @@ struct device {
 #ifdef CONFIG_NUMA
 	int		numa_node;	/* NUMA node this device is close to */
 #endif
+
 	dev_t			devt;	/* dev_t, creates the sysfs "dev" */
 	u32			id;	/* device instance */
 
@@ -576,9 +579,21 @@ struct device {
 #else
 	KABI_RESERVE(1)
 #endif
+#ifdef CONFIG_PSWIOTLB
+	KABI_USE(2, struct p_io_tlb_mem *dma_p_io_tlb_mem)
+	KABI_USE(3, struct {
+			bool dma_uses_p_io_tlb;
+			bool can_use_pswiotlb;
+		})
+#else
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
+#endif
+#if defined(CONFIG_NUMA) && defined(CONFIG_PSWIOTLB)
+	KABI_USE(4, int local_node) /* NUMA node this device is really belong to */
+#else
 	KABI_RESERVE(4)
+#endif
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
