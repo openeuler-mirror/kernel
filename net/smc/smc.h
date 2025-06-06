@@ -25,9 +25,6 @@
 #define SMC_RELEASE_1 1
 #define SMC_RELEASE	SMC_RELEASE_1 /* the latest release version */
 
-#define SMC_MAX_ISM_DEVS	8	/* max # of proposed non-native ISM
-					 * devices
-					 */
 #define SMC_AUTOCORKING_DEFAULT_SIZE	0x10000	/* 64K by default */
 
 extern struct proto smc_proto;
