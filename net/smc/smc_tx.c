@@ -295,37 +295,17 @@ out_err:
 	return rc;
 }
 
-int smc_tx_sendpage(struct smc_sock *smc, struct page *page, int offset,
-		    size_t size, int flags)
-{
-	struct msghdr msg = {.msg_flags = flags};
-	char *kaddr = kmap(page);
-	struct kvec iov;
-	int rc;
-
-	iov.iov_base = kaddr + offset;
-	iov.iov_len = size;
-	iov_iter_kvec(&msg.msg_iter, WRITE, &iov, 1, size);
-	rc = smc_tx_sendmsg(smc, &msg, size);
-	kunmap(page);
-	return rc;
-}
-
 /***************************** sndbuf consumer *******************************/
 
 /* sndbuf consumer: actual data transfer of one target chunk with ISM write */
 int smcd_tx_ism_write(struct smc_connection *conn, void *data, size_t len,
 		      u32 offset, int signal)
 {
-	struct smc_ism_position pos;
 	int rc;
 
-	memset(&pos, 0, sizeof(pos));
-	pos.token = conn->peer_token;
-	pos.index = conn->peer_rmbe_idx;
-	pos.offset = conn->tx_off + offset;
-	pos.signal = signal;
-	rc = smc_ism_write(conn->lgr->smcd, &pos, data, len);
+	rc = smc_ism_write(conn->lgr->smcd, conn->peer_token,
+			   conn->peer_rmbe_idx, signal, conn->tx_off + offset,
+			   data, len);
 	if (rc)
 		conn->local_tx_ctrl.conn_state_flags.peer_conn_abort = 1;
 	return rc;
@@ -637,7 +617,7 @@ static int smcd_tx_sndbuf_nonempty(struct smc_connection *conn)
 	return rc;
 }
 
-static int __smc_tx_sndbuf_nonempty(struct smc_connection *conn)
+int smc_tx_sndbuf_nonempty(struct smc_connection *conn)
 {
 	struct smc_sock *smc = container_of(conn, struct smc_sock, conn);
 	int rc = 0;
@@ -666,34 +646,6 @@ static int __smc_tx_sndbuf_nonempty(struct smc_connection *conn)
 	}
 
 out:
-	return rc;
-}
-
-int smc_tx_sndbuf_nonempty(struct smc_connection *conn)
-{
-	int rc;
-
-	/* This make sure only one can send simultaneously to prevent wasting
-	 * of CPU and CDC slot.
-	 * Record whether someone has tried to push while we are pushing.
-	 */
-	if (atomic_inc_return(&conn->tx_pushing) > 1)
-		return 0;
-
-again:
-	atomic_set(&conn->tx_pushing, 1);
-	smp_wmb(); /* Make sure tx_pushing is 1 before real send */
-	rc = __smc_tx_sndbuf_nonempty(conn);
-
-	/* We need to check whether someone else have added some data into
-	 * the send queue and tried to push but failed after the atomic_set()
-	 * when we are pushing.
-	 * If so, we need to push again to prevent those data hang in the send
-	 * queue.
-	 */
-	if (unlikely(!atomic_dec_and_test(&conn->tx_pushing)))
-		goto again;
-
 	return rc;
 }
 
