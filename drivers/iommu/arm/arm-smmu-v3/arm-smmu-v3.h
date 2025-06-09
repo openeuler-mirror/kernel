@@ -437,6 +437,7 @@
 #define EVTQ_MAX_SZ_SHIFT		(Q_MAX_SZ_SHIFT - EVTQ_ENT_SZ_SHIFT)
 
 #define EVTQ_0_ID			GENMASK_ULL(7, 0)
+#define EVTQ_2_ADDR			GENMASK_ULL(63, 0)
 
 #define EVT_ID_TRANSLATION_FAULT	0x10
 #define EVT_ID_ADDR_SIZE_FAULT		0x11
@@ -480,6 +481,9 @@
 
 #define MSI_IOVA_BASE			0x8000000
 #define MSI_IOVA_LENGTH			0x100000
+
+#define TRANSLATE_INVALID_ADDR		0x0
+#define EVT_ID_TRANSLATION_FAULT	0x10
 
 struct arm_smmu_cmdq_ent {
 	/* Common fields */
