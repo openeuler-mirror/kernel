@@ -1709,7 +1709,8 @@ void __hci_req_update_scan_rsp_data(struct hci_request *req, u8 instance)
 	}
 }
 
-static u8 create_instance_adv_data(struct hci_dev *hdev, u8 instance, u8 *ptr)
+static u8 create_instance_adv_data(struct hci_dev *hdev, u8 instance, u8 *ptr,
+				   u8 size)
 {
 	struct adv_info *adv_instance = NULL;
 	u8 ad_len = 0, flags = 0;
@@ -1754,7 +1755,7 @@ static u8 create_instance_adv_data(struct hci_dev *hdev, u8 instance, u8 *ptr)
 		/* If flags would still be empty, then there is no need to
 		 * include the "Flags" AD field".
 		 */
-		if (flags) {
+		if (flags && ad_len + 3 <= size) {
 			ptr[0] = 0x02;
 			ptr[1] = EIR_FLAGS;
 			ptr[2] = flags;
@@ -1785,7 +1786,8 @@ skip_flags:
 		}
 
 		/* Provide Tx Power only if we can provide a valid value for it */
-		if (adv_tx_power != HCI_TX_POWER_INVALID) {
+		if (adv_tx_power != HCI_TX_POWER_INVALID &&
+		    ad_len + 3 <= size) {
 			ptr[0] = 0x02;
 			ptr[1] = EIR_TX_POWER;
 			ptr[2] = (u8)adv_tx_power;
@@ -1814,7 +1816,8 @@ void __hci_req_update_adv_data(struct hci_request *req, u8 instance)
 
 		memset(&pdu, 0, sizeof(pdu));
 
-		len = create_instance_adv_data(hdev, instance, pdu.data);
+		len = create_instance_adv_data(hdev, instance, pdu.data,
+					       sizeof(pdu.data));
 
 		/* There's nothing to do if the data hasn't changed */
 		if (hdev->adv_data_len == len &&
@@ -1836,7 +1839,8 @@ void __hci_req_update_adv_data(struct hci_request *req, u8 instance)
 
 		memset(&cp, 0, sizeof(cp));
 
-		len = create_instance_adv_data(hdev, instance, cp.data);
+		len = create_instance_adv_data(hdev, instance, cp.data,
+					       sizeof(cp.data));
 
 		/* There's nothing to do if the data hasn't changed */
 		if (hdev->adv_data_len == len &&
