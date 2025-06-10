@@ -16,6 +16,8 @@
 #include "tee-dev.h"
 #include "platform-access.h"
 
+#include "hygon/psp-dev.h"
+
 struct psp_device *psp_master;
 
 static struct psp_device *psp_alloc_struct(struct sp_device *sp)
@@ -92,6 +94,10 @@ static int psp_check_sev_support(struct psp_device *psp,
 static int psp_check_tee_support(struct psp_device *psp,
 				 unsigned int capability)
 {
+	/* Bit1 of the capability is not applied for Hygon psp */
+	if (is_vendor_hygon())
+		return -ENODEV;
+
 	/* Check if device supports TEE feature */
 	if (!(capability & 2)) {
 		dev_dbg(psp->dev, "psp does not support TEE\n");
