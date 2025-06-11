@@ -839,8 +839,8 @@ static int sev_update_firmware(struct device *dev)
 	struct page *p;
 	u64 data_size;
 
-	if (!sev_version_greater_or_equal(0, 15) &&
-	    !(is_vendor_hygon() && csv_version_greater_or_equal(1667))) {
+	if (!sev_version_greater_or_equal(0, 15) ||
+	    (is_vendor_hygon() && !csv_version_greater_or_equal(1667))) {
 		dev_dbg(dev, "DOWNLOAD_FIRMWARE not supported\n");
 		return -1;
 	}
