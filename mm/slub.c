@@ -2782,7 +2782,7 @@ new_objects:
 	 */
 	if (unlikely(node != NUMA_NO_NODE && !(gfpflags & __GFP_THISNODE)
 		     && try_thisnode))
-		pc_gfpflags = GFP_NOWAIT | __GFP_THISNODE;
+		pc_gfpflags = GFP_NOWAIT | __GFP_THISNODE | __GFP_NOWARN;
 
 	freelist = new_slab_objects(s, pc_gfpflags, node, &c);
 
