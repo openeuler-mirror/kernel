@@ -24,6 +24,8 @@
 #include "ccp-dev.h"
 #include "psp-dev.h"
 
+#include "hygon/sp-dev.h"
+
 #define MSIX_VECTORS			2
 
 struct sp_pci {
@@ -435,6 +437,11 @@ static const struct pci_device_id sp_pci_table[] = {
 	{ PCI_VDEVICE(AMD, 0x15C7), (kernel_ulong_t)&dev_vdata[6] },
 	{ PCI_VDEVICE(AMD, 0x17E0), (kernel_ulong_t)&dev_vdata[7] },
 	{ PCI_VDEVICE(AMD, 0x156E), (kernel_ulong_t)&dev_vdata[8] },
+	{ PCI_VDEVICE(HYGON, 0x1456), (kernel_ulong_t)&hygon_dev_vdata[0] },
+	{ PCI_VDEVICE(HYGON, 0x1468), (kernel_ulong_t)&hygon_dev_vdata[1] },
+	{ PCI_VDEVICE(HYGON, 0x1486), (kernel_ulong_t)&hygon_dev_vdata[2] },
+	{ PCI_VDEVICE(HYGON, 0x14b8), (kernel_ulong_t)&hygon_dev_vdata[1] },
+	{ PCI_VDEVICE(HYGON, 0x14a6), (kernel_ulong_t)&hygon_dev_vdata[2] },
 	/* Last entry must be zero */
 	{ 0, }
 };
