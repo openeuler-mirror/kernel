@@ -3588,6 +3588,9 @@ static int per_family_init(struct amd64_pvt *pvt)
 		case 0x07:
 			pvt->ctl_name			= "F18h_M07h";
 			break;
+		case 0x08:
+			pvt->ctl_name			= "F18h_M08h";
+			break;
 		case 0x10:
 			pvt->ctl_name			= "F18h_M10h";
 			break;
