@@ -33,6 +33,19 @@ static inline void *phys_to_virt(unsigned long address)
 /* Maximum PIO space address supported?  */
 #define IO_SPACE_LIMIT		0xffffffffffffffff
 
+extern u8               inb(unsigned long port);
+extern u16              inw(unsigned long port);
+extern u32              inl(unsigned long port);
+extern void             outb(u8 b, unsigned long port);
+extern void             outw(u16 b, unsigned long port);
+extern void             outl(u32 b, unsigned long port);
+#define inb inb
+#define inw inw
+#define inl inl
+#define outb outb
+#define outw outw
+#define outl outl
+
 /*
  * Change addresses as seen by the kernel (virtual) to addresses as
  * seen by a device (bus), and vice versa.

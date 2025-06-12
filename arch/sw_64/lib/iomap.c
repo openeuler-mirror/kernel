@@ -14,42 +14,36 @@ extern unsigned long legacy_io_shift;
 /*
  * Here comes the sw64 implementation of the IOMAP interfaces.
  */
-#undef inb
 u8 inb(unsigned long port)
 {
 	return ioread8(ioport_map(port, 1));
 }
 EXPORT_SYMBOL(inb);
 
-#undef inw
 u16 inw(unsigned long port)
 {
 	return ioread16(ioport_map(port, 2));
 }
 EXPORT_SYMBOL(inw);
 
-#undef inl
 u32 inl(unsigned long port)
 {
 	return ioread32(ioport_map(port, 4));
 }
 EXPORT_SYMBOL(inl);
 
-#undef outb
 void outb(u8 b, unsigned long port)
 {
 	iowrite8(b, ioport_map(port, 1));
 }
 EXPORT_SYMBOL(outb);
 
-#undef outw
 void outw(u16 b, unsigned long port)
 {
 	iowrite16(b, ioport_map(port, 2));
 }
 EXPORT_SYMBOL(outw);
 
-#undef outl
 void outl(u32 b, unsigned long port)
 {
 	iowrite32(b, ioport_map(port, 4));
