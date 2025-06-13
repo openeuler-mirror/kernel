@@ -23,6 +23,7 @@
 struct perf_event_attr_map_entry {
 	__u32 link_id;
 	__u32 diff_map_id;
+	__u8 supported;
 };
 
 /* default attr_map name */
