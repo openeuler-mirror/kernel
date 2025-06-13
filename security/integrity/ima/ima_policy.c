@@ -319,6 +319,8 @@ static int ima_lsm_update_rule(struct ima_rule_entry *entry)
 	return 0;
 }
 
+static DEFINE_MUTEX(ima_rules_mutex);
+
 /*
  * The LSM policy can be reloaded, leaving the IMA LSM based rules referring
  * to the old, stale LSM policy.  Update the IMA LSM based rules to reflect
@@ -329,6 +331,7 @@ static void ima_lsm_update_rules(void)
 	struct ima_rule_entry *entry, *e;
 	int i, result, needs_update;
 
+	mutex_lock(&ima_rules_mutex);
 	list_for_each_entry_safe(entry, e, &ima_policy_rules, list) {
 		needs_update = 0;
 		for (i = 0; i < MAX_LSM_RULES; i++) {
@@ -342,10 +345,12 @@ static void ima_lsm_update_rules(void)
 
 		result = ima_lsm_update_rule(entry);
 		if (result) {
+			mutex_unlock(&ima_rules_mutex);
 			pr_err("lsm rule update error %d\n", result);
 			return;
 		}
 	}
+	mutex_unlock(&ima_rules_mutex);
 }
 
 int ima_lsm_policy_change(struct notifier_block *nb, unsigned long event,
@@ -685,9 +690,12 @@ int ima_check_policy(void)
  */
 void ima_update_policy(void)
 {
-	struct list_head *policy = &ima_policy_rules;
+	struct list_head *policy;
 
+	mutex_lock(&ima_rules_mutex);
+	policy = &ima_policy_rules;
 	list_splice_tail_init_rcu(&ima_temp_rules, policy, synchronize_rcu);
+	mutex_unlock(&ima_rules_mutex);
 
 	if (ima_rules != (struct list_head __rcu *)policy) {
 		ima_policy_flag = 0;
