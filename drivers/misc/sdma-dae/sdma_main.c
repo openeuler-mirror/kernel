@@ -99,7 +99,7 @@ void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan)
 
 	while (cq_head != cq_tail) {
 		sdma_channel_set_cq_head(pchan, cq_tail);
-		msleep(SDMA_POLL_DELAY);
+		msleep(HISI_SDMA_FSM_INTERVAL);
 
 		cq_head = sdma_channel_get_cq_head(pchan);
 		cq_tail = sdma_channel_get_cq_tail(pchan);
