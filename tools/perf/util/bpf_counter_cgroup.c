@@ -123,7 +123,7 @@ static int bperf_load_program(struct evlist *evlist)
 			for (cpu = 0; cpu < nr_cpus; cpu++) {
 				int fd = FD(evsel, cpu);
 				__u32 idx = evsel->idx * total_cpus +
-					evlist->core.all_cpus->map[cpu];
+					evlist->core.all_cpus->map[cpu].cpu;
 
 				bpf_map_update_elem(map_fd, &idx, &fd, BPF_ANY);
 			}
@@ -204,7 +204,7 @@ static int bperf_cgrp__sync_counters(struct evlist *evlist)
 	int prog_fd = bpf_program__fd(skel->progs.trigger_read);
 
 	for (i = 0; i < nr_cpus; i++) {
-		cpu = evlist->core.all_cpus->map[i];
+		cpu = evlist->core.all_cpus->map[i].cpu;
 		bperf_trigger_reading(prog_fd, cpu);
 	}
 
@@ -264,7 +264,7 @@ static int bperf_cgrp__read(struct evsel *evsel)
 		}
 
 		for (i = 0; i < nr_cpus; i++) {
-			cpu = evlist->core.all_cpus->map[i];
+			cpu = evlist->core.all_cpus->map[i].cpu;
 
 			counts = perf_counts(evsel->counts, i, 0);
 			counts->val = values[cpu].counter;

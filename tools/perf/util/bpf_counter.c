@@ -562,7 +562,7 @@ static int bperf__load(struct evsel *evsel, struct target *target)
 		    filter_type == BPERF_FILTER_TGID)
 			key = evsel->core.threads->map[i].pid;
 		else if (filter_type == BPERF_FILTER_CPU)
-			key = evsel->core.cpus->map[i];
+			key = evsel->core.cpus->map[i].cpu;
 		else
 			break;
 
@@ -608,7 +608,7 @@ static int bperf_sync_counters(struct evsel *evsel)
 
 	num_cpu = all_cpu_map->nr;
 	for (i = 0; i < num_cpu; i++) {
-		cpu = all_cpu_map->map[i];
+		cpu = all_cpu_map->map[i].cpu;
 		bperf_trigger_reading(evsel->bperf_leader_prog_fd, cpu);
 	}
 	return 0;
@@ -649,14 +649,14 @@ static int bperf__read(struct evsel *evsel)
 
 			num_cpu = all_cpu_map->nr;
 			for (j = 0; j < num_cpu; j++) {
-				cpu = all_cpu_map->map[j];
+				cpu = all_cpu_map->map[j].cpu;
 				perf_counts(evsel->counts, cpu, 0)->val = values[cpu].counter;
 				perf_counts(evsel->counts, cpu, 0)->ena = values[cpu].enabled;
 				perf_counts(evsel->counts, cpu, 0)->run = values[cpu].running;
 			}
 			break;
 		case BPERF_FILTER_CPU:
-			cpu = evsel->core.cpus->map[i];
+			cpu = evsel->core.cpus->map[i].cpu;
 			perf_counts(evsel->counts, i, 0)->val = values[cpu].counter;
 			perf_counts(evsel->counts, i, 0)->ena = values[cpu].enabled;
 			perf_counts(evsel->counts, i, 0)->run = values[cpu].running;
