@@ -27,7 +27,7 @@
 #include "bpf_skel/bperf_leader.skel.h"
 #include "bpf_skel/bperf_follower.skel.h"
 
-#define ATTR_MAP_SIZE 16
+#define ATTR_MAP_SIZE 100
 
 static inline void *u64_to_ptr(__u64 ptr)
 {
@@ -457,6 +457,12 @@ static int bperf__load(struct evsel *evsel, struct target *target)
 	int attr_map_fd, diff_map_fd = -1, err;
 	enum bperf_filter_type filter_type;
 	__u32 i;
+
+	if (evsel->evlist->core.nr_entries > ATTR_MAP_SIZE) {
+		pr_err("Too many events, please limit to %d or less\n",
+				ATTR_MAP_SIZE);
+		return -1;
+	}
 
 	if (bperf_check_target(evsel, target, &filter_type, &filter_entry_cnt))
 		return -1;
