@@ -256,12 +256,22 @@ do {									\
 	(x) = (__force __typeof__(*(ptr)))__gu_val;			\
 } while (0)
 
+/*
+ * We must not call into the scheduler between uaccess_ttbr0_enable() and
+ * uaccess_ttbr0_disable(). As `x` and `ptr` could contain blocking functions,
+ * we must evaluate these outside of the critical section.
+ */
 #define __raw_get_user(x, ptr, err)					\
 do {									\
+	__typeof__(*(ptr)) __user *__rgu_ptr = (ptr);			\
+	__typeof__(x) __rgu_val;					\
 	__chk_user_ptr(ptr);						\
+									\
 	uaccess_ttbr0_enable();						\
-	__raw_get_mem("ldtr", x, ptr, err, U);				\
+	__raw_get_mem("ldtr", __rgu_val, __rgu_ptr, err, U);		\
 	uaccess_ttbr0_disable();					\
+									\
+	(x) = __rgu_val;						\
 } while (0)
 
 #define __get_user_error(x, ptr, err)					\
@@ -329,11 +339,19 @@ do {									\
 	}								\
 } while (0)
 
+/*
+ * We must not call into the scheduler between uaccess_ttbr0_enable() and
+ * uaccess_ttbr0_disable(). As `x` and `ptr` could contain blocking functions,
+ * we must evaluate these outside of the critical section.
+ */
 #define __raw_put_user(x, ptr, err)					\
 do {									\
-	__chk_user_ptr(ptr);						\
+	__typeof__(*(ptr)) __user *__rpu_ptr = (ptr);			\
+	__typeof__(*(ptr)) __rpu_val = (x);				\
+	__chk_user_ptr(__rpu_ptr);					\
+									\
 	uaccess_ttbr0_enable();						\
-	__raw_put_mem("sttr", x, ptr, err, U);				\
+	__raw_put_mem("sttr", __rpu_val, __rpu_ptr, err, U);		\
 	uaccess_ttbr0_disable();					\
 } while (0)
 
