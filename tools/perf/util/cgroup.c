@@ -16,6 +16,7 @@
 #include <api/fs/fs.h>
 
 int nr_cgroups;
+bool cgrp_event_expanded;
 
 static int open_cgroup(const char *name)
 {
@@ -333,6 +334,8 @@ int evlist__expand_cgroup(struct evlist *evlist, const char *str,
 		}
 		str = p+1;
 	}
+
+	cgrp_event_expanded = true;
 
 out_err:
 	evlist__delete(orig_list);
