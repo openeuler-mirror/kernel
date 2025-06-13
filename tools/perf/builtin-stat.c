@@ -920,14 +920,14 @@ try_again_reset:
 	/*
 	 * Enable counters and exec the command:
 	 */
-	t0 = rdclock();
-	clock_gettime(CLOCK_MONOTONIC, &ref_time);
-
 	if (forks) {
 		perf_evlist__start_workload(evsel_list);
 		err = enable_counters();
 		if (err)
 			return -1;
+
+		t0 = rdclock();
+		clock_gettime(CLOCK_MONOTONIC, &ref_time);
 
 		if (interval || timeout || evlist__ctlfd_initialized(evsel_list))
 			status = dispatch_events(forks, timeout, interval, &times);
@@ -949,6 +949,10 @@ try_again_reset:
 		err = enable_counters();
 		if (err)
 			return -1;
+
+		t0 = rdclock();
+		clock_gettime(CLOCK_MONOTONIC, &ref_time);
+
 		status = dispatch_events(forks, timeout, interval, &times);
 	}
 
