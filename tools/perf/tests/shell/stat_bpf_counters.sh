@@ -60,13 +60,15 @@ test_bpf_modifier()
 }
 
 # skip if --bpf-counters is not supported
-if ! perf stat -e instructions --bpf-counters true > /dev/null 2>&1; then
+if ! perf stat -e instructionsi -e cycles --bpf-counters true > /dev/null 2>&1; then
 	if [ "$1" = "-v" ]; then
 		echo "Skipping: --bpf-counters not supported"
-		perf --no-pager stat -e instructions --bpf-counters true || true
+		perf --no-pager stat -e instructions -e cycles --bpf-counters true || true
 	fi
 	exit 2
 fi
+
+
 
 test_bpf_counters
 test_bpf_modifier
