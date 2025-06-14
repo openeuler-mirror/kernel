@@ -492,6 +492,12 @@ static inline void irq_remove_debugfs_entry(struct irq_desc *desc)
 	debugfs_remove(desc->debugfs_file);
 	kfree(desc->dev_name);
 }
+
+#ifdef CONFIG_FAST_IRQ
+void xint_add_debugfs_entry(unsigned int irq);
+void xint_remove_debugfs_entry(unsigned int irq);
+#endif
+
 void irq_debugfs_copy_devname(int irq, struct device *dev);
 # ifdef CONFIG_IRQ_DOMAIN
 void irq_domain_debugfs_init(struct dentry *root);
@@ -507,6 +513,16 @@ static inline void irq_add_debugfs_entry(unsigned int irq, struct irq_desc *d)
 static inline void irq_remove_debugfs_entry(struct irq_desc *d)
 {
 }
+
+#ifdef CONFIG_FAST_IRQ
+static inline void xint_add_debugfs_entry(unsigned int irq)
+{
+}
+static inline void xint_remove_debugfs_entry(unsigned int irq)
+{
+}
+#endif
+
 static inline void irq_debugfs_copy_devname(int irq, struct device *dev)
 {
 }

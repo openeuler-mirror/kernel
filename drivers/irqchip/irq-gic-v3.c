@@ -31,6 +31,10 @@
 
 #include "irq-gic-common.h"
 
+#ifdef CONFIG_FAST_IRQ
+#include "../../../kernel/irq/internals.h"
+#endif
+
 #define GICD_INT_NMI_PRI	(GICD_INT_DEF_PRI & ~0x80)
 
 #define FLAGS_WORKAROUND_GICR_WAKER_MSM8996	(1ULL << 0)
@@ -781,6 +785,7 @@ static ssize_t xint_proc_write(struct file *file,
 {
 	int irq = (int)(long)PDE_DATA(file_inode(file));
 	bool xint_state = false;
+	enum xint_op switch_type;
 	unsigned long val;
 	char *buf = NULL;
 
@@ -802,13 +807,21 @@ static ssize_t xint_proc_write(struct file *file,
 		return -EBUSY;
 	}
 
-	local_irq_disable();
+	if (xint_state) {
+		switch_type = XINT_TO_IRQ;
+		xint_remove_debugfs_entry(irq);
+	} else {
+		switch_type = IRQ_TO_XINT;
+		xint_add_debugfs_entry(irq);
+	}
+
 	disable_irq(irq);
+	local_irq_disable();
 
-	xint_transform(irq, xint_state ? XINT_TO_IRQ : IRQ_TO_XINT);
+	xint_transform(irq, switch_type);
 
-	enable_irq(irq);
 	local_irq_enable();
+	enable_irq(irq);
 
 	kfree(buf);
 

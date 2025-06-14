@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright 2017 Thomas Gleixner <tglx@linutronix.de>
 
+#ifdef CONFIG_FAST_IRQ
+#include <linux/cpufeature.h>
+#endif
 #include <linux/irqdomain.h>
 #include <linux/irq.h>
 #include <linux/uaccess.h>
@@ -236,6 +239,34 @@ void irq_add_debugfs_entry(unsigned int irq, struct irq_desc *desc)
 						 &dfs_irq_ops);
 }
 
+#ifdef CONFIG_FAST_IRQ
+static struct dentry *xint_dir;
+
+void xint_add_debugfs_entry(unsigned int irq)
+{
+	char name[10];
+	char buf[100];
+
+	if (!xint_dir)
+		return;
+
+	sprintf(name, "%d", irq);
+	sprintf(buf, "../irqs/%d", irq);
+	debugfs_create_symlink(name, xint_dir, buf);
+}
+
+void xint_remove_debugfs_entry(unsigned int irq)
+{
+	char name[10];
+
+	if (!xint_dir)
+		return;
+
+	sprintf(name, "%d", irq);
+	debugfs_lookup_and_remove(name, xint_dir);
+}
+#endif
+
 static int __init irq_debugfs_init(void)
 {
 	struct dentry *root_dir;
@@ -246,6 +277,11 @@ static int __init irq_debugfs_init(void)
 	irq_domain_debugfs_init(root_dir);
 
 	irq_dir = debugfs_create_dir("irqs", root_dir);
+
+#ifdef CONFIG_FAST_IRQ
+	if (system_supports_xint())
+		xint_dir = debugfs_create_dir("xints", root_dir);
+#endif
 
 	irq_lock_sparse();
 	for_each_active_irq(irq)
