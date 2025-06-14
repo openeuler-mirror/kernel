@@ -13,6 +13,10 @@
 #include <linux/kernel_stat.h>
 #include <linux/mutex.h>
 
+#ifdef CONFIG_FAST_IRQ
+#include <linux/irqchip/arm-gic-v3.h>
+#endif
+
 #include "internals.h"
 
 /*
@@ -331,6 +335,9 @@ void register_handler_proc(unsigned int irq, struct irqaction *action)
 	action->dir = proc_mkdir(name, desc->dir);
 }
 
+void __weak register_irqchip_proc(struct irq_desc *desc, void *irqp) { }
+void __weak unregister_irqchip_proc(struct irq_desc *desc) { }
+
 #undef MAX_NAMELEN
 
 #define MAX_NAMELEN 10
@@ -385,6 +392,7 @@ void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 #endif
 	proc_create_single_data("spurious", 0444, desc->dir,
 			irq_spurious_proc_show, (void *)(long)irq);
+	register_irqchip_proc(desc, irqp);
 
 out_unlock:
 	mutex_unlock(&register_lock);
@@ -407,6 +415,8 @@ void unregister_irq_proc(unsigned int irq, struct irq_desc *desc)
 # endif
 #endif
 	remove_proc_entry("spurious", desc->dir);
+
+	unregister_irqchip_proc(desc);
 
 	sprintf(name, "%u", irq);
 	remove_proc_entry(name, root_irq_dir);

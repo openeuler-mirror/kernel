@@ -793,6 +793,12 @@ static inline bool system_supports_tlb_range(void)
 		cpus_have_const_cap(ARM64_HAS_TLB_RANGE);
 }
 
+static __always_inline bool system_supports_xint(void)
+{
+	return IS_ENABLED(CONFIG_FAST_IRQ) &&
+		cpus_have_const_cap(ARM64_HAS_XINT);
+}
+
 #ifdef CONFIG_ARM64_PBHA
 extern bool pbha_enabled;
 

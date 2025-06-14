@@ -811,8 +811,88 @@ SYM_CODE_START_LOCAL_NOALIGN(el0_error_compat)
 SYM_CODE_END(el0_error_compat)
 #endif
 
+#ifdef CONFIG_FAST_IRQ
+.macro el0_xint_handler, handler:req
+#if defined(CONFIG_CONTEXT_TRACKING) || defined(CONFIG_TRACE_IRQFLAGS)
+	bl	fast_enter_from_user_mode
+#endif
+	enable_da_f
+#ifndef CONFIG_SECURITY_FEATURE_BYPASS
+	tbz     x22, #55, 1f
+	bl      do_el0_irq_bp_hardening
+1:
+#endif
+	irq_handler     \handler
+.endm
+
+.macro check_xint_pre_kernel_entry
+	stp	x0, x1, [sp, #0]
+	stp	x2, x3, [sp, #16]
+
+	ldr	x0, =irqnr_xint_map
+	/* get hpp irqnr */
+	mrs_s	x1, SYS_ICC_HPPIR1_EL1
+
+	/* xint hwirq can not exceed 1020 */
+	cmp     x1, 1020
+	b.ge	.Lskip_xint\@
+
+	/* x2 = irqnr % 8 */
+	and	x2, x1, #7
+	/* x3 = irqnr / 8 */
+	lsr	x3, x1, #3
+	/* x1 is the byte of irqnr in irqnr_xint_map */
+	ldr	x1, [x0, x3]
+
+	/* Get the check mask */
+	mov	x3, #1
+	/* x3 = 1 << (irqnr % 8) */
+	lsl	x3, x3, x2
+
+	/* x1 = x1 & x3 */
+	ands	x1, x1, x3
+	b.eq	.Lskip_xint\@
+
+	ldp	x0, x1, [sp, #0]
+	ldp	x2, x3, [sp, #16]
+#ifdef CONFIG_SECURITY_FEATURE_BYPASS
+	kernel_entry 0, 64, xint
+	el0_xint_handler handle_arch_irq
+	disable_daif
+	gic_prio_kentry_setup tmp=x3
+	ldr     x19, [tsk, #TSK_TI_FLAGS]
+	and     x2, x19, #_TIF_WORK_MASK
+	cbnz    x2, xint_fast_work_pending\@
+xint_fast_finish_ret_to_user\@:
+	user_enter_irqoff
+	kernel_exit 0 xint
+xint_fast_work_pending\@:
+	mov     x0, sp                          // 'regs'
+	mov     x1, x19
+	bl      do_notify_resume
+	b       xint_fast_finish_ret_to_user\@
+#else
+	kernel_entry 0, 64
+	el0_xint_handler handle_arch_irq
+	b       ret_to_user
+#endif
+
+.Lskip_xint\@:
+	ldp	x0, x1, [sp, #0]
+	ldp	x2, x3, [sp, #16]
+.endm
+#endif
+
 	.align	6
 SYM_CODE_START_LOCAL_NOALIGN(el0_irq)
+#ifdef CONFIG_FAST_IRQ
+	/* Only support el0 aarch64 irq */
+	alternative_if_not ARM64_HAS_XINT
+		b .Lskip_check_xint
+	alternative_else_nop_endif
+		check_xint_pre_kernel_entry
+.Lskip_check_xint:
+#endif
 	kernel_entry 0
 el0_irq_naked:
 	el0_interrupt_handler handle_arch_irq

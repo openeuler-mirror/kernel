@@ -1205,9 +1205,30 @@ config FAST_SYSCALL
 	  exception handling path that only considers necessary features
 	  such as security, context saving, and recovery.
 
+config ARCH_SUPPORTS_FAST_IRQ
+	bool
+
+config FAST_IRQ
+	bool "Fast irq support"
+	depends on ARCH_SUPPORTS_FAST_IRQ
+	default n
+	help
+	  The irq handling process, which includes auxiliary
+	  functions for debug/trace and core functions like
+	  KPTI, interrupt time record, interrupt processing as
+	  a random number source, interrupt affinity
+	  modification and interrupt processing race, as well as
+	  spurious and unhandled interrupt debugging, has been
+	  identified as overly "lengthy".
+	  To address this, we introduce the concept of fast irq,
+	  a fast interrupt handling path that only considers
+	  necessary features such as security, context saving
+	  and recovery, which adds an lightweight interrupt processing
+	  framework for latency-sensitive interrupts.
+
 config DEBUG_FEATURE_BYPASS
 	bool "Bypass debug feature in fast syscall"
-	depends on FAST_SYSCALL
+	depends on FAST_SYSCALL || FAST_IRQ
 	default y
 	help
 	  This to bypass debug feature in fast syscall.
@@ -1219,7 +1240,7 @@ config DEBUG_FEATURE_BYPASS
 
 config SECURITY_FEATURE_BYPASS
 	bool "Bypass security feature in fast syscall"
-	depends on FAST_SYSCALL
+	depends on FAST_SYSCALL || FAST_IRQ
 	default y
 	help
 	  This to bypass security feature in fast syscall.

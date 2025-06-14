@@ -720,6 +720,138 @@ static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs
 	}
 }
 
+#ifdef CONFIG_FAST_IRQ
+#include <linux/cpufeature.h>
+DECLARE_BITMAP(irqnr_xint_map, 1024);
+
+static bool can_set_xint(unsigned int hwirq)
+{
+	if (__get_intid_range(hwirq) == SGI_RANGE ||
+	    __get_intid_range(hwirq) == SPI_RANGE)
+		return true;
+
+	return false;
+}
+
+__always_inline bool is_hwirq_xint(unsigned int hwirq)
+{
+	if (likely(!system_supports_xint()))
+		return false;
+
+	if (!can_set_xint(hwirq))
+		return false;
+
+	if (!test_bit(hwirq, irqnr_xint_map))
+		return false;
+
+	return true;
+}
+
+static bool xint_transform(int irqno, enum xint_op op)
+{
+	struct irq_data *data = irq_get_irq_data(irqno);
+	int hwirq;
+
+	while (data->parent_data)
+		data = data->parent_data;
+
+	hwirq = data->hwirq;
+
+	if (!can_set_xint(hwirq))
+		return false;
+
+	switch (op) {
+	case IRQ_TO_XINT:
+		set_bit(hwirq, irqnr_xint_map);
+		return true;
+	case XINT_TO_IRQ:
+		clear_bit(hwirq, irqnr_xint_map);
+		return false;
+	case XINT_SET_CHECK:
+		return test_bit(hwirq, irqnr_xint_map);
+	case XINT_RANGE_CHECK:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static ssize_t xint_proc_write(struct file *file,
+		const char __user *buffer, size_t count, loff_t *pos)
+{
+	int irq = (int)(long)PDE_DATA(file_inode(file));
+	bool xint_state = false;
+	unsigned long val;
+	char *buf = NULL;
+
+	if (!xint_transform(irq, XINT_RANGE_CHECK))
+		return -EPERM;
+
+	buf = memdup_user_nul(buffer, count);
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
+
+	if (kstrtoul(buf, 0, &val) || (val != 0 && val != 1)) {
+		kfree(buf);
+		return -EINVAL;
+	}
+
+	xint_state = xint_transform(irq, XINT_SET_CHECK);
+	if (xint_state == val) {
+		kfree(buf);
+		return -EBUSY;
+	}
+
+	local_irq_disable();
+	disable_irq(irq);
+
+	xint_transform(irq, xint_state ? XINT_TO_IRQ : IRQ_TO_XINT);
+
+	enable_irq(irq);
+	local_irq_enable();
+
+	kfree(buf);
+
+	return count;
+}
+
+static int xint_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", xint_transform((long)m->private, XINT_SET_CHECK));
+	return 0;
+}
+
+static int xint_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, xint_proc_show, PDE_DATA(inode));
+}
+
+static const struct proc_ops xint_proc_ops = {
+	.proc_open	= xint_proc_open,
+	.proc_read	= seq_read,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= single_release,
+	.proc_write	= xint_proc_write,
+};
+
+void register_irqchip_proc(struct irq_desc *desc, void *irqp)
+{
+	if (!system_supports_xint())
+		return;
+
+	/* create /proc/irq/<irq>/xint */
+	proc_create_data("xint", 0644, desc->dir, &xint_proc_ops, irqp);
+}
+
+void unregister_irqchip_proc(struct irq_desc *desc)
+{
+	if (!system_supports_xint())
+		return;
+
+	remove_proc_entry("xint", desc->dir);
+}
+#endif /* CONFIG_FAST_IRQ */
+
 static u32 gic_get_pribits(void)
 {
 	u32 pribits;

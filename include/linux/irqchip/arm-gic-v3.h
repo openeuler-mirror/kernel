@@ -762,6 +762,18 @@ static inline enum gic_intid_range __get_intid_range(irq_hw_number_t hwirq)
 	}
 }
 
+#ifdef CONFIG_FAST_IRQ
+enum xint_op {
+	XINT_TO_IRQ,
+	IRQ_TO_XINT,
+	XINT_SET_CHECK,
+	XINT_RANGE_CHECK,
+};
+
+bool is_hwirq_xint(unsigned int hwirq);
+void register_irqchip_proc(struct irq_desc *desc, void *irqp);
+void unregister_irqchip_proc(struct irq_desc *desc);
+#endif
 #endif
 
 #endif

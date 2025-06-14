@@ -658,6 +658,10 @@ int generic_handle_irq(unsigned int irq)
 EXPORT_SYMBOL_GPL(generic_handle_irq);
 
 #ifdef CONFIG_HANDLE_DOMAIN_IRQ
+#ifdef CONFIG_FAST_IRQ
+#include <linux/irqchip/arm-gic-v3.h>
+#endif
+
 /**
  * __handle_domain_irq - Invoke the handler for a HW irq belonging to a domain
  * @domain:	The domain where to perform the lookup
@@ -673,8 +677,16 @@ int __handle_domain_irq(struct irq_domain *domain, unsigned int hwirq,
 	struct pt_regs *old_regs = set_irq_regs(regs);
 	unsigned int irq = hwirq;
 	int ret = 0;
+#ifdef CONFIG_FAST_IRQ
+	bool is_xint = is_hwirq_xint(hwirq);
 
+	if (is_xint)
+		xint_enter();
+	else
+		irq_enter();
+#else
 	irq_enter();
+#endif
 
 #ifdef CONFIG_IRQ_DOMAIN
 	if (lookup)
@@ -692,7 +704,14 @@ int __handle_domain_irq(struct irq_domain *domain, unsigned int hwirq,
 		generic_handle_irq(irq);
 	}
 
+#ifdef CONFIG_FAST_IRQ
+	if (is_xint)
+		xint_exit();
+	else
+		irq_exit();
+#else
 	irq_exit();
+#endif
 	set_irq_regs(old_regs);
 	return ret;
 }

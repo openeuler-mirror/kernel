@@ -388,7 +388,7 @@ static void noinstr el0_fpac(struct pt_regs *regs, unsigned long esr)
 	do_el0_fpac(regs, esr);
 }
 
-#ifdef CONFIG_FAST_SYSCALL
+#if defined(CONFIG_FAST_SYSCALL) || defined(CONFIG_FAST_IRQ)
 asmlinkage void noinstr fast_enter_from_user_mode(void)
 {
 #ifndef CONFIG_DEBUG_FEATURE_BYPASS
@@ -400,7 +400,9 @@ asmlinkage void noinstr fast_enter_from_user_mode(void)
 	trace_hardirqs_off_finish();
 #endif
 }
+#endif
 
+#ifdef CONFIG_FAST_SYSCALL
 asmlinkage void noinstr el0_xcall_handler(struct pt_regs *regs)
 {
 	fast_enter_from_user_mode();
