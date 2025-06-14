@@ -301,6 +301,7 @@ static void __fput(struct file *file)
 	 * in the file cleanup chain.
 	 */
 	eventpoll_release(file);
+	free_prefetch_item(file);
 	locks_remove_file(file);
 
 	ima_file_free(file);
