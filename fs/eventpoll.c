@@ -771,6 +771,8 @@ static void epi_rcu_free(struct rcu_head *head)
 #ifdef CONFIG_XCALL_PREFETCH
 #include <linux/cpufeature.h>
 #include <asm/xcall.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/xcall.h>
 
 #define XCALL_CACHE_PAGE_ORDER 2
 #define XCALL_CACHE_BUF_SIZE ((1 << XCALL_CACHE_PAGE_ORDER) * PAGE_SIZE)
@@ -939,10 +941,12 @@ static void prefetch_work_fn(struct work_struct *work)
 	if (!transition_state(pfi, XCALL_CACHE_NONE, XCALL_CACHE_PREFETCH))
 		return;
 
+	trace_epoll_rc_prefetch(pfi->file);
 	pfi->pos = 0;
 	pfi->len = kernel_read(pfi->file, pfi->cache,
 			       XCALL_CACHE_BUF_SIZE, &pfi->file->f_pos);
 	transition_state(pfi, XCALL_CACHE_PREFETCH, XCALL_CACHE_READY);
+	trace_epoll_rc_ready(pfi->file, pfi->len);
 }
 
 static void set_prefetch_numa_cpu(struct prefetch_item *pfi, int fd)
@@ -1054,6 +1058,7 @@ static int xcall_read(struct prefetch_item *pfi, char __user *buf, size_t count)
 
 	if (copy_len == 0) {
 		this_cpu_inc(xcall_cache_hit);
+		trace_epoll_rc_hit(pfi->file, 0);
 		transition_state(pfi, XCALL_CACHE_CANCEL, XCALL_CACHE_NONE);
 		return 0;
 	}
@@ -1068,10 +1073,12 @@ static int xcall_read(struct prefetch_item *pfi, char __user *buf, size_t count)
 		transition_state(pfi, XCALL_CACHE_CANCEL, XCALL_CACHE_READY);
 
 	this_cpu_inc(xcall_cache_hit);
+	trace_epoll_rc_hit(pfi->file, copy_len);
 	return copy_len;
 
 slow_read:
 	this_cpu_inc(xcall_cache_miss);
+	trace_epoll_rc_miss(pfi->file);
 	pfi->len = 0;
 	pfi->pos = 0;
 	cancel_work(&pfi->work);
@@ -1146,6 +1153,7 @@ static void ep_prefetch_item_enqueue(struct eventpoll *ep, struct epitem *epi)
 
 	cpu = get_async_prefetch_cpu(pfi);
 	queue_work_on(cpu, rc_work, &pfi->work);
+	trace_epoll_rc_queue(pfi->file, cpu);
 }
 
 static void xcall_cancel_work(struct file *file)
