@@ -2155,6 +2155,26 @@ static bool can_clearpage_use_stnp(const struct arm64_cpu_capabilities *entry,
 	return use_clearpage_stnp && has_mor_nontemporal(entry);
 }
 
+#ifdef CONFIG_FAST_SYSCALL
+static bool is_xcall_support;
+static int __init xcall_setup(char *str)
+{
+	is_xcall_support = true;
+	return 1;
+}
+__setup("xcall", xcall_setup);
+
+bool fast_syscall_enabled(void)
+{
+	return is_xcall_support;
+}
+
+static bool has_xcall_support(const struct arm64_cpu_capabilities *entry, int __unused)
+{
+	return is_xcall_support;
+}
+#endif
+
 static const struct arm64_cpu_capabilities arm64_features[] = {
 	{
 		.desc = "GIC system register CPU interface",
@@ -2701,6 +2721,14 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.cpu_enable = fa64_kernel_enable,
 	},
 #endif /* CONFIG_ARM64_SME */
+#ifdef CONFIG_FAST_SYSCALL
+	{
+		.desc = "Xcall Support",
+		.capability = ARM64_HAS_XCALL,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_xcall_support,
+	},
+#endif
 	{},
 };
 

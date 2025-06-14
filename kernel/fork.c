@@ -479,6 +479,12 @@ void free_task(struct task_struct *tsk)
 #endif
 	if (task_relationship_used())
 		sched_relationship_free(tsk);
+
+#ifdef CONFIG_FAST_SYSCALL
+	if (tsk->xcall_enable)
+		bitmap_free(tsk->xcall_enable);
+#endif
+
 	free_task_struct(tsk);
 }
 EXPORT_SYMBOL(free_task);
@@ -1007,6 +1013,11 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 #ifdef CONFIG_MEMCG
 	tsk->active_memcg = NULL;
 #endif
+
+#ifdef CONFIG_FAST_SYSCALL
+	tsk->xcall_enable = NULL;
+#endif
+
 	return tsk;
 
 free_stack:
@@ -2084,6 +2095,15 @@ static __latent_entropy struct task_struct *copy_process(
 	ftrace_graph_init_task(p);
 
 	rt_mutex_init_task(p);
+
+#ifdef CONFIG_FAST_SYSCALL
+	p->xcall_enable = bitmap_zalloc(__NR_syscalls, GFP_KERNEL);
+	if (!p->xcall_enable)
+		goto bad_fork_free;
+
+	if (current->xcall_enable)
+		bitmap_copy(p->xcall_enable, current->xcall_enable, __NR_syscalls);
+#endif
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	retval = sched_prefer_cpus_fork(p, current->prefer_cpus);

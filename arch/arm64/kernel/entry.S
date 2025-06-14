@@ -675,11 +675,70 @@ SYM_CODE_START_LOCAL_NOALIGN(el1_irq)
 	kernel_exit 1
 SYM_CODE_END(el1_irq)
 
+#ifdef CONFIG_FAST_SYSCALL
+	.macro check_esr_el1_ec_svc64
+	/* Only support SVC64 for now */
+	mrs	x20, esr_el1
+	lsr	w20, w20, #ESR_ELx_EC_SHIFT
+	cmp	x20, #ESR_ELx_EC_SVC64
+	.endm
+
+	.macro check_syscall_nr
+	cmp	x8, __NR_syscalls
+	.endm
+
+	.macro check_xcall_enable
+	/* x21 = task_struct->xcall_enable */
+	ldr_this_cpu	x20, __entry_task, x21
+	ldr	x21, [x20, #TSK_XCALL]
+	/* x20 = sc_no / 8 */
+	lsr	x20, x8, 3
+	ldr	x21, [x21, x20]
+	/* x8 = sc_no % 8 */
+	and	x8, x8, 7
+	mov	x20, 1
+	lsl	x20, x20, x8
+	and	x21, x21, x20
+	cmp	x21, 0
+	.endm
+
+	.macro check_xcall_pre_kernel_entry
+	stp	x20, x21, [sp, #0]
+	/* is ESR_ELx_EC_SVC64 */
+	check_esr_el1_ec_svc64
+	bne	.Lskip_xcall\@
+	/* x8 >= __NR_syscalls */
+	check_syscall_nr
+	bhs	.Lskip_xcall\@
+	str	x8, [sp, #16]
+	/* is xcall enabled */
+	check_xcall_enable
+	ldr	x8, [sp, #16]
+	beq	.Lskip_xcall\@
+	ldp	x20, x21, [sp, #0]
+	/* do xcall */
+	kernel_entry 0, 64
+	mov	x0, sp
+	bl	el0t_64_sync_handler
+	b	ret_to_user
+.Lskip_xcall\@:
+	ldp	x20, x21, [sp, #0]
+	.endm
+#endif
+
 /*
  * EL0 mode handlers.
  */
 	.align	6
 SYM_CODE_START_LOCAL_NOALIGN(el0_sync)
+#ifdef CONFIG_FAST_SYSCALL
+	/* Only support el0 aarch64 sync exception */
+	alternative_if_not ARM64_HAS_XCALL
+		b .Lret_to_kernel_entry
+	alternative_else_nop_endif
+		check_xcall_pre_kernel_entry
+	.Lret_to_kernel_entry:
+#endif
 	kernel_entry 0
 	mov	x0, sp
 	bl	el0_sync_handler

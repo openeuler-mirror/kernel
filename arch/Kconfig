@@ -1186,4 +1186,23 @@ source "kernel/gcov/Kconfig"
 
 source "scripts/gcc-plugins/Kconfig"
 
+config ARCH_SUPPORTS_FAST_SYSCALL
+	bool
+
+config FAST_SYSCALL
+	bool "Fast Syscall support"
+	depends on ARCH_SUPPORTS_FAST_SYSCALL
+	default n
+	help
+	  This enable support Fast syscall feature.
+	  The svc exception handling process, which includes auxiliary
+	  functions for debug/trace and core functions like
+	  KPTI, has been identified as overly "lengthy".
+	  This inefficiency is particularly noticeable in short syscalls
+	  such as lseek() and getpid(), where the syscall function itself
+	  comprises a small percentage of the total instructions executed.
+	  To address this, we introduce the concept of fast syscall, a fast svc
+	  exception handling path that only considers necessary features
+	  such as security, context saving, and recovery.
+
 endmenu
