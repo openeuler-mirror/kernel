@@ -7,6 +7,7 @@
 #include <linux/cpufeature.h>
 #include <linux/sched.h>
 #include <linux/seq_file.h>
+#include <asm/xcall.h>
 #include "internal.h"
 
 static int xcall_show(struct seq_file *m, void *v)
@@ -14,6 +15,7 @@ static int xcall_show(struct seq_file *m, void *v)
 	struct inode *inode = m->private;
 	struct task_struct *p;
 	unsigned int rs, re;
+	struct xcall_info *xinfo;
 
 	if (!system_supports_xcall())
 		return -EACCES;
@@ -22,12 +24,13 @@ static int xcall_show(struct seq_file *m, void *v)
 	if (!p)
 		return -ESRCH;
 
-	if (!p->xcall_enable)
+	xinfo = TASK_XINFO(p);
+	if (!xinfo)
 		goto out;
 
-	for (rs = 0, bitmap_next_set_region(p->xcall_enable, &rs, &re, __NR_syscalls);
+	for (rs = 0, bitmap_next_set_region(xinfo->xcall_enable, &rs, &re, __NR_syscalls);
 	     rs < re; rs = re + 1,
-	     bitmap_next_set_region(p->xcall_enable, &rs, &re, __NR_syscalls)) {
+	     bitmap_next_set_region(xinfo->xcall_enable, &rs, &re, __NR_syscalls)) {
 		if (rs == (re - 1))
 			seq_printf(m, "%d,", rs);
 		else
@@ -45,15 +48,15 @@ static int xcall_open(struct inode *inode, struct file *filp)
 	return single_open(filp, xcall_show, inode);
 }
 
-static int xcall_enable_one(struct task_struct *p, unsigned int sc_no)
+static int xcall_enable_one(struct xcall_info *xinfo, unsigned int sc_no)
 {
-	test_and_set_bit(sc_no, p->xcall_enable);
+	test_and_set_bit(sc_no, xinfo->xcall_enable);
 	return 0;
 }
 
-static int xcall_disable_one(struct task_struct *p, unsigned int sc_no)
+static int xcall_disable_one(struct xcall_info *xinfo, unsigned int sc_no)
 {
-	test_and_clear_bit(sc_no, p->xcall_enable);
+	test_and_clear_bit(sc_no, xinfo->xcall_enable);
 	return 0;
 }
 
@@ -67,6 +70,7 @@ static ssize_t xcall_write(struct file *file, const char __user *buf,
 	unsigned int sc_no = __NR_syscalls;
 	int ret = 0;
 	int is_clear = 0;
+	struct xcall_info *xinfo;
 
 	if (!system_supports_xcall())
 		return -EACCES;
@@ -76,9 +80,10 @@ static ssize_t xcall_write(struct file *file, const char __user *buf,
 		return -EFAULT;
 
 	p = get_proc_task(inode);
-	if (!p || !p->xcall_enable)
+	if (!p || !p->xinfo)
 		return -ESRCH;
 
+	xinfo = TASK_XINFO(p);
 	if (buffer[0] == '!')
 		is_clear = 1;
 
@@ -92,10 +97,10 @@ static ssize_t xcall_write(struct file *file, const char __user *buf,
 		goto out;
 	}
 
-	if (!is_clear && !test_bit(sc_no, p->xcall_enable))
-		ret = xcall_enable_one(p, sc_no);
-	else if (is_clear && test_bit(sc_no, p->xcall_enable))
-		ret = xcall_disable_one(p, sc_no);
+	if (!is_clear && !test_bit(sc_no, xinfo->xcall_enable))
+		ret = xcall_enable_one(xinfo, sc_no);
+	else if (is_clear && test_bit(sc_no, xinfo->xcall_enable))
+		ret = xcall_disable_one(xinfo, sc_no);
 	else
 		ret = -EINVAL;
 

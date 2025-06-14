@@ -707,7 +707,7 @@ SYM_CODE_END(el1_irq)
 	.endm
 
 	.macro check_xcall_enable
-	/* x21 = task_struct->xcall_enable */
+	/* x21 = task_struct->xinfo->xcall_enable */
 	ldr_this_cpu	x20, __entry_task, x21
 	ldr	x21, [x20, #TSK_XCALL]
 	/* x20 = sc_no / 8 */

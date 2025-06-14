@@ -27,7 +27,7 @@
 int main(void)
 {
 #ifdef CONFIG_FAST_SYSCALL
-	DEFINE(TSK_XCALL,		offsetof(struct task_struct, xcall_enable));
+	DEFINE(TSK_XCALL,		offsetof(struct task_struct, xinfo));
 #endif
   DEFINE(TSK_ACTIVE_MM,		offsetof(struct task_struct, active_mm));
   BLANK();

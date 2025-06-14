@@ -82,6 +82,7 @@ obj-$(CONFIG_SCHED_PARAL)		+= prefer_numa.o
 obj-y					+= vdso/ probes/
 obj-$(CONFIG_COMPAT_VDSO)		+= vdso32/
 obj-$(CONFIG_ARM64_ILP32)		+= vdso-ilp32/
+obj-$(CONFIG_FAST_SYSCALL)		+= xcall.o
 head-y					:= head.o
 extra-y					+= $(head-y) vmlinux.lds
 

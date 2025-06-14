@@ -1478,7 +1478,7 @@ struct task_struct {
 	KABI_RESERVE(14)
 #endif
 #if defined(CONFIG_FAST_SYSCALL)
-	KABI_USE(15, unsigned long *xcall_enable)
+	KABI_USE(15, void *xinfo)
 #else
 	KABI_RESERVE(15)
 #endif
