@@ -21,6 +21,9 @@ int xcall_init_task(struct task_struct *p, struct task_struct *orig)
 	if (orig->xinfo) {
 		bitmap_copy(TASK_XINFO(p)->xcall_enable, TASK_XINFO(p)->xcall_enable,
 			    __NR_syscalls);
+#ifdef CONFIG_XCALL_PREFETCH
+		TASK_XINFO(p)->prefetch = TASK_XINFO(orig)->prefetch;
+#endif
 	}
 
 	return 0;

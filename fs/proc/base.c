@@ -3618,6 +3618,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_FAST_SYSCALL
 	REG("xcall", 0644, proc_pid_xcall_operations),
 #endif
+#ifdef CONFIG_XCALL_PREFETCH
+	REG("prefetch", 0644, proc_pid_xcall_prefetch_operations),
+#endif
 #ifdef CONFIG_SCHED_AUTOGROUP
 	REG("autogroup",  S_IRUGO|S_IWUSR, proc_pid_sched_autogroup_operations),
 #endif

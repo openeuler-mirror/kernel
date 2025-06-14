@@ -1205,6 +1205,23 @@ config FAST_SYSCALL
 	  exception handling path that only considers necessary features
 	  such as security, context saving, and recovery.
 
+config XCALL_PREFETCH
+	bool "Xcall prefetch support"
+	depends on FAST_SYSCALL
+	depends on EPOLL
+	default n
+	help
+	  This enable xcall prefetch feature.
+	  Xcall prefetch feature implements customized epoll_wait() and
+	  read() system calls, which enable data prefetching.
+	  In high-concurrency connection scenarios, this improves
+	  the parallel execution efficiency of the read() system call
+	  and increases the system's business throughput.
+	  The Xcall prefetch feature is suitable for business scenarios
+	  where the epoll I/O multiplexing mechanism is used, the read()
+	  system call takes up a large proportion of time, and the number
+	  of concurrent connections is large.
+
 config ARCH_SUPPORTS_FAST_IRQ
 	bool
 

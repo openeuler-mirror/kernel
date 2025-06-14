@@ -11,6 +11,9 @@ DECLARE_STATIC_KEY_FALSE(xcall_enable);
 struct xcall_info {
 	/* Must be first! */
 	DECLARE_BITMAP(xcall_enable, __NR_syscalls);
+#ifdef CONFIG_XCALL_PREFETCH
+	bool prefetch;
+#endif
 };
 
 #define TASK_XINFO(p)	((struct xcall_info *)p->xinfo)

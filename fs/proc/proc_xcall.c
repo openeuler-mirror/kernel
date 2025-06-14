@@ -117,3 +117,69 @@ const struct file_operations proc_pid_xcall_operations = {
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
+
+#ifdef CONFIG_XCALL_PREFETCH
+static int xcall_prefetch_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *p;
+
+	if (!system_supports_xcall())
+		return -EACCES;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	if (p->xinfo)
+		seq_printf(m, "%d\n", TASK_XINFO(p)->prefetch);
+
+	put_task_struct(p);
+
+	return 0;
+}
+
+static int xcall_prefetch_open(struct inode *inode, struct file *filp)
+{
+	return single_open(filp, xcall_prefetch_show, inode);
+}
+
+static ssize_t xcall_prefetch_write(struct file *file, const char __user *buf,
+				    size_t count, loff_t *offset)
+{
+	struct inode *inode = file_inode(file);
+	struct task_struct *p;
+	char buffer[TASK_COMM_LEN];
+	const size_t maxlen = sizeof(buffer) - 1;
+	bool prefetch_enable = true;
+
+	if (!system_supports_xcall())
+		return -EACCES;
+
+	memset(buffer, 0, sizeof(buffer));
+	if (copy_from_user(buffer, buf, count > maxlen ? maxlen : count))
+		return -EFAULT;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	if (!p->xinfo || kstrtobool(buffer, &prefetch_enable)) {
+		put_task_struct(p);
+		return -EINVAL;
+	}
+
+	TASK_XINFO(p)->prefetch = prefetch_enable;
+	put_task_struct(p);
+
+	return count;
+}
+
+const struct file_operations proc_pid_xcall_prefetch_operations = {
+	.open		= xcall_prefetch_open,
+	.read		= seq_read,
+	.write		= xcall_prefetch_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+#endif
