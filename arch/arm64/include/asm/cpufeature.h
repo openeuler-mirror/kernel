@@ -799,6 +799,12 @@ static __always_inline bool system_supports_xint(void)
 		cpus_have_const_cap(ARM64_HAS_XINT);
 }
 
+static __always_inline bool system_supports_xcall(void)
+{
+	return IS_ENABLED(CONFIG_FAST_SYSCALL) &&
+		cpus_have_const_cap(ARM64_HAS_XCALL);
+}
+
 #ifdef CONFIG_ARM64_PBHA
 extern bool pbha_enabled;
 

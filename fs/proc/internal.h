@@ -335,3 +335,7 @@ static inline void pde_force_lookup(struct proc_dir_entry *pde)
 	/* /proc/net/ entries can be changed under us by setns(CLONE_NEWNET) */
 	pde->proc_dops = &proc_net_dentry_ops;
 }
+
+#ifdef CONFIG_FAST_SYSCALL
+extern const struct file_operations proc_pid_xcall_operations;
+#endif
