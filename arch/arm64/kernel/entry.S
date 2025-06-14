@@ -182,7 +182,7 @@ alternative_else_nop_endif
 #endif
 	.endm
 
-	.macro	kernel_entry, el, regsize = 64
+	.macro	kernel_entry, el, regsize = 64, fast_mode = std
 	.if	\regsize == 32
 	mov	w0, w0				// zero upper 32 bits of x0
 	.endif
@@ -212,12 +212,19 @@ alternative_else_nop_endif
 	 * Ensure MDSCR_EL1.SS is clear, since we can unmask debug exceptions
 	 * when scheduling.
 	 */
+	.if \fast_mode == std
 	ldr	x19, [tsk, #TSK_TI_FLAGS]
 	disable_step_tsk x19, x20
+	.endif
 
 	/* Check for asynchronous tag check faults in user space */
+	.if \fast_mode == std
 	check_mte_async_tcf x22, x23
+	.endif
+
+	.if \fast_mode == std
 	apply_ssbd 1, x22, x23
+	.endif
 
 	ptrauth_keys_install_kernel tsk, x20, x22, x23
 
@@ -243,9 +250,11 @@ alternative_else_nop_endif
 	add	x29, sp, #S_STACKFRAME
 
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
+.if \fast_mode == std
 alternative_if_not ARM64_HAS_PAN
 	bl	__swpan_entry_el\el
 alternative_else_nop_endif
+.endif
 #endif
 
 	stp	x22, x23, [sp, #S_PC]
@@ -268,9 +277,11 @@ alternative_else_nop_endif
 
 	/* Re-enable tag checking (TCO set on exception entry) */
 #ifdef CONFIG_ARM64_MTE
+.if \fast_mode == std
 alternative_if ARM64_MTE
 	SET_PSTATE_TCO(0)
 alternative_else_nop_endif
+.endif
 #endif
 
 	/*
@@ -283,7 +294,7 @@ alternative_else_nop_endif
 	*/
 	.endm
 
-	.macro	kernel_exit, el
+	.macro	kernel_exit, el, fast_mode = std
 	.if	\el != 0
 	disable_daif
 	.endif
@@ -303,14 +314,18 @@ alternative_else_nop_endif
 	ldp	x21, x22, [sp, #S_PC]		// load ELR, SPSR
 
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
+.if \fast_mode == std
 alternative_if_not ARM64_HAS_PAN
 	bl	__swpan_exit_el\el
 alternative_else_nop_endif
+.endif
 #endif
 
 	.if	\el == 0
 	ldr	x23, [sp, #S_SP]		// load return stack pointer
 	msr	sp_el0, x23
+
+	.if \fast_mode == std
 	tst	x22, #PSR_MODE32_BIT		// native task?
 	b.eq	3f
 
@@ -325,12 +340,16 @@ alternative_if ARM64_WORKAROUND_845719
 alternative_else_nop_endif
 #endif
 3:
+	.endif
+
 	scs_save tsk, x0
 
 	/* No kernel C function calls after this as user keys are set. */
 	ptrauth_keys_install_user tsk, x0, x1, x2
 
+	.if \fast_mode == std
 	apply_ssbd 0, x0, x1
+	.endif
 	.endif
 
 	msr	elr_el1, x21			// set up the return data
@@ -352,6 +371,11 @@ alternative_else_nop_endif
 	ldp	x28, x29, [sp, #16 * 14]
 
 	.if	\el == 0
+	.if \fast_mode != std
+	ldr	lr, [sp, #S_LR]
+	add	sp, sp, #S_FRAME_SIZE		// restore sp
+	eret
+	.endif
 alternative_if_not ARM64_UNMAP_KERNEL_AT_EL0
 	ldr	lr, [sp, #S_LR]
 	add	sp, sp, #S_FRAME_SIZE		// restore sp
@@ -717,10 +741,31 @@ SYM_CODE_END(el1_irq)
 	beq	.Lskip_xcall\@
 	ldp	x20, x21, [sp, #0]
 	/* do xcall */
+#ifdef CONFIG_SECURITY_FEATURE_BYPASS
+	kernel_entry 0, 64, xcall
+#else
 	kernel_entry 0, 64
+#endif
 	mov	x0, sp
-	bl	el0t_64_sync_handler
+	bl	el0_xcall_handler
+#ifdef CONFIG_SECURITY_FEATURE_BYPASS
+	disable_daif
+	gic_prio_kentry_setup tmp=x3
+	ldr	x19, [tsk, #TSK_TI_FLAGS]
+	and	x2, x19, #_TIF_WORK_MASK
+	cbnz	x2, fast_work_pending\@
+fast_finish_ret_to_user\@:
+	user_enter_irqoff
+	kernel_exit 0 xcall
+fast_work_pending\@:
+	mov	x0, sp				// 'regs'
+	mov	x1, x19
+	bl	do_notify_resume
+	ldr	x19, [tsk, #TSK_TI_FLAGS]	// re-check for single-step
+	b	fast_finish_ret_to_user\@
+#else
 	b	ret_to_user
+#endif
 .Lskip_xcall\@:
 	ldp	x20, x21, [sp, #0]
 	.endm
