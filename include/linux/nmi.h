@@ -21,6 +21,7 @@ extern int watchdog_user_enabled;
 extern int nmi_watchdog_user_enabled;
 extern int soft_watchdog_user_enabled;
 extern int watchdog_thresh;
+extern int watchdog_thresh_next;
 extern unsigned long watchdog_enabled;
 
 extern struct cpumask watchdog_cpumask;
