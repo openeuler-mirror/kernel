@@ -107,6 +107,9 @@
 #include <asm/mmu_context.h>
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
+#ifdef CONFIG_FAST_SYSCALL
+#include <asm/xcall.h>
+#endif
 
 #include <trace/events/sched.h>
 
@@ -479,6 +482,11 @@ void free_task(struct task_struct *tsk)
 #endif
 	if (task_relationship_used())
 		sched_relationship_free(tsk);
+
+#ifdef CONFIG_FAST_SYSCALL
+	xcall_task_free(tsk);
+#endif
+
 	free_task_struct(tsk);
 }
 EXPORT_SYMBOL(free_task);
@@ -1007,6 +1015,11 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 #ifdef CONFIG_MEMCG
 	tsk->active_memcg = NULL;
 #endif
+
+#ifdef CONFIG_FAST_SYSCALL
+	tsk->xinfo = NULL;
+#endif
+
 	return tsk;
 
 free_stack:
@@ -2084,6 +2097,12 @@ static __latent_entropy struct task_struct *copy_process(
 	ftrace_graph_init_task(p);
 
 	rt_mutex_init_task(p);
+
+#ifdef CONFIG_FAST_SYSCALL
+	retval = xcall_init_task(p, current);
+	if (retval)
+		goto bad_fork_free;
+#endif
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	retval = sched_prefer_cpus_fork(p, current->prefer_cpus);

@@ -86,6 +86,11 @@ void irq_exit(void);
  */
 void irq_exit_rcu(void);
 
+#ifdef CONFIG_FAST_IRQ
+void xint_enter(void);
+void xint_exit(void);
+#endif
+
 #ifndef arch_nmi_enter
 #define arch_nmi_enter()	do { } while (0)
 #define arch_nmi_exit()		do { } while (0)

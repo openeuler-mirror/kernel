@@ -2155,6 +2155,41 @@ static bool can_clearpage_use_stnp(const struct arm64_cpu_capabilities *entry,
 	return use_clearpage_stnp && has_mor_nontemporal(entry);
 }
 
+#ifdef CONFIG_FAST_SYSCALL
+#include <asm/xcall.h>
+DEFINE_STATIC_KEY_FALSE(xcall_enable);
+
+static int __init xcall_setup(char *str)
+{
+	static_branch_enable(&xcall_enable);
+	return 1;
+}
+__setup("xcall", xcall_setup);
+
+static bool has_xcall_support(const struct arm64_cpu_capabilities *entry, int __unused)
+{
+	return static_branch_unlikely(&xcall_enable);
+}
+#endif
+
+#ifdef CONFIG_FAST_IRQ
+static bool is_xint_support;
+static int __init xint_setup(char *str)
+{
+	if (!cpus_have_cap(ARM64_HAS_SYSREG_GIC_CPUIF))
+		return 1;
+
+	is_xint_support = true;
+	return 1;
+}
+__setup("xint", xint_setup);
+
+static bool has_xint_support(const struct arm64_cpu_capabilities *entry, int __unused)
+{
+	return is_xint_support;
+}
+#endif
+
 static const struct arm64_cpu_capabilities arm64_features[] = {
 	{
 		.desc = "GIC system register CPU interface",
@@ -2701,6 +2736,22 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.cpu_enable = fa64_kernel_enable,
 	},
 #endif /* CONFIG_ARM64_SME */
+#ifdef CONFIG_FAST_SYSCALL
+	{
+		.desc = "Xcall Support",
+		.capability = ARM64_HAS_XCALL,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_xcall_support,
+	},
+#endif
+#ifdef CONFIG_FAST_IRQ
+	{
+		.desc = "Xint Support",
+		.capability = ARM64_HAS_XINT,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_xint_support,
+	},
+#endif
 	{},
 };
 

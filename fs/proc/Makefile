@@ -36,3 +36,4 @@ proc-$(CONFIG_PROC_PAGE_MONITOR)	+= page.o
 proc-$(CONFIG_BOOT_CONFIG)	+= bootconfig.o
 obj-$(CONFIG_ETMEM_SCAN)     += etmem_scan.o
 obj-$(CONFIG_ETMEM_SWAP)     += etmem_swap.o
+obj-$(CONFIG_FAST_SYSCALL)	+= proc_xcall.o

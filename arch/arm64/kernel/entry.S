@@ -182,7 +182,7 @@ alternative_else_nop_endif
 #endif
 	.endm
 
-	.macro	kernel_entry, el, regsize = 64
+	.macro	kernel_entry, el, regsize = 64, fast_mode = std
 	.if	\regsize == 32
 	mov	w0, w0				// zero upper 32 bits of x0
 	.endif
@@ -212,12 +212,19 @@ alternative_else_nop_endif
 	 * Ensure MDSCR_EL1.SS is clear, since we can unmask debug exceptions
 	 * when scheduling.
 	 */
+	.if \fast_mode == std
 	ldr	x19, [tsk, #TSK_TI_FLAGS]
 	disable_step_tsk x19, x20
+	.endif
 
 	/* Check for asynchronous tag check faults in user space */
+	.if \fast_mode == std
 	check_mte_async_tcf x22, x23
+	.endif
+
+	.if \fast_mode == std
 	apply_ssbd 1, x22, x23
+	.endif
 
 	ptrauth_keys_install_kernel tsk, x20, x22, x23
 
@@ -243,9 +250,11 @@ alternative_else_nop_endif
 	add	x29, sp, #S_STACKFRAME
 
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
+.if \fast_mode == std
 alternative_if_not ARM64_HAS_PAN
 	bl	__swpan_entry_el\el
 alternative_else_nop_endif
+.endif
 #endif
 
 	stp	x22, x23, [sp, #S_PC]
@@ -268,9 +277,11 @@ alternative_else_nop_endif
 
 	/* Re-enable tag checking (TCO set on exception entry) */
 #ifdef CONFIG_ARM64_MTE
+.if \fast_mode == std
 alternative_if ARM64_MTE
 	SET_PSTATE_TCO(0)
 alternative_else_nop_endif
+.endif
 #endif
 
 	/*
@@ -283,7 +294,7 @@ alternative_else_nop_endif
 	*/
 	.endm
 
-	.macro	kernel_exit, el
+	.macro	kernel_exit, el, fast_mode = std
 	.if	\el != 0
 	disable_daif
 	.endif
@@ -303,14 +314,18 @@ alternative_else_nop_endif
 	ldp	x21, x22, [sp, #S_PC]		// load ELR, SPSR
 
 #ifdef CONFIG_ARM64_SW_TTBR0_PAN
+.if \fast_mode == std
 alternative_if_not ARM64_HAS_PAN
 	bl	__swpan_exit_el\el
 alternative_else_nop_endif
+.endif
 #endif
 
 	.if	\el == 0
 	ldr	x23, [sp, #S_SP]		// load return stack pointer
 	msr	sp_el0, x23
+
+	.if \fast_mode == std
 	tst	x22, #PSR_MODE32_BIT		// native task?
 	b.eq	3f
 
@@ -325,12 +340,16 @@ alternative_if ARM64_WORKAROUND_845719
 alternative_else_nop_endif
 #endif
 3:
+	.endif
+
 	scs_save tsk, x0
 
 	/* No kernel C function calls after this as user keys are set. */
 	ptrauth_keys_install_user tsk, x0, x1, x2
 
+	.if \fast_mode == std
 	apply_ssbd 0, x0, x1
+	.endif
 	.endif
 
 	msr	elr_el1, x21			// set up the return data
@@ -675,11 +694,91 @@ SYM_CODE_START_LOCAL_NOALIGN(el1_irq)
 	kernel_exit 1
 SYM_CODE_END(el1_irq)
 
+#ifdef CONFIG_FAST_SYSCALL
+	.macro check_esr_el1_ec_svc64
+	/* Only support SVC64 for now */
+	mrs	x20, esr_el1
+	lsr	w20, w20, #ESR_ELx_EC_SHIFT
+	cmp	x20, #ESR_ELx_EC_SVC64
+	.endm
+
+	.macro check_syscall_nr
+	cmp	x8, __NR_syscalls
+	.endm
+
+	.macro check_xcall_enable
+	/* x21 = task_struct->xinfo->xcall_enable */
+	ldr_this_cpu	x20, __entry_task, x21
+	ldr	x21, [x20, #TSK_XCALL]
+	/* x20 = sc_no / 8 */
+	lsr	x20, x8, 3
+	ldr	x21, [x21, x20]
+	/* x8 = sc_no % 8 */
+	and	x8, x8, 7
+	mov	x20, 1
+	lsl	x20, x20, x8
+	and	x21, x21, x20
+	cmp	x21, 0
+	.endm
+
+	.macro check_xcall_pre_kernel_entry
+	stp	x20, x21, [sp, #0]
+	/* is ESR_ELx_EC_SVC64 */
+	check_esr_el1_ec_svc64
+	bne	.Lskip_xcall\@
+	/* x8 >= __NR_syscalls */
+	check_syscall_nr
+	bhs	.Lskip_xcall\@
+	str	x8, [sp, #16]
+	/* is xcall enabled */
+	check_xcall_enable
+	ldr	x8, [sp, #16]
+	beq	.Lskip_xcall\@
+	ldp	x20, x21, [sp, #0]
+	/* do xcall */
+#ifdef CONFIG_SECURITY_FEATURE_BYPASS
+	kernel_entry 0, 64, xcall
+#else
+	kernel_entry 0, 64
+#endif
+	mov	x0, sp
+	bl	el0_xcall_handler
+#ifdef CONFIG_SECURITY_FEATURE_BYPASS
+	disable_daif
+	gic_prio_kentry_setup tmp=x3
+	ldr	x19, [tsk, #TSK_TI_FLAGS]
+	and	x2, x19, #_TIF_WORK_MASK
+	cbnz	x2, fast_work_pending\@
+fast_finish_ret_to_user\@:
+	user_enter_irqoff
+	kernel_exit 0 xcall
+fast_work_pending\@:
+	mov	x0, sp				// 'regs'
+	mov	x1, x19
+	bl	do_notify_resume
+	ldr	x19, [tsk, #TSK_TI_FLAGS]	// re-check for single-step
+	b	fast_finish_ret_to_user\@
+#else
+	b	ret_to_user
+#endif
+.Lskip_xcall\@:
+	ldp	x20, x21, [sp, #0]
+	.endm
+#endif
+
 /*
  * EL0 mode handlers.
  */
 	.align	6
 SYM_CODE_START_LOCAL_NOALIGN(el0_sync)
+#ifdef CONFIG_FAST_SYSCALL
+	/* Only support el0 aarch64 sync exception */
+	alternative_if_not ARM64_HAS_XCALL
+		b .Lret_to_kernel_entry
+	alternative_else_nop_endif
+		check_xcall_pre_kernel_entry
+	.Lret_to_kernel_entry:
+#endif
 	kernel_entry 0
 	mov	x0, sp
 	bl	el0_sync_handler
@@ -707,8 +806,88 @@ SYM_CODE_START_LOCAL_NOALIGN(el0_error_compat)
 SYM_CODE_END(el0_error_compat)
 #endif
 
+#ifdef CONFIG_FAST_IRQ
+.macro el0_xint_handler, handler:req
+#if defined(CONFIG_CONTEXT_TRACKING) || defined(CONFIG_TRACE_IRQFLAGS)
+	bl	fast_enter_from_user_mode
+#endif
+	enable_da_f
+#ifndef CONFIG_SECURITY_FEATURE_BYPASS
+	tbz     x22, #55, 1f
+	bl      do_el0_irq_bp_hardening
+1:
+#endif
+	irq_handler     \handler
+.endm
+
+.macro check_xint_pre_kernel_entry
+	stp	x0, x1, [sp, #0]
+	stp	x2, x3, [sp, #16]
+
+	ldr	x0, =irqnr_xint_map
+	/* get hpp irqnr */
+	mrs_s	x1, SYS_ICC_HPPIR1_EL1
+
+	/* xint hwirq can not exceed 1020 */
+	cmp     x1, 1020
+	b.ge	.Lskip_xint\@
+
+	/* x2 = irqnr % 8 */
+	and	x2, x1, #7
+	/* x3 = irqnr / 8 */
+	lsr	x3, x1, #3
+	/* x1 is the byte of irqnr in irqnr_xint_map */
+	ldr	x1, [x0, x3]
+
+	/* Get the check mask */
+	mov	x3, #1
+	/* x3 = 1 << (irqnr % 8) */
+	lsl	x3, x3, x2
+
+	/* x1 = x1 & x3 */
+	ands	x1, x1, x3
+	b.eq	.Lskip_xint\@
+
+	ldp	x0, x1, [sp, #0]
+	ldp	x2, x3, [sp, #16]
+#ifdef CONFIG_SECURITY_FEATURE_BYPASS
+	kernel_entry 0, 64, xint
+	el0_xint_handler handle_arch_irq
+	disable_daif
+	gic_prio_kentry_setup tmp=x3
+	ldr     x19, [tsk, #TSK_TI_FLAGS]
+	and     x2, x19, #_TIF_WORK_MASK
+	cbnz    x2, xint_fast_work_pending\@
+xint_fast_finish_ret_to_user\@:
+	user_enter_irqoff
+	kernel_exit 0 xint
+xint_fast_work_pending\@:
+	mov     x0, sp                          // 'regs'
+	mov     x1, x19
+	bl      do_notify_resume
+	b       xint_fast_finish_ret_to_user\@
+#else
+	kernel_entry 0, 64
+	el0_xint_handler handle_arch_irq
+	b       ret_to_user
+#endif
+
+.Lskip_xint\@:
+	ldp	x0, x1, [sp, #0]
+	ldp	x2, x3, [sp, #16]
+.endm
+#endif
+
 	.align	6
 SYM_CODE_START_LOCAL_NOALIGN(el0_irq)
+#ifdef CONFIG_FAST_IRQ
+	/* Only support el0 aarch64 irq */
+	alternative_if_not ARM64_HAS_XINT
+		b .Lskip_check_xint
+	alternative_else_nop_endif
+		check_xint_pre_kernel_entry
+.Lskip_check_xint:
+#endif
 	kernel_entry 0
 el0_irq_naked:
 	el0_interrupt_handler handle_arch_irq

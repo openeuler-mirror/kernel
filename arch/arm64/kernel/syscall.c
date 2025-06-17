@@ -106,6 +106,46 @@ static void cortex_a76_erratum_1463225_svc_handler(void)
 static void cortex_a76_erratum_1463225_svc_handler(void) { }
 #endif /* CONFIG_ARM64_ERRATUM_1463225 */
 
+#ifdef CONFIG_FAST_SYSCALL
+static void el0_xcall_common(struct pt_regs *regs, int scno, int sc_nr,
+			     const syscall_fn_t syscall_table[])
+{
+	unsigned long flags = read_thread_flags();
+
+	regs->orig_x0 = regs->regs[0];
+	regs->syscallno = scno;
+
+#ifndef CONFIG_SECURITY_FEATURE_BYPASS
+	cortex_a76_erratum_1463225_svc_handler();
+#endif
+	local_daif_restore(DAIF_PROCCTX);
+
+	if (system_supports_mte() && (flags & _TIF_MTE_ASYNC_FAULT)) {
+		syscall_set_return_value(current, regs, -ERESTARTNOINTR, 0);
+		return;
+	}
+
+	if (has_syscall_work(flags)) {
+		if (scno == NO_SYSCALL)
+			syscall_set_return_value(current, regs, -ENOSYS, 0);
+		scno = syscall_trace_enter(regs);
+		if (scno == NO_SYSCALL)
+			goto trace_exit;
+	}
+
+	invoke_syscall(regs, scno, sc_nr, syscall_table);
+
+	if (!has_syscall_work(flags) && !IS_ENABLED(CONFIG_DEBUG_RSEQ)) {
+		flags = read_thread_flags();
+		if (!has_syscall_work(flags) && !(flags & _TIF_SINGLESTEP))
+			return;
+	}
+
+trace_exit:
+	syscall_trace_exit(regs);
+}
+#endif
+
 static void el0_svc_common(struct pt_regs *regs, int scno, int sc_nr,
 			   const syscall_fn_t syscall_table[])
 {
@@ -234,6 +274,23 @@ static inline void delouse_pt_regs(struct pt_regs *regs)
 	regs->regs[5] &= UINT_MAX;
 	regs->regs[6] &= UINT_MAX;
 	regs->regs[7] &= UINT_MAX;
+}
+#endif
+
+#ifdef CONFIG_FAST_SYSCALL
+void do_el0_xcall(struct pt_regs *regs)
+{
+	const syscall_fn_t *t = sys_call_table;
+
+#ifdef CONFIG_ARM64_ILP32
+	if (is_ilp32_compat_task()) {
+		t = ilp32_sys_call_table;
+		delouse_pt_regs(regs);
+	}
+#endif
+
+	fp_user_discard();
+	el0_xcall_common(regs, regs->regs[8], __NR_syscalls, t);
 }
 #endif
 

@@ -345,6 +345,42 @@ asmlinkage __visible void do_softirq(void)
 	local_irq_restore(flags);
 }
 
+#ifdef CONFIG_FAST_IRQ
+/**
+ * xint_enter_rcu - Copy from irq_enter_rcu
+ */
+void xint_enter_rcu(void)
+{
+	if (tick_nohz_full_cpu(smp_processor_id()) ||
+	    (is_idle_task(current) && !in_interrupt())) {
+		/*
+		 * Prevent raise_softirq from needlessly waking up ksoftirqd
+		 * here, as softirq will be serviced on return from interrupt.
+		 */
+		local_bh_disable();
+		tick_irq_enter();
+		_local_bh_enable();
+	}
+
+#ifndef CONFIG_DEBUG_FEATURE_BYPASS
+	account_irq_enter_time(current);
+#endif
+	preempt_count_add(HARDIRQ_OFFSET);
+#ifndef CONFIG_DEBUG_FEATURE_BYPASS
+	lockdep_hardirq_enter();
+#endif
+}
+
+/**
+ * irq_enter - Copy from irq_enter
+ */
+void xint_enter(void)
+{
+	rcu_irq_enter();
+	xint_enter_rcu();
+}
+#endif
+
 /**
  * irq_enter_rcu - Enter an interrupt context with RCU watching
  */
@@ -410,6 +446,43 @@ static inline void tick_irq_exit(void)
 	}
 #endif
 }
+
+#ifdef CONFIG_FAST_IRQ
+static inline void __xint_exit_rcu(void)
+{
+#ifndef __ARCH_IRQ_EXIT_IRQS_DISABLED
+	local_irq_disable();
+#else
+#ifndef CONFIG_DEBUG_FEATURE_BYPASS
+	lockdep_assert_irqs_disabled();
+#endif
+#endif
+
+#ifndef CONFIG_DEBUG_FEATURE_BYPASS
+	account_irq_exit_time(current);
+#endif
+	preempt_count_sub(HARDIRQ_OFFSET);
+	if (!in_interrupt() && local_softirq_pending())
+		invoke_softirq();
+
+	tick_irq_exit();
+}
+
+/**
+ * xint_exit - Copy from irq_exit
+ *
+ * Also processes softirqs if needed and possible.
+ */
+void xint_exit(void)
+{
+	__xint_exit_rcu();
+	rcu_irq_exit();
+	/* must be last! */
+#ifndef CONFIG_DEBUG_FEATURE_BYPASS
+	lockdep_hardirq_exit();
+#endif
+}
+#endif
 
 static inline void __irq_exit_rcu(void)
 {

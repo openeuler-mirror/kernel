@@ -1186,4 +1186,85 @@ source "kernel/gcov/Kconfig"
 
 source "scripts/gcc-plugins/Kconfig"
 
+config ARCH_SUPPORTS_FAST_SYSCALL
+	bool
+
+config FAST_SYSCALL
+	bool "Fast Syscall support"
+	depends on ARCH_SUPPORTS_FAST_SYSCALL
+	default n
+	help
+	  This enable support Fast syscall feature.
+	  The svc exception handling process, which includes auxiliary
+	  functions for debug/trace and core functions like
+	  KPTI, has been identified as overly "lengthy".
+	  This inefficiency is particularly noticeable in short syscalls
+	  such as lseek() and getpid(), where the syscall function itself
+	  comprises a small percentage of the total instructions executed.
+	  To address this, we introduce the concept of fast syscall, a fast svc
+	  exception handling path that only considers necessary features
+	  such as security, context saving, and recovery.
+
+config XCALL_PREFETCH
+	bool "Xcall prefetch support"
+	depends on FAST_SYSCALL
+	depends on EPOLL
+	default n
+	help
+	  This enable xcall prefetch feature.
+	  Xcall prefetch feature implements customized epoll_wait() and
+	  read() system calls, which enable data prefetching.
+	  In high-concurrency connection scenarios, this improves
+	  the parallel execution efficiency of the read() system call
+	  and increases the system's business throughput.
+	  The Xcall prefetch feature is suitable for business scenarios
+	  where the epoll I/O multiplexing mechanism is used, the read()
+	  system call takes up a large proportion of time, and the number
+	  of concurrent connections is large.
+
+config ARCH_SUPPORTS_FAST_IRQ
+	bool
+
+config FAST_IRQ
+	bool "Fast irq support"
+	depends on ARCH_SUPPORTS_FAST_IRQ
+	default n
+	help
+	  The irq handling process, which includes auxiliary
+	  functions for debug/trace and core functions like
+	  KPTI, interrupt time record, interrupt processing as
+	  a random number source, interrupt affinity
+	  modification and interrupt processing race, as well as
+	  spurious and unhandled interrupt debugging, has been
+	  identified as overly "lengthy".
+	  To address this, we introduce the concept of fast irq,
+	  a fast interrupt handling path that only considers
+	  necessary features such as security, context saving
+	  and recovery, which adds an lightweight interrupt processing
+	  framework for latency-sensitive interrupts.
+
+config DEBUG_FEATURE_BYPASS
+	bool "Bypass debug feature in fast syscall"
+	depends on FAST_SYSCALL || FAST_IRQ
+	default y
+	help
+	  This to bypass debug feature in fast syscall.
+	  The svc exception handling process, which includes auxiliary
+	  functions for debug/trace and core functions like
+	  KPTI, has been identified as overly "lengthy".
+	  In fast syscall we only considers necessary features.
+	  Disable this config to keep debug feature in fast syscall.
+
+config SECURITY_FEATURE_BYPASS
+	bool "Bypass security feature in fast syscall"
+	depends on FAST_SYSCALL || FAST_IRQ
+	default y
+	help
+	  This to bypass security feature in fast syscall.
+	  The svc exception handling process, which includes auxiliary
+	  functions for debug/trace and core functions like
+	  KPTI, has been identified as overly "lengthy".
+	  In fast syscall we only considers necessary features.
+	  Disable this config to keep security feature in fast syscall.
+
 endmenu

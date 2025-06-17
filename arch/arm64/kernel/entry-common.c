@@ -388,6 +388,28 @@ static void noinstr el0_fpac(struct pt_regs *regs, unsigned long esr)
 	do_el0_fpac(regs, esr);
 }
 
+#if defined(CONFIG_FAST_SYSCALL) || defined(CONFIG_FAST_IRQ)
+asmlinkage void noinstr fast_enter_from_user_mode(void)
+{
+#ifndef CONFIG_DEBUG_FEATURE_BYPASS
+	lockdep_hardirqs_off(CALLER_ADDR0);
+	CT_WARN_ON(ct_state() != CONTEXT_USER);
+#endif
+	user_exit_irqoff();
+#ifndef CONFIG_DEBUG_FEATURE_BYPASS
+	trace_hardirqs_off_finish();
+#endif
+}
+#endif
+
+#ifdef CONFIG_FAST_SYSCALL
+asmlinkage void noinstr el0_xcall_handler(struct pt_regs *regs)
+{
+	fast_enter_from_user_mode();
+	do_el0_xcall(regs);
+}
+#endif
+
 asmlinkage void noinstr el0_sync_handler(struct pt_regs *regs)
 {
 	unsigned long esr = read_sysreg(esr_el1);

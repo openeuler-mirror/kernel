@@ -3750,4 +3750,39 @@ static inline bool cachefiles_ondemand_is_enabled(void)
 }
 #endif
 
+#ifdef CONFIG_XCALL_PREFETCH
+enum cache_state {
+	XCALL_CACHE_NONE = 0,
+	XCALL_CACHE_PREFETCH,
+	XCALL_CACHE_READY,
+	XCALL_CACHE_CANCEL
+};
+
+struct prefetch_item {
+	struct file *file;
+	struct work_struct work;
+	int cpu;
+	cpumask_t related_cpus;
+	struct page *cache_pages;
+	char *cache;
+	ssize_t len;
+	/* cache state in epoll_wait */
+	atomic_t state;
+	loff_t pos;
+	struct hlist_node node;
+};
+
+int xcall_read_begin(struct file *file, char __user *buf, size_t count);
+void xcall_read_end(struct file *file);
+void free_prefetch_item(struct file *file);
+#else
+static inline int xcall_read_begin(struct file *file, char __user *buf,
+				   size_t count)
+{
+	return -EAGAIN;
+}
+static inline void xcall_read_end(struct file *file) {}
+static inline void free_prefetch_item(struct file *file) {}
+#endif
+
 #endif /* _LINUX_FS_H */
