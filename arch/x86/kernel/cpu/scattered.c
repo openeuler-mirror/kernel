@@ -55,6 +55,7 @@ static const struct cpuid_bit cpuid_bits[] = {
 	{ X86_FEATURE_SBPB,		CPUID_EAX, 27, 0x80000021, 0 },
 	{ X86_FEATURE_IBPB_BRTYPE,	CPUID_EAX, 28, 0x80000021, 0 },
 	{ X86_FEATURE_SRSO_NO,		CPUID_EAX, 29, 0x80000021, 0 },
+	{ X86_FEATURE_CSV3,             CPUID_EAX, 30, 0x8000001f, 0 },
 	{ 0, 0, 0, 0, 0 }
 };
 
