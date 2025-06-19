@@ -665,4 +665,10 @@ libbpf_mem_preferred_nid(struct task_struct *tsk, nodemask_t *preferred_node)
 	*preferred_node = getVal(stats->mm.comm.preferred_node);
 	return 0;
 }
+
+static __always_inline int
+libbpf_sched_set_task_prefer_cpumask(struct task_struct *tsk, struct cpumask *mask, int len)
+{
+	return bpf_sched_set_task_prefer_cpumask(tsk, mask, len);
+}
 #endif
