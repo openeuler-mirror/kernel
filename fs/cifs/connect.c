@@ -407,12 +407,7 @@ cifs_reconnect(struct TCP_Server_Info *server)
 #ifdef CONFIG_CIFS_DFS_UPCALL
 	spin_unlock(&GlobalMid_Lock);
 	sb = cifs_get_tcp_super(server);
-	if (IS_ERR(sb)) {
-		rc = PTR_ERR(sb);
-		cifs_dbg(FYI, "%s: will not do DFS failover: rc = %d\n",
-			 __func__, rc);
-		sb = NULL;
-	} else {
+	if (sb) {
 		cifs_sb = CIFS_SB(sb);
 		rc = reconn_setup_dfs_targets(cifs_sb, &tgt_list);
 		if (rc) {
@@ -424,6 +419,9 @@ cifs_reconnect(struct TCP_Server_Info *server)
 		} else {
 			server->nr_targets = dfs_cache_get_nr_tgts(&tgt_list);
 		}
+	} else {
+		cifs_dbg(FYI, "%s: will not do DFS failover\n", __func__);
+		rc = -EINVAL;
 	}
 	cifs_dbg(FYI, "%s: will retry %d target(s)\n", __func__,
 		 server->nr_targets);
