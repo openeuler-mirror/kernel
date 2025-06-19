@@ -17,6 +17,7 @@
 #include "evsel.h"
 #include "debug.h"
 #include "units.h"
+#include "bpf_counter.h"
 #include <internal/lib.h> // page_size
 #include "affinity.h"
 #include "../perf.h"
@@ -396,6 +397,9 @@ void evlist__disable(struct evlist *evlist)
 
 	if (affinity__setup(&affinity) < 0)
 		return;
+
+	evlist__for_each_entry(evlist, pos)
+		bpf_counter__disable(pos);
 
 	/* Disable 'immediate' events last */
 	for (imm = 0; imm <= 1; imm++) {

@@ -67,6 +67,7 @@
 #include "util/top.h"
 #include "util/affinity.h"
 #include "util/pfm.h"
+#include "util/bpf_counter.h"
 #include "asm/bug.h"
 
 #include <linux/time64.h>
@@ -146,6 +147,7 @@ static const char *smi_cost_attrs = {
 };
 
 static struct evlist	*evsel_list;
+static bool all_counters_use_bpf = true;
 
 static struct target target = {
 	.uid	= UINT_MAX,
@@ -385,6 +387,9 @@ static int read_affinity_counters(struct timespec *rs)
 	struct affinity affinity;
 	int i, ncpus, cpu;
 
+	if (all_counters_use_bpf)
+		return 0;
+
 	if (affinity__setup(&affinity) < 0)
 		return -1;
 
@@ -399,6 +404,8 @@ static int read_affinity_counters(struct timespec *rs)
 		evlist__for_each_entry(evsel_list, counter) {
 			if (evsel__cpu_iter_skip(counter, cpu))
 				continue;
+			if (evsel__is_bpf(counter))
+				continue;
 			if (!counter->err) {
 				counter->err = read_counter_cpu(counter, rs,
 								counter->cpu_iter - 1);
@@ -409,12 +416,31 @@ static int read_affinity_counters(struct timespec *rs)
 	return 0;
 }
 
+static int read_bpf_map_counters(void)
+{
+	struct evsel *counter;
+	int err;
+
+	evlist__for_each_entry(evsel_list, counter) {
+		if (!evsel__is_bpf(counter))
+			continue;
+
+		err = bpf_counter__read(counter);
+		if (err)
+			return err;
+	}
+	return 0;
+}
+
 static void read_counters(struct timespec *rs)
 {
 	struct evsel *counter;
 
-	if (!stat_config.stop_read_counter && (read_affinity_counters(rs) < 0))
-		return;
+	if (!stat_config.stop_read_counter) {
+		if (read_bpf_map_counters() ||
+		    read_affinity_counters(rs))
+			return;
+	}
 
 	evlist__for_each_entry(evsel_list, counter) {
 		if (counter->err)
@@ -496,11 +522,23 @@ static bool handle_interval(unsigned int interval, int *times)
 	return false;
 }
 
-static void enable_counters(void)
+static int enable_counters(void)
 {
+	struct evsel *evsel;
+	int err;
+
+	evlist__for_each_entry(evsel_list, evsel) {
+		if (!evsel__is_bpf(evsel))
+			continue;
+
+		err = bpf_counter__enable(evsel);
+		if (err)
+			return err;
+	}
+
 	if (stat_config.initial_delay < 0) {
 		pr_info(EVLIST_DISABLED_MSG);
-		return;
+		return 0;
 	}
 
 	if (stat_config.initial_delay > 0) {
@@ -518,6 +556,7 @@ static void enable_counters(void)
 		if (stat_config.initial_delay > 0)
 			pr_info(EVLIST_ENABLED_MSG);
 	}
+	return 0;
 }
 
 static void disable_counters(void)
@@ -720,7 +759,7 @@ static int __run_perf_stat(int argc, const char **argv, int run_idx)
 	const bool forks = (argc > 0);
 	bool is_pipe = STAT_RECORD ? perf_stat.data.is_pipe : false;
 	struct affinity affinity;
-	int i, cpu;
+	int i, cpu, err;
 	bool second_pass = false;
 
 	if (forks) {
@@ -738,13 +777,28 @@ static int __run_perf_stat(int argc, const char **argv, int run_idx)
 	if (affinity__setup(&affinity) < 0)
 		return -1;
 
+	evlist__for_each_entry(evsel_list, counter) {
+		if (bpf_counter__load(counter, &target))
+			return -1;
+		if (!(evsel__is_bperf(counter)))
+			all_counters_use_bpf = false;
+	}
+
 	evlist__for_each_cpu (evsel_list, i, cpu) {
+		/*
+		 * bperf calls evsel__open_per_cpu() in bperf__load(), so
+		 * no need to call it again here.
+		 */
+		if (target.use_bpf)
+			break;
 		affinity__set(&affinity, cpu);
 
 		evlist__for_each_entry(evsel_list, counter) {
 			if (evsel__cpu_iter_skip(counter, cpu))
 				continue;
 			if (counter->reset_group || counter->errored)
+				continue;
+			if (evsel__is_bperf(counter))
 				continue;
 try_again:
 			if (create_perf_stat_counter(counter, &stat_config, &target,
@@ -853,7 +907,7 @@ try_again_reset:
 	}
 
 	if (STAT_RECORD) {
-		int err, fd = perf_data__fd(&perf_stat.data);
+		int fd = perf_data__fd(&perf_stat.data);
 
 		if (is_pipe) {
 			err = perf_header__write_pipe(perf_data__fd(&perf_stat.data));
@@ -874,12 +928,14 @@ try_again_reset:
 	/*
 	 * Enable counters and exec the command:
 	 */
-	t0 = rdclock();
-	clock_gettime(CLOCK_MONOTONIC, &ref_time);
-
 	if (forks) {
 		perf_evlist__start_workload(evsel_list);
-		enable_counters();
+		err = enable_counters();
+		if (err)
+			return -1;
+
+		t0 = rdclock();
+		clock_gettime(CLOCK_MONOTONIC, &ref_time);
 
 		if (interval || timeout || evlist__ctlfd_initialized(evsel_list))
 			status = dispatch_events(forks, timeout, interval, &times);
@@ -898,7 +954,13 @@ try_again_reset:
 		if (WIFSIGNALED(status))
 			psignal(WTERMSIG(status), argv[0]);
 	} else {
-		enable_counters();
+		err = enable_counters();
+		if (err)
+			return -1;
+
+		t0 = rdclock();
+		clock_gettime(CLOCK_MONOTONIC, &ref_time);
+
 		status = dispatch_events(forks, timeout, interval, &times);
 	}
 
@@ -1089,6 +1151,14 @@ static struct option stat_options[] = {
 		   "stat events on existing process id"),
 	OPT_STRING('t', "tid", &target.tid, "tid",
 		   "stat events on existing thread id"),
+#ifdef HAVE_BPF_SKEL
+	OPT_STRING('b', "bpf-prog", &target.bpf_str, "bpf-prog-id",
+		   "stat events on existing bpf program id"),
+	OPT_BOOLEAN(0, "bpf-counters", &target.use_bpf,
+		    "use bpf program to count events"),
+	OPT_STRING(0, "bpf-attr-map", &target.attr_map, "attr-map-path",
+		   "path to perf_event_attr map"),
+#endif
 	OPT_BOOLEAN('a', "all-cpus", &target.system_wide,
 		    "system-wide collection from all CPUs"),
 	OPT_BOOLEAN('g', "group", &group,
@@ -2060,11 +2130,12 @@ int cmd_stat(int argc, const char **argv)
 		"perf stat [<options>] [<command>]",
 		NULL
 	};
-	int status = -EINVAL, run_idx;
+	int status = -EINVAL, run_idx, err;
 	const char *mode;
 	FILE *output = stderr;
 	unsigned int interval, timeout;
 	const char * const stat_subcommands[] = { "record", "report" };
+	char errbuf[BUFSIZ];
 
 	setlocale(LC_ALL, "");
 
@@ -2175,6 +2246,13 @@ int cmd_stat(int argc, const char **argv)
 	} else if (big_num_opt == 0) /* User passed --no-big-num */
 		stat_config.big_num = false;
 
+	target.inherit = !stat_config.no_inherit;
+	err = target__validate(&target);
+	if (err) {
+		target__strerror(&target, err, errbuf, BUFSIZ);
+		pr_warning("%s\n", errbuf);
+	}
+
 	setup_system_wide(argc);
 
 	/*
@@ -2245,7 +2323,6 @@ int cmd_stat(int argc, const char **argv)
 			goto out;
 	}
 
-	target__validate(&target);
 
 	if ((stat_config.aggr_mode == AGGR_THREAD) && (target.system_wide))
 		target.per_thread = true;
@@ -2377,9 +2454,10 @@ int cmd_stat(int argc, const char **argv)
 		 * tools remain  -acme
 		 */
 		int fd = perf_data__fd(&perf_stat.data);
-		int err = perf_event__synthesize_kernel_mmap((void *)&perf_stat,
-							     process_synthesized_event,
-							     &perf_stat.session->machines.host);
+
+		err = perf_event__synthesize_kernel_mmap((void *)&perf_stat,
+							 process_synthesized_event,
+							 &perf_stat.session->machines.host);
 		if (err) {
 			pr_warning("Couldn't synthesize the kernel mmap record, harmless, "
 				   "older tools may produce warnings about this file\n.");
