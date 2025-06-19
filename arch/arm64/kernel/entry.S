@@ -212,8 +212,8 @@ alternative_else_nop_endif
 	 * Ensure MDSCR_EL1.SS is clear, since we can unmask debug exceptions
 	 * when scheduling.
 	 */
-	.if \fast_mode == std
 	ldr	x19, [tsk, #TSK_TI_FLAGS]
+	.if \fast_mode == std
 	disable_step_tsk x19, x20
 	.endif
 
