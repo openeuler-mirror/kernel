@@ -414,6 +414,42 @@ const struct bpf_func_proto bpf_sched_set_curr_preferred_node_proto = {
 };
 #endif
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+static inline int
+set_task_prefer_cpumask(struct task_struct *tsk, struct cpumask *mask, int len)
+{
+	if (!tsk || !mask || sizeof(*mask) != len)
+		return -EINVAL;
+
+	if (set_prefer_cpus_ptr(tsk, mask))
+		return -EINVAL;
+
+	return 0;
+}
+#else
+static inline int
+set_task_prefer_cpumask(struct task_struct *tsk, struct cpumask *mask, int len)
+{
+	return -EINVAL;
+}
+#endif
+
+BPF_CALL_3(bpf_sched_set_task_prefer_cpumask,
+	   struct task_struct *, tsk, struct cpumask *, mask, int, len)
+{
+	return set_task_prefer_cpumask(tsk, mask, len);
+}
+
+const struct bpf_func_proto bpf_sched_set_task_prefer_cpumask_proto = {
+	.func		 = bpf_sched_set_task_prefer_cpumask,
+	.gpl_only	 = false,
+	.ret_type	 = RET_INTEGER,
+	.arg1_type	 = ARG_PTR_TO_BTF_ID,
+	.arg1_btf_id = &btf_sched_task_ids[0],
+	.arg2_type	 = ARG_PTR_TO_MEM | MEM_RDONLY,
+	.arg3_type   = ARG_CONST_SIZE,
+};
+
 static const struct bpf_func_proto *
 bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
@@ -448,6 +484,8 @@ bpf_sched_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 	case BPF_FUNC_sched_set_curr_preferred_node:
 		return &bpf_sched_set_curr_preferred_node_proto;
 #endif
+	case BPF_FUNC_sched_set_task_prefer_cpumask:
+		return &bpf_sched_set_task_prefer_cpumask_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}

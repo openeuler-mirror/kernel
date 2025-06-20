@@ -77,6 +77,7 @@
 #include "internal.h"
 
 #include <trace/events/sched.h>
+#include <linux/bpf_sched.h>
 
 static int bprm_creds_from_file(struct linux_binprm *bprm);
 
@@ -1823,6 +1824,12 @@ static int exec_binprm(struct linux_binprm *bprm)
 	trace_sched_process_exec(current, old_pid, bprm);
 	ptrace_event(PTRACE_EVENT_EXEC, old_vpid);
 	proc_exec_connector(current);
+
+#ifdef CONFIG_BPF_SCHED
+	if (bpf_sched_enabled())
+		bpf_sched_cfs_exec_init(current);
+#endif
+
 	return 0;
 }
 

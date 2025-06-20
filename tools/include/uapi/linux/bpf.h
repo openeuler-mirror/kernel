@@ -3934,6 +3934,12 @@ union bpf_attr {
  *		update network's relationship to sched subsystem.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_sched_set_task_prefer_cpumask(struct task_struct *tsk, struct cpumask *mask, int len)
+ *	Description
+ *		set prefer cpumask for the task.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4111,6 +4117,7 @@ union bpf_attr {
 	FN(sched_set_curr_preferred_node),\
 	FN(get_node_stats),		\
 	FN(sched_net_rship_submit),	\
+	FN(sched_set_task_prefer_cpumask), \
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
