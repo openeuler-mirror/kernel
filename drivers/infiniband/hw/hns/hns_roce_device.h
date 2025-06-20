@@ -996,6 +996,7 @@ struct hns_roce_caps {
 	u8		default_congest_type;
 	u8              poe_ch_num;
 	u32		fw_cap;
+	u32		max_ack_req_msg_len;
 };
 
 enum hns_roce_device_state {
