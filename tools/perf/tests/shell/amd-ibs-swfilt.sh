@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # AMD IBS software filtering
 
 cpu_family() {
