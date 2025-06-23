@@ -990,9 +990,15 @@ int cachefiles_cull(struct cachefiles_cache *cache, struct dentry *dir,
 
 	_enter(",%pd/,%s", dir, filename);
 
+	ret = mnt_want_write(cache->mnt);
+	if (ret < 0)
+		return ret;
+
 	victim = cachefiles_check_active(cache, dir, filename);
-	if (IS_ERR(victim))
+	if (IS_ERR(victim)) {
+		mnt_drop_write(cache->mnt);
 		return PTR_ERR(victim);
+	}
 
 	_debug("victim -> %p %s",
 	       victim, d_backing_inode(victim) ? "positive" : "negative");
@@ -1003,6 +1009,7 @@ int cachefiles_cull(struct cachefiles_cache *cache, struct dentry *dir,
 	_debug("victim is cullable");
 
 	ret = cachefiles_remove_object_xattr(cache, victim);
+	mnt_drop_write(cache->mnt);
 	if (ret < 0)
 		goto error_unlock;
 
