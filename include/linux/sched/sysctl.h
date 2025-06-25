@@ -48,6 +48,10 @@ extern unsigned int sysctl_smart_grid_strategy_ctrl;
 extern int sysctl_affinity_adjust_delay_ms;
 #endif
 
+#ifdef CONFIG_SCHED_SOFT_QUOTA
+extern unsigned int sysctl_soft_runtime_ratio;
+#endif
+
 enum sched_tunable_scaling {
 	SCHED_TUNABLESCALING_NONE,
 	SCHED_TUNABLESCALING_LOG,

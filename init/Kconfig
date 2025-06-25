@@ -1411,6 +1411,24 @@ config SCHED_PARAL
 	  3. The existing "qos dynamic affinity" and "qos smart grid"
 	     features must not be used simultaneously.
 
+#
+# For architectures that want to enable the support for SCHED_SOFT_QUOTA
+#
+config ARCH_SUPPORTS_SCHED_SOFT_QUOTA
+	bool
+
+config SCHED_SOFT_QUOTA
+	bool "More flexible use of CPU quota"
+	depends on ARCH_SUPPORTS_SCHED_SOFT_QUOTA
+	depends on CFS_BANDWIDTH
+	default n
+	help
+	  This option allows users to use CPU quota more flexibly when CPU
+	  is idle. It is better for users to have some understanding of
+	  CFS_BANDWIDTH. It cannot be used in scenarios where there are strict
+	  restrictions on the use of the CPU quota, such as some commercial
+	  scenarios that charge based on the use of CPU quota.
+
 config CHECKPOINT_RESTORE
 	bool "Checkpoint/restore support"
 	select PROC_CHILDREN
