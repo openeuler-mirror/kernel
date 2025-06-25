@@ -509,7 +509,7 @@ struct task_group {
 	KABI_RESERVE(4)
 #endif
 #ifdef CONFIG_SCHED_SOFT_QUOTA
-	u64 soft_quota;
+	KABI_EXTEND(u64 soft_quota)
 #endif
 };
 
@@ -742,9 +742,9 @@ struct cfs_rq {
 	KABI_RESERVE(4)
 #endif
 #ifdef CONFIG_SCHED_SOFT_QUOTA
-	u64 soft_quota_enable;
-	u64 sum_soft_runtime;
-	struct list_head soft_quota_throttled_list;
+	KABI_EXTEND(u64 soft_quota_enable)
+	KABI_EXTEND(u64 sum_soft_runtime)
+	KABI_EXTEND(struct list_head soft_quota_throttled_list)
 #endif
 };
 
