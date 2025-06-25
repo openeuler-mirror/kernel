@@ -1030,8 +1030,10 @@ void free_prefetch_item(struct file *file)
 	kfree(pfi);
 }
 
+#define MAX_READY_WAIT_TIME  msecs_to_jiffies(2)
 static int xcall_read(struct prefetch_item *pfi, char __user *buf, size_t count)
 {
+	unsigned long end = jiffies + MAX_READY_WAIT_TIME;
 	ssize_t copy_len = 0;
 
 	/*
@@ -1050,6 +1052,13 @@ static int xcall_read(struct prefetch_item *pfi, char __user *buf, size_t count)
 		 */
 		if (transition_state(pfi, XCALL_CACHE_NONE, XCALL_CACHE_CANCEL))
 			goto slow_read;
+
+		if (time_after(jiffies, end)) {
+			pr_warn("xcall read wait prefetch state %d more than 2ms\n",
+				atomic_read(&pfi->state));
+			cond_resched();
+			end = jiffies + MAX_READY_WAIT_TIME;
+		}
 	}
 
 	copy_len = pfi->len;
@@ -1128,7 +1137,7 @@ static int get_async_prefetch_cpu(struct prefetch_item *pfi)
 	return pfi->cpu;
 }
 
-static void ep_prefetch_item_enqueue(struct eventpoll *ep, struct epitem *epi)
+static void ep_prefetch_item_enqueue(struct epitem *epi)
 {
 	struct prefetch_item *pfi;
 	int cpu, err;
@@ -2156,7 +2165,7 @@ static __poll_t ep_send_events_proc(struct eventpoll *ep, struct list_head *head
 			continue;
 
 #ifdef CONFIG_XCALL_PREFETCH
-		ep_prefetch_item_enqueue(ep, epi);
+		ep_prefetch_item_enqueue(epi);
 #endif
 
 		if (__put_user(revents, &uevent->events) ||
