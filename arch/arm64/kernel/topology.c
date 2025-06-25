@@ -363,6 +363,36 @@ store_and_exit:
 	this_cpu_write(arch_const_cycles_prev, const_cnt);
 }
 
+#ifdef CONFIG_SCHED_SOFT_QUOTA
+static DEFINE_PER_CPU(int, sibling_idle) = 1;
+
+int is_sibling_idle(void)
+{
+	return this_cpu_read(sibling_idle);
+}
+
+static void smt_measurement_begin(void)
+{
+}
+
+static void smt_measurement_done(void)
+{
+}
+#else
+static inline void smt_measurement_begin(void) { }
+static inline void smt_measurement_done(void) { }
+#endif
+
+void arch_cpu_idle_enter(void)
+{
+	smt_measurement_begin();
+}
+
+void arch_cpu_idle_exit(void)
+{
+	smt_measurement_done();
+}
+
 #ifdef CONFIG_ACPI_CPPC_LIB
 #include <acpi/cppc_acpi.h>
 

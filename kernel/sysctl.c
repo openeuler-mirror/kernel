@@ -2831,6 +2831,17 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &one_hundred,
 	},
 #endif
+#ifdef CONFIG_SCHED_SOFT_QUOTA
+	{
+		.procname       = "sched_soft_runtime_ratio",
+		.data           = &sysctl_soft_runtime_ratio,
+		.maxlen         = sizeof(sysctl_soft_runtime_ratio),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec_minmax,
+		.extra1         = SYSCTL_ONE,
+		.extra2         = &one_hundred,
+	},
+#endif
 #ifdef CONFIG_SCHED_STEAL
 	{
 		.procname       = "sched_max_steal_count",
