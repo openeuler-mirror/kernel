@@ -91,10 +91,10 @@ static const struct proc_ops nfsd_proc_ops = {
 	.proc_release	= single_release,
 };
 
-void
+struct proc_dir_entry *
 nfsd_stat_init(void)
 {
-	svc_proc_register(&init_net, &nfsd_svcstats, &nfsd_proc_ops);
+	return svc_proc_register(&init_net, &nfsd_svcstats, &nfsd_proc_ops);
 }
 
 void
