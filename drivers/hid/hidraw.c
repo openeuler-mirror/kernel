@@ -353,13 +353,15 @@ static int hidraw_release(struct inode * inode, struct file * file)
 	unsigned int minor = iminor(inode);
 	struct hidraw_list *list = file->private_data;
 	unsigned long flags;
-	int i;
 
 	mutex_lock(&minors_lock);
 
 	spin_lock_irqsave(&hidraw_table[minor]->list_lock, flags);
-	for (i = list->tail; i < list->head; i++)
-		kfree(list->buffer[i].value);
+	while (list->tail != list->head) {
+		kfree(list->buffer[list->tail].value);
+		list->buffer[list->tail].value = NULL;
+		list->tail = (list->tail + 1) & (HIDRAW_BUFFER_SIZE - 1);
+	}
 	list_del(&list->node);
 	spin_unlock_irqrestore(&hidraw_table[minor]->list_lock, flags);
 	kfree(list);
