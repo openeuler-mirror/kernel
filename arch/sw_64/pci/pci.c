@@ -231,14 +231,6 @@ static void fixup_root_complex(struct pci_dev *dev)
 
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_SW64_ROOT_BRIDGE, fixup_root_complex);
 
-static void quirk_zx200_dma_mask(struct pci_dev *pdev)
-{
-	pr_info("Set ZX200 UHCI & EHCI dma mask to DMA_BIT_MASK(32)\n");
-	pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-}
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ZHAOXIN, 0x3038, quirk_zx200_dma_mask);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ZHAOXIN, 0x3104, quirk_zx200_dma_mask);
-
 #ifdef CONFIG_DCA
 static void enable_sw_dca(struct pci_dev *dev)
 {
