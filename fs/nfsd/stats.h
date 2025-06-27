@@ -38,7 +38,7 @@ struct nfsd_stats {
 extern struct nfsd_stats	nfsdstats;
 extern struct svc_stat		nfsd_svcstats;
 
-void	nfsd_stat_init(void);
+struct proc_dir_entry *nfsd_stat_init(void);
 void	nfsd_stat_shutdown(void);
 
 #endif /* _NFSD_STATS_H */
