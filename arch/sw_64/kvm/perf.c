@@ -19,9 +19,12 @@ static int kvm_is_user_mode(void)
 
 	vcpu = kvm_get_running_vcpu();
 
-	if (vcpu)
-		return (vcpu->arch.regs.ps & 8) != 0;
-
+	if (vcpu) {
+		if (IS_ENABLED(CONFIG_SUBARCH_C3B))
+			return (vcpu->arch.regs.ps & 0x8) != 0;
+		else
+			return (vcpu->arch.regs.pc & 0x3) == 0x3;
+	}
 	return 0;
 }
 
