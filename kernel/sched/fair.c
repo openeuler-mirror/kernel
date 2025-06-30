@@ -10010,6 +10010,17 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	if (throttled_lb_pair(task_group(p), env->src_cpu, env->dst_cpu))
 		return 0;
 
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+	/* Do not migrate soft domain tasks to outside of prefer cluster. */
+	if (sched_feat(SOFT_DOMAIN)) {
+		struct soft_domain_ctx *ctx = task_group(p)->sf_ctx;
+
+		if (ctx && ctx->policy &&
+		    !cpumask_test_cpu(env->dst_cpu, to_cpumask(ctx->span)))
+			return 0;
+	}
+#endif
+
 	/* Disregard pcpu kthreads; they are where they need to be. */
 	if (kthread_is_per_cpu(p))
 		return 0;
