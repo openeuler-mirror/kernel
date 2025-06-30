@@ -12,7 +12,8 @@ int oecls_netdev_num;
 static struct oecls_netdev_info oecls_netdev_info_table[OECLS_MAX_NETDEV_NUM];
 
 int oecls_numa_num;
-static struct oecls_numa_info oecls_numa_info_table[OECLS_MAX_NUMA_NUM];
+static int oecls_cluster_cpu_num, oecls_cluster_per_numa;
+static struct oecls_numa_info *oecls_numa_info_table;
 
 int debug;
 module_param(debug, int, 0644);
@@ -51,8 +52,7 @@ static bool check_params(void)
 
 int check_appname(char *task_name)
 {
-	char *start = appname;
-	char *end;
+	char *start = appname, *end;
 
 	if (!strlen(appname))
 		return 0;
@@ -384,7 +384,7 @@ static void get_netdev_queue_info(struct oecls_netdev_info *oecls_dev)
 {
 	struct oecls_netdev_queue_info *rxq_info;
 	struct irq_desc *desc;
-	int irq;
+	int irq, cpu;
 
 	for_each_irq_desc(irq, desc) {
 		if (!desc->action)
@@ -393,14 +393,14 @@ static void get_netdev_queue_info(struct oecls_netdev_info *oecls_dev)
 			continue;
 		if (!check_irq_name(desc->action->name, oecls_dev))
 			continue;
-
-		oecls_debug("irq=%d, [%s], rxq_id=%d\n", irq, desc->action->name,
-			    oecls_dev->rxq_num);
-
 		if (oecls_dev->rxq_num >= OECLS_MAX_RXQ_NUM_PER_DEV)
 			break;
 		rxq_info = &oecls_dev->rxq[oecls_dev->rxq_num++];
 		rxq_info->irq = irq;
+		cpu = cpumask_first(irq_data_get_effective_affinity_mask(&desc->irq_data));
+		rxq_info->affinity_cpu = cpu;
+		oecls_debug("irq=%d, [%s], rxq_id=%d affinity_cpu:%d\n",
+			    irq, desc->action->name, oecls_dev->rxq_num, cpu);
 	}
 }
 
@@ -555,8 +555,7 @@ static void clean_oecls_netdev_info(void)
 
 static int init_oecls_netdev_info(char *netdev_str)
 {
-	char *start = netdev_str;
-	char *end;
+	char *start = netdev_str, *end;
 	int err = -ENODEV;
 
 	while (*start != '\0') {
@@ -584,7 +583,7 @@ static int init_oecls_netdev_info(char *netdev_str)
 
 struct oecls_numa_info *get_oecls_numa_info(unsigned int nid)
 {
-	if (nid >= OECLS_MAX_NUMA_NUM)
+	if (nid >= oecls_numa_num)
 		return NULL;
 	return &oecls_numa_info_table[nid];
 }
@@ -609,25 +608,52 @@ static void init_numa_avail_cpus(int nid, struct oecls_numa_info *numa_info)
 	}
 }
 
-static void init_numa_rxq_bitmap(int nid, struct oecls_numa_info *numa_info)
+static void clean_oecls_rxq(void)
 {
 	struct oecls_numa_bound_dev_info *bound_dev;
 	struct oecls_netdev_info *oecls_dev;
-	int bound_rxq_num;
-	int rxq_id;
-	int devid;
-	int cpu;
+	struct oecls_numa_info *numa_info;
+	int nid, devid;
+
+	for_each_oecls_numa(nid, numa_info) {
+		for_each_oecls_netdev(devid, oecls_dev) {
+			bound_dev = &numa_info->bound_dev[devid];
+			free_to_l0(bound_dev->cluster_info);
+		}
+	}
+}
+
+static int init_numa_rxq_bitmap(int nid, struct oecls_numa_info *numa_info)
+{
+	int bound_rxq_num, cluster_id, cluster_idx, cur_idx;
+	struct oecls_numa_bound_dev_info *bound_dev;
+	struct oecls_netdev_info *oecls_dev;
+	int rxq_id, devid, cpu, ret = 0;
 
 	for_each_oecls_netdev(devid, oecls_dev) {
 		bound_rxq_num = 0;
 		bound_dev = &numa_info->bound_dev[devid];
 		bitmap_zero(bound_dev->bitmap_rxq, OECLS_MAX_RXQ_NUM_PER_DEV);
+		bound_dev->cluster_info = alloc_from_l0(sizeof(struct oecls_numa_clusterinfo)
+							* oecls_cluster_per_numa);
+		if (!bound_dev->cluster_info) {
+			ret = -ENOMEM;
+			goto out;
+		}
 
 		for (rxq_id = 0; rxq_id < oecls_dev->rxq_num; rxq_id++) {
 			cpu = oecls_dev->rxq[rxq_id].affinity_cpu;
 			if (cpu_to_node(cpu) == nid) {
 				set_bit(rxq_id, bound_dev->bitmap_rxq);
+				cluster_id = cpu / oecls_cluster_cpu_num;
+				cluster_idx = cluster_id % oecls_cluster_per_numa;
+				bound_dev->cluster_info[cluster_idx].cluster_id = cluster_id;
+				cur_idx = bound_dev->cluster_info[cluster_idx].cur_freeidx++;
+				bound_dev->cluster_info[cluster_idx].rxqs[cur_idx].rxq_id = rxq_id;
+				bound_dev->cluster_info[cluster_idx].rxqs[cur_idx].status = 1;
 				bound_rxq_num++;
+				oecls_debug("cpu:%d cluster_id:%d cluster_idx:%d rxq_id:%d cur_idx:%d\n",
+					    cpu, cluster_id, cluster_idx, rxq_id, cur_idx);
 			}
 		}
 
@@ -635,6 +661,52 @@ static void init_numa_rxq_bitmap(int nid, struct oecls_numa_info *numa_info)
 			    nid, devid, oecls_dev->dev_name, oecls_dev->rxq_num,
 			    bound_rxq_num, OECLS_MAX_RXQ_NUM_PER_DEV, bound_dev->bitmap_rxq);
 	}
+	return ret;
+
+out:
+	clean_oecls_rxq();
+	return ret;
+}
+
+static int get_cluster_rxq(struct oecls_numa_bound_dev_info *bound_dev)
+{
+	int cpu = smp_processor_id();
+	int cluster_id = cpu / oecls_cluster_cpu_num;
+	int i, j, rxq_id;
+
+	for (i = 0; i < oecls_cluster_per_numa; i++) {
+		if (cluster_id != bound_dev->cluster_info[i].cluster_id)
+			continue;
+		for (j = 0; j < OECLS_MAX_RXQ_NUM_PER_DEV; j++) {
+			if (bound_dev->cluster_info[i].rxqs[j].status == 1) {
+				bound_dev->cluster_info[i].rxqs[j].status = 2;
+				rxq_id = bound_dev->cluster_info[i].rxqs[j].rxq_id;
+				oecls_debug("cluster:%d cpu:%d alloc rxq_id:%d\n",
+					    cluster_id, cpu, rxq_id);
+				return rxq_id;
+			}
+		}
+	}
+	oecls_debug("cluster:%d no free rxq for cpu:%d\n", cluster_id, cpu);
+	return -1;
+}
+
+static int put_cluster_rxq(struct oecls_numa_bound_dev_info *bound_dev, int rxq_id)
+{
+	int i, j;
+
+	for (i = 0; i < oecls_cluster_per_numa; i++) {
+		for (j = 0; j < OECLS_MAX_RXQ_NUM_PER_DEV; j++) {
+			if (bound_dev->cluster_info[i].rxqs[j].status == 2 &&
+			    bound_dev->cluster_info[i].rxqs[j].rxq_id == rxq_id) {
+				bound_dev->cluster_info[i].rxqs[j].status = 1;
+				oecls_debug("free rxq_id:%d\n", rxq_id);
+				return 0;
+			}
+		}
+	}
+	oecls_debug("no match malloced rxq_id:%d\n", rxq_id);
+	return -1;
 }
 
 int alloc_rxq_id(int nid, int devid)
@@ -655,12 +727,21 @@ int alloc_rxq_id(int nid, int devid)
 	}
 	bound_dev = &numa_info->bound_dev[devid];
 
+	if (strategy == 1) {
+		rxq_id = get_cluster_rxq(bound_dev);
+		if (rxq_id < 0 || rxq_id >= OECLS_MAX_RXQ_NUM_PER_DEV)
+			pr_info("failed to get rxq_id:%d in cluster, try numa\n", rxq_id);
+		else
+			goto found;
+	}
+
 	rxq_id = find_first_bit(bound_dev->bitmap_rxq, OECLS_MAX_RXQ_NUM_PER_DEV);
 	if (rxq_id >= OECLS_MAX_RXQ_NUM_PER_DEV) {
 		oecls_error("error rxq_id:%d\n", rxq_id);
 		return -EINVAL;
 	}
 
+found:
 	clear_bit(rxq_id, bound_dev->bitmap_rxq);
 	oecls_debug("alloc nid:%d, dev_id:%d, rxq_id:%d\n", nid, devid, rxq_id);
 	return rxq_id;
@@ -688,6 +769,9 @@ void free_rxq_id(int nid, int devid, int rxq_id)
 		return;
 	}
 
+	if (strategy == 1)
+		put_cluster_rxq(bound_dev, rxq_id);
+
 	if (test_bit(rxq_id, bound_dev->bitmap_rxq)) {
 		oecls_error("error nid:%d, devid:%d, rxq_id:%d\n", nid, devid, rxq_id);
 		return;
@@ -697,22 +781,28 @@ void free_rxq_id(int nid, int devid, int rxq_id)
 	oecls_debug("free nid:%d, dev_id:%d, rxq_id:%d\n", nid, devid, rxq_id);
 }
 
-static void init_oecls_numa_info(void)
+static int init_oecls_numa_info(void)
 {
 	struct oecls_numa_info *numa_info;
-	unsigned int numa_num;
-	int nid;
+	int nid, ret = 0;
 
-	numa_num = num_online_nodes();
-	if (numa_num > OECLS_MAX_NUMA_NUM) {
-		oecls_error("online numa num:%d is too much!\n", numa_num);
-		numa_num = OECLS_MAX_NUMA_NUM;
+	oecls_numa_num = num_online_nodes();
+	oecls_numa_info_table = alloc_from_l0(sizeof(struct oecls_numa_info) * oecls_numa_num);
+	if (!oecls_numa_info_table) {
+		ret = -ENOMEM;
+		oecls_error("oecls_numa_info_table alloc failed:%d\n", ret);
+		return ret;
 	}
-	oecls_numa_num = numa_num;
-	oecls_debug("set oecls_numa_num=%d\n", numa_num);
+
+	oecls_cluster_cpu_num = cpumask_weight(topology_cluster_cpumask(smp_processor_id()));
+	oecls_cluster_per_numa = (nr_cpu_ids / oecls_cluster_cpu_num) / oecls_numa_num;
+	oecls_debug("oecls_numa_num=%d cluster_cpu_num:%d cluster_cpu_num:%d\n",
+		    oecls_numa_num, oecls_cluster_per_numa, oecls_cluster_cpu_num);
 
 	for_each_oecls_numa(nid, numa_info)
 		init_numa_avail_cpus(nid, numa_info);
+
+	return ret;
 }
 
 static int alloc_available_cpu(int nid, struct oecls_numa_info *numa_info)
@@ -746,10 +836,7 @@ static void config_affinity_strategy_default(struct oecls_netdev_info *oecls_dev
 	int rxq_num = oecls_dev->rxq_num;
 	int rxq_per_numa = rxq_num / oecls_numa_num;
 	int remain = rxq_num - rxq_per_numa * oecls_numa_num;
-	int numa_rxq_id;
-	int rxq_id;
-	int nid;
-	int cpu;
+	int numa_rxq_id, rxq_id, nid, cpu;
 
 	oecls_debug("dev=%s, rxq_num=%d, rxq_per_numa=%d, remain=%d\n", oecls_dev->dev_name,
 		    rxq_num, rxq_per_numa, remain);
@@ -786,45 +873,60 @@ static void config_affinity_strategy_default(struct oecls_netdev_info *oecls_dev
 
 static void config_affinity_strategy_cluster(struct oecls_netdev_info *oecls_dev)
 {
-	int cluster_cpu_num = 8;
-	int cluster_num = num_online_cpus() / cluster_cpu_num;
-	int cluster_cpu_id = 0;
-	int rxq_id = 0;
-	int cluster;
-	int cpu;
+	int rxq_num = oecls_dev->rxq_num;
+	int rxq_per_numa = rxq_num / oecls_numa_num;
+	int remain = rxq_num - rxq_per_numa * oecls_numa_num;
+	int cpu_idx = oecls_cluster_cpu_num - 1;
+	int cluster, cpu, rxq_id = 0, round;
 
-	// average config rxq to every cluster
+	round = rxq_per_numa < oecls_cluster_per_numa ? rxq_per_numa : oecls_cluster_per_numa;
+	if (remain > 0)
+		round++;
+	oecls_debug("round=%d\n", round);
+
 	while (rxq_id < oecls_dev->rxq_num) {
-		for (cluster = 0; cluster < cluster_num; cluster++) {
-			cpu = cluster * cluster_cpu_num + cluster_cpu_id;
+		for (cluster = 0; cluster < oecls_cluster_per_numa * oecls_numa_num; cluster++) {
+			if (cluster % oecls_cluster_per_numa >= round)
+				continue;
+			cpu = cluster * oecls_cluster_cpu_num + cpu_idx;
 			if (rxq_id >= oecls_dev->rxq_num)
 				break;
 			add_netdev_irq_affinity_cpu(oecls_dev, rxq_id++, cpu);
 		}
-		cluster_cpu_id++;
+		cpu_idx--;
+		if (--cpu_idx < 0)
+			cpu_idx = oecls_cluster_cpu_num - 1;
 	}
 }
 
-static void config_affinity_strategy_16cores(struct oecls_netdev_info *oecls_dev)
+static void config_affinity_strategy_numa(struct oecls_netdev_info *oecls_dev)
 {
+	int rxq_num = oecls_dev->rxq_num;
+	int rxq_per_numa = rxq_num / oecls_numa_num;
+	int cpu_per_numa = nr_cpu_ids /oecls_numa_num;
+	int remain = rxq_num - rxq_per_numa * oecls_numa_num;
 	struct oecls_numa_info *numa_info;
-	int numa_start_cpu;
-	int numa_cpu_id;
-	int rxq_id = 0;
-	int nid;
-	int cpu;
+	int numa_start_cpu, numa_cpu_id;
+	int rxq_id = 0, nid, cpu;
 
-	// only use 16 cores of one numa
 	for_each_oecls_numa(nid, numa_info) {
 		numa_start_cpu = find_first_bit(numa_info->avail_cpus, OECLS_MAX_CPU_NUM);
-		for (numa_cpu_id = 0; numa_cpu_id < 16; numa_cpu_id++) {
-			cpu = numa_start_cpu + numa_cpu_id;
-
+		for (numa_cpu_id = 0; numa_cpu_id < rxq_per_numa; numa_cpu_id++) {
+			cpu = numa_start_cpu + (numa_cpu_id % cpu_per_numa);
 			if (rxq_id >= oecls_dev->rxq_num)
 				break;
 			add_netdev_irq_affinity_cpu(oecls_dev, rxq_id++, cpu);
 		}
+		if (remain-- > 0) {
+			cpu = numa_start_cpu + (numa_cpu_id % cpu_per_numa);
+			add_netdev_irq_affinity_cpu(oecls_dev, rxq_id++, cpu);
+		}
 	}
+}
+
+static void config_affinity_strategy_custom(struct oecls_netdev_info *oecls_dev)
+{
+	oecls_debug("dev=%s\n", oecls_dev->dev_name);
 }
 
 static void config_affinity_strategy(void)
@@ -834,15 +936,16 @@ static void config_affinity_strategy(void)
 
 	for_each_oecls_netdev(devid, oecls_dev) {
 		switch (strategy) {
-		case 0:
-			config_affinity_strategy_default(oecls_dev);
-			break;
 		case 1:
 			config_affinity_strategy_cluster(oecls_dev);
 			break;
 		case 2:
-			config_affinity_strategy_16cores(oecls_dev);
+			config_affinity_strategy_numa(oecls_dev);
 			break;
+		case 3:
+			config_affinity_strategy_custom(oecls_dev);
+			break;
+		case 0:
 		default:
 			config_affinity_strategy_default(oecls_dev);
 			break;
@@ -862,8 +965,7 @@ static void enable_affinity_strategy(void)
 {
 	struct oecls_netdev_queue_info *rxq_info;
 	struct oecls_netdev_info *oecls_dev;
-	int rxq_id;
-	int devid;
+	int rxq_id, devid;
 
 	for_each_oecls_netdev(devid, oecls_dev) {
 		for (rxq_id = 0; rxq_id < oecls_dev->rxq_num; rxq_id++) {
@@ -888,10 +990,7 @@ static void set_netdev_xps_queue(bool enable)
 	const struct cpumask clear_mask = { 0 };
 	struct oecls_netdev_info *oecls_dev;
 	const struct cpumask *cpu_mask;
-	int rxq_id;
-	int devid;
-	int cpu;
-	int nid;
+	int rxq_id, devid, cpu, nid;
 
 	for_each_oecls_netdev(devid, oecls_dev) {
 		for (rxq_id = 0; rxq_id < oecls_dev->rxq_num; rxq_id++) {
@@ -910,26 +1009,29 @@ static void set_netdev_xps_queue(bool enable)
 static __init int oecls_init(void)
 {
 	struct oecls_numa_info *numa_info;
-	int nid;
-	int err;
+	int nid, err;
 
-	oecls_debug("[init] mode=%d, ifname=[%s]\n", mode, ifname);
 	if (!check_params())
 		return -EINVAL;
 
 	init_oecls_l0_cache();
-	init_oecls_numa_info();
+	err = init_oecls_numa_info();
+	if (err)
+		goto clean_l0;
 	err = init_oecls_netdev_info(ifname);
 	if (err)
-		goto out;
+		goto clean_numa;
 
 	// Set irq affinity
 	config_affinity_strategy();
 	enable_affinity_strategy();
 
 	// Calculate rxq bounded to one numa
-	for_each_oecls_numa(nid, numa_info)
-		init_numa_rxq_bitmap(nid, numa_info);
+	for_each_oecls_numa(nid, numa_info) {
+		err = init_numa_rxq_bitmap(nid, numa_info);
+		if (err)
+			goto clean_rxq;
+	}
 
 #ifdef CONFIG_XPS
 	set_netdev_xps_queue(true);
@@ -941,16 +1043,18 @@ static __init int oecls_init(void)
 		oecls_flow_res_init();
 
 	return 0;
-out:
+
+clean_rxq:
+clean_numa:
 	clean_oecls_netdev_info();
 	clean_oecls_numa_info();
+clean_l0:
 	clean_oecls_l0_cache();
 	return err;
 }
 
 static __exit void oecls_exit(void)
 {
-	oecls_debug("[exit] mode=%d\n", mode);
 	if (mode == 0)
 		oecls_ntuple_res_clean();
 	else
@@ -960,6 +1064,7 @@ static __exit void oecls_exit(void)
 	set_netdev_xps_queue(false);
 #endif
 
+	clean_oecls_rxq();
 	clean_oecls_netdev_info();
 	clean_oecls_numa_info();
 	clean_oecls_l0_cache();

@@ -10,7 +10,7 @@
 #include <trace/hooks/oenetcls.h>
 #include "oenetcls.h"
 
-struct oecls_sk_rule_list oecls_sk_rules;
+struct oecls_sk_rule_list oecls_sk_rules, oecls_sk_list;
 
 static void init_oecls_sk_rules(void)
 {
@@ -21,21 +21,28 @@ static void init_oecls_sk_rules(void)
 	mutex_init(&oecls_sk_rules.mutex);
 }
 
-static struct hlist_head *oecls_sk_rule_hash(u32 dip4, u16 dport)
+static inline struct hlist_head *get_rule_hashlist(u32 dip4, u16 dport)
 {
 	return oecls_sk_rules.hash + (jhash_2words(dip4, dport, 0) & OECLS_SK_RULE_HASHMASK);
+}
+
+static inline struct hlist_head *get_sk_hashlist(void *sk)
+{
+	return oecls_sk_list.hash + (jhash(sk, sizeof(sk), 0) & OECLS_SK_RULE_HASHMASK);
 }
 
 static void add_sk_rule(int devid, u32 dip4, u16 dport, void *sk, int action,
 			int ruleid, int nid)
 {
-	struct hlist_head *hlist = oecls_sk_rule_hash(dip4, dport);
+	struct hlist_head *hlist = get_rule_hashlist(dip4, dport);
+	struct hlist_head *sk_hlist = get_sk_hashlist(sk);
 	struct oecls_sk_rule *rule;
+	struct oecls_sk_entry *entry;
 
 	rule = alloc_from_l0(sizeof(struct oecls_sk_rule));
-	if (!rule)
-		return;
-	oecls_debug("alloc rule=%p\n", rule);
+	entry = alloc_from_l0(sizeof(struct oecls_sk_entry));
+	if (!rule || !entry)
+		goto out;
 
 	rule->sk = sk;
 	rule->dip4 = dip4;
@@ -45,18 +52,47 @@ static void add_sk_rule(int devid, u32 dip4, u16 dport, void *sk, int action,
 	rule->ruleid = ruleid;
 	rule->nid = nid;
 	hlist_add_head(&rule->node, hlist);
+
+	entry->sk = sk;
+	entry->sk_rule_hash = jhash_2words(dip4, dport, 0);
+	hlist_add_head(&entry->node, sk_hlist);
+	return;
+out:
+	oecls_debug("alloc failed rule:%p entry:%p\n", rule, entry);
+	free_to_l0(entry);
+	free_to_l0(rule);
+}
+
+static struct oecls_sk_entry *get_sk_entry(void *sk)
+{
+	struct hlist_head *sk_hlist = get_sk_hashlist(sk);
+	struct oecls_sk_entry *entry = NULL;
+
+	hlist_for_each_entry(entry, sk_hlist, node) {
+		if (entry->sk == sk)
+			break;
+	}
+	return entry;
 }
 
 static void del_sk_rule(struct oecls_sk_rule *rule)
 {
-	hlist_del_init(&rule->node);
+	struct oecls_sk_entry *entry;
+
+	entry = get_sk_entry(rule->sk);
+	if (!entry)
+		return;
+	hlist_del_init(&entry->node);
+	free_to_l0(entry);
+
 	oecls_debug("del rule=%p\n", rule);
+	hlist_del_init(&rule->node);
 	free_to_l0(rule);
 }
 
 static struct oecls_sk_rule *get_sk_rule(int devid, u32 dip4, u16 dport)
 {
-	struct hlist_head *hlist = oecls_sk_rule_hash(dip4, dport);
+	struct hlist_head *hlist = get_rule_hashlist(dip4, dport);
 	struct oecls_sk_rule *rule = NULL;
 
 	hlist_for_each_entry(rule, hlist, node) {
@@ -66,7 +102,25 @@ static struct oecls_sk_rule *get_sk_rule(int devid, u32 dip4, u16 dport)
 	return rule;
 }
 
-static bool reuseport_check(int devid, u32 dip4, u16 dport)
+static struct oecls_sk_rule *get_rule_from_sk(int devid, void *sk)
+{
+	struct oecls_sk_rule *rule = NULL;
+	struct oecls_sk_entry *entry;
+	struct hlist_head *hlist;
+
+	entry = get_sk_entry(sk);
+	if (!entry)
+		return NULL;
+
+	hlist = oecls_sk_rules.hash + (entry->sk_rule_hash & OECLS_SK_RULE_HASHMASK);
+	hlist_for_each_entry(rule, hlist, node) {
+		if (rule->devid == devid && rule->sk == sk)
+			break;
+	}
+	return rule;
+}
+
+static inline bool reuseport_check(int devid, u32 dip4, u16 dport)
 {
 	return !!get_sk_rule(devid, dip4, dport);
 }
@@ -90,7 +144,7 @@ static u32 get_first_ip4_addr(struct net *net)
 		in_dev_for_each_ifa_rcu(ifa, in_dev) {
 			if (!strcmp(dev->name, ifa->ifa_label)) {
 				dip4 = ifa->ifa_local;
-				oecls_debug("dev: %s, dip4: 0x%x\n", dev->name, dip4);
+				oecls_debug("dev: %s, dip4:%pI4\n", dev->name, &dip4);
 				goto out;
 			}
 		}
@@ -382,10 +436,10 @@ static void del_ntuple_rule(struct sock *sk)
 	mutex_lock(&oecls_sk_rules.mutex);
 	for_each_oecls_netdev(devid, oecls_dev) {
 		strncpy(ctx.netdev, oecls_dev->dev_name, IFNAMSIZ);
-		rule = get_sk_rule(devid, dip4, dport);
+		rule = get_rule_from_sk(devid, sk);
 		if (!rule) {
-			oecls_debug("rule not found! sk:%p, devid:%d, dip4:0x%x, dport:%d\n", sk,
-				    devid, dip4, dport);
+			oecls_debug("rule not found! sk:%p, devid:%d, dip4:%pI4, dport:%d\n",
+				    sk, devid, &dip4, ntohs(dport));
 			continue;
 		}
 
@@ -456,8 +510,8 @@ static void ethtool_cfg_rxcls(void *data, struct sock *sk, int is_del)
 	if (sk->sk_family != AF_INET && sk->sk_family != AF_INET6)
 		return;
 
-	oecls_debug("[cpu:%d] app:%s, sk:%p, is_del:%d, ip:0x%x, port:0x%x\n", smp_processor_id(),
-		    current->comm, sk, is_del, sk->sk_rcv_saddr, sk->sk_num);
+	oecls_debug("[cpu:%d] app:%s, sk:%p, is_del:%d, ip:%pI4, port:%d\n", smp_processor_id(),
+		    current->comm, sk, is_del, &sk->sk_rcv_saddr, (u16)sk->sk_num);
 
 	if (is_del)
 		del_ntuple_rule(sk);
