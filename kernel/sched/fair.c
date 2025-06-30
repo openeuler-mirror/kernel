@@ -13892,6 +13892,7 @@ void free_fair_sched_group(struct task_group *tg)
 
 	destroy_cfs_bandwidth(tg_cfs_bandwidth(tg));
 	destroy_auto_affinity(tg);
+	destroy_soft_domain(tg);
 
 	for_each_possible_cpu(i) {
 #ifdef CONFIG_QOS_SCHED
@@ -13934,6 +13935,10 @@ int alloc_fair_sched_group(struct task_group *tg, struct task_group *parent)
 	if (ret)
 		goto err;
 
+	ret = init_soft_domain(tg, parent);
+	if (ret)
+		goto err;
+
 	for_each_possible_cpu(i) {
 		cfs_rq = kzalloc_node(sizeof(struct cfs_rq),
 				      GFP_KERNEL, cpu_to_node(i));
@@ -13956,6 +13961,7 @@ err_free_rq:
 	kfree(cfs_rq);
 err:
 	destroy_auto_affinity(tg);
+	destroy_soft_domain(tg);
 	return 0;
 }
 
