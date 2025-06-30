@@ -10022,6 +10022,9 @@ static s64 cpu_soft_domain_read_s64(struct cgroup_subsys_state *css,
 {
 	struct task_group *tg = css_tg(css);
 
+	if (!tg->sf_ctx)
+		return 0;
+
 	return (s64)tg->sf_ctx->policy;
 }
 
@@ -10041,12 +10044,18 @@ static u64 cpu_soft_domain_quota_read_u64(struct cgroup_subsys_state *css,
 {
 	struct task_group *tg = css_tg(css);
 
+	if (!tg->sf_ctx)
+		return 0;
+
 	return (u64)tg->sf_ctx->nr_cpus;
 }
 
 static int soft_domain_cpu_list_seq_show(struct seq_file *sf, void *v)
 {
 	struct task_group *tg = css_tg(seq_css(sf));
+
+	if (!tg->sf_ctx)
+		return 0;
 
 	seq_printf(sf, "%*pbl\n", cpumask_pr_args(to_cpumask(tg->sf_ctx->span)));
 
