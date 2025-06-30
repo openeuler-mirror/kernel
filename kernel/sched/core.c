@@ -8202,6 +8202,7 @@ void __init sched_init_smp(void)
 	sched_smp_initialized = true;
 
 	sched_grid_zone_init();
+	build_soft_domain();
 
 #ifdef CONFIG_QOS_SCHED_SMART_GRID
 	init_auto_affinity(&root_task_group);

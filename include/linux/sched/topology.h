@@ -78,6 +78,27 @@ extern int sched_domain_level_max;
 
 struct sched_group;
 
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+
+struct soft_subdomain {
+	/* the count of task group attached this sub domain. */
+	int			attached;
+	struct list_head	node;
+	unsigned long		span[];
+};
+
+/*
+ * Each LLC builds a soft domain:
+ * A soft scheduling domain is divided into multiple subdomains,
+ * typically based on the physical structure of CPU clusters.
+ */
+struct soft_domain {
+	struct list_head	child_domain;
+	int			nr_available_cpus;
+	unsigned long		span[];
+};
+#endif
+
 struct sched_domain_shared {
 	atomic_t	ref;
 	atomic_t	nr_busy_cpus;

@@ -1115,6 +1115,18 @@ config QOS_SCHED_NUMA_ICON
 
 	 If in doubt, say N.
 
+config SCHED_SOFT_DOMAIN
+	bool "Soft domain scheduler"
+	depends on FAIR_GROUP_SCHED
+	depends on SCHED_CLUSTER
+	default n
+	help
+	  This feature builds a CPU soft domain for each task group. Tasks are
+	  prioritized and aggregated to execute within soft domains, which optimizes
+	  resource allocation and enhances cache locality.
+
+	  If in doubt, say N.
+
 config UCLAMP_TASK_GROUP
 	bool "Utilization clamping per group of tasks"
 	depends on CGROUP_SCHED
