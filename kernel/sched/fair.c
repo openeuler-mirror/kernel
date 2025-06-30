@@ -7475,6 +7475,40 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, int t
 		}
 	}
 
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+	if (sched_feat(SOFT_DOMAIN)) {
+		struct task_group *tg = task_group(p);
+
+		if (tg->sf_ctx && tg->sf_ctx->policy != 0) {
+			struct cpumask *tmpmask = to_cpumask(tg->sf_ctx->span);
+
+			for_each_cpu_wrap(cpu, tmpmask, target + 1) {
+				if (!cpumask_test_cpu(cpu, cpus))
+					continue;
+
+				if (smt) {
+					i = select_idle_core(p, cpu, cpus, &idle_cpu);
+					if ((unsigned int)i < nr_cpumask_bits)
+						return i;
+
+				} else {
+					if (--nr <= 0)
+						return -1;
+					idle_cpu = __select_idle_cpu(cpu, p);
+					if ((unsigned int)idle_cpu < nr_cpumask_bits)
+						return idle_cpu;
+				}
+			}
+
+			if (idle_cpu != -1)
+				return idle_cpu;
+
+			cpumask_andnot(cpus, cpus, tmpmask);
+		}
+
+	}
+#endif
+
 	if (static_branch_unlikely(&sched_cluster_active)) {
 		struct sched_group *sg = sd->groups;
 
@@ -8261,6 +8295,33 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 }
 #endif
 
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+static int wake_soft_domain(struct task_struct *p, int target)
+{
+	struct cpumask *mask = this_cpu_cpumask_var_ptr(select_idle_mask);
+	struct soft_domain_ctx *ctx = NULL;
+
+	ctx = task_group(p)->sf_ctx;
+	if (!ctx || ctx->policy == 0)
+		goto out;
+
+#ifdef CONFIG_TASK_PLACEMENT_BY_CPU_RANGE
+	cpumask_and(mask, to_cpumask(ctx->span), p->select_cpus);
+#else
+	cpumask_and(mask, to_cpumask(ctx->span), p->cpus_ptr);
+#endif
+	cpumask_and(mask, mask, cpu_active_mask);
+	if (cpumask_empty(mask) || cpumask_test_cpu(target, mask))
+		goto out;
+	else
+		target = cpumask_any_and_distribute(mask, mask);
+
+out:
+
+	return target;
+}
+#endif
+
 /*
  * select_task_rq_fair: Select target runqueue for the waking task in domains
  * that have the 'sd_flag' flag set. In practice, this is SD_BALANCE_WAKE,
@@ -8323,6 +8384,11 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int sd_flag, int wake_f
 	}
 
 	rcu_read_lock();
+
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+	if (sched_feat(SOFT_DOMAIN))
+		new_cpu = prev_cpu = wake_soft_domain(p, prev_cpu);
+#endif
 #ifdef CONFIG_BPF_SCHED
 	if (bpf_sched_enabled()) {
 		ctx.task = p;
