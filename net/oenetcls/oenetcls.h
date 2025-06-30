@@ -7,7 +7,6 @@
 
 #define OECLS_MAX_NETDEV_NUM 8
 #define OECLS_MAX_RXQ_NUM_PER_DEV 256
-#define OECLS_MAX_NUMA_NUM 16
 #define OECLS_MAX_CPU_NUM 1024
 
 #define OECLS_TIMEOUT (5 * HZ)
@@ -27,8 +26,20 @@ struct oecls_netdev_info {
 	int				old_filter_state;
 };
 
+struct oecls_rxq {
+	int rxq_id;
+	int status;
+};
+
+struct oecls_numa_clusterinfo {
+	int cluster_id;
+	int cur_freeidx;
+	struct oecls_rxq rxqs[OECLS_MAX_RXQ_NUM_PER_DEV];
+};
+
 struct oecls_numa_bound_dev_info {
 	DECLARE_BITMAP(bitmap_rxq, OECLS_MAX_RXQ_NUM_PER_DEV);
+	struct oecls_numa_clusterinfo *cluster_info;
 };
 
 struct oecls_numa_info {
@@ -64,6 +75,12 @@ struct oecls_sk_rule {
 	int action;
 	int ruleid;
 	int nid;
+};
+
+struct oecls_sk_entry {
+	struct hlist_node node;
+	void *sk;
+	u32 sk_rule_hash;
 };
 
 struct oecls_dev_flow {
