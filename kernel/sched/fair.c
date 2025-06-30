@@ -6504,7 +6504,7 @@ int init_auto_affinity(struct task_group *tg)
 	return 0;
 }
 
-static void destroy_auto_affinity(struct task_group *tg)
+void offline_auto_affinity(struct task_group *tg)
 {
 	struct auto_affinity *auto_affi = tg->auto_affinity;
 
@@ -6513,11 +6513,18 @@ static void destroy_auto_affinity(struct task_group *tg)
 
 	if (auto_affi->period_active)
 		smart_grid_usage_dec();
+}
+
+static void destroy_auto_affinity(struct task_group *tg)
+{
+	struct auto_affinity *auto_affi = tg->auto_affinity;
+
+	if (unlikely(!auto_affi))
+		return;
 
 	hrtimer_cancel(&auto_affi->period_timer);
 	sched_grid_zone_del_af(auto_affi);
 	free_affinity_domains(&auto_affi->ad);
-
 	kfree(tg->auto_affinity);
 	tg->auto_affinity = NULL;
 }

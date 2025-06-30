@@ -8955,6 +8955,7 @@ static void cpu_cgroup_css_offline(struct cgroup_subsys_state *css)
 {
 	struct task_group *tg = css_tg(css);
 
+	offline_auto_affinity(tg);
 	offline_soft_domain(tg);
 }
 

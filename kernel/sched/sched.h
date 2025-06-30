@@ -610,6 +610,7 @@ extern void sched_move_task(struct task_struct *tsk);
 extern void start_auto_affinity(struct auto_affinity *auto_affi);
 extern void stop_auto_affinity(struct auto_affinity *auto_affi);
 extern int init_auto_affinity(struct task_group *tg);
+void offline_auto_affinity(struct task_group *tg);
 extern void tg_update_affinity_domains(int cpu, int online);
 extern int tg_rebuild_affinity_domains(int cpu, struct auto_affinity *auto_affi);
 
@@ -620,6 +621,7 @@ static inline int init_auto_affinity(struct task_group *tg)
 }
 
 static inline void tg_update_affinity_domains(int cpu, int online) {}
+static inline void offline_auto_affinity(struct task_group *tg) { }
 #endif
 
 #ifdef CONFIG_SCHED_SOFT_QUOTA
