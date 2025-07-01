@@ -430,6 +430,16 @@ struct auto_affinity {
 #endif
 };
 
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+
+struct soft_domain_ctx {
+	int			policy;
+	int			nr_cpus;
+	struct soft_domain	*sf_d;
+	unsigned long		span[];
+};
+#endif
+
 /* Task group related information */
 struct task_group {
 	struct cgroup_subsys_state css;
@@ -510,6 +520,9 @@ struct task_group {
 #endif
 #ifdef CONFIG_SCHED_SOFT_QUOTA
 	KABI_EXTEND(u64 soft_quota)
+#endif
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+	KABI_EXTEND(struct soft_domain_ctx *sf_ctx)
 #endif
 };
 
@@ -597,6 +610,7 @@ extern void sched_move_task(struct task_struct *tsk);
 extern void start_auto_affinity(struct auto_affinity *auto_affi);
 extern void stop_auto_affinity(struct auto_affinity *auto_affi);
 extern int init_auto_affinity(struct task_group *tg);
+void offline_auto_affinity(struct task_group *tg);
 extern void tg_update_affinity_domains(int cpu, int online);
 extern int tg_rebuild_affinity_domains(int cpu, struct auto_affinity *auto_affi);
 
@@ -607,6 +621,7 @@ static inline int init_auto_affinity(struct task_group *tg)
 }
 
 static inline void tg_update_affinity_domains(int cpu, int online) {}
+static inline void offline_auto_affinity(struct task_group *tg) { }
 #endif
 
 #ifdef CONFIG_SCHED_SOFT_QUOTA
@@ -3233,3 +3248,31 @@ static __always_inline int task_has_qos_idle_policy(struct task_struct *p)
 
 void swake_up_all_locked(struct swait_queue_head *q);
 void __prepare_to_swait(struct swait_queue_head *q, struct swait_queue *wait);
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+void build_soft_domain(void);
+int init_soft_domain(struct task_group *tg, struct task_group *parent);
+int destroy_soft_domain(struct task_group *tg);
+void offline_soft_domain(struct task_group *tg);
+int sched_group_set_soft_domain(struct task_group *tg, long val);
+int sched_group_set_soft_domain_quota(struct task_group *tg, long val);
+
+static inline struct cpumask *soft_domain_span(unsigned long span[])
+{
+	return to_cpumask(span);
+}
+#else
+
+static inline void build_soft_domain(void) { }
+static inline int init_soft_domain(struct task_group *tg, struct task_group *parent)
+{
+	return 0;
+}
+
+static inline void offline_soft_domain(struct task_group *tg) { }
+
+static inline int destroy_soft_domain(struct task_group *tg)
+{
+	return 0;
+}
+
+#endif
