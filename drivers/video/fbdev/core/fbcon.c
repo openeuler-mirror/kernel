@@ -26,7 +26,7 @@
  *
  *  Hardware cursor support added by Emmanuel Marty (core@ggi-project.org)
  *  Smart redraw scrolling, arbitrary font width support, 512char font support
- *  and software scrollback added by 
+ *  and software scrollback added by
  *                         Jakub Jelinek (jj@ultra.linux.cz)
  *
  *  Random hacking by Martin Mares <mj@ucw.cz>
@@ -125,7 +125,7 @@ static int logo_shown = FBCON_LOGO_CANSHOW;
 /* console mappings */
 static unsigned int first_fb_vc;
 static unsigned int last_fb_vc = MAX_NR_CONSOLES - 1;
-static int fbcon_is_default = 1; 
+static int fbcon_is_default = 1;
 static int primary_device = -1;
 static int fbcon_has_console_bind;
 
@@ -447,12 +447,12 @@ static int __init fb_console_setup(char *this_opt)
 			strlcpy(fontname, options + 5, sizeof(fontname));
 			continue;
 		}
-		
+
 		if (!strncmp(options, "scrollback:", 11)) {
 			pr_warn("Ignoring scrollback size option\n");
 			continue;
 		}
-		
+
 		if (!strncmp(options, "map:", 4)) {
 			options += 4;
 			if (*options) {
@@ -478,7 +478,7 @@ static int __init fb_console_setup(char *this_opt)
 				last_fb_vc = simple_strtoul(options, &options, 10) - 1;
 			if (last_fb_vc < first_fb_vc || last_fb_vc >= MAX_NR_CONSOLES)
 				last_fb_vc = MAX_NR_CONSOLES - 1;
-			fbcon_is_default = 0; 
+			fbcon_is_default = 0;
 			continue;
 		}
 
@@ -966,7 +966,7 @@ static const char *fbcon_startup(void)
 	info = registered_fb[info_idx];
 	if (!info)
 		return NULL;
-	
+
 	owner = info->fbops->owner;
 	if (!try_module_get(owner))
 		return NULL;
@@ -1429,7 +1429,7 @@ static __inline__ void ywrap_up(struct vc_data *vc, int count)
 	struct fb_info *info = registered_fb[con2fb_map[vc->vc_num]];
 	struct fbcon_ops *ops = info->fbcon_par;
 	struct fbcon_display *p = &fb_display[vc->vc_num];
-	
+
 	p->yscroll += count;
 	if (p->yscroll >= p->vrows)	/* Deal with wrap */
 		p->yscroll -= p->vrows;
@@ -1448,7 +1448,7 @@ static __inline__ void ywrap_down(struct vc_data *vc, int count)
 	struct fb_info *info = registered_fb[con2fb_map[vc->vc_num]];
 	struct fbcon_ops *ops = info->fbcon_par;
 	struct fbcon_display *p = &fb_display[vc->vc_num];
-	
+
 	p->yscroll -= count;
 	if (p->yscroll < 0)	/* Deal with wrap */
 		p->yscroll += p->vrows;
@@ -1515,7 +1515,7 @@ static __inline__ void ypan_down(struct vc_data *vc, int count)
 	struct fb_info *info = registered_fb[con2fb_map[vc->vc_num]];
 	struct fbcon_display *p = &fb_display[vc->vc_num];
 	struct fbcon_ops *ops = info->fbcon_par;
-	
+
 	p->yscroll -= count;
 	if (p->yscroll < 0) {
 		ops->bmove(vc, info, 0, 0, p->vrows - vc->vc_rows,
@@ -1898,7 +1898,7 @@ static void fbcon_bmove(struct vc_data *vc, int sy, int sx, int dy, int dx,
 {
 	struct fb_info *info = registered_fb[con2fb_map[vc->vc_num]];
 	struct fbcon_display *p = &fb_display[vc->vc_num];
-	
+
 	if (fbcon_is_inactive(vc, info))
 		return;
 
@@ -2023,7 +2023,7 @@ static void updatescrollmode(struct fbcon_display *p,
 #define PITCH(w) (((w) + 7) >> 3)
 #define CALC_FONTSZ(h, p, c) ((h) * (p) * (c)) /* size = height * pitch * charcount */
 
-static int fbcon_resize(struct vc_data *vc, unsigned int width, 
+static int fbcon_resize(struct vc_data *vc, unsigned int width,
 			unsigned int height, unsigned int user)
 {
 	struct fb_info *info = registered_fb[con2fb_map[vc->vc_num]];
@@ -2201,7 +2201,7 @@ static int fbcon_switch(struct vc_data *vc)
 	    ops->update_start(info);
 	}
 
-	fbcon_set_palette(vc, color_table); 	
+	fbcon_set_palette(vc, color_table);
 	fbcon_clear_margins(vc, 0);
 
 	if (logo_shown == FBCON_LOGO_DRAW) {
@@ -2371,7 +2371,7 @@ static void set_vc_hi_font(struct vc_data *vc, bool set)
 			vc->vc_complement_mask >>= 1;
 			vc->vc_s_complement_mask >>= 1;
 		}
-			
+
 		/* ++Edmund: reorder the attribute bits */
 		if (vc->vc_can_do_color) {
 			unsigned short *cp =
@@ -2394,7 +2394,7 @@ static void set_vc_hi_font(struct vc_data *vc, bool set)
 			vc->vc_complement_mask <<= 1;
 			vc->vc_s_complement_mask <<= 1;
 		}
-			
+
 		/* ++Edmund: reorder the attribute bits */
 		{
 			unsigned short *cp =
@@ -2429,20 +2429,24 @@ static int fbcon_do_set_font(struct vc_data *vc, int w, int h,
 	struct fb_info *info = registered_fb[con2fb_map[vc->vc_num]];
 	struct fbcon_ops *ops = info->fbcon_par;
 	struct fbcon_display *p = &fb_display[vc->vc_num];
-	int resize;
+	int resize, ret, old_userfont, old_width, old_height, old_charcount;
 	int cnt;
-	char *old_data = NULL;
+	u8 *old_data = vc->vc_font.data;
 
 	resize = (w != vc->vc_font.width) || (h != vc->vc_font.height);
-	if (p->userfont)
-		old_data = vc->vc_font.data;
 	if (userfont)
 		cnt = FNTCHARCNT(data);
 	else
 		cnt = 256;
 	vc->vc_font.data = (void *)(p->fontdata = data);
+	old_userfont = p->userfont;
 	if ((p->userfont = userfont))
 		REFCOUNT(data)++;
+
+	old_width = vc->vc_font.width;
+	old_height = vc->vc_font.height;
+	old_charcount = vc->vc_font.charcount;
+
 	vc->vc_font.width = w;
 	vc->vc_font.height = h;
 	if (vc->vc_hi_font_mask && cnt == 256)
@@ -2457,16 +2461,34 @@ static int fbcon_do_set_font(struct vc_data *vc, int w, int h,
 		rows = FBCON_SWAP(ops->rotate, info->var.yres, info->var.xres);
 		cols /= w;
 		rows /= h;
-		vc_resize(vc, cols, rows);
+		ret = vc_resize(vc, cols, rows);
+		if (ret)
+			goto err_out;
 	} else if (con_is_visible(vc)
 		   && vc->vc_mode == KD_TEXT) {
 		fbcon_clear_margins(vc, 0);
 		update_screen(vc);
 	}
 
-	if (old_data && (--REFCOUNT(old_data) == 0))
+	if (old_userfont && (--REFCOUNT(old_data) == 0))
 		kfree(old_data - FONT_EXTRA_WORDS * sizeof(int));
 	return 0;
+
+err_out:
+	p->fontdata = old_data;
+	vc->vc_font.data = old_data;
+
+	if (userfont) {
+		p->userfont = old_userfont;
+		if (--REFCOUNT(data) == 0)
+			kfree(data - FONT_EXTRA_WORDS * sizeof(int));
+	}
+
+	vc->vc_font.width = old_width;
+	vc->vc_font.height = old_height;
+	vc->vc_font.charcount = old_charcount;
+
+	return ret;
 }
 
 static int fbcon_copy_font(struct vc_data *vc, int con)
@@ -2548,7 +2570,7 @@ static int fbcon_set_font(struct vc_data *vc, struct console_font *font,
 	/* Check if the same font is on some other console already */
 	for (i = first_fb_vc; i <= last_fb_vc; i++) {
 		struct vc_data *tmp = vc_cons[i].d;
-		
+
 		if (fb_display[i].userfont &&
 		    fb_display[i].fontdata &&
 		    FNTSUM(fb_display[i].fontdata) == csum &&
@@ -3485,5 +3507,5 @@ void __exit fb_console_exit(void)
 	fbcon_exit();
 	do_unregister_con_driver(&fb_con);
 	console_unlock();
-}	
+}
 #endif
