@@ -84,8 +84,9 @@ u64 __init kaslr_early_init(void)
 {
 	void *fdt;
 	u64 seed, offset, mask, module_range;
-	const u8 *cmdline, *str;
+	const u8 *cmdline, *str, *after;
 	unsigned long raw;
+	int len;
 
 	/*
 	 * Set a reasonable default for module_alloc_base in case
@@ -116,7 +117,10 @@ u64 __init kaslr_early_init(void)
 	 */
 	cmdline = kaslr_get_cmdline(fdt);
 	str = strstr(cmdline, "nokaslr");
-	if (str == cmdline || (str > cmdline && *(str - 1) == ' ')) {
+	len = strlen("nokaslr");
+	after = str + len;
+	if ((str == cmdline || (str > cmdline && *(str - 1) == ' ')) &&
+	    (*after == ' ' || *after == '\0')) {
 		kaslr_status = KASLR_DISABLED_CMDLINE;
 		return 0;
 	}
