@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0
+obj-$(CONFIG_CRYPTO_DEV_HCT) += hygon/hct.o
 obj-$(CONFIG_CRYPTO_DEV_CCP_DD) += ccp.o
 ccp-objs  := sp-dev.o sp-platform.o
 ccp-$(CONFIG_CRYPTO_DEV_SP_CCP) += ccp-dev.o \
 	    ccp-ops.o \
 	    ccp-dev-v3.o \
 	    ccp-dev-v5.o \
-	    ccp-dmaengine.o
+	    ccp-dmaengine.o \
+	    hygon/ccp-dev-v5.o
 ccp-$(CONFIG_CRYPTO_DEV_CCP_DEBUGFS) += ccp-debugfs.o
 ccp-$(CONFIG_PCI) += sp-pci.o \
                      hygon/sp-pci.o
@@ -25,3 +27,11 @@ ccp-crypto-objs := ccp-crypto-main.o \
 		   ccp-crypto-des3.o \
 		   ccp-crypto-rsa.o \
 		   ccp-crypto-sha.o
+
+$(obj)/ccp_sm2_sign.asn1.o: $(obj)/ccp_sm2_sign.asn1.c $(obj)/ccp_sm2_sign.asn1.h
+$(obj)/ccp-crypto-sm2-hygon.o: $(obj)/ccp_sm2_sign.asn1.h
+
+ccp-crypto-$(CONFIG_HYGON_GM) += ccp-crypto-sm2-hygon.o \
+		   ccp-crypto-sm3-hygon.o \
+		   ccp-crypto-sm4-hygon.o \
+		   ccp_sm2_sign.asn1.o
