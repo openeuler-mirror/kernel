@@ -493,7 +493,7 @@ retry:
 		goto put_old;
 	}
 
-	if (WARN(!is_register && PageCompound(old_page),
+	if (WARN(!is_register && PageAnon(old_page) && PageCompound(old_page),
 		 "uprobe unregister should never work on compound page\n")) {
 		ret = -EINVAL;
 		goto put_old;
