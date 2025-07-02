@@ -50,7 +50,12 @@ enum cgroup_bpf_attach_type {
 	CGROUP_INET6_GETSOCKNAME,
 	CGROUP_INET_SOCK_RELEASE,
 #ifdef CONFIG_KABI_RESERVE
+#ifdef CONFIG_HISOCK
+	KABI_BROKEN_REMOVE_ENUM(CGROUP_ATTACH_TYPE_KABI_RESERVE_1)
+	KABI_BROKEN_INSERT_ENUM(HISOCK_EGRESS)
+#else
 	CGROUP_ATTACH_TYPE_KABI_RESERVE_1,
+#endif
 	CGROUP_ATTACH_TYPE_KABI_RESERVE_2,
 	CGROUP_ATTACH_TYPE_KABI_RESERVE_3,
 	CGROUP_ATTACH_TYPE_KABI_RESERVE_4,
@@ -58,6 +63,10 @@ enum cgroup_bpf_attach_type {
 	CGROUP_ATTACH_TYPE_KABI_RESERVE_6,
 	CGROUP_ATTACH_TYPE_KABI_RESERVE_7,
 	CGROUP_ATTACH_TYPE_KABI_RESERVE_8,
+#else
+#ifdef CONFIG_HISOCK
+	HISOCK_EGRESS,
+#endif
 #endif
 	MAX_CGROUP_BPF_ATTACH_TYPE
 };
@@ -92,6 +101,9 @@ to_cgroup_bpf_attach_type(enum bpf_attach_type attach_type)
 	CGROUP_ATYPE(CGROUP_INET4_GETSOCKNAME);
 	CGROUP_ATYPE(CGROUP_INET6_GETSOCKNAME);
 	CGROUP_ATYPE(CGROUP_INET_SOCK_RELEASE);
+#ifdef CONFIG_HISOCK
+	CGROUP_ATYPE(HISOCK_EGRESS);
+#endif
 	default:
 		return CGROUP_BPF_ATTACH_TYPE_INVALID;
 	}
@@ -236,6 +248,11 @@ int __cgroup_bpf_run_filter_getsockopt(struct sock *sk, int level,
 				       int optname, char __user *optval,
 				       int __user *optlen, int max_optlen,
 				       int retval);
+
+#ifdef CONFIG_HISOCK
+int __cgroup_bpf_run_hisock_egress(struct sock *sk, struct sk_buff *skb,
+				   enum cgroup_bpf_attach_type atype);
+#endif
 
 static inline enum bpf_cgroup_storage_type cgroup_storage_type(
 	struct bpf_map *map)
@@ -446,6 +463,21 @@ int bpf_percpu_cgroup_storage_update(struct bpf_map *map, void *key,
 	__ret;								       \
 })
 
+#ifdef CONFIG_HISOCK
+#define BPF_CGROUP_RUN_PROG_HISOCK_EGRESS(sk, skb)			       \
+({									       \
+	int __ret = HISOCK_PASS;					       \
+	if (cgroup_bpf_enabled(HISOCK_EGRESS) &&			       \
+	    sk && sk == skb->sk) {					       \
+		typeof(sk) __sk = sk_to_full_sk(sk);			       \
+		if (sk_fullsock(__sk))					       \
+			__ret = __cgroup_bpf_run_hisock_egress(__sk, skb,      \
+							       HISOCK_EGRESS); \
+	}								       \
+	__ret;								       \
+})
+#endif
+
 int cgroup_bpf_prog_attach(const union bpf_attr *attr,
 			   enum bpf_prog_type ptype, struct bpf_prog *prog);
 int cgroup_bpf_prog_detach(const union bpf_attr *attr,
@@ -526,6 +558,9 @@ static inline int bpf_percpu_cgroup_storage_update(struct bpf_map *map,
 				       optlen, max_optlen, retval) ({ retval; })
 #define BPF_CGROUP_RUN_PROG_SETSOCKOPT(sock, level, optname, optval, optlen, \
 				       kernel_optval) ({ 0; })
+#ifdef CONFIG_HISOCK
+#define BPF_CGROUP_RUN_PROG_HISOCK_EGRESS(sk, skb) ({ HISOCK_PASS; })
+#endif
 
 #define for_each_cgroup_storage_type(stype) for (; false; )
 

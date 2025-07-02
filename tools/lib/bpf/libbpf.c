@@ -8502,6 +8502,8 @@ static const struct bpf_sec_def section_defs[] = {
 						BPF_GNET_RCV_NIC_NODE),
 	BPF_EAPROG_SEC("gnet/send_nic_node",	BPF_PROG_TYPE_NET_GLOBAL,
 						BPF_GNET_SEND_NIC_NODE),
+	BPF_APROG_SEC("hisock_egress",		BPF_PROG_TYPE_HISOCK,
+						BPF_HISOCK_EGRESS),
 };
 
 #undef BPF_PROG_SEC_IMPL

@@ -202,6 +202,7 @@ enum bpf_prog_type {
 #ifndef __GENKSYMS__
 	BPF_PROG_TYPE_SCHED,
 	BPF_PROG_TYPE_NET_GLOBAL,
+	BPF_PROG_TYPE_HISOCK,
 #endif
 };
 
@@ -250,6 +251,7 @@ enum bpf_attach_type {
 	BPF_GNET_SK_DST_SET,
 	BPF_GNET_RCV_NIC_NODE,
 	BPF_GNET_SEND_NIC_NODE,
+	BPF_HISOCK_EGRESS,
 #endif
 	__MAX_BPF_ATTACH_TYPE
 };
@@ -5286,6 +5288,13 @@ struct bpf_gnet_ctx {
 	int rx_dev_idx;
 	int rx_dev_queue_idx;
 	__u64 rx_dev_netns_cookie;
+};
+
+enum hisock_action {
+	HISOCK_PASS,
+	HISOCK_DROP,
+	HISOCK_REDIRECT,
+	__MAX_HISOCK_ACTION,
 };
 
 #endif /* _UAPI__LINUX_BPF_H__ */

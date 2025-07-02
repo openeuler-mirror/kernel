@@ -17,6 +17,10 @@ BPF_PROG_TYPE(BPF_PROG_TYPE_CGROUP_SOCK, cg_sock,
 	      struct bpf_sock, struct sock)
 BPF_PROG_TYPE(BPF_PROG_TYPE_CGROUP_SOCK_ADDR, cg_sock_addr,
 	      struct bpf_sock_addr, struct bpf_sock_addr_kern)
+#ifdef CONFIG_HISOCK
+BPF_PROG_TYPE(BPF_PROG_TYPE_HISOCK, hisock,
+	      struct __sk_buff, struct sk_buff)
+#endif
 #endif
 BPF_PROG_TYPE(BPF_PROG_TYPE_LWT_IN, lwt_in,
 	      struct __sk_buff, struct sk_buff)

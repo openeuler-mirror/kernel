@@ -66,6 +66,7 @@ const char * const prog_type_name[] = {
 	[BPF_PROG_TYPE_SK_LOOKUP]		= "sk_lookup",
 	[BPF_PROG_TYPE_SCHED]			= "sched",
 	[BPF_PROG_TYPE_NET_GLOBAL]		= "gnet",
+	[BPF_PROG_TYPE_HISOCK]			= "hisock",
 };
 
 const size_t prog_type_name_size = ARRAY_SIZE(prog_type_name);

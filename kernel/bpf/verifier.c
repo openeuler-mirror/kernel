@@ -3359,6 +3359,9 @@ static bool may_access_direct_pkt_data(struct bpf_verifier_env *env,
 		return true;
 
 	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
+#ifdef CONFIG_HISOCK
+	case BPF_PROG_TYPE_HISOCK:
+#endif
 		if (t == BPF_WRITE)
 			env->seen_direct_write = true;
 

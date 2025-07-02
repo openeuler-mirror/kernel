@@ -7292,6 +7292,29 @@ cg_skb_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 	}
 }
 
+#ifdef CONFIG_HISOCK
+static const struct bpf_func_proto *
+hisock_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+{
+	switch (func_id) {
+	case BPF_FUNC_skb_store_bytes:
+		return &bpf_skb_store_bytes_proto;
+	case BPF_FUNC_skb_load_bytes:
+		return &bpf_skb_load_bytes_proto;
+	case BPF_FUNC_skb_pull_data:
+		return &bpf_skb_pull_data_proto;
+	case BPF_FUNC_skb_change_tail:
+		return &bpf_skb_change_tail_proto;
+	case BPF_FUNC_skb_change_head:
+		return &bpf_skb_change_head_proto;
+	case BPF_FUNC_skb_adjust_room:
+		return &bpf_skb_adjust_room_proto;
+	default:
+		return bpf_base_func_proto(func_id);
+	}
+}
+#endif
+
 static const struct bpf_func_proto *
 tc_cls_act_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
@@ -7828,6 +7851,33 @@ static bool cg_skb_is_valid_access(int off, int size,
 
 	return bpf_skb_is_valid_access(off, size, type, prog, info);
 }
+
+#ifdef CONFIG_HISOCK
+static bool hisock_is_valid_access(int off, int size,
+				   enum bpf_access_type type,
+				   const struct bpf_prog *prog,
+				   struct bpf_insn_access_aux *info)
+{
+	switch (off) {
+	case bpf_ctx_range(struct __sk_buff, tc_classid):
+	case bpf_ctx_range(struct __sk_buff, data_meta):
+	case bpf_ctx_range(struct __sk_buff, tstamp):
+	case bpf_ctx_range(struct __sk_buff, wire_len):
+		return false;
+	}
+
+	switch (off) {
+	case bpf_ctx_range(struct __sk_buff, data):
+		info->reg_type = PTR_TO_PACKET;
+		break;
+	case bpf_ctx_range(struct __sk_buff, data_end):
+		info->reg_type = PTR_TO_PACKET_END;
+		break;
+	}
+
+	return bpf_skb_is_valid_access(off, size, type, prog, info);
+}
+#endif
 
 static bool lwt_is_valid_access(int off, int size,
 				enum bpf_access_type type,
@@ -9951,6 +10001,18 @@ const struct bpf_verifier_ops cg_skb_verifier_ops = {
 const struct bpf_prog_ops cg_skb_prog_ops = {
 	.test_run		= bpf_prog_test_run_skb,
 };
+
+#ifdef CONFIG_HISOCK
+const struct bpf_verifier_ops hisock_verifier_ops = {
+	.get_func_proto		= hisock_func_proto,
+	.is_valid_access	= hisock_is_valid_access,
+	.convert_ctx_access	= bpf_convert_ctx_access,
+	.gen_prologue		= bpf_noop_prologue,
+};
+
+const struct bpf_prog_ops hisock_prog_ops = {
+};
+#endif
 
 const struct bpf_verifier_ops lwt_in_verifier_ops = {
 	.get_func_proto		= lwt_in_func_proto,
