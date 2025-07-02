@@ -7066,6 +7066,34 @@ static const struct bpf_func_proto bpf_sock_ops_reserve_hdr_opt_proto = {
 	.arg3_type	= ARG_ANYTHING,
 };
 
+#ifdef CONFIG_HISOCK
+BTF_ID_LIST_SINGLE(btf_dst_entity_ids, struct, dst_entry)
+BPF_CALL_1(bpf_sock_ops_get_ingress_dst, struct bpf_sock_ops_kern *, sops)
+{
+	struct sock *sk = sops->sk;
+	struct dst_entry *dst;
+
+	WARN_ON_ONCE(!rcu_read_lock_held());
+
+	if (!sk || !sk_fullsock(sk))
+		return (unsigned long)NULL;
+
+	dst = rcu_dereference(sk->sk_rx_dst);
+	if (dst)
+		dst = dst_check(dst, 0);
+
+	return (unsigned long)dst;
+}
+
+const struct bpf_func_proto bpf_sock_ops_get_ingress_dst_proto = {
+	.func		= bpf_sock_ops_get_ingress_dst,
+	.gpl_only	= false,
+	.ret_type	= RET_PTR_TO_BTF_ID_OR_NULL,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.ret_btf_id	= &btf_dst_entity_ids[0],
+};
+#endif
+
 #endif /* CONFIG_INET */
 
 bool bpf_helper_changes_pkt_data(void *func)
@@ -7519,6 +7547,10 @@ sock_ops_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sock_ops_store_hdr_opt_proto;
 	case BPF_FUNC_reserve_hdr_opt:
 		return &bpf_sock_ops_reserve_hdr_opt_proto;
+#ifdef CONFIG_HISOCK
+	case BPF_FUNC_get_ingress_dst:
+		return &bpf_sock_ops_get_ingress_dst_proto;
+#endif
 	case BPF_FUNC_tcp_sock:
 		return &bpf_tcp_sock_proto;
 #endif /* CONFIG_INET */

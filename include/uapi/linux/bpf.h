@@ -3942,6 +3942,13 @@ union bpf_attr {
  *		set prefer cpumask for the task.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * void *bpf_get_ingress_dst(struct bpf_sock_ops *skops)
+ *	Description
+ *		Get the ingress dst entry of the full sock.
+ *	Return
+ *		Valid ingress dst on success, or negative error
+ *		in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4120,6 +4127,7 @@ union bpf_attr {
 	FN(get_node_stats),		\
 	FN(sched_net_rship_submit),	\
 	FN(sched_set_task_prefer_cpumask), \
+	FN(get_ingress_dst),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
