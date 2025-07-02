@@ -5075,16 +5075,18 @@ static DEFINE_STATIC_KEY_FALSE(generic_xdp_needed_key);
 int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
 {
 	if (xdp_prog) {
-		struct xdp_buff xdp;
+		struct hisock_xdp_buff hxdp;
+		struct xdp_buff *xdp = &hxdp.xdp;
 		u32 act;
 		int err;
 
-		act = netif_receive_generic_xdp(skb, &xdp, xdp_prog);
+		hxdp.skb = skb;
+		act = netif_receive_generic_xdp(skb, xdp, xdp_prog);
 		if (act != XDP_PASS) {
 			switch (act) {
 			case XDP_REDIRECT:
 				err = xdp_do_generic_redirect(skb->dev, skb,
-							      &xdp, xdp_prog);
+							      xdp, xdp_prog);
 				if (err)
 					goto out_redir;
 				break;
