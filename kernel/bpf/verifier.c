@@ -3359,6 +3359,9 @@ static bool may_access_direct_pkt_data(struct bpf_verifier_env *env,
 		return true;
 
 	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
+#ifdef CONFIG_HISOCK
+	case BPF_PROG_TYPE_HISOCK:
+#endif
 		if (t == BPF_WRITE)
 			env->seen_direct_write = true;
 
@@ -5895,6 +5898,21 @@ static int check_helper_call(struct bpf_verifier_env *env, int func_id, int insn
 		verbose(env, "get_local_storage() doesn't support non-zero flags\n");
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_HISOCK
+	if (func_id == BPF_FUNC_ext_memcpy) {
+		/* XXX: cleanup & check if allowed to access dst mem */
+		u32 regno = BPF_REG_1 + 3;
+		struct bpf_reg_state *regs = cur_regs(env), *reg = &regs[regno];
+		struct bpf_insn *insn = &env->prog->insnsi[env->insn_idx];
+
+		if (!bpf_jit_supports_ext_helper() ||
+		    reg->umax_value <= 0 || reg->umax_value > 4096)
+			return -ENOTSUPP;
+
+		insn->off = reg->umax_value;
+	}
+#endif
 
 	/* reset caller saved regs */
 	for (i = 0; i < CALLER_SAVED_REGS; i++) {
@@ -10497,7 +10515,11 @@ static int do_check(struct bpf_verifier_env *env)
 			env->jmps_processed++;
 			if (opcode == BPF_CALL) {
 				if (BPF_SRC(insn->code) != BPF_K ||
+#ifdef CONFIG_HISOCK
+				    (insn->off != 0 && insn->imm != BPF_FUNC_ext_memcpy) ||
+#else
 				    insn->off != 0 ||
+#endif
 				    (insn->src_reg != BPF_REG_0 &&
 				     insn->src_reg != BPF_PSEUDO_CALL) ||
 				    insn->dst_reg != BPF_REG_0 ||
@@ -12222,6 +12244,12 @@ patch_map_ops_generic:
 			insn      = new_prog->insnsi + i + delta;
 			continue;
 		}
+
+#ifdef CONFIG_HISOCK
+		/* will fixup bpf extension helper in jit */
+		if (insn->imm == BPF_FUNC_ext_memcpy)
+			continue;
+#endif
 
 patch_call_imm:
 		fn = env->ops->get_func_proto(insn->imm, env->prog);

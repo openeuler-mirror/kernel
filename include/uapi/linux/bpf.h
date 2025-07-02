@@ -202,6 +202,7 @@ enum bpf_prog_type {
 #ifndef __GENKSYMS__
 	BPF_PROG_TYPE_SCHED,
 	BPF_PROG_TYPE_NET_GLOBAL,
+	BPF_PROG_TYPE_HISOCK,
 #endif
 };
 
@@ -250,6 +251,7 @@ enum bpf_attach_type {
 	BPF_GNET_SK_DST_SET,
 	BPF_GNET_RCV_NIC_NODE,
 	BPF_GNET_SEND_NIC_NODE,
+	BPF_HISOCK_EGRESS,
 #endif
 	__MAX_BPF_ATTACH_TYPE
 };
@@ -3940,6 +3942,37 @@ union bpf_attr {
  *		set prefer cpumask for the task.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * void *bpf_get_ingress_dst(struct bpf_sock_ops *skops)
+ *	Description
+ *		Get the ingress dst entry of the full sock.
+ *	Return
+ *		Valid ingress dst on success, or negative error
+ *		in case of failure.
+ *
+ * int bpf_set_ingress_dst(struct xdp_buff *xdp, void *dst)
+ *	Description
+ *		Set valid ingress dst entry to the skb associated
+ *		with xdp_buff.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_change_skb_dev(void *ctx, u32 ifindex)
+ *	Description
+ *		Change ingress or egress device of the associated skb.
+ *		Supports only BPF_PROG_TYPE_HISOCK and BPF_PROG_TYPE_XDP
+ *		program types.
+ *
+ *		*ctx* is either **struct xdp_md** for XDP programs or
+ *		**struct __sk_buff** hisock_egress programs.
+ *	Return
+ *		0 on success, or negative error in case of failure.
+ *
+ * int bpf_ext_memcpy(void *dst, size_t dst_sz, const void *src, size_t src_sz)
+ *	Description
+ *		Copy *src_sz* bytes from *src* to *dst* if *dst_sz* >= *src_sz*.
+ *	Return
+ *		0 on success, or negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4118,6 +4151,10 @@ union bpf_attr {
 	FN(get_node_stats),		\
 	FN(sched_net_rship_submit),	\
 	FN(sched_set_task_prefer_cpumask), \
+	FN(get_ingress_dst),		\
+	FN(set_ingress_dst),            \
+	FN(change_skb_dev),             \
+	FN(ext_memcpy),			\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
@@ -4485,6 +4522,7 @@ enum xdp_action {
 	XDP_PASS,
 	XDP_TX,
 	XDP_REDIRECT,
+	XDP_HISOCK_REDIRECT = 100,
 };
 
 /* user accessible metadata for XDP packet hook
@@ -5281,6 +5319,13 @@ struct bpf_gnet_ctx {
 	int rx_dev_idx;
 	int rx_dev_queue_idx;
 	__u64 rx_dev_netns_cookie;
+};
+
+enum hisock_action {
+	HISOCK_PASS,
+	HISOCK_DROP,
+	HISOCK_REDIRECT,
+	__MAX_HISOCK_ACTION,
 };
 
 #endif /* _UAPI__LINUX_BPF_H__ */

@@ -2111,6 +2111,9 @@ static bool is_net_admin_prog_type(enum bpf_prog_type prog_type)
 	case BPF_PROG_TYPE_CGROUP_SOCK_ADDR:
 	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
 	case BPF_PROG_TYPE_CGROUP_SYSCTL:
+#ifdef CONFIG_HISOCK
+	case BPF_PROG_TYPE_HISOCK:
+#endif
 	case BPF_PROG_TYPE_SOCK_OPS:
 	case BPF_PROG_TYPE_EXT: /* extends any prog */
 #ifdef CONFIG_BPF_NET_GLOBAL_PROG
@@ -3002,6 +3005,10 @@ attach_type_to_prog_type(enum bpf_attach_type attach_type)
 	case BPF_CGROUP_GETSOCKOPT:
 	case BPF_CGROUP_SETSOCKOPT:
 		return BPF_PROG_TYPE_CGROUP_SOCKOPT;
+#ifdef CONFIG_HISOCK
+	case BPF_HISOCK_EGRESS:
+		return BPF_PROG_TYPE_HISOCK;
+#endif
 	case BPF_TRACE_ITER:
 		return BPF_PROG_TYPE_TRACING;
 	case BPF_SK_LOOKUP:
@@ -3098,6 +3105,9 @@ static int bpf_prog_attach(const union bpf_attr *attr)
 	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
 	case BPF_PROG_TYPE_CGROUP_SYSCTL:
 	case BPF_PROG_TYPE_SOCK_OPS:
+#ifdef CONFIG_HISOCK
+	case BPF_PROG_TYPE_HISOCK:
+#endif
 		ret = cgroup_bpf_prog_attach(attr, ptype, prog);
 		break;
 #ifdef CONFIG_BPF_NET_GLOBAL_PROG
@@ -3140,6 +3150,9 @@ static int bpf_prog_detach(const union bpf_attr *attr)
 	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
 	case BPF_PROG_TYPE_CGROUP_SYSCTL:
 	case BPF_PROG_TYPE_SOCK_OPS:
+#ifdef CONFIG_HISOCK
+	case BPF_PROG_TYPE_HISOCK:
+#endif
 		return cgroup_bpf_prog_detach(attr, ptype);
 #ifdef CONFIG_BPF_NET_GLOBAL_PROG
 	case BPF_PROG_TYPE_NET_GLOBAL:
@@ -3186,6 +3199,9 @@ static int bpf_prog_query(const union bpf_attr *attr,
 	case BPF_CGROUP_SYSCTL:
 	case BPF_CGROUP_GETSOCKOPT:
 	case BPF_CGROUP_SETSOCKOPT:
+#ifdef CONFIG_HISOCK
+	case BPF_HISOCK_EGRESS:
+#endif
 		return cgroup_bpf_prog_query(attr, uattr);
 	case BPF_LIRC_MODE2:
 		return lirc_prog_query(attr, uattr);
@@ -4169,6 +4185,9 @@ static int link_create(union bpf_attr *attr)
 	case BPF_PROG_TYPE_CGROUP_DEVICE:
 	case BPF_PROG_TYPE_CGROUP_SYSCTL:
 	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
+#ifdef CONFIG_HISOCK
+	case BPF_PROG_TYPE_HISOCK:
+#endif
 		ret = cgroup_bpf_link_attach(attr, prog);
 		break;
 	case BPF_PROG_TYPE_TRACING:

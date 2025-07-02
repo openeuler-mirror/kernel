@@ -488,6 +488,12 @@ int __cgroup_bpf_attach(struct cgroup *cgrp,
 		 */
 		return -EPERM;
 
+#ifdef CONFIG_HISOCK
+	/* Only one bpf program can be attached to HISOCK_EGRESS */
+	if (atype == HISOCK_EGRESS && prog_list_length(progs) >= 1)
+		return -EEXIST;
+#endif
+
 	if (prog_list_length(progs) >= BPF_CGROUP_MAX_PROGS)
 		return -E2BIG;
 
@@ -1220,6 +1226,43 @@ int __cgroup_bpf_run_filter_sock_ops(struct sock *sk,
 	return ret == 1 ? 0 : -EPERM;
 }
 EXPORT_SYMBOL(__cgroup_bpf_run_filter_sock_ops);
+
+#ifdef CONFIG_HISOCK
+int __cgroup_bpf_run_hisock_egress(struct sock *sk, struct sk_buff *skb,
+				   enum cgroup_bpf_attach_type atype)
+{
+	struct cgroup *cgrp = sock_cgroup_ptr(&sk->sk_cgrp_data);
+	struct bpf_prog_array_item *item;
+	struct bpf_prog *prog;
+	struct bpf_prog_array *array;
+	struct bpf_run_ctx *old_run_ctx;
+	struct bpf_cg_run_ctx run_ctx;
+	void *saved_data_end;
+	u32 ret = HISOCK_PASS;
+
+	bpf_compute_and_save_data_end(skb, &saved_data_end);
+
+	migrate_disable();
+	rcu_read_lock();
+	array = rcu_dereference(cgrp->bpf.effective[atype]);
+	item = &array->items[0];
+	old_run_ctx = bpf_set_run_ctx(&run_ctx.run_ctx);
+	/* Only one bpf program can be attached to HISOCK_EGRESS */
+	prog = READ_ONCE(item->prog);
+	if (prog) {
+		run_ctx.prog_item = item;
+		ret = __bpf_prog_run_save_cb(prog, skb);
+	}
+	bpf_reset_run_ctx(old_run_ctx);
+	rcu_read_unlock();
+	migrate_enable();
+
+	bpf_restore_data_end(skb, saved_data_end);
+
+	return ret < __MAX_HISOCK_ACTION ? ret : -EPERM;
+}
+EXPORT_SYMBOL(__cgroup_bpf_run_hisock_egress);
+#endif
 
 int __cgroup_bpf_check_dev_permission(short dev_type, u32 major, u32 minor,
 				      short access, enum cgroup_bpf_attach_type atype)
