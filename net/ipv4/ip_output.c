@@ -457,6 +457,55 @@ static void ip_copy_addrs(struct iphdr *iph, const struct flowi4 *fl4)
 	iph->daddr = fl4->daddr;
 }
 
+#ifdef CONFIG_HISOCK
+static int hisock_egress_redirect_xmit(struct sk_buff *skb)
+{
+	struct net_device *dev = skb->dev;
+	struct netdev_queue *txq;
+	bool free_skb = true;
+	int cpu, rc;
+
+	rcu_read_lock_bh();
+
+	txq = netdev_core_pick_tx(dev, skb, NULL);
+	cpu = smp_processor_id();
+	HARD_TX_LOCK(dev, txq, cpu);
+	if (!netif_xmit_stopped(txq)) {
+		rc = netdev_start_xmit(skb, dev, txq, 0);
+		if (dev_xmit_complete(rc))
+			free_skb = false;
+	}
+	HARD_TX_UNLOCK(dev, txq);
+
+	rcu_read_unlock_bh();
+
+	if (free_skb) {
+		rc = -ENETDOWN;
+		kfree_skb(skb);
+	}
+
+	return rc;
+}
+
+static int do_hisock_egress_redirect(struct net *net, struct sock *sk, struct sk_buff *skb)
+{
+	struct iphdr *iph;
+
+	skb->protocol = htons(ETH_P_IP);
+	if (!skb->dev)
+		skb->dev = skb_dst(skb)->dev;
+
+	if (skb_mac_header_was_set(skb))
+		return hisock_egress_redirect_xmit(skb);
+
+	iph = ip_hdr(skb);
+	iph->tot_len = htons(skb->len);
+	ip_send_check(iph);
+
+	return ip_finish_output2(net, sk, skb);
+}
+#endif
+
 /* Note: skb->sk can be different from sk, in case of tunnels */
 int __ip_queue_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl,
 		    __u8 tos)
@@ -536,6 +585,25 @@ packet_routed:
 	/* TODO : should we use skb->sk here instead of sk ? */
 	skb->priority = sk->sk_priority;
 	skb->mark = sk->sk_mark;
+
+#ifdef CONFIG_HISOCK
+	res = BPF_CGROUP_RUN_PROG_HISOCK_EGRESS(sk, skb);
+	switch (res) {
+	case HISOCK_PASS:
+		break;
+	case HISOCK_REDIRECT:
+		res = do_hisock_egress_redirect(net, sk, skb);
+		rcu_read_unlock();
+		return res;
+	default:
+		pr_warn_once("Illegal HiSock return value %d, expect packet loss!", res);
+		fallthrough;
+	case HISOCK_DROP:
+		kfree_skb(skb);
+		rcu_read_unlock();
+		return NET_XMIT_DROP;
+	}
+#endif
 
 	res = ip_local_out(net, sk, skb);
 	rcu_read_unlock();
