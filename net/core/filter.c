@@ -3691,6 +3691,30 @@ static const struct bpf_func_proto bpf_skb_adjust_room_proto = {
 	.arg4_type	= ARG_ANYTHING,
 };
 
+#ifdef CONFIG_HISOCK
+BPF_CALL_2(bpf_skb_change_skb_dev, struct sk_buff *, skb, u32, ifindex)
+{
+	struct net_device *dev;
+
+	WARN_ON_ONCE(!rcu_read_lock_held());
+
+	dev = dev_get_by_index_rcu(&init_net, ifindex);
+	if (!dev)
+		return -ENODEV;
+
+	skb->dev = dev;
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_skb_change_skb_dev_proto = {
+	.func           = bpf_skb_change_skb_dev,
+	.gpl_only       = false,
+	.ret_type       = RET_INTEGER,
+	.arg1_type      = ARG_PTR_TO_CTX,
+	.arg2_type      = ARG_ANYTHING,
+};
+#endif
+
 static u32 __bpf_skb_min_len(const struct sk_buff *skb)
 {
 	u32 min_len = skb_network_offset(skb);
@@ -6390,6 +6414,34 @@ static const struct bpf_func_proto bpf_xdp_set_ingress_dst_proto = {
 };
 #endif
 
+#ifdef CONFIG_HISOCK
+BPF_CALL_2(bpf_xdp_change_skb_dev, struct xdp_buff *, xdp, u32, ifindex)
+{
+	struct hisock_xdp_buff *hxdp = (void *)xdp;
+	struct net_device *dev;
+
+	WARN_ON_ONCE(!rcu_read_lock_held());
+
+	if (!hxdp->skb)
+		return -EOPNOTSUPP;
+
+	dev = dev_get_by_index_rcu(&init_net, ifindex);
+	if (!dev)
+		return -ENODEV;
+
+	hxdp->skb->dev = dev;
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_xdp_change_skb_dev_proto = {
+	.func           = bpf_xdp_change_skb_dev,
+	.gpl_only       = false,
+	.ret_type       = RET_INTEGER,
+	.arg1_type      = ARG_PTR_TO_CTX,
+	.arg2_type      = ARG_ANYTHING,
+};
+#endif
+
 BPF_CALL_5(bpf_sock_addr_skc_lookup_tcp, struct bpf_sock_addr_kern *, ctx,
 	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id, u64, flags)
 {
@@ -7367,6 +7419,8 @@ hisock_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_skb_change_head_proto;
 	case BPF_FUNC_skb_adjust_room:
 		return &bpf_skb_adjust_room_proto;
+	case BPF_FUNC_change_skb_dev:
+		return &bpf_skb_change_skb_dev_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
@@ -7519,6 +7573,8 @@ xdp_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 #ifdef CONFIG_HISOCK
 	case BPF_FUNC_set_ingress_dst:
 		return &bpf_xdp_set_ingress_dst_proto;
+	case BPF_FUNC_change_skb_dev:
+		return &bpf_xdp_change_skb_dev_proto;
 #endif
 #ifdef CONFIG_INET
 	case BPF_FUNC_sk_lookup_udp:

@@ -3956,6 +3956,17 @@ union bpf_attr {
  *		with xdp_buff.
  *	Return
  *		0 on success, or negative error in case of failure.
+ *
+ * int bpf_change_skb_dev(void *ctx, u32 ifindex)
+ *	Description
+ *		Change ingress or egress device of the associated skb.
+ *		Supports only BPF_PROG_TYPE_HISOCK and BPF_PROG_TYPE_XDP
+ *		program types.
+ *
+ *		*ctx* is either **struct xdp_md** for XDP programs or
+ *		**struct __sk_buff** hisock_egress programs.
+ *	Return
+ *		0 on success, or negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4136,6 +4147,7 @@ union bpf_attr {
 	FN(sched_set_task_prefer_cpumask), \
 	FN(get_ingress_dst),		\
 	FN(set_ingress_dst),            \
+	FN(change_skb_dev),             \
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
