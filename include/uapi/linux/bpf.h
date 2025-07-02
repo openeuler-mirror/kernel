@@ -3967,6 +3967,12 @@ union bpf_attr {
  *		**struct __sk_buff** hisock_egress programs.
  *	Return
  *		0 on success, or negative error in case of failure.
+ *
+ * int bpf_ext_memcpy(void *dst, size_t dst_sz, const void *src, size_t src_sz)
+ *	Description
+ *		Copy *src_sz* bytes from *src* to *dst* if *dst_sz* >= *src_sz*.
+ *	Return
+ *		0 on success, or negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4148,6 +4154,7 @@ union bpf_attr {
 	FN(get_ingress_dst),		\
 	FN(set_ingress_dst),            \
 	FN(change_skb_dev),             \
+	FN(ext_memcpy),			\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
