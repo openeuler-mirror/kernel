@@ -3949,6 +3949,13 @@ union bpf_attr {
  *	Return
  *		Valid ingress dst on success, or negative error
  *		in case of failure.
+ *
+ * int bpf_set_ingress_dst(struct xdp_buff *xdp, void *dst)
+ *	Description
+ *		Set valid ingress dst entry to the skb associated
+ *		with xdp_buff.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4128,6 +4135,7 @@ union bpf_attr {
 	FN(sched_net_rship_submit),	\
 	FN(sched_set_task_prefer_cpumask), \
 	FN(get_ingress_dst),		\
+	FN(set_ingress_dst),            \
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
