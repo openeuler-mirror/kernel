@@ -52,3 +52,4 @@ xdp_tx_iptunnel
 xdpsock
 xsk_fwd
 testfile.img
+hisock/hisock_cmd
