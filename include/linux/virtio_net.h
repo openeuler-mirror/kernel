@@ -4,7 +4,9 @@
 
 #include <linux/if_vlan.h>
 #include <linux/ip.h>
+#ifndef __GENKSYMS__
 #include <linux/ipv6.h>
+#endif
 #include <uapi/linux/tcp.h>
 #include <uapi/linux/udp.h>
 #include <uapi/linux/virtio_net.h>
