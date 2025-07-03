@@ -181,12 +181,10 @@ err_exit:
 static void aq_nic_polling_timer_cb(struct timer_list *t)
 {
 	struct aq_nic_s *self = from_timer(self, t, polling_timer);
-	struct aq_vec_s *aq_vec = NULL;
 	unsigned int i = 0U;
 
-	for (i = 0U, aq_vec = self->aq_vec[0];
-		self->aq_vecs > i; ++i, aq_vec = self->aq_vec[i])
-		aq_vec_isr(i, (void *)aq_vec);
+	for (i = 0U; self->aq_vecs > i; ++i)
+		aq_vec_isr(i, (void *)self->aq_vec[i]);
 
 	mod_timer(&self->polling_timer, jiffies +
 		AQ_CFG_POLLING_TIMER_INTERVAL);
@@ -643,7 +641,6 @@ void aq_nic_get_stats(struct aq_nic_s *self, u64 *data)
 {
 	unsigned int i = 0U;
 	unsigned int count = 0U;
-	struct aq_vec_s *aq_vec = NULL;
 	struct aq_stats_s *stats = self->aq_hw_ops->hw_get_hw_stats(self->aq_hw);
 
 	if (!stats)
@@ -676,10 +673,11 @@ void aq_nic_get_stats(struct aq_nic_s *self, u64 *data)
 
 	data += i;
 
-	for (i = 0U, aq_vec = self->aq_vec[0];
-		aq_vec && self->aq_vecs > i; ++i, aq_vec = self->aq_vec[i]) {
+	for (i = 0U; self->aq_vecs > i; ++i) {
+		if (!self->aq_vec[i])
+			break;
 		data += count;
-		aq_vec_get_sw_stats(aq_vec, data, &count);
+		aq_vec_get_sw_stats(self->aq_vec[i], data, &count);
 	}
 
 err_exit:;
@@ -855,7 +853,6 @@ u32 aq_nic_get_fw_version(struct aq_nic_s *self)
 
 int aq_nic_stop(struct aq_nic_s *self)
 {
-	struct aq_vec_s *aq_vec = NULL;
 	unsigned int i = 0U;
 
 	netif_tx_disable(self->ndev);
@@ -870,9 +867,8 @@ int aq_nic_stop(struct aq_nic_s *self)
 	else
 		aq_pci_func_free_irqs(self);
 
-	for (i = 0U, aq_vec = self->aq_vec[0];
-		self->aq_vecs > i; ++i, aq_vec = self->aq_vec[i])
-		aq_vec_stop(aq_vec);
+	for (i = 0U; self->aq_vecs > i; ++i)
+		aq_vec_stop(self->aq_vec[i]);
 
 	return self->aq_hw_ops->hw_stop(self->aq_hw);
 }
