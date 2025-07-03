@@ -112,6 +112,12 @@ static inline u64 sme_get_me_mask(void)
 	return sme_me_mask;
 }
 
+#ifdef CONFIG_HYGON_CSV
+extern void print_hygon_cc_feature_info(void);
+#else	/* !CONFIG_HYGON_CSV */
+static inline void print_hygon_cc_feature_info(void) { }
+#endif	/* CONFIG_HYGON_CSV */
+
 #endif	/* __ASSEMBLY__ */
 
 #endif	/* __X86_MEM_ENCRYPT_H__ */

@@ -522,6 +522,13 @@ static int sev_get_api_version(void)
 	sev->build = status.build;
 	sev->state = status.state;
 
+	/*
+	 * The api version fields of HYGON CSV firmware are not consistent
+	 * with AMD SEV firmware.
+	 */
+	if (is_vendor_hygon())
+		csv_update_api_version(&status);
+
 	return 0;
 }
 
@@ -1161,8 +1168,12 @@ void sev_pci_init(void)
 		return;
 	}
 
-	dev_info(sev->dev, "SEV API:%d.%d build:%d\n", sev->api_major,
-		 sev->api_minor, sev->build);
+	if (is_vendor_hygon())
+		dev_info(sev->dev, "CSV API:%d.%d build:%d\n", sev->api_major,
+			 sev->api_minor, hygon_csv_build);
+	else
+		dev_info(sev->dev, "SEV API:%d.%d build:%d\n", sev->api_major,
+			 sev->api_minor, sev->build);
 
 	return;
 

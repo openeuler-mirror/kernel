@@ -42,6 +42,8 @@
 
 #include "svm.h"
 
+#include <asm/processor-hygon.h>
+
 #define __ex(x) __kvm_handle_fault_on_reboot(x)
 
 MODULE_AUTHOR("Qumranet");
@@ -433,7 +435,8 @@ static int has_svm(void)
 	}
 
 	if (sev_active()) {
-		pr_info("KVM is unsupported when running as an SEV guest\n");
+		pr_info("KVM is unsupported when running as an %s guest\n",
+			is_x86_vendor_hygon() ? "CSV" : "SEV");
 		return 0;
 	}
 
