@@ -968,12 +968,13 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 
 	u32 tmp;
 
-	u8 die_id_shift, die_id_mask, socket_id_shift, socket_id_mask;
+	u16 die_id_mask, socket_id_mask, cs_id = 0;
+	u8 die_id_shift, socket_id_shift;
 	u8 intlv_num_dies, intlv_num_chan, intlv_num_sockets;
 	u8 intlv_addr_sel, intlv_addr_bit;
 	u8 num_intlv_bits, hashed_bit;
 	u8 lgcy_mmio_hole_en, base = 0;
-	u8 cs_mask, cs_id = 0;
+	u8 cs_mask;
 	bool hash_enabled = false;
 
 	/* Read DramOffset, check if base 1 is used. */
@@ -1076,7 +1077,8 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 
 	if (num_intlv_bits > 0) {
 		u64 temp_addr_x, temp_addr_i, temp_addr_y;
-		u8 die_id_bit, sock_id_bit, cs_fabric_id;
+		u8 die_id_bit, sock_id_bit;
+		u16 cs_fabric_id;
 
 		/*
 		 * Read FabricBlockInstanceInformation3_CS[BlockFabricID].
