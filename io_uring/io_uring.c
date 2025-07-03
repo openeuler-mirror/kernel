@@ -292,6 +292,8 @@ struct io_sq_data {
 
 	unsigned long		state;
 	struct completion	exited;
+	ktime_t				sq_thread_wakeup_period;
+	struct hrtimer		timer;
 };
 
 #define IO_COMPL_BATCH			32
@@ -333,6 +335,7 @@ struct io_ring_ctx {
 
 		struct io_rings		*rings;
 		unsigned int		flags;
+		unsigned int		ext_flags;
 		unsigned int		compat: 1;
 		unsigned int		drain_next: 1;
 		unsigned int		eventfd_async: 1;
@@ -380,6 +383,7 @@ struct io_ring_ctx {
 		struct xarray		personalities;
 		u32			pers_next;
 		unsigned		sq_thread_idle;
+		ktime_t			sq_thread_wakeup_period;
 	} ____cacheline_aligned_in_smp;
 
 	/* IRQ completion list, under ->completion_lock */
@@ -7519,6 +7523,25 @@ static void io_sqd_update_thread_idle(struct io_sq_data *sqd)
 	sqd->sq_thread_idle = sq_thread_idle;
 }
 
+static void io_sqd_update_wakeup_period(struct io_sq_data *sqd)
+{
+	struct io_ring_ctx *ctx;
+	ktime_t sq_thread_wakeup_period = 0;
+
+	list_for_each_entry(ctx, &sqd->ctx_list, sqd_list) {
+		if (!(ctx->ext_flags & IORING_SETUP_SQ_THREAD_FORCE_IDLE))
+			continue;
+
+		if (!sq_thread_wakeup_period) {
+			sq_thread_wakeup_period = ctx->sq_thread_wakeup_period;
+			continue;
+		}
+		sq_thread_wakeup_period = min(sq_thread_wakeup_period,
+					      ctx->sq_thread_wakeup_period);
+	}
+	WRITE_ONCE(sqd->sq_thread_wakeup_period, sq_thread_wakeup_period);
+}
+
 static bool io_sqd_handle_event(struct io_sq_data *sqd)
 {
 	bool did_sig = false;
@@ -7559,7 +7582,7 @@ static int io_sq_thread(void *data)
 
 	mutex_lock(&sqd->lock);
 	while (1) {
-		bool cap_entries, sqt_spin = false;
+		bool cap_entries, sqt_spin, force_idle = false;
 
 		if (io_sqd_events_pending(sqd) || signal_pending(current)) {
 			if (io_sqd_handle_event(sqd))
@@ -7571,13 +7594,18 @@ static int io_sq_thread(void *data)
 		list_for_each_entry(ctx, &sqd->ctx_list, sqd_list) {
 			int ret = __io_sq_thread(ctx, cap_entries);
 
+			if (ctx->ext_flags & IORING_SETUP_SQ_THREAD_FORCE_IDLE) {
+				force_idle = true;
+				continue;
+			}
+
 			if (!sqt_spin && (ret > 0 || !list_empty(&ctx->iopoll_list)))
 				sqt_spin = true;
 		}
 		if (io_run_task_work())
 			sqt_spin = true;
 
-		if (sqt_spin || !time_after(jiffies, timeout)) {
+		if (!force_idle && (sqt_spin || !time_after(jiffies, timeout))) {
 			cond_resched();
 			sqd->sq_cpu = raw_smp_processor_id();
 			if (sqt_spin)
@@ -8113,6 +8141,9 @@ static void io_sq_thread_finish(struct io_ring_ctx *ctx)
 		io_sq_thread_park(sqd);
 		list_del_init(&ctx->sqd_list);
 		io_sqd_update_thread_idle(sqd);
+		io_sqd_update_wakeup_period(sqd);
+		if (!sqd->sq_thread_wakeup_period)
+			hrtimer_cancel(&sqd->timer);
 		io_sq_thread_unpark(sqd);
 
 		io_put_sq_data(sqd);
@@ -8177,6 +8208,7 @@ static struct io_sq_data *io_get_sq_data(struct io_uring_params *p,
 	mutex_init(&sqd->lock);
 	init_waitqueue_head(&sqd->wait);
 	init_completion(&sqd->exited);
+	hrtimer_init(&sqd->timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	return sqd;
 }
 
@@ -8580,8 +8612,21 @@ void __io_uring_free(struct task_struct *tsk)
 	tsk->io_uring = NULL;
 }
 
+static enum hrtimer_restart sq_thread_hrtimer_fn(struct hrtimer *timer)
+{
+	struct io_sq_data *sqd = container_of(timer, struct io_sq_data, timer);
+	ktime_t sq_thread_wakeup_period;
+
+	sq_thread_wakeup_period = READ_ONCE(sqd->sq_thread_wakeup_period);
+	wake_up(&sqd->wait);
+	hrtimer_forward_now(timer, sq_thread_wakeup_period);
+
+	return HRTIMER_RESTART;
+}
+
 static int io_sq_offload_create(struct io_ring_ctx *ctx,
-				struct io_uring_params *p)
+				struct io_uring_params *p,
+				struct io_uring_params_ext *ext_p)
 {
 	struct task_struct *task_to_put = NULL;
 	int ret;
@@ -8617,9 +8662,19 @@ static int io_sq_offload_create(struct io_ring_ctx *ctx,
 		if (!ctx->sq_thread_idle)
 			ctx->sq_thread_idle = HZ;
 
+		if (ctx->ext_flags & IORING_SETUP_SQ_THREAD_FORCE_IDLE) {
+			/* reset to make this ctx skip updating sq thread idle */
+			ctx->sq_thread_idle = 0;
+			ctx->sq_thread_wakeup_period =
+				ns_to_ktime((u64)ext_p->sq_thread_wakeup_period * NSEC_PER_USEC);
+			if (!ctx->sq_thread_wakeup_period)
+				ctx->sq_thread_wakeup_period = ns_to_ktime(10 * NSEC_PER_MSEC);
+		}
+
 		io_sq_thread_park(sqd);
 		list_add(&ctx->sqd_list, &sqd->ctx_list);
 		io_sqd_update_thread_idle(sqd);
+		io_sqd_update_wakeup_period(sqd);
 		/* don't attach to a dying SQPOLL thread, would be racy */
 		ret = (attached && !sqd->thread) ? -ENXIO : 0;
 		io_sq_thread_unpark(sqd);
@@ -8654,6 +8709,12 @@ static int io_sq_offload_create(struct io_ring_ctx *ctx,
 		wake_up_new_task(tsk);
 		if (ret)
 			goto err;
+
+		if (ctx->ext_flags & IORING_SETUP_SQ_THREAD_FORCE_IDLE) {
+			sqd->timer.function = sq_thread_hrtimer_fn;
+			hrtimer_start(&sqd->timer, READ_ONCE(sqd->sq_thread_wakeup_period),
+				HRTIMER_MODE_REL);
+		}
 	} else if (p->flags & IORING_SETUP_SQ_AFF) {
 		/* Can't have SQ_AFF without SQPOLL */
 		ret = -EINVAL;
@@ -10221,6 +10282,7 @@ static struct file *io_uring_get_file(struct io_ring_ctx *ctx)
 }
 
 static int io_uring_create(unsigned entries, struct io_uring_params *p,
+			   struct io_uring_params_ext *ext_p,
 			   struct io_uring_params __user *params)
 {
 	struct io_ring_ctx *ctx;
@@ -10267,6 +10329,7 @@ static int io_uring_create(unsigned entries, struct io_uring_params *p,
 	ctx = io_ring_ctx_alloc(p);
 	if (!ctx)
 		return -ENOMEM;
+	ctx->ext_flags = ext_p->flags;
 	ctx->compat = in_compat_syscall();
 	if (!ns_capable_noaudit(&init_user_ns, CAP_IPC_LOCK))
 		ctx->user = get_uid(current_user());
@@ -10284,7 +10347,7 @@ static int io_uring_create(unsigned entries, struct io_uring_params *p,
 	if (ret)
 		goto err;
 
-	ret = io_sq_offload_create(ctx, p);
+	ret = io_sq_offload_create(ctx, p, ext_p);
 	if (ret)
 		goto err;
 	/* always set a rsrc node */
@@ -10355,6 +10418,7 @@ err:
 static long io_uring_setup(u32 entries, struct io_uring_params __user *params)
 {
 	struct io_uring_params p;
+	struct io_uring_params_ext ext_p = {};
 	int i;
 
 	if (copy_from_user(&p, params, sizeof(p)))
@@ -10367,10 +10431,24 @@ static long io_uring_setup(u32 entries, struct io_uring_params __user *params)
 	if (p.flags & ~(IORING_SETUP_IOPOLL | IORING_SETUP_SQPOLL |
 			IORING_SETUP_SQ_AFF | IORING_SETUP_CQSIZE |
 			IORING_SETUP_CLAMP | IORING_SETUP_ATTACH_WQ |
-			IORING_SETUP_R_DISABLED))
+			IORING_SETUP_R_DISABLED | IORING_SETUP_EXT_PARAM))
 		return -EINVAL;
 
-	return  io_uring_create(entries, &p, params);
+	if (p.flags & IORING_SETUP_EXT_PARAM) {
+		if (copy_from_user(&ext_p, (void __user *)params +
+				   offsetof(struct io_uring_params_full, ext_p),
+				   sizeof(ext_p)))
+			return -EFAULT;
+		for (i = 0; i < ARRAY_SIZE(ext_p.resv); i++) {
+			if (ext_p.resv[i])
+				return -EINVAL;
+		}
+
+		if (ext_p.flags & ~(IORING_SETUP_SQ_THREAD_FORCE_IDLE))
+			return -EINVAL;
+	}
+
+	return  io_uring_create(entries, &p, &ext_p, params);
 }
 
 SYSCALL_DEFINE2(io_uring_setup, u32, entries,
