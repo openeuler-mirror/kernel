@@ -195,6 +195,17 @@ module_param(sev, int, 0444);
 static bool __read_mostly dump_invalid_vmcb = 0;
 module_param(dump_invalid_vmcb, bool, 0644);
 
+/*
+ * Allow set guest PAT to WB in some non-passthrough
+ * application scenarios to enhance performance.
+ *
+ * Add kernel parameter hygon_set_guest_pat_wb(default 0):
+ * 1 - set guest PAT to WB
+ * 0 - keep guest PAT to the kernel default value
+ */
+static int hygon_set_guest_pat_wb;
+module_param(hygon_set_guest_pat_wb, int, 0444);
+
 static u8 rsm_ins_bytes[] = "\x0f\xaa";
 
 static void svm_complete_interrupts(struct vcpu_svm *svm);
@@ -1103,6 +1114,16 @@ static void svm_check_invpcid(struct vcpu_svm *svm)
 	}
 }
 
+static void svm_set_guest_pat(struct vcpu_svm *svm, u64 *g_pat)
+{
+	struct kvm_vcpu *vcpu = &svm->vcpu;
+
+	if (!kvm_arch_has_assigned_device(vcpu->kvm))
+		*g_pat = GUEST_PAT_WB_ATTR;
+	else
+		*g_pat = vcpu->arch.pat;
+}
+
 static void init_vmcb(struct vcpu_svm *svm)
 {
 	struct vmcb_control_area *control = &svm->vmcb->control;
@@ -1216,6 +1237,9 @@ static void init_vmcb(struct vcpu_svm *svm)
 		svm_clr_intercept(svm, INTERCEPT_CR3_READ);
 		svm_clr_intercept(svm, INTERCEPT_CR3_WRITE);
 		save->g_pat = svm->vcpu.arch.pat;
+		if (hygon_set_guest_pat_wb)
+			svm_set_guest_pat(svm, &save->g_pat);
+
 		save->cr3 = 0;
 		save->cr4 = 0;
 	}
@@ -2640,6 +2664,10 @@ static int svm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr)
 			return 1;
 		vcpu->arch.pat = data;
 		svm->vmcb->save.g_pat = data;
+		if (npt_enabled && hygon_set_guest_pat_wb) {
+			svm_set_guest_pat(svm, &svm->vmcb->save.g_pat);
+			vcpu->arch.pat = svm->vmcb->save.g_pat;
+		}
 		vmcb_mark_dirty(svm->vmcb, VMCB_NPT);
 		break;
 	case MSR_IA32_SPEC_CTRL:
