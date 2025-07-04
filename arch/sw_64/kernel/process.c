@@ -109,6 +109,17 @@ copy_thread(unsigned long clone_flags, unsigned long usp,
 	return 0;
 }
 
+asmlinkage void ret_from_fork_kernel(struct pt_regs *regs, void (*fn)(void *args), void *fn_args)
+{
+	fn(fn_args);
+	local_irq_disable();
+}
+
+asmlinkage void ret_from_fork_user(struct pt_regs *regs)
+{
+	local_irq_disable();
+}
+
 /*
  * Fill in the user structure for a ELF core dump.
  * @regs: should be signal_pt_regs() or task_pt_reg(task)

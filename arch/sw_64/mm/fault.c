@@ -143,12 +143,15 @@ asmlinkage void notrace noinstr do_page_fault(struct pt_regs *regs)
 	unsigned long mmcsr = regs->earg1;
 	long cause = regs->earg2;
 
+	if (likely(!irqs_disabled_flags(regs->ps & 7)))
+		local_irq_enable();
+
 	if (notify_page_fault(regs, mmcsr))
-		return;
+		goto out;
 
 	if (unlikely(mmcsr >= MMCSR__DA_MATCH)) {
 		if (do_match(address, mmcsr, cause, regs) == 1)
-			return;
+			goto out;
 	}
 
 	if (unlikely(mmcsr == MMCSR__ACV1)) {
@@ -210,7 +213,7 @@ good_area:
 	fault = handle_mm_fault(vma, address, flags, NULL);
 
 	if ((fault & VM_FAULT_RETRY) && fatal_signal_pending(current))
-		return;
+		goto out;
 	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, address);
 
 	if (unlikely(fault & VM_FAULT_ERROR)) {
@@ -247,7 +250,7 @@ good_area:
 
 	up_read(&mm->mmap_lock);
 
-	return;
+	goto out;
 
 	/*
 	 * Something tried to access memory that isn't in our memory map.
@@ -262,7 +265,7 @@ good_area:
  no_context:
 	/* Are we prepared to handle this fault as an exception?  */
 	if (fixup_exception(regs, regs->pc))
-		return;
+		goto out;
 
 	/*
 	 * Oops. The kernel tried to access some bad page. We'll have to
@@ -282,7 +285,7 @@ good_area:
 	if (!user_mode(regs))
 		goto no_context;
 	pagefault_out_of_memory();
-	return;
+	goto out;
 
  do_sigbus:
 	up_read(&mm->mmap_lock);
@@ -293,7 +296,7 @@ good_area:
 	force_sig_fault(SIGBUS, BUS_ADRERR, (void __user *) address);
 	if (!user_mode(regs))
 		goto no_context;
-	return;
+	goto out;
 
  do_sigsegv:
 	force_sig_fault(SIGSEGV, si_code, (void __user *) address);
@@ -305,5 +308,6 @@ good_area:
 		show_all_vma();
 	}
 
-	return;
+out:
+	local_irq_disable();
 }

@@ -181,6 +181,8 @@ out:
 		nmi_exit();
 	else
 		irq_exit();
+
+	local_irq_disable();
 }
 EXPORT_SYMBOL(do_entInt);
 

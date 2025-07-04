@@ -32,6 +32,7 @@
 #include <asm/efi.h>
 #include <asm/unistd.h>
 #include <asm/traps.h>
+#include <asm/irq_impl.h>
 
 #include "proto.h"
 
@@ -151,6 +152,9 @@ asmlinkage void noinstr do_entArith(struct pt_regs *regs)
 	long si_code = FPE_FLTINV;
 	unsigned long exc_sum = regs->earg0;
 
+	if (!irqs_disabled_flags(regs->ps & 7))
+		local_irq_enable();
+
 #ifndef CONFIG_SUBARCH_C3B
 	/* integer divide by zero */
 	if (exc_sum & EXC_SUM_DZE_INT)
@@ -188,13 +192,16 @@ asmlinkage void noinstr do_entArith(struct pt_regs *regs)
 		 */
 		si_code = sw64_fp_emul(regs->pc - 4);
 		if (si_code == 0)
-			return;
+			goto out;
 	}
 
 	if (!user_mode(regs))
 		die("Arithmetic fault", regs, 0);
 
 	force_sig_fault(SIGFPE, si_code, (void __user *)regs->pc);
+
+out:
+	local_irq_disable();
 }
 
 void simd_emulate(unsigned int inst, unsigned long va)
@@ -254,19 +261,22 @@ asmlinkage void noinstr do_entIF(struct pt_regs *regs)
 	unsigned long inst_type = regs->earg0;
 	unsigned long va = regs->earg1;
 
+	if (!irqs_disabled_flags(regs->ps & 7))
+		local_irq_enable();
+
 	type = inst_type & 0xffffffff;
 	inst = inst_type >> 32;
 
 	if (type == IF_SIMDEMU) {
 		simd_emulate(inst, va);
-		return;
+		goto out;
 	}
 
 	if (!user_mode(regs) && type != IF_OPDEC) {
 		if (type == IF_BREAKPOINT) {
 			/* support kgdb */
 			notify_die(0, "kgdb trap", regs, 0, 0, SIGTRAP);
-			return;
+			goto out;
 		}
 		die((type == IF_RESERVED ? "Kernel Bug" : "Instruction fault"),
 				regs, type);
@@ -277,7 +287,7 @@ asmlinkage void noinstr do_entIF(struct pt_regs *regs)
 		if (ptrace_cancel_bpt(current))
 			regs->pc -= 4;
 		force_sig_fault(SIGTRAP, TRAP_BRKPT, (void __user *)regs->pc);
-		return;
+		goto out;
 
 	case IF_GENTRAP:
 		regs->pc -= 4;
@@ -340,34 +350,34 @@ asmlinkage void noinstr do_entIF(struct pt_regs *regs)
 		}
 
 		force_sig_fault(signo, code, (void __user *)regs->pc);
-		return;
+		goto out;
 
 	case IF_FEN:
 		fpu_enable();
-		return;
+		goto out;
 
 	case IF_OPDEC:
 		if (try_fix_rd_f(inst, regs) == 0)
-			return;
+			goto out;
 		switch (inst) {
 #ifdef CONFIG_KPROBES
 		case BREAK_KPROBE:
 			if (notify_die(DIE_BREAK, "kprobe", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
-				return;
+				goto out;
 			break;
 		case BREAK_KPROBE_SS:
 			if (notify_die(DIE_SSTEPBP, "single_step", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
-				return;
+				goto out;
 			break;
 #endif
 #ifdef CONFIG_UPROBES
 		case UPROBE_BRK_UPROBE:
 			if (notify_die(DIE_UPROBE, "uprobe", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
-				return;
+				goto out;
 			break;
 		case UPROBE_BRK_UPROBE_XOL:
 			if (notify_die(DIE_UPROBE_XOL, "uprobe_xol", regs, 0, 0, SIGTRAP) == NOTIFY_STOP)
-				return;
+				goto out;
 #endif
 		}
 
@@ -383,11 +393,15 @@ asmlinkage void noinstr do_entIF(struct pt_regs *regs)
 	}
 
 	force_sig_fault(SIGILL, ILL_ILLOPC, (void __user *)regs->pc);
+
+out:
+	local_irq_disable();
 }
 
 struct nmi_ctx {
 	unsigned long csr_sp;
 	unsigned long csr_scratch;
+	unsigned long csr_nmi_mask;
 };
 
 DEFINE_PER_CPU(struct nmi_ctx, nmi_context);
@@ -396,12 +410,17 @@ void save_nmi_ctx(void)
 {
 	this_cpu_write(nmi_context.csr_sp, sw64_read_csr(CSR_SP));
 	this_cpu_write(nmi_context.csr_scratch, sw64_read_csr(CSR_SCRATCH));
+	this_cpu_write(nmi_context.csr_nmi_mask, sw64_read_csr(CSR_NMI_MASK));
+	sw64_write_csr(1UL << ADR_IRQ, CSR_NMI_MASK);
+	imemb();
 }
 
 void restore_nmi_ctx(void)
 {
-	sw64_write_csr_imb(this_cpu_read(nmi_context.csr_sp), CSR_SP);
-	sw64_write_csr_imb(this_cpu_read(nmi_context.csr_scratch), CSR_SCRATCH);
+	sw64_write_csr(this_cpu_read(nmi_context.csr_sp), CSR_SP);
+	sw64_write_csr(this_cpu_read(nmi_context.csr_scratch), CSR_SCRATCH);
+	sw64_write_csr(this_cpu_read(nmi_context.csr_nmi_mask), CSR_NMI_MASK);
+	imemb();
 }
 
 void
