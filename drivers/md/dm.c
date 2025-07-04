@@ -1459,6 +1459,11 @@ static int __send_empty_flush(struct clone_info *ci)
 	unsigned target_nr = 0;
 	struct dm_target *ti;
 	struct bio flush_bio;
+	unsigned int opf = REQ_OP_WRITE | REQ_PREFLUSH | REQ_SYNC;
+
+	if ((ci->io->orig_bio->bi_opf & (REQ_IDLE | REQ_SYNC)) ==
+	    (REQ_IDLE | REQ_SYNC))
+		opf |= REQ_IDLE;
 
 	/*
 	 * Use an on-stack bio for this, it's safe since we don't
@@ -1466,7 +1471,7 @@ static int __send_empty_flush(struct clone_info *ci)
 	 * the basis for the clone(s).
 	 */
 	bio_init(&flush_bio, NULL, 0);
-	flush_bio.bi_opf = REQ_OP_WRITE | REQ_PREFLUSH | REQ_SYNC;
+	flush_bio.bi_opf = opf;
 	ci->bio = &flush_bio;
 	ci->sector_count = 0;
 
