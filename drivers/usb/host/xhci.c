@@ -294,6 +294,32 @@ static void xhci_zero_64b_regs(struct xhci_hcd *xhci)
 		xhci_info(xhci, "Fault detected\n");
 }
 
+int xhci_enable_interrupter(struct xhci_hcd *xhci)
+{
+	u32 iman;
+
+	if (!xhci || !xhci->ir_set)
+		return -EINVAL;
+
+	iman = readl(&xhci->ir_set->irq_pending);
+	writel(ER_IRQ_ENABLE(iman), &xhci->ir_set->irq_pending);
+
+	return 0;
+}
+
+int xhci_disable_interrupter(struct xhci_hcd *xhci)
+{
+	u32 iman;
+
+	if (!xhci || !xhci->ir_set)
+		return -EINVAL;
+
+	iman = readl(&xhci->ir_set->irq_pending);
+	writel(ER_IRQ_DISABLE(iman), &xhci->ir_set->irq_pending);
+
+	return 0;
+}
+
 #ifdef CONFIG_USB_PCI
 /*
  * Set up MSI
