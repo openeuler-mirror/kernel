@@ -613,6 +613,17 @@ extern int report_iommu_fault(struct iommu_domain *domain, struct device *dev,
 extern void __acpi_device_create_direct_mappings(struct iommu_group *group,
 						struct device *acpi_device);
 
+static inline bool need_config_zhaoxin_rmrr_andd(void)
+{
+#if defined(CONFIG_CPU_SUP_ZHAOXIN) || defined(CONFIG_CPU_SUP_CENTAUR)
+	if (((boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR) ||
+		(boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN)) &&
+		((boot_cpu_data.x86 == 7) && (boot_cpu_data.x86_model == 0x3b)))
+		return true;
+#endif
+	return false;
+}
+
 static inline void iommu_flush_iotlb_all(struct iommu_domain *domain)
 {
 	if (domain->ops->flush_iotlb_all)
