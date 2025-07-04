@@ -1227,6 +1227,7 @@ route_lookup:
 				t->err_time + IP6TUNNEL_ERR_TIMEO)) {
 			t->err_count--;
 
+			memset(skb->cb, 0, sizeof(struct inet6_skb_parm));
 			dst_link_failure(skb);
 		} else {
 			t->err_count = 0;
@@ -1302,6 +1303,7 @@ route_lookup:
 	return 0;
 tx_err_link_failure:
 	stats->tx_carrier_errors++;
+	memset(skb->cb, 0, sizeof(struct inet6_skb_parm));
 	dst_link_failure(skb);
 tx_err_dst_release:
 	dst_release(dst);
