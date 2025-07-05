@@ -1312,18 +1312,22 @@ static int vga_arb_release(struct inode *inode, struct file *file)
 
 	spin_lock_irqsave(&vga_user_lock, flags);
 	list_del(&priv->list);
+	spin_unlock_irqrestore(&vga_user_lock, flags);
 	for (i = 0; i < MAX_USER_CARDS; i++) {
 		uc = &priv->cards[i];
 		if (uc->pdev == NULL)
 			continue;
 		vgaarb_dbg(&uc->pdev->dev, "uc->io_cnt == %d, uc->mem_cnt == %d\n",
 			uc->io_cnt, uc->mem_cnt);
-		while (uc->io_cnt--)
+		while (uc->io_cnt--) {
 			vga_put(uc->pdev, VGA_RSRC_LEGACY_IO);
-		while (uc->mem_cnt--)
+			cond_resched();
+		}
+		while (uc->mem_cnt--) {
 			vga_put(uc->pdev, VGA_RSRC_LEGACY_MEM);
+			cond_resched();
+		}
 	}
-	spin_unlock_irqrestore(&vga_user_lock, flags);
 
 	kfree(priv);
 
