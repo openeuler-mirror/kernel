@@ -2008,10 +2008,10 @@ continue_reset:
 
 	return;
 reset_err:
+	i40evf_disable_vf(adapter);
 	clear_bit(__I40EVF_IN_CLIENT_TASK, &adapter->crit_section);
 	clear_bit(__I40EVF_IN_CRITICAL_TASK, &adapter->crit_section);
 	dev_err(&adapter->pdev->dev, "failed to allocate resources during reinit\n");
-	i40evf_close(netdev);
 }
 
 /**
