@@ -243,7 +243,6 @@ int cachefiles_check_old_object_xattr(struct cachefiles_object *object,
 				      struct cachefiles_xattr *auxdata)
 {
 	struct cachefiles_xattr *auxbuf;
-	struct cachefiles_cache *cache;
 	unsigned int len = sizeof(struct cachefiles_xattr) + 512;
 	struct dentry *dentry = object->dentry;
 	int ret;
@@ -301,17 +300,10 @@ int cachefiles_check_old_object_xattr(struct cachefiles_object *object,
 			BUG();
 		}
 
-		cache = container_of(object->fscache.cache,
-				     struct cachefiles_cache, cache);
-
 		/* update the current label */
-		ret = mnt_want_write(cache->mnt);
-		if (ret == 0) {
-			ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
-					   &auxdata->type, auxdata->len,
-					   XATTR_REPLACE);
-			mnt_drop_write(cache->mnt);
-		}
+		ret = vfs_setxattr(dentry, cachefiles_xattr_cache,
+				   &auxdata->type, auxdata->len,
+				   XATTR_REPLACE);
 		if (ret < 0) {
 			cachefiles_io_error_obj(object,
 						"Can't update xattr on %lu"
@@ -393,11 +385,7 @@ int cachefiles_remove_object_xattr(struct cachefiles_cache *cache,
 {
 	int ret;
 
-	ret = mnt_want_write(cache->mnt);
-	if (ret == 0) {
-		ret = vfs_removexattr(dentry, cachefiles_xattr_cache);
-		mnt_drop_write(cache->mnt);
-	}
+	ret = vfs_removexattr(dentry, cachefiles_xattr_cache);
 	if (ret < 0) {
 		if (ret == -ENOENT || ret == -ENODATA)
 			ret = 0;
