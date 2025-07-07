@@ -13,6 +13,10 @@
 
 #include <asm/cacheflush.h>
 
+#ifdef CONFIG_PSWIOTLB
+#include <linux/pswiotlb.h>
+#endif
+
 void arch_sync_dma_for_device(phys_addr_t paddr, size_t size,
 		enum dma_data_direction dir)
 {
@@ -51,6 +55,10 @@ void arch_setup_dma_ops(struct device *dev, u64 dma_base, u64 size,
 	dev->dma_coherent = coherent;
 	if (iommu)
 		iommu_setup_dma_ops(dev, dma_base, size);
+
+#ifdef CONFIG_PSWIOTLB
+	pswiotlb_setup_dma_ops(dev);
+#endif
 
 #ifdef CONFIG_XEN
 	if (xen_initial_domain())

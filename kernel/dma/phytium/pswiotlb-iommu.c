@@ -74,8 +74,6 @@ struct iommu_dma_cookie {
 	struct iommu_domain		*fq_domain;
 };
 
-//static DEFINE_STATIC_KEY_FALSE(iommu_deferred_attach_enabled);
-
 /*
  * The following functions are ported from
  * ./drivers/iommu/dma-iommu.c

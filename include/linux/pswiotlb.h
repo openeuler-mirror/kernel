@@ -26,7 +26,7 @@ struct p_io_tlb_pool;
 #define PSWIOTLB_FORCEOFF	(1 << 1) /* force phytium bounce buffering off*/
 #define PSWIOTLB_ANY	(1 << 2) /* allow any memory for the buffer */
 #define PSWIOTLB_FREE_THRESHOLD 30
-static bool is_ps_socs;
+static bool __read_mostly is_ps_socs;
 
 /*
  * Maximum allowable number of contiguous slabs to map,
@@ -79,6 +79,7 @@ dma_addr_t pswiotlb_map(struct device *dev, int nid, phys_addr_t phys,
 void pswiotlb_store_local_node(struct pci_dev *dev, struct pci_bus *bus);
 void iommu_dma_unmap_sg_pswiotlb(struct device *dev, struct scatterlist *sg, unsigned long iova,
 			size_t mapped, int nents, enum dma_data_direction dir, unsigned long attrs);
+void pswiotlb_setup_dma_ops(struct device *dev);
 #ifdef CONFIG_PSWIOTLB
 struct pswiotlb_passthroughlist {
 	struct list_head node;

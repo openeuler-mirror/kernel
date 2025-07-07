@@ -429,7 +429,10 @@ struct device_extended_resvd {
  * @dma_mem:	Internal for coherent mem override.
  * @cma_area:	Contiguous memory area for dma allocations
  * @dma_p_io_tlb_mem: Phytium Software IO TLB allocator.  Not for driver use.
+ * @orig_dma_ops:    Original DMA mapping operations for this device.
+ * @local_node:	NUMA node this device is really belong to.
  * @dma_uses_p_io_tlb: %true if device has used the Phytium software IO TLB.
+ * @can_use_pswiotlb: %true if device can use the Phytium software IO TLB.
  * @archdata:	For arch-specific additions.
  * @of_node:	Associated device tree node.
  * @fwnode:	Associated device node supplied by platform firmware.

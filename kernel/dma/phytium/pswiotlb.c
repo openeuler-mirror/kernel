@@ -77,7 +77,7 @@ struct p_io_tlb_slot {
 	unsigned int list;
 };
 
-bool pswiotlb_force_disable;
+bool __ro_after_init pswiotlb_force_disable;
 
 static struct page *alloc_dma_pages(int nid, gfp_t gfp, size_t bytes);
 

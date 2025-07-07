@@ -15,9 +15,6 @@
 #include <linux/vmalloc.h>
 #include "debug.h"
 #include "direct.h"
-#if defined(CONFIG_PSWIOTLB) && !defined(__GENKSYMS__)
-#include "./phytium/pswiotlb-dma.h"
-#endif
 
 /*
  * Managed DMA API
@@ -151,13 +148,7 @@ dma_addr_t dma_map_page_attrs(struct device *dev, struct page *page,
 
 	if (WARN_ON_ONCE(!dev->dma_mask))
 		return DMA_MAPPING_ERROR;
-#ifdef CONFIG_PSWIOTLB
-	if (check_if_pswiotlb_is_applicable(dev) &&
-				!pswiotlb_bypass_is_needed(dev, 0, dir)) {
-		addr = pswiotlb_dma_map_page_distribute(dev, page, offset, size, dir, attrs);
-		return addr;
-	}
-#endif
+
 	if (dma_map_direct(dev, ops))
 		addr = dma_direct_map_page(dev, page, offset, size, dir, attrs);
 	else
@@ -174,12 +165,7 @@ void dma_unmap_page_attrs(struct device *dev, dma_addr_t addr, size_t size,
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 
 	BUG_ON(!valid_dma_direction(dir));
-#ifdef CONFIG_PSWIOTLB
-	if (check_if_pswiotlb_is_applicable(dev)) {
-		pswiotlb_dma_unmap_page_attrs_distribute(dev, addr, size, dir, attrs);
-		return;
-	}
-#endif
+
 	if (dma_map_direct(dev, ops))
 		dma_direct_unmap_page(dev, addr, size, dir, attrs);
 	else if (ops->unmap_page)
@@ -203,13 +189,6 @@ int dma_map_sg_attrs(struct device *dev, struct scatterlist *sg, int nents,
 	if (WARN_ON_ONCE(!dev->dma_mask))
 		return 0;
 
-#ifdef CONFIG_PSWIOTLB
-	if (check_if_pswiotlb_is_applicable(dev) &&
-				!pswiotlb_bypass_is_needed(dev, nents, dir)) {
-		ents = pswiotlb_dma_map_sg_attrs_distribute(dev, sg, nents, dir, attrs);
-		return ents;
-	}
-#endif
 	if (dma_map_direct(dev, ops))
 		ents = dma_direct_map_sg(dev, sg, nents, dir, attrs);
 	else
@@ -229,12 +208,7 @@ void dma_unmap_sg_attrs(struct device *dev, struct scatterlist *sg,
 
 	BUG_ON(!valid_dma_direction(dir));
 	debug_dma_unmap_sg(dev, sg, nents, dir);
-#ifdef CONFIG_PSWIOTLB
-	if (check_if_pswiotlb_is_applicable(dev)) {
-		pswiotlb_dma_unmap_sg_attrs_distribute(dev, sg, nents, dir, attrs);
-		return;
-	}
-#endif
+
 	if (dma_map_direct(dev, ops))
 		dma_direct_unmap_sg(dev, sg, nents, dir, attrs);
 	else if (ops->unmap_sg)
@@ -285,12 +259,6 @@ void dma_sync_single_for_cpu(struct device *dev, dma_addr_t addr, size_t size,
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 
 	BUG_ON(!valid_dma_direction(dir));
-#ifdef CONFIG_PSWIOTLB
-	if (check_if_pswiotlb_is_applicable(dev)) {
-		pswiotlb_dma_sync_single_for_cpu_distribute(dev, addr, size, dir);
-		return;
-	}
-#endif
 	if (dma_map_direct(dev, ops))
 		dma_direct_sync_single_for_cpu(dev, addr, size, dir);
 	else if (ops->sync_single_for_cpu)
@@ -305,12 +273,6 @@ void dma_sync_single_for_device(struct device *dev, dma_addr_t addr,
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 
 	BUG_ON(!valid_dma_direction(dir));
-#ifdef CONFIG_PSWIOTLB
-	if (check_if_pswiotlb_is_applicable(dev)) {
-		pswiotlb_dma_sync_single_for_device_distribute(dev, addr, size, dir);
-		return;
-	}
-#endif
 	if (dma_map_direct(dev, ops))
 		dma_direct_sync_single_for_device(dev, addr, size, dir);
 	else if (ops->sync_single_for_device)
@@ -325,12 +287,6 @@ void dma_sync_sg_for_cpu(struct device *dev, struct scatterlist *sg,
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 
 	BUG_ON(!valid_dma_direction(dir));
-#ifdef CONFIG_PSWIOTLB
-	if (check_if_pswiotlb_is_applicable(dev)) {
-		pswiotlb_dma_sync_sg_for_cpu_distribute(dev, sg, nelems, dir);
-		return;
-	}
-#endif
 	if (dma_map_direct(dev, ops))
 		dma_direct_sync_sg_for_cpu(dev, sg, nelems, dir);
 	else if (ops->sync_sg_for_cpu)
@@ -345,12 +301,6 @@ void dma_sync_sg_for_device(struct device *dev, struct scatterlist *sg,
 	const struct dma_map_ops *ops = get_dma_ops(dev);
 
 	BUG_ON(!valid_dma_direction(dir));
-#ifdef CONFIG_PSWIOTLB
-	if (check_if_pswiotlb_is_applicable(dev)) {
-		pswiotlb_dma_sync_sg_for_device_distribute(dev, sg, nelems, dir);
-		return;
-	}
-#endif
 	if (dma_map_direct(dev, ops))
 		dma_direct_sync_sg_for_device(dev, sg, nelems, dir);
 	else if (ops->sync_sg_for_device)
@@ -478,9 +428,6 @@ void *dma_alloc_attrs(struct device *dev, size_t size, dma_addr_t *dma_handle,
 
 	WARN_ON_ONCE(!dev->coherent_dma_mask);
 
-#ifdef CONFIG_PSWIOTLB
-	check_if_pswiotlb_is_applicable(dev);
-#endif
 	if (dma_alloc_from_dev_coherent(dev, size, dma_handle, &cpu_addr))
 		return cpu_addr;
 
