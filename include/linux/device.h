@@ -581,17 +581,17 @@ struct device {
 #endif
 #ifdef CONFIG_PSWIOTLB
 	KABI_USE(2, struct p_io_tlb_mem *dma_p_io_tlb_mem)
-	KABI_USE(3, struct {
+	KABI_USE(3, const struct dma_map_ops *orig_dma_ops)
+	KABI_USE(4, struct {
+#ifdef CONFIG_NUMA
+			int local_node;
+#endif
 			bool dma_uses_p_io_tlb;
 			bool can_use_pswiotlb;
 		})
 #else
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
-#endif
-#if defined(CONFIG_NUMA) && defined(CONFIG_PSWIOTLB)
-	KABI_USE(4, int local_node) /* NUMA node this device is really belong to */
-#else
 	KABI_RESERVE(4)
 #endif
 	KABI_RESERVE(5)
