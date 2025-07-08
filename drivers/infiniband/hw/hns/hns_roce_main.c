@@ -1548,6 +1548,7 @@ int hns_roce_init(struct hns_roce_dev *hr_dev)
 	return 0;
 
 error_failed_register_device:
+	hns_roce_unregister_poe_ch(hr_dev);
 	if (hr_dev->hw->hw_exit)
 		hr_dev->hw->hw_exit(hr_dev);
 
