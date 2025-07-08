@@ -1469,6 +1469,8 @@ static void hns_roce_free_dca_safe_buf(struct hns_roce_dev *hr_dev)
 			  hr_dev->dca_safe_page);
 	hr_dev->dca_safe_page = 0;
 	hr_dev->dca_safe_buf = NULL;
+
+	memzero_explicit(&hr_dev->dca_safe_hash_key, sizeof(siphash_key_t));
 }
 
 int hns_roce_init(struct hns_roce_dev *hr_dev)

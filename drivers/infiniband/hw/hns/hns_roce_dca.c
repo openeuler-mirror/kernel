@@ -1327,7 +1327,8 @@ static int add_dca_mem(struct hns_roce_dev *hr_dev, u32 new_size)
 	if (!mem)
 		return -ENOMEM;
 
-	attr.key = (u64)mem;
+	attr.key = siphash_1u64((u64)mem, &hr_dev->dca_safe_hash_key);
+
 	attr.size = roundup(new_size, ctx->unit_size);
 	ret = register_dca_mem(hr_dev, NULL, mem, &attr);
 	if (ret) {
