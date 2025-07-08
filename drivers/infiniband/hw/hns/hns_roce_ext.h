@@ -8,15 +8,27 @@
 #include <linux/types.h>
 
 /**
- * rdma_register_notify_addr - Register an POE channel for this RDMA device.
+ * rdma_register_poe_channel - Register an POE channel for this RDMA device.
  * @channel - POE channel index.
  * @poe_addr - POE channel address.
  *
  * If the current POE device is not associated with CQ, then it will be
  * allowed to be re-registered. Otherwise, re-registration or
  * de-registration will report an EBUSY error.
+ *
+ * This function is not allowed to be called concurrently.
  */
 int rdma_register_poe_channel(struct ib_device *ib_dev, u8 channel, u64 poe_addr);
+
+/**
+ * rdma_unregister_poe_channel - Unregister an POE channel for this RDMA device.
+ * @channel - POE channel index.
+ *
+ * If the current POE device is still associated with CQ, de-registration
+ * will report an EBUSY error.
+ *
+ * This function is not allowed to be called concurrently.
+ */
 int rdma_unregister_poe_channel(struct ib_device *ib_dev, u8 channel);
 
 /**
@@ -58,9 +70,17 @@ struct rdma_notify_mem {
  *
  * If notify_mem has already been registered, re-registration
  * will not be allowed.
+ *
+ * This function is not allowed to be called concurrently.
  */
 int rdma_register_notify_addr(struct ib_device *ib_dev,
 			      size_t num, struct rdma_notify_mem *notify_mem);
+/**
+ * rdma_unregister_notify_addr - Unregister the memory regions for write with
+ * notify operation.
+ *
+ * This function is not allowed to be called concurrently.
+ */
 int rdma_unregister_notify_addr(struct ib_device *ib_dev);
 
 #endif
