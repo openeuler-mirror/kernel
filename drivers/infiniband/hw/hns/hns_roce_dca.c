@@ -1142,7 +1142,7 @@ static void load_kdca_param(struct hns_roce_dca_ctx *ctx)
 	else
 		ctx->max_size = roundup(dca_max_size, unit_size);
 
-	if (dca_min_size == DCA_MAX_MEM_SIZE)
+	if (dca_min_size == DCA_MAX_MEM_SIZE || dca_min_size > dca_max_size)
 		ctx->min_size = ctx->max_size;
 	else
 		ctx->min_size = roundup(dca_min_size, unit_size);
