@@ -417,7 +417,8 @@ static const struct attribute_group ldcp_cc_param_group = {
 	__HNS_SCC_ATTR(_name, HNS_ROCE_SCC_ALGO_HC3,			\
 			HNS_ROCE_HC3_##NAME##_OFS,			\
 			HNS_ROCE_HC3_##NAME##_SZ,			\
-			0, HNS_ROCE_HC3_##NAME##_MAX)
+			HNS_ROCE_HC3_##NAME##_MIN,			\
+			HNS_ROCE_HC3_##NAME##_MAX)
 
 HNS_PORT_HC3_CC_ATTR_RW(initial_window, INITIAL_WINDOW);
 HNS_PORT_HC3_CC_ATTR_RW(bandwidth, BANDWIDTH);
