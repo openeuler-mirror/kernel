@@ -3357,11 +3357,20 @@ static int hns_roce_v2_init(struct hns_roce_dev *hr_dev)
 {
 	int ret;
 
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08) {
+		ret = free_mr_init(hr_dev);
+		if (ret) {
+			dev_err(hr_dev->dev, "failed to init free mr!\n");
+			return ret;
+		}
+	}
+
+
 	ret = hns_roce_v2_get_reset_page(hr_dev);
 	if (ret) {
 		dev_err(hr_dev->dev,
 			"reset state init failed, ret = %d.\n", ret);
-		return ret;
+		goto error_get_reset_page_failed;
 	}
 
 	/* The hns ROCEE requires the extdb info to be cleared before using */
@@ -3390,6 +3399,9 @@ err_llm_init_failed:
 	put_hem_table(hr_dev);
 err_clear_extdb_failed:
 	hns_roce_v2_put_reset_page(hr_dev);
+error_get_reset_page_failed:
+	if (hr_dev->pci_dev->revision == PCI_REVISION_ID_HIP08)
+		free_mr_exit(hr_dev);
 
 	return ret;
 }
@@ -8013,20 +8025,9 @@ static int __hns_roce_hw_v2_init_instance(struct hnae3_handle *handle)
 		goto error_failed_roce_init;
 	}
 
-	if (pdev->revision == PCI_REVISION_ID_HIP08) {
-		ret = free_mr_init(hr_dev);
-		if (ret) {
-			dev_err(hr_dev->dev, "failed to init free mr!\n");
-			goto error_failed_free_mr_init;
-		}
-	}
-
 	handle->priv = hr_dev;
 
 	return 0;
-
-error_failed_free_mr_init:
-	hns_roce_exit(hr_dev, true);
 
 error_failed_roce_init:
 	kfree(hr_dev->priv);
