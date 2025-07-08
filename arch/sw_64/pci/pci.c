@@ -231,14 +231,6 @@ static void fixup_root_complex(struct pci_dev *dev)
 
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_JN, PCI_DEVICE_ID_SW64_ROOT_BRIDGE, fixup_root_complex);
 
-static void quirk_zx200_dma_mask(struct pci_dev *pdev)
-{
-	pr_info("Set ZX200 UHCI & EHCI dma mask to DMA_BIT_MASK(32)\n");
-	pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
-}
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ZHAOXIN, 0x3038, quirk_zx200_dma_mask);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ZHAOXIN, 0x3104, quirk_zx200_dma_mask);
-
 #ifdef CONFIG_DCA
 static void enable_sw_dca(struct pci_dev *dev)
 {
@@ -373,8 +365,10 @@ static void sunway_pci_root_bridge_prepare(struct pci_host_bridge *bridge)
 	bridge->swizzle_irq = pci_common_swizzle;
 	bridge->map_irq = sunway_pci_map_irq;
 
-	init_busnr = (0xff << 16) + ((last_bus + 1) << 8) + (last_bus);
-	writel(init_busnr, (hose->rc_config_space_base + RC_PRIMARY_BUS));
+	if (!is_guest_or_emul()) {
+		init_busnr = (0xff << 16) + ((last_bus + 1) << 8) + (last_bus);
+		writel(init_busnr, (hose->rc_config_space_base + RC_PRIMARY_BUS));
+	}
 
 	hose->first_busno = last_bus + (is_in_host() ? 1 : 0);
 
@@ -402,10 +396,12 @@ void sunway_pci_root_bridge_scan_finish(struct pci_host_bridge *bridge)
 	hose->last_busno = last_bus;
 	hose->busn_space->end = last_bus;
 
-	init_busnr = readl(hose->rc_config_space_base + RC_PRIMARY_BUS);
-	init_busnr &= ~(0xff << 16);
-	init_busnr |= last_bus << 16;
-	writel(init_busnr, (hose->rc_config_space_base + RC_PRIMARY_BUS));
+	if (!is_guest_or_emul()) {
+		init_busnr = readl(hose->rc_config_space_base + RC_PRIMARY_BUS);
+		init_busnr &= ~(0xff << 16);
+		init_busnr |= last_bus << 16;
+		writel(init_busnr, (hose->rc_config_space_base + RC_PRIMARY_BUS));
+	}
 
 	pci_bus_update_busn_res_end(bus, last_bus);
 	last_bus++;

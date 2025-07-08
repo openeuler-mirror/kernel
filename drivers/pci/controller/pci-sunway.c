@@ -781,6 +781,7 @@ enum pci_props {
 	PROP_PIU_IOR1_BASE,
 	PROP_RC_INDEX,
 	PROP_PCIE_IO_BASE,
+	PROP_DEVMN_BASE,
 	PROP_NUM
 };
 
@@ -805,7 +806,8 @@ static const char *prop_names[PROP_NUM] = {
 	"sunway,piu-ior0-base",
 	"sunway,piu-ior1-base",
 	"sunway,rc-index",
-	"sunway,pcie-io-base"
+	"sunway,pcie-io-base",
+	"sunway,devmn-base"
 };
 
 #ifdef CONFIG_NUMA
@@ -840,6 +842,9 @@ static int pci_prepare_controller(struct pci_controller *hose,
 
 	/* Get necessary properties of Root Complex */
 	for (i = 0; i < PROP_NUM; ++i) {
+		if ((i == PROP_DEVMN_BASE) && !is_junzhang_v3())
+			break;
+
 		ret = fwnode_property_read_u64(fwnode, prop_names[i],
 				&props[i]);
 
@@ -867,18 +872,22 @@ static int pci_prepare_controller(struct pci_controller *hose,
 	hose->dense_mem_base  = props[PROP_PCIE_IO_BASE];
 	hose->dense_io_base   = props[PROP_EP_IO_BASE];
 
-	hose->rc_config_space_base = ioremap(props[PROP_RC_CONFIG_BASE], SUNWAY_RC_SIZE);
-	hose->piu_ior0_base = ioremap(props[PROP_PIU_IOR0_BASE], SUNWAY_PIU_IOR0_SIZE);
-	hose->piu_ior1_base = ioremap(props[PROP_PIU_IOR1_BASE], SUNWAY_PIU_IOR1_SIZE);
+	if (!is_guest_or_emul()) {
+		hose->rc_config_space_base = ioremap(props[PROP_RC_CONFIG_BASE], SUNWAY_RC_SIZE);
+		hose->piu_ior0_base = ioremap(props[PROP_PIU_IOR0_BASE], SUNWAY_PIU_IOR0_SIZE);
+		hose->piu_ior1_base = ioremap(props[PROP_PIU_IOR1_BASE], SUNWAY_PIU_IOR1_SIZE);
+		hose->piu_ior0 = alloc_piu_saved_data(PIU_IOR0_SAVE_REGS * sizeof(u64));
+		hose->piu_ior1 = alloc_piu_saved_data(PIU_IOR1_SAVE_REGS * sizeof(u64));
+	}
+
+	if (is_junzhang_v3())
+		hose->devmn_base = ioremap(props[PROP_DEVMN_BASE], SUNWAY_DEVMN_SIZE);
 
 	hose->first_busno = 0xff;
 	hose->last_busno  = 0xff;
 	hose->self_busno  = 0xff;
 
 	hose->need_domain_info = 0;
-
-	hose->piu_ior0 = alloc_piu_saved_data(PIU_IOR0_SAVE_REGS * sizeof(u64));
-	hose->piu_ior1 = alloc_piu_saved_data(PIU_IOR1_SAVE_REGS * sizeof(u64));
 
 #if IS_ENABLED(CONFIG_PCI_MSI)
 	if (is_in_host())
