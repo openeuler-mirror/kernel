@@ -250,6 +250,12 @@ static u64 calc_loading_percent(size_t total, size_t free, u32 *out_rem)
 
 	all_pages = total >> HNS_HW_PAGE_SHIFT;
 	free_pages = free >> HNS_HW_PAGE_SHIFT;
+
+	if (!all_pages) {
+		percent = 0;
+		goto out;
+	}
+
 	if (all_pages >= free_pages) {
 		used_pages = all_pages - free_pages;
 		scale = LOADING_PERCENT_SCALE * LOADING_PERCENT_SCALE;
@@ -257,6 +263,7 @@ static u64 calc_loading_percent(size_t total, size_t free, u32 *out_rem)
 		percent = div_u64_rem(percent, LOADING_PERCENT_SCALE, &rem);
 	}
 
+out:
 	if (out_rem)
 		*out_rem = rem;
 

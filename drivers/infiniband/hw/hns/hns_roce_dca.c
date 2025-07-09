@@ -1142,7 +1142,7 @@ static void load_kdca_param(struct hns_roce_dca_ctx *ctx)
 	else
 		ctx->max_size = roundup(dca_max_size, unit_size);
 
-	if (dca_min_size == DCA_MAX_MEM_SIZE)
+	if (dca_min_size == DCA_MAX_MEM_SIZE || dca_min_size > dca_max_size)
 		ctx->min_size = ctx->max_size;
 	else
 		ctx->min_size = roundup(dca_min_size, unit_size);
@@ -1327,7 +1327,8 @@ static int add_dca_mem(struct hns_roce_dev *hr_dev, u32 new_size)
 	if (!mem)
 		return -ENOMEM;
 
-	attr.key = (u64)mem;
+	attr.key = siphash_1u64((u64)mem, &hr_dev->dca_safe_hash_key);
+
 	attr.size = roundup(new_size, ctx->unit_size);
 	ret = register_dca_mem(hr_dev, NULL, mem, &attr);
 	if (ret) {

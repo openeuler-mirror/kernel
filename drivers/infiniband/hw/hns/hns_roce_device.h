@@ -34,6 +34,7 @@
 #define _HNS_ROCE_DEVICE_H
 
 #include <linux/pci.h>
+#include <linux/siphash.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/hns-abi.h>
 #include "hns_roce_bond.h"
@@ -1233,6 +1234,7 @@ struct hns_roce_dev {
 
 	void *dca_safe_buf;
 	dma_addr_t dca_safe_page;
+	siphash_key_t dca_safe_hash_key;
 };
 
 static inline struct hns_roce_dev *to_hr_dev(struct ib_device *ib_dev)

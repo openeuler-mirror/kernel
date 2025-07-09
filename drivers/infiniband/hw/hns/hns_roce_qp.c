@@ -900,6 +900,8 @@ static int alloc_dca_safe_page(struct hns_roce_dev *hr_dev)
 		return -ENOMEM;
 	}
 
+	get_random_bytes(&hr_dev->dca_safe_hash_key, sizeof(siphash_key_t));
+
 	return 0;
 }
 
