@@ -331,12 +331,13 @@ static int hisi_ptp_get_rx_resource(struct platform_device *pdev,
 		ptp->rx_total = rx_total;
 
 	if (ptp->rx_total != rx_total || ptp->rx_cnt > ptp->rx_total) {
-		write_unlock_irqrestore(&ptp->rw_lock, flags);
+		ptp->rx_cnt--;
 		dev_err(&pdev->dev,
 			"failed to probe rx device, please check the asl file!\n");
 		dev_err(&pdev->dev,
 			"rx_total:%u, current rx_total:%u, rx_cnt:%u\n",
-			ptp->rx_total, rx_total, ptp->rx_cnt);
+			ptp->rx_total, rx_total, ptp->rx_cnt + 1);
+		write_unlock_irqrestore(&ptp->rw_lock, flags);
 
 		return -EINVAL;
 	}
@@ -618,6 +619,28 @@ static void hisi_ptp_timer(struct timer_list *t)
 	write_unlock_irqrestore(&ptp->rw_lock, flags);
 }
 
+static void hisi_ptp_remove_resource(struct platform_device *pdev)
+{
+	struct hisi_ptp_pdev *ptp = &g_ptpdev;
+
+	if (ptp->ptp_tx && ptp->ptp_tx->dev == &pdev->dev) {
+		ptp->tx_cnt--;
+		ptp->ptp_tx = NULL;
+		dev_info(&pdev->dev, "remove tx ptp device\n");
+	} else {
+		struct hisi_ptp_rx *rx;
+
+		list_for_each_entry(rx, &ptp->ptp_rx_list, node) {
+			if (rx->dev == &pdev->dev) {
+				ptp->rx_cnt--;
+				list_del(&rx->node);
+				dev_info(&pdev->dev, "remove rx ptp device\n");
+				break;
+			}
+		}
+	}
+}
+
 static int hisi_ptp_probe(struct platform_device *pdev)
 {
 	struct hisi_ptp_pdev *ptp = &g_ptpdev;
@@ -651,14 +674,15 @@ static int hisi_ptp_probe(struct platform_device *pdev)
 
 	if (ptp->rx_total == 0 || ptp->rx_total != ptp->rx_cnt ||
 	    ptp->tx_cnt != 1) {
-		write_unlock_irqrestore(&ptp->rw_lock, flags);
 		dev_info(&pdev->dev,
 			 "waiting for devices...rx total:%u, now:%u. tx total:1, now:%u\n",
 			 ptp->rx_total, ptp->rx_cnt, ptp->tx_cnt);
+		write_unlock_irqrestore(&ptp->rw_lock, flags);
 		return 0;
 	}
 
 	if (!ptp->rx_base) {
+		hisi_ptp_remove_resource(pdev);
 		write_unlock_irqrestore(&ptp->rw_lock, flags);
 		dev_err(&pdev->dev,
 			"failed to probe, no base rx device, please check the asl file!\n");
@@ -677,6 +701,7 @@ static int hisi_ptp_probe(struct platform_device *pdev)
 	if (ret) {
 		write_lock_irqsave(&ptp->rw_lock, flags);
 		hisi_ptp_disable(ptp);
+		hisi_ptp_remove_resource(pdev);
 		write_unlock_irqrestore(&ptp->rw_lock, flags);
 		return ret;
 	}
@@ -690,7 +715,6 @@ static int hisi_ptp_probe(struct platform_device *pdev)
 static int hisi_ptp_remove(struct platform_device *pdev)
 {
 	struct hisi_ptp_pdev *ptp = &g_ptpdev;
-	struct hisi_ptp_rx *rx;
 	unsigned long flags;
 
 	if (test_and_clear_bit(HISI_PTP_INIT_DONE, &ptp->flag)) {
@@ -705,20 +729,7 @@ static int hisi_ptp_remove(struct platform_device *pdev)
 	}
 
 	write_lock_irqsave(&ptp->rw_lock, flags);
-	if (ptp->ptp_tx && ptp->ptp_tx->dev == &pdev->dev) {
-		ptp->tx_cnt--;
-		ptp->ptp_tx = NULL;
-		dev_info(&pdev->dev, "remove tx ptp device\n");
-	} else {
-		list_for_each_entry(rx, &ptp->ptp_rx_list, node) {
-			if (rx->dev == &pdev->dev) {
-				ptp->rx_cnt--;
-				list_del(&rx->node);
-				dev_info(&pdev->dev, "remove rx ptp device\n");
-				break;
-			}
-		}
-	}
+	hisi_ptp_remove_resource(pdev);
 	write_unlock_irqrestore(&ptp->rw_lock, flags);
 
 	return 0;
