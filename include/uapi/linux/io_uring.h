@@ -98,6 +98,13 @@ enum {
 #define IORING_SETUP_CLAMP	(1U << 4)	/* clamp SQ/CQ ring sizes */
 #define IORING_SETUP_ATTACH_WQ	(1U << 5)	/* attach to existing wq */
 #define IORING_SETUP_R_DISABLED	(1U << 6)	/* start with ring disabled */
+#define IORING_SETUP_EXT_PARAM  (1U << 31)	/* extended param */
+
+/*
+ * io_uring_setup() extended flags
+ */
+/* Force SQ thread to be idle, waiting for periodic wake-up */
+#define IORING_SETUP_SQ_THREAD_FORCE_IDLE (1U << 0)
 
 enum {
 	IORING_OP_NOP,
@@ -269,6 +276,17 @@ struct io_uring_params {
 	__u32 resv[3];
 	struct io_sqring_offsets sq_off;
 	struct io_cqring_offsets cq_off;
+};
+
+struct io_uring_params_ext {
+	__u32 flags;
+	__u32 sq_thread_wakeup_period;
+	__u32 resv[6];
+};
+
+struct io_uring_params_full {
+	struct io_uring_params p;
+	struct io_uring_params_ext ext_p;
 };
 
 /*
