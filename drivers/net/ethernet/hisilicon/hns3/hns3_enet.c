@@ -3818,9 +3818,11 @@ static void hns3_unmap_buffer(struct hns3_enet_ring *ring,
 
 static void hns3_buffer_detach(struct hns3_enet_ring *ring, int i)
 {
-	hns3_unmap_buffer(ring, &ring->desc_cb[i]);
+	if (!ring->page_pool) {
+		hns3_unmap_buffer(ring, &ring->desc_cb[i]);
+		ring->desc_cb[i].refill = 0;
+	}
 	ring->desc[i].addr = 0;
-	ring->desc_cb[i].refill = 0;
 }
 
 static void hns3_free_buffer_detach(struct hns3_enet_ring *ring, int i,
@@ -3930,7 +3932,9 @@ out_buffer_fail:
 static void hns3_replace_buffer(struct hns3_enet_ring *ring, int i,
 				struct hns3_desc_cb *res_cb)
 {
-	hns3_unmap_buffer(ring, &ring->desc_cb[i]);
+	if (!ring->page_pool)
+		hns3_unmap_buffer(ring, &ring->desc_cb[i]);
+
 	ring->desc_cb[i] = *res_cb;
 	ring->desc_cb[i].refill = 1;
 	ring->desc[i].addr = cpu_to_le64(ring->desc_cb[i].dma +
