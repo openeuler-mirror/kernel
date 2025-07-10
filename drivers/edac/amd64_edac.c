@@ -1118,7 +1118,7 @@ static int hygon_umc_normaddr_to_sysaddr(u64 norm_addr, u16 nid, u8 umc, u64 *sy
 			die_id_shift = (tmp >> 12) & 0xF;
 			die_id_mask  = tmp & 0x7FF;
 
-			cs_id |= ((cs_fabric_id & die_id_mask) >> die_id_shift - 4) << die_id_bit;
+			cs_id |= (((cs_fabric_id & die_id_mask) >> die_id_shift) - 4) << die_id_bit;
 		}
 
 		/* If interleaved over more than 1 socket. */
