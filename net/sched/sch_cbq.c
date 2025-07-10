@@ -1422,7 +1422,8 @@ static void cbq_qlen_notify(struct Qdisc *sch, unsigned long arg)
 {
 	struct cbq_class *cl = (struct cbq_class *)arg;
 
-	cbq_deactivate_class(cl);
+	if (cl->next_alive)
+		cbq_deactivate_class(cl);
 }
 
 static unsigned long cbq_find(struct Qdisc *sch, u32 classid)
