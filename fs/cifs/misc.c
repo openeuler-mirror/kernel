@@ -1036,62 +1036,51 @@ struct super_cb_data {
 	struct super_block *sb;
 };
 
-static void tcp_super_cb(struct super_block *sb, void *arg)
-{
-	struct super_cb_data *sd = arg;
-	struct TCP_Server_Info *server = sd->data;
-	struct cifs_sb_info *cifs_sb;
-	struct cifs_tcon *tcon;
-
-	if (sd->sb)
-		return;
-
-	cifs_sb = CIFS_SB(sb);
-	tcon = cifs_sb_master_tcon(cifs_sb);
-	if (tcon->ses->server == server)
-		sd->sb = sb;
-}
-
-static struct super_block *__cifs_get_super(void (*f)(struct super_block *, void *),
-					    void *data)
-{
-	struct super_cb_data sd = {
-		.data = data,
-		.sb = NULL,
-	};
-	struct file_system_type **fs_type = (struct file_system_type *[]) {
-		&cifs_fs_type, &smb3_fs_type, NULL,
-	};
-
-	for (; *fs_type; fs_type++) {
-		iterate_supers_type(*fs_type, f, &sd);
-		if (sd.sb) {
-			/*
-			 * Grab an active reference in order to prevent automounts (DFS links)
-			 * of expiring and then freeing up our cifs superblock pointer while
-			 * we're doing failover.
-			 */
-			cifs_sb_active(sd.sb);
-			return sd.sb;
-		}
-	}
-	return ERR_PTR(-EINVAL);
-}
-
-static void __cifs_put_super(struct super_block *sb)
-{
-	if (!IS_ERR_OR_NULL(sb))
-		cifs_sb_deactive(sb);
-}
-
 struct super_block *cifs_get_tcp_super(struct TCP_Server_Info *server)
 {
-	return __cifs_get_super(tcp_super_cb, server);
+	struct super_block *sb;
+	struct cifs_ses *ses;
+	struct cifs_tcon *tcon;
+	struct cifs_sb_info *cifs_sb;
+
+	if (!server)
+		return NULL;
+
+	spin_lock(&cifs_tcp_ses_lock);
+	list_for_each_entry(ses, &server->smb_ses_list, smb_ses_list) {
+		list_for_each_entry(tcon, &ses->tcon_list, tcon_list) {
+			spin_lock(&tcon->sb_list_lock);
+			list_for_each_entry(cifs_sb, &tcon->cifs_sb_list, tcon_sb_link) {
+				if (!cifs_sb->vfs_sb)
+					continue;
+
+				sb = cifs_sb->vfs_sb;
+
+				/* Safely increment s_active only if it's not zero.
+				 *
+				 * When s_active == 0, the super block is being deactivated
+				 * and should not be used. This prevents UAF scenarios
+				 * where we might grab a reference to a super block that's
+				 * in the middle of destruction.
+				 */
+				if (!atomic_add_unless(&sb->s_active, 1, 0))
+					continue;
+				spin_unlock(&tcon->sb_list_lock);
+				spin_unlock(&cifs_tcp_ses_lock);
+				return sb;
+			}
+			spin_unlock(&tcon->sb_list_lock);
+		}
+	}
+	spin_unlock(&cifs_tcp_ses_lock);
+
+	return NULL;
 }
 
 void cifs_put_tcp_super(struct super_block *sb)
 {
-	__cifs_put_super(sb);
+	if (!IS_ERR_OR_NULL(sb))
+		deactivate_super(sb);
 }
 
 #ifdef CONFIG_CIFS_DFS_UPCALL
@@ -1140,29 +1129,45 @@ out:
 	return rc;
 }
 
-static void tcon_super_cb(struct super_block *sb, void *arg)
-{
-	struct super_cb_data *sd = arg;
-	struct cifs_tcon *tcon = sd->data;
-	struct cifs_sb_info *cifs_sb;
-
-	if (sd->sb)
-		return;
-
-	cifs_sb = CIFS_SB(sb);
-	if (tcon->dfs_path && cifs_sb->origin_fullpath &&
-	    !strcasecmp(tcon->dfs_path, cifs_sb->origin_fullpath))
-		sd->sb = sb;
-}
-
 static inline struct super_block *cifs_get_tcon_super(struct cifs_tcon *tcon)
 {
-	return __cifs_get_super(tcon_super_cb, tcon);
+	struct cifs_sb_info *cifs_sb;
+	struct super_block *sb = ERR_PTR(-EINVAL);
+
+	if (!tcon && list_empty(&tcon->cifs_sb_list))
+		return sb;
+
+	spin_lock(&tcon->sb_list_lock);
+	list_for_each_entry(cifs_sb, &tcon->cifs_sb_list, tcon_sb_link) {
+		if (!cifs_sb->vfs_sb)
+			continue;
+
+		sb = cifs_sb->vfs_sb;
+
+		if (!tcon->dfs_path)
+			continue;
+		if (!cifs_sb->origin_fullpath)
+			continue;
+		if (strcasecmp(tcon->dfs_path, cifs_sb->origin_fullpath))
+			continue;
+		/*
+		 * Use atomic_add_unless to safely increment s_active.
+		 * This ensures we don't add a reference to a super block
+		 * that has s_active == 0 (being destroyed).
+		 */
+		if (!atomic_add_unless(&sb->s_active, 1, 0))
+			continue;
+		break;
+	}
+	spin_unlock(&tcon->sb_list_lock);
+
+	return sb;
 }
 
 static inline void cifs_put_tcon_super(struct super_block *sb)
 {
-	__cifs_put_super(sb);
+	if (!IS_ERR_OR_NULL(sb))
+		deactivate_super(sb);
 }
 #else
 static inline struct super_block *cifs_get_tcon_super(struct cifs_tcon *tcon)

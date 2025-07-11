@@ -780,6 +780,7 @@ static int cifs_set_super(struct super_block *sb, void *data)
 {
 	struct cifs_mnt_data *mnt_data = data;
 	sb->s_fs_info = mnt_data->cifs_sb;
+	mnt_data->cifs_sb->vfs_sb = sb;
 	return set_anon_super(sb, NULL);
 }
 
