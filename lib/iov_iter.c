@@ -908,6 +908,24 @@ static inline bool page_copy_sane(struct page *page, size_t offset, size_t n)
 	return false;
 }
 
+size_t copy_mc_page_to_kvec_iter(struct page *page, size_t offset, size_t bytes,
+			 struct iov_iter *i)
+{
+	size_t wanted;
+	void *kaddr;
+
+	if (unlikely(!page_copy_sane(page, offset, bytes)))
+		return 0;
+
+	if (!(i->type & ITER_KVEC))
+		return 0;
+
+	kaddr = kmap_atomic(page);
+	wanted = copy_mc_to_iter(kaddr + offset, bytes, i);
+	kunmap_atomic(kaddr);
+	return wanted;
+}
+
 size_t copy_page_to_iter(struct page *page, size_t offset, size_t bytes,
 			 struct iov_iter *i)
 {

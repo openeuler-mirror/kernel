@@ -1685,10 +1685,24 @@ static int bprm_creds_from_file(struct linux_binprm *bprm)
  */
 static int prepare_binprm(struct linux_binprm *bprm)
 {
+	unsigned int flags = 0;
 	loff_t pos = 0;
+	int ret;
 
+	/*
+	 * Update task flag with PF_MCS to enable mcs support during
+	 * reading binrpm
+	 */
+	if (IS_ENABLED(CONFIG_ARM64) && IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC) &&
+	    !(current->flags & PF_MCS))
+		flags = PF_MCS;
+
+	current->flags |= flags;
 	memset(bprm->buf, 0, BINPRM_BUF_SIZE);
-	return kernel_read(bprm->file, bprm->buf, BINPRM_BUF_SIZE, &pos);
+	ret = kernel_read(bprm->file, bprm->buf, BINPRM_BUF_SIZE, &pos);
+	current->flags &= ~flags;
+
+	return ret;
 }
 
 /*

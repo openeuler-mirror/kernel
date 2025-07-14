@@ -2601,9 +2601,14 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	int error = 0;
 	ssize_t retval = 0;
 	loff_t *ppos = &iocb->ki_pos;
+	bool use_copy_mc = false;
 
 	index = *ppos >> PAGE_SHIFT;
 	offset = *ppos & ~PAGE_MASK;
+
+	if (IS_ENABLED(CONFIG_ARM64) && IS_ENABLED(CONFIG_ARCH_HAS_COPY_MC) &&
+	    (current->flags & PF_MCS) && iov_iter_is_kvec(to))
+		use_copy_mc = true;
 
 	for (;;) {
 		struct page *page = NULL;
@@ -2664,7 +2669,10 @@ static ssize_t shmem_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 			 * Ok, we have the page, and it's up-to-date, so
 			 * now we can copy it to user space...
 			 */
-			ret = copy_page_to_iter(page, offset, nr, to);
+			if (use_copy_mc)
+				ret = copy_mc_page_to_kvec_iter(page, offset, nr, to);
+			else
+				ret = copy_page_to_iter(page, offset, nr, to);
 			put_page(page);
 
 		} else if (iter_is_iovec(to)) {
