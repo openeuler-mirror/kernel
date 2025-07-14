@@ -3012,6 +3012,21 @@ found:
 	return 1;
 }
 
+static void hugetlb_drain_movable_pcp(struct hstate *h, int nid)
+{
+	pg_data_t *pgdat = NODE_DATA(nid);
+	struct zone *zone;
+
+	/*
+	 * only zone movable is needed to drian as it is the only
+	 * zone that can be exclusively used by hugetlb.
+	 */
+	zone = &pgdat->node_zones[ZONE_MOVABLE];
+
+	if (zone_managed_pages(zone))
+		drain_all_pages(zone);
+}
+
 #define persistent_huge_pages(h) (h->nr_huge_pages - h->surplus_huge_pages)
 static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
 			      nodemask_t *nodes_allowed)
@@ -3093,6 +3108,13 @@ static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
 		if (!adjust_pool_surplus(h, nodes_allowed, -1))
 			break;
 	}
+
+	/*
+	 * drain pcp for movable zone to increase the success rate for
+	 * hugetlb memory allocation if movable_node enabled
+	 */
+	if (movable_node_is_enabled() && count > persistent_huge_pages(h))
+		hugetlb_drain_movable_pcp(h, nid);
 
 	while (count > persistent_huge_pages(h)) {
 		/*
