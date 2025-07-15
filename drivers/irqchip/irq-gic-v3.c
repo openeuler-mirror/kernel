@@ -853,7 +853,7 @@ void register_irqchip_proc(struct irq_desc *desc, void *irqp)
 		return;
 
 	/* create /proc/irq/<irq>/xint */
-	proc_create_data("xint", 0644, desc->dir, &xint_proc_ops, irqp);
+	proc_create_data("xint", 0640, desc->dir, &xint_proc_ops, irqp);
 }
 
 void unregister_irqchip_proc(struct irq_desc *desc)
