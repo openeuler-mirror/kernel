@@ -3616,7 +3616,7 @@ static const struct pid_entry tgid_base_stuff[] = {
 	REG("smart_grid_level", 0644, proc_pid_sg_level_operations),
 #endif
 #ifdef CONFIG_FAST_SYSCALL
-	REG("xcall", 0644, proc_pid_xcall_operations),
+	REG("xcall", 0640, proc_pid_xcall_operations),
 #endif
 #ifdef CONFIG_XCALL_PREFETCH
 	REG("prefetch", 0644, proc_pid_xcall_prefetch_operations),
