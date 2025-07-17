@@ -443,6 +443,28 @@ static struct midr_range broken_aarch32_aes[] = {
 };
 #endif
 
+#ifdef CONFIG_PHYTIUM_ERRATUM_FT3386
+#define SOC_ID_PS23064	0x8
+#define SOC_ID_PS24080	0x6
+#define SYS_AIDR_EL1    sys_reg(3, 1, 0, 0, 7)
+bool __read_mostly is_ps_socs;
+static bool
+should_enable_phytium_ft3386_pswiotlb(const struct arm64_cpu_capabilities *entry, int unused)
+{
+	u32 model;
+	u32 soc_id;
+
+	soc_id = read_sysreg_s(SYS_AIDR_EL1);
+	model = read_cpuid_id();
+	if ((soc_id == SOC_ID_PS23064 || soc_id == SOC_ID_PS24080)
+				&& model == entry->midr_range.model) {
+		is_ps_socs = true;
+		return true;
+	} else
+		return false;
+}
+#endif
+
 const struct arm64_cpu_capabilities arm64_errata[] = {
 #ifdef CONFIG_ARM64_WORKAROUND_CLEAN_CACHE
 	{
@@ -664,6 +686,14 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		ERRATA_MIDR_ALL_VERSIONS(MIDR_HISI_TSV110),
 		.matches = should_disable_hisi_hip08_ru_prefetch,
 		.cpu_enable = hisi_hip08_ru_prefetch_disable,
+	},
+#endif
+#ifdef CONFIG_PHYTIUM_ERRATUM_FT3386
+	{
+		.desc = "Phytium erratum FT3386",
+		.capability = ARM64_WORKAROUND_PHYTIUM_FT3386,
+		ERRATA_MIDR_ALL_VERSIONS(MIDR_PHYTIUM_FTC862),
+		.matches = should_enable_phytium_ft3386_pswiotlb,
 	},
 #endif
 	{
