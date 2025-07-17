@@ -1311,7 +1311,7 @@ void update_cpu_closid_rmid(void *info)
 }
 
 /*
- * Update the PGR_ASSOC MSR on all cpus in @cpu_mask,
+ * Update the MPAM sysreg on all cpus in @cpu_mask,
  *
  * Per task closids/rmids must have been set up before calling this function.
  */
@@ -1326,86 +1326,63 @@ update_closid_rmid(const struct cpumask *cpu_mask, struct rdtgroup *r)
 	put_cpu();
 }
 
-struct task_move_callback {
-	struct callback_head	work;
-	struct rdtgroup		*rdtgrp;
-};
-
-static void move_myself(struct callback_head *head)
+static void _update_task_closid_rmid(void *task)
 {
-	struct task_move_callback *callback;
-	struct rdtgroup *rdtgrp;
-
-	callback = container_of(head, struct task_move_callback, work);
-	rdtgrp = callback->rdtgrp;
-
 	/*
-	 * If resource group was deleted before this task work callback
-	 * was invoked, then assign the task to root group and free the
-	 * resource group.
+	 * If the task is still current on this CPU, update MPAM sysreg.
+	 * Otherwise, the MSR is updated when the task is scheduled in.
 	 */
-	if (atomic_dec_and_test(&rdtgrp->waitcount) &&
-	    (rdtgrp->flags & RDT_DELETED)) {
-		current->closid = 0;
-		current->rmid = 0;
-		rdtgroup_remove(rdtgrp);
-	}
+	if (task == current)
+		mpam_sched_in();
+}
 
-	preempt_disable();
-	/* update PQR_ASSOC MSR to make resource group go into effect */
-	mpam_sched_in();
-	preempt_enable();
-
-	kfree(callback);
+static void update_task_closid_rmid(struct task_struct *t)
+{
+	if (IS_ENABLED(CONFIG_SMP) && task_curr(t))
+		smp_call_function_single(task_cpu(t), _update_task_closid_rmid, t, 1);
+	else
+		_update_task_closid_rmid(t);
 }
 
 int __resctrl_group_move_task(struct task_struct *tsk,
 				struct rdtgroup *rdtgrp)
 {
-	struct task_move_callback *callback;
-	int ret;
-
-	callback = kzalloc(sizeof(*callback), GFP_NOWAIT);
-	if (!callback)
-		return -ENOMEM;
-	callback->work.func = move_myself;
-	callback->rdtgrp = rdtgrp;
-
 	/*
-	 * Take a refcount, so rdtgrp cannot be freed before the
-	 * callback has been invoked.
+	 * Set the task's closid/rmid before the MPAM sysreg can be
+	 * updated by them.
+	 *
+	 * For ctrl_mon groups, move both closid and rmid.
+	 * For monitor groups, can move the tasks only from
+	 * their parent CTRL group.
 	 */
-	atomic_inc(&rdtgrp->waitcount);
-	ret = task_work_add(tsk, &callback->work, true);
-	if (ret) {
-		/*
-		 * Task is exiting. Drop the refcount and free the callback.
-		 * No need to check the refcount as the group cannot be
-		 * deleted before the write function unlocks resctrl_group_mutex.
-		 */
-		atomic_dec(&rdtgrp->waitcount);
-		kfree(callback);
-		rdt_last_cmd_puts("task exited\n");
-	} else {
-		/*
-		 * For ctrl_mon groups move both closid and rmid.
-		 * For monitor groups, can move the tasks only from
-		 * their parent CTRL group.
-		 */
-		if (rdtgrp->type == RDTCTRL_GROUP) {
+	if (rdtgrp->type == RDTCTRL_GROUP) {
+		tsk->closid = resctrl_navie_closid(rdtgrp->closid);
+		tsk->rmid = resctrl_navie_rmid(rdtgrp->mon.rmid);
+	} else if (rdtgrp->type == RDTMON_GROUP) {
+		if (rdtgrp->mon.parent->closid.intpartid == tsk->closid) {
 			tsk->closid = resctrl_navie_closid(rdtgrp->closid);
 			tsk->rmid = resctrl_navie_rmid(rdtgrp->mon.rmid);
-		} else if (rdtgrp->type == RDTMON_GROUP) {
-			if (rdtgrp->mon.parent->closid.intpartid == tsk->closid) {
-				tsk->closid = resctrl_navie_closid(rdtgrp->closid);
-				tsk->rmid = resctrl_navie_rmid(rdtgrp->mon.rmid);
-			} else {
-				rdt_last_cmd_puts("Can't move task to different control group\n");
-				ret = -EINVAL;
-			}
+		} else {
+			rdt_last_cmd_puts("Can't move task to different control group\n");
+			return -EINVAL;
 		}
 	}
-	return ret;
+
+	/*
+	 * Ensure the task's closid and rmid are written before determining if
+	 * the task is current that will decide if it will be interrupted.
+	 */
+	barrier();
+
+	/*
+	 * By now, the task's closid and rmid are set. If the task is current
+	 * on a CPU, the MPAM sysreg needs to be updated to make the resource
+	 * group go into effect. If the task is not current, the sysreg will be
+	 * updated when the task is scheduled in.
+	 */
+	update_task_closid_rmid(tsk);
+
+	return 0;
 }
 
 static int resctrl_group_seqfile_show(struct seq_file *m, void *arg)
