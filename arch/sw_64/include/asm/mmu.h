@@ -12,4 +12,10 @@ static inline void clear_asid(mm_context_t *mm_context)
 {
 	memset(mm_context->asid, 0, sizeof(mm_context->asid[0]) * nr_cpu_ids);
 }
+
+#ifdef CONFIG_SW64_KERNEL_PAGE_TABLE
+void create_pgd_mapping(pgd_t *pgdir, unsigned long virt, unsigned long phys,
+			unsigned long size, pgprot_t prot,
+			void *(*pgtable_alloc)(void));
+#endif
 #endif /* _ASM_SW64_MMU_H */

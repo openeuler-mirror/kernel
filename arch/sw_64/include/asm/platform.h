@@ -18,6 +18,17 @@ extern unsigned long bios_version;
 
 #endif
 
+#ifdef CONFIG_SW64_RRU
+#define USER_PRINT_BUFF_BASE	(0x600000UL + __START_KERNEL_map)
+#define USER_PRINT_BUFF_LEN	0x100000UL
+#define USER_MESSAGE_MAX_LEN	0x100000UL
+#endif
+
+#ifdef CONFIG_SW64_RRK
+#define KERNEL_PRINTK_BUFF_BASE (0x700000UL + __START_KERNEL_map)
+#define PRINTK_SIZE		0x100000UL
+#endif
+
 extern struct boot_params *sunway_boot_params;
 extern unsigned long sunway_boot_magic;
 extern unsigned long sunway_dtb_address;
