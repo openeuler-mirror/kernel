@@ -457,6 +457,14 @@ static void resctrl_move_group_tasks(struct resctrl_group *from, struct resctrl_
 			WRITE_ONCE(t->closid, resctrl_navie_closid(to->closid));
 			WRITE_ONCE(t->rmid, resctrl_navie_rmid(to->mon.rmid));
 
+			/*
+			 * Order the closid/rmid stores above before the loads
+			 * in task_curr(). This pairs with the full barrier
+			 * between the rq->curr update and mpam_sched_in()
+			 * during context switch.
+			 */
+			smp_mb();
+
 #ifdef CONFIG_SMP
 			/*
 			 * This is safe on x86 w/o barriers as the ordering
