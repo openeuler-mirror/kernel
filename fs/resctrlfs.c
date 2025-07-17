@@ -454,8 +454,8 @@ static void resctrl_move_group_tasks(struct resctrl_group *from, struct resctrl_
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
 		if (!from || is_task_match_resctrl_group(t, from)) {
-			t->closid = resctrl_navie_closid(to->closid);
-			t->rmid = resctrl_navie_rmid(to->mon.rmid);
+			WRITE_ONCE(t->closid, resctrl_navie_closid(to->closid));
+			WRITE_ONCE(t->rmid, resctrl_navie_rmid(to->mon.rmid));
 
 #ifdef CONFIG_SMP
 			/*

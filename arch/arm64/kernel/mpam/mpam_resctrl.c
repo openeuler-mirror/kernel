@@ -1356,12 +1356,12 @@ int __resctrl_group_move_task(struct task_struct *tsk,
 	 * their parent CTRL group.
 	 */
 	if (rdtgrp->type == RDTCTRL_GROUP) {
-		tsk->closid = resctrl_navie_closid(rdtgrp->closid);
-		tsk->rmid = resctrl_navie_rmid(rdtgrp->mon.rmid);
+		WRITE_ONCE(tsk->closid, resctrl_navie_closid(rdtgrp->closid));
+		WRITE_ONCE(tsk->rmid, resctrl_navie_rmid(rdtgrp->mon.rmid));
 	} else if (rdtgrp->type == RDTMON_GROUP) {
 		if (rdtgrp->mon.parent->closid.intpartid == tsk->closid) {
-			tsk->closid = resctrl_navie_closid(rdtgrp->closid);
-			tsk->rmid = resctrl_navie_rmid(rdtgrp->mon.rmid);
+			WRITE_ONCE(tsk->closid, resctrl_navie_closid(rdtgrp->closid));
+			WRITE_ONCE(tsk->rmid, resctrl_navie_rmid(rdtgrp->mon.rmid));
 		} else {
 			rdt_last_cmd_puts("Can't move task to different control group\n");
 			return -EINVAL;
@@ -2198,19 +2198,22 @@ void __mpam_sched_in(void)
 	u64 closid = state->default_closid;
 	u64 reqpartid = 0;
 	u64 pmg = 0;
+	u32 tmp;
 
 	/*
 	 * If this task has a closid/rmid assigned, use it.
 	 * Else use the closid/rmid assigned to this cpu.
 	 */
 	if (static_branch_likely(&resctrl_alloc_enable_key)) {
-		if (current->closid)
-			closid = current->closid;
+		tmp = READ_ONCE(current->closid);
+		if (tmp)
+			closid = tmp;
 	}
 
 	if (static_branch_likely(&resctrl_mon_enable_key)) {
-		if (current->rmid)
-			rmid = current->rmid;
+		tmp = READ_ONCE(current->rmid);
+		if (tmp)
+			rmid = tmp;
 	}
 
 	if (closid != state->cur_closid || rmid != state->cur_rmid) {
