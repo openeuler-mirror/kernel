@@ -1344,8 +1344,8 @@ static void update_task_closid_rmid(struct task_struct *t)
 		_update_task_closid_rmid(t);
 }
 
-int __resctrl_group_move_task(struct task_struct *tsk,
-				struct rdtgroup *rdtgrp)
+static int resctrl_group_update_task(struct task_struct *tsk,
+				     struct rdtgroup *rdtgrp)
 {
 	/*
 	 * Set the task's closid/rmid before the MPAM sysreg can be
@@ -1375,6 +1375,18 @@ int __resctrl_group_move_task(struct task_struct *tsk,
 	 * resctrl_sched_in() during context switch.
 	 */
 	smp_mb();
+
+	return 0;
+}
+
+int __resctrl_group_move_task(struct task_struct *tsk,
+			      struct rdtgroup *rdtgrp)
+{
+	int err;
+
+	err = resctrl_group_update_task(tsk, rdtgrp);
+	if (err)
+		return err;
 
 	/*
 	 * By now, the task's closid and rmid are set. If the task is current
@@ -1972,7 +1984,7 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
 		if (t->closid == rdtgrp->closid.intpartid) {
-			ret = __resctrl_group_move_task(t, rdtgrp);
+			ret = resctrl_group_update_task(t, rdtgrp);
 			if (ret) {
 				read_unlock(&tasklist_lock);
 				goto rollback;
@@ -1981,7 +1993,7 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 	}
 	read_unlock(&tasklist_lock);
 
-	update_closid_rmid(&rdtgrp->cpu_mask, rdtgrp);
+	update_closid_rmid(cpu_online_mask, rdtgrp);
 	rmid_free(old_rmid);
 
 unlock:
@@ -2004,7 +2016,7 @@ rollback:
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
 		if (t->closid == rdtgrp->closid.intpartid)
-			WARN_ON_ONCE(__resctrl_group_move_task(t, rdtgrp));
+			WARN_ON_ONCE(resctrl_group_update_task(t, rdtgrp));
 	}
 	read_unlock(&tasklist_lock);
 
