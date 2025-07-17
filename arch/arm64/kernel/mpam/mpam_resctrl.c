@@ -1914,9 +1914,13 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 	int old_rmid;
 	int old_reqpartid;
 	struct task_struct *p, *t;
+	cpumask_var_t tmpmask;
 
 	if (kstrtoint(strstrip(buf), 0, &rmid) || rmid < 0)
 		return -EINVAL;
+
+	if (!zalloc_cpumask_var(&tmpmask, GFP_KERNEL))
+		return -ENOMEM;
 
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 	if (!rdtgrp) {
@@ -1989,19 +1993,25 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 				read_unlock(&tasklist_lock);
 				goto rollback;
 			}
+
+			if (IS_ENABLED(CONFIG_SMP) && task_curr(t))
+				cpumask_set_cpu(task_cpu(t), tmpmask);
 		}
 	}
 	read_unlock(&tasklist_lock);
 
-	update_closid_rmid(cpu_online_mask, rdtgrp);
+	/* Update PARTID on CPUs which have moved task running on them */
+	update_closid_rmid(tmpmask, NULL);
+	/* Update PARTID on the cpu_list of the group */
+	update_closid_rmid(&rdtgrp->cpu_mask, rdtgrp);
+
 	rmid_free(old_rmid);
 
 unlock:
 	resctrl_group_kn_unlock(of->kn);
-	if (ret)
-		return ret;
+	free_cpumask_var(tmpmask);
 
-	return nbytes;
+	return ret ? : nbytes;
 
 rollback:
 	rdtgrp->mon.rmid = old_rmid;
@@ -2013,15 +2023,24 @@ rollback:
 	rdtgrp->resync = 1;
 	WARN_ON_ONCE(resctrl_update_groups_config(rdtgrp));
 
+	cpumask_clear(tmpmask);
+
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
-		if (t->closid == rdtgrp->closid.intpartid)
+		if (t->closid == rdtgrp->closid.intpartid) {
 			WARN_ON_ONCE(resctrl_group_update_task(t, rdtgrp));
+
+			if (IS_ENABLED(CONFIG_SMP) && task_curr(t))
+				cpumask_set_cpu(task_cpu(t), tmpmask);
+		}
 	}
 	read_unlock(&tasklist_lock);
 
+	update_closid_rmid(tmpmask, NULL);
+
 	rmid_free(rmid);
 	resctrl_group_kn_unlock(of->kn);
+	free_cpumask_var(tmpmask);
 	return ret;
 }
 
