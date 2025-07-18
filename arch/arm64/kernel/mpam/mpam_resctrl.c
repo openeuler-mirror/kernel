@@ -1311,7 +1311,7 @@ void update_cpu_closid_rmid(void *info)
 }
 
 /*
- * Update the PGR_ASSOC MSR on all cpus in @cpu_mask,
+ * Update the MPAM sysreg on all cpus in @cpu_mask,
  *
  * Per task closids/rmids must have been set up before calling this function.
  */
@@ -1326,86 +1326,77 @@ update_closid_rmid(const struct cpumask *cpu_mask, struct rdtgroup *r)
 	put_cpu();
 }
 
-struct task_move_callback {
-	struct callback_head	work;
-	struct rdtgroup		*rdtgrp;
-};
-
-static void move_myself(struct callback_head *head)
+static void _update_task_closid_rmid(void *task)
 {
-	struct task_move_callback *callback;
-	struct rdtgroup *rdtgrp;
-
-	callback = container_of(head, struct task_move_callback, work);
-	rdtgrp = callback->rdtgrp;
-
 	/*
-	 * If resource group was deleted before this task work callback
-	 * was invoked, then assign the task to root group and free the
-	 * resource group.
+	 * If the task is still current on this CPU, update MPAM sysreg.
+	 * Otherwise, the MSR is updated when the task is scheduled in.
 	 */
-	if (atomic_dec_and_test(&rdtgrp->waitcount) &&
-	    (rdtgrp->flags & RDT_DELETED)) {
-		current->closid = 0;
-		current->rmid = 0;
-		rdtgroup_remove(rdtgrp);
+	if (task == current)
+		mpam_sched_in();
+}
+
+static void update_task_closid_rmid(struct task_struct *t)
+{
+	if (IS_ENABLED(CONFIG_SMP) && task_curr(t))
+		smp_call_function_single(task_cpu(t), _update_task_closid_rmid, t, 1);
+	else
+		_update_task_closid_rmid(t);
+}
+
+static int resctrl_group_update_task(struct task_struct *tsk,
+				     struct rdtgroup *rdtgrp)
+{
+	/*
+	 * Set the task's closid/rmid before the MPAM sysreg can be
+	 * updated by them.
+	 *
+	 * For ctrl_mon groups, move both closid and rmid.
+	 * For monitor groups, can move the tasks only from
+	 * their parent CTRL group.
+	 */
+	if (rdtgrp->type == RDTCTRL_GROUP) {
+		WRITE_ONCE(tsk->closid, resctrl_navie_closid(rdtgrp->closid));
+		WRITE_ONCE(tsk->rmid, resctrl_navie_rmid(rdtgrp->mon.rmid));
+	} else if (rdtgrp->type == RDTMON_GROUP) {
+		if (rdtgrp->mon.parent->closid.intpartid == tsk->closid) {
+			WRITE_ONCE(tsk->closid, resctrl_navie_closid(rdtgrp->closid));
+			WRITE_ONCE(tsk->rmid, resctrl_navie_rmid(rdtgrp->mon.rmid));
+		} else {
+			rdt_last_cmd_puts("Can't move task to different control group\n");
+			return -EINVAL;
+		}
 	}
 
-	preempt_disable();
-	/* update PQR_ASSOC MSR to make resource group go into effect */
-	mpam_sched_in();
-	preempt_enable();
+	/*
+	 * Ensure the task's closid and rmid are written before determining if
+	 * the task is current that will decide if it will be interrupted.
+	 * This pairs with the full barrier between the rq->curr update and
+	 * resctrl_sched_in() during context switch.
+	 */
+	smp_mb();
 
-	kfree(callback);
+	return 0;
 }
 
 int __resctrl_group_move_task(struct task_struct *tsk,
-				struct rdtgroup *rdtgrp)
+			      struct rdtgroup *rdtgrp)
 {
-	struct task_move_callback *callback;
-	int ret;
+	int err;
 
-	callback = kzalloc(sizeof(*callback), GFP_NOWAIT);
-	if (!callback)
-		return -ENOMEM;
-	callback->work.func = move_myself;
-	callback->rdtgrp = rdtgrp;
+	err = resctrl_group_update_task(tsk, rdtgrp);
+	if (err)
+		return err;
 
 	/*
-	 * Take a refcount, so rdtgrp cannot be freed before the
-	 * callback has been invoked.
+	 * By now, the task's closid and rmid are set. If the task is current
+	 * on a CPU, the MPAM sysreg needs to be updated to make the resource
+	 * group go into effect. If the task is not current, the sysreg will be
+	 * updated when the task is scheduled in.
 	 */
-	atomic_inc(&rdtgrp->waitcount);
-	ret = task_work_add(tsk, &callback->work, true);
-	if (ret) {
-		/*
-		 * Task is exiting. Drop the refcount and free the callback.
-		 * No need to check the refcount as the group cannot be
-		 * deleted before the write function unlocks resctrl_group_mutex.
-		 */
-		atomic_dec(&rdtgrp->waitcount);
-		kfree(callback);
-		rdt_last_cmd_puts("task exited\n");
-	} else {
-		/*
-		 * For ctrl_mon groups move both closid and rmid.
-		 * For monitor groups, can move the tasks only from
-		 * their parent CTRL group.
-		 */
-		if (rdtgrp->type == RDTCTRL_GROUP) {
-			tsk->closid = resctrl_navie_closid(rdtgrp->closid);
-			tsk->rmid = resctrl_navie_rmid(rdtgrp->mon.rmid);
-		} else if (rdtgrp->type == RDTMON_GROUP) {
-			if (rdtgrp->mon.parent->closid.intpartid == tsk->closid) {
-				tsk->closid = resctrl_navie_closid(rdtgrp->closid);
-				tsk->rmid = resctrl_navie_rmid(rdtgrp->mon.rmid);
-			} else {
-				rdt_last_cmd_puts("Can't move task to different control group\n");
-				ret = -EINVAL;
-			}
-		}
-	}
-	return ret;
+	update_task_closid_rmid(tsk);
+
+	return 0;
 }
 
 static int resctrl_group_seqfile_show(struct seq_file *m, void *arg)
@@ -1923,9 +1914,13 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 	int old_rmid;
 	int old_reqpartid;
 	struct task_struct *p, *t;
+	cpumask_var_t tmpmask;
 
 	if (kstrtoint(strstrip(buf), 0, &rmid) || rmid < 0)
 		return -EINVAL;
+
+	if (!zalloc_cpumask_var(&tmpmask, GFP_KERNEL))
+		return -ENOMEM;
 
 	rdtgrp = resctrl_group_kn_lock_live(of->kn);
 	if (!rdtgrp) {
@@ -1993,24 +1988,30 @@ static ssize_t resctrl_group_rmid_write(struct kernfs_open_file *of,
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
 		if (t->closid == rdtgrp->closid.intpartid) {
-			ret = __resctrl_group_move_task(t, rdtgrp);
+			ret = resctrl_group_update_task(t, rdtgrp);
 			if (ret) {
 				read_unlock(&tasklist_lock);
 				goto rollback;
 			}
+
+			if (IS_ENABLED(CONFIG_SMP) && task_curr(t))
+				cpumask_set_cpu(task_cpu(t), tmpmask);
 		}
 	}
 	read_unlock(&tasklist_lock);
 
+	/* Update PARTID on CPUs which have moved task running on them */
+	update_closid_rmid(tmpmask, NULL);
+	/* Update PARTID on the cpu_list of the group */
 	update_closid_rmid(&rdtgrp->cpu_mask, rdtgrp);
+
 	rmid_free(old_rmid);
 
 unlock:
 	resctrl_group_kn_unlock(of->kn);
-	if (ret)
-		return ret;
+	free_cpumask_var(tmpmask);
 
-	return nbytes;
+	return ret ? : nbytes;
 
 rollback:
 	rdtgrp->mon.rmid = old_rmid;
@@ -2022,15 +2023,24 @@ rollback:
 	rdtgrp->resync = 1;
 	WARN_ON_ONCE(resctrl_update_groups_config(rdtgrp));
 
+	cpumask_clear(tmpmask);
+
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
-		if (t->closid == rdtgrp->closid.intpartid)
-			WARN_ON_ONCE(__resctrl_group_move_task(t, rdtgrp));
+		if (t->closid == rdtgrp->closid.intpartid) {
+			WARN_ON_ONCE(resctrl_group_update_task(t, rdtgrp));
+
+			if (IS_ENABLED(CONFIG_SMP) && task_curr(t))
+				cpumask_set_cpu(task_cpu(t), tmpmask);
+		}
 	}
 	read_unlock(&tasklist_lock);
 
+	update_closid_rmid(tmpmask, NULL);
+
 	rmid_free(rmid);
 	resctrl_group_kn_unlock(of->kn);
+	free_cpumask_var(tmpmask);
 	return ret;
 }
 
@@ -2221,19 +2231,22 @@ void __mpam_sched_in(void)
 	u64 closid = state->default_closid;
 	u64 reqpartid = 0;
 	u64 pmg = 0;
+	u32 tmp;
 
 	/*
 	 * If this task has a closid/rmid assigned, use it.
 	 * Else use the closid/rmid assigned to this cpu.
 	 */
 	if (static_branch_likely(&resctrl_alloc_enable_key)) {
-		if (current->closid)
-			closid = current->closid;
+		tmp = READ_ONCE(current->closid);
+		if (tmp)
+			closid = tmp;
 	}
 
 	if (static_branch_likely(&resctrl_mon_enable_key)) {
-		if (current->rmid)
-			rmid = current->rmid;
+		tmp = READ_ONCE(current->rmid);
+		if (tmp)
+			rmid = tmp;
 	}
 
 	if (closid != state->cur_closid || rmid != state->cur_rmid) {

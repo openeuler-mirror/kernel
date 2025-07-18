@@ -454,8 +454,16 @@ static void resctrl_move_group_tasks(struct resctrl_group *from, struct resctrl_
 	read_lock(&tasklist_lock);
 	for_each_process_thread(p, t) {
 		if (!from || is_task_match_resctrl_group(t, from)) {
-			t->closid = resctrl_navie_closid(to->closid);
-			t->rmid = resctrl_navie_rmid(to->mon.rmid);
+			WRITE_ONCE(t->closid, resctrl_navie_closid(to->closid));
+			WRITE_ONCE(t->rmid, resctrl_navie_rmid(to->mon.rmid));
+
+			/*
+			 * Order the closid/rmid stores above before the loads
+			 * in task_curr(). This pairs with the full barrier
+			 * between the rq->curr update and mpam_sched_in()
+			 * during context switch.
+			 */
+			smp_mb();
 
 #ifdef CONFIG_SMP
 			/*
