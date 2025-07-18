@@ -113,7 +113,7 @@ static int nfs_delegation_claim_locks(struct nfs4_state *state, const nfs4_state
 	int status = 0;
 
 	if (flctx == NULL)
-		goto out;
+		return status;
 
 	list = &flctx->flc_posix;
 	down_write(&nfsi->rwsem);
