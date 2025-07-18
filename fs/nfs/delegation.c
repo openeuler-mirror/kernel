@@ -106,6 +106,7 @@ int nfs4_check_delegation(struct inode *inode, fmode_t flags)
 static int nfs_delegation_claim_locks(struct nfs4_state *state, const nfs4_stateid *stateid)
 {
 	struct inode *inode = state->inode;
+	struct nfs_inode *nfsi = NFS_I(inode);
 	struct file_lock *fl;
 	struct file_lock_context *flctx = inode->i_flctx;
 	struct list_head *list;
@@ -115,6 +116,7 @@ static int nfs_delegation_claim_locks(struct nfs4_state *state, const nfs4_state
 		goto out;
 
 	list = &flctx->flc_posix;
+	down_write(&nfsi->rwsem);
 	spin_lock(&flctx->flc_lock);
 restart:
 	list_for_each_entry(fl, list, fl_list) {
@@ -132,6 +134,7 @@ restart:
 	}
 	spin_unlock(&flctx->flc_lock);
 out:
+	up_write(&nfsi->rwsem);
 	return status;
 }
 
