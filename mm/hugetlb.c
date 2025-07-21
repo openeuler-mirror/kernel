@@ -3113,7 +3113,8 @@ static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
 	 * drain pcp for movable zone to increase the success rate for
 	 * hugetlb memory allocation if movable_node enabled
 	 */
-	if (movable_node_is_enabled() && count > persistent_huge_pages(h))
+	if ((nid != NUMA_NO_NODE) && movable_node_is_enabled() &&
+	    count > persistent_huge_pages(h))
 		hugetlb_drain_movable_pcp(h, nid);
 
 	while (count > persistent_huge_pages(h)) {
