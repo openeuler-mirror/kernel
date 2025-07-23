@@ -3,6 +3,9 @@
 #ifndef _ASM_SW64_EFI_H
 #define _ASM_SW64_EFI_H
 
+#include <linux/efi.h>
+
+#include <asm/io.h>
 #include <asm/early_ioremap.h>
 
 #ifdef CONFIG_EFI
@@ -16,8 +19,16 @@ extern unsigned long entSuspend;
 #define efi_idmap_init()
 #endif
 
+#ifdef CONFIG_SW64_KERNEL_PAGE_TABLE
+int efi_create_mapping(struct mm_struct *mm, efi_memory_desc_t *md);
+#define arch_efi_call_virt_setup()	efi_virtmap_load()
+#define arch_efi_call_virt_teardown()	efi_virtmap_unload()
+void efi_virtmap_load(void);
+void efi_virtmap_unload(void);
+#else
 #define arch_efi_call_virt_setup()
 #define arch_efi_call_virt_teardown()
+#endif
 
 #define arch_efi_call_virt(p, f, args...)				\
 ({									\
