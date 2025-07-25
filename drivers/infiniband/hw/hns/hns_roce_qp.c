@@ -1546,7 +1546,7 @@ struct ib_qp *hns_roce_create_qp(struct ib_pd *pd,
 
 	ret = hns_roce_create_qp_common(hr_dev, init_attr, udata, hr_qp);
 	if (ret) {
-		ibdev_err(ibdev, "Create QP type 0x%x failed(%d)\n",
+		ibdev_err(ibdev, "create QP type %d failed(%d)\n",
 			  init_attr->qp_type, ret);
 
 		kfree(hr_qp);

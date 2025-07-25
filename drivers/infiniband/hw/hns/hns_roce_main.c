@@ -38,7 +38,6 @@
 #include <rdma/ib_cache.h>
 #include <rdma/uverbs_ioctl.h>
 
-#include "hnae3.h"
 #include "hns_roce_common.h"
 #include "hns_roce_device.h"
 #include "hns_roce_hem.h"
@@ -657,7 +656,7 @@ static void hns_roce_dealloc_ucontext(struct ib_ucontext *ibcontext)
 	struct hns_roce_dev *hr_dev = to_hr_dev(ibcontext->device);
 
 	hns_roce_put_cq_bankid_for_uctx(context);
-	hns_roce_unregister_uctx_debugfs(context);
+	hns_roce_unregister_uctx_debugfs(hr_dev, context);
 
 	mutex_lock(&hr_dev->uctx_list_mutex);
 	list_del(&context->list);
@@ -948,13 +947,6 @@ static const struct ib_device_ops hns_roce_dev_mr_ops = {
 	.rereg_user_mr = hns_roce_rereg_user_mr,
 };
 
-static const struct ib_device_ops hns_roce_dev_mw_ops = {
-	.alloc_mw = hns_roce_alloc_mw,
-	.dealloc_mw = hns_roce_dealloc_mw,
-
-	INIT_RDMA_OBJ_SIZE(ib_mw, hns_roce_mw, ibmw),
-};
-
 static const struct ib_device_ops hns_roce_dev_frmr_ops = {
 	.alloc_mr = hns_roce_alloc_mr,
 	.map_mr_sg = hns_roce_map_mr_sg,
@@ -1031,14 +1023,6 @@ static int hns_roce_register_device(struct hns_roce_dev *hr_dev)
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_REREG_MR) {
 		ib_dev->uverbs_cmd_mask |= (1ULL << IB_USER_VERBS_CMD_REREG_MR);
 		ib_set_device_ops(ib_dev, &hns_roce_dev_mr_ops);
-	}
-
-	/* MW */
-	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_MW) {
-		ib_dev->uverbs_cmd_mask |=
-					(1ULL << IB_USER_VERBS_CMD_ALLOC_MW) |
-					(1ULL << IB_USER_VERBS_CMD_DEALLOC_MW);
-		ib_set_device_ops(ib_dev, &hns_roce_dev_mw_ops);
 	}
 
 	/* FRMR */
@@ -1581,8 +1565,8 @@ error_failed_alloc_dfx_cnt:
 void hns_roce_exit(struct hns_roce_dev *hr_dev, bool bond_cleanup)
 {
 	hns_roce_unregister_sysfs(hr_dev);
-	hns_roce_unregister_device(hr_dev, bond_cleanup);
 	hns_roce_unregister_debugfs(hr_dev);
+	hns_roce_unregister_device(hr_dev, bond_cleanup);
 	hns_roce_unregister_poe_ch(hr_dev);
 	hns_roce_free_dca_safe_buf(hr_dev);
 
