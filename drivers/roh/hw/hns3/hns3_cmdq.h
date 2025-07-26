@@ -53,7 +53,7 @@ enum hns3_roh_cmd_return_status {
 };
 
 enum hns3_roh_mbx_opcode {
-	HNS3_ROH_MBX_PUSH_LINK_STATUS = 201 /* (M7 -> PF) get port link status */
+	HNS3_ROH_MBX_PUSH_LINK_STATUS = 201 /* (FW -> PF) get port link status */
 };
 
 struct hns3_roh_get_intr_info {

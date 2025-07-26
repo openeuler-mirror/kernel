@@ -15,11 +15,6 @@ struct roh_client {
 	struct completion uses_zero;
 };
 
-int roh_register_client(struct roh_client *client);
-void roh_unregister_client(struct roh_client *client);
-void roh_set_client_data(struct roh_device *device,
-			 struct roh_client *client, void *data);
-
 int roh_device_register_sysfs(struct roh_device *device);
 void roh_device_unregister_sysfs(struct roh_device *device);
 

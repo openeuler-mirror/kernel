@@ -258,8 +258,9 @@ static int alloc_hsag(struct roh_device *device)
 	return 0;
 err:
 	for (j = i - 1; j >= 0; j--)
-		kfree(hsag->attrs[j]);
+		kfree(container_of(hsag->attrs[j], struct roh_hw_stats_attribute, attr));
 	kfree(hsag);
+	hsag = NULL;
 
 	return ret;
 }
