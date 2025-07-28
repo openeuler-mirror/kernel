@@ -773,6 +773,12 @@ static int ovl_copy_up_one(struct dentry *parent, struct dentry *dentry,
 		return -EROFS;
 
 	ovl_path_lower(dentry, &ctx.lowerpath);
+
+	if (unlikely(!ctx.lowerpath.dentry)) {
+		pr_err("prevention GPF in security_inode_getattr()\n");
+		return -EIO;
+	}
+
 	err = vfs_getattr(&ctx.lowerpath, &ctx.stat,
 			  STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT);
 	if (err)
