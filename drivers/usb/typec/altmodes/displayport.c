@@ -482,7 +482,7 @@ static ssize_t pin_assignment_show(struct device *dev,
 	else
 		assignments = DP_CAP_DFP_D_PIN_ASSIGN(dp->alt->vdo);
 
-	for (i = 0; assignments; assignments >>= 1, i++) {
+	for (i = 0; assignments && i < DP_PIN_ASSIGN_MAX; assignments >>= 1, i++) {
 		if (assignments & 1) {
 			if (i == cur)
 				len += sprintf(buf + len, "[%s] ",
