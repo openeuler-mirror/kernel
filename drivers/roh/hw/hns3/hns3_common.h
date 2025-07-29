@@ -75,7 +75,6 @@ struct hns3_roh_device {
 	struct roh_device roh_dev;
 	struct pci_dev *pdev;
 	struct device *dev;
-	bool active;
 	struct net_device *netdev;
 
 	u8 __iomem *reg_base;

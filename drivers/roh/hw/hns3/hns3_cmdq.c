@@ -107,7 +107,6 @@ int hns3_roh_cmdq_init(struct hns3_roh_device *hroh_dev)
 
 	/* Setup the lock for command queue */
 	spin_lock_init(&priv->cmdq.csq.lock);
-	spin_lock_init(&priv->cmdq.crq.lock);
 
 	/* Clear up all command register,
 	 * in case there are some residual values
@@ -155,9 +154,7 @@ void hns3_roh_cmdq_exit(struct hns3_roh_device *hroh_dev)
 	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
 
 	spin_lock_bh(&priv->cmdq.csq.lock);
-	spin_lock(&priv->cmdq.crq.lock);
 	hns3_roh_cmdq_clear_regs(hroh_dev);
-	spin_unlock(&priv->cmdq.crq.lock);
 	spin_unlock_bh(&priv->cmdq.csq.lock);
 
 	hns3_roh_free_cmdq_desc(hroh_dev, &priv->cmdq.csq);
@@ -501,6 +498,6 @@ void hns3_roh_mbx_handler(struct hns3_roh_device *hroh_dev)
 		hns3_roh_mbx_ring_ptr_move_crq(crq);
 	}
 
-	/* write back CMDQ_RQ header ptr, M7 need this ptr */
+	/* write back CMDQ_RQ header ptr, FW need this ptr */
 	hns3_roh_write(hroh_dev, HNS3_ROH_RX_CMDQ_HEAD_REG, crq->next_to_use);
 }

@@ -28,7 +28,6 @@ MODULE_DEVICE_TABLE(pci, hns3_roh_pci_tbl);
 
 static void hns3_roh_unregister_device(struct hns3_roh_device *hroh_dev)
 {
-	hroh_dev->active = false;
 	roh_unregister_device(&hroh_dev->roh_dev);
 }
 
@@ -60,8 +59,6 @@ static int hns3_roh_register_device(struct hns3_roh_device *hroh_dev)
 		dev_err(dev, "failed to register roh device, ret = %d\n", ret);
 		return ret;
 	}
-
-	hroh_dev->active = true;
 
 	return 0;
 }
@@ -220,7 +217,7 @@ static int hns3_roh_get_cfg_from_frame(struct hns3_roh_device *hroh_dev,
 	hroh_dev->intr_info.vector_num = handle->rohinfo.num_vectors;
 	if (hroh_dev->intr_info.vector_num < HNS3_ROH_MIN_VECTOR_NUM) {
 		dev_err(hroh_dev->dev,
-			"just %d intr resources, not enough(min: %d).\n",
+			"just %u intr resources, not enough(min: %d).\n",
 			hroh_dev->intr_info.vector_num, HNS3_ROH_MIN_VECTOR_NUM);
 		return -EINVAL;
 	}
@@ -340,6 +337,7 @@ static int hns3_roh_reset_notify_init(struct hnae3_handle *handle)
 		dev_err(dev, "failed to reinit in roh reset process, ret = %d\n", ret);
 		handle->priv = NULL;
 		clear_bit(HNS3_ROH_STATE_INITED, &handle->rohinfo.reset_state);
+		return ret;
 	}
 
 	return 0;
@@ -428,14 +426,12 @@ static void hns3_roh_dfx_dump_dev_info(struct hns3_roh_device *hroh_dev)
 	dev_info(dev, "PCIe device id: 0x%x\n", hroh_dev->pdev->device);
 	dev_info(dev, "PCIe device name: %s\n", pci_name(hroh_dev->pdev));
 	dev_info(dev, "Network device name: %s\n", netdev_name(hroh_dev->netdev));
-	dev_info(dev, "BAR2~3 base addr: 0x%llx\n", (u64)hroh_dev->reg_base);
 
 	dev_info(dev, "Base vector: %d\n", hroh_dev->intr_info.base_vector);
 	dev_info(dev, "ROH vector offset: %d\n", hroh_dev->intr_info.vector_offset);
 	dev_info(dev, "ROH vector num: %d\n", hroh_dev->intr_info.vector_num);
 
 	dev_info(dev, "ABN vector0 irq: %d\n", hroh_dev->abn_vector.vector_irq);
-	dev_info(dev, "ABN vector0 addr: 0x%llx\n", (u64)hroh_dev->abn_vector.addr);
 	dev_info(dev, "ABN vector0 name: %s\n", hroh_dev->abn_vector.name);
 }
 

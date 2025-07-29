@@ -99,6 +99,7 @@ void roh_dealloc_device(struct roh_device *device)
 	WARN_ON(!xa_empty(&device->client_data));
 	WARN_ON(refcount_read(&device->refcount));
 
+	/* put_device will call back the roh_device_release function to release the roh_device */
 	put_device(&device->dev);
 }
 EXPORT_SYMBOL(roh_dealloc_device);
@@ -285,7 +286,7 @@ static int roh_ipv4_event(struct notifier_block *this, unsigned long event, void
 	ret = roh_device_set_eid(device, &eid_attr);
 	if (ret) {
 		pr_err("failed to set eid by IP, ret = %d\n", ret);
-		return ret;
+		return NOTIFY_DONE;
 	}
 
 	return NOTIFY_DONE;
@@ -391,19 +392,6 @@ void roh_unregister_device(struct roh_device *device)
 }
 EXPORT_SYMBOL(roh_unregister_device);
 
-void roh_set_client_data(struct roh_device *device, struct roh_client *client,
-			 void *data)
-{
-	void *rc;
-
-	if (WARN_ON(IS_ERR(data)))
-		data = NULL;
-
-	rc = xa_store(&device->client_data, client->client_id, data,
-		      GFP_KERNEL);
-	WARN_ON(xa_is_err(rc));
-}
-
 static void remove_client_context(struct roh_device *device,
 				  unsigned int client_id)
 {
@@ -471,88 +459,6 @@ out:
 out_unlock:
 	up_write(&device->client_data_rwsem);
 	return ret;
-}
-
-static int assign_client_id(struct roh_client *client)
-{
-	int ret;
-
-	down_write(&clients_rwsem);
-
-	client->client_id = highest_client_id;
-	ret = xa_insert(&clients, client->client_id, client, GFP_KERNEL);
-	if (ret)
-		goto out;
-
-	highest_client_id++;
-	xa_set_mark(&clients, client->client_id, CLIENT_REGISTERED);
-
-out:
-	up_write(&clients_rwsem);
-	return ret;
-}
-
-static void remove_client_id(struct roh_client *client)
-{
-	down_write(&clients_rwsem);
-	xa_erase(&clients, client->client_id);
-	for (; highest_client_id; highest_client_id--)
-		if (xa_load(&clients, highest_client_id - 1))
-			break;
-	up_write(&clients_rwsem);
-}
-
-int roh_register_client(struct roh_client *client)
-{
-	struct roh_device *device;
-	unsigned long index;
-	int ret;
-
-	refcount_set(&client->uses, 1);
-	init_completion(&client->uses_zero);
-	ret = assign_client_id(client);
-	if (ret)
-		return ret;
-
-	down_read(&devices_rwsem);
-	xa_for_each_marked(&devices, index, device, DEVICE_REGISTERED) {
-		ret = add_client_context(device, client);
-		if (ret) {
-			up_read(&devices_rwsem);
-			roh_unregister_client(client);
-			return ret;
-		}
-	}
-	up_read(&devices_rwsem);
-
-	return 0;
-}
-
-void roh_unregister_client(struct roh_client *client)
-{
-	struct roh_device *device;
-	unsigned long index;
-
-	down_write(&clients_rwsem);
-	roh_client_put(client);
-	xa_clear_mark(&clients, client->client_id, CLIENT_REGISTERED);
-	up_write(&clients_rwsem);
-
-	rcu_read_lock();
-	xa_for_each(&devices, index, device) {
-		if (!roh_device_try_get(device))
-			continue;
-		rcu_read_unlock();
-
-		remove_client_context(device, client->client_id);
-
-		roh_device_put(device);
-		rcu_read_lock();
-	}
-	rcu_read_unlock();
-
-	wait_for_completion(&client->uses_zero);
-	remove_client_id(client);
 }
 
 static int roh_set_pf_mac_by_eid(struct roh_device *device,
