@@ -949,28 +949,34 @@ static void prefetch_work_fn(struct work_struct *work)
 	trace_epoll_rc_ready(pfi->file, pfi->len);
 }
 
-static void set_prefetch_numa_cpu(struct prefetch_item *pfi, int fd)
+static int prefetch_cpus[MAX_NUMNODES] = { [0 ... MAX_NUMNODES - 1] = -1 };
+
+static void set_prefetch_numa_cpu(struct prefetch_item *pfi)
 {
 	int cur_cpu = smp_processor_id();
+	int cur_nid = numa_node_id();
+	int old_cpu, new_cpu;
 	struct cpumask tmp;
-	int cpu;
 
 	cpumask_copy(&tmp, &xcall_mask);
 	cpumask_and(&pfi->related_cpus, cpu_cpu_mask(cur_cpu), cpu_online_mask);
 	if (cpumask_intersects(&tmp, &pfi->related_cpus))
 		cpumask_and(&pfi->related_cpus, &pfi->related_cpus, &tmp);
-	cpu = cpumask_next(fd % cpumask_weight(&pfi->related_cpus),
-			   &pfi->related_cpus);
-	if (cpu > cpumask_last(&pfi->related_cpus))
-		cpu = cpumask_first(&pfi->related_cpus);
-	pfi->cpu = cpu;
+
+	do {
+		old_cpu = prefetch_cpus[cur_nid];
+		new_cpu = cpumask_next(old_cpu, &pfi->related_cpus);
+		if (new_cpu > cpumask_last(&pfi->related_cpus))
+			new_cpu = cpumask_first(&pfi->related_cpus);
+	} while (cmpxchg(&prefetch_cpus[cur_nid], old_cpu, new_cpu) != old_cpu);
+
+	pfi->cpu = new_cpu;
 }
 
 static struct prefetch_item *alloc_prefetch_item(struct epitem *epi)
 {
 	struct file *tfile = epi->ffd.file;
 	struct prefetch_item *pfi;
-	int fd = epi->ffd.fd;
 	unsigned int hash;
 
 	pfi = kmalloc(sizeof(struct prefetch_item), GFP_KERNEL);
@@ -991,7 +997,7 @@ static struct prefetch_item *alloc_prefetch_item(struct epitem *epi)
 	pfi->file = tfile;
 	pfi->len = 0;
 	pfi->pos = 0;
-	set_prefetch_numa_cpu(pfi, fd);
+	set_prefetch_numa_cpu(pfi);
 
 	hash = hash_64((u64)tfile, PREFETCH_ITEM_HASH_BITS);
 	write_lock(&xcall_table_lock);
