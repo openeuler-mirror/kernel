@@ -62,6 +62,11 @@ depends on PPC
 source "drivers/cpuidle/Kconfig.powerpc"
 endmenu
 
+menu "SW64 CPU Idle Drivers"
+depends on SW64
+source "drivers/cpuidle/Kconfig.sw64"
+endmenu
+
 config HALTPOLL_CPUIDLE
 	tristate "Halt poll cpuidle driver"
 	depends on (X86 && KVM_GUEST) || ARM64
