@@ -44,6 +44,9 @@ static inline void local_daif_mask(void)
 	if (system_uses_irq_prio_masking())
 		gic_write_pmr(GIC_PRIO_IRQON | GIC_PRIO_PSR_I_SET);
 
+	if (system_uses_nmi())
+		_allint_set();
+
 	trace_hardirqs_off();
 }
 
@@ -125,6 +128,14 @@ static inline void local_daif_restore(unsigned long flags)
 
 	write_sysreg(flags, daif);
 
+	/* If we can take asynchronous errors we can take NMIs */
+	if (system_uses_nmi()) {
+		if (flags & PSR_A_BIT)
+			_allint_set();
+		else
+			_allint_clear();
+	}
+
 	if (irq_disabled)
 		trace_hardirqs_off();
 }
@@ -149,5 +160,13 @@ static inline void local_daif_inherit(struct pt_regs *regs)
 	 * use the pmr instead.
 	 */
 	write_sysreg(flags, daif);
+
+	/* The ALLINT field is at the same position in pstate and ALLINT */
+	if (system_uses_nmi()) {
+		if (regs->pstate & ALLINT_ALLINT)
+			_allint_set();
+		else
+			_allint_clear();
+	}
 }
 #endif
