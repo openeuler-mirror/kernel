@@ -776,6 +776,12 @@ static inline bool system_supports_mte(void)
 		cpus_have_const_cap(ARM64_MTE);
 }
 
+static __always_inline bool system_uses_nmi(void)
+{
+	return IS_ENABLED(CONFIG_ARM64_NMI) &&
+		cpus_have_const_cap(ARM64_USES_NMI);
+}
+
 static inline bool system_has_prio_mask_debugging(void)
 {
 	return IS_ENABLED(CONFIG_ARM64_DEBUG_PRIORITY_MASKING) &&

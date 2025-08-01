@@ -1202,6 +1202,8 @@
 
 #define SCTLR_EL1_BT1		(BIT(36))
 #define SCTLR_EL1_BT0		(BIT(35))
+#define SCTLR_EL1_SPINTMASK	(BIT(62))
+#define SCTLR_EL1_NMI		(BIT(61))
 #define SCTLR_EL1_UCI		(BIT(26))
 #define SCTLR_EL1_E0E		(BIT(24))
 #define SCTLR_EL1_SPAN		(BIT(23))
@@ -1362,6 +1364,9 @@
 #define ID_AA64PFR1_MTE_NI		0x0
 #define ID_AA64PFR1_MTE_EL0		0x1
 #define ID_AA64PFR1_MTE			0x2
+
+#define ID_AA64PFR1_NMI_IMP_DEF		0x1
+#define ID_AA64PFR1_NMI_IMP_NI		0x0
 
 /* id_aa64zfr0 */
 #define ID_AA64ZFR0_F64MM_SHIFT		56
