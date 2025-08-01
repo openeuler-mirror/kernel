@@ -363,6 +363,8 @@
 #define SYS_PAR_EL1_F			BIT(0)
 #define SYS_PAR_EL1_FST			GENMASK(6, 1)
 
+#define HCRX_EL2_TALLINT_MASK		GENMASK(6, 6)
+
 /*** Statistical Profiling Extension ***/
 
 #define SMPRI_EL1_PRIORITY_MASK		0xf
@@ -1343,6 +1345,7 @@
 #define ID_AA64PFR0_EL0_32BIT_64BIT	0x2
 
 /* id_aa64pfr1 */
+#define ID_AA64PFR1_NMI_SHIFT		36
 #define ID_AA64PFR1_SME_SHIFT		24
 #define ID_AA64PFR1_MPAMFRAC_SHIFT	16
 #define ID_AA64PFR1_RASFRAC_SHIFT	12

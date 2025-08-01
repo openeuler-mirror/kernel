@@ -557,11 +557,24 @@ SYM_INNER_LABEL(init_el2, SYM_L_LOCAL)
 	msr	sctlr_el2, x0
 
 #ifdef CONFIG_ARM64_VHE
+	mrs	x2, id_aa64pfr1_el1
+	ubfx	x2, x2, #ID_AA64PFR1_NMI_SHIFT, #4
+	cbz	x2, .Lskip_nmi
+.Linit_nmi:
+	mrs	x2, id_aa64mmfr1_el1
+	ubfx	x2, x2, #ID_AA64MMFR1_HCX_SHIFT, #4
+	cbz	x2, .Lskip_nmi
+
+	mrs_s	x2, SYS_HCRX_EL2
+	bic	x2, x2, #HCRX_EL2_TALLINT_MASK	// Don't trap ALLINT
+	msr_s	SYS_HCRX_EL2, x2
+
 	/*
 	 * Check for VHE being present. For the rest of the EL2 setup,
 	 * x2 being non-zero indicates that we do have VHE, and that the
 	 * kernel is intended to run at EL2.
 	 */
+.Lskip_nmi:
 	mrs	x2, id_aa64mmfr1_el1
 	ubfx	x2, x2, #ID_AA64MMFR1_VHE_SHIFT, #4
 #else
