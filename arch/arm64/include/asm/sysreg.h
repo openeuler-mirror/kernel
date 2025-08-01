@@ -343,6 +343,7 @@
 #define SYS_ALLINT			sys_reg(3, 0, 4, 3, 0)
 
 #define SYS_ICC_PMR_EL1			sys_reg(3, 0, 4, 6, 0)
+#define SYS_ICC_NMIAR1_EL1		sys_reg(3, 0, 12, 9, 5)
 
 #define SYS_AFSR0_EL1			sys_reg(3, 0, 5, 1, 0)
 #define SYS_AFSR1_EL1			sys_reg(3, 0, 5, 1, 1)
@@ -369,6 +370,7 @@
 #define HCRX_EL2_TALLINT		BIT(6)
 #define HCRX_EL2_TALLINT_MASK		GENMASK(6, 6)
 #define ALLINT_ALLINT			BIT(13)
+#define ISR_EL1_IS			BIT(10)
 
 /*** Statistical Profiling Extension ***/
 

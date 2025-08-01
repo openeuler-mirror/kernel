@@ -768,8 +768,38 @@ static void __gic_handle_irq_from_irqsoff(struct pt_regs *regs)
 	__gic_handle_nmi(irqnr, regs);
 }
 
+#ifdef CONFIG_ARM64
+static inline u64 gic_read_nmiar(void)
+{
+	u64 irqstat;
+
+	irqstat = read_sysreg_s(SYS_ICC_NMIAR1_EL1);
+
+	dsb(sy);
+
+	return irqstat;
+}
+
+static __always_inline void __el1_nmi(struct pt_regs *regs)
+{
+	u32 irqnr = gic_read_nmiar();
+
+	nmi_enter();
+	__gic_handle_nmi(irqnr, regs);
+	nmi_exit();
+}
+#endif
+
 static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
 {
+#ifdef CONFIG_ARM64
+	/* Is there a NMI to handle? */
+	if (system_uses_nmi() && (read_sysreg(isr_el1) & ISR_EL1_IS)) {
+		__el1_nmi(regs);
+		return;
+	}
+#endif
+
 	if (unlikely(gic_supports_nmi() && !interrupts_enabled(regs)))
 		__gic_handle_irq_from_irqsoff(regs);
 	else
