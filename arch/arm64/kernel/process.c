@@ -737,6 +737,15 @@ core_initcall(tagged_addr_init);
 
 asmlinkage void __sched arm64_preempt_schedule_irq(void)
 {
+	/*
+	 * Architected NMIs are unmasked prior to handling regular
+	 * IRQs and masked while handling FIQs. If ALLINT is set then
+	 * we are in a NMI or other preempting context so skip
+	 * preemption.
+	 */
+	if (system_uses_nmi() && (read_sysreg_s(SYS_ALLINT) & ALLINT_ALLINT))
+		return;
+
 	lockdep_assert_irqs_disabled();
 
 	/*
