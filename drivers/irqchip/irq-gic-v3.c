@@ -61,6 +61,7 @@ struct gic_chip_data {
 	u32			nr_redist_regions;
 	u64			flags;
 	bool			has_rss;
+	bool			has_nmi;
 	unsigned int		ppi_nr;
 	struct partition_desc	**ppi_descs;
 };
@@ -141,6 +142,20 @@ static DEFINE_PER_CPU(bool, has_rss);
 
 /* Our default, arbitrary priority value. Linux only uses one anyway. */
 #define DEFAULT_PMR_VALUE	0xf0
+
+#ifdef CONFIG_ARM64
+#include <asm/cpufeature.h>
+
+static inline bool has_v3_3_nmi(void)
+{
+	return gic_data.has_nmi && system_uses_nmi();
+}
+#else
+static inline bool has_v3_3_nmi(void)
+{
+	return false;
+}
+#endif
 
 phys_addr_t get_gicr_paddr(int cpu)
 {
@@ -334,6 +349,42 @@ static int gic_peek_irq(struct irq_data *d, u32 offset)
 	return !!(readl_relaxed(base + offset + (index / 32) * 4) & mask);
 }
 
+static DEFINE_RAW_SPINLOCK(irq_controller_lock);
+
+static void gic_irq_configure_nmi(struct irq_data *d, bool enable)
+{
+	void __iomem *base, *addr;
+	u32 offset, index, mask, val;
+
+	offset = convert_offset_index(d, GICD_INMIR, &index);
+	mask = 1 << (index % 32);
+
+	if (gic_irq_in_rdist(d))
+		base = gic_data_rdist_sgi_base();
+	else
+		base = gic_data.dist_base;
+
+	addr = base + offset + (index / 32) * 4;
+
+	raw_spin_lock(&irq_controller_lock);
+
+	val = readl_relaxed(addr);
+	val = enable ? (val | mask) : (val & ~mask);
+	writel_relaxed(val, addr);
+
+	raw_spin_unlock(&irq_controller_lock);
+}
+
+static void gic_irq_enable_nmi(struct irq_data *d)
+{
+	gic_irq_configure_nmi(d, true);
+}
+
+static void gic_irq_disable_nmi(struct irq_data *d)
+{
+	gic_irq_configure_nmi(d, false);
+}
+
 static void gic_poke_irq(struct irq_data *d, u32 offset)
 {
 	void (*rwp_wait)(void);
@@ -378,6 +429,12 @@ static void gic_eoimode1_mask_irq(struct irq_data *d)
 static void gic_unmask_irq(struct irq_data *d)
 {
 	gic_poke_irq(d, GICD_ISENABLER);
+}
+
+static inline bool gic_supports_pseudo_nmis(void)
+{
+	return IS_ENABLED(CONFIG_ARM64_PSEUDO_NMI) &&
+		static_branch_likely(&supports_pseudo_nmis);
 }
 
 static int gic_irq_set_irqchip_state(struct irq_data *d,
@@ -462,7 +519,7 @@ static int gic_irq_nmi_setup(struct irq_data *d)
 	struct irq_desc *desc = irq_to_desc(d->irq);
 	u32 idx;
 
-	if (!gic_supports_nmi())
+	if (!gic_supports_pseudo_nmis() && !has_v3_3_nmi())
 		return -EINVAL;
 
 	if (gic_peek_irq(d, GICD_ISENABLER)) {
@@ -496,7 +553,10 @@ static int gic_irq_nmi_setup(struct irq_data *d)
 		break;
 	}
 
-	gic_irq_set_prio(d, GICD_INT_NMI_PRI);
+	if (has_v3_3_nmi())
+		gic_irq_enable_nmi(d);
+	else
+		gic_irq_set_prio(d, GICD_INT_NMI_PRI);
 
 	return 0;
 }
@@ -506,7 +566,7 @@ static void gic_irq_nmi_teardown(struct irq_data *d)
 	struct irq_desc *desc = irq_to_desc(d->irq);
 	u32 idx;
 
-	if (WARN_ON(!gic_supports_nmi()))
+	if (WARN_ON(!gic_supports_pseudo_nmis() && !has_v3_3_nmi()))
 		return;
 
 	if (gic_peek_irq(d, GICD_ISENABLER)) {
@@ -538,7 +598,10 @@ static void gic_irq_nmi_teardown(struct irq_data *d)
 		break;
 	}
 
-	gic_irq_set_prio(d, GICD_INT_DEF_PRI);
+	if (has_v3_3_nmi())
+		gic_irq_disable_nmi(d);
+	else
+		gic_irq_set_prio(d, GICD_INT_DEF_PRI);
 }
 
 static void gic_eoi_irq(struct irq_data *d)
@@ -662,7 +725,7 @@ static inline void gic_complete_ack(u32 irqnr)
 
 static bool gic_rpr_is_nmi_prio(void)
 {
-	if (!gic_supports_nmi())
+	if (!gic_supports_pseudo_nmis())
 		return false;
 
 	return unlikely(gic_read_rpr() == GICD_INT_NMI_PRI);
@@ -800,7 +863,7 @@ static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs
 	}
 #endif
 
-	if (unlikely(gic_supports_nmi() && !interrupts_enabled(regs)))
+	if (unlikely(gic_supports_pseudo_nmis() && !interrupts_enabled(regs)))
 		__gic_handle_irq_from_irqsoff(regs);
 	else
 		__gic_handle_irq_from_irqson(regs);
@@ -1217,7 +1280,7 @@ static void gic_cpu_sys_reg_init(void)
 	/* Set priority mask register */
 	if (!gic_prio_masking_enabled()) {
 		write_gicreg(DEFAULT_PMR_VALUE, ICC_PMR_EL1);
-	} else if (gic_supports_nmi()) {
+	} else {
 		/*
 		 * Mismatch configuration with boot CPU, the system is likely
 		 * to die as interrupt masking will not work properly on all
@@ -1227,10 +1290,8 @@ static void gic_cpu_sys_reg_init(void)
 		 * and as a result we'll never see this warning in the boot path
 		 * for that CPU.
 		 */
-		if (static_branch_unlikely(&gic_nonsecure_priorities))
-			WARN_ON(!group0 || gic_dist_security_disabled());
-		else
-			WARN_ON(group0 && !gic_dist_security_disabled());
+		WARN_ON(gic_supports_pseudo_nmis() && group0 &&
+			!gic_dist_security_disabled());
 	}
 
 	/*
@@ -1999,11 +2060,16 @@ static const struct gic_quirk gic_quirks[] = {
 	}
 };
 
+static void gic_enable_pseudo_nmis(void)
+{
+	static_branch_enable(&supports_pseudo_nmis);
+}
+
 static void gic_enable_nmi_support(void)
 {
 	int i;
 
-	if (!gic_prio_masking_enabled())
+	if (!gic_prio_masking_enabled() && !has_v3_3_nmi())
 		return;
 
 	if (gic_data.flags & FLAGS_WORKAROUND_MTK_GICR_SAVE) {
@@ -2059,8 +2125,12 @@ static void gic_enable_nmi_support(void)
 	if (gic_has_group0() && !gic_dist_security_disabled())
 		static_branch_enable(&gic_nonsecure_priorities);
 
-	static_branch_enable(&supports_pseudo_nmis);
-
+	/*
+	 * Initialize pseudo-NMIs only if GIC driver cannot take advantage
+	 * of core (FEAT_NMI) and GIC (FEAT_GICv3_NMI) in HW
+	 */
+	if (!has_v3_3_nmi())
+		gic_enable_pseudo_nmis();
 	if (static_branch_likely(&supports_deactivate_key))
 		gic_eoimode1_chip.flags |= IRQCHIP_SUPPORTS_NMI;
 	else
@@ -2125,6 +2195,7 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	irq_domain_update_bus_token(gic_data.domain, DOMAIN_BUS_WIRED);
 
 	gic_data.has_rss = !!(typer & GICD_TYPER_RSS);
+	gic_data.has_nmi = !!(typer & GICD_TYPER_NMI);
 	pr_info("Distributor has %sRange Selector support\n",
 		gic_data.has_rss ? "" : "no ");
 
