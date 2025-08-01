@@ -363,6 +363,8 @@
 #define SYS_PAR_EL1_F			BIT(0)
 #define SYS_PAR_EL1_FST			GENMASK(6, 1)
 
+#define ID_AA64PFR1_NMI_MASK		GENMASK(39, 36)
+#define HCRX_EL2_TALLINT		BIT(6)
 #define HCRX_EL2_TALLINT_MASK		GENMASK(6, 6)
 
 /*** Statistical Profiling Extension ***/
