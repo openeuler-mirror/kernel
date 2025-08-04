@@ -141,9 +141,8 @@ However, these ioctls have some limitations:
   CONFIG_PAGE_POISONING=y in your kernel config and add page_poison=1
   to your kernel command line.  However, this has a performance cost.
 
-- Secret keys might still exist in CPU registers, in crypto
-  accelerator hardware (if used by the crypto API to implement any of
-  the algorithms), or in other places not explicitly considered here.
+- Secret keys might still exist in CPU registers or in other places
+  not explicitly considered here.
 
 Limitations of v1 policies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
