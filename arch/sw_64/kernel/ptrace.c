@@ -129,7 +129,9 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 unsigned long
 get_reg(struct task_struct *task, unsigned long regno)
 {
-	return *get_reg_addr(task, regno);
+	unsigned long addr = *get_reg_addr(task, regno);
+
+	return (addr) ? addr : -EIO;
 }
 
 /*
@@ -138,8 +140,9 @@ get_reg(struct task_struct *task, unsigned long regno)
 static int
 put_reg(struct task_struct *task, unsigned long regno, unsigned long data)
 {
-	*get_reg_addr(task, regno) = data;
-	return 0;
+	unsigned long addr = *get_reg_addr(task, regno);
+
+	return (addr) ? 0 : -EIO;
 }
 
 static inline int
