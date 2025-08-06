@@ -19,7 +19,7 @@
 #define BASE_DIR		"sdma" /* Subdir in /sys/kernel/debug/  */
 #define UPPER_SHIFT		32
 #define MAX_INPUT_LENGTH	128
-#define SDMA_VERSION		"1.0.3"
+#define SDMA_VERSION		"1.0.4"
 
 u32 share_chns = 16;
 module_param(share_chns, uint, RW_R_R);
@@ -46,21 +46,21 @@ static bool sdma_channel_alloc_sq_cq(struct hisi_sdma_channel *pchan, u32 idx)
 	}
 	page_list = alloc_pages_node(idx, GFP_KERNEL | __GFP_ZERO, get_order(HISI_SDMA_SQ_SIZE));
 	if (!page_list) {
-		pr_err("sdma channel%u: alloc sq page_list failed\n", pchan->idx);
+		pr_err("SDMA channel%u: alloc sq page_list failed\n", pchan->idx);
 		return false;
 	}
 	pchan->sq_base = (struct hisi_sdma_sq_entry *)page_to_virt(page_list);
 
 	page_list = alloc_pages_node(idx, GFP_KERNEL | __GFP_ZERO, get_order(HISI_SDMA_CQ_SIZE));
 	if (!page_list) {
-		pr_err("sdma channel%u: alloc cq page_list failed\n", pchan->idx);
+		pr_err("SDMA channel%u: alloc cq page_list failed\n", pchan->idx);
 		return false;
 	}
 	pchan->cq_base = (struct hisi_sdma_cq_entry *)page_to_virt(page_list);
 
 	page_list = alloc_pages_node(idx, GFP_KERNEL | __GFP_ZERO, get_order(sync_size));
 	if (!page_list) {
-		pr_err("sdma channel%u: alloc sync_info page_list failed\n", pchan->idx);
+		pr_err("SDMA channel%u: alloc sync_info page_list failed\n", pchan->idx);
 		return false;
 	}
 	pchan->sync_info_base = (struct hisi_sdma_queue_info *)page_to_virt(page_list);
@@ -115,7 +115,7 @@ static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
 	while (!sdma_channel_is_paused(pchan)) {
 		msleep(HISI_SDMA_FSM_INTERVAL);
 		if (++i > HISI_SDMA_FSM_TIMEOUT) {
-			pr_warn("chn%u cannot get paused\n", pchan->idx);
+			pr_warn("Chn%u cannot get paused\n", pchan->idx);
 			return;
 		}
 	}
@@ -123,7 +123,7 @@ static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
 	while (!sdma_channel_is_quiescent(pchan)) {
 		msleep(HISI_SDMA_FSM_INTERVAL);
 		if (++i > HISI_SDMA_FSM_TIMEOUT) {
-			pr_warn("chn%u cannot get quiescent\n", pchan->idx);
+			pr_warn("Chn%u cannot get quiescent\n", pchan->idx);
 			return;
 		}
 	}
@@ -132,7 +132,7 @@ static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
 	while (!sdma_channel_is_idle(pchan)) {
 		msleep(HISI_SDMA_FSM_INTERVAL);
 		if (++i > HISI_SDMA_FSM_TIMEOUT) {
-			pr_warn("chn%u cannot get idle\n", pchan->idx);
+			pr_warn("Chn%u cannot get idle\n", pchan->idx);
 			return;
 		}
 	}
@@ -204,7 +204,7 @@ static int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
 	}
 
 	if (share_chns > chn_num) {
-		dev_warn(&psdma_dev->pdev->dev, "share_chns max val = %u!\n", chn_num);
+		dev_warn(&psdma_dev->pdev->dev, "Share_chns max val = %u!\n", chn_num);
 		share_chns = chn_num;
 	}
 	bitmap_set(psdma_dev->channel_map, 0, chn_num - share_chns);
@@ -245,7 +245,7 @@ static int sdma_device_add(struct hisi_sdma_device *psdma_dev)
 
 	if (IS_ERR(device_create(sdma_class, NULL, devno, NULL, "sdma%u", idx))) {
 		spin_unlock(&hisi_sdma_core_device.device_lock);
-		dev_err(&psdma_dev->pdev->dev, "device_create failed\n");
+		dev_err(&psdma_dev->pdev->dev, "Device_create failed\n");
 		cdev_del(cdev);
 		return -ENODEV;
 	}
@@ -275,26 +275,26 @@ static int of_sdma_collect_info(struct platform_device *pdev, struct hisi_sdma_d
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res == NULL) {
-		dev_err(&pdev->dev, "get io_base info from dtb failed\n");
+		dev_err(&pdev->dev, "Get io_base info from dtb failed\n");
 		return -ENOMEM;
 	}
 	psdma_dev->base_addr = res->start;
 	psdma_dev->base_addr_size = resource_size(res);
 	if (psdma_dev->base_addr_size < psdma_dev->nr_channel * HISI_SDMA_CHANNEL_IOMEM_SIZE ||
 	    psdma_dev->base_addr_size > HISI_SDMA_MAX_BASE_ADDR_SIZE) {
-		dev_err(&pdev->dev, "io reg size wrong!\n");
+		dev_err(&pdev->dev, "IO reg size wrong!\n");
 		return -EFAULT;
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	if (res == NULL) {
-		dev_err(&pdev->dev, "get common reg info from dtb failed\n");
+		dev_err(&pdev->dev, "Get common reg info from dtb failed\n");
 		return -ENOMEM;
 	}
 	psdma_dev->common_base_addr = res->start;
 	psdma_dev->common_base_addr_size = resource_size(res);
 	if (psdma_dev->common_base_addr_size != HISI_SDMA_MAX_COMMEN_BASE_ADDR_SIZE) {
-		dev_err(&pdev->dev, "global io reg size wrong!\n");
+		dev_err(&pdev->dev, "Global io reg size wrong!\n");
 		return -EFAULT;
 	}
 
@@ -303,7 +303,7 @@ static int of_sdma_collect_info(struct platform_device *pdev, struct hisi_sdma_d
 		dev_err(&pdev->dev, "Get irq_cnt failed!\n");
 		return -EINVAL;
 	}
-	dev_dbg(&pdev->dev, "get irq_cnt:%d\n", psdma_dev->irq_cnt);
+	dev_dbg(&pdev->dev, "Get irq_cnt:%d\n", psdma_dev->irq_cnt);
 
 	return 0;
 }
@@ -333,7 +333,7 @@ static int sdma_init_device_info(struct hisi_sdma_device *psdma_dev)
 
 	psdma_dev->io_orig_base = ioremap(psdma_dev->base_addr, psdma_dev->base_addr_size);
 	if (!psdma_dev->io_orig_base) {
-		dev_err(&psdma_dev->pdev->dev, "remap io reg failed!\n");
+		dev_err(&psdma_dev->pdev->dev, "Remap io reg failed!\n");
 		return -EFAULT;
 	}
 
@@ -341,7 +341,7 @@ static int sdma_init_device_info(struct hisi_sdma_device *psdma_dev)
 					 psdma_dev->common_base_addr_size);
 	if (!psdma_dev->common_base) {
 		iounmap(psdma_dev->io_orig_base);
-		dev_err(&psdma_dev->pdev->dev, "remap io common base failed!\n");
+		dev_err(&psdma_dev->pdev->dev, "Remap io common base failed!\n");
 		return -EFAULT;
 	}
 	psdma_dev->io_base = psdma_dev->io_orig_base + HISI_SDMA_CH_OFFSET;
@@ -377,13 +377,13 @@ static int sdma_smmu_enable(struct device *dev)
 
 	ret = iommu_dev_enable_feature(dev, IOMMU_DEV_FEAT_IOPF);
 	if (ret) {
-		dev_err(dev, "failed to enable IOPF feature! ret = %d\n", ret);
+		dev_err(dev, "Failed to enable IOPF feature! ret = %d\n", ret);
 		return ret;
 	}
 
 	ret = iommu_dev_enable_feature(dev, IOMMU_DEV_FEAT_SVA);
 	if (ret) {
-		dev_err(dev, "failed to enable SVA feature! ret = %d\n", ret);
+		dev_err(dev, "Failed to enable SVA feature! ret = %d\n", ret);
 		iommu_dev_disable_feature(dev, IOMMU_DEV_FEAT_IOPF);
 		return ret;
 	}
@@ -400,7 +400,7 @@ static int sdma_device_probe(struct platform_device *pdev)
 
 	device_num = hisi_sdma_core_device.sdma_device_num;
 	if (!node_online(pdev->dev.numa_node)) {
-		pr_info("numa_node %d not online, register sdma%u failed\n", pdev->dev.numa_node,
+		pr_info("Numa_node %d not online, register sdma%u failed\n", pdev->dev.numa_node,
 			device_num);
 		node_id = 0;
 	} else
@@ -421,7 +421,7 @@ static int sdma_device_probe(struct platform_device *pdev)
 
 	ret = of_sdma_collect_info(pdev, psdma_dev);
 	if (ret < 0) {
-		dev_err(&psdma_dev->pdev->dev, "collect device info failed, %d\n", ret);
+		dev_err(&psdma_dev->pdev->dev, "Collect device info failed, %d\n", ret);
 		goto free_dev;
 	}
 
@@ -442,7 +442,7 @@ static int sdma_device_probe(struct platform_device *pdev)
 	if (ret)
 		goto sva_device_shutdown;
 
-	dev_info(&pdev->dev, "sdma%u registered\n", psdma_dev->idx);
+	dev_info(&pdev->dev, "SDMA%u registered\n", psdma_dev->idx);
 
 	return 0;
 
@@ -467,7 +467,7 @@ static int sdma_device_remove(struct platform_device *pdev)
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 	sdma_deinit_device_info(psdma_dev);
-	dev_info(&pdev->dev, "sdma%u removed\n", psdma_dev->idx);
+	dev_info(&pdev->dev, "SDMA%u removed\n", psdma_dev->idx);
 
 	kfree(psdma_dev);
 
@@ -532,13 +532,13 @@ static int __init sdma_driver_init(void)
 
 	sdma_class = class_create(THIS_MODULE, "sdma");
 	if (IS_ERR(sdma_class)) {
-		pr_err("class_create() failed for sdma_class: %ld\n", PTR_ERR(sdma_class));
+		pr_err("Class_create() failed for sdma_class: %ld\n", PTR_ERR(sdma_class));
 		goto destroy_ida;
 	}
 	sdma_class->devnode = sdma_devnode;
 	ret = alloc_chrdev_region(&sdma_dev, 0, HISI_SDMA_MAX_DEVS, "sdma");
 	if (ret < 0) {
-		pr_err("alloc_chrdev_region() failed for sdma\n");
+		pr_err("Alloc_chrdev_region() failed for sdma\n");
 		goto destroy_class;
 	}
 	spin_lock_init(&hisi_sdma_core_device.device_lock);
@@ -549,17 +549,17 @@ static int __init sdma_driver_init(void)
 
 	ret = platform_driver_register(&sdma_driver);
 	if (ret) {
-		pr_err("sdma platform_driver_register failed!\n");
+		pr_err("SDMA platform_driver_register failed!\n");
 		goto remove_debugfs;
 	}
 
 	if (sdma_hash_init()) {
-		pr_err("sdma_hash alloc failed!\n");
+		pr_err("SDMA hash alloc failed!\n");
 		goto unregister_driver;
 	}
 
 	if (sdma_authority_hash_init()) {
-		pr_err("sdma_authority_hash alloc failed!\n");
+		pr_err("SDMA authority_hash alloc failed!\n");
 		goto umem_hash_free;
 	}
 

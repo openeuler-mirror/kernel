@@ -191,11 +191,11 @@ int sdma_auth_add(u32 pasid, u32 num, u32 *pid_list)
 	if (owner) {
 		ret = sdma_add_authority_ht(owner, num, pid_list);
 		if (ret < 0)
-			pr_err("add_pid_ht failed\n");
+			pr_err("Add_pid_ht failed\n");
 	} else {
 		ret = sdma_create_authority_ht(pid, pasid, num, pid_list);
 		if (ret < 0)
-			pr_err("create_pid_ht failed\n");
+			pr_err("Create_pid_ht failed\n");
 	}
 	write_unlock(&g_authority->owner_pid_lock);
 
@@ -214,13 +214,13 @@ int sdma_check_authority(u32 pasid, u32 owner_pid, u32 submitter_pid, u32 *owner
 	read_lock(&g_authority->owner_pid_lock);
 	entry = sdma_search_owner_pid_ht(owner_pid);
 	if (!entry) {
-		pr_err("the owner_pid_ht[%u] not exist\n", owner_pid);
+		pr_err("The owner_pid_ht[%u] not exist\n", owner_pid);
 		read_unlock(&g_authority->owner_pid_lock);
 		return -ENODATA;
 	}
 	sub_entry = sdma_search_submitter_pid(entry, submitter_pid);
 	if (!sub_entry) {
-		pr_err("the submitter[%u] not authorithed\n", submitter_pid);
+		pr_err("The submitter[%u] not authorithed\n", submitter_pid);
 		read_unlock(&g_authority->owner_pid_lock);
 		return -ENODATA;
 	}

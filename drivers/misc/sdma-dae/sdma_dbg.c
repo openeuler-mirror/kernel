@@ -68,7 +68,7 @@ static void sdma_scan_channel_status(struct seq_file *f, struct hisi_sdma_device
 				seq_puts(f, "pause! maybe reusable after module reset\n");
 		}
 	}
-	seq_printf(f, "\nSDMA[%u] has %u share_chn usable, %u exclusive_chn unusable\n",
+	seq_printf(f, "\nSDMA[%u] has %u share_chn usable, %u exclusive_chn usable\n",
 		   psdma_dev->idx, available_share_chn_num, available_exclusive_chn_num);
 	split_line(f);
 }
