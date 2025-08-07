@@ -4077,7 +4077,7 @@ static int arm_smmu_init_one_queue(struct arm_smmu_device *smmu,
 	}
 
 	if (!WARN_ON(q->base_dma & (qsz - 1))) {
-		dev_info(smmu->dev, "allocated %u entries for %s\n",
+		dev_dbg(smmu->dev, "allocated %u entries for %s\n",
 			 1 << q->llq.max_n_shift, name);
 	}
 
