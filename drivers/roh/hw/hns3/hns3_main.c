@@ -389,7 +389,7 @@ static ssize_t hns3_roh_dfx_cmd_read(struct file *filp, char __user *buffer,
 				     size_t count, loff_t *pos)
 {
 #define HNS3_ROH_DFX_READ_LEN 256
-	int uncopy_bytes;
+	unsigned long uncopy_bytes;
 	char *buf;
 	int len;
 
@@ -454,7 +454,7 @@ static ssize_t hns3_roh_dfx_cmd_write(struct file *filp, const char __user *buff
 #define HNS3_ROH_DFX_WRITE_LEN 1024
 	struct hns3_roh_device *hroh_dev = filp->private_data;
 	char *cmd_buf, *cmd_buf_tmp;
-	int uncopied_bytes;
+	unsigned long uncopied_bytes;
 	int ret;
 
 	if (*pos != 0)

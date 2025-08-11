@@ -109,7 +109,7 @@ static inline void hns3_roh_mbx_ring_ptr_move_crq(struct hns3_roh_cmdq_ring *crq
 int hns3_roh_cmdq_init(struct hns3_roh_device *hroh_dev);
 void hns3_roh_cmdq_exit(struct hns3_roh_device *hroh_dev);
 int hns3_roh_cmdq_send(struct hns3_roh_device *hroh_dev,
-		       struct hns3_roh_desc *desc, int num);
+		       struct hns3_roh_desc *desc, u32 num);
 void hns3_roh_cmdq_setup_basic_desc(struct hns3_roh_desc *desc,
 				    enum hns3_roh_opcode_type opcode, bool is_read);
 int hns3_roh_get_link_status(struct hns3_roh_device *hroh_dev, u32 *link_status);

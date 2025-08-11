@@ -161,13 +161,13 @@ void hns3_roh_cmdq_exit(struct hns3_roh_device *hroh_dev)
 	hns3_roh_free_cmdq_desc(hroh_dev, &priv->cmdq.crq);
 }
 
-static int hns3_roh_cmdq_space(struct hns3_roh_cmdq_ring *ring)
+static u32 hns3_roh_cmdq_space(struct hns3_roh_cmdq_ring *ring)
 {
-	int ntu = ring->next_to_use;
-	int ntc = ring->next_to_clean;
-	int used = (ntu - ntc + ring->desc_num) % ring->desc_num;
+	u32 ntu = ring->next_to_use;
+	u32 ntc = ring->next_to_clean;
+	u32 used = (ntu - ntc + ring->desc_num) % ring->desc_num;
 
-	return ring->desc_num - used - 1;
+	return ring->desc_num - used - 1U;
 }
 
 void hns3_roh_cmdq_setup_basic_desc(struct hns3_roh_desc *desc,
@@ -181,7 +181,7 @@ void hns3_roh_cmdq_setup_basic_desc(struct hns3_roh_desc *desc,
 		desc->flag |= cpu_to_le16(HNS3_ROH_CMD_FLAG_WR);
 }
 
-static int hns3_roh_cmdq_csq_done(struct hns3_roh_device *hroh_dev)
+static bool hns3_roh_cmdq_csq_done(struct hns3_roh_device *hroh_dev)
 {
 	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
 	u32 head = hns3_roh_read(hroh_dev, HNS3_ROH_TX_CMDQ_HEAD_REG);
@@ -189,13 +189,13 @@ static int hns3_roh_cmdq_csq_done(struct hns3_roh_device *hroh_dev)
 	return head == priv->cmdq.csq.next_to_use;
 }
 
-static int hns3_roh_cmdq_csq_clean(struct hns3_roh_device *hroh_dev)
+static u32 hns3_roh_cmdq_csq_clean(struct hns3_roh_device *hroh_dev)
 {
 	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
 	struct hns3_roh_cmdq_ring *csq = &priv->cmdq.csq;
-	u16 ntc = csq->next_to_clean;
+	u32 ntc = csq->next_to_clean;
 	struct hns3_roh_desc *desc;
-	int clean = 0;
+	u32 clean = 0;
 	u32 head;
 
 	desc = &csq->desc[ntc];
@@ -215,12 +215,12 @@ static int hns3_roh_cmdq_csq_clean(struct hns3_roh_device *hroh_dev)
 
 static int hns3_roh_cmdq_build(struct hns3_roh_device *hroh_dev,
 			       struct hns3_roh_desc *desc,
-			       int num, int *ntc)
+			       u32 num, u32 *ntc)
 {
 	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
 	struct hns3_roh_cmdq_ring *csq = &priv->cmdq.csq;
 	struct hns3_roh_desc *desc_to_use = NULL;
-	int handle = 0;
+	u32 handle = 0;
 
 	if (num > hns3_roh_cmdq_space(csq)) {
 		/* If CMDQ ring is full, SW HEAD and HW HEAD may be different,
@@ -305,13 +305,13 @@ static int hns3_roh_cmd_convert_err_code(u16 desc_ret)
 }
 
 static int hns3_roh_cmd_check_retval(struct hns3_roh_device *hroh_dev,
-				     struct hns3_roh_desc *desc, int num,
-				     int next_to_clean)
+				     struct hns3_roh_desc *desc, u32 num,
+				     u32 next_to_clean)
 {
 	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
-	int ntc = next_to_clean;
+	u32 ntc = next_to_clean;
 	u16 opcode, desc_ret;
-	int handle;
+	u32 handle;
 
 	opcode = le16_to_cpu(desc[0].opcode);
 	for (handle = 0; handle < num; handle++) {
@@ -330,13 +330,13 @@ static int hns3_roh_cmd_check_retval(struct hns3_roh_device *hroh_dev,
 	return hns3_roh_cmd_convert_err_code(desc_ret);
 }
 
-int hns3_roh_cmdq_send(struct hns3_roh_device *hroh_dev, struct hns3_roh_desc *desc, int num)
+int hns3_roh_cmdq_send(struct hns3_roh_device *hroh_dev, struct hns3_roh_desc *desc, u32 num)
 {
 	struct hns3_roh_priv *priv = (struct hns3_roh_priv *)hroh_dev->priv;
 	struct hns3_roh_cmdq_ring *csq = &priv->cmdq.csq;
 	bool is_completed = false;
-	int handle = 0;
-	int ntc = 0;
+	u32 handle = 0;
+	u32 ntc = 0;
 	int ret = 0;
 
 	if (test_bit(HNS3_ROH_STATE_CMD_DISABLE, &priv->handle->rohinfo.reset_state))
@@ -362,7 +362,7 @@ int hns3_roh_cmdq_send(struct hns3_roh_device *hroh_dev, struct hns3_roh_desc *d
 
 	handle = hns3_roh_cmdq_csq_clean(hroh_dev);
 	if (handle != num)
-		dev_warn(hroh_dev->dev, "cleaned %d, need to clean %d\n", handle, num);
+		dev_warn(hroh_dev->dev, "cleaned %u, need to clean %u\n", handle, num);
 	spin_unlock_bh(&csq->lock);
 
 	return ret;
@@ -376,7 +376,7 @@ int hns3_roh_get_link_status(struct hns3_roh_device *hroh_dev, u32 *link_status)
 	int ret;
 
 	hns3_roh_cmdq_setup_basic_desc(&desc, HNS3_ROH_OPC_QUERY_PORT_LINK_STATUS, true);
-	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1);
+	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1U);
 	if (ret) {
 		dev_err(hroh_dev->dev, "failed to query link status, ret = %d\n", ret);
 		return ret;
