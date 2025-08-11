@@ -66,7 +66,7 @@ static ssize_t print_hw_stat(struct roh_device *dev,
 			     struct roh_mib_stats *stats, char *buf)
 {
 	int offset = 0;
-	int i;
+	u32 i;
 
 	for (i = 0; i < stats->num_counters; i++)
 		offset += sprintf(buf + offset, "%s: %llu\n",

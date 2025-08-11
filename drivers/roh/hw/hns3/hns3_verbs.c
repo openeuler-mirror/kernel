@@ -19,7 +19,7 @@ int hns3_roh_set_eid(struct roh_device *rohdev, struct roh_eid_attr *eid_attr)
 	req->base_eid = cpu_to_le32(eid_attr->base);
 	req->num_eid = cpu_to_le32(eid_attr->num);
 
-	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1);
+	ret = hns3_roh_cmdq_send(hroh_dev, &desc, 1U);
 	if (ret) {
 		dev_err(hroh_dev->dev, "failed to set eid, ret = %d\n", ret);
 		return ret;
@@ -160,7 +160,7 @@ static const char * const hns3_roh_hw_stats_name_private[] = {
 struct roh_mib_stats *hns3_roh_alloc_hw_stats(struct roh_device *rohdev, enum roh_mib_type mib_type)
 {
 	struct roh_mib_stats *stats = NULL;
-	int num_counters;
+	u32 num_counters;
 
 	switch (mib_type) {
 	case ROH_MIB_PUBLIC:
@@ -190,13 +190,11 @@ int hns3_roh_get_hw_stats(struct roh_device *rohdev, struct roh_mib_stats *stats
 			  enum roh_mib_type mib_type)
 {
 	struct hns3_roh_device *hroh_dev = to_hroh_dev(rohdev);
+	u32 i, j, start, stats_num, desc_num;
 	u64 *data = (u64 *)(stats->value);
 	enum hns3_roh_opcode_type opcode;
 	struct hns3_roh_desc *desc;
-	int start, stats_num;
 	__le64 *desc_data;
-	u32 desc_num;
-	int i, j;
 	int ret;
 
 	if (mib_type != ROH_MIB_PUBLIC && mib_type != ROH_MIB_PRIVATE) {
@@ -205,10 +203,10 @@ int hns3_roh_get_hw_stats(struct roh_device *rohdev, struct roh_mib_stats *stats
 	}
 
 	if (mib_type == ROH_MIB_PUBLIC)
-		desc_num = 1 + DIV_ROUND_UP(stats->num_counters - HNS3_ROH_RD_FIRST_STATS_NUM,
+		desc_num = 1U + DIV_ROUND_UP(stats->num_counters - HNS3_ROH_RD_FIRST_STATS_NUM,
 			HNS3_ROH_RD_OTHER_STATS_NUM);
 	else
-		desc_num = 1 + DIV_ROUND_UP(stats->num_counters, HNS3_ROH_RD_OTHER_STATS_NUM);
+		desc_num = 1U + DIV_ROUND_UP(stats->num_counters, HNS3_ROH_RD_OTHER_STATS_NUM);
 	desc = kcalloc(desc_num, sizeof(struct hns3_roh_desc), GFP_KERNEL);
 	if (!desc) {
 		ret = -ENOMEM;
