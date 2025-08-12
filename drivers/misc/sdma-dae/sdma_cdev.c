@@ -526,11 +526,11 @@ static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 
 	ret = sdma_add_pid_ref(psdma_dev, (u32)current->tgid);
 	if (ret != 0) {
-		dev_err(&psdma_dev->pdev->dev, "alloc pid_ref hash failed\n");
+		dev_err(&psdma_dev->pdev->dev, "Alloc pid_ref hash failed\n");
 		goto free_ida;
 	}
 
-	dev_dbg(&psdma_dev->pdev->dev, "%s: ida alloc id = %d\n", __func__, id);
+	dev_dbg(&psdma_dev->pdev->dev, "Ida alloc id = %d\n", id);
 	data = kmalloc_node(sizeof(struct file_open_data), GFP_KERNEL, psdma_dev->node_idx);
 	if (!data) {
 		ret = -ENOMEM;
@@ -543,7 +543,7 @@ static int __do_sdma_open(struct hisi_sdma_device *psdma_dev, struct file *file)
 
 	handle = iommu_sva_bind_device(&psdma_dev->pdev->dev, current->mm, NULL);
 	if (IS_ERR(handle)) {
-		dev_err(&psdma_dev->pdev->dev, "failed to bind sva, %ld\n", PTR_ERR(handle));
+		dev_err(&psdma_dev->pdev->dev, "Failed to bind sva, %ld\n", PTR_ERR(handle));
 		ret = (int)PTR_ERR(handle);
 		goto mmu_resume_unreg;
 	}
@@ -606,13 +606,13 @@ static int ioctl_sdma_unpin_umem(struct file *file, unsigned long arg)
 
 	ida = (int)(cookie >> COOKIE_IDA_SHIFT);
 	if (ida != data->ida) {
-		dev_err(&data->psdma_dev->pdev->dev, "invalid process unpin umem!\n");
+		dev_err(&data->psdma_dev->pdev->dev, "Invalid process unpin umem!\n");
 		return -EPERM;
 	}
 
 	ret = sdma_umem_release(cookie);
 	if (ret)
-		dev_err(&data->psdma_dev->pdev->dev, "umem release fail!\n");
+		dev_err(&data->psdma_dev->pdev->dev, "Umem release fail!\n");
 
 	return ret;
 }
@@ -625,7 +625,7 @@ static int ioctl_sdma_pin_umem(struct file *file, unsigned long arg)
 
 	if (copy_from_user(&umemInfo, (struct hisi_sdma_umem_info __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_umem_info))) {
-		dev_err(&data->psdma_dev->pdev->dev, "umem_info copy from user failed!\n");
+		dev_err(&data->psdma_dev->pdev->dev, "Umem_info copy from user failed!\n");
 		return -EFAULT;
 	}
 
@@ -636,7 +636,7 @@ static int ioctl_sdma_pin_umem(struct file *file, unsigned long arg)
 	if (copy_to_user((struct hisi_sdma_umem_info __user *)(uintptr_t)arg, &umemInfo,
 			 sizeof(struct hisi_sdma_umem_info))) {
 		sdma_umem_release(umemInfo.cookie);
-		dev_err(&data->psdma_dev->pdev->dev, "umem_info copy to user failed!\n");
+		dev_err(&data->psdma_dev->pdev->dev, "Umem_info copy to user failed!\n");
 		return -EFAULT;
 	}
 
@@ -693,7 +693,7 @@ static int ioctl_sdma_get_chn(struct file *file, unsigned long arg)
 		bitmap_clear(pdev->channel_map, idx, 1);
 		pdev->nr_channel_used++;
 	} else {
-		dev_err(&pdev->pdev->dev, "fail to allocate usable exclusive chn!\n");
+		dev_err(&pdev->pdev->dev, "Fail to allocate usable exclusive chn!\n");
 		ret = -ENOSPC;
 		goto unlock;
 	}
@@ -709,7 +709,7 @@ static int ioctl_sdma_get_chn(struct file *file, unsigned long arg)
 		goto put_chn;
 	}
 	spin_unlock(&pdev->channel_lock);
-	dev_dbg(&pdev->pdev->dev, "sdma get chn %u\n", idx);
+	dev_dbg(&pdev->pdev->dev, "SDMA get chn %u\n", idx);
 
 	return 0;
 
@@ -736,18 +736,18 @@ static int ioctl_sdma_put_chn(struct file *file, unsigned long arg)
 	u32 idx;
 
 	if (copy_from_user(&idx, (u32 __user *)(uintptr_t)arg, sizeof(u32))) {
-		dev_err(dev, "put user chn failed\n");
+		dev_err(dev, "Put user chn failed\n");
 		return -EFAULT;
 	}
 
 	if (idx < share_chns || idx >= pdev->nr_channel) {
-		dev_err(dev, "put idx = %u is err\n", idx);
+		dev_err(dev, "Put idx = %u is err\n", idx);
 		return -EFAULT;
 	}
 
 	pchannel = pdev->channels + idx;
 	if (!sdma_check_ida_val(pchannel, data->ida)) {
-		dev_err(dev, "invalid process put chn by sdma exclusive channel%u\n", idx);
+		dev_err(dev, "Invalid process put chn by sdma exclusive channel%u\n", idx);
 		return -EPERM;
 	}
 
@@ -757,7 +757,7 @@ static int ioctl_sdma_put_chn(struct file *file, unsigned long arg)
 			bitmap_set(pdev->channel_map, idx - share_chns, 1);
 			pdev->nr_channel_used--;
 			sdma_reset_ida_val(pchannel);
-			dev_dbg(dev, "sdma put chn %u\n", idx);
+			dev_dbg(dev, "SDMA put chn %u\n", idx);
 			list_del(&c->chn_list);
 			kfree(c);
 			break;
@@ -791,11 +791,11 @@ static int ioctl_get_near_sdmaid(struct file *file SDMA_UNUSED, unsigned long ar
 
 	nid = numa_node_id();
 	if (nid < 0) {
-		pr_err("sdma numa_node not reported!\n");
+		pr_err("SDMA numa_node not reported!\n");
 		return -EINVAL;
 	}
 	if (num <= 0 || num > HISI_SDMA_MAX_DEVS) {
-		pr_err("device num wrong, cannot use sdma!\n");
+		pr_err("Device num wrong, cannot use sdma!\n");
 		return -ENOENT;
 	}
 
@@ -805,10 +805,10 @@ static int ioctl_get_near_sdmaid(struct file *file SDMA_UNUSED, unsigned long ar
 		sdma_numa[i].idx = sdma_dev->idx;
 		sdma_numa[i].pxm = sdma_dev->node_idx;
 		if (sdma_numa[i].pxm < 0) {
-			dev_err(dev, "sdma%d PXM domain not reported!\n", sdma_numa[i].idx);
+			dev_err(dev, "SDMA%d PXM domain not reported!\n", sdma_numa[i].idx);
 			return -ENODATA;
 		}
-		dev_dbg(dev, "sdma%d PXM = %d\n", sdma_numa[i].idx, sdma_numa[i].pxm);
+		dev_dbg(dev, "SDMA%d PXM = %d\n", sdma_numa[i].idx, sdma_numa[i].pxm);
 	}
 
 	sort(sdma_numa, num, sizeof(struct hisi_sdma_numa_domain), cmp, NULL);
@@ -944,7 +944,7 @@ static int ioctl_sdma_add_authority_ht(struct file *file, unsigned long arg)
 
 	if (copy_from_user(&pid_info, (struct hisi_sdma_pid_info __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_pid_info))) {
-		dev_err(&pdev->pdev->dev, "get hisi_sdma_pid_info failed\n");
+		dev_err(&pdev->pdev->dev, "Get hisi_sdma_pid_info failed\n");
 		return -EFAULT;
 	}
 	list_num = pid_info.num;
@@ -958,7 +958,7 @@ static int ioctl_sdma_add_authority_ht(struct file *file, unsigned long arg)
 
 	if (copy_from_user(pid_list, (void __user *)pid_info.pid_list_addr,
 			   list_num * sizeof(u32))) {
-		dev_err(&pdev->pdev->dev, "get pid_list failed\n");
+		dev_err(&pdev->pdev->dev, "Get pid_list failed\n");
 		ret = -EFAULT;
 		goto free_list;
 	}
@@ -979,7 +979,7 @@ static int sdma_verify_src_dst(struct file_open_data *data, struct pasid_info *p
 	if (task_list.opcode == HISI_SDMA_HBM_CACHE_PRELOAD_MODE) {
 		pasid->src_pasid = data->pasid;
 		pasid->dst_pasid = 0;
-		dev_dbg(dev, "unter hbm cach preload mode\n");
+		dev_dbg(dev, "Under hbm cache preload mode\n");
 		return 0;
 	}
 
@@ -994,7 +994,7 @@ static int sdma_verify_src_dst(struct file_open_data *data, struct pasid_info *p
 	}
 
 	if (ret < 0)
-		dev_err(dev, "no authority:tgid[%u] src_pid[%u] dst_pid[%u]\n",
+		dev_err(dev, "No authority:tgid[%u] src_pid[%u] dst_pid[%u]\n",
 			pid, task_list.src_process_id, task_list.dst_process_id);
 
 	return ret;
@@ -1143,7 +1143,7 @@ static int ioctl_sdma_send_task(struct file *file, unsigned long arg)
 
 	if (copy_from_user(&task_info, (struct hisi_sdma_task_info __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_task_info))) {
-		dev_err(dev, "get hisi_sdma_task_info failed\n");
+		dev_err(dev, "Get hisi_sdma_task_info failed\n");
 		return -EFAULT;
 	}
 	ret = sdma_task_info_validate(data, &task_info);
@@ -1157,19 +1157,19 @@ static int ioctl_sdma_send_task(struct file *file, unsigned long arg)
 
 	if (copy_from_user(task_list, (void __user *)task_info.task_addr,
 			   task_info.task_cnt * sizeof(struct hisi_sdma_sqe_task))) {
-		dev_err(dev, "get hisi_sdma_sqe_task failed\n");
+		dev_err(dev, "Get hisi_sdma_sqe_task failed\n");
 		ret = -EFAULT;
 		goto free_list;
 	}
 	ret = sdma_send_task_kernel(data, &task_info, task_list);
 	if (ret < 0) {
-		dev_err(dev, "exec sdma_send_task_kernel failed\n");
+		dev_err(dev, "Execute sdma_send_task_kernel failed\n");
 		goto free_list;
 	}
 
 	if (copy_to_user((struct hisi_sdma_task_info __user *)(uintptr_t)arg, &task_info,
 			 sizeof(struct hisi_sdma_task_info))) {
-		dev_err(dev, "set hisi_sdma_task_info failed\n");
+		dev_err(dev, "Set hisi_sdma_task_info failed\n");
 		ret = -EFAULT;
 	}
 
@@ -1211,7 +1211,7 @@ static int sdma_operation_reg(struct file_open_data *data, unsigned long arg,
 
 	if (copy_from_user(&reg_info, (struct hisi_sdma_reg_info __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_reg_info))) {
-		dev_err(dev, "get hisi_sdma_reg_info failed\n");
+		dev_err(dev, "Get hisi_sdma_reg_info failed\n");
 		return -EFAULT;
 	}
 
@@ -1232,7 +1232,7 @@ static int sdma_operation_reg(struct file_open_data *data, unsigned long arg,
 		if (copy_to_user((struct hisi_sdma_reg_info __user *)(uintptr_t)arg, &reg_info,
 				 sizeof(struct hisi_sdma_reg_info))) {
 			spin_unlock(&pchannel->owner_chn_lock);
-			dev_err(dev, "copy reg_info to user failed\n");
+			dev_err(dev, "Copy reg_info to user failed\n");
 			return -EFAULT;
 		}
 	} else if (reg_info.type == HISI_SDMA_WRITE_REG) {
@@ -1245,7 +1245,7 @@ static int sdma_operation_reg(struct file_open_data *data, unsigned long arg,
 				set_func(pchannel, reg_info.reg_value);
 			} else {
 				spin_unlock(&pchannel->owner_chn_lock);
-				dev_err(dev, "cq_head value illegal!\n");
+				dev_err(dev, "Cq_head value illegal!\n");
 				return -EINVAL;
 			}
 		}
@@ -1294,7 +1294,7 @@ static int ioctl_sdma_dfx_reg(struct file *file, unsigned long arg)
 	dev = &pdev->pdev->dev;
 	if (copy_from_user(&reg_info, (struct hisi_sdma_reg_info __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_reg_info))) {
-		dev_err(dev, "dfx_reg copy from user failed\n");
+		dev_err(dev, "Dfx_reg copy from user failed\n");
 		return -EFAULT;
 	}
 
@@ -1313,7 +1313,7 @@ static int ioctl_sdma_dfx_reg(struct file *file, unsigned long arg)
 	reg_info.reg_value = sdma_channel_get_dfx(pchannel);
 	if (copy_to_user((struct hisi_sdma_reg_info __user *)(uintptr_t)arg, &reg_info,
 			 sizeof(struct hisi_sdma_reg_info))) {
-		dev_err(dev, "dfx_reg copy to user failed\n");
+		dev_err(dev, "Dfx_reg copy to user failed\n");
 		return -EFAULT;
 	}
 
@@ -1331,7 +1331,7 @@ static int ioctl_sdma_sqe_cnt_reg(struct file *file, unsigned long arg)
 	dev = &pdev->pdev->dev;
 	if (copy_from_user(&reg_info, (struct hisi_sdma_reg_info __user *)(uintptr_t)arg,
 			   sizeof(struct hisi_sdma_reg_info))) {
-		dev_err(dev, "get hisi_sdma_reg_info failed\n");
+		dev_err(dev, "Get hisi_sdma_reg_info failed\n");
 		return -EFAULT;
 	}
 	if (reg_info.chn >= pdev->nr_channel) {
@@ -1409,18 +1409,18 @@ static int sdma_core_open(struct inode *inode, struct file *file)
 	u32 sdma_idx;
 
 	if (g_info.core_dev->sdma_device_num == 0) {
-		pr_err("cannot find a sdma device\n");
+		pr_err("Cannot find a sdma device\n");
 		return -ENODEV;
 	}
 	sdma_dev = inode->i_rdev;
 	sdma_idx = MINOR(sdma_dev);
 	if (sdma_idx >= HISI_SDMA_MAX_DEVS) {
-		pr_err("wrong id of sdma device\n");
+		pr_err("Wrong id of sdma device\n");
 		return -ENODEV;
 	}
 	psdma_dev = g_info.core_dev->sdma_devices[sdma_idx];
 	if (!psdma_dev) {
-		pr_err("cannot find sdma%u\n", sdma_idx);
+		pr_err("Cannot find sdma%u\n", sdma_idx);
 		return -ENODEV;
 	}
 
@@ -1437,13 +1437,13 @@ ssize_t sdma_read_info(struct file *file, char __user *buf SDMA_UNUSED, size_t s
 	bool mode = *(g_info.sdma_mode);
 
 	if (mode == HISI_SDMA_FAST_MODE)
-		dev_info(dev, "sdma is running unter fast mode\n");
+		dev_info(dev, "SDMA is running unter fast mode\n");
 	else
-		dev_info(dev, "sdma is running unter safe mode\n");
+		dev_info(dev, "SDMA is running unter safe mode\n");
 
 	if (share_chns > pdev->nr_channel)
 		share_chns = pdev->nr_channel;
-	dev_info(dev, "sdma%u has %u channels in total, %u share_channels\n",
+	dev_info(dev, "SDMA%u has %u channels in total, %u share_channels\n",
 		 pdev->idx, pdev->nr_channel, share_chns);
 
 	return 0;
@@ -1462,7 +1462,7 @@ static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 
 	spin_lock(&pdev->channel_lock);
 	list_for_each_entry_safe(c, n, &data->non_share_chn_list, chn_list) {
-		dev_dbg(dev, "release non_share_chn%u\n", c->chn_idx);
+		dev_dbg(dev, "Release non_share_chn%u\n", c->chn_idx);
 		pchannel = pdev->channels + c->chn_idx;
 		sdma_reset_ida_val(pchannel);
 		bitmap_set(pdev->channel_map, c->chn_idx - share_chns, 1);
@@ -1472,12 +1472,12 @@ static int sdma_dev_release(struct inode *inode SDMA_UNUSED, struct file *file)
 	}
 
 	list_for_each_entry_safe(c, n, &data->share_chn_list, chn_list) {
-		dev_dbg(dev, "release share_chn%u\n", c->chn_idx);
+		dev_dbg(dev, "Release share_chn%u\n", c->chn_idx);
 		pchannel = pdev->channels + c->chn_idx;
 		pchannel->cnt_used--;
 		if (pchannel->sync_info_base->lock != 0 &&
 			pchannel->sync_info_base->lock_pid == (u32)current->tgid) {
-			dev_warn(dev, "process %d exit with lock\n", current->tgid);
+			dev_warn(dev, "Process %d exit with lock\n", current->tgid);
 			pchannel->sync_info_base->lock_pid = 0;
 			/* clear lockpid before release lock */
 			wmb();
@@ -1517,13 +1517,23 @@ static int remap_addr_range(u32 chn_num, u64 offset, u64 size, struct hisi_sdma_
 {
 	struct hisi_sdma_channel *pchannel;
 	bool mode = *(g_info.sdma_mode);
+	u64 reg_max_size = PAGE_SIZE;
+	u64 sq_max_size = PAGE_SIZE;
+	u64 cq_max_size = PAGE_SIZE;
 	u64 sync_size;
+
+	if (HISI_SDMA_REG_SIZE >= PAGE_SIZE)
+		reg_max_size = HISI_SDMA_REG_SIZE;
+	if (HISI_SDMA_SQ_SIZE >= PAGE_SIZE)
+		sq_max_size = HISI_SDMA_SQ_SIZE;
+	if (HISI_SDMA_CQ_SIZE >= PAGE_SIZE)
+		cq_max_size = HISI_SDMA_CQ_SIZE;
 
 	sync_size = (u64)((sizeof(struct hisi_sdma_queue_info) + PAGE_SIZE - ALIGN_NUM) /
 		    PAGE_SIZE * PAGE_SIZE);
 
 	if (offset >= chn_num * (HISI_SDMA_MMAP_SHMEM + 1)) {
-		pr_err("sdma mmap offset exceed range\n");
+		pr_err("SDMA mmap offset exceed range\n");
 		return -EINVAL;
 	}
 
@@ -1531,32 +1541,32 @@ static int remap_addr_range(u32 chn_num, u64 offset, u64 size, struct hisi_sdma_
 	spin_lock(&pchannel->owner_chn_lock);
 	if (sdma_check_channel_permission(pchannel, ida, pchannel->idx)) {
 		spin_unlock(&pchannel->owner_chn_lock);
-		pr_err("sdma invalid process mmap\n");
+		pr_err("SDMA invalid process mmap\n");
 		return -EPERM;
 	}
 	spin_unlock(&pchannel->owner_chn_lock);
 
 	if (offset < chn_num * HISI_SDMA_MMAP_CQE) {
-		if (mode == HISI_SDMA_SAFE_MODE || size > HISI_SDMA_SQ_SIZE) {
-			pr_err("sdma mmap size exceed sqe range\n");
+		if (mode == HISI_SDMA_SAFE_MODE || size > sq_max_size) {
+			pr_err("SDMA mmap size exceed sqe range\n");
 			return -EINVAL;
 		}
 		return HISI_SDMA_MMAP_SQE;
 	} else if (offset < chn_num * HISI_SDMA_MMAP_IO) {
-		if (size > HISI_SDMA_CQ_SIZE) {
-			pr_err("sdma mmap size exceed cqe range\n");
+		if (size > cq_max_size) {
+			pr_err("SDMA mmap size exceed cqe range\n");
 			return -EINVAL;
 		}
 		return HISI_SDMA_MMAP_CQE;
 	} else if (offset < chn_num * HISI_SDMA_MMAP_SHMEM) {
-		if (mode == HISI_SDMA_SAFE_MODE || size > HISI_SDMA_REG_SIZE) {
-			pr_err("sdma not support io reg mmap\n");
+		if (mode == HISI_SDMA_SAFE_MODE || size > reg_max_size) {
+			pr_err("SDMA not support io reg mmap\n");
 			return -EINVAL;
 		}
 		return HISI_SDMA_MMAP_IO;
 	} else {
 		if (size > sync_size) {
-			pr_err("sdma mmap size exceed share mem range\n");
+			pr_err("SDMA mmap size exceed share mem range\n");
 			return -EINVAL;
 		}
 		return HISI_SDMA_MMAP_SHMEM;
@@ -1565,7 +1575,7 @@ static int remap_addr_range(u32 chn_num, u64 offset, u64 size, struct hisi_sdma_
 
 static int sdma_vma_remap(struct vm_area_struct *vma)
 {
-	pr_err("sdma vma remap not supported!\n");
+	pr_err("SDMA vma remap not supported!\n");
 	return -EINVAL;
 }
 
@@ -1591,7 +1601,7 @@ static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
 	vma->vm_ops = &sdma_vm_ops;
 	vma->vm_flags |= VM_DONTEXPAND | VM_WIPEONFORK | VM_DONTCOPY | VM_IO;
 
-	dev_dbg(dev, "sdma total channel num = %u, user mmap offset = 0x%llx", chn_num, offset);
+	dev_dbg(dev, "SDMA total channel num = %u, user mmap offset = 0x%llx", chn_num, offset);
 	switch (remap_addr_range(chn_num, offset, size, chn_base, data->ida)) {
 	case HISI_SDMA_MMAP_SQE:
 		pchan = chn_base + offset;
@@ -1623,7 +1633,7 @@ static int sdma_dev_mmap(struct file *file, struct vm_area_struct *vma)
 		return -EINVAL;
 	}
 	if (ret)
-		dev_err(dev, "sdma mmap failed!\n");
+		dev_err(dev, "SDMA mmap failed!\n");
 
 	return ret;
 }

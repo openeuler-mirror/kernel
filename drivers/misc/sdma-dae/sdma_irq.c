@@ -46,7 +46,7 @@ irqreturn_t sdma_chn_ioe_irq_handle(int irq, void *psdma_dev)
 	sdma_channel_clear_cqe_status(sdma->io_base + chn * HISI_SDMA_CHANNEL_IOMEM_SIZE);
 	spin_unlock(&err_set_lock[chn]);
 
-	dev_info(&sdma->pdev->dev, "sdma chn[%d], sqe[%u] error status = %u, ioe clear\n",
+	dev_info(&sdma->pdev->dev, "SDMA chn[%d], sqe[%u] error status = %u, ioe clear\n",
 		 chn, cqe_sqeid, err_status);
 
 	return IRQ_HANDLED;
@@ -72,7 +72,7 @@ int sdma_irq_init(struct hisi_sdma_device *sdma)
 	for (i = 0; i < irq_cnt; i++) {
 		vir_irq = platform_get_irq(pdev, i);
 		if (vir_irq < 0) {
-			dev_err(&pdev->dev, "get vir_irq[idx:%u] failed:%d!\n", i, vir_irq);
+			dev_err(&pdev->dev, "Get vir_irq[idx:%u] failed:%d!\n", i, vir_irq);
 			sdma->irq[i] = -1;
 			continue;
 		}
@@ -86,7 +86,7 @@ int sdma_irq_init(struct hisi_sdma_device *sdma)
 		ret = devm_request_irq(&sdma->pdev->dev, sdma->irq[i], sdma_chn_ioe_irq_handle,
 				       IRQF_ONESHOT, HISI_SDMA_IRQ_FUNC_NAME, sdma);
 		if (ret != 0) {
-			dev_err(&pdev->dev, "request_irq failed, ret=%d", ret);
+			dev_err(&pdev->dev, "Request_irq failed, ret=%d", ret);
 			return ret;
 		}
 	}
