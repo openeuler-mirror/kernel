@@ -31,6 +31,11 @@ extern unsigned int sysctl_sched_min_granularity;
 extern unsigned int sysctl_sched_wakeup_granularity;
 extern unsigned int sysctl_sched_child_runs_first;
 
+extern unsigned int min_sched_granularity_ns;
+extern unsigned int max_sched_granularity_ns;
+extern unsigned int min_wakeup_granularity_ns;
+extern unsigned int max_wakeup_granularity_ns;
+
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 extern int sysctl_sched_util_low_pct;
 #endif
