@@ -99,6 +99,11 @@ struct kernfs_elem_dir {
 	 * better directly in kernfs_node but is here to save space.
 	 */
 	struct kernfs_root	*root;
+	/*
+	 * Monotonic revision counter, used to identify if a directory
+	 * node has changed during negative dentry revalidation.
+	 */
+	KABI_EXTEND(unsigned long rev)
 };
 
 struct kernfs_elem_symlink {
@@ -194,7 +199,7 @@ struct kernfs_root {
 	u32			id_highbits;
 	struct kernfs_syscall_ops *syscall_ops;
 
-	/* list of kernfs_super_info of this root, protected by kernfs_mutex */
+	/* list of kernfs_super_info of this root, protected by kernfs_rwsem */
 	struct list_head	supers;
 
 	wait_queue_head_t	deactivate_waitq;
