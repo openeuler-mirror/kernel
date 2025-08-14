@@ -64,8 +64,6 @@ static int pcboff[] = {
 	[PT_IDA_MASK] = PCB_OFF(ida_mask)
 };
 
-static unsigned long zero;
-
 /*
  * Get address of register REGNO in task TASK.
  */
@@ -98,14 +96,6 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 		addr = &task->thread.fpstate.fp[fno].v[0];
 		break;
 	case PT_VECREG_BASE ... PT_VECREG_END:
-		/*
-		 * return addr for zero value if we catch vectors of f31
-		 * v0 and v3 of f31 are not in this range so ignore them
-		 */
-		if (regno == PT_F31_V1 || regno == PT_F31_V2) {
-			addr = &zero;
-			break;
-		}
 		fno = (regno - PT_VECREG_BASE) & 0x1f;
 		vno = 1 + ((regno - PT_VECREG_BASE) >> 5);
 		addr = &task->thread.fpstate.fp[fno].v[vno];
@@ -117,7 +107,7 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 		addr = (void *)task_pt_regs(task) + PT_REGS_PC;
 		break;
 	default:
-		addr = &zero;
+		return ERR_PTR(-EIO);
 	}
 
 	return addr;
@@ -129,9 +119,17 @@ get_reg_addr(struct task_struct *task, unsigned long regno)
 unsigned long
 get_reg(struct task_struct *task, unsigned long regno)
 {
-	unsigned long addr = *get_reg_addr(task, regno);
+	unsigned long *addr;
 
-	return (addr) ? addr : -EIO;
+	/*
+	 * return zero value if we catch vectors of f31
+	 * v0 and v3 of f31 are not in this range so ignore them
+	 */
+	if (regno == PT_F31_V1 || regno == PT_F31_V2)
+		return 0;
+
+	addr = get_reg_addr(task, regno);
+	return (unlikely(IS_ERR(addr))) ? PTR_ERR(addr) : *addr;
 }
 
 /*
@@ -140,9 +138,18 @@ get_reg(struct task_struct *task, unsigned long regno)
 static int
 put_reg(struct task_struct *task, unsigned long regno, unsigned long data)
 {
-	unsigned long addr = *get_reg_addr(task, regno);
+	unsigned long *addr;
 
-	return (addr) ? 0 : -EIO;
+	if (regno == PT_F31_V1 || regno == PT_F31_V2)
+		return 0;
+
+	addr = get_reg_addr(task, regno);
+	if (unlikely(IS_ERR(addr)))
+		return PTR_ERR(addr);
+	else {
+		*addr = data;
+		return 0;
+	}
 }
 
 static inline int
