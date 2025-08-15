@@ -21,9 +21,3 @@ ngbe-objs := ngbe_main.o \
 
 ngbe-${CONFIG_DEBUG_FS} += ngbe_debugfs.o
 
-KERNELDIR ?= /lib/modules/$(shell uname -r)/build
-all:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
-clean:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-	rm -rf *.${MANSECTION}.gz *.ko

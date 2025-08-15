@@ -259,44 +259,86 @@
 #define NGBE_YT8521S_PHY_RESET 0x8000
 
 /**************** external phy *******************/
-#define NGBE_EXPHY_MII_BMCR 0x00 /* Basic mode control register */
-#define NGBE_EXPHY_MII_BMSR 0x01 /* Basic mode status register */
-#define RTL821x_INER 0x12 /* Interrupt enable register */
-#define RTL821x_PHYSR 0x1a /* Specific Status register */
-#define RTL821x_INSR 0x1d /* Interrupt status register */
-#define RTL821x_PAGE_SELECT 0x1f
-#define RTL8211F_FIBER_ESR 0x0f /* fiber extended status register */
+#define NGBE_EXPHY_MII_BMCR		               0x00	/* Basic mode control register */
+#define NGBE_EXPHY_MII_BMSR		               0x01	/* Basic mode status register */
+#define RTL821x_INER				           0x12 /* Interrupt enable register */
+#define RTL821x_PHYSR				           0x1a /* Specific Status register */
+#define RTL821x_INSR				           0x1d /* Interrupt status register */
+#define RTL821x_PAGE_SELECT			           0x1f
+#define RTL8211F_FIBER_ESR                     0x0f /* fiber extended status register */
 
-#define NGBE_EXPHY_BMCR_PDOWN 0x0800 /* Enable low power state */
-#define NGBE_EXPHY_BMCR_RESET 0x8000
-#define RTL8211F_INSR_LINK_STATUS BIT(4)
-#define RTL8211F_INER_LINK_CHANGE BIT(4)
-#define RTL8211F_ANC_STATUS BIT(3)
-#define NGBE_88E1111_ANC BIT(11)
-#define NGBE_88E1111_LINK_CHANGE BIT(10)
-#define NGBE_88E1111_LINK_CHANGE_STATUS BIT(10)
+#define NGBE_EXPHY_BMCR_PDOWN		           0x0800	/* Enable low power state */
+#define NGBE_EXPHY_BMCR_RESET                  0x8000
+#define RTL8211F_INSR_LINK_STATUS		       BIT(4)
+#define RTL8211F_INER_LINK_CHANGE		       BIT(4)
+#define RTL8211F_ANC_STATUS		               BIT(3)
+#define NGBE_88E1111_ANC		               BIT(11)
+#define NGBE_88E1111_LINK_CHANGE		       BIT(10)
+#define NGBE_88E1111_LINK_CHANGE_STATUS        BIT(10)
 
-#define NGBE_88E1111_INER 0x12 /* Interrupt enable register */
-#define NGBE_88E1111_INSR 0x13 /* Interrupt status register */
-#define NGBE_88E1111_ESCR 0x14 /* Extended PHY Specific Control Register */
+#define NGBE_88E1111_INER			           0x12 /* Interrupt enable register */
+#define NGBE_88E1111_INSR			           0x13 /* Interrupt status register */
+#define NGBE_88E1111_ESCR                      0x14 /* Extended PHY Specific Control Register */
 
-#define NGBE_RTL8211F_PHY_ID2 0xc916
-#define NGBE_RTL8211F_PHY_ID1 0x001c
-#define NGBE_JL2201_PHY_ID2 0x4032
-#define NGBE_JL2201_PHY_ID1 0x937c
-#define NGBE_YT8011A_PHY_ID2 0xeb01
-#define NGBE_YT8011A_PHY_ID1 0x4f51
-#define NGBE_88E1111_PHY_ID2 0x0CC0
-#define NGBE_88E1111_PHY_ID1 0x0141
-#define RTL8211F_TX_DELAY BIT(8)
-#define RTL8211F_RX_DELAY BIT(3)
-#define JL2201_TX_DELAY BIT(8)
-#define JL2201_RX_DELAY BIT(9)
-#define NGBE_YT8011A_INSR_LINK_STATUS BIT(7)
-#define NGBE_PHY_BMCR_PDOWN 0x0800 /* Enable low power state */
-#define NGBE_PHY_BMCR_RESET 0x8000 /* Enable low power state */
-#define NGBE_88E1111_TX_DELAY BIT(7)
-#define NGBE_88E1111_RX_DELAY BIT(1)
+enum linkyum_port_type_e {
+	LYPHY_PORT_TYPE_UTP,
+	LYPHY_PORT_TYPE_FIBER,
+	LYPHY_PORT_TYPE_COMBO,
+	LYPHY_PORT_TYPE_EXT
+};
+
+#define NGBE_LY1211S_LINK_ST			       0x11 /* link status register */
+#define NGBE_LY1211S_INT_ST				       0X14 /* Interrupt status register */
+#define NGBE_LY1211S_INT_CLR			       0x15 /* Interrupt status clear register */
+#define NGBE_LY1211S_INT_MASK			       0x17 /* Interrupt status mask register */
+#define NGBE_LY1211S_LINK_CHANGE		       BIT(6)
+#define NGBE_LY1211S_SDS_LINK_CHANGE	       BIT(1)
+
+#define NGBE_LY1211S_MDIO_CTL			       0x16
+#define NGBE_LY1211S_PAGE_SELECT_MASK	       BIT(8)
+
+#define NGBE_LY1211S_PAGE_SELECT_UTP	       0x0000
+#define NGBE_LY1211S_PAGE_SELECT_FIBER	       BIT(8)
+#define NGBE_LY1211_PHY_MODE_REG		       0x62B
+#define NGBE_LY1211_PHY_MODE_MASK		       0x70
+
+#define NGBE_LY1211_LED0_CTRL			       0x1E33
+#define NGBE_LY1211_LED1_CTRL			       0x1E34
+#define NGBE_LY1211_LED2_CTRL			       0x1E35
+#define NGBE_LY1211_LED3_CTRL			       0x1E36
+#define NGBE_LY1211_LED4_CTRL			       0x1E37
+#define NGBE_LY1211_LED5_CTRL			       0x1E38
+
+#define NGBE_LY1211S_MODE_UTP_TO_RGMII                    0x00
+#define NGBE_LY1211S_MODE_FIBER_TO_RGMII                  0x10
+#define NGBE_LY1211S_MODE_UTP_OR_FIBER_TO_RGMII           0x20
+#define NGBE_LY1211S_MODE_UTP_TO_SGMII                    0x30
+#define NGBE_LY1211S_MODE_SGMII_PHY_TO_RGMII_MAC          0x40
+#define NGBE_LY1211S_MODE_SGMII_MAC_TO_RGMII_PHY          0x50
+#define NGBE_LY1211S_MODE_UTP_TO_FIBER_AUTO               0x60
+#define NGBE_LY1211S_MODE_UTP_TO_FIBER_FORCE              0x70
+
+#define NGBE_RTL8211F_PHY_ID2                  0xc916
+#define NGBE_RTL8211F_PHY_ID1                  0x001c
+#define NGBE_JL2201_PHY_ID2                    0x4032
+#define NGBE_JL2201_PHY_ID1                    0x937c
+#define NGBE_YT8011A_PHY_ID2                   0xeb01
+#define NGBE_YT8011A_PHY_ID1                   0x4f51
+#define NGBE_88E1111_PHY_ID2                   0x0CC0
+#define NGBE_88E1111_PHY_ID1                   0x0141
+#define NGBE_LY1211S_PHY_ID2                   0x0412
+#define NGBE_LY1211S_PHY_ID1                   0xADB4
+#define NGBE_JL3113_PHY_ID1                    0x937c
+#define NGBE_JL3113_PHY_ID2                    0x4010
+#define RTL8211F_TX_DELAY			           BIT(8)
+#define RTL8211F_RX_DELAY			           BIT(3)
+#define JL2201_TX_DELAY				           BIT(8)
+#define JL2201_RX_DELAY				           BIT(9)
+#define NGBE_YT8011A_INSR_LINK_STATUS		   BIT(7)
+#define NGBE_PHY_BMCR_PDOWN		               0x0800	/* Enable low power state */
+#define NGBE_PHY_BMCR_RESET		               0x8000	/* Enable low power state */
+#define NGBE_88E1111_TX_DELAY                  BIT(7)
+#define NGBE_88E1111_RX_DELAY                  BIT(1)
 
 /* PHY IDs*/
 #define TN1010_PHY_ID 0x00A19410U
@@ -455,6 +497,7 @@
 #define NGBE_MIS_RST_LAN2_RST 0x00000008U
 #define NGBE_MIS_RST_LAN3_RST 0x00000010U
 #define NGBE_MIS_RST_FW_RST 0x00000020U
+#define NGBE_MIS_RST_LAN_RST(_i) BIT((_i) + 1)
 
 #define NGBE_MIS_RST_LAN0_CHG_ETH_MODE 0x20000000U
 #define NGBE_MIS_RST_LAN1_CHG_ETH_MODE 0x40000000U
@@ -496,6 +539,7 @@
 #define NGBE_MIS_PRB_CTL_LAN1_UP 0x4
 #define NGBE_MIS_PRB_CTL_LAN2_UP 0x2
 #define NGBE_MIS_PRB_CTL_LAN3_UP 0x1
+#define NGBE_MIS_PRB_CTL_LAN_UP_MASK GENMASK(3, 0)
 
 /* Sensors for PVT(Process Voltage Temperature) */
 #define NGBE_TS_CTL 0x10300
@@ -851,6 +895,8 @@ enum {
 #define NGBE_RDB_RA_CTL_RSS_IPV6_TCP 0x00200000U
 #define NGBE_RDB_RA_CTL_RSS_IPV4_UDP 0x00400000U
 #define NGBE_RDB_RA_CTL_RSS_IPV6_UDP 0x00800000U
+#define NGBE_RDB_RA_CTL_RSS_IPV4_SCTP 0x00040000U
+#define NGBE_RDB_RA_CTL_RSS_IPV6_SCTP 0x00080000U
 
 /******************************* PSR Registers *******************************/
 /* psr control */
@@ -884,6 +930,22 @@ enum {
 #define NGBE_PSR_VLAN_CTL_CFI 0x10000000U /* bit 28 */
 #define NGBE_PSR_VLAN_CTL_CFIEN 0x20000000U /* bit 29 */
 #define NGBE_PSR_VLAN_CTL_VFE 0x40000000U /* bit 30 */
+
+/* Storm controller. */
+#define NGBE_PSR_STORM_CTL                0x15004
+#define NGBE_PSR_STORM_CTL_INTERVAL_MASK  0x3ff00
+#define NGBE_PSR_STORM_CTL_INTERVAL_MAX   0x3ff
+#define NGBE_PSR_STORM_CTL_MC_MASK        0x3
+#define NGBE_PSR_STORM_CTL_MC_PREV        0x1
+#define NGBE_PSR_STORM_CTL_MC_CUR         0x2
+#define NGBE_PSR_STORM_CTL_BC_MASK        0xc
+#define NGBE_PSR_STORM_CTL_BC_PREV        0x4
+#define NGBE_PSR_STORM_CTL_BC_CUR         0x8
+#define NGBE_PSR_STORM_CTL_UC             0x10
+#define NGBE_PSR_STORM_CTL_INTEVAL_MASK   0x3FF00U
+#define NGBE_PSR_STORM_THRE               0x15008
+#define NGBE_PSR_STORM_THRE_BC_MASK       0xFFFF0000U
+#define NGBE_PSR_STORM_THRE_MC_MASK       0x0000FFFFU
 
 /* vm L2 contorl */
 #define NGBE_PSR_VM_L2CTL(_i) (0x15600 + ((_i) * 4))
@@ -1265,6 +1327,7 @@ enum NGBE_MSCA_CMD_value {
 #define NGBE_MAC_LXOFFRXC 0x11988
 #define NGBE_MAC_PXOFFRXC 0x119DC
 #define NGBE_RX_BC_FRAMES_GOOD_LOW 0x11918
+#define NGBE_RX_MC_FRAMES_GOOD_LOW 0x11920
 #define NGBE_RX_CRC_ERROR_FRAMES_LOW 0x11928
 #define NGBE_RX_LEN_ERROR_FRAMES_LOW 0x11978
 #define NGBE_RX_UNDERSIZE_FRAMES_GOOD 0x11938
@@ -1849,6 +1912,7 @@ enum ngbe_l2_ptypes {
 #define NGBE_TXD_IPSEC 0x00000100U /* enable ipsec esp */
 #define NGBE_TXD_IIPCS 0x00000400U
 #define NGBE_TXD_EIPCS 0x00000800U
+#define NGBE_TXD_MNG_EN 0x00001000U
 #define NGBE_TXD_L4CS 0x00000200U
 #define NGBE_TXD_PAYLEN_SHIFT 13 /* Adv desc PAYLEN shift */
 #define NGBE_TXD_MACLEN_SHIFT 9 /* Adv ctxt desc mac len shift */
@@ -2360,7 +2424,14 @@ enum ngbe_phy_device_type {
 	ngbe_phy_yt_8011a,
 	ngbe_phy_88e1111,
 	ngbe_yt_utp,
-	ngbe_yt_serdes
+	ngbe_yt_serdes,
+	ngbe_phy_ly1211s,
+	ngbe_phy_jl3113,
+};
+
+enum ngbe_combo_media {
+	ngbe_phy_combo_fiber = 0,
+	ngbe_phy_combo_copper
 };
 
 /* SFP+ module type IDs:
@@ -2481,6 +2552,7 @@ struct ngbe_fc_info {
 	bool strict_ieee; /* Strict IEEE mode */
 	bool disable_fc_autoneg; /* Do not autonegotiate FC */
 	bool fc_was_autonegged; /* Is current_mode the result of autonegging? */
+	bool fc_changed;
 	enum ngbe_fc_mode current_mode; /* FC mode in effect */
 	enum ngbe_fc_mode requested_mode; /* FC mode requested by caller */
 };
@@ -2492,7 +2564,6 @@ struct ngbe_hw_stats {
 	u64 errbc;
 	u64 mspdc;
 	u64 mpctotal;
-	u64 mpc[8];
 	u64 mlfc;
 	u64 mrfc;
 	u64 rlec;
@@ -2518,7 +2589,6 @@ struct ngbe_hw_stats {
 	u64 psrpc;
 	u64 psrdc;
 	u64 untag;
-	u64 tdmpc;
 	u64 tdmdc;
 	u64 tdbpc;
 	u64 gptc;
@@ -2543,6 +2613,7 @@ struct ngbe_hw_stats {
 	u64 ptc1522;
 	u64 mptc;
 	u64 bptc;
+	u64 mpc;
 	u64 xec;
 	u64 qprc[16];
 	u64 qptc[16];
@@ -2777,6 +2848,8 @@ struct ngbe_phy_info {
 	ngbe_physical_layer link_mode;
 	u32 force_speed;
 	u32 yt_unidirectional;
+	u32 baset1_mode;
+	u32 combo_media_type;
 };
 
 #include "ngbe_mbx.h"

@@ -32,7 +32,7 @@ static ssize_t ngbe_hwmon_show_temp(struct device __always_unused *dev,
 	struct hwmon_attr *ngbe_attr =
 		container_of(attr, struct hwmon_attr, dev_attr);
 	struct ngbe_hw *hw = ngbe_attr->hw;
-	unsigned int value;
+	int value;
 
 	/* reset the temp field */
 	hw->mac.ops.get_thermal_sensor_data(hw);
@@ -42,7 +42,7 @@ static ssize_t ngbe_hwmon_show_temp(struct device __always_unused *dev,
 	/* display millidegree */
 	value *= 1000;
 
-	return sprintf(buf, "%u\n", value);
+	return sprintf(buf, "%d\n", value);
 }
 
 static ssize_t ngbe_hwmon_show_alarmthresh(struct device __always_unused *dev,

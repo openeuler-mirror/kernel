@@ -203,17 +203,28 @@ int ngbe_setup_fc(struct ngbe_hw *hw)
 	 */
 	switch (hw->fc.requested_mode) {
 	case ngbe_fc_none:
-		/* Flow control completely disabled by software override. */
+		if (hw->phy.phydev_type == ngbe_yt_serdes ||
+		    hw->phy.type == ngbe_phy_m88e1512_sfi ||
+			hw->phy.type == ngbe_phy_external)
+			/* Flow control completely disabled by software override. */
+			pcap_backplane &= ~(0x80 | 0x100);
+		else
+			pcap_backplane &= ~(NGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM |
+								NGBE_SR_AN_MMD_ADV_REG1_PAUSE_SYM);
 		break;
 	case ngbe_fc_tx_pause:
 		/* Tx Flow control is enabled, and Rx Flow control is
 		 * disabled by software override.
 		 */
-		if (hw->phy.type != ngbe_phy_m88e1512_sfi && hw->phy.type != ngbe_phy_yt8521s_sfi &&
-		    hw->phy.type != ngbe_phy_external)
-			pcap_backplane |= NGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM;
-		else
+		if (hw->phy.phydev_type == ngbe_yt_serdes ||
+		    hw->phy.type == ngbe_phy_m88e1512_sfi ||
+			hw->phy.type == ngbe_phy_external) {
 			pcap_backplane |= 0x100;
+			pcap_backplane &= ~0x80;
+		} else {
+			pcap_backplane |= NGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM;
+			pcap_backplane &= ~NGBE_SR_AN_MMD_ADV_REG1_PAUSE_SYM;
+		}
 		break;
 	case ngbe_fc_rx_pause:
 		/* Rx Flow control is enabled and Tx Flow control is
@@ -224,14 +235,25 @@ int ngbe_setup_fc(struct ngbe_hw *hw)
 		 * through to the fc_full statement.  Later, we will
 		 * disable the adapter's ability to send PAUSE frames.
 		 */
+		if (hw->phy.phydev_type == ngbe_yt_serdes ||
+		    hw->phy.type == ngbe_phy_m88e1512_sfi ||
+			hw->phy.type == ngbe_phy_external) {
+			pcap_backplane &= ~0x100;
+			pcap_backplane |= 0x80;
+		} else {
+			pcap_backplane &= ~NGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM;
+			pcap_backplane |= NGBE_SR_AN_MMD_ADV_REG1_PAUSE_SYM;
+		}
+		break;
 	case ngbe_fc_full:
 		/* Flow control (both Rx and Tx) is enabled by SW override. */
-		if (hw->phy.type != ngbe_phy_m88e1512_sfi && hw->phy.type != ngbe_phy_yt8521s_sfi &&
-		    hw->phy.type != ngbe_phy_external)
-			pcap_backplane |= NGBE_SR_AN_MMD_ADV_REG1_PAUSE_SYM |
-					  NGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM;
+		if (hw->phy.phydev_type == ngbe_yt_serdes ||
+		    hw->phy.type == ngbe_phy_m88e1512_sfi ||
+			hw->phy.type == ngbe_phy_external)
+			pcap_backplane |= 0x80 | 0x100;
 		else
-			pcap_backplane |= 0x80;
+			pcap_backplane |= NGBE_SR_AN_MMD_ADV_REG1_PAUSE_SYM |
+				NGBE_SR_AN_MMD_ADV_REG1_PAUSE_ASM;
 		break;
 	default:
 		ERROR_REPORT1(NGBE_ERROR_ARGUMENT, "Flow control param set incorrectly\n");
@@ -1019,12 +1041,10 @@ out:
 static int ngbe_negotiate_fc(struct ngbe_hw *hw, u32 adv_reg, u32 lp_reg, u32 adv_sym, u32 adv_asm,
 			     u32 lp_sym, u32 lp_asm)
 {
-	if ((!(adv_reg)) || (!(lp_reg))) {
-		ERROR_REPORT3(NGBE_ERROR_UNSUPPORTED,
-			      "Local or partner's fc advertised is  NULL. Local: %x, partner: %x\n",
-			      adv_reg, lp_reg);
+	if (hw->phy.type == ngbe_phy_fpga ||
+		hw->phy.phydev_type == ngbe_phy_yt_8011a ||
+		hw->phy.phydev_type == ngbe_phy_jl3113)
 		return NGBE_ERR_FC_NOT_NEGOTIATED;
-	}
 
 	if ((adv_reg & adv_sym) && (lp_reg & lp_sym)) {
 		/* Now we need to check if the user selected Rx ONLY
@@ -1478,6 +1498,7 @@ int ngbe_find_vlvf_slot(struct ngbe_hw *hw, u32 vlan)
  **/
 int ngbe_set_vfta(struct ngbe_hw *hw, u32 vlan, u32 vind, bool vlan_on)
 {
+	struct ngbe_adapter *adapter = hw->back;
 	int regindex;
 	u32 bitindex;
 	u32 vfta;
@@ -1523,10 +1544,14 @@ int ngbe_set_vfta(struct ngbe_hw *hw, u32 vlan, u32 vind, bool vlan_on)
 	if (ret_val != 0)
 		return ret_val;
 
-	if (vfta_changed)
-		wr32(hw, NGBE_PSR_VLAN_TBL(regindex), vfta);
 	/* errata 5 */
 	hw->mac.vft_shadow[regindex] = vfta;
+
+	if (adapter->flags2 & NGBE_FLAG2_VLAN_PROMISC)
+		return 0;
+
+	if (vfta_changed)
+		wr32(hw, NGBE_PSR_VLAN_TBL(regindex), vfta);
 	return 0;
 }
 
@@ -2831,10 +2856,14 @@ static int ngbe_get_copper_link_capabilities(struct ngbe_hw *hw, u32 *speed, boo
 			*autoneg = false;
 
 		if (hw->phy.phydev_type == ngbe_phy_jl ||
-		    hw->phy.phydev_type == ngbe_phy_rtl_8211f) {
+		    hw->phy.phydev_type == ngbe_phy_rtl_8211f ||
+		    hw->phy.phydev_type == ngbe_phy_88e1111) {
 			*speed = NGBE_LINK_SPEED_1GB_FULL;
 			hw->phy.link_mode = NGBE_PHYSICAL_LAYER_1000BASE_T;
 		} else if (hw->phy.phydev_type == ngbe_phy_yt_8011a) {
+			*speed = NGBE_LINK_SPEED_1GB_FULL | NGBE_LINK_SPEED_100_FULL;
+			hw->phy.link_mode = NGBE_PHYSICAL_LAYER_1000BASE_T;
+		} else if (hw->phy.phydev_type == ngbe_phy_jl3113) {
 			*speed = NGBE_LINK_SPEED_1GB_FULL | NGBE_LINK_SPEED_100_FULL;
 			hw->phy.link_mode = NGBE_PHYSICAL_LAYER_1000BASE_T;
 		}
@@ -3002,6 +3031,38 @@ static void ngbe_do_lanrst(struct ngbe_hw *hw)
 		clear_bit(__NGBE_NO_PHY_SET, &adapter->state);
 }
 
+static void ngbe_set_storm_ctl(struct ngbe_hw *hw)
+{
+	struct ngbe_adapter *adapter = hw->back;
+	u32 interval = NGBE_STORM_INTERVAL;
+	u32 value = 0, thre = 0;
+
+	if (NGBE_STORM_MC || NGBE_STORM_BC) {
+		value = (NGBE_STORM_MC & NGBE_PSR_STORM_CTL_MC_MASK) |
+			((NGBE_STORM_BC << 2) & NGBE_PSR_STORM_CTL_BC_MASK);
+		if (NGBE_STORM_BC)
+			value |= (NGBE_STORM_UC << 4) & NGBE_PSR_STORM_CTL_UC;
+	}
+
+	if (interval && interval <= NGBE_PSR_STORM_CTL_INTERVAL_MAX) {
+		value |= (interval << 8) &
+			  NGBE_PSR_STORM_CTL_INTERVAL_MASK;
+	} else {
+		e_dev_err("Invalid storm interval; using default 100\n");
+		 /* Default 1 ms period. */
+		value |= (0x64 << 8) & NGBE_PSR_STORM_CTL_INTERVAL_MASK;
+	}
+
+	if (NGBE_STORM_BC)
+		thre = ((NGBE_STORM_BC_THRE << 16) &
+			NGBE_PSR_STORM_THRE_BC_MASK);
+	if (NGBE_STORM_MC)
+		thre |= (NGBE_STORM_MC_THRE & NGBE_PSR_STORM_THRE_MC_MASK);
+
+	wr32(hw, NGBE_PSR_STORM_CTL, value);
+	wr32(hw, NGBE_PSR_STORM_THRE, thre);
+}
+
 /**
  *  ngbe_reset_hw - Perform hardware reset
  *  @hw: pointer to hardware structure
@@ -3061,6 +3122,11 @@ int ngbe_reset_hw(struct ngbe_hw *hw)
 		ngbe_do_lanrst(hw);
 		if (!(hw->phy.type == ngbe_phy_fpga)) {
 			wr32(hw, NGBE_MDIO_CLAUSE_SELECT, 0xF);
+
+			/* wait gphy reset done */
+			if (hw->phy.type == ngbe_phy_internal)
+				ngbe_gphy_wait_mdio_access_on(hw);
+
 			hw->phy.ops.phy_suspend(hw);
 		}
 	}
@@ -3080,6 +3146,8 @@ int ngbe_reset_hw(struct ngbe_hw *hw)
 	hw->mac.ops.init_rx_addrs(hw);
 
 	pci_set_master(((struct ngbe_adapter *)hw->back)->pdev);
+
+	ngbe_set_storm_ctl(hw);
 
 	return status;
 }
@@ -4141,7 +4209,73 @@ static int ngbe_check_mac_link_yt8521s(struct ngbe_hw *hw, u32 *speed, bool *lin
 	return status;
 }
 
-static int ngbe_check_mac_link_ex(struct ngbe_hw *hw, u32 *speed, bool *link_up,
+static void ngbe_check_mac_link_ly1211s(struct ngbe_hw *hw,
+					bool *link_up,
+							u16 *value)
+{
+	u16 sgmii_to_rgmii_vlaue;
+	u16 port_type;
+	u16 phy_mode;
+
+	ngbe_phy_read_reg_ext_ly1211s(hw, NGBE_LY1211_PHY_MODE_REG,
+				      NGBE_LY1211S_PAGE_SELECT_UTP, &phy_mode);
+
+	phy_mode &= NGBE_LY1211_PHY_MODE_MASK;
+	if (phy_mode == NGBE_LY1211S_MODE_UTP_TO_RGMII ||
+	    phy_mode == NGBE_LY1211S_MODE_UTP_TO_SGMII) {
+		port_type = LYPHY_PORT_TYPE_UTP;
+	} else if (phy_mode == NGBE_LY1211S_MODE_FIBER_TO_RGMII ||
+		phy_mode == NGBE_LY1211S_MODE_SGMII_PHY_TO_RGMII_MAC ||
+		phy_mode == NGBE_LY1211S_MODE_SGMII_MAC_TO_RGMII_PHY) {
+		port_type = LYPHY_PORT_TYPE_FIBER;
+	} else {
+		port_type = LYPHY_PORT_TYPE_COMBO;
+	}
+
+	if (port_type == LYPHY_PORT_TYPE_UTP || port_type == LYPHY_PORT_TYPE_COMBO) {
+		ngbe_phy_write_reg_ly1211s(hw, NGBE_LY1211S_MDIO_CTL,
+					   0, NGBE_LY1211S_PAGE_SELECT_UTP);
+		ngbe_phy_read_reg_ly1211s(hw, NGBE_LY1211S_LINK_ST, 0, value);
+
+		if (!(*value & BIT(2))) {
+			*link_up = false;
+		} else {
+			hw->phy.combo_media_type = ngbe_phy_combo_copper;
+			*link_up = true;
+			return;
+		}
+	}
+
+	if (port_type == LYPHY_PORT_TYPE_FIBER || port_type == LYPHY_PORT_TYPE_COMBO) {
+		ngbe_phy_write_reg_ly1211s(hw, NGBE_LY1211S_MDIO_CTL,
+					   0, NGBE_LY1211S_PAGE_SELECT_FIBER);
+		ngbe_phy_read_reg_ly1211s(hw, NGBE_LY1211S_LINK_ST, 0, value);
+
+		if (*value & BIT(2)) {
+			ngbe_phy_read_reg_ext_ly1211s(hw, NGBE_LY1211_PHY_MODE_REG,
+						      NGBE_LY1211S_PAGE_SELECT_UTP, &phy_mode);
+			if ((phy_mode & NGBE_LY1211_PHY_MODE_MASK) !=
+				NGBE_LY1211S_MODE_SGMII_MAC_TO_RGMII_PHY) {
+				hw->phy.combo_media_type = ngbe_phy_combo_fiber;
+				*link_up = true;
+			} else {
+				ngbe_phy_read_reg_ly1211s(hw, 0x1c, 0, &sgmii_to_rgmii_vlaue);
+				if (sgmii_to_rgmii_vlaue & 0x8000) {
+					hw->phy.combo_media_type = ngbe_phy_combo_fiber;
+					*link_up = true;
+				} else {
+					*link_up = false;
+				}
+			}
+		} else {
+			*link_up = false;
+		}
+	}
+}
+
+static int ngbe_check_mac_link_ex(struct ngbe_hw *hw,
+				  u32 *speed,
+				  bool *link_up,
 				  bool link_up_wait_to_complete)
 {
 	u32 i = 0;
@@ -4158,19 +4292,34 @@ static int ngbe_check_mac_link_ex(struct ngbe_hw *hw, u32 *speed, bool *link_up,
 					*link_up = true;
 				else
 					*link_up = false;
-			} else {
-				if (hw->phy.phydev_type == ngbe_phy_jl)
-					ngbe_phy_read_reg_exphy(hw, RTL821x_PHYSR, 0xa43, &value);
-				else if (hw->phy.phydev_type == ngbe_phy_yt_8011a)
-					ngbe_phy_read_reg_mii_yt8011a(hw, 0x1, &value);
-				else if (hw->phy.phydev_type == ngbe_phy_88e1111)
-					ngbe_phy_read_reg_88e1111(hw, NGBE_EXPHY_MII_BMSR, 0,
-								  &value);
+			} else if (hw->phy.phydev_type == ngbe_phy_88e1111) {
+				ngbe_phy_read_reg_88e1111(hw, 0x11, 0, &value);
+
+				if (value & BIT(10))
+					*link_up = true;
+				else
+					*link_up = false;
+			} else if (hw->phy.phydev_type == ngbe_phy_jl3113) {
+				ngbe_phy_read_reg_mmd_baset1(hw, 0x1, 0x1, &value);
 
 				if (value & BIT(2))
 					*link_up = true;
 				else
 					*link_up = false;
+			} else {
+				if (hw->phy.phydev_type == ngbe_phy_jl)
+					ngbe_phy_read_reg_exphy(hw, RTL821x_PHYSR, 0xa43, &value);
+				else if (hw->phy.phydev_type == ngbe_phy_yt_8011a)
+					ngbe_phy_read_reg_mii_yt8011a(hw, 0x1, &value);
+
+				if (value & BIT(2))
+					*link_up = true;
+				else
+					*link_up = false;
+
+				if (hw->phy.phydev_type == ngbe_phy_ly1211s)
+					ngbe_check_mac_link_ly1211s(hw, link_up, &value);
+
 			}
 			msleep(100);
 		}
@@ -4182,23 +4331,81 @@ static int ngbe_check_mac_link_ex(struct ngbe_hw *hw, u32 *speed, bool *link_up,
 				*link_up = true;
 			else
 				*link_up = false;
-		} else {
-			if (hw->phy.phydev_type == ngbe_phy_jl)
-				ngbe_phy_read_reg_exphy(hw, RTL821x_PHYSR, 0xa43, &value);
-			else if (hw->phy.phydev_type == ngbe_phy_yt_8011a)
-				ngbe_phy_read_reg_mii_yt8011a(hw, 0x1, &value);
-			else if (hw->phy.phydev_type == ngbe_phy_88e1111)
-				ngbe_phy_read_reg_88e1111(hw, NGBE_EXPHY_MII_BMSR, 0, &value);
+		} else if (hw->phy.phydev_type == ngbe_phy_88e1111) {
+			ngbe_phy_read_reg_88e1111(hw, 0x11, 0, &value);
+
+			if (value & BIT(10))
+				*link_up = true;
+			else
+				*link_up = false;
+		} else if (hw->phy.phydev_type == ngbe_phy_jl3113) {
+			ngbe_phy_read_reg_mmd_baset1(hw, 0x1, 0x1, &value);
 
 			if (value & BIT(2))
 				*link_up = true;
 			else
 				*link_up = false;
+		} else {
+			if (hw->phy.phydev_type == ngbe_phy_jl)
+				ngbe_phy_read_reg_exphy(hw, RTL821x_PHYSR, 0xa43, &value);
+			else if (hw->phy.phydev_type == ngbe_phy_yt_8011a)
+				ngbe_phy_read_reg_mii_yt8011a(hw, 0x1, &value);
+
+			if (value & BIT(2))
+				*link_up = true;
+			else
+				*link_up = false;
+
+			if (hw->phy.phydev_type == ngbe_phy_ly1211s)
+				ngbe_check_mac_link_ly1211s(hw, link_up, &value);
 		}
 	}
 
-	speed_sta = value & 0x30;
-	if (hw->phy.phydev_type != ngbe_phy_yt_8011a) {
+	if (hw->phy.phydev_type == ngbe_phy_ly1211s) {
+		speed_sta = value & 0x18;
+		if (*link_up) {
+			if (speed_sta == 0x10)
+				*speed = NGBE_LINK_SPEED_1GB_FULL;
+			else if (speed_sta == 0x8)
+				*speed = NGBE_LINK_SPEED_100_FULL;
+			else if (speed_sta == 0x00)
+				*speed = NGBE_LINK_SPEED_10_FULL;
+		} else {
+			*speed = NGBE_LINK_SPEED_UNKNOWN;
+		}
+	} else if (hw->phy.phydev_type == ngbe_phy_88e1111) {
+		if (*link_up) {
+			speed_sta = value & 0xC000;
+
+			if (speed_sta == 0x8000)
+				*speed = NGBE_LINK_SPEED_1GB_FULL;
+			else if (speed_sta == 0x4000)
+				*speed = NGBE_LINK_SPEED_100_FULL;
+			else if (speed_sta == 0x0000)
+				*speed = NGBE_LINK_SPEED_10_FULL;
+		} else {
+			*speed = NGBE_LINK_SPEED_UNKNOWN;
+		}
+	} else if (hw->phy.phydev_type == ngbe_phy_yt_8011a) {
+		if (*link_up) {
+			ngbe_phy_read_reg_mmd_baset1(hw, 0x834, 1, &speed_sta);
+			if (speed_sta & BIT(0))
+				*speed = NGBE_LINK_SPEED_1GB_FULL;
+			else
+				*speed = NGBE_LINK_SPEED_100_FULL;
+		} else {
+			*speed = NGBE_LINK_SPEED_UNKNOWN;
+		}
+
+	} else if (hw->phy.phydev_type == ngbe_phy_jl3113) {
+		ngbe_phy_read_reg_mmd_baset1(hw, 0x0, 0x1, &speed_sta);
+		if (speed_sta & BIT(6) && !(speed_sta & BIT(13)))
+			*speed = NGBE_LINK_SPEED_1GB_FULL;
+		else
+			*speed = NGBE_LINK_SPEED_100_FULL;
+	} else {
+		speed_sta = value & 0x30;
+
 		if (*link_up) {
 			if (speed_sta == 0x20)
 				*speed = NGBE_LINK_SPEED_1GB_FULL;
@@ -4206,16 +4413,6 @@ static int ngbe_check_mac_link_ex(struct ngbe_hw *hw, u32 *speed, bool *link_up,
 				*speed = NGBE_LINK_SPEED_100_FULL;
 			else if (speed_sta == 0x00)
 				*speed = NGBE_LINK_SPEED_10_FULL;
-		} else {
-			*speed = NGBE_LINK_SPEED_UNKNOWN;
-		}
-	} else {
-		if (*link_up) {
-			ngbe_phy_read_reg_mmd_yt8011a(hw, 0x834, 1, &speed_sta);
-			if (speed_sta & BIT(0))
-				*speed = NGBE_LINK_SPEED_1GB_FULL;
-			else
-				*speed = NGBE_LINK_SPEED_100_FULL;
 		} else {
 			*speed = NGBE_LINK_SPEED_UNKNOWN;
 		}
@@ -4243,16 +4440,15 @@ int ngbe_hic_write_lldp(struct ngbe_hw *hw, u32 open)
 {
 	u32 tmp = 0, i = 0, lldp_flash_data = 0;
 	int status;
-	struct ngbe_adapter *adapter = hw->back;
-	struct pci_dev *pdev = adapter->pdev;
 	struct ngbe_hic_write_lldp buffer;
 
 	buffer.hdr.cmd = 0xf3 - open;
 	buffer.hdr.buf_len = 0x1;
 	buffer.hdr.cmd_or_resp.cmd_resv = FW_CEM_CMD_RESERVED;
 	buffer.hdr.checksum = FW_DEFAULT_CHECKSUM;
-	buffer.func = PCI_FUNC(pdev->devfn);
-	status = ngbe_host_interface_command(hw, (u32 *)&buffer, sizeof(buffer), 5000, false);
+	buffer.func = hw->bus.lan_id;
+	status = ngbe_host_interface_command(hw, (u32 *)&buffer,
+					     sizeof(buffer), 5000, false);
 
 	for (; i < 0x1000 / sizeof(u32); i++) {
 		status = ngbe_flash_read_dword(hw, NGBE_LLDP_REG + i * 4, &tmp);
@@ -4293,7 +4489,15 @@ int ngbe_is_lldp(struct ngbe_hw *hw)
 
 	status = ngbe_hic_get_lldp(hw);
 	if (status != -1) {
-		adapter->eth_priv_flags = status;
+		if (status) {
+			adapter->eth_priv_flags |= NGBE_ETH_PRIV_FLAG_LLDP;
+			adapter->eth_priv_flags &=
+				~NGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+		} else {
+			adapter->eth_priv_flags &= ~NGBE_ETH_PRIV_FLAG_LLDP;
+			adapter->eth_priv_flags |=
+				NGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+		}
 		return 0;
 	}
 	for (; i < 0x1000 / sizeof(u32); i++) {
@@ -4304,10 +4508,15 @@ int ngbe_is_lldp(struct ngbe_hw *hw)
 			break;
 		lldp_flash_data = tmp;
 	}
-	if (lldp_flash_data & BIT(hw->bus.lan_id))
+	if (lldp_flash_data & BIT(hw->bus.lan_id)) {
 		adapter->eth_priv_flags |= NGBE_ETH_PRIV_FLAG_LLDP;
-	else
+		adapter->eth_priv_flags &=
+			~NGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+	} else {
 		adapter->eth_priv_flags &= ~NGBE_ETH_PRIV_FLAG_LLDP;
+		adapter->eth_priv_flags |=
+			NGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+	}
 	return 0;
 }
 

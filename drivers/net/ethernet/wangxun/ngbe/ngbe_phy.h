@@ -129,13 +129,30 @@ int ngbe_phy_read_reg_mii_yt8011a(struct ngbe_hw *hw, u16 reg_addr, u16 *phy_dat
 
 int ngbe_phy_read_reg_88e1111(struct ngbe_hw *hw, u16 reg_offset,
 			      u16 page, u16 *phy_data);
-int ngbe_phy_write_reg_88e1111(struct ngbe_hw *hw, u16 reg_offset, u16 page, u16 phy_data);
-int ngbe_phy_read_reg_mmd_yt8011a(struct ngbe_hw *hw, u16 reg_addr, u16 device_type, u16 *phy_data);
+int ngbe_phy_write_reg_88e1111(struct ngbe_hw *hw, u16 reg_offset,
+			       u16 page, u16 phy_data);
+int ngbe_phy_write_reg_ly1211s(struct ngbe_hw *hw, u16 reg_offset,
+			       u16 page, u16 phy_data);
+int ngbe_phy_read_reg_ly1211s(struct ngbe_hw *hw, u16 reg_offset,
+			      u16 page, u16 *phy_data);
+int ngbe_phy_write_reg_ext_ly1211s(struct ngbe_hw *hw, u16 reg_offset,
+				   u16 page, u16 phy_data);
+int ngbe_phy_read_reg_ext_ly1211s(struct ngbe_hw *hw, u16 reg_offset,
+				  u16 page, u16 *phy_data);
 
-int ngbe_phy_read_reg_ext_yt8521s(struct ngbe_hw *hw, u32 reg_addr, u32 device_type, u16 *phy_data);
-int ngbe_phy_write_reg_ext_yt8521s(struct ngbe_hw *hw, u32 reg_addr, u32 device_type, u16 phy_data);
-int ngbe_phy_read_reg_sds_mii_yt8521s(struct ngbe_hw *hw, u32 reg_addr, u32 device_type,
-				      u16 *phy_data);
-int ngbe_phy_read_reg_indirect(struct ngbe_hw *hw, u16 reg_offset, u16 *phy_data);
+int ngbe_phy_read_reg_mmd_baset1(struct ngbe_hw *hw,
+				 u16 reg_addr,
+					u16 device_type,
+					u16 *phy_data);
+
+int ngbe_phy_read_reg_ext_yt8521s(struct ngbe_hw *hw, u32 reg_addr,
+				  u32 device_type, u16 *phy_data);
+int ngbe_phy_write_reg_ext_yt8521s(struct ngbe_hw *hw, u32 reg_addr,
+				   u32 device_type, u16 phy_data);
+int ngbe_phy_read_reg_sds_mii_yt8521s(struct ngbe_hw *hw, u32 reg_addr,
+				      u32 device_type, u16 *phy_data);
+int ngbe_phy_read_reg_indirect(struct ngbe_hw *hw, u16 reg_offset,
+			       u16 *phy_data);
+int ngbe_gphy_wait_mdio_access_on(struct ngbe_hw *hw);
 
 #endif /* _NGBE_PHY_H_ */

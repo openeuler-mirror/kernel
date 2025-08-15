@@ -47,6 +47,7 @@
 #include "ngbe_phy.h"
 #include "ngbe_sriov.h"
 
+static int cards_found;
 char ngbe_driver_name[32] = NGBE_NAME;
 static const char ngbe_driver_string[] = "WangXun Gigabit PCI Express Network Driver";
 #define DRV_HW_PERF
@@ -59,7 +60,7 @@ static const char ngbe_driver_string[] = "WangXun Gigabit PCI Express Network Dr
 
 #define RELEASE_TAG
 
-#define DRV_VERSION __stringify(1.2.7elos)
+#define DRV_VERSION __stringify(1.2.8oe)
 const char ngbe_driver_version[32] = DRV_VERSION;
 static const char ngbe_copyright[] = "Copyright (c) 2018 -2019 Beijing WangXun Technology Co., Ltd";
 static const char ngbe_overheat_msg[] =
@@ -478,12 +479,11 @@ static void ngbe_dump_all_ring_desc(struct ngbe_adapter *adapter)
 	if (!netif_msg_tx_err(adapter))
 		return;
 
-	e_warn(tx_err, "Dump desc base addr\n");
+	e_warn(tx_err, "Dump desc base addr.\n");
 
-	for (i = 0; i < adapter->num_tx_queues; i++) {
-		e_warn(tx_err, "q_%d:0x%x%x\n", i, rd32(hw, NGBE_PX_TR_BAH(i)),
-		       rd32(hw, NGBE_PX_TR_BAL(i)));
-	}
+	for (i = 0; i < adapter->num_tx_queues; i++)
+		e_warn(tx_err, "txq_%d:0x%x%x\n",
+		       i, rd32(hw, NGBE_PX_TR_BAH(i)), rd32(hw, NGBE_PX_TR_BAL(i)));
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		tx_ring = adapter->tx_ring[i];
@@ -494,6 +494,12 @@ static void ngbe_dump_all_ring_desc(struct ngbe_adapter *adapter)
 				       tx_desc->read.buffer_addr, tx_desc->read.cmd_type_len,
 				       tx_desc->read.olinfo_status);
 		}
+
+		e_warn(drv, "tx ring %d next_to_use is %d, next_to_clean is %d\n",
+		       i, tx_ring->next_to_use, tx_ring->next_to_clean);
+		e_warn(drv, "tx ring %d hw rp is 0x%x, wp is 0x%x\n",
+		       i, rd32(hw, NGBE_PX_TR_RP(tx_ring->reg_idx)),
+			rd32(hw, NGBE_PX_TR_WP(tx_ring->reg_idx)));
 	}
 }
 
@@ -797,10 +803,7 @@ static inline bool ngbe_check_tx_hang(struct ngbe_ring *tx_ring)
 static void ngbe_tx_timeout_dorecovery(struct ngbe_adapter *adapter)
 {
 	/* schedule immediate reset if we believe we hung */
-	if (adapter->hw.bus.lan_id == 0)
-		adapter->flags2 |= NGBE_FLAG2_PCIE_NEED_RECOVER;
-	else
-		wr32(&adapter->hw, NGBE_MIS_PF_SM, 1);
+	adapter->flags2 |= NGBE_FLAG2_RING_DUMP;
 	ngbe_service_event_schedule(adapter);
 }
 
@@ -1231,8 +1234,10 @@ static inline void ngbe_rx_checksum(struct ngbe_ring *ring, union ngbe_rx_desc *
 	}
 
 	/* L4 checksum offload flag must set for the below code to work */
-	if (!ngbe_test_staterr(rx_desc, NGBE_RXD_STAT_L4CS))
+	if (!ngbe_test_staterr(rx_desc, NGBE_RXD_STAT_L4CS)) {
+		ring->rx_stats.csum_good_cnt++;
 		return;
+	}
 
 	/*likely incorrect csum if IPv6 Dest Header found */
 	if (dptype.prot != NGBE_DEC_PTYPE_PROT_SCTP && ngbe_test_staterr(rx_desc, NGBE_RXD_IPV6EX))
@@ -1874,7 +1879,8 @@ add_frag:
 
 int ngbe_xmit_xdp_ring(struct ngbe_ring *ring, struct xdp_frame *xdpf)
 {
-	u8 nr_frags = 0;
+	struct skb_shared_info *sinfo = xdp_get_shared_info_from_frame(xdpf);
+	u8 nr_frags = unlikely(xdp_frame_has_frags(xdpf)) ? sinfo->nr_frags : 0;
 	struct ngbe_tx_buffer *tx_buffer;
 	union ngbe_tx_desc *tx_desc;
 	u32 len, cmd_type = 0;
@@ -1885,7 +1891,7 @@ int ngbe_xmit_xdp_ring(struct ngbe_ring *ring, struct xdp_frame *xdpf)
 
 	len = xdpf->len;
 	data = xdpf->data;
-	if (unlikely(!ngbe_desc_unused(ring)))
+	if (unlikely(ngbe_desc_unused(ring) < 1 + nr_frags))
 		return NGBE_XDP_CONSUMED;
 
 	/* record the location of the first descriptor for this packet */
@@ -1919,6 +1925,8 @@ int ngbe_xmit_xdp_ring(struct ngbe_ring *ring, struct xdp_frame *xdpf)
 		tx_buffer = &ring->tx_buffer_info[index];
 		tx_desc = NGBE_TX_DESC(ring, index);
 		tx_desc->read.olinfo_status = 0;
+		data = skb_frag_address(&sinfo->frags[i]);
+		len = skb_frag_size(&sinfo->frags[i]);
 		i++;
 	}
 	tx_desc->read.cmd_type_len |= cpu_to_le32(NGBE_TXD_CMD);
@@ -2492,7 +2500,6 @@ void ngbe_irq_enable(struct ngbe_adapter *adapter, bool queues, bool flush)
 	else
 		wr32(&adapter->hw, NGBE_GPIO_DDR, 0x0);
 
-	wr32(&adapter->hw, NGBE_GPIO_INTEN, 0x3);
 	wr32(&adapter->hw, NGBE_GPIO_INTTYPE_LEVEL, 0x0);
 	if (adapter->hw.phy.type == ngbe_phy_yt8521s_sfi ||
 	    adapter->hw.phy.type == ngbe_phy_internal_yt8521s_sfi ||
@@ -2519,6 +2526,8 @@ void ngbe_irq_enable(struct ngbe_adapter *adapter, bool queues, bool flush)
 			ngbe_intr_enable(&adapter->hw, NGBE_INTR_MISC_VMDQ(adapter));
 	}
 
+	wr32(&adapter->hw, NGBE_GPIO_INTEN, 0x2);
+
 	/* flush configuration */
 	if (flush)
 		NGBE_WRITE_FLUSH(&adapter->hw);
@@ -2540,14 +2549,9 @@ static irqreturn_t ngbe_msix_other(int __always_unused irq, void *data)
 		ngbe_msg_task(adapter);
 
 	if (eicr & NGBE_PX_MISC_IC_PCIE_REQ_ERR) {
-		ERROR_REPORT1(NGBE_ERROR_POLLING, "lan id %d, PCIe request error founded.\n",
-			      hw->bus.lan_id);
-		if (hw->bus.lan_id == 0) {
-			adapter->flags2 |= NGBE_FLAG2_PCIE_NEED_RECOVER;
-			ngbe_service_event_schedule(adapter);
-		} else {
-			wr32(&adapter->hw, NGBE_MIS_PF_SM, 1);
-		}
+		ERROR_REPORT1(NGBE_ERROR_POLLING,
+			      "lan id %d, PCIe request error founded.\n", hw->bus.lan_id);
+		ngbe_tx_timeout_dorecovery(adapter);
 	}
 
 	if (eicr & NGBE_PX_MISC_IC_INT_ERR) {
@@ -3035,8 +3039,15 @@ static void ngbe_configure_srrctl(struct ngbe_adapter *adapter, struct ngbe_ring
 	/* configure header buffer length, needed for RSC */
 	srrctl |= NGBE_RX_HDR_SIZE << NGBE_PX_RR_CFG_BSIZEHDRSIZE_SHIFT;
 
-	/* configure the packet buffer length */
-	srrctl |= ngbe_rx_bufsz(rx_ring) >> NGBE_PX_RR_CFG_BSIZEPKT_SHIFT;
+	/* PF may receive a 3K descriptor when SR-IOV is enabled. Keep the
+	 * descriptor limit at 2K while allocating a 3K buffer to prevent
+	 * build_skb() padding from requesting memory out of bounds.
+	 */
+	if (test_bit(__NGBE_RX_3K_BUFFER, &rx_ring->state) &&
+	    !(adapter->flags & NGBE_FLAG_SRIOV_ENABLED))
+		srrctl |= NGBE_RXBUFFER_3K >> NGBE_PX_RR_CFG_BSIZEPKT_SHIFT;
+	else
+		srrctl |= NGBE_RXBUFFER_2K >> NGBE_PX_RR_CFG_BSIZEPKT_SHIFT;
 	if (ring_is_hs_enabled(rx_ring))
 		srrctl |= NGBE_PX_RR_CFG_SPLIT_MODE;
 
@@ -3133,6 +3144,10 @@ static void ngbe_setup_mrqc(struct ngbe_adapter *adapter)
 		rss_field |= NGBE_RDB_RA_CTL_RSS_IPV4_UDP;
 	if (adapter->flags2 & NGBE_FLAG2_RSS_FIELD_IPV6_UDP)
 		rss_field |= NGBE_RDB_RA_CTL_RSS_IPV6_UDP;
+	if (adapter->flags2 & NGBE_FLAG2_RSS_FIELD_IPV4_SCTP)
+		rss_field |= NGBE_RDB_RA_CTL_RSS_IPV4_SCTP;
+	if (adapter->flags2 & NGBE_FLAG2_RSS_FIELD_IPV6_SCTP)
+		rss_field |= NGBE_RDB_RA_CTL_RSS_IPV6_SCTP;
 
 	netdev_rss_key_fill(adapter->rss_key, sizeof(adapter->rss_key));
 
@@ -3285,8 +3300,16 @@ static void ngbe_configure_virtualization(struct ngbe_adapter *adapter)
 	u32 i;
 	u8 vfe = 0;
 
-	if (!(adapter->flags & NGBE_FLAG_VMDQ_ENABLED))
+	if (!(adapter->flags & NGBE_FLAG_VMDQ_ENABLED)) {
+		if (hw->mac.ops.set_ethertype_anti_spoofing) {
+			wr32(hw,
+			     NGBE_PSR_ETYPE_SWC(NGBE_PSR_ETYPE_SWC_FILTER_LLDP), 0);
+			wr32(hw,
+			     NGBE_PSR_ETYPE_SWC(NGBE_PSR_ETYPE_SWC_FILTER_FC), 0);
+		}
+
 		return;
+	}
 
 	wr32m(hw, NGBE_PSR_VM_CTL, NGBE_PSR_VM_CTL_POOL_MASK | NGBE_PSR_VM_CTL_REPLEN,
 	      VMDQ_P(0) << NGBE_PSR_VM_CTL_POOL_SHIFT | NGBE_PSR_VM_CTL_REPLEN);
@@ -3302,6 +3325,8 @@ static void ngbe_configure_virtualization(struct ngbe_adapter *adapter)
 	/* Enable only the PF pools for Tx/Rx */
 	wr32(hw, NGBE_RDM_POOL_RE, vfe);
 	wr32(hw, NGBE_TDM_POOL_TE, vfe);
+
+	adapter->flags2 &= ~NGBE_FLAG2_VLAN_PROMISC;
 
 	if (!(adapter->flags & NGBE_FLAG_SRIOV_ENABLED))
 		return;
@@ -3324,8 +3349,8 @@ static void ngbe_configure_virtualization(struct ngbe_adapter *adapter)
 	}
 
 	for (i = 0; i < adapter->num_vfs; i++) {
-		if (!adapter->vfinfo[i].spoofchk_enabled)
-			ngbe_ndo_set_vf_spoofchk(adapter->netdev, i, false);
+		ngbe_ndo_set_vf_spoofchk(adapter->netdev, i,
+					 adapter->vfinfo[i].spoofchk_enabled);
 		/* enable ethertype anti spoofing if hw supports it */
 		hw->mac.ops.set_ethertype_anti_spoofing(hw, true, i);
 	}
@@ -3366,6 +3391,8 @@ static void ngbe_set_rx_buffer_len(struct ngbe_adapter *adapter)
 			    (max_frame > (ETH_FRAME_LEN + ETH_FCS_LEN)))
 				set_bit(__NGBE_RX_3K_BUFFER, &rx_ring->state);
 #endif
+		if (adapter->flags & NGBE_FLAG_SRIOV_ENABLED)
+			set_bit(__NGBE_RX_3K_BUFFER, &rx_ring->state);
 	}
 }
 
@@ -3769,7 +3796,6 @@ static void ngbe_vlan_promisc_enable(struct ngbe_adapter *adapter)
 {
 	struct ngbe_hw *hw = &adapter->hw;
 	u32 vlnctrl, i;
-	u32 vlvfb;
 	u32 vind;
 	u32 bits;
 
@@ -3796,8 +3822,6 @@ static void ngbe_vlan_promisc_enable(struct ngbe_adapter *adapter)
 	vind = VMDQ_P(0);
 	for (i = NGBE_PSR_VLAN_SWC_ENTRIES; --i;) {
 		wr32(hw, NGBE_PSR_VLAN_SWC_IDX, i);
-		vlvfb = rd32(hw, NGBE_PSR_VLAN_SWC_IDX);
-
 		bits = rd32(hw, NGBE_PSR_VLAN_SWC_VM_L);
 		bits |= (1 << vind);
 		wr32(hw, NGBE_PSR_VLAN_SWC_VM_L, bits);
@@ -3818,7 +3842,7 @@ static void ngbe_scrub_vfta(struct ngbe_adapter *adapter)
 
 	for (i = NGBE_PSR_VLAN_SWC_ENTRIES; --i;) {
 		wr32(hw, NGBE_PSR_VLAN_SWC_IDX, i);
-		vlvf = rd32(hw, NGBE_PSR_VLAN_SWC_IDX);
+		vlvf = rd32(hw, NGBE_PSR_VLAN_SWC);
 
 		/* pull VLAN ID from VLVF */
 		vid = vlvf & ~NGBE_PSR_VLAN_SWC_VIEN;
@@ -4273,10 +4297,6 @@ static void ngbe_up_complete(struct ngbe_adapter *adapter)
 	//	if (!((adapter->num_rx_queues == 0) && (adapter->num_tx_queues == 0)))
 	netif_tx_start_all_queues(adapter->netdev);
 
-	adapter->pf_running = true;
-	adapter->need_delay = true;
-	ngbe_ping_all_vfs_with_link_status(adapter, false);
-
 	/* bring the link up in the watchdog, this could race with our first
 	 * link up interrupt but shouldn't be a problem
 	 */
@@ -4306,6 +4326,7 @@ static void ngbe_up_complete(struct ngbe_adapter *adapter)
 		adapter->flags2 &= ~NGBE_FLAG2_ECC_ERR_RESET;
 
 	/* update setting rx tx for all active vfs */
+	adapter->pf_running = true;
 	ngbe_set_all_vfs(adapter);
 }
 
@@ -4353,7 +4374,8 @@ void ngbe_reset(struct ngbe_adapter *adapter)
 		break;
 	case NGBE_ERR_MASTER_REQUESTS_PENDING:
 		e_dev_err("master disable timed out\n");
-		ngbe_tx_timeout_dorecovery(adapter);
+		if (!adapter->io_err)
+			ngbe_tx_timeout_dorecovery(adapter);
 		break;
 	case NGBE_ERR_EEPROM_VERSION:
 		/* We are running on a pre-production device, log a warning */
@@ -4367,6 +4389,7 @@ void ngbe_reset(struct ngbe_adapter *adapter)
 	memcpy(old_addr, &adapter->mac_table[0].addr, netdev->addr_len);
 	ngbe_flush_sw_mac_table(adapter);
 	ngbe_mac_set_default_filter(adapter, old_addr);
+	__dev_uc_unsync(netdev, NULL);
 
 	/* update SAN MAC vmdq pool selection */
 	hw->mac.ops.set_vmdq_san_mac(hw, VMDQ_P(0));
@@ -4529,9 +4552,6 @@ static void ngbe_disable_device(struct ngbe_adapter *adapter)
 		for (i = 0; i < adapter->num_vfs; i++)
 			adapter->vfinfo[i].clear_to_send = 0;
 
-		/* ping all the active vfs to let them know we are going down */
-		ngbe_ping_all_vfs_with_link_status(adapter, false);
-
 		/* Disable all VFTE/VFRE TX/RX */
 		// ngbe_disable_tx_rx(adapter);
 		ngbe_set_all_vfs(adapter);
@@ -4632,14 +4652,20 @@ void ngbe_down(struct ngbe_adapter *adapter)
  **/
 static int ngbe_init_shared_code(struct ngbe_hw *hw)
 {
+	struct ngbe_adapter *adapter = hw->back;
 	int wol_mask = 0, ncsi_mask = 0;
 	u16 type_mask = 0, val;
 	u32 lan_en;
 	bool ncsi_pin = false;
+	u32 lan_id;
+
+	lan_id = NGBE_CFG_PORT_ST_LAN_ID(rd32(hw, NGBE_CFG_PORT_ST));
 
 	lan_en = rd32(hw, NGBE_MIS_PWR);
-	if (!(lan_en & BIT(hw->bus.lan_id + 28)))
+	if (!(lan_en & BIT(lan_id + 28))) {
+		e_err(probe, "NGBE_MIS_PWR: %x\n", lan_en);
 		return -EIO;
+	}
 	type_mask = (u16)(hw->subsystem_device_id & OEM_MASK);
 	ncsi_mask = hw->subsystem_device_id & NCSI_SUP_MASK;
 	wol_mask = hw->subsystem_device_id & WOL_SUP_MASK;
@@ -4821,6 +4847,7 @@ static int ngbe_sw_init(struct ngbe_adapter *adapter)
 	hw->fc.pause_time = NGBE_DEFAULT_FCPAUSE;
 	hw->fc.send_xon = true;
 	hw->fc.disable_fc_autoneg = false;
+	hw->fc.fc_changed = false;
 
 	/* set default ring sizes */
 	adapter->tx_ring_count = NGBE_DEFAULT_TXD;
@@ -5244,11 +5271,7 @@ err_setup_tx:
 static void ngbe_close_suspend(struct ngbe_adapter *adapter)
 {
 	ngbe_ptp_suspend(adapter);
-	ngbe_disable_device(adapter);
-
-	ngbe_clean_all_tx_rings(adapter);
-	ngbe_clean_all_rx_rings(adapter);
-
+	ngbe_down(adapter);
 	ngbe_free_irq(adapter);
 
 	ngbe_free_isb_resources(adapter);
@@ -5270,13 +5293,8 @@ int ngbe_close(struct net_device *netdev)
 	struct ngbe_adapter *adapter = netdev_priv(netdev);
 
 	ngbe_ptp_stop(adapter);
-
-	ngbe_down(adapter);
-	ngbe_free_irq(adapter);
-
-	ngbe_free_isb_resources(adapter);
-	ngbe_free_all_rx_resources(adapter);
-	ngbe_free_all_tx_resources(adapter);
+	if (netif_device_present(netdev))
+		ngbe_close_suspend(adapter);
 
 	ngbe_release_hw_control(adapter);
 
@@ -5321,14 +5339,11 @@ static int ngbe_resume(struct device *dev)
 	if (!err && netif_running(netdev))
 		err = ngbe_open(netdev);
 
+	if (!err)
+		netif_device_attach(netdev);
 	rtnl_unlock();
 
-	if (err)
-		return err;
-
-	netif_device_attach(netdev);
-
-	return 0;
+	return err;
 }
 
 /**
@@ -5389,15 +5404,16 @@ static int __ngbe_shutdown(struct pci_dev *pdev, bool *enable_wake)
 	u32 wufc = adapter->wol;
 	int retval = 0;
 
+	rtnl_lock();
 	netif_device_detach(netdev);
 	ngbe_mac_set_default_filter(adapter, hw->mac.perm_addr);
 
-	rtnl_lock();
 	if (netif_running(netdev))
 		ngbe_close_suspend(adapter);
-	rtnl_unlock();
 
 	ngbe_clear_interrupt_scheme(adapter);
+
+	rtnl_unlock();
 
 	retval = pci_save_state(pdev);
 	if (retval)
@@ -5540,7 +5556,6 @@ void ngbe_update_stats(struct ngbe_adapter *adapter)
 	struct net_device_stats *net_stats = &adapter->netdev->stats;
 	struct ngbe_hw *hw = &adapter->hw;
 	struct ngbe_hw_stats *hwstats = &adapter->stats;
-	u64 total_mpc = 0;
 	u32 i, bprc, lxon, lxoff;
 	u64 non_eop_descs = 0, restart_queue = 0, tx_busy = 0;
 	u64 alloc_rx_page_failed = 0, alloc_rx_buff_failed = 0;
@@ -5615,18 +5630,15 @@ void ngbe_update_stats(struct ngbe_adapter *adapter)
 	adapter->hw_rx_no_dma_resources += rd32(hw, NGBE_RDM_DRP_PKT);
 	bprc = rd32(hw, NGBE_RX_BC_FRAMES_GOOD_LOW);
 	hwstats->bprc += bprc;
-	hwstats->mprc = 0;
 	hwstats->rdpc += rd32(hw, NGBE_RDB_PKT_CNT);
 	hwstats->rddc += rd32(hw, NGBE_RDB_DRP_CNT);
 	hwstats->psrpc += rd32(hw, NGBE_PSR_PKT_CNT);
 	hwstats->psrdc += rd32(hw, NGBE_PSR_DBG_DRP_CNT);
 	hwstats->untag += rd32(hw, NGBE_RSEC_LSEC_UNTAG_PKT);
-	hwstats->tdmpc += rd32(hw, NGBE_TDM_PKT_CNT);
 	hwstats->tdmdc += rd32(hw, NGBE_TDM_DRP_CNT);
 	hwstats->tdbpc += rd32(hw, NGBE_TDB_OUT_PKT_CNT);
 
-	for (i = adapter->num_vfs; i < 8; i++)
-		hwstats->mprc += rd32(hw, NGBE_PX_MPRC(i));
+	hwstats->mprc += rd32(hw, NGBE_RX_MC_FRAMES_GOOD_LOW);
 
 	hwstats->roc += rd32(hw, NGBE_RX_OVERSIZE_FRAMES_GOOD);
 	hwstats->rlec += rd32(hw, NGBE_RX_LEN_ERROR_FRAMES_LOW);
@@ -5640,6 +5652,7 @@ void ngbe_update_stats(struct ngbe_adapter *adapter)
 	hwstats->ruc += rd32(hw, NGBE_RX_UNDERSIZE_FRAMES_GOOD);
 	hwstats->tpr += rd32(hw, NGBE_RX_FRAME_CNT_GOOD_BAD_LOW);
 	hwstats->bptc += rd32(hw, NGBE_TX_BC_FRAMES_GOOD_LOW);
+	hwstats->mpc += rd32(hw, NGBE_RDB_MPCNT);
 	/* Fill out the OS statistics structure */
 	net_stats->multicast = hwstats->mprc;
 
@@ -5648,8 +5661,7 @@ void ngbe_update_stats(struct ngbe_adapter *adapter)
 	net_stats->rx_dropped = 0;
 	net_stats->rx_length_errors = hwstats->rlec;
 	net_stats->rx_crc_errors = hwstats->crcerrs;
-	total_mpc = rd32(hw, NGBE_RDB_MPCNT);
-	net_stats->rx_missed_errors += total_mpc;
+	net_stats->rx_missed_errors = 0;
 
 	/* VF Stats Collection - skip while resetting because these
 	 * are not clear on read and otherwise you'll sometimes get
@@ -5962,6 +5974,8 @@ static bool ngbe_vf_tx_pending(struct ngbe_adapter *adapter)
 		return false;
 
 	for (i = 0; i < adapter->num_vfs; i++) {
+		if (adapter->vfinfo[i].link_state == NGBE_VF_LINK_STATE_ENABLE)
+			continue;
 		for (j = 0; j < q_per_pool; j++) {
 			u32 h, t;
 
@@ -6092,10 +6106,14 @@ static void ngbe_service_timer(struct timer_list *t)
 		next_event_offset = HZ * 2;
 
 	/* flags to records which func to handle pcie recovery */
-	if (rd32(&adapter->hw, NGBE_MIS_PF_SM) == 1) {
+	if (rd32(&adapter->hw, NGBE_MIS_PF_SM) == NGBE_FAILED_READ_REG) {
+		adapter->flags2 |= NGBE_FLAG2_PCIE_NEED_RECOVER;
+		wr32m(&adapter->hw, NGBE_MIS_PF_SM, NGBE_MIS_PF_SM_SM, 0);
+		e_info(probe, "%s: set recover on Lan%d due to memory space inaccessible\n",
+		       __func__, hw->bus.lan_id);
+	} else if (rd32(&adapter->hw, NGBE_MIS_PF_SM) == 1) {
 		val = rd32m(&adapter->hw, NGBE_MIS_PRB_CTL,
-			    NGBE_MIS_PRB_CTL_LAN0_UP | NGBE_MIS_PRB_CTL_LAN1_UP |
-				    NGBE_MIS_PRB_CTL_LAN2_UP | NGBE_MIS_PRB_CTL_LAN3_UP);
+			    NGBE_MIS_PRB_CTL_LAN_UP_MASK);
 		if (val & NGBE_MIS_PRB_CTL_LAN0_UP) {
 			if (hw->bus.lan_id == 0) {
 				adapter->flags2 |= NGBE_FLAG2_PCIE_NEED_RECOVER;
@@ -6241,15 +6259,58 @@ unlock:
 	rtnl_unlock();
 }
 
+static void ngbe_check_ring_dump_subtask(struct ngbe_adapter *adapter)
+{
+	struct ngbe_hw *hw = &adapter->hw;
+	u32 val;
+
+	if (!(adapter->flags2 & NGBE_FLAG2_RING_DUMP))
+		return;
+
+	ngbe_print_tx_hang_status(adapter);
+	ngbe_dump_all_ring_desc(adapter);
+	wr32(&adapter->hw, NGBE_MIS_PF_SM, 1);
+	adapter->flags2 &= ~NGBE_FLAG2_RING_DUMP;
+
+	/* record which func to provoke PCIE recovery */
+	if (rd32(&adapter->hw, NGBE_MIS_PF_SM) == NGBE_FAILED_READ_REG) {
+		adapter->flags2 |= NGBE_FLAG2_PCIE_NEED_RECOVER;
+		wr32m(&adapter->hw, NGBE_MIS_PF_SM, NGBE_MIS_PF_SM_SM, 0);
+		e_info(probe, "%s: set recover on Lan%d due to memory space inaccessible\n",
+		       __func__, hw->bus.lan_id);
+	} else if (rd32(&adapter->hw, NGBE_MIS_PF_SM) == 1) {
+		val = rd32m(&adapter->hw, NGBE_MIS_PRB_CTL,
+			    NGBE_MIS_PRB_CTL_LAN_UP_MASK);
+		if (val & NGBE_MIS_PRB_CTL_LAN0_UP) {
+			if (hw->bus.lan_id == 0) {
+				adapter->flags2 |= NGBE_FLAG2_PCIE_NEED_RECOVER;
+				e_info(probe, "check_ring_dump_subtask: set recover on Lan0\n");
+			}
+		} else if (val & NGBE_MIS_PRB_CTL_LAN1_UP) {
+			if (hw->bus.lan_id == 1) {
+				adapter->flags2 |= NGBE_FLAG2_PCIE_NEED_RECOVER;
+				e_info(probe, "check_ring_dump_subtask: set recover on Lan1\n");
+			}
+		} else if (val & NGBE_MIS_PRB_CTL_LAN2_UP) {
+			if (hw->bus.lan_id == 2) {
+				adapter->flags2 |= NGBE_FLAG2_PCIE_NEED_RECOVER;
+				e_info(probe, "check_ring_dump_subtask: set recover on Lan2\n");
+			}
+		} else if (val & NGBE_MIS_PRB_CTL_LAN3_UP) {
+			if (hw->bus.lan_id == 3) {
+				adapter->flags2 |= NGBE_FLAG2_PCIE_NEED_RECOVER;
+				e_info(probe, "check_ring_dump_subtask: set recover on Lan3\n");
+			}
+		}
+	}
+}
+
 static void ngbe_check_pcie_subtask(struct ngbe_adapter *adapter)
 {
 	bool status;
 
 	if (!(adapter->flags2 & NGBE_FLAG2_PCIE_NEED_RECOVER))
 		return;
-
-	ngbe_print_tx_hang_status(adapter);
-	ngbe_dump_all_ring_desc(adapter);
 
 	wr32m(&adapter->hw, NGBE_MIS_PF_SM, NGBE_MIS_PF_SM_SM, 0);
 	if (NGBE_PCIE_RECOVER == 1 && !(adapter->flags & NGBE_FLAG_SRIOV_ENABLED)) {
@@ -6282,6 +6343,7 @@ static void ngbe_service_task(struct work_struct *work)
 		return;
 	}
 
+	ngbe_check_ring_dump_subtask(adapter);
 	ngbe_check_pcie_subtask(adapter);
 	ngbe_reset_subtask(adapter);
 	ngbe_check_overtemp_subtask(adapter);
@@ -6305,12 +6367,71 @@ union network_header {
 static struct ngbe_dec_ptype encode_tx_desc_ptype(const struct ngbe_tx_buffer *first)
 {
 	struct sk_buff *skb = first->skb;
+	union network_header hdr;
 	unsigned char *exthdr;
 	unsigned char *l4_hdr;
 	__be16 frag_off;
+	u8 tun_prot = 0;
 	u8 l4_prot = 0;
 	u8 ptype = 0;
 
+	if (skb->encapsulation) {
+		switch (first->protocol) {
+		case htons(ETH_P_IP):
+			tun_prot = ip_hdr(skb)->protocol;
+			if (ip_hdr(skb)->frag_off & htons(IP_MF | IP_OFFSET))
+				goto encap_frag;
+			ptype = NGBE_PTYPE_TUN_IPV4;
+			break;
+		case htons(ETH_P_IPV6):
+			l4_hdr = skb_transport_header(skb);
+			exthdr = skb_network_header(skb) + sizeof(struct ipv6hdr);
+			tun_prot = ipv6_hdr(skb)->nexthdr;
+			if (l4_hdr != exthdr)
+				ipv6_skip_exthdr(skb, exthdr - skb->data, &tun_prot, &frag_off);
+			if (tun_prot == NEXTHDR_FRAGMENT)
+				goto encap_frag;
+			ptype = NGBE_PTYPE_TUN_IPV6;
+			break;
+		default:
+			goto exit;
+		}
+
+		if (tun_prot != IPPROTO_IPIP && tun_prot != IPPROTO_IPV6 &&
+		    tun_prot != IPPROTO_UDP)
+			goto exit;
+
+		hdr.raw = inner_ip_hdr(skb);
+		if (tun_prot == IPPROTO_IPIP || tun_prot == IPPROTO_IPV6)
+			ptype |= NGBE_PTYPE_PKT_IPIP;
+
+		switch (hdr.ipv4->version) {
+		case 4:
+			l4_prot = hdr.ipv4->protocol;
+			if (hdr.ipv4->frag_off & htons(IP_MF | IP_OFFSET)) {
+				ptype |= NGBE_PTYPE_TYP_IPFRAG;
+				goto exit;
+			}
+			break;
+		case 6:
+			l4_hdr = skb_inner_transport_header(skb);
+			exthdr = skb_inner_network_header(skb) + sizeof(struct ipv6hdr);
+			l4_prot = inner_ipv6_hdr(skb)->nexthdr;
+			if (l4_hdr != exthdr)
+				ipv6_skip_exthdr(skb, exthdr - skb->data, &l4_prot, &frag_off);
+			ptype |= NGBE_PTYPE_PKT_IPV6;
+			if (l4_prot == NEXTHDR_FRAGMENT) {
+				ptype |= NGBE_PTYPE_TYP_IPFRAG;
+				goto exit;
+			}
+			break;
+		default:
+			goto exit;
+		}
+		goto decode_l4;
+	}
+
+encap_frag:
 	switch (first->protocol) {
 	case htons(ETH_P_IP):
 		l4_prot = ip_hdr(skb)->protocol;
@@ -6355,6 +6476,7 @@ static struct ngbe_dec_ptype encode_tx_desc_ptype(const struct ngbe_tx_buffer *f
 		goto exit;
 	}
 
+decode_l4:
 	switch (l4_prot) {
 	case IPPROTO_TCP:
 		ptype |= NGBE_PTYPE_TYP_TCP;
@@ -6384,6 +6506,11 @@ static int ngbe_tso(struct ngbe_ring *tx_ring, struct ngbe_tx_buffer *first, u8 
 	struct iphdr *iph;
 	u32 tunhdr_eiplen_tunlen = 0;
 	struct ipv6hdr *ipv6h;
+	u8 tun_prot = 0;
+	unsigned char *exthdr;
+	unsigned char *l4_hdr;
+	__be16 frag_off;
+	bool enc = skb->encapsulation;
 
 	if (skb->ip_summed != CHECKSUM_PARTIAL)
 		return 0;
@@ -6398,9 +6525,9 @@ static int ngbe_tso(struct ngbe_ring *tx_ring, struct ngbe_tx_buffer *first, u8 
 			return err;
 	}
 
-	iph = ip_hdr(skb);
+	iph = enc ? inner_ip_hdr(skb) : ip_hdr(skb);
 	if (iph->version == 4) {
-		tcph = tcp_hdr(skb);
+		tcph = enc ? inner_tcp_hdr(skb) : tcp_hdr(skb);
 		iph->tot_len = 0;
 		iph->check = 0;
 		tcph->check = ~csum_tcpudp_magic(iph->saddr, iph->daddr, 0, IPPROTO_TCP, 0);
@@ -6408,16 +6535,18 @@ static int ngbe_tso(struct ngbe_ring *tx_ring, struct ngbe_tx_buffer *first, u8 
 				   NGBE_TX_FLAGS_CC;
 
 	} else if (iph->version == 6 && skb_is_gso_v6(skb)) {
-		ipv6h = ipv6_hdr(skb);
-		tcph = tcp_hdr(skb);
+		ipv6h = enc ? inner_ipv6_hdr(skb) : ipv6_hdr(skb);
+		tcph = enc ? inner_tcp_hdr(skb) : tcp_hdr(skb);
 		ipv6h->payload_len = 0;
 		tcph->check = ~csum_ipv6_magic(&ipv6h->saddr, &ipv6h->daddr, 0, IPPROTO_TCP, 0);
 		first->tx_flags |= NGBE_TX_FLAGS_TSO | NGBE_TX_FLAGS_CSUM | NGBE_TX_FLAGS_CC;
 	}
 
 	/* compute header lengths */
-	l4len = tcp_hdrlen(skb);
-	*hdr_len = skb_transport_offset(skb) + l4len;
+	l4len = enc ? inner_tcp_hdrlen(skb) : tcp_hdrlen(skb);
+	*hdr_len = enc ? skb_inner_transport_header(skb) - skb->data :
+			 skb_transport_offset(skb);
+	*hdr_len += l4len;
 
 	/* update gso size and bytecount with header size */
 	first->gso_segs = skb_shinfo(skb)->gso_segs;
@@ -6428,7 +6557,54 @@ static int ngbe_tso(struct ngbe_ring *tx_ring, struct ngbe_tx_buffer *first, u8 
 	mss_l4len_idx |= skb_shinfo(skb)->gso_size << NGBE_TXD_MSS_SHIFT;
 
 	/* vlan_macip_lens: HEADLEN, MACLEN, VLAN tag */
-	vlan_macip_lens = skb_network_header_len(skb) >> 1;
+	if (enc) {
+		switch (first->protocol) {
+		case htons(ETH_P_IP):
+			tun_prot = ip_hdr(skb)->protocol;
+			first->tx_flags |= NGBE_TX_FLAGS_OUTER_IPV4;
+			break;
+		case htons(ETH_P_IPV6):
+			l4_hdr = skb_transport_header(skb);
+			exthdr = skb_network_header(skb) + sizeof(struct ipv6hdr);
+			tun_prot = ipv6_hdr(skb)->nexthdr;
+			if (l4_hdr != exthdr)
+				ipv6_skip_exthdr(skb, exthdr - skb->data, &tun_prot, &frag_off);
+			break;
+		default:
+			break;
+		}
+
+		switch (tun_prot) {
+		case IPPROTO_UDP:
+			tunhdr_eiplen_tunlen = NGBE_TXD_TUNNEL_UDP;
+			tunhdr_eiplen_tunlen |=
+				(skb_network_header_len(skb) >> 2) << NGBE_TXD_OUTER_IPLEN_SHIFT;
+			tunhdr_eiplen_tunlen |=
+				((skb_inner_mac_header(skb) - skb_transport_header(skb)) >> 1) <<
+				NGBE_TXD_TUNNEL_LEN_SHIFT;
+			break;
+		case IPPROTO_GRE:
+			tunhdr_eiplen_tunlen = NGBE_TXD_TUNNEL_GRE;
+			tunhdr_eiplen_tunlen |=
+				(skb_network_header_len(skb) >> 2) << NGBE_TXD_OUTER_IPLEN_SHIFT;
+			tunhdr_eiplen_tunlen |=
+				((skb_inner_mac_header(skb) - skb_transport_header(skb)) >> 1) <<
+				NGBE_TXD_TUNNEL_LEN_SHIFT;
+			break;
+		case IPPROTO_IPIP:
+		case IPPROTO_IPV6:
+			tunhdr_eiplen_tunlen =
+				(((unsigned char *)inner_ip_hdr(skb) -
+				  (unsigned char *)ip_hdr(skb)) >> 2) <<
+				NGBE_TXD_OUTER_IPLEN_SHIFT;
+			break;
+		default:
+			break;
+		}
+		vlan_macip_lens = skb_inner_network_header_len(skb) >> 1;
+	} else {
+		vlan_macip_lens = skb_network_header_len(skb) >> 1;
+	}
 	vlan_macip_lens |= skb_network_offset(skb) << NGBE_TXD_MACLEN_SHIFT;
 	vlan_macip_lens |= first->tx_flags & NGBE_TX_FLAGS_VLAN_MASK;
 
@@ -6449,6 +6625,7 @@ static void ngbe_tx_csum(struct ngbe_ring *tx_ring, struct ngbe_tx_buffer *first
 	u32 mss_l4len_idx = 0;
 	u32 tunhdr_eiplen_tunlen = 0;
 	u32 type_tucmd;
+	u8 tun_prot = 0;
 
 	if (skb->ip_summed != CHECKSUM_PARTIAL) {
 csum_failed:
@@ -6461,17 +6638,78 @@ csum_failed:
 		unsigned char *exthdr;
 		unsigned char *l4_hdr;
 		__be16 frag_off;
+		union network_header network_hdr;
 
-		switch (first->protocol) {
-		case htons(ETH_P_IP):
-			vlan_macip_lens |= skb_network_header_len(skb) >> 1;
-			l4_prot = ip_hdr(skb)->protocol;
+		if (skb->encapsulation) {
+			network_hdr.raw = skb_inner_network_header(skb);
+			vlan_macip_lens = skb_network_offset(skb) << NGBE_TXD_MACLEN_SHIFT;
+			switch (first->protocol) {
+			case htons(ETH_P_IP):
+				tun_prot = ip_hdr(skb)->protocol;
+				break;
+			case htons(ETH_P_IPV6):
+				l4_hdr = skb_transport_header(skb);
+				exthdr = skb_network_header(skb) + sizeof(struct ipv6hdr);
+				tun_prot = ipv6_hdr(skb)->nexthdr;
+				if (l4_hdr != exthdr)
+					ipv6_skip_exthdr(skb, exthdr - skb->data,
+							 &tun_prot,
+							 &frag_off);
+				break;
+			default:
+				return;
+			}
+
+			switch (tun_prot) {
+			case IPPROTO_UDP:
+				tunhdr_eiplen_tunlen = NGBE_TXD_TUNNEL_UDP;
+				tunhdr_eiplen_tunlen |=
+					(skb_network_header_len(skb) >> 2) <<
+					NGBE_TXD_OUTER_IPLEN_SHIFT;
+				tunhdr_eiplen_tunlen |=
+					((skb_inner_mac_header(skb) -
+					  skb_transport_header(skb)) >> 1) <<
+					 NGBE_TXD_TUNNEL_LEN_SHIFT;
+				break;
+			case IPPROTO_GRE:
+				tunhdr_eiplen_tunlen = NGBE_TXD_TUNNEL_GRE;
+				tunhdr_eiplen_tunlen |=
+					(skb_network_header_len(skb) >> 2) <<
+					NGBE_TXD_OUTER_IPLEN_SHIFT;
+				tunhdr_eiplen_tunlen |=
+					((skb_inner_mac_header(skb) -
+					  skb_transport_header(skb)) >> 1) <<
+					 NGBE_TXD_TUNNEL_LEN_SHIFT;
+				break;
+			case IPPROTO_IPIP:
+			case IPPROTO_IPV6:
+				tunhdr_eiplen_tunlen =
+					(((unsigned char *)inner_ip_hdr(skb) -
+					  (unsigned char *)ip_hdr(skb)) >> 2) <<
+					NGBE_TXD_OUTER_IPLEN_SHIFT;
+				break;
+			default:
+				break;
+			}
+		} else {
+			network_hdr.raw = skb_network_header(skb);
+		}
+
+		switch (network_hdr.ipv4->version) {
+		case 4:
+			vlan_macip_lens |= (skb->encapsulation ?
+				skb_inner_network_header_len(skb) :
+				skb_network_header_len(skb)) >> 1;
+			l4_prot = network_hdr.ipv4->protocol;
 			break;
-		case htons(ETH_P_IPV6):
-			vlan_macip_lens |= skb_network_header_len(skb) >> 1;
-			l4_hdr = skb_transport_header(skb);
-			exthdr = skb_network_header(skb) + sizeof(struct ipv6hdr);
-			l4_prot = ipv6_hdr(skb)->nexthdr;
+		case 6:
+			vlan_macip_lens |= (skb->encapsulation ?
+				skb_inner_network_header_len(skb) :
+				skb_network_header_len(skb)) >> 1;
+			l4_hdr = skb->encapsulation ? skb_inner_transport_header(skb) :
+				 skb_transport_header(skb);
+			exthdr = network_hdr.raw + sizeof(struct ipv6hdr);
+			l4_prot = network_hdr.ipv6->nexthdr;
 			if (l4_hdr != exthdr)
 				ipv6_skip_exthdr(skb, exthdr - skb->data, &l4_prot, &frag_off);
 			break;
@@ -6481,7 +6719,8 @@ csum_failed:
 
 		switch (l4_prot) {
 		case IPPROTO_TCP:
-			mss_l4len_idx = tcp_hdrlen(skb) << NGBE_TXD_L4LEN_SHIFT;
+			mss_l4len_idx = (skb->encapsulation ? inner_tcp_hdrlen(skb) :
+					     tcp_hdrlen(skb)) << NGBE_TXD_L4LEN_SHIFT;
 			break;
 		case IPPROTO_SCTP:
 			mss_l4len_idx = sizeof(struct sctphdr) << NGBE_TXD_L4LEN_SHIFT;
@@ -6531,6 +6770,8 @@ u32 ngbe_tx_cmd_type(u32 tx_flags)
 static void ngbe_tx_olinfo_status(union ngbe_tx_desc *tx_desc, u32 tx_flags, unsigned int paylen)
 {
 	u32 olinfo_status = paylen << NGBE_TXD_PAYLEN_SHIFT;
+
+	olinfo_status |= NGBE_TXD_MNG_EN;
 
 	/* enable L4 checksum for TSO and TX checksum offload */
 	olinfo_status |= NGBE_SET_FLAG(tx_flags, NGBE_TX_FLAGS_CSUM, NGBE_TXD_L4CS);
@@ -6791,7 +7032,9 @@ netdev_tx_t ngbe_xmit_frame_ring(struct sk_buff *skb, struct ngbe_adapter __mayb
 	protocol = vlan_get_protocol(skb);
 
 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) && adapter->ptp_clock) {
-		if (!test_and_set_bit_lock(__NGBE_PTP_TX_IN_PROGRESS, &adapter->state)) {
+		if (adapter->tstamp_config.tx_type == HWTSTAMP_TX_ON &&
+		    !test_and_set_bit_lock(__NGBE_PTP_TX_IN_PROGRESS,
+				   &adapter->state)) {
 			skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 			tx_flags |= NGBE_TX_FLAGS_TSTAMP;
 
@@ -6903,7 +7146,7 @@ static int ngbe_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 		return -EOPNOTSUPP;
 	}
 }
-
+#ifdef CONFIG_NET_POLL_CONTROLLER
 /* Polling 'interrupt' - used by things like netconsole to send skbs
  * without having to re-enable interrupts. It's not called while
  * the interrupt routine is executing.
@@ -6928,7 +7171,7 @@ static void ngbe_netpoll(struct net_device *netdev)
 		ngbe_intr(0, adapter);
 	}
 }
-
+#endif
 /**
  * ngbe_setup_tc - routine to configure net_device for multiple traffic
  * classes.
@@ -7127,28 +7370,34 @@ static netdev_features_t ngbe_features_check(struct sk_buff *skb, struct net_dev
 					     netdev_features_t features)
 {
 	u32 vlan_num = 0;
-	u16 vlan_depth = skb->mac_len;
+	u16 vlan_depth = ETH_HLEN;
 	__be16 type = skb->protocol;
-	struct vlan_hdr *vh;
+	u16 parse_depth = VLAN_MAX_DEPTH;
 
 	if (skb_vlan_tag_present(skb))
 		vlan_num++;
-
-	if (vlan_depth)
-		vlan_depth -= VLAN_HLEN;
 	else
-		vlan_depth = ETH_HLEN;
+		goto no_hw_vlan;
 
-	while (type == htons(ETH_P_8021Q) || type == htons(ETH_P_8021AD)) {
-		vlan_num++;
-		vh = (struct vlan_hdr *)(skb->data + vlan_depth);
-		type = vh->h_vlan_encapsulated_proto;
-		vlan_depth += VLAN_HLEN;
+	if (eth_type_vlan(type)) {
+		do {
+			struct vlan_hdr vhdr, *vh;
+
+			vh = skb_header_pointer(skb, vlan_depth,
+						sizeof(vhdr), &vhdr);
+			if (unlikely(!vh || !--parse_depth))
+				return 0;
+
+			type = vh->h_vlan_encapsulated_proto;
+			vlan_depth += VLAN_HLEN;
+			vlan_num++;
+		} while (eth_type_vlan(type));
 	}
 
 	if (vlan_num > 2)
 		features &= ~(NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_STAG_TX);
 
+no_hw_vlan:
 	if (skb->encapsulation) {
 		if (unlikely(skb_inner_mac_header(skb) - skb_transport_header(skb) >
 			     NGBE_MAX_TUNNEL_HDR_LEN))
@@ -7603,7 +7852,6 @@ static int ngbe_probe(struct pci_dev *pdev, const struct pci_device_id __always_
 	struct net_device *netdev;
 	struct ngbe_adapter *adapter = NULL;
 	struct ngbe_hw *hw = NULL;
-	static int cards_found;
 	int err, pci_using_dac, expected_gts;
 	u32 eeprom_verl = 0;
 	u32 etrack_id = 0;
@@ -8040,6 +8288,7 @@ static void ngbe_remove(struct pci_dev *pdev)
 	bitmap_free(adapter->af_xdp_zc_qps);
 	disable_dev = !test_and_set_bit(__NGBE_DISABLED, &adapter->state);
 	free_netdev(netdev);
+	cards_found--;
 	if (disable_dev)
 		pci_disable_device(pdev);
 }
@@ -8180,16 +8429,21 @@ skip_bad_vf_detection:
 	if (!test_bit(__NGBE_SERVICE_INITED, &adapter->state))
 		return PCI_ERS_RESULT_DISCONNECT;
 
+	if (!netif_device_present(netdev))
+		return PCI_ERS_RESULT_DISCONNECT;
+
 	rtnl_lock();
 	netif_device_detach(netdev);
+
+	adapter->io_err = true;
+
+	if (netif_running(netdev))
+		ngbe_close_suspend(adapter);
 
 	if (state == pci_channel_io_perm_failure) {
 		rtnl_unlock();
 		return PCI_ERS_RESULT_DISCONNECT;
 	}
-
-	if (netif_running(netdev))
-		ngbe_close(netdev);
 
 	if (!test_and_set_bit(__NGBE_DISABLED, &adapter->state))
 		pci_disable_device(pdev);
@@ -8265,6 +8519,8 @@ static void ngbe_io_resume(struct pci_dev *pdev)
 	rtnl_lock();
 	if (netif_running(netdev))
 		ngbe_open(netdev);
+
+	adapter->io_err = false;
 
 	netif_device_attach(netdev);
 	rtnl_unlock();

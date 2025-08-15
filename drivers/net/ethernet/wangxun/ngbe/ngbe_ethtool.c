@@ -74,7 +74,7 @@ static struct ngbe_stats ngbe_gstrings_stats[] = {
 	NGBE_STAT("rx_mac_good", stats.tpr),
 	NGBE_STAT("rdb_pkts", stats.rdpc),
 	NGBE_STAT("rdb_drop", stats.rddc),
-	NGBE_STAT("tdm_pkts", stats.tdmpc),
+	NGBE_STAT("rdb_missed", stats.mpc),
 	NGBE_STAT("tdm_drop", stats.tdmdc),
 	NGBE_STAT("tdb_pkts", stats.tdbpc),
 	NGBE_STAT("rx_parser_pkts", stats.psrpc),
@@ -86,9 +86,8 @@ static struct ngbe_stats ngbe_gstrings_stats[] = {
 	NGBE_STAT("rx_long_length_count", stats.roc),
 	NGBE_STAT("rx_short_length_count", stats.ruc),
 	NGBE_STAT("tx_flow_control_xon", stats.lxontxc),
-	NGBE_STAT("rx_flow_control_xon", stats.lxonrxc),
 	NGBE_STAT("tx_flow_control_xoff", stats.lxofftxc),
-	NGBE_STAT("rx_flow_control_xoff", stats.lxoffrxc),
+	NGBE_STAT("rx_pause_frames", stats.lxoffrxc),
 	NGBE_STAT("rx_csum_offload_good_count", hw_csum_rx_good),
 	NGBE_STAT("rx_csum_offload_errors", hw_csum_rx_error),
 	NGBE_STAT("alloc_rx_page_failed", alloc_rx_page_failed),
@@ -148,6 +147,8 @@ struct ngbe_priv_flags {
 
 static const struct ngbe_priv_flags ngbe_gstrings_priv_flags[] = {
 	NGBE_PRIV_FLAG("lldp", NGBE_ETH_PRIV_FLAG_LLDP, 0),
+	NGBE_PRIV_FLAG("link-down-on-close",
+		       NGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE, 0),
 };
 
 #define NGBE_PRIV_FLAGS_STR_LEN ARRAY_SIZE(ngbe_gstrings_priv_flags)
@@ -210,6 +211,35 @@ static int ngbe_get_link_ksettings(struct net_device *netdev, struct ethtool_lin
 				ethtool_link_ksettings_add_link_mode(cmd, supported,
 								     1000baseX_Full);
 			} else if (hw->phy.phydev_type == ngbe_phy_yt_8011a) {
+				if (supported_link & NGBE_LINK_SPEED_1GB_FULL)
+					ethtool_link_ksettings_add_link_mode(cmd, supported,
+									     1000baseT1_Full);
+				if (supported_link & NGBE_LINK_SPEED_100_FULL)
+					ethtool_link_ksettings_add_link_mode(cmd, supported,
+									     100baseT_Full);
+			} else if (hw->phy.phydev_type == ngbe_phy_ly1211s) {
+				if (hw->phy.combo_media_type == ngbe_phy_combo_copper) {
+					if (supported_link & NGBE_LINK_SPEED_1GB_FULL)
+						linkmode_set_bit(
+							ETHTOOL_LINK_MODE_1000baseT_Full_BIT,
+							cmd->link_modes.supported);
+
+					if (supported_link & NGBE_LINK_SPEED_100_FULL)
+						ethtool_link_ksettings_add_link_mode(cmd, supported,
+										     100baseT_Full);
+
+					if (supported_link & NGBE_LINK_SPEED_10_FULL)
+						ethtool_link_ksettings_add_link_mode(cmd, supported,
+										     10baseT_Full);
+				} else {
+					ethtool_link_ksettings_add_link_mode(cmd, supported,
+									     1000baseX_Full);
+
+					if (supported_link & NGBE_LINK_SPEED_100_FULL)
+						ethtool_link_ksettings_add_link_mode(cmd, supported,
+										     100baseT_Full);
+				}
+			} else if (hw->phy.phydev_type == ngbe_phy_jl3113) {
 				if (supported_link & NGBE_LINK_SPEED_1GB_FULL)
 					ethtool_link_ksettings_add_link_mode(cmd, supported,
 									     1000baseT1_Full);
@@ -301,12 +331,27 @@ static int ngbe_get_link_ksettings(struct net_device *netdev, struct ethtool_lin
 				else if (hw->phy.phydev_type == ngbe_phy_yt_8011a)
 					ethtool_link_ksettings_add_link_mode(cmd, advertising,
 									     1000baseT1_Full);
+				else if (hw->phy.phydev_type == ngbe_phy_jl3113)
+					ethtool_link_ksettings_add_link_mode(cmd, advertising,
+									     1000baseT1_Full);
+
+				if (hw->phy.phydev_type == ngbe_phy_ly1211s) {
+					if (hw->phy.combo_media_type == ngbe_phy_combo_copper)
+						linkmode_set_bit(
+							ETHTOOL_LINK_MODE_1000baseT_Full_BIT,
+							cmd->link_modes.advertising);
+					else
+						linkmode_set_bit(
+							ETHTOOL_LINK_MODE_1000baseX_Full_BIT,
+							cmd->link_modes.advertising);
+				}
 			}
 
 			if (hw->phy.autoneg_advertised & NGBE_LINK_SPEED_100_FULL) {
-				if (hw->phy.phydev_type == ngbe_phy_yt_8011a)
+				if (hw->phy.phydev_type == ngbe_phy_yt_8011a ||
+				    hw->phy.phydev_type == ngbe_phy_jl3113)
 					ethtool_link_ksettings_add_link_mode(cmd, advertising,
-									     100baseT_Full);
+									      100baseT_Full);
 			}
 		} else {
 			if (hw->phy.force_speed & NGBE_LINK_SPEED_1GB_FULL) {
@@ -318,10 +363,15 @@ static int ngbe_get_link_ksettings(struct net_device *netdev, struct ethtool_lin
 				else if (hw->phy.phydev_type == ngbe_phy_yt_8011a)
 					ethtool_link_ksettings_add_link_mode(cmd, advertising,
 									     1000baseT1_Full);
+				else if (hw->phy.phydev_type == ngbe_phy_jl3113)
+					ethtool_link_ksettings_add_link_mode(cmd, advertising,
+									     1000baseT1_Full);
 			}
 
 			if (hw->phy.force_speed & NGBE_LINK_SPEED_100_FULL) {
-				if (hw->phy.phydev_type == ngbe_phy_yt_8011a)
+				if (hw->phy.phydev_type == ngbe_phy_yt_8011a ||
+				    hw->phy.phydev_type == ngbe_phy_ly1211s ||
+				    hw->phy.phydev_type == ngbe_phy_jl3113)
 					ethtool_link_ksettings_add_link_mode(cmd, advertising,
 									     100baseT_Full);
 			}
@@ -382,9 +432,15 @@ static int ngbe_get_link_ksettings(struct net_device *netdev, struct ethtool_lin
 	case ngbe_phy_internal_yt8521s_sfi:
 	case ngbe_phy_m88e1512_sfi:
 	case ngbe_phy_external:
-		ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, FIBRE);
-		cmd->base.port = PORT_FIBRE;
+		if (hw->phy.combo_media_type == ngbe_phy_combo_copper) {
+			ethtool_link_ksettings_add_link_mode(cmd, supported, TP);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising, TP);
+			cmd->base.port = PORT_TP;
+		} else {
+			ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising, FIBRE);
+			cmd->base.port = PORT_FIBRE;
+		}
 		break;
 	default:
 		ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
@@ -404,6 +460,7 @@ static int ngbe_get_link_ksettings(struct net_device *netdev, struct ethtool_lin
 	}
 
 	ethtool_link_ksettings_add_link_mode(cmd, supported, Pause);
+	ethtool_link_ksettings_add_link_mode(cmd, supported, Asym_Pause);
 
 	switch (hw->fc.requested_mode) {
 	case ngbe_fc_full:
@@ -466,7 +523,8 @@ static int ngbe_set_link_ksettings(struct net_device *netdev,
 								  1000baseT_Full)) {
 				ethtool_link_ksettings_add_link_mode(&temp_ks, supported,
 								     1000baseT_Full);
-				if (hw->phy.phydev_type == ngbe_phy_yt_8011a)
+				if (hw->phy.phydev_type == ngbe_phy_yt_8011a ||
+				    hw->phy.phydev_type == ngbe_phy_jl3113)
 					ethtool_link_ksettings_del_link_mode(&temp_ks, supported,
 									     1000baseT1_Full);
 				else
@@ -595,6 +653,7 @@ static int ngbe_set_pauseparam(struct net_device *netdev, struct ethtool_pausepa
 	/* if the thing changed then we'll update and use new autoneg */
 	if (memcmp(&fc, &hw->fc, sizeof(struct ngbe_fc_info))) {
 		hw->fc = fc;
+		hw->fc.fc_changed = true;
 		if (netif_running(netdev))
 			ngbe_reinit_locked(adapter);
 		else
@@ -1278,15 +1337,26 @@ static int ngbe_set_priv_flags(struct net_device *dev, u32 flags)
 	if (!changed_flags)
 		return 0;
 
-	if (changed_flags & NGBE_ETH_PRIV_FLAG_LLDP) {
+	if (changed_flags & (NGBE_ETH_PRIV_FLAG_LLDP |
+			     NGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE)) {
 		if (!netif_running(dev)) {
-			e_dev_info("lldp cannot be modified when the port is not up");
+			e_dev_info("lldp/link-down-on-close cannot be modified when the port is not up");
 			return -EINVAL;
 		}
+
+		if (changed_flags & NGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE) {
+			if (new_flags & NGBE_ETH_PRIV_FLAG_LINK_DOWN_ON_CLOSE)
+				new_flags &= ~NGBE_ETH_PRIV_FLAG_LLDP;
+			else
+				new_flags |= NGBE_ETH_PRIV_FLAG_LLDP;
+		}
+
 		status = ngbe_hic_write_lldp(&adapter->hw,
 					     (u32)(new_flags & NGBE_ETH_PRIV_FLAG_LLDP));
-		if (!status)
-			adapter->eth_priv_flags = new_flags;
+		if (status)
+			return status;
+
+		adapter->eth_priv_flags = new_flags;
 	}
 
 	return status;
@@ -2405,6 +2475,9 @@ static int ngbe_get_rss_hash_opts(struct ngbe_adapter *adapter, struct ethtool_r
 			cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
 		fallthrough;
 	case SCTP_V4_FLOW:
+		if (adapter->flags2 & NGBE_FLAG2_RSS_FIELD_IPV4_SCTP)
+			cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		fallthrough;
 	case AH_ESP_V4_FLOW:
 	case AH_V4_FLOW:
 	case ESP_V4_FLOW:
@@ -2419,6 +2492,9 @@ static int ngbe_get_rss_hash_opts(struct ngbe_adapter *adapter, struct ethtool_r
 			cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
 		fallthrough;
 	case SCTP_V6_FLOW:
+		if (adapter->flags2 & NGBE_FLAG2_RSS_FIELD_IPV6_SCTP)
+			cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
+		fallthrough;
 	case AH_ESP_V6_FLOW:
 	case AH_V6_FLOW:
 	case ESP_V6_FLOW:
@@ -2505,14 +2581,40 @@ static int ngbe_set_rss_hash_opt(struct ngbe_adapter *adapter, struct ethtool_rx
 			return -EINVAL;
 		}
 		break;
+	case SCTP_V4_FLOW:
+		if (!(nfc->data & RXH_IP_SRC) || !(nfc->data & RXH_IP_DST))
+			return -EINVAL;
+		switch (nfc->data & (RXH_L4_B_0_1 | RXH_L4_B_2_3)) {
+		case 0:
+			flags2 &= ~NGBE_FLAG2_RSS_FIELD_IPV4_SCTP;
+			break;
+		case (RXH_L4_B_0_1 | RXH_L4_B_2_3):
+			flags2 |= NGBE_FLAG2_RSS_FIELD_IPV4_SCTP;
+			break;
+		default:
+			return -EINVAL;
+		}
+		break;
+	case SCTP_V6_FLOW:
+		if (!(nfc->data & RXH_IP_SRC) || !(nfc->data & RXH_IP_DST))
+			return -EINVAL;
+		switch (nfc->data & (RXH_L4_B_0_1 | RXH_L4_B_2_3)) {
+		case 0:
+			flags2 &= ~NGBE_FLAG2_RSS_FIELD_IPV6_SCTP;
+			break;
+		case (RXH_L4_B_0_1 | RXH_L4_B_2_3):
+			flags2 |= NGBE_FLAG2_RSS_FIELD_IPV6_SCTP;
+			break;
+		default:
+			return -EINVAL;
+		}
+		break;
 	case AH_ESP_V4_FLOW:
 	case AH_V4_FLOW:
 	case ESP_V4_FLOW:
-	case SCTP_V4_FLOW:
 	case AH_ESP_V6_FLOW:
 	case AH_V6_FLOW:
 	case ESP_V6_FLOW:
-	case SCTP_V6_FLOW:
 		if (!(nfc->data & RXH_IP_SRC) || !(nfc->data & RXH_IP_DST) ||
 		    (nfc->data & RXH_L4_B_0_1) || (nfc->data & RXH_L4_B_2_3))
 			return -EINVAL;
@@ -2539,12 +2641,20 @@ static int ngbe_set_rss_hash_opt(struct ngbe_adapter *adapter, struct ethtool_rx
 			NGBE_RDB_RA_CTL_RSS_IPV6 | NGBE_RDB_RA_CTL_RSS_IPV6_TCP;
 
 		mrqc &= ~(NGBE_RDB_RA_CTL_RSS_IPV4_UDP | NGBE_RDB_RA_CTL_RSS_IPV6_UDP);
+		mrqc &= ~(NGBE_RDB_RA_CTL_RSS_IPV4_SCTP |
+			  NGBE_RDB_RA_CTL_RSS_IPV6_SCTP);
 
 		if (flags2 & NGBE_FLAG2_RSS_FIELD_IPV4_UDP)
 			mrqc |= NGBE_RDB_RA_CTL_RSS_IPV4_UDP;
 
 		if (flags2 & NGBE_FLAG2_RSS_FIELD_IPV6_UDP)
 			mrqc |= NGBE_RDB_RA_CTL_RSS_IPV6_UDP;
+
+		if (flags2 & NGBE_FLAG2_RSS_FIELD_IPV4_SCTP)
+			mrqc |= NGBE_RDB_RA_CTL_RSS_IPV4_SCTP;
+
+		if (flags2 & NGBE_FLAG2_RSS_FIELD_IPV6_SCTP)
+			mrqc |= NGBE_RDB_RA_CTL_RSS_IPV6_SCTP;
 
 		wr32(hw, NGBE_RDB_RA_CTL, mrqc);
 	}
