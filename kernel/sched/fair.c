@@ -235,11 +235,15 @@ static void update_sysctl(void)
 {
 	unsigned int factor = get_update_sysctl_factor();
 
-#define SET_SYSCTL(name) \
-	(sysctl_##name = (factor) * normalized_sysctl_##name)
-	SET_SYSCTL(sched_min_granularity);
-	SET_SYSCTL(sched_latency);
-	SET_SYSCTL(sched_wakeup_granularity);
+#define SET_SYSCTL(name, min_val, max_val) \
+	(sysctl_##name = clamp((factor) * normalized_sysctl_##name, \
+		min_val, max_val))
+	SET_SYSCTL(sched_min_granularity,
+		min_sched_granularity_ns, max_sched_granularity_ns);
+	SET_SYSCTL(sched_latency,
+		min_sched_granularity_ns, max_sched_granularity_ns);
+	SET_SYSCTL(sched_wakeup_granularity,
+		min_wakeup_granularity_ns, max_wakeup_granularity_ns);
 #undef SET_SYSCTL
 }
 
