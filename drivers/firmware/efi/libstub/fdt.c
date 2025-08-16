@@ -44,6 +44,7 @@ static efi_status_t fdt_init_moc_mode(void *fdt, int node)
 	if (!efi_pbha)
 		goto out;
 
+	size = sizeof(hbm_mode);
 	efi_status = get_efi_var(L"MemoryOnChipMode", &oem_config_guid, NULL, &size,
 				 &hbm_mode);
 	if (efi_status != EFI_SUCCESS)
