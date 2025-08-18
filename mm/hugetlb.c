@@ -3035,6 +3035,7 @@ static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
 	struct page *page;
 	LIST_HEAD(page_list);
 	NODEMASK_ALLOC(nodemask_t, node_alloc_noretry, GFP_KERNEL);
+	bool drained = false;
 
 	/*
 	 * Bit mask controlling how hard we retry per-node allocations.
@@ -3109,14 +3110,6 @@ static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
 			break;
 	}
 
-	/*
-	 * drain pcp for movable zone to increase the success rate for
-	 * hugetlb memory allocation if movable_node enabled
-	 */
-	if ((nid != NUMA_NO_NODE) && movable_node_is_enabled() &&
-	    count > persistent_huge_pages(h))
-		hugetlb_drain_movable_pcp(h, nid);
-
 	while (count > persistent_huge_pages(h)) {
 		/*
 		 * If this allocation races such that we no longer need the
@@ -3127,6 +3120,16 @@ static int set_max_huge_pages(struct hstate *h, unsigned long count, int nid,
 
 		/* yield cpu to avoid soft lockup */
 		cond_resched();
+
+		/*
+		 * drain pcp for movable zone to increase the success rate
+		 * for hugetlb memory allocation if movable_node enabled
+		 */
+		if (!drained && (nid != NUMA_NO_NODE) &&
+		    movable_node_is_enabled()) {
+			hugetlb_drain_movable_pcp(h, nid);
+			drained = true;
+		}
 
 		ret = alloc_pool_huge_page(h, nodes_allowed,
 						node_alloc_noretry);
