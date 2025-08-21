@@ -876,7 +876,7 @@ static unsigned int hisi_cppc_cpufreq_get_rate(unsigned int cpu)
 	int ret;
 
 	if (!policy)
-		return -ENODEV;
+		return 0;
 
 	cpu_data = policy->driver_data;
 
@@ -884,7 +884,7 @@ static unsigned int hisi_cppc_cpufreq_get_rate(unsigned int cpu)
 
 	ret = cppc_get_desired_perf(cpu, &desired_perf);
 	if (ret < 0)
-		return -EIO;
+		return 0;
 
 	return cppc_cpufreq_perf_to_khz(cpu_data, desired_perf);
 }
