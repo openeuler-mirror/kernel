@@ -129,10 +129,12 @@ static int __split_vmemmap_huge_pmd(pmd_t *pmd, unsigned long start)
 		smp_wmb();
 		vmemmap_update_pmd(start, pmd, pgtable);
 		vmemmap_flush_tlb_range(start, start + PMD_SIZE);
-	} else {
-		pte_free_kernel(&init_mm, pgtable);
+		pgtable = NULL;
 	}
 	vmemmap_split_unlock(&init_mm.page_table_lock);
+
+	if (unlikely(pgtable))
+		pte_free_kernel(&init_mm, pgtable);
 
 	return 0;
 }
