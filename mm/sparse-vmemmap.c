@@ -70,6 +70,14 @@ static inline void vmemmap_update_pte(unsigned long addr,
 }
 #endif
 
+#ifndef vmemmap_split_lock
+#define vmemmap_split_lock(lock)	spin_lock(lock)
+#endif
+
+#ifndef vmemmap_split_unlock
+#define vmemmap_split_unlock(lock)	spin_unlock(lock)
+#endif
+
 #ifndef vmemmap_flush_tlb_all
 static inline void vmemmap_flush_tlb_all(void)
 {
@@ -107,7 +115,7 @@ static int __split_vmemmap_huge_pmd(pmd_t *pmd, unsigned long start)
 		set_pte_at(&init_mm, addr, pte, entry);
 	}
 
-	spin_lock_irq(&init_mm.page_table_lock);
+	vmemmap_split_lock(&init_mm.page_table_lock);
 	if (likely(pmd_leaf(*pmd))) {
 		/*
 		 * Higher order allocations from buddy allocator must be able to
@@ -124,7 +132,7 @@ static int __split_vmemmap_huge_pmd(pmd_t *pmd, unsigned long start)
 	} else {
 		pte_free_kernel(&init_mm, pgtable);
 	}
-	spin_unlock_irq(&init_mm.page_table_lock);
+	vmemmap_split_unlock(&init_mm.page_table_lock);
 
 	return 0;
 }
