@@ -1327,6 +1327,13 @@ static unsigned int shrink_page_list(struct list_head *page_list,
 		if (!trylock_page(page))
 			goto keep;
 
+		if (PageHWPoison(page)) {
+			try_to_unmap(page, TTU_IGNORE_MLOCK);
+			unlock_page(page);
+			put_page(page);
+			continue;
+		}
+
 		VM_BUG_ON_PAGE(PageActive(page), page);
 
 		nr_pages = compound_nr(page);
