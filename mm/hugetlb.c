@@ -1457,6 +1457,7 @@ void free_huge_page(struct page *page)
 
 	if (dhugetlb_enabled && PagePool(page)) {
 		spin_lock_irqsave(&hugetlb_lock, flags);
+		arch_clear_hugepage_flags(page);
 		clear_page_huge_active(page);
 		list_del(&page->lru);
 		hugetlb_cgroup_uncharge_page(hstate_index(h),
