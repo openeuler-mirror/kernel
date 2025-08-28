@@ -155,6 +155,8 @@ static const char * const hns3_roh_hw_stats_name_private[] = {
 	"mac_rx_tc5_icrd_vn_total_released",
 	"mac_rx_tc6_icrd_vn_total_released",
 	"mac_rx_tc7_icrd_vn_total_released",
+	"mac_crc_err_cnt",
+	"mac_retry_cnt",
 };
 
 struct roh_mib_stats *hns3_roh_alloc_hw_stats(struct roh_device *rohdev, enum roh_mib_type mib_type)
