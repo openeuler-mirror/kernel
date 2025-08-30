@@ -937,7 +937,8 @@ static bool upper_event_filter(struct netdev_notifier_changeupper_info *info,
 	struct hns_roce_dev *hr_dev;
 	u8 bus_num;
 
-	if (!info->linking)
+	if (!info->linking ||
+	    bond_grp->bond_state != HNS_ROCE_BOND_NOT_ATTACHED)
 		return bond_grp->upper_dev == upper_dev;
 
 	hr_dev = hns_roce_get_hrdev_by_netdev(net_dev);
@@ -950,10 +951,6 @@ static bool upper_event_filter(struct netdev_notifier_changeupper_info *info,
 
 	bond_grp_tmp = hns_roce_get_bond_grp(net_dev, bus_num);
 	if (bond_grp_tmp && bond_grp_tmp != bond_grp)
-		return false;
-
-	if (bond_grp->bond_state != HNS_ROCE_BOND_NOT_ATTACHED &&
-	    bond_grp->upper_dev != upper_dev)
 		return false;
 
 	return true;
