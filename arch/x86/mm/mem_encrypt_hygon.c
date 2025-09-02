@@ -228,6 +228,7 @@ struct csv_cma {
 struct cma_array {
 	unsigned long count;
 	atomic64_t csv_used_size;
+	unsigned int index;
 	struct csv_cma csv_cma[];
 };
 
@@ -300,6 +301,7 @@ static void __init csv_cma_reserve_mem(void)
 
 		array->count = 0;
 		atomic64_set(&array->csv_used_size, 0);
+		array->index = 0;
 		csv_contiguous_pernuma_area[node] = array;
 
 		for (i = 0; i < count; i++) {
@@ -411,7 +413,8 @@ retry:
 
 		count = array->count;
 		while (count) {
-			csv_cma = &array->csv_cma[count - 1];
+			array->index = (array->index + 1) % count;
+			csv_cma = &array->csv_cma[array->index];
 
 			/*
 			 * The value check of csv_cma->fast is lockless, but
