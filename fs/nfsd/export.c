@@ -331,14 +331,23 @@ static void nfsd4_fslocs_free(struct nfsd4_fs_locations *fsloc)
 	fsloc->locations = NULL;
 }
 
+static void svc_export_release(struct rcu_head *rcu_head)
+{
+	struct svc_export *exp = container_of(rcu_head, struct svc_export,
+			ex_rcu);
+
+	nfsd4_fslocs_free(&exp->ex_fslocs);
+	kfree(exp->ex_uuid);
+	kfree(exp);
+}
+
 static void svc_export_put(struct kref *ref)
 {
 	struct svc_export *exp = container_of(ref, struct svc_export, h.ref);
+
 	path_put(&exp->ex_path);
 	auth_domain_put(exp->ex_client);
-	nfsd4_fslocs_free(&exp->ex_fslocs);
-	kfree(exp->ex_uuid);
-	kfree_rcu(exp, ex_rcu);
+	call_rcu(&exp->ex_rcu, svc_export_release);
 }
 
 static int svc_export_upcall(struct cache_detail *cd, struct cache_head *h)
@@ -1246,10 +1255,9 @@ static int e_show(struct seq_file *m, void *p)
 		return 0;
 	}
 
-	exp_get(exp);
-	if (cache_check(cd, &exp->h, NULL))
+	if (cache_check_rcu(cd, &exp->h, NULL))
 		return 0;
-	exp_put(exp);
+
 	return svc_export_show(m, cd, cp);
 }
 
