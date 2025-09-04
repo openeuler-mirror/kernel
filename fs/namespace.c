@@ -2196,6 +2196,19 @@ static int flags_to_propagation_type(int ms_flags)
 	return type;
 }
 
+static int may_change_propagation(const struct mount *m)
+{
+	struct mnt_namespace *ns = m->mnt_ns;
+
+	// it must be mounted in some namespace
+	if (IS_ERR_OR_NULL(ns))         // is_mounted()
+		return -EINVAL;
+	// and the caller must be admin in userns of that namespace
+	if (!ns_capable(ns->user_ns, CAP_SYS_ADMIN))
+		return -EPERM;
+	return 0;
+}
+
 /*
  * recursively change the type of the mountpoint.
  */
@@ -2215,6 +2228,10 @@ static int do_change_type(struct path *path, int ms_flags)
 		return -EINVAL;
 
 	namespace_lock();
+	err = may_change_propagation(mnt);
+	if (err)
+		goto out_unlock;
+
 	if (type == MS_SHARED) {
 		err = invent_group_ids(mnt, recurse);
 		if (err)
