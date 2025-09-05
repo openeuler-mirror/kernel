@@ -507,10 +507,11 @@
 /* Zhaoxin/Centaur-defined CPU features, CPUID level 0xC0000006, word 30 */
 #define X86_FEATURE_PAUSEOPT		(30*32 + 0) /* Zhaoxin PAUSEOPT */
 
+#define X86_FEATURE_APX			(21*32+ 9) /* Advanced Performance Extensions */
 #define X86_FEATURE_TSA_SQ_NO		(21*32+11) /* AMD CPU not vulnerable to TSA-SQ */
 #define X86_FEATURE_TSA_L1_NO		(21*32+12) /* AMD CPU not vulnerable to TSA-L1 */
 #define X86_FEATURE_CLEAR_CPU_BUF_VM	(21*32+13) /* Clear CPU buffers using VERW before VMRUN */
-#define X86_FEATURE_APX			(21*32+ 9) /* Advanced Performance Extensions */
+#define X86_FEATURE_ABMC		(21*32+15) /* Assignable Bandwidth Monitoring Counters */
 
 /*
  * BUG word(s)
