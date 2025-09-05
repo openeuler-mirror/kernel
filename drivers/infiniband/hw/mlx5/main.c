@@ -2384,6 +2384,9 @@ static int handle_alloc_dm_memic(struct ib_ucontext *ctx,
 
 	dm->size = roundup(attr->length, MLX5_MEMIC_BASE_SIZE);
 
+	if (!dm_db)
+		return -EOPNOTSUPP;
+
 	err = mlx5_cmd_alloc_memic(dm_db, &dm->dev_addr,
 				   dm->size, attr->alignment);
 	if (err)
