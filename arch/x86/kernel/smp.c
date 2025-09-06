@@ -176,6 +176,29 @@ static int smp_stop_nmi_callback(unsigned int val, struct pt_regs *regs)
 asmlinkage __visible void smp_reboot_interrupt(void)
 {
 	ipi_entering_ack_irq();
+
+	/*
+	 * Handle the case where a reboot IPI is stale in the IRR. This
+	 * happens when:
+	 *
+	 *   a CPU crashes with interrupts disabled before handling the
+	 *   reboot IPI and jumps into a crash kernel. The reboot IPI
+	 *   vector is kept set in the APIC IRR across the APIC soft
+	 *   disabled phase and as there is no way to clear a pending IRR
+	 *   bit, it is delivered to the crash kernel immediately when
+	 *   interrupts are enabled.
+	 *
+	 * As the reboot IPI can only be sent after acquiring @stopping_cpu
+	 * by storing the CPU number, this case can be detected when
+	 * @stopping_cpu contains the bootup value -1. Just return and
+	 * ignore it.
+	 */
+	if (atomic_read(&stopping_cpu) == -1) {
+		pr_info("Ignoring stale reboot IPI\n");
+		irq_exit();
+		return;
+	}
+
 	cpu_emergency_vmxoff();
 	stop_this_cpu(NULL);
 	irq_exit();
