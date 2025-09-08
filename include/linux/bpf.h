@@ -21,6 +21,7 @@
 #include <linux/kallsyms.h>
 #include <linux/capability.h>
 #include <linux/percpu-refcount.h>
+#include <linux/slab.h>
 
 struct bpf_verifier_env;
 struct bpf_verifier_log;
@@ -144,6 +145,17 @@ struct bpf_map_memory {
 	struct user_struct *user;
 };
 
+/* 'Ownership' of prog array is claimed by the first program that
+ * is going to use this map or by the first program which FD is
+ * stored in the map to make sure that all callers and callees have
+ * the same prog type and JITed flag.
+ */
+struct bpf_map_owner {
+	enum bpf_prog_type type;
+	bool jited;
+	const struct btf_type *attach_func_proto;
+};
+
 struct bpf_map {
 	/* The first two cachelines with read-mostly members of which some
 	 * are also accessed in fast-path (e.g. ops, max_entries).
@@ -186,17 +198,8 @@ struct bpf_map {
 	})
 	struct mutex freeze_mutex;
 	atomic64_t writecnt;
-	/* 'Ownership' of prog array is claimed by the first program that
-	 * is going to use this map or by the first program which FD is
-	 * stored in the map to make sure that all callers and callees have
-	 * the same prog type and JITed flag.
-	 */
-	struct {
-		const struct btf_type *attach_func_proto;
-		spinlock_t lock;
-		enum bpf_prog_type type;
-		bool jited;
-	} owner;
+	spinlock_t owner_lock;
+	struct bpf_map_owner *owner;
 	u64 cookie; /* write-once */
 };
 
@@ -1117,6 +1120,16 @@ static inline bool bpf_map_flags_access_ok(u32 access_flags)
 {
 	return (access_flags & (BPF_F_RDONLY_PROG | BPF_F_WRONLY_PROG)) !=
 	       (BPF_F_RDONLY_PROG | BPF_F_WRONLY_PROG);
+}
+
+static inline struct bpf_map_owner *bpf_map_owner_alloc(struct bpf_map *map)
+{
+	return kzalloc(sizeof(*map->owner), GFP_ATOMIC);
+}
+
+static inline void bpf_map_owner_free(struct bpf_map *map)
+{
+	kfree(map->owner);
 }
 
 struct bpf_event_entry {
