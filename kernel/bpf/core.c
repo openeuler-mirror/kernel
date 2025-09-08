@@ -1779,7 +1779,9 @@ bool bpf_prog_map_compatible(struct bpf_map *map,
 			       const struct bpf_prog *fp)
 {
 	struct bpf_prog_aux *aux = fp->aux;
+	enum bpf_cgroup_storage_type i;
 	bool ret = false;
+	u64 cookie;
 
 	spin_lock(&map->owner_lock);
 	/* There's no owner yet where we could check for compatibility. */
@@ -1790,10 +1792,23 @@ bool bpf_prog_map_compatible(struct bpf_map *map,
 		map->owner->type  = fp->type;
 		map->owner->jited = fp->jited;
 		map->owner->attach_func_proto = aux->attach_func_proto;
+		for_each_cgroup_storage_type(i) {
+			map->owner->storage_cookie[i] =
+				aux->cgroup_storage[i] ?
+				aux->cgroup_storage[i]->cookie : 0;
+		}
 		ret = true;
 	} else {
 		ret = map->owner->type  ==  fp->type &&
 		      map->owner->jited == fp->jited;
+		for_each_cgroup_storage_type(i) {
+			if (!ret)
+				break;
+			cookie = aux->cgroup_storage[i] ?
+				aux->cgroup_storage[i]->cookie : 0;
+			ret = map->owner->storage_cookie[i] == cookie ||
+			      !cookie;
+		}
 		if (ret &&
 		    map->owner->attach_func_proto != aux->attach_func_proto) {
 			switch (fp->type) {

@@ -177,6 +177,7 @@ struct bpf_map_memory {
 struct bpf_map_owner {
 	enum bpf_prog_type type;
 	bool jited;
+	u64 storage_cookie[MAX_BPF_CGROUP_STORAGE_TYPE];
 	const struct btf_type *attach_func_proto;
 };
 
