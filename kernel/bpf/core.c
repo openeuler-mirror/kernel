@@ -32,6 +32,7 @@
 #include <linux/perf_event.h>
 #include <linux/extable.h>
 #include <linux/log2.h>
+#include <linux/bpf_verifier.h>
 #include <linux/nospec.h>
 
 #include <asm/barrier.h>
@@ -1778,6 +1779,7 @@ static unsigned int __bpf_prog_ret0_warn(const void *ctx,
 bool bpf_prog_map_compatible(struct bpf_map *map,
 			       const struct bpf_prog *fp)
 {
+	enum bpf_prog_type prog_type = resolve_prog_type(fp);
 	struct bpf_prog_aux *aux = fp->aux;
 	enum bpf_cgroup_storage_type i;
 	bool ret = false;
@@ -1789,7 +1791,7 @@ bool bpf_prog_map_compatible(struct bpf_map *map,
 		map->owner = bpf_map_owner_alloc(map);
 		if (!map->owner)
 			goto err;
-		map->owner->type  = fp->type;
+		map->owner->type  = prog_type;
 		map->owner->jited = fp->jited;
 		map->owner->attach_func_proto = aux->attach_func_proto;
 		for_each_cgroup_storage_type(i) {
@@ -1799,7 +1801,7 @@ bool bpf_prog_map_compatible(struct bpf_map *map,
 		}
 		ret = true;
 	} else {
-		ret = map->owner->type  ==  fp->type &&
+		ret = map->owner->type  ==  prog_type &&
 		      map->owner->jited == fp->jited;
 		for_each_cgroup_storage_type(i) {
 			if (!ret)
