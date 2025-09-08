@@ -21,6 +21,7 @@
 #include <linux/kallsyms.h>
 #include <linux/capability.h>
 #include <linux/percpu-refcount.h>
+#include <linux/slab.h>
 
 struct bpf_verifier_env;
 struct bpf_verifier_log;
@@ -50,6 +51,30 @@ struct bpf_iter_seq_info {
 	bpf_iter_fini_seq_priv_t fini_seq_private;
 	u32 seq_priv_size;
 };
+
+enum bpf_cgroup_storage_type {
+	BPF_CGROUP_STORAGE_SHARED,
+	BPF_CGROUP_STORAGE_PERCPU,
+#ifdef CONFIG_KABI_RESERVE
+	BPF_CGROUP_STORAGE_KABI_RESERVE_1,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_2,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_3,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_4,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_5,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_6,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_7,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_8,
+#endif
+	__BPF_CGROUP_STORAGE_MAX
+#define MAX_BPF_CGROUP_STORAGE_TYPE __BPF_CGROUP_STORAGE_MAX
+};
+
+#ifdef CONFIG_CGROUP_BPF
+#define for_each_cgroup_storage_type(stype) \
+	for (stype = 0; stype < MAX_BPF_CGROUP_STORAGE_TYPE; stype++)
+#else
+#define for_each_cgroup_storage_type(stype) for (; false; )
+#endif /* CONFIG_CGROUP_BPF */
 
 /* map is generic key/value storage optionally accesible by eBPF programs */
 struct bpf_map_ops {
@@ -144,6 +169,18 @@ struct bpf_map_memory {
 	struct user_struct *user;
 };
 
+/* 'Ownership' of prog array is claimed by the first program that
+ * is going to use this map or by the first program which FD is
+ * stored in the map to make sure that all callers and callees have
+ * the same prog type and JITed flag.
+ */
+struct bpf_map_owner {
+	enum bpf_prog_type type;
+	bool jited;
+	u64 storage_cookie[MAX_BPF_CGROUP_STORAGE_TYPE];
+	const struct btf_type *attach_func_proto;
+};
+
 struct bpf_map {
 	/* The first two cachelines with read-mostly members of which some
 	 * are also accessed in fast-path (e.g. ops, max_entries).
@@ -170,7 +207,9 @@ struct bpf_map {
 	bool bypass_spec_v1;
 	bool frozen; /* write-once; write-protected by freeze_mutex */
 	KABI_EXTEND(bool free_after_mult_rcu_gp)
-	/* 17 bytes hole */
+	KABI_FILL_HOLE(u64 cookie)
+	KABI_FILL_HOLE(spinlock_t owner_lock)
+	/* 4 bytes hole */
 
 	/* The 3rd and 4th cacheline with misc members to avoid false sharing
 	 * particularly with refcounting.
@@ -186,6 +225,7 @@ struct bpf_map {
 	})
 	struct mutex freeze_mutex;
 	atomic64_t writecnt;
+	KABI_EXTEND(struct bpf_map_owner *owner)
 };
 
 static inline bool map_value_has_spin_lock(const struct bpf_map *map)
@@ -579,24 +619,6 @@ struct bpf_prog_offload {
 	u32			jited_len;
 };
 
-enum bpf_cgroup_storage_type {
-	BPF_CGROUP_STORAGE_SHARED,
-	BPF_CGROUP_STORAGE_PERCPU,
-#ifdef CONFIG_KABI_RESERVE
-	BPF_CGROUP_STORAGE_KABI_RESERVE_1,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_2,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_3,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_4,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_5,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_6,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_7,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_8,
-#endif
-	__BPF_CGROUP_STORAGE_MAX
-};
-
-#define MAX_BPF_CGROUP_STORAGE_TYPE __BPF_CGROUP_STORAGE_MAX
-
 /* The longest tracepoint has 12 args.
  * See include/trace/bpf_probe.h
  */
@@ -959,17 +981,6 @@ struct bpf_prog_aux {
 };
 
 struct bpf_array_aux {
-	/* 'Ownership' of prog array is claimed by the first program that
-	 * is going to use this map or by the first program which FD is
-	 * stored in the map to make sure that all callers and callees have
-	 * the same prog type and JITed flag.
-	 */
-	struct {
-		const struct btf_type *attach_func_proto;
-		spinlock_t lock;
-		enum bpf_prog_type type;
-		bool jited;
-	} owner;
 	/* Programs with direct jumps into programs part of this array. */
 	struct list_head poke_progs;
 	struct bpf_map *map;
@@ -1118,6 +1129,16 @@ static inline bool bpf_map_flags_access_ok(u32 access_flags)
 	       (BPF_F_RDONLY_PROG | BPF_F_WRONLY_PROG);
 }
 
+static inline struct bpf_map_owner *bpf_map_owner_alloc(struct bpf_map *map)
+{
+	return kzalloc(sizeof(*map->owner), GFP_ATOMIC);
+}
+
+static inline void bpf_map_owner_free(struct bpf_map *map)
+{
+	kfree(map->owner);
+}
+
 struct bpf_event_entry {
 	struct perf_event *event;
 	struct file *perf_file;
@@ -1125,7 +1146,14 @@ struct bpf_event_entry {
 	struct rcu_head rcu;
 };
 
-bool bpf_prog_array_compatible(struct bpf_array *array, const struct bpf_prog *fp);
+static inline bool map_type_contains_progs(struct bpf_map *map)
+{
+	return map->map_type == BPF_MAP_TYPE_PROG_ARRAY ||
+	       map->map_type == BPF_MAP_TYPE_DEVMAP ||
+	       map->map_type == BPF_MAP_TYPE_CPUMAP;
+}
+
+bool bpf_prog_map_compatible(struct bpf_map *map, const struct bpf_prog *fp);
 int bpf_prog_calc_tag(struct bpf_prog *fp);
 const char *kernel_type_name(u32 btf_type_id);
 
