@@ -197,6 +197,7 @@ struct bpf_map {
 		enum bpf_prog_type type;
 		bool jited;
 	} owner;
+	u64 cookie; /* write-once */
 };
 
 static inline bool map_value_has_spin_lock(const struct bpf_map *map)
