@@ -207,7 +207,9 @@ struct bpf_map {
 	bool bypass_spec_v1;
 	bool frozen; /* write-once; write-protected by freeze_mutex */
 	KABI_EXTEND(bool free_after_mult_rcu_gp)
-	/* 17 bytes hole */
+	KABI_FILL_HOLE(u64 cookie)
+	KABI_FILL_HOLE(spinlock_t owner_lock)
+	/* 4 bytes hole */
 
 	/* The 3rd and 4th cacheline with misc members to avoid false sharing
 	 * particularly with refcounting.
@@ -223,9 +225,7 @@ struct bpf_map {
 	})
 	struct mutex freeze_mutex;
 	atomic64_t writecnt;
-	spinlock_t owner_lock;
-	struct bpf_map_owner *owner;
-	u64 cookie; /* write-once */
+	KABI_EXTEND(struct bpf_map_owner *owner)
 };
 
 static inline bool map_value_has_spin_lock(const struct bpf_map *map)
