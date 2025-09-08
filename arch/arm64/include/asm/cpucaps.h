@@ -83,6 +83,7 @@
 #define ARM64_SME_FA64				75
 #define ARM64_HAS_XCALL				76
 #define ARM64_HAS_XINT				77
+#define ARM64_WORKAROUND_PHYTIUM_FT3386	78
 
 #define ARM64_NCAPS				80
 

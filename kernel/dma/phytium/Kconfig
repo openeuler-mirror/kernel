@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config PSWIOTLB
+	bool "Phytium software IO TLB"
+	select NEED_DMA_MAP_STATE
+	depends on ARCH_PHYTIUM && NUMA

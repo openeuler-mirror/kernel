@@ -31,6 +31,9 @@
 #include <linux/switchtec.h>
 #include <asm/dma.h>	/* isa_dma_bridge_buggy */
 #include "pci.h"
+#ifdef CONFIG_PSWIOTLB
+#include <linux/pswiotlb.h>
+#endif
 
 static ktime_t fixup_debug_start(struct pci_dev *dev,
 				 void (*fn)(struct pci_dev *dev))
@@ -5913,6 +5916,17 @@ static void pci_fixup_no_d0_pme(struct pci_dev *dev)
 	dev->pme_support &= ~(PCI_PM_CAP_PME_D0 >> PCI_PM_CAP_PME_SHIFT);
 }
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_ASMEDIA, 0x2142, pci_fixup_no_d0_pme);
+
+void pci_configure_pswiotlb(struct pci_dev *dev, struct pci_bus *bus)
+{
+#ifdef CONFIG_PSWIOTLB
+	if ((pswiotlb_force_disable != true) &&
+		is_phytium_ps_socs()) {
+		pswiotlb_store_local_node(dev, bus);
+		dma_set_seg_boundary(&dev->dev, 0xffffffffffff);
+	}
+#endif
+}
 
 /*
  * Device 12d8:0x400e [OHCI] and 12d8:0x400f [EHCI]

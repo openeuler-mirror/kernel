@@ -29,6 +29,9 @@
 #include <linux/sched/signal.h>
 #include <linux/sched/mm.h>
 #include <linux/sysfs.h>
+#if defined(CONFIG_PSWIOTLB) && !defined(__GENKSYMS__)
+#include <linux/pswiotlb.h>
+#endif
 
 #include "base.h"
 #include "power/power.h"
@@ -2507,6 +2510,11 @@ void device_initialize(struct device *dev)
 #ifdef CONFIG_GENERIC_MSI_IRQ
 	raw_spin_lock_init(&dev->msi_lock);
 	INIT_LIST_HEAD(&dev->msi_list);
+#endif
+#ifdef CONFIG_PSWIOTLB
+	if ((pswiotlb_force_disable != true) &&
+			is_phytium_ps_socs())
+		pswiotlb_dev_init(dev);
 #endif
 	INIT_LIST_HEAD(&dev->links.consumers);
 	INIT_LIST_HEAD(&dev->links.suppliers);

@@ -51,6 +51,10 @@
 #include <linux/dma-map-ops.h>
 #include <linux/cma.h>
 
+#ifdef CONFIG_PSWIOTLB
+#include "./phytium/pswiotlb-dma.h"
+#endif
+
 #ifdef CONFIG_CMA_SIZE_MBYTES
 #define CMA_SIZE_MBYTES CONFIG_CMA_SIZE_MBYTES
 #else
@@ -306,6 +310,10 @@ struct page *dma_alloc_contiguous(struct device *dev, size_t size, gfp_t gfp)
 #ifdef CONFIG_DMA_PERNUMA_CMA
 	int nid = dev_to_node(dev);
 #endif
+#ifdef CONFIG_PSWIOTLB
+	if (check_if_pswiotlb_is_applicable(dev))
+		return NULL;
+#endif
 
 	/* CMA can be used only in the context which permits sleeping */
 	if (!gfpflags_allow_blocking(gfp))
@@ -348,6 +356,13 @@ void dma_free_contiguous(struct device *dev, struct page *page, size_t size)
 {
 	unsigned int count = PAGE_ALIGN(size) >> PAGE_SHIFT;
 
+#ifdef CONFIG_PSWIOTLB
+	if (check_if_pswiotlb_is_applicable(dev)) {
+		__free_pages(page, get_order(size));
+
+		return;
+	}
+#endif
 	/* if dev has its own cma, free page from there */
 	if (dev->cma_area) {
 		if (cma_release(dev->cma_area, page, count))
