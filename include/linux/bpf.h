@@ -52,6 +52,30 @@ struct bpf_iter_seq_info {
 	u32 seq_priv_size;
 };
 
+enum bpf_cgroup_storage_type {
+	BPF_CGROUP_STORAGE_SHARED,
+	BPF_CGROUP_STORAGE_PERCPU,
+#ifdef CONFIG_KABI_RESERVE
+	BPF_CGROUP_STORAGE_KABI_RESERVE_1,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_2,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_3,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_4,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_5,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_6,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_7,
+	BPF_CGROUP_STORAGE_KABI_RESERVE_8,
+#endif
+	__BPF_CGROUP_STORAGE_MAX
+#define MAX_BPF_CGROUP_STORAGE_TYPE __BPF_CGROUP_STORAGE_MAX
+};
+
+#ifdef CONFIG_CGROUP_BPF
+#define for_each_cgroup_storage_type(stype) \
+	for (stype = 0; stype < MAX_BPF_CGROUP_STORAGE_TYPE; stype++)
+#else
+#define for_each_cgroup_storage_type(stype) for (; false; )
+#endif /* CONFIG_CGROUP_BPF */
+
 /* map is generic key/value storage optionally accesible by eBPF programs */
 struct bpf_map_ops {
 	/* funcs callable from userspace (via syscall) */
@@ -593,24 +617,6 @@ struct bpf_prog_offload {
 	void			*jited_image;
 	u32			jited_len;
 };
-
-enum bpf_cgroup_storage_type {
-	BPF_CGROUP_STORAGE_SHARED,
-	BPF_CGROUP_STORAGE_PERCPU,
-#ifdef CONFIG_KABI_RESERVE
-	BPF_CGROUP_STORAGE_KABI_RESERVE_1,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_2,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_3,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_4,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_5,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_6,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_7,
-	BPF_CGROUP_STORAGE_KABI_RESERVE_8,
-#endif
-	__BPF_CGROUP_STORAGE_MAX
-};
-
-#define MAX_BPF_CGROUP_STORAGE_TYPE __BPF_CGROUP_STORAGE_MAX
 
 /* The longest tracepoint has 12 args.
  * See include/trace/bpf_probe.h
