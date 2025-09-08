@@ -569,9 +569,9 @@ static inline u32 type_flag(u32 type)
 	return type & ~BPF_BASE_TYPE_MASK;
 }
 
-static inline enum bpf_prog_type resolve_prog_type(struct bpf_prog *prog)
+static inline enum bpf_prog_type resolve_prog_type(const struct bpf_prog *prog)
 {
-	return prog->aux->dst_prog ? prog->aux->dst_prog->type : prog->type;
+	return prog->aux->saved_dst_prog_type ? prog->aux->saved_dst_prog_type : prog->type;
 }
 
 #endif /* _LINUX_BPF_VERIFIER_H */
