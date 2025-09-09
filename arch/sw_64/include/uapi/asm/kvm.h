@@ -2,6 +2,8 @@
 #ifndef _UAPI_ASM_SW64_KVM_H
 #define _UAPI_ASM_SW64_KVM_H
 
+#include <asm/ptrace.h>
+
 /*
  * KVM SW specific structures and definitions.
  */
@@ -21,6 +23,20 @@ enum SW64_KVM_IRQ {
 #define __KVM_HAVE_GUEST_DEBUG
 
 #define KVM_NR_IRQCHIPS		1
+
+#ifndef __KERNEL__
+struct kvm_regs {
+	union {
+		struct user_pt_regs regs;
+		struct {
+			unsigned long r[31];
+			unsigned long pc;
+			unsigned long ps;
+		};
+	};
+	struct user_fpsimd_state fpstate;
+};
+#endif
 
 /*
  * for KVM_GET_FPU and KVM_SET_FPU
