@@ -4915,6 +4915,9 @@ static int kvm_vcpu_ioctl_x86_set_debugregs(struct kvm_vcpu *vcpu,
 static void kvm_vcpu_ioctl_x86_get_xsave(struct kvm_vcpu *vcpu,
 					 struct kvm_xsave *guest_xsave)
 {
+	if (fpstate_is_confidential(&vcpu->arch.guest_fpu))
+		return;
+
 	fpu_copy_guest_fpstate_to_uabi(&vcpu->arch.guest_fpu,
 				       guest_xsave->region,
 				       sizeof(guest_xsave->region),
@@ -4934,6 +4937,9 @@ static void kvm_vcpu_ioctl_x86_get_xsave2(struct kvm_vcpu *vcpu,
 static int kvm_vcpu_ioctl_x86_set_xsave(struct kvm_vcpu *vcpu,
 					struct kvm_xsave *guest_xsave)
 {
+	if (fpstate_is_confidential(&vcpu->arch.guest_fpu))
+		return 0;
+
 	return fpu_copy_uabi_to_guest_fpstate(&vcpu->arch.guest_fpu,
 			guest_xsave->region,
 			supported_xcr0, &vcpu->arch.pkru);
@@ -10514,6 +10520,9 @@ int kvm_arch_vcpu_ioctl_get_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
 {
 	struct fxregs_state *fxsave;
 
+	if (fpstate_is_confidential(&vcpu->arch.guest_fpu))
+		return 0;
+
 	vcpu_load(vcpu);
 
 	fxsave = &vcpu->arch.guest_fpu.fpstate->regs.fxsave;
@@ -10533,6 +10542,9 @@ int kvm_arch_vcpu_ioctl_get_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
 int kvm_arch_vcpu_ioctl_set_fpu(struct kvm_vcpu *vcpu, struct kvm_fpu *fpu)
 {
 	struct fxregs_state *fxsave;
+
+	if (fpstate_is_confidential(&vcpu->arch.guest_fpu))
+		return 0;
 
 	vcpu_load(vcpu);
 
@@ -10794,7 +10806,8 @@ void kvm_vcpu_reset(struct kvm_vcpu *vcpu, bool init_event)
 	kvm_async_pf_hash_reset(vcpu);
 	vcpu->arch.apf.halted = false;
 
-	if (kvm_mpx_supported()) {
+	if (fpstate_is_confidential(&vcpu->arch.guest_fpu)
+			&& kvm_mpx_supported()) {
 		struct fpstate *fpstate = vcpu->arch.guest_fpu.fpstate;
 
 		/*
