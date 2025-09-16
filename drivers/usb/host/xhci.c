@@ -4706,68 +4706,31 @@ static int xhci_update_timeout_for_interface(struct xhci_hcd *xhci,
 	return 0;
 }
 
-static int xhci_check_intel_tier_policy(struct usb_device *udev,
-		enum usb3_link_state state)
-{
-	struct usb_device *parent;
-	unsigned int num_hubs;
-
-	if (state == USB3_LPM_U2)
-		return 0;
-
-	/* Don't enable U1 if the device is on a 2nd tier hub or lower. */
-	for (parent = udev->parent, num_hubs = 0; parent->parent;
-			parent = parent->parent)
-		num_hubs++;
-
-	if (num_hubs < 2)
-		return 0;
-
-	dev_dbg(&udev->dev, "Disabling U1 link state for device"
-			" below second-tier hub.\n");
-	dev_dbg(&udev->dev, "Plug device into first-tier hub "
-			"to decrease power consumption.\n");
-	return -E2BIG;
-}
-
-static int xhci_check_zhaoxin_tier_policy(struct usb_device *udev,
-							enum usb3_link_state state)
-{
-	struct usb_device *parent;
-	unsigned int num_hubs;
-	char *state_name;
-
-	if (state == USB3_LPM_U1)
-		state_name = "U1";
-	else if (state == USB3_LPM_U2)
-		state_name = "U2";
-	else
-		state_name = "Unknown";
-	/* Don't enable U1/U2 if the device is on an external hub*/
-	for (parent = udev->parent, num_hubs = 0; parent->parent;
-			parent = parent->parent)
-			num_hubs++;
-
-	if (num_hubs < 1)
-		return 0;
-
-	dev_dbg(&udev->dev, "Disabling %s link state for device" \
-							" below external hub.\n", state_name);
-	dev_dbg(&udev->dev, "Plug device into root port " \
-							"to decrease power consumption.\n");
-	return -E2BIG;
-}
-
 static int xhci_check_tier_policy(struct xhci_hcd *xhci,
 		struct usb_device *udev,
 		enum usb3_link_state state)
 {
-	if (xhci->quirks & XHCI_INTEL_HOST)
-		return xhci_check_intel_tier_policy(udev, state);
-	else if (xhci->quirks & XHCI_ZHAOXIN_HOST)
-		return xhci_check_zhaoxin_tier_policy(udev, state);
-	else
+	struct usb_device *parent = udev->parent;
+	int tier = 1; /* roothub is tier1 */
+
+	if (state == USB3_LPM_U2)
 		return 0;
+
+	while (parent) {
+		parent = parent->parent;
+		tier++;
+	}
+
+	if (xhci->quirks & XHCI_INTEL_HOST && tier > 3)
+		goto fail;
+	if (xhci->quirks & XHCI_ZHAOXIN_HOST && tier > 2)
+		goto fail;
+
+	return 0;
+fail:
+	dev_dbg(&udev->dev, "Tier policy prevents U1/U2 LPM states for devices at tier %d\n",
+			tier);
+	return -E2BIG;
 }
 
 /* Returns the U1 or U2 timeout that should be enabled.
@@ -5081,7 +5044,6 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
 	 */
 	struct device		*dev = hcd->self.sysdev;
 	unsigned int		minor_rev;
-	u8			i, j;
 	int			retval;
 
 	/* Accept arbitrarily long scatter-gather lists */
@@ -5136,24 +5098,6 @@ int xhci_gen_setup(struct usb_hcd *hcd, xhci_get_quirks_t get_quirks)
 			hcd->self.root_hub->speed = USB_SPEED_SUPER_PLUS;
 			break;
 		}
-
-		/* usb3.1 has gen1 and gen2, Some zx's xHCI controller that follow usb3.1 spec
-		 * but only support gen1
-		 */
-		if (xhci->quirks & XHCI_ZHAOXIN_HOST) {
-			minor_rev = 0;
-			for (j = 0; j < xhci->num_port_caps; j++) {
-				for (i = 0; i < xhci->port_caps[j].psi_count; i++) {
-					if (XHCI_EXT_PORT_PSIV(xhci->port_caps[j].psi[i]) >= 5)
-						minor_rev = 1;
-				}
-			}
-			if (minor_rev != 1) {
-				hcd->speed = HCD_USB3;
-				hcd->self.root_hub->speed = USB_SPEED_SUPER;
-			}
-		}
-
 		xhci_info(xhci, "Host supports USB 3.%x %sSuperSpeed\n",
 			  minor_rev,
 			  minor_rev ? "Enhanced " : "");
