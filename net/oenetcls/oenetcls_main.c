@@ -591,6 +591,7 @@ struct oecls_numa_info *get_oecls_numa_info(unsigned int nid)
 static void clean_oecls_numa_info(void)
 {
 	oecls_numa_num = 0;
+	free_to_l0(oecls_numa_info_table);
 }
 
 static void init_numa_avail_cpus(int nid, struct oecls_numa_info *numa_info)
