@@ -280,7 +280,10 @@
 #include <asm/ioctls.h>
 #include <net/busy_poll.h>
 #include <net/net_rship.h>
-#include <trace/hooks/oenetcls.h>
+
+#if IS_ENABLED(CONFIG_OENETCLS)
+#include <linux/oenetcls.h>
+#endif
 
 DEFINE_PER_CPU(unsigned int, tcp_orphan_count);
 EXPORT_PER_CPU_SYMBOL_GPL(tcp_orphan_count);
@@ -2177,8 +2180,8 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int nonblock,
 	if (unlikely(flags & MSG_ERRQUEUE))
 		return inet_recv_error(sk, msg, len, addr_len);
 
-#if IS_ENABLED(CONFIG_OENETCLS_HOOKS)
-	trace_oecls_flow_update(sk);
+#if IS_ENABLED(CONFIG_OENETCLS)
+	oenetcls_flow_update(sk);
 #endif
 
 	if (sk_can_busy_loop(sk) && skb_queue_empty_lockless(&sk->sk_receive_queue) &&
@@ -2756,8 +2759,8 @@ void tcp_close(struct sock *sk, long timeout)
 {
 	lock_sock(sk);
 
-#if IS_ENABLED(CONFIG_OENETCLS_HOOKS)
-	trace_ethtool_cfg_rxcls(sk, 1);
+#if IS_ENABLED(CONFIG_OENETCLS)
+	oenetcls_cfg_rxcls(sk, 1);
 #endif
 
 	__tcp_close(sk, timeout);

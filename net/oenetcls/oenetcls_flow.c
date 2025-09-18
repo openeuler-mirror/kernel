@@ -6,7 +6,7 @@
 #include <linux/irqdesc.h>
 #include <linux/inet.h>
 #include <net/sock.h>
-#include <trace/hooks/oenetcls.h>
+#include <linux/oenetcls.h>
 #include "oenetcls.h"
 
 static u32 oecls_cpu_mask;
@@ -26,8 +26,8 @@ bool is_oecls_config_netdev(const char *name)
 	return false;
 }
 
-static void oecls_timeout(void *data, struct net_device *dev, u16 rxq_index,
-			  u32 flow_id, u16 filter_id, bool *ret)
+static bool _oecls_timeout(struct net_device *dev, u16 rxq_index,
+			   u32 flow_id, u16 filter_id)
 {
 	struct netdev_rx_queue *rxqueue = dev->_rx + rxq_index;
 	struct oecls_dev_flow_table *flow_table;
@@ -55,10 +55,10 @@ static void oecls_timeout(void *data, struct net_device *dev, u16 rxq_index,
 	rcu_read_unlock();
 	oecls_debug("%s, dev:%s, rxq:%d, flow_id:%u, filter_id:%d, expire:%d\n", __func__,
 		    dev->name, rxq_index, flow_id, filter_id, expire);
-	*ret = expire;
+	return expire;
 }
 
-static void oecls_flow_update(void *data, struct sock *sk)
+static void _oecls_flow_update(struct sock *sk)
 {
 	struct oecls_sock_flow_table *tb;
 	unsigned int hash, index;
@@ -200,7 +200,7 @@ static void __oecls_set_cpu(struct sk_buff *skb, struct net_device *ndev,
 		set_oecls_cpu(ndev, skb, rflow, old_rxq_id, last_recv_cpu);
 }
 
-static void oecls_set_cpu(void *data, struct sk_buff *skb)
+static void _oecls_set_cpu(struct sk_buff *skb)
 {
 	struct net_device *ndev = skb->dev;
 	struct oecls_sock_flow_table *stb;
@@ -355,9 +355,6 @@ static int oecls_sock_flow_table_release(void)
 	synchronize_rcu();
 	vfree(tb);
 
-	unregister_trace_oecls_flow_update(&oecls_flow_update, NULL);
-	unregister_trace_oecls_set_cpu(&oecls_set_cpu, NULL);
-	unregister_trace_oecls_timeout(&oecls_timeout, NULL);
 	return 0;
 }
 
@@ -383,20 +380,26 @@ static int oecls_sock_flow_table_init(void)
 	rcu_assign_pointer(oecls_sock_flow_table, table);
 	mutex_unlock(&oecls_sock_flow_mutex);
 
-	register_trace_oecls_flow_update(oecls_flow_update, NULL);
-	register_trace_oecls_set_cpu(&oecls_set_cpu, NULL);
-	register_trace_oecls_timeout(&oecls_timeout, NULL);
 	return 0;
 }
+
+static const struct oecls_hook_ops oecls_flow_ops = {
+	.oecls_flow_update = _oecls_flow_update,
+	.oecls_set_cpu = _oecls_set_cpu,
+	.oecls_timeout = _oecls_timeout,
+	.oecls_cfg_rxcls = NULL,
+};
 
 void oecls_flow_res_init(void)
 {
 	oecls_sock_flow_table_init();
 	oecls_dev_flow_table_init();
+	RCU_INIT_POINTER(oecls_ops, &oecls_flow_ops);
 }
 
 void oecls_flow_res_clean(void)
 {
+	RCU_INIT_POINTER(oecls_ops, NULL);
 	oecls_sock_flow_table_release();
 	oecls_dev_flow_table_release();
 }

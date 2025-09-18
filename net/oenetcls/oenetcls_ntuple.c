@@ -7,7 +7,7 @@
 #include <linux/inet.h>
 #include <linux/jhash.h>
 #include <net/sock.h>
-#include <trace/hooks/oenetcls.h>
+#include <linux/oenetcls.h>
 #include "oenetcls.h"
 
 struct oecls_sk_rule_list oecls_sk_rules, oecls_sk_list;
@@ -502,7 +502,7 @@ static void add_ntuple_rule(struct sock *sk)
 	mutex_unlock(&oecls_sk_rules.mutex);
 }
 
-static void ethtool_cfg_rxcls(void *data, struct sock *sk, int is_del)
+static void ethtool_cfg_rxcls(struct sock *sk, int is_del)
 {
 	if (sk->sk_state != TCP_LISTEN)
 		return;
@@ -551,14 +551,21 @@ static void clean_oecls_sk_rules(void)
 	mutex_unlock(&oecls_sk_rules.mutex);
 }
 
+static const struct oecls_hook_ops oecls_ntuple_ops = {
+	.oecls_flow_update = NULL,
+	.oecls_set_cpu = NULL,
+	.oecls_timeout = NULL,
+	.oecls_cfg_rxcls = ethtool_cfg_rxcls,
+};
+
 void oecls_ntuple_res_init(void)
 {
 	init_oecls_sk_rules();
-	register_trace_ethtool_cfg_rxcls(&ethtool_cfg_rxcls, NULL);
+	RCU_INIT_POINTER(oecls_ops, &oecls_ntuple_ops);
 }
 
 void oecls_ntuple_res_clean(void)
 {
-	unregister_trace_ethtool_cfg_rxcls(&ethtool_cfg_rxcls, NULL);
+	RCU_INIT_POINTER(oecls_ops, NULL);
 	clean_oecls_sk_rules();
 }

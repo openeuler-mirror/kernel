@@ -149,7 +149,12 @@
 #include <net/net_rship.h>
 
 #include "net-sysfs.h"
-#include <trace/hooks/oenetcls.h>
+
+#if IS_ENABLED(CONFIG_OENETCLS)
+#include <linux/oenetcls.h>
+const struct oecls_hook_ops __rcu *oecls_ops __read_mostly;
+EXPORT_SYMBOL_GPL(oecls_ops);
+#endif
 
 #define MAX_GRO_SKBS 8
 
@@ -4485,10 +4490,9 @@ bool rps_may_expire_flow(struct net_device *dev, u16 rxq_index,
 	bool expire = true;
 	unsigned int cpu;
 
-#if IS_ENABLED(CONFIG_OENETCLS_HOOKS)
-	trace_oecls_timeout(dev, rxq_index, flow_id, filter_id, &expire);
-	if (expire)
-		return true;
+#if IS_ENABLED(CONFIG_OENETCLS)
+	if (oenetcls_may_expire_flow(dev, rxq_index, flow_id, filter_id, &expire))
+		return expire;
 #endif
 	rcu_read_lock();
 	flow_table = rcu_dereference(rxqueue->rps_flow_table);
@@ -5897,8 +5901,8 @@ static int netif_receive_skb_internal(struct sk_buff *skb)
 	}
 #endif
 
-#if IS_ENABLED(CONFIG_OENETCLS_HOOKS)
-	trace_oecls_set_cpu(skb);
+#if IS_ENABLED(CONFIG_OENETCLS)
+	oenetcls_skb_set_cpu(skb);
 #endif
 
 	ret = __netif_receive_skb(skb);
@@ -5936,9 +5940,8 @@ static void netif_receive_skb_list_internal(struct list_head *head)
 	}
 #endif
 
-#if IS_ENABLED(CONFIG_OENETCLS_HOOKS)
-	list_for_each_entry_safe(skb, next, head, list)
-		trace_oecls_set_cpu(skb);
+#if IS_ENABLED(CONFIG_OENETCLS)
+	oenetcls_skblist_set_cpu(head);
 #endif
 
 	__netif_receive_skb_list(head);
