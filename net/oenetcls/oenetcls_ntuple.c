@@ -11,6 +11,8 @@
 #include "oenetcls.h"
 
 struct oecls_sk_rule_list oecls_sk_rules, oecls_sk_list;
+static struct workqueue_struct *do_cfg_workqueue;
+static atomic_t oecls_worker_count = ATOMIC_INIT(0);
 
 static void init_oecls_sk_rules(void)
 {
@@ -31,8 +33,7 @@ static inline struct hlist_head *get_sk_hashlist(void *sk)
 	return oecls_sk_list.hash + (jhash(sk, sizeof(sk), 0) & OECLS_SK_RULE_HASHMASK);
 }
 
-static void add_sk_rule(int devid, u32 dip4, u16 dport, void *sk, int action,
-			int ruleid, int nid)
+static void add_sk_rule(int devid, u32 dip4, u16 dport, void *sk, int action, int ruleid, int cpu)
 {
 	struct hlist_head *hlist = get_rule_hashlist(dip4, dport);
 	struct hlist_head *sk_hlist = get_sk_hashlist(sk);
@@ -50,7 +51,7 @@ static void add_sk_rule(int devid, u32 dip4, u16 dport, void *sk, int action,
 	rule->devid = devid;
 	rule->action = action;
 	rule->ruleid = ruleid;
-	rule->nid = nid;
+	rule->cpu = cpu;
 	hlist_add_head(&rule->node, hlist);
 
 	entry->sk = sk;
@@ -421,85 +422,113 @@ static int cfg_ethtool_rule(struct cmd_context *ctx, bool is_del)
 	return ret;
 }
 
-static void del_ntuple_rule(struct sock *sk)
+static void cfg_work(struct work_struct *work)
 {
+	struct cfg_param *ctx_p = container_of(work, struct cfg_param, work);
 	struct oecls_netdev_info *oecls_dev;
-	struct cmd_context ctx = { 0 };
 	struct oecls_sk_rule *rule;
-	int devid;
-	u16 dport;
-	u32 dip4;
+	int devid, rxq_id;
 	int err;
-
-	get_sk_rule_addr(sk, &dip4, &dport);
 
 	mutex_lock(&oecls_sk_rules.mutex);
 	for_each_oecls_netdev(devid, oecls_dev) {
-		strncpy(ctx.netdev, oecls_dev->dev_name, IFNAMSIZ);
-		rule = get_rule_from_sk(devid, sk);
-		if (!rule) {
-			oecls_debug("rule not found! sk:%p, devid:%d, dip4:%pI4, dport:%d\n",
-				    sk, devid, &dip4, ntohs(dport));
-			continue;
+		strncpy(ctx_p->ctx.netdev, oecls_dev->dev_name, IFNAMSIZ);
+		if (!ctx_p->is_del) {
+			if (reuseport_check(devid, ctx_p->ctx.dip4, ctx_p->ctx.dport)) {
+				oecls_error("dip4:%pI4, dport:%d reuse!\n", &ctx_p->ctx.dip4,
+					    ctx_p->ctx.dport);
+				continue;
+			}
+
+			// Calculate the bound queue
+			rxq_id = alloc_rxq_id(ctx_p->cpu, devid);
+			if (rxq_id < 0)
+				continue;
+
+			// Config Ntuple rule to dev
+			ctx_p->ctx.action = (u16)rxq_id;
+			err = cfg_ethtool_rule(&ctx_p->ctx, ctx_p->is_del);
+			// Add sk rule only on success
+			if (err) {
+				free_rxq_id(ctx_p->cpu, devid, rxq_id);
+				continue;
+			}
+			add_sk_rule(devid, ctx_p->ctx.dip4, ctx_p->ctx.dport, ctx_p->sk,
+				    ctx_p->ctx.action, ctx_p->ctx.ret_loc, ctx_p->cpu);
+		} else {
+			rule = get_rule_from_sk(devid, ctx_p->sk);
+			if (!rule) {
+				oecls_debug("rule not found! sk:%p, devid:%d, dip4:%pI4, dport:%d\n",
+					    ctx_p->sk, devid, &ctx_p->ctx.dip4,
+					    ntohs(ctx_p->ctx.dport));
+				continue;
+			}
+
+			// Config Ntuple rule to dev
+			ctx_p->ctx.del_ruleid = rule->ruleid;
+			err = cfg_ethtool_rule(&ctx_p->ctx, ctx_p->is_del);
+			// Free the bound queue
+			free_rxq_id(rule->cpu, devid, rule->action);
+			// Delete sk rule
+			del_sk_rule(rule);
 		}
-
-		// Config Ntuple rule to dev
-		ctx.del_ruleid = rule->ruleid;
-		err = cfg_ethtool_rule(&ctx, true);
-		if (err) {
-			oecls_error("del sk:%p, nid:%d, devid:%d, action:%d, ruleid:%d, err:%d\n",
-				    sk, rule->nid, devid, rule->action, rule->ruleid, err);
-		}
-
-		// Free the bound queue
-		free_rxq_id(rule->nid, devid, rule->action);
-
-		// Delete sk rule
-		del_sk_rule(rule);
 	}
 	mutex_unlock(&oecls_sk_rules.mutex);
+	kfree(ctx_p);
+	atomic_dec(&oecls_worker_count);
+}
+
+static bool has_sock_rule(struct sock *sk)
+{
+	struct oecls_netdev_info *oecls_dev;
+	struct oecls_sk_rule *rule;
+	int devid;
+
+	for_each_oecls_netdev(devid, oecls_dev) {
+		rule = get_rule_from_sk(devid, sk);
+		if (rule)
+			return true;
+	}
+	return false;
+}
+
+static void del_ntuple_rule(struct sock *sk)
+{
+	struct cfg_param *ctx_p;
+
+	if (!has_sock_rule(sk))
+		return;
+
+	ctx_p = kzalloc(sizeof(*ctx_p), GFP_ATOMIC);
+	if (!ctx_p)
+		return;
+	get_sk_rule_addr(sk, &ctx_p->ctx.dip4, &ctx_p->ctx.dport);
+
+	ctx_p->is_del = true;
+	ctx_p->sk = sk;
+	INIT_WORK(&ctx_p->work, cfg_work);
+	queue_work(do_cfg_workqueue, &ctx_p->work);
+	atomic_inc(&oecls_worker_count);
 }
 
 static void add_ntuple_rule(struct sock *sk)
 {
-	struct oecls_netdev_info *oecls_dev;
-	struct cmd_context ctx = { 0 };
-	int cpu = raw_smp_processor_id();
-	int nid = cpu_to_node(cpu);
-	int rxq_id;
-	int devid;
-	int err;
+	struct cfg_param *ctx_p;
 
 	if (check_appname(current->comm))
 		return;
-	get_sk_rule_addr(sk, &ctx.dip4, &ctx.dport);
 
-	mutex_lock(&oecls_sk_rules.mutex);
-	for_each_oecls_netdev(devid, oecls_dev) {
-		strncpy(ctx.netdev, oecls_dev->dev_name, IFNAMSIZ);
-		if (reuseport_check(devid, ctx.dip4, ctx.dport)) {
-			oecls_error("dip4:0x%x, dport:%d reuse!\n", ctx.dip4, ctx.dport);
-			continue;
-		}
+	ctx_p = kzalloc(sizeof(*ctx_p), GFP_ATOMIC);
+	if (!ctx_p)
+		return;
+	get_sk_rule_addr(sk, &ctx_p->ctx.dip4, &ctx_p->ctx.dport);
 
-		// Calculate the bound queue
-		rxq_id = alloc_rxq_id(nid, devid);
-		if (rxq_id < 0)
-			continue;
-
-		// Config Ntuple rule to dev
-		ctx.action = (u16)rxq_id;
-		err = cfg_ethtool_rule(&ctx, false);
-		if (err) {
-			oecls_error("add sk:%p, nid:%d, devid:%d, action:%d, ruleid:%d, err:%d\n",
-				    sk, nid, devid, ctx.action, ctx.ret_loc, err);
-			continue;
-		}
-
-		// Add sk rule
-		add_sk_rule(devid, ctx.dip4, ctx.dport, sk, ctx.action, ctx.ret_loc, nid);
-	}
-	mutex_unlock(&oecls_sk_rules.mutex);
+	ctx_p->is_del = false;
+	ctx_p->sk = sk;
+	ctx_p->cpu = raw_smp_processor_id();
+	INIT_WORK(&ctx_p->work, cfg_work);
+	queue_work(do_cfg_workqueue, &ctx_p->work);
+	atomic_inc(&oecls_worker_count);
 }
 
 static void ethtool_cfg_rxcls(struct sock *sk, int is_del)
@@ -558,14 +587,29 @@ static const struct oecls_hook_ops oecls_ntuple_ops = {
 	.oecls_cfg_rxcls = ethtool_cfg_rxcls,
 };
 
-void oecls_ntuple_res_init(void)
+int oecls_ntuple_res_init(void)
 {
+	do_cfg_workqueue = alloc_ordered_workqueue("oecls_cfg", 0);
+	if (!do_cfg_workqueue) {
+		oecls_debug("alloc_ordered_workqueue fails\n");
+		return -ENOMEM;
+	}
+
 	init_oecls_sk_rules();
 	RCU_INIT_POINTER(oecls_ops, &oecls_ntuple_ops);
+	synchronize_rcu();
+	return 0;
 }
 
 void oecls_ntuple_res_clean(void)
 {
-	RCU_INIT_POINTER(oecls_ops, NULL);
+	rcu_assign_pointer(oecls_ops, NULL);
+	synchronize_rcu();
+
+	oecls_debug("oecls_worker_count:%d\n", atomic_read(&oecls_worker_count));
+	while (atomic_read(&oecls_worker_count) != 0)
+		mdelay(1);
+
+	destroy_workqueue(do_cfg_workqueue);
 	clean_oecls_sk_rules();
 }

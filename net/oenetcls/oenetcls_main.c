@@ -39,6 +39,10 @@ static int strategy;
 module_param(strategy, int, 0444);
 MODULE_PARM_DESC(strategy, "strategy, default 0");
 
+static int check_cap = 1;
+module_param(check_cap, int, 0444);
+MODULE_PARM_DESC(check_cap, "check_cap, default 1");
+
 static bool check_params(void)
 {
 	if (mode != 0 && mode != 1)
@@ -288,7 +292,7 @@ static int dev_ethtool_kern(struct net *net, struct ifreq *ifr)
 	case ETHTOOL_GCHANNELS:
 		break;
 	default:
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+		if (check_cap && !ns_capable(net->user_ns, CAP_NET_ADMIN))
 			return -EPERM;
 	}
 
@@ -669,9 +673,8 @@ out:
 	return ret;
 }
 
-static int get_cluster_rxq(struct oecls_numa_bound_dev_info *bound_dev)
+static int get_cluster_rxq(int cpu, struct oecls_numa_bound_dev_info *bound_dev)
 {
-	int cpu = raw_smp_processor_id();
 	int cluster_id = cpu / oecls_cluster_cpu_num;
 	int i, j, rxq_id;
 
@@ -710,10 +713,11 @@ static int put_cluster_rxq(struct oecls_numa_bound_dev_info *bound_dev, int rxq_
 	return -1;
 }
 
-int alloc_rxq_id(int nid, int devid)
+int alloc_rxq_id(int cpu, int devid)
 {
 	struct oecls_numa_bound_dev_info *bound_dev;
 	struct oecls_numa_info *numa_info;
+	int nid = cpu_to_node(cpu);
 	int rxq_id;
 
 	numa_info = get_oecls_numa_info(nid);
@@ -729,7 +733,7 @@ int alloc_rxq_id(int nid, int devid)
 	bound_dev = &numa_info->bound_dev[devid];
 
 	if (strategy == 1) {
-		rxq_id = get_cluster_rxq(bound_dev);
+		rxq_id = get_cluster_rxq(cpu, bound_dev);
 		if (rxq_id < 0 || rxq_id >= OECLS_MAX_RXQ_NUM_PER_DEV)
 			pr_info("failed to get rxq_id:%d in cluster, try numa\n", rxq_id);
 		else
@@ -744,14 +748,15 @@ int alloc_rxq_id(int nid, int devid)
 
 found:
 	clear_bit(rxq_id, bound_dev->bitmap_rxq);
-	oecls_debug("alloc nid:%d, dev_id:%d, rxq_id:%d\n", nid, devid, rxq_id);
+	oecls_debug("alloc cpu:%d, nid:%d, devid:%d, rxq_id:%d\n", cpu, nid, devid, rxq_id);
 	return rxq_id;
 }
 
-void free_rxq_id(int nid, int devid, int rxq_id)
+void free_rxq_id(int cpu, int devid, int rxq_id)
 {
 	struct oecls_numa_bound_dev_info *bound_dev;
 	struct oecls_numa_info *numa_info;
+	int nid = cpu_to_node(cpu);
 
 	numa_info = get_oecls_numa_info(nid);
 	if (!numa_info) {
@@ -1039,9 +1044,12 @@ static __init int oecls_init(void)
 #endif
 
 	if (mode == 0)
-		oecls_ntuple_res_init();
+		err = oecls_ntuple_res_init();
 	else
-		oecls_flow_res_init();
+		err = oecls_flow_res_init();
+
+	if (err)
+		goto clean_rxq;
 
 	return 0;
 

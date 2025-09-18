@@ -74,7 +74,7 @@ struct oecls_sk_rule {
 	int dport;
 	int action;
 	int ruleid;
-	int nid;
+	int cpu;
 };
 
 struct oecls_sk_entry {
@@ -119,6 +119,14 @@ struct rmgr_ctrl {
 	unsigned long		*slot;
 	__u32				n_rules;
 	__u32				size;
+};
+
+struct cfg_param {
+	struct work_struct work;
+	struct cmd_context ctx;
+	struct sock *sk;
+	bool is_del;
+	int cpu;
 };
 
 extern int match_ip_flag;
@@ -169,9 +177,9 @@ int check_appname(char *task_name);
 int send_ethtool_ioctl(struct cmd_context *ctx, void *cmd);
 int alloc_rxq_id(int nid, int devid);
 void free_rxq_id(int nid, int devid, int rxq_id);
-void oecls_ntuple_res_init(void);
+int oecls_ntuple_res_init(void);
 void oecls_ntuple_res_clean(void);
-void oecls_flow_res_init(void);
+int oecls_flow_res_init(void);
 void oecls_flow_res_clean(void);
 
 #define L0_MAX_PAGE_SIZE (8192)

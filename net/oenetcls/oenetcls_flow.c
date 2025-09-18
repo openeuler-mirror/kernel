@@ -40,7 +40,7 @@ static bool _oecls_timeout(struct net_device *dev, u16 rxq_index,
 	if (flow_table && flow_id <= flow_table->mask) {
 		rflow = &flow_table->flows[flow_id];
 		cpu = READ_ONCE(rflow->cpu);
-		oecls_debug("dev:%s, rxq:%d, flow_id:%u, filter_id:%d/%d, cpu:%d", dev->name,
+		oecls_debug("dev:%s, rxq:%d, flow_id:%u, filter_id:%d/%d, cpu:%d\n", dev->name,
 			    rxq_index, flow_id, filter_id, rflow->filter, cpu);
 
 		if (rflow->filter == filter_id && cpu < nr_cpu_ids) {
@@ -390,16 +390,30 @@ static const struct oecls_hook_ops oecls_flow_ops = {
 	.oecls_cfg_rxcls = NULL,
 };
 
-void oecls_flow_res_init(void)
+int oecls_flow_res_init(void)
 {
-	oecls_sock_flow_table_init();
-	oecls_dev_flow_table_init();
+	int err;
+
+	err = oecls_sock_flow_table_init();
+	if (err)
+		return err;
+
+	err = oecls_dev_flow_table_init();
+	if (err) {
+		oecls_sock_flow_table_release();
+		return err;
+	}
+
 	RCU_INIT_POINTER(oecls_ops, &oecls_flow_ops);
+	synchronize_rcu();
+	return 0;
 }
 
 void oecls_flow_res_clean(void)
 {
-	RCU_INIT_POINTER(oecls_ops, NULL);
+	rcu_assign_pointer(oecls_ops, NULL);
+	synchronize_rcu();
+
 	oecls_sock_flow_table_release();
 	oecls_dev_flow_table_release();
 }
