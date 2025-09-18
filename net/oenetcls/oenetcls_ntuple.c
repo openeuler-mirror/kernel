@@ -464,7 +464,7 @@ static void add_ntuple_rule(struct sock *sk)
 {
 	struct oecls_netdev_info *oecls_dev;
 	struct cmd_context ctx = { 0 };
-	int cpu = smp_processor_id();
+	int cpu = raw_smp_processor_id();
 	int nid = cpu_to_node(cpu);
 	int rxq_id;
 	int devid;
@@ -510,7 +510,7 @@ static void ethtool_cfg_rxcls(void *data, struct sock *sk, int is_del)
 	if (sk->sk_family != AF_INET && sk->sk_family != AF_INET6)
 		return;
 
-	oecls_debug("[cpu:%d] app:%s, sk:%p, is_del:%d, ip:%pI4, port:%d\n", smp_processor_id(),
+	oecls_debug("[cpu:%d] app:%s, sk:%p, is_del:%d, ip:%pI4, port:%d\n", raw_smp_processor_id(),
 		    current->comm, sk, is_del, &sk->sk_rcv_saddr, (u16)sk->sk_num);
 
 	if (is_del)
