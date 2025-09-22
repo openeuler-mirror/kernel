@@ -1330,7 +1330,8 @@ void __init sev_hardware_setup(void)
 	if (min_sev_asid == 1)
 		goto out;
 
-	pr_info("SEV-ES supported: %u ASIDs\n", min_sev_asid - 1);
+	pr_info("%s supported: %u ASIDs\n",
+			is_x86_vendor_hygon() ? "CSV2" : "SEV-ES", min_sev_asid - 1);
 	sev_es_supported = true;
 
 out:
