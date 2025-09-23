@@ -609,11 +609,8 @@ int register_ftrace_graph(struct fgraph_ops *gops)
 
 	ftrace_graph_active++;
 	ret = start_graph_tracing();
-	if (ret) {
-		ftrace_graph_active--;
-		unregister_pm_notifier(&ftrace_suspend_notifier);
-		goto out;
-	}
+	if (ret)
+		goto out_err;
 
 	ftrace_graph_return = gops->retfunc;
 
@@ -628,8 +625,12 @@ int register_ftrace_graph(struct fgraph_ops *gops)
 	update_function_graph_func();
 
 	ret = ftrace_startup(&graph_ops, FTRACE_START_FUNC_RET);
-	if (ret)
-		unregister_pm_notifier(&ftrace_suspend_notifier);
+out_err:
+	if (ret) {
+		ftrace_graph_active--;
+		if (!ftrace_graph_active)
+			unregister_pm_notifier(&ftrace_suspend_notifier);
+	}
 out:
 	mutex_unlock(&ftrace_lock);
 	return ret;
