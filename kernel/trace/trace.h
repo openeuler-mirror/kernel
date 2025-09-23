@@ -114,6 +114,8 @@ enum trace_type {
 	unlikely(__ret_warn_once);				\
 })
 
+#define FAULT_STRING "(fault)"
+
 /*
  * syscalls are special, and need special handling, this is why
  * they are not included in trace_entries.h
