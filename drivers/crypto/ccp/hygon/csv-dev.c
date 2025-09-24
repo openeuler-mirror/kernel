@@ -680,6 +680,12 @@ int csv_get_extension_info(void *buf, size_t *size)
 		*(uint32_t *)buf |= CSV_EXT_CSV3_INJ_SECRET;
 	}
 
+	/* Since firmware with build id 2393, support:
+	 *   c. issue CSV3_LAUNCH_FINISH_EX command
+	 */
+	if (csv_version_greater_or_equal(2393))
+		*(uint32_t *)buf |= CSV_EXT_CSV3_LFINISH_EX;
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(csv_get_extension_info);
