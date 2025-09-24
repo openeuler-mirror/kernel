@@ -3148,6 +3148,7 @@ static void sched_tick_remote(struct work_struct *work)
 		goto out_unlock;
 
 	update_rq_clock(rq);
+	printk_deferred_enter();
 	delta = rq_clock_task(rq) - curr->se.exec_start;
 
 	/*
@@ -3155,6 +3156,7 @@ static void sched_tick_remote(struct work_struct *work)
 	 * amount of time.
 	 */
 	WARN_ON_ONCE(delta > (u64)NSEC_PER_SEC * 3);
+	printk_deferred_exit();
 	curr->sched_class->task_tick(rq, curr, 0);
 
 out_unlock:
