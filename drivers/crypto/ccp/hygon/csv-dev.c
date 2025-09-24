@@ -66,6 +66,7 @@ int csv_cmd_buffer_len(int cmd)
 					return sizeof(struct csv3_data_receive_encrypt_data);
 	case CSV3_CMD_RECEIVE_ENCRYPT_CONTEXT:
 					return sizeof(struct csv3_data_receive_encrypt_context);
+	case CSV3_CMD_LAUNCH_FINISH_EX:		return sizeof(struct csv3_data_launch_finish_ex);
 	default:				return 0;
 	}
 }
