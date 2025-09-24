@@ -1232,6 +1232,8 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_MULT_LUP_DATA (1 << 1)
 /* support request to inject secret to CSV3 guest */
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_INJ_SECRET    (1 << 2)
+/* support finish launch process by CSV3_CMD_LAUNCH_FINISH_EX firmware API */
+#define KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX    (1 << 3)
 
 #define KVM_CAP_ARM_HW_DIRTY_STATE_TRACK 502
 
@@ -2420,6 +2422,7 @@ enum csv3_cmd_id {
 	KVM_CSV3_HANDLE_MEMORY,
 
 	KVM_CSV3_SET_GUEST_PRIVATE_MEMORY = 0xc8,
+	KVM_CSV3_LAUNCH_FINISH_EX = 0xc9,
 
 	KVM_CSV3_NR_MAX,
 };
@@ -2432,6 +2435,13 @@ struct kvm_csv3_launch_encrypt_data {
 	__u64 gpa;
 	__u64 uaddr;
 	__u32 len;
+};
+
+#define KVM_CSV3_HOST_DATA_SIZE 64
+
+struct kvm_csv3_launch_finish_ex {
+	__u8 host_data[KVM_CSV3_HOST_DATA_SIZE];
+	__u8 pad[16];
 };
 
 struct kvm_csv3_send_encrypt_data {

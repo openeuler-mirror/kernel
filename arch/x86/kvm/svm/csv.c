@@ -1625,6 +1625,35 @@ exit:
 	return ret;
 }
 
+static int csv3_launch_finish_ex(struct kvm *kvm, struct kvm_sev_cmd *argp)
+{
+	struct kvm_csv_info *csv = &to_kvm_svm_csv(kvm)->csv_info;
+	struct kvm_csv3_launch_finish_ex params;
+	struct csv3_data_launch_finish_ex *finish_ex = NULL;
+	int ret = 0;
+
+	if (!csv3_guest(kvm) ||
+	    !(csv->inuse_ext & KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX))
+		return -ENOTTY;
+
+	if (copy_from_user(&params, (void __user *)(uintptr_t)argp->data,
+			   sizeof(params)))
+		return -EFAULT;
+
+	finish_ex = kzalloc(sizeof(*finish_ex), GFP_KERNEL);
+	if (!finish_ex)
+		return -ENOMEM;
+
+	finish_ex->handle = csv->sev->handle;
+	memcpy(finish_ex->host_data, params.host_data, KVM_CSV3_HOST_DATA_SIZE);
+	ret = hygon_kvm_hooks.sev_issue_cmd(kvm, CSV3_CMD_LAUNCH_FINISH_EX,
+						finish_ex, &argp->error);
+
+	kfree(finish_ex);
+
+	return ret;
+}
+
 /* Userspace wants to query either header or trans length. */
 static int
 csv3_send_encrypt_data_query_lengths(struct kvm *kvm, struct kvm_sev_cmd *argp,
@@ -2784,6 +2813,9 @@ static int csv_mem_enc_ioctl(struct kvm *kvm, void __user *argp)
 	case KVM_CSV3_LAUNCH_ENCRYPT_VMCB:
 		r = csv3_launch_encrypt_vmcb(kvm, &sev_cmd);
 		break;
+	case KVM_CSV3_LAUNCH_FINISH_EX:
+		r = csv3_launch_finish_ex(kvm, &sev_cmd);
+		break;
 	case KVM_CSV3_SEND_ENCRYPT_DATA:
 		r = csv3_send_encrypt_data(kvm, &sev_cmd);
 		break;
@@ -3104,6 +3136,8 @@ static int csv_get_hygon_coco_extension(struct kvm *kvm)
 				csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_MULT_LUP_DATA;
 			if (csv->fw_ext & CSV_EXT_CSV3_INJ_SECRET)
 				csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_INJ_SECRET;
+			if (csv->fw_ext & CSV_EXT_CSV3_LFINISH_EX)
+				csv->kvm_ext |= KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX;
 		}
 		csv->kvm_ext_valid = true;
 	}
