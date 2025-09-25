@@ -1359,6 +1359,9 @@ do_migrate_range(unsigned long start_pfn, unsigned long end_pfn)
 			pfn = page_to_pfn(compound_head(page))
 				+ hpage_nr_pages(page) - 1;
 
+		if (!get_page_unless_zero(page))
+			continue;
+
 		/*
 		 * HWPoison pages have elevated reference counts so the migration would
 		 * fail on them. It also doesn't make any sense to migrate them in the
@@ -1367,18 +1370,20 @@ do_migrate_range(unsigned long start_pfn, unsigned long end_pfn)
 		 * the unmap as the catch all safety net).
 		 */
 		if (PageHWPoison(page)) {
-			if (WARN_ON(PageLRU(page)))
-				isolate_lru_page(page);
+			if (PageTransHuge(page))
+				goto page_put;
+			if (PageLRU(page) && isolate_lru_page(page))
+				goto page_put;
 			if (page_mapped(page)) {
 				lock_page(page);
 				try_to_unmap(page, TTU_IGNORE_MLOCK | TTU_IGNORE_ACCESS);
 				unlock_page(page);
 			}
+page_put:
+			put_page(page);
 			continue;
 		}
 
-		if (!get_page_unless_zero(page))
-			continue;
 		/*
 		 * We can skip free pages. And we can deal with pages on
 		 * LRU and non-lru movable pages.
