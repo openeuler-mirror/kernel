@@ -1281,6 +1281,19 @@ void sev_vm_destroy(struct kvm *kvm)
 	sev_asid_free(sev->asid);
 }
 
+#ifdef CONFIG_HYGON_CSV
+/* Code to set all of the function and vaiable pointers */
+void sev_install_hooks(void)
+{
+	hygon_kvm_hooks.sev_issue_cmd = sev_issue_cmd;
+	hygon_kvm_hooks.get_num_contig_pages = get_num_contig_pages;
+	hygon_kvm_hooks.sev_pin_memory = sev_pin_memory;
+	hygon_kvm_hooks.sev_unpin_memory = sev_unpin_memory;
+
+	hygon_kvm_hooks.sev_hooks_installed = true;
+}
+#endif
+
 void __init sev_hardware_setup(void)
 {
 	unsigned int eax, ebx, ecx, edx;
@@ -1348,6 +1361,16 @@ void __init sev_hardware_setup(void)
 out:
 	sev_enabled = sev_supported;
 	sev_es_enabled = sev_es_supported;
+
+#ifdef CONFIG_HYGON_CSV
+	/*
+	 * Install sev related function and variable pointers hooks only for
+	 * Hygon CPUs.
+	 */
+	if (is_x86_vendor_hygon())
+		sev_install_hooks();
+#endif
+
 }
 
 void sev_hardware_teardown(void)
