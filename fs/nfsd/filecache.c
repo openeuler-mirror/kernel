@@ -974,7 +974,7 @@ retry:
 	nfsd_file_slab_free(&new->nf_rcu);
 
 wait_for_construction:
-	wait_on_bit(&nf->nf_flags, NFSD_FILE_PENDING, TASK_UNINTERRUPTIBLE);
+	wait_on_bit_acquire(&nf->nf_flags, NFSD_FILE_PENDING, TASK_UNINTERRUPTIBLE);
 
 	/* Did construction of this file fail? */
 	if (!test_bit(NFSD_FILE_HASHED, &nf->nf_flags)) {
