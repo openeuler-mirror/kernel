@@ -1602,19 +1602,38 @@ static int loop_set_dio(struct loop_device *lo, unsigned long arg)
 	return error;
 }
 
-static int loop_set_block_size(struct loop_device *lo, unsigned long arg)
+static int loop_set_block_size(struct loop_device *lo, fmode_t mode,
+			       struct block_device *bdev, unsigned long arg)
 {
+	struct block_device *claimed_bdev = NULL;
 	int err = 0;
 
-	if (lo->lo_state != Lo_bound)
-		return -ENXIO;
+	/*
+	 * If we don't hold exclusive handle for the device, upgrade to it
+	 * here to avoid changing device under exclusive owner.
+	 */
+	if (!(mode & FMODE_EXCL)) {
+		claimed_bdev = bdev->bd_contains;
+		err = bd_prepare_to_claim(bdev, claimed_bdev, loop_set_block_size);
+		if (err)
+			return err;
+	}
+
+	err = mutex_lock_killable(&loop_ctl_mutex);
+	if (err)
+		goto abort_claim;
+
+	if (lo->lo_state != Lo_bound) {
+		err = -ENXIO;
+		goto unlock;
+	}
 
 	err = blk_validate_block_size(arg);
 	if (err)
-		return err;
+		goto unlock;
 
 	if (lo->lo_queue->limits.logical_block_size == arg)
-		return 0;
+		goto unlock;
 
 	sync_blockdev(lo->lo_device);
 	invalidate_bdev(lo->lo_device);
@@ -1636,7 +1655,11 @@ static int loop_set_block_size(struct loop_device *lo, unsigned long arg)
 	loop_update_dio(lo);
 out_unfreeze:
 	blk_mq_unfreeze_queue(lo->lo_queue);
-
+unlock:
+	mutex_unlock(&loop_ctl_mutex);
+abort_claim:
+	if (claimed_bdev)
+		bd_abort_claiming(bdev, claimed_bdev, loop_set_block_size);
 	return err;
 }
 
@@ -1654,9 +1677,6 @@ static int lo_simple_ioctl(struct loop_device *lo, unsigned int cmd,
 		break;
 	case LOOP_SET_DIRECT_IO:
 		err = loop_set_dio(lo, arg);
-		break;
-	case LOOP_SET_BLOCK_SIZE:
-		err = loop_set_block_size(lo, arg);
 		break;
 	default:
 		err = lo->ioctl ? lo->ioctl(lo, cmd, arg) : -EINVAL;
@@ -1714,9 +1734,12 @@ static int lo_ioctl(struct block_device *bdev, fmode_t mode,
 		break;
 	case LOOP_GET_STATUS64:
 		return loop_get_status64(lo, argp);
+	case LOOP_SET_BLOCK_SIZE:
+		if (!(mode & FMODE_WRITE) && !capable(CAP_SYS_ADMIN))
+			return -EPERM;
+		return loop_set_block_size(lo, mode, bdev, arg);
 	case LOOP_SET_CAPACITY:
 	case LOOP_SET_DIRECT_IO:
-	case LOOP_SET_BLOCK_SIZE:
 		if (!(mode & FMODE_WRITE) && !capable(CAP_SYS_ADMIN))
 			return -EPERM;
 		fallthrough;
