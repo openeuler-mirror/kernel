@@ -1400,10 +1400,12 @@ static int nbd_start_device_ioctl(struct nbd_device *nbd, struct block_device *b
 	 * will hold nbd->config_refs
 	 */
 	mutex_lock(&nbd->config_lock);
-	if (ret)
+	if (ret) {
 		sock_shutdown(nbd);
-	flush_workqueue(nbd->recv_workq);
+		nbd_clear_que(nbd);
+	}
 
+	flush_workqueue(nbd->recv_workq);
 	nbd_bdev_reset(bdev);
 	/* user requested, ignore socket errors */
 	if (test_bit(NBD_RT_DISCONNECT_REQUESTED, &config->runtime_flags))
