@@ -121,37 +121,39 @@ static int dsa_switch_bridge_leave(struct dsa_switch *ds,
 						info->sw_index, info->port,
 						info->br);
 
-	/* If the bridge was vlan_filtering, the bridge core doesn't trigger an
-	 * event for changing vlan_filtering setting upon slave ports leaving
-	 * it. That is a good thing, because that lets us handle it and also
-	 * handle the case where the switch's vlan_filtering setting is global
-	 * (not per port). When that happens, the correct moment to trigger the
-	 * vlan_filtering callback is only when the last port left this bridge.
-	 */
-	if (unset_vlan_filtering && ds->vlan_filtering_is_global) {
-		for (i = 0; i < ds->num_ports; i++) {
-			if (i == info->port)
-				continue;
-			if (dsa_to_port(ds, i)->bridge_dev == info->br) {
-				unset_vlan_filtering = false;
-				break;
+	if (ds->dst->index == info->tree_index && ds->index == info->sw_index) {
+		/* If the bridge was vlan_filtering, the bridge core doesn't trigger an
+		 * event for changing vlan_filtering setting upon slave ports leaving
+		 * it. That is a good thing, because that lets us handle it and also
+		 * handle the case where the switch's vlan_filtering setting is global
+		 * (not per port). When that happens, the correct moment to trigger the
+		 * vlan_filtering callback is only when the last port left this bridge.
+		 */
+		if (unset_vlan_filtering && ds->vlan_filtering_is_global) {
+			for (i = 0; i < ds->num_ports; i++) {
+				if (i == info->port)
+					continue;
+				if (dsa_to_port(ds, i)->bridge_dev == info->br) {
+					unset_vlan_filtering = false;
+					break;
+				}
 			}
 		}
-	}
-	if (unset_vlan_filtering) {
-		struct switchdev_trans trans;
+		if (unset_vlan_filtering) {
+			struct switchdev_trans trans;
 
-		trans.ph_prepare = true;
-		err = dsa_port_vlan_filtering(dsa_to_port(ds, info->port),
-					      false, &trans);
-		if (err && err != EOPNOTSUPP)
-			return err;
+			trans.ph_prepare = true;
+			err = dsa_port_vlan_filtering(dsa_to_port(ds, info->port),
+						      false, &trans);
+			if (err && err != EOPNOTSUPP)
+				return err;
 
-		trans.ph_prepare = false;
-		err = dsa_port_vlan_filtering(dsa_to_port(ds, info->port),
-					      false, &trans);
-		if (err && err != EOPNOTSUPP)
-			return err;
+			trans.ph_prepare = false;
+			err = dsa_port_vlan_filtering(dsa_to_port(ds, info->port),
+						      false, &trans);
+			if (err && err != EOPNOTSUPP)
+				return err;
+		}
 	}
 	return 0;
 }
