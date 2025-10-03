@@ -108,6 +108,7 @@ config KVM_GENERIC_MEMORY_ATTRIBUTES
        bool
 
 config KVM_PRIVATE_MEM
+       depends on KVM_GENERIC_MMU_NOTIFIER
        select XARRAY_MULTI
        bool
 
