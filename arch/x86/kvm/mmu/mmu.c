@@ -3364,7 +3364,7 @@ static bool page_fault_can_be_fast(struct kvm *kvm, struct kvm_page_fault *fault
 	 * on RET_PF_SPURIOUS until the update completes, or an actual spurious
 	 * case might go down the slow path. Either case will resolve itself.
 	 */
-	if (kvm->arch.has_private_mem &&
+	if (kvm->arch_ext.has_private_mem &&
 	    fault->is_private != kvm_mem_is_private(kvm, fault->gfn))
 		return false;
 
@@ -4706,7 +4706,7 @@ long kvm_arch_vcpu_pre_fault_memory(struct kvm_vcpu *vcpu,
 	u64 end;
 	int r;
 
-	if (!vcpu->kvm->arch.pre_fault_allowed)
+	if (!vcpu->kvm->arch_ext.pre_fault_allowed)
 		return -EOPNOTSUPP;
 
 	/*
@@ -5943,7 +5943,7 @@ int noinline kvm_mmu_page_fault(struct kvm_vcpu *vcpu, gpa_t cr2_or_gpa, u64 err
 	 */
 	if (IS_ENABLED(CONFIG_KVM_SW_PROTECTED_VM) &&
 	    !(error_code & PFERR_RSVD_MASK) &&
-	    vcpu->kvm->arch.vm_type == KVM_X86_SW_PROTECTED_VM &&
+	    vcpu->kvm->arch_ext.vm_type == KVM_X86_SW_PROTECTED_VM &&
 	    kvm_mem_is_private(vcpu->kvm, gpa_to_gfn(cr2_or_gpa)))
 		error_code |= PFERR_PRIVATE_ACCESS;
 

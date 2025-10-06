@@ -594,7 +594,7 @@ static int sev_guest_init(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	};
 	unsigned long vm_type;
 
-	if (kvm->arch.vm_type != KVM_X86_DEFAULT_VM)
+	if (kvm->arch_ext.vm_type != KVM_X86_DEFAULT_VM)
 		return -EINVAL;
 
 	vm_type = (argp->id == KVM_SEV_INIT ? KVM_X86_SEV_VM : KVM_X86_SEV_ES_VM);
@@ -616,15 +616,15 @@ static int sev_guest_init2(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	if (!to_kvm_sev_info(kvm)->need_init)
 		return -EINVAL;
 
-	if (kvm->arch.vm_type != KVM_X86_SEV_VM &&
-	    kvm->arch.vm_type != KVM_X86_SEV_ES_VM &&
-	    kvm->arch.vm_type != KVM_X86_SNP_VM)
+	if (kvm->arch_ext.vm_type != KVM_X86_SEV_VM &&
+	    kvm->arch_ext.vm_type != KVM_X86_SEV_ES_VM &&
+	    kvm->arch_ext.vm_type != KVM_X86_SNP_VM)
 		return -EINVAL;
 
 	if (copy_from_user(&data, u64_to_user_ptr(argp->data), sizeof(data)))
 		return -EFAULT;
 
-	return __sev_guest_init(kvm, argp, &data, kvm->arch.vm_type);
+	return __sev_guest_init(kvm, argp, &data, kvm->arch_ext.vm_type);
 }
 
 static int sev_bind_asid(struct kvm *kvm, unsigned int handle, int *error)
@@ -969,7 +969,7 @@ static int sev_es_sync_vmsa(struct vcpu_svm *svm)
 	 * Skip FPU and AVX setup with KVM_SEV_ES_INIT to avoid
 	 * breaking older measurements.
 	 */
-	if (vcpu->kvm->arch.vm_type != KVM_X86_DEFAULT_VM) {
+	if (vcpu->kvm->arch_ext.vm_type != KVM_X86_DEFAULT_VM) {
 		xsave = &vcpu->arch.guest_fpu.fpstate->regs.xsave;
 		save->x87_dp = xsave->i387.rdp;
 		save->mxcsr = xsave->i387.mxcsr;
@@ -2205,7 +2205,7 @@ int sev_vm_move_enc_context_from(struct kvm *kvm, unsigned int source_fd)
 	if (ret)
 		goto out_fput;
 
-	if (kvm->arch.vm_type != source_kvm->arch.vm_type ||
+	if (kvm->arch_ext.vm_type != source_kvm->arch_ext.vm_type ||
 	    sev_guest(kvm) || !sev_guest(source_kvm)) {
 		ret = -EINVAL;
 		goto out_unlock;
@@ -2663,7 +2663,7 @@ static int snp_launch_finish(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	 * This can happen on first access and also with KVM_PRE_FAULT_MEMORY.
 	 */
 	if (!ret)
-		kvm->arch.pre_fault_allowed = true;
+		kvm->arch_ext.pre_fault_allowed = true;
 
 	kfree(id_auth);
 

@@ -107,7 +107,6 @@ struct kvm_userspace_memory_region2 {
 	__u32 pad1;
 	__u64 pad2[14];
 };
-
 /*
  * The bit 0 ~ bit 15 of kvm_userspace_memory_region::flags are visible for
  * userspace, other bits are reserved for kvm internal use which are defined
@@ -538,12 +537,14 @@ struct kvm_run {
 			__u32 flags;
 		} notify;
 		/* KVM_EXIT_MEMORY_FAULT */
+#ifndef __GENKSYMS__
 		struct {
 #define KVM_MEMORY_EXIT_FLAG_PRIVATE	(1ULL << 3)
 			__u64 flags;
 			__u64 gpa;
 			__u64 size;
 		} memory_fault;
+#endif
 #ifndef __GENKSYMS__
 		/* KVM_EXIT_ARM_RME_DEV */
 		struct {
@@ -2306,13 +2307,11 @@ struct kvm_arm_rmm_psci_complete {
 #define KVM_ARM_VCPU_RMM_PSCI_COMPLETE	_IOW(KVMIO, 0xd6, struct kvm_arm_rmm_psci_complete)
 
 #define KVM_CREATE_GUEST_MEMFD	_IOWR(KVMIO,  0xd4, struct kvm_create_guest_memfd)
-
 struct kvm_create_guest_memfd {
 	__u64 size;
 	__u64 flags;
 	__u64 reserved[6];
 };
-
 #define KVM_PRE_FAULT_MEMORY	_IOWR(KVMIO, 0xd5, struct kvm_pre_fault_memory)
 
 struct kvm_pre_fault_memory {

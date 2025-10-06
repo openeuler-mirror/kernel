@@ -1255,16 +1255,27 @@ enum kvm_apicv_inhibit {
 	APICV_INHIBIT_REASON_LOGICAL_ID_ALIASED,
 };
 
+/*
+ * Per-VM x86 fields introduced after the OLK-6.6 KABI baseline.
+ *
+ * To avoid changing the layout of struct kvm_arch (which is embedded in
+ * struct kvm and whose offsets are part of the published kABI), new x86
+ * per-VM fields are placed here instead and reached through the
+ * arch_ext member that is appended at the tail of struct kvm.
+ */
+struct kvm_arch_ext {
+	u8 vm_type;
+	bool has_private_mem;
+	bool has_protected_state;
+	bool pre_fault_allowed;
+};
+
 struct kvm_arch {
 	unsigned long n_used_mmu_pages;
 	unsigned long n_requested_mmu_pages;
 	unsigned long n_max_mmu_pages;
 	unsigned int indirect_shadow_pages;
 	u8 mmu_valid_gen;
-	u8 vm_type;
-	bool has_private_mem;
-	bool has_protected_state;
-	bool pre_fault_allowed;
 	struct hlist_head mmu_page_hash[KVM_NUM_MMU_PAGES];
 	struct list_head active_mmu_pages;
 	struct list_head zapped_obsolete_pages;
@@ -2145,12 +2156,12 @@ void kvm_configure_mmu(bool enable_tdp, int tdp_forced_root_level,
 
 
 #ifdef CONFIG_KVM_PRIVATE_MEM
-#define kvm_arch_has_private_mem(kvm) ((kvm)->arch.has_private_mem)
+#define kvm_arch_has_private_mem(kvm) ((kvm)->arch_ext.has_private_mem)
 #else
 #define kvm_arch_has_private_mem(kvm) false
 #endif
 
-#define kvm_arch_has_readonly_mem(kvm) (!(kvm)->arch.has_protected_state)
+#define kvm_arch_has_readonly_mem(kvm) (!(kvm)->arch_ext.has_protected_state)
 
 static inline u16 kvm_read_ldt(void)
 {
