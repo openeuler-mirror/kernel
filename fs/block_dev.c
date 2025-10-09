@@ -1100,6 +1100,7 @@ retry:
 	spin_unlock(&bdev_lock);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(bd_prepare_to_claim); /* only for the loop driver */
 
 static void bd_clear_claiming(struct block_device *whole, void *holder)
 {
