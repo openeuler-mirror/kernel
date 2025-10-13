@@ -70,40 +70,45 @@ int get_dominating_id(struct mount *mnt, const struct path *root)
 	return 0;
 }
 
+static inline bool will_be_unmounted(struct mount *m)
+{
+	return m->mnt.mnt_flags & MNT_UMOUNT;
+}
+
+static struct mount *propagation_source(struct mount *mnt)
+{
+	do {
+		struct mount *m;
+		for (m = next_peer(mnt); m != mnt; m = next_peer(m)) {
+			if (!will_be_unmounted(m))
+				return m;
+		}
+		mnt = mnt->mnt_master;
+	} while (mnt && will_be_unmounted(mnt));
+	return mnt;
+}
+
 static int do_make_slave(struct mount *mnt)
 {
-	struct mount *master, *slave_mnt;
+	struct mount *master = propagation_source(mnt);
+	struct mount *slave_mnt;
 
 	if (list_empty(&mnt->mnt_share)) {
 		mnt_release_group_id(mnt);
-		CLEAR_MNT_SHARED(mnt);
-		master = mnt->mnt_master;
-		if (!master) {
-			struct list_head *p = &mnt->mnt_slave_list;
-			while (!list_empty(p)) {
-				slave_mnt = list_first_entry(p,
-						struct mount, mnt_slave);
-				list_del_init(&slave_mnt->mnt_slave);
-				slave_mnt->mnt_master = NULL;
-			}
-			return 0;
-		}
 	} else {
-		struct mount *m;
-		/*
-		 * slave 'mnt' to a peer mount that has the
-		 * same root dentry. If none is available then
-		 * slave it to anything that is available.
-		 */
-		for (m = master = next_peer(mnt); m != mnt; m = next_peer(m)) {
-			if (m->mnt.mnt_root == mnt->mnt.mnt_root) {
-				master = m;
-				break;
-			}
-		}
 		list_del_init(&mnt->mnt_share);
 		mnt->mnt_group_id = 0;
-		CLEAR_MNT_SHARED(mnt);
+	}
+	CLEAR_MNT_SHARED(mnt);
+	if (!master) {
+		struct list_head *p = &mnt->mnt_slave_list;
+		while (!list_empty(p)) {
+			slave_mnt = list_first_entry(p,
+					struct mount, mnt_slave);
+			list_del_init(&slave_mnt->mnt_slave);
+			slave_mnt->mnt_master = NULL;
+		}
+		return 0;
 	}
 	list_for_each_entry(slave_mnt, &mnt->mnt_slave_list, mnt_slave)
 		slave_mnt->mnt_master = master;
