@@ -22,7 +22,6 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/slab.h>
-#include <linux/scatterlist.h>
 #include <linux/mm.h>
 #include <linux/mempool.h>
 #include <linux/workqueue.h>
