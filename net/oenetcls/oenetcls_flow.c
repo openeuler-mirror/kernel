@@ -251,15 +251,16 @@ static void oecls_dev_flow_table_cleanup(struct net_device *netdev, int qid)
 	struct netdev_rx_queue *queue;
 	int i;
 
-	spin_lock(&oecls_dev_flow_lock);
 	for (i = 0; i < qid; i++) {
 		queue = netdev->_rx + i;
+		spin_lock(&oecls_dev_flow_lock);
 		dtb = rcu_dereference_protected(queue->oecls_ftb,
 						lockdep_is_held(&oecls_dev_flow_lock));
 		rcu_assign_pointer(queue->oecls_ftb, NULL);
+		spin_unlock(&oecls_dev_flow_lock);
+		if (dtb)
+			call_rcu(&dtb->rcu, oecls_dev_flow_table_free);
 	}
-	spin_unlock(&oecls_dev_flow_lock);
-	call_rcu(&dtb->rcu, oecls_dev_flow_table_free);
 }
 
 static int oecls_dev_flow_table_release(void)
