@@ -8267,6 +8267,19 @@ static inline unsigned long taskgroup_cpu_util(struct task_group *tg,
 	return cpu_util(cpu);
 }
 
+static unsigned long scale_rt_capacity(int cpu);
+
+static inline unsigned long calc_cpu_capacity(int cpu)
+{
+	unsigned long capacity;
+
+	capacity = scale_rt_capacity(cpu);
+	if (!capacity)
+		capacity = 1;
+
+	return capacity;
+}
+
 /*
  * set_task_select_cpus: select the cpu range for task
  * @p: the task whose available cpu range will to set
@@ -8328,8 +8341,12 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 		}
 
 		util_avg_sum += taskgroup_cpu_util(tg, cpu);
-		tg_capacity += capacity_of(cpu);
 		nr_cpus_valid++;
+
+		if (cpu_rq(cpu)->rt.rt_nr_running)
+			tg_capacity += calc_cpu_capacity(cpu);
+		else
+			tg_capacity += capacity_of(cpu);
 	}
 	rcu_read_unlock();
 
