@@ -3469,10 +3469,6 @@ static void update_cfs_group(struct sched_entity *se)
 
 #ifndef CONFIG_SMP
 	shares = READ_ONCE(gcfs_rq->tg->shares);
-#ifdef CONFIG_QOS_SCHED_MULTILEVEL
-	if (qos_sched_enabled())
-		shares = qos_reweight(shares, gcfs_rq->tg);
-#endif
 
 	if (likely(se->load.weight == shares))
 		return;
