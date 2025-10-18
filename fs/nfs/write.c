@@ -498,15 +498,16 @@ try_again:
 		goto try_again;
 	}
 
-	/* Ensure that nobody removed the request before we locked it */
-	if (head != nfs_page_private_request(page) && !PageSwapCache(page)) {
-		nfs_unlock_and_release_request(head);
-		goto try_again;
-	}
-
 	ret = nfs_page_group_lock(head);
 	if (ret < 0)
 		goto release_request;
+
+	/* Ensure that nobody removed the request before we locked it */
+	if (head != nfs_page_private_request(page) && !PageSwapCache(page)) {
+		nfs_page_group_unlock(head);
+		nfs_unlock_and_release_request(head);
+		goto try_again;
+	}
 
 	/* lock each request in the page group */
 	total_bytes = head->wb_bytes;
@@ -803,7 +804,8 @@ static void nfs_inode_remove_request(struct nfs_page *req)
 	struct nfs_inode *nfsi = NFS_I(inode);
 	struct nfs_page *head;
 
-	if (nfs_page_group_sync_on_bit(req, PG_REMOVE)) {
+	nfs_page_group_lock(req);
+	if (nfs_page_group_sync_on_bit_locked(req, PG_REMOVE)) {
 		head = req->wb_head;
 
 		spin_lock(&mapping->private_lock);
@@ -814,6 +816,7 @@ static void nfs_inode_remove_request(struct nfs_page *req)
 		}
 		spin_unlock(&mapping->private_lock);
 	}
+	nfs_page_group_unlock(req);
 
 	if (test_and_clear_bit(PG_INODE_REF, &req->wb_flags)) {
 		nfs_release_request(req);
