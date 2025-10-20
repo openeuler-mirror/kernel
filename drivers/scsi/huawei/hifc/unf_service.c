@@ -1155,7 +1155,7 @@ static void unf_logo_ob_callback(struct unf_xchg_s *v_xchg)
 	unsigned int nport_id = 0;
 	unsigned int logo_retry = 0;
 
-	UNF_CHECK_VALID(0x3675, UNF_TRUE, NULL, return);
+	UNF_CHECK_VALID(0x3675, UNF_TRUE, v_xchg, return);
 	xchg = v_xchg;
 	old_rport = xchg->rport;
 	logo_retry = old_rport->logo_retries;
