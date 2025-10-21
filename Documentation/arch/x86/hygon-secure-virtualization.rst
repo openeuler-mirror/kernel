@@ -89,7 +89,7 @@ the linux kernel command line with csv_mem_size or csv_mem_percentage::
 		from these CMAs.
 		For instance, csv_mem_percentage=60, means 60% system memory is
 		reserved for CSV3.
-		The maximum percentage is 80. And the default percentage is 0.
+		The maximum percentage is 95. And the default percentage is 0.
 
 Limitations
 The reserved CSV3 memory within CMA cannot be used by kernel or any application that
