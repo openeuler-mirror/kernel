@@ -408,7 +408,7 @@ struct fc_function_template function_template = {
 	.show_starget_port_id = 1,
 
 	.set_rport_dev_loss_tmo = unf_set_rport_loss_tmo,
-	.show_rport_dev_loss_tmo = 0,
+	.show_rport_dev_loss_tmo = 1,
 
 	.issue_fc_host_lip = NULL,
 	.dev_loss_tmo_callbk = unf_dev_loss_timeout_callbk,
