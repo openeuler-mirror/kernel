@@ -515,9 +515,7 @@ static void virtio_mmio_release_dev(struct device *_d)
 			container_of(_d, struct virtio_device, dev);
 	struct virtio_mmio_device *vm_dev =
 			container_of(vdev, struct virtio_mmio_device, vdev);
-	struct platform_device *pdev = vm_dev->pdev;
-
-	devm_kfree(&pdev->dev, vm_dev);
+	kfree(vm_dev);
 }
 
 /* Platform device */
@@ -537,7 +535,7 @@ static int virtio_mmio_probe(struct platform_device *pdev)
 			resource_size(mem), pdev->name))
 		return -EBUSY;
 
-	vm_dev = devm_kzalloc(&pdev->dev, sizeof(*vm_dev), GFP_KERNEL);
+	vm_dev = kzalloc(sizeof(*vm_dev), GFP_KERNEL);
 	if (!vm_dev)
 		return -ENOMEM;
 
