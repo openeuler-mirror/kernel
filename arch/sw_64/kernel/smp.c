@@ -18,6 +18,7 @@
 #include <asm/sw64_init.h>
 #include <asm/topology.h>
 #include <asm/timer.h>
+#include <asm/traps.h>
 
 #include "proto.h"
 
@@ -170,7 +171,7 @@ void smp_callin(void)
 	trap_init();
 
 	/* Set interrupt vector.  */
-	wrent(entInt, 0);
+	wrent(entInt, ENT_IDX_INT);
 
 	/* Get our local ticker going. */
 	sw64_setup_timer();
@@ -192,7 +193,7 @@ void smp_callin(void)
 		nmi_stack = nmi_stack_page ?
 			(unsigned long)page_address(nmi_stack_page) : 0;
 		sw64_write_csr_imb(nmi_stack + THREAD_SIZE, CSR_NMI_STACK);
-		wrent(entNMI, 6);
+		wrent(entNMI, ENT_IDX_NMI);
 		set_nmi(INT_PC);
 	}
 
