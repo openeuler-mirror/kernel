@@ -18,6 +18,9 @@
 
 #include "hisi_l3t.h"
 
+/* max size for l0 mmap */
+#define HISI_L0_MAX_SIZE (256UL << 20)
+
 struct l0_vma_data {
 	struct page *page;
 	unsigned long size;
@@ -99,9 +102,25 @@ static void l0_vma_close(struct vm_area_struct *vma)
 	kfree(data);
 }
 
+static int l0_mremap(struct vm_area_struct *vma)
+{
+	pr_err("mremap for l0 is not supported\n");
+
+	return -EINVAL;
+}
+
+static int l0_may_split(struct vm_area_struct *vma, unsigned long addr)
+{
+	pr_err("l0 may not be split\n");
+
+	return -EINVAL;
+}
+
 static const struct vm_operations_struct l0_vm_ops = {
 	.huge_fault = l0_huge_fault,
 	.close = l0_vma_close,
+	.split = l0_may_split,
+	.mremap = l0_mremap,
 };
 
 static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
@@ -116,6 +135,9 @@ static int l0_mmap(struct file *filp, struct vm_area_struct *vma)
 		&vma->vm_flags);
 
 	if ((vma->vm_start % PMD_SIZE) || (vma->vm_end % PMD_SIZE))
+		return -EINVAL;
+
+	if (cont_size >= HISI_L0_MAX_SIZE)
 		return -EINVAL;
 
 	data = kzalloc(sizeof(struct l0_vma_data), GFP_KERNEL);
