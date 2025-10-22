@@ -130,8 +130,8 @@ static void __l3t_update_and_wait(void __iomem *addr, u32 b_update, u32 b_wait)
 	} while ((val & b_wait) == 0);
 }
 
-static void __l3t_maintain(void __iomem *addr, int slot_idx,
-			   unsigned long s_addr, int size, bool lock)
+static void __l3t_maintain_do_lock(void __iomem *addr, int slot_idx,
+				   unsigned long s_addr, int size)
 {
 	if (slot_idx < 0 || slot_idx >= L3T_REG_NUM) {
 		pr_err("slot index is invalid: %d\n", slot_idx);
@@ -148,17 +148,33 @@ static void __l3t_maintain(void __iomem *addr, int slot_idx,
 	writeq(s_addr, addr + L3T_LOCK_START_L);
 	writel(size, addr + L3T_LOCK_AREA);
 
-	if (lock)
-		__l3t_update_and_wait(addr + L3T_LOCK_CTRL, LOCK_EN, LOCK_DONE);
-	else
-		__l3t_update_and_wait(addr + L3T_LOCK_CTRL, UNLOCK_EN,
-				      UNLOCK_DONE);
+	__l3t_update_and_wait(addr + L3T_LOCK_CTRL, LOCK_EN, LOCK_DONE);
+}
+
+static void __l3t_maintain_do_unlock(void __iomem *addr, int slot_idx)
+{
+	if (slot_idx < 0 || slot_idx >= L3T_REG_NUM) {
+		pr_err("slot index is invalid: %d\n", slot_idx);
+		return;
+	}
+
+	if (!addr) {
+		pr_err("invalid unlock addr\n");
+		return;
+	}
+
+	addr += slot_idx * L3T_LOCK_STEP;
+
+	__l3t_update_and_wait(addr + L3T_LOCK_CTRL, UNLOCK_EN, UNLOCK_DONE);
+
+	writeq(0, addr + L3T_LOCK_START_L);
+	writel(0, addr + L3T_LOCK_AREA);
 }
 
 void hisi_l3t_lock(struct hisi_l3t *l3t, int slot_idx, unsigned long s_addr,
 		   int size)
 {
-	__l3t_maintain(l3t->base, slot_idx, s_addr, size, true);
+	__l3t_maintain_do_lock(l3t->base, slot_idx, s_addr, size);
 
 	pr_debug("lock success. addr: %#lx, slot: %d, s_addr: %#lx, size: %#x\n",
 		(unsigned long)l3t->base, slot_idx, s_addr, size);
@@ -166,7 +182,7 @@ void hisi_l3t_lock(struct hisi_l3t *l3t, int slot_idx, unsigned long s_addr,
 
 void hisi_l3t_unlock(struct hisi_l3t *l3t, int slot_idx)
 {
-	__l3t_maintain(l3t->base, slot_idx, 0, 0, false);
+	__l3t_maintain_do_unlock(l3t->base, slot_idx);
 
 	pr_debug("unlock success. addr: %#lx, slot: %d\n",
 		 (unsigned long)l3t->base, slot_idx);
