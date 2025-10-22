@@ -15,6 +15,7 @@
 #include <linux/smp.h>
 #include <linux/xarray.h>
 #include <linux/irqchip.h>
+#include <linux/iopoll.h>
 
 #include "hisi_l3t.h"
 
@@ -22,6 +23,10 @@
 #define LOCK_DONE	BIT(1)
 #define UNLOCK_EN	BIT(2)
 #define UNLOCK_DONE	BIT(3)
+
+#define HISI_L3C_LOCK_CTRL_POLL_GAP_US 10
+
+#define l3c_lock_ctrl_mask(lock_ctrl, mask) ((lock_ctrl) & (mask))
 
 DEFINE_MUTEX(l3t_mutex);
 static DEFINE_XARRAY(l3t_mapping);
@@ -121,13 +126,17 @@ unlock:
 /* write bit b_update and wait bit b_wait to be zero */
 static void __l3t_update_and_wait(void __iomem *addr, u32 b_update, u32 b_wait)
 {
+	int timeout;
 	u32 val;
 
 	writel(b_update, addr);
 
-	do {
-		val = readl(addr);
-	} while ((val & b_wait) == 0);
+	timeout = readl_poll_timeout_atomic(addr, val,
+					l3c_lock_ctrl_mask(val, b_wait),
+					HISI_L3C_LOCK_CTRL_POLL_GAP_US,
+					jiffies_to_usecs(HZ));
+	if (timeout)
+		pr_warn_ratelimited("read reg timeout\n");
 }
 
 static void __l3t_maintain_do_lock(void __iomem *addr, int slot_idx,
