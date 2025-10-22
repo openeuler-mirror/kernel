@@ -15,6 +15,7 @@
 #include <linux/smp.h>
 #include <linux/xarray.h>
 #include <linux/irqchip.h>
+#include <linux/iopoll.h>
 
 #include "hisi_l3t.h"
 
@@ -22,6 +23,10 @@
 #define LOCK_DONE	BIT(1)
 #define UNLOCK_EN	BIT(2)
 #define UNLOCK_DONE	BIT(3)
+
+#define HISI_L3C_LOCK_CTRL_POLL_GAP_US 10
+
+#define l3c_lock_ctrl_mask(lock_ctrl, mask) ((lock_ctrl) & (mask))
 
 DEFINE_MUTEX(l3t_mutex);
 static DEFINE_XARRAY(l3t_mapping);
@@ -45,6 +50,8 @@ static int sccl_to_node_id(int id)
 static int hisi_l3t_init_data(struct platform_device *pdev,
 			      struct hisi_l3t *l3t)
 {
+	struct resource *mem;
+
 	if (device_property_read_u32(&pdev->dev, "hisilicon,scl-id",
 				     &l3t->sccl_id))
 		return -EINVAL;
@@ -53,8 +60,12 @@ static int hisi_l3t_init_data(struct platform_device *pdev,
 				     &l3t->ccl_id))
 		return -EINVAL;
 
-	l3t->base = devm_platform_ioremap_resource(pdev, 0);
-	if (IS_ERR(l3t->base))
+	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!mem)
+		return -ENODEV;
+
+	l3t->base = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
+	if (IS_ERR_OR_NULL(l3t->base))
 		return PTR_ERR(l3t->base);
 
 	l3t->nid = sccl_to_node_id(l3t->sccl_id);
@@ -115,17 +126,21 @@ unlock:
 /* write bit b_update and wait bit b_wait to be zero */
 static void __l3t_update_and_wait(void __iomem *addr, u32 b_update, u32 b_wait)
 {
+	int timeout;
 	u32 val;
 
 	writel(b_update, addr);
 
-	do {
-		val = readl(addr);
-	} while ((val & b_wait) == 0);
+	timeout = readl_poll_timeout_atomic(addr, val,
+					l3c_lock_ctrl_mask(val, b_wait),
+					HISI_L3C_LOCK_CTRL_POLL_GAP_US,
+					jiffies_to_usecs(HZ));
+	if (timeout)
+		pr_warn_ratelimited("read reg timeout\n");
 }
 
-static void __l3t_maintain(void __iomem *addr, int slot_idx,
-			   unsigned long s_addr, int size, bool lock)
+static void __l3t_maintain_do_lock(void __iomem *addr, int slot_idx,
+				   unsigned long s_addr, int size)
 {
 	if (slot_idx < 0 || slot_idx >= L3T_REG_NUM) {
 		pr_err("slot index is invalid: %d\n", slot_idx);
@@ -142,17 +157,33 @@ static void __l3t_maintain(void __iomem *addr, int slot_idx,
 	writeq(s_addr, addr + L3T_LOCK_START_L);
 	writel(size, addr + L3T_LOCK_AREA);
 
-	if (lock)
-		__l3t_update_and_wait(addr + L3T_LOCK_CTRL, LOCK_EN, LOCK_DONE);
-	else
-		__l3t_update_and_wait(addr + L3T_LOCK_CTRL, UNLOCK_EN,
-				      UNLOCK_DONE);
+	__l3t_update_and_wait(addr + L3T_LOCK_CTRL, LOCK_EN, LOCK_DONE);
+}
+
+static void __l3t_maintain_do_unlock(void __iomem *addr, int slot_idx)
+{
+	if (slot_idx < 0 || slot_idx >= L3T_REG_NUM) {
+		pr_err("slot index is invalid: %d\n", slot_idx);
+		return;
+	}
+
+	if (!addr) {
+		pr_err("invalid unlock addr\n");
+		return;
+	}
+
+	addr += slot_idx * L3T_LOCK_STEP;
+
+	__l3t_update_and_wait(addr + L3T_LOCK_CTRL, UNLOCK_EN, UNLOCK_DONE);
+
+	writeq(0, addr + L3T_LOCK_START_L);
+	writel(0, addr + L3T_LOCK_AREA);
 }
 
 void hisi_l3t_lock(struct hisi_l3t *l3t, int slot_idx, unsigned long s_addr,
 		   int size)
 {
-	__l3t_maintain(l3t->base, slot_idx, s_addr, size, true);
+	__l3t_maintain_do_lock(l3t->base, slot_idx, s_addr, size);
 
 	pr_debug("lock success. addr: %#lx, slot: %d, s_addr: %#lx, size: %#x\n",
 		(unsigned long)l3t->base, slot_idx, s_addr, size);
@@ -160,7 +191,7 @@ void hisi_l3t_lock(struct hisi_l3t *l3t, int slot_idx, unsigned long s_addr,
 
 void hisi_l3t_unlock(struct hisi_l3t *l3t, int slot_idx)
 {
-	__l3t_maintain(l3t->base, slot_idx, 0, 0, false);
+	__l3t_maintain_do_unlock(l3t->base, slot_idx);
 
 	pr_debug("unlock success. addr: %#lx, slot: %d\n",
 		 (unsigned long)l3t->base, slot_idx);
@@ -197,7 +228,7 @@ struct hisi_sccl *hisi_l3t_get_sccl(int nid)
 }
 
 static const struct acpi_device_id hisi_l3t_acpi_match[] = {
-	{ "HISI0501", },
+	{ "HISI0502", },
 	{}
 };
 MODULE_DEVICE_TABLE(acpi, hisi_l3t_acpi_match);
