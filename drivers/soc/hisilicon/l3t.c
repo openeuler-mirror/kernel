@@ -45,6 +45,8 @@ static int sccl_to_node_id(int id)
 static int hisi_l3t_init_data(struct platform_device *pdev,
 			      struct hisi_l3t *l3t)
 {
+	struct resource *mem;
+
 	if (device_property_read_u32(&pdev->dev, "hisilicon,scl-id",
 				     &l3t->sccl_id))
 		return -EINVAL;
@@ -53,8 +55,12 @@ static int hisi_l3t_init_data(struct platform_device *pdev,
 				     &l3t->ccl_id))
 		return -EINVAL;
 
-	l3t->base = devm_platform_ioremap_resource(pdev, 0);
-	if (IS_ERR(l3t->base))
+	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!mem)
+		return -ENODEV;
+
+	l3t->base = devm_ioremap(&pdev->dev, mem->start, resource_size(mem));
+	if (IS_ERR_OR_NULL(l3t->base))
 		return PTR_ERR(l3t->base);
 
 	l3t->nid = sccl_to_node_id(l3t->sccl_id);
@@ -197,7 +203,7 @@ struct hisi_sccl *hisi_l3t_get_sccl(int nid)
 }
 
 static const struct acpi_device_id hisi_l3t_acpi_match[] = {
-	{ "HISI0501", },
+	{ "HISI0502", },
 	{}
 };
 MODULE_DEVICE_TABLE(acpi, hisi_l3t_acpi_match);
