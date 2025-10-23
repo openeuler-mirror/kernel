@@ -15,7 +15,7 @@
 #include "trace.h"
 #include "trace_dynevent.h"
 
-static DEFINE_MUTEX(dyn_event_ops_mutex);
+DEFINE_MUTEX(dyn_event_ops_mutex);
 static LIST_HEAD(dyn_event_ops_list);
 
 int dyn_event_register(struct dyn_event_operations *ops)
@@ -73,6 +73,20 @@ int dyn_event_release(int argc, char **argv, struct dyn_event_operations *type)
 	tracing_reset_all_online_cpus();
 	mutex_unlock(&event_mutex);
 
+	return ret;
+}
+
+/*
+ * Locked version of event creation. The event creation must be protected by
+ * dyn_event_ops_mutex because of protecting trace_probe_log.
+ */
+int dyn_event_create(int argc, char **argv, struct dyn_event_operations *type)
+{
+	int ret;
+
+	mutex_lock(&dyn_event_ops_mutex);
+	ret = type->create(argc, (const char **)argv);
+	mutex_unlock(&dyn_event_ops_mutex);
 	return ret;
 }
 
