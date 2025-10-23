@@ -928,7 +928,7 @@ static int create_or_delete_trace_kprobe(int argc, char **argv)
 	if (argv[0][0] == '-')
 		return dyn_event_release(argc, argv, &trace_kprobe_ops);
 
-	ret = trace_kprobe_create(argc, (const char **)argv);
+	ret = dyn_event_create(argc, argv, &trace_kprobe_ops);
 	return ret == -ECANCELED ? -EINVAL : ret;
 }
 

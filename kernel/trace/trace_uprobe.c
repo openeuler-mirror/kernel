@@ -728,7 +728,7 @@ static int create_or_delete_trace_uprobe(int argc, char **argv)
 	if (argv[0][0] == '-')
 		return dyn_event_release(argc, argv, &trace_uprobe_ops);
 
-	ret = trace_uprobe_create(argc, (const char **)argv);
+	ret = dyn_event_create(argc, argv, &trace_uprobe_ops);
 	return ret == -ECANCELED ? -EINVAL : ret;
 }
 
