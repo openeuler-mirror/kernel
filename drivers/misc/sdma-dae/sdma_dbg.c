@@ -11,7 +11,7 @@
 #define SINGLE_CHANNEL_SELECTED 1
 #define R_R_R 0444
 
-static struct hisi_sdma_global_info dbg_g_info;
+static struct hisi_sdma_debugfs_info dbg_g_info;
 static u32 debug_mode;
 static u32 device_id;
 static u32 channel_id;
