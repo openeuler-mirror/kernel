@@ -22,8 +22,7 @@ static void free_region(struct list_head *list_head)
 
 	list_for_each_entry_safe(node_remove, node_next, list_head, list) {
 		unpin_user_pages(node_remove->pnode.page_list, node_remove->pnode.pinned);
-		free_pages((uintptr_t)(void *)node_remove->pnode.page_list,
-			   get_order(node_remove->pnode.pinned * sizeof(struct page *)));
+		free_page((uintptr_t)(void *)node_remove->pnode.page_list);
 		list_del(&node_remove->list);
 		kfree(node_remove);
 	}
@@ -94,7 +93,7 @@ void sdma_hash_free(void)
 	g_hash_table = NULL;
 }
 
-static int record_umem(u64 addr, struct list_head *list_head, int ida, u64 *cookie)
+static int sdma_record_umem(u64 addr, struct list_head *list_head, int ida, u64 *cookie)
 {
 	struct hash_entry *entry;
 	bool entry_find = true;
@@ -139,7 +138,7 @@ static int record_umem(u64 addr, struct list_head *list_head, int ida, u64 *cook
 
 	pmem->idr = idr;
 	spin_unlock(&g_hash_table->hash_lock);
-	*cookie = ((u64)ida << COOKIE_IDA_SHIFT) + idr;
+	*cookie = ((u64)ida << COOKIE_IDA_SHIFT) | ((u64)idr & COOKIE_IDA_MASK);
 	pr_debug("Record addr: ida = %d, idr = %d\n", ida, idr);
 
 	return 0;
@@ -148,32 +147,40 @@ free_entry:
 	kfree(entry);
 free_pmem:
 	kfree(pmem);
+
 	return ret;
 }
 
-static int pin_umem(u64 addr, int npages, struct list_head *p_head)
+/**
+ * sdma_pin_umem - SDMA kernel driver pin memory of userspace.
+ *
+ * @addr: memory virtual address be pinned
+ * @npages: number of pages be pinned
+ * @p_head: pointer points towards pin memory
+ */
+static int sdma_pin_umem(u64 addr, u32 npages, struct list_head *p_head)
 {
-	int pinned, to_pin_pages, unpin_pages, ret = 0;
-	size_t node_size = sizeof(struct p_list);
+	u64 pin_addr = addr & PAGE_MASK;
+	int pinned, to_pin_pages;
 	struct page **page_list;
 	struct p_list *cur_node;
-	u64 pin_addr = addr;
+	int ret = 0;
 
-	to_pin_pages = unpin_pages = npages;
-	while (unpin_pages != 0) {
-		if (to_pin_pages > HISI_SDMA_MAX_ALLOC_SIZE / sizeof(struct page *))
-			to_pin_pages = HISI_SDMA_MAX_ALLOC_SIZE / sizeof(struct page *);
-		page_list = (struct page **)(uintptr_t)__get_free_pages(GFP_KERNEL,
-				get_order(to_pin_pages * sizeof(struct page *)));
+	while (npages) {
+		/* page_list mostly record (PAGE_SIZE / 8) pages */
+		page_list = (struct page **)__get_free_page(GFP_KERNEL);
 		if (!page_list) {
 			pr_err("SDMA failed to alloc page list!\n");
-			return -ENOMEM;
+			ret = -ENOMEM;
+			goto exit;
 		}
+
+		to_pin_pages = min_t(unsigned int, npages, PAGE_SIZE / sizeof(struct page *));
 
 		pinned = pin_user_pages_fast(pin_addr, to_pin_pages, FOLL_WRITE, page_list);
 		if (pinned < 0) {
-			pr_err("SDMA failed to pin user pages!\n");
 			ret = pinned;
+			pr_err("SDMA failed to pin user pages!\n");
 			goto free_pages;
 		} else if (pinned != to_pin_pages) {
 			pr_err("Invalid number of pages. SDMA pinned %d pages, expect %d pages\n",
@@ -181,9 +188,9 @@ static int pin_umem(u64 addr, int npages, struct list_head *p_head)
 			ret = -EINVAL;
 			goto unpin_page;
 		}
+		npages -= pinned;
 
-		cur_node = NULL;
-		cur_node = kzalloc(node_size, GFP_KERNEL);
+		cur_node = kzalloc(sizeof(struct p_list), GFP_KERNEL);
 		if (!cur_node) {
 			ret = -ENOMEM;
 			goto unpin_page;
@@ -191,16 +198,15 @@ static int pin_umem(u64 addr, int npages, struct list_head *p_head)
 		cur_node->pnode.page_list = page_list;
 		cur_node->pnode.pinned = pinned;
 		list_add(&cur_node->list, p_head);
-		unpin_pages -= to_pin_pages;
-		if (unpin_pages > 0)
-			pin_addr += to_pin_pages * PAGE_SIZE;
-		to_pin_pages = unpin_pages;
+		pin_addr += (u64)pinned * PAGE_SIZE;
 	}
-	goto exit;
+
+	return 0;
+
 unpin_page:
 	unpin_user_pages(page_list, pinned);
 free_pages:
-	free_pages((uintptr_t)(void *)page_list, get_order(to_pin_pages * sizeof(struct page *)));
+	free_page((uintptr_t)(void *)page_list);
 exit:
 	return ret;
 }
@@ -208,7 +214,7 @@ exit:
 int sdma_umem_get(u64 addr, u32 size, int ida, u64 *cookie)
 {
 	struct list_head *p_head;
-	int npages;
+	u32 npages;
 	int ret;
 
 	/* Check overflow */
@@ -223,7 +229,7 @@ int sdma_umem_get(u64 addr, u32 size, int ida, u64 *cookie)
 
 	INIT_LIST_HEAD(p_head);
 	npages = (PAGE_ALIGN(addr + size) - ALIGN_DOWN(addr, PAGE_SIZE)) / PAGE_SIZE;
-	ret = pin_umem(addr, npages, p_head);
+	ret = sdma_pin_umem(addr, npages, p_head);
 	if (ret != 0) {
 		pr_err("SDMA failed to pin_umem\n");
 		free_region(p_head);
@@ -231,7 +237,7 @@ int sdma_umem_get(u64 addr, u32 size, int ida, u64 *cookie)
 		return ret;
 	}
 
-	ret = record_umem(addr, p_head, ida, cookie);
+	ret = sdma_record_umem(addr, p_head, ida, cookie);
 	if (ret) {
 		pr_err("SDMA failed to record umem\n");
 		free_region(p_head);
@@ -272,5 +278,6 @@ int sdma_umem_release(u64 cookie)
 	free_region(pmem->list_head);
 	kfree((void *)pmem->list_head);
 	kfree(pmem);
+
 	return 0;
 }
