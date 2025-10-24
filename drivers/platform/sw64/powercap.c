@@ -18,6 +18,8 @@
 
 #define SUNWAY_POWERCAP_ACPI_NOTIFY_VALUE 0x84
 
+#define POLL_INTERVAL_UNIT_10MS 10
+
 enum sunway_powercap_version {
 	SUNWAY_POWERCAP_V1 = 1,
 	SUNWAY_POWERCAP_VERSION_MAX,
@@ -243,6 +245,16 @@ static inline bool is_powercap_cpu_match(const struct sunway_powercap_cpu *data,
 	return true;
 }
 
+static inline bool is_powercap_enabled(const struct sunway_powercap_freq *freq)
+{
+	return !!(freq->flags & FREQ_FLAG_ENABLE);
+}
+
+static inline bool is_powercap_no_limit(const struct sunway_powercap_freq *freq)
+{
+	return !!(freq->flags & FREQ_FLAG_FREE);
+}
+
 static int sunway_powercap_validate_freq(const struct sunway_powercap_freq *freq,
 		struct sunway_powercap_ack *ack)
 {
@@ -268,6 +280,10 @@ static int sunway_powercap_validate_freq(const struct sunway_powercap_freq *freq
 		ack->flags |= ACK_FLAG_VALID_NODE;
 		ack->flags |= ACK_FLAG_VALID_CORE;
 
+		/* Make sure that the target freq field is meaningful */
+		if (!is_powercap_enabled(freq) || is_powercap_no_limit(freq))
+			return 0;
+
 		if (cpufreq_frequency_table_get_index(policy, target_freq) < 0) {
 			pr_err("invalid target freq %u\n", target_freq);
 			return -EINVAL;
@@ -282,16 +298,6 @@ out_validate_freq:
 	pr_err("invalid core %u on node %u\n", core, node);
 
 	return -EINVAL;
-}
-
-static inline bool is_powercap_enabled(const struct sunway_powercap_freq *freq)
-{
-	return !!(freq->flags & FREQ_FLAG_ENABLE);
-}
-
-static inline bool is_powercap_no_limit(const struct sunway_powercap_freq *freq)
-{
-	return !!(freq->flags & FREQ_FLAG_FREE);
 }
 
 static inline bool
@@ -527,7 +533,7 @@ static int sunway_powercap_setup_cfg(const struct sunway_powercap_cfg *cfg)
 
 	driver_data.version = cfg->version;
 	driver_data.mode = cfg->mode;
-	driver_data.poll_interval = cfg->poll_interval;
+	driver_data.poll_interval = cfg->poll_interval * POLL_INTERVAL_UNIT_10MS;
 
 	if (is_poll_mode) {
 		timer_setup(&driver_data.timer, sunway_powercap_poll_func, 0);
@@ -698,10 +704,10 @@ static int sunway_powercap_probe(struct platform_device *pdev)
 		struct freq_qos_request *req;
 
 		/* Initial state */
-		powercap_cpu_data[related_cpu].state = SUNWAY_POWERCAP_STATE_FREE;
+		powercap_cpu_data[cpu].state = SUNWAY_POWERCAP_STATE_FREE;
 
-		powercap_cpu_data[related_cpu].core = rcid_to_core_id(rcid);
-		powercap_cpu_data[related_cpu].node = rcid_to_domain_id(rcid);
+		powercap_cpu_data[cpu].core = rcid_to_core_id(rcid);
+		powercap_cpu_data[cpu].node = rcid_to_domain_id(rcid);
 
 		if (powercap_cpu_data[cpu].policy)
 			continue;
