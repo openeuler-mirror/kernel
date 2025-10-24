@@ -113,20 +113,16 @@ static struct hisi_sdma_own_pid_hte *sdma_search_owner_pid_ht(u32 pid)
 	return NULL;
 }
 
-static void sdma_clear_residual_auth_ht(struct hisi_sdma_own_pid_hte *entry, u32 *list, u32 pos,
-					bool *stored_info)
+static void sdma_clear_residual_auth_ht(struct hisi_sdma_own_pid_hte *entry, u32 *list, u32 pos)
 {
 	struct hisi_sdma_sub_pid_hte *sub_entry;
-	u32 i = pos;
+	u32 i;
 
-	while (i > 0) {
-		i--;
-		if (stored_info[i]) {
-			sub_entry = sdma_search_submitter_pid(entry, list[i]);
-			if (sub_entry) {
-				hash_del(&sub_entry->pnode);
-				kfree(sub_entry);
-			}
+	for (i = 0; i < pos; i++) {
+		sub_entry = sdma_search_submitter_pid(entry, list[i]);
+		if (sub_entry) {
+			hash_del(&sub_entry->pnode);
+			kfree(sub_entry);
 		}
 	}
 }
@@ -134,12 +130,7 @@ static void sdma_clear_residual_auth_ht(struct hisi_sdma_own_pid_hte *entry, u32
 static int sdma_add_authority_ht(struct hisi_sdma_own_pid_hte *entry, u32 count, u32 *list)
 {
 	struct hisi_sdma_sub_pid_hte *sub_entry;
-	bool *stored;
-	u32 i;
-
-	stored = kcalloc(count, sizeof(bool), GFP_ATOMIC);
-	if (!stored)
-		return -ENOMEM;
+	u32 i, j = 0;
 
 	for (i = 0; i < count; i++) {
 		sub_entry = sdma_search_submitter_pid(entry, list[i]);
@@ -148,17 +139,15 @@ static int sdma_add_authority_ht(struct hisi_sdma_own_pid_hte *entry, u32 count,
 
 		sub_entry = kzalloc(sizeof(struct hisi_sdma_sub_pid_hte), GFP_ATOMIC);
 		if (!sub_entry) {
-			sdma_clear_residual_auth_ht(entry, list, i, stored);
-			kfree(stored);
+			sdma_clear_residual_auth_ht(entry, list, j);
 			return -ENOMEM;
 		}
 
 		sub_entry->pid = list[i];
 		hash_add(entry->sdma_submitter_pid_ht, &sub_entry->pnode, sub_entry->pid);
-		stored[i] = true;
+		list[j++] = list[i];
 	}
 
-	kfree(stored);
 	return 0;
 }
 
