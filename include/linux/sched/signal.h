@@ -128,7 +128,11 @@ struct signal_struct {
 #ifdef CONFIG_POSIX_TIMERS
 
 	/* POSIX.1b Interval Timers */
+#ifdef __GENKSYMS__
 	int			posix_timer_id;
+#else
+	unsigned int		next_posix_timer_id;
+#endif
 	struct list_head	posix_timers;
 
 	/* ITIMER_REAL timer for the process */
