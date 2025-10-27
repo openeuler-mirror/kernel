@@ -183,11 +183,13 @@ static const struct file_operations l0_fops = {
 
 static struct miscdevice l0_dev = {
 	.minor = MISC_DYNAMIC_MINOR,
-	.name = "hisi_l0",
+	.name = "hisi_soc_cache_mgmt",
 	.fops = &l0_fops,
+	.mode = 0600,
 };
 module_misc_device(l0_dev);
 
+MODULE_VERSION("1.0");
 MODULE_DESCRIPTION("HiSilicon SoC L0 driver");
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Ma Wupeng <mawupeng1@huawei.com>");
