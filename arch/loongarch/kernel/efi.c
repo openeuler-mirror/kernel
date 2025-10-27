@@ -233,7 +233,7 @@ static int __init set_virtual_map(void)
 
 void __init efi_runtime_init(void)
 {
-	efi_status_t status;
+	int ret;
 
 	if (!efi_enabled(EFI_BOOT) || !efi_systab->runtime)
 		return;
@@ -243,9 +243,11 @@ void __init efi_runtime_init(void)
 		return;
 	}
 
-	status = set_virtual_map();
-	if (status < 0)
+	ret = set_virtual_map();
+	if (ret < 0) {
+		pr_info("Set virtual address map failed, EFI runtime services will not be available.\n");
 		return;
+	}
 
 	efi.runtime = READ_ONCE(efi_systab->runtime);
 	efi.runtime_version = (unsigned int)efi.runtime->hdr.revision;
