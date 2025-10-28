@@ -85,7 +85,7 @@ EXPORT_SYMBOL_GPL(platform_get_resource);
  *				    device
  *
  * @pdev: platform device to use both for memory resource lookup as well as
- *        resource managemend
+ *        resource management
  * @index: resource index
  */
 void __iomem *devm_platform_ioremap_resource(struct platform_device *pdev,
