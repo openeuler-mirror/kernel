@@ -210,9 +210,6 @@ union ccp_function {
 #define CCP5_Q_PTR_MASK	(2 << (CCP5_QUEUE_SIZE_VAL + 5) - 1)
 #define CCP5_Q_SIZE(n)			(CCP5_COMMANDS_PER_QUEUE * (n))
 
-/* indicates whether there is ECC engine for Hygon CCP */
-#define RI_ECC_PRESENT			0x0400
-
 /**
  * Hygon CCP from 4th generation support both sm2 & ecc,
  * but its input content is different from previous version.
@@ -967,10 +964,11 @@ static int ccp5_init(struct ccp_device *ccp)
 	 * but use new function structure.
 	 */
 	if (is_vendor_hygon()) {
-		ecc_support = !!(ioread32(ccp->io_regs + CMD5_PSP_CCP_VERSION) & RI_ECC_PRESENT);
+		ecc_support = !!(ioread32(ccp->io_regs + CMD5_PSP_CCP_VERSION)
+						& HYGON_RI_ECC_PRESENT);
 		is_trng2 = !!(((ioread32(ccp->io_regs + CMD5_PSP_CCP_ENG_VERSION)
-				>> RI_TRNGVersionOffset) & RI_TRNGVersionMask)
-				== RI_TRNGVersion_002);
+				>> HYGON_RI_TRNGVersionOffset) & HYGON_RI_TRNGVersionMask)
+				== HYGON_RI_TRNGVersion_002);
 		ccp->support_sm2_ecc = ecc_support || is_trng2;
 	}
 
