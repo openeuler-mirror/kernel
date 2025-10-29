@@ -217,7 +217,7 @@ int ccp_register_sm4_hygon_aeads(struct list_head *head)
 	unsigned int pspccp_version_reg = 0;
 
 	pspccp_version_reg = get_ccp_version_reg_val();
-	if (!(pspccp_version_reg & RI_SM4GCM_PRESENT)) {
+	if (!(pspccp_version_reg & HYGON_RI_SM4GCM_PRESENT)) {
 		pr_warn("SM4 GCM CCP ENGINE NOT SUPPORTED!\n");
 		return 0;
 	}

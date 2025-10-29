@@ -126,17 +126,18 @@
 #define LSB_ENTRY_NUMBER(LSB_ADDR)	(LSB_ADDR / LSB_ITEM_SIZE)
 
 /* indicates whether there are some crypto engine for Hygon CCP */
-#define RI_AES_PRESENT			0x0800
-#define RI_SHA2_PRESENT			0x01000
-#define RI_SM4GCM_PRESENT		0x04000
+#define HYGON_RI_ECC_PRESENT			0x0400
+#define HYGON_RI_AES_PRESENT			0x0800
+#define HYGON_RI_SHA2_PRESENT			0x01000
+#define HYGON_RI_SM4GCM_PRESENT			0x04000
 
 /* Hygon ccp sm4 engine version mask */
-#define RI_SM4VersionNum		(0x7 << 6)
+#define HYGON_RI_SM4VersionNum		(0x7 << 6)
 
 /* Hygon ccp TRNG version mask */
-#define RI_TRNGVersionOffset		21
-#define RI_TRNGVersionMask		0x03
-#define RI_TRNGVersion_002		2
+#define HYGON_RI_TRNGVersionOffset		21
+#define HYGON_RI_TRNGVersionMask		0x03
+#define HYGON_RI_TRNGVersion_002		2
 
 /* ------------------------ CCP Version 3 Specifics ------------------------ */
 #define REQ0_WAIT_FOR_WRITE		0x00000004
