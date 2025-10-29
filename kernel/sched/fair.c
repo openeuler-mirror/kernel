@@ -11867,6 +11867,56 @@ group_type group_classify(unsigned int imbalance_pct,
 	return group_has_spare;
 }
 
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+/*
+ * Record the statistics for this scheduler group for later
+ * use. These values guide load balancing on aggregating tasks
+ * to a LLC.
+ */
+static void record_sg_llc_stats(struct lb_env *env,
+				struct sg_lb_stats *sgs,
+				struct sched_group *group)
+{
+	/*
+	 * Find the child domain on env->dst_cpu. This domain
+	 * is either the domain that spans this group(if the
+	 * group is a local group), or the sibling domain of
+	 * this group.
+	 */
+	struct sched_domain *sd = env->sd->child;
+	struct sched_domain_shared *sd_share;
+
+	if (!sched_feat(SOFT_DOMAIN) || env->idle == CPU_NEWLY_IDLE)
+		return;
+
+	/* only care about sched domains spanning a LLC */
+	if (sd != rcu_dereference(per_cpu(sd_llc, env->dst_cpu)))
+		return;
+
+	/*
+	 * At this point we know this group spans a LLC domain.
+	 * Record the statistic of this group in its corresponding
+	 * shared LLC domain.
+	 */
+	sd_share = rcu_dereference(per_cpu(sd_llc_shared,
+					   cpumask_first(sched_group_span(group))));
+	if (!sd_share)
+		return;
+
+	if (READ_ONCE(sd_share->util_avg) != sgs->group_util)
+		WRITE_ONCE(sd_share->util_avg, sgs->group_util);
+
+	if (unlikely(READ_ONCE(sd_share->capacity) != sgs->group_capacity))
+		WRITE_ONCE(sd_share->capacity, sgs->group_capacity);
+}
+#else
+static inline void record_sg_llc_stats(struct lb_env *env, struct sg_lb_stats *sgs,
+				       struct sched_group *group)
+{
+}
+#endif
+
+
 /**
  * sched_use_asym_prio - Check whether asym_packing priority must be used
  * @sd:		The scheduling domain of the load balancing
@@ -12106,6 +12156,8 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 		sgs->group_smt_balance = 1;
 
 	sgs->group_type = group_classify(env->sd->imbalance_pct, group, sgs);
+
+	record_sg_llc_stats(env, sgs, group);
 
 	/* Computing avg_load makes sense only when group is overloaded */
 	if (sgs->group_type == group_overloaded)
