@@ -8474,6 +8474,9 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, bool 
 		if (tg->sf_ctx && tg->sf_ctx->policy != 0) {
 			struct cpumask *tmpmask = to_cpumask(tg->sf_ctx->span);
 
+			if (!cpumask_test_cpu(target, tmpmask))
+				goto skip_prefer;
+
 			for_each_cpu_wrap(cpu, tmpmask, target + 1) {
 				if (!cpumask_test_cpu(cpu, tmpmask))
 					continue;
@@ -8499,6 +8502,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, bool 
 		}
 
 	}
+skip_prefer:
 #endif
 
 	if (static_branch_unlikely(&sched_cluster_active)) {
@@ -9455,6 +9459,71 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 #endif
 
 #ifdef CONFIG_SCHED_SOFT_DOMAIN
+/*
+ * Determine whether to migrate a task outside the soft domain.
+ * If src CPU is in the soft domain and its LLC is overutilized,
+ * do not restrict task migration.
+ * If util exceeds 85%, it is in overutilized state, adjustable
+ * via parameter @soft_domain_overutil_pct.
+ *
+ * Return 1 means task need not migrate, prefers to stay on src CPU.
+ * Return 0 means follow the generic load balancer.
+ */
+
+int soft_domain_overutil_pct = 85;
+
+int soft_domain_cache_hot(struct task_struct *p, int src_cpu, int dst_cpu)
+{
+	struct soft_domain_ctx *ctx = task_group(p)->sf_ctx;
+	struct sched_domain_shared *sds;
+
+	/* soft domain disabled, just return. */
+	if (!soft_domain_enabled())
+		return 0;
+
+	if (!ctx)
+		return 0;
+
+	/*
+	 * If dst_cpu is in the domain or src_cpu is outside it,
+	 * these cases are not migrating a task outside the domain,
+	 * do not restrict them.
+	 */
+	if (cpumask_test_cpu(dst_cpu, to_cpumask(ctx->span)) ||
+	    !cpumask_test_cpu(src_cpu, to_cpumask(ctx->span)))
+		return 0;
+
+	sds = rcu_dereference(per_cpu(sd_llc_shared, src_cpu));
+	if (!sds)
+		return 0;
+
+	/*
+	 * Moving out of the soft domain:
+	 * if src CPU's llc isn't overutil, prefers to stay on src CPU.
+	 */
+	return !soft_domain_overutil(READ_ONCE(sds->util_avg),
+				    READ_ONCE(sds->capacity),
+				    soft_domain_overutil_pct);
+}
+
+static int can_prefer_soft_domain(struct task_struct *p, struct cpumask *mask)
+{
+	struct sched_domain_shared *sds;
+
+	sds = rcu_dereference(per_cpu(sd_llc_shared, cpumask_first(mask)));
+	if (!sds)
+		return 0;
+
+	/*
+	 * When soft domain's LLC is not overutilized, try preferred CPU
+	 * selection. Reserve a 20% margin here to avoid conflicts with
+	 * load balance behavior causing frequent task migrations.
+	 */
+	return !soft_domain_overutil(READ_ONCE(sds->util_avg),
+				     READ_ONCE(sds->capacity),
+				     max(0, soft_domain_overutil_pct - 20));
+}
+
 static int wake_soft_domain(struct task_struct *p, int target)
 {
 	struct cpumask *mask = this_cpu_cpumask_var_ptr(select_rq_mask);
@@ -9472,7 +9541,7 @@ static int wake_soft_domain(struct task_struct *p, int target)
 	cpumask_and(mask, mask, cpu_active_mask);
 	if (cpumask_empty(mask) || cpumask_test_cpu(target, mask))
 		goto out;
-	else
+	else if (can_prefer_soft_domain(p, mask))
 		target = cpumask_any_distribute(mask);
 
 out:
@@ -10993,6 +11062,9 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 		if (task_group(p)->sf_ctx && task_group(p)->sf_ctx->policy &&
 		(env->sd->flags & SD_NUMA) != 0)
 			return 0;
+
+		if (soft_domain_cache_hot(p, env->src_cpu, env->dst_cpu))
+			return 0;
 	}
 #endif
 
@@ -11886,7 +11958,7 @@ static void record_sg_llc_stats(struct lb_env *env,
 	struct sched_domain *sd = env->sd->child;
 	struct sched_domain_shared *sd_share;
 
-	if (!sched_feat(SOFT_DOMAIN) || env->idle == CPU_NEWLY_IDLE)
+	if (!soft_domain_enabled() || env->idle == CPU_NEWLY_IDLE)
 		return;
 
 	/* only care about sched domains spanning a LLC */
