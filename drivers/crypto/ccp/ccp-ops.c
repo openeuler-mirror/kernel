@@ -2901,26 +2901,26 @@ static int ccp_run_sm4_cmd(struct ccp_cmd_queue *cmd_q, struct ccp_cmd *cmd)
 				sm4->src_len - SM4_BLOCK_SIZE, SM4_BLOCK_SIZE);
 			memcpy(xts_wa.address + SM4_BLOCK_SIZE, xts_wa.address, remain);
 			ccp_set_dm_area(&xts_wa, 0, sm4->src, sm4->src_len, remain);
-			crypto_xor(xts_wa.address, tweak, AES_BLOCK_SIZE);
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
 			sm4_crypt_block(xts_ctx.rkey_enc, xts_wa.address, xts_wa.address);
-			crypto_xor(xts_wa.address, tweak, AES_BLOCK_SIZE);
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
 			ccp_get_dm_area(&xts_wa, 0, sm4->dst,
 				sm4->src_len - SM4_BLOCK_SIZE, remain + SM4_BLOCK_SIZE);
 		} else {
 			gf128mul_x_lle((be128 *)tweak, (be128 *)tweak);
 			ccp_set_dm_area(&xts_wa, 0, sm4->src,
 					sm4->src_len, remain + SM4_BLOCK_SIZE);
-			crypto_xor(xts_wa.address, tweak, AES_BLOCK_SIZE);
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
 			sm4_crypt_block(xts_ctx.rkey_dec, xts_wa.address, xts_wa.address);
-			crypto_xor(xts_wa.address, tweak, AES_BLOCK_SIZE);
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
 
 			memcpy(tweak, iv_key.address, SM4_BLOCK_SIZE);
 			memcpy(temp, xts_wa.address, remain);
 			memcpy(xts_wa.address, xts_wa.address + SM4_BLOCK_SIZE, remain);
 			memcpy(xts_wa.address + SM4_BLOCK_SIZE, temp, remain);
-			crypto_xor(xts_wa.address, tweak, AES_BLOCK_SIZE);
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
 			sm4_crypt_block(xts_ctx.rkey_dec, xts_wa.address, xts_wa.address);
-			crypto_xor(xts_wa.address, tweak, AES_BLOCK_SIZE);
+			crypto_xor(xts_wa.address, tweak, SM4_BLOCK_SIZE);
 			ccp_get_dm_area(&xts_wa, 0, sm4->dst,
 					sm4->src_len, remain + SM4_BLOCK_SIZE);
 		}

@@ -317,7 +317,7 @@ int ccp_register_sm4_hygon_algs(struct list_head *head)
 			continue;
 		if (sm4_algs[i].mode == CCP_SM4_ALG_MODE_XTS) {
 			ccp_engine_version_reg = get_ccp_engine_version_reg_val();
-			if (!(ccp_engine_version_reg & RI_SM4VersionNum)) {
+			if (!(ccp_engine_version_reg & HYGON_RI_SM4VersionNum)) {
 				pr_warn("SM4 XTS CCP ENGINE NOT SUPPORTED!\n");
 				continue;
 			}
