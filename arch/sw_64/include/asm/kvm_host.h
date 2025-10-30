@@ -70,6 +70,8 @@
 #define KVM_PHYS_SIZE	(_AC(1, ULL) << KVM_PHYS_SHIFT)
 #define KVM_PHYS_MASK	(KVM_PHYS_SIZE - _AC(1, ULL))
 
+#define KVM_REQ_RECORD_STEAL    KVM_ARCH_REQ(0)
+
 struct kvm_arch_memory_slot {
 };
 
@@ -118,6 +120,12 @@ struct kvm_vcpu_arch {
 
 	/* Cache some mmu pages needed inside spinlock regions */
 	struct kvm_mmu_memory_cache mmu_page_cache;
+
+	/* Guest steal-time state */
+	struct {
+		gpa_t base;
+		u64 last_steal;
+	} steal;
 };
 
 struct vmem_info {
@@ -204,4 +212,18 @@ long kvm_sw64_get_vcb(struct file *filp, unsigned long arg);
 
 void update_aptp(unsigned long);
 void vcpu_set_numa_affinity(struct kvm_vcpu *vcpu);
+
+void kvm_init_steal_time(struct kvm_vcpu *vcpu);
+void kvm_sw64_record_steal_time(struct kvm_vcpu *vcpu);
+
+static inline void kvm_sw64_pvtime_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
+{
+	vcpu_arch->steal.base = GPA_INVALID;
+	vcpu_arch->steal.last_steal = 0;
+}
+
+static inline bool kvm_sw64_is_pvtime_enabled(struct kvm_vcpu_arch *vcpu_arch)
+{
+	return (vcpu_arch->steal.base != GPA_INVALID);
+}
 #endif /* _ASM_SW64_KVM_HOST_H */
