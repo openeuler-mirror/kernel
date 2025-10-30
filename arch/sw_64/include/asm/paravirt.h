@@ -31,6 +31,8 @@ static inline u64 paravirt_steal_clock(int cpu)
 	return pv_ops.time.steal_clock(cpu);
 }
 
+int __init pv_steal_time_init(void);
+
 __visible bool __native_vcpu_is_preempted(int cpu);
 
 static inline bool pv_vcpu_is_preempted(int cpu)
@@ -66,6 +68,7 @@ static inline void pv_queued_spin_unlock(struct qspinlock *lock)
 #else
 
 #define pv_qspinlock_init() do {} while (0)
+#define pv_steal_time_init() do {} while (0)
 
 #endif /* CONFIG_PARAVIRT */
 
