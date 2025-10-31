@@ -308,7 +308,7 @@ static int proc_dpages_open(struct inode *inode, struct file *filp)
 		return -EBUSY;
 
 	if (buf_dirty == NULL || buf_size == 0) {
-		pr_warn("please allocate buffer before getting dirty pages\n");
+		pr_warn_ratelimited("please allocate buffer before getting dirty pages\n");
 		dirty_pages_unlock();
 		return -ENOMEM;
 	}

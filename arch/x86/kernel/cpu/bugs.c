@@ -1070,11 +1070,11 @@ void unpriv_ebpf_notify(int new_state)
 
 	switch (spectre_v2_enabled) {
 	case SPECTRE_V2_EIBRS:
-		pr_err(SPECTRE_V2_EIBRS_EBPF_MSG);
+		pr_err_ratelimited(SPECTRE_V2_EIBRS_EBPF_MSG);
 		break;
 	case SPECTRE_V2_EIBRS_LFENCE:
 		if (sched_smt_active())
-			pr_err(SPECTRE_V2_EIBRS_LFENCE_EBPF_SMT_MSG);
+			pr_err_ratelimited(SPECTRE_V2_EIBRS_LFENCE_EBPF_SMT_MSG);
 		break;
 	default:
 		break;
