@@ -133,8 +133,7 @@ static void set_oecls_cpu(struct net_device *dev, struct sk_buff *skb,
 	struct oecls_dev_flow_table *dtb;
 	struct oecls_dev_flow *rflow;
 	u32 flow_id, hash;
-	u16 rxq_index;
-	int rc;
+	int rxq_index, rc;
 
 	if (!skb_rx_queue_recorded(skb) || !dev->rx_cpu_rmap ||
 	    !(dev->features & NETIF_F_NTUPLE))
@@ -152,7 +151,8 @@ static void set_oecls_cpu(struct net_device *dev, struct sk_buff *skb,
 	hash = skb_get_hash(skb);
 	flow_id = hash & dtb->mask;
 	rflow = &dtb->flows[flow_id];
-	if (rflow->isvalid && rflow->cpu == next_cpu) {
+	//Return if someone has configured this.
+	if (rflow->isvalid && cpu_to_node(rflow->cpu) == cpu_to_node(next_cpu)) {
 		rflow->timeout = jiffies;
 		return;
 	}
@@ -171,15 +171,41 @@ static void set_oecls_cpu(struct net_device *dev, struct sk_buff *skb,
 	rflow->cpu = next_cpu;
 }
 
+static int get_cpu_in_mask(int tcpu, u32 hash)
+{
+	const struct cpumask *mask;
+	int nr_cpus, cpu, index;
+
+	mask = cpumask_of_node(cpu_to_node(tcpu));
+
+	nr_cpus = cpumask_weight(mask);
+	if (nr_cpus == 0)
+		return -1;
+
+	index = reciprocal_scale(hash, nr_cpus);
+	if (index < 0)
+		return -1;
+
+	cpu = cpumask_first(mask);
+	while (--nr_cpus > 0) {
+		if (index == 0)
+			break;
+		cpu = cpumask_next(cpu, mask);
+		index--;
+	}
+
+	return cpu;
+}
+
 static void __oecls_set_cpu(struct sk_buff *skb, struct net_device *ndev,
 			    struct oecls_sock_flow_table *tb, struct oecls_dev_flow_table *dtb,
-			    int old_rxq_id)
+			    int old_rxq_id, int *rcpu, int *last_qtail)
 {
+	u32 last_recv_cpu, hash, val, cpu, tcpu;
 	struct oecls_dev_flow *rflow;
-	u32 last_recv_cpu, hash, val;
-	u32 tcpu = 0;
-	u32 cpu = raw_smp_processor_id();
+	int newcpu;
 
+	cpu = raw_smp_processor_id();
 	skb_reset_network_header(skb);
 	hash = skb_get_hash(skb);
 	if (!hash)
@@ -193,14 +219,20 @@ static void __oecls_set_cpu(struct sk_buff *skb, struct net_device *ndev,
 	if ((val ^ hash) & ~oecls_cpu_mask)
 		return;
 
-	if (cpu_to_node(cpu) == cpu_to_node(last_recv_cpu))
+	newcpu = get_cpu_in_mask(last_recv_cpu, hash);
+	if (newcpu >= 0)
+		*rcpu = newcpu;
+	else
+		newcpu = last_recv_cpu;
+
+	if (cpu_to_node(cpu) == cpu_to_node(newcpu))
 		return;
 
 	if (tcpu >= nr_cpu_ids)
-		set_oecls_cpu(ndev, skb, rflow, old_rxq_id, last_recv_cpu);
+		set_oecls_cpu(ndev, skb, rflow, old_rxq_id, newcpu);
 }
 
-static void _oecls_set_cpu(struct sk_buff *skb)
+static void _oecls_set_cpu(struct sk_buff *skb, int *cpu, int *last_qtail)
 {
 	struct net_device *ndev = skb->dev;
 	struct oecls_sock_flow_table *stb;
@@ -208,6 +240,8 @@ static void _oecls_set_cpu(struct sk_buff *skb)
 	struct netdev_rx_queue *rxqueue;
 	int rxq_id = -1;
 
+	*cpu = -1;
+	last_qtail = 0;//unused
 	if (!ndev)
 		return;
 
@@ -233,7 +267,7 @@ static void _oecls_set_cpu(struct sk_buff *skb)
 	stb = rcu_dereference(oecls_sock_flow_table);
 	dtb = rcu_dereference(rxqueue->oecls_ftb);
 	if (stb && dtb)
-		__oecls_set_cpu(skb, ndev, stb, dtb, rxq_id);
+		__oecls_set_cpu(skb, ndev, stb, dtb, rxq_id, cpu, last_qtail);
 
 	rcu_read_unlock();
 }
@@ -245,13 +279,13 @@ static void oecls_dev_flow_table_free(struct rcu_head *rcu)
 	vfree(table);
 }
 
-static void oecls_dev_flow_table_cleanup(struct net_device *netdev, int qid)
+static void oecls_dev_flow_table_cleanup(struct net_device *netdev, int queues)
 {
 	struct oecls_dev_flow_table *dtb;
 	struct netdev_rx_queue *queue;
 	int i;
 
-	for (i = 0; i < qid; i++) {
+	for (i = 0; i < queues; i++) {
 		queue = netdev->_rx + i;
 		spin_lock(&oecls_dev_flow_lock);
 		dtb = rcu_dereference_protected(queue->oecls_ftb,
@@ -407,11 +441,21 @@ int oecls_flow_res_init(void)
 
 	RCU_INIT_POINTER(oecls_ops, &oecls_flow_ops);
 	synchronize_rcu();
+
+#ifdef CONFIG_RPS
+	static_branch_inc(&oecls_rps_needed);
+	oecls_debug("oecls_rps_needed true\n");
+#endif
+
 	return 0;
 }
 
 void oecls_flow_res_clean(void)
 {
+#ifdef CONFIG_RPS
+	static_branch_dec(&oecls_rps_needed);
+	oecls_debug("oecls_rps_needed false\n");
+#endif
 	rcu_assign_pointer(oecls_ops, NULL);
 	synchronize_rcu();
 
