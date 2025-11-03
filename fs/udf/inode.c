@@ -2139,6 +2139,9 @@ int8_t udf_current_aext(struct inode *inode, struct extent_position *epos,
 		alen = sizeof(struct allocExtDesc) +
 			le32_to_cpu(((struct allocExtDesc *)epos->bh->b_data)->
 							lengthAllocDescs);
+
+		if (alen > epos->bh->b_size)
+			return -1;
 	}
 
 	switch (iinfo->i_alloc_type) {
