@@ -59,7 +59,7 @@ static void add_sk_rule(int devid, u32 dip4, u16 dport, void *sk, int action, in
 	hlist_add_head(&entry->node, sk_hlist);
 	return;
 out:
-	oecls_debug("alloc failed rule:%p entry:%p\n", rule, entry);
+	oecls_debug("alloc rule failed\n");
 	free_to_l0(entry);
 	free_to_l0(rule);
 }

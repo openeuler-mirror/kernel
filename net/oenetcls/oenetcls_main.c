@@ -23,11 +23,11 @@ static int mode;
 module_param(mode, int, 0444);
 MODULE_PARM_DESC(mode, "mode, default 0");
 
-static char ifname[64] = { 0 };
+static char ifname[128] = { 0 };
 module_param_string(ifname, ifname, sizeof(ifname), 0444);
 MODULE_PARM_DESC(ifname, "ifname");
 
-static char appname[64] = "redis-server";
+static char appname[256] = "redis-server";
 module_param_string(appname, appname, sizeof(appname), 0644);
 MODULE_PARM_DESC(appname, "appname, default redis-server");
 
@@ -42,6 +42,10 @@ MODULE_PARM_DESC(strategy, "strategy, default 0");
 static int check_cap = 1;
 module_param(check_cap, int, 0444);
 MODULE_PARM_DESC(check_cap, "check_cap, default 1");
+
+static char irqname[64] = "comp";
+module_param_string(irqname, irqname, sizeof(irqname), 0644);
+MODULE_PARM_DESC(irqname, "nic irq name string, default comp");
 
 static bool check_params(void)
 {
@@ -371,7 +375,8 @@ static struct oecls_netdev_info *alloc_oecls_netdev_info(void)
 
 static bool check_irq_name(const char *irq_name, struct oecls_netdev_info *oecls_dev)
 {
-	if (!strstr(irq_name, "TxRx") && !strstr(irq_name, "comp") && !strstr(irq_name, "rx"))
+	if (!strstr(irq_name, "TxRx") && !strstr(irq_name, "comp") && !strstr(irq_name, "rx") &&
+	    strlen(irqname) > 0 && !strstr(irq_name, irqname))
 		return false;
 
 	if (strstr(irq_name, oecls_dev->dev_name))

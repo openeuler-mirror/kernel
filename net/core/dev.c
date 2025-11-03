@@ -154,6 +154,8 @@
 #include <linux/oenetcls.h>
 const struct oecls_hook_ops __rcu *oecls_ops __read_mostly;
 EXPORT_SYMBOL_GPL(oecls_ops);
+struct static_key_false oecls_rps_needed __read_mostly;
+EXPORT_SYMBOL(oecls_rps_needed);
 #endif
 
 #define MAX_GRO_SKBS 8
@@ -5889,6 +5891,10 @@ static int netif_receive_skb_internal(struct sk_buff *skb)
 
 	rcu_read_lock();
 #ifdef CONFIG_RPS
+#if IS_ENABLED(CONFIG_OENETCLS)
+	if (static_branch_unlikely(&oecls_rps_needed))
+		goto oecls_rps;
+#endif
 	if (static_branch_unlikely(&rps_needed)) {
 		struct rps_dev_flow voidflow, *rflow = &voidflow;
 		int cpu = get_rps_cpu(skb->dev, skb, &rflow);
@@ -5902,7 +5908,11 @@ static int netif_receive_skb_internal(struct sk_buff *skb)
 #endif
 
 #if IS_ENABLED(CONFIG_OENETCLS)
-	oenetcls_skb_set_cpu(skb);
+oecls_rps:
+	if (oenetcls_skb_set_cpu(skb, enqueue_to_backlog, &ret)) {
+		rcu_read_unlock();
+		return ret;
+	}
 #endif
 
 	ret = __netif_receive_skb(skb);
@@ -5926,6 +5936,10 @@ static void netif_receive_skb_list_internal(struct list_head *head)
 
 	rcu_read_lock();
 #ifdef CONFIG_RPS
+#if IS_ENABLED(CONFIG_OENETCLS)
+	if (static_branch_unlikely(&oecls_rps_needed))
+		goto oecls_rps_list;
+#endif
 	if (static_branch_unlikely(&rps_needed)) {
 		list_for_each_entry_safe(skb, next, head, list) {
 			struct rps_dev_flow voidflow, *rflow = &voidflow;
@@ -5941,7 +5955,8 @@ static void netif_receive_skb_list_internal(struct list_head *head)
 #endif
 
 #if IS_ENABLED(CONFIG_OENETCLS)
-	oenetcls_skblist_set_cpu(head);
+oecls_rps_list:
+	oenetcls_skblist_set_cpu(head, enqueue_to_backlog);
 #endif
 
 	__netif_receive_skb_list(head);
