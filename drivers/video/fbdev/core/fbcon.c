@@ -592,6 +592,8 @@ static void fbcon_prepare_logo(struct vc_data *vc, struct fb_info *info,
 		/* We can scroll screen down */
 		r = q - step - cols;
 		for (cnt = rows - logo_lines; cnt > 0; cnt--) {
+			if (r < (unsigned short *) vc->vc_origin)
+				break;
 			scr_memcpyw(r + step, r, vc->vc_size_row);
 			r -= cols;
 		}
