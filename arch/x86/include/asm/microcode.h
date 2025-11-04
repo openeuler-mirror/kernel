@@ -98,6 +98,12 @@ extern const struct microcode_ops * __init init_hygon_microcode(void);
 #define CPUID_HYGON1 QCHAR('H', 'y', 'g', 'o')
 #define CPUID_HYGON2 QCHAR('n', 'G', 'e', 'n')
 #define CPUID_HYGON3 QCHAR('u', 'i', 'n', 'e')
+#define CPUID_ZHAOXIN1 QCHAR(' ', ' ', 'S', 'h')
+#define CPUID_ZHAOXIN2 QCHAR('a', 'n', 'g', 'h')
+#define CPUID_ZHAOXIN3 QCHAR('a', 'i', ' ', ' ')
+#define CPUID_CENTAUR1 QCHAR('C', 'e', 'n', 't')
+#define CPUID_CENTAUR2 QCHAR('a', 'u', 'r', 'H')
+#define CPUID_CENTAUR3 QCHAR('a', 'u', 'l', 's')
 
 #define CPUID_IS(a, b, c, ebx, ecx, edx)	\
 		(!((ebx ^ (a))|(edx ^ (b))|(ecx ^ (c))))
@@ -126,6 +132,12 @@ static inline int x86_cpuid_vendor(void)
 
 	if (CPUID_IS(CPUID_HYGON1, CPUID_HYGON2, CPUID_HYGON3, ebx, ecx, edx))
 		return X86_VENDOR_HYGON;
+
+	if (CPUID_IS(CPUID_ZHAOXIN1, CPUID_ZHAOXIN2, CPUID_ZHAOXIN3, ebx, ecx, edx))
+		return X86_VENDOR_ZHAOXIN;
+
+	if (CPUID_IS(CPUID_CENTAUR1, CPUID_CENTAUR2, CPUID_CENTAUR3, ebx, ecx, edx))
+		return X86_VENDOR_CENTAUR;
 
 	return X86_VENDOR_UNKNOWN;
 }

@@ -1309,7 +1309,7 @@ config X86_REBOOTFIXUPS
 config MICROCODE
 	bool "CPU microcode loading support"
 	default y
-	depends on CPU_SUP_AMD || CPU_SUP_INTEL || CPU_SUP_HYGON
+	depends on CPU_SUP_AMD || CPU_SUP_INTEL || CPU_SUP_HYGON || CPU_SUP_ZHAOXIN || CPU_SUP_CENTAUR
 	help
 	  If you say Y here, you will be able to update the microcode on Intel,
 	  AMD and Hygon processors. The Intel support is for the IA32 family,
@@ -1353,6 +1353,14 @@ config MICROCODE_HYGON
 	select MICROCODE_AMD
 	help
 	  If you select this option, microcode patch loading support for Hygon
+	  processors will be enabled.
+
+config MICROCODE_ZHAOXIN
+	bool "Zhaoxin microcode loading support"
+	depends on (CPU_SUP_ZHAOXIN || CPU_SUP_CENTAUR) && MICROCODE
+	default MICROCODE
+	help
+	  If you select this option, microcode patch loading support for Zhaoxin
 	  processors will be enabled.
 
 config MICROCODE_OLD_INTERFACE
