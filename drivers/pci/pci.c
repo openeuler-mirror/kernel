@@ -563,6 +563,13 @@ int pci_find_next_ext_capability(struct pci_dev *dev, int start, int cap)
 		return 0;
 
 	while (ttl-- > 0) {
+#if defined(CONFIG_CPU_SUP_CENTAUR) || defined(CONFIG_CPU_SUP_ZHAOXIN)
+		if (boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR ||
+		    boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN)
+			if (header == 0xffffffff)
+				return 0;
+#endif /* CONFIG_CPU_SUP_CENTAUR || CONFIG_CPU_SUP_ZHAOXIN */
+
 		if (PCI_EXT_CAP_ID(header) == cap && pos != start)
 			return pos;
 
