@@ -698,4 +698,12 @@ config MST_IRQ
 	help
 	  Support MStar Interrupt Controller.
 
+config PHYTIUM_IXIC
+	bool "Phytium D2000 SoC PCI Legacy Interrupt Controller"
+	depends on ARCH_PHYTIUM
+	select IRQ_DOMAIN
+	select IRQ_DOMAIN_HIERARCHY
+	help
+	  This enables support PCI Legacy Interrupt on Phytium D2000 SoC.
+
 endmenu
