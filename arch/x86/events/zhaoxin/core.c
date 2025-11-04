@@ -639,6 +639,7 @@ __init int zhaoxin_pmu_init(void)
 			break;
 		case 0x5b:
 		case 0x6b:
+		case 0x7b:
 			zx_pmon_event_map[PERF_COUNT_HW_STALLED_CYCLES_FRONTEND] =
 				X86_CONFIG(.event = 0x02, .umask = 0x01, .inv = 0x01,
 					   .cmask = 0x01);
@@ -654,7 +655,7 @@ __init int zhaoxin_pmu_init(void)
 			if (boot_cpu_data.x86_model == 0x5b)
 				pr_cont("Yongfeng events, ");
 
-			if (boot_cpu_data.x86_model == 0x6b)
+			if (boot_cpu_data.x86_model == 0x6b || boot_cpu_data.x86_model == 0x7b)
 				pr_cont("Shijidadao events, ");
 
 			break;
