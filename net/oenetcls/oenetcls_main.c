@@ -19,7 +19,7 @@ int debug;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "debug switch");
 
-static int mode;
+int mode;
 module_param(mode, int, 0444);
 MODULE_PARM_DESC(mode, "mode, default 0");
 
@@ -43,13 +43,17 @@ static int check_cap = 1;
 module_param(check_cap, int, 0444);
 MODULE_PARM_DESC(check_cap, "check_cap, default 1");
 
+int rcpu_probability = -1;
+module_param(rcpu_probability, int, 0444);
+MODULE_PARM_DESC(rcpu_probability, "rcpu select policy probability, default -1");
+
 static char irqname[64] = "comp";
 module_param_string(irqname, irqname, sizeof(irqname), 0644);
 MODULE_PARM_DESC(irqname, "nic irq name string, default comp");
 
 static bool check_params(void)
 {
-	if (mode != 0 && mode != 1)
+	if (mode != 0 && mode != 1 && mode != 2)
 		return false;
 
 	if (strlen(ifname) == 0)
@@ -376,7 +380,7 @@ static struct oecls_netdev_info *alloc_oecls_netdev_info(void)
 static bool check_irq_name(const char *irq_name, struct oecls_netdev_info *oecls_dev)
 {
 	if (!strstr(irq_name, "TxRx") && !strstr(irq_name, "comp") && !strstr(irq_name, "rx") &&
-	    strlen(irqname) > 0 && !strstr(irq_name, irqname))
+	    !strstr(irq_name, "virtio0-input") && strlen(irqname) > 0 && !strstr(irq_name, irqname))
 		return false;
 
 	if (strstr(irq_name, oecls_dev->dev_name))
@@ -519,10 +523,12 @@ static int init_single_oecls_dev(char *if_name, unsigned int length)
 		goto out;
 	}
 
-	ret = oecls_filter_enable(dev_name, &old_state);
-	if (ret) {
-		oecls_error("dev [%s] not support ntuple! ret=%d\n", dev_name, ret);
-		goto out;
+	if (mode != 2) {
+		ret = oecls_filter_enable(dev_name, &old_state);
+		if (ret) {
+			oecls_error("dev [%s] not support ntuple! ret=%d\n", dev_name, ret);
+			goto out;
+		}
 	}
 
 	oecls_dev = alloc_oecls_netdev_info();
@@ -1017,6 +1023,39 @@ static void set_netdev_xps_queue(bool enable)
 	}
 }
 
+static void fixup_rcpu_load(void)
+{
+	char *start = appname, *end;
+	char *task_name = "redis-proxy";
+
+	if (!strlen(appname))
+		return;
+
+	// support appname: app1#app2#appN
+	while (*start != '\0') {
+		end = strchr(start, '#');
+		if (end == start) {
+			start++;
+			continue;
+		}
+
+		if (!end) {
+			if (!strncmp(task_name, start, strlen(start))) {
+				rcpu_probability = 100;
+				return;
+			}
+			break;
+		}
+
+		if (!strncmp(task_name, start, end - start)) {
+			rcpu_probability = 100;
+			return;
+		}
+		start = end + 1;
+	}
+	rcpu_probability = 65;
+}
+
 static __init int oecls_init(void)
 {
 	struct oecls_numa_info *numa_info;
@@ -1047,6 +1086,9 @@ static __init int oecls_init(void)
 #ifdef CONFIG_XPS
 	set_netdev_xps_queue(true);
 #endif
+
+	if (mode == 2 && rcpu_probability < 0)
+		fixup_rcpu_load();
 
 	if (mode == 0)
 		err = oecls_ntuple_res_init();

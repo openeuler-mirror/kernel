@@ -131,6 +131,8 @@ struct cfg_param {
 
 extern int match_ip_flag;
 extern int debug;
+extern int mode;
+extern int rcpu_probability;
 extern int oecls_netdev_num;
 extern int oecls_numa_num;
 
