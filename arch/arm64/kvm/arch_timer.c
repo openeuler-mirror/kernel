@@ -262,6 +262,14 @@ static void soft_timer_cancel(struct hrtimer *hrt)
 	hrtimer_cancel(hrt);
 }
 
+static inline void set_timer_irq_phys_active(struct arch_timer_context *ctx, bool active)
+{
+	int r;
+
+	r = irq_set_irqchip_state(ctx->host_timer_irq, IRQCHIP_STATE_ACTIVE, active);
+	WARN_ON(r);
+}
+
 static irqreturn_t kvm_arch_timer_handler(int irq, void *dev_id)
 {
 	struct kvm_vcpu *vcpu = *(struct kvm_vcpu **)dev_id;
@@ -286,6 +294,8 @@ static irqreturn_t kvm_arch_timer_handler(int irq, void *dev_id)
 
 	if (kvm_timer_should_fire(ctx))
 		kvm_timer_update_irq(vcpu, true, ctx);
+	else
+		set_timer_irq_phys_active(ctx, false);
 
 	if (userspace_irqchip(vcpu->kvm) &&
 	    !static_branch_unlikely(&has_gic_active_state))
@@ -641,13 +651,6 @@ out:
 static void set_cntvoff(u64 cntvoff)
 {
 	kvm_call_hyp(__kvm_timer_set_cntvoff, cntvoff);
-}
-
-static inline void set_timer_irq_phys_active(struct arch_timer_context *ctx, bool active)
-{
-	int r;
-	r = irq_set_irqchip_state(ctx->host_timer_irq, IRQCHIP_STATE_ACTIVE, active);
-	WARN_ON(r);
 }
 
 static void kvm_timer_vcpu_load_gic(struct arch_timer_context *ctx)
