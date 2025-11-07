@@ -147,6 +147,9 @@ void init_oecls_l0_cache(void)
 	int ret = 0;
 	struct l0_vma_data *sbkpages;
 
+	/* L0 cache is not support by some platforms, work around this */
+	return;
+
 	oecls_l0_cache = kzalloc(sizeof(*oecls_l0_cache), GFP_KERNEL);
 	if (!oecls_l0_cache) {
 		oecls_error("kzalloc oecls_l0_cache fail!\n");
