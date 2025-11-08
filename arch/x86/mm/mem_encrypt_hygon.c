@@ -140,11 +140,14 @@ EXPORT_SYMBOL_GPL(csv3_active);
 #define NUM_SMR_ENTRIES			(8 * 1024)
 #define MIN_SMR_ENTRY_SHIFT		23
 #define CSV_SMR_INFO_SIZE		(nr_node_ids * sizeof(struct csv_mem))
+#define CSV_SMCR_MAX_ENTRIES		64 /* 16GB SMCR */
 /* CSV3 CMA macros */
 #define CSV_CMA_SHIFT			PUD_SHIFT
 #define CSV_CMA_SIZE			(1 << CSV_CMA_SHIFT)
 #define MAX_CSV_CMA_PCT			95
 #define CSV_CMA_AREAS			2458
+/* CSV3 1G hugetlb macros */
+#define DEFAULT_MAX_CSV_NUMBER		113 /* This is an empirical value */
 
 /**
  * An array of Secure Memory Regions (SMRs), where each entry records a physical
@@ -158,6 +161,19 @@ EXPORT_SYMBOL_GPL(csv_smr);
 unsigned int csv_smr_num;
 EXPORT_SYMBOL_GPL(csv_smr_num);
 /**
+ * The kernel cmdline parameter 'csv_smcr_size=<N><k|K|m|M|g|G>' can be used to
+ * reserve memory for CSV3 VM NPT on the host platform. When this parameter is
+ * specified, the kernel reserves physical memory of the given size. These
+ * reserved memory are described by @csv_smcr.
+ * Optional when CSV3 private memory is allocated from CSV-CMA.
+ * Required when CSV3 private memory is allocated from 1G hugetlb pages.
+ */
+struct csv_mem *csv_smcr;
+EXPORT_SYMBOL_GPL(csv_smcr);
+/* Number of entries in the @csv_smcr array */
+unsigned int csv_smcr_num;
+EXPORT_SYMBOL_GPL(csv_smcr_num);
+/**
  * @csv_cma_pct specifies the percentage of total system memory to be managed by
  * CMA, while the @csv_cma_size specifies the absolute size of CMA-managed
  * memory.
@@ -168,6 +184,25 @@ EXPORT_SYMBOL_GPL(csv_smr_num);
  */
 static unsigned char csv_cma_pct;
 static unsigned long csv_cma_size;
+/**
+ * Number of CSV3 VMs that the system is intended to support.
+ * The kernel cmdline parameter 'csv_use_hugetlb=<N>' specify the value of
+ * @csv_use_hugetlb.
+ * Required when CSV3 private memory is allocated from 1G hugetlb pages.
+ */
+static unsigned int csv_use_hugetlb;
+/**
+ * When CSV3 private memory is allocated from 1G hugetlb, metadata blocks are
+ * reserved for per-VM VMSAs.
+ * The @csv_use_hugetlb indicates how many metadata blocks to reserve.
+ */
+struct csv_metadata {
+	struct list_head list;
+	unsigned long hpa;
+	bool used;
+};
+static LIST_HEAD(csv_metadata_list);
+DEFINE_SPINLOCK(csv_metadata_lock);
 /**
  * The memory unit size managed by the hardware. Do not confuse this with
  * @csv_smr or @csv_smr_num.
@@ -240,10 +275,65 @@ static int __init cmdline_parse_csv_cma_pct(char *str)
 }
 early_param("csv_mem_percentage", cmdline_parse_csv_cma_pct);
 
+static int __init cmdline_parse_csv_smcr_size(char *str)
+{
+	unsigned long size;
+	char *endp;
+
+	if (str) {
+		size = memparse(str, &endp);
+		if (size) {
+			csv_smcr_num = size >> CSV_MR_ALIGN_BITS;
+			if (csv_smcr_num < 2) {
+				csv_smcr_num = 0;
+				pr_err("CSV-SMCR: csv_smcr_size must be >= 512MB\n");
+			}
+			if (csv_smcr_num > CSV_SMCR_MAX_ENTRIES) {
+				csv_smcr_num = CSV_SMCR_MAX_ENTRIES;
+				pr_warn("CSV-SMCR: csv_smcr_size is limited to 16GB\n");
+			}
+		} else
+			pr_err("CSV-SMCR: csv_smcr_size is invalid\n");
+	}
+
+	return 0;
+}
+early_param("csv_smcr_size", cmdline_parse_csv_smcr_size);
+
+static int __init cmdline_parse_csv_use_hugetlb(char *str)
+{
+	unsigned int count, limit = 0;
+	int ret;
+
+	if (!str) {
+		csv_use_hugetlb = DEFAULT_MAX_CSV_NUMBER;
+		return 0;
+	}
+
+	if (is_x86_vendor_hygon() && boot_cpu_data.x86_model >= 0x4)
+		limit = 500;
+
+	ret  = kstrtou32(str, 10, &count);
+	if (!ret) {
+		if (limit < count) {
+			pr_info("csv_use_hugetlb is limited to %d\n", limit);
+			count = limit;
+		}
+		csv_use_hugetlb = count;
+	} else {
+		/* Disable CSV hugetlb. */
+		csv_use_hugetlb = 0;
+		pr_err("csv_use_hugetlb is invalid. [0 - %d] is expected.\n", limit);
+	}
+
+	return ret;
+}
+early_param("csv_use_hugetlb", cmdline_parse_csv_use_hugetlb);
+
 static void csv_set_smr_entry_shift(unsigned int shift)
 {
 	smr_entry_shift = max_t(unsigned int, shift, MIN_SMR_ENTRY_SHIFT);
-	pr_info("CSV-CMA: SMR entry size is 0x%x\n", 1 << smr_entry_shift);
+	pr_info("CSV: SMR entry size is 0x%x\n", 1 << smr_entry_shift);
 }
 
 unsigned int csv_get_smr_entry_shift(void)
@@ -251,6 +341,129 @@ unsigned int csv_get_smr_entry_shift(void)
 	return smr_entry_shift;
 }
 EXPORT_SYMBOL_GPL(csv_get_smr_entry_shift);
+
+static void __init csv_smcr_free_mem(void)
+{
+	unsigned int i;
+
+	if (!csv_smcr_num)
+		return;
+
+	for (i = 0; i < csv_smcr_num; i++) {
+		if (csv_smcr[i].start && csv_smcr[i].size) {
+			memblock_phys_free(csv_smcr[i].start, csv_smcr[i].size);
+			pr_info("CSV-SMCR: free mem - paddr 0x%016llx, size 0x%016llx\n",
+				csv_smcr[i].start, csv_smcr[i].size);
+		}
+	}
+
+	if (csv_smcr) {
+		memblock_free(csv_smcr, sizeof(struct csv_mem) * csv_smcr_num);
+		csv_smcr = NULL;
+		csv_smcr_num = 0;
+	}
+}
+
+static int __init csv_smcr_reserve_mem(void)
+{
+	unsigned int i;
+
+	if (!csv_smcr_num)
+		return 0;
+
+	csv_smcr = memblock_alloc_node(sizeof(struct csv_mem) * csv_smcr_num,
+					SMP_CACHE_BYTES, NUMA_NO_NODE);
+	if (!csv_smcr) {
+		pr_err("CSV-SMCR: Fail to allocate memory\n");
+		return -ENOMEM;
+	}
+
+	memset(csv_smcr, 0, sizeof(struct csv_mem) * csv_smcr_num);
+	for (i = 0; i < csv_smcr_num; i++) {
+		csv_smcr[i].size = 1UL << CSV_MR_ALIGN_BITS;
+		csv_smcr[i].start = memblock_phys_alloc_try_nid(csv_smcr[i].size,
+								csv_smcr[i].size,
+								NUMA_NO_NODE);
+		if (csv_smcr[i].start == 0) {
+			csv_smcr[i].size = 0;
+			pr_err("CSV-SMCR: Fail to reserve memory\n");
+			goto failure;
+		}
+		csv_smcr[i].nid = phys_to_target_node(csv_smcr[i].start);
+
+		pr_info("CSV-SMCR: reserve mem - paddr 0x%016llx, size 0x%016llx\n",
+			csv_smcr[i].start, csv_smcr[i].size);
+	}
+
+	return 0;
+
+failure:
+	csv_smcr_free_mem();
+
+	return -ENOMEM;
+}
+
+static unsigned long __init smallest_pfn_in_node(int nid)
+{
+	unsigned long range_start_pfn, range_end_pfn;
+	unsigned long smallest = -1;
+	int i;
+
+	for_each_mem_pfn_range(i, nid, &range_start_pfn, &range_end_pfn, NULL) {
+		if (range_start_pfn < smallest)
+			smallest = range_start_pfn;
+	}
+
+	return smallest;
+}
+
+static unsigned long __init largest_pfn_in_node(int nid)
+{
+	unsigned long range_start_pfn, range_end_pfn;
+	unsigned long largest = 0;
+	int i;
+
+	for_each_mem_pfn_range(i, nid, &range_start_pfn, &range_end_pfn, NULL) {
+		if (range_end_pfn > largest)
+			largest = range_end_pfn;
+	}
+
+	return largest;
+}
+
+static unsigned long __init largest_pfn(void)
+{
+	unsigned long range_start_pfn, range_end_pfn;
+	unsigned long largest = 0;
+	int node, i;
+
+	for_each_node_state(node, N_ONLINE) {
+		for_each_mem_pfn_range(i, node, &range_start_pfn, &range_end_pfn, NULL) {
+			if (range_end_pfn > largest)
+				largest = range_end_pfn;
+		}
+	}
+
+	return largest;
+}
+
+static struct csv_mem * __init find_csv_smcr_mem_nid(int nid)
+{
+	int i;
+	struct csv_mem *smcr = NULL;
+
+	if (!csv_smcr)
+		return NULL;
+
+	for (i = 0; i < csv_smcr_num; i++) {
+		if (csv_smcr[i].nid == nid) {
+			smcr = &csv_smcr[i];
+			return smcr;
+		}
+	}
+
+	return NULL;
+}
 
 #ifdef CONFIG_CMA
 struct csv_cma {
@@ -285,7 +498,7 @@ static phys_addr_t __init csv_early_percent_memory_on_node(int nid)
 	return (present_pages_in_node(nid) * csv_cma_pct / 100) << PAGE_SHIFT;
 }
 
-static void __init csv_cma_reserve_mem(void)
+static int __init csv_cma_reserve_mem(void)
 {
 	int node, i;
 	unsigned long size;
@@ -293,12 +506,6 @@ static void __init csv_cma_reserve_mem(void)
 	int count;
 	int cma_array_size;
 	unsigned long max_spanned_size = 0;
-
-	csv_smr = memblock_alloc_node(CSV_SMR_INFO_SIZE, SMP_CACHE_BYTES, NUMA_NO_NODE);
-	if (!csv_smr) {
-		pr_err("CSV-CMA: Fail to allocate csv_smr\n");
-		return;
-	}
 
 	for_each_node_state(node, N_ONLINE) {
 		int ret;
@@ -350,6 +557,20 @@ static void __init csv_cma_reserve_mem(void)
 			continue;
 
 		array->count = i;
+
+		/**
+		 * If CSV3 private memory is allocated from CSV-CMA and
+		 * @csv_smcr is specified, the reserved SMCRs are taken into
+		 * account.
+		 */
+		if (find_csv_smcr_mem_nid(node)) {
+			pr_info("CSV-CMA: Node %d has smcr reserved, set all mem as SMR\n", node);
+			start = ALIGN(smallest_pfn_in_node(node) << PAGE_SHIFT,
+					1ull << CSV_MR_ALIGN_BITS);
+			end = ALIGN_DOWN(largest_pfn_in_node(node) << PAGE_SHIFT,
+							1ull << CSV_MR_ALIGN_BITS);
+		}
+
 		spanned_size = end - start;
 		if (spanned_size > max_spanned_size)
 			max_spanned_size = spanned_size;
@@ -366,6 +587,8 @@ static void __init csv_cma_reserve_mem(void)
 	WARN_ON((max_spanned_size / NUM_SMR_ENTRIES) < 1);
 	if (likely((max_spanned_size / NUM_SMR_ENTRIES) >= 1))
 		csv_set_smr_entry_shift(ilog2(max_spanned_size / NUM_SMR_ENTRIES - 1) + 1);
+
+	return csv_smr_num ? 0 : -ENOMEM;
 }
 
 phys_addr_t csv_alloc_from_contiguous(size_t size, nodemask_t *nodes_allowed,
@@ -483,9 +706,150 @@ EXPORT_SYMBOL_GPL(csv_release_to_contiguous);
 
 #endif	/* CONFIG_CMA */
 
+static int __init csv_mark_secure_mem_region(void)
+{
+	int node;
+	int idx = 0;
+	unsigned long max_spanned_size = 0;
+
+	for_each_node_state(node, N_ONLINE) {
+		unsigned long spanned_size;
+		unsigned long start = 0, end = 0;
+
+		start = ALIGN(smallest_pfn_in_node(node) << PAGE_SHIFT,
+						1ull << CSV_MR_ALIGN_BITS);
+		end = ALIGN_DOWN(largest_pfn_in_node(node) << PAGE_SHIFT,
+						1ull << CSV_MR_ALIGN_BITS);
+
+		if (start >= end)
+			continue;
+
+		spanned_size = end - start;
+		if (spanned_size > max_spanned_size)
+			max_spanned_size = spanned_size;
+
+		csv_smr[idx].start = start;
+		csv_smr[idx].size  = end - start;
+		idx++;
+
+		pr_info("CSV: Node %d - secure range 0x%016lx ~ 0x%016lx\n",
+			node, start, end);
+	}
+
+	csv_smr_num = idx;
+	WARN_ON((max_spanned_size / NUM_SMR_ENTRIES) < 1);
+	if (likely((max_spanned_size / NUM_SMR_ENTRIES) >= 1))
+		csv_set_smr_entry_shift(ilog2(max_spanned_size / NUM_SMR_ENTRIES - 1) + 1);
+
+	return csv_smr_num ? 0 : -ENOMEM;
+}
+
+static int __init csv_reserve_metadata(void)
+{
+	unsigned int i;
+	struct csv_metadata *metadata, *cur;
+	u64 hpa;
+	u64 smr_size;
+	struct list_head *pos, *q;
+
+	if (WARN_ON_ONCE(!csv_smr))
+		return -EFAULT;
+
+	metadata = memblock_alloc_node(sizeof(*metadata) * csv_use_hugetlb,
+					SMP_CACHE_BYTES, NUMA_NO_NODE);
+	if (WARN_ON(!metadata))
+		return -ENOMEM;
+
+	smr_size = 1 << smr_entry_shift;
+	for (i = 0; i < csv_use_hugetlb; i++) {
+		hpa = memblock_phys_alloc_range(smr_size, smr_size, 0,
+				ALIGN_DOWN((largest_pfn() << PAGE_SHIFT) - PUD_SIZE,
+				PUD_SIZE));
+		if (WARN_ON(!hpa))
+			goto err;
+
+		metadata[i].hpa = hpa;
+		metadata[i].used = false;
+		list_add_tail(&metadata[i].list, &csv_metadata_list);
+	}
+
+	return 0;
+err:
+	list_for_each_safe(pos, q, &csv_metadata_list) {
+		cur = list_entry(pos, struct csv_metadata, list);
+		memblock_phys_free(cur->hpa, 1 << smr_entry_shift);
+		list_del(&cur->list);
+	}
+	memblock_free(metadata, sizeof(*metadata) * csv_use_hugetlb);
+
+	pr_warn("CSV: Fail to reserve metadata.\n");
+
+	return -ENOMEM;
+}
+
+/**
+ * The helper functions csv_alloc_metadata() and csv_free_metadata() are used
+ * for the VMSA of CSV3 VMs only when CSV3 private memory is allocated from 1G
+ * hugetlb pages. In this case, the host should set the kernel cmdline parameter
+ * 'csv_use_hugetlb=<N>', which causes the kernel to reserve <N> metadata blocks
+ * at boot time. The function csv_alloc_metadata() allocates one block from this
+ * reserved pool, and csv_free_metadata() returns it.
+ *
+ * If CSV3 private memory is allocated from CSV-CMA, the VMSA is allocated
+ * from CSV-CMA, and these helper functions are not used. The host must not
+ * specify 'csv_use_hugetlb' on the kernel cmdline in this scenario.
+ */
+phys_addr_t csv_alloc_metadata(void)
+{
+	struct csv_metadata *metadata;
+	struct list_head *pos, *q;
+	u64 hpa = 0;
+
+	spin_lock(&csv_metadata_lock);
+
+	list_for_each_safe(pos, q, &csv_metadata_list) {
+		metadata = list_entry(pos, struct csv_metadata, list);
+		if (metadata) {
+			if (!metadata->used) {
+				metadata->used = true;
+				hpa = metadata->hpa;
+				break;
+			}
+		}
+	}
+
+	spin_unlock(&csv_metadata_lock);
+
+	return hpa;
+}
+EXPORT_SYMBOL_GPL(csv_alloc_metadata);
+
+void csv_free_metadata(u64 hpa)
+{
+	struct csv_metadata *metadata;
+	struct list_head *pos, *q;
+
+	spin_lock(&csv_metadata_lock);
+
+	list_for_each_safe(pos, q, &csv_metadata_list) {
+		metadata = list_entry(pos, struct csv_metadata, list);
+		if (metadata) {
+			if (metadata->hpa == hpa) {
+				WARN_ON(metadata->used != true);
+				metadata->used = false;
+				break;
+			}
+		}
+	}
+
+	spin_unlock(&csv_metadata_lock);
+}
+EXPORT_SYMBOL_GPL(csv_free_metadata);
+
 void __init early_csv_reserve_mem(void)
 {
 	unsigned long total_pages;
+	int ret;
 
 	/* Only reserve memory on the host that enabled CSV3 feature */
 	if (!csv3_check_cpu_support())
@@ -504,20 +868,95 @@ void __init early_csv_reserve_mem(void)
 			csv_cma_pct = MAX_CSV_CMA_PCT;
 	}
 
-	if (!csv_cma_pct) {
-		pr_warn("CSV-CMA: Don't reserve any memory\n");
+	if (!csv_cma_pct && !(csv_smcr_num && csv_use_hugetlb)) {
+		pr_warn("CSV: Fail, either kernel param csv_mem_percentage or csv_smcr_size&csv_use_hugetlb is required\n");
+		pr_warn("CSV: Don't reserve any memory\n");
 		return;
 	}
 
-#ifdef CONFIG_CMA
-	if (cma_alloc_areas(CSV_CMA_AREAS))
+	csv_smr = memblock_alloc_node(CSV_SMR_INFO_SIZE, SMP_CACHE_BYTES, NUMA_NO_NODE);
+	if (!csv_smr) {
+		pr_err("CSV: Fail to allocate csv_smr\n");
 		return;
+	}
+	memset(csv_smr, 0, CSV_SMR_INFO_SIZE);
 
-	csv_cma_reserve_mem();
+	/* SMCR memory for CSV3 NPT/context. */
+	ret = csv_smcr_reserve_mem();
+	if (ret)
+		pr_warn("CSV: Fail to reserve SMCR!\n");
+
+	/**
+	 * The kernel cmdline parameter csv_mem_percentage=<N> take precedence
+	 * over csv_use_hugetlb=<N>.
+	 */
+	if (csv_cma_pct) {
+#ifdef CONFIG_CMA
+		/**
+		 * If reach here, the CSV3 private memory should be allocated
+		 * from CMA.
+		 */
+		csv_use_hugetlb = 0;
+
+		ret = cma_alloc_areas(CSV_CMA_AREAS);
+		if (ret)
+			goto err_free_smcr;
+
+		ret = csv_cma_reserve_mem();
+		if (ret)
+			goto err_free_smcr;
+
+		return;
 #else
-	pr_warn("CSV: Fail, csv_mem_percentage depends on CONFIG_CMA\n");
+		if (csv_smcr && csv_use_hugetlb) {
+			pr_info("CSV: Fallback to csv_use_hugetlb logic\n");
+		} else {
+			pr_warn("CSV: Fail, csv_mem_percentage depends on CONFIG_CMA\n");
+			goto err_free_smcr;
+		}
 #endif
+	}
+
+	/**
+	 * If reach here, the CSV3 private memory should be allocated from
+	 * 1G hugetlb.
+	 */
+	csv_cma_pct = 0;
+
+	if (csv_smcr && csv_use_hugetlb) {
+		ret = csv_mark_secure_mem_region();
+		if (ret)
+			goto err_free_smcr;
+
+		ret = csv_reserve_metadata();
+		if (ret)
+			goto err_free_smcr;
+
+		return;
+	}
+
+err_free_smcr:
+	csv_smcr_free_mem();
+
+	memblock_free(csv_smr, CSV_SMR_INFO_SIZE);
+	csv_smr = NULL;
+	csv_smr_num = 0;
+
+	csv_cma_pct = 0;
+	csv_use_hugetlb = 0;
 }
+
+enum csv_smr_source get_csv_smr_source(void)
+{
+	if (csv_cma_pct)
+		return USE_CMA;
+
+	if (csv_use_hugetlb)
+		return USE_HUGETLB;
+
+	return NOT_SUPPORTED;
+}
+EXPORT_SYMBOL_GPL(get_csv_smr_source);
 
 #ifdef CONFIG_SYSFS
 
