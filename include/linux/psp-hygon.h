@@ -280,11 +280,15 @@ struct csv3_data_set_guest_private_memory {
  * struct csv3_data_set_smr - CSV3_CMD_SET_SMR command parameters
  *
  * @smr_entry_size: size of SMR entry
+ * @smcr_flag: must be 0 for SMCR memory region
  * @nregions: number of memory regions
  * @regions_paddr: address of memory containing multiple memory regions
  */
 struct csv3_data_set_smr {
-	u32 smr_entry_size;		/* In */
+	union {
+		u32 smr_entry_size;	/* In */
+		u32 smcr_flag;		/* In */
+	};
 	u32 nregions;			/* In */
 	u64 regions_paddr;		/* In */
 } __packed;
