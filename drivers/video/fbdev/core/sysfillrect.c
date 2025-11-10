@@ -248,7 +248,6 @@ void sys_fillrect(struct fb_info *p, const struct fb_fillrect *rect)
 	u32 bpp = p->var.bits_per_pixel;
 	unsigned long *dst;
 	int dst_idx, left;
-	long dst_offset;
 
 	if (p->state != FBINFO_STATE_RUNNING)
 		return;
@@ -288,11 +287,6 @@ void sys_fillrect(struct fb_info *p, const struct fb_fillrect *rect)
 		}
 		while (height--) {
 			dst += dst_idx >> (ffs(bits) - 1);
-			dst_offset = (long)dst - (long)p->screen_base;
-			if (dst_offset < 0 || dst_offset >= p->fix.smem_len) {
-				pr_err("dst offset out of bound: dst_offset(%ld)", dst_offset);
-				return;
-			}
 			dst_idx &= (bits - 1);
 			fill_op32(p, dst, dst_idx, pat, width*bpp, bits);
 			dst_idx += p->fix.line_length*8;
