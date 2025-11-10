@@ -732,7 +732,7 @@ static int uncore_pmu_event_init(struct perf_event *event)
 
 	pmu = uncore_event_to_pmu(event);
 	/* no device found for this pmu */
-	if (pmu->func_id < 0)
+	if (!pmu->registered)
 		return -ENOENT;
 
 	/* Sampling not supported yet */
@@ -983,7 +983,7 @@ static void uncore_types_exit(struct intel_uncore_type **types)
 		uncore_type_exit(*types);
 }
 
-static int __init uncore_type_init(struct intel_uncore_type *type, bool setid)
+static int __init uncore_type_init(struct intel_uncore_type *type)
 {
 	struct intel_uncore_pmu *pmus;
 	size_t size;
@@ -996,7 +996,6 @@ static int __init uncore_type_init(struct intel_uncore_type *type, bool setid)
 	size = uncore_max_dies() * sizeof(struct intel_uncore_box *);
 
 	for (i = 0; i < type->num_boxes; i++) {
-		pmus[i].func_id	= setid ? i : -1;
 		pmus[i].pmu_idx	= i;
 		pmus[i].type	= type;
 		pmus[i].boxes	= kzalloc(size, GFP_KERNEL);
@@ -1046,12 +1045,12 @@ err:
 }
 
 static int __init
-uncore_types_init(struct intel_uncore_type **types, bool setid)
+uncore_types_init(struct intel_uncore_type **types)
 {
 	int ret;
 
 	for (; *types; types++) {
-		ret = uncore_type_init(*types, setid);
+		ret = uncore_type_init(*types);
 		if (ret)
 			return ret;
 	}
@@ -1150,11 +1149,6 @@ static int uncore_pci_pmu_register(struct pci_dev *pdev,
 	box = uncore_alloc_box(type, NUMA_NO_NODE);
 	if (!box)
 		return -ENOMEM;
-
-	if (pmu->func_id < 0)
-		pmu->func_id = pdev->devfn;
-	else
-		WARN_ON_ONCE(pmu->func_id != pdev->devfn);
 
 	atomic_inc(&box->refcnt);
 	box->dieid = die;
@@ -1401,7 +1395,7 @@ static int __init uncore_pci_init(void)
 		goto err;
 	}
 
-	ret = uncore_types_init(uncore_pci_uncores, false);
+	ret = uncore_types_init(uncore_pci_uncores);
 	if (ret)
 		goto errtype;
 
@@ -1669,7 +1663,7 @@ static int __init uncore_cpu_init(void)
 {
 	int ret;
 
-	ret = uncore_types_init(uncore_msr_uncores, true);
+	ret = uncore_types_init(uncore_msr_uncores);
 	if (ret)
 		goto err;
 
@@ -1688,7 +1682,7 @@ static int __init uncore_mmio_init(void)
 	struct intel_uncore_type **types = uncore_mmio_uncores;
 	int ret;
 
-	ret = uncore_types_init(types, true);
+	ret = uncore_types_init(types);
 	if (ret)
 		goto err;
 
@@ -1878,6 +1872,7 @@ static const struct x86_cpu_id intel_uncore_match[] __initconst = {
 	X86_MATCH_INTEL_FAM6_MODEL(ATOM_GRACEMONT,	&adl_uncore_init),
 	X86_MATCH_INTEL_FAM6_MODEL(ATOM_CRESTMONT_X,	&gnr_uncore_init),
 	X86_MATCH_INTEL_FAM6_MODEL(ATOM_CRESTMONT,	&gnr_uncore_init),
+	X86_MATCH_INTEL_FAM6_MODEL(ATOM_DARKMONT_X,	&gnr_uncore_init),
 	{},
 };
 MODULE_DEVICE_TABLE(x86cpu, intel_uncore_match);
