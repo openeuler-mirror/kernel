@@ -565,10 +565,11 @@ static inline void mminit_validate_memmodel_limits(unsigned long *start_pfn,
 #define NODE_RECLAIM_SUCCESS	1
 
 #ifdef CONFIG_NUMA
-extern int node_reclaim(struct pglist_data *, gfp_t, unsigned int);
+int node_reclaim(struct pglist_data *pgdat, gfp_t mask, unsigned int order,
+		 int alloc_flags, struct zone *zone);
 #else
 static inline int node_reclaim(struct pglist_data *pgdat, gfp_t mask,
-				unsigned int order)
+		unsigned int order, int alloc_flags, struct zone *zone)
 {
 	return NODE_RECLAIM_NOSCAN;
 }
