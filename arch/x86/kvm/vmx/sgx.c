@@ -152,8 +152,8 @@ static int __handle_encls_ecreate(struct kvm_vcpu *vcpu,
 	u8 max_size_log2;
 	int trapnr, ret;
 
-	sgx_12_0 = kvm_find_cpuid_entry(vcpu, 0x12, 0);
-	sgx_12_1 = kvm_find_cpuid_entry(vcpu, 0x12, 1);
+	sgx_12_0 = kvm_find_cpuid_entry_index(vcpu, 0x12, 0);
+	sgx_12_1 = kvm_find_cpuid_entry_index(vcpu, 0x12, 1);
 	if (!sgx_12_0 || !sgx_12_1) {
 		vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
 		vcpu->run->internal.suberror = KVM_INTERNAL_ERROR_EMULATION;
@@ -175,12 +175,19 @@ static int __handle_encls_ecreate(struct kvm_vcpu *vcpu,
 		return 1;
 	}
 
-	/* Enforce CPUID restrictions on MISCSELECT, ATTRIBUTES and XFRM. */
+	/*
+	 * Enforce CPUID restrictions on MISCSELECT, ATTRIBUTES and XFRM.  Note
+	 * that the allowed XFRM (XFeature Request Mask) isn't strictly bound
+	 * by the supported XCR0.  FP+SSE *must* be set in XFRM, even if XSAVE
+	 * is unsupported, i.e. even if XCR0 itself is completely unsupported.
+	 */
 	if ((u32)miscselect & ~sgx_12_0->ebx ||
 	    (u32)attributes & ~sgx_12_1->eax ||
 	    (u32)(attributes >> 32) & ~sgx_12_1->ebx ||
 	    (u32)xfrm & ~sgx_12_1->ecx ||
-	    (u32)(xfrm >> 32) & ~sgx_12_1->edx) {
+	    (u32)(xfrm >> 32) & ~sgx_12_1->edx ||
+	    xfrm & ~(vcpu->arch.guest_supported_xcr0 | XFEATURE_MASK_FPSSE) ||
+	    (xfrm & XFEATURE_MASK_FPSSE) != XFEATURE_MASK_FPSSE) {
 		kvm_inject_gp(vcpu, 0);
 		return 1;
 	}
@@ -437,7 +444,7 @@ static bool sgx_intercept_encls_ecreate(struct kvm_vcpu *vcpu)
 	if (!vcpu->kvm->arch.sgx_provisioning_allowed)
 		return true;
 
-	guest_cpuid = kvm_find_cpuid_entry(vcpu, 0x12, 0);
+	guest_cpuid = kvm_find_cpuid_entry_index(vcpu, 0x12, 0);
 	if (!guest_cpuid)
 		return true;
 
@@ -445,7 +452,7 @@ static bool sgx_intercept_encls_ecreate(struct kvm_vcpu *vcpu)
 	if (guest_cpuid->ebx != ebx || guest_cpuid->edx != edx)
 		return true;
 
-	guest_cpuid = kvm_find_cpuid_entry(vcpu, 0x12, 1);
+	guest_cpuid = kvm_find_cpuid_entry_index(vcpu, 0x12, 1);
 	if (!guest_cpuid)
 		return true;
 

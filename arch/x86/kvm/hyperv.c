@@ -275,8 +275,7 @@ static bool kvm_hv_is_syndbg_enabled(struct kvm_vcpu *vcpu)
 	struct kvm_cpuid_entry2 *entry;
 
 	entry = kvm_find_cpuid_entry(vcpu,
-				     HYPERV_CPUID_SYNDBG_PLATFORM_CAPABILITIES,
-				     0);
+				     HYPERV_CPUID_SYNDBG_PLATFORM_CAPABILITIES);
 	if (!entry)
 		return false;
 

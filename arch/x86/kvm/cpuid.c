@@ -19,6 +19,7 @@
 #include <asm/user.h>
 #include <asm/fpu/xstate.h>
 #include <asm/sgx.h>
+#include <asm/cpuid.h>
 #include "cpuid.h"
 #include "lapic.h"
 #include "mmu.h"
@@ -66,8 +67,17 @@ u32 xstate_required_size(u64 xstate_bv, bool compacted)
 	(boot_cpu_has(X86_FEATURE_##name) ? F(name) : 0);	\
 })
 
+/*
+ * Magic value used by KVM when querying userspace-provided CPUID entries and
+ * doesn't care about the CPIUD index because the index of the function in
+ * question is not significant.  Note, this magic value must have at least one
+ * bit set in bits[63:32] and must be consumed as a u64 by cpuid_entry2_find()
+ * to avoid false positives when processing guest CPUID input.
+ */
+#define KVM_CPUID_INDEX_NOT_SIGNIFICANT -1ull
+
 static inline struct kvm_cpuid_entry2 *cpuid_entry2_find(
-	struct kvm_cpuid_entry2 *entries, int nent, u32 function, u32 index)
+	struct kvm_cpuid_entry2 *entries, int nent, u32 function, u64 index)
 {
 	struct kvm_cpuid_entry2 *e;
 	int i;
@@ -75,9 +85,31 @@ static inline struct kvm_cpuid_entry2 *cpuid_entry2_find(
 	for (i = 0; i < nent; i++) {
 		e = &entries[i];
 
-		if (e->function == function && (e->index == index ||
-		    !(e->flags & KVM_CPUID_FLAG_SIGNIFCANT_INDEX)))
+		if (e->function != function)
+			continue;
+
+		/*
+		 * If the index isn't significant, use the first entry with a
+		 * matching function.  It's userspace's responsibilty to not
+		 * provide "duplicate" entries in all cases.
+		 */
+		if (!(e->flags & KVM_CPUID_FLAG_SIGNIFCANT_INDEX) || e->index == index)
 			return e;
+
+
+		/*
+		 * Similarly, use the first matching entry if KVM is doing a
+		 * lookup (as opposed to emulating CPUID) for a function that's
+		 * architecturally defined as not having a significant index.
+		 */
+		if (index == KVM_CPUID_INDEX_NOT_SIGNIFICANT) {
+			/*
+			 * Direct lookups from KVM should not diverge from what
+			 * KVM defines internally (the architectural behavior).
+			 */
+			WARN_ON_ONCE(cpuid_function_is_indexed(function));
+			return e;
+		}
 	}
 
 	return NULL;
@@ -94,7 +126,8 @@ static int kvm_check_cpuid(struct kvm_vcpu *vcpu,
 	 * The existing code assumes virtual address is 48-bit or 57-bit in the
 	 * canonical address checks; exit if it is ever changed.
 	 */
-	best = cpuid_entry2_find(entries, nent, 0x80000008, 0);
+	best = cpuid_entry2_find(entries, nent, 0x80000008,
+				 KVM_CPUID_INDEX_NOT_SIGNIFICANT);
 	if (best) {
 		int vaddr_bits = (best->eax & 0xff00) >> 8;
 
@@ -118,11 +151,99 @@ static int kvm_check_cpuid(struct kvm_vcpu *vcpu,
 	return fpu_enable_guest_xfd_features(&vcpu->arch.guest_fpu, xfeatures);
 }
 
+static void __kvm_update_cpuid_runtime(struct kvm_vcpu *vcpu, struct kvm_cpuid_entry2 *entries,
+				       int nent);
+
+/* Check whether the supplied CPUID data is equal to what is already set for the vCPU. */
+static int kvm_cpuid_check_equal(struct kvm_vcpu *vcpu, struct kvm_cpuid_entry2 *e2,
+				 int nent)
+{
+	struct kvm_cpuid_entry2 *orig;
+	int i;
+
+	/*
+	 * Apply runtime CPUID updates to the incoming CPUID entries to avoid
+	 * false positives due mismatches on KVM-owned feature flags.  Note,
+	 * runtime CPUID updates may consume other CPUID-driven vCPU state,
+	 * e.g. KVM or Xen CPUID bases.  Updating runtime state before full
+	 * CPUID processing is functionally correct only because any change in
+	 * CPUID is disallowed, i.e. using stale data is ok because the below
+	 * checks will reject the change.
+	 */
+	__kvm_update_cpuid_runtime(vcpu, e2, nent);
+
+	if (nent != vcpu->arch.cpuid_nent)
+		return -EINVAL;
+
+	for (i = 0; i < nent; i++) {
+		orig = &vcpu->arch.cpuid_entries[i];
+		if (e2[i].function != orig->function ||
+		    e2[i].index != orig->index ||
+		    e2[i].flags != orig->flags ||
+		    e2[i].eax != orig->eax || e2[i].ebx != orig->ebx ||
+		    e2[i].ecx != orig->ecx || e2[i].edx != orig->edx)
+			return -EINVAL;
+	}
+
+	return 0;
+}
+
+static struct kvm_hypervisor_cpuid __kvm_get_hypervisor_cpuid(struct kvm_cpuid_entry2 *entries,
+							      int nent, const char *sig)
+{
+	struct kvm_hypervisor_cpuid cpuid = {};
+	struct kvm_cpuid_entry2 *entry;
+	u32 base;
+
+	for_each_possible_hypervisor_cpuid_base(base) {
+		entry = cpuid_entry2_find(entries, nent, base, KVM_CPUID_INDEX_NOT_SIGNIFICANT);
+
+		if (entry) {
+			u32 signature[3];
+
+			signature[0] = entry->ebx;
+			signature[1] = entry->ecx;
+			signature[2] = entry->edx;
+
+			if (!memcmp(signature, sig, sizeof(signature))) {
+				cpuid.base = base;
+				cpuid.limit = entry->eax;
+				break;
+			}
+		}
+	}
+
+	return cpuid;
+}
+
+static struct kvm_hypervisor_cpuid kvm_get_hypervisor_cpuid(struct kvm_vcpu *vcpu,
+							    const char *sig)
+{
+	return __kvm_get_hypervisor_cpuid(vcpu->arch.cpuid_entries,
+					  vcpu->arch.cpuid_nent, sig);
+}
+
+static struct kvm_cpuid_entry2 *__kvm_find_kvm_cpuid_features(struct kvm_cpuid_entry2 *entries,
+							      int nent, u32 kvm_cpuid_base)
+{
+	return cpuid_entry2_find(entries, nent, kvm_cpuid_base | KVM_CPUID_FEATURES,
+				 KVM_CPUID_INDEX_NOT_SIGNIFICANT);
+}
+
+static struct kvm_cpuid_entry2 *kvm_find_kvm_cpuid_features(struct kvm_vcpu *vcpu)
+{
+	u32 base = vcpu->arch.kvm_cpuid.base;
+
+	if (!base)
+		return NULL;
+
+	return __kvm_find_kvm_cpuid_features(vcpu->arch.cpuid_entries,
+					     vcpu->arch.cpuid_nent, base);
+}
+
 void kvm_update_pv_runtime(struct kvm_vcpu *vcpu)
 {
-	struct kvm_cpuid_entry2 *best;
-
-	best = kvm_find_cpuid_entry(vcpu, KVM_CPUID_FEATURES, 0);
+	struct kvm_cpuid_entry2 *best = kvm_find_kvm_cpuid_features(vcpu);
 
 	/*
 	 * save the feature bitmap to avoid cpuid lookup for every PV
@@ -132,11 +253,28 @@ void kvm_update_pv_runtime(struct kvm_vcpu *vcpu)
 		vcpu->arch.pv_cpuid.features = best->eax;
 }
 
-void kvm_update_cpuid_runtime(struct kvm_vcpu *vcpu)
+/*
+ * Calculate guest's supported XCR0 taking into account guest CPUID data and
+ * supported_xcr0 (comprised of host configuration and KVM_SUPPORTED_XCR0).
+ */
+static u64 cpuid_get_supported_xcr0(struct kvm_cpuid_entry2 *entries, int nent)
 {
 	struct kvm_cpuid_entry2 *best;
 
-	best = kvm_find_cpuid_entry(vcpu, 1, 0);
+	best = cpuid_entry2_find(entries, nent, 0xd, 0);
+	if (!best)
+		return 0;
+
+	return (best->eax | ((u64)best->edx << 32)) & supported_xcr0;
+}
+
+static void __kvm_update_cpuid_runtime(struct kvm_vcpu *vcpu, struct kvm_cpuid_entry2 *entries,
+				       int nent)
+{
+	struct kvm_cpuid_entry2 *best;
+	struct kvm_hypervisor_cpuid kvm_cpuid;
+
+	best = cpuid_entry2_find(entries, nent, 1, KVM_CPUID_INDEX_NOT_SIGNIFICANT);
 	if (best) {
 		/* Update OSXSAVE bit */
 		if (boot_cpu_has(X86_FEATURE_XSAVE))
@@ -147,32 +285,39 @@ void kvm_update_cpuid_runtime(struct kvm_vcpu *vcpu)
 			   vcpu->arch.apic_base & MSR_IA32_APICBASE_ENABLE);
 	}
 
-	best = kvm_find_cpuid_entry(vcpu, 7, 0);
+	best = cpuid_entry2_find(entries, nent, 7, 0);
 	if (best && boot_cpu_has(X86_FEATURE_PKU) && best->function == 0x7)
 		cpuid_entry_change(best, X86_FEATURE_OSPKE,
 				   kvm_read_cr4_bits(vcpu, X86_CR4_PKE));
 
-	best = kvm_find_cpuid_entry(vcpu, 0xD, 0);
+	best = cpuid_entry2_find(entries, nent, 0xD, 0);
 	if (best)
 		best->ebx = xstate_required_size(vcpu->arch.xcr0, false);
 
-	best = kvm_find_cpuid_entry(vcpu, 0xD, 1);
+	best = cpuid_entry2_find(entries, nent, 0xD, 1);
 	if (best && (cpuid_entry_has(best, X86_FEATURE_XSAVES) ||
 		     cpuid_entry_has(best, X86_FEATURE_XSAVEC)))
 		best->ebx = xstate_required_size(vcpu->arch.xcr0, true);
 
-	best = kvm_find_cpuid_entry(vcpu, KVM_CPUID_FEATURES, 0);
-	if (kvm_hlt_in_guest(vcpu->kvm) && best &&
-		(best->eax & (1 << KVM_FEATURE_PV_UNHALT)))
-		best->eax &= ~(1 << KVM_FEATURE_PV_UNHALT);
+	kvm_cpuid = __kvm_get_hypervisor_cpuid(entries, nent, KVM_SIGNATURE);
+	if (kvm_cpuid.base) {
+		best = __kvm_find_kvm_cpuid_features(entries, nent, kvm_cpuid.base);
+		if (kvm_hlt_in_guest(vcpu->kvm) && best)
+			best->eax &= ~(1 << KVM_FEATURE_PV_UNHALT);
+	}
 
 	if (!kvm_check_has_quirk(vcpu->kvm, KVM_X86_QUIRK_MISC_ENABLE_NO_MWAIT)) {
-		best = kvm_find_cpuid_entry(vcpu, 0x1, 0);
+		best = cpuid_entry2_find(entries, nent, 0x1, KVM_CPUID_INDEX_NOT_SIGNIFICANT);
 		if (best)
 			cpuid_entry_change(best, X86_FEATURE_MWAIT,
 					   vcpu->arch.ia32_misc_enable_msr &
 					   MSR_IA32_MISC_ENABLE_MWAIT);
 	}
+}
+
+void kvm_update_cpuid_runtime(struct kvm_vcpu *vcpu)
+{
+	__kvm_update_cpuid_runtime(vcpu, vcpu->arch.cpuid_entries, vcpu->arch.cpuid_nent);
 }
 EXPORT_SYMBOL_GPL(kvm_update_cpuid_runtime);
 
@@ -181,7 +326,9 @@ static void kvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 	struct kvm_lapic *apic = vcpu->arch.apic;
 	struct kvm_cpuid_entry2 *best;
 
-	best = kvm_find_cpuid_entry(vcpu, 1, 0);
+	kvm_update_cpuid_runtime(vcpu);
+
+	best = kvm_find_cpuid_entry(vcpu, 1);
 	if (best && apic) {
 		if (cpuid_entry_has(best, X86_FEATURE_TSC_DEADLINE_TIMER))
 			apic->lapic_timer.timer_mode_mask = 3 << 17;
@@ -191,27 +338,8 @@ static void kvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 		kvm_apic_set_version(vcpu);
 	}
 
-	best = kvm_find_cpuid_entry(vcpu, 0xD, 0);
-	if (!best)
-		vcpu->arch.guest_supported_xcr0 = 0;
-	else
-		vcpu->arch.guest_supported_xcr0 =
-			(best->eax | ((u64)best->edx << 32)) & supported_xcr0;
-
-	/*
-	 * Bits 127:0 of the allowed SECS.ATTRIBUTES (CPUID.0x12.0x1) enumerate
-	 * the supported XSAVE Feature Request Mask (XFRM), i.e. the enclave's
-	 * requested XCR0 value.  The enclave's XFRM must be a subset of XCRO
-	 * at the time of EENTER, thus adjust the allowed XFRM by the guest's
-	 * supported XCR0.  Similar to XCR0 handling, FP and SSE are forced to
-	 * '1' even on CPUs that don't support XSAVE.
-	 */
-	best = kvm_find_cpuid_entry(vcpu, 0x12, 0x1);
-	if (best) {
-		best->ecx &= vcpu->arch.guest_supported_xcr0 & 0xffffffff;
-		best->edx &= vcpu->arch.guest_supported_xcr0 >> 32;
-		best->ecx |= XFEATURE_MASK_FPSSE;
-	}
+	vcpu->arch.guest_supported_xcr0 =
+		cpuid_get_supported_xcr0(vcpu->arch.cpuid_entries, vcpu->arch.cpuid_nent);
 
 	kvm_update_pv_runtime(vcpu);
 
@@ -232,38 +360,14 @@ static void kvm_vcpu_after_set_cpuid(struct kvm_vcpu *vcpu)
 	kvm_mmu_after_set_cpuid(vcpu);
 }
 
-static int is_efer_nx(void)
-{
-	return host_efer & EFER_NX;
-}
-
-static void cpuid_fix_nx_cap(struct kvm_vcpu *vcpu)
-{
-	int i;
-	struct kvm_cpuid_entry2 *e, *entry;
-
-	entry = NULL;
-	for (i = 0; i < vcpu->arch.cpuid_nent; ++i) {
-		e = &vcpu->arch.cpuid_entries[i];
-		if (e->function == 0x80000001) {
-			entry = e;
-			break;
-		}
-	}
-	if (entry && cpuid_entry_has(entry, X86_FEATURE_NX) && !is_efer_nx()) {
-		cpuid_entry_clear(entry, X86_FEATURE_NX);
-		printk(KERN_INFO "kvm: guest NX capability removed\n");
-	}
-}
-
 int cpuid_query_maxphyaddr(struct kvm_vcpu *vcpu)
 {
 	struct kvm_cpuid_entry2 *best;
 
-	best = kvm_find_cpuid_entry(vcpu, 0x80000000, 0);
+	best = kvm_find_cpuid_entry(vcpu, 0x80000000);
 	if (!best || best->eax < 0x80000008)
 		goto not_found;
-	best = kvm_find_cpuid_entry(vcpu, 0x80000008, 0);
+	best = kvm_find_cpuid_entry(vcpu, 0x80000008);
 	if (best)
 		return best->eax & 0xff;
 not_found:
@@ -278,6 +382,45 @@ not_found:
 u64 kvm_vcpu_reserved_gpa_bits_raw(struct kvm_vcpu *vcpu)
 {
 	return rsvd_bits(cpuid_maxphyaddr(vcpu), 63);
+}
+
+static int kvm_set_cpuid(struct kvm_vcpu *vcpu, struct kvm_cpuid_entry2 *e2,
+			 int nent)
+{
+	int r;
+
+	/*
+	 * KVM does not correctly handle changing guest CPUID after KVM_RUN, as
+	 * MAXPHYADDR, GBPAGES support, AMD reserved bit behavior, etc.. aren't
+	 * tracked in kvm_mmu_page_role.  As a result, KVM may miss guest page
+	 * faults due to reusing SPs/SPTEs. In practice no sane VMM mucks with
+	 * the core vCPU model on the fly. It would've been better to forbid any
+	 * KVM_SET_CPUID{,2} calls after KVM_RUN altogether but unfortunately
+	 * some VMMs (e.g. QEMU) reuse vCPU fds for CPU hotplug/unplug and do
+	 * KVM_SET_CPUID{,2} again. To support this legacy behavior, check
+	 * whether the supplied CPUID data is equal to what's already set.
+	 */
+	if (vcpu->arch.last_vmentry_cpu != -1) {
+		r = kvm_cpuid_check_equal(vcpu, e2, nent);
+		if (r)
+			return r;
+
+		kvfree(e2);
+		return 0;
+	}
+
+	r = kvm_check_cpuid(vcpu, e2, nent);
+	if (r)
+		return r;
+
+	kvfree(vcpu->arch.cpuid_entries);
+	vcpu->arch.cpuid_entries = e2;
+	vcpu->arch.cpuid_nent = nent;
+
+	vcpu->arch.kvm_cpuid = kvm_get_hypervisor_cpuid(vcpu, KVM_SIGNATURE);
+	kvm_vcpu_after_set_cpuid(vcpu);
+
+	return 0;
 }
 
 /* when an old userspace process fills a new kernel module */
@@ -316,19 +459,9 @@ int kvm_vcpu_ioctl_set_cpuid(struct kvm_vcpu *vcpu,
 		e2[i].padding[2] = 0;
 	}
 
-	r = kvm_check_cpuid(vcpu, e2, cpuid->nent);
-	if (r) {
+	r = kvm_set_cpuid(vcpu, e2, cpuid->nent);
+	if (r)
 		kvfree(e2);
-		goto out_free_cpuid;
-	}
-
-	kvfree(vcpu->arch.cpuid_entries);
-	vcpu->arch.cpuid_entries = e2;
-	vcpu->arch.cpuid_nent = cpuid->nent;
-
-	cpuid_fix_nx_cap(vcpu);
-	kvm_update_cpuid_runtime(vcpu);
-	kvm_vcpu_after_set_cpuid(vcpu);
 
 out_free_cpuid:
 	kvfree(e);
@@ -352,20 +485,11 @@ int kvm_vcpu_ioctl_set_cpuid2(struct kvm_vcpu *vcpu,
 			return PTR_ERR(e2);
 	}
 
-	r = kvm_check_cpuid(vcpu, e2, cpuid->nent);
-	if (r) {
+	r = kvm_set_cpuid(vcpu, e2, cpuid->nent);
+	if (r)
 		kvfree(e2);
-		return r;
-	}
 
-	kvfree(vcpu->arch.cpuid_entries);
-	vcpu->arch.cpuid_entries = e2;
-	vcpu->arch.cpuid_nent = cpuid->nent;
-
-	kvm_update_cpuid_runtime(vcpu);
-	kvm_vcpu_after_set_cpuid(vcpu);
-
-	return 0;
+	return r;
 }
 
 int kvm_vcpu_ioctl_get_cpuid2(struct kvm_vcpu *vcpu,
@@ -425,7 +549,6 @@ static __always_inline void kvm_cpu_cap_mask(enum cpuid_leafs leaf, u32 mask)
 
 void kvm_set_cpu_caps(void)
 {
-	unsigned int f_nx = is_efer_nx() ? F(NX) : 0;
 #ifdef CONFIG_X86_64
 	unsigned int f_gbpages = F(GBPAGES);
 	unsigned int f_lm = F(LM);
@@ -549,7 +672,7 @@ void kvm_set_cpu_caps(void)
 		F(CX8) | F(APIC) | 0 /* Reserved */ | F(SYSCALL) |
 		F(MTRR) | F(PGE) | F(MCA) | F(CMOV) |
 		F(PAT) | F(PSE36) | 0 /* Reserved */ |
-		f_nx | 0 /* Reserved */ | F(MMXEXT) | F(MMX) |
+		F(NX) | 0 /* Reserved */ | F(MMXEXT) | F(MMX) |
 		F(FXSR) | F(FXSR_OPT) | f_gbpages | F(RDTSCP) |
 		0 /* Reserved */ | f_lm | F(3DNOWEXT) | F(3DNOW)
 	);
@@ -683,24 +806,8 @@ static struct kvm_cpuid_entry2 *do_host_cpuid(struct kvm_cpuid_array *array,
 	cpuid_count(entry->function, entry->index,
 		    &entry->eax, &entry->ebx, &entry->ecx, &entry->edx);
 
-	switch (function) {
-	case 4:
-	case 7:
-	case 0xb:
-	case 0xd:
-	case 0xf:
-	case 0x10:
-	case 0x12:
-	case 0x14:
-	case 0x17:
-	case 0x18:
-	case 0x1d:
-	case 0x1e:
-	case 0x1f:
-	case 0x8000001d:
+	if (cpuid_function_is_indexed(function))
 		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
-		break;
-	}
 
 	return entry;
 }
@@ -983,8 +1090,7 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 		}
 		break;
 	case KVM_CPUID_SIGNATURE: {
-		static const char signature[12] = "KVMKVMKVM\0\0";
-		const u32 *sigptr = (const u32 *)signature;
+		const u32 *sigptr = (const u32 *)KVM_SIGNATURE;
 		entry->eax = KVM_CPUID_FEATURES;
 		entry->ebx = sigptr[0];
 		entry->ecx = sigptr[1];
@@ -1235,11 +1341,19 @@ out_free:
 	return r;
 }
 
-struct kvm_cpuid_entry2 *kvm_find_cpuid_entry(struct kvm_vcpu *vcpu,
-					      u32 function, u32 index)
+struct kvm_cpuid_entry2 *kvm_find_cpuid_entry_index(struct kvm_vcpu *vcpu,
+						    u32 function, u32 index)
 {
 	return cpuid_entry2_find(vcpu->arch.cpuid_entries, vcpu->arch.cpuid_nent,
 				 function, index);
+}
+EXPORT_SYMBOL_GPL(kvm_find_cpuid_entry_index);
+
+struct kvm_cpuid_entry2 *kvm_find_cpuid_entry(struct kvm_vcpu *vcpu,
+					      u32 function)
+{
+	return cpuid_entry2_find(vcpu->arch.cpuid_entries, vcpu->arch.cpuid_nent,
+				 function, KVM_CPUID_INDEX_NOT_SIGNIFICANT);
 }
 EXPORT_SYMBOL_GPL(kvm_find_cpuid_entry);
 
@@ -1277,7 +1391,7 @@ get_out_of_range_cpuid_entry(struct kvm_vcpu *vcpu, u32 *fn_ptr, u32 index)
 	struct kvm_cpuid_entry2 *basic, *class;
 	u32 function = *fn_ptr;
 
-	basic = kvm_find_cpuid_entry(vcpu, 0, 0);
+	basic = kvm_find_cpuid_entry(vcpu, 0);
 	if (!basic)
 		return NULL;
 
@@ -1286,11 +1400,11 @@ get_out_of_range_cpuid_entry(struct kvm_vcpu *vcpu, u32 *fn_ptr, u32 index)
 		return NULL;
 
 	if (function >= 0x40000000 && function <= 0x4fffffff)
-		class = kvm_find_cpuid_entry(vcpu, function & 0xffffff00, 0);
+		class = kvm_find_cpuid_entry(vcpu, function & 0xffffff00);
 	else if (function >= 0xc0000000)
-		class = kvm_find_cpuid_entry(vcpu, 0xc0000000, 0);
+		class = kvm_find_cpuid_entry(vcpu, 0xc0000000);
 	else
-		class = kvm_find_cpuid_entry(vcpu, function & 0x80000000, 0);
+		class = kvm_find_cpuid_entry(vcpu, function & 0x80000000);
 
 	if (class && function <= class->eax)
 		return NULL;
@@ -1308,7 +1422,7 @@ get_out_of_range_cpuid_entry(struct kvm_vcpu *vcpu, u32 *fn_ptr, u32 index)
 	 * the effective CPUID entry is the max basic leaf.  Note, the index of
 	 * the original requested leaf is observed!
 	 */
-	return kvm_find_cpuid_entry(vcpu, basic->eax, index);
+	return kvm_find_cpuid_entry_index(vcpu, basic->eax, index);
 }
 
 bool kvm_cpuid(struct kvm_vcpu *vcpu, u32 *eax, u32 *ebx,
@@ -1318,7 +1432,7 @@ bool kvm_cpuid(struct kvm_vcpu *vcpu, u32 *eax, u32 *ebx,
 	struct kvm_cpuid_entry2 *entry;
 	bool exact, used_max_basic = false;
 
-	entry = kvm_find_cpuid_entry(vcpu, function, index);
+	entry = kvm_find_cpuid_entry_index(vcpu, function, index);
 	exact = !!entry;
 
 	if (!entry && !exact_only) {
@@ -1347,7 +1461,7 @@ bool kvm_cpuid(struct kvm_vcpu *vcpu, u32 *eax, u32 *ebx,
 		 * exists. EDX can be copied from any existing index.
 		 */
 		if (function == 0xb || function == 0x1f) {
-			entry = kvm_find_cpuid_entry(vcpu, function, 1);
+			entry = kvm_find_cpuid_entry_index(vcpu, function, 1);
 			if (entry) {
 				*ecx = index & 0xff;
 				*edx = entry->edx;
