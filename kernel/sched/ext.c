@@ -2052,7 +2052,7 @@ static void do_enqueue_task(struct rq *rq, struct task_struct *p, u64 enq_flags,
 		goto local;
 
 	if (scx_rq_bypassing(rq))
-		goto global;
+		goto bypass;
 
 	if (p->scx.ddsp_dsq_id != SCX_DSQ_INVALID)
 		goto direct;
@@ -2104,6 +2104,9 @@ local:
 	goto enqueue;
 global:
 	dsq = find_global_dsq(p);
+	goto enqueue;
+bypass:
+	dsq = &task_rq(p)->scx.bypass_dsq;
 	goto enqueue;
 
 enqueue:
@@ -2877,7 +2880,14 @@ static int balance_one(struct rq *rq, struct task_struct *prev)
 	if (consume_global_dsq(rq))
 		goto has_tasks;
 
-	if (!SCX_HAS_OP(dispatch) || scx_rq_bypassing(rq) || !scx_rq_online(rq))
+	if (scx_rq_bypassing(rq)) {
+		if (consume_dispatch_q(rq, &rq->scx.bypass_dsq))
+			goto has_tasks;
+		else
+			goto no_tasks;
+	}
+
+	if (unlikely(!SCX_HAS_OP(dispatch)) || !scx_rq_online(rq))
 		goto no_tasks;
 
 	dspc->rq = rq;
@@ -5917,6 +5927,7 @@ void __init init_sched_ext_class(void)
 		struct rq *rq = cpu_rq(cpu);
 
 		init_dsq(&rq->scx.local_dsq, SCX_DSQ_LOCAL);
+		init_dsq(&rq->scx.bypass_dsq, SCX_DSQ_BYPASS);
 		INIT_LIST_HEAD(&rq->scx.runnable_list);
 		INIT_LIST_HEAD(&rq->scx.ddsp_deferred_locals);
 
