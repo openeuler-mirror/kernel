@@ -1441,6 +1441,11 @@ struct kvm_x86_ops {
 	int (*complete_emulated_msr)(struct kvm_vcpu *vcpu, int err);
 
 	void (*vcpu_deliver_sipi_vector)(struct kvm_vcpu *vcpu, u8 vector);
+
+	/*
+	 * Attestation interface for HYGON CSV guest
+	 */
+	int (*vm_attestation)(struct kvm *kvm, unsigned long gpa, unsigned long len);
 };
 
 struct kvm_x86_nested_ops {

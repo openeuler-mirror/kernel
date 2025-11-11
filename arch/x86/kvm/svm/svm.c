@@ -43,6 +43,8 @@
 
 #include "svm.h"
 
+#include "csv.h"
+
 #include <asm/processor-hygon.h>
 
 #define __ex(x) __kvm_handle_fault_on_reboot(x)
@@ -191,14 +193,6 @@ module_param(vls, int, 0444);
 /* enable/disable Virtual GIF */
 static int vgif = true;
 module_param(vgif, int, 0444);
-
-/* enable/disable SEV support */
-int sev = IS_ENABLED(CONFIG_AMD_MEM_ENCRYPT_ACTIVE_BY_DEFAULT);
-module_param(sev, int, 0444);
-
-/* enable/disable SEV-ES support */
-int sev_es = IS_ENABLED(CONFIG_AMD_MEM_ENCRYPT_ACTIVE_BY_DEFAULT);
-module_param(sev_es, int, 0444);
 
 bool __read_mostly dump_invalid_vmcb;
 module_param(dump_invalid_vmcb, bool, 0644);
@@ -993,12 +987,8 @@ static __init int svm_hardware_setup(void)
 		kvm_enable_efer_bits(EFER_SVME | EFER_LMSLE);
 	}
 
-	if (IS_ENABLED(CONFIG_KVM_AMD_SEV) && sev) {
-		sev_hardware_setup();
-	} else {
-		sev = false;
-		sev_es = false;
-	}
+	/* Note, SEV setup consumes npt_enabled. */
+	sev_hardware_setup();
 
 	svm_adjust_mmio_mask();
 
@@ -4623,6 +4613,10 @@ static struct kvm_x86_init_ops svm_init_ops __initdata = {
 static int __init svm_init(void)
 {
 	__unused_size_checks();
+
+	/* Register CSV specific interface for Hygon CPUs */
+	if (is_x86_vendor_hygon())
+		csv_init(&svm_x86_ops);
 
 	return kvm_init(&svm_init_ops, sizeof(struct vcpu_svm),
 			__alignof__(struct vcpu_svm), THIS_MODULE);
