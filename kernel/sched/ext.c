@@ -910,9 +910,8 @@ static DEFINE_MUTEX(scx_ops_enable_mutex);
 DEFINE_STATIC_KEY_FALSE(__scx_ops_enabled);
 DEFINE_STATIC_PERCPU_RWSEM(scx_fork_rwsem);
 static atomic_t scx_ops_enable_state_var = ATOMIC_INIT(SCX_OPS_DISABLED);
-static unsigned long scx_in_softlockup;
-static atomic_t scx_ops_breather_depth = ATOMIC_INIT(0);
 static int scx_ops_bypass_depth;
+static bool scx_aborting;
 static bool scx_ops_init_task_enabled;
 static bool scx_switching_all;
 DEFINE_STATIC_KEY_FALSE(__scx_switched_all);
@@ -2575,7 +2574,7 @@ static void scx_ops_breather(struct rq *rq)
 
 	lockdep_assert_rq_held(rq);
 
-	if (likely(!atomic_read(&scx_ops_breather_depth)))
+	if (likely(!READ_ONCE(scx_aborting)))
 		return;
 
 	raw_spin_rq_unlock(rq);
@@ -2584,9 +2583,9 @@ static void scx_ops_breather(struct rq *rq)
 
 	do {
 		int cnt = 1024;
-		while (atomic_read(&scx_ops_breather_depth) && --cnt)
+		while (READ_ONCE(scx_aborting) && --cnt)
 			cpu_relax();
-	} while (atomic_read(&scx_ops_breather_depth) &&
+	} while (READ_ONCE(scx_aborting) &&
 		 time_before64(ktime_get_ns(), until));
 
 	raw_spin_rq_lock(rq);
@@ -4347,28 +4346,11 @@ void scx_softlockup(u32 dur_s)
 		return;
 	}
 
-	/* allow only one instance, cleared at the end of scx_ops_bypass() */
-	if (test_and_set_bit(0, &scx_in_softlockup))
-		return;
-
 	printk_deferred(KERN_ERR "sched_ext: Soft lockup - CPU%d stuck for %us, disabling \"%s\"\n",
 			smp_processor_id(), dur_s, scx_ops.name);
 
-	/*
-	 * Some CPUs may be trapped in the dispatch paths. Enable breather
-	 * immediately; otherwise, we might even be able to get to
-	 * scx_ops_bypass().
-	 */
-	atomic_inc(&scx_ops_breather_depth);
-
 	scx_ops_error("soft lockup - CPU#%d stuck for %us",
 		      smp_processor_id(), dur_s);
-}
-
-static void scx_clear_softlockup(void)
-{
-	if (test_and_clear_bit(0, &scx_in_softlockup))
-		atomic_dec(&scx_ops_breather_depth);
 }
 
 /**
@@ -4420,8 +4402,6 @@ static void scx_ops_bypass(bool bypass)
 		if (scx_ops_bypass_depth != 0)
 			goto unlock;
 	}
-
-	atomic_inc(&scx_ops_breather_depth);
 
 	/*
 	 * No task property is changing. We just need to make sure all currently
@@ -4479,10 +4459,8 @@ static void scx_ops_bypass(bool bypass)
 		raw_spin_rq_unlock(rq);
 	}
 
-	atomic_dec(&scx_ops_breather_depth);
 unlock:
 	raw_spin_unlock_irqrestore(&bypass_lock, flags);
-	scx_clear_softlockup();
 }
 
 static void free_exit_info(struct scx_exit_info *ei)
@@ -4561,6 +4539,7 @@ static void scx_ops_disable_workfn(struct kthread_work *work)
 
 	/* guarantee forward progress by bypassing scx_ops */
 	scx_ops_bypass(true);
+	WRITE_ONCE(scx_aborting, false);
 
 	switch (scx_ops_set_enable_state(SCX_OPS_DISABLING)) {
 	case SCX_OPS_DISABLING:
@@ -4718,14 +4697,28 @@ static void schedule_scx_ops_disable_work(void)
 		kthread_queue_work(helper, &scx_ops_disable_work);
 }
 
-static void scx_ops_disable(enum scx_exit_kind kind)
+static bool scx_claim_exit(enum scx_exit_kind kind)
 {
 	int none = SCX_EXIT_NONE;
 
+	if (!atomic_try_cmpxchg(&scx_exit_kind, &none, kind))
+		return false;
+
+	/*
+	 * Some CPUs may be trapped in the dispatch paths. Enable breather
+	 * immediately; otherwise, we might not even be able to get to
+	 * scx_ops_bypass().
+	 */
+	WRITE_ONCE(scx_aborting, true);
+	return true;
+}
+
+static void scx_ops_disable(enum scx_exit_kind kind)
+{
 	if (WARN_ON_ONCE(kind == SCX_EXIT_NONE || kind == SCX_EXIT_DONE))
 		kind = SCX_EXIT_ERROR;
 
-	atomic_try_cmpxchg(&scx_exit_kind, &none, kind);
+	scx_claim_exit(kind);
 
 	schedule_scx_ops_disable_work();
 }
@@ -5026,10 +5019,9 @@ static __printf(3, 4) void scx_ops_exit_kind(enum scx_exit_kind kind,
 					     const char *fmt, ...)
 {
 	struct scx_exit_info *ei = scx_exit_info;
-	int none = SCX_EXIT_NONE;
 	va_list args;
 
-	if (!atomic_try_cmpxchg(&scx_exit_kind, &none, kind))
+	if (!scx_claim_exit(kind))
 		return;
 
 	ei->exit_code = exit_code;
@@ -5176,6 +5168,9 @@ static int scx_ops_enable(struct sched_ext_ops *ops)
 
 	WARN_ON_ONCE(scx_ops_set_enable_state(SCX_OPS_ENABLING) !=
 		     SCX_OPS_DISABLED);
+
+	if (WARN_ON_ONCE(READ_ONCE(scx_aborting)))
+		WRITE_ONCE(scx_aborting, false);
 
 	atomic_set(&scx_exit_kind, SCX_EXIT_NONE);
 	scx_warned_zero_slice = false;
