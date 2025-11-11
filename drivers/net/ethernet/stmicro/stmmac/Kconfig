@@ -117,6 +117,16 @@ config DWMAC_OXNAS
 	  This selects the Oxford Semiconductor OXNASSoC glue layer support for
 	  the stmmac device driver. This driver is used for OX820.
 
+config DWMAC_PHYTIUM
+	tristate "Phytium dwmac support"
+	default ARCH_PHYTIUM
+	depends on (OF || ACPI) && (ARCH_PHYTIUM || COMPILE_TEST)
+	help
+	  Support for GMAC controller on Phytium SoCs.
+
+	  This selects the Phytium GMAC glue layer support for the
+	  stmmac device driver.
+
 config DWMAC_QCOM_ETHQOS
 	tristate "Qualcomm ETHQOS support"
 	default ARCH_QCOM
