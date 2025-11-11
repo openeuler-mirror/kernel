@@ -58,6 +58,10 @@
 
 #define L3C_MAX_EXT		2
 
+#define L3C_PG_INFO_MASK(x)	GENMASK_ULL((x) - 1, 0)
+#define L3C_MAX_CPU		64
+#define SMT_PER_CORE		2
+
 HISI_PMU_EVENT_ATTR_EXTRACTOR(ext, config, 17, 16);
 HISI_PMU_EVENT_ATTR_EXTRACTOR(tt_req, config1, 10, 8);
 HISI_PMU_EVENT_ATTR_EXTRACTOR(datasrc_cfg, config1, 15, 11);
@@ -70,8 +74,13 @@ struct hisi_l3c_pmu {
 
 	/* MMIO and IRQ resources for extension events */
 	void __iomem *ext_base[L3C_MAX_EXT];
+	int core_config[L3C_MAX_CPU];
 	int ext_irq[L3C_MAX_EXT];
 	int ext_num;
+};
+
+enum hisi_l3c_cpu_substitute {
+	LAST_UP = 1,
 };
 
 #define to_hisi_l3c_pmu(_l3c_pmu) \
@@ -267,25 +276,45 @@ static void hisi_l3c_pmu_clear_ds(struct perf_event *event)
 	}
 }
 
+static u32 hisi_l3c_pmu_cluster_cpu_substitute(struct hisi_l3c_pmu *hisi_l3c_pmu,
+					       u32 core)
+{
+	int *core_config = hisi_l3c_pmu->core_config;
+	unsigned long tt_core_config = core;
+	unsigned long tt_core = 0;
+	int bit, sub_cpu;
+
+	for_each_set_bit(bit, &tt_core_config, BITS_PER_TYPE(u32)) {
+		sub_cpu = core_config[bit / SMT_PER_CORE] * SMT_PER_CORE;
+		tt_core |= BIT(sub_cpu + (bit & 1));
+	}
+
+	return tt_core;
+}
+
 static void hisi_l3c_pmu_config_core_tracetag(struct perf_event *event)
 {
+	struct hisi_pmu *hisi_pmu = to_hisi_pmu(event->pmu);
+	struct hisi_l3c_pmu *hisi_l3c_pmu = to_hisi_l3c_pmu(hisi_pmu);
 	struct hw_perf_event *hwc = &event->hw;
 	u32 core = hisi_get_tt_core(event);
+	u32 val;
 
-	if (core) {
-		u32 val;
+	if (!core)
+		return;
 
-		/* Config and enable core information */
-		hisi_l3c_pmu_event_writel(hwc, L3C_CORE_CTRL, core);
-		val = hisi_l3c_pmu_event_readl(hwc, L3C_PERF_CTRL);
-		val |= L3C_CORE_EN;
-		hisi_l3c_pmu_event_writel(hwc, L3C_PERF_CTRL, val);
+	core = hisi_l3c_pmu_cluster_cpu_substitute(hisi_l3c_pmu, core);
 
-		/* Enable core-tracetag statistics */
-		val = hisi_l3c_pmu_event_readl(hwc, L3C_TRACETAG_CTRL);
-		val |= L3C_TRACETAG_CORE_EN;
-		hisi_l3c_pmu_event_writel(hwc, L3C_TRACETAG_CTRL, val);
-	}
+	/* Config and enable core information */
+	hisi_l3c_pmu_event_writel(hwc, L3C_CORE_CTRL, core);
+	val = hisi_l3c_pmu_event_readl(hwc, L3C_PERF_CTRL);
+	val |= L3C_CORE_EN;
+	hisi_l3c_pmu_event_writel(hwc, L3C_PERF_CTRL, val);
+
+	/* Enable core-tracetag statistics */
+	val = hisi_l3c_pmu_event_readl(hwc, L3C_TRACETAG_CTRL);
+	val |= L3C_TRACETAG_CORE_EN;
+	hisi_l3c_pmu_event_writel(hwc, L3C_TRACETAG_CTRL, val);
 }
 
 static void hisi_l3c_pmu_clear_core_tracetag(struct perf_event *event)
@@ -763,6 +792,47 @@ static const struct hisi_uncore_ops hisi_uncore_l3c_ops = {
 	.check_filter		= hisi_l3c_pmu_check_filter,
 };
 
+static void hisi_l3c_do_last_up(u64 cpu_mask, u32 cpu_num,
+				struct hisi_l3c_pmu *hisi_l3c_pmu)
+{
+	int sub = 0, bit;
+
+	for_each_set_bit(bit, (unsigned long *)&cpu_mask, cpu_num) {
+		hisi_l3c_pmu->core_config[bit] = bit;
+		sub++;
+	}
+
+	sub = cpu_num - sub;
+
+	for_each_clear_bit(bit, (unsigned long *)&cpu_mask, cpu_num) {
+		hisi_l3c_pmu->core_config[bit] = cpu_num - sub;
+		sub--;
+	}
+}
+
+static void hisi_l3c_get_cluster_cpu_info(struct device *dev,
+					 struct hisi_l3c_pmu *hisi_l3c_pmu)
+{
+	u64 cpu_mask = -1ULL;
+	u32 cpu_num = 8;
+	u32 sub = 1;
+
+	/* If the configuration doesn't exist, default to full good. */
+	if (device_property_read_u32(dev, "hisilicon,cluster-cpu-num", &cpu_num))
+		dev_dbg(dev, "no cluster-cpu-num present\n");
+
+	if (device_property_read_u64(dev, "hisilicon,cluster-cpu", &cpu_mask))
+		dev_dbg(dev, "no cluster-cpu present\n");
+
+	if (device_property_read_u32(dev, "hisilicon,cpu-substitute", &sub))
+		dev_dbg(dev, "no cpu-substitute present\n");
+
+	cpu_mask &= L3C_PG_INFO_MASK(cpu_num);
+
+	/* For now the substitute algorithm is always last_up. */
+	hisi_l3c_do_last_up(cpu_mask, cpu_num, hisi_l3c_pmu);
+}
+
 static int hisi_l3c_pmu_dev_probe(struct platform_device *pdev,
 				  struct hisi_pmu *l3c_pmu)
 {
@@ -777,6 +847,8 @@ static int hisi_l3c_pmu_dev_probe(struct platform_device *pdev,
 	ret = hisi_uncore_pmu_init_irq(l3c_pmu, pdev);
 	if (ret)
 		return ret;
+
+	hisi_l3c_get_cluster_cpu_info(&pdev->dev, hisi_l3c_pmu);
 
 	l3c_pmu->pmu_events.attr_groups = l3c_pmu->dev_info->attr_groups;
 	l3c_pmu->counter_bits = l3c_pmu->dev_info->counter_bits;
