@@ -24,7 +24,13 @@
 extern struct hygon_psp_hooks_table {
 	bool sev_dev_hooks_installed;
 	struct mutex *sev_cmd_mutex;
+	bool *psp_dead;
+	int *psp_timeout;
+	int *psp_cmd_timeout;
+	int (*sev_cmd_buffer_len)(int cmd);
 	int (*__sev_do_cmd_locked)(int cmd, void *data, int *psp_ret);
+	int (*sev_wait_cmd_ioc)(struct sev_device *sev,
+				unsigned int *reg, unsigned int timeout);
 	long (*sev_ioctl)(struct file *file, unsigned int ioctl, unsigned long arg);
 } hygon_psp_hooks;
 

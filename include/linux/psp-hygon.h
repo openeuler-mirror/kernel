@@ -41,7 +41,13 @@ struct csv_data_hgsc_cert_import {
 } __packed;
 
 #ifdef CONFIG_CRYPTO_DEV_SP_PSP
+
+int psp_do_cmd(int cmd, void *data, int *psp_ret);
+
 #else  /* !CONFIG_CRYPTO_DEV_SP_PSP */
+
+static inline int psp_do_cmd(int cmd, void *data, int *psp_ret) { return -ENODEV; }
+
 #endif /* CONFIG_CRYPTO_DEV_SP_PSP */
 
 #endif /* __PSP_HYGON_H__ */
