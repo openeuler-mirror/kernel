@@ -4413,7 +4413,7 @@ bool task_should_scx(int policy)
  * live-lock the system by making many CPUs target the same DSQ to the point
  * where soft-lockup detection triggers. This function is called from
  * soft-lockup watchdog when the triggering point is close and tries to unjam
- * the system by enabling the breather and aborting the BPF scheduler.
+ * the system and aborting the BPF scheduler.
  */
 void scx_softlockup(u32 dur_s)
 {
@@ -4799,9 +4799,9 @@ static bool scx_claim_exit(enum scx_exit_kind kind)
 		return false;
 
 	/*
-	 * Some CPUs may be trapped in the dispatch paths. Enable breather
-	 * immediately; otherwise, we might not even be able to get to
-	 * scx_ops_bypass().
+	 * Some CPUs may be trapped in the dispatch paths. Set the aborting
+	 * flag to break potential live-lock scenarios, ensuring we can
+	 * successfully reach scx_ops_bypass().
 	 */
 	WRITE_ONCE(scx_aborting, true);
 	return true;
