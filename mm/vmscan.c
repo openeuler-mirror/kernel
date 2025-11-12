@@ -4404,6 +4404,7 @@ int node_reclaim_mode __read_mostly;
 #define RECLAIM_ZONE  (1<<0)   /* Run shrink_inactive_list on the zone */
 #define RECLAIM_WRITE (1<<1)   /* Writeout pages during reclaim */
 #define RECLAIM_UNMAP (1<<2)   /* Unmap pages during reclaim */
+#define RECLAIM_KSWAPD (1<<3)  /* Wakup kswapd during reclaim */
 
 /*
  * Priority for NODE_RECLAIM. This determines the fraction of pages
@@ -4530,7 +4531,8 @@ static int __node_reclaim(struct pglist_data *pgdat, gfp_t gfp_mask, unsigned in
 	return sc.nr_reclaimed >= nr_pages;
 }
 
-int node_reclaim(struct pglist_data *pgdat, gfp_t gfp_mask, unsigned int order)
+int node_reclaim(struct pglist_data *pgdat, gfp_t gfp_mask, unsigned int order,
+		 int alloc_flags, struct zone *zone)
 {
 	int ret;
 
@@ -4566,6 +4568,10 @@ int node_reclaim(struct pglist_data *pgdat, gfp_t gfp_mask, unsigned int order)
 
 	if (test_and_set_bit(PGDAT_RECLAIM_LOCKED, &pgdat->flags))
 		return NODE_RECLAIM_NOSCAN;
+
+	if ((node_reclaim_mode & RECLAIM_KSWAPD) &&
+	    (alloc_flags & ALLOC_KSWAPD))
+		wakeup_kswapd(zone, gfp_mask, order, gfp_zone(gfp_mask));
 
 	ret = __node_reclaim(pgdat, gfp_mask, order);
 	clear_bit(PGDAT_RECLAIM_LOCKED, &pgdat->flags);
