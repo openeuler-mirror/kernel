@@ -69,6 +69,11 @@ struct psp_vdata {
 	const unsigned int feature_reg;
 	const unsigned int inten_reg;
 	const unsigned int intsts_reg;
+#ifdef CONFIG_HYGON_PSP2CPU_CMD
+	const unsigned int p2c_cmdresp_reg;
+	const unsigned int p2c_cmdbuff_addr_lo_reg;
+	const unsigned int p2c_cmdbuff_addr_hi_reg;
+#endif
 };
 
 /* Structure to hold SP device data */
