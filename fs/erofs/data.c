@@ -458,6 +458,7 @@ static sector_t erofs_bmap(struct address_space *mapping, sector_t block)
 	struct erofs_map_blocks map = {
 		.m_la = blknr_to_addr(block),
 	};
+	erofs_off_t offset = map.m_la;
 
 	if (EROFS_I(inode)->datalayout == EROFS_INODE_FLAT_INLINE) {
 		erofs_blk_t blks = i_size_read(inode) >> LOG_BLOCK_SIZE;
@@ -467,7 +468,7 @@ static sector_t erofs_bmap(struct address_space *mapping, sector_t block)
 	}
 
 	if (!erofs_map_blocks(inode, &map))
-		return erofs_blknr(map.m_pa);
+		return erofs_blknr(map.m_pa + offset - map.m_la);
 
 	return 0;
 }
