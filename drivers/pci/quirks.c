@@ -31,6 +31,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/suspend.h>
 #include <linux/switchtec.h>
+#include <linux/vgaarb.h>
 #include "pci.h"
 #ifdef CONFIG_PSWIOTLB
 #include <linux/pswiotlb.h>
@@ -412,6 +413,35 @@ static void loongson_pcie_msi_quirk(struct pci_dev *dev)
 	}
 }
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, 0x7a59, loongson_pcie_msi_quirk);
+
+#define DEV_LS7A1000_DC 0x7a06
+#define DEV_LS7A2000_DC 0x7a36
+#define DEV_LS2K3000_DC 0x7a46
+static void loongson_vgadev_quirk(struct pci_dev *pdev)
+{
+	struct pci_dev *devp = NULL;
+
+	while ((devp = pci_get_class(PCI_CLASS_DISPLAY_VGA << 8, devp))) {
+		/* If the graphics card is SM750, set it as a slave */
+		if (devp->vendor == 0x126f && devp->device == 0x0750) {
+			vga_set_default_device(pdev);
+			dev_info(&pdev->dev,
+				"Overriding boot device as %X:%X\n",
+				pdev->vendor, pdev->device);
+			break;
+		}
+
+		if (devp->vendor != PCI_VENDOR_ID_LOONGSON) {
+			vga_set_default_device(devp);
+			dev_info(&pdev->dev,
+				"Overriding boot device as %X:%X\n",
+				devp->vendor, devp->device);
+		}
+	}
+}
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, DEV_LS7A1000_DC, loongson_vgadev_quirk);
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, DEV_LS7A2000_DC, loongson_vgadev_quirk);
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, DEV_LS2K3000_DC, loongson_vgadev_quirk);
 
 #define DEV_PCIE_PORT_4	0x7a39
 #define DEV_PCIE_PORT_5	0x7a49
