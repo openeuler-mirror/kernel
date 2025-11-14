@@ -40,6 +40,8 @@ extern struct hygon_psp_hooks_table {
 	long (*sev_ioctl)(struct file *file, unsigned int ioctl, unsigned long arg);
 } hygon_psp_hooks;
 
+extern struct wait_queue_head psp_int_queue;
+
 int sp_request_hygon_psp_irq(struct sp_device *sp, irq_handler_t handler,
 			     const char *name, void *data);
 

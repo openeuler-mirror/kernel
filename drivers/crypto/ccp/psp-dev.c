@@ -217,6 +217,9 @@ int psp_dev_init(struct sp_device *sp)
 	if (sp->set_psp_master_device)
 		sp->set_psp_master_device(sp);
 
+	if (is_vendor_hygon())
+		init_waitqueue_head(&psp_int_queue);
+
 	/* Enable interrupt */
 	iowrite32(-1, psp->io_regs + psp->vdata->inten_reg);
 
