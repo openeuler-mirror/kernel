@@ -460,18 +460,19 @@ static struct skcipher_alg cbc_aes_alg = {
 	.decrypt		=	cbc_aes_decrypt,
 };
 
-static const struct x86_cpu_id zhaoxin_cpu_id[] = {
-	{ X86_VENDOR_CENTAUR, 7, X86_MODEL_ANY, X86_STEPPING_ANY, X86_FEATURE_XCRYPT },
-	{ X86_VENDOR_ZHAOXIN, 7, X86_MODEL_ANY, X86_STEPPING_ANY, X86_FEATURE_XCRYPT },
+static const struct x86_cpu_id zhaoxin_aes_cpu_ids[] = {
+	X86_MATCH_VENDOR_FAM_FEATURE(CENTAUR, 7, X86_FEATURE_XCRYPT, NULL),
+	X86_MATCH_VENDOR_FAM_FEATURE(ZHAOXIN, 7, X86_FEATURE_XCRYPT, NULL),
+	X86_MATCH_VENDOR_FAM_FEATURE(ZHAOXIN, 6, X86_FEATURE_XCRYPT, NULL),
 	{}
 };
-MODULE_DEVICE_TABLE(x86cpu, zhaoxin_cpu_id);
+MODULE_DEVICE_TABLE(x86cpu, zhaoxin_aes_cpu_ids);
 
 static int __init padlock_init(void)
 {
 	int ret;
 
-	if (!x86_match_cpu(zhaoxin_cpu_id))
+	if (!x86_match_cpu(zhaoxin_aes_cpu_ids))
 		return -ENODEV;
 
 	if (!boot_cpu_has(X86_FEATURE_XCRYPT_EN)) {
