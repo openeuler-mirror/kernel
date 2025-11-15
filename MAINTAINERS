@@ -19653,6 +19653,7 @@ ZCOPY DRIVER
 M:	Mingrui Liu <liumingrui@huawei.com>
 S:	Maintained
 F:	drivers/zcopy/
+F:	include/trace/events/attach.h
 
 THE REST
 M:	Linus Torvalds <torvalds@linux-foundation.org>

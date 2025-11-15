@@ -20,6 +20,9 @@
 #include <asm/tlbflush.h>
 #include <asm/pgtable-hwdef.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/attach.h>
+
 #ifndef PUD_SHIFT
 #define ARM64_HW_PGTABLE_LEVEL_SHIFT(n) ((PAGE_SHIFT - 3) * (4 - (n)) + 3)
 #define PUD_SHIFT               ARM64_HW_PGTABLE_LEVEL_SHIFT(1)
@@ -399,8 +402,12 @@ static int attach_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 
 		if (pmd_trans_huge(*src_pmd)) {
 			if (extent == HPAGE_PMD_SIZE) {
+				trace_attach_extent_start(dst_mm, src_mm, dst_addr, src_addr,
+							dst_pmd, src_pmd, extent);
 				ret = attach_huge_pmd(dst_vma, src_vma, dst_addr, src_addr,
 							dst_pmd, src_pmd);
+				trace_attach_extent_end(dst_mm, src_mm, dst_addr, src_addr,
+							dst_pmd, src_pmd, ret);
 				if (ret)
 					return ret;
 				continue;
@@ -418,8 +425,12 @@ static int attach_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 			break;
 		}
 
+		trace_attach_extent_start(dst_mm, src_mm, dst_addr, src_addr, dst_pmd,
+					src_pmd, extent);
 		ret = attach_ptes(dst_vma, src_vma, dst_addr, src_addr, dst_pmd,
 					src_pmd, extent);
+		trace_attach_extent_end(dst_mm, src_mm, dst_addr, src_addr, dst_pmd,
+					src_pmd, ret);
 		if (ret < 0)
 			break;
 	}
@@ -502,7 +513,9 @@ static int attach_pages(unsigned long dst_addr, unsigned long src_addr,
 		goto free_pages_array;
 	}
 
+	trace_attach_page_range_start(dst_mm, src_mm, dst_addr, src_addr, size);
 	ret = attach_page_range(dst_mm, src_mm, dst_addr, src_addr, size);
+	trace_attach_page_range_end(dst_mm, src_mm, dst_addr, src_addr, ret);
 
 	unpin_user_pages_dirty_lock(process_pages, pinned_pages, 0);
 
