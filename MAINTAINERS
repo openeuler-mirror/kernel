@@ -19652,6 +19652,7 @@ F:	mm/zswap.c
 ZCOPY DRIVER
 M:	Mingrui Liu <liumingrui@huawei.com>
 S:	Maintained
+F:	Documentation/misc-devices/zcopy.rst
 F:	drivers/zcopy/
 F:	include/trace/events/attach.h
 
