@@ -19649,6 +19649,13 @@ L:	linux-mm@kvack.org
 S:	Maintained
 F:	mm/zswap.c
 
+ZCOPY DRIVER
+M:	Mingrui Liu <liumingrui@huawei.com>
+S:	Maintained
+F:	Documentation/misc-devices/zcopy.rst
+F:	drivers/zcopy/
+F:	include/trace/events/attach.h
+
 THE REST
 M:	Linus Torvalds <torvalds@linux-foundation.org>
 L:	linux-kernel@vger.kernel.org

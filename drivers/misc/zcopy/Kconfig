@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config PAGEATTACH
+	tristate "PAGEATTACH: A zero-copy data transfer mechanism"
+	depends on MMU && ARM64
+	help
+		This option enables the PAGEATTACH mechanism, a zero-copy data transfer
+		solution optimized for like High Performance Computing workloads. It
+		allows direct sharing of physical memory pages between distinct processes
+		by mapping source pages to a target address space, eliminating redundant
+		data copying and improving large data transfer efficiency.
+
+		Key features:
+		- Supports zero-copy communication between intra-node processes.
+		- Handles both PTE-level pages and PMD-level huge pages.
+		- Preserves the read/write permissions of the source page in the target address space.
+
+		This mechanism is intended for HPC applications requiring high-speed inter-process
+		data sharing. If your use case does not meet the above constraints or you are unsure,
+		disable this option by saying N.
