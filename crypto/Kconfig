@@ -1073,6 +1073,20 @@ config CRYPTO_SM3_AVX_X86_64
 
 	  If unsure, say N.
 
+config CRYPTO_SM3_ZHAOXIN_GMI
+	tristate "Zhaoxin GMI driver for SM3 algorithm"
+	depends on X86
+	depends on CRYPTO
+	default m
+	select CRYPTO_HASH
+	help
+	  Use Zhaoxin GMI for SM3 algorithm.
+
+	  Available in ZX-C+ and newer CPUs.
+
+	  If unsure say M. The compiled module will be
+	  called zhaoxin_gmi_sm3.
+
 config CRYPTO_STREEBOG
 	tristate "Streebog Hash Function"
 	select CRYPTO_HASH
