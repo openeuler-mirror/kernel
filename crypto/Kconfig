@@ -1726,6 +1726,22 @@ config CRYPTO_SM4_AESNI_AVX2_X86_64
 
 	  If unsure, say N.
 
+config CRYPTO_SM4_ZHAOXIN_GMI
+	tristate "Zhaoxin GMI driver for SM4 algorithm"
+	depends on X86
+	depends on CRYPTO
+	default m
+	select CRYPTO_SIMD
+	select CRYPTO_SKCIPHER
+	select CRYPTO_ALGAPI
+	help
+	  Use Zhaoxin GMI for SM4 algorithm.
+
+	  Available in ZX-C+ and newer CPUs.
+
+	  If unsure say M. The compiled module will be
+	  called zhaoxin_gmi_sm4.
+
 config CRYPTO_TEA
 	tristate "TEA, XTEA and XETA cipher algorithms"
 	depends on CRYPTO_USER_API_ENABLE_OBSOLETE
