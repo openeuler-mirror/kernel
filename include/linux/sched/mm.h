@@ -191,6 +191,24 @@ static inline void fs_reclaim_release(gfp_t gfp_mask) { }
 #endif
 
 /**
+ * memalloc_flags_save - Add a PF_* flag to current->flags, save old value
+ *
+ * This allows PF_* flags to be conveniently added, irrespective of current
+ * value, and then the old version restored with memalloc_flags_restore().
+ */
+static inline unsigned memalloc_flags_save(unsigned flags)
+{
+	unsigned oldflags = ~current->flags & flags;
+	current->flags |= flags;
+	return oldflags;
+}
+
+static inline void memalloc_flags_restore(unsigned flags)
+{
+	current->flags &= ~flags;
+}
+
+/**
  * memalloc_noio_save - Marks implicit GFP_NOIO allocation scope.
  *
  * This functions marks the beginning of the GFP_NOIO allocation scope.
@@ -203,9 +221,7 @@ static inline void fs_reclaim_release(gfp_t gfp_mask) { }
  */
 static inline unsigned int memalloc_noio_save(void)
 {
-	unsigned int flags = current->flags & PF_MEMALLOC_NOIO;
-	current->flags |= PF_MEMALLOC_NOIO;
-	return flags;
+	return memalloc_flags_save(PF_MEMALLOC_NOIO);
 }
 
 /**
@@ -218,7 +234,7 @@ static inline unsigned int memalloc_noio_save(void)
  */
 static inline void memalloc_noio_restore(unsigned int flags)
 {
-	current->flags = (current->flags & ~PF_MEMALLOC_NOIO) | flags;
+	memalloc_flags_restore(flags);
 }
 
 /**
@@ -234,9 +250,7 @@ static inline void memalloc_noio_restore(unsigned int flags)
  */
 static inline unsigned int memalloc_nofs_save(void)
 {
-	unsigned int flags = current->flags & PF_MEMALLOC_NOFS;
-	current->flags |= PF_MEMALLOC_NOFS;
-	return flags;
+	return memalloc_flags_save(PF_MEMALLOC_NOFS);
 }
 
 /**
@@ -249,33 +263,28 @@ static inline unsigned int memalloc_nofs_save(void)
  */
 static inline void memalloc_nofs_restore(unsigned int flags)
 {
-	current->flags = (current->flags & ~PF_MEMALLOC_NOFS) | flags;
+	memalloc_flags_restore(flags);
 }
 
 static inline unsigned int memalloc_noreclaim_save(void)
 {
-	unsigned int flags = current->flags & PF_MEMALLOC;
-	current->flags |= PF_MEMALLOC;
-	return flags;
+	return memalloc_flags_save(PF_MEMALLOC);
 }
 
 static inline void memalloc_noreclaim_restore(unsigned int flags)
 {
-	current->flags = (current->flags & ~PF_MEMALLOC) | flags;
+	memalloc_flags_restore(flags);
 }
 
 #ifdef CONFIG_CMA
 static inline unsigned int memalloc_nocma_save(void)
 {
-	unsigned int flags = current->flags & PF_MEMALLOC_NOCMA;
-
-	current->flags |= PF_MEMALLOC_NOCMA;
-	return flags;
+	return memalloc_flags_save(PF_MEMALLOC_NOCMA);
 }
 
 static inline void memalloc_nocma_restore(unsigned int flags)
 {
-	current->flags = (current->flags & ~PF_MEMALLOC_NOCMA) | flags;
+	memalloc_flags_restore(flags);
 }
 #else
 static inline unsigned int memalloc_nocma_save(void)
