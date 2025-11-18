@@ -22,6 +22,7 @@
 #include <linux/ccp.h>
 #include <linux/firmware.h>
 #include <linux/gfp.h>
+#include <linux/cpufeature.h>
 #include <linux/psp.h>
 
 #include <asm/smp.h>
@@ -1018,7 +1019,12 @@ static int sev_misc_init(struct sev_device *sev)
 static void sev_dev_install_hooks(void)
 {
 	hygon_psp_hooks.sev_cmd_mutex = &sev_cmd_mutex;
+	hygon_psp_hooks.psp_dead = &psp_dead;
+	hygon_psp_hooks.psp_timeout = &psp_timeout;
+	hygon_psp_hooks.psp_cmd_timeout = &psp_cmd_timeout;
+	hygon_psp_hooks.sev_cmd_buffer_len = sev_cmd_buffer_len;
 	hygon_psp_hooks.__sev_do_cmd_locked = __sev_do_cmd_locked;
+	hygon_psp_hooks.sev_wait_cmd_ioc = sev_wait_cmd_ioc;
 	hygon_psp_hooks.sev_ioctl = sev_ioctl;
 
 	hygon_psp_hooks.sev_dev_hooks_installed = true;
@@ -1037,6 +1043,11 @@ int sev_dev_init(struct psp_device *psp)
 	 */
 	if (is_vendor_hygon())
 		sev_dev_install_hooks();
+
+	if (!boot_cpu_has(X86_FEATURE_SEV)) {
+		dev_info_once(dev, "SEV: memory encryption not enabled by BIOS\n");
+		return 0;
+	}
 
 	sev = devm_kzalloc(dev, sizeof(*sev), GFP_KERNEL);
 	if (!sev)
