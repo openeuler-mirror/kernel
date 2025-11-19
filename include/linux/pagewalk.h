@@ -101,6 +101,8 @@ int walk_page_range_novma(struct mm_struct *mm, unsigned long start,
 			  void *private);
 int walk_page_vma(struct vm_area_struct *vma, const struct mm_walk_ops *ops,
 		void *private);
+int walk_page_vma_range(struct vm_area_struct *vma, unsigned long start_addr,
+		const struct mm_walk_ops *ops, void *private);
 int walk_page_mapping(struct address_space *mapping, pgoff_t first_index,
 		      pgoff_t nr, const struct mm_walk_ops *ops,
 		      void *private);

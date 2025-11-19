@@ -182,6 +182,102 @@ static void *m_next(struct seq_file *m, void *v, loff_t *ppos)
 	return next;
 }
 
+static void *numa_maps_next(struct seq_file *m, void *v, loff_t *ppos)
+{
+	struct proc_maps_private *priv = m->private;
+	struct vm_area_struct *next = NULL;
+	struct vm_area_struct *vma = v;
+	struct mm_struct *mm = priv->mm;
+	unsigned long last_vma_end;
+	unsigned long last_vma_start;
+	int ret;
+
+	if (!mm)
+		goto out;
+
+	if (vma == priv->tail_vma)
+		goto out;
+
+	if (vma->vm_next)
+		next = vma->vm_next;
+	else
+		next = priv->tail_vma;
+
+	last_vma_end = vma->vm_end;
+	last_vma_start = vma->vm_start;
+	if (mmap_lock_is_contended(mm)) {
+		mmap_read_unlock(mm);
+		ret = mmap_read_lock_killable(mm);
+		if (ret) {
+			mmput(mm);
+			put_task_struct(priv->task);
+			priv->task = NULL;
+			return ERR_PTR(ret);
+		}
+
+		/*
+		 * After dropping the lock, there are four cases to
+		 * consider. See the following example for explanation.
+		 *
+		 *   +------+------+-----------+
+		 *   | VMA1 | VMA2 | VMA3      |
+		 *   +------+------+-----------+
+		 *   |      |      |           |
+		 *  4k     8k     16k         400k
+		 *
+		 * Suppose we drop the lock after reading VMA2 due to
+		 * contention, then we get:
+		 *
+		 *	last_vma_end = 16k
+		 *
+		 * 1) VMA2 is freed, but VMA3 exists:
+		 *
+		 *    find_vma(mm, 16k - 1) will return VMA3.
+		 *    In this case, just continue from VMA3.
+		 *
+		 * 2) VMA2 still exists:
+		 *
+		 *    find_vma(mm, 16k - 1) will return VMA2.
+		 *    Iterate the loop like the original one.
+		 *
+		 * 3) No more VMAs can be found:
+		 *
+		 *    find_vma(mm, 16k - 1) will return NULL.
+		 *    No more things to do, just break.
+		 *
+		 * 4) (last_vma_end - 1) is the middle of a vma (VMA'):
+		 *
+		 *    find_vma(mm, 16k - 1) will return VMA' whose range
+		 *    contains last_vma_end.
+		 *    Iterate VMA' from last_vma_end.
+		 */
+		next = find_vma(mm, last_vma_end - 1);
+
+		/* Case 3 above */
+		if (!next)
+			goto out;
+
+		/* Case 1 above */
+		if (next->vm_start >= last_vma_end)
+			goto out;
+
+		/* Case 4 above */
+		if (next->vm_end > last_vma_end) {
+			*ppos = last_vma_end;
+			return next;
+		}
+
+		/* Case 2 above */
+		if (next->vm_next)
+			next = next->vm_next;
+		else
+			next = priv->tail_vma;
+	}
+out:
+	*ppos = next ? next->vm_start : -1UL;
+	return next;
+}
+
 static void m_stop(struct seq_file *m, void *v)
 {
 	struct proc_maps_private *priv = m->private;
@@ -2260,6 +2356,7 @@ static int show_numa_map(struct seq_file *m, void *v)
 	struct mempolicy *pol;
 	char buffer[64];
 	int nid;
+	unsigned long start_addr;
 
 	if (!mm)
 		return 0;
@@ -2267,7 +2364,15 @@ static int show_numa_map(struct seq_file *m, void *v)
 	/* Ensure we start with an empty set of numa_maps statistics. */
 	memset(md, 0, sizeof(*md));
 
-	pol = __get_vma_policy(vma, vma->vm_start);
+	start_addr = max_t(unsigned long, vma->vm_start, m->index);
+	if (start_addr >= vma->vm_end) {
+		VM_WARN_ONCE(1,
+			"invalid range: start_addr=%p vma=[%p-%p]\n",
+			(void *)start_addr, (void *)vma->vm_start, (void *)vma->vm_end);
+		return 0;
+	}
+
+	pol = __get_vma_policy(vma, start_addr);
 	if (pol) {
 		mpol_to_str(buffer, sizeof(buffer), pol);
 		mpol_cond_put(pol);
@@ -2275,7 +2380,7 @@ static int show_numa_map(struct seq_file *m, void *v)
 		mpol_to_str(buffer, sizeof(buffer), proc_priv->task_mempolicy);
 	}
 
-	seq_printf(m, "%08lx %s", vma->vm_start, buffer);
+	seq_printf(m, "%08lx %s", start_addr, buffer);
 
 	if (file) {
 		seq_puts(m, " file=");
@@ -2290,7 +2395,7 @@ static int show_numa_map(struct seq_file *m, void *v)
 		seq_puts(m, " huge");
 
 	/* mmap_lock is held by m_start */
-	walk_page_vma(vma, &show_numa_ops, md);
+	walk_page_vma_range(vma, start_addr, &show_numa_ops, md);
 
 	if (!md->pages)
 		goto out;
@@ -2328,7 +2433,7 @@ out:
 
 static const struct seq_operations proc_pid_numa_maps_op = {
 	.start  = m_start,
-	.next   = m_next,
+	.next   = numa_maps_next,
 	.stop   = m_stop,
 	.show   = show_numa_map,
 };
