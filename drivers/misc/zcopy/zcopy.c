@@ -38,7 +38,6 @@ enum pgt_entry {
 
 enum {
 	IO_ATTACH	= 1,
-	IO_DUMP		= 3,
 	IO_MAX
 };
 
@@ -48,11 +47,6 @@ struct zcopy_ioctl_pswap {
 	int src_pid;
 	int dst_pid;
 	unsigned long size;
-};
-
-struct zcopy_ioctl_dump {
-	unsigned long size;
-	unsigned long addr;
 };
 
 struct zcopy_cdev {
@@ -70,7 +64,6 @@ static int (*__zcopy_pmd_alloc)(struct mm_struct *, pud_t *, unsigned long);
 static int (*__zcopy_pud_alloc)(struct mm_struct *, p4d_t *, unsigned long);
 static unsigned long (*kallsyms_lookup_name_funcp)(const char *);
 static void (*zcopy_page_remove_rmap)(struct page *, bool);
-static void (*dump_pagetable)(unsigned long addr);
 
 static struct kretprobe __kretprobe;
 
@@ -558,18 +551,6 @@ static long zcopy_ioctl(struct file *file, unsigned int type, unsigned long ptr)
 					ctx.src_pid, ctx.size);
 		break;
 	}
-	case IO_DUMP:
-	{
-		struct zcopy_ioctl_dump param;
-
-		if (copy_from_user((void *)&param, (void *)ptr,
-								sizeof(struct zcopy_ioctl_dump))) {
-			ret = -EFAULT;
-			break;
-		}
-		dump_pagetable(param.addr);
-		break;
-	}
 	default:
 		break;
 	}
@@ -633,11 +614,6 @@ static int register_unexport_func(void)
 	zcopy_page_remove_rmap
 		= (void (*)(struct page *, bool))__kallsyms_lookup_name("page_remove_rmap");
 	ret = REGISTER_CHECK(zcopy_page_remove_rmap, "page_remove_rmap");
-	if (ret)
-		goto out;
-
-	dump_pagetable = (void (*)(unsigned long))__kallsyms_lookup_name("show_pte");
-	ret = REGISTER_CHECK(dump_pagetable, "show_pte");
 
 out:
 	return ret;
