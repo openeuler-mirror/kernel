@@ -1794,6 +1794,7 @@ bool bpf_prog_map_compatible(struct bpf_map *map,
 		map->owner->type  = prog_type;
 		map->owner->jited = fp->jited;
 		map->owner->attach_func_proto = aux->attach_func_proto;
+		map->owner->expected_attach_type = fp->expected_attach_type;
 		for_each_cgroup_storage_type(i) {
 			map->owner->storage_cookie[i] =
 				aux->cgroup_storage[i] ?
@@ -1803,6 +1804,10 @@ bool bpf_prog_map_compatible(struct bpf_map *map,
 	} else {
 		ret = map->owner->type  ==  prog_type &&
 		      map->owner->jited == fp->jited;
+		if (ret &&
+		    map->map_type == BPF_MAP_TYPE_PROG_ARRAY &&
+		    map->owner->expected_attach_type != fp->expected_attach_type)
+			ret = false;
 		for_each_cgroup_storage_type(i) {
 			if (!ret)
 				break;
