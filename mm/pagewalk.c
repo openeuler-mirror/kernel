@@ -485,6 +485,33 @@ int walk_page_vma(struct vm_area_struct *vma, const struct mm_walk_ops *ops,
 	return __walk_page_range(vma->vm_start, vma->vm_end, &walk);
 }
 
+int walk_page_vma_range(struct vm_area_struct *vma, unsigned long start_addr,
+		const struct mm_walk_ops *ops, void *private)
+{
+	struct mm_walk walk = {
+		.ops		= ops,
+		.mm		= vma->vm_mm,
+		.vma		= vma,
+		.private	= private,
+	};
+	int err;
+
+	if (!walk.mm)
+		return -EINVAL;
+
+	if (start_addr < vma->vm_start || start_addr >= vma->vm_end)
+		return -EINVAL;
+
+	mmap_assert_locked(walk.mm);
+
+	err = walk_page_test(start_addr, vma->vm_end, &walk);
+	if (err > 0)
+		return 0;
+	if (err < 0)
+		return err;
+	return __walk_page_range(start_addr, vma->vm_end, &walk);
+}
+
 /**
  * walk_page_mapping - walk all memory areas mapped into a struct address_space.
  * @mapping: Pointer to the struct address_space
