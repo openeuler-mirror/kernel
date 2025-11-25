@@ -62,7 +62,7 @@ struct aes_ctx {
 	u32 *D;
 };
 
-static DEFINE_PER_CPU(struct cword *, paes_last_cword);
+static DEFINE_PER_CPU(struct cword *, zx_paes_last_cword);
 
 /* Tells whether the ACE is capable to generate the extended key for a given key_len. */
 static inline int aes_hw_extkey_available(uint8_t key_len)
@@ -142,9 +142,9 @@ static int aes_set_key(struct crypto_tfm *tfm, const u8 *in_key, unsigned int ke
 
 ok:
 	for_each_online_cpu(cpu)
-		if (&ctx->cword.encrypt == per_cpu(paes_last_cword, cpu) ||
-			&ctx->cword.decrypt == per_cpu(paes_last_cword, cpu))
-			per_cpu(paes_last_cword, cpu) = NULL;
+		if (&ctx->cword.encrypt == per_cpu(zx_paes_last_cword, cpu) ||
+			&ctx->cword.decrypt == per_cpu(zx_paes_last_cword, cpu))
+			per_cpu(zx_paes_last_cword, cpu) = NULL;
 
 	return 0;
 }
@@ -162,7 +162,7 @@ static inline void padlock_reset_key(struct cword *cword)
 {
 	int cpu = raw_smp_processor_id();
 
-	if (cword != per_cpu(paes_last_cword, cpu))
+	if (cword != per_cpu(zx_paes_last_cword, cpu))
 #ifndef CONFIG_X86_64
 		asm volatile ("pushfl; popfl");
 #else
@@ -172,7 +172,7 @@ static inline void padlock_reset_key(struct cword *cword)
 
 static inline void padlock_store_cword(struct cword *cword)
 {
-	per_cpu(paes_last_cword, raw_smp_processor_id()) = cword;
+	per_cpu(zx_paes_last_cword, raw_smp_processor_id()) = cword;
 }
 
 /*
@@ -460,18 +460,19 @@ static struct skcipher_alg cbc_aes_alg = {
 	.decrypt		=	cbc_aes_decrypt,
 };
 
-static const struct x86_cpu_id zhaoxin_cpu_id[] = {
-	{ X86_VENDOR_CENTAUR, 7, X86_MODEL_ANY, X86_STEPPING_ANY, X86_FEATURE_XCRYPT },
-	{ X86_VENDOR_ZHAOXIN, 7, X86_MODEL_ANY, X86_STEPPING_ANY, X86_FEATURE_XCRYPT },
+static const struct x86_cpu_id zhaoxin_aes_cpu_ids[] = {
+	X86_MATCH_VENDOR_FAM_FEATURE(CENTAUR, 7, X86_FEATURE_XCRYPT, NULL),
+	X86_MATCH_VENDOR_FAM_FEATURE(ZHAOXIN, 7, X86_FEATURE_XCRYPT, NULL),
+	X86_MATCH_VENDOR_FAM_FEATURE(ZHAOXIN, 6, X86_FEATURE_XCRYPT, NULL),
 	{}
 };
-MODULE_DEVICE_TABLE(x86cpu, zhaoxin_cpu_id);
+MODULE_DEVICE_TABLE(x86cpu, zhaoxin_aes_cpu_ids);
 
 static int __init padlock_init(void)
 {
 	int ret;
 
-	if (!x86_match_cpu(zhaoxin_cpu_id))
+	if (!x86_match_cpu(zhaoxin_aes_cpu_ids))
 		return -ENODEV;
 
 	if (!boot_cpu_has(X86_FEATURE_XCRYPT_EN)) {
