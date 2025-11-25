@@ -8607,7 +8607,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, bool 
 			struct cpumask *tmpmask = to_cpumask(tg->sf_ctx->span);
 
 			for_each_cpu_wrap(cpu, tmpmask, target + 1) {
-				if (!cpumask_test_cpu(cpu, tmpmask))
+				if (!cpumask_test_cpu(cpu, cpus))
 					continue;
 
 				if (has_idle_core) {
