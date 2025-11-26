@@ -91,6 +91,8 @@ static void upshift_freq(void)
 {
 	int i, cpu_num;
 	void __iomem *spbu_base;
+	unsigned long *clu_lv2_selh_addr;
+	unsigned long *clu_lv2_sell_addr;
 
 	if (is_guest_or_emul())
 		return;
@@ -101,10 +103,14 @@ static void upshift_freq(void)
 	cpu_num = sw64_chip->get_cpu_num();
 	for (i = 0; i < cpu_num; i++) {
 		spbu_base = misc_platform_get_spbu_base(i);
-		writeq(-1UL, spbu_base + OFFSET_CLU_LV2_SELH);
-		writeq(-1UL, spbu_base + OFFSET_CLU_LV2_SELL);
+		clu_lv2_selh_addr = ioremap((phys_addr_t)(__pa(spbu_base) + OFFSET_CLU_LV2_SELH), 0x8);
+		clu_lv2_sell_addr = ioremap((phys_addr_t)(__pa(spbu_base) + OFFSET_CLU_LV2_SELL), 0x8);
+		writeq(-1UL, clu_lv2_selh_addr);
+		writeq(-1UL, clu_lv2_sell_addr);
 		udelay(1000);
 	}
+	iounmap(clu_lv2_selh_addr);
+	iounmap(clu_lv2_sell_addr);
 }
 
 static void downshift_freq(void)
@@ -285,16 +291,29 @@ static void __init process_nr_cpu_ids(void)
 	nr_cpu_ids = num_possible_cpus();
 }
 
+extern void * __init pgtable_alloc_fixmap(void);
+
 void __init smp_rcb_init(struct smp_rcb_struct *smp_rcb_base_addr)
 {
 	if (smp_rcb != NULL)
 		return;
 
 	smp_rcb = smp_rcb_base_addr;
+#ifdef CONFIG_SW64_KERNEL_PAGE_TABLE
+	create_pgd_mapping((&init_mm)->pgd, (unsigned long)smp_rcb, __pa(smp_rcb),
+			   CONFIG_PHYSICAL_START - __pa(smp_rcb),
+			   PAGE_KERNEL_NOEXEC, pgtable_alloc_fixmap);
+#endif
 	memset(smp_rcb, 0, sizeof(struct smp_rcb_struct));
 	/* Setup SMP_RCB fields that uses to activate secondary CPU */
 	smp_rcb->restart_entry = __smp_callin;
 	smp_rcb->init_done = 0xDEADBEEFUL;
+#ifdef CONFIG_SW64_KERNEL_PAGE_TABLE
+	if (sunway_support_kpt) {
+		smp_rcb->init_done = 0x2025DEADBEEFUL;
+		smp_rcb->ptbr = virt_to_phys(init_mm.pgd);
+	}
+#endif
 	mb();
 }
 

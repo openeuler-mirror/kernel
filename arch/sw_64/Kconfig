@@ -15,7 +15,9 @@ config SW64
 	select ARCH_HAS_PMEM_API
 	select ARCH_HAS_PTE_DEVMAP
 	select ARCH_HAS_PTE_SPECIAL
+	select ARCH_HAS_SET_MEMORY if SW64_KERNEL_PAGE_TABLE
 	select ARCH_HAS_SG_CHAIN
+	select ARCH_HAS_STRICT_KERNEL_RWX if SW64_KERNEL_PAGE_TABLE
 	select ARCH_HAS_UACCESS_FLUSHCACHE
 	select ARCH_HAS_ZONE_DEVICE
 	select ARCH_HAVE_NMI_SAFE_CMPXCHG
@@ -62,6 +64,7 @@ config SW64
 	select DMA_OPS if PCI
 	select GENERIC_ARCH_TOPOLOGY
 	select GENERIC_CLOCKEVENTS
+	select GENERIC_EARLY_IOREMAP if SW64_KERNEL_PAGE_TABLE
 	select GENERIC_GETTIMEOFDAY if HAVE_GENERIC_VDSO
 	select GENERIC_IOREMAP if SUBARCH_C4
 	select GENERIC_IRQ_EFFECTIVE_AFF_MASK if SMP
@@ -281,6 +284,14 @@ config SW64_CPUAUTOPLUG
 	  Turns on the interface for SW64_CPU CPUAUTOPLUG.
 
 endmenu
+
+config SW64_KERNEL_PAGE_TABLE
+	bool "sw64 kernel page table"
+	depends on SUBARCH_C4
+	default y
+	help
+		Map the kernel and the memory by page table.
+
 # clear all implied options (don't want default values for those):
 # Most of these machines have ISA slots; not exactly sure which don't,
 # and this doesn't activate hordes of code, so do it always.
@@ -483,6 +494,17 @@ config PARAVIRT
 	  This changes the kernel so it can modify itself when it is run
 	  under a hypervisor, potentially improving performance significantly
 	  over full virtualization.
+
+config PARAVIRT_TIME_ACCOUNTING
+        bool "Paravirtual steal time accounting"
+        depends on PARAVIRT
+        help
+          Select this option to enable fine granularity task steal time
+	  accounting. Time spent executing other tasks in parallel with
+	  the current vCPU is discounted from the vCPU power. To account
+	  for that, there can be a small performance impact.
+
+	  If in doubt, say N here.
 
 config USE_PERCPU_NUMA_NODE_ID
 	def_bool y

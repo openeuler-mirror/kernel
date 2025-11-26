@@ -29,6 +29,7 @@
 #include <linux/cpu.h>
 
 #include <asm/efi.h>
+#include <asm/early_ioremap.h>
 #include <asm/mmu_context.h>
 #include <asm/sw64_init.h>
 #include <asm/timer.h>
@@ -85,7 +86,7 @@ static struct resource bss_resource = {
 	.flags  = IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM
 };
 
-DEFINE_STATIC_KEY_TRUE(run_mode_host_key);
+DEFINE_STATIC_KEY_FALSE(run_mode_host_key);
 DEFINE_STATIC_KEY_FALSE(run_mode_guest_key);
 DEFINE_STATIC_KEY_FALSE(run_mode_emul_key);
 
@@ -685,6 +686,11 @@ setup_arch(char **cmdline_p)
 	 */
 	trap_init();
 
+	early_paging_init();
+#ifdef CONFIG_GENERIC_EARLY_IOREMAP
+	early_ioremap_setup();
+#endif
+
 	jump_label_init();
 
 #ifdef CONFIG_SUBARCH_C3B
@@ -707,8 +713,6 @@ setup_arch(char **cmdline_p)
 	atomic_notifier_chain_register(&panic_notifier_list,
 			&sw64_panic_block);
 
-	callback_init();
-
 	/*
 	 * Process command-line arguments.
 	 */
@@ -730,6 +734,10 @@ setup_arch(char **cmdline_p)
 
 	sw64_memblock_init();
 
+	paging_init();
+
+	callback_init();
+
 	/* Try to upgrade ACPI tables via initrd */
 	acpi_table_upgrade();
 
@@ -738,6 +746,10 @@ setup_arch(char **cmdline_p)
 
 	if (acpi_disabled)
 		device_tree_init();
+
+#ifdef CONFIG_GENERIC_EARLY_IOREMAP
+	early_ioremap_reset();
+#endif
 
 	setup_smp();
 
@@ -748,8 +760,6 @@ setup_arch(char **cmdline_p)
 	sparse_init();
 
 	zone_sizes_init();
-
-	paging_init();
 
 	kexec_control_page_init();
 
