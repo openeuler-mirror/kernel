@@ -46,10 +46,9 @@ static DEFINE_PER_CPU(struct soft_domain *, g_sf_d);
 
 static void free_sub_soft_domain(struct soft_domain *sf_d);
 
-static int build_soft_sub_domain(struct sched_domain *sd, struct cpumask *cpus)
+static int build_soft_sub_domain(int nid, struct cpumask *cpus)
 {
-	struct cpumask *span = sched_domain_span(sd);
-	int nid = cpu_to_node(cpumask_first(span));
+	const struct cpumask *span = cpumask_of_node(nid);
 	struct soft_domain *sf_d = NULL;
 	int i;
 
@@ -72,8 +71,8 @@ static int build_soft_sub_domain(struct sched_domain *sd, struct cpumask *cpus)
 			return -ENOMEM;
 		}
 		list_add_tail(&sub_d->node, &sf_d->child_domain);
-		cpumask_and(soft_domain_span(sub_d->span), span, cpu_clustergroup_mask(i));
-		cpumask_andnot(cpus, cpus, cpu_clustergroup_mask(i));
+		cpumask_and(soft_domain_span(sub_d->span), span, topology_cluster_cpumask(i));
+		cpumask_andnot(cpus, cpus, topology_cluster_cpumask(i));
 	}
 
 	for_each_cpu(i, span) {
@@ -117,7 +116,6 @@ static void free_soft_domain(void)
 
 void build_soft_domain(void)
 {
-	struct sched_domain *sd;
 	static struct cpumask cpus;
 	int i, ret;
 
@@ -126,15 +124,12 @@ void build_soft_domain(void)
 
 	cpumask_copy(&cpus, cpu_active_mask);
 	rcu_read_lock();
-	for_each_cpu(i, &cpus) {
-		/* build soft domain for each llc domain. */
-		sd = rcu_dereference(per_cpu(sd_llc, i));
-		if (sd) {
-			ret = build_soft_sub_domain(sd, &cpus);
-			if (ret) {
-				free_soft_domain();
-				goto out;
-			}
+	for (i = 0; i < nr_node_ids; i++) {
+		/* build soft domain for each numa domain. */
+		ret = build_soft_sub_domain(i, &cpus);
+		if (ret) {
+			free_soft_domain();
+			goto out;
 		}
 	}
 
