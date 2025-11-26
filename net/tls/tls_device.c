@@ -113,15 +113,14 @@ unlock:
 /* We assume that the socket is already connected */
 static struct net_device *get_netdev_for_sock(struct sock *sk)
 {
-	struct dst_entry *dst = sk_dst_get(sk);
 	struct net_device *netdev = NULL;
+	struct dst_entry *dst;
 
-	if (likely(dst)) {
-		netdev = dst->dev;
-		dev_hold(netdev);
-	}
-
-	dst_release(dst);
+	rcu_read_lock();
+	dst = __sk_dst_get(sk);
+	netdev = dst ? dst_dev_rcu(dst) : NULL;
+	dev_hold(netdev);
+	rcu_read_unlock();
 
 	return netdev;
 }
