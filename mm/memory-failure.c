@@ -60,9 +60,14 @@
 #include "internal.h"
 #include "ras/ras_event.h"
 
+#define SOFT_OFFLINE_ENABLED           BIT(0)
+#define SOFT_OFFLINE_SKIP_HUGETLB      BIT(1)
+
 int sysctl_memory_failure_early_kill __read_mostly = 0;
 
 int sysctl_memory_failure_recovery __read_mostly = 1;
+
+int sysctl_enable_soft_offline __read_mostly = SOFT_OFFLINE_ENABLED;
 
 atomic_long_t num_poisoned_pages __read_mostly = ATOMIC_LONG_INIT(0);
 
@@ -2120,7 +2125,9 @@ static void put_ref_page(struct page *page)
  * @pfn: pfn to soft-offline
  * @flags: flags. Same as memory_failure().
  *
- * Returns 0 on success, otherwise negated errno.
+ * Returns 0 on success,
+ *         -EOPNOTSUPP for  disabled by /proc/sys/vm/enable_soft_offline,
+ *         < 0 otherwise negated errno.
  *
  * Soft offline a page, by migration or invalidation,
  * without killing anything. This is for the case when
@@ -2155,6 +2162,20 @@ int soft_offline_page(unsigned long pfn, int flags)
 	if (!page) {
 		put_ref_page(ref_page);
 		return -EIO;
+	}
+
+	if (!(sysctl_enable_soft_offline & SOFT_OFFLINE_ENABLED)) {
+		pr_info_once("disabled by /proc/sys/vm/enable_soft_offline\n");
+		put_ref_page(ref_page);
+		return -EOPNOTSUPP;
+	}
+
+	if (sysctl_enable_soft_offline & SOFT_OFFLINE_SKIP_HUGETLB) {
+		if (PageHuge(page)) {
+			pr_info_once("disabled for HugeTLB pages by /proc/sys/vm/enable_soft_offline\n");
+			put_ref_page(ref_page);
+			return -EOPNOTSUPP;
+		}
 	}
 
 	if (PageHWPoison(page)) {
