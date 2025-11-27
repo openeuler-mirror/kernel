@@ -18,7 +18,6 @@
 #include <linux/cacheinfo.h>
 #include <linux/acpi.h>
 
-#include <asm/topology.h>
 #include <asm/cache.h>
 #include <asm/cpu.h>
 
@@ -41,7 +40,6 @@ do {									\
 	leaf->number_of_sets = get_cache_sets(cache_info);		\
 	leaf->ways_of_associativity = get_cache_ways(cache_info);	\
 	leaf->size = get_cache_size(cache_info);			\
-	leaf++;								\
 } while (0)
 
 static struct cacheinfo *get_cacheinfo(int cpu, int level, enum cache_type type)
@@ -114,6 +112,38 @@ int init_cache_level(unsigned int cpu)
 	return 0;
 }
 
+static void setup_shared_cpu_map(unsigned int cpu)
+{
+	unsigned int index;
+	unsigned int rcid = cpu_to_rcid(cpu);
+	struct cacheinfo *this_leaf, *sib_leaf;
+	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
+
+	for (index = 0; index < this_cpu_ci->num_leaves; index++) {
+		unsigned int i;
+
+		this_leaf = this_cpu_ci->info_list + index;
+
+		cpumask_set_cpu(cpu, &this_leaf->shared_cpu_map);
+
+		for_each_online_cpu(i) {
+			unsigned int sib_rcid = cpu_to_rcid(i);
+			struct cpu_cacheinfo *sib_cpu_ci = get_cpu_cacheinfo(i);
+
+			if ((rcid_to_domain_id(sib_rcid) != rcid_to_domain_id(rcid)) ||
+					(i == cpu) || !sib_cpu_ci->info_list)
+				continue;
+
+			sib_leaf = sib_cpu_ci->info_list + index;
+			if ((rcid_to_core_id(rcid) == rcid_to_core_id(sib_rcid)) ||
+					(this_leaf->level == 3)) {
+				cpumask_set_cpu(cpu, &sib_leaf->shared_cpu_map);
+				cpumask_set_cpu(i, &this_leaf->shared_cpu_map);
+			}
+		}
+	}
+}
+
 static bool is_pptt_cache_info_valid(void)
 {
 	struct acpi_table_header *table;
@@ -131,57 +161,35 @@ static bool is_pptt_cache_info_valid(void)
 	return true;
 }
 
-static void setup_shared_cpu_map(unsigned int cpu)
-{
-	unsigned int i, index;
-	struct cacheinfo *sib_leaf, *this_leaf;
-	struct cpu_topology *topo = &cpu_topology[cpu];
-	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
-
-	for (index = 0; index < this_cpu_ci->num_leaves; index++) {
-		this_leaf = this_cpu_ci->info_list + index;
-
-		cpumask_set_cpu(cpu, &this_leaf->shared_cpu_map);
-
-		for_each_online_cpu(i) {
-			struct cpu_cacheinfo *sib_cpu_ci = get_cpu_cacheinfo(i);
-			struct cpu_topology *sib_topo = &cpu_topology[i];
-			if (i == cpu || !sib_cpu_ci->info_list)
-				continue; /* skip if itself or no cacheinfo */
-			sib_leaf = sib_cpu_ci->info_list + index;
-			if (topo->llc_id == sib_topo->llc_id || (this_leaf->level == 3)) {
-				cpumask_set_cpu(cpu, &sib_leaf->shared_cpu_map);
-				cpumask_set_cpu(i, &this_leaf->shared_cpu_map);
-			}
-		}
-	}
-}
-
 int populate_cache_leaves(unsigned int cpu)
 {
 	enum sunway_cache_type type;
-	unsigned long cache_id;
+	unsigned int cache_id;
 	struct cpu_cacheinfo *this_cpu_ci = get_cpu_cacheinfo(cpu);
 	struct cacheinfo *this_leaf = this_cpu_ci->info_list;
-	struct cpu_topology *topo = &cpu_topology[cpu];
 	bool pptt_valid = is_pptt_cache_info_valid();
 
-	for (type = L1_ICACHE; type <= L3_CACHE; type++) {
+	for (type = L1_ICACHE; type <= L3_CACHE; type++, this_leaf++) {
+		unsigned int node = rcid_to_domain_id(cpu_to_rcid(cpu));
+		unsigned int core = rcid_to_core_id(cpu_to_rcid(cpu));
+
 		if (!cache_size(type))
 			continue;
 
-		cache_id = (type == L3_CACHE) ? topo->package_id : cpu;
+		/* L3 Cache is shared */
+		cache_id = (type == L3_CACHE) ? node : ((node << 16) | core);
+
 		populate_cache(get_cache_info(type), this_leaf, cache_level(type),
 				kernel_cache_type(type), cache_id);
 
-		if (!pptt_valid)
-			setup_shared_cpu_map(cpu);
+		if (pptt_valid)
+			this_leaf->attributes &= ~CACHE_ID;
 	}
 
-	this_cpu_ci->cpu_map_populated = true;
-
-	if (pptt_valid)
-		this_cpu_ci->cpu_map_populated = false;
+	if (!pptt_valid) {
+		setup_shared_cpu_map(cpu);
+		this_cpu_ci->cpu_map_populated = true;
+	}
 
 	return 0;
 }
