@@ -74,9 +74,9 @@ static inline u16 rnp_mbx_get_ack(struct rnp_hw *hw, int reg)
 static inline void rnp_mbx_inc_pf_req(struct rnp_hw *hw,
 				      enum MBX_ID mbx_id)
 {
+	struct rnp_mbx_info *mbx = &hw->mbx;
 	u16 req;
 	int reg;
-	struct rnp_mbx_info *mbx = &hw->mbx;
 	u32 v;
 
 	reg = (mbx_id == MBX_CM3CPU) ? PF2CPU_COUNTER(mbx) :
@@ -98,11 +98,11 @@ static inline void rnp_mbx_inc_pf_req(struct rnp_hw *hw,
 static inline void rnp_mbx_inc_pf_ack(struct rnp_hw *hw,
 				      enum MBX_ID mbx_id)
 {
-	u16 ack;
 	struct rnp_mbx_info *mbx = &hw->mbx;
 	int reg = (mbx_id == MBX_CM3CPU) ? PF2CPU_COUNTER(mbx) :
-		PF2VF_COUNTER(mbx, mbx_id);
+		   PF2VF_COUNTER(mbx, mbx_id);
 	u32 v = mbx_rd32(hw, reg);
+	u16 ack;
 
 	ack = (v >> 16) & 0xffff;
 	ack++;
@@ -275,9 +275,9 @@ out:
  **/
 static s32 rnp_check_for_msg_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
 {
+	struct rnp_mbx_info *mbx = &hw->mbx;
 	s32 ret_val = RNP_ERR_MBX;
 	u16 hw_req_count = 0;
-	struct rnp_mbx_info *mbx = &hw->mbx;
 
 	if (pci_channel_offline(hw->pdev))
 		return -EIO;
@@ -316,8 +316,8 @@ static s32 rnp_check_for_msg_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
  **/
 static s32 rnp_check_for_ack_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
 {
-	s32 ret_val = RNP_ERR_MBX;
 	struct rnp_mbx_info *mbx = &hw->mbx;
+	s32 ret_val = RNP_ERR_MBX;
 
 	if (pci_channel_offline(hw->pdev))
 		return -EIO;
@@ -348,11 +348,11 @@ static s32 rnp_check_for_ack_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
  **/
 static s32 rnp_obtain_mbx_lock_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
 {
-	int try_cnt = 5000; // wait 500ms
 	struct rnp_mbx_info *mbx = &hw->mbx;
 	u32 CTRL_REG = (mbx_id == MBX_CM3CPU) ?
 			PF2CPU_MBOX_CTRL(mbx) :
 			PF2VF_MBOX_CTRL(mbx, mbx_id);
+	int try_cnt = 5000;
 
 	while (try_cnt-- > 0) {
 		/* Take ownership of the buffer */
@@ -381,8 +381,6 @@ static s32 rnp_obtain_mbx_lock_pf(struct rnp_hw *hw, enum MBX_ID mbx_id)
 static s32 rnp_write_mbx_pf(struct rnp_hw *hw, u32 *msg, u16 size,
 			    enum MBX_ID mbx_id)
 {
-	s32 ret_val = 0;
-	u16 i;
 	struct rnp_mbx_info *mbx = &hw->mbx;
 	u32 DATA_REG = (mbx_id == MBX_CM3CPU) ?
 			CPU_PF_SHM_DATA(mbx) :
@@ -390,6 +388,8 @@ static s32 rnp_write_mbx_pf(struct rnp_hw *hw, u32 *msg, u16 size,
 	u32 CTRL_REG = (mbx_id == MBX_CM3CPU) ?
 			PF2CPU_MBOX_CTRL(mbx) :
 			PF2VF_MBOX_CTRL(mbx, mbx_id);
+	s32 ret_val = 0;
+	u16 i;
 
 	if (pci_channel_offline(hw->pdev))
 		return -EIO;
@@ -449,14 +449,14 @@ out_no_write:
 static s32 rnp_read_mbx_pf(struct rnp_hw *hw, u32 *msg, u16 size,
 			   enum MBX_ID mbx_id)
 {
-	s32 ret_val = -EIO;
-	u32 i;
 	struct rnp_mbx_info *mbx = &hw->mbx;
 	u32 BUF_REG = (mbx_id == MBX_CM3CPU) ? CPU_PF_SHM_DATA(mbx) :
 			PF_VF_SHM_DATA(mbx, mbx_id);
 	u32 CTRL_REG = (mbx_id == MBX_CM3CPU) ?
 			PF2CPU_MBOX_CTRL(mbx) :
 			PF2VF_MBOX_CTRL(mbx, mbx_id);
+	s32 ret_val = -EIO;
+	u32 i;
 
 	if (pci_channel_offline(hw->pdev))
 		return -EIO;
@@ -499,8 +499,8 @@ out_no_read:
 
 static void rnp_mbx_reset(struct rnp_hw *hw)
 {
-	int idx, v;
 	struct rnp_mbx_info *mbx = &hw->mbx;
+	int idx, v;
 
 	for (idx = 0; idx < hw->max_vfs; idx++) {
 		v = mbx_rd32(hw, VF2PF_COUNTER(mbx, idx));
@@ -526,9 +526,9 @@ static void rnp_mbx_reset(struct rnp_hw *hw)
 
 static int rnp_mbx_configure_pf(struct rnp_hw *hw, int nr_vec, bool enable)
 {
+	struct rnp_mbx_info *mbx = &hw->mbx;
 	int idx = 0;
 	u32 v;
-	struct rnp_mbx_info *mbx = &hw->mbx;
 
 	if (pci_channel_offline(hw->pdev))
 		return -EIO;

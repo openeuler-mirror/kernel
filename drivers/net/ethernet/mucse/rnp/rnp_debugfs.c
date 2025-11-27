@@ -9,19 +9,205 @@
 
 static struct dentry *rnp_dbg_root;
 
+#define bus_to_virt phys_to_virt
+
 static char rnp_dbg_reg_ops_buf[256] = "";
+
+static int rnp_dbg_csl_open(struct inode *inode, struct file *file)
+{
+	struct rnp_adapter *adapter;
+	int err, bytes = 4096;
+	void *dma_buf = NULL;
+	dma_addr_t dma_phy;
+	struct rnp_hw *hw;
+
+	if (inode->i_private)
+		file->private_data = inode->i_private;
+	else
+		return -EIO;
+
+	adapter = file->private_data;
+
+	if (!adapter)
+		return -EIO;
+
+	if (adapter->csl_dma_buf)
+		return 0;
+
+	hw = &adapter->hw;
+
+	dma_buf = dma_alloc_coherent(&hw->pdev->dev,
+				     bytes, &dma_phy, GFP_ATOMIC);
+	if (!dma_buf)
+		return -ENOMEM;
+
+	memset(dma_buf, 0, bytes);
+
+	adapter->csl_dma_buf = dma_buf;
+	adapter->csl_dma_phy = dma_phy;
+	adapter->csl_dma_size = bytes;
+
+	err = rnp_mbx_ddr_csl_enable(hw, 1, dma_phy, bytes);
+	if (err) {
+		dma_free_coherent(&hw->pdev->dev, bytes, dma_buf, dma_phy);
+		adapter->csl_dma_buf = NULL;
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static int rnp_dbg_csl_release(struct inode *inode, struct file *file)
+{
+	struct rnp_adapter *adapter = file->private_data;
+	struct rnp_hw *hw = &adapter->hw;
+
+	if (adapter->csl_dma_buf) {
+		rnp_mbx_ddr_csl_enable(hw, 0, 0, 0);
+		dma_free_coherent(&hw->pdev->dev, adapter->csl_dma_size,
+				  adapter->csl_dma_buf, adapter->csl_dma_phy);
+		adapter->csl_dma_buf = NULL;
+	}
+
+	return 0;
+}
+
+static int rnp_dbg_csl_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	struct rnp_adapter *adapter = file->private_data;
+	dma_addr_t dma_phy = adapter->csl_dma_phy;
+	int dma_bytes = adapter->csl_dma_size;
+	void *dma_buf = adapter->csl_dma_buf;
+	unsigned long length;
+	int ret = 0;
+
+	length = (unsigned long)(vma->vm_end - vma->vm_start);
+
+	if (length > dma_bytes)
+		return -EIO;
+	if (vma->vm_pgoff == 0) {
+		ret = dma_mmap_coherent(&adapter->pdev->dev,
+					vma, dma_buf,
+					dma_phy, length);
+	} else {
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+		ret = remap_pfn_range(vma, vma->vm_start,
+				      PFN_DOWN(virt_to_phys(bus_to_virt(dma_phy))) +
+				      vma->vm_pgoff,
+				      length, vma->vm_page_prot);
+	}
+
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static const struct file_operations rnp_dbg_csl_fops = {
+	.owner = THIS_MODULE,
+	.open = rnp_dbg_csl_open,
+	.release = rnp_dbg_csl_release,
+	.mmap = rnp_dbg_csl_mmap,
+};
+
+static ssize_t rnp_dbg_eth_info_read(struct file *file, char __user *buffer,
+				     size_t count, loff_t *ppos)
+{
+	struct rnp_adapter *adapter = file->private_data;
+	char *buf = NULL;
+	int len;
+
+	if (!adapter)
+		return -EIO;
+
+	/* don't allow partial reads */
+	if (*ppos != 0)
+		return 0;
+
+	buf = kasprintf(GFP_KERNEL, "bd:%d port%d %s %s\n", adapter->bd_number,
+			0, adapter->netdev->name, pci_name(adapter->pdev));
+	if (!buf)
+		return -ENOMEM;
+
+	if (count < strlen(buf)) {
+		kfree(buf);
+		return -ENOSPC;
+	}
+
+	len = simple_read_from_buffer(buffer, count, ppos, buf, strlen(buf));
+
+	kfree(buf);
+	return len;
+}
+
+static const struct file_operations rnp_dbg_eth_info_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = rnp_dbg_eth_info_read,
+};
+
+static ssize_t rnp_dbg_mbx_cookies_info_read(struct file *file,
+					     char __user *buffer,
+					     size_t count, loff_t *ppos)
+{
+	struct rnp_adapter *adapter = file->private_data;
+	struct mbx_req_cookie_pool *cookie_pool = &adapter->hw.mbx.cookie_pool;
+	int free_cnt = 0, wait_timout_cnt = 0;
+	struct mbx_req_cookie *cookie;
+	int alloced_cnt = 0;
+	char *buf = NULL;
+	int len, i;
+
+	if (!adapter)
+		return -EIO;
+	/* don't allow partial reads */
+	if (*ppos != 0)
+		return 0;
+	for (i = 0; i < MAX_COOKIES_ITEMS; i++) {
+		cookie = &cookie_pool->cookies[i];
+		if (cookie->stat == COOKIE_FREE)
+			free_cnt++;
+		else if (cookie->stat == COOKIE_FREE_WAIT_TIMEOUT)
+			wait_timout_cnt++;
+		else if (cookie->stat == COOKIE_ALLOCED)
+			alloced_cnt++;
+	}
+
+	buf = kasprintf(GFP_KERNEL, "pool: cur:%d total: %d free:%d wait_free:%d alloced:%d\n",
+			cookie_pool->next_idx,
+			MAX_COOKIES_ITEMS,
+			free_cnt, wait_timout_cnt, alloced_cnt);
+	if (!buf)
+		return -ENOMEM;
+
+	if (count < strlen(buf)) {
+		kfree(buf);
+		return -ENOSPC;
+	}
+
+	len = simple_read_from_buffer(buffer, count, ppos, buf, strlen(buf));
+
+	kfree(buf);
+	return len;
+}
+
+static const struct file_operations rnp_dbg_mbx_cookies_info_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = rnp_dbg_mbx_cookies_info_read,
+};
 
 /**
  * rnp_dbg_reg_ops_read - read for reg_ops datum
- * @filp: the opened file
+ * @file: the opened file
  * @buffer: where to write the data for the user to read
  * @count: the size of the user's buffer
  * @ppos: file position offset
  **/
-static ssize_t rnp_dbg_reg_ops_read(struct file *filp, char __user *buffer,
+static ssize_t rnp_dbg_reg_ops_read(struct file *file, char __user *buffer,
 				    size_t count, loff_t *ppos)
 {
-	struct rnp_adapter *adapter = filp->private_data;
+	struct rnp_adapter *adapter = file->private_data;
 	char *buf;
 	int len;
 
@@ -48,16 +234,16 @@ static ssize_t rnp_dbg_reg_ops_read(struct file *filp, char __user *buffer,
 
 /**
  * rnp_dbg_reg_ops_write - write into reg_ops datum
- * @filp: the opened file
+ * @file: the opened file
  * @buffer: where to find the user's data
  * @count: the length of the user's data
  * @ppos: file position offset
  **/
-static ssize_t rnp_dbg_reg_ops_write(struct file *filp,
+static ssize_t rnp_dbg_reg_ops_write(struct file *file,
 				     const char __user *buffer,
 				     size_t count, loff_t *ppos)
 {
-	struct rnp_adapter *adapter = filp->private_data;
+	struct rnp_adapter *adapter = file->private_data;
 	struct rnp_hw *hw = &adapter->hw;
 	int len;
 
@@ -132,16 +318,16 @@ static char rnp_dbg_netdev_ops_buf[256] = "";
 
 /**
  * rnp_dbg_netdev_ops_read - read for netdev_ops datum
- * @filp: the opened file
+ * @file: the opened file
  * @buffer: where to write the data for the user to read
  * @count: the size of the user's buffer
  * @ppos: file position offset
  **/
-static ssize_t rnp_dbg_netdev_ops_read(struct file *filp,
+static ssize_t rnp_dbg_netdev_ops_read(struct file *file,
 				       char __user *buffer, size_t count,
 				       loff_t *ppos)
 {
-	struct rnp_adapter *adapter = filp->private_data;
+	struct rnp_adapter *adapter = file->private_data;
 	char *buf;
 	int len;
 
@@ -168,16 +354,16 @@ static ssize_t rnp_dbg_netdev_ops_read(struct file *filp,
 
 /**
  * rnp_dbg_netdev_ops_write - write into netdev_ops datum
- * @filp: the opened file
+ * @file: the opened file
  * @buffer: where to find the user's data
  * @count: the length of the user's data
  * @ppos: file position offset
  **/
-static ssize_t rnp_dbg_netdev_ops_write(struct file *filp,
+static ssize_t rnp_dbg_netdev_ops_write(struct file *file,
 					const char __user *buffer,
 					size_t count, loff_t *ppos)
 {
-	struct rnp_adapter *adapter = filp->private_data;
+	struct rnp_adapter *adapter = file->private_data;
 	int len;
 
 	/* don't allow partial writes */
@@ -219,15 +405,15 @@ static const struct file_operations rnp_dbg_netdev_ops_fops = {
 	.write = rnp_dbg_netdev_ops_write,
 };
 
-static ssize_t rnp_dbg_netdev_temp_read(struct file *filp,
+static ssize_t rnp_dbg_netdev_temp_read(struct file *file,
 					char __user *buffer, size_t count,
 					loff_t *ppos)
 {
-	struct rnp_adapter *adapter = filp->private_data;
+	struct rnp_adapter *adapter = file->private_data;
 	struct rnp_hw *hw = &adapter->hw;
+	int temp = 0, voltage = 0;
 	char *buf;
 	int len;
-	int temp = 0, voltage = 0;
 
 	/* don't allow partial reads */
 	if (*ppos != 0)
@@ -289,6 +475,27 @@ void rnp_dbg_adapter_init(struct rnp_adapter *adapter)
 					    adapter, &rnp_dbg_netdev_temp);
 		if (!pfile)
 			e_dev_err("debugfs temp for %s failed\n", name);
+
+		if (rnp_is_pf1(&adapter->hw) == 0) {
+			pfile = debugfs_create_file_unsafe("csl", 0755,
+							   adapter->rnp_dbg_adapter,
+							   adapter, &rnp_dbg_csl_fops);
+			if (!pfile)
+				e_dev_err("debugfs csl failed\n");
+		}
+		pfile = debugfs_create_file("info", 0600,
+					    adapter->rnp_dbg_adapter,
+					    adapter,
+					    &rnp_dbg_eth_info_fops);
+		if (!pfile)
+			e_dev_err("debugfs info failed\n");
+		pfile = debugfs_create_file("mbx_cookies_info", 0600,
+					    adapter->rnp_dbg_adapter,
+					    adapter,
+					    &rnp_dbg_mbx_cookies_info_fops);
+		if (!pfile)
+			e_dev_err("debugfs reg_ops for mbx_cookies_info failed\n");
+
 	} else {
 		e_dev_err("debugfs entry for %s failed\n", name);
 	}

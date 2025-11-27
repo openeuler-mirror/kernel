@@ -177,6 +177,7 @@ unsigned int rnp_mbx_change_timeout(struct rnp_hw *hw, int timeout_ms);
 extern struct rnp_mbx_operations mbx_ops_generic;
 int rnp_mbx_lldp_status_get(struct rnp_hw *hw);
 int rnp_mbx_lldp_port_enable(struct rnp_hw *hw, bool enable);
-
+int rnp_mbx_ddr_csl_enable(struct rnp_hw *hw,
+			   int enable, dma_addr_t dma_phy, int bytes);
 
 #endif /* _RNP_MBX_H_ */

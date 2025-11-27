@@ -736,6 +736,7 @@ struct rnp_eth_operations {
 enum {
 	rnp_driver_insmod,
 	rnp_driver_suspuse,
+	rnp_driver_force_control_mac,
 };
 
 struct rnp_hw_operations {
@@ -1103,7 +1104,7 @@ struct rnp_hw {
 	int nr_lane;
 	u8 is_backplane : 1;
 	u8 is_sgmii : 1;
-	u8 force_10g_1g_speed_ablity : 1;
+	u8 force_10g_1g_speed_ability : 1;
 	u8 force_speed_stat : 2;
 #define FORCE_SPEED_STAT_DISABLED 0
 #define FORCE_SPEED_STAT_1G 1
@@ -1115,6 +1116,7 @@ struct rnp_hw {
 	u16 ncsi_mc_count;
 	u16 ncsi_vlan_count;
 	u32 ncsi_vf_cpu_shm_pf_base;
+	u32 saved_force_link_speed;
 	u32 pcode;
 	u32 supported_link;
 	u32 advertised_link;
@@ -1122,7 +1124,7 @@ struct rnp_hw {
 	u32 tp_mdx;
 	u32 tp_mdix_ctrl;
 	u32 phy_id;
-	u8 fw_lldp_ablity;
+	u8 fw_lldp_ability;
 	u8 link;
 	u8 pci_gen;
 	u8 pci_lanes;
@@ -1132,6 +1134,8 @@ struct rnp_hw {
 	u32 dma_version;
 	u32 wol;
 	u32 eco;
+	u32 force_status;
+	u32 force_link_supported;
 	u16 min_length;
 	u16 max_length;
 	u16 min_length_current;

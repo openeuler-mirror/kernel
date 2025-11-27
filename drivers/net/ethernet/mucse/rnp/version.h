@@ -3,5 +3,5 @@
 
 #ifndef VERSION_H
 #define VERSION_H
-#define GIT_COMMIT " 8206c05"
+#define GIT_COMMIT " 4650a79"
 #endif

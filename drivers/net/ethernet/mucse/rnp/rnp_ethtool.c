@@ -123,9 +123,9 @@ static struct rnp_reg_test reg_test_n10[] = {
 static bool reg_pattern_test(struct rnp_adapter *adapter, u64 *data,
 			     int reg, u32 mask, u32 write)
 {
-	u32 pat, val, before;
 	static const u32 test_pattern[] = { 0x5A5A5A5A, 0xA5A5A5A5,
 					    0x00000000, 0xFFFFFFFF };
+	u32 pat, val, before;
 
 	for (pat = 0; pat < ARRAY_SIZE(test_pattern); pat++) {
 		before = readl(adapter->hw.hw_addr + reg);
@@ -177,8 +177,8 @@ static bool reg_set_and_check(struct rnp_adapter *adapter, u64 *data,
  **/
 static bool rnp_reg_test(struct rnp_adapter *adapter, u64 *data)
 {
-	struct rnp_reg_test *test;
 	struct rnp_hw *hw = &adapter->hw;
+	struct rnp_reg_test *test;
 	u32 i;
 
 	if (RNP_REMOVED(hw->hw_addr)) {
@@ -243,8 +243,8 @@ static bool rnp_reg_test(struct rnp_adapter *adapter, u64 *data)
 static int rnp_link_test(struct rnp_adapter *adapter, u64 *data)
 {
 	struct rnp_hw *hw = &adapter->hw;
-	bool link_up;
 	u32 link_speed = 0;
+	bool link_up;
 	bool duplex;
 	*data = 0;
 
@@ -259,8 +259,8 @@ void rnp_diag_test(struct net_device *netdev,
 		   struct ethtool_test *eth_test, u64 *data)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
-	struct rnp_hw *hw = &adapter->hw;
 	bool if_running = netif_running(netdev);
+	struct rnp_hw *hw = &adapter->hw;
 
 	set_bit(__RNP_TESTING, &adapter->state);
 	if (eth_test->flags == ETH_TEST_FL_OFFLINE) {
@@ -354,9 +354,9 @@ skip_ol_tests:
 int rnp_get_fecparam(struct net_device *netdev,
 		     struct ethtool_fecparam *fecparam)
 {
-	int err;
 	struct rnp_adapter *adapter = netdev_priv(netdev);
 	struct rnp_hw *hw = &adapter->hw;
+	int err;
 
 	err = rnp_mbx_get_lane_stat(hw);
 	if (err)
@@ -493,8 +493,8 @@ int rnp_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
 
 static unsigned int rnp_max_channels(struct rnp_adapter *adapter)
 {
-	unsigned int max_combined;
 	struct rnp_hw *hw = &adapter->hw;
+	unsigned int max_combined;
 
 	/* SR-IOV currently only allows 2 queue on the PF */
 	/* dcb on max support 32 */
@@ -649,9 +649,9 @@ int rnp_get_module_info(struct net_device *dev,
 int rnp_get_module_eeprom(struct net_device *dev,
 			  struct ethtool_eeprom *eeprom, u8 *data)
 {
+	u16 start = eeprom->offset, length = eeprom->len;
 	struct rnp_adapter *adapter = netdev_priv(dev);
 	struct rnp_hw *hw = &adapter->hw;
-	u16 start = eeprom->offset, length = eeprom->len;
 	int rc = 0;
 
 	rnp_mbx_get_lane_stat(hw);
@@ -726,9 +726,9 @@ int rnp_set_ringparam(struct net_device *netdev,
 		      struct netlink_ext_ack __always_unused *extack)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
+	u32 new_rx_count, new_tx_count;
 	struct rnp_ring *temp_ring;
 	int i, err = 0;
-	u32 new_rx_count, new_tx_count;
 
 	/* sriov mode can't change ring param */
 	if (adapter->flags & RNP_FLAG_SRIOV_ENABLED)
@@ -838,6 +838,7 @@ int rnp_set_ringparam(struct net_device *netdev,
 					temp_ring[i].temp_count;
 				adapter->rx_ring[i]->reset_count =
 					new_rx_count;
+				new_rx_count = temp_ring[i].temp_count;
 			}
 			err = rnp_setup_rx_resources(&temp_ring[i],
 						     adapter);
@@ -897,8 +898,8 @@ int rnp_get_dump_flag(struct net_device *netdev, struct ethtool_dump *dump)
 int rnp_get_dump_data(struct net_device *netdev, struct ethtool_dump *dump,
 		      void *buffer)
 {
-	int err;
 	struct rnp_adapter *adapter = netdev_priv(netdev);
+	int err;
 
 	err = rnp_mbx_get_dump(&adapter->hw, dump->flag, buffer,
 			       dump->len);
@@ -945,13 +946,13 @@ int rnp_get_coalesce(struct net_device *netdev,
 	struct rnp_adapter *adapter = netdev_priv(netdev);
 
 	coal->use_adaptive_tx_coalesce = adapter->adaptive_tx_coal;
-	coal->tx_coalesce_usecs = adapter->tx_usecs;
+	coal->tx_coalesce_usecs = adapter->tx_usecs_usr_set;
 	coal->tx_coalesce_usecs_irq = 0;
 	coal->tx_max_coalesced_frames = adapter->tx_frames;
 	coal->tx_max_coalesced_frames_irq = adapter->tx_work_limit;
 	coal->use_adaptive_rx_coalesce = adapter->adaptive_rx_coal;
 	coal->rx_coalesce_usecs_irq = 0;
-	coal->rx_coalesce_usecs = adapter->rx_usecs;
+	coal->rx_coalesce_usecs = adapter->rx_usecs_usr_set;
 	coal->rx_max_coalesced_frames = adapter->rx_frames;
 	coal->rx_max_coalesced_frames_irq = adapter->napi_budge;
 
@@ -985,8 +986,8 @@ int rnp_set_coalesce(struct net_device *netdev,
 		     struct kernel_ethtool_coalesce *kernel_coal,
 		     struct netlink_ext_ack *extack)
 {
-	int reset = 0;
 	struct rnp_adapter *adapter = netdev_priv(netdev);
+	int reset = 0;
 	u32 value;
 
 	/* we don't support close tx and rx coalesce */
@@ -1026,6 +1027,7 @@ int rnp_set_coalesce(struct net_device *netdev,
 	if (adapter->tx_usecs != value) {
 		reset = 1;
 		adapter->tx_usecs = value;
+		adapter->tx_usecs_usr_set = value;
 	}
 
 	if (ec->rx_max_coalesced_frames_irq < RNP_MIN_RX_WORK ||
@@ -1059,6 +1061,7 @@ int rnp_set_coalesce(struct net_device *netdev,
 	if (adapter->rx_usecs != value) {
 		reset = 1;
 		adapter->rx_usecs = value;
+		adapter->rx_usecs_usr_set = value;
 	}
 
 	/* other setup is not supported */
@@ -1126,8 +1129,8 @@ static int rnp_get_ethtool_fdir_entry(struct rnp_adapter *adapter,
 {
 	struct ethtool_rx_flow_spec *fsp =
 		(struct ethtool_rx_flow_spec *)&cmd->fs;
-	struct hlist_node *node2;
 	struct rnp_fdir_filter *rule = NULL;
+	struct hlist_node *node2;
 
 	/* report total rule count */
 	cmd->data = adapter->fdir_pballoc;
@@ -1171,7 +1174,7 @@ static int rnp_get_ethtool_fdir_entry(struct rnp_adapter *adapter,
 		/* support proto and mask only in this mode */
 		fsp->h_u.ether_spec.h_proto =
 			rule->filter.layer2_formate.proto;
-		fsp->m_u.ether_spec.h_proto = 0xffff;
+		fsp->m_u.ether_spec.h_proto = cpu_to_be16(0xffff);
 		break;
 	default:
 		return -EINVAL;
@@ -1187,10 +1190,10 @@ static int rnp_get_ethtool_fdir_entry(struct rnp_adapter *adapter,
 				rule->filter.formatted.src_ip[0];
 			fsp->h_u.tcp_ip4_spec.ip4dst =
 				rule->filter.formatted.dst_ip[0];
-			fsp->m_u.tcp_ip4_spec.psrc = 0xffff;
-			fsp->m_u.tcp_ip4_spec.pdst = 0xffff;
-			fsp->m_u.tcp_ip4_spec.ip4src = 0xffffffff;
-			fsp->m_u.tcp_ip4_spec.ip4dst = 0xffffffff;
+			fsp->m_u.tcp_ip4_spec.psrc = cpu_to_be16(0xffff);
+			fsp->m_u.tcp_ip4_spec.pdst = cpu_to_be16(0xffff);
+			fsp->m_u.tcp_ip4_spec.ip4src = cpu_to_be32(0xffffffff);
+			fsp->m_u.tcp_ip4_spec.ip4dst = cpu_to_be32(0xffffffff);
 		} else {
 			fsp->h_u.tcp_ip4_spec.psrc =
 				rule->filter.formatted.src_port &
@@ -1241,8 +1244,8 @@ static int rnp_get_ethtool_fdir_all(struct rnp_adapter *adapter,
 				    struct ethtool_rxnfc *cmd,
 				    u32 *rule_locs)
 {
-	struct hlist_node *node2;
 	struct rnp_fdir_filter *rule;
+	struct hlist_node *node2;
 	int cnt = 0;
 
 	/* report total rule count */
@@ -1270,8 +1273,8 @@ int rnp_get_rxnfc(struct net_device *netdev, struct ethtool_rxnfc *cmd,
 		  u32 *rule_locs)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
-	int ret = -EOPNOTSUPP;
 	struct rnp_hw *hw = &adapter->hw;
+	int ret = -EOPNOTSUPP;
 
 	switch (cmd->cmd) {
 	case ETHTOOL_GRXRINGS:
@@ -1351,8 +1354,8 @@ static int rnp_flowspec_to_flow_type(struct rnp_adapter *adapter,
 				     u8 *flow_type,
 				     struct rnp_fdir_filter *input)
 {
-	int i;
 	int ret = 1;
+	int i;
 	/* not support flow_ext */
 	if (fsp->flow_type & FLOW_EXT)
 		return 0;
@@ -1434,12 +1437,12 @@ static int rnp_flowspec_to_flow_type(struct rnp_adapter *adapter,
 				ret = 0;
 			}
 			if (fsp->h_u.usr_ip4_spec.ip4src != 0 &&
-			    fsp->m_u.usr_ip4_spec.ip4src != 0xffffffff) {
+			    fsp->m_u.usr_ip4_spec.ip4src != cpu_to_be32(0xffffffff)) {
 				e_err(drv, "ip src mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.usr_ip4_spec.ip4dst != 0 &&
-			    fsp->m_u.usr_ip4_spec.ip4dst != 0xffffffff) {
+			    fsp->m_u.usr_ip4_spec.ip4dst != cpu_to_be32(0xffffffff)) {
 				e_err(drv, "ip dst mask error\n");
 				ret = 0;
 			}
@@ -1467,22 +1470,22 @@ static int rnp_flowspec_to_flow_type(struct rnp_adapter *adapter,
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.ip4src != 0 &&
-			    fsp->m_u.tcp_ip4_spec.ip4src != 0xffffffff) {
+			    fsp->m_u.tcp_ip4_spec.ip4src != cpu_to_be32(0xffffffff)) {
 				e_err(drv, "src mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.ip4dst != 0 &&
-			    fsp->m_u.tcp_ip4_spec.ip4dst != 0xffffffff) {
+			    fsp->m_u.tcp_ip4_spec.ip4dst != cpu_to_be32(0xffffffff)) {
 				e_err(drv, "dst mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.psrc != 0 &&
-			    fsp->m_u.tcp_ip4_spec.psrc != 0xffff) {
+			    fsp->m_u.tcp_ip4_spec.psrc != cpu_to_be16(0xffff)) {
 				e_err(drv, "src port mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.pdst != 0 &&
-			    fsp->m_u.tcp_ip4_spec.pdst != 0xffff) {
+			    fsp->m_u.tcp_ip4_spec.pdst != cpu_to_be16(0xffff)) {
 				e_err(drv, "src port mask error\n");
 				ret = 0;
 			}
@@ -1513,12 +1516,12 @@ int rnp_update_ethtool_fdir_entry(struct rnp_adapter *adapter,
 				  struct rnp_fdir_filter *input,
 				  u16 sw_idx)
 {
+	struct rnp_fdir_filter *rule, *parent;
 	struct rnp_hw *hw = &adapter->hw;
 	struct hlist_node *node2;
-	struct rnp_fdir_filter *rule, *parent;
-	bool deleted = false;
 	u16 hw_idx_layer2 = 0;
 	u16 hw_idx_tuple5 = 0;
+	bool deleted = false;
 	s32 err;
 
 	parent = NULL;
@@ -1635,11 +1638,11 @@ static int rnp_add_ethtool_fdir_entry(struct rnp_adapter *adapter,
 {
 	struct ethtool_rx_flow_spec *fsp =
 		(struct ethtool_rx_flow_spec *)&cmd->fs;
-	struct rnp_fdir_filter *input;
-	struct rnp_hw *hw = &adapter->hw;
-	int err;
-	int vf_fix = 0;
 	u32 ring_cookie_high = fsp->ring_cookie >> 32;
+	struct rnp_hw *hw = &adapter->hw;
+	struct rnp_fdir_filter *input;
+	int vf_fix = 0;
+	int err;
 
 	if (hw->feature_flags & RNP_NET_FEATURE_VF_FIXED)
 		vf_fix = 1;
@@ -1705,9 +1708,9 @@ static int rnp_add_ethtool_fdir_entry(struct rnp_adapter *adapter,
 		input->filter.formatted.dst_ip_mask[0] =
 			fsp->m_u.usr_ip4_spec.ip4dst;
 		input->filter.formatted.src_port = 0;
-		input->filter.formatted.src_port_mask = 0xffff;
+		input->filter.formatted.src_port_mask = cpu_to_be16(0xffff);
 		input->filter.formatted.dst_port = 0;
-		input->filter.formatted.dst_port_mask = 0xffff;
+		input->filter.formatted.dst_port_mask = cpu_to_be16(0xffff);
 		input->filter.formatted.inner_mac[0] =
 			fsp->h_u.usr_ip4_spec.proto;
 		input->filter.formatted.inner_mac_mask[0] =
@@ -1904,9 +1907,10 @@ int rnp_set_rxfh(struct net_device *netdev, const u32 *indir,
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
 	struct rnp_hw *hw = &adapter->hw;
+	u32 reta_entries;
 	int i;
-	u32 reta_entries = rnp_rss_indir_tbl_entries(adapter);
 
+	reta_entries = rnp_rss_indir_tbl_entries(adapter);
 	if (hfunc) {
 		if (hw->ops.set_rss_hfunc) {
 			if (hw->ops.set_rss_hfunc(hw, hfunc))

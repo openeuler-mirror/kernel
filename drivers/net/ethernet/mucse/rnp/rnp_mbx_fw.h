@@ -61,6 +61,7 @@ enum GENERIC_CMD {
 	SEND_TO_VF = 0x0802,
 	DRIVER_INSMOD = 0x0803,
 	SYSTEM_SUSPUSE = 0x0804,
+	SYSTEM_FORCE = 0x0805,
 
 	/* link configuration admin commands */
 	GET_PHY_ABALITY = 0x0601,
@@ -93,6 +94,7 @@ enum GENERIC_CMD {
 	GET_TEMP = 0x0a11,
 	SET_WOL = 0x0a12,
 	LLDP_TX_CTL = 0x0a13,
+	SET_DDR_CSL = 0xFF11,
 };
 
 enum link_event_mask {
@@ -120,7 +122,21 @@ enum pma_type {
 	PHY_TYPE_40G_BASE_LR4,
 	PHY_TYPE_10G_BASE_LR,
 	PHY_TYPE_10G_BASE_ER,
+	PHY_TYPE_10G_TP
 };
+
+#define PHY_C45 (BIT(30))
+#define PHY_MMD(i) ((i) << 16)
+#define PHY_MMD_PMAPMD PHY_MMD(1)
+#define PHY_MMD_AN PHY_MMD(7)
+#define PHY_MMD_VEND2 PHY_MMD(31)
+#define PHY_826x_MDIX (PHY_C45 | PHY_MMD_VEND2 | 0xa430)
+#define PHY_826x_SPEED (PHY_C45 | PHY_MMD_PMAPMD | 0)
+#define PHY_826x_DUPLEX (PHY_C45 | PHY_MMD_VEND2 | 0xa44)
+#define PHY_826x_AN (PHY_C45 | PHY_MMD_AN | 0)
+#define PHY_826x_ADV (PHY_C45 | PHY_MMD_AN | 16)
+#define PHY_826x_GBASE_ADV (PHY_C45 | PHY_MMD_AN | 0x20)
+#define PHY_826x_GBASE_ADV_2 (PHY_C45 | PHY_MMD_VEND2 | 0xa412)
 
 struct phy_abilities {
 	unsigned char link_stat;
@@ -141,7 +157,7 @@ struct phy_abilities {
 	int wol_status;
 
 	union {
-		unsigned int ext_ablity;
+		unsigned int ext_ability;
 		struct {
 			unsigned int valid : 1; /* 0 */
 			unsigned int wol_en : 1; /* 1 */
@@ -155,10 +171,16 @@ struct phy_abilities {
 			unsigned int yt8614 : 1; /* 9 */
 			unsigned int pci_ext_reset : 1; /* 10 */
 			unsigned int rpu_availble : 1; /* 11 */
-			unsigned int fw_lldp_ablity : 1; /* 12 */
+			unsigned int fw_lldp_ability : 1; /* 12 */
 			unsigned int lldp_enabled : 1; /* 13 */
 			unsigned int only_1g : 1; /* 14 */
-
+			unsigned int force_down_en : 4; /* 15-18 */
+			unsigned int force_link_supported : 1; /* 19 */
+			unsigned int ports_is_sgmii_valid : 1; /* [20] */
+			unsigned int lane0_is_sgmii : 1; /* [21] */
+			unsigned int lane1_is_sgmii : 1; /* [22] */
+			unsigned int lane2_is_sgmii : 1; /* [23] */
+			unsigned int lane3_is_sgmii : 1; /* [24] */
 		} e;
 	};
 
@@ -218,7 +240,7 @@ struct link_stat_data {
 
 	/* 3:ignore */
 	char an_completed : 1;
-	char lp_an_ablity : 1;
+	char lp_an_ability : 1;
 	char parallel_detection_fault : 1;
 	char fec_enabled : 1;
 	char low_power_state : 1;
@@ -263,11 +285,14 @@ struct link_stat_data {
 struct port_stat {
 	u8 phyid;
 
-	u8 duplex : 1;
-	u8 autoneg : 1;
-	u8 fec : 1;
-	u16 speed;
-	u16 pause;
+	u8 duplex      : 1;
+	u8 autoneg     : 1;
+	u8 fec	       : 1;
+	u8 rev	       : 1;
+	u8 link_traing : 1;
+	u8 is_sgmii    : 1;
+	u8 lldp_status : 1;
+	u32 speed;
 } __attribute__((packed));
 
 struct lane_stat_data {
@@ -416,6 +441,11 @@ struct mbx_fw_cmd_req {
 		} ifsuspuse;
 
 		struct {
+			int lane;
+			int status;
+		} ifforce;
+
+		struct {
 			int nr_lane;
 		} get_lane_st;
 
@@ -552,6 +582,13 @@ struct mbx_fw_cmd_req {
 			int lane_mask;
 			int pfvf_num;
 		} get_mac_addr;
+
+		struct {
+			int enable;
+			int ddr_phy_hi;
+			int ddr_phy_lo;
+			int bytes;
+		} ddr_csl;
 
 		struct {
 			char phy_interface;
@@ -1024,6 +1061,19 @@ static inline void build_ifsuspuse(struct mbx_fw_cmd_req *req,
 	req->ifinsmod.status = status;
 }
 
+static inline void build_ifforce(struct mbx_fw_cmd_req *req,
+				 unsigned int nr_lane, int status)
+{
+	req->flags = 0;
+	req->opcode = SYSTEM_FORCE;
+	req->datalen = sizeof(req->ifforce);
+	req->cookie = NULL;
+	req->reply_lo = 0;
+	req->reply_hi = 0;
+	req->ifforce.lane = nr_lane;
+	req->ifforce.status = status;
+}
+
 static inline void build_mbx_sfp_read(struct mbx_fw_cmd_req *req,
 				      unsigned int nr_lane, int sfp_addr,
 				      int reg, int cnt, void *cookie)
@@ -1106,6 +1156,30 @@ build_link_set_loopback_req(struct mbx_fw_cmd_req *req, void *cookie,
 	}
 }
 
+static inline void build_ddr_csl(struct mbx_fw_cmd_req *req,
+				 void *cookie, bool enable,
+				 dma_addr_t dma_phy, int bytes)
+{
+	u64 address = dma_phy;
+
+	req->flags = 0;
+	req->opcode = SET_DDR_CSL;
+	req->datalen = sizeof(req->ddr_csl);
+	req->cookie = cookie;
+	req->reply_lo = 0;
+	req->reply_hi = 0;
+
+	req->ddr_csl.enable = enable;
+
+	if (enable) {
+		req->ddr_csl.bytes = bytes;
+		req->ddr_csl.ddr_phy_hi = (address >> 32);
+		req->ddr_csl.ddr_phy_lo = address & 0xffffffff;
+	} else {
+		req->ddr_csl.bytes = 0;
+	}
+}
+
 /* =========== errcode======= */
 enum MBX_ERR {
 	MBX_OK = 0,
@@ -1153,6 +1227,7 @@ int rnp_set_lane_fun(struct rnp_hw *hw, int fun, int value0, int value1,
 int rnp_mbx_ifinsmod(struct rnp_hw *hw, int status);
 int rnp_mbx_ifsuspuse(struct rnp_hw *hw, int status);
 int rnp_mbx_ifup_down(struct rnp_hw *hw, int up);
+int rnp_mbx_ifforce_control_mac(struct rnp_hw *hw, int status);
 int rnp_mbx_led_set(struct rnp_hw *hw, int value);
 int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info);
 int rnp_mbx_get_temp(struct rnp_hw *hw, int *voltage);

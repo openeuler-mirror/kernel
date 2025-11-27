@@ -37,7 +37,7 @@
 	do {                                                        \
 		int i;                                              \
 		for (i = 0; i < size; i++) {                        \
-			rnp_wr_reg(((char *)(rpubase)) + (offset) + \
+			rnp_wr_reg((rpubase) + (offset) + \
 					   i * 4,                   \
 				   (array)[i]);                     \
 		}                                                   \
@@ -61,7 +61,7 @@ static void rnp_reset_mpe_and_rpu(struct rnp_hw *hw)
 	mdelay(100);
 }
 
-static void rnp_start_rpu(char *rpu_base, int do_start)
+static void rnp_start_rpu(u8 __iomem *rpu_base, int do_start)
 {
 	int mpe_start_v = 0xff, rpu_start_v = 0x1;
 
@@ -77,7 +77,8 @@ static void rnp_start_rpu(char *rpu_base, int do_start)
 }
 
 /* down bin to rpu */
-static int rnp_download_and_start_rpu(struct rnp_hw *hw, char *rpu_base,
+static int rnp_download_and_start_rpu(struct rnp_hw *hw,
+				      u8 __iomem *rpu_base,
 				      const unsigned int *mpe_bin,
 				      const int mpe_bin_sz,
 				      const unsigned int *mpe_data,
