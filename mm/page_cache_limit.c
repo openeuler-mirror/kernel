@@ -177,9 +177,12 @@ static void shrink_shepherd(struct work_struct *w)
 	if (!should_periodical_reclaim())
 		return;
 
-	for_each_online_node(node) {
-		if (!work_pending(&vmscan_works[node]))
-			queue_work_node(node, system_unbound_wq, &vmscan_works[node]);
+	if (vm_cache_limit_mbytes && page_cache_over_limit()) {
+		for_each_online_node(node) {
+			if (!work_pending(&vmscan_works[node]))
+				queue_work_node(node, system_unbound_wq,
+						&vmscan_works[node]);
+		}
 	}
 
 	queue_delayed_work(system_unbound_wq, &shepherd,
