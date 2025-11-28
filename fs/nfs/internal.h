@@ -153,7 +153,6 @@ struct nfs_fs_context {
 		struct super_block	*sb;
 		struct dentry		*dentry;
 		struct nfs_fattr	*fattr;
-		unsigned int		inherited_bsize;
 	} clone_data;
 #if IS_ENABLED(CONFIG_ENFS)
 	void *enfs_option; /* struct multipath_mount_options */
