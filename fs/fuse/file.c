@@ -1787,6 +1787,7 @@ static ssize_t fuse_direct_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	if (!is_sync_kiocb(iocb) && iocb->ki_flags & IOCB_DIRECT) {
 		res = fuse_direct_IO(iocb, to);
 	} else {
+		struct fuse_io_priv io = FUSE_IO_PRIV_SYNC(iocb);
 #ifdef CONFIG_FUSE_FASTPATH
 		struct inode *inode = file_inode(iocb->ki_filp);
 		struct fuse_conn *fc = get_fuse_conn(inode);
@@ -1794,7 +1795,6 @@ static ssize_t fuse_direct_read_iter(struct kiocb *iocb, struct iov_iter *to)
 		if (fc->use_fastpath)
 			return __fuse_direct_read_fast(iocb, to, &iocb->ki_pos);
 #endif
-		struct fuse_io_priv io = FUSE_IO_PRIV_SYNC(iocb);
 
 		res = __fuse_direct_read(&io, to, &iocb->ki_pos);
 	}
