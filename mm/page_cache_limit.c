@@ -18,7 +18,7 @@ static int vm_cache_reclaim_enable = 1;
 static unsigned long vm_cache_limit_mbytes __read_mostly;
 
 static void shrink_shepherd(struct work_struct *w);
-static DECLARE_DEFERRABLE_WORK(shepherd, shrink_shepherd);
+static DECLARE_DELAYED_WORK(shepherd, shrink_shepherd);
 static struct work_struct vmscan_works[MAX_NUMNODES];
 
 static bool should_periodical_reclaim(void)
