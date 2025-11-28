@@ -182,6 +182,7 @@ static void *m_next(struct seq_file *m, void *v, loff_t *ppos)
 	return next;
 }
 
+#ifdef CONFIG_NUMA
 static void *numa_maps_next(struct seq_file *m, void *v, loff_t *ppos)
 {
 	struct proc_maps_private *priv = m->private;
@@ -277,6 +278,7 @@ out:
 	*ppos = next ? next->vm_start : -1UL;
 	return next;
 }
+#endif /* CONFIG_NUMA */
 
 static void m_stop(struct seq_file *m, void *v)
 {
