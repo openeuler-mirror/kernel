@@ -7372,7 +7372,7 @@ int __sched yield_to(struct task_struct *p, bool preempt)
 	unsigned long flags;
 	int yielded = 0;
 
-	local_irq_save(flags);
+	raw_spin_lock_irqsave(&p->pi_lock, flags);
 	rq = this_rq();
 
 again:
@@ -7415,7 +7415,7 @@ again:
 out_unlock:
 	double_rq_unlock(rq, p_rq);
 out_irq:
-	local_irq_restore(flags);
+	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 
 	if (yielded > 0)
 		schedule();
