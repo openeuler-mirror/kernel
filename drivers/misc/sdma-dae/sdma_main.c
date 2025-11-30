@@ -19,7 +19,7 @@
 #define BASE_DIR		"sdma" /* Subdir in /sys/kernel/debug/  */
 #define UPPER_SHIFT		32
 #define MAX_INPUT_LENGTH	128
-#define SDMA_VERSION		"1.0.5"
+#define SDMA_VERSION		"1.0.6"
 
 u32 share_chns = 16;
 module_param(share_chns, uint, RW_R_R);
@@ -144,11 +144,11 @@ static void sdma_free_all_sq_cq(struct hisi_sdma_device *psdma_dev)
 {
 	struct hisi_sdma_channel *pchan;
 	int sync_size;
-	int i;
+	u16 i;
 
 	sync_size = sizeof(struct hisi_sdma_queue_info);
 
-	for (i = psdma_dev->nr_channel - 1; i >= 0; i--) {
+	for (i = 0; i < psdma_dev->nr_channel; i++) {
 		pchan = psdma_dev->channels + i;
 		if (pchan->io_base)
 			sdma_channel_reset(pchan);
