@@ -504,7 +504,7 @@ cifs_reconnect(struct TCP_Server_Info *server)
 	list_for_each_safe(tmp, tmp2, &retry_list) {
 		mid_entry = list_entry(tmp, struct mid_q_entry, qhead);
 		list_del_init(&mid_entry->qhead);
-		mid_entry->callback(mid_entry);
+		mid_execute_callback(mid_entry);
 		cifs_mid_q_entry_release(mid_entry);
 	}
 
@@ -944,7 +944,7 @@ static void clean_demultiplex_info(struct TCP_Server_Info *server)
 			mid_entry = list_entry(tmp, struct mid_q_entry, qhead);
 			cifs_dbg(FYI, "Callback mid 0x%llx\n", mid_entry->mid);
 			list_del_init(&mid_entry->qhead);
-			mid_entry->callback(mid_entry);
+			mid_execute_callback(mid_entry);
 			cifs_mid_q_entry_release(mid_entry);
 		}
 		/* 1/8th of sec is more than enough time for them to exit */
@@ -1195,7 +1195,7 @@ next_pdu:
 				mids[i]->resp_buf_size = server->pdu_size;
 
 				if (!mids[i]->multiRsp || mids[i]->multiEnd)
-					mids[i]->callback(mids[i]);
+					mid_execute_callback(mids[i]);
 
 				cifs_mid_q_entry_release(mids[i]);
 			} else if (server->ops->is_oplock_break &&
