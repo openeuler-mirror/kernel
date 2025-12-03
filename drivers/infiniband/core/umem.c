@@ -48,6 +48,8 @@
 #include "ib_peer_mem.h"
 #endif
 
+#define RESCHED_LOOP_CNT_THRESHOLD 0x1000
+
 static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int dirty)
 {
 	bool make_dirty = umem->writable && dirty;
@@ -58,9 +60,13 @@ static void __ib_umem_release(struct ib_device *dev, struct ib_umem *umem, int d
 		ib_dma_unmap_sg(dev, umem->sg_head.sgl, umem->sg_nents,
 				DMA_BIDIRECTIONAL);
 
-	for_each_sg(umem->sg_head.sgl, sg, umem->sg_nents, i)
+	for_each_sg(umem->sg_head.sgl, sg, umem->sg_nents, i) {
 		unpin_user_page_range_dirty_lock(sg_page(sg),
 			DIV_ROUND_UP(sg->length, PAGE_SIZE), make_dirty);
+
+		if (i && !(i % RESCHED_LOOP_CNT_THRESHOLD))
+			cond_resched();
+	}
 
 	sg_free_table(&umem->sg_head);
 }

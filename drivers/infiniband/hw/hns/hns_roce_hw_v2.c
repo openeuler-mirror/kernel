@@ -3039,7 +3039,7 @@ static void free_mr_uninit_pd(struct hns_roce_dev *hr_dev)
 		return;
 
 	hns_roce_dealloc_pd(&free_mr->rsv_pd->ibpd, NULL);
-	kvfree(free_mr->rsv_pd);
+	kfree(free_mr->rsv_pd);
 	free_mr->rsv_pd = NULL;
 }
 
@@ -3089,7 +3089,7 @@ static void free_mr_uninit_cq(struct hns_roce_dev *hr_dev)
 		return;
 
 	hns_roce_destroy_cq(&free_mr->rsv_cq->ib_cq, NULL);
-	kvfree(free_mr->rsv_cq);
+	kfree(free_mr->rsv_cq);
 	free_mr->rsv_cq = NULL;
 }
 

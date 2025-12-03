@@ -589,13 +589,13 @@ static struct hns_roce_die_info *alloc_die_info(int bus_num)
 	struct hns_roce_die_info *die_info;
 	int ret;
 
-	die_info = kzalloc(sizeof(struct hns_roce_die_info), GFP_KERNEL);
+	die_info = kvzalloc(sizeof(struct hns_roce_die_info), GFP_KERNEL);
 	if (!die_info)
 		return NULL;
 
 	ret = xa_err(xa_store(&roce_bond_xa, bus_num, die_info, GFP_KERNEL));
 	if (ret) {
-		kfree(die_info);
+		kvfree(die_info);
 		return NULL;
 	}
 
