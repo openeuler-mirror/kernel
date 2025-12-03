@@ -1724,8 +1724,6 @@ static u8 pci_hdr_type(struct pci_dev *dev)
 
 static void pci_msi_setup_pci_dev(struct pci_dev *dev)
 {
-	u16 ctrl;
-
 	/*
 	 * Disable the MSI hardware to avoid screaming interrupts
 	 * during boot.  This is the power on reset default so
@@ -1734,10 +1732,6 @@ static void pci_msi_setup_pci_dev(struct pci_dev *dev)
 	dev->msi_cap = pci_find_capability(dev, PCI_CAP_ID_MSI);
 	if (dev->msi_cap)
 		pci_msi_set_enable(dev, 0);
-
-	pci_read_config_word(dev, dev->msi_cap + PCI_MSI_FLAGS, &ctrl);
-	if (!(ctrl & PCI_MSI_FLAGS_64BIT))
-		dev->no_64bit_msi = 1;
 
 	dev->msix_cap = pci_find_capability(dev, PCI_CAP_ID_MSIX);
 	if (dev->msix_cap)
