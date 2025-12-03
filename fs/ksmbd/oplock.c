@@ -126,14 +126,6 @@ static void free_opinfo(struct oplock_info *opinfo)
 	kfree(opinfo);
 }
 
-static inline void opinfo_free_rcu(struct rcu_head *rcu_head)
-{
-	struct oplock_info *opinfo;
-
-	opinfo = container_of(rcu_head, struct oplock_info, rcu_head);
-	free_opinfo(opinfo);
-}
-
 struct oplock_info *opinfo_get(struct ksmbd_file *fp)
 {
 	struct oplock_info *opinfo;
@@ -154,12 +146,12 @@ static struct oplock_info *opinfo_get_list(struct ksmbd_inode *ci)
 	if (list_empty(&ci->m_op_list))
 		return NULL;
 
-	rcu_read_lock();
-	opinfo = list_first_or_null_rcu(&ci->m_op_list, struct oplock_info,
+	read_lock(&ci->m_lock);
+	opinfo = list_first_entry(&ci->m_op_list, struct oplock_info,
 					op_entry);
 	if (opinfo && !atomic_inc_not_zero(&opinfo->refcount))
 		opinfo = NULL;
-	rcu_read_unlock();
+	read_unlock(&ci->m_lock);
 
 	return opinfo;
 }
@@ -169,7 +161,7 @@ void opinfo_put(struct oplock_info *opinfo)
 	if (!atomic_dec_and_test(&opinfo->refcount))
 		return;
 
-	call_rcu(&opinfo->rcu_head, opinfo_free_rcu);
+	free_opinfo(opinfo);
 }
 
 static void opinfo_add(struct oplock_info *opinfo)
@@ -177,7 +169,7 @@ static void opinfo_add(struct oplock_info *opinfo)
 	struct ksmbd_inode *ci = opinfo->o_fp->f_ci;
 
 	write_lock(&ci->m_lock);
-	list_add_rcu(&opinfo->op_entry, &ci->m_op_list);
+	list_add(&opinfo->op_entry, &ci->m_op_list);
 	write_unlock(&ci->m_lock);
 }
 
@@ -191,7 +183,7 @@ static void opinfo_del(struct oplock_info *opinfo)
 		write_unlock(&lease_list_lock);
 	}
 	write_lock(&ci->m_lock);
-	list_del_rcu(&opinfo->op_entry);
+	list_del(&opinfo->op_entry);
 	write_unlock(&ci->m_lock);
 }
 
@@ -1259,11 +1251,10 @@ void smb_break_all_levII_oplock(struct ksmbd_work *work, struct ksmbd_file *fp,
 	ci = fp->f_ci;
 	op = opinfo_get(fp);
 
-	rcu_read_lock();
-	list_for_each_entry_rcu(brk_op, &ci->m_op_list, op_entry) {
+	read_lock(&ci->m_lock);
+	list_for_each_entry(brk_op, &ci->m_op_list, op_entry) {
 		if (!atomic_inc_not_zero(&brk_op->refcount))
 			continue;
-		rcu_read_unlock();
 		if (brk_op->is_lease && (brk_op->o_lease->state &
 		    (~(SMB2_LEASE_READ_CACHING_LE |
 				SMB2_LEASE_HANDLE_CACHING_LE)))) {
@@ -1293,9 +1284,8 @@ void smb_break_all_levII_oplock(struct ksmbd_work *work, struct ksmbd_file *fp,
 		oplock_break(brk_op, SMB2_OPLOCK_LEVEL_NONE);
 next:
 		opinfo_put(brk_op);
-		rcu_read_lock();
 	}
-	rcu_read_unlock();
+	read_unlock(&ci->m_lock);
 
 	if (op)
 		opinfo_put(op);
