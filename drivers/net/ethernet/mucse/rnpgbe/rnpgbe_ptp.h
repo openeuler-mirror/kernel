@@ -87,7 +87,6 @@ struct rnpgbe_hwtimestamp {
 #define PTP_GET_TX_HWTS_UPDATE (0)
 /* hardware ts can't so fake ts from the software clock */
 #define DEBUG_PTP_HARD_SOFTWAY
-
 int rnpgbe_ptp_get_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr);
 int rnpgbe_ptp_set_ts_config(struct rnpgbe_adapter *pf, struct ifreq *ifr);
 int rnpgbe_ptp_register(struct rnpgbe_adapter *pf);

@@ -249,6 +249,10 @@ static s32 rnpgbe_write_posted_mbx(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
 	s32 ret_val = RNP_ERR_MBX;
 
+	/* if pcie off, nothing todo */
+	if (pci_channel_offline(hw->pdev))
+		return -EIO;
+
 	/* exit if either we can't write or there isn't a defined timeout */
 	if (!mbx->ops.write || !mbx->timeout)
 		goto out;
@@ -277,6 +281,10 @@ static s32 rnpgbe_check_for_msg_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 	u16 hw_req_count = 0;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
 
+	/* if pcie off, nothing todo */
+	if (pci_channel_offline(hw->pdev))
+		return -EIO;
+
 	if (mbx_id == MBX_CM3CPU) {
 		hw_req_count = rnpgbe_mbx_get_req(hw, CPU2PF_COUNTER(mbx));
 		if (hw_req_count != 0 && hw_req_count != hw->mbx.cpu_req) {
@@ -304,12 +312,19 @@ static s32 rnpgbe_check_for_msg_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
  **/
 static s32 rnpgbe_check_for_ack_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 {
-	s32 ret_val = RNP_ERR_MBX;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
+	s32 ret_val = RNP_ERR_MBX;
+	u16 hw_cpu_ack = 0;
+
+	/* if pcie off, nothing todo */
+	if (pci_channel_offline(hw->pdev))
+		return -EIO;
 
 	if (mbx_id == MBX_CM3CPU) {
-		if (rnpgbe_mbx_get_ack(hw, CPU2PF_COUNTER(mbx)) !=
-		    hw->mbx.cpu_ack) {
+		hw_cpu_ack = rnpgbe_mbx_get_ack(hw, CPU2PF_COUNTER(mbx));
+
+		if (hw_cpu_ack != 0 &&
+		    hw_cpu_ack != hw->mbx.cpu_ack) {
 			ret_val = 0;
 			hw->mbx.stats.acks++;
 		}
@@ -336,7 +351,7 @@ static s32 rnpgbe_obtain_mbx_lock_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 	int try_cnt = 5000;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
 	u32 CTRL_REG = (mbx_id == MBX_CM3CPU) ? PF2CPU_MBOX_CTRL(mbx) :
-						      PF2VF_MBOX_CTRL(mbx, mbx_id);
+			PF2VF_MBOX_CTRL(mbx, mbx_id);
 
 	while (try_cnt-- > 0) {
 		/* Take ownership of the buffer */
@@ -373,6 +388,10 @@ static s32 rnpgbe_write_mbx_pf(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 						      PF_VF_SHM_DATA(mbx, mbx_id);
 	u32 CTRL_REG = (mbx_id == MBX_CM3CPU) ? PF2CPU_MBOX_CTRL(mbx) :
 						      PF2VF_MBOX_CTRL(mbx, mbx_id);
+
+	/* if pcie off, nothing todo */
+	if (pci_channel_offline(hw->pdev))
+		return -EIO;
 
 	if (size > RNP_VFMAILBOX_SIZE)
 		return -EINVAL;
@@ -429,6 +448,11 @@ static s32 rnpgbe_read_mbx_pf(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 						     PF_VF_SHM_DATA(mbx, mbx_id);
 	u32 CTRL_REG = (mbx_id == MBX_CM3CPU) ? PF2CPU_MBOX_CTRL(mbx) :
 						      PF2VF_MBOX_CTRL(mbx, mbx_id);
+
+	/* if pcie off, nothing todo */
+	if (pci_channel_offline(hw->pdev))
+		return -EIO;
+
 	if (size > RNP_VFMAILBOX_SIZE)
 		return -EINVAL;
 	/* lock the mailbox to prevent pf/vf race condition */
@@ -484,11 +508,11 @@ static void rnpgbe_mbx_reset(struct rnpgbe_hw *hw)
 	mbx_wr32(hw, PF2CPU_MBOX_CTRL(mbx), 0);
 
 	if (PF_VF_MBOX_MASK_LO(mbx))
-		wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0);
+		mbx_wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0);
 	if (PF_VF_MBOX_MASK_HI(mbx))
-		wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0);
+		mbx_wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0);
 
-	wr32(hw, CPU_PF_MBOX_MASK(mbx), 0);
+	mbx_wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xffff0000);
 }
 
 static int rnpgbe_mbx_configure_pf(struct rnpgbe_hw *hw, int nr_vec,
@@ -497,6 +521,10 @@ static int rnpgbe_mbx_configure_pf(struct rnpgbe_hw *hw, int nr_vec,
 	int idx = 0;
 	u32 v;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
+
+	/* if pcie off, nothing todo */
+	if (pci_channel_offline(hw->pdev))
+		return -EIO;
 
 	if (enable) {
 		for (idx = 0; idx < hw->max_vfs; idx++) {
@@ -510,7 +538,7 @@ static int rnpgbe_mbx_configure_pf(struct rnpgbe_hw *hw, int nr_vec,
 		v = mbx_rd32(hw, CPU2PF_COUNTER(mbx));
 		hw->mbx.cpu_req = v & 0xffff;
 		hw->mbx.cpu_ack = (v >> 16) & 0xffff;
-		/* release   pf->cm3 buffer lock */
+		/* release pf->cm3 buffer lock */
 		mbx_wr32(hw, PF2CPU_MBOX_CTRL(mbx), 0);
 
 		/* allow VF to PF MBX IRQ */
@@ -518,29 +546,28 @@ static int rnpgbe_mbx_configure_pf(struct rnpgbe_hw *hw, int nr_vec,
 			mbx_wr32(hw, VF2PF_MBOX_VEC(mbx, idx), nr_vec);
 
 		if (PF_VF_MBOX_MASK_LO(mbx))
-			wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0);
+			mbx_wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0);
 
 		if (PF_VF_MBOX_MASK_HI(mbx))
-			wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0);
+			mbx_wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0);
 
 		/* bind cm3cpu mbx to irq */
-		wr32(hw, CPU2PF_MBOX_VEC(mbx), nr_vec);
-		wr32(hw, CPU_PF_MBOX_MASK(mbx), 0);
-
+		mbx_wr32(hw, CPU2PF_MBOX_VEC(mbx), nr_vec);
+		mbx_wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xffff0000);
 	} else {
 		if (PF_VF_MBOX_MASK_LO(mbx))
-			wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0xffffffff);
+			mbx_wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0xffffffff);
 		if (PF_VF_MBOX_MASK_HI(mbx))
-			wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0xffffffff);
+			mbx_wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0xffffffff);
 
 		/* disable CM3CPU to PF MBX IRQ */
-		wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xffffffff);
+		mbx_wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xfffffffe);
 
 		/* reset vf->pf status/ctrl */
 		for (idx = 0; idx < hw->max_vfs; idx++)
 			mbx_wr32(hw, PF2VF_MBOX_CTRL(mbx, idx), 0);
 		mbx_wr32(hw, PF2CPU_MBOX_CTRL(mbx), 0);
-		wr32(hw, RNP_DMA_DUMY, 0);
+		mbx_wr32(hw, RNP_DMA_DUMY, 0);
 	}
 
 	return 0;
@@ -581,7 +608,7 @@ s32 rnpgbe_init_mbx_params_pf(struct rnpgbe_hw *hw)
 	return 0;
 }
 
-struct rnpgbe_mbx_operations mbx_ops_generic = {
+struct rnpgbe_mbx_operations rnpgbe_mbx_ops_generic = {
 	.init_params = rnpgbe_init_mbx_params_pf,
 	.read = rnpgbe_read_mbx_pf,
 	.write = rnpgbe_write_mbx_pf,

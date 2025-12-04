@@ -83,28 +83,24 @@ static inline unsigned int rnpgbe_rd_reg(void *reg)
 		iowrite32((val), (void *)(reg));                               \
 	} while (0)
 #else
-#define rnpgbe_rd_reg(reg) readl((void *)(reg))
-#define rnpgbe_wr_reg(reg, val) writel((val), (void *)(reg))
+#define rnpgbe_rd_reg(reg) readl(reg)
+#define rnpgbe_wr_reg(reg, val) writel((val), reg)
 #endif
-
-#define rd32(hw, off) rnpgbe_rd_reg((hw)->hw_addr + (off))
-#define wr32(hw, off, val) rnpgbe_wr_reg((hw)->hw_addr + (off), (val))
 
 #define nic_rd32(nic, off) rnpgbe_rd_reg((nic)->nic_base_addr + (off))
 #define nic_wr32(nic, off, val)                                                \
 	rnpgbe_wr_reg((nic)->nic_base_addr + (off), (val))
 
-#define dma_rd32(dma, off) rnpgbe_rd_reg((dma)->dma_base_addr + (off))
-#define dma_wr32(dma, off, val)                                                \
-	rnpgbe_wr_reg((dma)->dma_base_addr + (off), (val))
-
 #define dma_ring_rd32(dma, off) rnpgbe_rd_reg((dma)->dma_ring_addr + (off))
 #define dma_ring_wr32(dma, off, val)                                           \
 	rnpgbe_wr_reg((dma)->dma_ring_addr + (off), (val))
 
-#define eth_rd32(eth, off) rnpgbe_rd_reg((eth)->eth_base_addr + (off))
-#define eth_wr32(eth, off, val)                                                \
-	rnpgbe_wr_reg((eth)->eth_base_addr + (off), (val))
+u32 hw_rd32(struct rnpgbe_hw *hw, u32 off);
+void hw_wr32(struct rnpgbe_hw *hw, u32 off, u32 val);
+u32 dma_rd32(struct rnpgbe_dma_info *dma, u32 off);
+void dma_wr32(struct rnpgbe_dma_info *dma, u32 off, u32 val);
+u32 eth_rd32(struct rnpgbe_eth_info *eth, u32 off);
+void eth_wr32(struct rnpgbe_eth_info *eth, u32 off, u32 val);
 
 #define mac_rd32(mac, off) rnpgbe_rd_reg((mac)->mac_addr + (off))
 #define mac_wr32(mac, off, val) rnpgbe_wr_reg((mac)->mac_addr + (off), (val))
@@ -162,7 +158,7 @@ static inline unsigned int rnpgbe_rd_reg_1(int ring, u32 off, void *reg)
 	((NETIF_MSG_##nlevel & adapter->msg_enable) ?                          \
 		 (void)(netdev_printk(KERN_##klevel, adapter->netdev, fmt,     \
 				      ##args)) :                               \
-		 NULL)
+		 (void)0)
 
 /* ==== log helper === */
 #ifdef HW_DEBUG

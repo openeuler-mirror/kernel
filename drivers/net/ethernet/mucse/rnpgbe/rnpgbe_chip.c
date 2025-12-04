@@ -28,35 +28,34 @@
 #ifndef RNP_N500_MSIX_VECTORS
 #define RNP_N500_MSIX_VECTORS 26
 #endif
-#define RNP500_MAX_LAYER2_FILTERS 16
-#define RNP500_MAX_TUPLE5_FILTERS 128
+#define RNPGBE_MAX_LAYER2_FILTERS 16
+#define RNPGBE_MAX_TUPLE5_FILTERS 128
 
 enum n500_priv_bits {
 	n500_mac_loopback = 0,
 	n500_padding_enable = 8,
 };
 
-static const char rnp500_priv_flags_strings[][ETH_GSTRING_LEN] = {
-#define RNP500_MAC_LOOPBACK BIT(0)
-#define RNP500_TX_SOLF_PADDING BIT(1)
-#define RNP500_PADDING_DEBUG BIT(2)
-#define RNP500_SIMULATE_DOWN BIT(3)
-#define RNP500_ULTRA_SHORT BIT(4)
-#define RNP500_DOUBLE_VLAN BIT(5)
-#define RNP500_PAUSE_OWN BIT(6)
-#define RNP500_STAGS_ENABLE BIT(7)
-#define RNP500_JUMBO_ENABLE BIT(8)
-#define RNP500_TX_PADDING BIT(9)
-#define RNP500_REC_HDR_LEN_ERR BIT(10)
-#define RNP500_DOUBLE_VLAN_RECEIVE BIT(11)
-#define RNP500_RX_SKIP_EN BIT(12)
-#define RNP500_TCP_SYNC_PRIO BIT(13)
-#define RNP500_REMAP_PRIO BIT(14)
-#define RNP500_8023_PRIO BIT(15)
-#define RNP500_SRIOV_VLAN_MODE BIT(16)
-#define RNP500_LLDP_EN BIT(17)
-#define RNP500_FORCE_CLOSE BIT(18)
-	"mac_loopback",
+static const char rnpgbe_priv_flags_strings[][ETH_GSTRING_LEN] = {
+#define RNPGBE_FORCE_CLOSE BIT(0)
+#define RNPGBE_TX_SOLF_PADDING BIT(1)
+#define RNPGBE_PADDING_DEBUG BIT(2)
+#define RNPGBE_SIMULATE_DOWN BIT(3)
+#define RNPGBE_ULTRA_SHORT BIT(4)
+#define RNPGBE_DOUBLE_VLAN BIT(5)
+#define RNPGBE_PAUSE_OWN BIT(6)
+#define RNPGBE_STAGS_ENABLE BIT(7)
+#define RNPGBE_JUMBO_ENABLE BIT(8)
+#define RNPGBE_TX_PADDING BIT(9)
+#define RNPGBE_REC_HDR_LEN_ERR BIT(10)
+#define RNPGBE_DOUBLE_VLAN_RECEIVE BIT(11)
+#define RNPGBE_RX_SKIP_EN BIT(12)
+#define RNPGBE_TCP_SYNC_PRIO BIT(13)
+#define RNPGBE_REMAP_PRIO BIT(14)
+#define RNPGBE_8023_PRIO BIT(15)
+#define RNPGBE_SRIOV_VLAN_MODE BIT(16)
+#define RNPGBE_LLDP_EN BIT(17)
+	"link_down_on_close",
 	"soft_tx_padding_off",
 	"padding_debug",
 	"simulate_link_down",
@@ -74,22 +73,20 @@ static const char rnp500_priv_flags_strings[][ETH_GSTRING_LEN] = {
 	"8023_prio",
 	"sriov_vlan_mode",
 	"lldp_en",
-	"link_down_on_close",
 };
 
-#define RNP500_PRIV_FLAGS_STR_LEN ARRAY_SIZE(rnp500_priv_flags_strings)
+#define RNPGBE_PRIV_FLAGS_STR_LEN ARRAY_SIZE(rnpgbe_priv_flags_strings)
 
 /* setup queue speed limit to max_rate */
-static void rnpgbe_dma_set_tx_maxrate_n500(struct rnpgbe_dma_info *dma,
-					   u16 queue, u32 max_rate)
+static void rnpgbe_dma_set_tx_maxrate(struct rnpgbe_dma_info *dma,
+				      u16 queue, u32 max_rate)
 {
 }
 
 /* setup mac with vf_num to veb table */
-static void rnpgbe_dma_set_veb_mac_n500(struct rnpgbe_dma_info *dma, u8 *mac,
-					u32 vfnum, u32 ring)
+static void rnpgbe_dma_set_veb_mac(struct rnpgbe_dma_info *dma, u8 *mac,
+				   u32 vfnum, u32 ring)
 {
-	/* n500 only has 1 port veb table */
 	u32 maclow, machi, ring_vfnum;
 	int port;
 
@@ -97,57 +94,57 @@ static void rnpgbe_dma_set_veb_mac_n500(struct rnpgbe_dma_info *dma, u8 *mac,
 	machi = (mac[0] << 8) | mac[1];
 	ring_vfnum = ring | ((0x80 | vfnum) << 8);
 	for (port = 0; port < 1; port++) {
-		dma_wr32(dma, RNP500_DMA_PORT_VBE_MAC_LO_TBL(port, vfnum),
+		dma_wr32(dma, RNPGBE_DMA_PORT_VBE_MAC_LO_TBL(port, vfnum),
 			 maclow);
-		dma_wr32(dma, RNP500_DMA_PORT_VBE_MAC_HI_TBL(port, vfnum),
+		dma_wr32(dma, RNPGBE_DMA_PORT_VBE_MAC_HI_TBL(port, vfnum),
 			 machi);
-		dma_wr32(dma, RNP500_DMA_PORT_VEB_VF_RING_TBL(port, vfnum),
+		dma_wr32(dma, RNPGBE_DMA_PORT_VEB_VF_RING_TBL(port, vfnum),
 			 ring_vfnum);
 	}
 }
 
 /* setup vlan with vf_num to veb table */
-static void rnpgbe_dma_set_veb_vlan_n500(struct rnpgbe_dma_info *dma, u16 vlan,
-					 u32 vfnum)
+static void rnpgbe_dma_set_veb_vlan(struct rnpgbe_dma_info *dma, u16 vlan,
+				    u32 vfnum)
 {
 	int port;
 
 	/* each vf can support only one vlan */
 	for (port = 0; port < 1; port++)
-		dma_wr32(dma, RNP500_DMA_PORT_VEB_VID_TBL(port, vfnum), vlan);
+		dma_wr32(dma, RNPGBE_DMA_PORT_VEB_VID_TBL(port, vfnum), vlan);
 }
 
-static void rnpgbe_dma_set_veb_vlan_mask_n500(struct rnpgbe_dma_info *dma,
-					      u16 vlan, u16 mask, int entry)
+static void rnpgbe_dma_set_veb_vlan_mask(struct rnpgbe_dma_info *dma,
+					 u16 vlan, u16 mask, int entry)
 {
 	/* bit 19:12 is mask bit 11:0 is vid */
-	dma_wr32(dma, RNP500_DMA_PORT_VEB_VID_TBL(0, entry),
+	dma_wr32(dma, RNPGBE_DMA_PORT_VEB_VID_TBL(0, entry),
 		 (mask << 12) | vlan);
 }
 
-static void rnpgbe_dma_clr_veb_all_n500(struct rnpgbe_dma_info *dma)
+static void rnpgbe_dma_clr_veb_all(struct rnpgbe_dma_info *dma)
 {
 	int port = 0, i;
 
-	for (i = 0; i < RNP500_VEB_TBL_CNTS; i++) {
-		dma_wr32(dma, RNP500_DMA_PORT_VBE_MAC_LO_TBL(port, i), 0);
-		dma_wr32(dma, RNP500_DMA_PORT_VBE_MAC_HI_TBL(port, i), 0);
-		dma_wr32(dma, RNP500_DMA_PORT_VEB_VID_TBL(port, i), 0);
-		dma_wr32(dma, RNP500_DMA_PORT_VEB_VF_RING_TBL(port, i), 0);
+	for (i = 0; i < RNPGBE_VEB_TBL_CNTS; i++) {
+		dma_wr32(dma, RNPGBE_DMA_PORT_VBE_MAC_LO_TBL(port, i), 0);
+		dma_wr32(dma, RNPGBE_DMA_PORT_VBE_MAC_HI_TBL(port, i), 0);
+		dma_wr32(dma, RNPGBE_DMA_PORT_VEB_VID_TBL(port, i), 0);
+		dma_wr32(dma, RNPGBE_DMA_PORT_VEB_VF_RING_TBL(port, i), 0);
 	}
 }
 
-static struct rnpgbe_dma_operations dma_ops_n500 = {
-	.set_tx_maxrate = &rnpgbe_dma_set_tx_maxrate_n500,
-	.set_veb_mac = &rnpgbe_dma_set_veb_mac_n500,
-	.set_veb_vlan = &rnpgbe_dma_set_veb_vlan_n500,
-	.set_veb_vlan_mask = &rnpgbe_dma_set_veb_vlan_mask_n500,
-	.clr_veb_all = &rnpgbe_dma_clr_veb_all_n500,
+static struct rnpgbe_dma_operations dma_ops_rnpgbe = {
+	.set_tx_maxrate = &rnpgbe_dma_set_tx_maxrate,
+	.set_veb_mac = &rnpgbe_dma_set_veb_mac,
+	.set_veb_vlan = &rnpgbe_dma_set_veb_vlan,
+	.set_veb_vlan_mask = &rnpgbe_dma_set_veb_vlan_mask,
+	.clr_veb_all = &rnpgbe_dma_clr_veb_all,
 
 };
 
 /**
- *  rnpgbe_eth_set_rar_n500 - Set Rx address register
+ *  rnpgbe_eth_set_rar - Set Rx address register
  *  @eth: pointer to eth structure
  *  @index: Receive address register to write
  *  @addr: Address to put into receive address register
@@ -155,9 +152,9 @@ static struct rnpgbe_dma_operations dma_ops_n500 = {
  *
  *  Puts an ethernet address into a receive address register.
  **/
-static s32 rnpgbe_eth_set_rar_n500(struct rnpgbe_eth_info *eth, u32 index,
-				   u8 *addr,
-				   bool enable_addr)
+static s32 rnpgbe_eth_set_rar(struct rnpgbe_eth_info *eth, u32 index,
+			      u8 *addr,
+			      bool enable_addr)
 {
 	u32 mcstctrl;
 	u32 rar_low, rar_high = 0;
@@ -180,36 +177,36 @@ static s32 rnpgbe_eth_set_rar_n500(struct rnpgbe_eth_info *eth, u32 index,
 	 * so save everything except the lower 16 bits that hold part
 	 * of the address and the address valid bit.
 	 */
-	rar_high = eth_rd32(eth, RNP500_ETH_RAR_RH(index));
-	rar_high &= ~(0x0000FFFF | RNP500_RAH_AV);
+	rar_high = eth_rd32(eth, RNPGBE_ETH_RAR_RH(index));
+	rar_high &= ~(0x0000FFFF | RNPGBE_RAH_AV);
 	rar_high |= ((u32)addr[1] | ((u32)addr[0] << 8));
 
 	if (enable_addr)
-		rar_high |= RNP500_RAH_AV;
+		rar_high |= RNPGBE_RAH_AV;
 
-	eth_wr32(eth, RNP500_ETH_RAR_RL(index), rar_low);
-	eth_wr32(eth, RNP500_ETH_RAR_RH(index), rar_high);
+	eth_wr32(eth, RNPGBE_ETH_RAR_RL(index), rar_low);
+	eth_wr32(eth, RNPGBE_ETH_RAR_RH(index), rar_high);
 
 	/* open unicast filter */
 	/* we now not use unicast */
 	/* but we must open this since dest-mac filter | unicast table */
 	/* all packets up if close unicast table */
-	mcstctrl = eth_rd32(eth, RNP500_ETH_DMAC_MCSTCTRL);
-	mcstctrl |= RNP500_MCSTCTRL_UNICASE_TBL_EN;
-	eth_wr32(eth, RNP500_ETH_DMAC_MCSTCTRL, mcstctrl);
+	mcstctrl = eth_rd32(eth, RNPGBE_ETH_DMAC_MCSTCTRL);
+	mcstctrl |= RNPGBE_MCSTCTRL_UNICASE_TBL_EN;
+	eth_wr32(eth, RNPGBE_ETH_DMAC_MCSTCTRL, mcstctrl);
 
 	return 0;
 }
 
 /**
- *  rnpgbe_eth_clear_rar_n500 - Remove Rx address register
+ *  rnpgbe_eth_clear_rar - Remove Rx address register
  *  @eth: pointer to eth structure
  *  @index: Receive address register to write
  *
  *  Clears an ethernet address from a receive address register.
  **/
-static s32 rnpgbe_eth_clear_rar_n500(struct rnpgbe_eth_info *eth,
-				     u32 index)
+static s32 rnpgbe_eth_clear_rar(struct rnpgbe_eth_info *eth,
+				u32 index)
 {
 	u32 rar_high;
 	u32 rar_entries = eth->num_rar_entries;
@@ -224,11 +221,11 @@ static s32 rnpgbe_eth_clear_rar_n500(struct rnpgbe_eth_info *eth,
 	 * so save everything except the lower 16 bits that hold part
 	 * of the address and the address valid bit.
 	 */
-	rar_high = eth_rd32(eth, RNP500_ETH_RAR_RH(index));
-	rar_high &= ~(0x0000FFFF | RNP500_RAH_AV);
+	rar_high = eth_rd32(eth, RNPGBE_ETH_RAR_RH(index));
+	rar_high &= ~(0x0000FFFF | RNPGBE_RAH_AV);
 
-	eth_wr32(eth, RNP500_ETH_RAR_RL(index), 0);
-	eth_wr32(eth, RNP500_ETH_RAR_RH(index), rar_high);
+	eth_wr32(eth, RNPGBE_ETH_RAR_RL(index), 0);
+	eth_wr32(eth, RNPGBE_ETH_RAR_RH(index), rar_high);
 
 	/* clear VMDq pool/queue selection for this RAR */
 	eth->ops.clear_vmdq(eth, index, RNP_CLEAR_VMDQ_ALL);
@@ -237,14 +234,14 @@ static s32 rnpgbe_eth_clear_rar_n500(struct rnpgbe_eth_info *eth,
 }
 
 /**
- *  rnpgbe_eth_set_vmdq_n500 - Associate a VMDq pool index with a rx address
+ *  rnpgbe_eth_set_vmdq - Associate a VMDq pool index with a rx address
  *  @eth: pointer to eth struct
  *  @rar: receive address register index to associate with a VMDq index
  *  @vmdq: VMDq pool index
  *  only mac->vf
  **/
-static s32 rnpgbe_eth_set_vmdq_n500(struct rnpgbe_eth_info *eth,
-				    u32 rar, u32 vmdq)
+static s32 rnpgbe_eth_set_vmdq(struct rnpgbe_eth_info *eth,
+			       u32 rar, u32 vmdq)
 {
 	u32 rar_entries = eth->num_rar_entries;
 
@@ -254,19 +251,19 @@ static s32 rnpgbe_eth_set_vmdq_n500(struct rnpgbe_eth_info *eth,
 		return RNP_ERR_INVALID_ARGUMENT;
 	}
 
-	eth_wr32(eth, RNP500_VM_DMAC_MPSAR_RING(rar), vmdq);
+	eth_wr32(eth, RNPGBE_VM_DMAC_MPSAR_RING(rar), vmdq);
 
 	return 0;
 }
 
 /**
- *  rnpgbe_eth_clear_vmdq_n500 - Disassociate a VMDq pool index from a rx address
+ *  rnpgbe_eth_clear_vmdq - Disassociate a VMDq pool index from a rx address
  *  @eth: pointer to eth struct
  *  @rar: receive address register index to disassociate
  *  @vmdq: VMDq pool index to remove from the rar
  **/
-static s32 rnpgbe_eth_clear_vmdq_n500(struct rnpgbe_eth_info *eth,
-				      u32 rar, u32 vmdq)
+static s32 rnpgbe_eth_clear_vmdq(struct rnpgbe_eth_info *eth,
+				 u32 rar, u32 vmdq)
 {
 	u32 rar_entries = eth->num_rar_entries;
 
@@ -276,12 +273,12 @@ static s32 rnpgbe_eth_clear_vmdq_n500(struct rnpgbe_eth_info *eth,
 		return RNP_ERR_INVALID_ARGUMENT;
 	}
 
-	eth_wr32(eth, RNP500_VM_DMAC_MPSAR_RING(rar), 0);
+	eth_wr32(eth, RNPGBE_VM_DMAC_MPSAR_RING(rar), 0);
 
 	return 0;
 }
 
-static s32 rnp500_mta_vector(struct rnpgbe_eth_info *eth, u8 *mc_addr)
+static s32 rnpgbe_mta_vector(struct rnpgbe_eth_info *eth, u8 *mc_addr)
 {
 	u32 vector = 0;
 
@@ -323,7 +320,7 @@ static s32 rnp500_mta_vector(struct rnpgbe_eth_info *eth, u8 *mc_addr)
 	return vector;
 }
 
-static void rnp500_set_mta(struct rnpgbe_hw *hw, u8 *mc_addr)
+static void rnpgbe_set_mta(struct rnpgbe_hw *hw, u8 *mc_addr)
 {
 	u32 vector;
 	u32 vector_bit;
@@ -332,7 +329,7 @@ static void rnp500_set_mta(struct rnpgbe_hw *hw, u8 *mc_addr)
 
 	hw->addr_ctrl.mta_in_use++;
 
-	vector = rnp500_mta_vector(eth, mc_addr);
+	vector = rnpgbe_mta_vector(eth, mc_addr);
 
 	/* The MTA is a register array of 128 32-bit registers. It is treated
 	 * like an array of 4096 bits.  We want to set bit
@@ -349,7 +346,7 @@ static void rnp500_set_mta(struct rnpgbe_hw *hw, u8 *mc_addr)
 	eth->mta_shadow[vector_reg] |= (1 << vector_bit);
 }
 
-static void rnp500_set_vf_mta(struct rnpgbe_hw *hw, u16 vector)
+static void rnpgbe_set_vf_mta(struct rnpgbe_hw *hw, u16 vector)
 {
 	/* vf/pf use the same multicast table */
 	u32 vector_bit;
@@ -385,7 +382,7 @@ static u8 *rnpgbe_addr_list_itr(struct rnpgbe_hw __maybe_unused *hw,
 }
 
 /**
- *  rnpgbe_eth_update_mc_addr_list_n500 - Updates MAC list of multicast addresses
+ *  rnpgbe_eth_update_mc_addr_list - Updates MAC list of multicast addresses
  *  @eth: pointer to hardware structure
  *  @netdev: pointer to net device structure
  *  @sriov_on: sriov status
@@ -395,9 +392,9 @@ static u8 *rnpgbe_addr_list_itr(struct rnpgbe_hw __maybe_unused *hw,
  *  registers for the first multicast addresses, and hashes the rest into the
  *  multicast table.
  **/
-static s32 rnpgbe_eth_update_mc_addr_list_n500(struct rnpgbe_eth_info *eth,
-					       struct net_device *netdev,
-					       bool sriov_on)
+static s32 rnpgbe_eth_update_mc_addr_list(struct rnpgbe_eth_info *eth,
+					  struct net_device *netdev,
+					  bool sriov_on)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)eth->back;
 	struct netdev_hw_addr *ha;
@@ -429,7 +426,7 @@ static s32 rnpgbe_eth_update_mc_addr_list_n500(struct rnpgbe_eth_info *eth,
 	addr_list = ha->addr;
 	for (i = 0; i < addr_count; i++) {
 		eth_dbg(eth, " Adding the multicast addresses:\n");
-		rnp500_set_mta(hw, rnpgbe_addr_list_itr(hw, &addr_list));
+		rnpgbe_set_mta(hw, rnpgbe_addr_list_itr(hw, &addr_list));
 	}
 
 	if (!sriov_on)
@@ -445,7 +442,7 @@ static s32 rnpgbe_eth_update_mc_addr_list_n500(struct rnpgbe_eth_info *eth,
 
 		vfinfo = &adapter->vfinfo[i];
 		for (j = 0; j < vfinfo->num_vf_mc_hashes; j++)
-			rnp500_set_vf_mta(hw, vfinfo->vf_mc_hashes[j]);
+			rnpgbe_set_vf_mta(hw, vfinfo->vf_mc_hashes[j]);
 	}
 
 skip_sriov:
@@ -453,21 +450,21 @@ skip_sriov:
 	for (i = NCSI_RAR_NUM; i < NCSI_MC_NUM; i++) {
 		ret = hw->ops.get_ncsi_mac(hw, ncsi_mc_addr, i);
 		if (!ret)
-			rnp500_set_mta(hw, ncsi_mc_addr);
+			rnpgbe_set_mta(hw, ncsi_mc_addr);
 	}
 
 	/* Enable mta */
 	for (i = 0; i < hw->eth.mcft_size; i++) {
 		if (hw->addr_ctrl.mta_in_use) {
-			eth_wr32(eth, RNP500_ETH_MUTICAST_HASH_TABLE(i),
+			eth_wr32(eth, RNPGBE_ETH_MUTICAST_HASH_TABLE(i),
 				 eth->mta_shadow[i]);
 		}
 	}
 
 	if (hw->addr_ctrl.mta_in_use > 0) {
-		v = eth_rd32(eth, RNP500_ETH_DMAC_MCSTCTRL);
-		eth_wr32(eth, RNP500_ETH_DMAC_MCSTCTRL,
-			 v | RNP500_MCSTCTRL_MULTICASE_TBL_EN |
+		v = eth_rd32(eth, RNPGBE_ETH_DMAC_MCSTCTRL);
+		eth_wr32(eth, RNPGBE_ETH_DMAC_MCSTCTRL,
+			 v | RNPGBE_MCSTCTRL_MULTICASE_TBL_EN |
 				 eth->mc_filter_type);
 	}
 
@@ -478,27 +475,27 @@ skip_sriov:
 }
 
 /* clean all mc addr */
-static void rnpgbe_eth_clr_mc_addr_n500(struct rnpgbe_eth_info *eth)
+static void rnpgbe_eth_clr_mc_addr(struct rnpgbe_eth_info *eth)
 {
 	int i;
 
 	for (i = 0; i < eth->mcft_size; i++)
-		eth_wr32(eth, RNP500_ETH_MUTICAST_HASH_TABLE(i), 0);
+		eth_wr32(eth, RNPGBE_ETH_MUTICAST_HASH_TABLE(i), 0);
 }
 
 /**
- *  rnpgbe_eth_set_rss_hfunc_n500 - Remove Rx address register
+ *  rnpgbe_eth_set_rss_hfunc - Remove Rx address register
  *  @eth: pointer to eth structure
  *  @hfunc: hash function type
  *
  *  update rss key to eth regs
  **/
-static int rnpgbe_eth_set_rss_hfunc_n500(struct rnpgbe_eth_info *eth,
-					 int hfunc)
+static int rnpgbe_eth_set_rss_hfunc(struct rnpgbe_eth_info *eth,
+				    int hfunc)
 {
 	u32 data;
 
-	data = eth_rd32(eth, RNP500_ETH_RSS_CONTROL);
+	data = eth_rd32(eth, RNPGBE_ETH_RSS_CONTROL);
 	data &= ~(BIT(14) | BIT(15));
 
 	if (hfunc == rss_func_top)
@@ -511,54 +508,52 @@ static int rnpgbe_eth_set_rss_hfunc_n500(struct rnpgbe_eth_info *eth,
 		return -EINVAL;
 
 	/* update to hardware */
-	eth_wr32(eth, RNP500_ETH_RSS_CONTROL, data);
+	eth_wr32(eth, RNPGBE_ETH_RSS_CONTROL, data);
 
 	return 0;
 }
 
 /**
- *  rnpgbe_eth_update_rss_key_n500 - Remove Rx address register
+ *  rnpgbe_eth_update_rss_key - Remove Rx address register
  *  @eth: pointer to eth structure
  *  @sriov_flag: sriov status
  *
  *  update rss key to eth regs
  **/
 
-static void rnpgbe_eth_update_rss_key_n500(struct rnpgbe_eth_info *eth,
-					   bool sriov_flag)
+static void rnpgbe_eth_update_rss_key(struct rnpgbe_eth_info *eth,
+				      bool sriov_flag)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)eth->back;
 	int i;
-	u8 *key_temp;
+	u8 key_temp[RNP_RSS_KEY_SIZE];
 	int key_len = RNP_RSS_KEY_SIZE;
 	u8 *key = hw->rss_key;
 	u32 data;
-	u32 iov_en = (sriov_flag) ? RNP500_IOV_ENABLED : 0;
+	u32 iov_en = (sriov_flag) ? RNPGBE_IOV_ENABLED : 0;
 	u32 *value;
 
-	data = eth_rd32(eth, RNP500_ETH_RSS_CONTROL);
+	data = eth_rd32(eth, RNPGBE_ETH_RSS_CONTROL);
 
-	key_temp = kmalloc(key_len, GFP_KERNEL);
 	/* reoder the key */
 	for (i = 0; i < key_len; i++)
 		*(key_temp + key_len - i - 1) = *(key + i);
 	value = (u32 *)key_temp;
 
 	for (i = 0; i < key_len; i = i + 4)
-		eth_wr32(eth, RNP500_ETH_RSS_KEY + i, *(value + i / 4));
-	kfree(key_temp);
+		eth_wr32(eth, RNPGBE_ETH_RSS_KEY + i, *(value + i / 4));
 
-	data |= (RNP500_ETH_ENABLE_RSS_ONLY | iov_en);
-	eth_wr32(eth, RNP500_ETH_RSS_CONTROL, data);
+	data |= (RNPGBE_ETH_ENABLE_RSS_ONLY | iov_en);
+	eth_wr32(eth, RNPGBE_ETH_RSS_CONTROL, data);
 }
 
 /**
- *  rnpgbe_eth_update_rss_table_n500 - Remove Rx address register
+ *  rnpgbe_eth_update_rss_table - Remove Rx address register
  *  @eth: pointer to eth structure
  *
  *  update rss table to eth regs
  **/
-static void rnpgbe_eth_update_rss_table_n500(struct rnpgbe_eth_info *eth)
+static void rnpgbe_eth_update_rss_table(struct rnpgbe_eth_info *eth)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)eth->back;
 	u32 reta_entries = hw->rss_indir_tbl_num;
@@ -566,28 +561,28 @@ static void rnpgbe_eth_update_rss_table_n500(struct rnpgbe_eth_info *eth)
 	int i;
 
 	for (i = 0; i < tc_entries; i++)
-		eth_wr32(eth, RNP500_ETH_TC_IPH_OFFSET_TABLE(i),
+		eth_wr32(eth, RNPGBE_ETH_TC_IPH_OFFSET_TABLE(i),
 			 hw->rss_tc_tbl[i]);
 
 	for (i = 0; i < reta_entries; i++)
-		eth_wr32(eth, RNP500_ETH_RSS_INDIR_TBL(i),
+		eth_wr32(eth, RNPGBE_ETH_RSS_INDIR_TBL(i),
 			 hw->rss_indir_tbl[i]);
 
 	/* if we update rss table ,we should update deault ring same with rss[0] */
-	eth_wr32(eth, RNP500_ETH_DEFAULT_RX_RING, hw->rss_indir_tbl[0]);
+	eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_RING, hw->rss_indir_tbl[0]);
 }
 
 /**
- *  rnpgbe_eth_set_vfta_n500 - Set VLAN filter table
+ *  rnpgbe_eth_set_vfta - Set VLAN filter table
  *  @eth: pointer to eth structure
  *  @vlan: VLAN id to write to VLAN filter
  *  @vlan_on: boolean flag to turn on/off VLAN in VFVF
  *
  *  Turn on/off specified VLAN in the VLAN filter table.
  **/
-static s32 rnpgbe_eth_set_vfta_n500(struct rnpgbe_eth_info *eth,
-				    u32 vlan,
-				    bool vlan_on)
+static s32 rnpgbe_eth_set_vfta(struct rnpgbe_eth_info *eth,
+			       u32 vlan,
+			       bool vlan_on)
 {
 	s32 regindex;
 	u32 bitindex;
@@ -607,7 +602,7 @@ static s32 rnpgbe_eth_set_vfta_n500(struct rnpgbe_eth_info *eth,
 	regindex = (vlan >> 5) & 0x7F;
 	bitindex = vlan & 0x1F;
 	targetbit = (1 << bitindex);
-	vfta = eth_rd32(eth, RNP500_VFTA(regindex));
+	vfta = eth_rd32(eth, RNPGBE_VFTA(regindex));
 
 	if (vlan_on) {
 		if (!(vfta & targetbit)) {
@@ -622,30 +617,30 @@ static s32 rnpgbe_eth_set_vfta_n500(struct rnpgbe_eth_info *eth,
 	}
 
 	if (vfta_changed)
-		eth_wr32(eth, RNP500_VFTA(regindex), vfta);
+		eth_wr32(eth, RNPGBE_VFTA(regindex), vfta);
 
 	return 0;
 }
 
-static void rnpgbe_eth_clr_vfta_n500(struct rnpgbe_eth_info *eth)
+static void rnpgbe_eth_clr_vfta(struct rnpgbe_eth_info *eth)
 {
 	u32 offset;
 
 	for (offset = 0; offset < eth->vft_size; offset++)
-		eth_wr32(eth, RNP500_VFTA(offset), 0);
+		eth_wr32(eth, RNPGBE_VFTA(offset), 0);
 }
 
-static void rnpgbe_eth_set_doulbe_vlan_n500(struct rnpgbe_eth_info *eth,
-					    bool on)
+static void rnpgbe_eth_set_doulbe_vlan(struct rnpgbe_eth_info *eth,
+				       bool on)
 {
 	if (on)
-		eth_wr32(eth, RNP500_ETH_VLAN_RM_TYPE, 1);
+		eth_wr32(eth, RNPGBE_ETH_VLAN_RM_TYPE, 1);
 	else
-		eth_wr32(eth, RNP500_ETH_VLAN_RM_TYPE, 0);
+		eth_wr32(eth, RNPGBE_ETH_VLAN_RM_TYPE, 0);
 }
 
-static void rnpgbe_eth_set_outer_vlan_type_n500(struct rnpgbe_eth_info *eth,
-						int type)
+static void rnpgbe_eth_set_outer_vlan_type(struct rnpgbe_eth_info *eth,
+					   int type)
 {
 	u32 data = 0x88a8;
 
@@ -660,124 +655,124 @@ static void rnpgbe_eth_set_outer_vlan_type_n500(struct rnpgbe_eth_info *eth,
 		data = 0x9200;
 		break;
 	}
-	eth_wr32(eth, RNP500_ETH_WRAP_FIELD_TYPE, data);
-	eth_wr32(eth, RNP500_ETH_TX_VLAN_TYPE, data);
+	eth_wr32(eth, RNPGBE_ETH_WRAP_FIELD_TYPE, data);
+	eth_wr32(eth, RNPGBE_ETH_TX_VLAN_TYPE, data);
 }
 
 /**
- *  rnpgbe_eth_set_vlan_filter_n500 - Set VLAN filter table
+ *  rnpgbe_eth_set_vlan_filter - Set VLAN filter table
  *  @eth: pointer to eth structure
  *  @status: on |off
  *  Turn on/off VLAN filter table.
  **/
-static void rnpgbe_eth_set_vlan_filter_n500(struct rnpgbe_eth_info *eth,
-					    bool status)
+static void rnpgbe_eth_set_vlan_filter(struct rnpgbe_eth_info *eth,
+				       bool status)
 {
 #define ETH_VLAN_FILTER_BIT (30)
-	u32 value = eth_rd32(eth, RNP500_ETH_VLAN_FILTER_ENABLE);
+	u32 value = eth_rd32(eth, RNPGBE_ETH_VLAN_FILTER_ENABLE);
 
 	/* clear bit first */
 	value &= (~(0x01 << ETH_VLAN_FILTER_BIT));
 	if (status)
 		value |= (0x01 << ETH_VLAN_FILTER_BIT);
-	eth_wr32(eth, RNP500_ETH_VLAN_FILTER_ENABLE, value);
+	eth_wr32(eth, RNPGBE_ETH_VLAN_FILTER_ENABLE, value);
 }
 
-static u16 rnpgbe_layer2_pritologic_n500(u16 hw_id)
+static u16 rnpgbe_layer2_pritologic(u16 hw_id)
 {
 	return hw_id;
 }
 
-static void rnpgbe_eth_set_layer2_n500(struct rnpgbe_eth_info *eth,
-				       union rnpgbe_atr_input *input,
-				       u16 pri_id,
-				       u8 queue, bool prio_flag)
+static void rnpgbe_eth_set_layer2(struct rnpgbe_eth_info *eth,
+				  union rnpgbe_atr_input *input,
+				  u16 pri_id,
+				  u8 queue, bool prio_flag)
 {
 	u16 hw_id;
 
-	hw_id = rnpgbe_layer2_pritologic_n500(pri_id);
+	hw_id = rnpgbe_layer2_pritologic(pri_id);
 	/* enable layer2 */
-	eth_wr32(eth, RNP500_ETH_LAYER2_ETQF(hw_id),
+	eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQF(hw_id),
 		 (0x1 << 31) | (ntohs(input->layer2_formate.proto)));
 
 	/* setup action */
 	if (queue == RNP_FDIR_DROP_QUEUE) {
-		eth_wr32(eth, RNP500_ETH_LAYER2_ETQS(hw_id), (0x1 << 31));
+		eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQS(hw_id), (0x1 << 31));
 
 	} else {
 		/* setup ring_number */
 		if (prio_flag) {
-			eth_wr32(eth, RNP500_ETH_LAYER2_ETQS(hw_id),
+			eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQS(hw_id),
 				 (0x1 << 30) | (queue << 20) | (0x1 << 28));
 		} else {
-			eth_wr32(eth, RNP500_ETH_LAYER2_ETQS(hw_id),
+			eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQS(hw_id),
 				 (0x1 << 30) | (queue << 20));
 		}
 	}
 }
 
-static void rnpgbe_eth_clr_layer2_n500(struct rnpgbe_eth_info *eth, u16 pri_id)
+static void rnpgbe_eth_clr_layer2(struct rnpgbe_eth_info *eth, u16 pri_id)
 {
 	u16 hw_id;
 
-	hw_id = rnpgbe_layer2_pritologic_n500(pri_id);
-	eth_wr32(eth, RNP500_ETH_LAYER2_ETQF(hw_id), 0);
+	hw_id = rnpgbe_layer2_pritologic(pri_id);
+	eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQF(hw_id), 0);
 }
 
-static void rnpgbe_eth_clr_all_layer2_n500(struct rnpgbe_eth_info *eth)
+static void rnpgbe_eth_clr_all_layer2(struct rnpgbe_eth_info *eth)
 {
 	int i;
-#define RNP500_MAX_LAYER2_FILTERS 16
-	for (i = 0; i < RNP500_MAX_LAYER2_FILTERS; i++)
-		eth_wr32(eth, RNP500_ETH_LAYER2_ETQF(i), 0);
+#define RNPGBE_MAX_LAYER2_FILTERS 16
+	for (i = 0; i < RNPGBE_MAX_LAYER2_FILTERS; i++)
+		eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQF(i), 0);
 }
 
-static u16 rnpgbe_tuple5_pritologic_n500(u16 hw_id)
+static u16 rnpgbe_tuple5_pritologic(u16 hw_id)
 {
 	return hw_id;
 }
 
-static void rnpgbe_eth_set_tuple5_n500(struct rnpgbe_eth_info *eth,
-				       union rnpgbe_atr_input *input,
-				       u16 pri_id,
-				       u8 queue, bool prio_flag)
+static void rnpgbe_eth_set_tuple5(struct rnpgbe_eth_info *eth,
+				  union rnpgbe_atr_input *input,
+				  u16 pri_id,
+				  u8 queue, bool prio_flag)
 {
-#define RNP500_SRC_IP_MASK BIT(0)
-#define RNP500_DST_IP_MASK BIT(1)
-#define RNP500_SRC_PORT_MASK BIT(2)
-#define RNP500_DST_PORT_MASK BIT(3)
-#define RNP500_L4_PROTO_MASK BIT(4)
+#define RNPGBE_SRC_IP_MASK BIT(0)
+#define RNPGBE_DST_IP_MASK BIT(1)
+#define RNPGBE_SRC_PORT_MASK BIT(2)
+#define RNPGBE_DST_PORT_MASK BIT(3)
+#define RNPGBE_L4_PROTO_MASK BIT(4)
 
 	u32 port = 0;
 	u8 mask_temp = 0;
 	u8 l4_proto_type = 0;
 	u16 hw_id;
 
-	hw_id = rnpgbe_tuple5_pritologic_n500(pri_id);
+	hw_id = rnpgbe_tuple5_pritologic(pri_id);
 
 	if (input->formatted.src_ip[0] != 0) {
-		eth_wr32(eth, RNP500_ETH_TUPLE5_SAQF(hw_id),
-			 htonl(input->formatted.src_ip[0]));
+		eth_wr32(eth, RNPGBE_ETH_TUPLE5_SAQF(hw_id),
+			 ntohl(input->formatted.src_ip[0]));
 	} else {
-		mask_temp |= RNP500_SRC_IP_MASK;
+		mask_temp |= RNPGBE_SRC_IP_MASK;
 	}
 	if (input->formatted.dst_ip[0] != 0) {
-		eth_wr32(eth, RNP500_ETH_TUPLE5_DAQF(hw_id),
-			 htonl(input->formatted.dst_ip[0]));
+		eth_wr32(eth, RNPGBE_ETH_TUPLE5_DAQF(hw_id),
+			 ntohl(input->formatted.dst_ip[0]));
 	} else {
-		mask_temp |= RNP500_DST_IP_MASK;
+		mask_temp |= RNPGBE_DST_IP_MASK;
 	}
 	if (input->formatted.src_port != 0)
-		port |= (htons(input->formatted.src_port));
+		port |= (ntohs(input->formatted.src_port));
 	else
-		mask_temp |= RNP500_SRC_PORT_MASK;
+		mask_temp |= RNPGBE_SRC_PORT_MASK;
 	if (input->formatted.dst_port != 0)
-		port |= (htons(input->formatted.dst_port) << 16);
+		port |= (ntohs(input->formatted.dst_port) << 16);
 	else
-		mask_temp |= RNP500_DST_PORT_MASK;
+		mask_temp |= RNPGBE_DST_PORT_MASK;
 
 	if (port != 0)
-		eth_wr32(eth, RNP500_ETH_TUPLE5_SDPQF(hw_id), port);
+		eth_wr32(eth, RNPGBE_ETH_TUPLE5_SDPQF(hw_id), port);
 
 	switch (input->formatted.flow_type) {
 	case RNP_ATR_FLOW_TYPE_TCPV4:
@@ -797,85 +792,85 @@ static void rnpgbe_eth_set_tuple5_n500(struct rnpgbe_eth_info *eth,
 	}
 
 	if (l4_proto_type == 0)
-		mask_temp |= RNP500_L4_PROTO_MASK;
+		mask_temp |= RNPGBE_L4_PROTO_MASK;
 
 	/* setup ftqf */
 	/* always set 0x3 */
-	eth_wr32(eth, RNP500_ETH_TUPLE5_FTQF(hw_id),
+	eth_wr32(eth, RNPGBE_ETH_TUPLE5_FTQF(hw_id),
 		 (1 << 31) | (mask_temp << 25) | (l4_proto_type << 16) | 0x3);
 
 	/* setup action */
 	if (queue == RNP_FDIR_DROP_QUEUE) {
-		eth_wr32(eth, RNP500_ETH_TUPLE5_POLICY(hw_id), (0x1 << 31));
+		eth_wr32(eth, RNPGBE_ETH_TUPLE5_POLICY(hw_id), (0x1 << 31));
 	} else {
 		/* setup ring_number */
 		if (prio_flag) {
-			eth_wr32(eth, RNP500_ETH_TUPLE5_POLICY(hw_id),
+			eth_wr32(eth, RNPGBE_ETH_TUPLE5_POLICY(hw_id),
 				 ((0x1 << 30) | (queue << 20) | (0x1 << 28)));
 		} else {
-			eth_wr32(eth, RNP500_ETH_TUPLE5_POLICY(hw_id),
+			eth_wr32(eth, RNPGBE_ETH_TUPLE5_POLICY(hw_id),
 				 ((0x1 << 30) | (queue << 20)));
 		}
 	}
 }
 
-static void rnpgbe_eth_clr_tuple5_n500(struct rnpgbe_eth_info *eth,
-				       u16 pri_id)
+static void rnpgbe_eth_clr_tuple5(struct rnpgbe_eth_info *eth,
+				  u16 pri_id)
 {
 	u16 hw_id;
 
-	hw_id = rnpgbe_tuple5_pritologic_n500(pri_id);
-	eth_wr32(eth, RNP500_ETH_TUPLE5_FTQF(hw_id), 0);
+	hw_id = rnpgbe_tuple5_pritologic(pri_id);
+	eth_wr32(eth, RNPGBE_ETH_TUPLE5_FTQF(hw_id), 0);
 }
 
-static void rnpgbe_eth_clr_all_tuple5_n500(struct rnpgbe_eth_info *eth)
+static void rnpgbe_eth_clr_all_tuple5(struct rnpgbe_eth_info *eth)
 {
 	int i;
 
-	for (i = 0; i < RNP500_MAX_TUPLE5_FILTERS; i++)
-		eth_wr32(eth, RNP500_ETH_TUPLE5_FTQF(i), 0);
+	for (i = 0; i < RNPGBE_MAX_TUPLE5_FILTERS; i++)
+		eth_wr32(eth, RNPGBE_ETH_TUPLE5_FTQF(i), 0);
 }
 
-static void rnpgbe_eth_set_tcp_sync_n500(struct rnpgbe_eth_info *eth,
-					 int queue,
-					 bool flag, bool prio)
+static void rnpgbe_eth_set_tcp_sync(struct rnpgbe_eth_info *eth,
+				    int queue,
+				    bool flag, bool prio)
 {
 	if (flag) {
-		eth_wr32(eth, RNP500_ETH_SYNQF, (0x1 << 30) | (queue << 20));
+		eth_wr32(eth, RNPGBE_ETH_SYNQF, (0x1 << 30) | (queue << 20));
 		if (prio)
-			eth_wr32(eth, RNP500_ETH_SYNQF_PRIORITY, BIT(31) | 0x1);
+			eth_wr32(eth, RNPGBE_ETH_SYNQF_PRIORITY, BIT(31) | 0x1);
 		else
-			eth_wr32(eth, RNP500_ETH_SYNQF_PRIORITY, BIT(31));
+			eth_wr32(eth, RNPGBE_ETH_SYNQF_PRIORITY, BIT(31));
 
 	} else {
-		eth_wr32(eth, RNP500_ETH_SYNQF, 0);
-		eth_wr32(eth, RNP500_ETH_SYNQF_PRIORITY, 0);
+		eth_wr32(eth, RNPGBE_ETH_SYNQF, 0);
+		eth_wr32(eth, RNPGBE_ETH_SYNQF_PRIORITY, 0);
 	}
 }
 
-static void rnpgbe_eth_set_rx_skip_n500(struct rnpgbe_eth_info *eth,
-					int count,
-					bool flag)
+static void rnpgbe_eth_set_rx_skip(struct rnpgbe_eth_info *eth,
+				   int count,
+				   bool flag)
 {
 	if (flag) {
-		eth_wr32(eth, RNP500_ETH_PRIV_DATA_CONTROL_REG,
+		eth_wr32(eth, RNPGBE_ETH_PRIV_DATA_CONTROL_REG,
 			 PRIV_DATA_EN | count);
 	} else {
-		eth_wr32(eth, RNP500_ETH_PRIV_DATA_CONTROL_REG, 0);
+		eth_wr32(eth, RNPGBE_ETH_PRIV_DATA_CONTROL_REG, 0);
 	}
 }
 
-static void rnpgbe_eth_set_min_max_packets_n500(struct rnpgbe_eth_info *eth,
-						int min, int max)
+static void rnpgbe_eth_set_min_max_packets(struct rnpgbe_eth_info *eth,
+					   int min, int max)
 {
-	eth_wr32(eth, RNP500_ETH_DEFAULT_RX_MIN_LEN, min);
-	eth_wr32(eth, RNP500_ETH_DEFAULT_RX_MAX_LEN, max);
+	eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_MIN_LEN, min);
+	eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_MAX_LEN, max);
 }
 
-static void rnpgbe_eth_set_vlan_strip_n500(struct rnpgbe_eth_info *eth,
-					   u16 queue, bool enable)
+static void rnpgbe_eth_set_vlan_strip(struct rnpgbe_eth_info *eth,
+				      u16 queue, bool enable)
 {
-	u32 reg = RNP500_ETH_VLAN_VME_REG(queue / 32);
+	u32 reg = RNPGBE_ETH_VLAN_VME_REG(queue / 32);
 	u32 offset = queue % 32;
 	u32 data = eth_rd32(eth, reg);
 
@@ -887,56 +882,56 @@ static void rnpgbe_eth_set_vlan_strip_n500(struct rnpgbe_eth_info *eth,
 	eth_wr32(eth, reg, data);
 }
 
-static void rnpgbe_eth_set_rx_hash_n500(struct rnpgbe_eth_info *eth,
-					bool status, bool sriov_flag)
+static void rnpgbe_eth_set_rx_hash(struct rnpgbe_eth_info *eth,
+				   bool status, bool sriov_flag)
 {
-	u32 iov_en = (sriov_flag) ? RNP500_IOV_ENABLED : 0;
+	u32 iov_en = (sriov_flag) ? RNPGBE_IOV_ENABLED : 0;
 	u32 data;
 
-	data = eth_rd32(eth, RNP500_ETH_RSS_CONTROL);
-	data &= ~RNP500_ETH_RSS_MASK;
+	data = eth_rd32(eth, RNPGBE_ETH_RSS_CONTROL);
+	data &= ~RNPGBE_ETH_RSS_MASK;
 
 	if (status) {
-		data |= RNP500_ETH_ENABLE_RSS_ONLY;
-		eth_wr32(eth, RNP500_ETH_RSS_CONTROL, data | iov_en);
+		data |= RNPGBE_ETH_ENABLE_RSS_ONLY;
+		eth_wr32(eth, RNPGBE_ETH_RSS_CONTROL, data | iov_en);
 	} else {
-		eth_wr32(eth, RNP500_ETH_RSS_CONTROL, data | iov_en);
+		eth_wr32(eth, RNPGBE_ETH_RSS_CONTROL, data | iov_en);
 	}
 }
 
-static void rnpgbe_eth_set_rx_n500(struct rnpgbe_eth_info *eth, bool status)
+static void rnpgbe_eth_set_rx(struct rnpgbe_eth_info *eth, bool status)
 {
 	if (status) {
-		eth_wr32(eth, RNP500_ETH_EXCEPT_DROP_PROC, 0);
-		eth_wr32(eth, RNP500_ETH_TX_MUX_DROP, 0);
+		eth_wr32(eth, RNPGBE_ETH_EXCEPT_DROP_PROC, 0);
+		eth_wr32(eth, RNPGBE_ETH_TX_MUX_DROP, 0);
 	} else {
-		eth_wr32(eth, RNP500_ETH_EXCEPT_DROP_PROC, 1);
-		eth_wr32(eth, RNP500_ETH_TX_MUX_DROP, 1);
+		eth_wr32(eth, RNPGBE_ETH_EXCEPT_DROP_PROC, 1);
+		eth_wr32(eth, RNPGBE_ETH_TX_MUX_DROP, 1);
 	}
 }
 
-static void rnpgbe_eth_fcs_n500(struct rnpgbe_eth_info *eth, bool status)
+static void rnpgbe_eth_fcs(struct rnpgbe_eth_info *eth, bool status)
 {
 	if (status)
-		eth_wr32(eth, RNP500_ETH_FCS_EN, 1);
+		eth_wr32(eth, RNPGBE_ETH_FCS_EN, 1);
 	else
-		eth_wr32(eth, RNP500_ETH_FCS_EN, 0);
+		eth_wr32(eth, RNPGBE_ETH_FCS_EN, 0);
 }
 
-static void rnpgbe_eth_set_vf_vlan_mode_n500(struct rnpgbe_eth_info *eth,
-					     u16 vlan, int vf, bool enable)
+static void rnpgbe_eth_set_vf_vlan_mode(struct rnpgbe_eth_info *eth,
+					u16 vlan, int vf, bool enable)
 {
 	u32 value = vlan;
 
 	if (enable)
 		value |= BIT(31);
 
-	eth_wr32(eth, RNP500_VLVF(vf), value);
+	eth_wr32(eth, RNPGBE_VLVF(vf), value);
 	/* n500 1 vf only can setup 1 vlan */
-	eth_wr32(eth, RNP500_VLVF_TABLE(vf), vf);
+	eth_wr32(eth, RNPGBE_VLVF_TABLE(vf), vf);
 }
 
-static s32 rnpgbe_eth_set_fc_mode_n500(struct rnpgbe_eth_info *eth)
+static s32 rnpgbe_eth_set_fc_mode(struct rnpgbe_eth_info *eth)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)eth->back;
 	s32 ret_val = 0;
@@ -955,11 +950,11 @@ static s32 rnpgbe_eth_set_fc_mode_n500(struct rnpgbe_eth_info *eth)
 
 	if ((hw->fc.current_mode & rnpgbe_fc_tx_pause)) {
 		if (hw->fc.high_water[i]) {
-			eth_wr32(eth, RNP500_ETH_HIGH_WATER(i),
+			eth_wr32(eth, RNPGBE_ETH_HIGH_WATER(i),
 				 hw->fc.high_water[i]);
 		}
 		if (hw->fc.low_water[i]) {
-			eth_wr32(eth, RNP500_ETH_LOW_WATER(i),
+			eth_wr32(eth, RNPGBE_ETH_LOW_WATER(i),
 				 hw->fc.low_water[i]);
 		}
 	}
@@ -967,40 +962,40 @@ out:
 	return ret_val;
 }
 
-static struct rnpgbe_eth_operations eth_ops_n500 = {
-	.set_rar = &rnpgbe_eth_set_rar_n500,
-	.clear_rar = &rnpgbe_eth_clear_rar_n500,
-	.set_vmdq = &rnpgbe_eth_set_vmdq_n500,
-	.clear_vmdq = &rnpgbe_eth_clear_vmdq_n500,
-	.update_mc_addr_list = &rnpgbe_eth_update_mc_addr_list_n500,
-	.clr_mc_addr = &rnpgbe_eth_clr_mc_addr_n500,
-	.set_rss_hfunc = &rnpgbe_eth_set_rss_hfunc_n500,
-	.set_rss_key = &rnpgbe_eth_update_rss_key_n500,
-	.set_rss_table = &rnpgbe_eth_update_rss_table_n500,
-	.set_rx_hash = &rnpgbe_eth_set_rx_hash_n500,
-	.set_layer2_remapping = &rnpgbe_eth_set_layer2_n500,
-	.clr_layer2_remapping = &rnpgbe_eth_clr_layer2_n500,
-	.clr_all_layer2_remapping = &rnpgbe_eth_clr_all_layer2_n500,
-	.set_tuple5_remapping = &rnpgbe_eth_set_tuple5_n500,
-	.clr_tuple5_remapping = &rnpgbe_eth_clr_tuple5_n500,
-	.clr_all_tuple5_remapping = &rnpgbe_eth_clr_all_tuple5_n500,
-	.set_tcp_sync_remapping = &rnpgbe_eth_set_tcp_sync_n500,
-	.set_rx_skip = &rnpgbe_eth_set_rx_skip_n500,
-	.set_min_max_packet = &rnpgbe_eth_set_min_max_packets_n500,
-	.set_vlan_strip = &rnpgbe_eth_set_vlan_strip_n500,
-	.set_vfta = &rnpgbe_eth_set_vfta_n500,
-	.clr_vfta = &rnpgbe_eth_clr_vfta_n500,
-	.set_vlan_filter = &rnpgbe_eth_set_vlan_filter_n500,
-	.set_outer_vlan_type = &rnpgbe_eth_set_outer_vlan_type_n500,
-	.set_double_vlan = &rnpgbe_eth_set_doulbe_vlan_n500,
-	.set_fc_mode = &rnpgbe_eth_set_fc_mode_n500,
-	.set_rx = &rnpgbe_eth_set_rx_n500,
-	.set_fcs = &rnpgbe_eth_fcs_n500,
-	.set_vf_vlan_mode = &rnpgbe_eth_set_vf_vlan_mode_n500,
+static struct rnpgbe_eth_operations eth_ops_rnpgbe = {
+	.set_rar = &rnpgbe_eth_set_rar,
+	.clear_rar = &rnpgbe_eth_clear_rar,
+	.set_vmdq = &rnpgbe_eth_set_vmdq,
+	.clear_vmdq = &rnpgbe_eth_clear_vmdq,
+	.update_mc_addr_list = &rnpgbe_eth_update_mc_addr_list,
+	.clr_mc_addr = &rnpgbe_eth_clr_mc_addr,
+	.set_rss_hfunc = &rnpgbe_eth_set_rss_hfunc,
+	.set_rss_key = &rnpgbe_eth_update_rss_key,
+	.set_rss_table = &rnpgbe_eth_update_rss_table,
+	.set_rx_hash = &rnpgbe_eth_set_rx_hash,
+	.set_layer2_remapping = &rnpgbe_eth_set_layer2,
+	.clr_layer2_remapping = &rnpgbe_eth_clr_layer2,
+	.clr_all_layer2_remapping = &rnpgbe_eth_clr_all_layer2,
+	.set_tuple5_remapping = &rnpgbe_eth_set_tuple5,
+	.clr_tuple5_remapping = &rnpgbe_eth_clr_tuple5,
+	.clr_all_tuple5_remapping = &rnpgbe_eth_clr_all_tuple5,
+	.set_tcp_sync_remapping = &rnpgbe_eth_set_tcp_sync,
+	.set_rx_skip = &rnpgbe_eth_set_rx_skip,
+	.set_min_max_packet = &rnpgbe_eth_set_min_max_packets,
+	.set_vlan_strip = &rnpgbe_eth_set_vlan_strip,
+	.set_vfta = &rnpgbe_eth_set_vfta,
+	.clr_vfta = &rnpgbe_eth_clr_vfta,
+	.set_vlan_filter = &rnpgbe_eth_set_vlan_filter,
+	.set_outer_vlan_type = &rnpgbe_eth_set_outer_vlan_type,
+	.set_double_vlan = &rnpgbe_eth_set_doulbe_vlan,
+	.set_fc_mode = &rnpgbe_eth_set_fc_mode,
+	.set_rx = &rnpgbe_eth_set_rx,
+	.set_fcs = &rnpgbe_eth_fcs,
+	.set_vf_vlan_mode = &rnpgbe_eth_set_vf_vlan_mode,
 };
 
 /**
- *  rnpgbe_init_hw_ops_n500 - Generic hardware initialization
+ *  rnpgbe_init_hw_ops - Generic hardware initialization
  *  @hw: pointer to hardware structure
  *
  *  Initialize the hardware by resetting the hardware, filling the bus info
@@ -1009,7 +1004,7 @@ static struct rnpgbe_eth_operations eth_ops_n500 = {
  *  up link and flow control settings, and leaves transmit and receive units
  *  disabled and uninitialized
  **/
-static s32 rnpgbe_init_hw_ops_n500(struct rnpgbe_hw *hw)
+static s32 rnpgbe_init_hw_ops(struct rnpgbe_hw *hw)
 {
 	s32 status = 0;
 
@@ -1022,8 +1017,8 @@ static s32 rnpgbe_init_hw_ops_n500(struct rnpgbe_hw *hw)
 	return status;
 }
 
-static s32 rnpgbe_get_permtion_mac_addr_n500(struct rnpgbe_hw *hw,
-					     u8 *mac_addr)
+static s32 rnpgbe_get_permtion_mac_addr(struct rnpgbe_hw *hw,
+					u8 *mac_addr)
 {
 	if (rnpgbe_fw_get_macaddr(hw, hw->pfvfnum, mac_addr, hw->nr_lane))
 		eth_random_addr(mac_addr);
@@ -1036,12 +1031,11 @@ static s32 rnpgbe_get_permtion_mac_addr_n500(struct rnpgbe_hw *hw,
 	return 0;
 }
 
-static s32 rnpgbe_reset_hw_ops_n500(struct rnpgbe_hw *hw)
+static s32 rnpgbe_reset_hw_ops(struct rnpgbe_hw *hw)
 {
 	int i;
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	struct rnpgbe_eth_info *eth = &hw->eth;
-	struct rnpgbe_mac_info *mac = &hw->mac;
 
 	/* Call adapter stop to disable tx/rx and clear interrupts */
 	dma_wr32(dma, RNP_DMA_AXI_EN, 0);
@@ -1052,74 +1046,44 @@ static s32 rnpgbe_reset_hw_ops_n500(struct rnpgbe_hw *hw)
 
 	/* Store the permanent mac address */
 	if (!(hw->mac.mac_flags & RNP_FLAGS_INIT_MAC_ADDRESS)) {
-		rnpgbe_get_permtion_mac_addr_n500(hw, hw->mac.perm_addr);
+		rnpgbe_get_permtion_mac_addr(hw, hw->mac.perm_addr);
 		memcpy(hw->mac.addr, hw->mac.perm_addr, ETH_ALEN);
 	}
 
 	hw->ops.init_rx_addrs(hw);
 
-	/* n500 should do this */
-	eth_wr32(eth, RNP500_ETH_ERR_MASK_VECTOR,
-		 RNP_N500_PKT_LEN_ERR | RNP_N500_HDR_LEN_ERR);
+	/* default drop */
+	eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR, 0);
 
-	wr32(hw, RNP_DMA_RX_DATA_PROG_FULL_THRESH, 0xa);
+	hw_wr32(hw, RNP_DMA_RX_DATA_PROG_FULL_THRESH, 0xa);
 
 	/* reset all ring msix table to 0 */
 	for (i = 0; i < 12; i++)
 		rnpgbe_wr_reg(hw->ring_msix_base + RING_VECTOR(i), 0);
-
-	{
-		u32 value = 0;
-
-		value |= RNP_MODE_NO_SA_INSER << RNP_SARC_OFFSET;
-		value &= (~RNP_TWOKPE_MASK);
-		value &= (~RNP_SFTERR_MASK);
-		value |= (RNP_CST_MASK);
-		value |= RNP_TC_MASK;
-		value &= (~RNP_WD_MASK);
-		value &= (~RNP_JD_MASK);
-		value &= (~RNP_BE_MASK);
-		value |= (RNP_JE_MASK);
-		value |= (RNP_IFG_96 << RNP_IFG_OFFSET);
-		value &= (~RNP_DCRS_MASK);
-		value &= (~RNP_PS_MASK);
-		value &= (~RNP_FES_MASK);
-		value &= (~RNP_DO_MASK);
-		value &= (~RNP_LM_MASK);
-		value |= RNP_DM_MASK;
-		value |= RNP_IPC_MASK; /* open rx checksum */
-		value &= (~RNP_DR_MASK);
-		value &= (~RNP_LUD_MASK);
-		value |= (RNP_BL_MODE << RNP_BL_OFFSET);
-		value &= (~RNP_DC_MASK);
-		value |= RNP_TE_MASK;
-		value |= (RNP_PRELEN_MODE);
-		/* not setup this if in ncsi mode */
-		if (!hw->ncsi_en)
-			mac_wr32(mac, GMAC_CONTROL, value);
-	}
 
 	/* if ncsi on, sync hw status */
 	if (hw->ncsi_en)
 		rnpgbe_mbx_phy_pause_get(hw, &hw->fc.requested_mode);
 	else
 		rnpgbe_mbx_phy_pause_set(hw, hw->fc.requested_mode);
+
 	rnpgbe_mbx_get_lane_stat(hw);
+	hw->link = 0;
+
 	return 0;
 }
 
-static s32 rnpgbe_start_hw_ops_n500(struct rnpgbe_hw *hw)
+static s32 rnpgbe_start_hw_ops(struct rnpgbe_hw *hw)
 {
 	s32 ret_val = 0;
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_dma_info *dma = &hw->dma;
 
 	/* ETH Registers */
-	eth_wr32(eth, RNP500_ETH_ERR_MASK_VECTOR,
-		 RNP_N500_PKT_LEN_ERR | RNP_N500_HDR_LEN_ERR);
+	eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR, 0);
 
-	eth_wr32(eth, RNP500_ETH_BYPASS, 0);
-	eth_wr32(eth, RNP500_ETH_DEFAULT_RX_RING, 0);
+	eth_wr32(eth, RNPGBE_ETH_BYPASS, 0);
+	eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_RING, 0);
 
 	/* DMA common Registers */
 	dma_wr32(dma, RNP_DMA_CONFIG, DMA_VEB_BYPASS);
@@ -1139,7 +1103,7 @@ static s32 rnpgbe_start_hw_ops_n500(struct rnpgbe_hw *hw)
 /* set n500 min/max packet according to new_mtu
  * we support mtu + 14 + 4 * 3 as max packet LENGTH_ERROR
  */
-static void rnpgbe_set_mtu_hw_ops_n500(struct rnpgbe_hw *hw, int new_mtu)
+static void rnpgbe_set_mtu_hw_ops(struct rnpgbe_hw *hw, int new_mtu)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
@@ -1159,14 +1123,18 @@ static void rnpgbe_set_mtu_hw_ops_n500(struct rnpgbe_hw *hw, int new_mtu)
 	    (adapter->priv_flags & RNP_PRIV_FLAG_RX_ALL))
 		max = hw->max_length;
 
+	/* if ncsi not set max too small */
+	if (hw->ncsi_en && max < 1522)
+		max = 1522;
+
 	hw->min_length_current = min;
 	hw->max_length_current = max;
 	eth->ops.set_min_max_packet(eth, min, max);
 }
 
 /* setup n500 vlan filter status */
-static void rnpgbe_set_vlan_filter_en_hw_ops_n500(struct rnpgbe_hw *hw,
-						  bool status)
+static void rnpgbe_set_vlan_filter_en_hw_ops(struct rnpgbe_hw *hw,
+					     bool status)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
@@ -1175,8 +1143,8 @@ static void rnpgbe_set_vlan_filter_en_hw_ops_n500(struct rnpgbe_hw *hw,
 
 /* set vlan to n500 vlan filter table & veb */
 /* pf setup call */
-static void rnpgbe_set_vlan_filter_hw_ops_n500(struct rnpgbe_hw *hw, u16 vid,
-					       bool enable, bool sriov_flag)
+static void rnpgbe_set_vlan_filter_hw_ops(struct rnpgbe_hw *hw, u16 vid,
+					  bool enable, bool sriov_flag)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_dma_info *dma = &hw->dma;
@@ -1208,8 +1176,8 @@ static void rnpgbe_set_vlan_filter_hw_ops_n500(struct rnpgbe_hw *hw, u16 vid,
 	}
 }
 
-static int rnpgbe_set_veb_vlan_mask_hw_ops_n500(struct rnpgbe_hw *hw, u16 vid,
-						int vf, bool enable)
+static int rnpgbe_set_veb_vlan_mask_hw_ops(struct rnpgbe_hw *hw, u16 vid,
+					   int vf, bool enable)
 {
 	struct list_head *pos;
 	struct vf_vebvlans *entry;
@@ -1263,9 +1231,9 @@ err_out:
 	return err;
 }
 
-static void rnpgbe_set_vf_vlan_filter_hw_ops_n500(struct rnpgbe_hw *hw, u16 vid,
-						  int vf, bool enable,
-						  bool veb_only)
+static void rnpgbe_set_vf_vlan_filter_hw_ops(struct rnpgbe_hw *hw, u16 vid,
+					     int vf, bool enable,
+					     bool veb_only)
 {
 	struct rnpgbe_dma_info *dma = &hw->dma;
 
@@ -1281,7 +1249,7 @@ static void rnpgbe_set_vf_vlan_filter_hw_ops_n500(struct rnpgbe_hw *hw, u16 vid,
 	}
 }
 
-static void rnpgbe_clr_vlan_veb_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_clr_vlan_veb_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	u32 vfnum = hw->vfnum;
@@ -1290,8 +1258,8 @@ static void rnpgbe_clr_vlan_veb_hw_ops_n500(struct rnpgbe_hw *hw)
 }
 
 /* setup n500 vlan strip status */
-static void rnpgbe_set_vlan_strip_hw_ops_n500(struct rnpgbe_hw *hw, u16 queue,
-					      bool strip)
+static void rnpgbe_set_vlan_strip_hw_ops(struct rnpgbe_hw *hw, u16 queue,
+					 bool strip)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
@@ -1299,8 +1267,8 @@ static void rnpgbe_set_vlan_strip_hw_ops_n500(struct rnpgbe_hw *hw, u16 queue,
 }
 
 /* update new n500 mac */
-static void rnpgbe_set_mac_hw_ops_n500(struct rnpgbe_hw *hw, u8 *mac,
-				       bool sriov_flag)
+static void rnpgbe_set_mac_hw_ops(struct rnpgbe_hw *hw, u8 *mac,
+				  bool sriov_flag)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_dma_info *dma = &hw->dma;
@@ -1320,7 +1288,7 @@ static void rnpgbe_set_mac_hw_ops_n500(struct rnpgbe_hw *hw, u8 *mac,
 }
 
 /**
- * rnpgbe_write_uc_addr_list_n500 - write unicast addresses to RAR table
+ * rnpgbe_write_uc_addr_list - write unicast addresses to RAR table
  * @hw: hardware structure
  * @netdev: network interface device structure
  * @sriov_flag: sriov on or not
@@ -1330,9 +1298,9 @@ static void rnpgbe_set_mac_hw_ops_n500(struct rnpgbe_hw *hw, u8 *mac,
  *                0 on no addresses written
  *                X on writing X addresses to the RAR table
  **/
-static int rnpgbe_write_uc_addr_list_n500(struct rnpgbe_hw *hw,
-					  struct net_device *netdev,
-					  bool sriov_flag)
+static int rnpgbe_write_uc_addr_list(struct rnpgbe_hw *hw,
+				     struct net_device *netdev,
+				     bool sriov_flag)
 {
 	unsigned int rar_entries = hw->num_rar_entries - 1;
 	u32 vfnum = hw->vfnum;
@@ -1364,7 +1332,7 @@ static int rnpgbe_write_uc_addr_list_n500(struct rnpgbe_hw *hw,
 			if (!rar_entries)
 				break;
 			eth->ops.set_rar(eth, rar_entries, ha->addr,
-					 RNP500_RAH_AV);
+					 RNPGBE_RAH_AV);
 			if (sriov_flag)
 				eth->ops.set_vmdq(eth, rar_entries, vfnum);
 
@@ -1378,7 +1346,7 @@ static int rnpgbe_write_uc_addr_list_n500(struct rnpgbe_hw *hw,
 		ret = hw->ops.get_ncsi_mac(hw, ncsi_addr, i);
 		if (!ret) {
 			eth->ops.set_rar(eth, NCSI_RAR_IDX_START + i, ncsi_addr,
-					 RNP500_RAH_AV);
+					 RNPGBE_RAH_AV);
 		}
 	}
 
@@ -1390,31 +1358,30 @@ static int rnpgbe_write_uc_addr_list_n500(struct rnpgbe_hw *hw,
 	return count;
 }
 
-static void rnpgbe_set_rx_mode_hw_ops_n500(struct rnpgbe_hw *hw,
-					   struct net_device *netdev,
-					   bool sriov_flag)
+static void rnpgbe_set_rx_mode_hw_ops(struct rnpgbe_hw *hw,
+				      struct net_device *netdev,
+				      bool sriov_flag)
 {
-	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	u32 fctrl;
 	netdev_features_t features = netdev->features;
 	int count;
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	/* broadcast always bypass */
-	fctrl = eth_rd32(eth, RNP500_ETH_DMAC_FCTRL) | RNP500_FCTRL_BPE;
+	fctrl = eth_rd32(eth, RNPGBE_ETH_DMAC_FCTRL) | RNPGBE_FCTRL_BPE;
 
 	/* clear the bits we are changing the status of */
-	fctrl &= ~(RNP500_FCTRL_UPE | RNP500_FCTRL_MPE);
+	fctrl &= ~(RNPGBE_FCTRL_UPE | RNPGBE_FCTRL_MPE);
 	/* promisc mode */
 	if (netdev->flags & IFF_PROMISC) {
 		hw->addr_ctrl.user_set_promisc = true;
-		fctrl |= (RNP500_FCTRL_UPE | RNP500_FCTRL_MPE);
+		fctrl |= (RNPGBE_FCTRL_UPE | RNPGBE_FCTRL_MPE);
 		/* disable hardware filter vlans in promisc mode */
 		features &= ~NETIF_F_HW_VLAN_CTAG_FILTER;
 		features &= ~NETIF_F_HW_VLAN_CTAG_RX;
 	} else {
 		if (netdev->flags & IFF_ALLMULTI) {
-			fctrl |= RNP500_FCTRL_MPE;
+			fctrl |= RNPGBE_FCTRL_MPE;
 		} else {
 			/* Write addresses to the MTA, if the attempt fails
 			 * then we should just turn on promiscuous mode so
@@ -1423,7 +1390,7 @@ static void rnpgbe_set_rx_mode_hw_ops_n500(struct rnpgbe_hw *hw,
 			/* we always update vf multicast info */
 			count = eth->ops.update_mc_addr_list(eth, netdev, true);
 			if (count < 0)
-				fctrl |= RNP500_FCTRL_MPE;
+				fctrl |= RNPGBE_FCTRL_MPE;
 		}
 		hw->addr_ctrl.user_set_promisc = false;
 	}
@@ -1432,31 +1399,22 @@ static void rnpgbe_set_rx_mode_hw_ops_n500(struct rnpgbe_hw *hw,
 	 * sufficient space to store all the addresses then enable
 	 * unicast promiscuous mode
 	 */
-	if (rnpgbe_write_uc_addr_list_n500(hw, netdev, sriov_flag) < 0)
-		fctrl |= RNP500_FCTRL_UPE;
+	if (rnpgbe_write_uc_addr_list(hw, netdev, sriov_flag) < 0)
+		fctrl |= RNPGBE_FCTRL_UPE;
 
-	eth_wr32(eth, RNP500_ETH_DMAC_FCTRL, fctrl);
+	eth_wr32(eth, RNPGBE_ETH_DMAC_FCTRL, fctrl);
 	if (features & NETIF_F_HW_VLAN_CTAG_FILTER)
 		eth->ops.set_vlan_filter(eth, true);
 	else
 		eth->ops.set_vlan_filter(eth, false);
-
-	if (hw->addr_ctrl.user_set_promisc ||
-	    adapter->priv_flags & RNP_PRIV_FLAG_REC_HDR_LEN_ERR) {
-		/* set pkt_len_err and hdr_len_err default to 1 */
-		eth_wr32(eth, RNP500_ETH_ERR_MASK_VECTOR,
-			 PKT_LEN_ERR | HDR_LEN_ERR);
-	} else {
-		eth_wr32(eth, RNP500_ETH_ERR_MASK_VECTOR, 0);
-	}
 
 	/* update mtu */
 	hw->ops.set_mtu(hw, netdev->mtu);
 }
 
 /* setup an rar with vfnum */
-static void rnpgbe_set_rar_with_vf_hw_ops_n500(struct rnpgbe_hw *hw, u8 *mac,
-					       int idx, u32 vfnum, bool enable)
+static void rnpgbe_set_rar_with_vf_hw_ops(struct rnpgbe_hw *hw, u8 *mac,
+					  int idx, u32 vfnum, bool enable)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
@@ -1465,14 +1423,14 @@ static void rnpgbe_set_rar_with_vf_hw_ops_n500(struct rnpgbe_hw *hw, u8 *mac,
 	eth->ops.set_vmdq(eth, idx, vfnum);
 }
 
-static void rnpgbe_clr_rar_hw_ops_n500(struct rnpgbe_hw *hw, int idx)
+static void rnpgbe_clr_rar_hw_ops(struct rnpgbe_hw *hw, int idx)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.clear_rar(eth, idx);
 }
 
-static void rnpgbe_clr_rar_all_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_clr_rar_all_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	unsigned int rar_entries = hw->num_rar_entries - 1;
@@ -1482,7 +1440,7 @@ static void rnpgbe_clr_rar_all_hw_ops_n500(struct rnpgbe_hw *hw)
 		eth->ops.clear_rar(eth, rar_entries);
 }
 
-static void rnpgbe_set_fcs_mode_hw_ops_n500(struct rnpgbe_hw *hw, bool status)
+static void rnpgbe_set_fcs_mode_hw_ops(struct rnpgbe_hw *hw, bool status)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 	struct rnpgbe_eth_info *eth = &hw->eth;
@@ -1491,10 +1449,13 @@ static void rnpgbe_set_fcs_mode_hw_ops_n500(struct rnpgbe_hw *hw, bool status)
 	eth->ops.set_fcs(eth, status);
 }
 
-static void rnpgbe_set_mac_rx_hw_ops_n500(struct rnpgbe_hw *hw, bool status)
+static void rnpgbe_set_mac_rx_hw_ops(struct rnpgbe_hw *hw, bool status)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_mac_info *mac = &hw->mac;
+
+	if (pci_channel_offline(hw->pdev))
+		return;
 
 	if (status) {
 		mac->ops.set_mac_rx(mac, status);
@@ -1505,37 +1466,37 @@ static void rnpgbe_set_mac_rx_hw_ops_n500(struct rnpgbe_hw *hw, bool status)
 	}
 }
 
-static void rnpgbe_set_sriov_status_hw_ops_n500(struct rnpgbe_hw *hw,
-						bool status)
+static void rnpgbe_set_sriov_status_hw_ops(struct rnpgbe_hw *hw,
+					   bool status)
 {
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	u32 v, fctrl;
 
-	fctrl = eth_rd32(eth, RNP500_ETH_DMAC_FCTRL);
-#define RNP500_DMAC_MASK (0x7f)
-	fctrl &= ~RNP500_DMAC_MASK;
+	fctrl = eth_rd32(eth, RNPGBE_ETH_DMAC_FCTRL);
+#define RNPGBE_DMAC_MASK (0x7f)
+	fctrl &= ~RNPGBE_DMAC_MASK;
 
 	if (status) {
 		fctrl |= hw->veb_ring;
-		eth_wr32(eth, RNP500_ETH_DMAC_FCTRL, fctrl);
+		eth_wr32(eth, RNPGBE_ETH_DMAC_FCTRL, fctrl);
 		/* setup default ring */
 		dma_wr32(dma, RNP_DMA_CONFIG,
 			 dma_rd32(dma, RNP_DMA_CONFIG) & (~DMA_VEB_BYPASS));
-		v = eth_rd32(eth, RNP500_MRQC_IOV_EN);
-		v |= RNP500_IOV_ENABLED;
-		eth_wr32(eth, RNP500_MRQC_IOV_EN, v);
+		v = eth_rd32(eth, RNPGBE_MRQC_IOV_EN);
+		v |= RNPGBE_IOV_ENABLED;
+		eth_wr32(eth, RNPGBE_MRQC_IOV_EN, v);
 	} else {
-		eth_wr32(eth, RNP500_ETH_DMAC_FCTRL, fctrl);
-		v = eth_rd32(eth, RNP500_MRQC_IOV_EN);
-		v &= ~(RNP500_IOV_ENABLED);
-		eth_wr32(eth, RNP500_MRQC_IOV_EN, v);
+		eth_wr32(eth, RNPGBE_ETH_DMAC_FCTRL, fctrl);
+		v = eth_rd32(eth, RNPGBE_MRQC_IOV_EN);
+		v &= ~(RNPGBE_IOV_ENABLED);
+		eth_wr32(eth, RNPGBE_MRQC_IOV_EN, v);
 		dma->ops.clr_veb_all(dma);
 	}
 }
 
-static void rnpgbe_set_sriov_vf_mc_hw_ops_n500(struct rnpgbe_hw *hw,
-					       u16 mc_addr)
+static void rnpgbe_set_sriov_vf_mc_hw_ops(struct rnpgbe_hw *hw,
+					  u16 mc_addr)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	u32 vector_bit;
@@ -1545,17 +1506,17 @@ static void rnpgbe_set_sriov_vf_mc_hw_ops_n500(struct rnpgbe_hw *hw,
 
 	vector_reg = (mc_addr >> 5) & 0x7F;
 	vector_bit = mc_addr & 0x1F;
-	mta_reg = eth_rd32(eth, RNP500_ETH_MUTICAST_HASH_TABLE(vector_reg));
+	mta_reg = eth_rd32(eth, RNPGBE_ETH_MUTICAST_HASH_TABLE(vector_reg));
 	mta_reg |= (1 << vector_bit);
-	eth_wr32(eth, RNP500_ETH_MUTICAST_HASH_TABLE(vector_reg), mta_reg);
+	eth_wr32(eth, RNPGBE_ETH_MUTICAST_HASH_TABLE(vector_reg), mta_reg);
 }
 
-static void rnpgbe_update_sriov_info_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_update_sriov_info_hw_ops(struct rnpgbe_hw *hw)
 {
 	/* update sriov info to hw */
 }
 
-static void rnpgbe_set_pause_mode_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_set_pause_mode_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 	struct rnpgbe_eth_info *eth = &hw->eth;
@@ -1564,12 +1525,12 @@ static void rnpgbe_set_pause_mode_hw_ops_n500(struct rnpgbe_hw *hw)
 	eth->ops.set_fc_mode(eth);
 }
 
-static void rnpgbe_get_pause_mode_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_get_pause_mode_hw_ops(struct rnpgbe_hw *hw)
 {
 	// n500 can get pause mode in link event
 }
 
-static void rnpgbe_update_hw_info_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_update_hw_info_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	struct rnpgbe_eth_info *eth = &hw->eth;
@@ -1577,13 +1538,13 @@ static void rnpgbe_update_hw_info_hw_ops_n500(struct rnpgbe_hw *hw)
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	u32 data;
 	/* 1 enable eth filter */
-	eth_wr32(eth, RNP500_HOST_FILTER_EN, 1);
+	eth_wr32(eth, RNPGBE_HOST_FILTER_EN, 1);
 	/* 2 open redir en */
-	eth_wr32(eth, RNP500_REDIR_EN, 1);
+	eth_wr32(eth, RNPGBE_REDIR_EN, 1);
 
 	/* 3 open sctp checksum and other checksum */
 	if (hw->feature_flags & RNP_NET_FEATURE_TX_CHECKSUM)
-		eth_wr32(eth, RNP500_ETH_SCTP_CHECKSUM_EN, 1);
+		eth_wr32(eth, RNPGBE_ETH_SCTP_CHECKSUM_EN, 1);
 
 	/* 4 mark muticaset as broadcast */
 	dma_wr32(dma, RNP_VEB_MAC_MASK_LO, 0xffffffff);
@@ -1631,31 +1592,44 @@ static void rnpgbe_update_hw_info_hw_ops_n500(struct rnpgbe_hw *hw)
 	mac_wr32(mac, GMAC_FLOW_CTRL, data);
 
 	/* 11 open tx double vlan according to stags */
-	eth_wr32(eth, RNP500_ETH_TX_VLAN_CONTROL_EANBLE, 1);
+	eth_wr32(eth, RNPGBE_ETH_TX_VLAN_CONTROL_EANBLE, 1);
 
 	/* 12 test */
-	eth_wr32(eth, RNP500_ETH_WHOLE_PKT_LEN_ERR_DROP, 1);
+	eth_wr32(eth, RNPGBE_ETH_WHOLE_PKT_LEN_ERR_DROP, 1);
 
 	/* 13 setup double vlan drop */
 	if (adapter->priv_flags & RNP_PRIV_FLAG_DOUBLE_VLAN_RECEIVE)
-		eth_wr32(eth, RNP500_ETH_DOUBLE_VLAN_DROP, 0);
+		eth_wr32(eth, RNPGBE_ETH_DOUBLE_VLAN_DROP, 0);
 	else
-		eth_wr32(eth, RNP500_ETH_DOUBLE_VLAN_DROP, 1);
+		eth_wr32(eth, RNPGBE_ETH_DOUBLE_VLAN_DROP, 1);
 
 	/* 14 open error mask if in rx all mode */
 	if (adapter->priv_flags & RNP_PRIV_FLAG_RX_ALL) {
-		eth_wr32(eth, RNP500_MAC_ERR_MASK,
+		eth_wr32(eth, RNPGBE_MAC_ERR_MASK,
 			 RUN_FRAME_ERROR | GAINT_FRAME_ERROR | CRC_ERROR |
 				 LENGTH_ERROR);
-		eth_wr32(eth, RNP500_ETH_DOUBLE_VLAN_DROP, 0);
+		eth_wr32(eth, RNPGBE_ETH_DOUBLE_VLAN_DROP, 0);
 #define FORWARD_ALL_CONTROL (0x2)
+		eth_wr32(eth, RNPGBE_BAD_PACKETS_RECEIVE_EN, 1);
 		mac_wr32(mac, GMAC_FRAME_FILTER,
 			 0x00000001 | (FORWARD_ALL_CONTROL << 6));
 
 	} else {
-		eth_wr32(eth, RNP500_MAC_ERR_MASK,
+		eth_wr32(eth, RNPGBE_MAC_ERR_MASK,
 			 RUN_FRAME_ERROR | GAINT_FRAME_ERROR);
+		eth_wr32(eth, RNPGBE_BAD_PACKETS_RECEIVE_EN, 0);
 		mac_wr32(mac, GMAC_FRAME_FILTER, 0x00000001);
+	}
+
+	/* setup eth_err_mask */
+	if ((adapter->priv_flags & RNP_PRIV_FLAG_RX_ALL) ||
+	    (adapter->priv_flags & RNP_PRIV_FLAG_REC_HDR_LEN_ERR)) {
+		/* set pkt_len_err and hdr_len_err default to 1 */
+		eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR,
+			 PKT_LEN_ERR | HDR_LEN_ERR);
+	} else {
+		/* set 0 to drop in default */
+		eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR, 0);
 	}
 
 	/* 15 update water acoording to max length */
@@ -1668,10 +1642,10 @@ static void rnpgbe_update_hw_info_hw_ops_n500(struct rnpgbe_hw *hw)
 		hw->fc.high_water[0] = water_high;
 		hw->fc.low_water[0] = water_high;
 
-		dma_wr32(dma, RNP500_DMA_RBUF_FIFO,
+		dma_wr32(dma, RNPGBE_DMA_RBUF_FIFO,
 			 ((hw->max_length_current + 15) >> 4) + 5);
 
-		eth_wr32(eth, RNP500_ETH_EMAC_PARSE_PROGFULL_THRESH,
+		eth_wr32(eth, RNPGBE_ETH_EMAC_PARSE_PROGFULL_THRESH,
 			 ((hw->max_length_current + 15) >> 4) + 2);
 	}
 	/* 16 setup fcs mode */
@@ -1688,30 +1662,30 @@ static void rnpgbe_update_hw_info_hw_ops_n500(struct rnpgbe_hw *hw)
 		data = PRIV_DATA_EN | adapter->priv_skip_count;
 	else
 		data = 0;
-	eth_wr32(eth, RNP500_ETH_PRIV_DATA_CONTROL_REG, data);
+	eth_wr32(eth, RNPGBE_ETH_PRIV_DATA_CONTROL_REG, data);
 
 	/* 19 setup mac count read self clear */
-	data = mac_rd32(mac, RNP500_MAC_COUNT_CONTROL);
+	data = mac_rd32(mac, RNPGBE_MAC_COUNT_CONTROL);
 #define READ_CLEAR BIT(2)
 	data |= READ_CLEAR;
-	mac_wr32(mac, RNP500_MAC_COUNT_CONTROL, data);
+	mac_wr32(mac, RNPGBE_MAC_COUNT_CONTROL, data);
 
 	/* 20 setup prio */
 	if (adapter->priv_flags &
 	    (RNP_PRIV_FLAG_8023_PRIO | RNP_PRIV_FLAG_REMAP_PRIO)) {
-		eth_wr32(eth, RNP500_PRIORITY_1_MARK, RNP500_PRIORITY_1);
-		eth_wr32(eth, RNP500_PRIORITY_0_MARK, RNP500_PRIORITY_0);
-		eth_wr32(eth, RNP500_PRIORITY_EN, 1);
+		eth_wr32(eth, RNPGBE_PRIORITY_1_MARK, RNPGBE_PRIORITY_1);
+		eth_wr32(eth, RNPGBE_PRIORITY_0_MARK, RNPGBE_PRIORITY_0);
+		eth_wr32(eth, RNPGBE_PRIORITY_EN, 1);
 		if (adapter->priv_flags & RNP_PRIV_FLAG_8023_PRIO)
-			eth_wr32(eth, RNP500_PRIORITY_EN_8023, 1);
+			eth_wr32(eth, RNPGBE_PRIORITY_EN_8023, 1);
 		else
-			eth_wr32(eth, RNP500_PRIORITY_EN_8023, 0);
+			eth_wr32(eth, RNPGBE_PRIORITY_EN_8023, 0);
 	} else {
-		eth_wr32(eth, RNP500_PRIORITY_EN, 0);
+		eth_wr32(eth, RNPGBE_PRIORITY_EN, 0);
 	}
 }
 
-static void rnpgbe_update_hw_rx_drop_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_update_hw_rx_drop_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	int i;
@@ -1728,15 +1702,15 @@ static void rnpgbe_update_hw_rx_drop_hw_ops_n500(struct rnpgbe_hw *hw)
 	}
 }
 
-static void rnpgbe_set_rx_hash_hw_ops_n500(struct rnpgbe_hw *hw, bool status,
-					   bool sriov_flag)
+static void rnpgbe_set_rx_hash_hw_ops(struct rnpgbe_hw *hw, bool status,
+				      bool sriov_flag)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.set_rx_hash(eth, status, sriov_flag);
 }
 
-static s32 rnpgbe_init_rx_addrs_hw_ops_n500(struct rnpgbe_hw *hw)
+static s32 rnpgbe_init_rx_addrs_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
@@ -1777,10 +1751,10 @@ static s32 rnpgbe_init_rx_addrs_hw_ops_n500(struct rnpgbe_hw *hw)
 
 	/* Clear the MTA */
 	hw->addr_ctrl.mta_in_use = 0;
-	v = eth_rd32(eth, RNP500_ETH_DMAC_MCSTCTRL);
+	v = eth_rd32(eth, RNPGBE_ETH_DMAC_MCSTCTRL);
 	v &= (~0x3);
 	v |= eth->mc_filter_type;
-	eth_wr32(eth, RNP500_ETH_DMAC_MCSTCTRL, v);
+	eth_wr32(eth, RNPGBE_ETH_DMAC_MCSTCTRL, v);
 
 	hw_dbg(hw, " Clearing MTA\n");
 	if (!hw->ncsi_en)
@@ -1790,18 +1764,18 @@ static s32 rnpgbe_init_rx_addrs_hw_ops_n500(struct rnpgbe_hw *hw)
 }
 
 /* clean vlan filter tables */
-static void rnpgbe_clr_vfta_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_clr_vfta_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.clr_vfta(eth);
 }
 
-static void rnpgbe_set_txvlan_mode_hw_ops_n500(struct rnpgbe_hw *hw, bool cvlan)
+static void rnpgbe_set_txvlan_mode_hw_ops(struct rnpgbe_hw *hw, bool cvlan)
 {
 }
 
-static int rnpgbe_set_rss_hfunc_hw_ops_n500(struct rnpgbe_hw *hw, u8 hfunc)
+static int rnpgbe_set_rss_hfunc_hw_ops(struct rnpgbe_hw *hw, u8 hfunc)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
@@ -1823,8 +1797,8 @@ static int rnpgbe_set_rss_hfunc_hw_ops_n500(struct rnpgbe_hw *hw, u8 hfunc)
 	return 0;
 }
 
-static void rnpgbe_set_rss_key_hw_ops_n500(struct rnpgbe_hw *hw,
-					   bool sriov_flag)
+static void rnpgbe_set_rss_key_hw_ops(struct rnpgbe_hw *hw,
+				      bool sriov_flag)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
@@ -1835,26 +1809,26 @@ static void rnpgbe_set_rss_key_hw_ops_n500(struct rnpgbe_hw *hw,
 	eth->ops.set_rss_key(eth, sriov_flag);
 }
 
-static void rnpgbe_set_rss_table_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_set_rss_table_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.set_rss_table(eth);
 }
 
-static void rnpgbe_set_mbx_link_event_hw_ops_n500(struct rnpgbe_hw *hw,
-						  int enable)
+static void rnpgbe_set_mbx_link_event_hw_ops(struct rnpgbe_hw *hw,
+					     int enable)
 {
 	rnpgbe_mbx_link_event_enable(hw, enable);
 }
 
-static void rnpgbe_set_mbx_ifup_hw_ops_n500(struct rnpgbe_hw *hw, int enable)
+static void rnpgbe_set_mbx_ifup_hw_ops(struct rnpgbe_hw *hw, int enable)
 {
 	rnpgbe_mbx_ifup_down(hw, enable);
 }
 
 /**
- *  rnpgbe_check_mac_link_hw_ops_n500 - Determine link and speed status
+ *  rnpgbe_check_mac_link_hw_ops - Determine link and speed status
  *  @hw: pointer to hardware structure
  *  @speed: pointer to link speed
  *  @link_up: true when link is up
@@ -1863,11 +1837,11 @@ static void rnpgbe_set_mbx_ifup_hw_ops_n500(struct rnpgbe_hw *hw, int enable)
  *
  *  Reads the links register to determine if link is up and the current speed
  **/
-static s32 rnpgbe_check_mac_link_hw_ops_n500(struct rnpgbe_hw *hw,
-					     rnpgbe_link_speed *speed,
-					     bool *link_up,
-					     bool *duplex,
-					     bool link_up_wait_to_complete)
+static s32 rnpgbe_check_mac_link_hw_ops(struct rnpgbe_hw *hw,
+					rnpgbe_link_speed *speed,
+					bool *link_up,
+					bool *duplex,
+					bool link_up_wait_to_complete)
 {
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 
@@ -1896,11 +1870,11 @@ static s32 rnpgbe_check_mac_link_hw_ops_n500(struct rnpgbe_hw *hw,
 	return 0;
 }
 
-static s32 rnpgbe_setup_mac_link_hw_ops_n500(struct rnpgbe_hw *hw,
-					     u32 adv,
-					     u32 autoneg,
-					     u32 speed,
-					     u32 duplex)
+static s32 rnpgbe_setup_mac_link_hw_ops(struct rnpgbe_hw *hw,
+					u32 adv,
+					u32 autoneg,
+					u32 speed,
+					u32 duplex)
 {
 	rnpgbe_mbx_phy_link_set(hw, adv, autoneg, speed, duplex,
 				hw->tp_mdix_ctrl);
@@ -1908,69 +1882,104 @@ static s32 rnpgbe_setup_mac_link_hw_ops_n500(struct rnpgbe_hw *hw,
 	return 0;
 }
 
-static void rnpgbe_clean_link_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_clean_link_hw_ops(struct rnpgbe_hw *hw)
 {
 	hw->link = 0;
 }
 
-static void rnpgbe_set_layer2_hw_ops_n500(struct rnpgbe_hw *hw,
-					  union rnpgbe_atr_input *input,
-					  u16 pri_id, u8 queue, bool prio_flag)
+static void rnpgbe_set_layer2_hw_ops(struct rnpgbe_hw *hw,
+				     union rnpgbe_atr_input *input,
+				     u16 pri_id, u8 queue, bool prio_flag)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.set_layer2_remapping(eth, input, pri_id, queue, prio_flag);
 }
 
-static void rnpgbe_clr_layer2_hw_ops_n500(struct rnpgbe_hw *hw, u16 pri_id)
+static void rnpgbe_clr_layer2_hw_ops(struct rnpgbe_hw *hw, u16 pri_id)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.clr_layer2_remapping(eth, pri_id);
 }
 
-static void rnpgbe_clr_all_layer2_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_clr_all_layer2_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.clr_all_layer2_remapping(eth);
 }
 
-static void rnpgbe_clr_all_tuple5_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_clr_all_tuple5_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.clr_all_tuple5_remapping(eth);
 }
 
-static void rnpgbe_set_tcp_sync_hw_ops_n500(struct rnpgbe_hw *hw, int queue,
-					    bool flag, bool prio)
+static void rnpgbe_set_tcp_sync_hw_ops(struct rnpgbe_hw *hw, int queue,
+				       bool flag, bool prio)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.set_tcp_sync_remapping(eth, queue, flag, prio);
 }
 
-static void rnpgbe_set_rx_skip_hw_ops_n500(struct rnpgbe_hw *hw, int count,
-					   bool flag)
+static void rnpgbe_set_rx_skip_hw_ops(struct rnpgbe_hw *hw, int count,
+				      bool flag)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.set_rx_skip(eth, count, flag);
 }
 
-static void rnpgbe_set_outer_vlan_type_hw_ops_n500(struct rnpgbe_hw *hw,
-						   int type)
+static void rnpgbe_set_outer_vlan_type_hw_ops(struct rnpgbe_hw *hw,
+					      int type)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.set_outer_vlan_type(eth, type);
 }
 
-static s32 rnpgbe_phy_read_reg_hw_ops_n500(struct rnpgbe_hw *hw,
-					   u32 reg_addr,
-					   u32 device_type,
-					   u16 *phy_data)
+/**
+ * rnpgbe_get_thermal_sensor_data_hw_ops - Gathers thermal sensor data
+ * @hw: pointer to hardware structure
+ * Returns the thermal sensor data structure
+ **/
+static s32 rnpgbe_get_thermal_sensor_data_hw_ops(struct rnpgbe_hw *hw)
+{
+	struct rnpgbe_thermal_sensor_data *data = &hw->thermal_sensor_data;
+	int voltage = 0;
+
+	data->sensor[0].temp = rnpgbe_mbx_get_temp(hw, &voltage);
+
+	return 0;
+}
+
+/**
+ * rnpgbe_init_thermal_sensor_thresh_hw_ops - Inits thermal sensor thresholds
+ * @hw: pointer to hardware structure
+ * Inits the thermal sensor thresholds according to the NVM map
+ * and save off the threshold and location values into mac.thermal_sensor_data
+ **/
+static s32 rnpgbe_init_thermal_sensor_thresh_hw_ops(struct rnpgbe_hw *hw)
+{
+	struct rnpgbe_thermal_sensor_data *data = &hw->thermal_sensor_data;
+	u8 i;
+
+	for (i = 0; i < RNPGBE_MAX_SENSORS; i++) {
+		data->sensor[i].location = i + 1;
+		data->sensor[i].caution_thresh = 90;
+		data->sensor[i].max_op_thresh = 100;
+	}
+
+	return 0;
+}
+
+static s32 rnpgbe_phy_read_reg_hw_ops(struct rnpgbe_hw *hw,
+				      u32 reg_addr,
+				      u32 device_type,
+				      u16 *phy_data)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 	s32 status = 0;
@@ -1982,10 +1991,10 @@ static s32 rnpgbe_phy_read_reg_hw_ops_n500(struct rnpgbe_hw *hw,
 	return status;
 }
 
-static s32 rnpgbe_phy_write_reg_hw_ops_n500(struct rnpgbe_hw *hw,
-					    u32 reg_addr,
-					    u32 device_type,
-					    u16 phy_data)
+static s32 rnpgbe_phy_write_reg_hw_ops(struct rnpgbe_hw *hw,
+				       u32 reg_addr,
+				       u32 device_type,
+				       u16 phy_data)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 	s32 status = 0;
@@ -1995,16 +2004,16 @@ static s32 rnpgbe_phy_write_reg_hw_ops_n500(struct rnpgbe_hw *hw,
 	return status;
 }
 
-static void rnpgbe_setup_wol_hw_ops_n500(struct rnpgbe_hw *hw, u32 mode)
+static void rnpgbe_setup_wol_hw_ops(struct rnpgbe_hw *hw, u32 mode)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
 	mac->ops.pmt(mac, mode, !!hw->ncsi_en);
 }
 
-static void rnpgbe_setup_eee_hw_ops_n500(struct rnpgbe_hw *hw,
-					 int ls, int tw,
-					 u32 local_eee)
+static void rnpgbe_setup_eee_hw_ops(struct rnpgbe_hw *hw,
+				    int ls, int tw,
+				    u32 local_eee)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
@@ -2014,37 +2023,37 @@ static void rnpgbe_setup_eee_hw_ops_n500(struct rnpgbe_hw *hw,
 	rnpgbe_mbx_phy_eee_set(hw, tw, local_eee);
 }
 
-static void rnpgbe_set_eee_mode_hw_ops_n500(struct rnpgbe_hw *hw,
-					    bool en_tx_lpi_clockgating)
+static void rnpgbe_set_eee_mode_hw_ops(struct rnpgbe_hw *hw,
+				       bool en_tx_lpi_clockgating)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
 	mac->ops.set_eee_mode(mac, en_tx_lpi_clockgating);
 }
 
-static void rnpgbe_reset_eee_mode_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_reset_eee_mode_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
 	mac->ops.reset_eee_mode(mac);
 }
 
-static void rnpgbe_set_eee_pls_hw_ops_n500(struct rnpgbe_hw *hw, int link)
+static void rnpgbe_set_eee_pls_hw_ops(struct rnpgbe_hw *hw, int link)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
 	mac->ops.set_eee_pls(mac, link);
 }
 
-static u32 rnpgbe_get_lpi_status_hw_ops_n500(struct rnpgbe_hw *hw)
+static u32 rnpgbe_get_lpi_status_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
 	return mac->ops.get_lpi_status(mac);
 }
 
-static int rnpgbe_get_ncsi_mac_hw_ops_n500(struct rnpgbe_hw *hw,
-					   u8 *addr, int idx)
+static int rnpgbe_get_ncsi_mac_hw_ops(struct rnpgbe_hw *hw,
+				      u8 *addr, int idx)
 {
 #define NCSI_MAC_H(i) (0x48 + (i) * 0x8)
 #define NCSI_MAC_L(i) (0x4C + (i) * 0x8)
@@ -2067,8 +2076,8 @@ static int rnpgbe_get_ncsi_mac_hw_ops_n500(struct rnpgbe_hw *hw,
 	}
 }
 
-static int rnpgbe_get_ncsi_vlan_hw_ops_n500(struct rnpgbe_hw *hw,
-					    u16 *vlan, int idx)
+static int rnpgbe_get_ncsi_vlan_hw_ops(struct rnpgbe_hw *hw,
+				       u16 *vlan, int idx)
 {
 #define NCSI_VLAN(i) (0x80 + (i) * 0x10)
 	struct rnpgbe_mac_info *mac = &hw->mac;
@@ -2084,26 +2093,333 @@ static int rnpgbe_get_ncsi_vlan_hw_ops_n500(struct rnpgbe_hw *hw,
 	}
 }
 
-static void rnpgbe_set_lldp_hw_ops_n500(struct rnpgbe_hw *hw, bool enable)
+static void rnpgbe_dump_rings_regs(struct rnpgbe_hw *hw)
+{
+	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
+	struct net_device *netdev = adapter->netdev;
+	struct device *dev = &hw->pdev->dev;
+	struct rnpgbe_ring *ring;
+	u32 head = 0;
+	u32 tail = 0;
+	int i;
+
+	for (i = 0; i < RNP_NUM_TX_QUEUES; i++) {
+		ring = adapter->tx_ring[i];
+		head = ring_rd32(ring, RNP_DMA_REG_TX_DESC_BUF_HEAD),
+		tail = ring_rd32(ring, RNP_DMA_REG_TX_DESC_BUF_TAIL),
+		dev_info(dev, "\tTxq-%-3u (0x%08x)-head : (%4u),\t",
+			 ring->rnpgbe_queue_idx,
+			 RNPGBE_RING_BASE + RING_OFFSET(ring->rnpgbe_queue_idx) +
+			 RNP_DMA_REG_TX_DESC_BUF_HEAD, head);
+		dev_info(dev, "(0x%08x)-tail : (%4u),\t ntu  : (%4u),\t ntc  : (%4u),\t\n",
+			 RNPGBE_RING_BASE + RING_OFFSET(ring->rnpgbe_queue_idx) +
+			 RNP_DMA_REG_TX_DESC_BUF_TAIL,
+			 tail,
+			 ring->next_to_use,
+			 ring->next_to_clean);
+	}
+
+	for (i = 0; i < RNP_NUM_RX_QUEUES; i++) {
+		ring = adapter->rx_ring[i];
+		head = ring_rd32(ring, RNP_DMA_REG_RX_DESC_BUF_HEAD),
+		tail = ring_rd32(ring, RNP_DMA_REG_RX_DESC_BUF_TAIL),
+		dev_info(dev, "\tTxq-%-3u (0x%08x)-head : (%4u),\t",
+			 ring->rnpgbe_queue_idx,
+			 RNPGBE_RING_BASE + RING_OFFSET(ring->rnpgbe_queue_idx) +
+			 RNP_DMA_REG_RX_DESC_BUF_HEAD,
+			 head);
+
+		dev_info(dev, "(0x%08x)-tail : (%4u),\t ntu  : (%4u),\t ntc  : (%4u)\t\n",
+			 RNPGBE_RING_BASE + RING_OFFSET(ring->rnpgbe_queue_idx) +
+			 RNP_DMA_REG_RX_DESC_BUF_TAIL,
+			 tail,
+			 ring->next_to_use,
+			 ring->next_to_clean);
+	}
+}
+
+static const struct rnpgbe_debug_reg tx_debug_reg_eth[] = {
+	{"3to1(in from host)", RNPGBE_ETH_3TO1_HOST},
+	{"3to1(in from sw)", RNPGBE_ETH_3TO1_SW},
+	{"3to1(in from bmc)", RNPGBE_ETH_3TO1_BMC},
+	{"3to1(out all)", RNPGBE_ETH_3TO1_OUT},
+	{"out (multiple)", RNPGBE_ETH_OUT_MULTIPLE},
+	{"out (broadcast)", RNPGBE_ETH_OUT_BROADCAST},
+	{"out (ptp)", RNPGBE_ETH_OUT_PTP},
+	{"out (drop)", RNPGBE_ETH_OUT_DROP},
+	{"tx_trans", RNPGBE_ETH_TX_TRANS},
+	{"tx_trans_status_0", RNPGBE_ETH_TX_TRANS_STATUS_0},
+	{"tx_trans_status_1", RNPGBE_ETH_TX_TRANS_STATUS_1},
+	{"tx_trans_sop", RNPGBE_ETH_TX_TRANS_SOP},
+	{"tx_trans_eop", RNPGBE_ETH_TX_TRANS_EOP}
+};
+
+static const struct rnpgbe_debug_reg tx_debug_reg_mac[] = {
+	{"mac_status", 0}
+};
+
+static void rnpgbe_dump_tx_regs(struct rnpgbe_hw *hw)
+{
+	struct rnpgbe_eth_info *eth = &hw->eth;
+	struct rnpgbe_mac_info *mac = &hw->mac;
+	struct device *dev = &hw->pdev->dev;
+	u32 value;
+	int i;
+
+	/* eth */
+	for (i = 0; i < sizeof(tx_debug_reg_eth) / sizeof(struct rnpgbe_debug_reg); i++) {
+		value = eth_rd32(eth, tx_debug_reg_eth[i].offset);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 tx_debug_reg_eth[i].name,
+			 value, value);
+	}
+
+	/* mac */
+	for (i = 0; i < sizeof(tx_debug_reg_mac) / sizeof(struct rnpgbe_debug_reg); i++) {
+		value = mac_rd32(mac, tx_debug_reg_mac[i].offset);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 tx_debug_reg_mac[i].name,
+			 value, value);
+	}
+}
+
+static const struct rnpgbe_debug_reg rx_debug_reg_trans[] = {
+	{"pkts-in", RNPGBE_ETH_PKTS_IN},
+	{"pkts-out", RNPGBE_ETH_PKTS_OUT},
+	{"pkts-drop(fifo full or abnormal)", RNPGBE_ETH_PKTS_DRIP},
+	{"pkts-in(ethII)", RNPGBE_ETH_PKTS_IN_ETH2},
+	{"pkts-in(802.3)", RNPGBE_ETH_PKTS_IN_8023},
+	{"pkts-in(control)", RNPGBE_ETH_PKTS_IN_CONTROL},
+	{"pkts-in(udp)", RNPGBE_ETH_PKTS_IN_UDP},
+	{"pkts-in(tcp)", RNPGBE_ETH_PKTS_IN_TCP},
+	{"pkts-in(icmp)", RNPGBE_ETH_PKTS_IN_ICMP},
+	{"pkts-in(lcs_err)", RNPGBE_ETH_PKTS_IN_LCS_ERR},
+	{"pkts-in(len_err)", RNPGBE_ETH_PKTS_IN_LEN_ERR},
+	{"pkts-in(dmac_failed)", RNPGBE_ETH_PKTS_IN_DMAC_F},
+	{"pkts-in(smac_failed)", RNPGBE_ETH_PKTS_IN_SMAC_F},
+	{"pkts-in(slen_err)", RNPGBE_ETH_PKTS_IN_SLEN_ERR},
+	{"pkts-in(glen_err)", RNPGBE_ETH_PKTS_IN_GLEN_ERR},
+	{"pkts-in(iph_err)", RNPGBE_ETH_PKTS_IN_IPH_ERR},
+	{"pkts-in(payload_err)", RNPGBE_ETH_PKTS_IN_PAYLOAD_ERR},
+	{"pkts-in(ipv4)", RNPGBE_ETH_PKTS_IN_IPV4},
+	{"pkts-in(ipv6)", RNPGBE_ETH_PKTS_IN_IPV6},
+	{"pkts-in(cut_err)", RNPGBE_ETH_PKTS_IN_CUT_ERR},
+	{"pkts-in(except_bytes)", RNPGBE_ETH_PKTS_IN_EXCEPT_BYTES},
+	{"pkts-in(fcs_err)", RNPGBE_ETH_PKTS_IN_FCS_ERR},
+	{"pkts-in(mac_len_err)", RNPGBE_ETH_PKTS_IN_MAC_LEN_ERR}
+};
+
+static const struct rnpgbe_debug_reg rx_debug_reg_gather[] = {
+	{"pkts-in", RNPGBE_GATHER_PKTS_IN},
+	{"pkts-out", RNPGBE_GATHER_PKTS_OUT},
+	{"pkts-out(mutiplecast)", RNPGBE_GATHER_PKTS_OUT_MUL},
+	{"pkts-out(broadcast)", RNPGBE_GATHER_PKTS_OUT_BRO},
+	{"pkts(drop)", RNPGBE_GATHER_PKTS_IN_DROP},
+	{"pkts-in(mac_cut)", RNPGBE_GATHER_PKTS_IN_MAC_CUT},
+	{"pkts-in(mac_lcs_err)", RNPGBE_GATHER_PKTS_IN_MAC_LCS_ERR},
+	{"pkts-in(mac_len_err)", RNPGBE_GATHER_PKTS_IN_MAC_LEN_ERR},
+	{"pkts-in(mac_slen_err)", RNPGBE_GATHER_PKTS_IN_MAC_SLEN_ERR},
+	{"pkts-in(mac_glen_err)", RNPGBE_GATHER_PKTS_IN_MAC_GLEN_ERR},
+	{"pkts-in(mac_fcs_err)", RNPGBE_GATHER_PKTS_IN_MAC_FCS_ERR},
+	{"pkts-in(mac<64byts fcs_err)", RNPGBE_GATHER_PKTS_IN_SMALL_64},
+	{"pkts-in(mac>=64byts fcs_err)", RNPGBE_GATHER_PKTS_IN_LARGE_64}
+};
+
+static const struct rnpgbe_debug_reg rx_debug_reg_pip_parse[] = {
+	{"pkts-in", RNPGBE_PARSE_PKTS_IN},
+	{"pkts-out", RNPGBE_PARSE_PKTS_OUT},
+	{"pkts(arp request)", RNPGBE_PARSE_PKTS_ARP_REQUEST},
+	{"pkts(arp response)", RNPGBE_PARSE_PKTS_ARP_RESPONS},
+	{"pkts(icmp)", RNPGBE_PARSE_PKTS_ICMP},
+	{"pkts(udp)", RNPGBE_PARSE_PKTS_UDP},
+	{"pkts(tcp)", RNPGBE_PARSE_PKTS_TCP},
+	{"pkts(arp cut)", RNPGBE_PARSE_PKTS_ARP_CUT},
+	{"pkts(ND_CUT)", RNPGBE_PARSE_PKTS_ND_CUT},
+	{"pkts(sctp)", RNPGBE_PARSE_PKTS_SCTP},
+	{"pkts(tcp syn)", RNPGBE_PARSE_PKTS_TCP_SYN},
+	{"pkts(fragment)", RNPGBE_PARSE_PKTS_FRAGMENT},
+	{"pkts(1 vlan)", RNPGBE_PARSE_PKTS_1_VLAN},
+	{"pkts(2 vlans)", RNPGBE_PARSE_PKTS_2_VLANS},
+	{"pkts(ipv4)", RNPGBE_PARSE_PKTS_IPV4},
+	{"pkts(ipv6)", RNPGBE_PARSE_PKTS_IPV6},
+	{"pkts(ip hdr err)", RNPGBE_PARSE_PKTS_IP_HDR_ERR},
+	{"pkts(ip pkt err)", RNPGBE_PARSE_PKTS_IP_PKT_ERR},
+	{"pkts(l3 hdr chk err)", RNPGBE_PARSE_PKTS_L3_HDR_CHK_ERR},
+	{"pkts(l4 hdr chk err)", RNPGBE_PARSE_PKTS_L4_HDR_CHK_ERR},
+	{"pkts(sctp hdr chk err)", RNPGBE_PARSE_PKTS_SCTP_HDR_CHK_ERR},
+	{"pkts(vlan err)", RNPGBE_PARSE_PKTS_VLAN_ERR},
+	{"pkts(rdma)", RNPGBE_PARSE_PKTS_RDMA},
+	{"pkts(arp auto response)", RNPGBE_PARSE_PKTS_ARP_AUTO_RESP},
+	{"pkts(icmpv6)", RNPGBE_PARSE_PKTS_ICMPV6},
+	{"pkts(ipv6 extend)", RNPGBE_PARSE_PKTS_IPV6_EXTEND},
+	{"pkts(802.3)", RNPGBE_PARSE_PKTS_8023},
+	{"pkts(except short)", RNPGBE_PARSE_PKTS_EXCEPT_SHORT},
+	{"pkts(ptp)", RNPGBE_PARSE_PKTS_PTP},
+	{"pkts(NS req)", RNPGBE_PARSE_PKTS_NS_REQ},
+	{"pkts(NS_NA auto res)", RNPGBE_PARSE_PKTS_NS_NA_AUTO_RES}
+};
+
+static const struct rnpgbe_debug_reg rx_debug_reg_pip_decap[] = {
+	{"pkts-in(all)", 0x82d0},
+	{"pkts-out(all)", 0x82d4},
+	{"pkts-out(host)", 0x82d8},
+	{"pkts-out(bmc)", 0x82dc},
+	{"pkts-out(switch)", 0x82e0},
+	{"pkts-out(bmc+host)", 0x82e4},
+	{"pkts(drop invalid)", 0x82e8},
+	{"pkts(drop filter)", 0x82ec},
+	{"pkts(drop host Insufficient perf)", 0x82f0},
+	{"pkts(drop bmc Insufficient perf)", 0x82f4},
+	{"pkts(drop switch Insufficient perf)", 0x82f8},
+	{"pkts(rm vlan)", 0x82fc}
+};
+
+static const struct rnpgbe_debug_reg_bits regs_debug[] = {
+	{0x3fff, 0x8448,
+		{"gat_fifo_progfull", "gat_info_fifo_progfull",
+		 "parse_fifo_progfull", "parse_info_fifo_progfull",
+		 "res", "cov_fifo_progfull", "host_fifo_progfull",
+		 "host_info_fifo_progfull", "sw_fifo_progfull",
+		 "sw_info_fifo_progfull", "bmc_fifo_progfull",
+		 "bmc_info_fifo_progfull", "mac_rxdatafifo_progfull",
+		 "mac_rxinfo_fifo_progfull", " ", " ", " ", " ",
+		 " ", " ", " ", " ", " ", " ", " ", " ",
+		 " ", " ", " ", " ", " ", " "
+		},
+	},
+
+	{0x3c2f, 0x844c,
+		{"gat_fifo_full", "gat_info_fifo_full",
+		 "parse_fifo_full", "parse_info_fifo_full",
+		 " ", "cov_fifo_progfull", " ",
+		 " ", " ",
+		 " ", "bmc_fifo_full",
+		 "bmc_info_fifo_full", "mac_rxdatafifo_full",
+		 "mac_rxinfo_fifo_full", " ", " ", " ", " ",
+		 " ", " ", " ", " ", " ", " ", " ", " ",
+		 " ", " ", " ", " ", " ", " "
+		},
+	}
+};
+
+static void rnpgbe_dump_rx_regs(struct rnpgbe_hw *hw)
+{
+	struct rnpgbe_eth_info *eth = &hw->eth;
+	struct device *dev = &hw->pdev->dev;
+	u32 value;
+	int i;
+
+	/* rx trans */
+	dev_info(dev, "\trx trans module:\n");
+	for (i = 0; i < sizeof(rx_debug_reg_trans) / sizeof(struct rnpgbe_debug_reg); i++) {
+		value = eth_rd32(eth, rx_debug_reg_trans[i].offset);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 rx_debug_reg_trans[i].name,
+			 value, value);
+	}
+
+	dev_info(dev, "\temac gather module:\n");
+	for (i = 0; i < sizeof(rx_debug_reg_gather) / sizeof(struct rnpgbe_debug_reg); i++) {
+		value = eth_rd32(eth, rx_debug_reg_gather[i].offset);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 rx_debug_reg_gather[i].name,
+			 value, value);
+	}
+
+	/* pip parse */
+	dev_info(dev, "\tpip parse module:\n");
+	for (i = 0; i < sizeof(rx_debug_reg_pip_parse) / sizeof(struct rnpgbe_debug_reg); i++) {
+		value = eth_rd32(eth, rx_debug_reg_pip_parse[i].offset);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 rx_debug_reg_pip_parse[i].name,
+			 value, value);
+	}
+	/* pip decap */
+	dev_info(dev, "\tpip decap module:\n");
+	for (i = 0; i < sizeof(rx_debug_reg_pip_decap) / sizeof(struct rnpgbe_debug_reg); i++) {
+		value = eth_rd32(eth, rx_debug_reg_pip_decap[i].offset);
+		dev_info(dev, "\t%s \t:0x%08x(%4u)",
+			 rx_debug_reg_pip_decap[i].name,
+			 value, value);
+	}
+
+	dev_info(dev, "\tdebug reg:\n");
+	for (i = 0; i < sizeof(regs_debug) / sizeof(struct rnpgbe_debug_reg_bits); i++) {
+		int j;
+
+		value = eth_rd32(eth, regs_debug[i].offset);
+		/* for each bits */
+		for (j = 0; j < 32; j++) {
+			/* only check flags set value */
+			if ((value & regs_debug[i].flags) & (1 << j)) {
+				dev_info(dev,
+					 "\t%s detected\n", regs_debug[i].name[j]);
+			}
+		}
+	}
+	dev_info(dev, "\tend\n");
+}
+
+static void rnpgbe_dump_gephy(struct rnpgbe_hw *hw)
+{
+	struct device *dev = &hw->pdev->dev;
+	u16 page = 0;
+	u32 reg = 0;
+	u16 value;
+
+	for (page = 0; page < 0x12; page++) {
+		/* write page */
+		hw->ops.phy_write_reg(hw, 0x1f, 0, page);
+
+		for (reg = 0; reg < 31; reg++) {
+			hw->ops.phy_read_reg(hw, reg, 0, &value);
+			dev_info(dev, "page %02d reg 0x%02x:0x%04x\n", page, reg, value);
+		}
+	}
+	hw->ops.phy_write_reg(hw, 0x1f, 0, 0);
+}
+
+static int rnpgbe_dump_debug_regs_hw_ops(struct rnpgbe_hw *hw,
+					 char *cmd)
+{
+	int ret = -1;
+
+	if (!strncmp(cmd, "ring", 4)) {
+		rnpgbe_dump_rings_regs(hw);
+		ret = 0;
+	} else if (!strncmp(cmd, "tx", 2)) {
+		rnpgbe_dump_tx_regs(hw);
+		ret = 0;
+	} else if (!strncmp(cmd, "rx", 2)) {
+		rnpgbe_dump_rx_regs(hw);
+		ret = 0;
+	} else if (!strncmp(cmd, "gephy", 5)) {
+		rnpgbe_dump_gephy(hw);
+		ret = 0;
+	}
+	return ret;
+}
+
+static void rnpgbe_set_lldp_hw_ops(struct rnpgbe_hw *hw, bool enable)
 {
 	rnpgbe_mbx_lldp_set(hw, enable);
 }
 
-static void rnpgbe_get_lldp_hw_ops_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_get_lldp_hw_ops(struct rnpgbe_hw *hw)
 {
 }
 
-static void rnpgbe_set_eee_timer_hw_ops_n500(struct rnpgbe_hw *hw,
-					     int ls, int tw)
+static void rnpgbe_set_eee_timer_hw_ops(struct rnpgbe_hw *hw,
+					int ls, int tw)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
 	mac->ops.set_eee_timer(mac, ls, tw);
 }
 
-static void rnpgbe_set_vf_vlan_mode_hw_ops_n500(struct rnpgbe_hw *hw,
-						u16 vlan, int vf,
-						bool enable)
+static void rnpgbe_set_vf_vlan_mode_hw_ops(struct rnpgbe_hw *hw,
+					   u16 vlan, int vf,
+					   bool enable)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
@@ -2112,9 +2428,9 @@ static void rnpgbe_set_vf_vlan_mode_hw_ops_n500(struct rnpgbe_hw *hw,
 		eth->ops.set_vf_vlan_mode(eth, vlan, vf, enable);
 }
 
-static void rnpgbe_driver_status_hw_ops_n500(struct rnpgbe_hw *hw,
-					     bool enable,
-					     int mode)
+static void rnpgbe_driver_status_hw_ops(struct rnpgbe_hw *hw,
+					bool enable,
+					int mode)
 {
 	switch (mode) {
 	case rnpgbe_driver_insmod:
@@ -2123,23 +2439,23 @@ static void rnpgbe_driver_status_hw_ops_n500(struct rnpgbe_hw *hw,
 	case rnpgbe_driver_suspuse:
 		rnpgbe_mbx_ifsuspuse(hw, enable);
 		break;
-	case rnpgbe_driver_force_control_mac:
+	case rnpgbe_driver_force_control_phy:
 		rnpgbe_mbx_ifforce_control_mac(hw, enable);
 
 		break;
 	}
 }
 
-static void rnpgbe_set_tuple5_hw_ops_n500(struct rnpgbe_hw *hw,
-					  union rnpgbe_atr_input *input,
-					  u16 pri_id, u8 queue, bool prio_flag)
+static void rnpgbe_set_tuple5_hw_ops(struct rnpgbe_hw *hw,
+				     union rnpgbe_atr_input *input,
+				     u16 pri_id, u8 queue, bool prio_flag)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	eth->ops.set_tuple5_remapping(eth, input, pri_id, queue, prio_flag);
 }
 
-static void rnpgbe_clr_tuple5_hw_ops_n500(struct rnpgbe_hw *hw, u16 pri_id)
+static void rnpgbe_clr_tuple5_hw_ops(struct rnpgbe_hw *hw, u16 pri_id)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 
@@ -2147,76 +2463,92 @@ static void rnpgbe_clr_tuple5_hw_ops_n500(struct rnpgbe_hw *hw, u16 pri_id)
 }
 
 static void
-rnpgbe_update_hw_status_hw_ops_n500(struct rnpgbe_hw *hw,
-				    struct rnpgbe_hw_stats *hw_stats,
-				    struct net_device_stats *net_stats)
+rnpgbe_update_hw_status_hw_ops(struct rnpgbe_hw *hw,
+			       struct rnpgbe_hw_stats *hw_stats,
+			       struct net_device_stats *net_stats)
 {
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_mac_info *mac = &hw->mac;
+	u64 mac_rx_broadcast = 0;
+	u64 mac_rx_multicast = 0;
+	u64 rx_over_errors = 0;
 	int i;
 
-	net_stats->rx_errors += eth_rd32(eth, RNP500_RX_MAC_GFCS_ERR_NUM) +
-				eth_rd32(eth, RNP500_RX_MAC_LEN_ERR_NUM) +
-				eth_rd32(eth, RNP500_RX_MAC_SFCS_ERR_NUM) +
-				eth_rd32(eth, RNP500_RX_MAC_GLEN_ERR_NUM) +
-				eth_rd32(eth, RNP500_RX_MAC_SLEN_ERR_NUM);
+	net_stats->rx_length_errors = eth_rd32(eth, RNPGBE_RXTRANS_LEN_ERR_NUM) +
+				      eth_rd32(eth, RNPGBE_RXTRANS_SLEN_ERR_NUM) +
+				      eth_rd32(eth, RNPGBE_RXTRANS_GLEN_ERR_NUM);
 
-	net_stats->collisions = eth_rd32(eth, RNP500_RX_MAC_LCS_ERR_NUM);
-	net_stats->rx_over_errors = eth_rd32(eth, RNP500_RX_MAC_CUT_NUM);
-	net_stats->rx_crc_errors = eth_rd32(eth, RNP500_RX_MAC_GFCS_ERR_NUM);
+	net_stats->rx_crc_errors = eth_rd32(eth, RNPGBE_RXTRANS_FCS_ERR_NUM);
+	net_stats->rx_frame_errors = eth_rd32(eth, RNPGBE_RXTRANS_LCS_ERR_NUM);
+	net_stats->rx_fifo_errors = eth_rd32(eth, RNPGBE_RXTRANS_DROP);
+	net_stats->rx_missed_errors = net_stats->rx_fifo_errors +
+				      eth_rd32(eth, RNPGBE_RXTRANS_CUT_ERR_PKTS) +
+				      eth_rd32(eth, RNPGBE_RXTRANS_EXCEPT_NUM);
+
+	net_stats->collisions = eth_rd32(eth, RNPGBE_RX_MAC_LCS_ERR_NUM);
 
 	hw_stats->invalid_droped_packets =
-		eth_rd32(eth, RNP500_RX_DROP_PKT_NUM);
-	hw_stats->rx_capabity_lost = eth_rd32(eth, RNP500_RXTRANS_DROP) +
-				     eth_rd32(eth, RNP500_RXTRANS_CUT_ERR_PKTS);
+		eth_rd32(eth, RNPGBE_RX_DROP_PKT_NUM);
+	hw_stats->rx_capabity_lost = eth_rd32(eth, RNPGBE_RXTRANS_DROP) +
+				     eth_rd32(eth, RNPGBE_RXTRANS_CUT_ERR_PKTS);
 	hw_stats->filter_dropped_packets =
-		eth_rd32(eth, RNP500_DECAP_PKT_DROP1_NUM);
+		eth_rd32(eth, RNPGBE_DECAP_PKT_DROP1_NUM);
 	hw_stats->host_l2_match_drop =
-		eth_rd32(eth, RNP500_ETH_HOST_L2_DROP_PKTS);
+		eth_rd32(eth, RNPGBE_ETH_HOST_L2_DROP_PKTS);
 	hw_stats->redir_input_match_drop =
-		eth_rd32(eth, RNP500_ETH_REDIR_INPUT_MATCH_DROP_PKTS);
+		eth_rd32(eth, RNPGBE_ETH_REDIR_INPUT_MATCH_DROP_PKTS);
 	hw_stats->redir_etype_match_drop =
-		eth_rd32(eth, RNP500_ETH_ETYPE_DROP_PKTS);
+		eth_rd32(eth, RNPGBE_ETH_ETYPE_DROP_PKTS);
 	hw_stats->redir_tcp_syn_match_drop =
-		eth_rd32(eth, RNP500_ETH_TCP_SYN_DROP_PKTS);
+		eth_rd32(eth, RNPGBE_ETH_TCP_SYN_DROP_PKTS);
 	hw_stats->redir_tuple5_match_drop =
-		eth_rd32(eth, RNP500_ETH_REDIR_TUPLE5_DROP_PKTS);
+		eth_rd32(eth, RNPGBE_ETH_REDIR_TUPLE5_DROP_PKTS);
 
-	hw_stats->tx_multicast = eth_rd32(eth, RNP500_TX_MULTI_NUM);
-	hw_stats->tx_broadcast = eth_rd32(eth, RNP500_TX_BROADCAST_NUM);
-
-	hw_stats->mac_rx_broadcast = 0;
-	hw_stats->mac_rx_multicast = 0;
+	hw_stats->tx_multicast = eth_rd32(eth, RNPGBE_TX_MULTI_NUM);
+	hw_stats->tx_broadcast = eth_rd32(eth, RNPGBE_TX_BROADCAST_NUM);
 
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct rnpgbe_ring *tx_ring = adapter->tx_ring[i];
 		int idx = tx_ring->rnpgbe_queue_idx;
 
+		rx_over_errors += dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(idx));
 		/* we should use the true idex */
-		hw_stats->mac_rx_multicast +=
-			dma_rd32(dma, RNP500_VEB_VFMPRC(idx));
-		hw_stats->mac_rx_broadcast +=
-			dma_rd32(dma, RNP500_VEB_VFBPRC(idx));
+		mac_rx_multicast += dma_rd32(dma, RNPGBE_VEB_VFMPRC(idx));
+		mac_rx_broadcast += dma_rd32(dma, RNPGBE_VEB_VFBPRC(idx));
 	}
-	hw_stats->dma_rx_drop_cnt_0 = dma_rd32(dma, RNP500_RX_TIMEOUT_DROP(0));
-	hw_stats->dma_rx_drop_cnt_1 = dma_rd32(dma, RNP500_RX_TIMEOUT_DROP(1));
-	hw_stats->dma_rx_drop_cnt_2 = dma_rd32(dma, RNP500_RX_TIMEOUT_DROP(2));
-	hw_stats->dma_rx_drop_cnt_3 = dma_rd32(dma, RNP500_RX_TIMEOUT_DROP(3));
-	hw_stats->dma_rx_drop_cnt_4 = dma_rd32(dma, RNP500_RX_TIMEOUT_DROP(4));
-	hw_stats->dma_rx_drop_cnt_5 = dma_rd32(dma, RNP500_RX_TIMEOUT_DROP(5));
-	hw_stats->dma_rx_drop_cnt_6 = dma_rd32(dma, RNP500_RX_TIMEOUT_DROP(6));
-	hw_stats->dma_rx_drop_cnt_7 = dma_rd32(dma, RNP500_RX_TIMEOUT_DROP(7));
+
+	hw_stats->mac_rx_broadcast = mac_rx_broadcast;
+	hw_stats->mac_rx_multicast = mac_rx_multicast;
+
+	net_stats->rx_over_errors = rx_over_errors;
+	net_stats->rx_errors = net_stats->rx_length_errors +
+			       net_stats->rx_over_errors +
+			       net_stats->rx_crc_errors +
+			       net_stats->rx_frame_errors +
+			       net_stats->rx_fifo_errors +
+			       net_stats->rx_missed_errors;
+
+	hw_stats->dma_rx_drop_cnt_0 = dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(0));
+	hw_stats->dma_rx_drop_cnt_1 = dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(1));
+	hw_stats->dma_rx_drop_cnt_2 = dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(2));
+	hw_stats->dma_rx_drop_cnt_3 = dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(3));
+	hw_stats->dma_rx_drop_cnt_4 = dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(4));
+	hw_stats->dma_rx_drop_cnt_5 = dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(5));
+	hw_stats->dma_rx_drop_cnt_6 = dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(6));
+	hw_stats->dma_rx_drop_cnt_7 = dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(7));
 
 	net_stats->multicast = hw_stats->mac_rx_multicast;
 
 	hw_stats->ultra_short_cnt +=
 		mac_rd32(mac, GMAC_MANAGEMENT_RX_UNDERSIZE);
-	hw_stats->jumbo_cnt += mac_rd32(mac, RNP500_MAC_GLEN_ERR_NUM);
+	hw_stats->jumbo_cnt += mac_rd32(mac, RNPGBE_MAC_GLEN_ERR_NUM);
+	hw_stats->tx_pause += mac_rd32(mac, GMAC_MANAGEMENT_TX_PAUSE);
+	hw_stats->rx_pause += mac_rd32(mac, GMAC_MANAGEMENT_RX_PAUSE);
 }
 
-const struct rnpgbe_stats rnp500_gstrings_net_stats[] = {
+static const struct rnpgbe_stats rnpgbe_gstrings_net_stats[] = {
 	RNP_NETDEV_STAT(rx_packets),
 	RNP_NETDEV_STAT(tx_packets),
 	RNP_NETDEV_STAT(rx_bytes),
@@ -2238,8 +2570,8 @@ const struct rnpgbe_stats rnp500_gstrings_net_stats[] = {
 	RNP_NETDEV_STAT(tx_heartbeat_errors),
 };
 
-#define RNP500_GLOBAL_STATS_LEN ARRAY_SIZE(rnp500_gstrings_net_stats)
-static struct rnpgbe_stats rnp500_hwstrings_stats[] = {
+#define RNPGBE_GLOBAL_STATS_LEN ARRAY_SIZE(rnpgbe_gstrings_net_stats)
+static struct rnpgbe_stats rnpgbe_hwstrings_stats[] = {
 	RNP_HW_STAT("vlan_add_cnt", hw_stats.vlan_add_cnt),
 	RNP_HW_STAT("vlan_strip_cnt", hw_stats.vlan_strip_cnt),
 	/* === drop== */
@@ -2261,23 +2593,25 @@ static struct rnpgbe_stats rnp500_hwstrings_stats[] = {
 	RNP_HW_STAT("rx_multicast_count", hw_stats.mac_rx_multicast),
 	RNP_HW_STAT("ultra_short_packets", hw_stats.ultra_short_cnt),
 	RNP_HW_STAT("jumbo_packets", hw_stats.jumbo_cnt),
+	RNP_HW_STAT("mac_rx_pause_count", hw_stats.rx_pause),
+	RNP_HW_STAT("mac_tx_pause_count", hw_stats.tx_pause),
 };
 
-#define RNP500_HWSTRINGS_STATS_LEN ARRAY_SIZE(rnp500_hwstrings_stats)
+#define RNPGBE_HWSTRINGS_STATS_LEN ARRAY_SIZE(rnpgbe_hwstrings_stats)
 
-#define RNP500_STATS_LEN                                                       \
-	(RNP500_GLOBAL_STATS_LEN + RNP500_HWSTRINGS_STATS_LEN +                \
+#define RNPGBE_STATS_LEN                                                       \
+	(RNPGBE_GLOBAL_STATS_LEN + RNPGBE_HWSTRINGS_STATS_LEN +                \
 	 RNP_QUEUE_STATS_LEN)
 
-static const char rnp500_gstrings_test[][ETH_GSTRING_LEN] = {
+static const char rnpgbe_gstrings_test[][ETH_GSTRING_LEN] = {
 	"Register test  (offline)", "Eeprom test    (offline)",
 	"Interrupt test (offline)", "Loopback test  (offline)",
 	"Link test   (on/offline)"
 };
 
-#define RNP500_TEST_LEN (sizeof(rnp500_gstrings_test) / ETH_GSTRING_LEN)
+#define RNPGBE_TEST_LEN (sizeof(rnpgbe_gstrings_test) / ETH_GSTRING_LEN)
 
-static int rnp500_get_link_ksettings(struct net_device *netdev,
+static int rnpgbe_get_link_ksettings(struct net_device *netdev,
 				     struct ethtool_link_ksettings *cmd)
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
@@ -2311,7 +2645,7 @@ static int rnp500_get_link_ksettings(struct net_device *netdev,
 			ethtool_link_ksettings_add_link_mode(cmd, supported,
 							     10baseT_Half);
 
-		if (autoneg) {
+		if (autoneg && !hw->fake_autoneg) {
 			if (advertised_link & RNP_LINK_SPEED_1GB_FULL)
 				ethtool_link_ksettings_add_link_mode(cmd,
 					advertising, 1000baseT_Full);
@@ -2333,7 +2667,8 @@ static int rnp500_get_link_ksettings(struct net_device *netdev,
 		}
 
 		ethtool_link_ksettings_add_link_mode(cmd, supported, TP);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, TP);
+		if (!hw->fake_autoneg)
+			ethtool_link_ksettings_add_link_mode(cmd, advertising, TP);
 
 		cmd->base.port = PORT_TP;
 		cmd->base.phy_address = adapter->phy_addr;
@@ -2346,12 +2681,12 @@ static int rnp500_get_link_ksettings(struct net_device *netdev,
 	} else {
 		if (supported_link & RNP_LINK_SPEED_1GB_FULL) {
 			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     1000baseT_Full);
+							     1000baseKX_Full);
 		}
 
 		if (advertised_link & RNP_LINK_SPEED_1GB_FULL)
 			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     1000baseT_Full);
+							     1000baseKX_Full);
 		ethtool_link_ksettings_add_link_mode(cmd, supported, FIBRE);
 		ethtool_link_ksettings_add_link_mode(cmd, advertising, FIBRE);
 
@@ -2360,12 +2695,15 @@ static int rnp500_get_link_ksettings(struct net_device *netdev,
 
 	ethtool_link_ksettings_add_link_mode(cmd, supported, Autoneg);
 
-	if (autoneg) {
+	if (autoneg && !hw->fake_autoneg) {
 		ethtool_link_ksettings_add_link_mode(cmd, advertising, Autoneg);
 		cmd->base.autoneg = AUTONEG_ENABLE;
 	} else {
 		cmd->base.autoneg = AUTONEG_DISABLE;
 	}
+
+	if (hw->fake_autoneg)
+		cmd->base.autoneg = AUTONEG_DISABLE;
 
 	ethtool_link_ksettings_add_link_mode(cmd, supported, Pause);
 	ethtool_link_ksettings_add_link_mode(cmd, supported, Asym_Pause);
@@ -2402,7 +2740,7 @@ static int rnp500_get_link_ksettings(struct net_device *netdev,
 	return 0;
 }
 
-static int rnp500_set_link_ksettings(struct net_device *netdev,
+static int rnpgbe_set_link_ksettings(struct net_device *netdev,
 				     const struct ethtool_link_ksettings *cmd)
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
@@ -2419,17 +2757,20 @@ static int rnp500_set_link_ksettings(struct net_device *netdev,
 
 		/* only allow one speed at a time if no  */
 		if (!cmd->base.autoneg) {
-			if (cmd->base.speed == SPEED_1000)
-				return -EINVAL;
-			/* maybe user set other speed than 100 or 10 */
-			if (cmd->base.speed != SPEED_100 &&
+			if (cmd->base.speed != SPEED_1000 &&
+			    cmd->base.speed != SPEED_100 &&
 			    cmd->base.speed != SPEED_10)
 				return -EINVAL;
 
 			autoneg = 0;
 			speed = cmd->base.speed;
 			duplex = cmd->base.duplex;
+			if (cmd->base.speed == SPEED_1000) {
+				autoneg = 1;
+				hw->fake_autoneg = 1;
+			}
 		} else {
+			hw->fake_autoneg = 1;
 			autoneg = 1;
 		}
 
@@ -2468,6 +2809,10 @@ static int rnp500_set_link_ksettings(struct net_device *netdev,
 							  10baseT_Half))
 			advertised |= RNP_LINK_SPEED_10_HALF;
 
+		/* if fake autoneg, adv 1G */
+		if (hw->fake_autoneg)
+			advertised |= RNP_LINK_SPEED_1GB_FULL;
+
 		/* if autoneg on, adv can not set 0 */
 		if (!advertised && (autoneg))
 			return -EINVAL;
@@ -2487,20 +2832,25 @@ static int rnp500_set_link_ksettings(struct net_device *netdev,
 		}
 		clear_bit(__RNP_IN_SFP_INIT, &adapter->state);
 	} else {
+		/* if not sgmii, we not support close autoneg */
+		if (!cmd->base.autoneg && !hw->is_sgmii)
+			return -EINVAL;
 		if (cmd->base.duplex == DUPLEX_HALF)
+			return -EINVAL;
+		if (cmd->base.speed != SPEED_1000)
 			return -EINVAL;
 	}
 
 	return err;
 }
 
-static int rnp500_get_regs_len(struct net_device *netdev)
+static int rnpgbe_get_regs_len(struct net_device *netdev)
 {
-#define RNP500_REGS_LEN 1
-	return RNP500_REGS_LEN * sizeof(u32);
+#define RNPGBE_REGS_LEN 1
+	return RNPGBE_REGS_LEN * sizeof(u32);
 }
 
-static void rnp500_get_drvinfo(struct net_device *netdev,
+static void rnpgbe_get_drvinfo(struct net_device *netdev,
 			       struct ethtool_drvinfo *drvinfo)
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
@@ -2511,27 +2861,25 @@ static void rnp500_get_drvinfo(struct net_device *netdev,
 		sizeof(drvinfo->version));
 
 	snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version),
-		 "%d.%d.%d.%d 0x%08x", ((char *)&hw->fw_version)[3],
-		 ((char *)&hw->fw_version)[2], ((char *)&hw->fw_version)[1],
-		 ((char *)&hw->fw_version)[0],
-		 hw->bd_uid | (hw->sfc_boot ? 0x80000000 : 0) |
-			 (hw->pxe_en ? 0x40000000 : 0) |
-			 (hw->ncsi_en ? 0x20000000 : 0));
+		 "%d.%d.%d.%d", ((unsigned char *)&hw->fw_version)[3],
+		 ((unsigned char *)&hw->fw_version)[2],
+		 ((unsigned char *)&hw->fw_version)[1],
+		 ((unsigned char *)&hw->fw_version)[0]);
 
 	strscpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
-	drvinfo->n_stats = RNP500_STATS_LEN;
-	drvinfo->testinfo_len = RNP500_TEST_LEN;
-	drvinfo->regdump_len = rnp500_get_regs_len(netdev);
-	drvinfo->n_priv_flags = RNP500_PRIV_FLAGS_STR_LEN;
+	drvinfo->n_stats = RNPGBE_STATS_LEN;
+	drvinfo->testinfo_len = RNPGBE_TEST_LEN;
+	drvinfo->regdump_len = rnpgbe_get_regs_len(netdev);
+	drvinfo->n_priv_flags = RNPGBE_PRIV_FLAGS_STR_LEN;
 }
 
-static int rnp500_get_eeprom_len(struct net_device *netdev)
+static int rnpgbe_get_eeprom_len(struct net_device *netdev)
 {
 	return 0;
 }
 
-static int rnp500_get_eeprom(struct net_device *netdev,
+static int rnpgbe_get_eeprom(struct net_device *netdev,
 			     struct ethtool_eeprom *eeprom, u8 *bytes)
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
@@ -2565,13 +2913,13 @@ static int rnp500_get_eeprom(struct net_device *netdev,
 	return 0;
 }
 
-static int rnp500_set_eeprom(struct net_device *netdev,
+static int rnpgbe_set_eeprom(struct net_device *netdev,
 			     struct ethtool_eeprom *eeprom, u8 *bytes)
 {
 	return 0;
 }
 
-static void rnp500_get_pauseparam(struct net_device *netdev,
+static void rnpgbe_get_pauseparam(struct net_device *netdev,
 				  struct ethtool_pauseparam *pause)
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
@@ -2595,7 +2943,7 @@ static void rnp500_get_pauseparam(struct net_device *netdev,
 	}
 }
 
-static int rnp500_set_pauseparam(struct net_device *netdev,
+static int rnpgbe_set_pauseparam(struct net_device *netdev,
 				 struct ethtool_pauseparam *pause)
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
@@ -2624,7 +2972,7 @@ static int rnp500_set_pauseparam(struct net_device *netdev,
 	return 0;
 }
 
-static void rnp500_get_regs(struct net_device *netdev,
+static void rnpgbe_get_regs(struct net_device *netdev,
 			    struct ethtool_regs *regs, void *p)
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
@@ -2632,13 +2980,23 @@ static void rnp500_get_regs(struct net_device *netdev,
 	u32 *regs_buff = p;
 	int i;
 
-	memset(p, 0, RNP500_REGS_LEN * sizeof(u32));
+	memset(p, 0, RNPGBE_REGS_LEN * sizeof(u32));
 
-	for (i = 0; i < RNP500_REGS_LEN; i++)
-		regs_buff[i] = rd32(hw, i * 4);
+	for (i = 0; i < RNPGBE_REGS_LEN; i++)
+		regs_buff[i] = hw_rd32(hw, i * 4);
 }
 
-static void rnp500_get_strings(struct net_device *netdev, u32 stringset,
+static int rnpgbe_nway_reset(struct net_device *netdev)
+{
+	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
+
+	if (netif_running(netdev))
+		rnpgbe_reinit_locked(adapter);
+
+	return 0;
+}
+
+static void rnpgbe_get_strings(struct net_device *netdev, u32 stringset,
 			       u8 *data)
 {
 	char *p = (char *)data;
@@ -2646,19 +3004,19 @@ static void rnp500_get_strings(struct net_device *netdev, u32 stringset,
 
 	switch (stringset) {
 	case ETH_SS_TEST:
-		for (i = 0; i < RNP500_TEST_LEN; i++) {
-			memcpy(data, rnp500_gstrings_test[i], ETH_GSTRING_LEN);
+		for (i = 0; i < RNPGBE_TEST_LEN; i++) {
+			memcpy(data, rnpgbe_gstrings_test[i], ETH_GSTRING_LEN);
 			data += ETH_GSTRING_LEN;
 		}
 		break;
 	case ETH_SS_STATS:
-		for (i = 0; i < RNP500_GLOBAL_STATS_LEN; i++) {
-			memcpy(p, rnp500_gstrings_net_stats[i].stat_string,
+		for (i = 0; i < RNPGBE_GLOBAL_STATS_LEN; i++) {
+			memcpy(p, rnpgbe_gstrings_net_stats[i].stat_string,
 			       ETH_GSTRING_LEN);
 			p += ETH_GSTRING_LEN;
 		}
-		for (i = 0; i < RNP500_HWSTRINGS_STATS_LEN; i++) {
-			memcpy(p, rnp500_hwstrings_stats[i].stat_string,
+		for (i = 0; i < RNPGBE_HWSTRINGS_STATS_LEN; i++) {
+			memcpy(p, rnpgbe_hwstrings_stats[i].stat_string,
 			       ETH_GSTRING_LEN);
 			p += ETH_GSTRING_LEN;
 		}
@@ -2762,79 +3120,79 @@ static void rnp500_get_strings(struct net_device *netdev, u32 stringset,
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_rx_clean_count", i);
 			p += ETH_GSTRING_LEN;
+			sprintf(p, "queue%u_rx_resync", i);
+			p += ETH_GSTRING_LEN;
 		}
 
 		break;
 	case ETH_SS_PRIV_FLAGS:
-		memcpy(data, rnp500_priv_flags_strings,
-		       RNP500_PRIV_FLAGS_STR_LEN * ETH_GSTRING_LEN);
+		memcpy(data, rnpgbe_priv_flags_strings,
+		       RNPGBE_PRIV_FLAGS_STR_LEN * ETH_GSTRING_LEN);
 		break;
 	}
 }
 
-static int rnp500_get_sset_count(struct net_device *netdev, int sset)
+static int rnpgbe_get_sset_count(struct net_device *netdev, int sset)
 {
 	switch (sset) {
 	case ETH_SS_TEST:
-		return RNP500_TEST_LEN;
+		return RNPGBE_TEST_LEN;
 	case ETH_SS_STATS:
-		return RNP500_STATS_LEN;
+		return RNPGBE_STATS_LEN;
 	case ETH_SS_PRIV_FLAGS:
-		return RNP500_PRIV_FLAGS_STR_LEN;
+		return RNPGBE_PRIV_FLAGS_STR_LEN;
 	default:
 		return -EOPNOTSUPP;
 	}
 }
 
-static u32 rnp500_get_priv_flags(struct net_device *netdev)
+static u32 rnpgbe_get_priv_flags(struct net_device *netdev)
 {
 	struct rnpgbe_adapter *adapter =
 		(struct rnpgbe_adapter *)netdev_priv(netdev);
 	u32 priv_flags = 0;
 
-	if (adapter->priv_flags & RNP_PRIV_FLAG_MAC_LOOPBACK)
-		priv_flags |= RNP500_MAC_LOOPBACK;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_PADDING_DEBUG)
-		priv_flags |= RNP500_PADDING_DEBUG;
+		priv_flags |= RNPGBE_PADDING_DEBUG;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_SIMUATE_DOWN)
-		priv_flags |= RNP500_SIMULATE_DOWN;
+		priv_flags |= RNPGBE_SIMULATE_DOWN;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_ULTRA_SHORT)
-		priv_flags |= RNP500_ULTRA_SHORT;
+		priv_flags |= RNPGBE_ULTRA_SHORT;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_DOUBLE_VLAN)
-		priv_flags |= RNP500_DOUBLE_VLAN;
+		priv_flags |= RNPGBE_DOUBLE_VLAN;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_PAUSE_OWN)
-		priv_flags |= RNP500_PAUSE_OWN;
+		priv_flags |= RNPGBE_PAUSE_OWN;
 	if (adapter->flags2 & RNP_FLAG2_VLAN_STAGS_ENABLED)
-		priv_flags |= RNP500_STAGS_ENABLE;
+		priv_flags |= RNPGBE_STAGS_ENABLE;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_JUMBO)
-		priv_flags |= RNP500_JUMBO_ENABLE;
+		priv_flags |= RNPGBE_JUMBO_ENABLE;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_TX_PADDING)
-		priv_flags |= RNP500_TX_PADDING;
+		priv_flags |= RNPGBE_TX_PADDING;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_SOFT_TX_PADDING)
-		priv_flags |= RNP500_TX_SOLF_PADDING;
+		priv_flags |= RNPGBE_TX_SOLF_PADDING;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_REC_HDR_LEN_ERR)
-		priv_flags |= RNP500_REC_HDR_LEN_ERR;
+		priv_flags |= RNPGBE_REC_HDR_LEN_ERR;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_DOUBLE_VLAN_RECEIVE)
-		priv_flags |= RNP500_DOUBLE_VLAN_RECEIVE;
+		priv_flags |= RNPGBE_DOUBLE_VLAN_RECEIVE;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_RX_SKIP_EN)
-		priv_flags |= RNP500_RX_SKIP_EN;
+		priv_flags |= RNPGBE_RX_SKIP_EN;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC_PRIO)
-		priv_flags |= RNP500_TCP_SYNC_PRIO;
+		priv_flags |= RNPGBE_TCP_SYNC_PRIO;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_REMAP_PRIO)
-		priv_flags |= RNP500_REMAP_PRIO;
+		priv_flags |= RNPGBE_REMAP_PRIO;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_8023_PRIO)
-		priv_flags |= RNP500_8023_PRIO;
+		priv_flags |= RNPGBE_8023_PRIO;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_SRIOV_VLAN_MODE)
-		priv_flags |= RNP500_SRIOV_VLAN_MODE;
+		priv_flags |= RNPGBE_SRIOV_VLAN_MODE;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_LLDP)
-		priv_flags |= RNP500_LLDP_EN;
+		priv_flags |= RNPGBE_LLDP_EN;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE)
-		priv_flags |= RNP500_FORCE_CLOSE;
+		priv_flags |= RNPGBE_FORCE_CLOSE;
 
 	return priv_flags;
 }
 
-static int rnp500_set_priv_flags(struct net_device *netdev, u32 priv_flags)
+static int rnpgbe_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 {
 	struct rnpgbe_adapter *adapter =
 		(struct rnpgbe_adapter *)netdev_priv(netdev);
@@ -2848,20 +3206,12 @@ static int rnp500_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 	data_old = dma_rd32(dma, RNP_DMA_CONFIG);
 	data_new = data_old;
 
-	if (priv_flags & RNP500_MAC_LOOPBACK) {
-		SET_BIT(n500_mac_loopback, data_new);
-		adapter->priv_flags |= RNP_PRIV_FLAG_MAC_LOOPBACK;
-	} else if (adapter->priv_flags & RNP_PRIV_FLAG_MAC_LOOPBACK) {
-		adapter->priv_flags &= (~RNP_PRIV_FLAG_MAC_LOOPBACK);
-		CLR_BIT(n500_mac_loopback, data_new);
-	}
-
-	if (priv_flags & RNP500_PADDING_DEBUG)
+	if (priv_flags & RNPGBE_PADDING_DEBUG)
 		adapter->priv_flags |= RNP_PRIV_FLAG_PADDING_DEBUG;
 	else if (adapter->priv_flags & RNP_PRIV_FLAG_PADDING_DEBUG)
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_PADDING_DEBUG);
 
-	if (priv_flags & RNP500_SIMULATE_DOWN) {
+	if (priv_flags & RNPGBE_SIMULATE_DOWN) {
 		adapter->priv_flags |= RNP_PRIV_FLAG_SIMUATE_DOWN;
 		/* set check link again */
 		adapter->flags |= RNP_FLAG_NEED_LINK_UPDATE;
@@ -2871,19 +3221,19 @@ static int rnp500_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		adapter->flags |= RNP_FLAG_NEED_LINK_UPDATE;
 	}
 
-	if (priv_flags & RNP500_ULTRA_SHORT) {
+	if (priv_flags & RNPGBE_ULTRA_SHORT) {
 		int min = 33;
 
 		adapter->priv_flags |= RNP_PRIV_FLAG_ULTRA_SHORT;
-		eth_wr32(eth, RNP500_ETH_DEFAULT_RX_MIN_LEN, min);
+		eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_MIN_LEN, min);
 	} else {
 		int min = 60;
 
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_ULTRA_SHORT);
-		eth_wr32(eth, RNP500_ETH_DEFAULT_RX_MIN_LEN, min);
+		eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_MIN_LEN, min);
 	}
 
-	if (priv_flags & RNP500_PAUSE_OWN) {
+	if (priv_flags & RNPGBE_PAUSE_OWN) {
 		u32 data;
 
 		data = mac_rd32(mac, GMAC_FLOW_CTRL);
@@ -2899,7 +3249,7 @@ static int rnp500_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		mac_wr32(mac, GMAC_FLOW_CTRL, data);
 	}
 
-	if (priv_flags & RNP500_DOUBLE_VLAN) {
+	if (priv_flags & RNPGBE_DOUBLE_VLAN) {
 		adapter->priv_flags |= RNP_PRIV_FLAG_DOUBLE_VLAN;
 		eth->ops.set_double_vlan(eth, true);
 
@@ -2908,15 +3258,15 @@ static int rnp500_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		eth->ops.set_double_vlan(eth, false);
 	}
 
-	if (priv_flags & RNP500_STAGS_ENABLE) {
-		eth_wr32(eth, RNP500_ETH_TX_VLAN_CONTROL_EANBLE, 1);
+	if (priv_flags & RNPGBE_STAGS_ENABLE) {
+		eth_wr32(eth, RNPGBE_ETH_TX_VLAN_CONTROL_EANBLE, 1);
 		adapter->flags2 |= RNP_FLAG2_VLAN_STAGS_ENABLED;
 		eth->ops.set_vfta(eth, adapter->stags_vid, true);
 	} else {
 		int true_remove = 1;
 		int vid = adapter->stags_vid;
 
-		eth_wr32(eth, RNP500_ETH_TX_VLAN_CONTROL_EANBLE, 0);
+		eth_wr32(eth, RNPGBE_ETH_TX_VLAN_CONTROL_EANBLE, 0);
 		adapter->flags2 &= (~RNP_FLAG2_VLAN_STAGS_ENABLED);
 		if (vid) {
 			if (test_bit(vid, adapter->active_vlans))
@@ -2928,7 +3278,7 @@ static int rnp500_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		}
 	}
 
-	if (priv_flags & RNP500_JUMBO_ENABLE) {
+	if (priv_flags & RNPGBE_JUMBO_ENABLE) {
 		adapter->priv_flags |= RNP_PRIV_FLAG_JUMBO;
 		hw->ops.set_mtu(hw, netdev->mtu);
 	} else {
@@ -2936,42 +3286,41 @@ static int rnp500_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		hw->ops.set_mtu(hw, netdev->mtu);
 	}
 
-	if (priv_flags & RNP500_TX_PADDING)
+	if (priv_flags & RNPGBE_TX_PADDING)
 		adapter->priv_flags |= RNP_PRIV_FLAG_TX_PADDING;
 	else
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_TX_PADDING);
 
-	if (priv_flags & RNP500_TX_SOLF_PADDING)
+	if (priv_flags & RNPGBE_TX_SOLF_PADDING)
 		adapter->priv_flags |= RNP_PRIV_FLAG_SOFT_TX_PADDING;
 	else
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_SOFT_TX_PADDING);
 
-	if (priv_flags & RNP500_REC_HDR_LEN_ERR) {
+	if (priv_flags & RNPGBE_REC_HDR_LEN_ERR) {
 		adapter->priv_flags |= RNP_PRIV_FLAG_REC_HDR_LEN_ERR;
-		eth_wr32(eth, RNP500_ETH_ERR_MASK_VECTOR,
-			 PKT_LEN_ERR | HDR_LEN_ERR);
-
+		eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR, 0);
 	} else if (adapter->priv_flags & RNP_PRIV_FLAG_REC_HDR_LEN_ERR) {
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_REC_HDR_LEN_ERR);
-		eth_wr32(eth, RNP500_ETH_ERR_MASK_VECTOR, 0);
+		eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR,
+			 PKT_LEN_ERR | HDR_LEN_ERR);
 	}
 
-	if (priv_flags & RNP500_DOUBLE_VLAN_RECEIVE) {
+	if (priv_flags & RNPGBE_DOUBLE_VLAN_RECEIVE) {
 		adapter->priv_flags |= RNP_PRIV_FLAG_DOUBLE_VLAN_RECEIVE;
 		if (!(adapter->priv_flags & RNP_PRIV_FLAG_RX_ALL))
-			eth_wr32(eth, RNP500_ETH_DOUBLE_VLAN_DROP, 0);
+			eth_wr32(eth, RNPGBE_ETH_DOUBLE_VLAN_DROP, 0);
 	} else {
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_DOUBLE_VLAN_RECEIVE);
 		if (!(adapter->priv_flags & RNP_PRIV_FLAG_RX_ALL))
-			eth_wr32(eth, RNP500_ETH_DOUBLE_VLAN_DROP, 1);
+			eth_wr32(eth, RNPGBE_ETH_DOUBLE_VLAN_DROP, 1);
 	}
 
-	if (priv_flags & RNP500_TCP_SYNC_PRIO)
+	if (priv_flags & RNPGBE_TCP_SYNC_PRIO)
 		adapter->priv_flags |= RNP_PRIV_FLAG_TCP_SYNC_PRIO;
 	else
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_TCP_SYNC_PRIO);
 
-	if (priv_flags & RNP500_SRIOV_VLAN_MODE) {
+	if (priv_flags & RNPGBE_SRIOV_VLAN_MODE) {
 		int i;
 
 		adapter->priv_flags |= RNP_PRIV_FLAG_SRIOV_VLAN_MODE;
@@ -3002,7 +3351,7 @@ static int rnp500_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		}
 	}
 
-	if (priv_flags & RNP500_LLDP_EN) {
+	if (priv_flags & RNPGBE_LLDP_EN) {
 		hw->ops.set_lldp(hw, true);
 		adapter->priv_flags |=  RNP_PRIV_FLAG_LLDP;
 	} else if (adapter->priv_flags & RNP_PRIV_FLAG_LLDP) {
@@ -3010,32 +3359,44 @@ static int rnp500_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		hw->ops.set_lldp(hw, false);
 	}
 
-	if (priv_flags & RNP500_FORCE_CLOSE)
-		adapter->priv_flags |= RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
-	else
-		adapter->priv_flags &= (~RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE);
+	/* if force close */
+	if (hw->force_cap) {
+		if (priv_flags & RNPGBE_FORCE_CLOSE) {
+			if (!(adapter->priv_flags & RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE)) {
+				adapter->priv_flags |= RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+				hw->ops.driver_status(hw, true,
+						      rnpgbe_driver_force_control_phy);
+			}
+		} else if (adapter->priv_flags & RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE) {
+			adapter->priv_flags &= (~RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE);
+			hw->ops.driver_status(hw, false,
+					      rnpgbe_driver_force_control_phy);
+		}
+	}  else if (priv_flags & RNPGBE_FORCE_CLOSE) {
+		rnpgbe_err("firmware not support set this feature.\n");
+	}
 
 skip_setup_vf_vlan_n500:
 
-	if (priv_flags & RNP500_8023_PRIO) {
+	if (priv_flags & RNPGBE_8023_PRIO) {
 		adapter->priv_flags |= RNP_PRIV_FLAG_8023_PRIO;
-		eth_wr32(eth, RNP500_PRIORITY_EN_8023, 1);
+		eth_wr32(eth, RNPGBE_PRIORITY_EN_8023, 1);
 	} else {
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_8023_PRIO);
-		eth_wr32(eth, RNP500_PRIORITY_EN_8023, 0);
+		eth_wr32(eth, RNPGBE_PRIORITY_EN_8023, 0);
 	}
 
-	if (priv_flags & RNP500_REMAP_PRIO)
+	if (priv_flags & RNPGBE_REMAP_PRIO)
 		adapter->priv_flags |= RNP_PRIV_FLAG_REMAP_PRIO;
 	else
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_REMAP_PRIO);
 
-	if (priv_flags & (RNP500_8023_PRIO | RNP500_REMAP_PRIO)) {
-		eth_wr32(eth, RNP500_PRIORITY_1_MARK, RNP500_PRIORITY_1);
-		eth_wr32(eth, RNP500_PRIORITY_0_MARK, RNP500_PRIORITY_0);
-		eth_wr32(eth, RNP500_PRIORITY_EN, 1);
+	if (priv_flags & (RNPGBE_8023_PRIO | RNPGBE_REMAP_PRIO)) {
+		eth_wr32(eth, RNPGBE_PRIORITY_1_MARK, RNPGBE_PRIORITY_1);
+		eth_wr32(eth, RNPGBE_PRIORITY_0_MARK, RNPGBE_PRIORITY_0);
+		eth_wr32(eth, RNPGBE_PRIORITY_EN, 1);
 	} else {
-		eth_wr32(eth, RNP500_PRIORITY_EN, 0);
+		eth_wr32(eth, RNPGBE_PRIORITY_EN, 0);
 	}
 
 	if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC) {
@@ -3059,7 +3420,7 @@ skip_setup_vf_vlan_n500:
 	return 0;
 }
 
-static void rnp500_get_ethtool_stats(struct net_device *netdev,
+static void rnpgbe_get_ethtool_stats(struct net_device *netdev,
 				     struct ethtool_stats *stats, u64 *data)
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
@@ -3070,18 +3431,18 @@ static void rnp500_get_ethtool_stats(struct net_device *netdev,
 
 	rnpgbe_update_stats(adapter);
 
-	for (i = 0; i < RNP500_GLOBAL_STATS_LEN; i++) {
+	for (i = 0; i < RNPGBE_GLOBAL_STATS_LEN; i++) {
 		p = (char *)net_stats +
-		    rnp500_gstrings_net_stats[i].stat_offset;
-		data[i] = (rnp500_gstrings_net_stats[i].sizeof_stat ==
+		    rnpgbe_gstrings_net_stats[i].stat_offset;
+		data[i] = (rnpgbe_gstrings_net_stats[i].sizeof_stat ==
 			   sizeof(u64)) ?
 				  *(u64 *)p :
 				  *(u32 *)p;
 	}
-	for (j = 0; j < RNP500_HWSTRINGS_STATS_LEN; j++, i++) {
-		p = (char *)adapter + rnp500_hwstrings_stats[j].stat_offset;
+	for (j = 0; j < RNPGBE_HWSTRINGS_STATS_LEN; j++, i++) {
+		p = (char *)adapter + rnpgbe_hwstrings_stats[j].stat_offset;
 		data[i] =
-			(rnp500_hwstrings_stats[j].sizeof_stat == sizeof(u64)) ?
+			(rnpgbe_hwstrings_stats[j].sizeof_stat == sizeof(u64)) ?
 				*(u64 *)p :
 				*(u32 *)p;
 	}
@@ -3226,35 +3587,37 @@ static void rnp500_get_ethtool_stats(struct net_device *netdev,
 		data[i++] = ring->rx_stats.rx_equal_count;
 		data[i++] = ring->rx_stats.rx_clean_times;
 		data[i++] = ring->rx_stats.rx_clean_count;
+		data[i++] = ring->rx_stats.rx_resync;
 	}
 }
 
 /* n500 ethtool_ops ops here */
-static const struct ethtool_ops rnp500_ethtool_ops = {
-	.get_link_ksettings = rnp500_get_link_ksettings,
-	.set_link_ksettings = rnp500_set_link_ksettings,
-	.get_drvinfo = rnp500_get_drvinfo,
-	.get_regs_len = rnp500_get_regs_len,
-	.get_regs = rnp500_get_regs,
+static const struct ethtool_ops rnpgbe_ethtool_ops = {
+	.get_link_ksettings = rnpgbe_get_link_ksettings,
+	.set_link_ksettings = rnpgbe_set_link_ksettings,
+	.get_drvinfo = rnpgbe_get_drvinfo,
+	.get_regs_len = rnpgbe_get_regs_len,
+	.get_regs = rnpgbe_get_regs,
 	.get_wol = rnpgbe_get_wol,
 	.set_wol = rnpgbe_set_wol,
+	.nway_reset = rnpgbe_nway_reset,
 	.get_link = ethtool_op_get_link,
-	.get_eeprom_len = rnp500_get_eeprom_len,
-	.get_eeprom = rnp500_get_eeprom,
-	.set_eeprom = rnp500_set_eeprom,
+	.get_eeprom_len = rnpgbe_get_eeprom_len,
+	.get_eeprom = rnpgbe_get_eeprom,
+	.set_eeprom = rnpgbe_set_eeprom,
 	.get_ringparam = rnpgbe_get_ringparam,
 	.set_ringparam = rnpgbe_set_ringparam,
-	.get_pauseparam = rnp500_get_pauseparam,
-	.set_pauseparam = rnp500_set_pauseparam,
+	.get_pauseparam = rnpgbe_get_pauseparam,
+	.set_pauseparam = rnpgbe_set_pauseparam,
 	.get_msglevel = rnpgbe_get_msglevel,
 	.set_msglevel = rnpgbe_set_msglevel,
 	.self_test = rnpgbe_diag_test,
-	.get_strings = rnp500_get_strings,
+	.get_strings = rnpgbe_get_strings,
 	.set_phys_id = rnpgbe_set_phys_id,
-	.get_sset_count = rnp500_get_sset_count,
-	.get_priv_flags = rnp500_get_priv_flags,
-	.set_priv_flags = rnp500_set_priv_flags,
-	.get_ethtool_stats = rnp500_get_ethtool_stats,
+	.get_sset_count = rnpgbe_get_sset_count,
+	.get_priv_flags = rnpgbe_get_priv_flags,
+	.set_priv_flags = rnpgbe_set_priv_flags,
+	.get_ethtool_stats = rnpgbe_get_ethtool_stats,
 	.get_coalesce = rnpgbe_get_coalesce,
 	.set_coalesce = rnpgbe_set_coalesce,
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
@@ -3278,77 +3641,81 @@ static const struct ethtool_ops rnp500_ethtool_ops = {
 	.flash_device = rnpgbe_flash_device,
 };
 
-static void rnpgbe_set_ethtool_hw_ops_n500(struct net_device *netdev)
+static void rnpgbe_set_ethtool_hw_ops(struct net_device *netdev)
 {
-	netdev->ethtool_ops = &rnp500_ethtool_ops;
+	netdev->ethtool_ops = &rnpgbe_ethtool_ops;
 }
 
-static struct rnpgbe_hw_operations hw_ops_n500 = {
-	.init_hw = &rnpgbe_init_hw_ops_n500,
-	.reset_hw = &rnpgbe_reset_hw_ops_n500,
-	.start_hw = &rnpgbe_start_hw_ops_n500,
-	.set_mtu = &rnpgbe_set_mtu_hw_ops_n500,
-	.set_vlan_filter_en = &rnpgbe_set_vlan_filter_en_hw_ops_n500,
-	.set_vlan_filter = &rnpgbe_set_vlan_filter_hw_ops_n500,
-	.set_veb_vlan_mask = &rnpgbe_set_veb_vlan_mask_hw_ops_n500,
-	.set_vf_vlan_filter = &rnpgbe_set_vf_vlan_filter_hw_ops_n500,
-	.clr_vfta = &rnpgbe_clr_vfta_hw_ops_n500,
-	.set_vlan_strip = &rnpgbe_set_vlan_strip_hw_ops_n500,
-	.set_mac = &rnpgbe_set_mac_hw_ops_n500,
-	.set_rx_mode = &rnpgbe_set_rx_mode_hw_ops_n500,
-	.set_rar_with_vf = &rnpgbe_set_rar_with_vf_hw_ops_n500,
-	.clr_rar = &rnpgbe_clr_rar_hw_ops_n500,
-	.clr_rar_all = &rnpgbe_clr_rar_all_hw_ops_n500,
-	.clr_vlan_veb = &rnpgbe_clr_vlan_veb_hw_ops_n500,
-	.set_txvlan_mode = &rnpgbe_set_txvlan_mode_hw_ops_n500,
-	.set_fcs_mode = &rnpgbe_set_fcs_mode_hw_ops_n500,
-	.set_mac_rx = &rnpgbe_set_mac_rx_hw_ops_n500,
-	.update_sriov_info = &rnpgbe_update_sriov_info_hw_ops_n500,
-	.set_sriov_status = &rnpgbe_set_sriov_status_hw_ops_n500,
-	.set_sriov_vf_mc = &rnpgbe_set_sriov_vf_mc_hw_ops_n500,
-	.set_pause_mode = &rnpgbe_set_pause_mode_hw_ops_n500,
-	.get_pause_mode = &rnpgbe_get_pause_mode_hw_ops_n500,
-	.update_hw_info = &rnpgbe_update_hw_info_hw_ops_n500,
-	.set_rx_hash = &rnpgbe_set_rx_hash_hw_ops_n500,
-	.set_rss_hfunc = &rnpgbe_set_rss_hfunc_hw_ops_n500,
-	.set_rss_key = &rnpgbe_set_rss_key_hw_ops_n500,
-	.set_rss_table = &rnpgbe_set_rss_table_hw_ops_n500,
-	.set_mbx_link_event = &rnpgbe_set_mbx_link_event_hw_ops_n500,
-	.set_mbx_ifup = &rnpgbe_set_mbx_ifup_hw_ops_n500,
-	.check_link = &rnpgbe_check_mac_link_hw_ops_n500,
-	.setup_link = &rnpgbe_setup_mac_link_hw_ops_n500,
-	.clean_link = &rnpgbe_clean_link_hw_ops_n500,
-	.init_rx_addrs = &rnpgbe_init_rx_addrs_hw_ops_n500,
-	.set_layer2_remapping = &rnpgbe_set_layer2_hw_ops_n500,
-	.clr_layer2_remapping = &rnpgbe_clr_layer2_hw_ops_n500,
-	.clr_all_layer2_remapping = &rnpgbe_clr_all_layer2_hw_ops_n500,
-	.set_tuple5_remapping = &rnpgbe_set_tuple5_hw_ops_n500,
-	.clr_tuple5_remapping = &rnpgbe_clr_tuple5_hw_ops_n500,
-	.clr_all_tuple5_remapping = &rnpgbe_clr_all_tuple5_hw_ops_n500,
-	.set_tcp_sync_remapping = &rnpgbe_set_tcp_sync_hw_ops_n500,
-	.set_rx_skip = &rnpgbe_set_rx_skip_hw_ops_n500,
-	.set_outer_vlan_type = &rnpgbe_set_outer_vlan_type_hw_ops_n500,
-	.update_hw_status = &rnpgbe_update_hw_status_hw_ops_n500,
-	.update_rx_drop = &rnpgbe_update_hw_rx_drop_hw_ops_n500,
-	.setup_ethtool = &rnpgbe_set_ethtool_hw_ops_n500,
-	.phy_read_reg = &rnpgbe_phy_read_reg_hw_ops_n500,
-	.phy_write_reg = &rnpgbe_phy_write_reg_hw_ops_n500,
-	.setup_wol = &rnpgbe_setup_wol_hw_ops_n500,
-	.set_vf_vlan_mode = &rnpgbe_set_vf_vlan_mode_hw_ops_n500,
-	.driver_status = &rnpgbe_driver_status_hw_ops_n500,
-	.setup_eee = &rnpgbe_setup_eee_hw_ops_n500,
-	.set_eee_mode = &rnpgbe_set_eee_mode_hw_ops_n500,
-	.reset_eee_mode = &rnpgbe_reset_eee_mode_hw_ops_n500,
-	.set_eee_timer = &rnpgbe_set_eee_timer_hw_ops_n500,
-	.set_eee_pls = &rnpgbe_set_eee_pls_hw_ops_n500,
-	.get_lpi_status = &rnpgbe_get_lpi_status_hw_ops_n500,
-	.get_ncsi_mac = &rnpgbe_get_ncsi_mac_hw_ops_n500,
-	.get_ncsi_vlan = &rnpgbe_get_ncsi_vlan_hw_ops_n500,
-	.set_lldp = &rnpgbe_set_lldp_hw_ops_n500,
-	.get_lldp = &rnpgbe_get_lldp_hw_ops_n500,
+static struct rnpgbe_hw_operations hw_ops_rnpgbe = {
+	.init_hw = &rnpgbe_init_hw_ops,
+	.reset_hw = &rnpgbe_reset_hw_ops,
+	.start_hw = &rnpgbe_start_hw_ops,
+	.set_mtu = &rnpgbe_set_mtu_hw_ops,
+	.set_vlan_filter_en = &rnpgbe_set_vlan_filter_en_hw_ops,
+	.set_vlan_filter = &rnpgbe_set_vlan_filter_hw_ops,
+	.set_veb_vlan_mask = &rnpgbe_set_veb_vlan_mask_hw_ops,
+	.set_vf_vlan_filter = &rnpgbe_set_vf_vlan_filter_hw_ops,
+	.clr_vfta = &rnpgbe_clr_vfta_hw_ops,
+	.set_vlan_strip = &rnpgbe_set_vlan_strip_hw_ops,
+	.set_mac = &rnpgbe_set_mac_hw_ops,
+	.set_rx_mode = &rnpgbe_set_rx_mode_hw_ops,
+	.set_rar_with_vf = &rnpgbe_set_rar_with_vf_hw_ops,
+	.clr_rar = &rnpgbe_clr_rar_hw_ops,
+	.clr_rar_all = &rnpgbe_clr_rar_all_hw_ops,
+	.clr_vlan_veb = &rnpgbe_clr_vlan_veb_hw_ops,
+	.set_txvlan_mode = &rnpgbe_set_txvlan_mode_hw_ops,
+	.set_fcs_mode = &rnpgbe_set_fcs_mode_hw_ops,
+	.set_mac_rx = &rnpgbe_set_mac_rx_hw_ops,
+	.update_sriov_info = &rnpgbe_update_sriov_info_hw_ops,
+	.set_sriov_status = &rnpgbe_set_sriov_status_hw_ops,
+	.set_sriov_vf_mc = &rnpgbe_set_sriov_vf_mc_hw_ops,
+	.set_pause_mode = &rnpgbe_set_pause_mode_hw_ops,
+	.get_pause_mode = &rnpgbe_get_pause_mode_hw_ops,
+	.update_hw_info = &rnpgbe_update_hw_info_hw_ops,
+	.set_rx_hash = &rnpgbe_set_rx_hash_hw_ops,
+	.set_rss_hfunc = &rnpgbe_set_rss_hfunc_hw_ops,
+	.set_rss_key = &rnpgbe_set_rss_key_hw_ops,
+	.set_rss_table = &rnpgbe_set_rss_table_hw_ops,
+	.set_mbx_link_event = &rnpgbe_set_mbx_link_event_hw_ops,
+	.set_mbx_ifup = &rnpgbe_set_mbx_ifup_hw_ops,
+	.check_link = &rnpgbe_check_mac_link_hw_ops,
+	.setup_link = &rnpgbe_setup_mac_link_hw_ops,
+	.clean_link = &rnpgbe_clean_link_hw_ops,
+	.init_rx_addrs = &rnpgbe_init_rx_addrs_hw_ops,
+	.set_layer2_remapping = &rnpgbe_set_layer2_hw_ops,
+	.clr_layer2_remapping = &rnpgbe_clr_layer2_hw_ops,
+	.clr_all_layer2_remapping = &rnpgbe_clr_all_layer2_hw_ops,
+	.set_tuple5_remapping = &rnpgbe_set_tuple5_hw_ops,
+	.clr_tuple5_remapping = &rnpgbe_clr_tuple5_hw_ops,
+	.clr_all_tuple5_remapping = &rnpgbe_clr_all_tuple5_hw_ops,
+	.set_tcp_sync_remapping = &rnpgbe_set_tcp_sync_hw_ops,
+	.set_rx_skip = &rnpgbe_set_rx_skip_hw_ops,
+	.set_outer_vlan_type = &rnpgbe_set_outer_vlan_type_hw_ops,
+	.update_hw_status = &rnpgbe_update_hw_status_hw_ops,
+	.update_rx_drop = &rnpgbe_update_hw_rx_drop_hw_ops,
+	.setup_ethtool = &rnpgbe_set_ethtool_hw_ops,
+	.get_thermal_sensor_data = &rnpgbe_get_thermal_sensor_data_hw_ops,
+	.init_thermal_sensor_thresh =
+		&rnpgbe_init_thermal_sensor_thresh_hw_ops,
+	.phy_read_reg = &rnpgbe_phy_read_reg_hw_ops,
+	.phy_write_reg = &rnpgbe_phy_write_reg_hw_ops,
+	.setup_wol = &rnpgbe_setup_wol_hw_ops,
+	.set_vf_vlan_mode = &rnpgbe_set_vf_vlan_mode_hw_ops,
+	.driver_status = &rnpgbe_driver_status_hw_ops,
+	.setup_eee = &rnpgbe_setup_eee_hw_ops,
+	.set_eee_mode = &rnpgbe_set_eee_mode_hw_ops,
+	.reset_eee_mode = &rnpgbe_reset_eee_mode_hw_ops,
+	.set_eee_timer = &rnpgbe_set_eee_timer_hw_ops,
+	.set_eee_pls = &rnpgbe_set_eee_pls_hw_ops,
+	.get_lpi_status = &rnpgbe_get_lpi_status_hw_ops,
+	.get_ncsi_mac = &rnpgbe_get_ncsi_mac_hw_ops,
+	.get_ncsi_vlan = &rnpgbe_get_ncsi_vlan_hw_ops,
+	.set_lldp = &rnpgbe_set_lldp_hw_ops,
+	.get_lldp = &rnpgbe_get_lldp_hw_ops,
+	.dump_debug_regs = &rnpgbe_dump_debug_regs_hw_ops,
 };
 
-static void rnpgbe_mac_set_rx_n500(struct rnpgbe_mac_info *mac, bool status)
+static void rnpgbe_mac_set_rx(struct rnpgbe_mac_info *mac, bool status)
 {
 	u32 value = mac_rd32(mac, GMAC_CONTROL);
 
@@ -3363,52 +3730,31 @@ static void rnpgbe_mac_set_rx_n500(struct rnpgbe_mac_info *mac, bool status)
 	mac_wr32(mac, GMAC_FRAME_FILTER, value | 1);
 }
 
-static void rnpgbe_mac_set_speed_n500(struct rnpgbe_mac_info *mac, bool link,
-				      u32 speed, bool duplex)
+static void rnpgbe_mac_set_speed(struct rnpgbe_mac_info *mac, bool link,
+				 u32 speed, bool duplex)
 {
-#define SPEED_MASK (RNP_DM_MASK | RNP_FES_MASK | RNP_PS_MASK | RNP_LUD_MASK)
-	u32 value = mac_rd32(mac, GMAC_CONTROL);
 
-	value &= (~SPEED_MASK);
-
-	if (link)
-		value |= RNP_LUD_MASK;
-
-	if (duplex)
-		value |= RNP_DM_MASK;
-
-	switch (speed) {
-	case RNP_LINK_SPEED_100_FULL:
-		value |= RNP_PS_MASK;
-		value |= RNP_FES_MASK;
-		break;
-	case RNP_LINK_SPEED_10_FULL:
-		value |= RNP_PS_MASK;
-		break;
-	}
-
-	mac_wr32(mac, GMAC_CONTROL, value);
 }
 
-static void rnpgbe_mac_fcs_n500(struct rnpgbe_mac_info *mac, bool status)
+static void rnpgbe_mac_fcs(struct rnpgbe_mac_info *mac, bool status)
 {
-#define RNP500_CST_MASK BIT(25)
+#define RNPGBE_CST_MASK BIT(25)
 	u32 value = mac_rd32(mac, GMAC_CONTROL);
 
 	if (status)
-		value &= (~RNP500_CST_MASK);
+		value &= (~RNPGBE_CST_MASK);
 	else
-		value |= (RNP500_CST_MASK);
+		value |= (RNPGBE_CST_MASK);
 	mac_wr32(mac, GMAC_CONTROL, value);
 }
 
 /**
- *  rnpgbe_mac_fc_mode_n500 - Enable flow control
+ *  rnpgbe_mac_fc_mode - Enable flow control
  *  @mac: pointer to hardware structure
  *
  *  Enable flow control according to the current settings.
  **/
-static s32 rnpgbe_mac_fc_mode_n500(struct rnpgbe_mac_info *mac)
+static s32 rnpgbe_mac_fc_mode(struct rnpgbe_mac_info *mac)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)mac->back;
 	s32 ret_val = 0;
@@ -3512,10 +3858,10 @@ static int rnpgbe_mdio_read(struct rnpgbe_mac_info *mac, int phyreg)
 	return data;
 }
 
-static void rnpgbe_mac_check_link_n500(struct rnpgbe_mac_info *mac,
-				       rnpgbe_link_speed *speed,
-				       bool *link_up,
-				       bool link_up_wait_to_complete)
+static void rnpgbe_mac_check_link(struct rnpgbe_mac_info *mac,
+				  rnpgbe_link_speed *speed,
+				  bool *link_up,
+				  bool link_up_wait_to_complete)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)mac->back;
 	u32 data;
@@ -3559,19 +3905,19 @@ static void rnpgbe_mac_check_link_n500(struct rnpgbe_mac_info *mac,
 	}
 }
 
-static void rnpgbe_mac_set_mac_n500(struct rnpgbe_mac_info *mac, u8 *addr, int index)
+static void rnpgbe_mac_set_mac(struct rnpgbe_mac_info *mac, u8 *addr, int index)
 {
 	u32 rar_low, rar_high = 0;
 
 	rar_low = ((u32)addr[0] | ((u32)addr[1] << 8) | ((u32)addr[2] << 16) |
 		   ((u32)addr[3] << 24));
 	rar_high = RNP_RAH_AV | ((u32)addr[4] | (u32)addr[5] << 8);
-	mac_wr32(mac, RNP500_MAC_UNICAST_HIGH(index), rar_high);
-	mac_wr32(mac, RNP500_MAC_UNICAST_LOW(index), rar_low);
+	mac_wr32(mac, RNPGBE_MAC_UNICAST_HIGH(index), rar_high);
+	mac_wr32(mac, RNPGBE_MAC_UNICAST_LOW(index), rar_low);
 }
 
-static int rnpgbe_mac_mdio_read_n500(struct rnpgbe_mac_info *mac, u32 phyreg,
-				     u32 *regvalue)
+static int rnpgbe_mac_mdio_read(struct rnpgbe_mac_info *mac, u32 phyreg,
+				u32 *regvalue)
 {
 	unsigned int mii_address = mac->mii.addr;
 	unsigned int mii_data = mac->mii.data;
@@ -3600,8 +3946,8 @@ static int rnpgbe_mac_mdio_read_n500(struct rnpgbe_mac_info *mac, u32 phyreg,
 	return data;
 }
 
-static int rnpgbe_mac_mdio_write_n500(struct rnpgbe_mac_info *mac, int phyreg,
-				      int phydata)
+static int rnpgbe_mac_mdio_write(struct rnpgbe_mac_info *mac, int phyreg,
+				 int phydata)
 {
 	unsigned int mii_address = mac->mii.addr;
 	unsigned int mii_data = mac->mii.data;
@@ -3627,7 +3973,7 @@ static int rnpgbe_mac_mdio_write_n500(struct rnpgbe_mac_info *mac, int phyreg,
 	return poll_free_mdio(mac->mac_addr + mii_address, MII_BUSY, 100);
 }
 
-static void rnpgbe_mac_pmt_n500(struct rnpgbe_mac_info *mac, u32 mode, bool ncsi_en)
+static void rnpgbe_mac_pmt(struct rnpgbe_mac_info *mac, u32 mode, bool ncsi_en)
 {
 	unsigned int pmt = 0;
 
@@ -3646,8 +3992,8 @@ static void rnpgbe_mac_pmt_n500(struct rnpgbe_mac_info *mac, u32 mode, bool ncsi
 	mac_wr32(mac, GMAC_PMT, pmt);
 }
 
-static void rnpgbe_mac_set_eee_mode_n500(struct rnpgbe_mac_info *mac,
-					 bool en_tx_lpi_clockgating)
+static void rnpgbe_mac_set_eee_mode(struct rnpgbe_mac_info *mac,
+				    bool en_tx_lpi_clockgating)
 {
 	u32 value = 0;
 
@@ -3662,7 +4008,7 @@ static void rnpgbe_mac_set_eee_mode_n500(struct rnpgbe_mac_info *mac,
 	mac_wr32(mac, GMAC_LPI_CTRL_STATUS, value);
 }
 
-static void rnpgbe_mac_reset_eee_mode_n500(struct rnpgbe_mac_info *mac)
+static void rnpgbe_mac_reset_eee_mode(struct rnpgbe_mac_info *mac)
 {
 	u32 value = 0;
 
@@ -3671,7 +4017,7 @@ static void rnpgbe_mac_reset_eee_mode_n500(struct rnpgbe_mac_info *mac)
 	mac_wr32(mac, GMAC_LPI_CTRL_STATUS, value);
 }
 
-static void rnpgbe_mac_set_eee_timer_n500(struct rnpgbe_mac_info *mac, int ls, int tw)
+static void rnpgbe_mac_set_eee_timer(struct rnpgbe_mac_info *mac, int ls, int tw)
 {
 	int value = ((tw & 0xffff)) | ((ls & 0x7ff) << 16);
 
@@ -3686,7 +4032,7 @@ static void rnpgbe_mac_set_eee_timer_n500(struct rnpgbe_mac_info *mac, int ls, i
 	mac_wr32(mac, GMAC_LPI_TIMER_CTRL, value);
 }
 
-static void rnpgbe_mac_set_eee_pls_n500(struct rnpgbe_mac_info *mac, int link)
+static void rnpgbe_mac_set_eee_pls(struct rnpgbe_mac_info *mac, int link)
 {
 	u32 value = 0;
 
@@ -3700,7 +4046,7 @@ static void rnpgbe_mac_set_eee_pls_n500(struct rnpgbe_mac_info *mac, int link)
 	mac_wr32(mac, GMAC_LPI_CTRL_STATUS, value);
 }
 
-static u32 rnpgbe_mac_get_lpi_status_n500(struct rnpgbe_mac_info *mac)
+static u32 rnpgbe_mac_get_lpi_status(struct rnpgbe_mac_info *mac)
 {
 	if (mac_rd32(mac, GMAC_INT_STATUS) & GMAC_INT_STATUS_LPIIS)
 		return mac_rd32(mac, GMAC_LPI_CTRL_STATUS);
@@ -3708,21 +4054,21 @@ static u32 rnpgbe_mac_get_lpi_status_n500(struct rnpgbe_mac_info *mac)
 		return 0;
 }
 
-static struct rnpgbe_mac_operations mac_ops_n500 = {
-	.set_mac_rx = &rnpgbe_mac_set_rx_n500,
-	.set_mac_speed = &rnpgbe_mac_set_speed_n500,
-	.set_mac_fcs = &rnpgbe_mac_fcs_n500,
-	.set_fc_mode = &rnpgbe_mac_fc_mode_n500,
-	.check_link = &rnpgbe_mac_check_link_n500,
-	.set_mac = &rnpgbe_mac_set_mac_n500,
-	.mdio_write = &rnpgbe_mac_mdio_write_n500,
-	.mdio_read = &rnpgbe_mac_mdio_read_n500,
-	.pmt = &rnpgbe_mac_pmt_n500,
-	.set_eee_mode = rnpgbe_mac_set_eee_mode_n500,
-	.reset_eee_mode = rnpgbe_mac_reset_eee_mode_n500,
-	.set_eee_timer = rnpgbe_mac_set_eee_timer_n500,
-	.set_eee_pls = rnpgbe_mac_set_eee_pls_n500,
-	.get_lpi_status = rnpgbe_mac_get_lpi_status_n500,
+static struct rnpgbe_mac_operations mac_ops_rnpgbe = {
+	.set_mac_rx = &rnpgbe_mac_set_rx,
+	.set_mac_speed = &rnpgbe_mac_set_speed,
+	.set_mac_fcs = &rnpgbe_mac_fcs,
+	.set_fc_mode = &rnpgbe_mac_fc_mode,
+	.check_link = &rnpgbe_mac_check_link,
+	.set_mac = &rnpgbe_mac_set_mac,
+	.mdio_write = &rnpgbe_mac_mdio_write,
+	.mdio_read = &rnpgbe_mac_mdio_read,
+	.pmt = &rnpgbe_mac_pmt,
+	.set_eee_mode = rnpgbe_mac_set_eee_mode,
+	.reset_eee_mode = rnpgbe_mac_reset_eee_mode,
+	.set_eee_timer = rnpgbe_mac_set_eee_timer,
+	.set_eee_pls = rnpgbe_mac_set_eee_pls,
+	.get_lpi_status = rnpgbe_mac_get_lpi_status,
 
 };
 
@@ -3736,20 +4082,20 @@ static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	int i;
 
-	nic->nic_base_addr = hw->hw_addr + RNP500_NIC_BASE;
+	nic->nic_base_addr = hw->hw_addr + RNPGBE_NIC_BASE;
 	/* setup dma info */
 	dma->dma_base_addr = hw->hw_addr;
-	dma->dma_ring_addr = hw->hw_addr + RNP500_RING_BASE;
+	dma->dma_ring_addr = hw->hw_addr + RNPGBE_RING_BASE;
 	dma->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
 	dma->max_rx_queues = RNP_N500_MAX_RX_QUEUES;
 	dma->back = hw;
-	memcpy(&hw->dma.ops, &dma_ops_n500, sizeof(hw->dma.ops));
+	memcpy(&hw->dma.ops, &dma_ops_rnpgbe, sizeof(hw->dma.ops));
 
 	/* setup eth info */
-	memcpy(&hw->eth.ops, &eth_ops_n500, sizeof(hw->eth.ops));
-	eth->eth_base_addr = hw->hw_addr + RNP500_ETH_BASE;
+	memcpy(&hw->eth.ops, &eth_ops_rnpgbe, sizeof(hw->eth.ops));
+	eth->eth_base_addr = hw->hw_addr + RNPGBE_ETH_BASE;
 	eth->back = hw;
-	eth->mc_filter_type = 4;
+	eth->mc_filter_type = 0;
 	eth->mcft_size = RNP_N500_MC_TBL_SIZE;
 	eth->vft_size = RNP_N500_VFT_TBL_SIZE;
 	eth->num_rar_entries = RNP_N500_RAR_ENTRIES + NCSI_RAR_NUM;
@@ -3757,11 +4103,11 @@ static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
 	eth->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
 
 	/* setup mac info */
-	memcpy(&hw->mac.ops, &mac_ops_n500, sizeof(hw->mac.ops));
-	mac->mac_addr = hw->hw_addr + RNP500_MAC_BASE;
+	memcpy(&hw->mac.ops, &mac_ops_rnpgbe, sizeof(hw->mac.ops));
+	mac->mac_addr = hw->hw_addr + RNPGBE_MAC_BASE;
 	mac->back = hw;
 	mac->mac_type = mac_dwc_g;
-	mac->mc_filter_type = 4;
+	mac->mc_filter_type = 0;
 	mac->mcft_size = 2;
 	mac->vft_size = 1;
 	mac->num_rar_entries = RNP_N500_RAR_ENTRIES;
@@ -3798,14 +4144,14 @@ static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
 
 	/* setup some fdir resource */
 	hw->min_length = RNP_MIN_MTU;
-	hw->max_length = RNP500_MAX_JUMBO_FRAME_SIZE;
+	hw->max_length = RNPGBE_MAX_JUMBO_FRAME_SIZE;
 	hw->max_msix_vectors = RNP_N500_MSIX_VECTORS;
 	hw->num_rar_entries = RNP_N500_RAR_ENTRIES;
 	hw->fdir_mode = fdir_mode_tuple5;
 	hw->max_vfs = RNP_N500_MAX_VF;
 	hw->max_vfs_noari = 1;
-	hw->layer2_count = RNP500_MAX_LAYER2_FILTERS - 1;
-	hw->tuple5_count = RNP500_MAX_TUPLE5_FILTERS - 1;
+	hw->layer2_count = RNPGBE_MAX_LAYER2_FILTERS - 1;
+	hw->tuple5_count = RNPGBE_MAX_TUPLE5_FILTERS - 1;
 	/* n500 support magic wol */
 	hw->wol_supported = WAKE_MAGIC;
 	hw->num_vebvlan_entries = 8;
@@ -3817,7 +4163,7 @@ static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
 	hw->sriov_ring_limit = 1;
 	hw->max_pf_macvlans = RNP_MAX_PF_MACVLANS_N500;
 	hw->veb_ring = RNP_N500_MAX_RX_QUEUES - 1;
-	memcpy(&hw->ops, &hw_ops_n500, sizeof(hw->ops));
+	memcpy(&hw->ops, &hw_ops_rnpgbe, sizeof(hw->ops));
 	hw->supported_link = RNP_LINK_SPEED_1GB_FULL;
 
 	/* mbx setup */
@@ -3830,13 +4176,14 @@ static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
 	mbx->pf_vf_mbox_mask_hi = 0;
 	mbx->cpu_pf_shm_base = 0x2d000;
 	mbx->pf2cpu_mbox_ctrl = 0x2e000;
-	mbx->pf2cpu_mbox_mask = 0x2e200;
+	mbx->cpu_pf_mbox_mask = 0x2e200;
 	mbx->cpu_vf_share_ram = 0x2b000;
 	mbx->share_size = 512;
 
 	adapter->priv_flags |= RNP_PRIV_FLAG_PAUSE_OWN;
 	adapter->drop_time = 100;
 
+	hw->msix_vector_base = 0x28200;
 	/*initialization default pause flow */
 	hw->fc.requested_mode = PAUSE_AUTO;
 	hw->fc.pause_time = RNP_DEFAULT_FCPAUSE;
@@ -3845,8 +4192,8 @@ static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
 	/* we start from auto mode */
 	hw->tp_mdix_ctrl = ETH_TP_MDI_AUTO;
 	for (i = 0; i < RNP_MAX_TRAFFIC_CLASS; i++) {
-		hw->fc.high_water[i] = RNP500_DEFAULT_HIGH_WATER;
-		hw->fc.low_water[i] = RNP500_DEFAULT_LOW_WATER;
+		hw->fc.high_water[i] = RNPGBE_DEFAULT_HIGH_WATER;
+		hw->fc.low_water[i] = RNPGBE_DEFAULT_LOW_WATER;
 	}
 	hw->eeprom.word_size = 10;
 
@@ -3863,20 +4210,20 @@ static s32 rnpgbe_get_invariants_n210(struct rnpgbe_hw *hw)
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	int i;
 
-	nic->nic_base_addr = hw->hw_addr + RNP500_NIC_BASE;
+	nic->nic_base_addr = hw->hw_addr + RNPGBE_NIC_BASE;
 	/* setup dma info */
 	dma->dma_base_addr = hw->hw_addr;
-	dma->dma_ring_addr = hw->hw_addr + RNP500_RING_BASE;
+	dma->dma_ring_addr = hw->hw_addr + RNPGBE_RING_BASE;
 	dma->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
 	dma->max_rx_queues = RNP_N500_MAX_RX_QUEUES;
 	dma->back = hw;
-	memcpy(&hw->dma.ops, &dma_ops_n500, sizeof(hw->dma.ops));
+	memcpy(&hw->dma.ops, &dma_ops_rnpgbe, sizeof(hw->dma.ops));
 
 	/* setup eth info */
-	memcpy(&hw->eth.ops, &eth_ops_n500, sizeof(hw->eth.ops));
-	eth->eth_base_addr = hw->hw_addr + RNP500_ETH_BASE;
+	memcpy(&hw->eth.ops, &eth_ops_rnpgbe, sizeof(hw->eth.ops));
+	eth->eth_base_addr = hw->hw_addr + RNPGBE_ETH_BASE;
 	eth->back = hw;
-	eth->mc_filter_type = 4;
+	eth->mc_filter_type = 0;
 	eth->mcft_size = RNP_N500_MC_TBL_SIZE;
 	eth->vft_size = RNP_N500_VFT_TBL_SIZE;
 	eth->num_rar_entries = RNP_N500_RAR_ENTRIES + NCSI_RAR_NUM;
@@ -3884,12 +4231,12 @@ static s32 rnpgbe_get_invariants_n210(struct rnpgbe_hw *hw)
 	eth->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
 
 	/* setup mac info */
-	memcpy(&hw->mac.ops, &mac_ops_n500, sizeof(hw->mac.ops));
-	mac->mac_addr = hw->hw_addr + RNP500_MAC_BASE;
+	memcpy(&hw->mac.ops, &mac_ops_rnpgbe, sizeof(hw->mac.ops));
+	mac->mac_addr = hw->hw_addr + RNPGBE_MAC_BASE;
 	mac->back = hw;
 	mac->mac_type = mac_dwc_g;
 	/* move this to eth todo */
-	mac->mc_filter_type = 4;
+	mac->mc_filter_type = 0;
 	mac->mcft_size = 2;
 	mac->vft_size = 1;
 	mac->num_rar_entries = RNP_N500_RAR_ENTRIES;
@@ -3923,14 +4270,14 @@ static s32 rnpgbe_get_invariants_n210(struct rnpgbe_hw *hw)
 
 	/* setup some fdir resource */
 	hw->min_length = RNP_MIN_MTU;
-	hw->max_length = RNP500_MAX_JUMBO_FRAME_SIZE;
+	hw->max_length = RNPGBE_MAX_JUMBO_FRAME_SIZE;
 	hw->max_msix_vectors = RNP_N500_MSIX_VECTORS;
 	hw->num_rar_entries = RNP_N500_RAR_ENTRIES;
 	hw->fdir_mode = fdir_mode_tuple5;
 	hw->max_vfs = RNP_N500_MAX_VF;
-	hw->max_vfs_noari = 1;
-	hw->layer2_count = RNP500_MAX_LAYER2_FILTERS - 1;
-	hw->tuple5_count = RNP500_MAX_TUPLE5_FILTERS - 1;
+	hw->max_vfs_noari = 7;
+	hw->layer2_count = RNPGBE_MAX_LAYER2_FILTERS - 1;
+	hw->tuple5_count = RNPGBE_MAX_TUPLE5_FILTERS - 1;
 	hw->wol_supported = WAKE_MAGIC;
 	hw->num_vebvlan_entries = 8;
 	hw->default_rx_queue = 0;
@@ -3941,7 +4288,7 @@ static s32 rnpgbe_get_invariants_n210(struct rnpgbe_hw *hw)
 	hw->sriov_ring_limit = 1;
 	hw->max_pf_macvlans = RNP_MAX_PF_MACVLANS_N500;
 	hw->veb_ring = RNP_N500_MAX_RX_QUEUES - 1;
-	memcpy(&hw->ops, &hw_ops_n500, sizeof(hw->ops));
+	memcpy(&hw->ops, &hw_ops_rnpgbe, sizeof(hw->ops));
 	hw->supported_link = RNP_LINK_SPEED_1GB_FULL;
 
 	mbx->vf2pf_mbox_vec_base = 0x29200;
@@ -3953,13 +4300,14 @@ static s32 rnpgbe_get_invariants_n210(struct rnpgbe_hw *hw)
 	mbx->pf_vf_mbox_mask_hi = 0;
 	mbx->cpu_pf_shm_base = 0x2d900;
 	mbx->pf2cpu_mbox_ctrl = 0x2e900;
-	mbx->pf2cpu_mbox_mask = 0x2eb00;
+	mbx->cpu_pf_mbox_mask = 0x2eb00;
 	mbx->cpu_vf_share_ram = 0x2b900;
 	mbx->share_size = 512;
 
 	adapter->priv_flags |= RNP_PRIV_FLAG_PAUSE_OWN;
 	adapter->drop_time = 100;
 
+	hw->msix_vector_base = 0x28000;
 	/*initialization default pause flow */
 	/* we start from auto */
 	hw->fc.requested_mode = PAUSE_AUTO;
@@ -3968,8 +4316,8 @@ static s32 rnpgbe_get_invariants_n210(struct rnpgbe_hw *hw)
 
 	hw->tp_mdix_ctrl = ETH_TP_MDI_AUTO;
 	for (i = 0; i < RNP_MAX_TRAFFIC_CLASS; i++) {
-		hw->fc.high_water[i] = RNP500_DEFAULT_HIGH_WATER;
-		hw->fc.low_water[i] = RNP500_DEFAULT_LOW_WATER;
+		hw->fc.high_water[i] = RNPGBE_DEFAULT_HIGH_WATER;
+		hw->fc.low_water[i] = RNPGBE_DEFAULT_LOW_WATER;
 	}
 	hw->eeprom.word_size = 10;
 
@@ -3983,9 +4331,9 @@ struct rnpgbe_info rnpgbe_n500_info = {
 	.rss_type = rnpgbe_rss_n500,
 	.hw_type = rnpgbe_hw_n500,
 	.get_invariants = &rnpgbe_get_invariants_n500,
-	.mac_ops = &mac_ops_n500,
+	.mac_ops = &mac_ops_rnpgbe,
 	.eeprom_ops = NULL,
-	.mbx_ops = &mbx_ops_generic,
+	.mbx_ops = &rnpgbe_mbx_ops_generic,
 };
 
 struct rnpgbe_info rnpgbe_n210_info = {
@@ -3995,7 +4343,19 @@ struct rnpgbe_info rnpgbe_n210_info = {
 	.rss_type = rnpgbe_rss_n500,
 	.hw_type = rnpgbe_hw_n210,
 	.get_invariants = &rnpgbe_get_invariants_n210,
-	.mac_ops = &mac_ops_n500,
+	.mac_ops = &mac_ops_rnpgbe,
 	.eeprom_ops = NULL,
-	.mbx_ops = &mbx_ops_generic,
+	.mbx_ops = &rnpgbe_mbx_ops_generic,
+};
+
+struct rnpgbe_info rnpgbe_n210L_info = {
+	.one_pf_with_two_dma = false,
+	.total_queue_pair_cnts = RNP_N500_MAX_TX_QUEUES,
+	.adapter_cnt = 1,
+	.rss_type = rnpgbe_rss_n500,
+	.hw_type = rnpgbe_hw_n210L,
+	.get_invariants = &rnpgbe_get_invariants_n210,
+	.mac_ops = &mac_ops_rnpgbe,
+	.eeprom_ops = NULL,
+	.mbx_ops = &rnpgbe_mbx_ops_generic,
 };

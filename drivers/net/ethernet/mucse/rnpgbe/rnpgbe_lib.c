@@ -625,7 +625,7 @@ static void rnpgbe_free_q_vectors(struct rnpgbe_adapter *adapter)
 		rnpgbe_free_q_vector(adapter, v_idx);
 }
 
-void rnpgbe_reset_interrupt_capability(struct rnpgbe_adapter *adapter)
+static void rnpgbe_reset_interrupt_capability(struct rnpgbe_adapter *adapter)
 {
 	if (adapter->flags & RNP_FLAG_MSIX_ENABLED)
 		pci_disable_msix(adapter->pdev);
@@ -648,7 +648,7 @@ void rnpgbe_reset_interrupt_capability(struct rnpgbe_adapter *adapter)
  * Attempt to configure the interrupts using the best available
  * capabilities of the hardware and the kernel.
  **/
-int rnpgbe_set_interrupt_capability(struct rnpgbe_adapter *adapter)
+static int rnpgbe_set_interrupt_capability(struct rnpgbe_adapter *adapter)
 {
 	struct rnpgbe_hw *hw = &adapter->hw;
 	int vector, v_budget, err = 0;
@@ -805,9 +805,9 @@ void rnpgbe_clear_interrupt_scheme(struct rnpgbe_adapter *adapter)
  *
  **/
 
-void rnpgbe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring, u32 mss_len_vf_num,
-			u32 inner_vlan_tunnel_len, int ignore_vlan,
-			bool crc_pad)
+static void rnpgbe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring, u32 mss_len_vf_num,
+			       u32 inner_vlan_tunnel_len, int ignore_vlan,
+			       bool crc_pad)
 {
 	struct rnpgbe_tx_ctx_desc *context_desc;
 	u16 i = tx_ring->next_to_use;
@@ -841,7 +841,7 @@ void rnpgbe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring, u32 mss_len_vf_num,
 	if (tx_ring->q_vector->adapter->flags & RNP_FLAG_SRIOV_ENABLED) {
 		if (ignore_vlan) {
 			context_desc->inner_vlan_tunnel_len |=
-				VF_VEB_IGNORE_VLAN;
+				cpu_to_le32(VF_VEB_IGNORE_VLAN);
 		}
 	}
 	buf_dump_line("ctx  ", __LINE__, context_desc, sizeof(*context_desc));

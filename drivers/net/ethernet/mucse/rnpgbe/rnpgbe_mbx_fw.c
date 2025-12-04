@@ -32,6 +32,10 @@ static int rnpgbe_mbx_write_posted_locked(struct rnpgbe_hw *hw,
 	int err = 0;
 	int retry = 3;
 
+	/* if pcie off, nothing todo */
+	if (pci_channel_offline(hw->pdev))
+		return -EIO;
+
 	if (mutex_lock_interruptible(&hw->mbx.lock)) {
 		rnpgbe_err("[%s] get mbx lock failed opcode:0x%x\n", __func__,
 			   req->opcode);
@@ -62,12 +66,12 @@ try_again:
 
 static void rnpgbe_link_stat_mark_reset(struct rnpgbe_hw *hw)
 {
-	wr32(hw, RNP_DMA_DUMY, 0xa0000000);
+	mbx_wr32(hw, RNP_DMA_DUMY, 0xa0000000);
 }
 
 static void rnpgbe_link_stat_mark_disable(struct rnpgbe_hw *hw)
 {
-	wr32(hw, RNP_DMA_DUMY, 0);
+	mbx_wr32(hw, RNP_DMA_DUMY, 0);
 }
 
 static int rnpgbe_mbx_fw_post_req(struct rnpgbe_hw *hw, struct mbx_fw_cmd_req *req,
@@ -75,6 +79,10 @@ static int rnpgbe_mbx_fw_post_req(struct rnpgbe_hw *hw, struct mbx_fw_cmd_req *r
 {
 	int err = 0;
 	struct rnpgbe_adapter *adpt = hw->back;
+
+	/* if pcie off, nothing todo */
+	if (pci_channel_offline(hw->pdev))
+		return -EIO;
 
 	cookie->errcode = 0;
 	cookie->done = 0;
@@ -99,12 +107,9 @@ static int rnpgbe_mbx_fw_post_req(struct rnpgbe_hw *hw, struct mbx_fw_cmd_req *r
 	}
 
 	if (cookie->timeout_jiffes != 0) {
-retry:
-		err = wait_event_interruptible_timeout(cookie->wait,
-						       cookie->done == 1,
-						       cookie->timeout_jiffes);
-		if (err == -ERESTARTSYS)
-			goto retry;
+		err = wait_event_timeout(cookie->wait,
+					 cookie->done == 1,
+					 cookie->timeout_jiffes);
 		if (err == 0) {
 			rnpgbe_err("[%s] pfvfnum:0x%x timeout err:%d opcode:%x\n",
 				   adpt->name, hw->pfvfnum, err,
@@ -135,6 +140,10 @@ static int rnpgbe_fw_send_cmd_wait(struct rnpgbe_hw *hw, struct mbx_fw_cmd_req *
 		rnpgbe_err("error: hw:%p req:%p reply:%p\n", hw, req, reply);
 		return -EINVAL;
 	}
+
+	/* if pcie off, nothing todo */
+	if (pci_channel_offline(hw->pdev))
+		return -EIO;
 
 	if (mutex_lock_interruptible(&hw->mbx.lock)) {
 		rnpgbe_err("[%s] get mbx lock failed opcode:0x%x\n", __func__,
@@ -246,22 +255,6 @@ int rnpgbe_mbx_get_lane_stat(struct rnpgbe_hw *hw)
 	hw->supported_link = st->supported_link;
 	hw->advertised_link = st->advertised_link;
 	hw->tp_mdx = st->tp_mdx;
-
-	if (hw->hw_type == rnpgbe_hw_n10 || hw->hw_type == rnpgbe_hw_n400) {
-		if (hw->fw_version >= 0x00050000) {
-			hw->sfp_connector = st->sfp_connector;
-			hw->duplex = st->duplex;
-			adpt->an = st->autoneg;
-		} else {
-			hw->sfp_connector = 0xff;
-			hw->duplex = 1;
-			adpt->an = st->an;
-		}
-		if (hw->fw_version <= 0x00050000) {
-			hw->supported_link |= RNP_LINK_SPEED_10GB_FULL |
-					      RNP_LINK_SPEED_1GB_FULL;
-		}
-	}
 
 	rnpgbe_logd(LOG_MBX_LINK_STAT,
 		    "%s:pma_type:0x%x phy_type:0x%x,linkup:%d duplex:%d auton:%d ",
@@ -657,7 +650,7 @@ int rnpgbe_mbx_force_speed(struct rnpgbe_hw *hw, int speed)
 {
 	int cmd = 0x01150000;
 
-	if (hw->force_10g_1g_speed_ablity == 0)
+	if (hw->force_10g_1g_speed_ability == 0)
 		return -EINVAL;
 
 	if (speed == RNP_LINK_SPEED_10GB_FULL) {
@@ -762,7 +755,7 @@ int rnpgbe_mbx_get_dump(struct rnpgbe_hw *hw, int flags, u32 *data_out,
 	return err ? -err : 0;
 }
 
-int rnp500_fw_update(struct rnpgbe_hw *hw, int partition, const u8 *fw_bin,
+int rnpgbe_fw_update(struct rnpgbe_hw *hw, int partition, const u8 *fw_bin,
 		     int bytes)
 {
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
@@ -780,6 +773,33 @@ int rnp500_fw_update(struct rnpgbe_hw *hw, int partition, const u8 *fw_bin,
 	if (!cookie) {
 		dev_err(&hw->pdev->dev, "%s: no memory:%d!", __func__, 0);
 		return -ENOMEM;
+	}
+
+	/* if bytes more than ram_size, we update header at last */
+	if (bytes > ram_size) {
+		offset += ram_size;
+
+		if (hw->hw_type == rnpgbe_hw_n210 ||
+		    hw->hw_type == rnpgbe_hw_n210L) {
+			memset(&req, 0, sizeof(req));
+			memset(&reply, 0, sizeof(reply));
+
+			for (i = 0; i < ram_size; i = i + 4)
+				rnpgbe_wr_reg(hw->hw_addr + mbx->cpu_vf_share_ram + i,
+					      0xffffffff);
+
+			build_fw_update_n500_req(&req, cookie, partition, 0);
+			if (hw->mbx.other_irq_enabled) {
+				err = rnpgbe_mbx_fw_post_req(hw, &req, cookie);
+			} else {
+				int old_mbx_timeout = hw->mbx.timeout;
+
+				hw->mbx.timeout = (20 * 1000 * 1000) /
+					hw->mbx.usec_delay;
+				err = rnpgbe_fw_send_cmd_wait(hw, &req, &reply);
+				hw->mbx.timeout = old_mbx_timeout;
+			}
+		}
 	}
 
 	while (offset < bytes) {
@@ -807,59 +827,31 @@ int rnp500_fw_update(struct rnpgbe_hw *hw, int partition, const u8 *fw_bin,
 			goto out;
 		offset += ram_size;
 	}
+	/* we write header at last */
+	if (bytes > ram_size) {
+		offset = 0;
+		memset(&req, 0, sizeof(req));
+		memset(&reply, 0, sizeof(reply));
+
+		for (i = 0; i < ram_size; i = i + 4)
+			rnpgbe_wr_reg(hw->hw_addr + mbx->cpu_vf_share_ram + i,
+				      *(msg + offset / 4 + i / 4));
+
+		build_fw_update_n500_req(&req, cookie, partition, offset);
+		if (hw->mbx.other_irq_enabled) {
+			err = rnpgbe_mbx_fw_post_req(hw, &req, cookie);
+		} else {
+			int old_mbx_timeout = hw->mbx.timeout;
+
+			hw->mbx.timeout = (20 * 1000 * 1000) /
+					  hw->mbx.usec_delay;
+			err = rnpgbe_fw_send_cmd_wait(hw, &req, &reply);
+			hw->mbx.timeout = old_mbx_timeout;
+		}
+	}
 
 out:
 	return err ? -err : 0;
-}
-
-int rnpgbe_fw_update(struct rnpgbe_hw *hw, int partition, const u8 *fw_bin,
-		     int bytes)
-{
-	int err;
-	struct mbx_req_cookie *cookie = NULL;
-	struct mbx_fw_cmd_req req;
-	struct mbx_fw_cmd_reply reply;
-	void *dma_buf = NULL;
-	dma_addr_t dma_phy;
-	u64 address;
-
-	cookie = mbx_cookie_zalloc(0);
-	if (!cookie) {
-		dev_err(&hw->pdev->dev, "%s: no memory:%d!", __func__, 0);
-		return -ENOMEM;
-	}
-
-	memset(&req, 0, sizeof(req));
-	memset(&reply, 0, sizeof(reply));
-
-	dma_buf = dma_alloc_coherent(&hw->pdev->dev, bytes, &dma_phy, GFP_ATOMIC);
-	if (!dma_buf) {
-		err = -ENOMEM;
-		goto quit;
-	}
-
-	memcpy(dma_buf, fw_bin, bytes);
-	address = dma_phy;
-	build_fw_update_req(&req, cookie, partition, address & 0xffffffff,
-			    (address >> 32) & 0xffffffff, bytes);
-	if (hw->mbx.other_irq_enabled) {
-		err = rnpgbe_mbx_fw_post_req(hw, &req, cookie);
-	} else {
-		int old_mbx_timeout = hw->mbx.timeout;
-
-		hw->mbx.timeout =
-			(20 * 1000 * 1000) / hw->mbx.usec_delay;
-		err = rnpgbe_fw_send_cmd_wait(hw, &req, &reply);
-		hw->mbx.timeout = old_mbx_timeout;
-	}
-
-quit:
-	if (dma_buf)
-		dma_free_coherent(&hw->pdev->dev, bytes, dma_buf, dma_phy);
-
-	kfree(cookie);
-
-	return (err) ? -EIO : 0;
 }
 
 int rnpgbe_mbx_link_event_enable(struct rnpgbe_hw *hw, int enable)
@@ -872,19 +864,19 @@ int rnpgbe_mbx_link_event_enable(struct rnpgbe_hw *hw, int enable)
 	memset(&reply, 0, sizeof(reply));
 
 	if (enable)
-		wr32(hw, RNP_DMA_DUMY, 0xa0000000);
+		mbx_wr32(hw, RNP_DMA_DUMY, 0xa0000000);
 
 	build_link_set_event_mask(&req, BIT(EVT_LINK_UP),
 				  (enable & 1) << EVT_LINK_UP, &req);
 
 	err = rnpgbe_mbx_write_posted_locked(hw, &req);
 	if (!enable)
-		wr32(hw, RNP_DMA_DUMY, 0);
+		mbx_wr32(hw, RNP_DMA_DUMY, 0);
 
 	return err;
 }
 
-int rnpgbe_fw_get_capablity(struct rnpgbe_hw *hw, struct phy_abilities *abil)
+int rnpgbe_fw_get_capability(struct rnpgbe_hw *hw, struct phy_abilities *abil)
 {
 	int err;
 	struct mbx_fw_cmd_req req;
@@ -959,7 +951,7 @@ int rnpgbe_mbx_ifinsmod(struct rnpgbe_hw *hw, int status)
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
 
-	build_ifinsmod(&req, hw->nr_lane, status);
+	build_ifinsmod(&req, hw->driver_version, status);
 
 	if (mutex_lock_interruptible(&hw->mbx.lock))
 		return -EAGAIN;
@@ -1139,59 +1131,67 @@ int rnpgbe_mbx_phy_eee_set(struct rnpgbe_hw *hw, u32 tx_lpi_timer,
 int rnpgbe_mbx_get_capability(struct rnpgbe_hw *hw, struct rnpgbe_info *info)
 {
 	int err;
-	struct phy_abilities ablity;
+	struct phy_abilities ability;
 	int try_cnt = 3;
 
-	memset(&ablity, 0, sizeof(ablity));
+	memset(&ability, 0, sizeof(ability));
 	rnpgbe_link_stat_mark_disable(hw);
 
 	while (try_cnt--) {
-		err = rnpgbe_fw_get_capablity(hw, &ablity);
+		err = rnpgbe_fw_get_capability(hw, &ability);
 		if (err == 0 && info) {
-			hw->lane_mask = ablity.lane_mask & 0xf;
-			info->mac = to_mac_type(&ablity);
+			hw->lane_mask = ability.lane_mask & 0xf;
+			info->mac = to_mac_type(&ability);
 			info->adapter_cnt = hweight_long(hw->lane_mask);
-			hw->sfc_boot = (ablity.nic_mode & 0x1) ? 1 : 0;
-			hw->pxe_en = (ablity.nic_mode & 0x2) ? 1 : 0;
-			hw->ncsi_en = (ablity.nic_mode & 0x4) ? 1 : 0;
-			hw->pfvfnum = ablity.pfnum;
-			hw->speed = ablity.speed;
+			hw->sfc_boot = (ability.nic_mode & 0x1) ? 1 : 0;
+			hw->pxe_en = (ability.nic_mode & 0x2) ? 1 : 0;
+			hw->ncsi_en = (ability.nic_mode & 0x4) ? 1 : 0;
+			hw->pfvfnum = ability.pfnum;
+			hw->speed = ability.speed;
 			hw->nr_lane = 0;
-			hw->fw_version = ablity.fw_version;
+			hw->fw_version = ability.fw_version;
 			hw->mac_type = info->mac;
-			hw->phy_type = ablity.phy_type;
-			hw->axi_mhz = ablity.axi_mhz;
-			hw->port_ids = ablity.port_ids;
-			hw->bd_uid = ablity.bd_uid;
-			hw->phy_id = ablity.phy_id;
+			hw->phy_type = ability.phy_type;
+			hw->axi_mhz = ability.axi_mhz;
+			hw->port_ids = ability.port_ids;
+			hw->bd_uid = ability.bd_uid;
+			hw->phy_id = ability.phy_id;
 
 			if (hw->fw_version >= 0x00050201 &&
-			    ablity.speed == SPEED_10000) {
+			    ability.speed == SPEED_10000) {
 				hw->force_speed_stat = FORCE_SPEED_STAT_DISABLED;
-				hw->force_10g_1g_speed_ablity = 1;
+				hw->force_10g_1g_speed_ability = 1;
 			}
 			if (hw->fw_version >= 0x0001012C) {
 				/* this version can get wol_en from hw */
-				hw->wol = ablity.wol_status & 0xff;
-				hw->wol_en = ablity.wol_status & 0x100;
+				hw->wol = ability.wol_status & 0xff;
+				hw->wol_en = ability.wol_status & 0x100;
 			} else {
 				/* other version only pf0 or ncsi can wol */
-				hw->wol = ablity.wol_status & 0x1;
-				if (hw->ncsi_en || !ablity.pfnum)
+				hw->wol = ability.wol_status & 0xff;
+				if (hw->ncsi_en || !ability.pfnum)
 					hw->wol_en = 1;
 			}
+			/* 0.1.5.0 can get force status from fw */
+			if (hw->fw_version >= 0x00010500) {
+				hw->force_en = ability.e.force_down_en;
+				hw->force_cap = 1;
+			}
+			/* 0.1.6.0 can get trim valid from hw */
+			if (hw->fw_version >= 0x00010600)
+				hw->trim_valid = (ability.nic_mode & 0x8) ? 1 : 0;
 
 			pr_info("%s: nic-mode:%d mac:%d adpt_cnt:%d lane_mask:0x%x,",
 				__func__, hw->mode, info->mac,
 				info->adapter_cnt, hw->lane_mask);
 			pr_info("phy_type 0x%x, pfvfnum:0x%x, fw-version:0x%08x\n, axi:%d Mhz,",
 				hw->phy_type, hw->pfvfnum,
-				ablity.fw_version, ablity.axi_mhz);
-			pr_info("port_id:%d bd_uid:0x%08x 0x%x ex-ablity:0x%x fs:%d speed:%d ",
-				ablity.port_id[0], hw->bd_uid,
-				ablity.phy_id, ablity.ext_ablity,
-				hw->force_10g_1g_speed_ablity,
-				ablity.speed);
+				ability.fw_version, ability.axi_mhz);
+			pr_info("port_id:%d bd_uid:0x%08x 0x%x ex-ability:0x%x fs:%d speed:%d ",
+				ability.port_id[0], hw->bd_uid,
+				ability.phy_id, ability.ext_ability,
+				hw->force_10g_1g_speed_ability,
+				ability.speed);
 			if (info->adapter_cnt != 0)
 				return 0;
 		}
@@ -1246,50 +1246,47 @@ enum speed_enum {
 
 void rnpgbe_link_stat_mark(struct rnpgbe_hw *hw, int up)
 {
+	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	u32 v;
 
-	v = rd32(hw, RNP_DMA_DUMY);
-	if (hw->hw_type == rnpgbe_hw_n10 || hw->hw_type == rnpgbe_hw_n400) {
-		v &= ~(0xffff0000);
-		v |= 0xa5a40000;
-		if (up)
-			v |= BIT(0);
-		else
-			v &= ~BIT(0);
-
-	} else if ((hw->hw_type == rnpgbe_hw_n500) ||
-		   (hw->hw_type == rnpgbe_hw_n210)) {
-		v &= ~(0x0f000f11);
-		v |= 0xa0000000;
-		if (up) {
-			v |= BIT(0);
-			switch (hw->speed) {
-			case 10:
-				v |= (speed_10 << 8);
-				break;
-			case 100:
-				v |= (speed_100 << 8);
-				break;
-			case 1000:
-				v |= (speed_1000 << 8);
-				break;
-			case 10000:
-				v |= (speed_10000 << 8);
-				break;
-			case 25000:
-				v |= (speed_25000 << 8);
-				break;
-			case 40000:
-				v |= (speed_40000 << 8);
-				break;
-			}
-			v |= (hw->duplex << 4);
-			v |= (hw->fc.current_mode << 24);
-		} else {
-			v &= ~BIT(0);
+	v = mbx_rd32(hw, RNP_DMA_DUMY);
+	v &= ~(0x0f000f11);
+	v |= 0xa0000000;
+	if (up) {
+		v |= BIT(0);
+		switch (hw->speed) {
+		case 10:
+			v |= (speed_10 << 8);
+			break;
+		case 100:
+			v |= (speed_100 << 8);
+			break;
+		case 1000:
+			v |= (speed_1000 << 8);
+			break;
+		case 10000:
+			v |= (speed_10000 << 8);
+			break;
+		case 25000:
+			v |= (speed_25000 << 8);
+			break;
+		case 40000:
+			v |= (speed_40000 << 8);
+			break;
 		}
+		v |= (hw->duplex << 4);
+		v |= (hw->fc.current_mode << 24);
+	} else {
+		v &= ~BIT(0);
 	}
-	wr32(hw, RNP_DMA_DUMY, v);
+	/* we should update lldp_status */
+	if (hw->fw_version >= 0x00010500) {
+		if (adapter->priv_flags & RNP_PRIV_FLAG_LLDP)
+			v |= BIT(6);
+		else
+			v &= (~BIT(6));
+	}
+	mbx_wr32(hw, RNP_DMA_DUMY, v);
 }
 
 static inline int rnpgbe_mbx_fw_req_handler(struct rnpgbe_adapter *adapter,
@@ -1313,22 +1310,22 @@ static inline int rnpgbe_mbx_fw_req_handler(struct rnpgbe_adapter *adapter,
 		else
 			adapter->hw.link = 0;
 
-		if (hw->hw_type == rnpgbe_hw_n500 ||
-		    hw->hw_type == rnpgbe_hw_n210) {
-			adapter->local_eee = req->link_stat.st[0].local_eee;
-			adapter->partner_eee = req->link_stat.st[0].partner_eee;
+		adapter->local_eee = req->link_stat.st[0].local_eee;
+		adapter->partner_eee = req->link_stat.st[0].partner_eee;
+
+		if (hw->fw_version >= 0x00010500) {
+			if (req->link_stat.st[0].lldp_status)
+				adapter->priv_flags |= RNP_PRIV_FLAG_LLDP;
+			else
+				adapter->priv_flags &= (~RNP_PRIV_FLAG_LLDP);
 		}
 
 		if (req->link_stat.port_st_magic == SPEED_VALID_MAGIC) {
 			hw->speed = req->link_stat.st[0].speed;
 			hw->duplex = req->link_stat.st[0].duplex;
-			/* n500 can update pause and tp */
-			if (hw->hw_type == rnpgbe_hw_n500 ||
-			    hw->hw_type == rnpgbe_hw_n210) {
-				hw->fc.current_mode =
-					req->link_stat.st[0].pause;
-				hw->tp_mdx = req->link_stat.st[0].tp_mdx;
-			}
+			hw->fc.current_mode =
+				req->link_stat.st[0].pause;
+			hw->tp_mdx = req->link_stat.st[0].tp_mdx;
 
 			switch (hw->speed) {
 			case 10:
@@ -1359,6 +1356,7 @@ static inline int rnpgbe_mbx_fw_req_handler(struct rnpgbe_adapter *adapter,
 		adapter->flags |= RNP_FLAG_NEED_LINK_UPDATE;
 		break;
 	}
+	rnpgbe_service_event_schedule(adapter);
 
 	return 0;
 }
@@ -1382,7 +1380,7 @@ static inline int rnpgbe_mbx_fw_reply_handler(struct rnpgbe_adapter *adapter,
 	else
 		cookie->errcode = 0;
 
-	wake_up_interruptible(&cookie->wait);
+	wake_up(&cookie->wait);
 
 	return 0;
 }

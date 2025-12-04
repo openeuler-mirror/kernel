@@ -153,18 +153,25 @@ struct phy_abilities {
 	int wol_status;
 
 	union {
-		int ext_ablity;
+		int ext_ability;
 		struct {
-			int valid : 1;
-			int wol_en : 1;
-			int pci_preset_runtime_en : 1;
-			int smbus_en : 1;
-			int ncsi_en : 1;
-			int rpu_en : 1;
-			int v2 : 1;
-			int pxe_en : 1;
-			int mctp_en : 1;
-		};
+			unsigned int valid : 1;
+			unsigned int wol_en : 1;
+			unsigned int pci_preset_runtime_en : 1;
+			unsigned int smbus_en : 1;
+			unsigned int ncsi_en : 1;
+			unsigned int rpu_en : 1;
+			unsigned int v2 : 1;
+			unsigned int pxe_en : 1;
+			unsigned int mctp_en : 1;
+			unsigned int yt8614 : 1;
+			unsigned int pci_ext_reset : 1;
+			unsigned int rpu_availble : 1;
+			unsigned int fw_lldp_ability : 1;
+			unsigned int lldp_enabled : 1;
+			unsigned int only_1g : 1;
+			unsigned int force_down_en: 1;
+		} e;
 	};
 
 } _PACKED_ALIGN4;
@@ -218,7 +225,7 @@ struct link_stat_data {
 	char rev1 : 1;
 	/* 3:ignore */
 	char an_completed : 1;
-	char lp_an_ablity : 1;
+	char lp_an_ability : 1;
 	char parallel_detection_fault : 1;
 	char fec_enabled : 1;
 	char low_power_state : 1;
@@ -269,7 +276,8 @@ struct port_stat {
 	u16 local_eee : 3;
 	u16 partner_eee : 3;
 	u16 tp_mdx : 2;
-	u16 revs : 4;
+	u16 lldp_status : 1;
+	u16 revs : 3;
 } __attribute__((packed));
 
 struct phy_pause_data {
@@ -574,7 +582,7 @@ struct mbx_fw_cmd_req {
 			char nr_lane;
 		} set_phy_reg;
 		struct {
-		} get_phy_ablity;
+		} get_phy_ability;
 
 		struct {
 			int lane_mask;
@@ -602,7 +610,7 @@ struct mbx_fw_cmd_req {
 			unsigned int bin_phy_hi;
 		} fw_update;
 	};
-} _PACKED_ALIGN4;
+} __packed;
 
 #define EEE_1000BT BIT(2)
 #define EEE_100BT BIT(1)
@@ -1242,6 +1250,7 @@ enum MBX_ERR {
 	MBX_ERR_NODEV,
 	MBX_ERR_IO,
 };
-int rnpgbe_fw_get_capablity(struct rnpgbe_hw *hw, struct phy_abilities *abil);
+
+int rnpgbe_fw_get_capability(struct rnpgbe_hw *hw, struct phy_abilities *abil);
 
 #endif
