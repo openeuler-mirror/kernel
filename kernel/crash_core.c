@@ -9,6 +9,7 @@
 #include <linux/vmalloc.h>
 #include <linux/memblock.h>
 #include <linux/swiotlb.h>
+#include <linux/kmemleak.h>
 
 #ifdef CONFIG_KEXEC_CORE
 #include <asm/kexec.h>
@@ -555,6 +556,14 @@ reserve_ok:
 		(unsigned long)(crash_size >> 20),
 		(unsigned long)(crash_base >> 20),
 		(unsigned long)(total_mem >> 20));
+
+#ifdef CONFIG_ARM64
+	/*
+	 * The crashkernel memory will be removed from the kernel linear
+	 * map. Inform kmemleak so that it won't try to access it.
+	 */
+	kmemleak_ignore_phys(crash_base);
+#endif
 
 	crashk_res.start = crash_base;
 	crashk_res.end   = crash_base + crash_size - 1;
