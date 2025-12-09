@@ -79,20 +79,15 @@ EXPORT_SYMBOL_GPL(hisi_soc_cache_maintain);
 static int hisi_soc_cache_maint_pte_entry(pte_t *pte, unsigned long addr,
 				unsigned long next, struct mm_walk *walk)
 {
-#ifdef HISI_SOC_CACHE_LLT
-	unsigned int mnt_type = *((unsigned int *)walk->priv);
-#else
-	unsigned int mnt_type = *((unsigned int *)walk->private);
-#endif
-	size_t size = next - addr;
-	phys_addr_t paddr;
+	struct hisi_soc_cache_ioctl_param *param = walk->private;
+	size_t size = min(next - addr, param->size + param->addr - addr);
+	unsigned long offset = offset_in_page(max(addr, param->addr));
+	phys_addr_t paddr = PFN_PHYS(pte_pfn(*pte)) + offset;
 
 	if (!pte_present(ptep_get(pte)))
 		return -EINVAL;
 
-	paddr = PFN_PHYS(pte_pfn(*pte)) + offset_in_page(addr);
-
-	return hisi_soc_cache_maintain(paddr, size, mnt_type);
+	return hisi_soc_cache_maintain(paddr, size, param->op_type);
 }
 
 static const struct mm_walk_ops hisi_soc_cache_maint_walk = {
@@ -227,9 +222,9 @@ static int __hisi_soc_cache_maintain(unsigned long __user vaddr, size_t size,
 		goto out;
 	}
 
-	ret = walk_page_range(current->mm, start, start + size,
+	ret = walk_page_range(current->mm, PAGE_ALIGN_DOWN(start),
+			PAGE_ALIGN(start + size),
 			&hisi_soc_cache_maint_walk, &mnt_type);
-
 out:
 	mmap_read_unlock(current->mm);
 	return ret;
