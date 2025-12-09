@@ -496,7 +496,9 @@ static int attach_pages(unsigned long dst_addr, unsigned long src_addr,
 	}
 
 	trace_attach_page_range_start(dst_mm, src_mm, dst_addr, src_addr, size);
+	mmap_read_lock(src_mm);
 	ret = attach_page_range(dst_mm, src_mm, dst_addr, src_addr, size);
+	mmap_read_unlock(src_mm);
 	trace_attach_page_range_end(dst_mm, src_mm, dst_addr, src_addr, ret);
 
 put_dst_mm:
