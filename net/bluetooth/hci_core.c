@@ -3559,6 +3559,9 @@ static int hci_suspend_notifier(struct notifier_block *nb, unsigned long action,
 			goto done;
 	}
 
+	/* To avoid a potential race with hci_unregister_dev. */
+	hci_dev_hold(hdev);
+
 	/* Suspend notifier should only act on events when powered. */
 	if (!hdev_is_powered(hdev) ||
 	    hci_dev_test_flag(hdev, HCI_UNREGISTER))
@@ -3602,6 +3605,7 @@ done:
 		bt_dev_err(hdev, "Suspend notifier action (%lu) failed: %d",
 			   action, ret);
 
+	hci_dev_put(hdev);
 	return NOTIFY_DONE;
 }
 
