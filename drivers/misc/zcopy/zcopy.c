@@ -145,6 +145,9 @@ static pud_t *zcopy_get_pud(struct mm_struct *mm, unsigned long addr)
 	if (pud_none(*pud))
 		return NULL;
 
+	if (!pud_table(*pud))
+		return NULL;
+
 	return pud;
 }
 
@@ -177,11 +180,12 @@ static pud_t *zcopy_alloc_new_pud(struct mm_struct *mm, unsigned long addr)
 	return zcopy_pud_alloc(mm, p4d, addr);
 }
 
-static pmd_t *zcopy_alloc_pmd(struct mm_struct *mm, unsigned long addr)
+static pmd_t *zcopy_alloc_pmd(struct mm_struct *mm, unsigned long addr, int *rc)
 {
 	pud_t *pud;
 	pmd_t *pmd;
 
+	*rc = -ENOMEM;
 	pud = zcopy_alloc_new_pud(mm, addr);
 	if (!pud)
 		return NULL;
@@ -189,6 +193,12 @@ static pmd_t *zcopy_alloc_pmd(struct mm_struct *mm, unsigned long addr)
 	pmd = zcopy_pmd_alloc(mm, pud, addr);
 	if (!pmd)
 		return NULL;
+
+	if (pmd_trans_huge(*pmd)) {
+		pr_warn_once("va mapped to hugepage, please free it and realloc va\n");
+		*rc = -EAGAIN;
+		return NULL;
+	}
 
 	return pmd;
 }
@@ -264,10 +274,10 @@ int attach_huge_pmd(struct vm_area_struct *dst_vma, struct vm_area_struct *src_v
 {
 	struct mm_struct *dst_mm, *src_mm;
 	spinlock_t *src_ptl, *dst_ptl;
-	struct page *src_thp_page, *orig_thp_page;
+	struct page *src_thp_page;
 	pmd_t pmd, orig_pmd;
 	pgtable_t pgtable;
-
+	int ret = 0;
 
 	if (!vma_is_anonymous(dst_vma))
 		return -EINVAL;
@@ -280,9 +290,18 @@ int attach_huge_pmd(struct vm_area_struct *dst_vma, struct vm_area_struct *src_v
 	if (unlikely(!pgtable))
 		return -ENOMEM;
 
-	src_ptl = pmd_lockptr(src_mm, src_pmdp);
 	dst_ptl = pmd_lockptr(dst_mm, dst_pmdp);
+	spin_lock_nested(dst_ptl, SINGLE_DEPTH_NESTING);
+	orig_pmd = *dst_pmdp;
+	/* check if exists old mappings */
+	if (!pmd_none(orig_pmd)) {
+		pte_free(dst_mm, pgtable);
+		spin_unlock(dst_ptl);
+		return -EAGAIN;
+	}
+	spin_unlock(dst_ptl);
 
+	src_ptl = pmd_lockptr(src_mm, src_pmdp);
 	spin_lock(src_ptl);
 	pmd = *src_pmdp;
 	src_thp_page = pmd_page(pmd);
@@ -297,24 +316,13 @@ int attach_huge_pmd(struct vm_area_struct *dst_vma, struct vm_area_struct *src_v
 	spin_unlock(src_ptl);
 
 	spin_lock_nested(dst_ptl, SINGLE_DEPTH_NESTING);
-	orig_pmd = *dst_pmdp;
-	/* umap the old page mappings */
-	if (!pmd_none(orig_pmd)) {
-		orig_thp_page = pmd_page(orig_pmd);
-		put_page(orig_thp_page);
-		atomic_dec(compound_mapcount_ptr(orig_thp_page));
-		zcopy_add_mm_counter(dst_mm, MM_ANONPAGES, -HPAGE_PMD_NR);
-		mm_dec_nr_ptes(dst_mm);
-	}
-
 	zcopy_add_mm_counter(dst_mm, MM_ANONPAGES, HPAGE_PMD_NR);
 	mm_inc_nr_ptes(dst_mm);
 	zcopy_pgtable_trans_huge_deposit(dst_mm, dst_pmdp, pgtable);
 	zcopy_set_pmd_at(dst_mm, dst_addr, dst_pmdp, pmd);
 	flush_tlb_range(dst_vma, dst_addr, dst_addr + HPAGE_PMD_SIZE);
 	spin_unlock(dst_ptl);
-
-	return 0;
+	return ret;
 }
 
 
@@ -324,10 +332,14 @@ static int attach_ptes(struct vm_area_struct *dst_vma, struct vm_area_struct *sr
 {
 	struct mm_struct *dst_mm = dst_vma->vm_mm;
 	pte_t *src_ptep, *dst_ptep, pte, orig_pte;
-	struct page *src_page, *orig_page;
+	struct page *src_page;
 	spinlock_t *dst_ptl;
 	int rss[NR_MM_COUNTERS];
 	unsigned long src_addr_end = src_addr + len;
+	int ret = 0;
+
+	if (!vma_is_anonymous(dst_vma) || !vma_is_anonymous(src_vma))
+		return -EINVAL;
 
 	memset(rss, 0, sizeof(int) * NR_MM_COUNTERS);
 
@@ -346,30 +358,26 @@ static int attach_ptes(struct vm_area_struct *dst_vma, struct vm_area_struct *sr
 		if (pte_none(*src_ptep) || pte_special(*src_ptep) || !pte_present(pte))
 			continue;
 
+		/* check if exists old mappings */
+		orig_pte = *dst_ptep;
+		if (!pte_none(orig_pte)) {
+			ret = -EAGAIN;
+			goto out;
+		}
+
 		src_page = pte_page(pte);
 		get_page(src_page);
 		page_dup_rmap(src_page, false);
 		rss[MM_ANONPAGES]++;
-
-		/*
-		 * If dst virtual addr has page mapping, before setup the new mapping.
-		 * we should decrease the orig page mapcount and refcount.
-		 */
-		orig_pte = *dst_ptep;
-		if (!pte_none(orig_pte)) {
-			orig_page = pte_page(orig_pte);
-			put_page(orig_page);
-			zcopy_page_remove_rmap(orig_page, false);
-			rss[MM_ANONPAGES]--;
-		}
 		zcopy_set_pte_at(dst_mm, dst_addr, dst_ptep, pte);
 	}
 
 	flush_tlb_range(dst_vma, dst_addr, dst_addr + len);
+out:
 	zcopy_add_mm_rss_vec(dst_mm, rss);
 	spin_unlock(dst_ptl);
 
-	return 0;
+	return ret;
 }
 
 static int attach_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
@@ -394,11 +402,9 @@ static int attach_page_range(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		src_pmd = zcopy_get_pmd(src_mm, src_addr);
 		if (!src_pmd)
 			continue;
-		dst_pmd = zcopy_alloc_pmd(dst_mm, dst_addr);
-		if (!dst_pmd) {
-			ret = -ENOMEM;
+		dst_pmd = zcopy_alloc_pmd(dst_mm, dst_addr, &ret);
+		if (!dst_pmd)
 			break;
-		}
 
 		if (pmd_trans_huge(*src_pmd)) {
 			if (extent == HPAGE_PMD_SIZE) {
@@ -443,11 +449,6 @@ static int attach_pages(unsigned long dst_addr, unsigned long src_addr,
 {
 	struct mm_struct *dst_mm, *src_mm;
 	struct task_struct *src_task, *dst_task;
-	struct page **process_pages;
-	unsigned long nr_pages;
-	unsigned int flags = 0;
-	int pinned_pages;
-	int locked = 1;
 	int ret;
 
 	ret = -EINVAL;
@@ -494,33 +495,12 @@ static int attach_pages(unsigned long dst_addr, unsigned long src_addr,
 		goto put_dst_mm;
 	}
 
-	nr_pages = (src_addr + size - 1) / PAGE_SIZE - src_addr / PAGE_SIZE + 1;
-	process_pages = kvmalloc_array(nr_pages, sizeof(struct pages *), GFP_KERNEL);
-	if (!process_pages) {
-		ret = -ENOMEM;
-		goto put_dst_mm;
-	}
-
-	mmap_read_lock(src_mm);
-	pinned_pages = pin_user_pages_remote(src_mm, src_addr, nr_pages,
-					     flags, process_pages,
-					     NULL, &locked);
-	if (locked)
-		mmap_read_unlock(src_mm);
-
-	if (pinned_pages <= 0) {
-		ret = -EFAULT;
-		goto free_pages_array;
-	}
-
 	trace_attach_page_range_start(dst_mm, src_mm, dst_addr, src_addr, size);
+	mmap_read_lock(src_mm);
 	ret = attach_page_range(dst_mm, src_mm, dst_addr, src_addr, size);
+	mmap_read_unlock(src_mm);
 	trace_attach_page_range_end(dst_mm, src_mm, dst_addr, src_addr, ret);
 
-	unpin_user_pages_dirty_lock(process_pages, pinned_pages, 0);
-
-free_pages_array:
-	kvfree(process_pages);
 put_dst_mm:
 	mmput(dst_mm);
 put_dst_task:
