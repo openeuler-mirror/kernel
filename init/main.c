@@ -1077,6 +1077,7 @@ void start_kernel(void)
 	arch_call_rest_init();
 
 	prevent_tail_call_optimization();
+	unreachable();
 }
 
 /* Call all constructor functions linked into the kernel. */
