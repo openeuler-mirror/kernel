@@ -916,6 +916,13 @@ static bool scx_ops_init_task_enabled;
 static bool scx_switching_all;
 DEFINE_STATIC_KEY_FALSE(__scx_switched_all);
 
+/*
+ * Tracks whether scx_ops_enable() called scx_ops_bypass(true). Used to
+ * balance bypass depth on enable failure. Will be removed when bypass depth is
+ * moved into the sched instance.
+ */
+static bool scx_ops_bypassed_for_enable;
+
 static struct sched_ext_ops scx_ops;
 static bool scx_warned_zero_slice;
 
@@ -4659,6 +4666,11 @@ static void scx_ops_disable_workfn(struct kthread_work *work)
 	free_exit_info(scx_exit_info);
 	scx_exit_info = NULL;
 
+	if (scx_ops_bypassed_for_enable) {
+		scx_ops_bypassed_for_enable = false;
+		scx_ops_bypass(false);
+	}
+
 	mutex_unlock(&scx_ops_enable_mutex);
 
 	WARN_ON_ONCE(scx_ops_set_enable_state(SCX_OPS_DISABLED) !=
@@ -5220,6 +5232,7 @@ static int scx_ops_enable(struct sched_ext_ops *ops)
 	 * switched. Init in bypass mode to guarantee forward progress.
 	 */
 	scx_ops_bypass(true);
+	scx_ops_bypassed_for_enable = true;
 
 	for (i = SCX_OPI_NORMAL_BEGIN; i < SCX_OPI_NORMAL_END; i++)
 		if (((void (**)(void))ops)[i])
@@ -5343,6 +5356,7 @@ static int scx_ops_enable(struct sched_ext_ops *ops)
 	scx_task_iter_stop(&sti);
 	percpu_up_write(&scx_fork_rwsem);
 
+	scx_ops_bypassed_for_enable = false;
 	scx_ops_bypass(false);
 
 	if (!scx_ops_tryset_enable_state(SCX_OPS_ENABLED, SCX_OPS_ENABLING)) {
