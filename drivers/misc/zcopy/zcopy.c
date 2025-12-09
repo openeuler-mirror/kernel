@@ -145,6 +145,9 @@ static pud_t *zcopy_get_pud(struct mm_struct *mm, unsigned long addr)
 	if (pud_none(*pud))
 		return NULL;
 
+	if (!pud_table(*pud))
+		return NULL;
+
 	return pud;
 }
 
@@ -334,6 +337,9 @@ static int attach_ptes(struct vm_area_struct *dst_vma, struct vm_area_struct *sr
 	int rss[NR_MM_COUNTERS];
 	unsigned long src_addr_end = src_addr + len;
 	int ret = 0;
+
+	if (!vma_is_anonymous(dst_vma) || !vma_is_anonymous(src_vma))
+		return -EINVAL;
 
 	memset(rss, 0, sizeof(int) * NR_MM_COUNTERS);
 
