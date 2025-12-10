@@ -4788,13 +4788,13 @@ static void smb2_decrypt_offload(struct work_struct *work)
 #ifdef CONFIG_CIFS_STATS2
 			mid->when_received = jiffies;
 #endif
-			mid->callback(mid);
+			mid_execute_callback(mid);
 		} else {
 			spin_lock(&GlobalMid_Lock);
 			if (dw->server->tcpStatus == CifsNeedReconnect) {
 				mid->mid_state = MID_RETRY_NEEDED;
 				spin_unlock(&GlobalMid_Lock);
-				mid->callback(mid);
+				mid_execute_callback(mid);
 			} else {
 				mid->mid_state = MID_REQUEST_SUBMITTED;
 				mid->mid_flags &= ~(MID_DELETED);
