@@ -1834,6 +1834,106 @@ TRACE_EVENT(kvm_vmgexit_msr_protocol_exit,
 		  __entry->vcpu_id, __entry->ghcb_gpa, __entry->result)
 );
 
+/*
+ * Tracepoint for the Hygon CSV3 shared page processing
+ */
+TRACE_EVENT(kvm_csv3_sp_insert_dup,
+	TP_PROTO(unsigned long n_track_pfn,
+		 u64 n_track_hva,
+		 unsigned int n_order,
+		 unsigned long o_track_pfn,
+		 u64 o_track_hva,
+		 unsigned int o_order),
+	TP_ARGS(n_track_pfn, n_track_hva, n_order,
+		o_track_pfn, o_track_hva, o_order),
+
+	TP_STRUCT__entry(
+		__field(unsigned long, n_track_pfn)
+		__field(u64, n_track_hva)
+		__field(unsigned int, n_order)
+		__field(unsigned long, o_track_pfn)
+		__field(u64, o_track_hva)
+		__field(unsigned int, o_order)
+	),
+
+	TP_fast_assign(
+		__entry->n_track_pfn = n_track_pfn;
+		__entry->n_track_hva = n_track_hva;
+		__entry->n_order = n_order;
+		__entry->o_track_pfn = o_track_pfn;
+		__entry->o_track_hva = o_track_hva;
+		__entry->o_order = o_order;
+	),
+
+	TP_printk("n_sp pfn:0x%lx, hva:0x%llx, order:%u "
+		  "o_sp pfn:0x%lx, hva:0x%llx, order:%u",
+		  __entry->n_track_pfn, __entry->n_track_hva, __entry->n_order,
+		  __entry->o_track_pfn, __entry->o_track_hva, __entry->o_order)
+);
+
+TRACE_EVENT(kvm_csv3_sp_insert,
+	TP_PROTO(unsigned long n_track_pfn, u64 n_track_hva, unsigned int n_order),
+	TP_ARGS(n_track_pfn, n_track_hva, n_order),
+
+	TP_STRUCT__entry(
+		__field(unsigned long, n_track_pfn)
+		__field(u64, n_track_hva)
+		__field(unsigned int, n_order)
+	),
+
+	TP_fast_assign(
+		__entry->n_track_pfn = n_track_pfn;
+		__entry->n_track_hva = n_track_hva;
+		__entry->n_order = n_order;
+	),
+
+	TP_printk("n_sp pfn:0x%lx, hva:0x%llx order:%u",
+		  __entry->n_track_pfn, __entry->n_track_hva, __entry->n_order)
+);
+
+TRACE_EVENT(kvm_csv3_sp_hit,
+	TP_PROTO(unsigned long track_pfn, u64 track_hva, u64 hva, unsigned int order),
+	TP_ARGS(track_pfn, track_hva, hva, order),
+
+	TP_STRUCT__entry(
+		__field(unsigned long, track_pfn)
+		__field(u64, track_hva)
+		__field(u64, hva)
+		__field(unsigned int, order)
+	),
+
+	TP_fast_assign(
+		__entry->track_pfn = track_pfn;
+		__entry->track_hva = track_hva;
+		__entry->hva = hva;
+		__entry->order = order;
+	),
+
+	TP_printk("sp pfn:0x%lx, hva:0x%llx, subhva:0x%llx, order:%u",
+		  __entry->track_pfn, __entry->track_hva,
+		  __entry->hva, __entry->order)
+);
+
+TRACE_EVENT(kvm_csv3_sp_remove,
+	TP_PROTO(unsigned long track_pfn, u64 track_hva, unsigned int order),
+	TP_ARGS(track_pfn, track_hva, order),
+
+	TP_STRUCT__entry(
+		__field(unsigned long, track_pfn)
+		__field(u64, track_hva)
+		__field(unsigned int, order)
+	),
+
+	TP_fast_assign(
+		__entry->track_pfn = track_pfn;
+		__entry->track_hva = track_hva;
+		__entry->order = order;
+	),
+
+	TP_printk("sp pfn:0x%lx, hva:0x%llx order:%u",
+		  __entry->track_pfn, __entry->track_hva, __entry->order)
+);
+
 #endif /* _TRACE_KVM_H */
 
 #undef TRACE_INCLUDE_PATH
