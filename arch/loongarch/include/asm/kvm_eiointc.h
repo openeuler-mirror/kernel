@@ -3,16 +3,17 @@
  * Copyright (C) 2024 Loongson Technology Corporation Limited
  */
 
-#ifndef LOONGARCH_EIOINTC_H
-#define LOONGARCH_EIOINTC_H
+#ifndef __ASM_KVM_EIOINTC_H
+#define __ASM_KVM_EIOINTC_H
 
 #include <kvm/iodev.h>
 
 #define EIOINTC_IRQS			256
 #define EIOINTC_ROUTE_MAX_VCPUS		256
 #define EIOINTC_IRQS_U8_NUMS		(EIOINTC_IRQS / 8)
+#define EIOINTC_IRQS_U16_NUMS		(EIOINTC_IRQS_U8_NUMS / 2)
 #define EIOINTC_IRQS_U32_NUMS		(EIOINTC_IRQS_U8_NUMS / 4)
-#define EIOINTC_IRQS_U64_NUMS		(EIOINTC_IRQS_U32_NUMS / 2)
+#define EIOINTC_IRQS_U64_NUMS		(EIOINTC_IRQS_U8_NUMS / 8)
 /* map to ipnum per 32 irqs */
 #define EIOINTC_IRQS_NODETYPE_COUNT	16
 
@@ -51,19 +52,18 @@
 #define EIOINTC_ENABLE_INT_ENCODE	(2)
 #define EIOINTC_ENABLE_CPU_ENCODE	(3)
 
-#define LS3A_INTC_IP			8
+#define LOONGSON_IP_NUM			8
 
-#define EIOINTC_SW_COREMAP_FLAG		BIT(0)
+#define EIOINTC_SW_COREMAP_FLAG		(1 << 0)
 
 struct loongarch_eiointc {
-	/* Serialize emulated EIOINTC register state. */
 	spinlock_t lock;
 	struct kvm *kvm;
 	struct kvm_io_device device;
 	struct kvm_io_device device_vext;
-	u32 num_cpu;
-	u32 features;
-	u32 status;
+	uint32_t num_cpu;
+	uint32_t features;
+	uint32_t status;
 
 	/* hardware state */
 	union nodetype {
@@ -77,22 +77,26 @@ struct loongarch_eiointc {
 	union bounce {
 		u64 reg_u64[EIOINTC_IRQS_U64_NUMS];
 		u32 reg_u32[EIOINTC_IRQS_U32_NUMS];
+		u16 reg_u16[EIOINTC_IRQS_U16_NUMS];
 		u8 reg_u8[EIOINTC_IRQS_U8_NUMS];
 	} bounce;
 
 	union isr {
 		u64 reg_u64[EIOINTC_IRQS_U64_NUMS];
 		u32 reg_u32[EIOINTC_IRQS_U32_NUMS];
+		u16 reg_u16[EIOINTC_IRQS_U16_NUMS];
 		u8 reg_u8[EIOINTC_IRQS_U8_NUMS];
 	} isr;
 	union coreisr {
 		u64 reg_u64[EIOINTC_ROUTE_MAX_VCPUS][EIOINTC_IRQS_U64_NUMS];
 		u32 reg_u32[EIOINTC_ROUTE_MAX_VCPUS][EIOINTC_IRQS_U32_NUMS];
+		u16 reg_u16[EIOINTC_ROUTE_MAX_VCPUS][EIOINTC_IRQS_U16_NUMS];
 		u8 reg_u8[EIOINTC_ROUTE_MAX_VCPUS][EIOINTC_IRQS_U8_NUMS];
 	} coreisr;
 	union enable {
 		u64 reg_u64[EIOINTC_IRQS_U64_NUMS];
 		u32 reg_u32[EIOINTC_IRQS_U32_NUMS];
+		u16 reg_u16[EIOINTC_IRQS_U16_NUMS];
 		u8 reg_u8[EIOINTC_IRQS_U8_NUMS];
 	} enable;
 
@@ -100,20 +104,23 @@ struct loongarch_eiointc {
 	union ipmap {
 		u64 reg_u64;
 		u32 reg_u32[EIOINTC_IRQS_U32_NUMS / 4];
+		u16 reg_u16[EIOINTC_IRQS_U16_NUMS / 4];
 		u8 reg_u8[EIOINTC_IRQS_U8_NUMS / 4];
 	} ipmap;
 	/* use one byte to config coremap for one irq */
 	union coremap {
 		u64 reg_u64[EIOINTC_IRQS / 8];
 		u32 reg_u32[EIOINTC_IRQS / 4];
+		u16 reg_u16[EIOINTC_IRQS / 2];
 		u8 reg_u8[EIOINTC_IRQS];
 	} coremap;
 
-	DECLARE_BITMAP(sw_coreisr[EIOINTC_ROUTE_MAX_VCPUS][LS3A_INTC_IP], EIOINTC_IRQS);
-	u8  sw_coremap[EIOINTC_IRQS];
+	DECLARE_BITMAP(sw_coreisr[EIOINTC_ROUTE_MAX_VCPUS][LOONGSON_IP_NUM], EIOINTC_IRQS);
+	uint8_t  sw_coremap[EIOINTC_IRQS];
 };
 
-void eiointc_set_irq(struct loongarch_eiointc *s, int irq, int level);
 int kvm_loongarch_register_eiointc_device(void);
+void eiointc_set_irq(struct loongarch_eiointc *s, int irq, int level);
 int kvm_loongarch_reset_eiointc(struct kvm *kvm);
+
 #endif /* LOONGARCH_EIOINTC_H */
