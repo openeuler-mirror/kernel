@@ -8239,8 +8239,6 @@ static void disconnect_rsp(struct mgmt_pending_cmd *cmd, void *data)
 
 	*sk = cmd->sk;
 	sock_hold(*sk);
-
-	mgmt_pending_remove(cmd);
 }
 
 static void unpair_device_rsp(struct mgmt_pending_cmd *cmd, void *data)
