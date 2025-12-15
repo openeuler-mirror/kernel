@@ -540,6 +540,8 @@ static int dsa_tree_setup_switches(struct dsa_switch_tree *dst)
 	list_for_each_entry(dp, &dst->ports, list) {
 		err = dsa_port_setup(dp);
 		if (err) {
+			if (dsa_port_is_cpu(dp) && dp->master && dp->dn)
+				put_device(&dp->master->dev);
 			dsa_port_devlink_teardown(dp);
 			dp->type = DSA_PORT_TYPE_UNUSED;
 			err = dsa_port_devlink_setup(dp);
@@ -771,13 +773,17 @@ static int dsa_port_parse_of(struct dsa_port *dp, struct device_node *dn)
 
 	if (ethernet) {
 		struct net_device *master;
+		int err;
 
 		master = of_find_net_device_by_node(ethernet);
 		of_node_put(ethernet);
 		if (!master)
 			return -EPROBE_DEFER;
 
-		return dsa_port_parse_cpu(dp, master);
+		err = dsa_port_parse_cpu(dp, master);
+		if (err)
+			put_device(&master->dev);
+		return err;
 	}
 
 	if (link)
@@ -956,6 +962,8 @@ static void dsa_switch_release_ports(struct dsa_switch *ds)
 	list_for_each_entry_safe(dp, next, &dst->ports, list) {
 		if (dp->ds != ds)
 			continue;
+		if (dsa_port_is_cpu(dp) && dp->master && dp->dn)
+			put_device(&dp->master->dev);
 		list_del(&dp->list);
 		kfree(dp);
 	}
