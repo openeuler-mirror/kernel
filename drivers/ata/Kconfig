@@ -553,10 +553,13 @@ config SATA_VITESSE
 	  If unsure, say N.
 
 config SATA_ZHAOXIN
-	tristate "ZhaoXin SATA support"
-	depends on PCI
+	tristate "Zhaoxin SATA support"
+	depends on PCI && (CPU_SUP_ZHAOXIN || CPU_SUP_CENTAUR)
 	help
-	  This option enables support for ZhaoXin Serial ATA.
+	  This option enables support for Zhaoxin Serial ATA.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called sata-zhaoxin.
 
 	  If unsure, say N.
 
