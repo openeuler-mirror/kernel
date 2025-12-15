@@ -103,6 +103,16 @@ static int xhci_pci_reinit(struct xhci_hcd *xhci, struct pci_dev *pdev)
 	return 0;
 }
 
+static bool is_zhaoxin_cpu(void)
+{
+#ifdef CONFIG_X86
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN ||
+	    boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR)
+		return true;
+#endif
+	return false;
+}
+
 static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 {
 	struct pci_dev                  *pdev = to_pci_dev(dev);
@@ -358,6 +368,12 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 	/* xHC spec requires PCI devices to support D3hot and D3cold */
 	if (xhci->hci_version >= 0x120)
 		xhci->quirks |= XHCI_DEFAULT_PM_RUNTIME_ALLOW;
+
+	if (pdev->vendor == PCI_VENDOR_ID_ZHAOXIN && !is_zhaoxin_cpu()) {
+		xhci->quirks |= XHCI_NO_64BIT_SUPPORT;
+		if (pdev->device == 0x9203)
+			xhci->quirks |= XHCI_RESET_ON_RESUME;
+	}
 
 	if (xhci->quirks & XHCI_RESET_ON_RESUME)
 		xhci_dbg_trace(xhci, trace_xhci_dbg_quirks,
