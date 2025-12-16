@@ -541,8 +541,7 @@ static bool fixup_iopl_exception(struct pt_regs *regs)
 	if (!IS_ENABLED(CONFIG_X86_IOPL_IOPERM) || t->iopl_emul != 3)
 		return false;
 
-	ip = insn_get_effective_ip(regs);
-	if (!ip)
+	if (insn_get_effective_ip(regs, &ip))
 		return false;
 
 	if (get_user(byte, (const char __user *)ip))

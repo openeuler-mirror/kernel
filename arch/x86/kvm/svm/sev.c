@@ -99,7 +99,7 @@ static bool __sev_recycle_asids(int min_asid, int max_asid)
 	return true;
 }
 
-static int sev_asid_new(struct kvm_sev_info *sev)
+static int sev_asid_new(bool es_active)
 {
 	int pos, min_asid, max_asid;
 	bool retry = true;
@@ -110,8 +110,8 @@ static int sev_asid_new(struct kvm_sev_info *sev)
 	 * SEV-enabled guests must use asid from min_sev_asid to max_sev_asid.
 	 * SEV-ES-enabled guest can use from 1 to min_sev_asid - 1.
 	 */
-	min_asid = sev->es_active ? 0 : min_sev_asid - 1;
-	max_asid = sev->es_active ? min_sev_asid - 1 : max_sev_asid;
+	min_asid = es_active ? 0 : min_sev_asid - 1;
+	max_asid = es_active ? min_sev_asid - 1 : max_sev_asid;
 again:
 	pos = find_next_zero_bit(sev_asid_bitmap, max_sev_asid, min_asid);
 	if (pos >= max_asid) {
@@ -199,6 +199,7 @@ static void sev_unbind_asid(struct kvm *kvm, unsigned int handle)
 static int sev_guest_init(struct kvm *kvm, struct kvm_sev_cmd *argp)
 {
 	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
+	bool es_active = argp->id == KVM_SEV_ES_INIT;
 	int asid, ret;
 
 	if (kvm->created_vcpus)
@@ -208,7 +209,7 @@ static int sev_guest_init(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	if (unlikely(sev->active))
 		return ret;
 
-	asid = sev_asid_new(sev);
+	asid = sev_asid_new(es_active);
 	if (asid < 0)
 		return ret;
 
@@ -217,6 +218,7 @@ static int sev_guest_init(struct kvm *kvm, struct kvm_sev_cmd *argp)
 		goto e_free;
 
 	sev->active = true;
+	sev->es_active = es_active;
 	sev->asid = asid;
 	INIT_LIST_HEAD(&sev->regions_list);
 
@@ -225,16 +227,6 @@ static int sev_guest_init(struct kvm *kvm, struct kvm_sev_cmd *argp)
 e_free:
 	sev_asid_free(asid);
 	return ret;
-}
-
-static int sev_es_guest_init(struct kvm *kvm, struct kvm_sev_cmd *argp)
-{
-	if (!sev_es_enabled)
-		return -ENOTTY;
-
-	to_kvm_svm(kvm)->sev_info.es_active = true;
-
-	return sev_guest_init(kvm, argp);
 }
 
 static int sev_bind_asid(struct kvm *kvm, unsigned int handle, int *error)
@@ -442,6 +434,7 @@ static void sev_clflush_pages(struct page *pages[], unsigned long npages)
 		page_virtual = kmap_atomic(pages[i]);
 		clflush_cache_range(page_virtual, PAGE_SIZE);
 		kunmap_atomic(page_virtual);
+		cond_resched();
 	}
 }
 
@@ -585,55 +578,70 @@ static int sev_es_sync_vmsa(struct vcpu_svm *svm)
 	return 0;
 }
 
-static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
+static int __sev_launch_update_vmsa(struct kvm *kvm, struct kvm_vcpu *vcpu,
+									int *error)
 {
 	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
 	struct sev_data_launch_update_vmsa *vmsa;
-	int i, ret;
-
-	if (!sev_es_guest(kvm))
-		return -ENOTTY;
+	struct vcpu_svm *svm = to_svm(vcpu);
+	int ret;
 
 	vmsa = kzalloc(sizeof(*vmsa), GFP_KERNEL);
 	if (!vmsa)
 		return -ENOMEM;
 
-	for (i = 0; i < kvm->created_vcpus; i++) {
-		struct vcpu_svm *svm = to_svm(kvm->vcpus[i]);
+	/* Perform some pre-encryption checks against the VMSA */
+	ret = sev_es_sync_vmsa(svm);
+	if (ret)
+		goto e_free;
 
-		/* Perform some pre-encryption checks against the VMSA */
-		ret = sev_es_sync_vmsa(svm);
-		if (ret)
-			goto e_free;
+	/*
+	 * The LAUNCH_UPDATE_VMSA command will perform in-place
+	 * encryption of the VMSA memory content (i.e it will write
+	 * the same memory region with the guest's key), so invalidate
+	 * it first.
+	 */
+	clflush_cache_range(svm->vmsa, PAGE_SIZE);
 
-		/*
-		 * The LAUNCH_UPDATE_VMSA command will perform in-place
-		 * encryption of the VMSA memory content (i.e it will write
-		 * the same memory region with the guest's key), so invalidate
-		 * it first.
-		 */
-		clflush_cache_range(svm->vmsa, PAGE_SIZE);
+	vmsa->handle = sev->handle;
+	vmsa->address = __sme_pa(svm->vmsa);
+	vmsa->len = PAGE_SIZE;
+	ret = sev_issue_cmd(kvm, SEV_CMD_LAUNCH_UPDATE_VMSA, vmsa, error);
 
-		vmsa->handle = sev->handle;
-		vmsa->address = __sme_pa(svm->vmsa);
-		vmsa->len = PAGE_SIZE;
-		ret = sev_issue_cmd(kvm, SEV_CMD_LAUNCH_UPDATE_VMSA, vmsa,
-				    &argp->error);
-		if (ret)
-			goto e_free;
-
-		/*
-		* SEV-ES guests maintain an encrypted version of their FPU
-		* state which is restored and saved on VMRUN and VMEXIT.
-		* Mark vcpu->arch.guest_fpu->fpstate as scratch so it won't
-		* do xsave/xrstor on it.
-		*/
-		fpstate_set_confidential(&svm->vcpu.arch.guest_fpu);
-		svm->vcpu.arch.guest_state_protected = true;
-	}
+	/*
+	* SEV-ES guests maintain an encrypted version of their FPU
+	* state which is restored and saved on VMRUN and VMEXIT.
+	* Mark vcpu->arch.guest_fpu->fpstate as scratch so it won't
+	* do xsave/xrstor on it.
+	*/
+	fpstate_set_confidential(&vcpu->arch.guest_fpu);
+	vcpu->arch.guest_state_protected = true;
 
 e_free:
 	kfree(vmsa);
+	return ret;
+}
+
+static int sev_launch_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
+{
+
+	struct kvm_vcpu *vcpu;
+	int i, ret;
+
+	if (!sev_es_guest(kvm))
+		return -ENOTTY;
+
+	kvm_for_each_vcpu(i, vcpu, kvm) {
+		ret = mutex_lock_killable(&vcpu->mutex);
+		if (ret)
+			return ret;
+
+		ret = __sev_launch_update_vmsa(kvm, vcpu, &argp->error);
+		mutex_unlock(&vcpu->mutex);
+		if (ret)
+			return ret;
+	}
+
 	return ret;
 }
 
@@ -1091,11 +1099,14 @@ int svm_mem_enc_op(struct kvm *kvm, void __user *argp)
 	mutex_lock(&kvm->lock);
 
 	switch (sev_cmd.id) {
+	case KVM_SEV_ES_INIT:
+		if (!sev_es_enabled) {
+			r = -ENOTTY;
+			goto out;
+		}
+		fallthrough;
 	case KVM_SEV_INIT:
 		r = sev_guest_init(kvm, &sev_cmd);
-		break;
-	case KVM_SEV_ES_INIT:
-		r = sev_es_guest_init(kvm, &sev_cmd);
 		break;
 	case KVM_SEV_LAUNCH_START:
 		r = sev_launch_start(kvm, &sev_cmd);
@@ -1335,8 +1346,11 @@ void __init sev_hardware_setup(void)
 		goto out;
 
 	sev_reclaim_asid_bitmap = bitmap_zalloc(max_sev_asid, GFP_KERNEL);
-	if (!sev_reclaim_asid_bitmap)
+	if (!sev_reclaim_asid_bitmap) {
+		bitmap_free(sev_asid_bitmap);
+		sev_asid_bitmap = NULL;
 		goto out;
+	}
 
 	pr_info("%s supported: %u ASIDs\n",
 			is_x86_vendor_hygon() ? "CSV" : "SEV",  max_sev_asid - min_sev_asid + 1);
