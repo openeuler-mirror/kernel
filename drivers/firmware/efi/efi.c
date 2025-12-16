@@ -50,6 +50,15 @@ struct efi __read_mostly efi = {
 };
 EXPORT_SYMBOL(efi);
 
+/* HYGON added to avoid kabi breakage of efi (start) */
+struct efi_coco __read_mostly efi_coco = {
+#ifdef CONFIG_EFI_COCO_SECRET
+	.coco_secret		= EFI_INVALID_TABLE_ADDR,
+#endif
+};
+EXPORT_SYMBOL(efi_coco);
+/* HYGON added to avoid kabi breakage of efi (end) */
+
 unsigned long __ro_after_init efi_rng_seed = EFI_INVALID_TABLE_ADDR;
 static unsigned long __initdata mem_reserve = EFI_INVALID_TABLE_ADDR;
 static unsigned long __initdata rt_prop = EFI_INVALID_TABLE_ADDR;
@@ -420,6 +429,11 @@ static int __init efisubsys_init(void)
 	if (efi_enabled(EFI_DBG) && efi_enabled(EFI_PRESERVE_BS_REGIONS))
 		efi_debugfs_init();
 
+#ifdef CONFIG_EFI_COCO_SECRET
+	if (efi_coco.coco_secret != EFI_INVALID_TABLE_ADDR)
+		platform_device_register_simple("efi_secret", 0, NULL, 0);
+#endif
+
 	return 0;
 
 err_remove_group:
@@ -560,6 +574,9 @@ static const efi_config_table_type_t common_tables[] __initconst = {
 #endif
 #ifdef CONFIG_LOAD_UEFI_KEYS
 	{LINUX_EFI_MOK_VARIABLE_TABLE_GUID,	&efi.mokvar_table,	"MOKvar"	},
+#endif
+#ifdef CONFIG_EFI_COCO_SECRET
+	{LINUX_EFI_COCO_SECRET_AREA_GUID,	&efi_coco.coco_secret,	"CocoSecret"	},
 #endif
 	{},
 };

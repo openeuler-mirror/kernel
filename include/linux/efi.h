@@ -367,6 +367,7 @@ void efi_native_runtime_setup(void);
 #define LINUX_EFI_INITRD_MEDIA_GUID		EFI_GUID(0x5568e427, 0x68fc, 0x4f3d,  0xac, 0x74, 0xca, 0x55, 0x52, 0x31, 0xcc, 0x68)
 #define LINUX_EFI_ZBOOT_MEDIA_GUID		EFI_GUID(0xe565a30d, 0x47da, 0x4dbd,  0xb3, 0x54, 0x9b, 0xb5, 0xc8, 0x4f, 0x8b, 0xe2)
 #define LINUX_EFI_MOK_VARIABLE_TABLE_GUID	EFI_GUID(0xc451ed2b, 0x9694, 0x45d3,  0xba, 0xba, 0xed, 0x9f, 0x89, 0x88, 0xa3, 0x89)
+#define LINUX_EFI_COCO_SECRET_AREA_GUID		EFI_GUID(0xadf956ad, 0xe98c, 0x484c,  0xae, 0x11, 0xb5, 0x1c, 0x7d, 0x33, 0x64, 0x47)
 
 /* OEM GUIDs */
 #define DELLEMC_EFI_RCI2_TABLE_GUID		EFI_GUID(0x2d9f28a2, 0xa886, 0x456a,  0x97, 0xa8, 0xf1, 0x1e, 0xf2, 0x4f, 0xf4, 0x55)
@@ -576,6 +577,12 @@ extern struct efi {
 	struct efi_memory_map		memmap;
 	unsigned long			flags;
 } efi;
+
+/* HYGON added to avoid kabi breakage of efi (start) */
+extern struct efi_coco {
+	unsigned long			coco_secret;		/* Confidential computing secret table */
+} efi_coco;
+/* HYGON added to avoid kabi breakage of efi (end) */
 
 #define EFI_RT_SUPPORTED_GET_TIME 				0x0001
 #define EFI_RT_SUPPORTED_SET_TIME 				0x0002
@@ -1296,5 +1303,13 @@ static inline struct efi_mokvar_table_entry *efi_mokvar_entry_find(
 	return NULL;
 }
 #endif
+
+struct linux_efi_coco_secret_area {
+	u64	base_pa;
+	u64	size;
+};
+
+/* Header of a populated EFI secret area */
+#define EFI_SECRET_TABLE_HEADER_GUID	EFI_GUID(0x1e74f542, 0x71dd, 0x4d66,  0x96, 0x3e, 0xef, 0x42, 0x87, 0xff, 0x17, 0x3b)
 
 #endif /* _LINUX_EFI_H */
