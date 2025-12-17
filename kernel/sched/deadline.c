@@ -1781,7 +1781,7 @@ static void __dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
 		dequeue_pushable_dl_task(rq, p);
 }
 
-static void dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
+static bool dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
 {
 	update_curr_dl(rq);
 
@@ -1789,6 +1789,8 @@ static void dequeue_task_dl(struct rq *rq, struct task_struct *p, int flags)
 		flags |= DEQUEUE_MIGRATING;
 
 	__dequeue_task_dl(rq, p, flags);
+
+	return true;
 }
 
 /*
