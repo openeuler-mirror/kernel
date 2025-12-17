@@ -2542,7 +2542,9 @@ struct sched_class {
 	KABI_REPLACE(struct task_struct *(*pick_next_task)(struct rq *rq),
 		struct task_struct *(*pick_next_task)(struct rq *rq, struct task_struct *prev))
 
-	void (*put_prev_task)(struct rq *rq, struct task_struct *p, struct task_struct *next);
+	KABI_REPLACE(void (*put_prev_task)(struct rq *rq, struct task_struct *p),
+		void (*put_prev_task)(struct rq *rq,
+			struct task_struct *p, struct task_struct *next))
 	void (*set_next_task)(struct rq *rq, struct task_struct *p, bool first);
 
 #ifdef CONFIG_SMP
