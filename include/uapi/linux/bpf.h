@@ -6565,7 +6565,9 @@ struct bpf_link_info {
 					__aligned_u64 file_name; /* in/out */
 					__u32 name_len;
 					__u32 offset; /* offset from file_name */
+#if !defined(__GENKSYMS__)
 					__u64 cookie;
+#endif
 				} uprobe; /* BPF_PERF_EVENT_UPROBE, BPF_PERF_EVENT_URETPROBE */
 				struct {
 					__aligned_u64 func_name; /* in/out */
@@ -6574,20 +6576,24 @@ struct bpf_link_info {
 					__u64 addr;
 #if !defined(__GENKSYMS__)
 					__u64 missed;
-#endif
 					__u64 cookie;
+#endif
 				} kprobe; /* BPF_PERF_EVENT_KPROBE, BPF_PERF_EVENT_KRETPROBE */
 				struct {
 					__aligned_u64 tp_name;   /* in/out */
 					__u32 name_len;
+#if !defined(__GENKSYMS__)
 					__u32 :32;
 					__u64 cookie;
+#endif
 				} tracepoint; /* BPF_PERF_EVENT_TRACEPOINT */
 				struct {
 					__u64 config;
 					__u32 type;
+#if !defined(__GENKSYMS__)
 					__u32 :32;
 					__u64 cookie;
+#endif
 				} event; /* BPF_PERF_EVENT_EVENT */
 				struct {
 					__u64:64;
