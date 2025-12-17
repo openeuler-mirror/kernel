@@ -2527,13 +2527,14 @@ struct sched_class {
 	KABI_REPLACE(void (*check_preempt_curr)(struct rq *rq, struct task_struct *p, int flags),
 		void (*wakeup_preempt)(struct rq *rq, struct task_struct *p, int flags))
 
-	int (*balance)(struct rq *rq, struct task_struct *prev, struct rq_flags *rf);
 	struct task_struct *(*pick_next_task)(struct rq *rq);
 
 	void (*put_prev_task)(struct rq *rq, struct task_struct *p);
 	void (*set_next_task)(struct rq *rq, struct task_struct *p, bool first);
 
 #ifdef CONFIG_SMP
+	KABI_BROKEN_REMOVE(int (*balance)(struct rq *rq,
+		struct task_struct *prev, struct rq_flags *rf))
 	int  (*select_task_rq)(struct task_struct *p, int task_cpu, int flags);
 
 	struct task_struct * (*pick_task)(struct rq *rq);
@@ -2580,6 +2581,7 @@ struct sched_class {
 		struct task_struct *task, const struct load_weight *lw))
 	KABI_USE(2, void (*switching_to) (struct rq *this_rq, struct task_struct *task))
 	KABI_EXTEND(void (*switch_class)(struct rq *rq, struct task_struct *next))
+	KABI_EXTEND(int (*balance)(struct rq *rq, struct task_struct *prev, struct rq_flags *rf))
 };
 
 static inline void put_prev_task(struct rq *rq, struct task_struct *prev)
