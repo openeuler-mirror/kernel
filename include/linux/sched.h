@@ -842,9 +842,6 @@ struct task_struct {
 	struct sched_entity		se;
 	struct sched_rt_entity		rt;
 	struct sched_dl_entity		dl;
-#ifdef CONFIG_SCHED_CLASS_EXT
-	struct sched_ext_entity		scx;
-#endif
 	const struct sched_class	*sched_class;
 
 #ifdef CONFIG_SCHED_CORE
@@ -1648,6 +1645,10 @@ struct task_struct {
 	KABI_RESERVE(15)
 	KABI_RESERVE(16)
 	KABI_AUX_PTR(task_struct)
+
+#if !defined(__GENKSYMS__) && defined(CONFIG_SCHED_CLASS_EXT)
+	KABI_BROKEN_INSERT(struct sched_ext_entity scx)
+#endif
 
 	/* CPU-specific state of this task: */
 	struct thread_struct		thread;
