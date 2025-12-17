@@ -28,7 +28,18 @@ int iter_task_vma_for_each(const void *ctx)
 		return 0;
 
 	bpf_for_each(task_vma, vma, task, 0) {
-		if (seen >= 1000)
+		/*
+		 * Hack code here:
+		 * the compiler will assign the variable 'seen'
+		 * and the array index to different, unrelated
+		 * registers. As a result, the verifier will
+		 * reject the code due to potential out-of-bounds
+		 * access to the vm_ranges array. However, by
+		 * multiplying both sides of the inequality by 16,
+		 * we can ensure the code passes the verification
+		 * test.
+		 */
+		if (seen * 16 >= 16000)
 			break;
 
 		vm_ranges[seen].vm_start = vma->vm_start;
