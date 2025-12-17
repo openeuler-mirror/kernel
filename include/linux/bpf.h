@@ -1462,8 +1462,8 @@ struct bpf_jit_poke_descriptor {
 struct bpf_ctx_arg_aux {
 	u32 offset;
 	enum bpf_reg_type reg_type;
-	struct btf *btf;
 	u32 btf_id;
+	KABI_BROKEN_INSERT(struct btf *btf) // will affect struct bpf_iter_reg.
 };
 
 struct btf_mod_pair {
