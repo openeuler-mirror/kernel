@@ -27,6 +27,8 @@
 #include <linux/ccp.h>
 
 #include "ccp-dev.h"
+#include "hygon/ccp-mdev.h"
+#include "hygon/sp-dev.h"
 
 #define MAX_CCPS 32
 
@@ -235,7 +237,10 @@ int ccp_present(void)
 	int ret;
 
 	read_lock_irqsave(&ccp_unit_lock, flags);
-	ret = list_empty(&ccp_units);
+	if (is_vendor_hygon())
+		ret = ccp_dev_wrapper_list_empty();
+	else
+		ret = list_empty(&ccp_units);
 	read_unlock_irqrestore(&ccp_unit_lock, flags);
 
 	return ret ? -ENODEV : 0;
@@ -288,11 +293,13 @@ EXPORT_SYMBOL_GPL(ccp_version);
  */
 int ccp_enqueue_cmd(struct ccp_cmd *cmd)
 {
+	struct hygon_ccp_dev_wrapper *ccp_wrapper = NULL;
 	struct ccp_device *ccp;
 	unsigned long flags;
 	unsigned int i;
 	int ret;
 
+_Again:
 	/* Some commands might need to be sent to a specific device */
 	ccp = cmd->ccp ? cmd->ccp : ccp_get_device();
 
@@ -318,7 +325,31 @@ int ccp_enqueue_cmd(struct ccp_cmd *cmd)
 		}
 	} else {
 		ret = -EINPROGRESS;
-		ccp->cmd_count++;
+		if (is_vendor_hygon()) {
+			ccp_wrapper = hygon_ccp_dev_wrapper_get(ccp);
+			if (!ccp_wrapper) {
+				spin_unlock_irqrestore(&ccp->cmd_lock, flags);
+				return -EINVAL;
+			}
+
+			if (!read_trylock(&ccp_wrapper->q_lock)) {
+				spin_unlock_irqrestore(&ccp->cmd_lock, flags);
+				cmd->ccp = NULL;
+				goto _Again;
+			}
+
+			if (ccp_wrapper->used_mode == _USER_SPACE_USED) {
+				read_unlock(&ccp_wrapper->q_lock);
+				spin_unlock_irqrestore(&ccp->cmd_lock, flags);
+				cmd->ccp = NULL;
+				goto _Again;
+			}
+
+			ccp->cmd_count++;
+			read_unlock(&ccp_wrapper->q_lock);
+		} else {
+			ccp->cmd_count++;
+		}
 		list_add_tail(&cmd->entry, &ccp->cmd);
 
 		/* Find an idle queue */
@@ -665,7 +696,13 @@ e_quiet:
 
 void ccp_dev_destroy(struct sp_device *sp)
 {
+	struct device *dev = sp->dev;
 	struct ccp_device *ccp = sp->ccp_data;
+
+	if (is_vendor_hygon())
+		if (atomic_dec_return(&dev_count) < 0)
+			dev_warn(dev, "dev_count = %d, invalid.\n",
+					atomic_read(&dev_count));
 
 	if (!ccp)
 		return;
