@@ -63,7 +63,8 @@ struct irqstat {
 struct irq_desc {
 	struct irq_common_data	irq_common_data;
 	struct irq_data		irq_data;
-	struct irqstat __percpu	*kstat_irqs;
+	KABI_REPLACE(unsigned int __percpu *kstat_irqs,
+		struct irqstat __percpu	*kstat_irqs)
 	irq_flow_handler_t	handle_irq;
 	struct irqaction	*action;	/* IRQ action list */
 	unsigned int		status_use_accessors;
