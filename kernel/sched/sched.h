@@ -191,6 +191,10 @@ static inline int idle_policy(int policy)
 
 static inline int normal_policy(int policy)
 {
+#ifdef CONFIG_SCHED_CLASS_EXT
+	if (policy == SCHED_EXT)
+		return true;
+#endif
 	return policy == SCHED_NORMAL;
 }
 
@@ -818,6 +822,16 @@ struct cfs_rq {
 	KABI_RESERVE(8)
 };
 
+#ifdef CONFIG_SCHED_CLASS_EXT
+struct scx_rq {
+	struct scx_dispatch_q	local_dsq;
+	struct list_head	runnable_list;		/* runnable tasks on this rq */
+	unsigned long		ops_qseq;
+	u64			extra_enq_flags;	/* see move_task_to_local_dsq() */
+	u32			nr_running;
+};
+#endif /* CONFIG_SCHED_CLASS_EXT */
+
 static inline int rt_bandwidth_enabled(void)
 {
 	return sysctl_sched_rt_runtime >= 0;
@@ -1171,6 +1185,9 @@ struct rq {
 	struct dl_rq		dl;
 #ifdef CONFIG_SCHED_STEAL
 	struct sparsemask	*cfs_overload_cpus;
+#endif
+#ifdef CONFIG_SCHED_CLASS_EXT
+	struct scx_rq		scx;
 #endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
