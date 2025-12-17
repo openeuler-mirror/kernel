@@ -1412,10 +1412,13 @@ union bpf_attr {
 		 */
 		__u64	map_extra;
 
-		__s32   value_type_btf_obj_fd;	/* fd pointing to a BTF
-						 * type data for
-						 * btf_vmlinux_value_type_id.
-						 */
+		/* fd pointing to a BTF
+		 * type data for
+		 * btf_vmlinux_value_type_id.
+		 */
+#if !defined(__GENKSYMS__)
+		__s32	value_type_btf_obj_fd;
+#endif
 	};
 
 	struct { /* anonymous struct used by BPF_MAP_*_ELEM commands */
