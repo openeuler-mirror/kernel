@@ -44,7 +44,6 @@
 #include <linux/lockdep.h>
 #include <linux/minmax.h>
 #include <linux/mm.h>
-#include <linux/mmu_context.h>
 #include <linux/module.h>
 #include <linux/mutex_api.h>
 #include <linux/plist.h>
@@ -70,6 +69,9 @@
 #include <linux/wait_bit.h>
 #include <linux/workqueue_api.h>
 #include <linux/kabi.h>
+#ifndef __GENKSYMS__
+#include <linux/mmu_context.h>
+#endif
 
 #include <trace/events/power.h>
 #include <trace/events/sched.h>
