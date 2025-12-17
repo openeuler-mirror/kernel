@@ -100,6 +100,23 @@
 
 #include <linux/sched/grid_qos.h>
 
+/*
+ * Fix kabi for 04746ed80bcf,
+ * and still keep EXPORT_SYMBOL them in core.c instead of syscalls.c
+ */
+extern void sched_set_fifo_low(struct task_struct *p);
+EXPORT_SYMBOL_GPL(sched_set_fifo_low);
+extern int sched_setattr_nocheck(struct task_struct *p, const struct sched_attr *attr);
+EXPORT_SYMBOL_GPL(sched_setattr_nocheck);
+extern int __sched yield_to(struct task_struct *p, bool preempt);
+EXPORT_SYMBOL_GPL(yield_to);
+extern void set_user_nice(struct task_struct *p, long nice);
+EXPORT_SYMBOL(set_user_nice);
+extern void sched_set_fifo(struct task_struct *p);
+EXPORT_SYMBOL_GPL(sched_set_fifo);
+extern void sched_set_normal(struct task_struct *p, int nice);
+EXPORT_SYMBOL_GPL(sched_set_normal);
+
 EXPORT_TRACEPOINT_SYMBOL_GPL(ipi_send_cpu);
 EXPORT_TRACEPOINT_SYMBOL_GPL(ipi_send_cpumask);
 

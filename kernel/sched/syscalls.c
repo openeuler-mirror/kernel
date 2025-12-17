@@ -87,7 +87,6 @@ void set_user_nice(struct task_struct *p, long nice)
 	 */
 	p->sched_class->prio_changed(rq, p, old_prio);
 }
-EXPORT_SYMBOL(set_user_nice);
 
 /*
  * is_nice_reduction - check if nice value is an actual reduction
@@ -876,7 +875,6 @@ int sched_setattr_nocheck(struct task_struct *p, const struct sched_attr *attr)
 {
 	return __sched_setscheduler(p, attr, false, true);
 }
-EXPORT_SYMBOL_GPL(sched_setattr_nocheck);
 
 /**
  * sched_setscheduler_nocheck - change the scheduling policy and/or RT priority of a thread from kernelspace.
@@ -920,7 +918,6 @@ void sched_set_fifo(struct task_struct *p)
 	struct sched_param sp = { .sched_priority = MAX_RT_PRIO / 2 };
 	WARN_ON_ONCE(sched_setscheduler_nocheck(p, SCHED_FIFO, &sp) != 0);
 }
-EXPORT_SYMBOL_GPL(sched_set_fifo);
 
 /*
  * For when you don't much care about FIFO, but want to be above SCHED_NORMAL.
@@ -930,7 +927,6 @@ void sched_set_fifo_low(struct task_struct *p)
 	struct sched_param sp = { .sched_priority = 1 };
 	WARN_ON_ONCE(sched_setscheduler_nocheck(p, SCHED_FIFO, &sp) != 0);
 }
-EXPORT_SYMBOL_GPL(sched_set_fifo_low);
 
 void sched_set_normal(struct task_struct *p, int nice)
 {
@@ -940,7 +936,6 @@ void sched_set_normal(struct task_struct *p, int nice)
 	};
 	WARN_ON_ONCE(sched_setattr_nocheck(p, &attr) != 0);
 }
-EXPORT_SYMBOL_GPL(sched_set_normal);
 
 static int
 do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
@@ -1573,7 +1568,6 @@ again:
 
 	return yielded;
 }
-EXPORT_SYMBOL_GPL(yield_to);
 
 /**
  * sys_sched_get_priority_max - return maximum RT priority.
