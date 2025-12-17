@@ -489,7 +489,7 @@ static int fwnet_finish_incoming_packet(struct net_device *net,
 					bool is_broadcast, u16 ether_type)
 {
 	struct fwnet_device *dev;
-	int status;
+	int status, len;
 	__be64 guid;
 
 	switch (ether_type) {
@@ -546,13 +546,15 @@ static int fwnet_finish_incoming_packet(struct net_device *net,
 		}
 		skb->protocol = protocol;
 	}
+
+	len = skb->len;
 	status = netif_rx(skb);
 	if (status == NET_RX_DROP) {
 		net->stats.rx_errors++;
 		net->stats.rx_dropped++;
 	} else {
 		net->stats.rx_packets++;
-		net->stats.rx_bytes += skb->len;
+		net->stats.rx_bytes += len;
 	}
 
 	return 0;
