@@ -1500,11 +1500,7 @@ static int nfs_dentry_verify_change(struct inode *dir, struct dentry *dentry)
 
 bool nfs_check_have_lookup_cache_flag(struct nfs_server *server, int flag)
 {
-#if IS_ENABLED(CONFIG_ENFS)
 	return enfs_check_have_lookup_cache_flag(server, flag);
-#else
-	return (server->flags & NFS_MOUNT_LOOKUP_CACHE_NONE);
-#endif
 }
 
 /*

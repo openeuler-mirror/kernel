@@ -158,5 +158,33 @@ static inline void rpc_multipath_ops_inc_queuelen(struct rpc_xprt *xprt)
 static inline void rpc_multipath_ops_dec_queuelen(struct rpc_xprt *xprt)
 {
 }
+
+static inline const char *rpc_multipath_set_servername(const char *s, gfp_t gfp)
+{
+	return kstrdup(s, gfp);
+}
+
+static inline bool rpc_multipath_ops_create_xprt(struct rpc_xprt *xprt)
+{
+	return true;
+}
+
+static inline void rpc_multipath_free_servername(struct rpc_xprt *xprt)
+{
+	kfree(xprt->servername);
+}
+
+static inline void rpc_multipath_switch_set_roundrobin(struct rpc_clnt *clnt,
+	struct rpc_xprt_switch *xps)
+{
+	rpc_xprt_switch_set_roundrobin(xps);
+}
+
+#define RPC_MULTIPAHT_UPDATE_RPC_PROC(task, p, clnt)                 \
+	do {                                                         \
+		*p++ = cpu_to_be32(clnt->cl_prog);                 \
+		*p++ = cpu_to_be32(clnt->cl_vers);                 \
+	} while (0)
+
 #endif
 #endif // _SUNRPC_ENFS_ADAPTER_H_

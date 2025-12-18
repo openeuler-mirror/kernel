@@ -330,7 +330,7 @@ again:
 		/* Match the full socket address */
 		if (!rpc_cmp_addr_port(sap, clap)) {
 #if IS_ENABLED(CONFIG_ENFS)
-			if (data->enfs_option != NULL)
+			if (data->enfs_option)
 				continue;
 #endif
 			/* Match all xprt_switch full socket addresses */

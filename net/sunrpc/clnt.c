@@ -2709,12 +2709,7 @@ rpc_encode_header(struct rpc_task *task, struct xdr_stream *xdr)
 	*p++ = req->rq_xid;
 	*p++ = rpc_call;
 	*p++ = cpu_to_be32(RPC_VERSION);
-#if IS_ENABLED(CONFIG_SUNRPC_ENFS)
 	RPC_MULTIPAHT_UPDATE_RPC_PROC(task, p, clnt);
-#else
-	*p++ = cpu_to_be32(clnt->cl_prog);
-	*p++ = cpu_to_be32(clnt->cl_vers);
-#endif
 	*p   = cpu_to_be32(task->tk_msg.rpc_proc->p_proc);
 
 	error = rpcauth_marshcred(task, xdr);
@@ -3197,11 +3192,7 @@ int rpc_clnt_add_xprt(struct rpc_clnt *clnt,
 				connect_timeout,
 				reconnect_timeout);
 
-#if IS_ENABLED(CONFIG_SUNRPC_ENFS)
 	rpc_multipath_switch_set_roundrobin(clnt, xps);
-#else
-	rpc_xprt_switch_set_roundrobin(xps);
-#endif
 
 	if (setup) {
 		ret = setup(clnt, xps, xprt, data);
