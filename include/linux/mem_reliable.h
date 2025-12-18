@@ -111,8 +111,13 @@ static inline u64 task_reliable_used_pages(void)
 
 static inline bool reliable_mem_limit_check(unsigned long nr_page)
 {
-	return (task_reliable_used_pages() + nr_page) <=
-	       (task_reliable_limit >> PAGE_SHIFT);
+	s64 nr_task_pages;
+
+	/* limit check need precise counter, use sum rather than read */
+	nr_task_pages = percpu_counter_sum_positive(&pagecache_reliable_pages);
+	nr_task_pages += percpu_counter_sum_positive(&anon_reliable_pages);
+
+	return (nr_task_pages + nr_page) <= (task_reliable_limit >> PAGE_SHIFT);
 }
 
 static inline bool mem_reliable_should_reclaim(void)
