@@ -84,8 +84,9 @@ static inline bool reliable_mem_limit_check(unsigned long nr_page)
 {
 	s64 num;
 
-	num = percpu_counter_read_positive(&pagecache_reliable_pages);
-	num += percpu_counter_read_positive(&anon_reliable_pages);
+	/* limit check need precise counter, use sum rather than read */
+	num = percpu_counter_sum_positive(&pagecache_reliable_pages);
+	num += percpu_counter_sum_positive(&anon_reliable_pages);
 
 	return num + nr_page <= task_reliable_limit / PAGE_SIZE;
 }
