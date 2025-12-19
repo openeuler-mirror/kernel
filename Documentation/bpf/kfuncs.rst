@@ -37,16 +37,14 @@ prototype in a header for the wrapper kfunc.
 An example is given below::
 
         /* Disables missing prototype warnings */
-        __diag_push();
-        __diag_ignore_all("-Wmissing-prototypes",
-                          "Global kfuncs as their definitions will be in BTF");
+        __bpf_kfunc_start_defs();
 
         __bpf_kfunc struct task_struct *bpf_find_get_task_by_vpid(pid_t nr)
         {
                 return find_get_task_by_vpid(nr);
         }
 
-        __diag_pop();
+        __bpf_kfunc_end_defs();
 
 A wrapper kfunc is often needed when we need to annotate parameters of the
 kfunc. Otherwise one may directly make the kfunc visible to the BPF program by
@@ -155,10 +153,10 @@ In addition to kfuncs' arguments, verifier may need more information about the
 type of kfunc(s) being registered with the BPF subsystem. To do so, we define
 flags on a set of kfuncs as follows::
 
-        BTF_SET8_START(bpf_task_set)
+        BTF_KFUNCS_START(bpf_task_set)
         BTF_ID_FLAGS(func, bpf_get_task_pid, KF_ACQUIRE | KF_RET_NULL)
         BTF_ID_FLAGS(func, bpf_put_pid, KF_RELEASE)
-        BTF_SET8_END(bpf_task_set)
+        BTF_KFUNCS_END(bpf_task_set)
 
 This set encodes the BTF ID of each kfunc listed above, and encodes the flags
 along with it. Ofcourse, it is also allowed to specify no flags.
@@ -325,10 +323,10 @@ Once the kfunc is prepared for use, the final step to making it visible is
 registering it with the BPF subsystem. Registration is done per BPF program
 type. An example is shown below::
 
-        BTF_SET8_START(bpf_task_set)
+        BTF_KFUNCS_START(bpf_task_set)
         BTF_ID_FLAGS(func, bpf_get_task_pid, KF_ACQUIRE | KF_RET_NULL)
         BTF_ID_FLAGS(func, bpf_put_pid, KF_RELEASE)
-        BTF_SET8_END(bpf_task_set)
+        BTF_KFUNCS_END(bpf_task_set)
 
         static const struct btf_kfunc_id_set bpf_task_kfunc_set = {
                 .owner = THIS_MODULE,

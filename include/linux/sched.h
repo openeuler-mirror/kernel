@@ -77,6 +77,8 @@ struct task_delay_info;
 struct task_group;
 struct user_event_mm;
 
+#include <linux/sched/ext.h>
+
 /*
  * Task state bitmask. NOTE! These bits are also
  * encoded in fs/proc/array.c: get_task_state().
@@ -533,7 +535,7 @@ struct sched_statistics {
 	u64				block_max;
 	s64				sum_block_runtime;
 
-	u64				exec_max;
+	KABI_REPLACE(u64 exec_max, s64 exec_max)
 	u64				slice_max;
 
 	u64				nr_migrations_cold;
@@ -1643,6 +1645,10 @@ struct task_struct {
 	KABI_RESERVE(15)
 	KABI_RESERVE(16)
 	KABI_AUX_PTR(task_struct)
+
+#if !defined(__GENKSYMS__) && defined(CONFIG_SCHED_CLASS_EXT)
+	KABI_BROKEN_INSERT(struct sched_ext_entity scx)
+#endif
 
 	/* CPU-specific state of this task: */
 	struct thread_struct		thread;

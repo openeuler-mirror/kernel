@@ -1400,13 +1400,19 @@ static void test_map_stress(void)
 #define MAX_DELAY_US 50000
 #define MIN_DELAY_RANGE_US 5000
 
-static int map_update_retriable(int map_fd, const void *key, const void *value,
-				int flags, int attempts)
+static bool can_retry(int err)
+{
+	return (err == EAGAIN || err == EBUSY ||
+		(err == ENOMEM && map_opts.map_flags == BPF_F_NO_PREALLOC));
+}
+
+int map_update_retriable(int map_fd, const void *key, const void *value, int flags, int attempts,
+			 retry_for_error_fn need_retry)
 {
 	int delay = rand() % MIN_DELAY_RANGE_US;
 
 	while (bpf_map_update_elem(map_fd, key, value, flags)) {
-		if (!attempts || (errno != EAGAIN && errno != EBUSY))
+		if (!attempts || !need_retry(errno))
 			return -errno;
 
 		if (delay <= MAX_DELAY_US / 2)
@@ -1449,11 +1455,13 @@ static void test_update_delete(unsigned int fn, void *data)
 		key = value = i;
 
 		if (do_update) {
-			err = map_update_retriable(fd, &key, &value, BPF_NOEXIST, MAP_RETRIES);
+			err = map_update_retriable(fd, &key, &value, BPF_NOEXIST, MAP_RETRIES,
+						   can_retry);
 			if (err)
 				printf("error %d %d\n", err, errno);
 			assert(err == 0);
-			err = map_update_retriable(fd, &key, &value, BPF_EXIST, MAP_RETRIES);
+			err = map_update_retriable(fd, &key, &value, BPF_EXIST, MAP_RETRIES,
+						   can_retry);
 			if (err)
 				printf("error %d %d\n", err, errno);
 			assert(err == 0);
