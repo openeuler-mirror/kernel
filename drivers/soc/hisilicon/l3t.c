@@ -264,6 +264,14 @@ static struct platform_driver hisi_l3t_driver = {
 
 static int __init hisi_l3t_init(void)
 {
+	static const struct midr_range l3t_support_list[] = {
+		MIDR_ALL_VERSIONS(MIDR_HISI_TSV200),
+		MIDR_ALL_VERSIONS(MIDR_HISI_HIP10),
+		{}
+	};
+	if (!is_midr_in_range_list(read_cpuid_id(), l3t_support_list))
+		return -ENODEV;
+
 	mutex_init(&l3t_mutex);
 	xa_init(&l3t_mapping);
 
