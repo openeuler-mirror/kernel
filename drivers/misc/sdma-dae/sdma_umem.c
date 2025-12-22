@@ -66,6 +66,9 @@ void sdma_hash_free_entry(int key)
 	struct hash_entry *entry;
 	struct hlist_node *node_tmp;
 
+	if (g_hash_table == NULL)
+		return;
+
 	pr_debug("Function %s: free ida %d\n", __func__, key);
 	spin_lock(&g_hash_table->hash_lock);
 
@@ -81,6 +84,9 @@ void sdma_hash_free(void)
 	struct hash_entry *entry;
 	struct hlist_node *tmp;
 	u32 bkt;
+
+	if (g_hash_table == NULL)
+		return;
 
 	spin_lock(&g_hash_table->hash_lock);
 
