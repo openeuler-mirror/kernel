@@ -15,7 +15,7 @@ struct xfs_dinode;
 struct xfs_ifork {
 	int64_t			if_bytes;	/* bytes in if_u1 */
 	struct xfs_btree_block	*if_broot;	/* file's incore btree root */
-	unsigned int		if_seq;		/* cow fork mod counter */
+	unsigned int		if_seq;		/* fork mod counter */
 	int			if_height;	/* height of the extent tree */
 	union {
 		void		*if_root;	/* extent tree root */
