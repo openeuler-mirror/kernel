@@ -8278,6 +8278,14 @@ static struct cftype memory_files[] = {
 		.seq_show = memory_high_show,
 		.write = memory_high_write,
 	},
+#ifdef CONFIG_MEMCG_QOS
+	{
+		.name = "high_async_ratio",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.seq_show = memcg_high_async_ratio_show,
+		.write = memcg_high_async_ratio_write,
+	},
+#endif
 	{
 		.name = "max",
 		.flags = CFTYPE_NOT_ON_ROOT,
