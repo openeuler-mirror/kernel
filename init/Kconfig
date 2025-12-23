@@ -992,10 +992,16 @@ config MEMCG
 	help
 	  Provides control over the memory footprint of tasks in a cgroup.
 
-config MEMCG_V1_RECLAIM
-	bool "Enable Per Memory Cgroup Qos Reclaim in Cgroup V1"
+config MEMCG_QOS
+	bool "Enable Per Memory Cgroup Qos"
 	depends on MEMCG
 	default n
+	help
+	  This option enables Quality of Service (QoS) controls for
+	  individual memory cgroups, including support for setting memory
+	  watermarks and asynchronous reclaim mechanisms.
+
+	  If unsure, say "n".
 
 config MEMCG_MEMFS_INFO
 	bool "Show memfs files that have pages charged in given memory cgroup"
