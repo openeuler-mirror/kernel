@@ -399,7 +399,7 @@ struct mem_cgroup {
 	struct lru_gen_mm_list mm_list;
 #endif
 
-#ifdef CONFIG_MEMCG_V1_RECLAIM
+#ifdef CONFIG_MEMCG_QOS
 	int high_async_ratio;
 	bool high_async_reclaim;
 #endif
@@ -1257,7 +1257,7 @@ static inline void __memcg_memory_event(struct mem_cgroup *memcg,
 			else
 				cgroup_file_notify(&memcg->events_file);
 		}
-#ifndef CONFIG_MEMCG_V1_RECLAIM
+#ifndef CONFIG_MEMCG_QOS
 		if (!cgroup_subsys_on_dfl(memory_cgrp_subsys))
 			break;
 #endif
