@@ -118,7 +118,7 @@ static void pv_send_ipi_mask(const struct cpumask *mask, unsigned int action)
 
 	if (bitmap)
 		kvm_hypercall3(KVM_HCALL_FUNC_IPI, (unsigned long)bitmap,
-				(unsigned long)(bitmap >> BITS_PER_LONG), min);
+			      (unsigned long)(bitmap >> BITS_PER_LONG), min);
 }
 
 static irqreturn_t pv_ipi_interrupt(int irq, void *dev)
@@ -139,6 +139,11 @@ static irqreturn_t pv_ipi_interrupt(int irq, void *dev)
 	if (action & SMP_CALL_FUNCTION) {
 		generic_smp_call_function_interrupt();
 		info->ipi_irqs[IPI_CALL_FUNCTION]++;
+	}
+
+	if (action & SMP_CLEAR_VECTOR) {
+		complete_irq_moving();
+		info->ipi_irqs[IPI_CLEAR_VECTOR]++;
 	}
 
 	return IRQ_HANDLED;
