@@ -27,7 +27,9 @@
 #include <linux/ceph/auth.h>
 #include "crypto.h"
 
+#ifndef __GENKSYMS__
 #include <linux/sched/signal.h>
+#endif
 
 /*
  * Module compatibility interface.  For now it doesn't do anything,
