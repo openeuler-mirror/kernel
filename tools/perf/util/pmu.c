@@ -832,6 +832,7 @@ static bool perf_pmu__match_ignoring_suffix(const char *pmu_name, const char *to
 {
 	const char *p, *suffix;
 	bool has_hex = false;
+	bool has_underscore = false;
 
 	if (strncmp(pmu_name, tok, strlen(tok)))
 		return false;
@@ -840,13 +841,14 @@ static bool perf_pmu__match_ignoring_suffix(const char *pmu_name, const char *to
 	if (*p == 0)
 		return true;
 
-	if (*p == '_') {
-		++p;
-		++suffix;
-	}
-
-	/* Ensure we end in a number */
+	/* Ensure we end in a number or a mix of number and "_". */
 	while (1) {
+		if (!has_underscore && (*p == '_')) {
+			has_underscore = true;
+			++p;
+			++suffix;
+		}
+
 		if (!isxdigit(*p))
 			return false;
 		if (!has_hex)
