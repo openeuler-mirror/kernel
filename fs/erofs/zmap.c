@@ -437,6 +437,13 @@ int z_erofs_map_blocks_iter(struct inode *inode,
 	map->m_pa = blknr_to_addr(m.pblk);
 	map->m_flags |= EROFS_MAP_MAPPED;
 
+	if (m.type == Z_EROFS_VLE_CLUSTER_TYPE_PLAIN) {
+		if (map->m_llen > map->m_plen) {
+			DBG_BUGON(1);
+			err = -EFSCORRUPTED;
+		}
+	}
+
 unmap_out:
 	erofs_unmap_metabuf(&m.map->buf);
 
