@@ -28,6 +28,7 @@
 #include <linux/acpi.h>
 #include <linux/cpu.h>
 
+#include <asm/alternative.h>
 #include <asm/cpufeature.h>
 #include <asm/efi.h>
 #include <asm/early_ioremap.h>
@@ -693,6 +694,8 @@ setup_arch(char **cmdline_p)
 #endif
 
 	setup_cpu_features();
+
+	apply_alternatives_all();
 
 	jump_label_init();
 

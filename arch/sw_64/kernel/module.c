@@ -4,6 +4,7 @@
 #include <linux/elf.h>
 #include <linux/vmalloc.h>
 #include <asm/pgtable.h>
+#include <asm/alternative.h>
 
 #define DEBUGP(fmt...)
 
@@ -289,4 +290,17 @@ void *module_alloc(unsigned long size)
 	return __vmalloc_node_range(size, 1, MODULES_VADDR, MODULES_END,
 			GFP_KERNEL, PAGE_KERNEL, 0,
 			NUMA_NO_NODE, __builtin_return_address(0));
+}
+
+int module_finalize(const Elf_Ehdr *hdr,
+		    const Elf_Shdr *sechdrs,
+		    struct module *me)
+{
+	const Elf_Shdr *s;
+
+	s = find_section(hdr, sechdrs, ".altinstructions");
+	if (s)
+		apply_alternatives((void *)s->sh_addr, (void *)s->sh_addr + s->sh_size);
+
+	return 0;
 }
