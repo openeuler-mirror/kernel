@@ -126,6 +126,7 @@ struct cpuinfo_x86 {
 	__u8			x86_phys_bits;
 	/* CPUID returned core id bits: */
 	__u8			x86_coreid_bits;
+	KABI_DEPRECATE(__u8,	cu_id)
 	/* Max extended CPUID function supported: */
 	__u32			extended_cpuid_level;
 	/* Maximum supported CPUID level, -1=no CPUID: */
@@ -141,7 +142,6 @@ struct cpuinfo_x86 {
 	};
 	char			x86_vendor_id[16];
 	char			x86_model_id[64];
-	struct cpuinfo_topology	topo;
 	/* in KB - valid for CPUS which support this call: */
 	unsigned int		x86_cache_size;
 	int			x86_cache_alignment;	/* In bytes */
@@ -155,9 +155,19 @@ struct cpuinfo_x86 {
 	u64			ppin;
 	/* cpuid returned max cores value: */
 	u16			x86_max_cores;
+	KABI_DEPRECATE(u16,	apicid)
+	KABI_DEPRECATE(u16,	initial_apicid)
 	u16			x86_clflush_size;
 	/* number of cores as seen by the OS: */
 	u16			booted_cores;
+	/* Physical processor id: */
+	KABI_DEPRECATE(u16,	phys_proc_id)
+	/* Logical processor id: */
+	KABI_DEPRECATE(u16,	logical_proc_id)
+	/* Core id: */
+	KABI_DEPRECATE(u16,	cpu_core_id)
+	KABI_DEPRECATE(u16,	cpu_die_id)
+	KABI_DEPRECATE(u16,	logical_die_id)
 	/* Index into per_cpu list: */
 	u16			cpu_index;
 	/*  Is SMT active on this core? */
@@ -171,6 +181,7 @@ struct cpuinfo_x86 {
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_AUX_EMBED(cpuinfo_x86)
+	KABI_EXTEND(struct cpuinfo_topology	topo)
 } __randomize_layout;
 
 #define X86_VENDOR_INTEL	0
