@@ -83,6 +83,18 @@ static inline long kvm_hypercall4(unsigned int nr, unsigned long p1,
 	return ret;
 }
 
+static inline long kvm_sev_hypercall3(unsigned int nr, unsigned long p1,
+				      unsigned long p2, unsigned long p3)
+{
+	long ret;
+
+	asm volatile("vmmcall"
+		     : "=a"(ret)
+		     : "a"(nr), "b"(p1), "c"(p2), "d"(p3)
+		     : "memory");
+	return ret;
+}
+
 #ifdef CONFIG_KVM_GUEST
 void kvmclock_init(void);
 void kvmclock_disable(void);
@@ -103,6 +115,10 @@ static __always_inline bool kvm_handle_async_pf(struct pt_regs *regs, u32 token)
 	else
 		return false;
 }
+
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+extern void kvm_sev_hc_page_enc_status(unsigned long pfn, int npages, bool enc);
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
 
 #ifdef CONFIG_PARAVIRT_SPINLOCKS
 void __init kvm_spinlock_init(void);
@@ -140,6 +156,14 @@ static __always_inline bool kvm_handle_async_pf(struct pt_regs *regs, u32 token)
 {
 	return false;
 }
+
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+static inline void kvm_sev_hc_page_enc_status(unsigned long pfn, int npages, bool enc)
+{
+	return;
+}
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
+
 #endif
 
 #endif /* _ASM_X86_KVM_PARA_H */

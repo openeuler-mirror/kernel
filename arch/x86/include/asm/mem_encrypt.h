@@ -43,6 +43,8 @@ void __init sme_enable(struct boot_params *bp);
 
 int __init early_set_memory_decrypted(unsigned long vaddr, unsigned long size);
 int __init early_set_memory_encrypted(unsigned long vaddr, unsigned long size);
+void __init early_set_mem_enc_dec_hypercall(unsigned long vaddr,
+					    unsigned long size, bool enc);
 
 void __init mem_encrypt_free_decrypted_mem(void);
 
@@ -54,6 +56,14 @@ bool sev_es_active(void);
 void __init mem_encrypt_init(void);
 
 #define __bss_decrypted __section(".bss..decrypted")
+
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+extern bool page_enc_status_kvm_hypercall_enable;
+#define ENABLE_PAGE_ENC_STATUS_KVM_HYPERCALL		\
+({							\
+	page_enc_status_kvm_hypercall_enable = true;	\
+})
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
 
 #else	/* !CONFIG_AMD_MEM_ENCRYPT */
 
@@ -81,12 +91,18 @@ static inline int __init
 early_set_memory_decrypted(unsigned long vaddr, unsigned long size) { return 0; }
 static inline int __init
 early_set_memory_encrypted(unsigned long vaddr, unsigned long size) { return 0; }
+static inline void __init
+early_set_mem_enc_dec_hypercall(unsigned long vaddr, unsigned long size, bool enc) {}
 
 static inline void mem_encrypt_free_decrypted_mem(void) { }
 
 static inline void mem_encrypt_init(void) { }
 
 #define __bss_decrypted
+
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+#define ENABLE_PAGE_ENC_STATUS_KVM_HYPERCALL
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
 
 #endif	/* CONFIG_AMD_MEM_ENCRYPT */
 

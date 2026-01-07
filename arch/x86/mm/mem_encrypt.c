@@ -31,6 +31,10 @@
 #include <asm/msr.h>
 #include <asm/cmdline.h>
 
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+#include <asm/kvm_para.h>
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
+
 #include "mm_internal.h"
 
 #include <asm/processor-hygon.h>
@@ -199,28 +203,85 @@ void __init sme_early_init(void)
 		swiotlb_force = SWIOTLB_FORCE;
 }
 
+static unsigned long pg_level_to_pfn(int level, pte_t *kpte, pgprot_t *ret_prot)
+{
+	unsigned long pfn = 0;
+	pgprot_t prot;
+
+	switch (level) {
+	case PG_LEVEL_4K:
+		pfn = pte_pfn(*kpte);
+		prot = pte_pgprot(*kpte);
+		break;
+	case PG_LEVEL_2M:
+		pfn = pmd_pfn(*(pmd_t *)kpte);
+		prot = pmd_pgprot(*(pmd_t *)kpte);
+		break;
+	case PG_LEVEL_1G:
+		pfn = pud_pfn(*(pud_t *)kpte);
+		prot = pud_pgprot(*(pud_t *)kpte);
+		break;
+	default:
+		WARN_ONCE(1, "Invalid level for kpte\n");
+		return 0;
+	}
+
+	if (ret_prot)
+		*ret_prot = prot;
+
+	return pfn;
+}
+
+/* HYGON added to avoid kabi breakage of pv_ops (start) */
+bool page_enc_status_kvm_hypercall_enable;
+
+static inline void notify_page_enc_status_changed(unsigned long pfn,
+						  int npages, bool enc)
+{
+	if (page_enc_status_kvm_hypercall_enable == true)
+		kvm_sev_hc_page_enc_status(pfn, npages, enc);
+}
+/* HYGON added to avoid kabi breakage of pv_ops (end) */
+
+void notify_range_enc_status_changed(unsigned long vaddr, int size, bool enc)
+{
+#ifdef CONFIG_PARAVIRT
+	unsigned long vaddr_end = vaddr + size;
+
+	while (vaddr < vaddr_end) {
+		int psize, pmask, level;
+		unsigned long pfn;
+		pte_t *kpte;
+
+		kpte = lookup_address(vaddr, &level);
+		if (!kpte || pte_none(*kpte)) {
+			WARN_ONCE(1, "kpte lookup for vaddr\n");
+			return;
+		}
+
+		pfn = pg_level_to_pfn(level, kpte, NULL);
+		if (!pfn)
+			continue;
+
+		psize = page_level_size(level);
+		pmask = page_level_mask(level);
+
+		notify_page_enc_status_changed(pfn, psize >> PAGE_SHIFT, enc);
+
+		vaddr = (vaddr & pmask) + psize;
+	}
+#endif
+}
+
 static void __init __set_clr_pte_enc(pte_t *kpte, int level, bool enc)
 {
 	pgprot_t old_prot, new_prot;
 	unsigned long pfn, pa, size;
 	pte_t new_pte;
 
-	switch (level) {
-	case PG_LEVEL_4K:
-		pfn = pte_pfn(*kpte);
-		old_prot = pte_pgprot(*kpte);
-		break;
-	case PG_LEVEL_2M:
-		pfn = pmd_pfn(*(pmd_t *)kpte);
-		old_prot = pmd_pgprot(*(pmd_t *)kpte);
-		break;
-	case PG_LEVEL_1G:
-		pfn = pud_pfn(*(pud_t *)kpte);
-		old_prot = pud_pgprot(*(pud_t *)kpte);
-		break;
-	default:
+	pfn = pg_level_to_pfn(level, kpte, &old_prot);
+	if (!pfn)
 		return;
-	}
 
 	new_prot = old_prot;
 	if (enc)
@@ -256,12 +317,13 @@ static void __init __set_clr_pte_enc(pte_t *kpte, int level, bool enc)
 static int __init early_set_memory_enc_dec(unsigned long vaddr,
 					   unsigned long size, bool enc)
 {
-	unsigned long vaddr_end, vaddr_next;
+	unsigned long vaddr_end, vaddr_next, start;
 	unsigned long psize, pmask;
 	int split_page_size_mask;
 	int level, ret;
 	pte_t *kpte;
 
+	start = vaddr;
 	vaddr_next = vaddr;
 	vaddr_end = vaddr + size;
 
@@ -316,6 +378,7 @@ static int __init early_set_memory_enc_dec(unsigned long vaddr,
 
 	ret = 0;
 
+	notify_range_enc_status_changed(start, size, enc);
 out:
 	__flush_tlb_all();
 	return ret;
@@ -329,6 +392,11 @@ int __init early_set_memory_decrypted(unsigned long vaddr, unsigned long size)
 int __init early_set_memory_encrypted(unsigned long vaddr, unsigned long size)
 {
 	return early_set_memory_enc_dec(vaddr, size, true);
+}
+
+void __init early_set_mem_enc_dec_hypercall(unsigned long vaddr, unsigned long size, bool enc)
+{
+	notify_range_enc_status_changed(vaddr, size, enc);
 }
 
 /*
