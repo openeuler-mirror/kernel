@@ -127,6 +127,8 @@ struct cpuinfo_x86 {
 #endif
 	__u8			x86_virt_bits;
 	__u8			x86_phys_bits;
+	/* CPUID returned core id bits: */
+	KABI_DEPRECATE(__u8,	x86_coreid_bits)
 	KABI_DEPRECATE(__u8,	cu_id)
 	/* Max extended CPUID function supported: */
 	__u32			extended_cpuid_level;
