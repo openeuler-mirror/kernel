@@ -204,7 +204,7 @@ struct kernfs_root {
 	struct list_head	supers;
 
 	wait_queue_head_t	deactivate_waitq;
-	struct rw_semaphore	kernfs_rwsem;
+	KABI_EXTEND(struct rw_semaphore	kernfs_rwsem)
 };
 
 struct kernfs_open_file {
