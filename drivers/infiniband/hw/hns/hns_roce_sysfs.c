@@ -28,7 +28,7 @@ static void scc_param_config_work(struct work_struct *work)
 static void get_default_cnp_pri_param(struct hns_roce_dev *hr_dev,
 				  struct hns_roce_port *pdata)
 {
-	if (hr_dev->is_vf || hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP09)
+	if (hr_dev->is_vf || hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP08)
 		return;
 
 	if (hr_dev->mac_type != HNAE3_MAC_ROH ||
@@ -266,7 +266,7 @@ static umode_t cnp_pri_param_is_visible(struct kobject *kobj,
 		container_of(kobj, struct hns_roce_port, kobj);
 	struct hns_roce_dev *hr_dev = pdata->hr_dev;
 
-	if (hr_dev->is_vf || hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP09)
+	if (hr_dev->is_vf || hr_dev->pci_dev->revision <= PCI_REVISION_ID_HIP08)
 		return 0;
 
 	if (hr_dev->mac_type != HNAE3_MAC_ROH ||
