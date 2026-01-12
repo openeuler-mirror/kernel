@@ -618,6 +618,10 @@ static void fnhe_remove_oldest(struct fnhe_hash_bucket *hash)
 		}
 	}
 	if (oldest) {
+		/* Clear oldest->fnhe_daddr to prevent this fnhe from being
+		 * rebound with new dsts in rt_bind_exception().
+		 */
+		oldest->fnhe_daddr = 0;
 		fnhe_flush_routes(oldest);
 		*oldest_p = oldest->fnhe_next;
 		kfree_rcu(oldest, rcu);
