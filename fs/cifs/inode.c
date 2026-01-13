@@ -2069,6 +2069,7 @@ cifs_rename2(struct inode *source_dir, struct dentry *source_dentry,
 	struct cifs_sb_info *cifs_sb;
 	struct tcon_link *tlink;
 	struct cifs_tcon *tcon;
+	bool rehash = false;
 	FILE_UNIX_BASIC_INFO *info_buf_source = NULL;
 	FILE_UNIX_BASIC_INFO *info_buf_target;
 	unsigned int xid;
@@ -2078,6 +2079,18 @@ cifs_rename2(struct inode *source_dir, struct dentry *source_dentry,
 		return -EINVAL;
 
 	cifs_sb = CIFS_SB(source_dir->i_sb);
+
+	/*
+	 * Prevent any concurrent opens on the target by unhashing the dentry.
+	 * VFS already unhashes the target when renaming directories.
+	 */
+	if (d_is_positive(target_dentry) && !d_is_dir(target_dentry)) {
+		if (!d_unhashed(target_dentry)) {
+			d_drop(target_dentry);
+			rehash = true;
+		}
+	}
+
 	tlink = cifs_sb_tlink(cifs_sb);
 	if (IS_ERR(tlink))
 		return PTR_ERR(tlink);
@@ -2103,6 +2116,8 @@ cifs_rename2(struct inode *source_dir, struct dentry *source_dentry,
 
 	rc = cifs_do_rename(xid, source_dentry, from_name, target_dentry,
 			    to_name);
+	if (!rc)
+		rehash = false;
 
 	/*
 	 * No-replace is the natural behavior for CIFS, so skip unlink hacks.
@@ -2159,6 +2174,8 @@ unlink_target:
 			goto cifs_rename_exit;
 		rc = cifs_do_rename(xid, source_dentry, from_name,
 				    target_dentry, to_name);
+		if (!rc)
+			rehash = false;
 	}
 
 	/* force revalidate to go get info when needed */
@@ -2168,6 +2185,8 @@ unlink_target:
 		target_dir->i_mtime = current_time(source_dir);
 
 cifs_rename_exit:
+	if (rehash)
+		d_rehash(target_dentry);
 	kfree(info_buf_source);
 	kfree(from_name);
 	kfree(to_name);
