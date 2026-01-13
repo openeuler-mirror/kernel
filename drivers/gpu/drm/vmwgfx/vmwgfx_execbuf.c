@@ -1151,7 +1151,7 @@ static int vmw_translate_mob_ptr(struct vmw_private *dev_priv,
 	ret = vmw_user_bo_lookup(sw_context->fp->tfile, handle, &vmw_bo, NULL);
 	if (ret != 0) {
 		VMW_DEBUG_USER("Could not find or use MOB buffer.\n");
-		return PTR_ERR(vmw_bo);
+		return ret;
 	}
 
 	ret = vmw_validation_add_bo(sw_context->ctx, vmw_bo, true, false);
@@ -1206,7 +1206,7 @@ static int vmw_translate_guest_ptr(struct vmw_private *dev_priv,
 	ret = vmw_user_bo_lookup(sw_context->fp->tfile, handle, &vmw_bo, NULL);
 	if (ret != 0) {
 		VMW_DEBUG_USER("Could not find or use GMR region.\n");
-		return PTR_ERR(vmw_bo);
+		return ret;
 	}
 
 	ret = vmw_validation_add_bo(sw_context->ctx, vmw_bo, false, false);
