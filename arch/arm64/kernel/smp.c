@@ -80,6 +80,10 @@ enum ipi_msg_type {
 	IPI_TIMER,
 	IPI_IRQ_WORK,
 	IPI_WAKEUP,
+#if IS_ENABLED(CONFIG_TEE_SGI_INTERRUPT)
+	IPI_RESERVE,
+	IPI_TPCM,
+#endif
 	NR_IPI
 };
 
@@ -845,6 +849,10 @@ static const char *ipi_types[NR_IPI] __tracepoint_string = {
 	S(IPI_TIMER, "Timer broadcast interrupts"),
 	S(IPI_IRQ_WORK, "IRQ work interrupts"),
 	S(IPI_WAKEUP, "CPU wake-up interrupts"),
+#if IS_ENABLED(CONFIG_TEE_SGI_INTERRUPT)
+	S(IPI_RESERVE, "reserve id 7 interrupts"),
+	S(IPI_TPCM, "TPCM interrupts"),
+#endif
 };
 
 static void smp_cross_call(const struct cpumask *target, unsigned int ipinr);
@@ -936,6 +944,53 @@ static void ipi_cpu_crash_stop(unsigned int cpu, struct pt_regs *regs)
 #endif
 }
 
+#if IS_ENABLED(CONFIG_TEE_SGI_INTERRUPT)
+static DEFINE_SPINLOCK(irq_8_lock);
+static irq_8_handler the_irq_8_handler;
+
+static void tsb_irq_handle(void)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&irq_8_lock, flags);
+	if (the_irq_8_handler)
+		the_irq_8_handler();
+	spin_unlock_irqrestore(&irq_8_lock, flags);
+}
+
+int register_irq_8_handler(irq_8_handler handler)
+{
+	unsigned long flags;
+	int r = 0;
+
+	spin_lock_irqsave(&irq_8_lock, flags);
+	if (the_irq_8_handler)
+		r = -1;
+	else
+		the_irq_8_handler = handler;
+	spin_unlock_irqrestore(&irq_8_lock, flags);
+
+	return r;
+}
+EXPORT_SYMBOL_GPL(register_irq_8_handler);
+
+int unregister_irq_8_handler(irq_8_handler handler)
+{
+	unsigned long flags;
+	int r = 0;
+
+	spin_lock_irqsave(&irq_8_lock, flags);
+	if (the_irq_8_handler != handler)
+		r = -1;
+	else
+		the_irq_8_handler = NULL;
+	spin_unlock_irqrestore(&irq_8_lock, flags);
+
+	return r;
+}
+EXPORT_SYMBOL_GPL(unregister_irq_8_handler);
+#endif
+
 /*
  * Main handler for inter-processor interrupts
  */
@@ -984,6 +1039,15 @@ static void do_handle_IPI(int ipinr)
 		WARN_ONCE(!acpi_parking_protocol_valid(cpu),
 			  "CPU%u: Wake-up IPI outside the ACPI parking protocol\n",
 			  cpu);
+		break;
+#endif
+
+#if IS_ENABLED(CONFIG_TEE_SGI_INTERRUPT)
+	case IPI_RESERVE:
+		pr_crit("CPU%u: IPI message 7 is not supported!", cpu);
+		break;
+	case IPI_TPCM:
+		tsb_irq_handle();
 		break;
 #endif
 

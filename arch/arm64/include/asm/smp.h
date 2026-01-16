@@ -31,6 +31,12 @@
 #include <linux/cpumask.h>
 #include <linux/thread_info.h>
 
+#if IS_ENABLED(CONFIG_TEE_SGI_INTERRUPT)
+typedef void (*irq_8_handler)(void);
+int register_irq_8_handler(irq_8_handler handler);
+int unregister_irq_8_handler(irq_8_handler handler);
+#endif
+
 DECLARE_PER_CPU_READ_MOSTLY(int, cpu_number);
 
 /*
