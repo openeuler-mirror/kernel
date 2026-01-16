@@ -2269,8 +2269,6 @@ static struct iommu_device *amd_iommu_probe_device(struct device *dev)
 					     pci_max_pasids(to_pci_dev(dev)));
 	}
 
-
-out_err:
 	iommu_completion_wait(iommu);
 
 	if (FEATURE_NUM_INT_REMAP_SUP_2K(amd_iommu_efr2))
@@ -2278,6 +2276,7 @@ out_err:
 	else
 		dev_data->max_irqs = MAX_IRQS_PER_TABLE_512;
 
+out_err:
 	return iommu_dev;
 }
 
