@@ -33,6 +33,8 @@
 #define QM_MB_PING_ALL_VFS		0xffff
 #define QM_MB_STATUS_MASK		GENMASK(12, 9)
 #define QM_MB_BUSY_MASK			BIT(13)
+#define QM_MB_MAX_WAIT_TIMEOUT		USEC_PER_SEC
+#define QM_MB_MAX_STOP_TIMEOUT		(5 * USEC_PER_SEC)
 
 /* sqc shift */
 #define QM_SQ_HOP_NUM_SHIFT		0
@@ -676,14 +678,14 @@ int hisi_qm_wait_mb_ready(struct hisi_qm *qm)
 }
 EXPORT_SYMBOL_GPL(hisi_qm_wait_mb_ready);
 
-static int qm_wait_mb_finish(struct hisi_qm *qm, struct qm_mailbox *mailbox)
+static int qm_wait_mb_finish(struct hisi_qm *qm, struct qm_mailbox *mailbox, u32 wait_timeout)
 {
 	struct device *dev = &qm->pdev->dev;
 	int ret;
 
 	ret = read_poll_timeout(qm_mb_read, *mailbox,
 				!(le16_to_cpu(mailbox->w0) & QM_MB_BUSY_MASK),
-				POLL_PERIOD, POLL_TIMEOUT,
+				POLL_PERIOD, wait_timeout,
 				true, qm);
 	if (ret) {
 		dev_err(dev, "QM mailbox operation timeout!\n");
@@ -698,7 +700,7 @@ static int qm_wait_mb_finish(struct hisi_qm *qm, struct qm_mailbox *mailbox)
 	return 0;
 }
 
-static int qm_mb_nolock(struct hisi_qm *qm, struct qm_mailbox *mailbox)
+static int qm_mb_nolock(struct hisi_qm *qm, struct qm_mailbox *mailbox, u32 wait_timeout)
 {
 	int ret;
 
@@ -708,7 +710,7 @@ static int qm_mb_nolock(struct hisi_qm *qm, struct qm_mailbox *mailbox)
 
 	qm_mb_write(qm, mailbox);
 
-	ret = qm_wait_mb_finish(qm, mailbox);
+	ret = qm_wait_mb_finish(qm, mailbox, wait_timeout);
 	if (ret)
 		goto mb_err_cnt_increase;
 
@@ -723,12 +725,24 @@ int hisi_qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
 	       bool op)
 {
 	struct qm_mailbox mailbox;
+	u32 wait_timeout;
 	int ret;
+
+	if (cmd == QM_MB_CMD_STOP_QP || cmd == QM_MB_CMD_FLUSH_QM)
+		wait_timeout = QM_MB_MAX_STOP_TIMEOUT;
+	else
+		wait_timeout = QM_MB_MAX_WAIT_TIMEOUT;
+
+	/* No need to judge if master OOO is blocked. */
+	if (qm_check_dev_error(qm)) {
+		dev_err(&qm->pdev->dev, "QM mailbox operation failed since qm is stop!\n");
+		return -EIO;
+	}
 
 	qm_mb_pre_init(&mailbox, cmd, dma_addr, queue, op);
 
 	mutex_lock(&qm->mailbox_lock);
-	ret = qm_mb_nolock(qm, &mailbox);
+	ret = qm_mb_nolock(qm, &mailbox, wait_timeout);
 	mutex_unlock(&qm->mailbox_lock);
 
 	return ret;
@@ -742,7 +756,7 @@ int hisi_qm_mb_read(struct hisi_qm *qm, u64 *base, u8 cmd, u16 queue)
 
 	qm_mb_pre_init(&mailbox, cmd, 0, queue, 1);
 	mutex_lock(&qm->mailbox_lock);
-	ret = qm_mb_nolock(qm, &mailbox);
+	ret = qm_mb_nolock(qm, &mailbox, QM_MB_MAX_WAIT_TIMEOUT);
 	mutex_unlock(&qm->mailbox_lock);
 	if (ret)
 		return ret;
@@ -800,7 +814,7 @@ int qm_set_and_get_xqc(struct hisi_qm *qm, u8 cmd, void *xqc, u32 qp_id, bool op
 		memcpy(tmp_xqc, xqc, size);
 
 	qm_mb_pre_init(&mailbox, cmd, xqc_dma, qp_id, op);
-	ret = qm_mb_nolock(qm, &mailbox);
+	ret = qm_mb_nolock(qm, &mailbox, QM_MB_MAX_WAIT_TIMEOUT);
 	if (!ret && op)
 		memcpy(xqc, tmp_xqc, size);
 
@@ -1951,7 +1965,7 @@ static int qm_set_ifc_begin_v3(struct hisi_qm *qm, enum qm_ifc_cmd cmd, u32 data
 
 	qm_mb_pre_init(&mailbox, QM_MB_CMD_SRC, msg, fun_num, 0);
 	mutex_lock(&qm->mailbox_lock);
-	return qm_mb_nolock(qm, &mailbox);
+	return qm_mb_nolock(qm, &mailbox, QM_MB_MAX_WAIT_TIMEOUT);
 }
 
 static void qm_set_ifc_end_v3(struct hisi_qm *qm)
