@@ -14,6 +14,7 @@
 #include <kvm/arm_pmu.h>
 #include <kvm/arm_vgic.h>
 #include <asm/kvm_tmi.h>
+#include "sys_regs.h"
 
 static void kvm_pmu_create_perf_event(struct kvm_vcpu *vcpu, u64 select_idx);
 static void kvm_pmu_update_pmc_chained(struct kvm_vcpu *vcpu, u64 select_idx);
@@ -21,9 +22,9 @@ static void kvm_pmu_stop_counter(struct kvm_vcpu *vcpu, struct kvm_pmc *pmc);
 
 #define PERF_ATTR_CFG1_KVM_PMU_CHAINED 0x1
 
-static u32 kvm_pmu_event_mask(struct kvm *kvm)
+static u32 __kvm_pmu_event_mask(unsigned int pmuver)
 {
-	switch (kvm->arch.pmuver) {
+	switch (pmuver) {
 	case ID_AA64DFR0_PMUVER_8_0:
 		return GENMASK(9, 0);
 	case ID_AA64DFR0_PMUVER_8_1:
@@ -32,9 +33,17 @@ static u32 kvm_pmu_event_mask(struct kvm *kvm)
 	case ID_AA64DFR0_PMUVER_8_7:
 		return GENMASK(15, 0);
 	default:		/* Shouldn't be here, just for sanity */
-		WARN_ONCE(1, "Unknown PMU version %d\n", kvm->arch.pmuver);
+		WARN_ONCE(1, "Unknown PMU version %d\n", pmuver);
 		return 0;
 	}
+}
+
+static u32 kvm_pmu_event_mask(struct kvm *kvm)
+{
+	u64 dfr0 = _read_id_reg(kvm->vcpus[0], SYS_ID_AA64DFR0_EL1, false);
+	u8 pmuver = cpuid_feature_extract_unsigned_field(dfr0, ID_AA64DFR0_PMUVER_SHIFT);
+
+	return __kvm_pmu_event_mask(pmuver);
 }
 
 /**

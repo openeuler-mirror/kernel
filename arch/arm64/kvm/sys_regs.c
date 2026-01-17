@@ -1153,12 +1153,8 @@ static void kvm_set_id_reg(struct kvm_vcpu *vcpu, u64 id, u64 value)
 	ri->sys_val = value;
 }
 
-/* Read a sanitised cpufeature ID register by sys_reg_desc */
-static u64 read_id_reg(struct kvm_vcpu *vcpu,
-		struct sys_reg_desc const *r, bool raz)
+u64 _read_id_reg(struct kvm_vcpu *vcpu, u32 id, bool raz)
 {
-	u32 id = sys_reg((u32)r->Op0, (u32)r->Op1,
-			 (u32)r->CRn, (u32)r->CRm, (u32)r->Op2);
 	u64 val = raz ? 0 : kvm_get_id_reg(vcpu, id);
 
 	if (id == SYS_ID_AA64PFR0_EL1) {
@@ -1192,6 +1188,16 @@ static u64 read_id_reg(struct kvm_vcpu *vcpu,
 	}
 
 	return val;
+}
+
+/* Read a sanitised cpufeature ID register by sys_reg_desc */
+static u64 read_id_reg(struct kvm_vcpu *vcpu,
+		struct sys_reg_desc const *r, bool raz)
+{
+	u32 id = sys_reg((u32)r->Op0, (u32)r->Op1,
+			(u32)r->CRn, (u32)r->CRm, (u32)r->Op2);
+	return _read_id_reg(vcpu, id, raz);
+
 }
 
 static unsigned int id_visibility(const struct kvm_vcpu *vcpu,
