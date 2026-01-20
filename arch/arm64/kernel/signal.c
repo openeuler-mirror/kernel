@@ -249,6 +249,12 @@ int restore_sve_fpsimd_context(struct user_ctxs *user)
 	if (sve.head.size < SVE_SIG_CONTEXT_SIZE(vq))
 		return -EINVAL;
 
+	if (sve.flags & SVE_SIG_FLAG_SM) {
+		sme_alloc(current, false);
+		if (!current->thread.za_state)
+			return -ENOMEM;
+	}
+
 	/*
 	 * Careful: we are about __copy_from_user() directly into
 	 * thread.sve_state with preemption enabled, so protection is
@@ -265,17 +271,20 @@ int restore_sve_fpsimd_context(struct user_ctxs *user)
 		return -ENOMEM;
 	}
 
+	if (sve.flags & SVE_SIG_FLAG_SM) {
+		current->thread.svcr |= SVCR_SM_MASK;
+		set_thread_flag(TIF_SME);
+	} else {
+		current->thread.svcr &= ~SVCR_SM_MASK;
+		set_thread_flag(TIF_SVE);
+	}
+
 	err = __copy_from_user(current->thread.sve_state,
 			       (char __user const *)user->sve +
 					SVE_SIG_REGS_OFFSET,
 			       SVE_SIG_REGS_SIZE(vq));
 	if (err)
 		return -EFAULT;
-
-	if (sve.flags & SVE_SIG_FLAG_SM)
-		current->thread.svcr |= SVCR_SM_MASK;
-	else
-		set_thread_flag(TIF_SVE);
 
 fpsimd_only:
 	/* copy the FP and status/control registers */
