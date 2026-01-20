@@ -89,7 +89,7 @@ static void loongson_default_data(struct pci_dev *pdev,
 	plat->bus_id = (pci_domain_nr(pdev->bus) << 16) |
 			PCI_DEVID(pdev->bus->number, pdev->devfn);
 
-	plat->clk_csr = 2;	/* clk_csr_i = 20-35MHz & MDC = clk_csr_i/16 */
+	plat->clk_csr = 1; /* clk_csr_i = 100-150MHz & MDC = clk_csr_i/64 */
 	plat->has_gmac = 1;
 	plat->force_sf_dma_mode = 1;
 
