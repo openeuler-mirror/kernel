@@ -426,7 +426,7 @@ static int vf_qm_check_match(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	qp_num = qm_get_vft(vf_qm, &vf_qm->qp_base);
 	if (qp_num <= 0) {
 		dev_err(dev, "failed to get vft qp nums\n");
-		return -EINVAL;
+		return qp_num < 0 ? qp_num : -EINVAL;
 	}
 
 	if (qp_num != vf_data->qp_num) {
