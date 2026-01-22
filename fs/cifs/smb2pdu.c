@@ -3714,6 +3714,13 @@ void smb2_reconnect_server(struct work_struct *work)
 
 	spin_lock(&cifs_tcp_ses_lock);
 	list_for_each_entry(ses, &server->smb_ses_list, smb_ses_list) {
+		spin_lock(&GlobalMid_Lock);
+		if (ses->status == CifsExiting) {
+			spin_unlock(&GlobalMid_Lock);
+			continue;
+		}
+		spin_unlock(&GlobalMid_Lock);
+
 		list_for_each_entry(tcon, &ses->tcon_list, tcon_list) {
 			if (tcon->need_reconnect || tcon->need_reopen_files) {
 				tcon->tc_count++;
