@@ -3778,8 +3778,6 @@ static int raid10_run(struct mddev *mddev)
 	}
 
 	if (mddev->queue) {
-		blk_queue_max_discard_sectors(mddev->queue,
-					      mddev->chunk_sectors);
 		blk_queue_max_write_same_sectors(mddev->queue, 0);
 		blk_queue_max_write_zeroes_sectors(mddev->queue, 0);
 		blk_queue_io_min(mddev->queue, mddev->chunk_sectors << 9);
