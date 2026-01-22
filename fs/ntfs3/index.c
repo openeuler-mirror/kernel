@@ -1085,6 +1085,13 @@ ok:
 		err = 0;
 	}
 
+	/* check for index header length */
+	if (offsetof(struct INDEX_BUFFER, ihdr) + le32_to_cpu(ib->ihdr.used) >
+	    bytes) {
+		err = -EINVAL;
+		goto out;
+	}
+
 	in->index = ib;
 	*node = in;
 
