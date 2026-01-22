@@ -413,6 +413,12 @@ void __init reserve_crashkernel_high(void)
 			return;
 
 		crash_high_mem_reserved = true;
+
+		/*
+		 * The crashkernel memory will be removed from the kernel linear
+		 * map. Inform kmemleak so that it won't try to access it.
+		 */
+		kmemleak_ignore_phys(crash_base);
 	}
 
 	/* Mark the memory range that requires page-level mappings */
@@ -556,14 +562,6 @@ reserve_ok:
 		(unsigned long)(crash_size >> 20),
 		(unsigned long)(crash_base >> 20),
 		(unsigned long)(total_mem >> 20));
-
-#ifdef CONFIG_ARM64
-	/*
-	 * The crashkernel memory will be removed from the kernel linear
-	 * map. Inform kmemleak so that it won't try to access it.
-	 */
-	kmemleak_ignore_phys(crash_base);
-#endif
 
 	crashk_res.start = crash_base;
 	crashk_res.end   = crash_base + crash_size - 1;
