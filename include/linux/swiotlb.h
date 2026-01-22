@@ -24,6 +24,9 @@ enum swiotlb_force {
  */
 #define IO_TLB_SEGSIZE	128
 
+/* default to 64MB */
+#define IO_TLB_DEFAULT_SIZE (64UL<<20)
+
 /*
  * log of the size of each IO TLB slab.  The number of slabs is command line
  * controllable.
@@ -79,6 +82,7 @@ void __init swiotlb_exit(void);
 unsigned int swiotlb_max_segment(void);
 size_t swiotlb_max_mapping_size(struct device *dev);
 bool is_swiotlb_active(void);
+void __init swiotlb_adjust_size(unsigned long new_size);
 #else
 #define swiotlb_force SWIOTLB_NO_FORCE
 static inline bool is_swiotlb_buffer(phys_addr_t paddr)
@@ -100,6 +104,10 @@ static inline size_t swiotlb_max_mapping_size(struct device *dev)
 static inline bool is_swiotlb_active(void)
 {
 	return false;
+}
+
+static inline void swiotlb_adjust_size(unsigned long new_size)
+{
 }
 #endif /* CONFIG_SWIOTLB */
 
