@@ -58,6 +58,9 @@ void sdma_authority_ht_free(void)
 	struct hlist_node *tmp;
 	u32 bkt;
 
+	if (g_authority == NULL)
+		return;
+
 	write_lock(&g_authority->owner_pid_lock);
 	hash_for_each_safe(g_authority->sdma_owner_pid_ht, bkt, tmp, entry, node)
 		entry_free_pid_ht(entry);
@@ -86,6 +89,9 @@ void sdma_free_authority_ht_with_pid(u32 pid)
 	struct hisi_sdma_own_pid_hte *entry;
 	struct hlist_node *tmp;
 	u32 bkt;
+
+	if (g_authority == NULL)
+		return;
 
 	write_lock(&g_authority->owner_pid_lock);
 	hash_for_each_safe(g_authority->sdma_owner_pid_ht, bkt, tmp, entry, node) {
