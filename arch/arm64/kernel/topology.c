@@ -15,6 +15,7 @@
 #include <linux/arch_topology.h>
 #include <linux/cacheinfo.h>
 #include <linux/cpufreq.h>
+#include <linux/cpu_smt.h>
 #include <linux/init.h>
 #include <linux/percpu.h>
 #include <linux/xarray.h>
@@ -85,25 +86,31 @@ static bool __init acpi_cpu_is_threaded(int cpu)
 	return !!is_threaded;
 }
 
+struct cpu_smt_info {
+	unsigned int thread_num;
+	int core_id;
+};
+
 /*
  * Propagate the topology information of the processor_topology_node tree to the
  * cpu_topology array.
  */
 int __init parse_acpi_topology(void)
 {
-	int thread_num, max_smt_thread_num = 1;
-	struct xarray core_threads;
+	unsigned int max_smt_thread_num = 1;
+	struct cpu_smt_info *entry;
+	struct xarray hetero_cpu;
+	unsigned long hetero_id;
 	int cpu, topology_id, ret;
-	void *entry;
 
 	if (acpi_disabled)
 		return 0;
 
-	xa_init(&core_threads);
-
 	ret = acpi_pptt_init();
 	if (ret)
 		return ret;
+
+	xa_init(&hetero_cpu);
 
 	for_each_possible_cpu(cpu) {
 		int i, cache_id;
@@ -117,18 +124,32 @@ int __init parse_acpi_topology(void)
 			topology_id = find_acpi_cpu_topology(cpu, 1);
 			cpu_topology[cpu].core_id   = topology_id;
 
-			entry = xa_load(&core_threads, topology_id);
+			/*
+			 * In the PPTT, CPUs below a node with the 'identical
+			 * implementation' flag have the same number of threads.
+			 * Count the number of threads for only one CPU (i.e.
+			 * one core_id) among those with the same hetero_id.
+			 * See the comment of find_acpi_cpu_topology_hetero_id()
+			 * for more details.
+			 *
+			 * One entry is created for each node having:
+			 * - the 'identical implementation' flag
+			 * - its parent not having the flag
+			 */
+			hetero_id = find_acpi_cpu_topology_hetero_id(cpu);
+			entry = xa_load(&hetero_cpu, hetero_id);
 			if (!entry) {
-				xa_store(&core_threads, topology_id,
-					 xa_mk_value(1), GFP_KERNEL);
-			} else {
-				thread_num = xa_to_value(entry);
-				thread_num++;
-				xa_store(&core_threads, topology_id,
-					 xa_mk_value(thread_num), GFP_KERNEL);
+				entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+				WARN_ON_ONCE(!entry);
 
-				if (thread_num > max_smt_thread_num)
-					max_smt_thread_num = thread_num;
+				if (entry) {
+					entry->core_id = topology_id;
+					entry->thread_num = 1;
+					xa_store(&hetero_cpu, hetero_id,
+						 entry, GFP_KERNEL);
+				}
+			} else if (entry->core_id == topology_id) {
+				entry->thread_num++;
 			}
 		} else {
 			cpu_topology[cpu].thread_id  = -1;
@@ -152,9 +173,19 @@ int __init parse_acpi_topology(void)
 		}
 	}
 
-	topology_smt_set_num_threads(max_smt_thread_num);
+	/*
+	 * This is a short loop since the number of XArray elements is the
+	 * number of heterogeneous CPU clusters. On a homogeneous system
+	 * there's only one entry in the XArray.
+	 */
+	xa_for_each(&hetero_cpu, hetero_id, entry) {
+		max_smt_thread_num = max(max_smt_thread_num, entry->thread_num);
+		xa_erase(&hetero_cpu, hetero_id);
+		kfree(entry);
+	}
 
-	xa_destroy(&core_threads);
+	cpu_smt_set_num_threads(max_smt_thread_num, max_smt_thread_num);
+	xa_destroy(&hetero_cpu);
 	return 0;
 }
 #endif
