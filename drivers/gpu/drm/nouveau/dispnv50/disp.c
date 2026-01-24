@@ -1965,7 +1965,10 @@ nv50_pior_help = {
 static void
 nv50_pior_destroy(struct drm_encoder *encoder)
 {
+	struct nouveau_encoder *nv_encoder = nouveau_encoder(encoder);
+
 	drm_encoder_cleanup(encoder);
+	mutex_destroy(&nv_encoder->dp.hpd_irq_lock);
 	kfree(encoder);
 }
 
@@ -2009,6 +2012,8 @@ nv50_pior_create(struct drm_connector *connector, struct dcb_output *dcbe)
 	nv_encoder->dcb = dcbe;
 	nv_encoder->i2c = ddc;
 	nv_encoder->aux = aux;
+
+	mutex_init(&nv_encoder->dp.hpd_irq_lock);
 
 	encoder = to_drm_encoder(nv_encoder);
 	encoder->possible_crtcs = dcbe->heads;
