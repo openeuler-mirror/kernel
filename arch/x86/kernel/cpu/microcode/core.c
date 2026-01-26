@@ -34,6 +34,7 @@
 #include <asm/microcode_intel.h>
 #include <asm/cpu_device_id.h>
 #include <asm/microcode_amd.h>
+#include <asm/microcode_zhaoxin.h>
 #include <asm/perf_event.h>
 #include <asm/microcode.h>
 #include <asm/processor.h>
@@ -165,14 +166,15 @@ bool get_builtin_firmware(struct cpio_data *cd, const char *name)
 void __init load_ucode_bsp(void)
 {
 	unsigned int cpuid_1_eax;
-	bool intel = true;
+	unsigned int x86_vendor;
 
 	if (!have_cpuid_p())
 		return;
 
 	cpuid_1_eax = native_cpuid_eax(1);
+	x86_vendor = x86_cpuid_vendor();
 
-	switch (x86_cpuid_vendor()) {
+	switch (x86_vendor) {
 	case X86_VENDOR_INTEL:
 		if (x86_family(cpuid_1_eax) < 6)
 			return;
@@ -181,11 +183,15 @@ void __init load_ucode_bsp(void)
 	case X86_VENDOR_AMD:
 		if (x86_family(cpuid_1_eax) < 0x10)
 			return;
-		intel = false;
 		break;
 
 	case X86_VENDOR_HYGON:
-		intel = false;
+		break;
+
+	case X86_VENDOR_ZHAOXIN:
+	case X86_VENDOR_CENTAUR:
+		if ((cpuid_eax(0xC0000000) < 0xC0000004) || !(cpuid_edx(0xC0000004) & 0x1))
+			return;
 		break;
 
 	default:
@@ -195,10 +201,21 @@ void __init load_ucode_bsp(void)
 	if (check_loader_disabled_bsp())
 		return;
 
-	if (intel)
+	switch (x86_vendor) {
+	case X86_VENDOR_INTEL:
 		load_ucode_intel_bsp();
-	else
+		break;
+	case X86_VENDOR_AMD:
+	case X86_VENDOR_HYGON:
 		load_ucode_amd_early(cpuid_1_eax);
+		break;
+	case X86_VENDOR_ZHAOXIN:
+	case X86_VENDOR_CENTAUR:
+		load_ucode_zhaoxin_bsp();
+		break;
+	default:
+		return;
+	}
 }
 
 static bool check_loader_disabled_ap(void)
@@ -231,6 +248,11 @@ void load_ucode_ap(void)
 	case X86_VENDOR_HYGON:
 		load_ucode_amd_early(cpuid_1_eax);
 		break;
+	case X86_VENDOR_ZHAOXIN:
+	case X86_VENDOR_CENTAUR:
+		if ((cpuid_eax(0xC0000000) >= 0xC0000004) && (cpuid_edx(0xC0000004) & 0x1))
+			load_ucode_zhaoxin_ap();
+		break;
 	default:
 		break;
 	}
@@ -252,6 +274,11 @@ static int __init save_microcode_in_initrd(void)
 		break;
 	case X86_VENDOR_HYGON:
 		ret = save_microcode_in_initrd_amd(cpuid_eax(1));
+		break;
+	case X86_VENDOR_ZHAOXIN:
+	case X86_VENDOR_CENTAUR:
+		if ((cpuid_eax(0xC0000000) >= 0xC0000004) && (cpuid_edx(0xC0000004) & 0x1))
+			ret = save_microcode_in_initrd_zhaoxin();
 		break;
 	default:
 		break;
@@ -348,6 +375,10 @@ void reload_early_microcode(unsigned int cpu)
 		break;
 	case X86_VENDOR_HYGON:
 		reload_ucode_amd(cpu);
+		break;
+	case X86_VENDOR_ZHAOXIN:
+	case X86_VENDOR_CENTAUR:
+		reload_ucode_zhaoxin();
 		break;
 	default:
 		break;
@@ -878,6 +909,9 @@ int __init microcode_init(void)
 		microcode_ops = init_amd_microcode();
 	else if (c->x86_vendor == X86_VENDOR_HYGON)
 		microcode_ops = init_hygon_microcode();
+	else if (c->x86_vendor == X86_VENDOR_ZHAOXIN ||
+		 c->x86_vendor == X86_VENDOR_CENTAUR)
+		microcode_ops = init_zhaoxin_microcode();
 	else
 		pr_err("no support for this CPU vendor\n");
 
