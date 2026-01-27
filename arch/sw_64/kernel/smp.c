@@ -13,6 +13,7 @@
 #include <linux/numa.h>
 
 #include <asm/irq_impl.h>
+#include <asm/mmu.h>
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
 #include <asm/sw64_init.h>
@@ -290,8 +291,6 @@ static void __init process_nr_cpu_ids(void)
 
 	nr_cpu_ids = num_possible_cpus();
 }
-
-extern void * __init pgtable_alloc_fixmap(void);
 
 void __init smp_rcb_init(struct smp_rcb_struct *smp_rcb_base_addr)
 {
