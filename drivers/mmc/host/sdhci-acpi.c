@@ -740,6 +740,7 @@ static const struct sdhci_acpi_uid_slot sdhci_acpi_uids[] = {
 	{ "QCOM8051", NULL, &sdhci_acpi_slot_qcom_sd_3v },
 	{ "QCOM8052", NULL, &sdhci_acpi_slot_qcom_sd },
 	{ "AMDI0040", NULL, &sdhci_acpi_slot_amd_emmc },
+	{ "HYGO0040", NULL, &sdhci_acpi_slot_amd_emmc },
 	{ },
 };
 
@@ -757,6 +758,7 @@ static const struct acpi_device_id sdhci_acpi_ids[] = {
 	{ "QCOM8051" },
 	{ "QCOM8052" },
 	{ "AMDI0040" },
+	{ "HYGO0040" },
 	{ },
 };
 MODULE_DEVICE_TABLE(acpi, sdhci_acpi_ids);
