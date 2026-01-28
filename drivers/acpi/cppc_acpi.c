@@ -33,13 +33,15 @@
 
 #define pr_fmt(fmt)	"ACPI CPPC: " fmt
 
-#include <linux/cpufreq.h>
 #include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/ktime.h>
 #include <linux/rwsem.h>
 #include <linux/wait.h>
 #include <linux/topology.h>
+#include <linux/dmi.h>
+#include <linux/units.h>
+#include <asm/unaligned.h>
 
 #include <acpi/cppc_acpi.h>
 
@@ -441,108 +443,72 @@ bool acpi_cpc_valid(void)
 EXPORT_SYMBOL_GPL(acpi_cpc_valid);
 
 /**
- * acpi_get_psd_map - Map the CPUs in a common freq domain.
- * @all_cpu_data: Ptrs to CPU specific CPPC data including PSD info.
+ * acpi_get_psd_map - Map the CPUs in the freq domain of a given cpu
+ * @cpu: Find all CPUs that share a domain with cpu.
+ * @cpu_data: Pointer to CPU specific CPPC data including PSD info.
  *
  *	Return: 0 for success or negative value for err.
  */
-static int __acpi_get_psd_map(struct cppc_cpudata **all_cpu_data, struct cpc_desc **cpc_pptr)
+static int __acpi_get_psd_map(unsigned int cpu, struct cppc_cpudata *cpu_data, struct cpc_desc **cpc_pptr)
 {
-	int count_target;
-	int retval = 0;
-	unsigned int i, j;
-	cpumask_var_t covered_cpus;
-	struct cppc_cpudata *pr, *match_pr;
-	struct acpi_psd_package *pdomain;
-	struct acpi_psd_package *match_pdomain;
 	struct cpc_desc *cpc_ptr, *match_cpc_ptr;
-
-	if (!zalloc_cpumask_var(&covered_cpus, GFP_KERNEL))
-		return -ENOMEM;
+	struct acpi_psd_package *match_pdomain;
+	struct acpi_psd_package *pdomain;
+	int count_target, i;
 
 	/*
 	 * Now that we have _PSD data from all CPUs, let's setup P-state
 	 * domain info.
 	 */
+	cpc_ptr = cpc_pptr[cpu];
+	if (!cpc_ptr)
+		return -EFAULT;
+
+	pdomain = &(cpc_ptr->domain_info);
+	cpumask_set_cpu(cpu, cpu_data->shared_cpu_map);
+	if (pdomain->num_processors <= 1)
+		return 0;
+
+	/* Validate the Domain info */
+	count_target = pdomain->num_processors;
+	if (pdomain->coord_type == DOMAIN_COORD_TYPE_SW_ALL)
+		cpu_data->shared_type = CPUFREQ_SHARED_TYPE_ALL;
+	else if (pdomain->coord_type == DOMAIN_COORD_TYPE_HW_ALL)
+		cpu_data->shared_type = CPUFREQ_SHARED_TYPE_HW;
+	else if (pdomain->coord_type == DOMAIN_COORD_TYPE_SW_ANY)
+		cpu_data->shared_type = CPUFREQ_SHARED_TYPE_ANY;
+
 	for_each_possible_cpu(i) {
-		if (cpumask_test_cpu(i, covered_cpus))
+		if (i == cpu)
 			continue;
 
-		pr = all_cpu_data[i];
-		cpc_ptr = cpc_pptr[i];
-		if (!cpc_ptr) {
-			retval = -EFAULT;
-			goto err_ret;
-		}
+		match_cpc_ptr = cpc_pptr[i];
+		if (!match_cpc_ptr)
+			goto err_fault;
 
-		pdomain = &(cpc_ptr->domain_info);
-		cpumask_set_cpu(i, pr->shared_cpu_map);
-		cpumask_set_cpu(i, covered_cpus);
-		if (pdomain->num_processors <= 1)
+		match_pdomain = &(match_cpc_ptr->domain_info);
+		if (match_pdomain->domain != pdomain->domain)
 			continue;
 
-		/* Validate the Domain info */
-		count_target = pdomain->num_processors;
-		if (pdomain->coord_type == DOMAIN_COORD_TYPE_SW_ALL)
-			pr->shared_type = CPUFREQ_SHARED_TYPE_ALL;
-		else if (pdomain->coord_type == DOMAIN_COORD_TYPE_HW_ALL)
-			pr->shared_type = CPUFREQ_SHARED_TYPE_HW;
-		else if (pdomain->coord_type == DOMAIN_COORD_TYPE_SW_ANY)
-			pr->shared_type = CPUFREQ_SHARED_TYPE_ANY;
+		/* Here i and cpu are in the same domain */
+		if (match_pdomain->num_processors != count_target)
+			goto err_fault;
 
-		for_each_possible_cpu(j) {
-			if (i == j)
-				continue;
+		if (pdomain->coord_type != match_pdomain->coord_type)
+			goto err_fault;
 
-			match_cpc_ptr = cpc_pptr[j];
-			if (!match_cpc_ptr) {
-				retval = -EFAULT;
-				goto err_ret;
-			}
-
-			match_pdomain = &(match_cpc_ptr->domain_info);
-			if (match_pdomain->domain != pdomain->domain)
-				continue;
-
-			/* Here i and j are in the same domain */
-			if (match_pdomain->num_processors != count_target) {
-				retval = -EFAULT;
-				goto err_ret;
-			}
-
-			if (pdomain->coord_type != match_pdomain->coord_type) {
-				retval = -EFAULT;
-				goto err_ret;
-			}
-
-			cpumask_set_cpu(j, covered_cpus);
-			cpumask_set_cpu(j, pr->shared_cpu_map);
-		}
-
-		for_each_cpu(j, pr->shared_cpu_map) {
-			if (i == j)
-				continue;
-
-			match_pr = all_cpu_data[j];
-			match_pr->shared_type = pr->shared_type;
-			cpumask_copy(match_pr->shared_cpu_map,
-				     pr->shared_cpu_map);
-		}
+		cpumask_set_cpu(i, cpu_data->shared_cpu_map);
 	}
-	goto out;
 
-err_ret:
-	for_each_possible_cpu(i) {
-		pr = all_cpu_data[i];
+	return 0;
 
-		/* Assume no coordination on any error parsing domain info */
-		cpumask_clear(pr->shared_cpu_map);
-		cpumask_set_cpu(i, pr->shared_cpu_map);
-		pr->shared_type = CPUFREQ_SHARED_TYPE_ALL;
-	}
-out:
-	free_cpumask_var(covered_cpus);
-	return retval;
+err_fault:
+	/* Assume no coordination on any error parsing domain info */
+	cpumask_clear(cpu_data->shared_cpu_map);
+	cpumask_set_cpu(cpu, cpu_data->shared_cpu_map);
+	cpu_data->shared_type = CPUFREQ_SHARED_TYPE_ALL;
+
+	return -EFAULT;
 }
 
 static acpi_status acpi_parse_cpc(acpi_handle handle, u32 lvl, void *data,
@@ -586,7 +552,7 @@ static acpi_status acpi_parse_cpc(acpi_handle handle, u32 lvl, void *data,
 	return AE_OK;
 }
 
-int acpi_get_psd_map(struct cppc_cpudata **all_cpu_data)
+int acpi_get_psd_map(unsigned int cpu, struct cppc_cpudata *cpu_data)
 {
 	struct cpc_desc **cpc_pptr, *cpc_ptr;
 	int parsed_core_num = 0;
@@ -617,7 +583,7 @@ int acpi_get_psd_map(struct cppc_cpudata **all_cpu_data)
 		goto out;
 	}
 
-	ret = __acpi_get_psd_map(all_cpu_data, cpc_pptr);
+	ret = __acpi_get_psd_map(cpu, cpu_data, cpc_pptr);
 
 out:
 	for_each_possible_cpu(i) {
@@ -1442,6 +1408,48 @@ out_err:
 EXPORT_SYMBOL_GPL(cppc_get_perf_caps);
 
 /**
+ * cppc_perf_ctrs_in_pcc - Check if any perf counters are in a PCC region.
+ *
+ * CPPC has flexibility about how CPU performance counters are accessed.
+ * One of the choices is PCC regions, which can have a high access latency. This
+ * routine allows callers of cppc_get_perf_ctrs() to know this ahead of time.
+ *
+ * Return: true if any of the counters are in PCC regions, false otherwise
+ */
+bool cppc_perf_ctrs_in_pcc(void)
+{
+	int cpu;
+
+	for_each_online_cpu(cpu) {
+		struct cpc_register_resource *ref_perf_reg;
+		struct cpc_desc *cpc_desc;
+
+		cpc_desc = per_cpu(cpc_desc_ptr, cpu);
+
+		if (CPC_IN_PCC(&cpc_desc->cpc_regs[DELIVERED_CTR]) ||
+		    CPC_IN_PCC(&cpc_desc->cpc_regs[REFERENCE_CTR]) ||
+		    CPC_IN_PCC(&cpc_desc->cpc_regs[CTR_WRAP_TIME]))
+			return true;
+
+
+		ref_perf_reg = &cpc_desc->cpc_regs[REFERENCE_PERF];
+
+		/*
+		 * If reference perf register is not supported then we should
+		 * use the nominal perf value
+		 */
+		if (!CPC_SUPPORTED(ref_perf_reg))
+			ref_perf_reg = &cpc_desc->cpc_regs[NOMINAL_PERF];
+
+		if (CPC_IN_PCC(ref_perf_reg))
+			return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL_GPL(cppc_perf_ctrs_in_pcc);
+
+/**
  * cppc_get_perf_ctrs - Read a CPU's performance feedback counters.
  * @cpunum: CPU from which to read counters.
  * @perf_fb_ctrs: ptr to cppc_perf_fb_ctrs. See cppc_acpi.h
@@ -1754,3 +1762,116 @@ unsigned int cppc_get_transition_latency(int cpu_num)
 	return latency_ns;
 }
 EXPORT_SYMBOL_GPL(cppc_get_transition_latency);
+
+/* Minimum struct length needed for the DMI processor entry we want */
+#define DMI_ENTRY_PROCESSOR_MIN_LENGTH	48
+
+/* Offset in the DMI processor structure for the max frequency */
+#define DMI_PROCESSOR_MAX_SPEED		0x14
+
+/* Callback function used to retrieve the max frequency from DMI */
+static void cppc_find_dmi_mhz(const struct dmi_header *dm, void *private)
+{
+	const u8 *dmi_data = (const u8 *)dm;
+	u16 *mhz = (u16 *)private;
+
+	if (dm->type == DMI_ENTRY_PROCESSOR &&
+	    dm->length >= DMI_ENTRY_PROCESSOR_MIN_LENGTH) {
+		u16 val = (u16)get_unaligned((const u16 *)
+				(dmi_data + DMI_PROCESSOR_MAX_SPEED));
+		*mhz = val > *mhz ? val : *mhz;
+	}
+}
+
+/* Look up the max frequency in DMI */
+static u64 cppc_get_dmi_max_khz(void)
+{
+	u16 mhz = 0;
+
+	dmi_walk(cppc_find_dmi_mhz, &mhz);
+
+	/*
+	 * Real stupid fallback value, just in case there is no
+	 * actual value set.
+	 */
+	mhz = mhz ? mhz : 1;
+
+	return KHZ_PER_MHZ * mhz;
+}
+
+/*
+ * If CPPC lowest_freq and nominal_freq registers are exposed then we can
+ * use them to convert perf to freq and vice versa. The conversion is
+ * extrapolated as an affine function passing by the 2 points:
+ *  - (Low perf, Low freq)
+ *  - (Nominal perf, Nominal freq)
+ */
+unsigned int cppc_perf_to_khz(struct cppc_perf_caps *caps, unsigned int perf)
+{
+	s64 retval, offset = 0;
+	static u64 max_khz;
+	u64 mul, div;
+
+	if (caps->lowest_freq && caps->nominal_freq) {
+		/* Avoid the special case when nominal_freq is equal to lowest_freq */
+		if (caps->nominal_freq == caps->lowest_freq) {
+			mul = caps->nominal_freq;
+			div = caps->nominal_perf;
+		} else {
+			mul = caps->nominal_freq - caps->lowest_freq;
+			div = caps->nominal_perf - caps->lowest_perf;
+		}
+		mul *= KHZ_PER_MHZ;
+		offset = caps->nominal_freq * KHZ_PER_MHZ -
+			 div64_u64(caps->nominal_perf * mul, div);
+	} else {
+		if (!max_khz)
+			max_khz = cppc_get_dmi_max_khz();
+		mul = max_khz;
+		div = caps->highest_perf;
+	}
+
+	retval = offset + div64_u64(perf * mul, div);
+	if (retval >= 0)
+		return retval;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cppc_perf_to_khz);
+
+unsigned int cppc_khz_to_perf(struct cppc_perf_caps *caps, unsigned int freq)
+{
+	s64 retval, offset = 0;
+	static u64 max_khz;
+	u64 mul, div;
+
+	if (caps->lowest_freq && caps->nominal_freq) {
+		/* Avoid special case when nominal_freq is equal to lowest_freq */
+		if (caps->nominal_freq == caps->lowest_freq) {
+			mul = caps->nominal_perf;
+			div = caps->nominal_freq;
+		} else {
+			mul = caps->nominal_perf - caps->lowest_perf;
+			div = caps->nominal_freq - caps->lowest_freq;
+		}
+		/*
+		 * We don't need to convert to kHz for computing offset and can
+		 * directly use nominal_freq and lowest_freq as the div64_u64
+		 * will remove the frequency unit.
+		 */
+		offset = caps->nominal_perf -
+			 div64_u64(caps->nominal_freq * mul, div);
+		/* But we need it for computing the perf level. */
+		div *= KHZ_PER_MHZ;
+	} else {
+		if (!max_khz)
+			max_khz = cppc_get_dmi_max_khz();
+		mul = caps->highest_perf;
+		div = max_khz;
+	}
+
+	retval = offset + div64_u64(freq * mul, div);
+	if (retval >= 0)
+		return retval;
+	return 0;
+}
+EXPORT_SYMBOL_GPL(cppc_khz_to_perf);

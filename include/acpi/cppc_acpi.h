@@ -11,6 +11,7 @@
 #define _CPPC_ACPI_H
 
 #include <linux/acpi.h>
+#include <linux/cpufreq.h>
 #include <linux/types.h>
 
 #include <acpi/pcc.h>
@@ -124,15 +125,14 @@ struct cppc_perf_fb_ctrs {
 
 /* Per CPU container for runtime CPPC management. */
 struct cppc_cpudata {
-	int cpu;
 	struct cppc_perf_caps perf_caps;
 	struct cppc_perf_ctrls perf_ctrls;
 	struct cppc_perf_fb_ctrs perf_fb_ctrs;
-	struct cpufreq_policy *cur_policy;
 	unsigned int shared_type;
 	cpumask_var_t shared_cpu_map;
 };
 
+#ifdef CONFIG_ACPI_CPPC_LIB
 extern int cppc_get_desired_perf(int cpunum, u64 *desired_perf);
 extern int cppc_get_perf_ctrs(int cpu, struct cppc_perf_fb_ctrs *perf_fb_ctrs);
 extern int cppc_get_epp_perf(int cpunum, u64 *epp_perf);
@@ -143,11 +143,56 @@ extern int cppc_set_auto_sel(int cpu, bool enable);
 extern int cppc_set_epp(int cpu, u64 epp_val);
 extern int cppc_set_perf(int cpu, struct cppc_perf_ctrls *perf_ctrls);
 extern int cppc_get_perf_caps(int cpu, struct cppc_perf_caps *caps);
-extern int acpi_get_psd_map(struct cppc_cpudata **);
+extern bool cppc_perf_ctrs_in_pcc(void);
+extern unsigned int cppc_perf_to_khz(struct cppc_perf_caps *caps, unsigned int perf);
+extern unsigned int cppc_khz_to_perf(struct cppc_perf_caps *caps, unsigned int freq);
 extern bool acpi_cpc_valid(void);
+extern int acpi_get_psd_map(unsigned int cpu, struct cppc_cpudata *cpu_data);
 extern unsigned int cppc_get_transition_latency(int cpu);
 extern bool cpc_ffh_supported(void);
 extern int cpc_read_ffh(int cpunum, struct cpc_reg *reg, u64 *val);
 extern int cpc_write_ffh(int cpunum, struct cpc_reg *reg, u64 val);
+#else /* !CONFIG_ACPI_CPPC_LIB */
+static inline int cppc_get_desired_perf(int cpunum, u64 *desired_perf)
+{
+	return -ENOTSUPP;
+}
+static inline int cppc_get_perf_ctrs(int cpu, struct cppc_perf_fb_ctrs *perf_fb_ctrs)
+{
+	return -ENOTSUPP;
+}
+static inline int cppc_set_perf(int cpu, struct cppc_perf_ctrls *perf_ctrls)
+{
+	return -ENOTSUPP;
+}
+static inline int cppc_get_perf_caps(int cpu, struct cppc_perf_caps *caps)
+{
+	return -ENOTSUPP;
+}
+static inline bool cppc_perf_ctrs_in_pcc(void)
+{
+	return false;
+}
+static inline bool acpi_cpc_valid(void)
+{
+	return false;
+}
+static inline unsigned int cppc_get_transition_latency(int cpu)
+{
+	return CPUFREQ_ETERNAL;
+}
+static inline bool cpc_ffh_supported(void)
+{
+	return false;
+}
+static inline int cpc_read_ffh(int cpunum, struct cpc_reg *reg, u64 *val)
+{
+	return -ENOTSUPP;
+}
+static inline int cpc_write_ffh(int cpunum, struct cpc_reg *reg, u64 val)
+{
+	return -ENOTSUPP;
+}
+#endif /* !CONFIG_ACPI_CPPC_LIB */
 
 #endif /* _CPPC_ACPI_H*/
