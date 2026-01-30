@@ -800,6 +800,9 @@ static void mt76u_tx_worker(struct mt76_worker *w)
 	bool wake;
 	int i;
 
+	if (!test_bit(MT76_STATE_RUNNING, &dev->phy.state))
+		return;
+
 	for (i = 0; i < IEEE80211_NUM_ACS; i++) {
 		q = dev->q_tx[i];
 
@@ -821,13 +824,13 @@ static void mt76u_tx_worker(struct mt76_worker *w)
 			wake_up(&dev->tx_wait);
 
 		mt76_txq_schedule(&dev->phy, i);
-
-		if (dev->drv->tx_status_data &&
-		    !test_and_set_bit(MT76_READING_STATS, &dev->phy.state))
-			queue_work(dev->wq, &dev->usb.stat_work);
 		if (wake)
 			ieee80211_wake_queue(dev->hw, i);
 	}
+
+	if (dev->drv->tx_status_data &&
+	    !test_and_set_bit(MT76_READING_STATS, &dev->phy.state))
+		queue_work(dev->wq, &dev->usb.stat_work);
 }
 
 static void mt76u_tx_status_data(struct work_struct *work)
