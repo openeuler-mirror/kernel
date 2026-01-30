@@ -29,8 +29,6 @@
 #include <asm/signal32.h>
 #include <asm/vdso.h>
 
-extern char vdso_start[], vdso_end[];
-extern char vdso32_start[], vdso32_end[];
 #ifdef CONFIG_ARM64_ILP32
 extern char vdso_ilp32_start[], vdso_ilp32_end[];
 #endif
