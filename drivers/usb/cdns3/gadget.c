@@ -237,7 +237,7 @@ int cdns3_allocate_trb_pool(struct cdns3_endpoint *priv_ep)
 		priv_ep->trb_pool = dma_alloc_coherent(priv_dev->sysdev,
 						       ring_size,
 						       &priv_ep->trb_pool_dma,
-						       GFP_DMA32 | GFP_ATOMIC);
+						       GFP_ATOMIC);
 		if (!priv_ep->trb_pool)
 			return -ENOMEM;
 
