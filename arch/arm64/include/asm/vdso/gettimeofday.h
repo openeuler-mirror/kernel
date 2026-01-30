@@ -98,10 +98,29 @@ static __always_inline u64 __arch_get_hw_counter(s32 clock_mode,
 		u64 new;
 		int retries = 50;
 
-		asm volatile("mrs %0, cntvct_el0" : "=r" (new) :: "memory");
+		asm volatile(
+		ALTERNATIVE("mrs %0, cntvct_el0",
+			    __mrs_s("%0", SYS_CNTVCTSS_EL0),
+			    ARM64_HAS_ECV)
+		: "=r" (new)
+		:
+		: "memory");
 		while (unlikely((new - res) >> vd->vdso_shift) && retries) {
-			asm volatile("mrs %0, cntvct_el0" : "=r" (res) :: "memory");
-			asm volatile("mrs %0, cntvct_el0" : "=r" (new) :: "memory");
+			asm volatile(
+			ALTERNATIVE("mrs %0, cntvct_el0",
+				    __mrs_s("%0", SYS_CNTVCTSS_EL0),
+				    ARM64_HAS_ECV)
+			: "=r" (res)
+			:
+			: "memory");
+
+			asm volatile(
+			ALTERNATIVE("mrs %0, cntvct_el0",
+				    __mrs_s("%0", SYS_CNTVCTSS_EL0),
+				    ARM64_HAS_ECV)
+			: "=r" (new)
+			:
+			: "memory");
 			retries--;
 		}
 	}
