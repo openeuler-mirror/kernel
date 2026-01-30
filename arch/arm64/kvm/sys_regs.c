@@ -1168,6 +1168,7 @@ static u64 read_id_reg(struct kvm_vcpu *vcpu,
 	} else if (id == SYS_ID_AA64PFR1_EL1) {
 		val &= ~(0xfUL << ID_AA64PFR1_MTE_SHIFT);
 		val &= ~(0xfUL << ID_AA64PFR1_SME_SHIFT);
+		val &= ~ID_AA64PFR1_NMI_MASK;
 	} else if (id == SYS_ID_AA64ISAR1_EL1 && !vcpu_has_ptrauth(vcpu)) {
 		val &= ~((0xfUL << ID_AA64ISAR1_APA_SHIFT) |
 			 (0xfUL << ID_AA64ISAR1_API_SHIFT) |

@@ -1197,7 +1197,7 @@ bool cpus_are_stuck_in_kernel(void)
 	return !!cpus_stuck_in_kernel || smp_spin_tables;
 }
 
-#ifdef CONFIG_HARDLOCKUP_DETECTOR_PERF
+#ifndef CONFIG_HARDLOCKUP_DETECTOR_PERF
 s64 hardlockup_enable;
 static DEFINE_PER_CPU(u64, cpu_freq_probed);
 

@@ -103,7 +103,7 @@ static DEFINE_PER_CPU(struct arm_pmu *, cpu_armpmu);
 static DEFINE_PER_CPU(int, cpu_irq);
 static DEFINE_PER_CPU(const struct pmu_irq_ops *, cpu_irq_ops);
 
-static bool has_nmi;
+static bool has_nmi = true;
 
 static inline u64 arm_pmu_event_max_period(struct perf_event *event)
 {
@@ -753,6 +753,11 @@ static int armpmu_get_cpu_irq(struct arm_pmu *pmu, int cpu)
 {
 	struct pmu_hw_events __percpu *hw_events = pmu->hw_events;
 	return per_cpu(hw_events->irq, cpu);
+}
+
+bool arm_pmu_irq_is_nmi(void)
+{
+	return has_nmi;
 }
 
 /*

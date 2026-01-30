@@ -61,6 +61,7 @@ struct gic_chip_data {
 	u32			nr_redist_regions;
 	u64			flags;
 	bool			has_rss;
+	bool			has_nmi;
 	unsigned int		ppi_nr;
 	struct partition_desc	**ppi_descs;
 };
@@ -141,6 +142,21 @@ static DEFINE_PER_CPU(bool, has_rss);
 
 /* Our default, arbitrary priority value. Linux only uses one anyway. */
 #define DEFAULT_PMR_VALUE	0xf0
+
+#ifdef CONFIG_ARM64
+#include <asm/daifflags.h>
+#include <asm/cpufeature.h>
+
+static inline bool has_v3_3_nmi(void)
+{
+	return gic_data.has_nmi && system_uses_nmi();
+}
+#else
+static inline bool has_v3_3_nmi(void)
+{
+	return false;
+}
+#endif
 
 phys_addr_t get_gicr_paddr(int cpu)
 {
@@ -334,6 +350,42 @@ static int gic_peek_irq(struct irq_data *d, u32 offset)
 	return !!(readl_relaxed(base + offset + (index / 32) * 4) & mask);
 }
 
+static DEFINE_RAW_SPINLOCK(irq_controller_lock);
+
+static void gic_irq_configure_nmi(struct irq_data *d, bool enable)
+{
+	void __iomem *base, *addr;
+	u32 offset, index, mask, val;
+
+	offset = convert_offset_index(d, GICD_INMIR, &index);
+	mask = 1 << (index % 32);
+
+	if (gic_irq_in_rdist(d))
+		base = gic_data_rdist_sgi_base();
+	else
+		base = gic_data.dist_base;
+
+	addr = base + offset + (index / 32) * 4;
+
+	raw_spin_lock(&irq_controller_lock);
+
+	val = readl_relaxed(addr);
+	val = enable ? (val | mask) : (val & ~mask);
+	writel_relaxed(val, addr);
+
+	raw_spin_unlock(&irq_controller_lock);
+}
+
+static void gic_irq_enable_nmi(struct irq_data *d)
+{
+	gic_irq_configure_nmi(d, true);
+}
+
+static void gic_irq_disable_nmi(struct irq_data *d)
+{
+	gic_irq_configure_nmi(d, false);
+}
+
 static void gic_poke_irq(struct irq_data *d, u32 offset)
 {
 	void (*rwp_wait)(void);
@@ -378,6 +430,12 @@ static void gic_eoimode1_mask_irq(struct irq_data *d)
 static void gic_unmask_irq(struct irq_data *d)
 {
 	gic_poke_irq(d, GICD_ISENABLER);
+}
+
+static inline bool gic_supports_pseudo_nmis(void)
+{
+	return IS_ENABLED(CONFIG_ARM64_PSEUDO_NMI) &&
+		static_branch_likely(&supports_pseudo_nmis);
 }
 
 static int gic_irq_set_irqchip_state(struct irq_data *d,
@@ -462,7 +520,7 @@ static int gic_irq_nmi_setup(struct irq_data *d)
 	struct irq_desc *desc = irq_to_desc(d->irq);
 	u32 idx;
 
-	if (!gic_supports_nmi())
+	if (!gic_supports_pseudo_nmis() && !has_v3_3_nmi())
 		return -EINVAL;
 
 	if (gic_peek_irq(d, GICD_ISENABLER)) {
@@ -496,7 +554,10 @@ static int gic_irq_nmi_setup(struct irq_data *d)
 		break;
 	}
 
-	gic_irq_set_prio(d, GICD_INT_NMI_PRI);
+	if (has_v3_3_nmi())
+		gic_irq_enable_nmi(d);
+	else
+		gic_irq_set_prio(d, GICD_INT_NMI_PRI);
 
 	return 0;
 }
@@ -506,7 +567,7 @@ static void gic_irq_nmi_teardown(struct irq_data *d)
 	struct irq_desc *desc = irq_to_desc(d->irq);
 	u32 idx;
 
-	if (WARN_ON(!gic_supports_nmi()))
+	if (WARN_ON(!gic_supports_pseudo_nmis() && !has_v3_3_nmi()))
 		return;
 
 	if (gic_peek_irq(d, GICD_ISENABLER)) {
@@ -538,12 +599,16 @@ static void gic_irq_nmi_teardown(struct irq_data *d)
 		break;
 	}
 
-	gic_irq_set_prio(d, GICD_INT_DEF_PRI);
+	if (has_v3_3_nmi())
+		gic_irq_disable_nmi(d);
+	else
+		gic_irq_set_prio(d, GICD_INT_DEF_PRI);
 }
 
 static void gic_eoi_irq(struct irq_data *d)
 {
-	gic_write_eoir(gic_irq(d));
+	write_gicreg(gic_irq(d), ICC_EOIR1_EL1);
+	isb();
 }
 
 static void gic_eoimode1_eoi_irq(struct irq_data *d)
@@ -627,101 +692,208 @@ static void gic_deactivate_unhandled(u32 irqnr)
 		if (irqnr < 8192)
 			gic_write_dir(irqnr);
 	} else {
-		gic_write_eoir(irqnr);
+		write_gicreg(irqnr, ICC_EOIR1_EL1);
+		isb();
 	}
 }
 
-static inline void gic_handle_nmi(u32 irqnr, struct pt_regs *regs)
+/*
+ * Follow a read of the IAR with any HW maintenance that needs to happen prior
+ * to invoking the relevant IRQ handler. We must do two things:
+ *
+ * (1) Ensure instruction ordering between a read of IAR and subsequent
+ *     instructions in the IRQ handler using an ISB.
+ *
+ *     It is possible for the IAR to report an IRQ which was signalled *after*
+ *     the CPU took an IRQ exception as multiple interrupts can race to be
+ *     recognized by the GIC, earlier interrupts could be withdrawn, and/or
+ *     later interrupts could be prioritized by the GIC.
+ *
+ *     For devices which are tightly coupled to the CPU, such as PMUs, a
+ *     context synchronization event is necessary to ensure that system
+ *     register state is not stale, as these may have been indirectly written
+ *     *after* exception entry.
+ *
+ * (2) Deactivate the interrupt when EOI mode 1 is in use.
+ */
+static inline void gic_complete_ack(u32 irqnr)
 {
-	bool irqs_enabled = interrupts_enabled(regs);
-	int err;
-
-	if (irqs_enabled)
-		nmi_enter();
-
 	if (static_branch_likely(&supports_deactivate_key))
-		gic_write_eoir(irqnr);
-	else
-		isb();
+		write_gicreg(irqnr, ICC_EOIR1_EL1);
 
-	/*
-	 * Leave the PSR.I bit set to prevent other NMIs to be
-	 * received while handling this one.
-	 * PSR.I will be restored when we ERET to the
-	 * interrupted context.
-	 */
-	err = handle_domain_nmi(gic_data.domain, irqnr, regs);
-	if (err)
-		gic_deactivate_unhandled(irqnr);
-
-	if (irqs_enabled)
-		nmi_exit();
+	isb();
 }
 
-static u32 do_read_iar(struct pt_regs *regs)
+static bool gic_rpr_is_nmi_prio(void)
 {
-	u32 iar;
+	if (!gic_supports_pseudo_nmis())
+		return false;
 
-	if (gic_supports_nmi() && unlikely(!interrupts_enabled(regs))) {
-		u64 pmr;
-
-		/*
-		 * We were in a context with IRQs disabled. However, the
-		 * entry code has set PMR to a value that allows any
-		 * interrupt to be acknowledged, and not just NMIs. This can
-		 * lead to surprising effects if the NMI has been retired in
-		 * the meantime, and that there is an IRQ pending. The IRQ
-		 * would then be taken in NMI context, something that nobody
-		 * wants to debug twice.
-		 *
-		 * Until we sort this, drop PMR again to a level that will
-		 * actually only allow NMIs before reading IAR, and then
-		 * restore it to what it was.
-		 */
-		pmr = gic_read_pmr();
-		gic_pmr_mask_irqs();
-		isb();
-
-		iar = gic_read_iar();
-
-		gic_write_pmr(pmr);
-	} else {
-		iar = gic_read_iar();
-	}
-
-	return iar;
+	return unlikely(gic_read_rpr() == GICD_INT_NMI_PRI);
 }
 
-static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
+static bool gic_irqnr_is_special(u32 irqnr)
 {
-	u32 irqnr;
+	return irqnr >= 1020 && irqnr <= 1023;
+}
 
-	irqnr = do_read_iar(regs);
-
-	/* Check for special IDs first */
-	if ((irqnr >= 1020 && irqnr <= 1023))
+static void __gic_handle_irq(u32 irqnr, struct pt_regs *regs)
+{
+	if (gic_irqnr_is_special(irqnr))
 		return;
 
-	if (gic_supports_nmi() &&
-	    unlikely(gic_read_rpr() == GICD_INT_RPR_PRI(GICD_INT_NMI_PRI))) {
-		gic_handle_nmi(irqnr, regs);
-		return;
-	}
-
-	if (gic_prio_masking_enabled()) {
-		gic_pmr_mask_irqs();
-		gic_arch_enable_irqs();
-	}
-
-	if (static_branch_likely(&supports_deactivate_key))
-		gic_write_eoir(irqnr);
-	else
-		isb();
+	gic_complete_ack(irqnr);
 
 	if (handle_domain_irq(gic_data.domain, irqnr, regs)) {
 		WARN_ONCE(true, "Unexpected interrupt received!\n");
 		gic_deactivate_unhandled(irqnr);
 	}
+}
+
+static void __gic_handle_nmi(u32 irqnr, struct pt_regs *regs)
+{
+	if (gic_irqnr_is_special(irqnr))
+		return;
+
+	gic_complete_ack(irqnr);
+
+	if (handle_domain_nmi(gic_data.domain, irqnr, regs))
+		gic_deactivate_unhandled(irqnr);
+}
+
+/*
+ * An exception has been taken from a context with IRQs enabled, and this could
+ * be an IRQ or an NMI.
+ *
+ * The entry code called us with DAIF.IF set to keep NMIs masked. We must clear
+ * DAIF.IF (and update ICC_PMR_EL1 to mask regular IRQs) prior to returning,
+ * after handling any NMI but before handling any IRQ.
+ *
+ * The entry code has performed IRQ entry, and if an NMI is detected we must
+ * perform NMI entry/exit around invoking the handler.
+ */
+static void __gic_handle_irq_from_irqson(struct pt_regs *regs)
+{
+	bool is_nmi;
+	u32 irqnr;
+
+	/*
+	 * We should enter here with interrupts disabled, otherwise we may met
+	 * a race here with FEAT_NMI/FEAT_GICv3_NMI:
+	 *
+	 * [interrupt disabled]
+	 *                   <- normal interrupt pending, for example timer interrupt
+	 *                   <- NMI occurs, ISR_EL1.nmi = 1
+	 * do_el1_interrupt()
+	 *                   <- NMI withdraw, ISR_EL1.nmi = 0
+	 *   ISR_EL1.nmi = 0, not an NMI interrupt
+	 *   gic_handle_irq()
+	 *     __gic_handle_irq_from_irqson()
+	 *       irqnr = gic_read_iar() <- Oops, ack and handle an normal interrupt
+	 *                                 in interrupt disabled context!
+	 *
+	 * So if we met this case here, just return from the interrupt context.
+	 * Since the interrupt is still pending, we can handle it once the
+	 * interrupt re-enabled and it'll not be missing.
+	 */
+	if (!interrupts_enabled(regs))
+		return;
+
+	irqnr = gic_read_iar();
+
+	is_nmi = gic_rpr_is_nmi_prio();
+
+	if (is_nmi) {
+		nmi_enter();
+		__gic_handle_nmi(irqnr, regs);
+		nmi_exit();
+	}
+
+	if (gic_prio_masking_enabled()) {
+		gic_pmr_mask_irqs();
+		gic_arch_enable_irqs();
+	} else if (has_v3_3_nmi()) {
+#ifdef CONFIG_ARM64_NMI
+		_allint_clear();
+#endif
+	}
+
+	if (!is_nmi)
+		__gic_handle_irq(irqnr, regs);
+}
+
+/*
+ * An exception has been taken from a context with IRQs disabled, which can only
+ * be an NMI.
+ *
+ * The entry code called us with DAIF.IF set to keep NMIs masked. We must leave
+ * DAIF.IF (and ICC_PMR_EL1) unchanged.
+ *
+ * The entry code has performed NMI entry.
+ */
+static void __gic_handle_irq_from_irqsoff(struct pt_regs *regs)
+{
+	u64 pmr;
+	u32 irqnr;
+
+	/*
+	 * We were in a context with IRQs disabled. However, the
+	 * entry code has set PMR to a value that allows any
+	 * interrupt to be acknowledged, and not just NMIs. This can
+	 * lead to surprising effects if the NMI has been retired in
+	 * the meantime, and that there is an IRQ pending. The IRQ
+	 * would then be taken in NMI context, something that nobody
+	 * wants to debug twice.
+	 *
+	 * Until we sort this, drop PMR again to a level that will
+	 * actually only allow NMIs before reading IAR, and then
+	 * restore it to what it was.
+	 */
+	pmr = gic_read_pmr();
+	gic_pmr_mask_irqs();
+	isb();
+	irqnr = gic_read_iar();
+	gic_write_pmr(pmr);
+
+	__gic_handle_nmi(irqnr, regs);
+}
+
+#ifdef CONFIG_ARM64
+static inline u64 gic_read_nmiar(void)
+{
+	u64 irqstat;
+
+	irqstat = read_sysreg_s(SYS_ICC_NMIAR1_EL1);
+
+	dsb(sy);
+
+	return irqstat;
+}
+
+static __always_inline void __el1_nmi(struct pt_regs *regs)
+{
+	u32 irqnr = gic_read_nmiar();
+
+	nmi_enter();
+	__gic_handle_nmi(irqnr, regs);
+	nmi_exit();
+}
+#endif
+
+static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
+{
+#ifdef CONFIG_ARM64
+	/* Is there a NMI to handle? */
+	if (system_uses_nmi() && (read_sysreg(isr_el1) & ISR_EL1_IS)) {
+		__el1_nmi(regs);
+		return;
+	}
+#endif
+
+	if (unlikely(gic_supports_pseudo_nmis() && !interrupts_enabled(regs)))
+		__gic_handle_irq_from_irqsoff(regs);
+	else
+		__gic_handle_irq_from_irqson(regs);
 }
 
 #ifdef CONFIG_FAST_IRQ
@@ -1135,7 +1307,7 @@ static void gic_cpu_sys_reg_init(void)
 	/* Set priority mask register */
 	if (!gic_prio_masking_enabled()) {
 		write_gicreg(DEFAULT_PMR_VALUE, ICC_PMR_EL1);
-	} else if (gic_supports_nmi()) {
+	} else {
 		/*
 		 * Mismatch configuration with boot CPU, the system is likely
 		 * to die as interrupt masking will not work properly on all
@@ -1145,10 +1317,8 @@ static void gic_cpu_sys_reg_init(void)
 		 * and as a result we'll never see this warning in the boot path
 		 * for that CPU.
 		 */
-		if (static_branch_unlikely(&gic_nonsecure_priorities))
-			WARN_ON(!group0 || gic_dist_security_disabled());
-		else
-			WARN_ON(group0 && !gic_dist_security_disabled());
+		WARN_ON(gic_supports_pseudo_nmis() && group0 &&
+			!gic_dist_security_disabled());
 	}
 
 	/*
@@ -1917,11 +2087,16 @@ static const struct gic_quirk gic_quirks[] = {
 	}
 };
 
+static void gic_enable_pseudo_nmis(void)
+{
+	static_branch_enable(&supports_pseudo_nmis);
+}
+
 static void gic_enable_nmi_support(void)
 {
 	int i;
 
-	if (!gic_prio_masking_enabled())
+	if (!gic_prio_masking_enabled() && !has_v3_3_nmi())
 		return;
 
 	if (gic_data.flags & FLAGS_WORKAROUND_MTK_GICR_SAVE) {
@@ -1977,8 +2152,12 @@ static void gic_enable_nmi_support(void)
 	if (gic_has_group0() && !gic_dist_security_disabled())
 		static_branch_enable(&gic_nonsecure_priorities);
 
-	static_branch_enable(&supports_pseudo_nmis);
-
+	/*
+	 * Initialize pseudo-NMIs only if GIC driver cannot take advantage
+	 * of core (FEAT_NMI) and GIC (FEAT_GICv3_NMI) in HW
+	 */
+	if (!has_v3_3_nmi())
+		gic_enable_pseudo_nmis();
 	if (static_branch_likely(&supports_deactivate_key))
 		gic_eoimode1_chip.flags |= IRQCHIP_SUPPORTS_NMI;
 	else
@@ -2043,6 +2222,7 @@ static int __init gic_init_bases(void __iomem *dist_base,
 	irq_domain_update_bus_token(gic_data.domain, DOMAIN_BUS_WIRED);
 
 	gic_data.has_rss = !!(typer & GICD_TYPER_RSS);
+	gic_data.has_nmi = !!(typer & GICD_TYPER_NMI);
 	pr_info("Distributor has %sRange Selector support\n",
 		gic_data.has_rss ? "" : "no ");
 

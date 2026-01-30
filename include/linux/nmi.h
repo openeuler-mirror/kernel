@@ -13,6 +13,7 @@
 
 #ifdef CONFIG_LOCKUP_DETECTOR
 void lockup_detector_init(void);
+void lockup_detector_retry_init(void);
 void lockup_detector_soft_poweroff(void);
 void lockup_detector_cleanup(void);
 bool is_hardlockup(void);
@@ -36,6 +37,7 @@ extern int sysctl_hardlockup_all_cpu_backtrace;
 
 #else /* CONFIG_LOCKUP_DETECTOR */
 static inline void lockup_detector_init(void) { }
+static inline void lockup_detector_retry_init(void) { }
 static inline void lockup_detector_soft_poweroff(void) { }
 static inline void lockup_detector_cleanup(void) { }
 #endif /* !CONFIG_LOCKUP_DETECTOR */
@@ -113,6 +115,7 @@ extern void hardlockup_detector_perf_disable(void);
 extern void hardlockup_detector_perf_enable(void);
 extern void hardlockup_detector_perf_cleanup(void);
 extern int hardlockup_detector_perf_init(void);
+extern void hardlockup_detector_perf_adjust_period(int cpu, u64 period);
 #else
 static inline void hardlockup_detector_perf_stop(void) { }
 static inline void hardlockup_detector_perf_restart(void) { }
@@ -124,6 +127,7 @@ static inline int hardlockup_detector_perf_init(void) { return -ENODEV; }
 # else
 static inline int hardlockup_detector_perf_init(void) { return 0; }
 # endif
+static inline void hardlockup_detector_perf_adjust_period(int cpu, u64 period) { }
 #endif
 
 #ifdef CONFIG_CORELOCKUP_DETECTOR
@@ -221,6 +225,7 @@ static inline bool trigger_single_cpu_backtrace(int cpu)
 
 #ifdef CONFIG_HARDLOCKUP_DETECTOR_PERF
 u64 hw_nmi_get_sample_period(int watchdog_thresh);
+bool arch_perf_nmi_is_available(void);
 #endif
 
 #if defined(CONFIG_HARDLOCKUP_CHECK_TIMESTAMP) && \
@@ -243,9 +248,17 @@ int proc_watchdog_cpumask(struct ctl_table *, int, void *, size_t *, loff_t *);
 #endif
 
 #ifdef CONFIG_SDEI_WATCHDOG
+int sdei_watchdog_nmi_enable(unsigned int cpu);
+void sdei_watchdog_nmi_disable(unsigned int cpu);
 void sdei_watchdog_clear_eoi(void);
+int sdei_watchdog_nmi_probe(void);
+extern bool disable_sdei_nmi_watchdog;
 #else
+static inline int sdei_watchdog_nmi_enable(unsigned int cpu) { return -ENODEV; }
+static inline void sdei_watchdog_nmi_disable(unsigned int cpu) { }
 static inline void sdei_watchdog_clear_eoi(void) { }
+static inline int sdei_watchdog_nmi_probe(void) { return -ENODEV; }
+#define disable_sdei_nmi_watchdog 1
 #endif
 
 #endif

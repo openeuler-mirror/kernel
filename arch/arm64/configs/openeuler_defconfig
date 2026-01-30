@@ -550,6 +550,12 @@ CONFIG_ARM64_TWED=y
 CONFIG_ARM64_EPAN=y
 # end of ARMv8.7 architectural features
 
+#
+# ARMv8.8 architectural features
+#
+CONFIG_ARM64_NMI=y
+# end of ARMv8.8 architectural features
+
 CONFIG_ARM64_SVE=y
 CONFIG_ARM64_SME=y
 CONFIG_ARM64_MODULE_PLTS=y
