@@ -456,10 +456,12 @@ static int select_mem_allocator(void)
 		pr_err("invalid mem allocator specified: %s\n", mempool_allocator);
 		return ALLOCATOR_MAX;
 	}
+#ifndef CONFIG_ARM64_64K_PAGES
 	if (contig_mem_pool_percent != 100 && i == ALLOCATOR_HUGETLB_PMD) {
 		pr_err("using allocator %s when pmd_mapping not 100%%\n", allocator_names[i]);
 		i = ALLOCATOR_MAX;
 	}
+#endif
 
 	return i;
 }
