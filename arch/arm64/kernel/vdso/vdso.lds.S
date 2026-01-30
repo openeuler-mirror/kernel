@@ -49,9 +49,7 @@ SECTIONS
 
 	. = ALIGN(4);
 	.altinstructions : {
-		__alt_instructions = .;
 		*(.altinstructions)
-		__alt_instructions_end = .;
 	}
 
 	.eh_frame_hdr	: { *(.eh_frame_hdr) }		:text	:eh_frame_hdr
