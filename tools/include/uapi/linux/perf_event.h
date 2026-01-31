@@ -1254,7 +1254,9 @@ union perf_mem_data_src {
 #define PERF_MEM_LVLNUM_L4	0x04 /* L4 */
 #define PERF_MEM_LVLNUM_L2_MHB	0x05 /* L2 Miss Handling Buffer */
 #define PERF_MEM_LVLNUM_MSC	0x06 /* Memory-side Cache */
-/* 7-0xa available */
+/* 7-0x8 available */
+#define PERF_MEM_LVLNUM_CXL	0x09 /* CXL */
+#define PERF_MEM_LVLNUM_IO	0x0a /* I/O */
 #define PERF_MEM_LVLNUM_ANY_CACHE 0x0b /* Any cache */
 #define PERF_MEM_LVLNUM_LFB	0x0c /* LFB / L1 Miss Handling Buffer */
 #define PERF_MEM_LVLNUM_RAM	0x0d /* RAM */
@@ -1272,7 +1274,7 @@ union perf_mem_data_src {
 #define PERF_MEM_SNOOP_SHIFT	19
 
 #define PERF_MEM_SNOOPX_FWD	0x01 /* forward */
-/* 1 free */
+#define PERF_MEM_SNOOPX_PEER	0x02 /* xfer from peer */
 #define PERF_MEM_SNOOPX_SHIFT  38
 
 /* locked instruction */

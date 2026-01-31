@@ -197,18 +197,18 @@ static int hisi_lpddrc_pmu_init_data(struct platform_device *pdev,
 	 * LPDDRC PMU, while SCCL_ID is in MPIDR[aff2].
 	 */
 	if (device_property_read_u32(&pdev->dev, "hisilicon,ch-id",
-				     &lpddrc_pmu->index_id)) {
+				     &lpddrc_pmu->topo.index_id)) {
 		dev_err(&pdev->dev, "Can not read lpddrc channel-id!\n");
 		return -EINVAL;
 	}
 
 	if (device_property_read_u32(&pdev->dev, "hisilicon,scl-id",
-				     &lpddrc_pmu->sccl_id)) {
+				     &lpddrc_pmu->topo.sccl_id)) {
 		dev_err(&pdev->dev, "Can not read lpddrc sccl-id!\n");
 		return -EINVAL;
 	}
 	/* LPDDRC PMUs only share the same SCCL */
-	lpddrc_pmu->ccl_id = -1;
+	lpddrc_pmu->topo.ccl_id = -1;
 
 	lpddrc_pmu->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(lpddrc_pmu->base)) {
@@ -248,34 +248,11 @@ static const struct attribute_group hisi_lpddrc_pmu_v1_events_group = {
 	.attrs = hisi_lpddrc_pmu_v1_events_attr,
 };
 
-static DEVICE_ATTR(cpumask, 0444, hisi_cpumask_sysfs_show, NULL);
-
-static struct attribute *hisi_lpddrc_pmu_cpumask_attrs[] = {
-	&dev_attr_cpumask.attr,
-	NULL,
-};
-
-static const struct attribute_group hisi_lpddrc_pmu_cpumask_attr_group = {
-	.attrs = hisi_lpddrc_pmu_cpumask_attrs,
-};
-
-static struct device_attribute hisi_lpddrc_pmu_identifier_attr =
-	__ATTR(identifier, 0444, hisi_uncore_pmu_identifier_attr_show, NULL);
-
-static struct attribute *hisi_lpddrc_pmu_identifier_attrs[] = {
-	&hisi_lpddrc_pmu_identifier_attr.attr,
-	NULL
-};
-
-static struct attribute_group hisi_lpddrc_pmu_identifier_group = {
-	.attrs = hisi_lpddrc_pmu_identifier_attrs,
-};
-
 static const struct attribute_group *hisi_lpddrc_pmu_v1_attr_groups[] = {
 	&hisi_lpddrc_pmu_v1_format_group,
 	&hisi_lpddrc_pmu_v1_events_group,
-	&hisi_lpddrc_pmu_cpumask_attr_group,
-	&hisi_lpddrc_pmu_identifier_group,
+	&hisi_pmu_cpumask_attr_group,
+	&hisi_pmu_identifier_group,
 	NULL,
 };
 
@@ -336,8 +313,8 @@ static int hisi_lpddrc_pmu_probe(struct platform_device *pdev)
 		return ret;
 
 	name = devm_kasprintf(&pdev->dev, GFP_KERNEL,
-			      "hisi_sccl%u_lpddrc%u", lpddrc_pmu->sccl_id,
-			      lpddrc_pmu->index_id);
+			      "hisi_sccl%u_lpddrc%u", lpddrc_pmu->topo.sccl_id,
+			      lpddrc_pmu->topo.index_id);
 
 	lpddrc_pmu->pmu = (struct pmu) {
 		.name		= name,
@@ -402,6 +379,7 @@ static void __exit hisi_lpddrc_pmu_module_exit(void)
 }
 module_exit(hisi_lpddrc_pmu_module_exit);
 
+MODULE_IMPORT_NS(HISI_PMU);
 MODULE_DESCRIPTION("HiSilicon SoC LPDDRC uncore PMU driver");
 MODULE_LICENSE("GPL v2");
 MODULE_AUTHOR("Shaokun Zhang <zhangshaokun@hisilicon.com>");
