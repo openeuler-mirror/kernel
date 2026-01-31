@@ -4,6 +4,8 @@
 #ifndef __HIRAID_H_
 #define __HIRAID_H_
 
+#include <linux/mutex.h>
+
 #define HIRAID_HDD_PD_QD 64
 #define HIRAID_HDD_VD_QD 256
 #define HIRAID_SSD_PD_QD 64
@@ -758,6 +760,39 @@ struct hiraid_sdev_hostdata {
 	u8 rg_id;
 	u8 hwq;
 	u16 pend_count;
+};
+
+enum stream_type {
+	TYPE_TOTAL,
+	TYPE_WRITE,
+	TYPE_READ,
+	TYPE_CLEAN,
+	TYPE_BOTTOM
+};
+
+struct HIRAID_STREAM_S {
+	/* recog-window */
+	u64 stream_lba;
+	u32 stream_len;
+	u16 did;
+	u16 type;
+	/* aging ctrl */
+	int aging_credit;
+	int aging_grade;
+	u16 stream_id;
+	u16 using;
+};
+
+struct IO_LIST_S {
+	struct list_head list;
+	struct hiraid_scsi_io_cmd io_cmd;
+	struct hiraid_queue *submit_queue;
+	unsigned int sector_size;
+};
+
+struct mutex_list_head_s {
+	struct list_head list;
+	struct mutex lock;
 };
 
 #endif

@@ -35,6 +35,10 @@
 #include <scsi/scsi_transport.h>
 #include <scsi/scsi_dbg.h>
 #include <scsi/sg.h>
+#include <linux/kthread.h>
+#include <linux/mutex.h>
+#include <linux/sched.h>
+#include <linux/sched/prio.h>
 
 #include "hiraid.h"
 
@@ -54,9 +58,7 @@ static bool max_io_force;
 module_param(max_io_force, bool, 0644);
 MODULE_PARM_DESC(max_io_force, "force max_hw_sectors_kb = 1024, default false(performance first)");
 
-static bool work_mode;
-module_param(work_mode, bool, 0444);
-MODULE_PARM_DESC(work_mode, "work mode switch, default false for multi hw queues");
+static bool work_mode = true;
 
 #define MAX_IO_QUEUES		128
 #define MIN_IO_QUEUES		1
@@ -152,7 +154,7 @@ static struct workqueue_struct *work_queue;
 			__func__, ##__VA_ARGS__);	\
 } while (0)
 
-#define HIRAID_DRV_VERSION	"1.1.0.1"
+#define HIRAID_DRV_VERSION	"1.1.0.2"
 
 #define ADMIN_TIMEOUT		(admin_tmout * HZ)
 #define USRCMD_TIMEOUT		(180 * HZ)
@@ -168,6 +170,15 @@ static struct workqueue_struct *work_queue;
 
 #define MAX_CAN_QUEUE		(4096 - 1)
 #define MIN_CAN_QUEUE		(1024 - 1)
+
+#define MAX_DECREASE_GRADE (-8)
+#define MAX_INCREASE_GRADE 8
+#define INC_GRADE 1
+#define MIN_CREDIT 0
+#define MAX_CREDIT 64
+#define CREDIT_THRES 32
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
 enum SENSE_STATE_CODE {
 	SENSE_STATE_OK = 0,
@@ -749,6 +760,400 @@ static int hiraid_build_sgl(struct hiraid_dev *hdev, struct hiraid_scsi_io_cmd *
 	return 0;
 }
 
+#define MAX_PD_NUM  (40 + 1)
+#define MAX_STREAM_NUM  8
+#define PER_MB (1024 * 1024)
+#define MAX_IO_NUM  (200 * PER_MB)
+#define STREAM_LEN  (4 * PER_MB)
+#define MAX_IO_NUM_ONCE 100
+#define IO_SUBMIT_TIME_OUT 100
+#define MAX_AGING_NUM 100
+
+#define MIN_IO_SEND_TIME 10
+#define MAX_IO_SEND_TIME 50
+
+enum io_operation_type {
+	TYPE_DELETE_SINGLE_IO = 1,
+	TYPE_DELETE_SINGLE_IO_LIST,
+	TYPE_DELETE_ALL_IO_LIST
+};
+
+struct HIRAID_STREAM_S stream_array[MAX_PD_NUM][MAX_STREAM_NUM] = {0};
+struct mutex_list_head_s  io_heads_per_stream[MAX_PD_NUM * MAX_STREAM_NUM];
+spinlock_t stream_array_lock;
+DEFINE_MUTEX(g_stream_operation_mutex);
+
+u64 g_io_transport_num[MAX_PD_NUM][MAX_STREAM_NUM] = {0};
+u16 g_io_stream_num[MAX_PD_NUM][TYPE_BOTTOM] = {0};
+u16 g_io_count = 1;
+
+void hiraid_inc_io_transport_num(u16 disk_id, u16 streamd_id, u16 nlb)
+{
+	g_io_transport_num[disk_id][streamd_id] += nlb;
+}
+
+void hiraid_refresh_io_transport_num(u16 disk_id, u16 streamd_id)
+{
+	g_io_transport_num[disk_id][streamd_id] = 0;
+}
+
+void hiraid_inc_stream_num(u16 disk_id)
+{
+	spin_lock(&stream_array_lock);
+	g_io_stream_num[disk_id][TYPE_TOTAL]++;
+	spin_unlock(&stream_array_lock);
+}
+
+void hiraid_dec_stream_num(u16 disk_id)
+{
+	spin_lock(&stream_array_lock);
+	if (g_io_stream_num[disk_id][TYPE_TOTAL] > 0)
+		g_io_stream_num[disk_id][TYPE_TOTAL]--;
+	spin_unlock(&stream_array_lock);
+}
+
+static bool hiraid_io_recog_check_stream_exceed(u16 disk_id)
+{
+	bool exceed_flag;
+
+	spin_lock(&stream_array_lock);
+	exceed_flag = (g_io_stream_num[disk_id][TYPE_TOTAL] >= MAX_STREAM_NUM);
+	spin_unlock(&stream_array_lock);
+	return exceed_flag;
+}
+
+static u16 hiraid_get_stream_num(u16 disk_id)
+{
+	return g_io_stream_num[disk_id][TYPE_TOTAL];
+}
+
+static inline struct HIRAID_STREAM_S *hiraid_get_stream(u16 disk_id,
+					u16 stream_id)
+{
+	return &stream_array[disk_id][stream_id];
+}
+
+static inline struct mutex_list_head_s  *hiraid_get_io_head(u16 disk_id)
+{
+	return &(io_heads_per_stream[disk_id]);
+}
+
+static bool hiraid_recognition_acknowledge(const struct HIRAID_STREAM_S *stream)
+{
+	return (stream->aging_credit >= CREDIT_THRES) ? true : false;
+}
+
+void hiraid_io_recognition_init(void)
+{
+	u16 i;
+
+	spin_lock_init(&stream_array_lock);
+	for (i = 0; i < (MAX_PD_NUM * MAX_STREAM_NUM); i++) {
+		INIT_LIST_HEAD(&hiraid_get_io_head(i)->list);
+		mutex_init(&hiraid_get_io_head(i)->lock);
+	}
+}
+
+static void hiraid_io_recognition_iterator(struct HIRAID_STREAM_S *stream,
+							int direction)
+{
+	stream->aging_grade = stream->aging_grade + direction * INC_GRADE;
+	stream->aging_grade = MAX(stream->aging_grade, MAX_DECREASE_GRADE);
+	stream->aging_grade = MIN(stream->aging_grade, MAX_INCREASE_GRADE);
+	stream->aging_credit = stream->aging_credit + stream->aging_grade;
+	stream->aging_credit = MAX(stream->aging_credit, MIN_CREDIT);
+	stream->aging_credit = MIN(stream->aging_credit, MAX_CREDIT);
+}
+
+struct HIRAID_STREAM_S *hiraid_io_pick_stream(
+	struct hiraid_scsi_rw_cmd *req, u16 type, u16 actual_id)
+{
+	struct HIRAID_STREAM_S *first_hit_stream = NULL;
+	struct HIRAID_STREAM_S *temp_stream = NULL;
+	u16 pick_flag = 0;
+	u8 i;
+
+	for (i = 0; i < MAX_STREAM_NUM; i++) {
+		temp_stream = &stream_array[actual_id][i];
+		temp_stream->stream_id = i;
+		if (req->slba < temp_stream->stream_lba ||
+			req->slba >= temp_stream->stream_lba +
+			temp_stream->stream_len ||
+			temp_stream->type != type) {
+			continue;
+		}
+		if (!pick_flag) {
+			temp_stream->stream_lba = req->slba;
+			first_hit_stream = temp_stream;
+			pick_flag = 1;
+			continue;
+		}
+		hiraid_dec_stream_num(actual_id);
+		memset(temp_stream, 0,
+	sizeof(struct HIRAID_STREAM_S));  // 去重影
+	}
+	return first_hit_stream;
+}
+
+static struct HIRAID_STREAM_S *hiraid_init_flow_stream(
+	struct hiraid_scsi_rw_cmd *req, u16 type, u16 actual_id)
+{
+	int i;
+	struct HIRAID_STREAM_S *stream = NULL;
+
+	for (i = 0; i < MAX_STREAM_NUM; i++) {
+		stream = hiraid_get_stream(actual_id, i);
+		if (!stream->using) {
+			stream->using = 1;
+			stream->stream_id = i;
+			break;
+		}
+	}
+	stream->stream_lba = req->slba;
+	stream->did = actual_id;
+	stream->type = type;
+	stream->aging_credit = 0;
+	stream->aging_grade = 0;
+	stream->stream_len = STREAM_LEN;
+	return stream;
+}
+
+static struct HIRAID_STREAM_S *hiraid_stream_detect(struct hiraid_dev *hdev,
+		struct hiraid_scsi_rw_cmd *io_cmd, u16 actual_id)
+{
+	u16 type = io_cmd->opcode == HIRAID_CMD_WRITE ? TYPE_WRITE : TYPE_READ;
+	struct HIRAID_STREAM_S *stream = hiraid_io_pick_stream(io_cmd, type,
+								actual_id);
+
+	if (stream != NULL) { /* 可以命中一个stream */
+		return stream;
+	}
+
+	if (hiraid_io_recog_check_stream_exceed(actual_id))
+		return NULL;
+	stream = hiraid_init_flow_stream(io_cmd, type, actual_id);
+	hiraid_inc_stream_num(actual_id);
+	return stream;
+}
+
+u64 g_io_last_pull_time[MAX_PD_NUM] = {0};
+
+static u16 hiraid_get_submit_io_stream(u16 did, struct hiraid_dev *hdev)
+{
+	u64 temp_num, i;
+	static u16 stream_num[MAX_PD_NUM] = {0};
+
+	if (g_io_last_pull_time[did] == 0)
+		g_io_last_pull_time[did] = jiffies_to_msecs(jiffies);
+
+	for (i = 0; i < MAX_STREAM_NUM; i++) {
+		temp_num = g_io_transport_num[did][i];
+		if (temp_num != 0) {
+			if ((temp_num < MAX_IO_NUM) &&
+	((jiffies_to_msecs(jiffies) - g_io_last_pull_time[did])
+	< IO_SUBMIT_TIME_OUT)) {
+				stream_num[did] = i;
+				return i;
+			}
+			g_io_last_pull_time[did] = jiffies_to_msecs(jiffies);
+			hiraid_refresh_io_transport_num(did, i);
+			stream_num[did] = ((i+1) % MAX_STREAM_NUM);
+			return ((i+1) % MAX_STREAM_NUM);
+		}
+	}
+	g_io_last_pull_time[did] = jiffies_to_msecs(jiffies);
+	return ((stream_num[did]++) % MAX_STREAM_NUM);
+}
+
+static void hiraid_submit_io_stream(u16 hdid, struct hiraid_dev *hdev)
+{
+	struct mutex_list_head_s *io_slist = NULL;
+	struct list_head *node = NULL;
+	struct list_head *next_node = NULL;
+	struct list_head temp_header;
+	struct hiraid_scsi_io_cmd io_cmd = {0};
+	u16 submit_stream_id;
+	struct IO_LIST_S *temp_io_stream = NULL;
+	u16 count = 0;
+
+	INIT_LIST_HEAD(&temp_header);
+	submit_stream_id = hiraid_get_submit_io_stream(hdid, hdev);
+	io_slist = hiraid_get_io_head(hdid * MAX_STREAM_NUM + submit_stream_id);
+	mutex_lock(&io_slist->lock);
+	list_for_each_safe(node, next_node, &io_slist->list) {
+		list_del(node);
+		list_add_tail(node, &temp_header);
+		if (++count >= MAX_IO_NUM_ONCE)
+			break;
+	}
+	mutex_unlock(&io_slist->lock);
+
+	list_for_each_safe(node, next_node, &temp_header) {
+		temp_io_stream = list_entry(node, struct IO_LIST_S, list);
+		io_cmd = temp_io_stream->io_cmd;
+		hiraid_submit_cmd(temp_io_stream->submit_queue, &io_cmd);
+		hiraid_inc_io_transport_num(hdid, submit_stream_id,
+		io_cmd.rw.nlb * temp_io_stream->sector_size);
+		list_del(node);
+		kfree(temp_io_stream);
+	}
+	temp_io_stream = NULL;
+	list_del_init(&temp_header);
+}
+
+static u8 hiraid_detect_if_aging(void)
+{
+	if (++g_io_count == MAX_AGING_NUM) {
+		g_io_count = 0;
+		return 1;
+	}
+	return 0;
+}
+
+static void hiraid_aging(struct hiraid_dev *hdev)
+{
+	struct HIRAID_STREAM_S *temp_stream = NULL;
+	int i = 0;
+	int j = 0;
+
+	for (i = 0; i < MAX_PD_NUM; i++) {
+		for (j = 0; j < MAX_STREAM_NUM; j++) {
+			temp_stream = hiraid_get_stream(i, j);
+			if (temp_stream->using) {
+				hiraid_io_recognition_iterator(temp_stream, -1);
+				if (temp_stream->aging_credit <= 0) {
+					hiraid_dec_stream_num(i);
+					memset(temp_stream,
+			0, sizeof(struct HIRAID_STREAM_S));  // 老化
+				}
+			}
+		}
+	}
+}
+
+static u8 hiraid_io_list_operation(u32 hdid, u16 cid, u16 hwq, u8 operation)
+{
+	int i, j;
+
+	struct mutex_list_head_s  *io_slist = NULL;
+	struct list_head *node = NULL;
+	struct list_head *next_node = NULL;
+	struct hiraid_scsi_io_cmd *io_cmd = NULL;
+	struct hiraid_queue *hiraidq = NULL;
+	struct IO_LIST_S *temp_io_stream = NULL;
+
+	u8 max_hd_num = operation == TYPE_DELETE_ALL_IO_LIST ?
+				MAX_PD_NUM : hdid + 1;
+	for (i = hdid; i < max_hd_num; i++) {
+		for (j = 0; j < MAX_STREAM_NUM; j++) {
+			io_slist = hiraid_get_io_head(i * MAX_STREAM_NUM + j);
+			mutex_lock(&io_slist->lock);
+			list_for_each_safe(node, next_node, &io_slist->list) {
+				temp_io_stream = list_entry(node,
+					struct IO_LIST_S, list);
+				io_cmd = &(temp_io_stream->io_cmd);
+				hiraidq = temp_io_stream->submit_queue;
+				if (operation >= TYPE_DELETE_SINGLE_IO_LIST) {
+					list_del_init(node);
+					kfree(temp_io_stream);
+					temp_io_stream = NULL;
+				} else {
+					if ((io_cmd->rw.cmd_id == cid) &&
+					(hiraidq->qid == hwq)) {
+						list_del_init(node);
+						mutex_unlock(&io_slist->lock);
+						kfree(temp_io_stream);
+						return 1;
+					}
+				}
+			}
+			mutex_unlock(&io_slist->lock);
+		}
+	}
+	return 0;
+}
+
+static u8 hiraid_check_io_list(u32 hdid, u16 cid, u16 hwq)
+{
+	u8 ret;
+
+	mutex_lock(&g_stream_operation_mutex);
+	ret = hiraid_io_list_operation(hdid, cid, hwq, TYPE_DELETE_SINGLE_IO);
+	mutex_unlock(&g_stream_operation_mutex);
+	return ret;
+}
+
+static u8 hiraid_delete_single_pd_io_list(u32 hdid)
+{
+	u8 ret;
+
+	mutex_lock(&g_stream_operation_mutex);
+	ret = hiraid_io_list_operation(hdid, 0, 0, TYPE_DELETE_SINGLE_IO_LIST);
+	mutex_unlock(&g_stream_operation_mutex);
+	return ret;
+}
+
+static u8 hiraid_delete_all_io_list(void)
+{
+	u8 ret;
+
+	mutex_lock(&g_stream_operation_mutex);
+	ret = hiraid_io_list_operation(0, 0, 0, TYPE_DELETE_ALL_IO_LIST);
+	mutex_unlock(&g_stream_operation_mutex);
+	return ret;
+}
+
+static u8 hiraid_add_io_to_list(struct hiraid_queue *submit_queue,
+	struct HIRAID_STREAM_S *tmp_stream, struct hiraid_scsi_io_cmd io_cmd,
+	unsigned int sector_size, u16 actual_id)
+{
+	struct mutex_list_head_s  *io_slist = NULL;
+	struct IO_LIST_S *new_io_node = NULL;
+
+	new_io_node = kmalloc(sizeof(struct IO_LIST_S), GFP_KERNEL);
+	if (!new_io_node)
+		return 0;
+	new_io_node->io_cmd = io_cmd;
+	new_io_node->submit_queue = submit_queue;
+	new_io_node->sector_size = sector_size;
+	io_slist = hiraid_get_io_head(actual_id *
+		MAX_STREAM_NUM + tmp_stream->stream_id);
+	mutex_lock(&io_slist->lock);
+	INIT_LIST_HEAD(&(new_io_node->list));
+	list_add_tail(&(new_io_node->list), &io_slist->list);
+	mutex_unlock(&io_slist->lock);
+	return 1;
+}
+
+static void hiraid_submit_io_threading(struct hiraid_dev *hdev)
+{
+	int i = 0;
+
+	while (!kthread_should_stop()) {
+		mutex_lock(&g_stream_operation_mutex);
+		for (i = 0; i < MAX_PD_NUM; i++)
+			hiraid_submit_io_stream(i, hdev);
+		mutex_unlock(&g_stream_operation_mutex);
+		usleep_range(MIN_IO_SEND_TIME, MAX_IO_SEND_TIME);
+	}
+}
+
+static void hiraid_destroy_io_stream_resource(struct hiraid_dev *hdev)
+{
+	u16 i;
+
+	for (i = 0; i < (MAX_PD_NUM * MAX_STREAM_NUM); i++)
+		list_del_init(&hiraid_get_io_head(i)->list);
+}
+
+struct task_struct *g_hiraid_submit_task;
+static void hiraid_init_io_stream(struct hiraid_dev *hdev)
+{
+	hiraid_io_recognition_init();
+	g_hiraid_submit_task = kthread_run((void *)hiraid_submit_io_threading,
+			hdev, "hiraid_submit_thread");
+}
+
 #define HIRAID_RW_FUA	BIT(14)
 #define RW_LENGTH_ZERO	(67)
 
@@ -869,6 +1274,30 @@ static int hiraid_setup_nonrw_cmd(struct hiraid_dev *hdev,
 	}
 
 	return 0;
+}
+
+static bool hiraid_disk_is_hdd(u8 attr)
+{
+	switch (HIRAID_DEV_DISK_TYPE(attr)) {
+	case HIRAID_SAS_HDD_VD:
+	case HIRAID_SATA_HDD_VD:
+	case HIRAID_SAS_HDD_PD:
+	case HIRAID_SATA_HDD_PD:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static bool hiraid_disk_is_hdd_rawdrive(u8 attr)
+{
+	switch (HIRAID_DEV_DISK_TYPE(attr)) {
+	case HIRAID_SAS_HDD_PD:
+	case HIRAID_SATA_HDD_PD:
+		return true;
+	default:
+		return false;
+	}
 }
 
 static int hiraid_setup_io_cmd(struct hiraid_dev *hdev,
@@ -1025,6 +1454,7 @@ static int hiraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	struct hiraid_sdev_hostdata *hostdata;
 	struct hiraid_scsi_io_cmd io_cmd;
 	struct hiraid_queue *ioq;
+	struct HIRAID_STREAM_S *tmp_stm = NULL;
 	u16 hwq, cid;
 	int ret;
 
@@ -1092,6 +1522,23 @@ static int hiraid_queue_command(struct Scsi_Host *shost, struct scsi_cmnd *scmd)
 	}
 
 	WRITE_ONCE(mapbuf->state, CMD_FLIGHT);
+
+	if (hiraid_is_rw_scmd(scmd) &&
+		hiraid_disk_is_hdd_rawdrive(hostdata->attr)) {
+		if (hiraid_detect_if_aging())
+			hiraid_aging(hdev);
+		tmp_stm = hiraid_stream_detect(hdev, &(io_cmd.rw), sdev->id);
+		if (tmp_stm != NULL) {
+			hiraid_io_recognition_iterator(tmp_stm, 1);
+			if (hiraid_recognition_acknowledge(tmp_stm) &&
+			(hiraid_get_stream_num(sdev->id) > 1)) {
+				if (hiraid_add_io_to_list(ioq,
+		tmp_stm, io_cmd, sdev->sector_size, sdev->id)) {
+					return 0;
+				}
+			}
+		}
+	}
 	hiraid_submit_cmd(ioq, &io_cmd);
 
 	return 0;
@@ -1138,19 +1585,6 @@ static int hiraid_disk_qd(u8 attr)
 		return HIRAID_SSD_PD_QD;
 	default:
 		return MAX_CMD_PER_DEV;
-	}
-}
-
-static bool hiraid_disk_is_hdd(u8 attr)
-{
-	switch (HIRAID_DEV_DISK_TYPE(attr)) {
-	case HIRAID_SAS_HDD_VD:
-	case HIRAID_SATA_HDD_VD:
-	case HIRAID_SAS_HDD_PD:
-	case HIRAID_SATA_HDD_PD:
-		return true;
-	default:
-		return false;
 	}
 }
 
@@ -1939,6 +2373,7 @@ static int hiraid_create_queue(struct hiraid_queue *hiraidq, u16 qid)
 	hiraidq->cq_vector = cq_vector;
 	ret = pci_request_irq(hdev->pdev, cq_vector, hiraid_handle_irq, NULL,
 			      hiraidq, "hiraid%d_q%d", hdev->instance, qid);
+
 	if (ret) {
 		hiraidq->cq_vector = -1;
 		dev_err(hdev->dev, "request queue[%d] irq failed\n", qid);
@@ -3232,6 +3667,12 @@ static int hiraid_abort(struct scsi_cmnd *scmd)
 	cid = mapbuf->cid;
 	hwq = mapbuf->hiraidq->qid;
 
+	if (hiraid_check_io_list(hostdata->hdid, cid, hwq)) {
+		dev_warn(hdev->dev, "find cid[%d] qid[%d] in host, abort succ\n",
+			cid, hwq);
+		return SUCCESS;
+	}
+
 	dev_warn(hdev->dev, "cid[%d] qid[%d] timeout, send abort\n", cid, hwq);
 	ret = hiraid_send_abort_cmd(hdev, hostdata->hdid, hwq, cid);
 	if (ret != -ETIME) {
@@ -3263,6 +3704,7 @@ static int hiraid_scsi_reset(struct scsi_cmnd *scmd, enum hiraid_rst_type rst)
 	ret = hiraid_send_reset_cmd(hdev, rst, hostdata->hdid);
 	if ((ret == 0) || (ret == FW_EH_DEV_NONE && rst == HIRAID_RESET_TARGET)) {
 		if (rst == HIRAID_RESET_TARGET) {
+			hiraid_delete_single_pd_io_list(hostdata->hdid);
 			ret = wait_tgt_reset_io_done(scmd);
 			if (ret) {
 				dev_warn(hdev->dev, "sdev[%d:%d] target has %d peding cmd, target reset failed\n",
@@ -3300,6 +3742,7 @@ static int hiraid_host_reset(struct scsi_cmnd *scmd)
 
 	dev_warn(hdev->dev, "sdev[%d:%d] send host reset\n",
 		scmd->device->channel, scmd->device->id);
+	hiraid_delete_all_io_list();
 	if (hiraid_reset_work_sync(hdev) == -EBUSY)
 		flush_work(&hdev->reset_work);
 
@@ -3333,6 +3776,7 @@ static pci_ers_result_t hiraid_pci_error_detected(struct pci_dev *pdev,
 		scsi_block_requests(hdev->shost);
 
 		hiraid_dev_state_trans(hdev, DEV_RESETTING);
+		hiraid_delete_all_io_list();
 
 		return PCI_ERS_RESULT_NEED_RESET;
 	case pci_channel_io_perm_failure:
@@ -3906,6 +4350,7 @@ static int hiraid_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto unregist_bsg;
 
 	scsi_scan_host(hdev->shost);
+	hiraid_init_io_stream(hdev);
 
 	return 0;
 
@@ -3936,6 +4381,10 @@ static void hiraid_remove(struct pci_dev *pdev)
 	struct Scsi_Host *shost = hdev->shost;
 
 	dev_info(hdev->dev, "enter hiraid remove\n");
+
+	kthread_stop(g_hiraid_submit_task);
+	hiraid_delete_all_io_list();
+	hiraid_destroy_io_stream_resource(hdev);
 
 	hiraid_dev_state_trans(hdev, DEV_DELETING);
 	flush_work(&hdev->reset_work);
