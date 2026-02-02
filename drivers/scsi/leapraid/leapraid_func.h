@@ -46,15 +46,15 @@
 #define LEAPRAID_SYS_LOG_BUF_RESERVE    0x1000
 
 /* Driver version and name */
-#define LEAPRAID_DRIVER_NAME            "LeapRaid"
+#define LEAPRAID_DRIVER_NAME            "LeapRAID"
 #define LEAPRAID_NAME_LENGTH            48
 #define LEAPRAID_AUTHOR                 "LeapIO Inc."
-#define LEAPRAID_DESCRIPTION            "LeapRaid Driver"
-#define LEAPRAID_DRIVER_VERSION         "2.00.00.05"
+#define LEAPRAID_DESCRIPTION            "LeapRAID Driver"
+#define LEAPRAID_DRIVER_VERSION         "2.00.00.06"
 #define LEAPRAID_MAJOR_VERSION          2
 #define LEAPRAID_MINOR_VERSION          00
 #define LEAPRAID_BUILD_VERSION          00
-#define LEAPRAID_RELEASE_VERSION        05
+#define LEAPRAID_RELEASE_VERSION        06
 
 /* Device ID */
 #define LEAPRAID_VENDOR_ID      0xD405
@@ -243,6 +243,7 @@ struct leapraid_adapter_features {
 	u16 hp_slot;
 	u32 adapter_caps;
 	u32 fw_version;
+	u8 max_msix_vectors;
 	u8 max_volumes;
 	u16 max_dev_handle;
 	u16 min_dev_handle;
@@ -349,7 +350,7 @@ struct leapraid_rep_desc_seg_maint {
 };
 
 /**
- * struct leapraid_mem_desc - Memory descriptor for LeapRaid adapter
+ * struct leapraid_mem_desc - Memory descriptor for LeapRAID adapter
  *
  * @task_desc: Pointer to task descriptor
  * @task_desc_dma: DMA address of task descriptor
@@ -395,7 +396,7 @@ struct leapraid_mem_desc {
 #define LEAPRAID_CMD_RESET		0x0008
 
 /**
- * enum LEAPRAID_CB_INDEX - Callback index for LeapRaid driver
+ * enum LEAPRAID_CB_INDEX - Callback index for LeapRAID driver
  *
  * @LEAPRAID_SCAN_DEV_CB_IDX: Scan device callback index
  * @LEAPRAID_CONFIG_CB_IDX: Configuration callback index
@@ -513,7 +514,7 @@ struct leapraid_dynamic_task_desc {
  * struct leapraid_fw_evt_work - Firmware event work structure
  *
  * @list: Linked list node for queuing the work
- * @adapter: Pointer to the associated LeapRaid adapter
+ * @adapter: Pointer to the associated LeapRAID adapter
  * @work: Work structure used by the kernel workqueue
  * @refcnt: Reference counter for managing the lifetime of this work
  * @evt_data: Pointer to firmware event data
@@ -554,9 +555,9 @@ struct leapraid_fw_evt_struct {
 };
 
 /**
- * struct leapraid_rq - Represents a LeapRaid request queue
+ * struct leapraid_rq - Represents a LeapRAID request queue
  *
- * @adapter: Pointer to the associated LeapRaid adapter
+ * @adapter: Pointer to the associated LeapRAID adapter
  * @msix_idx: MSI-X vector index used by this queue
  * @rep_post_host_idx: Index of the last processed reply descriptor
  * @rep_desc: Pointer to the reply descriptor associated with this queue
@@ -576,7 +577,7 @@ struct leapraid_rq {
  * struct leapraid_int_rq - Internal request queue for a CPU
  *
  * @affinity_hint: CPU affinity mask for the queue
- * @rq: Underlying LeapRaid request queue structure
+ * @rq: Underlying LeapRAID request queue structure
  */
 struct leapraid_int_rq {
 	cpumask_var_t affinity_hint;
@@ -584,11 +585,11 @@ struct leapraid_int_rq {
 };
 
 /**
- * struct leapraid_blk_mq_poll_rq - Polling request for LeapRaid blk-mq
+ * struct leapraid_blk_mq_poll_rq - Polling request for LeapRAID blk-mq
  *
  * @busy: Atomic flag indicating request is being processed
  * @pause: Atomic flag to temporarily suspend polling
- * @rq: The underlying LeapRaid request structure
+ * @rq: The underlying LeapRAID request structure
  */
 struct leapraid_blk_mq_poll_rq {
 	atomic_t busy;
@@ -598,7 +599,7 @@ struct leapraid_blk_mq_poll_rq {
 
 /**
  * struct leapraid_notification_desc - Notification
- * descriptor for LeapRaid
+ * descriptor for LeapRAID
  *
  * @iopoll_qdex: Index of the I/O polling queue
  * @iopoll_qcnt: Count of I/O polling queues
@@ -621,7 +622,7 @@ struct leapraid_notification_desc {
 };
 
 /**
- * struct leapraid_reset_desc - Reset descriptor for LeapRaid
+ * struct leapraid_reset_desc - Reset descriptor for LeapRAID
  *
  * @fault_reset_wq: Workqueue for fault reset operations
  * @fault_reset_work: Delayed work structure for fault reset
@@ -651,7 +652,7 @@ struct leapraid_reset_desc {
 
 /**
  * struct leapraid_scan_dev_desc - Scan device descriptor
- * for LeapRaid
+ * for LeapRAID
  *
  * @wait_scan_dev_done: Flag indicating if scan device operation is done
  * @driver_loading: Flag indicating if driver is loading
@@ -670,7 +671,7 @@ struct leapraid_scan_dev_desc {
 };
 
 /**
- * struct leapraid_access_ctrl - Access control structure for LeapRaid
+ * struct leapraid_access_ctrl - Access control structure for LeapRAID
  *
  * @pci_access_lock: Mutex for PCI access control
  * @adapter_thermal_alert: Flag indicating if adapter thermal alert is active
@@ -687,7 +688,7 @@ struct leapraid_access_ctrl {
 };
 
 /**
- * struct leapraid_fw_log_desc - Firmware log descriptor for LeapRaid
+ * struct leapraid_fw_log_desc - Firmware log descriptor for LeapRAID
  *
  * @fw_log_buffer: Buffer for firmware log data
  * @fw_log_buffer_dma: DMA address of the firmware log buffer
@@ -711,7 +712,7 @@ struct leapraid_fw_log_desc {
 #define LEAPRAID_CARD_PORT_FLG_NEW	0x02
 #define LEAPRAID_DISABLE_MP_PORT_ID	0xFF
 /**
- * struct leapraid_card_port - Card port structure for LeapRaid
+ * struct leapraid_card_port - Card port structure for LeapRAID
  *
  * @list: List head for card port
  * @vphys_list: List head for virtual phy list
@@ -732,7 +733,7 @@ struct leapraid_card_port {
 };
 
 /**
- * struct leapraid_card_phy - Card phy structure for LeapRaid
+ * struct leapraid_card_phy - Card phy structure for LeapRAID
  *
  * @port_siblings: List head for port siblings
  * @card_port: Pointer to the card port
@@ -759,7 +760,7 @@ struct leapraid_card_phy {
 };
 
 /**
- * struct leapraid_topo_node - SAS topology node for LeapRaid
+ * struct leapraid_topo_node - SAS topology node for LeapRAID
  *
  * @list: List head for linking nodes
  * @sas_port_list: List of SAS ports
@@ -792,7 +793,7 @@ struct leapraid_topo_node {
 };
 
 /**
- * struct leapraid_dev_topo - LeapRaid device topology management structure
+ * struct leapraid_dev_topo - LeapRAID device topology management structure
  *
  * @topo_node_lock: Spinlock for protecting topology node operations
  * @sas_dev_lock: Spinlock for SAS device list access
@@ -832,7 +833,7 @@ struct leapraid_dev_topo {
 };
 
 /**
- * struct leapraid_boot_dev - Boot device structure for LeapRaid
+ * struct leapraid_boot_dev - Boot device structure for LeapRAID
  *
  * @dev: Device pointer
  * @chnl: Channel number
@@ -871,7 +872,7 @@ struct leapraid_smart_poll_desc {
 };
 
 /**
- * struct leapraid_adapter - Main LeapRaid adapter structure
+ * struct leapraid_adapter - Main LeapRAID adapter structure
  * @list: List head for adapter management
  * @shost: SCSI host structure
  * @pdev: PCI device structure

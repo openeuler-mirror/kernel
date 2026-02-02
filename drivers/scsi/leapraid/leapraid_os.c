@@ -2124,7 +2124,7 @@ static void leapraid_shutdown(struct pci_dev *pdev)
 	adapter->access_ctrl.host_removing = true;
 	leapraid_wait_cmds_done(adapter);
 	leapraid_clean_active_fw_evt(adapter);
-
+	leapraid_fw_log_stop(adapter);
 	spin_lock_irqsave(&adapter->fw_evt_s.fw_evt_lock, flags);
 	wq = adapter->fw_evt_s.fw_evt_thread;
 	adapter->fw_evt_s.fw_evt_thread = NULL;

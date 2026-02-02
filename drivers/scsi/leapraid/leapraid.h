@@ -310,6 +310,8 @@
 #define LEAPRAID_EVT_IR_RC_PD_UNHIDDEN_TO_DELETE        0x04
 #define LEAPRAID_EVT_IR_RC_PD_CREATED_TO_HIDE           0x05
 #define LEAPRAID_EVT_IR_RC_PD_DELETED_TO_EXPOSE         0x06
+#define LEAPRAID_EVT_IR_RC_VOLUME_HIDE                  0x0A
+#define LEAPRAID_EVT_IR_RC_VOLUME_UNHIDE                0x0B
 
 /* sas topology change event */
 #define LEAPRAID_EVT_SAS_TOPO_ES_NO_EXPANDER    0x00
