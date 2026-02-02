@@ -377,7 +377,7 @@ static int hi6421_spmi_regulator_probe_ldo(struct platform_device *pdev,
 	config.of_node = pdev->dev.of_node;
 
 	/* register regulator */
-	rdev = regulator_register(rdesc, &config);
+	rdev = regulator_register(&pdev->dev, rdesc, &config);
 	if (IS_ERR(rdev)) {
 		dev_err(dev, "failed to register %s\n",
 			rdesc->name);
