@@ -30,11 +30,19 @@ Affected processors
 AMD Zen, generations 1-4. That is, all families 0x17 and 0x19. Older
 processors have not been investigated.
 
+HYGON generations 1~4.
+
 System information and options
 ------------------------------
 
 First of all, it is required that the latest microcode be loaded for
 mitigations to be effective.
+
+For HYGON 1~3 CPUs, all types of branches are flushed with IBPB by default,
+so no microcode or kernel parameter is needed.
+For HYGON 4 CPU, all branches can be flushed by setting ibpb_brtype=ibpb-all
+or by using the default value instead of loading microcode.
+See the following description of the kernel parameter ibpb_brtype.
 
 The sysfs file showing SRSO mitigation status is:
 
@@ -85,6 +93,18 @@ The possible values in this file are:
                                 only.
 
                                 (spec_rstack_overflow=ibpb-vmexit)
+
+
+In order to mitigate the attacks to the user space tasks,
+IBPB must be set to flush all types of branches by setting kernel parameter ibpb_brtype.
+The description of kernel parameter ibpb_brtype is as follows:
+ibpb_brtype=     [X86, HYGON only]
+                IBPB action control flag
+                Format: { ibpb-all | ibpb-ind }
+                ibpb-all -- IBPB flushes all types of branches,
+                            this is the default value if the command line
+                            does not specify the ibpb_brtype value.
+                ibpb-ind -- IBPB flushes only indirect branches.
 
 In order to exploit vulnerability, an attacker needs to:
 
