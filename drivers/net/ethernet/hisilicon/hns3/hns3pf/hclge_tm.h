@@ -303,4 +303,5 @@ int hclge_tm_tc_buffer_update(struct hclge_dev *hdev,
 			      u32 *buffer_size, u8 buffer_num);
 int hclge_tm_tc_buffer_check(struct hclge_dev *hdev,
 			     u32 *buffer_size, u8 buffer_num);
+u32 hclge_tm_get_prio_tc_map(struct hclge_dev *hdev);
 #endif

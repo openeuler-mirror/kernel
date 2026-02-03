@@ -2420,17 +2420,23 @@ int hclge_tm_flush_cfg(struct hclge_dev *hdev, bool enable)
 	return ret;
 }
 
-static int hclge_vf_prio_tc_validate(struct hclge_dev *hdev,
-				     struct hclge_mbx_tc_info *tc_info)
+u32 hclge_tm_get_prio_tc_map(struct hclge_dev *hdev)
 {
 #define HCLGE_PRI_SHIFT		4
-
 	u32 prio_tc_map = 0;
 	u8 i;
 
 	for (i = 0; i < HNAE3_MAX_USER_PRIO; i++)
 		prio_tc_map |=
 			(u32)hdev->tm_info.prio_tc[i] << (i * HCLGE_PRI_SHIFT);
+
+	return prio_tc_map;
+}
+
+static int hclge_vf_prio_tc_validate(struct hclge_dev *hdev,
+				     struct hclge_mbx_tc_info *tc_info)
+{
+	u32 prio_tc_map = hclge_tm_get_prio_tc_map(hdev);
 
 	if (prio_tc_map != __le32_to_cpu(tc_info->prio_tc_map)) {
 		dev_err(&hdev->pdev->dev,

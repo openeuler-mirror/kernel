@@ -596,12 +596,6 @@ static int hclge_ieee_getmaxrate(struct hnae3_handle *h,
 				 struct ieee_maxrate *maxrate)
 {
 	struct hnae3_tc_info *tc_info = &h->kinfo.tc_info;
-	struct hclge_vport *vport = hclge_get_vport(h);
-	struct hclge_dev *hdev = vport->back;
-
-	if (!hnae3_dev_roh_supported(hdev) &&
-	    !hnae3_dev_ubl_supported(hdev->ae_dev))
-		return -EOPNOTSUPP;
 
 	memcpy(maxrate, tc_info->max_rate, sizeof(struct ieee_maxrate));
 	return 0;
@@ -637,10 +631,6 @@ static int hclge_ieee_setmaxrate(struct hnae3_handle *h,
 	struct hclge_dev *hdev = vport->back;
 	struct hnae3_tc_info old_tc_info;
 	int ret;
-
-	if (!hnae3_dev_roh_supported(hdev) &&
-	    !hnae3_dev_ubl_supported(hdev->ae_dev))
-		return -EOPNOTSUPP;
 
 	if (!(hdev->dcbx_cap & DCB_CAP_DCBX_VER_IEEE) || tc_info->mqprio_active)
 		return -EINVAL;
