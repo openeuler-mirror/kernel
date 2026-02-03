@@ -9,6 +9,7 @@
 #include <linux/delay.h>
 #include <linux/types.h>
 #include <linux/pci.h>
+#include <linux/delay.h>
 #include <linux/vgaarb.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <asm/cacheflush.h>
@@ -98,6 +99,100 @@ static void pci_fixup_vgadev(struct pci_dev *pdev)
 			vga_set_default_device(devp);
 			dev_info(&pdev->dev,
 				"Overriding boot device as %X:%X\n",
+
+#define DEV_LS2K3000_DC 0x7a46
+#define DEV_LS2K2000_DC 0x7a36
+#define DEV_LS2K2000_GPU 0x7a25
+#define DEV_LS2K3000_GPU 0x7a35
+#define LS2K2000_DC_OFFSET 0x1240
+#define LS2K3000_DC_OFFSET 0
+#define LS2K2000_DC_CRTC_OFFSET 0x10
+#define LS2K3000_DC_CRTC_OFFSET 0x400
+#define LS2K_DC_OUTPUT_ENABLE 0x100
+#define LS2K_DC_BAR_SIZE 0x10000
+#define LS2K_DC_NUM_MAX 2
+
+static u32 save_status[LS2K_DC_NUM_MAX] = { 0 };
+static void loongson_dma_hangs_fixup(struct pci_dev *pdev, bool open)
+{
+	void __iomem *dc_reg, *base, *regbase;
+	u32 val, count, i, crtc_offset, device;
+
+	base = pdev->bus->ops->map_bus(pdev->bus, pdev->devfn + 1, 0);
+	device = readw(base + PCI_DEVICE_ID);
+
+	crtc_offset = (device == DEV_LS2K3000_DC) ? LS2K3000_DC_CRTC_OFFSET :
+		      (device == DEV_LS2K2000_DC) ? LS2K2000_DC_CRTC_OFFSET :
+						    0;
+	regbase = ioremap(readq(base + PCI_BASE_ADDRESS_0) & ~0xffull,
+			  LS2K_DC_BAR_SIZE);
+	if (!regbase) {
+		pci_err(pdev, "Failed to ioremap\n");
+		return;
+	}
+
+	dc_reg = regbase + ((device == DEV_LS2K2000_DC) ? LS2K2000_DC_OFFSET :
+							  LS2K3000_DC_OFFSET);
+
+	for (i = 0; i < LS2K_DC_NUM_MAX; i++, dc_reg += crtc_offset) {
+		count = 0;
+
+		val = readl(dc_reg);
+
+		if (!open)
+			save_status[i] = val;
+
+		/* If the status is turned off at startup,
+		 * there is no need to fixup.
+		 */
+		if (!(save_status[i] & LS2K_DC_OUTPUT_ENABLE)) {
+			pci_info(pdev,
+				 "dma hangs no fixup at reg[0x%llx] : 0x%x\n",
+				 (u64)dc_reg & 0xffff, save_status[i]);
+			continue;
+		}
+
+		if (open)
+			val |= LS2K_DC_OUTPUT_ENABLE;
+		else
+			val &= ~LS2K_DC_OUTPUT_ENABLE;
+
+		/* ensure value active */
+		mb();
+		writel(val, dc_reg);
+
+		while (open ? (!(readl(dc_reg) & LS2K_DC_OUTPUT_ENABLE)) :
+			      (readl(dc_reg) & LS2K_DC_OUTPUT_ENABLE)) {
+			if (count++ > 50)
+				break;
+			udelay(1000);
+		}
+
+		pci_info(pdev, "dma hangs fixup at reg[0x%llx] : 0x%x\n",
+			 (u64)dc_reg & 0xffff, val);
+	}
+
+	iounmap(regbase);
+}
+
+static void loongson_dma_hangs_early_quirk(struct pci_dev *pdev)
+{
+	loongson_dma_hangs_fixup(pdev, false);
+}
+
+static void loongson_dma_hangs_final_quirk(struct pci_dev *pdev)
+{
+	loongson_dma_hangs_fixup(pdev, true);
+}
+
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_LOONGSON, DEV_LS2K2000_GPU,
+			loongson_dma_hangs_early_quirk);
+DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_LOONGSON, DEV_LS2K3000_GPU,
+			loongson_dma_hangs_early_quirk);
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, DEV_LS2K2000_GPU,
+			loongson_dma_hangs_final_quirk);
+DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, DEV_LS2K3000_GPU,
+			loongson_dma_hangs_final_quirk);
 				devp->vendor, devp->device);
 		}
 	}
@@ -106,80 +201,4 @@ DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC1, pci_
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC2, pci_fixup_vgadev);
 DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_DC3, pci_fixup_vgadev);
 
-#define CRTC_NUM_MAX		2
-#define CRTC_OUTPUT_ENABLE	0x100
 
-static void loongson_gpu_fixup_dma_hang(struct pci_dev *pdev, bool on)
-{
-	u32 i, val, count, crtc_offset, device;
-	void __iomem *crtc_reg, *base, *regbase;
-	static u32 crtc_status[CRTC_NUM_MAX] = { 0 };
-
-	base = pdev->bus->ops->map_bus(pdev->bus, pdev->devfn + 1, 0);
-	device = readw(base + PCI_DEVICE_ID);
-
-	regbase = ioremap(readq(base + PCI_BASE_ADDRESS_0) & ~0xffull, SZ_64K);
-	if (!regbase) {
-		pci_err(pdev, "Failed to ioremap()\n");
-		return;
-	}
-
-	switch (device) {
-	case PCI_DEVICE_ID_LOONGSON_DC2:
-		crtc_reg = regbase + 0x1240;
-		crtc_offset = 0x10;
-		break;
-	case PCI_DEVICE_ID_LOONGSON_DC3:
-		crtc_reg = regbase;
-		crtc_offset = 0x400;
-		break;
-	default:
-		iounmap(regbase);
-		return;
-	}
-
-	for (i = 0; i < CRTC_NUM_MAX; i++, crtc_reg += crtc_offset) {
-		val = readl(crtc_reg);
-
-		if (!on)
-			crtc_status[i] = val;
-
-		/* No need to fixup if the status is off at startup. */
-		if (!(crtc_status[i] & CRTC_OUTPUT_ENABLE))
-			continue;
-
-		if (on)
-			val |= CRTC_OUTPUT_ENABLE;
-		else
-			val &= ~CRTC_OUTPUT_ENABLE;
-
-		mb();
-		writel(val, crtc_reg);
-
-		for (count = 0; count < 40; count++) {
-			val = readl(crtc_reg) & CRTC_OUTPUT_ENABLE;
-			if ((on && val) || (!on && !val))
-				break;
-			udelay(1000);
-		}
-
-		pci_info(pdev, "DMA hang fixup at reg[0x%lx]: 0x%x\n",
-				(unsigned long)crtc_reg & 0xffff, readl(crtc_reg));
-	}
-
-	iounmap(regbase);
-}
-
-static void pci_fixup_dma_hang_early(struct pci_dev *pdev)
-{
-	loongson_gpu_fixup_dma_hang(pdev, false);
-}
-DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_GPU2, pci_fixup_dma_hang_early);
-DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_GPU3, pci_fixup_dma_hang_early);
-
-static void pci_fixup_dma_hang_final(struct pci_dev *pdev)
-{
-	loongson_gpu_fixup_dma_hang(pdev, true);
-}
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_GPU2, pci_fixup_dma_hang_final);
-DECLARE_PCI_FIXUP_FINAL(PCI_VENDOR_ID_LOONGSON, PCI_DEVICE_ID_LOONGSON_GPU3, pci_fixup_dma_hang_final);
