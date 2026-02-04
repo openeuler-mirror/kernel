@@ -124,11 +124,13 @@ static void __kernel_fpu_end(void)
 	kernel_fpu_enable();
 }
 
+static inline void check_using_kernel_fpu(bool flag);
+
 void kernel_fpu_begin(void)
 {
 	preempt_disable();
 	if (static_branch_unlikely(&hygon_lmc_key))
-		check_using_kernel_fpu();
+		check_using_kernel_fpu(true);
 	__kernel_fpu_begin();
 }
 EXPORT_SYMBOL_GPL(kernel_fpu_begin);
@@ -136,7 +138,7 @@ EXPORT_SYMBOL_GPL(kernel_fpu_begin);
 void kernel_fpu_end(void)
 {
 	if (static_branch_unlikely(&hygon_lmc_key))
-		check_using_kernel_fpu();
+		check_using_kernel_fpu(false);
 	__kernel_fpu_end();
 	preempt_enable();
 }
@@ -170,23 +172,21 @@ unsigned long get_fpu_registers_pos(struct fpu *fpu, unsigned int off)
  */
 int kernel_fpu_begin_nonatomic_mask(void)
 {
+	unsigned long flags;
+
 	preempt_disable();
 
 	struct fpu *fpu = &current->thread.fpu;
 
-	/* we not support Nested call */
-	if (test_thread_flag(TIF_USING_FPU_NONATOMIC))
-		goto err;
-
+	/*
+	 * This means we call kernel_fpu_begin_nonatomic after kernel_fpu_begin,
+	 * but before kernel_fpu_end.
+	 */
 	if (KERNEL_FPU_NONATOMIC_SIZE >
 	    get_fpustate_free_space(&current->thread.fpu))
 		goto err;
 
-	/*
-       * This means we call kernel_fpu_begin_nonatomic after kernel_fpu_begin,
-       * but before kernel_fpu_end.
-       */
-	if (this_cpu_read(in_kernel_fpu))
+	if (test_thread_flag(TIF_USING_FPU_NONATOMIC))
 		goto err;
 
 	if (in_interrupt())
@@ -195,6 +195,8 @@ int kernel_fpu_begin_nonatomic_mask(void)
 	if (current->flags & PF_KTHREAD)
 		goto err;
 
+	local_irq_save(flags);
+
 	if (fpu->initialized)
 		copy_fpregs_to_fpstate(&current->thread.fpu);
 
@@ -202,6 +204,8 @@ int kernel_fpu_begin_nonatomic_mask(void)
 	set_thread_flag(TIF_USING_FPU_NONATOMIC);
 
 	__cpu_invalidate_fpregs_state();
+
+	local_irq_restore(flags);
 
 	preempt_enable();
 
@@ -218,11 +222,9 @@ void kernel_fpu_end_nonatomic(void)
 {
 	preempt_disable();
 	/*
-       * This means we call kernel_fpu_end_nonatomic after kernel_fpu_begin,
-       * but before kernel_fpu_end.
-       */
-	WARN_ON_FPU(this_cpu_read(in_kernel_fpu));
-
+	 * This means we call kernel_fpu_end_nonatomic after kernel_fpu_begin,
+	 * but before kernel_fpu_end.
+	 */
 	WARN_ON_FPU(!test_thread_flag(TIF_USING_FPU_NONATOMIC));
 
 	clear_thread_flag(TIF_USING_FPU_NONATOMIC);
@@ -236,6 +238,26 @@ void save_fpregs_to_fpkernelstate(struct fpu *kfpu)
 							     MAX_FPU_CTX_SIZE),
 			       NULL, MAX_FPU_CTX_SIZE);
 }
+
+/*
+ * It means we call kernel_fpu_end after kernel_fpu_begin_nonatomic
+ * func, but before kernel_fpu_end_nonatomic
+ */
+static inline void check_using_kernel_fpu(bool flag)
+{
+	if (test_thread_flag(TIF_USING_FPU_NONATOMIC)) {
+		struct fpu *current_fpu = &current->thread.fpu;
+
+		if (flag)
+			save_fpregs_to_fpkernelstate(current_fpu);
+		else
+			fpregs_restore_kernelregs(current_fpu);
+	}
+}
+
+#else
+static inline void check_using_kernel_fpu(bool flag) { }
+
 #endif
 
 /*
