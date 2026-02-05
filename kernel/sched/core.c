@@ -6563,10 +6563,19 @@ void sched_move_task(struct task_struct *tsk)
 
 	sched_change_group(tsk, TASK_MOVE_GROUP);
 
-	if (queued)
+	if (queued) {
 		enqueue_task(rq, tsk, queue_flags);
-	if (running)
+		check_preempt_curr(rq, tsk, 0);
+	}
+	if (running) {
 		set_curr_task(rq, tsk);
+		/*
+		 * After changing group, the running task may have joined a
+		 * throttled one but it's still the running task. Trigger a
+		 * resched to make sure that task can still run.
+		 */
+		resched_curr(rq);
+	}
 
 	task_rq_unlock(rq, tsk, &rf);
 }
