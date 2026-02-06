@@ -11,9 +11,14 @@ enum hisi_cpu_type {
 	HI_1616,
 	HI_1620,
 	HI_IP09,
+	HI_IP12,
 	UNKNOWN_HI_TYPE
 };
 
+/* HIP12 */
+#ifdef CONFIG_ARM64_HISI_IPIV
+#define AIDR_EL1_IPIV_MASK	GENMASK_ULL(17, 16)
+#endif
 /* HIP09 */
 #define AIDR_EL1_DVMBM_MASK	GENMASK_ULL(13, 12)
 #define SYS_LSUDVM_CTRL_EL2	sys_reg(3, 4, 15, 7, 4)
@@ -61,9 +66,37 @@ enum hisi_cpu_type {
 
 #define DVMBM_MAX_DIES			32
 
+/*
+ * MPIDR_EL1 layout on HIP12
+ *
+ * Aff3[4:3]	- socket ID	[0-3]
+ * Aff3[2:0]	- die ID	[0,1]
+ * Aff2[2:0]	- cluster ID	[0-5]
+ * Aff1[3:0]	- core ID	[0-15]
+ * Aff0[0]	- thread ID	[0,1]
+ *
+ * On HIP12, cpu die is named as vdie. Actually,
+ * vdie is equivalent to cpu die. Here use die
+ * to describe vdie.
+ */
+
+#define MPIDR_AFF3_SOCKET_ID_MASK		GENMASK(4, 3)
+#define MPIDR_AFF3_DIE_ID_MASK			GENMASK(2, 0)
+#define DVMBM_DIE1_SHIFT_HIP12			57
+#define DVMBM_DIE2_SHIFT_HIP12			53
+#define DVMBM_DIE1_CLUSTER_SHIFT_HIP12		6
+#define DVMBM_DIE2_CLUSTER_SHIFT_HIP12		0
+#define DVMBM_MAX_DIES_HIP12			8
+
 void probe_hisi_cpu_type(void);
 bool hisi_ncsnp_supported(void);
 bool hisi_dvmbm_supported(void);
+#ifdef CONFIG_ARM64_HISI_IPIV
+bool hisi_ipiv_supported(void);
+bool hisi_ipiv_supported_per_vm(struct kvm_vcpu *vcpu);
+void hisi_ipiv_enable_per_vm(struct kvm_vcpu *vcpu);
+void ipiv_gicd_init(void);
+#endif /* CONFIG_ARM64_HISI_IPIV */
 void kvm_get_pg_cfg(void);
 
 int kvm_hisi_dvmbm_vcpu_init(struct kvm_vcpu *vcpu);
@@ -74,4 +107,8 @@ int kvm_hisi_init_dvmbm(struct kvm *kvm);
 void kvm_hisi_destroy_dvmbm(struct kvm *kvm);
 void kvm_hisi_reload_lsudvmbm(struct kvm *kvm);
 
+#ifdef CONFIG_ARM64_HISI_IPIV
+extern void gic_dist_enable_ipiv(void);
+extern bool gic_get_ipiv_status(void);
+#endif /* CONFIG_ARM64_HISI_IPIV */
 #endif /* __HISI_VIRT_H__ */

@@ -3,6 +3,7 @@
  * Copyright (C) 2015, 2016 ARM Ltd.
  */
 
+#include <linux/acpi.h>
 #include <linux/uaccess.h>
 #include <linux/interrupt.h>
 #include <linux/cpu.h>
@@ -11,6 +12,11 @@
 #include <asm/kvm_emulate.h>
 #include <asm/kvm_mmu.h>
 #include "vgic.h"
+
+#ifdef CONFIG_ARM64_HISI_IPIV
+#include <linux/irqchip/arm-gic-v3.h>
+#include "hisilicon/hisi_virt.h"
+#endif
 
 /*
  * Initialization rules: there are multiple stages to the vgic
@@ -457,20 +463,59 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_ARM64_HISI_IPIV
+extern struct static_key_false ipiv_enable;
+static int ipiv_irq;
+#endif
+
 /* GENERIC PROBE */
 
 static int vgic_init_cpu_starting(unsigned int cpu)
 {
 	enable_percpu_irq(kvm_vgic_global_state.maint_irq, 0);
+#ifdef CONFIG_ARM64_HISI_IPIV
+	if (static_branch_unlikely(&ipiv_enable))
+		enable_percpu_irq(ipiv_irq, 0);
 	return 0;
+#endif
 }
 
 
 static int vgic_init_cpu_dying(unsigned int cpu)
 {
 	disable_percpu_irq(kvm_vgic_global_state.maint_irq);
+#ifdef CONFIG_ARM64_HISI_IPIV
+	if (static_branch_unlikely(&ipiv_enable))
+		disable_percpu_irq(ipiv_irq);
 	return 0;
+#endif
 }
+
+#ifdef CONFIG_ARM64_HISI_IPIV
+extern void __iomem *gic_data_rdist_get_vlpi_base(void);
+static irqreturn_t vgic_ipiv_irq_handler(int irq, void *data)
+{
+	void __iomem *vlpi_base = gic_data_rdist_get_vlpi_base();
+	u32 gicr_ipiv_st;
+	bool broadcast_err, grpbrd_err, vcpuidx_err;
+
+	gicr_ipiv_st = readl_relaxed(vlpi_base + GICR_IPIV_ST);
+
+	broadcast_err = !!(gicr_ipiv_st & GICR_IPIV_ST_IRM_ERR);
+	if (broadcast_err)
+		kvm_err("IPIV error: IRM=1 Guest broadcast error\n");
+
+	grpbrd_err = !!(gicr_ipiv_st & GICR_IPIV_ST_BRPBRD_ERR);
+	if (grpbrd_err)
+		kvm_err("IPIV error: Guest group broadcast error\n");
+
+	vcpuidx_err = !!(gicr_ipiv_st & GICR_IPIV_ST_VCPUIDX_ERR);
+	if (vcpuidx_err)
+		kvm_err("IPIV error: The VCPU index is out of range\n");
+
+	return IRQ_HANDLED;
+}
+#endif
 
 static irqreturn_t vgic_maintenance_handler(int irq, void *data)
 {
@@ -560,6 +605,37 @@ int kvm_vgic_hyp_init(void)
 	}
 
 	kvm_info("vgic interrupt IRQ%d\n", kvm_vgic_global_state.maint_irq);
+
+#ifdef CONFIG_ARM64_HISI_IPIV
+	if (hisi_ipiv_supported()) {
+		ipiv_gicd_init();
+		kvm_info("KVM ipiv enabled\n");
+	} else {
+		kvm_info("KVM ipiv disabled\n");
+	}
+
+	if (static_branch_unlikely(&ipiv_enable)) {
+		ipiv_irq = acpi_register_gsi(NULL, 18, ACPI_EDGE_SENSITIVE,
+			ACPI_ACTIVE_HIGH);
+		if (ipiv_irq < 0) {
+			kvm_err("No ipiv exception irq\n");
+			free_percpu_irq(kvm_vgic_global_state.maint_irq,
+					kvm_get_running_vcpus());
+			return -ENXIO;
+		}
+
+		ret = request_percpu_irq(ipiv_irq, vgic_ipiv_irq_handler,
+				 "ipiv exception", kvm_get_running_vcpus());
+		if (ret) {
+			kvm_err("Cannot register interrupt %d\n", ipiv_irq);
+			free_percpu_irq(kvm_vgic_global_state.maint_irq,
+					kvm_get_running_vcpus());
+			acpi_unregister_gsi(18);
+			return ret;
+		}
+	}
+#endif
+
 	return 0;
 
 out_free_irq:

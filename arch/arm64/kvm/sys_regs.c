@@ -662,7 +662,9 @@ static void reset_mpidr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
 	mpidr = (vcpu->vcpu_id & 0x0f) << MPIDR_LEVEL_SHIFT(0);
 	mpidr |= ((vcpu->vcpu_id >> 4) & 0xff) << MPIDR_LEVEL_SHIFT(1);
 	mpidr |= ((vcpu->vcpu_id >> 12) & 0xff) << MPIDR_LEVEL_SHIFT(2);
-	vcpu_write_sys_reg(vcpu, (1ULL << 31) | mpidr, MPIDR_EL1);
+
+	mpidr |= (1ULL << 31);
+	vcpu_write_sys_reg(vcpu, mpidr, MPIDR_EL1);
 }
 
 static void reset_pmcr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
@@ -1151,12 +1153,8 @@ static void kvm_set_id_reg(struct kvm_vcpu *vcpu, u64 id, u64 value)
 	ri->sys_val = value;
 }
 
-/* Read a sanitised cpufeature ID register by sys_reg_desc */
-static u64 read_id_reg(struct kvm_vcpu *vcpu,
-		struct sys_reg_desc const *r, bool raz)
+u64 _read_id_reg(struct kvm_vcpu *vcpu, u32 id, bool raz)
 {
-	u32 id = sys_reg((u32)r->Op0, (u32)r->Op1,
-			 (u32)r->CRn, (u32)r->CRm, (u32)r->Op2);
 	u64 val = raz ? 0 : kvm_get_id_reg(vcpu, id);
 
 	if (id == SYS_ID_AA64PFR0_EL1) {
@@ -1190,6 +1188,16 @@ static u64 read_id_reg(struct kvm_vcpu *vcpu,
 	}
 
 	return val;
+}
+
+/* Read a sanitised cpufeature ID register by sys_reg_desc */
+static u64 read_id_reg(struct kvm_vcpu *vcpu,
+		struct sys_reg_desc const *r, bool raz)
+{
+	u32 id = sys_reg((u32)r->Op0, (u32)r->Op1,
+			(u32)r->CRn, (u32)r->CRm, (u32)r->Op2);
+	return _read_id_reg(vcpu, id, raz);
+
 }
 
 static unsigned int id_visibility(const struct kvm_vcpu *vcpu,
@@ -1282,6 +1290,30 @@ static int set_id_aa64pfr0_el1(struct kvm_vcpu *vcpu,
 
 	return 0;
 }
+
+#ifdef CONFIG_ARM64_HISI_IPIV
+extern struct static_key_false ipiv_enable;
+static int set_mpidr(struct kvm_vcpu *vcpu, const struct sys_reg_desc *rd,
+		     const struct kvm_one_reg *reg, void __user *uaddr)
+{
+	u64 val;
+
+	if (get_user(val, (u64 __user *)uaddr))
+		return -EFAULT;
+
+	if (static_branch_unlikely(&ipiv_enable) &&
+	    vcpu->kvm->arch.vgic.its_vm.enable_ipiv_from_vmm) {
+		if (val != __vcpu_sys_reg(vcpu, rd->reg)) {
+			kvm_err("IPIV ERROR: MPIDR changed\n");
+			return -EINVAL;
+		}
+	}
+
+	__vcpu_sys_reg(vcpu, rd->reg) = val;
+
+	return 0;
+}
+#endif
 
 /*
  * cpufeature ID register user accessors
@@ -1496,7 +1528,12 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 
 	{ SYS_DESC(SYS_DBGVCR32_EL2), NULL, reset_val, DBGVCR32_EL2, 0 },
 
+#ifdef CONFIG_ARM64_HISI_IPIV
+	{ SYS_DESC(SYS_MPIDR_EL1),
+	  .reset = reset_mpidr, .reg = MPIDR_EL1, .set_user = set_mpidr},
+#else
 	{ SYS_DESC(SYS_MPIDR_EL1), NULL, reset_mpidr, MPIDR_EL1 },
+#endif
 
 	/*
 	 * ID regs: all ID_SANITISED() entries here must have corresponding

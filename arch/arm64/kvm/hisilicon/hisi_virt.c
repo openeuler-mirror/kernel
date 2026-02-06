@@ -11,16 +11,22 @@
 #include <asm/kvm_tmi.h>
 #endif
 #include "hisi_virt.h"
+#include <linux/bitfield.h>
 
 static enum hisi_cpu_type cpu_type = UNKNOWN_HI_TYPE;
 
 static bool dvmbm_enabled;
+
+#ifdef CONFIG_ARM64_HISI_IPIV
+static bool ipiv_enabled;
+#endif
 
 static const char * const hisi_cpu_type_str[] = {
 	"Hisi1612",
 	"Hisi1616",
 	"Hisi1620",
 	"HIP09",
+	"HIP12",
 	"Unknown"
 };
 
@@ -29,7 +35,8 @@ static const char * const oem_str[] = {
 	"HIP06",	/* Hisi 1612 */
 	"HIP07",	/* Hisi 1616 */
 	"HIP08",	/* Hisi 1620 */
-	"HIP09"		/* HIP09 */
+	"HIP09",	/* HIP09 */
+	"HIP12"		/* HIP12 */
 };
 
 /*
@@ -154,21 +161,94 @@ static void hardware_disable_dvmbm(void *data)
 	write_sysreg_s(val, SYS_LSUDVM_CTRL_EL2);
 }
 
+#ifdef CONFIG_ARM64_HISI_IPIV
+static int __init early_ipiv_enable(char *buf)
+{
+	return strtobool(buf, &ipiv_enabled);
+}
+early_param("kvm-arm.ipiv_enabled", early_ipiv_enable);
+
+bool hisi_ipiv_supported(void)
+{
+	if (cpu_type != HI_IP12)
+		return false;
+
+	/* Determine whether IPIV is supported by the hardware */
+	if (!(read_sysreg(aidr_el1) & AIDR_EL1_IPIV_MASK)) {
+		kvm_info("Hisi ipiv not supported by the hardware\n");
+		return false;
+	}
+
+	if (!gic_get_ipiv_status()) {
+		kvm_info("Hisi ipiv is disabled by BIOS\n");
+		return false;
+	}
+
+	/* User provided kernel command-line parameter */
+	if (!ipiv_enabled || !is_kernel_in_hyp_mode())
+		return false;
+
+	/* Enable IPIV feature if necessary */
+	if (!kvm_vgic_global_state.has_gicv4_1) {
+		kvm_info("Hisi ipiv needs to enable GICv4p1!\n");
+		return false;
+	}
+
+	kvm_info("Enable Hisi ipiv, do not support vSGI broadcast\n");
+	return true;
+}
+
+extern struct static_key_false ipiv_enable;
+
+bool hisi_ipiv_supported_per_vm(struct kvm_vcpu *vcpu)
+{
+	/* IPIV is supported by the hardware */
+	if (!static_branch_unlikely(&ipiv_enable))
+		return false;
+
+	/* vSGI passthrough is configured */
+	if (!vcpu->kvm->arch.vgic.nassgireq)
+		return false;
+
+	/* IPIV is enabled by the user */
+	if (!vcpu->kvm->arch.vgic.its_vm.enable_ipiv_from_vmm)
+		return false;
+
+	return true;
+}
+
+void hisi_ipiv_enable_per_vm(struct kvm_vcpu *vcpu)
+{
+	/* Enable IPIV feature */
+	vcpu->kvm->arch.vgic.its_vm.enable_ipiv_from_guest = true;
+}
+
+void ipiv_gicd_init(void)
+{
+	gic_dist_enable_ipiv();
+}
+#endif /* CONFIG_ARM64_HISI_IPIV */
+
 bool hisi_dvmbm_supported(void)
 {
 #ifdef CONFIG_CVM_HOST
 	if (static_branch_unlikely(&kvm_cvm_is_enable))
 		return false;
 #endif
-	if (cpu_type != HI_IP09)
+	if (cpu_type != HI_IP09 && cpu_type != HI_IP12)
 		return false;
+
+	if (!is_kernel_in_hyp_mode()) {
+		kvm_info("Hisi dvmbm not supported by KVM nVHE mode\n");
+		return false;
+	}
 
 	/* Determine whether DVMBM is supported by the hardware */
 	if (!(read_sysreg(aidr_el1) & AIDR_EL1_DVMBM_MASK))
 		return false;
 
 	/* User provided kernel command-line parameter */
-	if (!dvmbm_enabled || !is_kernel_in_hyp_mode()) {
+	if (!dvmbm_enabled) {
 		on_each_cpu(hardware_disable_dvmbm, NULL, 1);
 		return false;
 	}
@@ -187,9 +267,14 @@ int kvm_hisi_dvmbm_vcpu_init(struct kvm_vcpu *vcpu)
 		return 0;
 
 	vcpu->arch.cpus_ptr = kzalloc(sizeof(cpumask_t), GFP_ATOMIC);
-	vcpu->arch.pre_cpus_ptr = kzalloc(sizeof(cpumask_t), GFP_ATOMIC);
-	if (!vcpu->arch.cpus_ptr || !vcpu->arch.pre_cpus_ptr)
+	if (!vcpu->arch.cpus_ptr)
 		return -ENOMEM;
+
+	vcpu->arch.pre_cpus_ptr = kzalloc(sizeof(cpumask_t), GFP_ATOMIC);
+	if (!vcpu->arch.pre_cpus_ptr) {
+		kfree(vcpu->arch.cpus_ptr);
+		return -ENOMEM;
+	}
 
 	return 0;
 }
@@ -396,6 +481,74 @@ out_update:
 	kvm->arch.lsudvmbm_el2 = val;
 }
 
+static u64 convert_aff3_to_die_hip12(u64 aff3)
+{
+	/*
+	 * On HIP12, we use 4 bits to represent a die in SYS_LSUDVMBM_EL2.
+	 *
+	 * die1: socket ID (bits[60:59]) + die ID (bits[58:57])
+	 * die2: socket ID (bits[56:55]) + die ID (bits[54:53])
+	 *
+	 * We therefore need to properly encode Aff3 into it.
+	 */
+	return FIELD_GET(MPIDR_AFF3_SOCKET_ID_MASK, aff3) << 2 |
+	       FIELD_GET(MPIDR_AFF3_DIE_ID_MASK, aff3);
+}
+
+static void kvm_update_vm_lsudvmbm_hip12(struct kvm *kvm)
+{
+	u64 mpidr, aff3, aff2;
+	u64 vm_aff3s[DVMBM_MAX_DIES_HIP12];
+	u64 val;
+	int cpu, nr_dies;
+	u64 die1, die2;
+
+	nr_dies = kvm_dvmbm_get_dies_info(kvm, vm_aff3s, DVMBM_MAX_DIES_HIP12);
+	if (nr_dies > 2) {
+		val = DVMBM_RANGE_ALL_DIES << DVMBM_RANGE_SHIFT;
+		goto out_update;
+	}
+
+	if (nr_dies == 1) {
+		die1 = convert_aff3_to_die_hip12(vm_aff3s[0]);
+		val = DVMBM_RANGE_ONE_DIE << DVMBM_RANGE_SHIFT	|
+		      die1 << DVMBM_DIE1_SHIFT_HIP12;
+
+		/* fulfill bits [11:6] */
+		for_each_cpu(cpu, kvm->arch.dvm_cpumask) {
+			mpidr = cpu_logical_map(cpu);
+			aff2 = MPIDR_AFFINITY_LEVEL(mpidr, 2);
+
+			val |= 1ULL << (aff2 + DVMBM_DIE1_CLUSTER_SHIFT_HIP12);
+		}
+
+		goto out_update;
+	}
+
+	/* nr_dies == 2 */
+	die1 = convert_aff3_to_die_hip12(vm_aff3s[0]);
+	die2 = convert_aff3_to_die_hip12(vm_aff3s[1]);
+	val = DVMBM_RANGE_TWO_DIES << DVMBM_RANGE_SHIFT	|
+	      DVMBM_GRAN_CLUSTER << DVMBM_GRAN_SHIFT	|
+	      die1 << DVMBM_DIE1_SHIFT_HIP12		|
+	      die2 << DVMBM_DIE2_SHIFT_HIP12;
+
+	/* and fulfill bits [11:0] */
+	for_each_cpu(cpu, kvm->arch.dvm_cpumask) {
+		mpidr = cpu_logical_map(cpu);
+		aff3 = MPIDR_AFFINITY_LEVEL(mpidr, 3);
+		aff2 = MPIDR_AFFINITY_LEVEL(mpidr, 2);
+
+		if (aff3 == vm_aff3s[0])
+			val |= 1ULL << (aff2 + DVMBM_DIE1_CLUSTER_SHIFT_HIP12);
+		else
+			val |= 1ULL << (aff2 + DVMBM_DIE2_CLUSTER_SHIFT_HIP12);
+	}
+
+out_update:
+	kvm->arch.lsudvmbm_el2 = val;
+}
+
 void kvm_hisi_dvmbm_load(struct kvm_vcpu *vcpu)
 {
 	struct kvm *kvm = vcpu->kvm;
@@ -444,7 +597,10 @@ void kvm_hisi_dvmbm_load(struct kvm_vcpu *vcpu)
 	 * Re-calculate LSUDVMBM_EL2 for this VM and kick all vcpus
 	 * out to reload the LSUDVMBM configuration.
 	 */
-	kvm_update_vm_lsudvmbm(kvm);
+	if (cpu_type == HI_IP12)
+		kvm_update_vm_lsudvmbm_hip12(kvm);
+	else
+		kvm_update_vm_lsudvmbm(kvm);
 	kvm_make_all_cpus_request(kvm, KVM_REQ_RELOAD_DVMBM);
 
 out_unlock:
@@ -473,6 +629,9 @@ void kvm_get_pg_cfg(void)
 	u32 pg_cfgs[MAX_PG_CFG_SOCKETS * MAX_DIES_PER_SOCKET];
 	u64 mn_phy_base;
 	u32 val;
+
+	if (cpu_type == HI_IP12)
+		return;
 
 	socket_num = kvm_get_socket_num();
 	die_num = kvm_get_die_num();
