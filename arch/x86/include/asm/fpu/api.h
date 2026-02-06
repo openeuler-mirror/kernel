@@ -34,19 +34,6 @@ static inline int kernel_fpu_begin_nonatomic(void)
 	return kernel_fpu_begin_nonatomic_mask();
 }
 
-/*
- * It means we call kernel_fpu_end after kernel_fpu_begin_nonatomic
- * func, but before kernel_fpu_end_nonatomic
- */
-static inline void check_using_kernel_fpu(void)
-{
-	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
-		WARN_ON_ONCE(test_thread_flag(TIF_USING_FPU_NONATOMIC));
-}
-
-#else
-static inline void check_using_kernel_fpu(void) { }
-
 #endif
 
 /*
