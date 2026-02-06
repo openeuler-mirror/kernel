@@ -1780,10 +1780,13 @@ void sev_vm_destroy(struct kvm *kvm)
 /* Code to set all of the function and vaiable pointers */
 void sev_install_hooks(void)
 {
+	hygon_kvm_hooks.sev_enabled = &sev_enabled;
+	hygon_kvm_hooks.sev_me_mask = &sev_me_mask;
 	hygon_kvm_hooks.sev_issue_cmd = sev_issue_cmd;
 	hygon_kvm_hooks.get_num_contig_pages = get_num_contig_pages;
 	hygon_kvm_hooks.sev_pin_memory = sev_pin_memory;
 	hygon_kvm_hooks.sev_unpin_memory = sev_unpin_memory;
+	hygon_kvm_hooks.sev_clflush_pages = sev_clflush_pages;
 
 	hygon_kvm_hooks.sev_hooks_installed = true;
 }
@@ -1867,12 +1870,22 @@ out:
 	sev_es_enabled = sev_es_supported;
 
 #ifdef CONFIG_HYGON_CSV
-	/*
-	 * Install sev related function and variable pointers hooks only for
-	 * Hygon CPUs.
-	 */
-	if (is_x86_vendor_hygon())
+	/* Setup resources which are necessary for HYGON CSV */
+	if (is_x86_vendor_hygon()) {
+		/*
+		 * Install sev related function and variable pointers hooks
+		 * no matter @sev_enabled is false.
+		 */
 		sev_install_hooks();
+
+		/*
+		 * Allocate a memory pool to speed up live migration of
+		 * the CSV/CSV2 guests. If the allocation fails, no
+		 * acceleration is performed at live migration.
+		 */
+		if (sev_enabled)
+			csv_alloc_trans_mempool();
+	}
 #endif
 
 }
@@ -1881,6 +1894,10 @@ void sev_hardware_teardown(void)
 {
 	if (!svm_sev_enabled())
 		return;
+
+	/* Free the memory pool that allocated in sev_hardware_setup(). */
+	if (is_x86_vendor_hygon())
+		csv_free_trans_mempool();
 
 	/* No need to take sev_bitmap_lock, all VMs have been destroyed. */
 	sev_flush_asids(0, max_sev_asid);

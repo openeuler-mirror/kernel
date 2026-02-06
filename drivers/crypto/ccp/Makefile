@@ -16,7 +16,8 @@ ccp-$(CONFIG_CRYPTO_DEV_SP_PSP) += psp-dev.o \
                                    tee-dev.o \
                                    platform-access.o \
                                    hygon/psp-dev.o \
-                                   hygon/csv-dev.o
+                                   hygon/csv-dev.o \
+                                   hygon/ring-buffer.o
 
 ccp-$(CONFIG_TDM_DEV_HYGON) += hygon/tdm-dev.o
 obj-$(CONFIG_TDM_KERNEL_GUARD) += hygon/tdm-kernel-guard.o
