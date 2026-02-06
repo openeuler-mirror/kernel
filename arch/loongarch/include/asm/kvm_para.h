@@ -38,8 +38,10 @@ struct kvm_steal_time {
 	__u64 steal;
 	__u32 version;
 	__u32 flags;
-	__u32 pad[12];
+	__u8  preempted;
+	__u8  pad[47];
 };
+#define KVM_VCPU_PREEMPTED		(1 << 0)
 
 
 /*
