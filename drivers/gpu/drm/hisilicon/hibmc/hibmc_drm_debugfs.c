@@ -89,7 +89,7 @@ static ssize_t hibmc_control_write(struct file *file, const char __user *user_bu
 	if (cfg->pattern > 9 || cfg->enable > 1 || cfg->self_timing > 1)
 		return -EINVAL;
 
-	ret = drm_dev_enter(&priv->dev, &idx);
+	ret = drm_dev_enter(priv->dev, &idx);
 	if (!ret)
 		return -ENODEV;
 
@@ -106,7 +106,7 @@ static int hibmc_dp_dbgfs_show(struct seq_file *m, void *arg)
 	struct hibmc_dp_cbar_cfg *cfg = &priv->dp.cfg;
 	int idx;
 
-	if (!drm_dev_enter(&priv->dev, &idx))
+	if (!drm_dev_enter(priv->dev, &idx))
 		return -ENODEV;
 
 	seq_printf(m, "hibmc dp colorbar cfg: %u %u %u %u\n", cfg->enable, cfg->self_timing,

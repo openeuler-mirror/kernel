@@ -196,7 +196,7 @@ irqreturn_t hibmc_dp_hpd_isr(int irq, void *arg)
 		}
 	} else {
 		if (dp->irq_status & HIBMC_DP_MASKED_SINK_HPD_PLUG_INT) {
-			drm_dbg_dp(&priv->dev, "HPD IN isr occur!\n");
+			drm_dbg_dp(priv->dev, "HPD IN isr occur!\n");
 			hibmc_dp_hpd_cfg(dp);
 			dp->hpd_status = 1;
 			if (dev->registered)
@@ -213,7 +213,7 @@ irqreturn_t hibmc_dp_hpd_isr(int irq, void *arg)
 
 int hibmc_dp_init(struct hibmc_drm_private *priv)
 {
-	struct drm_device *dev = &priv->dev;
+	struct drm_device *dev = priv->dev;
 	struct drm_crtc *crtc = &priv->crtc;
 	struct hibmc_dp *dp = &priv->dp;
 	struct drm_connector *connector = &dp->connector;
