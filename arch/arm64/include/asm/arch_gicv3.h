@@ -88,6 +88,11 @@ static inline void gic_write_sgi1r(u64 val)
 	write_sysreg_s(val, SYS_ICC_SGI1R_EL1);
 }
 
+static inline void gic_write_asgi1r(u64 val)
+{
+	write_sysreg_s(val, SYS_ICC_ASGI1R_EL1);
+}
+
 static inline u32 gic_read_sre(void)
 {
 	return read_sysreg_s(SYS_ICC_SRE_EL1);

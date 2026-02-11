@@ -15,3 +15,14 @@ config OPTEE_SHM_NUM_PRIV_PAGES
 	help
 	  This sets the number of private shared memory pages to be
 	  used by OP-TEE TEE driver.
+
+config TEE_SGI_INTERRUPT
+    bool "TEE to REE SGI interrupt support"
+    depends on OPTEE && SMP && ARM_GIC_V3 && ARCH_PHYTIUM
+    default n
+    help
+      This option enables Secure World (TEE) to Normal World (REE) interrupt
+      notification using SGI (Software Generated Interrupt) #8.
+      When enabled, the TEE can trigger an SGI interrupt to notify the REE
+      of events or requests, facilitating secure/normal world communication.
+      Say N if you are unsure or do not require TEE-REE interrupt communication.
