@@ -1249,7 +1249,7 @@ static int hclge_tm_pri_shaper_cfg(struct hclge_dev *hdev)
 	return 0;
 }
 
-int hclge_tm_vf_tc_dwrr_cfg(struct hclge_vport *vport)
+static int hclge_tm_vf_tc_dwrr_cfg(struct hclge_vport *vport)
 {
 	struct hnae3_knic_private_info *kinfo = &vport->nic.kinfo;
 	struct hclge_dev *hdev = vport->back;
