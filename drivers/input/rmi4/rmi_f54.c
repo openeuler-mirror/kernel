@@ -535,6 +535,8 @@ static void rmi_f54_work(struct work_struct *work)
 	u8 *data;
 	int error;
 
+	mutex_lock(&f54->data_mutex);
+
 	data = f54->report_data;
 	report_size = rmi_f54_get_report_size(f54);
 	if (report_size == 0) {
@@ -545,8 +547,6 @@ static void rmi_f54_work(struct work_struct *work)
 	}
 	f54->standard_report[0].size = report_size;
 	report = f54->standard_report;
-
-	mutex_lock(&f54->data_mutex);
 
 	/*
 	 * Need to check if command has completed.
