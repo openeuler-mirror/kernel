@@ -266,8 +266,8 @@ static int obmm_cmd_export_pid_allowed(struct obmm_cmd_export_pid *cmd)
 		return -EINVAL;
 	}
 
-	if (cmd->length % OBMM_BASIC_GRANU) {
-		pr_err("export memory size is not aligned to OBMM basic granularity.\n");
+	if (cmd->length % PMD_SIZE) {
+		pr_err("export memory size is not aligned to PMD_SIZE.\n");
 		return -EINVAL;
 	}
 
