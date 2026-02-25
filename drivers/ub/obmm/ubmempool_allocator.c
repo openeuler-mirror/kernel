@@ -486,8 +486,10 @@ static int init_mem_allocator_granu(enum allocator_id aid)
 	if (!mem_allocator_granu) {
 		if (aid == ALLOCATOR_HUGETLB_PUD)
 			__obmm_memseg_size = PUD_SIZE;
-		else
+		else if (aid == ALLOCATOR_HUGETLB_PMD)
 			__obmm_memseg_size = PMD_SIZE;
+		else
+			__obmm_memseg_size = OBMM_BASIC_GRANU;
 
 		print_granu(def_granu, __obmm_memseg_size);
 		mem_allocator_granu = def_granu;
