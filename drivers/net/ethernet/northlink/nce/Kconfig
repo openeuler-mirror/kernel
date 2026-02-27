@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# NorthLink device configuration
+
+
+config NCE
+	tristate "NorthLink Ethernet Connection N5/N6 Series Support"
+	depends on PCI
+	help
+	  This selects the drivers support NorthLink Ethernet Connection N5/N6 Series devices.
+
+if NCE
+
+config NE6X
+	tristate "NorthLink Ethernet Connection N5/N6 Series Support"
+	default n
+	depends on PCI_MSI
+	help
+	  This driver supports NorthLink Ethernet Connection N5/N6 Series
+	  of devices.
+
+	  To compile this driver as a module, choose M here.
+	  The module will be called ncepf.
+
+config NE6XVF
+	tristate "NorthLink Ethernet Connection N5/N6 Series Virtual Function support"
+	depends on PCI_MSI
+	depends on NE6X
+	help
+	  This driver supports virtual functions for NorthLink Ethernet Connection N5/N6 Series
+	  Virtual Function devices.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called ncevf.
+
+endif #NCE
