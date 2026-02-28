@@ -4974,10 +4974,6 @@ static u32 netif_receive_generic_xdp(struct sk_buff *skb,
 		if (metalen)
 			skb_metadata_set(skb, metalen);
 		break;
-#ifdef CONFIG_HISOCK
-	case XDP_HISOCK_REDIRECT:
-		break;
-#endif
 	default:
 		bpf_warn_invalid_xdp_action(act);
 		fallthrough;
@@ -5082,31 +5078,22 @@ static DEFINE_STATIC_KEY_FALSE(generic_xdp_needed_key);
 int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
 {
 	if (xdp_prog) {
-		struct hisock_xdp_buff hxdp;
-		struct xdp_buff *xdp = &hxdp.xdp;
+		struct xdp_buff xdp;
 		u32 act;
 		int err;
 
-		hxdp.skb = skb;
-		act = netif_receive_generic_xdp(skb, xdp, xdp_prog);
+		act = netif_receive_generic_xdp(skb, &xdp, xdp_prog);
 		if (act != XDP_PASS) {
 			switch (act) {
 			case XDP_REDIRECT:
 				err = xdp_do_generic_redirect(skb->dev, skb,
-							      xdp, xdp_prog);
+							      &xdp, xdp_prog);
 				if (err)
 					goto out_redir;
 				break;
 			case XDP_TX:
 				generic_xdp_tx(skb, xdp_prog);
 				break;
-#ifdef CONFIG_HISOCK
-			case XDP_HISOCK_REDIRECT:
-				err = do_hisock_ingress_redirect(skb);
-				if (err == -EOPNOTSUPP)
-					return XDP_PASS;
-				break;
-#endif
 			}
 			return XDP_DROP;
 		}

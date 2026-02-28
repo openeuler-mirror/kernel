@@ -2376,13 +2376,6 @@ bool __weak bpf_jit_needs_zext(void)
 	return false;
 }
 
-#ifdef CONFIG_HISOCK
-bool __weak bpf_jit_supports_ext_helper(void)
-{
-	return false;
-}
-#endif
-
 /* To execute LD_ABS/LD_IND instructions __bpf_prog_run() may call
  * skb_copy_bits(), so provide a weak definition of it for NET-less config.
  */

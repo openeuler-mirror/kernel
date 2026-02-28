@@ -107,11 +107,6 @@ static __always_inline void xdp_buff_clear_frags_flag(struct xdp_buff *xdp)
 }
 #endif
 
-struct hisock_xdp_buff {
-	struct xdp_buff xdp;
-	struct sk_buff *skb;
-};
-
 /* Reserve memory area at end-of data area.
  *
  * This macro reserves tailroom in the XDP buffer by limiting the

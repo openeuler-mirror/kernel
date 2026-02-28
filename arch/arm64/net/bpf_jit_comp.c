@@ -21,26 +21,11 @@
 
 #include "bpf_jit.h"
 
-#ifdef CONFIG_HISOCK
-#define TCALL_CNT (MAX_BPF_JIT_REG + 0)
-#define FP_BOTTOM (MAX_BPF_JIT_REG + 1)
-#define TMP_REG_1 (MAX_BPF_JIT_REG + 2)
-#define TMP_REG_2 (MAX_BPF_JIT_REG + 3)
-#define TMP_REG_3 (MAX_BPF_JIT_REG + 4)
-#define TMP_REG_4 (MAX_BPF_JIT_REG + 5)
-#define TMP_REG_5 (MAX_BPF_JIT_REG + 6)
-#define TMP_REG_6 (MAX_BPF_JIT_REG + 7)
-#define TMP_REG_7 (MAX_BPF_JIT_REG + 8)
-#define TMP_REG_8 (MAX_BPF_JIT_REG + 9)
-#define TMP_REG_9 (MAX_BPF_JIT_REG + 10)
-#define TMP_REG_10 (MAX_BPF_JIT_REG + 11)
-#else
 #define TMP_REG_1 (MAX_BPF_JIT_REG + 0)
 #define TMP_REG_2 (MAX_BPF_JIT_REG + 1)
 #define TCALL_CNT (MAX_BPF_JIT_REG + 2)
 #define TMP_REG_3 (MAX_BPF_JIT_REG + 3)
 #define FP_BOTTOM (MAX_BPF_JIT_REG + 4)
-#endif
 
 /* Map BPF registers to A64 registers */
 static const int bpf2a64[] = {
@@ -63,15 +48,6 @@ static const int bpf2a64[] = {
 	[TMP_REG_1] = A64_R(10),
 	[TMP_REG_2] = A64_R(11),
 	[TMP_REG_3] = A64_R(12),
-#ifdef CONFIG_HISOCK
-	[TMP_REG_4] = A64_R(13),
-	[TMP_REG_5] = A64_R(14),
-	[TMP_REG_6] = A64_R(15),
-	[TMP_REG_7] = A64_R(5),
-	[TMP_REG_8] = A64_R(6),
-	[TMP_REG_9] = A64_R(7),
-	[TMP_REG_10] = A64_R(28),
-#endif
 	/* tail_call_cnt */
 	[TCALL_CNT] = A64_R(26),
 	/* temporary register for blinding constants */
@@ -589,234 +565,6 @@ static int add_exception_handler(const struct bpf_insn *insn,
 	return 0;
 }
 
-#ifdef CONFIG_HISOCK
-static bool support_unaligned_access(void)
-{
-	unsigned long sctlr = SCTLR_ELx_A;
-
-	switch (read_sysreg(CurrentEL)) {
-	case CurrentEL_EL1:
-		sctlr = read_sysreg(sctlr_el1);
-		break;
-	case CurrentEL_EL2:
-		sctlr = read_sysreg(sctlr_el2);
-		break;
-	default:
-		/* not EL1 and EL2 ? */
-		break;
-	}
-
-	return (sctlr & SCTLR_ELx_A) ? false : true;
-}
-
-extern u64 bpf_ext_memcpy(void *dst, size_t dst_sz,
-			  const void *src, size_t src_sz);
-
-static void emit_memcpy(struct jit_ctx *ctx, int size)
-{
-	u8 dst = bpf2a64[BPF_REG_1];
-	u8 src = bpf2a64[BPF_REG_3];
-	u8 tmp1 = bpf2a64[TMP_REG_1];
-	u8 tmp2 = bpf2a64[TMP_REG_2];
-	u8 tmp3 = bpf2a64[TMP_REG_3];
-	u8 tmp4 = bpf2a64[TMP_REG_4];
-	u8 tmp5 = bpf2a64[TMP_REG_5];
-	u8 tmp6 = bpf2a64[TMP_REG_6];
-	u8 tmp7 = bpf2a64[TMP_REG_7];
-	u8 tmp8 = bpf2a64[TMP_REG_8];
-	u8 tmp9 = bpf2a64[TMP_REG_9];
-	u8 tmp10 = bpf2a64[TMP_REG_10];
-
-	if (!support_unaligned_access()) {
-		emit_call((u64)bpf_ext_memcpy, ctx);
-		return;
-	}
-
-	switch (size) {
-	case 0:
-		break;
-	case 1:
-		emit(A64_LDRBI(tmp1, src, 0), ctx);
-		emit(A64_STRBI(tmp1, dst, 0), ctx);
-		break;
-	case 2:
-		emit(A64_LDRHI(tmp1, src, 0), ctx);
-		emit(A64_STRHI(tmp1, dst, 0), ctx);
-		break;
-	case 3:
-		emit(A64_LDRHI(tmp1, src, 0), ctx);
-		emit(A64_LDRBI(tmp2, src, 2), ctx);
-		emit(A64_STRHI(tmp1, dst, 0), ctx);
-		emit(A64_STRBI(tmp2, dst, 2), ctx);
-		break;
-	case 4:
-		emit(A64_LDR32I(tmp1, src, 0), ctx);
-		emit(A64_STR32I(tmp1, dst, 0), ctx);
-		break;
-	case 5:
-		emit(A64_LDR32I(tmp1, src, 0), ctx);
-		emit(A64_LDRBI(tmp2, src, 4), ctx);
-		emit(A64_STR32I(tmp1, dst, 0), ctx);
-		emit(A64_STRBI(tmp2, dst, 4), ctx);
-		break;
-	case 6:
-		emit(A64_LDR32I(tmp1, src, 0), ctx);
-		emit(A64_LDRHI(tmp2, src, 4), ctx);
-		emit(A64_STR32I(tmp1, dst, 0), ctx);
-		emit(A64_STRHI(tmp2, dst, 4), ctx);
-		break;
-	case 7:
-		emit(A64_LDR32I(tmp1, src, 0), ctx);
-		emit(A64_LDRHI(tmp2, src, 4), ctx);
-		emit(A64_LDRBI(tmp3, src, 6), ctx);
-		emit(A64_STR32I(tmp1, src, 0), ctx);
-		emit(A64_STRHI(tmp2, dst, 4), ctx);
-		emit(A64_STRBI(tmp3, dst, 6), ctx);
-		break;
-	case 8:
-		emit(A64_LDR64I(tmp1, src, 0), ctx);
-		emit(A64_STR64I(tmp1, dst, 0), ctx);
-		break;
-	case 9 ... 15:
-		emit(A64_ADD_I(1, tmp1, src, size), ctx);
-		emit(A64_ADD_I(1, tmp2, dst, size), ctx);
-		emit(A64_LDR64I(tmp3, src, 0), ctx);
-		emit(A64_LDP32(tmp4, tmp5, tmp1, -8), ctx);
-		emit(A64_STR64I(tmp3, dst, 0), ctx);
-		emit(A64_STP32(tmp4, tmp5, tmp2, -8), ctx);
-		break;
-	case 16:
-		emit(A64_LDP(tmp1, tmp2, src, 0), ctx);
-		emit(A64_STP(tmp1, tmp2, dst, 0), ctx);
-		break;
-	case 17 ... 31:
-		emit(A64_ADD_I(1, tmp1, src, size), ctx);
-		emit(A64_ADD_I(1, tmp2, dst, size), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 0), ctx);
-		emit(A64_LDP(tmp5, tmp6, tmp1, -16), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 0), ctx);
-		emit(A64_STP(tmp5, tmp6, tmp2, -16), ctx);
-		break;
-	case 32:
-		emit(A64_LDP(tmp1, tmp2, src, 0), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 16), ctx);
-		emit(A64_STP(tmp1, tmp2, dst, 0), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 16), ctx);
-		break;
-	case 33 ... 63:
-		emit(A64_ADD_I(1, tmp1, src, size), ctx);
-		emit(A64_ADD_I(1, tmp2, dst, size), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 0), ctx);
-		emit(A64_LDP(tmp5, tmp6, src, 16), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 0), ctx);
-		emit(A64_STP(tmp5, tmp6, dst, 16), ctx);
-		emit(A64_LDP(tmp3, tmp4, tmp1, -32), ctx);
-		emit(A64_LDP(tmp5, tmp6, tmp1, -16), ctx);
-		emit(A64_STP(tmp3, tmp4, tmp2, -32), ctx);
-		emit(A64_STP(tmp5, tmp6, tmp2, -16), ctx);
-		break;
-	case 64:
-		emit(A64_LDP(tmp1, tmp2, src, 0), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 16), ctx);
-		emit(A64_LDP(tmp5, tmp6, src, 32), ctx);
-		emit(A64_LDP(tmp7, tmp8, src, 48), ctx);
-		emit(A64_STP(tmp1, tmp2, dst, 0), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 16), ctx);
-		emit(A64_STP(tmp5, tmp6, dst, 32), ctx);
-		emit(A64_STP(tmp7, tmp8, dst, 48), ctx);
-		break;
-	case 65 ... 95:
-		/* copy first 48 bytes */
-		emit(A64_LDP(tmp1, tmp2, src, 0), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 16), ctx);
-		emit(A64_LDP(tmp5, tmp6, src, 32), ctx);
-
-		emit(A64_STP(tmp1, tmp2, dst, 0), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 16), ctx);
-		emit(A64_STP(tmp5, tmp6, dst, 32), ctx);
-
-		/* copy last 48 bytes */
-		emit(A64_ADD_I(1, tmp7, src, size), ctx);
-		emit(A64_ADD_I(1, tmp8, dst, size), ctx);
-
-		emit(A64_LDP(tmp1, tmp2, tmp7, -48), ctx);
-		emit(A64_LDP(tmp3, tmp4, tmp7, -32), ctx);
-		emit(A64_LDP(tmp5, tmp6, tmp7, -16), ctx);
-
-		emit(A64_STP(tmp1, tmp2, tmp8, -48), ctx);
-		emit(A64_STP(tmp3, tmp4, tmp8, -32), ctx);
-		emit(A64_STP(tmp5, tmp6, tmp8, -16), ctx);
-		break;
-	case 96:
-		emit(A64_LDP(tmp1, tmp2, src, 0), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 16), ctx);
-		emit(A64_LDP(tmp5, tmp6, src, 32), ctx);
-		emit(A64_LDP(tmp7, tmp8, src, 48), ctx);
-
-		emit(A64_STP(tmp1, tmp2, dst, 0), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 16), ctx);
-		emit(A64_STP(tmp5, tmp6, dst, 32), ctx);
-		emit(A64_STP(tmp7, tmp8, dst, 48), ctx);
-
-		emit(A64_LDP(tmp1, tmp2, src, 64), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 80), ctx);
-		emit(A64_STP(tmp1, tmp2, dst, 64), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 80), ctx);
-		break;
-	case 97 ... 127:
-		emit(A64_ADD_I(1, tmp9, src, size), ctx);
-		emit(A64_ADD_I(1, tmp10, dst, size), ctx);
-
-		/* copy first 64 bytes */
-		emit(A64_LDP(tmp1, tmp2, src, 0), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 16), ctx);
-		emit(A64_LDP(tmp5, tmp6, src, 32), ctx);
-		emit(A64_LDP(tmp7, tmp8, src, 48), ctx);
-
-		emit(A64_STP(tmp1, tmp2, dst, 0), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 16), ctx);
-		emit(A64_STP(tmp5, tmp6, dst, 32), ctx);
-		emit(A64_STP(tmp7, tmp8, dst, 48), ctx);
-
-		/* copy last 64 bytes */
-		emit(A64_LDP(tmp1, tmp2, tmp9, -64), ctx);
-		emit(A64_LDP(tmp3, tmp4, tmp9, -48), ctx);
-		emit(A64_LDP(tmp5, tmp6, tmp9, -32), ctx);
-		emit(A64_LDP(tmp7, tmp8, tmp9, -16), ctx);
-
-		emit(A64_STP(tmp1, tmp2, tmp10, -64), ctx);
-		emit(A64_STP(tmp3, tmp4, tmp10, -48), ctx);
-		emit(A64_STP(tmp5, tmp6, tmp10, -32), ctx);
-		emit(A64_STP(tmp7, tmp8, tmp10, -16), ctx);
-		break;
-	case 128:
-		emit(A64_LDP(tmp1, tmp2, src, 0), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 16), ctx);
-		emit(A64_LDP(tmp5, tmp6, src, 32), ctx);
-		emit(A64_LDP(tmp7, tmp8, src, 48), ctx);
-
-		emit(A64_STP(tmp1, tmp2, dst, 0), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 16), ctx);
-		emit(A64_STP(tmp5, tmp6, dst, 32), ctx);
-		emit(A64_STP(tmp7, tmp8, dst, 48), ctx);
-
-		emit(A64_LDP(tmp1, tmp2, src, 64), ctx);
-		emit(A64_LDP(tmp3, tmp4, src, 80), ctx);
-		emit(A64_LDP(tmp5, tmp6, src, 96), ctx);
-		emit(A64_LDP(tmp7, tmp8, src, 112), ctx);
-
-		emit(A64_STP(tmp1, tmp2, dst, 64), ctx);
-		emit(A64_STP(tmp3, tmp4, dst, 80), ctx);
-		emit(A64_STP(tmp5, tmp6, dst, 96), ctx);
-		emit(A64_STP(tmp7, tmp8, dst, 112), ctx);
-		break;
-	default:
-		emit_call((u64)bpf_ext_memcpy, ctx);
-		break;
-	}
-}
-#endif
-
 /* JITs an eBPF instruction.
  * Returns:
  * 0  - successfully JITed an 8-byte eBPF instruction.
@@ -1166,13 +914,6 @@ emit_cond_jmp:
 		const u8 r0 = bpf2a64[BPF_REG_0];
 		bool func_addr_fixed;
 		u64 func_addr;
-
-#ifdef CONFIG_HISOCK
-		if (insn->src_reg == 0 && insn->imm == BPF_FUNC_ext_memcpy) {
-			emit_memcpy(ctx, insn->off);
-			break;
-		}
-#endif
 
 		ret = bpf_jit_get_func_addr(ctx->prog, insn, extra_pass,
 					    &func_addr, &func_addr_fixed);
@@ -1719,13 +1460,6 @@ out:
 					   tmp : orig_prog);
 	return prog;
 }
-
-#ifdef CONFIG_HISOCK
-bool bpf_jit_supports_ext_helper(void)
-{
-	return true;
-}
-#endif
 
 u64 bpf_jit_alloc_exec_limit(void)
 {

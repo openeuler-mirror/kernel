@@ -3844,28 +3844,6 @@ static const struct bpf_func_proto bpf_handle_egress_ptype_proto = {
 	.ret_type       = RET_VOID,
 	.arg1_type      = ARG_PTR_TO_CTX,
 };
-
-BPF_CALL_2(bpf_skb_change_skb_dev, struct sk_buff *, skb, u32, ifindex)
-{
-	struct net_device *dev;
-
-	WARN_ON_ONCE(!rcu_read_lock_held());
-
-	dev = dev_get_by_index_rcu(&init_net, ifindex);
-	if (!dev)
-		return -ENODEV;
-
-	skb->dev = dev;
-	return 0;
-}
-
-static const struct bpf_func_proto bpf_skb_change_skb_dev_proto = {
-	.func           = bpf_skb_change_skb_dev,
-	.gpl_only       = false,
-	.ret_type       = RET_INTEGER,
-	.arg1_type      = ARG_PTR_TO_CTX,
-	.arg2_type      = ARG_ANYTHING,
-};
 #endif
 
 static u32 __bpf_skb_min_len(const struct sk_buff *skb)
@@ -6537,64 +6515,6 @@ static const struct bpf_func_proto bpf_xdp_sk_lookup_tcp_proto = {
 	.arg5_type      = ARG_ANYTHING,
 };
 
-#ifdef CONFIG_HISOCK
-BPF_CALL_2(bpf_xdp_set_ingress_dst, struct xdp_buff *, xdp, void *, dst)
-{
-	struct hisock_xdp_buff *hxdp = (struct hisock_xdp_buff *)xdp;
-	struct dst_entry *_dst = (struct dst_entry *)dst;
-
-	if (!hxdp->skb)
-		return -EOPNOTSUPP;
-
-	if (!_dst || !virt_addr_valid(_dst))
-		return -EFAULT;
-
-	/* same as skb_valid_dst */
-	if (_dst->flags & DST_METADATA)
-		return -EINVAL;
-
-	skb_dst_set_noref(hxdp->skb, _dst);
-	return 0;
-}
-
-static const struct bpf_func_proto bpf_xdp_set_ingress_dst_proto = {
-	.func		= bpf_xdp_set_ingress_dst,
-	.gpl_only       = false,
-	.pkt_access     = true,
-	.ret_type       = RET_INTEGER,
-	.arg1_type      = ARG_PTR_TO_CTX,
-	.arg2_type      = ARG_ANYTHING,
-};
-#endif
-
-#ifdef CONFIG_HISOCK
-BPF_CALL_2(bpf_xdp_change_skb_dev, struct xdp_buff *, xdp, u32, ifindex)
-{
-	struct hisock_xdp_buff *hxdp = (void *)xdp;
-	struct net_device *dev;
-
-	WARN_ON_ONCE(!rcu_read_lock_held());
-
-	if (!hxdp->skb)
-		return -EOPNOTSUPP;
-
-	dev = dev_get_by_index_rcu(&init_net, ifindex);
-	if (!dev)
-		return -ENODEV;
-
-	hxdp->skb->dev = dev;
-	return 0;
-}
-
-static const struct bpf_func_proto bpf_xdp_change_skb_dev_proto = {
-	.func           = bpf_xdp_change_skb_dev,
-	.gpl_only       = false,
-	.ret_type       = RET_INTEGER,
-	.arg1_type      = ARG_PTR_TO_CTX,
-	.arg2_type      = ARG_ANYTHING,
-};
-#endif
-
 BPF_CALL_5(bpf_sock_addr_skc_lookup_tcp, struct bpf_sock_addr_kern *, ctx,
 	   struct bpf_sock_tuple *, tuple, u32, len, u64, netns_id, u64, flags)
 {
@@ -7301,34 +7221,6 @@ static const struct bpf_func_proto bpf_sock_ops_reserve_hdr_opt_proto = {
 	.arg3_type	= ARG_ANYTHING,
 };
 
-#ifdef CONFIG_HISOCK
-BTF_ID_LIST_SINGLE(btf_dst_entity_ids, struct, dst_entry)
-BPF_CALL_1(bpf_sock_ops_get_ingress_dst, struct bpf_sock_ops_kern *, sops)
-{
-	struct sock *sk = sops->sk;
-	struct dst_entry *dst;
-
-	WARN_ON_ONCE(!rcu_read_lock_held());
-
-	if (!sk || !sk_fullsock(sk))
-		return (unsigned long)NULL;
-
-	dst = rcu_dereference(sk->sk_rx_dst);
-	if (dst)
-		dst = dst_check(dst, 0);
-
-	return (unsigned long)dst;
-}
-
-const struct bpf_func_proto bpf_sock_ops_get_ingress_dst_proto = {
-	.func		= bpf_sock_ops_get_ingress_dst,
-	.gpl_only	= false,
-	.ret_type	= RET_PTR_TO_BTF_ID_OR_NULL,
-	.arg1_type	= ARG_PTR_TO_CTX,
-	.ret_btf_id	= &btf_dst_entity_ids[0],
-};
-#endif
-
 #endif /* CONFIG_INET */
 
 bool bpf_helper_changes_pkt_data(enum bpf_func_id func_id)
@@ -7569,8 +7461,6 @@ hisock_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_skb_change_head_proto;
 	case BPF_FUNC_skb_adjust_room:
 		return &bpf_skb_adjust_room_proto;
-	case BPF_FUNC_change_skb_dev:
-		return &bpf_skb_change_skb_dev_proto;
 	case BPF_FUNC_set_ingress_dst:
 		return is_ingress ? &bpf_set_ingress_dst_proto : NULL;
 	case BPF_FUNC_get_skb_ethhdr:
@@ -7733,12 +7623,6 @@ xdp_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_xdp_adjust_tail_proto;
 	case BPF_FUNC_fib_lookup:
 		return &bpf_xdp_fib_lookup_proto;
-#ifdef CONFIG_HISOCK
-	case BPF_FUNC_set_rx_dst:
-		return &bpf_xdp_set_ingress_dst_proto;
-	case BPF_FUNC_change_skb_dev:
-		return &bpf_xdp_change_skb_dev_proto;
-#endif
 #ifdef CONFIG_INET
 	case BPF_FUNC_sk_lookup_udp:
 		return &bpf_xdp_sk_lookup_udp_proto;
@@ -7800,10 +7684,6 @@ sock_ops_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_sock_ops_store_hdr_opt_proto;
 	case BPF_FUNC_reserve_hdr_opt:
 		return &bpf_sock_ops_reserve_hdr_opt_proto;
-#ifdef CONFIG_HISOCK
-	case BPF_FUNC_get_rx_dst:
-		return &bpf_sock_ops_get_ingress_dst_proto;
-#endif
 	case BPF_FUNC_tcp_sock:
 		return &bpf_tcp_sock_proto;
 #ifdef CONFIG_HISOCK
