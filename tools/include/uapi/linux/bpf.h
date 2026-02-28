@@ -3980,6 +3980,12 @@ union bpf_attr {
  *		Set skb ingress dst entry with valid sock rx dst entry.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_get_skb_ethhdr(struct sk_buff *skb, void *peth, int size)
+ *	Description
+ *		Get the ether header of ingress skb.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4163,6 +4169,7 @@ union bpf_attr {
 	FN(change_skb_dev),             \
 	FN(ext_memcpy),			\
 	FN(set_ingress_dst),		\
+	FN(get_skb_ethhdr),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

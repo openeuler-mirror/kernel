@@ -3731,6 +3731,26 @@ static const struct bpf_func_proto bpf_set_ingress_dst_proto = {
 	.arg2_type      = ARG_ANYTHING,
 };
 
+BPF_CALL_3(bpf_get_skb_ethhdr, struct sk_buff *, skb, void *, peth, int, size)
+{
+	struct ethhdr *eth = eth_hdr(skb);
+
+	if (size != sizeof(struct ethhdr))
+		return -EINVAL;
+
+	memcpy(peth, eth, size);
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_get_skb_ethhdr_proto = {
+	.func           = bpf_get_skb_ethhdr,
+	.gpl_only       = false,
+	.ret_type       = RET_INTEGER,
+	.arg1_type      = ARG_PTR_TO_CTX,
+	.arg2_type      = ARG_PTR_TO_MEM,
+	.arg3_type      = ARG_CONST_SIZE,
+};
+
 BPF_CALL_2(bpf_skb_change_skb_dev, struct sk_buff *, skb, u32, ifindex)
 {
 	struct net_device *dev;
@@ -7459,6 +7479,8 @@ hisock_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_skb_change_skb_dev_proto;
 	case BPF_FUNC_set_ingress_dst:
 		return is_ingress ? &bpf_set_ingress_dst_proto : NULL;
+	case BPF_FUNC_get_skb_ethhdr:
+		return is_ingress ? &bpf_get_skb_ethhdr_proto : NULL;
 
 	default:
 		return bpf_base_func_proto(func_id);
