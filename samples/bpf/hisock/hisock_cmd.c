@@ -30,15 +30,16 @@
 
 #define DEF_BPF_PATH	"bpf.o"
 #define MAX_IF_NUM	8
+#define MAX_PORT_NUM	8
 
 struct {
 	__u32 ifindex[MAX_IF_NUM];
 	int if_num;
-	char *port;
+	char *port[MAX_PORT_NUM];
+	int port_num;
 	char *cgrp_path;
 	char *bpf_path;
 	bool unload;
-	bool help;
 } hisock;
 
 struct hisock_prog_info {
@@ -172,7 +173,7 @@ static int parse_port_range(const char *port_str, int map_fd)
 
 static int set_speed_port(struct bpf_object *obj)
 {
-	int map_fd;
+	int map_fd, i;
 
 	map_fd = bpf_object__find_map_fd_by_name(obj, "speed_port");
 	if (map_fd < 0) {
@@ -180,9 +181,11 @@ static int set_speed_port(struct bpf_object *obj)
 		return -1;
 	}
 
-	if (hisock.port && parse_port_range(hisock.port, map_fd)) {
-		fprintf(stderr, "ERROR: failed to update speed port\n");
-		return -1;
+	for (i = 0; i < hisock.port_num; i++) {
+		if (hisock.port[i] && parse_port_range(hisock.port[i], map_fd)) {
+			fprintf(stderr, "ERROR: failed to update speed port\n");
+			return -1;
+		}
 	}
 
 	return 0;
@@ -316,11 +319,9 @@ static void do_help(void)
 
 static int parse_args(int argc, char **argv)
 {
-	char *ifname;
 	int opt;
 
 	hisock.bpf_path = DEF_BPF_PATH;
-	hisock.if_num = 0;
 
 	while ((opt = getopt(argc, argv, "f:c:p:i:uh")) != -1) {
 		switch (opt) {
@@ -331,29 +332,34 @@ static int parse_args(int argc, char **argv)
 			hisock.cgrp_path = optarg;
 			break;
 		case 'p':
-			hisock.port = optarg;
+			hisock.port[hisock.port_num] = optarg;
+			hisock.port_num++;
 			break;
 		case 'i':
-			ifname = optarg;
-			hisock.ifindex[hisock.if_num] = if_nametoindex(ifname);
+			hisock.ifindex[hisock.if_num] = if_nametoindex(optarg);
 			hisock.if_num++;
 			break;
 		case 'u':
 			hisock.unload = true;
 			break;
 		case 'h':
-			hisock.help = true;
-			break;
+			do_help();
+			exit(0);
 		default:
 			fprintf(stderr, "ERROR: unknown option %c\n", opt);
 			return -1;
 		}
 	}
 
-	if (hisock.cgrp_path == NULL ||
-	    hisock.if_num == 0 ||
-	    (!hisock.unload &&
-	     hisock.port == NULL)) {
+	if (hisock.unload &&
+	    (hisock.cgrp_path == NULL || hisock.if_num == 0)) {
+		do_help();
+		return -1;
+	}
+
+	if (!hisock.unload &&
+	    (hisock.cgrp_path == NULL || hisock.if_num == 0 ||
+	     hisock.port_num == 0)) {
 		do_help();
 		return -1;
 	}
@@ -366,11 +372,6 @@ int main(int argc, char **argv)
 	if (parse_args(argc, argv)) {
 		fprintf(stderr, "ERROR: failed to parse args\n");
 		return -1;
-	}
-
-	if (hisock.help) {
-		do_help();
-		return 0;
 	}
 
 	if (hisock.unload) {
