@@ -3998,6 +3998,20 @@ union bpf_attr {
  *		Set valid net device to egress skb.
  *	Return
  *		0 on success, or negative error in case of failure.
+ *
+ * void bpf_handle_ingress_ptype(struct sk_buff *skb)
+ *	Description
+ *		Handle ingress ptype all logic based on the current
+ *		net device of skb.
+ *	Return
+ *		Void.
+ *
+ * void bpf_handle_egress_ptype(struct sk_buff *skb)
+ *	Description
+ *		Handle egress ptype all logic based on the current
+ *		net device of skb.
+ *	Return
+ *		Void.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4184,6 +4198,8 @@ union bpf_attr {
 	FN(get_skb_ethhdr),		\
 	FN(set_ingress_dev),		\
 	FN(set_egress_dev),		\
+	FN(handle_ingress_ptype),	\
+	FN(handle_egress_ptype),	\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

@@ -463,35 +463,6 @@ static void ip_copy_addrs(struct iphdr *iph, const struct flowi4 *fl4)
 }
 
 #ifdef CONFIG_HISOCK
-static int hisock_egress_redirect_xmit(struct sk_buff *skb)
-{
-	struct net_device *dev = skb->dev;
-	struct netdev_queue *txq;
-	bool free_skb = true;
-	int cpu, rc;
-
-	rcu_read_lock_bh();
-
-	txq = netdev_core_pick_tx(dev, skb, NULL);
-	cpu = smp_processor_id();
-	HARD_TX_LOCK(dev, txq, cpu);
-	if (!netif_xmit_stopped(txq)) {
-		rc = netdev_start_xmit(skb, dev, txq, 0);
-		if (dev_xmit_complete(rc))
-			free_skb = false;
-	}
-	HARD_TX_UNLOCK(dev, txq);
-
-	rcu_read_unlock_bh();
-
-	if (free_skb) {
-		rc = -ENETDOWN;
-		kfree_skb(skb);
-	}
-
-	return rc;
-}
-
 static int do_hisock_egress_redirect(struct net *net, struct sock *sk, struct sk_buff *skb)
 {
 	struct iphdr *iph;
@@ -501,7 +472,7 @@ static int do_hisock_egress_redirect(struct net *net, struct sock *sk, struct sk
 		skb->dev = skb_dst(skb)->dev;
 
 	if (skb_mac_header_was_set(skb))
-		return hisock_egress_redirect_xmit(skb);
+		return dev_queue_xmit(skb);
 
 	iph = ip_hdr(skb);
 	iph->tot_len = htons(skb->len);

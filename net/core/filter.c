@@ -3791,6 +3791,60 @@ static const struct bpf_func_proto bpf_set_egress_dev_proto = {
 	.arg2_type      = ARG_ANYTHING,
 };
 
+BPF_CALL_1(bpf_handle_ingress_ptype, struct sk_buff *, skb)
+{
+	struct list_head *ptype_list = &ptype_all;
+	struct packet_type *ptype;
+
+	rcu_read_lock();
+again:
+	list_for_each_entry_rcu(ptype, ptype_list, list) {
+		if (likely(!skb_orphan_frags_rx(skb, GFP_ATOMIC))) {
+			refcount_inc(&skb->users);
+			ptype->func(skb, skb->dev, ptype, skb->dev);
+		}
+	}
+
+	if (ptype_list == &ptype_all) {
+		ptype_list = &skb->dev->ptype_all;
+		goto again;
+	}
+
+	rcu_read_unlock();
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_handle_ingress_ptype_proto = {
+	.func           = bpf_handle_ingress_ptype,
+	.gpl_only       = false,
+	.ret_type       = RET_VOID,
+	.arg1_type      = ARG_PTR_TO_CTX,
+};
+
+BPF_CALL_1(bpf_handle_egress_ptype, struct sk_buff *, skb)
+{
+	struct net_device *dev, *orig_dev = skb->dev;
+
+	rcu_read_lock();
+	dev = skb_dst_dev_rcu(skb);
+	skb->dev = dev;
+	skb->protocol = htons(ETH_P_IP);
+
+	if (dev_nit_active(skb->dev))
+		dev_queue_xmit_nit(skb, skb->dev);
+
+	skb->dev = orig_dev;
+	rcu_read_unlock();
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_handle_egress_ptype_proto = {
+	.func           = bpf_handle_egress_ptype,
+	.gpl_only       = false,
+	.ret_type       = RET_VOID,
+	.arg1_type      = ARG_PTR_TO_CTX,
+};
+
 BPF_CALL_2(bpf_skb_change_skb_dev, struct sk_buff *, skb, u32, ifindex)
 {
 	struct net_device *dev;
@@ -7525,6 +7579,10 @@ hisock_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return is_ingress ? &bpf_set_ingress_dev_proto : NULL;
 	case BPF_FUNC_set_egress_dev:
 		return !is_ingress ? &bpf_set_egress_dev_proto : NULL;
+	case BPF_FUNC_handle_ingress_ptype:
+		return is_ingress ? &bpf_handle_ingress_ptype_proto : NULL;
+	case BPF_FUNC_handle_egress_ptype:
+		return !is_ingress ? &bpf_handle_egress_ptype_proto : NULL;
 
 	default:
 		return bpf_base_func_proto(func_id);
