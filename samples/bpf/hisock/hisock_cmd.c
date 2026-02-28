@@ -48,9 +48,8 @@ struct hisock_prog_info {
 	const char *sec_name;
 	enum bpf_prog_type prog_type;
 	enum bpf_attach_type attach_type;
-	int attach_flag;
+	bool is_dev_attach;
 	int prog_fd;
-	bool is_xdp;
 };
 
 static struct hisock_prog_info prog_infos[] = {
@@ -58,22 +57,17 @@ static struct hisock_prog_info prog_infos[] = {
 		.sec_name	= "hisock_sockops",
 		.prog_type	= BPF_PROG_TYPE_SOCK_OPS,
 		.attach_type	= BPF_CGROUP_SOCK_OPS,
-		.attach_flag	= 0,
-		.is_xdp		= false,
 	},
 	{
 		.sec_name	= "hisock_ingress",
-		.prog_type	= BPF_PROG_TYPE_XDP,
-		.attach_type	= BPF_XDP,
-		.attach_flag	= XDP_FLAGS_SKB_MODE,
-		.is_xdp		= true,
+		.prog_type	= BPF_PROG_TYPE_HISOCK,
+		.attach_type	= BPF_HISOCK_INGRESS,
+		.is_dev_attach	= true,
 	},
 	{
 		.sec_name	= "hisock_egress",
 		.prog_type	= BPF_PROG_TYPE_HISOCK,
 		.attach_type	= BPF_HISOCK_EGRESS,
-		.attach_flag	= 0,
-		.is_xdp		= false,
 	},
 };
 
@@ -208,10 +202,9 @@ static int detach_progs(void)
 
 	for (i = 0; i < ARRAY_SIZE(prog_infos); i++) {
 		info = &prog_infos[i];
-		if (info->is_xdp) {
+		if (info->is_dev_attach) {
 			for (j = 0; j < hisock.if_num; j++) {
-				if (bpf_set_link_xdp_fd(hisock.ifindex[j], -1,
-							info->attach_flag)) {
+				if (bpf_prog_detach(hisock.ifindex[j], info->attach_type)) {
 					fprintf(stderr,
 						"ERROR: failed to detach prog %s\n",
 						info->sec_name);
@@ -244,17 +237,16 @@ static int attach_progs(void)
 
 	for (i = 0; i < ARRAY_SIZE(prog_infos); i++) {
 		info = &prog_infos[i];
-		if (info->is_xdp) {
+		if (info->is_dev_attach) {
 			for (j = 0; j < hisock.if_num; j++) {
-				if (bpf_set_link_xdp_fd(hisock.ifindex[j], info->prog_fd,
-							info->attach_flag))
+				if (bpf_prog_attach(info->prog_fd, hisock.ifindex[j],
+						    info->attach_type, 0))
 					goto fail;
 			}
 			continue;
 		}
 
-		if (bpf_prog_attach(info->prog_fd, cgrp_fd, info->attach_type,
-				    info->attach_flag))
+		if (bpf_prog_attach(info->prog_fd, cgrp_fd, info->attach_type, 0))
 			goto fail;
 	}
 

@@ -4,22 +4,22 @@
  *
  * Description: End-to-End HiSock Redirect sample.
  */
+#define KBUILD_MODNAME "foo"
 #include <uapi/linux/in.h>
 #include <uapi/linux/if_ether.h>
 #include <linux/if_vlan.h>
+#include <linux/filter.h>
 #include <uapi/linux/ip.h>
 #include <uapi/linux/tcp.h>
 #include <uapi/linux/bpf.h>
 
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
 
 #define IP_MF           0x2000
 #define IP_OFFSET       0x1FFF
 #define CSUM_SHIFT_BITS	16
-
-#define SOCKOPS_SUCC	1
-#define SOCKOPS_FAIL	0
 
 #define PORT_LOCAL	1
 #define PORT_REMOTE	2
@@ -36,10 +36,11 @@ struct sock_tuple {
 };
 
 struct sock_value {
+	void *sk;
+	void *egress_dev;
+	void *ingress_dev;
 	struct ethhdr ingress_eth;
 	bool eth_updated;
-	u32 ingress_ifindex;
-	void *ingress_dst;
 };
 
 struct {
@@ -71,29 +72,46 @@ static inline bool is_speed_flow(u32 local, u32 remote)
 	return false;
 }
 
+static inline void *parse_ingress_dev(struct bpf_sock_ops *skops)
+{
+	struct sk_buff *skb;
+	struct net_device *dev;
+
+	skb = BPF_CORE_READ((struct bpf_sock_ops_kern *)skops, skb);
+	dev = BPF_CORE_READ(skb, dev);
+
+	return dev;
+}
+
+static inline void *parse_egress_dev(struct __sk_buff *skb)
+{
+	struct net_device *dev;
+
+	dev = BPF_CORE_READ((struct sk_buff *)skb, dev);
+
+	return dev;
+}
+
 SEC("hisock_sockops")
 int hisock_sockops_prog(struct bpf_sock_ops *skops)
 {
 	struct sock_tuple key = { 0 };
 	struct sock_value val = { 0 };
-	void *dst;
 
 	if (!is_speed_flow(skops->local_port, bpf_ntohl(skops->remote_port)))
-		return SOCKOPS_SUCC;
+		return 1;
 
 	switch (skops->op) {
 	case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
 	case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
-		dst = bpf_get_rx_dst(skops);
-		if (!dst)
-			return SOCKOPS_FAIL;
-
 		key.saddr = skops->remote_ip4;
 		key.sport = bpf_ntohl(skops->remote_port);
 		key.daddr = skops->local_ip4;
 		key.dport = skops->local_port;
 
-		val.ingress_dst = dst;
+		val.sk = skops->sk;
+		val.ingress_dev = parse_ingress_dev(skops);
+
 		bpf_map_update_elem(&connmap, &key, &val, BPF_ANY);
 
 		bpf_sock_ops_cb_flags_set(skops, BPF_SOCK_OPS_STATE_CB_FLAG);
@@ -118,43 +136,39 @@ int hisock_sockops_prog(struct bpf_sock_ops *skops)
 		break;
 	}
 
-	return SOCKOPS_SUCC;
+	return 1;
 }
 
 SEC("hisock_ingress")
-int hisock_ingress_prog(struct xdp_md *ctx)
+int hisock_ingress_prog(struct __sk_buff *skb)
 {
-	void *data_end = (void *)(long)ctx->data_end;
-	void *data = (void *)(long)ctx->data;
+	void *data_end = (void *)(long)skb->data_end;
+	void *data = (void *)(long)skb->data;
 	struct sock_tuple key = { 0 };
 	struct sock_value *val;
-	struct ethhdr *ehdr;
 	struct tcphdr *thdr;
 	struct iphdr *ihdr;
+	struct ethhdr ehdr;
 
-	ehdr = (struct ethhdr *)data;
-	if (ehdr + 1 > data_end)
-		return XDP_PASS;
+	if (skb->protocol != bpf_htons(ETH_P_IP))
+		return HISOCK_PASS;
 
-	if (ehdr->h_proto != bpf_htons(ETH_P_IP))
-		return XDP_PASS;
-
-	ihdr = (struct iphdr *)(ehdr + 1);
+	ihdr = (struct iphdr *)data;
 	if (ihdr + 1 > data_end)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	if (ihdr->ihl != 5 || ihdr->protocol != IPPROTO_TCP)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	if (ihdr->frag_off & bpf_htons(IP_MF | IP_OFFSET))
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	thdr = (struct tcphdr *)(ihdr + 1);
 	if (thdr + 1 > data_end)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	if (thdr->syn || thdr->fin || thdr->rst)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	key.saddr = ihdr->saddr;
 	key.sport = bpf_ntohs(thdr->source);
@@ -163,24 +177,25 @@ int hisock_ingress_prog(struct xdp_md *ctx)
 
 	val = bpf_map_lookup_elem(&connmap, &key);
 	if (!val)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
-	if (unlikely(!val->eth_updated)) {
-		bpf_ext_memcpy(val->ingress_eth.h_source, ETH_ALEN,
-			       ehdr->h_dest, ETH_ALEN);
-		bpf_ext_memcpy(val->ingress_eth.h_dest, ETH_ALEN,
-			       ehdr->h_source, ETH_ALEN);
-		val->ingress_eth.h_proto = ehdr->h_proto;
-		val->eth_updated = true;
+	if (!val->eth_updated) {
+		if (!(bpf_get_skb_ethhdr(skb, &ehdr, sizeof(ehdr)))) {
+			memcpy(val->ingress_eth.h_source, ehdr.h_dest, ETH_ALEN);
+			memcpy(val->ingress_eth.h_dest, ehdr.h_source, ETH_ALEN);
+			val->ingress_eth.h_proto = ehdr.h_proto;
+			val->eth_updated = true;
+		}
 	}
 
-	if (unlikely(!val->ingress_ifindex))
-		val->ingress_ifindex = ctx->ingress_ifindex;
+	if (!val->egress_dev)
+		val->egress_dev = parse_egress_dev(skb);
 
-	if (likely(val->ingress_dst))
-		bpf_set_rx_dst(ctx, val->ingress_dst);
+	bpf_set_ingress_dev(skb, val->ingress_dev);
+	bpf_handle_ingress_ptype(skb);
+	bpf_set_ingress_dst(skb, val->sk);
 
-	return XDP_HISOCK_REDIRECT;
+	return HISOCK_REDIRECT;
 }
 
 static inline void ipv4_csum(struct iphdr *ihdr)
@@ -203,8 +218,19 @@ int hisock_egress_prog(struct __sk_buff *skb)
 	struct sock_tuple key = { 0 };
 	struct sock_value *val;
 	struct ethhdr *ehdr;
+	struct tcphdr *thdr;
 	struct iphdr *ihdr;
-	int ret;
+
+	ihdr = (struct iphdr *)data;
+	if (ihdr + 1 > data_end)
+		return HISOCK_PASS;
+
+	thdr = (struct tcphdr *)(ihdr + 1);
+	if (thdr + 1 > data_end)
+		return HISOCK_PASS;
+
+	if (thdr->syn || thdr->fin || thdr->rst)
+		return HISOCK_PASS;
 
 	key.saddr = skb->remote_ip4;
 	key.sport = bpf_ntohl(skb->remote_port);
@@ -215,18 +241,13 @@ int hisock_egress_prog(struct __sk_buff *skb)
 	if (!val)
 		return HISOCK_PASS;
 
-	if (unlikely(!val->eth_updated))
+	if (!val->eth_updated)
 		goto redirect;
-
-	ihdr = (struct iphdr *)data;
-	if (ihdr + 1 > data_end)
-		return HISOCK_PASS;
 
 	ihdr->tot_len = bpf_htons(skb->len);
 	ipv4_csum(ihdr);
 
-	ret = bpf_skb_change_head(skb, ETH_HLEN, 0);
-	if (ret < 0)
+	if (bpf_skb_change_head(skb, ETH_HLEN, 0) < 0)
 		goto redirect;
 
 	data = (void *)(long)skb->data;
@@ -236,10 +257,10 @@ int hisock_egress_prog(struct __sk_buff *skb)
 	if (ehdr + 1 > data_end)
 		return HISOCK_DROP;
 
-	bpf_ext_memcpy(ehdr, ETH_HLEN, &val->ingress_eth, ETH_HLEN);
+	memcpy(ehdr, &val->ingress_eth, ETH_HLEN);
+	bpf_handle_egress_ptype(skb);
 redirect:
-	if (likely(val->ingress_ifindex))
-		bpf_change_skb_dev(skb, val->ingress_ifindex);
+	bpf_set_egress_dev(skb, val->egress_dev);
 
 	return HISOCK_REDIRECT;
 }
