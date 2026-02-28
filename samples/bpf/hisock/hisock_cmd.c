@@ -32,6 +32,7 @@
 #define TASK_COMM_LEN	16
 #endif
 
+#define HISOCK_BPFFS	"/sys/fs/bpf/hisock"
 #define DEF_BPF_PATH	"bpf.o"
 #define MAX_IF_NUM	8
 #define MAX_PORT_NUM	8
@@ -51,9 +52,11 @@ struct {
 
 struct hisock_prog_info {
 	const char *sec_name;
+	const char *pin_map;
 	enum bpf_prog_type prog_type;
 	enum bpf_attach_type attach_type;
 	bool is_dev_attach;
+	bool is_skmsg;
 	int prog_fd;
 };
 
@@ -62,6 +65,13 @@ static struct hisock_prog_info prog_infos[] = {
 		.sec_name	= "hisock_sockops",
 		.prog_type	= BPF_PROG_TYPE_SOCK_OPS,
 		.attach_type	= BPF_CGROUP_SOCK_OPS,
+	},
+	{
+		.sec_name       = "hisock_skmsg",
+		.prog_type      = BPF_PROG_TYPE_SK_MSG,
+		.attach_type    = BPF_SK_MSG_VERDICT,
+		.pin_map        = "local_connmap",
+		.is_skmsg       = true,
 	},
 	{
 		.sec_name	= "hisock_ingress",
@@ -249,6 +259,16 @@ static int detach_progs(void)
 			continue;
 		}
 
+		if (info->is_skmsg) {
+			char pin_path[64];
+
+			snprintf(pin_path, sizeof(pin_path), "%s/%s",
+				 HISOCK_BPFFS, info->pin_map);
+
+			unlink(pin_path);
+			continue;
+		}
+
 		if (bpf_prog_detach(cgrp_fd, info->attach_type)) {
 			fprintf(stderr, "ERROR: failed to detach prog %s\n", info->sec_name);
 			err_cnt++;
@@ -259,7 +279,7 @@ static int detach_progs(void)
 	return -err_cnt;
 }
 
-static int attach_progs(void)
+static int attach_progs(struct bpf_object *obj)
 {
 	struct hisock_prog_info *info;
 	int i, j, cgrp_fd;
@@ -278,6 +298,31 @@ static int attach_progs(void)
 						    info->attach_type, 0))
 					goto fail;
 			}
+			continue;
+		}
+
+		if (info->is_skmsg) {
+			struct bpf_map *map;
+			char pin_path[64];
+
+			map = bpf_object__find_map_by_name(obj, info->pin_map);
+			if (!map) {
+				fprintf(stderr, "ERROR: failed to find pin map\n");
+				goto fail;
+			}
+
+			snprintf(pin_path, sizeof(pin_path), "%s/%s",
+				 HISOCK_BPFFS, info->pin_map);
+
+			if (bpf_map__pin(map, pin_path)) {
+				fprintf(stderr, "ERROR: failed to pin map\n");
+				goto fail;
+			}
+
+			if (bpf_prog_attach(info->prog_fd, bpf_map__fd(map),
+					    info->attach_type, 0))
+				goto fail;
+
 			continue;
 		}
 
@@ -337,7 +382,7 @@ static int do_hisock(void)
 		return -1;
 	}
 
-	if (attach_progs()) {
+	if (attach_progs(obj)) {
 		fprintf(stderr, "ERROR: failed to attach progs\n");
 		bpf_object__close(obj);
 		return -1;

@@ -50,6 +50,13 @@ struct {
 } connmap SEC(".maps");
 
 struct {
+	__uint(type, BPF_MAP_TYPE_SOCKHASH);
+	__uint(key_size, sizeof(struct sock_tuple));
+	__uint(value_size, sizeof(int));
+	__uint(max_entries, MAX_CONN);
+} local_connmap SEC(".maps");
+
+struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(key_size, sizeof(u16));
 	__uint(value_size, sizeof(u8));
@@ -72,6 +79,28 @@ static inline bool is_speed_flow(u16 port)
 		return true;
 
 	return false;
+}
+
+static inline bool
+is_local_conn(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
+{
+	struct sock_tuple key = { 0 };
+	struct bpf_sock *sk;
+
+	if (*laddr == *raddr)
+		return true;
+
+	key.saddr = *laddr;
+	key.daddr = *raddr;
+	key.sport = skops->local_port;
+	key.dport = bpf_ntohl(skops->remote_port);
+
+	sk = bpf_map_lookup_elem(&local_connmap, &key);
+	if (!sk)
+		return false;
+
+	bpf_sk_release(sk);
+	return true;
 }
 
 static inline bool is_ipv6_addr_mapped(u32 *addr6)
@@ -117,6 +146,19 @@ static void handle_listen_cb(struct bpf_sock_ops *skops)
 }
 
 static void
+handle_local_estd_cb(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
+{
+	struct sock_tuple key = { 0 };
+
+	key.saddr = *raddr;
+	key.daddr = *laddr;
+	key.sport = bpf_ntohl(skops->remote_port);
+	key.dport = skops->local_port;
+
+	bpf_sock_hash_update(skops, &local_connmap, &key, BPF_NOEXIST);
+}
+
+static void
 handle_remote_estd_cb(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
 {
 	struct sock_tuple key = { 0 };
@@ -137,12 +179,28 @@ handle_remote_estd_cb(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
 
 static inline void handle_passive_estd_inet_cb(struct bpf_sock_ops *skops)
 {
-	handle_remote_estd_cb(skops, &skops->local_ip4, &skops->remote_ip4);
+	if (is_local_conn(skops, &skops->local_ip4, &skops->remote_ip4))
+		handle_local_estd_cb(skops, &skops->local_ip4, &skops->remote_ip4);
+	else
+		handle_remote_estd_cb(skops, &skops->local_ip4, &skops->remote_ip4);
 }
 
 static inline void handle_passive_estd_inet6_cb(struct bpf_sock_ops *skops)
 {
-	handle_remote_estd_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
+	if (is_local_conn(skops, &skops->local_ip6[3], &skops->remote_ip6[3]))
+		handle_local_estd_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
+	else
+		handle_remote_estd_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
+}
+
+static inline void handle_active_estd_inet_cb(struct bpf_sock_ops *skops)
+{
+	handle_local_estd_cb(skops, &skops->local_ip4, &skops->remote_ip4);
+}
+
+static inline void handle_active_estd_inet6_cb(struct bpf_sock_ops *skops)
+{
+	handle_local_estd_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
 }
 
 static void
@@ -191,6 +249,11 @@ int hisock_sockops_prog(struct bpf_sock_ops *skops)
 				break;
 			handle_passive_estd_inet_cb(skops);
 			break;
+		case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
+			if (!is_speed_flow(bpf_ntohl(skops->remote_port)))
+				break;
+			handle_active_estd_inet_cb(skops);
+			break;
 		case BPF_SOCK_OPS_STATE_CB:
 			handle_terminate_inet_cb(skops);
 			break;
@@ -205,6 +268,11 @@ int hisock_sockops_prog(struct bpf_sock_ops *skops)
 				break;
 			handle_passive_estd_inet6_cb(skops);
 			break;
+		case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
+			if (!is_speed_flow(bpf_ntohl(skops->remote_port)))
+				break;
+			handle_active_estd_inet6_cb(skops);
+			break;
 		case BPF_SOCK_OPS_STATE_CB:
 			handle_terminate_inet6_cb(skops);
 			break;
@@ -214,6 +282,41 @@ int hisock_sockops_prog(struct bpf_sock_ops *skops)
 	}
 
 	return 1;
+}
+
+static void
+msg_redirect_cb(struct sk_msg_md *msg, u32 *laddr, u32 *raddr)
+{
+	struct sock_tuple key = { 0 };
+
+	key.daddr = *raddr;
+	key.saddr = *laddr;
+	key.dport = bpf_ntohl(msg->remote_port);
+	key.sport = msg->local_port;
+
+	bpf_msg_redirect_hash(msg, &local_connmap, &key, BPF_F_INGRESS);
+}
+
+static inline void msg_redirect_inet_cb(struct sk_msg_md *msg)
+{
+	msg_redirect_cb(msg, &msg->local_ip4, &msg->remote_ip4);
+}
+
+static inline void msg_redirect_inet6_cb(struct sk_msg_md *msg)
+{
+	msg_redirect_cb(msg, &msg->local_ip6[3], &msg->remote_ip6[3]);
+}
+
+SEC("hisock_skmsg")
+int hisock_skmsg_prog(struct sk_msg_md *msg)
+{
+	if (msg->family == AF_INET)
+		msg_redirect_inet_cb(msg);
+	else if (msg->family == AF_INET6 &&
+		 is_ipv6_addr_mapped(msg->local_ip6))
+		msg_redirect_inet6_cb(msg);
+
+	return SK_PASS;
 }
 
 SEC("hisock_ingress")

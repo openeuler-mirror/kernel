@@ -7806,6 +7806,10 @@ sock_ops_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 #endif
 	case BPF_FUNC_tcp_sock:
 		return &bpf_tcp_sock_proto;
+#ifdef CONFIG_HISOCK
+	case BPF_FUNC_sk_release:
+		return &bpf_sk_release_proto;
+#endif
 #endif /* CONFIG_INET */
 	case BPF_FUNC_get_current_comm:
 		return &bpf_get_current_comm_proto;
