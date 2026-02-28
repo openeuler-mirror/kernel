@@ -74,6 +74,12 @@ static inline bool is_speed_flow(u16 port)
 	return false;
 }
 
+static inline bool is_ipv6_addr_mapped(u32 *addr6)
+{
+	return addr6[0] == 0 && addr6[1] == 0 &&
+	       addr6[2] == bpf_htonl(0x0000ffff);
+}
+
 static inline void *parse_ingress_dev(struct bpf_sock_ops *skops)
 {
 	struct sk_buff *skb;
@@ -110,52 +116,101 @@ static void handle_listen_cb(struct bpf_sock_ops *skops)
 	}
 }
 
-SEC("hisock_sockops")
-int hisock_sockops_prog(struct bpf_sock_ops *skops)
+static void
+handle_remote_estd_cb(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
 {
 	struct sock_tuple key = { 0 };
 	struct sock_value val = { 0 };
 
+	key.saddr = *raddr;
+	key.daddr = *laddr;
+	key.sport = bpf_ntohl(skops->remote_port);
+	key.dport = skops->local_port;
+
+	val.sk = skops->sk;
+	val.ingress_dev = parse_ingress_dev(skops);
+
+	bpf_map_update_elem(&connmap, &key, &val, BPF_ANY);
+
+	bpf_sock_ops_cb_flags_set(skops, BPF_SOCK_OPS_STATE_CB_FLAG);
+}
+
+static inline void handle_passive_estd_inet_cb(struct bpf_sock_ops *skops)
+{
+	handle_remote_estd_cb(skops, &skops->local_ip4, &skops->remote_ip4);
+}
+
+static inline void handle_passive_estd_inet6_cb(struct bpf_sock_ops *skops)
+{
+	handle_remote_estd_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
+}
+
+static void
+handle_terminate_cb(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
+{
+	struct sock_tuple key = { 0 };
+
+	if (skops->args[1] != BPF_TCP_CLOSE_WAIT &&
+	    skops->args[1] != BPF_TCP_FIN_WAIT1 &&
+	    skops->args[1] != BPF_TCP_CLOSE)
+		return;
+
+	key.saddr = *raddr;
+	key.daddr = *laddr;
+	key.sport = bpf_ntohl(skops->remote_port);
+	key.dport = skops->local_port;
+
+	bpf_map_delete_elem(&connmap, &key);
+
+	bpf_sock_ops_cb_flags_set(skops,
+		skops->bpf_sock_ops_cb_flags & ~BPF_SOCK_OPS_STATE_CB_FLAG);
+}
+
+static inline void handle_terminate_inet_cb(struct bpf_sock_ops *skops)
+{
+	handle_terminate_cb(skops, &skops->local_ip4, &skops->remote_ip4);
+}
+
+static inline void handle_terminate_inet6_cb(struct bpf_sock_ops *skops)
+{
+	handle_terminate_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
+}
+
+SEC("hisock_sockops")
+int hisock_sockops_prog(struct bpf_sock_ops *skops)
+{
 	if (skops->op == BPF_SOCK_OPS_TCP_LISTEN_CB) {
 		handle_listen_cb(skops);
 		return 1;
 	}
 
-	if (!is_speed_flow(skops->local_port))
-		return 1;
-
-	switch (skops->op) {
-	case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
-		key.saddr = skops->remote_ip4;
-		key.sport = bpf_ntohl(skops->remote_port);
-		key.daddr = skops->local_ip4;
-		key.dport = skops->local_port;
-
-		val.sk = skops->sk;
-		val.ingress_dev = parse_ingress_dev(skops);
-
-		bpf_map_update_elem(&connmap, &key, &val, BPF_ANY);
-
-		bpf_sock_ops_cb_flags_set(skops, BPF_SOCK_OPS_STATE_CB_FLAG);
-		break;
-	case BPF_SOCK_OPS_STATE_CB:
-		if (skops->args[1] != BPF_TCP_CLOSE_WAIT &&
-		    skops->args[1] != BPF_TCP_FIN_WAIT1 &&
-		    skops->args[1] != BPF_TCP_CLOSE)
+	if (skops->family == AF_INET) {
+		switch (skops->op) {
+		case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
+			if (!is_speed_flow(skops->local_port))
+				break;
+			handle_passive_estd_inet_cb(skops);
 			break;
-
-		key.saddr = skops->remote_ip4;
-		key.sport = bpf_ntohl(skops->remote_port);
-		key.daddr = skops->local_ip4;
-		key.dport = skops->local_port;
-
-		bpf_map_delete_elem(&connmap, &key);
-
-		bpf_sock_ops_cb_flags_set(skops,
-			skops->bpf_sock_ops_cb_flags & ~BPF_SOCK_OPS_STATE_CB_FLAG);
-		break;
-	default:
-		break;
+		case BPF_SOCK_OPS_STATE_CB:
+			handle_terminate_inet_cb(skops);
+			break;
+		default:
+			break;
+		}
+	} else if (skops->family == AF_INET6 &&
+		   is_ipv6_addr_mapped(skops->local_ip6)) {
+		switch (skops->op) {
+		case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
+			if (!is_speed_flow(skops->local_port))
+				break;
+			handle_passive_estd_inet6_cb(skops);
+			break;
+		case BPF_SOCK_OPS_STATE_CB:
+			handle_terminate_inet6_cb(skops);
+			break;
+		default:
+			break;
+		}
 	}
 
 	return 1;
