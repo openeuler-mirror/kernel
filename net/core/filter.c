@@ -3751,6 +3751,46 @@ static const struct bpf_func_proto bpf_get_skb_ethhdr_proto = {
 	.arg3_type      = ARG_CONST_SIZE,
 };
 
+BPF_CALL_2(bpf_set_ingress_dev, struct sk_buff *, skb, void *, _dev)
+{
+	struct net_device *dev = (struct net_device *)_dev;
+
+	if (!dev || !virt_addr_valid(dev))
+		return -EFAULT;
+
+	skb->dev = dev;
+	skb->skb_iif = dev->ifindex;
+	skb->pkt_type = PACKET_HOST;
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_set_ingress_dev_proto = {
+	.func           = bpf_set_ingress_dev,
+	.gpl_only       = false,
+	.ret_type       = RET_INTEGER,
+	.arg1_type      = ARG_PTR_TO_CTX,
+	.arg2_type      = ARG_ANYTHING,
+};
+
+BPF_CALL_2(bpf_set_egress_dev, struct sk_buff *, skb, void *, _dev)
+{
+	struct net_device *dev = (struct net_device *)_dev;
+
+	if (!dev || !virt_addr_valid(dev))
+		return -EFAULT;
+
+	skb->dev = dev;
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_set_egress_dev_proto = {
+	.func           = bpf_set_egress_dev,
+	.gpl_only       = false,
+	.ret_type       = RET_INTEGER,
+	.arg1_type      = ARG_PTR_TO_CTX,
+	.arg2_type      = ARG_ANYTHING,
+};
+
 BPF_CALL_2(bpf_skb_change_skb_dev, struct sk_buff *, skb, u32, ifindex)
 {
 	struct net_device *dev;
@@ -7481,6 +7521,10 @@ hisock_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return is_ingress ? &bpf_set_ingress_dst_proto : NULL;
 	case BPF_FUNC_get_skb_ethhdr:
 		return is_ingress ? &bpf_get_skb_ethhdr_proto : NULL;
+	case BPF_FUNC_set_ingress_dev:
+		return is_ingress ? &bpf_set_ingress_dev_proto : NULL;
+	case BPF_FUNC_set_egress_dev:
+		return !is_ingress ? &bpf_set_egress_dev_proto : NULL;
 
 	default:
 		return bpf_base_func_proto(func_id);

@@ -3986,6 +3986,18 @@ union bpf_attr {
  *		Get the ether header of ingress skb.
  *	Return
  *		0 on success, or a negative error in case of failure.
+ *
+ * int bpf_set_ingress_dev(struct sk_buff *skb, void *dev)
+ *	Description
+ *		Set valid net device to ingress skb.
+ *	Return
+ *		0 on success, or negative error in case of failure.
+ *
+ * int bpf_set_egress_dev(struct sk_buff *skb, void *dev)
+ *	Description
+ *		Set valid net device to egress skb.
+ *	Return
+ *		0 on success, or negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4170,6 +4182,8 @@ union bpf_attr {
 	FN(ext_memcpy),			\
 	FN(set_ingress_dst),		\
 	FN(get_skb_ethhdr),		\
+	FN(set_ingress_dev),		\
+	FN(set_egress_dev),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
