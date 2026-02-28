@@ -1533,4 +1533,28 @@ out:
 
 #endif
 
+#ifdef CONFIG_HISOCK
+DECLARE_STATIC_KEY_FALSE(hisock_ingress_key);
+
+int hisock_ingress_prog_attach(const union bpf_attr *attr, struct bpf_prog *prog);
+int hisock_ingress_prog_detach(const union bpf_attr *attr);
+
+static inline int hisock_ingress_bpf_run(struct bpf_prog *prog, struct sk_buff *skb)
+{
+	void *saved_data_end;
+	int ret;
+
+	if (unlikely(!prog))
+		return HISOCK_PASS;
+
+	rcu_read_lock();
+	bpf_compute_and_save_data_end(skb, &saved_data_end);
+	ret = bpf_prog_run_pin_on_cpu(prog, skb);
+	bpf_restore_data_end(skb, saved_data_end);
+	rcu_read_unlock();
+
+	return ret;
+}
+#endif
+
 #endif /* __LINUX_FILTER_H__ */

@@ -7984,12 +7984,25 @@ static bool hisock_is_valid_access(int off, int size,
 				   const struct bpf_prog *prog,
 				   struct bpf_insn_access_aux *info)
 {
-	switch (off) {
-	case bpf_ctx_range(struct __sk_buff, tc_classid):
-	case bpf_ctx_range(struct __sk_buff, data_meta):
-	case bpf_ctx_range(struct __sk_buff, tstamp):
-	case bpf_ctx_range(struct __sk_buff, wire_len):
+	if (type == BPF_WRITE)
 		return false;
+
+	if (prog->expected_attach_type == BPF_HISOCK_EGRESS) {
+		switch (off) {
+		case bpf_ctx_range(struct __sk_buff, tc_classid):
+		case bpf_ctx_range(struct __sk_buff, data_meta):
+		case bpf_ctx_range(struct __sk_buff, tstamp):
+		case bpf_ctx_range(struct __sk_buff, wire_len):
+			return false;
+		}
+	} else if (prog->expected_attach_type == BPF_HISOCK_INGRESS) {
+		switch (off) {
+		case bpf_ctx_range_till(struct __sk_buff, mark, queue_mapping):
+		case bpf_ctx_range(struct __sk_buff, priority):
+		case bpf_ctx_range_till(struct __sk_buff, tc_index, tc_classid):
+		case bpf_ctx_range_till(struct __sk_buff, napi_id, gso_size):
+			return false;
+		}
 	}
 
 	switch (off) {
@@ -10236,6 +10249,52 @@ const struct bpf_verifier_ops flow_dissector_verifier_ops = {
 const struct bpf_prog_ops flow_dissector_prog_ops = {
 	.test_run		= bpf_prog_test_run_flow_dissector,
 };
+
+#ifdef CONFIG_HISOCK
+DEFINE_STATIC_KEY_FALSE(hisock_ingress_key);
+
+static int hisock_ingress_prog_install(const union bpf_attr *attr, struct bpf_prog *new)
+{
+	struct net *net = current->nsproxy->net_ns;
+	struct net_device *dev;
+	struct bpf_prog *old;
+	int ret = 0;
+
+	if (attr->attach_type != BPF_HISOCK_INGRESS)
+		return -EINVAL;
+
+	rtnl_lock();
+	dev = __dev_get_by_index(net, attr->target_fd);
+	if (!dev) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	old = rtnl_dereference(dev->hisock_ingress);
+	rcu_assign_pointer(dev->hisock_ingress, new);
+
+	if (new && !old)
+		static_branch_inc(&hisock_ingress_key);
+	else if (!new && old)
+		static_branch_dec(&hisock_ingress_key);
+
+	if (old)
+		bpf_prog_put(old);
+out:
+	rtnl_unlock();
+	return ret;
+}
+
+int hisock_ingress_prog_attach(const union bpf_attr *attr, struct bpf_prog *prog)
+{
+	return hisock_ingress_prog_install(attr, prog);
+}
+
+int hisock_ingress_prog_detach(const union bpf_attr *attr)
+{
+	return hisock_ingress_prog_install(attr, NULL);
+}
+#endif
 
 int sk_detach_filter(struct sock *sk)
 {

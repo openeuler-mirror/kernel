@@ -332,6 +332,7 @@ config EULER_SOCKETMAP
 config HISOCK
 	bool "enable HiSock Redirect Framework"
 	depends on INET
+	depends on ARM64
 	depends on CGROUP_BPF
 	depends on BPF_SYSCALL
 	default n
