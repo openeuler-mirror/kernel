@@ -3944,14 +3944,14 @@ union bpf_attr {
  *	Return
  *		0 on success, or a negative error in case of failure.
  *
- * void *bpf_get_ingress_dst(struct bpf_sock_ops *skops)
+ * void *bpf_get_rx_dst(struct bpf_sock_ops *skops)
  *	Description
  *		Get the ingress dst entry of the full sock.
  *	Return
  *		Valid ingress dst on success, or negative error
  *		in case of failure.
  *
- * int bpf_set_ingress_dst(struct xdp_buff *xdp, void *dst)
+ * int bpf_set_rx_dst(struct xdp_buff *xdp, void *dst)
  *	Description
  *		Set valid ingress dst entry to the skb associated
  *		with xdp_buff.
@@ -3974,6 +3974,12 @@ union bpf_attr {
  *		Copy *src_sz* bytes from *src* to *dst* if *dst_sz* >= *src_sz*.
  *	Return
  *		0 on success, or negative error in case of failure.
+ *
+ * int bpf_set_ingress_dst(struct sk_buff *skb, void *sk)
+ *	Description
+ *		Set skb ingress dst entry with valid sock rx dst entry.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4152,10 +4158,11 @@ union bpf_attr {
 	FN(get_node_stats),		\
 	FN(sched_net_rship_submit),	\
 	FN(sched_set_task_prefer_cpumask), \
-	FN(get_ingress_dst),		\
-	FN(set_ingress_dst),            \
+	FN(get_rx_dst),			\
+	FN(set_rx_dst),			\
 	FN(change_skb_dev),             \
 	FN(ext_memcpy),			\
+	FN(set_ingress_dst),		\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper

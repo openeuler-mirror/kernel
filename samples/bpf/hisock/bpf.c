@@ -84,7 +84,7 @@ int hisock_sockops_prog(struct bpf_sock_ops *skops)
 	switch (skops->op) {
 	case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
 	case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
-		dst = bpf_get_ingress_dst(skops);
+		dst = bpf_get_rx_dst(skops);
 		if (!dst)
 			return SOCKOPS_FAIL;
 
@@ -178,7 +178,7 @@ int hisock_ingress_prog(struct xdp_md *ctx)
 		val->ingress_ifindex = ctx->ingress_ifindex;
 
 	if (likely(val->ingress_dst))
-		bpf_set_ingress_dst(ctx, val->ingress_dst);
+		bpf_set_rx_dst(ctx, val->ingress_dst);
 
 	return XDP_HISOCK_REDIRECT;
 }

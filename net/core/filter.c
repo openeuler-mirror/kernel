@@ -3701,6 +3701,36 @@ static const struct bpf_func_proto bpf_skb_adjust_room_proto = {
 };
 
 #ifdef CONFIG_HISOCK
+BPF_CALL_2(bpf_set_ingress_dst, struct sk_buff *, skb, unsigned long, _sk)
+{
+	struct sock *sk = (struct sock *)_sk;
+	struct dst_entry *dst;
+
+	WARN_ON_ONCE(!rcu_read_lock_held());
+
+	if (!sk || !virt_addr_valid(sk))
+		return -EFAULT;
+
+	if (!sk_fullsock(sk))
+		return -EINVAL;
+
+	dst = rcu_dereference(sk->sk_rx_dst);
+	if (dst)
+		dst = dst_check(dst, 0);
+	if (dst && inet_sk(sk)->rx_dst_ifindex == skb->skb_iif)
+		skb_dst_set_noref(skb, dst);
+
+	return 0;
+}
+
+static const struct bpf_func_proto bpf_set_ingress_dst_proto = {
+	.func           = bpf_set_ingress_dst,
+	.gpl_only       = false,
+	.ret_type       = RET_INTEGER,
+	.arg1_type      = ARG_PTR_TO_CTX,
+	.arg2_type      = ARG_ANYTHING,
+};
+
 BPF_CALL_2(bpf_skb_change_skb_dev, struct sk_buff *, skb, u32, ifindex)
 {
 	struct net_device *dev;
@@ -7410,6 +7440,8 @@ cg_skb_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 static const struct bpf_func_proto *
 hisock_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
+	bool is_ingress = prog->expected_attach_type == BPF_HISOCK_INGRESS;
+
 	switch (func_id) {
 	case BPF_FUNC_skb_store_bytes:
 		return &bpf_skb_store_bytes_proto;
@@ -7425,6 +7457,9 @@ hisock_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_skb_adjust_room_proto;
 	case BPF_FUNC_change_skb_dev:
 		return &bpf_skb_change_skb_dev_proto;
+	case BPF_FUNC_set_ingress_dst:
+		return is_ingress ? &bpf_set_ingress_dst_proto : NULL;
+
 	default:
 		return bpf_base_func_proto(func_id);
 	}
@@ -7575,7 +7610,7 @@ xdp_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 	case BPF_FUNC_fib_lookup:
 		return &bpf_xdp_fib_lookup_proto;
 #ifdef CONFIG_HISOCK
-	case BPF_FUNC_set_ingress_dst:
+	case BPF_FUNC_set_rx_dst:
 		return &bpf_xdp_set_ingress_dst_proto;
 	case BPF_FUNC_change_skb_dev:
 		return &bpf_xdp_change_skb_dev_proto;
@@ -7642,7 +7677,7 @@ sock_ops_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 	case BPF_FUNC_reserve_hdr_opt:
 		return &bpf_sock_ops_reserve_hdr_opt_proto;
 #ifdef CONFIG_HISOCK
-	case BPF_FUNC_get_ingress_dst:
+	case BPF_FUNC_get_rx_dst:
 		return &bpf_sock_ops_get_ingress_dst_proto;
 #endif
 	case BPF_FUNC_tcp_sock:
