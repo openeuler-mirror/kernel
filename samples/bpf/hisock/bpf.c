@@ -21,9 +21,6 @@
 #define IP_OFFSET       0x1FFF
 #define CSUM_SHIFT_BITS	16
 
-#define PORT_LOCAL	1
-#define PORT_REMOTE	2
-
 #define MAX_NUMA	8
 #define MAX_CONN_NUMA	4096
 #define MAX_CONN	(MAX_CONN_NUMA * MAX_NUMA * 2)
@@ -57,16 +54,12 @@ struct {
 	__uint(max_entries, 128);
 } speed_port SEC(".maps");
 
-static inline bool is_speed_flow(u32 local, u32 remote)
+static inline bool is_speed_flow(u16 port)
 {
 	u8 *val;
 
-	val = bpf_map_lookup_elem(&speed_port, &local);
-	if (val && *val == PORT_LOCAL)
-		return true;
-
-	val = bpf_map_lookup_elem(&speed_port, &remote);
-	if (val && *val == PORT_REMOTE)
+	val = bpf_map_lookup_elem(&speed_port, &port);
+	if (val && *val == 1)
 		return true;
 
 	return false;
@@ -98,12 +91,11 @@ int hisock_sockops_prog(struct bpf_sock_ops *skops)
 	struct sock_tuple key = { 0 };
 	struct sock_value val = { 0 };
 
-	if (!is_speed_flow(skops->local_port, bpf_ntohl(skops->remote_port)))
+	if (!is_speed_flow(skops->local_port))
 		return 1;
 
 	switch (skops->op) {
 	case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
-	case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
 		key.saddr = skops->remote_ip4;
 		key.sport = bpf_ntohl(skops->remote_port);
 		key.daddr = skops->local_ip4;

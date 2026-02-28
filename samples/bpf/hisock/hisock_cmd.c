@@ -29,15 +29,12 @@
 #include <bpf/libbpf.h>
 
 #define DEF_BPF_PATH	"bpf.o"
-#define PORT_LOCAL	1
-#define PORT_REMOTE	2
 #define MAX_IF_NUM	8
 
 struct {
 	__u32 ifindex[MAX_IF_NUM];
 	int if_num;
-	char *local_port;
-	char *remote_port;
+	char *port;
 	char *cgrp_path;
 	char *bpf_path;
 	bool unload;
@@ -125,10 +122,11 @@ static int find_progs(struct bpf_object *obj)
 	return 0;
 }
 
-static int parse_port_range(const char *port_str, __u8 status, int map_fd)
+static int parse_port_range(const char *port_str, int map_fd)
 {
 	char *str = strdup(port_str);
 	char *token, *rest = str;
+	__u8 val = 1;
 	__u16 port;
 
 	while ((token = strtok_r(rest, ",", &rest))) {
@@ -144,18 +142,27 @@ static int parse_port_range(const char *port_str, __u8 status, int map_fd)
 				return -1;
 			}
 
-			for (port = start; port <= end; port++)
-				bpf_map_update_elem(map_fd, &port, &status, BPF_ANY);
+			for (port = start; port <= end; port++) {
+				if (bpf_map_update_elem(map_fd, &port, &val, BPF_ANY) < 0) {
+					fprintf(stderr, "ERROR: failed to update port range\n");
+					return -1;
+				}
+			}
 
-			printf("Speed port range %u-%u:%u\n", start, end, status);
+			printf("Speed port range: %u-%u\n", start, end);
 		} else {
 			port = atoi(token);
 			if (port == 0 || port > 65535) {
 				fprintf(stderr, "Invalid port: %s\n", token);
 				return -1;
 			}
-			bpf_map_update_elem(map_fd, &port, &status, BPF_ANY);
-			printf("Speed port %u:%u\n", port, status);
+
+			if (bpf_map_update_elem(map_fd, &port, &val, BPF_ANY) < 0) {
+				fprintf(stderr, "ERROR: failed to update port\n");
+				return -1;
+			}
+
+			printf("Speed port: %u\n", port);
 		}
 	}
 
@@ -173,15 +180,8 @@ static int set_speed_port(struct bpf_object *obj)
 		return -1;
 	}
 
-	if (hisock.local_port &&
-	    parse_port_range(hisock.local_port, PORT_LOCAL, map_fd)) {
-		fprintf(stderr, "ERROR: failed to update local port\n");
-		return -1;
-	}
-
-	if (hisock.remote_port &&
-	    parse_port_range(hisock.remote_port, PORT_REMOTE, map_fd)) {
-		fprintf(stderr, "ERROR: failed to update remote port\n");
+	if (hisock.port && parse_port_range(hisock.port, map_fd)) {
+		fprintf(stderr, "ERROR: failed to update speed port\n");
 		return -1;
 	}
 
@@ -310,7 +310,7 @@ static void do_help(void)
 {
 	fprintf(stderr,
 		"Load:   hisock_cmd [-f BPF_FILE] [-c CGRP_PATH] "
-		"[-p LOCAL_PORT] [-r REMOTE_PORT] [-i INTERFACE]\n"
+		"[-p PORT] [-i INTERFACE]\n"
 		"Unload: hisock_cmd -u [-c CGRP_PATH] [-i INTERFACE]\n");
 }
 
@@ -322,7 +322,7 @@ static int parse_args(int argc, char **argv)
 	hisock.bpf_path = DEF_BPF_PATH;
 	hisock.if_num = 0;
 
-	while ((opt = getopt(argc, argv, "f:c:p:r:i:uh")) != -1) {
+	while ((opt = getopt(argc, argv, "f:c:p:i:uh")) != -1) {
 		switch (opt) {
 		case 'f':
 			hisock.bpf_path = optarg;
@@ -331,10 +331,7 @@ static int parse_args(int argc, char **argv)
 			hisock.cgrp_path = optarg;
 			break;
 		case 'p':
-			hisock.local_port = optarg;
-			break;
-		case 'r':
-			hisock.remote_port = optarg;
+			hisock.port = optarg;
 			break;
 		case 'i':
 			ifname = optarg;
@@ -356,8 +353,7 @@ static int parse_args(int argc, char **argv)
 	if (hisock.cgrp_path == NULL ||
 	    hisock.if_num == 0 ||
 	    (!hisock.unload &&
-	     hisock.local_port == NULL &&
-	     hisock.remote_port == NULL)) {
+	     hisock.port == NULL)) {
 		do_help();
 		return -1;
 	}
