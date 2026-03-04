@@ -28,29 +28,36 @@
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
+#ifndef TASK_COMM_LEN
+#define TASK_COMM_LEN	16
+#endif
+
+#define HISOCK_BPFFS	"/sys/fs/bpf/hisock"
 #define DEF_BPF_PATH	"bpf.o"
-#define PORT_LOCAL	1
-#define PORT_REMOTE	2
 #define MAX_IF_NUM	8
+#define MAX_PORT_NUM	8
+#define MAX_COMM_NUM	8
 
 struct {
 	__u32 ifindex[MAX_IF_NUM];
 	int if_num;
-	char *local_port;
-	char *remote_port;
+	char *port[MAX_PORT_NUM];
+	int port_num;
+	char *comm[MAX_COMM_NUM];
+	int comm_num;
 	char *cgrp_path;
 	char *bpf_path;
 	bool unload;
-	bool help;
 } hisock;
 
 struct hisock_prog_info {
 	const char *sec_name;
+	const char *pin_map;
 	enum bpf_prog_type prog_type;
 	enum bpf_attach_type attach_type;
-	int attach_flag;
+	bool is_dev_attach;
+	bool is_skmsg;
 	int prog_fd;
-	bool is_xdp;
 };
 
 static struct hisock_prog_info prog_infos[] = {
@@ -58,22 +65,24 @@ static struct hisock_prog_info prog_infos[] = {
 		.sec_name	= "hisock_sockops",
 		.prog_type	= BPF_PROG_TYPE_SOCK_OPS,
 		.attach_type	= BPF_CGROUP_SOCK_OPS,
-		.attach_flag	= 0,
-		.is_xdp		= false,
+	},
+	{
+		.sec_name       = "hisock_skmsg",
+		.prog_type      = BPF_PROG_TYPE_SK_MSG,
+		.attach_type    = BPF_SK_MSG_VERDICT,
+		.pin_map        = "local_connmap",
+		.is_skmsg       = true,
 	},
 	{
 		.sec_name	= "hisock_ingress",
-		.prog_type	= BPF_PROG_TYPE_XDP,
-		.attach_type	= BPF_XDP,
-		.attach_flag	= XDP_FLAGS_SKB_MODE,
-		.is_xdp		= true,
+		.prog_type	= BPF_PROG_TYPE_HISOCK,
+		.attach_type	= BPF_HISOCK_INGRESS,
+		.is_dev_attach	= true,
 	},
 	{
 		.sec_name	= "hisock_egress",
 		.prog_type	= BPF_PROG_TYPE_HISOCK,
 		.attach_type	= BPF_HISOCK_EGRESS,
-		.attach_flag	= 0,
-		.is_xdp		= false,
 	},
 };
 
@@ -131,10 +140,11 @@ static int find_progs(struct bpf_object *obj)
 	return 0;
 }
 
-static int parse_port_range(const char *port_str, __u8 status, int map_fd)
+static int parse_port_range(const char *port_str, int map_fd)
 {
 	char *str = strdup(port_str);
 	char *token, *rest = str;
+	__u8 val = 1;
 	__u16 port;
 
 	while ((token = strtok_r(rest, ",", &rest))) {
@@ -150,18 +160,27 @@ static int parse_port_range(const char *port_str, __u8 status, int map_fd)
 				return -1;
 			}
 
-			for (port = start; port <= end; port++)
-				bpf_map_update_elem(map_fd, &port, &status, BPF_ANY);
+			for (port = start; port <= end; port++) {
+				if (bpf_map_update_elem(map_fd, &port, &val, BPF_ANY) < 0) {
+					fprintf(stderr, "ERROR: failed to update port range\n");
+					return -1;
+				}
+			}
 
-			printf("Speed port range %u-%u:%u\n", start, end, status);
+			printf("Speed port range: %u-%u\n", start, end);
 		} else {
 			port = atoi(token);
 			if (port == 0 || port > 65535) {
 				fprintf(stderr, "Invalid port: %s\n", token);
 				return -1;
 			}
-			bpf_map_update_elem(map_fd, &port, &status, BPF_ANY);
-			printf("Speed port %u:%u\n", port, status);
+
+			if (bpf_map_update_elem(map_fd, &port, &val, BPF_ANY) < 0) {
+				fprintf(stderr, "ERROR: failed to update port\n");
+				return -1;
+			}
+
+			printf("Speed port: %u\n", port);
 		}
 	}
 
@@ -171,7 +190,7 @@ static int parse_port_range(const char *port_str, __u8 status, int map_fd)
 
 static int set_speed_port(struct bpf_object *obj)
 {
-	int map_fd;
+	int map_fd, i;
 
 	map_fd = bpf_object__find_map_fd_by_name(obj, "speed_port");
 	if (map_fd < 0) {
@@ -179,16 +198,36 @@ static int set_speed_port(struct bpf_object *obj)
 		return -1;
 	}
 
-	if (hisock.local_port &&
-	    parse_port_range(hisock.local_port, PORT_LOCAL, map_fd)) {
-		fprintf(stderr, "ERROR: failed to update local port\n");
+	for (i = 0; i < hisock.port_num; i++) {
+		if (hisock.port[i] && parse_port_range(hisock.port[i], map_fd)) {
+			fprintf(stderr, "ERROR: failed to update speed port\n");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+static int set_target_comm(struct bpf_object *obj)
+{
+	int map_fd, i;
+
+	map_fd = bpf_object__find_map_fd_by_name(obj, "target_comm");
+	if (map_fd < 0) {
+		fprintf(stderr, "ERROR: failed to find map fd\n");
 		return -1;
 	}
 
-	if (hisock.remote_port &&
-	    parse_port_range(hisock.remote_port, PORT_REMOTE, map_fd)) {
-		fprintf(stderr, "ERROR: failed to update remote port\n");
-		return -1;
+	for (i = 0; i < hisock.comm_num; i++) {
+		char key[TASK_COMM_LEN] = { 0 };
+		__u8 val = 1;
+
+		strncpy(key, hisock.comm[i], sizeof(key) - 1);
+		if (bpf_map_update_elem(map_fd, &key, &val, BPF_ANY) < 0) {
+			fprintf(stderr, "ERROR: failed to update comm\n");
+			return -1;
+		}
+		printf("Target comm: %s\n", key);
 	}
 
 	return 0;
@@ -208,16 +247,25 @@ static int detach_progs(void)
 
 	for (i = 0; i < ARRAY_SIZE(prog_infos); i++) {
 		info = &prog_infos[i];
-		if (info->is_xdp) {
+		if (info->is_dev_attach) {
 			for (j = 0; j < hisock.if_num; j++) {
-				if (bpf_set_link_xdp_fd(hisock.ifindex[j], -1,
-							info->attach_flag)) {
+				if (bpf_prog_detach(hisock.ifindex[j], info->attach_type)) {
 					fprintf(stderr,
 						"ERROR: failed to detach prog %s\n",
 						info->sec_name);
 					err_cnt++;
 				}
 			}
+			continue;
+		}
+
+		if (info->is_skmsg) {
+			char pin_path[64];
+
+			snprintf(pin_path, sizeof(pin_path), "%s/%s",
+				 HISOCK_BPFFS, info->pin_map);
+
+			unlink(pin_path);
 			continue;
 		}
 
@@ -231,7 +279,7 @@ static int detach_progs(void)
 	return -err_cnt;
 }
 
-static int attach_progs(void)
+static int attach_progs(struct bpf_object *obj)
 {
 	struct hisock_prog_info *info;
 	int i, j, cgrp_fd;
@@ -244,17 +292,41 @@ static int attach_progs(void)
 
 	for (i = 0; i < ARRAY_SIZE(prog_infos); i++) {
 		info = &prog_infos[i];
-		if (info->is_xdp) {
+		if (info->is_dev_attach) {
 			for (j = 0; j < hisock.if_num; j++) {
-				if (bpf_set_link_xdp_fd(hisock.ifindex[j], info->prog_fd,
-							info->attach_flag))
+				if (bpf_prog_attach(info->prog_fd, hisock.ifindex[j],
+						    info->attach_type, 0))
 					goto fail;
 			}
 			continue;
 		}
 
-		if (bpf_prog_attach(info->prog_fd, cgrp_fd, info->attach_type,
-				    info->attach_flag))
+		if (info->is_skmsg) {
+			struct bpf_map *map;
+			char pin_path[64];
+
+			map = bpf_object__find_map_by_name(obj, info->pin_map);
+			if (!map) {
+				fprintf(stderr, "ERROR: failed to find pin map\n");
+				goto fail;
+			}
+
+			snprintf(pin_path, sizeof(pin_path), "%s/%s",
+				 HISOCK_BPFFS, info->pin_map);
+
+			if (bpf_map__pin(map, pin_path)) {
+				fprintf(stderr, "ERROR: failed to pin map\n");
+				goto fail;
+			}
+
+			if (bpf_prog_attach(info->prog_fd, bpf_map__fd(map),
+					    info->attach_type, 0))
+				goto fail;
+
+			continue;
+		}
+
+		if (bpf_prog_attach(info->prog_fd, cgrp_fd, info->attach_type, 0))
 			goto fail;
 	}
 
@@ -304,7 +376,13 @@ static int do_hisock(void)
 		return -1;
 	}
 
-	if (attach_progs()) {
+	if (set_target_comm(obj)) {
+		fprintf(stderr, "ERROR: failed to set target comm\n");
+		bpf_object__close(obj);
+		return -1;
+	}
+
+	if (attach_progs(obj)) {
 		fprintf(stderr, "ERROR: failed to attach progs\n");
 		bpf_object__close(obj);
 		return -1;
@@ -318,19 +396,17 @@ static void do_help(void)
 {
 	fprintf(stderr,
 		"Load:   hisock_cmd [-f BPF_FILE] [-c CGRP_PATH] "
-		"[-p LOCAL_PORT] [-r REMOTE_PORT] [-i INTERFACE]\n"
+		"[-p PORT] [-C COMM] [-i INTERFACE]\n"
 		"Unload: hisock_cmd -u [-c CGRP_PATH] [-i INTERFACE]\n");
 }
 
 static int parse_args(int argc, char **argv)
 {
-	char *ifname;
 	int opt;
 
 	hisock.bpf_path = DEF_BPF_PATH;
-	hisock.if_num = 0;
 
-	while ((opt = getopt(argc, argv, "f:c:p:r:i:uh")) != -1) {
+	while ((opt = getopt(argc, argv, "f:c:p:i:C:uh")) != -1) {
 		switch (opt) {
 		case 'f':
 			hisock.bpf_path = optarg;
@@ -339,33 +415,38 @@ static int parse_args(int argc, char **argv)
 			hisock.cgrp_path = optarg;
 			break;
 		case 'p':
-			hisock.local_port = optarg;
-			break;
-		case 'r':
-			hisock.remote_port = optarg;
+			hisock.port[hisock.port_num] = optarg;
+			hisock.port_num++;
 			break;
 		case 'i':
-			ifname = optarg;
-			hisock.ifindex[hisock.if_num] = if_nametoindex(ifname);
+			hisock.ifindex[hisock.if_num] = if_nametoindex(optarg);
 			hisock.if_num++;
+			break;
+		case 'C':
+			hisock.comm[hisock.comm_num] = optarg;
+			hisock.comm_num++;
 			break;
 		case 'u':
 			hisock.unload = true;
 			break;
 		case 'h':
-			hisock.help = true;
-			break;
+			do_help();
+			exit(0);
 		default:
 			fprintf(stderr, "ERROR: unknown option %c\n", opt);
 			return -1;
 		}
 	}
 
-	if (hisock.cgrp_path == NULL ||
-	    hisock.if_num == 0 ||
-	    (!hisock.unload &&
-	     hisock.local_port == NULL &&
-	     hisock.remote_port == NULL)) {
+	if (hisock.unload &&
+	    (hisock.cgrp_path == NULL || hisock.if_num == 0)) {
+		do_help();
+		return -1;
+	}
+
+	if (!hisock.unload &&
+	    (hisock.cgrp_path == NULL || hisock.if_num == 0 ||
+	     (hisock.port_num == 0 && hisock.comm_num == 0))) {
 		do_help();
 		return -1;
 	}
@@ -378,11 +459,6 @@ int main(int argc, char **argv)
 	if (parse_args(argc, argv)) {
 		fprintf(stderr, "ERROR: failed to parse args\n");
 		return -1;
-	}
-
-	if (hisock.help) {
-		do_help();
-		return 0;
 	}
 
 	if (hisock.unload) {

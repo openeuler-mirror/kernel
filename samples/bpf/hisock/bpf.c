@@ -4,29 +4,28 @@
  *
  * Description: End-to-End HiSock Redirect sample.
  */
+#define KBUILD_MODNAME "foo"
 #include <uapi/linux/in.h>
 #include <uapi/linux/if_ether.h>
 #include <linux/if_vlan.h>
+#include <linux/filter.h>
 #include <uapi/linux/ip.h>
 #include <uapi/linux/tcp.h>
 #include <uapi/linux/bpf.h>
 
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
 
 #define IP_MF           0x2000
 #define IP_OFFSET       0x1FFF
 #define CSUM_SHIFT_BITS	16
 
-#define SOCKOPS_SUCC	1
-#define SOCKOPS_FAIL	0
-
-#define PORT_LOCAL	1
-#define PORT_REMOTE	2
-
 #define MAX_NUMA	8
 #define MAX_CONN_NUMA	4096
 #define MAX_CONN	(MAX_CONN_NUMA * MAX_NUMA * 2)
+
+#define MAX_COMM_NUM	8
 
 struct sock_tuple {
 	u32 saddr;
@@ -36,10 +35,11 @@ struct sock_tuple {
 };
 
 struct sock_value {
+	void *sk;
+	void *egress_dev;
+	void *ingress_dev;
 	struct ethhdr ingress_eth;
 	bool eth_updated;
-	u32 ingress_ifindex;
-	void *ingress_dst;
 };
 
 struct {
@@ -50,111 +50,305 @@ struct {
 } connmap SEC(".maps");
 
 struct {
+	__uint(type, BPF_MAP_TYPE_SOCKHASH);
+	__uint(key_size, sizeof(struct sock_tuple));
+	__uint(value_size, sizeof(int));
+	__uint(max_entries, MAX_CONN);
+} local_connmap SEC(".maps");
+
+struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(key_size, sizeof(u16));
 	__uint(value_size, sizeof(u8));
 	__uint(max_entries, 128);
 } speed_port SEC(".maps");
 
-static inline bool is_speed_flow(u32 local, u32 remote)
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(key_size, sizeof(char[TASK_COMM_LEN]));
+	__uint(value_size, sizeof(u8));
+	__uint(max_entries, MAX_COMM_NUM);
+} target_comm SEC(".maps");
+
+static inline bool is_speed_flow(u16 port)
 {
 	u8 *val;
 
-	val = bpf_map_lookup_elem(&speed_port, &local);
-	if (val && *val == PORT_LOCAL)
-		return true;
-
-	val = bpf_map_lookup_elem(&speed_port, &remote);
-	if (val && *val == PORT_REMOTE)
+	val = bpf_map_lookup_elem(&speed_port, &port);
+	if (val && *val == 1)
 		return true;
 
 	return false;
 }
 
-SEC("hisock_sockops")
-int hisock_sockops_prog(struct bpf_sock_ops *skops)
+static inline bool
+is_local_conn(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
+{
+	struct sock_tuple key = { 0 };
+	struct bpf_sock *sk;
+
+	if (*laddr == *raddr)
+		return true;
+
+	key.saddr = *laddr;
+	key.daddr = *raddr;
+	key.sport = skops->local_port;
+	key.dport = bpf_ntohl(skops->remote_port);
+
+	sk = bpf_map_lookup_elem(&local_connmap, &key);
+	if (!sk)
+		return false;
+
+	bpf_sk_release(sk);
+	return true;
+}
+
+static inline bool is_ipv6_addr_mapped(u32 *addr6)
+{
+	return addr6[0] == 0 && addr6[1] == 0 &&
+	       addr6[2] == bpf_htonl(0x0000ffff);
+}
+
+static inline void *parse_ingress_dev(struct bpf_sock_ops *skops)
+{
+	struct sk_buff *skb;
+	struct net_device *dev;
+
+	skb = BPF_CORE_READ((struct bpf_sock_ops_kern *)skops, skb);
+	dev = BPF_CORE_READ(skb, dev);
+
+	return dev;
+}
+
+static inline void *parse_egress_dev(struct __sk_buff *skb)
+{
+	struct net_device *dev;
+
+	dev = BPF_CORE_READ((struct sk_buff *)skb, dev);
+
+	return dev;
+}
+
+static void handle_listen_cb(struct bpf_sock_ops *skops)
+{
+	char comm[TASK_COMM_LEN] = { 0 };
+	u8 *comm_val;
+
+	bpf_get_current_comm(comm, sizeof(comm));
+
+	comm_val = bpf_map_lookup_elem(&target_comm, comm);
+	if (comm_val && *comm_val == 1) {
+		u16 key = skops->local_port;
+		u8 val = 1;
+
+		bpf_map_update_elem(&speed_port, &key, &val, BPF_ANY);
+	}
+}
+
+static void
+handle_local_estd_cb(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
+{
+	struct sock_tuple key = { 0 };
+
+	key.saddr = *raddr;
+	key.daddr = *laddr;
+	key.sport = bpf_ntohl(skops->remote_port);
+	key.dport = skops->local_port;
+
+	bpf_sock_hash_update(skops, &local_connmap, &key, BPF_NOEXIST);
+}
+
+static void
+handle_remote_estd_cb(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
 {
 	struct sock_tuple key = { 0 };
 	struct sock_value val = { 0 };
-	void *dst;
 
-	if (!is_speed_flow(skops->local_port, bpf_ntohl(skops->remote_port)))
-		return SOCKOPS_SUCC;
+	key.saddr = *raddr;
+	key.daddr = *laddr;
+	key.sport = bpf_ntohl(skops->remote_port);
+	key.dport = skops->local_port;
 
-	switch (skops->op) {
-	case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
-	case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
-		dst = bpf_get_ingress_dst(skops);
-		if (!dst)
-			return SOCKOPS_FAIL;
+	val.sk = skops->sk;
+	val.ingress_dev = parse_ingress_dev(skops);
 
-		key.saddr = skops->remote_ip4;
-		key.sport = bpf_ntohl(skops->remote_port);
-		key.daddr = skops->local_ip4;
-		key.dport = skops->local_port;
+	bpf_map_update_elem(&connmap, &key, &val, BPF_ANY);
 
-		val.ingress_dst = dst;
-		bpf_map_update_elem(&connmap, &key, &val, BPF_ANY);
+	bpf_sock_ops_cb_flags_set(skops, BPF_SOCK_OPS_STATE_CB_FLAG);
+}
 
-		bpf_sock_ops_cb_flags_set(skops, BPF_SOCK_OPS_STATE_CB_FLAG);
-		break;
-	case BPF_SOCK_OPS_STATE_CB:
-		if (skops->args[1] != BPF_TCP_CLOSE_WAIT &&
-		    skops->args[1] != BPF_TCP_FIN_WAIT1 &&
-		    skops->args[1] != BPF_TCP_CLOSE)
-			break;
+static inline void handle_passive_estd_inet_cb(struct bpf_sock_ops *skops)
+{
+	if (is_local_conn(skops, &skops->local_ip4, &skops->remote_ip4))
+		handle_local_estd_cb(skops, &skops->local_ip4, &skops->remote_ip4);
+	else
+		handle_remote_estd_cb(skops, &skops->local_ip4, &skops->remote_ip4);
+}
 
-		key.saddr = skops->remote_ip4;
-		key.sport = bpf_ntohl(skops->remote_port);
-		key.daddr = skops->local_ip4;
-		key.dport = skops->local_port;
+static inline void handle_passive_estd_inet6_cb(struct bpf_sock_ops *skops)
+{
+	if (is_local_conn(skops, &skops->local_ip6[3], &skops->remote_ip6[3]))
+		handle_local_estd_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
+	else
+		handle_remote_estd_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
+}
 
-		bpf_map_delete_elem(&connmap, &key);
+static inline void handle_active_estd_inet_cb(struct bpf_sock_ops *skops)
+{
+	handle_local_estd_cb(skops, &skops->local_ip4, &skops->remote_ip4);
+}
 
-		bpf_sock_ops_cb_flags_set(skops,
-			skops->bpf_sock_ops_cb_flags & ~BPF_SOCK_OPS_STATE_CB_FLAG);
-		break;
-	default:
-		break;
+static inline void handle_active_estd_inet6_cb(struct bpf_sock_ops *skops)
+{
+	handle_local_estd_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
+}
+
+static void
+handle_terminate_cb(struct bpf_sock_ops *skops, u32 *laddr, u32 *raddr)
+{
+	struct sock_tuple key = { 0 };
+
+	if (skops->args[1] != BPF_TCP_CLOSE_WAIT &&
+	    skops->args[1] != BPF_TCP_FIN_WAIT1 &&
+	    skops->args[1] != BPF_TCP_CLOSE)
+		return;
+
+	key.saddr = *raddr;
+	key.daddr = *laddr;
+	key.sport = bpf_ntohl(skops->remote_port);
+	key.dport = skops->local_port;
+
+	bpf_map_delete_elem(&connmap, &key);
+
+	bpf_sock_ops_cb_flags_set(skops,
+		skops->bpf_sock_ops_cb_flags & ~BPF_SOCK_OPS_STATE_CB_FLAG);
+}
+
+static inline void handle_terminate_inet_cb(struct bpf_sock_ops *skops)
+{
+	handle_terminate_cb(skops, &skops->local_ip4, &skops->remote_ip4);
+}
+
+static inline void handle_terminate_inet6_cb(struct bpf_sock_ops *skops)
+{
+	handle_terminate_cb(skops, &skops->local_ip6[3], &skops->remote_ip6[3]);
+}
+
+SEC("hisock_sockops")
+int hisock_sockops_prog(struct bpf_sock_ops *skops)
+{
+	if (skops->op == BPF_SOCK_OPS_TCP_LISTEN_CB) {
+		handle_listen_cb(skops);
+		return 1;
 	}
 
-	return SOCKOPS_SUCC;
+	if (skops->family == AF_INET) {
+		switch (skops->op) {
+		case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
+			if (!is_speed_flow(skops->local_port))
+				break;
+			handle_passive_estd_inet_cb(skops);
+			break;
+		case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
+			if (!is_speed_flow(bpf_ntohl(skops->remote_port)))
+				break;
+			handle_active_estd_inet_cb(skops);
+			break;
+		case BPF_SOCK_OPS_STATE_CB:
+			handle_terminate_inet_cb(skops);
+			break;
+		default:
+			break;
+		}
+	} else if (skops->family == AF_INET6 &&
+		   is_ipv6_addr_mapped(skops->local_ip6)) {
+		switch (skops->op) {
+		case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
+			if (!is_speed_flow(skops->local_port))
+				break;
+			handle_passive_estd_inet6_cb(skops);
+			break;
+		case BPF_SOCK_OPS_ACTIVE_ESTABLISHED_CB:
+			if (!is_speed_flow(bpf_ntohl(skops->remote_port)))
+				break;
+			handle_active_estd_inet6_cb(skops);
+			break;
+		case BPF_SOCK_OPS_STATE_CB:
+			handle_terminate_inet6_cb(skops);
+			break;
+		default:
+			break;
+		}
+	}
+
+	return 1;
+}
+
+static void
+msg_redirect_cb(struct sk_msg_md *msg, u32 *laddr, u32 *raddr)
+{
+	struct sock_tuple key = { 0 };
+
+	key.daddr = *raddr;
+	key.saddr = *laddr;
+	key.dport = bpf_ntohl(msg->remote_port);
+	key.sport = msg->local_port;
+
+	bpf_msg_redirect_hash(msg, &local_connmap, &key, BPF_F_INGRESS);
+}
+
+static inline void msg_redirect_inet_cb(struct sk_msg_md *msg)
+{
+	msg_redirect_cb(msg, &msg->local_ip4, &msg->remote_ip4);
+}
+
+static inline void msg_redirect_inet6_cb(struct sk_msg_md *msg)
+{
+	msg_redirect_cb(msg, &msg->local_ip6[3], &msg->remote_ip6[3]);
+}
+
+SEC("hisock_skmsg")
+int hisock_skmsg_prog(struct sk_msg_md *msg)
+{
+	if (msg->family == AF_INET)
+		msg_redirect_inet_cb(msg);
+	else if (msg->family == AF_INET6 &&
+		 is_ipv6_addr_mapped(msg->local_ip6))
+		msg_redirect_inet6_cb(msg);
+
+	return SK_PASS;
 }
 
 SEC("hisock_ingress")
-int hisock_ingress_prog(struct xdp_md *ctx)
+int hisock_ingress_prog(struct __sk_buff *skb)
 {
-	void *data_end = (void *)(long)ctx->data_end;
-	void *data = (void *)(long)ctx->data;
+	void *data_end = (void *)(long)skb->data_end;
+	void *data = (void *)(long)skb->data;
 	struct sock_tuple key = { 0 };
 	struct sock_value *val;
-	struct ethhdr *ehdr;
 	struct tcphdr *thdr;
 	struct iphdr *ihdr;
+	struct ethhdr ehdr;
 
-	ehdr = (struct ethhdr *)data;
-	if (ehdr + 1 > data_end)
-		return XDP_PASS;
+	if (skb->protocol != bpf_htons(ETH_P_IP))
+		return HISOCK_PASS;
 
-	if (ehdr->h_proto != bpf_htons(ETH_P_IP))
-		return XDP_PASS;
-
-	ihdr = (struct iphdr *)(ehdr + 1);
+	ihdr = (struct iphdr *)data;
 	if (ihdr + 1 > data_end)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	if (ihdr->ihl != 5 || ihdr->protocol != IPPROTO_TCP)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	if (ihdr->frag_off & bpf_htons(IP_MF | IP_OFFSET))
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	thdr = (struct tcphdr *)(ihdr + 1);
 	if (thdr + 1 > data_end)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	if (thdr->syn || thdr->fin || thdr->rst)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
 	key.saddr = ihdr->saddr;
 	key.sport = bpf_ntohs(thdr->source);
@@ -163,24 +357,25 @@ int hisock_ingress_prog(struct xdp_md *ctx)
 
 	val = bpf_map_lookup_elem(&connmap, &key);
 	if (!val)
-		return XDP_PASS;
+		return HISOCK_PASS;
 
-	if (unlikely(!val->eth_updated)) {
-		bpf_ext_memcpy(val->ingress_eth.h_source, ETH_ALEN,
-			       ehdr->h_dest, ETH_ALEN);
-		bpf_ext_memcpy(val->ingress_eth.h_dest, ETH_ALEN,
-			       ehdr->h_source, ETH_ALEN);
-		val->ingress_eth.h_proto = ehdr->h_proto;
-		val->eth_updated = true;
+	if (!val->eth_updated) {
+		if (!(bpf_get_skb_ethhdr(skb, &ehdr, sizeof(ehdr)))) {
+			memcpy(val->ingress_eth.h_source, ehdr.h_dest, ETH_ALEN);
+			memcpy(val->ingress_eth.h_dest, ehdr.h_source, ETH_ALEN);
+			val->ingress_eth.h_proto = ehdr.h_proto;
+			val->eth_updated = true;
+		}
 	}
 
-	if (unlikely(!val->ingress_ifindex))
-		val->ingress_ifindex = ctx->ingress_ifindex;
+	if (!val->egress_dev)
+		val->egress_dev = parse_egress_dev(skb);
 
-	if (likely(val->ingress_dst))
-		bpf_set_ingress_dst(ctx, val->ingress_dst);
+	bpf_set_ingress_dev(skb, val->ingress_dev);
+	bpf_handle_ingress_ptype(skb);
+	bpf_set_ingress_dst(skb, val->sk);
 
-	return XDP_HISOCK_REDIRECT;
+	return HISOCK_REDIRECT;
 }
 
 static inline void ipv4_csum(struct iphdr *ihdr)
@@ -203,8 +398,19 @@ int hisock_egress_prog(struct __sk_buff *skb)
 	struct sock_tuple key = { 0 };
 	struct sock_value *val;
 	struct ethhdr *ehdr;
+	struct tcphdr *thdr;
 	struct iphdr *ihdr;
-	int ret;
+
+	ihdr = (struct iphdr *)data;
+	if (ihdr + 1 > data_end)
+		return HISOCK_PASS;
+
+	thdr = (struct tcphdr *)(ihdr + 1);
+	if (thdr + 1 > data_end)
+		return HISOCK_PASS;
+
+	if (thdr->syn || thdr->fin || thdr->rst)
+		return HISOCK_PASS;
 
 	key.saddr = skb->remote_ip4;
 	key.sport = bpf_ntohl(skb->remote_port);
@@ -215,18 +421,13 @@ int hisock_egress_prog(struct __sk_buff *skb)
 	if (!val)
 		return HISOCK_PASS;
 
-	if (unlikely(!val->eth_updated))
+	if (!val->eth_updated)
 		goto redirect;
-
-	ihdr = (struct iphdr *)data;
-	if (ihdr + 1 > data_end)
-		return HISOCK_PASS;
 
 	ihdr->tot_len = bpf_htons(skb->len);
 	ipv4_csum(ihdr);
 
-	ret = bpf_skb_change_head(skb, ETH_HLEN, 0);
-	if (ret < 0)
+	if (bpf_skb_change_head(skb, ETH_HLEN, 0) < 0)
 		goto redirect;
 
 	data = (void *)(long)skb->data;
@@ -236,10 +437,10 @@ int hisock_egress_prog(struct __sk_buff *skb)
 	if (ehdr + 1 > data_end)
 		return HISOCK_DROP;
 
-	bpf_ext_memcpy(ehdr, ETH_HLEN, &val->ingress_eth, ETH_HLEN);
+	memcpy(ehdr, &val->ingress_eth, ETH_HLEN);
+	bpf_handle_egress_ptype(skb);
 redirect:
-	if (likely(val->ingress_ifindex))
-		bpf_change_skb_dev(skb, val->ingress_ifindex);
+	bpf_set_egress_dev(skb, val->egress_dev);
 
 	return HISOCK_REDIRECT;
 }

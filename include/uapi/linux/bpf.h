@@ -252,6 +252,7 @@ enum bpf_attach_type {
 	BPF_GNET_RCV_NIC_NODE,
 	BPF_GNET_SEND_NIC_NODE,
 	BPF_HISOCK_EGRESS,
+	BPF_HISOCK_INGRESS,
 #endif
 	__MAX_BPF_ATTACH_TYPE
 };
@@ -3943,36 +3944,43 @@ union bpf_attr {
  *	Return
  *		0 on success, or a negative error in case of failure.
  *
- * void *bpf_get_ingress_dst(struct bpf_sock_ops *skops)
+ * int bpf_set_ingress_dst(struct sk_buff *skb, void *sk)
  *	Description
- *		Get the ingress dst entry of the full sock.
- *	Return
- *		Valid ingress dst on success, or negative error
- *		in case of failure.
- *
- * int bpf_set_ingress_dst(struct xdp_buff *xdp, void *dst)
- *	Description
- *		Set valid ingress dst entry to the skb associated
- *		with xdp_buff.
+ *		Set skb ingress dst entry with valid sock rx dst entry.
  *	Return
  *		0 on success, or a negative error in case of failure.
  *
- * int bpf_change_skb_dev(void *ctx, u32 ifindex)
+ * int bpf_get_skb_ethhdr(struct sk_buff *skb, void *peth, int size)
  *	Description
- *		Change ingress or egress device of the associated skb.
- *		Supports only BPF_PROG_TYPE_HISOCK and BPF_PROG_TYPE_XDP
- *		program types.
+ *		Get the ether header of ingress skb.
+ *	Return
+ *		0 on success, or a negative error in case of failure.
  *
- *		*ctx* is either **struct xdp_md** for XDP programs or
- *		**struct __sk_buff** hisock_egress programs.
+ * int bpf_set_ingress_dev(struct sk_buff *skb, void *dev)
+ *	Description
+ *		Set valid net device to ingress skb.
  *	Return
  *		0 on success, or negative error in case of failure.
  *
- * int bpf_ext_memcpy(void *dst, size_t dst_sz, const void *src, size_t src_sz)
+ * int bpf_set_egress_dev(struct sk_buff *skb, void *dev)
  *	Description
- *		Copy *src_sz* bytes from *src* to *dst* if *dst_sz* >= *src_sz*.
+ *		Set valid net device to egress skb.
  *	Return
  *		0 on success, or negative error in case of failure.
+ *
+ * void bpf_handle_ingress_ptype(struct sk_buff *skb)
+ *	Description
+ *		Handle ingress ptype all logic based on the current
+ *		net device of skb.
+ *	Return
+ *		Void.
+ *
+ * void bpf_handle_egress_ptype(struct sk_buff *skb)
+ *	Description
+ *		Handle egress ptype all logic based on the current
+ *		net device of skb.
+ *	Return
+ *		Void.
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
@@ -4151,10 +4159,12 @@ union bpf_attr {
 	FN(get_node_stats),		\
 	FN(sched_net_rship_submit),	\
 	FN(sched_set_task_prefer_cpumask), \
-	FN(get_ingress_dst),		\
-	FN(set_ingress_dst),            \
-	FN(change_skb_dev),             \
-	FN(ext_memcpy),			\
+	FN(set_ingress_dst),		\
+	FN(get_skb_ethhdr),		\
+	FN(set_ingress_dev),		\
+	FN(set_egress_dev),		\
+	FN(handle_ingress_ptype),	\
+	FN(handle_egress_ptype),	\
 	/* */
 
 /* integer value in 'imm' field of BPF_CALL instruction selects which helper
@@ -4522,7 +4532,6 @@ enum xdp_action {
 	XDP_PASS,
 	XDP_TX,
 	XDP_REDIRECT,
-	XDP_HISOCK_REDIRECT = 100,
 };
 
 /* user accessible metadata for XDP packet hook

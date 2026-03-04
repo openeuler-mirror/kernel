@@ -4974,10 +4974,6 @@ static u32 netif_receive_generic_xdp(struct sk_buff *skb,
 		if (metalen)
 			skb_metadata_set(skb, metalen);
 		break;
-#ifdef CONFIG_HISOCK
-	case XDP_HISOCK_REDIRECT:
-		break;
-#endif
 	default:
 		bpf_warn_invalid_xdp_action(act);
 		fallthrough;
@@ -5019,7 +5015,7 @@ void generic_xdp_tx(struct sk_buff *skb, struct bpf_prog *xdp_prog)
 }
 
 #ifdef CONFIG_HISOCK
-static int generic_xdp_hisock_redirect(struct sk_buff *skb)
+static int do_hisock_ingress_redirect(struct sk_buff *skb)
 {
 	const struct iphdr *iph;
 	u32 len;
@@ -5053,9 +5049,10 @@ static int generic_xdp_hisock_redirect(struct sk_buff *skb)
 	iph = ip_hdr(skb);
 	skb->transport_header = skb->network_header + iph->ihl * 4;
 
-	skb_orphan(skb);
+	if (!skb_sk_is_prefetched(skb))
+		skb_orphan(skb);
 
-	if (!skb_valid_dst(skb)) {
+	if (unlikely(!skb_valid_dst(skb))) {
 		if (ip_route_input_noref(skb, iph->daddr, iph->saddr,
 					 iph->tos, skb->dev))
 			goto free_skb;
@@ -5072,7 +5069,7 @@ static int generic_xdp_hisock_redirect(struct sk_buff *skb)
 free_skb:
 	kfree_skb(skb);
 out:
-	return -EFAULT;
+	return NET_RX_DROP;
 }
 #endif
 
@@ -5081,31 +5078,22 @@ static DEFINE_STATIC_KEY_FALSE(generic_xdp_needed_key);
 int do_xdp_generic(struct bpf_prog *xdp_prog, struct sk_buff *skb)
 {
 	if (xdp_prog) {
-		struct hisock_xdp_buff hxdp;
-		struct xdp_buff *xdp = &hxdp.xdp;
+		struct xdp_buff xdp;
 		u32 act;
 		int err;
 
-		hxdp.skb = skb;
-		act = netif_receive_generic_xdp(skb, xdp, xdp_prog);
+		act = netif_receive_generic_xdp(skb, &xdp, xdp_prog);
 		if (act != XDP_PASS) {
 			switch (act) {
 			case XDP_REDIRECT:
 				err = xdp_do_generic_redirect(skb->dev, skb,
-							      xdp, xdp_prog);
+							      &xdp, xdp_prog);
 				if (err)
 					goto out_redir;
 				break;
 			case XDP_TX:
 				generic_xdp_tx(skb, xdp_prog);
 				break;
-#ifdef CONFIG_HISOCK
-			case XDP_HISOCK_REDIRECT:
-				err = generic_xdp_hisock_redirect(skb);
-				if (err == -EOPNOTSUPP)
-					return XDP_PASS;
-				break;
-#endif
 			}
 			return XDP_DROP;
 		}
@@ -5540,6 +5528,31 @@ another_round:
 	}
 
 skip_taps:
+#ifdef CONFIG_HISOCK
+	if (static_branch_unlikely(&hisock_ingress_key)) {
+		int act;
+
+		if (pt_prev) {
+			ret = deliver_skb(skb, pt_prev, orig_dev);
+			pt_prev = NULL;
+		}
+
+		act = hisock_ingress_bpf_run(rcu_dereference(skb->dev->hisock_ingress), skb);
+		switch (act) {
+		case HISOCK_PASS:
+			break;
+		case HISOCK_REDIRECT:
+			ret = do_hisock_ingress_redirect(skb);
+			if (ret != -EOPNOTSUPP)
+				goto out;
+			break;
+		case HISOCK_DROP:
+		default:
+			ret = NET_RX_DROP;
+			goto out;
+		}
+	}
+#endif
 #ifdef CONFIG_NET_INGRESS
 	if (static_branch_unlikely(&ingress_needed_key)) {
 		bool another = false;

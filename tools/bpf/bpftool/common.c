@@ -68,6 +68,7 @@ const char * const attach_type_name[__MAX_BPF_ATTACH_TYPE] = {
 	[BPF_SK_LOOKUP]			= "sk_lookup",
 	[BPF_SCHED]			= "sched",
 	[BPF_HISOCK_EGRESS]		= "hisock_egress",
+	[BPF_HISOCK_INGRESS]		= "hisock_ingress",
 };
 
 void p_err(const char *fmt, ...)

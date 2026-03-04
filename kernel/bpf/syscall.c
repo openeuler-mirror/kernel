@@ -2089,6 +2089,16 @@ bpf_prog_load_check_attach(enum bpf_prog_type prog_type,
 		if (expected_attach_type == BPF_SK_LOOKUP)
 			return 0;
 		return -EINVAL;
+#ifdef CONFIG_HISOCK
+	case BPF_PROG_TYPE_HISOCK:
+		switch (expected_attach_type) {
+		case BPF_HISOCK_EGRESS:
+		case BPF_HISOCK_INGRESS:
+			return 0;
+		default:
+			return -EINVAL;
+		}
+#endif
 	case BPF_PROG_TYPE_EXT:
 		if (expected_attach_type)
 			return -EINVAL;
@@ -3013,6 +3023,7 @@ attach_type_to_prog_type(enum bpf_attach_type attach_type)
 		return BPF_PROG_TYPE_CGROUP_SOCKOPT;
 #ifdef CONFIG_HISOCK
 	case BPF_HISOCK_EGRESS:
+	case BPF_HISOCK_INGRESS:
 		return BPF_PROG_TYPE_HISOCK;
 #endif
 	case BPF_TRACE_ITER:
@@ -3111,14 +3122,19 @@ static int bpf_prog_attach(const union bpf_attr *attr)
 	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
 	case BPF_PROG_TYPE_CGROUP_SYSCTL:
 	case BPF_PROG_TYPE_SOCK_OPS:
-#ifdef CONFIG_HISOCK
-	case BPF_PROG_TYPE_HISOCK:
-#endif
 		ret = cgroup_bpf_prog_attach(attr, ptype, prog);
 		break;
 #ifdef CONFIG_BPF_NET_GLOBAL_PROG
 	case BPF_PROG_TYPE_NET_GLOBAL:
 		ret = gnet_bpf_prog_attach(attr, ptype, prog);
+		break;
+#endif
+#ifdef CONFIG_HISOCK
+	case BPF_PROG_TYPE_HISOCK:
+		if (attr->attach_type == BPF_HISOCK_EGRESS)
+			ret = cgroup_bpf_prog_attach(attr, ptype, prog);
+		else if (attr->attach_type == BPF_HISOCK_INGRESS)
+			ret = hisock_ingress_prog_attach(attr, prog);
 		break;
 #endif
 	default:
@@ -3156,13 +3172,18 @@ static int bpf_prog_detach(const union bpf_attr *attr)
 	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
 	case BPF_PROG_TYPE_CGROUP_SYSCTL:
 	case BPF_PROG_TYPE_SOCK_OPS:
-#ifdef CONFIG_HISOCK
-	case BPF_PROG_TYPE_HISOCK:
-#endif
 		return cgroup_bpf_prog_detach(attr, ptype);
 #ifdef CONFIG_BPF_NET_GLOBAL_PROG
 	case BPF_PROG_TYPE_NET_GLOBAL:
 		return gnet_bpf_prog_detach(attr, ptype);
+#endif
+#ifdef CONFIG_HISOCK
+	case BPF_PROG_TYPE_HISOCK:
+		if (attr->attach_type == BPF_HISOCK_EGRESS)
+			return cgroup_bpf_prog_detach(attr, ptype);
+		else if (attr->attach_type == BPF_HISOCK_INGRESS)
+			return hisock_ingress_prog_detach(attr);
+		return -EINVAL;
 #endif
 	default:
 		return -EINVAL;

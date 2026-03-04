@@ -922,9 +922,6 @@ u64 __bpf_call_base(u64 r1, u64 r2, u64 r3, u64 r4, u64 r5);
 struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *prog);
 void bpf_jit_compile(struct bpf_prog *prog);
 bool bpf_jit_needs_zext(void);
-#ifdef CONFIG_HISOCK
-bool bpf_jit_supports_ext_helper(void);
-#endif
 u64 bpf_arch_uaddress_limit(void);
 bool bpf_helper_changes_pkt_data(enum bpf_func_id func_id);
 
@@ -1531,6 +1528,30 @@ out:
 	rcu_read_unlock();
 }
 
+#endif
+
+#ifdef CONFIG_HISOCK
+DECLARE_STATIC_KEY_FALSE(hisock_ingress_key);
+
+int hisock_ingress_prog_attach(const union bpf_attr *attr, struct bpf_prog *prog);
+int hisock_ingress_prog_detach(const union bpf_attr *attr);
+
+static inline int hisock_ingress_bpf_run(struct bpf_prog *prog, struct sk_buff *skb)
+{
+	void *saved_data_end;
+	int ret;
+
+	if (unlikely(!prog))
+		return HISOCK_PASS;
+
+	rcu_read_lock();
+	bpf_compute_and_save_data_end(skb, &saved_data_end);
+	ret = bpf_prog_run_pin_on_cpu(prog, skb);
+	bpf_restore_data_end(skb, saved_data_end);
+	rcu_read_unlock();
+
+	return ret;
+}
 #endif
 
 #endif /* __LINUX_FILTER_H__ */
