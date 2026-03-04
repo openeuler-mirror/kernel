@@ -69,6 +69,10 @@ SUBSYS(xcu)
 SUBSYS(misc)
 #endif
 
+#if IS_ENABLED(CONFIG_CGROUP_DMEM)
+SUBSYS(dmem)
+#endif
+
 /*
  * The following subsystems are not supported on the default hierarchy.
  */
