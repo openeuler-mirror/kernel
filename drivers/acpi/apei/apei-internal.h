@@ -136,4 +136,12 @@ int cper_estatus_check_header(const struct acpi_hest_generic_status *estatus);
 int cper_estatus_check(const struct acpi_hest_generic_status *estatus);
 
 int apei_osc_setup(void);
+#ifdef CONFIG_ACPI_APEI_MEMORY_FAILURE
+bool apei_page_should_offline(unsigned long pfn);
+#else
+static inline bool apei_page_should_offline(unsigned long pfn)
+{
+	return true;
+}
+#endif
 #endif
