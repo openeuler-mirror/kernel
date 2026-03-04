@@ -60,14 +60,11 @@
 #include "internal.h"
 #include "ras/ras_event.h"
 
-#define SOFT_OFFLINE_ENABLED           BIT(0)
-#define SOFT_OFFLINE_SKIP_HUGETLB      BIT(1)
-
 int sysctl_memory_failure_early_kill __read_mostly = 0;
 
 int sysctl_memory_failure_recovery __read_mostly = 1;
 
-int sysctl_enable_soft_offline __read_mostly = SOFT_OFFLINE_ENABLED;
+int sysctl_enable_soft_offline __read_mostly = 1;
 
 atomic_long_t num_poisoned_pages __read_mostly = ATOMIC_LONG_INIT(0);
 
@@ -2164,18 +2161,10 @@ int soft_offline_page(unsigned long pfn, int flags)
 		return -EIO;
 	}
 
-	if (!(sysctl_enable_soft_offline & SOFT_OFFLINE_ENABLED)) {
+	if (!sysctl_enable_soft_offline) {
 		pr_info_once("disabled by /proc/sys/vm/enable_soft_offline\n");
 		put_ref_page(ref_page);
 		return -EOPNOTSUPP;
-	}
-
-	if (sysctl_enable_soft_offline & SOFT_OFFLINE_SKIP_HUGETLB) {
-		if (PageHuge(page)) {
-			pr_info_once("disabled for HugeTLB pages by /proc/sys/vm/enable_soft_offline\n");
-			put_ref_page(ref_page);
-			return -EOPNOTSUPP;
-		}
 	}
 
 	if (PageHWPoison(page)) {
