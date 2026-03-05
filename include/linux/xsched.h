@@ -474,4 +474,9 @@ void xsched_quota_refill(struct work_struct *work);
 
 #endif
 
+#ifdef CONFIG_CGROUP_DMEM
+/* Dmem interface */
+int xsched_dmem_init(void);
+#endif /* CONFIG_CGROUP_DMEM */
+
 #endif /* !__LINUX_XSCHED_H__ */
