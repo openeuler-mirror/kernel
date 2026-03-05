@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# NorthLink device configuration
+#
+
+config NET_VENDOR_NORTHLINK
+	bool "NorthLink devices"
+	default y
+	help
+	  If you have a network (Ethernet) card belonging to this class, say Y.
+
+	  Note that the answer to this question doesn't directly affect the
+	  kernel: saying N will just cause the configurator to skip all
+	  the questions about NorthLink devices. If you say Y, you will be asked
+	  for your specific device in the following questions.
+
+if NET_VENDOR_NORTHLINK
+
+source "drivers/net/ethernet/northlink/nce/Kconfig"
+
+endif # NET_VENDOR_NORTHLINK
