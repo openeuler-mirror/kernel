@@ -59,3 +59,51 @@ err_out:
 	}
 	return retval;
 }
+
+int xsched_dmem_alloc(struct xsched_context *ctx, struct vstream_args *args)
+{
+	struct dmem_cgroup_pool_state *ret_pool, *ret_limit_pool;
+	struct xsched_dmem_pool *new_pool;
+	int ret;
+	struct dmem_cgroup_region *hbm_region;
+
+	hbm_region = hbm_regions[args->dev_id];
+	if (!hbm_region) {
+		XSCHED_ERR("Try to charge memory when region is not registered (region HBM%u)\n",
+			args->dev_id);
+		goto error_out;
+	}
+
+	ret = dmem_cgroup_try_charge(hbm_region, args->vh_args.size, &ret_pool, &ret_limit_pool);
+	if (ret != 0) {
+		XSCHED_ERR("Fail to charge a new allocation to a HBM region\n");
+		goto error_out;
+	}
+
+	new_pool = kzalloc(sizeof(*new_pool), GFP_KERNEL);
+	if (!new_pool) {
+		XSCHED_ERR("Fail to alloc xsched dmem alloc @ %s\n", __func__);
+		ret = -ENOMEM;
+		goto error_charge;
+	}
+
+	new_pool->pool = ret_pool;
+
+	/* protect list using ctx_lock */
+	spin_lock(&ctx->ctx_lock);
+	new_pool->id = ctx->next_pool_id++;
+	list_add_tail(&new_pool->pool_node, &ctx->pool_list);
+	spin_unlock(&ctx->ctx_lock);
+
+	args->vh_args.pool_id = new_pool->id;
+	XSCHED_DEBUG("charged %llu bytes, new_alloc = %p with id %llu",
+		args->vh_args.size, new_pool, new_pool->id);
+
+	return 0;
+
+error_charge:
+	dmem_cgroup_uncharge(ret_pool, args->vh_args.size);
+error_out:
+	args->vh_args.pool_id = ULLONG_MAX;
+	return ret;
+}

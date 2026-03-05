@@ -348,6 +348,11 @@ struct xsched_context {
 	struct list_head vstream_list;
 	struct list_head ctx_node;
 
+#ifdef CONFIG_CGROUP_DMEM
+	uint64_t next_pool_id;
+	struct list_head pool_list;
+#endif
+
 	struct xsched_entity xse;
 
 	spinlock_t ctx_lock;
@@ -477,6 +482,10 @@ void xsched_quota_refill(struct work_struct *work);
 #ifdef CONFIG_CGROUP_DMEM
 /* Dmem interface */
 int xsched_dmem_init(void);
+int xsched_dmem_alloc(struct xsched_context *ctx, struct vstream_args *args);
+#else
+static inline int xsched_dmem_alloc(
+	struct xsched_context *ctx, struct vstream_args *args) { return 0; }
 #endif /* CONFIG_CGROUP_DMEM */
 
 #endif /* !__LINUX_XSCHED_H__ */
