@@ -107,3 +107,30 @@ error_out:
 	args->vh_args.pool_id = ULLONG_MAX;
 	return ret;
 }
+
+int xsched_dmem_free(struct xsched_context *ctx, struct vstream_args *args)
+{
+	struct xsched_dmem_pool *pool, *target = NULL;
+
+	spin_lock(&ctx->ctx_lock);
+	list_for_each_entry(pool, &ctx->pool_list, pool_node) {
+		if (pool->id == args->vh_args.pool_id) {
+			list_del(&pool->pool_node);
+			target = pool;
+			break;
+		}
+	}
+	spin_unlock(&ctx->ctx_lock);
+
+	if (!target) {
+		XSCHED_ERR("pool with id %llu is not found\n", args->vh_args.pool_id);
+		return -EINVAL;
+	}
+
+	XSCHED_DEBUG("uncharged %llu bytes for pool = %p with id %llu\n",
+		args->vh_args.size, target, target->id);
+	dmem_cgroup_uncharge(target->pool, args->vh_args.size);
+	kfree(target);
+
+	return 0;
+}

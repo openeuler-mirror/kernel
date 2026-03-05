@@ -639,6 +639,24 @@ static int vstream_hbm_alloc(struct vstream_args *arg)
 	return xsched_dmem_alloc(ctx, arg);
 }
 
+static int vstream_hbm_free(struct vstream_args *arg)
+{
+	struct xsched_cu *xcu_found;
+	struct xsched_context *ctx;
+
+	xcu_found = xcu_find(XCU_TYPE_XPU, arg->dev_id, arg->channel_id);
+	if (!xcu_found)
+		return -EINVAL;
+
+	ctx = ctx_find_by_tgid_and_xcu(current->tgid, xcu_found);
+	if (!ctx) {
+		XSCHED_ERR("Failed to find a context for HBM free");
+		return -EINVAL;
+	}
+
+	return xsched_dmem_free(ctx, arg);
+}
+
 /*
  * vstream_manage_cmd table
  */
@@ -647,6 +665,7 @@ static vstream_manage_t(*vstream_command_table[MAX_COMMAND + 1]) = {
 	vstream_free, // VSTREAM_FREE
 	vstream_kick, // VSTREAM_KICK
 	vstream_hbm_alloc, // VSTREAM_HBM_ALLOC
+	vstream_hbm_free, // VSTREAM_HBM_FREE
 	NULL // MAX_COMMAND
 };
 

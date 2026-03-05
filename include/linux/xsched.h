@@ -483,8 +483,11 @@ void xsched_quota_refill(struct work_struct *work);
 /* Dmem interface */
 int xsched_dmem_init(void);
 int xsched_dmem_alloc(struct xsched_context *ctx, struct vstream_args *args);
+int xsched_dmem_free(struct xsched_context *ctx, struct vstream_args *args);
 #else
 static inline int xsched_dmem_alloc(
+	struct xsched_context *ctx, struct vstream_args *args) { return 0; }
+static inline int xsched_dmem_free(
 	struct xsched_context *ctx, struct vstream_args *args) { return 0; }
 #endif /* CONFIG_CGROUP_DMEM */
 
