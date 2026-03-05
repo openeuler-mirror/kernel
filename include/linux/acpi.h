@@ -1436,4 +1436,18 @@ acpi_pptt_find_cache_backwards(struct acpi_table_header *table_hdr,
 			       struct acpi_pptt_cache *cache);
 acpi_status acpi_hotplug_schedule(struct acpi_device *adev, u32 src);
 
+#ifdef CONFIG_ACPI_APEI_MEMORY_FAILURE
+int register_apei_page_offline_notifier(struct notifier_block *nb);
+int unregister_apei_page_offline_notifier(struct notifier_block *nb);
+#else
+static inline int register_apei_page_offline_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+
+static inline int unregister_apei_page_offline_notifier(struct notifier_block *nb)
+{
+	return 0;
+}
+#endif
 #endif	/*_LINUX_ACPI_H*/

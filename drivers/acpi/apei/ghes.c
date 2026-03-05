@@ -500,6 +500,9 @@ static bool ghes_do_memory_failure(u64 physical_addr, int flags)
 		return true;
 	}
 
+	if (flags == MF_SOFT_OFFLINE && !apei_page_should_offline(pfn))
+		return false;
+
 	memory_failure_queue(pfn, flags);
 	return true;
 }
