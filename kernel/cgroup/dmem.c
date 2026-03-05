@@ -382,6 +382,11 @@ alloc_pool_single(struct dmemcg_state *dmemcs, struct dmem_cgroup_region *region
 		dmemcg_pool_get(ppool);
 	}
 
+#ifdef CONFIG_XCU_SCHEDULER
+	if (!ppool)
+		set_resource_max(pool, region->size);
+#endif
+
 	list_add_tail_rcu(&pool->css_node, &dmemcs->pools);
 	list_add_tail(&pool->region_node, &region->pools);
 
