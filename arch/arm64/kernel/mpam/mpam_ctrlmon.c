@@ -269,9 +269,9 @@ static void resctrl_group_update_domain_ctrls(struct rdtgroup *rdtgrp,
 				dom->ctrl_val[type][closid.intpartid] =
 					cfg[i].new_ctrl[type];
 				dom->have_new_ctrl = true;
-				cfg[i].ctrl_updated[type] = false;
 				update_on = true;
 			}
+			cfg[i].ctrl_updated[type] = false;
 		}
 		if (update_on)
 			resctrl_dom_ctrl_config(cdp_both_ctrl, r, dom, &para);
