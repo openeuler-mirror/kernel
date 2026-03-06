@@ -92,6 +92,13 @@ config IPMI_POWEROFF
 	  This enables a function to power off the system with IPMI if
 	  the IPMI management controller is capable of this.
 
+config HISI_IPMI_PSO
+	tristate 'HISI IPMI Page Soft Offline driver'
+	depends on (ARCH_HISI || COMPILE_TEST) && ACPI_APEI_MEMORY_FAILURE
+	default m
+	help
+	  This enables the HISI IPMI Page Soft Offline feature.
+
 endif # IPMI_HANDLER
 
 config IPMI_KCS_BMC
