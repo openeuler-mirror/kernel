@@ -911,7 +911,7 @@ int mpam_discovery_start(void)
 
 static void mpam_reset_device_bitmap(struct mpam_device *dev, u16 reg, u16 wd)
 {
-	u32 bm = ~0;
+	u32 msb, bm = ~0;
 	int i;
 
 	lockdep_assert_held(&dev->lock);
@@ -920,8 +920,12 @@ static void mpam_reset_device_bitmap(struct mpam_device *dev, u16 reg, u16 wd)
 	for (i = 0; i < wd / 32; i++, reg += sizeof(bm))
 		mpam_write_reg(dev, reg, bm);
 
-	/* and the last partial 32bit word */
-	bm = GENMASK(wd % 32, 0);
+	/*
+	 * ....and the last partial 32bit word. When wd is a multiple
+	 * of 32, msb should be 31 to write a full 32bit word.
+	 */
+	msb = (wd - 1) % 32;
+	bm = GENMASK(msb, 0);
 	if (bm)
 		mpam_write_reg(dev, reg, bm);
 }
