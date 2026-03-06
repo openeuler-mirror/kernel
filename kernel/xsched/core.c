@@ -530,6 +530,10 @@ __init int xsched_sched_init(void)
 	xcu_cg_subsys_init();
 #endif
 
+#ifdef CONFIG_CGROUP_DMEM
+	xsched_dmem_init();
+#endif
+
 	return 0;
 }
 late_initcall(xsched_sched_init);
