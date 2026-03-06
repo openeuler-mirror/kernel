@@ -78,6 +78,14 @@ static int __init acpi_mpam_parse_cache_v2(struct acpi_mpam_msc_node *msc,
 	cpus_read_unlock();
 
 	/*
+	 * 5.10 MPAM ACPI does not support parsing the CPU affinity
+	 * information of the msc, and therefore the L2 devices
+	 * cannot be created.
+	 */
+	if (level != 3)
+		return 0;
+
+	/*
 	 * Possible we can get cpu-affinity in next MPAM ACPI version,
 	 * now we have to set it to NULL and use default possible_aff-
 	 * inity.
