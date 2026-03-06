@@ -5305,7 +5305,7 @@ static void hns3_update_tx_spare_buf_config(struct hns3_nic_priv *priv)
 	if (ae_dev->dev_version < HNAE3_DEVICE_VERSION_V3)
 		return;
 
-	if (!(domain && domain->type == IOMMU_DOMAIN_DMA))
+	if (!(domain && domain->type & IOMMU_DOMAIN_DMA))
 		return;
 
 	priv->min_tx_copybreak = HNS3_MAX_PACKET_SIZE;
