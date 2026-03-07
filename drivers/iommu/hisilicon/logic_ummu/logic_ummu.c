@@ -1176,8 +1176,8 @@ static void logic_ummu_release_device(struct device *dev)
 		return;
 	}
 
-	if (domain->type == IOMMU_DOMAIN_IDENTITY &&
-	    logic_identity_dev && !iommu_default_passthrough()) {
+	if (domain->type == IOMMU_DOMAIN_IDENTITY && !iommu_default_passthrough() &&
+	    logic_identity_dev && !hw_bypass) {
 		logic_identity_dev_put(logic_identity_dev);
 		return;
 	}
@@ -1404,7 +1404,7 @@ static int logic_ummu_attach_dev_identity(struct iommu_domain *domain, struct de
 		return -ENODEV;
 	}
 
-	if (!logic_identity_dev) {
+	if (!hw_bypass && !logic_identity_dev) {
 		core_dev = agent_domain->core_dev;
 		ret = logic_identity_dev_init(core_dev->iommu.min_pasids,
 					      core_dev->iommu.max_pasids);
@@ -1422,7 +1422,8 @@ static int logic_ummu_attach_dev_identity(struct iommu_domain *domain, struct de
 	}
 
 	logic_domain_update_attr(logic_domain);
-	logic_identity_dev_get(logic_identity_dev);
+	if (!hw_bypass)
+		logic_identity_dev_get(logic_identity_dev);
 
 	list_for_each_entry(base_domain, &logic_domain->base_domain.list, list) {
 		if (base_domain == agent_domain)

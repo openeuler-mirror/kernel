@@ -37,6 +37,7 @@ MODULE_PARM_DESC(sva_separated_mode,
 	"Enable user-mode SVA with an independent page table (no process page table sharing).");
 
 static u16 ummu_chip_identifier;
+bool hw_bypass;
 
 bool ummu_sva_separated_enabled(void)
 {
@@ -343,6 +344,10 @@ static int ummu_device_hw_probe_cap2(struct ummu_device *ummu)
 		ummu->cap.features |= UMMU_FEAT_BTM;
 	else
 		dev_warn(ummu->dev, "don't support BTM!\n");
+
+	if (FIELD_GET(CAP2_HW_BYPASS, reg))
+		hw_bypass = true;
+
 	return 0;
 }
 
@@ -731,7 +736,8 @@ static int ummu_device_probe(struct platform_device *pdev)
 		}
 	}
 
-	(void)ummu_global_identity_pgtbl_init(ummu);
+	if (!hw_bypass)
+		(void)ummu_global_identity_pgtbl_init(ummu);
 
 	return 0;
 
@@ -816,7 +822,9 @@ static void __exit ummu_driver_unregister(struct platform_driver *drv)
 	platform_driver_unregister(drv);
 	ummu_release_partid_map();
 	ummu_free_global_meta();
-	ummu_global_identity_pgtbl_free();
+	if (!hw_bypass)
+		ummu_global_identity_pgtbl_free();
+
 	logic_ummu_device_exit();
 }
 

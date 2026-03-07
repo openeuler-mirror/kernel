@@ -850,9 +850,11 @@ static __le64 *ummu_alloc_tcte(struct ummu_tct_desc_cfg *tct_cfg, u32 tid)
 int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
 			bool is_clear)
 {
-	u32 tid = container_of(cfgs, struct ummu_domain, cfgs)->base_domain.tid;
+	struct ummu_domain *u_domain = container_of(cfgs, struct ummu_domain, cfgs);
 	struct ummu_tct_desc_cfg *tct_cfg = cfgs->s1_cfg.tct_cfg;
 	struct ummu_tct_desc *tct_desc = &cfgs->s1_cfg.tct;
+	u32 type = u_domain->base_domain.domain.type;
+	u32 tid = u_domain->base_domain.tid;
 	u32 tag = cfgs->tecte_tag;
 	bool is_valid;
 	__le64 *tcte;
@@ -917,6 +919,8 @@ int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
 			val |= TCT_ENT0_HAF;
 		if (ummu->cap.features & UMMU_FEAT_HD)
 			val |= TCT_ENT0_HDF;
+		if (hw_bypass && type == IOMMU_DOMAIN_IDENTITY)
+			val |= TCT_ENT0_MATT_BYPASS;
 		WRITE_ONCE(tcte[0], cpu_to_le64(val));
 	}
 
@@ -1115,17 +1119,20 @@ static void ummu_device_write_tecte_bypass(struct ummu_device *ummu,
 
 static void ummu_device_make_default_tecte(struct ummu_device *ummu,
 					   struct ummu_tct_desc_cfg *tct_cfg,
-					   struct ummu_tecte_data *target)
+					   struct ummu_tecte_data *target,
+					   enum eid_type type)
 {
-	u32 tcr_sel;
+	u32 tcr_sel, st_mode;
 
 	memset(target, 0, sizeof(*target));
 	tcr_sel = ummu->cap.features & UMMU_FEAT_E2H ?
 		  TECT_ENT0_TCR_EL2 : TECT_ENT0_TCR_NSEL1;
+
+	st_mode = (type == EID_BYPASS) ? TECT_ENT0_ST_MODE_BYPASS : TECT_ENT0_ST_MODE_S1;
 	target->data[0] = cpu_to_le64(
 		TECT_ENT0_V | FIELD_PREP(TECT_ENT0_TCRC_SEL, tcr_sel) |
 		((ummu->cap.features & UMMU_FEAT_MAPT) ? TECT_ENT0_MAPT_EN : 0) |
-		FIELD_PREP(TECT_ENT0_ST_MODE, TECT_ENT0_ST_MODE_S1) |
+		FIELD_PREP(TECT_ENT0_ST_MODE, st_mode) |
 		FIELD_PREP(TECT_ENT0_PRIV_SEL, TECT_ENT0_PRIV_SEL_PRIV));
 
 	target->data[1] = cpu_to_le64(
@@ -1248,6 +1255,10 @@ int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enu
 	u32 kv_index;
 	int ret;
 
+	if ((type == EID_BYPASS) &&
+	    (guid_is_null(guid) || !IS_ENABLED(CONFIG_UB_UMMU_BYPASSEID) || !hw_bypass))
+		return -EOPNOTSUPP;
+
 	meta = ummu_get_os_meta_by_guid((const guid_t *)guid);
 	if (!meta) {
 		cap = ummu_get_cap();
@@ -1275,7 +1286,7 @@ int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enu
 
 	if (!meta->valid) {
 		meta->valid = true;
-		ummu_device_make_default_tecte(ummu, &meta->tct_tbl, &target);
+		ummu_device_make_default_tecte(ummu, &meta->tct_tbl, &target, type);
 		ummu_device_write_tecte(ummu, meta->tecte_tag, &target);
 	}
 	ummu_device_create_kvtable(ummu, meta->tecte_tag, eid, kv_index);

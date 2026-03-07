@@ -579,12 +579,25 @@ const struct iommu_domain_ops default_domain_ops = {
 	.free = ummu_domain_free,
 };
 
+static int ummu_attach_dev_hw_bypass(struct ummu_domain *u_domain, struct ummu_master *master)
+{
+	int ret;
+
+	mutex_lock(&u_domain->init_mutex);
+	ret = ummu_domain_context_set(u_domain, master);
+	mutex_unlock(&u_domain->init_mutex);
+	return ret;
+}
+
 static int ummu_attach_dev_identity(struct iommu_domain *domain, struct device *dev)
 {
+	struct ummu_master *master = (struct ummu_master *)dev_iommu_priv_get(dev);
 	struct ummu_domain *identity_dom = ummu_get_global_identity_domain();
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
-	struct ummu_master *master = dev_iommu_priv_get(dev);
 	int ret = 0;
+
+	if (hw_bypass)
+		return ummu_attach_dev_hw_bypass(u_domain, master);
 
 	guard(mutex)(&u_domain->init_mutex);
 	if (!u_domain->has_cfged) {
