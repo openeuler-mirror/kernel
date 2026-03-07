@@ -35,6 +35,7 @@
 #define EVTQ_MAX_LOG2SIZE 19
 
 #define UMMU_CAP2 0x18
+#define CAP2_HW_BYPASS (1UL << 16)
 #define CAP2_TTF_MASK GENMASK(15, 14)
 #define CAP2_TTF_IAS_40 40
 #define CAP2_TTF_AARCH64 2

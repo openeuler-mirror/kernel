@@ -17,6 +17,7 @@
 
 #define LOCAL_TECT_TAG 0
 
+extern bool hw_bypass;
 extern struct platform_driver ummu_driver;
 extern const struct ummu_core_ops ummu_ops;
 extern const struct ummu_device_helper ummu_helper;
