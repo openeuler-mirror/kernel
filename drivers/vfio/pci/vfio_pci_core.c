@@ -1823,25 +1823,18 @@ static vm_fault_t vfio_pci_mmap_huge_fault(struct vm_fault *vmf,
 	}
 
 found:
-	switch (order) {
-	case 0:
+	if (!order)
 		ret = vmf_insert_pfn(vma, vmf->address, pfn);
-		break;
-#ifdef CONFIG_ARCH_SUPPORTS_PMD_PFNMAP
-	case PMD_ORDER:
+	else if (IS_ENABLED(CONFIG_ARCH_SUPPORTS_PMD_PFNMAP) &&
+		 order == PMD_ORDER)
 		ret = vmf_insert_pfn_pmd(vmf,
 					 __pfn_to_pfn_t(pfn, PFN_DEV), false);
-		break;
-#endif
-#ifdef CONFIG_ARCH_SUPPORTS_PUD_PFNMAP
-	case PUD_ORDER:
+	else if (IS_ENABLED(CONFIG_ARCH_SUPPORTS_PUD_PFNMAP) &&
+		 order == PUD_ORDER)
 		ret = vmf_insert_pfn_pud(vmf,
 					 __pfn_to_pfn_t(pfn, PFN_DEV), false);
-		break;
-#endif
-	default:
+	else
 		ret = VM_FAULT_FALLBACK;
-	}
 
 up_out:
 	up_read(&vdev->memory_lock);
