@@ -70,4 +70,6 @@ int ubase_restore_initial_qset_qos(struct auxiliary_device *adev);
 struct ubase_initial_qset_qos *
 ubase_get_initial_qset_qos(struct auxiliary_device *adev);
 
+int ubase_set_dscp_tc_map(struct auxiliary_device *adev, u64 dscp_bitmap,
+			  u8 *vl);
 #endif /* _UBASE_COMM_QOS_H_ */
