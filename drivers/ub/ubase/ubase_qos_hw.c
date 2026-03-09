@@ -1259,6 +1259,65 @@ void ubase_update_udma_dscp_vl(struct auxiliary_device *adev, u8 *dscp_vl,
 }
 EXPORT_SYMBOL(ubase_update_udma_dscp_vl);
 
+static int __ubase_set_dscp_tc_map(struct ubase_dev *udev, u64 dscp_bitmap,
+				   u8 *vl)
+{
+	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
+	struct ubase_config_dscp_tc_cmd req = {0};
+	u8 backup_vl[UBASE_MAX_DSCP];
+	struct ubase_cmd_buf in;
+	u8 i, cnt = 0;
+	int ret;
+
+	memcpy(backup_vl, qos->dscp_vl, UBASE_MAX_DSCP);
+
+	for (i = 0; i < UBASE_MAX_DSCP; i++) {
+		if ((dscp_bitmap >> i) & 1)
+			qos->dscp_vl[i] = vl[i];
+
+		if (qos->dscp_vl[i])
+			cnt++;
+	}
+
+	req.map_type = cnt > 0 ? UBASE_DSCP_VL_MAP : UBASE_PRIO_VL_MAP;
+	memcpy(req.vl, qos->dscp_vl, UBASE_MAX_DSCP);
+
+	ubase_fill_inout_buf(&in, UBASE_OPC_CFG_DSCP_TC, false,
+			     sizeof(req), &req);
+	ret = __ubase_cmd_send_in(udev, &in);
+	if (ret) {
+		memcpy(qos->dscp_vl, backup_vl, UBASE_MAX_DSCP);
+		ubase_err(udev,
+			  "failed to set dscp tc map, ret = %d.\n", ret);
+	}
+
+	return ret;
+}
+
+/**
+ * ubase_set_dscp_tc_map() - set udma's dscp to tc mapping
+ * @adev: auxiliary device
+ * @dscp_bitmap: Bitmap where the DSCP takes effect
+ * @vl: dscp configuration for the corresponding VLAN
+ *
+ * This function is used by HCCN_TOOL to directly configure the DSCP and
+ * TC mapping relationship of the UDMA.
+ *
+ * Context: Any context.
+ */
+int ubase_set_dscp_tc_map(struct auxiliary_device *adev, u64 dscp_bitmap,
+			  u8 *vl)
+{
+	struct ubase_dev *udev;
+
+	if (!adev || !vl)
+		return -EINVAL;
+
+	udev = __ubase_get_udev_by_adev(adev);
+	return __ubase_set_dscp_tc_map(udev, dscp_bitmap, vl);
+}
+EXPORT_SYMBOL(ubase_set_dscp_tc_map);
+
 int ubase_query_tm_queue(struct ubase_dev *udev, u16 bus_ue_id,
 			 struct ubase_query_tm_queue_cmd *resp)
 {
