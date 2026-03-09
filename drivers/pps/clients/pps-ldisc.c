@@ -71,7 +71,7 @@ static int pps_tty_open(struct tty_struct *tty)
 		goto err_unregister;
 	}
 
-	dev_info(pps->dev, "source \"%s\" added\n", info.path);
+	dev_dbg(pps->dev, "source \"%s\" added\n", info.path);
 
 	return 0;
 
