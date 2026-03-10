@@ -40,6 +40,7 @@
 #ifndef __GENKSYMS__
 #include <trace/events/kmem.h>
 #endif
+#include <linux/userfaultfd_k_ext.h>
 
 #include <asm/page.h>
 #include <asm/pgalloc.h>

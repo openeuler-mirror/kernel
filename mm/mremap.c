@@ -24,6 +24,7 @@
 #include <linux/mmu_notifier.h>
 #include <linux/uaccess.h>
 #include <linux/userfaultfd_k.h>
+#include <linux/userfaultfd_k_ext.h>
 #include <linux/mempolicy.h>
 #include <linux/share_pool.h>
 #include <linux/userswap.h>

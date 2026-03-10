@@ -25,6 +25,7 @@
 #include <linux/anon_inodes.h>
 #include <linux/syscalls.h>
 #include <linux/userfaultfd_k.h>
+#include <linux/userfaultfd_k_ext.h>
 #include <linux/mempolicy.h>
 #include <linux/ioctl.h>
 #include <linux/security.h>
