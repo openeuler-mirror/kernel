@@ -5307,15 +5307,21 @@ static int pci_bus_reset(struct pci_bus *bus, int probe)
 	if (probe)
 		return 0;
 
-	pci_bus_lock(bus);
+	/*
+	 * Replace blocking lock with trylock to prevent deadlock during bus reset.
+	 * Same as above except return -EAGAIN if the bus cannot be locked.
+	 */
+	if (pci_bus_trylock(bus)) {
+		might_sleep();
 
-	might_sleep();
+		ret = pci_bridge_secondary_bus_reset(bus->self);
 
-	ret = pci_bridge_secondary_bus_reset(bus->self);
+		pci_bus_unlock(bus);
 
-	pci_bus_unlock(bus);
+		return ret;
+	}
 
-	return ret;
+	return -EAGAIN;
 }
 
 /**
