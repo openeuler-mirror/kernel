@@ -21,6 +21,7 @@
 #include <linux/xsched.h>
 #include <linux/types.h>
 #include <linux/cgroup_dmem.h>
+#include <linux/sizes.h>
 
 static struct dmem_cgroup_region *hbm_regions[XSCHED_NR_CUS];
 
