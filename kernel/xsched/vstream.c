@@ -80,6 +80,7 @@ static void xsched_task_free(struct kref *kref)
 		usleep_range(100, 200);
 
 	mutex_lock(&xcu->ctx_list_lock);
+	xsched_dmem_clear(ctx);
 	list_for_each_entry_safe(vs, tmp, &ctx->vstream_list, ctx_node) {
 		list_del(&vs->ctx_node);
 		kfree(vs);
@@ -660,7 +661,10 @@ static int vstream_hbm_free(struct vstream_args *arg)
 	if (!xcu_found)
 		return -EINVAL;
 
+	mutex_lock(&xcu_found->ctx_list_lock);
 	ctx = ctx_find_by_tgid_and_xcu(current->tgid, xcu_found);
+	mutex_unlock(&xcu_found->ctx_list_lock);
+
 	if (!ctx) {
 		XSCHED_ERR("Failed to find a context for HBM free");
 		return -EINVAL;

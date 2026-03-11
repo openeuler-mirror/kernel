@@ -138,3 +138,27 @@ int xsched_dmem_free(struct xsched_context *ctx, struct vstream_args *args)
 
 	return 0;
 }
+
+void xsched_dmem_clear(struct xsched_context *ctx)
+{
+	struct xsched_dmem_pool *pool, *tmp;
+
+	if (!ctx)
+		return;
+
+	spin_lock(&ctx->ctx_lock);
+
+	list_for_each_entry_safe(pool, tmp, &ctx->pool_list, pool_node) {
+		list_del(&pool->pool_node);
+		spin_unlock(&ctx->ctx_lock);
+
+		XSCHED_DEBUG("uncharged %llu bytes for pool = %p with id %llu\n",
+			pool->size, pool, pool->id);
+		dmem_cgroup_uncharge(pool->pool, pool->size);
+		kfree(pool);
+
+		spin_lock(&ctx->ctx_lock);
+	}
+
+	spin_unlock(&ctx->ctx_lock);
+}
