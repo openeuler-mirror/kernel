@@ -17,6 +17,7 @@
  */
 
 #include <linux/console.h>
+#include <linux/err.h>
 #include <linux/module.h>
 #include <linux/pci.h>
 
@@ -323,8 +324,11 @@ static int cirrus_fb_blit_rect(struct drm_framebuffer *fb,
 
 	ret = -ENOMEM;
 	vmap = drm_gem_shmem_vmap(fb->obj[0]);
-	if (!vmap)
+	if (IS_ERR_OR_NULL(vmap)) {
+		if (IS_ERR(vmap))
+			ret = PTR_ERR(vmap);
 		goto out_dev_exit;
+	}
 
 	if (cirrus->cpp == fb->format->cpp[0])
 		drm_fb_memcpy_dstclip(cirrus->vram,
