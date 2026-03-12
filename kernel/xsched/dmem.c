@@ -21,11 +21,13 @@
 #include <linux/xsched.h>
 #include <linux/types.h>
 #include <linux/cgroup_dmem.h>
+#include <linux/sizes.h>
 
 static struct dmem_cgroup_region *hbm_regions[XSCHED_NR_CUS];
 
 struct xsched_dmem_pool {
 	uint64_t id;
+	uint64_t size;
 	struct dmem_cgroup_pool_state *pool;
 	struct list_head pool_node;
 };
@@ -88,6 +90,7 @@ int xsched_dmem_alloc(struct xsched_context *ctx, struct vstream_args *args)
 	}
 
 	new_pool->pool = ret_pool;
+	new_pool->size = args->vh_args.size;
 
 	/* protect list using ctx_lock */
 	spin_lock(&ctx->ctx_lock);
@@ -97,7 +100,7 @@ int xsched_dmem_alloc(struct xsched_context *ctx, struct vstream_args *args)
 
 	args->vh_args.pool_id = new_pool->id;
 	XSCHED_DEBUG("charged %llu bytes, new_alloc = %p with id %llu",
-		args->vh_args.size, new_pool, new_pool->id);
+		new_pool->size, new_pool, new_pool->id);
 
 	return 0;
 
@@ -111,10 +114,11 @@ error_out:
 int xsched_dmem_free(struct xsched_context *ctx, struct vstream_args *args)
 {
 	struct xsched_dmem_pool *pool, *target = NULL;
+	uint64_t pool_id = args->vh_args.pool_id;
 
 	spin_lock(&ctx->ctx_lock);
 	list_for_each_entry(pool, &ctx->pool_list, pool_node) {
-		if (pool->id == args->vh_args.pool_id) {
+		if (pool->id == pool_id) {
 			list_del(&pool->pool_node);
 			target = pool;
 			break;
@@ -123,14 +127,38 @@ int xsched_dmem_free(struct xsched_context *ctx, struct vstream_args *args)
 	spin_unlock(&ctx->ctx_lock);
 
 	if (!target) {
-		XSCHED_ERR("pool with id %llu is not found\n", args->vh_args.pool_id);
+		XSCHED_ERR("pool with id %llu is not found\n", pool_id);
 		return -EINVAL;
 	}
 
 	XSCHED_DEBUG("uncharged %llu bytes for pool = %p with id %llu\n",
-		args->vh_args.size, target, target->id);
-	dmem_cgroup_uncharge(target->pool, args->vh_args.size);
+		target->size, target, target->id);
+	dmem_cgroup_uncharge(target->pool, target->size);
 	kfree(target);
 
 	return 0;
+}
+
+void xsched_dmem_clear(struct xsched_context *ctx)
+{
+	struct xsched_dmem_pool *pool, *tmp;
+
+	if (!ctx)
+		return;
+
+	spin_lock(&ctx->ctx_lock);
+
+	list_for_each_entry_safe(pool, tmp, &ctx->pool_list, pool_node) {
+		list_del(&pool->pool_node);
+		spin_unlock(&ctx->ctx_lock);
+
+		XSCHED_DEBUG("uncharged %llu bytes for pool = %p with id %llu\n",
+			pool->size, pool, pool->id);
+		dmem_cgroup_uncharge(pool->pool, pool->size);
+		kfree(pool);
+
+		spin_lock(&ctx->ctx_lock);
+	}
+
+	spin_unlock(&ctx->ctx_lock);
 }
