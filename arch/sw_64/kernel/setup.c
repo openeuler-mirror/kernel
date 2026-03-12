@@ -50,7 +50,7 @@
 
 DEFINE_PER_CPU(unsigned long, hard_node_id) = { 0 };
 
-static inline int phys_addr_valid(unsigned long addr)
+inline int phys_addr_valid(unsigned long addr)
 {
 	/*
 	 * At this point memory probe has not been done such that max_pfn
