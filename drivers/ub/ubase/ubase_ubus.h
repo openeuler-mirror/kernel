@@ -31,6 +31,11 @@
 #define UBASE_DEV_ID_A_0_UBOE_MUE	0xD80B
 #define UBASE_DEV_ID_A_0_UBOE_UE	0xD80C
 
+#define UBASE_DEV_ID_S_0_URMA_MUE	0x8011
+#define UBASE_DEV_ID_S_0_URMA_UE	0x8012
+#define UBASE_DEV_ID_S_0_PMU_MUE	0x8013
+#define UBASE_DEV_ID_S_0_CDMA_MUE	0x8015
+
 struct ubase_bus_eid;
 
 int ubase_ubus_register_driver(void);
