@@ -7417,6 +7417,9 @@ static int bfq_init_queue(struct request_queue *q, struct elevator_type *e)
 	return 0;
 
 out_free:
+	spin_lock_irq(&q->queue_lock);
+	q->elevator = NULL;
+	spin_unlock_irq(&q->queue_lock);
 	kfree(bfqd);
 	kobject_put(&eq->kobj);
 	return -ENOMEM;

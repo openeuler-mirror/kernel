@@ -732,9 +732,11 @@ void wbt_enable_default(struct gendisk *disk)
 	struct rq_qos *rqos;
 	bool enable = IS_ENABLED(CONFIG_BLK_WBT_MQ);
 
+	spin_lock_irq(&q->queue_lock);
 	if (q->elevator &&
 	    test_bit(ELEVATOR_FLAG_DISABLE_WBT, &q->elevator->flags))
 		enable = false;
+	spin_unlock_irq(&q->queue_lock);
 
 	/* Throttling already enabled? */
 	rqos = wbt_rq_qos(q);

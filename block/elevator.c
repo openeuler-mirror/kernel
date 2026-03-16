@@ -704,7 +704,6 @@ void elevator_disable(struct request_queue *q)
 	elv_unregister_queue(q);
 	elevator_exit(q);
 	blk_queue_flag_clear(QUEUE_FLAG_SQ_SCHED, q);
-	q->elevator = NULL;
 	q->nr_requests = q->tag_set->queue_depth;
 	blk_add_trace_msg(q, "elv switch: none");
 
