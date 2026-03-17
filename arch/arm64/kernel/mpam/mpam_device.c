@@ -1238,8 +1238,16 @@ static u32 mpam_device_read_csu_mon(struct mpam_device *dev,
 	return mpam_read_reg(dev, MSMON_CSU);
 }
 
+static bool mpam_dev_has_nrdy_bit(struct mpam_device *dev)
+{
+	if (mpam_has_feature(mpam_feat_msmon_mbwu, dev->features))
+		return read_cpuid_implementor() != ARM_CPU_IMP_HISI;
+
+	return true;
+}
+
 static u32 mpam_device_read_mbwu_mon(struct mpam_device *dev,
-			struct sync_args *args)
+			struct sync_args *args, bool *config_mismatch)
 {
 	u16 mon;
 	u32 clt, flt, cur_clt, cur_flt;
@@ -1282,6 +1290,8 @@ static u32 mpam_device_read_mbwu_mon(struct mpam_device *dev,
 		clt |= MSMON_CFG_CTL_EN;
 		mpam_write_reg(dev, MSMON_CFG_MBWU_CTL, clt);
 		wmb();
+
+		*config_mismatch = true;
 	}
 
 	return mpam_read_reg(dev, MSMON_MBWU);
@@ -1292,6 +1302,7 @@ static int mpam_device_frob_mon(struct mpam_device *dev,
 {
 	struct sync_args *args = ctx->args;
 	u32 val;
+	bool config_mismatch = false;
 
 	lockdep_assert_held(&dev->lock);
 
@@ -1306,11 +1317,12 @@ static int mpam_device_frob_mon(struct mpam_device *dev,
 		val = mpam_device_read_csu_mon(dev, args);
 	else if (args->eventid == QOS_L3_MBM_LOCAL_EVENT_ID &&
 		mpam_has_feature(mpam_feat_msmon_mbwu, dev->features))
-		val = mpam_device_read_mbwu_mon(dev, args);
+		val = mpam_device_read_mbwu_mon(dev, args, &config_mismatch);
 	else
 		return -EOPNOTSUPP;
 
-	if (val & MSMON___NRDY)
+	if (val & MSMON___NRDY ||
+	    (config_mismatch && !mpam_dev_has_nrdy_bit(dev)))
 		return -EBUSY;
 
 	val = val & MSMON___VALUE;
