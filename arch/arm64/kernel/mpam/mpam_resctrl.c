@@ -337,7 +337,7 @@ parse_bw(char *buf, struct resctrl_resource *r,
 		struct resctrl_staged_config *cfg,
 		enum resctrl_ctrl_type type)
 {
-	unsigned long data;
+	unsigned long data, min_bw = 0;
 	struct raw_resctrl_resource *rr = r->res;
 
 	if (cfg->have_new_ctrl) {
@@ -353,10 +353,12 @@ parse_bw(char *buf, struct resctrl_resource *r,
 	switch (rr->ctrl_features[type].evt) {
 	case QOS_MBA_MAX_EVENT_ID:
 	case QOS_MBA_PBM_EVENT_ID:
+		min_bw = r->mbw.min_bw;
+		fallthrough;
 	case QOS_MBA_MIN_EVENT_ID:
-		if (data < r->mbw.min_bw || data >= rr->ctrl_features[type].max_wd) {
+		if (data < min_bw || data >= rr->ctrl_features[type].max_wd) {
 			rdt_last_cmd_printf("MB value %ld out of range [%d,%d]\n", data,
-					r->mbw.min_bw, rr->ctrl_features[type].max_wd - 1);
+					(int)min_bw, rr->ctrl_features[type].max_wd - 1);
 			return -EINVAL;
 		}
 		data = roundup(data, r->mbw.bw_gran);
