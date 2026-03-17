@@ -54,6 +54,11 @@ static LIST_HEAD(mpam_all_devices);
 /* Classes are the set of MSCs that make up components of the same type. */
 LIST_HEAD(mpam_classes);
 
+static const struct midr_range hip12_cpus[] = {
+	MIDR_ALL_VERSIONS(MIDR_HISI_HIP12),
+	{ /* sentinel */ }
+};
+
 static DEFINE_MUTEX(mpam_cpuhp_lock);
 static int mpam_cpuhp_state;
 
@@ -125,6 +130,14 @@ mpam_probe_update_sysprops(u16 max_partid, u16 max_pmg)
 				mpam_sysprops.max_pmg : max_pmg;
 }
 
+static int mpam_pmg_max_workaround(u32 hwfeatures)
+{
+	if (is_midr_in_range_list(read_cpuid_id(), hip12_cpus))
+		return 0;
+
+	return (hwfeatures & MPAMF_IDR_PMG_MAX_MASK) >> MPAMF_IDR_PMG_MAX_SHIFT;
+}
+
 static int mpam_device_probe(struct mpam_device *dev)
 {
 	u64 idr;
@@ -141,7 +154,7 @@ static int mpam_device_probe(struct mpam_device *dev)
 
 	hwfeatures = mpam_read_reg(dev, MPAMF_IDR);
 	max_partid = hwfeatures & MPAMF_IDR_PARTID_MAX_MASK;
-	max_pmg = (hwfeatures & MPAMF_IDR_PMG_MAX_MASK) >> MPAMF_IDR_PMG_MAX_SHIFT;
+	max_pmg = mpam_pmg_max_workaround(hwfeatures);
 
 	dev->num_partid = max_partid + 1;
 	dev->num_pmg = max_pmg + 1;
