@@ -223,8 +223,12 @@ static int unic_setets_config(struct net_device *ndev, struct ieee_ets *ets,
 		return ret;
 
 	ret = unic_handle_vl_tsa_bw_change(unic_dev, ets, changed);
-	if (ret)
-		return ret;
+	if (ret) {
+		if (ret != -EPERM)
+			return ret;
+		unic_warn(unic_dev,
+			  "ets tsa and bw configuration is not<  permitted.\n");
+	}
 
 	unic_dev->channels.vl.vl_num = vl_num;
 	if (unic_rss_vl_num_changed(unic_dev, vl_num))
