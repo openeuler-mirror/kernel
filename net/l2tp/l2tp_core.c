@@ -995,19 +995,73 @@ static int l2tp_build_l2tpv3_header(struct l2tp_session *session, void *buf)
 	return bufp - optr;
 }
 
+#if IS_ENABLED(CONFIG_IPV6)
+static int l2tp_xmit_ipv6(struct sock *sk, struct sk_buff *skb)
+{
+	struct ipv6_pinfo *np = inet6_sk(sk);
+	struct inet_sock *inet = inet_sk(sk);
+	struct in6_addr *final_p, final;
+	struct dst_entry *dst;
+	struct flowi6 fl6;
+	int err;
+
+	memset(&fl6, 0, sizeof(fl6));
+	fl6.flowi6_proto = sk->sk_protocol;
+	fl6.daddr        = sk->sk_v6_daddr;
+	fl6.saddr        = np->saddr;
+	fl6.flowlabel    = np->flow_label;
+	IP6_ECN_flow_xmit(sk, fl6.flowlabel);
+
+	fl6.flowi6_oif   = sk->sk_bound_dev_if;
+	fl6.flowi6_mark  = sk->sk_mark;
+	fl6.fl6_sport    = inet->inet_sport;
+	fl6.fl6_dport    = inet->inet_dport;
+	fl6.flowi6_uid   = sk->sk_uid;
+
+	security_sk_classify_flow(sk, flowi6_to_flowi_common(&fl6));
+
+	rcu_read_lock();
+	final_p = fl6_update_dst(&fl6, rcu_dereference(np->opt), &final);
+	rcu_read_unlock();
+
+	dst = sk_dst_check(sk, np->dst_cookie);
+	if (!dst) {
+		dst = ip6_dst_lookup_flow(sock_net(sk), sk, &fl6, final_p);
+		if (IS_ERR(dst)) {
+			sk->sk_err_soft = -PTR_ERR(dst);
+			sk->sk_route_caps = 0;
+			kfree_skb(skb);
+			return PTR_ERR(dst);
+		}
+
+		ip6_dst_store(sk, dst_clone(dst), NULL, NULL);
+	}
+
+	skb_dst_set(skb, dst);
+	fl6.daddr = sk->sk_v6_daddr;
+
+	rcu_read_lock();
+	err = ip6_xmit(sk, skb, &fl6, sk->sk_mark, rcu_dereference(np->opt),
+		       np->tclass, sk->sk_priority);
+	rcu_read_unlock();
+	return err;
+}
+#endif
+
 /* Queue the packet to IP for output: tunnel socket lock must be held */
 static int l2tp_xmit_queue(struct l2tp_tunnel *tunnel, struct sk_buff *skb, struct flowi *fl)
 {
 	int err;
+	struct sock *sk = tunnel->sock;
 
 	skb->ignore_df = 1;
 	skb_dst_drop(skb);
 #if IS_ENABLED(CONFIG_IPV6)
-	if (l2tp_sk_is_v6(tunnel->sock))
-		err = inet6_csk_xmit(tunnel->sock, skb, NULL);
+	if (l2tp_sk_is_v6(sk))
+		err = l2tp_xmit_ipv6(sk, skb);
 	else
 #endif
-		err = ip_queue_xmit(tunnel->sock, skb, fl);
+		err = ip_queue_xmit(sk, skb, fl);
 
 	return err >= 0 ? NET_XMIT_SUCCESS : NET_XMIT_DROP;
 }
