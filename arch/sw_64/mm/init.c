@@ -180,19 +180,19 @@ void __set_fixmap(enum fixed_addresses idx, phys_addr_t phys, pgprot_t prot)
 	local_flush_tlb_all();
 }
 
-static pte_t *__init get_pte_virt_fixmap(phys_addr_t phys)
+static pte_t *get_pte_virt_fixmap(phys_addr_t phys)
 {
 	clear_fixmap(FIX_PTE);
 	return (pte_t *)set_fixmap_offset(FIX_PTE, phys);
 }
 
-static pmd_t *__init get_pmd_virt_fixmap(phys_addr_t phys)
+static pmd_t *get_pmd_virt_fixmap(phys_addr_t phys)
 {
 	clear_fixmap(FIX_PMD);
 	return (pmd_t *)set_fixmap_offset(FIX_PMD, phys);
 }
 
-static pud_t *__init get_pud_virt_fixmap(phys_addr_t phys)
+static pud_t *get_pud_virt_fixmap(phys_addr_t phys)
 {
 	clear_fixmap(FIX_PUD);
 	return (pud_t *)set_fixmap_offset(FIX_PUD, phys);
@@ -203,7 +203,12 @@ void * __init pgtable_alloc_fixmap(void)
 	return (void *)__va(memblock_phys_alloc(PAGE_SIZE, PAGE_SIZE));
 }
 
-static void __init
+void *pgtable_alloc_late(void)
+{
+	return (void *)__get_free_page(GFP_KERNEL);
+}
+
+static void
 create_pte_mapping(pte_t *pte_first, unsigned long virt, unsigned long phys,
 		   unsigned long size, pgprot_t prot)
 {
@@ -222,7 +227,7 @@ create_pte_mapping(pte_t *pte_first, unsigned long virt, unsigned long phys,
 	}
 }
 
-static void __init
+static void
 create_pmd_mapping(pmd_t *pmd_first, unsigned long virt, unsigned long phys,
 		   unsigned long size, pgprot_t prot,
 		   void *(*pgtable_alloc)(void))
@@ -256,7 +261,7 @@ create_pmd_mapping(pmd_t *pmd_first, unsigned long virt, unsigned long phys,
 	}
 }
 
-static void __init
+static void
 create_cont_pmd_mapping(pmd_t *pmd_first, unsigned long virt,
 			unsigned long phys, unsigned long size, pgprot_t prot,
 			void *(*pgtable_alloc)(void))
@@ -285,7 +290,7 @@ create_cont_pmd_mapping(pmd_t *pmd_first, unsigned long virt,
 	}
 }
 
-static void __init
+static void
 create_pud_mapping(pud_t *pud_first, unsigned long virt, unsigned long phys,
 		   unsigned long size, pgprot_t prot,
 		   void *(*pgtable_alloc)(void))
@@ -319,8 +324,8 @@ create_pud_mapping(pud_t *pud_first, unsigned long virt, unsigned long phys,
 	}
 }
 
-void __init
-create_pgd_mapping(pgd_t *pgdir, unsigned long virt, unsigned long phys,
+static void
+__create_pgd_mapping(pgd_t *pgdir, unsigned long virt, unsigned long phys,
 		   unsigned long size, pgprot_t prot,
 		   void *(*pgtable_alloc)(void))
 {
@@ -351,6 +356,14 @@ create_pgd_mapping(pgd_t *pgdir, unsigned long virt, unsigned long phys,
 	clear_fixmap(FIX_PTE);
 	clear_fixmap(FIX_PMD);
 	clear_fixmap(FIX_PUD);
+}
+
+void __init
+create_pgd_mapping(pgd_t *pgdir, unsigned long virt, unsigned long phys,
+		   unsigned long size, pgprot_t prot,
+		   void *(*pgtable_alloc)(void))
+{
+	__create_pgd_mapping(pgdir, virt, phys, size, prot, pgtable_alloc);
 }
 
 static void __init early_create_pmd(pgd_t *pgdir, pud_t *pud, pmd_t *pmd,
@@ -437,6 +450,75 @@ static void __init map_legacy_io(pgd_t *pgdir)
 	create_pgd_mapping(pgdir, (unsigned long)__va(lpc_legacy_io_start), lpc_legacy_io_start,
 			   size, PAGE_KERNEL_NOEXEC, pgtable_alloc_fixmap);
 }
+
+static bool check_present(pgd_t *pgdir, unsigned long addr)
+{
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte;
+	bool ret;
+
+	if (!addr)
+		return false;
+
+	pgd = pgd_offset_pgd(pgdir, addr);
+	p4d = p4d_offset(pgd, addr);
+	if (p4d_none(*p4d))
+		return false;
+
+	pud = pud_offset(p4d, addr);
+	pud = get_pud_virt_fixmap(__pa(pud));
+	if (pud_none(*pud)) {
+		ret = false;
+		goto out;
+	}
+	if (pud_leaf(*pud)) {
+		ret = true;
+		goto out;
+	}
+
+	pmd = pmd_offset(pud, addr);
+	pmd = get_pmd_virt_fixmap(__pa(pmd));
+	if (!pmd_present(*pmd)) {
+		ret = false;
+		goto out;
+	}
+	if (pmd_leaf(*pmd)) {
+		ret = true;
+		goto out;
+	}
+
+	pte = pte_offset_kernel(pmd, addr);
+	pte = get_pte_virt_fixmap(__pa(pte));
+	if (pte_none(*pte))
+		ret = false;
+	else
+		ret = true;
+
+out:
+	clear_fixmap(FIX_PTE);
+	clear_fixmap(FIX_PMD);
+	clear_fixmap(FIX_PUD);
+
+	return ret;
+}
+
+static void __init map_fdt(pgd_t *pgdir)
+{
+	unsigned long dtb_size = 0;
+
+	/*
+	 * If sunway_dtb_address is not included in the memory mapping, create a mapping
+	 * for it.
+	 */
+	if (!check_present(pgdir, sunway_dtb_address)) {
+		dtb_size = (unsigned long)fdt_totalsize((void *)sunway_dtb_address);
+		create_pgd_mapping(pgdir, sunway_dtb_address, __pa(sunway_dtb_address),
+				   dtb_size, PAGE_KERNEL_READONLY, pgtable_alloc_fixmap);
+	}
+}
 #endif /* CONFIG_SW64_KERNEL_PAGE_TABLE */
 
 /*
@@ -448,7 +530,7 @@ void __init early_paging_init(void)
 	unsigned long img_start, img_size;
 	unsigned long dtb_start, dtb_size = 0;
 
-	img_start = (unsigned long)(KERNEL_START_PHYS + __START_KERNEL_map);
+	img_start = (unsigned long)_text - TEXT_OFFSET;
 	img_size = (unsigned long)_end - img_start;
 	dtb_start = sunway_dtb_address;
 
@@ -474,8 +556,6 @@ void __init early_paging_init(void)
 		pr_info("SW64 kernel page table enabled\n");
 		set_atc(ATC_PAGE);
 	}
-
-	tbiv();
 #endif /* CONFIG_SW64_KERNEL_PAGE_TABLE */
 }
 
@@ -487,9 +567,9 @@ void __init paging_init(void)
 #ifdef CONFIG_SW64_KERNEL_PAGE_TABLE
 	unsigned long sw64_vcpucb_start = PAGE_OFFSET + 0x20000;
 	unsigned long sw64_vcpucb_size = 0x60000;
-	unsigned long sw64_reserve_start = CONFIG_PHYSICAL_START + PAGE_OFFSET;
-	unsigned long sw64_reserve_size = (unsigned long)_stext - sw64_reserve_start;
-	unsigned long text_start = (unsigned long)_stext;
+	unsigned long sw64_reserve_start = (unsigned long)_text - TEXT_OFFSET;
+	unsigned long sw64_reserve_size = (unsigned long)_text - sw64_reserve_start;
+	unsigned long text_start = (unsigned long)_text;
 	unsigned long text_size = (unsigned long)_etext - text_start;
 	unsigned long ro_start = (unsigned long)__start_rodata;
 	unsigned long ro_size = (unsigned long)__init_begin - ro_start;
@@ -533,8 +613,7 @@ void __init paging_init(void)
 		create_pgd_mapping(pgdir, sw64_guest_reset_start, __pa(sw64_guest_reset_start), sw64_guest_reset_size,
 				   PAGE_KERNEL_READONLY_EXEC, pgtable_alloc_fixmap);
 
-	memblock_mark_nomap(__pa(sw64_reserve_start),
-			    __pa((unsigned long)_end - sw64_reserve_start));
+	memblock_mark_nomap(__pa(sw64_reserve_start), (unsigned long)_end - sw64_reserve_start);
 	for_each_mem_range(i, &start, &end) {
 		if (start >= end)
 			break;
@@ -543,8 +622,9 @@ void __init paging_init(void)
 				   (unsigned long)(end - start),
 				   PAGE_KERNEL_NOEXEC, pgtable_alloc_fixmap);
 	}
-	memblock_clear_nomap(__pa(sw64_reserve_start),
-			     __pa((unsigned long)_end - sw64_reserve_start));
+	memblock_clear_nomap(__pa(sw64_reserve_start), (unsigned long)_end - sw64_reserve_start);
+
+	map_fdt(pgdir);
 #endif /* CONFIG_SW64_KERNEL_PAGE_TABLE */
 }
 
@@ -860,16 +940,349 @@ void vmemmap_free(unsigned long start, unsigned long end,
 #endif
 
 #ifdef CONFIG_MEMORY_HOTPLUG
+#ifdef CONFIG_SW64_KERNEL_PAGE_TABLE
+static void free_hotplug_page_range(struct page *page, size_t size,
+				    struct vmem_altmap *altmap)
+{
+	if (altmap) {
+		vmem_altmap_free(altmap, size >> PAGE_SHIFT);
+	} else {
+		WARN_ON(PageReserved(page));
+		free_pages((unsigned long)page_address(page), get_order(size));
+	}
+}
+
+static void free_hotplug_pgtable_page(struct page *page)
+{
+	free_hotplug_page_range(page, PAGE_SIZE, NULL);
+}
+
+static bool pgtable_range_aligned(unsigned long start, unsigned long end,
+				  unsigned long floor, unsigned long ceiling,
+				  unsigned long mask)
+{
+	start &= mask;
+	if (start < floor)
+		return false;
+
+	if (ceiling) {
+		ceiling &= mask;
+		if (!ceiling)
+			return false;
+	}
+
+	if (end - 1 > ceiling - 1)
+		return false;
+	return true;
+}
+
+static void unmap_hotplug_pte_range(pmd_t *pmdp, unsigned long addr,
+				    unsigned long end, bool free_mapped,
+				    struct vmem_altmap *altmap)
+{
+	pte_t *ptep, pte;
+
+	do {
+		ptep = pte_offset_kernel(pmdp, addr);
+		pte = READ_ONCE(*ptep);
+		if (pte_none(pte))
+			continue;
+
+		WARN_ON(!pte_present(pte));
+		pte_clear(&init_mm, addr, ptep);
+		flush_tlb_kernel_range(addr, addr + PAGE_SIZE);
+		if (free_mapped)
+			free_hotplug_page_range(pte_page(pte),
+						PAGE_SIZE, altmap);
+	} while (addr += PAGE_SIZE, addr < end);
+}
+
+static void unmap_hotplug_pmd_range(pud_t *pudp, unsigned long addr,
+				    unsigned long end, bool free_mapped,
+				    struct vmem_altmap *altmap)
+{
+	unsigned long next;
+	pmd_t *pmdp, pmd;
+
+	for (; addr < end; addr = next) {
+		next = pmd_addr_end(addr, end);
+		pmdp = pmd_offset(pudp, addr);
+		pmd = READ_ONCE(*pmdp);
+		if (pmd_none(pmd))
+			continue;
+
+		WARN_ON(!pmd_present(pmd));
+		if (next - addr == PMD_SIZE) {
+			pmd_clear(pmdp);
+			flush_tlb_kernel_range(addr, addr + PMD_SIZE);
+			if (free_mapped)
+				free_hotplug_page_range(pmd_page(pmd),
+							PMD_SIZE, altmap);
+			continue;
+		}
+		unmap_hotplug_pte_range(pmdp, addr, next, free_mapped, altmap);
+	}
+}
+
+static void unmap_hotplug_cont_pmd_range(pud_t *pudp, unsigned long addr,
+				    unsigned long end, bool free_mapped,
+				    struct vmem_altmap *altmap)
+{
+	unsigned long next, i;
+	pmd_t *pmdp, pmd;
+
+	for (; addr < end; addr = next) {
+		next = cont_pmd_addr_end(addr, end);
+		pmdp = pmd_offset(pudp, addr);
+		pmd = READ_ONCE(*pmdp);
+		if (pmd_none(pmd))
+			continue;
+
+		WARN_ON(!pmd_present(pmd));
+		if ((next - addr == CONT_PMD_SIZE) &&
+		    (PTRS_PER_PMD - pmd_index(addr) >= CONT_PMDS)) {
+			for (i = 0; i < CONT_PMDS; i++) {
+				pmd_clear(pmdp + i);
+				if (free_mapped)
+					free_hotplug_page_range(pmd_page(pmd),
+							PMD_SIZE, altmap);
+			}
+			flush_tlb_kernel_range(addr, addr + CONT_PMD_SIZE);
+			continue;
+		}
+		unmap_hotplug_pmd_range(pudp, addr, next, free_mapped, altmap);
+	}
+}
+
+static void unmap_hotplug_pud_range(p4d_t *p4dp, unsigned long addr,
+				    unsigned long end, bool free_mapped,
+				    struct vmem_altmap *altmap)
+{
+	unsigned long next;
+	pud_t *pudp, pud;
+
+	for (; addr < end; addr = next) {
+		next = pud_addr_end(addr, end);
+		pudp = pud_offset(p4dp, addr);
+		pud = READ_ONCE(*pudp);
+		if (pud_none(pud))
+			continue;
+
+		WARN_ON(!pud_present(pud));
+		if (next - addr == PUD_SIZE) {
+			pud_clear(pudp);
+			flush_tlb_kernel_range(addr, addr + PUD_SIZE);
+			if (free_mapped)
+				free_hotplug_page_range(pud_page(pud),
+							PUD_SIZE, altmap);
+			continue;
+		}
+		unmap_hotplug_cont_pmd_range(pudp, addr, next, free_mapped, altmap);
+	}
+}
+
+static void unmap_hotplug_range(unsigned long addr, unsigned long end,
+				bool free_mapped, struct vmem_altmap *altmap)
+{
+	unsigned long next;
+	pgd_t *pgdp;
+	p4d_t *p4dp, p4d;
+
+	/*
+	 * altmap can only be used as vmemmap mapping backing memory.
+	 * In case the backing memory itself is not being freed, then
+	 * altmap is irrelevant. Warn about this inconsistency when
+	 * encountered.
+	 */
+	WARN_ON(!free_mapped && altmap);
+
+	for (; addr < end; addr = next) {
+		next = pgd_addr_end(addr, end);
+		pgdp = pgd_offset_k(addr);
+		p4dp = p4d_offset(pgdp, addr);
+		p4d = READ_ONCE(*p4dp);
+		if (p4d_none(p4d))
+			continue;
+
+		WARN_ON(!p4d_present(p4d));
+		unmap_hotplug_pud_range(p4dp, addr, next, free_mapped, altmap);
+	}
+}
+
+static void free_empty_pte_table(pmd_t *pmdp, unsigned long addr,
+				 unsigned long end, unsigned long floor,
+				 unsigned long ceiling)
+{
+	pte_t *ptep, pte;
+	unsigned long i, start = addr;
+
+	do {
+		ptep = pte_offset_kernel(pmdp, addr);
+		pte = READ_ONCE(*ptep);
+
+		/*
+		 * This is just a sanity check here which verifies that
+		 * pte clearing has been done by earlier unmap loops.
+		 */
+		WARN_ON(!pte_none(pte));
+	} while (addr += PAGE_SIZE, addr < end);
+
+	if (!pgtable_range_aligned(start, end, floor, ceiling, PMD_MASK))
+		return;
+
+	/*
+	 * Check whether we can free the pte page if the rest of the
+	 * entries are empty. Overlap with other regions have been
+	 * handled by the floor/ceiling check.
+	 */
+	ptep = pte_offset_kernel(pmdp, 0UL);
+	for (i = 0; i < PTRS_PER_PTE; i++) {
+		if (!pte_none(READ_ONCE(ptep[i])))
+			return;
+	}
+
+	pmd_clear(pmdp);
+
+	/* invalidate the walk caches */
+	flush_tlb_all();
+	free_hotplug_pgtable_page(virt_to_page(ptep));
+}
+
+static void free_empty_pmd_table(pud_t *pudp, unsigned long addr,
+				 unsigned long end, unsigned long floor,
+				 unsigned long ceiling)
+{
+	pmd_t *pmdp, pmd;
+	unsigned long i, next, start = addr;
+
+	for (; addr < end; addr = next) {
+		next = pmd_addr_end(addr, end);
+		pmdp = pmd_offset(pudp, addr);
+		pmd = READ_ONCE(*pmdp);
+		if (pmd_none(pmd))
+			continue;
+
+		WARN_ON(!pmd_present(pmd));
+		free_empty_pte_table(pmdp, addr, next, floor, ceiling);
+	};
+
+	if (CONFIG_PGTABLE_LEVELS <= 2)
+		return;
+
+	if (!pgtable_range_aligned(start, end, floor, ceiling, PUD_MASK))
+		return;
+
+	/*
+	 * Check whether we can free the pmd page if the rest of the
+	 * entries are empty. Overlap with other regions have been
+	 * handled by the floor/ceiling check.
+	 */
+	pmdp = pmd_offset(pudp, 0UL);
+	for (i = 0; i < PTRS_PER_PMD; i++) {
+		if (!pmd_none(READ_ONCE(pmdp[i])))
+			return;
+	}
+
+	pud_clear(pudp);
+
+	/* invalidate the walk caches */
+	flush_tlb_all();
+	free_hotplug_pgtable_page(virt_to_page(pmdp));
+}
+
+static void free_empty_pud_table(p4d_t *p4dp, unsigned long addr,
+				 unsigned long end, unsigned long floor,
+				 unsigned long ceiling)
+{
+	pud_t *pudp, pud;
+	unsigned long i, next, start = addr;
+
+	for (; addr < end; addr = next) {
+		next = pud_addr_end(addr, end);
+		pudp = pud_offset(p4dp, addr);
+		pud = READ_ONCE(*pudp);
+		if (pud_none(pud))
+			continue;
+
+		WARN_ON(!pud_present(pud));
+		free_empty_pmd_table(pudp, addr, next, floor, ceiling);
+	}
+
+	if (CONFIG_PGTABLE_LEVELS <= 3)
+		return;
+
+	if (!pgtable_range_aligned(start, end, floor, ceiling, PGDIR_MASK))
+		return;
+
+	/*
+	 * Check whether we can free the pud page if the rest of the
+	 * entries are empty. Overlap with other regions have been
+	 * handled by the floor/ceiling check.
+	 */
+	pudp = pud_offset(p4dp, 0UL);
+	for (i = 0; i < PTRS_PER_PUD; i++) {
+		if (!pud_none(READ_ONCE(pudp[i])))
+			return;
+	}
+
+	p4d_clear(p4dp);
+
+	/* invalidate the walk caches */
+	flush_tlb_all();
+	free_hotplug_pgtable_page(virt_to_page(pudp));
+}
+
+static void free_empty_tables(unsigned long addr, unsigned long end,
+			      unsigned long floor, unsigned long ceiling)
+{
+	unsigned long next;
+	pgd_t *pgdp;
+	p4d_t *p4dp, p4d;
+
+	for (; addr < end; addr = next) {
+		next = pgd_addr_end(addr, end);
+		pgdp = pgd_offset_k(addr);
+		p4dp = p4d_offset(pgdp, addr);
+		p4d = READ_ONCE(*p4dp);
+		if (p4d_none(p4d))
+			continue;
+
+		WARN_ON(!p4d_present(p4d));
+		free_empty_pud_table(p4dp, addr, next, floor, ceiling);
+	}
+}
+
+static void __remove_pgd_mapping(pgd_t *pgdir, unsigned long start, u64 size)
+{
+	unsigned long end = start + size;
+
+	WARN_ON(pgdir != init_mm.pgd);
+	WARN_ON((start < PAGE_OFFSET) || (end > PAGE_END));
+
+	unmap_hotplug_range(start, end, false, NULL);
+	free_empty_tables(start, end, PAGE_OFFSET, PAGE_END);
+}
+#endif /* CONFIG_SW64_KERNEL_PAGE_TABLE */
+
 int arch_add_memory(int nid, u64 start, u64 size, struct mhp_params *params)
 {
 	unsigned long start_pfn = start >> PAGE_SHIFT;
 	unsigned long nr_pages = size >> PAGE_SHIFT;
 	int ret;
 
+#ifdef CONFIG_SW64_KERNEL_PAGE_TABLE
+	__create_pgd_mapping(swapper_pg_dir, (unsigned long)__va(start), start,
+			     size, params->pgprot, pgtable_alloc_late);
+#endif /* CONFIG_SW64_KERNEL_PAGE_TABLE */
+
 	ret = __add_pages(nid, start_pfn, nr_pages, params);
 	if (ret)
 		printk("%s: Problem encountered in __add_pages() as ret=%d\n",
 		       __func__,  ret);
+	else {
+		max_pfn = PFN_UP(start + size);
+		max_low_pfn = max_pfn;
+	}
 
 	return ret;
 }
@@ -881,5 +1294,8 @@ void arch_remove_memory(int nid, u64 start, u64 size,
 	unsigned long nr_pages = size >> PAGE_SHIFT;
 
 	__remove_pages(start_pfn, nr_pages, altmap);
+#ifdef CONFIG_SW64_KERNEL_PAGE_TABLE
+	__remove_pgd_mapping(swapper_pg_dir, (unsigned long)__va(start), size);
+#endif /* CONFIG_SW64_KERNEL_PAGE_TABLE */
 }
 #endif

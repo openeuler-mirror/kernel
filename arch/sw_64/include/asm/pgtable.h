@@ -367,6 +367,11 @@ static inline pmd_t *pud_pgtable(pud_t pud)
 	return (pmd_t *)pfn_to_virt(pud_pfn(pud));
 }
 
+static inline unsigned long pud_page_vaddr(pud_t pud)
+{
+	return (unsigned long)pfn_to_virt(pud_pfn(pud));
+}
+
 static inline unsigned long pmd_page_vaddr(pmd_t pmd)
 {
 	return (unsigned long)pfn_to_virt(pmd_pfn(pmd));

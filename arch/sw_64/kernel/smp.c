@@ -13,6 +13,7 @@
 #include <linux/numa.h>
 
 #include <asm/irq_impl.h>
+#include <asm/mmu.h>
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
 #include <asm/sw64_init.h>
@@ -290,8 +291,6 @@ static void __init process_nr_cpu_ids(void)
 
 	nr_cpu_ids = num_possible_cpus();
 }
-
-extern void * __init pgtable_alloc_fixmap(void);
 
 void __init smp_rcb_init(struct smp_rcb_struct *smp_rcb_base_addr)
 {
@@ -840,6 +839,21 @@ void flush_tlb_kernel_range(unsigned long start, unsigned long end)
 	on_each_cpu(ipi_flush_tlb_kernel_range, &info, 1);
 }
 EXPORT_SYMBOL(flush_tlb_kernel_range);
+
+void arch_tlbbatch_add_pending(struct arch_tlbflush_unmap_batch *batch,
+				struct mm_struct *mm,
+				unsigned long uaddr)
+{
+	cpumask_or(&batch->cpumask, &batch->cpumask, mm_cpumask(mm));
+}
+
+void arch_tlbbatch_flush(struct arch_tlbflush_unmap_batch *batch)
+{
+	if (!cpumask_empty(&batch->cpumask)) {
+		on_each_cpu_mask(&batch->cpumask, ipi_flush_tlb_all, NULL, 1);
+		cpumask_clear(&batch->cpumask);
+	}
+}
 
 #ifdef CONFIG_HOTPLUG_CPU
 extern int can_unplug_cpu(void);
