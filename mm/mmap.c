@@ -2578,6 +2578,7 @@ int split_vma(struct vma_iterator *vmi, struct vm_area_struct *vma,
 
 	return __split_vma(vmi, vma, addr, new_below);
 }
+EXPORT_SYMBOL(split_vma);
 
 /*
  * do_vmi_align_munmap() - munmap the aligned region from @start to @end.
