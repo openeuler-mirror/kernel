@@ -249,14 +249,23 @@ static pgprot_t mem_state_to_pgprot(unsigned long mem_state)
 	pgprot_t pgprot;
 
 	/* initialize pgprot to be normal memory pgprot with certain access rights */
-	if ((mem_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_READONLY)
+	if ((mem_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_READONLY) {
 		pgprot = PAGE_READONLY;
-	else if ((mem_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_READEXEC)
+	} else if ((mem_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_READEXEC) {
 		pgprot = PAGE_READONLY_EXEC;
-	else if ((mem_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_READWRITE)
-		pgprot.pgprot = _PAGE_READONLY & ~PTE_RDONLY;
-	else
+	} else if ((mem_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_READWRITE) {
+		/*
+		 * Use PAGE_SHARED (PTE_RDONLY | PTE_WRITE) and clear PTE_RDONLY
+		 * to make the page immediately writable. This ensures:
+		 * 1. pte_write() returns true (PTE_WRITE/PTE_DBM bit set)
+		 * 2. Page is writable on both DBM and non-DBM platforms
+		 * 3. generic_access_phys() can properly verify write permission
+		 */
+		pgprot = PAGE_SHARED;
+		pgprot.pgprot &= ~PTE_RDONLY;
+	} else {
 		pgprot = PAGE_NONE;
+	}
 
 	/* modify cacheability attribute if necessary */
 	if ((mem_state & OBMM_SHM_MEM_CACHE_MASK) == OBMM_SHM_MEM_NORMAL_NC)
