@@ -110,44 +110,141 @@ static struct ubagg_device *ubagg_find_dev_by_name(char *dev_name)
 	return NULL;
 }
 
-static bool get_slave_dev(char *dev_name, struct ubagg_slave_device *slave_dev)
+static bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev)
 {
-	struct ubagg_device *ubagg_dev = ubagg_find_dev_by_name(dev_name);
-	int i;
+	struct ubagg_topo_agg_dev empty_dev = {0};
 
-	if (ubagg_dev == NULL) {
-		ubagg_log_err("aggregation device not exist.");
-		return false;
-	}
-
-	slave_dev->slave_dev_num = ubagg_dev->slave_dev_num;
-	for (i = 0; i < ubagg_dev->slave_dev_num; i++)
-		(void)memcpy(slave_dev->slave_dev_name[i],
-			     ubagg_dev->slave_dev_name[i],
-			     UBAGG_MAX_DEV_NAME_LEN);
-	return true;
+	return (memcmp(agg_dev, &empty_dev, sizeof(struct ubagg_topo_agg_dev)) == 0) ? false : true;
 }
 
-static int ubagg_get_slave_device(struct ubcore_device *dev,
-				  struct ubcore_user_ctl *user_ctl)
+static bool is_eid_valid(const char *eid)
 {
-	struct ubagg_slave_device slave_dev = { 0 };
+	int i;
+
+	for (i = 0; i < EID_LEN; i++) {
+		if (eid[i] != 0)
+			return true;
+	}
+	return false;
+}
+
+static bool is_eid_match(const char *eid1, const char *eid2)
+{
+	return memcmp(eid1, eid2, EID_LEN) == 0;
+}
+
+static int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid,
+			 uint32_t *eid_idx)
+{
+	spin_lock(&dev->eid_table.lock);
+	for (int32_t i = 0; i < dev->eid_table.eid_cnt; i++) {
+		struct ubcore_eid_entry *eid_entity;
+
+		eid_entity = &dev->eid_table.eid_entries[i];
+		if (memcmp(eid, &eid_entity->eid, sizeof(*eid)) == 0) {
+			*eid_idx = eid_entity->eid_index;
+			spin_unlock(&dev->eid_table.lock);
+			return 0;
+		}
+	}
+	spin_unlock(&dev->eid_table.lock);
+	return -ENOENT;
+}
+
+static int get_physical_device(struct ubagg_device *ubagg_dev,
+			       struct ubagg_physical_device_out *out,
+			       union ubcore_eid *bonding_eid)
+{
+	struct ubagg_topo_map *topo_map;
+	struct ubagg_topo_agg_dev *topo_agg_dev;
 	int ret;
 
-	if (!get_slave_dev(dev->dev_name, &slave_dev)) {
-		ubagg_log_err("ubagg dev not exist:%s", dev->dev_name);
+	topo_map = get_global_ubagg_map();
+	if (topo_map == NULL) {
+		ubagg_log_err("global topo map is NULL\n");
+		return -EINVAL;
+	}
+
+	topo_agg_dev = find_cur_topo_agg_dev(topo_map, bonding_eid);
+	if (topo_agg_dev == NULL) {
+		ubagg_log_err("find cur node index failed\n");
+		return -EINVAL;
+	}
+
+	out->physical_dev_num = IODIE_NUM;
+	for (int i = 0; i < IODIE_NUM; i++) {
+		struct ubagg_topo_ue *topo_ue;
+		struct ubagg_physical_device *pdev;
+		union ubcore_eid *primary_eid;
+		struct ubcore_device *dev;
+
+		topo_ue = &topo_agg_dev->ues[i];
+
+		primary_eid = (union ubcore_eid *)&topo_ue->primary_eid;
+		dev = ubcore_get_device_by_eid(primary_eid, UBCORE_TRANSPORT_UB);
+		if (IS_ERR_OR_NULL(dev)) {
+			ubagg_log_err("Failed to query primary dev, eid: "EID_FMT"\n",
+				EID_RAW_ARGS(topo_ue->primary_eid));
+			return -ENOENT;
+		}
+
+		pdev = &out->physical_devs[i];
+		pdev->chip_id = topo_ue->chip_id;
+		(void)memcpy(pdev->dev_name, dev->dev_name, UBCORE_MAX_DEV_NAME);
+
+		ret = query_eid_idx(dev, primary_eid, &pdev->primary_eid_idx);
+		if (ret != 0) {
+			ubagg_log_err("Failed to query primary eid information, eid: "
+				EID_FMT"\n", EID_ARGS(*bonding_eid));
+			pdev->primary_eid_idx = UINT32_MAX;
+		}
+		for (int j = 0; j < MAX_PORT_NUM; j++) {
+			union ubcore_eid *port_eid;
+
+			port_eid = (union ubcore_eid *)&topo_ue->port_eid[j];
+			if (!is_eid_valid(port_eid->raw)) {
+				pdev->port_eid_idx[j] = UINT32_MAX;
+				continue;
+			}
+			ret = query_eid_idx(dev, port_eid, &pdev->port_eid_idx[j]);
+			if (ret != 0) {
+				ubagg_log_err("Failed to query port eid information, eid: "
+					EID_FMT"\n", EID_ARGS(*bonding_eid));
+				pdev->port_eid_idx[j] = UINT32_MAX;
+				continue;
+			}
+		}
+	}
+	return 0;
+}
+
+static int ubagg_get_physical_device(struct ubcore_device *dev,
+				  struct ubcore_user_ctl *user_ctl)
+{
+	struct ubagg_physical_device_out out = {0};
+	struct ubagg_device *ubagg_dev;
+	int ret;
+
+	ubagg_dev = ubagg_find_dev_by_name(dev->dev_name);
+	if (ubagg_dev == NULL) {
+		ubagg_log_err("Bonding device not exist.");
 		return -ENXIO;
 	}
 
-	if (user_ctl->out.len < sizeof(struct ubagg_slave_device)) {
+	if (get_physical_device(ubagg_dev, &out, &ubagg_dev->bonding_eid) != 0) {
+		ubagg_log_err("Failed to get physical device:%s", dev->dev_name);
+		return -ENXIO;
+	}
+
+	if (user_ctl->out.len < sizeof(struct ubagg_physical_device_out)) {
 		ubagg_log_err(
 			"ubagg user ctl has no enough space, buffer size:%u, needed size:%lu",
-			user_ctl->out.len, sizeof(struct ubagg_slave_device));
+			user_ctl->out.len, sizeof(struct ubagg_physical_device_out));
 		return -ENOSPC;
 	}
 
 	ret = copy_to_user((void __user *)user_ctl->out.addr,
-			   (void *)&slave_dev, sizeof(slave_dev));
+			   (void *)&out, sizeof(out));
 	if (ret != 0) {
 		ubagg_log_err("copy to user fail, ret:%d", ret);
 		return -EFAULT;
@@ -354,8 +451,8 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 	}
 
 	switch (user_ctl->in.opcode) {
-	case GET_SLAVE_DEVICE:
-		ret = ubagg_get_slave_device(dev, user_ctl);
+	case GET_PHYSICAL_DEVICE:
+		ret = ubagg_get_physical_device(dev, user_ctl);
 		break;
 	case GET_TOPO_INFO:
 		ret = ubagg_get_topo_info(dev, user_ctl);
@@ -880,29 +977,6 @@ static void free_ubagg_dev_bitmap(struct ubagg_device *ubagg_dev)
 	ubagg_dev->jfc_bitmap = NULL;
 }
 
-static bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev)
-{
-	struct ubagg_topo_agg_dev empty_dev = {0};
-
-	return (memcmp(agg_dev, &empty_dev, sizeof(struct ubagg_topo_agg_dev)) == 0) ? false : true;
-}
-
-static bool is_eid_valid(const char *eid)
-{
-	int i;
-
-	for (i = 0; i < EID_LEN; i++) {
-		if (eid[i] != 0)
-			return true;
-	}
-	return false;
-}
-
-static bool is_eid_match(const char *eid1, const char *eid2)
-{
-	return memcmp(eid1, eid2, EID_LEN) == 0;
-}
-
 static int update_dev_info(struct ubagg_topo_node *new_topo_info,
 					struct ubagg_topo_node *old_topo_info)
 {
@@ -1059,6 +1133,8 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 	// init ubagg device
 	(void)memcpy(ubagg_dev->master_dev_name, arg->master_dev_name,
 		     UBAGG_MAX_DEV_NAME_LEN);
+	(void)memcpy(&ubagg_dev->bonding_eid, &arg->agg_eid,
+		     sizeof(union ubcore_eid));
 	ubagg_log_info("master dev name: %s, eid : " EID_FMT "\n",
 		ubagg_dev->master_dev_name,
 		EID_ARGS(arg->agg_eid));

@@ -170,7 +170,7 @@ struct ubagg_get_dev_name_arg {
 };
 
 enum ubagg_userctl_opcode {
-	GET_SLAVE_DEVICE = 1,
+	GET_PHYSICAL_DEVICE = 1,
 	GET_TOPO_INFO = 2,
 	GET_JFR_ID = 3,
 	GET_JETTY_ID = 4,
@@ -178,10 +178,9 @@ enum ubagg_userctl_opcode {
 	GET_JETTY_INFO = 6,
 };
 
-struct ubagg_slave_device {
-	int slave_dev_num;
-	char slave_dev_name[UBAGG_MAX_DEV_NUM][UBAGG_MAX_DEV_NAME_LEN];
-	struct ubagg_physical_device physical_devices[IODIE_NUM];
+struct ubagg_physical_device_out {
+	int physical_dev_num;
+	struct ubagg_physical_device physical_devs[IODIE_NUM];
 };
 
 struct ubagg_topo_info_out {
