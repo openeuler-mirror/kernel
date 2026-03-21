@@ -7810,12 +7810,58 @@ static void hclge_get_cls_key_port(const struct flow_rule *flow,
 	}
 }
 
+static int hclge_get_tc_flower_action(struct hclge_dev *hdev,
+				      struct flow_cls_offload *cls_flower,
+				      struct hclge_fd_rule *rule)
+{
+	struct hnae3_handle *handle = &hdev->vport[0].nic;
+	int tc;
+
+	tc = tc_classid_to_hwtc(handle->netdev, cls_flower->classid);
+	if (tc < 0 || tc > hdev->tc_max) {
+		dev_err(&hdev->pdev->dev, "invalid traffic class: %d\n", tc);
+		return -EINVAL;
+	}
+
+	rule->action = HCLGE_FD_ACTION_SELECT_TC;
+	rule->cls_flower.tc = tc;
+	return 0;
+}
+
 static int hclge_parse_cls_flower(struct hclge_dev *hdev,
 				  struct flow_cls_offload *cls_flower,
 				  struct hclge_fd_rule *rule)
 {
 	struct flow_rule *flow = flow_cls_offload_flow_rule(cls_flower);
+
+	hclge_get_cls_key_basic(flow, rule);
+	hclge_get_cls_key_mac(flow, rule);
+	hclge_get_cls_key_vlan(flow, rule);
+	hclge_get_cls_key_ip(flow, rule);
+	hclge_get_cls_key_port(flow, rule);
+
+	return 0;
+}
+
+static int hclge_check_cls_flower(struct hclge_dev *hdev,
+				  struct flow_cls_offload *cls_flower)
+{
+	struct flow_rule *flow = flow_cls_offload_flow_rule(cls_flower);
 	struct flow_dissector *dissector = flow->match.dissector;
+	u32 prio = cls_flower->common.prio;
+
+	if (prio == 0 ||
+	    prio > hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1]) {
+		dev_err(&hdev->pdev->dev,
+			"prio %u should be in range[1, %u]\n",
+			prio, hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1]);
+		return -EINVAL;
+	}
+
+	if (test_bit(prio - 1, hdev->fd_bmap)) {
+		dev_err(&hdev->pdev->dev, "prio %u is already used\n", prio);
+		return -EINVAL;
+	}
 
 	if (dissector->used_keys &
 	    ~(BIT_ULL(FLOW_DISSECTOR_KEY_CONTROL) |
@@ -7830,43 +7876,11 @@ static int hclge_parse_cls_flower(struct hclge_dev *hdev,
 		return -EOPNOTSUPP;
 	}
 
-	hclge_get_cls_key_basic(flow, rule);
-	hclge_get_cls_key_mac(flow, rule);
-	hclge_get_cls_key_vlan(flow, rule);
-	hclge_get_cls_key_ip(flow, rule);
-	hclge_get_cls_key_port(flow, rule);
-
-	return 0;
-}
-
-static int hclge_check_cls_flower(struct hclge_dev *hdev,
-				  struct flow_cls_offload *cls_flower, int tc)
-{
-	u32 prio = cls_flower->common.prio;
-
-	if (tc < 0 || tc > hdev->tc_max) {
-		dev_err(&hdev->pdev->dev, "invalid traffic class\n");
-		return -EINVAL;
-	}
-
-	if (prio == 0 ||
-	    prio > hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1]) {
-		dev_err(&hdev->pdev->dev,
-			"prio %u should be in range[1, %u]\n",
-			prio, hdev->fd_cfg.rule_num[HCLGE_FD_STAGE_1]);
-		return -EINVAL;
-	}
-
-	if (test_bit(prio - 1, hdev->fd_bmap)) {
-		dev_err(&hdev->pdev->dev, "prio %u is already used\n", prio);
-		return -EINVAL;
-	}
 	return 0;
 }
 
 static int hclge_add_cls_flower(struct hnae3_handle *handle,
-				struct flow_cls_offload *cls_flower,
-				int tc)
+				struct flow_cls_offload *cls_flower)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
@@ -7879,7 +7893,7 @@ static int hclge_add_cls_flower(struct hnae3_handle *handle,
 		return -EOPNOTSUPP;
 	}
 
-	ret = hclge_check_cls_flower(hdev, cls_flower, tc);
+	ret = hclge_check_cls_flower(hdev, cls_flower);
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"failed to check cls flower params, ret = %d\n", ret);
@@ -7896,8 +7910,12 @@ static int hclge_add_cls_flower(struct hnae3_handle *handle,
 		return ret;
 	}
 
-	rule->action = HCLGE_FD_ACTION_SELECT_TC;
-	rule->cls_flower.tc = tc;
+	ret = hclge_get_tc_flower_action(hdev, cls_flower, rule);
+	if (ret) {
+		kfree(rule);
+		return ret;
+	}
+
 	rule->location = cls_flower->common.prio - 1;
 	rule->vf_id = 0;
 	rule->cls_flower.cookie = cls_flower->cookie;
