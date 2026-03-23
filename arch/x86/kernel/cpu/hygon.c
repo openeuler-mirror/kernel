@@ -31,12 +31,6 @@
  */
 static u32 nodes_per_socket = 1;
 
-u32 hygon_get_nodes_per_socket(void)
-{
-	return nodes_per_socket;
-}
-EXPORT_SYMBOL_GPL(hygon_get_nodes_per_socket);
-
 #ifdef CONFIG_NUMA
 /*
  * To workaround broken NUMA config.  Read the comment in

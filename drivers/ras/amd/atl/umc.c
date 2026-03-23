@@ -383,12 +383,7 @@ static u8 get_die_id(struct atl_err *err)
 	 * For CPUs, this is the AMD Node ID modulo the number
 	 * of AMD Nodes per socket.
 	 */
-	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
-	    boot_cpu_data.x86 == 0x18)
-		return topology_die_id(err->cpu) %
-				hygon_get_nodes_per_socket();
-	else
-		return topology_die_id(err->cpu) % amd_get_nodes_per_socket();
+	return topology_die_id(err->cpu) % amd_get_nodes_per_socket();
 }
 
 #define UMC_CHANNEL_NUM	GENMASK(31, 20)
