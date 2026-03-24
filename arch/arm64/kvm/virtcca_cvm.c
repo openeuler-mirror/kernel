@@ -6,7 +6,10 @@
 #include <linux/kvm.h>
 #include <linux/vfio.h>
 #include <linux/vfio_pci_core.h>
+#include <linux/miscdevice.h>
 #include <linux/nmi.h>
+#include <linux/rwlock.h>
+#include <linux/delay.h>
 #include <linux/atomic.h>
 #include <linux/arm-smccc.h>
 #include <asm/kvm_tmi.h>
@@ -17,6 +20,7 @@
 #include <asm/kvm_tmm.h>
 #include <asm/stage2_pgtable.h>
 #include <asm/virtcca_cvm_host.h>
+#include <asm/virtcca_cvm_tsi.h>
 #include <asm/virtcca_coda.h>
 #include <kvm/arm_hypercalls.h>
 #include <kvm/arm_psci.h>
@@ -29,6 +33,7 @@ static DEFINE_SPINLOCK(cvm_vmid_lock);
 static unsigned long *cvm_vmid_bitmap;
 DECLARE_STATIC_KEY_FALSE(virtcca_cvm_is_enable);
 static bool virtcca_vtimer_adjust;
+static int virtcca_migcvm_enabled;
 #define SIMD_PAGE_SIZE 0x3000
 #define UEFI_MAX_SIZE 0x8000000
 #define UEFI_DTB_START 0x40000000
@@ -49,7 +54,7 @@ static bool virtcca_vtimer_adjust;
 #define SEND_RETRY_LIMIT		5
 #define RECV_RETRY_LIMIT		5
 #define CONNECT_RETRY_LIMIT		3
-#define TMI_IMPORT_TIMEOUT_MS	30000
+#define TMI_IMPORT_TIMEOUT_MS	70000
 #define TMI_TRACK_TIMEOUT_MS	20
 
 static struct virtcca_mig_capabilities g_virtcca_mig_caps;
@@ -70,9 +75,16 @@ static int virtcca_mig_state_create(struct virtcca_cvm *cvm);
 static int virtcca_save_migvm_cid(struct kvm *guest_kvm, struct kvm_virtcca_mig_cmd *cmd);
 static int virtcca_migvm_agent_ratstls(struct kvm *kvm, struct kvm_virtcca_mig_cmd *cmd);
 static int virtcca_migvm_agent_ratstls_dst(struct kvm *kvm, struct kvm_virtcca_mig_cmd *cmd);
-static int virtcca_get_bind_info(struct kvm *kvm, struct kvm_virtcca_mig_cmd *cmd);
 static int virtcca_mig_export_abort(struct kvm *kvm);
 static void virtcca_crc32_init(void);
+static int virtcca_mig_notify(struct kvm *kvm, struct kvm_virtcca_mig_cmd *cmd);
+static int virtcca_wait_for_verifier_state(struct kvm *kvm, int expected_state);
+static int virtcca_mig_verifier_register(struct kvm *kvm,
+						struct virtcca_mig_dst_host_info *dst_host_info);
+static int virtcca_mig_verifier_delete(struct kvm *kvm);
+static int virtcca_mig_get_notify(struct virtcca_tmi_cmd *cmd);
+static int virtcca_get_dstvm_rd(struct virtcca_tmi_cmd *cmd);
+static int virtcca_migvm_mem_checksum_loop(struct virtcca_tmi_cmd *cmd);
 
 bool is_virtcca_available(void)
 {
@@ -247,10 +259,21 @@ int kvm_arm_create_cvm(struct kvm *kvm)
 	}
 
 	if (cvm->params->migration_migvm_cap) {
+		if (virtcca_migcvm_enabled) {
+			pr_err("Mig-CVM is already exist\n");
+			ret = -EFAULT;
+			goto out;
+		}
+
+		virtcca_migcvm_enabled = 1;
+
 		cvm->mig_cvm_info = kzalloc(sizeof(struct mig_cvm), GFP_KERNEL_ACCOUNT);
-		if (!cvm->mig_cvm_info)
-			return -ENOMEM;
+		if (!cvm->mig_cvm_info) {
+			ret = -ENOMEM;
+			goto out;
+		}
 		pr_info("This CVM is Mig-CVM\n");
+		cvm->mig_cvm_info->is_migcvm = 1;
 	}
 
 	WRITE_ONCE(cvm->state, CVM_STATE_NEW);
@@ -300,8 +323,6 @@ void kvm_destroy_cvm(struct kvm *kvm)
 #endif
 
 	cvm_vmid = cvm->cvm_vmid;
-	kfree(cvm->params);
-	cvm->params = NULL;
 
 	if (virtcca_cvm_state(kvm) == CVM_STATE_NONE)
 		return;
@@ -328,6 +349,7 @@ void kvm_destroy_cvm(struct kvm *kvm)
 	if (!tmi_cvm_destroy(cvm->rd))
 		kvm_info("KVM has destroyed cVM: %d\n", cvm->cvm_vmid);
 
+	virtcca_mig_verifier_delete(kvm);
 	cvm_vmid_release(cvm_vmid);
 	cvm->is_mapped = false;
 	kfree(cvm);
@@ -770,11 +792,9 @@ static int kvm_activate_cvm(struct kvm *kvm)
 	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
 
 	if (cvm->mig_state) {
-		kvm_info("%s: vm->mig_state->mig_src = %d", __func__, cvm->mig_state->mig_src);
-		if (cvm->mig_state->mig_src == VIRTCCA_MIG_DST) {
-			kvm_info("%s: vm->mig_state->mig_src == VIRTCCA_MIG_DST", __func__);
+		if (cvm->mig_state->mig_src == VIRTCCA_MIG_DST)
 			return 0;
-		}
+
 		virtcca_mig_export_abort(kvm);
 	}
 
@@ -1096,6 +1116,53 @@ static inline bool is_dtb_info_has_extend_data(u64 dtb_info)
 	return dtb_info & 0x1;
 }
 
+static int virtcca_get_bind_info(struct kvm *kvm, struct kvm_virtcca_mig_cmd *cmd)
+{
+	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
+	struct virtcca_bind_info info;
+	struct arm_smccc_res ret;
+
+	if (copy_from_user(&info, (void __user *)cmd->data,
+			sizeof(struct virtcca_bind_info))) {
+		return -EFAULT;
+	}
+
+	if (cmd->flags || info.version != KVM_CVM_MIGVM_VERSION)
+		return -EINVAL;
+
+	if (!virtcca_migcvm_enabled) {
+		ret.a0 = virtcca_wait_for_verifier_state(kvm, VIRTCCA_MIG_KEY_UPDATED);
+		if (ret.a0)
+			info.premig_done = false;
+		else
+			info.premig_done = true;
+
+		if (copy_to_user((void __user *)cmd->data, &info,
+			sizeof(struct virtcca_bind_info))) {
+			return -EFAULT;
+		}
+
+		return 0;
+	}
+
+	ret = tmi_bind_peek(cvm->rd);
+	if (ret.a1 == TMI_SUCCESS) {
+		if (ret.a2 == SLOT_IS_READY)
+			info.premig_done = true;
+		else
+			info.premig_done = false;
+
+		if (copy_to_user((void __user *)cmd->data, &info,
+			sizeof(struct virtcca_bind_info))) {
+			return -EFAULT;
+		}
+		return ret.a1;
+	}
+
+	pr_err("%s: failed, err=%lx\n", __func__, ret.a1);
+	return -EIO;
+}
+
 int kvm_migcvm_ioctl(struct kvm *kvm, unsigned long arg)
 {
 	struct kvm_virtcca_mig_cmd cvm_cmd;
@@ -1104,11 +1171,13 @@ int kvm_migcvm_ioctl(struct kvm *kvm, unsigned long arg)
 
 	mutex_lock(&kvm->lock);
 	if (copy_from_user(&cvm_cmd, argp, sizeof(struct kvm_virtcca_mig_cmd))) {
+		pr_err("%s: copy from user failed", __func__);
 		ret = -EINVAL;
 		goto out;
 	}
 
 	if (cvm_cmd.id < KVM_CVM_MIGCVM_SET_CID || cvm_cmd.id >= KVM_CVM_MIG_STREAM_START) {
+		pr_err("%s: invalid cvm_cmd.id: %u", __func__, cvm_cmd.id);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1117,11 +1186,8 @@ int kvm_migcvm_ioctl(struct kvm *kvm, unsigned long arg)
 	case KVM_CVM_MIGCVM_SET_CID:
 		ret = virtcca_save_migvm_cid(kvm, &cvm_cmd);
 		break;
-	case KVM_CVM_MIGCVM_ATTEST:
-		ret = virtcca_migvm_agent_ratstls(kvm, &cvm_cmd);
-		break;
-	case KVM_CVM_MIGCVM_ATTEST_DST:
-		ret = virtcca_migvm_agent_ratstls_dst(kvm, &cvm_cmd);
+	case KVM_CVM_MIG_NOTIFY:
+		ret = virtcca_mig_notify(kvm, &cvm_cmd);
 		break;
 	case KVM_CVM_GET_BIND_STATUS:
 		ret = virtcca_get_bind_info(kvm, &cvm_cmd);
@@ -3179,7 +3245,7 @@ out:
 /* vsock connection*/
 /* step 1: send to mig-cvm agent: the migrated rd, the destination platform ip*/
 /* step 2: wait for mig-cvm agent's response */
-static int notify_migcvm_agent(uint64_t cid, struct virtcca_dst_host_info *dst_host_info,
+static int notify_migcvm_agent(uint64_t cid, struct virtcca_mig_dst_host_info *dst_host_info,
 							   uint64_t guest_rd, bool is_src)
 {
 	struct socket *sock = NULL;
@@ -3289,7 +3355,7 @@ cleanup:
 static int virtcca_migvm_agent_ratstls_dst(struct kvm *kvm, struct kvm_virtcca_mig_cmd *cmd)
 {
 	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
-	struct virtcca_dst_host_info dst_info;
+	struct virtcca_mig_dst_host_info dst_info;
 	struct arm_smccc_res tmi_ret;
 	int ret = 0;
 
@@ -3299,7 +3365,7 @@ static int virtcca_migvm_agent_ratstls_dst(struct kvm *kvm, struct kvm_virtcca_m
 	}
 
 	if (copy_from_user(&dst_info, (void __user *)cmd->data,
-		sizeof(struct virtcca_dst_host_info))) {
+		sizeof(struct virtcca_mig_dst_host_info))) {
 		return -EFAULT;
 	}
 
@@ -3332,7 +3398,7 @@ static int virtcca_migvm_agent_ratstls_dst(struct kvm *kvm, struct kvm_virtcca_m
 static int virtcca_migvm_agent_ratstls(struct kvm *kvm, struct kvm_virtcca_mig_cmd *cmd)
 {
 	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
-	struct virtcca_dst_host_info dst_info;
+	struct virtcca_mig_dst_host_info dst_info;
 	struct arm_smccc_res tmi_ret;
 	int ret = 0;
 
@@ -3342,7 +3408,7 @@ static int virtcca_migvm_agent_ratstls(struct kvm *kvm, struct kvm_virtcca_mig_c
 	}
 
 	if (copy_from_user(&dst_info, (void __user *)cmd->data,
-		sizeof(struct virtcca_dst_host_info))) {
+		sizeof(struct virtcca_mig_dst_host_info))) {
 		return -EFAULT;
 	}
 
@@ -3354,7 +3420,7 @@ static int virtcca_migvm_agent_ratstls(struct kvm *kvm, struct kvm_virtcca_mig_c
 
 	/* now the dst ip is none, and dst port is 0,
 	 * it should be add check into this (after qemu input)
-	*/
+	 */
 	if (!cvm->mig_cvm_info)
 		return -EINVAL;
 
@@ -3382,36 +3448,6 @@ static int virtcca_migvm_agent_ratstls(struct kvm *kvm, struct kvm_virtcca_mig_c
 		return -EINVAL;
 	}
 	return ret;
-}
-
-static int virtcca_get_bind_info(struct kvm *kvm, struct kvm_virtcca_mig_cmd *cmd)
-{
-	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
-	struct virtcca_bind_info info;
-	struct arm_smccc_res ret;
-
-	if (copy_from_user(&info, (void __user *)cmd->data,
-			sizeof(struct virtcca_bind_info))) {
-		return -EFAULT;
-	}
-
-	if (cmd->flags || info.version != KVM_CVM_MIGVM_VERSION)
-		return -EINVAL;
-
-	ret = tmi_bind_peek(cvm->rd);
-	if (ret.a1 == TMI_SUCCESS) {
-		if (ret.a2 == SLOT_IS_READY)
-			info.premig_done = true;
-		else
-			info.premig_done = false;
-		if (copy_to_user((void __user *)cmd->data, &info,
-			sizeof(struct virtcca_bind_info))) {
-			return -EFAULT;
-		}
-		return ret.a1;
-	}
-	pr_err("%s: failed, err=%lu\n", __func__, ret.a1);
-	return -EIO;
 }
 
 static struct kvm_device_ops kvm_virtcca_mig_stream_ops = {
@@ -3451,11 +3487,6 @@ static void virtcca_enable_log_dirty(struct kvm *kvm, uint64_t start, uint64_t e
 {
 	struct arm_smccc_res res;
 	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
-	uint64_t s_start = cvm->ipa_start;
-	uint64_t s_end = cvm->ipa_start + cvm->ram_size;
-
-	if (end <= s_start || start >= s_end)
-		return;
 
 	res = tmi_mem_region_protect(cvm->rd, start, end);
 	if (res.a1 != 0)
@@ -3581,4 +3612,470 @@ bool virtcca_kvm_adjust_dirty_log_range(struct kvm *kvm, phys_addr_t *start, phy
 
 	return false;
 }
+
+static LIST_HEAD(virtcca_mig_verifier_list);
+static DEFINE_RWLOCK(verifier_list_rwlock);
+#define VIRTCCA_MIG_STATE_WAIT_TIMEOUT 3000
+
+int virtcca_mig_verifier_register(struct kvm *kvm, struct virtcca_mig_dst_host_info *dst_host_info)
+{
+	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
+	struct virtcca_mig_verifier *verifier = NULL;
+	int ret = 0;
+
+	write_lock(&verifier_list_rwlock);
+	list_for_each_entry(verifier, &virtcca_mig_verifier_list, list) {
+		if (verifier->cvm_vmid == cvm->cvm_vmid) {
+			if (dst_host_info->is_src) {
+				strscpy(verifier->dst_ip,
+						dst_host_info->dst_ip,
+						sizeof(verifier->dst_ip));
+				verifier->dst_port = dst_host_info->dst_port;
+			}
+
+			atomic_set(&verifier->status, VIRTCCA_MIG_UPDATED);
+			verifier->is_src = dst_host_info->is_src;
+			pr_warn("CVM is already registered to verifer list, update it\n");
+			write_unlock(&verifier_list_rwlock);
+			return 0;
+		}
+	}
+
+	verifier = kmalloc(sizeof(struct virtcca_mig_verifier), GFP_KERNEL);
+	if (!verifier) {
+		write_unlock(&verifier_list_rwlock);
+		return -ENOMEM;
+	}
+
+	strscpy(verifier->name, dst_host_info->name, sizeof(verifier->name));
+	strscpy(verifier->dst_ip, dst_host_info->dst_ip, sizeof(verifier->dst_ip));
+	verifier->dst_port = dst_host_info->dst_port;
+	verifier->is_src = dst_host_info->is_src;
+	verifier->rd = cvm->rd;
+	verifier->cvm_vmid = cvm->cvm_vmid;
+	init_waitqueue_head(&verifier->wait_queue);
+	atomic_set(&verifier->status, VIRTCCA_MIG_NEW);
+
+	INIT_LIST_HEAD(&verifier->list);
+
+	list_add_tail(&verifier->list, &virtcca_mig_verifier_list);
+	write_unlock(&verifier_list_rwlock);
+
+	return ret;
+}
+
+int virtcca_mig_verifier_delete(struct kvm *kvm)
+{
+	struct virtcca_mig_verifier *verifier, *tmp;
+	struct virtcca_cvm *cvm = kvm->arch.virtcca_cvm;
+
+	write_lock(&verifier_list_rwlock);
+	list_for_each_entry_safe(verifier, tmp, &virtcca_mig_verifier_list, list) {
+		if (verifier->cvm_vmid == cvm->cvm_vmid) {
+			list_del(&verifier->list);
+			write_unlock(&verifier_list_rwlock);
+			kfree(verifier);
+			pr_info("Removed CVM ID %d from verifer list\n", cvm->cvm_vmid);
+			return 0;
+		}
+	}
+	write_unlock(&verifier_list_rwlock);
+	return 0;
+}
+
+static int virtcca_mig_notify(struct kvm *kvm, struct kvm_virtcca_mig_cmd *cmd)
+{
+	struct virtcca_mig_dst_host_info mig_host_info;
+	int ret = 0;
+
+	if (copy_from_user(&mig_host_info, (void __user *)cmd->data,
+			sizeof(struct virtcca_mig_dst_host_info)))
+		return -EFAULT;
+
+	if (virtcca_migcvm_enabled) {
+		mig_host_info.migcvm_enabled = 1;
+		if (mig_host_info.is_src)
+			ret = virtcca_migvm_agent_ratstls(kvm, cmd);
+		else
+			ret = virtcca_migvm_agent_ratstls_dst(kvm, cmd);
+	} else {
+		mig_host_info.migcvm_enabled = 0;
+		ret = virtcca_mig_verifier_register(kvm, &mig_host_info);
+	}
+
+	if (ret) {
+		pr_err("%s failed! ret = %d\n", __func__, ret);
+		return ret;
+	}
+
+	if (copy_to_user((void __user *)cmd->data, &mig_host_info,
+			sizeof(struct virtcca_mig_dst_host_info))) {
+		pr_err("%s: copy data to user failed!\n", __func__);
+		return -EFAULT;
+	}
+
+	return ret;
+}
+
+static int virtcca_mig_flat_list_to_agent(void __user *user_data)
+{
+	struct virtcca_mig_verifier *verifier;
+	struct virtcca_mig_agent_notify_info *agent_data = NULL;
+	int notify_count = 0;
+	int i = 0;
+	int ret = 0;
+
+	read_lock(&verifier_list_rwlock);
+
+	list_for_each_entry(verifier, &virtcca_mig_verifier_list, list) {
+		if (atomic_read(&verifier->status) < VIRTCCA_MIG_NOTIFIED && verifier->is_src)
+			notify_count++;
+	}
+
+	if (notify_count == 0) {
+		read_unlock(&verifier_list_rwlock);
+		return 0;
+	}
+
+	notify_count = min(notify_count, CVM_MIG_SYNC_NUM_MAX);
+	agent_data = kmalloc_array(notify_count,
+						sizeof(struct virtcca_mig_agent_notify_info),
+						GFP_KERNEL);
+	if (!agent_data) {
+		read_unlock(&verifier_list_rwlock);
+		return -ENOMEM;
+	}
+
+	list_for_each_entry(verifier, &virtcca_mig_verifier_list, list) {
+		if (atomic_read(&verifier->status) < VIRTCCA_MIG_NOTIFIED && verifier->is_src) {
+			if (i >= notify_count)
+				break;
+
+			strscpy(agent_data[i].name, verifier->name, sizeof(agent_data[i].name));
+			strscpy(agent_data[i].dst_ip,
+					verifier->dst_ip,
+					sizeof(agent_data[i].dst_ip));
+			agent_data[i].rd = verifier->rd;
+			agent_data[i].dst_port = verifier->dst_port;
+			agent_data[i].cvm_vmid = verifier->cvm_vmid;
+			agent_data[i].is_src = verifier->is_src;
+			atomic_set(&verifier->status, VIRTCCA_MIG_NOTIFIED);
+
+			i++;
+		}
+	}
+	read_unlock(&verifier_list_rwlock);
+
+	if (i > 0) {
+		if (copy_to_user(user_data, agent_data,
+				sizeof(struct virtcca_mig_agent_notify_info) * i))
+			ret = -EFAULT;
+		else
+			ret = i;
+	}
+
+	kfree(agent_data);
+	return ret;
+}
+
+static int virtcca_mig_get_notify(struct virtcca_tmi_cmd *cmd)
+{
+	int count = 0;
+
+	count = virtcca_mig_flat_list_to_agent((void __user *)cmd->data);
+
+	if (count < 0)
+		return count;
+
+	cmd->ret_val = count;
+	return 0;
+}
+
+static int virtcca_migvm_mem_checksum_loop(struct virtcca_tmi_cmd *cmd)
+{
+	unsigned long ret;
+	struct virtcca_migvm_checksum_info checksuminfo;
+
+	if (copy_from_user(&checksuminfo, (void __user *)cmd->data, sizeof(checksuminfo)))
+		return -EFAULT;
+
+	ret = tmi_mig_integrity_checksum_loop(checksuminfo.guest_rd, checksuminfo.thread_id);
+	cmd->ret_val = ret;
+
+	return ret;
+}
+
+static int virtcca_get_dstvm_rd(struct virtcca_tmi_cmd *cmd)
+{
+	struct virtcca_mig_verifier *verifier;
+	char cvm_name[CVM_NAME_LEN] = {0};
+
+	if (copy_from_user(&cvm_name, (void __user *)cmd->data, sizeof(cvm_name)))
+		return -EFAULT;
+
+	read_lock(&verifier_list_rwlock);
+	list_for_each_entry(verifier, &virtcca_mig_verifier_list, list) {
+		if (!strcmp(verifier->name, cvm_name)) {
+			cmd->ret_val = verifier->rd;
+			read_unlock(&verifier_list_rwlock);
+			return 0;
+		}
+	}
+
+	read_unlock(&verifier_list_rwlock);
+	return -1;
+}
+
+static int virtcca_update_verifier_state_by_rd(uint64_t rd, uint16_t verifier_state)
+{
+	struct virtcca_mig_verifier *verifier;
+
+	read_lock(&verifier_list_rwlock);
+	list_for_each_entry(verifier, &virtcca_mig_verifier_list, list) {
+		if (verifier->rd == rd) {
+			pr_info("%s: update verifier state to %u\n", __func__, verifier_state);
+			atomic_set(&verifier->status, verifier_state);
+			read_unlock(&verifier_list_rwlock);
+			return 0;
+		}
+	}
+	read_unlock(&verifier_list_rwlock);
+	return -1;
+}
+
+static int virtcca_wait_for_verifier_state(struct kvm *kvm, int expected_state)
+{
+	struct virtcca_mig_verifier *verifier;
+	unsigned long timeout = msecs_to_jiffies(VIRTCCA_MIG_STATE_WAIT_TIMEOUT);
+	uint64_t rd = kvm->arch.virtcca_cvm->rd;
+
+	read_lock(&verifier_list_rwlock);
+	list_for_each_entry(verifier, &virtcca_mig_verifier_list, list) {
+		if (verifier->rd == rd) {
+			long time_left = wait_event_timeout(verifier->wait_queue,
+						atomic_read(&verifier->status) == expected_state,
+						timeout);
+			read_unlock(&verifier_list_rwlock);
+			if (time_left <= 0) {
+				pr_err("Timeout waiting for verifier state %d\n", expected_state);
+				return -ETIMEDOUT;
+			}
+			return 0;
+		}
+	}
+	read_unlock(&verifier_list_rwlock);
+	return -1;
+}
+
+static int virtcca_mig_src_get_key(struct virtcca_tmi_cmd *cmd)
+{
+	unsigned long ret = 0;
+	struct virtcca_mig_host_agent_info agent_info = {0};
+	struct mig_host_key_info *key_info = NULL;
+
+	if (copy_from_user(&agent_info, (void __user *)cmd->data,
+			sizeof(struct virtcca_mig_host_agent_info)))
+		return -EFAULT;
+
+	if (agent_info.content) {
+		if (!access_ok(agent_info.content, agent_info.size)) {
+			pr_err("%s: invalid content address\n", __func__);
+			return -EFAULT;
+		}
+	} else {
+		pr_err("%s: invalid content pointer\n", __func__);
+		return -EFAULT;
+	}
+
+	if (sizeof(struct mig_host_key_info) != agent_info.size) {
+		pr_err("%s: size mismatch\n", __func__);
+		return -EINVAL;
+	}
+
+	key_info = kmalloc(sizeof(struct mig_host_key_info), GFP_KERNEL);
+	if (!key_info)
+		return -ENOMEM;
+
+	ret = tmi_mig_get_migration_key(agent_info.rd, (uint64_t)key_info);
+	if (ret) {
+		pr_err("%s: tmi_mig_get_migration_key failed\n", __func__);
+		goto out;
+	}
+	cmd->ret_val = ret;
+
+	if (copy_to_user(agent_info.content, key_info, agent_info.size)) {
+		pr_err("%s: copy to user failed\n", __func__);
+		ret = -EFAULT;
+		goto out;
+	}
+
+	virtcca_update_verifier_state_by_rd(agent_info.rd, VIRTCCA_MIG_KEY_UPDATED);
+
+out:
+	kfree(key_info);
+
+	return ret;
+}
+
+static int virtcca_mig_dst_set_key(struct virtcca_tmi_cmd *cmd)
+{
+	unsigned long ret = 0;
+	struct virtcca_mig_host_agent_info agent_info = {0};
+	struct mig_host_key_info *key_info = NULL;
+
+	if (copy_from_user(&agent_info, (void __user *)cmd->data,
+			sizeof(struct virtcca_mig_host_agent_info)))
+		return -EFAULT;
+
+	if (!agent_info.content || !agent_info.size) {
+		pr_err("%s: invalid content or size\n", __func__);
+		return -EINVAL;
+	}
+
+	if (!access_ok(agent_info.content, agent_info.size)) {
+		pr_err("%s: invalid user address\n", __func__);
+		return -EFAULT;
+	}
+
+	if (sizeof(struct mig_host_key_info) != agent_info.size) {
+		pr_err("%s: size mismatch\n", __func__);
+		return -EINVAL;
+	}
+
+	key_info = kzalloc(sizeof(struct mig_host_key_info), GFP_KERNEL);
+	if (!key_info)
+		return -ENOMEM;
+
+	if (copy_from_user(key_info, (void __user *)agent_info.content,
+			sizeof(struct mig_host_key_info))) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+	ret = tmi_mig_set_migration_key(agent_info.rd, (uint64_t)key_info);
+	if (ret) {
+		pr_err("%s: tmi_mig_set_migration_key failed\n", __func__);
+		ret = -EFAULT;
+		goto out;
+	}
+
+	virtcca_update_verifier_state_by_rd(agent_info.rd, VIRTCCA_MIG_KEY_UPDATED);
+out:
+	kfree(key_info);
+
+	return ret;
+}
+
+static long virtcca_tmi_ioctl_wrapper(struct file *file, unsigned int cmd, unsigned long arg);
+static const struct file_operations tmm_tmi_fops = {
+	.owner		  = THIS_MODULE,
+	.unlocked_ioctl = virtcca_tmi_ioctl_wrapper
+};
+
+static struct miscdevice ioctl_dev = {
+	MISC_DYNAMIC_MINOR,
+	"tmi",
+	&tmm_tmi_fops,
+};
+
+static int virtcca_tmi_ioctl(unsigned long arg)
+{
+	struct virtcca_tmi_cmd tmi_cmd = {0};
+	int ret = 0;
+	void __user *argp = (void __user *)arg;
+
+	if (!access_ok((void __user *)arg, sizeof(struct virtcca_tmi_cmd))) {
+		pr_err("invalid user address %p\n", (void __user *)arg);
+		return -EFAULT;
+	}
+
+	if (copy_from_user(&tmi_cmd, argp, sizeof(struct virtcca_tmi_cmd)))
+		return -EINVAL;
+
+	if (virtcca_migcvm_enabled &&
+		tmi_cmd.id >= VIRTCCA_TMI_GET_NOTIFY &&
+		tmi_cmd.id <= VIRTCCA_GET_DSTVM_RD) {
+		pr_err("migcvm is running, host mig agent is disabled!");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	switch (tmi_cmd.id) {
+	case VIRTCCA_TMI_IOCTL_VERSION:
+		pr_info("This is a tmi ioctl\n");
+		break;
+	case VIRTCCA_TMI_GET_NOTIFY:
+		ret = virtcca_mig_get_notify(&tmi_cmd);
+		break;
+	case VIRTCCA_GET_MIGVM_MEM_CHECKSUM:
+		ret = virtcca_migvm_mem_checksum_loop(&tmi_cmd);
+		break;
+	case VIRTCCA_GET_DSTVM_RD:
+		ret = virtcca_get_dstvm_rd(&tmi_cmd);
+		break;
+	case VIRTCCA_GET_MIG_KEY:
+		ret = virtcca_mig_src_get_key(&tmi_cmd);
+		break;
+	case VIRTCCA_SET_MIG_KEY:
+		ret = virtcca_mig_dst_set_key(&tmi_cmd);
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+out:
+	if (copy_to_user(argp, &tmi_cmd, sizeof(struct virtcca_tmi_cmd)))
+		return -EFAULT;
+
+	return ret;
+}
+
+static long virtcca_tmi_ioctl_wrapper(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	int ret = 0;
+
+	if (!file)
+		return -EINVAL;
+
+	switch (cmd) {
+	case VIRTCCA_TMI_IOCTL_ENTER:
+		ret = virtcca_tmi_ioctl(arg);
+		break;
+	default:
+		pr_err("tmm_tmi: unknown ioctl command (0x%x)!\n", cmd);
+		return -ENOTTY;
+	}
+
+	return ret;
+}
+
+static int __init tmm_tmi_init(void)
+{
+	int ret;
+
+	if (!is_virtcca_cvm_enable())
+		return -EIO;
+
+	ret = misc_register(&ioctl_dev);
+	if (ret) {
+		pr_err("tmm_tmi: misc device register failed (%d)!\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static void __exit tmm_tmi_exit(void)
+{
+	misc_deregister(&ioctl_dev);
+	pr_info("tmm_tmi: module unloaded.\n");
+}
+
+module_init(tmm_tmi_init);
+module_exit(tmm_tmi_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("HUAWEI TECHNOLOGIES CO., LTD.");
+MODULE_DESCRIPTION("Interacting with TMM through TMI interface from user space.");
+
 #endif
