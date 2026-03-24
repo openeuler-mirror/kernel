@@ -490,7 +490,7 @@ static u64 cache_rdmon(struct rdt_domain *d, void *md_priv)
 static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv)
 {
 	int err;
-	u64 result;
+	u64 result, wait_jiffies;
 	union mon_data_bits md;
 	struct sync_args args;
 	struct mpam_resctrl_dom *dom;
@@ -520,7 +520,19 @@ static u64 mbw_rdmon(struct rdt_domain *d, void *md_priv)
 		err = mpam_component_mon(dom->comp, &args, &result);
 		/* Currently just report it */
 		WARN_ON(err && (err != -EBUSY));
-	} while (err == -EBUSY);
+
+		if (err != -EBUSY)
+			break;
+
+		/*
+		 * The "nrdy_usec" needs to be waited. Since there is
+		 * currently no way to obtain "arm,not-ready-us",
+		 * only a hardcoded value is written.
+		 */
+		wait_jiffies = usecs_to_jiffies(1000);
+		while (wait_jiffies)
+			wait_jiffies = schedule_timeout_uninterruptible(wait_jiffies);
+	} while (1);
 
 	return result;
 }
