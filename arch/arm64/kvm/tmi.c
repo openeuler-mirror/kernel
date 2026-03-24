@@ -589,3 +589,45 @@ struct arm_smccc_res tmi_bind_peek(u64 rd)
 	arm_smccc_1_1_smc(TMI_TMM_MIG_ATTESTATION, TMI_TMM_MIG_BIND_PEEK, rd, &res);
 	return res;
 }
+
+u64 tmi_mig_integrity_checksum_init(unsigned long dst_rd, unsigned long queue_pa)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(
+		TMI_TMM_MIG_ATTESTATION,
+		TMI_TMM_MIG_INTEGRITY_CHECKSUM_INIT,
+		dst_rd, queue_pa, &res);
+	return res.a1;
+}
+
+u64 tmi_mig_integrity_checksum_loop(uint64_t rd, uint64_t thread_id)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(
+		TMI_TMM_MIG_ATTESTATION, TMI_TMM_MIG_INTEGRITY_CHECKSUM_LOOP, rd, thread_id, &res);
+	return res.a1;
+}
+
+u64 tmi_mig_get_migration_key(uint64_t rd, uint64_t hsot_mig_agent_attr_p)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(
+		TMI_TMM_MIG_CONTROL,
+		TMI_TMM_MIG_GET_MIG_KEY,
+		rd, __pa(hsot_mig_agent_attr_p), &res);
+	return res.a1;
+}
+
+u64 tmi_mig_set_migration_key(uint64_t rd, uint64_t hsot_mig_agent_attr_p)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(
+		TMI_TMM_MIG_CONTROL,
+		TMI_TMM_MIG_SET_MIG_KEY,
+		rd, __pa(hsot_mig_agent_attr_p), &res);
+	return res.a1;
+}

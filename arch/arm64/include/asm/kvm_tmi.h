@@ -330,7 +330,9 @@ enum tmi_tmm_mig_control_fid_e {
 	TMI_TMM_MIG_IMPORT_COMMIT,
 	TMI_TMM_DUMP_CHECKSUM,
 	TMI_TMM_MIG_EXPORT_ABORT,
-	TMI_TMM_MIG_EXPORT_PAUSE
+	TMI_TMM_MIG_EXPORT_PAUSE,
+	TMI_TMM_MIG_GET_MIG_KEY,
+	TMI_TMM_MIG_SET_MIG_KEY
 };
 
 enum tmi_tmm_mig_data_fid_e {
@@ -348,7 +350,9 @@ enum tmi_tmm_mig_data_fid_e {
 
 enum tmi_tmm_mig_attestation_fid_e {
 	TMI_TMM_MIG_BIND_CLEAN,
-	TMI_TMM_MIG_BIND_PEEK
+	TMI_TMM_MIG_BIND_PEEK,
+	TMI_TMM_MIG_INTEGRITY_CHECKSUM_INIT,
+	TMI_TMM_MIG_INTEGRITY_CHECKSUM_LOOP
 };
 
 #define TMI_ABI_VERSION_GET_MAJOR(_version) ((_version) >> 16)
@@ -533,6 +537,10 @@ struct arm_smccc_res tmi_export_tec(uint64_t tec_pa, uint64_t mbmd_addr_and_size
 					uint64_t page_list_pa, uint64_t stream_info_pa);
 u64 tmi_update_cvm_info(uint64_t rd, uint64_t cvm_update_info_addr);
 struct arm_smccc_res tmi_export_pause(uint64_t rd);
+u64 tmi_mig_integrity_checksum_loop(uint64_t rd, uint64_t thread_id);
+u64 tmi_mig_integrity_checksum_init(unsigned long dst_rd, unsigned long queue_pa);
+u64 tmi_mig_get_migration_key(uint64_t rd, uint64_t hsot_mig_agent_attr_pa);
+u64 tmi_mig_set_migration_key(uint64_t rd, uint64_t hsot_mig_agent_attr_pa);
 
 /* enable the migcvm ctl */
 int kvm_migcvm_ioctl(struct kvm *kvm, unsigned long arg);
