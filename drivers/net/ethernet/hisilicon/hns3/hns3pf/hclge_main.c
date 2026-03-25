@@ -7822,6 +7822,52 @@ static void hclge_get_cls_key_port(const struct flow_rule *flow,
 	}
 }
 
+static int hclge_get_cls_enc_keyid(struct hclge_dev *hdev,
+				   const struct flow_rule *flow,
+				   struct hclge_fd_rule *rule)
+{
+	if (flow_rule_match_key(flow, FLOW_DISSECTOR_KEY_ENC_KEYID)) {
+		struct flow_match_enc_keyid match;
+
+		flow_rule_match_enc_keyid(flow, &match);
+
+		/* vni is only 24 bits and must be greater than 0,
+		 * and it can not be masked.
+		 */
+		if (match.mask->keyid != HCLGE_FD_VXLAN_VNI_UNMASK ||
+		    be32_to_cpu(match.key->keyid) >= VXLAN_N_VID ||
+		    !match.key->keyid) {
+			dev_err(&hdev->pdev->dev, "invalid enc_keyid\n");
+			return -EINVAL;
+		}
+
+		rule->tuples.outer_tun_vni = be32_to_cpu(match.key->keyid);
+		rule->tuples_mask.outer_tun_vni =
+						be32_to_cpu(match.mask->keyid);
+	} else {
+		rule->unused_tuple |= BIT(OUTER_TUN_VNI);
+	}
+
+	return 0;
+}
+
+static void hclge_get_cls_key_ip_tos(const struct flow_rule *flow,
+				     struct hclge_fd_rule *rule)
+{
+	if (flow_rule_match_key(flow, FLOW_DISSECTOR_KEY_IP)) {
+		struct flow_match_ip match;
+
+		flow_rule_match_ip(flow, &match);
+
+		rule->tuples.ip_tos = match.key->tos;
+		rule->tuples_mask.ip_tos = match.mask->tos;
+		if (!rule->tuples.ip_tos)
+			rule->unused_tuple |= BIT(INNER_IP_TOS);
+	} else {
+		rule->unused_tuple |= BIT(INNER_IP_TOS);
+	}
+}
+
 static int hclge_get_tc_flower_action(struct hclge_dev *hdev,
 				      struct flow_cls_offload *cls_flower,
 				      struct hclge_fd_rule *rule)
@@ -7873,13 +7919,17 @@ static int hclge_parse_cls_flower(struct hclge_dev *hdev,
 {
 	struct flow_rule *flow = flow_cls_offload_flow_rule(cls_flower);
 
+	/* not support any user def tuples */
+	rule->unused_tuple |= HCLGE_FD_TUPLE_USER_DEF_TUPLES;
+
 	hclge_get_cls_key_basic(flow, rule);
 	hclge_get_cls_key_mac(flow, rule);
 	hclge_get_cls_key_vlan(flow, rule);
 	hclge_get_cls_key_ip(flow, rule);
 	hclge_get_cls_key_port(flow, rule);
+	hclge_get_cls_key_ip_tos(flow, rule);
 
-	return 0;
+	return hclge_get_cls_enc_keyid(hdev, flow, rule);
 }
 
 static int hclge_check_cls_flower(struct hclge_dev *hdev,
@@ -7909,7 +7959,9 @@ static int hclge_check_cls_flower(struct hclge_dev *hdev,
 	      BIT_ULL(FLOW_DISSECTOR_KEY_VLAN) |
 	      BIT_ULL(FLOW_DISSECTOR_KEY_IPV4_ADDRS) |
 	      BIT_ULL(FLOW_DISSECTOR_KEY_IPV6_ADDRS) |
-	      BIT_ULL(FLOW_DISSECTOR_KEY_PORTS))) {
+	      BIT_ULL(FLOW_DISSECTOR_KEY_PORTS) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_IP) |
+	      BIT_ULL(FLOW_DISSECTOR_KEY_ENC_KEYID))) {
 		dev_err(&hdev->pdev->dev, "unsupported key set: %#llx\n",
 			dissector->used_keys);
 		return -EOPNOTSUPP;
