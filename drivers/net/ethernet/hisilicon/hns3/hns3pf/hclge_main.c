@@ -7730,6 +7730,10 @@ static void hclge_get_cls_key_mac(const struct flow_rule *flow,
 		ether_addr_copy(rule->tuples_mask.dst_mac, match.mask->dst);
 		ether_addr_copy(rule->tuples.src_mac, match.key->src);
 		ether_addr_copy(rule->tuples_mask.src_mac, match.mask->src);
+		if (is_zero_ether_addr(match.key->dst))
+			rule->unused_tuple |= BIT(INNER_DST_MAC);
+		if (is_zero_ether_addr(match.key->src))
+			rule->unused_tuple |= BIT(INNER_SRC_MAC);
 	} else {
 		rule->unused_tuple |= BIT(INNER_DST_MAC);
 		rule->unused_tuple |= BIT(INNER_SRC_MAC);
@@ -7774,6 +7778,10 @@ static void hclge_get_cls_key_ip(const struct flow_rule *flow,
 		rule->tuples.dst_ip[IPV4_INDEX] = be32_to_cpu(match.key->dst);
 		rule->tuples_mask.dst_ip[IPV4_INDEX] =
 						be32_to_cpu(match.mask->dst);
+		if (!match.key->src)
+			rule->unused_tuple |= BIT(INNER_SRC_IP);
+		if (!match.key->dst)
+			rule->unused_tuple |= BIT(INNER_DST_IP);
 	} else if (addr_type == FLOW_DISSECTOR_KEY_IPV6_ADDRS) {
 		struct flow_match_ipv6_addrs match;
 
@@ -7786,6 +7794,10 @@ static void hclge_get_cls_key_ip(const struct flow_rule *flow,
 				  IPV6_SIZE);
 		be32_to_cpu_array(rule->tuples_mask.dst_ip,
 				  match.mask->dst.s6_addr32, IPV6_SIZE);
+		if (ipv6_addr_any((struct in6_addr *)match.key->src.s6_addr32))
+			rule->unused_tuple |= BIT(INNER_SRC_IP);
+		if (ipv6_addr_any((struct in6_addr *)match.key->dst.s6_addr32))
+			rule->unused_tuple |= BIT(INNER_DST_IP);
 	} else {
 		rule->unused_tuple |= BIT(INNER_SRC_IP);
 		rule->unused_tuple |= BIT(INNER_DST_IP);
