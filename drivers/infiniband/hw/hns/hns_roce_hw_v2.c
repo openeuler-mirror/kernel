@@ -1024,6 +1024,7 @@ static void handle_drain_completion(struct ib_cq *ibcq,
 				    struct hns_roce_drain_cqe *drain,
 				    struct hns_roce_dev *hr_dev)
 {
+#define DRAIN_QP_TMO (HZ * 30)
 #define TIMEOUT (HZ / 10)
 	struct hns_roce_cq *hr_cq = to_hr_cq(ibcq);
 	unsigned long flags;
@@ -1068,8 +1069,10 @@ static void handle_drain_completion(struct ib_cq *ibcq,
 		ibcq->comp_handler(ibcq, ibcq->cq_context);
 
 waiting_done:
-	if (ibcq->comp_handler)
-		wait_for_completion(&drain->done);
+	if (ibcq->comp_handler) {
+		if (!wait_for_completion_timeout(&drain->done, DRAIN_QP_TMO))
+			ibdev_err_ratelimited(&hr_dev->ib_dev, "Drain qp timeout!\n");
+	}
 }
 
 static void hns_roce_v2_drain_rq(struct ib_qp *ibqp)
