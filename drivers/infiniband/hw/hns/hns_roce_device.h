@@ -746,6 +746,7 @@ struct hns_roce_qp {
 	bool			delayed_destroy_flag;
 	spinlock_t flush_lock;
 	struct hns_roce_dip *dip;
+	bool			ud_sl_set;
 };
 
 struct hns_roce_ib_iboe {
