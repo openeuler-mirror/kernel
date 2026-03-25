@@ -76,5 +76,39 @@ int kvm_arm_pvtimer_status_has_attr(struct kvm_vcpu *vcpu,
 	return -ENXIO;
 }
 
+bool kvm_arm_pvtimer_status_get_active(struct kvm_vcpu *vcpu)
+{
+	struct kvm *kvm = vcpu->kvm;
+	u64 base = vcpu->arch.pvtimer_status.base;
+	u64 offset = offsetof(struct pvtimer_status_vcpu_state, active);
+	int idx;
+	u32 active = 0;
+
+	if (base == INVALID_GPA)
+		return false;
+
+	idx = srcu_read_lock(&kvm->srcu);
+	kvm_get_guest(kvm, base + offset, active);
+	srcu_read_unlock(&kvm->srcu, idx);
+
+	return le32_to_cpu(active);
+}
+
+void kvm_arm_pvtimer_status_set_active(struct kvm_vcpu *vcpu, bool active)
+{
+	struct kvm *kvm = vcpu->kvm;
+	u64 base = vcpu->arch.pvtimer_status.base;
+	u64 offset = offsetof(struct pvtimer_status_vcpu_state, active);
+	int idx;
+	u32 act = active;
+
+	if (base == INVALID_GPA)
+		return;
+
+	idx = srcu_read_lock(&kvm->srcu);
+	kvm_put_guest(kvm, base + offset, cpu_to_le32(act));
+	srcu_read_unlock(&kvm->srcu, idx);
+}
+
 #endif
 

@@ -1172,6 +1172,8 @@ int kvm_arm_pvtimer_status_get_attr(struct kvm_vcpu *vcpu,
 			    struct kvm_device_attr *attr);
 int kvm_arm_pvtimer_status_has_attr(struct kvm_vcpu *vcpu,
 			    struct kvm_device_attr *attr);
+bool kvm_arm_pvtimer_status_get_active(struct kvm_vcpu *vcpu);
+void kvm_arm_pvtimer_status_set_active(struct kvm_vcpu *vcpu, bool active);
 
 static inline void kvm_arm_pvtimer_status_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
 {
