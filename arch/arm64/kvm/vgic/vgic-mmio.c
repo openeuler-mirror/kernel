@@ -519,7 +519,7 @@ static void vgic_access_active_finish(struct kvm_vcpu *vcpu, u32 intid)
 }
 
 static unsigned long __vgic_mmio_read_active(struct kvm_vcpu *vcpu,
-					     gpa_t addr, unsigned int len)
+					     gpa_t addr, unsigned int len, bool is_uaccess)
 {
 	u32 intid = VGIC_ADDR_TO_INTID(addr, 1);
 	u32 value = 0;
@@ -562,7 +562,7 @@ unsigned long vgic_mmio_read_active(struct kvm_vcpu *vcpu,
 	mutex_lock(&vcpu->kvm->arch.config_lock);
 	vgic_access_active_prepare(vcpu, intid);
 
-	val = __vgic_mmio_read_active(vcpu, addr, len);
+	val = __vgic_mmio_read_active(vcpu, addr, len, false);
 
 	vgic_access_active_finish(vcpu, intid);
 	mutex_unlock(&vcpu->kvm->arch.config_lock);
@@ -573,7 +573,7 @@ unsigned long vgic_mmio_read_active(struct kvm_vcpu *vcpu,
 unsigned long vgic_uaccess_read_active(struct kvm_vcpu *vcpu,
 				    gpa_t addr, unsigned int len)
 {
-	return __vgic_mmio_read_active(vcpu, addr, len);
+	return __vgic_mmio_read_active(vcpu, addr, len, true);
 }
 
 /* Must be called with irq->irq_lock held */
@@ -588,7 +588,7 @@ static void vgic_hw_irq_change_active(struct kvm_vcpu *vcpu, struct vgic_irq *ir
 }
 
 static void vgic_mmio_change_active(struct kvm_vcpu *vcpu, struct vgic_irq *irq,
-				    bool active)
+				    bool active, bool is_uaccess)
 {
 	unsigned long flags;
 	struct kvm_vcpu *requester_vcpu = kvm_get_running_vcpu();
@@ -641,14 +641,14 @@ static void vgic_mmio_change_active(struct kvm_vcpu *vcpu, struct vgic_irq *irq,
 
 static void __vgic_mmio_write_cactive(struct kvm_vcpu *vcpu,
 				      gpa_t addr, unsigned int len,
-				      unsigned long val)
+				      unsigned long val, bool is_uaccess)
 {
 	u32 intid = VGIC_ADDR_TO_INTID(addr, 1);
 	int i;
 
 	for_each_set_bit(i, &val, len * 8) {
 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
-		vgic_mmio_change_active(vcpu, irq, false);
+		vgic_mmio_change_active(vcpu, irq, false, is_uaccess);
 		vgic_put_irq(vcpu->kvm, irq);
 	}
 }
@@ -662,7 +662,7 @@ void vgic_mmio_write_cactive(struct kvm_vcpu *vcpu,
 	mutex_lock(&vcpu->kvm->arch.config_lock);
 	vgic_access_active_prepare(vcpu, intid);
 
-	__vgic_mmio_write_cactive(vcpu, addr, len, val);
+	__vgic_mmio_write_cactive(vcpu, addr, len, val, false);
 
 	vgic_access_active_finish(vcpu, intid);
 	mutex_unlock(&vcpu->kvm->arch.config_lock);
@@ -672,20 +672,20 @@ int vgic_mmio_uaccess_write_cactive(struct kvm_vcpu *vcpu,
 				     gpa_t addr, unsigned int len,
 				     unsigned long val)
 {
-	__vgic_mmio_write_cactive(vcpu, addr, len, val);
+	__vgic_mmio_write_cactive(vcpu, addr, len, val, true);
 	return 0;
 }
 
 static void __vgic_mmio_write_sactive(struct kvm_vcpu *vcpu,
 				      gpa_t addr, unsigned int len,
-				      unsigned long val)
+				      unsigned long val, bool is_uaccess)
 {
 	u32 intid = VGIC_ADDR_TO_INTID(addr, 1);
 	int i;
 
 	for_each_set_bit(i, &val, len * 8) {
 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
-		vgic_mmio_change_active(vcpu, irq, true);
+		vgic_mmio_change_active(vcpu, irq, true, is_uaccess);
 		vgic_put_irq(vcpu->kvm, irq);
 	}
 }
@@ -699,7 +699,7 @@ void vgic_mmio_write_sactive(struct kvm_vcpu *vcpu,
 	mutex_lock(&vcpu->kvm->arch.config_lock);
 	vgic_access_active_prepare(vcpu, intid);
 
-	__vgic_mmio_write_sactive(vcpu, addr, len, val);
+	__vgic_mmio_write_sactive(vcpu, addr, len, val, false);
 
 	vgic_access_active_finish(vcpu, intid);
 	mutex_unlock(&vcpu->kvm->arch.config_lock);
@@ -709,7 +709,7 @@ int vgic_mmio_uaccess_write_sactive(struct kvm_vcpu *vcpu,
 				     gpa_t addr, unsigned int len,
 				     unsigned long val)
 {
-	__vgic_mmio_write_sactive(vcpu, addr, len, val);
+	__vgic_mmio_write_sactive(vcpu, addr, len, val, true);
 	return 0;
 }
 
