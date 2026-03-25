@@ -128,6 +128,12 @@ static bool kvm_smccc_test_fw_bmap(struct kvm_vcpu *vcpu, u32 func_id)
 		return test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_IPIV,
 				&smccc_feat->vendor_hyp_bmap);
 #endif
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	case ARM_SMCCC_VENDOR_PVTIMER_STATUS_FEATURES:
+	case ARM_SMCCC_VENDOR_PVTIMER_STATUS_ENABLE:
+		return test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_PVTIMER_STATUS,
+				&smccc_feat->vendor_hyp_bmap);
+#endif
 	default:
 		return false;
 	}
@@ -389,6 +395,12 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 		} else {
 			val[0] = SMCCC_RET_NOT_SUPPORTED;
 		}
+		break;
+#endif
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	case ARM_SMCCC_VENDOR_PVTIMER_STATUS_FEATURES:
+		if (vtimer_is_irqbypass())
+			val[0] = SMCCC_RET_SUCCESS;
 		break;
 #endif
 	case ARM_SMCCC_VENDOR_HYP_CALL_UID_FUNC_ID:
