@@ -639,6 +639,10 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 
 	kvm_arm_pvsched_vcpu_init(&vcpu->arch);
 
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	kvm_arm_pvtimer_status_vcpu_init(&vcpu->arch);
+#endif
+
 	vcpu->arch.hw_mmu = &vcpu->kvm->arch.mmu;
 
 	err = kvm_vgic_vcpu_init(vcpu);

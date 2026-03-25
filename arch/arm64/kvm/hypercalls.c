@@ -402,6 +402,13 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 		if (vtimer_is_irqbypass())
 			val[0] = SMCCC_RET_SUCCESS;
 		break;
+	case ARM_SMCCC_VENDOR_PVTIMER_STATUS_ENABLE:
+		if (vtimer_is_irqbypass()) {
+			gpa = kvm_init_pvtimer_status(vcpu);
+			if (gpa != INVALID_GPA)
+				val[0] = gpa;
+		}
+		break;
 #endif
 	case ARM_SMCCC_VENDOR_HYP_CALL_UID_FUNC_ID:
 		val[0] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_0;
