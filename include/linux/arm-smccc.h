@@ -603,5 +603,19 @@ asmlinkage void __arm_smccc_hvc(unsigned long a0, unsigned long a1,
 			   0x91)
 #endif /* CONFIG_ARM64_HISI_IPIV */
 
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+#define ARM_SMCCC_VENDOR_PVTIMER_STATUS_FEATURES					\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_VENDOR_HYP,			\
+			   0x92)
+
+#define ARM_SMCCC_VENDOR_PVTIMER_STATUS_ENABLE					\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_VENDOR_HYP,			\
+			   0x93)
+#endif
+
 #endif /*__ASSEMBLY__*/
 #endif /*__LINUX_ARM_SMCCC_H*/

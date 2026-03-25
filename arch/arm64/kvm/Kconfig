@@ -118,4 +118,13 @@ config VIRT_VTIMER_IRQ_BYPASS
 	depends on KVM && ARM64 && ARCH_HISI && HISILICON_IRQ_MBIGEN
 	default n
 
+config VIRT_VTIMER_PV_STATUS
+	bool "vtimer irq bypass's pv active status"
+	depends on KVM && ARM64 && ARCH_HISI && HISILICON_IRQ_MBIGEN && VIRT_VTIMER_IRQ_BYPASS
+	default n
+	help
+	  MBIGEN vtimer irq bypass don't have active state, as it is injected by
+	  ITS. we could emulate it by PV, to present active & pending state
+	  correctly.
+
 endif # VIRTUALIZATION
