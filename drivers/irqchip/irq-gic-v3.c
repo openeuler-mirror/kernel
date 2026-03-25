@@ -30,6 +30,9 @@
 
 #include <asm/cputype.h>
 #include <asm/exception.h>
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+#include <asm/paravirt.h>
+#endif
 #include <asm/smp_plat.h>
 #include <asm/virt.h>
 
@@ -694,11 +697,20 @@ static bool gic_arm64_erratum_2941627_needed(struct irq_data *d)
 				  irq_data_get_effective_affinity_mask(d));
 }
 
+
+/* As ABSA B_PPI_01 define, vtimer irq is 27 */
+#define ARMVTIMER_IRQ_NUM 27
 static void gic_eoi_irq(struct irq_data *d)
 {
-	write_gicreg(gic_irq(d), ICC_EOIR1_EL1);
+	unsigned long hwirq = gic_irq(d);
+
+	write_gicreg(hwirq, ICC_EOIR1_EL1);
 	isb();
 
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	if (hwirq == ARMVTIMER_IRQ_NUM)
+		paravirt_set_pvtimer_active(false);
+#endif
 	if (gic_arm64_erratum_2941627_needed(d)) {
 		/*
 		 * Make sure the GIC stream deactivate packet
@@ -909,6 +921,10 @@ static void __gic_handle_irq_from_irqson(struct pt_regs *regs)
 
 	irqnr = gic_read_iar();
 
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	if (irqnr == ARMVTIMER_IRQ_NUM)
+		paravirt_set_pvtimer_active(true);
+#endif
 	is_nmi = gic_rpr_is_nmi_prio();
 
 	if (is_nmi) {
