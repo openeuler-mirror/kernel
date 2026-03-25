@@ -680,6 +680,12 @@ struct kvm_vcpu_arch {
 				struct virtcca_cvm_tec tec;
 				/* Realm meta data */
 				struct realm_rec *rec;
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+				/* Guest pvtimer status */
+				struct {
+					gpa_t base;
+				} pvtimer_status;
+#endif
 			})
 
 #ifdef CONFIG_ARM64_HDBSS
@@ -1158,6 +1164,19 @@ static inline bool kvm_arm_is_pvtime_enabled(struct kvm_vcpu_arch *vcpu_arch)
 {
 	return (vcpu_arch->steal.base != INVALID_GPA);
 }
+
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+static inline void kvm_arm_pvtimer_status_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
+{
+	vcpu_arch->pvtimer_status.base = INVALID_GPA;
+}
+
+static inline bool kvm_arm_is_pvtimer_status_enabled(struct kvm_vcpu_arch *vcpu_arch)
+{
+	return (vcpu_arch->pvtimer_status.base != INVALID_GPA);
+}
+gpa_t kvm_init_pvtimer_status(struct kvm_vcpu *vcpu);
+#endif
 
 #ifdef CONFIG_PARAVIRT_SCHED
 long kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu);
