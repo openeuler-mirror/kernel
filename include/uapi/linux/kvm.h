@@ -1248,6 +1248,7 @@ struct kvm_ppc_resize_hpt {
 
 #define KVM_CAP_ARM_HISI_IPIV 798
 #define KVM_CAP_ARM_VIRT_MSI_BYPASS 799
+#define KVM_CAP_ARM_HISI_PVTIMER_STATUS 800
 
 #ifdef KVM_CAP_IRQ_ROUTING
 

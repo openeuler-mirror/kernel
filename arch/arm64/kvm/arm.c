@@ -559,6 +559,14 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 			r = 0;
 		break;
 #endif
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	case KVM_CAP_ARM_HISI_PVTIMER_STATUS:
+		if (vtimer_is_irqbypass() && !kvm_is_realm(kvm))
+			r = 1;
+		else
+			r = 0;
+		break;
+#endif
 	case KVM_CAP_ARM_RME:
 		r = static_key_enabled(&kvm_rme_is_available);
 		break;
