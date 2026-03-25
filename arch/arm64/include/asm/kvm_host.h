@@ -1166,6 +1166,13 @@ static inline bool kvm_arm_is_pvtime_enabled(struct kvm_vcpu_arch *vcpu_arch)
 }
 
 #ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+int kvm_arm_pvtimer_status_set_attr(struct kvm_vcpu *vcpu,
+			    struct kvm_device_attr *attr);
+int kvm_arm_pvtimer_status_get_attr(struct kvm_vcpu *vcpu,
+			    struct kvm_device_attr *attr);
+int kvm_arm_pvtimer_status_has_attr(struct kvm_vcpu *vcpu,
+			    struct kvm_device_attr *attr);
+
 static inline void kvm_arm_pvtimer_status_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
 {
 	vcpu_arch->pvtimer_status.base = INVALID_GPA;
