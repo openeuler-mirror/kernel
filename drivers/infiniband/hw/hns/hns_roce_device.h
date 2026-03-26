@@ -1225,6 +1225,7 @@ struct hns_roce_dev {
 	void *dca_safe_buf;
 	dma_addr_t dca_safe_page;
 	siphash_key_t dca_safe_hash_key;
+	u8 gsi_sl;
 };
 
 enum hns_roce_trace_type {
