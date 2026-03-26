@@ -1183,6 +1183,7 @@ struct hns_roce_dev {
 	void *dca_safe_buf;
 	dma_addr_t dca_safe_page;
 	siphash_key_t dca_safe_hash_key;
+	u8 gsi_sl;
 	struct hns_roce_cnp_pri_param *cnp_pri_param;
 };
 

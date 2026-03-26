@@ -520,8 +520,9 @@ static int fill_ud_av(struct hns_roce_qp *qp,
 	if (WARN_ON(ah->av.sl > MAX_SERVICE_LEVEL))
 		return -EINVAL;
 
-	if (!qp->ud_sl_set) {
-		qp->sl = ah->av.sl;
+	if (!qp->ud_sl_set || qp->ibqp.qp_type == IB_QPT_GSI) {
+		qp->sl = qp->ibqp.qp_type == IB_QPT_GSI ?
+				hr_dev->gsi_sl : ah->av.sl;
 		qp->ud_sl_set = true;
 	}
 
