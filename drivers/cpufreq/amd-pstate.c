@@ -254,7 +254,6 @@ static int msr_update_perf(struct amd_cpudata *cpudata, u8 min_perf,
 
 	if (fast_switch) {
 		wrmsrl(MSR_AMD_CPPC_REQ, value);
-		return 0;
 	} else {
 		int ret = wrmsrl_on_cpu(cpudata->cpu, MSR_AMD_CPPC_REQ, value);
 
