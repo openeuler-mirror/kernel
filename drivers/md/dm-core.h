@@ -136,6 +136,7 @@ struct mapped_device {
 #define DMF_DEFERRED_REMOVE 6
 #define DMF_SUSPENDED_INTERNALLY 7
 #define DMF_POST_SUSPENDING 8
+#define DMF_QUEUE_STOPPED 9
 
 void disable_discard(struct mapped_device *md);
 void disable_write_same(struct mapped_device *md);
