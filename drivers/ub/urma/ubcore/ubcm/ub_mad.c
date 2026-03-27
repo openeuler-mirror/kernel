@@ -352,7 +352,7 @@ static struct ubcore_jfr *ubmad_create_jfr(struct ubmad_device_priv *dev_priv,
 	jfr_cfg.id = 0U;
 	jfr_cfg.depth = UBMAD_JFR_DEPTH;
 	jfr_cfg.flag.bs.token_policy = UBCORE_TOKEN_NONE;
-	jfr_cfg.trans_mode = UBCORE_TP_RM;
+	jfr_cfg.trans_mode = UBCORE_TP_UM;
 	jfr_cfg.eid_index = dev_priv->eid_info.eid_index;
 	jfr_cfg.max_sge = UBMAD_JFR_MAX_SGE_NUM;
 	jfr_cfg.jfc = jfc_r;
@@ -371,7 +371,8 @@ static int ubmad_jetty_set_priority(struct ubmad_device_priv *dev_priv,
 	ret = ubcore_query_device_attr(dev_priv->device, &attr);
 	if (ret == 0) {
 		for (i = 0; i < UBCORE_MAX_PRIORITY_CNT; ++i) {
-			if (attr.dev_cap.priority_info[i].tp_type.bs.ctp == 1) {
+			/* No priority supports utp currently, so rtp priority used */
+			if (attr.dev_cap.priority_info[i].tp_type.bs.rtp == 1) {
 				jetty_cfg->priority = i;
 				ubcore_log_info(
 					"ubmad create jetty set priority : %d, tp_type : ctp\n", i);
@@ -400,10 +401,10 @@ ubmad_create_jetty(struct ubmad_device_priv *dev_priv, struct ubcore_jfc *jfc_s,
 
 	jetty_cfg.id = jetty_id;
 	jetty_cfg.flag.bs.share_jfr = 1;
-	jetty_cfg.trans_mode = UBCORE_TP_RM;
+	jetty_cfg.trans_mode = UBCORE_TP_UM;
 	jetty_cfg.eid_index = dev_priv->eid_info.eid_index;
 	jetty_cfg.jfs_depth = UBMAD_JFS_DEPTH;
-	jetty_cfg.priority = 0; /* Highest priority */
+	jetty_cfg.priority = 0;
 	ret = ubmad_jetty_set_priority(dev_priv, &jetty_cfg);
 	if (ret)
 		ubcore_log_info("ubmad create jetty set priority : 0\n");
@@ -477,9 +478,9 @@ static int ubmad_fill_get_tp_cfg(struct ubcore_device *dev,
 {
 	uint32_t eid_index = cfg->eid_index;
 
-	get_tp_cfg->flag.bs.ctp = 1;
+	get_tp_cfg->flag.bs.ctp = 0;
 	get_tp_cfg->flag.bs.rtp = 0;
-	get_tp_cfg->flag.bs.utp = 0;
+	get_tp_cfg->flag.bs.utp = 1;
 
 	get_tp_cfg->trans_mode = cfg->trans_mode;
 
@@ -575,7 +576,7 @@ struct ubmad_tjetty *ubmad_import_jetty(struct ubcore_device *device,
 	tjetty_cfg.id.id = rsrc->jetty_id;
 	tjetty_cfg.id.eid = *dst_eid;
 	tjetty_cfg.flag.bs.token_policy = UBCORE_TOKEN_NONE;
-	tjetty_cfg.trans_mode = UBCORE_TP_RM;
+	tjetty_cfg.trans_mode = UBCORE_TP_UM;
 	tjetty_cfg.type = UBCORE_JETTY;
 	tjetty_cfg.eid_index = rsrc->jetty->jetty_cfg.eid_index;
 	new_target = ubmad_import_jetty_compat(device, &tjetty_cfg, NULL);
