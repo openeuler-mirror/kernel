@@ -2652,6 +2652,9 @@ retry:
 	if (!dm_suspended_md(md))
 		goto out;
 
+	if (test_bit(DMF_FREEING, &md->flags))
+		goto out;
+
 	if (dm_suspended_internally_md(md)) {
 		/* already internally suspended, wait for internal resume */
 		mutex_unlock(&md->suspend_lock);
