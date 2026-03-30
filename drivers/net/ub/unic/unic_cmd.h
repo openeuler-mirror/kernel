@@ -182,6 +182,11 @@ enum unic_vl_map_type {
 	UNIC_DSCP_VL_MAP,
 };
 
+struct unic_config_prio_tc_cmd {
+	u8 prio_vl[UNIC_MAX_PRIO_NUM];
+	u8 rsv[16];
+};
+
 struct unic_config_vl_map_cmd {
 	u8 map_type;
 	u8 resv0[3];
