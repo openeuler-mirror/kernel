@@ -115,7 +115,6 @@ struct hns_port_cc_attr {
 struct hns_port_cnp_pri_attr {
 	struct hns_port_attribute port_attr;
 	u32 bit_offset;
-	u32 bit_size;
 	u32 bit_mask;
 	u32 max;
 };
@@ -301,10 +300,9 @@ static umode_t scc_attr_is_visible(struct kobject *kobj,
 	return 0644;
 }
 
-#define __HNS_CNP_PRI_ATTR(_name, _offset, _size, _mask, _max) {		\
+#define __HNS_CNP_PRI_ATTR(_name, _offset, _mask, _max) {		\
 	.port_attr = __ATTR(_name, 0644, cnp_pri_attr_show,  cnp_pri_attr_store),	\
 	.bit_offset = _offset,							\
-	.bit_size = _size,								\
 	.bit_mask = _mask,								\
 	.max = _max,								\
 }
@@ -313,7 +311,6 @@ static umode_t scc_attr_is_visible(struct kobject *kobj,
 	static struct hns_port_cnp_pri_attr hns_roce_port_attr_cnp_pri_##_name =	\
 	__HNS_CNP_PRI_ATTR(_name,		\
 			HNS_ROCE_CNP_PRI_##NAME##_BIT_OFS,				\
-			HNS_ROCE_CNP_PRI_##NAME##_BIT_SZ,				\
 			HNS_ROCE_CNP_PRI_##NAME##_BIT_MASK,				\
 			HNS_ROCE_CNP_PRI_##NAME##_MAX)
 
