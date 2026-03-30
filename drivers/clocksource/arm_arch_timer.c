@@ -34,6 +34,10 @@
 #include <linux/irqchip/arm-gic-v3.h>
 #endif
 
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+#include <asm/paravirt.h>
+#endif
+
 #include <asm/arch_timer.h>
 #include <asm/virt.h>
 
@@ -797,7 +801,7 @@ static int arch_timer_shutdown_phys_mem(struct clock_event_device *clk)
 static __always_inline void set_next_event(const int access, unsigned long evt,
 					   struct clock_event_device *clk)
 {
-	unsigned long ctrl;
+	unsigned long ctrl, delta = 0;
 	u64 cnt;
 
 	ctrl = arch_timer_reg_read(access, ARCH_TIMER_REG_CTRL, clk);
@@ -809,7 +813,19 @@ static __always_inline void set_next_event(const int access, unsigned long evt,
 	else
 		cnt = __arch_counter_get_cntvct();
 
-	arch_timer_reg_write(access, ARCH_TIMER_REG_CVAL, evt + cnt, clk);
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	long early_ns;
+
+	/* Get timer early injection latency from PV interface */
+	early_ns = paravirt_get_timer_early_inject_ns();
+	if (early_ns != 0)
+		delta = ((unsigned long long) early_ns * clk->mult) >> clk->shift;
+
+	if (delta >= evt)
+		delta = 0;
+#endif
+
+	arch_timer_reg_write(access, ARCH_TIMER_REG_CVAL, evt - delta + cnt, clk);
 	arch_timer_reg_write(access, ARCH_TIMER_REG_CTRL, ctrl, clk);
 }
 
