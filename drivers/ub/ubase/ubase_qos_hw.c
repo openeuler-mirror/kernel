@@ -848,15 +848,6 @@ static int ubase_parse_adev_sl_vl(struct ubase_dev *udev)
 	return 0;
 }
 
-static void ubase_init_udma_dscp_vl(struct ubase_dev *udev)
-{
-	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
-	u8 i;
-
-	for (i = 0; i < UBASE_MAX_DSCP; i++)
-		qos->dscp_vl[i] = qos->tp_req_vl[0];
-}
-
 static void ubase_parse_max_vl(struct ubase_dev *udev)
 {
 	struct ubase_adev_qos *qos = &udev->qos.adev_qos;
@@ -901,8 +892,6 @@ static int ubase_parse_sl_vl(struct ubase_dev *udev)
 	ret = ubase_parse_adev_sl_vl(udev);
 	if (ret)
 		return ret;
-
-	ubase_init_udma_dscp_vl(udev);
 
 	if (ubase_utp_supported(udev) && ubase_dev_urma_supported(udev))
 		udev->caps.unic_caps.tpg.max_cnt = ubase_get_nic_max_vl(udev) + 1;
