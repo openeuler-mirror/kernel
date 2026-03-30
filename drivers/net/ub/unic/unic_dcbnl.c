@@ -136,9 +136,23 @@ static int unic_setets_preconditions(struct net_device *net_dev)
 	return 0;
 }
 
+static bool unic_dscp_tc_exists(struct auxiliary_device *adev)
+{
+	struct ubase_adev_qos *qos = ubase_get_adev_qos(adev);
+	u8 i;
+
+	for (i = 0; i < UBASE_MAX_DSCP; i++) {
+		if (qos->dscp_vl[i])
+			return true;
+	}
+
+	return false;
+}
+
 static int unic_handle_prio_vl_change(struct unic_dev *unic_dev,
 				      struct ieee_ets *ets, u8 changed)
 {
+	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_vl *vl = &unic_dev->channels.vl;
 	u8 map_type;
 	int ret;
@@ -146,9 +160,19 @@ static int unic_handle_prio_vl_change(struct unic_dev *unic_dev,
 	if (!(changed & UNIC_PRIO_VL_MAP_CHANGED))
 		return 0;
 
-	map_type = vl->dscp_app_cnt ? UNIC_DSCP_VL_MAP : UNIC_PRIO_VL_MAP;
-	ret = unic_set_vl_map(unic_dev, vl->dscp_prio, ets->prio_tc,
-			      map_type);
+	/* If the DSCP and VL configurations under UBASE is exists,
+	 * it indicates that other tools have already configured this area,
+	 * and reconfiguration is not allowed.
+	 */
+	if (unic_dscp_tc_exists(adev)) {
+		ret = unic_set_prio_tc(unic_dev, ets->prio_tc);
+	} else {
+		map_type = vl->dscp_app_cnt ? UNIC_DSCP_VL_MAP :
+					      UNIC_PRIO_VL_MAP;
+		ret = unic_set_vl_map(unic_dev, vl->dscp_prio, ets->prio_tc,
+				      map_type);
+	}
+
 	if (ret)
 		return ret;
 
