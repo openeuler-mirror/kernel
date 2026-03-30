@@ -591,8 +591,13 @@ static int amdgpu_vce_validate_bo(struct amdgpu_cs_parser *p, uint32_t ib_idx,
 	struct amdgpu_bo_va_mapping *mapping;
 	unsigned i, fpfn, lpfn;
 	struct amdgpu_bo *bo;
+	struct amdgpu_ib *ib;
 	uint64_t addr;
 	int r;
+
+	ib = &p->job->ibs[ib_idx];
+	if (lo < 0 || hi < 0 || lo >= ib->length_dw || hi >= ib->length_dw)
+		return -EINVAL;
 
 	addr = ((uint64_t)amdgpu_get_ib_value(p, ib_idx, lo)) |
 	       ((uint64_t)amdgpu_get_ib_value(p, ib_idx, hi)) << 32;
@@ -636,8 +641,13 @@ static int amdgpu_vce_cs_reloc(struct amdgpu_cs_parser *p, uint32_t ib_idx,
 {
 	struct amdgpu_bo_va_mapping *mapping;
 	struct amdgpu_bo *bo;
+	struct amdgpu_ib *ib;
 	uint64_t addr;
 	int r;
+
+	ib = &p->job->ibs[ib_idx];
+	if (lo < 0 || hi < 0 || lo >= ib->length_dw || hi >= ib->length_dw)
+		return -EINVAL;
 
 	if (index == 0xffffffff)
 		index = 0;
