@@ -649,7 +649,7 @@ unsigned long clock_t_to_jiffies(unsigned long x)
 }
 EXPORT_SYMBOL(clock_t_to_jiffies);
 
-u64 jiffies_64_to_clock_t(u64 x)
+notrace u64 jiffies_64_to_clock_t(u64 x)
 {
 #if (TICK_NSEC % (NSEC_PER_SEC / USER_HZ)) == 0
 # if HZ < USER_HZ
