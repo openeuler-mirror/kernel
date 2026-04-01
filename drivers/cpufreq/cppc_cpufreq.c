@@ -758,7 +758,7 @@ static int cppc_get_perf_ctrs_pair(void *val)
 	struct fb_ctr_pair *fb_ctrs = val;
 	int cpu = fb_ctrs->cpu;
 	int ret;
-	unsigned long timeout;
+	ktime_t timeout;
 
 	ret = cppc_get_perf_ctrs(cpu, &fb_ctrs->fb_ctrs_t0);
 	if (ret)
@@ -770,8 +770,8 @@ static int cppc_get_perf_ctrs_pair(void *val)
 		 * to the idle task to prevent the AMU counters from
 		 * stopping working.
 		 */
-		timeout = jiffies + msecs_to_jiffies(1);
-		while (!time_after(jiffies, timeout))
+		timeout = ktime_add_ms(ktime_get(), 1);
+		while (ktime_before(ktime_get(), timeout))
 			cond_resched();
 	} else {
 		pr_warn_once("CPU%d: Get rate in atomic context", cpu);
