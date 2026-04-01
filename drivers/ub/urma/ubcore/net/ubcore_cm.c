@@ -191,7 +191,7 @@ int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
 
 	send_buf->dst_eid = addr;
 	send_buf->msg_type = UBCORE_CM_CONN_MSG;
-	send_buf->payload_len = send_buf_len;
+	send_buf->payload_len = MSG_HDR_SIZE + msg->len;
 	(void)memcpy(send_buf->payload, msg, MSG_HDR_SIZE);
 	if (msg->len > 0)
 		(void)memcpy(send_buf->payload + MSG_HDR_SIZE, msg->data,
