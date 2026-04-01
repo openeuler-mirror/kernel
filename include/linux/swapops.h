@@ -205,14 +205,28 @@ static inline unsigned long migration_entry_to_pfn(swp_entry_t entry)
 	return swp_offset(entry);
 }
 
-static inline struct page *migration_entry_to_page(swp_entry_t entry)
+static inline void migration_entry_sync_page(struct page *head)
 {
-	struct page *p = pfn_to_page(swp_offset(entry));
+	/*
+	 * Ensure we do not race with split, which might alter tail pages into new
+	 * head pages and thus result in observing an unlocked page.
+	 * This matches the write barrier in __split_huge_page_tail().
+	 */
+	smp_rmb();
+
 	/*
 	 * Any use of migration entries may only occur while the
 	 * corresponding page is locked
 	 */
-	BUG_ON(!PageLocked(compound_head(p)));
+	BUG_ON(!PageLocked(head));
+}
+
+static inline struct page *migration_entry_to_page(swp_entry_t entry)
+{
+	struct page *p = pfn_to_page(swp_offset(entry));
+
+	migration_entry_sync_page(compound_head(p));
+
 	return p;
 }
 
