@@ -290,6 +290,17 @@ int ubcore_active_jfc(struct ubcore_jfc *jfc, struct ubcore_udata *udata);
 int ubcore_get_jfc_opt(struct ubcore_jfc *jfc, uint64_t opt,
 	void *buf, uint32_t len, struct ubcore_udata *udata);
 /**
+ * Get the opt of jfc by id.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] jfc_id: id of the allocated jfc;
+ * @param[in] opt: the option item of jfc to get;
+ * @param[out] buf: the buffer to store the value
+ * @param[in] len: the len of the opt value(byte);
+ * Return: 0 on success, other value on error
+ */
+int ubcore_get_jfc_opt_by_id(struct ubcore_device *dev, uint32_t jfc_id, uint64_t opt,
+	void *buf, uint32_t len);
+/**
  * Deactivate the activated jfc.
  * Note: active_jfc and deactive_jfc do not support concurrency
  * @param[in] jfc: handle of the allocated jfc;
@@ -417,6 +428,17 @@ int ubcore_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata);
 int ubcore_get_jfs_opt(struct ubcore_jfs *jfs, uint64_t opt,
 	void *buf, uint32_t len, struct ubcore_udata *udata);
 /**
+ * Get the opt of jfs by id.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] jfs_id: id of the allocated jfs;
+ * @param[in] opt: the option item of jfs to get;
+ * @param[out] buf: the buffer to store the value
+ * @param[in] len: the len of the opt value(byte);
+ * Return: 0 on success, other value on error
+ */
+int ubcore_get_jfs_opt_by_id(struct ubcore_device *dev, uint32_t jfs_id, uint64_t opt,
+	void *buf, uint32_t len);
+/**
  * Deactivate the activated jfs.
  * Note: active_jfs and deactive_jfs do not support concurrency
  * @param[in] jfs: handle of the allocated jfs;
@@ -519,6 +541,17 @@ int ubcore_active_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata);
  */
 int ubcore_get_jfr_opt(struct ubcore_jfr *jfr, uint64_t opt,
 	void *buf, uint32_t len, struct ubcore_udata *udata);
+/**
+ * Get the opt of jfr by id.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] jfr_id: id of the allocated jfr;
+ * @param[in] opt: the option item of jfr to get;
+ * @param[out] buf: the buffer to store the value
+ * @param[in] len: the len of the opt value(byte);
+ * Return: 0 on success, other value on error
+ */
+int ubcore_get_jfr_opt_by_id(struct ubcore_device *dev, uint32_t jfr_id, uint64_t opt,
+	void *buf, uint32_t len);
 /**
  * Deactivated the activated jfr.
  * Note: active_jfr and deactive_jfr do not support concurrency
@@ -636,6 +669,17 @@ int ubcore_active_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata);
  */
 int ubcore_get_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf,
 	uint32_t len, struct ubcore_udata *udata);
+/**
+ * Get the opt of jetty by id.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] jetty_id: id of the allocated jetty;
+ * @param[in] opt: the option item of jetty to get;
+ * @param[out] buf: the buffer to store the value
+ * @param[in] len: the len of the opt value(byte);
+ * Return: 0 on success, other value on error
+ */
+int ubcore_get_jetty_opt_by_id(struct ubcore_device *dev, uint32_t jetty_id, uint64_t opt,
+	void *buf, uint32_t len);
 /**
  * Deactivated the activated jetty.
  * @param[in] jetty: handle of the allocated jetty;

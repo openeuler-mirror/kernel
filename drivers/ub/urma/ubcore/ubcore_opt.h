@@ -30,7 +30,7 @@ enum ubcore_field_target_t {
 	TARGET_NO_STORE,
 };
 
-struct ubcore_opt_map_t {
+struct ubcore_opt_map {
 	uint64_t opt;           /* opt id (eg. URMA_JFC_DEPTH) */
 	uint64_t mask;          /* bit mask value for this opt (eg. URMA_JFC_DEPTH_MASK) */
 	enum ubcore_field_target_t tgt; /* which sub-struct the field belongs to */
@@ -38,13 +38,13 @@ struct ubcore_opt_map_t {
 	size_t size;            /* sizeof(member) */
 };
 
-extern const struct ubcore_opt_map_t g_ubcore_jfs_opt_table[];
+extern const struct ubcore_opt_map g_ubcore_jfs_opt_table[];
 extern const size_t g_ubcore_jfs_opt_map_count;
-extern const struct ubcore_opt_map_t g_ubcore_jfr_opt_table[];
+extern const struct ubcore_opt_map g_ubcore_jfr_opt_table[];
 extern const size_t g_ubcore_jfr_opt_map_count;
-extern const struct ubcore_opt_map_t g_ubcore_jfc_opt_map[];
+extern const struct ubcore_opt_map g_ubcore_jfc_opt_table[];
 extern const size_t g_ubcore_jfc_opt_map_count;
-extern const struct ubcore_opt_map_t g_ubcore_jetty_opt_table[];
+extern const struct ubcore_opt_map g_ubcore_jetty_opt_table[];
 extern const size_t g_ubcore_jetty_opt_map_count;
 
 #define UBCORE_JFS_SQE_BASE_ADDR_MASK       (1ULL << 0)

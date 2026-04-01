@@ -15,6 +15,8 @@
 #include "ubcore_types.h"
 
 struct ubcore_jfc *ubcore_find_jfc(struct ubcore_device *dev, uint32_t jfc_id);
+void ubcore_put_jfc(struct ubcore_jfc *jfc);
+void ubcore_jfc_get(void *obj);
 
 struct ubcore_jfs *ubcore_find_jfs(struct ubcore_device *dev, uint32_t jfs_id);
 void ubcore_put_jfs(struct ubcore_jfs *jfs);
@@ -28,6 +30,8 @@ struct ubcore_jetty *ubcore_find_jetty(struct ubcore_device *dev,
 					   uint32_t jetty_id);
 void ubcore_put_jetty(struct ubcore_jetty *jetty);
 void ubcore_jetty_get(void *obj);
+
+struct ubcore_jfc *ubcore_find_get_jfc(struct ubcore_device *dev, uint32_t jfc_id);
 struct ubcore_jfs *ubcore_find_get_jfs(struct ubcore_device *dev, uint32_t jfs_id);
 struct ubcore_jfr *ubcore_find_get_jfr(struct ubcore_device *dev, uint32_t jfr_id);
 struct ubcore_jetty *ubcore_find_get_jetty(struct ubcore_device *dev, uint32_t jetty_id);

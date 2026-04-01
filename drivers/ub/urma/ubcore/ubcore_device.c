@@ -619,8 +619,8 @@ static struct ubcore_ht_param g_ht_params[] = {
 	[UBCORE_HT_JFC] = { UBCORE_HASH_TABLE_SIZE,
 			    offsetof(struct ubcore_jfc, hnode),
 			    offsetof(struct ubcore_jfc, id), sizeof(uint32_t),
-			    NULL, ubcore_free_jfc_obj, NULL },
-
+			    NULL, ubcore_free_jfc_obj,
+				ubcore_jfc_get },
 	[UBCORE_HT_JETTY] = { UBCORE_HASH_TABLE_SIZE,
 			      offsetof(struct ubcore_jetty, hnode),
 			      offsetof(struct ubcore_jetty, jetty_id) +
