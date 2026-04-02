@@ -617,5 +617,19 @@ asmlinkage void __arm_smccc_hvc(unsigned long a0, unsigned long a1,
 			   0x93)
 #endif
 
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+#define ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_FEATURES				\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_VENDOR_HYP,			\
+			   0x94)
+
+#define ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_ENABLE				\
+	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL,				\
+			   ARM_SMCCC_SMC_64,				\
+			   ARM_SMCCC_OWNER_VENDOR_HYP,			\
+			   0x95)
+#endif
+
 #endif /*__ASSEMBLY__*/
 #endif /*__LINUX_ARM_SMCCC_H*/
