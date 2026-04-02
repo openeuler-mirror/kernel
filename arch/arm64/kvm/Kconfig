@@ -127,4 +127,16 @@ config VIRT_VTIMER_PV_STATUS
 	  ITS. we could emulate it by PV, to present active & pending state
 	  correctly.
 
+config VIRT_TIMER_EARLY_INJECT
+	bool "vtimer early inject's pv support"
+	depends on KVM && ARM64
+	default n
+	help
+	  Timer early inject allows the hypervisor to provide an early
+	  injection latency value to the guest, which can be used to
+	  compensate for timer interrupt injection delays.
+
+	  The hypervisor can control the early injection latency via
+	  the module parameter: timer_early_inject_ns
+
 endif # VIRTUALIZATION
