@@ -536,6 +536,7 @@ void dma_free_iova(struct iova_slot *slot);
 /**
  * ummu_fill_pages() - Fill a range of IOVA. It allocates pages and maps pages to the iova.
  * The API is not thread-safe.
+ * Deprecated: Use ummu_core_fill_pages() instead.
  * @slot: iova slot, generated from dma_alloc_iova.
  * @iova: iova start.
  * @nr_pages: fill pages count.
@@ -547,6 +548,7 @@ int ummu_fill_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pa
 /**
  * ummu_drain_pages() - Drain a range of IOVA. It unmaps iova and releases pages.
  * The API is not thread-safe.
+ * Deprecated: Use ummu_core_drain_pages() instead.
  * @slot: iova slot, generated from dma_alloc_iova.
  * @iova: iova start.
  * @nr_pages: drain pages count.
@@ -554,6 +556,31 @@ int ummu_fill_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pa
  * Return: 0 on success, or an error number.
  */
 int ummu_drain_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages);
+
+/**
+ * ummu_core_fill_pages() - Fill a range of IOVA, It allocates pages and maps pages to the iova.
+ * The API is not thread-safe.
+ * @slot: iova slot, generated from dma_alloc_iova.
+ * @iova: iova start.
+ * @nr_pages: fill pages count.
+ * @gfp: GFP flags for memory allocation(e.g., GFP_KERNEL, __GFP_ZERO).
+ *
+ * Return: 0 on success, or an error number.
+ */
+int ummu_core_fill_pages(struct iova_slot *slot, dma_addr_t iova,
+			 unsigned long nr_pages, gfp_t gfp);
+
+/**
+ * ummu_core_drain_pages() - Drain a range of IOVA, It unmaps iova and releases pages.
+ * The API is not thread-safe.
+ * @slot: iova slot, generated from dma_alloc_iova.
+ * @iova: iova start.
+ * @nr_pages: drain pages count.
+ *
+ * Return: 0 on success, or an error number.
+ */
+int ummu_core_drain_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages);
+
 #else
 static inline int ummu_core_add_eid(guid_t *guid, eid_t eid, enum eid_type type)
 {
@@ -583,6 +610,18 @@ static inline int ummu_fill_pages(struct iova_slot *slot, dma_addr_t iova,
 
 static inline int ummu_drain_pages(struct iova_slot *slot, dma_addr_t iova,
 				   unsigned long nr_pages)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int ummu_core_fill_pages(struct iova_slot *slot, dma_addr_t iova,
+				       unsigned long nr_pages, gfp_t gfp)
+{
+	return -EOPNOTSUPP;
+}
+
+static inline int ummu_core_drain_pages(struct iova_slot *slot, dma_addr_t iova,
+					unsigned long nr_pages)
 {
 	return -EOPNOTSUPP;
 }
