@@ -410,3 +410,63 @@ int __init pvtimer_status_init(void)
 }
 #endif
 
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+
+#include <asm/pvtimer-early-abi.h>
+
+static u64 native_get_timer_early_inject_ns(void)
+{
+	return 0;
+}
+
+DEFINE_STATIC_CALL(pv_timer_early_inject, native_get_timer_early_inject_ns);
+
+static struct pvtimer_early_vcpu_state *timer_early_kaddr;
+
+static u64 pv_get_timer_early_inject_ns(void)
+{
+	if (!timer_early_kaddr)
+		return 0;
+
+	return le64_to_cpu(READ_ONCE(timer_early_kaddr->early_ns));
+}
+
+static bool __init has_timer_early_inject(void)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_FEATURES, &res);
+
+	return res.a0 == SMCCC_RET_SUCCESS;
+}
+
+int __init timer_early_inject_init(void)
+{
+	struct arm_smccc_res res;
+	phys_addr_t gpa;
+
+	if (!has_timer_early_inject())
+		return 0;
+
+	arm_smccc_1_1_invoke(ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_ENABLE, &res);
+	if (res.a0 == SMCCC_RET_NOT_SUPPORTED)
+		return 0;
+
+	gpa = res.a0;
+
+	timer_early_kaddr = memremap(gpa,
+				      sizeof(struct pvtimer_early_vcpu_state),
+				      MEMREMAP_WB);
+	if (!timer_early_kaddr) {
+		pr_warn("Failed to map timer early inject data structure\n");
+		return -ENOMEM;
+	}
+
+	static_call_update(pv_timer_early_inject, pv_get_timer_early_inject_ns);
+
+	pr_info("using timer early inject PV\n");
+	return 0;
+}
+
+#endif /* CONFIG_VIRT_TIMER_EARLY_INJECT */
+
