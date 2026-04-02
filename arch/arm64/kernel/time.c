@@ -70,6 +70,10 @@ void __init time_init(void)
 
 	pv_time_init();
 
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	timer_early_inject_init();
+#endif
+
 #ifdef CONFIG_VIRT_VTIMER_PV_STATUS
 	pvtimer_status_init();
 #endif
