@@ -18,7 +18,7 @@
 #include "ubcore_topo_info.h"
 #include "ubcore_log.h"
 
-#define BONDING_UDATA_BUF_LEN 1032
+#define BONDING_UDATA_BUF_LEN 1800
 
 struct session_data_exchange_udata {
 	int *result;

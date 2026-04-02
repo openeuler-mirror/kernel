@@ -83,6 +83,8 @@ struct ubagg_jetty_exchange_info {
 	struct ubagg_jetty_id slaves[UBAGG_DEV_MAX_NUM];
 	int dev_num;
 	bool is_multipath;
+	bool is_health_check_enable;
+	struct ubagg_seg_exchange_info health_check_seg;
 };
 
 struct ubagg_jetty_hash_node {
