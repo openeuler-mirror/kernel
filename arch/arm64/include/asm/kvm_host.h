@@ -56,6 +56,7 @@
 #define KVM_REQ_RESYNC_PMU_EL0	KVM_ARCH_REQ(7)
 #define KVM_REQ_RELOAD_TLBI_DVMBM	KVM_ARCH_REQ(8)
 #define KVM_REQ_RELOAD_WFI_TRAPS       KVM_ARCH_REQ(9)
+#define KVM_REQ_RELOAD_TIMER_EARLY_INJECT KVM_ARCH_REQ(10)
 
 #define KVM_DIRTY_LOG_MANUAL_CAPS   (KVM_DIRTY_LOG_MANUAL_PROTECT_ENABLE | \
 				     KVM_DIRTY_LOG_INITIALLY_SET)
@@ -314,6 +315,11 @@ struct kvm_arch {
 			struct cvm cvm;
 			struct virtcca_cvm *virtcca_cvm;
 			struct realm realm;
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+			struct {
+				gpa_t base;
+			} timer_early;
+#endif
 		})
 	KABI_REPLACE(bool is_virtcca_cvm,
 		union {
@@ -1185,6 +1191,26 @@ static inline bool kvm_arm_is_pvtimer_status_enabled(struct kvm_vcpu_arch *vcpu_
 	return (vcpu_arch->pvtimer_status.base != INVALID_GPA);
 }
 gpa_t kvm_init_pvtimer_status(struct kvm_vcpu *vcpu);
+#endif
+
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+void kvm_arm_timer_early_inject_vm_init(struct kvm *kvm);
+int kvm_arm_timer_early_inject_has_attr(struct kvm *kvm,
+					struct kvm_device_attr *attr);
+int kvm_arm_timer_early_inject_set_attr(struct kvm *kvm,
+					struct kvm_device_attr *attr);
+bool kvm_arm_timer_early_inject_supported(void);
+gpa_t kvm_init_timer_early_inject(struct kvm *kvm);
+void kvm_timer_early_inject_config(struct kvm *kvm);
+#else
+static inline void kvm_arm_timer_early_inject_vm_init(struct kvm *kvm)
+{
+}
+static inline int kvm_arm_timer_early_inject_has_attr(struct kvm *kvm,
+					struct kvm_device_attr *attr)
+{
+	return -ENXIO;
+}
 #endif
 
 #ifdef CONFIG_PARAVIRT_SCHED
