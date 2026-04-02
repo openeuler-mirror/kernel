@@ -372,6 +372,8 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 
 	kvm_arm_init_hypercalls(kvm);
 
+	kvm_arm_timer_early_inject_vm_init(kvm);
+
 	bitmap_zero(kvm->arch.vcpu_features, KVM_VCPU_MAX_FEATURES);
 
 	/* Initialise the realm bits after the generic bits are enabled */
@@ -1163,6 +1165,10 @@ static int check_vcpu_requests(struct kvm_vcpu *vcpu)
 			else
 				vcpu_set_wfx_traps(vcpu);
 		}
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+		if (kvm_check_request(KVM_REQ_RELOAD_TIMER_EARLY_INJECT, vcpu))
+			kvm_timer_early_inject_config(vcpu->kvm);
+#endif
 	}
 
 	return 1;
@@ -2032,6 +2038,10 @@ static int kvm_vm_has_attr(struct kvm *kvm, struct kvm_device_attr *attr)
 	switch (attr->group) {
 	case KVM_ARM_VM_SMCCC_CTRL:
 		return kvm_vm_smccc_has_attr(kvm, attr);
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	case KVM_VM_TIMER_EARLY_INJECT_CTRL:
+		return kvm_arm_timer_early_inject_has_attr(kvm, attr);
+#endif
 	default:
 		return -ENXIO;
 	}
@@ -2042,6 +2052,10 @@ static int kvm_vm_set_attr(struct kvm *kvm, struct kvm_device_attr *attr)
 	switch (attr->group) {
 	case KVM_ARM_VM_SMCCC_CTRL:
 		return kvm_vm_smccc_set_attr(kvm, attr);
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	case KVM_VM_TIMER_EARLY_INJECT_CTRL:
+		return kvm_arm_timer_early_inject_set_attr(kvm, attr);
+#endif
 	default:
 		return -ENXIO;
 	}

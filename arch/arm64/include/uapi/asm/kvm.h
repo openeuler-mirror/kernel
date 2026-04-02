@@ -404,6 +404,10 @@ enum {
 #define KVM_ARM_VM_SMCCC_CTRL		0
 #define   KVM_ARM_VM_SMCCC_FILTER	0
 
+/* Solely for avoiding conflicts with mainline */
+#define KVM_VM_TIMER_EARLY_INJECT_CTRL	20
+#define   KVM_VM_TIMER_EARLY_INJECT_IPA	0
+
 /* Device Control API: ARM VGIC */
 #define KVM_DEV_ARM_VGIC_GRP_ADDR	0
 #define KVM_DEV_ARM_VGIC_GRP_DIST_REGS	1

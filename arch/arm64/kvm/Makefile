@@ -11,7 +11,7 @@ obj-$(CONFIG_KVM) += kvm.o
 obj-$(CONFIG_KVM) += hyp/
 
 kvm-y += arm.o mmu.o mmio.o psci.o hypercalls.o \
-	 pvtime.o pvsched.o pvtimer_status.o \
+	 pvtime.o pvsched.o pvtimer_status.o pvtimer_early.o \
 	 inject_fault.o va_layout.o handle_exit.o \
 	 guest.o debug.o reset.o sys_regs.o stacktrace.o \
 	 vgic-sys-reg-v3.o fpsimd.o pkvm.o \

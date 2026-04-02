@@ -410,6 +410,19 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 		}
 		break;
 #endif
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	case ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_FEATURES:
+		if (kvm_arm_timer_early_inject_supported())
+			val[0] = SMCCC_RET_SUCCESS;
+		break;
+	case ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_ENABLE:
+		if (kvm_arm_timer_early_inject_supported()) {
+			gpa = kvm_init_timer_early_inject(vcpu->kvm);
+			if (gpa != INVALID_GPA)
+				val[0] = gpa;
+		}
+		break;
+#endif
 	case ARM_SMCCC_VENDOR_HYP_CALL_UID_FUNC_ID:
 		val[0] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_0;
 		val[1] = ARM_SMCCC_VENDOR_HYP_UID_KVM_REG_1;
