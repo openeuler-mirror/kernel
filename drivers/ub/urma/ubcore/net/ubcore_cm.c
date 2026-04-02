@@ -189,8 +189,25 @@ int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
 		return -ENOMEM;
 	}
 
+	send_buf->session_id = (uint64_t)msg->session_id;
 	send_buf->dst_eid = addr;
-	send_buf->msg_type = UBCORE_CM_CONN_MSG;
+	if (msg->type == UBCORE_NET_CREATE_REQ ||
+		  msg->type == UBCORE_NET_BONDING_SEG_INFO_REQ ||
+		  msg->type == UBCORE_NET_BONDING_JETTY_INFO_REQ)
+		send_buf->msg_type = UBCORE_CM_CONN_REQ;
+	else if (msg->type == UBCORE_NET_CREATE_RESP ||
+			  msg->type == UBCORE_NET_BONDING_SEG_INFO_RESP ||
+			  msg->type == UBCORE_NET_BONDING_JETTY_INFO_RESP)
+		send_buf->msg_type = UBCORE_CM_CONN_RESP;
+	else if (msg->type == UBCORE_NET_DESTROY_REQ ||
+			  msg->type == UBCORE_NET_DESTROY_RESP)
+		send_buf->msg_type = UBCORE_CM_SINGLE_REQ;
+	else {
+		ubcore_log_err("Unrecognized msg type %u\n", msg->type);
+		kfree(send_buf);
+		return -EINVAL;
+	}
+
 	send_buf->payload_len = MSG_HDR_SIZE + msg->len;
 	(void)memcpy(send_buf->payload, msg, MSG_HDR_SIZE);
 	if (msg->len > 0)

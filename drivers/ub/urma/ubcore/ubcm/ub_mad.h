@@ -20,20 +20,23 @@
 enum ubmad_msg_type {
 	UBMAD_CONN_DATA = 0,
 	UBMAD_CONN_ACK,
-	UBMAD_UBC_CONN_DATA = UBCORE_CM_CONN_MSG,
-	UBMAD_UBC_CONN_ACK,
+	UBMAD_UBC_CONN_REQ = UBCORE_CM_CONN_REQ,
+	UBMAD_UBC_CONN_RESP = UBCORE_CM_CONN_RESP,
+	UBMAD_UBC_SINGLE_REQ = UBCORE_CM_SINGLE_REQ,
 	UBMAD_AUTHN_DATA = 0x10,
 	UBMAD_AUTHN_ACK,
 	// cm send close request to all tjetty before remove kmod, one-way notification
 	UBMAD_CLOSE_REQ = 0x20,
 };
 
+/* keep same with ubcore_cm_send_buf */
 struct ubmad_send_buf {
 	union ubcore_eid src_eid;
 	union ubcore_eid dst_eid;
 
 	enum ubmad_msg_type msg_type;
 	uint32_t payload_len;
+	uint64_t session_id;
 	uint8_t payload[];
 };
 
@@ -42,6 +45,7 @@ struct ubmad_send_cr {
 	struct ubcore_cr *cr;
 };
 
+/* keep same with ubcore_cm_recv_cr */
 struct ubmad_recv_cr {
 	struct ubcore_cr *cr;
 
