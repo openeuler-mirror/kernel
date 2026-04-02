@@ -563,6 +563,8 @@ static int unic_ieee_setmaxrate(struct net_device *ndev,
 	struct unic_dev *unic_dev = netdev_priv(ndev);
 	struct unic_vl *vl = &unic_dev->channels.vl;
 	u64 tc_maxrate[IEEE_8021QAZ_MAX_TCS];
+	struct auxiliary_device *adev;
+	struct ubase_caps *caps;
 	int ret;
 
 	if (!unic_dev_ets_supported(unic_dev) ||
@@ -581,7 +583,9 @@ static int unic_ieee_setmaxrate(struct net_device *ndev,
 	if (ret)
 		return ret;
 
-	memcpy(vl->vl_maxrate, tc_maxrate, sizeof(tc_maxrate));
+	adev = unic_dev->comdev.adev;
+	caps = ubase_get_dev_caps(adev);
+	memcpy(vl->vl_maxrate, tc_maxrate, caps->vl_num * sizeof(u64));
 
 	return 0;
 }
