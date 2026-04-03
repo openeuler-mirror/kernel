@@ -174,7 +174,7 @@ int main(int argc, char *argv[])
 
 		if (ret == 0 || !(pfd.revents & POLLIN)) {
 			pr_err("poll event error, ret:%d, revents:%x\n", ret, pfd.revents);
-			continue;
+			break;
 		}
 
 		if (process_req(fd) == -1)
