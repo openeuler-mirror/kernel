@@ -454,6 +454,9 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_IRQFD_RESAMPLE:
 		r = 1;
 		break;
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	case KVM_CAP_ARM_TIMER_EARLY_INJECT:
+#endif
 	case KVM_CAP_COUNTER_OFFSET:
 	case KVM_CAP_READONLY_MEM:
 	case KVM_CAP_SET_GUEST_DEBUG:
