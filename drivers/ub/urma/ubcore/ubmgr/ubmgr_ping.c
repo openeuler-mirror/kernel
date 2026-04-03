@@ -182,14 +182,18 @@ static void ping_tjetty_put(struct ubmgr_ping_ctx *ctx,
 			    struct ubmgr_ping_tjetty_entry *entry)
 {
 	unsigned long flag;
+	bool last = false;
 
 	spin_lock_irqsave(&ctx->tjetty_lock, flag);
-	if (kref_put(&entry->kref, __ping_tjetty_free_entry)) {
+	if (kref_read(&entry->kref) == 1) {
 		hlist_del(&entry->node);
-		spin_unlock_irqrestore(&ctx->tjetty_lock, flag);
+		last = true;
+	}
+	spin_unlock_irqrestore(&ctx->tjetty_lock, flag);
+
+	kref_put(&entry->kref, __ping_tjetty_free_entry);
+	if (last)
 		kfree(entry);
-	} else
-		spin_unlock_irqrestore(&ctx->tjetty_lock, flag);
 }
 
 static void ping_tjetty_clear(struct ubmgr_ping_ctx *ctx)
@@ -570,7 +574,6 @@ static void ping_ctx_uninit_jetty(struct ubmgr_ping_ctx *ctx)
 	ubcore_delete_jfc(ctx->recv_jfc);
 	ubcore_delete_jfc(ctx->send_jfc);
 	ubcore_unregister_seg(ctx->seg);
-	kfree(ctx->buf);
 }
 
 static int ping_on_add_device(struct ubcore_device *dev)
