@@ -10,6 +10,7 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/interrupt.h>
+#include <linux/kernel.h>
 #include <linux/kernel_stat.h>
 #include <linux/mutex.h>
 
@@ -340,7 +341,7 @@ void __weak unregister_irqchip_proc(struct irq_desc *desc) { }
 
 #undef MAX_NAMELEN
 
-#define MAX_NAMELEN 10
+#define MAX_NAMELEN 11
 
 void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 {
@@ -361,7 +362,7 @@ void register_irq_proc(unsigned int irq, struct irq_desc *desc)
 	if (desc->dir)
 		goto out_unlock;
 
-	sprintf(name, "%d", irq);
+	snprintf(name, MAX_NAMELEN, "%u", irq);
 
 	/* create /proc/irq/1234 */
 	desc->dir = proc_mkdir(name, root_irq_dir);
@@ -418,7 +419,7 @@ void unregister_irq_proc(unsigned int irq, struct irq_desc *desc)
 
 	unregister_irqchip_proc(desc);
 
-	sprintf(name, "%u", irq);
+	snprintf(name, MAX_NAMELEN, "%u", irq);
 	remove_proc_entry(name, root_irq_dir);
 }
 
