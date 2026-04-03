@@ -408,9 +408,9 @@ static u8 ub_vdm_create_bi_bypass_ummu(struct ub_bus_controller *ubc, struct vdm
 	int ret;
 
 	if (pld->m)
-		type = EID_NONE;
-	else
 		type = EID_BYPASS;
+	else
+		type = EID_NONE;
 
 	ret = ub_msg_bus_instance_create(ubc, pld->guid, pld->eid[0], pld->upi,
 					 type);

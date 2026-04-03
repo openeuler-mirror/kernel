@@ -392,7 +392,7 @@ void ublc_link_down_handle(struct ub_port *port)
 		ub_info(uent, "all port link down and remove device\n");
 		device_unlock(&uent->dev);
 
-		return;
+		goto link_down_notify;
 	}
 
 	r_port = port->r_uent->ports + port->r_index;
