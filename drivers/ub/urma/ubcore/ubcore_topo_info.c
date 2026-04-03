@@ -803,11 +803,6 @@ int ubcore_get_route_loopback_primary_eid(union ubcore_eid *local_eid,
 	return 0;
 }
 
-static bool ubcore_eid_equals(union ubcore_eid *src, union ubcore_eid *dst)
-{
-	return memcmp(src, dst, sizeof(union ubcore_eid)) == 0;
-}
-
 int ubcore_get_route_list(struct ubcore_route *route,
 	struct ubcore_route_list *route_list)
 {
@@ -828,15 +823,6 @@ int ubcore_get_route_list(struct ubcore_route *route,
 	}
 
 	(void)memset(route_list, 0, sizeof(struct ubcore_route_list));
-
-	if (ubcore_eid_equals(src_v_eid, dst_v_eid)) {
-		ret = ubcore_get_route_loopback_primary_eid(src_v_eid, route_list);
-		if (ret != 0) {
-			ubcore_log_err(
-				"Failed to query primary id in loopback mode, ret: %d.\n", ret);
-		}
-		return ret;
-	}
 
 	ret = ubcore_get_route_primary_eid(src_v_eid, dst_v_eid, route_list);
 	if (ret != 0) {
