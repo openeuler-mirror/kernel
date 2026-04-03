@@ -397,13 +397,16 @@ static void mfs_kill_sb(struct super_block *sb)
 	struct mfs_sb_info *sbi = MFS_SB(sb);
 	struct mfs_caches *caches = &sbi->caches;
 
+	smp_mb__before_atomic();
 	clear_bit(MFS_MOUNTED, &sbi->flags);
+	smp_mb__after_atomic();
 	if (support_event(sbi)) {
 		/* The barrier pair to make sure flags is new */
 		smp_mb__before_atomic();
 		while (test_bit(MFS_CACHE_OPENED, &caches->flags)) {
 			static DEFINE_RATELIMIT_STATE(busy_open, 30 * HZ, 1);
 
+			wake_up_all(&caches->pollwq);
 			msleep(100);
 			if (!__ratelimit(&busy_open))
 				continue;
