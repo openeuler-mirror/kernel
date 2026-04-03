@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 
+#include <asm/cputype.h>
 #include <asm/kvm_mmu.h>
 #include <asm/pvtimer-early-abi.h>
 
@@ -77,6 +78,7 @@ void kvm_arm_timer_early_inject_vm_init(struct kvm *kvm)
 	kvm->arch.timer_early.base = INVALID_GPA;
 }
 
+#define TIMER_EARLY_NS_HIP12 180
 int kvm_arm_timer_early_inject_set_attr(struct kvm *kvm,
 					struct kvm_device_attr *attr)
 {
@@ -101,8 +103,14 @@ int kvm_arm_timer_early_inject_set_attr(struct kvm *kvm,
 		ret = -EINVAL;
 	srcu_read_unlock(&kvm->srcu, idx);
 
-	if (!ret)
+	if (!ret) {
 		kvm->arch.timer_early.base = ipa;
+		/* let's set default value if user did'nt set */
+		if ((timer_early_inject_ns == 0) &&
+		    ((read_cpuid_id() & MIDR_CPU_MODEL_MASK) == MIDR_HISI_HIP12)) {
+			timer_early_inject_ns = TIMER_EARLY_NS_HIP12;
+		}
+	}
 
 	return ret;
 }
