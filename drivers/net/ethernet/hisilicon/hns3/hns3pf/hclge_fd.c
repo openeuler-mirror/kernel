@@ -2292,10 +2292,17 @@ static int hclge_get_tc_flower_action(struct hclge_dev *hdev,
 	struct netlink_ext_ack *extack = cls_flower->common.extack;
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	struct flow_action *action = &flow->action;
+	u16 vf = cls_flower->common.chain_index;
 	struct flow_action_entry *act;
 	int tc;
 
 	if (!flow_action_has_entries(&flow->action)) {
+		if (vf) {
+			NL_SET_ERR_MSG_MOD(extack,
+					   "cannot select traffic class for vf");
+			return -EINVAL;
+		}
+
 		tc = tc_classid_to_hwtc(handle->netdev, cls_flower->classid);
 		if (tc < 0 || tc > hdev->tc_max) {
 			NL_SET_ERR_MSG_FMT_MOD(extack,
@@ -2311,11 +2318,11 @@ static int hclge_get_tc_flower_action(struct hclge_dev *hdev,
 	act = &action->entries[0];
 	switch (act->id) {
 	case FLOW_ACTION_RX_QUEUE_MAPPING:
-		if (act->rx_queue >= handle->kinfo.num_tqps) {
+		if (act->rx_queue >= hdev->vport[vf].nic.kinfo.num_tqps) {
 			NL_SET_ERR_MSG_FMT_MOD(extack,
 					       "queue id (%u) should be less than %u",
 					       act->rx_queue,
-					       handle->kinfo.num_tqps);
+					       hdev->vport[vf].nic.kinfo.num_tqps);
 			return -EINVAL;
 		}
 
@@ -2382,6 +2389,21 @@ static int hclge_check_cls_flower(struct hclge_dev *hdev,
 				       "prio %u is already used", prio);
 		return -EINVAL;
 	}
+
+	/* Each VF has its own rule, where chain_index indicates the vf_id.
+	 * For the PF, chain_index is 0.
+	 */
+	if (cls_flower->common.chain_index > hdev->num_req_vfs) {
+		NL_SET_ERR_MSG_FMT_MOD(extack,
+				       "chain (%u) should be less than %u",
+				       cls_flower->common.chain_index,
+				       hdev->num_req_vfs);
+		return -EINVAL;
+	}
+
+	if (cls_flower->common.chain_index)
+		dev_info_once(&hdev->pdev->dev,
+			      "chain_index is considered as vf_id");
 
 	support_keys = BIT_ULL(FLOW_DISSECTOR_KEY_CONTROL) |
 		       BIT_ULL(FLOW_DISSECTOR_KEY_BASIC) |
@@ -2458,7 +2480,7 @@ int hclge_add_cls_flower(struct hnae3_handle *handle,
 	}
 
 	rule->location = cls_flower->common.prio - 1;
-	rule->vf_id = 0;
+	rule->vf_id = hdev->vport[cls_flower->common.chain_index].vport_id;
 	rule->cls_flower.cookie = cls_flower->cookie;
 	rule->rule_type = HCLGE_FD_TC_FLOWER_ACTIVE;
 
