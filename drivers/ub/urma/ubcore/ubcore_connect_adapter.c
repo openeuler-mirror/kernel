@@ -552,8 +552,8 @@ static void handle_create_req(struct ubcore_device *dev, struct ubcore_net_msg *
 
 	key.local_eid = req->get_tp_cfg.peer_eid;
 	key.peer_eid = req->get_tp_cfg.local_eid;
-	key.local_jetty_id = req->src_jetty_id;
-	key.peer_jetty_id = req->dst_jetty_id;
+	key.local_jetty_id = req->dst_jetty_id;
+	key.peer_jetty_id = req->src_jetty_id;
 
 	get_tp_cfg.local_eid = req->get_tp_cfg.peer_eid;
 	get_tp_cfg.peer_eid = req->get_tp_cfg.local_eid;
@@ -687,10 +687,14 @@ int ubcore_adapter_layer_disconnect(struct ubcore_vtpn *vtpn)
 		return ret;
 	}
 
-	if (vtpn->uspace)
-		ret = ubcore_deactive_tp(dev, tp_handle, &udata);
-	else
+	if (vtpn->trans_mode == UBCORE_TP_RC) {
 		ret = ubcore_deactive_tp(dev, tp_handle, NULL);
+	} else {
+		if (vtpn->uspace)
+			ret = ubcore_deactive_tp(dev, tp_handle, &udata);
+		else
+			ret = ubcore_deactive_tp(dev, tp_handle, NULL);
+	}
 	if (ret != 0) {
 		ubcore_log_err("Failed to deactivate tp\n");
 		return ret;
