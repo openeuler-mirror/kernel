@@ -2535,8 +2535,6 @@ struct sched_class {
 	void (*put_prev_task)(struct rq *rq, struct task_struct *p);
 	void (*set_next_task)(struct rq *rq, struct task_struct *p, bool first);
 
-	void (*switch_class)(struct rq *rq, struct task_struct *next);
-
 #ifdef CONFIG_SMP
 	int (*balance)(struct rq *rq, struct task_struct *prev, struct rq_flags *rf);
 	int  (*select_task_rq)(struct task_struct *p, int task_cpu, int flags);
@@ -2584,6 +2582,7 @@ struct sched_class {
 	KABI_USE(1, void (*reweight_task)(struct rq *this_rq,
 		struct task_struct *task, const struct load_weight *lw))
 	KABI_USE(2, void (*switching_to) (struct rq *this_rq, struct task_struct *task))
+	KABI_EXTEND(void (*switch_class)(struct rq *rq, struct task_struct *next))
 };
 
 static inline void put_prev_task(struct rq *rq, struct task_struct *prev)
