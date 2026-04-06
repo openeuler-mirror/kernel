@@ -2742,6 +2742,11 @@ extern int push_cpu_stop(void *arg);
 
 #else /* !CONFIG_SMP: */
 
+static inline bool task_allowed_on_cpu(struct task_struct *p, int cpu)
+{
+	return true;
+}
+
 static inline int __set_cpus_allowed_ptr(struct task_struct *p,
 					 struct affinity_context *ctx)
 {
