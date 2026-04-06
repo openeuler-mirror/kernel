@@ -55,3 +55,4 @@
 #ifdef CONFIG_SCHED_SOFT_DOMAIN
 #include "soft_domain.c"
 #endif
+#include "syscalls.c"
