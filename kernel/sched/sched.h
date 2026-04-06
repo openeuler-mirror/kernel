@@ -2594,7 +2594,18 @@ extern void update_group_capacity(struct sched_domain *sd, int cpu);
 
 extern void trigger_load_balance(struct rq *rq);
 
+extern int __set_cpus_allowed_ptr(struct task_struct *p, struct affinity_context *ctx);
 extern void set_cpus_allowed_common(struct task_struct *p, struct affinity_context *ctx);
+
+static inline cpumask_t *alloc_user_cpus_ptr(int node)
+{
+	/*
+	 * See do_set_cpus_allowed() above for the rcu_head usage.
+	 */
+	int size = max_t(int, cpumask_size(), sizeof(struct rcu_head));
+
+	return kmalloc_node(size, GFP_KERNEL, node);
+}
 
 static inline struct task_struct *get_push_task(struct rq *rq)
 {
@@ -2617,7 +2628,20 @@ static inline struct task_struct *get_push_task(struct rq *rq)
 
 extern int push_cpu_stop(void *arg);
 
-#endif
+#else /* !CONFIG_SMP: */
+
+static inline int __set_cpus_allowed_ptr(struct task_struct *p,
+					 struct affinity_context *ctx)
+{
+	return set_cpus_allowed_ptr(p, ctx->new_mask);
+}
+
+static inline cpumask_t *alloc_user_cpus_ptr(int node)
+{
+	return NULL;
+}
+
+#endif /* !CONFIG_SMP */
 
 #ifdef CONFIG_CPU_IDLE
 static inline void idle_set_state(struct rq *rq,
@@ -3348,6 +3372,36 @@ static inline bool uclamp_is_used(void)
 {
 	return static_branch_likely(&sched_uclamp_used);
 }
+
+#define for_each_clamp_id(clamp_id) \
+	for ((clamp_id) = 0; (clamp_id) < UCLAMP_CNT; (clamp_id)++)
+
+extern unsigned int sysctl_sched_uclamp_util_min_rt_default;
+
+
+static inline unsigned int uclamp_none(enum uclamp_id clamp_id)
+{
+	if (clamp_id == UCLAMP_MIN)
+		return 0;
+	return SCHED_CAPACITY_SCALE;
+}
+
+/* Integer rounded range for each bucket */
+#define UCLAMP_BUCKET_DELTA DIV_ROUND_CLOSEST(SCHED_CAPACITY_SCALE, UCLAMP_BUCKETS)
+
+static inline unsigned int uclamp_bucket_id(unsigned int clamp_value)
+{
+	return min_t(unsigned int, clamp_value / UCLAMP_BUCKET_DELTA, UCLAMP_BUCKETS - 1);
+}
+
+static inline void uclamp_se_set(struct uclamp_se *uc_se,
+				 unsigned int value, bool user_defined)
+{
+	uc_se->value = value;
+	uc_se->bucket_id = uclamp_bucket_id(value);
+	uc_se->user_defined = user_defined;
+}
+
 #else /* CONFIG_UCLAMP_TASK */
 static inline unsigned long uclamp_eff_value(struct task_struct *p,
 					     enum uclamp_id clamp_id)
@@ -3390,6 +3444,7 @@ static inline bool uclamp_rq_is_idle(struct rq *rq)
 {
 	return false;
 }
+
 #endif /* CONFIG_UCLAMP_TASK */
 
 #ifdef CONFIG_HAVE_SCHED_AVG_IRQ
@@ -3765,7 +3820,82 @@ extern int entity_eligible(struct cfs_rq *cfs_rq, struct sched_entity *se);
 
 #ifdef CONFIG_BPF_SCHED
 bool bpf_sched_is_cpu_allowed(struct task_struct *p, int cpu);
-#endif
+#endif /* CONFIG_BPF_SCHED */
+#ifdef CONFIG_RT_MUTEXES
+static inline int __rt_effective_prio(struct task_struct *pi_task, int prio)
+{
+	if (pi_task)
+		prio = min(prio, pi_task->prio);
+
+	return prio;
+}
+
+static inline int rt_effective_prio(struct task_struct *p, int prio)
+{
+	struct task_struct *pi_task = rt_mutex_get_top_task(p);
+
+	return __rt_effective_prio(pi_task, prio);
+}
+#else
+static inline int rt_effective_prio(struct task_struct *p, int prio)
+{
+	return prio;
+}
+#endif /* CONFIG_RT_MUTEXES */
+
+static inline int __normal_prio(int policy, int rt_prio, int nice)
+{
+	int prio;
+
+	if (dl_policy(policy))
+		prio = MAX_DL_PRIO - 1;
+	else if (rt_policy(policy))
+		prio = MAX_RT_PRIO - 1 - rt_prio;
+	else
+		prio = NICE_TO_PRIO(nice);
+
+	return prio;
+}
+
+/*
+ * Calculate the expected normal priority: i.e. priority
+ * without taking RT-inheritance into account. Might be
+ * boosted by interactivity modifiers. Changes upon fork,
+ * setprio syscalls, and whenever the interactivity
+ * estimator recalculates.
+ */
+static inline int normal_prio(struct task_struct *p)
+{
+	return __normal_prio(p->policy, p->rt_priority, PRIO_TO_NICE(p->static_prio));
+}
+
+extern int __sched_setscheduler(struct task_struct *p, const struct sched_attr *attr, bool user, bool pi);
+extern int __sched_setaffinity(struct task_struct *p, struct affinity_context *ctx);
+extern void __setscheduler_prio(struct task_struct *p, int prio);
+extern void __setscheduler_params(struct task_struct *p, const struct sched_attr *attr);
+extern void set_load_weight(struct task_struct *p, bool update_load);
+extern void enqueue_task(struct rq *rq, struct task_struct *p, int flags);
+extern void dequeue_task(struct rq *rq, struct task_struct *p, int flags);
+
+extern void check_class_changed(struct rq *rq, struct task_struct *p,
+				const struct sched_class *prev_class,
+				int oldprio);
+
+#ifdef CONFIG_SMP
+extern struct balance_callback *splice_balance_callbacks(struct rq *rq);
+extern void balance_callbacks(struct rq *rq, struct balance_callback *head);
+#else
+
+static inline struct balance_callback *splice_balance_callbacks(struct rq *rq)
+{
+	return NULL;
+}
+
+static inline void balance_callbacks(struct rq *rq, struct balance_callback *head)
+{
+}
+
+#endif /* CONFIG_SMP */
 
 #ifdef CONFIG_SCHED_SOFT_DOMAIN
 void build_soft_domain(void);
