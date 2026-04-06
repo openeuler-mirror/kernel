@@ -820,6 +820,7 @@ change:
 		__setscheduler_dl_pi(newprio, policy, p, &queue_flags);
 	}
 	__setscheduler_uclamp(p, attr);
+	check_class_changing(rq, p, prev_class);
 
 	if (queued) {
 		/*
