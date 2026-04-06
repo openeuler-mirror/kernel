@@ -2536,7 +2536,6 @@ struct sched_class {
 	KABI_REPLACE(void (*check_preempt_curr)(struct rq *rq, struct task_struct *p, int flags),
 		void (*wakeup_preempt)(struct rq *rq, struct task_struct *p, int flags))
 
-	struct task_struct *(*pick_task)(struct rq *rq);
 	/*
 	 * Optional! When implemented pick_next_task() should be equivalent to:
 	 *
@@ -2546,7 +2545,8 @@ struct sched_class {
 	 *       set_next_task_first(next);
 	 *   }
 	 */
-	struct task_struct *(*pick_next_task)(struct rq *rq, struct task_struct *prev);
+	KABI_REPLACE(struct task_struct *(*pick_next_task)(struct rq *rq),
+		struct task_struct *(*pick_next_task)(struct rq *rq, struct task_struct *prev))
 
 	void (*put_prev_task)(struct rq *rq, struct task_struct *p);
 	void (*set_next_task)(struct rq *rq, struct task_struct *p, bool first);
@@ -2555,7 +2555,9 @@ struct sched_class {
 	int (*balance)(struct rq *rq, struct task_struct *prev, struct rq_flags *rf);
 #ifdef CONFIG_SMP
 	int  (*select_task_rq)(struct task_struct *p, int task_cpu, int flags);
-
+#endif
+	struct task_struct *(*pick_task)(struct rq *rq);
+#ifdef CONFIG_SMP
 	void (*migrate_task_rq)(struct task_struct *p, int new_cpu);
 
 	void (*task_woken)(struct rq *this_rq, struct task_struct *task);
