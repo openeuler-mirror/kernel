@@ -3956,5 +3956,6 @@ static inline int destroy_soft_domain(struct task_group *tg)
 }
 
 #endif
+#include "ext.h"
 
 #endif /* _KERNEL_SCHED_SCHED_H */
