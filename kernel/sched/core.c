@@ -5973,13 +5973,8 @@ restart:
 	for_each_active_class(class) {
 		if (class->pick_next_task) {
 			p = class->pick_next_task(rq, prev);
-			if (p) {
-				const struct sched_class *prev_class = prev->sched_class;
-
-				if (class != prev_class && prev_class->switch_class)
-					prev_class->switch_class(rq, p);
+			if (p)
 				return p;
-			}
 		} else {
 			p = class->pick_task(rq);
 			if (p) {
