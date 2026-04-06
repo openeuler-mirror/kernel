@@ -850,9 +850,6 @@ struct task_struct {
 	struct sched_entity		se;
 	struct sched_rt_entity		rt;
 	struct sched_dl_entity		dl;
-#ifdef CONFIG_SCHED_CLASS_EXT
-	struct sched_ext_entity		scx;
-#endif
 	const struct sched_class	*sched_class;
 
 #ifdef CONFIG_SCHED_CORE
@@ -1661,6 +1658,16 @@ struct task_struct {
 	KABI_RESERVE(16)
 	KABI_AUX_PTR(task_struct)
 
+	/*
+	 * On x86, CONFIG_SCHED_CLASS_EXT is disabled by default since enabling it
+	 * may cause KABI changes. Placing scx before 'thread' avoids compilation
+	 * failures from the BUILD_CHECK at the end of task_struct, which enforces
+	 * that 'thread' must be the last field in X86 due to its variable-size nature.
+	 */
+#if defined(CONFIG_X86) && !defined(__GENKSYMS__) && defined(CONFIG_SCHED_CLASS_EXT)
+	KABI_BROKEN_INSERT(struct sched_ext_entity scx)
+#endif
+
 	/* CPU-specific state of this task: */
 	struct thread_struct		thread;
 
@@ -1670,6 +1677,10 @@ struct task_struct {
 	 *
 	 * Do not put anything below here!
 	 */
+
+#if defined(CONFIG_ARM64) && !defined(__GENKSYMS__) && defined(CONFIG_SCHED_CLASS_EXT)
+	KABI_EXTEND(struct sched_ext_entity scx)
+#endif
 };
 
 static inline struct pid *task_pid(struct task_struct *task)
