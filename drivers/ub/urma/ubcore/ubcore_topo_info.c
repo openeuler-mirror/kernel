@@ -483,6 +483,12 @@ static struct ubcore_topo_node *
 	int node_id, dev_id;
 
 	topo_map = g_ubcore_topo_map;
+	if (!topo_map) {
+		ubcore_log_err(
+			"Failed to get topo info, ubcore topo map doesn't exist.\n");
+		return NULL;
+	}
+
 	for (node_id = 0; node_id < topo_map->node_num; node_id++) {
 		for (dev_id = 0; dev_id < DEV_NUM; dev_id++) {
 			if (memcmp(agg_eid, topo_map->topo_infos[node_id].agg_devs[dev_id].agg_eid,
