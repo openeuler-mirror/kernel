@@ -973,7 +973,7 @@ struct scx_dump_data {
 	struct scx_bstr_buf	buf;
 };
 
-struct scx_dump_data scx_dump_data = {
+static struct scx_dump_data scx_dump_data = {
 	.cpu			= -1,
 };
 
