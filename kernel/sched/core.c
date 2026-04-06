@@ -4700,7 +4700,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	if (rt_prio(p->prio)) {
 		p->sched_class = &rt_sched_class;
 #ifdef CONFIG_SCHED_CLASS_EXT
-	} else if (task_should_scx(p)) {
+	} else if (task_should_scx(p->policy)) {
 		p->sched_class = &ext_sched_class;
 #endif
 	} else {
@@ -6996,7 +6996,7 @@ void __setscheduler_prio(struct task_struct *p, int prio)
 	else if (rt_prio(prio))
 		p->sched_class = &rt_sched_class;
 #ifdef CONFIG_SCHED_CLASS_EXT
-	else if (task_should_scx(p))
+	else if (task_should_scx(p->policy))
 		p->sched_class = &ext_sched_class;
 #endif
 	else
@@ -7007,10 +7007,16 @@ void __setscheduler_prio(struct task_struct *p, int prio)
 
 /*
  * Currently, __setscheduler_class is mainly picked for sched_ext,
- * but in mainline it is for delayed_dequeue in EEVDF, the commit is
- * 98442f0ccd82 ("sched: Fix delayed_dequeue vs switched_from_fair()")
+ * but the original patch comes from mainline, the commits are:
+ *
+ * 98442f0ccd82 ("sched: Fix delayed_dequeue vs switched_from_fair()"):
+ * it is for delayed_dequeue in EEVDF
+ *
+ * 5db91545ef81
+ * ("sched: Pass correct scheduling policy to __setscheduler_class"):
+ * it is to adopt __setscheduler_class() in sched_ext.
  */
-const struct sched_class *__setscheduler_class(struct task_struct *p, int prio)
+const struct sched_class *__setscheduler_class(int policy, int prio)
 {
 	if (dl_prio(prio))
 		return &dl_sched_class;
@@ -7019,7 +7025,7 @@ const struct sched_class *__setscheduler_class(struct task_struct *p, int prio)
 		return &rt_sched_class;
 
 #ifdef CONFIG_SCHED_CLASS_EXT
-	if (task_should_scx(p))
+	if (task_should_scx(policy))
 		return &ext_sched_class;
 #endif
 

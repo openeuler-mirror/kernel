@@ -4044,8 +4044,9 @@ extern void __setscheduler_params(struct task_struct *p, const struct sched_attr
 /*
  * pick from mainline
  * 98442f0ccd82 ("sched: Fix delayed_dequeue vs switched_from_fair()")
+ * 5db91545ef81 ("sched: Pass correct scheduling policy to __setscheduler_class")
  */
-extern const struct sched_class *__setscheduler_class(struct task_struct *p, int prio);
+extern const struct sched_class *__setscheduler_class(int policy, int prio);
 extern void set_load_weight(struct task_struct *p, bool update_load);
 extern void enqueue_task(struct rq *rq, struct task_struct *p, int flags);
 extern bool dequeue_task(struct rq *rq, struct task_struct *p, int flags);
