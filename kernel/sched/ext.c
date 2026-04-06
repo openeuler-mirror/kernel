@@ -1588,12 +1588,10 @@ static void run_deferred(struct rq *rq)
 	process_ddsp_deferred_locals(rq);
 }
 
-#ifdef CONFIG_SMP
 static void deferred_bal_cb_workfn(struct rq *rq)
 {
 	run_deferred(rq);
 }
-#endif
 
 static void deferred_irq_workfn(struct irq_work *irq_work)
 {
@@ -1616,7 +1614,6 @@ static void schedule_deferred(struct rq *rq)
 {
 	lockdep_assert_rq_held(rq);
 
-#ifdef CONFIG_SMP
 	/*
 	 * If in the middle of waking up a task, task_woken_scx() will be called
 	 * afterwards which will then run the deferred actions, no need to
@@ -1634,7 +1631,7 @@ static void schedule_deferred(struct rq *rq)
 				       deferred_bal_cb_workfn);
 		return;
 	}
-#endif
+
 	/*
 	 * No scheduler hooks available. Queue an irq work. They are executed on
 	 * IRQ re-enable which may take a bit longer than the scheduler hooks.
@@ -2315,7 +2312,6 @@ static void move_local_task_to_local_dsq(struct task_struct *p, u64 enq_flags,
 	p->scx.dsq = dst_dsq;
 }
 
-#ifdef CONFIG_SMP
 /**
  * move_remote_task_to_local_dsq - Move a task from a foreign rq to a local DSQ
  * @p: task to move
@@ -2490,11 +2486,6 @@ static bool consume_remote_task(struct rq *this_rq, struct task_struct *p,
 		return false;
 	}
 }
-#else	/* CONFIG_SMP */
-static inline void move_remote_task_to_local_dsq(struct task_struct *p, u64 enq_flags, struct rq *src_rq, struct rq *dst_rq) { WARN_ON_ONCE(1); }
-static inline bool task_can_run_on_remote_rq(struct task_struct *p, struct rq *rq, bool trigger_error) { return false; }
-static inline bool consume_remote_task(struct rq *this_rq, struct task_struct *p, struct scx_dispatch_q *dsq, struct rq *task_rq) { return false; }
-#endif	/* CONFIG_SMP */
 
 /**
  * move_task_between_dsqs() - Move a task from one DSQ to another
@@ -2662,9 +2653,7 @@ static void dispatch_to_local_dsq(struct rq *rq, struct scx_dispatch_q *dst_dsq,
 {
 	struct rq *src_rq = task_rq(p);
 	struct rq *dst_rq = container_of(dst_dsq, struct rq, scx.local_dsq);
-#ifdef CONFIG_SMP
 	struct rq *locked_rq = rq;
-#endif
 
 	/*
 	 * We're synchronized against dequeue through DISPATCHING. As @p can't
@@ -2677,7 +2666,6 @@ static void dispatch_to_local_dsq(struct rq *rq, struct scx_dispatch_q *dst_dsq,
 		return;
 	}
 
-#ifdef CONFIG_SMP
 	if (src_rq != dst_rq &&
 	    unlikely(!task_can_run_on_remote_rq(p, dst_rq, true))) {
 		dispatch_enqueue(find_global_dsq(p), p,
@@ -2736,9 +2724,6 @@ static void dispatch_to_local_dsq(struct rq *rq, struct scx_dispatch_q *dst_dsq,
 		raw_spin_rq_unlock(locked_rq);
 		raw_spin_rq_lock(rq);
 	}
-#else	/* CONFIG_SMP */
-	BUG();	/* control can not reach here on UP */
-#endif	/* CONFIG_SMP */
 }
 
 /**
@@ -3053,10 +3038,8 @@ static void set_next_task_scx(struct rq *rq, struct task_struct *p, bool first)
 static enum scx_cpu_preempt_reason
 preempt_reason_from_class(const struct sched_class *class)
 {
-#ifdef CONFIG_SMP
 	if (class == &stop_sched_class)
 		return SCX_CPU_PREEMPT_STOP;
-#endif
 	if (class == &dl_sched_class)
 		return SCX_CPU_PREEMPT_DL;
 	if (class == &rt_sched_class)
@@ -3068,14 +3051,12 @@ static void switch_class(struct rq *rq, struct task_struct *next)
 {
 	const struct sched_class *next_class = next->sched_class;
 
-#ifdef CONFIG_SMP
 	/*
 	 * Pairs with the smp_load_acquire() issued by a CPU in
 	 * kick_cpus_irq_workfn() who is waiting for this CPU to perform a
 	 * resched.
 	 */
 	smp_store_release(&rq->scx.pnt_seq, rq->scx.pnt_seq + 1);
-#endif
 	if (!static_branch_unlikely(&scx_ops_cpu_preempt))
 		return;
 
@@ -3263,8 +3244,6 @@ bool scx_prio_less(const struct task_struct *a, const struct task_struct *b,
 }
 #endif	/* CONFIG_SCHED_CORE */
 
-#ifdef CONFIG_SMP
-
 static int select_task_rq_scx(struct task_struct *p, int prev_cpu, int wake_flags)
 {
 	/*
@@ -3370,7 +3349,6 @@ static void rq_offline_scx(struct rq *rq)
 	rq->scx.flags &= ~SCX_RQ_ONLINE;
 }
 
-#endif	/* CONFIG_SMP */
 
 static bool check_rq_for_timeouts(struct rq *rq)
 {
@@ -4028,14 +4006,12 @@ DEFINE_SCHED_CLASS(ext) = {
 	.put_prev_task		= put_prev_task_scx,
 	.set_next_task		= set_next_task_scx,
 
-#ifdef CONFIG_SMP
 	.select_task_rq		= select_task_rq_scx,
 	.task_woken		= task_woken_scx,
 	.set_cpus_allowed	= set_cpus_allowed_scx,
 
 	.rq_online		= rq_online_scx,
 	.rq_offline		= rq_offline_scx,
-#endif
 
 	.task_tick		= task_tick_scx,
 
