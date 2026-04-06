@@ -1187,9 +1187,6 @@ struct rq {
 #ifdef CONFIG_SCHED_STEAL
 	struct sparsemask	*cfs_overload_cpus;
 #endif
-#ifdef CONFIG_SCHED_CLASS_EXT
-	struct scx_rq		scx;
-#endif
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this CPU: */
@@ -1380,6 +1377,9 @@ struct rq {
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
+#if defined(CONFIG_SCHED_CLASS_EXT)
+	KABI_EXTEND(struct scx_rq scx)
+#endif
 };
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
