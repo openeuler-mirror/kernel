@@ -2490,8 +2490,6 @@ struct sched_class {
 	 */
 	void (*switched_from)(struct rq *this_rq, struct task_struct *task);
 	void (*switched_to)  (struct rq *this_rq, struct task_struct *task);
-	void (*reweight_task)(struct rq *this_rq, struct task_struct *task,
-			      const struct load_weight *lw);
 	void (*prio_changed) (struct rq *this_rq, struct task_struct *task,
 			      int oldprio);
 
@@ -2507,7 +2505,8 @@ struct sched_class {
 #if defined(CONFIG_SCHED_CORE) || defined(CONFIG_CGROUP_IFS)
 	int (*task_is_throttled)(struct task_struct *p, int cpu);
 #endif
-	KABI_RESERVE(1)
+	KABI_USE(1, void (*reweight_task)(struct rq *this_rq,
+		struct task_struct *task, const struct load_weight *lw))
 	KABI_RESERVE(2)
 };
 
