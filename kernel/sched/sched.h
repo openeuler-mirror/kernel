@@ -2493,7 +2493,6 @@ struct sched_class {
 	 * cannot assume the switched_from/switched_to pair is serialized by
 	 * rq->lock. They are however serialized by p->pi_lock.
 	 */
-	void (*switching_to) (struct rq *this_rq, struct task_struct *task);
 	void (*switched_from)(struct rq *this_rq, struct task_struct *task);
 	void (*switched_to)  (struct rq *this_rq, struct task_struct *task);
 	void (*prio_changed) (struct rq *this_rq, struct task_struct *task,
@@ -2513,7 +2512,7 @@ struct sched_class {
 #endif
 	KABI_USE(1, void (*reweight_task)(struct rq *this_rq,
 		struct task_struct *task, const struct load_weight *lw))
-	KABI_RESERVE(2)
+	KABI_USE(2, void (*switching_to) (struct rq *this_rq, struct task_struct *task))
 };
 
 static inline void put_prev_task(struct rq *rq, struct task_struct *prev)
