@@ -474,11 +474,6 @@ struct task_group {
 	struct rt_bandwidth	rt_bandwidth;
 #endif
 
-#ifdef CONFIG_EXT_GROUP_SCHED
-	u32			scx_flags;	/* SCX_TG_* */
-	u32			scx_weight;
-#endif
-
 	struct rcu_head		rcu;
 	struct list_head	list;
 
@@ -523,7 +518,12 @@ struct task_group {
 #else
 	KABI_RESERVE(2)
 #endif
+
+#ifdef CONFIG_EXT_GROUP_SCHED
+	KABI_USE2(3, u32 scx_flags, u32 scx_weight) /* SCX_TG_* */
+#else
 	KABI_RESERVE(3)
+#endif
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
