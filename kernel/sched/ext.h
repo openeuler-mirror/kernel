@@ -8,6 +8,11 @@
  */
 #ifdef CONFIG_SCHED_CLASS_EXT
 
+static inline bool scx_kf_allowed_if_unlocked(void)
+{
+	return !current->scx.kf_mask;
+}
+
 DECLARE_STATIC_KEY_FALSE(scx_ops_allow_queued_wakeup);
 
 DECLARE_PER_CPU(struct rq *, scx_locked_rq_state);
