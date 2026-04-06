@@ -5961,8 +5961,7 @@ __pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 		/* Assume the next prioritized class is idle_sched_class */
 		if (!p) {
 			p = pick_task_idle(rq);
-			put_prev_task(rq, prev);
-			set_next_task_first(rq, p);
+			put_prev_set_next_task(rq, prev, p);
 		}
 
 		return p;
@@ -5986,9 +5985,8 @@ restart:
 			if (p) {
 				const struct sched_class *prev_class = prev->sched_class;
 
-				put_prev_task(rq, prev);
-				set_next_task_first(rq, p);
-
+				put_prev_set_next_task(rq, prev, p);
+				
 				if (class != prev_class && prev_class->switch_class)
 					prev_class->switch_class(rq, p);
 				return p;
@@ -6079,13 +6077,8 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 		WRITE_ONCE(rq->core_sched_seq, rq->core->core_pick_seq);
 
 		next = rq->core_pick;
-		if (next != prev) {
-			put_prev_task(rq, prev);
-			set_next_task_first(rq, next);
-		}
-
 		rq->core_pick = NULL;
-		goto out;
+		goto out_set_next;
 	}
 
 	prev_balance(rq, prev, rf);
@@ -6255,9 +6248,7 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 	}
 
 out_set_next:
-	put_prev_task(rq, prev);
-	set_next_task_first(rq, next);
-out:
+	put_prev_set_next_task(rq, prev, next);
 	if (rq->core->core_forceidle_count && next == rq->idle)
 		queue_core_balance(rq);
 
