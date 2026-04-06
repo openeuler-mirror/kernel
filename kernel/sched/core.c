@@ -7005,6 +7005,27 @@ void __setscheduler_prio(struct task_struct *p, int prio)
 	p->prio = prio;
 }
 
+/*
+ * Currently, __setscheduler_class is mainly picked for sched_ext,
+ * but in mainline it is for delayed_dequeue in EEVDF, the commit is
+ * 98442f0ccd82 ("sched: Fix delayed_dequeue vs switched_from_fair()")
+ */
+const struct sched_class *__setscheduler_class(struct task_struct *p, int prio)
+{
+	if (dl_prio(prio))
+		return &dl_sched_class;
+
+	if (rt_prio(prio))
+		return &rt_sched_class;
+
+#ifdef CONFIG_SCHED_CLASS_EXT
+	if (task_should_scx(p))
+		return &ext_sched_class;
+#endif
+
+	return &fair_sched_class;
+}
+
 #ifdef CONFIG_RT_MUTEXES
 
 /*
