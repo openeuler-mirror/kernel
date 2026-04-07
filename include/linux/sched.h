@@ -809,9 +809,6 @@ struct task_struct {
 #endif
 	unsigned int			__state;
 
-	/* saved state for "spinlock sleepers" */
-	unsigned int			saved_state;
-
 	/*
 	 * This begins the randomizable portion of task_struct. Only
 	 * scheduling-critical items should be added above here.
@@ -1640,8 +1637,10 @@ struct task_struct {
 #else
 	KABI_RESERVE(1)
 #endif
+
 	KABI_RESERVE(2)
-	KABI_RESERVE(3)
+	/* saved state for "spinlock sleepers" */
+	KABI_USE2(3, unsigned kabi_reserved_int, unsigned int saved_state)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
