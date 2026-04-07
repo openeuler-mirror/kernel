@@ -150,7 +150,7 @@ EXPORT_SYMBOL_GPL(ubdevshm_unregister_ops);
 #define fill_role_info(role, task)	\
 ({						\
 	role.tgid = task_tgid_nr_ns(task, &init_pid_ns); \
-	role.aux = task->start_time; \
+	role.aux = task->group_leader->start_time; \
 	role.lite = false; \
 	get_task_comm(role.name, task); \
 	&role; \
@@ -159,7 +159,7 @@ EXPORT_SYMBOL_GPL(ubdevshm_unregister_ops);
 static void set_role(struct role_info *role, struct task_struct *task)
 {
 	role->tgid = task_tgid_nr_ns(task, &init_pid_ns);
-	role->aux = task->start_time;
+	role->aux = task->group_leader->start_time;
 	get_task_comm(role->name, task);
 }
 
@@ -180,10 +180,11 @@ static bool is_same_role_task(struct role_info *role, void *task)
 {
 	struct task_struct *tsk = (struct task_struct *)task;
 
-	if (role->tgid == task_tgid_nr_ns(tsk, &init_pid_ns) && role->aux == tsk->start_time)
+	if (role->tgid == task_tgid_nr_ns(tsk, &init_pid_ns) &&
+		((role->aux == tsk->group_leader->start_time) ||
+		(role->lite && role->aux == (u32)tsk->group_leader->start_time)))
 		return true;
 
-	pr_err("tgid or aux[%d] not match\n", role->aux == tsk->start_time);
 	return false;
 }
 
@@ -564,7 +565,7 @@ static bool lite_role_get_task_exist(struct role_info *role, struct task_struct 
 	if (!task)
 		return false;
 
-	if (role->aux != (u32)task->start_time) {
+	if (role->aux != (u32)task->group_leader->start_time) {
 		put_task_struct(task);
 		return false;
 	}
@@ -594,8 +595,11 @@ int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
 
 	if (extract_lite_role(va, &role)) {
 		is_exist = lite_role_get_task_exist(&role, &task, &task_get);
-		if (!is_exist || task != current) {
-			pr_err("register segment can not find task\n");
+		if (!is_exist || !is_same_role_task(&role, current)) {
+			pr_err("register segment can not find task: is_exist: %d, current tgid: %d,\n"
+				"start_time: %llx, role.tgid: %d, role.aux: %llx\n", is_exist,
+				current->tgid, current->group_leader->start_time, role.tgid,
+				role.aux);
 			if (task)
 				put_task_struct(task);
 			return -EINVAL;
@@ -741,6 +745,7 @@ int ubdevshm_unregister_segment(unsigned long *handle, struct mem_uva *va)
 	if (extract_lite_role(va, &role))
 		lite = !lite_role_get_task_exist(&role, &task, &task_get);
 
+	// lite: true means the process has exited.
 	cntr = lite ? find_get_shm_container(is_same_role_cb, &role) :
 	       find_get_shm_container(is_same_role_task, task);
 	if (!cntr) {
@@ -855,12 +860,17 @@ int ubdevshm_acquire_uba(struct access_ctx *ctx, struct mem_uva *va, union acqui
 
 	if (!ctx) { // simple mode
 		cntr = find_get_shm_container(is_same_role_task, current);
-		if (!cntr)
+		if (!cntr) {
+			pr_err("find cntr failed: current tgid:%d, start_time: %llx\n",
+				current->tgid, current->group_leader->start_time);
 			return -ENOENT;
+		}
 
 		ctx_inner = find_get_access_ctx(cntr, va, true, true, role_equal,
 						fill_role_info(role, current));
 		if (!ctx_inner) {
+			pr_err("find ctx_inner failed: role.tgid: %d, role.aux: %llx\n",
+				role.tgid, role.aux);
 			ret = -ENOENT;
 			goto out;
 		}
@@ -925,9 +935,9 @@ static int find_get_shm_container_context(struct access_ctx *ctx, struct mem_uba
 	int ret;
 
 	if (!ctx) { // simple mode
-		uintptr_t handle_to_int = (uintptr_t)mem_handle;
+		uintptr_t handle = (uintptr_t)mem_handle;
 
-		ctx_inner = find_get_access_ctx_by_id(handle_to_int);
+		ctx_inner = find_get_access_ctx_by_id(handle);
 		if (!ctx_inner) {
 			pr_err("find access ctx inner failed\n");
 			return -ENOENT;
@@ -1069,6 +1079,8 @@ int ubdevshm_grant_access(unsigned long *handle, struct shm_user *user,
 
 	cntr = find_get_shm_container(is_same_role_task, current);
 	if (!cntr) {
+		pr_err("find cntr failed: current tgid:%d, start_time: %llx\n",
+			current->tgid, current->group_leader->start_time);
 		ret = -EINVAL;
 		goto out_put_task_provider;
 	}
