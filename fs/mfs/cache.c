@@ -445,6 +445,10 @@ int try_hook_fd(struct mfs_event *event)
 	}
 	up_read(&object->rwsem);
 	down_write(&object->rwsem);
+	if (object->fd > 0) {
+		up_write(&object->rwsem);
+		return object->fd;
+	}
 	fd = get_unused_fd_flags(O_WRONLY);
 	if (fd < 0) {
 		up_write(&object->rwsem);
