@@ -1238,6 +1238,8 @@ struct ubcore_vtpn *
 	if (ctx && ctx->tp_state == UBCORE_TP_ACTIVE) {
 		atomic_inc(&vtpn->use_cnt);
 		vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
+		vtpn->tp_handle = ctx->tp_handle;
+		vtpn->peer_tp_handle = ctx->peer_tp_handle;
 		vtpn->state = UBCORE_VTPS_READY;
 		mutex_unlock(&vtpn->state_lock);
 		return vtpn;

@@ -906,17 +906,6 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 	return tjetty;
 }
 
-static inline void ubcore_update_vtpn(struct ubcore_vtpn *vtpn,
-	struct ubcore_tpid_ctx *ctx)
-{
-	union ubcore_tp_handle tp_handle;
-
-	tp_handle.value = ctx->tp_handle;
-	vtpn->vtpn = (uint32_t)tp_handle.bs.tpid;
-	vtpn->tp_handle = ctx->tp_handle;
-	vtpn->peer_tp_handle = ctx->peer_tp_handle;
-}
-
 static void ubcore_fadd_init_tpid_ctx(struct ubcore_device *dev,
 	struct ubcore_tpid_key *key, struct ubcore_active_tp_cfg *cfg,
 	struct ubcore_vtpn *vtpn)
@@ -942,9 +931,8 @@ static void ubcore_fadd_init_tpid_ctx(struct ubcore_device *dev,
 		return;
 	}
 	if (ctx && !ctx->is_init) {
-		ubcore_update_vtpn(vtpn, ctx);
-		spin_unlock(&ht->lock);
 		ubcore_log_info("Find tpid in target, hash: %u.\n", hash);
+		spin_unlock(&ht->lock);
 		(void)ubcore_deactive_tp(dev, cfg->tp_handle, NULL);
 		kfree(add_ctx);
 		return;
@@ -978,8 +966,6 @@ static int ubcore_reuse_init_rtp_tpid(struct ubcore_jetty *jetty,
 	active_tp_cfg.tp_attr.tx_psn = ctx->tx_psn;
 	active_tp_cfg.tp_attr.rx_psn = ctx->rx_psn;
 	active_tp_cfg.tag = 0;
-	tjetty->vtpn->tp_handle = ctx->tp_handle;
-	tjetty->vtpn->peer_tp_handle = ctx->peer_tp_handle;
 	ubcore_log_info("tp_handle is %llu, peer_tp_handle is %llu.",
 		ctx->tp_handle, ctx->peer_tp_handle);
 
