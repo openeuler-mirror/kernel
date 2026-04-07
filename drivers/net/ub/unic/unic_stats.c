@@ -6,7 +6,6 @@
 
 #include <linux/phy.h>
 #include <ub/ubase/ubase_comm_cmd.h>
-#include <ub/ubase/ubase_comm_dev.h>
 #include <ub/ubase/ubase_comm_stats.h>
 
 #include "unic.h"
