@@ -30,22 +30,6 @@
 	val;						\
 })
 
-/*
- * This disables KASAN checking when reading a value from another task's stack,
- * since the other task could be running on another CPU and could have poisoned
- * the stack in the meantime.
- */
-#define READ_ONCE_TASK_STACK(task, x)			\
-({							\
-	unsigned long val;				\
-	unsigned long addr = x;				\
-	if ((task) == current)				\
-		val = READ_ONCE(addr);			\
-	else						\
-		val = READ_ONCE_NOCHECK(addr);		\
-	val;						\
-})
-
 extern asmlinkage void handle_exception(void);
 extern unsigned long ret_from_exception_end;
 
