@@ -620,6 +620,10 @@ typedef int (*read_func)(struct seq_file *s, void *data);
  *   Request to update pfc storm configuration
  * get_pfc_storm_config
  *   Get pfc storm config
+ * set_pfc_storm_prevention_tout
+ *   Set_pfc_storm_prevention_tout
+ * get_pfc_storm_prevention_tout
+ *   Get_pfc_storm_prevention_tout
  * set_tx_hwts_info
  *   Save information for 1588 tx packet
  * get_rx_hwts
@@ -822,6 +826,8 @@ struct hnae3_ae_ops {
 	void (*request_pfc_storm_config)(struct hnae3_handle *handle,
 					 bool enable);
 	int (*get_pfc_storm_config)(struct hnae3_handle *handle, bool *enable);
+	int (*set_pfc_storm_prevention_tout)(struct hnae3_handle *handle, u16 times);
+	int (*get_pfc_storm_prevention_tout)(struct hnae3_handle *handle, u16 *times);
 	bool (*set_tx_hwts_info)(struct hnae3_handle *handle,
 				 struct sk_buff *skb);
 	void (*get_rx_hwts)(struct hnae3_handle *handle, struct sk_buff *skb,

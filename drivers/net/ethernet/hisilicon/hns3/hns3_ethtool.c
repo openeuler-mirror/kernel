@@ -1953,6 +1953,12 @@ static int hns3_get_tunable(struct net_device *netdev,
 	case ETHTOOL_TX_COPYBREAK_BUF_SIZE:
 		*(u32 *)data = h->kinfo.tx_spare_buf_size;
 		break;
+	case ETHTOOL_PFC_PREVENTION_TOUT:
+		if (h->ae_algo->ops->get_pfc_storm_prevention_tout)
+			ret = h->ae_algo->ops->get_pfc_storm_prevention_tout(h, (u16 *)data);
+		else
+			return -EOPNOTSUPP;
+		break;
 	default:
 		ret = -EOPNOTSUPP;
 		break;
@@ -2078,6 +2084,12 @@ static int hns3_set_tunable(struct net_device *netdev,
 			netdev_info(netdev, "the active tx spare buf size is %u, due to page order\n",
 				    priv->ring->tx_spare->len);
 
+		break;
+	case ETHTOOL_PFC_PREVENTION_TOUT:
+		if (h->ae_algo->ops->set_pfc_storm_prevention_tout)
+			ret = h->ae_algo->ops->set_pfc_storm_prevention_tout(h, *(u16 *)data);
+		else
+			return -EOPNOTSUPP;
 		break;
 	default:
 		ret = -EOPNOTSUPP;
