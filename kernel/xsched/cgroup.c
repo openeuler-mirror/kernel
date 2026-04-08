@@ -801,6 +801,7 @@ static struct cftype xcu_cg_files[] = {
 	},
 	{
 		.name = "stat",
+		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = xcu_stat,
 	},
 	{
