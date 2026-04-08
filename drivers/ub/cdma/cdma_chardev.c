@@ -174,6 +174,7 @@ static int cdma_remap_pfn_range(struct cdma_file *cfile, struct vm_area_struct *
 static int cdma_mmap(struct file *file, struct vm_area_struct *vma)
 {
 	struct cdma_file *cfile = (struct cdma_file *)file->private_data;
+	unsigned long size = vma->vm_end - vma->vm_start;
 	struct cdma_umap_priv *priv;
 	int ret;
 
@@ -182,12 +183,12 @@ static int cdma_mmap(struct file *file, struct vm_area_struct *vma)
 		return -ENODEV;
 	}
 
-	if (((vma->vm_end - vma->vm_start) % PAGE_SIZE) != 0) {
-		pr_err("mmap failed, expect vm area size to be an integer multiple of page size.\n");
+	if (size != PAGE_SIZE) {
+		pr_err("expect size 0x%lx, but got 0x%lx\n", PAGE_SIZE, size);
 		return -EINVAL;
 	}
 
-	priv = kzalloc(sizeof(struct cdma_umap_priv), GFP_KERNEL);
+	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
 

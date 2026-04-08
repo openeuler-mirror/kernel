@@ -84,7 +84,7 @@ static int cdma_create_ucontext(struct cdma_ioctl_hdr *hdr,
 				  (u32)sizeof(args));
 	if (ret) {
 		dev_err(cdev->dev, "get user data failed, ret = %d.\n", ret);
-		return ret;
+		return -EFAULT;
 	}
 
 	ctx = cdma_alloc_context(cdev, false);

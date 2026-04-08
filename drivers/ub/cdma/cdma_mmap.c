@@ -10,7 +10,7 @@
 void cdma_umap_priv_init(struct cdma_umap_priv *priv,
 			struct vm_area_struct *vma)
 {
-	struct cdma_file *cfile = (struct cdma_file *)vma->vm_file->private_data;
+	struct cdma_file *cfile = vma->vm_file->private_data;
 
 	priv->vma = vma;
 	vma->vm_private_data = priv;
@@ -45,6 +45,7 @@ void cdma_unmap_vma_pages(struct cdma_file *cfile)
 		if (!mm)
 			return;
 
+		mmap_read_lock(mm);
 		mutex_lock(&cfile->umap_mutex);
 		list_for_each_entry_safe(priv, next_priv, &cfile->umaps_list, node) {
 			vma = priv->vma;
@@ -54,6 +55,7 @@ void cdma_unmap_vma_pages(struct cdma_file *cfile)
 			zap_vma_ptes(vma, vma->vm_start, vma->vm_end - vma->vm_start);
 		}
 		mutex_unlock(&cfile->umap_mutex);
+		mmap_read_unlock(mm);
 
 		mmput(mm);
 	}

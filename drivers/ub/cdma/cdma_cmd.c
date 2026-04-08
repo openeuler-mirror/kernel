@@ -12,7 +12,8 @@
 #include <ub/ubase/ubase_comm_ctrlq.h>
 #include "cdma_cmd.h"
 
-static int cdma_cmd_query_fw_resource(struct cdma_dev *cdev, struct cdma_ue_info *out_addr)
+static int cdma_cmd_query_fw_resource(struct cdma_dev *cdev,
+				      struct cdma_ue_info *out_addr)
 {
 #define CDMA_QUERY_UE_RES 0x0004
 	struct ubase_cmd_buf out = { 0 };
