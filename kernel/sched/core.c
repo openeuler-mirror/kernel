@@ -134,8 +134,8 @@ static void sched_change_qos_group(struct task_struct *tsk, struct task_group *t
  * at compile time and compiler optimization based on features default.
  */
 #define SCHED_FEAT(name, enabled)	\
-	(1UL << __SCHED_FEAT_##name) * enabled |
-const_debug unsigned long sysctl_sched_features =
+	(1ULL << __SCHED_FEAT_##name) * enabled |
+const_debug unsigned long long sysctl_sched_features =
 #include "features.h"
 	0;
 #undef SCHED_FEAT

@@ -62,7 +62,7 @@ static int sched_feat_show(struct seq_file *m, void *v)
 	int i;
 
 	for (i = 0; i < __SCHED_FEAT_NR; i++) {
-		if (!(sysctl_sched_features & (1UL << i)))
+		if (!(sysctl_sched_features & (1ULL << i)))
 			seq_puts(m, "NO_");
 		seq_printf(m, "%s ", sched_feat_names[i]);
 	}
@@ -149,14 +149,14 @@ static int sched_feat_set(char *cmp)
 		return i;
 
 	if (neg) {
-		sysctl_sched_features &= ~(1UL << i);
+		sysctl_sched_features &= ~(1ULL << i);
 		sched_feat_disable_paral(cmp);
 		sched_feat_disable(i);
 	} else {
 		if (!sched_feat_enable_paral(cmp))
 			return -EPERM;
 
-		sysctl_sched_features |= (1UL << i);
+		sysctl_sched_features |= (1ULL << i);
 		sched_feat_enable(i);
 	}
 
