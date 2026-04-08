@@ -38,11 +38,16 @@ static int ipourma_fill_info(struct sk_buff *skb, const struct net_device *dev)
 {
 	struct ipourma_dev_priv *priv = netdev_priv(dev);
 
-	if (IS_ERR_OR_NULL(skb) || nla_put_u32(skb, IFLA_IPOURMA_OP_MODE, priv->urma_op_mode) ||
+	if (IS_ERR_OR_NULL(skb)) {
+		pr_warn_ratelimited("fill_info: skb is NULL");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(skb, IFLA_IPOURMA_OP_MODE, priv->urma_op_mode) ||
 		nla_put_u32(skb, IFLA_IPOURMA_TRANSPORT_MODE, priv->urma_transport_mode) ||
 		nla_put_u32(skb, IFLA_IPOURMA_MAX_SEND_SGE, priv->max_send_sge) ||
 		nla_put_u32(skb, IFLA_IPOURMA_XMTU, priv->urma_mtu)) {
-		pr_err("fill_info: put attribute failed\n");
+		netdev_dbg(dev, "fill_info: put attribute failed");
 		return -EMSGSIZE;
 	}
 
