@@ -278,7 +278,7 @@ int udma_id_alloc_auto_grow(struct udma_dev *udma_dev, struct udma_ida *ida_tabl
 		if (id < 0) {
 			spin_unlock(&ida_table->lock);
 			dev_err(udma_dev->dev, "failed to alloc id, ret = %d.\n", id);
-			return id;
+			return id == -ENOSPC ? -ENOSR : id;
 		}
 	}
 

@@ -211,7 +211,7 @@ int udma_alloc_jetty_id(struct udma_dev *udma_dev, uint32_t *idx,
 		if (ret < 0) {
 			ret = ida_alloc_range(ida, min, max, GFP_KERNEL);
 			if (ret < 0)
-				return ret;
+				return ret == -ENOSPC ? -ENOSR : ret;
 		}
 
 		*idx = (uint32_t)ret;
@@ -661,14 +661,14 @@ struct ubcore_jetty *udma_create_jetty(struct ubcore_device *ub_dev, struct ubco
 
 	udma_jetty = kzalloc(sizeof(*udma_jetty), GFP_KERNEL);
 	if (!udma_jetty)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	ret = udma_active_jetty_detail(udma_dev, udma_jetty, cfg, udata);
 	if (ret) {
 		dev_err(udma_dev->dev, "active jetty detail failed, ret = %d.\n", ret);
 
 		kfree(udma_jetty);
-		return NULL;
+		return ERR_PTR(ret);
 	}
 
 	udma_jetty->sq.activated = true;
@@ -1493,16 +1493,16 @@ struct ubcore_tjetty *udma_import_jetty_ex(struct ubcore_device *ub_dev,
 		dev_err(udma_dev->dev,
 			"the jetty of the type %u cannot be imported in exp.\n",
 			cfg->type);
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	ret = udma_check_jetty_grp_info(cfg, udma_dev);
 	if (ret)
-		return NULL;
+		return ERR_PTR(ret);
 
 	tjetty = kzalloc(sizeof(*tjetty), GFP_KERNEL);
 	if (!tjetty)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	if (cfg->flag.bs.token_policy != UBCORE_TOKEN_NONE) {
 		tjetty->token_value = cfg->token_value.token;

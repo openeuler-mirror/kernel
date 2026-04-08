@@ -611,12 +611,12 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *ub_dev,
 
 	if (cfg->trans_mode == UBCORE_TP_RC) {
 		dev_err(dev->dev, "jfs not support RC transmode.\n");
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	jfs = kcalloc(1, sizeof(*jfs), GFP_KERNEL);
 	if (!jfs)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	ret = udma_alloc_jfs_sq(dev, cfg, jfs, udata);
 	if (ret) {
@@ -645,7 +645,7 @@ err_create_hw_jfs:
 	udma_free_jfs_sq(dev, jfs);
 err_alloc_sq:
 	kfree(jfs);
-	return NULL;
+	return ERR_PTR(ret);
 }
 
 static void udma_free_jfs_detail(struct ubcore_jfs *jfs)

@@ -298,7 +298,7 @@ static int udma_create_stars_jfc(struct udma_dev *dev,
 	ret = udma_id_alloc_auto_grow(dev, &dev->jfc_table.ida_table, &jfc->jfcn);
 	if (ret) {
 		dev_err(dev->dev, "failed to alloc id for stars JFC.\n");
-		return -ENOMEM;
+		return ret;
 	}
 
 	udma_init_jfc_param(cfg, jfc);
@@ -358,8 +358,9 @@ static int udma_alloc_jfc_id(struct udma_dev *udma_dev, uint32_t *idx, struct ud
 	if (ret < 0) {
 		ret = ida_alloc_range(ida, min, max, GFP_ATOMIC);
 		if (ret < 0) {
+			spin_unlock(&udma_dev->jfc_table.ida_table.lock);
 			dev_err(udma_dev->dev, "ida alloc failed %d.\n", ret);
-			return ret;
+			return ret == -ENOSPC ? -ENOSR : ret;
 		}
 	}
 
@@ -429,7 +430,7 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *ubcore_dev,
 
 	jfc = kzalloc(sizeof(struct udma_jfc), GFP_KERNEL);
 	if (!jfc)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	if (udata) {
 		ret = udma_get_cmd_from_user(&ucmd, dev, udata, jfc);
@@ -445,7 +446,8 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *ubcore_dev,
 		goto err_get_cmd;
 
 	if (jfc->mode == UDMA_STARS_JFC_TYPE || jfc->mode == UDMA_CCU_JFC_TYPE) {
-		if (udma_create_stars_jfc(dev, jfc, cfg, udata, &ucmd))
+		ret = udma_create_stars_jfc(dev, jfc, cfg, udata, &ucmd);
+		if (ret)
 			goto err_get_cmd;
 		return &jfc->base;
 	}
@@ -494,7 +496,7 @@ err_store_jfcn:
 	udma_id_free(&dev->jfc_table.ida_table, jfc->jfcn);
 err_get_cmd:
 	kfree(jfc);
-	return NULL;
+	return ERR_PTR(ret);
 }
 
 int udma_alloc_jfc(struct ubcore_device *ubcore_dev,
