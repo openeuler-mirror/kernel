@@ -660,6 +660,10 @@ enum hnae3_unic_addr_type {
  *   Request to update pfc storm configuration
  * get_pfc_storm_config
  *   Get pfc storm config
+ * set_pfc_storm_prevention_tout
+ *   Set_pfc_storm_prevention_tout
+ * get_pfc_storm_prevention_tout
+ *   Get_pfc_storm_prevention_tout
  * query_fd_qb_state
  *   Query whether hw queue bonding enabled
  * set_tx_hwts_info
@@ -862,6 +866,8 @@ struct hnae3_ae_ops {
 	void (*request_pfc_storm_config)(struct hnae3_handle *handle,
 					 bool enable);
 	int (*get_pfc_storm_config)(struct hnae3_handle *handle, bool *enable);
+	int (*set_pfc_storm_prevention_tout)(struct hnae3_handle *handle, u16 times);
+	int (*get_pfc_storm_prevention_tout)(struct hnae3_handle *handle, u16 *times);
 	bool (*query_fd_qb_state)(struct hnae3_handle *handle);
 	bool (*set_tx_hwts_info)(struct hnae3_handle *handle,
 				 struct sk_buff *skb);
