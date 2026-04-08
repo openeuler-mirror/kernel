@@ -470,6 +470,9 @@ static int uburma_get_async_event(struct uburma_jfae_uobj *jfae,
 	if (ret < 0)
 		return ret;
 
+	if (event_cnt == 0 || list_empty(&event_list))
+		return -EIO;
+
 	event = list_first_entry(&event_list, struct uburma_jfe_event, node);
 	if (!event)
 		return -EIO;

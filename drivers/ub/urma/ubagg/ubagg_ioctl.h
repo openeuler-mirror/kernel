@@ -151,6 +151,7 @@ struct ubagg_set_topo_info {
 struct ubagg_create_dev_arg {
 	struct {
 		union ubcore_eid agg_eid;
+		char dev_name[UBAGG_MAX_DEV_NAME_LEN];
 	} in;
 };
 

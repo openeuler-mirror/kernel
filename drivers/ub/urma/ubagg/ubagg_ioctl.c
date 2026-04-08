@@ -25,10 +25,7 @@
 
 #define UBAGG_DEVICE_MAX_EID_CNT 128
 #define UBAGG_MAX_BONDING_DEV_NUM 1024
-#define UBAGG_DEV_NAME_PREFIX "bonding_dev_"
-#define MAX_NUM_LEN 11
 #define BITMAP_OFFSET 1025
-#define BASE_DECIMAL 10
 
 static LIST_HEAD(g_ubagg_dev_list);
 static DEFINE_SPINLOCK(g_ubagg_dev_list_lock);
@@ -84,88 +81,6 @@ struct ubagg_dev_name_eid_arr {
 static struct ubagg_dev_name_eid_arr
 	g_name_eid_arr[UBAGG_MAX_BONDING_DEV_NUM] = { 0 };
 static DEFINE_MUTEX(g_name_eid_arr_lock);
-
-static bool g_device_id_has_use[UBAGG_MAX_BONDING_DEV_NUM] = { 0 };
-static DEFINE_MUTEX(g_device_id_lock);
-
-static int find_bond_device_id(void)
-{
-	int use_id, i;
-
-	mutex_lock(&g_device_id_lock);
-	for (i = 0; i < UBAGG_MAX_BONDING_DEV_NUM; i++) {
-		if (g_device_id_has_use[i] == false) {
-			use_id = i;
-			g_device_id_has_use[i] = true;
-			break;
-		}
-	}
-	mutex_unlock(&g_device_id_lock);
-	if (i == UBAGG_MAX_BONDING_DEV_NUM) {
-		ubagg_log_err("no free device id.\n");
-		return -1;
-	}
-	return use_id;
-}
-
-static void release_bond_device_id(int id)
-{
-	mutex_lock(&g_device_id_lock);
-	g_device_id_has_use[id] = false;
-	mutex_unlock(&g_device_id_lock);
-}
-
-static int release_bond_device_id_with_name(const char *str)
-{
-	const char *underscore_pos;
-	int id;
-	int ret;
-
-	if (!str) {
-		ubagg_log_err("name str is null\n");
-		return -EINVAL;
-	}
-
-	underscore_pos = strrchr(str, '_');
-	if (!underscore_pos) {
-		ubagg_log_err("invalid dev name: %s\n", str);
-		return -EINVAL;
-	}
-	if (underscore_pos[1] == '\0') {
-		ubagg_log_err("dev name is invalid\n");
-		return -EINVAL;
-	}
-	ret = kstrtoint(underscore_pos + 1, BASE_DECIMAL, &id);
-	if (ret) {
-		ubagg_log_err("str to int failed\n");
-		return ret;
-	}
-	release_bond_device_id(id);
-	return 0;
-}
-
-static char *generate_master_dev_name(void)
-{
-	char *name = NULL;
-	int cur_id;
-	int max_length;
-
-	cur_id = find_bond_device_id();
-	if (cur_id < 0) {
-		ubagg_log_err("no free device id.\n");
-		return NULL;
-	}
-
-	max_length = strlen(UBAGG_DEV_NAME_PREFIX) + MAX_NUM_LEN;
-	name = kmalloc_array(max_length, sizeof(char), GFP_KERNEL);
-	if (name == NULL) {
-		release_bond_device_id(cur_id);
-		ubagg_log_err("malloc master dev name failed.\n");
-		return NULL;
-	}
-	(void)snprintf(name, max_length, "%s%d", UBAGG_DEV_NAME_PREFIX, cur_id);
-	return name;
-}
 
 static bool ubagg_dev_exists(char *dev_name)
 {
@@ -1536,7 +1451,7 @@ static int ubagg_create_dev(struct ubagg_create_dev_arg *arg)
 	struct ubagg_topo_agg_dev *agg_dev;
 	struct ubagg_topo_node *cur_node;
 	struct ubagg_topo_map *topo_map;
-	char *master_dev_name = NULL;
+	uint32_t dev_name_len = 0;
 	int ret;
 	int i;
 
@@ -1545,9 +1460,21 @@ static int ubagg_create_dev(struct ubagg_create_dev_arg *arg)
 		return -EINVAL;
 	}
 
+	dev_name_len = strnlen(arg->in.dev_name, UBAGG_MAX_DEV_NAME_LEN);
+	if (dev_name_len == 0 || dev_name_len >= UBAGG_MAX_DEV_NAME_LEN) {
+		ubagg_log_err("dev_name is invalid\n");
+		return -EINVAL;
+	}
+
 	if (has_add_dev_by_agg_eid(arg->in.agg_eid.raw)) {
 		ubagg_log_err("has add dev by aggr eid: " EID_FMT "\n",
 				   EID_RAW_ARGS(arg->in.agg_eid.raw));
+		return -EEXIST;
+	}
+
+	if (ubagg_dev_exists(arg->in.dev_name)) {
+		ubagg_log_err("ubagg dev already exist, name:%s\n",
+			      arg->in.dev_name);
 		return -EEXIST;
 	}
 
@@ -1575,26 +1502,18 @@ static int ubagg_create_dev(struct ubagg_create_dev_arg *arg)
 		return -ENODEV;
 	}
 
-	master_dev_name = generate_master_dev_name();
-	if (master_dev_name == NULL) {
-		ubagg_log_err("generate master dev name failed\n");
-		return -ENOMEM;
-	}
 	(void)snprintf(uvs_arg.master_dev_name, UBAGG_MAX_DEV_NAME_LEN, "%s",
-				master_dev_name);
+				arg->in.dev_name);
 
 	fill_add_dev_cfg(agg_dev, &uvs_arg);
 
 	ret = add_dev_by_uvs(&uvs_arg);
 	if (ret != 0) {
-		release_bond_device_id_with_name(master_dev_name);
-		kfree(master_dev_name);
 		ubagg_log_err("add ubagg dev by uvs failed, ret:%d\n", ret);
 		return ret;
 	}
 
-	find_add_master_dev(arg->in.agg_eid.raw, master_dev_name);
-	kfree(master_dev_name);
+	find_add_master_dev(arg->in.agg_eid.raw, arg->in.dev_name);
 	return 0;
 }
 
@@ -1756,7 +1675,6 @@ static int ubagg_delete_dev(const struct ubagg_delete_dev_arg *arg)
 	rmv_dev_from_list(dev);
 	ubcore_unregister_device(&dev->ub_dev);
 	uninit_ubagg_res(dev);
-	release_bond_device_id_with_name(dev->master_dev_name);
 
 	ubagg_dev_ref_put(dev);
 

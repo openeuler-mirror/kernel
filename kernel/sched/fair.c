@@ -7850,6 +7850,14 @@ static int wake_wide(struct task_struct *p)
 	unsigned int slave = p->wakee_flips;
 	int factor = __this_cpu_read(sd_llc_size);
 
+	/* Scale factor to physical-core count to account for SMT interference. */
+	if (sched_feat(WA_SMT)) {
+		int smt_width = cpumask_weight(cpu_smt_mask(smp_processor_id()));
+
+		if (smt_width > 1)
+			factor = DIV_ROUND_UP(factor, smt_width);
+	}
+
 	if (master < slave)
 		swap(master, slave);
 	if (slave < factor || master < slave * factor)

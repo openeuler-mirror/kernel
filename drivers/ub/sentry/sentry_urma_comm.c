@@ -1073,6 +1073,7 @@ static struct ubcore_device *match_dev_by_local_eid(const union ubcore_eid *eid,
 {
 	int cnt = 0;
 	struct ubcore_dev_list *dev_node;
+	struct ubcore_eid_info *eid_list;
 
 	list_for_each_entry(dev_node, &ub_dev_list_head, list) {
 		struct ubcore_eid_info *eid_info = ubcore_get_eid_list(dev_node->dev, &cnt);
@@ -1083,6 +1084,7 @@ static struct ubcore_device *match_dev_by_local_eid(const union ubcore_eid *eid,
 			continue;
 		}
 
+		eid_list = eid_info;
 		/* One device may have multiple EIDs */
 		for (i = 0; i < cnt; i++) {
 			pr_info("eid_info->eid: %llx, %x, %x, try to match\n",
@@ -1093,10 +1095,12 @@ static struct ubcore_device *match_dev_by_local_eid(const union ubcore_eid *eid,
 				pr_info("Match device %s, use it to send/recv data\n",
 					dev_node->dev->dev_name);
 				*eid_index = eid_info->eid_index;
+				ubcore_free_eid_list(eid_list);
 				return dev_node->dev;
 			}
 			eid_info++;
 		}
+		ubcore_free_eid_list(eid_list);
 	}
 
 	pr_err("Cannot find dev by eid: %llx, %x, %x\n",

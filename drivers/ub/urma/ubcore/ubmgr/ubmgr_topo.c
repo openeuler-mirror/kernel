@@ -102,12 +102,15 @@ static void ubmgr_notify_event(enum ubmgr_event_type event_type,
 {
 	struct ubmgr_event_notifier *iter;
 	unsigned long flags;
+	ubmgr_event_cb_t local_cb;
 
 	spin_lock_irqsave(&g_ubmgr_notifier_list, flags);
 	list_for_each_entry(iter, &g_ubmgr_event_notifier_list, node) {
-		iter->cb(event_type, event_data, NULL);
+		local_cb = iter->cb;
 	}
 	spin_unlock_irqrestore(&g_ubmgr_notifier_list, flags);
+
+	local_cb(event_type, event_data, NULL);
 }
 
 void ubmgr_notify_mgmt_event(struct ubcore_mgmt_event *event)

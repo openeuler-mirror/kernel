@@ -225,7 +225,7 @@ bool ub_memory_validate_pa(u32 scna, u64 pa_start, u64 pa_end, bool cacheable)
 		return mem_device->ops->mem_validate_pa(ubc, pa_start, pa_end,
 							cacheable);
 
-	dev_warn(mem_device->dev, "ub memory decoder ops mem_drain_state is null.\n");
+	dev_warn(mem_device->dev, "ub memory decoder ops memory_validate_pa is null.\n");
 	return false;
 }
 EXPORT_SYMBOL_GPL(ub_memory_validate_pa);

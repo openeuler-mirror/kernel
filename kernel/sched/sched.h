@@ -2284,7 +2284,7 @@ enum {
  * To support run-time toggling of sched features, all the translation units
  * (but core.c) reference the sysctl_sched_features defined in core.c.
  */
-extern const_debug unsigned long sysctl_sched_features;
+extern const_debug unsigned long long sysctl_sched_features;
 
 #ifdef CONFIG_JUMP_LABEL
 #define SCHED_FEAT(name, enabled)					\
@@ -2301,7 +2301,7 @@ extern struct static_key sched_feat_keys[__SCHED_FEAT_NR];
 
 #else /* !CONFIG_JUMP_LABEL */
 
-#define sched_feat(x) (sysctl_sched_features & (1UL << __SCHED_FEAT_##x))
+#define sched_feat(x) (sysctl_sched_features & (1ULL << __SCHED_FEAT_##x))
 
 #endif /* CONFIG_JUMP_LABEL */
 
@@ -2313,13 +2313,13 @@ extern struct static_key sched_feat_keys[__SCHED_FEAT_NR];
  * features default.
  */
 #define SCHED_FEAT(name, enabled)	\
-	(1UL << __SCHED_FEAT_##name) * enabled |
-static const_debug __maybe_unused unsigned int sysctl_sched_features =
+	(1ULL << __SCHED_FEAT_##name) * enabled |
+static const_debug __maybe_unused unsigned long long sysctl_sched_features =
 #include "features.h"
 	0;
 #undef SCHED_FEAT
 
-#define sched_feat(x) !!(sysctl_sched_features & (1UL << __SCHED_FEAT_##x))
+#define sched_feat(x) (!!(sysctl_sched_features & (1ULL << __SCHED_FEAT_##x)))
 
 #endif /* SCHED_DEBUG */
 
