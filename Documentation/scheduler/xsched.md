@@ -64,11 +64,11 @@ CONFIG_CGROUP_XCU=y
 # 修改内核引导文件，根据实际情况编辑
 vim /etc/grub2-efi.cfg
 
-# 在XSched内核新增 cmdline 配置，关闭驱动签名校验、开启cgroup-v2
-module.sig_enforce=0 systemd.unified_cgroup_hierarchy=1 cgroup_no_v1=all
+# 在XSched内核新增 cmdline 配置，关闭驱动签名校验、开启cgroup-v2，使能 xcu cgroup 子系统
+module.sig_enforce=0 cgroup_no_v1=all xcu=enable
 ```
 
-保存引导文件后，重启切换内核
+保存引导文件后，重启切换内核，**注意！！！，xcu 子系统仅支持 cgroup-v2**
 
 ### 1.3 重编驱动
 
