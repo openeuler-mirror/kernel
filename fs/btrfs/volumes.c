@@ -6541,11 +6541,12 @@ static int read_one_chunk(struct btrfs_fs_info *fs_info, struct btrfs_key *key,
 				add_missing_dev(fs_info->fs_devices, devid,
 						uuid);
 			if (IS_ERR(map->stripes[i].dev)) {
+				ret = PTR_ERR(map->stripes[i].dev);
 				free_extent_map(em);
 				btrfs_err(fs_info,
 					"failed to init missing dev %llu: %ld",
 					devid, PTR_ERR(map->stripes[i].dev));
-				return PTR_ERR(map->stripes[i].dev);
+				return ret;
 			}
 			btrfs_report_missing_device(fs_info, devid, uuid, false);
 		}
