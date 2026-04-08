@@ -1607,6 +1607,9 @@ static void prepare_playback_urb(struct snd_usb_substream *subs,
 		else
 			counts = snd_usb_endpoint_next_packet_size(ep);
 
+		if (counts < 0 ||
+		    (frames + counts) * ep->stride > ctx->buffer_size)
+			break;
 		/* set up descriptor */
 		urb->iso_frame_desc[i].offset = frames * ep->stride;
 		urb->iso_frame_desc[i].length = counts * ep->stride;
