@@ -134,9 +134,6 @@ struct sentry_urma_context {
 	int server_eid_num_configured;
 	bool is_panic_mode;
 
-	char *kbuf; /* server_buf client_jetty_id */
-	char *server_buf_part;
-	char *client_jetty_id_part;
 	char *client_info_buf; /* for proc_read */
 	bool is_valid_client_info;
 
@@ -379,15 +376,6 @@ static struct ubcore_client sentry_ubcore_client = {
  */
 void free_global_char(void)
 {
-	kfree(sentry_urma_ctx.kbuf);
-	sentry_urma_ctx.kbuf = NULL;
-
-	kfree(sentry_urma_ctx.server_buf_part);
-	sentry_urma_ctx.server_buf_part = NULL;
-
-	kfree(sentry_urma_ctx.client_jetty_id_part);
-	sentry_urma_ctx.client_jetty_id_part = NULL;
-
 	kfree(sentry_urma_ctx.client_info_buf);
 	sentry_urma_ctx.client_info_buf = NULL;
 
@@ -415,24 +403,6 @@ void free_global_char(void)
  */
 int init_global_char(void)
 {
-	sentry_urma_ctx.kbuf = kzalloc(CLIENT_INFO_MAX_LEN, GFP_KERNEL);
-	if (!sentry_urma_ctx.kbuf) {
-		pr_err("kzalloc kbuf failed\n");
-		goto err_free;
-	}
-
-	sentry_urma_ctx.server_buf_part = kzalloc(SERVER_EID_PART_MAX_LEN, GFP_KERNEL);
-	if (!sentry_urma_ctx.server_buf_part) {
-		pr_err("kzalloc server_buf_part failed\n");
-		goto err_free;
-	}
-
-	sentry_urma_ctx.client_jetty_id_part = kzalloc(JETTY_ID_MAX_LEN, GFP_KERNEL);
-	if (!sentry_urma_ctx.client_jetty_id_part) {
-		pr_err("kzalloc client_jetty_id_part failed\n");
-		goto err_free;
-	}
-
 	sentry_urma_ctx.client_info_buf = kzalloc(CLIENT_INFO_BUF_MAX_LEN, GFP_KERNEL);
 	if (!sentry_urma_ctx.client_info_buf) {
 		pr_err("kzalloc client_info_buf failed\n");
@@ -1381,6 +1351,9 @@ static ssize_t proc_client_info_write(struct file *file, const char __user *user
 	int server_eid_valid_num[MAX_DIE_NUM] = {0};
 	uint32_t client_jetty_id;
 	int i;
+	char *kbuf; /* server_buf, save service eid info and client_jetty_id info */
+	char *server_buf_part; /* save service eid strings */
+	char *client_jetty_id_part; /* save jetty id */
 
 	if (count > CLIENT_INFO_MAX_LEN - 1) {
 		pr_err("invalid server eid info, max len %d, actual %lu\n",
@@ -1388,34 +1361,69 @@ static ssize_t proc_client_info_write(struct file *file, const char __user *user
 		return -EINVAL;
 	}
 
-	if (copy_from_user(sentry_urma_ctx.kbuf, user_buf, count)) {
-		pr_err("failed parse client info input: copy_from_user failed\n");
-		return -EFAULT;
+	kbuf = kzalloc(CLIENT_INFO_MAX_LEN, GFP_KERNEL);
+	if (!kbuf)
+		return -ENOMEM;
+
+	server_buf_part = kzalloc(SERVER_EID_PART_MAX_LEN, GFP_KERNEL);
+	if (!server_buf_part) {
+		kfree(kbuf);
+		return -ENOMEM;
 	}
-	sentry_urma_ctx.kbuf[count] = '\0';
-	pr_info("proc_client_info_write kbuf is %s\n", sentry_urma_ctx.kbuf);
+
+	client_jetty_id_part = kzalloc(JETTY_ID_MAX_LEN, GFP_KERNEL);
+	if (!client_jetty_id_part) {
+		kfree(kbuf);
+		kfree(server_buf_part);
+		return -ENOMEM;
+	}
+
+	if (copy_from_user(kbuf, user_buf, count)) {
+		pr_err("failed parse client info input: copy_from_user failed\n");
+		ret = -EFAULT;
+		goto free_client_info;
+	}
+	kbuf[count] = '\0';
+	pr_info("%s kbuf is %s\n", __func__, kbuf);
 
 	/*
 	 * Parse server EID part and client jetty ID part
 	 * ((39 + 1) * 32 - 1) * 2 + 1 = 2559
 	 */
-	ret = sscanf(sentry_urma_ctx.kbuf, "%2559[^ ] %6[^\n]%n",
-		     sentry_urma_ctx.server_buf_part,
-		     sentry_urma_ctx.client_jetty_id_part,
+	ret = sscanf(kbuf, "%2559[^ ] %6[^\n]%n",
+		     server_buf_part,
+		     client_jetty_id_part,
 		     &n);
 	if (ret != 2) {
-		pr_err("Invalid msg str format and parse client info failed! str [%s]\n",
-		       sentry_urma_ctx.kbuf);
-		return -EINVAL;
+		pr_err("Invalid msg str format and parse client info failed! str [%s]\n", kbuf);
+		ret = -EINVAL;
+		goto free_client_info;
 	}
 
 	/* Process server EIDs */
-	ret = process_server_eid_str(sentry_urma_ctx.server_buf_part,
+	ret = process_server_eid_str(server_buf_part,
 				     server_ub_eid_tmp, server_eid_valid_num);
 	if (ret)
-		return ret;
+		goto free_client_info;
 
-	/* Determine number of configured server EIDs */
+	/* Process client jetty ID */
+	ret = kstrtou32(client_jetty_id_part, 10, &client_jetty_id);
+	if (ret < 0) {
+		pr_err("Invalid format for client_jetty_id, str %s\n", client_jetty_id_part);
+		ret = -EINVAL;
+		goto free_client_info;
+	}
+
+	if (client_jetty_id < MIN_JETTY_ID || client_jetty_id > MAX_JETTY_ID) {
+		pr_err("client_jetty_id %u out of range [%d, %d]\n",
+		       client_jetty_id, MIN_JETTY_ID, MAX_JETTY_ID);
+		ret = -EINVAL;
+		goto free_client_info;
+	}
+	pr_info("client_jetty_id is %u\n", client_jetty_id);
+
+	/* Update global configuration */
+	urma_mutex_lock_op(URMA_LOCK);
 	for (i = 0; i < MAX_DIE_NUM; i++) {
 		if (server_eid_valid_num[i] == 0)
 			break;
@@ -1423,29 +1431,14 @@ static ssize_t proc_client_info_write(struct file *file, const char __user *user
 	}
 
 	if (sentry_urma_ctx.server_eid_num_configured >
-	    sentry_urma_ctx.local_eid_num_configured) {
+			sentry_urma_ctx.local_eid_num_configured) {
 		pr_err("server eid num %d > local eid num %d\n",
-		       sentry_urma_ctx.server_eid_num_configured,
-		       sentry_urma_ctx.local_eid_num_configured);
-		return -EINVAL;
+				sentry_urma_ctx.server_eid_num_configured,
+				sentry_urma_ctx.local_eid_num_configured);
+		ret = -EINVAL;
+		urma_mutex_lock_op(URMA_UNLOCK);
+		goto free_client_info;
 	}
-
-	/* Process client jetty ID */
-	ret = kstrtou32(sentry_urma_ctx.client_jetty_id_part, 10, &client_jetty_id);
-	if (ret < 0) {
-		pr_err("Invalid format for client_jetty_id, str %s\n",
-		       sentry_urma_ctx.client_jetty_id_part);
-		return -EINVAL;
-	}
-
-	if (client_jetty_id < MIN_JETTY_ID || client_jetty_id > MAX_JETTY_ID) {
-		pr_err("client_jetty_id %u out of range [%d, %d]\n",
-		       client_jetty_id, MIN_JETTY_ID, MAX_JETTY_ID);
-		return -EINVAL;
-	}
-	pr_info("client_jetty_id is %u\n", client_jetty_id);
-
-	/* Update global configuration */
 	sentry_urma_ctx.is_valid_client_info = true;
 	sentry_urma_ctx.client_jetty_id = client_jetty_id;
 
@@ -1454,15 +1447,23 @@ static ssize_t proc_client_info_write(struct file *file, const char __user *user
 		       sizeof(union ubcore_eid) * MAX_NODE_NUM);
 		sentry_urma_dev[i].server_eid_valid_num = server_eid_valid_num[i];
 	}
+	urma_mutex_lock_op(URMA_UNLOCK);
 
 	/* Import URMA resources */
 	ret = import();
 	if (ret != 0) {
 		pr_err("ubcore import failed\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto free_client_info;
 	}
 
-	return count;
+	ret = count;
+
+free_client_info:
+	kfree(kbuf);
+	kfree(server_buf_part);
+	kfree(client_jetty_id_part);
+	return ret;
 }
 
 /**
