@@ -29,7 +29,9 @@ SUBSYS(io)
 SUBSYS(memory)
 #endif
 
-#if IS_ENABLED(CONFIG_CGROUP_DEVICE)
+#if IS_ENABLED(CONFIG_CGROUP_DMEM)
+SUBSYS(dmem)
+#elif IS_ENABLED(CONFIG_CGROUP_DEVICE)
 SUBSYS(devices)
 #endif
 
@@ -65,10 +67,6 @@ SUBSYS(rdma)
 
 #if IS_ENABLED(CONFIG_CGROUP_MISC)
 SUBSYS(misc)
-#endif
-
-#if IS_ENABLED(CONFIG_CGROUP_DMEM)
-SUBSYS(dmem)
 #endif
 
 /*

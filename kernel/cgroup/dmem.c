@@ -17,6 +17,75 @@
 #include <linux/refcount.h>
 #include <linux/slab.h>
 
+#ifdef CONFIG_CGROUP_DEVICE
+#include <linux/device_cgroup.h>
+#endif
+
+static struct cgroup_subsys_state *
+dmem_devices_compat_css_alloc(struct cgroup_subsys_state *parent_css);
+static void dmem_devices_compat_css_free(struct cgroup_subsys_state *css);
+static int dmem_devices_compat_css_online(struct cgroup_subsys_state *css);
+static void dmem_devices_compat_css_offline(struct cgroup_subsys_state *css);
+
+/**
+ * Parse the "dmem=" kernel command line parameter.
+ *
+ * Usage:
+ *   dmem=enable → enable dmem_cgrp_subsys
+ *   Otherwise  → enable devices_cgrp_subsys
+ *
+ * Returns:
+ *   1 (handled), 0 (not handled)
+ */
+static DEFINE_STATIC_KEY_FALSE(dmem_cgroup_key);
+
+static int __init dmem_setup(char *str)
+{
+	if (!str)
+		return 0;
+
+	if (strcmp(str, "enable") == 0)
+		static_branch_enable(&dmem_cgroup_key);
+
+	return 1;
+}
+__setup("dmem=", dmem_setup);
+
+bool dmem_cgroup_enabled(void)
+{
+	return static_branch_unlikely(&dmem_cgroup_key);
+}
+
+/**
+ * dmem_cgroup_check_compat - Verify Dmem mode matches the cgroup hierarchy version.
+ *
+ * Validates that the Dmem enablement state matches the active cgroup hierarchy
+ * version when CONFIG_CGROUP_DMEM and CONFIG_CGROUP_DEVICE are both enabeld.
+ * The compatibility rules are strictly defined as:
+ *
+ * 1. Dmem Enabled (dmem=enable): Requires cgroup v2.
+ * 2. Dmem Disabled (default):    Requires cgroup v1.
+ *
+ * Return: true if compatible, false otherwise (with a warning logged).
+ */
+static bool dmem_cgroup_check_compat(void)
+{
+#ifdef CONFIG_CGROUP_DEVICE
+	bool dmem_mode = dmem_cgroup_enabled();
+
+	if (dmem_mode != cgroup_subsys_on_dfl(dmem_cgrp_subsys)) {
+		pr_warn("DMEM cgrp is incompatible with the cgroup version\n");
+		return false;
+	}
+#endif
+
+	/*
+	 * With only CONFIG_CGROUP_DMEM enabled, dmem is toggled via the command line.
+	 * Skip the cgroup version check as it is not required.
+	 */
+	return true;
+}
+
 struct dmem_cgroup_region {
 	/**
 	 * @ref: References keeping the region alive.
@@ -877,9 +946,80 @@ static struct cftype files[] = {
 };
 
 struct cgroup_subsys dmem_cgrp_subsys = {
-	.css_alloc	= dmemcs_alloc,
-	.css_free	= dmemcs_free,
-	.css_offline	= dmemcs_offline,
+	.css_alloc	= dmem_devices_compat_css_alloc,
+	.css_free	= dmem_devices_compat_css_free,
+	.css_offline	= dmem_devices_compat_css_offline,
+	.css_online	= dmem_devices_compat_css_online,
+#ifdef CONFIG_CGROUP_DEVICE
+	.legacy_cftypes	= dev_cgroup_files,
+	.legacy_name	= "devices",
+#else
 	.legacy_cftypes	= files,
+#endif
 	.dfl_cftypes	= files,
 };
+
+/**
+ * The hooks of a cgroup_subsys are only invoked after a successful allocation.
+ * Therefore, we must handle all error conditions during the alloc phase to
+ * prevent invalid usage later.
+ *
+ * 1. If both CONFIG_CGROUP_DMEM and CONFIG_CGROUP_DEVICE are enabled:
+ *    We verify that the dmem cmdline and cgroup version are compatible.
+ *    If they do not match, return -EPERM.
+ *
+ * 2. If only CONFIG_CGROUP_DMEM is enabled:
+ *    We verify the dmem cmdline. If the dmem is not enabled,
+ *    return -EPERM to restrict access.
+ */
+static struct cgroup_subsys_state *
+dmem_devices_compat_css_alloc(struct cgroup_subsys_state *parent_css)
+{
+	/* Skip allocation if DMEM cmdline mismatches the cgroup version. */
+	if (parent_css && !dmem_cgroup_check_compat())
+		return ERR_PTR(-EPERM);
+
+	if (dmem_cgroup_enabled())
+		return dmemcs_alloc(parent_css);
+
+#ifdef CONFIG_CGROUP_DEVICE
+	return devcgroup_css_alloc(parent_css);
+#else /* CONFIG_CGROUP_DEVICE=n dmem=disable */
+	if (!parent_css)
+		return dmemcs_alloc(parent_css);
+	else
+		return ERR_PTR(-EPERM);
+#endif
+}
+
+static void dmem_devices_compat_css_free(struct cgroup_subsys_state *css)
+{
+	if (dmem_cgroup_enabled())
+		return dmemcs_free(css);
+
+#ifdef CONFIG_CGROUP_DEVICE
+	return devcgroup_css_free(css);
+#endif
+}
+
+static int dmem_devices_compat_css_online(struct cgroup_subsys_state *css)
+{
+	if (dmem_cgroup_enabled())
+		return 0;
+
+#ifdef CONFIG_CGROUP_DEVICE
+	return devcgroup_online(css);
+#else
+	return 0;
+#endif
+}
+
+static void dmem_devices_compat_css_offline(struct cgroup_subsys_state *css)
+{
+	if (dmem_cgroup_enabled())
+		return dmemcs_offline(css);
+
+#ifdef CONFIG_CGROUP_DEVICE
+	return devcgroup_offline(css);
+#endif
+}

@@ -10,6 +10,9 @@
 #define DEVCG_DEV_CHAR  2
 #define DEVCG_DEV_ALL   4  /* this represents all devices */
 
+#ifdef CONFIG_CGROUP_DMEM
+#include <linux/cgroup-defs.h>
+#endif
 
 #if defined(CONFIG_CGROUP_DEVICE) || defined(CONFIG_CGROUP_BPF)
 int devcgroup_check_permission(short type, u32 major, u32 minor,
@@ -64,4 +67,21 @@ static inline int devcgroup_inode_permission(struct inode *inode, int mask)
 { return 0; }
 static inline int devcgroup_inode_mknod(int mode, dev_t dev)
 { return 0; }
+#endif
+
+/*
+ * When CONFIG_CGROUP_DMEM is enabled, cpuacct_cgrp_subsys and dmem_cgrp_subsys
+ * share the same set of cgroup_subsys hook functions. Consequently, the hooks for
+ * cpuacct_cgrp_subsys must be exposed externally to allow linkage with the dmem
+ * cgroup_subsys.
+ */
+#ifdef CONFIG_CGROUP_DMEM
+#define devices_cgrp_id dmem_cgrp_id
+
+int devcgroup_online(struct cgroup_subsys_state *css);
+void devcgroup_offline(struct cgroup_subsys_state *css);
+struct cgroup_subsys_state *
+devcgroup_css_alloc(struct cgroup_subsys_state *parent_css);
+void devcgroup_css_free(struct cgroup_subsys_state *css);
+extern struct cftype dev_cgroup_files[];
 #endif
