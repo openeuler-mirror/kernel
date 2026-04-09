@@ -32,8 +32,7 @@ struct mfs_cache_object {
 	struct inode *mfs_inode;
 
 	struct rw_semaphore rwsem;
-	int fd;  /* file handle */
-	struct file *anon_file;  /* related with fd */
+	int fd;  /* anon file handle */
 };
 
 struct mfs_syncer {

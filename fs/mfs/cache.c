@@ -23,7 +23,6 @@ static int fd_release(struct inode *inode, struct file *file)
 	down_write(&object->rwsem);
 	if (object->fd > 0) {
 		object->fd = -1;
-		object->anon_file = NULL;
 		up_write(&object->rwsem);
 		iput(object->mfs_inode);
 	} else {
@@ -246,7 +245,6 @@ static int mfs_setup_object(struct mfs_cache_object *object,
 	object->cache_file = cache_file;
 	init_rwsem(&object->rwsem);
 	object->fd = -1;
-	object->anon_file = NULL;
 	return 0;
 }
 
@@ -463,7 +461,6 @@ int try_hook_fd(struct mfs_event *event)
 	}
 	anon_file->f_mode |= FMODE_PWRITE | FMODE_LSEEK;
 	object->fd = fd;
-	object->anon_file = anon_file;
 	/* lifecyle of fd/anon_file should later than mfs_inode */
 	ihold(object->mfs_inode);
 	fd_install(fd, anon_file);
