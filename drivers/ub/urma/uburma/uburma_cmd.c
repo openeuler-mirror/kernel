@@ -4043,8 +4043,6 @@ static void uburma_fill_device_attr(struct ubcore_device *ubc_dev,
 	attr->dev_cap.atomic_feat.value =
 		ubc_dev->attr.dev_cap.atomic_feat.value;
 	attr->dev_cap.trans_mode = ubc_dev->attr.dev_cap.trans_mode;
-	attr->dev_cap.sub_trans_mode_cap =
-		ubc_dev->attr.dev_cap.sub_trans_mode_cap;
 	attr->dev_cap.congestion_ctrl_alg =
 		ubc_dev->attr.dev_cap.congestion_ctrl_alg;
 	attr->dev_cap.ceq_cnt = ubc_dev->attr.dev_cap.ceq_cnt;

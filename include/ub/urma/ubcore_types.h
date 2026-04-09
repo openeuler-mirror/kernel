@@ -199,9 +199,6 @@ union ubcore_jfc_flag {
 	uint32_t value;
 };
 
-#define UBCORE_SUB_TRANS_MODE_TA_DST_ORDERING_ENABLE (0x1)
-#define UBCORE_SUB_TRANS_MODE_USER_TP (0x2)
-
 enum ubcore_order_type {
 	UBCORE_DEF_ORDER,
 	UBCORE_OT, // target ordering
@@ -586,13 +583,6 @@ struct ubcore_port_attr {
 
 enum ubcore_pattern { UBCORE_PATTERN_1 = 0, UBCORE_PATTERN_3 };
 
-enum ubcore_sub_trans_mode_cap {
-	UBCORE_RC_TP_DST_ORDERING = 0x1, /* rc mode with tp dst ordering */
-	UBCORE_RC_TA_DST_ORDERING = 0x1
-				    << 1, /* rc mode with ta dst ordering  */
-	UBCORE_RC_USER_TP = 0x1 << 2, /* rc mode with user connection  */
-};
-
 enum ubcore_mgmt_event_type {
 	UBCORE_MGMT_EVENT_EID_ADD,
 	UBCORE_MGMT_EVENT_EID_RMV,
@@ -680,7 +670,6 @@ struct ubcore_device_cap {
 	uint32_t max_dip_cnt_per_ue;
 	uint32_t max_seid_cnt_per_ue;
 	uint16_t trans_mode; /* one or more from ubcore_transport_mode_t */
-	uint16_t sub_trans_mode_cap; /* one or more from ubcore_sub_trans_mode_cap */
 	uint16_t congestion_ctrl_alg; /* one or more mode from ubcore_congestion_ctrl_alg_t */
 	uint16_t ceq_cnt; /* completion vector count */
 	uint32_t max_tp_in_tpg;

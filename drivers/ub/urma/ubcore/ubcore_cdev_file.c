@@ -486,20 +486,6 @@ static ssize_t trans_mode_show(struct device *dev,
 
 static DEVICE_ATTR_RO(trans_mode);
 
-static ssize_t sub_trans_mode_cap_show_cb(struct ubcore_device *dev, char *buf)
-{
-	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "0x%hx\n",
-			dev->attr.dev_cap.sub_trans_mode_cap);
-}
-
-static ssize_t sub_trans_mode_cap_show(struct device *dev,
-				       struct device_attribute *attr, char *buf)
-{
-	return ubcore_show_dev_attr(dev, attr, buf, sub_trans_mode_cap_show_cb);
-}
-
-static DEVICE_ATTR_RO(sub_trans_mode_cap);
-
 static ssize_t congestion_ctrl_alg_show_cb(struct ubcore_device *dev, char *buf)
 {
 	return snprintf(buf, UBCORE_MAX_VALUE_LEN, "%u\n",
@@ -903,7 +889,6 @@ static struct attribute *ubcore_dev_attrs[] = {
 	&dev_attr_atomic_feat.attr,
 	&dev_attr_max_rc_outstd_cnt.attr,
 	&dev_attr_trans_mode.attr,
-	&dev_attr_sub_trans_mode_cap.attr,
 	&dev_attr_congestion_ctrl_alg.attr,
 	&dev_attr_ceq_cnt.attr,
 	&dev_attr_utp_cnt.attr,

@@ -101,7 +101,6 @@ struct ubagg_device_cap {
 	uint32_t max_fetch_and_xor_size;
 	union ubcore_atomic_feat atomic_feat;
 	uint16_t trans_mode; /* one or more from ubcore_transport_mode_t */
-	uint16_t sub_trans_mode_cap; /* one or more from ubcore_sub_trans_mode_cap */
 	uint16_t congestion_ctrl_alg; /* one or more mode from ubcore_congestion_ctrl_alg_t */
 	uint32_t ceq_cnt; /* completion vector count */
 	uint32_t max_tp_in_tpg;
