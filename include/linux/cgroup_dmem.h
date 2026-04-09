@@ -63,4 +63,9 @@ static inline void dmem_cgroup_pool_state_put(struct dmem_cgroup_pool_state *poo
 { }
 
 #endif
+
+#ifdef CONFIG_CGROUP_DEVICE
+bool dmem_cgroup_enabled(void);
+#endif
+
 #endif	/* _CGROUP_DMEM_H */
