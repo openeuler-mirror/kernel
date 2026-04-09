@@ -29,7 +29,8 @@
 
 static int heartbeat_thread(void *arg);
 static int rebuild_tjetty(int idx, int die_index);
-static int sentry_post_jetty_send_wr(const char *buf, size_t len, int tjetty_idx, int die_index);
+static int sentry_post_jetty_send_wr(const struct sentry_binary_msg *buf,
+		int tjetty_idx, int die_index);
 static int sentry_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr *cr, int die_index);
 
 #define PROC_DEVICE_PATH		"sentry_urma_comm"
@@ -551,6 +552,43 @@ int str_to_eid(const char *eid_str, union ubcore_eid *eid)
 	return -EINVAL;
 }
 EXPORT_SYMBOL(str_to_eid);
+
+/**
+ * ubcore_eid_to_str_full - Convert URMA EID to string representation
+ * @eid: URMA EID
+ * @dst_eid_str: Pointer to store converted EID
+ *
+ * Return: 0 on success, -EINVAL on invalid input
+ *
+ * This function converts the binary format used by URMA of an EID to
+ * a string representation of an EID.
+ */
+int ubcore_eid_to_str_full(const union ubcore_eid *eid, char *dst_eid_str, int len)
+{
+	if (!eid || !dst_eid_str || len < EID_MAX_LEN) {
+		pr_err("%s: invalid params or buffer too small\n", __func__);
+		return -EINVAL;
+	}
+
+	int ret = snprintf(dst_eid_str, len,
+			"%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x",
+			(unsigned int)eid->raw[0] << 8 | eid->raw[1],
+			(unsigned int)eid->raw[2] << 8 | eid->raw[3],
+			(unsigned int)eid->raw[4] << 8 | eid->raw[5],
+			(unsigned int)eid->raw[6] << 8 | eid->raw[7],
+			(unsigned int)eid->raw[8] << 8 | eid->raw[9],
+			(unsigned int)eid->raw[10] << 8 | eid->raw[11],
+			(unsigned int)eid->raw[12] << 8 | eid->raw[13],
+			(unsigned int)eid->raw[14] << 8 | eid->raw[15]);
+	if (ret < 0 || ret >= len) {
+		pr_err("%s:snprintf failed or buffer overflow\n", __func__);
+		return -EINVAL;
+	}
+
+	pr_info("%s: Covert ubcore eid to full string: %s\n", __func__, dst_eid_str);
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_eid_to_str_full);
 
 /**
  * set_urma_panic_mode - Set URMA panic mode status
@@ -1600,6 +1638,10 @@ static int heartbeat_thread(void *arg)
 	int i, cnt;
 	int die_index;
 
+	struct sentry_binary_msg heartbeat_msg = {0};
+
+	heartbeat_msg.type = SMH_MESSAGE_HEARTBEAT;
+
 	while (!kthread_should_stop()) {
 		if (!sentry_urma_ctx.heartbeat_enable) {
 			msleep_interruptible(HB_WAIT_ACK_SLEEP_MS);
@@ -1627,7 +1669,7 @@ static int heartbeat_thread(void *arg)
 			for (i = 1; i < sentry_urma_dev[die_index].server_eid_valid_num; i++) {
 				pr_info("send heartbeat to node %d (eid=%s)\n", i,
 					sentry_urma_dev[die_index].server_eid_array[i]);
-				sentry_post_jetty_send_wr(HEARTBEAT, strlen(HEARTBEAT) + 1, i, die_index);
+				sentry_post_jetty_send_wr(&heartbeat_msg, i, die_index);
 			}
 
 			msleep_interruptible(HB_WAIT_ACK_SLEEP_MS);
@@ -1656,8 +1698,8 @@ static int heartbeat_thread(void *arg)
 					if (rebuild_tjetty(i, die_index) == 0) {
 						pr_info("after rebuild, retry heartbeat for node %d (eid=%s)\n",
 							i, sentry_urma_dev[die_index].server_eid_array[i]);
-						sentry_post_jetty_send_wr(HEARTBEAT, strlen(HEARTBEAT) + 1,
-									 i, die_index);
+						sentry_post_jetty_send_wr(&heartbeat_msg,
+								i, die_index);
 						need_rebuild[i] = true;
 						rebuilt = true;
 					}
@@ -1901,7 +1943,6 @@ static int check_and_rebuild_single_tjetty(int idx, int die_index)
 /**
  * sentry_post_jetty_send_wr - Post a send work request to a jetty
  * @buf: Data buffer to send
- * @len: Length of data to send
  * @tjetty_idx: Target jetty index
  * @die_index: Die index for resource access
  *
@@ -1910,14 +1951,13 @@ static int check_and_rebuild_single_tjetty(int idx, int die_index)
  * This function posts a send work request to the specified target jetty,
  * copying the data to the send segment and updating the send counters.
  */
-static int sentry_post_jetty_send_wr(const char *buf, size_t len, int tjetty_idx,
+int sentry_post_jetty_send_wr(const struct sentry_binary_msg *buf, int tjetty_idx,
 				     int die_index)
 {
 	int ret;
 	struct ubcore_jfs_wr *bad_wr = NULL;
 	struct ubcore_tjetty *tj_i;
 	uint64_t s_seg_va_i;
-	size_t actual_len;
 
 	if (die_index < 0 || die_index >= MAX_DIE_NUM) {
 		pr_err("invalid die_index (%d), range is [0, %d]\n",
@@ -1927,7 +1967,7 @@ static int sentry_post_jetty_send_wr(const char *buf, size_t len, int tjetty_idx
 
 	if (!sentry_urma_ctx.is_panic_mode &&
 	    !mutex_trylock(&sentry_urma_mutex)) {
-		pr_debug("sentry_post_jetty_send_wr: lock busy, skipping %d\n", tjetty_idx);
+		pr_debug("%s: lock busy, skipping %d\n", __func__, tjetty_idx);
 		return 0;
 	}
 
@@ -1957,17 +1997,11 @@ static int sentry_post_jetty_send_wr(const char *buf, size_t len, int tjetty_idx
 		     (SGE_MAX_LEN * tjetty_idx);
 
 	/* Copy data to send segment */
-	ret = snprintf((char *)s_seg_va_i, len, "%s", buf);
-	if ((size_t)ret >= len) {
-		pr_err("sentry_post_jetty_send_wr: send str size exceeds max\n");
-		urma_mutex_lock_op(URMA_UNLOCK);
-		return -EINVAL;
-	}
+	memcpy((struct sentry_binary_msg *)s_seg_va_i, buf, sizeof(struct sentry_binary_msg));
 
 	/* Set up scatter-gather element */
-	actual_len = strnlen((char *)s_seg_va_i, len - 1) + 1;
 	sentry_urma_dev[die_index].s_sge[tjetty_idx].addr = s_seg_va_i;
-	sentry_urma_dev[die_index].s_sge[tjetty_idx].len = actual_len;
+	sentry_urma_dev[die_index].s_sge[tjetty_idx].len = sizeof(struct sentry_binary_msg);
 	sentry_urma_dev[die_index].s_sge[tjetty_idx].tseg =
 		sentry_urma_dev[die_index].s_seg;
 
@@ -1983,10 +2017,14 @@ static int sentry_post_jetty_send_wr(const char *buf, size_t len, int tjetty_idx
 					&sentry_urma_dev[die_index].jfs_wr[tjetty_idx],
 					&bad_wr);
 	if (ret) {
-		pr_err("ubcore_post_jetty_send_wr err\n");
+		pr_err("ubcore_post_jetty_send_wr err, send [%s] msg to %s failed\n",
+				get_msg_type_name(buf->type),
+				sentry_urma_dev[die_index].server_eid_array[tjetty_idx]);
 	} else {
 		atomic_inc(&sentry_urma_dev[die_index].send_cnt[tjetty_idx]);
-		pr_info("ubcore_post_jetty_send_wr success\n");
+		pr_info("ubcore_post_jetty_send_wr success, send [%s] msg to %s success\n",
+				get_msg_type_name(buf->type),
+				sentry_urma_dev[die_index].server_eid_array[tjetty_idx]);
 	}
 
 	urma_mutex_lock_op(URMA_UNLOCK);
@@ -1996,7 +2034,6 @@ static int sentry_post_jetty_send_wr(const char *buf, size_t len, int tjetty_idx
 /**
  * urma_send_to_all_nodes - Send data to all configured nodes
  * @buf: Data buffer to send
- * @len: Length of data to send
  * @die_index: Die index for resource access
  *
  * Return: Number of successful sends, negative error code on failure
@@ -2004,12 +2041,12 @@ static int sentry_post_jetty_send_wr(const char *buf, size_t len, int tjetty_idx
  * This function sends data to all configured remote nodes for a specific die,
  * performing necessary checks and potential tjetty rebuilds before sending.
  */
-static int urma_send_to_all_nodes(const char *buf, size_t len, int die_index)
+static int urma_send_to_all_nodes(const struct sentry_binary_msg *buf, int die_index)
 {
 	int cnt = 0;
 	int i;
 
-	if (!buf || len == 0)
+	if (!buf)
 		return -EINVAL;
 
 	if (die_index < 0 || die_index >= MAX_DIE_NUM) {
@@ -2031,9 +2068,9 @@ static int urma_send_to_all_nodes(const char *buf, size_t len, int die_index)
 			ret = check_and_rebuild_single_tjetty(i, die_index);
 
 		if (!ret) {
-			pr_info("start to send msg [%s] to [%s]\n", buf,
+			pr_info("start to send msg to [%s]\n",
 				sentry_urma_dev[die_index].server_eid_array[i]);
-			ret = sentry_post_jetty_send_wr(buf, len, i, die_index);
+			ret = sentry_post_jetty_send_wr(buf, i, die_index);
 		}
 
 		if (ret == COMM_PARM_NOT_SET)
@@ -2049,7 +2086,6 @@ static int urma_send_to_all_nodes(const char *buf, size_t len, int die_index)
 /**
  * urma_send_to_given_node - Send data to a specific node
  * @buf: Data buffer to send
- * @len: Length of data to send
  * @dst_eid: Destination EID string
  * @die_index: Die index for resource access (-1 if unknown)
  *
@@ -2058,7 +2094,7 @@ static int urma_send_to_all_nodes(const char *buf, size_t len, int die_index)
  * This function sends data to a specific node identified by EID, performing
  * necessary validation and potential tjetty rebuild before sending.
  */
-static int urma_send_to_given_node(const char *buf, size_t len,
+static int urma_send_to_given_node(const struct sentry_binary_msg *buf,
 				   const char *dst_eid, int die_index)
 {
 	int cnt = 0;
@@ -2066,7 +2102,7 @@ static int urma_send_to_given_node(const char *buf, size_t len,
 	int node_idx = -1;
 	union ubcore_eid dst_ubcore_eid;
 
-	if (!buf || len == 0 || !dst_eid)
+	if (!buf || !dst_eid)
 		return -EINVAL;
 
 	/* Convert EID string to binary format */
@@ -2078,7 +2114,7 @@ static int urma_send_to_given_node(const char *buf, size_t len,
 	/* Find node and die indices */
 	match_index_by_remote_ub_eid(dst_ubcore_eid, &node_idx, &die_index);
 	if (node_idx < 0) {
-		pr_warn("urma_send: msg format invalid, str [%s]\n", buf);
+		pr_warn("urma_send: msg format invalid, dst eid is %s\n", dst_eid);
 		return 0;
 	}
 
@@ -2092,8 +2128,8 @@ static int urma_send_to_given_node(const char *buf, size_t len,
 		ret = check_and_rebuild_single_tjetty(node_idx, die_index);
 
 	if (!ret) {
-		pr_info("start to send msg [%s] to [%s]\n", buf, dst_eid);
-		ret = sentry_post_jetty_send_wr(buf, len, node_idx, die_index);
+		pr_info("start to send msg to [%s]\n", dst_eid);
+		ret = sentry_post_jetty_send_wr(buf, node_idx, die_index);
 	}
 
 	if (!ret)
@@ -2105,7 +2141,6 @@ static int urma_send_to_given_node(const char *buf, size_t len,
 /**
  * urma_send - Send data to URMA nodes
  * @buf: Data buffer to send
- * @len: Length of data to send
  * @dst_eid: Destination EID (NULL for broadcast to all nodes)
  * @die_index: Die index (-1 for auto-detect, 0/1 for specific die)
  *
@@ -2114,7 +2149,7 @@ static int urma_send_to_given_node(const char *buf, size_t len,
  * This function provides the main interface for sending data via URMA,
  * supporting both broadcast and unicast modes.
  */
-int urma_send(const char *buf, size_t len, const char *dst_eid, int die_index)
+int urma_send(const struct sentry_binary_msg *buf, const char *dst_eid, int die_index)
 {
 	int cnt = 0;
 
@@ -2122,17 +2157,17 @@ int urma_send(const char *buf, size_t len, const char *dst_eid, int die_index)
 		return -ENODEV;
 
 	/* at broadcast mode, dst_eid is NULL */
-	if (!buf || len > URMA_SEND_DATA_MAX_LEN || strlen(buf) > len) {
+	if (!buf) {
 		pr_err("%s: Invalid param, failed to send data\n", __func__);
 		return -EINVAL;
 	}
 
 	if (!dst_eid && die_index >= 0) {
 		/* Broadcast mode: send to all nodes */
-		cnt = urma_send_to_all_nodes(buf, len, die_index);
+		cnt = urma_send_to_all_nodes(buf, die_index);
 	} else {
 		/* Unicast mode: send to specific node */
-		cnt = urma_send_to_given_node(buf, len, dst_eid, die_index);
+		cnt = urma_send_to_given_node(buf, dst_eid, die_index);
 	}
 
 	return cnt;
@@ -2142,18 +2177,17 @@ EXPORT_SYMBOL(urma_send);
 /**
  * urma_recv - Receive data from URMA nodes
  * @buf_arr: Array of buffers to store received messages
- * @len: Maximum length for each received message
+ * @array_size: array size for received message
  *
  * Return: Number of valid messages received, negative error code on failure
  *
  * This function polls for incoming messages, handles heartbeat protocol,
  * and returns valid event messages to the caller.
  */
-int urma_recv(char **buf_arr, size_t len)
+int urma_recv(struct sentry_binary_msg *buf_arr, size_t array_size)
 {
 	int ret;
 	int valid_msg_num = 0;
-	char recv_msg[URMA_SEND_DATA_MAX_LEN] = {0};
 	int die_index;
 
 	if (!buf_arr)
@@ -2188,8 +2222,10 @@ int urma_recv(char **buf_arr, size_t len)
 		urma_mutex_lock_op(URMA_UNLOCK);
 
 		if (cnt < 0) {
-			pr_err("urma_recv: ubcore_poll_jfc failed for eid %s, ret %d\n",
-			       sentry_urma_dev[die_index].server_eid_array[0], cnt);
+			pr_err("%s: ubcore_poll_jfc failed for eid %s, ret %d\n",
+			       __func__,
+			       sentry_urma_dev[die_index].server_eid_array[0],
+			       cnt);
 			continue;
 		} else if (cnt == 0) {
 			/* No messages available */
@@ -2200,35 +2236,42 @@ int urma_recv(char **buf_arr, size_t len)
 		for (int i = 0; i < cnt; i++) {
 			int node_idx = -1;
 			int tmp_die_index = die_index;
-
-			/* Extract message from completion context */
-			ret = snprintf(recv_msg, sizeof(recv_msg), "%s", (char *)sentry_urma_ctx.urma_recv_cr[i].user_ctx);
-			if ((size_t)ret >= sizeof(recv_msg)) {
-				pr_warn("urma recv: msg size exceeds max len %lu\n", len);
-				continue;
-			}
+			struct sentry_binary_msg *binary_msg = NULL;
 
 			/* Match remote EID to node index */
 			match_index_by_remote_ub_eid(sentry_urma_ctx.urma_recv_cr[i].remote_id.eid, &node_idx, &tmp_die_index);
 			if (node_idx < 0) {
-				pr_warn("urma_recv: cr[%d] eid (%llx, %x, %x) not matched, msg [%s]\n",
-					i, sentry_urma_ctx.urma_recv_cr[i].remote_id.eid.in4.reserved,
+				pr_warn("%s: cr[%d] eid (%llx, %x, %x) not matched\n",
+					__func__,
+					i,
+					sentry_urma_ctx.urma_recv_cr[i].remote_id.eid.in4.reserved,
 					sentry_urma_ctx.urma_recv_cr[i].remote_id.eid.in4.prefix,
-					sentry_urma_ctx.urma_recv_cr[i].remote_id.eid.in4.addr, recv_msg);
+					sentry_urma_ctx.urma_recv_cr[i].remote_id.eid.in4.addr);
 				continue;
 			}
 
-			pr_info("urma_recv: cr[%d] get msg [%s] from node[%d] eid=%s\n",
-				i, recv_msg, node_idx,
+			/* Check if binary message */
+			binary_msg = (struct sentry_binary_msg *)
+				sentry_urma_ctx.urma_recv_cr[i].user_ctx;
+			pr_info("%s: cr[%d] get msg from node[%d] eid=%s\n",
+				__func__,
+				i,
+				node_idx,
 				sentry_urma_dev[tmp_die_index].server_eid_array[node_idx]);
 
 			/* Handle different message types */
-			if (!strcmp(recv_msg, HEARTBEAT)) {
+			if (binary_msg->type == SMH_MESSAGE_HEARTBEAT) {
 				/* Heartbeat request - send acknowledgment */
-				pr_info("urma_recv: received heartbeat from node[%d] eid=%s, send ack\n",
-					node_idx, sentry_urma_dev[tmp_die_index].server_eid_array[node_idx]);
-				sentry_post_jetty_send_wr(HEARTBEAT_ACK, strlen(HEARTBEAT_ACK) + 1,
-							 node_idx, tmp_die_index);
+				pr_info("%s: received heartbeat from node[%d] eid=%s, send ack\n",
+					__func__,
+					node_idx,
+					sentry_urma_dev[tmp_die_index].server_eid_array[node_idx]);
+
+				struct sentry_binary_msg heartbeat_msg = {0};
+
+				heartbeat_msg.type = SMH_MESSAGE_HEARTBEAT_ACK;
+				sentry_post_jetty_send_wr(&heartbeat_msg,
+						node_idx, tmp_die_index);
 
 				if (!sentry_urma_ctx.is_panic_mode &&
 				    !mutex_trylock(&sentry_urma_mutex))
@@ -2238,14 +2281,21 @@ int urma_recv(char **buf_arr, size_t len)
 				sentry_poll_jfc(sentry_urma_dev[tmp_die_index].sender_jfc,
 						MAX_NODE_NUM, sentry_urma_ctx.urma_recv_sender_cr, tmp_die_index);
 				urma_mutex_lock_op(URMA_UNLOCK);
-			} else if (!strcmp(recv_msg, HEARTBEAT_ACK)) {
+			} else if (binary_msg->type == SMH_MESSAGE_HEARTBEAT_ACK) {
 				/* Heartbeat acknowledgment - update status */
-				pr_info("urma_recv: received heartbeat ack from node[%d] eid=%s\n",
-					node_idx, sentry_urma_dev[tmp_die_index].server_eid_array[node_idx]);
+				pr_info("%s: received heartbeat ack from node[%d] eid=%s\n",
+					__func__,
+					node_idx,
+					sentry_urma_dev[tmp_die_index].server_eid_array[node_idx]);
 				atomic_set(&sentry_urma_dev[tmp_die_index].urma_hb_ack_list[node_idx], 1);
 			} else {
 				/* Event message - store for caller */
-				memcpy(buf_arr[valid_msg_num], recv_msg, sizeof(recv_msg));
+				if (valid_msg_num >= array_size) {
+					pr_warn("%s: recv msg num exceeds the msg array size\n",
+						__func__);
+					return valid_msg_num;
+				}
+				memcpy(&buf_arr[valid_msg_num], binary_msg, sizeof(*binary_msg));
 				valid_msg_num++;
 			}
 
@@ -2260,7 +2310,7 @@ int urma_recv(char **buf_arr, size_t len)
 			urma_mutex_lock_op(URMA_UNLOCK);
 
 			if (ret < 0)
-				pr_warn("urma_recv: sentry_post_recv failed, ret %d\n", ret);
+				pr_warn("%s: sentry_post_recv failed, ret %d\n", __func__, ret);
 		}
 	}
 
