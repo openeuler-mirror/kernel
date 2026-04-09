@@ -3534,7 +3534,7 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 			   &udata);
 	}
 	if (ret != 0) {
-		uburma_log_err("bind jetty failed.\n");
+		uburma_log_err("bind jetty failed, ret: %d.\n", ret);
 		uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
 		return ret;
 	}

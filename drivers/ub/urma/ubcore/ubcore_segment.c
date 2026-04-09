@@ -71,7 +71,7 @@ int ubcore_free_token_id(struct ubcore_token_id *token_id)
 	ret = dev->ops->free_token_id(token_id);
 	if (ret != 0) {
 		ubcore_log_err("[DRV]Failed to free_token_id, ret is %d", ret);
-		return -UBCORE_DRV_ERRNO;
+		return ret;
 	}
 	ubcore_log_info("[FREE_TOKEN_ID] Free_token_id is %u.",
 			token_id->token_id);
@@ -238,7 +238,7 @@ int ubcore_unregister_seg(struct ubcore_target_seg *tseg)
 	if (ret != 0) {
 		ubcore_log_err("[DRV]failed to unregister segment,dev name is %s, ret is %d.\n",
 			dev->dev_name, ret);
-		return -UBCORE_DRV_ERRNO;
+		return ret;
 	}
 
 	if (free_token_id == true && token_id != NULL)
@@ -301,7 +301,7 @@ int ubcore_unimport_seg(struct ubcore_target_seg *tseg)
 	if (ret != 0) {
 		ubcore_log_err("[DRV] Failed to unimport seg, dev_name is %s, ret is %d.",
 			       dev->dev_name, ret);
-		return -UBCORE_DRV_ERRNO;
+		return ret;
 	}
 	ubcore_log_info("[UNIMPORT SEG] Unimport seg, dev_name is %s.",
 			dev->dev_name);

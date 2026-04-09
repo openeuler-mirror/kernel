@@ -1142,7 +1142,7 @@ static int ubcore_active_tp(struct ubcore_device *dev,
 	if (ret != 0) {
 		ubcore_log_err("[DRV_ERROR]Failed to active tp, ret: %d, dev_name: %s.\n",
 			       ret, dev->dev_name);
-		return -UBCORE_DRV_ERRNO;
+		return ret;
 	}
 
 	vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
