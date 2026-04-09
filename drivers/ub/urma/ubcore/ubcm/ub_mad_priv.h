@@ -123,6 +123,7 @@ struct ubmad_device_priv {
 		 *rt_wq; // retransmit work queue, only for initiator
 	struct ubcore_eid_info eid_info;
 	bool has_create_jetty_rsrc;
+	struct workqueue_struct *conn_wq;
 };
 
 /* agent */
@@ -168,6 +169,14 @@ struct ubmad_jfce_work {
 
 	struct ubcore_jfc *jfc;
 	struct ubmad_agent_priv *agent_priv;
+};
+
+struct ubmad_jetty_work {
+	struct work_struct work;
+	struct ubmad_device_priv *dev_priv;
+	struct ubmad_jetty_resource *rsrc;
+	union ubcore_eid dst_primary_eid;
+	struct ubmad_send_buf *send_buf;
 };
 
 /** reliable communication **/

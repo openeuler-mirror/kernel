@@ -1059,6 +1059,10 @@ static void ubmad_release_device_priv(struct kref *kref)
 	drain_workqueue(dev_priv->rt_wq);
 	destroy_workqueue(dev_priv->rt_wq);
 
+	/* connection */
+	drain_workqueue(dev_priv->conn_wq);
+	destroy_workqueue(dev_priv->conn_wq);
+
 	/* rsrc */
 	ubmad_destroy_device_priv_resources(dev_priv);
 
@@ -1099,6 +1103,19 @@ static int ubmad_open_device(struct ubcore_device *device)
 	if (IS_ERR_OR_NULL(dev_priv->rt_wq)) {
 		ubcore_log_err("create rt_wq failed. dev_name: %s\n",
 			     device->dev_name);
+		ubmad_destroy_device_priv_resources(dev_priv);
+		ubcore_unregister_event_handler(dev_priv->device,
+						&dev_priv->handler);
+		kfree(dev_priv);
+		return -1;
+	}
+
+	dev_priv->conn_wq = alloc_workqueue("%s", 0, 0, "ubmad conn_wq");
+	if (IS_ERR_OR_NULL(dev_priv->conn_wq)) {
+		ubcore_log_err("create conn_wq failed. dev_name: %s\n",
+			     device->dev_name);
+		drain_workqueue(dev_priv->rt_wq);
+		destroy_workqueue(dev_priv->rt_wq);
 		ubmad_destroy_device_priv_resources(dev_priv);
 		ubcore_unregister_event_handler(dev_priv->device,
 						&dev_priv->handler);

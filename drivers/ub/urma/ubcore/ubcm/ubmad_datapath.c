@@ -459,18 +459,47 @@ put_id:
 }
 
 // for UBMAD_CONN_DATA, UBMAD_AUTHN_DATA
+static void ubmad_jetty_work_handler(struct work_struct *work)
+{
+	struct ubmad_jetty_work *jetty_work = container_of(work, struct ubmad_jetty_work, work);
+	struct ubmad_tjetty *wk_tjetty;
+	int ret;
+
+	wk_tjetty = ubmad_import_jetty(jetty_work->dev_priv->device,
+		jetty_work->rsrc, &jetty_work->dst_primary_eid);
+	if (IS_ERR_OR_NULL(wk_tjetty)) {
+		ubcore_log_err("import jetty failed. eid " EID_FMT "\n",
+			     EID_ARGS(jetty_work->dst_primary_eid));
+		goto put_device_priv;
+	}
+
+	ret = ubmad_do_post_send(
+		jetty_work->rsrc, wk_tjetty, jetty_work->send_buf,
+		atomic64_fetch_inc(&wk_tjetty->msn_mgr.msn_gen),
+		jetty_work->dev_priv->rt_wq);
+	if (ret != 0)
+		ubcore_log_err("do post send failed, ret: %d\n", ret);
+
+	ubmad_put_tjetty(wk_tjetty);
+
+put_device_priv:
+	ubmad_put_device_priv(jetty_work->dev_priv);
+	kfree(jetty_work->send_buf);
+	kfree(jetty_work);
+}
+
 int ubmad_post_send(struct ubcore_device *device,
 		    struct ubmad_send_buf *send_buf,
 		    struct ubmad_send_buf **bad_send_buf)
 {
 	struct ubmad_device_priv *dev_priv = NULL;
 	struct ubmad_jetty_resource *rsrc;
-	struct ubcore_jetty *wk_jetty; // well-known jetty
-	struct ubmad_tjetty *wk_tjetty;
 	union ubcore_eid dst_primary_eid = { 0 };
+	struct ubmad_jetty_work *jetty_work;
+	struct ubmad_send_buf *jetty_send_buf;
 	int ret;
 
-	dev_priv = ubmad_get_device_priv(device); // put below
+	dev_priv = ubmad_get_device_priv(device); // put in ubmad_jetty_work_handler()
 	if (IS_ERR_OR_NULL(dev_priv)) {
 		ubcore_log_err("Failed to get dev_priv, dev_name: %s.\n",
 			     device->dev_name);
@@ -497,7 +526,6 @@ int ubmad_post_send(struct ubcore_device *device,
 		ret = -EINVAL;
 		goto put_device_priv;
 	}
-	wk_jetty = rsrc->jetty;
 
 	/* import well-known jetty */
 	// unimport in ubmad_uninit_jetty_rsrc()
@@ -506,23 +534,39 @@ int ubmad_post_send(struct ubcore_device *device,
 		ubcore_log_err("get primary eid failed\n");
 		goto put_device_priv;
 	}
-	wk_tjetty = ubmad_import_jetty(device, rsrc, &dst_primary_eid);
-	if (IS_ERR_OR_NULL(wk_tjetty)) {
-		ubcore_log_err("import jetty failed. eid " EID_FMT "\n",
-			     EID_ARGS(dst_primary_eid));
-		ret = -1;
+
+	jetty_work = kcalloc(1, sizeof(struct ubmad_jetty_work), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(jetty_work)) {
+		ret = -ENOMEM;
 		goto put_device_priv;
 	}
+	jetty_send_buf = kcalloc(1, sizeof(struct ubmad_send_buf) + send_buf->payload_len,
+		GFP_KERNEL);
+	if (IS_ERR_OR_NULL(jetty_send_buf)) {
+		ret = -ENOMEM;
+		kfree(jetty_work);
+		goto put_device_priv;
+	}
+	(void)memcpy(jetty_send_buf, send_buf,
+		sizeof(struct ubmad_send_buf) + send_buf->payload_len);
 
-	/* post send */
-	ret = ubmad_do_post_send(
-		rsrc, wk_tjetty, send_buf,
-		atomic64_fetch_inc(&wk_tjetty->msn_mgr.msn_gen),
-		dev_priv->rt_wq);
+	jetty_work->dev_priv = dev_priv;
+	jetty_work->rsrc = rsrc;
+	jetty_work->dst_primary_eid = dst_primary_eid;
+	jetty_work->send_buf = jetty_send_buf;
 
-	ubmad_put_tjetty(wk_tjetty); // first put for ubmad_import_jetty() above
+	INIT_WORK(&jetty_work->work, ubmad_jetty_work_handler);
+	ret = queue_work(dev_priv->conn_wq, &jetty_work->work);
+	if (!ret) {
+		ubcore_log_err("queue work failed. ret %d\n", ret);
+		kfree(jetty_send_buf);
+		kfree(jetty_work);
+		goto put_device_priv;
+	}
+	return 0;
+
 put_device_priv:
-	ubmad_put_device_priv(dev_priv); // get above
+	ubmad_put_device_priv(dev_priv);
 	return ret;
 }
 
