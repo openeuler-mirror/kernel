@@ -1277,7 +1277,6 @@ static int init_ubagg_ubcore_dev(struct ubagg_device *ubagg_dev,
 		ubagg_log_err("ubcore register device fail, name:%s\n",
 			      arg->master_dev_name);
 		free_ubagg_dev_bitmap(ubagg_dev);
-		ubagg_dev_ref_put(ubagg_dev);
 		return ret;
 	}
 
