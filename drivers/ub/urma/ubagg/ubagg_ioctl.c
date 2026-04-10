@@ -1131,6 +1131,17 @@ set_ubagg_device_attr_by_ubcore_cap(struct ubcore_device *dev,
 	dev->attr.dev_cap = *dev_cap;
 }
 
+static void ubagg_put_ubcore_device(struct ubcore_device *dev)
+{
+	if (IS_ERR_OR_NULL(dev)) {
+		ubagg_log_err("Invalid parameter\n");
+		return;
+	}
+
+	if (atomic_dec_and_test(&dev->use_cnt))
+		complete(&dev->comp);
+}
+
 static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 			  struct ubagg_add_dev_by_uvs *arg)
 {
@@ -1167,6 +1178,7 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 
 		(void)memcpy(ubagg_dev->slave_dev_name[slave_dev_idx],
 			     dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
+		ubagg_put_ubcore_device(dev);
 		slave_dev_idx++;
 	}
 
@@ -1195,6 +1207,7 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 
 			(void)memcpy(ubagg_dev->slave_dev_name[slave_dev_idx],
 				     dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
+			ubagg_put_ubcore_device(dev);
 			slave_dev_idx++;
 		}
 	}
@@ -1817,6 +1830,7 @@ static int ubagg_get_dev_name(struct ubagg_get_dev_name_arg *arg)
 
 	(void)strscpy(arg->out.dev_name, dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
 
+	ubagg_put_ubcore_device(dev);
 	return 0;
 }
 
