@@ -592,6 +592,8 @@ struct sched_entity {
 	u64				sum_exec_runtime;
 	u64				prev_sum_exec_runtime;
 	u64				vruntime;
+	KABI_BROKEN_REPLACE(
+	s64                     vlag,
 	union {
 		/*
 		 * When !@on_rq this field is vlag.
@@ -600,7 +602,8 @@ struct sched_entity {
 		 */
 		s64                     vlag;
 		u64                     vprot;
-	};
+	}
+	)
 	u64				slice;
 
 	u64				nr_migrations;
