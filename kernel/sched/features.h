@@ -16,7 +16,7 @@ SCHED_FEAT(RUN_TO_PARITY_WAKEUP, true)
  * Allow wakeup of tasks with a shorter slice to cancel RESPECT_SLICE for
  * current.
  */
-SCHED_FEAT(PREEMPT_SHORT, true)
+SCHED_FEAT(PREEMPT_SHORT, false)
 
 /*
  * Prefer to schedule the task we woke last (assuming it failed
