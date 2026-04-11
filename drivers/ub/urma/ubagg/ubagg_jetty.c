@@ -19,30 +19,32 @@ struct ubagg_target_jetty {
 };
 
 struct ubagg_import_jetty_udata {
-	struct ubagg_jetty_id slaves[UBAGG_DEV_MAX_NUM];
-	int dev_num;
-	bool is_multipath;
-	bool is_health_check_enable;
-	struct ubagg_seg_exchange_info health_check_seg;
-	uint32_t ports[IODIE_NUM][MAX_PORT_NUM];
+	struct ubagg_jetty_exchange_info exinfo;
+	bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM];
 };
 
 static int fill_udata(struct ubcore_tjetty_cfg *cfg, struct ubcore_udata *udata)
 {
 	struct ubagg_import_jetty_udata *udata_typed;
-	uint32_t ports[IODIE_NUM][MAX_PORT_NUM] = { 0 };
+	bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM] = { 0 };
 	int ret;
 
-	ret = find_linked_port(&cfg->id.eid, ports);
+	ret = find_linked_port(&cfg->id.eid, connected);
 	if (ret != 0) {
 		ubagg_log_err("Failed to find linked port\n");
 		return ret;
 	}
 	udata_typed =
 		(struct ubagg_import_jetty_udata *)udata->udrv_data->out_addr;
+	if (udata->udrv_data->out_len <
+	    sizeof(struct ubagg_import_jetty_udata)) {
+		ubagg_log_err("Invalid udrv_data out_len: %u.\n",
+			      udata->udrv_data->out_len);
+		return -EINVAL;
+	}
 
-	ret = copy_to_user((void __user *)udata_typed->ports, (void *)ports,
-			   sizeof(udata_typed->ports));
+	ret = copy_to_user((void __user *)udata_typed->connected,
+			   (void *)connected, sizeof(udata_typed->connected));
 	if (ret != 0) {
 		ubagg_log_err("Failed to copy to user, ret:%d", ret);
 		return ret;

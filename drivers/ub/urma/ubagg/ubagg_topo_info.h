@@ -19,6 +19,7 @@
 #define MAX_NODE_NUM (16)
 #define IODIE_NUM (2)
 #define DEV_NUM (128)
+#define UBAGG_DEV_MAX_NUM (20)
 
 struct ubagg_topo_ue {
 	uint32_t chip_id;
@@ -57,8 +58,9 @@ create_global_ubagg_topo_map(struct ubagg_topo_node *topo_infos,
 void delete_global_ubagg_topo_map(void);
 
 struct ubagg_topo_map *get_global_ubagg_map(void);
-int find_linked_port(union ubcore_eid *dst_eid,
-		     uint32_t ports[IODIE_NUM][MAX_PORT_NUM]);
+int find_linked_port(
+	union ubcore_eid *dst_eid,
+	bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM]);
 
 struct ubagg_topo_map *
 create_ubagg_topo_map_from_user(struct ubagg_topo_node *topo_infos,

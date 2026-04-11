@@ -66,7 +66,7 @@ static struct ubagg_topo_node *get_topo_node(union ubcore_eid *eid)
 }
 
 int find_linked_port(union ubcore_eid *dst_eid,
-		     uint32_t ports[IODIE_NUM][MAX_PORT_NUM])
+		     bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM])
 {
 	struct ubagg_topo_node *src_node = get_current_topo_node();
 	struct ubagg_topo_node *dst_node = get_topo_node(dst_eid);
@@ -81,14 +81,40 @@ int find_linked_port(union ubcore_eid *dst_eid,
 	}
 
 	for (uint32_t i = 0; i < IODIE_NUM; i++) {
+		connected[i][i] = true;
 		for (uint32_t j = 0; j < MAX_PORT_NUM; j++) {
 			struct ubagg_topo_link *link = &src_node->links[i][j];
+			uint32_t local_indice =
+				IODIE_NUM + i * MAX_PORT_NUM + j;
 
-			// Ignore iodie id, since it is not relevant for port mapping
+			if (local_indice >= UBAGG_DEV_MAX_NUM) {
+				ubagg_log_err("Invalid local indice: %u\n",
+					      local_indice);
+				continue;
+			}
+
 			if (src_node->id == dst_node->id)
-				ports[i][j] = j;
-			else if (link->peer_node == dst_node->id)
-				ports[i][j] = link->peer_port;
+				connected[local_indice][local_indice] = true;
+			// Ignore peer iodie id
+			else if (link->peer_node == dst_node->id) {
+				uint32_t remote_indice;
+
+				if (link->peer_port >= MAX_PORT_NUM) {
+					ubagg_log_err("Invalid peer port: %u\n",
+						      link->peer_port);
+					continue;
+				}
+
+				remote_indice = IODIE_NUM + i * MAX_PORT_NUM +
+						link->peer_port;
+				if (remote_indice >= UBAGG_DEV_MAX_NUM) {
+					ubagg_log_err(
+						"Invalid remote indice: %u\n",
+						remote_indice);
+					continue;
+				}
+				connected[local_indice][remote_indice] = true;
+			}
 		}
 	}
 	return 0;

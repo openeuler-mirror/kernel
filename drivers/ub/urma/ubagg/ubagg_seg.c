@@ -23,26 +23,31 @@ struct ubagg_import_seg_udata {
 	 * so the offset can only be resolved using a fixed length.
 	 */
 	char peer_p_seg[960];
-	uint32_t ports[IODIE_NUM][MAX_PORT_NUM];
+	bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM];
 };
 
 static int fill_udata(struct ubcore_target_seg_cfg *cfg,
 		      struct ubcore_udata *udata)
 {
 	struct ubagg_import_seg_udata *udata_typed;
-	uint32_t ports[IODIE_NUM][MAX_PORT_NUM] = { 0 };
+	bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM] = { 0 };
 	int ret;
 
-	ret = find_linked_port(&cfg->seg.ubva.eid, ports);
+	ret = find_linked_port(&cfg->seg.ubva.eid, connected);
 	if (ret != 0) {
 		ubagg_log_err("Failed to find linked port\n");
 		return ret;
 	}
 	udata_typed =
 		(struct ubagg_import_seg_udata *)udata->udrv_data->out_addr;
+	if (udata->udrv_data->out_len < sizeof(struct ubagg_import_seg_udata)) {
+		ubagg_log_err("Invalid udrv_data out_len: %u.\n",
+			      udata->udrv_data->out_len);
+		return -EINVAL;
+	}
 
-	ret = copy_to_user((void __user *)udata_typed->ports, (void *)ports,
-			   sizeof(udata_typed->ports));
+	ret = copy_to_user((void __user *)udata_typed->connected,
+			   (void *)connected, sizeof(udata_typed->connected));
 	if (ret != 0) {
 		ubagg_log_err("Failed to copy to user, ret:%d", ret);
 		return ret;
@@ -101,11 +106,9 @@ struct ubcore_target_seg *ubagg_register_seg(struct ubcore_device *dev,
 	seg_node->token_id = token_id;
 	seg_node->ubagg_seg.ub_dev = dev;
 	if (udata->udrv_data->in_addr != 0 &&
-		udata->udrv_data->in_len > sizeof(struct ubagg_seg_exchange_info)) {
-		ubagg_log_err(
-			"invalid udrv_data in_len.\n");
+	    udata->udrv_data->in_len > sizeof(struct ubagg_seg_exchange_info)) {
+		ubagg_log_err("invalid udrv_data in_len.\n");
 		goto FREE_TOKEN_ID;
-
 	}
 	ret = copy_from_user(&seg_node->ex_info,
 			     (void __user *)udata->udrv_data->in_addr,

@@ -19,7 +19,7 @@
 #include "ubcore_log.h"
 #include "ubcore_connect_adapter.h"
 
-#define BONDING_UDATA_BUF_LEN 1800
+#define BONDING_UDATA_BUF_LEN 1928
 
 struct session_data_exchange_udata {
 	int *result;
@@ -297,6 +297,11 @@ int ubcore_connect_exchange_udata_when_import_seg(struct ubcore_seg *seg,
 		ubcore_log_err("Failed find physical device");
 		return -EINVAL;
 	}
+	if (udata->udrv_data->out_len > BONDING_UDATA_BUF_LEN) {
+		ubcore_log_err("Invalid udata out len:%u\n",
+			       udata->udrv_data->out_len);
+		return -EINVAL;
+	}
 
 	session = create_session_for_exchange_udata(physical_dev, &result, buf,
 						    sizeof(buf));
@@ -352,6 +357,11 @@ int ubcore_connect_exchange_udata_when_import_jetty(
 
 	if (!physical_dev) {
 		ubcore_log_err("Failed find physical device");
+		return -EINVAL;
+	}
+	if (udata->udrv_data->out_len > BONDING_UDATA_BUF_LEN) {
+		ubcore_log_err("Invalid udata out len:%u\n",
+			       udata->udrv_data->out_len);
 		return -EINVAL;
 	}
 
