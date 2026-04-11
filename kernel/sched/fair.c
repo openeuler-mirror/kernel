@@ -3985,7 +3985,7 @@ static void reweight_entity(struct cfs_rq *cfs_rq, struct sched_entity *se,
 
 	enqueue_load_avg(cfs_rq, se);
 	if (se->on_rq) {
-		place_entity(cfs_rq, se, 0);
+		place_entity(cfs_rq, se, curr ? ENQUEUE_REWEIGHT_CURR : 0);
 		if (rel_vprot)
 			se->vprot = se->vruntime + vprot;
 		update_load_add(&cfs_rq->load, se->load.weight);
@@ -5388,6 +5388,14 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 		lag = se->vlag;
 
 		/*
+		 * ENQUEUE_REWEIGHT_CURR:
+		 * current running se (cfs_rq->curr) should skip vlag recalculation,
+		 * because avg_vruntime(...) hasn't changed.
+		 */
+		if (flags & ENQUEUE_REWEIGHT_CURR)
+			goto skip_lag_scale;
+
+		/*
 		 * If we want to place a task and preserve lag, we have to
 		 * consider the effect of the new entity on the weighted
 		 * average and compensate for this, otherwise lag can quickly
@@ -5449,6 +5457,7 @@ place_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 		lag = div_s64(lag, load);
 	}
 
+skip_lag_scale:
 	se->vruntime = vruntime - lag;
 
 	if (se->rel_deadline) {
