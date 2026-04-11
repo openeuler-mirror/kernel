@@ -17,6 +17,7 @@
 #include "ubcore_priv.h"
 #include "ubcore_topo_info.h"
 #include "ubcore_log.h"
+#include "ubcore_connect_adapter.h"
 
 #define BONDING_UDATA_BUF_LEN 1800
 
@@ -180,7 +181,8 @@ create_session_for_exchange_udata(struct ubcore_device *dev,
 	session_data->udata_out = udata_out;
 	session_data->udata_out_size = udata_out_size;
 
-	session = ubcore_session_create(dev, session_data, 0, NULL, NULL);
+	session = ubcore_session_create(dev, session_data,
+		ubcore_get_conn_timeout(), NULL, NULL);
 	if (!session) {
 		ubcore_log_err("Failed to alloc session for exchange seg info");
 		kfree(session_data);

@@ -57,6 +57,14 @@ struct msg_destroy_conn_req {
 	enum ubcore_transport_mode trans_mode;
 };
 
+/* Default as 128 ms */
+uint32_t ubcore_conn_timeout = UBCORE_DEF_CONN_TIMEOUT;
+
+uint32_t ubcore_get_conn_timeout(void)
+{
+	return ubcore_conn_timeout;
+}
+
 static int ubcore_active_tp(struct ubcore_device *dev,
 			    struct ubcore_active_tp_cfg *active_cfg)
 {
@@ -115,7 +123,8 @@ create_session_for_create_connection(struct ubcore_device *dev)
 
 	session_data->ret = -1;
 
-	session = ubcore_session_create(dev, session_data, 0, NULL, NULL);
+	session = ubcore_session_create(dev, session_data,
+		ubcore_get_conn_timeout(), NULL, NULL);
 	if (!session) {
 		ubcore_log_err("Failed to alloc session for create connection");
 		kfree(session_data);

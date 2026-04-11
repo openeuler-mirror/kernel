@@ -66,12 +66,11 @@ ubcore_session_create(struct ubcore_device *dev, void *session_data,
 		      uint32_t timeout, ubcore_session_callback complete_cb,
 		      ubcore_session_free_callback free_cb)
 {
-	const uint32_t MAX_TIMEOUT = 10000; /* 10s */
 	struct ubcore_session *s;
 	uint32_t timeout_limited;
 
-	if (timeout == 0 || timeout > MAX_TIMEOUT)
-		timeout_limited = MAX_TIMEOUT;
+	if (timeout == 0 || timeout > UBCORE_CONN_MAX_TIMEOUT)
+		timeout_limited = UBCORE_CONN_MAX_TIMEOUT;
 	else
 		timeout_limited = timeout;
 

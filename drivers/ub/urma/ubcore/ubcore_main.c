@@ -26,6 +26,8 @@
 
 module_param(g_ubcore_log_level, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(g_ubcore_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
+module_param(ubcore_conn_timeout, uint, UBCORE_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(ubcore_conn_timeout, "unit milliseconds");
 
 static int __init ubcore_init(void)
 {
