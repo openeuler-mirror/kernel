@@ -668,7 +668,7 @@ struct cfs_rq {
 	unsigned int		idle_nr_running;   /* SCHED_IDLE */
 	unsigned int		idle_h_nr_running; /* SCHED_IDLE */
 
-	s64			sum_w_vruntime;
+	KABI_REPLACE(s64 avg_vruntime, s64 sum_w_vruntime)
 	KABI_REPLACE(u64 avg_load, u64 sum_weight)
 
 	u64			exec_clock;
