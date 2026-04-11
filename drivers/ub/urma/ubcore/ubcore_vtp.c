@@ -1275,6 +1275,66 @@ struct ubcore_vtpn *
 	return vtpn;
 }
 
+struct ubcore_vtpn *
+	ubcore_connect_rc_vtp_ctrlplane(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata)
+{
+	struct ubcore_vtpn *exist_vtpn = NULL;
+	struct ubcore_vtpn *vtpn;
+	int ret;
+
+	// 1. try to reuse vtpn
+	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
+	if (vtpn != NULL)
+		return ubcore_reuse_vtpn(dev, vtpn);
+
+	// 2. alloc new vtpn
+	vtpn = ubcore_create_vtpn(dev, param, active_tp_cfg, udata);
+	if (IS_ERR_OR_NULL(vtpn)) {
+		ubcore_log_err("failed to alloc vtpn.\n");
+		return vtpn;
+	}
+
+	// 3. add vtpn to hashtable
+	ret = ubcore_find_add_vtpn_ctrlplane(dev, vtpn, &exist_vtpn);
+	if (ret == -EEXIST && exist_vtpn != NULL) {
+		exist_vtpn =
+			ubcore_reuse_vtpn(dev, exist_vtpn); // reuse immediately
+		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		return exist_vtpn;
+	} else if (ret != 0) {
+		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		return NULL;
+	}
+
+	// 4. active tp
+	mutex_lock(&vtpn->state_lock);
+	ret = ubcore_active_tp(dev, active_tp_cfg, vtpn);
+	if (ret == 0) {
+		atomic_inc(&vtpn->use_cnt);
+		vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
+		vtpn->state = UBCORE_VTPS_READY;
+	} else {
+		vtpn->state = UBCORE_VTPS_WAIT_DESTROY;
+	}
+	mutex_unlock(&vtpn->state_lock);
+
+	// 5. failed roll back
+	if (ret != 0) {
+		ubcore_log_err("failed to active tp, vtpn:%u", vtpn->vtpn);
+		ubcore_hash_table_rmv_vtpn_ctrlplane(dev, vtpn);
+		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		return ERR_PTR(ret);
+	}
+
+	ubcore_log_info("connect vtpn:%u, trans_mode:%u, tp_handle: %llu.\n",
+			vtpn->vtpn, vtpn->trans_mode,
+			active_tp_cfg->tp_handle.value);
+	return vtpn;
+}
+
 static struct ubcore_vtpn *
 ubcore_reuse_vtpn_async(struct ubcore_device *dev, struct ubcore_vtpn *vtpn,
 			struct ubcore_vtpn_cb_para *para)

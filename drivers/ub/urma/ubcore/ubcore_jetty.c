@@ -2824,7 +2824,7 @@ static int ubcore_inner_bind_ub_jetty_ctrlplane(
 			ret = -EEXIST;
 			goto unbind;
 		}
-		vtpn = ubcore_connect_vtp_ctrlplane(dev, &vtp_param,
+		vtpn = ubcore_connect_rc_vtp_ctrlplane(dev, &vtp_param,
 							active_tp_cfg, udata);
 		if (IS_ERR_OR_NULL(vtpn)) {
 			mutex_unlock(&tjetty->lock);
