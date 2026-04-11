@@ -554,6 +554,24 @@ int str_to_eid(const char *eid_str, union ubcore_eid *eid)
 EXPORT_SYMBOL(str_to_eid);
 
 /**
+ * is_full_zero_ubcore_eid - check whether the EID is 0
+ * @eid: URMA EID
+ *
+ * Return: true when eid is 0, false when eid not is 0.
+ *
+ */
+static bool is_full_zero_ubcore_eid(const union ubcore_eid *eid)
+{
+	int i = 0;
+
+	for (i = 0; i < UBCORE_EID_SIZE; i++) {
+		if (eid->raw[i] != 0)
+			return false;
+	}
+	return true;
+}
+
+/**
  * ubcore_eid_to_str_full - Convert URMA EID to string representation
  * @eid: URMA EID
  * @dst_eid_str: Pointer to store converted EID
@@ -569,6 +587,9 @@ int ubcore_eid_to_str_full(const union ubcore_eid *eid, char *dst_eid_str, int l
 		pr_err("%s: invalid params or buffer too small\n", __func__);
 		return -EINVAL;
 	}
+
+	if (is_full_zero_ubcore_eid(eid))
+		pr_warn("%s: the eid is 0\n", __func__);
 
 	int ret = snprintf(dst_eid_str, len,
 			"%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x",
@@ -1136,6 +1157,9 @@ int match_index_by_remote_ub_eid(union ubcore_eid remote_eid, int *node_index, i
 		pr_err("Invalid param, failed to match index\n");
 		return -EINVAL;
 	}
+
+	if (is_full_zero_ubcore_eid(&remote_eid))
+		pr_warn("%s: the eid is 0\n", __func__);
 
 	for (i = 0; i < sentry_urma_ctx.local_eid_num_configured; i++) {
 		if (!sentry_urma_dev[i].is_created) {
@@ -1771,7 +1795,7 @@ static int sentry_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr 
 	}
 
 	cnt = ubcore_poll_jfc(jfc, cr_cnt, cr);
-	pr_info("ubcore_poll_jfc cr.status is %d\n", cr->status);
+	pr_info("ubcore_poll_jfc cr.status is %d, cnt is %d\n", cr->status, cnt);
 	if (cnt <= 0)
 		return cnt;
 
@@ -1780,11 +1804,12 @@ static int sentry_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr 
 		int idx = -1;
 		int tmp_die_index = die_index;
 
-		if (cr[k].status == 0) {
-			match_index_by_remote_ub_eid(cr[k].remote_id.eid, &idx, &tmp_die_index);
-			if (idx >= 0)
-				atomic_inc(&sentry_urma_dev[tmp_die_index].remote_recv_cnt[idx]);
-		}
+		match_index_by_remote_ub_eid(cr[k].remote_id.eid, &idx, &tmp_die_index);
+		if (idx >= 0)
+			atomic_inc(&sentry_urma_dev[tmp_die_index].remote_recv_cnt[idx]);
+		else
+			pr_warn("%s: cr[%d].status is %d, match index failed\n",
+					__func__, k, cr[k].status);
 	}
 
 	return cnt;
