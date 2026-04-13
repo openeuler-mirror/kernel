@@ -14,6 +14,7 @@
 
 #include <linux/types.h>
 #include <linux/printk.h>
+#include <linux/sched.h>
 
 enum ubcore_log_level {
 	UBCORE_LOG_LEVEL_EMERG = 0,
@@ -31,14 +32,16 @@ enum ubcore_log_level {
 #define UBCORE_LOG_TAG "URMA"
 #define UBCORE_LOG     "ubcore"
 /* only use debug log */
-/* add log head info: URMA|ubcore|thread_id|function:[line]|format */
+/* add log head info: URMA|ubcore|thread_id|vnr_thread_id|function:[line]|format */
 #define ubcore_log(l, format, args...) \
-	pr_##l("%s|%s|%d|%s:[%d]|" format, UBCORE_LOG_TAG, UBCORE_LOG, \
-		((int)current->pid), __func__, __LINE__, ##args)
+	pr_##l("%s|%s|%d|%d|%s:[%d]|" format, UBCORE_LOG_TAG, UBCORE_LOG, \
+		((int)current->pid), ((int)task_pid_vnr(current)), \
+		__func__, __LINE__, ##args)
 /* use default log, info/warn/err */
 #define ubcore_default_log(l, format, args...)                        \
-	((void)pr_##l("%s|%s|%d|%s[%d]|" format, UBCORE_LOG_TAG, UBCORE_LOG, \
-		((int)current->pid), __func__, __LINE__, ##args))
+	((void)pr_##l("%s|%s|%d|%d|%s[%d]|" format, UBCORE_LOG_TAG, UBCORE_LOG, \
+		((int)current->pid), ((int)task_pid_vnr(current)), \
+		__func__, __LINE__, ##args))
 
 #define UBCORE_RATELIMIT_INTERVAL (5 * HZ)
 #define UBCORE_RATELIMIT_BURST 100

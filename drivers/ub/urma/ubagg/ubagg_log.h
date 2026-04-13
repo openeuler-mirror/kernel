@@ -14,6 +14,7 @@
 
 #include <linux/types.h>
 #include <linux/printk.h>
+#include <linux/sched.h>
 
 enum ubagg_log_level {
 	UBAGG_LOG_LEVEL_EMERG = 0,
@@ -32,8 +33,9 @@ enum ubagg_log_level {
 #define UBAGG_LOG     "ubagg"
 
 #define ubagg_log(l, format, args...) \
-	pr_##l("%s|%s|%d|%s:[%d]|" format, UBAGG_LOG_TAG, UBAGG_LOG, \
-		((int)current->pid), __func__, __LINE__, ##args)
+	pr_##l("%s|%s|%d|%d|%s:[%d]|" format, UBAGG_LOG_TAG, UBAGG_LOG, \
+		((int)current->pid), ((int)task_pid_vnr(current)), \
+		__func__, __LINE__, ##args)
 
 #define UBAGG_RATELIMIT_INTERVAL (5 * HZ)
 #define UBAGG_RATELIMIT_BURST 100
