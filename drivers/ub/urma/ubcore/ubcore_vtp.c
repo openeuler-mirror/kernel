@@ -1198,16 +1198,7 @@ struct ubcore_vtpn *
 {
 	struct ubcore_vtpn *exist_vtpn = NULL;
 	struct ubcore_vtpn *vtpn;
-	struct ubcore_tpid_key key = { 0 };
-	struct ubcore_tpid_ctx *ctx;
-	struct ubcore_hash_table *ht = &dev->ht[UBCORE_HT_RC_TP_ID];
 	int ret;
-
-	key.local_eid = param->local_eid;
-	key.peer_eid = param->peer_eid;
-	key.local_jetty_id = param->local_jetty;
-	key.peer_jetty_id = param->peer_jetty;
-	ctx = ubcore_fget_tpid_ctx(dev, &key);
 
 	// 1. try to reuse vtpn
 	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
@@ -1235,19 +1226,9 @@ struct ubcore_vtpn *
 
 	// 4. active tp
 	mutex_lock(&vtpn->state_lock);
-	if (ctx && ctx->tp_state == UBCORE_TP_ACTIVE) {
-		atomic_inc(&vtpn->use_cnt);
-		vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
-		vtpn->tp_handle = ctx->tp_handle;
-		vtpn->peer_tp_handle = ctx->peer_tp_handle;
-		vtpn->state = UBCORE_VTPS_READY;
-		mutex_unlock(&vtpn->state_lock);
-		return vtpn;
-	}
 	ret = ubcore_active_tp(dev, active_tp_cfg, vtpn);
 	if (ret == 0) {
 		atomic_inc(&vtpn->use_cnt);
-		vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
 		vtpn->state = UBCORE_VTPS_READY;
 	} else {
 		vtpn->state = UBCORE_VTPS_WAIT_DESTROY;
@@ -1261,13 +1242,6 @@ struct ubcore_vtpn *
 		(void)ubcore_free_vtpn_ctrlplane(vtpn);
 		return ERR_PTR(ret);
 	}
-
-	if (ctx) {
-		spin_lock(&ht->lock);
-		ctx->tp_state = UBCORE_TP_ACTIVE;
-		spin_unlock(&ht->lock);
-	}
-
 
 	ubcore_log_info("connect vtpn:%u, trans_mode:%u, tp_handle: %llu.\n",
 			vtpn->vtpn, vtpn->trans_mode,

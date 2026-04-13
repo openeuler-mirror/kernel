@@ -701,7 +701,6 @@ int ubcore_adapter_layer_disconnect(struct ubcore_vtpn *vtpn)
 	if (ret != 0)
 		ubcore_log_err("Failed to send destroy req message");
 
-
 	return 0;
 }
 
