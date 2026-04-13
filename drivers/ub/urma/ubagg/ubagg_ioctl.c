@@ -110,6 +110,7 @@ static struct ubagg_device *ubagg_find_dev_by_name(char *dev_name)
 	list_for_each_entry(dev, &g_ubagg_dev_list, list_node) {
 		if (strncmp(dev_name, dev->master_dev_name,
 			    UBAGG_MAX_DEV_NAME_LEN) == 0) {
+			ubagg_dev_ref_get(dev);
 			spin_unlock(&g_ubagg_dev_list_lock);
 			return dev;
 		}
@@ -242,6 +243,7 @@ static int ubagg_get_physical_device(struct ubcore_device *dev,
 
 	if (get_physical_device(ubagg_dev, &out, &ubagg_dev->bonding_eid) != 0) {
 		ubagg_log_err("Failed to get physical device:%s", dev->dev_name);
+		ubagg_dev_ref_put(ubagg_dev);
 		return -ENXIO;
 	}
 
@@ -249,6 +251,7 @@ static int ubagg_get_physical_device(struct ubcore_device *dev,
 		ubagg_log_err(
 			"ubagg user ctl has no enough space, buffer size:%u, needed size:%lu",
 			user_ctl->out.len, sizeof(struct ubagg_physical_device_out));
+		ubagg_dev_ref_put(ubagg_dev);
 		return -ENOSPC;
 	}
 
@@ -256,8 +259,10 @@ static int ubagg_get_physical_device(struct ubcore_device *dev,
 			   (void *)&out, sizeof(out));
 	if (ret != 0) {
 		ubagg_log_err("copy to user fail, ret:%d", ret);
+		ubagg_dev_ref_put(ubagg_dev);
 		return -EFAULT;
 	}
+	ubagg_dev_ref_put(ubagg_dev);
 	return 0;
 }
 
@@ -1909,7 +1914,6 @@ void ubagg_clear_dev_list(void)
 		list_del_init(&dev->list_node);
 		ubcore_unregister_device(&dev->ub_dev);
 		free_ubagg_dev_bitmap(dev);
-		ubagg_dev_ref_put(dev);
 		ubagg_dev_ref_put(dev);
 	}
 	spin_unlock_irqrestore(&g_ubagg_dev_list_lock, flags);
