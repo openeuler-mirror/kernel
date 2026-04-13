@@ -444,6 +444,7 @@ int ubcore_connect_exchange_udata_when_import_seg(struct ubcore_seg *seg,
 	if (udata->udrv_data->out_len > BONDING_UDATA_BUF_LEN) {
 		ubcore_log_err("Invalid udata out len:%u\n",
 			       udata->udrv_data->out_len);
+		ubcore_put_device(physical_dev);
 		return -EINVAL;
 	}
 
@@ -520,6 +521,7 @@ int ubcore_connect_exchange_udata_when_import_jetty(
 	if (udata->udrv_data->out_len > BONDING_UDATA_BUF_LEN) {
 		ubcore_log_err("Invalid udata out len:%u\n",
 			       udata->udrv_data->out_len);
+		ubcore_put_device(physical_dev);
 		return -EINVAL;
 	}
 
@@ -625,7 +627,7 @@ static void handle_jetty_info_req(struct ubcore_device *dev,
 
 	resp.result = ret;
 	if (send_jetty_info_resp(dev, conn, msg->session_id, &resp) != 0) {
-		ubcore_log_err("Failed to send create resp message.\n");
+		ubcore_log_err("Failed to send jetty info resp message.\n");
 		goto put_device;
 	}
 
