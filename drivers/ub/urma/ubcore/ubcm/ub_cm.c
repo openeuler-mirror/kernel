@@ -190,6 +190,7 @@ static int ubcm_add_device(struct ubcore_device *device)
 	if (IS_ERR_OR_NULL(cm_dev->agent)) {
 		ubcore_log_err("Failed to register mad agent.\n");
 		ret = PTR_ERR(cm_dev->agent);
+		ubcm_put_ubc_dev(device);
 		goto put_dev;
 	}
 
