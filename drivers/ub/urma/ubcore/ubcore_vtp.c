@@ -1243,9 +1243,12 @@ struct ubcore_vtpn *
 		return ERR_PTR(ret);
 	}
 
-	ubcore_log_info("connect vtpn:%u, trans_mode:%u, tp_handle: %llu.\n",
-			vtpn->vtpn, vtpn->trans_mode,
-			active_tp_cfg->tp_handle.value);
+	ubcore_log_info("connect vtpn:%u, trans_mode:%u, l_eid " EID_FMT
+		", p_eid "EID_FMT", tphdl %llu, ptphdl %llu, tx_psn %u, rx_psn %u.\n",
+		vtpn->vtpn, vtpn->trans_mode, EID_ARGS(param->local_eid),
+		EID_ARGS(param->peer_eid), active_tp_cfg->tp_handle.value,
+		active_tp_cfg->peer_tp_handle.value, active_tp_cfg->tp_attr.tx_psn,
+		active_tp_cfg->tp_attr.rx_psn);
 	return vtpn;
 }
 
@@ -1303,9 +1306,12 @@ struct ubcore_vtpn *
 		return ERR_PTR(ret);
 	}
 
-	ubcore_log_info("connect vtpn:%u, trans_mode:%u, tp_handle: %llu.\n",
-			vtpn->vtpn, vtpn->trans_mode,
-			active_tp_cfg->tp_handle.value);
+	ubcore_log_info("connect vtpn:%u, trans_mode:%u, l_eid " EID_FMT
+		", p_eid "EID_FMT", tphdl %llu, ptphdl %llu, tx_psn %u, rx_psn %u.\n",
+		vtpn->vtpn, vtpn->trans_mode, EID_ARGS(param->local_eid),
+		EID_ARGS(param->peer_eid), active_tp_cfg->tp_handle.value,
+		active_tp_cfg->peer_tp_handle.value, active_tp_cfg->tp_attr.tx_psn,
+		active_tp_cfg->tp_attr.rx_psn);
 	return vtpn;
 }
 

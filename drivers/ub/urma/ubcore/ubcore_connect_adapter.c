@@ -568,11 +568,6 @@ static void handle_create_req(struct ubcore_device *dev, struct ubcore_net_msg *
 		ret = GET_TP_LIST_ERROR;
 		goto send_resp;
 	}
-	ubcore_log_info("Rcv req, local eid " EID_FMT ", peer eid " EID_FMT
-			", tp_hdl: %llu, tp_cnt: %u.\n",
-			EID_ARGS(get_tp_cfg.local_eid),
-			EID_ARGS(get_tp_cfg.peer_eid), tp_info.tp_handle.value,
-			tp_info.tp_handle.bs.tp_cnt);
 
 	tp_handle = tp_info.tp_handle.value;
 	tx_psn = get_random_u32();
@@ -581,6 +576,12 @@ static void handle_create_req(struct ubcore_device *dev, struct ubcore_net_msg *
 	active_cfg.peer_tp_handle.value = req->tp_handle;
 	active_cfg.tp_attr.rx_psn = req->tx_psn;
 	active_cfg.tp_attr.tx_psn = tx_psn;
+
+	ubcore_log_info("Rcv req, local eid " EID_FMT ", peer eid " EID_FMT
+		", tphdl: %llu, p_tphdl: %llu, tx_psn: %u, rx_psn: %u.\n",
+		EID_ARGS(get_tp_cfg.local_eid),
+		EID_ARGS(get_tp_cfg.peer_eid), tp_info.tp_handle.value,
+		active_cfg.peer_tp_handle.value, tx_psn, req->tx_psn);
 
 	ret = ubcore_active_tp(dev, &active_cfg);
 	if (ret != 0) {
@@ -671,7 +672,8 @@ int ubcore_adapter_layer_disconnect(struct ubcore_vtpn *vtpn)
 			ret = ubcore_deactive_tp(dev, tp_handle, NULL);
 	}
 	if (ret != 0) {
-		ubcore_log_err("Failed to deactivate tp, ret: %d\n", ret);
+		ubcore_log_err("Failed to deactivate tp, ret: %d, tphdl: %llu.\n",
+			ret, tp_handle.value);
 		return ret;
 	}
 
@@ -714,7 +716,8 @@ static void handle_destroy_req(struct ubcore_device *dev,
 	/* Target tp_handle get from kernel space */
 	ret = ubcore_deactive_tp(dev, req->tp_handle, NULL);
 	if (ret != 0)
-		ubcore_log_err("Failed to deactivate tp, ret: %d", ret);
+		ubcore_log_err("Failed to deactivate tp, ret: %d, tphdl: %llu",
+			ret, req->tp_handle.value);
 }
 
 /* Only for impoprt_jetty/jfr, thus only for RM/UM */
