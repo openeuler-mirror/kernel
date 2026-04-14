@@ -22,6 +22,10 @@
 #include "ubmgr/ubmgr_topo.h"
 #include "ubcore_uvs_cmd.h"
 
+int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
+	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
+	bool multi_path, struct ubcore_path_set *path_set);
+
 static int ubcore_eidtbl_add_entry(struct ubcore_device *dev,
 				   union ubcore_eid *eid, uint32_t *eid_idx,
 				   struct net *net)
@@ -203,7 +207,7 @@ static int ubcore_create_jetty_rsrc(struct ubcore_topo_map *topo_map)
 				ubcore_log_err(
 				"primary dev not exist, node %d dev %d die %d, eid: " EID_FMT
 				"\n",
-				cur_node_info->id, dev_idx, die_idx,
+				cur_node_info->node_id, dev_idx, die_idx,
 				EID_RAW_ARGS(
 				cur_node_info->agg_devs[dev_idx].ues[die_idx].primary_eid
 				));
@@ -227,7 +231,7 @@ static int ubcore_create_jetty_rsrc(struct ubcore_topo_map *topo_map)
 			ubcore_log_info(
 				"Created jetty rsrc: node %d dev %d primary die %d, eid: " EID_FMT
 				", idx: %d\n",
-				cur_node_info->id, dev_idx, die_idx,
+				cur_node_info->node_id, dev_idx, die_idx,
 				EID_RAW_ARGS(
 				cur_node_info->agg_devs[dev_idx].ues[die_idx].primary_eid),
 				eid_info.eid_index);
@@ -342,6 +346,30 @@ static int ubcore_cmd_get_route_list(struct ubcore_global_file *file,
 	return ret;
 }
 
+static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
+	struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_get_path_set arg;
+
+	int ret = 0;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
+	if (ret != 0) {
+		ubcore_log_err("Failed to parse ubcore cmd tlv.\n");
+		return ret;
+	}
+	ret = ubcore_get_path_set(&arg.in.src_bonding_eid, &arg.in.dst_bonding_eid,
+		arg.in.tp_type, arg.in.multi_path, &arg.out);
+	if (ret != 0) {
+		ubcore_log_err("Failed to get_path_set, ret: %d.\n", ret);
+		return ret;
+	}
+	if (ubcore_global_tlv_append(hdr, (void *)&arg) != 0)
+		ret = -EPERM;
+
+	return ret;
+}
+
 typedef int (*ubcore_uvs_global_cmd_handler)(struct ubcore_global_file *file,
 					     struct ubcore_cmd_hdr *hdr);
 struct ubcore_uvs_global_cmd_func {
@@ -354,6 +382,7 @@ static struct ubcore_uvs_global_cmd_func g_ubcore_uvs_global_cmd_funcs[] = {
 	[UBCORE_CMD_SET_TOPO] = { ubcore_cmd_set_topo, true },
 	[UBCORE_CMD_GET_ROUTE_LIST] = { ubcore_cmd_get_route_list, false },
 	[UBCORE_CMD_GET_TOPO] = { ubcore_cmd_get_topo, false },
+	[UBCORE_CMD_GET_PATH_SET] = { ubcore_cmd_get_path_set, false },
 };
 
 int ubcore_uvs_global_cmd_parse(struct ubcore_global_file *file,

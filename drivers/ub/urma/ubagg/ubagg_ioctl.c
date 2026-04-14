@@ -989,7 +989,7 @@ static int ubagg_update_topo_info(struct ubagg_topo_map *new_topo_map,
 		new_node = &new_topo_map->topo_infos[i];
 		for (j = 0; j < old_topo_map->node_num; j++) {
 			old_node = &old_topo_map->topo_infos[j];
-			if (new_node->id == old_node->id) {
+			if (new_node->node_id == old_node->node_id) {
 				if (update_link_info(new_node, old_node)) {
 					ubagg_log_err("update link info fail.");
 					return -EINVAL;
@@ -1336,7 +1336,7 @@ static void print_topo_map(struct ubagg_topo_map *topo_map)
 
 		ubagg_log_info(
 			"===================== node %u start(is_current:%d) =======================\n",
-			node->id, node->is_current);
+			node->node_id, node->is_current);
 
 		/* print link table for this node */
 		for (iodie_idx = 0; iodie_idx < IODIE_NUM; iodie_idx++) {
@@ -1384,7 +1384,7 @@ static void print_topo_map(struct ubagg_topo_map *topo_map)
 
 		ubagg_log_info(
 			"===================== node %d end =======================\n",
-			node->id);
+			node->node_id);
 	}
 	ubagg_log_info(
 		"========================== topo map end =============================\n");

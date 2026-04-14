@@ -15,16 +15,18 @@
 #include <ub/urma/ubcore_types.h>
 
 #define EID_LEN (16)
-#define MAX_PORT_NUM (9)
-#define MAX_NODE_NUM (16)
-#define IODIE_NUM (2)
-#define PORT_NUM (9)
-#define DEV_NUM (128)
-#define MAX_NODE_NUM (16)
+#define MAX_NODE_NUM (64)
 #define ENTITY_AGG_DEV_NUM (3) // bonding device number per entity
+#define PORT_NUM (9)
+#define CHIP_NUM (2)
+#define IODIE_NUM_PER_CHIP (1)
+#define DEV_NUM (256)
+#define IODIE_NUM (IODIE_NUM_PER_CHIP * CHIP_NUM)
+#define MAX_PATH_NUM (16)
 
 struct ubcore_topo_ue {
 	uint32_t chip_id;
+	uint32_t die_id;
 	uint32_t entity_id;
 	char primary_eid[EID_LEN];
 	char port_eid[PORT_NUM][EID_LEN];
@@ -55,10 +57,52 @@ struct ubcore_topo_link {
 };
 
 struct ubcore_topo_node {
-	uint32_t id;
+	uint32_t type;  // 0:1D-fullmesh, 1: Clos topology with parallel planes
+	uint32_t super_node_id;
+	uint32_t node_id;
 	uint32_t is_current;
-	struct ubcore_topo_link links[IODIE_NUM][PORT_NUM];
+	struct ubcore_topo_link links[IODIE_NUM][PORT_NUM]; /*Links[i] represents
+		the destination information connected to the current node's port[i].
+		It is not filled in Clos topology and relies on preset information.*/
 	struct ubcore_topo_agg_dev agg_devs[DEV_NUM];
+};
+
+
+enum ubcore_topo_type_t {
+	UBCORE_TOPO_TYPE_FULLMESH_1D,
+	UBCORE_TOPO_TYPE_CLOS
+};
+
+struct ubcore_node_id {
+	uint32_t super_node_id;
+	uint32_t node_id;
+};
+
+union ubcore_port_id {
+	struct {
+		uint8_t chip_id;
+		uint8_t die_id;
+		uint8_t port_idx;
+		uint8_t reserved;
+	};
+	uint64_t value;
+};
+
+struct ubcore_path {
+	union ubcore_port_id src_port;
+	union ubcore_port_id dst_port;
+	union ubcore_eid src_eid;
+	union ubcore_eid dst_eid;
+};
+
+struct ubcore_path_set {
+	enum ubcore_topo_type_t topo_type;
+	struct ubcore_node_id src_node;
+	struct ubcore_node_id dst_node;
+	uint32_t chip_count;
+	uint32_t die_count;
+	uint32_t path_count;
+	struct ubcore_path paths[MAX_PATH_NUM];
 };
 
 struct ubcore_topo_map {
@@ -92,5 +136,9 @@ int ubcore_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
 
 int ubcore_get_topo_bonding_dev_by_agg_eid(union ubcore_eid *agg_eid,
 	struct ubcore_topo_bonding_dev *out);
+
+int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
+	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
+	bool multi_path, struct ubcore_path_set *path_set);
 
 #endif // UBCORE_TOPO_INFO_H

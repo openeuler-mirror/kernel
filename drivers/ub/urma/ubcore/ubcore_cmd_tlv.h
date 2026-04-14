@@ -921,6 +921,17 @@ enum ubcore_get_route_list_type {
 	GET_ROUTE_LIST_OUT_NUM,
 };
 
+enum ubcore_get_path_set_type {
+	GET_PATH_SET_IN_SRC_BONDING_EID,
+	GET_PATH_SET_IN_DST_BONDING_EID,
+	GET_PATH_SET_IN_TP_TYPE,
+	GET_PATH_SET_IN_MULTI_PATH,
+	GET_PATH_SET_IN_NUM,
+
+	GET_PATH_SET_OUT_PATH_SET = UBCORE_CMD_OUT_TYPE_INIT,
+	GET_PATH_SET_OUT_NUM,
+};
+
 int ubcore_mue_tlv_parse(struct ubcore_cmd_hdr *hdr, void *arg);
 int ubcore_mue_tlv_append(struct ubcore_cmd_hdr *hdr, void *arg);
 int ubcore_global_tlv_parse(struct ubcore_cmd_hdr *hdr, void *arg);

@@ -1067,7 +1067,6 @@ void ubcore_cgroup_uncharge(struct ubcore_cg_object *cg_obj,
  */
 int ubcore_get_route_list(struct ubcore_route *route_v,
 	struct ubcore_route_list *route_list);
-
 int ubcore_get_topo_eid(uint32_t tp_type, union ubcore_eid *src_v_eid,
 	union ubcore_eid *dst_v_eid, union ubcore_eid *src_p_eid,
 	union ubcore_eid *dst_p_eid);

@@ -32,6 +32,7 @@ enum ubcore_uvs_global_cmd {
 	UBCORE_CMD_SET_TOPO = 1,
 	UBCORE_CMD_GET_ROUTE_LIST = 2,
 	UBCORE_CMD_GET_TOPO = 3,
+	UBCORE_CMD_GET_PATH_SET = 4,
 	UBCORE_CMD_GLOBAL_LAST
 };
 
@@ -51,6 +52,16 @@ struct ubcore_cmd_get_topo {
 struct ubcore_cmd_get_route_list {
 	struct ubcore_route in;
 	struct ubcore_route_list out;
+};
+
+struct ubcore_cmd_get_path_set {
+	struct {
+		union ubcore_eid src_bonding_eid;
+		union ubcore_eid dst_bonding_eid;
+		enum ubcore_tp_type tp_type;
+		bool multi_path;
+	} in;
+	struct ubcore_path_set out;
 };
 
 int ubcore_uvs_mue_cmd_parse(struct ubcore_mue_file *file,

@@ -16,6 +16,7 @@
 #include "ubcore_topo_info.h"
 #include "ubcore_priv.h"
 
+#define INVALID_PORT (255)
 static struct ubcore_topo_map *g_ubcore_topo_map;
 
 struct ubcore_topo_map *
@@ -214,7 +215,7 @@ int ubcore_update_topo_map(struct ubcore_topo_map *new_topo_map,
 		new_node = &new_topo_map->topo_infos[i];
 		for (j = 0; j < old_topo_map->node_num; j++) {
 			old_node = &old_topo_map->topo_infos[j];
-			if (new_node->id == old_node->id) {
+			if (new_node->node_id == old_node->node_id) {
 				if (update_link_info(new_node, old_node)) {
 					ubcore_log_err("update link info failed\n");
 					return -EINVAL;
@@ -247,7 +248,7 @@ void ubcore_show_topo_map(struct ubcore_topo_map *topo_map)
 
 		ubcore_log_info(
 			"===================== node %u start(is_current:%d) =======================\n",
-			node->id, node->is_current);
+			node->node_id, node->is_current);
 
 		/* print link table for this node */
 		for (die_idx = 0; die_idx < IODIE_NUM; die_idx++) {
@@ -324,7 +325,7 @@ static int find_primary_eid_in_ues(struct ubcore_topo_agg_dev *agg_dev,
 			return 0;
 		}
 
-		for (port_id = 0; port_id < MAX_PORT_NUM; port_id++) {
+		for (port_id = 0; port_id < PORT_NUM; port_id++) {
 			if (is_eid_match(
 				agg_dev->ues[iodie_id].port_eid[port_id],
 				eid_raw)) {
@@ -655,13 +656,13 @@ static int get_route_port_eid_same_node(
 			ubcore_log_warn("Invalid route num, num = %d.\n", num);
 			return 0;
 		}
-		for (port_id = 0; port_id < MAX_PORT_NUM; port_id++) {
+		for (port_id = 0; port_id < PORT_NUM; port_id++) {
 			if (is_eid_valid(src_agg_dev->ues[iodie_id].port_eid[port_id]) &&
 				is_eid_valid(dst_agg_dev->ues[iodie_id].port_eid[port_id])) {
 				break;
 			}
 		}
-		if (port_id >= MAX_PORT_NUM) {
+		if (port_id >= PORT_NUM) {
 			ubcore_log_err("No valid port_eid found, num = %d.\n", num);
 			return -EINVAL;
 		}
@@ -696,12 +697,11 @@ static int ubcore_get_route_port_eid(union ubcore_eid *src_v_eid,
 	src_agg_dev = &src_topo_info->agg_devs[src_dev_id];
 	dst_agg_dev = &dst_topo_info->agg_devs[dst_dev_id];
 	// handle the possibility where src and dst share the same node.
-	if (src_topo_info->id == dst_topo_info->id) {
+	if (src_topo_info->node_id == dst_topo_info->node_id)
 		return get_route_port_eid_same_node(src_agg_dev, dst_agg_dev, route_list);
-	}
 
 	for (iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
-		for (port_id = 0; port_id < MAX_PORT_NUM; port_id++) {
+		for (port_id = 0; port_id < PORT_NUM; port_id++) {
 			if (route_list->route_num >= UBCORE_MAX_ROUTE_NUM) {
 				route_list->route_num = UBCORE_MAX_ROUTE_NUM;
 				ubcore_log_warn("Invalid route num, num = %d.\n",
@@ -710,9 +710,10 @@ static int ubcore_get_route_port_eid(union ubcore_eid *src_v_eid,
 			}
 			if (!is_eid_valid(src_agg_dev->ues[iodie_id].port_eid[port_id]) ||
 				src_topo_info->links[iodie_id][port_id].peer_port == UINT32_MAX ||
-				src_topo_info->links[iodie_id][port_id].peer_node != dst_topo_info->id) {
+				src_topo_info->links[iodie_id][port_id].peer_node !=
+				dst_topo_info->node_id)
 				continue;
-			}
+
 			// use link to get peer info
 			peer_port_id = src_topo_info->links[iodie_id][port_id].peer_port;
 			append_route_list(route_list, src_agg_dev->ues[iodie_id].port_eid[port_id],
@@ -847,6 +848,412 @@ int ubcore_get_route_list(struct ubcore_route *route,
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_get_route_list);
+
+static int ubcore_get_route_set_primary(struct ubcore_topo_agg_dev *src_agg_dev,
+	struct ubcore_topo_agg_dev *dst_agg_dev, struct ubcore_path_set *path_set)
+{
+	uint32_t path_idx = 0;
+	struct ubcore_path *path;
+
+	for (int iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
+		if (path_idx >= UBCORE_MAX_ROUTE_NUM) {
+			ubcore_log_warn("Path set is full, path_count: %u.\n", path_idx);
+			break;
+		}
+
+		if (!is_eid_valid(src_agg_dev->ues[iodie_id].primary_eid) ||
+			!is_eid_valid(dst_agg_dev->ues[iodie_id].primary_eid)) {
+			continue;
+		}
+
+		path = &path_set->paths[path_idx];
+		path->src_port.chip_id = src_agg_dev->ues[iodie_id].chip_id;
+		path->src_port.die_id = iodie_id;
+		path->src_port.port_idx = INVALID_PORT;
+		path->src_port.reserved = 0;
+
+		path->dst_port.chip_id = dst_agg_dev->ues[iodie_id].chip_id;
+		path->dst_port.die_id = iodie_id;
+		path->dst_port.port_idx = INVALID_PORT;
+		path->dst_port.reserved = 0;
+
+		(void)memcpy(&path->src_eid,
+					src_agg_dev->ues[iodie_id].primary_eid,
+					sizeof(union ubcore_eid));
+		(void)memcpy(&path->dst_eid,
+					dst_agg_dev->ues[iodie_id].primary_eid,
+					sizeof(union ubcore_eid));
+		path_idx++;
+	}
+
+	path_set->path_count = path_idx;
+
+	if (path_idx == 0) {
+		ubcore_log_err("Failed to get any valid primary path.\n");
+		return -EINVAL;
+	}
+	ubcore_log_info("path_idx in get route primary is %u.\n", path_idx);
+
+	return 0;
+}
+
+static int ubcore_get_route_same_node(struct ubcore_topo_agg_dev *src_agg_dev,
+	struct ubcore_topo_agg_dev *dst_agg_dev, struct ubcore_path_set *path_set)
+{
+	uint32_t path_idx = path_set->path_count;
+	struct ubcore_path *path;
+
+	for (int iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
+		for (int port_id = 0; port_id < PORT_NUM; port_id++) {
+			if (path_idx >= UBCORE_MAX_ROUTE_NUM) {
+				ubcore_log_warn("Path set is full, path_count: %u.\n", path_idx);
+				path_set->path_count = path_idx;
+				return 0;
+			}
+
+			if (!is_eid_valid(src_agg_dev->ues[iodie_id].port_eid[port_id]))
+				continue;
+
+			path = &path_set->paths[path_idx];
+			path->src_port.chip_id = src_agg_dev->ues[iodie_id].chip_id;
+			path->src_port.die_id = iodie_id;
+			path->src_port.port_idx = port_id;
+			path->src_port.reserved = 0;
+
+			path->dst_port.chip_id = dst_agg_dev->ues[iodie_id].chip_id;
+			path->dst_port.die_id = iodie_id;
+			path->dst_port.port_idx = port_id;
+			path->dst_port.reserved = 0;
+
+			(void)memcpy(&path->src_eid,
+						src_agg_dev->ues[iodie_id].port_eid[port_id],
+						sizeof(union ubcore_eid));
+			(void)memcpy(&path->dst_eid,
+						dst_agg_dev->ues[iodie_id].port_eid[port_id],
+						sizeof(union ubcore_eid));
+
+			path_idx++;
+		}
+	}
+	ubcore_log_info("path_idx in get route same node is %u.\n", path_idx);
+
+	return 0;
+}
+
+static int ubcore_get_route_set_port(struct ubcore_topo_node *src_topo_info,
+	struct ubcore_topo_node *dst_topo_info, struct ubcore_topo_agg_dev *src_agg_dev,
+	struct ubcore_topo_agg_dev *dst_agg_dev, struct ubcore_path_set *path_set)
+{
+	int peer_port_id;
+	uint32_t path_idx = path_set->path_count;
+	struct ubcore_path *path;
+
+	if (src_topo_info->node_id == dst_topo_info->node_id)
+		return ubcore_get_route_same_node(src_agg_dev, dst_agg_dev, path_set);
+
+
+	for (int iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
+		for (int port_id = 0; port_id < PORT_NUM; port_id++) {
+			if (path_idx >= UBCORE_MAX_ROUTE_NUM) {
+				ubcore_log_warn("Path set is full, path_count: %u.\n", path_idx);
+				path_set->path_count = path_idx;
+				return 0;
+			}
+
+			if (!is_eid_valid(src_agg_dev->ues[iodie_id].port_eid[port_id]))
+				continue;
+
+			if (src_topo_info->links[iodie_id][port_id].peer_port == UINT32_MAX ||
+				src_topo_info->links[iodie_id][port_id].peer_node !=
+				dst_topo_info->node_id) {
+				continue;
+			}
+
+			peer_port_id = src_topo_info->links[iodie_id][port_id].peer_port;
+
+			path = &path_set->paths[path_idx];
+			path->src_port.chip_id = src_agg_dev->ues[iodie_id].chip_id;
+			path->src_port.die_id = iodie_id;
+			path->src_port.port_idx = port_id;
+			path->src_port.reserved = 0;
+
+			path->dst_port.chip_id = dst_agg_dev->ues[iodie_id].chip_id;
+			path->dst_port.die_id = iodie_id;
+			path->dst_port.port_idx = peer_port_id;
+			path->dst_port.reserved = 0;
+
+			(void)memcpy(&path->src_eid,
+						src_agg_dev->ues[iodie_id].port_eid[port_id],
+						sizeof(union ubcore_eid));
+			(void)memcpy(&path->dst_eid,
+						dst_agg_dev->ues[iodie_id].port_eid[peer_port_id],
+						sizeof(union ubcore_eid));
+
+			path_idx++;
+		}
+	}
+
+	if (path_idx == path_set->path_count) {
+		ubcore_log_err("Failed to get any valid port path.\n");
+		return -EINVAL;
+	}
+
+	path_set->path_count = path_idx;
+
+	ubcore_log_info("path_idx in get route port is %u", path_idx);
+	return 0;
+}
+
+static int ubcore_get_path_set_primary(struct ubcore_topo_agg_dev *src_agg_dev,
+	struct ubcore_topo_agg_dev *dst_agg_dev, struct ubcore_path_set *path_set)
+{
+	int iodie_id;
+	uint32_t path_idx = 0;
+	struct ubcore_path *path;
+
+	for (iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
+		if (path_idx >= UBCORE_MAX_ROUTE_NUM) {
+			ubcore_log_warn("Path set is full, path_count: %u.\n", path_idx);
+			break;
+		}
+
+		if (!is_eid_valid(src_agg_dev->ues[iodie_id].primary_eid) ||
+			!is_eid_valid(dst_agg_dev->ues[iodie_id].primary_eid)) {
+			continue;
+		}
+
+		path = &path_set->paths[path_idx];
+		path->src_port.chip_id = src_agg_dev->ues[iodie_id].chip_id;
+		path->src_port.die_id = src_agg_dev->ues[iodie_id].die_id;
+		path->src_port.port_idx = INVALID_PORT;
+		path->src_port.reserved = 0;
+
+		path->dst_port.chip_id = dst_agg_dev->ues[iodie_id].chip_id;
+		path->dst_port.die_id = dst_agg_dev->ues[iodie_id].die_id;
+		path->dst_port.port_idx = INVALID_PORT;
+		path->dst_port.reserved = 0;
+
+		(void)memcpy(&path->src_eid,
+					src_agg_dev->ues[iodie_id].primary_eid,
+					sizeof(union ubcore_eid));
+		(void)memcpy(&path->dst_eid,
+					dst_agg_dev->ues[iodie_id].primary_eid,
+					sizeof(union ubcore_eid));
+		ubcore_log_info("src chip_idx is %u, die_idx is %u, port_idx is %u.\n.",
+			path->src_port.chip_id, path->src_port.die_id,
+			path->src_port.port_idx);
+		ubcore_log_info("dst chip_idx is %u, die_idx is %u, port_idx is %u.\n.",
+			path->dst_port.chip_id, path->dst_port.die_id,
+			path->dst_port.port_idx);
+		path_idx++;
+	}
+
+	path_set->path_count = path_idx;
+
+	if (path_idx == 0) {
+		ubcore_log_err("Failed to get any valid primary path.\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ubcore_get_path_set_port(struct ubcore_topo_node *src_topo_info,
+	struct ubcore_topo_node *dst_topo_info, struct ubcore_topo_agg_dev *src_agg_dev,
+	struct ubcore_topo_agg_dev *dst_agg_dev, struct ubcore_path_set *path_set)
+{
+	int iodie_id, port_id;
+	uint32_t path_idx = 0;
+	struct ubcore_path *path;
+
+	for (iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
+		for (port_id = 0; port_id < PORT_NUM; port_id++) {
+			if (path_idx >= UBCORE_MAX_ROUTE_NUM) {
+				ubcore_log_warn("idx full, path_count: %u.\n", path_idx);
+				path_set->path_count = path_idx;
+				return 0;
+			}
+
+			if (!is_eid_valid(src_agg_dev->ues[iodie_id].port_eid[port_id]))
+				continue;
+
+			path = &path_set->paths[path_idx];
+			path->src_port.chip_id = src_agg_dev->ues[iodie_id].chip_id;
+			path->src_port.die_id = src_agg_dev->ues[iodie_id].die_id;
+			path->src_port.port_idx = port_id;
+			path->src_port.reserved = 0;
+
+			path->dst_port.chip_id = dst_agg_dev->ues[iodie_id].chip_id;
+			path->dst_port.die_id = dst_agg_dev->ues[iodie_id].die_id;
+			path->dst_port.port_idx = port_id;
+			path->dst_port.reserved = 0;
+
+			(void)memcpy(&path->src_eid,
+				src_agg_dev->ues[iodie_id].port_eid[port_id],
+				sizeof(union ubcore_eid));
+			(void)memcpy(&path->dst_eid,
+				dst_agg_dev->ues[iodie_id].port_eid[port_id],
+				sizeof(union ubcore_eid));
+			ubcore_log_info("src chip_idx is %u, die_idx is %u, port_idx is %u.\n.",
+				path->src_port.chip_id, path->src_port.die_id,
+				path->src_port.port_idx);
+			ubcore_log_info("dst chip_idx is %u, die_idx is %u, port_idx is %u.\n.",
+				path->dst_port.chip_id, path->dst_port.die_id,
+				path->dst_port.port_idx);
+			path_idx++;
+		}
+	}
+
+	path_set->path_count = path_idx;
+
+	if (path_idx == 0) {
+		ubcore_log_err("Failed to get any valid port path.\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ubcore_get_path_set_same_node(struct ubcore_topo_agg_dev *src_agg_dev,
+	struct ubcore_topo_agg_dev *dst_agg_dev, enum ubcore_tp_type tp_type,
+	struct ubcore_path_set *path_set)
+{
+	int iodie_id;
+	uint32_t path_idx = 0;
+	struct ubcore_path *path;
+
+	for (iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
+
+		path = &path_set->paths[path_idx];
+		path->src_port.chip_id = src_agg_dev->ues[iodie_id].chip_id + 1;
+		path->src_port.die_id = iodie_id;
+		path->src_port.port_idx = 0;
+		path->src_port.reserved = 0;
+
+		path->dst_port.chip_id = dst_agg_dev->ues[iodie_id].chip_id + 1;
+		path->dst_port.die_id = iodie_id;
+		path->dst_port.port_idx = 0;
+		path->dst_port.reserved = 0;
+
+		(void)memcpy(&path->src_eid,
+				src_agg_dev->ues[iodie_id].primary_eid,
+				sizeof(union ubcore_eid));
+		(void)memcpy(&path->dst_eid,
+				dst_agg_dev->ues[iodie_id].primary_eid,
+				sizeof(union ubcore_eid));
+		path_idx++;
+	}
+
+	path_set->path_count = path_idx;
+
+	if (path_idx == 0) {
+		ubcore_log_err("Failed to get any valid port path in same_node.\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
+	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
+	bool multi_path, struct ubcore_path_set *path_set)
+{
+	int ret = 0;
+	struct ubcore_topo_agg_dev *src_agg_dev = NULL;
+	struct ubcore_topo_agg_dev *dst_agg_dev = NULL;
+	struct ubcore_topo_node *src_topo_info = NULL;
+	struct ubcore_topo_node *dst_topo_info = NULL;
+	int src_dev_id, dst_dev_id;
+
+	if (IS_ERR_OR_NULL(src_bonding_eid) || IS_ERR_OR_NULL(dst_bonding_eid) ||
+		IS_ERR_OR_NULL(path_set)) {
+		ubcore_log_err("Invalid parameter.\n");
+		return -EINVAL;
+	}
+
+	if (!g_ubcore_topo_map) {
+		ubcore_log_err("Failed to get path set, ubcore topo map doesn't exist.\n");
+		return -EINVAL;
+	}
+
+	(void)memset(path_set, 0, sizeof(struct ubcore_path_set));
+
+	src_topo_info = ubcore_get_topo_info_by_agg_eid(src_bonding_eid, &src_dev_id);
+	if (IS_ERR_OR_NULL(src_topo_info)) {
+		ubcore_log_err("Failed to get src_topo_info.\n");
+		return -EINVAL;
+	}
+	dst_topo_info = ubcore_get_topo_info_by_agg_eid(dst_bonding_eid, &dst_dev_id);
+	if (IS_ERR_OR_NULL(dst_topo_info)) {
+		ubcore_log_err("Failed to get dst_topo_info.\n");
+		return -EINVAL;
+	}
+	if (src_topo_info->type != dst_topo_info->type) {
+		ubcore_log_err("src topo_type is not equal with dst topo_type.\n");
+		return -EINVAL;
+	}
+	path_set->topo_type = src_topo_info->type;
+	path_set->chip_count = IODIE_NUM;
+	path_set->die_count = IODIE_NUM_PER_CHIP;
+	path_set->src_node.node_id = src_topo_info->node_id;
+	path_set->src_node.super_node_id = src_topo_info->super_node_id;
+	path_set->dst_node.node_id = dst_topo_info->node_id;
+	path_set->dst_node.super_node_id = dst_topo_info->super_node_id;
+
+	src_agg_dev = &src_topo_info->agg_devs[src_dev_id];
+	dst_agg_dev = &dst_topo_info->agg_devs[dst_dev_id];
+
+	if (path_set->topo_type == UBCORE_TOPO_TYPE_FULLMESH_1D) {
+		ret = ubcore_get_route_set_primary(src_agg_dev, dst_agg_dev, path_set);
+		if (ret != 0) {
+			ubcore_log_err("Failed to get primary route path set, ret: %d.\n", ret);
+			return ret;
+		}
+		ret = ubcore_get_route_set_port(src_topo_info, dst_topo_info, src_agg_dev,
+			dst_agg_dev, path_set);
+		if (ret != 0) {
+			ubcore_log_err("Failed to get port route path set, ret: %d.\n", ret);
+			return ret;
+		}
+		return ret;
+	}
+
+	/* multi_path == true && tp_type == RTP: paths array all empty */
+	if (multi_path && tp_type == UBCORE_RTP) {
+		path_set->path_count = 0;
+		ubcore_log_info("multi_path RTP mode, path_count set to 0.\n");
+		return 0;
+	}
+
+	/* multi_path == true && tp_type == CTP: all paths use primary logic */
+	if (multi_path && tp_type == UBCORE_CTP) {
+		ret = ubcore_get_path_set_primary(src_agg_dev, dst_agg_dev, path_set);
+		if (ret != 0)
+			ubcore_log_err("Failed to get primary path set, ret: %d.\n", ret);
+		return ret;
+	}
+
+	/* multi_path == false && (tp_type == CTP || tp_type == RTP): original port logic */
+	if (src_topo_info->node_id == dst_topo_info->node_id) {
+		ret = ubcore_get_path_set_same_node(src_agg_dev, dst_agg_dev,
+			tp_type, path_set);
+		if (ret != 0)
+			ubcore_log_err("Failed to get path set for same node, ret: %d.\n", ret);
+		return ret;
+	}
+
+	ret = ubcore_get_path_set_port(src_topo_info, dst_topo_info, src_agg_dev,
+			dst_agg_dev, path_set);
+	if (ret != 0) {
+		ubcore_log_err("Failed to get port path set, ret: %d.\n", ret);
+		return ret;
+	}
+
+	ubcore_log_info("Finish to get path set, path_count: %u.\n", path_set->path_count);
+
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_get_path_set);
 
 int ubcore_get_topo_eid(uint32_t tp_type, union ubcore_eid *src_v_eid,
 	union ubcore_eid *dst_v_eid, union ubcore_eid *src_p_eid, union ubcore_eid *dst_p_eid)
