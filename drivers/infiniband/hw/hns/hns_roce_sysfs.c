@@ -186,6 +186,57 @@ static ssize_t cnp_pri_attr_store(struct hns_roce_port *pdata,
 	return count;
 }
 
+static umode_t gsi_sl_attr_is_visible(struct kobject *kobj,
+				      struct attribute *attr, int i)
+{
+	return 0600;
+}
+
+static ssize_t gsi_sl_attr_show(struct hns_roce_port *pdata,
+				struct hns_port_attribute *attr, char *buf)
+{
+	struct hns_roce_dev *hr_dev = pdata->hr_dev;
+
+	return sysfs_emit(buf, "%u\n", hr_dev->gsi_sl);
+}
+
+static ssize_t gsi_sl_attr_store(struct hns_roce_port *pdata,
+				 struct hns_port_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct hns_roce_dev *hr_dev = pdata->hr_dev;
+	u32 val;
+	int ret;
+
+	if (hr_dev->iboe.port_state[pdata->port_num - 1] == IB_PORT_ACTIVE)
+		return -EOPNOTSUPP;
+
+	ret = kstrtou32(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val > MAX_SERVICE_LEVEL)
+		return -EINVAL;
+
+	hr_dev->gsi_sl = val;
+
+	return count;
+}
+
+static struct hns_port_attribute hns_roce_port_attr_gsi_sl =
+		__ATTR(sl, 0600,  gsi_sl_attr_show,  gsi_sl_attr_store);
+
+static struct attribute *gsi_sl_param_attrs[] = {
+	&hns_roce_port_attr_gsi_sl.attr,
+	NULL,
+};
+
+static const struct attribute_group gsi_sl_param_group = {
+	.name = "gsi_sl",
+	.attrs = gsi_sl_param_attrs,
+	.is_visible = gsi_sl_attr_is_visible,
+};
+
 static ssize_t scc_attr_show(struct hns_roce_port *pdata,
 			     struct hns_port_attribute *attr, char *buf)
 {
@@ -489,6 +540,7 @@ static const struct attribute_group *hns_attr_port_groups[] = {
 	&hc3_cc_param_group,
 	&dip_cc_param_group,
 	&cnp_pri_param_group,
+	&gsi_sl_param_group,
 	NULL,
 };
 
