@@ -223,10 +223,6 @@ static int alloc_ctx_from_vstream(struct vstream_info *vstream_info,
 	struct xsched_cu *xcu = vstream_info->xcu;
 	int ret;
 
-	*ctx = ctx_find_by_tgid_and_xcu(vstream_info->tgid, xcu);
-	if (*ctx)
-		return 0;
-
 	*ctx = kzalloc(sizeof(struct xsched_context), GFP_KERNEL);
 	if (!*ctx) {
 		XSCHED_ERR("Fail to alloc xsched context (tgid=%d) @ %s\n",
