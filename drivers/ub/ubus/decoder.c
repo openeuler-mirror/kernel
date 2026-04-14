@@ -55,23 +55,21 @@ static u32 set_mmio_base_reg(struct ub_decoder *decoder)
 	struct ub_entity *ent = decoder->uent;
 	u32 low_bit, high_bit, ret;
 
-	if (!ent->ubc->cluster) {
-		ret = (u32)ub_cfg_write_dword(ent, DECODER_MMIO_BA0,
-					      0xffffffff);
-		ret |= (u32)ub_cfg_write_dword(ent, DECODER_MMIO_BA1,
-					       0xffffffff);
-		ret |= (u32)ub_cfg_read_dword(ent, DECODER_MMIO_BA0, &low_bit);
-		ret |= (u32)ub_cfg_read_dword(ent, DECODER_MMIO_BA1, &high_bit);
-		if (ret) {
-			ub_err(ent, "Failed to access decoder MMIO BA\n");
-			return ret;
-		}
+	ret = (u32)ub_cfg_write_dword(ent, DECODER_MMIO_BA0,
+				      0xffffffff);
+	ret |= (u32)ub_cfg_write_dword(ent, DECODER_MMIO_BA1,
+				      0xffffffff);
+	ret |= (u32)ub_cfg_read_dword(ent, DECODER_MMIO_BA0, &low_bit);
+	ret |= (u32)ub_cfg_read_dword(ent, DECODER_MMIO_BA1, &high_bit);
+	if (ret) {
+		ub_err(ent, "Failed to access decoder MMIO BA\n");
+		return ret;
+	}
 
-		if ((low_bit | mmio_low) != low_bit ||
-		    (high_bit | mmio_high) != high_bit) {
-			ub_err(ent, "decoder MMIO address does not match HW reg\n");
-			return -EINVAL;
-		}
+	if ((low_bit | mmio_low) != low_bit ||
+		(high_bit | mmio_high) != high_bit) {
+		ub_err(ent, "decoder MMIO address does not match HW reg\n");
+		return -EINVAL;
 	}
 
 	ret = (u32)ub_cfg_write_dword(decoder->uent, DECODER_MMIO_BA0,
@@ -89,23 +87,21 @@ static u32 set_page_table_reg(struct ub_decoder *decoder)
 	struct ub_entity *ent = decoder->uent;
 	u32 low_bit, high_bit, ret;
 
-	if (!ent->ubc->cluster) {
-		ret = (u32)ub_cfg_write_dword(ent, DECODER_MATT_BA0,
-					      0xffffffff);
-		ret |= (u32)ub_cfg_write_dword(ent, DECODER_MATT_BA1,
-					       0xffffffff);
-		ret |= (u32)ub_cfg_read_dword(ent, DECODER_MATT_BA0, &low_bit);
-		ret |= (u32)ub_cfg_read_dword(ent, DECODER_MATT_BA1, &high_bit);
-		if (ret) {
-			ub_err(ent, "Failed to access decoder MATT BA\n");
-			return ret;
-		}
+	ret = (u32)ub_cfg_write_dword(ent, DECODER_MATT_BA0,
+				      0xffffffff);
+	ret |= (u32)ub_cfg_write_dword(ent, DECODER_MATT_BA1,
+				      0xffffffff);
+	ret |= (u32)ub_cfg_read_dword(ent, DECODER_MATT_BA0, &low_bit);
+	ret |= (u32)ub_cfg_read_dword(ent, DECODER_MATT_BA1, &high_bit);
+	if (ret) {
+		ub_err(ent, "Failed to access decoder MATT BA\n");
+		return ret;
+	}
 
-		if ((low_bit | matt_low) != low_bit ||
-		    (high_bit | matt_high) != high_bit) {
-			ub_err(ent, "decoder MATT address does not match HW reg\n");
-			return -EINVAL;
-		}
+	if ((low_bit | matt_low) != low_bit ||
+		(high_bit | matt_high) != high_bit) {
+		ub_err(ent, "decoder MATT address does not match HW reg\n");
+		return -EINVAL;
 	}
 
 	ret = (u32)ub_cfg_write_dword(decoder->uent, DECODER_MATT_BA0,
@@ -199,13 +195,15 @@ static void unset_decoder_enable(struct ub_decoder *decoder)
 
 static u32 ub_decoder_device_set(struct ub_decoder *decoder)
 {
-	u32 ret;
+	u32 ret = 0;
 
-	ret = set_mmio_base_reg(decoder);
-	ret |= set_page_table_reg(decoder);
+	if (decoder->create_matt) {
+		ub_info(decoder->uent, "Set mmio base reg and page table reg\n");
+		ret = set_mmio_base_reg(decoder);
+		ret |= set_page_table_reg(decoder);
+	}
 	ret |= set_queue_reg(decoder);
 	ret |= set_decoder_enable(decoder);
-
 	if (ret) {
 		unset_decoder_enable(decoder);
 		unset_queue_reg(decoder);
@@ -217,6 +215,9 @@ static u32 ub_decoder_device_set(struct ub_decoder *decoder)
 static int ub_decoder_create_page_table(struct ub_bus_controller *ubc,
 					struct ub_decoder *decoder)
 {
+	if (!decoder->create_matt)
+		return 0;
+
 	if (ubc->ops->create_decoder_table && ubc->ops->free_decoder_table)
 		return ubc->ops->create_decoder_table(decoder);
 
@@ -227,12 +228,16 @@ static int ub_decoder_create_page_table(struct ub_bus_controller *ubc,
 static void ub_decoder_free_page_table(struct ub_bus_controller *ubc,
 				       struct ub_decoder *decoder)
 {
+	if (!decoder->create_matt)
+		return;
+
 	if (ubc->ops->free_decoder_table)
 		ubc->ops->free_decoder_table(decoder);
 	else
 		ub_err(decoder->uent,
 			"ub bus controller can't free decoder table\n");
 }
+
 static int ub_get_decoder_mmio_base(struct ub_bus_controller *ubc,
 				     struct ub_decoder *decoder)
 {
@@ -268,8 +273,8 @@ static const u64 mmio_size[] = {
 static int ub_get_decoder_cap(struct ub_decoder *decoder)
 {
 	struct ub_entity *uent = decoder->uent;
+	u32 val, feature;
 	u64 size;
-	u32 val;
 	int ret;
 
 	ret = ub_cfg_read_dword(uent, DECODER_CAP, &val);
@@ -281,7 +286,6 @@ static int ub_get_decoder_cap(struct ub_decoder *decoder)
 	decoder->mmio_size_sup = (val & MMIO_SIZE_MASK) >> MMIO_SIZE_OFFSET;
 	decoder->cmdq.qs = (val & CMDQ_SIZE_MASK) >> CMDQ_SIZE_OFFSET;
 	decoder->evtq.qs = (val & EVTQ_SIZE_MASK) >> EVTQ_SIZE_OFFSET;
-
 	if (decoder->cmdq.qs == 0 || decoder->evtq.qs == 0) {
 		ub_err(uent, "decoder cmdq or evtq qs is 0\n");
 		return -EINVAL;
@@ -292,10 +296,17 @@ static int ub_get_decoder_cap(struct ub_decoder *decoder)
 		decoder->mmio_end_addr = decoder->mmio_base_addr +
 					 mmio_size[decoder->mmio_size_sup] - 1;
 
-	ub_info(uent, "decoder mmio_addr[%#llx-%#llx], cmdq_queue_size=%u, evtq_queue_size=%u, mmio_size_sup=%s\n",
-		decoder->mmio_base_addr, decoder->mmio_end_addr,
-		decoder->cmdq.qs, decoder->evtq.qs,
-		mmio_size_desc[decoder->mmio_size_sup]);
+	ret = ub_cfg_read_dword(uent, UB_CFG1_SUPPORT_FEATURE_L, &feature);
+	if (ret) {
+		ub_err(uent, "read ub cfg1 support feature failed, ret=%d\n", ret);
+		return ret;
+	}
+	decoder->create_matt = !(feature & UB_DECODER_JURIS);
+
+	ub_info(uent, "decoder mmio_addr[%#llx-%#llx], cmdq_queue_size=%u, evtq_queue_size=%u, mmio_size_sup=%s, matt_jurisdiction=%s\n",
+		decoder->mmio_base_addr, decoder->mmio_end_addr, decoder->cmdq.qs, decoder->evtq.qs,
+		mmio_size_desc[decoder->mmio_size_sup],
+		decoder->create_matt ? "UB driver" : "UBFM");
 	return 0;
 }
 
@@ -501,6 +512,9 @@ int ub_decoder_unmap(struct ub_decoder *decoder, phys_addr_t addr, u64 size)
 	}
 
 	ubc = decoder->uent->ubc;
+	if (!decoder->create_matt)
+		return 0;
+
 	if (!ubc->ops->decoder_unmap) {
 		pr_err("decoder_unmap ops not exist\n");
 		return -EINVAL;
@@ -518,6 +532,9 @@ int ub_decoder_map(struct ub_decoder *decoder, struct decoder_map_info *info)
 	}
 
 	ubc = decoder->uent->ubc;
+	if (!decoder->create_matt)
+		return 0;
+
 	if (!ubc->ops->decoder_map || !ubc->ops->decoder_unmap) {
 		pr_err("decoder_map or decoder_unmap ops not exist\n");
 		return -EINVAL;
