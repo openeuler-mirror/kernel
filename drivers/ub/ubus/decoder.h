@@ -86,6 +86,7 @@ struct ub_decoder {
 	u64 invalid_page_dma;
 
 	struct mutex table_lock;
+	bool create_matt;
 };
 
 struct decoder_map_info {
