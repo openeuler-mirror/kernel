@@ -911,9 +911,10 @@ int ubcore_get_dmac(struct ubcore_device *dev,
  * @return: 0 on success, other value on error
  */
 int ubcore_exchange_tp_info(struct ubcore_device *dev,
-				struct ubcore_get_tp_cfg *cfg, uint64_t tp_handle,
-				uint32_t tx_psn, uint64_t *peer_tp_handle,
-				uint32_t *rx_psn, struct ubcore_udata *udata);
+				struct ubcore_get_tp_cfg *get_tp_cfg,
+				struct ubcore_active_tp_cfg *active_tp_cfg,
+				struct ubcore_tjetty_cfg *tjetty_cfg,
+				struct ubcore_udata *udata);
 
 /**
  * operation of user ioctl cmd.

@@ -3230,7 +3230,7 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 				    struct uburma_file *file,
 				    struct uburma_cmd_hdr *hdr)
 {
-	struct ubcore_active_tp_cfg active_tp_cfg = { 0 };
+	struct ubcore_active_tp_cfg active_tp_cfg = { 0 }, empty_cfg = { 0 };
 	struct uburma_cmd_import_jfr_ex arg = { 0 };
 	struct ubcore_tjetty_cfg cfg = { 0 };
 	struct ubcore_udata udata = { 0 };
@@ -3255,7 +3255,9 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 	cfg.trans_mode = arg.in.trans_mode;
 	cfg.tp_type = (enum ubcore_tp_type)arg.in.tp_type;
 	cfg.eid_index = file->ucontext->eid_index;
-
+	cfg.stp_cfg.stag = arg.in.stag;
+	cfg.stp_cfg.dtag = arg.in.dtag;
+	cfg.stp_cfg.local_import = 1;
 	active_tp_cfg.tp_handle.value = arg.in.tp_handle;
 	active_tp_cfg.peer_tp_handle.value = arg.in.peer_tp_handle;
 	active_tp_cfg.tag = arg.in.tag;
@@ -3263,7 +3265,11 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 	active_tp_cfg.tp_attr.rx_psn = arg.in.rx_psn;
 	fill_udata(&udata, file->ucontext, &arg.udata);
 
-	tjfr = ubcore_import_jfr_ex(ubc_dev, &cfg, &active_tp_cfg, &udata);
+	if (memcmp(&active_tp_cfg, &empty_cfg, sizeof(active_tp_cfg)) == 0)
+		tjfr = ubcore_import_jfr(ubc_dev, &cfg, &udata);
+	else
+		tjfr = ubcore_import_jfr_ex(ubc_dev, &cfg, &active_tp_cfg, &udata);
+
 	if (IS_ERR_OR_NULL(tjfr)) {
 		uobj_alloc_abort(uobj);
 		return PTR_ERR(tjfr);
@@ -4619,25 +4625,27 @@ static int uburma_cmd_exchange_tp_info(struct ubcore_device *ubc_dev,
 				       struct uburma_file *file,
 				       struct uburma_cmd_hdr *hdr)
 {
-	struct uburma_cmd_exchange_tp_info arg;
+	struct ubcore_active_tp_cfg active_tp_cfg = {0};
+	struct uburma_cmd_exchange_tp_info arg = {0};
 	struct ubcore_get_tp_cfg get_tcp_cfg = {0};
+	struct ubcore_tjetty_cfg tjetty_cfg = {0};
 	struct ubcore_udata udata = {0};
-	uint64_t peer_tp_handle;
-	uint32_t rx_psn;
 	int ret;
 
 	ret = uburma_tlv_parse(hdr, &arg);
 	if (ret != 0)
 		return ret;
 	get_tcp_cfg = arg.in.get_tp_cfg;
-	ret = ubcore_exchange_tp_info(ubc_dev, &get_tcp_cfg, arg.in.tp_handle,
-		arg.in.tx_psn, &peer_tp_handle, &rx_psn, &udata);
+	active_tp_cfg.tp_handle.value = arg.in.tp_handle;
+	active_tp_cfg.tp_attr.tx_psn = arg.in.tx_psn;
+	ret = ubcore_exchange_tp_info(ubc_dev, &get_tcp_cfg,
+			&active_tp_cfg, &tjetty_cfg, &udata);
 	if (ret != 0) {
 		uburma_log_err("Failed to exchange tp info, ret: %d.\n", ret);
 		return ret;
 	}
-	arg.out.peer_tp_handle = peer_tp_handle;
-	arg.out.rx_psn = rx_psn;
+	arg.out.peer_tp_handle = active_tp_cfg.peer_tp_handle.value;
+	arg.out.rx_psn = active_tp_cfg.tp_attr.rx_psn;
 
 	ret = uburma_tlv_append(hdr, &arg);
 	return ret;
@@ -4761,7 +4769,7 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 				      struct uburma_file *file,
 				      struct uburma_cmd_hdr *hdr)
 {
-	struct ubcore_active_tp_cfg active_tp_cfg = { 0 };
+	struct ubcore_active_tp_cfg active_tp_cfg = { 0 }, empty_cfg = { 0 };
 	struct uburma_cmd_import_jetty_ex arg = { 0 };
 	struct ubcore_tjetty_cfg cfg = { 0 };
 	struct ubcore_udata udata = { 0 };
@@ -4788,6 +4796,9 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	cfg.policy = (enum ubcore_jetty_grp_policy)arg.in.policy;
 	cfg.type = (enum ubcore_target_type)arg.in.type;
 	cfg.tp_type = (enum ubcore_tp_type)arg.in.tp_type;
+	cfg.stp_cfg.stag = arg.in.stag;
+	cfg.stp_cfg.dtag = arg.in.dtag;
+	cfg.stp_cfg.local_import = 1;
 	cfg.eid_index = file->ucontext->eid_index;
 
 	active_tp_cfg.tp_handle.value = arg.in.tp_handle;
@@ -4797,7 +4808,11 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	active_tp_cfg.tp_attr.rx_psn = arg.in.rx_psn;
 	fill_udata(&udata, file->ucontext, &arg.udata);
 
-	tjetty = ubcore_import_jetty_ex(ubc_dev, &cfg, &active_tp_cfg, &udata);
+	if (memcmp(&active_tp_cfg, &empty_cfg, sizeof(active_tp_cfg)) == 0)
+		tjetty = ubcore_import_jetty(ubc_dev, &cfg, &udata);
+	else
+		tjetty = ubcore_import_jetty_ex(ubc_dev, &cfg, &active_tp_cfg, &udata);
+
 	if (IS_ERR_OR_NULL(tjetty)) {
 		uburma_log_err("ubcore_import_jetty failed.\n");
 		uobj_alloc_abort(uobj);

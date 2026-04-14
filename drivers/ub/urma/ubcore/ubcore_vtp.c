@@ -1253,6 +1253,93 @@ struct ubcore_vtpn *
 }
 
 struct ubcore_vtpn *
+	ubcore_connect_rm_svrtp_ctrlplane(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_share_tp_cfg *stp_cfg,
+	struct ubcore_udata *udata)
+{
+	struct ubcore_rm_tp_info *info_ext = NULL;
+	struct ubcore_vtpn *exist_vtpn = NULL;
+	struct ubcore_rm_tp_key key = {0};
+	struct ubcore_vtpn *vtpn;
+	uint32_t hash;
+	int ret;
+
+	// 1. try to reuse vtpn
+	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
+	if (vtpn != NULL)
+		return ubcore_reuse_vtpn(dev, vtpn);
+
+	// 2. alloc new vtpn
+	vtpn = ubcore_create_vtpn(dev, param, active_tp_cfg, udata);
+	if (IS_ERR_OR_NULL(vtpn)) {
+		ubcore_log_err("failed to alloc vtpn.\n");
+		return vtpn;
+	}
+
+	// 3. add vtpn to hashtable
+	ret = ubcore_find_add_vtpn_ctrlplane(dev, vtpn, &exist_vtpn);
+	if (ret == -EEXIST && exist_vtpn != NULL) {
+		exist_vtpn =
+			ubcore_reuse_vtpn(dev, exist_vtpn); // reuse immediately
+		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		return exist_vtpn;
+	} else if (ret != 0) {
+		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		return NULL;
+	}
+
+	key.local_eid = param->local_eid;
+	key.peer_eid = param->peer_eid;
+	key.stag = stp_cfg->stag;
+	key.dtag = stp_cfg->dtag;
+	hash = ubcore_get_rm_tp_hash(&key);
+
+	info_ext = ubcore_hash_table_lookup(&dev->ht[UBCORE_HT_RM_TP_ID],
+							hash, &key);
+	if (info_ext == NULL) {
+		ubcore_log_err("failed to find rm share tp_info");
+		return NULL;
+	}
+	// 4. active tp
+	mutex_lock(&vtpn->state_lock);
+
+	mutex_lock(&info_ext->lock);
+	if (atomic_read(&info_ext->tp_state) == RM_STP_CREATED) {
+		ret = ubcore_active_tp(dev, active_tp_cfg, vtpn);
+		atomic_set(&info_ext->tp_state, RM_STP_ACTIVE);
+	}
+	mutex_unlock(&info_ext->lock);
+	vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
+
+	if (ret == 0) {
+		atomic_inc(&vtpn->use_cnt);
+		vtpn->state = UBCORE_VTPS_READY;
+	} else {
+		vtpn->state = UBCORE_VTPS_WAIT_DESTROY;
+	}
+	mutex_unlock(&vtpn->state_lock);
+
+	// 5. failed roll back
+	if (ret != 0) {
+		atomic_set(&info_ext->tp_state, RM_STP_ERROR);
+		ubcore_log_err("failed to active tp, vtpn:%u", vtpn->vtpn);
+		ubcore_hash_table_rmv_vtpn_ctrlplane(dev, vtpn);
+		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		return ERR_PTR(ret);
+	}
+
+	ubcore_log_info("connect vtpn:%u, trans_mode:%u, l_eid " EID_FMT
+		", p_eid "EID_FMT", tphdl %llu, ptphdl %llu, tx_psn %u, rx_psn %u.\n",
+		vtpn->vtpn, vtpn->trans_mode, EID_ARGS(param->local_eid),
+		EID_ARGS(param->peer_eid), active_tp_cfg->tp_handle.value,
+		active_tp_cfg->peer_tp_handle.value, active_tp_cfg->tp_attr.tx_psn,
+		active_tp_cfg->tp_attr.rx_psn);
+	return vtpn;
+}
+
+struct ubcore_vtpn *
 	ubcore_connect_rc_vtp_ctrlplane(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param,
 	struct ubcore_active_tp_cfg *active_tp_cfg,
@@ -1511,6 +1598,65 @@ int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn)
 		if (ret == 0 || ret == -ENOENT ||
 		    (vtpn->tp_handle == 0 &&
 		     ubcore_queue_destroy_vtp_task(dev, vtpn, 0) != 0)) {
+			if (tp_handle != 0)
+				(void)ubcore_free_vtpn_ctrlplane(vtpn);
+			else
+				(void)ubcore_free_vtpn(vtpn);
+		}
+	}
+
+	return (tp_handle != 0) ? ret : 0;
+}
+
+int ubcore_disconnect_rm_svtp(struct ubcore_tjetty *tjetty)
+{
+	struct ubcore_vtpn *vtpn = tjetty->vtpn;
+	struct ubcore_device *dev;
+	uint64_t tp_handle;
+	int ret = 0;
+
+	if (vtpn == NULL || vtpn->ub_dev == NULL)
+		return -EINVAL;
+
+	tp_handle = vtpn->tp_handle;
+	dev = vtpn->ub_dev;
+	mutex_lock(&vtpn->state_lock);
+	if (atomic_dec_return(&vtpn->use_cnt) > 0) {
+		ubcore_log_info("vtpn in use, vtpn id = %u, vtpn use_cnt = %d",
+				vtpn->vtpn, atomic_read(&vtpn->use_cnt));
+		mutex_unlock(&vtpn->state_lock);
+		/* dec refcnt of rm stp */
+		ubcore_adapter_layer_rm_stp_disconnect(tjetty);
+		return 0;
+	}
+	if (tp_handle == 0)
+		ubcore_hash_table_rmv_vtpn(dev, vtpn);
+	else
+		ubcore_hash_table_rmv_vtpn_ctrlplane(dev, vtpn);
+
+	if (atomic_read(&vtpn->use_cnt) > 0) {
+		mutex_unlock(&vtpn->state_lock);
+		return 0;
+	}
+
+	if (vtpn->state == UBCORE_VTPS_READY) {
+		if (tp_handle != 0)
+			ret = ubcore_adapter_layer_rm_stp_disconnect(tjetty);
+		else
+			ret = ubcore_send_del_vtp_req(vtpn);
+		vtpn->state = UBCORE_VTPS_WAIT_DESTROY;
+	} else {
+		ubcore_log_info("vtp in deleted state, vtpn:%u, state%u",
+				vtpn->vtpn, vtpn->state);
+	}
+	ubcore_log_info_rl("disconnect vtpn:%u, ret:%d, vtp_state:%u",
+				vtpn->vtpn, ret, vtpn->state);
+	mutex_unlock(&vtpn->state_lock);
+
+	if (atomic_read(&vtpn->use_cnt) == 0) {
+		if (ret == 0 || ret == -ENOENT ||
+			(vtpn->tp_handle == 0 &&
+				ubcore_queue_destroy_vtp_task(dev, vtpn, 0) != 0)) {
 			if (tp_handle != 0)
 				(void)ubcore_free_vtpn_ctrlplane(vtpn);
 			else

@@ -597,6 +597,11 @@ static void ubcore_free_rc_tp_id_obj(void *obj)
 	ubcore_free_driver_obj(obj, UBCORE_HT_RC_TP_ID);
 }
 
+static void ubcore_free_rm_tp_id_obj(void *obj)
+{
+	ubcore_free_driver_obj(obj, UBCORE_HT_RM_TP_ID);
+}
+
 static struct ubcore_ht_param g_ht_params[] = {
 	[UBCORE_HT_JFS] = { UBCORE_HASH_TABLE_SIZE,
 			    offsetof(struct ubcore_jfs, hnode),
@@ -638,6 +643,12 @@ static struct ubcore_ht_param g_ht_params[] = {
 			      offsetof(struct ubcore_tpid_ctx, key),
 			      sizeof(struct ubcore_tpid_key), NULL,
 			      ubcore_free_rc_tp_id_obj, ubcore_tpid_get },
+	[UBCORE_HT_RM_TP_ID] = { UBCORE_HASH_TABLE_SIZE,
+				offsetof(struct ubcore_rm_tp_info, hnode),
+				offsetof(struct ubcore_rm_tp_info, key),
+				sizeof(struct ubcore_rm_tp_key),
+				NULL, ubcore_free_rm_tp_id_obj,
+				NULL },
 };
 
 static inline void ubcore_set_vtpn_hash_table_size(uint32_t vtpn_size)

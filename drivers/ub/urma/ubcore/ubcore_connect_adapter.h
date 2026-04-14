@@ -76,6 +76,8 @@ int ubcore_bind_jetty_compat(struct ubcore_jetty *jetty,
 
 int ubcore_adapter_layer_disconnect(struct ubcore_vtpn *vtpn);
 
+int ubcore_adapter_layer_rm_stp_disconnect(struct ubcore_tjetty *tjetty);
+
 void ubcore_exchange_init(void);
 
 static inline bool ubcore_check_ctrlplane_compat(void *op_ptr)

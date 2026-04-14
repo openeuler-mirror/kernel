@@ -142,6 +142,12 @@ struct ubcore_vtpn *ubcore_connect_vtp_ctrlplane(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param, struct ubcore_active_tp_cfg *active_tp_cfg,
 	struct ubcore_udata *udata);
 struct ubcore_vtpn *
+	ubcore_connect_rm_svrtp_ctrlplane(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_share_tp_cfg *stp_cfg,
+	struct ubcore_udata *udata);
+struct ubcore_vtpn *
 	ubcore_connect_rc_vtp_ctrlplane(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param,
 	struct ubcore_active_tp_cfg *active_tp_cfg,
@@ -149,6 +155,7 @@ struct ubcore_vtpn *
 struct ubcore_vtpn *ubcore_connect_vtp_async(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param, int timeout, struct ubcore_vtpn_cb_para *para);
 int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn);
+int ubcore_disconnect_rm_svtp(struct ubcore_tjetty *tjetty);
 int ubcore_disconnect_vtp_async(struct ubcore_vtpn *vtpn, int timeout,
 	struct ubcore_vtpn_cb_para *para);
 int ubcore_queue_destroy_vtp_task(struct ubcore_device *dev, struct ubcore_vtpn *vtpn,

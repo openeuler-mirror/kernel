@@ -1708,6 +1708,8 @@ uburma_import_jetty_ex_fill_spec_in(void *arg_addr,
 	SPEC(s++, IMPORT_JETTY_EX_IN_TAG, arg->in.tag);
 	SPEC(s++, IMPORT_JETTY_EX_IN_TX_PSN, arg->in.tx_psn);
 	SPEC(s++, IMPORT_JETTY_EX_IN_RX_PSN, arg->in.rx_psn);
+	SPEC(s++, IMPORT_JETTY_EX_IN_STAG, arg->in.stag);
+	SPEC(s++, IMPORT_JETTY_EX_IN_DTAG, arg->in.dtag);
 	SPEC(s++, IMPORT_JETTY_EX_IN_UDATA, arg->udata);
 }
 
@@ -1742,6 +1744,8 @@ uburma_import_jfr_ex_fill_spec_in(void *arg_addr,
 	SPEC(s++, IMPORT_JFR_EX_IN_TAG, arg->in.tag);
 	SPEC(s++, IMPORT_JFR_EX_IN_TX_PSN, arg->in.tx_psn);
 	SPEC(s++, IMPORT_JFR_EX_IN_RX_PSN, arg->in.rx_psn);
+	SPEC(s++, IMPORT_JFR_EX_IN_STAG, arg->in.stag);
+	SPEC(s++, IMPORT_JFR_EX_IN_DTAG, arg->in.dtag);
 	SPEC(s++, IMPORT_JFR_EX_IN_UDATA, arg->udata);
 }
 
