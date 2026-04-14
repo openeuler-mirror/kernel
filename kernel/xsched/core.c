@@ -463,6 +463,9 @@ int init_xsched_entity(struct xsched_context *ctx, struct vstream_info *vs)
 	xse = &ctx->xse;
 
 #ifdef CONFIG_CGROUP_XCU
+	if (!xcu_cgroup_enabled())
+		return -EPERM;
+
 	xsched_group_inherit(current, xse);
 	/* inherit the scheduler class from the parent group */
 	class_id = xse->parent_grp->sched_class;
