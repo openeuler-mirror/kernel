@@ -21,6 +21,10 @@
 #include <linux/xsched.h>
 #include <linux/delay.h>
 
+#ifdef CONFIG_CGROUP_FREEZER
+#include <linux/freezer.h>
+#endif
+
 static struct xsched_group root_xsched_group;
 struct xsched_group *root_xcg = &root_xsched_group;
 
@@ -38,6 +42,61 @@ static const char xcu_sched_name[XSCHED_TYPE_NUM][SCHED_CLASS_MAX_LENGTH] = {
 	[XSCHED_TYPE_RT] = "rt",
 	[XSCHED_TYPE_CFS] = "cfs"
 };
+
+/**
+ * Parse the "xcu=" kernel command line parameter.
+ *
+ * Usage:
+ *   xcu=enable → enable xcu_cgrp_subsys
+ *   Otherwise  → enable freezer_cgrp_subsys
+ *
+ * Returns:
+ *   1 (handled), 0 (not handled)
+ */
+static DEFINE_STATIC_KEY_FALSE(xcu_cgroup_key);
+
+static int __init xcu_setup(char *str)
+{
+	if (!str)
+		return 0;
+
+	if (strcmp(str, "enable") == 0)
+		static_branch_enable(&xcu_cgroup_key);
+
+	return 1;
+}
+__setup("xcu=", xcu_setup);
+
+static bool xcu_cgroup_enabled(void)
+{
+	return static_branch_unlikely(&xcu_cgroup_key);
+}
+
+/**
+ * xcu_cgroup_check_compat - Verify XCU mode matches the cgroup hierarchy version.
+ *
+ * Validates that the XCU enablement state matches the active cgroup hierarchy
+ * version. The compatibility rules are strictly defined as:
+ *
+ * 1. XCU Enabled (xcu=enable): Requires cgroup v2.
+ * 2. XCU Disabled (default):   Requires cgroup v1.
+ *
+ * IMPORTANT: cgroup_subsys_on_dfl() only returns a valid version indicator
+ * after the cgroup filesystem has been mounted at the root node. Calling
+ * this function prior to mount may yield incorrect results.
+ *
+ * Return: true if compatible, false otherwise (with a warning logged).
+ */
+static bool xcu_cgroup_check_compat(void)
+{
+	bool xcu_mode = xcu_cgroup_enabled();
+
+	if (xcu_mode != cgroup_subsys_on_dfl(xcu_cgrp_subsys)) {
+		XSCHED_WARN("XCU cgrp is incompatible with the cgroup version\n");
+		return false;
+	}
+	return true;
+}
 
 static int xcu_cg_set_file_show(struct xsched_group *xg, int sched_class)
 {
@@ -742,6 +801,7 @@ static struct cftype xcu_cg_files[] = {
 	},
 	{
 		.name = "stat",
+		.flags = CFTYPE_NOT_ON_ROOT,
 		.seq_show = xcu_stat,
 	},
 	{
@@ -753,17 +813,124 @@ static struct cftype xcu_cg_files[] = {
 	{} /* terminate */
 };
 
+/*
+ * The hooks of a cgroup_subsys are only invoked after a successful allocation.
+ * Therefore, we must handle all error conditions during the alloc phase to
+ * prevent invalid usage later.
+ *
+ * 1. If both CONFIG_CGROUP_XCU and CONFIG_CGROUP_FREEZER are enabled:
+ *    We verify that the xcu cmdline and cgroup version are compatible.
+ *    If they do not match, return -EPERM.
+ *
+ * 2. If only CONFIG_CGROUP_XCU is enabled:
+ *    We verify the cgroup version. If the system is using cgroup v1,
+ *    return -EPERM as it is unsupported.
+ */
+static struct cgroup_subsys_state *
+xcu_freezer_compat_css_alloc(struct cgroup_subsys_state *parent_css)
+{
+	/* Skip allocation if XCU cmdline mismatches the cgroup version. */
+	if (parent_css && !xcu_cgroup_check_compat())
+		return ERR_PTR(-EPERM);
+
+	if (xcu_cgroup_enabled())
+		return xcu_css_alloc(parent_css);
+
+#ifdef CONFIG_CGROUP_FREEZER
+	return freezer_css_alloc(parent_css);
+#else /* CONFIG_CGROUP_FREEZER=n xcu=disable cgroup=v1 */
+	if (!parent_css)
+		return &root_xsched_group.css;
+	else
+		return ERR_PTR(-EPERM);
+#endif
+}
+
+static int xcu_freezer_compat_css_online(struct cgroup_subsys_state *css)
+{
+	if (xcu_cgroup_enabled())
+		return xcu_css_online(css);
+
+#ifdef CONFIG_CGROUP_FREEZER
+	return freezer_css_online(css);
+#else
+	return 0;
+#endif
+}
+
+static void xcu_freezer_compat_css_offline(struct cgroup_subsys_state *css)
+{
+	if (xcu_cgroup_enabled())
+		return xcu_css_offline(css);
+
+#ifdef CONFIG_CGROUP_FREEZER
+	return freezer_css_offline(css);
+#endif
+}
+
+static void xcu_freezer_compat_css_released(struct cgroup_subsys_state *css)
+{
+	if (xcu_cgroup_enabled())
+		return xcu_css_released(css);
+}
+
+static void xcu_freezer_compat_css_free(struct cgroup_subsys_state *css)
+{
+	if (xcu_cgroup_enabled())
+		return xcu_css_free(css);
+
+#ifdef CONFIG_CGROUP_FREEZER
+	return freezer_css_free(css);
+#endif
+}
+
+static int xcu_freezer_compat_can_attach(struct cgroup_taskset *tset)
+{
+	if (xcu_cgroup_enabled())
+		return xcu_can_attach(tset);
+
+	return 0;
+}
+
+static void xcu_freezer_compat_cancel_attach(struct cgroup_taskset *tset)
+{
+	if (xcu_cgroup_enabled())
+		return xcu_cancel_attach(tset);
+}
+
+static void xcu_freezer_compat_attach(struct cgroup_taskset *tset)
+{
+	if (xcu_cgroup_enabled())
+		return xcu_attach(tset);
+
+#ifdef CONFIG_CGROUP_FREEZER
+	return freezer_attach(tset);
+#endif
+}
+
+static void xcu_freezer_compat_fork(struct task_struct *task)
+{
+#ifdef CONFIG_CGROUP_FREEZER
+	if (!xcu_cgroup_enabled())
+		return freezer_fork(task);
+#endif
+}
+
 struct cgroup_subsys xcu_cgrp_subsys = {
-	.css_alloc = xcu_css_alloc,
-	.css_online = xcu_css_online,
-	.css_offline = xcu_css_offline,
-	.css_released = xcu_css_released,
-	.css_free = xcu_css_free,
-	.can_attach = xcu_can_attach,
-	.cancel_attach = xcu_cancel_attach,
-	.attach = xcu_attach,
+	.css_alloc = xcu_freezer_compat_css_alloc,
+	.css_online = xcu_freezer_compat_css_online,
+	.css_offline = xcu_freezer_compat_css_offline,
+	.css_released = xcu_freezer_compat_css_released,
+	.css_free = xcu_freezer_compat_css_free,
+	.can_attach = xcu_freezer_compat_can_attach,
+	.cancel_attach = xcu_freezer_compat_cancel_attach,
+	.attach = xcu_freezer_compat_attach,
+	.fork = xcu_freezer_compat_fork,
 	.dfl_cftypes = xcu_cg_files,
+#ifdef CONFIG_CGROUP_FREEZER
+	.legacy_cftypes = files,
+	.legacy_name = "freezer",
+#else
 	.legacy_cftypes = xcu_cg_files,
-	.early_init = false,
-	.threaded  = true
+#endif
 };

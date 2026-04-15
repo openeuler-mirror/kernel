@@ -1751,7 +1751,7 @@ int ubcore_query_device_attr(struct ubcore_device *dev,
 	ret = dev->ops->query_device_attr(dev, attr);
 	if (ret != 0) {
 		ubcore_log_err("failed to query device attr, ret: %d.\n", ret);
-		return -UBCORE_DRV_ERRNO;
+		return ret;
 	}
 	return 0;
 }

@@ -668,8 +668,8 @@ struct cfs_rq {
 	unsigned int		idle_nr_running;   /* SCHED_IDLE */
 	unsigned int		idle_h_nr_running; /* SCHED_IDLE */
 
-	s64			avg_vruntime;
-	u64			avg_load;
+	KABI_REPLACE(s64 avg_vruntime, s64 sum_w_vruntime)
+	KABI_REPLACE(u64 avg_load, u64 sum_weight)
 
 	u64			exec_clock;
 	KABI_REPLACE(u64 min_vruntime, u64 zero_vruntime)
@@ -2431,6 +2431,8 @@ extern const u32		sched_prio_to_wmult[40];
 #endif
 #define ENQUEUE_INITIAL		0x80
 
+#define ENQUEUE_REWEIGHT_CURR	0x200
+
 #define RETRY_TASK		((void *)-1UL)
 
 struct affinity_context {
@@ -2438,6 +2440,8 @@ struct affinity_context {
 	struct cpumask *user_mask;
 	unsigned int flags;
 };
+
+extern s64 update_curr_common(struct rq *rq);
 
 struct sched_class {
 
@@ -3522,16 +3526,6 @@ extern int preempt_dynamic_mode;
 extern int sched_dynamic_mode(const char *str);
 extern void sched_dynamic_update(int mode);
 #endif
-
-static inline void update_current_exec_runtime(struct task_struct *curr,
-						u64 now, u64 delta_exec)
-{
-	curr->se.sum_exec_runtime += delta_exec;
-	account_group_exec_runtime(curr, delta_exec);
-
-	curr->se.exec_start = now;
-	cgroup_account_cputime(curr, delta_exec);
-}
 
 #ifdef CONFIG_SCHED_MM_CID
 

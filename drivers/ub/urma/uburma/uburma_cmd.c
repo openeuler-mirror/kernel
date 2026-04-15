@@ -3534,7 +3534,7 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 			   &udata);
 	}
 	if (ret != 0) {
-		uburma_log_err("bind jetty failed.\n");
+		uburma_log_err("bind jetty failed, ret: %d.\n", ret);
 		uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
 		return ret;
 	}
@@ -4043,8 +4043,6 @@ static void uburma_fill_device_attr(struct ubcore_device *ubc_dev,
 	attr->dev_cap.atomic_feat.value =
 		ubc_dev->attr.dev_cap.atomic_feat.value;
 	attr->dev_cap.trans_mode = ubc_dev->attr.dev_cap.trans_mode;
-	attr->dev_cap.sub_trans_mode_cap =
-		ubc_dev->attr.dev_cap.sub_trans_mode_cap;
 	attr->dev_cap.congestion_ctrl_alg =
 		ubc_dev->attr.dev_cap.congestion_ctrl_alg;
 	attr->dev_cap.ceq_cnt = ubc_dev->attr.dev_cap.ceq_cnt;

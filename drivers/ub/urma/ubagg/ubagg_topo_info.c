@@ -66,7 +66,7 @@ static struct ubagg_topo_node *get_topo_node(union ubcore_eid *eid)
 }
 
 int find_linked_port(union ubcore_eid *dst_eid,
-		     uint32_t ports[IODIE_NUM][MAX_PORT_NUM])
+		     bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM])
 {
 	struct ubagg_topo_node *src_node = get_current_topo_node();
 	struct ubagg_topo_node *dst_node = get_topo_node(dst_eid);
@@ -80,16 +80,54 @@ int find_linked_port(union ubcore_eid *dst_eid,
 		return -EINVAL;
 	}
 
-	for (uint32_t i = 0; i < IODIE_NUM; i++) {
-		for (uint32_t j = 0; j < MAX_PORT_NUM; j++) {
-			struct ubagg_topo_link *link = &src_node->links[i][j];
+	if (src_node->type == UBAGG_TOPO_TYPE_FULLMESH) {
+		for (uint32_t i = 0; i < IODIE_NUM; i++) {
+			connected[i][i] = true;
+			for (uint32_t j = 0; j < MAX_PORT_NUM; j++) {
+				struct ubagg_topo_link *link = &src_node->links[i][j];
+				uint32_t local_indice =
+					IODIE_NUM + i * MAX_PORT_NUM + j;
 
-			// Ignore iodie id, since it is not relevant for port mapping
-			if (src_node->id == dst_node->id)
-				ports[i][j] = j;
-			else if (link->peer_node == dst_node->id)
-				ports[i][j] = link->peer_port;
+				if (local_indice >= UBAGG_DEV_MAX_NUM) {
+					ubagg_log_err("Invalid local indice: %u\n",
+							local_indice);
+					continue;
+				}
+
+				if (src_node->node_id == dst_node->node_id)
+					connected[local_indice][local_indice] = true;
+				// Ignore peer iodie id
+				else if (link->peer_node == dst_node->node_id) {
+					uint32_t remote_indice;
+
+					if (link->peer_port >= MAX_PORT_NUM) {
+						ubagg_log_err("Invalid peer port: %u\n",
+								link->peer_port);
+						continue;
+					}
+
+					remote_indice = IODIE_NUM + i * MAX_PORT_NUM +
+							link->peer_port;
+					if (remote_indice >= UBAGG_DEV_MAX_NUM) {
+						ubagg_log_err(
+							"Invalid remote indice: %u\n",
+							remote_indice);
+						continue;
+					}
+					connected[local_indice][remote_indice] = true;
+				}
+			}
 		}
+	} else if (src_node->type == UBAGG_TOPO_TYPE_CLOS) {
+		for (uint32_t i = 0; i < IODIE_NUM; i++) {
+			for (uint32_t j = 0; j < PORT_NUM; j++) {
+				// Self connection: map to same port
+				connected[i][j] = true;
+			}
+		}
+	} else {
+		ubagg_log_err("Unknown topology type: %u\n", src_node->type);
+		return -EINVAL;
 	}
 	return 0;
 }
@@ -113,7 +151,7 @@ create_ubagg_topo_map_from_user(struct ubagg_topo_node *user_topo_infos,
 			     (void __user *)user_topo_infos,
 			     sizeof(struct ubagg_topo_node) * node_num);
 	if (ret != 0) {
-		ubagg_log_err("Failed to copy topo info\n");
+		ubagg_log_err("Failed to copy topo info.ret is %d.\n", ret);
 		kfree(topo_map);
 		return NULL;
 	}

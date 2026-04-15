@@ -10,6 +10,10 @@
 #include <linux/atomic.h>
 #include <linux/jump_label.h>
 
+#ifdef CONFIG_CGROUP_XCU
+#include <linux/cgroup-defs.h>
+#endif
+
 #ifdef CONFIG_FREEZER
 DECLARE_STATIC_KEY_FALSE(freezer_active);
 
@@ -86,5 +90,25 @@ static inline bool try_to_freeze(void) { return false; }
 static inline void set_freezable(void) {}
 
 #endif /* !CONFIG_FREEZER */
+
+/*
+ * When CONFIG_CGROUP_XCU is enabled, freezer_cgrp_subsys and xcu_cgrp_subsys
+ * share the same set of cgroup_subsys hook functions. Consequently, the hooks for
+ * freezer_cgrp_subsys must be exposed externally to allow linkage with the XCU
+ * cgroup_subsys.
+ *
+ */
+#ifdef CONFIG_CGROUP_XCU
+#define freezer_cgrp_id xcu_cgrp_id
+
+extern struct cftype files[];
+struct cgroup_subsys_state *
+freezer_css_alloc(struct cgroup_subsys_state *parent_css);
+int freezer_css_online(struct cgroup_subsys_state *css);
+void freezer_css_offline(struct cgroup_subsys_state *css);
+void freezer_css_free(struct cgroup_subsys_state *css);
+void freezer_attach(struct cgroup_taskset *tset);
+void freezer_fork(struct task_struct *task);
+#endif /* CONFIG_CGROUP_XCU */
 
 #endif	/* FREEZER_H_INCLUDED */

@@ -103,7 +103,7 @@ ubcore_check_trans_mode_valid(enum ubcore_transport_mode trans_mode)
 	       trans_mode == UBCORE_TP_UM;
 }
 
-/* combine sub_trans_mode and share_tp -> uint16_t? */
+/* combine order_type and share_tp -> uint16_t? */
 static inline bool is_create_rc_shared_tp(enum ubcore_transport_mode trans_mode,
 					  uint32_t order_type,
 					  uint32_t share_tp)

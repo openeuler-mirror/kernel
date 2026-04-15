@@ -115,7 +115,7 @@ static inline struct ub_bus_controller *find_bus_controller_by_errdata(
 	if (edata->version == HIP12_VERSION && edata->soc_id == HIP12_SOC_ID)
 		ctl_no = (u32)edata->socket_id;
 	else if (edata->version == ASCEND950_VERSION && edata->soc_id == ASCEND950_SOC_ID)
-		ctl_no = (u32)edata->socket_id;
+		ctl_no = (u32)edata->nimbus_id;
 	else
 		return NULL;
 

@@ -42,24 +42,18 @@ static DEFINE_MUTEX(sentry_msg_info_mutex);
  * This function sends a message to userspace and tracks it using node message
  * info for acknowledgment handling.
  */
-int send_msg_to_userspace(struct sentry_msg_helper_msg *msg,
+int send_msg_to_userspace(struct sentry_msg_helper_msg *msg, union ubcore_eid dst_eid,
 			  enum SENTRY_REMOTE_COMM_TYPE comm_type, uint32_t random_id)
 {
 	int ret;
 	int node_idx = -1;
 	int die_index = -1;
-	union ubcore_eid dst_ubcore_eid;
 
 	pr_info("send %s message to userspace\n",
 		comm_type == COMM_TYPE_URMA ? "urma" : "uvb");
 
 	if (comm_type == COMM_TYPE_URMA) {
-		if (str_to_eid(msg->helper_msg_info.remote_info.eid, &dst_ubcore_eid) < 0) {
-			pr_err("send_msg_to_userspace: invalid dst eid [%s]\n",
-			       msg->helper_msg_info.remote_info.eid);
-			return -EINVAL;
-		}
-		match_index_by_remote_ub_eid(dst_ubcore_eid, &node_idx, &die_index);
+		match_index_by_remote_ub_eid(dst_eid, &node_idx, &die_index);
 	} else if (comm_type == COMM_TYPE_UVB) {
 		int i;
 
@@ -114,8 +108,15 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 	int ret;
 	int times = msg->timeout_time / MILLISECONDS_OF_EACH_MDELAY;
 	int i, j;
+	union ubcore_eid dst_ubcore_eid;
 
-	ret = send_msg_to_userspace(msg, comm_type, random_id);
+	if (str_to_eid(msg->helper_msg_info.remote_info.eid, &dst_ubcore_eid) < 0) {
+		pr_err("send_msg_to_userspace: invalid dst eid [%s]\n",
+				msg->helper_msg_info.remote_info.eid);
+		return -EINVAL;
+	}
+
+	ret = send_msg_to_userspace(msg, dst_ubcore_eid, comm_type, random_id);
 	if (ret) {
 		pr_err("Failed to send remote message to userspace\n");
 		return ret;
@@ -135,17 +136,12 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 		}
 
 		/* Get acknowledgment success, send acknowledgment message */
-		char send_ack[URMA_SEND_DATA_MAX_LEN] = {0};
+		struct sentry_binary_msg binary_ack = {0};
 
-		ret = snprintf(send_ack, URMA_SEND_DATA_MAX_LEN, "%d_%u_%s_%lu",
-			       ack_type,
-			       msg->helper_msg_info.remote_info.cna,
-			       msg->helper_msg_info.remote_info.eid,
-			       msg->res);
-		if ((size_t)ret >= URMA_SEND_DATA_MAX_LEN) {
-			pr_err("msg str size exceeds the max value\n");
-			return -EINVAL;
-		}
+		binary_ack.type = ack_type;
+		binary_ack.cna = msg->helper_msg_info.remote_info.cna;
+		binary_ack.eid = dst_ubcore_eid;
+		binary_ack.res = msg->res;
 
 		pr_info("Start to send %s ack msg to %u\n",
 			comm_type == COMM_TYPE_URMA ? "urma" : "uvb",
@@ -154,7 +150,7 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 		if (comm_type == COMM_TYPE_URMA) {
 			/* Retry URMA acknowledgment sending */
 			for (j = 0; j < URMA_ACK_RETRY_NUM; j++) {
-				ret = urma_send(send_ack, sizeof(send_ack),
+				ret = urma_send(&binary_ack,
 						msg->helper_msg_info.remote_info.eid, -1);
 				if (ret == COMM_PARM_NOT_SET)
 					break;
@@ -162,7 +158,8 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 			}
 		} else {
 			/* UVB is a reliable protocol, no need to resend */
-			ret = uvb_send(send_ack, msg->helper_msg_info.remote_info.cna, false);
+			ret = uvb_send(&binary_ack,
+				msg->helper_msg_info.remote_info.cna, false);
 		}
 
 		if (ret <= 0) {
@@ -261,6 +258,50 @@ void write_ack_msg_buf(const struct sentry_msg_helper_msg *msg,
 }
 
 /**
+ * convert_binary_to_smh_msg - Convert a raw binary message to an SMH helper message
+ * @binary_msg: Pointer to the incoming binary message structure
+ * @smh_msg: Pointer to the output SMH helper message structure to fill
+ * @random_id: Pointer to store extracted random ID for certain message types
+ *
+ * Return: 0 on success, negative error code on failure:
+ *         -EINVAL if any input pointer is NULL or message type is unsupported.
+ */
+int convert_binary_to_smh_msg(const struct sentry_binary_msg *binary_msg,
+			 struct sentry_msg_helper_msg *smh_msg,
+			 uint32_t *random_id)
+{
+	if (!binary_msg || !smh_msg || !random_id)
+		return -EINVAL;
+
+	smh_msg->type = binary_msg->type;
+	smh_msg->helper_msg_info.remote_info.cna = binary_msg->cna;
+
+	int ret = ubcore_eid_to_str_full(&binary_msg->eid,
+			smh_msg->helper_msg_info.remote_info.eid,
+			EID_MAX_LEN);
+	if (ret) {
+		pr_err("%s: covert ubcore eid to string failed\n", __func__);
+		return -EINVAL;
+	}
+
+	switch (binary_msg->type) {
+	case SMH_MESSAGE_PANIC:
+	case SMH_MESSAGE_KERNEL_REBOOT:
+		smh_msg->timeout_time = binary_msg->timeout_ms;
+		*random_id = binary_msg->random_id;
+		break;
+	case SMH_MESSAGE_PANIC_ACK:
+	case SMH_MESSAGE_KERNEL_REBOOT_ACK:
+		smh_msg->res = binary_msg->res;
+		break;
+	default:
+		pr_err("%s: invalid msg type\n", __func__);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+/**
  * create_kthread_to_process_msg - Create kernel thread to process incoming message
  * @event_msg: Raw event message string
  * @comm_type: Communication type (URMA or UVB)
@@ -270,7 +311,7 @@ void write_ack_msg_buf(const struct sentry_msg_helper_msg *msg,
  * This function creates a kernel thread to process incoming remote messages,
  * handling both panic/reboot events and acknowledgment messages.
  */
-int create_kthread_to_process_msg(const char *event_msg,
+int create_kthread_to_process_msg(const struct sentry_binary_msg *event_msg,
 				  enum SENTRY_REMOTE_COMM_TYPE comm_type)
 {
 	int ret;
@@ -279,10 +320,10 @@ int create_kthread_to_process_msg(const char *event_msg,
 	struct child_thread_process_data *child_data;
 	struct task_struct *child_thread;
 
-	ret = convert_str_to_smh_msg(event_msg, &msg, &random_id);
+	ret = convert_binary_to_smh_msg(event_msg, &msg, &random_id);
 	if (ret) {
-		pr_err("convert %s data to smh msg failed. msg [%s]\n",
-		       comm_type == COMM_TYPE_URMA ? "urma" : "uvb", event_msg);
+		pr_err("convert %s binary data: to smh msg failed\n",
+		       comm_type == COMM_TYPE_URMA ? "urma" : "uvb");
 		return -EINVAL;
 	}
 
@@ -337,27 +378,17 @@ static int process_urma_data(void *data)
 {
 	int ret = 0;
 	int recv_msg_nodes = 0;
-	char **msg_str;
+	struct sentry_binary_msg *binary_msg_array;
 	int i;
 
-	msg_str = kcalloc(MAX_NODE_NUM * MAX_DIE_NUM, sizeof(*msg_str), GFP_KERNEL);
-	if (!msg_str) {
-		pr_err("Failed to allocate memory for msg_str!\n");
+	binary_msg_array = kmalloc_array(MAX_NODE_NUM * MAX_DIE_NUM,
+			sizeof(struct sentry_binary_msg), GFP_KERNEL);
+	if (!binary_msg_array)
 		return -ENOMEM;
-	}
-
-	for (i = 0; i < MAX_NODE_NUM * MAX_DIE_NUM; i++) {
-		msg_str[i] = kzalloc(URMA_SEND_DATA_MAX_LEN, GFP_KERNEL);
-		if (!msg_str[i]) {
-			pr_err("Failed to allocate memory for msg_str[%d]!\n", i);
-			ret = -ENOMEM;
-			goto free_msg;
-		}
-	}
 
 	while (!kthread_should_stop()) {
 		/* Listen for URMA messages */
-		recv_msg_nodes = urma_recv(msg_str, URMA_SEND_DATA_MAX_LEN);
+		recv_msg_nodes = urma_recv(binary_msg_array, MAX_NODE_NUM * MAX_DIE_NUM);
 		if (recv_msg_nodes <= 0) {
 			/*
 			 * Prevent processes from entering the D state if reboot event
@@ -371,11 +402,7 @@ static int process_urma_data(void *data)
 			recv_msg_nodes);
 
 		for (i = 0; i < recv_msg_nodes; i++) {
-			if (strcmp(HEARTBEAT, msg_str[i]) == 0 ||
-			    strcmp(HEARTBEAT_ACK, msg_str[i]) == 0)
-				continue;
-
-			ret = create_kthread_to_process_msg(msg_str[i], COMM_TYPE_URMA);
+			ret = create_kthread_to_process_msg(&binary_msg_array[i], COMM_TYPE_URMA);
 			if (ret == -ENOMEM)
 				goto free_msg;
 		}
@@ -388,8 +415,7 @@ static int process_urma_data(void *data)
 	}
 
 free_msg:
-	free_char_array(msg_str, MAX_NODE_NUM * MAX_DIE_NUM);
-
+	kfree(binary_msg_array);
 	pr_info("Urma receiver thread stopped!\n");
 	return ret;
 }
@@ -407,8 +433,13 @@ int cis_ubios_remote_msg_cb(struct cis_message *cis_msg)
 {
 	int ret;
 
-	pr_info("uvb get msg: [%s]\n", (char *)cis_msg->input);
-	ret = create_kthread_to_process_msg((char *)cis_msg->input, COMM_TYPE_UVB);
+	if (cis_msg->input_size != sizeof(struct sentry_binary_msg)) {
+		pr_err("%s: invalid input size: %d, expect %lu\n",
+			__func__, cis_msg->input_size, sizeof(struct sentry_binary_msg));
+		return -EINVAL;
+	}
+	ret = create_kthread_to_process_msg((struct sentry_binary_msg *)cis_msg->input,
+			COMM_TYPE_UVB);
 	return ret;
 }
 

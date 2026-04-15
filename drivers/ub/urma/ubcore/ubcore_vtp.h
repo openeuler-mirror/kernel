@@ -141,6 +141,11 @@ struct ubcore_vtpn *ubcore_connect_vtp(struct ubcore_device *dev,
 struct ubcore_vtpn *ubcore_connect_vtp_ctrlplane(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param, struct ubcore_active_tp_cfg *active_tp_cfg,
 	struct ubcore_udata *udata);
+struct ubcore_vtpn *
+	ubcore_connect_rc_vtp_ctrlplane(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata);
 struct ubcore_vtpn *ubcore_connect_vtp_async(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param, int timeout, struct ubcore_vtpn_cb_para *para);
 int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn);

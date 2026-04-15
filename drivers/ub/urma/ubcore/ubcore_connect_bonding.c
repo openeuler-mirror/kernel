@@ -17,8 +17,9 @@
 #include "ubcore_priv.h"
 #include "ubcore_topo_info.h"
 #include "ubcore_log.h"
+#include "ubcore_connect_adapter.h"
 
-#define BONDING_UDATA_BUF_LEN 1032
+#define BONDING_UDATA_BUF_LEN 1928
 
 struct session_data_exchange_udata {
 	int *result;
@@ -180,7 +181,8 @@ create_session_for_exchange_udata(struct ubcore_device *dev,
 	session_data->udata_out = udata_out;
 	session_data->udata_out_size = udata_out_size;
 
-	session = ubcore_session_create(dev, session_data, 0, NULL, NULL);
+	session = ubcore_session_create(dev, session_data,
+		ubcore_get_conn_timeout(), NULL, NULL);
 	if (!session) {
 		ubcore_log_err("Failed to alloc session for exchange seg info");
 		kfree(session_data);
@@ -295,6 +297,11 @@ int ubcore_connect_exchange_udata_when_import_seg(struct ubcore_seg *seg,
 		ubcore_log_err("Failed find physical device");
 		return -EINVAL;
 	}
+	if (udata->udrv_data->out_len > BONDING_UDATA_BUF_LEN) {
+		ubcore_log_err("Invalid udata out len:%u\n",
+			       udata->udrv_data->out_len);
+		return -EINVAL;
+	}
 
 	session = create_session_for_exchange_udata(physical_dev, &result, buf,
 						    sizeof(buf));
@@ -350,6 +357,11 @@ int ubcore_connect_exchange_udata_when_import_jetty(
 
 	if (!physical_dev) {
 		ubcore_log_err("Failed find physical device");
+		return -EINVAL;
+	}
+	if (udata->udrv_data->out_len > BONDING_UDATA_BUF_LEN) {
+		ubcore_log_err("Invalid udata out len:%u\n",
+			       udata->udrv_data->out_len);
 		return -EINVAL;
 	}
 

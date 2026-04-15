@@ -429,7 +429,7 @@ static int udma_alloc_jfr_id(struct udma_dev *udma_dev, uint32_t cfg_id, uint32_
 			dev_err(udma_dev->dev,
 				"alloc jfr id range (%u - %u) failed, ret = %d.\n",
 				min, max, id);
-			return id;
+			return id == -ENOSPC ? -ENOSR : id;
 		}
 	}
 
@@ -454,12 +454,12 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev,
 	ret = udma_verify_jfr_param(udma_dev, cfg);
 	if (ret) {
 		dev_err(udma_dev->dev, "verify jfr param failed.\n");
-		return NULL;
+		return ERR_PTR(-EINVAL);
 	}
 
 	udma_jfr = kzalloc(sizeof(*udma_jfr), GFP_KERNEL);
 	if (!udma_jfr)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	ret = udma_alloc_jfr_id(udma_dev, cfg->id, &udma_jfr->rq.id);
 	if (ret)
@@ -501,7 +501,7 @@ err_get_jfr_buf:
 	udma_id_free(&udma_dev->jfr_table.ida_table, udma_jfr->rq.id);
 err_alloc_jfr_id:
 	kfree(udma_jfr);
-	return NULL;
+	return ERR_PTR(ret);
 }
 
 static int modify_jfr_context(struct udma_dev *dev, uint32_t jfrn,

@@ -203,12 +203,12 @@ typedef void (*rx_msg_handler_t)(struct ub_bus_controller *ubc, void *pkt, u16 l
 struct message_ops {
 	int (*sync_request)(struct message_device *mdev, struct msg_info *info,
 			    u8 code);
-	int (*send)(struct message_device *mdev, struct msg_info *info,
-		    u8 code);
 	int (*response)(struct message_device *mdev, struct msg_info *info,
 			u8 code);
 	int (*sync_enum)(struct message_device *mdev, struct msg_info *info,
 			 u8 cmd);
+	int (*send)(struct message_device *mdev, struct msg_info *info,
+		    u8 code);
 	rx_msg_handler_t vdm_rx_handler;
 	struct module *owner;
 };

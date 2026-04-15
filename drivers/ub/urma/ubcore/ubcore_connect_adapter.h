@@ -60,6 +60,8 @@ struct ubcore_ex_tpid_info {
 	uint32_t peer_jetty_id;
 };
 
+extern uint32_t ubcore_conn_timeout;
+
 struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 					       struct ubcore_tjetty_cfg *cfg,
 					       struct ubcore_udata *udata);
@@ -85,5 +87,7 @@ void ubcore_tpid_get(void *obj);
 
 struct ubcore_tpid_ctx *ubcore_fget_tpid_ctx(
 	struct ubcore_device *dev, struct ubcore_tpid_key *key);
+
+uint32_t ubcore_get_conn_timeout(void);
 
 #endif

@@ -27,10 +27,15 @@ extern int cis_ubios_remote_msg_cb(struct cis_message *cis_msg);
 // sentry urma global variable and functions
 extern bool g_is_created_ubcore_resource;
 extern int str_to_eid(const char *buf, union ubcore_eid *eid);
+extern int ubcore_eid_to_str_full(const union ubcore_eid *eid, char *dst_eid_str, int len);
 extern int match_index_by_remote_ub_eid(union ubcore_eid remote_id, int *node_index, int *die_index);
 extern int sentry_create_urma_resource(union ubcore_eid eid[], int eid_num);
 extern int process_multi_eid_string(char *eid_buf, char eid_array[][EID_MAX_LEN],
     union ubcore_eid eid_tmp[], const char *sepstr, int eid_max_num);
+
+extern int convert_binary_to_smh_msg(const struct sentry_binary_msg *binary_msg,
+		struct sentry_msg_helper_msg *smh_msg,
+		uint32_t *random_id);
 
 enum SENTRY_REMOTE_COMM_TYPE {
     COMM_TYPE_URMA,
@@ -68,6 +73,7 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg, enum SENTRY
     uint32_t random_id, enum sentry_msg_helper_msg_type ack_type);
 
 void write_ack_msg_buf(const struct sentry_msg_helper_msg *msg, enum SENTRY_REMOTE_COMM_TYPE comm_type);
-int create_kthread_to_process_msg(const char *event_msg, enum SENTRY_REMOTE_COMM_TYPE comm_type);
+int create_kthread_to_process_msg(const struct sentry_binary_msg *event_msg,
+				  enum SENTRY_REMOTE_COMM_TYPE comm_type);
 enum sentry_msg_helper_msg_type get_ack_type(enum sentry_msg_helper_msg_type event_type);
 #endif

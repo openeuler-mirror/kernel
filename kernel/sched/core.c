@@ -10793,8 +10793,10 @@ void sched_move_task(struct task_struct *tsk)
 
 	sched_change_group(tsk, group);
 
-	if (queued)
+	if (queued) {
 		enqueue_task(rq, tsk, queue_flags);
+		check_preempt_curr(rq, tsk, 0);
+	}
 	if (running) {
 		set_next_task(rq, tsk);
 		/*

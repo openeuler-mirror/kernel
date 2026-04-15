@@ -1170,7 +1170,6 @@ struct uburma_cmd_device_cap {
 	uint32_t max_fetch_and_xor_size;
 	union ubcore_atomic_feat atomic_feat; /* refer to urma_atomic_feature_t */
 	uint16_t trans_mode;
-	uint16_t sub_trans_mode_cap;
 	uint16_t congestion_ctrl_alg;
 	uint32_t ceq_cnt;
 	uint32_t max_tp_in_tpg;

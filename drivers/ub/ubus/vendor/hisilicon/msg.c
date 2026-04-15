@@ -644,8 +644,8 @@ static struct message_ops hi_message_ops = {
 	.sync_request = hi_message_sync_request,
 	.response = hi_message_response,
 	.sync_enum = hi_message_sync_enum,
-	.vdm_rx_handler = hi_vdm_rx_msg_handler,
 	.send = hi_message_send,
+	.vdm_rx_handler = hi_vdm_rx_msg_handler,
 };
 
 static void hi_bus_drv_msg_irq_handler(struct hi_msg_core *hmc)

@@ -255,12 +255,27 @@ static bool msg_rx_code_valid(struct ub_bus_controller *ubc, u8 code)
 	if (msg_type(code) == MSG_RSP)
 		return false;
 
-	if (msg == UB_MSG_CODE_RAS || msg == UB_MSG_CODE_CFG ||
-	    msg == UB_MSG_CODE_EXCH || msg == UB_MSG_CODE_MAX)
+	switch (msg) {
+	case UB_MSG_CODE_RAS:
+	case UB_MSG_CODE_CFG:
+	case UB_MSG_CODE_EXCH:
+	case UB_MSG_CODE_SEC:
+	case UB_MSG_CODE_MAX:
 		return false;
 
-	if (!ubc->cluster && msg == UB_MSG_CODE_POOL)
+	case UB_MSG_CODE_POOL:
+		if (!ubc->cluster)
+			return false;
+		break;
+
+	default:
+		break;
+	}
+
+	if (!rx_msg_wq[msg]) {
+		dev_err(&ubc->dev, "no workqueue registered for msg %u\n", msg);
 		return false;
+	}
 
 	return true;
 }

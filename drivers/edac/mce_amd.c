@@ -1112,7 +1112,7 @@ static void decode_mc3_mce(struct mce *m)
 static void decode_mc4_mce(struct mce *m)
 {
 	unsigned int fam = x86_family(m->cpuid);
-	int node_id = topology_die_id(m->extcpu);
+	int node_id = topology_amd_node_id(m->extcpu);
 	u16 ec = EC(m->status);
 	u8 xec = XEC(m->status, 0x1f);
 	u8 offset = 0;
@@ -1244,7 +1244,7 @@ static void decode_smca_error(struct mce *m)
 		    boot_cpu_data.x86 == 0x18)
 			decode_dram_ecc(topology_logical_die_id(m->extcpu), m);
 		else
-			decode_dram_ecc(topology_die_id(m->extcpu), m);
+			decode_dram_ecc(topology_amd_node_id(m->extcpu), m);
 	}
 }
 

@@ -94,6 +94,27 @@ static void ubcore_get_route_list_fill_spec_out(void *arg_addr,
 	SPEC(s++, GET_ROUTE_LIST_OUT_ROUTE_LIST, arg->out);
 }
 
+static void ubcore_get_path_set_fill_spec_in(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_get_path_set *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, GET_PATH_SET_IN_SRC_BONDING_EID, arg->in.src_bonding_eid);
+	SPEC(s++, GET_PATH_SET_IN_DST_BONDING_EID, arg->in.dst_bonding_eid);
+	SPEC(s++, GET_PATH_SET_IN_TP_TYPE, arg->in.tp_type);
+	SPEC(s++, GET_PATH_SET_IN_MULTI_PATH, arg->in.multi_path);
+}
+
+static void ubcore_get_path_set_fill_spec_out(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_get_path_set *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, GET_PATH_SET_OUT_PATH_SET, arg->out);
+}
+
 static struct ubcore_tlv_handler
 	g_global_tlv_handler[] = {
 		[0] = { 0 },
@@ -114,6 +135,12 @@ static struct ubcore_tlv_handler
 			GET_TOPO_OUT_NUM,
 			NULL,
 			0,
+		},
+		[UBCORE_CMD_GET_PATH_SET] = {
+			ubcore_get_path_set_fill_spec_in,
+			GET_PATH_SET_IN_NUM,
+			ubcore_get_path_set_fill_spec_out,
+			GET_PATH_SET_OUT_NUM,
 		}
 	};
 

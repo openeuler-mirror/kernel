@@ -533,7 +533,7 @@ struct sched_statistics {
 	u64				block_max;
 	s64				sum_block_runtime;
 
-	u64				exec_max;
+	KABI_REPLACE(u64 exec_max, s64 exec_max)
 	u64				slice_max;
 
 	u64				nr_migrations_cold;
@@ -592,7 +592,18 @@ struct sched_entity {
 	u64				sum_exec_runtime;
 	u64				prev_sum_exec_runtime;
 	u64				vruntime;
-	s64				vlag;
+	KABI_BROKEN_REPLACE(
+	s64                     vlag,
+	union {
+		/*
+		 * When !@on_rq this field is vlag.
+		 * When cfs_rq->curr == se (which implies @on_rq)
+		 * this field is vprot. See protect_slice().
+		 */
+		s64                     vlag;
+		u64                     vprot;
+	}
+	)
 	u64				slice;
 
 	u64				nr_migrations;

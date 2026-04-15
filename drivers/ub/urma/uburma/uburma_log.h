@@ -14,6 +14,7 @@
 
 #include <linux/types.h>
 #include <linux/printk.h>
+#include <linux/sched.h>
 
 enum uburma_log_level {
 	UBURMA_LOG_LEVEL_EMERG = 0,
@@ -32,8 +33,9 @@ enum uburma_log_level {
 #define UBURMA_LOG     "uburma"
 
 #define uburma_log(l, format, args...) \
-	pr_##l("%s|%s|%d|%s:[%d]|" format, UBURMA_LOG_TAG, UBURMA_LOG, \
-		((int)current->pid), __func__, __LINE__, ##args)
+	pr_##l("%s|%s|%d|%d|%s:[%d]|" format, UBURMA_LOG_TAG, UBURMA_LOG, \
+		((int)current->pid), ((int)task_pid_vnr(current)), \
+		__func__, __LINE__, ##args)
 
 #define UBURMA_RATELIMIT_INTERVAL (5 * HZ)
 #define UBURMA_RATELIMIT_BURST 100

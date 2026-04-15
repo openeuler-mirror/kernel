@@ -44,7 +44,7 @@ struct sentry_client_context {
 	int die_num_configured;
 
 	struct proc_dir_entry *panic_proc_dir;
-	char **msg_str;
+	struct sentry_binary_msg *msg_array;
 
 	unsigned long panic_timeout_ms;
 	unsigned long kernel_reboot_timeout_ms;
@@ -144,7 +144,7 @@ int remote_event_handler(enum sentry_msg_helper_msg_type remote_type,
 	bool uvb_send_success = false;
 	bool urma_send_success = false;
 	enum sentry_msg_helper_msg_type remote_ack_type;
-	char send_data[MAX_DIE_NUM][URMA_SEND_DATA_MAX_LEN] = {0};
+	struct sentry_binary_msg send_data[MAX_DIE_NUM] = {0};
 	uint64_t start_count, current_count;
 	uint64_t code_run_count, code_run_times_ms;
 	uint64_t counts_per_sec = arch_timer_get_cntfrq();
@@ -161,14 +161,11 @@ int remote_event_handler(enum sentry_msg_helper_msg_type remote_type,
 			return NOTIFY_OK;
 		}
 
-		ret = snprintf(send_data[i], URMA_SEND_DATA_MAX_LEN - 1,
-			       "%d_%u_%s_%lu_%u", remote_type, g_local_cna,
-			       sentry_client_ctx.eid_str[i], timeout_ms,
-			       sentry_client_ctx.random_id);
-		if ((size_t)ret >= URMA_SEND_DATA_MAX_LEN - 1) {
-			pr_err("msg str size exceeds the max value\n");
-			return NOTIFY_OK;
-		}
+		send_data[i].type = remote_type;
+		send_data[i].cna = g_local_cna;
+		send_data[i].eid = sentry_client_ctx.eid[i];
+		send_data[i].timeout_ms = timeout_ms;
+		send_data[i].random_id = sentry_client_ctx.random_id;
 	}
 
 	remote_ack_type = get_ack_type(remote_type);
@@ -189,28 +186,28 @@ int remote_event_handler(enum sentry_msg_helper_msg_type remote_type,
 				if (strlen(sentry_client_ctx.eid_str[j]) == 0)
 					break;
 
-				ret = urma_send(send_data[j], sizeof(send_data[j]), NULL, j);
+				ret = urma_send(&send_data[j], NULL, j);
 				if (ret > 0) {
 					urma_send_success = true;
-					pr_info("URMA send data [%s] [%d]: SUCCESS. die index %d\n",
-						send_data[j], i + 1, j);
+					pr_info("URMA send binary msg [%d]: SUCCESS. die index %d\n",
+						i + 1, j);
 				}
 			}
 		}
 
 		/* Send via UVB if enabled */
 		if (sentry_client_ctx.use_uvb) {
-			ret = uvb_send(send_data[0], -1,
+			ret = uvb_send(&send_data[0], -1,
 				       sentry_client_ctx.is_in_panic_status ? true : false);
 			if (ret > 0) {
 				uvb_send_success = true;
-				pr_info("UVB send data [%s] [%d]: SUCCESS\n", send_data[0], i + 1);
+				pr_info("UVB send data [%d]: SUCCESS\n", i + 1);
 			}
 		}
 
 		/* Handle send failure */
 		if (!urma_send_success && !uvb_send_success) {
-			pr_warn("UVB && URMA send data [%s]: FAILED\n", send_data[0]);
+			pr_warn("UVB && URMA send data: FAILED\n");
 			if (sentry_client_ctx.is_in_panic_status)
 				mdelay(MILLISECONDS_OF_EACH_MDELAY);
 			else
@@ -256,8 +253,8 @@ int remote_event_handler(enum sentry_msg_helper_msg_type remote_type,
 do_urma_recv:
 		if (urma_send_success) {
 			/* In panic status, poll URMA directly */
-			recv_msg_nodes = urma_recv(sentry_client_ctx.msg_str,
-							URMA_SEND_DATA_MAX_LEN);
+			recv_msg_nodes = urma_recv(sentry_client_ctx.msg_array,
+							MAX_NODE_NUM * MAX_DIE_NUM);
 			if (recv_msg_nodes <= 0)
 				goto check_ack_and_sleep;
 			pr_info("urma received %d nodes\n", recv_msg_nodes);
@@ -265,16 +262,11 @@ do_urma_recv:
 				struct sentry_msg_helper_msg msg;
 				uint32_t random_id_stub;
 
-				if (strcmp(HEARTBEAT, sentry_client_ctx.msg_str[l]) == 0 ||
-					strcmp(HEARTBEAT_ACK, sentry_client_ctx.msg_str[l]) == 0)
-					continue;
-
 				/* Convert and check acknowledgment */
-				ret = convert_str_to_smh_msg(sentry_client_ctx.msg_str[l],
+				ret = convert_binary_to_smh_msg(&sentry_client_ctx.msg_array[l],
 								&msg, &random_id_stub);
 				if (ret) {
-					pr_warn("convert urma data failed: [%s]\n",
-						sentry_client_ctx.msg_str[l]);
+					pr_warn("convert urma binary data failed\n");
 					continue;
 				}
 				ack_done = get_ack_done(&msg, remote_ack_type,
@@ -1030,7 +1022,6 @@ static struct notifier_block kernel_reboot_notifier = {
 static int __init sentry_remote_reporter_init(void)
 {
 	int ret;
-	int i;
 
 	sentry_client_ctx.random_id = get_random_u32();
 
@@ -1038,28 +1029,19 @@ static int __init sentry_remote_reporter_init(void)
 	if (ret)
 		return ret;
 
-	sentry_client_ctx.msg_str = kzalloc(MAX_NODE_NUM * MAX_DIE_NUM * sizeof(char *),
-										GFP_KERNEL);
-	if (!sentry_client_ctx.msg_str) {
-		pr_err("Failed to allocate memory for msg_str\n");
+	sentry_client_ctx.msg_array = kmalloc_array(MAX_NODE_NUM * MAX_DIE_NUM,
+			sizeof(struct sentry_binary_msg),
+			GFP_KERNEL);
+	if (!sentry_client_ctx.msg_array) {
+		pr_err("Failed to allocate memory for msg_array\n");
 		ret = -ENOMEM;
 		goto stop_kthread;
-	}
-
-	for (i = 0; i < MAX_NODE_NUM * MAX_DIE_NUM; i++) {
-		sentry_client_ctx.msg_str[i] = kzalloc(URMA_SEND_DATA_MAX_LEN, GFP_KERNEL);
-		if (!sentry_client_ctx.msg_str[i]) {
-			pr_err("Failed to allocate memory for msg_str[%d]\n", i);
-			free_char_array(sentry_client_ctx.msg_str, i);
-			ret = -ENOMEM;
-			goto stop_kthread;
-		}
 	}
 
 	ret = register_reboot_notifier(&kernel_reboot_notifier);
 	if (ret) {
 		pr_err("Failed to register kernel reboot handler: %d\n", ret);
-		goto free_msg_str;
+		goto free_msg_array;
 	}
 	pr_info("Kernel reboot handler registered\n");
 
@@ -1082,8 +1064,8 @@ unregister_panic:
 	atomic_notifier_chain_unregister(&panic_notifier_list, &panic_notifier);
 unregister_kernel_reboot:
 	unregister_reboot_notifier(&kernel_reboot_notifier);
-free_msg_str:
-	free_char_array(sentry_client_ctx.msg_str, MAX_NODE_NUM * MAX_DIE_NUM);
+free_msg_array:
+	kfree(sentry_client_ctx.msg_array);
 stop_kthread:
 	sentry_panic_reporter_exit();
 	return ret;
@@ -1103,7 +1085,7 @@ static void __exit sentry_remote_reporter_exit(void)
 	unregister_reboot_notifier(&kernel_reboot_notifier);
 	pr_info("Kernel reboot handler unregistered\n");
 
-	free_char_array(sentry_client_ctx.msg_str, MAX_NODE_NUM * MAX_DIE_NUM);
+	kfree(sentry_client_ctx.msg_array);
 
 	if (sentry_client_ctx.panic_proc_dir)
 		proc_remove(sentry_client_ctx.panic_proc_dir);

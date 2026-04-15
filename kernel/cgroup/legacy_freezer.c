@@ -25,6 +25,17 @@
 #include <linux/cpu.h>
 
 /*
+ * The STATIC macro is used to handle this conditional visibility:
+ * - Enabled: interfaces are defined as non-static (exported).
+ * - Disabled: interfaces remain static (file-local).
+ */
+#ifdef CONFIG_CGROUP_XCU
+#define STATIC
+#else
+#define STATIC static
+#endif
+
+/*
  * A cgroup is freezing if any FREEZING flags are set.  FREEZING_SELF is
  * set if "FROZEN" is written to freezer.state cgroupfs file, and cleared
  * for "THAWED".  FREEZING_PARENT is set if the parent freezer is FREEZING
@@ -83,7 +94,7 @@ static const char *freezer_state_strs(unsigned int state)
 	return "THAWED";
 };
 
-static struct cgroup_subsys_state *
+STATIC struct cgroup_subsys_state *
 freezer_css_alloc(struct cgroup_subsys_state *parent_css)
 {
 	struct freezer *freezer;
@@ -103,7 +114,7 @@ freezer_css_alloc(struct cgroup_subsys_state *parent_css)
  * parent's freezing state while holding both parent's and our
  * freezer->lock.
  */
-static int freezer_css_online(struct cgroup_subsys_state *css)
+STATIC int freezer_css_online(struct cgroup_subsys_state *css)
 {
 	struct freezer *freezer = css_freezer(css);
 	struct freezer *parent = parent_freezer(freezer);
@@ -130,7 +141,7 @@ static int freezer_css_online(struct cgroup_subsys_state *css)
  * @css is going away.  Mark it dead and decrement system_freezing_count if
  * it was holding one.
  */
-static void freezer_css_offline(struct cgroup_subsys_state *css)
+STATIC void freezer_css_offline(struct cgroup_subsys_state *css)
 {
 	struct freezer *freezer = css_freezer(css);
 
@@ -146,7 +157,7 @@ static void freezer_css_offline(struct cgroup_subsys_state *css)
 	cpus_read_unlock();
 }
 
-static void freezer_css_free(struct cgroup_subsys_state *css)
+STATIC void freezer_css_free(struct cgroup_subsys_state *css)
 {
 	kfree(css_freezer(css));
 }
@@ -160,7 +171,7 @@ static void freezer_css_free(struct cgroup_subsys_state *css)
  * @freezer->lock.  freezer_attach() makes the new tasks conform to the
  * current state and all following state changes can see the new tasks.
  */
-static void freezer_attach(struct cgroup_taskset *tset)
+STATIC void freezer_attach(struct cgroup_taskset *tset)
 {
 	struct task_struct *task;
 	struct cgroup_subsys_state *new_css;
@@ -205,7 +216,7 @@ static void freezer_attach(struct cgroup_taskset *tset)
  * to do anything as freezer_attach() will put @task into the appropriate
  * state.
  */
-static void freezer_fork(struct task_struct *task)
+STATIC void freezer_fork(struct task_struct *task)
 {
 	struct freezer *freezer;
 
@@ -449,7 +460,7 @@ static u64 freezer_parent_freezing_read(struct cgroup_subsys_state *css,
 	return (bool)(freezer->state & CGROUP_FREEZING_PARENT);
 }
 
-static struct cftype files[] = {
+STATIC struct cftype files[] = {
 	{
 		.name = "state",
 		.flags = CFTYPE_NOT_ON_ROOT,
@@ -469,6 +480,14 @@ static struct cftype files[] = {
 	{ }	/* terminate */
 };
 
+/*
+ * CRITICAL: Freezer and XCU may share the same SUBSYS slot when
+ *           CONFIG_CGROUP_XCU and CONFIG_CGROUP_FREEZER are both set.
+ *
+ * If the hook functions in the freezer cgroup_subsys changes, you MUST
+ * synchronize those changes to the XCU subsystem (kernel/xsched/cgroup.c)
+ * immediately. Failure to do so will result in inconsistencies or crashes.
+ */
 struct cgroup_subsys freezer_cgrp_subsys = {
 	.css_alloc	= freezer_css_alloc,
 	.css_online	= freezer_css_online,
