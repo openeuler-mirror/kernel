@@ -598,6 +598,6 @@ void cper_estatus_print(const char *pfx,
 int cper_estatus_check_header(const struct acpi_hest_generic_status *estatus);
 int cper_estatus_check(const struct acpi_hest_generic_status *estatus);
 
-const char *cper_zdi_zpi_err_type_str(unsigned long etype);
+const char *cper_zdi_zpi_err_type_str(unsigned int etype);
 
 #endif
