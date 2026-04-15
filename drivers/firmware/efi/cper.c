@@ -201,6 +201,7 @@ static const char * const proc_flag_strs[] = {
 	"corrected",
 };
 
+#ifdef CONFIG_X86
 static const char * const zdi_zpi_err_type_strs[] = {
 	"No Error",
 	"Training Error Status (PHY)",
@@ -223,7 +224,7 @@ static const char * const zdi_zpi_err_type_strs[] = {
 	"ZDI Gen4 Link Speed Unreliable Status",
 };
 
-const char *cper_zdi_zpi_err_type_str(unsigned long etype)
+const char *cper_zdi_zpi_err_type_str(unsigned int etype)
 {
 	return etype < ARRAY_SIZE(zdi_zpi_err_type_strs) ?
 		zdi_zpi_err_type_strs[etype] : "unknown error";
@@ -233,24 +234,20 @@ EXPORT_SYMBOL_GPL(cper_zdi_zpi_err_type_str);
 static void cper_print_proc_generic_zdi_zpi(const char *pfx,
 					    const struct cper_sec_proc_generic *zdi_zpi)
 {
-#if IS_ENABLED(CONFIG_X86)
-	if (boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN ||
-	    boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR) {
-		if ((zdi_zpi->requestor_id & 0xff) == 7) {
-			pr_info("%s general processor error(zpi error)\n", pfx);
-		} else if ((zdi_zpi->requestor_id & 0xff) == 6) {
-			pr_info("%s general processor error(zdi error)\n", pfx);
-		} else {
-			pr_info("%s general processor error(unknown error)\n", pfx);
-			return;
-		}
-		pr_info("%s bus number %llx device number %llx function number 0\n", pfx,
-			((zdi_zpi->requestor_id)>>8) & 0xff, zdi_zpi->requestor_id & 0xff);
-		pr_info("%s apic id %lld error_type: %s\n", pfx, zdi_zpi->proc_id,
-			cper_zdi_zpi_err_type_str(zdi_zpi->responder_id));
+	if ((zdi_zpi->requestor_id & 0xff) == 7) {
+		pr_info("%s general processor error(zpi error)\n", pfx);
+	} else if ((zdi_zpi->requestor_id & 0xff) == 6) {
+		pr_info("%s general processor error(zdi error)\n", pfx);
+	} else {
+		pr_info("%s general processor error(unknown error)\n", pfx);
+		return;
 	}
-#endif
+	pr_info("%s bus number %llx device number %llx function number 0\n",
+		pfx, ((zdi_zpi->requestor_id) >> 8) & 0xff, zdi_zpi->requestor_id & 0xff);
+	pr_info("%s apic id %lld error_type: %s\n",
+		pfx, zdi_zpi->proc_id, cper_zdi_zpi_err_type_str(zdi_zpi->responder_id));
 }
+#endif
 
 static void cper_print_proc_generic(const char *pfx,
 				    const struct cper_sec_proc_generic *proc)
@@ -296,7 +293,11 @@ static void cper_print_proc_generic(const char *pfx,
 	if (proc->validation_bits & CPER_PROC_VALID_IP)
 		printk("%s""IP: 0x%016llx\n", pfx, proc->ip);
 
-	cper_print_proc_generic_zdi_zpi(pfx, proc);
+#ifdef CONFIG_X86
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN ||
+	    boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR)
+		cper_print_proc_generic_zdi_zpi(pfx, proc);
+#endif
 }
 
 static const char * const mem_err_type_strs[] = {
