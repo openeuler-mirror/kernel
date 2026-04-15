@@ -7,6 +7,8 @@
  */
 
 #include <linux/module.h>
+#include <linux/overflow.h>
+#include <linux/stddef.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv6.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
@@ -58,6 +60,36 @@ static const struct nf_hook_ops nf_nat_ipv6_ops[] = {
 	},
 };
 
+struct ip6table_nat_ops_rcu {
+	struct rcu_head rcu;
+	struct nf_hook_ops ops[];
+};
+
+static struct ip6table_nat_ops_rcu *
+ip6table_nat_ops_rcu_from_ops(struct nf_hook_ops *ops)
+{
+	return (struct ip6table_nat_ops_rcu *)((char *)ops -
+		offsetof(struct ip6table_nat_ops_rcu, ops));
+}
+
+static struct nf_hook_ops *ip6table_nat_ops_alloc(void)
+{
+	struct ip6table_nat_ops_rcu *ops_rcu;
+
+	ops_rcu = kmalloc(struct_size(ops_rcu, ops, ARRAY_SIZE(nf_nat_ipv6_ops)),
+			  GFP_KERNEL);
+	if (!ops_rcu)
+		return NULL;
+
+	memcpy(ops_rcu->ops, nf_nat_ipv6_ops, sizeof(nf_nat_ipv6_ops));
+	return ops_rcu->ops;
+}
+
+static void ip6table_nat_ops_free_rcu(struct nf_hook_ops *ops)
+{
+	kfree_rcu(ip6table_nat_ops_rcu_from_ops(ops), rcu);
+}
+
 static int ip6t_nat_register_lookups(struct net *net)
 {
 	struct ip6table_nat_pernet *xt_nat_net;
@@ -70,7 +102,7 @@ static int ip6t_nat_register_lookups(struct net *net)
 		return -ENOENT;
 
 	xt_nat_net = net_generic(net, ip6table_nat_net_id);
-	ops = kmemdup(nf_nat_ipv6_ops, sizeof(nf_nat_ipv6_ops), GFP_KERNEL);
+	ops = ip6table_nat_ops_alloc();
 	if (!ops)
 		return -ENOMEM;
 
@@ -81,7 +113,7 @@ static int ip6t_nat_register_lookups(struct net *net)
 			while (i)
 				nf_nat_ipv6_unregister_fn(net, &ops[--i]);
 
-			kfree(ops);
+			ip6table_nat_ops_free_rcu(ops);
 			return ret;
 		}
 	}
@@ -102,7 +134,7 @@ static void ip6t_nat_unregister_lookups(struct net *net)
 	for (i = 0; i < ARRAY_SIZE(nf_nat_ipv6_ops); i++)
 		nf_nat_ipv6_unregister_fn(net, &ops[i]);
 
-	kfree(ops);
+	ip6table_nat_ops_free_rcu(ops);
 }
 
 static int ip6table_nat_table_init(struct net *net)
