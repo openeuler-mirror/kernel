@@ -5,6 +5,8 @@
  */
 
 #include <linux/module.h>
+#include <linux/overflow.h>
+#include <linux/stddef.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
@@ -56,6 +58,36 @@ static const struct nf_hook_ops nf_nat_ipv4_ops[] = {
 	},
 };
 
+struct iptable_nat_ops_rcu {
+	struct rcu_head rcu;
+	struct nf_hook_ops ops[];
+};
+
+static struct iptable_nat_ops_rcu *
+iptable_nat_ops_rcu_from_ops(struct nf_hook_ops *ops)
+{
+	return (struct iptable_nat_ops_rcu *)((char *)ops -
+		offsetof(struct iptable_nat_ops_rcu, ops));
+}
+
+static struct nf_hook_ops *iptable_nat_ops_alloc(void)
+{
+	struct iptable_nat_ops_rcu *ops_rcu;
+
+	ops_rcu = kmalloc(struct_size(ops_rcu, ops, ARRAY_SIZE(nf_nat_ipv4_ops)),
+			  GFP_KERNEL);
+	if (!ops_rcu)
+		return NULL;
+
+	memcpy(ops_rcu->ops, nf_nat_ipv4_ops, sizeof(nf_nat_ipv4_ops));
+	return ops_rcu->ops;
+}
+
+static void iptable_nat_ops_free_rcu(struct nf_hook_ops *ops)
+{
+	kfree_rcu(iptable_nat_ops_rcu_from_ops(ops), rcu);
+}
+
 static int ipt_nat_register_lookups(struct net *net)
 {
 	struct iptable_nat_pernet *xt_nat_net;
@@ -68,7 +100,7 @@ static int ipt_nat_register_lookups(struct net *net)
 	if (WARN_ON_ONCE(!table))
 		return -ENOENT;
 
-	ops = kmemdup(nf_nat_ipv4_ops, sizeof(nf_nat_ipv4_ops), GFP_KERNEL);
+	ops = iptable_nat_ops_alloc();
 	if (!ops)
 		return -ENOMEM;
 
@@ -79,7 +111,7 @@ static int ipt_nat_register_lookups(struct net *net)
 			while (i)
 				nf_nat_ipv4_unregister_fn(net, &ops[--i]);
 
-			kfree(ops);
+			iptable_nat_ops_free_rcu(ops);
 			return ret;
 		}
 	}
@@ -100,7 +132,7 @@ static void ipt_nat_unregister_lookups(struct net *net)
 	for (i = 0; i < ARRAY_SIZE(nf_nat_ipv4_ops); i++)
 		nf_nat_ipv4_unregister_fn(net, &ops[i]);
 
-	kfree(ops);
+	iptable_nat_ops_free_rcu(ops);
 }
 
 static int iptable_nat_table_init(struct net *net)

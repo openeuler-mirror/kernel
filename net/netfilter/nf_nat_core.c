@@ -8,6 +8,8 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
+#include <linux/overflow.h>
+#include <linux/stddef.h>
 #include <linux/types.h>
 #include <linux/timer.h>
 #include <linux/skbuff.h>
@@ -43,6 +45,11 @@ struct nf_nat_lookup_hook_priv {
 	struct nf_hook_entries __rcu *entries;
 
 	struct rcu_head rcu_head;
+};
+
+struct nf_nat_ops_rcu {
+	struct rcu_head rcu;
+	struct nf_hook_ops ops[];
 };
 
 struct nf_nat_hooks_net {
@@ -1194,6 +1201,35 @@ static struct nf_ct_helper_expectfn follow_master_nat = {
 	.expectfn	= nf_nat_follow_master,
 };
 
+static struct nf_nat_ops_rcu *nf_nat_ops_rcu_from_ops(struct nf_hook_ops *ops)
+{
+	return (struct nf_nat_ops_rcu *)((char *)ops -
+		offsetof(struct nf_nat_ops_rcu, ops));
+}
+
+static struct nf_hook_ops *
+nf_nat_ops_alloc(const struct nf_hook_ops *orig_nat_ops, unsigned int ops_count)
+{
+	struct nf_nat_ops_rcu *ops_rcu;
+
+	ops_rcu = kmalloc(struct_size(ops_rcu, ops, ops_count), GFP_KERNEL);
+	if (!ops_rcu)
+		return NULL;
+
+	memcpy(ops_rcu->ops, orig_nat_ops, sizeof(*orig_nat_ops) * ops_count);
+	return ops_rcu->ops;
+}
+
+static void nf_nat_ops_free(struct nf_hook_ops *ops)
+{
+	kfree(nf_nat_ops_rcu_from_ops(ops));
+}
+
+static void nf_nat_ops_free_rcu(struct nf_hook_ops *ops)
+{
+	kfree_rcu(nf_nat_ops_rcu_from_ops(ops), rcu);
+}
+
 int nf_nat_register_fn(struct net *net, u8 pf, const struct nf_hook_ops *ops,
 		       const struct nf_hook_ops *orig_nat_ops, unsigned int ops_count)
 {
@@ -1223,7 +1259,7 @@ int nf_nat_register_fn(struct net *net, u8 pf, const struct nf_hook_ops *ops,
 	if (!nat_proto_net->nat_hook_ops) {
 		WARN_ON(nat_proto_net->users != 0);
 
-		nat_ops = kmemdup(orig_nat_ops, sizeof(*orig_nat_ops) * ops_count, GFP_KERNEL);
+		nat_ops = nf_nat_ops_alloc(orig_nat_ops, ops_count);
 		if (!nat_ops) {
 			mutex_unlock(&nf_nat_proto_mutex);
 			return -ENOMEM;
@@ -1238,16 +1274,18 @@ int nf_nat_register_fn(struct net *net, u8 pf, const struct nf_hook_ops *ops,
 			mutex_unlock(&nf_nat_proto_mutex);
 			while (i)
 				kfree(nat_ops[--i].priv);
-			kfree(nat_ops);
+			nf_nat_ops_free(nat_ops);
 			return -ENOMEM;
 		}
 
 		ret = nf_register_net_hooks(net, nat_ops, ops_count);
 		if (ret < 0) {
 			mutex_unlock(&nf_nat_proto_mutex);
-			for (i = 0; i < ops_count; i++)
-				kfree(nat_ops[i].priv);
-			kfree(nat_ops);
+			for (i = 0; i < ops_count; i++) {
+				priv = nat_ops[i].priv;
+				kfree_rcu(priv, rcu_head);
+			}
+			nf_nat_ops_free_rcu(nat_ops);
 			return ret;
 		}
 
@@ -1311,7 +1349,7 @@ void nf_nat_unregister_fn(struct net *net, u8 pf, const struct nf_hook_ops *ops,
 		}
 
 		nat_proto_net->nat_hook_ops = NULL;
-		kfree(nat_ops);
+		nf_nat_ops_free_rcu(nat_ops);
 	}
 unlock:
 	mutex_unlock(&nf_nat_proto_mutex);
