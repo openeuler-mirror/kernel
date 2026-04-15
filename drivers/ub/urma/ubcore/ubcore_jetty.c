@@ -1604,8 +1604,16 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	     cfg->trans_mode == UBCORE_TP_UM)) {
 		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
 		mutex_lock(&tjfr->lock);
-		vtpn = ubcore_connect_vtp_ctrlplane(dev, &vtp_param,
-							active_tp_cfg, udata);
+		if (cfg->flag.bs.share_tp == 1 &&
+			cfg->trans_mode == UBCORE_TP_RM &&
+			cfg->tp_type == UBCORE_RTP) {
+			vtpn = ubcore_connect_rm_svrtp_ctrlplane(dev, &vtp_param,
+								 active_tp_cfg,
+								 &cfg->stp_cfg, udata);
+		} else {
+			vtpn = ubcore_connect_vtp_ctrlplane(dev, &vtp_param,
+									active_tp_cfg, udata);
+		}
 		if (IS_ERR_OR_NULL(vtpn)) {
 			mutex_unlock(&tjfr->lock);
 			mutex_destroy(&tjfr->lock);
@@ -1640,12 +1648,17 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 
 	dev = tjfr->ub_dev;
 	if (!ubcore_is_bonding_dev(dev) &&
-	    dev->transport_type == UBCORE_TRANSPORT_UB &&
-	    (tjfr->cfg.trans_mode == UBCORE_TP_RM ||
-	     tjfr->cfg.trans_mode == UBCORE_TP_UM) &&
-	    tjfr->vtpn != NULL) {
+		dev->transport_type == UBCORE_TRANSPORT_UB &&
+		(tjfr->cfg.trans_mode == UBCORE_TP_RM ||
+		 tjfr->cfg.trans_mode == UBCORE_TP_UM) &&
+		 tjfr->vtpn != NULL) {
 		mutex_lock(&tjfr->lock);
-		ret = ubcore_disconnect_vtp(tjfr->vtpn);
+		if (tjfr->cfg.trans_mode == UBCORE_TP_RM &&
+			tjfr->cfg.tp_type == UBCORE_RTP &&
+			tjfr->cfg.flag.bs.share_tp == 1)
+			ret = ubcore_disconnect_rm_svtp(tjfr);
+		else
+			ret = ubcore_disconnect_vtp(tjfr->vtpn);
 		if (ret != 0) {
 			ubcore_log_err("Failed to disconnect vtp.\n");
 			mutex_unlock(&tjfr->lock);
@@ -2561,8 +2574,17 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 				    tjetty->cfg.flag.bs.share_tp))) {
 		ubcore_set_vtp_param(dev, NULL, cfg, &vtp_param);
 		mutex_lock(&tjetty->lock);
-		vtpn = ubcore_connect_vtp_ctrlplane(dev, &vtp_param,
-							active_tp_cfg, udata);
+		if (cfg->flag.bs.share_tp == 1 &&
+			cfg->trans_mode == UBCORE_TP_RM &&
+			cfg->tp_type == UBCORE_RTP) {
+			vtpn = ubcore_connect_rm_svrtp_ctrlplane(dev, &vtp_param,
+								 active_tp_cfg,
+								 &cfg->stp_cfg, udata);
+		} else {
+			vtpn = ubcore_connect_vtp_ctrlplane(dev, &vtp_param,
+									active_tp_cfg, udata);
+		}
+
 		if (IS_ERR_OR_NULL(vtpn)) {
 			mutex_unlock(&tjetty->lock);
 			mutex_destroy(&tjetty->lock);
@@ -2606,7 +2628,12 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 				    tjetty->cfg.flag.bs.share_tp)) &&
 	    tjetty->vtpn != NULL) {
 		mutex_lock(&tjetty->lock);
-		ret = ubcore_disconnect_vtp(tjetty->vtpn);
+		if (tjetty->cfg.trans_mode == UBCORE_TP_RM &&
+			tjetty->cfg.tp_type == UBCORE_RTP &&
+			tjetty->cfg.flag.bs.share_tp == 1)
+			ret = ubcore_disconnect_rm_svtp(tjetty);
+		else
+			ret = ubcore_disconnect_vtp(tjetty->vtpn);
 		if (ret != 0) {
 			mutex_unlock(&tjetty->lock);
 			ubcore_log_err("Failed to disconnect vtp.\n");

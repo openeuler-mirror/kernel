@@ -199,6 +199,11 @@ static inline uint32_t ubcore_get_ex_tp_hash(uint64_t *tp_handle)
 	return jhash(tp_handle, sizeof(uint64_t), 0);
 }
 
+static inline uint32_t ubcore_get_rm_tp_hash(struct ubcore_rm_tp_key *key)
+{
+	return jhash(key, sizeof(struct ubcore_rm_tp_key), 0);
+}
+
 static inline bool ubcore_is_ub_device(struct ubcore_device *dev)
 {
 	return (dev->transport_type == UBCORE_TRANSPORT_UB);
