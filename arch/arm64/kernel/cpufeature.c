@@ -2238,7 +2238,7 @@ static bool use_nmi(const struct arm64_cpu_capabilities *entry, int scope)
 	 */
 	if (!IS_ENABLED(CONFIG_ARM64_NMI))
 		pr_info("CONFIG_ARM64_NMI disabled, using NMIs for guests only\n");
-#ifdef CONFIG_ARM64_PSEUDO_NMI
+#if IS_ENABLED(CONFIG_ARM64_PSEUDO_NMI) || IS_ENABLED(CONFIG_ARM64_NMI)
 	else if (IS_ENABLED(CONFIG_ARM64_PSEUDO_NMI) && enable_pseudo_nmi) {
 		pr_info("Pseudo NMI enabled, not using architected NMI\n");
 		return false;
