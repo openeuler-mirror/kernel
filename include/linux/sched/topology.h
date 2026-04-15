@@ -232,7 +232,8 @@ struct sched_domain_topology_level {
 
 extern void __init set_sched_topology(struct sched_domain_topology_level *tl);
 
-# define SD_INIT_NAME(type)		.name = #type
+#define SDTL_INIT(maskfn, flagsfn, dname) ((struct sched_domain_topology_level) \
+	    { .mask = maskfn, .sd_flags = flagsfn, .name = #dname })
 
 #else /* CONFIG_SMP */
 
