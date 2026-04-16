@@ -6400,6 +6400,7 @@ bool btf_ctx_access(int off, int size, enum bpf_access_type type,
 	}
 	return true;
 }
+EXPORT_SYMBOL_GPL(btf_ctx_access);
 
 enum bpf_struct_walk_result {
 	/* < 0 error */
