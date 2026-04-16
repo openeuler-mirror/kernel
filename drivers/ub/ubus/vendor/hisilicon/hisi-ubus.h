@@ -47,6 +47,7 @@ int hi_send_entity_enable_msg(struct ub_entity *uent, u8 enable);
 int hi_send_port_reset_msg(struct ub_entity *uent, u16 port_idx);
 int ub_bus_controller_probe(struct ub_bus_controller *ubc);
 void ub_bus_controller_remove(struct ub_bus_controller *ubc);
+void ub_delay_task_work_vdm(struct work_struct *work);
 unsigned long long hi_feature_get(void);
 
 #endif /* __HISI_UBUS_H__ */

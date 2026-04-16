@@ -14,6 +14,7 @@
 #include "port.h"
 #include "cna.h"
 #include "route.h"
+#include "task.h"
 #include "enum.h"
 
 #define ENUM_MAX_HOPS 255
@@ -1416,7 +1417,7 @@ static void ub_enum_free_all(void)
 	ub_remove_entities();
 }
 
-int ub_enum_entities_active(struct list_head *dev_list)
+int ub_enum_entities_active(struct list_head *dev_list, int src)
 {
 	struct ub_entity *uent, *tmp;
 	int ret;
@@ -1434,11 +1435,20 @@ int ub_enum_entities_active(struct list_head *dev_list)
 
 		list_del(&uent->node);
 		ub_entity_add(uent, uent->ubc);
+		ub_entity_assign_task_src(uent, src, true);
 
 		if (is_ibus_controller(uent) && uent->ubc->cluster)
 			continue;
 
-		ub_start_ent(uent);
+		if (ub_entity_test_task_src(uent, TASK_SRC_SELF)) {
+			ub_start_ent(uent);
+		} else {
+			ret = ub_add_delay_task(uent, NULL, TASK_TYPE_START);
+			if (ret) {
+				ub_err(uent, "active add start task failed\n");
+				return ret; /* Just one entity */
+			}
+		}
 	}
 
 	return 0;
@@ -1462,7 +1472,7 @@ int ub_enum_probe(void)
 		goto err_out;
 	}
 
-	ret = ub_enum_entities_active(&topo_scan.dev_list);
+	ret = ub_enum_entities_active(&topo_scan.dev_list, TASK_SRC_SELF);
 	if (ret) {
 		pr_err("devices start failed, ret=%d\n", ret);
 		goto err_out;

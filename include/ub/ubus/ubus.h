@@ -159,8 +159,22 @@ struct ub_port {
 	enum ub_link_state link_state;
 	u8 link_event;
 
+#ifndef __GENKSYMS__
+	union {
+		struct {
+			atomic_t port_mgmt_state;
+		};
+		u64 reserved1;
+	};
+#else
 	KABI_RESERVE(1)
+#endif
+
+#ifndef __GENKSYMS__
+	struct mutex *port_lock;
+#else
 	KABI_RESERVE(2)
+#endif
 };
 
 struct ue_map {
@@ -269,7 +283,17 @@ struct ub_entity {
 
 	u16 upi;
 
+#ifndef __GENKSYMS__
+	union {
+		struct {
+			atomic_t ent_mgmt_state;
+			u32 task_src;
+		};
+		u64 reserved1;
+	};
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -290,13 +314,24 @@ struct ub_entity {
 /* UB bus error event callbacks */
 struct ub_error_handlers {
 	/* UB function reset prepare or completed */
+
+	/*
+	 * Deprecated: This function is going to be removed in future version.
+	 * Please use ub_reset_prepare_return() and ub_reset_done_with_pret()
+	 * instead, which provides more complete return value processing.
+	 */
 	void (*ub_reset_prepare)(struct ub_entity *uent);
 	void (*ub_reset_done)(struct ub_entity *uent);
 	ub_ers_result_t (*ub_error_detected)(struct ub_entity *uent, ub_channel_state_t state);
 	ub_ers_result_t (*ub_resource_enabled)(struct ub_entity *uent);
 
+#ifndef __GENKSYMS__
+	int (*ub_reset_prepare_return)(struct ub_entity *uent);
+	int (*ub_reset_done_with_pret)(struct ub_entity *uent, int pret);
+#else
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };
@@ -378,7 +413,11 @@ struct ub_driver {
 	struct ub_dynids dynids;
 	bool driver_managed_dma;
 
+#ifndef __GENKSYMS__
+	int (*reinit)(struct ub_entity *uent);
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -483,7 +522,12 @@ enum ub_port_event {
 	UB_PORT_EVENT_LINK_DOWN,
 	UB_PORT_EVENT_LINK_UP,
 	UB_PORT_EVENT_RESET_PREPARE,
+#ifndef __GENKSYMS__
+	UB_PORT_EVENT_RESET_DONE,
+	UB_PORT_EVENT_RESET_FAILED
+#else
 	UB_PORT_EVENT_RESET_DONE
+#endif
 };
 
 struct ub_share_port_ops {
@@ -566,11 +610,17 @@ struct ub_entity *ub_get_ent_by_guid(const struct ub_guid *guid);
  * @uent: UB entity.
  * @enable: Enable or disable.
  *
+ * Deprecated: This function is going to be removed in future version.
+ * Please use ub_entity_enable_return() instead, which provides more complete
+ * return value processing.
+ *
  * Enable or disable the communication channel between entity and user host.
  *
  * Context: Any context, it will take mutex_lock()/mutex_unlock().
  */
 void ub_entity_enable(struct ub_entity *uent, u8 enable);
+
+int ub_entity_enable_return(struct ub_entity *uent, u8 enable);
 
 /**
  * ub_set_user_info() - Initialize host information for the entity.
@@ -1039,6 +1089,8 @@ static inline struct ub_entity *ub_entity_get(struct ub_entity *uent)
 { return NULL; }
 static inline void ub_entity_put(struct ub_entity *uent) {}
 static inline void ub_entity_enable(struct ub_entity *uent, u8 enable) {}
+static inline int ub_entity_enable_return(struct ub_entity *uent, u8 enable)
+{ return -ENODEV; }
 static inline int ub_set_user_info(struct ub_entity *uent)
 { return -ENODEV; }
 static inline void ub_unset_user_info(struct ub_entity *uent) {}

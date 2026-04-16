@@ -73,6 +73,7 @@ struct vfio_ub_core_device {
 	u64 usi_addr_offset;
 	u32 usi_addr_size;
 	struct eventfd_ctx *req_trigger;
+	struct eventfd_ctx *reinit_trigger;
 	struct mutex igate;
 };
 

@@ -10,6 +10,15 @@
 
 #define UB_CP_UPI 0x7FFF
 
+enum ub_mgmt_state {
+	MGMT_STATE_IDLE = 0,
+	MGMT_STATE_REGISTERING = 1,
+	MGMT_STATE_UNREGISTERING = 2
+};
+
+#define ent_in_unregistering(uent) \
+	(atomic_read(&(uent)->ent_mgmt_state) == MGMT_STATE_UNREGISTERING)
+
 enum ub_entity_type {
 	UB_ENT_BUS_CONTROLLER,
 	UB_ENT_IBUS_CONTROLLER,
@@ -45,6 +54,7 @@ enum ub_entity_type {
 #define UB_ENTITY_SETUP 4 /* Flag indicate uent is setup */
 #define UB_ENTITY_ACTIVE 5 /* Flag indicate uent is in normal or disable state */
 #define UB_ENTITY_DISCONNECTED 6 /* Flag indicate uent is disconnected */
+#define UB_ENTITY_PROBED 7 /* Flag indicate uent is probed driver */
 
 static inline void ub_entity_assign_priv_flag(struct ub_entity *uent, int bit,
 					      bool flag)
@@ -67,16 +77,18 @@ struct ub_manage_subsystem_ops {
 	void (*ras_handler_remove)(void);
 
 #ifndef __GENKSYMS__
+	void (*vdm_delay_work)(struct work_struct *work);
 	unsigned long long (*feature_get)(void);
 #else
 	KABI_RESERVE(1)
-#endif
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 };
 int register_ub_manage_subsystem_ops(const struct ub_manage_subsystem_ops *ops);
 void unregister_ub_manage_subsystem_ops(const struct ub_manage_subsystem_ops *ops);
 const struct ub_manage_subsystem_ops *get_ub_manage_subsystem_ops(void);
+struct ub_entity *ub_find_entity(struct ub_entity *parent, bool mue, int idx);
 
 #endif /* __UBUS_H__ */

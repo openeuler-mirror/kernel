@@ -15,6 +15,7 @@
 #include "reset.h"
 #include "instance.h"
 #include "ubus_inner.h"
+#include "task.h"
 #include "pool.h"
 
 struct cfg_cpl_notify_pld {
@@ -57,46 +58,8 @@ struct pool_msg_pkt {
 #define MSG_CFG_CPL_NOTIFY_SIZE (MSG_PKT_HEADER_SIZE + CFG_CPL_NOTIFY_PLD_SIZE)
 #define MSG_PORT_RESET_SIZE (MSG_PKT_HEADER_SIZE + PORT_RESET_NOTIFY_PLD_SIZE)
 
-static DEFINE_SPINLOCK(ub_fad_lock);
-
-struct ub_fad_collection {
-	struct list_head list;
-	struct list_head node;
-};
-
-static struct ub_fad_collection ub_fad = {
-	.list = LIST_HEAD_INIT(ub_fad.list),
-	.node = LIST_HEAD_INIT(ub_fad.node),
-};
-
-static struct pool_fad *ub_get_fad(u32 eid)
-{
-	struct pool_fad *fad;
-	unsigned long flags;
-
-	spin_lock_irqsave(&ub_fad_lock, flags);
-	list_for_each_entry(fad, &ub_fad.node, node)
-		if (fad->base.eid[0] == eid)
-			goto out;
-
-	fad = NULL;
-out:
-	spin_unlock_irqrestore(&ub_fad_lock, flags);
-	return fad;
-}
-
-struct ub_entity *ub_get_fad_ent_by_eid(unsigned int eid)
-{
-	struct pool_fad *fad;
-
-	fad = ub_get_fad(eid);
-	if (fad)
-		return fad->uent;
-
-	return NULL;
-}
-
-static int ub_fad_res_init(struct pool_fad *fad, struct ub_entity *uent)
+static int ub_pool_res_init(struct entity_reg_msg_pld *pld,
+			    struct ub_entity *uent, bool ers_valid)
 {
 	u32 source_support_map[MAX_UB_RES_NUM] = { UB_ERS0S_SUPPORT,
 						   UB_ERS1S_SUPPORT,
@@ -106,7 +69,7 @@ static int ub_fad_res_init(struct pool_fad *fad, struct ub_entity *uent)
 	u8 sys_pg = 0;
 	int ret, i;
 
-	if (!fad->ers_valid)
+	if (!ers_valid)
 		return 0;
 
 	ret = ub_cfg_read_byte(uent, UB_SYS_PGS, &sys_pg);
@@ -126,10 +89,10 @@ static int ub_fad_res_init(struct pool_fad *fad, struct ub_entity *uent)
 		if (!(support_feature & source_support_map[i]))
 			continue;
 
-		uent->zone[i].res.start = ubba_gen(fad->ers[i].sa_h,
-						   fad->ers[i].sa_l);
+		uent->zone[i].res.start = ubba_gen(pld->ers[i].sa_h,
+						   pld->ers[i].sa_l);
 		uent->zone[i].res.end = uent->zone[i].res.start +
-					((u64)fad->ers[i].ss * pg_size - 1);
+					((u64)pld->ers[i].ss * pg_size - 1);
 		uent->zone[i].res.flags = IORESOURCE_MEM;
 		uent->zone[i].res.name = ub_name(uent);
 		uent->zone[i].sa_used = 1;
@@ -157,56 +120,46 @@ fail:
 	return ret;
 }
 
-static void ub_fad_uent_init(struct pool_fad *fad, struct ub_entity *uent)
+static void ub_pool_uent_init(struct entity_reg_msg_pld *pld,
+			      struct ub_entity *uent)
 {
+	struct ub_guid *guid = (struct ub_guid *)pld->base.guid;
+	char buf[SZ_64] = {};
+
+	(void)ub_show_guid(guid, buf);
+
 	uent->pool = true;
-	uent->eid = fad->base.eid[0];
-	uent->user_eid = fad->base.ueid[0];
-	uent->cna = fad->base.cna;
-	uent->upi = fad->base.upi;
-	uent->entity_idx = fad->base.entity_idx;
-	uent->ubc = ub_ubc_get(fad->ubc);
-	memcpy(uent->guid.dw, fad->base.guid, UB_GUID_SIZE);
+	uent->eid = pld->base.eid[0];
+	uent->user_eid = pld->base.ueid[0];
+	uent->cna = pld->base.cna;
+	uent->upi = pld->base.upi;
+	uent->entity_idx = pld->base.entity_idx;
+	memcpy(uent->guid.dw, pld->base.guid, UB_GUID_SIZE);
 	uent->pue = uent;
 	uent->is_mue = 1;
+
+	dev_info(&uent->ubc->dev,
+		 "pool_add_idx=%u, eid=%#x, cna=%#x, upi=%#x, u_eid=%#05x, guid=%s\n",
+		 pld->base.entity_idx, pld->base.eid[0], pld->base.cna,
+		 pld->base.upi, pld->base.ueid[0], buf);
 }
 
-static int ub_fad_attach(struct pool_fad *fad)
+static int ub_pool_attach(struct ub_entity *uent,
+			  struct entity_reg_msg_pld *pld, bool ers_valid)
 {
-	struct ub_entity *uent;
 	int ret;
-
-	if (fad->attach)
-		return 0;
-
-	uent = ub_alloc_ent();
-	if (!uent)
-		return -ENOMEM;
-
-	ub_fad_uent_init(fad, uent);
 
 	ret = ub_setup_ent(uent);
 	if (ret)
-		goto fail;
+		return ret;
 
-	ret = ub_fad_res_init(fad, uent);
+	ret = ub_pool_res_init(pld, uent, ers_valid);
 	WARN_ON(ret);
 
+	ub_entity_assign_task_src(uent, TASK_SRC_POOL, true);
 	ub_entity_add(uent, uent->ubc);
 
-	fad->uent = uent;
-	fad->attach = true;
-	return 0;
-fail:
-	ub_ubc_put(uent->ubc);
-	kfree(uent);
 	return ret;
-}
-
-static void ub_fad_detach(struct pool_fad *fad)
-{
-	ub_stop_and_remove_ent(fad->uent);
-	fad->uent = NULL;
 }
 
 bool ub_rsp_msg_init(struct msg_pkt_header *header, u8 status, u32 plen)
@@ -232,46 +185,27 @@ bool ub_rsp_msg_init(struct msg_pkt_header *header, u8 status, u32 plen)
 }
 EXPORT_SYMBOL_GPL(ub_rsp_msg_init);
 
-static void ub_fad_para_init(struct pool_fad *fad, struct entity_reg_msg_pld *pld)
-{
-	struct ub_guid *guid = (struct ub_guid *)fad->base.guid;
-	char buf[SZ_64] = {};
-
-	memcpy(&fad->base, &pld->base, sizeof(struct entity_base_info));
-
-	(void)ub_show_guid(guid, buf);
-
-	dev_info(&fad->ubc->dev,
-		 "fad_add_idx=%u, eid=%#x, cna=%#x, upi=%#x,  u_eid=%#05x, guid=%s\n",
-		 fad->base.entity_idx, fad->base.eid[0], fad->base.cna,
-		 fad->base.upi, fad->base.ueid[0], buf);
-
-	if (fad->ers_valid)
-		memcpy(fad->ers, pld->ers, ENTITY_RS_PLD_SIZE);
-}
-
 static int ub_entity_reg_check(struct ub_bus_controller *ubc,
-			     struct entity_reg_msg_pld *pld, bool ers_valid)
+			       struct entity_reg_msg_pld *pld, bool ers_valid)
 {
 	struct ub_guid *guid = (struct ub_guid *)pld->base.guid;
-	struct device *dev = &ubc->dev;
 	struct entity_rs_info *ers;
 	int i;
 
 	if (pld->base.eid[0] == 0 || pld->base.ueid[0] == 0) {
-		dev_err(dev, "entity reg eid=%#x u_eid=%#x is invalid\n",
+		dev_err(&ubc->dev, "entity reg eid=%#x u_eid=%#x is invalid\n",
 			pld->base.eid[0], pld->base.ueid[0]);
 		return -EINVAL;
 	}
 
 	if (!ub_bus_instance_exist(pld->base.ueid[0])) {
-		dev_err(dev, "entity reg u_eid=%#x not exist\n",
+		dev_err(&ubc->dev, "entity reg u_eid=%#x not exist\n",
 			pld->base.ueid[0]);
 		return -EINVAL;
 	}
 
 	if (guid->bits.type != UB_TYPE_CONTROLLER) {
-		dev_err(dev, "entity reg guid type %u is invalid\n",
+		dev_err(&ubc->dev, "entity reg guid type %u is invalid\n",
 			guid->bits.type);
 		return -EINVAL;
 	}
@@ -282,7 +216,7 @@ static int ub_entity_reg_check(struct ub_bus_controller *ubc,
 	ers = (struct entity_rs_info *)pld->ers;
 	for (i = 0; i < MAX_UB_RES_NUM; i++) {
 		if (ers[i].ss == 0) {
-			dev_err(dev, "entity reg ers[%d] size is 0\n", i);
+			dev_err(&ubc->dev, "entity reg ers[%d] size is 0\n", i);
 			return -EINVAL;
 		}
 	}
@@ -291,71 +225,59 @@ static int ub_entity_reg_check(struct ub_bus_controller *ubc,
 }
 
 static u8 ub_entity_reg_handle(struct ub_bus_controller *ubc,
-			     struct pool_msg_pkt *pkt, bool ers_valid,
-			     struct pool_fad **start_fad)
+			       struct pool_msg_pkt *pkt, bool ers_valid)
 {
 	struct entity_reg_msg_pld *pld = &pkt->reg;
-	struct pool_fad *fad;
+	struct workqueue_struct *delay_task_wq;
+	struct ub_delay_task *ub_task;
 	struct ub_entity *uent;
 	int ret;
-
-	uent = ub_get_ent_by_eid(pld->base.eid[0]);
-	if (uent) {
-		ub_entity_put(uent);
-		return UB_MSG_RSP_EXEC_EEXIST;
-	}
 
 	ret = ub_entity_reg_check(ubc, pld, ers_valid);
 	if (ret)
 		return UB_MSG_RSP_EXEC_EINVAL;
 
-	fad = kzalloc(sizeof(*fad), GFP_KERNEL);
-	if (!fad)
+	uent = ub_alloc_ent();
+	if (!uent) {
+		dev_err(&ubc->dev, "Failed to allocate entity\n");
 		return UB_MSG_RSP_EXEC_ENOMEM;
+	}
 
-	fad->ubc = ubc;
-	fad->ers_valid = ers_valid;
-	ub_fad_para_init(fad, pld);
+	uent->ubc = ubc;
+	uent->dev.parent = &ubc->uent->dev;
+	ub_pool_uent_init(pld, uent);
 
-	ret = ub_fad_attach(fad);
+	ub_task = ub_delay_task_alloc_and_init(uent, NULL, TASK_TYPE_START);
+	if (IS_ERR(ub_task)) {
+		dev_err(&ubc->dev, "ub_delay_task alloc failed\n");
+		ret = PTR_ERR(ub_task);
+		goto free_uent;
+	}
+
+	delay_task_wq = ub_get_delay_task_wq();
+	if (!delay_task_wq) {
+		dev_err(&ubc->dev, "delay_task_wq get failed\n");
+		ret = -EINVAL;
+		goto free_task;
+	}
+
+	ret = ub_pool_attach(uent, pld, ers_valid);
 	if (ret) {
-		dev_err(&ubc->dev, "fad idx[%u] add failed\n", fad->base.entity_idx);
-		kfree(fad);
-		return err_to_msg_rsp(ret);
+		dev_err(&ubc->dev, "pool idx[%u] add failed\n",
+			pld->base.entity_idx);
+		goto free_task;
 	}
 
-	spin_lock(&ub_fad_lock);
-	list_add_tail(&fad->node, &ub_fad.node);
-	spin_unlock(&ub_fad_lock);
-	*start_fad = fad;
+	queue_work(delay_task_wq, &ub_task->work);
 
 	return UB_MSG_RSP_SUCCESS;
-}
 
-static u8
-ub_entity_rls_handle(struct ub_bus_controller *ubc, struct pool_msg_pkt *pkt)
-{
-	struct entity_rls_msg_pld *pld = &pkt->rls;
-	struct pool_fad *fad;
-
-	fad = ub_get_fad(pld->eid[0]);
-	if (!fad)
-		return UB_MSG_RSP_EXEC_ENODEV;
-
-	spin_lock(&ub_fad_lock);
-	list_del(&fad->node);
-	spin_unlock(&ub_fad_lock);
-
-	if (fad->attach) {
-		ub_info(fad->uent, "fad detach, eid=%#x, reason=%#x\n",
-			fad->uent->eid, pld->reason);
-		ub_fad_detach(fad);
-		fad->attach = false;
-	}
-
-	kfree(fad);
-
-	return UB_MSG_RSP_SUCCESS;
+free_task:
+	ub_delay_task_free(ub_task);
+free_uent:
+	ub_ubc_put(uent->ubc);
+	kfree(uent);
+	return err_to_msg_rsp(ret);
 }
 
 static void
@@ -363,7 +285,9 @@ ub_entity_rls_msg_handler(struct ub_bus_controller *ubc, void *msg, u16 p_len)
 {
 	struct pool_msg_pkt *pkt = (struct pool_msg_pkt *)msg;
 	struct msg_pkt_header *header = &pkt->header;
+	struct entity_rls_msg_pld *pld = &pkt->rls;
 	struct msg_info info = {};
+	struct ub_entity *uent;
 	bool local;
 	u8 status;
 	int ret;
@@ -375,7 +299,24 @@ ub_entity_rls_msg_handler(struct ub_bus_controller *ubc, void *msg, u16 p_len)
 		goto rsp;
 	}
 
-	status = ub_entity_rls_handle(ubc, pkt);
+	uent = ub_get_ent_by_eid(pld->eid[0]);
+	if (!uent) {
+		dev_err(&ubc->dev, "can not find ub entity by eid=%#05x\n",
+			pld->eid[0]);
+		status = UB_MSG_RSP_EXEC_ENODEV;
+		goto rsp;
+	}
+
+	if (!is_p_device(uent)) {
+		dev_err(&ubc->dev, "ub entity is not a pooled device\n");
+		status = UB_MSG_RSP_EXEC_EINVAL;
+		ub_entity_put(uent);
+		goto rsp;
+	}
+
+	ret = ub_destroy_existed_entity_handler(uent);
+	status = err_to_msg_rsp(ret);
+	ub_entity_put(uent);
 
 rsp:
 	local = ub_rsp_msg_init(header, status, 0);
@@ -392,8 +333,9 @@ ub_entity_reg_msg_handler(struct ub_bus_controller *ubc, void *msg, u16 p_len)
 {
 	struct pool_msg_pkt *pkt = (struct pool_msg_pkt *)msg;
 	struct msg_pkt_header *header = &pkt->header;
+	struct entity_reg_msg_pld *pld = &pkt->reg;
 	struct msg_info info = {};
-	struct pool_fad *start_fad;
+	struct ub_entity *uent;
 	bool local, flag;
 	u32 feature = 0;
 	u8 status;
@@ -407,13 +349,30 @@ ub_entity_reg_msg_handler(struct ub_bus_controller *ubc, void *msg, u16 p_len)
 
 	ret = ub_cfg_read_dword(ubc->uent, UB_CFG1_SUPPORT_FEATURE_L, &feature);
 	if (ret) {
-		dev_err(&ubc->dev, "entity reg feature read failed, ret=%d\n", ret);
+		dev_err(&ubc->dev, "entity reg feature read failed, ret=%d\n",
+			ret);
 		status = UB_MSG_RSP_EXEC_ENOEXEC;
 		goto rsp;
 	}
 
+	uent = ub_get_ent_by_eid(pld->base.eid[0]);
+	if (uent) {
+		if (!is_p_device(uent)) {
+			dev_err(&ubc->dev,
+				"Entity with eid=%#05x is not a pool device\n",
+				pld->base.eid[0]);
+			status = UB_MSG_RSP_EXEC_EINVAL;
+			ub_entity_put(uent);
+			goto rsp;
+		}
+		ret = ub_create_existed_entity_handler(uent);
+		status = err_to_msg_rsp(ret);
+		ub_entity_put(uent);
+		goto rsp;
+	}
+
 	flag = !!(feature & UB_DECODER_JURIS);
-	status = ub_entity_reg_handle(ubc, pkt, flag, &start_fad);
+	status = ub_entity_reg_handle(ubc, pkt, flag);
 
 rsp:
 	local = ub_rsp_msg_init(header, status, 0);
@@ -423,9 +382,6 @@ rsp:
 	ret = message_response(ubc->mdev, &info, header->msgetah.code);
 	if (ret)
 		dev_err(&ubc->dev, "send pool rsp msg, ret=%d\n", ret);
-
-	if (status == UB_MSG_RSP_SUCCESS)
-		ub_start_ent(start_fad->uent);
 }
 
 static void ub_cfg_cpl_notify_msg_rsp(struct ub_bus_controller *ubc,
@@ -520,7 +476,7 @@ out:
 }
 
 static void ub_cfg_cpl_notify_handler(struct ub_bus_controller *ubc, void *msg,
-				     u16 p_len)
+				      u16 p_len)
 {
 	struct pool_msg_pkt *pkt = (struct pool_msg_pkt *)msg;
 	struct cfg_cpl_notify_pld *notify = &pkt->notify;
@@ -558,7 +514,8 @@ rsp:
 	ub_cfg_cpl_notify_msg_rsp(ubc, header);
 }
 
-static void ub_pool_bi_handler(struct ub_bus_controller *ubc, void *msg, u16 p_len)
+static void ub_pool_bi_handler(struct ub_bus_controller *ubc,
+			       void *msg, u16 p_len)
 {
 	struct pool_msg_pkt *pkt = (struct pool_msg_pkt *)msg;
 	u32 size = MSG_PKT_HEADER_SIZE << MSG_REQ_SIZE_OFFSET;
@@ -602,8 +559,8 @@ rsp:
 		dev_err(dev, "send bi rsp msg, ret=%d\n", ret);
 }
 
-static void ub_port_reset_notify_handler(struct ub_bus_controller *ubc, void *msg,
-				    u16 p_len)
+static void ub_port_reset_notify_handler(struct ub_bus_controller *ubc,
+					 void *msg, u16 p_len)
 {
 	u32 size = MSG_PKT_HEADER_SIZE << MSG_REQ_SIZE_OFFSET;
 	struct pool_msg_pkt *pkt = (struct pool_msg_pkt *)msg;

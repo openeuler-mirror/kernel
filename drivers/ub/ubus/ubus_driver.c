@@ -20,6 +20,7 @@
 #include "ioctl.h"
 #include "sysfs.h"
 #include "ubus.h"
+#include "task.h"
 #include "ubus_config.h"
 #include "ubus_controller.h"
 #include "ubus_inner.h"
@@ -31,7 +32,7 @@ bool entity_flex_en;
 module_param(entity_flex_en, bool, 0444);
 MODULE_PARM_DESC(entity_flex_en, "Entity Flexible enable: default: 0");
 
-bool msg_retry;
+bool msg_retry = 1;
 EXPORT_SYMBOL_GPL(msg_retry);
 module_param(msg_retry, bool, 0444);
 MODULE_PARM_DESC(msg_retry, "support msg retry: 0(disable)");
@@ -235,6 +236,31 @@ struct ub_entity *ub_get_ent_by_uent_num(unsigned int uent_num)
 }
 EXPORT_SYMBOL_GPL(ub_get_ent_by_uent_num);
 
+/* Should call ub_entity_put after unused */
+struct ub_entity *ub_find_entity(struct ub_entity *parent, bool mue, int idx)
+{
+	struct list_head *head;
+	struct ub_entity *uent;
+	bool find = false;
+
+	if (!parent)
+		return NULL;
+
+	head = mue ? &parent->mue_list : &parent->ue_list;
+
+	down_read(&ub_bus_sem);
+	list_for_each_entry(uent, head, node)
+		if (uent->entity_idx == idx) {
+			find = true;
+			ub_entity_get(uent);
+			break;
+		}
+	up_read(&ub_bus_sem);
+
+	return find ? uent : NULL;
+}
+EXPORT_SYMBOL_GPL(ub_find_entity);
+
 static const struct ub_device_id *ub_match_device(struct ub_driver *drv,
 						  struct ub_entity *dev)
 {
@@ -345,8 +371,17 @@ static int ub_entity_probe(struct device *dev)
 	}
 
 	ret = __ub_entity_probe(drv, ub_entity);
-	if (ret)
+	if (ret) {
+		if (ret == -EAGAIN)
+			ub_add_retry_task(ub_entity);
+
 		ub_entity_put(ub_entity);
+	} else {
+		ub_entity_assign_priv_flag(ub_entity, UB_ENTITY_PROBED, true);
+	}
+
+	atomic_set(&ub_entity->ent_mgmt_state, MGMT_STATE_IDLE);
+
 	return ret;
 }
 
@@ -359,6 +394,7 @@ static void ub_entity_remove(struct device *dev)
 		drv->remove(ub_entity);
 
 	ub_entity->driver = NULL;
+	ub_entity_assign_priv_flag(ub_entity, UB_ENTITY_PROBED, false);
 
 	ub_entity_put(ub_entity);
 }
