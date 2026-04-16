@@ -1,39 +1,98 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/wait.h>
+#include <linux/delay.h>
 #include <linux/sem.h>
 #include <linux/semaphore.h>
 #include <linux/mutex.h>
+#include <linux/kernel.h>
 
 #include "rnpm.h"
 #include "rnpm_mbx.h"
 #include "rnpm_mbx_fw.h"
 
 #define RNP_FW_MAILBOX_SIZE RNPM_VFMAILBOX_SIZE
+#define DM_MAGIC_CODE 0xa5000000
+#define dbg_here pr_debug("%s %d\n", __func__, __LINE__)
 
-struct mbx_req_cookie *mbx_cookie_zalloc(int priv_len)
+// DEFINE_MUTEX(pf_fw_mbx_lock);
+
+bool is_cookie_valid(struct rnpm_hw *hw, void *cookie)
 {
-	struct mbx_req_cookie *cookie =
-		kzalloc(sizeof(*cookie) + priv_len, GFP_KERNEL);
+	struct rnpm_pf_adapter *pf_adapter = pci_get_drvdata(hw->pdev);
+	unsigned char *begin = (unsigned char *)(&pf_adapter->cookie_pool.cookies[0]);
+	unsigned char *end = (unsigned char *)(&pf_adapter->cookie_pool.cookies[MAX_COOKIES_ITEMS]);
 
-	if (cookie) {
-		cookie->timeout_jiffes = 30 * HZ;
-		cookie->magic = COOKIE_MAGIC;
-		cookie->priv_len = priv_len;
+	if (((unsigned char *)cookie) >= begin && ((unsigned char *)cookie) < end)
+		return true;
+
+	return false;
+}
+
+struct mbx_req_cookie *mbx_cookie_zalloc(struct rnpm_hw *hw, int priv_len)
+{
+	struct mbx_req_cookie *cookie = NULL;
+	int loop_cnt = MAX_COOKIES_ITEMS, i;
+	bool find = false;
+
+	struct rnpm_pf_adapter *pf_adapter = pci_get_drvdata(hw->pdev);
+
+	u64 now_jiffies = get_jiffies_64();
+
+	if (mutex_lock_interruptible(hw->mbx.lock)) {
+		rnpm_err("[%s] get mbx lock failed,priv_len:%d\n", __func__, priv_len);
+		return NULL;
 	}
+	i = pf_adapter->cookie_pool.next_idx;
+	while (loop_cnt--) {
+		cookie = &pf_adapter->cookie_pool.cookies[i];
+		if (cookie->stat == COOKIE_FREE ||
+		    // force free cookie if cookie not freed after 120 seconds
+		    time_after64(now_jiffies, cookie->alloced_jiffies + (2 * 60) * HZ)) {
+			find = true;
+			cookie->alloced_jiffies = get_jiffies_64();
+			cookie->stat = COOKIE_ALLOCED;
+			pf_adapter->cookie_pool.next_idx = (i + 1) % MAX_COOKIES_ITEMS;
+			break;
+		}
+		i = (i + 1) % MAX_COOKIES_ITEMS;
+	}
+	mutex_unlock(hw->mbx.lock);
+
+	if (!find) {
+		rnpm_err("[%s] no free cookies availble\n", __func__);
+		return NULL;
+	}
+
+	cookie->timeout_jiffes = 30 * HZ;
+	cookie->priv_len = priv_len;
 
 	return cookie;
 }
 
-int rnpm_mbx_write_posted_locked(struct rnpm_hw *hw, struct mbx_fw_cmd_req *req)
+/*
+ *	@force_free:
+ *		true: no other reference to this cookie, it is save to mark cookie reusable
+ *		false: cookie may used by other(firmware), only availble after 2min
+ */
+void mbx_free_cookie(struct mbx_req_cookie *cookie, bool force_free)
+{
+	if (!cookie)
+		return;
+
+	if (force_free)
+		cookie->stat = COOKIE_FREE;
+	else
+		cookie->stat = COOKIE_FREE_WAIT_TIMEOUT;
+}
+
+int rnpm_mbx_write_posted_locked(struct rnpm_hw *hw,
+				 struct mbx_fw_cmd_req *req)
 {
 	int err = 0;
 	int retry = 3;
 	struct rnpm_pf_adapter *pf_adapter = pci_get_drvdata(hw->pdev);
-
-	if (pci_channel_offline(hw->pdev))
-		return -EIO;
 
 	if (mutex_lock_interruptible(hw->mbx.lock)) {
 		rnpm_err("[%s] get mbx lock failed opcode:0x%x\n", __func__,
@@ -44,8 +103,10 @@ int rnpm_mbx_write_posted_locked(struct rnpm_hw *hw, struct mbx_fw_cmd_req *req)
 		err = RNPM_MBX_ERR_IN_REMOVING;
 		goto error;
 	}
-	rnpm_logd(LOG_MBX_LOCK, "%s %d lock:%p hw:%p opcode:0x%x\n", __func__,
-		  hw->pfvfnum, hw->mbx.lock, hw, req->opcode);
+	rnpm_logd(LOG_MBX_LOCK,
+		  "%s pfvf:%d lane%d lock:%p hw:%p opcode:0x%x\n",
+		  __func__, hw->pfvfnum, hw->nr_lane, hw->mbx.lock, hw,
+		  req->opcode);
 
 try_again:
 	retry--;
@@ -56,8 +117,9 @@ try_again:
 		return -EIO;
 	}
 
-	err = hw->mbx.ops.write_posted(
-		hw, (u32 *)req, (req->datalen + MBX_REQ_HDR_LEN) / 4, MBX_FW);
+	err = hw->mbx.ops.write_posted(hw, (u32 *)req,
+				       (req->datalen + MBX_REQ_HDR_LEN) / 4,
+				       MBX_FW);
 	if (err)
 		goto try_again;
 
@@ -67,7 +129,9 @@ error:
 	return err;
 }
 
-/* force firmware report link event to driver */
+/*
+ * force firmware report link event to driver
+ */
 void rnpm_link_stat_mark_reset(struct rnpm_hw *hw)
 {
 	wr32(hw, RNPM_DMA_DUMY, 0xa5a40000);
@@ -78,22 +142,26 @@ void rnpm_link_stat_mark_disable(struct rnpm_hw *hw)
 	wr32(hw, RNPM_DMA_DUMY, 0x0);
 }
 
-int rnpm_mbx_fw_post_req(struct rnpm_hw *hw, struct mbx_fw_cmd_req *req,
-			 struct mbx_req_cookie *cookie)
+/*
+ * @ret:
+ *	=0: no error
+ *	>0: req has response, but fw return a errcode
+ *	<0: driver error
+ */
+static int rnpm_mbx_fw_post_req(struct rnpm_hw *hw, struct mbx_fw_cmd_req *req,
+				struct mbx_req_cookie *cookie)
 {
 	int err = 0;
 	struct rnpm_pf_adapter *pf_adapter = pci_get_drvdata(hw->pdev);
-
-	if (pci_channel_offline(hw->pdev))
-		return -EIO;
 
 	cookie->errcode = 0;
 	cookie->done = 0;
 	init_waitqueue_head(&cookie->wait);
 
 	if (mutex_lock_interruptible(hw->mbx.lock)) {
-		rnpm_err("[%s] wait mbx lock timeout opcode:0x%x\n", __func__,
-			 req->opcode);
+		rnpm_err(
+			"[%s] lane%d 0x%x wait mbx lock timeout opcode:0x%x\n",
+			__func__, hw->nr_lane, hw->pfvfnum, req->opcode);
 		return -EAGAIN;
 	}
 
@@ -102,8 +170,10 @@ int rnpm_mbx_fw_post_req(struct rnpm_hw *hw, struct mbx_fw_cmd_req *req,
 		goto error;
 	}
 
-	rnpm_logd(LOG_MBX_LOCK, "%s %d lock:%p hw:%p opcode:0x%x\n", __func__,
-		  hw->pfvfnum, hw->mbx.lock, hw, req->opcode);
+	rnpm_logd(LOG_MBX_LOCK,
+		  "%s pfvf:%d lane%d lock:%p hw:%p opcode:0x%x\n",
+		  __func__, hw->pfvfnum, hw->nr_lane, hw->mbx.lock, hw,
+		  req->opcode);
 
 	err = rnpm_write_mbx(hw, (u32 *)req,
 			     (req->datalen + MBX_REQ_HDR_LEN) / 4, MBX_FW);
@@ -115,17 +185,20 @@ int rnpm_mbx_fw_post_req(struct rnpm_hw *hw, struct mbx_fw_cmd_req *req,
 	}
 
 	if (cookie->timeout_jiffes != 0) {
+		int retry_cnt = 4;
 retry:
-		err = wait_event_interruptible_timeout(cookie->wait,
-						       cookie->done == 1,
-						       cookie->timeout_jiffes);
-		if (err == -ERESTARTSYS)
+		err = wait_event_interruptible_timeout(
+			cookie->wait, cookie->done == 1,
+			cookie->timeout_jiffes);
+		if (err == -ERESTARTSYS && retry_cnt) {
+			retry_cnt--;
 			goto retry;
+		}
 		if (err == 0) {
 			rnpm_err("%s failed! timeout err:%d opcode:%x\n",
 				 __func__, err, req->opcode);
 			err = -ETIME;
-		} else {
+		}  else if (err > 0) {
 			err = 0;
 		}
 	} else {
@@ -141,18 +214,15 @@ error:
 	return err;
 }
 
-int rnpm_fw_send_cmd_wait(struct rnpm_hw *hw, struct mbx_fw_cmd_req *req,
-			  struct mbx_fw_cmd_reply *reply)
+static int rnpm_fw_send_cmd_wait(struct rnpm_hw *hw, struct mbx_fw_cmd_req *req,
+				 struct mbx_fw_cmd_reply *reply)
 {
 	int err = 0;
 	int retry_cnt = 3;
 	struct rnpm_pf_adapter *pf_adapter = pci_get_drvdata(hw->pdev);
 
-	if (pci_channel_offline(hw->pdev))
-		return -EIO;
-
 	if (!hw || !req || !reply || !hw->mbx.ops.read_posted) {
-		rnpm_err("error: hw:%p req:%p reply:%p\n", hw, req, reply);
+		pr_err("error: hw:%p req:%p reply:%p\n", hw, req, reply);
 		return -EINVAL;
 	}
 
@@ -167,11 +237,12 @@ int rnpm_fw_send_cmd_wait(struct rnpm_hw *hw, struct mbx_fw_cmd_req *req,
 		goto error;
 	}
 
-	rnpm_logd(LOG_MBX_LOCK, "%s %d lock:%p hw:%p opcode:0x%x\n", __func__,
-		  hw->pfvfnum, hw->mbx.lock, hw, req->opcode);
+	rnpm_logd(LOG_MBX_LOCK, "%s %d lock:%p hw:%p opcode:0x%x\n",
+		  __func__, hw->pfvfnum, hw->mbx.lock, hw, req->opcode);
 
-	err = hw->mbx.ops.write_posted(
-		hw, (u32 *)req, (req->datalen + MBX_REQ_HDR_LEN) / 4, MBX_FW);
+	err = hw->mbx.ops.write_posted(hw, (u32 *)req,
+				       (req->datalen + MBX_REQ_HDR_LEN) / 4,
+				       MBX_FW);
 	if (err) {
 		rnpm_err("%s: write_posted failed! err:0x%x opcode:0x%x\n",
 			 __func__, err, req->opcode);
@@ -239,7 +310,7 @@ int rnpm_mbx_get_lane_stat(struct rnpm_hw *hw)
 	memset(&req, 0, sizeof(req));
 
 	if (hw->mbx.irq_enabled) {
-		cookie = mbx_cookie_zalloc(sizeof(struct lane_stat_data));
+		cookie = mbx_cookie_zalloc(hw, sizeof(struct lane_stat_data));
 
 		if (!cookie) {
 			rnpm_err("%s: no memory\n", __func__);
@@ -251,10 +322,11 @@ int rnpm_mbx_get_lane_stat(struct rnpm_hw *hw)
 		build_get_lane_status_req(&req, hw->nr_lane, cookie);
 
 		err = rnpm_mbx_fw_post_req(hw, &req, cookie);
+		// printk("%s: phy_type:%d\n", __func__, st->phy_type);
 		if (err) {
 			if (err != RNPM_MBX_ERR_IN_REMOVING) {
 				rnpm_err("%s: error:%d\n", __func__, err);
-				WARN_ON(1);
+				//WARN_ON(1);
 			}
 			goto quit;
 		}
@@ -266,14 +338,16 @@ int rnpm_mbx_get_lane_stat(struct rnpm_hw *hw)
 
 		if (err) {
 			if (err != RNPM_MBX_ERR_IN_REMOVING)
-				rnpm_err("%s: 1 error:%d\n", __func__, err);
+				rnpm_err("%s: 1 error:%d\n", __func__,
+					 err);
 			goto quit;
 		}
-		st = (struct lane_stat_data *)&(reply.data);
+		st = (struct lane_stat_data *)&reply.data;
 	}
 
 	hw->phy_type = st->phy_type;
-	hw->speed = adpt->speed = st->speed;
+	hw->speed = st->speed;
+	adpt->speed = st->speed;
 	if (st->is_sgmii) {
 		adpt->phy_addr = st->phy_addr;
 	} else {
@@ -304,17 +378,16 @@ int rnpm_mbx_get_lane_stat(struct rnpm_hw *hw)
 
 	rnpm_logd(
 		LOG_MBX_LINK_STAT,
-		"%s:pma_type:0x%x phy_type:0x%x,linkup:%d speed=%d duplex:%d auton:%d ",
-		adpt->name, st->pma_type, st->phy_type, st->linkup, st->speed,
-		st->duplex, st->autoneg);
-	rnpm_logd(
-		LOG_MBX_LINK_STAT,
-		"fec:%d an:%d lt:%d is_sgmii:%d supported_link:0x%x, backplane:%d ",
-		st->fec, st->an, st->link_traing, st->is_sgmii,
-		hw->supported_link, hw->is_backplane);
-	rnpm_logd(LOG_MBX_LINK_STAT, "phy_addr:0x%x\n", adpt->phy_addr);
+		"%s:pma_type:0x%x phy_type:0x%x,linkup:%d speed=%d duplex:%d auton:%d "
+		"fec:%d an:%d lt:%d is_sgmii:%d supported_link:0x%x, backplane:%d "
+		"phy_addr:0x%x\n",
+		adpt->name, st->pma_type, st->phy_type, st->linkup,
+		st->speed, st->duplex, st->autoneg, st->fec, st->an,
+		st->link_traing, st->is_sgmii, hw->supported_link,
+		hw->is_backplane, adpt->phy_addr);
 quit:
-	kfree(cookie);
+	if (cookie)
+		mbx_free_cookie(cookie, err ? false : true);
 	return err;
 }
 
@@ -322,12 +395,13 @@ int rnpm_mbx_get_phy_statistics(struct rnpm_hw *hw, u8 *data)
 {
 	int err = 0;
 	struct mbx_fw_cmd_req req;
+	struct mbx_fw_cmd_reply reply;
 
 	memset(&req, 0, sizeof(req));
 
 	if (hw->mbx.irq_enabled) {
 		struct mbx_req_cookie *cookie =
-			mbx_cookie_zalloc(sizeof(struct phy_statistics));
+			mbx_cookie_zalloc(hw, sizeof(struct phy_statistics));
 
 		if (!cookie)
 			return -ENOMEM;
@@ -338,12 +412,12 @@ int rnpm_mbx_get_phy_statistics(struct rnpm_hw *hw, u8 *data)
 		if (err == 0) {
 			memcpy(data, cookie->priv,
 			       sizeof(struct phy_statistics));
+			mbx_free_cookie(cookie, false);
+			return err;
 		}
 
-		kfree(cookie);
+		mbx_free_cookie(cookie, true);
 	} else {
-		struct mbx_fw_cmd_reply reply;
-
 		memset(&reply, 0, sizeof(reply));
 
 		build_get_phy_statistics_req(&req, hw->nr_lane, &req);
@@ -363,7 +437,7 @@ int rnpm_mbx_fw_reset_phy(struct rnpm_hw *hw)
 	memset(&reply, 0, sizeof(reply));
 
 	if (hw->mbx.irq_enabled) {
-		struct mbx_req_cookie *cookie = mbx_cookie_zalloc(0);
+		struct mbx_req_cookie *cookie = mbx_cookie_zalloc(hw, 0);
 
 		if (!cookie)
 			return -ENOMEM;
@@ -371,24 +445,24 @@ int rnpm_mbx_fw_reset_phy(struct rnpm_hw *hw)
 		build_reset_phy_req(&req, cookie);
 
 		ret = rnpm_mbx_fw_post_req(hw, &req, cookie);
-		kfree(cookie);
-	} else {
-		build_reset_phy_req(&req, &req);
-		ret = rnpm_fw_send_cmd_wait(hw, &req, &reply);
+		mbx_free_cookie(cookie, ret ? false : true);
+		return ret;
 	}
-	return ret;
+	build_reset_phy_req(&req, &req);
+	return rnpm_fw_send_cmd_wait(hw, &req, &reply);
 }
 
-int rnpm_maintain_req(struct rnpm_hw *hw, int cmd, int arg0, int req_data_bytes,
-		      int reply_bytes, dma_addr_t dma_phy_addr)
+int rnpm_maintain_req(struct rnpm_hw *hw, int cmd, int arg0,
+		      int req_data_bytes, int reply_bytes,
+		      dma_addr_t dma_phy_addr)
 {
 	int err;
 	struct mbx_req_cookie *cookie = NULL;
-	u64 address = dma_phy_addr;
+
 	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
 
-	cookie = mbx_cookie_zalloc(0);
+	cookie = mbx_cookie_zalloc(hw, 0);
 	if (!cookie)
 		return -ENOMEM;
 
@@ -396,8 +470,10 @@ int rnpm_maintain_req(struct rnpm_hw *hw, int cmd, int arg0, int req_data_bytes,
 	memset(&reply, 0, sizeof(reply));
 	cookie->timeout_jiffes = 60 * HZ; // 60s
 
-	build_maintain_req(&req, cookie, cmd, arg0, req_data_bytes, reply_bytes,
-			   address & 0xffffffff, (address >> 32) & 0xffffffff);
+	build_maintain_req(&req, cookie, cmd, arg0, req_data_bytes,
+			   reply_bytes,
+			   lower_32_bits(dma_phy_addr),
+			   upper_32_bits(dma_phy_addr));
 
 	if (hw->mbx.irq_enabled) {
 		cookie->timeout_jiffes = 400 * HZ;
@@ -405,13 +481,14 @@ int rnpm_maintain_req(struct rnpm_hw *hw, int cmd, int arg0, int req_data_bytes,
 	} else {
 		int old_mbx_timeout = hw->mbx.timeout;
 
-		hw->mbx.timeout =
-			(400 * 1000 * 1000) / hw->mbx.usec_delay; // wait 30s
+		hw->mbx.timeout = (400 * 1000 * 1000) /
+				  hw->mbx.usec_delay; // wait 30s
 		err = rnpm_fw_send_cmd_wait(hw, &req, &reply);
 		hw->mbx.timeout = old_mbx_timeout;
 	}
 
-	kfree(cookie);
+	// quit:
+	mbx_free_cookie(cookie, err ? false : true);
 	return (err) ? -EIO : 0;
 }
 
@@ -425,7 +502,8 @@ int rnpm_fw_get_macaddr(struct rnpm_hw *hw, int pfvfnum, u8 *mac_addr,
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
 
-	rnpm_dbg("%s: pfvfnum:0x%x nr_lane:%d\n", __func__, pfvfnum, nr_lane);
+	rnpm_dbg("%s: pfvfnum:0x%x nr_lane:%d\n", __func__, pfvfnum,
+		 nr_lane);
 
 	if (!mac_addr) {
 		rnpm_err("%s: mac_addr is null\n", __func__);
@@ -434,45 +512,51 @@ int rnpm_fw_get_macaddr(struct rnpm_hw *hw, int pfvfnum, u8 *mac_addr,
 
 	if (hw->mbx.irq_enabled) {
 		struct mbx_req_cookie *cookie =
-			mbx_cookie_zalloc(sizeof(reply.mac_addr));
+				mbx_cookie_zalloc(hw, sizeof(reply.mac_addr));
 		struct mac_addr *mac;
 
 		if (!cookie)
 			return -ENOMEM;
 		mac = (struct mac_addr *)cookie->priv;
 
-		build_get_macaddress_req(&req, 1 << nr_lane, pfvfnum, cookie);
+		build_get_macaddress_req(&req, 1 << nr_lane, pfvfnum,
+					 cookie);
 
 		err = rnpm_mbx_fw_post_req(hw, &req, cookie);
 		if (err) {
-			kfree(cookie);
+			mbx_free_cookie(cookie, false);
 			return err;
 		}
 		hw->ccode = mac->ccode;
 
 		if ((1 << nr_lane) & mac->lanes) {
 			memcpy(mac_addr, mac->addrs[nr_lane].mac, 6);
-			kfree(cookie);
+			mbx_free_cookie(cookie, true);
 			return 0;
 		}
-		kfree(cookie);
+		mbx_free_cookie(cookie, true);
 		return -ENODATA;
-	}
-	build_get_macaddress_req(&req, 1 << nr_lane, pfvfnum, &req);
+	} else {
+		build_get_macaddress_req(&req, 1 << nr_lane, pfvfnum,
+					 &req);
 
-	// mbx_fw_req_set_reply(&req, hw->mbx.reply_dma_phy);
-	err = rnpm_fw_send_cmd_wait(hw, &req, &reply);
+		// mbx_fw_req_set_reply(&req, hw->mbx.reply_dma_phy);
+		err = rnpm_fw_send_cmd_wait(hw, &req, &reply);
 
-	if (err) {
-		if (err != RNPM_MBX_ERR_IN_REMOVING)
-			rnpm_err("%s: failed. err:%d\n", __func__, err);
-		return err;
-	}
+		if (err) {
+			if (err != RNPM_MBX_ERR_IN_REMOVING) {
+				rnpm_err("%s: failed. err:%d\n", __func__,
+					 err);
+			}
+			return err;
+		}
 
-	hw->ccode = reply.mac_addr.ccode;
-	if ((1 << nr_lane) & reply.mac_addr.lanes) {
-		memcpy(mac_addr, reply.mac_addr.addrs[nr_lane].mac, 6);
-		return 0;
+		hw->ccode = reply.mac_addr.ccode;
+		if ((1 << nr_lane) & reply.mac_addr.lanes) {
+			memcpy(mac_addr, reply.mac_addr.addrs[nr_lane].mac,
+			       6);
+			return 0;
+		}
 	}
 
 	return -ENODATA;
@@ -484,31 +568,35 @@ static int rnpm_mbx_sfp_read(struct rnpm_hw *hw, int sfp_i2c_addr, int reg,
 	struct mbx_fw_cmd_req req;
 	int err = -EIO;
 	int nr_lane = hw->nr_lane;
+	struct mbx_req_cookie *cookie;
 
-	if ((cnt > MBX_SFP_READ_MAX_CNT) || !out_buf) {
-		rnpm_err("%s: cnt:%d should <= %d out_buf:%p\n", __func__, cnt,
-			 MBX_SFP_READ_MAX_CNT, out_buf);
+	if (cnt > MBX_SFP_READ_MAX_CNT || !out_buf) {
+		rnpm_err("%s: cnt:%d should <= %d out_buf:%p\n", __func__,
+			 cnt, MBX_SFP_READ_MAX_CNT, out_buf);
 		return -EINVAL;
 	}
 
 	memset(&req, 0, sizeof(req));
 
-	if (hw->mbx.irq_enabled) {
-		struct mbx_req_cookie *cookie = mbx_cookie_zalloc(cnt);
+	// printk("%s: lane%d i2c:0x%x, reg:0x%x cnt:%d\n", __func__, nr_lane,
+	// sfp_i2c_addr, reg, cnt);
 
+	if (hw->mbx.irq_enabled) {
+		cookie = mbx_cookie_zalloc(hw, cnt);
 		if (!cookie)
 			return -ENOMEM;
+
 		build_mbx_sfp_read(&req, nr_lane, sfp_i2c_addr, reg, cnt,
 				   cookie);
 
 		err = rnpm_mbx_fw_post_req(hw, &req, cookie);
 		if (err) {
-			kfree(cookie);
+			mbx_free_cookie(cookie, false);
 			return err;
 		}
 		memcpy(out_buf, cookie->priv, cnt);
 		err = 0;
-		kfree(cookie);
+		mbx_free_cookie(cookie, true);
 	} else {
 		struct mbx_fw_cmd_reply reply;
 
@@ -524,15 +612,16 @@ static int rnpm_mbx_sfp_read(struct rnpm_hw *hw, int sfp_i2c_addr, int reg,
 	return err;
 }
 
-int rnpm_mbx_sfp_module_eeprom_info(struct rnpm_hw *hw, int sfp_addr, int reg,
-				    int data_len, u8 *buf)
+int rnpm_mbx_sfp_module_eeprom_info(struct rnpm_hw *hw, int sfp_addr,
+				    int reg, int data_len, u8 *buf)
 {
 	int left = data_len;
 	int cnt, err;
 
 	do {
-		cnt = (left > MBX_SFP_READ_MAX_CNT) ? MBX_SFP_READ_MAX_CNT :
-							    left;
+		cnt = (left > MBX_SFP_READ_MAX_CNT) ?
+			      MBX_SFP_READ_MAX_CNT :
+			      left;
 		err = rnpm_mbx_sfp_read(hw, sfp_addr, reg, cnt, buf);
 		if (err) {
 			rnpm_err("%s: error:%d\n", __func__, err);
@@ -571,7 +660,7 @@ int rnpm_mbx_fw_reg_read(struct rnpm_hw *hw, int fw_reg)
 
 	if (hw->mbx.irq_enabled) {
 		struct mbx_req_cookie *cookie =
-			mbx_cookie_zalloc(sizeof(reply.r_reg));
+			mbx_cookie_zalloc(hw, sizeof(reply.r_reg));
 
 		if (!cookie)
 			return -ENOMEM;
@@ -579,16 +668,18 @@ int rnpm_mbx_fw_reg_read(struct rnpm_hw *hw, int fw_reg)
 
 		err = rnpm_mbx_fw_post_req(hw, &req, cookie);
 		if (err) {
-			kfree(cookie);
+			mbx_free_cookie(cookie, false);
 			return ret;
 		}
 		ret = ((int *)(cookie->priv))[0];
+		mbx_free_cookie(cookie, true);
 	} else {
 		build_readreg_req(&req, fw_reg, &reply);
 		err = rnpm_fw_send_cmd_wait(hw, &req, &reply);
 		if (err) {
 			if (err != RNPM_MBX_ERR_IN_REMOVING)
-				rnpm_err("%s: failed. err:%d\n", __func__, err);
+				rnpm_err("%s: failed. err:%d\n", __func__,
+					 err);
 			return err;
 		}
 		ret = reply.r_reg.value[0];
@@ -603,16 +694,14 @@ int rnpm_mbx_reg_write(struct rnpm_hw *hw, int fw_reg, int value)
 
 	memset(&req, 0, sizeof(req));
 
-	if (hw->fw_version < 0x00050200)
-		return -EOPNOTSUPP;
-
 	build_writereg_req(&req, NULL, fw_reg, 4, &value);
 
 	err = rnpm_mbx_write_posted_locked(hw, &req);
 	return err;
 }
 
-int rnpm_mbx_reg_writev(struct rnpm_hw *hw, int fw_reg, int value[4], int bytes)
+int rnpm_mbx_reg_writev(struct rnpm_hw *hw, int fw_reg, int value[4],
+			int bytes)
 {
 	struct mbx_fw_cmd_req req;
 	int err;
@@ -625,7 +714,7 @@ int rnpm_mbx_reg_writev(struct rnpm_hw *hw, int fw_reg, int value[4], int bytes)
 	return err;
 }
 
-int rnpm_mbx_lldp_all_ports_enable(struct rnpm_hw *hw, bool enable)
+__maybe_unused static int rnpm_mbx_lldp_all_ports_enable(struct rnpm_hw *hw, bool enable)
 {
 	struct mbx_fw_cmd_req req;
 	int err;
@@ -676,7 +765,7 @@ int rnpm_mbx_lldp_status_get(struct rnpm_hw *hw)
 
 	if (hw->mbx.irq_enabled) {
 		struct mbx_req_cookie *cookie =
-			mbx_cookie_zalloc(sizeof(reply.lldp));
+			mbx_cookie_zalloc(hw, sizeof(reply.lldp));
 
 		if (!cookie)
 			return -ENOMEM;
@@ -684,16 +773,18 @@ int rnpm_mbx_lldp_status_get(struct rnpm_hw *hw)
 
 		err = rnpm_mbx_fw_post_req(hw, &req, cookie);
 		if (err) {
-			kfree(cookie);
+			mbx_free_cookie(cookie, false);
 			return ret;
 		}
 		ret = ((int *)(cookie->priv))[0];
+		mbx_free_cookie(cookie, true);
 	} else {
 		build_lldp_ctrl_get(&req, hw->nr_lane, &reply);
 		err = rnpm_fw_send_cmd_wait(hw, &req, &reply);
 		if (err) {
 			if (err != RNPM_MBX_ERR_IN_REMOVING)
-				rnpm_err("%s: failed. err:%d\n", __func__, err);
+				rnpm_err("%s: failed. err:%d\n", __func__,
+					 err);
 			return err;
 		}
 		ret = reply.lldp.enable_stat;
@@ -728,37 +819,42 @@ int rnpm_mbx_set_dump(struct rnpm_hw *hw, int flag)
 	return err;
 }
 
-int rnpm_mbx_get_dump(struct rnpm_hw *hw, int flags, u8 *data_out, int bytes)
+int rnpm_mbx_get_dump(struct rnpm_hw *hw, int flags, u8 *data_out,
+		      int bytes)
 {
 	int err;
 	struct mbx_req_cookie *cookie = NULL;
+
 	struct mbx_fw_cmd_reply reply;
 	struct mbx_fw_cmd_req req;
 	struct get_dump_reply *get_dump;
-	u64 address;
+
 	void *dma_buf = NULL;
 	dma_addr_t dma_phy = 0;
 
-	cookie = mbx_cookie_zalloc(sizeof(*get_dump));
+	cookie = mbx_cookie_zalloc(hw, sizeof(*get_dump));
 	if (!cookie)
 		return -ENOMEM;
+
 	get_dump = (struct get_dump_reply *)cookie->priv;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
 
 	if (bytes > sizeof(get_dump->data)) {
-		dma_buf = dma_alloc_coherent(&hw->pdev->dev, bytes, &dma_phy,
-					     GFP_ATOMIC);
+		// dma_buf = pci_alloc_consistent(hw->pdev, bytes, &dma_phy);
+		dma_buf = dma_alloc_coherent(&hw->pdev->dev, bytes,
+					     &dma_phy, GFP_ATOMIC);
 		if (!dma_buf) {
 			err = -ENOMEM;
 			goto quit;
 		}
 	}
+	// printk("%s: bytes:%d %x\n", __func__, bytes, dma_phy);
 
-	address = dma_phy;
-	build_get_dump_req(&req, cookie, hw->nr_lane, address & 0xffffffff,
-			   (address >> 32) & 0xffffffff, bytes);
+	build_get_dump_req(&req, cookie, hw->nr_lane,
+			   lower_32_bits(dma_phy),
+			   upper_32_bits(dma_phy), bytes);
 
 	if (hw->mbx.irq_enabled) {
 		err = rnpm_mbx_fw_post_req(hw, &req, cookie);
@@ -783,22 +879,23 @@ quit:
 		//  pci_free_consistent(hw->pdev, bytes, dma_buf, dma_phy);
 		dma_free_coherent(&hw->pdev->dev, bytes, dma_buf, dma_phy);
 	}
-	kfree(cookie);
+	if (cookie)
+		mbx_free_cookie(cookie, err ? false : true);
 	return err ? -err : 0;
 }
 
-/**
- *@speed :
- *0 : disable force speed
- *1000 : force 1000Mbps
- *10000 : force 10000Mbps
+/*
+ *	@speed :
+ *		0 : disable force speed
+ *		1000 : force 1000Mbps
+ *		10000 : force 10000Mbps
  */
 int rnpm_mbx_force_speed(struct rnpm_hw *hw, int speed)
 {
 	int cmd = 0x01150000; // disable force speed
 	struct rnpm_adapter *adapter = (struct rnpm_adapter *)hw->back;
 
-	if ((hw->fw_version < 0x00050201) || hw->is_sgmii)
+	if (hw->fw_version < 0x00050201 || hw->is_sgmii)
 		return -EINVAL;
 
 	/* adapter_cnt: 4 ---- cmd BIT 9 is 1
@@ -826,14 +923,13 @@ int rnpm_fw_update(struct rnpm_hw *hw, int partition, const u8 *fw_bin,
 {
 	int err;
 	struct mbx_req_cookie *cookie = NULL;
-	u64 address;
 	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
 
 	void *dma_buf = NULL;
 	dma_addr_t dma_phy;
 
-	cookie = mbx_cookie_zalloc(0);
+	cookie = mbx_cookie_zalloc(hw, 0);
 	if (!cookie)
 		return -ENOMEM;
 
@@ -841,27 +937,26 @@ int rnpm_fw_update(struct rnpm_hw *hw, int partition, const u8 *fw_bin,
 	memset(&reply, 0, sizeof(reply));
 
 	//  dma_buf = pci_alloc_consistent(hw->pdev, bytes, &dma_phy);
-	dma_buf =
-		dma_alloc_coherent(&hw->pdev->dev, bytes, &dma_phy, GFP_ATOMIC);
+	dma_buf = dma_alloc_coherent(&hw->pdev->dev, bytes, &dma_phy,
+				     GFP_ATOMIC);
 	if (!dma_buf) {
-		dev_err(&hw->pdev->dev, "%s: no memory:%d!", __func__, bytes);
 		err = -ENOMEM;
 		goto quit;
 	}
 
 	memcpy(dma_buf, fw_bin, bytes);
-	address = dma_phy;
-	build_fw_update_req(&req, cookie, partition, address & 0xffffffff,
-			    (address >> 32) & 0xffffffff, bytes);
 
+	build_fw_update_req(&req, cookie, partition,
+			    lower_32_bits(dma_phy),
+			    upper_32_bits(dma_phy), bytes);
 	if (hw->mbx.irq_enabled) {
 		cookie->timeout_jiffes = 400 * HZ;
 		err = rnpm_mbx_fw_post_req(hw, &req, cookie);
 	} else {
 		int old_mbx_timeout = hw->mbx.timeout;
 
-		hw->mbx.timeout =
-			(400 * 1000 * 1000) / hw->mbx.usec_delay; // wait 400s
+		hw->mbx.timeout = (400 * 1000 * 1000) /
+				  hw->mbx.usec_delay; // wait 400s
 		err = rnpm_fw_send_cmd_wait(hw, &req, &reply);
 		hw->mbx.timeout = old_mbx_timeout;
 	}
@@ -869,8 +964,13 @@ int rnpm_fw_update(struct rnpm_hw *hw, int partition, const u8 *fw_bin,
 quit:
 	if (dma_buf)
 		dma_free_coherent(&hw->pdev->dev, bytes, dma_buf, dma_phy);
-	kfree(cookie);
+		// pci_free_consistent(hw->pdev, bytes, dma_buf, dma_phy);
 
+	if (cookie)
+		mbx_free_cookie(cookie, err ? false : true);
+
+	pr_debug("%s: %s (errcode:%d)\n", __func__,
+		 err ? " failed" : " success", err);
 	return (err) ? -EIO : 0;
 }
 
@@ -879,10 +979,6 @@ int rnpm_mbx_pf_link_event_enable_nolock(struct rnpm_hw *hw, int enable)
 	struct mbx_fw_cmd_reply reply;
 	struct mbx_fw_cmd_req req;
 	int err, v;
-#define DM_MAGIC_CODE 0xa5000000
-
-	if (pci_channel_offline(hw->pdev))
-		return -EIO;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
@@ -920,7 +1016,8 @@ int rnpm_mbx_pf_link_event_enable(struct rnpm_hw *hw, int enable)
 	// enable); dump_stack();
 
 	if (enable) {
-		struct rnpm_adapter *adapter = (struct rnpm_adapter *)hw->back;
+		struct rnpm_adapter *adapter =
+			(struct rnpm_adapter *)hw->back;
 		struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
 		int v;
 
@@ -929,25 +1026,14 @@ int rnpm_mbx_pf_link_event_enable(struct rnpm_hw *hw, int enable)
 		v &= 0x0000ffff;
 		v |= 0xa5a40000;
 		wr32(hw, RNPM_DMA_DUMY, v);
-		spin_unlock_irqrestore(&pf_adapter->dummy_setup_lock, flags);
+		spin_unlock_irqrestore(&pf_adapter->dummy_setup_lock,
+				       flags);
 	} else {
 		wr32(hw, RNPM_DMA_DUMY, 0);
 	}
 
 	build_link_set_event_mask(&req, BIT(EVT_LINK_UP),
 				  (enable & 1) << EVT_LINK_UP, &req);
-
-	err = rnpm_mbx_write_posted_locked(hw, &req);
-
-	return err;
-}
-
-int rnpm_mbx_pluginout_evt_en(struct rnpm_hw *hw, int in_dir, int enable)
-{
-	struct mbx_fw_cmd_req req;
-	int err;
-
-	build_pluginout_evt_notify(&req, hw->nr_lane, in_dir, !!enable, &req);
 
 	err = rnpm_mbx_write_posted_locked(hw, &req);
 
@@ -971,7 +1057,7 @@ int rnpm_mbx_lane_link_changed_event_enable(struct rnpm_hw *hw, int enable)
 	return err;
 }
 
-int rnpm_fw_get_capablity(struct rnpm_hw *hw, struct phy_abilities *abil)
+static int rnpm_fw_get_capablity(struct rnpm_hw *hw, struct phy_abilities *abil)
 {
 	int err;
 	struct mbx_fw_cmd_req req;
@@ -998,8 +1084,8 @@ int rnpm_set_lane_fun(struct rnpm_hw *hw, int fun, int value0, int value1,
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
 
-	rnpm_logd(LOG_SET_LANE_FUN, "%s: fun:%d %d-%d-%d-%d\n", __func__, fun,
-		  value0, value1, value2, value3);
+	rnpm_logd(LOG_SET_LANE_FUN, "%s: fun:%d %d-%d-%d-%d\n", __func__,
+		  fun, value0, value1, value2, value3);
 
 	build_set_lane_fun(&req, hw->nr_lane, fun, value0, value1, value2,
 			   value3);
@@ -1029,10 +1115,17 @@ int rnpm_mbx_ifup_down(struct rnpm_hw *hw, int up)
 	}
 	// if (test_bit(__RNPM_REMOVING, &pf_adapter->state))
 	//	return RNPM_MBX_ERR_IN_REMOVING;
+	rnpm_logd(LOG_MBX_LOCK,
+		  "%s pfvf:%d lane%d lock:%p hw:%p opcode:0x%x up:%d\n",
+		  __func__, hw->pfvfnum, hw->nr_lane, hw->mbx.lock, hw,
+		  0x0800, up);
 
 	err = hw->mbx.ops.write(hw, (u32 *)&req,
-				(req.datalen + MBX_REQ_HDR_LEN) / 4, MBX_FW);
+				(req.datalen + MBX_REQ_HDR_LEN) / 4,
+				MBX_FW);
+
 	mdelay(1);
+
 	mutex_unlock(hw->mbx.lock);
 
 	// force firmware report link-status
@@ -1100,10 +1193,12 @@ int rnpm_mbx_get_capability(struct rnpm_hw *hw, struct rnpm_info *info)
 		if (err == 0 && info) {
 			hw->lane_mask = ablity.lane_mask & 0xf;
 			// info->mac = to_mac_type(&ablity);
-			info->adapter_cnt = Hamming_weight_1(hw->lane_mask);
+			info->adapter_cnt =
+				Hamming_weight_1(hw->lane_mask);
 			hw->mode = ablity.nic_mode;
 			hw->pfvfnum = ablity.pfnum;
-			hw->ablity_speed = hw->speed = ablity.speed;
+			hw->ablity_speed = ablity.speed;
+			hw->speed = ablity.speed;
 			hw->nr_lane = 0; // PF1
 			hw->fw_version = ablity.fw_version;
 			// hw->mac_type = info->mac;
@@ -1118,7 +1213,8 @@ int rnpm_mbx_get_capability(struct rnpm_hw *hw, struct rnpm_info *info)
 			if (ablity.fw_version >= 0x00050200)
 				hw->single_lane_link_evt_ctrl_ablity = 1;
 
-			if (ablity.ext_ablity != 0xffffffff && ablity.valid) {
+			if (ablity.ext_ablity != 0xffffffff &&
+			    ablity.valid) {
 				hw->fw_lldp_ablity = ablity.fw_lldp_ablity;
 				hw->ncsi_en = ablity.ncsi_en;
 				hw->ncsi_rar_entries = 1;
@@ -1127,22 +1223,43 @@ int rnpm_mbx_get_capability(struct rnpm_hw *hw, struct rnpm_info *info)
 					ablity.rpu_availble = 1;
 				hw->rpu_availble = ablity.rpu_availble;
 				hw->max_speed_1g = ablity.only_1g;
+
+				if (ablity.ports_is_sgmii_valid) {
+					hw->is_sgmii_bitmaps_valid = 1;
+					hw->is_sgmii_bitmaps = ablity.lane0_is_sgmii |
+							       (ablity.lane1_is_sgmii << 1) |
+							       (ablity.lane2_is_sgmii << 2) |
+							       (ablity.lane3_is_sgmii << 3);
+					if (hw->is_sgmii_bitmaps == 0b1111)
+						hw->is_sgmii  = 1;
+					else
+						hw->is_sgmii  = 0;
+				}
 			} else {
 				hw->ncsi_rar_entries = 0;
 			}
 
-			pr_info("%s: nic-mode:%d  adpt_cnt:%d lane_mask:0x%x, ",
-				__func__, hw->mode, info->adapter_cnt,
-				hw->lane_mask);
-			pr_info("pfvfnum:0x%x, fw-version:0x%08x, axi:%d Mhz ",
-				hw->pfvfnum, ablity.fw_version, ablity.axi_mhz);
-			pr_info("port_id:%d-%d-%d-%d, uid:0x%08x sgmii:%d ext-ablity:0x%x",
-				ablity.port_id[0], ablity.port_id[1],
-				ablity.port_id[2], ablity.port_id[3],
-				hw->fw_uid, hw->is_sgmii, ablity.ext_ablity);
-			pr_info("ncsi:%u wol=0x%x rpu:%d-%d only-1g:%d\n",
+			pr_info("%s: nic-mode:%d  adpt_cnt:%d lane_mask:0x%x, "
+				"pfvfnum:0x%x, fw-version:0x%08x, axi:%d Mhz "
+				"port_id:%d-%d-%d-%d, uid:0x%08x sgmii:%d ext-ablity:0x%x "
+				"ncsi:%u wol=0x%x rpu:%d-%d only-1g:%d sgmii:%u_%u%u%u%u,0x%x\n",
+				__func__, hw->mode,
+				// info->mac,
+				info->adapter_cnt, hw->lane_mask,
+				hw->pfvfnum, ablity.fw_version,
+				ablity.axi_mhz, ablity.port_id[0],
+				ablity.port_id[1], ablity.port_id[2],
+				ablity.port_id[3], hw->fw_uid,
+				hw->is_sgmii, ablity.ext_ablity,
 				hw->ncsi_en & 1, hw->wol, hw->rpu_en,
-				hw->rpu_availble, hw->max_speed_1g);
+				hw->rpu_availble, hw->max_speed_1g,
+				ablity.ports_is_sgmii_valid,
+				ablity.lane0_is_sgmii,
+				ablity.lane1_is_sgmii,
+				ablity.lane2_is_sgmii,
+				ablity.lane3_is_sgmii,
+				hw->is_sgmii_bitmaps
+				);
 			if (info->adapter_cnt > 0)
 				return 0;
 		}
@@ -1162,7 +1279,7 @@ int rnpm_mbx_get_temp(struct rnpm_hw *hw, int *voltage)
 	struct get_temp *temp;
 	int temp_v = 0;
 
-	cookie = mbx_cookie_zalloc(sizeof(*temp));
+	cookie = mbx_cookie_zalloc(hw, sizeof(*temp));
 	if (!cookie)
 		return -ENOMEM;
 	temp = (struct get_temp *)cookie->priv;
@@ -1184,25 +1301,38 @@ int rnpm_mbx_get_temp(struct rnpm_hw *hw, int *voltage)
 		*voltage = temp->volatage;
 	temp_v = temp->temp;
 
-	kfree(cookie);
+	if (cookie)
+		mbx_free_cookie(cookie, err ? false : true);
 	return temp_v;
 }
-int rnpm_fw_reg_read(struct rnpm_hw *hw, int addr, int sz)
+
+__maybe_unused static int rnpm_fw_reg_read(struct rnpm_hw *hw, int addr, int sz)
 {
-	struct mbx_req_cookie *cookie;
+	struct mbx_req_cookie *cookie = NULL;
 	struct mbx_fw_cmd_req req;
-	int value;
+	struct mbx_fw_cmd_reply reply;
+	int value = 0xffffffff, err;
 
-	cookie = mbx_cookie_zalloc(sizeof(int));
-	if (!cookie)
-		return -ENOMEM;
+	if (hw->mbx.irq_enabled) {
+		cookie = mbx_cookie_zalloc(hw, sizeof(int));
+		if (!cookie)
+			return -ENOMEM;
 
-	build_readreg_req(&req, addr, cookie);
+		build_readreg_req(&req, addr, cookie);
+		err = rnpm_mbx_fw_post_req(hw, &req, cookie);
+		if (err == 0)
+			value = *((int *)cookie->priv);
 
-	rnpm_mbx_fw_post_req(hw, &req, cookie);
+		mbx_free_cookie(cookie, err ? false : true);
+	} else {
+		memset(&reply, 0, sizeof(reply));
 
-	value = *((int *)cookie->priv);
-	kfree(cookie);
+		build_readreg_req(&req, addr, &req);
+
+		err = rnpm_fw_send_cmd_wait(hw, &req, &reply);
+		if (err == 0)
+			value = reply.r_reg.value[0];
+	}
 	return 0;
 }
 
@@ -1212,9 +1342,6 @@ void rnpm_link_stat_mark(struct rnpm_hw *hw, int nr_lane, int up)
 	struct rnpm_adapter *adapter = (struct rnpm_adapter *)hw->back;
 	struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
 	unsigned long flags;
-
-	if (pci_channel_offline(hw->pdev))
-		return;
 
 	spin_lock_irqsave(&pf_adapter->dummy_setup_lock, flags);
 	v = rd32(hw, RNPM_DMA_DUMY);
@@ -1234,9 +1361,6 @@ void rnpm_mbx_probe_stat_set(struct rnpm_pf_adapter *pf_adapter, int stat)
 	unsigned long flags;
 	struct rnpm_hw *hw = &pf_adapter->hw;
 	u32 v;
-
-	if (pci_channel_offline(hw->pdev))
-		return;
 
 	spin_lock_irqsave(&pf_adapter->dummy_setup_lock, flags);
 	v = rd32(hw, RNPM_DMA_DUMY);
@@ -1265,6 +1389,7 @@ int rnpm_hw_set_clause73_autoneg_enable(struct rnpm_hw *hw, int enable)
 static inline int rnpm_mbx_fw_req_handler(struct rnpm_pf_adapter *adapter,
 					  struct mbx_fw_cmd_req *req)
 {
+	// dbg_here;
 	struct rnpm_hw *hw;
 	// u32 value;
 	int i, nr_lane;
@@ -1275,8 +1400,8 @@ static inline int rnpm_mbx_fw_req_handler(struct rnpm_pf_adapter *adapter,
 	case PTP_EVENT: {
 		rnpm_logd(LOG_PTP_EVT, "ptp event:lanes:0x%x\n",
 			  req->ptp.lanes);
-		rnpm_info("%s:ptp event:lanes:0x%x\n", __func__,
-			  req->ptp.lanes);
+		pr_debug("%s:ptp event:lanes:0x%x\n", __func__,
+			 req->ptp.lanes);
 		break;
 	}
 	case PLUG_EVENT: {
@@ -1285,35 +1410,36 @@ static inline int rnpm_mbx_fw_req_handler(struct rnpm_pf_adapter *adapter,
 				continue;
 
 			adpt = adapter->adapter[i];
-			if (adpt == NULL)
+			if (!adpt)
 				continue;
 			hw = &adpt->hw;
 			nr_lane = adpt->hw.nr_lane & 0b11;
 
 			if (nr_lane == req->plugin_out.nr_lane) {
-				rnpm_info("%s plu%s\n", adpt->name,
-					  req->plugin_out.action ? "out" :
-								   "in");
+				pr_debug("%s plu%s\n", adpt->name,
+					 req->plugin_out.action ?
+					 "out" : "in");
 				break;
 			}
 		}
 		break;
 	}
 	case LINK_STATUS_EVENT:
-		rnpm_logd(
-			LOG_LINK_EVENT,
-			"link changed: change lane:0x%x status:0x%x speed:%d-%d-%d-%d\n",
-			req->link_stat.changed_lanes,
-			req->link_stat.lane_status, req->link_stat.st[0].speed,
-			req->link_stat.st[1].speed, req->link_stat.st[2].speed,
-			req->link_stat.st[3].speed);
+		rnpm_logd(LOG_LINK_EVENT,
+			  "link changed: changed_lane:0x%x, status:0x%x, speed:%d-%d-%d-%d\n",
+			  req->link_stat.changed_lanes,
+			  req->link_stat.lane_status,
+			  req->link_stat.st[0].speed,
+			  req->link_stat.st[1].speed,
+			  req->link_stat.st[2].speed,
+			  req->link_stat.st[3].speed);
 
 		for (i = 0; i < adapter->adapter_cnt; i++) {
 			if (!rnpm_port_is_valid(adapter, i))
 				continue;
 
 			adpt = adapter->adapter[i];
-			if (adpt == NULL)
+			if (!adpt)
 				continue;
 			hw = &adpt->hw;
 			nr_lane = adpt->hw.nr_lane & 0b11;
@@ -1327,7 +1453,8 @@ static inline int rnpm_mbx_fw_req_handler(struct rnpm_pf_adapter *adapter,
 				// rnpm_link_stat_mark(&adpt->hw, nr_lane, 0);
 			}
 			if ((BIT(i) & req->link_stat.changed_lanes) &&
-			    req->link_stat.port_st_magic == SPEED_VALID_MAGIC) {
+			    req->link_stat.port_st_magic ==
+				    SPEED_VALID_MAGIC) {
 				st = &req->link_stat.st[nr_lane];
 				adpt->speed = st->speed;
 				adpt->phy_addr = st->phy_addr;
@@ -1336,13 +1463,13 @@ static inline int rnpm_mbx_fw_req_handler(struct rnpm_pf_adapter *adapter,
 				adpt->flags |= RNPM_FLAG_NEED_LINK_UPDATE;
 			}
 
-			rnpm_logd(
-				LOG_LINK_EVENT,
-				"%s:%s:lane:%d link:%d speed:%d hw:%p phy_addr:0x%x\n",
-				__func__, adpt->name, nr_lane, adpt->hw.link,
-				adpt->speed, &adpt->hw, adpt->phy_addr);
-
-			// rnpm_service_event_schedule(adpt);
+			if (adpt->netdev->flags & IFF_SLAVE)
+				rnpm_service_event_schedule(adpt);
+			rnpm_logd(LOG_LINK_EVENT,
+				  "%s:%s:lane:%d link:%d speed:%d hw:%p phy_addr:0x%x\n",
+				  __func__, adpt->name, nr_lane,
+				  adpt->hw.link, adpt->speed, &adpt->hw,
+				  adpt->phy_addr);
 		}
 		set_bit(RNPM_PF_LINK_CHANGE, &adapter->flags);
 
@@ -1352,15 +1479,18 @@ static inline int rnpm_mbx_fw_req_handler(struct rnpm_pf_adapter *adapter,
 	return 0;
 }
 
-static inline int rnpm_mbx_fw_reply_handler(struct rnpm_pf_adapter *adapter,
-					    struct mbx_fw_cmd_reply *reply)
+static inline int
+rnpm_mbx_fw_reply_handler(struct rnpm_pf_adapter *adapter,
+			  struct mbx_fw_cmd_reply *reply)
 {
 	struct mbx_req_cookie *cookie;
+	// dbg_here;
 
 	// buf_dump("reply:", reply, sizeof(*reply));
 
 	cookie = reply->cookie;
-	if (!cookie || cookie->magic != COOKIE_MAGIC)
+	if (!cookie || is_cookie_valid(&adapter->hw, cookie) == false ||
+	    cookie->stat != COOKIE_ALLOCED)
 		return -EIO;
 
 	if (cookie->priv_len > 0)
@@ -1371,7 +1501,12 @@ static inline int rnpm_mbx_fw_reply_handler(struct rnpm_pf_adapter *adapter,
 		cookie->errcode = reply->error_code;
 	else
 		cookie->errcode = 0;
-	wake_up_interruptible(&cookie->wait);
+
+	if (cookie->stat == COOKIE_ALLOCED)
+		wake_up_interruptible(&cookie->wait);
+
+	// not really free cookie, mark as free-able
+	mbx_free_cookie(cookie, false);
 
 	return 0;
 }
@@ -1384,8 +1519,8 @@ static inline int rnpm_rcv_msg_from_fw(struct rnpm_pf_adapter *adapter)
 
 	retval = rnpm_read_mbx(hw, msgbuf, RNP_FW_MAILBOX_SIZE, MBX_FW);
 	if (retval) {
-		rnpm_err("Error receiving message from FW:#%d ret:%d\n",
-			 __LINE__, retval);
+		pr_err("Error receiving message from FW:#%d ret:%d\n",
+		       __LINE__, retval);
 		return retval;
 	}
 
@@ -1394,8 +1529,8 @@ static inline int rnpm_rcv_msg_from_fw(struct rnpm_pf_adapter *adapter)
 
 	/* this is a message we already processed, do nothing */
 	if (((unsigned short *)msgbuf)[0] & FLAGS_DD) { //
-		return rnpm_mbx_fw_reply_handler(
-			adapter, (struct mbx_fw_cmd_reply *)msgbuf);
+		return rnpm_mbx_fw_reply_handler(adapter,
+						 (struct mbx_fw_cmd_reply *)msgbuf);
 	} else { // req
 		return rnpm_mbx_fw_req_handler(adapter,
 					       (struct mbx_fw_cmd_req *)msgbuf);
@@ -1426,8 +1561,8 @@ int rnpm_mbx_phy_write(struct rnpm_hw *hw, u32 reg, u32 val)
 
 	memset(&req, 0, sizeof(req));
 
-	build_set_phy_reg(&req, NULL, PHY_EXTERNAL_PHY_MDIO, nr_lane, reg, val,
-			  0);
+	build_set_phy_reg(&req, NULL, PHY_EXTERNAL_PHY_MDIO, nr_lane, reg,
+			  val, 0);
 
 	return rnpm_mbx_write_posted_locked(hw, &req);
 }
@@ -1435,6 +1570,7 @@ int rnpm_mbx_phy_write(struct rnpm_hw *hw, u32 reg, u32 val)
 int rnpm_mbx_phy_read(struct rnpm_hw *hw, u32 reg, u32 *val)
 {
 	struct mbx_fw_cmd_req req;
+	struct mbx_fw_cmd_reply reply;
 	int err = -EIO;
 	char nr_lane = hw->nr_lane;
 
@@ -1443,27 +1579,27 @@ int rnpm_mbx_phy_read(struct rnpm_hw *hw, u32 reg, u32 *val)
 	// dump_stack();
 
 	if (hw->mbx.irq_enabled) {
-		struct mbx_req_cookie *cookie = mbx_cookie_zalloc(4);
+		struct mbx_req_cookie *cookie = mbx_cookie_zalloc(hw, 4);
 
 		if (!cookie)
 			return -ENOMEM;
-		build_get_phy_reg(&req, cookie, PHY_EXTERNAL_PHY_MDIO, nr_lane,
-				  reg);
+
+		build_get_phy_reg(&req, cookie, PHY_EXTERNAL_PHY_MDIO,
+				  nr_lane, reg);
 
 		err = rnpm_mbx_fw_post_req(hw, &req, cookie);
 		if (err) {
-			kfree(cookie);
+			mbx_free_cookie(cookie, false);
 			return err;
 		}
+
 		memcpy(val, cookie->priv, 4);
 		err = 0;
-		kfree(cookie);
+		mbx_free_cookie(cookie, true);
 	} else {
-		struct mbx_fw_cmd_reply reply;
-
 		memset(&reply, 0, sizeof(reply));
-		build_get_phy_reg(&req, &reply, PHY_EXTERNAL_PHY_MDIO, nr_lane,
-				  reg);
+		build_get_phy_reg(&req, &reply, PHY_EXTERNAL_PHY_MDIO,
+				  nr_lane, reg);
 
 		err = rnpm_fw_send_cmd_wait(hw, &req, &reply);
 		if (err == 0)
@@ -1478,60 +1614,84 @@ int rnpm_mbx_phy_link_set(struct rnpm_hw *hw, int speeds)
 
 	memset(&req, 0, sizeof(req));
 
-	rnpm_info("%s:lane:%d speed:0x%x\n", __func__, hw->nr_lane, speeds);
+	pr_info("%s:lane:%d speed:0x%x\n", __func__, hw->nr_lane, speeds);
 
 	build_phy_link_set(&req, speeds, hw->nr_lane);
 
 	return rnpm_mbx_write_posted_locked(hw, &req);
 }
 
-int rnpm_get_port_stats2(struct rnpm_hw *hw, int *pabs, int *pspeed, int *plink)
+int rnpm_get_port_stats2(struct rnpm_hw *hw, struct mbx_port_stat *stat)
 {
+#define _SHM_LANES_STAT (0xa8000 + 64 * 64 - 4)
+#define _PORT_SPEED_MAX_SUPPORT_NUM (6)
 	unsigned int v;
-	int link = 0, abs = 0, idx = 0, speed = 0;
-	int speed_tb[6] = { 10, 100, 1000, 10 * 1000, 25 * 1000, 40 * 1000 };
+	int idx = 0;
+	int speed_tb[_PORT_SPEED_MAX_SUPPORT_NUM] = {
+		SPEED_10,    SPEED_100,	  SPEED_1000,
+		SPEED_10000, SPEED_25000, SPEED_40000
+	};
 
-#define LANES_STAT (0xa8000 + 64 * 64 - 4)
-	v = rd32(hw, LANES_STAT);
+	memset(stat, 0, sizeof(*stat));
 
-	if ((v & 0xF0000000) != 0xA0000000)
+	v = rd32(hw, _SHM_LANES_STAT);
+	if (!((v & GENMASK(31, 28)) - DM_MAGIC_CODE))
 		return -1;
 
-	link = !!(v & BIT(hw->nr_lane));
-	abs = !!(v & BIT(hw->nr_lane + 4));
-	idx = (v >> 8) & 0xf;
-	if ((idx <= 5))
-		speed = speed_tb[idx];
-	if (plink)
-		*plink = link;
-	if (pspeed)
-		*pspeed = speed;
-	if (pabs)
-		*pabs = abs;
+	stat->link = !!(v & BIT(hw->nr_lane));
+	stat->abs = !!(v & BIT(hw->nr_lane + 4));
+	stat->duplex = !!(v & BIT(hw->nr_lane + 24));
 
-	// printk("%s lane%d link%d speed:%d pabs:%d\n", __func__, hw->nr_lane, link, speed, abs);
+	idx = v >> (8 + hw->nr_lane * 4);
+	idx &= 0xf;
+	if (idx > _PORT_SPEED_MAX_SUPPORT_NUM)
+		return -1;
+	stat->speed = speed_tb[idx];
 
-	return link;
+	// printk("%s lane%d link%d speed:%d pabs:%d duplex:%d\n", __func__,
+	//        hw->nr_lane, stat->link, stat->speed, stat->abs,
+	//        stat->duplex);
+
+	return 0;
+}
+
+int rnpm_mbx_ddr_csl_enable(struct rnpm_hw *hw, int enable,
+			    dma_addr_t dma_phy, int bytes)
+{
+	struct mbx_fw_cmd_req req;
+	struct mbx_fw_cmd_reply reply;
+
+	memset(&req, 0, sizeof(req));
+	build_ddr_csl(&req, NULL, enable, dma_phy, bytes);
+
+	if (hw->mbx.irq_enabled)
+		return rnpm_mbx_write_posted_locked(hw, &req);
+
+	memset(&reply, 0, sizeof(reply));
+	return rnpm_fw_send_cmd_wait(hw, &req, &reply);
 }
 
 int rnpm_mbx_sdram_simm(struct rnpm_hw *hw, u32 flags, u32 offset,
 			void *dma_buf, dma_addr_t dma_phy, u32 len)
 {
 	int err;
-	u64 address;
+
 	struct mbx_fw_cmd_reply reply;
 	struct mbx_fw_cmd_req req;
 
 	if (!dma_buf || dma_phy == 0) {
-		dev_err(&hw->pdev->dev, "%s: no memory:%d!", __func__, len);
+		dev_err(&hw->pdev->dev, "%s: no memory:%d!", __func__,
+			len);
 		return -ENOMEM;
 	}
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
-	address = dma_phy;
-	build_comm_sdram_req(&req, NULL, flags, offset, address & 0xffffffff,
-			     (address >> 32) & 0xffffffff, len);
+
+	build_comm_sdram_req(&req, NULL, flags, offset,
+			     lower_32_bits(dma_phy),
+			     upper_32_bits(dma_phy), len);
+
 	if (hw->mbx.irq_enabled)
 		rnpm_mbx_write_posted_locked(hw, &req);
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/types.h>
 #include <linux/module.h>
@@ -35,9 +35,9 @@
 #include "rnpm_mbx_fw.h"
 #include "version.h"
 #include "rnpm_mpe.h"
+
 #include <net/vxlan.h>
 #include <net/udp_tunnel.h>
-#include <net/vxlan.h>
 
 // for test
 #ifdef CONFIG_ARM64
@@ -49,17 +49,16 @@
 char rnpm_driver_name[] = "rnpm";
 char rnpm_port_name[] = "enp";
 
-#ifndef NO_NETDEV_PORT
 #define ASSIN_PDEV
-#endif
 static const char rnpm_driver_string[] =
 	"mucse 4/8port 1/10 Gigabit PCI Express Network Driver";
 static char rnpm_default_device_descr[] __maybe_unused =
 	"mucse(R) 4/8port 1/10 Gigabit Network Connection";
-#define DRV_VERSION "0.3.1.rc4"
-const char rnpm_driver_version[] = DRV_VERSION GIT_COMMIT;
+#define DRV_VERSION "1.0.0"
+// const char rnpm_driver_version[] = DRV_VERSION GIT_COMMIT;
+const char rnpm_driver_version[] = DRV_VERSION;
 static const char rnpm_copyright[] =
-	"Copyright (c) 2022-2024 mucse Corporation.";
+	"Copyright (c) 2022-2026 mucse Corporation.";
 
 static struct rnpm_info *rnpm_info_tbl[] = {
 	[board_n10] = &rnpm_n10_info,
@@ -84,34 +83,24 @@ static void rnpm_put_rx_buffer(struct rnpm_ring *rx_ring,
 #endif
 
 // #define DEBUG_TX
+// #define SIMULATE_TX
 
 // vu440 must select mode type
-#ifdef UV440_2PF
-#ifdef MODE_4_PORT
-#define MODE_TYPE board_vu440_8x10G
-#endif
 
-#ifdef MODE_2_PORT
-#define MODE_TYPE board_vu440_4x10G
-#endif
-
-#ifdef MODE_1_PORT
-#define MODE_TYPE board_vu440_2x10G
-#endif
-
-#ifndef MODE_TYPE
-/* default in 4 ports in 1 pf mode */
-#define MODE_TYPE board_vu440_8x10G
-#endif
-#endif
 /* itr can be modified in napi handle */
 /* now hw not support this */
 
+// #define DISABLE_RX_IRQ
+
 static struct pci_device_id rnpm_pci_tbl[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_MUCSE, 0x1060), .driver_data = board_n10 },
-	{ PCI_DEVICE(PCI_VENDOR_ID_MUCSE, 0x1C60), .driver_data = board_n10 },
-	{ PCI_DEVICE(PCI_VENDOR_ID_MUCSE, 0x1020), .driver_data = board_n10 },
-	{ PCI_DEVICE(PCI_VENDOR_ID_MUCSE, 0x1C20), .driver_data = board_n10 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_MUCSE, 0x1060),
+	  .driver_data = board_n10 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_MUCSE, 0x1C60),
+	  .driver_data = board_n10 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_MUCSE, 0x1020),
+	  .driver_data = board_n10 },
+	{ PCI_DEVICE(PCI_VENDOR_ID_MUCSE, 0x1C20),
+	  .driver_data = board_n10 },
 
 	{ PCI_DEVICE(PCI_VENDOR_ID_MUCSE, 0x1021),
 	  .driver_data = board_n400_4x1G },
@@ -129,7 +118,15 @@ MODULE_DEVICE_TABLE(pci, rnpm_pci_tbl);
 static unsigned int mac_loop_en;
 module_param(mac_loop_en, uint, 0000);
 
-#define DEFAULT_MSG_ENABLE (NETIF_MSG_DRV | NETIF_MSG_PROBE | NETIF_MSG_LINK)
+#ifdef CONFIG_PCI_IOV
+static unsigned int max_vfs;
+module_param(max_vfs, uint, 0000);
+MODULE_PARM_DESC(max_vfs,
+		 "Maximum number of virtual functions to allocate per physical function - default is zero and maximum value is 127");
+#endif /* CONFIG_PCI_IOV */
+
+#define DEFAULT_MSG_ENABLE \
+	(NETIF_MSG_DRV | NETIF_MSG_PROBE | NETIF_MSG_LINK)
 static int debug = -1;
 module_param(debug, int, 0000);
 MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
@@ -138,16 +135,19 @@ static unsigned int pf_msix_counts_set;
 module_param(pf_msix_counts_set, uint, 0000);
 MODULE_PARM_DESC(pf_msix_counts_set, "set msix count by one pf");
 
+static unsigned int pf_support_vlan0;
+module_param(pf_support_vlan0, uint, 0000);
+MODULE_PARM_DESC(pf_support_vlan0, "pf support vlan0");
+
 /* just for test */
 static unsigned int fix_eth_name;
 module_param(fix_eth_name, uint, 0000);
 MODULE_PARM_DESC(fix_eth_name, "set eth adapter name to rnpmXX");
 
-#ifndef NO_PTP
 static int module_enable_ptp = 1;
 module_param(module_enable_ptp, uint, 0000);
-MODULE_PARM_DESC(module_enable_ptp, "enable ptp feature, disabled default");
-#endif
+MODULE_PARM_DESC(module_enable_ptp,
+		 "enable ptp feature, disabled default");
 
 unsigned int mpe_src_port;
 module_param(mpe_src_port, uint, 0000);
@@ -186,8 +186,7 @@ module_param(force_speed_ablity_pf1, uint, 0000);
 MODULE_PARM_DESC(force_speed_ablity_pf1,
 		 "allow to force speed 1/10G for fiber on pf1");
 
-MODULE_PARM_DESC(
-	fw_10g_1g_auto_det,
+MODULE_PARM_DESC(fw_10g_1g_auto_det,
 	"enable 4x10G cards partially supported 10G and 1G SFP at the same time ");
 
 MODULE_AUTHOR("Mucse Corporation, <mucse@mucse.com>");
@@ -197,10 +196,12 @@ MODULE_VERSION(DRV_VERSION);
 
 static int enable_hi_dma;
 
+// try to add new method
+
 #if (PAGE_SIZE < 8192)
 #define RNPM_MAX_2K_FRAME_BUILD_SKB (RNPM_RXBUFFER_1536 - NET_IP_ALIGN)
-#define RNPM_2K_TOO_SMALL_WITH_PADDING                                         \
-	((NET_SKB_PAD + RNPM_RXBUFFER_1536) >                                  \
+#define RNPM_2K_TOO_SMALL_WITH_PADDING        \
+	((NET_SKB_PAD + RNPM_RXBUFFER_1536) > \
 	 SKB_WITH_OVERHEAD(RNPM_RXBUFFER_2K))
 
 static inline int rnpm_compute_pad(int rx_buf_len)
@@ -225,7 +226,8 @@ static inline int rnpm_skb_pad(void)
 	 * cache-line alignment.
 	 */
 	if (RNPM_2K_TOO_SMALL_WITH_PADDING)
-		rx_buf_len = RNPM_RXBUFFER_3K + SKB_DATA_ALIGN(NET_IP_ALIGN);
+		rx_buf_len =
+			RNPM_RXBUFFER_3K + SKB_DATA_ALIGN(NET_IP_ALIGN);
 	else
 		rx_buf_len = RNPM_RXBUFFER_1536;
 
@@ -253,7 +255,7 @@ void rnpm_service_event_schedule(struct rnpm_adapter *adapter)
 	}
 }
 
-void rnpm_pf_service_event_schedule(struct rnpm_pf_adapter *pf_adapter)
+static void rnpm_pf_service_event_schedule(struct rnpm_pf_adapter *pf_adapter)
 {
 	schedule_work(&pf_adapter->service_task);
 }
@@ -292,8 +294,8 @@ void rnpm_get_hw_control(struct rnpm_adapter *adapter)
  * @msix_vector: the vector to map to the corresponding queue
  *
  */
-static void rnpm_set_ring_vector(struct rnpm_adapter *adapter, u8 rnpm_queue,
-				 u8 rnpm_msix_vector)
+static void rnpm_set_ring_vector(struct rnpm_adapter *adapter,
+				 u8 rnpm_queue, u8 rnpm_msix_vector)
 {
 	struct rnpm_hw *hw = &adapter->hw;
 	// struct net_device *netdev = adapter->netdev;
@@ -329,7 +331,8 @@ void rnpm_unmap_and_free_tx_resource(struct rnpm_ring *ring,
 					 DMA_TO_DEVICE);
 	} else if (dma_unmap_len(tx_buffer, len)) {
 		dma_unmap_page(ring->dev, dma_unmap_addr(tx_buffer, dma),
-			       dma_unmap_len(tx_buffer, len), DMA_TO_DEVICE);
+			       dma_unmap_len(tx_buffer, len),
+			       DMA_TO_DEVICE);
 	}
 	tx_buffer->next_to_watch = NULL;
 	tx_buffer->skb = NULL;
@@ -347,14 +350,14 @@ static u64 rnpm_get_tx_pending(struct rnpm_ring *ring)
 	struct rnpm_adapter *adapter = netdev_priv(ring->netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 
-	u32 head =
-		rd32(hw, RNPM_DMA_REG_TX_DESC_BUF_HEAD(ring->rnpm_queue_idx));
-	u32 tail =
-		rd32(hw, RNPM_DMA_REG_TX_DESC_BUF_TAIL(ring->rnpm_queue_idx));
+	u32 head = rd32(hw,
+			RNPM_DMA_REG_TX_DESC_BUF_HEAD(ring->rnpm_queue_idx));
+	u32 tail = rd32(hw,
+			RNPM_DMA_REG_TX_DESC_BUF_TAIL(ring->rnpm_queue_idx));
 
 	if (head != tail)
 		return (head < tail) ? tail - head :
-					     (tail + ring->count - head);
+				       (tail + ring->count - head);
 
 	return 0;
 }
@@ -368,7 +371,8 @@ static inline bool rnpm_check_tx_hang(struct rnpm_ring *tx_ring)
 
 	clear_check_for_tx_hang(tx_ring);
 
-	/* Check for a hung queue, but be thorough. This verifies
+	/*
+	 * Check for a hung queue, but be thorough. This verifies
 	 * that a transmit has been completed since the previous
 	 * check AND there is at least one packet pending. The
 	 * ARMED bit is set to indicate a potential hang. The
@@ -379,7 +383,7 @@ static inline bool rnpm_check_tx_hang(struct rnpm_ring *tx_ring)
 	 * run the check_tx_hang logic with a transmit completion
 	 * pending but without time to complete it yet.
 	 */
-	if ((tx_done_old == tx_done) && tx_pending) {
+	if (tx_done_old == tx_done && tx_pending) {
 		/* make sure it is true for two checks in a row */
 		ret = test_and_set_bit(__RNPM_HANG_CHECK_ARMED,
 				       &tx_ring->state);
@@ -478,8 +482,10 @@ static bool rnpm_clean_tx_irq(struct rnpm_q_vector *q_vector,
 		/* free the skb */
 		napi_consume_skb(tx_buffer->skb, napi_budget);
 		/* unmap skb header data */
-		dma_unmap_single(tx_ring->dev, dma_unmap_addr(tx_buffer, dma),
-				 dma_unmap_len(tx_buffer, len), DMA_TO_DEVICE);
+		dma_unmap_single(tx_ring->dev,
+				 dma_unmap_addr(tx_buffer, dma),
+				 dma_unmap_len(tx_buffer, len),
+				 DMA_TO_DEVICE);
 
 		/* clear tx_buffer data */
 		tx_buffer->skb = NULL;
@@ -488,8 +494,8 @@ static bool rnpm_clean_tx_irq(struct rnpm_q_vector *q_vector,
 		/* unmap remaining buffers */
 		while (tx_desc != eop_desc) {
 			/* print desc */
-			buf_dump_line("desc %d  ", i + tx_ring->count, tx_desc,
-				      sizeof(*tx_desc));
+			buf_dump_line("desc %d  ", i + tx_ring->count,
+				      tx_desc, sizeof(*tx_desc));
 
 			tx_buffer++;
 			tx_desc++;
@@ -503,9 +509,9 @@ static bool rnpm_clean_tx_irq(struct rnpm_q_vector *q_vector,
 			/* unmap any remaining paged data */
 			if (dma_unmap_len(tx_buffer, len)) {
 				dma_unmap_page(tx_ring->dev,
-					       dma_unmap_addr(tx_buffer, dma),
-					       dma_unmap_len(tx_buffer, len),
-					       DMA_TO_DEVICE);
+					dma_unmap_addr(tx_buffer, dma),
+					dma_unmap_len(tx_buffer, len),
+					DMA_TO_DEVICE);
 				dma_unmap_len_set(tx_buffer, len, 0);
 			}
 		}
@@ -599,6 +605,7 @@ static inline void rnpm_rx_checksum(struct rnpm_ring *ring,
 	    RNPM_RXD_STAT_TUNNEL_VXLAN) {
 		encap_pkt = true;
 		skb->encapsulation = 1;
+		/* HAVE_UDP_ENC_RX_OFFLOAD || HAVE_VXLAN_RX_OFFLOAD */
 		skb->ip_summed = CHECKSUM_NONE;
 	}
 
@@ -616,10 +623,8 @@ static inline void rnpm_rx_checksum(struct rnpm_ring *ring,
 	/* It must be a TCP or UDP packet with a valid checksum */
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
 	if (encap_pkt) {
-#ifdef HAVE_SKBUFF_CSUM_LEVEL
 		/* If we checked the outer header let the stack know */
 		skb->csum_level = 1;
-#endif /* HAVE_SKBUFF_CSUM_LEVEL */
 	}
 }
 
@@ -628,7 +633,8 @@ static inline void rnpm_update_rx_tail(struct rnpm_ring *rx_ring, u32 val)
 	rx_ring->next_to_use = val;
 	/* update next to alloc since we have filled the ring */
 	rx_ring->next_to_alloc = val;
-	/* Force memory writes to complete before letting h/w
+	/*
+	 * Force memory writes to complete before letting h/w
 	 * know there are new descriptors to fetch.  (Only
 	 * applicable for weak-ordered memory model archs,
 	 * such as IA-64).
@@ -656,11 +662,11 @@ void rnpm_alloc_rx_buffers(struct rnpm_ring *rx_ring, u16 cleaned_count)
 
 	rx_desc = RNPM_RX_DESC(rx_ring, i);
 
-	BUG_ON(rx_desc == NULL);
+	BUG_ON(!rx_desc);
 
 	bi = &rx_ring->rx_buffer_info[i];
 
-	BUG_ON(bi == NULL);
+	BUG_ON(!bi);
 
 	i -= rx_ring->count;
 	bufsz = rnpm_rx_bufsz(rx_ring);
@@ -691,7 +697,8 @@ void rnpm_alloc_rx_buffers(struct rnpm_ring *rx_ring, u16 cleaned_count)
 
 		cleaned_count--;
 
-		while (count < rx_ring->rx_page_buf_nums && cleaned_count) {
+		while (count < rx_ring->rx_page_buf_nums &&
+		       cleaned_count) {
 			// dma_addr_t dma = bi->dma;
 			dma_addr_t dma;
 
@@ -701,9 +708,11 @@ void rnpm_alloc_rx_buffers(struct rnpm_ring *rx_ring, u16 cleaned_count)
 			dma = dma_map_page_attrs(rx_ring->dev, page,
 						 bi->page_offset, bufsz,
 						 DMA_FROM_DEVICE,
+
 						 RNPM_RX_DMA_ATTR);
 
 			if (dma_mapping_error(rx_ring->dev, dma)) {
+				pr_err("map second error\n");
 				rx_ring->rx_stats.alloc_rx_page_failed++;
 				break;
 			}
@@ -715,14 +724,19 @@ void rnpm_alloc_rx_buffers(struct rnpm_ring *rx_ring, u16 cleaned_count)
 			bi->pagecnt_bias = USHRT_MAX;
 
 			/* sync the buffer for use by the device */
-			dma_sync_single_range_for_device(rx_ring->dev, bi->dma,
-							 0, bufsz,
+			dma_sync_single_range_for_device(rx_ring->dev,
+							 bi->dma, 0, bufsz,
 							 DMA_FROM_DEVICE);
 
-			/* Refresh the desc even if buffer_addrs didn't change
+			/*
+			 * Refresh the desc even if buffer_addrs didn't change
 			 * because each write-back erases this info.
 			 */
+			// printk("second %d dma %llx\n", count, bi->dma);
 			rx_desc->pkt_addr = cpu_to_le64(bi->dma + fun_id);
+			// cpu_to_le64(bi->dma + bi->page_offset + fun_id);
+			// printk("rx_desc is %llx\n", rx_desc->pkt_addr);
+			// printk("%d rx_desc page_offset %x\n", i, bi->page_offset);
 			/* clean dd */
 			rx_desc->resv_cmd = 0;
 
@@ -764,9 +778,9 @@ void rnpm_alloc_rx_buffers(struct rnpm_ring *rx_ring, u16 cleaned_count)
 		return;
 
 	rx_desc = RNPM_RX_DESC(rx_ring, i);
-	BUG_ON(rx_desc == NULL);
+	BUG_ON(!rx_desc);
 	bi = &rx_ring->rx_buffer_info[i];
-	BUG_ON(bi == NULL);
+	BUG_ON(!bi);
 	i -= rx_ring->count;
 	bufsz = rnpm_rx_bufsz(rx_ring);
 
@@ -777,8 +791,15 @@ void rnpm_alloc_rx_buffers(struct rnpm_ring *rx_ring, u16 cleaned_count)
 						 bi->page_offset, bufsz,
 						 DMA_FROM_DEVICE);
 
+			/*
+			 * Refresh the desc even if buffer_addrs didn't change
+			 * because each write-back erases this info.
+			 */
 		rx_desc->pkt_addr =
 			cpu_to_le64(bi->dma + bi->page_offset + fun_id);
+		/* clean dd */
+		// rx_desc->resv_cmd = cpu_to_le16(RNPM_RXD_FLAG_RS);
+		// rx_desc->resv_cmd = cpu_to_le32(0);
 		rx_desc->resv_cmd = 0;
 
 		rx_desc++;
@@ -850,7 +871,8 @@ __maybe_unused static unsigned int rnpm_get_headlen(unsigned char *data,
 
 	/* handle L3 protocols */
 	if (protocol == htons(ETH_P_IP)) {
-		if ((hdr.network - data) > (max_len - sizeof(struct iphdr)))
+		if ((hdr.network - data) >
+		    (max_len - sizeof(struct iphdr)))
 			return max_len;
 
 		/* access ihl as a u8 to avoid unaligned access on ia64 */
@@ -864,7 +886,8 @@ __maybe_unused static unsigned int rnpm_get_headlen(unsigned char *data,
 		if (!(hdr.ipv4->frag_off & htons(IP_OFFSET)))
 			nexthdr = hdr.ipv4->protocol;
 	} else if (protocol == htons(ETH_P_IPV6)) {
-		if ((hdr.network - data) > (max_len - sizeof(struct ipv6hdr)))
+		if ((hdr.network - data) >
+		    (max_len - sizeof(struct ipv6hdr)))
 			return max_len;
 
 		/* record next protocol */
@@ -879,7 +902,8 @@ __maybe_unused static unsigned int rnpm_get_headlen(unsigned char *data,
 
 	/* finally sort out TCP/UDP */
 	if (nexthdr == IPPROTO_TCP) {
-		if ((hdr.network - data) > (max_len - sizeof(struct tcphdr)))
+		if ((hdr.network - data) >
+		    (max_len - sizeof(struct tcphdr)))
 			return max_len;
 
 		/* access doff as a u8 to avoid unaligned access on ia64 */
@@ -891,13 +915,15 @@ __maybe_unused static unsigned int rnpm_get_headlen(unsigned char *data,
 
 		hdr.network += hlen;
 	} else if (nexthdr == IPPROTO_UDP) {
-		if ((hdr.network - data) > (max_len - sizeof(struct udphdr)))
+		if ((hdr.network - data) >
+		    (max_len - sizeof(struct udphdr)))
 			return max_len;
 
 		hdr.network += sizeof(struct udphdr);
 	}
 
-	/* If everything has gone correctly hdr.network should be the
+	/*
+	 * If everything has gone correctly hdr.network should be the
 	 * data section of the packet and will be the end of the header.
 	 * If not then it probably represents the end of the last recognized
 	 * header.
@@ -908,13 +934,14 @@ __maybe_unused static unsigned int rnpm_get_headlen(unsigned char *data,
 		return max_len;
 }
 
-static void rnpm_set_rsc_gso_size(struct rnpm_ring *ring, struct sk_buff *skb)
+static void rnpm_set_rsc_gso_size(struct rnpm_ring *ring,
+				  struct sk_buff *skb)
 {
 	u16 hdr_len = skb_headlen(skb);
 
 	/* set gso_size to avoid messing up TCP MSS */
-	skb_shinfo(skb)->gso_size =
-		DIV_ROUND_UP((skb->len - hdr_len), RNPM_CB(skb)->append_cnt);
+	skb_shinfo(skb)->gso_size = DIV_ROUND_UP((skb->len - hdr_len),
+						 RNPM_CB(skb)->append_cnt);
 	skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
 }
 
@@ -933,8 +960,9 @@ __maybe_unused static void rnpm_update_rsc_stats(struct rnpm_ring *rx_ring,
 	/* gso_size is computed using append_cnt so always clear it last */
 	RNPM_CB(skb)->append_cnt = 0;
 }
-static void rnpm_rx_vlan(struct rnpm_ring *rx_ring, union rnpm_rx_desc *rx_desc,
-			 struct sk_buff *skb)
+
+static void rnpm_rx_vlan(struct rnpm_ring *rx_ring,
+			 union rnpm_rx_desc *rx_desc, struct sk_buff *skb)
 {
 	if ((netdev_ring(rx_ring)->features & NETIF_F_HW_VLAN_CTAG_RX) &&
 	    rnpm_test_staterr(rx_desc, RNPM_RXD_STAT_VLAN_VALID)) {
@@ -943,6 +971,7 @@ static void rnpm_rx_vlan(struct rnpm_ring *rx_ring, union rnpm_rx_desc *rx_desc,
 				       le16_to_cpu(rx_desc->wb.vlan));
 	}
 }
+
 /**
  * rnpm_process_skb_fields - Populate skb header fields from Rx descriptor
  * @rx_ring: rx descriptor ring packet is being transacted on
@@ -960,14 +989,20 @@ static void rnpm_process_skb_fields(struct rnpm_ring *rx_ring,
 	struct net_device *dev = rx_ring->netdev;
 
 	rnpm_rx_hash(rx_ring, rx_desc, skb);
+
 	rnpm_rx_checksum(rx_ring, rx_desc, skb);
+
 	rnpm_rx_vlan(rx_ring, rx_desc, skb);
+
 	skb_record_rx_queue(skb, rx_ring->queue_index);
+
 	skb->protocol = eth_type_trans(skb, dev);
 }
 
-static void rnpm_rx_skb(struct rnpm_q_vector *q_vector, struct sk_buff *skb)
+static void rnpm_rx_skb(struct rnpm_q_vector *q_vector,
+			struct sk_buff *skb)
 {
+
 	napi_gro_receive(&q_vector->napi, skb);
 }
 
@@ -998,6 +1033,8 @@ static bool rnpm_is_non_eop(struct rnpm_ring *rx_ring,
 		return false;
 
 	rx_ring->rx_stats.non_eop_descs++;
+	/* we should clean it since we used all info in it */
+	rx_desc->wb.cmd = 0;
 	return true;
 }
 #else
@@ -1013,7 +1050,8 @@ static bool rnpm_is_non_eop(struct rnpm_ring *rx_ring,
  * that this is in fact a non-EOP buffer.
  **/
 static bool rnpm_is_non_eop(struct rnpm_ring *rx_ring,
-			    union rnpm_rx_desc *rx_desc, struct sk_buff *skb)
+			    union rnpm_rx_desc *rx_desc,
+			    struct sk_buff *skb)
 {
 	u32 ntc = rx_ring->next_to_clean + 1;
 	/* fetch, update, and store next to clean */
@@ -1028,7 +1066,8 @@ static bool rnpm_is_non_eop(struct rnpm_ring *rx_ring,
 	/* place skb in next buffer to be received */
 	rx_ring->rx_buffer_info[ntc].skb = skb;
 	rx_ring->rx_stats.non_eop_descs++;
-
+	/* we should clean it since we used all info in it */
+	rx_desc->wb.cmd = 0;
 	return true;
 }
 #endif
@@ -1047,36 +1086,36 @@ static bool rnpm_check_csum_error(struct rnpm_ring *rx_ring,
 		if (unlikely(rnpm_test_staterr(rx_desc,
 					       RNPM_RXD_STAT_ERR_MASK))) {
 			rx_debug_printk("rx error: VEB:%s mark:0x%x cmd:0x%x\n",
-					(rx_ring->q_vector->adapter->flags &
-					 RNPM_FLAG_SRIOV_ENABLED) ?
-						"On" :
-						"Off",
-					rx_desc->wb.mark, rx_desc->wb.cmd);
+				(rx_ring->q_vector->adapter->flags &
+				 RNPM_FLAG_SRIOV_ENABLED) ?
+					"On" :
+					"Off",
+				rx_desc->wb.mark, rx_desc->wb.cmd);
 			/* push this packet to stack if in promisc mode */
 			rx_ring->rx_stats.csum_err++;
 
 			if ((!(netdev->flags & IFF_PROMISC) &&
 			     (!(netdev->features & NETIF_F_RXALL)))) {
 				// if not ipv4 with l4 error, we should ignore l4 csum error
-				if (unlikely(rnpm_test_staterr(
-						     rx_desc,
-						     RNPM_RXD_STAT_L4_MASK) &&
-					     (!(rx_desc->wb.rev1 &
-						RNPM_RX_L3_TYPE_MASK)))) {
+				if (unlikely(
+					    rnpm_test_staterr(rx_desc,
+						    RNPM_RXD_STAT_L4_MASK) &&
+					    (!(rx_desc->wb.rev1 &
+					       RNPM_RX_L3_TYPE_MASK)))) {
 					rx_ring->rx_stats.csum_err--;
 					goto skip_fix;
 				}
 
-				if (unlikely(rnpm_test_staterr(
-					    rx_desc,
+				if (unlikely(rnpm_test_staterr(rx_desc,
 					    RNPM_RXD_STAT_SCTP_MASK))) {
-					if ((size > 60) &&
+					if (size > 60 &&
 					    (rx_desc->wb.rev1 &
 					     RNPM_RX_L3_TYPE_MASK)) {
 						err = true;
 					} else {
 						/* sctp less than 60 hw report err by mistake */
-						rx_ring->rx_stats.csum_err--;
+						rx_ring->rx_stats
+							.csum_err--;
 					}
 				} else {
 					err = true;
@@ -1088,6 +1127,7 @@ static bool rnpm_check_csum_error(struct rnpm_ring *rx_ring,
 skip_fix:
 	if (err) {
 		u32 ntc = rx_ring->next_to_clean + 1;
+
 		struct rnpm_rx_buffer *rx_buffer;
 #if (PAGE_SIZE < 8192)
 		unsigned int truesize = rnpm_rx_pg_size(rx_ring) / 2;
@@ -1103,7 +1143,8 @@ skip_fix:
 			*driver_drop_packets = *driver_drop_packets + 1;
 
 		/* we are reusing so sync this buffer for CPU use */
-		rx_buffer = &rx_ring->rx_buffer_info[rx_ring->next_to_clean];
+		rx_buffer =
+			&rx_ring->rx_buffer_info[rx_ring->next_to_clean];
 		dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma,
 					      rx_buffer->page_offset,
 					      RNPM_RXBUFFER_1536,
@@ -1134,22 +1175,23 @@ skip_fix:
  * rnpm_rx_ring_reinit - just reinit rx_ring with new count in ->reset_count
  * @rx_ring: rx descriptor ring to transact packets on
  */
-int rnpm_rx_ring_reinit(struct rnpm_adapter *adapter, struct rnpm_ring *rx_ring)
+static int rnpm_rx_ring_reinit(struct rnpm_adapter *adapter,
+			struct rnpm_ring *rx_ring)
 {
-	struct rnpm_ring *temp_ring = NULL;
+	struct rnpm_ring *temp_ring;
 	int err = 0;
 	struct rnpm_hw *hw = &adapter->hw;
 
-	temp_ring = vmalloc(array_size(1, sizeof(struct rnpm_ring)));
-	if (!temp_ring)
-		return -1;
-
 	if (rx_ring->count == rx_ring->reset_count)
 		return 0;
-	/* stop rx queue */
 
+	/* stop rx queue */
 	rnpm_disable_rx_queue(adapter, rx_ring);
-	memset(temp_ring, 0x00, sizeof(struct rnpm_ring));
+
+	temp_ring = kzalloc(sizeof(*temp_ring), GFP_KERNEL);
+	if (!temp_ring)
+		return -ENOMEM;
+
 	/* reinit for this ring */
 	memcpy(temp_ring, rx_ring, sizeof(struct rnpm_ring));
 	/* setup new count */
@@ -1165,7 +1207,7 @@ int rnpm_rx_ring_reinit(struct rnpm_adapter *adapter, struct rnpm_ring *rx_ring)
 err_setup:
 	/* start rx */
 	wr32(hw, RNPM_DMA_RX_START(rx_ring->rnpm_queue_idx), 1);
-	vfree(temp_ring);
+	kfree(temp_ring);
 	return 0;
 }
 
@@ -1192,15 +1234,18 @@ static bool rnpm_alloc_mapped_page(struct rnpm_ring *rx_ring,
 	bi->page_offset = rnpm_rx_offset(rx_ring);
 
 	/* map page for use */
-	dma = dma_map_page_attrs(rx_ring->dev, page, bi->page_offset, bufsz,
-				 DMA_FROM_DEVICE, RNPM_RX_DMA_ATTR);
+	dma = dma_map_page_attrs(rx_ring->dev, page, bi->page_offset,
+				 bufsz, DMA_FROM_DEVICE,
+				 RNPM_RX_DMA_ATTR);
 
-	/* if mapping failed free memory back to system since
+	/*
+	 * if mapping failed free memory back to system since
 	 * there isn't much point in holding memory we can't use
 	 */
 	if (dma_mapping_error(rx_ring->dev, dma)) {
 		//__free_pages(page, rnpm_rx_pg_order(rx_ring));
 		__free_pages(page, RNPM_ALLOC_PAGE_ORDER);
+		pr_err("map failed\n");
 
 		rx_ring->rx_stats.alloc_rx_page_failed++;
 		return false;
@@ -1216,7 +1261,8 @@ static bool rnpm_alloc_mapped_page(struct rnpm_ring *rx_ring,
 	dma_sync_single_range_for_device(rx_ring->dev, bi->dma, 0, bufsz,
 					 DMA_FROM_DEVICE);
 
-	/* Refresh the desc even if buffer_addrs didn't change
+	/*
+	 * Refresh the desc even if buffer_addrs didn't change
 	 * because each write-back erases this info.
 	 */
 	rx_desc->pkt_addr = cpu_to_le64(bi->dma + fun_id);
@@ -1236,8 +1282,8 @@ static bool rnpm_alloc_mapped_page(struct rnpm_ring *rx_ring,
 		return true;
 
 	/* alloc new page for storage */
-	page = dev_alloc_pages(rnpm_rx_pg_order(rx_ring));
-
+	page = alloc_pages(GFP_ATOMIC | __GFP_COLD | __GFP_COMP,
+			   rnpm_rx_pg_order(rx_ring));
 	if (unlikely(!page)) {
 		rx_ring->rx_stats.alloc_rx_page_failed++;
 		return false;
@@ -1248,7 +1294,8 @@ static bool rnpm_alloc_mapped_page(struct rnpm_ring *rx_ring,
 				 rnpm_rx_pg_size(rx_ring), DMA_FROM_DEVICE,
 				 RNPM_RX_DMA_ATTR);
 
-	/* if mapping failed free memory back to system since
+	/*
+	 * if mapping failed free memory back to system since
 	 * there isn't much point in holding memory we can't use
 	 */
 	if (dma_mapping_error(rx_ring->dev, dma)) {
@@ -1262,12 +1309,8 @@ static bool rnpm_alloc_mapped_page(struct rnpm_ring *rx_ring,
 	bi->dma = dma;
 	bi->page = page;
 	bi->page_offset = rnpm_rx_offset(rx_ring);
-#ifdef HAVE_PAGE_COUNT_BULK_UPDATE
 	page_ref_add(page, USHRT_MAX - 1);
 	bi->pagecnt_bias = USHRT_MAX;
-#else
-	bi->pagecnt_bias = 1;
-#endif
 	rx_ring->rx_stats.alloc_rx_page++;
 
 	return true;
@@ -1290,13 +1333,15 @@ static void rnpm_pull_tail(struct sk_buff *skb)
 	unsigned char *va;
 	unsigned int pull_len;
 
-	/* it is valid to use page_address instead of kmap since we are
+	/*
+	 * it is valid to use page_address instead of kmap since we are
 	 * working with pages allocated out of the lomem pool per
 	 * alloc_page(GFP_ATOMIC)
 	 */
 	va = skb_frag_address(frag);
 
-	/* we need the header to contain the greater of either ETH_HLEN or
+	/*
+	 * we need the header to contain the greater of either ETH_HLEN or
 	 * 60 bytes if the skb->len is less than 60 for skb_pad.
 	 */
 	pull_len = rnpm_get_headlen(va, RNPM_RX_HDR_SIZE);
@@ -1325,18 +1370,22 @@ __maybe_unused static void rnpm_dma_sync_frag(struct rnpm_ring *rx_ring,
 	/* if the page was released unmap it, else just sync our portion */
 	if (unlikely(RNPM_CB(skb)->page_released)) {
 		dma_unmap_page_attrs(rx_ring->dev, RNPM_CB(skb)->dma,
-				     rnpm_rx_pg_size(rx_ring), DMA_FROM_DEVICE,
+				     rnpm_rx_pg_size(rx_ring),
+				     DMA_FROM_DEVICE,
 				     RNPM_RX_DMA_ATTR);
 	} else if (ring_uses_build_skb(rx_ring)) {
-		unsigned long offset = (unsigned long)(skb->data) & ~PAGE_MASK;
+		unsigned long offset = (unsigned long)(skb->data) &
+				       ~PAGE_MASK;
 
-		dma_sync_single_range_for_cpu(rx_ring->dev, RNPM_CB(skb)->dma,
-					      offset, skb_headlen(skb),
+		dma_sync_single_range_for_cpu(rx_ring->dev,
+					      RNPM_CB(skb)->dma, offset,
+					      skb_headlen(skb),
 					      DMA_FROM_DEVICE);
 	} else {
 		skb_frag_t *frag = &skb_shinfo(skb)->frags[0];
 
-		dma_sync_single_range_for_cpu(rx_ring->dev, RNPM_CB(skb)->dma,
+		dma_sync_single_range_for_cpu(rx_ring->dev,
+					      RNPM_CB(skb)->dma,
 					      skb_frag_off(frag),
 					      skb_frag_size(frag),
 					      DMA_FROM_DEVICE);
@@ -1369,6 +1418,7 @@ static bool rnpm_cleanup_headers(struct rnpm_ring __maybe_unused *rx_ring,
 				 union rnpm_rx_desc *rx_desc,
 				 struct sk_buff *skb)
 {
+	// struct net_device *netdev = rx_ring->netdev;
 	/* XDP packets use error pointer so abort at this point */
 #ifdef RNPM_OPTM_WITH_LPAGE
 #else
@@ -1417,7 +1467,8 @@ static void rnpm_reuse_rx_page(struct rnpm_ring *rx_ring,
 
 static inline bool rnpm_page_is_reserved(struct page *page)
 {
-	return (page_to_nid(page) != numa_mem_id()) || page_is_pfmemalloc(page);
+	return (page_to_nid(page) != numa_mem_id()) ||
+	       page_is_pfmemalloc(page);
 }
 
 static bool rnpm_can_reuse_rx_page(struct rnpm_rx_buffer *rx_buffer)
@@ -1432,25 +1483,21 @@ static bool rnpm_can_reuse_rx_page(struct rnpm_rx_buffer *rx_buffer)
 	if (unlikely(rnpm_page_is_reserved(page)))
 		return false;
 #if (PAGE_SIZE < 8192)
-		/* if we are only owner of page we can reuse it */
-#ifdef HAVE_PAGE_COUNT_BULK_UPDATE
+	/* if we are only owner of page we can reuse it */
 	if (unlikely((page_ref_count(page) - pagecnt_bias) > 1))
-#else
-	if (unlikely((page_count(page) - pagecnt_bias) > 1))
-#endif
 		return false;
 #else
-		/* The last offset is a bit aggressive in that we assume the
-		 * worst case of FCoE being enabled and using a 3K buffer.
-		 * However this should have minimal impact as the 1K extra is
-		 * still less than one buffer in size.
-		 */
+	/* The last offset is a bit aggressive in that we assume the
+	 * worst case of FCoE being enabled and using a 3K buffer.
+	 * However this should have minimal impact as the 1K extra is
+	 * still less than one buffer in size.
+	 */
+
 #define RNPM_LAST_OFFSET (SKB_WITH_OVERHEAD(PAGE_SIZE) - RNPM_RXBUFFER_2K)
 	if (rx_buffer->page_offset > RNPM_LAST_OFFSET)
 		return false;
 #endif
 
-#ifdef HAVE_PAGE_COUNT_BULK_UPDATE
 	/* If we have drained the page fragment pool we need to update
 	 * the pagecnt_bias and page count so that we fully restock the
 	 * number of references the driver holds.
@@ -1459,15 +1506,6 @@ static bool rnpm_can_reuse_rx_page(struct rnpm_rx_buffer *rx_buffer)
 		page_ref_add(page, USHRT_MAX - 1);
 		rx_buffer->pagecnt_bias = USHRT_MAX;
 	}
-#else
-	/* Even if we own the page, we are not allowed to use atomic_set()
-	 * This would break get_page_unless_zero() users.
-	 */
-	if (likely(!pagecnt_bias)) {
-		page_ref_inc(page);
-		rx_buffer->pagecnt_bias = 1;
-	}
-#endif
 
 	return true;
 }
@@ -1494,9 +1532,10 @@ static void rnpm_add_rx_frag(struct rnpm_ring *rx_ring,
 #if (PAGE_SIZE < 8192)
 	unsigned int truesize = rnpm_rx_pg_size(rx_ring) / 2;
 #else
-	unsigned int truesize = ring_uses_build_skb(rx_ring) ?
-					SKB_DATA_ALIGN(RNPM_SKB_PAD + size) :
-					SKB_DATA_ALIGN(size);
+	unsigned int truesize =
+		ring_uses_build_skb(rx_ring) ?
+			SKB_DATA_ALIGN(RNPM_SKB_PAD + size) :
+			SKB_DATA_ALIGN(size);
 #endif
 
 	skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, rx_buffer->page,
@@ -1510,9 +1549,9 @@ static void rnpm_add_rx_frag(struct rnpm_ring *rx_ring,
 }
 
 #ifdef RNPM_OPTM_WITH_LPAGE
-static struct rnpm_rx_buffer *rnpm_get_rx_buffer(struct rnpm_ring *rx_ring,
-						 union rnpm_rx_desc *rx_desc,
-						 const unsigned int size)
+static struct rnpm_rx_buffer *
+rnpm_get_rx_buffer(struct rnpm_ring *rx_ring, union rnpm_rx_desc *rx_desc,
+		   const unsigned int size)
 {
 	struct rnpm_rx_buffer *rx_buffer;
 
@@ -1524,18 +1563,17 @@ static struct rnpm_rx_buffer *rnpm_get_rx_buffer(struct rnpm_ring *rx_ring,
 		    rx_desc->wb.len);
 
 	/* we are reusing so sync this buffer for CPU use */
-	dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma, 0, size,
-				      DMA_FROM_DEVICE);
+	dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma, 0,
+				      size, DMA_FROM_DEVICE);
 	/* skip_sync: */
 	rx_buffer->pagecnt_bias--;
 
 	return rx_buffer;
 }
 #else
-static struct rnpm_rx_buffer *rnpm_get_rx_buffer(struct rnpm_ring *rx_ring,
-						 union rnpm_rx_desc *rx_desc,
-						 struct sk_buff **skb,
-						 const unsigned int size)
+static struct rnpm_rx_buffer *
+rnpm_get_rx_buffer(struct rnpm_ring *rx_ring, union rnpm_rx_desc *rx_desc,
+		   struct sk_buff **skb, const unsigned int size)
 {
 	struct rnpm_rx_buffer *rx_buffer;
 
@@ -1568,7 +1606,8 @@ static void rnpm_put_rx_buffer(struct rnpm_ring *rx_ring,
 	} else {
 		/* we are not reusing the buffer so unmap it */
 		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
-				     rnpm_rx_bufsz(rx_ring), DMA_FROM_DEVICE,
+				     rnpm_rx_bufsz(rx_ring),
+				     DMA_FROM_DEVICE,
 				     RNPM_RX_DMA_ATTR);
 		__page_frag_cache_drain(rx_buffer->page,
 					rx_buffer->pagecnt_bias);
@@ -1584,6 +1623,7 @@ static void rnpm_put_rx_buffer(struct rnpm_ring *rx_ring,
 			       struct rnpm_rx_buffer *rx_buffer,
 			       struct sk_buff *skb)
 {
+
 	if (!rx_buffer || !rx_buffer->page || !rx_ring) {
 		rnpm_info("rnpm rx buffer is null!\n");
 		WARN_ON(1);
@@ -1601,7 +1641,8 @@ static void rnpm_put_rx_buffer(struct rnpm_ring *rx_ring,
 		//	} else {
 		/* we are not reusing the buffer so unmap it */
 		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
-				     rnpm_rx_pg_size(rx_ring), DMA_FROM_DEVICE,
+				     rnpm_rx_pg_size(rx_ring),
+				     DMA_FROM_DEVICE,
 				     RNPM_RX_DMA_ATTR);
 		//		}
 		__page_frag_cache_drain(rx_buffer->page,
@@ -1665,7 +1706,8 @@ static struct sk_buff *rnpm_construct_skb(struct rnpm_ring *rx_ring,
 
 	if (size) {
 		skb_add_rx_frag(skb, 0, rx_buffer->page,
-				(va + headlen) - page_address(rx_buffer->page),
+				(va + headlen) -
+					page_address(rx_buffer->page),
 				size, truesize);
 		rx_buffer->page_offset += truesize;
 	} else {
@@ -1675,15 +1717,15 @@ static struct sk_buff *rnpm_construct_skb(struct rnpm_ring *rx_ring,
 	return skb;
 }
 
-#ifdef HAVE_SWIOTLB_SKIP_CPU_SYNC
 static struct sk_buff *rnpm_build_skb(struct rnpm_ring *rx_ring,
 				      struct rnpm_rx_buffer *rx_buffer,
 				      union rnpm_rx_desc *rx_desc,
 				      unsigned int size)
 {
 	void *va = page_address(rx_buffer->page) + rx_buffer->page_offset;
-	unsigned int truesize = SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
-				SKB_DATA_ALIGN(size + RNPM_SKB_PAD);
+	unsigned int truesize =
+		SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
+		SKB_DATA_ALIGN(size + RNPM_SKB_PAD);
 	struct sk_buff *skb;
 
 	/* prefetch first cache line of first page */
@@ -1713,8 +1755,6 @@ static struct sk_buff *rnpm_build_skb(struct rnpm_ring *rx_ring,
 
 	return skb;
 }
-
-#endif /* HAVE_SWIOTLB_SKIP_CPU_SYNC */
 
 #else
 static struct sk_buff *rnpm_construct_skb(struct rnpm_ring *rx_ring,
@@ -1761,8 +1801,8 @@ static struct sk_buff *rnpm_construct_skb(struct rnpm_ring *rx_ring,
 
 	if (size > RNPM_RX_HDR_SIZE) {
 		skb_add_rx_frag(skb, 0, rx_buffer->page,
-				xdp->data - page_address(rx_buffer->page), size,
-				truesize);
+				xdp->data - page_address(rx_buffer->page),
+				size, truesize);
 #if (PAGE_SIZE < 8192)
 		rx_buffer->page_offset ^= truesize;
 #else
@@ -1777,18 +1817,13 @@ static struct sk_buff *rnpm_construct_skb(struct rnpm_ring *rx_ring,
 	return skb;
 }
 
-#ifdef HAVE_SWIOTLB_SKIP_CPU_SYNC
 static struct sk_buff *rnpm_build_skb(struct rnpm_ring *rx_ring,
 				      struct rnpm_rx_buffer *rx_buffer,
 				      struct xdp_buff *xdp,
 				      union rnpm_rx_desc *rx_desc)
 {
-#ifdef HAVE_XDP_BUFF_DATA_META
 	unsigned int metasize = xdp->data - xdp->data_meta;
 	void *va = xdp->data_meta;
-#else
-	void *va = xdp->data;
-#endif
 #if (PAGE_SIZE < 8192)
 	unsigned int truesize = rnpm_rx_pg_size(rx_ring) / 2;
 #else
@@ -1811,10 +1846,8 @@ static struct sk_buff *rnpm_build_skb(struct rnpm_ring *rx_ring,
 	/* update pointers within the skb to store the data */
 	skb_reserve(skb, xdp->data - xdp->data_hard_start);
 	__skb_put(skb, xdp->data_end - xdp->data);
-#ifdef HAVE_XDP_BUFF_DATA_META
 	if (metasize)
 		skb_metadata_set(skb, metasize);
-#endif
 
 		/* update buffer offset */
 #if (PAGE_SIZE < 8192)
@@ -1826,7 +1859,6 @@ static struct sk_buff *rnpm_build_skb(struct rnpm_ring *rx_ring,
 	return skb;
 }
 
-#endif /* HAVE_SWIOTLB_SKIP_CPU_SYNC */
 #endif
 
 #define RNPM_XDP_PASS 0
@@ -1843,9 +1875,10 @@ static void rnpm_rx_buffer_flip(struct rnpm_ring *rx_ring,
 
 	rx_buffer->page_offset ^= truesize;
 #else
-	unsigned int truesize = ring_uses_build_skb(rx_ring) ?
-					SKB_DATA_ALIGN(RNPM_SKB_PAD + size) :
-					SKB_DATA_ALIGN(size);
+	unsigned int truesize =
+		ring_uses_build_skb(rx_ring) ?
+			SKB_DATA_ALIGN(RNPM_SKB_PAD + size) :
+			SKB_DATA_ALIGN(size);
 
 	rx_buffer->page_offset += truesize;
 #endif
@@ -1879,8 +1912,9 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 		rx_buf_dump("rx-desc:", rx_desc, sizeof(*rx_desc));
 		// buf_dump("rx-desc:", rx_desc, sizeof(*rx_desc));
 		rx_debug_printk("  dd set: %s\n",
-				(rx_desc->wb.cmd & RNPM_RXD_STAT_DD) ? "Yes" :
-								       "No");
+				(rx_desc->wb.cmd & RNPM_RXD_STAT_DD) ?
+					"Yes" :
+					"No");
 
 		if (!rnpm_test_staterr(rx_desc, RNPM_RXD_STAT_DD))
 			break;
@@ -1899,11 +1933,13 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 		/* handle padding */
 		if ((adapter->priv_flags &
 		     RNPM_PRIV_FLAG_PCIE_CACHE_ALIGN_PATCH) &&
-		    (!(adapter->priv_flags & RNPM_PRIV_FLAG_PADDING_DEBUG))) {
+		    (!(adapter->priv_flags &
+		       RNPM_PRIV_FLAG_PADDING_DEBUG))) {
 			if (likely(rnpm_test_staterr(rx_desc,
 						     RNPM_RXD_STAT_EOP))) {
 				size = le16_to_cpu(rx_desc->wb.len) -
-				       le16_to_cpu(rx_desc->wb.padding_len);
+				       le16_to_cpu(
+					       rx_desc->wb.padding_len);
 			} else {
 				size = le16_to_cpu(rx_desc->wb.len);
 			}
@@ -1925,13 +1961,12 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 
 		if (skb) {
 			rnpm_add_rx_frag(rx_ring, rx_buffer, skb, size);
-#ifdef HAVE_SWIOTLB_SKIP_CPU_SYNC
 		} else if (ring_uses_build_skb(rx_ring)) {
-			skb = rnpm_build_skb(rx_ring, rx_buffer, rx_desc, size);
-#endif
+			skb = rnpm_build_skb(rx_ring, rx_buffer, rx_desc,
+					     size);
 		} else {
-			skb = rnpm_construct_skb(rx_ring, rx_buffer, rx_desc,
-						 size);
+			skb = rnpm_construct_skb(rx_ring, rx_buffer,
+						 rx_desc, size);
 		}
 
 		/* exit if we failed to retrieve a buffer */
@@ -1941,12 +1976,10 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 			break;
 		}
 
-#ifndef NO_PTP
 		if (module_enable_ptp && adapter->ptp_rx_en &&
 		    adapter->flags2 & RNPM_FLAG2_PTP_ENABLED) {
 			rnpm_ptp_get_rx_hwstamp(adapter, rx_desc, skb);
 		}
-#endif
 		rnpm_put_rx_buffer(rx_ring, rx_buffer);
 		cleaned_count++;
 
@@ -1967,7 +2000,8 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 
 		/* populate checksum, timestamp, VLAN, and protocol */
 		rnpm_process_skb_fields(rx_ring, rx_desc, skb);
-
+		/* we should clean it since we used all info in it */
+		rx_desc->wb.cmd = 0;
 		rnpm_rx_skb(q_vector, skb);
 		skb = NULL;
 		total_rx_packets++;
@@ -2000,7 +2034,7 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
  * This function provides a "bounce buffer" approach to Rx interrupt
  * processing.  The advantage to this is that on systems that have
  * expensive overhead for IOMMU access this provides a means of avoiding
- * it by maintaining the mapping of the page to the system.
+ * it by maintaining the mapping of the page to the syste.
  *
  * Returns amount of work completed.
  **/
@@ -2035,8 +2069,9 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 		rx_buf_dump("rx-desc:", rx_desc, sizeof(*rx_desc));
 		// buf_dump("rx-desc:", rx_desc, sizeof(*rx_desc));
 		rx_debug_printk("  dd set: %s\n",
-				(rx_desc->wb.cmd & RNPM_RXD_STAT_DD) ? "Yes" :
-								       "No");
+				(rx_desc->wb.cmd & RNPM_RXD_STAT_DD) ?
+					"Yes" :
+					"No");
 
 		if (!rnpm_test_staterr(rx_desc, RNPM_RXD_STAT_DD))
 			break;
@@ -2055,11 +2090,13 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 		/* handle padding */
 		if ((adapter->priv_flags &
 		     RNPM_PRIV_FLAG_PCIE_CACHE_ALIGN_PATCH) &&
-		    (!(adapter->priv_flags & RNPM_PRIV_FLAG_PADDING_DEBUG))) {
+		    (!(adapter->priv_flags &
+		       RNPM_PRIV_FLAG_PADDING_DEBUG))) {
 			if (likely(rnpm_test_staterr(rx_desc,
 						     RNPM_RXD_STAT_EOP))) {
 				size = le16_to_cpu(rx_desc->wb.len) -
-				       le16_to_cpu(rx_desc->wb.padding_len);
+				       le16_to_cpu(
+					       rx_desc->wb.padding_len);
 			} else {
 				size = le16_to_cpu(rx_desc->wb.len);
 			}
@@ -2077,14 +2114,13 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 			continue;
 		}
 
-		rx_buffer = rnpm_get_rx_buffer(rx_ring, rx_desc, &skb, size);
+		rx_buffer =
+			rnpm_get_rx_buffer(rx_ring, rx_desc, &skb, size);
 
 		if (!skb) {
 			xdp.data = page_address(rx_buffer->page) +
 				   rx_buffer->page_offset;
-#ifdef HAVE_XDP_BUFF_DATA_META
 			xdp.data_meta = xdp.data;
-#endif
 			xdp.data_hard_start =
 				xdp.data - rnpm_rx_offset(rx_ring);
 			xdp.data_end = xdp.data + size;
@@ -2095,7 +2131,8 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 		if (IS_ERR(skb)) {
 			if (PTR_ERR(skb) == -RNPM_XDP_TX) {
 				xdp_xmit = true;
-				rnpm_rx_buffer_flip(rx_ring, rx_buffer, size);
+				rnpm_rx_buffer_flip(rx_ring, rx_buffer,
+						    size);
 			} else {
 				rx_buffer->pagecnt_bias++;
 			}
@@ -2103,10 +2140,9 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 			total_rx_bytes += size;
 		} else if (skb) {
 			rnpm_add_rx_frag(rx_ring, rx_buffer, skb, size);
-#ifdef HAVE_SWIOTLB_SKIP_CPU_SYNC
 		} else if (ring_uses_build_skb(rx_ring)) {
-			skb = rnpm_build_skb(rx_ring, rx_buffer, &xdp, rx_desc);
-#endif
+			skb = rnpm_build_skb(rx_ring, rx_buffer, &xdp,
+					     rx_desc);
 		} else {
 			skb = rnpm_construct_skb(rx_ring, rx_buffer, &xdp,
 						 rx_desc);
@@ -2119,12 +2155,10 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 			break;
 		}
 
-#ifndef NO_PTP
 		if (module_enable_ptp && adapter->ptp_rx_en &&
 		    adapter->flags2 & RNPM_FLAG2_PTP_ENABLED) {
 			rnpm_ptp_get_rx_hwstamp(adapter, rx_desc, skb);
 		}
-#endif
 		rnpm_put_rx_buffer(rx_ring, rx_buffer, skb);
 		cleaned_count++;
 
@@ -2142,7 +2176,8 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 
 		/* populate checksum, timestamp, VLAN, and protocol */
 		rnpm_process_skb_fields(rx_ring, rx_desc, skb);
-
+		/* we should clean it since we used all info in it */
+		rx_desc->wb.cmd = 0;
 		rnpm_rx_skb(q_vector, skb);
 
 		/* update budget accounting */
@@ -2164,7 +2199,6 @@ static int rnpm_clean_rx_irq(struct rnpm_q_vector *q_vector,
 }
 #endif /* RNPM_OPTM_WITH_LPAGE */
 
-
 /**
  * rnpm_configure_msix - Configure MSI-X hardware
  * @adapter: board private structure
@@ -2180,13 +2214,16 @@ static void rnpm_configure_msix(struct rnpm_adapter *adapter)
 
 	// rnpm_dbg("[%s] num_q_vectors:%d\n", __func__, adapter->num_q_vectors);
 
-	/* configure ring-msix Registers table */
+	/*
+	 * configure ring-msix Registers table
+	 */
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		struct rnpm_ring *ring;
 
 		q_vector = adapter->q_vector[i];
-		rnpm_for_each_ring(ring, q_vector->rx) rnpm_set_ring_vector(
-			adapter, ring->rnpm_queue_idx, q_vector->v_idx);
+		rnpm_for_each_ring(ring, q_vector->rx)
+			rnpm_set_ring_vector(adapter, ring->rnpm_queue_idx,
+					     q_vector->v_idx);
 	}
 }
 
@@ -2204,7 +2241,7 @@ static inline bool rnpm_container_is_rx(struct rnpm_q_vector *q_vector,
  * when it needs to update EITR registers at runtime.  Hardware
  * specific quirks/differences are taken care of here.
  */
-void rnpm_write_eitr(struct rnpm_q_vector *q_vector, bool is_rxframe)
+static void rnpm_write_eitr(struct rnpm_q_vector *q_vector, bool is_rxframe)
 {
 	struct rnpm_adapter *adapter = q_vector->adapter;
 	struct rnpm_hw *hw = &adapter->hw;
@@ -2212,15 +2249,19 @@ void rnpm_write_eitr(struct rnpm_q_vector *q_vector, bool is_rxframe)
 	u32 itr_reg = q_vector->adapter->rx_usecs * hw->usecstocount;
 
 	if (is_rxframe) {
-		rnpm_for_each_ring(ring, q_vector->rx) wr32(
-			hw,
-			RNPM_DMA_REG_RX_INT_DELAY_PKTCNT(ring->rnpm_queue_idx),
-			q_vector->itr);
+		rnpm_for_each_ring(ring, q_vector->rx) {
+			wr32(hw,
+			     RNPM_DMA_REG_RX_INT_DELAY_PKTCNT(
+				     ring->rnpm_queue_idx),
+			     q_vector->itr);
+		}
 	} else {
-		rnpm_for_each_ring(ring, q_vector->rx) wr32(
-			hw,
-			RNPM_DMA_REG_RX_INT_DELAY_TIMER(ring->rnpm_queue_idx),
-			itr_reg);
+		rnpm_for_each_ring(ring, q_vector->rx) {
+			wr32(hw,
+			     RNPM_DMA_REG_RX_INT_DELAY_TIMER(
+				     ring->rnpm_queue_idx),
+			     itr_reg);
+		}
 	}
 }
 
@@ -2258,17 +2299,19 @@ static int rnpm_update_itr_by_packets(int speed, int poll_packets, int itr)
 				itr += t ? t : 1;
 			} else {
 				if (itr >= (poll_packets + 2)) {
-					t = DIV_ROUND_UP(itr - poll_packets, 2);
+					t = DIV_ROUND_UP(
+						itr - poll_packets, 2);
 					itr -= t ? 2 : 1;
-				} else
+				} else {
 					itr--;
+				}
 			}
 		}
 		if (itr < 3)
 			itr = 3;
 	} else {
 		/* 100M/10M */
-		if (((poll_packets - itr) == 1) && (itr != 1)) {
+		if (((poll_packets - itr) == 1) && itr != 1) {
 			/* Hold this itr */
 		} else {
 			if (poll_packets >= itr) {
@@ -2345,7 +2388,7 @@ static bool rnpm_update_rxf(struct rnpm_q_vector *q_vector,
 	if (time_after_eq(next_update, ring_container->next_update)) {
 		avg_wire_size = bytes / packets;
 		if (rnpm_container_is_rx(q_vector, ring_container) &&
-		    (speed > SPEED_100)) {
+		    speed > SPEED_100) {
 			/* If Rx and there are 1 to 23 packets and bytes are less than
 			 * 12112 assume insufficient data to use bulk rate limiting
 			 * approach. Instead we will focus on simply trying to target
@@ -2354,8 +2397,9 @@ static bool rnpm_update_rxf(struct rnpm_q_vector *q_vector,
 			 */
 			if (packets && packets < (24 + off_1) &&
 			    bytes < 12112 * DIV_ROUND_UP(factor, 2)) {
-				if ((packets <= 3) && (avg_wire_size <= 1120) &&
-				    (avg_wire_size >= 768))
+				if (packets <= 3 &&
+				    avg_wire_size <= 1120 &&
+				    avg_wire_size >= 768)
 					itr = 2;
 				else
 					itr = 1;
@@ -2380,13 +2424,15 @@ static bool rnpm_update_rxf(struct rnpm_q_vector *q_vector,
 		}
 
 		if (poll_packets <= (32 + off_2)) {
-			if ((poll_packets <= 3) && (avg_wire_size <= 1120) &&
-			    (speed > SPEED_100)) {
+			if (poll_packets <= 3 &&
+			    avg_wire_size <= 1120 &&
+			    speed > SPEED_100) {
 				/* 1K - 2K bytes*/
 				itr = 2;
 			} else {
-				itr = rnpm_update_itr_by_packets(
-					speed, poll_packets, itr);
+				itr = rnpm_update_itr_by_packets(speed,
+								 poll_packets,
+								 itr);
 			}
 		} else {
 			/* Mabey too large */
@@ -2482,8 +2528,8 @@ rnpm_update_itr(struct rnpm_q_vector *q_vector,
 		if (packets && packets < 24 && bytes < 12112) {
 			itr = RNPM_ITR_ADAPTIVE_MIN_USECS;
 			avg_wire_size = bytes + packets * 24;
-			avg_wire_size = clamp_t(unsigned int, avg_wire_size,
-						128, 12800);
+			avg_wire_size = clamp_t(unsigned int,
+						avg_wire_size, 128, 12800);
 			goto adjust_for_speed;
 		}
 	}
@@ -2505,7 +2551,8 @@ rnpm_update_itr(struct rnpm_q_vector *q_vector,
 		if (packets && packets < 8) {
 			itr += RNPM_ITR_ADAPTIVE_LATENCY;
 		} else {
-			itr = q_vector->itr + RNPM_ITR_ADAPTIVE_MIN_INC * 3;
+			itr = q_vector->itr +
+			      RNPM_ITR_ADAPTIVE_MIN_INC * 3;
 			if (itr > RNPM_ITR_ADAPTIVE_MAX_USECS)
 				itr = RNPM_ITR_ADAPTIVE_MAX_USECS;
 		}
@@ -2603,8 +2650,8 @@ adjust_for_speed:
 clear_counts:
 	/* write back value */
 	if (ring_container->itr >= (itr + 12)) {
-		ring_container->itr =
-			(ring_container->itr >> 1) + RNPM_ITR_ADAPTIVE_MIN_INC;
+		ring_container->itr = (ring_container->itr >> 1) +
+				      RNPM_ITR_ADAPTIVE_MIN_INC;
 	} else {
 		ring_container->itr = itr;
 	}
@@ -2638,8 +2685,9 @@ enum latency_range {
 	bulk_latency = 2,
 	latency_invalid = 255
 };
-__maybe_unused static void rnpm_check_sfp_event(struct rnpm_adapter *adapter,
-						u32 eicr)
+
+__maybe_unused static void
+rnpm_check_sfp_event(struct rnpm_adapter *adapter, u32 eicr)
 {
 	// struct rnpm_hw *hw = &adapter->hw;
 }
@@ -2654,12 +2702,9 @@ static inline void rnpm_irq_enable_queues(struct rnpm_adapter *adapter,
 		// clear irq
 		// rnpm_wr_reg(ring->dma_int_clr, RX_INT_MASK | TX_INT_MASK);
 		// wmb();
-#ifdef CONFIG_RNPM_DISABLE_TX_IRQ
-		rnpm_wr_reg(ring->dma_int_mask, ~(RX_INT_MASK));
-#else
-		rnpm_wr_reg(ring->dma_int_mask, ~(RX_INT_MASK | TX_INT_MASK));
+		rnpm_wr_reg(ring->dma_int_mask,
+			    ~(u32)(RX_INT_MASK | TX_INT_MASK));
 		// rnpm_wr_reg(ring->dma_int_mask, ~(RX_INT_MASK));
-#endif
 	}
 }
 
@@ -2668,10 +2713,12 @@ static inline void rnpm_irq_disable_queues(struct rnpm_q_vector *q_vector)
 	struct rnpm_ring *ring;
 
 	rnpm_for_each_ring(ring, q_vector->tx) {
-		rnpm_wr_reg(ring->dma_int_mask, (RX_INT_MASK | TX_INT_MASK));
+		rnpm_wr_reg(ring->dma_int_mask,
+			    (RX_INT_MASK | TX_INT_MASK));
 		// rnpm_wr_reg(ring->dma_int_clr, RX_INT_MASK | TX_INT_MASK);
 	}
 }
+
 /**
  * rnpm_irq_enable - Enable default interrupt generation settings
  * @adapter: board private structure
@@ -2697,8 +2744,9 @@ static void rnpm_htimer_start(struct rnpm_q_vector *q_vector)
 {
 	unsigned long ns = q_vector->irq_check_usecs * NSEC_PER_USEC / 2;
 
-	hrtimer_start_range_ns(&q_vector->irq_miss_check_timer, ns_to_ktime(ns),
-			       ns, HRTIMER_MODE_REL_PINNED);
+	hrtimer_start_range_ns(&q_vector->irq_miss_check_timer,
+			       ns_to_ktime(ns), ns,
+			       HRTIMER_MODE_REL_PINNED);
 }
 
 static void rnpm_htimer_stop(struct rnpm_q_vector *q_vector)
@@ -2744,8 +2792,9 @@ int rnpm_poll(struct napi_struct *napi, int budget)
 	    test_bit(__RNPM_DOWN, &adapter->state))
 		return budget;
 
-	rnpm_for_each_ring(ring, q_vector->tx) clean_complete &=
-		!!rnpm_clean_tx_irq(q_vector, ring, budget);
+	rnpm_for_each_ring(ring, q_vector->tx)
+		clean_complete &=
+			!!rnpm_clean_tx_irq(q_vector, ring, budget);
 
 	if (budget <= 0)
 		return budget;
@@ -2759,10 +2808,10 @@ int rnpm_poll(struct napi_struct *napi, int budget)
 		per_ring_budget = budget;
 	rnpm_for_each_ring(ring, q_vector->rx) {
 		int cleaned = 0;
-
 		/* this ring is waitting to reset rx_len*/
 		/* avoid to deal this ring until reset done */
-		if (likely(!(ring->ring_flags & RNPM_RING_FLAG_DO_RESET_RX_LEN)))
+		if (likely(!(ring->ring_flags &
+			     RNPM_RING_FLAG_DO_RESET_RX_LEN)))
 			cleaned = rnpm_clean_rx_irq(q_vector, ring,
 						    per_ring_budget);
 		/* check delay rx setup */
@@ -2785,7 +2834,8 @@ int rnpm_poll(struct napi_struct *napi, int budget)
 			} else {
 				// start rx again
 				wr32(hw,
-				     RNPM_DMA_RX_START(ring->rnpm_queue_idx),
+				     RNPM_DMA_RX_START(
+					     ring->rnpm_queue_idx),
 				     1);
 			}
 		}
@@ -2794,8 +2844,12 @@ int rnpm_poll(struct napi_struct *napi, int budget)
 			clean_complete = false;
 	}
 
+	/* all work done, exit the polling mode */
+	// napi_complete(napi);
+
 	/* If all work not completed, return budget and keep polling */
 	if (!clean_complete) {
+		// check
 		int cpu_id = smp_processor_id();
 
 		/* It is possible that the interrupt affinity has changed but,
@@ -2807,14 +2861,18 @@ int rnpm_poll(struct napi_struct *napi, int budget)
 		 */
 		if (!cpumask_test_cpu(cpu_id, &q_vector->affinity_mask)) {
 			/* Tell napi that we are done polling */
+			// napi_complete_done(napi, work_done);
+			// printk("affinity error\n");
+
+			/* Force an interrupt */
+			// rnpm_force_wb(vsi, q_vector);
 			napi_complete_done(napi, work_done);
 			// printk("irq affinity\n");
 			if (!test_bit(__RNPM_DOWN, &adapter->state))
 				rnpm_irq_enable_queues(adapter, q_vector);
 				/* we need this to ensure riq start before tx start */
 #ifdef TX_IRQ_MISS_REDUCE
-			/* memory barrior */
-			smp_mb();
+			smp_mb(); /* memory barrier need */
 			rnpm_for_each_ring(ring, q_vector->tx)
 				rnpm_check_restart_tx(q_vector, ring);
 #endif
@@ -2836,22 +2894,22 @@ int rnpm_poll(struct napi_struct *napi, int budget)
 	}
 
 	if (likely(napi_complete_done(napi, work_done))) {
+		/* try to do itr handle */
+		// if (adapter->rx_itr_setting == 1)
 		rnpm_set_itr(q_vector);
 		/* only open irq if not down */
-		if (!test_bit(__RNPM_DOWN, &adapter->state))
+		if (!test_bit(__RNPM_DOWN, &adapter->state)) {
 			rnpm_irq_enable_queues(adapter, q_vector);
 			/* we need this to ensure irq start before tx start */
 #ifdef TX_IRQ_MISS_REDUCE
-		/* memory barrior */
-		smp_mb();
-		rnpm_for_each_ring(ring, q_vector->tx) {
-			rnpm_check_restart_tx(q_vector, ring);
-		}
+			smp_mb(); /* memory barrier need */
+			rnpm_for_each_ring(ring, q_vector->tx) {
+				rnpm_check_restart_tx(q_vector, ring);
+			}
 #endif
+			rnpm_htimer_start(q_vector);
+		}
 	}
-	/* only open htimer if net not down */
-	if (!test_bit(__RNPM_DOWN, &adapter->state))
-		rnpm_htimer_start(q_vector);
 
 	return min(work_done, budget - 1);
 }
@@ -2867,8 +2925,8 @@ int rnpm_poll(struct napi_struct *napi, int budget)
 static void rnpm_irq_affinity_notify(struct irq_affinity_notify *notify,
 				     const cpumask_t *mask)
 {
-	struct rnpm_q_vector *q_vector =
-		container_of(notify, struct rnpm_q_vector, affinity_notify);
+	struct rnpm_q_vector *q_vector = container_of(
+		notify, struct rnpm_q_vector, affinity_notify);
 
 	cpumask_copy(&q_vector->affinity_mask, mask);
 }
@@ -2907,9 +2965,9 @@ static int rnpm_request_msix_irqs(struct rnpm_adapter *adapter)
 
 		// rnpm_dbg("use irq %d\n", entry->entry);
 		if (q_vector->tx.ring && q_vector->rx.ring) {
-			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
-				 "%s-%s-%d-%d", netdev->name, "TxRx", i,
-				 q_vector->v_idx);
+			snprintf(q_vector->name,
+				 sizeof(q_vector->name) - 1, "%s-%s-%d-%d",
+				 netdev->name, "TxRx", i, q_vector->v_idx);
 		} else {
 			WARN(!(q_vector->tx.ring && q_vector->rx.ring),
 			     "%s vector%d tx rx is null, v_idx:%d\n",
@@ -2926,10 +2984,13 @@ static int rnpm_request_msix_irqs(struct rnpm_adapter *adapter)
 			goto free_queue_irqs;
 		}
 		/* register for affinity change notifications */
-		q_vector->affinity_notify.notify = rnpm_irq_affinity_notify;
-		q_vector->affinity_notify.release = rnpm_irq_affinity_release;
+		q_vector->affinity_notify.notify =
+			rnpm_irq_affinity_notify;
+		q_vector->affinity_notify.release =
+			rnpm_irq_affinity_release;
 		irq_set_affinity_notifier(entry->vector,
 					  &q_vector->affinity_notify);
+
 		/* Spread affinity hints out across online CPUs.
 		 *
 		 * get_cpu_mask returns a static constant mask with
@@ -2945,13 +3006,17 @@ static int rnpm_request_msix_irqs(struct rnpm_adapter *adapter)
 free_queue_irqs:
 	while (i) {
 		i--;
-		irq_set_affinity_hint(adapter->msix_entries[i].vector, NULL);
+		irq_set_affinity_hint(adapter->msix_entries[i].vector,
+				      NULL);
 		irq_set_affinity_notifier(adapter->msix_entries[i].vector,
 					  NULL);
-		irq_set_affinity_hint(adapter->msix_entries[i].vector, NULL);
-		free_irq(adapter->msix_entries[i].vector, adapter->q_vector[i]);
+		irq_set_affinity_hint(adapter->msix_entries[i].vector,
+				      NULL);
+		free_irq(adapter->msix_entries[i].vector,
+			 adapter->q_vector[i]);
 	}
 
+	// pci_disable_msix(adapter->pdev);
 	kfree(adapter->msix_entries);
 	adapter->msix_entries = NULL;
 	return err;
@@ -2978,6 +3043,8 @@ static int rnpm_request_irq(struct rnpm_adapter *adapter)
 static void rnpm_free_irq(struct rnpm_adapter *adapter)
 {
 	int i;
+
+	// rnpm_dbg("[%s] num_q_vectors:%d\n", __func__, adapter->num_q_vectors);
 
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		struct rnpm_q_vector *q_vector = adapter->q_vector[i];
@@ -3010,7 +3077,7 @@ static inline void rnpm_irq_disable(struct rnpm_adapter *adapter)
 	}
 }
 
-int rnpm_xmit_nop_frame_ring(struct rnpm_adapter *adapter,
+static int rnpm_xmit_nop_frame_ring(struct rnpm_adapter *adapter,
 			     struct rnpm_ring *tx_ring)
 {
 	u16 i = tx_ring->next_to_use;
@@ -3020,8 +3087,10 @@ int rnpm_xmit_nop_frame_ring(struct rnpm_adapter *adapter,
 
 	/* set length to 0 */
 	tx_desc->blen_mac_ip_len = 0;
-	tx_desc->vlan_cmd = cpu_to_le32(RNPM_TXD_CMD_EOP | RNPM_TXD_CMD_RS);
-	/* Force memory writes to complete before letting h/w know there
+	tx_desc->vlan_cmd =
+		cpu_to_le32(RNPM_TXD_CMD_EOP | RNPM_TXD_CMD_RS);
+	/*
+	 * Force memory writes to complete before letting h/w know there
 	 * are new descriptors to fetch.  (Only applicable for weak-ordered
 	 * memory model archs, such as IA-64).
 	 *
@@ -3034,7 +3103,7 @@ int rnpm_xmit_nop_frame_ring(struct rnpm_adapter *adapter,
 	return 0;
 }
 
-int rnpm_xmit_nop_frame_ring_temp(struct rnpm_adapter *adapter,
+__maybe_unused static int rnpm_xmit_nop_frame_ring_temp(struct rnpm_adapter *adapter,
 				  struct rnpm_ring *tx_ring)
 {
 	u16 i = tx_ring->next_to_use;
@@ -3044,15 +3113,15 @@ int rnpm_xmit_nop_frame_ring_temp(struct rnpm_adapter *adapter,
 
 	/* set length to 0 */
 	tx_desc->blen_mac_ip_len = 0;
-	tx_desc->vlan_cmd = cpu_to_le32(RNPM_TXD_CMD_EOP | RNPM_TXD_CMD_RS);
+	tx_desc->vlan_cmd =
+		cpu_to_le32(RNPM_TXD_CMD_EOP | RNPM_TXD_CMD_RS);
 	/* update tail */
 	i++;
 	tx_desc++;
 	if (i == tx_ring->count)
 		i = 0;
 	tx_ring->next_to_use = i;
-	/* memory barrior */
-	wmb();
+	wmb(); /* memory barrier need */
 	rnpm_wr_reg(tx_ring->tail, i);
 	/* no need clean */
 	tx_ring->next_to_clean = i;
@@ -3066,16 +3135,17 @@ int rnpm_xmit_nop_frame_ring_temp(struct rnpm_adapter *adapter,
  * @queue_index: Tx queue to set
  * @maxrate: desired maximum transmit bitrate Mbps
  **/
-static int rnpm_tx_maxrate_own(struct rnpm_adapter *adapter, int queue_index)
+static int rnpm_tx_maxrate_own(struct rnpm_adapter *adapter,
+			       int queue_index)
 {
 	struct rnpm_ring *tx_ring = adapter->tx_ring[queue_index];
 	u64 real_rate = 0;
 	u32 maxrate = adapter->max_rate[queue_index];
 
 	if (!maxrate)
-		return rnpm_setup_tx_maxrate(adapter->hw.hw_addr, tx_ring, 0,
-					     adapter->hw.usecstocount *
-						     1000000);
+		return rnpm_setup_tx_maxrate(
+			adapter->hw.hw_addr, tx_ring, 0,
+			adapter->hw.usecstocount * 1000000);
 	/* we need turn it to bytes/s */
 	real_rate = (maxrate * 1024 * 1024) / 8;
 	rnpm_setup_tx_maxrate(adapter->hw.hw_addr, tx_ring, real_rate,
@@ -3109,7 +3179,8 @@ void rnpm_configure_tx_ring(struct rnpm_adapter *adapter,
 	ring->next_to_clean =
 		rd32(hw, RNPM_DMA_REG_TX_DESC_BUF_HEAD(queue_idx));
 	ring->next_to_use = ring->next_to_clean;
-	ring->tail = hw->hw_addr + RNPM_DMA_REG_TX_DESC_BUF_TAIL(queue_idx);
+	ring->tail =
+		hw->hw_addr + RNPM_DMA_REG_TX_DESC_BUF_TAIL(queue_idx);
 	rnpm_wr_reg(ring->tail, ring->next_to_use);
 
 	//	wr32(hw, RNPM_DMA_REG_TX_DESC_FETCH_CTRL(queue_idx),
@@ -3179,12 +3250,14 @@ static void rnpm_configure_tx(struct rnpm_adapter *adapter)
 }
 
 __maybe_unused static void
-rnpm_rx_desc_queue_enable(struct rnpm_adapter *adapter, struct rnpm_ring *ring)
+rnpm_rx_desc_queue_enable(struct rnpm_adapter *adapter,
+			  struct rnpm_ring *ring)
 {
 
 }
 
-void rnpm_disable_rx_queue(struct rnpm_adapter *adapter, struct rnpm_ring *ring)
+void rnpm_disable_rx_queue(struct rnpm_adapter *adapter,
+			   struct rnpm_ring *ring)
 {
 	struct rnpm_hw *hw = &adapter->hw;
 
@@ -3202,13 +3275,15 @@ void rnpm_configure_rx_ring(struct rnpm_adapter *adapter,
 	rnpm_disable_rx_queue(adapter, ring);
 
 	/* set descripts registers*/
-	wr32(hw, RNPM_DMA_REG_RX_DESC_BUF_BASE_ADDR_LO(q_idx), (u32)desc_phy);
+	wr32(hw, RNPM_DMA_REG_RX_DESC_BUF_BASE_ADDR_LO(q_idx),
+	     (u32)desc_phy);
 	wr32(hw, RNPM_DMA_REG_RX_DESC_BUF_BASE_ADDR_HI(q_idx),
 	     ((u32)(desc_phy >> 32)) | (hw->pfvfnum << 24));
 	wr32(hw, RNPM_DMA_REG_RX_DESC_BUF_LEN(q_idx), ring->count);
 
 	ring->tail = hw->hw_addr + RNPM_DMA_REG_RX_DESC_BUF_TAIL(q_idx);
-	ring->next_to_clean = rd32(hw, RNPM_DMA_REG_RX_DESC_BUF_HEAD(q_idx));
+	ring->next_to_clean =
+		rd32(hw, RNPM_DMA_REG_RX_DESC_BUF_HEAD(q_idx));
 	ring->next_to_use = ring->next_to_clean;
 
 	wr32(hw, RNPM_DMA_REG_RX_DESC_FETCH_CTRL(q_idx),
@@ -3218,7 +3293,8 @@ void rnpm_configure_rx_ring(struct rnpm_adapter *adapter,
 	);
 	wr32(hw, RNPM_DMA_REG_RX_INT_DELAY_TIMER(q_idx),
 	     adapter->rx_usecs * hw->usecstocount);
-	wr32(hw, RNPM_DMA_REG_RX_INT_DELAY_PKTCNT(q_idx), adapter->rx_frames);
+	wr32(hw, RNPM_DMA_REG_RX_INT_DELAY_PKTCNT(q_idx),
+	     adapter->rx_frames);
 	rnpm_alloc_rx_buffers(ring, rnpm_desc_unused_rx(ring));
 	/* enable receive descriptor ring */
 	// wr32(hw, RNPM_DMA_RX_START(q_idx), 1);
@@ -3271,7 +3347,6 @@ static void rnpm_set_rx_buffer_len(struct rnpm_adapter *adapter)
 		rx_ring = adapter->rx_ring[i];
 		clear_bit(__RNPM_RX_3K_BUFFER, &rx_ring->state);
 		clear_bit(__RNPM_RX_BUILD_SKB_ENABLED, &rx_ring->state);
-#ifdef HAVE_SWIOTLB_SKIP_CPU_SYNC
 		set_bit(__RNPM_RX_BUILD_SKB_ENABLED, &rx_ring->state);
 		hw_dbg(&adapter->hw, "set build skb\n");
 
@@ -3282,11 +3357,6 @@ static void rnpm_set_rx_buffer_len(struct rnpm_adapter *adapter)
 			//	set_bit(__RNPM_RX_3K_BUFFER, &rx_ring->state);
 #endif
 
-#else /* !HAVE_SWIOTLB_SKIP_CPU_SYNC */
-		/* FIXME */
-		hw_dbg(&adapter->hw, "set construct skb\n");
-
-#endif /* HAVE_SWIOTLB_SKIP_CPU_SYNC */
 #ifdef RNPM_OPTM_WITH_LPAGE
 		rx_ring->rx_page_buf_nums = RNPM_PAGE_BUFFER_NUMS(rx_ring);
 		// we can fixed 2k ?
@@ -3315,16 +3385,20 @@ static void rnpm_configure_rx(struct rnpm_adapter *adapter)
 	struct rnpm_ring *rx_ring = adapter->rx_ring[0];
 #endif
 
-
-
 	/* set_rx_buffer_len must be called before ring initialization */
 	rnpm_set_rx_buffer_len(adapter);
 
-	/* Setup the HW Rx Head and Tail Descriptor Pointers and
+	/* set_rx_buffer_len must be called before ring initialization */
+	// rnpm_set_rx_buffer_len(adapter);
+
+	/*
+	 * Setup the HW Rx Head and Tail Descriptor Pointers and
 	 * the Base and Length of the Rx Descriptor Ring
 	 */
 	for (i = 0; i < adapter->num_rx_queues; i++)
 		rnpm_configure_rx_ring(adapter, adapter->rx_ring[i]);
+
+	rnpm_ipsec_rss_update_args(adapter);
 
 	if (adapter->pf_adapter->default_rx_ring > 0) {
 		wr32(hw, RNPM_ETH_DEFAULT_RX_RING,
@@ -3338,13 +3412,15 @@ static void rnpm_configure_rx(struct rnpm_adapter *adapter)
 #endif
 	if (!hw->dma_split_size)
 		hw->dma_split_size = RNPM_RXBUFFER_1536;
-		/* dma split size need cal by skb headroom and tailroom */
+
+	/* dma split size need cal by skb headroom and tailroom */
 #define RNPM_DMA_RESPLIT_SIZE (hw->dma_split_size >> 4)
 	dbg("%s: dma_split_size=%d page_size=%d rx_page_size=%d rx_offset=%d skb_shared_info=%d\n",
-	    __func__, hw->dma_split_size, PAGE_SIZE, rnpm_rx_pg_size(rx_ring),
-	    rnpm_rx_offset(rx_ring), sizeof(struct skb_shared_info));
-	rnpm_setup_dma_rx(adapter, RNPM_DMA_RESPLIT_SIZE);
+	    __func__, hw->dma_split_size, PAGE_SIZE,
+	    rnpm_rx_pg_size(rx_ring), rnpm_rx_offset(rx_ring),
+	    sizeof(struct skb_shared_info));
 
+	rnpm_setup_dma_rx(adapter, RNPM_DMA_RESPLIT_SIZE);
 	/* enable all receives */
 	rxctrl |= 0;
 
@@ -3355,12 +3431,8 @@ static void rnpm_configure_rx(struct rnpm_adapter *adapter)
 	hw->mac.ops.enable_rx_dma(hw, rxctrl);
 }
 
-#ifdef NETIF_F_HW_VLAN_CTAG_TX
 static int rnpm_vlan_rx_add_vid(struct net_device *netdev,
 				__always_unused __be16 proto, u16 vid)
-#else /* !NETIF_F_HW_VLAN_CTAG_TX */
-static int rnpm_vlan_rx_add_vid(struct net_device *netdev, u16 vid)
-#endif /* NETIF_F_HW_VLAN_CTAG_TX */
 {
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
@@ -3368,38 +3440,48 @@ static int rnpm_vlan_rx_add_vid(struct net_device *netdev, u16 vid)
 	int port = 0;
 	unsigned long flags;
 
+	if (!pf_support_vlan0) {
+		if (!vid)
+			return 0;
+	}
+
 	if (hw->mac.vlan_location == rnpm_vlan_location_nic) {
 		if (hw->mac.ops.set_vfta) {
 			if (vid < VLAN_N_VID) {
 				set_bit(vid, adapter->active_vlans);
-				spin_lock_irqsave(&pf_adapter->vlan_setup_lock,
-						  flags);
+				spin_lock_irqsave(
+					&pf_adapter->vlan_setup_lock,
+					flags);
 				set_bit(vid, pf_adapter->active_vlans);
 				spin_unlock_irqrestore(
-					&pf_adapter->vlan_setup_lock, flags);
+					&pf_adapter->vlan_setup_lock,
+					flags);
 			}
 			/* add VID to filter table */
-			spin_lock_irqsave(&pf_adapter->vlan_setup_lock, flags);
+			spin_lock_irqsave(&pf_adapter->vlan_setup_lock,
+					  flags);
 			hw->mac.ops.set_vfta(&adapter->hw, vid, VMDQ_P(0),
 					     true);
-			spin_unlock_irqrestore(&pf_adapter->vlan_setup_lock,
-					       flags);
+			spin_unlock_irqrestore(
+				&pf_adapter->vlan_setup_lock, flags);
 		}
 	} else {
 		if (hw->mac.ops.set_vfta_mac) {
 			if (vid < VLAN_N_VID)
 				set_bit(vid, adapter->active_vlans);
-			hw->mac.ops.set_vfta_mac(&adapter->hw, vid, VMDQ_P(0),
-						 true);
+			hw->mac.ops.set_vfta_mac(&adapter->hw, vid,
+						 VMDQ_P(0), true);
 		}
 	}
 
+	/* todo */
 	if (adapter->flags & RNPM_FLAG_SRIOV_ENABLED) {
 		u8 vfnum = RNPM_MAX_VF_CNT - 1;
 
 		if (rd32(hw, RNPM_DMA_VERSION) >= 0x20201231) {
 			for (port = 0; port < 4; port++)
-				wr32(hw, RNPM_DMA_PORT_VEB_VID_TBL(port, vfnum),
+				wr32(hw,
+				     RNPM_DMA_PORT_VEB_VID_TBL(port, vfnum),
 				     vid);
 		} else {
 			wr32(hw,
@@ -3414,12 +3496,15 @@ static int rnpm_vlan_rx_kill_vid(struct net_device *netdev,
 				 __always_unused __be16 proto, u16 vid)
 {
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
-	struct rnpm_pf_adapter __maybe_unused *pf_adapter = adapter->pf_adapter;
+	struct rnpm_pf_adapter __maybe_unused *pf_adapter =
+		adapter->pf_adapter;
 	struct rnpm_hw *hw = &adapter->hw;
 	unsigned long flags;
 
-	if (!vid)
-		return 0;
+	if (!pf_support_vlan0) {
+		if (!vid)
+			return 0;
+	}
 
 	if (hw->mac.ops.set_vfta) {
 		/* remove VID from filter table only in no mutiport mode */
@@ -3438,15 +3523,15 @@ static int rnpm_vlan_rx_kill_vid(struct net_device *netdev,
 			int i;
 			/* if use mac vlan table */
 			/* clear hash table */
-			wr32(&adapter->hw, RNPM_MAC_VLAN_HASH_TB(adapter->port),
-			     0);
+			wr32(&adapter->hw,
+			     RNPM_MAC_VLAN_HASH_TB(adapter->port), 0);
 			/* update vlan hash table in mac */
 			for_each_set_bit(i, adapter->active_vlans,
-					  VLAN_N_VID) {
+					 VLAN_N_VID) {
 				if (hw->mac.ops.set_vfta_mac) {
-					hw->mac.ops.set_vfta_mac(&adapter->hw,
-								 i, VMDQ_P(0),
-								 true);
+					hw->mac.ops.set_vfta_mac(
+						&adapter->hw, i, VMDQ_P(0),
+						true);
 				}
 			}
 			rnpm_ncsi_set_vfta_mac_generic(hw);
@@ -3455,15 +3540,15 @@ static int rnpm_vlan_rx_kill_vid(struct net_device *netdev,
 	} else {
 		spin_lock_irqsave(&pf_adapter->vlan_setup_lock, flags);
 		clear_bit(vid, pf_adapter->active_vlans);
-		spin_unlock_irqrestore(&pf_adapter->vlan_setup_lock, flags);
+		spin_unlock_irqrestore(&pf_adapter->vlan_setup_lock,
+				       flags);
 	}
 
 	return 0;
 }
 
-
-
-static u32 rnpm_vlan_filter_status_update(struct rnpm_pf_adapter *pf_adapter)
+static u32
+rnpm_vlan_filter_status_update(struct rnpm_pf_adapter *pf_adapter)
 {
 	int i;
 	u32 status = 1;
@@ -3483,7 +3568,8 @@ static u32 rnpm_vlan_filter_status_update(struct rnpm_pf_adapter *pf_adapter)
  * rnpm_vlan_filter_disable - helper to disable hw vlan filtering
  * @adapter: driver data
  */
-static void __maybe_unused rnpm_vlan_filter_disable(struct rnpm_adapter *adapter)
+static void __maybe_unused
+rnpm_vlan_filter_disable(struct rnpm_adapter *adapter)
 {
 	struct rnpm_hw *hw = &adapter->hw;
 	struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
@@ -3491,7 +3577,8 @@ static void __maybe_unused rnpm_vlan_filter_disable(struct rnpm_adapter *adapter
 
 	pf_adapter->vlan_filter_status[port] = 0;
 	if (hw->mac.vlan_location == rnpm_vlan_location_nic) {
-		adapter->flags_feature |= RNPM_FLAG_DELAY_UPDATE_VLAN_FILTER;
+		adapter->flags_feature |=
+			RNPM_FLAG_DELAY_UPDATE_VLAN_FILTER;
 		/* off vlan filter if any port vlan filter off*/
 		if (!rnpm_vlan_filter_status_update(pf_adapter))
 			rnpm_vlan_filter_off(hw);
@@ -3510,7 +3597,8 @@ static void __maybe_unused rnpm_vlan_filter_disable(struct rnpm_adapter *adapter
  * rnpm_vlan_filter_enable - helper to enable hw vlan filtering
  * @adapter: driver data
  */
-static void __maybe_unused rnpm_vlan_filter_enable(struct rnpm_adapter *adapter)
+static void __maybe_unused
+rnpm_vlan_filter_enable(struct rnpm_adapter *adapter)
 {
 	struct rnpm_hw *hw = &adapter->hw;
 	struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
@@ -3519,7 +3607,8 @@ static void __maybe_unused rnpm_vlan_filter_enable(struct rnpm_adapter *adapter)
 	pf_adapter->vlan_filter_status[port] = 1;
 	/* open vlan filter if all port vlan filter on*/
 	if (hw->mac.vlan_location == rnpm_vlan_location_nic) {
-		adapter->flags_feature |= RNPM_FLAG_DELAY_UPDATE_VLAN_FILTER;
+		adapter->flags_feature |=
+			RNPM_FLAG_DELAY_UPDATE_VLAN_FILTER;
 		if (rnpm_vlan_filter_status_update(pf_adapter))
 			rnpm_vlan_filter_on(hw);
 	} else {
@@ -3574,8 +3663,10 @@ static void rnpm_restore_vlan(struct rnpm_adapter *adapter)
 	struct rnpm_hw *hw = &adapter->hw;
 
 	rnpm_vlan_rx_add_vid(adapter->netdev, htons(ETH_P_8021Q), 0);
+
 	for_each_set_bit(vid, adapter->active_vlans, VLAN_N_VID)
-		rnpm_vlan_rx_add_vid(adapter->netdev, htons(ETH_P_8021Q), vid);
+		rnpm_vlan_rx_add_vid(adapter->netdev, htons(ETH_P_8021Q),
+				     vid);
 
 	/* config vlan mode for mac */
 	wr32(hw, RNPM_MAC_TX_VLAN_MODE(adapter->port), 0x00100000);
@@ -3637,7 +3728,8 @@ static int rnpm_write_uc_addr_list(struct net_device *netdev)
 			if (hw->mac.mc_location == rnpm_mc_location_mac) {
 				hw->mac.ops.set_rar_mac(
 					hw, rar_entries - adapter->uc_off,
-					ha->addr, VMDQ_P(0), adapter->port);
+					ha->addr, VMDQ_P(0),
+					adapter->port);
 			}
 			rar_entries--;
 			count++;
@@ -3645,14 +3737,14 @@ static int rnpm_write_uc_addr_list(struct net_device *netdev)
 	}
 	/* write the addresses in reverse order to avoid write combining */
 
-	hw_dbg(hw, "%s: Clearing RAR[%d - %d]\n", __func__, adapter->uc_off + 1,
-	       rar_entries);
+	hw_dbg(hw, "%s: Clearing RAR[%d - %d]\n", __func__,
+	       adapter->uc_off + 1, rar_entries);
 	for (; rar_entries > adapter->uc_off; rar_entries--) {
 		hw->mac.ops.clear_rar(hw, rar_entries);
 		if (hw->mac.mc_location == rnpm_mc_location_mac) {
-			hw->mac.ops.clear_rar_mac(hw,
-						  rar_entries - adapter->uc_off,
-						  adapter->port);
+			hw->mac.ops.clear_rar_mac(
+				hw, rar_entries - adapter->uc_off,
+				adapter->port);
 		}
 	}
 	rnpm_ncsi_set_uc_addr_generic(hw);
@@ -3710,6 +3802,7 @@ void rnpm_set_rx_mode(struct net_device *netdev)
 		fctrl_mac |= RNPM_RX_ALL;
 		/* disable hardware filter vlans in promisc mode */
 		features &= ~NETIF_F_HW_VLAN_CTAG_FILTER;
+		/* close vlan offload */
 		features &= ~NETIF_F_HW_VLAN_CTAG_RX;
 	} else {
 		if (netdev->flags & IFF_ALLMULTI) {
@@ -3721,8 +3814,10 @@ void rnpm_set_rx_mode(struct net_device *netdev)
 			 * then we should just turn on promiscuous mode so
 			 * that we can at least receive multicast traffic
 			 */
-			count = hw->mac.ops.update_mc_addr_list(hw, netdev);
+			count = hw->mac.ops.update_mc_addr_list(hw,
+								netdev);
 			if (count < 0) {
+				pr_err("open mpe\n");
 				fctrl |= RNPM_FCTRL_MPE;
 				fctrl_mac |= RNPM_RX_ALL_MUL;
 				// mcstctrl &= ~RNPM_MCSTCTRL_MULTICASE_TBL_EN;
@@ -3735,7 +3830,8 @@ void rnpm_set_rx_mode(struct net_device *netdev)
 
 	// test mode
 	// fctrl_mac |= RNPM_RX_ALL;
-	/* Write addresses to available RAR registers, if there is not
+	/*
+	 * Write addresses to available RAR registers, if there is not
 	 * sufficient space to store all the addresses then enable
 	 * unicast promiscuous mode
 	 */
@@ -3770,7 +3866,6 @@ void rnpm_set_rx_mode(struct net_device *netdev)
 
 		rnpm_setup_fctrl(hw);
 	}
-
 	if (features & NETIF_F_HW_VLAN_CTAG_FILTER)
 		rnpm_vlan_filter_enable(adapter);
 	else
@@ -3780,6 +3875,8 @@ void rnpm_set_rx_mode(struct net_device *netdev)
 		rnpm_vlan_strip_enable(adapter);
 	else
 		rnpm_vlan_strip_disable(adapter);
+	/* features not write back ?*/
+	/* no need this */
 }
 
 static void rnpm_napi_enable_all(struct rnpm_adapter *adapter)
@@ -3815,21 +3912,6 @@ static void rnpm_napi_disable_all(struct rnpm_adapter *adapter)
 	}
 }
 
-#ifdef CONFIG_RNPM_DCB
-/**
- * rnpm_configure_dcb - Configure DCB hardware
- * @adapter: rnpm adapter struct
- *
- * This is called by the driver on open to configure the DCB hardware.
- * This is also called by the gennetlink interface when reconfiguring
- * the DCB state.
- */
-static void rnpm_configure_dcb(struct rnpm_adapter *adapter)
-{
-
-}
-#endif
-
 /* Additional bittime to account for RNPM framing */
 #define RNPM_ETH_FRAMING 20
 
@@ -3839,7 +3921,8 @@ static void rnpm_configure_dcb(struct rnpm_adapter *adapter)
  * @adapter: board private structure to calculate for
  * @pb: packet buffer to calculate
  */
-__maybe_unused static int rnpm_hpbthresh(struct rnpm_adapter *adapter, int pb)
+__maybe_unused static int rnpm_hpbthresh(struct rnpm_adapter *adapter,
+					 int pb)
 {
 	int marker = 0;
 
@@ -3854,12 +3937,14 @@ __maybe_unused static int rnpm_hpbthresh(struct rnpm_adapter *adapter, int pb)
  */
 __maybe_unused static int rnpm_lpbthresh(struct rnpm_adapter *adapter)
 {
-
 	return 0;
 }
 
-/* rnpm_pbthresh_setup - calculate and setup high low water marks */
-__maybe_unused static void rnpm_pbthresh_setup(struct rnpm_adapter *adapter)
+/*
+ * rnpm_pbthresh_setup - calculate and setup high low water marks
+ */
+__maybe_unused static void
+rnpm_pbthresh_setup(struct rnpm_adapter *adapter)
 {
 
 }
@@ -3886,27 +3971,29 @@ static void rnpm_fdir_filter_restore(struct rnpm_adapter *adapter)
 	}
 
 	/* setup ntuple */
-	hlist_for_each_entry_safe(filter, node2, &adapter->fdir_filter_list,
-				   fdir_node) {
+	hlist_for_each_entry_safe(filter, node2,
+				  &adapter->fdir_filter_list, fdir_node) {
 		rnpm_fdir_write_perfect_filter(
-			adapter->fdir_mode, hw, &filter->filter, filter->hw_idx,
+			adapter->fdir_mode, hw, &filter->filter,
+			filter->hw_idx,
 			(filter->action == RNPM_FDIR_DROP_QUEUE) ?
-				      RNPM_FDIR_DROP_QUEUE :
-				      adapter->rx_ring[filter->action]
+				RNPM_FDIR_DROP_QUEUE :
+				adapter->rx_ring[filter->action]
 					->rnpm_queue_idx);
 	}
 
 	spin_unlock_irqrestore(&adapter->fdir_perfect_lock, flags);
 }
 
-__maybe_unused static void rnpm_configure_pause(struct rnpm_adapter *adapter)
+__maybe_unused static void
+rnpm_configure_pause(struct rnpm_adapter *adapter)
 {
 	struct rnpm_hw *hw = &adapter->hw;
 
 	hw->mac.ops.fc_enable(hw);
 }
 
-void rnpm_vlan_stags_flag(struct rnpm_adapter *adapter)
+static void rnpm_vlan_stags_flag(struct rnpm_adapter *adapter)
 {
 	struct rnpm_hw *hw = &adapter->hw;
 	u8 port = adapter->port;
@@ -3938,11 +4025,8 @@ static void rnpm_configure(struct rnpm_adapter *adapter)
 
 	rnpm_configure_pb(adapter); // setup high low water
 
-#ifdef CONFIG_RNPM_DCB
-	rnpm_configure_dcb(adapter);
-#endif
-
-	/* We must restore virtualization before VLANs or else
+	/*
+	 * We must restore virtualization before VLANs or else
 	 * the VLVF registers will not be populated
 	 */
 	rnpm_configure_virtualization(adapter);
@@ -4005,7 +4089,8 @@ static inline bool rnpm_is_sfp(struct rnpm_hw *hw)
  **/
 static void rnpm_sfp_link_config(struct rnpm_adapter *adapter)
 {
-	/* We are assuming the worst case scenario here, and that
+	/*
+	 * We are assuming the worst case scenario here, and that
 	 * is that an SFP was inserted/removed after the reset
 	 * but before SFP detection was enabled.  As such the best
 	 * solution is to just start searching as soon as we start
@@ -4028,40 +4113,45 @@ static int rnpm_non_sfp_link_config(struct rnpm_hw *hw)
 	return ret;
 }
 
-void control_mac_rx(struct rnpm_adapter *adapter, bool on)
+static void control_mac_rx(struct rnpm_adapter *adapter, bool on)
 {
 	struct rnpm_hw *hw = &adapter->hw;
 	u8 port = adapter->port;
 	u32 value = 0;
 	u32 count = 0;
 
-	if (pci_channel_offline(hw->pdev))
-		return;
-
 	if (on) {
 		wr32(hw, RNPM_ETH_RX_PROGFULL_THRESH_PORT(adapter->port),
 		     RECEIVE_ALL_THRESH);
 		do {
-			wr32(hw, RNPM_MAC_RX_CFG(port),
-			     rd32(hw, RNPM_MAC_RX_CFG(port)) | 0x01 |
-				     RNPM_MAX_RX_CFG_IPC);
+			value = rd32(hw, RNPM_MAC_RX_CFG(port)) | 0x01;
+			value = adapter->mac_ipc_off ?
+					value & ~RNPM_MAX_RX_CFG_IPC :
+					value | RNPM_MAX_RX_CFG_IPC;
+			wr32(hw, RNPM_MAC_RX_CFG(port), value);
 			usleep_range(100, 200);
 			value = rd32(hw, RNPM_MAC_RX_CFG(port));
 			count++;
-			if (count > 1000)
+			if (count > 1000) {
+				pr_warn("setup rx on timeout\n");
 				break;
+			}
 		} while (!(value & 0x01));
 
 		// clean loop back
 		do {
-			wr32(hw, RNPM_MAC_RX_CFG(port),
-			     (rd32(hw, RNPM_MAC_RX_CFG(port)) & (~0x400)) |
-				     RNPM_MAX_RX_CFG_IPC);
+			value = rd32(hw, RNPM_MAC_RX_CFG(port)) & (~0x400);
+			value = adapter->mac_ipc_off ?
+					value & ~RNPM_MAX_RX_CFG_IPC :
+					value | RNPM_MAX_RX_CFG_IPC;
+			wr32(hw, RNPM_MAC_RX_CFG(port), value);
 			usleep_range(100, 200);
 			value = rd32(hw, RNPM_MAC_RX_CFG(port));
 			count++;
-			if (count > 1000)
+			if (count > 1000) {
+				pr_warn("setup rx off timeout\n");
 				break;
+			}
 		} while (value & 0x400);
 
 		/* in this mode close mc filter in mac */
@@ -4076,15 +4166,16 @@ void control_mac_rx(struct rnpm_adapter *adapter, bool on)
 		     DROP_ALL_THRESH);
 		// set loopback
 		do {
-			wr32(hw, RNPM_MAC_RX_CFG(port),
-			     rd32(hw, RNPM_MAC_RX_CFG(port)) | 0x400 |
-				     RNPM_MAX_RX_CFG_IPC);
+			value = rd32(hw, RNPM_MAC_RX_CFG(port)) | 0x400;
+			value = adapter->mac_ipc_off ?
+					value & ~RNPM_MAX_RX_CFG_IPC :
+					value | RNPM_MAX_RX_CFG_IPC;
+			wr32(hw, RNPM_MAC_RX_CFG(port), value);
 			usleep_range(100, 200);
 			value = rd32(hw, RNPM_MAC_RX_CFG(port));
 			count++;
 			if (count > 1000) {
-				netdev_dbg(adapter->netdev,
-					   "setup rx on timeout\n");
+				pr_warn("setup rx on timeout\n");
 				break;
 			}
 		} while (!(value & 0x400));
@@ -4104,8 +4195,7 @@ static void rnpm_up_complete(struct rnpm_adapter *adapter)
 	/* enable the optics for n10 SFP+ fiber */
 	if (hw->mac.ops.enable_tx_laser)
 		hw->mac.ops.enable_tx_laser(hw);
-	/* memory barrier */
-	smp_mb__before_atomic();
+	smp_mb__before_atomic(); /* memory barrier need */
 	clear_bit(__RNPM_DOWN, &adapter->state);
 	rnpm_napi_enable_all(adapter);
 
@@ -4124,7 +4214,9 @@ static void rnpm_up_complete(struct rnpm_adapter *adapter)
 
 	/* enable rx transmit */
 	for (i = 0; i < adapter->num_rx_queues; i++)
-		wr32(hw, RNPM_DMA_RX_START(adapter->rx_ring[i]->rnpm_queue_idx),
+		wr32(hw,
+		     RNPM_DMA_RX_START(
+			     adapter->rx_ring[i]->rnpm_queue_idx),
 		     1);
 	adapter->link_check_timeout = jiffies;
 	mod_timer(&adapter->service_timer, HZ + jiffies);
@@ -4143,7 +4235,8 @@ void rnpm_reinit_locked(struct rnpm_adapter *adapter)
 	while (test_and_set_bit(__RNPM_RESETTING, &adapter->state))
 		usleep_range(1000, 2000);
 	rnpm_down(adapter);
-	/* If SR-IOV enabled then wait a bit before bringing the adapter
+	/*
+	 * If SR-IOV enabled then wait a bit before bringing the adapter
 	 * back up to give the VFs time to respond to the reset.  The
 	 * two second wait is based upon the watchdog timer cycle in
 	 * the VF driver.
@@ -4178,8 +4271,8 @@ void rnpm_reset(struct rnpm_adapter *adapter)
 
 	err = hw->mac.ops.init_hw(hw);
 	if (err) {
-		e_dev_err("init_hw: Hardware Error: err:%d. line:%d\n", err,
-			  __LINE__);
+		e_dev_err("init_hw: Hardware Error: err:%d. line:%d\n",
+			  err, __LINE__);
 	}
 
 	clear_bit(__RNPM_IN_SFP_INIT, &adapter->state);
@@ -4193,13 +4286,11 @@ void rnpm_reset(struct rnpm_adapter *adapter)
 					adapter->port);
 	}
 
-#ifndef NO_PTP
 	if (module_enable_ptp) {
 		if (adapter->flags2 & RNPM_FLAG2_PTP_ENABLED &&
 		    (adapter->ptp_rx_en || adapter->ptp_tx_en))
 			rnpm_ptp_reset(adapter);
 	}
-#endif
 }
 
 #ifdef RNPM_OPTM_WITH_LPAGE
@@ -4234,7 +4325,8 @@ static void rnpm_clean_rx_ring(struct rnpm_ring *rx_ring)
 
 		/* free resources associated with mapping */
 		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
-				     rnpm_rx_pg_size(rx_ring), DMA_FROM_DEVICE,
+				     rnpm_rx_pg_size(rx_ring),
+				     DMA_FROM_DEVICE,
 				     RNPM_RX_DMA_ATTR);
 
 		__page_frag_cache_drain(rx_buffer->page,
@@ -4250,9 +4342,6 @@ next_buffer:
 		}
 	}
 
-#ifdef HAVE_AF_XDP_ZC_SUPPORT
-// skip_free:
-#endif
 	rx_ring->next_to_alloc = 0;
 	rx_ring->next_to_clean = 0;
 	rx_ring->next_to_use = 0;
@@ -4273,11 +4362,11 @@ static void rnpm_clean_rx_ring(struct rnpm_ring *rx_ring)
 			struct sk_buff *skb = rx_buffer->skb;
 			/* no need this */
 			if (RNPM_CB(skb)->page_released)
-				dma_unmap_page_attrs(rx_ring->dev,
-						     RNPM_CB(skb)->dma,
-						     rnpm_rx_pg_size(rx_ring),
-						     DMA_FROM_DEVICE,
-						     RNPM_RX_DMA_ATTR);
+				dma_unmap_page_attrs(
+					rx_ring->dev, RNPM_CB(skb)->dma,
+					rnpm_rx_pg_size(rx_ring),
+					DMA_FROM_DEVICE,
+					RNPM_RX_DMA_ATTR);
 			dev_kfree_skb(skb);
 			rx_buffer->skb = NULL;
 		}
@@ -4292,7 +4381,8 @@ static void rnpm_clean_rx_ring(struct rnpm_ring *rx_ring)
 
 		/* free resources associated with mapping */
 		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
-				     rnpm_rx_pg_size(rx_ring), DMA_FROM_DEVICE,
+				     rnpm_rx_pg_size(rx_ring),
+				     DMA_FROM_DEVICE,
 				     RNPM_RX_DMA_ATTR);
 
 		__page_frag_cache_drain(rx_buffer->page,
@@ -4307,6 +4397,7 @@ static void rnpm_clean_rx_ring(struct rnpm_ring *rx_ring)
 		}
 	}
 
+// skip_free:
 	rx_ring->next_to_alloc = 0;
 	rx_ring->next_to_clean = 0;
 	rx_ring->next_to_use = 0;
@@ -4322,7 +4413,7 @@ static void rnpm_clean_tx_ring(struct rnpm_ring *tx_ring)
 	u16 i = tx_ring->next_to_clean;
 	struct rnpm_tx_buffer *tx_buffer = &tx_ring->tx_buffer_info[i];
 
-	BUG_ON(tx_ring == NULL);
+	BUG_ON(!tx_ring);
 	/* ring already cleared, nothing to do */
 	if (!tx_ring->tx_buffer_info)
 		return;
@@ -4331,8 +4422,10 @@ static void rnpm_clean_tx_ring(struct rnpm_ring *tx_ring)
 
 		dev_kfree_skb_any(tx_buffer->skb);
 		/* unmap skb header data */
-		dma_unmap_single(tx_ring->dev, dma_unmap_addr(tx_buffer, dma),
-				 dma_unmap_len(tx_buffer, len), DMA_TO_DEVICE);
+		dma_unmap_single(tx_ring->dev,
+				 dma_unmap_addr(tx_buffer, dma),
+				 dma_unmap_len(tx_buffer, len),
+				 DMA_TO_DEVICE);
 
 		eop_desc = tx_buffer->next_to_watch;
 		tx_desc = RNPM_TX_DESC(tx_ring, i);
@@ -4349,10 +4442,11 @@ static void rnpm_clean_tx_ring(struct rnpm_ring *tx_ring)
 
 			/* unmap any remaining paged data */
 			if (dma_unmap_len(tx_buffer, len)) {
-				dma_unmap_page(tx_ring->dev,
-					       dma_unmap_addr(tx_buffer, dma),
-					       dma_unmap_len(tx_buffer, len),
-					       DMA_TO_DEVICE);
+				dma_unmap_page(
+					tx_ring->dev,
+					dma_unmap_addr(tx_buffer, dma),
+					dma_unmap_len(tx_buffer, len),
+					DMA_TO_DEVICE);
 				dma_unmap_len_set(tx_buffer, len, 0);
 			}
 		}
@@ -4410,11 +4504,12 @@ static void rnpm_fdir_filter_exit(struct rnpm_adapter *adapter)
 
 	spin_lock_irqsave(&adapter->fdir_perfect_lock, flags);
 
-	hlist_for_each_entry_safe(filter, node2, &adapter->fdir_filter_list,
-				   fdir_node) {
+	hlist_for_each_entry_safe(filter, node2,
+				  &adapter->fdir_filter_list, fdir_node) {
 		/* call earase to hw */
 		rnpm_fdir_erase_perfect_filter(adapter->fdir_mode, hw,
-					       &filter->filter, filter->hw_idx);
+					       &filter->filter,
+					       filter->hw_idx);
 
 		hlist_del(&filter->fdir_node);
 		kfree(filter);
@@ -4429,10 +4524,9 @@ void rnpm_down(struct rnpm_adapter *adapter)
 	struct net_device *netdev = adapter->netdev;
 	struct rnpm_hw *hw = &adapter->hw;
 	int i, retry = 200;
-	bool is_pci_dead = pci_channel_offline(adapter->pdev);
-	bool is_pci_online = !is_pci_dead;
 
-	rnpm_dbg("%s %s port=%d!!!\n", netdev->name, __func__, adapter->port);
+	rnpm_dbg("%s %s port=%d!!!\n", netdev->name, __func__,
+		 adapter->port);
 	rnpm_logd(LOG_FUNC_ENTER, "enter %s %s\n", __func__,
 		  adapter->netdev->name);
 	/* signal that we are down to the interrupt handler */
@@ -4447,10 +4541,10 @@ void rnpm_down(struct rnpm_adapter *adapter)
 	usleep_range(10000, 20000);
 
 	/* disable all enabled rx queues */
-	for (i = 0; i < adapter->num_rx_queues && is_pci_online; i++) {
+	for (i = 0; i < adapter->num_rx_queues; i++) {
 		rnpm_disable_rx_queue(adapter, adapter->rx_ring[i]);
-		/* only handle when srio enable or mutiport mode and change rx length
-		 * setup
+		/* only handle when srio enable or mutiport mode and
+		 * change rx length setup
 		 */
 		if (((adapter->flags & RNPM_FLAG_SRIOV_ENABLED) ||
 		     (adapter->flags & RNPM_FLAG_MUTIPORT_ENABLED)) &&
@@ -4458,10 +4552,9 @@ void rnpm_down(struct rnpm_adapter *adapter)
 		     RNPM_RING_FLAG_CHANGE_RX_LEN)) {
 			int head;
 
-			head = rd32(
-				hw,
-				RNPM_DMA_REG_RX_DESC_BUF_HEAD(
-					adapter->rx_ring[i]->rnpm_queue_idx));
+			head = rd32(hw, RNPM_DMA_REG_RX_DESC_BUF_HEAD(
+						adapter->rx_ring[i]
+							->rnpm_queue_idx));
 			adapter->rx_ring[i]->ring_flags &=
 				(~RNPM_RING_FLAG_CHANGE_RX_LEN);
 			/* we should delay setup rx length to wait rx head to 0 */
@@ -4477,21 +4570,18 @@ void rnpm_down(struct rnpm_adapter *adapter)
 	rnpm_irq_disable(adapter);
 	rnpm_napi_disable_all(adapter);
 
-	adapter->flags2 &=
-		~(RNPM_FLAG2_FDIR_REQUIRES_REINIT | RNPM_FLAG2_RESET_REQUESTED);
+	adapter->flags2 &= ~(RNPM_FLAG2_FDIR_REQUIRES_REINIT |
+			     RNPM_FLAG2_RESET_REQUESTED);
 	adapter->flags &= ~RNPM_FLAG_NEED_LINK_UPDATE;
 
 	if (adapter->num_vfs) {
 		/* ping all the active vfs to let them know we are going down */
 		rnpm_ping_all_vfs(adapter);
-
-		/* Disable all VFTE/VFRE TX/RX */
 		rnpm_disable_tx_rx(adapter);
 	}
 	del_timer_sync(&adapter->service_timer);
 	// maybe bug here if call tx real hang reset
 	cancel_work_sync(&adapter->service_task);
-	clear_bit(__RNPM_SERVICE_SCHED, &adapter->state);
 
 	while (retry) {
 		if (rnpm_wait_irq_miss_check_done(adapter))
@@ -4500,24 +4590,24 @@ void rnpm_down(struct rnpm_adapter *adapter)
 		usleep_range(20000, 40000);
 	}
 	if (!retry) {
-		netdev_dbg(adapter->netdev,
+		netdev_err(adapter->netdev,
 			   "error: %s wait ire miss check done timeout\n",
 			   netdev->name);
 	}
 
 	/* disable transmits in the hardware now that interrupts are off */
-	for (i = 0; i < adapter->num_tx_queues && is_pci_online; i++) {
+	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct rnpm_hw *hw = &adapter->hw;
 		struct rnpm_ring *tx_ring = adapter->tx_ring[i];
 		int count = tx_ring->count;
 		int head, tail;
 		int timeout = 0;
 		u32 status = 0;
-		/* 1. stop queue */
-		// check tx ready
+
 		do {
-			status = rd32(
-				hw, RNPM_DMA_TX_READY(tx_ring->rnpm_queue_idx));
+			status =
+				rd32(hw, RNPM_DMA_TX_READY(
+						 tx_ring->rnpm_queue_idx));
 			usleep_range(1000, 2000);
 			timeout++;
 			rnpm_dbg("wait %d tx ready to 1\n",
@@ -4530,14 +4620,13 @@ void rnpm_down(struct rnpm_adapter *adapter)
 
 			tail = rd32(hw, RNPM_DMA_REG_TX_DESC_BUF_TAIL(
 						tx_ring->rnpm_queue_idx));
-			netdev_dbg(
-				adapter->netdev,
-				"wait tx ready timeout, name=%s, i=%d queue_idx=%d head=%d tail=%d\n",
-				netdev->name, i, tx_ring->rnpm_queue_idx, head,
-				tail);
+			netdev_err(netdev,
+				   "wait tx ready timeout, %s i:%d q_idx:%d head:%d tail:%d\n",
+				   netdev->name, i, tx_ring->rnpm_queue_idx,
+				   head, tail);
 		}
 
-		/* 2. try to set tx head to 0 in sriov mode since we don't reset
+		/* try to set tx head to 0 in sriov mode since we don't reset
 		 * in sriov on or mutiport mode
 		 */
 		if ((adapter->flags & RNPM_FLAG_SRIOV_ENABLED) ||
@@ -4609,18 +4698,20 @@ void rnpm_down(struct rnpm_adapter *adapter)
  * rnpm_tx_timeout - Respond to a Tx Hang
  * @netdev: network interface device structure
  **/
-static void rnpm_tx_timeout(struct net_device *netdev, unsigned int txqueue)
+static void rnpm_tx_timeout(struct net_device *netdev,
+			    unsigned int txqueue)
 {
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	/* Do the reset outside of interrupt context */
 	int i;
 	bool real_tx_hang = false;
+	struct rnpm_ring *tx_ring;
 
 #define TX_TIMEO_LIMIT 16000
 	for (i = 0; i < adapter->num_tx_queues; i++) {
-		struct rnpm_ring *tx_ring = adapter->tx_ring[i];
-
-		if (check_for_tx_hang(tx_ring) && rnpm_check_tx_hang(tx_ring))
+		tx_ring = adapter->tx_ring[i];
+		if (check_for_tx_hang(tx_ring) &&
+		    rnpm_check_tx_hang(tx_ring))
 			real_tx_hang = true;
 	}
 
@@ -4653,10 +4744,6 @@ static int rnpm_sw_init(struct rnpm_adapter *adapter)
 	struct pci_dev *pdev = adapter->pdev;
 	unsigned int rss = 0, fdir;
 	int i;
-#ifdef CONFIG_RNPM_DCB
-	int j;
-	struct tc_configuration *tc;
-#endif
 
 	hw->vendor_id = pdev->vendor;
 	hw->device_id = pdev->device;
@@ -4672,9 +4759,6 @@ static int rnpm_sw_init(struct rnpm_adapter *adapter)
 		rss = min_t(int, adapter->max_ring_pair_counts,
 			    num_online_cpus());
 	}
-#ifdef RNPM_DEFAULT_RINGS_CNT
-	rss = min_t(int, rss, RNPM_DEFAULT_RINGS_CNT);
-#endif
 	// should limit queue since cpu maybe large than vectors number
 	rss = min_t(int, rss, adapter->max_msix_counts);
 	adapter->ring_feature[RING_F_RSS].limit =
@@ -4684,11 +4768,7 @@ static int rnpm_sw_init(struct rnpm_adapter *adapter)
 	// adapter->flags2 |= RNPM_FLAG2_RSC_ENABLED;
 	adapter->atr_sample_rate = 20;
 
-#ifdef RNPM_MAX_RINGS
-	fdir = min_t(int, 32, RNPM_MAX_RINGS);
-#else
 	fdir = min_t(int, 32, num_online_cpus());
-#endif
 	// no-use this ?
 	adapter->ring_feature[RING_F_FDIR].limit = fdir;
 
@@ -4703,8 +4783,8 @@ static int rnpm_sw_init(struct rnpm_adapter *adapter)
 		else
 			adapter->fdir_mode = fdir_mode_tuple5;
 
-		adapter->fdir_pballoc =
-			adapter->layer2_count_max + adapter->tuple_5_count_max;
+		adapter->fdir_pballoc = adapter->layer2_count_max +
+					adapter->tuple_5_count_max;
 		// adapter->flags |= RNPM_FLAG_FDIR_PERFECT_CAPABLE;
 	}
 	/* itr sw setup here */
@@ -4715,8 +4795,9 @@ static int rnpm_sw_init(struct rnpm_adapter *adapter)
 	adapter->napi_budge = RNPM_DEFAULT_NAPI_BUDGE;
 
 	/* set default work limits */
-	adapter->tx_work_limit = rnpm_info_tbl[adapter->pf_adapter->board_type]
-					 ->coalesce.tx_work_limit;
+	adapter->tx_work_limit =
+		rnpm_info_tbl[adapter->pf_adapter->board_type]
+			->coalesce.tx_work_limit;
 	adapter->rx_usecs = rnpm_info_tbl[adapter->pf_adapter->board_type]
 				    ->coalesce.rx_usecs;
 	adapter->rx_frames = rnpm_info_tbl[adapter->pf_adapter->board_type]
@@ -4745,6 +4826,13 @@ static int rnpm_sw_init(struct rnpm_adapter *adapter)
 	default:
 		break;
 	}
+
+	/* n-tuple support exists, always init our spinlock */
+	/* init fdir count */
+#ifdef CONFIG_PCI_IOV
+	adapter->num_vfs =
+		(max_vfs > (RNPM_MAX_VF_FUNCTIONS - 1)) ? 0 : max_vfs;
+#endif
 
 	/* set default ring sizes */
 	adapter->tx_ring_item_count =
@@ -4807,12 +4895,12 @@ int rnpm_setup_tx_resources(struct rnpm_ring *tx_ring,
 	tx_ring->size = ALIGN(tx_ring->size, 4096);
 
 	set_dev_node(dev, numa_node);
-	tx_ring->desc = dma_alloc_coherent(dev, tx_ring->size, &tx_ring->dma,
-					   GFP_KERNEL);
+	tx_ring->desc = dma_alloc_coherent(dev, tx_ring->size,
+					   &tx_ring->dma, GFP_KERNEL);
 	set_dev_node(dev, orig_node);
 	if (!tx_ring->desc)
-		tx_ring->desc = dma_alloc_coherent(dev, tx_ring->size,
-						   &tx_ring->dma, GFP_KERNEL);
+		tx_ring->desc = dma_alloc_coherent(
+			dev, tx_ring->size, &tx_ring->dma, GFP_KERNEL);
 	if (!tx_ring->desc)
 		goto err;
 	memset(tx_ring->desc, 0, tx_ring->size);
@@ -4821,20 +4909,20 @@ int rnpm_setup_tx_resources(struct rnpm_ring *tx_ring,
 	tx_ring->next_to_clean = 0;
 
 	DPRINTK(IFUP, INFO,
-		"TxRing:%d, vector:%d ItemCounts:%d desc:%p node:%d\n",
+		"TxRing:%d vector:%d ItemCounts:%d desc:%p(0x%pad) node:%d\n",
 		tx_ring->rnpm_queue_idx, tx_ring->q_vector->v_idx,
-		tx_ring->count, tx_ring->desc, numa_node);
-
+		tx_ring->count, tx_ring->desc, &tx_ring->dma, numa_node);
 	return 0;
 err:
-	rnpm_err(
-		"%s [SetupTxResources] #%d TxRing:%d, vector:%d ItemCounts:%d\n",
-		tx_ring->netdev->name, tx_ring->queue_index,
-		tx_ring->rnpm_queue_idx, tx_ring->q_vector->v_idx,
-		tx_ring->count);
+	netdev_err(adapter->netdev,
+		   "%s [SetupTxResources] #%d TxRing:%d vector:%d ItemCounts:%d\n",
+		   tx_ring->netdev->name, tx_ring->queue_index,
+		   tx_ring->rnpm_queue_idx, tx_ring->q_vector->v_idx,
+		   tx_ring->count);
 	vfree(tx_ring->tx_buffer_info);
 	tx_ring->tx_buffer_info = NULL;
-	dev_err(dev, "Unable to allocate memory for the Tx descriptor ring\n");
+	dev_err(dev,
+		"Unable to allocate memory for the Tx descriptor ring\n");
 	return -ENOMEM;
 }
 
@@ -4856,8 +4944,9 @@ static int rnpm_setup_all_tx_resources(struct rnpm_adapter *adapter)
 	       adapter->num_tx_queues, adapter->tx_ring[0]);
 
 	for (i = 0; i < (adapter->num_tx_queues); i++) {
-		BUG_ON(adapter->tx_ring[i] == NULL);
-		err = rnpm_setup_tx_resources(adapter->tx_ring[i], adapter);
+		BUG_ON(!adapter->tx_ring[i]);
+		err = rnpm_setup_tx_resources(adapter->tx_ring[i],
+					      adapter);
 		if (!err)
 			continue;
 
@@ -4887,7 +4976,7 @@ int rnpm_setup_rx_resources(struct rnpm_ring *rx_ring,
 	int numa_node = -1;
 	int size;
 
-	BUG_ON(rx_ring == NULL);
+	BUG_ON(!rx_ring);
 
 	size = sizeof(struct rnpm_rx_buffer) * rx_ring->count;
 
@@ -4907,12 +4996,12 @@ int rnpm_setup_rx_resources(struct rnpm_ring *rx_ring,
 	rx_ring->size = ALIGN(rx_ring->size, 4096);
 
 	set_dev_node(dev, numa_node);
-	rx_ring->desc = dma_alloc_coherent(dev, rx_ring->size, &rx_ring->dma,
-					   GFP_KERNEL);
+	rx_ring->desc = dma_alloc_coherent(dev, rx_ring->size,
+					   &rx_ring->dma, GFP_KERNEL);
 	set_dev_node(dev, orig_node);
 	if (!rx_ring->desc)
-		rx_ring->desc = dma_alloc_coherent(dev, rx_ring->size,
-						   &rx_ring->dma, GFP_KERNEL);
+		rx_ring->desc = dma_alloc_coherent(
+			dev, rx_ring->size, &rx_ring->dma, GFP_KERNEL);
 	if (!rx_ring->desc)
 		goto err;
 	memset(rx_ring->desc, 0, rx_ring->size);
@@ -4921,21 +5010,22 @@ int rnpm_setup_rx_resources(struct rnpm_ring *rx_ring,
 	rx_ring->next_to_use = 0;
 
 	DPRINTK(IFUP, INFO,
-		"RxRing:%d, vector:%d ItemCounts:%d desc:%p node:%d\n",
+		"RxRing:%d, vector:%d ItemCounts:%d desc:%p(0x%pad) node:%d\n",
 		rx_ring->rnpm_queue_idx, rx_ring->q_vector->v_idx,
-		rx_ring->count, rx_ring->desc, numa_node);
+		rx_ring->count, rx_ring->desc, &rx_ring->dma, numa_node);
 
 	return 0;
 err:
-	rnpm_err(
-		"%s [SetupRxResources] #%d RxRing:%d, vector:%d ItemCounts:%d error!\n",
-		rx_ring->netdev->name, rx_ring->queue_index,
-		rx_ring->rnpm_queue_idx, rx_ring->q_vector->v_idx,
-		rx_ring->count);
+	netdev_err(adapter->netdev,
+		   "%s [SetupRxResources] %d RxRing:%d, vector:%d ItemCounts:%d!\n",
+		   rx_ring->netdev->name, rx_ring->queue_index,
+		   rx_ring->rnpm_queue_idx, rx_ring->q_vector->v_idx,
+		   rx_ring->count);
 
 	vfree(rx_ring->rx_buffer_info);
 	rx_ring->rx_buffer_info = NULL;
-	dev_err(dev, "Unable to allocate memory for the Rx descriptor ring\n");
+	dev_err(dev,
+		"Unable to allocate memory for the Rx descriptor ring\n");
 	return -ENOMEM;
 }
 
@@ -4956,11 +5046,12 @@ static int rnpm_setup_all_rx_resources(struct rnpm_adapter *adapter)
 	u32 head;
 
 	for (i = 0; i < adapter->num_rx_queues; i++) {
-		BUG_ON(adapter->rx_ring[i] == NULL);
+		BUG_ON(!adapter->rx_ring[i]);
 		/* should check count and head */
 		/* in sriov condition may head large than count */
-		head = rd32(hw, RNPM_DMA_REG_RX_DESC_BUF_HEAD(
-					adapter->rx_ring[i]->rnpm_queue_idx));
+		head = rd32(hw,
+			    RNPM_DMA_REG_RX_DESC_BUF_HEAD(
+				    adapter->rx_ring[i]->rnpm_queue_idx));
 		if (unlikely(head >= adapter->rx_ring[i]->count)) {
 			dbg("[%s] Ring %d head large than count",
 			    adapter->netdev->name,
@@ -4971,7 +5062,8 @@ static int rnpm_setup_all_rx_resources(struct rnpm_adapter *adapter)
 				adapter->rx_ring[i]->count;
 			adapter->rx_ring[i]->count = head + 1;
 		}
-		err = rnpm_setup_rx_resources(adapter->rx_ring[i], adapter);
+		err = rnpm_setup_rx_resources(adapter->rx_ring[i],
+					      adapter);
 		if (!err)
 			continue;
 
@@ -4995,7 +5087,7 @@ err_setup_rx:
  **/
 void rnpm_free_tx_resources(struct rnpm_ring *tx_ring)
 {
-	BUG_ON(tx_ring == NULL);
+	BUG_ON(!tx_ring);
 
 	rnpm_clean_tx_ring(tx_ring);
 
@@ -5034,7 +5126,7 @@ static void rnpm_free_all_tx_resources(struct rnpm_adapter *adapter)
  **/
 void rnpm_free_rx_resources(struct rnpm_ring *rx_ring)
 {
-	BUG_ON(rx_ring == NULL);
+	BUG_ON(!rx_ring);
 
 	rnpm_clean_rx_ring(rx_ring);
 
@@ -5081,10 +5173,12 @@ static int rnpm_change_mtu(struct net_device *netdev, int new_mtu)
 	int max_frame = new_mtu + ETH_HLEN + 2 * ETH_FCS_LEN;
 
 	/* MTU < 68 is an error and causes problems on some kernels */
-	if ((new_mtu < RNPM_MIN_MTU) || (max_frame > RNPM_MAX_JUMBO_FRAME_SIZE))
+	if (new_mtu < RNPM_MIN_MTU ||
+	    max_frame > RNPM_MAX_JUMBO_FRAME_SIZE)
 		return -EINVAL;
 
-	e_info(probe, "changing MTU from %d to %d\n", netdev->mtu, new_mtu);
+	e_info(probe, "changing MTU from %d to %d\n", netdev->mtu,
+	       new_mtu);
 
 	/* must set new MTU before calling down or up */
 	netdev->mtu = new_mtu;
@@ -5113,9 +5207,9 @@ static int rnpm_tx_maxrate(struct net_device *netdev, int queue_index,
 	adapter->max_rate[queue_index] = maxrate;
 	// adapter->flags2 |= RNPM_FLAG2_TX_RATE_SETUP;
 	if (!maxrate)
-		return rnpm_setup_tx_maxrate(adapter->hw.hw_addr, tx_ring, 0,
-					     adapter->hw.usecstocount *
-						     1000000);
+		return rnpm_setup_tx_maxrate(
+			adapter->hw.hw_addr, tx_ring, 0,
+			adapter->hw.usecstocount * 1000000);
 	/* we need turn it to bytes/s */
 	real_rate = (maxrate * 1024 * 1024) / 8;
 	rnpm_setup_tx_maxrate(adapter->hw.hw_addr, tx_ring, real_rate,
@@ -5123,6 +5217,7 @@ static int rnpm_tx_maxrate(struct net_device *netdev, int queue_index,
 
 	return 0;
 }
+
 /**
  * rnpm_open - Called when a network interface is made active
  * @netdev: network interface device structure
@@ -5171,10 +5266,8 @@ int rnpm_open(struct net_device *netdev)
 	err = netif_set_real_num_rx_queues(netdev, adapter->num_rx_queues);
 	if (err)
 		goto err_set_queues;
-#ifndef NO_PTP
 	if (module_enable_ptp)
 		rnpm_ptp_register(adapter);
-#endif
 	rnpm_up_complete(adapter);
 
 	/* set sw dummy 0,  wait fw link to force one interrupt */
@@ -5227,13 +5320,12 @@ int rnpm_close(struct net_device *netdev)
 		dev_kfree_skb_any(adapter->ptp_tx_skb);
 		adapter->ptp_tx_skb = NULL;
 		adapter->tx_hwtstamp_timeouts++;
-		netdev_warn(adapter->netdev, "clearing Tx timestamp hang\n");
+		netdev_warn(adapter->netdev,
+			    "clearing Tx timestamp hang\n");
 	}
 
-#ifndef NO_PTP
 	if (module_enable_ptp)
 		rnpm_ptp_unregister(adapter);
-#endif
 
 	rnpm_down(adapter);
 	rnpm_free_irq(adapter);
@@ -5289,7 +5381,8 @@ void rnpm_update_stats(struct rnpm_adapter *adapter)
 			net_stats->rx_bytes += ring->stats.bytes;
 			hw_csum_rx_error += ring->rx_stats.csum_err;
 			hw_csum_rx_good += ring->rx_stats.csum_good;
-			hw_stats->vlan_strip_cnt += ring->rx_stats.vlan_remove;
+			hw_stats->vlan_strip_cnt +=
+				ring->rx_stats.vlan_remove;
 		}
 		rnpm_for_each_ring(ring, adapter->q_vector[i]->tx) {
 			net_stats->tx_packets += ring->stats.packets;
@@ -5310,8 +5403,8 @@ void rnpm_update_stats(struct rnpm_adapter *adapter)
 	case MODE_NIC_MODE_2PORT:
 		hw_stats->dma_to_eth = 0;
 		for (i = port * 2; i < (port + 1) * 2; i++) {
-			hw_stats->dma_to_eth +=
-				rd32(hw, RNPM_DMA_STATS_DMA_TO_DMA_CHANNEL(i));
+			hw_stats->dma_to_eth += rd32(
+				hw, RNPM_DMA_STATS_DMA_TO_DMA_CHANNEL(i));
 		}
 		break;
 	case MODE_NIC_MODE_4PORT:
@@ -5326,14 +5419,14 @@ void rnpm_update_stats(struct rnpm_adapter *adapter)
 
 	rx_crc_error = rnpm_recalculate_err_pkts(
 		rd32(hw, RNPM_RXTRANS_CRC_ERR_PKTS(port)),
-		&(hw->err_pkts_init.crc[port]), false);
-	net_stats->rx_crc_errors = rx_crc_error;
+		&hw->err_pkts_init.crc[port], false);
+	net_stats->rx_crc_errors += rx_crc_error;
 	// hw->err_pkts_init.scsum[port] = hw_csum_rx_error;
 
 	net_stats->rx_errors +=
-		rnpm_recalculate_err_pkts(rd32(hw,
-					       RNPM_RXTRANS_WDT_ERR_PKTS(port)),
-					  &hw->err_pkts_init.wdt[port], false) +
+		rnpm_recalculate_err_pkts(
+			rd32(hw, RNPM_RXTRANS_WDT_ERR_PKTS(port)),
+			&hw->err_pkts_init.wdt[port], false) +
 		rnpm_recalculate_err_pkts(
 			rd32(hw, RNPM_RXTRANS_CODE_ERR_PKTS(port)),
 			&hw->err_pkts_init.code[port], false) +
@@ -5343,12 +5436,12 @@ void rnpm_update_stats(struct rnpm_adapter *adapter)
 		rnpm_recalculate_err_pkts(
 			rd32(hw, RNPM_RXTRANS_GLEN_ERR_PKTS(port)),
 			&hw->err_pkts_init.glen[port], false) +
-		rnpm_recalculate_err_pkts(rd32(hw,
-					       RNPM_RXTRANS_IPH_ERR_PKTS(port)),
-					  &hw->err_pkts_init.iph[port], false) +
-		rnpm_recalculate_err_pkts(rd32(hw,
-					       RNPM_RXTRANS_LEN_ERR_PKTS(port)),
-					  &hw->err_pkts_init.len[port], false) +
+		rnpm_recalculate_err_pkts(
+			rd32(hw, RNPM_RXTRANS_IPH_ERR_PKTS(port)),
+			&hw->err_pkts_init.iph[port], false) +
+		rnpm_recalculate_err_pkts(
+			rd32(hw, RNPM_RXTRANS_LEN_ERR_PKTS(port)),
+			&hw->err_pkts_init.len[port], false) +
 		rnpm_recalculate_err_pkts(
 			rd32(hw, RNPM_RXTRANS_CSUM_ERR_PKTS(port)),
 			&hw->err_pkts_init.csum[port], false) +
@@ -5357,12 +5450,12 @@ void rnpm_update_stats(struct rnpm_adapter *adapter)
 					  true) +
 		rx_crc_error;
 	net_stats->rx_dropped +=
-		rnpm_recalculate_err_pkts(rd32(hw,
-					       RNPM_RXTRANS_CUT_ERR_PKTS(port)),
-					  &hw->err_pkts_init.cut[port], false) +
-		rnpm_recalculate_err_pkts(rd32(hw,
-					       RNPM_RXTRANS_DROP_PKTS(port)),
-					  &hw->err_pkts_init.drop[port], false);
+		rnpm_recalculate_err_pkts(
+			rd32(hw, RNPM_RXTRANS_CUT_ERR_PKTS(port)),
+			&hw->err_pkts_init.cut[port], false) +
+		rnpm_recalculate_err_pkts(
+			rd32(hw, RNPM_RXTRANS_DROP_PKTS(port)),
+			&hw->err_pkts_init.drop[port], false);
 	adapter->hw_csum_rx_error = hw_csum_rx_error;
 	adapter->hw_csum_rx_good = hw_csum_rx_good;
 
@@ -5401,8 +5494,6 @@ void rnpm_update_stats(struct rnpm_adapter *adapter)
  */
 static void rnpm_check_hang_subtask(struct rnpm_adapter *adapter)
 {
-	// struct rnpm_hw *hw = &adapter->hw;
-	// u64 eics = 0;
 	int i;
 	struct rnpm_ring *tx_ring;
 	u64 tx_next_to_clean_old;
@@ -5452,14 +5543,16 @@ static void rnpm_check_hang_subtask(struct rnpm_adapter *adapter)
 					}
 
 					tx_ring->tx_stats.tx_irq_miss++;
-					tx_ring->tx_stats.tx_equal_count = 0;
+					tx_ring->tx_stats.tx_equal_count =
+						0;
 				}
 			} else {
 				tx_ring->tx_stats.tx_equal_count = 0;
 			}
 			/* update */
 			/* record this next_to_clean */
-			tx_ring->tx_stats.tx_next_to_clean = tx_next_to_clean;
+			tx_ring->tx_stats.tx_next_to_clean =
+				tx_next_to_clean;
 		} else {
 			/* clean record to -1 */
 			tx_ring->tx_stats.tx_next_to_clean = -1;
@@ -5479,22 +5572,21 @@ static void rnpm_check_hang_subtask(struct rnpm_adapter *adapter)
 		if (rx_next_to_clean == rx_next_to_clean_old) {
 			rx_ring->rx_stats.rx_equal_count++;
 
-			if ((rx_ring->rx_stats.rx_equal_count > 2) &&
-			    (rx_ring->rx_stats.rx_equal_count < 5)) {
-				// check if dd in the clean rx desc
-				rx_desc = RNPM_RX_DESC(rx_ring,
-						       rx_ring->next_to_clean);
-
+			if (rx_ring->rx_stats.rx_equal_count > 2 &&
+			    rx_ring->rx_stats.rx_equal_count < 5) {
+				/* check if dd in the clean rx desc */
+				rx_desc = RNPM_RX_DESC(
+					rx_ring, rx_ring->next_to_clean);
 				if (!rnpm_test_staterr(rx_desc,
 						       RNPM_RXD_STAT_DD))
 					goto skip;
-
 				q_vector = rx_ring->q_vector;
 				size = le16_to_cpu(rx_desc->wb.len);
 				if (!size)
 					goto skip;
 				rx_ring->rx_stats.rx_irq_miss++;
-				if (q_vector->rx.ring || q_vector->tx.ring) {
+				if (q_vector->rx.ring ||
+				    q_vector->tx.ring) {
 					rnpm_irq_disable_queues(q_vector);
 					napi_schedule_irqoff(&q_vector->napi);
 				}
@@ -5531,9 +5623,10 @@ static int rnpm_pf_get_port_link_stat(struct rnpm_pf_adapter *pf_adapter)
 					if (err)
 						goto error;
 					hw->phy.an =
-						(hw->phy.vb_r[0] & BIT(12)) ?
-							      AUTONEG_ENABLE :
-							      AUTONEG_DISABLE;
+						(hw->phy.vb_r[0] &
+						 BIT(12)) ?
+							AUTONEG_ENABLE :
+							AUTONEG_DISABLE;
 					err = rnpm_mbx_phy_read(
 						hw, 4, &hw->phy.vb_r[4]);
 					if (err)
@@ -5546,8 +5639,8 @@ static int rnpm_pf_get_port_link_stat(struct rnpm_pf_adapter *pf_adapter)
 						hw, 17, &hw->phy.vb_r[17]);
 					if (err)
 						goto error;
-					hw->phy.is_mdix =
-						!!(hw->phy.vb_r[17] & 0x0040);
+					hw->phy.is_mdix = !!(
+						hw->phy.vb_r[17] & 0x0040);
 				}
 			}
 		}
@@ -5583,9 +5676,10 @@ static int rnpm_watchdog_update_link(struct rnpm_adapter *adapter)
 		/* always assume link is up, if no check link function */
 		link_speed = RNPM_LINK_SPEED_10GB_FULL;
 		link_up = true;
-		rnpm_logd(LOG_LINK_EVENT,
-			  "WARN: %s:%s: check_link is null, force speed/link\n",
-			  __func__, adapter->netdev->name);
+		rnpm_logd(
+			LOG_LINK_EVENT,
+			"WARN: %s:%s: check_link is null, force speed/link\n",
+			__func__, adapter->netdev->name);
 	}
 
 	if (link_up || time_after(jiffies, (adapter->link_check_timeout +
@@ -5600,19 +5694,6 @@ static int rnpm_watchdog_update_link(struct rnpm_adapter *adapter)
 
 static void rnpm_update_default_up(struct rnpm_adapter *adapter)
 {
-#ifdef CONFIG_RNPM_DCB
-	struct net_device *netdev = adapter->netdev;
-	struct dcb_app app = {
-		.selector = IEEE_8021QAZ_APP_SEL_ETHERTYPE,
-		.protocol = 0,
-	};
-	u8 up = 0;
-
-	if (adapter->dcbx_cap & DCB_CAP_DCBX_VER_IEEE)
-		up = dcb_ieee_getapp_mask(netdev, &app);
-
-	adapter->default_up = (up > 1) ? (ffs(up) - 1) : 0;
-#endif
 }
 
 /**
@@ -5648,17 +5729,17 @@ static void rnpm_watchdog_link_is_up(struct rnpm_adapter *adapter)
 
 	e_info(drv, "NIC Link is Up %s, Flow Control: %s\n",
 	       (link_speed == RNPM_LINK_SPEED_10GB_FULL ?
-			      "10 Gbps" :
-			      (link_speed == RNPM_LINK_SPEED_1GB_FULL ?
-				       "1 Gbps" :
-				       (link_speed == RNPM_LINK_SPEED_100_FULL ?
-						"100 Mbps" :
-						(link_speed == RNPM_LINK_SPEED_10_FULL ?
-							 "10 Mbps" :
-							 "unknown speed")))),
+			"10 Gbps" :
+			(link_speed == RNPM_LINK_SPEED_1GB_FULL ?
+				 "1 Gbps" :
+				 (link_speed == RNPM_LINK_SPEED_100_FULL ?
+					  "100 Mbps" :
+					  (link_speed == RNPM_LINK_SPEED_10_FULL ?
+						   "10 Mbps" :
+						   "unknown speed")))),
 	       ((flow_rx && flow_tx) ?
-			      "RX/TX" :
-			      (flow_rx ? "RX" : (flow_tx ? "TX" : "None"))));
+			"RX/TX" :
+			(flow_rx ? "RX" : (flow_tx ? "TX" : "None"))));
 
 	netif_carrier_on(netdev);
 
@@ -5709,16 +5790,18 @@ static void rnpm_watchdog_link_is_down(struct rnpm_adapter *adapter)
  * rnpm_watchdog_flush_tx - flush queues on link down
  * @adapter: pointer to the device adapter structure
  **/
-__maybe_unused static void rnpm_watchdog_flush_tx(struct rnpm_adapter *adapter)
+__maybe_unused static void
+rnpm_watchdog_flush_tx(struct rnpm_adapter *adapter)
 {
 	int i;
 	int some_tx_pending = 0;
+	struct rnpm_ring *tx_ring;
 
 	if (!netif_carrier_ok(adapter->netdev)) {
 		for (i = 0; i < adapter->num_tx_queues; i++) {
-			struct rnpm_ring *tx_ring = adapter->tx_ring[i];
-
-			if (tx_ring->next_to_use != tx_ring->next_to_clean) {
+			tx_ring = adapter->tx_ring[i];
+			if (tx_ring->next_to_use !=
+			    tx_ring->next_to_clean) {
 				some_tx_pending = 1;
 				break;
 			}
@@ -5735,7 +5818,8 @@ __maybe_unused static void rnpm_watchdog_flush_tx(struct rnpm_adapter *adapter)
 			e_warn(drv,
 			       "initiating reset to clear Tx work after link loss\n");
 			// adapter->flags2 |= RNPM_FLAG2_RESET_REQUESTED;
-			set_bit(RNPM_PF_RESET, &adapter->pf_adapter->flags);
+			set_bit(RNPM_PF_RESET,
+				&adapter->pf_adapter->flags);
 		}
 	}
 }
@@ -5760,17 +5844,10 @@ static void rnpm_watchdog_subtask(struct rnpm_adapter *adapter)
 	if (rnpm_watchdog_update_link(adapter))
 		return;
 
-	if ((adapter->link_up))
+	if (adapter->link_up)
 		rnpm_watchdog_link_is_up(adapter);
 	else
 		rnpm_watchdog_link_is_down(adapter);
-
-	// rnpm_watchdog_flush_tx(adapter);
-	// rnpm_logd(LOG_FUNC_ENTER,
-	//		  "exit %s %s state=0x%lx\n",
-	//		  __func__,
-	//		  adapter->netdev->name,
-	//		  adapter->state);
 }
 
 /**
@@ -5793,11 +5870,11 @@ static void rnpm_sfp_link_config_subtask(struct rnpm_adapter *adapter)
 
 	if (!(adapter->flags & RNPM_FLAG_NEED_LINK_CONFIG))
 		return;
-
 }
 
 #ifdef CONFIG_PCI_IOV
-__maybe_unused static void rnpm_check_for_bad_vf(struct rnpm_adapter *adapter)
+__maybe_unused static void
+rnpm_check_for_bad_vf(struct rnpm_adapter *adapter)
 {
 }
 
@@ -5806,7 +5883,7 @@ __maybe_unused static void rnpm_check_for_bad_vf(struct rnpm_adapter *adapter)
  * rnpm_pf_service_timer - Timer Call-back
  * @data: pointer to adapter cast into an unsigned long
  **/
-void rnpm_pf_service_timer(struct timer_list *t)
+static void rnpm_pf_service_timer(struct timer_list *t)
 {
 	struct rnpm_pf_adapter *pf_adapter =
 		from_timer(pf_adapter, t, service_timer);
@@ -5826,7 +5903,8 @@ void rnpm_pf_service_timer(struct timer_list *t)
  **/
 void rnpm_service_timer(struct timer_list *t)
 {
-	struct rnpm_adapter *adapter = from_timer(adapter, t, service_timer);
+	struct rnpm_adapter *adapter =
+		from_timer(adapter, t, service_timer);
 	unsigned long next_event_offset;
 	bool ready = true;
 
@@ -5857,12 +5935,6 @@ static int rnpm_reset_pf(struct rnpm_pf_adapter *pf_adapter)
 	int times = 0;
 	int i = 0;
 	u32 status = 0;
-#ifdef NO_MBX_VERSION
-	unsigned long flags;
-#endif
-
-	if (pci_channel_offline(pf_adapter->pdev))
-		return -EIO;
 
 	wr32(pf_adapter, RNPM_DMA_AXI_EN, 0);
 #define TIMEOUT_COUNT (1000)
@@ -5880,35 +5952,15 @@ static int rnpm_reset_pf(struct rnpm_pf_adapter *pf_adapter)
 		}
 	}
 
-	wr32(pf_adapter, RNPM_TOP_NIC_REST_N, NIC_RESET);
-	/* we need this */
-	wmb();
-
-	wr32(pf_adapter, RNPM_TOP_NIC_REST_N, ~NIC_RESET);
-
-#ifdef NO_MBX_VERSION
-#define TSRN10_REG_DEBUG_VALUE (0x1a2b3c4d)
-
-	spin_lock_irqsave(&pf_adapter->dummy_setup_lock, flags);
-	wr32(pf_adapter, RNPM_DMA_DUMY, TSRN10_REG_DEBUG_VALUE);
-	times = 0;
-	status = 0;
-	while ((status != TSRN10_REG_DEBUG_VALUE + 1) &&
-	       (times < TIMEOUT_COUNT)) {
-		status = rd32(pf_adapter, RNPM_DMA_DUMY);
-		times++;
-		usleep_range(4000, 8000);
-		// rnpm_dbg("wait firmware reset card %x\n", status);
+	if (!(pf_adapter->hw.fw_version >= 0x0005070f &&
+	      pf_adapter->hw.ncsi_en)) {
+		wr32(pf_adapter, RNPM_TOP_NIC_REST_N, NIC_RESET);
+		/* we need this */
+		wmb();
+		wr32(pf_adapter, RNPM_TOP_NIC_REST_N, ~NIC_RESET);
 	}
-	spin_unlock_irqrestore(&pf_adapter->dummy_setup_lock, flags);
 
-	if (times >= TIMEOUT_COUNT) {
-		rnpm_dbg("wait firmware reset card timeout\n");
-		return -ETIME;
-	}
-#else
 	rnpm_mbx_fw_reset_phy(&pf_adapter->hw);
-#endif
 
 	/* global setup here */
 	wr32(pf_adapter, RNPM_TOP_ETH_BUG_40G_PATCH, 1);
@@ -5968,7 +6020,8 @@ static int rnpm_reset_pf(struct rnpm_pf_adapter *pf_adapter)
 	return 0;
 }
 
-__maybe_unused void wait_all_port_resetting(struct rnpm_pf_adapter *pf_adapter)
+__maybe_unused static void
+wait_all_port_resetting(struct rnpm_pf_adapter *pf_adapter)
 {
 	int i;
 	struct rnpm_adapter *adapter;
@@ -5980,7 +6033,8 @@ __maybe_unused void wait_all_port_resetting(struct rnpm_pf_adapter *pf_adapter)
 	}
 }
 
-__maybe_unused void clean_all_port_resetting(struct rnpm_pf_adapter *pf_adapter)
+__maybe_unused static void
+clean_all_port_resetting(struct rnpm_pf_adapter *pf_adapter)
 {
 	int i;
 	struct rnpm_adapter *adapter;
@@ -6102,7 +6156,8 @@ static void rnpm_rx_len_reset_subtask(struct rnpm_adapter *adapter)
 		if (unlikely(rx_ring->ring_flags &
 			     RNPM_RING_FLAG_DO_RESET_RX_LEN)) {
 			dbg("[%s] Rx-ring %d count reset\n",
-			    adapter->netdev->name, rx_ring->rnpm_queue_idx);
+			    adapter->netdev->name,
+			    rx_ring->rnpm_queue_idx);
 			rnpm_rx_ring_reinit(adapter, rx_ring);
 			rx_ring->ring_flags &=
 				(~RNPM_RING_FLAG_DO_RESET_RX_LEN);
@@ -6191,7 +6246,8 @@ static void rnpm_rx_len_reset_subtask(struct rnpm_adapter *adapter)
 //	}
 // }
 //  todo check lock status ?
-int rnpm_check_mc_addr(struct rnpm_adapter *adapter)
+
+__maybe_unused static int rnpm_check_mc_addr(struct rnpm_adapter *adapter)
 {
 	struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
 	u32 mta_shadow[RNPM_MAX_MTA];
@@ -6200,7 +6256,8 @@ int rnpm_check_mc_addr(struct rnpm_adapter *adapter)
 	int ret = 0;
 	struct rnpm_hw *hw;
 	/* store old data */
-	memcpy(mta_shadow, pf_adapter->mta_shadow, sizeof(u32) * RNPM_MAX_MTA);
+	memcpy(mta_shadow, pf_adapter->mta_shadow,
+	       sizeof(u32) * RNPM_MAX_MTA);
 	/* calculate new data */
 	for (i = 0; i < RNPM_MAX_MTA; i++) {
 		pf_adapter->mta_shadow[i] = 0;
@@ -6217,14 +6274,15 @@ int rnpm_check_mc_addr(struct rnpm_adapter *adapter)
 	return ret;
 }
 
-void update_pf_vlan(struct rnpm_adapter *adapter)
+static void update_pf_vlan(struct rnpm_adapter *adapter)
 {
 }
 
 __maybe_unused static void
 rnpm_update_feature_subtask(struct rnpm_adapter *adapter)
 {
-	struct rnpm_pf_adapter __maybe_unused *pf_adapter = adapter->pf_adapter;
+	struct rnpm_pf_adapter __maybe_unused *pf_adapter =
+		adapter->pf_adapter;
 	u32 changed = 0;
 	netdev_features_t features = adapter->netdev->features;
 	/* if interface is down do nothing */
@@ -6232,7 +6290,9 @@ rnpm_update_feature_subtask(struct rnpm_adapter *adapter)
 	    test_bit(__RNPM_RESETTING, &adapter->state))
 		return;
 
-	/* update vlan filter status maybe other port update the unique status */
+	/* update vlan filter status
+	 * maybe other port update the unique status
+	 */
 	if (adapter->flags_feature & RNPM_FLAG_DELAY_UPDATE_VLAN_FILTER) {
 		if (pf_adapter->vlan_status_true) {
 			if (!(features & NETIF_F_HW_VLAN_CTAG_FILTER)) {
@@ -6248,15 +6308,18 @@ rnpm_update_feature_subtask(struct rnpm_adapter *adapter)
 	}
 	if (changed)
 		adapter->netdev->features = features;
+
 	if (adapter->flags_feature & RNPM_FLAG_DELAY_UPDATE_VLAN_TABLE) {
 		/* this port try to delete a vlan table */
 		// todo
 		update_pf_vlan(adapter);
 
-		adapter->flags_feature &= (~RNPM_FLAG_DELAY_UPDATE_VLAN_TABLE);
+		adapter->flags_feature &=
+			(~RNPM_FLAG_DELAY_UPDATE_VLAN_TABLE);
 	}
 
-	if (adapter->flags_feature & RNPM_FLAG_DELAY_UPDATE_MUTICAST_TABLE) {
+	if (adapter->flags_feature &
+	    RNPM_FLAG_DELAY_UPDATE_MUTICAST_TABLE) {
 		// update multicast table
 		// todo
 		adapter->flags_feature &=
@@ -6267,8 +6330,8 @@ rnpm_update_feature_subtask(struct rnpm_adapter *adapter)
 /**
  * rnpm_pf_service_task - manages and runs subtasks
  * @work: pointer to work_struct containing our data
- **/
-void rnpm_pf_service_task(struct work_struct *work)
+ */
+static void rnpm_pf_service_task(struct work_struct *work)
 {
 	struct rnpm_pf_adapter *pf_adapter =
 		container_of(work, struct rnpm_pf_adapter, service_task);
@@ -6307,6 +6370,7 @@ void rnpm_service_task(struct work_struct *work)
 	struct rnpm_adapter *adapter =
 		container_of(work, struct rnpm_adapter, service_task);
 
+	set_bit(__RNPM_SERVICE_IN_PROGRESS, &adapter->state);
 	rnpm_reset_subtask(adapter);
 	rnpm_sfp_detection_subtask(adapter);
 	rnpm_sfp_link_config_subtask(adapter);
@@ -6314,10 +6378,11 @@ void rnpm_service_task(struct work_struct *work)
 	rnpm_rx_len_reset_subtask(adapter);
 	rnpm_check_hang_subtask(adapter);
 	rnpm_service_event_complete(adapter);
+	clear_bit(__RNPM_SERVICE_IN_PROGRESS, &adapter->state);
 }
 
-static int rnpm_tso(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
-		    u8 *hdr_len)
+static int rnpm_tso(struct rnpm_ring *tx_ring,
+		    struct rnpm_tx_buffer *first, u8 *hdr_len)
 {
 	struct rnpm_adapter *adapter = netdev_priv(tx_ring->netdev);
 	struct sk_buff *skb = first->skb;
@@ -6351,8 +6416,8 @@ static int rnpm_tso(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
 	ip.hdr = skb_network_header(skb);
 	l4.hdr = skb_transport_header(skb);
 
-	first->tx_flags |=
-		RNPM_TXD_FLAG_TSO | RNPM_TXD_IP_CSUM | RNPM_TXD_L4_CSUM;
+	first->tx_flags |= RNPM_TXD_FLAG_TSO | RNPM_TXD_IP_CSUM |
+			   RNPM_TXD_L4_CSUM;
 
 	/* initialize outer IP header fields */
 	if (ip.v4->version == 4) {
@@ -6363,19 +6428,13 @@ static int rnpm_tso(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
 	} else {
 		ip.v6->payload_len = 0;
 	}
-#ifdef HAVE_ENCAP_TSO_OFFLOAD
 	if (skb_shinfo(skb)->gso_type &
 	    (SKB_GSO_GRE |
-#ifdef NETIF_F_GSO_PARTIAL
 	     SKB_GSO_GRE_CSUM |
-#endif
 	     SKB_GSO_UDP_TUNNEL | SKB_GSO_UDP_TUNNEL_CSUM)) {
-#ifndef NETIF_F_GSO_PARTIAL
-		if (skb_shinfo(skb)->gso_type & SKB_GSO_UDP_TUNNEL_CSUM) {
-#else
 		if (!(skb_shinfo(skb)->gso_type & SKB_GSO_PARTIAL) &&
-		    (skb_shinfo(skb)->gso_type & SKB_GSO_UDP_TUNNEL_CSUM)) {
-#endif
+		    (skb_shinfo(skb)->gso_type &
+		     SKB_GSO_UDP_TUNNEL_CSUM)) {
 		}
 		/* we should always do this */
 		inner_mac = skb_inner_mac_header(skb);
@@ -6395,7 +6454,6 @@ static int rnpm_tso(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
 		l4.hdr = skb_inner_transport_header(skb);
 	}
 
-#endif /* HAVE_ENCAP_TSO_OFFLOAD */
 	if (ip.v4->version == 4) {
 		/* IP header will have to cancel out any data that
 		 * is not a part of the outer IP header
@@ -6499,7 +6557,8 @@ __maybe_unused static void set_resevd(struct rnpm_tx_buffer *first)
 	}
 }
 
-static int rnpm_tx_csum(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first)
+static int rnpm_tx_csum(struct rnpm_ring *tx_ring,
+			struct rnpm_tx_buffer *first)
 {
 	struct sk_buff *skb = first->skb;
 	struct rnpm_adapter *adapter = netdev_priv(tx_ring->netdev);
@@ -6553,7 +6612,6 @@ static int rnpm_tx_csum(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first)
 
 			first->tx_flags |= RNPM_TXD_TUNNEL_VXLAN;
 			break;
-#ifdef HAVE_GRE_ENCAP_OFFLOAD
 		case IPPROTO_GRE:
 			first->tx_flags |= RNPM_TXD_TUNNEL_NVGRE;
 			/* There was a long-standing issue in GRE where GSO
@@ -6567,7 +6625,6 @@ static int rnpm_tx_csum(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first)
 			if (ip.v4->version == 4)
 				l4.hdr = ip.hdr + (ip.v4->ihl * 4);
 			break;
-#endif
 		default:
 			skb_checksum_help(skb);
 			return -1;
@@ -6594,8 +6651,8 @@ static int rnpm_tx_csum(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first)
 		exthdr = ip.hdr + sizeof(*ip.v6);
 		l4_proto = ip.v6->nexthdr;
 		if (l4.hdr != exthdr)
-			ipv6_skip_exthdr(skb, exthdr - skb->data, &l4_proto,
-					 &frag_off);
+			ipv6_skip_exthdr(skb, exthdr - skb->data,
+					 &l4_proto, &frag_off);
 		first->tx_flags |= RNPM_TXD_FLAG_IPv6;
 	}
 	/* Enable L4 checksum offloads */
@@ -6605,7 +6662,8 @@ static int rnpm_tx_csum(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first)
 		break;
 	case IPPROTO_SCTP:
 		tx_dbg("sctp checksum packet\n");
-		first->tx_flags |= RNPM_TXD_L4_TYPE_SCTP | RNPM_TXD_L4_CSUM;
+		first->tx_flags |= RNPM_TXD_L4_TYPE_SCTP |
+				   RNPM_TXD_L4_CSUM;
 		break;
 	case IPPROTO_UDP:
 		first->tx_flags |= RNPM_TXD_L4_TYPE_UDP | RNPM_TXD_L4_CSUM;
@@ -6620,18 +6678,19 @@ static int rnpm_tx_csum(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first)
 	first->mac_ip_len = (mac_len << 9) | ip_len;
 	return 0;
 }
+
 static int __rnpm_maybe_stop_tx(struct rnpm_ring *tx_ring, u16 size)
 {
 	tx_dbg("stop subqueue\n");
 	netif_stop_subqueue(tx_ring->netdev, tx_ring->queue_index);
 	/* Herbert's original patch had:
 	 *  smp_mb__after_netif_stop_queue();
-	 * but since that doesn't exist yet, just open code it
+	 * but since that doesn't exist yet, just open code it.
 	 */
 	smp_mb();
 
 	/* We need to check again in a case another CPU has just
-	 * made room available
+	 * made room available.
 	 */
 	if (likely(rnpm_desc_unused(tx_ring) < size))
 		return -EBUSY;
@@ -6649,8 +6708,8 @@ static inline int rnpm_maybe_stop_tx(struct rnpm_ring *tx_ring, u16 size)
 	return __rnpm_maybe_stop_tx(tx_ring, size);
 }
 
-static int rnpm_tx_map(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
-		       const u8 hdr_len)
+static int rnpm_tx_map(struct rnpm_ring *tx_ring,
+		       struct rnpm_tx_buffer *first, const u8 hdr_len)
 {
 	struct sk_buff *skb = first->skb;
 	struct rnpm_tx_buffer *tx_buffer;
@@ -6673,6 +6732,7 @@ static int rnpm_tx_map(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
 
 	tx_buffer = first;
 
+	// printk("next to use is %d\n", i);
 	for (frag = &skb_shinfo(skb)->frags[0];; frag++) {
 		if (dma_mapping_error(tx_ring->dev, dma))
 			goto dma_error;
@@ -6686,8 +6746,8 @@ static int rnpm_tx_map(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
 
 		while (unlikely(size > RNPM_MAX_DATA_PER_TXD)) {
 			tx_desc->vlan_cmd = cpu_to_le32(tx_flags);
-			tx_desc->blen_mac_ip_len =
-				cpu_to_le32(mac_ip_len ^ RNPM_MAX_DATA_PER_TXD);
+			tx_desc->blen_mac_ip_len = cpu_to_le32(
+				mac_ip_len ^ RNPM_MAX_DATA_PER_TXD);
 			//==== desc==
 			buf_dump_line("tx0  ", __LINE__, tx_desc,
 				      sizeof(*tx_desc));
@@ -6703,12 +6763,14 @@ static int rnpm_tx_map(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
 			tx_desc->pkt_addr = cpu_to_le64(dma | fun_id);
 		}
 
-		buf_dump_line("tx1  ", __LINE__, tx_desc, sizeof(*tx_desc));
+		buf_dump_line("tx1  ", __LINE__, tx_desc,
+			      sizeof(*tx_desc));
 		if (likely(!data_len)) // if not sg break
 			break;
 		tx_desc->vlan_cmd = cpu_to_le32(tx_flags);
 		tx_desc->blen_mac_ip_len = cpu_to_le32(mac_ip_len ^ size);
-		buf_dump_line("tx2  ", __LINE__, tx_desc, sizeof(*tx_desc));
+		buf_dump_line("tx2  ", __LINE__, tx_desc,
+			      sizeof(*tx_desc));
 
 		//==== frag==
 		i++;
@@ -6747,7 +6809,8 @@ static int rnpm_tx_map(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
 #else
 	netdev_tx_sent_queue(txring_txq(tx_ring), first->bytecount);
 #endif
-	/* Force memory writes to complete before letting h/w know there
+	/*
+	 * Force memory writes to complete before letting h/w know there
 	 * are new descriptors to fetch.  (Only applicable for weak-ordered
 	 * memory model archs, such as IA-64).
 	 *
@@ -6763,19 +6826,12 @@ static int rnpm_tx_map(struct rnpm_ring *tx_ring, struct rnpm_tx_buffer *first,
 	i++;
 	if (i == tx_ring->count)
 		i = 0;
-
 	tx_ring->next_to_use = i;
+
 	/* need this */
 	rnpm_maybe_stop_tx(tx_ring, DESC_NEEDED);
-	if (netif_xmit_stopped(txring_txq(tx_ring)) || !netdev_xmit_more()) {
-		tx_ring->tx_stats.send_bytes_to_hw += first->bytecount;
-		tx_ring->tx_stats.send_bytes_to_hw +=
-			tx_ring->tx_stats.todo_update;
-		tx_ring->tx_stats.todo_update = 0;
-		rnpm_wr_reg(tx_ring->tail, i);
-	} else {
-		tx_ring->tx_stats.todo_update = first->bytecount;
-	}
+	/* notify HW of packet */
+	rnpm_wr_reg(tx_ring->tail, i);
 
 	return 0;
 dma_error:
@@ -6796,6 +6852,7 @@ dma_error:
 
 	return -1;
 }
+
 __maybe_unused static void rnpm_atr(struct rnpm_ring *ring,
 				    struct rnpm_tx_buffer *first)
 {
@@ -6812,11 +6869,14 @@ netdev_tx_t rnpm_xmit_frame_ring(struct sk_buff *skb,
 	u16 count = TXD_USE_COUNT(skb_headlen(skb));
 	__be16 protocol = skb->protocol;
 	u8 hdr_len = 0;
+	// struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
 
 	tx_dbg("=== begin ====\n");
-	tx_dbg("skb:%p, skb->len:%d  headlen:%d, data_len:%d\n", skb, skb->len,
-	       skb_headlen(skb), skb->data_len);
-	/* need: 1 descriptor per page * PAGE_SIZE/RNPM_MAX_DATA_PER_TXD,
+
+	tx_dbg("skb:%p, skb->len:%d  headlen:%d, data_len:%d\n", skb,
+	       skb->len, skb_headlen(skb), skb->data_len);
+	/*
+	 * need: 1 descriptor per page * PAGE_SIZE/RNPM_MAX_DATA_PER_TXD,
 	 *       + 1 desc for skb_headlen/RNPM_MAX_DATA_PER_TXD,
 	 *       + 2 desc gap to keep tail from touching head,
 	 *       + 1 desc for context descriptor,
@@ -6826,11 +6886,11 @@ netdev_tx_t rnpm_xmit_frame_ring(struct sk_buff *skb,
 		skb_frag_t *frag_temp = &skb_shinfo(skb)->frags[f];
 
 		count += TXD_USE_COUNT(skb_frag_size(frag_temp));
-		tx_dbg(" #%d frag: size:%d\n", f, skb_frag_size(frag_temp));
+		tx_dbg(" #%d frag: size:%d\n", f,
+		       skb_frag_size(frag_temp));
 		if (count > 60) {
 			/* error detect */
-			netdev_dbg(adapter->netdev, "desc too large, %d\n",
-				   count);
+			pr_warn("desc too large, %d\n", count);
 			return NETDEV_TX_BUSY;
 		}
 	}
@@ -6852,12 +6912,7 @@ netdev_tx_t rnpm_xmit_frame_ring(struct sk_buff *skb,
 	first->mss_len_vf_num = 0;
 	first->inner_vlan_tunnel_len = 0;
 
-#ifdef RNPM_IOV_VEB_BUG_NOT_FIXED
-	first->ctx_flag =
-		(adapter->flags & RNPM_FLAG_SRIOV_ENABLED) ? true : false;
-#else
 	first->ctx_flag = false;
-#endif
 	if (adapter->priv_flags & RNPM_PRIV_FLAG_TX_PADDING)
 		first->ctx_flag = true;
 	/* if we have a HW VLAN tag being added default to the HW one */
@@ -6871,11 +6926,13 @@ netdev_tx_t rnpm_xmit_frame_ring(struct sk_buff *skb,
 			first->inner_vlan_tunnel_len |=
 				(skb_vlan_tag_get(skb) << 8);
 			first->ctx_flag = true;
+			/* else if it is a SW VLAN check the next protocol and store the tag
+			 */
 		} else if (protocol == htons(ETH_P_8021Q)) {
 			struct vlan_hdr *vhdr, _vhdr;
 
-			vhdr = skb_header_pointer(skb, ETH_HLEN, sizeof(_vhdr),
-						  &_vhdr);
+			vhdr = skb_header_pointer(skb, ETH_HLEN,
+						  sizeof(_vhdr), &_vhdr);
 			if (!vhdr)
 				goto out_drop;
 
@@ -6895,8 +6952,8 @@ netdev_tx_t rnpm_xmit_frame_ring(struct sk_buff *skb,
 		} else if (protocol == htons(ETH_P_8021Q)) {
 			struct vlan_hdr *vhdr, _vhdr;
 
-			vhdr = skb_header_pointer(skb, ETH_HLEN, sizeof(_vhdr),
-						  &_vhdr);
+			vhdr = skb_header_pointer(skb, ETH_HLEN,
+						  sizeof(_vhdr), &_vhdr);
 			if (!vhdr)
 				goto out_drop;
 
@@ -6910,27 +6967,19 @@ netdev_tx_t rnpm_xmit_frame_ring(struct sk_buff *skb,
 	skb_tx_timestamp(skb);
 	/* just for test */
 	// tx_flags |= RNPM_TXD_FLAG_PTP;
-#ifdef SKB_SHARED_TX_IS_UNION
-	if (unlikely(skb_tx(skb)->hardware) &&
-	    adapter->flags2 & RNPM_FLAG2_PTP_ENABLED && adapter->ptp_tx_en) {
-		if (!test_and_set_bit_lock(__RNPM_PTP_TX_IN_PROGRESS,
-					   &adapter->state)) {
-			skb_tx(skb)->in_progress = 1;
-
-#else
 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP) &&
-	    adapter->flags2 & RNPM_FLAG2_PTP_ENABLED && adapter->ptp_tx_en) {
+	    adapter->flags2 & RNPM_FLAG2_PTP_ENABLED &&
+	    adapter->ptp_tx_en) {
 		if (!test_and_set_bit_lock(__RNPM_PTP_TX_IN_PROGRESS,
 					   &adapter->state)) {
 			skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
-#endif
 			tx_flags |= RNPM_TXD_FLAG_PTP;
 			adapter->ptp_tx_skb = skb_get(skb);
 			adapter->tx_hwtstamp_start = jiffies;
 			schedule_work(&adapter->tx_hwtstamp_work);
 
 		} else {
-			netdev_dbg(adapter->netdev, "ptp_tx_skb miss\n");
+			pr_warn("ptp_tx_skb miss\n");
 		}
 	}
 	/* record initial flags and protocol */
@@ -6972,7 +7021,8 @@ cleanup_tx_tstamp:
 		dev_kfree_skb_any(adapter->ptp_tx_skb);
 		adapter->ptp_tx_skb = NULL;
 		cancel_work_sync(&adapter->tx_hwtstamp_work);
-		clear_bit_unlock(__RNPM_PTP_TX_IN_PROGRESS, &adapter->state);
+		clear_bit_unlock(__RNPM_PTP_TX_IN_PROGRESS,
+				 &adapter->state);
 	}
 
 	return NETDEV_TX_OK;
@@ -6989,10 +7039,10 @@ static u8 skb_need_padto_bytes(struct sk_buff *skb, bool mac_padding)
 
 	if (mac_padding) {
 		ip.hdr = skb_network_header(skb);
-		l4_proto =
-			ip.v4->version == 4 ? ip.v4->protocol : ip.v6->nexthdr;
+		l4_proto = ip.v4->version == 4 ? ip.v4->protocol :
+						 ip.v6->nexthdr;
 		/* Skb is sctp and len < 60 bytes, need to open mac padding */
-		if ((l4_proto == IPPROTO_SCTP) && (skb->len < 60))
+		if (l4_proto == IPPROTO_SCTP && skb->len < 60)
 			return 33;
 		return 60;
 	}
@@ -7012,11 +7062,12 @@ static netdev_tx_t rnpm_xmit_frame(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 	}
 
-	/* The minimum packet size for olinfo paylen is 17 so pad the skb
+	/*
+	 * The minimum packet size for olinfo paylen is 17 so pad the skb
 	 * in order to meet this minimum size requirement.
 	 */
-	padto_bytes = skb_need_padto_bytes(skb, !!(adapter->priv_flags &
-						   RNPM_PRIV_FLAG_TX_PADDING));
+	padto_bytes = skb_need_padto_bytes(
+		skb, !!(adapter->priv_flags & RNPM_PRIV_FLAG_TX_PADDING));
 	if (skb_put_padto(skb, padto_bytes))
 		return NETDEV_TX_OK;
 
@@ -7078,8 +7129,9 @@ static int rnpm_mdio_read(struct net_device *netdev, int prtad, int devad,
 	return rc;
 }
 
-__maybe_unused static int rnpm_mdio_write(struct net_device *netdev, int prtad,
-					  int devad, u16 addr, u16 value)
+__maybe_unused static int rnpm_mdio_write(struct net_device *netdev,
+					  int prtad, int devad, u16 addr,
+					  u16 value)
 {
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
@@ -7087,9 +7139,11 @@ __maybe_unused static int rnpm_mdio_write(struct net_device *netdev, int prtad,
 	return hw->phy.ops.write_reg(hw, addr, 0, value);
 }
 
-static int rnpm_mii_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
+static int rnpm_mii_ioctl(struct net_device *netdev, struct ifreq *ifr,
+			  int cmd)
 {
-	struct mii_ioctl_data *mii = (struct mii_ioctl_data *)&ifr->ifr_data;
+	struct mii_ioctl_data *mii =
+		(struct mii_ioctl_data *)&ifr->ifr_data;
 	int prtad, devad, ret = -EIO;
 
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
@@ -7120,30 +7174,22 @@ static int rnpm_mii_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 	return 0;
 }
 
-static int rnpm_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
+static int rnpm_ioctl(struct net_device *netdev, struct ifreq *req,
+		      int cmd)
 {
-#ifdef HAVE_PTP_1588_CLOCK
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
-#endif
 
+	// printk("rnpm ioctl cmd is %x\n", cmd);
 	/* ptp 1588 used this */
 	switch (cmd) {
-#ifdef HAVE_PTP_1588_CLOCK
-#ifdef SIOCGHWTSTAMP
 	case SIOCGHWTSTAMP:
-#ifndef NO_PTP
 		if (module_enable_ptp)
 			return rnpm_ptp_get_ts_config(adapter, req);
-#endif
-#endif
 		break;
 	case SIOCSHWTSTAMP:
-#ifndef NO_PTP
 		if (module_enable_ptp)
 			return rnpm_ptp_set_ts_config(adapter, req);
 		break;
-#endif
-#endif
 	case SIOCGMIIPHY:
 	case SIOCGMIIREG:
 	case SIOCSMIIREG:
@@ -7153,7 +7199,8 @@ static int rnpm_ioctl(struct net_device *netdev, struct ifreq *req, int cmd)
 }
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
-/* Polling 'interrupt' - used by things like netconsole to send skbs
+/*
+ * Polling 'interrupt' - used by things like netconsole to send skbs
  * without having to re-enable interrupts. It's not called while
  * the interrupt routine is executing.
  */
@@ -7189,10 +7236,12 @@ static void rnpm_get_stats64(struct net_device *netdev,
 
 		if (ring) {
 			do {
-				start = u64_stats_fetch_begin(&ring->syncp);
+				start = u64_stats_fetch_begin(
+					&ring->syncp);
 				packets = ring->stats.packets;
 				bytes = ring->stats.bytes;
-			} while (u64_stats_fetch_retry(&ring->syncp, start));
+			} while (u64_stats_fetch_retry(&ring->syncp,
+						       start));
 			stats->rx_packets += packets;
 			stats->rx_bytes += bytes;
 		}
@@ -7205,10 +7254,12 @@ static void rnpm_get_stats64(struct net_device *netdev,
 
 		if (ring) {
 			do {
-				start = u64_stats_fetch_begin(&ring->syncp);
+				start = u64_stats_fetch_begin(
+					&ring->syncp);
 				packets = ring->stats.packets;
 				bytes = ring->stats.bytes;
-			} while (u64_stats_fetch_retry(&ring->syncp, start));
+			} while (u64_stats_fetch_retry(&ring->syncp,
+						       start));
 			stats->tx_packets += packets;
 			stats->tx_bytes += bytes;
 		}
@@ -7222,36 +7273,6 @@ static void rnpm_get_stats64(struct net_device *netdev,
 	stats->rx_crc_errors = netdev->stats.rx_crc_errors;
 }
 
-#ifdef CONFIG_RNPM_DCB
-/**
- * rnpm_validate_rtr - verify 802.1Qp to Rx packet buffer mapping is valid.
- * @adapter: pointer to rnpm_adapter
- * @tc: number of traffic classes currently enabled
- *
- * Configure a valid 802.1Qp to Rx packet buffer mapping ie confirm
- * 802.1Q priority maps to a packet buffer that exists.
- */
-static void rnpm_validate_rtr(struct rnpm_adapter *adapter, u8 tc)
-{
-	struct rnpm_hw *hw = &adapter->hw;
-	u32 reg, rsave;
-	int i;
-
-}
-
-/**
- * rnpm_set_prio_tc_map - Configure netdev prio tc map
- * @adapter: Pointer to adapter struct
- *
- * Populate the netdev user priority to tc map
- */
-static void rnpm_set_prio_tc_map(struct rnpm_adapter *adapter)
-{
-	struct net_device *dev = adapter->netdev;
-
-}
-
-#endif /* CONFIG_RNPM_DCB */
 /**
  * rnpm_setup_tc - configure net_device for multiple traffic classes
  *
@@ -7272,7 +7293,8 @@ int rnpm_setup_tc(struct net_device *dev, u8 tc)
 	 * match packet buffer alignment. Unfortunately, the
 	 * hardware is not flexible enough to do this dynamically.
 	 */
-	while (test_and_set_bit(__RNPM_RESETTING, &adapter->pf_adapter->state))
+	while (test_and_set_bit(__RNPM_RESETTING,
+				&adapter->pf_adapter->state))
 		usleep_range(1000, 2000);
 
 	if (netif_running(dev))
@@ -7282,32 +7304,6 @@ int rnpm_setup_tc(struct net_device *dev, u8 tc)
 	hw->mac.ops.clear_hw_cntrs(hw);
 	rnpm_update_stats(adapter);
 
-#ifdef CONFIG_RNPM_DCB
-	if (tc) {
-		netdev_set_num_tc(dev, tc);
-		rnpm_set_prio_tc_map(adapter);
-
-		adapter->flags |= RNPM_FLAG_DCB_ENABLED;
-
-		if (adapter->hw.mac.type == rnpm_mac_82598EB) {
-			adapter->last_lfc_mode = adapter->hw.fc.requested_mode;
-			adapter->hw.fc.requested_mode = rnpm_fc_none;
-		}
-	} else {
-		netdev_reset_tc(dev);
-
-		if (adapter->hw.mac.type == rnpm_mac_82598EB)
-			adapter->hw.fc.requested_mode = adapter->last_lfc_mode;
-
-		adapter->flags &= ~RNPM_FLAG_DCB_ENABLED;
-
-		adapter->temp_dcb_cfg.pfc_mode_enable = false;
-		adapter->dcb_cfg.pfc_mode_enable = false;
-	}
-
-	rnpm_validate_rtr(adapter, tc);
-
-#endif /* CONFIG_RNPM_DCB */
 	rnpm_init_interrupt_scheme(adapter);
 
 	/* rss table must reset */
@@ -7414,7 +7410,8 @@ static int rnpm_set_features(struct net_device *netdev,
 		if (adapter->flags & RNPM_FLAG_MUTIPORT_ENABLED) {
 			/* in mutiport mode ,use rss table to zero instead close hw flags */
 			if (features & (NETIF_F_RXHASH)) {
-				adapter->flags &= (~RNPM_FLAG_RXHASH_DISABLE);
+				adapter->flags &=
+					(~RNPM_FLAG_RXHASH_DISABLE);
 				rnpm_store_reta(adapter);
 			} else {
 				adapter->flags |= RNPM_FLAG_RXHASH_DISABLE;
@@ -7422,10 +7419,10 @@ static int rnpm_set_features(struct net_device *netdev,
 			}
 
 		} else {
-			u32 iov_en =
-				(adapter->flags & RNPM_FLAG_SRIOV_ENABLED) ?
-					      RNPM_IOV_ENABLED :
-					      0;
+			u32 iov_en = (adapter->flags &
+				      RNPM_FLAG_SRIOV_ENABLED) ?
+					     RNPM_IOV_ENABLED :
+					     0;
 			/* close rxhash will lead all rx packets to ring 0 */
 			if (features & (NETIF_F_RXHASH))
 				wr32(hw, RNPM_ETH_RSS_CONTROL,
@@ -7451,8 +7448,10 @@ static int rnpm_set_features(struct net_device *netdev,
 		} else {
 			old_value |= FCS_MASK;
 		}
-		wr32(hw, RNPM_MAC_RX_CFG(adapter->port),
-		     old_value | RNPM_MAX_RX_CFG_IPC);
+		old_value = adapter->mac_ipc_off ?
+				    old_value & ~RNPM_MAX_RX_CFG_IPC :
+				    old_value | RNPM_MAX_RX_CFG_IPC;
+		wr32(hw, RNPM_MAC_RX_CFG(adapter->port), old_value);
 	}
 
 	if (changed & NETIF_F_RXALL)
@@ -7474,9 +7473,10 @@ static int rnpm_set_features(struct net_device *netdev,
 	return 0;
 }
 
-static int rnpm_ndo_bridge_setlink(struct net_device *dev, struct nlmsghdr *nlh,
-				   __always_unused u16 flags,
-				   struct netlink_ext_ack __always_unused *ext)
+static int
+rnpm_ndo_bridge_setlink(struct net_device *dev, struct nlmsghdr *nlh,
+			__always_unused u16 flags,
+			struct netlink_ext_ack __always_unused *ext)
 {
 	struct rnpm_adapter *adapter = netdev_priv(dev);
 	struct rnpm_hw *hw = &adapter->hw;
@@ -7486,7 +7486,8 @@ static int rnpm_ndo_bridge_setlink(struct net_device *dev, struct nlmsghdr *nlh,
 	if (!(adapter->flags & RNPM_FLAG_SRIOV_ENABLED))
 		return -EOPNOTSUPP;
 
-	br_spec = nlmsg_find_attr(nlh, sizeof(struct ifinfomsg), IFLA_AF_SPEC);
+	br_spec = nlmsg_find_attr(nlh, sizeof(struct ifinfomsg),
+				  IFLA_AF_SPEC);
 
 	nla_for_each_nested(attr, br_spec, rem) {
 		__u16 mode;
@@ -7503,10 +7504,12 @@ static int rnpm_ndo_bridge_setlink(struct net_device *dev, struct nlmsghdr *nlh,
 		} else if (mode == BRIDGE_MODE_VEB) {
 			adapter->flags2 |= RNPM_FLAG2_BRIDGE_MODE_VEB;
 			wr32(hw, RNPM_DMA_CONFIG,
-			     rd32(hw, RNPM_DMA_CONFIG) & (~DMA_VEB_BYPASS));
+			     rd32(hw, RNPM_DMA_CONFIG) &
+				     (~DMA_VEB_BYPASS));
 
-		} else
+		} else {
 			return -EINVAL;
+		}
 
 		e_info(drv, "enabling bridge mode: %s\n",
 		       mode == BRIDGE_MODE_VEPA ? "VEPA" : "VEB");
@@ -7517,7 +7520,8 @@ static int rnpm_ndo_bridge_setlink(struct net_device *dev, struct nlmsghdr *nlh,
 
 static int rnpm_ndo_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
 				   struct net_device *dev,
-				   u32 __maybe_unused filter_mask, int nlflags)
+				   u32 __maybe_unused filter_mask,
+				   int nlflags)
 {
 	struct rnpm_adapter *adapter = netdev_priv(dev);
 	u16 mode;
@@ -7530,11 +7534,11 @@ static int rnpm_ndo_bridge_getlink(struct sk_buff *skb, u32 pid, u32 seq,
 	else
 		mode = BRIDGE_MODE_VEPA;
 
-	return ndo_dflt_bridge_getlink(skb, pid, seq, dev, mode, 0, 0, nlflags,
-				       filter_mask, NULL);
+	return ndo_dflt_bridge_getlink(skb, pid, seq, dev, mode, 0, 0,
+				       nlflags, filter_mask, NULL);
 }
 
-void rnpm_clear_udp_tunnel_port(struct rnpm_adapter *adapter)
+static void rnpm_clear_udp_tunnel_port(struct rnpm_adapter *adapter)
 {
 	struct rnpm_hw *hw = &adapter->hw;
 
@@ -7550,8 +7554,9 @@ void rnpm_clear_udp_tunnel_port(struct rnpm_adapter *adapter)
  * @dev: The port's netdev
  * @ti: Tunnel endpoint information
  **/
-__maybe_unused static void rnpm_add_udp_tunnel_port(struct net_device *dev,
-						    struct udp_tunnel_info *ti)
+__maybe_unused static void
+rnpm_add_udp_tunnel_port(struct net_device *dev,
+			 struct udp_tunnel_info *ti)
 {
 	struct rnpm_adapter *adapter = netdev_priv(dev);
 	struct rnpm_hw *hw = &adapter->hw;
@@ -7591,8 +7596,9 @@ __maybe_unused static void rnpm_add_udp_tunnel_port(struct net_device *dev,
  * @dev: The port's netdev
  * @ti: Tunnel endpoint information
  **/
-__maybe_unused static void rnpm_del_udp_tunnel_port(struct net_device *dev,
-						    struct udp_tunnel_info *ti)
+__maybe_unused static void
+rnpm_del_udp_tunnel_port(struct net_device *dev,
+			 struct udp_tunnel_info *ti)
 {
 	struct rnpm_adapter *adapter = netdev_priv(dev);
 	// u32 port_mask;
@@ -7626,7 +7632,6 @@ __maybe_unused static void rnpm_del_udp_tunnel_port(struct net_device *dev,
 }
 
 #define RNPM_MAX_TUNNEL_HDR_LEN 80
-#ifdef NETIF_F_GSO_PARTIAL
 #define RNPM_MAX_MAC_HDR_LEN 127
 #define RNPM_MAX_NETWORK_HDR_LEN 511
 
@@ -7639,11 +7644,12 @@ static netdev_features_t rnpm_features_check(struct sk_buff *skb,
 	/* Make certain the headers can be described by a context descriptor */
 	mac_hdr_len = skb_network_header(skb) - skb->data;
 	if (unlikely(mac_hdr_len > RNPM_MAX_MAC_HDR_LEN))
-		return features &
-		       ~(NETIF_F_HW_CSUM | NETIF_F_SCTP_CRC |
-			 NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_TSO | NETIF_F_TSO6);
+		return features & ~(NETIF_F_HW_CSUM | NETIF_F_SCTP_CRC |
+				    NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_TSO |
+				    NETIF_F_TSO6);
 
-	network_hdr_len = skb_checksum_start(skb) - skb_network_header(skb);
+	network_hdr_len =
+		skb_checksum_start(skb) - skb_network_header(skb);
 	if (unlikely(network_hdr_len > RNPM_MAX_NETWORK_HDR_LEN))
 		return features & ~(NETIF_F_HW_CSUM | NETIF_F_SCTP_CRC |
 				    NETIF_F_TSO | NETIF_F_TSO6);
@@ -7656,22 +7662,6 @@ static netdev_features_t rnpm_features_check(struct sk_buff *skb,
 
 	return features;
 }
-#else
-static netdev_features_t rnpm_features_check(struct sk_buff *skb,
-					     struct net_device *dev,
-					     netdev_features_t features)
-{
-	if (!skb->encapsulation)
-		return features;
-
-	if (unlikely(skb_inner_mac_header(skb) - skb_transport_header(skb) >
-		     RNPM_MAX_TUNNEL_HDR_LEN))
-		return features & ~NETIF_F_CSUM_MASK;
-
-	return features;
-}
-
-#endif /* NETIF_F_GSO_PARTIAL */
 
 const struct net_device_ops rnpm_netdev_ops = {
 	.ndo_open = rnpm_open,
@@ -7679,28 +7669,34 @@ const struct net_device_ops rnpm_netdev_ops = {
 	.ndo_start_xmit = rnpm_xmit_frame,
 	.ndo_set_rx_mode = rnpm_set_rx_mode,
 	.ndo_validate_addr = eth_validate_addr,
-	.ndo_do_ioctl = rnpm_ioctl,
+	.ndo_eth_ioctl = rnpm_ioctl,
 	.ndo_change_mtu = rnpm_change_mtu,
 	.ndo_get_stats64 = rnpm_get_stats64,
 	.ndo_tx_timeout = rnpm_tx_timeout,
+
 	.ndo_set_tx_maxrate = rnpm_tx_maxrate,
+
 	.ndo_set_mac_address = rnpm_set_mac,
 	.ndo_vlan_rx_add_vid = rnpm_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = rnpm_vlan_rx_kill_vid,
+
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller = rnpm_netpoll,
 #endif
+
 	.ndo_bridge_setlink = rnpm_ndo_bridge_setlink,
 	.ndo_bridge_getlink = rnpm_ndo_bridge_getlink,
 
 	.ndo_features_check = rnpm_features_check,
+
 	.ndo_set_features = rnpm_set_features,
 	.ndo_fix_features = rnpm_fix_features,
 };
 
-void rnpm_assign_netdev_ops(struct net_device *dev)
+static void rnpm_assign_netdev_ops(struct net_device *dev)
 {
 	dev->netdev_ops = &rnpm_netdev_ops;
+
 	rnpm_set_ethtool_ops(dev);
 	dev->watchdog_timeo = 5 * HZ;
 }
@@ -7731,26 +7727,18 @@ static inline unsigned long rnpm_tso_features(void)
 {
 	unsigned long features = 0;
 
-#ifdef NETIF_F_TSO
 	features |= NETIF_F_TSO;
-#endif /* NETIF_F_TSO */
-#ifdef NETIF_F_TSO6
 	features |= NETIF_F_TSO6;
-#endif /* NETIF_F_TSO6 */
-#ifdef NETIF_F_GSO_PARTIAL
 	features |= NETIF_F_GSO_PARTIAL | RNPM_GSO_PARTIAL_FEATURES;
-#endif
 
 	return features;
 }
 
 static int rnpm_rm_adpater(struct rnpm_adapter *adapter)
 {
-	struct net_device *netdev;
+	struct net_device *netdev = adapter->netdev;
 
-	netdev = adapter->netdev;
-	rnpm_info("= remove adapter:%s =\n", netdev->name);
-	// rnpm_logd(LOG_FUNC_ENTER,"= %s: %s\n", __func__, netdev->name);
+	netdev_info(netdev, "remove adapter\n");
 
 	rnpm_dbg_adapter_exit(adapter);
 
@@ -7759,16 +7747,18 @@ static int rnpm_rm_adpater(struct rnpm_adapter *adapter)
 	set_bit(__RNPM_DOWN, &adapter->state);
 
 	/* should clean all tx schedule_work */
-#ifndef NO_PTP
 	if (module_enable_ptp) {
 		// should wait ptp timeout
-		while (test_bit(__RNPM_PTP_TX_IN_PROGRESS, &adapter->state))
+		while (test_bit(__RNPM_PTP_TX_IN_PROGRESS,
+				&adapter->state))
 			usleep_range(10000, 20000);
 		cancel_work_sync(&adapter->tx_hwtstamp_work);
 	}
-#endif
-
 	cancel_work_sync(&adapter->service_task);
+	/* muset wait service task over, we can free irq */
+	while (test_bit(__RNPM_SERVICE_IN_PROGRESS, &adapter->state))
+		usleep_range(10000, 20000);
+
 	rnpm_sysfs_exit(adapter);
 
 	if (adapter->netdev_registered) {
@@ -7791,21 +7781,18 @@ static int rnpm_rm_adpater(struct rnpm_adapter *adapter)
 }
 
 /* read from hw */
-void rnpm_fix_queue_number(struct rnpm_hw *hw)
+static void rnpm_fix_queue_number(struct rnpm_hw *hw)
 {
 	struct rnpm_adapter *adapter = hw->back;
 	u32 count;
 
-	// count = rd32(hw, RNPM_DMA_STATUS);
-	// count = (count & DMA_RING_NUM) >> 24;
 	/* total_queue_pair_cnts equal to 64 on n400 tp & n10 4x10 board , when
 	 * nic-mode 3 and adapter cnt 2
 	 */
-	if ((rnpm_info_tbl[adapter->pf_adapter->board_type]->adapter_cnt ==
-	     2) &&
-	    (hw->mode == MODE_NIC_MODE_4PORT)) {
-		if ((adapter->pf_adapter->board_type == board_n10) ||
-		    (adapter->pf_adapter->board_type == board_n400_4x1G)) {
+	if (rnpm_info_tbl[adapter->pf_adapter->board_type]->adapter_cnt == 2 &&
+	    hw->mode == MODE_NIC_MODE_4PORT) {
+		if (adapter->pf_adapter->board_type == board_n10 ||
+		    adapter->pf_adapter->board_type == board_n400_4x1G) {
 			rnpm_info_tbl[adapter->pf_adapter->board_type]
 				->total_queue_pair_cnts = 64;
 		}
@@ -7816,15 +7803,10 @@ void rnpm_fix_queue_number(struct rnpm_hw *hw)
 		rnpm_info_tbl[adapter->pf_adapter->board_type]->adapter_cnt;
 
 	if (count != adapter->max_ring_pair_counts) {
-		netdev_dbg(adapter->netdev,
-			   "reset max_ring_pair_counts from %d to %d\n",
-			   adapter->max_ring_pair_counts, count);
+		pr_warn("reset max_ring_pair_counts from %d to %d\n",
+			adapter->max_ring_pair_counts, count);
 		adapter->max_ring_pair_counts = count;
 	}
-
-#ifdef RNPM_MAX_RINGS
-	adapter->max_ring_pair_counts = RNPM_MAX_RINGS;
-#endif
 }
 
 static int check_valid_mode(struct rnpm_pf_adapter *pf_adapter)
@@ -7866,25 +7848,19 @@ static int rnpm_init_msix_pf_adapter(struct rnpm_pf_adapter *pf_adapter)
 	int vector, vectors = 0, err, max_msix_counts_per_port;
 	int min_vectors = valid_port + 1;
 	int remain, i;
-#ifdef NO_PCI_MSIX_COUNT
-	total_msix_counts = 64;
-#else
+
 	total_msix_counts = pci_msix_vec_count(pf_adapter->pdev);
-#endif
 
 	// reset max vectors if set by kconfig
-#ifdef CONFIG_MXGBEM_MSIX_COUNT
-	total_msix_counts = CONFIG_MXGBEM_MSIX_COUNT;
-#endif
 	if (pf_msix_counts_set) {
 		total_msix_counts =
 			pf_msix_counts_set < 5 ? 5 : pf_msix_counts_set;
 	}
 	total_msix_counts -= 1; // one for mailbox
-	total_msix_counts = min_t(
-		int,
-		rnpm_info_tbl[pf_adapter->board_type]->total_queue_pair_cnts,
-		total_msix_counts);
+	total_msix_counts = min_t(int,
+				  rnpm_info_tbl[pf_adapter->board_type]
+					  ->total_queue_pair_cnts,
+				  total_msix_counts);
 	max_msix_counts_per_port = total_msix_counts / valid_port;
 
 	remain = total_msix_counts - max_msix_counts_per_port * valid_port;
@@ -7902,8 +7878,9 @@ static int rnpm_init_msix_pf_adapter(struct rnpm_pf_adapter *pf_adapter)
 					max_msix_counts_per_port;
 			}
 		}
-		pf_adapter->max_msix_counts[i] = min_t(
-			int, pf_adapter->max_msix_counts[i], num_online_cpus());
+		pf_adapter->max_msix_counts[i] =
+			min_t(int, pf_adapter->max_msix_counts[i],
+			      num_online_cpus());
 		rnpm_dbg("port %d, max_msix_counts %d\n", i,
 			 pf_adapter->max_msix_counts[i]);
 		vectors += pf_adapter->max_msix_counts[i];
@@ -7921,8 +7898,9 @@ static int rnpm_init_msix_pf_adapter(struct rnpm_pf_adapter *pf_adapter)
 	for (vector = 0; vector < vectors; vector++)
 		pf_adapter->msix_entries[vector].entry = vector;
 
-	err = pci_enable_msix_range(pf_adapter->pdev, pf_adapter->msix_entries,
-				    min_vectors, vectors);
+	err = pci_enable_msix_range(pf_adapter->pdev,
+				    pf_adapter->msix_entries, min_vectors,
+				    vectors);
 
 	if (err < 0) {
 		rnpm_err("pci_enable_msix failed: req:%d err:%d\n", vectors,
@@ -7932,7 +7910,7 @@ static int rnpm_init_msix_pf_adapter(struct rnpm_pf_adapter *pf_adapter)
 		return -EINVAL;
 	} else if ((err > 0) && (err != vectors)) {
 		// should reset msix for each port
-		rnpm_dbg("get msix count %d\n", err);
+		pr_debug("get msix count %d\n", err);
 		total_msix_counts = err;
 		total_msix_counts -= 1; // one for mailbox
 
@@ -7946,7 +7924,8 @@ static int rnpm_init_msix_pf_adapter(struct rnpm_pf_adapter *pf_adapter)
 			if (pf_adapter->port_valid & (1 << i)) {
 				if (remain) {
 					pf_adapter->max_msix_counts[i] =
-						max_msix_counts_per_port + 1;
+						max_msix_counts_per_port +
+						1;
 					remain--;
 				} else {
 					pf_adapter->max_msix_counts[i] =
@@ -7956,6 +7935,9 @@ static int rnpm_init_msix_pf_adapter(struct rnpm_pf_adapter *pf_adapter)
 			pf_adapter->max_msix_counts[i] =
 				min_t(int, pf_adapter->max_msix_counts[i],
 				      num_online_cpus());
+			pr_debug("port %d, max_msix_counts %d\n", i,
+				 pf_adapter->max_msix_counts[i]);
+			// vectors += pf_adapter->max_msix_counts[i];
 		}
 	}
 
@@ -7990,7 +7972,9 @@ static void rnpm_rm_mbx_irq(struct rnpm_pf_adapter *pf_adapter)
 {
 	pf_adapter->hw.mbx.ops.configure(
 		&pf_adapter->hw,
-		pf_adapter->msix_entries[pf_adapter->other_irq].entry, false);
+		pf_adapter->msix_entries[pf_adapter->other_irq].entry,
+		false);
+
 	free_irq(pf_adapter->msix_entries[pf_adapter->other_irq].vector,
 		 pf_adapter);
 	pf_adapter->hw.mbx.irq_enabled = false;
@@ -8008,14 +7992,20 @@ static int rnpm_request_mbx_irq(struct rnpm_pf_adapter *pf_adapter)
 		rnpm_msix_other, 0, pf_adapter->name, pf_adapter);
 
 	if (err) {
+		// e_err(probe, "request_irq for msix_other failed: %d\n", err);
 		err = -1;
 		goto err_mbx_irq;
 	}
 
 	pf_adapter->hw.mbx.ops.configure(
 		&pf_adapter->hw,
-		pf_adapter->msix_entries[pf_adapter->other_irq].entry, true);
+		pf_adapter->msix_entries[pf_adapter->other_irq].entry,
+		true);
 	pf_adapter->hw.mbx.irq_enabled = true;
+
+	rnpm_logd(LOG_MBX_MSG_IN, "enable mbx-other irq. %s vec:%d",
+		  pf_adapter->name,
+		  pf_adapter->msix_entries[pf_adapter->other_irq].vector);
 
 err_mbx_irq:
 	return err;
@@ -8028,16 +8018,14 @@ static int rnpm_add_pf_adapter(struct pci_dev *pdev,
 	/*alloc pf_adapter and set it to pdev priv */
 	struct rnpm_pf_adapter *pf_adapter;
 	int i, err = 0;
-#ifdef FT_PADDING
-	u32 data;
-#endif
 	u8 __iomem *hw_addr_bar0 = 0;
 	static int pf0_cards_found;
 	static int pf1_cards_found;
 	struct rnpm_hw *hw;
 	struct rnpm_info *ii = rnpm_info_tbl[(int)id->driver_data];
 
-	pf_adapter = devm_kzalloc(&pdev->dev, sizeof(*pf_adapter), GFP_KERNEL);
+	pf_adapter =
+		devm_kzalloc(&pdev->dev, sizeof(*pf_adapter), GFP_KERNEL);
 	if (pf_adapter) {
 		*ppf_adapter = pf_adapter;
 	} else {
@@ -8052,20 +8040,13 @@ static int rnpm_add_pf_adapter(struct pci_dev *pdev,
 #define RNPM_NIC_BAR0 (0)
 	hw_addr_bar0 = pcim_iomap(pdev, RNPM_NIC_BAR0, 0);
 	if (!hw_addr_bar0) {
-		dev_err(&pdev->dev, "pcim_iomap bar%d failed!\n", 0);
+		dev_err(&pdev->dev, "pcim_iomap bar%d faild!\n", 0);
 		goto err_ioremap0;
 	}
-#ifdef FIX_VF_BUG
-	rnpm_wr_reg(hw_addr_bar0 +
-			    (0x7982fc &
-			     (pci_resource_len(pdev, RNPM_NIC_BAR0) - 1)),
-		    0);
-#else
 	rnpm_wr_reg(hw_addr_bar0 +
 			    (0x7982fc &
 			     (pci_resource_len(pdev, RNPM_NIC_BAR0) - 1)),
 		    1);
-#endif
 	pf_adapter->hw_bar0 = hw_addr_bar0;
 	hw = &pf_adapter->hw;
 
@@ -8078,8 +8059,8 @@ static int rnpm_add_pf_adapter(struct pci_dev *pdev,
 	    (int)pci_resource_len(pdev, 0) / 1024 / 1024, hw->rpu_addr);
 
 #define RNPM_NIC_BAR4 (4)
-	pf_adapter->hw_addr4 = pf_adapter->hw_addr =
-		pcim_iomap(pdev, RNPM_NIC_BAR4, 0);
+	pf_adapter->hw_addr = pcim_iomap(pdev, RNPM_NIC_BAR4, 0);
+	pf_adapter->hw_addr4 = pcim_iomap(pdev, RNPM_NIC_BAR4, 0);
 	if (!pf_adapter->hw_addr) {
 		err = -EIO;
 		goto err_ioremap4;
@@ -8092,39 +8073,18 @@ static int rnpm_add_pf_adapter(struct pci_dev *pdev,
 	mutex_init(&pf_adapter->mbx_lock);
 
 	/* mailbox here */
+	hw = &pf_adapter->hw;
 	// hw->hw_addr = pf_adapter->hw_addr;
-#ifdef FIX_VF_BUG
-	if (rnpm_is_pf1(pdev)) {
-		hw->hw_addr = pf_adapter->hw_addr4 + 0x100000;
-		pf_adapter->hw_addr = hw->hw_addr;
-		hw->ring_msix_base = hw->hw_addr + 0xa4000 + 0x200;
-	} else {
-		hw->hw_addr = pf_adapter->hw_addr;
-		hw->ring_msix_base = hw->hw_addr + 0xa4000;
-	}
-#else
 	hw->hw_addr = pf_adapter->hw_addr;
 	hw->ring_msix_base = hw->hw_addr + 0xa4000;
-#endif
+
+	hw->hw_kram_addr = pf_adapter->rpu_addr;
+	hw->hw_mpe_addr = pf_adapter->rpu_addr;
 
 	hw->pdev = pf_adapter->pdev;
 	hw->mbx.lock = &pf_adapter->mbx_lock;
 	rnpm_init_mbx_params_pf(hw);
 	memcpy(&hw->mbx.ops, ii->mbx_ops, sizeof(hw->mbx.ops));
-#ifdef NO_MBX_VERSION
-	/* in this mode; we set mode munaly */
-	ii->mac = rnp_mac_n10g_x8_10G;
-	pf_adapter->adapter_cnt = ii->adapter_cnt;
-	if (rnpm_is_pf1(pdev)) {
-		pf_adapter->port_valid = port_valid_pf0;
-		pf_adapter->port_names = port_names_pf0;
-	} else {
-		pf_adapter->port_valid = port_valid_pf1;
-		pf_adapter->port_names = port_names_pf1;
-	}
-	// pf_adapter->hw.mac_type = ii->mac;
-	pf_adapter->hw.phy_type = PHY_TYPE_10G_BASE_SR;
-#else
 	spin_lock_init(&pf_adapter->vlan_setup_lock);
 	spin_lock_init(&pf_adapter->drop_setup_lock);
 	spin_lock_init(&pf_adapter->dummy_setup_lock);
@@ -8135,7 +8095,7 @@ static int rnpm_add_pf_adapter(struct pci_dev *pdev,
 
 	rnpm_mbx_pf_link_event_enable_nolock(hw, 0);
 	if (rnpm_mbx_get_capability(hw, ii)) {
-		dev_err(&pdev->dev, "rnp_mbx_get_capablity failed!\n");
+		dev_err(&pdev->dev, "rnp_mbx_get_capablity faild!\n");
 		err = -EIO;
 		goto err_mbx_capability;
 	}
@@ -8149,7 +8109,7 @@ static int rnpm_add_pf_adapter(struct pci_dev *pdev,
 	pf_adapter->hw.axi_mhz = hw->axi_mhz;
 	pf_adapter->hw.ncsi_en = hw->ncsi_en;
 	pf_adapter->hw.wol = hw->wol;
-#endif
+	pf_adapter->hw.fw_version = hw->fw_version;
 
 	/* some global var init here */
 	spin_lock_init(&pf_adapter->key_setup_lock);
@@ -8163,9 +8123,6 @@ static int rnpm_add_pf_adapter(struct pci_dev *pdev,
 	// todo vu440 must decide mode_type
 
 /* vu440 can select board_type manul */
-#ifdef UV440_2PF
-	pf_adapter->board_type = MODE_TYPE;
-#endif
 	switch (pf_adapter->hw.mode) {
 	case MODE_NIC_MODE_1PORT:
 		pf_adapter->mcft_size = 128;
@@ -8191,13 +8148,6 @@ static int rnpm_add_pf_adapter(struct pci_dev *pdev,
 	pf_adapter->vlan_status_true = 1;
 
 	pf_adapter->priv_flags = 0;
-#ifdef FT_PADDING
-	rnpm_dbg("ft padding status on\n");
-	pf_adapter->priv_flags |= RNPM_PRIV_FLAG_PCIE_CACHE_ALIGN_PATCH;
-	data = rd32(pf_adapter, RNPM_DMA_CONFIG);
-	SET_BIT(padding_enable, data);
-	wr32(pf_adapter, RNPM_DMA_CONFIG, data);
-#endif
 
 	err = check_valid_mode(pf_adapter);
 	if (err)
@@ -8302,7 +8252,8 @@ static int rnpm_rm_pf_adapter(struct pci_dev *pdev,
 	return 0;
 }
 
-static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
+static int rnpm_add_adpater(struct pci_dev *pdev,
+			    const struct rnpm_info *ii,
 			    struct rnpm_adapter **padapter,
 			    struct rnpm_pf_adapter *pf_adapter, int port,
 			    int msix_offset, int port_name)
@@ -8315,9 +8266,6 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	unsigned int indices;
 	int adapter_cnt = pf_adapter->adapter_cnt;
 	// netdev_features_t hw_enc_features = 0;
-#ifndef NETIF_F_GSO_PARTIAL
-	netdev_features_t hw_features;
-#endif /* NETIF_F_GSO_PARTIAL */
 	queues = ii->total_queue_pair_cnts / adapter_cnt;
 	indices = queues;
 	pr_info("====  add adapter queues:%d table %d ===", queues,
@@ -8336,7 +8284,6 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	adapter->bd_number = pf_adapter->bd_number;
 	adapter->port = port;
 	adapter->lane = port;
-
 	adapter->max_ring_pair_counts = queues;
 	adapter->vector_off = msix_offset;
 
@@ -8347,35 +8294,32 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	adapter->layer2_count_max = ii->total_layer2_count / adapter_cnt;
 	adapter->layer2_offset = adapter->layer2_count_max * adapter->port;
 	adapter->tuple_5_count_max = ii->total_tuple5_count / adapter_cnt;
-	adapter->tuple_5_offset = adapter->tuple_5_count_max * adapter->port;
+	adapter->tuple_5_offset =
+		adapter->tuple_5_count_max * adapter->port;
 
 	adapter->priv_flags = pf_adapter->priv_flags;
 
-#ifdef RNPM_NAME_BY_LANES
-	snprintf(adapter->name, sizeof(netdev->name), "%s%ds%df%d",
-		 rnpm_port_name, pdev->bus->number, rnpm_is_pf1(pdev),
-		 adapter->port);
-#else
 	snprintf(adapter->name, sizeof(netdev->name), "%s%ds%df%d",
 		 rnpm_port_name, pdev->bus->number, rnpm_is_pf1(pdev),
 		 port_name);
-#endif
 	if (padapter) {
 		*padapter = adapter;
 		(*padapter)->pf_adapter = pf_adapter;
 	}
 	hw = &adapter->hw;
 	hw->back = adapter;
-	hw->nr_lane = hw->num = adapter->port;
+	hw->num = adapter->port;
+	hw->nr_lane = adapter->port;
+	hw->port_idx = pf_adapter->hw.port_id[hw->nr_lane];
 	hw->pdev = pdev;
 	hw->mode = pf_adapter->hw.mode;
 	hw->lane_mask = pf_adapter->hw.lane_mask;
 	hw->fw_version = pf_adapter->hw.fw_version;
 	hw->fw_uid = pf_adapter->hw.fw_uid;
 	// hw->mac_type = pf_adapter->hw.mac_type;
-	hw->phy.media_type = hw->phy_type = pf_adapter->hw.phy_type;
+	hw->phy.media_type = pf_adapter->hw.phy_type;
+	hw->phy_type = pf_adapter->hw.phy_type;
 	hw->axi_mhz = pf_adapter->hw.axi_mhz;
-	hw->is_sgmii = pf_adapter->hw.is_sgmii;
 	hw->phy.id = pf_adapter->hw.phy.id;
 	hw->single_lane_link_evt_ctrl_ablity =
 		pf_adapter->hw.single_lane_link_evt_ctrl_ablity;
@@ -8383,23 +8327,18 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	hw->ncsi_en = pf_adapter->hw.ncsi_en;
 	hw->fw_lldp_ablity = pf_adapter->hw.fw_lldp_ablity;
 	hw->max_speed_1g = pf_adapter->hw.max_speed_1g;
+	if (pf_adapter->hw.is_sgmii_bitmaps_valid)
+		hw->is_sgmii = !!(pf_adapter->hw.is_sgmii_bitmaps & BIT(hw->nr_lane));
+	else
+		hw->is_sgmii = pf_adapter->hw.is_sgmii;
 	adapter->wol = pf_adapter->hw.wol;
 	/* not so good ? */
 	memcpy(&hw->mbx, &pf_adapter->hw.mbx, sizeof(pf_adapter->hw.mbx));
 	memcpy(&hw->mac.ops, &pf_adapter->hw.mac.ops,
 	       sizeof(pf_adapter->hw.mac.ops));
 
-	adapter->msg_enable = netif_msg_init(debug, NETIF_MSG_DRV
-#ifdef MSG_PROBE_ENABLE
-							    | NETIF_MSG_PROBE
-#endif
-#ifdef MSG_IFUP_ENABLE
-							    | NETIF_MSG_IFUP
-#endif
-#ifdef MSG_IFDOWN_ENABLE
-							    | NETIF_MSG_IFDOWN
-#endif
-	);
+	adapter->msg_enable =
+		netif_msg_init(debug, DEFAULT_MSG_ENABLE);
 
 	if (rnpm_is_pf1(pdev))
 		hw->pfvfnum = PF_NUM(1);
@@ -8426,12 +8365,10 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	/* this is relative with netdev name */
 	/* in mutiport mode not support this */
 	// if (!(adapter->flags & RNPM_FLAG_MUTIPORT_ENABLED)) {
-#if !defined(NO_ETHDEV_PORT)
 	if (adapter->flags & RNPM_FLAG_MUTIPORT_ENABLED)
 		netdev->dev_port = port_name;
 
 	SET_NETDEV_DEV(netdev, &pdev->dev);
-#endif
 
 	adapter->portid_of_card = port_name;
 	//}
@@ -8439,35 +8376,32 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	hw->default_rx_queue = 0;
 
 	hw->rss_type = ii->rss_type;
-#ifdef FIX_VF_BUG
-	if (hw->pfvfnum) {
-		hw->hw_addr = pf_adapter->hw_addr4 + 0x100000;
-		pf_adapter->hw_addr = hw->hw_addr;
-
-		hw->ring_msix_base = hw->hw_addr + 0xa4000 + 0x200;
-	} else {
-		hw->hw_addr = pf_adapter->hw_addr;
-		hw->ring_msix_base = hw->hw_addr + 0xa4000;
-	}
-#else
 	hw->hw_addr = pf_adapter->hw_addr;
 	hw->ring_msix_base = hw->hw_addr + 0xa4000;
-#endif
 	hw->rpu_addr = pf_adapter->hw.rpu_addr;
+	hw->hw_kram_addr = hw->rpu_addr;
+	hw->hw_mpe_addr = hw->rpu_addr;
 
+	/* fix queue from hw setup */
 	rnpm_fix_queue_number(hw);
 	/* get version */
 	hw->dma_version = rd32(hw, RNPM_DMA_VERSION);
-	pr_info("%s %s: dma version:0x%x, nic version:0x%x, pfvfnum:0x%x lane%d %p\n",
+	pr_info("%s %s: dma version:0x%x, nic version:0x%x, pfvfnum:0x%x lane%d %p sgmii:%d\n",
 		adapter->name, pci_name(pdev), hw->dma_version,
-		rd32(hw, RNPM_TOP_NIC_VERSION), hw->pfvfnum, hw->nr_lane, hw);
+		rd32(hw, RNPM_TOP_NIC_VERSION), hw->pfvfnum, hw->nr_lane,
+		hw, hw->is_sgmii);
 
 	rnpm_assign_netdev_ops(netdev);
-	strscpy(netdev->name, adapter->name, sizeof(netdev->name));
+	strscpy(netdev->name, adapter->name, sizeof(netdev->name) - 1);
 
 	/* Setup hw api */
 	memcpy(&hw->mac.ops, ii->mac_ops, sizeof(hw->mac.ops));
 	// hw->mac.type = ii->mac;
+
+	/* EEPROM */
+	if (ii->eeprom_ops)
+		memcpy(&hw->eeprom.ops, ii->eeprom_ops,
+		       sizeof(hw->eeprom.ops));
 
 	/* PHY */
 	memcpy(&hw->phy.ops, ii->phy_ops, sizeof(hw->phy.ops));
@@ -8475,7 +8409,6 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 
 	/* PCS */
 	memcpy(&hw->pcs.ops, ii->pcs_ops, sizeof(hw->pcs.ops));
-
 
 	ii->get_invariants(hw);
 	/* setup the private structure */
@@ -8503,7 +8436,6 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	netdev->min_mtu = RNPM_MIN_MTU;
 	netdev->max_mtu =
 		RNPM_MAX_JUMBO_FRAME_SIZE - (ETH_HLEN + 2 * ETH_FCS_LEN);
-#ifdef NETIF_F_GSO_PARTIAL
 
 	if (hw->feature_flags & RNPM_NET_FEATURE_SG)
 		netdev->features |= NETIF_F_SG;
@@ -8518,15 +8450,16 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 
 	netdev->features |= NETIF_F_HIGHDMA;
 	netdev->gso_partial_features = RNPM_GSO_PARTIAL_FEATURES;
-	netdev->features |= NETIF_F_GSO_PARTIAL | RNPM_GSO_PARTIAL_FEATURES;
+	netdev->features |= NETIF_F_GSO_PARTIAL |
+			    RNPM_GSO_PARTIAL_FEATURES;
 
 	netdev->hw_features |= netdev->features;
 
 	if (hw->feature_flags & RNPM_NET_FEATURE_VLAN_FILTER)
 		netdev->hw_features |= NETIF_F_HW_VLAN_CTAG_FILTER;
 	if (hw->feature_flags & RNPM_NET_FEATURE_VLAN_OFFLOAD) {
-		netdev->hw_features |=
-			NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_CTAG_TX;
+		netdev->hw_features |= NETIF_F_HW_VLAN_CTAG_RX |
+				       NETIF_F_HW_VLAN_CTAG_TX;
 	}
 	netdev->hw_features |= NETIF_F_RXALL;
 	if (hw->feature_flags & RNPM_NET_FEATURE_RX_NTUPLE_FILTER)
@@ -8541,8 +8474,8 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	if (hw->feature_flags & RNPM_NET_FEATURE_VLAN_FILTER)
 		netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
 	if (hw->feature_flags & RNPM_NET_FEATURE_VLAN_OFFLOAD) {
-		netdev->features |=
-			NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_CTAG_TX;
+		netdev->features |= NETIF_F_HW_VLAN_CTAG_RX |
+				    NETIF_F_HW_VLAN_CTAG_TX;
 	}
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 	netdev->priv_flags |= IFF_SUPP_NOFCS;
@@ -8550,92 +8483,13 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	if (adapter->flags2 & RNPM_FLAG2_RSC_CAPABLE)
 		netdev->hw_features |= NETIF_F_LRO;
 
-#else /* NETIF_F_GSO_PARTIAL */
-
-	if (hw->feature_flags & RNPM_NET_FEATURE_SG)
-		netdev->features |= NETIF_F_SG;
-	if (hw->feature_flags & RNPM_NET_FEATURE_TX_CHECKSUM)
-		netdev->features |= NETIF_F_IP_CSUM;
-
-	netdev->features |= NETIF_F_HIGHDMA;
-
-	netdev->features |=
-		NETIF_F_GSO_UDP_TUNNEL | NETIF_F_GSO_UDP_TUNNEL_CSUM;
-
-#ifdef NETIF_F_IPV6_CSUM
-	if (hw->feature_flags & RNPM_NET_FEATURE_TX_CHECKSUM)
-		netdev->features |= NETIF_F_IPV6_CSUM;
-#endif /*  NETIF_F_IPV6_CSUM */
-
-#ifdef NETIF_F_HW_VLAN_CTAG_TX
-	if (hw->feature_flags & RNPM_NET_FEATURE_VLAN_FILTER)
-		netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
-	if (hw->feature_flags & RNPM_NET_FEATURE_VLAN_OFFLOAD) {
-		netdev->features |=
-			NETIF_F_HW_VLAN_CTAG_RX | NETIF_F_HW_VLAN_CTAG_TX;
-	}
-#endif /*  NETIF_F_HW_VLAN_CTAG_TX */
-	netdev->features |= rnpm_tso_features();
-
-#ifdef NETIF_F_RXHASH
-	if (hw->feature_flags & RNPM_NET_FEATURE_RX_HASH)
-		netdev->features |= NETIF_F_RXHASH;
-#endif /* NETIF_F_RXHASH */
-
-	if (hw->feature_flags & RNPM_NET_FEATURE_RX_CHECKSUM)
-		netdev->features |= NETIF_F_RXCSUM;
-		/* copy netdev features into list of user selectable features */
-	hw_features = netdev->hw_features;
-	hw_features |= netdev->features;
-
-	/* give us the option of enabling RSC/LRO later */
-	if (adapter->flags2 & RNPM_FLAG2_RSC_CAPABLE)
-		hw_features |= NETIF_F_LRO;
-
-	if (hw->feature_flags & RNPM_NET_FEATURE_TX_CHECKSUM)
-		hw_features |= NETIF_F_SCTP_CSUM;
-	if (hw->feature_flags & RNPM_NET_FEATURE_RX_NTUPLE_FILTER)
-		hw_features |= NETIF_F_NTUPLE;
-
-	hw_features |= NETIF_F_RXALL;
-
-	if (hw->feature_flags & RNPM_NET_FEATURE_RX_FCS)
-		hw_features |= NETIF_F_RXFCS;
-
-	netdev->hw_features = hw_features;
-	if (hw->feature_flags & RNPM_NET_FEATURE_SG)
-		netdev->vlan_features |= NETIF_F_SG;
-	if (hw->feature_flags & RNPM_NET_FEATURE_TX_CHECKSUM)
-		netdev->vlan_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
-	if (hw->feature_flags & RNPM_NET_FEATURE_TSO)
-		netdev->vlan_features |= NETIF_F_TSO | NETIF_F_TSO6;
-
-	netdev->hw_enc_features |= NETIF_F_SG;
-
-	if (hw->feature_flags & RNPM_NET_FEATURE_TX_CHECKSUM)
-		netdev->hw_enc_features |= NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM;
-
-#endif /* NETIF_F_GSO_PARTIAL */
-
-#ifdef IFF_UNICAST_FLT
 	netdev->priv_flags |= IFF_UNICAST_FLT;
-#endif /* IFF_UNICAST_FLT */
-#ifdef IFF_SUPP_NOFCS
 	netdev->priv_flags |= IFF_SUPP_NOFCS;
-#endif /* IFF_SUPP_NOFCS */
-
-#ifdef NET_FEATURE_DCB
-#ifdef CONFIG_DCB
-	rnpm_dcb_init(netdev, adapter);
-#endif /* CONFIG_DCB */
-#endif /* NET_FEATURE_DCB */
 
 	if (adapter->flags2 & RNPM_FLAG2_RSC_ENABLED)
 		netdev->features |= NETIF_F_LRO;
 	eth_hw_addr_set(netdev, hw->mac.perm_addr);
-#ifdef ETHTOOL_GPERMADDR
 	memcpy(netdev->perm_addr, hw->mac.perm_addr, netdev->addr_len);
-#endif
 	pr_info("set dev_addr:%pM\n", netdev->dev_addr);
 
 	if (!is_valid_ether_addr(netdev->dev_addr)) {
@@ -8648,7 +8502,6 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 
 	timer_setup(&adapter->service_timer, rnpm_service_timer, 0);
 
-#ifndef NO_PTP
 	if (module_enable_ptp) {
 		adapter->flags2 |= RNPM_FLAG2_PTP_ENABLED;
 		if (adapter->flags2 & RNPM_FLAG2_PTP_ENABLED) {
@@ -8657,7 +8510,6 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 				  rnpm_tx_hwtstamp_work);
 		}
 	}
-#endif
 
 	INIT_WORK(&adapter->service_task, rnpm_service_task);
 	clear_bit(__RNPM_SERVICE_SCHED, &adapter->state);
@@ -8673,7 +8525,7 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 
 	adapter->pf_adapter->force_10g_1g_speed_ablity =
 		rnpm_is_pf1(pdev) ? !!force_speed_ablity_pf1 :
-					  !!force_speed_ablity_pf0;
+				    !!force_speed_ablity_pf0;
 	if (hw->max_speed_1g)
 		adapter->pf_adapter->force_10g_1g_speed_ablity = 0;
 
@@ -8684,18 +8536,20 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 	if (hw->max_speed_1g == 0)
 		rnpm_mbx_force_speed(hw, 0);
 
-	strscpy(netdev->name, adapter->name, sizeof(netdev->name));
+	strscpy(netdev->name, adapter->name, sizeof(netdev->name) - 1);
 
 	if (fix_eth_name) {
 		if (!(adapter->flags & RNPM_FLAG_MUTIPORT_ENABLED)) {
-			snprintf(adapter->name, sizeof(netdev->name), "rnp%d%d",
-				 rnpm_is_pf1(pdev), adapter->bd_number);
+			snprintf(adapter->name, sizeof(netdev->name),
+				 "rnp%d%d", rnpm_is_pf1(pdev),
+				 adapter->bd_number);
 		} else {
 			snprintf(adapter->name, sizeof(netdev->name),
 				 "rnpm%d%d%d", rnpm_is_pf1(pdev),
 				 adapter->bd_number, adapter->port);
 		}
-		strscpy(netdev->name, adapter->name, sizeof(netdev->name));
+		strscpy(netdev->name, adapter->name,
+			sizeof(netdev->name) - 1);
 	} else {
 #ifdef ASSIN_PDEV
 		strscpy(netdev->name, "eth%d", sizeof(netdev->name));
@@ -8724,8 +8578,10 @@ static int rnpm_add_adpater(struct pci_dev *pdev, const struct rnpm_info *ii,
 
 	/* carrier off reporting is important to ethtool even BEFORE open */
 	netif_carrier_off(netdev);
+
 	if (adapter->flags & RNPM_FLAG_SRIOV_ENABLED) {
-		e_info(probe, "IOV is enabled with %d VFs\n", adapter->num_vfs);
+		e_info(probe, "IOV is enabled with %d VFs\n",
+		       adapter->num_vfs);
 		for (i = 0; i < adapter->num_vfs; i++)
 			rnpm_vf_configuration(pdev, (i | 0x10000000));
 	}
@@ -8766,9 +8622,9 @@ err_sw_init:
 	return err;
 }
 
-int rnpm_can_rpu_start(struct rnpm_pf_adapter *pf_adapter)
+static int rnpm_check_rpu_status(struct rnpm_pf_adapter *pf_adapter)
 {
-	if (pf_adapter->hw.rpu_addr == NULL)
+	if (!pf_adapter->hw.rpu_addr)
 		return 0;
 	if ((pf_adapter->pdev->device & 0xff00) == 0x1c00)
 		return 1;
@@ -8803,17 +8659,16 @@ static int rnpm_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	 * the PCIe SR-IOV capability.
 	 */
 	if (pdev->is_virtfn) {
-		WARN(1, "%s (%x:%x) should not be a VF!\n", pci_name(pdev),
-		     pdev->vendor, pdev->device);
+		WARN(1, "%s (%x:%x) should not be a VF!\n",
+		     pci_name(pdev), pdev->vendor, pdev->device);
 		return -EINVAL;
 	}
-#ifdef HAVE_PCI_DEV_FLAGS_NO_BUS_RESET
 	/*not support bus reset*/
 	pdev->dev_flags |= PCI_DEV_FLAGS_NO_BUS_RESET;
-#endif
 	err = pci_enable_device_mem(pdev);
 	if (err) {
-		dev_err(&pdev->dev, "pci_enable_device_mem failed 0x%x\n", err);
+		dev_err(&pdev->dev, "pci_enable_device_mem failed 0x%x\n",
+			err);
 		return err;
 	}
 	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(56)) &&
@@ -8845,15 +8700,14 @@ static int rnpm_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	err = rnpm_add_pf_adapter(pdev, &pf_adapter, id);
 	if (err) {
-		dev_err(&pdev->dev, "rnpm_add_pf_adapter failed 0x%x\n", err);
+		dev_err(&pdev->dev, "rnpm_add_pf_adapter failed 0x%x\n",
+			err);
 		goto err_pf_adpater;
 	}
 
-	// only pf0 download mpe
-	if ((rnpm_is_pf1(pf_adapter->pdev) == 0) &&
-	    rnpm_can_rpu_start(pf_adapter)) {
+	if (rnpm_check_rpu_status(pf_adapter))
 		rnpm_rpu_mpe_start(pf_adapter);
-	}
+
 	ii = rnpm_info_tbl[pf_adapter->board_type];
 	// pf_adapter->adapter_cnt = ii->adapter_cnt;
 	memset(pf_adapter->adapter, 0, sizeof(pf_adapter->adapter));
@@ -8870,13 +8724,14 @@ static int rnpm_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		lane_num = 0;
 		vector_idx_new = 1;
 		// get the min port name
-		for (i = 0, vector_idx = 1; i < pf_adapter->adapter_cnt; i++) {
+		for (i = 0, vector_idx = 1; i < pf_adapter->adapter_cnt;
+		     i++) {
 			if (port_valid & (1 << i)) {
-				port_name_new =
-					(pf_adapter->port_names >> (i * 8)) &
-					0xff;
+				port_name_new = (pf_adapter->port_names >>
+						 (i * 8)) &
+						0xff;
 				if ((port_name == -1) ||
-				    (port_name > port_name_new)) {
+				    port_name > port_name_new) {
 					// get the current port name
 					port_name = port_name_new;
 					lane_num = i;
@@ -8886,12 +8741,13 @@ static int rnpm_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 			vector_idx += pf_adapter->max_msix_counts[i];
 		}
 		// do register
-		err = rnpm_add_adpater(pdev, ii, &pf_adapter->adapter[lane_num],
-				       pf_adapter, lane_num, vector_idx_new,
-				       port_name);
+		err = rnpm_add_adpater(pdev, ii,
+				       &pf_adapter->adapter[lane_num],
+				       pf_adapter, lane_num,
+				       vector_idx_new, port_name);
 		if (err) {
-			dev_err(&pdev->dev, "add adpater %d failed, err=%d\n",
-				i, err);
+			dev_err(&pdev->dev,
+				"add adpater %d failed, err=%d\n", i, err);
 			goto err_adpater;
 		}
 
@@ -8910,13 +8766,20 @@ static int rnpm_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 						 fw_10g_1g_auto_det);
 	}
 
-#ifndef NO_MBX_VERSION
 	if (pf_adapter->hw.single_lane_link_evt_ctrl_ablity == 0)
 		rnpm_mbx_pf_link_event_enable_nolock(&pf_adapter->hw, 1);
-#endif
 	mod_timer(&pf_adapter->service_timer, HZ + jiffies);
 	if (pf_adapter->hw.ncsi_en)
 		rnpm_mbx_probe_stat_set(pf_adapter, MBX_PROBE);
+
+	if (pf_adapter->rpu_inited &&
+	    (pf_adapter->adapter[0]->hw.feature_flags & RNPM_NET_FEATURE_TCAM)) {
+	}
+
+/*	tick id=910 force to set the RNPM_PF_LINK_CHANGE flag in the probe step*/
+	if (!test_bit(RNPM_PF_LINK_CHANGE, &pf_adapter->flags))
+		set_bit(RNPM_PF_LINK_CHANGE, &pf_adapter->flags);
+/*	tick id=910 force to set the RNPM_PF_LINK_CHANGE flag in the probe step*/
 
 	return 0;
 
@@ -8945,10 +8808,6 @@ static void rnpm_remove(struct pci_dev *pdev)
 	struct rnpm_pf_adapter *pf_adapter = pci_get_drvdata(pdev);
 	int i;
 
-	if (pci_channel_offline(pdev))
-		dev_info(&pdev->dev, "%s:%s card pluged out, pci-err-stat:%d\n",
-			 __func__, pci_name(pdev), pdev->error_state);
-
 	set_bit(__RNPM_DOWN, &pf_adapter->state);
 
 	/* Disable fw send link event to rc */
@@ -8970,9 +8829,10 @@ static void rnpm_remove(struct pci_dev *pdev)
 		}
 	}
 
-	// disable mbx-irq
+	// disbale mbx-irq
 	if (pf_adapter->hw.mbx.ops.configure)
-		pf_adapter->hw.mbx.ops.configure(&pf_adapter->hw, 0, false);
+		pf_adapter->hw.mbx.ops.configure(&pf_adapter->hw, 0,
+						 false);
 
 	rnpm_rm_pf_adapter(pdev, &pf_adapter);
 	// pci_release_selected_regions(pdev, pci_select_bars(pdev,
@@ -8995,7 +8855,6 @@ static void rnpm_remove(struct pci_dev *pdev)
 static pci_ers_result_t rnpm_io_error_detected(struct pci_dev *pdev,
 					       pci_channel_state_t state)
 {
-
 	/* Request a slot reset. */
 	return PCI_ERS_RESULT_NEED_RESET;
 }
@@ -9022,16 +8881,20 @@ static int rnpm_resume(struct pci_dev *pdev)
 	int i;
 	u32 err;
 
+	pr_debug("call rnp_resume\n");
+
 	pci_set_power_state(pdev, PCI_D0);
 	pci_restore_state(pdev);
-	/* pci_restore_state clears dev->state_saved so call
+	/*
+	 * pci_restore_state clears dev->state_saved so call
 	 * pci_save_state to restore it.
 	 */
 	pci_save_state(pdev);
 
 	err = pci_enable_device_mem(pdev);
 	if (err) {
-		dev_err(&pdev->dev, "Cannot enable PCI device from suspend\n");
+		dev_err(&pdev->dev,
+			"Cannot enable PCI device from suspend\n");
 		return err;
 	}
 
@@ -9061,7 +8924,6 @@ static int rnpm_resume(struct pci_dev *pdev)
 		}
 		wr32(pf_adapter, RNPM_TCAM_MODE, 1);
 	}
-
 	// should open all tx
 	rnpm_fix_dma_tx_status(pf_adapter);
 
@@ -9161,6 +9023,8 @@ static int rnpm_suspend(struct pci_dev *pdev, pm_message_t state)
 	int retval;
 	bool wake;
 
+	pr_debug("call rnp_suspend\n");
+
 	retval = __rnpm_shutdown(pdev, &wake);
 	if (retval)
 		return retval;
@@ -9238,7 +9102,8 @@ static int __init rnpm_init_module(void)
 {
 	int ret;
 
-	pr_info("%s - version %s\n", rnpm_driver_string, rnpm_driver_version);
+	pr_info("%s - version %s\n", rnpm_driver_string,
+		rnpm_driver_version);
 	pr_info("%s\n", rnpm_copyright);
 	rnpm_dbg_init();
 	ret = pci_register_driver(&rnpm_driver);

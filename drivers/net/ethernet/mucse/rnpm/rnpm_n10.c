@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/pci.h>
 #include <linux/delay.h>
@@ -26,12 +26,11 @@
 #define RNPM_N10_RX_PB_SIZE 512
 #define RNPM_N10_MSIX_VECTORS 64
 
-#define NET_FEATURE_TCAM 1
-
 static bool rnpm_mng_enabled(struct rnpm_hw *hw)
 {
 	return false;
 }
+
 __maybe_unused static void rnpm_init_mac_link_ops_n10(struct rnpm_hw *hw)
 {
 }
@@ -76,7 +75,8 @@ static s32 rnpm_get_invariants_n10(struct rnpm_hw *hw)
 	hw->feature_flags |=
 		RNPM_NET_FEATURE_SG | RNPM_NET_FEATURE_TX_CHECKSUM |
 		RNPM_NET_FEATURE_RX_CHECKSUM | RNPM_NET_FEATURE_TSO |
-		RNPM_NET_FEATURE_TX_UDP_TUNNEL | RNPM_NET_FEATURE_VLAN_FILTER |
+		RNPM_NET_FEATURE_TX_UDP_TUNNEL |
+		RNPM_NET_FEATURE_VLAN_FILTER |
 		/*RNPM_NET_FEATURE_VLAN_OFFLOAD |*/ RNPM_NET_FEATURE_TCAM |
 		RNPM_NET_FEATURE_RX_HASH | RNPM_NET_FEATURE_RX_FCS;
 	if (!hw->ncsi_en)
@@ -125,7 +125,8 @@ static s32 rnpm_get_invariants_n400(struct rnpm_hw *hw)
 	hw->feature_flags |=
 		RNPM_NET_FEATURE_SG | RNPM_NET_FEATURE_TX_CHECKSUM |
 		RNPM_NET_FEATURE_RX_CHECKSUM | RNPM_NET_FEATURE_TSO |
-		RNPM_NET_FEATURE_TX_UDP_TUNNEL | RNPM_NET_FEATURE_VLAN_FILTER |
+		RNPM_NET_FEATURE_TX_UDP_TUNNEL |
+		RNPM_NET_FEATURE_VLAN_FILTER |
 		/*RNPM_NET_FEATURE_VLAN_OFFLOAD |*/ RNPM_NET_FEATURE_TCAM |
 		RNPM_NET_FEATURE_RX_HASH | RNPM_NET_FEATURE_RX_FCS;
 	if (!hw->ncsi_en)
@@ -197,14 +198,15 @@ s32 rnpm_init_fdir_perfect_n10(struct rnpm_hw *hw, u32 fdirctrl)
 	return 0;
 }
 
-/* These defines allow us to quickly generate all of the necessary instructions
+/*
+ * These defines allow us to quickly generate all of the necessary instructions
  * in the function below by simply calling out RNPM_COMPUTE_SIG_HASH_ITERATION
  * for values 0 through 15
  */
-#define RNPM_ATR_COMMON_HASH_KEY                                               \
+#define RNPM_ATR_COMMON_HASH_KEY \
 	(RNPM_ATR_BUCKET_HASH_KEY & RNPM_ATR_SIGNATURE_HASH_KEY)
-#define RNPM_COMPUTE_SIG_HASH_ITERATION(_n)                                    \
-	do {                                                                   \
+#define RNPM_COMPUTE_SIG_HASH_ITERATION(_n) \
+	do {                                \
 	} while (0)
 
 /**
@@ -239,13 +241,13 @@ s32 rnpm_fdir_add_signature_filter_n10(struct rnpm_hw *hw,
 	return 0;
 }
 
-#define RNPM_COMPUTE_BKT_HASH_ITERATION(_n)                                    \
-	do {                                                                   \
-		u32 n = (_n);                                                  \
-		if (RNPM_ATR_BUCKET_HASH_KEY & (0x01 << n))                    \
-			bucket_hash ^= lo_hash_dword >> n;                     \
-		if (RNPM_ATR_BUCKET_HASH_KEY & (0x01 << (n + 16)))             \
-			bucket_hash ^= hi_hash_dword >> n;                     \
+#define RNPM_COMPUTE_BKT_HASH_ITERATION(_n)                        \
+	do {                                                       \
+		u32 n = (_n);                                      \
+		if (RNPM_ATR_BUCKET_HASH_KEY & (0x01 << n))        \
+			bucket_hash ^= lo_hash_dword >> n;         \
+		if (RNPM_ATR_BUCKET_HASH_KEY & (0x01 << (n + 16))) \
+			bucket_hash ^= hi_hash_dword >> n;         \
 	} while (0)
 
 /**
@@ -253,7 +255,7 @@ s32 rnpm_fdir_add_signature_filter_n10(struct rnpm_hw *hw,
  *  @atr_input: input bitstream to compute the hash on
  *  @input_mask: mask for the input bitstream
  *
- *  This function serves two main purposes.  First it applies the input_mask
+ *  This function serves two main purposes.  First it applys the input_mask
  *  to the atr_input resulting in a cleaned up atr_input data stream.
  *  Secondly it computes the hash and stores it in the bkt_hash field at
  *  the end of the input byte stream.  This way it will be available for
@@ -279,20 +281,21 @@ rnpm_get_fdirtcpm_n10(union rnpm_atr_input *input_mask)
 	return 0;
 }
 
-/* These two macros are meant to address the fact that we have registers
+/*
+ * These two macros are meant to address the fact that we have registers
  * that are either all or in part big-endian.  As a result on big-endian
  * systems we will end up byte swapping the value to little-endian before
  * it is byte swapped again and written to the hardware in the original
  * big-endian format.
  */
-#define RNPM_STORE_AS_BE32(_value)                                             \
-	(((u32)(_value) >> 24) | (((u32)(_value)&0x00FF0000) >> 8) |           \
-	 (((u32)(_value)&0x0000FF00) << 8) | ((u32)(_value) << 24))
+#define RNPM_STORE_AS_BE32(_value)                                     \
+	(((u32)(_value) >> 24) | (((u32)(_value) & 0x00FF0000) >> 8) | \
+	 (((u32)(_value) & 0x0000FF00) << 8) | ((u32)(_value) << 24))
 
-#define RNPM_WRITE_REG_BE32(a, reg, value)                                     \
+#define RNPM_WRITE_REG_BE32(a, reg, value) \
 	RNPM_WRITE_REG((a), (reg), RNPM_STORE_AS_BE32(ntohl(value)))
 
-#define RNPM_STORE_AS_BE16(_value)                                             \
+#define RNPM_STORE_AS_BE16(_value) \
 	ntohs(((u16)(_value) >> 8) | ((u16)(_value) << 8))
 
 s32 rnpm_fdir_set_input_mask_n10(struct rnpm_hw *hw,
@@ -302,14 +305,15 @@ s32 rnpm_fdir_set_input_mask_n10(struct rnpm_hw *hw,
 }
 
 s32 rnpm_fdir_write_perfect_filter_n10(struct rnpm_hw *hw,
-				       union rnpm_atr_input *input, u16 soft_id,
-				       u8 queue)
+				       union rnpm_atr_input *input,
+				       u16 soft_id, u8 queue)
 {
 	return 0;
 }
 
 s32 rnpm_fdir_erase_perfect_filter_n10(struct rnpm_hw *hw,
-				       union rnpm_atr_input *input, u16 soft_id)
+				       union rnpm_atr_input *input,
+				       u16 soft_id)
 {
 	s32 err = 0;
 
@@ -349,7 +353,8 @@ static s32 rnpm_identify_sfp_module_n10(struct rnpm_hw *hw)
  **/
 static s32 rnpm_enable_rx_dma_n10(struct rnpm_hw *hw, u32 regval)
 {
-	/* Workaround for n10 silicon errata when enabling the Rx datapath.
+	/*
+	 * Workaround for n10 silicon errata when enabling the Rx datapath.
 	 * If traffic is incoming before we enable the Rx unit, it could hang
 	 * the Rx DMA unit.  Therefore, make sure the security engine is
 	 * completely disabled prior to enabling the Rx unit.
@@ -408,8 +413,8 @@ bool rnpm_verify_lesm_fw_enabled_n10(struct rnpm_hw *hw)
  *  Retrieves 16 bit word(s) read from EEPROM
  **/
 __maybe_unused static s32 rnpm_read_eeprom_buffer_n10(struct rnpm_hw *hw,
-						      u16 offset, u16 words,
-						      u16 *data)
+						      u16 offset,
+						      u16 words, u16 *data)
 {
 	s32 ret_val = RNPM_ERR_CONFIG;
 
@@ -426,8 +431,8 @@ __maybe_unused static s32 rnpm_read_eeprom_buffer_n10(struct rnpm_hw *hw,
  *
  *  Reads a 16 bit word from the EEPROM
  **/
-__maybe_unused static s32 rnpm_read_eeprom_n10(struct rnpm_hw *hw, u16 offset,
-					       u16 *data)
+__maybe_unused static s32 rnpm_read_eeprom_n10(struct rnpm_hw *hw,
+					       u16 offset, u16 *data)
 {
 	s32 ret_val = RNPM_ERR_CONFIG;
 
@@ -443,7 +448,8 @@ __maybe_unused static s32 rnpm_read_eeprom_n10(struct rnpm_hw *hw, u16 offset,
  * full pipeline reset.  Note - We must hold the SW/FW semaphore before writing
  * to AUTOC, so this function assumes the semaphore is held.
  **/
-s32 rnpm_reset_pipeline_n10(struct rnpm_hw *hw)
+
+__maybe_unused static s32 rnpm_reset_pipeline_n10(struct rnpm_hw *hw)
 {
 	s32 ret_val;
 	u32 i;
@@ -475,14 +481,16 @@ __maybe_unused static void upl_init(u8 __iomem *bar2)
 	// config ulh pll
 	data = ioread32((void *)(bar2 + SOFT_COMMON11));
 	iowrite32(((0x3 << 29) | data),
-		  (void *)(bar2 + SOFT_COMMON11)); // ulh pd is 1, bypass is 1
+		  (void *)(bar2 +
+			   SOFT_COMMON11)); // ulh pd is 1, bypass is 1
 	data = ioread32((void *)(bar2 + SOFT_COMMON11));
 	iowrite32(((0x1 << 31) | data),
 		  (void *)(bar2 + SOFT_COMMON11)); // ulh reset is 1
 
 	data = ioread32((void *)(bar2 + SOFT_COMMON12));
 	iowrite32(((0x3 << 29) | data),
-		  (void *)(bar2 + SOFT_COMMON12)); // ulh pd is 1, bypass is 1
+		  (void *)(bar2 +
+			   SOFT_COMMON12)); // ulh pd is 1, bypass is 1
 	data = ioread32((void *)(bar2 + SOFT_COMMON12));
 	iowrite32(((0x1 << 31) | data),
 		  (void *)(bar2 + SOFT_COMMON12)); // ulh reset is 1
@@ -512,7 +520,7 @@ static s32 rnpm_reset_hw_n10(struct rnpm_hw *hw)
 	}
 
 	/* Reset PHY */
-	if (hw->phy.reset_disable == false && hw->phy.ops.reset != NULL)
+	if (!hw->phy.reset_disable && hw->phy.ops.reset)
 		hw->phy.ops.reset(hw);
 
 	/* Store the permanent mac address only once */
@@ -592,8 +600,8 @@ static u32 rnpm_get_supported_physical_layer_n10(struct rnpm_hw *hw)
 }
 
 static s32 rnpm_get_link_capabilities_n10(struct rnpm_hw *hw,
-					  rnpm_link_speed *speed, bool *autoneg,
-					  u32 *media_type)
+					  rnpm_link_speed *speed,
+					  bool *autoneg, u32 *media_type)
 {
 	*autoneg = false;
 
@@ -635,7 +643,8 @@ static struct rnpm_mac_operations mac_ops_n10 = {
 	.start_hw = &rnpm_start_hw_n10,
 	.clear_hw_cntrs = &rnpm_clear_hw_cntrs_generic,
 	.get_media_type = &rnpm_get_media_type_n10,
-	.get_supported_physical_layer = &rnpm_get_supported_physical_layer_n10,
+	.get_supported_physical_layer =
+		&rnpm_get_supported_physical_layer_n10,
 	.enable_rx_dma = &rnpm_enable_rx_dma_n10,
 	.disable_rx_buff = &rnpm_disable_rx_buff_generic,
 	.enable_rx_buff = &rnpm_enable_rx_buff_generic,
@@ -673,7 +682,8 @@ static struct rnpm_mac_operations mac_ops_n10 = {
 	.init_uta_tables = &rnpm_init_uta_tables_generic,
 	.setup_sfp = &rnpm_setup_sfp_modules_n10,
 	.get_thermal_sensor_data = &rnpm_get_thermal_sensor_data_generic,
-	.init_thermal_sensor_thresh = &rnpm_init_thermal_sensor_thresh_generic,
+	.init_thermal_sensor_thresh =
+		&rnpm_init_thermal_sensor_thresh_generic,
 	.mng_fw_enabled = &rnpm_mng_enabled,
 };
 
@@ -690,11 +700,7 @@ struct rnpm_info rnpm_n10_info = {
 	.coalesce.tx_usecs = 100,
 	.coalesce.tx_frames = RNPM_TX_PKT_POLL_BUDGET,
 	.total_layer2_count = RNPM_MAX_LAYER2_FILTERS,
-#if NET_FEATURE_TCAM
 	.total_tuple5_count = RNPM_MAX_TCAM_FILTERS,
-#else
-	.total_tuple5_count = RNPM_MAX_TUPLE5_FILTERS,
-#endif
 #ifdef RNPM_FIX_MAC_PADDING
 	.mac_padding = true,
 #endif
@@ -702,6 +708,7 @@ struct rnpm_info rnpm_n10_info = {
 	.rss_type = rnpm_rss_n10,
 	.get_invariants = &rnpm_get_invariants_n10,
 	.mac_ops = &mac_ops_n10,
+	.eeprom_ops = NULL,
 	.phy_ops = &phy_ops_n10,
 	.mbx_ops = &mbx_ops_generic,
 	.pcs_ops = &pcs_ops_generic,
@@ -717,14 +724,10 @@ struct rnpm_info rnpm_n400_4x1G_info = {
 	//.coalesce.rx_usecs = 1200,
 	.coalesce.rx_usecs = RNPM_DEFAULT_LOW_RX_USEC,
 	.coalesce.rx_frames = 1,
-	.coalesce.tx_usecs = 100,
+	.coalesce.tx_usecs = 200,
 	.coalesce.tx_frames = RNPM_TX_PKT_POLL_BUDGET,
 	.total_layer2_count = RNPM_MAX_LAYER2_FILTERS,
-#if NET_FEATURE_TCAM
 	.total_tuple5_count = RNPM_MAX_TCAM_FILTERS,
-#else
-	.total_tuple5_count = RNPM_MAX_TUPLE5_FILTERS,
-#endif
 #ifdef RNPM_FIX_MAC_PADDING
 	.mac_padding = false,
 #endif
@@ -732,6 +735,7 @@ struct rnpm_info rnpm_n400_4x1G_info = {
 	.rss_type = rnpm_rss_n10,
 	.get_invariants = &rnpm_get_invariants_n400,
 	.mac_ops = &mac_ops_n10,
+	.eeprom_ops = NULL,
 	.phy_ops = &phy_ops_n10,
 	.mbx_ops = &mbx_ops_generic,
 	.pcs_ops = &pcs_ops_generic,
