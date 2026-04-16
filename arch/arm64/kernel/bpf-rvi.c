@@ -45,10 +45,10 @@ __bpf_kfunc const char *bpf_arch_flags(enum arch_flags_type t, int i)
 	}
 }
 
-BTF_SET8_START(bpf_arm64_kfunc_ids)
+BTF_KFUNCS_START(bpf_arm64_kfunc_ids)
 BTF_ID_FLAGS(func, bpf_arm64_cpu_have_feature, KF_RCU)
 BTF_ID_FLAGS(func, bpf_arch_flags)
-BTF_SET8_END(bpf_arm64_kfunc_ids)
+BTF_KFUNCS_END(bpf_arm64_kfunc_ids)
 
 static const struct btf_kfunc_id_set bpf_arm64_kfunc_set = {
 	.owner		= THIS_MODULE,
