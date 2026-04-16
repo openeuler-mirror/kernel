@@ -2344,9 +2344,9 @@ __bpf_kfunc void bpf_blkcg_get_dev_iostat(struct blkcg *blkcg, int major, int mi
 	rcu_read_unlock();
 }
 
-BTF_SET8_START(bpf_blkcg_kfunc_ids)
+BTF_KFUNCS_START(bpf_blkcg_kfunc_ids)
 BTF_ID_FLAGS(func, bpf_blkcg_get_dev_iostat)
-BTF_SET8_END(bpf_blkcg_kfunc_ids)
+BTF_KFUNCS_END(bpf_blkcg_kfunc_ids)
 
 static const struct btf_kfunc_id_set bpf_blkcg_kfunc_set = {
 	.owner		= THIS_MODULE,

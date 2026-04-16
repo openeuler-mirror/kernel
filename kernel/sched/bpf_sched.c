@@ -167,12 +167,12 @@ __bpf_kfunc s32 bpf_sched_cpu_stats_of(int cpuid,
 
 __diag_pop();
 
-BTF_SET8_START(sched_cpustats_kfunc_btf_ids)
+BTF_KFUNCS_START(sched_cpustats_kfunc_btf_ids)
 BTF_ID_FLAGS(func, bpf_sched_cpustats_create, KF_ACQUIRE | KF_RET_NULL)
 BTF_ID_FLAGS(func, bpf_sched_cpustats_release, KF_RELEASE)
 BTF_ID_FLAGS(func, bpf_sched_cpustats_acquire, KF_ACQUIRE | KF_TRUSTED_ARGS)
 BTF_ID_FLAGS(func, bpf_sched_cpu_stats_of, KF_RCU)
-BTF_SET8_END(sched_cpustats_kfunc_btf_ids)
+BTF_KFUNCS_END(sched_cpustats_kfunc_btf_ids)
 
 static const struct btf_kfunc_id_set cpustats_kfunc_set = {
 	.owner		= THIS_MODULE,
@@ -224,12 +224,12 @@ __bpf_kfunc int bpf_sched_set_task_prefer_nid(struct task_struct *task, int nid)
 	return set_prefer_cpus_ptr(task, &mask);
 }
 
-BTF_SET8_START(sched_task_kfunc_btf_ids)
+BTF_KFUNCS_START(sched_task_kfunc_btf_ids)
 BTF_ID_FLAGS(func, bpf_sched_entity_is_task)
 BTF_ID_FLAGS(func, bpf_sched_entity_to_task)
 BTF_ID_FLAGS(func, bpf_sched_tag_of_entity)
 BTF_ID_FLAGS(func, bpf_sched_set_task_prefer_nid)
-BTF_SET8_END(sched_task_kfunc_btf_ids)
+BTF_KFUNCS_END(sched_task_kfunc_btf_ids)
 
 static const struct btf_kfunc_id_set sched_task_kfunc_set = {
 	.owner		= THIS_MODULE,
