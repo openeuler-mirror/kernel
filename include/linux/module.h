@@ -517,9 +517,8 @@ struct module {
 #endif
 #ifdef CONFIG_DEBUG_INFO_BTF_MODULES
 	unsigned int btf_data_size;
-	unsigned int btf_base_data_size;
+	KABI_FILL_HOLE(unsigned int btf_base_data_size)
 	void *btf_data;
-	void *btf_base_data;
 #else
 	KABI_DEPRECATE(unsigned int, btf_data_size)
 	KABI_DEPRECATE(void *, btf_data)
@@ -609,7 +608,11 @@ struct module {
 #ifdef CONFIG_DYNAMIC_DEBUG_CORE
 	struct _ddebug_info dyndbg_info;
 #endif
+#ifdef CONFIG_DEBUG_INFO_BTF_MODULES
+	KABI_USE(1, void *btf_base_data)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
