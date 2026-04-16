@@ -5861,8 +5861,6 @@ err_out:
 	return btf;
 }
 
-#ifdef CONFIG_DEBUG_INFO_BTF_MODULES
-
 /* If .BTF_ids section was created with distilled base BTF, both base and
  * split BTF ids will need to be mapped to actual base/split ids for
  * BTF now that it has been relocated.
@@ -5873,6 +5871,8 @@ static __u32 btf_relocate_id(const struct btf *btf, __u32 id)
 		return id;
 	return btf->base_id_map[id];
 }
+
+#ifdef CONFIG_DEBUG_INFO_BTF_MODULES
 
 static struct btf *btf_parse_module(const char *module_name, const void *data,
 				    unsigned int data_size, void *base_data,
