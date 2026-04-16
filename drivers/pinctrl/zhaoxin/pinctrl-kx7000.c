@@ -302,9 +302,9 @@ static enum zx_gpio_type kx7000_gpio_type(struct zhaoxin_pinctrl *pctrl, unsigne
 		return ZX_TYPE_PGPIO;
 	else if (pin == 0x52 || pin == 0x55)
 		return ZX_TYPE_PGPIO;
-	else if (pin >= 0x57 || pin <= 0x5F)
+	else if (pin >= 0x57 && pin <= 0x5F)
 		return ZX_TYPE_PGPIO;
-	else if (pin >= 0x62 || pin <= 0x70)
+	else if (pin >= 0x62 && pin <= 0x70)
 		return ZX_TYPE_PGPIO;
 	else
 		return ZX_TYPE_ERROR;
