@@ -1794,6 +1794,7 @@ struct bpf_struct_ops {
 	int (*validate)(void *kdata);
 	void *cfi_stubs;
 	const char *name;
+	struct module *owner;
 	struct btf_func_model func_models[BPF_STRUCT_OPS_MAX_NR_MEMBERS];
 	u32 type_id;
 	u32 value_id;
