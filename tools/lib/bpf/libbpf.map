@@ -395,6 +395,7 @@ LIBBPF_1.2.0 {
 LIBBPF_1.3.0 {
 	global:
 		btf__new_split;
+		btf__distill_base;
 		bpf_obj_pin_opts;
 		bpf_object__unpin;
 		bpf_prog_detach_opts;
