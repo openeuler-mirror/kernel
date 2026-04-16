@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/types.h>
 #include <linux/module.h>
@@ -27,40 +27,40 @@
 #define RPU_ENDIAN_REG (0x110010)
 #define N10_START_REG (0x106000)
 
-#define CFG_MPE_ICCM(nr) (0x200000 + (nr)*0x80000)
-#define CFG_MPE_DCCM(nr) (0x220000 + (nr)*0x80000)
+#define MPE_OFF 0x80000
+#define CFG_MPE_ICCM(nr) (0x200000 + (nr) * 0x80000)
+#define CFG_MPE_DCCM(nr) (0x220000 + (nr) * 0x80000)
 
 #define RPU_CM3_BASE (0x40000000) // 0x4000_0000
-#define RPU_SDRAM_BASE (0x60000000) // 0x4000_0000
-#define SDRAM_DEFAULT_VAL (0x88481c00) // 0x4000_0000
+#define RPU_SDRAM_BASE (0x60000000) // 0x6000_0000
+#define SDRAM_DEFAULT_VAL (0x88481c00) //
 
-#define iowrite32_arrary(rpubase, offset, array, size)                         \
-	do {                                                                   \
-		int i;                                                         \
-		for (i = 0; i < size; i++) {                                   \
-			rnpm_wr_reg(((char *)(rpubase)) + (offset) + i * 4,    \
-				    (array)[i]);                               \
-		}                                                              \
+#define iowrite32_arrary(rpubase, offset, array, size)               \
+	do {                                                         \
+		int i;                                               \
+		for (i = 0; i < (size); i++) {                         \
+			rnpm_wr_reg(((char *)(rpubase)) + (offset) + \
+					    i * 4,                   \
+				    (array)[i]);                     \
+		}                                                    \
 	} while (0)
 
 #define MPE_LOOP_INST 0x6f
 
 static void rnpm_reset_mpe_and_rpu(struct rnpm_hw *hw)
 {
-	// int i;
 #define SYSCTL_CRG_CTRL12 0x30007030
 #define RPU_RESET_BIT 9
 
 	// reset rpu/mpe/pub
-	cm3_reg_write32(hw, SYSCTL_CRG_CTRL12, BIT(RPU_RESET_BIT + 16) | 0);
-	/* memory barrior */
-	smp_mb();
+	cm3_reg_write32(hw, SYSCTL_CRG_CTRL12,
+			BIT(RPU_RESET_BIT + 16) | 0);
+	smp_mb(); /* memory barrier need */
 	mdelay(150);
 
 	cm3_reg_write32(hw, SYSCTL_CRG_CTRL12,
 			BIT(RPU_RESET_BIT + 16) | BIT(RPU_RESET_BIT));
-	/* memory barrior */
-	smp_mb();
+	smp_mb(); /* memory barrier need */
 
 	mdelay(100);
 }
@@ -80,62 +80,65 @@ static void rnpm_start_rpu(char *rpu_base, int do_start)
 	// start rpu
 	rnpm_wr_reg(rpu_base + RPU_DMA_START_REG, rpu_start_v);
 
-	/* memory barrior */
-	smp_mb();
+	smp_mb(); /* memory barrier need */
 }
 
-/* @rpu_base: mapped(0x4000_0000)
- * @mpe_bin : required
- * @mpe_data: optional
- * @rpu_bin : optional
+/*
+ *	@rpu_base: mapped(0x4000_0000)
+ *	@mpe_bin : required
+ *	@mpe_data: optional
+ *	@rpu_bin : optional
  */
-static int
-rnpm_download_and_start_rpu(struct rnpm_hw *hw, char *rpu_base,
-			    const unsigned int *mpe_bin, const int mpe_bin_sz,
-			    const unsigned int *mpe_data, const int mpe_data_sz,
-			    const unsigned int *rpu_bin, const int rpu_sz)
+static int rnpm_download_and_start_rpu(struct rnpm_pf_adapter *adapter,
+				       struct rnpm_hw *hw,
+				       char *rpu_base,
+				       const unsigned int *mpe_bin,
+				       const int mpe_bin_sz,
+				       const unsigned int *mpe_data,
+				       const int mpe_data_sz,
+				       const unsigned int *rpu_bin,
+				       const int rpu_sz)
 {
 	int nr = 0;
 
-	rnpm_info("MPE: rpu:%d mpe:%d mpe-data:%d. Downloading...\n", rpu_sz,
-		  mpe_bin_sz, mpe_data_sz);
+	rnpm_info("MPE: rpu:%d mpe:%d mpe-data:%d. Downloading...\n",
+		  rpu_sz, mpe_bin_sz, mpe_data_sz);
 
 	rnpm_reset_mpe_and_rpu(hw);
 
 	// download rpu firmeware
-	if (rpu_sz) {
-		iowrite32_arrary(rpu_base, CFG_RPU_OFFSET + 0x4000, rpu_bin,
-				 rpu_sz / 4);
-	}
+	if (rpu_sz)
+		iowrite32_arrary(rpu_base, CFG_RPU_OFFSET + 0x4000,
+				 rpu_bin, rpu_sz / 4);
 
 	// download firmware to 4 mpe-core: mpe0,mpe1,mpe2,mpe3
 	for (nr = 0; nr < 4; nr++) {
 		iowrite32_arrary(rpu_base, CFG_MPE_ICCM(nr), mpe_bin,
 				 mpe_bin_sz / 4);
 		if (mpe_data_sz)
-			iowrite32_arrary(rpu_base, CFG_MPE_DCCM(nr), mpe_data,
-					 mpe_data_sz / 4);
+			iowrite32_arrary(rpu_base, CFG_MPE_DCCM(nr),
+					 mpe_data, mpe_data_sz / 4);
 	}
-	/* memory barrior */
-	smp_mb();
+	smp_mb(); /* memory barrier need */
 
 	// Enable MPE
 	if (mpe_src_port != 0) {
-		rnpm_info("%s %d\n", __func__, __LINE__);
 		rnpm_wr_reg(rpu_base + 0x100000, mpe_pkt_version);
 		rnpm_wr_reg(rpu_base + 0x100004, mpe_src_port);
 	}
 
 	// start  mpe
 	rnpm_wr_reg(rpu_base + RPU_ENDIAN_REG, 0xf);
-	/* memory barrior */
-	smp_mb();
+	smp_mb(); /* memory barrier need */
 	rnpm_start_rpu(rpu_base, 1);
+	pr_debug("start mpe/rpu\n");
 
 	return 0;
 }
 
-/* load fw bin from: /lib/firmware/ directory */
+/*
+ *	load fw bin from: /lib/firmware/ directory
+ */
 static const struct firmware *rnpm_load_fw(struct device *dev,
 					   const char *fw_name)
 {
@@ -169,7 +172,7 @@ int rnpm_rpu_mpe_start(struct rnpm_pf_adapter *adapter)
 	}
 
 	dev_info(&adapter->pdev->dev, "rpu_addr=%p\n", hw->rpu_addr);
-	if (hw->rpu_addr == NULL)
+	if (!hw->rpu_addr)
 		return -EINVAL;
 
 	mpe_bin = rnpm_load_fw(&adapter->pdev->dev, MPE_FW_BIN);
@@ -180,22 +183,40 @@ int rnpm_rpu_mpe_start(struct rnpm_pf_adapter *adapter)
 	}
 	mpe_data = rnpm_load_fw(&adapter->pdev->dev, MPE_FW_DATA);
 	if (!mpe_data)
-		dev_warn(&adapter->pdev->dev, "no %s, ignored\n", MPE_FW_DATA);
+		dev_warn(&adapter->pdev->dev, "no %s, ignored\n",
+			 MPE_FW_DATA);
+
 	rpu_bin = rnpm_load_fw(&adapter->pdev->dev, MPE_RPU_BIN);
 	if (!rpu_bin)
-		dev_warn(&adapter->pdev->dev, "no %s, ignored\n", MPE_RPU_BIN);
+		dev_warn(&adapter->pdev->dev, "no %s, ignored\n",
+			 MPE_RPU_BIN);
 
-	err = rnpm_download_and_start_rpu(
-		hw, hw->rpu_addr, (unsigned int *)mpe_bin->data, mpe_bin->size,
-		mpe_data ? (unsigned int *)mpe_data->data : NULL,
-		mpe_data ? mpe_data->size : 0,
-		rpu_bin ? (unsigned int *)rpu_bin->data : NULL,
-		rpu_bin ? rpu_bin->size : 0);
-	if (err != 0) {
-		dev_warn(&adapter->pdev->dev, "can't start mpe and rpu\n");
-		goto quit;
+	if (((unsigned int *)mpe_bin->data)[4] == 0xA5) {
+		adapter->mpe_shm = ((unsigned int *)mpe_bin->data)[2];
+	} else {
+		dev_err(&adapter->pdev->dev,
+			"imvalid mpe bin. magic-code error\n");
+		return -EINVAL;
 	}
+	dev_info(&adapter->pdev->dev, "mpe shm:0x%x nic-mode:%x\n",
+		 adapter->mpe_shm, adapter->hw.mode);
 
+	// only pf0 download mpe/rpu firmware
+	if (adapter->hw.pfvfnum == PF_NUM(0)) {
+		err = rnpm_download_and_start_rpu(
+			adapter, hw, hw->rpu_addr,
+			(unsigned int *)mpe_bin->data, mpe_bin->size,
+			mpe_data ? (unsigned int *)mpe_data->data : NULL,
+			mpe_data ? mpe_data->size : 0,
+			rpu_bin ? (unsigned int *)rpu_bin->data : NULL,
+			rpu_bin ? rpu_bin->size : 0);
+		if (err != 0) {
+			dev_warn(&adapter->pdev->dev,
+				 "can't start mpe and rpu\n");
+			goto quit;
+		}
+		adapter->rpu_need_stop = 1;
+	}
 	adapter->rpu_inited = 1;
 
 quit:
@@ -208,12 +229,125 @@ quit:
 	return 0;
 }
 
+void rnpm_mpe_shm_write32(struct rnpm_pf_adapter *adapter, int nr_mpe,
+			  int offset_bytes, unsigned int value)
+{
+	rnpm_wr_reg(adapter->hw.rpu_addr + CFG_MPE_DCCM(nr_mpe) +
+			    adapter->mpe_shm + offset_bytes,
+		    value);
+}
+
+void rnpm_mpe_shm_write32_array(struct rnpm_pf_adapter *adapter,
+				int nr_mpe, int offset_bytes, int *values,
+				int bytes)
+{
+	int i;
+
+	for (i = 0; i < bytes / 4; i++) {
+		rnpm_mpe_shm_write32(adapter, nr_mpe, offset_bytes + i * 4,
+				     values[i]);
+	}
+}
+
+int rnpm_mpe_shm_read32(struct rnpm_pf_adapter *adapter, int nr_mpe,
+			int offset)
+{
+	int v;
+
+	v = rnpm_rd_reg(adapter->hw.rpu_addr + CFG_MPE_DCCM(nr_mpe) +
+			adapter->mpe_shm + offset);
+	return v;
+}
+
+void rnpm_mpe_shm_read32_array(struct rnpm_pf_adapter *adapter, int nr_mpe,
+			       int offset_bytes, int *values, int bytes)
+{
+	int i;
+
+	for (i = 0; i < bytes / 4; i++) {
+		values[i] = rnpm_mpe_shm_read32(adapter, nr_mpe,
+						offset_bytes + i * 4);
+	}
+}
+
 void rnpm_rpu_mpe_stop(struct rnpm_pf_adapter *adapter)
 {
-	if (adapter->rpu_inited && pci_channel_offline(adapter->pdev)) {
+	if (adapter->rpu_need_stop) {
 		rnpm_start_rpu(adapter->hw.rpu_addr, 0);
 		rnpm_reset_mpe_and_rpu(&adapter->hw);
 	}
 
-	adapter->rpu_inited = 0;
+	adapter->rpu_need_stop = 0;
+}
+
+/*
+ *	@lane: 0~7 . serdes_lane not port_id
+ *	@mpe_id_bitmask: [0]:mpe0 [1]:mpe1 [2]:mpe2 [3]:mpe3
+ */
+int rnpm_mpe_set_queue_info(struct rnpm_pf_adapter *adapter, int lane,
+			    int mpe_id_bitmask, int queue_start,
+			    int queue_end)
+{
+	int nr_mpe;
+	int irss_off = offsetof(struct ipsec_rss_shm, irss);
+	int offset;
+
+	for (nr_mpe = 0; nr_mpe < 4; nr_mpe++) {
+		if (BIT(nr_mpe) & mpe_id_bitmask) {
+			// invalid this record
+			offset = irss_off + lane * sizeof(struct rss_queue_info);
+			offset += offsetof(struct rss_queue_info, valid);
+			rnpm_mpe_shm_write32(adapter, nr_mpe, offset, 0);
+
+			// set new value
+			offset = irss_off + lane * sizeof(struct rss_queue_info);
+			offset += offsetof(struct rss_queue_info, queue_start);
+			rnpm_mpe_shm_write32(adapter, nr_mpe, offset, queue_start);
+
+			offset = irss_off + lane * sizeof(struct rss_queue_info);
+			offset += offsetof(struct rss_queue_info, queue_end);
+			rnpm_mpe_shm_write32(adapter, nr_mpe, offset, queue_end);
+
+			offset = irss_off + lane * sizeof(struct rss_queue_info);
+			offset += offsetof(struct rss_queue_info, valid);
+			rnpm_mpe_shm_write32(adapter, nr_mpe, offset, INFO_VALID);
+
+			// set nic-mode to DCCM
+			offset = offsetof(struct mpe_shm_comm, nic_mode);
+			rnpm_mpe_shm_write32(adapter, nr_mpe, offset, adapter->hw.mode);
+
+			offset = offsetof(struct mpe_shm_comm, valid_magic);
+			rnpm_mpe_shm_write32(adapter, nr_mpe, offset, DRV_MPE_SHM_MAGIC);
+		}
+	}
+
+	return 0;
+}
+
+int rnpm_ipsec_rss_update_args(struct rnpm_adapter *adapter)
+{
+	int start, end, lane_gap;
+	struct rnpm_ring *ring = NULL;
+
+	if (!adapter->pf_adapter->rpu_inited ||
+	    adapter->num_rx_queues <= 0) {
+		return -EINVAL;
+	}
+	ring = adapter->rx_ring[0];
+	if (!ring)
+		return -EINVAL;
+
+	start = ring->rnpm_queue_idx;
+	ring = adapter->rx_ring[adapter->num_rx_queues - 1];
+	if (!ring)
+		return -EINVAL;
+
+	end = ring->rnpm_queue_idx;
+	lane_gap = (adapter->hw.pfvfnum == PF_NUM(1)) ? 4 : 0;
+
+	rnpm_mpe_set_queue_info(adapter->pf_adapter,
+				adapter->hw.nr_lane + lane_gap, 0b1111,
+				start, end);
+
+	return 0;
 }

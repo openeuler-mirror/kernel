@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/netdevice.h>
 #include <linux/ptp_classify.h>
@@ -53,7 +53,8 @@ static void config_sub_second_increment(void __iomem *ioaddr, u8 port,
 
 	reg_value <<= RNPM_PTP_SSIR_SSINC_SHIFT;
 
-	rnpm_wr_reg(ioaddr + RNPM_MAC_SUB_SECOND_INCREMENT(port), reg_value);
+	rnpm_wr_reg(ioaddr + RNPM_MAC_SUB_SECOND_INCREMENT(port),
+		    reg_value);
 
 	if (ssinc)
 		*ssinc = data;
@@ -131,20 +132,24 @@ static void get_systime(void __iomem *ioaddr, u8 port, u64 *systime)
 		*systime = ns;
 }
 
-static void config_mac_interrupt_enable(void __iomem *ioaddr, u8 port, bool on)
+static void config_mac_interrupt_enable(void __iomem *ioaddr, u8 port,
+					bool on)
 {
 	rnpm_wr_reg(ioaddr + RNPM_MAC_INTERRUPT_ENABLE(port), on);
 }
 
 struct rnpm_hwtimestamp {
-	void (*config_hw_tstamping)(void __iomem *ioaddr, u8 port, u32 data);
+	void (*config_hw_tstamping)(void __iomem *ioaddr, u8 port,
+				    u32 data);
 	void (*config_sub_second_increment)(void __iomem *ioaddr, u8 port,
 					    u32 ptp_clock, u32 *ssinc);
-	void (*config_mac_irq_enable)(void __iomem *ioaddr, u8 port, bool on);
-	int (*init_systime)(void __iomem *ioaddr, u8 port, u32 sec, u32 nsec);
+	void (*config_mac_irq_enable)(void __iomem *ioaddr, u8 port,
+				      bool on);
+	int (*init_systime)(void __iomem *ioaddr, u8 port, u32 sec,
+			    u32 nsec);
 	int (*config_addend)(void __iomem *ioaddr, u8 port, u32 addend);
-	int (*adjust_systime)(void __iomem *ioaddr, u8 port, u32 sec, u32 nsec,
-			      int add_sub);
+	int (*adjust_systime)(void __iomem *ioaddr, u8 port, u32 sec,
+			      u32 nsec, int add_sub);
 	void (*get_systime)(void __iomem *ioaddr, u8 port, u64 *systime);
 };
 
@@ -171,7 +176,8 @@ static int adjust_systime(void __iomem *ioaddr, u8 port, u32 sec, u32 nsec,
 	//printk("adjust %x\n", sec);
 	rnpm_wr_reg(ioaddr + RNPM_MAC_SYS_TIME_SEC_UPDATE(port), sec);
 	value = (add_sub << PTP_STNSUR_ADDSUB_SHIFT) | nsec;
-	rnpm_wr_reg(ioaddr + RNPM_MAC_SYS_TIME_NANOSEC_UPDATE(port), value);
+	rnpm_wr_reg(ioaddr + RNPM_MAC_SYS_TIME_NANOSEC_UPDATE(port),
+		    value);
 
 	/* issue command to initialize the system time value */
 	value = rnpm_rd_reg(ioaddr + RNPM_MAC_TS_CTRL(port));
@@ -211,7 +217,7 @@ static int rnpm_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 	u64 adj;
 	u8 port = pf->port;
 
-	if (pf == NULL) {
+	if (!pf) {
 		ptp_dbg("adapter_of contail is null\n");
 		return 0;
 	}
@@ -257,13 +263,15 @@ static int rnpm_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	nsec = reminder;
 
 	spin_lock_irqsave(&pf->ptp_lock, flags);
-	pf->hwts_ops->adjust_systime(pf->hw.hw_addr, port, sec, nsec, neg_adj);
+	pf->hwts_ops->adjust_systime(pf->hw.hw_addr, port, sec, nsec,
+				     neg_adj);
 	spin_unlock_irqrestore(&pf->ptp_lock, flags);
 
 	return 0;
 }
 
-static int rnpm_ptp_gettime(struct ptp_clock_info *ptp, struct timespec64 *ts)
+static int rnpm_ptp_gettime(struct ptp_clock_info *ptp,
+			    struct timespec64 *ts)
 {
 	struct rnpm_adapter *pf =
 		container_of(ptp, struct rnpm_adapter, ptp_clock_ops);
@@ -278,7 +286,6 @@ static int rnpm_ptp_gettime(struct ptp_clock_info *ptp, struct timespec64 *ts)
 	spin_unlock_irqrestore(&pf->ptp_lock, flags);
 
 	*ts = ns_to_timespec64(ns);
-
 	return 0;
 }
 
@@ -309,11 +316,12 @@ int rnpm_ptp_get_ts_config(struct rnpm_adapter *pf, struct ifreq *ifr)
 {
 	struct hwtstamp_config *config = &pf->tstamp_config;
 
-	return copy_to_user(ifr->ifr_data, config, sizeof(*config)) ? -EFAULT :
-									    0;
+	return copy_to_user(ifr->ifr_data, config, sizeof(*config)) ?
+		       -EFAULT :
+		       0;
 }
 
-int rnpm_ptp_setup_ptp(struct rnpm_adapter *pf, u32 value)
+static int rnpm_ptp_setup_ptp(struct rnpm_adapter *pf, u32 value)
 {
 	u32 sec_inc = 0;
 	u64 temp = 0;
@@ -334,13 +342,14 @@ int rnpm_ptp_setup_ptp(struct rnpm_adapter *pf, u32 value)
 	 * we use kernel-system clock
 	 */
 	pf->hwts_ops->config_sub_second_increment(pf->hw.hw_addr, port,
-						  pf->clk_ptp_rate, &sec_inc);
+						  pf->clk_ptp_rate,
+						  &sec_inc);
 	/* 4.If use fine correction approash then,
 	 * Program MAC_Timestamp_Addend register
 	 */
 	if (sec_inc == 0) {
-		ptp_dbg("%s:%d the sec_inc is zero this is a bug\n", __func__,
-			__LINE__);
+		ptp_dbg("%s:%d the sec_inc is zero this is a bug\n",
+			__func__, __LINE__);
 		return -EFAULT;
 	}
 	temp = div_u64(1000000000ULL, sec_inc);
@@ -356,12 +365,14 @@ int rnpm_ptp_setup_ptp(struct rnpm_adapter *pf, u32 value)
 
 	if (pf->clk_ptp_rate == 0) {
 		pf->clk_ptp_rate = 1000;
-		ptp_dbg("%s:%d clk_ptp_rate is zero\n", __func__, __LINE__);
+		ptp_dbg("%s:%d clk_ptp_rate is zero\n", __func__,
+			__LINE__);
 	}
 
 	pf->default_addend = div_u64(temp, pf->clk_ptp_rate);
 
-	pf->hwts_ops->config_addend(pf->hw.hw_addr, port, pf->default_addend);
+	pf->hwts_ops->config_addend(pf->hw.hw_addr, port,
+				    pf->default_addend);
 	/* 5.Poll wait for the TCR Update Addend Register*/
 	/* 6.enabled Fine Update method */
 	/* 7.program the second and nanosecond register*/
@@ -407,7 +418,8 @@ int rnpm_ptp_set_ts_config(struct rnpm_adapter *pf, struct ifreq *ifr)
 
 	netdev_info(pf->netdev,
 		    "%s config flags:0x%x, tx_type:0x%x, rx_filter:0x%x\n",
-		    __func__, config.flags, config.tx_type, config.rx_filter);
+		    __func__, config.flags, config.tx_type,
+		    config.rx_filter);
 	/* reserved for future extensions */
 	if (config.flags)
 		return -EINVAL;
@@ -525,9 +537,7 @@ int rnpm_ptp_set_ts_config(struct rnpm_adapter *pf, struct ifreq *ifr)
 		ptp_over_ethernet = RNPM_PTP_TCR_TSIPENA;
 		break;
 
-#ifdef HWTSTAMP_FILTER_NTP_ALL
 	case HWTSTAMP_FILTER_NTP_ALL:
-#endif
 	case HWTSTAMP_FILTER_ALL:
 		/* time stamp any incoming packet */
 		config.rx_filter = HWTSTAMP_FILTER_ALL;
@@ -538,17 +548,18 @@ int rnpm_ptp_set_ts_config(struct rnpm_adapter *pf, struct ifreq *ifr)
 		return -ERANGE;
 	}
 
-	pf->ptp_rx_en = ((config.rx_filter == HWTSTAMP_FILTER_NONE) ? 0 : 1);
+	pf->ptp_rx_en =
+		((config.rx_filter == HWTSTAMP_FILTER_NONE) ? 0 : 1);
 	pf->ptp_tx_en = config.tx_type == HWTSTAMP_TX_ON;
 
-	netdev_info(
-		pf->netdev,
-		"ptp config rx filter 0x%.2x tx_type 0x%.2x rx_en[%d] tx_en[%d]\n",
-		config.rx_filter, config.tx_type, pf->ptp_rx_en, pf->ptp_tx_en);
-	if (!pf->ptp_rx_en && !pf->ptp_tx_en)
+	netdev_info(pf->netdev,
+		    "ptp config rx filter 0x%.2x tx_type 0x%.2x rx_en[%d] tx_en[%d]\n",
+		    config.rx_filter, config.tx_type, pf->ptp_rx_en,
+		    pf->ptp_tx_en);
+	if (!pf->ptp_rx_en && !pf->ptp_tx_en) {
 		/*rx and tx is not use hardware ts so clear the ptp register */
 		pf->hwts_ops->config_hw_tstamping(pf->hw.hw_addr, port, 0);
-	else {
+	} else {
 		value = (RNPM_PTP_TCR_TSENA | RNPM_PTP_TCR_TSCFUPDT |
 			 RNPM_PTP_TCR_TSCTRLSSR | tstamp_all | ptp_v2 |
 			 ptp_over_ethernet | ptp_over_ipv6_udp |
@@ -561,8 +572,9 @@ int rnpm_ptp_set_ts_config(struct rnpm_adapter *pf, struct ifreq *ifr)
 	pf->ptp_config_value = value;
 	memcpy(&pf->tstamp_config, &config, sizeof(config));
 
-	return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ? -EFAULT :
-									    0;
+	return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ?
+		       -EFAULT :
+		       0;
 }
 
 /* structure describing a PTP hardware clock */
@@ -574,8 +586,10 @@ static struct ptp_clock_info rnpm_ptp_clock_ops = {
 	.n_ext_ts = 0,
 	.n_per_out = 0, /* will be overwritten in stmmac_ptp_register */
 	.n_pins = 0, /*should be 0 if not set*/
+
 	.adjfine = rnpm_ptp_adjfine,
 	.adjtime = rnpm_ptp_adjtime,
+
 	.gettime64 = rnpm_ptp_gettime,
 	.settime64 = rnpm_ptp_settime,
 	.enable = rnpm_ptp_feature_enable,
@@ -594,11 +608,12 @@ int rnpm_ptp_register(struct rnpm_adapter *pf)
 
 	/*default mac clock rate is 50Mhz */
 	pf->clk_ptp_rate = 50000000; //50Mhz
-	if (pf->pdev == NULL)
+	if (!pf->pdev)
 		ptp_dbg("pdev dev is null\n");
 
-	pf->ptp_clock = ptp_clock_register(&pf->ptp_clock_ops, &pf->pdev->dev);
-	if (pf->ptp_clock == NULL)
+	pf->ptp_clock =
+		ptp_clock_register(&pf->ptp_clock_ops, &pf->pdev->dev);
+	if (!pf->ptp_clock)
 		pci_err(pf->pdev, "ptp clock register failed\n");
 
 	if (IS_ERR(pf->ptp_clock)) {
@@ -622,47 +637,6 @@ void rnpm_ptp_unregister(struct rnpm_adapter *pf)
 	}
 }
 
-#if defined(DEBUG_PTP_HARD_SOFTWAY_RX) || defined(DEBUG_PTP_HARD_SOFTWAY_TX)
-static u64 rnpm_get_software_ts(void)
-{
-	struct timespec64 ts;
-
-	ktime_get_real_ts64(&ts);
-	return (ts.tv_nsec + ts.tv_sec * 1000000000ULL);
-}
-#endif
-
-#if defined(DEBUG_PTP_TX_TIMESTAMP) || defined(DEBUG_PTP_RX_TIMESTAMP)
-#define TIME_ZONE_CHINA (8)
-char *asctime(const struct tm *timeptr)
-{
-	static const char wday_name[][4] = { "Sun", "Mon", "Tue", "Wed",
-					     "Thu", "Fri", "Sat" };
-	static const char mon_name[][4] = { "Jan", "Feb", "Mar", "Apr",
-					    "May", "Jun", "Jul", "Aug",
-					    "Sep", "Oct", "Nov", "Dec" };
-	static char result[26];
-
-	sprintf(result, "%.3s %.3s%3d %.2d:%.2d:%.2d %ld\n",
-		wday_name[timeptr->tm_wday], mon_name[timeptr->tm_mon],
-		timeptr->tm_mday, timeptr->tm_hour + TIME_ZONE_CHINA,
-		timeptr->tm_min, timeptr->tm_sec, 1900 + timeptr->tm_year);
-	return result;
-}
-
-static void rnpm_print_human_timestamp(uint64_t ns, uint8_t *direct)
-{
-	struct timespec64 ts;
-	struct tm tms;
-	ktime_t ktm = ns_to_ktime(ns);
-
-	ts = ktime_to_timespec64(ktm);
-	//time64_to_tm(ts.tv_sec, ts.tv_nsec / 1000000000ULL, &tms);
-	//ptp_dbg("[%s] %s ------\n", direct, asctime(&tms));
-	ptp_dbg("[%s] %s ------\n", direct, ns);
-}
-#endif
-
 void rnpm_tx_hwtstamp_work(struct work_struct *work)
 {
 	struct rnpm_adapter *adapter =
@@ -678,13 +652,15 @@ void rnpm_tx_hwtstamp_work(struct work_struct *work)
 	if (!adapter->ptp_tx_skb)
 		return;
 
-	if (rnpm_rd_reg(ioaddr + RNPM_ETH_PTP_TX_TSVALUE_STATUS(port)) & 0x01) {
+	if (rnpm_rd_reg(ioaddr + RNPM_ETH_PTP_TX_TSVALUE_STATUS(port)) &
+	    0x01) {
 		struct sk_buff *skb = adapter->ptp_tx_skb;
 		struct skb_shared_hwtstamps shhwtstamps;
 		u64 txstmp = 0;
 		/* read  and add nsec, sec turn to nsec*/
 
-		nanosec = rnpm_rd_reg(ioaddr + RNPM_ETH_PTP_TX_LTIMES(port));
+		nanosec =
+			rnpm_rd_reg(ioaddr + RNPM_ETH_PTP_TX_LTIMES(port));
 		sec = rnpm_rd_reg(ioaddr + RNPM_ETH_PTP_TX_HTIMES(port));
 		/* when we read the timestamp finish need to notice the hardware
 		 * that the timestamp need to update via set tx_hwts_clear-reg
@@ -705,11 +681,10 @@ void rnpm_tx_hwtstamp_work(struct work_struct *work)
 		memset(&shhwtstamps, 0, sizeof(shhwtstamps));
 		shhwtstamps.hwtstamp = ns_to_ktime(txstmp);
 		adapter->ptp_tx_skb = NULL;
-		clear_bit_unlock(__RNPM_PTP_TX_IN_PROGRESS, &adapter->state);
-#ifdef DEBUG_PTP_TX_TIMESTAMP
-		rnpm_print_human_timestamp(txstmp, "TX");
-#endif
-		/* Force memory writes to complete before letting h/w
+		clear_bit_unlock(__RNPM_PTP_TX_IN_PROGRESS,
+				 &adapter->state);
+		/*
+		 * Force memory writes to complete before letting h/w
 		 * know there are new descriptors to fetch.  (Only
 		 * applicable for weak-ordered memory model archs,
 		 * such as IA-64).
@@ -728,24 +703,13 @@ void rnpm_tx_hwtstamp_work(struct work_struct *work)
 			dev_kfree_skb_any(adapter->ptp_tx_skb);
 		adapter->ptp_tx_skb = NULL;
 		adapter->tx_hwtstamp_timeouts++;
-		clear_bit_unlock(__RNPM_PTP_TX_IN_PROGRESS, &adapter->state);
-		netdev_warn(adapter->netdev, "clearing Tx timestamp hang\n");
+		clear_bit_unlock(__RNPM_PTP_TX_IN_PROGRESS,
+				 &adapter->state);
+		netdev_warn(adapter->netdev,
+			    "clearing Tx timestamp hang\n");
 	} else {
 		/* reschedule to check later */
-#ifdef DEBUG_PTP_HARD_SOFTWAY_TX
-		struct skb_shared_hwtstamps shhwtstamp;
-		u64 ns = 0;
-
-		ns = rnpm_get_software_ts();
-		shhwtstamp.hwtstamp = ns_to_ktime(ns);
-		if (adapter->ptp_tx_skb) {
-			skb_tstamp_tx(adapter->ptp_tx_skb, &shhwtstamp);
-			dev_consume_skb_any(adapter->ptp_tx_skb);
-			adapter->ptp_tx_skb = NULL;
-		}
-#else
 		schedule_work(&adapter->tx_hwtstamp_work);
-#endif
 	}
 }
 
@@ -758,15 +722,12 @@ void rnpm_ptp_get_rx_hwstamp(struct rnpm_adapter *adapter,
 
 	if (!skb || !adapter->ptp_rx_en) {
 		netdev_dbg(adapter->netdev,
-			   "hwstamp skb is null or rx_en is zero %u\n",
+			   "hwstamp skb is null or rx_en iszero %u\n",
 			   adapter->ptp_rx_en);
 		return;
 	}
 
-#ifdef DEBUG_PTP_HARD_SOFTWAY_RX
-	ns = rnpm_get_software_ts();
-#else
-	if (likely(!((desc->wb.cmd) & RNPM_RXD_STAT_PTP)))
+	if (likely(!(desc->wb.cmd & RNPM_RXD_STAT_PTP)))
 		return;
 	hwtstamps = skb_hwtstamps(skb);
 	/* because of rx hwstamp store before the mac head
@@ -777,11 +738,11 @@ void rnpm_ptp_get_rx_hwstamp(struct rnpm_adapter *adapter,
 	/* low8bytes is null high8bytes is timestamp
 	 * high32bit is seconds low32bits is nanoseconds
 	 */
-	skb_copy_from_linear_data_offset(skb, RNPM_RX_TIME_RESERVE, &tsvalueh,
-					 RNPM_RX_SEC_SIZE);
-	skb_copy_from_linear_data_offset(
-		skb, RNPM_RX_TIME_RESERVE + RNPM_RX_SEC_SIZE, &tsvaluel,
-		RNPM_RX_NANOSEC_SIZE);
+	skb_copy_from_linear_data_offset(skb, RNPM_RX_TIME_RESERVE,
+					 &tsvalueh, RNPM_RX_SEC_SIZE);
+	skb_copy_from_linear_data_offset(skb,
+					 RNPM_RX_TIME_RESERVE + RNPM_RX_SEC_SIZE,
+					 &tsvaluel, RNPM_RX_NANOSEC_SIZE);
 	skb_pull(skb, RNPM_RX_HWTS_OFFSET);
 	tsvalueh = ntohl(tsvalueh);
 	tsvaluel = ntohl(tsvaluel);
@@ -789,13 +750,9 @@ void rnpm_ptp_get_rx_hwstamp(struct rnpm_adapter *adapter,
 	ns = tsvaluel & RNPM_RX_NSEC_MASK;
 	ns += ((tsvalueh & RNPM_RX_SEC_MASK) * 1000000000ULL);
 	netdev_dbg(adapter->netdev,
-		   "ptp get hardware ts-sec %llu ts-nanosec %llu\n", tsvalueh,
-		   tsvaluel);
+		   "ptp get hardware ts-sec %llu ts-nanosec %llu\n",
+		   tsvalueh, tsvaluel);
 	hwtstamps->hwtstamp = ns_to_ktime(ns);
-#endif
-#ifdef DEBUG_PTP_RX_TIMESTAMP
-	rnpm_print_human_timestamp(ns, "RX");
-#endif
 }
 
 void rnpm_ptp_reset(struct rnpm_adapter *adapter)

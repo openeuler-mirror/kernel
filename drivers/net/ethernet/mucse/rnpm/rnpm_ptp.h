@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef __RNPM_PTP_H__
 #define __RNPM_PTP_H__
 
+#define RNPM_ETH_PTP_TIMESTAMP_SEL (0x38010)
 /* PTP Timestamp control register defines */
 /* Timestamp Enable */
 #define RNPM_PTP_TCR_TSENA BIT(0)
@@ -66,7 +67,7 @@
 #define RNPM_RX_TIME_RESERVE (8)
 #define RNPM_RX_SEC_SIZE (4)
 #define RNPM_RX_NANOSEC_SIZE (4)
-#define RNPM_RX_HWTS_OFFSET                                                    \
+#define RNPM_RX_HWTS_OFFSET \
 	(RNPM_RX_SEC_SIZE + RNPM_RX_NANOSEC_SIZE + RNPM_RX_TIME_RESERVE)
 
 #define PTP_STNSUR_ADDSUB_SHIFT (31)
@@ -86,7 +87,8 @@ int rnpm_ptp_set_ts_config(struct rnpm_adapter *pf, struct ifreq *ifr);
 int rnpm_ptp_register(struct rnpm_adapter *pf);
 void rnpm_ptp_unregister(struct rnpm_adapter *pf);
 
-void rnpm_ptp_get_rx_hwstamp(struct rnpm_adapter *pf, union rnpm_rx_desc *desc,
+void rnpm_ptp_get_rx_hwstamp(struct rnpm_adapter *pf,
+			     union rnpm_rx_desc *desc,
 			     struct sk_buff *skb);
 void rnpm_tx_hwtstamp_work(struct work_struct *work);
 void rnpm_ptp_reset(struct rnpm_adapter *adapter);
