@@ -1083,11 +1083,13 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 	if (ubcore_fill_get_tp_cfg(dev, &get_tp_cfg, cfg) != 0)
 		return NULL;
 
+	active_tp_cfg.tp_attr.tx_psn = get_random_u32();
 	if (cfg->trans_mode == UBCORE_TP_RM &&
 		cfg->tp_type == UBCORE_RTP &&
-		cfg->flag.bs.share_tp == 1)
+		cfg->flag.bs.share_tp == 1) {
 		ret = ubcore_get_rm_stp_list(dev, &tp_cnt, &tp_list, &cfg->stp_cfg, &get_tp_cfg);
-	else
+		active_tp_cfg.tp_attr.tx_psn = cfg->stp_cfg.tx_psn;
+	} else
 		ret = ubcore_get_tp_list(dev, &get_tp_cfg, &tp_cnt, &tp_list, NULL);
 
 	if (ret != 0 || tp_cnt != 1) {
@@ -1100,7 +1102,6 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 
 	if (cfg->trans_mode == UBCORE_TP_RM &&
 		cfg->tp_type == UBCORE_RTP) {
-		active_tp_cfg.tp_attr.tx_psn = get_random_u32();
 		ret = ubcore_exchange_tp_info(dev, &get_tp_cfg,
 				      &active_tp_cfg, cfg, udata);
 		if (ret != 0) {
