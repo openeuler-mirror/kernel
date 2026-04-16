@@ -246,7 +246,6 @@ LIBBPF_0.3.0 {
 		btf__parse_raw_split;
 		btf__parse_split;
 		btf__new_empty_split;
-		btf__new_split;
 		ring_buffer__epoll_fd;
 } LIBBPF_0.2.0;
 
@@ -395,6 +394,7 @@ LIBBPF_1.2.0 {
 
 LIBBPF_1.3.0 {
 	global:
+		btf__new_split;
 		bpf_obj_pin_opts;
 		bpf_object__unpin;
 		bpf_prog_detach_opts;
