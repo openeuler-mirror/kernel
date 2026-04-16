@@ -293,6 +293,17 @@ static int vfio_ub_set_req_trigger(struct vfio_ub_core_device *vdev,
 	return vfio_ub_set_ctx_trigger_single(&vdev->req_trigger, count, flags, data);
 }
 
+static int vfio_ub_set_reinit_trigger(struct vfio_ub_core_device *vdev,
+				      unsigned int index, unsigned int start,
+				      unsigned int count, uint32_t flags,
+				      void *data)
+{
+	if (index != VFIO_UB_REINIT_IRQ_INDEX || start != 0 || count > 1)
+		return -EINVAL;
+
+	return vfio_ub_set_ctx_trigger_single(&vdev->reinit_trigger, count, flags, data);
+}
+
 int vfio_ub_set_irqs_ioctl(struct vfio_ub_core_device *vdev, uint32_t flags,
 			   unsigned int index, unsigned int start,
 			   unsigned int count, void *data)
@@ -309,6 +320,11 @@ int vfio_ub_set_irqs_ioctl(struct vfio_ub_core_device *vdev, uint32_t flags,
 		if (flags & VFIO_IRQ_SET_ACTION_TRIGGER)
 			ret = vfio_ub_set_req_trigger(vdev, index, start,
 						      count, flags, data);
+		break;
+	case VFIO_UB_REINIT_IRQ_INDEX:
+		if (flags & VFIO_IRQ_SET_ACTION_TRIGGER)
+			ret = vfio_ub_set_reinit_trigger(vdev, index, start,
+							 count, flags, data);
 		break;
 	default:
 		ret = -ENOTTY;
