@@ -182,7 +182,7 @@ struct enum_tlv_cap_info {
 #define ENUM_TLV_CAP_INFO_SZ 8
 
 void ub_enum_clear_ent_list(struct list_head *dev_list);
-int ub_enum_entities_active(struct list_head *dev_list);
+int ub_enum_entities_active(struct list_head *dev_list, int src);
 int ub_enum_topo_scan_ports(struct ub_entity *uent, u16 start_port, u16 num,
 			    struct list_head *dev_list, void *buf);
 struct ub_entity *ub_enum_get_port_r_uent(struct ub_port *port, void *buf);

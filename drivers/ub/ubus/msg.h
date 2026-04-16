@@ -300,6 +300,7 @@ struct ub_rx_msg_task {
 };
 
 struct workqueue_struct *get_rx_msg_wq(u8 msg_code);
+int get_msg_rx_flag(void);
 int message_rx_handler(struct ub_bus_controller *ubc, void *pkt, u16 len);
 int message_rx_init(void);
 void message_rx_uninit(void);

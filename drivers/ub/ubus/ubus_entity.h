@@ -18,5 +18,6 @@ void ub_remove_entities(void);
 int ub_num_ue(struct ub_entity *uent);
 void ub_disable_ent(struct ub_entity *uent);
 void ub_virt_notify(struct ub_entity *pue, u16 entity_idx, bool is_en);
+int ub_reinit_ent(struct ub_entity *uent);
 
 #endif /* __UBUS_ENTITY_H__ */

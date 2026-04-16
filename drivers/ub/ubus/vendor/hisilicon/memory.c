@@ -29,9 +29,6 @@
 
 #define hpa_gen(addr_h, addr_l) (((u64)(addr_h) << 32) | (addr_l))
 
-#define UB_MEM_PORT_WARNING 18
-#define UB_MEM_PORT_RECOVERY 19
-
 static u8 ub_mem_num;
 
 struct ub_mem_decoder {
