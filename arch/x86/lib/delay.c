@@ -118,12 +118,12 @@ static void delay_halt_tpause(u64 start, u64 cycles)
 }
 
 /*
- * On ZHAOXIN the ZXPAUSE instruction waits until any of:
+ * On ZHAOXIN the PAUSEOPT instruction waits until any of:
  * 1) the delta of TSC counter exceeds the value provided in EDX:EAX
- * 2) global timeout in ZX_PAUSE_CONTROL is exceeded
+ * 2) global timeout in PAUSEOPT_CONTROL is exceeded
  * 3) an external interrupt occurs
  */
-static void delay_halt_zxpause(u64 unused, u64 cycles)
+static void delay_halt_pauseopt(u64 unused, u64 cycles)
 {
 	u64 until = cycles;
 	u32 eax, edx;
@@ -131,11 +131,7 @@ static void delay_halt_zxpause(u64 unused, u64 cycles)
 	eax = lower_32_bits(until);
 	edx = upper_32_bits(until);
 
-	/*
-	 * Hard code the deeper (C0.1) sleep state because exit latency is
-	 * small compared to the "microseconds" that usleep() will delay.
-	 */
-	__zxpause(ZXPAUSE_C01_STATE, edx, eax);
+	__pauseopt(PAUSEOPT_P01_STATE, edx, eax);
 }
 
 /*
@@ -204,9 +200,9 @@ void __init use_tpause_delay(void)
 	delay_fn = delay_halt;
 }
 
-void __init use_zxpause_delay(void)
+void __init use_pauseopt_delay(void)
 {
-	delay_halt_fn = delay_halt_zxpause;
+	delay_halt_fn = delay_halt_pauseopt;
 	delay_fn = delay_halt;
 }
 
