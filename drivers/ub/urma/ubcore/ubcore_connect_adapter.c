@@ -610,6 +610,7 @@ static int ubcore_get_rm_stp_list(struct ubcore_device *dev, uint32_t *tp_cnt,
 	uint32_t hash;
 	int ret = 0;
 	uint32_t tx_psn;
+	int i = 0;
 
 	if (dev == NULL || dev->ops == NULL || dev->ops->get_tp_list == NULL ||
 		tp_cnt == NULL || tp_list == NULL || *tp_cnt == 0) {
@@ -639,8 +640,12 @@ static int ubcore_get_rm_stp_list(struct ubcore_device *dev, uint32_t *tp_cnt,
 		spin_unlock(&ht->lock);
 
 		/* waiting for get_tp_list finished */
-		while (atomic_read(&info_ext->tp_state) == RM_STP_UNCREATED)
-			;
+		do {
+			if (atomic_read(&info_ext->tp_state) != RM_STP_UNCREATED)
+				break;
+			i++;
+			usleep_range(1000, 1100);
+		} while (i < ubcore_conn_timeout);
 
 		if (atomic_read(&info_ext->tp_state) == RM_STP_ERROR)
 			goto err_out;
