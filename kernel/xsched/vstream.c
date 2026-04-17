@@ -703,9 +703,36 @@ static int vstream_hbm_free(struct vstream_args *arg)
 
 	return ret;
 }
+
+static int vstream_hbm_cleanup(struct vstream_args *arg)
+{
+	struct xsched_cu *xcu_found;
+	struct xsched_context *ctx;
+
+	if (!dmem_cgroup_enabled())
+		return -EPERM;
+
+	xcu_found = xcu_find(XCU_TYPE_XPU, arg->dev_id, arg->channel_id);
+	if (!xcu_found)
+		return -EINVAL;
+
+	mutex_lock(&xcu_found->ctx_list_lock);
+	ctx = ctx_find_by_tgid_and_xcu(current->tgid, xcu_found);
+	if (ctx)
+		kref_get(&ctx->kref);
+	mutex_unlock(&xcu_found->ctx_list_lock);
+
+	if (ctx) {
+		xsched_dmem_cleanup(ctx);
+		kref_put(&ctx->kref, xsched_task_free);
+	}
+
+	return 0;
+}
 #else
 static int vstream_hbm_alloc(struct vstream_args *arg) { return -EOPNOTSUPP; }
 static int vstream_hbm_free(struct vstream_args *arg) { return -EOPNOTSUPP; }
+static int vstream_hbm_cleanup(struct vstream_args *arg) { return -EOPNOTSUPP; }
 #endif /* CONFIG_CGROUP_DMEM */
 
 /*
@@ -717,6 +744,7 @@ static vstream_manage_t(*vstream_command_table[MAX_COMMAND + 1]) = {
 	vstream_kick, // VSTREAM_KICK
 	vstream_hbm_alloc, // VSTREAM_HBM_ALLOC
 	vstream_hbm_free, // VSTREAM_HBM_FREE
+	vstream_hbm_cleanup, // VSTREAM_HBM_CLEANUP
 	NULL // MAX_COMMAND
 };
 

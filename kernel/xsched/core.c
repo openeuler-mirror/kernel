@@ -174,6 +174,9 @@ int delete_ctx(struct xsched_context *ctx)
 
 	mutex_unlock(&xcu->xcu_lock);
 
+#ifdef CONFIG_CGROUP_DMEM
+	xsched_dmem_cleanup(ctx);
+#endif
 	xse->class->xse_deinit(xse);
 	return 0;
 }

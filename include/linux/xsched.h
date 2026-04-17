@@ -523,6 +523,7 @@ void xsched_dmem_unregister_region(int dev_id);
 bool xsched_dmem_used(void);
 int xsched_dmem_alloc(struct xsched_context *ctx, struct vstream_args *args);
 int xsched_dmem_free(struct xsched_context *ctx, struct vstream_args *args);
+void xsched_dmem_cleanup(struct xsched_context *ctx);
 #endif
 
 #endif /* !__LINUX_XSCHED_H__ */
