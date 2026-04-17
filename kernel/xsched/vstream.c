@@ -22,6 +22,10 @@
 #include <linux/vstream.h>
 #include <linux/xsched.h>
 
+#ifdef CONFIG_CGROUP_DMEM
+#include <linux/cgroup_dmem.h>
+#endif
+
 #if defined(CONFIG_XCU_SCHEDULER) && defined(CONFIG_XCU_VSTREAM)
 
 #define XCU_HASH_ORDER 6
@@ -168,6 +172,10 @@ static void init_xsched_ctx(struct xsched_context *ctx,
 
 	INIT_LIST_HEAD(&ctx->vstream_list);
 	INIT_LIST_HEAD(&ctx->ctx_node);
+
+#ifdef CONFIG_CGROUP_DMEM
+	INIT_LIST_HEAD(&ctx->pool_list);
+#endif
 
 	spin_lock_init(&ctx->ctx_lock);
 	mutex_init(&ctx->ctx_mutex);
@@ -624,6 +632,51 @@ int vstream_kick(struct vstream_args *arg)
 	return err;
 }
 
+#ifdef CONFIG_CGROUP_DMEM
+static int vstream_hbm_alloc(struct vstream_args *arg)
+{
+	vstream_info_t vstream_info;
+	struct xsched_cu *xcu_found;
+	struct xsched_context *ctx;
+	int ret = 0;
+
+	if (!dmem_cgroup_enabled())
+		return -EPERM;
+
+	xcu_found = xcu_find(XCU_TYPE_XPU, arg->dev_id, arg->channel_id);
+	if (!xcu_found)
+		return -EINVAL;
+
+	/* it will either allocate or find a context */
+	mutex_lock(&xcu_found->ctx_list_lock);
+	ctx = ctx_find_by_tgid_and_xcu(current->tgid, xcu_found);
+	if (ctx) {
+		kref_get(&ctx->kref);
+	} else {
+		vstream_info.tgid = current->tgid;
+		vstream_info.xcu = xcu_found;
+		vstream_info.dev_id = arg->dev_id;
+		vstream_info.channel_id = arg->channel_id;
+		vstream_info.fd = arg->fd;
+
+		ret = alloc_ctx_from_vstream(&vstream_info, &ctx);
+	}
+	mutex_unlock(&xcu_found->ctx_list_lock);
+
+	if (ret != 0) {
+		XSCHED_ERR("Failed to find a context for HBM alloc");
+		return ret;
+	}
+
+	ret = xsched_dmem_alloc(ctx, arg);
+	kref_put(&ctx->kref, xsched_task_free);
+
+	return ret;
+}
+#else
+static int vstream_hbm_alloc(struct vstream_args *arg) { return -EOPNOTSUPP; }
+#endif /* CONFIG_CGROUP_DMEM */
+
 /*
  * vstream_manage_cmd table
  */
@@ -631,6 +684,7 @@ static vstream_manage_t(*vstream_command_table[MAX_COMMAND + 1]) = {
 	vstream_alloc, // VSTREAM_ALLOC
 	vstream_free, // VSTREAM_FREE
 	vstream_kick, // VSTREAM_KICK
+	vstream_hbm_alloc, // VSTREAM_HBM_ALLOC
 	NULL // MAX_COMMAND
 };
 
