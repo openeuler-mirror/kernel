@@ -205,7 +205,7 @@ struct kernfs_node {
 	 * never moved to a different parent, it is safe to access the
 	 * parent directly.
 	 */
-	struct kernfs_node	__rcu *__parent;
+	KABI_REPLACE(struct kernfs_node *parent, struct kernfs_node __rcu *__parent)
 	const char		__rcu *name;
 
 	struct rb_node		rb;
@@ -328,9 +328,8 @@ struct kernfs_ops {
 			 struct poll_table_struct *pt);
 
 	int (*mmap)(struct kernfs_open_file *of, struct vm_area_struct *vma);
-	loff_t (*llseek)(struct kernfs_open_file *of, loff_t offset, int whence);
 
-	KABI_RESERVE(1)
+	KABI_USE(1, loff_t (*llseek)(struct kernfs_open_file *of, loff_t offset, int whence))
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
