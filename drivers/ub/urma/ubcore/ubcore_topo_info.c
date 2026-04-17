@@ -1114,46 +1114,6 @@ static int ubcore_get_path_set_port(struct ubcore_topo_node *src_topo_info,
 	return 0;
 }
 
-static int ubcore_get_path_set_same_node(struct ubcore_topo_agg_dev *src_agg_dev,
-	struct ubcore_topo_agg_dev *dst_agg_dev, enum ubcore_tp_type tp_type,
-	struct ubcore_path_set *path_set)
-{
-	int iodie_id;
-	uint32_t path_idx = 0;
-	struct ubcore_path *path;
-
-	for (iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
-
-		path = &path_set->paths[path_idx];
-		path->src_port.chip_id = src_agg_dev->ues[iodie_id].chip_id + 1;
-		path->src_port.die_id = iodie_id;
-		path->src_port.port_idx = 0;
-		path->src_port.reserved = 0;
-
-		path->dst_port.chip_id = dst_agg_dev->ues[iodie_id].chip_id + 1;
-		path->dst_port.die_id = iodie_id;
-		path->dst_port.port_idx = 0;
-		path->dst_port.reserved = 0;
-
-		(void)memcpy(&path->src_eid,
-				src_agg_dev->ues[iodie_id].primary_eid,
-				sizeof(union ubcore_eid));
-		(void)memcpy(&path->dst_eid,
-				dst_agg_dev->ues[iodie_id].primary_eid,
-				sizeof(union ubcore_eid));
-		path_idx++;
-	}
-
-	path_set->path_count = path_idx;
-
-	if (path_idx == 0) {
-		ubcore_log_err("Failed to get any valid port path in same_node.\n");
-		return -EINVAL;
-	}
-
-	return 0;
-}
-
 int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
 	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
 	bool multi_path, struct ubcore_path_set *path_set)
@@ -1234,14 +1194,6 @@ int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
 	}
 
 	/* multi_path == false && (tp_type == CTP || tp_type == RTP): original port logic */
-	if (src_topo_info->node_id == dst_topo_info->node_id) {
-		ret = ubcore_get_path_set_same_node(src_agg_dev, dst_agg_dev,
-			tp_type, path_set);
-		if (ret != 0)
-			ubcore_log_err("Failed to get path set for same node, ret: %d.\n", ret);
-		return ret;
-	}
-
 	ret = ubcore_get_path_set_port(src_topo_info, dst_topo_info, src_agg_dev,
 			dst_agg_dev, path_set);
 	if (ret != 0) {
