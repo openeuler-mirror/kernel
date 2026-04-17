@@ -214,3 +214,32 @@ int xsched_dmem_alloc(struct xsched_context *ctx, struct vstream_args *args)
 
 	return 0;
 }
+
+int xsched_dmem_free(struct xsched_context *ctx, struct vstream_args *args)
+{
+	struct xsched_dmem_pool *pool, *target = NULL;
+	uint64_t addr = args->vm_args.addr;
+
+	if (!xsched_dmem_used())
+		return -EPERM;
+
+	spin_lock(&ctx->ctx_lock);
+	list_for_each_entry(pool, &ctx->pool_list, pool_node) {
+		if (pool->addr == addr) {
+			list_del(&pool->pool_node);
+			target = pool;
+			break;
+		}
+	}
+	spin_unlock(&ctx->ctx_lock);
+
+	if (!target)
+		return -ENOENT;
+
+	XSCHED_DEBUG("uncharged %llu bytes for pool = %p with addr %llu\n",
+		target->size, target, target->addr);
+	dmem_cgroup_uncharge(target->pool, target->size);
+	kfree(target);
+
+	return 0;
+}

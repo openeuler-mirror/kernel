@@ -673,8 +673,39 @@ static int vstream_hbm_alloc(struct vstream_args *arg)
 
 	return ret;
 }
+
+static int vstream_hbm_free(struct vstream_args *arg)
+{
+	struct xsched_cu *xcu_found;
+	struct xsched_context *ctx;
+	int ret;
+
+	if (!dmem_cgroup_enabled())
+		return -EPERM;
+
+	xcu_found = xcu_find(XCU_TYPE_XPU, arg->dev_id, arg->channel_id);
+	if (!xcu_found)
+		return -EINVAL;
+
+	mutex_lock(&xcu_found->ctx_list_lock);
+	ctx = ctx_find_by_tgid_and_xcu(current->tgid, xcu_found);
+	if (ctx)
+		kref_get(&ctx->kref);
+	mutex_unlock(&xcu_found->ctx_list_lock);
+
+	if (!ctx) {
+		XSCHED_ERR("Failed to find a context for HBM free");
+		return -ENOENT;
+	}
+
+	ret = xsched_dmem_free(ctx, arg);
+	kref_put(&ctx->kref, xsched_task_free);
+
+	return ret;
+}
 #else
 static int vstream_hbm_alloc(struct vstream_args *arg) { return -EOPNOTSUPP; }
+static int vstream_hbm_free(struct vstream_args *arg) { return -EOPNOTSUPP; }
 #endif /* CONFIG_CGROUP_DMEM */
 
 /*
@@ -685,6 +716,7 @@ static vstream_manage_t(*vstream_command_table[MAX_COMMAND + 1]) = {
 	vstream_free, // VSTREAM_FREE
 	vstream_kick, // VSTREAM_KICK
 	vstream_hbm_alloc, // VSTREAM_HBM_ALLOC
+	vstream_hbm_free, // VSTREAM_HBM_FREE
 	NULL // MAX_COMMAND
 };
 
