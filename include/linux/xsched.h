@@ -374,6 +374,10 @@ struct xsched_context {
 	struct list_head vstream_list;
 	struct list_head ctx_node;
 
+#ifdef CONFIG_CGROUP_DMEM
+	struct list_head pool_list;
+#endif
+
 	struct xsched_entity xse;
 
 	spinlock_t ctx_lock;
@@ -517,6 +521,7 @@ static inline u64 xs_calc_delta_fair(u64 delta_exec, u32 weight)
 int xsched_dmem_register_region(uint64_t size, int dev_id);
 void xsched_dmem_unregister_region(int dev_id);
 bool xsched_dmem_used(void);
-#endif /* CONFIG_CGROUP_DMEM */
+int xsched_dmem_alloc(struct xsched_context *ctx, struct vstream_args *args);
+#endif
 
 #endif /* !__LINUX_XSCHED_H__ */
