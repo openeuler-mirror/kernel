@@ -243,3 +243,21 @@ int xsched_dmem_free(struct xsched_context *ctx, struct vstream_args *args)
 
 	return 0;
 }
+
+void xsched_dmem_cleanup(struct xsched_context *ctx)
+{
+	struct xsched_dmem_pool *pool, *tmp;
+	LIST_HEAD(free_list);
+
+	if (!ctx || !xsched_dmem_used())
+		return;
+
+	spin_lock(&ctx->ctx_lock);
+	list_splice_init(&ctx->pool_list, &free_list);
+	spin_unlock(&ctx->ctx_lock);
+
+	list_for_each_entry_safe(pool, tmp, &free_list, pool_node) {
+		dmem_cgroup_uncharge(pool->pool, pool->size);
+		kfree(pool);
+	}
+}
