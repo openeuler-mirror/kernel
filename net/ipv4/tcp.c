@@ -311,7 +311,11 @@ DEFINE_STATIC_KEY_FALSE(tcp_have_comp);
 #endif
 
 #if IS_ENABLED(CONFIG_UB_UMS)
+#ifdef CONFIG_UBS_HANDSHAKE
+DEFINE_STATIC_KEY_TRUE(tcp_have_ums);
+#else
 DEFINE_STATIC_KEY_FALSE(tcp_have_ums);
+#endif
 EXPORT_SYMBOL(tcp_have_ums);
 #endif
 
@@ -3718,6 +3722,14 @@ int do_tcp_setsockopt(struct sock *sk, int level, int optname,
 			tcp_enable_tx_delay();
 		WRITE_ONCE(tp->tcp_tx_delay, val);
 		break;
+#ifdef CONFIG_UBS_HANDSHAKE
+	case TCP_UBS_HANDSHAKE:
+		if (val > 1 || val < 0)
+			err = -EINVAL;
+		else
+			tp->syn_ums = val;
+		break;
+#endif
 	default:
 		err = -ENOPROTOOPT;
 		break;
@@ -4324,6 +4336,11 @@ zerocopy_rcv_out:
 	case TCP_IS_MPTCP:
 		val = 0;
 		break;
+#ifdef CONFIG_UBS_HANDSHAKE
+	case TCP_UBS_HANDSHAKE:
+		val = tp->syn_ums;
+		break;
+#endif
 	default:
 		return -ENOPROTOOPT;
 	}

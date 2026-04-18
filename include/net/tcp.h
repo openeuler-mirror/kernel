@@ -2561,7 +2561,11 @@ extern struct static_key_false tcp_have_smc;
 #endif
 
 #if IS_ENABLED(CONFIG_UB_UMS)
+#ifdef CONFIG_UBS_HANDSHAKE
+extern struct static_key_true tcp_have_ums;
+#else
 extern struct static_key_false tcp_have_ums;
+#endif
 #endif
 
 #if IS_ENABLED(CONFIG_TLS_DEVICE)
