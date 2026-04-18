@@ -82,6 +82,14 @@ config UB_UMS
 	  based on the UB network for data transmission, transparently accelerating
 	  TCP communication
 
+config UBS_HANDSHAKE
+	bool "Enable UB socket(UBS) TCP handshake"
+	depends on UB_UMS
+	default y
+	help
+	  UB socket(UBS) TCP handshake is used to identify whether it is an UB
+	  connection, allowing UBS to be dynamically enabled through sockopt.
+
 config NET_HANDSHAKE
 	bool
 	depends on SUNRPC || NVME_TARGET_TCP || NVME_TCP
