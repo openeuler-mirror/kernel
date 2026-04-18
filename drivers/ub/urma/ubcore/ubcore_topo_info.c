@@ -472,7 +472,7 @@ int ubcore_get_main_primary_eid(union ubcore_eid *eid,
 
 	ubcore_get_min_eid(eid_arr, main_primary_eid);
 
-	ubcore_log_info("Finish to get main primary eid "EID_FMT".\n",
+	ubcore_log_info_rl("Finish to get main primary eid "EID_FMT".\n",
 		EID_ARGS(*main_primary_eid));
 	return 0;
 }
