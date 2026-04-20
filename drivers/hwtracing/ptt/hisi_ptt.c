@@ -18,6 +18,7 @@
 #include <linux/module.h>
 #include <linux/sysfs.h>
 #include <linux/vmalloc.h>
+#include <linux/compiler.h>
 
 #include "hisi_ptt.h"
 
@@ -266,6 +267,10 @@ static int hisi_ptt_update_aux(struct hisi_ptt *hisi_ptt, int index, bool stop)
 
 		reg = readl(hisi_ptt->iobase + HISI_PTT_TRACE_WR_STS);
 		size = FIELD_GET(HISI_PTT_TRACE_WR_STS_WRITE, reg);
+		if (unlikely(size > HISI_PTT_TRACE_BUF_SIZE)) {
+			pci_err(hisi_ptt->pdev, "Failed to get the size of traced data from the device\n");
+			return -EFAULT;
+		}
 	} else {
 		size = HISI_PTT_TRACE_BUF_SIZE;
 	}
