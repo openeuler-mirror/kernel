@@ -1570,8 +1570,10 @@ static int acpi_ec_setup(struct acpi_ec *ec, struct acpi_device *device)
 	int ret;
 
 	ret = ec_install_handlers(ec, device);
-	if (ret)
+	if (ret) {
+		ec_remove_handlers(ec);
 		return ret;
+	}
 
 	/* First EC capable of handling transactions */
 	if (!first_ec)
