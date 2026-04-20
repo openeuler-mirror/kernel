@@ -276,13 +276,7 @@ static int udma_get_stars_jfc_buf(struct udma_dev *dev, struct udma_jfc *jfc)
 
 	jfc->buf.addr = (dma_addr_t)(uintptr_t)jfc_addr->cq_addr;
 
-	ret = udma_alloc_sw_db(dev, &jfc->db, UDMA_JFC_TYPE_DB);
-	if (ret) {
-		dev_err(dev->dev, "failed to alloc sw db for jfc(%u).\n", jfc->jfcn);
-		return -ENOMEM;
-	}
-
-	return ret;
+	return 0;
 }
 
 static int udma_create_stars_jfc(struct udma_dev *dev,
@@ -318,7 +312,7 @@ static int udma_create_stars_jfc(struct udma_dev *dev,
 
 	ret = udma_post_create_jfc_mbox(dev, jfc);
 	if (ret)
-		goto err_get_jfc_buf;
+		goto err_alloc_cqc;
 
 	refcount_set(&jfc->event_refcount, 1);
 	init_completion(&jfc->event_comp);
@@ -328,8 +322,6 @@ static int udma_create_stars_jfc(struct udma_dev *dev,
 
 	return 0;
 
-err_get_jfc_buf:
-	udma_free_sw_db(dev, &jfc->db);
 err_alloc_cqc:
 	xa_lock_irqsave(&dev->jfc_table.xa, flags_erase);
 	__xa_erase(&dev->jfc_table.xa, jfc->jfcn);
