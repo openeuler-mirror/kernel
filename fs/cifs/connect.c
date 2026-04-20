@@ -2739,6 +2739,10 @@ static int match_session(struct cifs_ses *ses, struct smb_vol *vol)
 	case Kerberos:
 		if (!uid_eq(vol->cred_uid, ses->cred_uid))
 			return 0;
+		if (strncmp(ses->user_name ?: "",
+			    vol->username ?: "",
+			    CIFS_MAX_USERNAME_LEN))
+			return 0;
 		break;
 	default:
 		/* NULL username means anonymous session */
