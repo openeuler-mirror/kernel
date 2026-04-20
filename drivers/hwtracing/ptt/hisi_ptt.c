@@ -921,14 +921,14 @@ static int hisi_ptt_trace_valid_type(u32 val)
 
 static int hisi_ptt_trace_valid_format(u32 val)
 {
-	static const u32 hisi_ptt_trace_availble_format[] = {
+	static const u32 hisi_ptt_trace_available_format[] = {
 		0,	/* 4DW */
 		1,	/* 8DW */
 	};
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(hisi_ptt_trace_availble_format); i++) {
-		if (val == hisi_ptt_trace_availble_format[i])
+	for (i = 0; i < ARRAY_SIZE(hisi_ptt_trace_available_format); i++) {
+		if (val == hisi_ptt_trace_available_format[i])
 			return 0;
 	}
 
