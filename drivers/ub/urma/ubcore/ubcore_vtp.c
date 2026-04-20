@@ -1308,8 +1308,12 @@ struct ubcore_vtpn *
 	mutex_lock(&info_ext->lock);
 	if (atomic_read(&info_ext->tp_state) == RM_STP_CREATED) {
 		ret = ubcore_active_tp(dev, active_tp_cfg, vtpn);
-		atomic_set(&info_ext->tp_state, RM_STP_ACTIVE);
-	}
+		if (ret == 0)
+			atomic_set(&info_ext->tp_state, RM_STP_ACTIVE);
+		else
+			atomic_set(&info_ext->tp_state, RM_STP_ERROR);
+	} else if (atomic_read(&info_ext->tp_state) != RM_STP_ACTIVE)
+		ret = -RM_STP_ERROR;
 	mutex_unlock(&info_ext->lock);
 	vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
 
@@ -1323,7 +1327,6 @@ struct ubcore_vtpn *
 
 	// 5. failed roll back
 	if (ret != 0) {
-		atomic_set(&info_ext->tp_state, RM_STP_ERROR);
 		ubcore_log_err("failed to active tp, vtpn:%u", vtpn->vtpn);
 		ubcore_hash_table_rmv_vtpn_ctrlplane(dev, vtpn);
 		(void)ubcore_free_vtpn_ctrlplane(vtpn);

@@ -22,7 +22,8 @@ const char UBCORE_QUEUE_NAMES[(int)UBCORE_QUEUE_TYPE_NUM]
 				     { "ubcore-nl-wq" },
 				     { "ubcore-vtp-task-wq" },
 				     { "ubcore-connect-vtp-async-wq" },
-				     { "ubcore-disconnect-vtp-async-wq" }
+				     { "ubcore-disconnect-vtp-async-wq" },
+				     { "ubcore-deactive-share-tp-wq" }
 			     };
 
 static bool check_queue_type_valid(int queue_type)

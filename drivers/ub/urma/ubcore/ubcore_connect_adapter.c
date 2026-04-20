@@ -18,6 +18,7 @@
 #include "ubcore_connect_adapter.h"
 #include "ubcore_priv.h"
 #include "ubcore_hash_table.h"
+#include "ubcore_workqueue.h"
 
 enum msg_create_conn_result {
 	CREATE_CONN_SUCCESS = 0,
@@ -951,6 +952,23 @@ static int unrefed_for_deactive_rmstp(struct ubcore_hash_table *ht, uint32_t has
 	return RM_STP_ACTIVE;
 }
 
+static void ubcore_deactive_stp(struct work_struct *work)
+{
+	struct ubcore_deactive_stp_work *deactive_work =
+		container_of(work, struct ubcore_deactive_stp_work, work);
+	union ubcore_tp_handle tp_handle = deactive_work->tp_handle;
+	struct ubcore_device *dev = deactive_work->dev;
+	int ret = 0;
+
+	if (deactive_work->uspace)
+		ret = ubcore_deactive_tp(dev, tp_handle, &deactive_work->udata);
+	else
+		ret = ubcore_deactive_tp(dev, tp_handle, NULL);
+	if (ret != 0)
+		ubcore_log_err("Failed to queue deactivate tp\n");
+	kfree(deactive_work);
+}
+
 int ubcore_adapter_layer_rm_stp_disconnect(struct ubcore_tjetty *tjetty)
 {
 	struct ubcore_vtpn *vtpn = tjetty->vtpn;
@@ -961,6 +979,7 @@ int ubcore_adapter_layer_rm_stp_disconnect(struct ubcore_tjetty *tjetty)
 	struct ubcore_device *dev = vtpn->ub_dev;
 	struct ubcore_hash_table *ht = &dev->ht[UBCORE_HT_RM_TP_ID];
 	struct ubcore_share_tp_cfg *stp_cfg = &tjetty->cfg.stp_cfg;
+	struct ubcore_deactive_stp_work *deactive_work;
 	struct ubcore_rm_tp_key key = {0};
 	struct ubcore_udata udata = {0};
 	uint32_t hash;
@@ -976,12 +995,20 @@ int ubcore_adapter_layer_rm_stp_disconnect(struct ubcore_tjetty *tjetty)
 		return ret;
 
 	if (ret == RM_STP_CREATED) {
-		if (vtpn->uspace)
-			ret = ubcore_deactive_tp(dev, tp_handle, &udata);
-		else
-			ret = ubcore_deactive_tp(dev, tp_handle, NULL);
+		deactive_work = kzalloc(sizeof(*deactive_work), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(deactive_work))
+			return -ENOMEM;
+
+		INIT_WORK(&deactive_work->work, ubcore_deactive_stp);
+		deactive_work->dev = dev;
+		deactive_work->tp_handle = tp_handle;
+		deactive_work->udata = udata;
+		deactive_work->uspace = vtpn->uspace;
+		ret = ubcore_queue_work((int)UBCORE_DEACTIVE_SHARE_TP_WQ,
+					&deactive_work->work);
 		if (ret != 0) {
-			ubcore_log_err("Failed to deactivate tp\n");
+			kfree(&deactive_work->work);
+			ubcore_log_err("Failed to queue deactivate tp\n");
 			return ret;
 		}
 	}
