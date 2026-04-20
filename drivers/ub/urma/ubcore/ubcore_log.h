@@ -33,14 +33,14 @@ enum ubcore_log_level {
 #define UBCORE_LOG     "ubcore"
 /* only use debug log */
 /* add log head info: URMA|ubcore|thread_id|vnr_thread_id|function:[line]|format */
-#define ubcore_log(l, format, args...) \
-	pr_##l("%s|%s|%d|%d|%s:[%d]|" format, UBCORE_LOG_TAG, UBCORE_LOG, \
-		((int)current->pid), ((int)task_pid_vnr(current)), \
+#define ubcore_log(l, format, args...)                                       \
+	pr_##l("%s|%s|%d|%d|%s:[%d]|" format, UBCORE_LOG_TAG, UBCORE_LOG,        \
+		((int)current->pid), ((int)task_pid_vnr(current)),                   \
 		__func__, __LINE__, ##args)
 /* use default log, info/warn/err */
-#define ubcore_default_log(l, format, args...)                        \
-	((void)pr_##l("%s|%s|%d|%d|%s[%d]|" format, UBCORE_LOG_TAG, UBCORE_LOG, \
-		((int)current->pid), ((int)task_pid_vnr(current)), \
+#define ubcore_default_log(l, format, args...)                               \
+	((void)pr_##l("%s|%s|%d|%d|%s[%d]|" format, UBCORE_LOG_TAG, UBCORE_LOG,  \
+		((int)current->pid), ((int)task_pid_vnr(current)),                   \
 		__func__, __LINE__, ##args))
 
 #define UBCORE_RATELIMIT_INTERVAL (5 * HZ)
@@ -48,57 +48,72 @@ enum ubcore_log_level {
 
 extern uint32_t g_ubcore_log_level;
 
-#define ubcore_log_info(...)                                     \
-	do {                                                     \
-		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_INFO) \
-			ubcore_default_log(info, __VA_ARGS__);   \
-	} while (0)
-
-#define ubcore_log_err(...)                                     \
-	do {                                                    \
-		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_ERR) \
-			ubcore_default_log(err, __VA_ARGS__);   \
+#define ubcore_log_err(...)                                         \
+	do {                                                            \
+		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_ERR)             \
+			ubcore_default_log(err, __VA_ARGS__);                   \
 	} while (0)
 
 #define ubcore_log_warn(...)                                        \
-	do {                                                        \
-		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_WARNING) \
-			ubcore_default_log(warn, __VA_ARGS__);      \
+	do {                                                            \
+		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_WARNING)         \
+			ubcore_default_log(warn, __VA_ARGS__);                  \
 	} while (0)
 
-#define ubcore_log_debug(...)                                     \
-	do {                                                      \
-		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_DEBUG) \
-			ubcore_log(debug, __VA_ARGS__);           \
+#define ubcore_log_notice(...)                                      \
+	do {                                                            \
+		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_NOTICE)          \
+			ubcore_default_log(notice, __VA_ARGS__);                \
+	} while (0)
+
+#define ubcore_log_info(...)                                        \
+	do {                                                            \
+		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_INFO)            \
+			ubcore_default_log(info, __VA_ARGS__);                  \
+	} while (0)
+
+#define ubcore_log_debug(...)                                       \
+	do {                                                            \
+		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_DEBUG)           \
+			ubcore_log(debug, __VA_ARGS__);                         \
 	} while (0)
 
 /* Rate Limited log to avoid soft lockup crash by quantities of printk */
 /* Current limit is 100 log every 5 seconds */
-#define ubcore_log_info_rl(...)                                               \
-	do {                                                                  \
-		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL, \
-					      UBCORE_RATELIMIT_BURST);        \
-		if ((__ratelimit(&_rs)) &&                                    \
-		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_INFO))            \
-			ubcore_log(info, __VA_ARGS__);                        \
-	} while (0)
-
 #define ubcore_log_err_rl(...)                                                \
-	do {                                                                  \
-		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL, \
-					      UBCORE_RATELIMIT_BURST);        \
-		if ((__ratelimit(&_rs)) &&                                    \
-		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_ERR))             \
-			ubcore_log(err, __VA_ARGS__);                         \
+	do {                                                                      \
+		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,         \
+					      UBCORE_RATELIMIT_BURST);                            \
+		if ((__ratelimit(&_rs)) &&                                            \
+		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_ERR))                     \
+			ubcore_log(err, __VA_ARGS__);                                     \
 	} while (0)
 
 #define ubcore_log_warn_rl(...)                                               \
-	do {                                                                  \
-		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL, \
-					      UBCORE_RATELIMIT_BURST);        \
-		if ((__ratelimit(&_rs)) &&                                    \
-		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_WARNING))         \
-			ubcore_log(warn, __VA_ARGS__);                        \
+	do {                                                                      \
+		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,         \
+					      UBCORE_RATELIMIT_BURST);                            \
+		if ((__ratelimit(&_rs)) &&                                            \
+		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_WARNING))                 \
+			ubcore_log(warn, __VA_ARGS__);                                    \
+	} while (0)
+
+#define ubcore_log_notice_rl(...)                                             \
+	do {                                                                      \
+		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,         \
+					      UBCORE_RATELIMIT_BURST);                            \
+		if ((__ratelimit(&_rs)) &&                                            \
+		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_NOTICE))                  \
+			ubcore_log(notice, __VA_ARGS__);                                  \
+	} while (0)
+
+#define ubcore_log_info_rl(...)                                               \
+	do {                                                                      \
+		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,         \
+					      UBCORE_RATELIMIT_BURST);                            \
+		if ((__ratelimit(&_rs)) &&                                            \
+		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_INFO))                    \
+			ubcore_log(info, __VA_ARGS__);                                    \
 	} while (0)
 
 #endif

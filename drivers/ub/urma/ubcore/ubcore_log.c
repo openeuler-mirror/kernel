@@ -12,4 +12,4 @@
 #include <linux/types.h>
 #include "ubcore_log.h"
 
-uint32_t g_ubcore_log_level = UBCORE_LOG_LEVEL_WARNING;
+uint32_t g_ubcore_log_level = UBCORE_LOG_LEVEL_NOTICE;

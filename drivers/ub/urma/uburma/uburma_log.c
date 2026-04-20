@@ -12,4 +12,4 @@
 #include <linux/types.h>
 #include "uburma_log.h"
 
-uint32_t g_uburma_log_level = UBURMA_LOG_LEVEL_WARNING;
+uint32_t g_uburma_log_level = UBURMA_LOG_LEVEL_NOTICE;

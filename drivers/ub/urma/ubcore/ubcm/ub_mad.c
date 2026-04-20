@@ -274,7 +274,7 @@ static int ubmad_ubc_eid_ops(struct ubcore_device *dev,
 	ret = ubcore_get_main_primary_eid(&eid_info->eid, &main_primary_eid);
 	if (ret != 0) {
 		mutex_unlock(&g_ubc_eid_lock);
-		ubcore_log_err("Invalid eid "EID_FMT".\n", EID_ARGS(eid_info->eid));
+		ubcore_log_err_rl("Invalid eid "EID_FMT".\n", EID_ARGS(eid_info->eid));
 		return -1;
 	}
 

@@ -1513,6 +1513,9 @@ static int ubagg_cmd_set_topo_info(struct ubagg_cmd_hdr *hdr)
 
 	print_topo_map(topo_map);
 
+	ubagg_log_notice("Finish to set topo info, node_num: %u.\n",
+		topo_map->node_num);
+
 	return 0;
 }
 
@@ -1590,6 +1593,8 @@ static int ubagg_create_dev(struct ubagg_create_dev_arg *arg)
 	}
 
 	find_add_master_dev(arg->in.agg_eid.raw, arg->in.dev_name);
+
+	ubagg_log_notice("Finish to create ubagg device: %s.\n", arg->in.dev_name);
 	return 0;
 }
 
@@ -1751,6 +1756,9 @@ static int ubagg_delete_dev(const struct ubagg_delete_dev_arg *arg)
 	rmv_dev_from_list(dev);
 	ubcore_unregister_device(&dev->ub_dev);
 	uninit_ubagg_res(dev);
+
+	ubagg_log_notice("Finish to delete ubagg device: %s.\n",
+		dev->master_dev_name);
 
 	ubagg_dev_ref_put(dev);
 

@@ -393,7 +393,7 @@ static int ubcore_get_primary_eid_array(uint32_t entity_id,
 	int eid_num = 0;
 
 	if (!g_ubcore_topo_map) {
-		ubcore_log_warn("ubcore topo map doesn't exist.\n");
+		ubcore_log_warn_rl("ubcore topo map doesn't exist.\n");
 		return -1;
 	}
 
@@ -466,7 +466,7 @@ int ubcore_get_main_primary_eid(union ubcore_eid *eid,
 	ret = ubcore_get_primary_eid_array(entity_id, chip_id, node_id,
 		eid_arr);
 	if (ret != 0) {
-		ubcore_log_err("Failed to get primary eid array, ret: %d.\n", ret);
+		ubcore_log_err_rl("Failed to get primary eid array, ret: %d.\n", ret);
 		return ret;
 	}
 

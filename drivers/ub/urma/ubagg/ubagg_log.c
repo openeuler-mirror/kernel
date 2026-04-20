@@ -12,4 +12,4 @@
 #include <linux/types.h>
 #include "ubagg_log.h"
 
-uint32_t g_ubagg_log_level = UBAGG_LOG_LEVEL_WARNING;
+uint32_t g_ubagg_log_level = UBAGG_LOG_LEVEL_NOTICE;
