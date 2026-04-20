@@ -16,8 +16,8 @@
 
 /* The default distance between local node and remote node */
 #define REMOTE_TO_LOCAL_DISTANCE	100
-/* The default distance between two remtoe node */
-#define REMOTE_TO_REMOTE_DISTANCE	254
+/* The default distance between two remote node */
+#define REMOTE_TO_REMOTE_DISTANCE	255
 
 bool numa_remote_enabled __ro_after_init;
 static bool numa_remote_nofallback_mode __ro_after_init;
