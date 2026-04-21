@@ -6782,7 +6782,7 @@ static void perf_sigtrap(struct perf_event *event)
 	 * Both perf_pending_task() and perf_pending_irq() can race with the
 	 * task exiting.
 	 */
-	if (current->flags & PF_EXITING)
+	if (current->flags & PF_EXITING || event->ctx->task == TASK_TOMBSTONE)
 		return;
 
 	/*
