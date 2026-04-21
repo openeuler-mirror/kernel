@@ -120,6 +120,7 @@ enum uburma_cmd {
 	UBURMA_CMD_GET_JETTY_OPT,
 	UBURMA_CMD_ACTIVE_JETTY,
 	UBURMA_CMD_DEACTIVE_JETTY,
+	UBURMA_CMD_GET_JFCE_CNT,
 	UBURMA_CMD_MAX
 };
 
@@ -1360,6 +1361,16 @@ struct uburma_cmd_get_dmac {
 	} in;
 	struct {
 		uint8_t mac[UBCORE_MAC_BYTES];
+	} out;
+};
+
+struct uburma_cmd_get_jfce_cnt {
+	struct {
+		uint32_t threshold;
+	} in;
+	struct {
+		uint64_t jfce_total_cnt;
+		uint64_t jfce_thresh_cnt;
 	} out;
 };
 

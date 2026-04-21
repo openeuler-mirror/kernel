@@ -29,11 +29,17 @@
 #include "uburma_uobj.h"
 #include "uburma_cmd.h"
 #include "uburma_mmap.h"
+#include "uburma_event.h"
 
 #define UBURMA_LOG_FILE_PERMISSION (0644)
+#define UBURMA_IRQ_HANDLE_THRESHOLD (0644)
 
 module_param(g_uburma_log_level, uint, UBURMA_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(g_uburma_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
+module_param(uburma_irq_handle_threshold, uint, UBURMA_IRQ_HANDLE_THRESHOLD);
+MODULE_PARM_DESC(uburma_irq_handle_threshold, "IRQ handle threshold in ns");
+module_param(uburma_irq_handle_threshold_enable, uint, UBURMA_IRQ_HANDLE_THRESHOLD);
+MODULE_PARM_DESC(uburma_irq_handle_threshold_enable, "Enable IRQ handle threshold. 0: disable, 1: enable");
 
 #define UBURMA_MAX_DEVICE 1024
 #define UBURMA_DYNAMIC_MINOR_NUM UBURMA_MAX_DEVICE

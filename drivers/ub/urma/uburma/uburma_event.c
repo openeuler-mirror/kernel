@@ -16,6 +16,7 @@
 #include <linux/file.h>
 #include <linux/anon_inodes.h>
 #include <linux/poll.h>
+#include <linux/ktime.h>
 
 #include "ub/urma/ubcore_uapi.h"
 
@@ -30,6 +31,8 @@
 
 #define UBURMA_JFCE_DELETE_EVENT 0
 
+uint32_t uburma_irq_handle_threshold = 50;
+uint32_t uburma_irq_handle_threshold_enable;
 struct uburma_jfe_event {
 	struct list_head node;
 	uint32_t event_type; /* support async event */
@@ -114,28 +117,42 @@ static bool uburma_jfce_is_null(struct uburma_jfc_uobj *jfc_uobj)
 	return false;
 }
 
+void uburma_set_irq_handle_threshold(uint32_t threshold)
+{
+	uburma_irq_handle_threshold = threshold;
+}
+
 void uburma_jfce_handler(struct ubcore_jfc *jfc)
 {
 	struct uburma_jfc_uobj *jfc_uobj;
 	struct uburma_jfce_uobj *jfce;
+	struct uburma_device *ubu_dev;
 	bool write_event = false;
+	u64 start_time, duration_ns;
 
 	if (!jfc)
 		return;
 
+	start_time = ktime_get_ns();
 	rcu_read_lock();
 	jfc_uobj = rcu_dereference(jfc->jfc_cfg.jfc_context);
 	if (!IS_ERR_OR_NULL(jfc_uobj) && !IS_ERR(jfc_uobj->jfce) &&
-		(uburma_jfce_is_null(jfc_uobj) == false)) {
-		jfce = container_of(jfc_uobj->jfce, struct uburma_jfce_uobj,
-				    uobj);
+		(uburma_jfce_is_null(jfc_uobj) == false) && !IS_ERR_OR_NULL(jfc_uobj->uobj.ufile)) {
+		jfce = container_of(jfc_uobj->jfce, struct uburma_jfce_uobj, uobj);
+		ubu_dev = jfc_uobj->uobj.ufile->ubu_dev;
 		uburma_write_event(&jfce->jfe, jfc->urma_jfc, 0,
 				   &jfc_uobj->comp_event_list,
 				   &jfc_uobj->comp_events_reported);
 		write_event = true;
 	}
-
 	rcu_read_unlock();
+
+	if (!IS_ERR_OR_NULL(ubu_dev) && uburma_irq_handle_threshold_enable) {
+		duration_ns = ktime_get_ns() - start_time;
+		ubu_dev->irq_total_count_table[jfc->id]++;
+		if (duration_ns > uburma_irq_handle_threshold)
+			ubu_dev->irq_thresh_count_table[jfc->id]++;
+	}
 	if (write_event)
 		uburma_log_info("Finish to write jfc event, jfc_id: %u.\n", jfc->id);
 }
