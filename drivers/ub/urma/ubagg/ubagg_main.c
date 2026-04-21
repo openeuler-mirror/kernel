@@ -16,6 +16,7 @@
 
 #include "ubagg_log.h"
 #include "ubagg_ioctl.h"
+#include "ubagg_netlink.h"
 #include "ubagg_seg.h"
 #include "ubagg_bitmap.h"
 #include "ubagg_hash_table.h"
@@ -140,6 +141,13 @@ static int __init ubagg_init(void)
 		return ret;
 	}
 
+	ret = ubagg_netlink_init();
+	if (ret != 0) {
+		ubagg_log_err("create ubagg netlink fail.\n");
+		ubagg_cdev_destroy();
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -147,6 +155,7 @@ static void __exit ubagg_exit(void)
 {
 	ubagg_delete_topo_map();
 	ubagg_clear_dev_list();
+	ubagg_netlink_uninit();
 	ubagg_cdev_destroy();
 }
 

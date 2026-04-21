@@ -49,6 +49,7 @@ static const char *const msg_type_str_list[UBCORE_NET_MSG_MAX] = {
 	[UBCORE_NET_BONDING_SEG_INFO_RESP] = "seg_resp",
 	[UBCORE_NET_BONDING_JETTY_INFO_REQ] = "jetty_req",
 	[UBCORE_NET_BONDING_JETTY_INFO_RESP] = "jetty_resp",
+	[UBCORE_NET_BONDING_USER_MSG] = "bonding-user-msg",
 };
 
 enum ubcore_connect_type {
@@ -93,7 +94,7 @@ void ubcore_net_handle_msg(struct ubcore_device *dev,
 		return;
 	}
 	desc = &g_msg_descriptors[msg->type];
-	if (msg->len != desc->msg_len) {
+	if (desc->msg_len != 0 && msg->len != desc->msg_len) {
 		ubcore_log_err("Invalid net msg len, expected: %u, " MSG_FMT,
 			       desc->msg_len, MSG_ARG(msg));
 		return;

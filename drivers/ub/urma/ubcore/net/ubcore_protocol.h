@@ -24,6 +24,7 @@ enum ubcore_net_msg_type {
 	UBCORE_NET_BONDING_SEG_INFO_RESP,
 	UBCORE_NET_BONDING_JETTY_INFO_REQ,
 	UBCORE_NET_BONDING_JETTY_INFO_RESP,
+	UBCORE_NET_BONDING_USER_MSG,
 	UBCORE_NET_MSG_MAX,
 };
 
@@ -71,7 +72,7 @@ typedef void (*ubcore_net_msg_handler)(struct ubcore_device *dev,
  * Register processing callbacks for specified message types
  * @param[in] type: Message type to handle
  * @param[in] handler: Callback function
- * @param[in] msg_len: Expected length (for validation)
+ * @param[in] msg_len: Expected length (for validation), 0 means variable length
  */
 int ubcore_net_register_msg_handler(enum ubcore_net_msg_type type,
 				    ubcore_net_msg_handler handler,
