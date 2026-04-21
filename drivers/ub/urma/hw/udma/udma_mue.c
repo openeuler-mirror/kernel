@@ -26,12 +26,15 @@ static uint32_t udma_get_rsp_msg_len(uint8_t opcode)
 	}
 }
 
-static void udma_send_ue_msg(struct udma_dev *udev, void *data, uint16_t len, uint8_t opcode)
+static void udma_send_ue_msg(struct udma_dev *udev, void *data, uint16_t len,
+		uint8_t opcode, bool is_resp)
 {
 	uint16_t hdr_len = ubase_ctrlq_ue_msg_header_len();
+	struct ubase_ctrlq_ue_msg_info msg_info = {};
 	uint8_t *rsp_msg = NULL;
 	uint32_t total_msg_len;
 	uint32_t rsp_msg_len;
+	int result;
 	int ret;
 
 	rsp_msg_len = udma_get_rsp_msg_len(opcode);
@@ -48,8 +51,15 @@ static void udma_send_ue_msg(struct udma_dev *udev, void *data, uint16_t len, ui
 
 	memcpy(rsp_msg, (uint8_t *)data, hdr_len);
 
+	if (is_resp) {
+		ubase_ctrlq_parse_ue_msg(udev->comdev.adev, data, len, &msg_info);
+		result = msg_info.ret;
+	} else {
+		result = EINVAL;
+	}
+
 	ret = ubase_ctrlq_send_mue2ue_resp(udev->comdev.adev, rsp_msg,
-					   total_msg_len, EINVAL);
+					   total_msg_len, result);
 	if (ret)
 		dev_err(udev->dev, "udma send mue2ue msg failed, opcode = %u.\n", opcode);
 
@@ -96,7 +106,7 @@ static int udma_handle_ue_req_msg(struct auxiliary_device *adev, void *data,
 		dev_err(udma_dev->dev,
 				"from ue req msg is error, len = %u. opcode = %u\n",
 				len, opcode);
-		udma_send_ue_msg(udma_dev, data, len, opcode);
+		udma_send_ue_msg(udma_dev, data, len, opcode, false);
 
 		return UBASE_CTRLQ_HANDLE_UE_MSG;
 	}
@@ -242,7 +252,7 @@ static int udma_handle_ue_rsp_msg(struct auxiliary_device *adev, void *data,
 	return 0;
 
 err_and_send_ue_msg:
-	udma_send_ue_msg(udma_dev, data, len, opcode);
+	udma_send_ue_msg(udma_dev, data, len, opcode, true);
 
 	return UBASE_CTRLQ_HANDLE_UE_MSG;
 }
