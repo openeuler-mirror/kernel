@@ -15,7 +15,10 @@
 #include "ubcore_topo_info.h"
 #include "net/ubcore_cm.h"
 #include "ubcore_log.h"
+#include "ubcore_priv.h"
 #include "ub_mad_priv.h"
+
+uint32_t ubcore_max_retry_cnt = 11;
 
 /** reliable communication **/
 /* msn mgr */
@@ -220,7 +223,6 @@ static void ubmad_release_tgt_hash_node(
 		}
 	}
 	spin_unlock_irqrestore(&tjetty->tgt_hash_lock, flag);
-	ubcore_log_err("Failed to release tgt hash: already releasd.\n");
 }
 
 /* repost send conn data */
@@ -255,7 +257,7 @@ static int ubmad_repost_send_conn_data(struct ubmad_rt_work *rt_work)
 	struct ubmad_ini_rtbuffer *rtbuffer = ubmad_get_ini_rtbuffer(tjetty, msn);
 
 	if (IS_ERR_OR_NULL(rtbuffer)) {
-		ubcore_log_err("Failed to get rtbuffer in repost.\n");
+		ubcore_log_err("Failed to get rtbuffer in repost, msn = %llu.\n", msn);
 		goto repost_put_id;
 	}
 	memcpy((void *)sge_addr, rtbuffer->data, rtbuffer->payload_len);
@@ -410,7 +412,7 @@ static void ubmad_rt_work_handler(struct work_struct *work)
 	if (found) {
 		rt_work->rt_cnt++;
 		if (ubmad_repost_send_conn_data(rt_work) == 0 &&
-				rt_work->rt_cnt <= UBMAD_MAX_RETRY_CNT) {
+				rt_work->rt_cnt <= ubcore_max_retry_cnt) {
 			if (queue_delayed_work(rt_work->rt_wq, &rt_work->delay_work,
 						msecs_to_jiffies(1 << rt_work->rt_cnt)) != true) {
 				ubcore_log_err("queue rt work failed\n");
@@ -1028,7 +1030,7 @@ static int ubmad_process_conn_resp(struct ubcore_cr *cr,
 	// msn_node not in msn_hlist, indicates already removed by previous ack with same msn
 	ubcore_log_info_rl("redundant ack. msn %llu seid " EID_FMT "\n", msg->msn,
 		      EID_ARGS(*seid));
-	return -1;
+	return 0;
 
 effective_resp:
 	ret = ubmad_cm_process_msg(cr, &rsrc->jetty->jetty_id.eid, msg,

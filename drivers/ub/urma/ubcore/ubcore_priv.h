@@ -90,6 +90,8 @@ struct ubcore_global_file {
 	struct ubcore_uvs_instance *uvs;
 };
 
+extern uint32_t ubcore_max_retry_cnt;
+
 static inline struct ubcore_ucontext *
 ubcore_get_uctx(struct ubcore_udata *udata)
 {
