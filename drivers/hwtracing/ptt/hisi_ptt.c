@@ -1301,6 +1301,7 @@ static int hisi_ptt_probe(struct pci_dev *pdev,
 			  const struct pci_device_id *id)
 {
 	struct hisi_ptt *hisi_ptt;
+	void __iomem * const *iomap_table;
 	int ret;
 
 	ret = hisi_ptt_check_iommu_mapping(pdev);
@@ -1328,7 +1329,12 @@ static int hisi_ptt_probe(struct pci_dev *pdev,
 		return ret;
 	}
 
-	hisi_ptt->iobase = pcim_iomap_table(pdev)[2];
+	iomap_table = pcim_iomap_table(pdev);
+	if (!iomap_table) {
+		pci_err(pdev, "failed to get iomap table\n");
+		return -EFAULT;
+	}
+	hisi_ptt->iobase = iomap_table[2];
 
 	ret = dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(64));
 	if (ret) {
