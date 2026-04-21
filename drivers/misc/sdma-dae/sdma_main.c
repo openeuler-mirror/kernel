@@ -19,7 +19,7 @@
 #define BASE_DIR		"sdma" /* Subdir in /sys/kernel/debug/  */
 #define UPPER_SHIFT		32
 #define MAX_INPUT_LENGTH	128
-#define SDMA_VERSION		"1.0.6"
+#define SDMA_VERSION		"1.0.7"
 
 u32 share_chns = 16;
 module_param(share_chns, uint, RW_R_R);
@@ -33,6 +33,28 @@ struct ida fd_ida;
 struct hisi_sdma_core_device hisi_sdma_core_device = {0};
 static struct class *sdma_class;
 static struct dentry *sdma_dbgfs_dir;
+static bool is_numa;
+static bool is_ncob;
+
+static bool is_ncob_enable(void)
+{
+	unsigned long long ret_val;
+	acpi_status status;
+
+	status = acpi_evaluate_integer(
+		NULL,
+		"\\_SB.GNCO",
+		NULL,
+		&ret_val
+	);
+
+	if (!ACPI_SUCCESS(status)) {
+		pr_err("Unsupported to query the config.Please upgrade the BIOS version.\n");
+		return true;
+	}
+
+	return (bool)ret_val;
+}
 
 static bool sdma_channel_alloc_sq_cq(struct hisi_sdma_channel *pchan, u32 idx)
 {
@@ -64,6 +86,8 @@ static bool sdma_channel_alloc_sq_cq(struct hisi_sdma_channel *pchan, u32 idx)
 	}
 	pchan->sync_info_base = (struct hisi_sdma_queue_info *)page_to_virt(page_list);
 	pchan->sync_info_base->cq_vld = 1;
+	pchan->sync_info_base->is_ncob_enable = is_ncob;
+	pchan->sync_info_base->is_numa = is_numa;
 
 	return true;
 }
@@ -561,6 +585,13 @@ static int __init sdma_driver_init(void)
 	ret = sdma_create_debugfs();
 	if (ret != 0)
 		goto unregister_chrdev;
+
+	if (num_online_nodes() > 1)
+		is_numa = true;
+	else
+		is_numa = false;
+
+	is_ncob = is_ncob_enable();
 
 	ret = platform_driver_register(&sdma_driver);
 	if (ret) {

@@ -15,6 +15,7 @@
 #include "sdma_auth.h"
 
 #define mn_to_sdma(mn)	container_of(mn, struct hisi_sdma_mn, mn)
+#define ALIGN_8K 8192
 
 DEFINE_MUTEX(sdma_pid_lock);
 
@@ -568,6 +569,69 @@ free_ida:
 	ida_free(g_info.fd_ida, id);
 
 	return ret;
+}
+
+int get_user_phys_addr(unsigned long uaddr, phys_addr_t *paddr)
+{
+	struct mm_struct *mm = current->mm;
+	struct page *page = NULL;
+	unsigned long offset;
+	int ret;
+
+	if (!access_ok((void __user *)uaddr, sizeof(unsigned long)))
+		return -EFAULT;
+
+	if (!mm)
+		return -EFAULT;
+
+	offset = uaddr & ~PAGE_MASK;
+	down_read(&mm->mmap_lock);
+	ret = get_user_pages(uaddr, 1, FOLL_WRITE | FOLL_FORCE,
+		&page, NULL);
+	up_read(&mm->mmap_lock);
+	if (ret <= 0)
+		return -EFAULT;
+
+	if (!page)
+		return -ENOENT;
+
+	*paddr = page_to_phys(page) + offset;
+	put_page(page);
+	return 0;
+}
+
+static int ioctl_sdma_check_addr_aligned(struct file *file, unsigned long arg)
+{
+	struct file_open_data *data = file->private_data;
+	struct hisi_sdma_addr_pair addr_pair;
+	unsigned long src_paddr = 0;
+	unsigned long dst_paddr = 0;
+	int ret;
+
+	if (copy_from_user(&addr_pair, (struct hisi_sdma_addr_pair __user *)(uintptr_t)arg,
+			   sizeof(struct hisi_sdma_addr_pair))) {
+		dev_err(&data->psdma_dev->pdev->dev, "Get hisi_sdma_addr_pair failed\n");
+		return -EPERM;
+	}
+
+	ret = get_user_phys_addr(addr_pair.src_addr, (phys_addr_t *)&src_paddr);
+	if (ret != 0) {
+		dev_err(&data->psdma_dev->pdev->dev, "Configuration error, SDMA disabled.\n");
+		return -EFAULT;
+	}
+
+	ret = get_user_phys_addr(addr_pair.dst_addr, (phys_addr_t *)&dst_paddr);
+	if (ret != 0) {
+		dev_err(&data->psdma_dev->pdev->dev, "Configuration error, SDMA disabled.\n");
+		return -EFAULT;
+	}
+
+	if ((src_paddr % ALIGN_8K) != (dst_paddr % ALIGN_8K)) {
+		dev_err(&data->psdma_dev->pdev->dev, "Configuration error, SDMA disabled.\n");
+		return -EFAULT;
+	}
+
+	return 0;
 }
 
 static int ioctl_get_sdma_num(struct file *file, unsigned long arg)
@@ -1378,6 +1442,7 @@ struct hisi_sdma_ioctl_func_list g_ioctl_funcs[] = {
 	{IOCTL_SDMA_DFX_REG,			ioctl_sdma_dfx_reg},
 	{IOCTL_SDMA_SQE_CNT_REG,		ioctl_sdma_sqe_cnt_reg},
 	{IOCTL_GET_SDMA_MODE,			ioctl_get_sdma_mode},
+	{IOCTL_SDMA_CHECK_ADDR_ALIGNED,		ioctl_sdma_check_addr_aligned},
 };
 
 static long sdma_dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
