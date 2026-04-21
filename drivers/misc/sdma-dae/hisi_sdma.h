@@ -48,6 +48,12 @@
 #define HISI_SDMA_HBM_CACHE_PRELOAD_MODE	0x6
 #define SDMA_UNUSED				__attribute__((__unused__))
 
+struct hisi_sdma_addr_pair {
+	unsigned long src_addr;
+	unsigned long dst_addr;
+	uint32_t length;
+};
+
 struct chn_ioe_info {
 	u32 ch_err_status;
 	u32 ch_cqe_sqeid;
@@ -128,6 +134,8 @@ struct hisi_sdma_queue_info {
 	int    cqe_err[HISI_SDMA_SQ_LENGTH];
 	u32    round_cnt[HISI_SDMA_SQ_LENGTH];
 	struct chn_ioe_info ioe;
+	bool is_ncob_enable;
+	bool is_numa;
 };
 
 struct hisi_sdma_mpamcfg {
@@ -209,5 +217,6 @@ struct hisi_sdma_ioctl_func_list {
 #define IOCTL_SDMA_DFX_REG		_IOWR('s', 18, struct hisi_sdma_reg_info)
 #define IOCTL_SDMA_SQE_CNT_REG		_IOW('s', 19, struct hisi_sdma_reg_info)
 #define IOCTL_GET_SDMA_MODE			_IOR('s', 20, bool)
+#define IOCTL_SDMA_CHECK_ADDR_ALIGNED	_IOR('s', 21, struct hisi_sdma_addr_pair)
 
 #endif
