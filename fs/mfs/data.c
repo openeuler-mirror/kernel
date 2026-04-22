@@ -74,6 +74,19 @@ put_path:
 
 static int mfs_release(struct inode *inode, struct file *file)
 {
+	struct mfs_cache_object *object = inode->i_private;
+	struct mfs_sb_info *sbi;
+
+	if (!object)
+		goto out;
+	sbi = MFS_SB(object->mfs_inode->i_sb);
+	if (!support_event(sbi) || !allow_ev_type(sbi, MFS_OP_CLOSE))
+		goto out;
+	if (!cache_is_ready(sbi))
+		goto out;
+	/* post close event to user-space daemon for closing fd handle */
+	mfs_post_event_close(object);
+out:
 	trace_mfs_release(inode, file);
 	mfs_file_info_free(file->private_data);
 	return 0;

@@ -137,6 +137,7 @@ int mfs_sysfs_init(void)
 	mfs_ev_fullmask = 0;
 	mfs_set_evmask(mfs_ev_fullmask, MFS_OP_READ);
 	mfs_set_evmask(mfs_ev_fullmask, MFS_OP_FAULT);
+	mfs_set_evmask(mfs_ev_fullmask, MFS_OP_CLOSE);
 
 	mfs_root = kobject_create_and_add("mfs", fs_kobj);
 	if (!mfs_root)
