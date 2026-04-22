@@ -14,8 +14,8 @@
 
 #include <ub/urma/ubcore_types.h>
 
-#define UBCORE_DEF_CONN_TIMEOUT 128
-#define UBCORE_CONN_MAX_TIMEOUT 10000 /* maximum timeout 10s */
+#define UBCORE_DEF_CONN_TIMEOUT 16384
+#define UBCORE_CONN_MAX_TIMEOUT 30000 /* maximum timeout 30s */
 
 struct ubcore_session;
 

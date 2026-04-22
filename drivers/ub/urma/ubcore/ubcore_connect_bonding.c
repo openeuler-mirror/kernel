@@ -9,6 +9,7 @@
  * History: 2025-08-07: create file
  */
 
+#include <linux/module.h>
 #include <ub/urma/ubcore_uapi.h>
 #include "ubcore_connect_bonding.h"
 #include "net/ubcore_protocol.h"
@@ -47,6 +48,101 @@ struct msg_jetty_info_resp {
 	int result;
 	char jetty_info[BONDING_UDATA_BUF_LEN];
 };
+
+static DEFINE_MUTEX(bonding_user_msg_lock);
+static void (*bonding_user_msg_handler)(struct ubcore_device *dev,
+					void *payload, uint16_t payload_len,
+					void *conn);
+static bool bonding_user_msg_registered;
+
+static void ubcore_handle_bonding_user_msg(struct ubcore_device *dev,
+					   struct ubcore_net_msg *msg,
+					   void *conn)
+{
+	void (*handler)(struct ubcore_device *dev,
+			void *payload, uint16_t payload_len, void *conn);
+
+	mutex_lock(&bonding_user_msg_lock);
+	handler = bonding_user_msg_handler;
+	mutex_unlock(&bonding_user_msg_lock);
+
+	if (!handler) {
+		ubcore_log_err(
+			"No bonding user msg handler registered, " MSG_FMT,
+			MSG_ARG(msg));
+		return;
+	}
+
+	handler(dev, msg->data, msg->len, conn);
+}
+
+int ubcore_net_send_bonding_user_msg(struct ubcore_device *dev,
+				     union ubcore_eid peer_eid,
+				     uint32_t session_id,
+				     const void *payload,
+				     uint16_t payload_len)
+{
+	struct ubcore_net_msg msg = { 0 };
+
+	if (!dev || (!payload && payload_len != 0)) {
+		ubcore_log_err("Invalid bonding user msg param");
+		return -EINVAL;
+	}
+
+	msg.type = UBCORE_NET_BONDING_USER_MSG;
+	msg.len = payload_len;
+	msg.session_id = session_id;
+	msg.data = (void *)payload;
+
+	return ubcore_net_send_to(dev, &msg, peer_eid);
+}
+EXPORT_SYMBOL(ubcore_net_send_bonding_user_msg);
+
+int ubcore_net_register_bonding_user_msg_handler(
+	void (*handler)(struct ubcore_device *dev,
+			void *payload, uint16_t payload_len, void *conn))
+{
+	int ret = 0;
+
+	if (!handler) {
+		ubcore_log_err("Invalid bonding user msg handler");
+		return -EINVAL;
+	}
+
+	mutex_lock(&bonding_user_msg_lock);
+	if (!bonding_user_msg_registered) {
+		ret = ubcore_net_register_msg_handler(
+			UBCORE_NET_BONDING_USER_MSG,
+			ubcore_handle_bonding_user_msg,
+			0);
+		if (ret == 0)
+			bonding_user_msg_registered = true;
+	}
+	if (ret == 0 && bonding_user_msg_handler &&
+	    bonding_user_msg_handler != handler)
+		ret = -EEXIST;
+	if (ret == 0)
+		bonding_user_msg_handler = handler;
+	mutex_unlock(&bonding_user_msg_lock);
+
+	if (ret != 0)
+		ubcore_log_err(
+			"Failed to register bonding user msg handler, ret:%d",
+			ret);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_net_register_bonding_user_msg_handler);
+
+void ubcore_net_unregister_bonding_user_msg_handler(
+	void (*handler)(struct ubcore_device *dev,
+			void *payload, uint16_t payload_len, void *conn))
+{
+	mutex_lock(&bonding_user_msg_lock);
+	if (bonding_user_msg_handler == handler)
+		bonding_user_msg_handler = NULL;
+	mutex_unlock(&bonding_user_msg_lock);
+}
+EXPORT_SYMBOL(ubcore_net_unregister_bonding_user_msg_handler);
 
 static struct ubcore_device *ubcore_find_physical_device(struct ubcore_device *agg_dev)
 {

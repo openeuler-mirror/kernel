@@ -44,13 +44,12 @@
 #define UBMAD_RETRANSMIT_MS 500
 #define UBMAD_RETRANSMIT_PERIOD msecs_to_jiffies(UBMAD_RETRANSMIT_MS)
 
-#define UBMAD_MAX_RETRY_CNT 4
 #define UBMAD_RX_BITMAP_SIZE 1024
 
 #define UBMAD_TX_THREDSHOLD (UBMAD_JFS_DEPTH - 8)
 
 #define UBMAD_INI_RTBUFFER_SIZE 1024
-#define UBMAD_TGT_RTBUFFER_SIZE 256
+#define UBMAD_TGT_RTBUFFER_SIZE 1024
 #define UBMAD_TGT_RTBUFFER_MASK 255
 #define UBMAD_RTBUFFER_PKTSIZE 256
 #define UBMAD_TGT_HASH_SIZE 1024
@@ -223,7 +222,7 @@ struct ubmad_rt_work {
 	struct delayed_work delay_work; // ubmad_device_priv.rt_wq
 
 	uint64_t msn;
-	uint32_t rt_cnt; /* Retry count, no larger than UBMAD_MAX_RETRY_CNT */
+	uint32_t rt_cnt; /* Retry count, no larger than ubcore_max_retry_cnt */
 	struct ubmad_msn_mgr *msn_mgr;
 	struct ubmad_jetty_resource *rsrc;
 	union ubcore_eid dst;

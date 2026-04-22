@@ -15,7 +15,10 @@
 #include "ubcore_topo_info.h"
 #include "net/ubcore_cm.h"
 #include "ubcore_log.h"
+#include "ubcore_priv.h"
 #include "ub_mad_priv.h"
+
+uint32_t ubcore_max_retry_cnt = 11;
 
 /** reliable communication **/
 /* msn mgr */
@@ -147,30 +150,6 @@ static void ubmad_release_ini_rtbuffer(
 }
 
 /* target retransmit buffer hash node */
-static struct ubmad_tgt_hash_node *ubmad_create_tgt_hash_node(
-				struct ubmad_tjetty *tjetty, uint64_t msn)
-{
-	struct ubmad_tgt_hash_node *tgt_hash_node;
-	unsigned long flag;
-	uint32_t hash;
-
-	tgt_hash_node = kzalloc(sizeof(struct ubmad_tgt_hash_node), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(tgt_hash_node))
-		return NULL;
-
-	tgt_hash_node->msn = msn;
-	tgt_hash_node->idx = atomic64_fetch_inc(&tjetty->tgt_idx_gen);
-
-	INIT_HLIST_NODE(&tgt_hash_node->node);
-
-	hash = jhash(&msn, sizeof(uint64_t), 0) % UBMAD_TGT_HASH_SIZE;
-	spin_lock_irqsave(&tjetty->tgt_hash_lock, flag);
-	hlist_add_head(&tgt_hash_node->node, &tjetty->tgt_hash_hlist[hash]);
-	spin_unlock_irqrestore(&tjetty->tgt_hash_lock, flag);
-
-	return tgt_hash_node;
-}
-
 static struct ubmad_tgt_hash_node *ubmad_get_tgt_hash_node(
 					struct ubmad_tjetty *tjetty, uint64_t msn)
 {
@@ -189,6 +168,40 @@ static struct ubmad_tgt_hash_node *ubmad_get_tgt_hash_node(
 	}
 	spin_unlock_irqrestore(&tjetty->tgt_hash_lock, flag);
 	return NULL;
+}
+
+static struct ubmad_tgt_hash_node *ubmad_find_and_create_tgt_hash_node(
+				struct ubmad_tjetty *tjetty, uint64_t msn, uint8_t *tgt_flag)
+{
+	struct ubmad_tgt_hash_node *tgt_hash_node;
+	struct ubmad_tgt_hash_node *cur;
+	unsigned long flag;
+	struct hlist_node *next;
+	uint32_t hash;
+
+	tgt_hash_node = kzalloc(sizeof(struct ubmad_tgt_hash_node), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(tgt_hash_node))
+		return NULL;
+
+	hash = jhash(&msn, sizeof(uint64_t), 0) % UBMAD_TGT_HASH_SIZE;
+	spin_lock_irqsave(&tjetty->tgt_hash_lock, flag);
+
+	hlist_for_each_entry_safe(cur, next, &tjetty->tgt_hash_hlist[hash], node) {
+		if (cur->msn == msn) {
+			spin_unlock_irqrestore(&tjetty->tgt_hash_lock, flag);
+			kfree(tgt_hash_node);
+			return cur;
+		}
+	}
+	tgt_hash_node->msn = msn;
+	tgt_hash_node->idx = atomic64_fetch_inc(&tjetty->tgt_idx_gen);
+	INIT_HLIST_NODE(&tgt_hash_node->node);
+	(*tgt_flag) = 1;
+
+	hlist_add_head(&tgt_hash_node->node, &tjetty->tgt_hash_hlist[hash]);
+	spin_unlock_irqrestore(&tjetty->tgt_hash_lock, flag);
+
+	return tgt_hash_node;
 }
 
 static void ubmad_release_tgt_hash_node(
@@ -210,7 +223,6 @@ static void ubmad_release_tgt_hash_node(
 		}
 	}
 	spin_unlock_irqrestore(&tjetty->tgt_hash_lock, flag);
-	ubcore_log_err("Failed to release tgt hash: already releasd.\n");
 }
 
 /* repost send conn data */
@@ -245,7 +257,7 @@ static int ubmad_repost_send_conn_data(struct ubmad_rt_work *rt_work)
 	struct ubmad_ini_rtbuffer *rtbuffer = ubmad_get_ini_rtbuffer(tjetty, msn);
 
 	if (IS_ERR_OR_NULL(rtbuffer)) {
-		ubcore_log_err("Failed to get rtbuffer in repost.\n");
+		ubcore_log_err("Failed to get rtbuffer in repost, msn = %llu.\n", msn);
 		goto repost_put_id;
 	}
 	memcpy((void *)sge_addr, rtbuffer->data, rtbuffer->payload_len);
@@ -284,19 +296,25 @@ repost_put_id:
 }
 
 static int ubmad_try_repost_all_response(
+						struct ubcore_device *dev,
 						struct ubmad_jetty_resource *rsrc,
 						union ubcore_eid *dst, uint64_t msn)
 {
 	struct ubmad_tjetty *tjetty = ubmad_get_tjetty(dst, rsrc);
 	int ret = 0;
+	uint8_t hash_flag = 0;
 
-	if (IS_ERR_OR_NULL(tjetty))
+	if (IS_ERR_OR_NULL(tjetty)) {
+		tjetty = ubmad_import_jetty(dev, rsrc, dst);
+		if (IS_ERR_OR_NULL(tjetty))
+			return -1;
+	}
+	struct ubmad_tgt_hash_node *hash_node = ubmad_find_and_create_tgt_hash_node(
+								tjetty, msn, &hash_flag);
+
+	if (IS_ERR_OR_NULL(hash_node))
 		return -1;
-	struct ubmad_tgt_hash_node *hash_node = ubmad_get_tgt_hash_node(
-										tjetty, msn);
-
-	if (IS_ERR_OR_NULL(hash_node)) {
-		hash_node = ubmad_create_tgt_hash_node(tjetty, msn);
+	if (hash_flag == 1) {
 		ubmad_put_tjetty(tjetty);
 		return -2;
 	}
@@ -394,7 +412,7 @@ static void ubmad_rt_work_handler(struct work_struct *work)
 	if (found) {
 		rt_work->rt_cnt++;
 		if (ubmad_repost_send_conn_data(rt_work) == 0 &&
-				rt_work->rt_cnt <= UBMAD_MAX_RETRY_CNT) {
+				rt_work->rt_cnt <= ubcore_max_retry_cnt) {
 			if (queue_delayed_work(rt_work->rt_wq, &rt_work->delay_work,
 						msecs_to_jiffies(1 << rt_work->rt_cnt)) != true) {
 				ubcore_log_err("queue rt work failed\n");
@@ -953,7 +971,7 @@ static int ubmad_process_conn_data(struct ubcore_cr *cr,
 		"Finish to recv request. msn %llu, seid " EID_FMT
 		"\n", msg->msn, EID_ARGS(*seid));
 
-	ret = ubmad_try_repost_all_response(rsrc, seid, msg->msn);
+	ret = ubmad_try_repost_all_response(dev_priv->device, rsrc, seid, msg->msn);
 
 	if (ret == -1) {
 		ubcore_log_err("try to repost response failed, msn = %llu, seid"
@@ -1012,7 +1030,7 @@ static int ubmad_process_conn_resp(struct ubcore_cr *cr,
 	// msn_node not in msn_hlist, indicates already removed by previous ack with same msn
 	ubcore_log_info_rl("redundant ack. msn %llu seid " EID_FMT "\n", msg->msn,
 		      EID_ARGS(*seid));
-	return -1;
+	return 0;
 
 effective_resp:
 	ret = ubmad_cm_process_msg(cr, &rsrc->jetty->jetty_id.eid, msg,

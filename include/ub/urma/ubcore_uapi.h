@@ -197,6 +197,7 @@ struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
  * @return: 0 on success, other value on error
  */
 int ubcore_unimport_seg(struct ubcore_target_seg *tseg);
+
 /**
  * create jfc with ubcore device.
  * @param[in] dev: the ubcore device handle;
@@ -998,6 +999,11 @@ int ubcore_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr *cr);
  */
 struct ubcore_device *ubcore_get_device_by_eid(union ubcore_eid *eid,
 					       enum ubcore_transport_type type);
+/**
+ * Put ubcore device reference returned by ubcore_get_device_by_eid
+ * @param[in] dev: the ubcore device pointer
+ */
+void ubcore_put_device(struct ubcore_device *dev);
 
 // for system not support cgroup
 #ifndef CONFIG_CGROUP_RDMA
@@ -1072,4 +1078,33 @@ int ubcore_get_topo_eid(uint32_t tp_type, union ubcore_eid *src_v_eid,
 	union ubcore_eid *dst_v_eid, union ubcore_eid *src_p_eid,
 	union ubcore_eid *dst_p_eid);
 
+/**
+ * send bonding user msg to peer through ubcore net layer
+ * @param[in] dev: the ubcore device handle
+ * @param[in] peer_eid: remote eid
+ * @param[in] session_id: message sequence number
+ * @param[in] payload: bonding user msg payload to send
+ * @param[in] payload_len: bonding user msg payload length
+ * @return: 0 on success, other value on error
+ */
+int ubcore_net_send_bonding_user_msg(struct ubcore_device *dev,
+				     union ubcore_eid peer_eid,
+				     uint32_t session_id,
+				     const void *payload,
+				     uint16_t payload_len);
+/**
+ * register net bonding user msg callback
+ * @param[in] handler: callback used to process received bonding user msg
+ * @return: 0 on success, other value on error
+ */
+int ubcore_net_register_bonding_user_msg_handler(
+	void (*handler)(struct ubcore_device *dev,
+			void *payload, uint16_t payload_len, void *conn));
+/**
+ * unregister net bonding user msg callback
+ * @param[in] handler: callback registered before
+ */
+void ubcore_net_unregister_bonding_user_msg_handler(
+	void (*handler)(struct ubcore_device *dev,
+			void *payload, uint16_t payload_len, void *conn));
 #endif

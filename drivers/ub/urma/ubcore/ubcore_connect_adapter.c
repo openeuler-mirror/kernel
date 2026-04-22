@@ -65,7 +65,7 @@ struct msg_destroy_conn_req {
 	int ht_id;
 };
 
-/* Default as 128 ms */
+/* Default as 16384 ms */
 uint32_t ubcore_conn_timeout = UBCORE_DEF_CONN_TIMEOUT;
 
 uint32_t ubcore_get_conn_timeout(void)
