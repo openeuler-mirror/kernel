@@ -37,44 +37,6 @@ void udma_cmd_cleanup(struct udma_dev *udma_dev)
 	up_write(&udma_dev->mb_cmd.udma_mb_rwsem);
 }
 
-struct ubase_cmd_mailbox *udma_alloc_cmd_mailbox(struct udma_dev *dev)
-{
-	struct ubase_cmd_mailbox *mailbox;
-
-	mailbox = kzalloc(sizeof(*mailbox), GFP_KERNEL);
-	if (!mailbox)
-		goto failed_alloc_mailbox;
-
-	down_read(&dev->mb_cmd.udma_mb_rwsem);
-	mailbox->buf = dma_pool_zalloc(dev->mb_cmd.pool, GFP_KERNEL,
-				       &mailbox->dma);
-	if (!mailbox->buf) {
-		dev_err(dev->dev, "failed to alloc buffer of mailbox.\n");
-		goto failed_alloc_mailbox_buf;
-	}
-
-	return mailbox;
-
-failed_alloc_mailbox_buf:
-	up_read(&dev->mb_cmd.udma_mb_rwsem);
-	kfree(mailbox);
-failed_alloc_mailbox:
-	return NULL;
-}
-
-void udma_free_cmd_mailbox(struct udma_dev *dev,
-			   struct ubase_cmd_mailbox *mailbox)
-{
-	if (!mailbox) {
-		dev_err(dev->dev, "Invalid mailbox.\n");
-		return;
-	}
-
-	dma_pool_free(dev->mb_cmd.pool, mailbox->buf, mailbox->dma);
-	up_read(&dev->mb_cmd.udma_mb_rwsem);
-	kfree(mailbox);
-}
-
 static void udma_set_mb_flag_or_fd(uint8_t op, void *buf)
 {
 	struct udma_jetty_ctx *jfs_ctx;
