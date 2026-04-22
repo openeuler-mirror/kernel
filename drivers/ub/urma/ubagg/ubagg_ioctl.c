@@ -83,16 +83,23 @@ static struct ubagg_dev_name_eid_arr
 	g_name_eid_arr[UBAGG_MAX_BONDING_DEV_NUM] = { 0 };
 static DEFINE_MUTEX(g_name_eid_arr_lock);
 
-static bool ubagg_dev_exists(char *dev_name)
+static bool ubagg_dev_exists(const char *dev_name)
 {
 	struct ubagg_device *dev;
+	unsigned long flags;
+	bool found = false;
 
+	spin_lock_irqsave(&g_ubagg_dev_list_lock, flags);
 	list_for_each_entry(dev, &g_ubagg_dev_list, list_node) {
 		if (strncmp(dev_name, dev->master_dev_name,
-			    UBAGG_MAX_DEV_NAME_LEN) == 0)
-			return true;
+			    UBAGG_MAX_DEV_NAME_LEN) == 0) {
+			found = true;
+			break;
+		}
 	}
-	return false;
+	spin_unlock_irqrestore(&g_ubagg_dev_list_lock, flags);
+
+	return found;
 }
 
 static struct ubagg_device *ubagg_find_dev_by_name(char *dev_name)
