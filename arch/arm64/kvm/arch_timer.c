@@ -771,8 +771,19 @@ static void kvm_vtimer_mbigen_restore_stat(struct kvm_vcpu *vcpu)
 
 	vtimer_mbigen_set_vector(vcpu->cpu, vpeid);
 
-	if (mbigen_ctx->active)
-		vtimer_mbigen_set_active(vcpu->cpu, true);
+	/*
+	 * There exists a corner case in kvm_timer_vcpu_load/put. The
+	 * vtimer has expired, mbigen is active, but the message has
+	 * not been sent to the ITS. Therefore, if we restore the mbigen
+	 * active state, it cannot be cleared permanently and all subsequent
+	 * vtimer interrupts will be blocked. To avoid this, we choose not
+	 * to restore it. If the guest kernel is Linux, there is no problem
+	 * doing this.
+	 * This solution may cause an extra interrupt to be sent. This extra
+	 * interrupt may be merged with the previous pending interrupt, or
+	 * the extra interrupt may be cleared when the Linux guest is processing
+	 * the previous interrupt.
+	 */
 
 	mbigen_ctx->loaded = true;
 out:
@@ -1047,10 +1058,6 @@ static void kvm_vtimer_mbigen_save_stat(struct kvm_vcpu *vcpu)
 
 	mbigen_ctx->active = vtimer_mbigen_get_active(vcpu->cpu);
 
-	/* Clear active state in MBIGEN now that we've saved everything. */
-	if (mbigen_ctx->active)
-		vtimer_mbigen_set_active(vcpu->cpu, false);
-
 	mbigen_ctx->loaded = false;
 out:
 	local_irq_restore(flags);
@@ -1086,6 +1093,10 @@ void kvm_timer_vcpu_put(struct kvm_vcpu *vcpu)
 #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
 	if (vtimer_is_irqbypass()) {
 		kvm_vtimer_mbigen_save_stat(vcpu);
+		/*
+		 * After enabling the automatic clearing of mbigen active state,
+		 * hardware ensures that the active state is cleared here.
+		 */
 		kvm_vtimer_mbigen_auto_clr_set(vcpu, true);
 	}
 #endif
