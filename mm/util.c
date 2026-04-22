@@ -1190,6 +1190,6 @@ EXPORT_SYMBOL(flush_dcache_folio);
 unsigned int folio_pte_batch(struct folio *folio, pte_t *ptep, pte_t pte,
 		unsigned int max_nr)
 {
-	return folio_pte_batch_flags(folio, ptep, pte, max_nr, 0, NULL, NULL, NULL);
+	return folio_pte_batch_flags(folio, NULL, ptep, &pte, max_nr, 0);
 }
 #endif /* CONFIG_MMU */
