@@ -485,6 +485,8 @@ void xsched_quota_account(struct xsched_group *xg, s64 exec_time);
 void xsched_quota_check(struct xsched_group *xg, struct xsched_cu *xcu);
 void xsched_quota_refill(struct work_struct *work);
 
+bool xcu_cgroup_enabled(void);
+
 #define XCU_PERIOD_MIN_MS 1
 #define XCU_QUOTA_RUNTIME_INF -1
 #define XCU_SHARES_MIN 1

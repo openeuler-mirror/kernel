@@ -121,10 +121,10 @@ static struct rnp_dma_operations dma_ops_n10 = {
 static s32 rnp_eth_set_rar_n10(struct rnp_eth_info *eth, u32 index, u8 *addr,
 			       bool enable_addr)
 {
-	u32 mcstctrl;
-	u32 rar_low, rar_high = 0;
 	u32 rar_entries = eth->num_rar_entries;
 	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
+	u32 rar_low, rar_high = 0;
+	u32 mcstctrl;
 
 	/* Make sure we are using a valid rar index range */
 	if (index >= (rar_entries + hw->ncsi_rar_entries)) {
@@ -173,8 +173,8 @@ static s32 rnp_eth_set_rar_n10(struct rnp_eth_info *eth, u32 index, u8 *addr,
  **/
 static s32 rnp_eth_clear_rar_n10(struct rnp_eth_info *eth, u32 index)
 {
-	u32 rar_high;
 	u32 rar_entries = eth->num_rar_entries;
+	u32 rar_high;
 
 	/* Make sure we are using a valid rar index range */
 	if (index >= rar_entries) {
@@ -280,10 +280,10 @@ static s32 rnp10_mta_vector(struct rnp_eth_info *eth, u8 *mc_addr)
 
 static void rnp10_set_mta(struct rnp_hw *hw, u8 *mc_addr)
 {
-	u32 vector;
+	struct rnp_eth_info *eth = &hw->eth;
 	u32 vector_bit;
 	u32 vector_reg;
-	struct rnp_eth_info *eth = &hw->eth;
+	u32 vector;
 
 	hw->addr_ctrl.mta_in_use++;
 	vector = rnp10_mta_vector(eth, mc_addr);
@@ -305,9 +305,9 @@ static void rnp10_set_mta(struct rnp_hw *hw, u8 *mc_addr)
 
 static void rnp10_set_vf_mta(struct rnp_hw *hw, u16 vector)
 {
+	struct rnp_eth_info *eth = &hw->eth;
 	u32 vector_bit;
 	u32 vector_reg;
-	struct rnp_eth_info *eth = &hw->eth;
 
 	hw->addr_ctrl.mta_in_use++;
 	vector_reg = (vector >> 5) & 0x7F;
@@ -352,12 +352,12 @@ static s32 rnp_eth_update_mc_addr_list_n10(struct rnp_eth_info *eth,
 					   bool sriov_on)
 {
 	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
+	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
 	struct netdev_hw_addr *ha;
+	u8 *addr_list = NULL;
+	int addr_count = 0;
 	u32 i;
 	u32 v;
-	int addr_count = 0;
-	u8 *addr_list = NULL;
-	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
 
 	/* Set the new number of MC addresses that we are being requested to
 	 * use.
@@ -446,13 +446,13 @@ static void rnp_eth_clr_mc_addr_n10(struct rnp_eth_info *eth)
  **/
 static void rnp_eth_update_rss_key_n10(struct rnp_eth_info *eth, bool sriov_flag)
 {
+	u32 iov_en = (sriov_flag) ? RNP10_IOV_ENABLED : 0;
 	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
-	int i;
-	u8 *key_temp;
 	int key_len = RNP_RSS_KEY_SIZE;
 	u8 *key = hw->rss_key;
+	u8 *key_temp;
 	u32 *value;
-	u32 iov_en = (sriov_flag) ? RNP10_IOV_ENABLED : 0;
+	int i;
 
 	key_temp = kmalloc(key_len, GFP_KERNEL);
 	/* reoder the key */
@@ -502,11 +502,11 @@ static void rnp_eth_update_rss_table_n10(struct rnp_eth_info *eth)
  **/
 static s32 rnp_eth_set_vfta_n10(struct rnp_eth_info *eth, u32 vlan, bool vlan_on)
 {
+	bool vfta_changed = false;
+	u32 targetbit;
 	s32 regindex;
 	u32 bitindex;
 	u32 vfta;
-	u32 targetbit;
-	bool vfta_changed = false;
 
 	if (vlan > 4095)
 		return RNP_ERR_PARAM;
@@ -620,9 +620,9 @@ static u16 rnp_tuple5_pritologic_n10(u16 hw_id)
 
 static u16 rnp_tuple5_pritologic_tcam_n10(u16 pri_id)
 {
-	int i;
 	int hw_id = 0;
 	int step = 32;
+	int i;
 
 	for (i = 0; i < pri_id; i++) {
 		hw_id += step;
@@ -655,22 +655,22 @@ static void rnp_eth_set_tuple5_n10(struct rnp_eth_info *eth,
 		dbg("try to eable tuple 5 %x\n", hw_id);
 		if (input->formatted.src_ip[0] != 0) {
 			eth_wr32(eth, RNP10_ETH_TUPLE5_SAQF(hw_id),
-				 htonl(input->formatted.src_ip[0]));
+				 ntohl(input->formatted.src_ip[0]));
 		} else {
 			mask_temp |= RNP10_SRC_IP_MASK;
 		}
 		if (input->formatted.dst_ip[0] != 0) {
 			eth_wr32(eth, RNP10_ETH_TUPLE5_DAQF(hw_id),
-				 htonl(input->formatted.dst_ip[0]));
+				 ntohl(input->formatted.dst_ip[0]));
 		} else {
 			mask_temp |= RNP10_DST_IP_MASK;
 		}
 		if (input->formatted.src_port != 0)
-			port |= (htons(input->formatted.src_port));
+			port |= (ntohs(input->formatted.src_port));
 		else
 			mask_temp |= RNP10_SRC_PORT_MASK;
 		if (input->formatted.dst_port != 0)
-			port |= (htons(input->formatted.dst_port) << 16);
+			port |= (ntohs(input->formatted.dst_port) << 16);
 		else
 			mask_temp |= RNP10_DST_PORT_MASK;
 
@@ -733,31 +733,31 @@ static void rnp_eth_set_tuple5_n10(struct rnp_eth_info *eth,
 		eth_wr32(eth, RNP10_TCAM_MODE, 2);
 		if (input->formatted.src_ip[0] != 0) {
 			eth_wr32(eth, RNP10_TCAM_SAQF(hw_id),
-				 htonl(input->formatted.src_ip[0]));
+				 ntohl(input->formatted.src_ip[0]));
 			eth_wr32(eth, RNP10_TCAM_SAQF_MASK(hw_id),
-				 htonl(input->formatted.src_ip_mask[0]));
+				 ntohl(input->formatted.src_ip_mask[0]));
 		} else {
 			eth_wr32(eth, RNP10_TCAM_SAQF(hw_id), 0);
 			eth_wr32(eth, RNP10_TCAM_SAQF_MASK(hw_id), 0);
 		}
 		if (input->formatted.dst_ip[0] != 0) {
 			eth_wr32(eth, RNP10_TCAM_DAQF(hw_id),
-				 htonl(input->formatted.dst_ip[0]));
+				 ntohl(input->formatted.dst_ip[0]));
 			eth_wr32(eth, RNP10_TCAM_DAQF_MASK(hw_id),
-				 htonl(input->formatted.dst_ip_mask[0]));
+				 ntohl(input->formatted.dst_ip_mask[0]));
 		} else {
 			eth_wr32(eth, RNP10_TCAM_DAQF(hw_id), 0);
 			eth_wr32(eth, RNP10_TCAM_DAQF_MASK(hw_id), 0);
 		}
 		if (input->formatted.src_port != 0) {
-			port |= (htons(input->formatted.src_port) << 16);
-			port_mask |= (htons(input->formatted.src_port_mask)
+			port |= (ntohs(input->formatted.src_port) << 16);
+			port_mask |= (ntohs(input->formatted.src_port_mask)
 				      << 16);
 		}
 		if (input->formatted.dst_port != 0) {
-			port |= (htons(input->formatted.dst_port));
+			port |= (ntohs(input->formatted.dst_port));
 			port_mask |=
-				(htons(input->formatted.dst_port_mask));
+				(ntohs(input->formatted.dst_port_mask));
 		}
 
 		/* setup src & dst port */
@@ -819,8 +819,8 @@ static void rnp_eth_set_tuple5_n10(struct rnp_eth_info *eth,
 
 static void rnp_eth_clr_tuple5_n10(struct rnp_eth_info *eth, u16 pri_id)
 {
-	u16 hw_id;
 	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
+	u16 hw_id;
 
 	if (hw->fdir_mode != fdir_mode_tcam) {
 		hw_id = rnp_tuple5_pritologic_n10(pri_id);
@@ -896,8 +896,8 @@ static void rnp_eth_set_vlan_strip_n10(struct rnp_eth_info *eth, u16 queue,
 				       bool enable)
 {
 	u32 reg = RNP10_ETH_VLAN_VME_REG(queue / 32);
-	u32 offset = queue % 32;
 	u32 data = eth_rd32(eth, reg);
+	u32 offset = queue % 32;
 
 	if (enable)
 		data |= (1 << offset);
@@ -996,9 +996,9 @@ static void rnp_eth_set_vf_vlan_mode_n10(struct rnp_eth_info *eth,
 static int __get_ncsi_shm_info(struct rnp_hw *hw,
 			       struct ncsi_shm_info *ncsi_shm)
 {
-	int i;
-	int *ptr = (int *)ncsi_shm;
 	int rbytes = round_up(sizeof(*ncsi_shm), 4);
+	int *ptr = (int *)ncsi_shm;
+	int i;
 
 	memset(ncsi_shm, 0, sizeof(*ncsi_shm));
 	for (i = 0; i < (rbytes / 4); i++)
@@ -1010,8 +1010,8 @@ static int __get_ncsi_shm_info(struct rnp_hw *hw,
 
 static void rnp_ncsi_set_uc_addr_n10(struct rnp_eth_info *eth)
 {
-	struct ncsi_shm_info ncsi_shm;
 	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
+	struct ncsi_shm_info ncsi_shm;
 
 	u8 mac[ETH_ALEN];
 
@@ -1036,10 +1036,10 @@ static void rnp_ncsi_set_uc_addr_n10(struct rnp_eth_info *eth)
 
 static void rnp_ncsi_set_mc_mta_n10(struct rnp_eth_info *eth)
 {
-	struct ncsi_shm_info ncsi_shm;
 	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
-	u8 i;
+	struct ncsi_shm_info ncsi_shm;
 	u8 mac[ETH_ALEN];
+	u8 i;
 
 	if (!hw->ncsi_en)
 		return;
@@ -1063,8 +1063,8 @@ static void rnp_ncsi_set_mc_mta_n10(struct rnp_eth_info *eth)
 
 static void rnp_ncsi_set_vfta_n10(struct rnp_eth_info *eth)
 {
-	struct ncsi_shm_info ncsi_shm;
 	struct rnp_hw *hw = (struct rnp_hw *)eth->back;
+	struct ncsi_shm_info ncsi_shm;
 
 	if (!hw->ncsi_en)
 		return;
@@ -1146,9 +1146,9 @@ static s32 rnp_get_permtion_mac_addr_n10(struct rnp_hw *hw, u8 *mac_addr)
 
 static s32 rnp_reset_hw_ops_n10(struct rnp_hw *hw)
 {
-	int i;
 	struct rnp_dma_info *dma = &hw->dma;
 	struct rnp_eth_info *eth = &hw->eth;
+	int i;
 
 	/* Call adapter stop to disable tx/rx and clear interrupts */
 	dma_wr32(dma, RNP_DMA_AXI_EN, 0);
@@ -1188,9 +1188,7 @@ static s32 rnp_reset_hw_ops_n10(struct rnp_hw *hw)
 		rnp_wr_reg(hw->ring_msix_base + RING_VECTOR(i), 0);
 
 	/* setup pause reg if is_sgmii */
-	if (hw->phy_type != PHY_TYPE_SGMII)
-		goto out;
-	{
+	if (hw->phy_type == PHY_TYPE_SGMII) {
 		u16 pause_bits = 0;
 		u32 value;
 
@@ -1213,15 +1211,15 @@ static s32 rnp_reset_hw_ops_n10(struct rnp_hw *hw)
 		value |= pause_bits;
 		rnp_mbx_phy_write(hw, 4, value);
 	}
-out:
+
 	return 0;
 }
 
 static s32 rnp_start_hw_ops_n10(struct rnp_hw *hw)
 {
-	s32 ret_val = 0;
 	struct rnp_eth_info *eth = &hw->eth;
 	struct rnp_dma_info *dma = &hw->dma;
+	s32 ret_val = 0;
 
 	/* ETH Registers */
 	eth_wr32(eth, RNP10_ETH_ERR_MASK_VECTOR,
@@ -1319,9 +1317,9 @@ static void rnp_set_vlan_strip_hw_ops_n10(struct rnp_hw *hw, u16 queue,
 static void rnp_set_mac_hw_ops_n10(struct rnp_hw *hw, u8 *mac,
 				   bool sriov_flag)
 {
+	struct rnp_mac_info *mac_info = &hw->mac;
 	struct rnp_eth_info *eth = &hw->eth;
 	struct rnp_dma_info *dma = &hw->dma;
-	struct rnp_mac_info *mac_info = &hw->mac;
 	/* use this queue index to setup veb */
 	/* now pf use queu 0 /1 */
 	/* vfnum is the last vfnum */
@@ -1357,8 +1355,8 @@ static int rnp_write_uc_addr_list_n10(struct rnp_hw *hw,
 				      bool sriov_flag)
 {
 	unsigned int rar_entries = hw->num_rar_entries - 1;
-	u32 vfnum = hw->vfnum;
 	struct rnp_eth_info *eth = &hw->eth;
+	u32 vfnum = hw->vfnum;
 	int count = 0;
 
 	if (hw->feature_flags & RNP_NET_FEATURE_VF_FIXED)
@@ -1410,11 +1408,11 @@ static void rnp_set_rx_mode_hw_ops_n10(struct rnp_hw *hw,
 				       bool sriov_flag)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
-	u32 fctrl, value;
 	netdev_features_t features = netdev->features;
-	int count;
 	struct rnp_eth_info *eth = &hw->eth;
 	struct rnp_mac_info *mac = &hw->mac;
+	u32 fctrl, value;
+	int count;
 
 	/* broadcast always bypass */
 	fctrl = eth_rd32(eth, RNP10_ETH_DMAC_FCTRL) | RNP10_FCTRL_BPE;
@@ -1493,8 +1491,8 @@ static void rnp_clr_rar_hw_ops_n10(struct rnp_hw *hw, int idx)
 
 static void rnp_clr_rar_all_hw_ops_n10(struct rnp_hw *hw)
 {
-	struct rnp_eth_info *eth = &hw->eth;
 	unsigned int rar_entries = hw->num_rar_entries - 1;
+	struct rnp_eth_info *eth = &hw->eth;
 	int i;
 
 	for (i = 0; i < rar_entries; i++)
@@ -1662,9 +1660,9 @@ static void rnp_get_pause_mode_hw_ops_n10(struct rnp_hw *hw)
 
 static void rnp_update_hw_info_hw_ops_n10(struct rnp_hw *hw)
 {
+	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
 	struct rnp_dma_info *dma = &hw->dma;
 	struct rnp_eth_info *eth = &hw->eth;
-	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
 	u32 data;
 	/* 1 enable eth filter */
 	eth_wr32(eth, RNP10_HOST_FILTER_EN, 1);
@@ -1700,8 +1698,8 @@ static void rnp_update_hw_info_hw_ops_n10(struct rnp_hw *hw)
 static void rnp_update_hw_rx_drop_hw_ops_n10(struct rnp_hw *hw)
 {
 	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
-	int i;
 	struct rnp_ring *ring;
+	int i;
 
 	for (i = 0; i < adapter->num_rx_queues; i++) {
 		ring = adapter->rx_ring[i];
@@ -1807,8 +1805,8 @@ static void rnp_set_txvlan_mode_hw_ops_n10(struct rnp_hw *hw, bool cvlan)
 
 static void rnp_set_rss_key_hw_ops_n10(struct rnp_hw *hw, bool sriov_flag)
 {
-	struct rnp_eth_info *eth = &hw->eth;
 	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
+	struct rnp_eth_info *eth = &hw->eth;
 	int key_len = RNP_RSS_KEY_SIZE;
 
 	memcpy(hw->rss_key, adapter->rss_key, key_len);
@@ -1830,7 +1828,18 @@ static void rnp_set_mbx_link_event_hw_ops_n10(struct rnp_hw *hw,
 
 static void rnp_set_mbx_ifup_hw_ops_n10(struct rnp_hw *hw, int enable)
 {
+	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
+
 	rnp_mbx_ifup_down(hw, enable);
+
+	if (hw->phy_type != PHY_TYPE_10G_TP)
+		return;
+	/* first call reset an */
+	if (enable) {
+		hw->ops.setup_link(hw, hw->phy.autoneg_advertised,
+				   hw->autoneg, adapter->speed,
+				   hw->duplex);
+	}
 }
 
 /**
@@ -1872,9 +1881,9 @@ static s32 rnp_setup_mac_link_hw_ops_n10(struct rnp_hw *hw, u32 adv, u32 autoneg
 					 u32 speed, u32 duplex)
 {
 	struct rnp_adapter *adpt = hw->back;
-	u32 value = 0;
 	u32 value_r4 = 0;
 	u32 value_r9 = 0;
+	u32 value = 0;
 
 	rnp_logd(LOG_PHY,
 		 "%s setup phy: phy_addr=%d speed=%d",
@@ -1887,13 +1896,117 @@ static s32 rnp_setup_mac_link_hw_ops_n10(struct rnp_hw *hw, u32 adv, u32 autoneg
 	if (hw->is_backplane)
 		return rnp_set_lane_fun(hw, LANE_FUN_AN, autoneg, 0, 0, 0);
 
-	if (!hw->is_sgmii) {
-		if (hw->force_10g_1g_speed_ablity)
+	if (!hw->is_sgmii && hw->phy_type != PHY_TYPE_10G_TP) {
+		if (hw->force_10g_1g_speed_ability)
 			return rnp_mbx_force_speed(hw, speed);
 		else
 			return 0;
 	}
 
+	if (hw->phy_type == PHY_TYPE_10G_TP) {
+		rnp_mbx_phy_read(hw, PHY_826x_MDIX, &value);
+
+		value &= ~(BIT(8) | BIT(9));
+		/* Options: 0: Auto (default)  1: MDI mode  2: MDI-X mode */
+		switch (hw->phy.mdix) {
+		case 1:
+			value |= BIT(8) | BIT(9);
+			break;
+		case 2:
+			value |= BIT(9);
+			break;
+		case 0:
+		default:
+			break;
+		}
+		rnp_mbx_phy_write(hw, PHY_826x_MDIX, value);
+
+		if (!autoneg) {
+			rnp_mbx_phy_read(hw, PHY_826x_SPEED, &value);
+			value &= (~(BIT(13) | BIT(6) | BIT(5) | BIT(4) |
+				    BIT(3) | BIT(2)));
+
+			switch (speed) {
+			case RNP_LINK_SPEED_10GB_FULL:
+				value |= BIT(13) | BIT(6);
+				break;
+			case RNP_LINK_SPEED_1GB_FULL:
+			case RNP_LINK_SPEED_1GB_HALF:
+				value |= BIT(6);
+				;
+				break;
+			case RNP_LINK_SPEED_100_FULL:
+			case RNP_LINK_SPEED_100_HALF:
+				value |= BIT(13);
+				break;
+			case RNP_LINK_SPEED_10_FULL:
+			case RNP_LINK_SPEED_10_HALF:
+				value = 0;
+				break;
+			default:
+				hw_dbg(hw, "unknown speed = 0x%x.\n", speed);
+				break;
+			}
+			rnp_mbx_phy_write(hw, PHY_826x_SPEED, value);
+			rnp_mbx_phy_read(hw, PHY_826x_DUPLEX, &value);
+			value &= (~BIT(8));
+			if (duplex)
+				value |= BIT(8);
+			rnp_mbx_phy_write(hw, PHY_826x_DUPLEX, value);
+			rnp_mbx_phy_read(hw, PHY_826x_AN, &value);
+			value &= (~BIT(12));
+			rnp_mbx_phy_write(hw, PHY_826x_AN, value);
+		} else {
+			rnp_mbx_phy_read(hw, PHY_826x_ADV, &value);
+
+			value &= (~(BIT(5) | BIT(6) | BIT(7) | BIT(8) |
+				    BIT(10) | BIT(11)));
+
+			if (adv & RNP_LINK_SPEED_100_FULL) {
+				hw->phy.autoneg_advertised |=
+					RNP_LINK_SPEED_100_FULL;
+				value |= BIT(8);
+			}
+			if (adv & RNP_LINK_SPEED_100_HALF) {
+				hw->phy.autoneg_advertised |=
+					RNP_LINK_SPEED_100_FULL;
+				value |= BIT(7);
+			}
+
+			value |= BIT(10) | BIT(11);
+			/* BIT10 fc BIT11 asyfc */
+			rnp_mbx_phy_write(hw, PHY_826x_ADV, value);
+
+			rnp_mbx_phy_read(hw, PHY_826x_GBASE_ADV, &value);
+			value &= (~(BIT(7) | BIT(8) | BIT(12)));
+
+			/* bit 7 2.5G  bit 8 5G */
+			if (adv & RNP_LINK_SPEED_10GB_FULL) {
+				hw->phy.autoneg_advertised |=
+					RNP_LINK_SPEED_10GB_FULL;
+				value |= BIT(12);
+			}
+			rnp_mbx_phy_write(hw, PHY_826x_GBASE_ADV, value);
+			rnp_mbx_phy_read(hw, PHY_826x_GBASE_ADV_2, &value);
+			value &= 0x00ff;
+			if (adv & RNP_LINK_SPEED_1GB_FULL) {
+				hw->phy.autoneg_advertised |=
+					RNP_LINK_SPEED_1GB_FULL;
+				value |= BIT(9);
+			}
+			if (adv & RNP_LINK_SPEED_1GB_HALF) {
+				hw->phy.autoneg_advertised |=
+					RNP_LINK_SPEED_1GB_HALF;
+				value |= BIT(8);
+			}
+			rnp_mbx_phy_write(hw, PHY_826x_GBASE_ADV_2, value);
+			rnp_mbx_phy_read(hw, PHY_826x_AN, &value);
+			value |= BIT(12) | BIT(9);
+			rnp_mbx_phy_write(hw, PHY_826x_AN, value);
+		}
+
+		return 0;
+	}
 	/* Set MDI/MDIX mode */
 	rnp_mbx_phy_read(hw, RNP_YT8531_PHY_SPEC_CTRL, &value);
 	value &= ~RNP_YT8531_PHY_SPEC_CTRL_MDIX_CFG_MASK;
@@ -2057,8 +2170,8 @@ static void rnp_set_tcp_sync_hw_ops_n10(struct rnp_hw *hw, int queue,
 static void rnp_update_msix_count_hw_ops_n10(struct rnp_hw *hw,
 					     int msix_count)
 {
-	int msix_count_new;
 	struct rnp_mac_info *mac = &hw->mac;
+	int msix_count_new;
 
 	msix_count_new = clamp_t(int, msix_count, 2, RNP_N10_MSIX_VECTORS);
 	mac->max_msix_vectors = msix_count_new;
@@ -2090,6 +2203,8 @@ rnp_update_hw_status_hw_ops_n10(struct rnp_hw *hw,
 	struct rnp_dma_info *dma = &hw->dma;
 	struct rnp_eth_info *eth = &hw->eth;
 	struct rnp_mac_info *mac = &hw->mac;
+	u64 rx_crc_errors = 0;
+	u64 rx_errors = 0;
 	int port;
 
 	hw_stats->dma_to_dma =
@@ -2102,17 +2217,14 @@ rnp_update_hw_status_hw_ops_n10(struct rnp_hw *hw,
 		dma_rd32(dma, RNP_DMA_STATS_DMA_TO_SWITCH);
 	hw_stats->mac_to_dma = dma_rd32(dma, RNP_DMA_STATS_MAC_TO_DMA);
 
-	net_stats->rx_crc_errors = 0;
-	net_stats->rx_errors = 0;
-
 	hw_stats->mac_rx_csum_err = 0;
 
 	for (port = 0; port < 4; port++) {
-		/* we use Hardware stats? */
-		net_stats->rx_crc_errors +=
+		/* we use Hardware stats */
+		rx_crc_errors +=
 			eth_rd32(eth, RNP10_RXTRANS_CRC_ERR_PKTS(port));
 
-		net_stats->rx_errors +=
+		rx_errors +=
 			eth_rd32(eth, RNP10_RXTRANS_WDT_ERR_PKTS(port)) +
 			eth_rd32(eth, RNP10_RXTRANS_CODE_ERR_PKTS(port)) +
 			eth_rd32(eth, RNP10_RXTRANS_CRC_ERR_PKTS(port)) +
@@ -2165,6 +2277,9 @@ rnp_update_hw_status_hw_ops_n10(struct rnp_hw *hw,
 	hw_stats->mac_tx_pause_count +=
 		((u64)mac_rd32(mac, RNP10_MAC_STATS_TX_PAUSE_COUNT_HIGH) << 32);
 
+	net_stats->rx_crc_errors = rx_crc_errors;
+	net_stats->rx_errors = rx_errors;
+
 }
 
 enum n10_priv_bits {
@@ -2189,16 +2304,17 @@ static const char rnp10_priv_flags_strings[][ETH_GSTRING_LEN] = {
 #define RNP10_SRIOV_VLAN_MODE BIT(10)
 #define RNP10_REMAP_MODE BIT(11)
 #define RNP10_LLDP_EN_STAT BIT(12)
+#define RNP10_FORCE_CLOSE BIT(13)
 	"mac_loopback",	      "switch_loopback",   "veb_enable",
 	"pcie_patch",	      "padding_debug",	   "ptp_performance_debug",
 	"simulate_link_down", "vxlan_inner_match", "stag_enable",
 	"mask_len_err",	      "sriov_vlan_mode", "remap_mode1",
-	"lldp_en",
+	"lldp_en",            "link_down_on_close",
 };
 
 #define RNP10_PRIV_FLAGS_STR_LEN ARRAY_SIZE(rnp10_priv_flags_strings)
 
-const struct rnp_stats rnp10_gstrings_net_stats[] = {
+static const struct rnp_stats rnp10_gstrings_net_stats[] = {
 	RNP_NETDEV_STAT(rx_packets),
 	RNP_NETDEV_STAT(tx_packets),
 	RNP_NETDEV_STAT(rx_bytes),
@@ -2294,12 +2410,13 @@ static int rnp_set_autoneg_adv_from_hw(struct rnp_hw *hw,
 				       struct ethtool_link_ksettings *ks)
 {
 	u32 value_r0 = 0, value_r4 = 0, value_r9 = 0;
+	u32 value_r20, value_r412;
 
 	/* Read autoneg state from phy */
 	if (hw->phy_type == PHY_TYPE_SGMII) {
 		rnp_mbx_phy_read(hw, 0x0, &value_r0);
 		/* Not support AN, return directly */
-		if (!(value_r0 & BIT(12)) || !hw->link)
+		if (!(value_r0 & BIT(12)))
 			return 0;
 
 		rnp_mbx_phy_read(hw, 0x4, &value_r4);
@@ -2328,6 +2445,29 @@ static int rnp_set_autoneg_adv_from_hw(struct rnp_hw *hw,
 			ethtool_link_ksettings_add_link_mode(ks, advertising,
 							     1000baseT_Half);
 		}
+	}
+
+	if (hw->phy_type == PHY_TYPE_10G_TP) {
+		rnp_mbx_phy_read(hw, (PHY_C45 | PHY_MMD(7) | 0x0), &value_r0);
+
+		if (!(value_r0 & BIT(12)))
+			return 0;
+
+		rnp_mbx_phy_read(hw, (PHY_C45 | PHY_MMD(7) | 0x20), &value_r20);
+
+		if (value_r20 & BIT(12))
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     10000baseT_Full);
+
+		rnp_mbx_phy_read(hw, (PHY_C45 | PHY_MMD_VEND2 | 0xa412),
+				 &value_r412);
+
+		if (value_r412 & BIT(8))
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     1000baseT_Full);
+		if (value_r412 & BIT(9))
+			ethtool_link_ksettings_add_link_mode(ks, advertising,
+							     1000baseT_Full);
 	}
 
 	return 0;
@@ -2389,6 +2529,15 @@ static void rnp_phy_type_to_ethtool(struct rnp_adapter *adapter,
 		ethtool_link_ksettings_add_link_mode(ks, supported,
 						     10baseT_Half);
 
+		rnp_set_autoneg_adv_from_hw(hw, ks);
+	}
+
+	if (phy_type == PHY_TYPE_10G_TP) {
+		ethtool_link_ksettings_add_link_mode(ks, supported, Autoneg);
+		ethtool_link_ksettings_add_link_mode(ks, supported,
+						     10000baseT_Full);
+		ethtool_link_ksettings_add_link_mode(ks, supported,
+						     1000baseT_Full);
 		rnp_set_autoneg_adv_from_hw(hw, ks);
 	}
 
@@ -2683,7 +2832,18 @@ static void rnp_get_settings_link_up(struct rnp_hw *hw,
 		ethtool_link_ksettings_add_link_mode(ks, advertising,
 						     25000baseCR_Full);
 		break;
-
+	case PHY_TYPE_10G_TP:
+		ethtool_link_ksettings_add_link_mode(ks, supported, Autoneg);
+		ethtool_link_ksettings_add_link_mode(ks, advertising, Autoneg);
+		ethtool_link_ksettings_add_link_mode(ks, supported,
+						     10000baseT_Full);
+		ethtool_link_ksettings_add_link_mode(ks, supported,
+						     1000baseT_Full);
+		ethtool_link_ksettings_add_link_mode(ks, advertising,
+						     10000baseT_Full);
+		ethtool_link_ksettings_add_link_mode(ks, advertising,
+						     1000baseT_Full);
+		break;
 	default:
 		/* if we got here and link is up something bad */
 		netdev_info(netdev,
@@ -2730,7 +2890,8 @@ static void rnp_get_settings_link_down(struct rnp_hw *hw,
 	ks->base.duplex = DUPLEX_UNKNOWN;
 
 	/* if copper we should adv mdix info */
-	if (hw->phy_type == PHY_TYPE_SGMII) {
+	if (hw->phy_type == PHY_TYPE_SGMII ||
+	    hw->phy_type == PHY_TYPE_10G_TP) {
 		ks->base.eth_tp_mdix_ctrl = ETH_TP_MDI_INVALID;
 		ks->base.eth_tp_mdix_ctrl = hw->tp_mdix_ctrl;
 	}
@@ -2746,8 +2907,8 @@ static void rnp_get_settings_link_down(struct rnp_hw *hw,
 static int rnp_set_autoneg_state_from_hw(struct rnp_hw *hw,
 					 struct ethtool_link_ksettings *ks)
 {
-	int ret;
 	struct rnp_adapter *adapter = hw->back;
+	int ret;
 
 	ks->base.autoneg =
 		(adapter->an ? AUTONEG_ENABLE : AUTONEG_DISABLE);
@@ -2764,19 +2925,39 @@ static int rnp_set_autoneg_state_from_hw(struct rnp_hw *hw,
 			AUTONEG_DISABLE;
 	}
 
+	if (hw->phy_type == PHY_TYPE_10G_TP) {
+		u32 value_r0 = 0;
+
+		rnp_mbx_phy_read(hw, PHY_826x_AN, &value_r0);
+
+		ks->base.autoneg = (value_r0 & BIT(12)) ? AUTONEG_ENABLE :
+							  AUTONEG_DISABLE;
+		if (value_r0)
+			adapter->an = 1;
+	}
+
 	return 0;
 }
 
 static int rnp_get_phy_mdix_from_hw(struct rnp_hw *hw)
 {
-	int ret;
 	u32 value_r17 = 0;
+	int rmmd_reg = 0;
+	int ret;
 
 	if (hw->phy_type == PHY_TYPE_SGMII) {
 		ret = rnp_mbx_phy_read(hw, 0x11, &value_r17);
 		if (ret)
 			return -1;
 		hw->phy.is_mdix = !!(value_r17 & 0x0040);
+	}
+
+	if (hw->phy_type == PHY_TYPE_10G_TP) {
+		rmmd_reg = (1 << 30) | (0x1f << 16) | (0xa430 & 0xffff);
+		ret = rnp_mbx_phy_read(hw, rmmd_reg, &value_r17);
+		if (ret)
+			return -1;
+		hw->phy.is_mdix = !!(value_r17 & 0x0200);
 	}
 
 	return 0;
@@ -2847,6 +3028,7 @@ static int rnp10_get_link_ksettings(struct net_device *netdev,
 		}
 		break;
 	case PHY_TYPE_SGMII:
+	case PHY_TYPE_10G_TP:
 		hw->phy.media_type = rnp_media_type_copper;
 		ks->base.phy_address = adapter->phy_addr;
 		break;
@@ -2979,7 +3161,8 @@ static int rnp10_get_link_ksettings(struct net_device *netdev,
 
 #ifdef ETH_TP_MDI_X
 	/* MDI-X => 2; MDI =>1; Invalid =>0 */
-	if (hw->phy_type == PHY_TYPE_SGMII) {
+	if (hw->phy_type == PHY_TYPE_SGMII ||
+	    hw->phy_type == PHY_TYPE_10G_TP) {
 		if (rnp_get_phy_mdix_from_hw(hw)) {
 			ks->base.eth_tp_mdix = ETH_TP_MDI_INVALID;
 		} else {
@@ -2987,6 +3170,8 @@ static int rnp10_get_link_ksettings(struct net_device *netdev,
 				ETH_TP_MDI_X :
 				ETH_TP_MDI;
 		}
+	} else {
+		ks->base.eth_tp_mdix = hw->tp_mdx;
 	}
 
 #ifdef ETH_TP_MDI_AUTO
@@ -3012,13 +3197,13 @@ static int rnp10_set_link_ksettings(struct net_device *netdev,
 				    const struct ethtool_link_ksettings *ks)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
-	struct rnp_hw *hw = &adapter->hw;
 	struct ethtool_link_ksettings safe_ks;
 	struct ethtool_link_ksettings copy_ks;
+	u32 advertising_link_speed, speed = 0;
+	struct rnp_hw *hw = &adapter->hw;
 	int timeout = 50;
 	int err = 0;
 	u8 autoneg;
-	u32 advertising_link_speed, speed = 0;
 
 	/* copy the ksettings to copy_ks to avoid modifying the origin */
 	memcpy(&copy_ks, ks, sizeof(struct ethtool_link_ksettings));
@@ -3129,6 +3314,7 @@ static int rnp10_set_link_ksettings(struct net_device *netdev,
 				goto done;
 			}
 		}
+		hw->advertised_link = advertising_link_speed;
 
 		hw->autoneg = true;
 	} else {
@@ -3146,6 +3332,13 @@ static int rnp10_set_link_ksettings(struct net_device *netdev,
 				err = -EINVAL;
 				goto done;
 			}
+		}
+		/* if 10G -TP, not support close an */
+		if (hw->phy_type == PHY_TYPE_10G_TP) {
+			netdev_info(netdev,
+				    "Autoneg cannot be disabled on this phy\n");
+			err = -EINVAL;
+			goto done;
 		}
 
 		/* Only allow one speed at a time when autoneg is AUTONEG_DISABLE. */
@@ -3177,6 +3370,9 @@ static int rnp10_set_link_ksettings(struct net_device *netdev,
 	 * is disabled) then speed won't get set.
 	 */
 	if (hw->is_sgmii)
+		hw->duplex = ks->base.duplex;
+
+	if (hw->phy_type == PHY_TYPE_10G_TP)
 		hw->duplex = ks->base.duplex;
 
 	/* this sets the link speed and restarts auto-neg */
@@ -3215,14 +3411,14 @@ static void rnp10_get_drvinfo(struct net_device *netdev,
 	struct rnp_hw *hw = &adapter->hw;
 
 	strscpy(drvinfo->driver, rnp_driver_name, sizeof(drvinfo->driver));
-	snprintf(drvinfo->version, sizeof(drvinfo->version), "%s-%x",
-		 rnp_driver_version, hw->pcode);
+	snprintf(drvinfo->version, sizeof(drvinfo->version), "%s",
+		 rnp_driver_version);
 
 	snprintf(drvinfo->fw_version, sizeof(drvinfo->fw_version),
-		 "%d.%d.%d.%d 0x%08x", ((char *)&hw->fw_version)[3],
-		 ((char *)&hw->fw_version)[2],
-		 ((char *)&hw->fw_version)[1],
-		 ((char *)&hw->fw_version)[0], hw->bd_uid);
+		 "%d.%d.%d.%d", ((unsigned char *)&hw->fw_version)[3],
+		 ((unsigned char *)&hw->fw_version)[2],
+		 ((unsigned char *)&hw->fw_version)[1],
+		 ((unsigned char *)&hw->fw_version)[0]);
 
 	strscpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
@@ -3561,6 +3757,8 @@ static u32 rnp10_get_priv_flags(struct net_device *netdev)
 		priv_flags |= RNP10_REMAP_MODE;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_LLDP_EN_STAT)
 		priv_flags |= RNP10_LLDP_EN_STAT;
+	if (adapter->priv_flags & RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE)
+		priv_flags |= RNP10_FORCE_CLOSE;
 
 	return priv_flags;
 }
@@ -3705,6 +3903,31 @@ static int rnp10_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 				hw->ops.set_vf_vlan_mode(hw, 0, i, false);
 		}
 	}
+
+	if (hw->force_link_supported) {
+		if (priv_flags & RNP10_FORCE_CLOSE) {
+			if (!(adapter->priv_flags &
+			      RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE)) {
+				adapter->priv_flags |=
+					RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
+				hw->ops.driver_status(hw, true,
+						      rnp_driver_force_control_mac);
+			}
+		} else {
+			if (adapter->priv_flags &
+					RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE) {
+				adapter->priv_flags &=
+					(~RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE);
+				hw->ops.driver_status(hw, false,
+						      rnp_driver_force_control_mac);
+			}
+		}
+	} else {
+		if (priv_flags & RNP10_FORCE_CLOSE)
+			rnp_err("%s: firmware not support set `link_down_on_close` private flag\n",
+				adapter->netdev->name);
+	}
+
 skip_setup_vf_vlan:
 
 	if (data_old != data_new)
@@ -3721,11 +3944,11 @@ skip_setup_vf_vlan:
 static void rnp10_get_ethtool_stats(struct net_device *netdev,
 				    struct ethtool_stats *stats, u64 *data)
 {
-	struct rnp_adapter *adapter = netdev_priv(netdev);
 	struct net_device_stats *net_stats = &netdev->stats;
+	struct rnp_adapter *adapter = netdev_priv(netdev);
 	struct rnp_ring *ring;
-	int i, j;
 	char *p = NULL;
+	int i, j;
 
 	rnp_update_stats(adapter);
 
@@ -3948,8 +4171,8 @@ static void rnp_set_ethtool_hw_ops_n10(struct net_device *netdev)
  **/
 static s32 rnp_get_thermal_sensor_data_hw_ops_n10(struct rnp_hw *hw)
 {
-	int voltage = 0;
 	struct rnp_thermal_sensor_data *data = &hw->thermal_sensor_data;
+	int voltage = 0;
 
 	data->sensor[0].temp = rnp_mbx_get_temp(hw, &voltage);
 
@@ -3964,8 +4187,8 @@ static s32 rnp_get_thermal_sensor_data_hw_ops_n10(struct rnp_hw *hw)
  **/
 static s32 rnp_init_thermal_sensor_thresh_hw_ops_n10(struct rnp_hw *hw)
 {
-	u8 i;
 	struct rnp_thermal_sensor_data *data = &hw->thermal_sensor_data;
+	u8 i;
 
 	for (i = 0; i < RNP_MAX_SENSORS; i++) {
 		data->sensor[i].location = i + 1;
@@ -4001,11 +4224,34 @@ static s32 rnp_phy_write_reg_hw_ops_n10(struct rnp_hw *hw, u32 reg_addr,
 static void rnp_set_vf_vlan_mode_hw_ops_n10(struct rnp_hw *hw, u16 vlan, int vf,
 					    bool enable)
 {
-	struct rnp_eth_info *eth = &hw->eth;
 	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
+	struct rnp_eth_info *eth = &hw->eth;
 
 	if (adapter->priv_flags & RNP_PRIV_FLAG_SRIOV_VLAN_MODE)
 		eth->ops.set_vf_vlan_mode(eth, vlan, vf, enable);
+}
+
+/**
+ * rnp_driver_status_hw_ops_n10 - notify status to firmware
+ *
+ * @hw: hw pointer
+ * @enable: state
+ * @mode: cmd
+ */
+static void rnp_driver_status_hw_ops_n10(struct rnp_hw *hw, bool enable,
+					 int mode)
+{
+	switch (mode) {
+	case rnp_driver_insmod:
+		rnp_mbx_ifinsmod(hw, enable);
+		break;
+	case rnp_driver_suspuse:
+		rnp_mbx_ifsuspuse(hw, enable);
+		break;
+	case rnp_driver_force_control_mac:
+		rnp_mbx_ifforce_control_mac(hw, enable);
+		break;
+	}
 }
 
 static struct rnp_hw_operations hw_ops_n10 = {
@@ -4061,6 +4307,7 @@ static struct rnp_hw_operations hw_ops_n10 = {
 	.phy_read_reg = &rnp_phy_read_reg_hw_ops_n10,
 	.phy_write_reg = &rnp_phy_write_reg_hw_ops_n10,
 	.set_vf_vlan_mode = &rnp_set_vf_vlan_mode_hw_ops_n10,
+	.driver_status = &rnp_driver_status_hw_ops_n10,
 };
 
 static void rnp_mac_set_rx_n10(struct rnp_mac_info *mac, bool status)
@@ -4143,10 +4390,10 @@ static void rnp_mac_fcs_n10(struct rnp_mac_info *mac, bool status)
  **/
 static s32 rnp_mac_fc_mode_n10(struct rnp_mac_info *mac)
 {
+	u32 rxctl_reg, txctl_reg[RNP_MAX_TRAFFIC_CLASS];
 	struct rnp_hw *hw = (struct rnp_hw *)mac->back;
 	s32 ret_val = 0;
 	u32 reg;
-	u32 rxctl_reg, txctl_reg[RNP_MAX_TRAFFIC_CLASS];
 	int i;
 
 	/* Validate the water mark configuration for packet buffer 0.  Zero
@@ -4245,11 +4492,11 @@ static struct rnp_mac_operations mac_ops_n10 = {
 
 static s32 rnp_get_invariants_n10(struct rnp_hw *hw)
 {
+	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
 	struct rnp_mac_info *mac = &hw->mac;
 	struct rnp_dma_info *dma = &hw->dma;
 	struct rnp_eth_info *eth = &hw->eth;
 	struct rnp_mbx_info *mbx = &hw->mbx;
-	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
 	int i;
 
 	/* setup dma info */
@@ -4400,11 +4647,11 @@ struct rnp_info rnp_n10_info = {
 
 static s32 rnp_get_invariants_n400(struct rnp_hw *hw)
 {
+	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
 	struct rnp_mac_info *mac = &hw->mac;
 	struct rnp_dma_info *dma = &hw->dma;
 	struct rnp_eth_info *eth = &hw->eth;
 	struct rnp_mbx_info *mbx = &hw->mbx;
-	struct rnp_adapter *adapter = (struct rnp_adapter *)hw->back;
 
 	int i;
 	/* setup dma info */

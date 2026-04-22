@@ -6536,6 +6536,14 @@ out:
 	return ret;
 }
 
+#ifndef arch_mk_kernel_prot
+#define arch_mk_kernel_prot arch_mk_kernel_prot
+static inline unsigned long arch_mk_kernel_prot(unsigned long user_prot)
+{
+	return user_prot;
+}
+#endif
+
 /**
  * generic_access_phys - generic implementation for iomem mmap access
  * @vma: the vma to access
@@ -6552,7 +6560,8 @@ int generic_access_phys(struct vm_area_struct *vma, unsigned long addr,
 			void *buf, int len, int write)
 {
 	resource_size_t phys_addr;
-	unsigned long prot = 0;
+	unsigned long user_prot = 0;
+	unsigned long prot;
 	void __iomem *maddr;
 	pte_t *ptep, pte;
 	spinlock_t *ptl;
@@ -6568,12 +6577,13 @@ retry:
 	pte = ptep_get(ptep);
 	pte_unmap_unlock(ptep, ptl);
 
-	prot = pgprot_val(pte_pgprot(pte));
+	user_prot = pgprot_val(pte_pgprot(pte));
 	phys_addr = (resource_size_t)pte_pfn(pte) << PAGE_SHIFT;
 
 	if ((write & FOLL_WRITE) && !pte_write(pte))
 		return -EINVAL;
 
+	prot = arch_mk_kernel_prot(user_prot);
 	maddr = ioremap_prot(phys_addr, PAGE_ALIGN(len + offset), prot);
 	if (!maddr)
 		return -ENOMEM;

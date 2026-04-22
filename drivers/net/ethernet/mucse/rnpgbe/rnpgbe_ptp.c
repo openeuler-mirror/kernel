@@ -116,11 +116,6 @@ static void get_systime(void __iomem *ioaddr, u64 *systime)
 		*systime = ns;
 }
 
-static void config_mac_interrupt_enable(void __iomem *ioaddr, bool on)
-{
-	rnpgbe_wr_reg(ioaddr + RNP_MAC_INTERRUPT_ENABLE, on);
-}
-
 static int adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec, int add_sub,
 			  int gmac4)
 {
@@ -164,9 +159,8 @@ static int adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec, int add_sub,
 	return 0;
 }
 
-const struct rnpgbe_hwtimestamp mac_ptp = {
+static const struct rnpgbe_hwtimestamp mac_ptp = {
 	.config_hw_tstamping = config_hw_tstamping,
-	.config_mac_irq_enable = config_mac_interrupt_enable,
 	.init_systime = init_systime,
 	.config_sub_second_increment = config_sub_second_increment,
 	.config_addend = config_addend,
@@ -557,6 +551,7 @@ void rnpgbe_ptp_unregister(struct rnpgbe_adapter *pf)
 	if (pf->ptp_clock) {
 		ptp_clock_unregister(pf->ptp_clock);
 		pf->ptp_clock = NULL;
+		pf->hwts_ops = NULL;
 		pr_debug("Removed PTP HW clock successfully on %s\n",
 			 "rnpgbe_ptp");
 	}
@@ -640,6 +635,7 @@ void rnpgbe_ptp_get_rx_hwstamp(struct rnpgbe_adapter *adapter,
 {
 	u64 ns = 0;
 	u64 tsvalueh = 0, tsvaluel = 0;
+	__be32 value_h, value_l;
 	struct skb_shared_hwtstamps *hwtstamps = NULL;
 
 	if (!skb || !adapter->ptp_rx_en) {
@@ -649,7 +645,7 @@ void rnpgbe_ptp_get_rx_hwstamp(struct rnpgbe_adapter *adapter,
 		return;
 	}
 
-	if (likely(!(desc->wb.cmd & RNP_RXD_STAT_PTP)))
+	if (likely(!(desc->wb.cmd & cpu_to_le16(RNP_RXD_STAT_PTP))))
 		return;
 	hwtstamps = skb_hwtstamps(skb);
 	/* because of rx hwstamp store before the mac head
@@ -660,14 +656,14 @@ void rnpgbe_ptp_get_rx_hwstamp(struct rnpgbe_adapter *adapter,
 	/* low8bytes is null high8bytes is timestamp
 	 * high32bit is seconds low32bits is nanoseconds
 	 */
-	skb_copy_from_linear_data_offset(skb, RNP_RX_TIME_RESERVE, &tsvalueh,
+	skb_copy_from_linear_data_offset(skb, RNP_RX_TIME_RESERVE, &value_h,
 					 RNP_RX_SEC_SIZE);
 	skb_copy_from_linear_data_offset(skb,
 					 RNP_RX_TIME_RESERVE + RNP_RX_SEC_SIZE,
-					 &tsvaluel, RNP_RX_NANOSEC_SIZE);
+					 &value_l, RNP_RX_NANOSEC_SIZE);
 	skb_pull(skb, RNP_RX_HWTS_OFFSET);
-	tsvalueh = ntohl(tsvalueh);
-	tsvaluel = ntohl(tsvaluel);
+	tsvalueh = ntohl(value_h);
+	tsvaluel = ntohl(value_l);
 
 	ns = tsvaluel & RNP_RX_NSEC_MASK;
 	ns += ((tsvalueh & RNP_RX_SEC_MASK) * 1000000000ULL);

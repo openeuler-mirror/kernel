@@ -72,6 +72,7 @@ struct uburma_uobj_batch_attr {
 	bool is_batch;
 };
 
+#define UBURMA_JFC_TABLE_SIZE (64 * 1024U)
 struct uburma_device {
 	atomic_t refcnt;
 	struct completion comp; /* When refcnt becomes 0, it will wake up */
@@ -87,6 +88,8 @@ struct uburma_device {
 	struct uburma_uobj_batch_attr batch_attr;
 	struct mutex uburma_file_list_mutex; /* protect uburma_file_list */
 	struct list_head uburma_file_list;
+	uint64_t irq_thresh_count_table[UBURMA_JFC_TABLE_SIZE];
+	uint64_t irq_total_count_table[UBURMA_JFC_TABLE_SIZE];
 };
 
 struct uburma_umap_priv {

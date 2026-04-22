@@ -343,6 +343,8 @@ static int ipourma_stop(struct net_device *dev)
 	ipourma_napi_disable(dev);
 	clear_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags);
 	netif_stop_queue(dev);
+	if (!IS_ERR_OR_NULL(priv->tx_wq))
+		flush_workqueue(priv->tx_wq);
 	if (!IS_ERR_OR_NULL(priv->rx_wq))
 		flush_workqueue(priv->rx_wq);
 	ipourma_reset_rings(priv);

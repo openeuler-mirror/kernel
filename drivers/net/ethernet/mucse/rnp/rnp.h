@@ -217,13 +217,13 @@ struct vf_macvlans {
 struct rnp_tx_buffer {
 	struct rnp_tx_desc *next_to_watch;
 	unsigned long time_stamp;
-	struct sk_buff *skb;
-	unsigned int bytecount;
 	unsigned short gso_segs;
+	unsigned int bytecount;
 	bool gso_need_padding;
+	struct sk_buff *skb;
 
 	__be16 protocol;
-	__be16 priv_tags;
+	u16 priv_tags;
 	DEFINE_DMA_UNMAP_ADDR(dma);
 	DEFINE_DMA_UNMAP_LEN(len);
 	union {
@@ -354,6 +354,7 @@ struct rnp_ring {
 #define RNP_RING_IRQ_MISS_FIX ((u32)(1 << 10))
 #define RNP_RING_OUTER_VLAN_FIX ((u32)(1 << 11))
 #define RNP_RING_CHKSM_FIX ((u32)(1 << 12))
+#define RNP_RING_LOWER_ITR ((u32)(1 << 13))
 	u8 pfvfnum;
 
 	u16 count; /* amount of descriptors */
@@ -664,10 +665,12 @@ struct rnp_adapter {
 	/* only rx itr is Supported */
 	int usecendcount;
 	u16 rx_usecs;
+	u16 rx_usecs_usr_set;
 	u16 rx_frames;
 	u16 usecstocount;
 	u16 tx_frames;
 	u16 tx_usecs;
+	u16 tx_usecs_usr_set;
 	u32 pkt_rate_low;
 	u16 rx_usecs_low;
 	u32 pkt_rate_high;
@@ -787,6 +790,7 @@ struct rnp_adapter {
 #define RNP_PRIV_FLAG_SRIOV_VLAN_MODE BIT(23)
 #define RNP_PRIV_FLAG_REMAP_MODE BIT(24)
 #define RNP_PRIV_FLAG_LLDP_EN_STAT BIT(25)
+#define RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE BIT(26)
 
 #define PRIV_DATA_EN BIT(7)
 	int rss_func_mode;
@@ -984,8 +988,10 @@ struct rnp_adapter {
 
 	// struct rnp_info* info;
 	bool dma2_in_1pf;
-
 	char name[60];
+	void *csl_dma_buf;
+	dma_addr_t csl_dma_phy;
+	int csl_dma_size;
 };
 
 struct rnp_fdir_filter {
@@ -1141,7 +1147,7 @@ static inline int ignore_veb_vlan(struct rnp_adapter *adapter,
 				  union rnp_rx_desc *rx_desc)
 {
 	if (unlikely((adapter->flags & RNP_FLAG_SRIOV_ENABLED) &&
-		     (cpu_to_le16(rx_desc->wb.rev1) &
+		     (le16_to_cpu(rx_desc->wb.rev1) &
 		      VEB_VF_IGNORE_VLAN))) {
 		return 1;
 	}

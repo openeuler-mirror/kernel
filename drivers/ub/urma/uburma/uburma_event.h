@@ -15,6 +15,9 @@
 #include "ub/urma/ubcore_types.h"
 #include "uburma_uobj.h"
 
+extern uint32_t uburma_irq_handle_threshold;
+extern uint32_t uburma_irq_handle_threshold_enable;
+
 void uburma_init_jfe(struct uburma_jfe *jfe);
 void uburma_uninit_jfe(struct uburma_jfe *jfe);
 
@@ -40,6 +43,7 @@ void uburma_release_async_event(struct uburma_file *ufile,
 				struct list_head *event_list);
 int uburma_get_jfae(struct uburma_file *ufile);
 void uburma_put_jfae(struct uburma_file *ufile);
+void uburma_set_irq_handle_threshold(uint32_t threshold);
 
 struct uburma_notifier_uobj *
 uburma_get_notifier_uobj(int fd, struct uburma_file *ufile);

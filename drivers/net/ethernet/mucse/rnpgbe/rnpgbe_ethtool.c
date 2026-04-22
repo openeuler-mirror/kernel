@@ -9,6 +9,7 @@
 #include <linux/firmware.h>
 #include <linux/netdevice.h>
 #include <linux/ethtool.h>
+#include "rnpgbe_common.h"
 #include <linux/vmalloc.h>
 #include <linux/highmem.h>
 #include <linux/uaccess.h>
@@ -219,7 +220,7 @@ static bool rnpgbe_reg_test(struct rnpgbe_adapter *adapter, u64 *data)
 						      test->mask, test->write);
 				break;
 			case WRITE_NO_TEST:
-				wr32(hw, test->reg + (i * 0x40), test->write);
+				hw_wr32(hw, test->reg + (i * 0x40), test->write);
 				break;
 			case TABLE32_TEST:
 				b = reg_pattern_test(adapter, data,
@@ -277,11 +278,12 @@ void rnpgbe_diag_test(struct net_device *netdev, struct ethtool_test *eth_test,
 				if (adapter->vfinfo[i].clear_to_send) {
 					netdev_warn(netdev, "%s",
 						"offline diagnostic is not supported when VFs are present\n");
-					data[0] = 1;
-					data[1] = 1;
-					data[2] = 1;
-					data[3] = 1;
-					eth_test->flags |= ETH_TEST_FL_FAILED;
+					data[0] = 0;
+					data[1] = 0;
+					data[2] = 0;
+					data[3] = 0;
+					if (rnpgbe_link_test(adapter, &data[4]))
+						eth_test->flags |= ETH_TEST_FL_FAILED;
 					clear_bit(__RNP_TESTING,
 						  &adapter->state);
 					goto skip_ol_tests;
@@ -396,12 +398,10 @@ int rnpgbe_get_ts_info(struct net_device *dev, struct ethtool_ts_info *info)
 	/*For we just set it as pf0 */
 	if (!(adapter->flags2 & RNP_FLAG2_PTP_ENABLED))
 		return ethtool_op_get_ts_info(dev, info);
-
 	if (adapter->ptp_clock)
 		info->phc_index = ptp_clock_index(adapter->ptp_clock);
 	else
 		info->phc_index = -1;
-
 	info->so_timestamping =
 		SOF_TIMESTAMPING_TX_HARDWARE | SOF_TIMESTAMPING_RX_HARDWARE |
 		SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_TX_SOFTWARE |
@@ -767,9 +767,14 @@ int rnpgbe_set_ringparam(struct net_device *netdev,
 		for (i = 0; i < adapter->num_rx_queues; i++)
 			adapter->rx_ring[i]->reset_count = new_rx_count;
 	}
-	if (hw->ops.driver_status)
+
+	/* if now we are in force mode, never need force, if not force it */
+	if (!(adapter->priv_flags & RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE)) {
+		hw->ops.set_mac_rx(hw, false);
 		hw->ops.driver_status(hw, true,
-				      rnpgbe_driver_force_control_mac);
+				      rnpgbe_driver_force_control_phy);
+	}
+
 	rnpgbe_down(adapter);
 	/* Setup new Tx resources and free the old Tx resources in that order.
 	 * We can then assign the new resources to the rings via a memcpy.
@@ -829,9 +834,10 @@ int rnpgbe_set_ringparam(struct net_device *netdev,
 err_setup:
 	rnpgbe_up(adapter);
 	vfree(temp_ring);
-	if (hw->ops.driver_status)
+	if (!(adapter->priv_flags & RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE)) {
 		hw->ops.driver_status(hw, false,
-				      rnpgbe_driver_force_control_mac);
+				      rnpgbe_driver_force_control_phy);
+	}
 clear_reset:
 	clear_bit(__RNP_RESETTING, &adapter->state);
 	return err;
@@ -1132,7 +1138,7 @@ static int rnpgbe_get_ethtool_fdir_entry(struct rnpgbe_adapter *adapter,
 		fsp->flow_type = ETHER_FLOW;
 		/* support proto and mask only in this mode */
 		fsp->h_u.ether_spec.h_proto = rule->filter.layer2_formate.proto;
-		fsp->m_u.ether_spec.h_proto = 0xffff;
+		fsp->m_u.ether_spec.h_proto = htons(0xffff);
 		break;
 	default:
 		return -EINVAL;
@@ -1148,10 +1154,10 @@ static int rnpgbe_get_ethtool_fdir_entry(struct rnpgbe_adapter *adapter,
 				rule->filter.formatted.src_ip[0];
 			fsp->h_u.tcp_ip4_spec.ip4dst =
 				rule->filter.formatted.dst_ip[0];
-			fsp->m_u.tcp_ip4_spec.psrc = 0xffff;
-			fsp->m_u.tcp_ip4_spec.pdst = 0xffff;
-			fsp->m_u.tcp_ip4_spec.ip4src = 0xffffffff;
-			fsp->m_u.tcp_ip4_spec.ip4dst = 0xffffffff;
+			fsp->m_u.tcp_ip4_spec.psrc = htons(0xffff);
+			fsp->m_u.tcp_ip4_spec.pdst = htons(0xffff);
+			fsp->m_u.tcp_ip4_spec.ip4src = htonl(0xffffffff);
+			fsp->m_u.tcp_ip4_spec.ip4dst = htonl(0xffffffff);
 		} else {
 			fsp->h_u.tcp_ip4_spec.psrc =
 				rule->filter.formatted.src_port &
@@ -1391,12 +1397,12 @@ static int rnpgbe_flowspec_to_flow_type(struct rnpgbe_adapter *adapter,
 				ret = 0;
 			}
 			if (fsp->h_u.usr_ip4_spec.ip4src != 0 &&
-			    fsp->m_u.usr_ip4_spec.ip4src != 0xffffffff) {
+			    fsp->m_u.usr_ip4_spec.ip4src != htonl(0xffffffff)) {
 				e_err(drv, "ip src mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.usr_ip4_spec.ip4dst != 0 &&
-			    fsp->m_u.usr_ip4_spec.ip4dst != 0xffffffff) {
+			    fsp->m_u.usr_ip4_spec.ip4dst != htonl(0xffffffff)) {
 				e_err(drv, "ip dst mask error\n");
 				ret = 0;
 			}
@@ -1425,22 +1431,22 @@ static int rnpgbe_flowspec_to_flow_type(struct rnpgbe_adapter *adapter,
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.ip4src != 0 &&
-			    fsp->m_u.tcp_ip4_spec.ip4src != 0xffffffff) {
+			    fsp->m_u.tcp_ip4_spec.ip4src != htonl(0xffffffff)) {
 				e_err(drv, "src mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.ip4dst != 0 &&
-			    fsp->m_u.tcp_ip4_spec.ip4dst != 0xffffffff) {
+			    fsp->m_u.tcp_ip4_spec.ip4dst != htonl(0xffffffff)) {
 				e_err(drv, "dst mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.psrc != 0 &&
-			    fsp->m_u.tcp_ip4_spec.psrc != 0xffff) {
+			    fsp->m_u.tcp_ip4_spec.psrc != htons(0xffff)) {
 				e_err(drv, "src port mask error\n");
 				ret = 0;
 			}
 			if (fsp->h_u.tcp_ip4_spec.pdst != 0 &&
-			    fsp->m_u.tcp_ip4_spec.pdst != 0xffff) {
+			    fsp->m_u.tcp_ip4_spec.pdst != htons(0xffff)) {
 				e_err(drv, "src port mask error\n");
 				ret = 0;
 			}
@@ -1654,9 +1660,9 @@ static int rnpgbe_add_ethtool_fdir_entry(struct rnpgbe_adapter *adapter,
 		input->filter.formatted.dst_ip_mask[0] =
 			fsp->m_u.usr_ip4_spec.ip4dst;
 		input->filter.formatted.src_port = 0;
-		input->filter.formatted.src_port_mask = 0xffff;
+		input->filter.formatted.src_port_mask = htons(0xffff);
 		input->filter.formatted.dst_port = 0;
-		input->filter.formatted.dst_port_mask = 0xffff;
+		input->filter.formatted.dst_port_mask = htons(0xffff);
 		input->filter.formatted.inner_mac[0] =
 			fsp->h_u.usr_ip4_spec.proto;
 		input->filter.formatted.inner_mac_mask[0] =
@@ -1792,13 +1798,51 @@ int rnpgbe_get_rxfh(struct net_device *netdev, u32 *indir, u8 *key, u8 *hfunc)
 	return 0;
 }
 
-enum {
-	PART_FW,
-	PART_CFG,
-	PART_MACSN,
-	PART_PCSPHY,
-	PART_PXE,
-};
+static int check_fw_type(struct rnpgbe_hw *hw, const u8 *data, int len)
+{
+	u32 device_id;
+	int ret = 0;
+	u32 crc32_goal;
+	u32 crc32 = 0xffffffff;
+	struct crc32_info *info = (struct crc32_info *)(data + CRC_OFFSET);
+
+	if (info->magic == CRC32_MAGIC) {
+		crc32_goal = info->crc32;
+		info->crc32 = 0;
+		info->magic = 0;
+
+		crc32 = crc32_le(crc32, data, len);
+		if (crc32 != crc32_goal)
+			return -1;
+		info->magic = CRC32_MAGIC;
+		info->crc32 = crc32_goal;
+	}
+
+	device_id = *((u16 *)data + 30);
+
+	/* if no device_id no check */
+	if (device_id == 0 || device_id == 0xffff)
+		return 0;
+
+	switch (hw->hw_type) {
+	case rnpgbe_hw_n500:
+		if (device_id != 0x8308)
+			ret = 1;
+	break;
+	case rnpgbe_hw_n210:
+		if (device_id != 0x8208)
+			ret = 1;
+	break;
+	case rnpgbe_hw_n210L:
+		if (device_id != 0x820a)
+			ret = 1;
+	break;
+	default:
+		ret = 1;
+	}
+
+	return ret;
+}
 
 static int rnpgbe_flash_firmware(struct rnpgbe_adapter *adapter, int region,
 				 const u8 *data, int bytes)
@@ -1809,26 +1853,14 @@ static int rnpgbe_flash_firmware(struct rnpgbe_adapter *adapter, int region,
 	case PART_FW:
 		if (*((u32 *)(data)) != 0xa55aa55a)
 			return -EINVAL;
-		break;
-	case PART_CFG:
-		if (*((u32 *)(data)) != 0x00010cf9)
-			return -EINVAL;
-		break;
-	case PART_MACSN:
-		break;
-	case PART_PCSPHY:
-		if (*((u16 *)(data)) != 0x081d)
-			return -EINVAL;
-		break;
-	case PART_PXE:
-		if (*((u16 *)(data)) != 0xaa55)
+		if (check_fw_type(hw, data, bytes))
 			return -EINVAL;
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	return rnp500_fw_update(hw, region, data, bytes);
+	return rnpgbe_fw_update(hw, region, data, bytes);
 }
 
 static int rnpgbe_flash_firmware_from_file(struct net_device *dev,

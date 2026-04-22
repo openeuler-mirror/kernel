@@ -26,6 +26,7 @@
 
 extern struct rnpgbe_info rnpgbe_n500_info;
 extern struct rnpgbe_info rnpgbe_n210_info;
+extern struct rnpgbe_info rnpgbe_n210L_info;
 /* common prefix used by pr_<> macros */
 #undef pr_fmt
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -70,6 +71,7 @@ extern struct rnpgbe_info rnpgbe_n210_info;
 #define ACTION_TO_MPE (130)
 #define MPE_PORT (10)
 #define AUTO_ALL_MODES 0
+#define CHECK_DATA (0xaabc)
 /* TX/RX descriptor defines */
 #ifdef FEITENG
 #define RNP_DEFAULT_TXD 4096
@@ -94,10 +96,8 @@ extern struct rnpgbe_info rnpgbe_n210_info;
 #define RNP_MIN_FCRTH 0x600
 #define RNP_MAX_FCRTH 0x7FFF0
 #define RNP_DEFAULT_FCPAUSE 0xFFFF
-#define RNP10_DEFAULT_HIGH_WATER 0x320
-#define RNP10_DEFAULT_LOW_WATER 0x270
-#define RNP500_DEFAULT_HIGH_WATER 400
-#define RNP500_DEFAULT_LOW_WATER 256
+#define RNPGBE_DEFAULT_HIGH_WATER 400
+#define RNPGBE_DEFAULT_LOW_WATER 256
 #define RNP_MIN_FCPAUSE 0
 #define RNP_MAX_FCPAUSE 0xFFFF
 
@@ -196,6 +196,7 @@ struct vf_data_storage {
 	u16 default_vf_vlan_id;
 	u16 vlans_enabled;
 	bool clear_to_send;
+	bool get_mtu_done;
 	bool pf_set_mac;
 	u16 pf_vlan; /* When set, guest VLAN config not allowed. */
 	u16 vf_vlan; // vf just can set 1 vlan
@@ -242,7 +243,7 @@ struct rnpgbe_tx_buffer {
 	bool gso_need_padding;
 
 	__be16 protocol;
-	__be16 priv_tags;
+	int priv_tags;
 	DEFINE_DMA_UNMAP_ADDR(dma);
 	DEFINE_DMA_UNMAP_LEN(len);
 	union {
@@ -318,6 +319,7 @@ struct rnpgbe_rx_queue_stats {
 	u64 rx_equal_count;
 	u64 rx_clean_times;
 	u64 rx_clean_count;
+	u64 rx_resync;
 };
 
 enum rnpgbe_ring_state_t {
@@ -329,6 +331,14 @@ enum rnpgbe_ring_state_t {
 	__RNP_HANG_CHECK_ARMED,
 	__RNP_RX_CSUM_UDP_ZERO_ERR,
 	__RNP_RX_FCOE,
+};
+
+enum {
+	PART_FW,
+	PART_CFG,
+	PART_MACSN,
+	PART_PCSPHY,
+	PART_PXE,
 };
 
 #define ring_uses_build_skb(ring)                                              \
@@ -372,6 +382,7 @@ struct rnpgbe_ring {
 #define RNP_RING_IRQ_MISS_FIX ((u32)(1 << 10))
 #define RNP_RING_OUTER_VLAN_FIX ((u32)(1 << 11))
 #define RNP_RING_CHKSM_FIX ((u32)(1 << 12))
+#define RNP_RING_LOWER_ITR ((u32)(1 << 13))
 	u8 pfvfnum;
 
 	u16 count; /* amount of descriptors */
@@ -453,6 +464,9 @@ static inline unsigned int rnpgbe_rx_pg_order(struct rnpgbe_ring *ring)
 }
 
 #define rnpgbe_rx_pg_size(_ring) (PAGE_SIZE << rnpgbe_rx_pg_order(_ring))
+#define DEFAULT_ADV (RNP_LINK_SPEED_1GB_FULL | RNP_LINK_SPEED_100_FULL | \
+	RNP_LINK_SPEED_10_FULL | RNP_LINK_SPEED_10_HALF | \
+	RNP_LINK_SPEED_100_HALF)
 
 struct rnpgbe_ring_container {
 	struct rnpgbe_ring *ring; /* pointer to linked list of rings */
@@ -542,8 +556,8 @@ struct hwmon_attr {
 struct hwmon_buff {
 	struct attribute_group group;
 	const struct attribute_group *groups[2];
-	struct attribute *attrs[RNP_MAX_SENSORS * 4 + 1];
-	struct hwmon_attr hwmon_list[RNP_MAX_SENSORS * 4];
+	struct attribute *attrs[RNPGBE_MAX_SENSORS * 4 + 1];
+	struct hwmon_attr hwmon_list[RNPGBE_MAX_SENSORS * 4];
 	unsigned int n_hwmon;
 };
 #endif /* RNPM_HWMON */
@@ -574,7 +588,7 @@ static inline u16 rnpgbe_desc_unused_rx(struct rnpgbe_ring *ring)
 	u16 ntc = ring->next_to_clean;
 	u16 ntu = ring->next_to_use;
 
-	return ((ntc > ntu) ? 0 : ring->count) + ntc - ntu - 1;
+	return ((ntc > ntu) ? 0 : ring->count) + ntc - ntu - 16;
 }
 
 #define RNP_RX_DESC(R, i) (&(((union rnpgbe_rx_desc *)((R)->desc))[i]))
@@ -583,7 +597,7 @@ static inline u16 rnpgbe_desc_unused_rx(struct rnpgbe_ring *ring)
 
 #define RNP_MAX_JUMBO_FRAME_SIZE 9590 /* Maximum Supported Size 9.5KB */
 #define RNP_MIN_MTU 68
-#define RNP500_MAX_JUMBO_FRAME_SIZE 9722 /* Maximum Supported Size 9728 */
+#define RNPGBE_MAX_JUMBO_FRAME_SIZE 9722 /* Maximum Supported Size 9728 */
 
 #define OTHER_VECTOR 1
 #define NON_Q_VECTORS (OTHER_VECTOR)
@@ -777,6 +791,7 @@ struct rnpgbe_adapter {
 #define RNP_FLAG2_RESET_PF ((u32)(1 << 15))
 #define RNP_FLAG2_CHKSM_FIX ((u32)(1 << 16))
 #define RNP_FLAG2_INSMOD ((u32)(1 << 17))
+#define RNP_FLAG2_NO_NET_REG ((u32)(1 << 18))
 
 	u32 priv_flags;
 #define RNP_PRIV_FLAG_MAC_LOOPBACK BIT(0)
@@ -971,6 +986,7 @@ struct rnpgbe_adapter {
 #ifdef RNP_SYSFS
 #ifdef RNPGBE_HWMON
 	struct hwmon_buff *rnpgbe_hwmon_buff;
+	struct device *hwmon_dev;
 #endif /* RNPGBE_HWMON */
 #endif /* RNPM_SYSFS */
 #ifdef CONFIG_DEBUG_FS
@@ -1003,6 +1019,14 @@ struct rnpgbe_fdir_filter {
 	u32 vf_num;
 	u64 action;
 };
+
+struct crc32_info {
+	u32 magic;
+	u32 crc32;
+};
+
+#define CRC_OFFSET (504)
+#define CRC32_MAGIC (0x43524332)
 
 enum rnpgbe_state_t {
 	__RNP_TESTING,
@@ -1039,11 +1063,13 @@ enum rnpgbe_boards {
 	board_n20,
 	board_n500,
 	board_n210,
+	board_n210L,
 };
 
 extern char rnpgbe_driver_name[];
 extern const char rnpgbe_driver_version[];
 
+void rnpgbe_reinit_locked(struct rnpgbe_adapter *adapter);
 extern void rnpgbe_up(struct rnpgbe_adapter *adapter);
 extern void rnpgbe_down(struct rnpgbe_adapter *adapter);
 extern void rnpgbe_reset(struct rnpgbe_adapter *adapter);
@@ -1061,8 +1087,6 @@ extern void rnpgbe_disable_rx_queue(struct rnpgbe_adapter *adapter,
 				    struct rnpgbe_ring *ring);
 extern void rnpgbe_update_stats(struct rnpgbe_adapter *adapter);
 extern int rnpgbe_init_interrupt_scheme(struct rnpgbe_adapter *adapter);
-extern int rnpgbe_set_interrupt_capability(struct rnpgbe_adapter *adapter);
-extern void rnpgbe_reset_interrupt_capability(struct rnpgbe_adapter *adapter);
 extern int rnpgbe_wol_supported(struct rnpgbe_adapter *adapter, u16 device_id);
 extern void rnpgbe_clear_interrupt_scheme(struct rnpgbe_adapter *adapter);
 extern netdev_tx_t rnpgbe_xmit_frame_ring(struct sk_buff *sk_buff,
@@ -1071,7 +1095,6 @@ extern netdev_tx_t rnpgbe_xmit_frame_ring(struct sk_buff *sk_buff,
 extern void
 rnpgbe_unmap_and_free_tx_resource(struct rnpgbe_ring *ring,
 				  struct rnpgbe_tx_buffer *tx_buffer_info);
-extern void rnpgbe_alloc_rx_buffers(struct rnpgbe_ring *ring, u16 count);
 extern int rnpgbe_poll(struct napi_struct *napi, int budget);
 extern int ethtool_ioctl(struct ifreq *ifr);
 extern s32 rnpgbe_reinit_fdir_tables_n10(struct rnpgbe_hw *hw);
@@ -1102,9 +1125,6 @@ extern int rnpgbe_setup_tc(struct net_device *dev, u8 tc);
 void rnpgbe_check_options(struct rnpgbe_adapter *adapter);
 extern int rnpgbe_open(struct net_device *netdev);
 extern int rnpgbe_close(struct net_device *netdev);
-void rnpgbe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring, u32 mss_len_vf_num,
-			u32 inner_vlan_tunnel_len, int ignore_vlan,
-			bool crc_pad);
 void rnpgbe_maybe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring,
 			      struct rnpgbe_tx_buffer *first, u32 type_tucmd);
 
@@ -1160,7 +1180,7 @@ static inline int ignore_veb_vlan(struct rnpgbe_adapter *adapter,
 				  union rnpgbe_rx_desc *rx_desc)
 {
 	if (unlikely((adapter->flags & RNP_FLAG_SRIOV_ENABLED) &&
-		     (cpu_to_le16(rx_desc->wb.rev1) & VEB_VF_IGNORE_VLAN))) {
+		     (rx_desc->wb.rev1 & cpu_to_le16(VEB_VF_IGNORE_VLAN)))) {
 		return 1;
 	}
 	return 0;
@@ -1198,12 +1218,19 @@ static inline bool rnpgbe_removed(void __iomem *addr)
 	return unlikely(!addr);
 }
 
+static inline struct device *pci_dev_to_dev(struct pci_dev *pdev)
+{
+	return (struct device *)pdev;
+}
+
 #define RNP_REMOVED(a) rnpgbe_removed(a)
 int rnpgbe_fw_msg_handler(struct rnpgbe_adapter *adapter);
-int rnp500_fw_update(struct rnpgbe_hw *hw, int partition, const u8 *fw_bin,
+int rnpgbe_fw_update(struct rnpgbe_hw *hw, int partition, const u8 *fw_bin,
 		     int bytes);
 int rnpgbe_fw_update(struct rnpgbe_hw *hw, int partition, const u8 *fw_bin,
 		     int bytes);
+void rnpgbe_service_event_schedule(struct rnpgbe_adapter *adapter);
 int rsp_hal_sfc_flash_erase(struct rnpgbe_hw *hw, u32 size);
+int rsp_hal_sfc_write_protect(struct rnpgbe_hw *hw, u32 value);
 
 #endif /* _RNPGBE_H_ */

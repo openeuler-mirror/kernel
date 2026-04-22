@@ -540,7 +540,7 @@ static int cdma_get_async_event(struct cdma_jfae *jfae, struct file *filp,
 	} else {
 		INIT_LIST_HEAD(&event_list);
 		ret = cdma_wait_event(&jfae->jfe, filp->f_flags & O_NONBLOCK, 1,
-				&event_cnt, &event_list);
+				      &event_cnt, &event_list);
 		if (ret < 0) {
 			pr_err("wait event failed, ret = %d.\n", ret);
 			return ret;

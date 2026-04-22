@@ -313,7 +313,6 @@ static int udma_get_jfc_buf_ex(struct udma_dev *dev,
 			       struct udma_jfc_cfg_ex *cfg_ex)
 {
 	uint32_t size;
-	int ret = 0;
 
 	if (!jfc->lock_free)
 		spin_lock_init(&jfc->lock);
@@ -335,13 +334,7 @@ static int udma_get_jfc_buf_ex(struct udma_dev *dev,
 
 	jfc->buf.kva = (void *)(uintptr_t)jfc->buf.addr;
 
-	ret = udma_alloc_sw_db(dev, &jfc->db, UDMA_JFC_TYPE_DB);
-	if (ret) {
-		dev_err(dev->dev, "failed to alloc sw db for jfc(%u).\n", jfc->jfcn);
-		return -ENOMEM;
-	}
-
-	return ret;
+	return 0;
 }
 
 static struct ubcore_jfc *udma_create_jfc_ex(struct ubcore_device *ubcore_dev,
@@ -392,7 +385,7 @@ static struct ubcore_jfc *udma_create_jfc_ex(struct ubcore_device *ubcore_dev,
 
 	ret = udma_post_create_jfc_mbox(dev, jfc);
 	if (ret)
-		goto err_alloc_cqc;
+		goto err_get_jfc_buf;
 
 	refcount_set(&jfc->event_refcount, 1);
 
@@ -403,8 +396,6 @@ static struct ubcore_jfc *udma_create_jfc_ex(struct ubcore_device *ubcore_dev,
 
 	return &jfc->base;
 
-err_alloc_cqc:
-	udma_free_sw_db(dev, &jfc->db);
 err_get_jfc_buf:
 	xa_lock_irqsave(&dev->jfc_table.xa, flags_erase);
 	__xa_erase(&dev->jfc_table.xa, jfc->jfcn);

@@ -4838,6 +4838,47 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	return 0;
 }
 
+static void fill_jfce_cnt(struct uburma_device *ubu_dev, struct uburma_cmd_get_jfce_cnt *arg)
+{
+	uint32_t threshold;
+	uint32_t jfc_idx = 0;
+	uint64_t jfce_total_cnt = 0, jfce_thresh_cnt = 0;
+
+	threshold = arg->in.threshold;
+	if (threshold != 0)
+		uburma_set_irq_handle_threshold(threshold);
+
+	for (; jfc_idx < UBURMA_JFC_TABLE_SIZE; jfc_idx++) {
+		jfce_total_cnt += ubu_dev->irq_total_count_table[jfc_idx];
+		jfce_thresh_cnt += ubu_dev->irq_thresh_count_table[jfc_idx];
+	}
+
+	arg->out.jfce_total_cnt = jfce_total_cnt;
+	arg->out.jfce_thresh_cnt = jfce_thresh_cnt;
+}
+
+static int uburma_cmd_get_jfce_cnt(struct ubcore_device *ubc_dev,
+	struct uburma_file *file, struct uburma_cmd_hdr *hdr)
+{
+	struct uburma_cmd_get_jfce_cnt arg = {0};
+	struct uburma_device *ubu_dev = NULL;
+	int ret;
+
+	ret = uburma_tlv_parse(hdr, &arg);
+	if (ret != 0)
+		return ret;
+
+	ubu_dev = file->ubu_dev;
+	if (ubu_dev == NULL) {
+		uburma_log_err("Failed to find uburma_device.\n");
+		return -ENODEV;
+	}
+	fill_jfce_cnt(ubu_dev, &arg);
+
+	ret = uburma_tlv_append(hdr, &arg);
+	return ret;
+}
+
 typedef int (*uburma_cmd_handler)(struct ubcore_device *ubc_dev,
 				  struct uburma_file *file,
 				  struct uburma_cmd_hdr *hdr);
@@ -4924,6 +4965,7 @@ static uburma_cmd_handler g_uburma_cmd_handlers[] = {
 	[UBURMA_CMD_GET_JETTY_OPT] = uburma_cmd_get_jetty_opt,
 	[UBURMA_CMD_ACTIVE_JETTY] = uburma_cmd_active_jetty,
 	[UBURMA_CMD_DEACTIVE_JETTY] = uburma_cmd_deactive_jetty,
+	[UBURMA_CMD_GET_JFCE_CNT] = uburma_cmd_get_jfce_cnt,
 };
 
 static int uburma_cmd_parse(struct ubcore_device *ubc_dev,

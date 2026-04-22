@@ -119,11 +119,9 @@ int find_linked_port(union ubcore_eid *dst_eid,
 			}
 		}
 	} else if (src_node->type == UBAGG_TOPO_TYPE_CLOS) {
-		for (uint32_t i = 0; i < IODIE_NUM; i++) {
-			for (uint32_t j = 0; j < PORT_NUM; j++) {
-				// Self connection: map to same port
-				connected[i][j] = true;
-			}
+		for (uint32_t i = 0; i < UBAGG_DEV_MAX_NUM; i++) {
+			// Self connection: map to same port
+			connected[i][i] = true;
 		}
 	} else {
 		ubagg_log_err("Unknown topology type: %u\n", src_node->type);

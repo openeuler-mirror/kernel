@@ -24,6 +24,7 @@
 #include <linux/mmu_notifier.h>
 #include <linux/uaccess.h>
 #include <linux/userfaultfd_k.h>
+#include <linux/userfaultfd_k_ext.h>
 #include <linux/mempolicy.h>
 #include <linux/share_pool.h>
 #include <linux/userswap.h>
@@ -161,6 +162,7 @@ static int move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 		struct vm_area_struct *new_vma, pmd_t *new_pmd,
 		unsigned long new_addr, bool need_rmap_locks)
 {
+	bool need_clear_uffd_wp = vma_has_uffd_without_event_remap(vma);
 	struct mm_struct *mm = vma->vm_mm;
 	pte_t *old_ptep, *new_ptep;
 	pte_t old_pte, pte;
@@ -239,7 +241,18 @@ static int move_ptes(struct vm_area_struct *vma, pmd_t *old_pmd,
 		pte = get_and_clear_full_ptes(mm, old_addr, old_ptep, nr_ptes, 0);
 		pte = move_pte(pte, new_vma->vm_page_prot, old_addr, new_addr);
 		pte = move_soft_dirty_pte(pte);
-		set_ptes(mm, new_addr, new_ptep, pte, nr_ptes);
+
+		if (need_clear_uffd_wp && pte_marker_uffd_wp(pte))
+			pte_clear(mm, new_addr, new_ptep);
+		else {
+			if (need_clear_uffd_wp) {
+				if (pte_present(pte))
+					pte = pte_clear_uffd_wp(pte);
+				else if (is_swap_pte(pte))
+					pte = pte_swp_clear_uffd_wp(pte);
+			}
+			set_ptes(mm, new_addr, new_ptep, pte, nr_ptes);
+		}
 	}
 
 	arch_leave_lazy_mmu_mode();
@@ -264,9 +277,29 @@ static inline bool arch_supports_page_table_move(void)
 }
 #endif
 
+static inline bool uffd_supports_page_table_move(struct vm_area_struct *vma,
+						struct vm_area_struct *new_vma)
+{
+	/*
+	 * If we are moving a VMA that has uffd-wp registered but with
+	 * remap events disabled (new VMA will not be registered with uffd), we
+	 * need to ensure that the uffd-wp state is cleared from all pgtables.
+	 * This means recursing into lower page tables in move_page_tables().
+	 *
+	 * We might get called with VMAs reversed when recovering from a
+	 * failed page table move. In that case, the
+	 * "old"-but-actually-"originally new" VMA during recovery will not have
+	 * a uffd context. Recursing into lower page tables during the original
+	 * move but not during the recovery move will cause trouble, because we
+	 * run into already-existing page tables. So check both VMAs.
+	 */
+	return !vma_has_uffd_without_event_remap(vma) &&
+	       !vma_has_uffd_without_event_remap(new_vma);
+}
+
 #ifdef CONFIG_HAVE_MOVE_PMD
-static bool move_normal_pmd(struct vm_area_struct *vma, unsigned long old_addr,
-		  unsigned long new_addr, pmd_t *old_pmd, pmd_t *new_pmd)
+static bool move_normal_pmd(struct vm_area_struct *vma, struct vm_area_struct *new_vma,
+		  unsigned long old_addr, unsigned long new_addr, pmd_t *old_pmd, pmd_t *new_pmd)
 {
 	spinlock_t *old_ptl, *new_ptl;
 	struct mm_struct *mm = vma->vm_mm;
@@ -274,6 +307,8 @@ static bool move_normal_pmd(struct vm_area_struct *vma, unsigned long old_addr,
 	pmd_t pmd;
 
 	if (!arch_supports_page_table_move())
+		return false;
+	if (!uffd_supports_page_table_move(vma, new_vma))
 		return false;
 	/*
 	 * The destination pmd shouldn't be established, free_pgtables()
@@ -331,23 +366,24 @@ out_unlock:
 	return res;
 }
 #else
-static inline bool move_normal_pmd(struct vm_area_struct *vma,
-		unsigned long old_addr, unsigned long new_addr, pmd_t *old_pmd,
-		pmd_t *new_pmd)
+static inline bool move_normal_pmd(struct vm_area_struct *vma, struct vm_area_struct *new_vma,
+		unsigned long old_addr, unsigned long new_addr, pmd_t *old_pmd, pmd_t *new_pmd)
 {
 	return false;
 }
 #endif
 
 #if CONFIG_PGTABLE_LEVELS > 2 && defined(CONFIG_HAVE_MOVE_PUD)
-static bool move_normal_pud(struct vm_area_struct *vma, unsigned long old_addr,
-		  unsigned long new_addr, pud_t *old_pud, pud_t *new_pud)
+static bool move_normal_pud(struct vm_area_struct *vma, struct vm_area_struct *new_vma,
+		  unsigned long old_addr, unsigned long new_addr, pud_t *old_pud, pud_t *new_pud)
 {
 	spinlock_t *old_ptl, *new_ptl;
 	struct mm_struct *mm = vma->vm_mm;
 	pud_t pud;
 
 	if (!arch_supports_page_table_move())
+		return false;
+	if (!uffd_supports_page_table_move(vma, new_vma))
 		return false;
 	/*
 	 * The destination pud shouldn't be established, free_pgtables()
@@ -380,9 +416,8 @@ static bool move_normal_pud(struct vm_area_struct *vma, unsigned long old_addr,
 	return true;
 }
 #else
-static inline bool move_normal_pud(struct vm_area_struct *vma,
-		unsigned long old_addr, unsigned long new_addr, pud_t *old_pud,
-		pud_t *new_pud)
+static inline bool move_normal_pud(struct vm_area_struct *vma, struct vm_area_struct *new_vma,
+		unsigned long old_addr, unsigned long new_addr, pud_t *old_pud, pud_t *new_pud)
 {
 	return false;
 }
@@ -488,8 +523,9 @@ static __always_inline unsigned long get_extent(enum pgt_entry entry,
  * pgt_entry. Returns true if the move was successful, else false.
  */
 static bool move_pgt_entry(enum pgt_entry entry, struct vm_area_struct *vma,
-			unsigned long old_addr, unsigned long new_addr,
-			void *old_entry, void *new_entry, bool need_rmap_locks)
+			struct vm_area_struct *new_vma, unsigned long old_addr,
+			unsigned long new_addr, void *old_entry, void *new_entry,
+			bool need_rmap_locks)
 {
 	bool moved = false;
 
@@ -499,11 +535,11 @@ static bool move_pgt_entry(enum pgt_entry entry, struct vm_area_struct *vma,
 
 	switch (entry) {
 	case NORMAL_PMD:
-		moved = move_normal_pmd(vma, old_addr, new_addr, old_entry,
+		moved = move_normal_pmd(vma, new_vma, old_addr, new_addr, old_entry,
 					new_entry);
 		break;
 	case NORMAL_PUD:
-		moved = move_normal_pud(vma, old_addr, new_addr, old_entry,
+		moved = move_normal_pud(vma, new_vma, old_addr, new_addr, old_entry,
 					new_entry);
 		break;
 	case HPAGE_PMD:
@@ -568,14 +604,14 @@ unsigned long move_page_tables(struct vm_area_struct *vma,
 			break;
 		if (pud_trans_huge(*old_pud) || pud_devmap(*old_pud)) {
 			if (extent == HPAGE_PUD_SIZE) {
-				move_pgt_entry(HPAGE_PUD, vma, old_addr, new_addr,
+				move_pgt_entry(HPAGE_PUD, vma, new_vma, old_addr, new_addr,
 					       old_pud, new_pud, need_rmap_locks);
 				/* We ignore and continue on error? */
 				continue;
 			}
 		} else if (IS_ENABLED(CONFIG_HAVE_MOVE_PUD) && extent == PUD_SIZE) {
 
-			if (move_pgt_entry(NORMAL_PUD, vma, old_addr, new_addr,
+			if (move_pgt_entry(NORMAL_PUD, vma, new_vma, old_addr, new_addr,
 					   old_pud, new_pud, true))
 				continue;
 		}
@@ -591,7 +627,7 @@ again:
 		if (is_swap_pmd(*old_pmd) || pmd_trans_huge(*old_pmd) ||
 		    pmd_devmap(*old_pmd)) {
 			if (extent == HPAGE_PMD_SIZE &&
-			    move_pgt_entry(HPAGE_PMD, vma, old_addr, new_addr,
+			    move_pgt_entry(HPAGE_PMD, vma, new_vma, old_addr, new_addr,
 					   old_pmd, new_pmd, need_rmap_locks))
 				continue;
 			split_huge_pmd(vma, old_pmd, old_addr);
@@ -601,7 +637,7 @@ again:
 			 * If the extent is PMD-sized, try to speed the move by
 			 * moving at the PMD level if possible.
 			 */
-			if (move_pgt_entry(NORMAL_PMD, vma, old_addr, new_addr,
+			if (move_pgt_entry(NORMAL_PMD, vma, new_vma, old_addr, new_addr,
 					   old_pmd, new_pmd, true))
 				continue;
 		}

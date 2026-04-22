@@ -63,6 +63,18 @@ static int rsp_hal_sfc_flash_erase_sector_internal(u8 __iomem *hw_addr,
 	return HAL_OK;
 }
 
+int rsp_hal_sfc_write_protect(struct rnpgbe_hw *hw, u32 value)
+{
+	rsp_hal_sfc_flash_write_enable(hw->hw_addr);
+
+	iowrite32(CMD_CYCLE(8), (hw->hw_addr + 0x10));
+	iowrite32(WR_DATA_CYCLE(8), (hw->hw_addr + 0x14));
+	iowrite32((value << 24), (hw->hw_addr + 0x04));
+	rsp_hal_sfc_command(hw->hw_addr, CMD_WRITE_STATUS);
+
+	return 0;
+}
+
 int rsp_hal_sfc_flash_erase(struct rnpgbe_hw *hw, u32 size)
 {
 	u32 addr = SFC_MEM_BASE;

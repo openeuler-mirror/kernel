@@ -195,6 +195,7 @@ static int __init set_virtual_map(void)
 	efi_runtime_services_t *rt;
 	efi_set_virtual_address_map_t *svam;
 	efi_memory_desc_t *in, runtime_map[32];
+	unsigned long target_virt;
 
 	if (efi_bp)
 		return EFI_SUCCESS;
@@ -207,9 +208,16 @@ static int __init set_virtual_map(void)
 			continue;
 
 		if (attr & (EFI_MEMORY_WB | EFI_MEMORY_WT))
-			in->virt_addr = TO_CACHE(in->phys_addr);
+			target_virt = TO_CACHE(in->phys_addr);
 		else
-			in->virt_addr = TO_UNCACHE(in->phys_addr);
+			target_virt = TO_UNCACHE(in->phys_addr);
+
+		if (in->virt_addr == target_virt) {
+			pr_info("EFI: Virtual mapping already established. Skipping SVAM.\n");
+			return EFI_SUCCESS;
+		}
+
+		in->virt_addr = target_virt;
 
 		memcpy(&runtime_map[count++], in, size);
 	}
@@ -233,7 +241,7 @@ static int __init set_virtual_map(void)
 
 void __init efi_runtime_init(void)
 {
-	efi_status_t status;
+	int ret;
 
 	if (!efi_enabled(EFI_BOOT) || !efi_systab->runtime)
 		return;
@@ -243,9 +251,11 @@ void __init efi_runtime_init(void)
 		return;
 	}
 
-	status = set_virtual_map();
-	if (status < 0)
+	ret = set_virtual_map();
+	if (ret < 0) {
+		pr_info("Set virtual address map failed, EFI runtime services will not be available.\n");
 		return;
+	}
 
 	efi.runtime = READ_ONCE(efi_systab->runtime);
 	efi.runtime_version = (unsigned int)efi.runtime->hdr.revision;

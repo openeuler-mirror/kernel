@@ -67,7 +67,7 @@ static int __init xcu_setup(char *str)
 }
 __setup("xcu=", xcu_setup);
 
-static bool xcu_cgroup_enabled(void)
+bool xcu_cgroup_enabled(void)
 {
 	return static_branch_unlikely(&xcu_cgroup_key);
 }

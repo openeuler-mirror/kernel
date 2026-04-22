@@ -41,12 +41,12 @@ static bool rnp_cache_ring_dcb_sriov(struct rnp_adapter *adapter)
 static bool rnp_cache_ring_dcb(struct rnp_adapter *adapter)
 {
 	struct net_device *dev = adapter->netdev;
-	unsigned int tx_idx, rx_idx;
-	int tc, offset, rss_i, i, step;
 	u8 num_tcs = netdev_get_num_tc(dev);
-	struct rnp_ring *ring;
 	struct rnp_hw *hw = &adapter->hw;
 	struct rnp_dma_info *dma = &hw->dma;
+	int tc, offset, rss_i, i, step;
+	unsigned int tx_idx, rx_idx;
+	struct rnp_ring *ring;
 
 	/* verify we have DCB queueing enabled before proceeding */
 	if (num_tcs <= 1)
@@ -121,12 +121,11 @@ static bool rnp_cache_ring_sriov(struct rnp_adapter *adapter)
  **/
 static bool rnp_cache_ring_rss(struct rnp_adapter *adapter)
 {
-	int i;
-	/* setup here */
-	int ring_step = 1;
-	struct rnp_ring *ring;
 	struct rnp_hw *hw = &adapter->hw;
 	struct rnp_dma_info *dma = &hw->dma;
+	struct rnp_ring *ring;
+	int ring_step = 1;
+	int i;
 
 	/* n400 use 0 4 8 c */
 	if (hw->hw_type == rnp_hw_n400)
@@ -208,10 +207,10 @@ static void rnp_cache_ring_register(struct rnp_adapter *adapter)
  **/
 static bool rnp_set_dcb_sriov_queues(struct rnp_adapter *adapter)
 {
-	int i;
 	u16 vmdq_i = adapter->ring_feature[RING_F_VMDQ].limit;
-	u16 vmdq_m = 0;
 	u8 tcs = netdev_get_num_tc(adapter->netdev);
+	u16 vmdq_m = 0;
+	int i;
 
 	/* verify we have DCB queueing enabled before proceeding */
 	if (tcs <= 1)
@@ -316,10 +315,10 @@ static bool rnp_set_dcb_queues(struct rnp_adapter *adapter)
  **/
 static bool rnp_set_sriov_queues(struct rnp_adapter *adapter)
 {
-	u16 vmdq_m = 0;
 	u16 rss_i = adapter->ring_feature[RING_F_RSS].limit;
 	u16 rss_m = RNP_RSS_DISABLED_MASK;
 	struct rnp_hw *hw = &adapter->hw;
+	u16 vmdq_m = 0;
 
 	/* only proceed if SR-IOV is enabled */
 	if (!(adapter->flags & RNP_FLAG_SRIOV_ENABLED))
@@ -491,16 +490,14 @@ static inline void rnp_irq_disable_queues(struct rnp_q_vector *q_vector)
 
 static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 {
+	struct rnp_tx_buffer *tx_buffer;
 	struct rnp_q_vector *q_vector;
-	struct rnp_ring *ring;
 	struct rnp_tx_desc *eop_desc;
 	struct rnp_adapter *adapter;
-
+	union rnp_rx_desc *rx_desc;
+	struct rnp_ring *ring;
 	int tx_next_to_clean;
 	int tx_next_to_use;
-
-	struct rnp_tx_buffer *tx_buffer;
-	union rnp_rx_desc *rx_desc;
 	int size;
 
 	q_vector = container_of(hrtimer, struct rnp_q_vector,
@@ -577,16 +574,16 @@ static int rnp_alloc_q_vector(struct rnp_adapter *adapter,
 			      int eth_queue_idx, int v_idx, int r_idx,
 			      int r_count, int step)
 {
-	struct rnp_q_vector *q_vector;
-	struct rnp_ring *ring;
+	int rxr_idx = r_idx, txr_idx = r_idx;
 	struct rnp_hw *hw = &adapter->hw;
 	struct rnp_dma_info *dma = &hw->dma;
-	int node = NUMA_NO_NODE;
-	int cpu = -1;
-	int ring_count, size;
 	int txr_count, rxr_count, idx;
-	int rxr_idx = r_idx, txr_idx = r_idx;
+	struct rnp_q_vector *q_vector;
+	int node = NUMA_NO_NODE;
+	struct rnp_ring *ring;
+	int ring_count, size;
 	int cpu_offset = 0;
+	int cpu = -1;
 
 	rxr_count = r_count;
 	txr_count = rxr_count;
@@ -721,7 +718,6 @@ static int rnp_alloc_q_vector(struct rnp_adapter *adapter,
 		ring++;
 	}
 	if (hw->hw_type == rnp_hw_n10 || hw->hw_type == rnp_hw_n400) {
-		q_vector->vector_flags |= RNP_QVECTOR_FLAG_IRQ_MISS_CHECK;
 		/* initialize timer */
 		q_vector->irq_check_usecs = 1000;
 		hrtimer_init(&q_vector->irq_miss_check_timer,
@@ -760,8 +756,7 @@ static void rnp_free_q_vector(struct rnp_adapter *adapter, int v_idx)
 	adapter->q_vector[v_idx] = NULL;
 	netif_napi_del(&q_vector->napi);
 
-	if (q_vector->vector_flags & RNP_QVECTOR_FLAG_IRQ_MISS_CHECK)
-		hrtimer_cancel(&q_vector->irq_miss_check_timer);
+	hrtimer_cancel(&q_vector->irq_miss_check_timer);
 
 	/* rnp_get_stats64() might access the rings on this vector,
 	 * we must wait a grace period before freeing it.
@@ -778,14 +773,14 @@ static void rnp_free_q_vector(struct rnp_adapter *adapter, int v_idx)
  **/
 static int rnp_alloc_q_vectors(struct rnp_adapter *adapter)
 {
-	int v_idx = adapter->q_vector_off;
-	int ring_idx = 0;
-	int r_remaing =
-		min_t(int, adapter->num_tx_queues, adapter->num_rx_queues);
-	int ring_step = 1;
 	int err, ring_cnt, v_remaing = adapter->num_q_vectors;
-	int q_vector_nums = 0;
+	int r_remaing = min_t(int, adapter->num_tx_queues,
+			      adapter->num_rx_queues);
+	int v_idx = adapter->q_vector_off;
 	struct rnp_hw *hw = &adapter->hw;
+	int q_vector_nums = 0;
+	int ring_step = 1;
+	int ring_idx = 0;
 
 	if (adapter->flags & RNP_FLAG_SRIOV_ENABLED) {
 		ring_idx = 0;
@@ -897,9 +892,9 @@ static void rnp_reset_interrupt_capability(struct rnp_adapter *adapter)
  **/
 static int rnp_set_interrupt_capability(struct rnp_adapter *adapter)
 {
+	int irq_mode_back = adapter->irq_mode;
 	struct rnp_hw *hw = &adapter->hw;
 	int vector, v_budget, err = 0;
-	int irq_mode_back = adapter->irq_mode;
 
 	v_budget =
 		min_t(int, adapter->num_tx_queues, adapter->num_rx_queues);
@@ -971,9 +966,9 @@ out:
 
 static void rnp_print_ring_info(struct rnp_adapter *adapter)
 {
-	int i;
-	struct rnp_ring *ring;
 	struct rnp_q_vector *q_vector;
+	struct rnp_ring *ring;
+	int i;
 
 	rnp_dbg("tx_queue count %d\n", adapter->num_tx_queues);
 	rnp_dbg("queue-mapping :\n");
@@ -1079,9 +1074,9 @@ void rnp_tx_ctxtdesc(struct rnp_ring *tx_ring, u32 mss_len_vf_num,
 		     u32 inner_vlan_tunnel_len, int ignore_vlan,
 		     bool crc_pad)
 {
+	struct rnp_adapter *adapter = RING2ADAPT(tx_ring);
 	struct rnp_tx_ctx_desc *context_desc;
 	u16 i = tx_ring->next_to_use;
-	struct rnp_adapter *adapter = RING2ADAPT(tx_ring);
 	u32 type_tucmd = 0;
 
 	context_desc = RNP_TX_CTXTDESC(tx_ring, i);
@@ -1119,7 +1114,7 @@ void rnp_tx_ctxtdesc(struct rnp_ring *tx_ring, u32 mss_len_vf_num,
 	if (tx_ring->q_vector->adapter->flags & RNP_FLAG_SRIOV_ENABLED) {
 		if (ignore_vlan)
 			context_desc->inner_vlan_tunnel_len |=
-				VF_VEB_IGNORE_VLAN;
+				cpu_to_le32(VF_VEB_IGNORE_VLAN);
 	}
 	buf_dump_line("ctx  ", __LINE__, context_desc,
 		      sizeof(*context_desc));
@@ -1140,9 +1135,9 @@ void rnp_store_reta(struct rnp_adapter *adapter)
 {
 	u32 i, reta_entries = rnp_rss_indir_tbl_entries(adapter);
 	struct rnp_hw *hw = &adapter->hw;
-	u32 reta = 0;
 	/* relative with rss table */
 	struct rnp_ring *rx_ring;
+	u32 reta = 0;
 
 	/* Write redirection table to HW */
 	for (i = 0; i < reta_entries; i++) {
@@ -1160,16 +1155,16 @@ void rnp_store_reta(struct rnp_adapter *adapter)
 
 void rnp_store_key(struct rnp_adapter *adapter)
 {
-	struct rnp_hw *hw = &adapter->hw;
 	bool sriov_flag = !!(adapter->flags & RNP_FLAG_SRIOV_ENABLED);
+	struct rnp_hw *hw = &adapter->hw;
 
 	hw->ops.set_rss_key(hw, sriov_flag);
 }
 
 int rnp_init_rss_key(struct rnp_adapter *adapter)
 {
-	struct rnp_hw *hw = &adapter->hw;
 	bool sriov_flag = !!(adapter->flags & RNP_FLAG_SRIOV_ENABLED);
+	struct rnp_hw *hw = &adapter->hw;
 
 	/* only init rss key once */
 	/* no change rss key if user input one */
@@ -1184,12 +1179,12 @@ int rnp_init_rss_key(struct rnp_adapter *adapter)
 
 int rnp_init_rss_table(struct rnp_adapter *adapter)
 {
+	u32 reta_entries = rnp_rss_indir_tbl_entries(adapter);
 	int rx_nums = adapter->num_rx_queues;
-	int i, j;
 	struct rnp_hw *hw = &adapter->hw;
 	struct rnp_ring *rx_ring;
 	u32 reta = 0;
-	u32 reta_entries = rnp_rss_indir_tbl_entries(adapter);
+	int i, j;
 
 	if (adapter->flags & RNP_FLAG_DCB_ENABLED) {
 		rx_nums = rx_nums / adapter->num_tc;
@@ -1278,8 +1273,8 @@ s32 rnp_fdir_erase_perfect_filter(int fdir_mode, struct rnp_hw *hw,
 
 u32 rnp_tx_desc_unused_sw(struct rnp_ring *tx_ring)
 {
-	u16 ntu = tx_ring->next_to_use;
 	u16 ntc = tx_ring->next_to_clean;
+	u16 ntu = tx_ring->next_to_use;
 	u16 count = tx_ring->count;
 
 	return ((ntu >= ntc) ? (count - ntu + ntc) : (ntc - ntu));
@@ -1306,9 +1301,9 @@ u32 rnp_tx_desc_unused_hw(struct rnp_hw *hw, struct rnp_ring *tx_ring)
 s32 rnp_disable_rxr_maxrate(struct net_device *netdev, u8 queue_index)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
-	struct rnp_hw *hw = &adapter->hw;
 	struct rnp_ring *rx_ring = adapter->rx_ring[queue_index];
 	u32 reg_idx = rx_ring->rnp_queue_idx;
+	struct rnp_hw *hw = &adapter->hw;
 
 	/* disable which dma ring in maxrate limit mode */
 	wr32(hw, RNP_SELECT_RING_EN(reg_idx), 0);
@@ -1322,9 +1317,9 @@ s32 rnp_enable_rxr_maxrate(struct net_device *netdev, u8 queue_index,
 			   u32 maxrate)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
-	struct rnp_hw *hw = &adapter->hw;
 	struct rnp_ring *rx_ring = adapter->rx_ring[queue_index];
 	u32 reg_idx = rx_ring->rnp_queue_idx;
+	struct rnp_hw *hw = &adapter->hw;
 	u32 real_rate = maxrate / 16;
 
 	if (!real_rate)

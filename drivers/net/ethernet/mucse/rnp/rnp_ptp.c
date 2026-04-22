@@ -164,7 +164,7 @@ static int adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec,
 	return 0;
 }
 
-const struct rnp_hwtimestamp mac_ptp = {
+static const struct rnp_hwtimestamp mac_ptp = {
 	.config_hw_tstamping = config_hw_tstamping,
 	.config_mac_irq_enable = config_mac_interrupt_enable,
 	.init_systime = init_systime,
@@ -198,10 +198,10 @@ static int rnp_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 {
 	struct rnp_adapter *pf =
 		container_of(ptp, struct rnp_adapter, ptp_clock_ops);
-	unsigned long flags;
-	u32 sec, nsec;
 	u32 quotient, reminder;
+	unsigned long flags;
 	int neg_adj = 0;
+	u32 sec, nsec;
 
 	if (delta < 0) {
 		neg_adj = 1;
@@ -274,9 +274,9 @@ int rnp_ptp_get_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 
 static int rnp_ptp_setup_ptp(struct rnp_adapter *pf, u32 value)
 {
+	struct timespec64 now;
 	u32 sec_inc = 0;
 	u64 temp = 0;
-	struct timespec64 now;
 
 	/*For now just use extrnal clock(the kernel-system clock)*/
 	// value |= RNP_PTP_TCR_ESTI;
@@ -340,13 +340,13 @@ static int rnp_ptp_setup_ptp(struct rnp_adapter *pf, u32 value)
 int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 {
 	struct hwtstamp_config config;
-	u32 ptp_v2 = 0;
-	u32 tstamp_all = 0;
 	u32 ptp_over_ipv4_udp = 0;
 	u32 ptp_over_ipv6_udp = 0;
 	u32 ptp_over_ethernet = 0;
 	u32 snap_type_sel = 0;
 	u32 ts_master_en = 0;
+	u32 tstamp_all = 0;
+	u32 ptp_v2 = 0;
 	u32 value = 0;
 	s32 ret = -1;
 
@@ -650,6 +650,7 @@ void rnp_ptp_get_rx_hwstamp(struct rnp_adapter *adapter,
 			    union rnp_rx_desc *desc, struct sk_buff *skb)
 {
 	u64 ns = 0;
+	__be32 value_h, value_l;
 	u64 tsvalueh = 0, tsvaluel = 0;
 	//static int test = 0;
 	struct skb_shared_hwtstamps *hwtstamps = NULL;
@@ -660,7 +661,7 @@ void rnp_ptp_get_rx_hwstamp(struct rnp_adapter *adapter,
 		return;
 	}
 
-	if (likely(!(desc->wb.cmd & RNP_RXD_STAT_PTP)))
+	if (likely(!(desc->wb.cmd & cpu_to_le16(RNP_RXD_STAT_PTP))))
 		return;
 	hwtstamps = skb_hwtstamps(skb);
 	/* because of rx hwstamp store before the mac head
@@ -672,13 +673,13 @@ void rnp_ptp_get_rx_hwstamp(struct rnp_adapter *adapter,
 	 * high32bit is seconds low32bits is nanoseconds
 	 */
 	skb_copy_from_linear_data_offset(skb, RNP_RX_TIME_RESERVE,
-					 &tsvalueh, RNP_RX_SEC_SIZE);
+					 &value_h, RNP_RX_SEC_SIZE);
 	skb_copy_from_linear_data_offset(skb, RNP_RX_TIME_RESERVE +
-					 RNP_RX_SEC_SIZE, &tsvaluel,
+					 RNP_RX_SEC_SIZE, &value_l,
 					 RNP_RX_NANOSEC_SIZE);
 	skb_pull(skb, RNP_RX_HWTS_OFFSET);
-	tsvalueh = ntohl(tsvalueh);
-	tsvaluel = ntohl(tsvaluel);
+	tsvalueh = ntohl(value_h);
+	tsvaluel = ntohl(value_l);
 
 	ns = tsvaluel & RNP_RX_NSEC_MASK;
 	ns += ((tsvalueh & RNP_RX_SEC_MASK) * 1000000000ULL);

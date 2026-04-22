@@ -11,12 +11,12 @@
 
 static void rnp_config_prio_map(struct rnp_adapter *adapter, u8 pfc_map)
 {
-	int i, j;
-	u32 prio_map = 0;
-	u8 port = adapter->port;
-	u8 *prio_tc = adapter->prio_tc_map;
 	void __iomem *ioaddr = adapter->hw.hw_addr;
+	u8 *prio_tc = adapter->prio_tc_map;
 	u8 num_tc = adapter->num_tc;
+	u8 port = adapter->port;
+	u32 prio_map = 0;
+	int i, j;
 
 	for (i = 0; i < num_tc; i++) {
 		if (i > RNP_MAX_TCS_NUM)
@@ -50,9 +50,9 @@ static int rnp_dcb_hw_pfc_config(struct rnp_adapter *adapter, u8 pfc_map)
 {
 	struct rnp_dcb_cfg *dcb = &adapter->dcb_cfg;
 	void __iomem *ioaddr = adapter->hw.hw_addr;
+	u8 num_tc = adapter->num_tc;
 	u8 i = 0, j = 0;
 	u32 reg = 0;
-	u8 num_tc = adapter->num_tc;
 
 	if (!(adapter->flags & RNP_FLAG_DCB_ENABLED) ||
 	    adapter->num_rx_queues <= 1) {
@@ -282,7 +282,9 @@ static int rnp_dcbnl_setpfc(struct net_device *dev, struct ieee_pfc *pfc)
 static u8 rnp_dcbnl_getpfcstate(struct net_device *netdev)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
-	struct rnp_pfc_cfg *pfc_cfg = &adapter->dcb_cfg.pfc_cfg;
+	struct rnp_pfc_cfg *pfc_cfg;
+
+	pfc_cfg = &adapter->dcb_cfg.pfc_cfg;
 
 	return pfc_cfg->pfc_en;
 }
@@ -294,7 +296,7 @@ static void rnp_dcbnl_setpfcstate(struct net_device *netdev, u8 state)
 	adapter->dcb_cfg.pfc_cfg.pfc_en = state;
 }
 
-const struct dcbnl_rtnl_ops rnp_dcbnl_ops = {
+static const struct dcbnl_rtnl_ops rnp_dcbnl_ops = {
 	/*IEEE*/
 	.ieee_getpfc = rnp_dcbnl_getpfc,
 	.ieee_setpfc = rnp_dcbnl_setpfc,

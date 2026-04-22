@@ -28,6 +28,7 @@ struct ubcore_rm_tp_info {
 	int ref_cnt;
 	bool is_refed;
 	atomic_t tp_state;
+	uint32_t tx_psn;
 	struct mutex lock;
 };
 

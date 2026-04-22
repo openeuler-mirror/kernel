@@ -185,7 +185,7 @@ s32 rnpgbe_check_for_rst(struct rnpgbe_hw *hw, enum MBX_ID);
 
 s32 rnpgbe_init_mbx_params_pf(struct rnpgbe_hw *hw);
 
-extern struct rnpgbe_mbx_operations mbx_ops_generic;
+extern struct rnpgbe_mbx_operations rnpgbe_mbx_ops_generic;
 
 int rnpgbe_fw_get_macaddr(struct rnpgbe_hw *hw, int pfvfnum, u8 *mac_addr,
 			  int lane);

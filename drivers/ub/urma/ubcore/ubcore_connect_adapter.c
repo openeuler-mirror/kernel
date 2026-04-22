@@ -18,6 +18,7 @@
 #include "ubcore_connect_adapter.h"
 #include "ubcore_priv.h"
 #include "ubcore_hash_table.h"
+#include "ubcore_workqueue.h"
 
 enum msg_create_conn_result {
 	CREATE_CONN_SUCCESS = 0,
@@ -608,12 +609,14 @@ static int ubcore_get_rm_stp_list(struct ubcore_device *dev, uint32_t *tp_cnt,
 	int is_local = 0;
 	uint32_t hash;
 	int ret = 0;
+	uint32_t tx_psn;
+	int i = 0;
 
 	if (dev == NULL || dev->ops == NULL || dev->ops->get_tp_list == NULL ||
 		tp_cnt == NULL || tp_list == NULL || *tp_cnt == 0) {
 		return -EINVAL;
 	}
-
+	tx_psn = get_random_u32();
 	ht = &dev->ht[UBCORE_HT_RM_TP_ID];
 	is_local = stp_cfg->local_import;
 	/* free it when unused */
@@ -630,14 +633,19 @@ static int ubcore_get_rm_stp_list(struct ubcore_device *dev, uint32_t *tp_cnt,
 	info_ext = ubcore_hash_table_lookup_nolock(ht, hash, &tp_info->key);
 	/* old tp */
 	if (info_ext != NULL) {
+		stp_cfg->tx_psn = info_ext->tx_psn;
 		info_ext->ref_cnt += is_local;
 		if (is_local == 0)
 			info_ext->is_refed = true;
 		spin_unlock(&ht->lock);
 
 		/* waiting for get_tp_list finished */
-		while (atomic_read(&info_ext->tp_state) == RM_STP_UNCREATED)
-			;
+		do {
+			if (atomic_read(&info_ext->tp_state) != RM_STP_UNCREATED)
+				break;
+			i++;
+			usleep_range(1000, 1100);
+		} while (i < ubcore_conn_timeout);
 
 		if (atomic_read(&info_ext->tp_state) == RM_STP_ERROR)
 			goto err_out;
@@ -652,6 +660,8 @@ static int ubcore_get_rm_stp_list(struct ubcore_device *dev, uint32_t *tp_cnt,
 	/* new tp */
 	mutex_init(&tp_info->lock);
 	tp_info->ref_cnt = is_local;
+	tp_info->tx_psn = tx_psn;
+	stp_cfg->tx_psn = tx_psn;
 	if (is_local == 0)
 		tp_info->is_refed = true;
 	atomic_set(&tp_info->tp_state, RM_STP_UNCREATED);
@@ -701,6 +711,7 @@ static void handle_create_req(struct ubcore_device *dev, struct ubcore_net_msg *
 
 	get_tp_cfg.local_eid = req->get_tp_cfg.peer_eid;
 	get_tp_cfg.peer_eid = req->get_tp_cfg.local_eid;
+	tx_psn = get_random_u32();
 	if (get_tp_cfg.trans_mode == UBCORE_TP_RM &&
 		get_tp_cfg.flag.bs.rtp == 1 &&
 		req->share_tp) {
@@ -708,6 +719,7 @@ static void handle_create_req(struct ubcore_device *dev, struct ubcore_net_msg *
 		stp_cfg.dtag = req->stag;
 		stp_cfg.local_import = 0;
 		ret = ubcore_get_rm_stp_list(dev, &tp_cnt, &tp_info, &stp_cfg, &get_tp_cfg);
+		tx_psn = stp_cfg.tx_psn;
 	} else
 		ret = ubcore_get_tp_list(dev, &get_tp_cfg, &tp_cnt, &tp_info, NULL);
 
@@ -721,8 +733,6 @@ static void handle_create_req(struct ubcore_device *dev, struct ubcore_net_msg *
 	}
 
 	tp_handle = tp_info.tp_handle.value;
-	tx_psn = get_random_u32();
-
 	active_cfg.tp_handle.value = tp_handle;
 	active_cfg.peer_tp_handle.value = req->tp_handle;
 	active_cfg.tp_attr.rx_psn = req->tx_psn;
@@ -947,6 +957,23 @@ static int unrefed_for_deactive_rmstp(struct ubcore_hash_table *ht, uint32_t has
 	return RM_STP_ACTIVE;
 }
 
+static void ubcore_deactive_stp(struct work_struct *work)
+{
+	struct ubcore_deactive_stp_work *deactive_work =
+		container_of(work, struct ubcore_deactive_stp_work, work);
+	union ubcore_tp_handle tp_handle = deactive_work->tp_handle;
+	struct ubcore_device *dev = deactive_work->dev;
+	int ret = 0;
+
+	if (deactive_work->uspace)
+		ret = ubcore_deactive_tp(dev, tp_handle, &deactive_work->udata);
+	else
+		ret = ubcore_deactive_tp(dev, tp_handle, NULL);
+	if (ret != 0)
+		ubcore_log_err("Failed to queue deactivate tp\n");
+	kfree(deactive_work);
+}
+
 int ubcore_adapter_layer_rm_stp_disconnect(struct ubcore_tjetty *tjetty)
 {
 	struct ubcore_vtpn *vtpn = tjetty->vtpn;
@@ -957,6 +984,7 @@ int ubcore_adapter_layer_rm_stp_disconnect(struct ubcore_tjetty *tjetty)
 	struct ubcore_device *dev = vtpn->ub_dev;
 	struct ubcore_hash_table *ht = &dev->ht[UBCORE_HT_RM_TP_ID];
 	struct ubcore_share_tp_cfg *stp_cfg = &tjetty->cfg.stp_cfg;
+	struct ubcore_deactive_stp_work *deactive_work;
 	struct ubcore_rm_tp_key key = {0};
 	struct ubcore_udata udata = {0};
 	uint32_t hash;
@@ -972,12 +1000,20 @@ int ubcore_adapter_layer_rm_stp_disconnect(struct ubcore_tjetty *tjetty)
 		return ret;
 
 	if (ret == RM_STP_CREATED) {
-		if (vtpn->uspace)
-			ret = ubcore_deactive_tp(dev, tp_handle, &udata);
-		else
-			ret = ubcore_deactive_tp(dev, tp_handle, NULL);
+		deactive_work = kzalloc(sizeof(*deactive_work), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(deactive_work))
+			return -ENOMEM;
+
+		INIT_WORK(&deactive_work->work, ubcore_deactive_stp);
+		deactive_work->dev = dev;
+		deactive_work->tp_handle = tp_handle;
+		deactive_work->udata = udata;
+		deactive_work->uspace = vtpn->uspace;
+		ret = ubcore_queue_work((int)UBCORE_DEACTIVE_SHARE_TP_WQ,
+					&deactive_work->work);
 		if (ret != 0) {
-			ubcore_log_err("Failed to deactivate tp\n");
+			kfree(&deactive_work->work);
+			ubcore_log_err("Failed to queue deactivate tp\n");
 			return ret;
 		}
 	}
@@ -1079,11 +1115,13 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 	if (ubcore_fill_get_tp_cfg(dev, &get_tp_cfg, cfg) != 0)
 		return NULL;
 
+	active_tp_cfg.tp_attr.tx_psn = get_random_u32();
 	if (cfg->trans_mode == UBCORE_TP_RM &&
 		cfg->tp_type == UBCORE_RTP &&
-		cfg->flag.bs.share_tp == 1)
+		cfg->flag.bs.share_tp == 1) {
 		ret = ubcore_get_rm_stp_list(dev, &tp_cnt, &tp_list, &cfg->stp_cfg, &get_tp_cfg);
-	else
+		active_tp_cfg.tp_attr.tx_psn = cfg->stp_cfg.tx_psn;
+	} else
 		ret = ubcore_get_tp_list(dev, &get_tp_cfg, &tp_cnt, &tp_list, NULL);
 
 	if (ret != 0 || tp_cnt != 1) {
@@ -1096,7 +1134,6 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 
 	if (cfg->trans_mode == UBCORE_TP_RM &&
 		cfg->tp_type == UBCORE_RTP) {
-		active_tp_cfg.tp_attr.tx_psn = get_random_u32();
 		ret = ubcore_exchange_tp_info(dev, &get_tp_cfg,
 				      &active_tp_cfg, cfg, udata);
 		if (ret != 0) {
@@ -1150,7 +1187,10 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 		cfg->tp_type != UBCORE_RTP)
 		goto import_jetty_ex;
 
-	active_tp_cfg.tp_attr.tx_psn = get_random_u32();
+	if (cfg->flag.bs.share_tp == 1)
+		active_tp_cfg.tp_attr.tx_psn = cfg->stp_cfg.tx_psn;
+	else
+		active_tp_cfg.tp_attr.tx_psn = get_random_u32();
 	ret = ubcore_exchange_tp_info(dev, &get_tp_cfg,
 				      &active_tp_cfg, cfg, udata);
 	if (ret == 0)

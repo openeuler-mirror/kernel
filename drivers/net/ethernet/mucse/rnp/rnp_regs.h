@@ -23,6 +23,7 @@
 
 #define RNP_DMA_VERSION (0x0000)
 #define RNP_DMA_CONFIG (0x0004)
+#define RNP_DMA_AXI_READY (0x0014)
 #define DMA_MAC_LOOPBACK (1 << 0)
 #define DMA_SWITCH_LOOPBACK (1 << 1)
 #define DMA_VEB_BYPASS (1 << 4)

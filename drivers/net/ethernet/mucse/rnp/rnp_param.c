@@ -177,10 +177,8 @@ static int rnp_validate_option(struct net_device *netdev,
  **/
 void rnp_check_options(struct rnp_adapter *adapter)
 {
-	//unsigned int mdd;
-	int bd = adapter->bd_number;
 	u32 *aflags = &adapter->flags;
-	//struct rnp_ring_feature *feature = adapter->ring_feature;
+	int bd = adapter->bd_number;
 
 	if (bd >= RNP_MAX_NIC) {
 		netdev_notice(adapter->netdev,

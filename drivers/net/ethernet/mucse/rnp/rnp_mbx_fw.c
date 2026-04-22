@@ -14,8 +14,8 @@
 
 static bool is_cookie_valid(struct rnp_hw *hw, void *cookie)
 {
-	unsigned char *begin = (unsigned char *)(&hw->mbx.cookie_pool.cookies[0]);
 	unsigned char *end = (unsigned char *)(&hw->mbx.cookie_pool.cookies[MAX_COOKIES_ITEMS]);
+	unsigned char *begin = (unsigned char *)(&hw->mbx.cookie_pool.cookies[0]);
 
 	if (((unsigned char *)cookie) >= begin && ((unsigned char *)cookie) < end)
 		return true;
@@ -63,26 +63,27 @@ static struct mbx_req_cookie *mbx_cookie_zalloc(struct rnp_hw *hw, int priv_len)
 }
 
 /**
- * @force_free:
- * true: no other reference to this cookie, it is save to mark cookie reusable
- * false: cookie may used by other(firmware), only available after 2min
+ * mbx_free_cookie
+ * @cookie: cookie to be freed
+ * @force_free: force free flag
+ * If no other reference to this cookie, it is save to mark cookie reusable
+ * cookie may used by other(firmware), only available after 2min
  **/
 static void mbx_free_cookie(struct mbx_req_cookie *cookie, bool force_free)
 {
 	if (!cookie)
 		return;
 
-	if (force_free) {
+	if (force_free)
 		cookie->stat = COOKIE_FREE;
-	} else {
+	else
 		cookie->stat = COOKIE_FREE_WAIT_TIMEOUT;
-	}
 }
 
 static int rnp_mbx_write_posted_locked(struct rnp_hw *hw, struct mbx_fw_cmd_req *req)
 {
-	int err = 0;
 	int retry = 3;
+	int err = 0;
 
 	if (pci_channel_offline(hw->pdev))
 		return -EIO;
@@ -133,8 +134,8 @@ static void rnp_link_stat_mark_disable(struct rnp_hw *hw)
 static int rnp_mbx_fw_post_req(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
 			       struct mbx_req_cookie *cookie)
 {
-	int err = 0;
 	struct rnp_adapter *adpt = hw->back;
+	int err = 0;
 
 	if (pci_channel_offline(hw->pdev))
 		return -EIO;
@@ -195,8 +196,8 @@ retry:
 static int rnp_fw_send_cmd_wait(struct rnp_hw *hw, struct mbx_fw_cmd_req *req,
 				struct mbx_fw_cmd_reply *reply)
 {
-	int err;
 	int retry_cnt = 3;
+	int err;
 
 	if (!hw || !req || !reply || !hw->mbx.ops.read_posted) {
 		rnp_err("error: hw:%p req:%p reply:%p\n", hw, req, reply);
@@ -252,8 +253,8 @@ retry:
 
 int wait_mbx_init_done(struct rnp_hw *hw)
 {
-	int count = 10000;
 	u32 v = rd32(hw, RNP_TOP_NIC_DUMMY);
+	int count = 10000;
 
 	while (count) {
 		v = rd32(hw, RNP_TOP_NIC_DUMMY);
@@ -274,12 +275,12 @@ int wait_mbx_init_done(struct rnp_hw *hw)
  **/
 int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 {
-	int err = 0;
-	struct mbx_fw_cmd_req req;
-	struct rnp_adapter *adpt = hw->back;
-	struct lane_stat_data *st;
 	struct mbx_req_cookie *cookie = NULL;
+	struct rnp_adapter *adpt = hw->back;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
+	struct lane_stat_data *st;
+	int err = 0;
 
 	memset(&req, 0, sizeof(req));
 
@@ -308,7 +309,7 @@ int rnp_mbx_get_lane_stat(struct rnp_hw *hw)
 	hw->phy_type = st->phy_type;
 	adpt->speed = st->speed;
 	hw->speed = adpt->speed;
-	if (st->is_sgmii) {
+	if (st->is_sgmii || hw->phy_type == PHY_TYPE_10G_TP) {
 		adpt->phy_addr = st->phy_addr;
 	} else {
 		adpt->sfp.fault = st->sfp.fault;
@@ -372,8 +373,8 @@ quit:
  **/
 int rnp_mbx_get_link_stat(struct rnp_hw *hw)
 {
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
@@ -389,8 +390,8 @@ int rnp_mbx_get_link_stat(struct rnp_hw *hw)
  **/
 int rnp_mbx_fw_reset_phy(struct rnp_hw *hw)
 {
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
 	int ret;
 
 	memset(&req, 0, sizeof(req));
@@ -417,11 +418,11 @@ int rnp_maintain_req(struct rnp_hw *hw, int cmd, int arg0,
 		     int req_data_bytes, int reply_bytes,
 		     dma_addr_t dma_phy_addr)
 {
-	int err;
 	struct mbx_req_cookie *cookie = NULL;
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
 	u64 address = dma_phy_addr;
+	struct mbx_fw_cmd_req req;
+	int err;
 
 	cookie = mbx_cookie_zalloc(hw, 0);
 	if (!cookie)
@@ -462,9 +463,9 @@ int rnp_maintain_req(struct rnp_hw *hw, int cmd, int arg0,
 int rnp_fw_get_macaddr(struct rnp_hw *hw, int pfvfnum, u8 *mac_addr,
 		       int nr_lane)
 {
-	int err;
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
@@ -517,8 +518,8 @@ static int rnp_mbx_sfp_read(struct rnp_hw *hw, int sfp_i2c_addr, int reg,
 			    int cnt, u8 *out_buf)
 {
 	struct mbx_fw_cmd_req req;
-	int err = -EIO;
 	int nr_lane = hw->nr_lane;
+	int err = -EIO;
 
 	if (cnt > MBX_SFP_READ_MAX_CNT || !out_buf) {
 		rnp_err("%s: cnt:%d should <= %d out_buf:%p\n", __func__,
@@ -599,8 +600,8 @@ int rnp_mbx_sfp_module_eeprom_info(struct rnp_hw *hw, int sfp_addr,
 int rnp_mbx_sfp_write(struct rnp_hw *hw, int sfp_addr, int reg, short v)
 {
 	struct mbx_fw_cmd_req req;
-	int err;
 	int nr_lane = hw->nr_lane;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	build_mbx_sfp_write(&req, nr_lane, sfp_addr, reg, v);
@@ -617,8 +618,8 @@ int rnp_mbx_sfp_write(struct rnp_hw *hw, int sfp_addr, int reg, short v)
  **/
 int rnp_mbx_fw_reg_read(struct rnp_hw *hw, int fw_reg)
 {
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
 	int err, ret = 0xffffffff;
 
 	memset(&req, 0, sizeof(req));
@@ -661,8 +662,8 @@ int rnp_mbx_fw_reg_read(struct rnp_hw *hw, int fw_reg)
 int rnp_mbx_reg_write(struct rnp_hw *hw, int fw_reg, int value)
 {
 	struct mbx_fw_cmd_req req;
-	int err;
 	int temp[4];
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	temp[0] = value;
@@ -706,8 +707,8 @@ int rnp_mbx_reg_writev(struct rnp_hw *hw, int fw_reg, int value[4],
 int rnp_mbx_wol_set(struct rnp_hw *hw, u32 mode)
 {
 	struct mbx_fw_cmd_req req;
-	int err;
 	int nr_lane = hw->nr_lane;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	build_mbx_wol_set(&req, nr_lane, mode);
@@ -724,8 +725,8 @@ int rnp_mbx_wol_set(struct rnp_hw *hw, u32 mode)
  **/
 int rnp_mbx_set_dump(struct rnp_hw *hw, int flag)
 {
-	int err;
 	struct mbx_fw_cmd_req req;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	build_set_dump(&req, hw->nr_lane, flag);
@@ -746,17 +747,20 @@ int rnp_mbx_force_speed(struct rnp_hw *hw, int speed)
 {
 	int cmd = 0x01150000;
 
-	if (hw->force_10g_1g_speed_ablity == 0)
+	if (hw->force_10g_1g_speed_ability == 0)
 		return -EINVAL;
 	if (speed == RNP_LINK_SPEED_10GB_FULL) {
 		cmd = 0x01150002;
 		hw->force_speed_stat = FORCE_SPEED_STAT_10G;
+		hw->saved_force_link_speed = speed;
 	} else if (speed == RNP_LINK_SPEED_1GB_FULL) {
 		cmd = 0x01150001;
 		hw->force_speed_stat = FORCE_SPEED_STAT_1G;
+		hw->saved_force_link_speed = speed;
 	} else {
 		cmd = 0x01150000;
 		hw->force_speed_stat = FORCE_SPEED_STAT_DISABLED;
+		hw->saved_force_link_speed = RNP_LINK_SPEED_UNKNOWN;
 	}
 
 	return rnp_mbx_set_dump(hw, cmd);
@@ -772,14 +776,14 @@ int rnp_mbx_force_speed(struct rnp_hw *hw, int speed)
  **/
 int rnp_mbx_get_dump(struct rnp_hw *hw, int flags, u8 *data_out, int bytes)
 {
-	int err;
 	struct mbx_req_cookie *cookie = NULL;
+	struct get_dump_reply *get_dump;
 	struct mbx_fw_cmd_reply reply;
 	struct mbx_fw_cmd_req req;
-	struct get_dump_reply *get_dump;
-	void *dma_buf = NULL;
 	dma_addr_t dma_phy = 0;
+	void *dma_buf = NULL;
 	u64 address;
+	int err;
 
 	cookie = mbx_cookie_zalloc(hw, sizeof(*get_dump));
 	if (!cookie)
@@ -837,13 +841,13 @@ quit:
 int rnp_fw_update(struct rnp_hw *hw, int partition, const u8 *fw_bin,
 		  int bytes)
 {
-	int err;
 	struct mbx_req_cookie *cookie = NULL;
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
 	void *dma_buf = NULL;
 	dma_addr_t dma_phy;
 	u64 address;
+	int err;
 
 	cookie = mbx_cookie_zalloc(hw, 0);
 	if (!cookie) {
@@ -916,9 +920,9 @@ int rnp_mbx_link_event_enable(struct rnp_hw *hw, int enable)
 
 static int rnp_fw_get_capability(struct rnp_hw *hw, struct phy_abilities *abil)
 {
-	int err;
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
@@ -974,8 +978,8 @@ static int to_mac_type(struct phy_abilities *ability)
 int rnp_set_lane_fun(struct rnp_hw *hw, int fun, int value0, int value1,
 		     int value2, int value3)
 {
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
@@ -993,9 +997,9 @@ int rnp_set_lane_fun(struct rnp_hw *hw, int fun, int value0, int value1,
  **/
 int rnp_mbx_ifinsmod(struct rnp_hw *hw, int status)
 {
-	int err;
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
@@ -1020,9 +1024,9 @@ int rnp_mbx_ifinsmod(struct rnp_hw *hw, int status)
  **/
 int rnp_mbx_ifsuspuse(struct rnp_hw *hw, int status)
 {
-	int err;
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
@@ -1041,6 +1045,38 @@ int rnp_mbx_ifsuspuse(struct rnp_hw *hw, int status)
 }
 
 /**
+ * rnp_mbx_ifforce_control_mac - set mac force control to firmware
+ * @hw: hw private structure
+ * @status: force state
+ *
+ **/
+int rnp_mbx_ifforce_control_mac(struct rnp_hw *hw, int status)
+{
+	int err;
+	struct mbx_fw_cmd_req req;
+	struct mbx_fw_cmd_reply reply;
+
+	memset(&req, 0, sizeof(req));
+	memset(&reply, 0, sizeof(reply));
+
+	build_ifforce(&req, hw->nr_lane, status);
+
+	if (mutex_lock_interruptible(&hw->mbx.lock))
+		return -EAGAIN;
+
+	err = hw->mbx.ops.write_posted(hw, (u32 *)&req,
+				       (req.datalen + MBX_REQ_HDR_LEN) / 4,
+				       MBX_FW);
+
+	mutex_unlock(&hw->mbx.lock);
+
+	rnp_logd(LOG_MBX_IFUP_DOWN, "%s: lane:%d status:%d\n", __func__,
+		 hw->nr_lane, status);
+
+	return err;
+}
+
+/**
  * rnp_mbx_ifup_down - set port status to firmware
  * @hw: hw private structure
  * @up: port status
@@ -1048,9 +1084,9 @@ int rnp_mbx_ifsuspuse(struct rnp_hw *hw, int status)
  **/
 int rnp_mbx_ifup_down(struct rnp_hw *hw, int up)
 {
-	int err;
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
@@ -1078,8 +1114,8 @@ int rnp_mbx_ifup_down(struct rnp_hw *hw, int up)
  **/
 int rnp_mbx_led_set(struct rnp_hw *hw, int value)
 {
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
 
 	memset(&req, 0, sizeof(req));
 	memset(&reply, 0, sizeof(reply));
@@ -1096,68 +1132,86 @@ int rnp_mbx_led_set(struct rnp_hw *hw, int value)
  **/
 int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info)
 {
-	int err;
-	struct phy_abilities ablity;
+	struct phy_abilities ability;
 	int try_cnt = 3;
+	int err;
 
-	memset(&ablity, 0, sizeof(ablity));
+	memset(&ability, 0, sizeof(ability));
 	rnp_link_stat_mark_disable(hw);
 
 	while (try_cnt--) {
-		err = rnp_fw_get_capability(hw, &ablity);
+		err = rnp_fw_get_capability(hw, &ability);
 		if (err == 0 && info) {
-			hw->lane_mask = ablity.lane_mask & 0xf;
-			info->mac = to_mac_type(&ablity);
+			hw->lane_mask = ability.lane_mask & 0xf;
+			info->mac = to_mac_type(&ability);
 			info->adapter_cnt = hweight_long(hw->lane_mask);
-			hw->mode = ablity.nic_mode;
-			hw->pfvfnum = ablity.pfnum;
-			hw->speed = ablity.speed;
-			hw->nr_lane = 0; // PF1
-			hw->fw_version = ablity.fw_version;
+			hw->mode = ability.nic_mode;
+			hw->pfvfnum = ability.pfnum;
+			hw->speed = ability.speed;
+			hw->nr_lane = 0;
+			hw->fw_version = ability.fw_version;
 			hw->mac_type = info->mac;
-			hw->phy_type = ablity.phy_type;
-			hw->axi_mhz = ablity.axi_mhz;
-			hw->port_ids = ablity.port_ids;
-			hw->bd_uid = ablity.bd_uid;
-			hw->phy_id = ablity.phy_id;
-			hw->wol = ablity.wol_status;
-			hw->eco = ablity.e.v2;
+			hw->phy_type = ability.phy_type;
+			hw->axi_mhz = ability.axi_mhz;
+			hw->port_ids = ability.port_ids;
+			hw->bd_uid = ability.bd_uid;
+			hw->phy_id = ability.phy_id;
+			hw->wol = ability.wol_status;
+			hw->eco = ability.e.v2;
+			hw->force_link_supported =
+				ability.e.force_link_supported;
+
+			if (ability.e.force_link_supported &&
+			    (ability.e.force_down_en & 0x1)) {
+				hw->force_status = 1;
+			}
 
 			if (hw->fw_version >= 0x00050201 &&
-			    ablity.speed == SPEED_10000) {
+			    ability.speed == SPEED_10000) {
 				hw->force_speed_stat =
 					FORCE_SPEED_STAT_DISABLED;
-				hw->force_10g_1g_speed_ablity = 1;
+				hw->force_10g_1g_speed_ability = 1;
 			}
-			if (ablity.ext_ablity != 0xffffffff &&
-			    ablity.e.valid) {
-				hw->ncsi_en = (ablity.e.ncsi_en == 1);
+			if (ability.ext_ability != 0xffffffff &&
+			    ability.e.valid) {
+				hw->ncsi_en = (ability.e.ncsi_en == 1);
 				hw->ncsi_rar_entries = 1;
-				hw->rpu_en = ablity.e.rpu_en;
+				hw->rpu_en = ability.e.rpu_en;
 				if (hw->rpu_en)
-					ablity.e.rpu_availble = 1;
-				hw->rpu_availble = ablity.e.rpu_availble;
-				hw->fw_lldp_ablity = ablity.e.fw_lldp_ablity;
+					ability.e.rpu_availble = 1;
+				hw->rpu_availble = ability.e.rpu_availble;
+				hw->fw_lldp_ability = ability.e.fw_lldp_ability;
 
 			} else {
 				hw->ncsi_rar_entries = 0;
 			}
+
+			if (hw->force_link_supported == 0)
+				hw->force_status = hw->ncsi_en ? 0 : 1;
 
 			pr_info("%s: nic-mode:%d mac:%d adpt_cnt:%d lane_mask:0x%x",
 				__func__, hw->mode, info->mac,
 				info->adapter_cnt, hw->lane_mask);
 			pr_info("phy_type 0x%x, pfvfnum:0x%x, fw-version:0x%08x\n, axi:%d Mhz,",
 				hw->phy_type, hw->pfvfnum,
-				ablity.fw_version, ablity.axi_mhz);
-			pr_info("port_id:%d bd_uid:0x%08x 0x%x ex-ablity:0x%x fs:%d speed:%d ",
-				ablity.port_id[0], hw->bd_uid,
-				ablity.phy_id, ablity.ext_ablity,
-				hw->force_10g_1g_speed_ablity,
-				ablity.speed);
+				ability.fw_version, ability.axi_mhz);
+			pr_info("port_id:%d bd_uid:0x%08x 0x%x ex-ability:0x%x fs:%d speed:%d ",
+				ability.port_id[0], hw->bd_uid,
+				ability.phy_id, ability.ext_ability,
+				hw->force_10g_1g_speed_ability,
+				ability.speed);
 			pr_info("ncsi_en:%u %d wol=0x%x  rpu:%d-%d eco %d\n",
 				hw->ncsi_en,
 				hw->ncsi_rar_entries, hw->wol, hw->rpu_en,
 				hw->rpu_availble, hw->eco);
+
+			if (hw->phy_type == PHY_TYPE_10G_TP) {
+				hw->supported_link = RNP_LINK_SPEED_10GB_FULL |
+						     RNP_LINK_SPEED_1GB_FULL |
+						     RNP_LINK_SPEED_1GB_HALF;
+				hw->phy.autoneg_advertised = hw->supported_link;
+				hw->autoneg = 1;
+			}
 
 			if (info->adapter_cnt != 0)
 				return 0;
@@ -1176,12 +1230,12 @@ int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info)
  **/
 int rnp_mbx_get_temp(struct rnp_hw *hw, int *voltage)
 {
-	int err;
 	struct mbx_req_cookie *cookie = NULL;
 	struct mbx_fw_cmd_reply reply;
 	struct mbx_fw_cmd_req req;
 	struct get_temp *temp;
 	int temp_v = 0;
+	int err;
 
 	cookie = mbx_cookie_zalloc(hw, sizeof(*temp));
 	if (!cookie)
@@ -1287,6 +1341,11 @@ static inline int rnp_mbx_fw_req_handler(struct rnp_adapter *adapter,
 		else
 			adapter->hw.link = 0;
 
+		if (req->link_stat.st[0].lldp_status)
+			adapter->priv_flags |= RNP_PRIV_FLAG_LLDP_EN_STAT;
+		else
+			adapter->priv_flags &= (~RNP_PRIV_FLAG_LLDP_EN_STAT);
+
 		if (req->link_stat.port_st_magic == SPEED_VALID_MAGIC) {
 			hw->speed = req->link_stat.st[0].speed;
 			hw->duplex = req->link_stat.st[0].duplex;
@@ -1352,8 +1411,8 @@ static inline int rnp_mbx_fw_reply_handler(struct rnp_adapter *adapter,
 
 static inline int rnp_rcv_msg_from_fw(struct rnp_adapter *adapter)
 {
-	u32 msgbuf[RNP_FW_MAILBOX_SIZE];
 	struct rnp_hw *hw = &adapter->hw;
+	u32 msgbuf[RNP_FW_MAILBOX_SIZE];
 	s32 retval;
 
 	retval = rnp_read_mbx(hw, msgbuf, RNP_FW_MAILBOX_SIZE, MBX_FW);
@@ -1403,8 +1462,8 @@ int rnp_fw_msg_handler(struct rnp_adapter *adapter)
  **/
 int rnp_mbx_phy_write(struct rnp_hw *hw, u32 reg, u32 val)
 {
-	struct mbx_fw_cmd_req req;
 	char nr_lane = hw->nr_lane;
+	struct mbx_fw_cmd_req req;
 
 	memset(&req, 0, sizeof(req));
 	build_set_phy_reg(&req, NULL, PHY_EXTERNAL_PHY_MDIO, nr_lane, reg,
@@ -1422,9 +1481,9 @@ int rnp_mbx_phy_write(struct rnp_hw *hw, u32 reg, u32 val)
  **/
 int rnp_mbx_phy_read(struct rnp_hw *hw, u32 reg, u32 *val)
 {
+	char nr_lane = hw->nr_lane;
 	struct mbx_fw_cmd_req req;
 	int err = -EIO;
-	char nr_lane = hw->nr_lane;
 
 	memset(&req, 0, sizeof(req));
 
@@ -1471,8 +1530,8 @@ int rnp_mbx_phy_read(struct rnp_hw *hw, u32 reg, u32 *val)
 int rnp_mbx_phy_link_set(struct rnp_hw *hw, int adv, int autoneg,
 			 int speed, int duplex, int mdix_ctrl)
 {
-	int err;
 	struct mbx_fw_cmd_req req;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	build_phy_link_set(&req, adv, hw->nr_lane, autoneg, speed, duplex,
@@ -1496,8 +1555,8 @@ int rnp_mbx_phy_link_set(struct rnp_hw *hw, int adv, int autoneg,
  **/
 int rnp_mbx_phy_pause_set(struct rnp_hw *hw, int pause_mode)
 {
-	int err;
 	struct mbx_fw_cmd_req req;
+	int err;
 
 	memset(&req, 0, sizeof(req));
 	build_phy_pause_set(&req, pause_mode, hw->nr_lane);
@@ -1515,10 +1574,10 @@ int rnp_mbx_phy_pause_set(struct rnp_hw *hw, int pause_mode)
 int rnp_mbx_lldp_port_enable(struct rnp_hw *hw, bool enable)
 {
 	struct mbx_fw_cmd_req req;
-	int err;
 	int nr_lane = hw->nr_lane;
+	int err;
 
-	if (!hw->fw_lldp_ablity) {
+	if (!hw->fw_lldp_ability) {
 		rnp_warn("lldp set not supported\n");
 		return -EOPNOTSUPP;
 	}
@@ -1533,11 +1592,11 @@ int rnp_mbx_lldp_port_enable(struct rnp_hw *hw, bool enable)
 
 int rnp_mbx_lldp_status_get(struct rnp_hw *hw)
 {
-	struct mbx_fw_cmd_req req;
 	struct mbx_fw_cmd_reply reply;
+	struct mbx_fw_cmd_req req;
 	int err, ret = 0;
 
-	if (!hw->fw_lldp_ablity) {
+	if (!hw->fw_lldp_ability) {
 		rnp_warn("fw lldp not supported\n");
 		return -EOPNOTSUPP;
 	}
@@ -1571,4 +1630,22 @@ int rnp_mbx_lldp_status_get(struct rnp_hw *hw)
 		ret = reply.lldp.enable_stat;
 	}
 	return ret;
+}
+
+int rnp_mbx_ddr_csl_enable(struct rnp_hw *hw,
+			   int enable, dma_addr_t dma_phy,
+			   int bytes)
+{
+	struct mbx_fw_cmd_req req;
+	struct mbx_fw_cmd_reply reply;
+
+	memset(&req, 0, sizeof(req));
+
+	build_ddr_csl(&req, NULL, enable, dma_phy, bytes);
+
+	if (hw->mbx.other_irq_enabled)
+		return rnp_mbx_write_posted_locked(hw, &req);
+
+	memset(&reply, 0, sizeof(reply));
+	return rnp_fw_send_cmd_wait(hw, &req, &reply);
 }

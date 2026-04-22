@@ -63,9 +63,9 @@ static int _rmi_granule_delegate(unsigned long phys)
 
 int rmi_granule_delegate(unsigned long phys)
 {
+#ifdef CONFIG_HISI_CCA
 	struct folio *folio = page_folio(phys_to_page(phys));
 
-#ifdef CONFIG_HISI_CCA
 	if (folio_test_hugetlb(folio)) {
 		if (rme_isolate_hugetlb(folio))
 			folio_put(folio);
@@ -1760,11 +1760,11 @@ out:
 
 int rmi_granule_delegate_get(unsigned long phys, void *realm_p)
 {
+#ifdef CONFIG_HISI_CCA
 	int ret;
 	struct realm *realm = (struct realm *)realm_p;
 	struct folio *folio = page_folio(phys_to_page(phys));
 
-#ifdef CONFIG_HISI_CCA
 	if (folio_test_hugetlb(folio)) {
 		if (rme_isolate_hugetlb(folio)) {
 			folio_put(folio);

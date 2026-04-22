@@ -18,6 +18,7 @@
 
 #define BUF_10_BASE 10
 #define BUF_SIZE 8
+#define CDMA_S_IRUSR 0400
 
 /* ctx debugfs start */
 static void cdma_get_ctx_info(struct cdma_dev *cdev,
@@ -718,7 +719,7 @@ static int cdma_dbg_create_cfg_file(struct cdma_dev *cdev,
 			if (!cdma_dbg_cfg[j].dentry_valid[i])
 				continue;
 			debugfs_file = debugfs_create_file(
-				cdma_dbg_cfg[j].name, 0400, cur_dir,
+				cdma_dbg_cfg[j].name, CDMA_S_IRUSR, cur_dir,
 				&cdev->cdbgfs.cfg, &cdma_dbg_cfg[j].file_ops);
 			if (!debugfs_file)
 				return -ENOMEM;

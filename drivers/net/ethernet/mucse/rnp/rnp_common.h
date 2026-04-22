@@ -79,11 +79,11 @@ static inline unsigned int rnp_rd_reg(void *reg)
 	do {                                                             \
 		dbg(" wr-reg: %p <== 0x%08x \t#%-4d %s\n", (reg), (val), \
 		    __LINE__, __FILE__);                                 \
-		iowrite32((val), (void *)(reg));                         \
+		iowrite32((val), (reg));                         \
 	} while (0)
 #else
-#define rnp_rd_reg(reg) readl((void *)(reg))
-#define rnp_wr_reg(reg, val) writel((val), (void *)(reg))
+#define rnp_rd_reg(reg) readl(reg)
+#define rnp_wr_reg(reg, val) writel(val, reg)
 #endif
 
 #define rd32(hw, off) rnp_rd_reg((hw)->hw_addr + (off))
@@ -173,9 +173,9 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 
 #define DPRINTK(nlevel, klevel, fmt, args...)                         \
 	((NETIF_MSG_##nlevel & adapter->msg_enable) ?                 \
-		 (void)(netdev_printk(KERN_##klevel, adapter->netdev, \
+		 ((void)netdev_printk(KERN_##klevel, adapter->netdev, \
 				      fmt, ##args)) :                 \
-		 NULL)
+		(void)0)
 
 //==== log helper ===
 #ifdef HW_DEBUG
@@ -217,10 +217,10 @@ static inline void hw_queue_strip_rx_vlan(struct rnp_hw *hw, u8 ring_num,
 static inline void buf_dump_line(const char *msg, int line, void *buf,
 				 int len)
 {
-	int i, offset = 0;
-	int msg_len = 1024;
-	u8 msg_buf[1024];
 	u8 *ptr = (u8 *)buf;
+	int msg_len = 1024;
+	int i, offset = 0;
+	u8 msg_buf[1024];
 
 	offset += snprintf(msg_buf + offset, msg_len,
 			   "=== %s #%d line:%d buf:%p==\n000: ", msg, len,
@@ -256,10 +256,10 @@ static inline __le64 build_ctob(u32 vlan_cmd, u32 mac_ip_len, u32 size)
 
 static inline void buf_dump(const char *msg, void *buf, int len)
 {
-	int i, offset = 0;
-	int msg_len = 1024;
-	u8 msg_buf[1024];
 	u8 *ptr = (u8 *)buf;
+	int msg_len = 1024;
+	int i, offset = 0;
+	u8 msg_buf[1024];
 
 	offset += snprintf(msg_buf + offset, msg_len,
 			   "=== %s #%d ==\n000: ", msg, len);

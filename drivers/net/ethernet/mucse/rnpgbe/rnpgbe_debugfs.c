@@ -214,6 +214,94 @@ static const struct file_operations rnpgbe_dbg_netdev_ops_fops = {
 	.write = rnpgbe_dbg_netdev_ops_write,
 };
 
+static void debugfs_command_help(struct device *dev, char *cmd_buf)
+{
+	dev_info(dev, "unknown or invalid command '%s'\n", cmd_buf);
+	dev_info(dev, "available commands\n");
+	dev_info(dev, "\t dump ring\n");
+	dev_info(dev, "\t dump dma\n");
+	dev_info(dev, "\t dump tx\n");
+	dev_info(dev, "\t dump rx\n");
+}
+
+/**
+ * rnpgbe_dbg_command_write - write into netdev_ops datum
+ * @file: the opened file
+ * @buf: where to find the user's data
+ * @count: the size of the user's buffer
+ * @ppos: file position offset
+ **/
+static ssize_t rnpgbe_dbg_command_write(struct file *file,
+					const char __user *buf,
+					size_t count, loff_t *ppos)
+{
+	struct rnpgbe_adapter *adapter = file->private_data;
+	struct device *dev = &adapter->pdev->dev;
+	struct rnpgbe_hw *hw = &adapter->hw;
+	char *cmd_buf, *cmd_buf_tmp;
+	ssize_t ret;
+	char **argv;
+	int argc;
+
+	/* don't allow partial writes */
+	if (*ppos != 0)
+		return 0;
+
+	cmd_buf = memdup_user(buf, count + 1);
+	if (IS_ERR(cmd_buf))
+		return PTR_ERR(cmd_buf);
+	cmd_buf[count] = '\0';
+
+	cmd_buf_tmp = strchr(cmd_buf, '\n');
+	if (cmd_buf_tmp) {
+		*cmd_buf_tmp = '\0';
+		count = (size_t)cmd_buf_tmp - (size_t)cmd_buf + 1;
+	}
+
+	argv = argv_split(GFP_KERNEL, cmd_buf, &argc);
+	if (!argv) {
+		ret = -ENOMEM;
+		goto err_copy_from_user;
+	}
+
+	if (argc == 2 && !strncmp(argv[0], "dump", 4)) {
+		ret = hw->ops.dump_debug_regs(hw, argv[1]);
+		if (ret) {
+			debugfs_command_help(dev, cmd_buf);
+			ret = -EINVAL;
+			goto command_write_error;
+		}
+	} else {
+		debugfs_command_help(dev, cmd_buf);
+		ret = -EINVAL;
+		goto command_write_error;
+	}
+
+	/* if we get here, nothing went wrong; return bytes copied */
+	ret = (ssize_t)count;
+
+command_write_error:
+	argv_free(argv);
+err_copy_from_user:
+	kfree(cmd_buf);
+
+	/* This function always consumes all of the written input, or produces
+	 * an error. Check and enforce this. Otherwise, the write operation
+	 * won't complete properly.
+	 */
+	if (WARN_ON(ret != (ssize_t)count && ret >= 0))
+		ret = -EIO;
+
+	return ret;
+}
+
+static const struct file_operations rnpgbe_dbg_command_fops = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = NULL,
+	.write = rnpgbe_dbg_command_write,
+};
+
 static ssize_t rnpgbe_dbg_netdev_temp_read(struct file *filp,
 					   char __user *buffer, size_t count,
 					   loff_t *ppos)
@@ -258,7 +346,7 @@ static const struct file_operations rnpgbe_dbg_netdev_temp = {
  **/
 void rnpgbe_dbg_adapter_init(struct rnpgbe_adapter *adapter)
 {
-	const char *name = adapter->name;
+	const char *name = pci_name(adapter->pdev);
 	struct dentry *pfile;
 
 	adapter->rnpgbe_dbg_adapter = debugfs_create_dir(name, rnpgbe_dbg_root);
@@ -280,6 +368,13 @@ void rnpgbe_dbg_adapter_init(struct rnpgbe_adapter *adapter)
 					    adapter, &rnpgbe_dbg_netdev_temp);
 		if (!pfile)
 			e_dev_err("debugfs temp for %s failed\n", name);
+
+		pfile = debugfs_create_file("command", 0600,
+					    adapter->rnpgbe_dbg_adapter,
+					    adapter, &rnpgbe_dbg_command_fops);
+		if (!pfile)
+			e_dev_err("debugfs temp for command failed\n");
+
 	} else {
 		e_dev_err("debugfs entry for %s failed\n", name);
 	}

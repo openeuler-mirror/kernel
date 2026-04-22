@@ -52,6 +52,7 @@
 #define PCI_DEVICE_ID_N500_DUAL_PORT 0x8318
 #define PCI_DEVICE_ID_N500_VF 0x8309
 #define PCI_DEVICE_ID_N210 0x8208
+#define PCI_DEVICE_ID_N210L 0x820a
 /* Wake Up Control */
 #define RNP_WUC_PME_EN 0x00000002 /* PME Enable */
 #define RNP_WUC_PME_STATUS 0x00000004 /* PME Status */
@@ -95,16 +96,16 @@
 #define ADVERTISE_2500_HALF 0x0040 /* NOT used, just FYI */
 #define ADVERTISE_2500_FULL 0x0080
 
-#define RNP_MAX_SENSORS 1
+#define RNPGBE_MAX_SENSORS 1
 struct rnpgbe_thermal_diode_data {
-	u8 location;
-	u8 temp;
-	u8 caution_thresh;
-	u8 max_op_thresh;
+	unsigned int location;
+	unsigned int temp;
+	unsigned int caution_thresh;
+	unsigned int max_op_thresh;
 };
 
 struct rnpgbe_thermal_sensor_data {
-	struct rnpgbe_thermal_diode_data sensor[RNP_MAX_SENSORS];
+	struct rnpgbe_thermal_diode_data sensor[RNPGBE_MAX_SENSORS];
 };
 
 /* Wake Up Status */
@@ -528,13 +529,9 @@ enum rnpgbe_rss_type {
 };
 
 enum rnpgbe_hw_type {
-	rnpgbe_hw_uv440 = 0,
-	rnpgbe_hw_uv3p,
-	rnpgbe_hw_n10,
-	rnpgbe_hw_n20,
-	rnpgbe_hw_n400,
-	rnpgbe_hw_n500,
+	rnpgbe_hw_n500 = 0,
 	rnpgbe_hw_n210,
+	rnpgbe_hw_n210L,
 };
 
 enum rnpgbe_eth_type { rnpgbe_eth_n10 = 0, rnpgbe_eth_n500 };
@@ -682,6 +679,8 @@ struct rnpgbe_hw_stats {
 	u64 dma_rx_drop_cnt_5;
 	u64 dma_rx_drop_cnt_6;
 	u64 dma_rx_drop_cnt_7;
+	u64 tx_pause;
+	u64 rx_pause;
 };
 
 /* forward declaration */
@@ -741,8 +740,6 @@ struct rnpgbe_eth_operations {
 	void (*set_vlan_filter)(struct rnpgbe_eth_info *eth, bool status);
 	void (*set_outer_vlan_type)(struct rnpgbe_eth_info *eth, int type);
 	void (*set_double_vlan)(struct rnpgbe_eth_info *eth, bool on);
-	void (*set_vxlan_port)(struct rnpgbe_eth_info *eth, u32 port);
-	void (*set_vxlan_mode)(struct rnpgbe_eth_info *eth, bool inner);
 	s32 (*set_fc_mode)(struct rnpgbe_eth_info *eth);
 	void (*set_rx)(struct rnpgbe_eth_info *eth, bool status);
 	void (*set_fcs)(struct rnpgbe_eth_info *eth, bool status);
@@ -753,7 +750,7 @@ struct rnpgbe_eth_operations {
 enum {
 	rnpgbe_driver_insmod,
 	rnpgbe_driver_suspuse,
-	rnpgbe_driver_force_control_mac,
+	rnpgbe_driver_force_control_phy,
 };
 
 struct rnpgbe_hw_operations {
@@ -782,8 +779,6 @@ struct rnpgbe_hw_operations {
 	void (*set_txvlan_mode)(struct rnpgbe_hw *hw, bool vlan);
 	void (*set_tx_maxrate)(struct rnpgbe_hw *hw, bool flag);
 	void (*set_fcs_mode)(struct rnpgbe_hw *hw, bool status);
-	void (*set_vxlan_port)(struct rnpgbe_hw *hw, u32 port);
-	void (*set_vxlan_mode)(struct rnpgbe_hw *hw, bool inner);
 	void (*set_mac_speed)(struct rnpgbe_hw *hw, bool link, u32 speed,
 			      bool duplex);
 	void (*set_mac_rx)(struct rnpgbe_hw *hw, bool status);
@@ -810,8 +805,6 @@ struct rnpgbe_hw_operations {
 	s32 (*setup_link)(struct rnpgbe_hw *hw, rnpgbe_link_speed adv,
 			  u32 autoneg, u32 speed, u32 duplex);
 	void (*clean_link)(struct rnpgbe_hw *hw);
-	s32 (*get_link_capabilities)(struct rnpgbe_hw *hw,
-				     rnpgbe_link_speed *speed, bool *autoneg);
 	s32 (*init_rx_addrs)(struct rnpgbe_hw *hw);
 	void (*set_layer2_remapping)(struct rnpgbe_hw *hw,
 				     union rnpgbe_atr_input *input, u16 pri_id,
@@ -851,6 +844,7 @@ struct rnpgbe_hw_operations {
 	int (*get_ncsi_vlan)(struct rnpgbe_hw *hw, u16 *vlan, int idx);
 	void (*set_lldp)(struct rnpgbe_hw *hw, bool enable);
 	void (*get_lldp)(struct rnpgbe_hw *hw);
+	int (*dump_debug_regs)(struct rnpgbe_hw *hw, char *var);
 };
 
 struct rnpgbe_mac_operations {
@@ -1103,6 +1097,17 @@ struct lldp_status {
 	int inteval;
 };
 
+struct rnpgbe_debug_reg {
+	char *name;
+	u32 offset;
+};
+
+struct rnpgbe_debug_reg_bits {
+	u32 flags;
+	u32 offset;
+	char *name[32];
+};
+
 struct rnpgbe_hw {
 	void *back;
 	u8 __iomem *hw_addr;
@@ -1111,6 +1116,7 @@ struct rnpgbe_hw {
 	u8 pfvfnum;
 	u8 pfvfnum_system;
 	struct pci_dev *pdev;
+	int msix_vector_base;
 	u16 device_id;
 	u16 vendor_id;
 	u16 subsystem_device_id;
@@ -1122,9 +1128,10 @@ struct rnpgbe_hw {
 	int sfc_boot;
 	int pxe_en;
 	int ncsi_en;
+	int trim_valid;
 	u8 is_backplane : 1;
 	u8 is_sgmii : 1;
-	u8 force_10g_1g_speed_ablity : 1;
+	u8 force_10g_1g_speed_ability : 1;
 	u8 force_speed_stat : 2;
 #define FORCE_SPEED_STAT_DISABLED 0
 #define FORCE_SPEED_STAT_1G 1
@@ -1132,6 +1139,7 @@ struct rnpgbe_hw {
 	u32 supported_link;
 	u32 advertised_link;
 	u32 autoneg;
+	u32 fake_autoneg;
 	u32 tp_mdx;
 	u32 tp_mdix_ctrl;
 	u32 phy_id;
@@ -1196,6 +1204,9 @@ struct rnpgbe_hw {
 	bool wol_enabled;
 	unsigned long wol_supported;
 	int fw_version;
+	int force_en;
+	int force_cap;
+	u32 driver_version;
 	u8 sfp_connector;
 
 	struct vf_vebvlans vf_vas;
