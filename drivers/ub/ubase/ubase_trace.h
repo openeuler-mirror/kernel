@@ -263,6 +263,45 @@ DEFINE_EVENT(ubase_ctrlq_ue_msg_template, ubase_parse_ue_msg,
 	TP_PROTO(const struct device *dev, u16 bus_ue_id, const void *buf, u16 len),
 	TP_ARGS(dev, bus_ue_id, buf, len));
 
+DECLARE_EVENT_CLASS(ubase_free_mailbox_template,
+	TP_PROTO(const struct device *dev, atomic_t *count, u16 seq_num),
+	TP_ARGS(dev, count, seq_num),
+
+	TP_STRUCT__entry(
+		__field(int, count)
+		__field(u16, seq_num)
+		__dynamic_array(char, devname, TRACE_DEV_NAME_MAX_LEN)
+	),
+
+	TP_fast_assign(
+		__entry->count = atomic_read(count);
+		__entry->seq_num = seq_num;
+		if (dev) {
+			(void)snprintf(__get_str(devname), TRACE_DEV_NAME_MAX_LEN,
+				       "%s %s", dev_driver_string(dev),
+				       dev_name(dev));
+		}
+	),
+
+	TP_printk(
+		"%s mailbox count: %d, seq_num: %d", __get_str(devname), __entry->count,
+		__entry->seq_num
+	)
+);
+
+DEFINE_EVENT(ubase_free_mailbox_template, ubase_free_mailbox_user,
+	TP_PROTO(const struct device *dev, atomic_t *count, u16 seq_num),
+	TP_ARGS(dev, count, seq_num));
+DEFINE_EVENT(ubase_free_mailbox_template, ubase_free_mailbox_self,
+	TP_PROTO(const struct device *dev, atomic_t *count, u16 seq_num),
+	TP_ARGS(dev, count, seq_num));
+DEFINE_EVENT(ubase_free_mailbox_template, ubase_alloc_mailbox_user,
+	TP_PROTO(const struct device *dev, atomic_t *count, u16 seq_num),
+	TP_ARGS(dev, count, seq_num));
+DEFINE_EVENT(ubase_free_mailbox_template, ubase_add_mailbox_count,
+	TP_PROTO(const struct device *dev, atomic_t *count, u16 seq_num),
+	TP_ARGS(dev, count, seq_num));
+
 TRACE_EVENT(ubase_misc_event_cause,
 	TP_PROTO(struct device *dev, unsigned long event_cause),
 	TP_ARGS(dev, event_cause),

@@ -406,6 +406,8 @@ static void ubase_mbx_complete(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 	if (aeqe->event.cmd.seq_num != ctx->seq_num)
 		return;
 
+	ubase_mailbox_buff_free(udev);
+
 	ctx->result = aeqe->event.cmd.status == 0 ? 0 : -EIO;
 	ctx->out_param = aeqe->event.cmd.out_param;
 

@@ -543,7 +543,7 @@ static int unic_update_ctrlq_ip_list(struct unic_ip_info *ip_info,
 	st_ip.ip_addr[2] = le32_to_be32(ip_info->ip_addr[1]);
 	st_ip.ip_addr[3] = le32_to_be32(ip_info->ip_addr[0]);
 
-	ip_node = kzalloc(sizeof(*ip_node), GFP_KERNEL);
+	ip_node = kzalloc(sizeof(*ip_node), GFP_ATOMIC);
 	if (!ip_node)
 		return -ENOMEM;
 
@@ -563,7 +563,7 @@ static int unic_update_ctrlq_ip_list(struct unic_ip_info *ip_info,
 		list_add_tail(&ip_node->node, &vport->addr_tbl.ip_list);
 	}
 
-	tmp_node = kzalloc(sizeof(*tmp_node), GFP_KERNEL);
+	tmp_node = kzalloc(sizeof(*tmp_node), GFP_ATOMIC);
 	if (!tmp_node)
 		return -ENOMEM;
 

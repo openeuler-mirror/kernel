@@ -9,11 +9,15 @@
 #include <linux/ummu_core.h>
 
 #include "ubase_cmd.h"
+#include "ubase_trace.h"
 #include "ubase_mailbox.h"
 
 int ubase_mbox_cmd_init(struct ubase_dev *udev)
 {
 	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
+
+	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		return 0;
 
 	udev->mb_cmd.pool = dma_pool_create("ubase_mbox", udev->dev,
 					    UBASE_MAILBOX_SIZE,
@@ -30,6 +34,11 @@ int ubase_mbox_cmd_init(struct ubase_dev *udev)
 void ubase_mbox_cmd_uninit(struct ubase_dev *udev)
 {
 	if (!udev->mb_cmd.pool)
+		return;
+
+	ubase_mailbox_buff_free(udev);
+
+	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
 		return;
 
 	dma_pool_destroy(udev->mb_cmd.pool);
@@ -57,6 +66,8 @@ struct ubase_cmd_mailbox *__ubase_alloc_cmd_mailbox(struct ubase_dev *udev)
 		ubase_err(udev, "failed to alloc buffer of mailbox.\n");
 		goto failed_alloc_mailbox_buf;
 	}
+
+	atomic_set(&mailbox->count, 1);
 
 	return mailbox;
 
@@ -96,6 +107,9 @@ void __ubase_free_cmd_mailbox(struct ubase_dev *udev,
 		return;
 	}
 
+	if (!atomic_dec_and_test(&mailbox->count))
+		return;
+
 	dma_pool_free(udev->mb_cmd.pool, mailbox->buf, mailbox->dma);
 	kfree(mailbox);
 }
@@ -119,9 +133,21 @@ void ubase_free_cmd_mailbox(struct auxiliary_device *aux_dev,
 
 	udev = __ubase_get_udev_by_adev(aux_dev);
 
+	trace_ubase_free_mailbox_user(udev->dev, &mailbox->count, udev->mb_cmd.ctx.seq_num);
 	__ubase_free_cmd_mailbox(udev, mailbox);
 }
 EXPORT_SYMBOL(ubase_free_cmd_mailbox);
+
+void ubase_mailbox_buff_free(struct ubase_dev *udev)
+{
+	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
+
+	if (ctx->mbx_buff) {
+		trace_ubase_free_mailbox_self(udev->dev, &ctx->mbx_buff->count, ctx->seq_num);
+		__ubase_free_cmd_mailbox(udev, ctx->mbx_buff);
+		ctx->mbx_buff = NULL;
+	}
+}
 
 static int ubase_post_mailbox(struct ubase_dev *udev,
 			      struct ubase_cmdq_desc *desc,
@@ -249,7 +275,7 @@ static int ubase_cmd_mbox_event(struct ubase_dev *udev,
 	__ubase_fill_inout_buf(&out, UBASE_OPC_POST_MB, false,
 			       sizeof(union ubase_mbox), (void *)&mb_out);
 
-	ret = ubase_post_mailbox_by_event(udev, &in, &out);
+	ret = ubase_post_mailbox_by_event(udev, &in, &out, mailbox);
 	if (ret)
 		ubase_err(udev,
 			  "failed to post mailbox 0x%x in event mode, ret = %d.\n",
@@ -544,7 +570,12 @@ int __ubase_hw_upgrade_ctx_ex(struct ubase_dev *udev,
  * @attr: the mailbox attribute pointer
  * @mailbox: mailbox command address
  *
- * The function is used to upgrade hardware context.
+ * The function is used to upgrade hardware context. It can be used
+ * in the following two ways:
+ * 1. Combined mode: This function is used together with ubase_alloc_cmd_mailbox()
+ * and ubase_free_cmd_mailbox().
+ * 2. Independent mode: When used independently, the atomic variable 'count' in
+ * the ubase_cmd_mailbox structure must be 0.
  *
  * Context: Process context. Takes and releases <lock>, BH-safe. May sleep
  * Return: 0 on success, negative error code otherwise

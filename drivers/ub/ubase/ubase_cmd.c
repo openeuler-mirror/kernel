@@ -711,8 +711,10 @@ static void ubase_setup_mbx_info(struct ubase_dev *udev, union ubase_mbox *mbx)
 
 int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 				struct ubase_cmd_buf *in,
-				struct ubase_cmd_buf *out)
+				struct ubase_cmd_buf *out,
+				struct ubase_cmd_mailbox *mailbox)
 {
+	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
 	union ubase_mbox *mbx = (union ubase_mbox *)in->data;
 	unsigned long end;
 	int ret;
@@ -722,7 +724,18 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 		return -EINVAL;
 	}
 
+	if (ctx->mbx_buff) {
+		ubase_err_rl(udev, udev->log_rs.mbx_buff_not_empty_cnt,
+			     "Incomplete mailbox events exist.\n");
+		return -EBUSY;
+	}
+
 	ubase_setup_mbx_info(udev, mbx);
+	trace_ubase_alloc_mailbox_user(udev->dev, &mailbox->count, ctx->seq_num);
+	if (atomic_inc_not_zero(&mailbox->count))
+		ctx->mbx_buff = mailbox;
+
+	trace_ubase_add_mailbox_count(udev->dev, &mailbox->count, ctx->seq_num);
 
 	end = msecs_to_jiffies(UBASE_CMDQ_MBX_TX_TIMEOUT) + jiffies;
 	while (1) {
@@ -734,6 +747,8 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 			dev_err_ratelimited(udev->dev,
 					    "failed to wait mbox, ret = %d.\n",
 					    ret);
+
+			atomic_add_unless(&mailbox->count, -1, 0);
 			return -ETIMEDOUT;
 		}
 
