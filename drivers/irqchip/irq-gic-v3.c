@@ -1368,6 +1368,14 @@ static int __gic_update_rdist_properties(struct redist_region *region,
 	return 1;
 }
 
+#ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
+bool is_vtimer_supported(void)
+{
+	return gic_data.rdists.has_vtimer;
+}
+EXPORT_SYMBOL(is_vtimer_supported);
+#endif
+
 static void gic_update_rdist_properties(void)
 {
 	gic_data.ppi_nr = UINT_MAX;

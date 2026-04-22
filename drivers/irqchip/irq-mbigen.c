@@ -706,6 +706,17 @@ static bool vtimer_mbigen_should_probe(struct mbigen_device *mgn_chip)
 #define CHIP1_TB_PERI_PHY_BASE		0x20c614002018
 
 extern bool vtimer_irqbypass;
+extern bool gicv4_enable;
+
+static bool is_vtimer_enabled(void)
+{
+	/*
+	 * 'gicv4_enable' indicates whether the user enables GICv4.
+	 * 'is_vtimer_supported()' check whether vtimer is supported.
+	 * 'vtimer_irqbypass' indicates whether the user enables vtimer.
+	 */
+	return gicv4_enable && is_vtimer_supported() && vtimer_irqbypass;
+}
 
 static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 {
@@ -716,7 +727,7 @@ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 	u32 val;
 	struct vtimer_mbigen_device *chip;
 
-	if (!vtimer_irqbypass)
+	if (!is_vtimer_enabled())
 		return 0;
 
 	if (!mgn_chip)
@@ -796,7 +807,7 @@ static int vtimer_mbigen_device_probe(struct platform_device *pdev)
 	struct vtimer_mbigen_device *vtimer_mgn_chip;
 	int err;
 
-	if (!vtimer_irqbypass)
+	if (!is_vtimer_enabled())
 		return 0;
 
 	err = vtimer_mbigen_set_regs(pdev);

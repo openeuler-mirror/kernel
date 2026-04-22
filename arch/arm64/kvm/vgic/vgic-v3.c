@@ -20,7 +20,7 @@ static bool group0_trap;
 static bool group1_trap;
 static bool common_trap;
 static bool dir_trap;
-static bool gicv4_enable;
+bool gicv4_enable;
 
 void vgic_v3_set_underflow(struct kvm_vcpu *vcpu)
 {
