@@ -106,10 +106,12 @@ int ubcore_create_workqueues(void)
 	for (i = 0; i < UBCORE_QUEUE_TYPE_NUM; i++) {
 		if (i == UBCORE_NLMSG_WQ)
 			g_ubcore_workqueues[i] = alloc_workqueue(
-				"%s", 0, 1, UBCORE_QUEUE_NAMES[i]);
+				"%s", WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM,
+				1, UBCORE_QUEUE_NAMES[i]);
 		else
 			g_ubcore_workqueues[i] = alloc_workqueue(
-				"%s", 0, 0, UBCORE_QUEUE_NAMES[i]);
+				"%s", WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM,
+				0, UBCORE_QUEUE_NAMES[i]);
 
 		if (!g_ubcore_workqueues[i]) {
 			ubcore_log_err(

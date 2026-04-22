@@ -21,15 +21,15 @@
 #define UBMAD_WK_JETTY_ID_1 2U
 
 // jetty
-#define UBMAD_JFS_DEPTH 512U
-#define UBMAD_JFR_DEPTH 1024U
+#define UBMAD_JFS_DEPTH 1024U
+#define UBMAD_JFR_DEPTH 2048U
 #define UBMAD_JFS_MAX_SGE_NUM 1
 #define UBMAD_JFR_MAX_SGE_NUM 1
 #define UBMAD_JETTY_ERR_TIMEOUT 17
 
 // seg
-#define UBMAD_SEND_SGE_NUM (UBMAD_JFS_DEPTH * 2)
-#define UBMAD_RECV_SGE_NUM (UBMAD_JFR_DEPTH * 2)
+#define UBMAD_SEND_SGE_NUM (UBMAD_JFS_DEPTH)
+#define UBMAD_RECV_SGE_NUM (UBMAD_JFR_DEPTH)
 
 // tjetty
 #define UBMAD_MAX_TJETTY_NUM 10240
@@ -50,8 +50,8 @@
 
 #define UBMAD_INI_RTBUFFER_SIZE 1024
 #define UBMAD_TGT_RTBUFFER_SIZE 1024
-#define UBMAD_TGT_RTBUFFER_MASK 255
-#define UBMAD_RTBUFFER_PKTSIZE 256
+#define UBMAD_TGT_RTBUFFER_MASK 1023
+#define UBMAD_RTBUFFER_PKTSIZE 1024
 #define UBMAD_TGT_HASH_SIZE 1024
 
 /* common */
@@ -278,5 +278,9 @@ int ubmad_post_recv(struct ubmad_jetty_resource *rsrc);
 /* poll */
 void ubmad_jfce_handler_s(struct ubcore_jfc *jfc);
 void ubmad_jfce_handler_r(struct ubcore_jfc *jfc);
+
+struct ubmad_tjetty *
+ubmad_get_tjetty_lockless(struct ubmad_jetty_resource *rsrc, uint32_t hash,
+			  union ubcore_eid *dst_eid);
 
 #endif /* UB_MAD_PRIV_H */

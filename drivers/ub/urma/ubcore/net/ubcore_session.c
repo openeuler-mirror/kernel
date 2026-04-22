@@ -205,7 +205,8 @@ int ubcore_session_init(void)
 	INIT_LIST_HEAD(&session_ctx.list);
 	spin_lock_init(&session_ctx.lock);
 
-	session_ctx.wq = alloc_workqueue("%s", 0, 1, "ubcore-session");
+	session_ctx.wq = alloc_workqueue("%s",
+		WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 1, "ubcore-session");
 	if (!session_ctx.wq) {
 		ubcore_log_err("Fail to alloc session workqueue.");
 		return -EINVAL;

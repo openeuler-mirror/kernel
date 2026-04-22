@@ -769,6 +769,9 @@ int ubmad_post_send(struct ubcore_device *device,
 	union ubcore_eid dst_primary_eid = { 0 };
 	struct ubmad_jetty_work *jetty_work;
 	struct ubmad_send_buf *jetty_send_buf;
+	unsigned long flag;
+	uint32_t hash;
+	struct ubmad_tjetty *tjetty = NULL;
 	int ret;
 
 	dev_priv = ubmad_get_device_priv(device); // put in ubmad_jetty_work_handler()
@@ -810,6 +813,27 @@ int ubmad_post_send(struct ubcore_device *device,
 	if (ret != 0) {
 		ubcore_log_err("get primary eid failed\n");
 		goto put_device_priv;
+	}
+
+	hash = jhash(&dst_primary_eid, sizeof(union ubcore_eid), 0) %
+		UBMAD_MAX_TJETTY_NUM;
+	spin_lock_irqsave(&rsrc->tjetty_hlist_lock, flag);
+	tjetty = ubmad_get_tjetty_lockless(rsrc, hash, &dst_primary_eid); // put by user
+	spin_unlock_irqrestore(&rsrc->tjetty_hlist_lock, flag);
+	if (!IS_ERR_OR_NULL(tjetty)) {
+		ubcore_log_info("tjetty0 already imported. eid " EID_FMT "\n",
+			EID_ARGS(dst_primary_eid));
+		/* post send */
+		ret = ubmad_do_post_send(
+			rsrc, tjetty, send_buf,
+			send_buf->session_id,
+			dev_priv->rt_wq);
+		if (ret != 0)
+			ubcore_log_err("do post send failed, ret: %d\n", ret);
+
+		ubmad_put_tjetty(tjetty);
+		ubmad_put_device_priv(dev_priv);
+		return ret;
 	}
 
 	jetty_work = kcalloc(1, sizeof(struct ubmad_jetty_work), GFP_KERNEL);
