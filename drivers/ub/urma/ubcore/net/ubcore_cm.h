@@ -22,7 +22,9 @@ typedef int (*ubcore_cm_eid_ops)(struct ubcore_device *dev,
 void ubcore_register_cm_eid_ops(ubcore_cm_eid_ops eid_ops);
 
 enum ubcore_cm_msg_type {
-	UBCORE_CM_CONN_MSG = 2, /* Consistent with UBMAD_UBC_CONN_DATA */
+	UBCORE_CM_CONN_REQ = 2, /* Consistent with UBMAD_UBC_CONN_REQ */
+	UBCORE_CM_CONN_RESP = 3, /* Consistent with UBMAD_UBC_CONN_RESP */
+	UBCORE_CM_SINGLE_REQ = 4, /* Consistent with UBMAD_UBC_SINGLE_REQ */
 	UBCORE_CM_MSG_NUM
 };
 
@@ -31,6 +33,7 @@ struct ubcore_cm_send_buf {
 	union ubcore_eid dst_eid; /* [Mandatory] Target eid */
 	uint32_t msg_type; /* [Mandatory] Refer to enum ubcore_cm_msg_type */
 	uint32_t payload_len; /* [Mandatory] */
+	uint64_t session_id;
 	uint8_t payload[0]; /* [Mandatory] */
 };
 

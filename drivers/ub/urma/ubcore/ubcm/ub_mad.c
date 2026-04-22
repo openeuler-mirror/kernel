@@ -458,6 +458,32 @@ static void ubmad_release_tjetty(struct kref *kref)
 	struct ubmad_tjetty *tjetty =
 		container_of(kref, struct ubmad_tjetty, kref);
 	int ret;
+	struct ubmad_ini_rtbuffer *ini_rtbuffer;
+	struct ubmad_tgt_hash_node *tgt_hash_node;
+	struct hlist_node *next;
+	unsigned long flag;
+	uint32_t idx;
+
+
+	spin_lock_irqsave(&tjetty->ini_rt_spinlock, flag);
+	for (idx = 0; idx < UBMAD_INI_RTBUFFER_SIZE; idx++) {
+		hlist_for_each_entry_safe(ini_rtbuffer, next,
+					  &tjetty->ini_rt_hlist[idx], node) {
+			hlist_del(&ini_rtbuffer->node);
+			kfree(ini_rtbuffer);
+		}
+	}
+	spin_unlock_irqrestore(&tjetty->ini_rt_spinlock, flag);
+
+	spin_lock_irqsave(&tjetty->tgt_hash_lock, flag);
+	for (idx = 0; idx < UBMAD_TGT_HASH_SIZE; idx++) {
+		hlist_for_each_entry_safe(tgt_hash_node, next,
+					  &tjetty->tgt_hash_hlist[idx], node) {
+			hlist_del(&tgt_hash_node->node);
+			kfree(tgt_hash_node);
+		}
+	}
+	spin_unlock_irqrestore(&tjetty->tgt_hash_lock, flag);
 
 	ubmad_uninit_msn_mgr(&tjetty->msn_mgr);
 
@@ -586,6 +612,19 @@ struct ubmad_tjetty *ubmad_import_jetty(struct ubcore_device *device,
 		goto free;
 	}
 	new_tjetty->tjetty = new_target;
+
+	int idx;
+
+	for (idx = 0; idx < UBMAD_INI_RTBUFFER_SIZE; idx++)
+		INIT_HLIST_HEAD(&new_tjetty->ini_rt_hlist[idx]);
+	spin_lock_init(&new_tjetty->ini_rt_spinlock);
+	for (idx = 0; idx < UBMAD_TGT_HASH_SIZE; idx++)
+		INIT_HLIST_HEAD(&new_tjetty->tgt_hash_hlist[idx]);
+	for (idx = 0; idx < UBMAD_TGT_RTBUFFER_SIZE; idx++)
+		new_tjetty->tgt_rt_buffer[idx].msn = 0;
+	spin_lock_init(&new_tjetty->tgt_hash_lock);
+	atomic64_set(&new_tjetty->tgt_idx_gen, 1);
+	new_tjetty->rsrc = rsrc;
 
 	ubmad_init_msn_mgr(&new_tjetty->msn_mgr);
 
@@ -826,9 +865,6 @@ static int ubmad_init_jetty_rsrc(struct ubmad_jetty_resource *rsrc,
 		INIT_HLIST_HEAD(&rsrc->tjetty_hlist[idx]);
 	spin_lock_init(&rsrc->tjetty_hlist_lock);
 
-	/* reliable communication */
-	ubmad_init_seid_hlist(rsrc);
-
 	return 0;
 destroy_seg:
 	ubmad_destroy_seg(rsrc);
@@ -882,9 +918,6 @@ static void ubmad_uninit_jetty_rsrc(struct ubmad_jetty_resource *rsrc)
 	struct hlist_node *next;
 	unsigned long flag;
 	int i;
-
-	/* reliable communication */
-	ubmad_uninit_seid_hlist(rsrc);
 
 	/* tjetty */
 	spin_lock_irqsave(&rsrc->tjetty_hlist_lock, flag);

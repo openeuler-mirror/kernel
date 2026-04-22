@@ -152,7 +152,7 @@ static int ubcm_recv_handler(struct ubmad_agent *agent,
 	int ret;
 
 	switch (recv_cr->msg_type) {
-	case UBMAD_UBC_CONN_DATA:
+	case UBMAD_UBC_CONN_REQ:
 		ret = ubcore_cm_recv(agent->device,
 				     (struct ubcore_cm_recv_cr *)recv_cr);
 		if (ret != 0)

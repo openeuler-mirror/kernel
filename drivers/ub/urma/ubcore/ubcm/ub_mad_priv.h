@@ -49,6 +49,12 @@
 
 #define UBMAD_TX_THREDSHOLD (UBMAD_JFS_DEPTH - 8)
 
+#define UBMAD_INI_RTBUFFER_SIZE 1024
+#define UBMAD_TGT_RTBUFFER_SIZE 256
+#define UBMAD_TGT_RTBUFFER_MASK 255
+#define UBMAD_RTBUFFER_PKTSIZE 256
+#define UBMAD_TGT_HASH_SIZE 1024
+
 /* common */
 struct ubmad_bitmap {
 	unsigned long *bits;
@@ -88,11 +94,25 @@ struct ubmad_jetty_resource {
 	// key: ubcore_eid dst_eid, val: ubmad_tjetty tjetty
 	struct hlist_head tjetty_hlist[UBMAD_MAX_TJETTY_NUM];
 	spinlock_t tjetty_hlist_lock;
+};
 
-	/* reliable communication */
-	// source eid hlist, only for target. key: src eid, val: seid_node.
-	struct hlist_head seid_hlist[UBMAD_MAX_SEID_NUM]; // ubmad_seid_node
-	spinlock_t seid_hlist_lock;
+struct ubmad_ini_rtbuffer {
+	struct hlist_node node;
+	uint64_t msn;
+	uint32_t payload_len;
+	uint8_t data[UBMAD_RTBUFFER_PKTSIZE];
+};
+
+struct ubmad_tgt_rtbuffer {
+	uint64_t msn;
+	uint32_t payload_len;
+	uint8_t data[UBMAD_RTBUFFER_PKTSIZE];
+};
+
+struct ubmad_tgt_hash_node {
+	struct hlist_node node;
+	uint64_t msn;
+	uint64_t idx;
 };
 
 struct ubmad_tjetty {
@@ -102,6 +122,15 @@ struct ubmad_tjetty {
 
 	/* reliable communication */
 	struct ubmad_msn_mgr msn_mgr; // for retransmit, only for initiator
+	spinlock_t ini_rt_spinlock;
+	struct hlist_head ini_rt_hlist[UBMAD_INI_RTBUFFER_SIZE];
+
+	spinlock_t tgt_hash_lock;
+	atomic64_t tgt_idx_gen;
+	struct hlist_head tgt_hash_hlist[UBMAD_TGT_HASH_SIZE];
+	struct ubmad_tgt_rtbuffer tgt_rt_buffer[UBMAD_TGT_RTBUFFER_SIZE];
+
+	struct ubmad_jetty_resource *rsrc;
 };
 
 /* device */
@@ -196,21 +225,9 @@ struct ubmad_rt_work {
 	uint64_t msn;
 	uint32_t rt_cnt; /* Retry count, no larger than UBMAD_MAX_RETRY_CNT */
 	struct ubmad_msn_mgr *msn_mgr;
-
-	struct ubmad_msg *msg;
-	struct ubmad_tjetty *tjetty;
 	struct ubmad_jetty_resource *rsrc;
+	union ubcore_eid dst;
 	struct workqueue_struct *rt_wq;
-};
-
-/* for target (data recver, ack sender) */
-struct ubmad_seid_node {
-	struct hlist_node node; // ubmad_device_priv.seid_hlist
-	union ubcore_eid seid;
-	struct kref kref;
-
-	atomic64_t expected_msn;
-	struct ubmad_bitmap *rx_bitmap;
 };
 
 /* common */
@@ -253,14 +270,7 @@ void ubmad_put_agent_priv(struct ubmad_agent_priv *agent_priv);
 void ubmad_init_msn_mgr(struct ubmad_msn_mgr *msn_mgr);
 void ubmad_uninit_msn_mgr(struct ubmad_msn_mgr *msn_mgr);
 
-void ubmad_init_seid_hlist(struct ubmad_jetty_resource *rsrc);
-void ubmad_uninit_seid_hlist(struct ubmad_jetty_resource *rsrc);
-
 /* post */
-int ubmad_repost_send(struct ubmad_msg *msg, struct ubmad_tjetty *tjetty,
-		      struct ubcore_target_seg *send_seg,
-		      struct workqueue_struct *rt_wq,
-		      struct ubmad_jetty_resource *rsrc);
 void ubmad_post_send_close_req(struct ubmad_jetty_resource *rsrc,
 			       struct ubcore_tjetty *tjetty);
 
