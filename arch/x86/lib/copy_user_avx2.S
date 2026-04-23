@@ -196,6 +196,7 @@ large_block_nt_unaligned_cpy:
     jmp Lless_than_256_bytes_cpy
 
 88:
+    sfence
     vzeroupper
     jmp Lavx2_copy_user_handle_tail
 
