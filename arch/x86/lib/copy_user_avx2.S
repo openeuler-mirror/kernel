@@ -190,6 +190,7 @@ large_block_nt_unaligned_cpy:
     .section .fixup,"ax"
 
 88:
+    sfence
     vzeroupper
     jmp .Lavx2_copy_user_handle_tail
     .previous
