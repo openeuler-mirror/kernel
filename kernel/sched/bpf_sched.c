@@ -212,13 +212,16 @@ __bpf_kfunc long bpf_sched_tag_of_entity(struct sched_entity *se)
 
 __bpf_kfunc int bpf_sched_set_task_prefer_nid(struct task_struct *task, int nid)
 {
+	cpumask_t mask;
+
 	if (!task)
 		return -EINVAL;
 
 	if ((unsigned int)nid >= nr_node_ids)
 		return -EINVAL;
 
-	return set_prefer_cpus_ptr(task, cpumask_of_node(nid));
+	cpumask_and(&mask, task->cpus_ptr, cpumask_of_node(nid));
+	return set_prefer_cpus_ptr(task, &mask);
 }
 
 BTF_SET8_START(sched_task_kfunc_btf_ids)
