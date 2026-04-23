@@ -56,8 +56,8 @@ a simple open/read/write/close cycle will be used to tune the event.
     $ cd /sys/devices/hisi_ptt<sicl_id>_<core_id>/tune
     $ ls
     qos_tx_cpl    qos_tx_np    qos_tx_p
-    tx_path_rx_req_alloc_buf_level
-    tx_path_tx_req_alloc_buf_level
+    rx_alloc_buf_level
+    tx_alloc_buf_level
     $ cat qos_tx_dp
     1
     $ echo 2 > qos_tx_dp
