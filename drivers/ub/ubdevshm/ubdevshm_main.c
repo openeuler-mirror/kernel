@@ -279,7 +279,7 @@ static inline int shm_area_find_overlap(const void *key, const struct rb_node *n
 {
 	struct va_area *a = (struct va_area *)key;
 	struct shm_area *b = __node_2_sa(node);
-	u64 end_area = min(a->va + a->size, b->va + b->size);
+	u64 end_area = min(a->va + a->size - 1, b->va + b->size - 1);
 	u64 start_area = max(a->va, b->va);
 
 	if (end_area >= start_area)
@@ -532,9 +532,6 @@ static struct task_struct *get_task_by_tgid(pid_t tgid)
 
 	rcu_read_lock();
 	tsk = get_pid_task(find_pid_ns(tgid, &init_pid_ns), PIDTYPE_TGID);
-	if (tsk)
-		get_task_struct(tsk);
-
 	rcu_read_unlock();
 
 	return tsk;
@@ -610,7 +607,7 @@ int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
 	bool found = false;
 	int ret;
 
-	if (!handle || !va) {
+	if (!handle || !va || !va->size) {
 		pr_err("invalid param\n");
 		return -EINVAL;
 	}
@@ -1057,10 +1054,8 @@ static struct task_struct *get_task_by_peer_tgid(struct task_struct *peer, pid_t
 	tsk = get_pid_task(find_pid_ns(tgid, task_active_pid_ns(peer)), PIDTYPE_PID);
 	if (tsk == peer) {
 		pr_err("tgid[%d] is same with peer task\n", tgid);
+		put_task_struct(tsk);
 		tsk = NULL;
-	} else {
-		if (tsk)
-			get_task_struct(tsk);
 	}
 	rcu_read_unlock();
 
