@@ -1037,7 +1037,7 @@ static void hclge_dbg_dump_mac_type(struct hclge_dev *hdev, char *buf, int len,
 {
 	struct hclge_vport *vport = &hdev->vport[0];
 	struct hnae3_handle *handle = &vport->nic;
-	char *type;
+	const char *type;
 
 	if (hnae3_dev_ubl_supported(hdev->ae_dev))
 		type = "UB";
