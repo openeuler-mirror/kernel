@@ -1185,13 +1185,18 @@ out_put_provider:
 EXPORT_SYMBOL_GPL(ubdevshm_grant_access);
 
 static struct access_ctx_inner *find_cntr_owner_access_ctx(struct shm_container *cntr,
-							   struct shm_area *sa)
+			struct access_ctx_inner *ctx_inner)
 {
 	struct access_ctx_inner *ctx = NULL, *pos = NULL;
+	struct role_provider rp = {};
+	struct role_info role;
+
+	rp.role = fill_role_info(role, current);
+	rp.provider = ctx_inner->provider;
 
 	mutex_lock(&cntr->lock);
-	list_for_each_entry(pos, &sa->ctx_list, node) {
-		if (is_same_role(&pos->user, &cntr->owner)) {
+	list_for_each_entry(pos, &ctx_inner->sa->ctx_list, node) {
+		if (role_provider_equal(pos, &rp)) {
 			ctx = pos;
 			break;
 		}
@@ -1230,7 +1235,7 @@ int ubdevshm_ungrant_access(struct access_ctx *ctx)
 		goto out;
 	}
 
-	ctx_parent = find_cntr_owner_access_ctx(cntr, ctx_inner->sa);
+	ctx_parent = find_cntr_owner_access_ctx(cntr, ctx_inner);
 	if (!ctx_parent) {
 		pr_err("FATAL err: find cntr owner access ctx failed\n");
 		ret = -ENOENT;
