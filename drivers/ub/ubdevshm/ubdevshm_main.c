@@ -584,7 +584,7 @@ static int lite_role_find_get_task(struct mem_uva *va, struct role_info *role)
 		if (!is_exist || !is_same_role_task(role, current)) {
 			pr_err("register segment can not find task: current tgid: %d, start_time: %llx\n",
 				current->tgid, current->group_leader->start_time);
-			pr_err("is_exist: %d, role->tgid: %d, role->aux: %llx\n",
+			pr_err("is_exist: %d, role->tgid: %u, role->aux: %llx\n",
 				is_exist, role->tgid, role->aux);
 			if (task)
 				put_task_struct(task);
@@ -817,14 +817,14 @@ static int find_get_shm_context(struct access_ctx *ctx,
 
 	cntr = find_get_shm_container_by_id(ctx->shm_container_id);
 	if (!cntr) {
-		pr_err("invalid shm_container_id[%d] without matching cntr\n",
+		pr_err("invalid shm_container_id[%u] without matching cntr\n",
 		       ctx->shm_container_id);
 		return -ENOENT;
 	}
 
 	ctx_inner = find_get_access_ctx_by_id(ctx->access_ctx_id);
 	if (!ctx_inner) {
-		pr_err("find access ctx inner[%d] failed\n", ctx->access_ctx_id);
+		pr_err("find access ctx inner[%u] failed\n", ctx->access_ctx_id);
 		ret = -ENOENT;
 		goto out;
 	}
@@ -868,7 +868,7 @@ static int find_get_shm_container_access_ctx(struct access_ctx *ctx, struct mem_
 		ctx_inner = find_get_access_ctx(cntr, va, true, true, role_equal,
 						fill_role_info(role, current));
 		if (!ctx_inner) {
-			pr_err("find ctx_inner failed: role.tgid: %d, role.aux: %llx\n",
+			pr_err("find ctx_inner failed: role.tgid: %u, role.aux: %llx\n",
 				role.tgid, role.aux);
 			ret = -ENOENT;
 			goto out;
@@ -1213,7 +1213,7 @@ int ubdevshm_ungrant_access(struct access_ctx *ctx)
 
 	cntr = find_get_shm_container_by_id(ctx->shm_container_id);
 	if (!cntr) {
-		pr_err("invalid shm_container_id[%d] without matching cntr\n",
+		pr_err("invalid shm_container_id[%u] without matching cntr\n",
 		       ctx->shm_container_id);
 		return -ENOENT;
 	}
