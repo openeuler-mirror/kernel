@@ -10,6 +10,7 @@
  */
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/vmalloc.h>
 #include "ubagg_log.h"
 #include "ubagg_topo_info.h"
 
@@ -142,7 +143,7 @@ create_ubagg_topo_map_from_user(struct ubagg_topo_node *user_topo_infos,
 		ubagg_log_err("Invalid param\n");
 		return NULL;
 	}
-	topo_map = kzalloc(sizeof(struct ubagg_topo_map), GFP_KERNEL);
+	topo_map = vzalloc(sizeof(struct ubagg_topo_map));
 	if (topo_map == NULL)
 		return NULL;
 	ret = copy_from_user(topo_map->topo_infos,
@@ -150,7 +151,7 @@ create_ubagg_topo_map_from_user(struct ubagg_topo_node *user_topo_infos,
 			     sizeof(struct ubagg_topo_node) * node_num);
 	if (ret != 0) {
 		ubagg_log_err("Failed to copy topo info.ret is %d.\n", ret);
-		kfree(topo_map);
+		vfree(topo_map);
 		return NULL;
 	}
 	topo_map->node_num = node_num;
@@ -161,7 +162,7 @@ void delete_ubagg_topo_map(struct ubagg_topo_map *topo_map)
 {
 	if (topo_map == NULL)
 		return;
-	kfree(topo_map);
+	vfree(topo_map);
 }
 
 struct ubagg_topo_node *find_cur_topo_node(struct ubagg_topo_map *topo_map)

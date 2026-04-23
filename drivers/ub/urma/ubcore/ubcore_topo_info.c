@@ -10,6 +10,7 @@
  */
 
 #include <linux/uaccess.h>
+#include <linux/vmalloc.h>
 #include <ub/urma/ubcore_types.h>
 #include <ub/urma/ubcore_uapi.h>
 #include "ubcore_log.h"
@@ -53,7 +54,7 @@ ubcore_create_topo_map_from_user(struct ubcore_topo_node *user_topo_infos,
 		ubcore_log_err("Invalid param\n");
 		return NULL;
 	}
-	topo_map = kzalloc(sizeof(struct ubcore_topo_map), GFP_KERNEL);
+	topo_map = vzalloc(sizeof(struct ubcore_topo_map));
 	if (!topo_map)
 		return NULL;
 	ret = copy_from_user(topo_map->topo_infos,
@@ -61,7 +62,7 @@ ubcore_create_topo_map_from_user(struct ubcore_topo_node *user_topo_infos,
 				 sizeof(struct ubcore_topo_node) * node_num);
 	if (ret != 0) {
 		ubcore_log_err("Failed to copy topo infos\n");
-		kfree(topo_map);
+		vfree(topo_map);
 		return NULL;
 	}
 	topo_map->node_num = node_num;
@@ -72,7 +73,7 @@ void ubcore_delete_topo_map(struct ubcore_topo_map *topo_map)
 {
 	if (!topo_map)
 		return;
-	kfree(topo_map);
+	vfree(topo_map);
 }
 
 bool is_agg_dev_valid(struct ubcore_topo_agg_dev *agg_dev)

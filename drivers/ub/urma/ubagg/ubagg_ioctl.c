@@ -12,6 +12,7 @@
 #include <linux/list.h>
 #include <linux/string.h>
 #include <linux/kref.h>
+#include <linux/vmalloc.h>
 
 #include <ub/urma/ubcore_api.h>
 #include <ub/urma/ubcore_uapi.h>
@@ -260,7 +261,7 @@ static struct ubagg_topo_info_out *get_topo_info(void)
 	topo_map = get_global_ubagg_map();
 	if (topo_map == NULL)
 		return NULL;
-	out = kzalloc(sizeof(struct ubagg_topo_info_out), GFP_KERNEL);
+	out = vzalloc(sizeof(struct ubagg_topo_info_out));
 	if (out == NULL)
 		return NULL;
 	(void)memcpy(out->topo_info, topo_map->topo_infos,
@@ -286,7 +287,7 @@ static int ubagg_get_topo_info(struct ubcore_device *dev,
 		ubagg_log_err(
 			"ubagg user ctl has no enough space, buffer size:%u, needed size:%lu",
 			user_ctl->out.len, sizeof(struct ubagg_topo_info_out));
-		kfree(topo_info_out);
+		vfree(topo_info_out);
 		return -ENOSPC;
 	}
 
@@ -295,10 +296,10 @@ static int ubagg_get_topo_info(struct ubcore_device *dev,
 			   sizeof(struct ubagg_topo_info_out));
 	if (ret != 0) {
 		ubagg_log_err("copy to user fail, ret:%d", ret);
-		kfree(topo_info_out);
+		vfree(topo_info_out);
 		return -EFAULT;
 	}
-	kfree(topo_info_out);
+	vfree(topo_info_out);
 	return 0;
 }
 
