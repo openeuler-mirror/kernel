@@ -40,7 +40,7 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 
 	ret = dev->ops->get_tp_list(dev, cfg, tp_cnt, tp_list, udata);
 	if (ret != 0)
-		ubcore_log_err("[DRV_ERROR]Failed to get to list, ret: %d.\n", ret);
+		ubcore_log_err_rl("[DRV_ERROR]Failed to get tp list, ret: %d.\n", ret);
 
 	return ret;
 }

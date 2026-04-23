@@ -1298,7 +1298,7 @@ int ubcore_bind_jetty_compat(struct ubcore_jetty *jetty,
 
 	ret = ubcore_get_tp_list(dev, &get_tp_cfg, &tp_cnt, &tp_list, NULL);
 	if (ret != 0 || tp_cnt != 1) {
-		ubcore_log_err("Failed to get tp list, ret: %d, tp_cnt: %u.\n",
+		ubcore_log_err_rl("Failed to get tp list, ret: %d, tp_cnt: %u.\n",
 			       ret, tp_cnt);
 		return ret == 0 ? -UBCORE_DRV_ERRNO : ret;
 	}

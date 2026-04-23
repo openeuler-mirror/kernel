@@ -176,7 +176,7 @@ ubmad_update_device_priv_resources(struct ubmad_device_priv *dev_priv,
 	if (memcmp(&dev_priv->eid_info.eid, &eid_info->eid,
 		   sizeof(union ubcore_eid)) == 0 &&
 	    dev_priv->eid_info.eid_index == eid_info->eid_index) {
-		ubcore_log_warn(
+		ubcore_log_warn_rl(
 			"eid_info is not changed, no need to update rsrc\n");
 		return 0;
 	}
@@ -281,7 +281,7 @@ static int ubmad_ubc_eid_ops(struct ubcore_device *dev,
 	if (memcmp(&eid_info->eid, &main_primary_eid,
 		sizeof(union ubcore_eid)) != 0) {
 		mutex_unlock(&g_ubc_eid_lock);
-		ubcore_log_warn("No need to operate current eid "EID_FMT".\n",
+		ubcore_log_warn_rl("No need to operate current eid "EID_FMT".\n",
 			EID_ARGS(eid_info->eid));
 		return 0;
 	}

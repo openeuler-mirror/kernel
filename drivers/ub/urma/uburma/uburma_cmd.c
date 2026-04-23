@@ -3540,7 +3540,7 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 			   &udata);
 	}
 	if (ret != 0) {
-		uburma_log_err("bind jetty failed, ret: %d.\n", ret);
+		uburma_log_err_rl("bind jetty failed, ret: %d.\n", ret);
 		uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
 		return ret;
 	}
@@ -4544,7 +4544,7 @@ static int uburma_cmd_get_tp_list(struct ubcore_device *ubc_dev,
 	}
 	ret = ubcore_get_tp_list(ubc_dev, &cfg, &tp_cnt, tp_list, &udata);
 	if (ret != 0) {
-		uburma_log_err("Failed to get tp list, ret: %d.\n", ret);
+		uburma_log_err_rl("Failed to get tp list, ret: %d.\n", ret);
 		goto free_tp_list;
 	}
 	arg->out.tp_cnt = tp_cnt;
