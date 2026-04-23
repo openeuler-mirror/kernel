@@ -577,29 +577,18 @@ static bool lite_role_get_task_exist(struct role_info *role, struct task_struct 
 	return true;
 }
 
-int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
+static int lite_role_find_get_task(struct mem_uva *va, struct role_info *role)
 {
-	bool found = false, task_get = false, is_exist = false;
-	struct mem_provider *provider = NULL;
-	struct access_ctx_inner *ctx_inner;
-	struct role_provider rp = {};
-	struct shm_container *cntr;
+	bool task_get = false, is_exist = false;
 	struct task_struct *task = NULL;
-	struct role_info role;
-	int ret;
 
-	if (!handle || !va) {
-		pr_err("invalid param\n");
-		return -EINVAL;
-	}
-
-	if (extract_lite_role(va, &role)) {
-		is_exist = lite_role_get_task_exist(&role, &task, &task_get);
-		if (!is_exist || !is_same_role_task(&role, current)) {
-			pr_err("register segment can not find task: is_exist: %d, current tgid: %d,\n"
-				"start_time: %llx, role.tgid: %d, role.aux: %llx\n", is_exist,
-				current->tgid, current->group_leader->start_time, role.tgid,
-				role.aux);
+	if (extract_lite_role(va, role)) {
+		is_exist = lite_role_get_task_exist(role, &task, &task_get);
+		if (!is_exist || !is_same_role_task(role, current)) {
+			pr_err("register segment can not find task: current tgid: %d, start_time: %llx\n",
+				current->tgid, current->group_leader->start_time);
+			pr_err("is_exist: %d, role->tgid: %d, role->aux: %llx\n",
+				is_exist, role->tgid, role->aux);
 			if (task)
 				put_task_struct(task);
 			return -EINVAL;
@@ -607,6 +596,28 @@ int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
 		if (task_get)
 			put_task_struct(task);
 	}
+
+	return 0;
+}
+
+int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
+{
+	struct mem_provider *provider = NULL;
+	struct access_ctx_inner *ctx_inner;
+	struct role_provider rp = {};
+	struct shm_container *cntr;
+	struct role_info role;
+	bool found = false;
+	int ret;
+
+	if (!handle || !va) {
+		pr_err("invalid param\n");
+		return -EINVAL;
+	}
+
+	ret = lite_role_find_get_task(va, &role);
+	if (ret)
+		return ret;
 
 	ret = find_get_shm_provider(handle, &provider);
 	if (ret)
@@ -841,22 +852,13 @@ static void mem_uba_cpy(struct mem_uba *dst, struct mem_uba *src)
 	dst->mem_handle = src->mem_handle;
 }
 
-/*
- * if ctx is null, it means that there is only one mem provider,
- * and sharer and user is the same process.
- */
-int ubdevshm_acquire_uba(struct access_ctx *ctx, struct mem_uva *va, union acquire_attr *attr,
-			 invalidate func, struct mem_uba *uba)
+static int find_get_shm_container_access_ctx(struct access_ctx *ctx, struct mem_uva *va,
+			struct shm_container **rcntr, struct access_ctx_inner **rctx_inner)
 {
 	struct access_ctx_inner *ctx_inner;
 	struct shm_container *cntr;
 	struct role_info role;
 	int ret;
-
-	if (!va || !attr || !uba) {
-		pr_err("invalid param\n");
-		return -EINVAL;
-	}
 
 	if (!ctx) { // simple mode
 		cntr = find_get_shm_container(is_same_role_task, current);
@@ -885,6 +887,36 @@ int ubdevshm_acquire_uba(struct access_ctx *ctx, struct mem_uva *va, union acqui
 			goto out;
 		}
 	}
+
+	*rcntr = cntr;
+	*rctx_inner = ctx_inner;
+
+	return 0;
+
+out:
+	shm_container_put(cntr);
+	return ret;
+}
+
+/*
+ * if ctx is null, it means that there is only one mem provider,
+ * and sharer and user is the same process.
+ */
+int ubdevshm_acquire_uba(struct access_ctx *ctx, struct mem_uva *va, union acquire_attr *attr,
+			 invalidate func, struct mem_uba *uba)
+{
+	struct access_ctx_inner *ctx_inner;
+	struct shm_container *cntr;
+	int ret;
+
+	if (!va || !attr || !uba) {
+		pr_err("invalid param\n");
+		return -EINVAL;
+	}
+
+	ret = find_get_shm_container_access_ctx(ctx, va, &cntr, &ctx_inner);
+	if (ret)
+		return ret;
 
 	if (!is_same_role_task(&ctx_inner->user, current)) {
 		ret = -EINVAL;
@@ -1044,6 +1076,50 @@ static inline int user_tgid(struct shm_user *user, pid_t *rtgid)
 	return 0;
 }
 
+static int find_get_task_by_peer_tgid(struct shm_user *user, struct task_struct **rutask)
+{
+	struct task_struct *utask;
+	pid_t tgid;
+	int ret;
+
+	ret = user_tgid(user, &tgid);
+	if (ret) {
+		pr_err("user tgid trans failed\n");
+		return ret;
+	}
+
+	utask = get_task_by_peer_tgid(current, tgid);
+	if (!utask) {
+		pr_err("Failed to get task_struct for tgid %d\n", tgid);
+		return -EINVAL;
+	}
+	*rutask = utask;
+
+	return 0;
+}
+
+static int find_get_access_ctx_by_rp(struct shm_container *cntr, struct mem_uva *va,
+			struct role_provider *rp, struct access_ctx_inner **rctx_parent)
+{
+	struct access_ctx_inner *ctx_inner, *ctx_parent;
+	struct role_info role;
+
+	ctx_inner = find_get_access_ctx(cntr, va, false, true, role_provider_equal, rp);
+	if (ctx_inner) {
+		access_ctx_put(ctx_inner);
+		return -EEXIST;
+	}
+
+	rp->role = fill_role_info(role, current);
+	ctx_parent = find_get_access_ctx(cntr, va, false, true, role_provider_equal, rp);
+	if (!ctx_parent)
+		return -EINVAL;
+
+	*rctx_parent = ctx_parent;
+
+	return 0;
+}
+
 int ubdevshm_grant_access(unsigned long *handle, struct shm_user *user,
 			  struct mem_uva *va, struct access_ctx *ctx)
 {
@@ -1053,7 +1129,6 @@ int ubdevshm_grant_access(unsigned long *handle, struct shm_user *user,
 	struct task_struct *utask;
 	struct role_provider rp;
 	struct role_info role;
-	pid_t tgid;
 	int ret;
 
 	if (!handle || !user || !va || !ctx || user->type != IDENTIY_TGID) {
@@ -1065,17 +1140,9 @@ int ubdevshm_grant_access(unsigned long *handle, struct shm_user *user,
 	if (ret)
 		return ret;
 
-	ret = user_tgid(user, &tgid);
-	if (ret) {
-		pr_err("user tgid trans failed\n");
+	ret = find_get_task_by_peer_tgid(user, &utask);
+	if (ret)
 		goto out_put_provider;
-	}
-
-	utask = get_task_by_peer_tgid(current, tgid);
-	if (!utask) {
-		ret = -EINVAL;
-		goto out_put_provider;
-	}
 
 	cntr = find_get_shm_container(is_same_role_task, current);
 	if (!cntr) {
@@ -1087,19 +1154,11 @@ int ubdevshm_grant_access(unsigned long *handle, struct shm_user *user,
 
 	rp.role = fill_role_info(role, utask);
 	rp.provider = provider;
-	ctx_inner = find_get_access_ctx(cntr, va, false, true, role_provider_equal, &rp);
-	if (ctx_inner) {
-		ret = -EEXIST;
-		access_ctx_put(ctx_inner);
-		goto out;
-	}
 
-	rp.role = fill_role_info(role, current);
-	ctx_parent = find_get_access_ctx(cntr, va, false, true, role_provider_equal, &rp);
-	if (!ctx_parent) {
-		ret = -EINVAL;
+	ret = find_get_access_ctx_by_rp(cntr, va, &rp, &ctx_parent);
+	if (ret)
 		goto out;
-	}
+
 	ret = create_and_link_access_ctx(cntr, provider, utask, true, va->va, va->size, &ctx_inner);
 	if (ret) {
 		access_ctx_put(ctx_parent);
