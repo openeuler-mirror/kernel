@@ -495,6 +495,12 @@ static ssize_t proc_oom_rate_limit_write(struct file *file,
 	char *buf;
 	int ret;
 
+	if (cnt == 0 || cnt > OOM_RATE_LIMIT_RAW_STR_MAX_LEN) {
+		pr_err("invalid input length for oom_rate_limit, max %d\n",
+		       OOM_RATE_LIMIT_RAW_STR_MAX_LEN);
+		return -EINVAL;
+	}
+
 	buf = kzalloc(cnt + 1, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
