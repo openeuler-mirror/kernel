@@ -11244,9 +11244,6 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	if (vcpu->arch.apic_attention)
 		kvm_lapic_sync_from_vapic(vcpu);
 
-	if (unlikely(exit_fastpath == EXIT_FASTPATH_EXIT_USERSPACE))
-		return 0;
-
 	r = static_call(kvm_x86_handle_exit)(vcpu, exit_fastpath);
 #ifdef CONFIG_ARCH_VCPU_STAT
 	vcpu->stat.utime = current->utime;
