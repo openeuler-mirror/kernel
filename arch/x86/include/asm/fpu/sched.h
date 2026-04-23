@@ -87,7 +87,7 @@ static inline void switch_kernel_fpu_prepare(struct task_struct *prev, int cpu)
 {
 	struct fpu *old_fpu = &prev->thread.fpu;
 
-	if (!test_thread_flag(TIF_USING_FPU_NONATOMIC))
+	if (!test_ti_thread_flag(task_thread_info(prev), TIF_USING_FPU_NONATOMIC))
 		return;
 
 	if (static_cpu_has(X86_FEATURE_FPU) && !(prev->flags & PF_KTHREAD))
