@@ -907,6 +907,7 @@ struct hclge_dev {
 	u16 pf_rss_size_max;		/* HW defined PF max RSS task queue */
 	u32 tx_spare_buf_size;		/* HW defined TX spare buffer size */
 	u16 pfc_prevention_tout;
+	u16 pfc_prevention_tout_default;
 
 	u16 fdir_pf_filter_count; /* Num of guaranteed filters for this PF */
 	u16 num_alloc_vport;		/* Num vports this driver supports */

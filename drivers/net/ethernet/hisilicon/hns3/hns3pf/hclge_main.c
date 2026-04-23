@@ -4068,12 +4068,15 @@ int hclge_func_reset_cmd(struct hclge_dev *hdev, int func_id)
 	return ret;
 }
 
-int hclge_set_pfc_storm_prevention_tout(struct hnae3_handle *h, u16 times)
+static int hclge_set_pfc_storm_prevention_tout(struct hnae3_handle *h, u16 times)
 {
 	struct hclge_vport *vport = hclge_get_vport(h);
 	struct hclge_dev *hdev = vport->back;
 	struct hnae3_pfc_storm_para para;
 	int ret;
+
+	if (hdev->ae_dev->dev_version < HNAE3_DEVICE_VERSION_V3)
+		return -EOPNOTSUPP;
 
 	if (times > HCLGE_MAX_PFC_PREVENTION_TOUT) {
 		dev_err(&hdev->pdev->dev,
@@ -4101,19 +4104,22 @@ int hclge_set_pfc_storm_prevention_tout(struct hnae3_handle *h, u16 times)
 	return 0;
 }
 
-int hclge_get_pfc_storm_prevention_tout(struct hnae3_handle *h, u16 *times)
+static int hclge_get_pfc_storm_prevention_tout(struct hnae3_handle *h, u16 *times)
 {
 	struct hclge_vport *vport = hclge_get_vport(h);
 	struct hclge_dev *hdev = vport->back;
 	struct hnae3_pfc_storm_para para;
 	int ret;
 
+	if (hdev->ae_dev->dev_version < HNAE3_DEVICE_VERSION_V3)
+		return -EOPNOTSUPP;
+
 	para.dir = HCLGE_DIR_TX;
 	ret = hclge_get_pfc_storm_para(hdev, &para, sizeof(struct hnae3_pfc_storm_para));
 	if (ret)
 		return ret;
 
-	*times = (u16)para.times;
+	*times = para.enable ? (u16)para.times : 0;
 
 	return 0;
 }
@@ -4466,6 +4472,9 @@ static void hclge_restore_pfc_storm_prevention_tout(struct hclge_dev *hdev)
 {
 	struct hnae3_handle *handle = &hdev->vport[0].nic;
 	int ret;
+
+	if (hdev->ae_dev->dev_version < HNAE3_DEVICE_VERSION_V3)
+		return;
 
 	ret = hclge_enable_pfc_storm_prevent(hdev, HCLGE_DIR_RX, false);
 	if (ret) {
@@ -12614,6 +12623,9 @@ static void hclge_set_default_pfc_prevention_tout(struct hclge_dev *hdev)
 	u16 times;
 	int ret;
 
+	if (hdev->ae_dev->dev_version < HNAE3_DEVICE_VERSION_V3)
+		return;
+
 	ret = hclge_enable_pfc_storm_prevent(hdev, HCLGE_DIR_RX, false);
 	if (ret)
 		dev_warn(&hdev->pdev->dev,
@@ -12622,10 +12634,12 @@ static void hclge_set_default_pfc_prevention_tout(struct hclge_dev *hdev)
 	ret = hclge_get_pfc_storm_prevention_tout(handle, &times);
 	if (ret) {
 		hdev->pfc_prevention_tout = HCLGE_DEFAULT_PFC_PREVENTION_TOUT;
+		hdev->pfc_prevention_tout_default = HCLGE_DEFAULT_PFC_PREVENTION_TOUT;
 		return;
 	}
 
 	hdev->pfc_prevention_tout = times;
+	hdev->pfc_prevention_tout_default = times;
 }
 
 static void hclge_get_wol(struct hnae3_handle *handle,
@@ -13341,6 +13355,10 @@ static void hclge_uninit_ae_dev(struct hnae3_ae_dev *ae_dev)
 	hclge_config_mac_tnl_int(hdev, false);
 	hclge_config_nic_hw_error(hdev, false);
 	hclge_config_rocee_ras_interrupt(hdev, false);
+
+	/* Restore default values for the next initialization */
+	hclge_set_pfc_storm_prevention_tout(&hdev->vport->nic,
+					    hdev->pfc_prevention_tout_default);
 
 	hclge_comm_cmd_uninit(hdev->ae_dev, &hdev->hw.hw);
 	hclge_misc_irq_uninit(hdev);
