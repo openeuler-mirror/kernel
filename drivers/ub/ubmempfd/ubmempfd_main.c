@@ -27,6 +27,8 @@
 #include <uapi/ub/ubmempfd/ubmempfd.h>
 
 #define UBMEMPFD_MISC_NAME "ubmempfd"
+#define UBMEMPFD_MAX_SIZE 0x80000000
+#define UBMEMPFD_MAX_AREA_NUM 262144
 
 struct ubmempfd_ctx {
 	struct rw_semaphore mapping_wr_lock;
@@ -181,7 +183,11 @@ static int ubmempfd_info_check(struct ubmempfd_ctx *ctx, struct ubm_request *req
 	for (i = 0; i < req->areas_num; i++) {
 		addr = req->areas[i].hva;
 		size = req->areas[i].size;
-		if (size && !(IS_ALIGNED(addr, PAGE_SIZE) && IS_ALIGNED(size, PAGE_SIZE))) {
+		if (!size || size > UBMEMPFD_MAX_SIZE) {
+			pr_err("Invalid size.\n");
+			return -EINVAL;
+		}
+		if (!(IS_ALIGNED(addr, PAGE_SIZE) && IS_ALIGNED(size, PAGE_SIZE))) {
 			pr_err("Address or size not aligned to PAGE_SIZE\n");
 			return -EINVAL;
 		}
@@ -282,7 +288,6 @@ static int ubmempfd_check_req(const char __user *buf, size_t count)
 	if (count < req_len) {
 		pr_err("Invalid count\n");
 
-
 		return -EINVAL;
 	}
 
@@ -291,7 +296,8 @@ static int ubmempfd_check_req(const char __user *buf, size_t count)
 		return -EFAULT;
 	}
 
-	if (sizeof(((struct ubm_request *)0)->areas[0]) * req.areas_num != count - req_len) {
+	if (req.areas_num > UBMEMPFD_MAX_AREA_NUM ||
+	    sizeof(((struct ubm_request *)0)->areas[0]) * req.areas_num != count - req_len) {
 		pr_err("Failed to check req size, req size %zu, areas num %llu\n",
 		       count, req.areas_num);
 		return -EINVAL;
