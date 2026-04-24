@@ -733,10 +733,15 @@ static int ubcore_get_route_port_eid(union ubcore_eid *src_v_eid,
 }
 
 int ubcore_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
-	union ubcore_eid *primary_eid)
+	union ubcore_eid *primary_eid, uint32_t ue_id)
 {
 	struct ubcore_topo_map *topo_map;
 	int node_id, dev_id;
+
+	if (ue_id >= IODIE_NUM) {
+		ubcore_log_err("Invalid ue_id: %u.\n", ue_id);
+		return -EINVAL;
+	}
 
 	topo_map = ubcore_get_global_topo_map();
 	if (!topo_map) {
@@ -746,10 +751,12 @@ int ubcore_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
 
 	for (node_id = 0; node_id < topo_map->node_num; node_id++) {
 		for (dev_id = 0; dev_id < DEV_NUM; dev_id++) {
-			if (memcmp(agg_eid, topo_map->topo_infos[node_id].agg_devs[dev_id].agg_eid,
-					sizeof(*agg_eid)) == 0) {
+			struct ubcore_topo_agg_dev *agg_dev =
+				&topo_map->topo_infos[node_id].agg_devs[dev_id];
+
+			if (memcmp(agg_eid, agg_dev->agg_eid, sizeof(*agg_eid)) == 0) {
 				*primary_eid = *((union ubcore_eid *)
-				topo_map->topo_infos[node_id].agg_devs[dev_id].ues[0].primary_eid);
+				agg_dev->ues[ue_id].primary_eid);
 				return 0;
 			}
 		}

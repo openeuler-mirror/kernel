@@ -49,6 +49,40 @@ struct msg_jetty_info_resp {
 	char jetty_info[BONDING_UDATA_BUF_LEN];
 };
 
+static int ubcore_get_bonding_ue_idx_from_udata(struct ubcore_udata *udata,
+						uint32_t *ue_idx)
+{
+	unsigned long byte;
+
+	if (!udata || !udata->udrv_data) {
+		ubcore_log_err("udata or udrv_data is null.\n");
+		return -EINVAL;
+	}
+
+	if (!udata->udrv_data->in_addr ||
+	    udata->udrv_data->in_len < sizeof(*ue_idx)) {
+		ubcore_log_err("invalid udata in_addr or in_len:%u.\n",
+			       udata->udrv_data->in_len);
+		return -EINVAL;
+	}
+
+	byte = copy_from_user(ue_idx,
+			      (void __user *)(uintptr_t)udata->udrv_data->in_addr,
+			      sizeof(*ue_idx));
+	if (byte != 0) {
+		ubcore_log_err("failed to copy ue_idx from user, byte:%lu.\n",
+			       byte);
+		return -EFAULT;
+	}
+
+	if (*ue_idx >= IODIE_NUM) {
+		ubcore_log_err("invalid ue_idx:%u.\n", *ue_idx);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static DEFINE_MUTEX(bonding_user_msg_lock);
 static void (*bonding_user_msg_handler)(struct ubcore_device *dev,
 					void *payload, uint16_t payload_len,
@@ -144,7 +178,8 @@ void ubcore_net_unregister_bonding_user_msg_handler(
 }
 EXPORT_SYMBOL(ubcore_net_unregister_bonding_user_msg_handler);
 
-static struct ubcore_device *ubcore_find_physical_device(struct ubcore_device *agg_dev)
+static struct ubcore_device *ubcore_find_physical_device(struct ubcore_device *agg_dev,
+							 uint32_t ue_id)
 {
 	struct ubcore_topo_map *topo_map;
 	struct ubcore_topo_node *topo_info;
@@ -157,6 +192,10 @@ static struct ubcore_device *ubcore_find_physical_device(struct ubcore_device *a
 
 	if (agg_dev == NULL) {
 		ubcore_log_err("agg_dev is NULL");
+		return NULL;
+	}
+	if (ue_id >= IODIE_NUM) {
+		ubcore_log_err("Invalid ue_id: %u.\n", ue_id);
 		return NULL;
 	}
 	topo_map = ubcore_get_global_topo_map();
@@ -197,7 +236,7 @@ static struct ubcore_device *ubcore_find_physical_device(struct ubcore_device *a
 		return NULL;
 	}
 
-	primary_eid = (union ubcore_eid *)topo_info->agg_devs[dev_id].ues[0].primary_eid;
+	primary_eid = (union ubcore_eid *)topo_info->agg_devs[dev_id].ues[ue_id].primary_eid;
 
 	return ubcore_find_device(primary_eid, UBCORE_TRANSPORT_UB);
 }
@@ -289,7 +328,7 @@ create_session_for_exchange_udata(struct ubcore_device *dev,
 }
 
 static int send_seg_info_req(struct ubcore_device *dev, uint32_t session_id,
-			     struct msg_seg_info_req *req)
+			     struct msg_seg_info_req *req, uint32_t ue_id)
 {
 	struct ubcore_net_msg msg = { 0 };
 	union ubcore_eid dest_eid = { 0 };
@@ -300,7 +339,7 @@ static int send_seg_info_req(struct ubcore_device *dev, uint32_t session_id,
 	msg.session_id = session_id;
 	msg.data = req;
 
-	ret = ubcore_get_primary_eid_by_agg_eid(&req->ubva.eid, &dest_eid);
+	ret = ubcore_get_primary_eid_by_agg_eid(&req->ubva.eid, &dest_eid, ue_id);
 	if (ret != 0)
 		return ret;
 
@@ -335,7 +374,7 @@ static int send_seg_info_resp(struct ubcore_device *dev, void *conn,
 }
 
 static int send_jetty_info_req(struct ubcore_device *dev, uint32_t session_id,
-			       struct msg_jetty_info_req *req)
+			       struct msg_jetty_info_req *req, uint32_t ue_id)
 {
 	struct ubcore_net_msg msg = { 0 };
 	union ubcore_eid dest_eid = { 0 };
@@ -347,7 +386,7 @@ static int send_jetty_info_req(struct ubcore_device *dev, uint32_t session_id,
 	msg.data = req;
 
 	ret = ubcore_get_primary_eid_by_agg_eid(&req->jetty_id.eid,
-						    &dest_eid);
+						    &dest_eid, ue_id);
 	if (ret != 0)
 		return ret;
 
@@ -383,12 +422,18 @@ static int send_jetty_info_resp(struct ubcore_device *dev, void *conn,
 int ubcore_connect_exchange_udata_when_import_seg(struct ubcore_seg *seg,
 				struct ubcore_udata *udata, struct ubcore_device *dev)
 {
-	struct ubcore_device *physical_dev = ubcore_find_physical_device(dev);
+	struct ubcore_device *physical_dev;
 	struct msg_seg_info_req req = { 0 };
 	struct ubcore_session *session;
 	char buf[BONDING_UDATA_BUF_LEN];
+	uint32_t ue_idx;
 	int ret, result = -1;
 
+	ret = ubcore_get_bonding_ue_idx_from_udata(udata, &ue_idx);
+	if (ret != 0)
+		return ret;
+
+	physical_dev = ubcore_find_physical_device(dev, ue_idx);
 	if (!physical_dev) {
 		ubcore_log_err("Failed find physical device");
 		return -EINVAL;
@@ -410,7 +455,7 @@ int ubcore_connect_exchange_udata_when_import_seg(struct ubcore_seg *seg,
 	req.len = seg->len;
 	req.token_id = seg->token_id;
 	ret = send_seg_info_req(physical_dev, ubcore_session_get_id(session),
-				&req);
+				&req, ue_idx);
 	if (ret != 0) {
 		ubcore_session_complete(session);
 		goto release_session;
@@ -445,12 +490,18 @@ int ubcore_connect_exchange_udata_when_import_jetty(
 	struct ubcore_tjetty_cfg *cfg, struct ubcore_udata *udata, bool is_jfr,
 	struct ubcore_device *dev)
 {
-	struct ubcore_device *physical_dev = ubcore_find_physical_device(dev);
+	struct ubcore_device *physical_dev;
 	struct msg_jetty_info_req req = { 0 };
 	struct ubcore_session *session;
 	char buf[BONDING_UDATA_BUF_LEN];
+	uint32_t ue_idx;
 	int ret, result = -1;
 
+	ret = ubcore_get_bonding_ue_idx_from_udata(udata, &ue_idx);
+	if (ret != 0)
+		return ret;
+
+	physical_dev = ubcore_find_physical_device(dev, ue_idx);
 	if (!physical_dev) {
 		ubcore_log_err("Failed find physical device");
 		return -EINVAL;
@@ -471,7 +522,7 @@ int ubcore_connect_exchange_udata_when_import_jetty(
 	req.is_jfr = is_jfr;
 	req.jetty_id = cfg->id;
 	ret = send_jetty_info_req(physical_dev, ubcore_session_get_id(session),
-				  &req);
+				  &req, ue_idx);
 	if (ret != 0) {
 		ubcore_session_complete(session);
 		goto release_session;
