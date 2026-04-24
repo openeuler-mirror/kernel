@@ -1451,8 +1451,10 @@ static ssize_t proc_client_info_write(struct file *file, const char __user *user
 	/*
 	 * Parse server EID part and client jetty ID part
 	 * ((39 + 1) * 32 - 1) * 2 + 1 = 2559
+	 * client_jetty_id_part buffer size is JETTY_ID_MAX_LEN (6),
+	 * so use %5[^\n] to read max 5 chars + null terminator = 6
 	 */
-	ret = sscanf(kbuf, "%2559[^ ] %6[^\n]%n",
+	ret = sscanf(kbuf, "%2559[^ ] %5[^\n]%n",
 		     server_buf_part,
 		     client_jetty_id_part,
 		     &n);
