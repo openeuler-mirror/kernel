@@ -43,7 +43,7 @@ static int ubase_alloc_rc_buf(struct ubase_dev *udev, u32 rc_queue_idx)
 		return 0;
 	}
 
-	entry->va = dma_alloc_coherent(udev->dev, size, &entry->iova, GFP_KERNEL);
+	entry->va = ubase_alloc_buf(udev, size, &entry->iova, &entry->page);
 	if (!entry->va)
 		return -ENOMEM;
 
@@ -66,7 +66,7 @@ static void ubase_free_rc_buf(struct ubase_dev *udev, u32 rc_queue_idx)
 	if (!entry->va || !entry->iova)
 		return;
 
-	dma_free_coherent(udev->dev, size, entry->va, entry->iova);
+	ubase_free_buf(udev, size, entry->va, entry->iova, entry->page);
 
 	entry->va = NULL;
 	entry->iova = 0;

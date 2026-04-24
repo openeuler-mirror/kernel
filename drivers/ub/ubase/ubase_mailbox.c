@@ -432,8 +432,8 @@ static bool ubase_is_jfs_opcode(u8 op)
 }
 
 static struct ubase_ctx_buf_cap*
-ubase_parse_opcode_buf(struct ubase_dev *udev, struct ubase_mbx_attr *attr,
-		       enum ubase_mb_type *type)
+ubase_parse_ta_opcode_buf(struct ubase_dev *udev, struct ubase_mbx_attr *attr,
+			  enum ubase_mb_type *type)
 {
 	struct mbx_op_match ta_matches[] = {
 		{UBASE_MB_CREATE_JFS_CONTEXT, UBASE_MB_CREATE, &udev->ctx_buf.jfs},
@@ -459,11 +459,21 @@ ubase_parse_opcode_buf(struct ubase_dev *udev, struct ubase_mbx_attr *attr,
 	};
 	u32 size = ARRAY_SIZE(ta_matches);
 
+	return ubase_parse_common_buf(attr, ta_matches, type, size);
+}
+
+static struct ubase_ctx_buf_cap*
+ubase_parse_opcode_buf(struct ubase_dev *udev, struct ubase_mbx_attr *attr,
+		       enum ubase_mb_type *type)
+{
+	if (ubase_dev_dtu_supported(udev))
+		return NULL;
+
 	if (ubase_is_jfs_opcode(attr->op) &&
 	    test_bit(UBASE_STATE_PREALLOC_OK_B, &udev->state_bits))
 		return NULL;
 
-	return ubase_parse_common_buf(attr, ta_matches, type, size);
+	return ubase_parse_ta_opcode_buf(udev, attr, type);
 }
 
 static int ubase_check_buf_ctx_page(struct ubase_dev *udev,

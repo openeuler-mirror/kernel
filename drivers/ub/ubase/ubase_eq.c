@@ -8,6 +8,7 @@
 
 #include "ubase_cmd.h"
 #include "ubase_dev.h"
+#include "ubase_dtumem.h"
 #include "ubase_mailbox.h"
 #include "ubase_reset.h"
 #include "ubase_tp.h"
@@ -480,11 +481,30 @@ static void ubase_construct_eq_ctx(struct ubase_eq *eq,
 	ctx->state2 = eq->state;
 }
 
+static int ubase_alloc_eq_buf(struct ubase_dev *udev, struct ubase_eq *eq)
+{
+	eq->addr.addr = ubase_alloc_buf(udev, eq->addr.size, &eq->addr.dma_addr,
+					&eq->addr.page);
+	if (!eq->addr.addr)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static void ubase_free_eq_buf(struct ubase_dev *udev, struct ubase_eq *eq)
+{
+	ubase_free_buf(udev, eq->addr.size, eq->addr.addr, eq->addr.dma_addr,
+		       eq->addr.page);
+
+	eq->addr.addr = NULL;
+}
+
 static int ubase_fill_eq_attribute(struct ubase_dev *udev, struct ubase_eq *eq,
 				   u32 eqn, struct ubase_irq *irq,
 				   enum ubase_eq_type eq_type)
 {
 	struct ubase_eq_addr *eq_addr = &eq->addr;
+	int ret;
 
 	if (eq_type == UBASE_EQ_TYPE_AEQ) {
 		eq->eqe_size = udev->caps.dev_caps.aeqe_size;
@@ -508,14 +528,11 @@ static int ubase_fill_eq_attribute(struct ubase_dev *udev, struct ubase_eq *eq,
 	eq->irqn = irq->irqn;
 
 	eq_addr->size = eq->entries_num * eq->eqe_size;
-	eq_addr->addr = dma_alloc_coherent(udev->dev, eq_addr->size,
-					   &eq_addr->dma_addr, GFP_KERNEL);
-	if (!eq_addr->addr) {
+	ret = ubase_alloc_eq_buf(udev, eq);
+	if (ret)
 		ubase_err(udev, "failed to alloc eqe base addr.\n");
-		return -ENOMEM;
-	}
 
-	return 0;
+	return ret;
 }
 
 static int ubase_create_eq(struct ubase_dev *udev, struct ubase_eq *eq, u32 eqn,
@@ -556,9 +573,7 @@ static int ubase_create_eq(struct ubase_dev *udev, struct ubase_eq *eq, u32 eqn,
 err_upgrade_ctx:
 	__ubase_free_cmd_mailbox(udev, mbx);
 err_alloc_mailbox:
-	dma_free_coherent(udev->dev, eq->addr.size, eq->addr.addr,
-			  eq->addr.dma_addr);
-	eq->addr.addr = NULL;
+	ubase_free_eq_buf(udev, eq);
 
 	return ret;
 }
@@ -586,9 +601,7 @@ static int ubase_destroy_eq(struct ubase_dev *udev, struct ubase_eq *eq,
 		ubase_err(udev, "failed to destroy EQC, ret = %d.\n", ret);
 
 	__ubase_free_cmd_mailbox(udev, mbx);
-	dma_free_coherent(udev->dev, eq->addr.size, eq->addr.addr,
-			  eq->addr.dma_addr);
-	eq->addr.addr = NULL;
+	ubase_free_eq_buf(udev, eq);
 
 	return ret;
 }

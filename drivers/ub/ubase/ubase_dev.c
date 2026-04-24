@@ -12,6 +12,7 @@
 #include "ubase_arq.h"
 #include "ubase_cmd.h"
 #include "ubase_ctrlq.h"
+#include "ubase_dtumem.h"
 #include "ubase_hw.h"
 #include "ubase_mailbox.h"
 #include "ubase_pmem.h"
@@ -758,6 +759,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 	{
 		"query dev res", UBASE_SUP_ALL, 0,
 		ubase_query_dev_res, NULL
+	},
+	{
+		"dtu memory", UBASE_SUP_UDMA, 0,
+		ubase_dtu_mem_init, ubase_dtu_mem_uninit
 	},
 	{
 		"init mailbox", UBASE_SUP_NO_PMU, 1,
@@ -2082,3 +2087,25 @@ bool ubase_adev_shutting_down(struct auxiliary_device *adev)
 	return ubase_shutting_down(__ubase_get_udev_by_adev(adev));
 }
 EXPORT_SYMBOL(ubase_adev_shutting_down);
+
+void *ubase_alloc_buf(struct ubase_dev *udev, size_t size,
+		      dma_addr_t *iova, struct page **page)
+{
+	void *va = NULL;
+
+	if (ubase_dev_dtu_supported(udev))
+		va = ubase_dtu_alloc(udev, page, size, iova);
+	else
+		va = dma_alloc_coherent(udev->dev, size, iova, GFP_KERNEL);
+
+	return va;
+}
+
+void ubase_free_buf(struct ubase_dev *udev, size_t size,
+		    void *va, dma_addr_t iova, struct page *page)
+{
+	if (ubase_dev_dtu_supported(udev))
+		ubase_dtu_free(udev, page, size, iova);
+	else
+		dma_free_coherent(udev->dev, size, va, iova);
+}
