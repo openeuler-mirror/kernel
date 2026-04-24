@@ -187,5 +187,8 @@ int ubase_query_fst_fvt_rqmt(struct ubase_dev *udev,
 int ubase_query_port_bitmap(struct ubase_dev *udev);
 int __ubase_perf_stats(struct ubase_dev *udev, u64 port_bitmap, u32 period,
 		       struct ubase_perf_stats_result *data, u32 data_size);
+int ubase_config_ctx_buf_to_hw(struct ubase_dev *udev,
+			       struct ubase_ctx_buf_cap *ctx_buf,
+			       struct ubase_mbx_attr *attr);
 
 #endif /* __UBASE_HW_H__ */

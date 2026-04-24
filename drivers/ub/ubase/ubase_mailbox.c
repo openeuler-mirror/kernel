@@ -10,6 +10,7 @@
 
 #include "ubase_cmd.h"
 #include "ubase_trace.h"
+#include "ubase_usc.h"
 #include "ubase_mailbox.h"
 
 int ubase_mbox_cmd_init(struct ubase_dev *udev)
@@ -528,6 +529,9 @@ int __ubase_hw_upgrade_ctx_ex(struct ubase_dev *udev,
 	enum ubase_mb_type type = UBASE_MB_OTHER;
 	struct ubase_ctx_buf_cap *ctx_buf;
 	int ret;
+
+	if (ubase_dev_usc_supported(udev) && ubase_ctx_in_usc(attr->op))
+		return __ubase_hw_upgrade_ctx(udev, attr, mailbox);
 
 	ctx_buf = ubase_parse_opcode_buf(udev, attr, &type);
 	if (ctx_buf) {

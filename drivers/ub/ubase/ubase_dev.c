@@ -18,6 +18,7 @@
 #include "ubase_rct.h"
 #include "ubase_reset.h"
 #include "ubase_stats.h"
+#include "ubase_usc.h"
 #include "ubase_dev.h"
 
 #define UBASE_PERIOD_100MS 100
@@ -811,6 +812,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_ue_init, ubase_ue_uninit
 	},
 	{
+		"init usc", UBASE_SUP_URMA, 0,
+		ubase_usc_init, ubase_usc_uninit
+	},
+	{
 		"init hw", UBASE_SUP_NO_PMU, 1,
 		ubase_hw_init, ubase_hw_uninit
 	},
@@ -1591,6 +1596,25 @@ bool ubase_adev_ip_over_urma_utp_supported(struct auxiliary_device *adev)
 	return ubase_ip_over_urma_utp_supported(__ubase_get_udev_by_adev(adev));
 }
 EXPORT_SYMBOL(ubase_adev_ip_over_urma_utp_supported);
+
+/**
+ * ubase_adev_ucp_supported() - determine whether to support ucp
+ * @adev: auxiliary device
+ *
+ * This function is used to determine whether to support ucp
+ * (Unified Cmd Process).
+ *
+ * Context: Any context.
+ * Return: true or false
+ */
+bool ubase_adev_ucp_supported(struct auxiliary_device *adev)
+{
+	if (!adev)
+		return false;
+
+	return ubase_ucp_supported(__ubase_get_udev_by_adev(adev));
+}
+EXPORT_SYMBOL(ubase_adev_ucp_supported);
 
 static void ubase_activate_notify(struct ubase_dev *udev,
 				  struct auxiliary_device *adev, bool activate)

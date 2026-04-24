@@ -381,6 +381,18 @@ struct ubase_dev_qos {
 	struct ubase_initial_qset_qos	initial_qos;
 };
 
+struct ubase_mm_ops {
+	void *(*alloc_mem)(struct device *dev, dma_addr_t *dma_ctx_buf_ba,
+			   size_t size, u32 ubase_mem_op);
+	void (*free_mem)(struct device *dev, dma_addr_t *dma_ctx_buf_ba,
+			 size_t size, u32 ubase_mem_op);
+};
+
+struct ubase_mem_init_ops {
+	int (*mem_init)(struct device *dev, struct ubase_mm_ops *mm_ops);
+	void (*mem_uninit)(struct device *dev, struct ubase_mm_ops *mm_ops);
+};
+
 struct ubase_dev {
 	struct device		*dev;
 	int			dev_id;
@@ -427,6 +439,8 @@ struct ubase_dev {
 	struct ubase_prealloc_mem_info	pmem_info;
 	u8			dev_mac[ETH_ALEN];
 	struct ubase_log_rs	log_rs;
+	struct ubase_mem_init_ops	mem_init_ops;
+	struct ubase_mm_ops	mm_ops;
 };
 
 #define UBASE_ERR_MSG_LEN	128
@@ -537,10 +551,20 @@ static inline bool ubase_utp_supported(struct ubase_dev *udev)
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_UTP_B);
 }
 
+static inline bool ubase_ucp_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_UCP_B);
+}
+
 static inline bool ubase_dev_prealloc_supported(struct ubase_dev *udev)
 {
 	return __ubase_dev_prealloc_supported(udev) &&
 	       PAGE_SIZE != UBASE_PMEM_PAGE_SIZE;
+}
+
+static inline bool ubase_dev_usc_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_USC_B);
 }
 
 static inline u32 ubase_jfs_num(struct ubase_dev *udev)
