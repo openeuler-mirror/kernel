@@ -10,6 +10,7 @@
 #include <linux/auxiliary_bus.h>
 #include <linux/dcbnl.h>
 #include <linux/list.h>
+#include <ub/ubase/ubase_comm_mbx.h>
 
 struct iova_slot;
 
@@ -39,7 +40,9 @@ struct iova_slot;
 
 #define UBASE_HW_VER_UNKNOWN	(0U)
 #define UBASE_HW_VER_A_0	(1000U)
+#define UBASE_HW_VER_A_1	(1001U)
 #define UBASE_HW_VER_K_0	(2000U)
+#define UBASE_HW_VER_K_1	(2001U)
 
 enum ubase_reset_type {
 	UBASE_NO_RESET,
@@ -276,6 +279,15 @@ struct ubase_ctx_buf_cap {
 	KABI_RESERVE(4)
 };
 
+enum ubase_ctx_va_type {
+	UBASE_JFR_CTX_VA,
+	UBASE_JFS_CTX_VA,
+	UBASE_JFC_CTX_VA,
+	UBASE_JTG_CTX_VA,
+	UBASE_RC_CTX_VA,
+	UBASE_CTX_VA_TYPE_NUM,
+};
+
 struct net_device;
 
 /**
@@ -377,6 +389,7 @@ bool ubase_adev_ubl_supported(struct auxiliary_device *adev);
 bool ubase_adev_ctrlq_supported(struct auxiliary_device *adev);
 bool ubase_adev_eth_mac_supported(struct auxiliary_device *adev);
 bool ubase_adev_mac_stats_supported(struct auxiliary_device *aux_dev);
+bool ubase_adev_mbx_supported(struct auxiliary_device *adev);
 bool ubase_adev_prealloc_supported(struct auxiliary_device *aux_dev);
 bool ubase_adev_ip_over_urma_supported(struct auxiliary_device *adev);
 bool ubase_adev_ip_over_urma_utp_supported(struct auxiliary_device *adev);
@@ -398,6 +411,13 @@ struct ubase_adev_qos *ubase_get_adev_qos(struct auxiliary_device *adev);
 void ubase_reset_event(struct auxiliary_device *adev,
 		       enum ubase_reset_type reset_type);
 enum ubase_reset_stage ubase_get_reset_stage(struct auxiliary_device *adev);
+
+void ubase_cmd_ctx_buf_free(struct auxiliary_device *aux_dev,
+			    struct ubase_ctx_buf_cap *ctx_buf);
+int ubase_cmd_ctx_buf_alloc(struct auxiliary_device *aux_dev,
+			    struct ubase_ctx_buf_cap *ctx_buf,
+			    struct ubase_mbx_attr *attr);
+
 void ubase_virt_register(struct auxiliary_device *adev,
 			 void (*virt_handler)(struct auxiliary_device *adev,
 					      u16 bus_ue_id, bool is_en));

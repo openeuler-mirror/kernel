@@ -560,7 +560,10 @@ static int ubase_create_eq(struct ubase_dev *udev, struct ubase_eq *eq, u32 eqn,
 	ubase_construct_eq_ctx(eq, (struct ubase_eq_ctx *)mbx->buf,
 			       udev->caps.dev_caps.tid);
 	ubase_fill_mbx_attr(&attr, eq->eqn, mbx_cmd, 0);
-	ret = ubase_hw_upgrade_ctx_poll(udev, &attr, mbx);
+
+	ret = ubase_dev_mbx_supported(udev) ?
+	      ubase_hw_upgrade_ctx_poll(udev, &attr, mbx) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mbx);
 	if (ret) {
 		ubase_err(udev, "failed to create EQC, ret = %d.\n", ret);
 		goto err_upgrade_ctx;
@@ -596,7 +599,10 @@ static int ubase_destroy_eq(struct ubase_dev *udev, struct ubase_eq *eq,
 		return -ENOMEM;
 	}
 	ubase_fill_mbx_attr(&attr, eq->eqn, mbx_cmd, 0);
-	ret = ubase_hw_upgrade_ctx_poll(udev, &attr, mbx);
+
+	ret = ubase_dev_mbx_supported(udev) ?
+	      ubase_hw_upgrade_ctx_poll(udev, &attr, mbx) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mbx);
 	if (ret)
 		ubase_err(udev, "failed to destroy EQC, ret = %d.\n", ret);
 

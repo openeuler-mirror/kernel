@@ -1007,7 +1007,7 @@ static int ubase_ctrlq_query_sl(struct ubase_dev *udev)
 	 * the value returned by the IMP is used by default.
 	 */
 	rc_max_cnt = le16_to_cpu(resp.rc_max_cnt);
-	if (rc_max_cnt != 0) {
+	if (rc_max_cnt) {
 		udev->use_fixed_rc_num = true;
 		udev->caps.udma_caps.rc_max_cnt = rc_max_cnt;
 	}
