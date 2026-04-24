@@ -135,6 +135,8 @@ struct ummu_data_info {
 	enum ummu_grant_op_type op;
 	struct ummu_mapt_info *mapt_info;
 	u8 lvl;
+	u8 head_flag;
+	struct ummu_plbi_gather *ummu_gather;
 };
 
 struct ummu_domain;
