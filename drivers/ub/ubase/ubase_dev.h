@@ -7,6 +7,7 @@
 #ifndef __UBASE_DEV_H__
 #define __UBASE_DEV_H__
 
+#include <linux/align.h>
 #include <linux/atomic.h>
 #include <linux/auxiliary_bus.h>
 #include <linux/dma-mapping.h>
@@ -22,6 +23,7 @@
 
 #include "ubase.h"
 #include "ubase_eq.h"
+#include "ubase_proxy.h"
 #include "ubase_ubus.h"
 
 #define UBASE_MOD_VERSION		"1.0"
@@ -82,6 +84,7 @@ struct ubase_ctx_buf {
 struct ubase_ue_node {
 	struct list_head	list;
 	u16			bus_ue_id;
+	u8			isolated;
 };
 
 struct ubase_cmdq_desc;
@@ -302,6 +305,11 @@ struct ubase_ctrlq {
 	struct semaphore			sem;
 };
 
+struct ubase_ctx_status {
+	int			ctx_ret;
+	struct completion	ctx_va_done;
+};
+
 #define UBASE_ACT_STAT_MAX_NUM 10U
 struct ubase_activate_dev_stats {
 	u64	act_cnt;
@@ -358,6 +366,12 @@ struct ubase_pmem_ctx {
 struct ubase_prealloc_mem_info {
 	struct ubase_pmem_ctx	comm;
 	struct ubase_pmem_ctx	udma;
+};
+
+struct ubase_mbox_over_cmdq_info {
+	u32 seq_num;
+	struct xarray seq_tbl;
+	wait_queue_head_t queue;
 };
 
 struct ubase_log_rs {
@@ -441,11 +455,13 @@ struct ubase_dev {
 	enum ubase_reset_type	reset_type;
 	unsigned long		last_reset_scheduled;
 	enum ubase_reset_stage	reset_stage;
+	struct ubase_ctx_status	ctx_status;
 	struct ubase_stats	stats;
 	struct ubase_act_ctx	act_ctx;
 	struct ubase_arq_msg_ring	arq;
 	struct ubase_prealloc_mem_info	pmem_info;
 	u8			dev_mac[ETH_ALEN];
+	struct ubase_mbox_over_cmdq_info	*moc_info;
 	struct ubase_log_rs	log_rs;
 	struct ubase_dtu_info	dtu_info;
 	struct ubase_mem_init_ops	mem_init_ops;
@@ -565,6 +581,16 @@ static inline bool ubase_ucp_supported(struct ubase_dev *udev)
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_UCP_B);
 }
 
+static inline bool ubase_dev_mbx_supported(struct ubase_dev *udev)
+{
+	return !ubase_get_cap_bit(udev, UBASE_SUPPORT_MBX_DISABLED_B);
+}
+
+static inline bool ubase_dev_mbx_proxy_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_MBX_PROXY_B);
+}
+
 static inline bool ubase_dev_prealloc_supported(struct ubase_dev *udev)
 {
 	return __ubase_dev_prealloc_supported(udev) &&
@@ -649,4 +675,4 @@ void *ubase_alloc_buf(struct ubase_dev *udev, size_t size,
 void ubase_free_buf(struct ubase_dev *udev, size_t size,
 		    void *va, dma_addr_t iova, struct page *page);
 
-#endif
+#endif /* __UBASE_DEV_H__ */

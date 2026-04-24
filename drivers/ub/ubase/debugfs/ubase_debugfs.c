@@ -13,8 +13,11 @@
 #include "ubase_ctx_debugfs.h"
 #include "ubase_dev.h"
 #include "ubase_hw.h"
+#include "ubase_mailbox.h"
+#include "ubase_proxy_debugfs.h"
 #include "ubase_qos_debugfs.h"
 #include "ubase_stats.h"
+#include "ubase_tp.h"
 #include "ubase_debugfs.h"
 
 static struct dentry *ubase_dbgfs_root;
@@ -46,6 +49,8 @@ static void ubase_dbg_dump_caps_bits(struct seq_file *s, struct ubase_dev *udev)
 	PRINT_CAP(ctrlq, ubase_dev_ctrlq_supported);
 	PRINT_CAP(eth_mac, ubase_dev_eth_mac_supported);
 	PRINT_CAP(mac_stats, ubase_dev_mac_stats_supported);
+	PRINT_CAP(mbx, ubase_dev_mbx_supported);
+	PRINT_CAP(mbx_proxy, ubase_dev_mbx_proxy_supported);
 	PRINT_CAP(prealloc, __ubase_dev_prealloc_supported);
 	PRINT_CAP(udma, ubase_dev_udma_supported);
 	PRINT_CAP(unic, ubase_dev_unic_supported);
@@ -145,7 +150,7 @@ static void ubase_dbg_dump_adev_caps(struct seq_file *s,
 		{"\tcqe_size: %hu\n", caps->cqe_size},
 		{"\tjtg_max_cnt: %u\n", caps->jtg_max_cnt},
 		{"\trc_max_cnt: %u\n", caps->rc_max_cnt},
-		{"\trc_depth: %u\n", caps->rc_que_depth},
+		{"\trc_que_depth: %u\n", caps->rc_que_depth},
 		{"\tprealloc_mem_dma_len: %llu\n", caps->pmem.dma_len},
 	};
 	int i;
@@ -304,7 +309,6 @@ static int ubase_dbg_dump_activate_record(struct seq_file *s, void *data)
 	}
 
 	mutex_unlock(&record->lock);
-
 	return 0;
 }
 
@@ -722,6 +726,14 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.support = __ubase_dbg_dentry_support,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_tm_port_info,
+	},
+	{
+		.name = "ue_isolated_state",
+		.dentry_index = UBASE_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_URMA | UBASE_SUP_UBL_ETH,
+		.support = __ubase_dbg_dentry_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_ue_isolated_state,
 	},
 	{
 		.name = "prealloc_mem_info",

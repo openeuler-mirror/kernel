@@ -4,8 +4,11 @@
  *
  */
 
+#include <linux/delay.h>
 #include <linux/etherdevice.h>
 #include <linux/kernel.h>
+#include <linux/ummu_core.h>
+
 #include <ub/ubus/ubus.h>
 
 #include "debugfs/ubase_debugfs.h"
@@ -16,6 +19,7 @@
 #include "ubase_hw.h"
 #include "ubase_mailbox.h"
 #include "ubase_pmem.h"
+#include "ubase_proxy.h"
 #include "ubase_rct.h"
 #include "ubase_reset.h"
 #include "ubase_stats.h"
@@ -43,6 +47,12 @@ bool ubase_dev_urma_supported(struct ubase_dev *udev)
 	case UBASE_DEV_ID_A_0_UBOE_UE:
 	case UBASE_DEV_ID_S_0_URMA_MUE:
 	case UBASE_DEV_ID_S_0_URMA_UE:
+	case UBASE_DEV_ID_K_V2_URMA_MUE:
+	case UBASE_DEV_ID_K_V2_URMA_UE:
+	case UBASE_DEV_ID_A_V2_URMA_MUE:
+	case UBASE_DEV_ID_A_V2_URMA_UE:
+	case UBASE_DEV_ID_A_V2_UBOE_MUE:
+	case UBASE_DEV_ID_A_V2_UBOE_UE:
 		break;
 	default:
 		return false;
@@ -60,6 +70,9 @@ bool ubase_dev_unic_supported(struct ubase_dev *udev)
 	case UBASE_DEV_ID_A_0_URMA_MUE:
 	case UBASE_DEV_ID_A_0_UBOE_MUE:
 	case UBASE_DEV_ID_S_0_URMA_MUE:
+	case UBASE_DEV_ID_K_V2_URMA_MUE:
+	case UBASE_DEV_ID_A_V2_URMA_MUE:
+	case UBASE_DEV_ID_A_V2_UBOE_MUE:
 		break;
 	default:
 		return false;
@@ -78,6 +91,10 @@ bool ubase_dev_cdma_supported(struct ubase_dev *udev)
 	case UBASE_DEV_ID_A_0_CDMA_MUE:
 	case UBASE_DEV_ID_A_0_CDMA_UE:
 	case UBASE_DEV_ID_S_0_CDMA_MUE:
+	case UBASE_DEV_ID_K_V2_CDMA_MUE:
+	case UBASE_DEV_ID_K_V2_CDMA_UE:
+	case UBASE_DEV_ID_A_V2_CDMA_MUE:
+	case UBASE_DEV_ID_A_V2_CDMA_UE:
 		break;
 	default:
 		return false;
@@ -96,6 +113,10 @@ bool ubase_dev_pmu_supported(struct ubase_dev *udev)
 	case UBASE_DEV_ID_A_0_PMU_MUE:
 	case UBASE_DEV_ID_A_0_PMU_UE:
 	case UBASE_DEV_ID_S_0_PMU_MUE:
+	case UBASE_DEV_ID_K_V2_PMU_MUE:
+	case UBASE_DEV_ID_K_V2_PMU_UE:
+	case UBASE_DEV_ID_A_V2_PMU_MUE:
+	case UBASE_DEV_ID_A_V2_PMU_UE:
 		break;
 	default:
 		return false;
@@ -136,6 +157,10 @@ static struct ubase_adev_device {
 	[UBASE_DRV_UVB] = {
 		.suffix = "uvb",
 		.is_supported = &ubase_dev_uvb_supported
+	},
+	[UBASE_DRV_UBASEPROXY] = {
+		.suffix = "ubaseproxy",
+		.is_supported = &ubase_dev_mbx_proxy_supported
 	},
 };
 
@@ -666,6 +691,7 @@ static int ubase_handle_activate_resp(void *dev, void *data, u32 len)
 
 	return -EIO;
 }
+
 static struct ubase_crq_event_nb ubase_crq_events[] = {
 	{
 		.opcode = UBASE_OPC_UE2UE_UBASE,
@@ -678,6 +704,18 @@ static struct ubase_crq_event_nb ubase_crq_events[] = {
 	{
 		.opcode = UBASE_OPC_ACTIVATE_RESP,
 		.crq_handler = ubase_handle_activate_resp,
+	},
+	{
+		.opcode = UBASE_OPC_UE_ISOLATED_NOTIFY,
+		.crq_handler = ubase_handle_ue_isolated_notify_event,
+	},
+	{
+		.opcode = UBASE_OPC_SET_CTX_VA_RESP,
+		.crq_handler = ubase_handle_ue_ctx_va_resp,
+	},
+	{
+		.opcode = UBASE_OPC_PROXY_TO_UBASE,
+		.crq_handler = ubase_handle_mbx_over_cmdq_resp,
 	},
 };
 
@@ -839,6 +877,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 	{
 		"enable period service task", UBASE_SUP_NO_PMU, 0,
 		ubase_enable_period_service_task, ubase_cancel_period_service_task
+	},
+	{
+		"update ue isolated state", UBASE_SUP_URMA, 1,
+		ubase_init_ue_isolated_state, NULL
 	},
 };
 
@@ -1026,6 +1068,13 @@ u32 ubase_get_hw_ver(struct auxiliary_device *adev)
 	case UBASE_DEV_ID_K_0_PMU_MUE:
 	case UBASE_DEV_ID_K_0_PMU_UE:
 		return UBASE_HW_VER_K_0;
+	case UBASE_DEV_ID_K_V2_URMA_MUE:
+	case UBASE_DEV_ID_K_V2_URMA_UE:
+	case UBASE_DEV_ID_K_V2_CDMA_MUE:
+	case UBASE_DEV_ID_K_V2_CDMA_UE:
+	case UBASE_DEV_ID_K_V2_PMU_MUE:
+	case UBASE_DEV_ID_K_V2_PMU_UE:
+		return UBASE_HW_VER_K_1;
 	case UBASE_DEV_ID_A_0_URMA_MUE:
 	case UBASE_DEV_ID_A_0_URMA_UE:
 	case UBASE_DEV_ID_A_0_CDMA_MUE:
@@ -1035,6 +1084,15 @@ u32 ubase_get_hw_ver(struct auxiliary_device *adev)
 	case UBASE_DEV_ID_A_0_UBOE_MUE:
 	case UBASE_DEV_ID_A_0_UBOE_UE:
 		return UBASE_HW_VER_A_0;
+	case UBASE_DEV_ID_A_V2_URMA_MUE:
+	case UBASE_DEV_ID_A_V2_URMA_UE:
+	case UBASE_DEV_ID_A_V2_CDMA_MUE:
+	case UBASE_DEV_ID_A_V2_CDMA_UE:
+	case UBASE_DEV_ID_A_V2_PMU_MUE:
+	case UBASE_DEV_ID_A_V2_PMU_UE:
+	case UBASE_DEV_ID_A_V2_UBOE_MUE:
+	case UBASE_DEV_ID_A_V2_UBOE_UE:
+		return UBASE_HW_VER_A_1;
 	default:
 		return UBASE_HW_VER_UNKNOWN;
 	}
@@ -1502,6 +1560,8 @@ void ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
 
 	if (!ubase_modify_ue_list(udev, bus_ue_id, is_en))
 		return;
+
+	ubase_update_ue_isolated_state(udev);
 
 	mutex_lock(&udev->priv.uadev_lock);
 	for (i = 0; i < UBASE_DRV_MAX; i++) {
@@ -2017,6 +2077,74 @@ int ubase_get_bus_eid(struct auxiliary_device *adev, struct ubase_bus_eid *eid)
 	return __ubase_get_bus_eid(udev, eid);
 }
 EXPORT_SYMBOL(ubase_get_bus_eid);
+
+/**
+ * ubase_adev_mbx_supported() - determine whether to support mailbox functionality
+ * @adev: auxiliary device
+ *
+ * The function is used to determine whether the auxiliary device supports mailbox
+ * functionality.
+ *
+ * Context: Any context.
+ * Return: true or false
+ */
+bool ubase_adev_mbx_supported(struct auxiliary_device *adev)
+{
+	if (!adev)
+		return false;
+
+	return ubase_dev_mbx_supported(__ubase_get_udev_by_adev(adev));
+}
+EXPORT_SYMBOL(ubase_adev_mbx_supported);
+
+/**
+ * ubase_cmd_ctx_buf_free - Free context buffer of the device
+ * @aux_dev: auxiliary device
+ * @ctx_buf: context buffer capabilities
+ *
+ * This function is used to free the context buffer that is
+ * allocated by calling function 'ubase_cmd_ctx_buf_alloc'.
+ *
+ * Context: Any context.
+ */
+void ubase_cmd_ctx_buf_free(struct auxiliary_device *aux_dev,
+			    struct ubase_ctx_buf_cap *ctx_buf)
+{
+	struct ubase_dev *udev;
+
+	if (!aux_dev || !ctx_buf)
+		return;
+
+	udev = __ubase_get_udev_by_adev(aux_dev);
+	__ubase_cmd_ctx_buf_free(udev, ctx_buf);
+}
+EXPORT_SYMBOL(ubase_cmd_ctx_buf_free);
+
+/**
+ * ubase_cmd_ctx_buf_alloc - Allocate context buffer of the device
+ * @aux_dev: auxiliary device
+ * @ctx_buf: context buffer capabilities
+ * @attr: mailbox attribute
+ *
+ * This function is used to allocate context buffer for the device
+ * and config context buffer by mailbox to hardware.
+ *
+ * Context: Process context. Takes and releases <lock>, BH-safe. May sleep
+ * Return: 0 on success, negative error code otherwise
+ */
+int ubase_cmd_ctx_buf_alloc(struct auxiliary_device *aux_dev,
+			    struct ubase_ctx_buf_cap *ctx_buf,
+			    struct ubase_mbx_attr *attr)
+{
+	struct ubase_dev *udev;
+
+	if (!aux_dev || !ctx_buf || !attr)
+		return -EINVAL;
+
+	udev = __ubase_get_udev_by_adev(aux_dev);
+	return __ubase_cmd_ctx_buf_alloc(udev, ctx_buf, attr);
+}
+EXPORT_SYMBOL(ubase_cmd_ctx_buf_alloc);
 
 /**
  * ubase_set_dev_mac() - Record the MAC address of the device
