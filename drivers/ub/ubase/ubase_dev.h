@@ -162,6 +162,7 @@ struct ubase_destroy_res_cmd {
 struct ubase_dma_buf {
 	void		*addr;
 	dma_addr_t	dma_addr;
+	struct page	*page;
 	size_t		size;
 };
 
@@ -368,6 +369,13 @@ struct ubase_log_rs {
 	u32 mbx_buff_not_empty_cnt;
 };
 
+struct ubase_dtu_info {
+	struct iommu_domain	*domain;
+	struct iova_slot	*dtu_slot;
+	u16			dtu_win_num;
+	int			dtu_mem_node_id;
+};
+
 enum ubase_node_type {
 	UBASE_NODE_TYPE_UNKNOWN,
 	UBASE_NODE_TYPE_INBAND_CTRL,
@@ -439,6 +447,7 @@ struct ubase_dev {
 	struct ubase_prealloc_mem_info	pmem_info;
 	u8			dev_mac[ETH_ALEN];
 	struct ubase_log_rs	log_rs;
+	struct ubase_dtu_info	dtu_info;
 	struct ubase_mem_init_ops	mem_init_ops;
 	struct ubase_mm_ops	mm_ops;
 };
@@ -562,6 +571,11 @@ static inline bool ubase_dev_prealloc_supported(struct ubase_dev *udev)
 	       PAGE_SIZE != UBASE_PMEM_PAGE_SIZE;
 }
 
+static inline bool ubase_dev_dtu_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_DTU_B);
+}
+
 static inline bool ubase_dev_usc_supported(struct ubase_dev *udev)
 {
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_USC_B);
@@ -629,5 +643,10 @@ int ubase_activate_handler(struct ubase_dev *udev, u32 bus_ue_id);
 int ubase_deactivate_handler(struct ubase_dev *udev, u32 bus_ue_id);
 
 void ubase_flush_workqueue(struct ubase_dev *udev);
+
+void *ubase_alloc_buf(struct ubase_dev *udev, size_t size,
+		      dma_addr_t *iova, struct page **page);
+void ubase_free_buf(struct ubase_dev *udev, size_t size,
+		    void *va, dma_addr_t iova, struct page *page);
 
 #endif
