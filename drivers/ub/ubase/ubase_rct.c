@@ -5,6 +5,7 @@
  */
 
 #include "ubase_mailbox.h"
+#include "ubase_usc.h"
 #include "ubase_rct.h"
 
 static dma_addr_t ubase_get_rc_queue_iova_from_pmem(struct ubase_dev *udev,
@@ -33,6 +34,9 @@ static int ubase_alloc_rc_buf(struct ubase_dev *udev, u32 rc_queue_idx)
 	size_t size = udev->caps.udma_caps.rc_que_depth * UBASE_RCE_SIZE;
 	struct ubase_rc_queue *entry = &udev->rc_entry[rc_queue_idx];
 
+	if (ubase_dev_usc_supported(udev))
+		return ubase_alloc_rc_buf_usc(udev, entry, size);
+
 	if (test_bit(UBASE_STATE_PREALLOC_OK_B, &udev->state_bits)) {
 		entry->iova = ubase_get_rc_queue_iova_from_pmem(udev,
 								rc_queue_idx);
@@ -50,6 +54,11 @@ static void ubase_free_rc_buf(struct ubase_dev *udev, u32 rc_queue_idx)
 {
 	size_t size = udev->caps.udma_caps.rc_que_depth * UBASE_RCE_SIZE;
 	struct ubase_rc_queue *entry = &udev->rc_entry[rc_queue_idx];
+
+	if (ubase_dev_usc_supported(udev)) {
+		ubase_free_rc_buf_usc(udev, entry, size);
+		return;
+	}
 
 	if (test_bit(UBASE_STATE_PREALLOC_OK_B, &udev->state_bits))
 		return;
@@ -142,7 +151,7 @@ int ubase_rc_init(struct ubase_dev *udev)
 		if (ret) {
 			ubase_err(udev, "failed to init rc entry[%u], ret = %d.\n",
 				  i, ret);
-			goto err_alloc_rc_entry;
+			goto err_rc_init;
 		}
 
 		ret = ubase_create_rc_queue_ctx(udev, i);
@@ -150,13 +159,13 @@ int ubase_rc_init(struct ubase_dev *udev)
 			ubase_err(udev, "failed to create ctx for rc entry[%u], ret = %d.\n",
 				  i, ret);
 			ubase_free_rc_buf(udev, i);
-			goto err_alloc_rc_entry;
+			goto err_rc_init;
 		}
 	}
 
 	return 0;
 
-err_alloc_rc_entry:
+err_rc_init:
 	for (; i > 0; i--) {
 		(void)ubase_destroy_rc_queue_ctx(udev, i - 1);
 		ubase_free_rc_buf(udev, i - 1);

@@ -12,6 +12,7 @@
 #include "ubase_dev.h"
 #include "ubase_mailbox.h"
 #include "ubase_tp.h"
+#include "ubase_usc.h"
 #include "ubase_hw.h"
 
 static DEFINE_MUTEX(ubase_perf_mutex);
@@ -49,6 +50,23 @@ static void ubase_assign_addr_val(void *addr, u32 val, u8 size)
 	default:
 		break;
 	}
+}
+
+static int ubase_check_dev_caps_compat(struct ubase_dev *udev)
+{
+	if (ubase_dev_usc_supported(udev) && ubase_dev_dtu_supported(udev)) {
+		ubase_err(udev,
+			  "failed to check caps, usc and dtu are both enabled.\n");
+		return -EINVAL;
+	}
+
+	if (ubase_dev_usc_supported(udev) && ubase_dev_prealloc_supported(udev)) {
+		ubase_err(udev,
+			  "failed to check caps, usc and prealloc are both enabled.\n");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static void ubase_check_dev_caps_comm(struct ubase_dev *udev)
@@ -135,6 +153,10 @@ static int ubase_check_dev_caps_extdb(struct ubase_dev *udev)
 static int ubase_check_dev_caps(struct ubase_dev *udev)
 {
 	int ret;
+
+	ret = ubase_check_dev_caps_compat(udev);
+	if (ret)
+		return ret;
 
 	ubase_check_dev_caps_comm(udev);
 
@@ -260,9 +282,9 @@ static void ubase_init_start_idx(struct ubase_dev *udev)
 	udma_caps->jfc.start_idx = unic_caps->jfc.max_cnt;
 }
 
-static int ubase_config_ctx_buf_to_hw(struct ubase_dev *udev,
-				      struct ubase_ctx_buf_cap *ctx_buf,
-				      struct ubase_mbx_attr *attr)
+int ubase_config_ctx_buf_to_hw(struct ubase_dev *udev,
+			       struct ubase_ctx_buf_cap *ctx_buf,
+			       struct ubase_mbx_attr *attr)
 {
 	struct ubase_cmd_mailbox mailbox;
 	int ret;
@@ -321,8 +343,14 @@ static void ubase_ctx_free(struct ubase_dev *udev,
 	int i, end_idx = ARRAY_SIZE(map) - 1;
 
 	i = (idx == UBASE_CTX_REMOVE_ALL) ? end_idx : idx;
-	for (; i >= 0; i--)
+	for (; i >= 0; i--) {
+		if (ubase_dev_usc_supported(udev) && ubase_ctx_in_usc(map[i].mb_cmd)) {
+			ubase_cmd_ctx_buf_free_usc(udev, map[i].ctx, map[i].mb_cmd);
+			continue;
+		}
+
 		ubase_cmd_ctx_buf_free(udev, map[i].ctx);
+	}
 }
 
 static int ubase_fill_common_ctx_buf(struct ubase_dev *udev,
@@ -492,6 +520,14 @@ static int ubase_ctx_alloc(struct ubase_dev *udev,
 	for (i = 0; i < ARRAY_SIZE(map); i++) {
 		memset(&attr, 0, sizeof(attr));
 		attr.op = map[i].mb_cmd;
+
+		if (ubase_dev_usc_supported(udev) && ubase_ctx_in_usc(attr.op)) {
+			ret = ubase_cmd_ctx_buf_alloc_usc(udev, map[i].ctx, &attr);
+			if (ret)
+				goto err_alloc_ctx_buf;
+			continue;
+		}
+
 		ret = ubase_cmd_ctx_buf_alloc(udev, map[i].ctx, &attr);
 		if (ret) {
 			ubase_err(udev,
