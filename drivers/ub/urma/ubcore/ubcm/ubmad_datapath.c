@@ -1288,7 +1288,7 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 		if (cr.status == UBCORE_CR_SUCCESS) {
 			if (ubmad_process_msg(&cr, rsrc, dev_priv,
 					      jfce_work->agent_priv) != 0)
-				ubcore_log_err("process msg failed\n");
+				ubcore_log_err_rl("process msg failed\n");
 		}
 
 		// put sge id
