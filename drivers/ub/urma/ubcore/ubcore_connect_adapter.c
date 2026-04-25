@@ -76,6 +76,7 @@ uint32_t ubcore_get_conn_timeout(void)
 static int ubcore_active_tp(struct ubcore_device *dev,
 			    struct ubcore_active_tp_cfg *active_cfg)
 {
+	uint64_t start, duration;
 	int ret;
 
 	if (!dev || !dev->ops || !dev->ops->active_tp ||
@@ -87,11 +88,18 @@ static int ubcore_active_tp(struct ubcore_device *dev,
 	ubcore_log_info("Active tp, local tp_hdl: %llu, peer tp_hdl: %llu.\n",
 			active_cfg->tp_handle.value,
 			active_cfg->peer_tp_handle.value);
+
+	start = ktime_get_ns();
 	ret = dev->ops->active_tp(dev, active_cfg);
+	duration = (ktime_get_ns() - start) / UBCORE_NS_TO_MS;
 	if (ret != 0)
 		ubcore_log_err(
 			"Failed to active tp, ret: %d, local tpid: %u.\n", ret,
 			(uint32_t)active_cfg->tp_handle.bs.tpid);
+
+	if (duration > UBCORE_DRV_TP_THRESHOLD_MS)
+		ubcore_log_info_rl("[DRV_INFO]active_tp target consumes: %llu.\n",
+			duration);
 
 	return ret;
 }

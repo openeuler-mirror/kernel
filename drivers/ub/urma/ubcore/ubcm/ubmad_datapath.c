@@ -735,7 +735,12 @@ static void ubmad_jetty_work_handler(struct work_struct *work)
 {
 	struct ubmad_jetty_work *jetty_work = container_of(work, struct ubmad_jetty_work, work);
 	struct ubmad_tjetty *wk_tjetty;
+	uint64_t duration;
 	int ret;
+
+	duration = (ktime_get_ns() - jetty_work->start) / UBCORE_NS_TO_MS;
+	if (duration > UBCORE_WQ_THRESHOLD_MS)
+		ubcore_log_info_rl("[WQ_INFO]post_wq consumes: %llu.\n", duration);
 
 	wk_tjetty = ubmad_import_jetty(jetty_work->dev_priv->device, jetty_work->rsrc,
 		&jetty_work->dst_primary_eid);
@@ -855,6 +860,7 @@ int ubmad_post_send(struct ubcore_device *device,
 	jetty_work->rsrc = rsrc;
 	jetty_work->dst_primary_eid = dst_primary_eid;
 	jetty_work->send_buf = jetty_send_buf;
+	jetty_work->start = ktime_get_ns();
 
 	INIT_WORK(&jetty_work->work, ubmad_jetty_work_handler);
 	ret = queue_work(dev_priv->conn_wq, &jetty_work->work);
@@ -1326,6 +1332,12 @@ static void ubmad_jfce_work_handler(struct work_struct *work)
 		container_of(work, struct ubmad_jfce_work, work);
 	struct ubcore_device *dev = jfce_work->jfc->ub_dev;
 	struct ubmad_device_priv *dev_priv = NULL;
+	uint64_t duration;
+
+	duration = (ktime_get_ns() - jfce_work->start) / UBCORE_NS_TO_MS;
+	if (duration > UBCORE_WQ_THRESHOLD_MS)
+		ubcore_log_info_rl("[WQ_INFO]poll_wq consumes: %llu, type: %u.\n",
+			duration, jfce_work->type);
 
 	dev_priv = ubmad_get_device_priv(dev); // put below
 	if (IS_ERR_OR_NULL(dev_priv)) {
@@ -1383,6 +1395,7 @@ static void ubmad_jfce_handler(struct ubcore_jfc *jfc,
 	jfce_work->type = type;
 	jfce_work->jfc = jfc;
 	jfce_work->agent_priv = agent_priv;
+	jfce_work->start = ktime_get_ns();
 
 	INIT_WORK(&jfce_work->work, ubmad_jfce_work_handler);
 	switch (jfce_work->type) {

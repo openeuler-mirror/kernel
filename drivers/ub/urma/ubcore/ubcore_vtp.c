@@ -1130,6 +1130,7 @@ static int ubcore_active_tp(struct ubcore_device *dev,
 			    struct ubcore_active_tp_cfg *active_tp_cfg,
 			    struct ubcore_vtpn *vtpn)
 {
+	uint64_t start, duration;
 	int ret;
 
 	if (dev->ops == NULL || dev->ops->active_tp == NULL ||
@@ -1138,7 +1139,9 @@ static int ubcore_active_tp(struct ubcore_device *dev,
 		return -EINVAL;
 	}
 
+	start = ktime_get_ns();
 	ret = dev->ops->active_tp(dev, active_tp_cfg);
+	duration = (ktime_get_ns() - start) / UBCORE_NS_TO_MS;
 	if (ret != 0) {
 		ubcore_log_err("[DRV_ERROR]Failed to active tp, ret: %d, dev_name: %s.\n",
 			       ret, dev->dev_name);
@@ -1146,6 +1149,10 @@ static int ubcore_active_tp(struct ubcore_device *dev,
 	}
 
 	vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
+
+	if (duration > UBCORE_DRV_TP_THRESHOLD_MS)
+		ubcore_log_info_rl("[DRV_INFO]active_tp init consumes: %llu.\n",
+			duration);
 	return 0;
 }
 

@@ -197,6 +197,7 @@ struct ubmad_jfce_work {
 
 	struct ubcore_jfc *jfc;
 	struct ubmad_agent_priv *agent_priv;
+	uint64_t start;
 };
 
 struct ubmad_jetty_work {
@@ -205,6 +206,7 @@ struct ubmad_jetty_work {
 	struct ubmad_jetty_resource *rsrc;
 	union ubcore_eid dst_primary_eid;
 	struct ubmad_send_buf *send_buf;
+	uint64_t start;
 };
 
 /** reliable communication **/

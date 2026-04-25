@@ -27,6 +27,7 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 		       uint32_t *tp_cnt, struct ubcore_tp_info *tp_list,
 		       struct ubcore_udata *udata)
 {
+	uint64_t start, duration;
 	int ret;
 
 	if (dev == NULL || dev->ops == NULL || dev->ops->get_tp_list == NULL ||
@@ -38,9 +39,14 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 		return -EINVAL;
 	}
 
+	start = ktime_get_ns();
 	ret = dev->ops->get_tp_list(dev, cfg, tp_cnt, tp_list, udata);
+	duration = (ktime_get_ns() - start) / UBCORE_NS_TO_MS;
 	if (ret != 0)
 		ubcore_log_err_rl("[DRV_ERROR]Failed to get tp list, ret: %d.\n", ret);
+
+	if (duration > UBCORE_DRV_TP_THRESHOLD_MS)
+		ubcore_log_info_rl("[DRV_INFO]get_tp_list consumes: %llu.\n", duration);
 
 	return ret;
 }
