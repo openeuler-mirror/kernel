@@ -4930,7 +4930,7 @@ static void ops_dump_exit(void)
 }
 
 static void scx_dump_task(struct seq_buf *s, struct scx_dump_ctx *dctx,
-			  struct task_struct *p, char marker)
+			  struct rq *rq, struct task_struct *p, char marker)
 {
 	static unsigned long bt[SCX_EXIT_BT_LEN];
 	char dsq_id_buf[19] = "(n/a)";
@@ -4957,7 +4957,7 @@ static void scx_dump_task(struct seq_buf *s, struct scx_dump_ctx *dctx,
 
 	if (SCX_HAS_OP(dump_task)) {
 		ops_dump_init(s, "    ");
-		SCX_CALL_OP(SCX_KF_REST, dump_task, NULL, dctx, p);
+		SCX_CALL_OP(SCX_KF_REST, dump_task, rq, dctx, p);
 		ops_dump_exit();
 	}
 
@@ -5063,7 +5063,7 @@ static void scx_dump_state(struct scx_exit_info *ei, size_t dump_len)
 		used = seq_buf_used(&ns);
 		if (SCX_HAS_OP(dump_cpu)) {
 			ops_dump_init(&ns, "  ");
-			SCX_CALL_OP(SCX_KF_REST, dump_cpu, NULL, &dctx, cpu, idle);
+			SCX_CALL_OP(SCX_KF_REST, dump_cpu, rq, &dctx, cpu, idle);
 			ops_dump_exit();
 		}
 
@@ -5085,10 +5085,10 @@ static void scx_dump_state(struct scx_exit_info *ei, size_t dump_len)
 		}
 
 		if (rq->curr->sched_class == &ext_sched_class)
-			scx_dump_task(&s, &dctx, rq->curr, '*');
+			scx_dump_task(&s, &dctx, rq, rq->curr, '*');
 
 		list_for_each_entry(p, &rq->scx.runnable_list, scx.runnable_node)
-			scx_dump_task(&s, &dctx, p, ' ');
+			scx_dump_task(&s, &dctx, rq, p, ' ');
 	next:
 		rq_unlock_irqrestore(rq, &rf);
 	}
