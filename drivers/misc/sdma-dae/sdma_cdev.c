@@ -256,7 +256,6 @@ static void sdma_pause_channels(struct hisi_sdma_device *psdma_dev)
 	struct hisi_sdma_channel *pchannel;
 	int i;
 
-	pr_warn("Process exit abnormally. Pause sdma%u proactively.\n", psdma_dev->idx);
 	for (i = 0; i < HISI_SDMA_DEFAULT_CHANNEL_NUM; i++) {
 		pchannel = psdma_dev->channels + i;
 		sdma_pause_single_channel(pchannel, psdma_dev);
@@ -298,7 +297,6 @@ static void sdma_resume_device(struct hisi_sdma_device *psdma_dev)
 	struct hisi_sdma_channel *pchannel;
 	int i;
 
-	pr_warn("Resume sdma%u now.\n", psdma_dev->idx);
 	for (i = 0; i < HISI_SDMA_DEFAULT_CHANNEL_NUM; i++) {
 		pchannel = psdma_dev->channels + i;
 		if (sdma_channel_is_paused(pchannel) && sdma_channel_is_quiescent(pchannel))
