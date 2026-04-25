@@ -222,6 +222,7 @@ static int get_physical_device(struct ubagg_device *ubagg_dev,
 				continue;
 			}
 		}
+		ubagg_put_ubcore_device(dev);
 	}
 	return 0;
 }
@@ -1131,7 +1132,7 @@ set_ubagg_device_attr_by_ubcore_cap(struct ubcore_device *dev,
 	dev->attr.dev_cap = *dev_cap;
 }
 
-static void ubagg_put_ubcore_device(struct ubcore_device *dev)
+void ubagg_put_ubcore_device(struct ubcore_device *dev)
 {
 	if (IS_ERR_OR_NULL(dev)) {
 		ubagg_log_err("Invalid parameter\n");

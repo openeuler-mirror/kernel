@@ -17,6 +17,7 @@
 #include <ub/urma/ubcore_uapi.h>
 
 #include "ubagg_log.h"
+#include "ubagg_ioctl.h"
 #include "ubagg_netlink.h"
 
 #define UBAGG_MAX_NL_MSG_BUF_LEN 2048
@@ -161,7 +162,7 @@ static int ubagg_nl_handle_user_msg(struct sk_buff *skb, struct genl_info *info)
 			       ", peer_eid:" EID_FMT ", payload_len:%u\n",
 			       EID_ARGS(local_eid), EID_ARGS(peer_eid),
 			       payload_len);
-
+	ubagg_put_ubcore_device(dev);
 	return ret;
 }
 
