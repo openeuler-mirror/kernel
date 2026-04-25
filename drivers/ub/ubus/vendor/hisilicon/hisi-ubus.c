@@ -70,6 +70,14 @@ static void __exit hisi_ubus_driver_unregister(struct platform_driver *drv)
 	unregister_ub_manage_subsystem_ops(&hisi_ub_manage_subsystem_ops);
 }
 
+/*
+ * Ensure the ummu driver is loaded before the ub device appears if the device
+ * driver plans to use ummu as the iommu implementation, so that
+ * ub_bus_type_iommu_ops can be set by ummu driver before it will be called.
+ *
+ * If the ummu driver is not there that's OK as well.
+ */
+MODULE_SOFTDEP("pre: ummu");
 module_driver(hisi_ubus_driver, hisi_ubus_driver_register, hisi_ubus_driver_unregister);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Hisilicon UnifiedBus Manage Subsystem");
