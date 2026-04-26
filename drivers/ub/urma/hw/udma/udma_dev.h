@@ -11,6 +11,7 @@
 #include <uapi/ub/urma/udma/udma_abi.h>
 #include <ub/urma/udma/udma_ctl.h>
 
+extern bool dev_name_style;
 extern bool dfx_switch;
 extern bool cqe_mode;
 extern uint32_t batch_flush_query_freq;
