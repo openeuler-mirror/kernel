@@ -176,7 +176,7 @@ ubmad_update_device_priv_resources(struct ubmad_device_priv *dev_priv,
 	if (memcmp(&dev_priv->eid_info.eid, &eid_info->eid,
 		   sizeof(union ubcore_eid)) == 0 &&
 	    dev_priv->eid_info.eid_index == eid_info->eid_index) {
-		ubcore_log_warn(
+		ubcore_log_warn_rl(
 			"eid_info is not changed, no need to update rsrc\n");
 		return 0;
 	}
@@ -281,7 +281,7 @@ static int ubmad_ubc_eid_ops(struct ubcore_device *dev,
 	if (memcmp(&eid_info->eid, &main_primary_eid,
 		sizeof(union ubcore_eid)) != 0) {
 		mutex_unlock(&g_ubc_eid_lock);
-		ubcore_log_warn("No need to operate current eid "EID_FMT".\n",
+		ubcore_log_warn_rl("No need to operate current eid "EID_FMT".\n",
 			EID_ARGS(eid_info->eid));
 		return 0;
 	}
@@ -420,7 +420,7 @@ ubmad_create_jetty(struct ubmad_device_priv *dev_priv, struct ubcore_jfc *jfc_s,
 	return ubcore_create_jetty(dev_priv->device, &jetty_cfg, NULL, NULL);
 }
 
-static struct ubmad_tjetty *
+struct ubmad_tjetty *
 ubmad_get_tjetty_lockless(struct ubmad_jetty_resource *rsrc, uint32_t hash,
 			  union ubcore_eid *dst_eid)
 {
@@ -1132,7 +1132,8 @@ static int ubmad_open_device(struct ubcore_device *device)
 	}
 
 	/* reliable communication */
-	dev_priv->rt_wq = alloc_workqueue("%s", 0, 0, "ubmad rt_wq");
+	dev_priv->rt_wq = alloc_workqueue("%s",
+		WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 0, "ubmad rt_wq");
 	if (IS_ERR_OR_NULL(dev_priv->rt_wq)) {
 		ubcore_log_err("create rt_wq failed. dev_name: %s\n",
 			     device->dev_name);
@@ -1143,7 +1144,8 @@ static int ubmad_open_device(struct ubcore_device *device)
 		return -1;
 	}
 
-	dev_priv->conn_wq = alloc_workqueue("%s", 0, 0, "ubmad conn_wq");
+	dev_priv->conn_wq = alloc_workqueue("%s",
+		WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 0, "ubmad conn_wq");
 	if (IS_ERR_OR_NULL(dev_priv->conn_wq)) {
 		ubcore_log_err("create conn_wq failed. dev_name: %s\n",
 			     device->dev_name);
@@ -1362,12 +1364,14 @@ struct ubmad_agent *ubmad_register_agent(struct ubcore_device *device,
 		return ERR_PTR(-ENOMEM);
 	kref_init(&agent_priv->kref);
 
-	agent_priv->jfce_wq_s = alloc_workqueue("%s", 0, 0, "ubmad jfce_wq_s");
+	agent_priv->jfce_wq_s = alloc_workqueue("%s",
+		WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 0, "ubmad jfce_wq_s");
 	if (IS_ERR_OR_NULL(agent_priv->jfce_wq_s)) {
 		ubcore_log_err("alloc agent_priv workqueue_s failed.\n");
 		goto err_alloc_wq_s;
 	}
-	agent_priv->jfce_wq_r = alloc_workqueue("%s", 0, 0, "ubmad jfce_wq_r");
+	agent_priv->jfce_wq_r = alloc_workqueue("%s",
+		WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 0, "ubmad jfce_wq_r");
 	if (IS_ERR_OR_NULL(agent_priv->jfce_wq_r)) {
 		ubcore_log_err("alloc agent_priv workqueue_r failed.\n");
 		goto err_alloc_wq_r;

@@ -735,7 +735,12 @@ static void ubmad_jetty_work_handler(struct work_struct *work)
 {
 	struct ubmad_jetty_work *jetty_work = container_of(work, struct ubmad_jetty_work, work);
 	struct ubmad_tjetty *wk_tjetty;
+	uint64_t duration;
 	int ret;
+
+	duration = (ktime_get_ns() - jetty_work->start) / UBCORE_NS_TO_MS;
+	if (duration > UBCORE_WQ_THRESHOLD_MS)
+		ubcore_log_info_rl("[WQ_INFO]post_wq consumes: %llu.\n", duration);
 
 	wk_tjetty = ubmad_import_jetty(jetty_work->dev_priv->device, jetty_work->rsrc,
 		&jetty_work->dst_primary_eid);
@@ -769,6 +774,9 @@ int ubmad_post_send(struct ubcore_device *device,
 	union ubcore_eid dst_primary_eid = { 0 };
 	struct ubmad_jetty_work *jetty_work;
 	struct ubmad_send_buf *jetty_send_buf;
+	unsigned long flag;
+	uint32_t hash;
+	struct ubmad_tjetty *tjetty = NULL;
 	int ret;
 
 	dev_priv = ubmad_get_device_priv(device); // put in ubmad_jetty_work_handler()
@@ -812,6 +820,27 @@ int ubmad_post_send(struct ubcore_device *device,
 		goto put_device_priv;
 	}
 
+	hash = jhash(&dst_primary_eid, sizeof(union ubcore_eid), 0) %
+		UBMAD_MAX_TJETTY_NUM;
+	spin_lock_irqsave(&rsrc->tjetty_hlist_lock, flag);
+	tjetty = ubmad_get_tjetty_lockless(rsrc, hash, &dst_primary_eid); // put by user
+	spin_unlock_irqrestore(&rsrc->tjetty_hlist_lock, flag);
+	if (!IS_ERR_OR_NULL(tjetty)) {
+		ubcore_log_info("tjetty0 already imported. eid " EID_FMT "\n",
+			EID_ARGS(dst_primary_eid));
+		/* post send */
+		ret = ubmad_do_post_send(
+			rsrc, tjetty, send_buf,
+			send_buf->session_id,
+			dev_priv->rt_wq);
+		if (ret != 0)
+			ubcore_log_err("do post send failed, ret: %d\n", ret);
+
+		ubmad_put_tjetty(tjetty);
+		ubmad_put_device_priv(dev_priv);
+		return ret;
+	}
+
 	jetty_work = kcalloc(1, sizeof(struct ubmad_jetty_work), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(jetty_work)) {
 		ret = -ENOMEM;
@@ -831,6 +860,7 @@ int ubmad_post_send(struct ubcore_device *device,
 	jetty_work->rsrc = rsrc;
 	jetty_work->dst_primary_eid = dst_primary_eid;
 	jetty_work->send_buf = jetty_send_buf;
+	jetty_work->start = ktime_get_ns();
 
 	INIT_WORK(&jetty_work->work, ubmad_jetty_work_handler);
 	ret = queue_work(dev_priv->conn_wq, &jetty_work->work);
@@ -1264,7 +1294,7 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 		if (cr.status == UBCORE_CR_SUCCESS) {
 			if (ubmad_process_msg(&cr, rsrc, dev_priv,
 					      jfce_work->agent_priv) != 0)
-				ubcore_log_err("process msg failed\n");
+				ubcore_log_err_rl("process msg failed\n");
 		}
 
 		// put sge id
@@ -1302,6 +1332,12 @@ static void ubmad_jfce_work_handler(struct work_struct *work)
 		container_of(work, struct ubmad_jfce_work, work);
 	struct ubcore_device *dev = jfce_work->jfc->ub_dev;
 	struct ubmad_device_priv *dev_priv = NULL;
+	uint64_t duration;
+
+	duration = (ktime_get_ns() - jfce_work->start) / UBCORE_NS_TO_MS;
+	if (duration > UBCORE_WQ_THRESHOLD_MS)
+		ubcore_log_info_rl("[WQ_INFO]poll_wq consumes: %llu, type: %u.\n",
+			duration, jfce_work->type);
 
 	dev_priv = ubmad_get_device_priv(dev); // put below
 	if (IS_ERR_OR_NULL(dev_priv)) {
@@ -1359,6 +1395,7 @@ static void ubmad_jfce_handler(struct ubcore_jfc *jfc,
 	jfce_work->type = type;
 	jfce_work->jfc = jfc;
 	jfce_work->agent_priv = agent_priv;
+	jfce_work->start = ktime_get_ns();
 
 	INIT_WORK(&jfce_work->work, ubmad_jfce_work_handler);
 	switch (jfce_work->type) {

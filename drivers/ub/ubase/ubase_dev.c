@@ -747,7 +747,7 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_query_dev_res, NULL
 	},
 	{
-		"init mailbox", UBASE_SUP_NO_PMU, 0,
+		"init mailbox", UBASE_SUP_NO_PMU, 1,
 		ubase_mbox_cmd_init, ubase_mbox_cmd_uninit
 	},
 	{

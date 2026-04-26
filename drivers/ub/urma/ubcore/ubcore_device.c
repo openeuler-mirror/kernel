@@ -2480,6 +2480,7 @@ struct ubcore_device *ubcore_get_device_by_eid(union ubcore_eid *eid,
 				   sizeof(union ubcore_eid)) == 0 &&
 			    dev->transport_type == type) {
 				target = dev;
+				ubcore_get_device(target);
 				break;
 			}
 		}

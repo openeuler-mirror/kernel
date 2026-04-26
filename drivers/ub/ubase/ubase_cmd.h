@@ -368,7 +368,8 @@ int ubase_send_cmd(struct ubase_dev *udev,
 
 int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 				struct ubase_cmd_buf *in,
-				struct ubase_cmd_buf *out);
+				struct ubase_cmd_buf *out,
+				struct ubase_cmd_mailbox *mailbox);
 int __ubase_cmd_send_in(struct ubase_dev *udev, struct ubase_cmd_buf *in);
 int __ubase_cmd_send_inout(struct ubase_dev *udev, struct ubase_cmd_buf *in,
 			   struct ubase_cmd_buf *out);

@@ -263,7 +263,8 @@ static int ubcm_base_init(void)
 	INIT_LIST_HEAD(&cm_ctx->device_list);
 	spin_lock_init(&cm_ctx->device_lock);
 
-	cm_ctx->wq = alloc_workqueue(UBCM_MODULE_NAME, 0, 1);
+	cm_ctx->wq = alloc_workqueue(UBCM_MODULE_NAME,
+		WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 1);
 	if (IS_ERR_OR_NULL(cm_ctx->wq)) {
 		ubcore_log_err("Failed to alloc ubcm workqueue.\n");
 		return -ENOMEM;

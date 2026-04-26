@@ -132,7 +132,7 @@ int ubcore_get_main_primary_eid(union ubcore_eid *eid,
 	union ubcore_eid *main_primary_eid);
 
 int ubcore_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
-	union ubcore_eid *primary_eid);
+	union ubcore_eid *primary_eid, uint32_t ue_id);
 
 int ubcore_get_topo_bonding_dev_by_agg_eid(union ubcore_eid *agg_eid,
 	struct ubcore_topo_bonding_dev *out);

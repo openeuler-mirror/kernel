@@ -12,6 +12,7 @@
 #include <linux/list.h>
 #include <linux/string.h>
 #include <linux/kref.h>
+#include <linux/vmalloc.h>
 
 #include <ub/urma/ubcore_api.h>
 #include <ub/urma/ubcore_uapi.h>
@@ -82,16 +83,23 @@ static struct ubagg_dev_name_eid_arr
 	g_name_eid_arr[UBAGG_MAX_BONDING_DEV_NUM] = { 0 };
 static DEFINE_MUTEX(g_name_eid_arr_lock);
 
-static bool ubagg_dev_exists(char *dev_name)
+static bool ubagg_dev_exists(const char *dev_name)
 {
 	struct ubagg_device *dev;
+	unsigned long flags;
+	bool found = false;
 
+	spin_lock_irqsave(&g_ubagg_dev_list_lock, flags);
 	list_for_each_entry(dev, &g_ubagg_dev_list, list_node) {
 		if (strncmp(dev_name, dev->master_dev_name,
-			    UBAGG_MAX_DEV_NAME_LEN) == 0)
-			return true;
+			    UBAGG_MAX_DEV_NAME_LEN) == 0) {
+			found = true;
+			break;
+		}
 	}
-	return false;
+	spin_unlock_irqrestore(&g_ubagg_dev_list_lock, flags);
+
+	return found;
 }
 
 static struct ubagg_device *ubagg_find_dev_by_name(char *dev_name)
@@ -214,6 +222,7 @@ static int get_physical_device(struct ubagg_device *ubagg_dev,
 				continue;
 			}
 		}
+		ubagg_put_ubcore_device(dev);
 	}
 	return 0;
 }
@@ -260,7 +269,7 @@ static struct ubagg_topo_info_out *get_topo_info(void)
 	topo_map = get_global_ubagg_map();
 	if (topo_map == NULL)
 		return NULL;
-	out = kzalloc(sizeof(struct ubagg_topo_info_out), GFP_KERNEL);
+	out = vzalloc(sizeof(struct ubagg_topo_info_out));
 	if (out == NULL)
 		return NULL;
 	(void)memcpy(out->topo_info, topo_map->topo_infos,
@@ -286,7 +295,7 @@ static int ubagg_get_topo_info(struct ubcore_device *dev,
 		ubagg_log_err(
 			"ubagg user ctl has no enough space, buffer size:%u, needed size:%lu",
 			user_ctl->out.len, sizeof(struct ubagg_topo_info_out));
-		kfree(topo_info_out);
+		vfree(topo_info_out);
 		return -ENOSPC;
 	}
 
@@ -295,10 +304,10 @@ static int ubagg_get_topo_info(struct ubcore_device *dev,
 			   sizeof(struct ubagg_topo_info_out));
 	if (ret != 0) {
 		ubagg_log_err("copy to user fail, ret:%d", ret);
-		kfree(topo_info_out);
+		vfree(topo_info_out);
 		return -EFAULT;
 	}
-	kfree(topo_info_out);
+	vfree(topo_info_out);
 	return 0;
 }
 
@@ -1123,6 +1132,17 @@ set_ubagg_device_attr_by_ubcore_cap(struct ubcore_device *dev,
 	dev->attr.dev_cap = *dev_cap;
 }
 
+void ubagg_put_ubcore_device(struct ubcore_device *dev)
+{
+	if (IS_ERR_OR_NULL(dev)) {
+		ubagg_log_err("Invalid parameter\n");
+		return;
+	}
+
+	if (atomic_dec_and_test(&dev->use_cnt))
+		complete(&dev->comp);
+}
+
 static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 			  struct ubagg_add_dev_by_uvs *arg)
 {
@@ -1159,6 +1179,7 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 
 		(void)memcpy(ubagg_dev->slave_dev_name[slave_dev_idx],
 			     dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
+		ubagg_put_ubcore_device(dev);
 		slave_dev_idx++;
 	}
 
@@ -1187,6 +1208,7 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 
 			(void)memcpy(ubagg_dev->slave_dev_name[slave_dev_idx],
 				     dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
+			ubagg_put_ubcore_device(dev);
 			slave_dev_idx++;
 		}
 	}
@@ -1256,7 +1278,6 @@ static int init_ubagg_ubcore_dev(struct ubagg_device *ubagg_dev,
 		ubagg_log_err("ubcore register device fail, name:%s\n",
 			      arg->master_dev_name);
 		free_ubagg_dev_bitmap(ubagg_dev);
-		ubagg_dev_ref_put(ubagg_dev);
 		return ret;
 	}
 
@@ -1809,6 +1830,7 @@ static int ubagg_get_dev_name(struct ubagg_get_dev_name_arg *arg)
 
 	(void)strscpy(arg->out.dev_name, dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
 
+	ubagg_put_ubcore_device(dev);
 	return 0;
 }
 

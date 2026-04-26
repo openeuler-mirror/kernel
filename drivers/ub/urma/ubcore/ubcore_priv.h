@@ -14,6 +14,7 @@
 
 #include <linux/jhash.h>
 #include <linux/types.h>
+#include <linux/ktime.h>
 #include <ub/urma/ubcore_types.h>
 #include "ubcore_tp.h"
 
@@ -32,6 +33,11 @@
 #define UBCORE_TYPICAL_TIMEOUT 30000 /* 30s */
 #define UBCORE_DESTROY_TIMEOUT 2000 /* 2s */
 #define UCBORE_DEFAULT_UPI 0
+
+#define UBCORE_NS_TO_MS            1000000
+#define UBCORE_DRV_TP_THRESHOLD_MS 1
+#define UBCORE_EXC_THRESHOLD_MS    20
+#define UBCORE_WQ_THRESHOLD_MS     10
 
 enum ubcore_uvs_state {
 	UBCORE_UVS_STATE_DEAD = 0,

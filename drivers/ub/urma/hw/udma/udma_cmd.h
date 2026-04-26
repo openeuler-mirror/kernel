@@ -260,11 +260,18 @@ static inline void udma_fill_buf(struct ubase_cmd_buf *buf, u16 opcode,
 	buf->data = data;
 }
 
+static inline struct ubase_cmd_mailbox *udma_alloc_cmd_mailbox(struct udma_dev *dev)
+{
+	return ubase_alloc_cmd_mailbox(dev->comdev.adev);
+}
+
+static inline void udma_free_cmd_mailbox(struct udma_dev *dev, struct ubase_cmd_mailbox *mailbox)
+{
+	return ubase_free_cmd_mailbox(dev->comdev.adev, mailbox);
+}
+
 int udma_cmd_init(struct udma_dev *udma_dev);
 void udma_cmd_cleanup(struct udma_dev *udma_dev);
-struct ubase_cmd_mailbox *udma_alloc_cmd_mailbox(struct udma_dev *dev);
-void udma_free_cmd_mailbox(struct udma_dev *dev,
-			   struct ubase_cmd_mailbox *mailbox);
 int udma_post_mbox(struct udma_dev *dev, struct ubase_cmd_mailbox *mailbox,
 		   struct ubase_mbx_attr *attr);
 int udma_cmd_query_hw_resource(struct udma_dev *udma_dev, void *out_addr);

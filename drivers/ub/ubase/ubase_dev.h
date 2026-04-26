@@ -110,10 +110,11 @@ struct ubase_hw {
 };
 
 struct ubase_mbx_event_context {
-	struct completion	done;
-	int			result;
-	u64			out_param;
-	u16			seq_num;
+	struct completion		done;
+	int				result;
+	u64				out_param;
+	u16				seq_num;
+	struct ubase_cmd_mailbox	*mbx_buff;
 };
 
 struct ubase_adev {
@@ -364,6 +365,7 @@ struct ubase_log_rs {
 	u64 aeq_event_type_exceed_max_cnt;
 	u32 ctrlq_wait_resp_timeout_cnt;
 	u32 ctrlq_pi_invalid_cnt;
+	u32 mbx_buff_not_empty_cnt;
 };
 
 enum ubase_node_type {
