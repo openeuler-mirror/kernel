@@ -24,7 +24,6 @@
 #include "unic_guid.h"
 #include "unic_hw.h"
 #include "unic_ip.h"
-#include "unic_qos_hw.h"
 #include "unic_mac.h"
 #include "unic_netdev.h"
 #include "unic_vlan.h"

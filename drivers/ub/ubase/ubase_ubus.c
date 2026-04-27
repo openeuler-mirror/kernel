@@ -6,6 +6,7 @@
 
 #include <linux/delay.h>
 #include <linux/module.h>
+#include <linux/pm.h>
 #include <ub/ubase/ubase_comm_dev.h>
 #include <ub/ubus/ub_black_box.h>
 

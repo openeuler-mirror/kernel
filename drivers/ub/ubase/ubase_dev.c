@@ -555,7 +555,7 @@ static int ubase_handle_ue2ue_ctrlq_event(struct ubase_dev *udev, void *data,
 {
 	struct ubase_ue2ue_ctrlq_head *cmd = data;
 	struct ubase_ctrlq_base_block *head;
-	u16 data_len;
+	u32 ue2ue_data_len, ctrlq_msg_len;
 
 	if (len < (sizeof(*cmd) + UBASE_CTRLQ_HDR_LEN)) {
 		ubase_err(udev, "invalid ue2ue ctrlq event len(%u).\n", len);
@@ -571,9 +571,16 @@ static int ubase_handle_ue2ue_ctrlq_event(struct ubase_dev *udev, void *data,
 	}
 
 	head = (struct ubase_ctrlq_base_block *)(cmd + 1);
-	data_len = len - sizeof(*cmd) - UBASE_CTRLQ_HDR_LEN;
+	ue2ue_data_len = len - sizeof(*cmd);
+	ctrlq_msg_len = head->bb_num * UBASE_CTRLQ_BB_LEN;
+	if (ue2ue_data_len < ctrlq_msg_len) {
+		ubase_err(udev, "invalid ue2ue data len(%u), ctrlq msg len(%u).\n",
+			  ue2ue_data_len, ctrlq_msg_len);
+		return -EINVAL;
+	}
 	ubase_ctrlq_handle_crq_msg(udev, head, cmd->seq,
-				   (u8 *)head + UBASE_CTRLQ_HDR_LEN, data_len);
+				   (u8 *)head + UBASE_CTRLQ_HDR_LEN,
+				   ctrlq_msg_len - UBASE_CTRLQ_HDR_LEN);
 
 	return 0;
 }
