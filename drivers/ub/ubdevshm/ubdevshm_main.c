@@ -48,6 +48,24 @@ bool ubdevshm_is_inited(void)
 }
 EXPORT_SYMBOL_GPL(ubdevshm_is_inited);
 
+int ubdevshm_check_version(uint32_t app_major, uint32_t app_minor)
+{
+	if (app_major != UBDEVSHM_VERSION_MAJOR) {
+		pr_err("major version check failed: app %u mismatch lib %u.",
+			app_major, UBDEVSHM_VERSION_MAJOR);
+		return -EPERM;
+	}
+
+	if (app_minor > UBDEVSHM_VERSION_MINOR) {
+		pr_err("minor version check failed: app %u can't be newer than lib %u.",
+			app_minor, UBDEVSHM_VERSION_MINOR);
+		return -EPERM;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(ubdevshm_check_version);
+
 static bool check_provider_registered(struct ubdevshm_mem_ops *ops)
 {
 	struct mem_provider *pos = NULL;
@@ -1283,4 +1301,5 @@ module_init(ubdevshm_init);
 module_exit(ubdevshm_exit);
 
 MODULE_DESCRIPTION("Hisilicon ubdevshm");
+MODULE_AUTHOR("HiSilicon Tech. Co., Ltd.");
 MODULE_LICENSE("GPL");
