@@ -524,7 +524,7 @@ static int ubmad_do_post_send_conn_data(struct ubcore_jetty *jetty,
 
 	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
-		ubcore_log_err("Invalid threshold, tx_in_queue: %u.\n",
+		ubcore_log_err_rl("Invalid threshold, tx_in_queue: %u.\n",
 			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
 		ret = -1;
 		goto destroy_msn_node;
@@ -718,7 +718,7 @@ static int ubmad_do_post_send(struct ubmad_jetty_resource *rsrc,
 		ret = -EINVAL;
 	}
 	if (ret != 0) {
-		ubcore_log_err("post send failed. msg type %d ret %d\n",
+		ubcore_log_err_rl("post send failed. msg type %d ret %d\n",
 			     msg->msg_type, ret);
 		goto put_id;
 	}
@@ -826,7 +826,7 @@ int ubmad_post_send(struct ubcore_device *device,
 	tjetty = ubmad_get_tjetty_lockless(rsrc, hash, &dst_primary_eid); // put by user
 	spin_unlock_irqrestore(&rsrc->tjetty_hlist_lock, flag);
 	if (!IS_ERR_OR_NULL(tjetty)) {
-		ubcore_log_info("tjetty0 already imported. eid " EID_FMT "\n",
+		ubcore_log_info_rl("tjetty0 already imported. eid " EID_FMT "\n",
 			EID_ARGS(dst_primary_eid));
 		/* post send */
 		ret = ubmad_do_post_send(
@@ -834,7 +834,7 @@ int ubmad_post_send(struct ubcore_device *device,
 			send_buf->session_id,
 			dev_priv->rt_wq);
 		if (ret != 0)
-			ubcore_log_err("do post send failed, ret: %d\n", ret);
+			ubcore_log_err_rl("do post send failed, ret: %d\n", ret);
 
 		ubmad_put_tjetty(tjetty);
 		ubmad_put_device_priv(dev_priv);
@@ -1188,7 +1188,7 @@ int ubmad_ubc_send(struct ubcore_device *device,
 	ret = ubmad_post_send(device, (struct ubmad_send_buf *)send_buf,
 			      &bad_send_buf);
 	if (ret != 0)
-		ubcore_log_err("Failed to send message, ret: %d, length: %u.\n",
+		ubcore_log_err_rl("Failed to send message, ret: %d, length: %u.\n",
 			     ret, send_buf->payload_len);
 
 	return ret;
