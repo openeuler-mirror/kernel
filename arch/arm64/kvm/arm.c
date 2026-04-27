@@ -1797,8 +1797,10 @@ static int kvm_arch_vcpu_ioctl_vcpu_init(struct kvm_vcpu *vcpu,
 
 	kvm_arm_pvsched_vcpu_init(&vcpu->arch);
 
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
 	/* let's set active to false for vcpu reset */
 	kvm_arm_pvtimer_status_set_active(vcpu, false);
+#endif
 
 	return 0;
 }
