@@ -667,6 +667,11 @@ static int udma_ctrlq_eid_update(struct auxiliary_device *adev, uint8_t service_
 	}
 
 	udma_dev = get_udma_dev(adev);
+	if (service_ver != UBASE_CTRLQ_SER_VER_01) {
+		dev_err(udma_dev->dev, "unsupported service version (%u).\n", service_ver);
+		return -EOPNOTSUPP;
+	}
+
 	if (udma_dev->status != UDMA_NORMAL)
 		return udma_ctrlq_send_eid_update_response(udma_dev, seq, 0);
 
@@ -702,10 +707,15 @@ static int udma_ctrlq_check_tp_status(struct udma_dev *udev, void *data, uint16_
 				      uint32_t *rsp_info_len)
 {
 #define UDMA_CTRLQ_CHECK_TP_OFFSET 0xFF
-	struct udma_ctrlq_check_tp_active_req_info *req_info = NULL;
+struct udma_tp_active_req_info {
+	struct udma_ctrlq_check_tp_active_req_info *info;
+	struct rcu_head rcu;
+};
+
+	struct udma_tp_active_req_info tp_active_req;
 	uint32_t req_info_len;
 	uint32_t tp_num;
-	int i;
+	uint32_t i;
 
 	tp_num = *((uint32_t *)data) & UDMA_CTRLQ_CHECK_TP_OFFSET;
 	req_info_len = sizeof(struct udma_ctrlq_check_tp_active_req_info) +
@@ -714,29 +724,28 @@ static int udma_ctrlq_check_tp_status(struct udma_dev *udev, void *data, uint16_
 		dev_err(udev->dev, "msg param num(%u) is invalid.\n", tp_num);
 		return -EINVAL;
 	}
-	req_info = kzalloc(req_info_len, GFP_KERNEL);
-	if (!req_info)
+	tp_active_req.info = kzalloc(req_info_len, GFP_KERNEL);
+	if (!tp_active_req.info)
 		return -ENOMEM;
-	memcpy(req_info, data, req_info_len);
+	memcpy(tp_active_req.info, data, req_info_len);
 
 	*rsp_info_len = sizeof(struct udma_ctrlq_check_tp_active_rsp_info) +
 			sizeof(struct udma_ctrlq_check_tp_active_rsp_data) * tp_num;
 	*rsp_info = kzalloc(*rsp_info_len, GFP_KERNEL);
 	if (!(*rsp_info)) {
 		*rsp_info_len = 0;
-		kfree(req_info);
-		req_info = NULL;
+		kfree_rcu(&tp_active_req, rcu);
 		return -ENOMEM;
 	}
 
 	rcu_read_lock();
-	for (i = 0; i < req_info->num; i++) {
-		if (find_vpid(req_info->data[i].pid_flag))
+	for (i = 0; i < tp_active_req.info->num; i++) {
+		if (find_vpid(tp_active_req.info->data[i].pid_flag))
 			(*rsp_info)->data[i].result = UDMA_CTRLQ_TPID_IN_USE;
 		else
 			(*rsp_info)->data[i].result = UDMA_CTRLQ_TPID_EXITED;
 
-		(*rsp_info)->data[i].tp_id = req_info->data[i].tp_id;
+		(*rsp_info)->data[i].tp_id = tp_active_req.info->data[i].tp_id;
 	}
 	(*rsp_info)->num = tp_num;
 	rcu_read_unlock();
@@ -744,8 +753,8 @@ static int udma_ctrlq_check_tp_status(struct udma_dev *udev, void *data, uint16_
 	if (debug_switch)
 		udma_dfx_ctx_print(udev, "udma check tp active", (*rsp_info)->data[0].tp_id,
 				   *rsp_info_len / sizeof(uint32_t), (uint32_t *)(*rsp_info));
-	kfree(req_info);
-	req_info = NULL;
+
+	kfree_rcu(&tp_active_req, rcu);
 
 	return 0;
 }
@@ -769,15 +778,26 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 				      uint8_t service_ver, void *data,
 				      uint16_t len, uint16_t seq)
 {
-	struct udma_ctrlq_check_tp_active_rsp_info *rsp_info = NULL;
+struct udma_tp_active_rsq_info {
+	struct udma_ctrlq_check_tp_active_rsp_info *info;
+	struct rcu_head rcu;
+};
+
+	struct udma_tp_active_rsq_info tp_active_rsq;
 	struct udma_dev *udev = get_udma_dev(adev);
 	struct ubase_ctrlq_msg msg = {};
 	uint32_t rsp_info_len = 0;
 	int ret;
 
+	if (service_ver != UBASE_CTRLQ_SER_VER_01) {
+		dev_err(udev->dev, "unsupported service version (%u).\n", service_ver);
+		return -EOPNOTSUPP;
+	}
+
 	ret = udma_ctrlq_check_tp_active_param(udev, data, len);
 	if (ret == 0) {
-		ret = udma_ctrlq_check_tp_status(udev, data, len, &rsp_info, &rsp_info_len);
+		ret = udma_ctrlq_check_tp_status(udev, data, len, &tp_active_rsq.info,
+						 &rsp_info_len);
 		if (ret)
 			dev_err(udev->dev, "check tp status failed, ret(%d).\n", ret);
 	}
@@ -788,7 +808,7 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 	msg.need_resp = 0;
 	msg.is_resp = 1;
 	msg.in_size = (uint16_t)rsp_info_len;
-	msg.in = (void *)rsp_info;
+	msg.in = (void *)tp_active_rsq.info;
 	msg.resp_seq = seq;
 	msg.resp_ret = (uint8_t)(-ret);
 
@@ -796,8 +816,7 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 	if (ret)
 		dev_err(udev->dev, "send check tp active ctrlq msg failed, ret(%d).\n", ret);
 
-	kfree(rsp_info);
-	rsp_info = NULL;
+	kfree_rcu(&tp_active_rsq, rcu);
 
 	return ret;
 }
@@ -845,6 +864,11 @@ static int udma_ctrlq_notify_mue_eid_guid(struct auxiliary_device *adev,
 	}
 
 	udma_dev = get_udma_dev(adev);
+	if (service_ver != UBASE_CTRLQ_SER_VER_01) {
+		dev_err(udma_dev->dev, "unsupported service version (%u).\n", service_ver);
+		return -EOPNOTSUPP;
+	}
+
 	if (udma_dev->is_ue)
 		return 0;
 
