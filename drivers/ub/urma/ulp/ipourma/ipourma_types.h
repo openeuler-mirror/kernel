@@ -73,6 +73,8 @@ enum {
 	IPOURMA_ALEN                = 6,
 	IPOURMA_DEFAULT_TJETTY_CAP  = 256,
 	IPOURMA_MAX_EID_CNT         = 128,
+	IPOURMA_MIN_EID_CNT       = 9,
+	IPOURMA_DWORK_TIME          = 30,
 	IPOURMA_TJETTY_CB_S         = 10,
 	IPOURMA_TJETTY_TIMEOUT_S    = 60,
 	IPOURMA_TJETTY_TIMEOUT_MAX  = 65535,
@@ -320,6 +322,7 @@ struct ipourma_dev_priv {
 	struct work_struct unset_route;
 	struct work_struct set_route_entry;
 	struct work_struct rx_cr_event;
+	struct delayed_work redundant_dwork;
 	/* register netdev */
 	struct workqueue_struct *register_wq;
 	struct work_struct register_netdev;

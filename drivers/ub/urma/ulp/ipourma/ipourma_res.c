@@ -749,6 +749,7 @@ static void ipourma_uninit_misc(struct ipourma_dev_priv *priv)
 		priv->tjetty_lru.tjetty_wq = NULL;
 	}
 	if (!IS_ERR_OR_NULL(priv->net_config_wq)) {
+		cancel_delayed_work_sync(&priv->redundant_dwork);
 		flush_workqueue(priv->net_config_wq);
 		destroy_workqueue(priv->net_config_wq);
 		priv->net_config_wq = NULL;
