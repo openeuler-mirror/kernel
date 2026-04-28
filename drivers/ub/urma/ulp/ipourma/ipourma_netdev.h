@@ -10,6 +10,8 @@
 
 #include "ipourma_types.h"
 
+extern int ipourma_min_eid_cnt;
+
 struct ipourma_set_ip_work {
 	struct delayed_work d_work;
 	struct ipourma_dev_priv *priv;
