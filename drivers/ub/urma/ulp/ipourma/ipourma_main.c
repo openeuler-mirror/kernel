@@ -44,6 +44,10 @@ int ipourma_utp_sl = IPOURMA_DEFAULT_UTP_SL;
 module_param_named(utp_sl, ipourma_utp_sl, int, 0644);
 MODULE_PARM_DESC(ipourma_utp_sl, "utp sl, default 0 in ipourma");
 
+int ipourma_min_eid_cnt = IPOURMA_MIN_EID_CNT;
+module_param_named(min_eid_cnt, ipourma_min_eid_cnt, int, 0644);
+MODULE_PARM_DESC(ipourma_min_eid_cnt, "min eid cnt, default 9 in ipourma");
+
 static int ipourma_ubcore_add_device(struct ubcore_device *ubc_dev);
 static void ipourma_ubcore_remove_device(struct ubcore_device *ubc_dev, void *client_ctx);
 static void ipourma_unregister_netdev(struct ipourma_dev_priv *priv);
@@ -383,6 +387,11 @@ static int ipourma_param_init(void)
 		return -EOPNOTSUPP;
 	}
 
+	if (ipourma_min_eid_cnt > IPOURMA_MAX_EID_CNT) {
+		pr_err("invalid minimum eid count.\n");
+		return -EOPNOTSUPP;
+	}
+
 	ipourma_tx_ring_size = tx_ring_size;
 	ipourma_rx_ring_size = rx_ring_size;
 	ipourma_register_seg_size = (1 << page_level);
@@ -428,7 +437,6 @@ static int __init ipourma_init(void)
 
 	return 0;
 }
-
 
 static void __exit ipourma_exit(void)
 {
