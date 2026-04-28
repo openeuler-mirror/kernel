@@ -7,6 +7,7 @@
 #include <linux/timer.h>
 #include "ipourma_err.h"
 #include "ipourma_ub.h"
+#include "ipourma_netdev.h"
 #include "ub/urma/ubcore_uapi.h"
 #include "ipourma_res.h"
 
@@ -743,6 +744,19 @@ static struct ubcore_jfc *ipourma_create_jfc(struct net_device *dev,
 
 static void ipourma_uninit_misc(struct ipourma_dev_priv *priv)
 {
+	struct ipourma_set_ip_work *set_ip_work, *next_work;
+
+	spin_lock(&priv->set_ip_lock);
+	atomic_set(&priv->need_set_ip, 0);
+	list_for_each_entry_safe(set_ip_work, next_work, &priv->set_ip_list, list) {
+		list_del(&set_ip_work->list);
+		/* set_ip_work may schedule itself, cancel twice to make sure need_set_ip work */
+		cancel_delayed_work_sync(&set_ip_work->d_work);
+		cancel_delayed_work_sync(&set_ip_work->d_work);
+		kfree(set_ip_work);
+	}
+	spin_unlock(&priv->set_ip_lock);
+
 	if (!IS_ERR_OR_NULL(priv->tjetty_lru.tjetty_wq)) {
 		flush_workqueue(priv->tjetty_lru.tjetty_wq);
 		destroy_workqueue(priv->tjetty_lru.tjetty_wq);

@@ -11,6 +11,7 @@
 #include "ipourma_types.h"
 
 struct ipourma_set_ip_work {
+	struct list_head list;
 	struct delayed_work d_work;
 	struct ipourma_dev_priv *priv;
 	int eid_idx;
