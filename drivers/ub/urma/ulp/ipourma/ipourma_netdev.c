@@ -224,7 +224,8 @@ void ipourma_add_route(struct work_struct *work)
 	priv = container_of(work, struct ipourma_dev_priv, set_route);
 
 	for (i = 0; i < IPOURMA_MAX_EID_CNT; i++) {
-		if (eid_is_empty(&priv->eid_info[i].eid))
+		if (eid_is_empty(&priv->eid_info[i].eid)
+				|| priv->eid_info[i].eid_index != i)
 			continue;
 		ret = ipourma_add_route_rule(priv, &(priv->eid_info[i].eid));
 		flag = true;
@@ -248,7 +249,8 @@ static void ipourma_del_route(struct work_struct *work)
 	ipourma_del_route_entry(priv);
 	if (!IS_ERR_OR_NULL(priv->eid_info)) {
 		for (int i = 0; i < IPOURMA_MAX_EID_CNT; i++) {
-			if (eid_is_empty(&priv->eid_info[i].eid))
+			if (eid_is_empty(&priv->eid_info[i].eid)
+					|| priv->eid_info[i].eid_index != i)
 				continue;
 			ipourma_del_route_rule(priv, &priv->eid_info[i].eid);
 		}
@@ -554,6 +556,7 @@ static inline void ipourma_init_stats(struct ipourma_dev_priv *priv)
 	spin_lock_init(&(priv->runtime_stats.lock));
 }
 
+static void ipourma_create_redundant_jetty_callback(struct work_struct *work);
 static int ipourma_priv_base_init(struct net_device *dev,
 	struct ubcore_device *urma_dev)
 {
@@ -577,6 +580,7 @@ static int ipourma_priv_base_init(struct net_device *dev,
 	INIT_WORK(&(priv->set_route_entry), ipourma_add_route_entry);
 	INIT_WORK(&(priv->rx_cr_event), ipourma_rx_cr_event);
 	INIT_WORK(&(priv->register_netdev), ipourma_register_netdev);
+	INIT_DELAYED_WORK(&(priv->redundant_dwork), ipourma_create_redundant_jetty_callback);
 	atomic_set(&priv->rx_jfr_ref, 0);
 	atomic_set(&priv->tx_ring_blocked, 0);
 	spin_lock_init(&priv->tjetty_lru.lock);
@@ -683,6 +687,44 @@ static void ipourma_init_set_ip_work(struct ipourma_dev_priv *priv, u32 eid_idx)
 	schedule_delayed_work(d_work, msecs_to_jiffies(MSEC_PER_SEC));
 }
 
+static int ipourma_get_redundant_eid(struct ipourma_dev_priv *priv, u32 *eid_idx)
+{
+	int i;
+
+	for (i = 0; i < IPOURMA_MAX_EID_CNT; i++) {
+		if (!eid_is_empty(&priv->eid_info[i].eid)) {
+			*eid_idx = priv->eid_info[i].eid_index;
+			return IPOURMA_OK;
+		}
+	}
+	return -EINVAL;
+}
+
+static void ipourma_create_redundant_jetty_callback(struct work_struct *work)
+{
+	struct delayed_work *d_work = container_of(work, struct delayed_work, work);
+	struct ipourma_dev_priv *priv;
+	u32 eid_idx;
+	int i;
+
+	priv = container_of(d_work,
+		struct ipourma_dev_priv, redundant_dwork);
+
+	if (ipourma_get_redundant_eid(priv, &eid_idx))
+		return;
+	for (i = 0; i < ipourma_min_eid_cnt; i++) {
+		if (!eid_is_empty(&priv->eid_info[i].eid))
+			continue;
+		priv->eid_info[i] = priv->eid_info[eid_idx];
+		if (ipourma_urma_init_by_eid(priv, i) != IPOURMA_OK) {
+			memset(&priv->eid_info[i].eid, 0, UBCORE_EID_SIZE);
+			continue;
+		}
+		netdev_info(priv->dev, "create redundant jetty id: %d by eid: %d!\n",
+						 i, priv->eid_info[i].eid_index);
+	}
+}
+
 void ipourma_create_new_eid(struct ipourma_dev_priv *priv, u32 eid_idx)
 {
 	int ret;
@@ -693,4 +735,7 @@ void ipourma_create_new_eid(struct ipourma_dev_priv *priv, u32 eid_idx)
 		return;
 	}
 	ipourma_init_set_ip_work(priv, eid_idx);
+	cancel_delayed_work_sync(&priv->redundant_dwork);
+	queue_delayed_work(priv->net_config_wq, &priv->redundant_dwork,
+				IPOURMA_DWORK_TIME * msecs_to_jiffies(MSEC_PER_SEC));
 }

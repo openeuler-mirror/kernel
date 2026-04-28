@@ -88,7 +88,8 @@ void ipourma_init_ipv6_addr(struct work_struct *work)
 	dev = priv->dev;
 
 	for (i = 0; i < IPOURMA_MAX_EID_CNT; i++) {
-		if (eid_is_empty(&priv->eid_info[i].eid))
+		if (eid_is_empty(&priv->eid_info[i].eid)
+				|| priv->eid_info[i].eid_index != i)
 			continue;
 		ret = ipourma_send_ipv6_netlink(dev, &(priv->eid_info[i].eid), RTM_NEWADDR);
 		if (ret != 0)
