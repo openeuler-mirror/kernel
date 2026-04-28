@@ -478,13 +478,13 @@ static void ghes_clear_estatus(struct ghes *ghes,
  *   terminating the corresponding host process (e.g., the VMM/QEMU task) is the
  *   expected behavior to ensure system stability.
  */
-static void ghes_handle_critical_ras(unsigned long pfn)
+static void ghes_handle_critical_ras(unsigned long pfn, unsigned long flags)
 {
 	struct mm_struct *mm = current->mm;
 	struct page *p;
 	int nid;
 
-	if (!IS_ENABLED(CONFIG_ACPI_APEI_RAS_CRITICAL))
+	if (!IS_ENABLED(CONFIG_ACPI_APEI_RAS_CRITICAL) || !(flags & MF_ACTION_REQUIRED))
 		return;
 
 	p = pfn_to_online_page(pfn);
@@ -493,6 +493,10 @@ static void ghes_handle_critical_ras(unsigned long pfn)
 
 	nid = page_to_nid(p);
 	if (!numa_is_remote_node(nid))
+		return;
+
+	set_node_critical_err(nid);
+	if (!mm)
 		return;
 
 	if (test_bit(MMF_CRITICAL_ERR, &mm->flags))
@@ -554,10 +558,10 @@ static bool ghes_do_memory_failure(u64 physical_addr, int flags, bool critical)
 		return false;
 	}
 
-	if (flags == MF_ACTION_REQUIRED && current->mm) {
-		if (critical)
-			ghes_handle_critical_ras(pfn);
+	if (critical)
+		ghes_handle_critical_ras(pfn, flags);
 
+	if (flags == MF_ACTION_REQUIRED && current->mm) {
 		twcb = (void *)gen_pool_alloc(ghes_estatus_pool, sizeof(*twcb));
 		if (!twcb)
 			return false;
