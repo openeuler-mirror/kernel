@@ -106,6 +106,9 @@ int mfs_fs_sysfs_init(struct super_block *sb)
 
 	if (sbi->minor >= 0) { /* event related sysfs config */
 		sbi->ev_mask = 0;
+		mfs_set_evmask(sbi->ev_mask, MFS_OP_READ);
+		mfs_set_evmask(sbi->ev_mask, MFS_OP_FAULT);
+
 		init_completion(&sbi->ev_kobj_unregister);
 		err = kobject_init_and_add(&sbi->ev_kobj, &mfs_ev_ktype, mfs_root,
 					   "mfs%d", sbi->minor);
@@ -131,7 +134,9 @@ void mfs_fs_sysfs_exit(struct super_block *sb)
 
 int mfs_sysfs_init(void)
 {
-	mfs_ev_fullmask = 0xFFFF;
+	mfs_ev_fullmask = 0;
+	mfs_set_evmask(mfs_ev_fullmask, MFS_OP_READ);
+	mfs_set_evmask(mfs_ev_fullmask, MFS_OP_FAULT);
 
 	mfs_root = kobject_create_and_add("mfs", fs_kobj);
 	if (!mfs_root)

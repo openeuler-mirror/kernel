@@ -102,6 +102,11 @@ struct mfs_dentry_info {
 #define MFS_I(ptr) container_of(ptr, struct mfs_inode, vfs_inode)
 #define MFS_D(dent) ((struct mfs_dentry_info *)(dent)->d_fsdata)
 
+#define mfs_set_evmask(mask, bit) ((mask) |= (1UL << bit))
+#define mfs_clear_evmask(mask, bit) ((mask) &= ~(1UL << bit))
+#define mfs_test_evmask(mask, bit) ((mask) & (1UL << bit))
+#define allow_ev_type(sbi, op) mfs_test_evmask((sbi)->ev_mask, op)
+
 extern const struct file_operations mfs_dir_fops;
 extern const struct file_operations mfs_file_fops;
 extern const struct address_space_operations mfs_aops;
