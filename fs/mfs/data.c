@@ -254,7 +254,7 @@ static int mfs_check_range(struct range_ctx *ctx)
 	struct mfs_syncer syncer;
 	int err = 0, err2 = 0;
 
-	if (!support_event(sbi))
+	if (!support_event(sbi) || !allow_ev_type(sbi, ctx->op))
 		return 0;
 	if (!cache_is_ready(sbi))
 		return ctx->sync ? -EIO : 0;
