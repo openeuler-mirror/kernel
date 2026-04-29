@@ -711,6 +711,7 @@ int mbi_init(struct fwnode_handle *fwnode, struct irq_domain *parent);
 
 #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
 phys_addr_t get_gicr_paddr(int cpu);
+bool is_vtimer_supported(void);
 #endif
 
 static inline bool gic_enable_sre(void)

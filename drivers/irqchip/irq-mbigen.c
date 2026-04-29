@@ -111,6 +111,7 @@ struct vtimer_mbigen_device {
 	int                     mpidr_aff3;
 	struct list_head        entry;
 	spinlock_t              vmgn_lock;
+	resource_size_t         gicr_base;
 };
 #endif
 
@@ -136,9 +137,25 @@ static LIST_HEAD(vtimer_mgn_list);
  * absolute offset of a cpu relative to the base cpu.
  */
 #define GICR_LENGTH                            0x40000
-static inline int get_abs_offset(int cpu, int cpu_base)
+static inline int get_abs_offset(int cpu, struct vtimer_mbigen_device *chip)
 {
-	return ((get_gicr_paddr(cpu) - get_gicr_paddr(cpu_base)) / GICR_LENGTH);
+	int abs_offset;
+
+	/*
+	 * The soft pg of HIP12 might cause OS to fail to find the cpu_base
+	 * with aff<2,1,0>=0, which is used to get the base address of GICR0.
+	 * Therefore, the base address of GICR0 is written into the OS for
+	 * calculating the absolute core offset.
+	 */
+	if (read_cpuid_id() == MIDR_HISI_HIP12) {
+		abs_offset = ((get_gicr_paddr(cpu) - chip->gicr_base)
+						/ GICR_LENGTH);
+	} else {
+		abs_offset = ((get_gicr_paddr(cpu) - get_gicr_paddr(chip->cpu_base))
+						/ GICR_LENGTH);
+	}
+
+	return abs_offset;
 }
 
 static struct vtimer_mbigen_device *get_vtimer_mbigen(int cpu_id)
@@ -168,7 +185,7 @@ void vtimer_mbigen_set_vector(int cpu_id, u16 vpeid)
 	if (!chip)
 		return;
 
-	cpu_abs_offset = get_abs_offset(cpu_id, chip->cpu_base);
+	cpu_abs_offset = get_abs_offset(cpu_id, chip);
 	addr = chip->base + VTIMER_MBIGEN_REG_VEC_OFFSET +
 	       cpu_abs_offset * VTIMER_MBIGEN_REG_WIDTH;
 
@@ -195,7 +212,7 @@ bool vtimer_mbigen_get_active(int cpu_id)
 	if (!chip)
 		return false;
 
-	cpu_abs_offset = get_abs_offset(cpu_id, chip->cpu_base);
+	cpu_abs_offset = get_abs_offset(cpu_id, chip);
 	addr = chip->base + VTIMER_MBIGEN_REG_ATV_STAT_OFFSET +
 		(cpu_abs_offset / PPIS_PER_MBIGEN_NODE) * VTIMER_MBIGEN_REG_WIDTH;
 
@@ -216,7 +233,7 @@ void vtimer_mbigen_set_auto_clr(int cpu_id, bool set)
 	if (!chip)
 		return;
 
-	cpu_abs_offset = get_abs_offset(cpu_id, chip->cpu_base);
+	cpu_abs_offset = get_abs_offset(cpu_id, chip);
 	offset = set ? VTIMER_MBIGEN_REG_SET_AUTO_CLR_OFFSET :
 		 VTIMER_MBIGEN_REG_CLR_AUTO_CLR_OFFSET;
 	addr = chip->base + offset +
@@ -239,7 +256,7 @@ void vtimer_gic_set_auto_clr(int cpu_id, bool set)
 	if (!chip)
 		return;
 
-	cpu_abs_offset = get_abs_offset(cpu_id, chip->cpu_base);
+	cpu_abs_offset = get_abs_offset(cpu_id, chip);
 	offset = set ? VTIMER_GIC_REG_SET_AUTO_CLR_OFFSET :
 		 VTIMER_GIC_REG_CLR_AUTO_CLR_OFFSET;
 	addr = chip->base + offset +
@@ -262,7 +279,7 @@ void vtimer_mbigen_set_active(int cpu_id, bool set)
 	if (!chip)
 		return;
 
-	cpu_abs_offset = get_abs_offset(cpu_id, chip->cpu_base);
+	cpu_abs_offset = get_abs_offset(cpu_id, chip);
 	offset = set ? VTIMER_MBIGEN_REG_ATV_STAT_OFFSET :
 		 VTIMER_MBIGEN_REG_ATV_CLR_OFFSET;
 	addr = chip->base + offset +
@@ -284,7 +301,7 @@ static int vtimer_mbigen_set_type(unsigned int cpu_id)
 	if (!chip)
 		return -EINVAL;
 
-	cpu_abs_offset = get_abs_offset(cpu_id, chip->cpu_base);
+	cpu_abs_offset = get_abs_offset(cpu_id, chip);
 	addr = chip->base + VTIMER_MBIGEN_REG_TYPE_OFFSET +
 	       (cpu_abs_offset / PPIS_PER_MBIGEN_NODE) * VTIMER_MBIGEN_REG_WIDTH;
 
@@ -627,6 +644,14 @@ static int vtimer_mbigen_chip_match_cpu(struct vtimer_mbigen_device *chip)
 {
 	int cpu;
 
+	/*
+	 * HIP12 does not need cpu_base. it uses gicr_base for
+	 * calculating abs_offset.
+	 */
+	if (read_cpuid_id() == MIDR_HISI_HIP12) {
+		return 0;
+	}
+
 	for_each_possible_cpu(cpu) {
 		int mpidr_aff3 = MPIDR_AFFINITY_LEVEL(cpu_logical_map(cpu), 3);
 
@@ -689,23 +714,83 @@ static bool vtimer_mbigen_should_probe(struct mbigen_device *mgn_chip)
 	return true;
 }
 
-#define CHIP0_TA_MBIGEN_PHY_BASE	0x4604400000
-#define CHIP0_TA_MBIGEN_ITS_BASE	0x84028
-#define CHIP0_TA_PERI_PHY_BASE		0x4614002018
+#define MPIDR_AFF3_SOCKETID_SHIFT 3
+#define MPIDR_AFF3_CHIP0_VDIE0 (0 | (0 << MPIDR_AFF3_SOCKETID_SHIFT))
+#define MPIDR_AFF3_CHIP0_VDIE1 (1 | (0 << MPIDR_AFF3_SOCKETID_SHIFT))
+#define MPIDR_AFF3_CHIP1_VDIE0 (0 | (1 << MPIDR_AFF3_SOCKETID_SHIFT))
+#define MPIDR_AFF3_CHIP1_VDIE1 (1 | (1 << MPIDR_AFF3_SOCKETID_SHIFT))
 
-#define CHIP0_TB_MBIGEN_PHY_BASE	0xc604400000
-#define CHIP0_TB_PERI_PHY_BASE		0xc614002018
-#define CHIP0_TB_MBIGEN_ITS_BASE	0x4028
+struct gicr_addr {
+	resource_size_t chip0_vdie0_gicr_base;
+	resource_size_t chip0_vdie1_gicr_base;
+	resource_size_t chip1_vdie0_gicr_base;
+	resource_size_t chip1_vdie1_gicr_base;
+};
 
-#define CHIP1_TA_MBIGEN_PHY_BASE	0x204604400000
-#define CHIP1_TA_PERI_PHY_BASE		0x204614002018
-#define CHIP1_TA_MBIGEN_ITS_BASE	0x2084028
+struct gicr_addr hip12_gicr_addr = {
+	.chip0_vdie0_gicr_base = 0x480100000,
+	.chip0_vdie1_gicr_base = 0x580100000,
+	.chip1_vdie0_gicr_base = 0x4480100000,
+	.chip1_vdie1_gicr_base = 0x4580100000,
+};
 
-#define CHIP1_TB_MBIGEN_PHY_BASE	0x20c604400000
-#define CHIP1_TB_MBIGEN_ITS_BASE	0x2004028
-#define CHIP1_TB_PERI_PHY_BASE		0x20c614002018
+struct its_mbigen_addr {
+	resource_size_t chip0_ta_mbigen_base;
+	unsigned long chip0_ta_peri_base;
+	u32 chip0_ta_mbigen_its_base;
+	resource_size_t chip0_tb_mbigen_base;
+	unsigned long chip0_tb_peri_base;
+	u32 chip0_tb_mbigen_its_base;
+	resource_size_t chip1_ta_mbigen_base;
+	unsigned long chip1_ta_peri_base;
+	u32 chip1_ta_mbigen_its_base;
+	resource_size_t chip1_tb_mbigen_base;
+	unsigned long chip1_tb_peri_base;
+	u32 chip1_tb_mbigen_its_base;
+};
+
+struct its_mbigen_addr hip09_its_mbigen_addr = {
+	.chip0_ta_mbigen_base = 0x4604400000,
+	.chip0_ta_peri_base = 0x4614002018,
+	.chip0_ta_mbigen_its_base = 0x84028,
+	.chip0_tb_mbigen_base = 0xc604400000,
+	.chip0_tb_peri_base = 0xc614002018,
+	.chip0_tb_mbigen_its_base = 0x4028,
+	.chip1_ta_mbigen_base = 0x204604400000,
+	.chip1_ta_peri_base = 0x204614002018,
+	.chip1_ta_mbigen_its_base = 0x2084028,
+	.chip1_tb_mbigen_base = 0x20c604400000,
+	.chip1_tb_peri_base = 0x20c614002018,
+	.chip1_tb_mbigen_its_base = 0x2004028,
+};
+
+struct its_mbigen_addr hip12_its_mbigen_addr = {
+	.chip0_ta_mbigen_base = 0x420120000,
+	.chip0_ta_peri_base = 0x41c0f013c,
+	.chip0_ta_mbigen_its_base = 0x4880,
+	.chip0_tb_mbigen_base = 0x520120000,
+	.chip0_tb_peri_base = 0x51c0f013c,
+	.chip0_tb_mbigen_its_base = 0x5880,
+	.chip1_ta_mbigen_base = 0x4420120000,
+	.chip1_ta_peri_base = 0x441c0f013c,
+	.chip1_ta_mbigen_its_base = 0x44880,
+	.chip1_tb_mbigen_base = 0x4520120000,
+	.chip1_tb_peri_base = 0x451c0f013c,
+	.chip1_tb_mbigen_its_base = 0x45880,
+};
 
 extern bool vtimer_irqbypass;
+extern bool gicv4_enable;
+
+static bool is_vtimer_enabled(void)
+{
+	/*
+	 * 'gicv4_enable' indicates whether the user enables GICv4.
+	 * 'is_vtimer_supported()' check whether vtimer is supported.
+	 * 'vtimer_irqbypass' indicates whether the user enables vtimer.
+	 */
+	return gicv4_enable && is_vtimer_supported() && vtimer_irqbypass;
+}
 
 static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 {
@@ -715,8 +800,23 @@ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 	unsigned int mpidr_aff3;
 	u32 val;
 	struct vtimer_mbigen_device *chip;
+	struct its_mbigen_addr *addr_table;
+	u32 midr;
 
-	if (!vtimer_irqbypass)
+	midr = read_cpuid_id();
+	switch (midr) {
+	case MIDR_HISI_LINXICORE9100:
+		addr_table = &hip09_its_mbigen_addr;
+		break;
+	case MIDR_HISI_HIP12:
+		addr_table = &hip12_its_mbigen_addr;
+		break;
+	default:
+		pr_err("Do not support vtimer irq bypass in this chip.\n");
+		return -EINVAL;
+	}
+
+	if (!is_vtimer_enabled())
 		return 0;
 
 	if (!mgn_chip)
@@ -731,8 +831,8 @@ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (res->start == CHIP0_TA_MBIGEN_PHY_BASE) {
-		addr = ioremap(CHIP0_TA_PERI_PHY_BASE, 4);
+	if (res->start == addr_table->chip0_ta_mbigen_base) {
+		addr = ioremap(addr_table->chip0_ta_peri_base, 4);
 		if (!addr) {
 			pr_err("Unable to map CHIP0-TA-PERI\n");
 			return -ENOMEM;
@@ -742,11 +842,11 @@ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 		iounmap(addr);
 
 		addr = mgn_chip->base + MBIX_VPPI_ITS_TA;
-		writel_relaxed(CHIP0_TA_MBIGEN_ITS_BASE, addr);
+		writel_relaxed(addr_table->chip0_ta_mbigen_its_base, addr);
 	}
 
-	if (res->start == CHIP0_TB_MBIGEN_PHY_BASE) {
-		addr = ioremap(CHIP0_TB_PERI_PHY_BASE, 4);
+	if (res->start == addr_table->chip0_tb_mbigen_base) {
+		addr = ioremap(addr_table->chip0_tb_peri_base, 4);
 		if (!addr) {
 			pr_err("Unable to map CHIP0-TB-PERI\n");
 			return -ENOMEM;
@@ -756,11 +856,11 @@ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 		iounmap(addr);
 
 		addr = mgn_chip->base + MBIX_VPPI_ITS_TA;
-		writel_relaxed(CHIP0_TB_MBIGEN_ITS_BASE, addr);
+		writel_relaxed(addr_table->chip0_tb_mbigen_its_base, addr);
 	}
 
-	if (res->start == CHIP1_TA_MBIGEN_PHY_BASE) {
-		addr = ioremap(CHIP1_TA_PERI_PHY_BASE, 4);
+	if (res->start == addr_table->chip1_ta_mbigen_base) {
+		addr = ioremap(addr_table->chip1_ta_peri_base, 4);
 		if (!addr) {
 			pr_err("Unable to map CHIP1-TA-PERI\n");
 			return -ENOMEM;
@@ -770,11 +870,11 @@ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 		iounmap(addr);
 
 		addr = mgn_chip->base + MBIX_VPPI_ITS_TA;
-		writel_relaxed(CHIP1_TA_MBIGEN_ITS_BASE, addr);
+		writel_relaxed(addr_table->chip1_ta_mbigen_its_base, addr);
 	}
 
-	if (res->start == CHIP1_TB_MBIGEN_PHY_BASE) {
-		addr = ioremap(CHIP1_TB_PERI_PHY_BASE, 4);
+	if (res->start == addr_table->chip1_tb_mbigen_base) {
+		addr = ioremap(addr_table->chip1_tb_peri_base, 4);
 		if (!addr) {
 			pr_err("Unable to map CHIP1-TB-PERI\n");
 			return -ENOMEM;
@@ -784,10 +884,35 @@ static int vtimer_mbigen_set_regs(struct platform_device *pdev)
 		iounmap(addr);
 
 		addr = mgn_chip->base + MBIX_VPPI_ITS_TA;
-		writel_relaxed(CHIP1_TB_MBIGEN_ITS_BASE, addr);
+		writel_relaxed(addr_table->chip1_tb_mbigen_its_base, addr);
 	}
 
 	return 0;
+}
+
+static resource_size_t vtimer_mbigen_chip_get_gicrbase(struct vtimer_mbigen_device *chip)
+{
+	if (read_cpuid_id() != MIDR_HISI_HIP12)
+		return 0;
+
+	if (chip->mpidr_aff3 == MPIDR_AFF3_CHIP0_VDIE0) {
+		chip->gicr_base = hip12_gicr_addr.chip0_vdie0_gicr_base;
+		return 0;
+	}
+	if (chip->mpidr_aff3 == MPIDR_AFF3_CHIP0_VDIE1) {
+		chip->gicr_base = hip12_gicr_addr.chip0_vdie1_gicr_base;
+		return 0;
+	}
+	if (chip->mpidr_aff3 == MPIDR_AFF3_CHIP1_VDIE0) {
+		chip->gicr_base = hip12_gicr_addr.chip1_vdie0_gicr_base;
+		return 0;
+	}
+	if (chip->mpidr_aff3 == MPIDR_AFF3_CHIP1_VDIE1) {
+		chip->gicr_base = hip12_gicr_addr.chip1_vdie1_gicr_base;
+		return 0;
+	}
+
+	return -EINVAL;
 }
 
 static int vtimer_mbigen_device_probe(struct platform_device *pdev)
@@ -796,7 +921,7 @@ static int vtimer_mbigen_device_probe(struct platform_device *pdev)
 	struct vtimer_mbigen_device *vtimer_mgn_chip;
 	int err;
 
-	if (!vtimer_irqbypass)
+	if (!is_vtimer_enabled())
 		return 0;
 
 	err = vtimer_mbigen_set_regs(pdev);
@@ -814,6 +939,13 @@ static int vtimer_mbigen_device_probe(struct platform_device *pdev)
 	mgn_chip->vtimer_mbigen_chip = vtimer_mgn_chip;
 	vtimer_mgn_chip->base = mgn_chip->base;
 	vtimer_mgn_chip->mpidr_aff3 = vtimer_mbigen_chip_read_aff3(vtimer_mgn_chip);
+	vtimer_mgn_chip->gicr_base = 0;
+	err = vtimer_mbigen_chip_get_gicrbase(vtimer_mgn_chip);
+	if (err) {
+		dev_err(&pdev->dev,
+			"Fail to get gicr base on HIP12\n");
+		goto out;
+	}
 	vtimer_mgn_chip->cpu_base = -1;
 	err = vtimer_mbigen_chip_match_cpu(vtimer_mgn_chip);
 	if (err) {

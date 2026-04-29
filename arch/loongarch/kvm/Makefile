@@ -3,8 +3,6 @@
 # Makefile for LoongArch KVM support
 #
 
-ccflags-y += -I $(srctree)/$(src)
-
 include $(srctree)/virt/kvm/Makefile.kvm
 
 obj-$(CONFIG_KVM) += kvm.o
@@ -19,7 +17,7 @@ kvm-y += tlb.o
 kvm-y += vcpu.o
 kvm-y += vm.o
 kvm-y += intc/ipi.o
-kvm-y += intc/extioi.o
+kvm-y += intc/eiointc.o
 kvm-y += intc/pch_pic.o
 kvm-y += irqfd.o
 

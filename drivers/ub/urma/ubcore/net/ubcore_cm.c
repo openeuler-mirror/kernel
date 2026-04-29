@@ -217,7 +217,7 @@ int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
 
 	ret = ubcore_call_cm_send_ops(dev, send_buf);
 	if (ret != 0)
-		ubcore_log_err("Failed to send cm message, ret:%d, " MSG_FMT,
+		ubcore_log_err_rl("Failed to send cm message, ret:%d, " MSG_FMT,
 			       ret, MSG_ARG(msg));
 
 	kfree(send_buf);

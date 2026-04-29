@@ -6,6 +6,7 @@
 
 #include <linux/delay.h>
 #include <linux/module.h>
+#include <linux/pm.h>
 #include <ub/ubase/ubase_comm_dev.h>
 #include <ub/ubus/ub_black_box.h>
 
@@ -294,7 +295,7 @@ static void ubase_ubus_shutdown(struct ub_entity *ue)
 
 	__ubase_ubus_remove(ue);
 
-	ubase_info(udev, "ubase shutdown end.\n");
+	dev_info(&ue->dev, "ubase shutdown end.\n");
 }
 
 int ubase_ubus_irq_vectors_alloc(struct device *dev)

@@ -59,10 +59,9 @@ void __iomem *acpi_os_ioremap(acpi_physical_address phys, acpi_size size)
 }
 
 #ifdef CONFIG_SMP
-int set_processor_mask(u32 id, u32 flags)
+int set_processor_mask(u32 id, u32 pass)
 {
-
-	int cpu, cpuid = id;
+	int cpu = -1, cpuid = id;
 
 	if (num_processors >= nr_cpu_ids) {
 		pr_warn(PREFIX "nr_cpus/possible_cpus limit of %i reached."
@@ -71,26 +70,36 @@ int set_processor_mask(u32 id, u32 flags)
 		return -ENODEV;
 
 	}
+
 	if (cpuid == loongson_sysconf.boot_cpu_id)
 		cpu = 0;
-	else
-		cpu = cpumask_next_zero(-1, cpu_present_mask);
-
-	if (flags & ACPI_MADT_ENABLED) {
+	switch (pass) {
+	case 1: /* Pass 1 handle enabled processors */
+		if (cpu < 0)
+			cpu = find_first_zero_bit(cpumask_bits(cpu_present_mask), nr_cpu_ids);
 		num_processors++;
 		set_cpu_possible(cpu, true);
 		set_cpu_present(cpu, true);
-		__cpu_number_map[cpuid] = cpu;
-		__cpu_logical_map[cpu] = cpuid;
-	} else
+		break;
+	case 2: /* Pass 2 handle disabled processors */
+		if (cpu < 0)
+			cpu = find_first_zero_bit(cpumask_bits(cpu_possible_mask), nr_cpu_ids);
 		disabled_cpus++;
+		break;
+	default:
+		return cpu;
+	}
+
+	set_cpu_possible(cpu, true);
+	__cpu_number_map[cpuid] = cpu;
+	__cpu_logical_map[cpu] = cpuid;
 
 	return cpu;
 }
 #endif
 
 static int __init
-acpi_parse_processor(union acpi_subtable_headers *header, const unsigned long end)
+acpi_parse_p1_processor(union acpi_subtable_headers *header, const unsigned long end)
 {
 	struct acpi_madt_core_pic *processor = NULL;
 
@@ -101,12 +110,29 @@ acpi_parse_processor(union acpi_subtable_headers *header, const unsigned long en
 	acpi_table_print_madt_entry(&header->common);
 #ifdef CONFIG_SMP
 	acpi_core_pic[processor->core_id] = *processor;
-	set_processor_mask(processor->core_id, processor->flags);
+	if (processor->flags & ACPI_MADT_ENABLED)
+		set_processor_mask(processor->core_id, 1);
 #endif
 
 	return 0;
 }
 
+static int __init
+acpi_parse_p2_processor(union acpi_subtable_headers *header, const unsigned long end)
+{
+	struct acpi_madt_core_pic *processor = NULL;
+
+	processor = (struct acpi_madt_core_pic *)header;
+	if (BAD_MADT_ENTRY(processor, end))
+		return -EINVAL;
+
+#ifdef CONFIG_SMP
+	if (!(processor->flags & ACPI_MADT_ENABLED))
+		set_processor_mask(processor->core_id, 2);
+#endif
+
+	return 0;
+}
 static int __init
 acpi_parse_eio_master(union acpi_subtable_headers *header, const unsigned long end)
 {
@@ -138,7 +164,10 @@ static void __init acpi_process_madt(void)
 		legacy_madt_table_init();
 
 	acpi_table_parse_madt(ACPI_MADT_TYPE_CORE_PIC,
-			acpi_parse_processor, MAX_CORE_PIC);
+			acpi_parse_p1_processor, MAX_CORE_PIC);
+
+	acpi_table_parse_madt(ACPI_MADT_TYPE_CORE_PIC,
+			acpi_parse_p2_processor, MAX_CORE_PIC);
 
 	acpi_table_parse_madt(ACPI_MADT_TYPE_EIO_PIC,
 			acpi_parse_eio_master, MAX_IO_PICS);
@@ -289,6 +318,10 @@ static int __ref acpi_map_cpu2node(acpi_handle handle, int cpu, int physid)
 	int nid;
 
 	nid = acpi_get_node(handle);
+
+	if (nid != NUMA_NO_NODE)
+		nid = early_cpu_to_node(cpu);
+
 	if (nid != NUMA_NO_NODE) {
 		set_cpuid_to_node(physid, nid);
 		node_set(nid, numa_nodes_parsed);
@@ -303,12 +336,14 @@ int acpi_map_cpu(acpi_handle handle, phys_cpuid_t physid, u32 acpi_id, int *pcpu
 {
 	int cpu;
 
-	cpu = set_processor_mask(physid, ACPI_MADT_ENABLED);
-	if (cpu < 0) {
+	cpu = cpu_number_map(physid);
+	if (cpu < 0 || cpu >= nr_cpu_ids) {
 		pr_info(PREFIX "Unable to map lapic to logical cpu number\n");
-		return cpu;
+		return -ERANGE;
 	}
 
+	num_processors++;
+	set_cpu_present(cpu, true);
 	acpi_map_cpu2node(handle, cpu, physid);
 
 	*pcpu = cpu;

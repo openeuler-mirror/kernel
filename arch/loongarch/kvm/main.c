@@ -9,7 +9,7 @@
 #include <asm/cacheflush.h>
 #include <asm/cpufeature.h>
 #include <asm/kvm_csr.h>
-#include <asm/kvm_extioi.h>
+#include <asm/kvm_eiointc.h>
 #include <asm/kvm_pch_pic.h>
 #include "trace.h"
 
@@ -246,20 +246,22 @@ void kvm_check_vpid(struct kvm_vcpu *vcpu)
 		vcpu->cpu = cpu;
 		kvm_clear_request(KVM_REQ_TLB_FLUSH_GPA, vcpu);
 		/*
-		 * LLBCTL_WCLLB is separated CSR register from host
-		 * eret instruction in host mode clears host LLBCTL_WCLLB
-		 * register, and clears guest register in guest mode
+		 * LLBCTL is a separated guest CSR register from host, a general
+		 * exception ERET instruction clears the host LLBCTL register in
+		 * host mode, and clears the guest LLBCTL register in guest mode.
+		 * ERET in tlb refill exception does not clear LLBCTL register.
 		 *
-		 * When gpa --> hpa mapping is changed, guest does not know
-		 * even if the content is changed with new address
+		 * When secondary mmu mapping is changed, guest OS does not know
+		 * even if the content is changed after mapping is changed.
 		 *
-		 * Here clear guest LLBCTL_WCLLB register when mapping is
-		 * changed, else if mapping is changed when guest is executing
-		 * LL/SC pair, LL loads old address, SC store new address
-		 * successfully since LLBCTL_WCLLB is on, even if memory
-		 * with new address is changed with other VCPUs.
+		 * Here clear WCLLB of the guest LLBCTL register when mapping is
+		 * changed. Otherwise, if mmu mapping is changed while guest is
+		 * executing LL/SC pair, LL loads with the old address and set
+		 * the LLBCTL flag, SC checks the LLBCTL flag and will store the
+		 * new address successfully since LLBCTL_WCLLB is on, even if
+		 * memory with new address is changed on other VCPUs.
 		 */
-		set_gcsr_llbctl(LOONGARCH_CSR_LLBCTL);
+		set_gcsr_llbctl(CSR_LLBCTL_WCLLB);
 	}
 
 	/* Restore GSTAT(0x50).vpid */
@@ -293,16 +295,16 @@ int kvm_arch_hardware_enable(void)
 	/*
 	 * Enable virtualization features granting guest direct control of
 	 * certain features:
-	 * GCI=2:       Trap on init or unimplement cache instruction.
+	 * GCI=2:       Trap on init or unimplemented cache instruction.
 	 * TORU=0:      Trap on Root Unimplement.
 	 * CACTRL=1:    Root control cache.
-	 * TOP=0:       Trap on Previlege.
+	 * TOP=0:       Trap on Privilege.
 	 * TOE=0:       Trap on Exception.
 	 * TIT=0:       Trap on Timer.
 	 */
-	if (env & CSR_GCFG_GCIP_ALL)
+	if (env & CSR_GCFG_GCIP_SECURE)
 		gcfg |= CSR_GCFG_GCI_SECURE;
-	if (env & CSR_GCFG_MATC_ROOT)
+	if (env & CSR_GCFG_MATP_ROOT)
 		gcfg |= CSR_GCFG_MATC_ROOT;
 
 	write_csr_gcfg(gcfg);
@@ -396,8 +398,8 @@ static int kvm_loongarch_env_init(void)
 	if (ret)
 		return ret;
 
-	/* Register loongarch extioi interrupt controller interface. */
-	ret = kvm_loongarch_register_extioi_device();
+	/* Register loongarch eiointc interrupt controller interface. */
+	ret = kvm_loongarch_register_eiointc_device();
 	if (ret)
 		return ret;
 

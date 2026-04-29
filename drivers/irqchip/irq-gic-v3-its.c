@@ -6115,7 +6115,7 @@ static struct its_node __init *its_node_init(struct resource *res,
 	its->fwnode_handle = handle;
 
 #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
-	if (readl_relaxed(its_base + GITS_IIDR) == 0x00051736)
+	if (read_cpuid_implementor() == ARM_CPU_IMP_HISI)
 		its->version = readl_relaxed(its_base + GITS_VERSION);
 #endif
 	return its;

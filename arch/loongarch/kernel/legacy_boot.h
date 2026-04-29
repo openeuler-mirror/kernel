@@ -72,7 +72,7 @@ unsigned long legacy_boot_init(unsigned long argc,
 extern int bpi_version;
 extern struct boot_params *efi_bp;
 extern struct loongsonlist_mem_map *g_mmap;
-extern int set_processor_mask(u32 id, u32 flags);
+extern int set_processor_mask(u32 id, u32 pass);
 extern int __init setup_legacy_IRQ(void);
 extern struct loongson_system_configuration loongson_sysconf;
 extern unsigned long long smp_group[MAX_PACKAGES];

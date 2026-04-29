@@ -586,6 +586,14 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.read_func = ubase_dbg_dump_activate_record,
 	},
 	{
+		.name = "tpg_context",
+		.dentry_index = UBASE_DBG_DENTRY_CONTEXT,
+		.property = UBASE_SUP_URMA | UBASE_SUP_UBL_ETH,
+		.support = __ubase_dbg_dentry_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_tpg_ctx,
+	},
+	{
 		.name = "aeq_context_hw",
 		.dentry_index = UBASE_DBG_DENTRY_CONTEXT,
 		.property = UBASE_SUP_URMA | UBASE_SUP_CDMA | UBASE_SUP_UBL_ETH,

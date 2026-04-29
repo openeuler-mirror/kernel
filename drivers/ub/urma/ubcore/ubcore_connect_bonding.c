@@ -393,7 +393,7 @@ static int send_jetty_info_req(struct ubcore_device *dev, uint32_t session_id,
 	ubcore_log_info("Send jetty info req to " EID_FMT "\n", EID_ARGS(dest_eid));
 	ret = ubcore_net_send_to(dev, &msg, dest_eid);
 	if (ret != 0) {
-		ubcore_log_err("Failed to send msg to " EID_FMT"\n", EID_ARGS(dest_eid));
+		ubcore_log_err_rl("Failed to send msg to " EID_FMT"\n", EID_ARGS(dest_eid));
 		return ret;
 	}
 	return 0;
