@@ -903,7 +903,6 @@ static inline void hci_discovery_filter_clear(struct hci_dev *hdev)
 
 	hdev->discovery.scan_start = 0;
 	hdev->discovery.scan_duration = 0;
-	spin_unlock(&hdev->discovery.lock);
 }
 
 bool hci_discovery_active(struct hci_dev *hdev);
