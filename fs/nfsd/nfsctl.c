@@ -1529,9 +1529,12 @@ static int __init init_nfsd(void)
 	if (retval)
 		goto out_free_stat;
 	nfsd_lockd_init();	/* lockd->nfsd callbacks */
-	retval = create_proc_exports_entry();
+	retval = nfsd_export_wq_init();
 	if (retval)
 		goto out_free_lockd;
+	retval = create_proc_exports_entry();
+	if (retval)
+		goto out_free_export_wq;
 	retval = register_pernet_subsys(&nfsd_net_ops);
 	if (retval < 0)
 		goto out_free_exports;
@@ -1549,6 +1552,8 @@ out_free_subsys:
 out_free_exports:
 	remove_proc_entry("fs/nfs/exports", NULL);
 	remove_proc_entry("fs/nfs", NULL);
+out_free_export_wq:
+	nfsd_export_wq_shutdown();
 out_free_lockd:
 	nfsd_lockd_shutdown();
 	nfsd_drc_slab_free();
@@ -1566,6 +1571,7 @@ static void __exit exit_nfsd(void)
 	unregister_filesystem(&nfsd_fs_type);
 	unregister_cld_notifier();
 	unregister_pernet_subsys(&nfsd_net_ops);
+	nfsd_export_wq_shutdown();
 	nfsd_drc_slab_free();
 	remove_proc_entry("fs/nfs/exports", NULL);
 	remove_proc_entry("fs/nfs", NULL);
