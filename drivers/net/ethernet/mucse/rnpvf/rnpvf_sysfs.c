@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
-
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/module.h>
 #include <linux/pci.h>
@@ -16,6 +14,4 @@ int rnpvf_sysfs_init(struct net_device *ndev)
 	return 0;
 }
 
-void rnpvf_sysfs_exit(struct net_device *ndev)
-{
-}
+void rnpvf_sysfs_exit(struct net_device *ndev) {}
