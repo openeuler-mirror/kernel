@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include "vf.h"
 #include "rnpvf.h"
@@ -65,10 +65,8 @@ static int rnpvf_set_mtu(struct rnpvf_hw *hw, int mtu)
 
 	/* if nacked the address was rejected, use "perm_addr" */
 	if (!ret_val &&
-	    (msgbuf[0] == (RNP_VF_SET_MTU | RNP_VT_MSGTYPE_NACK))) {
-		// set mtu failed
+	    (msgbuf[0] == (RNP_VF_SET_MTU | RNP_VT_MSGTYPE_NACK)))
 		return -1;
-	}
 
 	return ret_val;
 }
@@ -331,7 +329,6 @@ static s32 rnpvf_mta_vector(struct rnpvf_hw *hw, u8 *mc_addr)
  **/
 static s32 rnpvf_get_mac_addr_vf(struct rnpvf_hw *hw, u8 *mac_addr)
 {
-	// memcpy(mac_addr, hw->mac.perm_addr, ETH_ALEN);
 	struct rnp_mbx_info *mbx = &hw->mbx;
 	u32 msgbuf[3];
 	u8 *msg_addr = (u8 *)(&msgbuf[1]);
@@ -364,7 +361,6 @@ static s32 rnpvf_get_mac_addr_vf(struct rnpvf_hw *hw, u8 *mac_addr)
 /**
  *  rnpvf_get_queues_vf - Read device MAC address
  *  @hw: pointer to the HW structure
- *
  **/
 static s32 rnpvf_get_queues_vf(struct rnpvf_hw *hw)
 {
@@ -374,8 +370,10 @@ static s32 rnpvf_get_queues_vf(struct rnpvf_hw *hw)
 
 	memset(msgbuf, 0, sizeof(msgbuf));
 	msgbuf[0] |= RNP_VF_GET_QUEUE;
+	msgbuf[1] = 0xaa;
+	msgbuf[2] |= VF_ALLOC_FEATURE;
 
-	ret_val = mbx->ops.write_posted(hw, msgbuf, 1, false);
+	ret_val = mbx->ops.write_posted(hw, msgbuf, 3, false);
 
 	mdelay(10);
 
@@ -674,8 +672,7 @@ void rnpvf_rlpml_set_vf(struct rnpvf_hw *hw, u16 max_size)
 }
 
 static void rnpvf_set_veb_mac_n10(struct rnpvf_hw *hw,
-				  u8 *mac,
-				  u32 vfnum,
+				  u8 *mac, u32 vfnum,
 				  u32 ring)
 {
 	int port;
@@ -692,17 +689,56 @@ static void rnpvf_set_veb_mac_n10(struct rnpvf_hw *hw,
 		     maclow);
 		wr32(hw, RNP_DMA_PORT_VBE_MAC_HI_TBL_N10(port, vfnum),
 		     machi);
+
 		wr32(hw, RNP_DMA_PORT_VEB_VF_RING_TBL_N10(port, vfnum),
 		     ring);
 	}
 }
 
-static void rnpvf_set_vlan_n10(struct rnpvf_hw *hw, u16 vid, u32 vf_num)
+static void rnpvf_set_vlan_n10(struct rnpvf_hw *hw,
+			       u16 vid, u32 vf_num)
 {
 	int port;
 
 	for (port = 0; port < 4; port++)
 		wr32(hw, RNP_DMA_PORT_VEB_VID_TBL_N10(port, vf_num), vid);
+}
+
+static int rnpvf_set_promisc_mode(struct rnpvf_hw *hw, bool promisc)
+{
+	struct rnp_mbx_info *mbx = &hw->mbx;
+	u32 msgbuf[2];
+	s32 err;
+
+	msgbuf[0] = RNP_VF_SET_PROMISCE;
+	if (promisc)
+		msgbuf[1] = 1;
+	else
+		msgbuf[1] = 0;
+
+	err = mbx->ops.write_posted(hw, msgbuf, 2, false);
+	if (err) {
+		pr_err("promisc write_posted failed\n");
+		goto mbx_err;
+	}
+
+	err = mbx->ops.read_posted(hw, msgbuf, 2, false);
+	if (err) {
+		pr_err("promisc read_posted failed\n");
+		goto mbx_err;
+	}
+
+	/* remove extra bits from the message */
+	msgbuf[0] &= ~RNP_VT_MSGTYPE_CTS;
+	msgbuf[0] &= ~(0xFF << RNP_VT_MSGINFO_SHIFT);
+
+	if (msgbuf[0] != (RNP_VF_SET_PROMISCE | RNP_VT_MSGTYPE_ACK)) {
+		err = RNP_ERR_INVALID_ARGUMENT;
+		pr_err("set promisc failed\n");
+	}
+
+mbx_err:
+	return err;
 }
 
 static const struct rnpvf_hw_operations rnpvf_hw_ops_n10 = {
@@ -723,6 +759,7 @@ static s32 rnpvf_get_invariants_n10(struct rnpvf_hw *hw)
 		RNPVF_NET_FEATURE_TX_UDP_TUNNEL |
 		RNPVF_NET_FEATURE_VLAN_OFFLOAD | RNPVF_NET_FEATURE_RX_HASH;
 
+	/* mbx setup */
 	mbx->pf2vf_mbox_vec_base = 0xa5000;
 	mbx->vf2pf_mbox_vec_base = 0xa5100;
 	mbx->cpu2vf_mbox_vec_base = 0xa5200;
@@ -775,6 +812,7 @@ static const struct rnp_mac_operations rnpvf_mac_ops = {
 	.get_mtu = rnpvf_get_mtu,
 	.set_mtu = rnpvf_set_mtu,
 	.req_reset_pf = rnpvf_reset_pf,
+	.set_promisc_mode = rnpvf_set_promisc_mode,
 };
 
 const struct rnpvf_info rnp_n10_vf_info = {
