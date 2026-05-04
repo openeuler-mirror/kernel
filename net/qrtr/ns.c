@@ -80,6 +80,13 @@ struct qrtr_node {
  */
 #define QRTR_NS_MAX_LOOKUPS 64
 
+/* Max nodes limit is chosen based on the current platform requirements.
+ * If the requirement changes in the future, this value can be increased.
+ */
+#define QRTR_NS_MAX_NODES   64
+
+static u8 node_count;
+
 static struct qrtr_node *node_get(unsigned int node_id)
 {
 	struct qrtr_node *node;
@@ -87,6 +94,11 @@ static struct qrtr_node *node_get(unsigned int node_id)
 	node = radix_tree_lookup(&nodes, node_id);
 	if (node)
 		return node;
+
+	if (node_count >= QRTR_NS_MAX_NODES) {
+		pr_err_ratelimited("QRTR clients exceed max node limit!\n");
+		return NULL;
+	}
 
 	/* If node didn't exist, allocate and insert it to the tree */
 	node = kzalloc(sizeof(*node), GFP_KERNEL);
@@ -100,6 +112,8 @@ static struct qrtr_node *node_get(unsigned int node_id)
 		kfree(node);
 		return NULL;
 	}
+
+	node_count++;
 
 	return node;
 }
@@ -404,6 +418,7 @@ static int ctrl_cmd_bye(struct sockaddr_qrtr *from)
 delete_node:
 	xa_erase(&nodes, from->sq_node);
 	kfree(node);
+	node_count--;
 
 	return ret;
 }
