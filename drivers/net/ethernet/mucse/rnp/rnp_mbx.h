@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2023 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNP_MBX_H_
 #define _RNP_MBX_H_
@@ -8,7 +8,6 @@
 
 #define RNP_VFMAILBOX_SIZE 14 /* 16 32 bit words - 64 bytes */
 #define RNP_ERR_MBX -100
-
 #define RNP_VT_MSGTYPE_ACK 0x80000000
 /* Messages below or'd with */
 /* this are the ACK */
@@ -18,7 +17,7 @@
  */
 #define RNP_VT_MSGTYPE_CTS 0x20000000
 /* Indicates that VF is still
- * clear to send requests
+ *clear to send requests
  */
 #define RNP_VT_MSGINFO_SHIFT 14
 /* bits 23:16 are used for exra info for certain messages */
@@ -37,7 +36,7 @@
 #define RNP_VF_SET_VLAN 0x04 /* VF requests PF to set VLAN */
 
 /* mailbox API, version 1.0 VF requests */
-//#define RNP_VF_SET_LPE 0x05 /* VF requests PF to set VMOLR.LPE */
+#define RNP_VF_SET_LPE 0x05 /* VF requests PF to set VMOLR.LPE */
 #define RNP_VF_SET_MACVLAN 0x06 /* VF requests PF for unicast filter */
 #define RNP_VF_GET_MACADDR 0x07 /* get vf macaddr */
 #define RNP_VF_API_NEGOTIATE 0x08 /* negotiate API version */
@@ -52,6 +51,7 @@
 #define RNP_VF_GET_LINK 0x10 /* get link status */
 #define RNP_VF_RESET_PF 0x11
 #define RNP_VF_GET_DMA_FRAG 0x12
+#define RNP_VF_SET_PROMISCE 0x16
 #define RNP_PF_SET_FCS 0x10 /* PF set fcs status */
 #define RNP_PF_SET_PAUSE 0x11 /* PF set pause status */
 #define RNP_PF_SET_FT_PADDING 0x12 /* PF set ft padding status */
@@ -60,7 +60,8 @@
 #define RNP_PF_SET_LINK 0x15 /* PF set ntuple status */
 #define RNP_PF_SET_MTU 0x16 /* PF set ntuple status */
 #define RNP_PF_SET_RESET 0x17 /* PF set ntuple status */
-#define RNP_PF_LINK_UP (1 << 31)
+#define RNP_PF_SET_MAC_SPOOF 0x18 /* PF set mac spoof status */
+#define RNP_PF_LINK_UP (0x1 << 31)
 #define RNP_PF_REMOVE 0x0f
 /* GET_QUEUES return data indices within the mailbox */
 #define RNP_VF_TX_QUEUES 1 /* number of Tx queues supported */
@@ -69,6 +70,8 @@
 #define RNP_VF_DEF_QUEUE 4 /* Default queue offset */
 #define RNP_VF_QUEUE_START 5 /* Default queue offset */
 #define RNP_VF_QUEUE_DEPTH 6 /* ring depth */
+
+#define VF_ALLOC_FEATURE BIT(0)
 /* length of permanent address message returned from PF */
 #define RNP_VF_PERMADDR_MSG_LEN 11
 /* word in permanent address message with the current multicast type */
@@ -81,8 +84,11 @@
 #define RNP_VF_AXI_MHZ 9
 #define PF_FEATRURE_VLAN_FILTER BIT(0)
 #define PF_NCSI_EN BIT(1)
+#define VF_MAC_SPOOF_EN BIT(2)
 #define RNP_VF_FEATURE 10
+
 #define RNP_PF_CONTROL_PRING_MSG 0x0100 /* PF control message */
+
 #define RNP_VF_MBX_INIT_TIMEOUT 2000 /* number of retries on mailbox */
 #define RNP_VF_MBX_INIT_DELAY 500 /* microseconds between retries */
 
@@ -165,6 +171,7 @@ enum PF_STATUS {
 	PF_SET_LINK_STATUS,
 	PF_SET_MTU,
 	PF_SET_RESET,
+	PF_SET_MAC_SPOOF,
 };
 
 s32 rnp_read_mbx(struct rnp_hw *hw, u32 *msg, u16 size, enum MBX_ID);
@@ -173,11 +180,10 @@ s32 rnp_check_for_msg(struct rnp_hw *hw, enum MBX_ID);
 s32 rnp_check_for_ack(struct rnp_hw *hw, enum MBX_ID);
 s32 rnp_check_for_rst(struct rnp_hw *hw, enum MBX_ID);
 s32 rnp_init_mbx_params_pf(struct rnp_hw *hw);
+extern struct rnp_mbx_operations rnp_mbx_ops_generic;
 unsigned int rnp_mbx_change_timeout(struct rnp_hw *hw, int timeout_ms);
-extern struct rnp_mbx_operations mbx_ops_generic;
 int rnp_mbx_lldp_status_get(struct rnp_hw *hw);
 int rnp_mbx_lldp_port_enable(struct rnp_hw *hw, bool enable);
-int rnp_mbx_ddr_csl_enable(struct rnp_hw *hw,
-			   int enable, dma_addr_t dma_phy, int bytes);
-
+int rnp_mbx_ddr_csl_enable(struct rnp_hw *hw, int enable, dma_addr_t dma_phy,
+			   int bytes);
 #endif /* _RNP_MBX_H_ */

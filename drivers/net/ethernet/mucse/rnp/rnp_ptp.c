@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2023 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/netdevice.h>
 #include <linux/ptp_classify.h>
@@ -17,9 +17,8 @@ static void config_hw_tstamping(void __iomem *ioaddr, u32 data)
 	writel(data, ioaddr + PTP_TCR);
 }
 
-static void config_sub_second_increment(void __iomem *ioaddr,
-					u32 ptp_clock, int gmac4,
-					u32 *ssinc)
+static void config_sub_second_increment(void __iomem *ioaddr, u32 ptp_clock,
+					int gmac4, u32 *ssinc)
 {
 	u32 value = readl(ioaddr + PTP_TCR);
 	unsigned long data;
@@ -121,8 +120,8 @@ static void config_mac_interrupt_enable(void __iomem *ioaddr, bool on)
 	rnp_wr_reg(ioaddr + RNP_MAC_INTERRUPT_ENABLE, on);
 }
 
-static int adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec,
-			  int add_sub, int gmac4)
+static int adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec, int add_sub,
+			  int gmac4)
 {
 	u32 value;
 	int limit;
@@ -164,7 +163,7 @@ static int adjust_systime(void __iomem *ioaddr, u32 sec, u32 nsec,
 	return 0;
 }
 
-static const struct rnp_hwtimestamp mac_ptp = {
+const struct rnp_hwtimestamp rnp_mac_ptp = {
 	.config_hw_tstamping = config_hw_tstamping,
 	.config_mac_irq_enable = config_mac_interrupt_enable,
 	.init_systime = init_systime,
@@ -182,9 +181,10 @@ static int rnp_ptp_adjfreq(struct ptp_clock_info *ptp, long scaled_ppm)
 	u32 addend;
 
 	if (!pf) {
-		printk(KERN_DEBUG "adapter_of contail is null\n");
+		pr_debug("adapter_of contail is null\n");
 		return 0;
 	}
+
 	addend = adjust_by_scaled_ppm(pf->default_addend, scaled_ppm);
 
 	spin_lock_irqsave(&pf->ptp_lock, flags);
@@ -198,17 +198,17 @@ static int rnp_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 {
 	struct rnp_adapter *pf =
 		container_of(ptp, struct rnp_adapter, ptp_clock_ops);
-	u32 quotient, reminder;
 	unsigned long flags;
-	int neg_adj = 0;
 	u32 sec, nsec;
+	u32 quotient, reminder;
+	int neg_adj = 0;
 
 	if (delta < 0) {
 		neg_adj = 1;
 		delta = -delta;
 	}
 
-	if (delta == 0)
+	if (!delta)
 		return 0;
 
 	quotient = div_u64_rem(delta, 1000000000ULL, &reminder);
@@ -223,8 +223,7 @@ static int rnp_ptp_adjtime(struct ptp_clock_info *ptp, s64 delta)
 	return 0;
 }
 
-static int rnp_ptp_gettime(struct ptp_clock_info *ptp,
-			   struct timespec64 *ts)
+static int rnp_ptp_gettime(struct ptp_clock_info *ptp, struct timespec64 *ts)
 {
 	struct rnp_adapter *pf =
 		container_of(ptp, struct rnp_adapter, ptp_clock_ops);
@@ -267,24 +266,20 @@ int rnp_ptp_get_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 {
 	struct hwtstamp_config *config = &pf->tstamp_config;
 
-	return copy_to_user(ifr->ifr_data, config, sizeof(*config)) ?
-		       -EFAULT :
-		       0;
+	return copy_to_user(ifr->ifr_data, config, sizeof(*config)) ? -EFAULT :
+								      0;
 }
 
 static int rnp_ptp_setup_ptp(struct rnp_adapter *pf, u32 value)
 {
-	struct timespec64 now;
 	u32 sec_inc = 0;
 	u64 temp = 0;
+	struct timespec64 now;
 
-	/*For now just use extrnal clock(the kernel-system clock)*/
-	// value |= RNP_PTP_TCR_ESTI;
+	/* For now just use extrnal clock(the kernel-system clock)*/
 	/* 1.Mask the Timestamp Trigger interrupt */
-	//pf->hwts_ops->config_mac_irq_enable(pf->ptp_addr, false);
 	/* 2.enable time stamping */
 	/* 2.1 clear all bytes about time ctrl reg*/
-	//pf->hwts_ops->config_hw_tstamping(pf->ptp_addr, 0);
 
 	pf->hwts_ops->config_hw_tstamping(pf->ptp_addr, value);
 	/* 3.Program the PTPclock frequency */
@@ -298,9 +293,9 @@ static int rnp_ptp_setup_ptp(struct rnp_adapter *pf, u32 value)
 	/* 4.If use fine correction approash then,
 	 * Program MAC_Timestamp_Addend register
 	 */
-	if (sec_inc == 0) {
-		pr_info("%s:%d the sec_inc is zero this is a bug\n",
-			__func__, __LINE__);
+	if (!sec_inc) {
+		pr_debug("%s:%d the sec_inc is zero this is a bug\n",
+			 __func__, __LINE__);
 		return -EFAULT;
 	}
 	temp = div_u64(1000000000ULL, sec_inc);
@@ -314,8 +309,11 @@ static int rnp_ptp_setup_ptp(struct rnp_adapter *pf, u32 value)
 	 */
 	temp = (u64)(temp << 32);
 
-	if (pf->clk_ptp_rate == 0)
+	if (!pf->clk_ptp_rate) {
 		pf->clk_ptp_rate = 1000;
+		pr_debug("%s:%d clk_ptp_rate is zero\n", __func__,
+			 __LINE__);
+	}
 
 	pf->default_addend = div_u64(temp, pf->clk_ptp_rate);
 
@@ -329,10 +327,7 @@ static int rnp_ptp_setup_ptp(struct rnp_adapter *pf, u32 value)
 	ktime_get_real_ts64(&now);
 
 	/* lower 32 bits of tv_sec are safe until y2106 */
-	pf->hwts_ops->init_systime(pf->ptp_addr, (u32)now.tv_sec,
-				   now.tv_nsec);
-
-	//pf->hwts_ops->config_mac_irq_enable(pf->ptp_addr, true);
+	pf->hwts_ops->init_systime(pf->ptp_addr, (u32)now.tv_sec, now.tv_nsec);
 
 	return 0;
 }
@@ -340,13 +335,14 @@ static int rnp_ptp_setup_ptp(struct rnp_adapter *pf, u32 value)
 int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 {
 	struct hwtstamp_config config;
+	u32 ptp_v2 = 0;
+	u32 tstamp_all = 0;
 	u32 ptp_over_ipv4_udp = 0;
 	u32 ptp_over_ipv6_udp = 0;
 	u32 ptp_over_ethernet = 0;
 	u32 snap_type_sel = 0;
 	u32 ts_master_en = 0;
-	u32 tstamp_all = 0;
-	u32 ptp_v2 = 0;
+	u32 ts_event_en = 0;
 	u32 value = 0;
 	s32 ret = -1;
 
@@ -363,8 +359,7 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 
 	netdev_info(pf->netdev,
 		    "%s config flags:0x%x, tx_type:0x%x, rx_filter:0x%x\n",
-		    __func__, config.flags, config.tx_type,
-		    config.rx_filter);
+		    __func__, config.flags, config.tx_type, config.rx_filter);
 	/* reserved for future extensions */
 	if (config.flags)
 		return -EINVAL;
@@ -397,6 +392,7 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 		/* PTP v1, UDP, Sync packet */
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V1_L4_SYNC;
 		/* take time stamp for SYNC messages only */
+		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
@@ -407,6 +403,7 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V1_L4_DELAY_REQ;
 		/* take time stamp for Delay_Req messages only */
 		ts_master_en = RNP_PTP_TCR_TSMSTRENA;
+		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
@@ -429,6 +426,7 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V2_L4_SYNC;
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		/* take time stamp for SYNC messages only */
+		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
 		break;
@@ -439,6 +437,7 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		/* take time stamp for Delay_Req messages only */
 		ts_master_en = RNP_PTP_TCR_TSMSTRENA;
+		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
 		break;
@@ -448,6 +447,7 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		snap_type_sel = RNP_PTP_TCR_SNAPTYPSEL_1;
+		// ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
 		ptp_over_ethernet = RNP_PTP_TCR_TSIPENA;
@@ -458,6 +458,7 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V2_SYNC;
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		/* take time stamp for SYNC messages only */
+		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
 		ptp_over_ethernet = RNP_PTP_TCR_TSIPENA;
@@ -469,13 +470,13 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 		ptp_v2 = RNP_PTP_TCR_TSVER2ENA;
 		/* take time stamp for Delay_Req messages only */
 		ts_master_en = RNP_PTP_TCR_TSMSTRENA;
+		ts_event_en = RNP_PTP_TCR_TSEVNTENA;
 
 		ptp_over_ipv4_udp = RNP_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNP_PTP_TCR_TSIPV6ENA;
 		ptp_over_ethernet = RNP_PTP_TCR_TSIPENA;
 		break;
 
-	case HWTSTAMP_FILTER_NTP_ALL:
 	case HWTSTAMP_FILTER_ALL:
 		/* time stamp any incoming packet */
 		config.rx_filter = HWTSTAMP_FILTER_ALL;
@@ -486,14 +487,12 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 		return -ERANGE;
 	}
 
-	pf->ptp_rx_en =
-		((config.rx_filter == HWTSTAMP_FILTER_NONE) ? 0 : 1);
+	pf->ptp_rx_en = ((config.rx_filter == HWTSTAMP_FILTER_NONE) ? 0 : 1);
 	pf->ptp_tx_en = config.tx_type == HWTSTAMP_TX_ON;
 
 	netdev_info(pf->netdev,
 		    "ptp config rx filter 0x%.2x tx_type 0x%.2x rx_en[%d] tx_en[%d]\n",
-		    config.rx_filter, config.tx_type, pf->ptp_rx_en,
-		    pf->ptp_tx_en);
+		    config.rx_filter, config.tx_type, pf->ptp_rx_en, pf->ptp_tx_en);
 	if (!pf->ptp_rx_en && !pf->ptp_tx_en) {
 		/*rx and tx is not use hardware ts so clear the ptp register */
 		pf->hwts_ops->config_hw_tstamping(pf->ptp_addr, 0);
@@ -510,9 +509,8 @@ int rnp_ptp_set_ts_config(struct rnp_adapter *pf, struct ifreq *ifr)
 	pf->ptp_config_value = value;
 	memcpy(&pf->tstamp_config, &config, sizeof(config));
 
-	return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ?
-		       -EFAULT :
-		       0;
+	return copy_to_user(ifr->ifr_data, &config, sizeof(config)) ? -EFAULT :
+								      0;
 }
 
 /* structure describing a PTP hardware clock */
@@ -522,10 +520,13 @@ static struct ptp_clock_info rnp_ptp_clock_ops = {
 	.max_adj = 50000000,
 	.n_alarm = 0,
 	.n_ext_ts = 0,
-	.n_per_out = 0, /* will be overwritten in stmmac_ptp_register */
-	.n_pins = 0, /*should be 0 if not set*/
+	.n_per_out = 0,
+	/* will be overwritten in stmmac_ptp_register */
+	.n_pins = 0,
+	/* should be 0 if not set */
 	.adjfine = rnp_ptp_adjfreq,
 	.adjtime = rnp_ptp_adjtime,
+
 	.gettime64 = rnp_ptp_gettime,
 	.settime64 = rnp_ptp_settime,
 	.enable = rnp_ptp_feature_enable,
@@ -533,7 +534,7 @@ static struct ptp_clock_info rnp_ptp_clock_ops = {
 
 int rnp_ptp_register(struct rnp_adapter *pf)
 {
-	pf->hwts_ops = &mac_ptp;
+	pf->hwts_ops = &rnp_mac_ptp;
 
 	pf->ptp_tx_en = 0;
 	pf->ptp_rx_en = 0;
@@ -542,13 +543,12 @@ int rnp_ptp_register(struct rnp_adapter *pf)
 	pf->flags2 |= RNP_FLAG2_PTP_ENABLED;
 	pf->ptp_clock_ops = rnp_ptp_clock_ops;
 
-	/*default mac clock rate is 100Mhz */
-	pf->clk_ptp_rate = 50000000; // 100Mhz
+	/* default mac clock rate is 50Mhz */
+	pf->clk_ptp_rate = 50000000;
 	if (!pf->pdev)
-		pr_info("pdev dev is null\n");
+		pr_debug("pdev dev is null\n");
 
-	pf->ptp_clock =
-		ptp_clock_register(&pf->ptp_clock_ops, &pf->pdev->dev);
+	pf->ptp_clock = ptp_clock_register(&pf->ptp_clock_ops, &pf->pdev->dev);
 	if (!pf->ptp_clock)
 		pci_err(pf->pdev, "ptp clock register failed\n");
 
@@ -578,8 +578,6 @@ void rnp_tx_hwtstamp_work(struct work_struct *work)
 	struct rnp_adapter *adapter =
 		container_of(work, struct rnp_adapter, tx_hwtstamp_work);
 	void __iomem *ioaddr = adapter->hw.hw_addr;
-	//static int test = 0;
-	//void __iomem *ioaddr = adapter->ptp_addr;
 
 	/* 1. read port belone timestatmp status reg */
 	/* 2. status enabled read nsec and sec reg*/
@@ -587,8 +585,7 @@ void rnp_tx_hwtstamp_work(struct work_struct *work)
 	u64 nanosec = 0, sec = 0;
 
 	if (!adapter->ptp_tx_skb) {
-		clear_bit_unlock(__RNP_PTP_TX_IN_PROGRESS,
-				 &adapter->state);
+		clear_bit_unlock(__RNP_PTP_TX_IN_PROGRESS, &adapter->state);
 		return;
 	}
 
@@ -596,7 +593,7 @@ void rnp_tx_hwtstamp_work(struct work_struct *work)
 		struct sk_buff *skb = adapter->ptp_tx_skb;
 		struct skb_shared_hwtstamps shhwtstamps;
 		u64 txstmp = 0;
-		/* read  and add nsec, sec turn to nsec*/
+		/* read and add nsec, sec turn to nsec*/
 
 		nanosec = rnp_rd_reg(ioaddr + RNP_ETH_PTP_TX_LTIMES(0));
 		sec = rnp_rd_reg(ioaddr + RNP_ETH_PTP_TX_HTIMES(0));
@@ -604,7 +601,6 @@ void rnp_tx_hwtstamp_work(struct work_struct *work)
 		 * that the timestamp need to update via set tx_hwts_clear-reg
 		 * from high to low
 		 */
-		//printk("tx time %llx-- %llx\n", nanosec, sec);
 		rnp_wr_reg(ioaddr + RNP_ETH_PTP_TX_CLEAR(0),
 			   PTP_GET_TX_HWTS_FINISH);
 		rnp_wr_reg(ioaddr + RNP_ETH_PTP_TX_CLEAR(0),
@@ -626,8 +622,7 @@ void rnp_tx_hwtstamp_work(struct work_struct *work)
 
 		skb_tstamp_tx(skb, &shhwtstamps);
 		dev_consume_skb_any(skb);
-		clear_bit_unlock(__RNP_PTP_TX_IN_PROGRESS,
-				 &adapter->state);
+		clear_bit_unlock(__RNP_PTP_TX_IN_PROGRESS, &adapter->state);
 	} else if (time_after(jiffies,
 			      adapter->tx_hwtstamp_start +
 				      adapter->tx_timeout_factor * HZ)) {
@@ -636,10 +631,8 @@ void rnp_tx_hwtstamp_work(struct work_struct *work)
 			dev_kfree_skb_any(adapter->ptp_tx_skb);
 		adapter->ptp_tx_skb = NULL;
 		adapter->tx_hwtstamp_timeouts++;
-		clear_bit_unlock(__RNP_PTP_TX_IN_PROGRESS,
-				 &adapter->state);
-		netdev_warn(adapter->netdev,
-			    "clearing Tx timestamp hang\n");
+		clear_bit_unlock(__RNP_PTP_TX_IN_PROGRESS, &adapter->state);
+		netdev_warn(adapter->netdev, "clearing Tx timestamp hang\n");
 	} else {
 		/* reschedule to check later */
 		schedule_work(&adapter->tx_hwtstamp_work);
@@ -652,7 +645,6 @@ void rnp_ptp_get_rx_hwstamp(struct rnp_adapter *adapter,
 	u64 ns = 0;
 	__be32 value_h, value_l;
 	u64 tsvalueh = 0, tsvaluel = 0;
-	//static int test = 0;
 	struct skb_shared_hwtstamps *hwtstamps = NULL;
 
 	if (!skb || !adapter->ptp_rx_en) {

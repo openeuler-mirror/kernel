@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2023 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/dcbnl.h>
 
@@ -11,22 +11,21 @@
 
 static void rnp_config_prio_map(struct rnp_adapter *adapter, u8 pfc_map)
 {
-	void __iomem *ioaddr = adapter->hw.hw_addr;
-	u8 *prio_tc = adapter->prio_tc_map;
-	u8 num_tc = adapter->num_tc;
-	u8 port = adapter->port;
-	u32 prio_map = 0;
 	int i, j;
+	u32 prio_map = 0;
+	u8 port = adapter->port;
+	u8 *prio_tc = adapter->prio_tc_map;
+	void __iomem *ioaddr = adapter->hw.hw_addr;
+	u8 num_tc = adapter->num_tc;
 
 	for (i = 0; i < num_tc; i++) {
 		if (i > RNP_MAX_TCS_NUM)
 			break;
 		for (j = 0; j < RNP_MAX_USER_PRIO; j++) {
-			dbg("prio_tc[%d]==%d tc_num[%d] pfc_map 0x%.2x\n",
-			    j, prio_tc[j], i, pfc_map);
-			if ((prio_tc[j] == i) && (pfc_map & BIT(j))) {
-				dbg("match rule tc_num %d prio_%d\n", i,
-				    j);
+			dbg("prio_tc[%d]==%d tc_num[%d] pfc_map 0x%.2x\n", j,
+			    prio_tc[j], i, pfc_map);
+			if (prio_tc[j] == i && pfc_map & BIT(j)) {
+				dbg("match rule tc_num %d prio_%d\n", i, j);
 				prio_map |= (i << (2 * j));
 				dbg("match prio_tc change to 0x%.2x\n",
 				    prio_map);
@@ -50,14 +49,14 @@ static int rnp_dcb_hw_pfc_config(struct rnp_adapter *adapter, u8 pfc_map)
 {
 	struct rnp_dcb_cfg *dcb = &adapter->dcb_cfg;
 	void __iomem *ioaddr = adapter->hw.hw_addr;
-	u8 num_tc = adapter->num_tc;
 	u8 i = 0, j = 0;
 	u32 reg = 0;
+	u8 num_tc = adapter->num_tc;
 
 	if (!(adapter->flags & RNP_FLAG_DCB_ENABLED) ||
 	    adapter->num_rx_queues <= 1) {
 		dev_warn(&adapter->pdev->dev,
-			"don't support pfc when rx quene less than 1 or disable dcb feature\n");
+			 "don't support pfc when rx quene less than 1 or disable dcb feature\n");
 		return 0;
 	}
 	/* 1.Enable Receive Priority Flow Control */
@@ -75,8 +74,8 @@ static int rnp_dcb_hw_pfc_config(struct rnp_adapter *adapter, u8 pfc_map)
 		int enabled = 0;
 
 		for (j = 0; j < RNP_MAX_USER_PRIO; j++) {
-			if ((adapter->prio_tc_map[j] == i) &&
-			    (pfc_map & BIT(j))) {
+			if (adapter->prio_tc_map[j] == i &&
+			    pfc_map & BIT(j)) {
 				enabled = 1;
 				dcb->pfc_cfg.hw_pfc_map |= BIT(j);
 				dcb->pfc_cfg.pfc_num++;
@@ -88,11 +87,9 @@ static int rnp_dcb_hw_pfc_config(struct rnp_adapter *adapter, u8 pfc_map)
 			reg = RNP_TX_TFE |
 			      (RNP_PAUSE_28_SLOT_TIME
 			       << RNP_FC_TX_PLTH_OFFSET) |
-			      (RNP_DEFAULT_PAUSE_TIME
-			       << RNP_FC_TX_PT_OFFSET);
+			      (RNP_DEFAULT_PAUSE_TIME << RNP_FC_TX_PT_OFFSET);
 
-			rnp_wr_reg(ioaddr + RNP_MAC_Q0_TX_FLOW_CTRL(j),
-				   reg);
+			rnp_wr_reg(ioaddr + RNP_MAC_Q0_TX_FLOW_CTRL(j), reg);
 		}
 	}
 	/* the below configure can just use default config */
@@ -108,7 +105,6 @@ static int rnp_dcb_hw_pfc_config(struct rnp_adapter *adapter, u8 pfc_map)
 	return 0;
 }
 
-
 static int rnp_dcbnl_getpfc(struct net_device *dev, struct ieee_pfc *pfc)
 {
 	struct rnp_adapter *adapter = netdev_priv(dev);
@@ -120,15 +116,13 @@ static int rnp_dcbnl_getpfc(struct net_device *dev, struct ieee_pfc *pfc)
 	/* Pfc setting is based on TC */
 	for (i = 0; i < adapter->num_tc; i++) {
 		for (j = 0; j < RNP_MAX_USER_PRIO; j++) {
-			if ((adapter->prio_tc_map[j] == i) &&
-			    (dcb->pfc_cfg.hw_pfc_map & BIT(i)))
+			if (adapter->prio_tc_map[j] == i &&
+			    dcb->pfc_cfg.hw_pfc_map & BIT(i))
 				pfc->pfc_en |= BIT(j);
 		}
 	}
 	/* do we need to get the pfc statistic*/
 	/* 1. get the tc channel send and recv pfc pkts*/
-	/*
-	 */
 
 	return 0;
 }
@@ -196,8 +190,7 @@ static u8 rnp_dcbnl_setdcbx(struct net_device *net_dev, u8 mode)
 	return 0;
 }
 
-static int rnp_dcbnl_getnumtcs(struct net_device *netdev, int tcid,
-			       u8 *num)
+static int rnp_dcbnl_getnumtcs(struct net_device *netdev, int tcid, u8 *num)
 {
 	struct rnp_adapter *adapter = netdev_priv(netdev);
 	u8 rval = 0;
@@ -244,13 +237,12 @@ static int rnp_dcbnl_setnumtcs(struct net_device *netdev, int tcid, u8 num)
 	return rval;
 }
 
-static int rnp_dcb_parse_config(struct rnp_dcb_cfg *dcb,
-				struct ieee_pfc *pfc)
+static int rnp_dcb_parse_config(struct rnp_dcb_cfg *dcb, struct ieee_pfc *pfc)
 {
 	u8 j = 0, pfc_en_num = 0, pfc_map = 0;
 
 	for (j = 0; j < RNP_MAX_USER_PRIO; j++) {
-		if ((pfc->pfc_en & BIT(j))) {
+		if (pfc->pfc_en & BIT(j)) {
 			pfc_map |= BIT(j);
 			pfc_en_num++;
 		}
@@ -297,6 +289,7 @@ static void rnp_dcbnl_setpfcstate(struct net_device *netdev, u8 state)
 }
 
 static const struct dcbnl_rtnl_ops rnp_dcbnl_ops = {
+	/*DCB PFC*/
 	/*IEEE*/
 	.ieee_getpfc = rnp_dcbnl_getpfc,
 	.ieee_setpfc = rnp_dcbnl_setpfc,
@@ -319,8 +312,7 @@ int rnp_dcb_init(struct net_device *dev, struct rnp_adapter *adapter)
 	struct rnp_dcb_cfg *dcb = &adapter->dcb_cfg;
 	struct rnp_hw *hw = &adapter->hw;
 
-	if ((hw->hw_type != rnp_hw_n10) &&
-			(hw->hw_type != rnp_hw_n400))
+	if (hw->hw_type != rnp_hw_n10 && hw->hw_type != rnp_hw_n400)
 		return 0;
 
 	dcb->dcb_en = false;
