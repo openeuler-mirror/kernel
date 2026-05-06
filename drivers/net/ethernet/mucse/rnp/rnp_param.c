@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2023 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/types.h>
 #include <linux/module.h>
@@ -28,13 +28,11 @@
 	{                                          \
 		[0 ... RNP_MAX_NIC] = OPTION_UNSET \
 	}
-
 #define RNP_PARAM(X, desc)                                            \
 	static int X[RNP_MAX_NIC + 1] = RNP_PARAM_INIT; \
 	static unsigned int num_##X;                                  \
 	module_param_array_named(X, X, int, &num_##X, 0);             \
-	MODULE_PARM_DESC(X, desc)
-
+	MODULE_PARM_DESC(X, desc);
 /* IntMode (Interrupt Mode)
  *
  * Valid Range: 0-2
@@ -49,6 +47,18 @@ RNP_PARAM(IntMode, "Change Interrupt Mode (2 = MSI-X), default 2");
 #define RNP_INT_MSI 1
 #define RNP_INT_MSIX 2
 
+/* vlan_unlimit
+ *
+ * Valid Range: 0 - 1
+ * - 0 Default, limit 1 when sriov on
+ * - 1 no limit when sriov on
+ *
+ * Default Value: 0
+ */
+
+RNP_PARAM(VlanUnlimit, "limit vlan when sriov on: 0 = limit (default)");
+#define RNP_UNLIMIT_OFF 0
+#define RNP_UNLIMIT_ON 1
 #ifdef CONFIG_PCI_IOV
 /* max_vfs - SR I/O Virtualization
  *
@@ -83,8 +93,7 @@ RNP_PARAM(SRIOV_Mode, "Change SRIOV Mode (0=MAC_MODE, 1=VLAN_MODE), default 0");
  *
  * Default Value: 0 (un-limit)
  */
-RNP_PARAM(pf_msix_counts_set,
-	  "Number of Max MSIX Count: (default un-limit)");
+RNP_PARAM(pf_msix_counts_set, "Number of Max MSIX Count: (default un-limit)");
 #define RNP_INT_MIN 2
 
 struct rnp_option {
@@ -108,8 +117,8 @@ struct rnp_option {
 	} arg;
 };
 
-static int rnp_validate_option(struct net_device *netdev,
-			       unsigned int *value, struct rnp_option *opt)
+static int rnp_validate_option(struct net_device *netdev, unsigned int *value,
+			       struct rnp_option *opt)
 {
 	if (*value == OPTION_UNSET) {
 		netdev_info(netdev, "Invalid %s specified (%d),  %s\n",
@@ -130,15 +139,14 @@ static int rnp_validate_option(struct net_device *netdev,
 		}
 		break;
 	case range_option:
-		if ((*value >= opt->arg.r.min &&
-		     *value <= opt->arg.r.max) ||
+		if ((*value >= opt->arg.r.min && *value <= opt->arg.r.max) ||
 		    *value == opt->def) {
 			if (opt->msg)
 				netdev_info(netdev, "%s set to %d, %s\n",
 					    opt->name, *value, opt->msg);
 			else
-				netdev_info(netdev, "%s set to %d\n",
-					    opt->name, *value);
+				netdev_info(netdev, "%s set to %d\n", opt->name,
+					    *value);
 			return 0;
 		}
 		break;
@@ -150,8 +158,7 @@ static int rnp_validate_option(struct net_device *netdev,
 
 			if (*value == ent->i) {
 				if (ent->str[0] != '\0')
-					netdev_info(netdev, "%s\n",
-						    ent->str);
+					netdev_info(netdev, "%s\n", ent->str);
 				return 0;
 			}
 		}
@@ -177,25 +184,23 @@ static int rnp_validate_option(struct net_device *netdev,
  **/
 void rnp_check_options(struct rnp_adapter *adapter)
 {
-	u32 *aflags = &adapter->flags;
 	int bd = adapter->bd_number;
+	u32 *aflags = &adapter->flags;
 
 	if (bd >= RNP_MAX_NIC) {
 		netdev_notice(adapter->netdev,
-			      "Warning: no configuration for board #%d\n",
-			      bd);
+			      "Warning: no configuration for board #%d\n", bd);
 		netdev_notice(adapter->netdev,
 			      "Using defaults for all values\n");
 	}
 
-	// try to setup new irq mode
+	/* try to setup new irq mode */
 	{ /* Interrupt Mode */
 		unsigned int int_mode;
 		static struct rnp_option opt = {
 			.type = range_option,
 			.name = "Interrupt Mode",
-			.err = "using default of " __MODULE_STRING(
-				RNP_INT_MSIX),
+			.err = "using default of " __MODULE_STRING(RNP_INT_MSIX),
 			.def = RNP_INT_MSIX,
 			.arg = { .r = { .min = RNP_INT_LEGACY,
 					.max = RNP_INT_MSIX } }
@@ -205,49 +210,72 @@ void rnp_check_options(struct rnp_adapter *adapter)
 			int_mode = IntMode[bd];
 			if (int_mode == OPTION_UNSET)
 				int_mode = RNP_INT_MSIX;
-			rnp_validate_option(adapter->netdev, &int_mode,
-					    &opt);
+			rnp_validate_option(adapter->netdev, &int_mode, &opt);
 			switch (int_mode) {
 			case RNP_INT_MSIX:
-				if (!(*aflags & RNP_FLAG_MSIX_CAPABLE)) {
-					netdev_info(
-						adapter->netdev,
-						"Ignoring MSI-X setting; "
-						"support unavailable\n");
-				} else
+				if (!(*aflags & RNP_FLAG_MSIX_CAPABLE))
+					netdev_info(adapter->netdev,
+						    "Ignoring MSI-X setting; support unavailable\n");
+				else
 					adapter->irq_mode = irq_mode_msix;
 				break;
 			case RNP_INT_MSI:
-				if (!(*aflags & RNP_FLAG_MSI_CAPABLE)) {
-					netdev_info(
-						adapter->netdev,
-						"Ignoring MSI setting; "
-						"support unavailable\n");
-				} else
+				if (!(*aflags & RNP_FLAG_MSI_CAPABLE))
+					netdev_info(adapter->netdev,
+						    "Ignoring MSI setting; support unavailable\n");
+				else
 					adapter->irq_mode = irq_mode_msi;
 
 				break;
 			case RNP_INT_LEGACY:
-				if (!(*aflags & RNP_FLAG_LEGACY_CAPABLE)) {
-					netdev_info(
-						adapter->netdev,
-						"Ignoring MSI setting; "
-						"support unavailable\n");
-				} else
-					adapter->irq_mode =
-						irq_mode_legency;
-
+				if (!(*aflags & RNP_FLAG_LEGACY_CAPABLE))
+					netdev_info(adapter->netdev,
+						    "Ignoring MSI setting; support unavailable\n");
+				else
+					adapter->irq_mode = irq_mode_legency;
 				break;
 			}
 		} else {
 			/* default settings */
-			// msix -> msi -> Legacy
+			/* msix -> msi -> Legacy */
 			if (*aflags & RNP_FLAG_MSIX_CAPABLE)
 				adapter->irq_mode = irq_mode_msix;
 			else if (*aflags & RNP_FLAG_MSI_CAPABLE)
 				adapter->irq_mode = irq_mode_msi;
 			else
 				adapter->irq_mode = irq_mode_legency;
+		}
+	}
+
+	/* try to setup new vlan_unlimit */
+	{ /* vlan_unlimit mode */
+		unsigned int vlan_unlimit;
+		static struct rnp_option opt = {
+			.type = range_option,
+			.name = "vlan_unlimit Mode",
+			.err = "using default of " __MODULE_STRING(RNP_UNLIMIT_OFF),
+			.def = RNP_UNLIMIT_OFF,
+			.arg = { .r = { .min = RNP_UNLIMIT_OFF,
+					.max = RNP_UNLIMIT_ON } }
+		};
+
+		if (num_VlanUnlimit > bd) {
+			vlan_unlimit = VlanUnlimit[bd];
+			if (vlan_unlimit == OPTION_UNSET)
+				vlan_unlimit = RNP_UNLIMIT_OFF;
+			rnp_validate_option(adapter->netdev, &vlan_unlimit, &opt);
+			switch (vlan_unlimit) {
+			case RNP_UNLIMIT_OFF:
+				adapter->flags2 &= (~RNP_FLAG2_VLAN_UNLIMIT);
+				break;
+			case RNP_UNLIMIT_ON:
+				adapter->flags2 |= RNP_FLAG2_VLAN_UNLIMIT;
+				break;
+			}
+		} else {
+			adapter->flags2 &= (~RNP_FLAG2_VLAN_UNLIMIT);
+			/* default settings */
+			/* msix -> msi -> Legacy */
 		}
 	}
 
@@ -267,13 +295,10 @@ void rnp_check_options(struct rnp_adapter *adapter)
 		if (num_max_vfs > bd) {
 			unsigned int vfs = max_vfs[bd];
 
-			if (rnp_validate_option(adapter->netdev, &vfs,
-						&opt)) {
+			if (rnp_validate_option(adapter->netdev, &vfs, &opt)) {
 				vfs = 0;
 				DPRINTK(PROBE, INFO,
-					"max_vfs out of range");
-				DPRINTK(PROBE, INFO,
-					"Disabling SR-IOV.\n");
+					"max_vfs out of range Disabling SR-IOV.\n");
 			}
 
 			adapter->num_vfs = vfs;
@@ -293,13 +318,12 @@ void rnp_check_options(struct rnp_adapter *adapter)
 		}
 	}
 
-	{ /* Interrupt Mode */
+	{ /* Sriov Mode */
 		unsigned int sriov_mode;
 		static struct rnp_option opt = {
 			.type = range_option,
 			.name = "SRIOV Mode",
-			.err = "using default of " __MODULE_STRING(
-				RNP_SRIOV_MAC_MODE),
+			.err = "using default of " __MODULE_STRING(RNP_SRIOV_MAC_MODE),
 			.def = RNP_SRIOV_MAC_MODE,
 			.arg = { .r = { .min = RNP_SRIOV_MAC_MODE,
 					.max = RNP_SRIOV_VLAN_MODE } }
@@ -309,8 +333,7 @@ void rnp_check_options(struct rnp_adapter *adapter)
 			sriov_mode = SRIOV_Mode[bd];
 			if (sriov_mode == OPTION_UNSET)
 				sriov_mode = RNP_SRIOV_MAC_MODE;
-			rnp_validate_option(adapter->netdev, &sriov_mode,
-					    &opt);
+			rnp_validate_option(adapter->netdev, &sriov_mode, &opt);
 
 			if (sriov_mode == RNP_SRIOV_VLAN_MODE)
 				adapter->priv_flags |=
@@ -318,12 +341,10 @@ void rnp_check_options(struct rnp_adapter *adapter)
 
 		} else {
 			/* default settings */
-			// msix -> msi -> Legacy
-			adapter->priv_flags &=
-				(~RNP_PRIV_FLAG_SRIOV_VLAN_MODE);
+			adapter->priv_flags &= (~RNP_PRIV_FLAG_SRIOV_VLAN_MODE);
 		}
 	}
-#endif // CONFIG_PCI_IOV
+#endif /* CONFIG_PCI_IOV */
 
 	{ /* max msix count setup */
 		int pf_msix_counts;
@@ -342,13 +363,12 @@ void rnp_check_options(struct rnp_adapter *adapter)
 			pf_msix_counts = pf_msix_counts_set[bd];
 			if (pf_msix_counts == OPTION_DISABLED)
 				pf_msix_counts = 0;
-			rnp_validate_option(adapter->netdev,
-					    &pf_msix_counts, &opt);
+			rnp_validate_option(adapter->netdev, &pf_msix_counts,
+					    &opt);
 
 			if (pf_msix_counts) {
 				if (hw->ops.update_msix_count)
-					hw->ops.update_msix_count(
-						hw, pf_msix_counts);
+					hw->ops.update_msix_count(hw, pf_msix_counts);
 			}
 		}
 	}
