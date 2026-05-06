@@ -88,6 +88,7 @@ static int ub_idevice_enable_handle(struct ub_entity *pue, u16 idx, u8 is_mue,
 	}
 
 	ub_entity_add(dev, pue);
+	atomic_set(&dev->ent_mgmt_state, MGMT_STATE_REGISTERING);
 
 	ub_entity_assign_task_src(dev, TASK_SRC_VDM, true);
 	queue_work(ub_get_delay_task_wq(), &task->work);
@@ -191,6 +192,10 @@ put_pue:
 	ub_entity_put(pue);
 pue_reg_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
+	dev_info(&ubc->dev, "MUE reg: guid[%#llx-%#llx] idx[%u] cnt[%u] start[%u] end[%u] ueid[%#x] status[%#x]\n",
+		 *(u64 *)&pld->guid[2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 pld->ue_cnt, pld->start_ue_entity_idx, pld->end_ue_entity_idx,
+		 pld->user_eid[0], status);
 	return status;
 }
 
@@ -257,13 +262,16 @@ u8 ub_idevice_pue_rls_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt 
 	ub_entity_put(ent0);
 rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
+	dev_info(&ubc->dev, "MUE unreg: guid[%#llx-%#llx] idx[%u] reason[%#x] status[%#x]\n",
+		 *(u64 *)&pld->guid[2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 pld->rls_reason, status);
 	return status;
 }
 
 static u8 ue_idx_valid_check(struct ub_entity *mue, int idx)
 {
 	if (idx < mue->uem.start_entity_idx || idx > mue->uem.end_entity_idx) {
-		ub_err(mue, "invalid ue entity_idx=%u, start_idx=%d, end_idx=%d\n",
+		ub_err(mue, "invalid ue entity_idx=%d, start_idx=%d, end_idx=%d\n",
 		       idx, mue->uem.start_entity_idx,
 		       mue->uem.end_entity_idx);
 		return UB_MSG_RSP_EXEC_EINVAL;
@@ -319,6 +327,7 @@ u8 ub_idevice_ue_add_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *
 	} else {
 		lock = device_trylock(&mue->dev);
 		if (!lock) {
+			ub_warn(mue, "mue lock busy\n");
 			status = UB_MSG_RSP_EXEC_EBUSY;
 			goto put_mue;
 		}
@@ -343,6 +352,9 @@ put_mue:
 	ub_entity_put(mue);
 ue_reg_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
+	dev_info(&ubc->dev, "UE reg: guid[%#llx-%#llx] mue_idx[%u] idx[%u] ueid[%#x] status[%#x]\n",
+		 *(u64 *)&pld->guid[2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 pld->ue_entity_idx, pld->user_eid[0], status);
 	return status;
 }
 
@@ -381,6 +393,9 @@ put_mue:
 	ub_entity_put(mue);
 ue_rls_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
+	dev_info(&ubc->dev, "UE unreg: guid[%#llx-%#llx] mue_idx[%u] idx[%u] reason[%#x] status[%#x]\n",
+		 *(u64 *)&pld->guid[2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 pld->ue_entity_idx, pld->rls_reason, status);
 	return status;
 }
 
@@ -503,6 +518,8 @@ static u8 ub_vdm_port_mgmt_handler(struct ub_bus_controller *ubc,
 
 port_mgmt_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
+	dev_info(&ubc->dev, "VDM port %s: port_idx[%u] status[%#x]\n",
+		 pld->en ? "enable" : "disable", pld->port_idx, status);
 	return status;
 }
 
@@ -558,6 +575,8 @@ static int hi_vdm_vendor_handler(struct ub_bus_controller *ubc, void *pkt, u16 l
 
 	opcode = pld_dw0->opcode;
 	sub_opcode = pld_dw0->sub_opcode;
+	dev_info(&ubc->dev, "vdm msg opcode %#x, sub %#x\n", opcode, sub_opcode);
+
 	switch (opcode) {
 	case VDM_OPCODE_FM2UB_COMM_MSG:
 		return ub_vdm_msg_info_handle(ubc, vdm_pkt, len, sub_opcode);
@@ -723,6 +742,8 @@ void ub_delay_task_work_vdm(struct work_struct *work)
 		atomic_set(&port->port_mgmt_state, MGMT_STATE_IDLE);
 		break;
 	case TASK_TYPE_DISABLE:
+	case TASK_TYPE_ATTACH_RETRY:
+	case TASK_TYPE_REINIT_RETRY:
 	default:
 		break;
 		/* do nothing */

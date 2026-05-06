@@ -1443,9 +1443,11 @@ int ub_enum_entities_active(struct list_head *dev_list, int src)
 		if (ub_entity_test_task_src(uent, TASK_SRC_SELF)) {
 			ub_start_ent(uent);
 		} else {
+			atomic_set(&uent->ent_mgmt_state, MGMT_STATE_REGISTERING);
 			ret = ub_add_delay_task(uent, NULL, TASK_TYPE_START);
 			if (ret) {
 				ub_err(uent, "active add start task failed\n");
+				atomic_set(&uent->ent_mgmt_state, MGMT_STATE_IDLE);
 				return ret; /* Just one entity */
 			}
 		}
