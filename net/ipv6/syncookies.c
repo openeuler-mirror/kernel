@@ -231,6 +231,10 @@ struct sock *cookie_v6_check(struct sock *sk, struct sk_buff *skb)
 	ireq->ums_ok = 0;
 #endif
 
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	ireq->ubs_ok = 0;
+#endif
+
 	/*
 	 * We need to lookup the dst_entry to get the correct window size.
 	 * This is taken from tcp_v6_syn_recv_sock.  Somebody please enlighten

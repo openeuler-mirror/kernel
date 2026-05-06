@@ -203,6 +203,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOPT_SMC_MAGIC	0xE2D4C3D9
 #define TCPOPT_COMP_MAGIC	0x7954
 #define TCPOPT_UMS_MAGIC	0xE4C2D4E2
+#define TCPOPT_UB_SOCKET_MAGIC	0xE4C2D6E2
 
 /*
  *     TCP option lengths
@@ -218,6 +219,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_EXP_SMC_BASE   6
 #define TCPOLEN_EXP_COMP_BASE  4
 #define TCPOLEN_EXP_UMS_BASE   6
+#define TCPOLEN_EXP_UB_SOCKET_BASE      6
 
 /* But this is what stacks really send out. */
 #define TCPOLEN_TSTAMP_ALIGNED		12
@@ -230,6 +232,7 @@ void tcp_time_wait(struct sock *sk, int state, int timeo);
 #define TCPOLEN_MSS_ALIGNED		4
 #define TCPOLEN_EXP_SMC_BASE_ALIGNED	8
 #define TCPOLEN_EXP_UMS_BASE_ALIGNED	8
+#define TCPOLEN_EXP_UB_SOCKET_BASE_ALIGNED	8
 
 /* Flags in tp->nonagle */
 #define TCP_NAGLE_OFF		1	/* Nagle's algo is disabled */
@@ -2561,11 +2564,7 @@ extern struct static_key_false tcp_have_smc;
 #endif
 
 #if IS_ENABLED(CONFIG_UB_UMS)
-#ifdef CONFIG_UBS_HANDSHAKE
-extern struct static_key_true tcp_have_ums;
-#else
 extern struct static_key_false tcp_have_ums;
-#endif
 #endif
 
 #if IS_ENABLED(CONFIG_TLS_DEVICE)

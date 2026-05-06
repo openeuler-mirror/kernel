@@ -129,7 +129,10 @@ struct tcp_options_received {
 #if IS_ENABLED(CONFIG_UB_UMS)
 		ums_ok:1,	/* UMS seen on SYN packet */
 #endif
-		unused:5;
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+		ubs_ok:1,	/* UB socket seen on SYN packet */
+#endif
+		unused:4;
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
@@ -147,6 +150,9 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 #endif
 #if IS_ENABLED(CONFIG_UB_UMS)
 	rx_opt->ums_ok = 0;
+#endif
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	rx_opt->ubs_ok = 0;
 #endif
 }
 
@@ -458,6 +464,9 @@ struct tcp_sock {
 #endif
 #if IS_ENABLED(CONFIG_UB_UMS)
 	bool	syn_ums;	/* SYN includes UMS */
+#endif
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	bool	syn_ubs;	/* SYN includes UB socket */
 #endif
 
 #ifdef CONFIG_TCP_MD5SIG
