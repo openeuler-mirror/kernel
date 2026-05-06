@@ -412,7 +412,6 @@ void ub_entity_add(struct ub_entity *uent, void *ctx)
 	dev_set_msi_domain(&uent->dev, uent->ubc->dev.msi.domain);
 
 	uent->match_driver = false;
-	atomic_set(&uent->ent_mgmt_state, MGMT_STATE_REGISTERING);
 	ret = device_add(&uent->dev);
 	WARN_ON(ret < 0);
 
@@ -439,7 +438,6 @@ void ub_start_ent(struct ub_entity *uent)
 	ret = ub_default_bus_instance_init(uent);
 	if (ret) {
 		ub_err(uent, "default bi init failed, ret=%d\n", ret);
-		atomic_set(&uent->ent_mgmt_state, MGMT_STATE_IDLE);
 		return;
 	}
 
@@ -450,12 +448,7 @@ void ub_start_ent(struct ub_entity *uent)
 		uent->match_driver = true;
 		ret = device_attach(&uent->dev);
 		if (ret < 0 && ret != -EPROBE_DEFER)
-			ub_err(uent, "device attach failed, ret=%d\n", ret);
-
-		if (!ret) /* Not match driver */
-			atomic_set(&uent->ent_mgmt_state, MGMT_STATE_IDLE);
-	} else {
-		atomic_set(&uent->ent_mgmt_state, MGMT_STATE_IDLE);
+			ub_warn(uent, "device attach failed, ret=%d\n", ret);
 	}
 
 	if (is_primary(uent) && !is_p_device(uent)) {
@@ -1141,14 +1134,18 @@ int ub_reinit_ent(struct ub_entity *uent)
 
 	udrv = uent->driver;
 	if (!udrv || !udrv->reinit) {
-		ub_err(uent, "udrv or reinit is null\n");
-		ret = -EINVAL;
+		ub_info(uent, "udrv or reinit is null\n");
+		ret = 0;
 		goto out;
 	}
 
 	ret = udrv->reinit(uent);
+	if (ret) {
+		ub_err(uent, "reinit ret[%d]\n", ret);
+		if (ret == -EAGAIN)
+			ub_add_retry_task(uent, TASK_TYPE_REINIT_RETRY);
+	}
 out:
-	atomic_set(&uent->ent_mgmt_state, MGMT_STATE_IDLE);
 	device_unlock(&uent->dev);
 	return ret;
 }

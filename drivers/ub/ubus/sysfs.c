@@ -383,6 +383,24 @@ pue_print:
 }
 DEVICE_ATTR_RO(primary_entity);
 
+static ssize_t mgmt_state_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	struct ub_entity *uent = to_ub_entity(dev);
+
+	return sysfs_emit(buf, "%d\n", atomic_read(&uent->ent_mgmt_state));
+}
+DEVICE_ATTR_RO(mgmt_state);
+
+static ssize_t task_src_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct ub_entity *uent = to_ub_entity(dev);
+
+	return sysfs_emit(buf, "%#x\n", uent->task_src);
+}
+DEVICE_ATTR_RO(task_src);
+
 static struct attribute *ub_entity_attrs[] = {
 	&dev_attr_resource.attr,
 	&dev_attr_vendor.attr,
@@ -404,6 +422,8 @@ static struct attribute *ub_entity_attrs[] = {
 	&dev_attr_primary_entity.attr,
 	&dev_attr_kref.attr,
 	&dev_attr_ummu_map.attr,
+	&dev_attr_mgmt_state.attr,
+	&dev_attr_task_src.attr,
 	NULL
 };
 

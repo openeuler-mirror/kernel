@@ -11,7 +11,9 @@ enum ub_delay_task_type {
 	TASK_TYPE_ATTACH = 1,
 	TASK_TYPE_REINIT = 2,
 	TASK_TYPE_LINKDOWN = 3,
-	TASK_TYPE_DISABLE = 4
+	TASK_TYPE_DISABLE = 4,
+	TASK_TYPE_ATTACH_RETRY = 5,
+	TASK_TYPE_REINIT_RETRY = 6,
 };
 
 enum ub_task_src {
@@ -19,7 +21,8 @@ enum ub_task_src {
 	TASK_SRC_POOL = 1,
 	TASK_SRC_COMMON_MAX = 7,
 	/* 8~15 reserved for Vendor */
-	TASK_SRC_RETRY = 16,
+	TASK_SRC_RETRY_ATTACH = 16,
+	TASK_SRC_RETRY_REINIT = 17,
 };
 
 #define TASK_SRC_COMMON_MASK 0xff
@@ -38,6 +41,7 @@ struct ub_retry_task {
 	struct delayed_work work;
 	struct list_head node;
 	struct kref kref;
+	int task_type;
 };
 
 static inline void ub_entity_assign_task_src(struct ub_entity *uent, int bit,
@@ -59,7 +63,7 @@ ub_delay_task_alloc_and_init(struct ub_entity *uent, struct ub_port *port,
 			     int type);
 void ub_delay_task_free(struct ub_delay_task *task);
 int ub_add_delay_task(struct ub_entity *uent, struct ub_port *port, int type);
-void ub_add_retry_task(struct ub_entity *uent);
+void ub_add_retry_task(struct ub_entity *uent, int task_type);
 void ub_cancel_retry_work_sync(void);
 int ub_create_existed_entity_handler(struct ub_entity *uent);
 int ub_destroy_existed_entity_handler(struct ub_entity *uent);

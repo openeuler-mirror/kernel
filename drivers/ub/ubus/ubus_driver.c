@@ -373,14 +373,12 @@ static int ub_entity_probe(struct device *dev)
 	ret = __ub_entity_probe(drv, ub_entity);
 	if (ret) {
 		if (ret == -EAGAIN)
-			ub_add_retry_task(ub_entity);
+			ub_add_retry_task(ub_entity, TASK_TYPE_ATTACH_RETRY);
 
 		ub_entity_put(ub_entity);
 	} else {
 		ub_entity_assign_priv_flag(ub_entity, UB_ENTITY_PROBED, true);
 	}
-
-	atomic_set(&ub_entity->ent_mgmt_state, MGMT_STATE_IDLE);
 
 	return ret;
 }
