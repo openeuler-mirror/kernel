@@ -82,13 +82,12 @@ config UB_UMS
 	  based on the UB network for data transmission, transparently accelerating
 	  TCP communication
 
-config UBS_HANDSHAKE
-	bool "Enable UB socket(UBS) TCP handshake"
-	depends on UB_UMS
+config UB_SOCKET_HANDSHAKE
+	bool "Enable UB socket TCP handshake"
 	default y
 	help
-	  UB socket(UBS) TCP handshake is used to identify whether it is an UB
-	  connection, allowing UBS to be dynamically enabled through sockopt.
+	  UB socket TCP handshake is used to identify whether it is an UB connection,
+	  allowing UB socket to be dynamically enabled through sockopt.
 
 config NET_HANDSHAKE
 	bool
