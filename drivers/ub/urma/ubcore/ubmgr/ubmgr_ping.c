@@ -581,11 +581,11 @@ static int ping_on_add_device(struct ubcore_device *dev)
 	struct ubmgr_ping_ctx *ping_ctx;
 	int ret;
 
-	ping_ctx = kzalloc(sizeof(struct ubmgr_ping_ctx), GFP_KERNEL);
+	ping_ctx = vzalloc(sizeof(struct ubmgr_ping_ctx));
 	if (ping_ctx == NULL)
 		return -ENOMEM;
 
-	ping_ctx->buf = kzalloc(PING_BUF_SIZE, GFP_KERNEL);
+	ping_ctx->buf = vzalloc(PING_BUF_SIZE);
 	if (ping_ctx->buf == NULL) {
 		ret = -ENOMEM;
 		goto free_ctx;
@@ -625,9 +625,9 @@ destroy_wq:
 	destroy_workqueue(ping_ctx->wq);
 	mutex_destroy(&ping_ctx->init_mutex);
 free_buf:
-	kfree(ping_ctx->buf);
+	vfree(ping_ctx->buf);
 free_ctx:
-	kfree(ping_ctx);
+	vfree(ping_ctx);
 	return ret;
 }
 
@@ -647,8 +647,8 @@ static void ping_on_remove_device(struct ubcore_device *dev, void *client_ctx)
 
 	destroy_workqueue(ping_ctx->wq);
 	mutex_destroy(&ping_ctx->init_mutex);
-	kfree(ping_ctx->buf);
-	kfree(ping_ctx);
+	vfree(ping_ctx->buf);
+	vfree(ping_ctx);
 }
 
 struct ubcore_client g_ping_client = {

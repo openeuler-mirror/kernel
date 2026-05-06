@@ -701,7 +701,7 @@ static struct ubcore_target_seg *ubmad_register_seg(struct ubcore_device *dev,
 	struct ubcore_seg_cfg cfg = { 0 };
 	struct ubcore_target_seg *ret;
 
-	seg_va = kzalloc(seg_len, GFP_KERNEL);
+	seg_va = vzalloc(seg_len);
 	if (IS_ERR_OR_NULL(seg_va))
 		return ERR_PTR(-ENOMEM);
 	flag.bs.token_policy = UBCORE_TOKEN_NONE;
@@ -721,7 +721,7 @@ static struct ubcore_target_seg *ubmad_register_seg(struct ubcore_device *dev,
 	return ret;
 
 free:
-	kfree(seg_va);
+	vfree(seg_va);
 	return ret;
 }
 
@@ -730,7 +730,7 @@ static void ubmad_unregister_seg(struct ubcore_target_seg *seg)
 	uint64_t va = seg->seg.ubva.va;
 
 	(void)ubcore_unregister_seg(seg);
-	kfree((void *)va);
+	vfree((void *)va);
 }
 
 static int ubmad_create_seg(struct ubmad_jetty_resource *rsrc,
