@@ -33,8 +33,6 @@ void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu, u32 preempted)
 	srcu_read_unlock(&kvm->srcu, idx);
 
 	pagefault_enable();
-
-	vcpu->arch.pv_preempted = !!preempted;
 }
 
 long kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu)

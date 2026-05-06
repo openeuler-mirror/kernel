@@ -598,10 +598,6 @@ struct kvm_vcpu_arch {
 	 * themselves (or the flag accesses need to be made atomic).
 	 */
 	bool pause;
-#ifdef CONFIG_PARAVIRT_SCHED
-	/* Shadow copy of pvsched preempted state for module param toggle */
-	KABI_FILL_HOLE(bool pv_preempted)
-#endif
 
 	/*
 	 * We maintain more than a single set of debug registers to support
@@ -1221,14 +1217,12 @@ static inline int kvm_arm_timer_early_inject_has_attr(struct kvm *kvm,
 long kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu);
 void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu, u32 preempted);
 
-extern bool pv_preempted_enable;
 static inline void kvm_arm_pvsched_vcpu_init(struct kvm_vcpu_arch *vcpu_arch)
 {
 	vcpu_arch->pvsched.base = INVALID_GPA;
-	vcpu_arch->pv_preempted = false;
 }
 
-static inline bool kvm_arm_is_pvsched_valid(struct kvm_vcpu_arch *vcpu_arch)
+static inline bool kvm_arm_is_pvsched_enabled(struct kvm_vcpu_arch *vcpu_arch)
 {
 	return (vcpu_arch->pvsched.base != INVALID_GPA);
 }
@@ -1240,7 +1234,7 @@ static inline long kvm_hypercall_pvsched_features(struct kvm_vcpu *vcpu)
 static inline void kvm_update_pvsched_preempted(struct kvm_vcpu *vcpu,
 						u32 preempted) {}
 static inline void kvm_arm_pvsched_vcpu_init(struct kvm_vcpu_arch *vcpu_arch) {}
-static inline bool kvm_arm_is_pvsched_valid(struct kvm_vcpu_arch *vcpu_arch)
+static inline bool kvm_arm_is_pvsched_enabled(struct kvm_vcpu_arch *vcpu_arch)
 {
 	return false;
 }
