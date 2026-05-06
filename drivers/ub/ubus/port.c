@@ -329,6 +329,12 @@ static ssize_t qdlws_exec_state_show(struct ub_port *port, char *buf)
 }
 UB_PORT_ATTR_RO(qdlws_exec_state);
 
+static ssize_t mgmt_state_show(struct ub_port *port, char *buf)
+{
+	return sysfs_emit(buf, "%d\n", atomic_read(&port->port_mgmt_state));
+}
+UB_PORT_ATTR_RO(mgmt_state);
+
 static struct attribute *ub_port_default_attrs[] = {
 	&ub_port_attr_cna.attr,
 	&ub_port_attr_boundary.attr,
@@ -338,6 +344,7 @@ static struct attribute *ub_port_default_attrs[] = {
 	&ub_port_attr_neighbor_guid.attr,
 	&ub_port_attr_neighbor.attr,
 	&ub_port_attr_port_reset.attr,
+	&ub_port_attr_mgmt_state.attr,
 	NULL
 };
 
