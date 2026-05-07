@@ -7,7 +7,9 @@
 #define _UB_UBDEVSHM_UBDEVSHM_H_
 
 #include <linux/kernel.h>
-#include <linux/kabi.h>
+
+#define UBDEVSHM_VERSION_MAJOR 1
+#define UBDEVSHM_VERSION_MINOR 0
 
 /**
  * struct uba_eid - eid info of ub address.
@@ -19,13 +21,6 @@ struct uba_eid {
 	u64 eid : 20; /* bus_instance_eid */
 	u64 reserved0 : 44;
 	u64 reserved1 : 64;
-
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
-	KABI_RESERVE(4)
-	KABI_RESERVE(5)
-	KABI_RESERVE(6)
 };
 
 /**
@@ -45,14 +40,6 @@ union uba_attr {
 		u64 executeable : 1;
 		u64 token_value_required : 1;
 		u64 reserved : 60;
-
-		KABI_RESERVE(1)
-		KABI_RESERVE(2)
-		KABI_RESERVE(3)
-		KABI_RESERVE(4)
-		KABI_RESERVE(5)
-		KABI_RESERVE(6)
-		KABI_RESERVE(7)
 	} bs;
 	u64 value;
 };
@@ -69,14 +56,6 @@ union acquire_attr {
 		u64 require_pin : 1;
 		u64 require_invalidate : 1;
 		u64 reserved : 62;
-
-		KABI_RESERVE(1)
-		KABI_RESERVE(2)
-		KABI_RESERVE(3)
-		KABI_RESERVE(4)
-		KABI_RESERVE(5)
-		KABI_RESERVE(6)
-		KABI_RESERVE(7)
 	} bs;
 	u64 value;
 };
@@ -90,12 +69,6 @@ struct mem_uva {
 	u64 va;
 	u64 size;
 	u64 invalidate_tag;
-
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
-	KABI_RESERVE(4)
-	KABI_RESERVE(5)
 };
 
 /**
@@ -116,11 +89,6 @@ struct mem_uba {
 	union uba_attr attr;
 
 	void *mem_handle; /* used by ubdevshm inner */
-
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
-	KABI_RESERVE(4)
 };
 
 enum identity_type {
@@ -142,13 +110,6 @@ struct shm_user {
 	enum identity_type type;
 	u32 user_len;
 	void *user;
-
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
-	KABI_RESERVE(4)
-	KABI_RESERVE(5)
-	KABI_RESERVE(6)
 };
 
 /**
@@ -161,13 +122,6 @@ struct access_ctx {
 	u32 shm_container_id;
 	u32 access_ctx_id;
 
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
-	KABI_RESERVE(4)
-	KABI_RESERVE(5)
-	KABI_RESERVE(6)
-	KABI_RESERVE(7)
 };
 
 typedef int (*invalidate)(u64 invalidate_tag);
@@ -184,12 +138,6 @@ struct ubdevshm_mem_ops {
 
 	/* Release the uba address */
 	int (*release)(struct mem_uba *uba);
-
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
-	KABI_RESERVE(4)
-	KABI_RESERVE(5)
 };
 
 /**
@@ -319,4 +267,16 @@ int ubdevshm_acquire_uba(struct access_ctx *ctx, struct mem_uva *va,
  */
 int ubdevshm_release_uba(struct access_ctx *ctx, struct mem_uba *uba);
 
-#endif /* _UB_UBDEVSHM_UBDEVSHM_H_ */
+/**
+ * ubdevshm_check_version() - version check
+ * @app_major: major version from user
+ * @app_minor: minor version from user
+ *
+ * Before using the functions of this module, user must call this
+ * interface to check the version
+ *
+ * return: 0 indicates pass, while any other value indicates failure
+ */
+int ubdevshm_check_version(uint32_t app_major, uint32_t app_minor);
+
+#endif /*_UB_UBDEVSHM_UBDEVSHM_H_*/

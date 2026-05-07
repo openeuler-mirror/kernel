@@ -499,8 +499,6 @@ int blk_mq_init_sched(struct request_queue *q, struct elevator_type *e)
 err_free_map_and_rqs:
 	blk_mq_sched_free_rqs(q);
 	blk_mq_sched_tags_teardown(q, flags);
-
-	q->elevator = NULL;
 	return ret;
 }
 
@@ -550,5 +548,7 @@ void blk_mq_exit_sched(struct request_queue *q, struct elevator_queue *e)
 	if (e->type->ops.exit_sched)
 		e->type->ops.exit_sched(e);
 	blk_mq_sched_tags_teardown(q, flags);
+	spin_lock_irq(&q->queue_lock);
 	q->elevator = NULL;
+	spin_unlock_irq(&q->queue_lock);
 }
