@@ -470,52 +470,11 @@ EXPORT_SYMBOL_GPL(ummu_core_invalidate_cfg_table);
 
 int ummu_core_invalidate_cfg(struct ummu_invalid_cfg_param *param)
 {
-	struct iommu_domain *domain;
-	struct mm_struct *tid_mm;
-	struct device *dev;
-	int ret;
 
-	if (!param)
+	if (!param || !param->mm)
 		return -EINVAL;
 
-	if (!param->mm)
-		return -EFAULT;
-
-	mutex_lock(&global_device_lock);
-	if (!global_core_device) {
-		ret = -ENOENT;
-		goto out_unlock;
-	}
-
-	tid_mm = ummu_core_get_mm(global_core_device, param->tid);
-	if (param->mm != tid_mm) {
-		ret = -ESPIPE;
-		goto out_unlock;
-	}
-
-	dev = ummu_core_get_device(global_core_device, param->tid);
-	if (!dev) {
-		ret = -ENODEV;
-		goto out_unlock;
-	}
-
-	domain = ummu_core_get_domain_by_tid(dev, param->tid);
-	if (!domain) {
-		ret = -ENXIO;
-		goto out_put_device;
-	}
-
-	if (!global_core_device->ops || !global_core_device->ops->invalidate_cfg) {
-		ret = -EOPNOTSUPP;
-		goto out_put_device;
-	}
-	ret = global_core_device->ops->invalidate_cfg(to_ummu_base_domain(domain));
-
-out_put_device:
-	ummu_core_put_device(dev);
-out_unlock:
-	mutex_unlock(&global_device_lock);
-	return ret;
+	return ummu_core_invalidate_tid(param->mm, param->tid);
 }
 EXPORT_SYMBOL_GPL(ummu_core_invalidate_cfg);
 
