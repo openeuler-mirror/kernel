@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Nebula-matrix RDMA driver configuration
+#
+
+config INFINIBAND_NBL
+	tristate "Nebula-matrix RDMA driver"
+	depends on NBL_CORE
+	help
+	  This driver provides RDMA support for
+	  Nebula-matrix devices.
+
