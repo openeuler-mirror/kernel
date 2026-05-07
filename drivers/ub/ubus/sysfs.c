@@ -224,7 +224,7 @@ static ssize_t resource_show(struct device *dev, struct device_attribute *attr,
 	int i, cnt = 0;
 
 	for (i = 0; i < MAX_UB_RES_NUM; i++) {
-		struct resource *res =  &uent->zone[i].res;
+		struct resource *res = &uent->zone[i].res;
 
 		ub_resource_to_user(uent, i, res, &start, &end);
 		cnt += sysfs_emit_at(buf, cnt, "%#016llx %#016llx %#016llx\n",
@@ -318,7 +318,7 @@ static ssize_t direct_link_show(struct device *dev,
 DEVICE_ATTR_RO(direct_link);
 
 static ssize_t primary_cna_show(struct device *dev,
-				 struct device_attribute *attr, char *buf)
+				struct device_attribute *attr, char *buf)
 {
 	struct ub_entity *uent = to_ub_entity(dev);
 
@@ -428,10 +428,56 @@ static ssize_t cluster_show(const struct bus_type *bus, char *buf)
 }
 static BUS_ATTR_RO(cluster);
 
+static const struct {
+	const char *name;
+	u64 mask;
+} ub_feature_table[] = {
+	{ "UB Memory Borrowing(Non Cacheable)", UB_MEM_BORROW_NC },
+	{ "UB Memory Borrowing(Cacheable)", UB_MEM_BORROW_CC },
+	{ "UB Memory Sharing(Non Cacheable)", UB_MEM_SHARE_NC },
+	{ "UB Memory Sharing(Cacheable)", UB_MEM_SHARE_CC },
+	{ "URMA RTP-ROI", UB_URMA_RTP_ROI },
+	{ "URMA RTP-ROT", UB_URMA_RTP_ROT },
+	{ "URMA RTP-ROL", UB_URMA_RTP_ROL },
+	{ "URMA CTP-ROI", UB_URMA_CTP_ROI },
+	{ "URMA CTP-ROT", UB_URMA_CTP_ROT },
+	{ "URMA CTP-ROL", UB_URMA_CTP_ROL },
+	{ "URMA CTP-UNO", UB_URMA_CTP_UNO },
+	{ "URMA UTP-UNO", UB_URMA_UTP_UNO },
+};
+
+static ssize_t ub_feature_show(const struct bus_type *bus, char *buf)
+{
+	const struct ub_manage_subsystem_ops *manage_subsystem_ops;
+	unsigned long long f;
+	int n = 0, i, ret;
+
+	manage_subsystem_ops = get_ub_manage_subsystem_ops();
+	if (!manage_subsystem_ops || !manage_subsystem_ops->feature_get)
+		return sysfs_emit(buf, "%#llx\n", U64_MAX);
+
+	f = manage_subsystem_ops->feature_get();
+	ret = sysfs_emit_at(buf, n, "%#.16llx\n", f);
+	if (ret < 0)
+		return ret;
+	n += ret;
+
+	for (i = 0; i < ARRAY_SIZE(ub_feature_table); i++) {
+		ret = sysfs_emit_at(buf, n, "%s%c\n", ub_feature_table[i].name,
+				    (f & ub_feature_table[i].mask) ? '+' : '-');
+		if (ret < 0)
+			return ret;
+		n += ret;
+	}
+
+	return n;
+}
+static BUS_ATTR_RO(ub_feature);
 
 static struct attribute *ub_bus_attrs[] = {
 	&bus_attr_instance.attr,
 	&bus_attr_cluster.attr,
+	&bus_attr_ub_feature.attr,
 	NULL
 };
 
@@ -933,13 +979,24 @@ int ub_bus_attr_dynamic_init(void)
 
 	ret = bus_create_file(&ub_bus_type, &bus_attr_cluster);
 	if (ret)
-		bus_remove_file(&ub_bus_type, &bus_attr_instance);
+		goto create_file_cluster_failed;
 
+	ret = bus_create_file(&ub_bus_type, &bus_attr_ub_feature);
+	if (ret)
+		goto create_file_ub_feature_failed;
+
+	return 0;
+
+create_file_ub_feature_failed:
+	bus_remove_file(&ub_bus_type, &bus_attr_cluster);
+create_file_cluster_failed:
+	bus_remove_file(&ub_bus_type, &bus_attr_instance);
 	return ret;
 }
 
 void ub_bus_attr_dynamic_uninit(void)
 {
+	bus_remove_file(&ub_bus_type, &bus_attr_ub_feature);
 	bus_remove_file(&ub_bus_type, &bus_attr_cluster);
 	bus_remove_file(&ub_bus_type, &bus_attr_instance);
 }

@@ -504,6 +504,20 @@ struct ub_vdm_pld {
 	u8 sub_msg_code;
 };
 
+/* feature bitmap */
+#define UB_MEM_BORROW_NC BIT(0)
+#define UB_MEM_BORROW_CC BIT(1)
+#define UB_MEM_SHARE_NC BIT(2)
+#define UB_MEM_SHARE_CC BIT(3)
+#define UB_URMA_RTP_ROI BIT(16)
+#define UB_URMA_RTP_ROT BIT(17)
+#define UB_URMA_RTP_ROL BIT(18)
+#define UB_URMA_CTP_ROI BIT(19)
+#define UB_URMA_CTP_ROT BIT(20)
+#define UB_URMA_CTP_ROL BIT(21)
+#define UB_URMA_CTP_UNO BIT(22)
+#define UB_URMA_UTP_UNO BIT(23)
+
 #ifdef CONFIG_UB_UBUS
 extern struct bus_type ub_bus_type;
 #define dev_is_ub(d) ((d)->bus == &ub_bus_type)
@@ -741,6 +755,19 @@ int ub_device_reset(struct ub_entity *ent);
  */
 int ub_vdm_message(struct ub_entity *uent, struct ub_vdm_pld *vdm_pld);
 
+/**
+ * ub_feature_get() - Get UB controller feature sets.
+ *
+ * Query the vendor-specific feature capabilities of the UB controller
+ * through vendor manage subsystem ops callback.
+ *
+ * Context: Any context.
+ * Return: Feature bitmap (u64) on success,
+ *	   or U64_MAX if vendor manage subsystem ops not registered or
+ *	   feature_get callback not implemented.
+ */
+unsigned long long ub_feature_get(void);
+
 /* Only for ubus module */
 unsigned int ub_irq_calc_affinity_vectors(unsigned int minvec,
 					  unsigned int maxvec,
@@ -925,7 +952,7 @@ void ub_entity_put(struct ub_entity *uent);
  * or %-ENOMEM if buffer is too small.
  */
 int ub_get_bus_controller(struct ub_entity *uents[], unsigned int max_num,
-		      unsigned int *real_num);
+			  unsigned int *real_num);
 
 /**
  * ub_put_bus_controller() - Free the ub bus controller device list.
@@ -1068,6 +1095,10 @@ static inline int ub_device_reset(struct ub_entity *uent)
 static inline int ub_vdm_message(struct ub_entity *uent,
 				 struct ub_vdm_pld *vdm_pld)
 { return -ENODEV; }
+static inline unsigned long long ub_feature_get(void)
+{
+	return U64_MAX;
+}
 static inline unsigned int
 ub_irq_calc_affinity_vectors(unsigned int minvec, unsigned int maxvec,
 			     const struct irq_affinity *affd)
