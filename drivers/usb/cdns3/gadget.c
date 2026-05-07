@@ -3399,6 +3399,7 @@ static int __cdns3_gadget_init(struct cdns3 *cdns)
 	ret = cdns3_gadget_start(cdns);
 	if (ret) {
 		pm_runtime_put_sync(cdns->dev);
+		cdns3_drd_gadget_off(cdns);
 		return ret;
 	}
 
