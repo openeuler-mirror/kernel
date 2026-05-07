@@ -44,6 +44,11 @@ static __init int cmdline_parse_pmd_mapping(char *p)
 	unsigned long percent;
 	char *endptr;
 
+	if (IS_ENABLED(CONFIG_ARM64_64K_PAGES)) {
+		pr_warn("page size is 64KB, don't use pmd_mapping, use rodata=full instead\n");
+		return -EINVAL;
+	}
+
 	if (!p)
 		return -EINVAL;
 
@@ -248,21 +253,31 @@ struct folio *pfn_range_alloc(unsigned int nr_pages, int nid)
 	if (nid < 0 || nid >= MAX_NUMNODES)
 		goto out;
 
+#ifdef CONFIG_ARM64_4K_PAGES
 	if (!IS_ALIGNED(nr_pages, min_align))
 		goto out;
+#endif
+
+#ifdef CONFIG_ARM64_64K_PAGES
+	if (!can_set_direct_map())
+		goto out;
+	if (!is_power_of_2(nr_pages))
+		goto out;
+#endif
 
 	if (can_set_direct_map() || should_pmd_linear_mapping()) {
 		int order = ilog2(nr_pages);
 
-		folio = NULL;
 		gfp_mask |= __GFP_THISNODE;
-		if (nr_pages <= MAX_ORDER_NR_PAGES)
-			folio = __folio_alloc_node(gfp_mask | __GFP_NOWARN, order, nid);
-		if (!folio)
+		if (nr_pages <= MAX_ORDER_NR_PAGES) {
+			gfp_mask |= __GFP_RECLAIM | __GFP_NOWARN | __GFP_NORETRY;
+			folio = __folio_alloc_node(gfp_mask, order, nid);
+		} else {
 			folio = folio_alloc_gigantic(order, gfp_mask, nid, NULL);
+		}
+
 		if (!folio)
 			folio = ERR_PTR(-ENOMEM);
-
 		goto out;
 	}
 
@@ -400,14 +415,16 @@ static inline int check_update_lm_arg(unsigned long start_pfn, unsigned long end
 	struct page *start_page;
 	int nid;
 
+	if (can_set_direct_map())
+		return 0;
+
 	start_page = pfn_to_page(start_pfn);
 	nid = page_to_nid(start_page);
 	start = (unsigned long)page_to_virt(start_page);
 	end = start + (end_pfn - start_pfn) * PAGE_SIZE;
 	if ((start_pfn >= reserved_range[nid].start_pfn &&
 	    end_pfn <= reserved_range[nid].end_pfn)
-	    || should_pmd_linear_mapping()
-	    || can_set_direct_map()) {
+	    || should_pmd_linear_mapping()) {
 		if (!IS_ALIGNED(start, PFN_RANGE_ALLOC_SIZE) ||
 			!IS_ALIGNED(end, PFN_RANGE_ALLOC_SIZE)) {
 			return -EINVAL;
