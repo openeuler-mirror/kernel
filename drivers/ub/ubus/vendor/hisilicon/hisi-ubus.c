@@ -22,7 +22,8 @@ static const struct ub_manage_subsystem_ops hisi_ub_manage_subsystem_ops = {
 	.controller_probe = ub_bus_controller_probe,
 	.controller_remove = ub_bus_controller_remove,
 	.ras_handler_probe = ub_ras_handler_probe,
-	.ras_handler_remove = ub_ras_handler_remove
+	.ras_handler_remove = ub_ras_handler_remove,
+	.feature_get = hi_feature_get,
 };
 
 static const struct of_device_id hisi_ubus_of_match[] = {

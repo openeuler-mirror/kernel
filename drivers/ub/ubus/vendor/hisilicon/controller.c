@@ -73,3 +73,23 @@ void ub_bus_controller_remove(struct ub_bus_controller *ubc)
 	ub_bus_controller_debugfs_uninit(ubc);
 	ubc->ops = NULL;
 }
+
+unsigned long long hi_feature_get(void)
+{
+	struct ub_bus_controller *ubc;
+	u64 raw;
+
+	if (list_empty(&ubc_list))
+		return 0;
+
+	ubc = list_first_entry(&ubc_list, struct ub_bus_controller, node);
+	if (!ubc->data)
+		return 0;
+
+#define UBC_VENDOR_FEATURE_SETS_OFFSET 144
+#define UBC_VENDOR_FEATURE_SETS_SIZE 8
+	memcpy(&raw, (u8 *)ubc->data + UBC_VENDOR_FEATURE_SETS_OFFSET,
+	       UBC_VENDOR_FEATURE_SETS_SIZE);
+
+	return (raw >> 32) & GENMASK_ULL(31, 0);
+}
