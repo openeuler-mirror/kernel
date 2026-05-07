@@ -20,6 +20,8 @@ void tid_misc_exit(void);
 struct tid_dev {
 	struct platform_device pdev;
 	struct iommu_sva *sva;
+	struct kref ref;
+	struct mm_struct *mm;
 };
 
 /* private definition */
