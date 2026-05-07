@@ -51,6 +51,18 @@ out:
 	return ret;
 }
 
+unsigned long long ub_feature_get(void)
+{
+	const struct ub_manage_subsystem_ops *manage_subsystem_ops;
+
+	manage_subsystem_ops = get_ub_manage_subsystem_ops();
+	if (!manage_subsystem_ops || !manage_subsystem_ops->feature_get)
+		return U64_MAX;
+
+	return manage_subsystem_ops->feature_get();
+}
+EXPORT_SYMBOL_GPL(ub_feature_get);
+
 struct ub_bus_controller *ub_find_bus_controller_by_cna(u32 cna)
 {
 	struct ub_bus_controller *ubc;

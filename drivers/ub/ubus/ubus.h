@@ -66,7 +66,11 @@ struct ub_manage_subsystem_ops {
 	int (*ras_handler_probe)(void);
 	void (*ras_handler_remove)(void);
 
+#ifndef __GENKSYMS__
+	unsigned long long (*feature_get)(void);
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
