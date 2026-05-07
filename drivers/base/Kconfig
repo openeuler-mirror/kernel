@@ -178,7 +178,7 @@ config HMEM_REPORTING
 config NUMA_REMOTE
 	bool "Establish numa node for remote memory"
 	depends on NUMA
-	depends on ARM64 && ARM64_4K_PAGES
+	depends on ARM64
 	depends on SPARSEMEM_VMEMMAP
 	depends on ZONE_EXTMEM
 	help
