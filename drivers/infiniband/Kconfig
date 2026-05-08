@@ -116,6 +116,7 @@ source "drivers/infiniband/hw/vmw_pvrdma/Kconfig"
 source "drivers/infiniband/hw/hiroce3/Kconfig"
 source "drivers/infiniband/hw/xsc/Kconfig"
 source "drivers/infiniband/sw/rdmavt/Kconfig"
+source "drivers/infiniband/hw/sxe2rdma/Kconfig"
 endif # !UML
 source "drivers/infiniband/sw/rxe/Kconfig"
 source "drivers/infiniband/sw/siw/Kconfig"
