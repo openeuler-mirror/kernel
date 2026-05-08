@@ -238,6 +238,7 @@ void mfs_post_event_read(struct mfs_cache_object *object,
 			       loff_t off, uint64_t len,
 			       struct mfs_syncer *syncer, int op);
 void mfs_post_event_close(struct mfs_cache_object *object);
+void mfs_post_event_open(struct mfs_cache_object *object, unsigned long ino);
 void mfs_destroy_events(struct super_block *sb);
 void mfs_cancel_syncer_events(struct mfs_cache_object *object,
 			      struct mfs_syncer *syncer);

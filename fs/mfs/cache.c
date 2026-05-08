@@ -273,6 +273,8 @@ static void mfs_post_event(struct mfs_cache_object *object, void *msg,
 		datalen = sizeof(struct mfs_read);
 	else if (op == MFS_OP_CLOSE)
 		datalen = 0;
+	else if (op == MFS_OP_OPEN)
+		datalen = sizeof(struct mfs_open);
 	else {
 		pr_warn("%s: unsupported event type %d\n", __func__, op);
 		return;
@@ -373,6 +375,15 @@ void mfs_post_event_read(struct mfs_cache_object *object,
 void mfs_post_event_close(struct mfs_cache_object *object)
 {
 	mfs_post_event(object, NULL, NULL, MFS_OP_CLOSE);
+}
+
+void mfs_post_event_open(struct mfs_cache_object *object, unsigned long ino)
+{
+	struct mfs_open msg;
+
+	msg.ino = ino;
+	msg.pid = current->pid;
+	mfs_post_event(object, &msg, NULL, MFS_OP_OPEN);
 }
 
 void mfs_destroy_events(struct super_block *sb)

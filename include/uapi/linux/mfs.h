@@ -10,6 +10,7 @@ enum mfs_opcode {
 	MFS_OP_READ = 0,
 	MFS_OP_FAULT,
 	MFS_OP_CLOSE,
+	MFS_OP_OPEN,
 };
 
 enum {
@@ -56,6 +57,11 @@ struct mfs_msg {
 struct mfs_read {
 	__u64 off;
 	__u64 len;
+	__s32 pid;
+};
+
+struct mfs_open {
+	__u64 ino;
 	__s32 pid;
 };
 

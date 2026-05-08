@@ -31,6 +31,7 @@ static void mfs_file_info_free(struct mfs_file_info *info)
 static int mfs_open(struct inode *inode, struct file *file)
 {
 	struct dentry *dentry = file_dentry(file);
+	struct mfs_cache_object *object = inode->i_private;
 	struct mfs_sb_info *sbi = MFS_SB(inode->i_sb);
 	struct path lpath, cpath;
 	struct file *lfile, *cfile;
@@ -69,6 +70,9 @@ lfput:
 	fput(lfile);
 put_path:
 	mfs_put_path(&lpath, &cpath);
+	if (!err && object && allowed_event(sbi, MFS_OP_OPEN) &&
+	   cache_is_ready(sbi))
+		mfs_post_event_open(object, inode->i_ino);
 	return err;
 }
 
