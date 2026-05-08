@@ -106,6 +106,7 @@ source "drivers/infiniband/hw/hiroce3/Kconfig"
 source "drivers/infiniband/sw/rdmavt/Kconfig"
 source "drivers/infiniband/sw/rxe/Kconfig"
 source "drivers/infiniband/sw/siw/Kconfig"
+source "drivers/infiniband/hw/sxe2rdma/Kconfig"
 endif
 
 source "drivers/infiniband/ulp/ipoib/Kconfig"
