@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# sxe2vf network device configuration
+#
+
+config SXE2_VF
+	tristate "sxe2vf PCI Express adapters support"
+	depends on (X86) && PCI
+	select MDIO
+        select PHYLIB
+        select PTP_1588_CLOCK
+        default m
+	help
+	  This driver supports sxe2vf PCI Express family of adapters.
+
+	  To compile this driver as a module, choose M here. The module
+	  will be called sxe2vf.
