@@ -22,7 +22,6 @@
 #include <linux/moduleparam.h>
 #include <linux/init.h>
 #include <linux/acpi.h>
-#include <linux/bitfield.h>
 #include <linux/io.h>
 #include <linux/interrupt.h>
 #include <linux/timer.h>
@@ -608,7 +607,6 @@ static bool ghes_handle_arm_hw_error(struct acpi_hest_generic_data *gdata,
 {
 	struct cper_sec_proc_arm *err = acpi_hest_get_payload(gdata);
 	int flags = sync ? MF_ACTION_REQUIRED : 0;
-	char error_type[120];
 	bool queued = false;
 	int sec_sev, i;
 	bool critical;
@@ -627,8 +625,9 @@ static bool ghes_handle_arm_hw_error(struct acpi_hest_generic_data *gdata,
 	critical = ghes_armp_vendor_critical_error(err, sync);
 	for (i = 0; i < err->err_info_num; i++) {
 		struct cper_arm_err_info *err_info = (struct cper_arm_err_info *)p;
-		bool is_cache = err_info->type & CPER_ARM_CACHE_ERROR;
+		bool is_cache = (err_info->type == CPER_ARM_CACHE_ERROR);
 		bool has_pa = (err_info->validation_bits & CPER_ARM_INFO_VALID_PHYSICAL_ADDR);
+		const char *error_type = "unknown error";
 
 		/*
 		 * The field (err_info->error_info & BIT(26)) is fixed to set to
@@ -642,15 +641,12 @@ static bool ghes_handle_arm_hw_error(struct acpi_hest_generic_data *gdata,
 			continue;
 		}
 
-		cper_bits_to_str(error_type, sizeof(error_type),
-				 FIELD_GET(CPER_ARM_ERR_TYPE_MASK, err_info->type),
-				 cper_proc_error_type_strs,
-				 ARRAY_SIZE(cper_proc_error_type_strs));
+		if (err_info->type < ARRAY_SIZE(cper_proc_error_type_strs))
+			error_type = cper_proc_error_type_strs[err_info->type];
 
 		pr_warn_ratelimited(FW_WARN GHES_PFX
-				    "Unhandled processor error type 0x%02x: %s%s\n",
-				    err_info->type, error_type,
-				    (err_info->type & ~CPER_ARM_ERR_TYPE_MASK) ? " with reserved bit(s)" : "");
+				    "Unhandled processor error type: %s\n",
+				    error_type);
 		p += err_info->length;
 	}
 
