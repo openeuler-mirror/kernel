@@ -41,6 +41,7 @@ enum GENERIC_CMD {
 	GET_PHY_REG = 0x0629,
 	PHY_LINK_SET = 0x0630,
 	GET_PHY_STATISTICS = 0x0631,
+	GET_PCS_REG = 0x0633,
 
 	/*sfp-module*/
 	SFP_MODULE_READ = 0x0900,
@@ -73,7 +74,7 @@ enum link_event_mask {
 	EVT_PORT_TX_SUSPEND = 9,
 };
 
-#define PMA_UNKNOWN 0b111111 // 0x3f
+#define PMA_UNKNOWN 0b111111
 #define PMA_1000BASE_KX 0b001101
 #define PMA_1000BASE_T 0b001100
 #define PMA_10GBASE_KR 0b001011
@@ -148,13 +149,20 @@ struct phy_abilities {
 			unsigned int fw_lldp_ablity : 1; /* 12 */
 			unsigned int lldp_enabled : 1; /* 13 */
 			unsigned int only_1g : 1; /* 14 */
-			unsigned int force_link_down_en : 4; // [15:18]
-			unsigned int force_link_supported : 1; //[19]
-			unsigned int ports_is_sgmii_valid : 1; //[20]
-			unsigned int lane0_is_sgmii : 1; //[21]
-			unsigned int lane1_is_sgmii : 1; //[22]
-			unsigned int lane2_is_sgmii : 1; //[23]
-			unsigned int lane3_is_sgmii : 1; //[24]
+			unsigned int force_link_down_en : 4; /* 15:18 */
+			unsigned int force_link_supported : 1; /* 19 */
+			unsigned int ports_is_sgmii_valid : 1; /* 20*/
+			unsigned int lane0_is_sgmii : 1; /* 21 */
+			unsigned int lane1_is_sgmii : 1; /* 22*/
+			unsigned int lane2_is_sgmii : 1; /* 23*/
+			unsigned int lane3_is_sgmii : 1; /* 24 */
+			unsigned int pf0_ext_pll : 1; /* 25 */
+			unsigned int pf1_ext_pll : 1; /* 26 */
+			unsigned int dan_dao_enabled : 1; /* 27 */
+			unsigned int no_c37_autoneg : 1; /* 28 */
+			unsigned int pcie_bar_32bit : 1; /* 29 */
+			unsigned int none_prefetchable : 1; /* 30 */
+			unsigned int oldway : 1; /* 31 */
 		};
 	};
 } __packed __aligned(4);
@@ -255,12 +263,57 @@ struct link_stat_data {
 	char link_type_ext;
 } __packed __aligned(4);
 
+struct info {
+	union {
+		struct {
+			u8 phy_type : 4;
+			u8 phy_addr : 4;
+		};
+		struct {
+			u8 phy_type : 4;
+			u8 mod_abs : 1;
+			u8 fault : 1;
+			u8 tx_dis : 1;
+			u8 los : 1;
+		} sfp;
+	};
+
+	u32 si_main : 6;
+	u32 si_pre : 6;
+	u32 si_post : 6;
+	u32 si_tx_boost : 4;
+	u32 fec : 1;
+	u32 link_traing : 1;
+	u8 an : 1; /* 4 bytes:32 */
+	u8 link : 1;
+	u8 speed : 3;
+	u8 duplex : 1;
+	u8 tp_mdx : 2;
+	u8 media_availble : 1;
+	u8 rev : 7;
+} __attribute((packed));
+
+struct lane_stat_v3 {
+	u32 magic : 7;
+	u32 pci_gen : 2;
+	u32 pci_lanes : 3;
+	u32 tempreture : 8; /* 12 */
+	u32 voltage : 12;
+
+	u32 supported_link[4]; /* should 4byte align */
+	struct info info[4];
+} __packed __aligned(4);
+
 struct port_stat {
 	u8 phy_addr;
 
 	u8 duplex : 1;
 	u8 autoneg : 1;
 	u8 fec : 1;
+	u8 rev	       : 1;
+	u8 link_traing : 1;
+	u8 is_sgmii    : 1;
+	u8 lldp_status: 1;
 	u32 speed;
 } __packed;
 
@@ -277,8 +330,8 @@ struct lane_stat_data {
 	u16 fec : 1;
 	u16 an : 1;
 	u16 link_traing : 1;
-	u16 media_availble : 1; //
-	u16 is_sgmii : 1; //
+	u16 media_availble : 1;
+	u16 is_sgmii : 1;
 	u16 link_fault : 4;
 #define LINK_LINK_FAULT BIT(0)
 #define LINK_TX_FAULT BIT(1)
@@ -337,7 +390,7 @@ struct phy_statistics {
 	BIT(2) /* driver clear 0, FW must set only if it reporting an error */
 #define FLAGS_LB BIT(9)
 #define FLAGS_RD \
-	BIT(10) /* set if additonal buffer has command paramters */
+	BIT(10) /* set if additional buffer has command parameters */
 #define FLAGS_BUF BIT(12) /* set 1 on indirect command */
 #define FLAGS_SI BIT(13) /* not irq when command complete */
 #define FLAGS_EI BIT(14) /* interrupt on error */
@@ -352,8 +405,6 @@ struct phy_statistics {
 #define MBX_REQ_MAX_DATA_LEN (SHM_DATA_MAX_BYTES - MBX_REQ_HDR_LEN)
 #define MBX_REPLY_MAX_DATA_LEN (SHM_DATA_MAX_BYTES - MBX_REPLYHDR_LEN)
 
-// TODO req is little endian. bigendian should be conserened
-
 struct mbx_fw_cmd_req {
 	unsigned short flags; /* 0-1 */
 	unsigned short opcode; /* 2-3 enum LINK_ADM_CMD */
@@ -366,9 +417,9 @@ struct mbx_fw_cmd_req {
 		};
 		void *cookie;
 	};
-	unsigned int reply_lo; // 16-19 5dw
-	unsigned int reply_hi; // 20-23
-	/*=== data === 7dw [24-64] */
+	unsigned int reply_lo; /* 16-19 5dw */
+	unsigned int reply_hi; /* 20-23 */
+	/* data: 7dw [24-64] */
 	union {
 		char data[0];
 
@@ -477,14 +528,14 @@ struct mbx_fw_cmd_req {
 
 		struct {
 			unsigned int nr_lane;
-			unsigned int sfp_adr; // 0xa0 or 0xa2
+			unsigned int sfp_adr; /* 0xa0 or 0xa2 */
 			unsigned int reg;
 			unsigned int cnt;
 		} sfp_read;
 
 		struct {
 			unsigned int nr_lane;
-			unsigned int sfp_adr; // 0xa0 or 0xa2
+			unsigned int sfp_adr; /* 0xa0 or 0xa2 */
 			unsigned int reg;
 			unsigned int val;
 		} sfp_write;
@@ -498,18 +549,18 @@ struct mbx_fw_cmd_req {
 			unsigned int port_st_magic;
 #define SPEED_VALID_MAGIC 0xa4a6a8a9
 			struct port_stat st[4];
-		} link_stat; // FW->RC
+		} link_stat; /* FW->RC */
 
 		struct plugin_s {
 			int nr_lane;
 			int action;
 #define PLUGIN_ACT_IN 0
 #define PLUGIN_ACT_OFF 1
-		} plugin_out; // FW -> RC
+		} plugin_out; /* FW -> RC */
 
 		struct {
 			unsigned short enable_stat;
-			unsigned short event_mask; //  enum link_event_mask
+			unsigned short event_mask; /* enum link_event_mask */
 		} stat_pf_event_mask;
 
 		struct stat_lane_evt_t {
@@ -582,6 +633,11 @@ struct mbx_fw_cmd_req {
 		} get_mac_addr;
 
 		struct {
+			int nr_lane; /* 0 ~ 3 */
+			int pcs_reg; /* 0 ~ N */
+		} get_pcs_reg;
+
+		struct {
 			char phy_interface;
 			union {
 				char page_num;
@@ -614,24 +670,25 @@ struct mbx_fw_cmd_req {
 
 /* firmware -> driver */
 struct mbx_fw_cmd_reply {
-	unsigned short
-		flags; // fw must set: DD, CMP, Error(if error), copy value
-		// from command: LB,RD,VFC,BUF,SI,EI,FE
-	unsigned short opcode; // 2-3: copy from req
-	unsigned short error_code; // 4-5: 0 if no error
-	unsigned short datalen; // 6-7:
+	/* fw must set: DD, CMP, Error(if error), copy value
+	 * from command: LB,RD,VFC,BUF,SI,EI,FE
+	 */
+	unsigned short flags;
+	unsigned short opcode; /* 2-3: copy from req */
+	unsigned short error_code; /* 4-5: 0 if no error*/
+	unsigned short datalen; /* 6-7:*/
 	union {
 		struct {
-			unsigned int cookie_lo; // 8-11:
-			unsigned int cookie_hi; // 12-15:
+			unsigned int cookie_lo; /* 8-11 */
+			unsigned int cookie_hi; /* 12-15 */
 		};
 		void *cookie;
 	};
-	//===== data ==== [16-64]
+	/* data[16-64] */
 	union {
 		char data[0];
 
-		struct version { // GET_VERSION
+		struct version {
 			unsigned int major;
 			unsigned int sub;
 			unsigned int modify;
@@ -669,6 +726,11 @@ struct mbx_fw_cmd_reply {
 			} addrs[4];
 			unsigned int ccode;
 		} mac_addr;
+
+		struct pcs_reg {
+			int pcs_reg;
+			int value;
+		} pcs_reg;
 
 		struct get_dump_reply {
 			int flags;
@@ -757,6 +819,20 @@ static inline void build_get_macaddress_req(struct mbx_fw_cmd_req *req,
 	req->get_mac_addr.pfvf_num = pfvfnum;
 }
 
+static inline void build_get_pcs_reg_req(struct mbx_fw_cmd_req *req,
+					 int lane, int reg, void *cookie)
+{
+	req->flags = 0;
+	req->opcode = GET_PCS_REG;
+	req->datalen = sizeof(req->get_mac_addr);
+	req->cookie = cookie;
+	req->reply_lo = 0;
+	req->reply_hi = 0;
+
+	req->get_pcs_reg.nr_lane = lane;
+	req->get_pcs_reg.pcs_reg = reg;
+}
+
 static inline void build_version_req(struct mbx_fw_cmd_req *req,
 				     void *cookie)
 {
@@ -768,7 +844,6 @@ static inline void build_version_req(struct mbx_fw_cmd_req *req,
 	req->cookie = cookie;
 }
 
-// 7.10.11.8 Read egister admin command
 static inline void build_readreg_req(struct mbx_fw_cmd_req *req,
 				     int reg_addr, void *cookie)
 {
@@ -802,7 +877,6 @@ static inline void mbx_fw_req_set_reply(struct mbx_fw_cmd_req *req,
 	req->reply_lo = lower_32_bits(reply);
 }
 
-// 7.10.11.9 Write egister admin command
 static inline void build_writereg_req(struct mbx_fw_cmd_req *req,
 				      void *cookie, int reg_addr,
 				      int bytes, int value[4])
@@ -821,7 +895,6 @@ static inline void build_writereg_req(struct mbx_fw_cmd_req *req,
 		req->w_reg.data[i] = value[i];
 }
 
-/* 7.10.11.10 modify egister admin command */
 static inline void build_modifyreg_req(struct mbx_fw_cmd_req *req,
 				       void *cookie, int reg_addr,
 				       int value, unsigned int mask)
@@ -998,7 +1071,6 @@ static inline void build_mbx_sfp_read(struct mbx_fw_cmd_req *req,
 	req->sfp_read.nr_lane = nr_lane;
 	req->sfp_read.sfp_adr = sfp_addr;
 	req->sfp_read.reg = reg;
-	;
 	req->sfp_read.cnt = cnt;
 }
 
@@ -1122,15 +1194,14 @@ static inline void build_ddr_csl(struct mbx_fw_cmd_req *req, void *cookie,
 				 bool enable, dma_addr_t dma_phy,
 				 int bytes)
 {
+
 	req->flags = 0;
 	req->opcode = SET_DDR_CSL;
 	req->datalen = sizeof(req->ddr_csl);
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-
 	req->ddr_csl.enable = enable;
-
 	if (enable) {
 		req->ddr_csl.bytes = bytes;
 		req->ddr_csl.ddr_phy_hi = upper_32_bits(dma_phy);
@@ -1140,9 +1211,6 @@ static inline void build_ddr_csl(struct mbx_fw_cmd_req *req, void *cookie,
 	}
 }
 
-/*
- *	used for debug
- */
 static inline void build_set_phy_reg(struct mbx_fw_cmd_req *req,
 				     void *cookie,
 				     enum PHY_INTERFACE phy_inf,
@@ -1219,7 +1287,10 @@ int rnpm_mbx_phy_read(struct rnpm_hw *hw, u32 reg, u32 *val);
 int rnpm_mbx_sdram_simm(struct rnpm_hw *hw, u32 flags, u32 offset,
 			void *dma_buf, dma_addr_t dma_phy, u32 len);
 
-/* =========== errcode======= */
+int rnpm_get_lane_stat_v3(struct rnpm_hw *hw);
+int rnpm_get_temperature_v3(struct rnpm_hw *hw, int *voltage, int *temp);
+
+/* errcode */
 enum MBX_ERR {
 	MBX_OK = 0,
 	MBX_ERR_NO_PERM,

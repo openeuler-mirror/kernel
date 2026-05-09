@@ -46,7 +46,7 @@ int pcs_cnt;
 
 #define PHY_EXT_REG_FLAG 0x80000000
 static u32 is_phy_ext_reg;
-static u32 phy_reg;
+static u32 phy_reg = -1;
 static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
 			     struct bin_attribute *attr, char *buf,
 			     loff_t off, size_t count)
@@ -54,7 +54,6 @@ static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
 	struct device *dev = kobj_to_dev(kobj);
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
-	// struct rnpm_hw *hw = &adapter->hw;
 	int rbytes = count;
 
 	if (!adapter->maintain_buf)
@@ -64,14 +63,12 @@ static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
 		rbytes = adapter->maintain_buf_len - off;
 	memcpy(buf, adapter->maintain_buf + off, rbytes);
 
-	// end-of-buf
+	/* end-of-buf */
 	if ((off + rbytes) >= adapter->maintain_buf_len) {
 		kfree(adapter->maintain_buf);
 		adapter->maintain_buf = NULL;
 		adapter->maintain_buf_len = 0;
 	}
-
-	// printk("rbytes:%d\n", rbytes);
 
 	return rbytes;
 }
@@ -81,10 +78,10 @@ static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
 			      loff_t off, size_t count)
 {
 	struct device *dev = kobj_to_dev(kobj);
-	// int ret;
 	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
+	struct rnpm_pf_adapter *pf_adpt = adapter->pf_adapter;
 	struct rnpm_hw *hw = &adapter->hw;
 	struct maintain_req *req;
 	void *dma_buf = NULL;
@@ -94,32 +91,31 @@ static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
 	if (off == 0) {
 		if (count < sizeof(*req))
 			return -EINVAL;
+
 		req = (struct maintain_req *)buf;
 		if (req->magic != MAINTAIN_MAGIC)
 			return -EINVAL;
 		bytes = max_t(int, req->req_data_bytes, req->reply_bytes);
 		bytes += sizeof(*req);
 
-		// free no readed buf
+		/* free no readed buf */
 		kfree(adapter->maintain_buf);
 		adapter->maintain_buf = NULL;
 		adapter->maintain_buf_len = 0;
 
-		// alloc buf
-		//dma_buf = pci_alloc_consistent(hw->pdev, bytes, &dma_phy);
 		dma_buf = dma_alloc_coherent(&hw->pdev->dev, bytes,
 					     &dma_phy, GFP_ATOMIC);
-		if (!dma_buf)
+		if (!dma_buf) {
+			//netdev_err(netdev, "%s: dma alloc memory failed\n", __func__);
 			return -ENOMEM;
+		}
 
 		adapter->maintain_dma_buf = dma_buf;
 		adapter->maintain_dma_phy = dma_phy;
 		adapter->maintain_dma_size = bytes;
 		adapter->maintain_in_bytes =
 			req->req_data_bytes + sizeof(*req);
-
 		memcpy(dma_buf + off, buf, count);
-
 		if (count < adapter->maintain_in_bytes)
 			return count;
 	}
@@ -130,44 +126,45 @@ static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
 
 	memcpy(dma_buf + off, buf, count);
 
-	// all data got, send req
+	/* all data got, send req */
 	if ((off + count) >= adapter->maintain_in_bytes) {
 		int reply_bytes = req->reply_bytes;
-		// send req
+
+		/* PN_SN Partition */
+		if (req->arg0 == 3) {
+			pf_adpt->pn[0] = 0;
+			pf_adpt->sn[0] = 0;
+		}
+
+		/* send req */
 		err = rnpm_maintain_req(hw, req->cmd, req->arg0,
 					req->req_data_bytes,
 					req->reply_bytes, dma_phy);
 		if (err != 0)
 			goto err_quit;
-
-		// req can't be acces, a
-		// copy data for read
 		if (reply_bytes > 0) {
 			adapter->maintain_buf_len = reply_bytes;
 			adapter->maintain_buf = kmalloc(adapter->maintain_buf_len,
 							GFP_KERNEL);
 			if (!adapter->maintain_buf) {
+				//netdev_err(netdev, "%s: alloc memory failed\n", __func__);
 				err = -ENOMEM;
 				goto err_quit;
 			}
 			memcpy(adapter->maintain_buf, dma_buf,
 			       reply_bytes);
-			// buf_dump("rx", adapter->maintain_buf, reply_bytes);
 		}
 
-		if (dma_buf) {
-			//pci_free_consistent(
+		if (dma_buf)
 			dma_free_coherent(&hw->pdev->dev,
 					  adapter->maintain_dma_size,
 					  dma_buf, dma_phy);
-		}
 		adapter->maintain_dma_buf = NULL;
 	}
 
 	return count;
 err_quit:
 	if (dma_buf) {
-		//pci_free_consistent(
 		dma_free_coherent(&hw->pdev->dev,
 				  adapter->maintain_dma_size, dma_buf,
 				  dma_phy);
@@ -176,31 +173,25 @@ err_quit:
 	return err;
 }
 
-/* some centos kernel maybe error use BIN_ATTR_RW */
-//static BIN_ATTR_RW(maintain, 1 * 1024 * 1024);
 static BIN_ATTR(maintain, 0644, maintain_read,
 		maintain_write, 1 * 1024 * 1024);
 
 static ssize_t active_vid_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
-	u16 current_vid = 0;
-	u16 vid = 0;
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
-	u8 vfnum =
-		RNPM_MAX_VF_CNT - 1; //use last-vf's table entry. the las
+	u16 current_vid = 0;
+	u16 vid = 0;
+	int ret = 0;
+	u8 vfnum = RNPM_MAX_VF_CNT - 1;
 
-	if ((adapter->flags & RNPM_FLAG_SRIOV_ENABLED)) {
-		current_vid = rd32(hw,
-				   RNPM_DMA_PORT_VEB_VID_TBL(adapter->port, vfnum));
-	}
-	for_each_set_bit(vid, adapter->active_vlans, VLAN_N_VID) {
+	if ((adapter->flags & RNPM_FLAG_SRIOV_ENABLED))
+		current_vid = rd32(hw, RNPM_DMA_PORT_VEB_VID_TBL(adapter->port, vfnum));
+	for_each_set_bit(vid, adapter->active_vlans, VLAN_N_VID)
 		ret += sprintf(buf + ret, "%u%s ", vid,
 			       (current_vid == vid ? "*" : ""));
-	}
 	ret += sprintf(buf + ret, "\n");
 	return ret;
 }
@@ -214,14 +205,13 @@ static ssize_t active_vid_store(struct device *dev,
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw __maybe_unused *hw = &adapter->hw;
-	u8 __maybe_unused vfnum =
-		RNPM_MAX_VF_CNT - 1; // use last-vf's table entry. the las
+	u8 __maybe_unused vfnum = RNPM_MAX_VF_CNT - 1;
 	int __maybe_unused port = 0;
 
 	if (!(adapter->flags & RNPM_FLAG_SRIOV_ENABLED))
 		return -EIO;
 
-	if (kstrtou16(buf, 0, &vid) != 0)
+	if (kstrtou16(buf, 0, &vid))
 		return -EINVAL;
 	if (vid < 4096 && test_bit(vid, adapter->active_vlans)) {
 		if (rd32(hw, RNPM_DMA_VERSION) >= 0x20201231) {
@@ -250,12 +240,8 @@ static ssize_t pf_reset_store(struct device *dev,
 	struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
 
 	set_bit(RNPM_PF_RESET, &pf_adapter->flags);
-
 	return count;
 }
-
-static DEVICE_ATTR_RW(active_vid);
-static DEVICE_ATTR_WO(pf_reset);
 
 static inline int pn_sn_dlen(char *v, int v_len)
 {
@@ -272,13 +258,19 @@ static inline int pn_sn_dlen(char *v, int v_len)
 
 static int rnpm_mbx_get_pn_sn(struct rnpm_hw *hw, char pn[33], char sn[33])
 {
+	struct rnpm_adapter *adapter = (struct rnpm_adapter *)hw->back;
 	struct maintain_req *req;
-	void *dma_buf = NULL;
 	dma_addr_t dma_phy;
 	struct ucfg_mac_sn *cfg;
-	int sz;
-
+	struct rnpm_pf_adapter *pf_adpt = adapter->pf_adapter;
+	void *dma_buf = NULL;
 	int err = 0, bytes = sizeof(*req) + sizeof(struct ucfg_mac_sn);
+
+	if (isprint(pf_adpt->pn[0]) && isprint(pf_adpt->sn[0])) {
+		memcpy(pn, pf_adpt->pn, 33);
+		memcpy(sn, pf_adpt->sn, 33);
+		return 0;
+	}
 
 	memset(pn, 0, 33);
 	memset(sn, 0, 33);
@@ -292,8 +284,8 @@ static int rnpm_mbx_get_pn_sn(struct rnpm_hw *hw, char pn[33], char sn[33])
 	memset(dma_buf, 0, bytes);
 	cfg = (struct ucfg_mac_sn *)(req + 1);
 	req->magic = MAINTAIN_MAGIC;
-	req->cmd = 0; // READ
-	req->arg0 = 3; // PARTITION 3
+	req->cmd = 0; /* READ */
+	req->arg0 = 3; /* PARTITION 3 */
 	req->req_data_bytes = 0;
 	req->reply_bytes = bytes - sizeof(*req);
 
@@ -303,23 +295,26 @@ static int rnpm_mbx_get_pn_sn(struct rnpm_hw *hw, char pn[33], char sn[33])
 	if (err != 0)
 		goto err_quit;
 	if (cfg->magic == MAC_SN_MAGIC) {
-		sz = pn_sn_dlen(cfg->pn, 32);
+		int sz = pn_sn_dlen(cfg->pn, 32);
+
 		if (sz) {
 			memcpy(pn, cfg->pn, sz);
+			memcpy(pf_adpt->pn, cfg->pn, sz);
+			pf_adpt->pn[sz] = 0;
 			pn[sz] = 0;
 		}
 		sz = pn_sn_dlen(cfg->sn, 32);
 		if (sz) {
 			memcpy(sn, cfg->sn, sz);
+			memcpy(pf_adpt->sn, cfg->sn, sz);
+			pf_adpt->sn[sz] = 0;
 			sn[sz] = 0;
 		}
 	}
 
 err_quit:
-	if (dma_buf) {
-		// pci_free_consistent(
+	if (dma_buf)
 		dma_free_coherent(&hw->pdev->dev, bytes, dma_buf, dma_phy);
-	}
 
 	return 0;
 }
@@ -336,18 +331,17 @@ static ssize_t own_vpd_show(struct device *dev,
 
 	rnpm_mbx_get_pn_sn(hw, pn, sn);
 
-	if ((adapter->pdev->device & 0xff) == 0x20) {
+	if ((adapter->pdev->device & 0xff) == 0x20)
 		prod_name =
 			"Ethernet Controller N10 Series for 10GbE (Quad-port)";
-	} else if ((adapter->pdev->device & 0xff) == 0x21) {
+	else if ((adapter->pdev->device & 0xff) == 0x21)
 		prod_name =
 			"Ethernet Controller N400 Series for 1GbE (Quad-port)";
-	} else if ((adapter->pdev->device & 0xff) == 0x60) {
+	else if ((adapter->pdev->device & 0xff) == 0x60)
 		prod_name =
 			"Ethernet Controller N10 Series for 10GbE (Oct-port)";
-	} else {
+	else
 		prod_name = "Ethernet Controller N10 Series for 10GbE";
-	}
 
 	ret += sprintf(buf + ret, "Product Name: %s\n", prod_name);
 
@@ -356,7 +350,6 @@ static ssize_t own_vpd_show(struct device *dev,
 
 	return ret;
 }
-static DEVICE_ATTR_RO(own_vpd);
 
 static ssize_t version_info_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
@@ -375,46 +368,47 @@ static ssize_t version_info_show(struct device *dev,
 		       ((char *)&hw->fw_version)[1],
 		       ((char *)&hw->fw_version)[0], hw->fw_uid);
 
+	ret += sprintf(buf + ret, "ext_ablity: 0x%08x\n", hw->ext_ablity);
+
 	return ret;
 }
-static DEVICE_ATTR_RO(version_info);
-
-//==========
 
 /* show logical and physical ring num correspondence */
 static ssize_t ring_num_show(struct device *dev,
-			     struct device_attribute *attr,
-			     char *buf)
+			     struct device_attribute *attr, char *buf)
 {
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_ring *ring;
 	int ret = 0, i;
 
+	if (test_bit(__RNPM_DOWN, &adapter->state)) {
+		ret += sprintf(buf + ret,
+			       "error: port should be up first\n");
+		return ret;
+	}
+
 	ret += sprintf(buf + ret,
-		       "show %s logical <-> physical ring num (Decimal) correspondence:\n",
-		       netdev->name);
-	for (i = 0; i < netdev->real_num_tx_queues; i++) {
+		"show %s logical <-> physical ring num (Decimal) correspondence:\n",
+		netdev->name);
+	for (i = 0; i < adapter->num_tx_queues; i++) {
 		ring = adapter->tx_ring[i];
 		ret += sprintf(buf + ret, "%03d           %03d\n", i,
 			       ring->rnpm_queue_idx);
 	}
 	return ret;
 }
-static DEVICE_ATTR_RO(ring_num);
 
 static ssize_t port_idx_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
-	// struct rnpm_hw *hw = &adapter->hw;
+	int ret = 0;
 
 	ret += sprintf(buf, "%d\n", adapter->portid_of_card);
 	return ret;
 }
-static DEVICE_ATTR_RO(port_idx);
 
 static ssize_t nr_lane_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
@@ -422,12 +416,10 @@ static ssize_t nr_lane_show(struct device *dev,
 	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
-	// struct rnpm_hw *hw = &adapter->hw;
 
 	ret += sprintf(buf, "%d\n", adapter->lane);
 	return ret;
 }
-static DEVICE_ATTR_RO(nr_lane);
 
 static ssize_t debug_linkstat_show(struct device *dev,
 				   struct device_attribute *attr,
@@ -444,7 +436,6 @@ static ssize_t debug_linkstat_show(struct device *dev,
 		       netif_carrier_ok(netdev));
 	return ret;
 }
-static DEVICE_ATTR_RO(debug_linkstat);
 
 static ssize_t debug_aptstat_show(struct device *dev,
 				  struct device_attribute *attr, char *buf)
@@ -454,8 +445,7 @@ static ssize_t debug_aptstat_show(struct device *dev,
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 
-	ret += sprintf(
-		buf,
+	ret += sprintf(buf,
 		"stat:%d %d dumy:0x%x up-flag:%d carry:%d\n"
 		"apt:flags:0x%x flags2:0x%x state:0x%lx timercnt:%u service cnt:%u\n"
 		"pf_apt:flags:0x%lx state:0x%lx timercnt:%u\n",
@@ -468,7 +458,6 @@ static ssize_t debug_aptstat_show(struct device *dev,
 		adapter->pf_adapter->timer_count);
 	return ret;
 }
-static DEVICE_ATTR_RO(debug_aptstat);
 
 static ssize_t sfp_show(struct device *dev, struct device_attribute *attr,
 			char *buf)
@@ -482,56 +471,53 @@ static ssize_t sfp_show(struct device *dev, struct device_attribute *attr,
 		ret += sprintf(buf, " IO Error\n");
 	} else {
 		ret += sprintf(buf,
-			       "mod-abs:%d\ntx-fault:%d\ntx-dis:%d\nrx-los:%d\n",
-			       adapter->sfp.mod_abs, adapter->sfp.fault,
-			       adapter->sfp.tx_dis, adapter->sfp.los);
+			"mod-abs:%d\ntx-fault:%d\ntx-dis:%d\nrx-los:%d\n",
+			adapter->sfp.mod_abs, adapter->sfp.fault,
+			adapter->sfp.tx_dis, adapter->sfp.los);
 	}
 
 	return ret;
 }
-static DEVICE_ATTR_RO(sfp);
 
 static ssize_t pci_store(struct device *dev, struct device_attribute *attr,
 			 const char *buf, size_t count)
 {
-	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 	int gen = 3, lanes = 8;
+	int err = -EINVAL;
 
 	if (count > 30)
 		return -EINVAL;
 
 	if (sscanf(buf, "gen%dx%d", &gen, &lanes) != 2) {
-		netdev_err(netdev, "Error: invalid input. example: gen3x8\n");
+		netdev_err(netdev,
+			   "Error: invalid input. example: gen3x8\n");
 		return -EINVAL;
 	}
 	if (gen > 3 || lanes > 8)
 		return -EINVAL;
 
 	err = rnpm_set_lane_fun(hw, LANE_FUN_PCI_LANE, gen, lanes, 0, 0);
-
 	return err ? err : count;
 }
 
 static ssize_t pci_show(struct device *dev, struct device_attribute *attr,
 			char *buf)
 {
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
+	int ret = 0;
 
 	if (rnpm_mbx_get_lane_stat(hw) != 0)
 		ret += sprintf(buf, " IO Error\n");
 	else
 		ret += sprintf(buf, "gen%dx%d\n", hw->pci_gen,
 			       hw->pci_lanes);
-
 	return ret;
 }
-static DEVICE_ATTR_RW(pci);
 
 static ssize_t lane_intr_en_store(struct device *dev,
 				  struct device_attribute *attr,
@@ -545,7 +531,6 @@ static ssize_t lane_intr_en_store(struct device *dev,
 		return -EINVAL;
 	adapter->lane_intr_en = en;
 	rnpm_mbx_lane_link_changed_event_enable(&adapter->hw, !!en);
-
 	return count;
 }
 
@@ -554,51 +539,44 @@ static ssize_t lane_intr_en_show(struct device *dev,
 {
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
-
 	int ret = 0;
 
 	ret = sprintf(buf, "lane intr stat:%d\n", adapter->lane_intr_en);
 	return ret;
-
-	return ret;
 }
-static DEVICE_ATTR_RW(lane_intr_en);
 
 static ssize_t prbs_store(struct device *dev,
 			  struct device_attribute *attr, const char *buf,
 			  size_t count)
 {
-	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 	long prbs = 0;
+	int err = -EINVAL;
 
 	if (kstrtol(buf, 10, &prbs))
 		return -EINVAL;
 
 	err = rnpm_set_lane_fun(hw, LANE_FUN_PRBS, prbs, 0, 0, 0);
-
 	return err ? err : count;
 }
-static DEVICE_ATTR_WO(prbs);
 
 static ssize_t sfp_tx_disable_store(struct device *dev,
 				    struct device_attribute *attr,
 				    const char *buf, size_t count)
 {
-	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 	long enable = 0;
+	int err = -EINVAL;
 
 	if (kstrtol(buf, 10, &enable))
 		return -EINVAL;
 
 	err = rnpm_set_lane_fun(hw, LANE_FUN_SFP_TX_DISABLE, !!enable, 0,
 				0, 0);
-
 	return err ? err : count;
 }
 
@@ -606,104 +584,104 @@ static ssize_t sfp_tx_disable_show(struct device *dev,
 				   struct device_attribute *attr,
 				   char *buf)
 {
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
+	int ret = 0;
 
 	if (rnpm_mbx_get_lane_stat(hw) != 0)
 		ret += sprintf(buf, " IO Error\n");
 	else
 		ret += sprintf(buf, "%d\n", adapter->sfp.tx_dis);
-
 	return ret;
 }
-static DEVICE_ATTR_RW(sfp_tx_disable);
 
 static ssize_t link_traing_store(struct device *dev,
 				 struct device_attribute *attr,
 				 const char *buf, size_t count)
 {
-	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 	long enable = 0;
+	int err = -EINVAL;
 
 	if (kstrtol(buf, 10, &enable))
 		return -EINVAL;
 
 	err = rnpm_set_lane_fun(hw, LANE_FUN_LINK_TRAING, !!enable, 0, 0,
 				0);
-
 	return err ? err : count;
 }
 
 static ssize_t link_traing_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
+	int ret = 0;
 
 	if (rnpm_mbx_get_lane_stat(hw) != 0)
 		ret += sprintf(buf, " IO Error\n");
 	else
 		ret += sprintf(buf, "%d\n", adapter->link_traing);
-
 	return ret;
 }
-static DEVICE_ATTR_RW(link_traing);
 
 static ssize_t fec_store(struct device *dev, struct device_attribute *attr,
 			 const char *buf, size_t count)
 {
-	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 	long enable = 0;
+	int err = -EINVAL;
 
 	if (kstrtol(buf, 10, &enable))
 		return -EINVAL;
 
 	err = rnpm_set_lane_fun(hw, LANE_FUN_FEC, !!enable, 0, 0, 0);
-
 	return err ? err : count;
 }
 
 static ssize_t fec_show(struct device *dev, struct device_attribute *attr,
 			char *buf)
 {
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
+	int ret = 0;
 
 	if (rnpm_mbx_get_lane_stat(hw) != 0)
 		ret += sprintf(buf, " IO Error\n");
 	else
 		ret += sprintf(buf, "%d\n", adapter->fec);
-
 	return ret;
 }
-static DEVICE_ATTR_RW(fec);
 
 static ssize_t autoneg_store(struct device *dev,
 			     struct device_attribute *attr,
 			     const char *buf, size_t count)
 {
-	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 	long enable = 0;
+	int err = -EINVAL;
 
 	if (kstrtol(buf, 10, &enable))
 		return -EINVAL;
 
-	err = rnpm_set_lane_fun(hw, LANE_FUN_AN, !!enable, 0, 0, 0);
+	if (hw->speed == 1000 &&
+	    hw->phy.media_type == rnpm_media_type_fiber) {
+		err = rnpm_hw_set_clause37_autoneg_enable(hw, !!enable);
+	} else {
+		err = rnpm_set_lane_fun(hw, LANE_FUN_AN, !!enable, 0, 0,
+					0);
+	}
+	if (err == 0)
+		adapter->an = !!enable;
 
 	return err ? err : count;
 }
@@ -711,30 +689,26 @@ static ssize_t autoneg_store(struct device *dev,
 static ssize_t autoneg_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
 {
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
+	int ret = 0;
 
 	if (rnpm_mbx_get_lane_stat(hw) != 0)
 		ret += sprintf(buf, " IO Error\n");
 	else
 		ret += sprintf(buf, "%d\n", adapter->an);
-
 	return ret;
 }
-static DEVICE_ATTR_RW(autoneg);
 
-static ssize_t si_store(struct device *dev,
-			struct device_attribute *attr,
+static ssize_t si_store(struct device *dev, struct device_attribute *attr,
 			const char *buf, size_t count)
 {
-	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
 	int si_main = -1, si_pre = -1, si_post = -1, si_txboost = -1;
-	int cnt;
+	int cnt, err = -EINVAL;
 
 	if (count > 100) {
 		netdev_err(netdev, "Error: Input size >100: too large\n");
@@ -743,41 +717,42 @@ static ssize_t si_store(struct device *dev,
 	cnt = sscanf(buf, "%u %u %u %u", &si_main, &si_pre, &si_post,
 		     &si_txboost);
 	if (cnt != 4) {
-		netdev_err(netdev, "Error: Invalid Input: <main> <pre> <post> <tx_boost>\n");
+		netdev_err(netdev,
+			   "Error: Invalid Input: <main> <pre> <post> <tx_boost>\n");
 		return -EINVAL;
 	}
 	if (si_main > 63 || si_pre > 63 || si_post > 63) {
-		netdev_err(netdev, "Error: Invalid value. should in 0~63\n");
+		netdev_err(netdev,
+			   "Error: Invalid value. should in 0~63\n");
 		return -EINVAL;
 	}
 	if (si_txboost > 16) {
-		netdev_err(netdev, "Error: Invalid txboost. should in 0~15\n");
+		netdev_err(netdev,
+			   "Error: Invalid txboost. should in 0~15\n");
 		return -EINVAL;
 	}
+
 	err = rnpm_set_lane_fun(hw, LANE_FUN_SI, si_main, si_pre, si_post,
 				si_txboost);
-
 	return err ? err : count;
 }
 
-static ssize_t si_show(struct device *dev,
-		       struct device_attribute *attr, char *buf)
+static ssize_t si_show(struct device *dev, struct device_attribute *attr,
+		       char *buf)
 {
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
+	int ret = 0;
 
-	if (rnpm_mbx_get_lane_stat(hw) != 0)
+	if (rnpm_mbx_get_lane_stat(hw))
 		ret += sprintf(buf, " IO Error\n");
 	else
 		ret += sprintf(buf, "main:%u pre:%u post:%u tx_boost:%u\n",
 			       adapter->si.main, adapter->si.pre,
 			       adapter->si.post, adapter->si.tx_boost);
-
 	return ret;
 }
-static DEVICE_ATTR_RW(si);
 
 static ssize_t temperature_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
@@ -788,20 +763,18 @@ static ssize_t temperature_show(struct device *dev,
 	int ret = 0, temp = 0, voltage = 0;
 
 	temp = rnpm_mbx_get_temp(hw, &voltage);
-
 	ret += sprintf(buf, "temp:%d oC  volatage:%d mV\n", temp, voltage);
 	return ret;
 }
-static DEVICE_ATTR_RO(temperature);
 
 static ssize_t tx_counter_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
-	u32 val = 0;
-	int i, ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
+	int i, ret = 0;
+	u32 val = 0;
 
 	ret += sprintf(buf + ret, "tx counters\n");
 	for (i = 0; i < 4; i++) {
@@ -939,90 +912,78 @@ static ssize_t tx_counter_show(struct device *dev,
 	return ret;
 }
 
-static DEVICE_ATTR_RO(tx_counter);
-
 static ssize_t rx_counter_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
-	u32 val = 0, port = 0;
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
+	u32 val = 0, port = 0;
+	int ret = 0;
 
+	port = hw->nr_lane;
 	ret += sprintf(buf + ret, "rx counters\n");
-	for (port = 0; port < 4; port++) {
-		ret += sprintf(buf + ret, "emac_rx_trans (port:%d):\n",
-			       port);
+	ret += sprintf(buf + ret, "emac_rx_trans (lane:%d):\n", port);
 
-		val = rd32(hw, RNPM_XLMAC + 0x900 + port * 0x10000);
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "mac-pkts:",
-			       RNPM_XLMAC + 0x900 + port * 0x10000, val);
+	val = rd32(hw, RNPM_XLMAC + 0x900 + port * 0x10000);
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "mac-pkts:", RNPM_XLMAC + 0x900 + port * 0x10000,
+		       val);
 
-		val = rd32(hw, RNPM_RXTRANS_RX_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "pkts:", RNPM_RXTRANS_RX_PKTS(port), val);
+	val = rd32(hw, RNPM_RXTRANS_RX_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "pkts:", RNPM_RXTRANS_RX_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_DROP_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "drop:", RNPM_RXTRANS_DROP_PKTS(port), val);
+	val = rd32(hw, RNPM_RXTRANS_DROP_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "drop:", RNPM_RXTRANS_DROP_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_WDT_ERR_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "wdt_err:", RNPM_RXTRANS_WDT_ERR_PKTS(port),
-			       val);
+	val = rd32(hw, RNPM_RXTRANS_WDT_ERR_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "wdt_err:", RNPM_RXTRANS_WDT_ERR_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_CODE_ERR_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "code_err:",
-			       RNPM_RXTRANS_CODE_ERR_PKTS(port), val);
+	val = rd32(hw, RNPM_RXTRANS_CODE_ERR_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "code_err:", RNPM_RXTRANS_CODE_ERR_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_CRC_ERR_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "crc_err:", RNPM_RXTRANS_CRC_ERR_PKTS(port),
-			       val);
+	val = rd32(hw, RNPM_RXTRANS_CRC_ERR_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "crc_err:", RNPM_RXTRANS_CRC_ERR_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_SLEN_ERR_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "slen_err:",
-			       RNPM_RXTRANS_SLEN_ERR_PKTS(port), val);
+	val = rd32(hw, RNPM_RXTRANS_SLEN_ERR_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "slen_err:", RNPM_RXTRANS_SLEN_ERR_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_GLEN_ERR_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "glen_err:",
-			       RNPM_RXTRANS_GLEN_ERR_PKTS(port), val);
+	val = rd32(hw, RNPM_RXTRANS_GLEN_ERR_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "glen_err:", RNPM_RXTRANS_GLEN_ERR_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_IPH_ERR_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "iph_err:", RNPM_RXTRANS_IPH_ERR_PKTS(port),
-			       val);
+	val = rd32(hw, RNPM_RXTRANS_IPH_ERR_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "iph_err:", RNPM_RXTRANS_IPH_ERR_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_CSUM_ERR_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "csum_err:",
-			       RNPM_RXTRANS_CSUM_ERR_PKTS(port), val);
+	val = rd32(hw, RNPM_RXTRANS_CSUM_ERR_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "csum_err:", RNPM_RXTRANS_CSUM_ERR_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_LEN_ERR_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "len_err:", RNPM_RXTRANS_LEN_ERR_PKTS(port),
-			       val);
+	val = rd32(hw, RNPM_RXTRANS_LEN_ERR_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "len_err:", RNPM_RXTRANS_LEN_ERR_PKTS(port), val);
 
-		val = rd32(hw, RNPM_RXTRANS_CUT_ERR_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "trans_cut_err:",
-			       RNPM_RXTRANS_CUT_ERR_PKTS(port), val);
+	val = rd32(hw, RNPM_RXTRANS_CUT_ERR_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "trans_cut_err:", RNPM_RXTRANS_CUT_ERR_PKTS(port),
+		       val);
 
-		val = rd32(hw, RNPM_RXTRANS_EXCEPT_BYTES(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       "expt_byte_err:",
-			       RNPM_RXTRANS_EXCEPT_BYTES(port), val);
+	val = rd32(hw, RNPM_RXTRANS_EXCEPT_BYTES(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       "expt_byte_err:", RNPM_RXTRANS_EXCEPT_BYTES(port),
+		       val);
 
-		val = rd32(hw, RNPM_RXTRANS_G1600_BYTES_PKTS(port));
-		ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-			       ">1600Byte:",
-			       RNPM_RXTRANS_G1600_BYTES_PKTS(port), val);
-	}
+	val = rd32(hw, RNPM_RXTRANS_G1600_BYTES_PKTS(port));
+	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
+		       ">1600Byte:", RNPM_RXTRANS_G1600_BYTES_PKTS(port),
+		       val);
 
 	ret += sprintf(buf + ret, "gather:\n");
 	val = rd32(hw, RNPM_ETH_TOTAL_GAT_RX_PKT_NUM);
@@ -1031,9 +992,7 @@ static ssize_t rx_counter_show(struct device *dev,
 		       val);
 
 	port = 0;
-	val = rd32(hw, RNPM_ETH_RX_PKT_NUM(port));
-	ret += sprintf(buf + ret, "\t %16s 0x%08x: %u\n",
-		       "to_nxt_mdodule:", RNPM_ETH_RX_PKT_NUM(port), val);
+	ret += sprintf(buf + ret, "to_nxt_module:\n");
 
 	for (port = 0; port < 4; port++) {
 		u8 pname[16] = { 0 };
@@ -1170,30 +1129,27 @@ static ssize_t rx_counter_show(struct device *dev,
 	ret += sprintf(buf + ret, "\npolicy-drop-reason:\n");
 	val = rd32(hw, RNPM_ETH_RX_DEBUG(4));
 	ret += sprintf(buf + ret, "\t %30s 0x%08x: %d\n",
-		       "host_l2_match_drop:",
-		       RNPM_ETH_RX_DEBUG(4), val);
+		       "host_l2_match_drop:", RNPM_ETH_RX_DEBUG(4), val);
 	val = rd32(hw, RNPM_ETH_RX_DEBUG(5));
 	ret += sprintf(buf + ret, "\t %30s 0x%08x: %d\n",
-		       "redir_input_match_drop:",
-		       RNPM_ETH_RX_DEBUG(5), val);
+		       "redir_input_match_drop:", RNPM_ETH_RX_DEBUG(5),
+		       val);
 	val = rd32(hw, RNPM_ETH_RX_DEBUG(6));
 	ret += sprintf(buf + ret, "\t %30s 0x%08x: %d\n",
-		       "redir_etypt_match_drop:",
-		       RNPM_ETH_RX_DEBUG(6), val);
+		       "redir_etypt_match_drop:", RNPM_ETH_RX_DEBUG(6),
+		       val);
 	val = rd32(hw, RNPM_ETH_RX_DEBUG(7));
 	ret += sprintf(buf + ret, "\t %30s 0x%08x: %d\n",
-		       "redir_tcp_sync_match_drop:",
-		       RNPM_ETH_RX_DEBUG(7), val);
+		       "redir_tcp_sync_match_drop:", RNPM_ETH_RX_DEBUG(7),
+		       val);
 	val = rd32(hw, RNPM_ETH_RX_DEBUG(8));
 	ret += sprintf(buf + ret, "\t %30s 0x%08x: %d\n",
-		       "redir_tuple5_match_drop:",
-		       RNPM_ETH_RX_DEBUG(8), val);
+		       "redir_tuple5_match_drop:", RNPM_ETH_RX_DEBUG(8),
+		       val);
 	val = rd32(hw, RNPM_ETH_RX_DEBUG(9));
 	ret += sprintf(buf + ret, "\t %30s 0x%08x: %d\n",
-		       "recdir_tcam_match_drop:",
-		       RNPM_ETH_RX_DEBUG(9), val);
-
-	ret += sprintf(buf + ret, "dma-2-host:\n");
+		       "recdir_tcam_match_drop:", RNPM_ETH_RX_DEBUG(9),
+		       val);
 
 	ret += sprintf(buf + ret, "dma-2-host:\n");
 
@@ -1230,10 +1186,13 @@ static ssize_t rx_counter_show(struct device *dev,
 			       val);
 	}
 
+	if (ret > RNPM_RXBUFFER_4K)
+		netdev_warn(netdev,
+			    "ret = %d, buffer size may be exceed 4K\n",
+			    ret);
+
 	return ret;
 }
-
-static DEVICE_ATTR_RO(rx_counter);
 
 static ssize_t bar4_reg_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
@@ -1256,7 +1215,6 @@ static ssize_t bar4_reg_store(struct device *dev,
 	if (kstrtou32(buf, 0, &bar4_reg_addr))
 		return -EINVAL;
 	bar4_reg_val = rd32(hw, bar4_reg_addr);
-
 	return count;
 }
 
@@ -1283,17 +1241,13 @@ static ssize_t root_slot_info_show(struct device *dev,
 	int ret = 0;
 	struct pci_dev *root_pdev = pcie_find_root_port_old(adapter->pdev);
 
-	if (root_pdev) {
+	if (root_pdev)
 		ret += sprintf(buf + ret, "%02x:%02x.%x\n",
 			       root_pdev->bus->number,
 			       PCI_SLOT(root_pdev->devfn),
 			       PCI_FUNC(root_pdev->devfn));
-	}
 	return ret;
 }
-
-static DEVICE_ATTR_RW(bar4_reg);
-static DEVICE_ATTR_RO(root_slot_info);
 
 static ssize_t phy_statistics_show(struct device *dev,
 				   struct device_attribute *attr,
@@ -1306,6 +1260,9 @@ static ssize_t phy_statistics_show(struct device *dev,
 	struct phy_statistics ps;
 
 	memset(&ps, 0, sizeof(ps));
+
+	if (!hw->is_sgmii)
+		return 0;
 
 	if (rnpm_mbx_get_phy_statistics(hw, (u8 *)&ps) != 0)
 		return 0;
@@ -1341,7 +1298,6 @@ static ssize_t phy_statistics_show(struct device *dev,
 
 	return ret;
 }
-static DEVICE_ATTR_RO(phy_statistics);
 
 static ssize_t port_stat2_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
@@ -1362,18 +1318,15 @@ static ssize_t port_stat2_show(struct device *dev,
 
 	return ret;
 }
-static DEVICE_ATTR_RO(port_stat2);
 
-static ssize_t pcs_reg_store(struct device *dev, struct device_attribute *attr,
+static ssize_t pcs_reg_store(struct device *dev,
+			     struct device_attribute *attr,
 			     const char *buf, size_t count)
 {
-	// eg: echo "phy reg val" > pcs_reg
-	// sscanf
 	u32 pcs_phy_regs[] = {
 		0x00040000, 0x00041000, 0x00042000, 0x00043000,
 		0x00040000, 0x00041000, 0x00042000, 0x00043000,
 	};
-
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
@@ -1387,17 +1340,16 @@ static ssize_t pcs_reg_store(struct device *dev, struct device_attribute *attr,
 	pcs_cnt = sscanf(buf, "%u %x %x", &pcs_phy_num, &bar4_reg_addr,
 			 &bar4_reg_val);
 
-	// printk("phy=%d reg=%x val=%x\n", pcs_phy_num, bar4_reg_addr,
-	// bar4_reg_val);
-
 	if (pcs_cnt != 2 && pcs_cnt != 3) {
 		netdev_err(netdev,
-			   "Error: Invalid Input: read phy x reg 0xXXX or write phy x reg 0xXXX val 0xXXX\n");
+			   "Invalid Input: read phy x reg 0xXXX or write phy x reg\n");
+		netdev_err(netdev, " 0xXXX val 0xXXX\n");
 		return -EINVAL;
 	}
 
 	if (pcs_phy_num > 8) {
-		netdev_err(netdev, "Error: Invalid value. should in 0~7\n");
+		netdev_err(netdev,
+			   "Error: Invalid value. should in 0~7\n");
 		return -EINVAL;
 	}
 
@@ -1417,15 +1369,16 @@ static ssize_t pcs_reg_store(struct device *dev, struct device_attribute *attr,
 		wr32(hw, pcs_base_regs + reg_lo, bar4_reg_val);
 		break;
 	default:
-		netdev_err(netdev, "Error: Invalid value. pcs_cnt=%d\n", pcs_cnt);
+		netdev_err(netdev, "Error: Invalid value. pcs_cnt=%d\n",
+			   pcs_cnt);
 		break;
 	}
 
 	return count;
 }
 
-static ssize_t pcs_reg_show(struct device *dev, struct device_attribute *attr,
-			    char *buf)
+static ssize_t pcs_reg_show(struct device *dev,
+			    struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
 
@@ -1444,7 +1397,6 @@ static ssize_t pcs_reg_show(struct device *dev, struct device_attribute *attr,
 
 	return ret;
 }
-static DEVICE_ATTR_RW(pcs_reg);
 
 static ssize_t phy_reg_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
@@ -1455,14 +1407,18 @@ static ssize_t phy_reg_show(struct device *dev,
 	int val = 0;
 	int err = -EINVAL;
 
+	if (phy_reg == -1)
+		return 0;
+
 	if (hw) {
 		if (is_phy_ext_reg)
 			err = rnpm_mbx_phy_read(hw,
-						phy_reg | PHY_EXT_REG_FLAG,
-						&val);
+						phy_reg | PHY_EXT_REG_FLAG, &val);
 		else
 			err = rnpm_mbx_phy_read(hw, phy_reg, &val);
 	}
+
+	phy_reg = -1;
 
 	if (err)
 		return 0;
@@ -1476,13 +1432,12 @@ static ssize_t phy_reg_store(struct device *dev,
 			     struct device_attribute *attr,
 			     const char *buf, size_t count)
 {
-	int i = 0, argc = 0, err = -EINVAL;
-	char argv[3][16];
-	unsigned long val[3] = { 0 };
-
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
+	int i = 0, argc = 0, err = -EINVAL;
+	char argv[3][16];
+	unsigned long val[3] = { 0 };
 
 	memset(argv, 0, sizeof(argv));
 	argc = sscanf(buf, "%15s %15s %15s", argv[0], argv[1], argv[2]);
@@ -1491,7 +1446,6 @@ static ssize_t phy_reg_store(struct device *dev,
 		return -EINVAL;
 
 	is_phy_ext_reg = 0;
-
 	if (strcmp(argv[0], "ext") == 0) {
 		is_phy_ext_reg = 1;
 	} else {
@@ -1529,8 +1483,7 @@ static ssize_t phy_reg_store(struct device *dev,
 			/* write ext phy reg */
 			phy_reg = val[1];
 			err = rnpm_mbx_phy_write(hw,
-						 phy_reg | PHY_EXT_REG_FLAG,
-						 val[2]);
+						 phy_reg | PHY_EXT_REG_FLAG, val[2]);
 		} else {
 			return -EINVAL;
 		}
@@ -1538,30 +1491,27 @@ static ssize_t phy_reg_store(struct device *dev,
 
 	return err ? err : count;
 }
-static DEVICE_ATTR_RW(phy_reg);
 
 static ssize_t pma_rx2tx_loopback_store(struct device *dev,
 					struct device_attribute *attr,
-					const char *buf,
-					size_t count)
+					const char *buf, size_t count)
 {
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
-	int v;
-	unsigned long en_loopback;
+	int v, en_loopback;
 	int nr_lane = adapter->lane % 4;
 
-	if (kstrtoul(buf, 0, &en_loopback))
+	if (kstrtouint(buf, 0, &en_loopback))
 		return -EINVAL;
 
-	netdev_info(netdev, "%s: nr_lane:%d lp:%lu\n", __func__,
-		    nr_lane, en_loopback);
+	netdev_info(netdev, "nr_lane:%d lp:%d\n", nr_lane,
+		    en_loopback);
 
 	if (!hw->pcs.ops.write || !hw->pcs.ops.read)
 		return -EOPNOTSUPP;
 
-	// pma-rx2tx_loopback
+	/* pma-rx2tx_loopback */
 	v = hw->pcs.ops.read(hw, nr_lane, 0x18090);
 	if (en_loopback)
 		v |= 0xf << 4;
@@ -1569,26 +1519,24 @@ static ssize_t pma_rx2tx_loopback_store(struct device *dev,
 		v &= ~(0xf << 4);
 	hw->pcs.ops.write(hw, nr_lane, 0x18090, v);
 
-	// mac tx-disable
+	/* mac tx-disable */
 	v = rd32(hw, RNPM_MAC_TX_CFG(nr_lane));
 	if (en_loopback)
-		v &= ~(BIT(0)); // disable mac-tx
+		v &= ~(BIT(0)); /* disable mac-tx */
 	else
-		v |= (BIT(0)); // enable mac-tx
+		v |= (BIT(0)); /* enable mac-tx */
 	wr32(hw, RNPM_MAC_TX_CFG(nr_lane), v);
 
-	// mac rx-disable
+	/* mac rx-disable */
 	v = rd32(hw, RNPM_MAC_RX_CFG(nr_lane));
 	if (en_loopback)
-		v &= ~(BIT(0)); // disable mac-rx
+		v &= ~(BIT(0)); /* disable mac-rx */
 	else
-		v |= (BIT(0)); // enable mac-rx
-
+		v |= (BIT(0)); /*  enable mac-rx */
 	wr32(hw, RNPM_MAC_RX_CFG(nr_lane), v);
 
 	return count;
 }
-static DEVICE_ATTR_WO(pma_rx2tx_loopback);
 
 static ssize_t pcs_rx2tx_loopback_store(struct device *dev,
 					struct device_attribute *attr,
@@ -1597,83 +1545,108 @@ static ssize_t pcs_rx2tx_loopback_store(struct device *dev,
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpm_adapter *adapter = netdev_priv(netdev);
 	struct rnpm_hw *hw = &adapter->hw;
-	int v;
-	unsigned long en_loopback;
+	int v, en_loopback;
 	int nr_lane = adapter->lane % 4;
 
-	if (kstrtoul(buf, 0, &en_loopback))
+	if (kstrtouint(buf, 0, &en_loopback))
 		return -EINVAL;
-
-	netdev_info(netdev, "%s: nr_lane:%d lp:%lu\n", __func__,
-		    nr_lane, en_loopback);
-
+	netdev_info(netdev, "nr_lane:%d lp:%d\n", nr_lane,
+		    en_loopback);
 	if (!hw->pcs.ops.write || !hw->pcs.ops.read)
 		return -EOPNOTSUPP;
 
-	// pma-rx2tx_loopback
+	/* pma-rx2tx_loopback */
 	v = hw->pcs.ops.read(hw, nr_lane, 0x38000);
 	if (en_loopback)
-		v |= BIT(14); // RX2TX_LB_EN
+		v |= BIT(14); /* RX2TX_LB_EN */
 	else
-		v &= ~BIT(14); // RX2TX_LB_EN
+		v &= ~BIT(14); /* RX2TX_LB_EN */
 	hw->pcs.ops.write(hw, nr_lane, 0x38000, v);
 
-	// mac tx-disable
+	/* mac tx-disable */
 	v = rd32(hw, RNPM_MAC_TX_CFG(nr_lane));
 	if (en_loopback)
-		v &= ~(BIT(0)); // disable mac-tx
+		v &= ~(BIT(0)); /* disable mac-tx */
 	else
-		v |= (BIT(0)); // enable mac-tx
+		v |= (BIT(0)); /* enable mac-tx */
 	wr32(hw, RNPM_MAC_TX_CFG(nr_lane), v);
 
-	// mac rx-disable
+	/* mac rx-disable */
 	v = rd32(hw, RNPM_MAC_RX_CFG(nr_lane));
 	if (en_loopback)
-		v &= ~(BIT(0)); // disable mac-rx
+		v &= ~(BIT(0)); /* disable mac-rx */
 	else
-		v |= (BIT(0)); // enable mac-rx
+		v |= (BIT(0)); /* enable mac-rx */
 	wr32(hw, RNPM_MAC_RX_CFG(nr_lane), v);
 
 	return count;
 }
-static DEVICE_ATTR_WO(pcs_rx2tx_loopback);
+
+static ssize_t mac_loopback_store(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct net_device *netdev = to_net_device(dev);
+	struct rnpm_adapter *adapter = netdev_priv(netdev);
+	struct rnpm_hw *hw = &adapter->hw;
+	s32 en = 0;
+
+	if (kstrtos32(buf, 10, &en))
+		return -EINVAL;
+	netdev_info(netdev, "%s:%s mac lp:%d\n", __func__, netdev->name,
+		    en);
+	adapter->is_mac_loopback = !!en;
+	if (adapter->is_mac_loopback)
+		rnpm_link_stat_mark(hw, hw->nr_lane, 0);
+	else
+		rnpm_link_stat_mark(hw, hw->nr_lane, 1);
+	hw->mac.ops.mac_loopback(hw, !!en);
+
+	if (hw->is_sgmii) {
+		hw->mac.ops.power_down(hw, !!en);
+	} else {
+		rnpm_set_lane_fun(hw, LANE_FUN_SFP_TX_DISABLE, !!en, 0, 0,
+				  0);
+	}
+
+	adapter->flags |= RNPM_FLAG_NEED_LINK_UPDATE;
+	return count;
+}
 
 static int do_switch_loopback_set(struct rnpm_adapter *adapter, int en,
 				  int sport_lane, int dst_switch_port)
 {
-	int v;
 	struct rnpm_hw *hw = &adapter->hw;
 	struct net_device *netdev = adapter->netdev;
+	int v;
 
 	netdev_info(netdev, "%s: %s %d -> %d en:%d\n", __func__,
-		    netdev_name(adapter->netdev),
-		    sport_lane, dst_switch_port, en);
-
+		    netdev_name(adapter->netdev), sport_lane,
+		    dst_switch_port, en);
 	if (en)
 		adapter->flags |= RNPM_FLAG_SWITCH_LOOPBACK_EN;
 	else
 		adapter->flags &= ~RNPM_FLAG_SWITCH_LOOPBACK_EN;
 
-	// redir pkgs to peer
+	/* redir pkgs to peer */
 	wr32(hw, RNPM_ETH_INPORT_POLICY_REG(sport_lane),
 	     BIT(29) | (dst_switch_port << 16));
 
-	// enable/disable policy
+	/* enable/disable policy */
 	v = rd32(hw, RNPM_ETH_INPORT_POLICY_VAL);
 	if (en)
-		v |= BIT(sport_lane); // enable this-port-policy
+		v |= BIT(sport_lane);
 	else
 		v &= ~BIT(sport_lane);
 	wr32(hw, RNPM_ETH_INPORT_POLICY_VAL, v);
 
-	// mac promisc
+	/* mac promisc */
 	v = rd32(hw, RNPM_MAC_PKT_FLT(sport_lane));
 	if (en)
 		v |= (RNPM_RX_ALL | RNPM_RX_ALL_MUL);
 	else
 		v &= ~(RNPM_RX_ALL | RNPM_RX_ALL_MUL);
 	wr32(hw, RNPM_MAC_PKT_FLT(sport_lane), v);
-
 	return 0;
 }
 
@@ -1688,7 +1661,6 @@ static int to_switch_port(struct rnpm_adapter *adapter)
 		if (adapter->lane != 0)
 			switch_port += 1;
 	}
-
 	return switch_port;
 }
 
@@ -1698,8 +1670,8 @@ static ssize_t _switch_loopback(struct rnpm_adapter *adapter,
 	struct net_device *netdev = adapter->netdev;
 	struct net_device *peer_netdev = NULL;
 	struct rnpm_adapter *peer_adapter = NULL;
-	int i;
 	char name[100];
+	int i;
 
 	strscpy(name, peer_eth, sizeof(name));
 	strim(name);
@@ -1711,7 +1683,7 @@ static ssize_t _switch_loopback(struct rnpm_adapter *adapter,
 	}
 	peer_adapter = netdev_priv(peer_netdev);
 
-	// check if in same slot
+	/* check if in same slot */
 	if (PCI_SLOT(peer_adapter->pdev->devfn) !=
 	    PCI_SLOT(adapter->pdev->devfn)) {
 		netdev_err(netdev, "%s %s not in same slot\n",
@@ -1721,11 +1693,10 @@ static ssize_t _switch_loopback(struct rnpm_adapter *adapter,
 		return -EINVAL;
 	}
 
-	netdev_info(netdev,
-		    "%s: %s(%d,%d) <-> %s(%d,%d) en:%d\n", __func__,
-		    netdev_name(adapter->netdev), adapter->lane, adapter->port,
-		    netdev_name(peer_adapter->netdev), peer_adapter->lane,
-		    peer_adapter->port, en);
+	netdev_info(netdev, "%s: %s(%d,%d) <-> %s(%d,%d) en:%d\n",
+		    __func__, netdev_name(adapter->netdev), adapter->lane,
+		    adapter->port, netdev_name(peer_adapter->netdev),
+		    peer_adapter->lane, peer_adapter->port, en);
 
 	/* clear pf0/pf1 input port policy eth reg */
 	for (i = 0; i < MAX_PORT_NUM; i++) {
@@ -1757,8 +1728,6 @@ static ssize_t switch_loopback_on_store(struct device *dev,
 	return _switch_loopback(adapter, buf, 1) == 0 ? count : -EINVAL;
 }
 
-static DEVICE_ATTR_WO(switch_loopback_on);
-
 static ssize_t switch_loopback_off_store(struct device *dev,
 					 struct device_attribute *attr,
 					 const char *buf, size_t count)
@@ -1767,8 +1736,217 @@ static ssize_t switch_loopback_off_store(struct device *dev,
 
 	return _switch_loopback(adapter, buf, 0) == 0 ? count : -EINVAL;
 }
-static DEVICE_ATTR_WO(switch_loopback_off);
 
+static int __print_desc(char *buf, void *data, int len)
+{
+	u8 *ptr = (u8 *)data;
+	int ret = 0, i = 0;
+
+	for (i = 0; i < len; i++)
+		ret += sprintf(buf + ret, "%02x ", *(ptr + i));
+
+	return ret;
+}
+
+static struct netdev_queue *__rnpm_txring_txq(const struct rnpm_ring *ring)
+{
+	return netdev_get_tx_queue(ring->netdev, ring->queue_index);
+}
+
+static ssize_t txring_info_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct rnpm_adapter *adapter = netdev_priv(to_net_device(dev));
+	struct rnpm_hw *hw = &adapter->hw;
+	struct rnpm_ring *ring = NULL;
+	struct rnpm_tx_buffer *tx_buf = NULL;
+	struct rnpm_tx_desc *eop_desc;
+	int s_id, e_id;
+	int ret = 0, i;
+
+	if (test_bit(__RNPM_DOWN, &adapter->state)) {
+		ret += sprintf(buf + ret,
+			       "error: port should be up first\n");
+		return ret;
+	}
+
+	if (!adapter->d_ringinfo.txring_vaild) {
+		ret = sprintf(buf + ret,
+			      "error: need setup debug tx ring num range first\n");
+		return ret;
+	}
+
+	s_id = adapter->d_ringinfo.txring_start;
+	e_id = adapter->d_ringinfo.txring_end;
+	for (i = s_id; i <= e_id; i++) {
+		struct netdev_queue *q;
+		struct dql *dql;
+
+		if (i >= adapter->num_tx_queues) {
+			ret = sprintf(buf + ret,
+				      "error: tx queue id:%d larger than num_txq:%d, exit!\n",
+				i, adapter->num_tx_queues);
+			return ret;
+		}
+
+		ring = adapter->tx_ring[i];
+		q = __rnpm_txring_txq(ring);
+		dql = &q->dql;
+		ret += sprintf(buf + ret,
+			       "====== tx ring num %d info: ======\n", i);
+		ret += sprintf(buf + ret, "BQL queue state:0x%lx:\n",
+			       q->state);
+		ret += sprintf(buf + ret,
+			       "1: num_queued:%d adj_limit:%d limit:%d\n",
+			       dql->num_queued, dql->adj_limit,
+			       dql->limit);
+		ret += sprintf(buf + ret,
+			"2: num_completed:%d p_ovlimit:%d p_num_queued:%d\n",
+			dql->num_completed, dql->prev_ovlimit,
+			dql->prev_num_queued);
+		ret += sprintf(buf + ret, "3: max_limit:%d min_limit:%d\n",
+			       dql->max_limit, dql->min_limit);
+		ret += sprintf(buf + ret, "next_to_use: %d\n",
+			       ring->next_to_use);
+		ret += sprintf(buf + ret, "next_to_clean: %d\n",
+			       ring->next_to_clean);
+		ret += sprintf(buf + ret, "hw_head: %d   hw_tail: %d\n",
+			       rd32(hw, RNPM_DMA_REG_TX_DESC_BUF_HEAD(ring->rnpm_queue_idx)),
+			       rd32(hw, RNPM_DMA_REG_TX_DESC_BUF_TAIL(ring->rnpm_queue_idx)));
+		tx_buf = &ring->tx_buffer_info[ring->next_to_clean];
+		eop_desc = tx_buf->next_to_watch;
+		if (eop_desc) {
+			ret += sprintf(buf + ret, "next_to_watch:\n");
+			ret += __print_desc(buf + ret, eop_desc,
+					    sizeof(*eop_desc));
+			ret += sprintf(buf + ret, "\n");
+		} else {
+			ret += sprintf(buf + ret, "next_to_watch: no\n");
+		}
+	}
+
+	return ret;
+}
+
+static ssize_t txring_info_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct rnpm_adapter *adapter = netdev_priv(to_net_device(dev));
+	int s_id, e_id, cnt;
+
+	if (test_bit(__RNPM_DOWN, &adapter->state))
+		return -EBUSY;
+
+	/* start ring id + end ring id */
+	cnt = sscanf(buf, "%d %d", &s_id, &e_id);
+	if (cnt != 2 || s_id > e_id)
+		return -EINVAL;
+	if (e_id >= adapter->num_tx_queues)
+		return -EINVAL;
+	adapter->d_ringinfo.txring_start = s_id;
+	adapter->d_ringinfo.txring_end = e_id;
+	adapter->d_ringinfo.txring_vaild = true;
+	return count;
+}
+
+static ssize_t rxring_info_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct rnpm_adapter *adapter = netdev_priv(to_net_device(dev));
+	struct rnpm_hw *hw = &adapter->hw;
+	struct rnpm_ring *ring = NULL;
+	union rnpm_rx_desc *rx_desc;
+	int s_id, e_id;
+	int ret = 0, i;
+
+	if (test_bit(__RNPM_DOWN, &adapter->state)) {
+		ret += sprintf(buf + ret,
+			       "error: port should be up first\n");
+		return ret;
+	}
+
+	if (!adapter->d_ringinfo.rxring_vaild) {
+		ret = sprintf(buf + ret,
+			      "error: need setup debug rx ring num range first\n");
+		return ret;
+	}
+
+	s_id = adapter->d_ringinfo.rxring_start;
+	e_id = adapter->d_ringinfo.rxring_end;
+	for (i = s_id; i <= e_id; i++) {
+		if (i >= adapter->num_rx_queues) {
+			ret = sprintf(buf + ret,
+				      "error: rx queue id:%d larger than num_rxq:%d, exit!\n",
+				      i, adapter->num_rx_queues);
+			return ret;
+		}
+		ring = adapter->rx_ring[i];
+		ret += sprintf(buf + ret,
+			       "====== rx ring num %d info: ======\n", i);
+		ret += sprintf(buf + ret, "next_to_use: %d\n",
+			       ring->next_to_use);
+		ret += sprintf(buf + ret, "next_to_clean: %d\n",
+			       ring->next_to_clean);
+		ret += sprintf(buf + ret, "hw_head: %d   hw_tail: %d\n",
+			       rd32(hw, RNPM_DMA_REG_RX_DESC_BUF_HEAD(ring->rnpm_queue_idx)),
+			       rd32(hw, RNPM_DMA_REG_RX_DESC_BUF_TAIL(ring->rnpm_queue_idx)));
+		rx_desc = RNPM_RX_DESC(ring, ring->next_to_clean);
+		ret += sprintf(buf + ret, "next_to_clean desc: ");
+		ret += __print_desc(buf + ret, rx_desc, sizeof(*rx_desc));
+		ret += sprintf(buf + ret, "\n");
+	}
+
+	return ret;
+}
+
+static ssize_t rxring_info_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct rnpm_adapter *adapter = netdev_priv(to_net_device(dev));
+	int s_id, e_id, cnt;
+
+	if (test_bit(__RNPM_DOWN, &adapter->state))
+		return -EBUSY;
+
+	/* start ring id + end ring id */
+	cnt = sscanf(buf, "%d %d", &s_id, &e_id);
+	if (cnt != 2 || s_id > e_id)
+		return -EINVAL;
+	if (e_id >= adapter->num_rx_queues)
+		return -EINVAL;
+	adapter->d_ringinfo.rxring_start = s_id;
+	adapter->d_ringinfo.rxring_end = e_id;
+	adapter->d_ringinfo.rxring_vaild = true;
+	return count;
+}
+
+static DEVICE_ATTR_RO(root_slot_info);
+static DEVICE_ATTR_RW(active_vid);
+static DEVICE_ATTR_WO(pf_reset);
+static DEVICE_ATTR_RO(ring_num);
+static DEVICE_ATTR_RO(port_idx);
+static DEVICE_ATTR_RO(version_info);
+
+static DEVICE_ATTR_RO(nr_lane);
+static DEVICE_ATTR_RW(lane_intr_en);
+static DEVICE_ATTR_WO(prbs);
+static DEVICE_ATTR_RO(debug_linkstat);
+static DEVICE_ATTR_RO(debug_aptstat);
+static DEVICE_ATTR_RO(tx_counter);
+static DEVICE_ATTR_RO(rx_counter);
+static DEVICE_ATTR_RW(bar4_reg);
+static DEVICE_ATTR_RO(phy_statistics);
+static DEVICE_ATTR_RO(port_stat2);
+static DEVICE_ATTR_RW(pcs_reg);
+static DEVICE_ATTR_WO(pma_rx2tx_loopback);
+static DEVICE_ATTR_WO(pcs_rx2tx_loopback);
+static DEVICE_ATTR_WO(mac_loopback);
+static DEVICE_ATTR_WO(switch_loopback_off);
+static DEVICE_ATTR_WO(switch_loopback_on);
+static DEVICE_ATTR_RW(txring_info);
+static DEVICE_ATTR_RW(rxring_info);
 static struct attribute *dev_attrs[] = {
 	&dev_attr_root_slot_info.attr,
 	&dev_attr_active_vid.attr,
@@ -1776,16 +1954,7 @@ static struct attribute *dev_attrs[] = {
 	&dev_attr_ring_num.attr,
 	&dev_attr_port_idx.attr,
 	&dev_attr_version_info.attr,
-	&dev_attr_own_vpd.attr,
 	&dev_attr_nr_lane.attr,
-	&dev_attr_temperature.attr,
-	&dev_attr_si.attr,
-	&dev_attr_sfp.attr,
-	&dev_attr_autoneg.attr,
-	&dev_attr_sfp_tx_disable.attr,
-	&dev_attr_fec.attr,
-	&dev_attr_link_traing.attr,
-	&dev_attr_pci.attr,
 	&dev_attr_lane_intr_en.attr,
 	&dev_attr_prbs.attr,
 	&dev_attr_debug_linkstat.attr,
@@ -1796,11 +1965,36 @@ static struct attribute *dev_attrs[] = {
 	&dev_attr_phy_statistics.attr,
 	&dev_attr_port_stat2.attr,
 	&dev_attr_pcs_reg.attr,
-	&dev_attr_phy_reg.attr,
 	&dev_attr_pma_rx2tx_loopback.attr,
 	&dev_attr_pcs_rx2tx_loopback.attr,
+	&dev_attr_mac_loopback.attr,
 	&dev_attr_switch_loopback_off.attr,
 	&dev_attr_switch_loopback_on.attr,
+	&dev_attr_txring_info.attr,
+	&dev_attr_rxring_info.attr,
+	NULL,
+};
+static DEVICE_ATTR_RW(si);
+static DEVICE_ATTR_RO(sfp);
+static DEVICE_ATTR_RW(autoneg);
+static DEVICE_ATTR_RO(own_vpd);
+static DEVICE_ATTR_RW(pci);
+static DEVICE_ATTR_RW(sfp_tx_disable);
+static DEVICE_ATTR_RW(link_traing);
+static DEVICE_ATTR_RW(fec);
+static DEVICE_ATTR_RO(temperature);
+static DEVICE_ATTR_RW(phy_reg);
+static struct attribute *vendor_dev_attrs[] = {
+	&dev_attr_si.attr,
+	&dev_attr_sfp.attr,
+	&dev_attr_autoneg.attr,
+	&dev_attr_own_vpd.attr,
+	&dev_attr_pci.attr,
+	&dev_attr_sfp_tx_disable.attr,
+	&dev_attr_link_traing.attr,
+	&dev_attr_fec.attr,
+	&dev_attr_temperature.attr,
+	&dev_attr_phy_reg.attr,
 	NULL,
 };
 
@@ -1809,9 +2003,21 @@ static struct bin_attribute *dev_bin_attrs[] = {
 	NULL,
 };
 
+/* should not call mailbox in the group */
 static struct attribute_group dev_attr_grp = {
 	.attrs = dev_attrs,
 	.bin_attrs = dev_bin_attrs,
+};
+
+static const struct attribute_group vendor_attr_grp = {
+	.name = "vendor",
+	.attrs = vendor_dev_attrs,
+};
+
+static const struct attribute_group *attr_grps[] = {
+	&dev_attr_grp,
+	&vendor_attr_grp,
+	NULL,
 };
 
 /* hwmon callback functions */
@@ -1839,7 +2045,7 @@ static ssize_t rnpm_hwmon_show_temp(struct device __always_unused *dev,
 {
 	struct hwmon_attr *rnpm_attr =
 		container_of(attr, struct hwmon_attr, dev_attr);
-	unsigned int value;
+	int value;
 
 	/* reset the temp field */
 	rnpm_attr->hw->mac.ops.get_thermal_sensor_data(rnpm_attr->hw);
@@ -1848,7 +2054,7 @@ static ssize_t rnpm_hwmon_show_temp(struct device __always_unused *dev,
 	/* display millidegree */
 	value *= 1000;
 
-	return snprintf(buf, PAGE_SIZE, "%u\n", value);
+	return snprintf(buf, PAGE_SIZE, "%d\n", value);
 }
 
 static ssize_t
@@ -1857,12 +2063,12 @@ rnpm_hwmon_show_cautionthresh(struct device __always_unused *dev,
 {
 	struct hwmon_attr *rnpm_attr =
 		container_of(attr, struct hwmon_attr, dev_attr);
-	unsigned int value = rnpm_attr->sensor->caution_thresh;
+	int value = rnpm_attr->sensor->caution_thresh;
 
 	/* display millidegree */
 	value *= 1000;
 
-	return snprintf(buf, PAGE_SIZE, "%u\n", value);
+	return snprintf(buf, PAGE_SIZE, "%d\n", value);
 }
 
 static ssize_t
@@ -1871,12 +2077,11 @@ rnpm_hwmon_show_maxopthresh(struct device __always_unused *dev,
 {
 	struct hwmon_attr *rnpm_attr =
 		container_of(attr, struct hwmon_attr, dev_attr);
-	unsigned int value = rnpm_attr->sensor->max_op_thresh;
+	int value = rnpm_attr->sensor->max_op_thresh;
 
 	/* display millidegree */
 	value *= 1000;
-
-	return snprintf(buf, PAGE_SIZE, "%u\n", value);
+	return snprintf(buf, PAGE_SIZE, "%d\n", value);
 }
 
 /**
@@ -1953,13 +2158,21 @@ static int rnpm_add_hwmon_attr(struct rnpm_adapter *adapter,
 static void
 rnpm_sysfs_del_adapter(struct rnpm_adapter __maybe_unused *adapter)
 {
+	if (!adapter)
+		return;
+
+	if (adapter->hwmon_dev) {
+		hwmon_device_unregister(adapter->hwmon_dev);
+		adapter->hwmon_dev = NULL;
+	}
+
 }
 
 /* called from rnpm_main.c */
 void rnpm_sysfs_exit(struct rnpm_adapter *adapter)
 {
 	rnpm_sysfs_del_adapter(adapter);
-	sysfs_remove_group(&adapter->netdev->dev.kobj, &dev_attr_grp);
+	sysfs_remove_groups(&adapter->netdev->dev.kobj, &attr_grps[0]);
 }
 
 /* called from rnpm_main.c */
@@ -1970,11 +2183,11 @@ int rnpm_sysfs_init(struct rnpm_adapter *adapter, int port)
 	struct device *hwmon_dev;
 	unsigned int i;
 
-	err = sysfs_create_group(&adapter->netdev->dev.kobj,
-				 &dev_attr_grp);
+	err = sysfs_create_groups(&adapter->netdev->dev.kobj,
+				  &attr_grps[0]);
 	if (err != 0) {
 		dev_err(&adapter->netdev->dev,
-			"sysfs_create_group faild:err:%d\n", err);
+			"sysfs_create_group failed:err:%d\n", err);
 		return err;
 	}
 	/* only  port0 and pcie devfn all both 0 register temperature hwmon */
@@ -1993,13 +2206,14 @@ int rnpm_sysfs_init(struct rnpm_adapter *adapter, int port)
 				  GFP_KERNEL);
 
 	if (!rnpm_hwmon) {
+		dev_err(&adapter->netdev->dev,
+			"devm alloc rnpm_hwmon failed:err:%d\n", err);
 		rc = -ENOMEM;
 		goto exit;
 	}
 
 	adapter->rnpm_hwmon_buff = rnpm_hwmon;
 
-	/* TODO: Only support one sensor now */
 	for (i = 0; i < RNPM_MAX_SENSORS; i++) {
 		/*
 		 * Only create hwmon sysfs entries for sensors that have
@@ -2025,14 +2239,15 @@ int rnpm_sysfs_init(struct rnpm_adapter *adapter, int port)
 	rnpm_hwmon->groups[0] = &rnpm_hwmon->group;
 	rnpm_hwmon->group.attrs = rnpm_hwmon->attrs;
 
-	hwmon_dev = devm_hwmon_device_register_with_groups(
-		&adapter->pdev->dev, "rnpm", rnpm_hwmon,
-		rnpm_hwmon->groups);
+	hwmon_dev = hwmon_device_register_with_groups(&adapter->pdev->dev,
+						      "rnpm", rnpm_hwmon,
+						      rnpm_hwmon->groups);
 
 	if (IS_ERR(hwmon_dev)) {
 		rc = PTR_ERR(hwmon_dev);
 		goto exit;
 	}
+	adapter->hwmon_dev = hwmon_dev;
 no_thermal:
 	goto exit;
 err:

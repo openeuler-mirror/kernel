@@ -3,7 +3,6 @@
 
 #include <linux/debugfs.h>
 #include <linux/module.h>
-
 #include "rnpm.h"
 #include "rnpm_mbx_fw.h"
 
@@ -31,13 +30,11 @@ static int rnpm_dbg_csl_open(struct inode *inode, struct file *filp)
 		return -EIO;
 
 	adapter = filp->private_data;
-
 	if (!adapter)
 		return -EIO;
 
-	if (!adapter->pf_adapter->csl_dma_buf)
+	if (adapter->pf_adapter->csl_dma_buf)
 		return 0;
-
 	hw = &adapter->hw;
 	name = adapter->name;
 
@@ -47,11 +44,9 @@ static int rnpm_dbg_csl_open(struct inode *inode, struct file *filp)
 		return -ENOMEM;
 
 	memset(dma_buf, 0, bytes);
-
 	adapter->pf_adapter->csl_dma_buf = dma_buf;
 	adapter->pf_adapter->csl_dma_phy = dma_phy;
 	adapter->pf_adapter->csl_dma_size = bytes;
-
 	err = rnpm_mbx_ddr_csl_enable(hw, 1, dma_phy, bytes);
 	if (err) {
 		dma_free_coherent(&hw->pdev->dev, bytes, dma_buf, dma_phy);
@@ -79,10 +74,9 @@ static int rnpm_dbg_csl_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-int rnpm_dbg_csl_mmap(struct file *filp, struct vm_area_struct *vma)
+static int rnpm_dbg_csl_mmap(struct file *filp, struct vm_area_struct *vma)
 {
 	unsigned long length;
-	unsigned long pfn;
 	struct rnpm_adapter *adapter = filp->private_data;
 	void *dma_buf = adapter->pf_adapter->csl_dma_buf;
 	dma_addr_t dma_phy = adapter->pf_adapter->csl_dma_phy;
@@ -93,21 +87,20 @@ int rnpm_dbg_csl_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	if (length > dma_bytes)
 		return -EIO;
-
 	if (vma->vm_pgoff == 0) {
-		ret = dma_mmap_coherent(NULL, vma, dma_buf, dma_phy,
-					length);
+		ret = dma_mmap_coherent(&adapter->pdev->dev, vma, dma_buf,
+					dma_phy, length);
 	} else {
 		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-		// vma->vm_flags |= VM_IO;
-		pfn = PFN_DOWN(virt_to_phys(bus_to_virt(dma_phy))) + vma->vm_pgoff;
-		ret = remap_pfn_range(vma, vma->vm_start, pfn,
-				      length,
-				      vma->vm_page_prot);
+		ret = remap_pfn_range(vma, vma->vm_start,
+				      PFN_DOWN(virt_to_phys(bus_to_virt(dma_phy))) +
+				      vma->vm_pgoff,
+				      length, vma->vm_page_prot);
 	}
 
 	if (ret < 0) {
-		pr_err("%s: remap failed (%d)\n", __func__, ret);
+		netdev_err(adapter->netdev, "%s: remap failed (%d)\n",
+			   __func__, ret);
 		return ret;
 	}
 
@@ -132,7 +125,6 @@ static ssize_t rnpm_dbg_eth_info_read(struct file *filp,
 	if (!adapter)
 		return -EIO;
 
-	/* don't allow partial reads */
 	if (*ppos != 0)
 		return 0;
 
@@ -163,8 +155,7 @@ static const struct file_operations rnpm_dbg_eth_info_fops = {
 
 static ssize_t rnpm_dbg_mbx_cookies_info_read(struct file *filp,
 					      char __user *buffer,
-					      size_t count,
-					      loff_t *ppos)
+					      size_t count, loff_t *ppos)
 {
 	struct rnpm_adapter *adapter = filp->private_data;
 	struct rnpm_pf_adapter *pf_adapter = NULL;
@@ -195,11 +186,8 @@ static ssize_t rnpm_dbg_mbx_cookies_info_read(struct file *filp,
 
 	buf = kasprintf(GFP_KERNEL,
 			"pool items:cur:%d total: %d. free:%d wait_free:%d alloced:%d\n",
-			cookie_pool->next_idx,
-			MAX_COOKIES_ITEMS,
-			free_cnt,
-			wait_timout_cnt,
-			alloced_cnt);
+			cookie_pool->next_idx, MAX_COOKIES_ITEMS, free_cnt,
+			wait_timout_cnt, alloced_cnt);
 	if (!buf)
 		return -ENOMEM;
 
@@ -251,7 +239,6 @@ static ssize_t rnpm_dbg_reg_ops_read(struct file *filp,
 
 	len = simple_read_from_buffer(buffer, count, ppos, buf,
 				      strlen(buf));
-
 	kfree(buf);
 	return len;
 }
@@ -269,6 +256,7 @@ static ssize_t rnpm_dbg_reg_ops_write(struct file *filp,
 {
 	struct rnpm_adapter *adapter = filp->private_data;
 	struct rnpm_hw *hw = &adapter->hw;
+	struct device *dev = &adapter->pdev->dev;
 	int len;
 
 	/* don't allow partial writes */
@@ -284,7 +272,6 @@ static ssize_t rnpm_dbg_reg_ops_write(struct file *filp,
 		return len;
 
 	rnpm_dbg_reg_ops_buf[len] = '\0';
-
 	if (strncmp(rnpm_dbg_reg_ops_buf, "write", 5) == 0) {
 		u32 reg, value;
 		int cnt;
@@ -298,9 +285,9 @@ static ssize_t rnpm_dbg_reg_ops_write(struct file *filp,
 				rnpm_wr_reg(hw->hw_addr + reg, value);
 				value = rnpm_rd_reg(hw->hw_addr + reg);
 			}
-			e_dev_info("write: 0x%08x = 0x%08x\n", reg, value);
+			dev_dbg(dev, "write: 0x%08x = 0x%08x\n", reg, value);
 		} else {
-			e_dev_info("write <reg> <value>\n");
+			dev_dbg(dev, "write <reg> <value>\n");
 		}
 	} else if (strncmp(rnpm_dbg_reg_ops_buf, "read", 4) == 0) {
 		u32 reg, value;
@@ -308,22 +295,22 @@ static ssize_t rnpm_dbg_reg_ops_write(struct file *filp,
 
 		cnt = sscanf(&rnpm_dbg_reg_ops_buf[4], "%x", &reg);
 		if (cnt == 1) {
-			if (reg >= 0x30000000)
+			if (reg >= 0x20000000)
 				value = rnpm_mbx_fw_reg_read(hw, reg);
 			else
 				value = rnpm_rd_reg(hw->hw_addr + reg);
 			snprintf(rnpm_dbg_reg_ops_buf,
 				 sizeof(rnpm_dbg_reg_ops_buf),
 				 "0x%08x: 0x%08x", reg, value);
-			e_dev_info("read 0x%08x = 0x%08x\n", reg, value);
+			dev_dbg(dev, "read 0x%08x = 0x%08x\n", reg, value);
 		} else {
-			e_dev_info("read <reg>\n");
+			dev_dbg(dev, "read <reg>\n");
 		}
 	} else {
-		e_dev_info("Unknown command %s\n", rnpm_dbg_reg_ops_buf);
-		e_dev_info("Available commands:\n");
-		e_dev_info("   read <reg>\n");
-		e_dev_info("   write <reg> <value>\n");
+		dev_info(dev, "Unknown command %s\n", rnpm_dbg_reg_ops_buf);
+		dev_info(dev, "Available commands:\n");
+		dev_info(dev, "   read <reg>\n");
+		dev_info(dev, "   write <reg> <value>\n");
 	}
 	return count;
 }
@@ -349,7 +336,6 @@ static ssize_t rnpm_dbg_netdev_ops_read(struct file *filp,
 					loff_t *ppos)
 {
 	struct rnpm_adapter *adapter = filp->private_data;
-	// struct rnpm_hw *hw = &adapter->hw;
 	char *buf;
 	int len;
 
@@ -369,7 +355,6 @@ static ssize_t rnpm_dbg_netdev_ops_read(struct file *filp,
 
 	len = simple_read_from_buffer(buffer, count, ppos, buf,
 				      strlen(buf));
-
 	kfree(buf);
 	return len;
 }
@@ -386,7 +371,7 @@ static ssize_t rnpm_dbg_netdev_ops_write(struct file *filp,
 					 size_t count, loff_t *ppos)
 {
 	struct rnpm_adapter *adapter = filp->private_data;
-	struct net_device *netdev = adapter->netdev;
+	struct device *dev = &adapter->pdev->dev;
 	int len;
 
 	/* don't allow partial writes */
@@ -404,18 +389,20 @@ static ssize_t rnpm_dbg_netdev_ops_write(struct file *filp,
 	rnpm_dbg_netdev_ops_buf[len] = '\0';
 
 	if (strncmp(rnpm_dbg_netdev_ops_buf, "stat", 4) == 0) {
-		rnpm_info("adapter->stat=0x%lx\n", adapter->state);
-		rnpm_info("adapter->tx_timeout_count=%d\n",
-			  adapter->tx_timeout_count);
+		netdev_info(adapter->netdev, "adapter->stat=0x%lx\n",
+			    adapter->state);
+		netdev_info(adapter->netdev,
+			    "adapter->tx_timeout_count=%d\n",
+			    adapter->tx_timeout_count);
 	} else if (strncmp(rnpm_dbg_netdev_ops_buf, "tx_timeout", 10) ==
 		   0) {
-		netdev->netdev_ops->ndo_tx_timeout(netdev, UINT_MAX);
-		e_dev_info("tx_timeout called\n");
+		adapter->netdev->netdev_ops->ndo_tx_timeout(adapter->netdev, UINT_MAX);
+		dev_info(dev, "tx_timeout called\n");
 	} else {
-		e_dev_info("Unknown command: %s\n",
+		dev_info(dev, "Unknown command: %s\n",
 			   rnpm_dbg_netdev_ops_buf);
-		e_dev_info("Available commands:\n");
-		e_dev_info("    tx_timeout\n");
+		dev_info(dev, "Available commands:\n");
+		dev_info(dev, "    tx_timeout\n");
 	}
 	return count;
 }
@@ -478,6 +465,7 @@ static ssize_t rnpm_dbg_phy_ops_write(struct file *filp,
 {
 	struct rnpm_adapter *adapter = filp->private_data;
 	struct rnpm_hw *hw = &adapter->hw;
+	struct device *dev = &adapter->pdev->dev;
 	int len;
 
 	/* don't allow partial writes */
@@ -502,13 +490,13 @@ static ssize_t rnpm_dbg_phy_ops_write(struct file *filp,
 			     &value);
 		if (cnt == 2) {
 			if (rnpm_mbx_phy_write(hw, reg, value) == 0)
-				e_dev_info("write phy: 0x%08x = 0x%08x\n",
+				dev_dbg(dev, "write phy: 0x%08x = 0x%08x\n",
 					   reg, value);
 			else
-				e_dev_info("write phy failed: 0x%08x = 0x%08x\n",
+				dev_dbg(dev, "write phy failed: 0x%08x = 0x%08x\n",
 					   reg, value);
 		} else {
-			e_dev_info("write phy <reg> <value>\n");
+			dev_dbg(dev, "write phy <reg> <value>\n");
 		}
 
 	} else if (strncmp(rnpm_dbg_phy_ops_buf, "read", 4) == 0) {
@@ -521,20 +509,21 @@ static ssize_t rnpm_dbg_phy_ops_write(struct file *filp,
 				sprintf(rnpm_dbg_phy_ops_buf,
 					"read phy 0x%08x = 0x%08x\n", reg,
 					value);
-				rnpm_info("read phy 0x%08x = 0x%08x\n",
-					  reg, value);
+				netdev_info(adapter->netdev,
+					    "read phy 0x%08x = 0x%08x\n",
+					    reg, value);
 			} else {
-				e_dev_info("read phy failed 0x%08x = 0x%08x\n",
+				dev_info(dev, "read phy failed 0x%08x = 0x%08x\n",
 					   reg, value);
 			}
 		} else {
-			e_dev_info("read phy <reg>\n");
+			dev_dbg(dev, "read phy <reg>\n");
 		}
 	} else {
-		e_dev_info("Unknown command %s\n", rnpm_dbg_phy_ops_buf);
-		e_dev_info("Available commands:\n");
-		e_dev_info("   read <phyreg>\n");
-		e_dev_info("   write <phyreg> <value>\n");
+		dev_info(dev, "Unknown command %s\n", rnpm_dbg_phy_ops_buf);
+		dev_info(dev, "Available commands:\n");
+		dev_info(dev, "   read <phyreg>\n");
+		dev_info(dev, "   write <phyreg> <value>\n");
 	}
 	return count;
 }
@@ -553,6 +542,7 @@ static const struct file_operations rnpm_dbg_phy_ops_fops = {
 void rnpm_dbg_adapter_init(struct rnpm_adapter *adapter)
 {
 	const char *name = adapter->name;
+	struct device *dev = &adapter->pdev->dev;
 	struct dentry *pfile;
 
 	adapter->rnpm_dbg_adapter =
@@ -563,21 +553,19 @@ void rnpm_dbg_adapter_init(struct rnpm_adapter *adapter)
 					    adapter,
 					    &rnpm_dbg_reg_ops_fops);
 		if (!pfile)
-			e_dev_err("debugfs reg_ops for %s failed\n", name);
+			dev_err(dev, "debugfs reg_ops for %s failed\n", name);
 		pfile = debugfs_create_file("netdev_ops", 0600,
 					    adapter->rnpm_dbg_adapter,
 					    adapter,
 					    &rnpm_dbg_netdev_ops_fops);
 		if (!pfile)
-			e_dev_err("debugfs netdev_ops for %s failed\n",
-				  name);
+			dev_err(dev, "debugfs netdev_ops for %s failed\n", name);
 		pfile = debugfs_create_file("phy_ops", 0600,
 					    adapter->rnpm_dbg_adapter,
 					    adapter,
 					    &rnpm_dbg_phy_ops_fops);
 		if (!pfile)
-			e_dev_err("debugfs netdev_ops for %s failed\n",
-				  name);
+			dev_err(dev, "debugfs netdev_ops for %s failed\n", name);
 
 		if (rnpm_is_pf1(adapter->pdev) == 0) {
 			pfile = debugfs_create_file_unsafe("csl", 0755,
@@ -586,21 +574,22 @@ void rnpm_dbg_adapter_init(struct rnpm_adapter *adapter)
 							   &rnpm_dbg_csl_fops);
 
 			if (!pfile)
-				e_dev_err("debugfs csl  failed\n");
+				dev_err(dev, "debugfs csl  failed\n");
 		}
+
 		pfile = debugfs_create_file("info", 0600,
 					    adapter->rnpm_dbg_adapter,
 					    adapter,
 					    &rnpm_dbg_eth_info_fops);
 		if (!pfile)
-			e_dev_err("debugfs info  failed\n");
+			dev_err(dev, "debugfs info  failed\n");
 		pfile = debugfs_create_file("mbx_cookies_info", 0600,
 					    adapter->rnpm_dbg_adapter, adapter,
 					    &rnpm_dbg_mbx_cookies_info_fops);
 		if (!pfile)
-			e_dev_err("debugfs reg_ops for mbx_cookies_info failed\n");
+			dev_err(dev, "debugfs reg_ops for mbx_cookies_info failed\n");
 	} else {
-		e_dev_err("debugfs entry for %s failed\n", name);
+		dev_err(dev, "debugfs entry for %s failed\n", name);
 	}
 }
 

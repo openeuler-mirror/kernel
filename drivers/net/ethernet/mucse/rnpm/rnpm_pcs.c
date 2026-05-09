@@ -5,9 +5,9 @@
 #include "rnpm_regs.h"
 #include "rnpm_common.h"
 
-#define VR_XS_PMA_SNPS_CR_CTRL (0x18000 + (0xa0)) //5.3.132
-#define VR_XS_PMA_SNPS_CR_ADDR (0x18000 + (0xa1)) //5.3.133
-#define VR_XS_PMA_SNPS_CR_DATA (0x18000 + (0xa2)) // 5.3.134
+#define VR_XS_PMA_SNPS_CR_CTRL (0x18000 + (0xa0))
+#define VR_XS_PMA_SNPS_CR_ADDR (0x18000 + (0xa1))
+#define VR_XS_PMA_SNPS_CR_DATA (0x18000 + (0xa2))
 
 static u32 __pcs_ioread32(struct rnpm_hw *hw, int num, u32 pcs_reg)
 {
@@ -87,12 +87,10 @@ static void rnpm_cr_write_pcs(struct rnpm_hw *hw, int num, u32 addr,
 
 static u32 rnpm_read_pcs(struct rnpm_hw *hw, int num, u32 addr)
 {
-	u32 reg_hi, reg_lo;
-	u32 value;
+	u32 reg_hi, reg_lo, value;
 
 	reg_hi = addr >> 8;
 	reg_lo = (addr & 0xff) << 2;
-
 	wr32(hw, RNPM_PCS_BASE(num) + (0xff << 2), reg_hi);
 	value = rd32(hw, RNPM_PCS_BASE(num) + reg_lo);
 	return value;
@@ -105,7 +103,6 @@ static void rnpm_write_pcs(struct rnpm_hw *hw, int num, u32 addr,
 
 	reg_hi = addr >> 8;
 	reg_lo = (addr & 0xff) << 2;
-
 	wr32(hw, RNPM_PCS_BASE(num) + (0xff << 2), reg_hi);
 	wr32(hw, RNPM_PCS_BASE(num) + reg_lo, value);
 }

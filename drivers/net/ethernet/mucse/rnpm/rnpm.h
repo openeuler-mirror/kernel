@@ -3,7 +3,6 @@
 
 #ifndef _RNPM_H_
 #define _RNPM_H_
-
 #include <linux/bitops.h>
 #include <linux/types.h>
 #include <linux/pci.h>
@@ -16,23 +15,12 @@
 #include <linux/interrupt.h>
 #include <linux/net_tstamp.h>
 #include <linux/ptp_clock_kernel.h>
-
 #include "rnpm_type.h"
 #include "rnpm_common.h"
 
-/*
- * OPTM_WITH_LPAGE should never define along with
- * CONFIG_RNPM_DISABLE_PACKET_SPLIT
- */
+#define RNPM_CPU_CACHE_SIZE_128B 128
+
 #ifdef RNPM_OPTM_WITH_LPAGE
-#endif
-
-#ifndef __GFP_COLD
-#define __GFP_COLD 0
-#endif
-
-#ifndef __GFP_COMP
-#define __GFP_COMP 0
 #endif
 
 /* common prefix used by pr_<> macros */
@@ -76,7 +64,7 @@
 
 #define RNP_MAX_VF_FUNCTIONS 64
 
-#define RNPM_MAX_TXD (4096)
+#define RNPM_MAX_TXD (8192)
 #define RNPM_MIN_TXD (64)
 
 #define RNPM_DEFAULT_SAMPLE_INTERVAL (10)
@@ -88,7 +76,7 @@
 
 #define RNPM_DEFAULT_RXD (1024)
 
-#define RNPM_MAX_RXD (4096)
+#define RNPM_MAX_RXD (8192)
 #define RNPM_MIN_RXD (64)
 
 /* Phy */
@@ -106,7 +94,6 @@
 #define RNPM_MAX_FCPAUSE (0xFFFF)
 
 /* Supported Rx Buffer Sizes */
-/* Used for skb receive header */
 #define RNPM_RXBUFFER_256 256
 #define RNPM_RXBUFFER_1536 1536
 #define RNPM_RXBUFFER_2K 2048
@@ -233,7 +220,6 @@ struct rnpm_tx_buffer {
 		};
 	};
 	__le32 mac_ip_len;
-	/* for control desc */
 	union {
 		u32 mss_len_vf_num;
 		struct {
@@ -307,7 +293,6 @@ struct rnpm_rx_queue_stats {
 	u64 rx_poll_packets;
 	u64 rx_poll_avg_packets;
 	u64 rx_poll_itr;
-	//u64 poll_count;
 };
 
 enum rnpm_ring_state_t {
@@ -317,7 +302,6 @@ enum rnpm_ring_state_t {
 	__RNPM_TX_XPS_INIT_DONE,
 	__RNPM_TX_DETECT_HANG,
 	__RNPM_HANG_CHECK_ARMED,
-	//__RNPM_RX_RSC_ENABLED,
 	__RNPM_RX_CSUM_UDP_ZERO_ERR,
 	__RNPM_RX_FCOE,
 };
@@ -365,8 +349,8 @@ struct rnpm_ring {
 
 	u8 queue_index; /* queue_index needed for multiqueue queue management */
 	u8 rnpm_queue_idx; /*the real ring,used by dma*/
-	u16 next_to_use; //tail (not-dma-mapped)
-	u16 next_to_clean; //soft-saved-head
+	u16 next_to_use;
+	u16 next_to_clean;
 
 	u16 device_id;
 #ifdef RNPM_OPTM_WITH_LPAGE
@@ -398,7 +382,6 @@ enum rnpm_ring_f_enum {
 	RING_F_VMDQ, /* SR-IOV uses the same ring feature */
 	RING_F_RSS,
 	RING_F_FDIR,
-
 	RING_F_ARRAY_SIZE /* must be last in enum set */
 };
 
@@ -428,16 +411,13 @@ struct rnpm_ring_feature {
  */
 static inline unsigned int rnpm_rx_bufsz(struct rnpm_ring *ring)
 {
-	// 1 rx-desc trans max half page(2048), for jumbo frame sg is needed
-	// return RNPM_RXBUFFER_MAX;
+	/* rx-desc trans max half page(2048), for jumbo frame sg is needed */
 	return RNPM_RXBUFFER_1536 - NET_IP_ALIGN;
 }
 
 /* SG , 1 rx-desc use one page */
 static inline unsigned int rnpm_rx_pg_order(struct rnpm_ring *ring)
 {
-	/* fixed 1 page */
-	/* we don't support 3k buffer */
 	return 0;
 }
 
@@ -471,10 +451,6 @@ struct rnpm_q_vector {
 	int old_rx_count;
 	struct rnpm_adapter *adapter;
 	int factor;
-	/* index of q_vector within array, also used for
-	 * finding the bit in EICR and friends that
-	 * represents the vector for this rings
-	 */
 	u16 v_idx;
 	u16 itr;
 	struct rnpm_ring_container rx, tx;
@@ -484,15 +460,11 @@ struct rnpm_q_vector {
 	struct irq_affinity_notify affinity_notify;
 	int numa_node;
 	struct rcu_head rcu; /* to avoid race with update stats on free */
-
 	int irq_check_usecs;
-	struct hrtimer irq_miss_check_timer; // to check irq miss
+	struct hrtimer irq_miss_check_timer;
 #define RNPM_IRQ_MISS_HANDLE_DONE ((u32)(1 << 0))
-	// #define RNPM_IRQ_VECTOR_SOFT_DISABLE (u32)(1 << 1)
 	unsigned long flags;
-
 	char name[IFNAMSIZ + 9];
-
 	/* for dynamic allocation of rings associated with this q_vector */
 	struct rnpm_ring ring[0] ____cacheline_internodealigned_in_smp;
 };
@@ -544,7 +516,7 @@ static inline u16 rnpm_desc_unused_rx(struct rnpm_ring *ring)
 	u16 ntc = ring->next_to_clean;
 	u16 ntu = ring->next_to_use;
 
-	return ((ntc > ntu) ? 0 : ring->count) + ntc - ntu - 1;
+	return ((ntc > ntu) ? 0 : ring->count) + ntc - ntu - 16;
 }
 
 #define RNPM_RX_DESC(R, i) (&(((union rnpm_rx_desc *)((R)->desc))[i]))
@@ -576,12 +548,8 @@ struct rnpm_dcb_cfg {
 	u8 dcb_en; /* enabled the dcb feature or not */
 	u8 dcbx_mode;
 	struct rnpm_pfc_cfg pfc_cfg;
-
-	/* statistic info */
-
 	u64 requests[RNPM_MAX_TCS_NUM];
 	u64 indications[RNPM_MAX_TCS_NUM];
-
 	enum rnpm_fc_mode last_lfc_mode;
 };
 
@@ -613,15 +581,14 @@ struct mbx_req_cookie {
 
 struct mbx_req_cookie_pool {
 #define MAX_COOKIES_ITEMS (20 * 400)
-// #define MAX_COOKIES_ITEMS (20)
 	struct mbx_req_cookie cookies[MAX_COOKIES_ITEMS];
-
 	int next_idx;
 };
 
 /* board pf adapter */
 struct rnpm_pf_adapter {
 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
+
 	spinlock_t vlan_setup_lock;
 	spinlock_t drop_setup_lock;
 	spinlock_t dummy_setup_lock;
@@ -658,6 +625,9 @@ struct rnpm_pf_adapter {
 	int max_msix_counts[MAX_PORT_NUM];
 	int other_irq;
 
+	u8 pn[33];
+	u8 sn[33];
+
 	spinlock_t key_setup_lock;
 	/* size of RSS Hash Key in bytes */
 #define RNPM_RSS_KEY_SIZE 40
@@ -675,11 +645,10 @@ struct rnpm_pf_adapter {
 #define RNPM_MAX_MTA 128
 	u32 mta_shadow[RNPM_MAX_MTA];
 	u32 fctrl[MAX_PORT_NUM];
-	/* vlan filter status */
 	u32 vlan_filter_status[MAX_PORT_NUM];
 	spinlock_t vlan_filter_lock;
 	u32 vlan_status_true;
-	/* priv_flags used by mutiports */
+	/* priv_flags used by multiports */
 	u32 priv_flags;
 	spinlock_t priv_flags_lock;
 
@@ -688,16 +657,15 @@ struct rnpm_pf_adapter {
 
 	unsigned long state;
 	u32 timer_count;
-	/* just for mailbox use */
 	struct rnpm_hw hw;
 	char name[60];
-
 	u32 mpe_shm;
-
 	void *csl_dma_buf;
 	dma_addr_t csl_dma_phy;
 	int csl_dma_size;
 	struct mbx_req_cookie_pool cookie_pool;
+	int cpu_l3_cache_size;
+	bool module_enable_ptp;
 };
 
 enum priv_bits {
@@ -708,9 +676,20 @@ enum priv_bits {
 	padding_debug_enable = 0x10,
 };
 
+/* ring debug information */
+struct rnpm_d_ringinfo {
+	u16 txring_start;
+	u16 txring_end;
+	u16 rxring_start;
+	u16 rxring_end;
+	bool txring_vaild;
+	bool rxring_vaild;
+};
+
 /* board specific private data structure */
 struct rnpm_adapter {
 	unsigned long active_vlans[BITS_TO_LONGS(VLAN_N_VID)];
+
 	struct rnpm_pf_adapter *pf_adapter;
 	/* OS defined structs */
 	struct net_device *netdev;
@@ -721,7 +700,6 @@ struct rnpm_adapter {
 	bool quit_poll_thread;
 	struct task_struct *rx_poll_thread;
 	unsigned long state;
-	/* this var is used for auto itr modify */
 	/* hw not Supported well */
 	unsigned long last_moder_packets[MAX_RX_QUEUES];
 	unsigned long last_moder_tx_packets;
@@ -772,7 +750,7 @@ struct rnpm_adapter {
 	u8 fec : 1;
 	u8 link_traing : 1;
 	u8 duplex : 1;
-
+	u8 media_availble : 1;
 	/* Some features need tri-state capability,
 	 * thus the additional *_CAPABLE flags.
 	 */
@@ -830,11 +808,9 @@ struct rnpm_adapter {
 #define RNPM_FLAG_DELAY_UPDATE_VLAN_FILTER ((u32)(1 << 0))
 #define RNPM_FLAG_DELAY_UPDATE_VLAN_TABLE ((u32)(1 << 1))
 #define RNPM_FLAG_DELAY_UPDATE_MUTICAST_TABLE ((u32)(1 << 1))
-
 	u32 priv_flags;
 #define RNPM_PRIV_FLAG_MAC_LOOPBACK BIT(0)
 #define RNPM_PRIV_FLAG_SWITCH_LOOPBACK BIT(1)
-#define RNPM_PRIV_FLAG_VEB_ENABLE BIT(2)
 #define RNPM_PRIV_FLAG_PCIE_CACHE_ALIGN_PATCH BIT(3)
 #define RNPM_PRIV_FLAG_PADDING_DEBUG BIT(4)
 #define RNPM_PRIV_FLAG_PTP_DEBUG BIT(5)
@@ -845,8 +821,6 @@ struct rnpm_adapter {
 #define RNPM_PRIV_FLAG_TX_PADDING BIT(13)
 #define RNPM_PRIV_FLAG_FORCE_SPEED_ABLIY BIT(14)
 #define RNPM_PRIV_FLAG_LLDP_EN_STAT BIT(15)
-
-	/* Tx fast path data */
 	unsigned int num_tx_queues;
 	unsigned int max_ring_pair_counts;
 	unsigned int max_msix_counts;
@@ -854,15 +828,14 @@ struct rnpm_adapter {
 
 	__be16 vxlan_port;
 	__be16 geneve_port;
-	/* Rx fast path data */
 	int num_rx_queues;
 	u16 rx_itr_setting;
 	u32 eth_queue_idx;
 	u32 max_rate[MAX_TX_QUEUES];
 	/* TX */
-	struct rnpm_ring *tx_ring[MAX_TX_QUEUES] ____cacheline_aligned_in_smp;
+	struct rnpm_ring
+		*tx_ring[MAX_TX_QUEUES] ____cacheline_aligned_in_smp;
 	int tx_ring_item_count;
-
 	u64 restart_queue;
 	u64 lsc_int;
 	u32 tx_timeout_count;
@@ -904,7 +877,6 @@ struct rnpm_adapter {
 	unsigned long tx_hwtstamp_skipped;
 	unsigned long tx_timeout_factor;
 	u64 tx_hwtstamp_timeouts;
-	/*used for IEEE 1588 ptp clock end */
 
 	/* DCB parameters */
 	struct rnpm_dcb_cfg dcb_cfg;
@@ -926,7 +898,7 @@ struct rnpm_adapter {
 	struct rnpm_hw_stats hw_stats;
 
 	u64 tx_busy;
-
+	bool is_mac_loopback;
 	u32 link_speed;
 	bool link_up;
 	unsigned long link_check_timeout;
@@ -946,24 +918,14 @@ struct rnpm_adapter {
 	int tuple_5_count;
 	int tuple_5_count_max;
 	int tuple_5_offset;
-	u32 fdir_pballoc; //total count
+	u32 fdir_pballoc;
 	u32 atr_sample_rate;
 	spinlock_t fdir_perfect_lock;
 
 	u32 wol;
-
 	u16 bd_number;
 	u16 vector_off;
-
-	u16 eeprom_verh;
-	u16 eeprom_verl;
-	u16 eeprom_cap;
-
 	u16 stags_vid;
-
-	u32 interrupt_event;
-	u32 led_reg;
-
 	/* maintain */
 	char *maintain_buf;
 	int maintain_buf_len;
@@ -979,38 +941,26 @@ struct rnpm_adapter {
 	int vf_rate_link_speed;
 	struct vf_macvlans vf_mvs;
 	struct vf_macvlans *mv_list;
-
 	u32 timer_event_accumulator;
 	u32 vferr_refcount;
 	struct kobject *info_kobj;
 	struct hwmon_buff *rnpm_hwmon_buff;
-
+	struct device *hwmon_dev;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *rnpm_dbg_adapter;
 #endif /*CONFIG_DEBUG_FS*/
-
 	u8 default_up;
-	//u8 veb_vfnum;
-
-	u8 port; /* nr_pf_port: 0 or 1 */
+	u8 port;
 	u8 portid_of_card; /* port num in card*/
 #define RNPM_MAX_RETA_ENTRIES 512
 	u8 rss_indir_tbl[RNPM_MAX_RETA_ENTRIES];
 	u32 rss_tbl_setup_flag;
-
-	/*
-	 * #define RNPM_RSS_KEY_SIZE     40
-	 * u8 rss_key[RNPM_RSS_KEY_SIZE];
-	 * u32 rss_key_setup_flag;
-	 * struct rnpm_info* info;
-	 */
 	bool dma2_in_1pf;
-
 	u8 uc_off;
 	u8 uc_num;
-
 	char name[60];
 	bool mac_ipc_off;
+	struct rnpm_d_ringinfo d_ringinfo;
 };
 
 struct rnpm_fdir_filter {
@@ -1047,11 +997,11 @@ struct rnpm_cb {
 #define RNPM_CB(skb) ((struct rnpm_cb *)(skb)->cb)
 
 enum rnpm_boards {
-	board_n10_709_1pf_2x10G, // not support
-	board_n10_vu440_1pf_2x10G, // not support
+	board_n10_709_1pf_2x10G,
+	board_n10_vu440_1pf_2x10G,
 	board_vu440_2x10G,
 	board_vu440_2x40G,
-	board_n10_uv3p_1pf_2x10G, // not support
+	board_n10_uv3p_1pf_2x10G,
 	board_vu440_4x10G,
 	board_vu440_8x10G,
 	board_n10,
@@ -1060,6 +1010,8 @@ enum rnpm_boards {
 
 extern char rnpm_driver_name[];
 extern const char rnpm_driver_version[];
+extern struct rnpm_info rnpm_n10_info;
+extern struct rnpm_info rnpm_n400_4x1G_info;
 
 void rnpm_up(struct rnpm_adapter *adapter);
 void rnpm_down(struct rnpm_adapter *adapter);
@@ -1088,30 +1040,9 @@ netdev_tx_t rnpm_xmit_frame_ring(struct sk_buff *skb,
 				 struct rnpm_ring *ring);
 void rnpm_unmap_and_free_tx_resource(struct rnpm_ring *ring,
 				     struct rnpm_tx_buffer *buffer);
-void rnpm_alloc_rx_buffers(struct rnpm_ring *ring, u16 cnt);
 int rnpm_poll(struct napi_struct *napi, int budget);
 int ethtool_ioctl(struct ifreq *ifr);
 s32 rnpm_reinit_fdir_tables_n10(struct rnpm_hw *hw);
-s32 rnpm_init_fdir_signature_n10(struct rnpm_hw *hw, u32 fdirctrl);
-s32 rnpm_init_fdir_perfect_n10(struct rnpm_hw *hw, u32 fdirctrl);
-s32 rnpm_fdir_add_signature_filter_n10(struct rnpm_hw *hw,
-				       union rnpm_atr_hash_dword input,
-				       union rnpm_atr_hash_dword common,
-				       u8 queue);
-
-void rnpm_release_hw_control(struct rnpm_adapter *adapter);
-void rnpm_get_hw_control(struct rnpm_adapter *adapter);
-s32 rnpm_fdir_set_input_mask_n10(struct rnpm_hw *hw,
-				 union rnpm_atr_input *input_mask);
-s32 rnpm_fdir_write_perfect_filter_n10(struct rnpm_hw *hw,
-				       union rnpm_atr_input *input,
-				       u16 soft_id, u8 queue);
-s32 rnpm_fdir_erase_perfect_filter_n10(struct rnpm_hw *hw,
-				       union rnpm_atr_input *input,
-				       u16 soft_id);
-void rnpm_atr_compute_perfect_hash_n10(union rnpm_atr_input *input,
-				       union rnpm_atr_input *mask);
-bool rnpm_verify_lesm_fw_enabled_n10(struct rnpm_hw *hw);
 void rnpm_set_rx_mode(struct net_device *netdev);
 int rnpm_setup_tx_maxrate(void __iomem *ioaddr,
 			  struct rnpm_ring *tx_ring, u64 max_rate,
@@ -1126,7 +1057,7 @@ void rnpm_maybe_tx_ctxtdesc(struct rnpm_ring *tx_ring,
 			    struct rnpm_tx_buffer *first, u32 type_tucmd);
 void rnpm_store_reta(struct rnpm_adapter *adapter);
 void rnpm_store_key(struct rnpm_pf_adapter *pf_adapter);
-int rnpm_init_rss_key(struct rnpm_pf_adapter *adapter);
+int rnpm_init_rss_key(struct rnpm_pf_adapter *pf_adapter);
 int rnpm_init_rss_table(struct rnpm_adapter *adapter);
 void rnpm_setup_dma_rx(struct rnpm_adapter *adapter,
 		       int count_in_dw);
@@ -1143,7 +1074,7 @@ u32 rnpm_tx_desc_unused_sw(struct rnpm_ring *tx_ring);
 u32 rnpm_tx_desc_unused_hw(struct rnpm_hw *hw,
 			   struct rnpm_ring *tx_ring);
 s32 rnpm_disable_rxr_maxrate(struct net_device *netdev,
-			     u8 queue_index);
+				u8 queue_index);
 s32 rnpm_enable_rxr_maxrate(struct net_device *netdev,
 			    u8 queue_index, u32 maxrate);
 u32 rnpm_rx_desc_used_hw(struct rnpm_hw *hw,
@@ -1183,20 +1114,13 @@ void rnpm_ptp_stop(struct rnpm_adapter *adapter);
 void rnpm_ptp_overflow_check(struct rnpm_adapter *adapter);
 void rnpm_ptp_rx_hang(struct rnpm_adapter *adapter);
 void __rnpm_ptp_rx_hwtstamp(struct rnpm_q_vector *q_vector,
-				   struct sk_buff *skb);
+			    struct sk_buff *skb);
 static inline void rnpm_ptp_rx_hwtstamp(struct rnpm_ring *rx_ring,
 					union rnpm_rx_desc *rx_desc,
 					struct sk_buff *skb)
 {
 	if (unlikely(!rnpm_test_staterr(rx_desc, RNPM_RXD_STAT_PTP)))
 		return;
-
-	//__rnpm_ptp_rx_hwtstamp(rx_ring->q_vector, skb);
-
-	/*
-	 * Update the last_rx_timestamp timer in order to enable watchdog check
-	 * for error case of latched timestamp on a dropped packet.
-	 */
 	rx_ring->last_rx_timestamp = jiffies;
 }
 
@@ -1213,9 +1137,9 @@ int rnpm_update_ethtool_fdir_entry(struct rnpm_adapter *adapter,
 static inline bool rnpm_is_pf1(struct pci_dev *pdev)
 {
 	struct rnpm_pf_adapter *pf_adapter = pci_get_drvdata(pdev);
-	/* n10 read this from bar0 */
 	u16 vf_num = -1;
 	u32 pfvfnum_reg;
+
 #define PF_NUM_REG_N10 (0x75f000)
 	pfvfnum_reg = (PF_NUM_REG_N10 & (pci_resource_len(pdev, 0) - 1));
 	vf_num = readl(pf_adapter->hw_bar0 + pfvfnum_reg);
@@ -1247,18 +1171,17 @@ static inline bool rnpm_removed(void __iomem *addr)
 static inline bool rnpm_port_is_valid(struct rnpm_pf_adapter *pf_adapter,
 				      int i)
 {
-	if (i >= MAX_PORT_NUM) {
-		//rnpm_dbg("Port number cannot over MAX_PORT_NUM!\n");
-		return false;
-	}
+	bool b = false;
 
-	return !!(pf_adapter->port_valid & (1 << i));
+	if (i >= MAX_PORT_NUM)
+		return false;
+	b = !!(pf_adapter->port_valid & (1 << i));
+	return b;
 }
 
-int rnpm_set_clause73_autoneg_enable(struct net_device *netdev,
+int rnpm_set_clause37_autoneg_enable(struct net_device *netdev,
 				     int enable);
-int rnpm_card_partially_supported_10g_1g_sfp(
-	struct rnpm_pf_adapter *pf_adapter);
+int rnpm_card_partially_supported_10g_1g_sfp(struct rnpm_pf_adapter *pf_adapter);
 
 #define RNPM_FW_VERSION_NEW_ETHTOOL 0x00050010
 static inline bool rnpm_fw_is_old_ethtool(struct rnpm_hw *hw)
@@ -1267,7 +1190,9 @@ static inline bool rnpm_fw_is_old_ethtool(struct rnpm_hw *hw)
 							       true;
 }
 
-static inline int Hamming_weight_1(u32 n)
+void rnpm_control_mac_rx(struct rnpm_adapter *adapter, bool on);
+
+static inline int hamming_weight_1(u32 n)
 {
 	int count_ = 0;
 
@@ -1292,7 +1217,32 @@ static inline int Hamming_weight_1(u32 n)
 int rnpm_esp_tcam_enable(struct rnpm_pf_adapter *pf_adapter);
 void rnpm_set_esp_to_mpe_tcam_rule(struct rnpm_pf_adapter *pf_adapter);
 
-extern struct rnpm_info rnpm_n10_info;
-extern struct rnpm_info rnpm_n400_4x1G_info;
+/**
+ * rnpm_is_primary_adapter - Check if the adapter has the minimum port name
+ * @adapter: pointer to the rnpm_adapter structure
+ *
+ * This function determines whether the given adapter is the primary adapter.
+ *
+ * Returns: true if this adapter has the minimum port name, false otherwise.
+ */
+static inline bool rnpm_is_primary_adapter(struct rnpm_adapter *adapter)
+{
+	struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
+	u8 current_port_name = adapter->portid_of_card;
+	u8 min_port_name = current_port_name;
+	int i;
+
+	for (i = 0; i < pf_adapter->adapter_cnt; i++) {
+		if (rnpm_port_is_valid(pf_adapter, i)) {
+			u8 port_name_new =
+				(pf_adapter->port_names >> (i * 8)) & 0xff;
+
+			if (port_name_new < min_port_name)
+				min_port_name = port_name_new;
+		}
+	}
+
+	return (current_port_name == min_port_name);
+}
 
 #endif /* _RNPM_H_ */
