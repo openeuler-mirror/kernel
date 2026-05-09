@@ -785,6 +785,50 @@ void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf)
 		udma_free_normal_buf(dev, size, buf);
 }
 
+bool remap_va_to_pfn(struct udma_dev *dev, uint64_t va, uint64_t *pfn)
+{
+	pte_t *ptep;
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+
+	pgd = pgd_offset(current->mm, va);
+	if (pgd_none(*pgd) || pgd_bad(*pgd)) {
+		dev_err(dev->dev, "failed to get pgd.\n");
+		return false;
+	}
+
+	p4d = p4d_offset(pgd, va);
+	if (p4d_none(*p4d) || p4d_bad(*p4d)) {
+		dev_err(dev->dev, "failed to get p4d.\n");
+		return false;
+	}
+
+	pud = pud_offset(p4d, va);
+	if (pud_none(*pud) || pud_bad(*pud)) {
+		dev_err(dev->dev, "failed to get pud.\n");
+		return false;
+	}
+
+	pmd = pmd_offset(pud, va);
+	if (pmd_leaf(*pmd)) {
+		*pfn = pmd_pfn(*pmd);
+	} else if (pmd_none(*pmd) || pmd_bad(*pmd)) {
+		dev_err(dev->dev, "failed to get pmd.\n");
+		return false;
+	}
+
+	ptep = __pte_map(pmd, va);
+	if (!pte_present(ptep_get(ptep))) {
+		dev_err(dev->dev, "failed to get pte.\n");
+		return false;
+	}
+	*pfn = pte_pfn(*ptep);
+
+	return true;
+}
+
 int udma_query_ue_idx(struct ubcore_device *ubcore_dev, struct ubcore_devid *devid,
 		      uint16_t *ue_idx)
 {
