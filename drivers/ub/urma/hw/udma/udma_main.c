@@ -387,6 +387,7 @@ void udma_destroy_tables(struct udma_dev *udma_dev)
 
 	udma_ctrlq_destroy_tpid_list(&udma_dev->ctrlq_tpid_table);
 
+	udma_destroy_seg_tree_table(udma_dev);
 	udma_destroy_eid_table(udma_dev);
 	mutex_destroy(&udma_dev->disable_ue_rx_mutex);
 	if (!ida_is_empty(&udma_dev->rsvd_jetty_ida_table.ida))
@@ -485,6 +486,8 @@ int udma_init_tables(struct udma_dev *udma_dev)
 	ida_init(&udma_dev->rsvd_jetty_ida_table.ida);
 	mutex_init(&udma_dev->disable_ue_rx_mutex);
 	udma_init_managed_by_ctrl_cpu_table(udma_dev);
+	mutex_init(&udma_dev->seg_tree_mutex);
+	xa_init(&udma_dev->seg_tree_table);
 
 	if (udma_dev->is_ue)
 		return 0;
