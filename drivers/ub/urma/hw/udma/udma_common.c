@@ -236,28 +236,23 @@ void udma_umem_release(struct udma_umem *umem, bool is_kernel, bool dirty)
 	kfree(umem);
 }
 
-int udma_ioummu_map(struct udma_context *ctx, int r_tid, int prot, uint64_t addr,
+int udma_ioummu_map(uint32_t l_tid, uint32_t r_tid, int prot, uint64_t addr,
 		    struct sg_table *sgt)
 {
 	struct ummu_matt_domain domain = {};
-	int ret;
 
-	domain.l_tid = ctx->tid;
+	domain.l_tid = l_tid;
 	domain.r_tid = r_tid;
 	domain.mm = current->mm;
 
-	ret = ummu_sva_matt_map(&domain, addr, sgt, prot);
-	if (ret)
-		dev_err(ctx->dev->dev, "failed to ummu sva matt map, ret:%d.\n", ret);
-
-	return ret;
+	return ummu_sva_matt_map(&domain, addr, sgt, prot);
 }
 
-void udma_ioummu_unmap(struct udma_context *ctx, int r_tid, uint64_t addr, size_t size)
+void udma_ioummu_unmap(uint32_t l_tid, uint32_t r_tid, uint64_t addr, size_t size)
 {
 	struct ummu_matt_domain domain = {};
 
-	domain.l_tid = ctx->tid;
+	domain.l_tid = l_tid;
 	domain.r_tid = r_tid;
 	domain.mm = current->mm;
 

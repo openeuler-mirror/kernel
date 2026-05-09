@@ -36,7 +36,7 @@ static void udma_u_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq
 		udma_dtu_uva_unremap(dev, &sq->buf, &sq->dtu_pg_info);
 	} else if (dev->sq_reserved_info.sq_reserved) {
 		if (dev->caps.sva_sep_mode_en) {
-			udma_ioummu_unmap(sq->udma_ctx, UMMU_INVALID_TID, sq->buf.addr,
+			udma_ioummu_unmap(sq->udma_ctx->tid, UMMU_INVALID_TID, sq->buf.addr,
 					  sq->reserved_info.len);
 			sg_free_table(sq->sgt);
 			kfree(sq->sgt);
@@ -92,7 +92,7 @@ static int udma_do_ioummu_map(struct udma_dev *dev, struct udma_jetty_queue *sq,
 		goto err_create_sgt;
 	}
 
-	ret = udma_ioummu_map(sq->udma_ctx, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
+	ret = udma_ioummu_map(sq->udma_ctx->tid, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
 			      buf_addr, sq->sgt);
 	if (ret) {
 		dev_err(dev->dev, "failed to map sgt, ret=%d.\n", ret);
@@ -174,7 +174,7 @@ udma_reserved_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	return ret;
 err_remap:
 	if (dev->caps.sva_sep_mode_en) {
-		udma_ioummu_unmap(sq->udma_ctx, UMMU_INVALID_TID, buf_addr, buf_len);
+		udma_ioummu_unmap(sq->udma_ctx->tid, UMMU_INVALID_TID, buf_addr, buf_len);
 		sg_free_table(sq->sgt);
 		kfree(sq->sgt);
 		sq->sgt = NULL;

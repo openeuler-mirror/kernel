@@ -9,6 +9,7 @@
 struct udma_segment {
 	struct ubcore_target_seg core_tseg;
 	struct udma_umem *umem;
+	struct page *first_page;
 	uint32_t token_value;
 	bool token_value_valid;
 	bool kernel_mode;
@@ -30,5 +31,6 @@ struct ubcore_target_seg *udma_import_seg(struct ubcore_device *dev,
 					  struct ubcore_target_seg_cfg *cfg,
 					  struct ubcore_udata *udata);
 int udma_unimport_seg(struct ubcore_target_seg *tseg);
+void udma_destroy_seg_tree_table(struct udma_dev *udma_dev);
 
 #endif /* __UDMA_SEGMENT_H__ */
