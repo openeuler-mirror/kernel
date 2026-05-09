@@ -6,6 +6,7 @@
 
 #include "udma_dev.h"
 #include "udma_ctx.h"
+#include "udma_common.h"
 
 #define UDMA_JFC_DEPTH_MIN 64
 #define UDMA_JFC_DEPTH_SHIFT_BASE 6
@@ -73,6 +74,8 @@ struct udma_jfc {
 	uint32_t cq_shift;
 	enum udma_jfc_bind_type bind_type;
 	refcount_t bind_refcount;
+	bool dtu_en;
+	struct udma_dtu_pg_info dtu_pg_info;
 	struct sg_table *sgt;
 };
 

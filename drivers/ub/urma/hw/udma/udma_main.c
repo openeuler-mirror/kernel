@@ -703,6 +703,24 @@ static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
 	udma_dev->port_id = ubase_caps->io_port_id;
 	udma_dev->port_logic_id = ubase_caps->io_port_logic_id;
 	udma_dev->ue_id = ubase_caps->ue_id;
+
+	udma_dev->dtu_info.k_dtu_enable = ubase_adev_dtu_supported(udma_dev->comdev.adev);
+	if (!udma_dev->dtu_info.k_dtu_enable)
+		return;
+
+	if (ubase_caps->dtu_pa_base == 0 || ubase_caps->dtu_pa_size == 0 ||
+	    ubase_caps->dtu_va_base == 0 || ubase_caps->dtu_iova_base == 0) {
+		dev_warn(udma_dev->dev, "dtu para invalid.\n");
+		udma_dev->dtu_info.k_dtu_enable = false;
+		return;
+	}
+
+	udma_dev->dtu_info.u_dtu_enable = true;
+	udma_dev->dtu_info.pa_base = ubase_caps->dtu_pa_base;
+	udma_dev->dtu_info.pa_size = ubase_caps->dtu_pa_size;
+	udma_dev->dtu_info.va_base = ubase_caps->dtu_va_base;
+	udma_dev->dtu_info.iova_base = ubase_caps->dtu_iova_base;
+	udma_dev->dtu_info.dtu_mem_node_id = ubase_adev_get_mem_node_id(udma_dev->comdev.adev);
 }
 
 static int udma_construct_qos_param(struct udma_dev *dev)
@@ -1035,6 +1053,16 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 		goto err_sva_grant_range;
 	}
 
+	if (!udma_dev->dtu_info.k_dtu_enable)
+		return ret;
+
+	ret = ubase_dtu_tbl_init(udma_dev->comdev.adev, udma_dev->tid,
+				 &udma_dev->dtu_info.win_num);
+	if (ret) {
+		dev_warn(udma_dev->dev, "Failed to init dtu for udma device.\n");
+		udma_dev->dtu_info.k_dtu_enable = false;
+	}
+
 	return ret;
 
 err_sva_grant_range:
@@ -1054,6 +1082,13 @@ static void udma_free_dev_tid(struct udma_dev *udma_dev)
 	struct iommu_sva *ksva = NULL;
 	size_t token_id;
 	int ret;
+
+	if (udma_dev->dtu_info.k_dtu_enable) {
+		ret = ubase_dtu_tbl_uninit(udma_dev->comdev.adev,
+					   udma_dev->dtu_info.win_num);
+		if (ret)
+			dev_warn(udma_dev->dev, "uninit dtu failed, ret = %d.\n", ret);
+	}
 
 	ret = iommu_sva_ungrant(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE, NULL);
 	if (ret)

@@ -193,6 +193,7 @@ struct udma_buf {
 	struct xarray		id_table_xa;
 	struct mutex		id_table_mutex;
 	bool			is_hugepage;
+	bool			k_dtu_enable;
 	struct udma_hugepage	*hugepage;
 	uint32_t		len;
 	struct udma_page_priv	*page_priv;

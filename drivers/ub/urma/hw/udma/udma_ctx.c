@@ -10,9 +10,10 @@
 #include "udma_jfs.h"
 #include "udma_jetty.h"
 #include "udma_ctrlq_tp.h"
+#include "udma_cmd.h"
 #include "udma_ctx.h"
 
-static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data)
+static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data, bool dtu_en)
 {
 	struct udma_create_ctx_resp resp;
 	unsigned long byte;
@@ -37,6 +38,9 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.sq_reserved_va = dev->sq_reserved_info.va_start;
 	resp.sq_reserved_len = dev->sq_reserved_info.va_size;
 	resp.atomic_add_en = dev->caps.atomic_add_en;
+	resp.u_dtu_enable = dtu_en;
+	resp.dtu_va_base = dev->dtu_info.va_base;
+	resp.dtu_va_size = dev->dtu_info.pa_size;
 	resp.ccu_jetty_start_id = dev->caps.ccu_jetty.start_idx;
 	resp.ccu_jetty_max_cnt = dev->caps.ccu_jetty.max_cnt;
 	resp.hugepage_enable = ubase_adev_prealloc_supported(dev->comdev.adev) & hugepage_enable;
@@ -107,7 +111,12 @@ struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *ub_dev,
 		dev_err(dev->dev, "Failed to get usva tid, ret = %d.\n", ret);
 		goto err_free_ctx;
 	}
-
+	ctx->dtu_en = dev->dtu_info.u_dtu_enable;
+	ret = udma_set_dtu_va_info(dev, ctx);
+	if (ret) {
+		dev_warn(dev->dev, "Could not set DTU, ret = %d.\n", ret);
+		ctx->dtu_en = false;
+	}
 	ctx->dev = dev;
 	ctx->mm = current->mm;
 	INIT_LIST_HEAD(&ctx->pgdir_list);
@@ -117,7 +126,7 @@ struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *ub_dev,
 	INIT_LIST_HEAD(&ctx->page_list);
 	mutex_init(&ctx->page_lock);
 
-	ret = udma_init_ctx_resp(dev, udrv_data);
+	ret = udma_init_ctx_resp(dev, udrv_data, ctx->dtu_en);
 	if (ret) {
 		dev_err(dev->dev, "Init ctx resp failed.\n");
 		goto err_init_ctx_resp;
@@ -156,6 +165,7 @@ int udma_free_ucontext(struct ubcore_ucontext *ucontext)
 		dev_err(udma_dev->dev, "invalidate cfg_table failed, ret=%d.\n", ret);
 
 	mutex_destroy(&ctx->pgdir_mutex);
+	udma_unset_dtu_va_info(udma_dev, ctx);
 	udma_put_usva_tid(udma_dev, ctx);
 
 	mutex_lock(&ctx->hugepage_lock);
