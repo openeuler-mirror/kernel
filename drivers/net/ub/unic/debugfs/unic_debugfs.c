@@ -301,6 +301,56 @@ static int unic_dbg_query_link_record(struct seq_file *s, void *data)
 	return 0;
 }
 
+static int unic_dbg_query_bond_record(struct seq_file *s, void *data)
+{
+	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
+	struct unic_bond_stats *record = &unic_dev->stats.bond_record;
+	u8 cnt = 1, stats_cnt, cur_status, last_notify_status;
+	u64 total, idx;
+
+	mutex_lock(&unic_dev->bond_status.mutex);
+	cur_status = unic_dev->bond_status.cur_status;
+	last_notify_status = unic_dev->bond_status.last_notify_status;
+	mutex_unlock(&unic_dev->bond_status.mutex);
+
+	mutex_lock(&record->lock);
+
+	total = record->tx_enabled_cnt + record->tx_disabled_cnt;
+	if (!total) {
+		seq_puts(s, "bond change records : NA\n");
+		mutex_unlock(&record->lock);
+
+		return 0;
+	}
+
+	seq_puts(s, "current time        : ");
+	(void)ubase_dbg_format_time(ktime_get_real_seconds(), s);
+	seq_printf(s, "\ncurrent bond status : %s\n", cur_status ?
+		   "TX ENABLED" : "TX DISABLED");
+	seq_printf(s, "last notify status  : %s\n", last_notify_status ?
+		   "ADD" : "DEL");
+	seq_printf(s, "tx_enabled count    : %llu\n", record->tx_enabled_cnt);
+	seq_printf(s, "tx_disabled count   : %llu\n", record->tx_disabled_cnt);
+	seq_puts(s, "bond change records :\n");
+	seq_puts(s, "\tNo.\tTIME\t\t\t\tSTATUS\n");
+
+	stats_cnt = min(total, BOND_STAT_MAX_IDX);
+	while (cnt <= stats_cnt) {
+		total--;
+		idx = total % BOND_STAT_MAX_IDX;
+		seq_printf(s, "\t%-2d\t", cnt);
+		(void)ubase_dbg_format_time(record->stats[idx].bond_tv_sec, s);
+		seq_printf(s, "\t%s\n",
+			   record->stats[idx].bond_status ?
+			   "TX ENABLED" : "TX DISABLED");
+		cnt++;
+	}
+
+	mutex_unlock(&record->lock);
+
+	return 0;
+}
+
 static int unic_dbg_clear_link_record(struct seq_file *s, void *data)
 {
 	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
@@ -313,6 +363,22 @@ static int unic_dbg_clear_link_record(struct seq_file *s, void *data)
 	mutex_unlock(&record->lock);
 
 	seq_puts(s, "Link status records have been cleared!\n");
+
+	return 0;
+}
+
+static int unic_dbg_clear_bond_record(struct seq_file *s, void *data)
+{
+	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
+	struct unic_bond_stats *record = &unic_dev->stats.bond_record;
+
+	mutex_lock(&record->lock);
+	record->tx_enabled_cnt = 0;
+	record->tx_disabled_cnt = 0;
+	memset(record->stats, 0, sizeof(record->stats));
+	mutex_unlock(&record->lock);
+
+	seq_puts(s, "Bond status records have been cleared!\n");
 
 	return 0;
 }
@@ -577,13 +643,27 @@ static struct ubase_dbg_cmd_info unic_dbg_cmd[] = {
 		.init = ubase_dbg_seq_file_init,
 		.read_func = unic_dbg_query_link_record,
 	}, {
+		.name = "bond_status_record",
+		.dentry_index = UNIC_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_UNIC | UBASE_SUP_ETH,
+		.support = unic_dbg_dentry_support,
+		.init = ubase_dbg_seq_file_init,
+		.read_func = unic_dbg_query_bond_record,
+	}, {
 		.name = "clear_link_status_record",
 		.dentry_index = UNIC_DBG_DENTRY_ROOT,
 		.property = UBASE_SUP_UNIC | UBASE_SUP_UBL_ETH,
 		.support = unic_dbg_dentry_support,
 		.init = ubase_dbg_seq_file_init,
 		.read_func = unic_dbg_clear_link_record,
-	},
+	}, {
+		.name = "clear_bond_status_record",
+		.dentry_index = UNIC_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_UNIC | UBASE_SUP_ETH,
+		.support = unic_dbg_dentry_support,
+		.init = ubase_dbg_seq_file_init,
+		.read_func = unic_dbg_clear_bond_record,
+	}
 };
 
 int unic_dbg_init(struct auxiliary_device *adev)

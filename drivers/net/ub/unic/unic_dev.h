@@ -206,9 +206,21 @@ struct unic_link_stats {
 	struct mutex		lock; /* protects link record */
 };
 
+#define BOND_STAT_MAX_IDX 20U
+struct unic_bond_stats {
+	u64			tx_enabled_cnt;
+	u64			tx_disabled_cnt;
+	struct {
+		bool		bond_status;
+		time64_t	bond_tv_sec;
+	} stats[BOND_STAT_MAX_IDX];
+	struct mutex		lock; /* protects bond record */
+};
+
 struct unic_stats {
 	struct unic_fec_stats			fec_stats;
 	struct unic_link_stats			link_record;
+	struct unic_bond_stats			bond_record;
 };
 
 struct unic_addr_tbl {
@@ -257,6 +269,12 @@ struct unic_act_info {
 	struct mutex	mutex; /* protects modify deactivate state */
 };
 
+struct unic_bond_status {
+	u8 cur_status;
+	u8 last_notify_status;
+	struct mutex	mutex; /* protection bond status. */
+};
+
 struct unic_dev {
 	/* This member must be first, adaptor driver will relay on it */
 	struct ubase_adev_com	comdev;
@@ -278,6 +296,7 @@ struct unic_dev {
 	struct unic_act_info	act_info;
 	u32			tid;
 	u8			sw_link_status;
+	struct unic_bond_status	bond_status;
 };
 
 int unic_dev_init(struct auxiliary_device *adev);

@@ -189,6 +189,27 @@ static void unic_link_status_record(struct net_device *netdev, bool linkup)
 	mutex_unlock(&record->lock);
 }
 
+static void unic_bond_status_record(struct net_device *netdev, bool tx_enabled)
+{
+	struct unic_dev *unic_dev = netdev_priv(netdev);
+	struct unic_bond_stats *record = &unic_dev->stats.bond_record;
+	u64 idx, total;
+
+	mutex_lock(&record->lock);
+
+	if (tx_enabled)
+		record->tx_enabled_cnt++;
+	else
+		record->tx_disabled_cnt++;
+
+	total = record->tx_enabled_cnt + record->tx_disabled_cnt;
+	idx = (total - 1) % BOND_STAT_MAX_IDX;
+	record->stats[idx].bond_tv_sec = ktime_get_real_seconds();
+	record->stats[idx].bond_status = tx_enabled;
+
+	mutex_unlock(&record->lock);
+}
+
 static void unic_clear_fec_stats(struct unic_dev *unic_dev)
 {
 	struct unic_fec_stats *fec_stats = &unic_dev->stats.fec_stats;
@@ -874,6 +895,31 @@ void unic_unregister_ipaddr_notifier(void)
 	unregister_inet6addr_notifier(&unic_inet6addr_notifier);
 }
 
+static int unic_update_bond_status(struct unic_dev *unic_dev,
+				   struct netdev_notifier_changelowerstate_info *info)
+{
+	struct unic_bond_status *bond_status = &unic_dev->bond_status;
+	struct netdev_lag_lower_state_info *lag_info;
+
+	if (!netif_is_bond_slave(unic_dev->comdev.netdev))
+		return NOTIFY_DONE;
+
+	lag_info = info->lower_state_info;
+
+	mutex_lock(&bond_status->mutex);
+	unic_dev->bond_status.cur_status = lag_info->tx_enabled;
+	mutex_unlock(&bond_status->mutex);
+
+	unic_info(unic_dev, "[UNIC DEBUG] update bond_status: %u.\n",
+		  unic_dev->bond_status.cur_status);
+
+	unic_bond_status_record(unic_dev->comdev.netdev, lag_info->tx_enabled);
+
+	set_bit(UNIC_STATE_SYNC_BOND_PORT, &unic_dev->state);
+
+	return NOTIFY_OK;
+}
+
 static int unic_netdev_event(struct notifier_block *nb,
 			     unsigned long event, void *ptr)
 {
@@ -886,12 +932,17 @@ static int unic_netdev_event(struct notifier_block *nb,
 
 	unic_dev = netdev_priv(netdev);
 
-	if (!unic_dev_eth_mac_supported(unic_dev) || event != NETDEV_CHANGEUPPER)
+	if (!unic_dev_eth_mac_supported(unic_dev))
 		return NOTIFY_DONE;
 
-	set_bit(UNIC_STATE_SYNC_BOND_PORT, &unic_dev->state);
+	switch (event) {
+	case NETDEV_CHANGELOWERSTATE:
+		return unic_update_bond_status(unic_dev, ptr);
+	default:
+		break;
+	}
 
-	return NOTIFY_OK;
+	return NOTIFY_DONE;
 }
 
 static struct notifier_block unic_netdev_notifier = {
