@@ -790,6 +790,33 @@ static int vhost_vsock_set_cid(struct vhost_vsock *vsock, u64 guest_cid)
 	return 0;
 }
 
+u64 vhost_vsock_translate_gpa(u32 cid, u64 gpa, u64 size)
+{
+	struct vhost_vsock *vsock;
+	struct vhost_iotlb_map *map;
+	u64 hva = 0;
+
+	if (cid <= VMADDR_CID_HOST || size == 0)
+		return 0;
+
+	mutex_lock(&vhost_vsock_mutex);
+	vsock = vhost_vsock_get(cid);
+	if (!vsock || !vsock->dev.umem)
+		goto out;
+
+	map = vhost_iotlb_itree_first(vsock->dev.umem, gpa, gpa);
+	if (!map || gpa < map->start || gpa > map->last)
+		goto out;
+
+	if (gpa + size > map->start + map->size)
+		goto out;
+	hva = map->addr + (gpa - map->start);
+out:
+	mutex_unlock(&vhost_vsock_mutex);
+	return hva;
+}
+EXPORT_SYMBOL_GPL(vhost_vsock_translate_gpa);
+
 static int vhost_vsock_set_features(struct vhost_vsock *vsock, u64 features)
 {
 	struct vhost_virtqueue *vq;
