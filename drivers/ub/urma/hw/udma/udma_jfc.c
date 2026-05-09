@@ -469,6 +469,11 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *ubcore_dev,
 	if (ret)
 		goto err_alloc_cqc;
 
+	if (!!dev->caps.no_share_jfc_en) {
+		jfc->bind_type = UDMA_UNOCP_JFC;
+		refcount_set(&jfc->bind_refcount, 1);
+	}
+
 	refcount_set(&jfc->event_refcount, 1);
 	init_completion(&jfc->event_comp);
 
@@ -557,6 +562,11 @@ int udma_active_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_udata *udata)
 			udma_id_free(&dev->jfc_table.ida_table, ujfc->jfcn);
 		}
 		return ret;
+	}
+
+	if (!!dev->caps.no_share_jfc_en) {
+		ujfc->bind_type = UDMA_UNOCP_JFC;
+		refcount_set(&ujfc->bind_refcount, 1);
 	}
 
 	refcount_set(&ujfc->event_refcount, 1);
@@ -1576,4 +1586,117 @@ void udma_clean_jfc(struct ubcore_jfc *jfc, uint32_t jetty_id, struct udma_dev *
 
 	if (!jfc->jfc_cfg.flag.bs.lock_free)
 		spin_unlock_irqrestore(&udma_jfc->lock, flags);
+}
+
+int udma_bind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type type)
+{
+	struct udma_jfc *udma_jfc;
+
+	if (jfc_share_enable || !dev->caps.no_share_jfc_en)
+		return 0;
+
+	xa_lock(&dev->jfc_table.xa);
+	udma_jfc = (struct udma_jfc *)xa_load(&dev->jfc_table.xa, jfc_id);
+	if (!udma_jfc) {
+		xa_unlock(&dev->jfc_table.xa);
+		dev_err(dev->dev, "jfc %u is invalid.\n", jfc_id);
+		return -EINVAL;
+	}
+
+	if ((udma_jfc->bind_type != type) && (udma_jfc->bind_type != UDMA_UNOCP_JFC)) {
+		xa_unlock(&dev->jfc_table.xa);
+		dev_err(dev->dev, "jfc %u is bound.\n", jfc_id);
+		return -EINVAL;
+	}
+
+	refcount_inc(&udma_jfc->bind_refcount);
+	xa_unlock(&dev->jfc_table.xa);
+
+	return 0;
+}
+
+void udma_unbind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type type)
+{
+	struct udma_jfc *udma_jfc;
+
+	if (jfc_share_enable || !dev->caps.no_share_jfc_en)
+		return;
+
+	xa_lock(&dev->jfc_table.xa);
+	udma_jfc = (struct udma_jfc *)xa_load(&dev->jfc_table.xa, jfc_id);
+	if (!udma_jfc) {
+		xa_unlock(&dev->jfc_table.xa);
+		dev_err(dev->dev, "jfc %u is invalid.\n", jfc_id);
+		return;
+	}
+
+	if ((udma_jfc->bind_type != type) && (udma_jfc->bind_type != UDMA_UNOCP_JFC)) {
+		xa_unlock(&dev->jfc_table.xa);
+		dev_err(dev->dev, "failed to unbind jfc:%u, jfc type:%u.\n",
+			jfc_id, (uint8_t)udma_jfc->bind_type);
+		return;
+	}
+
+	refcount_dec(&udma_jfc->bind_refcount);
+	xa_unlock(&dev->jfc_table.xa);
+}
+
+int udma_jetty_bind_jfc(struct udma_dev *dev, uint32_t send_jfc_id, uint32_t recv_jfc_id)
+{
+	struct udma_jfc *udma_send_jfc;
+
+	if (jfc_share_enable || !dev->caps.no_share_jfc_en)
+		return 0;
+
+	if (send_jfc_id == recv_jfc_id) {
+		dev_err(dev->dev, "send jfc %u = recv jfc %u.\n", send_jfc_id, recv_jfc_id);
+		return -EINVAL;
+	}
+
+	xa_lock(&dev->jfc_table.xa);
+	udma_send_jfc = (struct udma_jfc *)xa_load(&dev->jfc_table.xa, send_jfc_id);
+	if (!udma_send_jfc) {
+		xa_unlock(&dev->jfc_table.xa);
+		dev_err(dev->dev, "jfc %u is invalid.\n", send_jfc_id);
+		return -EINVAL;
+	}
+
+	if ((udma_send_jfc->bind_type != UDMA_SEND_JFC) &&
+	    (udma_send_jfc->bind_type != UDMA_UNOCP_JFC)) {
+		xa_unlock(&dev->jfc_table.xa);
+		dev_err(dev->dev, "jfc %u is bound.\n", send_jfc_id);
+		return -EINVAL;
+	}
+
+	refcount_inc(&udma_send_jfc->bind_refcount);
+	xa_unlock(&dev->jfc_table.xa);
+
+	return 0;
+}
+
+void udma_jetty_unbind_jfc(struct udma_dev *dev, uint32_t send_jfc_id)
+{
+	struct udma_jfc *udma_send_jfc;
+
+	if (jfc_share_enable || !dev->caps.no_share_jfc_en)
+		return;
+
+	xa_lock(&dev->jfc_table.xa);
+	udma_send_jfc = (struct udma_jfc *)xa_load(&dev->jfc_table.xa, send_jfc_id);
+	if (!udma_send_jfc) {
+		xa_unlock(&dev->jfc_table.xa);
+		dev_err(dev->dev, "jfc id %u is invalid.\n", send_jfc_id);
+		return;
+	}
+
+	if ((udma_send_jfc->bind_type != UDMA_SEND_JFC) &&
+	    (udma_send_jfc->bind_type != UDMA_UNOCP_JFC)) {
+		xa_unlock(&dev->jfc_table.xa);
+		dev_err(dev->dev,
+			"failed to unbind jfc:%u, jfc type is not send jfc.\n", send_jfc_id);
+		return;
+	}
+
+	refcount_dec(&udma_send_jfc->bind_refcount);
+	xa_unlock(&dev->jfc_table.xa);
 }

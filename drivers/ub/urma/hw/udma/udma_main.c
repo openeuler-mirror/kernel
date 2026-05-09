@@ -46,6 +46,7 @@ uint32_t jfr_sleep_time = 1000;
 uint32_t jfc_arm_mode;
 bool dump_aux_info;
 bool hugepage_enable = true;
+bool jfc_share_enable = true;
 
 static const struct auxiliary_device_id udma_id_table[] = {
 	{
@@ -797,6 +798,9 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	ret = udma_query_wqebb_va(udma_dev);
 	if (ret)
 		return ret;
+
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_NOT_SHARE_JFC))
+		udma_dev->caps.no_share_jfc_en = true;
 
 	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_WRITE_ATOMIC_ADD))
 		udma_dev->caps.atomic_add_en = true;
@@ -1566,3 +1570,6 @@ MODULE_PARM_DESC(dump_aux_info,
 
 module_param(hugepage_enable, bool, 0644);
 MODULE_PARM_DESC(hugepage_enable, "Set huge page enable, default: 1(0:disable, 1:enable)");
+
+module_param(jfc_share_enable, bool, 0644);
+MODULE_PARM_DESC(jfc_share_enable, "Set jfc share enable, default: 1(0:disable, 1:enable)");
