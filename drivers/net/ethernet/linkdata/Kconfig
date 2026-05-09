@@ -17,4 +17,6 @@ config NET_VENDOR_LINKDATA
 if NET_VENDOR_LINKDATA
 source "drivers/net/ethernet/linkdata/sxe/Kconfig"
 source "drivers/net/ethernet/linkdata/sxevf/Kconfig"
+source "drivers/net/ethernet/linkdata/sxe2/Kconfig"
+source "drivers/net/ethernet/linkdata/sxe2vf/Kconfig"
 endif # NET_VENDOR_LINKDATA
