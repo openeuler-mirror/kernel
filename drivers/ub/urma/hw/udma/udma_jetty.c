@@ -1568,11 +1568,13 @@ static uint64_t udma_jetty_opt[] = {
 	UBCORE_JFS_PI,
 	UBCORE_JFS_PI_TYPE,
 	UBCORE_JFS_CI,
+	UBCORE_JFS_FULL_CTX,
 	UBCORE_JETTY_ID,
 	UBCORE_JETTY_FLAG,
 	UBCORE_JETTY_BIND_JFR,
 	UBCORE_JETTY_BIND_RX_JFC,
 	UBCORE_JETTY_BIND_JTG,
+	UBCORE_JETTY_FULL_CTX,
 };
 
 static struct udma_jetty_opt_info opt_info[] = {
@@ -1594,11 +1596,13 @@ static struct udma_jetty_opt_info opt_info[] = {
 	{sizeof(uint16_t), PERM_R, 0, JFS_MODE | JETTY_MODE},
 	{sizeof(uint16_t), PERM_R | PERM_W, USER_IGNORE, JFS_MODE | JETTY_MODE},
 	{sizeof(uint16_t), PERM_R, 0, JFS_MODE | JETTY_MODE},
+	{sizeof(struct udma_jetty_ctx), PERM_R, 0, JFS_MODE | JETTY_MODE},
 	{sizeof(uint32_t), PERM_R | PERM_W, USER_IGNORE, JETTY_MODE},
 	{sizeof(uint32_t), PERM_R | PERM_W, USER_IGNORE, JETTY_MODE},
 	{sizeof(uint64_t), PERM_R | PERM_W, USER_IGNORE, JETTY_MODE},
 	{sizeof(uint64_t), PERM_R | PERM_W, USER_IGNORE, JETTY_MODE},
 	{sizeof(uint64_t), PERM_R | PERM_W, USER_IGNORE, JETTY_MODE},
+	{sizeof(struct udma_jetty_ctx), PERM_R, 0, JETTY_MODE},
 };
 
 int udma_verify_jetty_opt(struct udma_dev *udma_dev, struct udma_jetty_opt_attr attr)
@@ -1747,7 +1751,7 @@ int udma_get_jetty_field(struct udma_dev *dev, struct udma_jetty_queue *sq, uint
 	case UBCORE_JFS_PI:
 		ret = udma_query_jetty_ctx(dev, &ctx, sq->id);
 		if (ret) {
-			dev_err(dev->dev, "query jetty ctx failed, id = %u, ret = %d.\n",
+			dev_err(dev->dev, "failed to query jetty ctx, id = %u, ret = %d.\n",
 				sq->id, ret);
 			return ret;
 		}
@@ -1759,11 +1763,27 @@ int udma_get_jetty_field(struct udma_dev *dev, struct udma_jetty_queue *sq, uint
 	case UBCORE_JFS_CI:
 		ret = udma_query_jetty_ctx(dev, &ctx, sq->id);
 		if (ret) {
-			dev_err(dev->dev, "query jetty ctx failed, id = %u, ret = %d.\n",
+			dev_err(dev->dev, "failed to query jfs ctx, id = %u, ret = %d.\n",
 				sq->id, ret);
 			return ret;
 		}
 		*(uint16_t *)buf = ctx.CI;
+		break;
+	case UBCORE_JFS_FULL_CTX:
+		ret = udma_query_jetty_ctx(dev, (struct udma_jetty_ctx *)buf, sq->id);
+		if (ret) {
+			dev_err(dev->dev, "failed to query jfs ctx, id = %u, ret = %d.\n",
+				sq->id, ret);
+			return ret;
+		}
+		break;
+	case UBCORE_JETTY_FULL_CTX:
+		ret = udma_query_jetty_ctx(dev, (struct udma_jetty_ctx *)buf, sq->id);
+		if (ret) {
+			dev_err(dev->dev, "failed to query jetty ctx, id = %u, ret = %d.\n",
+				sq->id, ret);
+			return ret;
+		}
 		break;
 	default:
 		break;

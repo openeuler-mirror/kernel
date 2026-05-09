@@ -1025,11 +1025,12 @@ static struct udma_jfr_opt_info opt_k_jfr_table[] = {
 	{UBCORE_JFR_USER_CTX, sizeof(uint64_t), PERM_READ | PERM_WRITE, USER_IGNORE},
 	{UBCORE_JFR_RQE_BASE_ADDR, sizeof(uint64_t), PERM_READ | PERM_WRITE, USER_IGNORE},
 	{UBCORE_JFR_ID, sizeof(uint32_t), PERM_READ | PERM_WRITE, 0},
-	{UBCORE_JFR_DB_ADDR, sizeof(uint64_t), PERM_READ, USER_IGNORE},
+	{UBCORE_JFR_DB_ADDR, sizeof(uint64_t), PERM_READ | PERM_WRITE, USER_IGNORE},
 	{UBCORE_JFR_DB_STATUS, sizeof(uint8_t), PERM_READ | PERM_WRITE, USER_IGNORE},
 	{UBCORE_JFR_PI, sizeof(uint16_t), PERM_READ, 0},
 	{UBCORE_JFR_PI_TYPE, sizeof(uint16_t), PERM_READ | PERM_WRITE, USER_IGNORE},
 	{UBCORE_JFR_CI, sizeof(uint16_t), PERM_READ, 0},
+	{UBCORE_JFR_FULL_CTX, sizeof(struct udma_jfr_ctx), PERM_READ, 0},
 };
 
 static int udma_query_jfr_ctx(struct udma_dev *dev, struct udma_jfr_ctx *ctx,
@@ -1119,6 +1120,15 @@ static int udma_k_get_jfr_param(struct udma_dev *dev, struct ubcore_jfr *ubcore_
 		}
 		*(uint16_t *)buf = jfr_ctx.ci;
 		break;
+	case UBCORE_JFR_FULL_CTX:
+		ret = udma_query_jfr_ctx(dev, (struct udma_jfr_ctx *)buf, udma_jfr->rq.id);
+		if (ret) {
+			dev_err(dev->dev,
+				"failed to query jfr ctx, id = %u, ret = %d.\n",
+				udma_jfr->rq.id, ret);
+			return ret;
+		}
+		break;
 	default:
 		dev_err(dev->dev, "invalid param, opt=%llu.\n", opt);
 		return -EINVAL;
@@ -1156,6 +1166,13 @@ static int udma_k_set_jfr_param(struct udma_dev *dev, struct ubcore_jfr *ubcore_
 		udma_jfr->rq.id = *(uint32_t *)buf;
 		break;
 	case UBCORE_JFR_DB_ADDR:
+		addr = *(uint64_t *)buf;
+		if (!addr) {
+			dev_err(dev->dev, "jfr doorbell addr is null.\n");
+			return -EINVAL;
+		}
+		udma_jfr->sw_db.db_addr = *(uint64_t *)buf;
+		break;
 	case UBCORE_JFR_DB_STATUS:
 	case UBCORE_JFR_PI_TYPE:
 		/* TO DO */
@@ -1172,12 +1189,10 @@ static int udma_k_check_set_get_jfr_param(uint64_t opt, void *buf, uint32_t len,
 					  struct ubcore_udata *udata,
 					  enum udma_k_set_get_jfr_opt_perm perm)
 {
-#define UDMA_K_JFR_GET_JFR_OPT_CNT 15
-
 	if (!buf)
 		return -ENOMEM;
 
-	for (size_t i = 0; i < UDMA_K_JFR_GET_JFR_OPT_CNT; i++) {
+	for (size_t i = 0; i < ARRAY_SIZE(opt_k_jfr_table); i++) {
 		if ((opt_k_jfr_table[i].opt == opt) &&
 		    (opt_k_jfr_table[i].buf_len == len) &&
 		    (opt_k_jfr_table[i].perm & perm))
@@ -1289,8 +1304,12 @@ int udma_get_jfr_opt(struct ubcore_jfr *jfr, uint64_t opt, void *buf, uint32_t l
 	ret = udma_k_check_set_get_jfr_param(opt, buf, len, udata, PERM_READ);
 	if (ret == -EEXIST)
 		return 0;
-	if (ret)
+	if (ret) {
+		dev_err(udma_dev->dev,
+			"opt %llu, len %u, perm value or buf addr is invalid, ret = %d.\n",
+			opt, len, ret);
 		return ret;
+	}
 
 	ret = udma_k_get_jfr_param(udma_dev, jfr, opt, buf);
 	if (ret)
