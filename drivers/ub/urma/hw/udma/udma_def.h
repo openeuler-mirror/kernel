@@ -23,6 +23,7 @@ enum {
 	UDMA_CAP_FEATURE_UE_RX_CLOSE		= BIT(18),
 	UDMA_CAP_FEATURE_RNR_RETRY		= BIT(19),
 	UDMA_CAP_FEATURE_WRITE_ATOMIC_ADD	= BIT(21),
+	UDMA_CAP_FEATURE_NOT_SHARE_JFC		= BIT(27),
 };
 
 struct udma_res {
@@ -71,6 +72,7 @@ struct udma_caps {
 	uint8_t cqe_size;
 	struct udma_tbl seid;
 	uint32_t rc_max_cnt;
+	bool no_share_jfc_en;
 	bool ctp_en;
 	bool ipourma_en;
 	bool sva_sep_mode_en;

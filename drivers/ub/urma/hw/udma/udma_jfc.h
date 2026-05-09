@@ -46,6 +46,12 @@ enum udma_cq_cnt_mode {
 	UDMA_CQE_CNT_MODE_BY_CI_PI_GAP,
 };
 
+enum udma_jfc_bind_type {
+	UDMA_UNOCP_JFC,
+	UDMA_SEND_JFC,
+	UDMA_RECV_JFC,
+};
+
 struct udma_jfc {
 	struct ubcore_jfc base;
 	struct udma_context *ctx;
@@ -65,6 +71,8 @@ struct udma_jfc {
 	uint64_t stars_chnl_addr;
 	bool stars_en;
 	uint32_t cq_shift;
+	enum udma_jfc_bind_type bind_type;
+	refcount_t bind_refcount;
 	struct sg_table *sgt;
 };
 
@@ -207,5 +215,9 @@ int udma_get_jfc_opt(struct ubcore_jfc *jfc, uint64_t opt, void *buf, uint32_t l
 		     struct ubcore_udata *udata);
 int udma_deactive_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_udata *udata);
 int udma_free_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_udata *udata);
+int udma_bind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type type);
+void udma_unbind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type type);
+int udma_jetty_bind_jfc(struct udma_dev *dev, uint32_t send_jfc_id, uint32_t recv_jfc_id);
+void udma_jetty_unbind_jfc(struct udma_dev *dev, uint32_t send_jfc_id);
 
 #endif /* __UDMA_JFC_H__ */

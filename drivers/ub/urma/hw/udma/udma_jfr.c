@@ -471,6 +471,10 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev,
 	if (ret)
 		goto err_get_jfr_buf;
 
+	ret = udma_bind_jfc(udma_dev, cfg->jfc->id, UDMA_RECV_JFC);
+	if (ret)
+		goto err_xa_store;
+
 	ret = xa_err(xa_store(&udma_dev->jfr_table.xa, udma_jfr->rq.id,
 			      udma_jfr, GFP_KERNEL));
 	if (ret) {
@@ -494,6 +498,7 @@ struct ubcore_jfr *udma_create_jfr(struct ubcore_device *dev,
 	return &udma_jfr->ubcore_jfr;
 
 err_hw_init_jfrc:
+	udma_unbind_jfc(udma_dev, cfg->jfc->id, UDMA_RECV_JFC);
 	xa_erase(&udma_dev->jfr_table.xa, udma_jfr->rq.id);
 err_xa_store:
 	udma_put_jfr_buf(udma_dev, udma_jfr, false);
@@ -618,6 +623,8 @@ static void udma_free_jfr_prepare(struct ubcore_jfr *jfr)
 {
 	struct udma_dev *udma_dev = to_udma_dev(jfr->ub_dev);
 	struct udma_jfr *udma_jfr = to_udma_jfr(jfr);
+
+	udma_unbind_jfc(udma_dev, jfr->jfr_cfg.jfc->id, UDMA_RECV_JFC);
 
 	if (udma_jfr->rq.buf.kva && jfr->jfr_cfg.jfc)
 		udma_clean_jfc(jfr->jfr_cfg.jfc, udma_jfr->rq.id, udma_dev);
@@ -1216,10 +1223,8 @@ int udma_active_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 	if (ret)
 		goto err_get_jfr_buf;
 
-#ifdef CONFIG_V121
 	if (udma_bind_jfc(udma_dev, cfg->jfc->id, UDMA_RECV_JFC))
 		goto err_xa_store;
-#endif
 
 	ret = xa_err(xa_store(&udma_dev->jfr_table.xa, udma_jfr->rq.id, udma_jfr, GFP_KERNEL));
 	if (ret) {
@@ -1243,9 +1248,7 @@ int udma_active_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 	return 0;
 
 err_hw_init_jfrc:
-#ifdef CONFIG_V121
 	udma_unbind_jfc(udma_dev, cfg->jfc->id, UDMA_RECV_JFC);
-#endif
 	xa_erase(&udma_dev->jfr_table.xa, udma_jfr->rq.id);
 err_xa_store:
 	udma_put_jfr_buf(udma_dev, udma_jfr, false);

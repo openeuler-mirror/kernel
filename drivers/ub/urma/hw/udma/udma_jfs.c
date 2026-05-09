@@ -17,6 +17,7 @@
 #include "udma_cmd.h"
 #include "udma_jetty.h"
 #include "udma_segment.h"
+#include "udma_jfc.h"
 #include "udma_jfs.h"
 
 static bool udma_check_vma(struct udma_dev *dev, struct vm_area_struct *vma)
@@ -578,6 +579,9 @@ int udma_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 		return ret;
 	}
 
+	if (udma_bind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC))
+		goto err_bind_jfc;
+
 	ret = udma_create_hw_jfs_ctx(dev, ujfs, cfg);
 	if (ret) {
 		dev_err(dev->dev,
@@ -596,6 +600,8 @@ int udma_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 	return 0;
 
 err_create_hw_jfs:
+	udma_unbind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC);
+err_bind_jfc:
 	udma_free_jfs_sq(dev, ujfs);
 
 	return ret;
@@ -624,6 +630,10 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *ub_dev,
 		goto err_alloc_sq;
 	}
 
+	ret = udma_bind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC);
+	if (ret)
+		goto err_bind_jfc;
+
 	ret = udma_create_hw_jfs_ctx(dev, jfs, cfg);
 	if (ret) {
 		dev_err(dev->dev,
@@ -642,6 +652,8 @@ struct ubcore_jfs *udma_create_jfs(struct ubcore_device *ub_dev,
 	return &jfs->ubcore_jfs;
 
 err_create_hw_jfs:
+	udma_unbind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC);
+err_bind_jfc:
 	udma_free_jfs_sq(dev, jfs);
 err_alloc_sq:
 	kfree(jfs);
@@ -652,6 +664,8 @@ static void udma_free_jfs_detail(struct ubcore_jfs *jfs)
 {
 	struct udma_dev *dev = to_udma_dev(jfs->ub_dev);
 	struct udma_jfs *ujfs = to_udma_jfs(jfs);
+
+	udma_unbind_jfc(dev, jfs->jfs_cfg.jfc->id, UDMA_SEND_JFC);
 
 	udma_clean_cqe_for_jetty(dev, &ujfs->sq, jfs->jfs_cfg.jfc, NULL);
 

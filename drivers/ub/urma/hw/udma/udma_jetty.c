@@ -663,10 +663,16 @@ struct ubcore_jetty *udma_create_jetty(struct ubcore_device *ub_dev, struct ubco
 	if (!udma_jetty)
 		return ERR_PTR(-ENOMEM);
 
+	ret = udma_jetty_bind_jfc(udma_dev, cfg->send_jfc->id, cfg->recv_jfc->id);
+	if (ret) {
+		kfree(udma_jetty);
+		return ERR_PTR(ret);
+	}
+
 	ret = udma_active_jetty_detail(udma_dev, udma_jetty, cfg, udata);
 	if (ret) {
 		dev_err(udma_dev->dev, "active jetty detail failed, ret = %d.\n", ret);
-
+		udma_jetty_unbind_jfc(udma_dev, cfg->send_jfc->id);
 		kfree(udma_jetty);
 		return ERR_PTR(ret);
 	}
@@ -902,6 +908,7 @@ static void udma_free_jetty_detail(struct ubcore_jetty *jetty)
 	struct udma_dev *udma_dev = to_udma_dev(jetty->ub_dev);
 	struct udma_jetty *udma_jetty = to_udma_jetty(jetty);
 
+	udma_jetty_unbind_jfc(udma_dev, jetty->jetty_cfg.send_jfc->id);
 
 	udma_clean_cqe_for_jetty(udma_dev, &udma_jetty->sq, jetty->jetty_cfg.send_jfc,
 				 jetty->jetty_cfg.recv_jfc);
@@ -1706,8 +1713,13 @@ int udma_active_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 	struct udma_jetty *udma_jetty = to_udma_jetty(jetty);
 	int ret = 0;
 
+	if (udma_jetty_bind_jfc(udma_dev, jetty->jetty_cfg.send_jfc->id,
+				jetty->jetty_cfg.recv_jfc->id))
+		return -EINVAL;
+
 	ret = udma_active_jetty_detail(udma_dev, udma_jetty, &jetty->jetty_cfg, udata);
 	if (ret) {
+		udma_jetty_unbind_jfc(udma_dev, jetty->jetty_cfg.send_jfc->id);
 		dev_err(udma_dev->dev, "failed to active jetty, ret = %d.\n", ret);
 		return ret;
 	}
