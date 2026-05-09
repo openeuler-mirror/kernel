@@ -7,6 +7,7 @@
 #include <linux/types.h>
 #include <linux/auxiliary_bus.h>
 #include <linux/ummu_core.h>
+#include <ub/urma/ubcore_types.h>
 #include <ub/ubase/ubase_comm_mbx.h>
 
 #define UDMA_AE_EVENT_TYPE 4
