@@ -30,6 +30,7 @@
 #include "udma_common.h"
 #include "udma_ctrlq_tp.h"
 #include "udma_mue.h"
+#include "udma_safe_mode.h"
 #include "udma_jetty_group.h"
 
 #define UDMA_DRV_VER "1.0"
@@ -853,11 +854,28 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 
 	udma_init_hugepage(udma_dev);
 
+	if (!ubase_adev_mbx_supported(udma_dev->comdev.adev)) {
+		ret = udma_init_mbox_over_cmdq(udma_dev);
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"Failed to init mbox over cmdq, ret = %d\n", ret);
+			udma_destroy_hugepage(udma_dev);
+
+			mutex_destroy(&udma_dev->db_mutex);
+			dev_set_drvdata(&udma_dev->comdev.adev->dev, NULL);
+			udma_destroy_tables(udma_dev);
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
 static void udma_uninit_dev_param(struct udma_dev *udma_dev)
 {
+	if (!ubase_adev_mbx_supported(udma_dev->comdev.adev))
+		udma_uninit_mbox_over_cmdq(udma_dev);
+
 	udma_destroy_hugepage(udma_dev);
 	mutex_destroy(&udma_dev->db_mutex);
 	dev_set_drvdata(&udma_dev->comdev.adev->dev, NULL);

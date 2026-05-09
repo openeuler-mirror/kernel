@@ -6,6 +6,7 @@
 #include <linux/slab.h>
 #include <linux/dmapool.h>
 #include <ub/ubase/ubase_comm_dev.h>
+#include "udma_safe_mode.h"
 #include "udma_eid.h"
 #include "udma_cmd.h"
 #include "udma_jfc.h"
@@ -97,7 +98,9 @@ int udma_post_mbox(struct udma_dev *dev, struct ubase_cmd_mailbox *mailbox,
 				     "Send cmd mailbox, data: %08x %04x%04x.\n",
 				     attr->tag, attr->op, attr->mbx_ue_id);
 
-	ret = ubase_hw_upgrade_ctx_ex(dev->comdev.adev, attr, mailbox);
+	ret = ubase_adev_mbx_supported(dev->comdev.adev) ?
+	      ubase_hw_upgrade_ctx_ex(dev->comdev.adev, attr, mailbox) :
+	      udma_post_mbox_over_cmdq(dev, attr, mailbox);
 
 	return (ret == -EAGAIN &&
 		udma_op_ignore_eagain(attr->op, mailbox->buf)) ? 0 : ret;

@@ -174,6 +174,7 @@ struct udma_dev {
 	atomic_t hugepage_seq;
 	struct udma_tp_cmdq_info *wait_cmdq_info;
 	struct udma_sq_reserved_info sq_reserved_info;
+	struct udma_mbox_over_cmdq_info *mbox_over_cmdq_info;
 };
 
 #define UDMA_ERR_MSG_LEN	128
