@@ -798,6 +798,9 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	if (ret)
 		return ret;
 
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_WRITE_ATOMIC_ADD))
+		udma_dev->caps.atomic_add_en = true;
+
 	udma_dev->caps.max_msg_len = MAX_MSG_LEN;
 	udma_dev->caps.jetty_in_grp = MAX_JETTY_IN_JETTY_GRP;
 

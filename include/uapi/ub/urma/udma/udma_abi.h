@@ -103,9 +103,10 @@ struct udma_create_ctx_resp {
 	__u32 reduce_enable : 1;
 	__u32 dump_aux_info : 1;
 	__u32 sq_reserved : 1;
+	__u32 atomic_add_en : 1;
 	__u32 hugepage_enable : 1;
 	__u32 sva_sep_mode_en : 1;
-	__u32 rsv : 19;
+	__u32 rsv : 17;
 	__u32 ue_id;
 	__u32 chip_id;
 	__u32 die_id;
