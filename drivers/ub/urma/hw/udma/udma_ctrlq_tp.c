@@ -878,32 +878,151 @@ int udma_ctrlq_query_host_ubmem_info(struct ubcore_device *dev, struct ubcore_uc
 	return ret;
 }
 
+static int udma_set_global_udp_sport_attr(struct udma_dev *udev, const uint32_t tp_attr_bitmap,
+					  const struct ubcore_tp_attr_value *tp_attr)
+{
+	uint8_t udp_attr_bitmap = (tp_attr_bitmap >> UDMA_UDP_ATTR_SHIFT) & UDMA_UDP_ATTR_MASK;
+	uint8_t udp_global_bit_enable = (tp_attr_bitmap >> UDMA_UDP_GLOBAL_SHIFT) &
+					UDMA_UDP_GLOBAL_MASK;
+
+	if (!udp_global_bit_enable) {
+		dev_err(udev->dev,
+			"udp_global_en bit failed to take effect in bitmap %u.\n",
+			tp_attr_bitmap);
+		return -EINVAL;
+	}
+
+	if (!tp_attr->udp_global_en) {
+		spin_lock(&udev->caps.udp.lock);
+		udev->caps.udp.udp_srcport_range = 0;
+		udev->caps.udp.data_udp_srcport = 0;
+		udev->caps.udp.ack_udp_srcport = 0;
+		udev->caps.udp.udp_global_en = 0;
+		udev->caps.udp.spray_en = 0;
+		spin_unlock(&udev->caps.udp.lock);
+
+		return 0;
+	}
+
+	if (udp_attr_bitmap != UDMA_UDP_ATTR_MASK) {
+		dev_err(udev->dev,
+			"the num of udp sport attr is not sufficient, udp_attr_bitmap = 0x%x.\n",
+			udp_attr_bitmap);
+		return -EINVAL;
+	}
+
+	if (tp_attr->udp_srcport_range > UDMA_UDP_RANGE_MAX) {
+		dev_err(udev->dev,
+			"global-level udp sport range attr %u exceeds max limit %d.\n",
+			tp_attr->udp_srcport_range, UDMA_UDP_RANGE_MAX);
+		return -EINVAL;
+	}
+
+	spin_lock(&udev->caps.udp.lock);
+	udev->caps.udp.udp_srcport_range = tp_attr->udp_srcport_range;
+	udev->caps.udp.data_udp_srcport = tp_attr->data_udp_srcport;
+	udev->caps.udp.ack_udp_srcport = tp_attr->ack_udp_srcport;
+	udev->caps.udp.spray_en = tp_attr->spray_en;
+	udev->caps.udp.udp_global_en = 1;
+	spin_unlock(&udev->caps.udp.lock);
+
+	return 0;
+}
+
+static uint8_t udma_update_tp_attr_cnt(uint32_t tp_attr_bitmap)
+{
+	uint8_t tp_attr_cnt = 0;
+
+	while (tp_attr_bitmap) {
+		tp_attr_cnt += tp_attr_bitmap & 1;
+		tp_attr_bitmap >>= 1;
+	}
+
+	return tp_attr_cnt;
+}
+
+static int udma_fill_tp_attr_req(struct udma_dev *udev, const uint64_t tp_handle,
+				 const uint8_t tp_attr_cnt, const uint32_t tp_attr_bitmap,
+				 const struct ubcore_tp_attr_value *tp_attr,
+				 struct udma_ctrlq_set_tp_attr_req *tp_attr_req)
+{
+	uint8_t udp_global_bit_enable = (tp_attr_bitmap >> UDMA_UDP_GLOBAL_SHIFT) &
+					UDMA_UDP_GLOBAL_MASK;
+	union ubcore_tp_handle tp_handle_val;
+
+	if (udp_global_bit_enable && tp_attr->udp_global_en == 1) {
+		dev_err(udev->dev,
+			"udp_global_en cannot be set to 1 at tpid-level.\n");
+		return -EINVAL;
+	}
+
+	if (tp_attr->udp_srcport_range > UDMA_UDP_RANGE_MAX) {
+		dev_err(udev->dev,
+			"tpid-level udp sport range attr %u exceeds max limit %d.\n",
+			tp_attr->udp_srcport_range, UDMA_UDP_RANGE_MAX);
+		return -EINVAL;
+	}
+
+	tp_handle_val.value = tp_handle;
+	tp_attr_req->tpid = tp_handle_val.bs.tpid;
+	tp_attr_req->tpn_cnt = tp_handle_val.bs.tp_cnt;
+	tp_attr_req->tpn_start = tp_handle_val.bs.tpn_start;
+	memcpy(&tp_attr_req->tp_attr.tp_attr_value, (void *)tp_attr, sizeof(*tp_attr));
+
+	udma_swap_endian(tp_attr->sip, tp_attr_req->tp_attr.tp_attr_value.sip,
+			 UBCORE_IP_ADDR_BYTES);
+	udma_swap_endian(tp_attr->dip, tp_attr_req->tp_attr.tp_attr_value.dip,
+			 UBCORE_IP_ADDR_BYTES);
+	udma_swap_endian(tp_attr->sma, tp_attr_req->tp_attr.tp_attr_value.sma,
+			 UBCORE_MAC_BYTES);
+	udma_swap_endian(tp_attr->dma, tp_attr_req->tp_attr.tp_attr_value.dma,
+			 UBCORE_MAC_BYTES);
+
+	spin_lock(&udev->caps.udp.lock);
+	if (udev->caps.udp.udp_global_en) {
+		tp_attr_req->tp_attr.tp_attr_value.udp_srcport_range =
+			udev->caps.udp.udp_srcport_range;
+		tp_attr_req->tp_attr.tp_attr_value.data_udp_srcport =
+			udev->caps.udp.data_udp_srcport;
+		tp_attr_req->tp_attr.tp_attr_value.ack_udp_srcport = udev->caps.udp.ack_udp_srcport;
+		tp_attr_req->tp_attr.tp_attr_value.spray_en = udev->caps.udp.spray_en;
+		tp_attr_req->tp_attr.tp_attr_bitmap = (UDMA_UDP_ATTR_MASK << UDMA_UDP_ATTR_SHIFT) |
+						       tp_attr_bitmap;
+		tp_attr_req->tp_attr_cnt =
+			udma_update_tp_attr_cnt(tp_attr_req->tp_attr.tp_attr_bitmap);
+		tp_attr_req->tp_attr.tp_attr_value.udp_global_en = 1;
+	} else {
+		tp_attr_req->tp_attr.tp_attr_value.udp_global_en = 0;
+		tp_attr_req->tp_attr.tp_attr_bitmap = tp_attr_bitmap;
+		tp_attr_req->tp_attr_cnt = tp_attr_cnt;
+	}
+	spin_unlock(&udev->caps.udp.lock);
+
+	return 0;
+}
+
 int udma_set_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 		     const uint8_t tp_attr_cnt, const uint32_t tp_attr_bitmap,
 		     const struct ubcore_tp_attr_value *tp_attr, struct ubcore_udata *udata)
 {
 	struct udma_ctrlq_set_tp_attr_req tp_attr_req = {};
 	struct udma_dev *udev = to_udma_dev(dev);
-	union ubcore_tp_handle tp_handle_val;
 	struct ubase_ctrlq_msg msg = {};
-	int ret;
+	int ret = 0;
 
-	tp_handle_val.value = tp_handle;
-	tp_attr_req.tpid = tp_handle_val.bs.tpid;
-	tp_attr_req.tpn_cnt = tp_handle_val.bs.tp_cnt;
-	tp_attr_req.tpn_start = tp_handle_val.bs.tpn_start;
-	tp_attr_req.tp_attr_cnt = tp_attr_cnt;
-	tp_attr_req.tp_attr.tp_attr_bitmap = tp_attr_bitmap;
-	memcpy(&tp_attr_req.tp_attr.tp_attr_value, (void *)tp_attr, sizeof(*tp_attr));
+	if (tp_handle == UDMA_GLOBAL_TP_HANDLE) {
+		ret = udma_set_global_udp_sport_attr(udev, tp_attr_bitmap, tp_attr);
+		if (ret)
+			goto err_udp_cfg;
 
-	udma_swap_endian((uint8_t *)tp_attr->sip, tp_attr_req.tp_attr.tp_attr_value.sip,
-			 UBCORE_IP_ADDR_BYTES);
-	udma_swap_endian((uint8_t *)tp_attr->dip, tp_attr_req.tp_attr.tp_attr_value.dip,
-			 UBCORE_IP_ADDR_BYTES);
-	udma_swap_endian((uint8_t *)tp_attr->sma, tp_attr_req.tp_attr.tp_attr_value.sma,
-			 UBCORE_MAC_BYTES);
-	udma_swap_endian((uint8_t *)tp_attr->dma, tp_attr_req.tp_attr.tp_attr_value.dma,
-			 UBCORE_MAC_BYTES);
+		return ret;
+	}
+
+	ret = udma_fill_tp_attr_req(udev, tp_handle, tp_attr_cnt, tp_attr_bitmap,
+				    tp_attr, &tp_attr_req);
+	if (ret)
+		goto err_udp_cfg;
+
 	udma_ctrlq_set_tp_msg(&msg, &tp_attr_req, sizeof(tp_attr_req), NULL, 0);
 	msg.opcode = UDMA_CMD_CTRLQ_SET_TP_ATTR;
 
@@ -913,6 +1032,33 @@ int udma_set_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 			tp_attr_req.tpid, ret);
 
 	return ret;
+
+err_udp_cfg:
+	dev_err(udev->dev, "set udp sport attr failed, ret = %d.\n", ret);
+	return ret;
+}
+
+static void
+udma_get_global_udp_sport_attr(struct udma_dev *udev, uint8_t *tp_attr_cnt,
+			       uint32_t *tp_attr_bitmap, struct ubcore_tp_attr_value *tp_attr)
+{
+	if (!udev->caps.udp.udp_global_en) {
+		*tp_attr_bitmap = UDMA_UDP_GLOBAL_MASK << UDMA_UDP_GLOBAL_SHIFT;
+		*tp_attr_cnt = udma_update_tp_attr_cnt(*tp_attr_bitmap);
+		tp_attr->udp_global_en = 0;
+
+		return;
+	}
+
+	spin_lock(&udev->caps.udp.lock);
+	tp_attr->udp_srcport_range = udev->caps.udp.udp_srcport_range;
+	tp_attr->data_udp_srcport = udev->caps.udp.data_udp_srcport;
+	tp_attr->ack_udp_srcport = udev->caps.udp.ack_udp_srcport;
+	tp_attr->spray_en = udev->caps.udp.spray_en;
+	tp_attr->udp_global_en = 1;
+	*tp_attr_bitmap = UDMA_UDP_ATTR_MASK << UDMA_UDP_ATTR_SHIFT;
+	*tp_attr_cnt = UDMA_UDP_ATTR_NUM;
+	spin_unlock(&udev->caps.udp.lock);
 }
 
 int udma_get_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
@@ -925,6 +1071,11 @@ int udma_get_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 	union ubcore_tp_handle tp_handle_val;
 	struct ubase_ctrlq_msg msg = {};
 	int ret;
+
+	if (tp_handle == UDMA_GLOBAL_TP_HANDLE) {
+		udma_get_global_udp_sport_attr(udev, tp_attr_cnt, tp_attr_bitmap, tp_attr);
+		return 0;
+	}
 
 	tp_handle_val.value = tp_handle;
 	tp_attr_req.tpid.tpid = tp_handle_val.bs.tpid;

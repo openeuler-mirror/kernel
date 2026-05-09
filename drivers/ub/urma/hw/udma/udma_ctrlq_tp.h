@@ -11,7 +11,7 @@
 #define UDMA_CNA_SIZE		16
 #define UDMA_PID_MASK		0xFFFFFF
 #define UDMA_DEFAULT_PID	1
-#define UDMA_UE_NUM			64
+#define UDMA_UE_NUM		64
 #define UDMA_MAX_UE_IDX		256
 #define UDMA_MAX_TPID_NUM	5
 #define UDMA_IP_SIZE		16
@@ -20,6 +20,13 @@
 #define UDMA_CTRLQ_UBMEM_INFO_NUM (205)
 #define UDMA_CTRLQ_HOST_UBMEM_INFO_NUM (8)
 #define UDMA_TPN_CNT_MASK 0x1F
+#define UDMA_GLOBAL_TP_HANDLE	UINT32_MAX
+#define UDMA_UDP_RANGE_MAX	8
+#define UDMA_UDP_ATTR_MASK	0x1F
+#define UDMA_UDP_ATTR_SHIFT	12
+#define UDMA_UDP_ATTR_NUM	5
+#define UDMA_UDP_GLOBAL_MASK	0x1
+#define UDMA_UDP_GLOBAL_SHIFT	16
 
 enum udma_ctrlq_cmd_code_type {
 	UDMA_CMD_CTRLQ_REMOVE_SINGLE_TP = 0x13,
@@ -310,10 +317,10 @@ int udma_set_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 		     const uint8_t tp_attr_cnt, const uint32_t tp_attr_bitmap,
 		     const struct ubcore_tp_attr_value *tp_attr, struct ubcore_udata *udata);
 int udma_get_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
-		    uint8_t *tp_attr_cnt, uint32_t *tp_attr_bitmap,
-		    struct ubcore_tp_attr_value *tp_attr, struct ubcore_udata *udata);
+		     uint8_t *tp_attr_cnt, uint32_t *tp_attr_bitmap,
+		     struct ubcore_tp_attr_value *tp_attr, struct ubcore_udata *udata);
 int udma_send_msg_to_ue(struct udma_dev *udma_dev, struct udma_entity_buf *add_buf,
-				   uint8_t dst_ue_idx, uint16_t opcode);
+			uint8_t dst_ue_idx, uint16_t opcode);
 int udma_recv_tp_resp_from_mue(struct udma_dev *udev, struct udma_entity_msg *resp, uint32_t len);
 int udma_send_tp_resp_to_ue(struct udma_dev *udev, struct udma_entity_msg *req, int ret);
 int udma_active_tp(struct ubcore_device *dev, struct ubcore_active_tp_cfg *active_cfg);

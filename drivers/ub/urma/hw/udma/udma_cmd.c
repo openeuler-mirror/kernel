@@ -134,6 +134,18 @@ int udma_cmd_query_hw_resource(struct udma_dev *udma_dev, void *out_addr)
 	return ubase_cmd_send_inout(udma_dev->comdev.adev, &in, &out);
 }
 
+int udma_query_ucp_res(struct udma_dev *udma_dev, void *out_addr)
+{
+	struct ubase_cmd_buf out = {};
+	struct ubase_cmd_buf in = {};
+
+	udma_fill_buf(&in, UDMA_CMD_QUERY_UCP_RES, true, 0, NULL);
+	udma_fill_buf(&out, UDMA_CMD_QUERY_UCP_RES, true,
+		      sizeof(struct udma_cmd_ucp_resource), out_addr);
+
+	return ubase_cmd_send_inout(udma_dev->comdev.adev, &in, &out);
+}
+
 int post_mailbox_update_ctx(struct udma_dev *udma_dev, void *ctx, uint32_t size,
 			    struct ubase_mbx_attr *attr)
 {

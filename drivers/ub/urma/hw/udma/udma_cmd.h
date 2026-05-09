@@ -73,6 +73,7 @@ enum udma_ctrlq_dev_mgmt_opcode {
 
 enum udma_cmd_opcode_type {
 	UDMA_CMD_QUERY_UE_RES = 0x0002,
+	UDMA_CMD_QUERY_UCP_RES = 0x0008,
 	UDMA_CMD_QUERY_UE_INDEX = 0x241d,
 	UDMA_CMD_CFG_CONG_PARAM = 0x3003,
 	UDMA_CMD_CHANGE_ACTIVE_PORT = 0x3102,
@@ -219,6 +220,21 @@ struct udma_cmd_ue_resource {
 	uint32_t rsvd4[3];
 };
 
+struct udma_cmd_ucp_resource {
+	/* BD0 */
+	uint16_t ucp_jetty_start;
+	uint16_t ucp_jetty_num;
+	uint16_t ucp_jfc_start;
+	uint16_t ucp_jfc_num;
+	uint16_t ucp_jfr_start;
+	uint16_t ucp_jfr_num;
+	uint16_t standard_jfc_start;
+	uint16_t standard_jfc_num;
+	uint16_t standard_jfr_start;
+	uint16_t standard_jfr_num;
+	uint16_t rsvd0[2];
+};
+
 struct udma_cmd_port_info {
 	uint32_t speed;
 	uint8_t rsv[10];
@@ -275,6 +291,7 @@ void udma_cmd_cleanup(struct udma_dev *udma_dev);
 int udma_post_mbox(struct udma_dev *dev, struct ubase_cmd_mailbox *mailbox,
 		   struct ubase_mbx_attr *attr);
 int udma_cmd_query_hw_resource(struct udma_dev *udma_dev, void *out_addr);
+int udma_query_ucp_res(struct udma_dev *udma_dev, void *out_addr);
 int udma_config_ctx_buf_to_hw(struct udma_dev *udma_dev,
 			      struct udma_buf *ctx_buf,
 			      struct ubase_mbx_attr *attr);

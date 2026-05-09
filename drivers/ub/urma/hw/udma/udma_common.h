@@ -341,9 +341,7 @@ int udma_alloc_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct 
 void udma_free_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct udma_buf *buf);
 int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf);
 void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf);
-void *udma_alloc_iova(struct udma_dev *udma_dev, size_t memory_size, dma_addr_t *addr);
-void udma_free_iova(struct udma_dev *udma_dev, size_t memory_size, void *kva_or_slot,
-		    dma_addr_t addr);
+bool remap_va_to_pfn(struct udma_dev *dev, uint64_t va, uint64_t *pfn);
 
 static inline void udma_write64(struct udma_dev *udma_dev,
 				uint64_t *val, void __iomem *dest)

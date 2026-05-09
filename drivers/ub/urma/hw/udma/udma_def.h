@@ -38,6 +38,21 @@ struct udma_tbl {
 	uint32_t size;
 };
 
+struct udma_ucp_caps {
+	struct udma_res ucp_jetty;
+	struct udma_res ucp_jfc;
+	struct udma_res ucp_jfr;
+};
+
+struct udma_udp_sport {
+	spinlock_t lock;
+	uint16_t ack_udp_srcport;
+	uint16_t data_udp_srcport;
+	uint8_t udp_srcport_range : 4;
+	uint8_t spray_en	  : 1;
+	uint8_t udp_global_en	  : 1;
+};
+
 struct udma_caps {
 	unsigned long init_flag;
 	struct udma_res jfs;
@@ -67,10 +82,12 @@ struct udma_caps {
 	struct udma_res stars_jetty;
 	struct udma_res public_jetty;
 	struct udma_res user_ctrl_normal_jetty;
+	struct udma_ucp_caps ucp_caps;
 	uint8_t ack_queue_num;
 	uint8_t port_num;
 	uint8_t cqe_size;
 	struct udma_tbl seid;
+	struct udma_udp_sport udp;
 	uint32_t rc_max_cnt;
 	bool no_share_jfc_en;
 	bool ctp_en;
