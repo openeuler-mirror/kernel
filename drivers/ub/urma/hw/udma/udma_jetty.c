@@ -486,7 +486,8 @@ static int udma_jetty_copy_resp(struct udma_dev *dev, struct udma_jetty *jetty,
 		dev_err(dev->dev, "invalid out_addr or out_len=%u.\n", udata->udrv_data->out_len);
 		return -EINVAL;
 	}
-	if (!jetty->sq.non_pin && dev->sq_reserved_info.sq_reserved)
+	if (jetty->sq.dtu_en ||
+	    (!jetty->sq.non_pin && dev->sq_reserved_info.sq_reserved))
 		resp.buf_addr = jetty->sq.buf.addr;
 
 	byte = copy_to_user((void *)(uintptr_t)udata->udrv_data->out_addr, &resp, sizeof(resp));

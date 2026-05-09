@@ -110,6 +110,17 @@ struct udma_ex_jfc_addr {
 	uint32_t cq_len;
 };
 
+struct udma_dtu_info {
+	uint16_t win_num;
+	uint64_t pa_base;
+	uint64_t pa_size;
+	uint64_t va_base;
+	uint64_t iova_base;
+	uint64_t dtu_mem_node_id;
+	bool k_dtu_enable;
+	bool u_dtu_enable;
+};
+
 struct udma_dev {
 	struct ubase_adev_com comdev;
 	struct ubcore_device ub_dev;
@@ -176,6 +187,7 @@ struct udma_dev {
 	struct udma_tp_cmdq_info *wait_cmdq_info;
 	struct udma_sq_reserved_info sq_reserved_info;
 	struct udma_mbox_over_cmdq_info *mbox_over_cmdq_info;
+	struct udma_dtu_info dtu_info;
 };
 
 #define UDMA_ERR_MSG_LEN	128

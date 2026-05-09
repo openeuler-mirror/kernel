@@ -332,5 +332,75 @@ int udma_open_ue_rx_with_retry(struct udma_dev *dev, bool check_feature_enable, 
 	return ret;
 }
 
+void udma_unset_dtu_va_info(struct udma_dev *dev, struct udma_context *ctx)
+{
+	struct udma_cmd_config_dtu_tbl dtu_info = {};
+	struct ubase_cmd_buf in;
+	int ret;
+
+	if (!ctx->dtu_en)
+		return;
+
+	dtu_info.en = 0;
+	dtu_info.win_num = ctx->dtu_win_num;
+
+	udma_fill_buf(&in, UDMA_CMD_CONFIG_DTU_TBL, false,
+		      sizeof(dtu_info), (void *)&dtu_info);
+
+	ret = ubase_cmd_send_in(dev->comdev.adev, &in);
+	if (ret)
+		dev_warn(dev->dev, "failed to delete dtu info, ret = %d.\n", ret);
+}
+
+int udma_set_dtu_va_info(struct udma_dev *dev, struct udma_context *ctx)
+{
+	struct udma_cmd_config_dtu_tbl dtu_info = {};
+	struct ubase_cmd_buf in, out;
+	uint64_t total_limit;
+	int ret;
+
+	if (!ctx->dtu_en)
+		return 0;
+
+	total_limit = dev->dtu_info.va_base + dev->dtu_info.pa_size;
+	if (dev->dtu_info.va_base > U64_MAX - dev->dtu_info.pa_size) {
+		dev_err(dev->dev, "check the sum of 'va base' and 'pa size' failed.\n");
+		return -EINVAL;
+	}
+
+	dtu_info.en = 1;
+	dtu_info.exclusive = 1;
+	dtu_info.perm_read = 1;
+	dtu_info.perm_write = 1;
+	dtu_info.perm_atomic = 1;
+	dtu_info.bufferable = 1;
+	dtu_info.modified = 1;
+	dtu_info.read_allocate = 1;
+	dtu_info.write_allocate = 1;
+	dtu_info.snoop = 1;
+	dtu_info.tid = ctx->tid;
+	dtu_info.base_addr_l = dev->dtu_info.va_base & (uint32_t)ADDR_BASE_MASK;
+	dtu_info.base_addr_h = (dev->dtu_info.va_base >> ADDR_BASE_H_OFFSET) &
+			       (uint32_t)ADDR_BASE_MASK;
+	dtu_info.limit_addr_l = total_limit & (uint32_t)ADDR_BASE_MASK;
+	dtu_info.limit_addr_h = (total_limit >> ADDR_BASE_H_OFFSET) & (uint32_t)ADDR_BASE_MASK;
+	dtu_info.target_addr_l = dev->dtu_info.pa_base & (uint32_t)ADDR_BASE_MASK;
+	dtu_info.target_addr_h = (dev->dtu_info.pa_base >> ADDR_BASE_H_OFFSET) &
+				 (uint32_t)ADDR_BASE_MASK;
+
+	udma_fill_buf(&in, UDMA_CMD_CONFIG_DTU_TBL, false,
+		      sizeof(dtu_info), (void *)&dtu_info);
+	udma_fill_buf(&out, UDMA_CMD_CONFIG_DTU_TBL, true,
+		      sizeof(dtu_info), (void *)&dtu_info);
+	ret = ubase_cmd_send_inout(dev->comdev.adev, &in, &out);
+	if (ret) {
+		dev_err(dev->dev, "failed to set dtu info, ret = %d.\n", ret);
+		return -EFAULT;
+	}
+	ctx->dtu_win_num = dtu_info.win_num;
+
+	return 0;
+}
+
 module_param(debug_switch, bool, 0444);
 MODULE_PARM_DESC(debug_switch, "set debug print ON, default: false");
