@@ -744,8 +744,18 @@ static int udma_set_jfc_id(struct ubcore_jfc *jfc, void *buf)
 	return 0;
 }
 
-static int udma_get_jfc_ctx(struct udma_jfc_ctx *jfc_ctx,
-			    struct udma_dev *dev, uint32_t jfcn)
+static int udma_set_jfc_db_addr(struct ubcore_jfc *jfc, void *buf)
+{
+	struct udma_jfc *ujfc = to_udma_jfc(jfc);
+
+	ujfc->db.db_addr = *(uint64_t *)buf;
+
+	return 0;
+}
+
+static int udma_query_jfc_ctx(struct udma_dev *dev,
+			      struct udma_jfc_ctx *jfc_ctx,
+			      uint32_t jfcn)
 {
 	struct ubase_mbx_attr mbox_attr = {};
 	struct ubase_cmd_mailbox *mailbox;
@@ -772,7 +782,7 @@ static int udma_get_jfc_pi(struct ubcore_jfc *jfc, void *buf)
 	struct udma_jfc_ctx udma_jfc_ctx;
 	int ret;
 
-	ret = udma_get_jfc_ctx(&udma_jfc_ctx, dev, ujfc->jfcn);
+	ret = udma_query_jfc_ctx(dev, &udma_jfc_ctx, ujfc->jfcn);
 	if (ret) {
 		dev_err(dev->dev, "failed to get jfc ctx.\n");
 		return ret;
@@ -790,13 +800,35 @@ static int udma_get_jfc_ci(struct ubcore_jfc *jfc, void *buf)
 	struct udma_jfc_ctx udma_jfc_ctx;
 	int ret;
 
-	ret = udma_get_jfc_ctx(&udma_jfc_ctx, dev, ujfc->jfcn);
+	ret = udma_query_jfc_ctx(dev, &udma_jfc_ctx, ujfc->jfcn);
 	if (ret) {
 		dev_err(dev->dev, "failed to get jfc ctx.\n");
 		return ret;
 	}
 
 	*(uint32_t *)buf = udma_jfc_ctx.ci;
+
+	return 0;
+}
+
+static int udma_get_jfc_full_ctx(struct ubcore_jfc *jfc, void *buf, uint32_t len)
+{
+	struct udma_dev *dev = to_udma_dev(jfc->ub_dev);
+	struct udma_jfc *udma_jfc = to_udma_jfc(jfc);
+	int ret;
+
+	if (len != sizeof(struct udma_jfc_ctx)) {
+		dev_err(dev->dev, "get jfc full ctx len %u error, should be %u.\n",
+			len, (uint32_t)sizeof(struct udma_jfc_ctx));
+		return -EINVAL;
+	}
+
+	ret = udma_query_jfc_ctx(dev, (struct udma_jfc_ctx *)buf, udma_jfc->jfcn);
+	if (ret) {
+		dev_err(dev->dev, "failed to query jfc ctx, id = %u, ret = %d.\n",
+			udma_jfc->jfcn, ret);
+		return ret;
+	}
 
 	return 0;
 }
@@ -900,6 +932,8 @@ int udma_set_jfc_opt(struct ubcore_jfc *jfc, uint64_t opt,
 		return udma_set_jfc_cqe_base_addr(jfc, buf, udata);
 	case UBCORE_JFC_ID:
 		return udma_set_jfc_id(jfc, buf);
+	case UBCORE_JFC_DB_ADDR:
+		return udma_set_jfc_db_addr(jfc, buf);
 	case UBCORE_JFC_DB_STATUS:
 		break;
 	case UBCORE_JFC_PI_TYPE:
@@ -916,8 +950,8 @@ int udma_get_jfc_opt(struct ubcore_jfc *jfc, uint64_t opt,
 		     void *buf, uint32_t len,
 		     struct ubcore_udata *udata)
 {
-	struct udma_jfc *ujfc = to_udma_jfc(jfc);
 	struct udma_dev *dev = to_udma_dev(jfc->ub_dev);
+	struct udma_jfc *ujfc = to_udma_jfc(jfc);
 
 	switch (opt) {
 	// the len has been confirmed in urma to be valid
@@ -951,6 +985,8 @@ int udma_get_jfc_opt(struct ubcore_jfc *jfc, uint64_t opt,
 		return 0;
 	case UBCORE_JFC_CI:
 		return udma_get_jfc_ci(jfc, buf);
+	case UBCORE_JFC_FULL_CTX:
+		return udma_get_jfc_full_ctx(jfc, buf, len);
 	default:
 		dev_err(dev->dev, "invalid jfc opt = 0x%llx.\n", opt);
 		return -EINVAL;
@@ -1525,7 +1561,7 @@ static void udma_inv_tid(struct udma_dev *dev, struct list_head *tid_list)
 		if (!ksva) {
 			dev_warn(dev->dev, "tid may have been released.\n");
 		} else {
-			ummu_ksva_unbind_device(ksva);
+			iommu_ksva_unbind_device(ksva);
 			__xa_erase(&dev->ksva_table, tid);
 		}
 
@@ -1544,8 +1580,8 @@ int udma_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr *cr)
 	struct list_head tid_list;
 	unsigned long flags;
 	uint32_t ci;
-	uint32_t i;
 	int npolled;
+	int i;
 
 	INIT_LIST_HEAD(&tid_list);
 

@@ -41,8 +41,8 @@ static int udma_alloc_k_tid(struct udma_dev *udma_dev,
 	uint32_t tid;
 	int ret;
 
-	ksva = ummu_ksva_bind_device(udma_dev->dev, &param);
-	if (!ksva) {
+	ksva = iommu_ksva_bind_device(udma_dev->dev, &param);
+	if (IS_ERR(ksva)) {
 		dev_err(udma_dev->dev, "ksva bind device failed.\n");
 		return -ENOMEM;
 	}
@@ -74,7 +74,7 @@ static int udma_alloc_k_tid(struct udma_dev *udma_dev,
 	return ret;
 
 err_get_tid:
-	ummu_ksva_unbind_device(ksva);
+	iommu_ksva_unbind_device(ksva);
 
 	return ret;
 }
@@ -143,7 +143,7 @@ int udma_free_tid(struct ubcore_token_id *token_id)
 			 "unable to get ksva while free tid, token maybe is free.\n");
 		goto out;
 	}
-	ummu_ksva_unbind_device(ksva);
+	iommu_ksva_unbind_device(ksva);
 	__xa_erase(&udma_dev->ksva_table, udma_tid->tid);
 	mutex_unlock(&udma_dev->ksva_mutex);
 
