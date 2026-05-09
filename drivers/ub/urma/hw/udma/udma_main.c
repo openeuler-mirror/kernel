@@ -1015,8 +1015,8 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 		goto err_enable_ksva;
 	}
 
-	udma_dev->ksva = ummu_ksva_bind_device(udma_dev->dev, &param);
-	if (!udma_dev->ksva) {
+	udma_dev->ksva = iommu_ksva_bind_device(udma_dev->dev, &param);
+	if (IS_ERR(udma_dev->ksva)) {
 		dev_err(udma_dev->dev, "ksva bind device failed.\n");
 		ret = -EINVAL;
 		goto err_ksva_bind_device;
@@ -1028,7 +1028,7 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 		goto err_get_tid;
 	}
 
-	ret = ummu_sva_grant_range(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE,
+	ret = iommu_sva_grant(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE,
 				   UMMU_DEV_WRITE | UMMU_DEV_READ, &seg_attr);
 	if (ret) {
 		dev_err(udma_dev->dev, "Failed to sva grant range for udma device.\n");
@@ -1039,7 +1039,7 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 
 err_sva_grant_range:
 err_get_tid:
-	ummu_ksva_unbind_device(udma_dev->ksva);
+	iommu_ksva_unbind_device(udma_dev->ksva);
 err_ksva_bind_device:
 	if (iommu_dev_disable_feature(udma_dev->dev, IOMMU_DEV_FEAT_KSVA))
 		dev_warn(udma_dev->dev, "disable ksva failed.\n");
@@ -1055,7 +1055,7 @@ static void udma_free_dev_tid(struct udma_dev *udma_dev)
 	size_t token_id;
 	int ret;
 
-	ret = ummu_sva_ungrant_range(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE, NULL);
+	ret = iommu_sva_ungrant(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE, NULL);
 	if (ret)
 		dev_warn(udma_dev->dev,
 			 "sva ungrant range for udma device failed, ret = %d.\n",
@@ -1064,11 +1064,11 @@ static void udma_free_dev_tid(struct udma_dev *udma_dev)
 	mutex_lock(&udma_dev->ksva_mutex);
 	xa_for_each(&udma_dev->ksva_table, token_id, ksva) {
 		__xa_erase(&udma_dev->ksva_table, token_id);
-		ummu_ksva_unbind_device(ksva);
+		iommu_ksva_unbind_device(ksva);
 	}
 	mutex_unlock(&udma_dev->ksva_mutex);
 
-	ummu_ksva_unbind_device(udma_dev->ksva);
+	iommu_ksva_unbind_device(udma_dev->ksva);
 
 	ret = iommu_dev_disable_feature(udma_dev->dev, IOMMU_DEV_FEAT_KSVA);
 	if (ret)

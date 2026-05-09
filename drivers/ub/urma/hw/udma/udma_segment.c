@@ -107,13 +107,13 @@ static int udma_sva_grant(struct ubcore_seg_cfg *cfg, struct iommu_sva *ksva)
 			  UBCORE_ACCESS_LOCAL_ONLY;
 
 	if (cfg->flag.bs.token_policy == UBCORE_TOKEN_NONE) {
-		return ummu_sva_grant_range(ksva, (void *)(uintptr_t)cfg->va, cfg->len,
+		return iommu_sva_grant(ksva, (void *)(uintptr_t)cfg->va, cfg->len,
 					    perm, (void *)&seg_attr);
 	} else {
 		seg_attr.token = &token_info;
 		token_info.input = UDMA_TOKEN_VALUE_INPUT;
 		token_info.tokenVal = cfg->token_value.token;
-		ret = ummu_sva_grant_range(ksva, (void *)(uintptr_t)cfg->va, cfg->len,
+		ret = iommu_sva_grant(ksva, (void *)(uintptr_t)cfg->va, cfg->len,
 					    perm, (void *)&seg_attr);
 		token_info.tokenVal = 0;
 
@@ -304,12 +304,12 @@ int udma_unregister_seg(struct ubcore_target_seg *ubcore_seg)
 	} else {
 		if (seg->token_value_valid) {
 			token_info.tokenVal = seg->token_value;
-			ret = ummu_sva_ungrant_range(ksva,
+			ret = iommu_sva_ungrant(ksva,
 						     (void *)(uintptr_t)ubcore_seg->seg.ubva.va,
 						     ubcore_seg->seg.len, &token_info);
 			token_info.tokenVal = 0;
 		} else {
-			ret = ummu_sva_ungrant_range(ksva,
+			ret = iommu_sva_ungrant(ksva,
 						     (void *)(uintptr_t)ubcore_seg->seg.ubva.va,
 						     ubcore_seg->seg.len, NULL);
 		}
