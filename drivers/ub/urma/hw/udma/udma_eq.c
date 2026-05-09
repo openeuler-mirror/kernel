@@ -9,6 +9,7 @@
 #include <ub/ubase/ubase_comm_cmd.h>
 #include <ub/ubase/ubase_comm_ctrlq.h>
 #include <ub/ubase/ubase_comm_dev.h>
+#include <ub/urma/udma/udma_ctl.h>
 #include "udma_ctrlq_tp.h"
 #include "udma_dev.h"
 #include "udma_cmd.h"
@@ -17,7 +18,7 @@
 #include "udma_jfc.h"
 #include "udma_jetty.h"
 #include "udma_eid.h"
-#include <ub/urma/udma/udma_ctl.h>
+#include "udma_safe_mode.h"
 #include "udma_eq.h"
 
 static int udma_ae_tp_ctrlq_msg_deal(struct udma_dev *udma_dev,
@@ -539,6 +540,7 @@ static int udma_crq_recv_msg_from_mue(void *dev, void *data, uint32_t len)
 static struct ubase_crq_event_nb udma_crq_opts[] = {
 	{UBASE_OPC_UE_TO_MUE, NULL, udma_crq_recv_msg_from_ue},
 	{UBASE_OPC_MUE_TO_UE, NULL, udma_crq_recv_msg_from_mue},
+	{UBASE_OPC_PROXY_TO_UDMA, NULL, udma_recv_resp_from_proxy},
 };
 
 void udma_unregister_crq_event(struct auxiliary_device *adev)
