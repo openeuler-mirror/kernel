@@ -32,7 +32,9 @@ static void udma_u_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq
 {
 	struct vm_area_struct *vma;
 
-	if (dev->sq_reserved_info.sq_reserved) {
+	if (sq->dtu_en) {
+		udma_dtu_uva_unremap(dev, &sq->buf, &sq->dtu_pg_info);
+	} else if (dev->sq_reserved_info.sq_reserved) {
 		if (dev->caps.sva_sep_mode_en) {
 			udma_ioummu_unmap(sq->udma_ctx, UMMU_INVALID_TID, sq->buf.addr,
 					  sq->reserved_info.len);
@@ -61,7 +63,7 @@ void udma_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq)
 {
 	if (sq->buf.kva) {
 		if (!sq->cstm)
-			udma_k_free_buf(dev, &sq->buf);
+			udma_k_free_buf(dev, &sq->buf, true);
 		kfree(sq->wrid);
 		sq->wrid = NULL;
 		return;
@@ -190,7 +192,10 @@ static int udma_u_alloc_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq
 {
 	int ret = 0;
 
-	if (dev->sq_reserved_info.sq_reserved) {
+	if (sq->dtu_en) {
+		ret = udma_dtu_uva_remap(dev, &sq->buf, &sq->dtu_pg_info);
+		sq->buf.entry_size = UDMA_JFS_WQEBB_SIZE;
+	} else if (dev->sq_reserved_info.sq_reserved) {
 		ret = udma_reserved_u_sq_buf(dev, sq, ucmd);
 	} else if (ucmd->is_hugepage) {
 		if (!udma_alloc_u_hugepage(sq->udma_ctx, sq->buf.addr, sq->buf.len)) {
@@ -224,6 +229,7 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->buf.entry_cnt = ucmd->buf_len >> WQE_BB_SIZE_SHIFT;
 	sq->buf.addr = ucmd->buf_addr;
 	sq->buf.len = ucmd->buf_len;
+	sq->dtu_en = ucmd->dtu_en;
 	if (sq->non_pin) {
 		if (dev->caps.sva_sep_mode_en) {
 			dev_err(dev->dev, "sep mode not support non_pin.\n");
@@ -266,7 +272,7 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->buf.entry_cnt = size >> WQE_BB_SIZE_SHIFT;
 
 	if (!sq->cstm) {
-		ret = udma_k_alloc_buf(dev, &sq->buf);
+		ret = udma_k_alloc_buf(dev, &sq->buf, true);
 		if (ret) {
 			dev_err(dev->dev, "failed to alloc sq buffer, id=%u.\n", sq->id);
 			return ret;
@@ -276,7 +282,7 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->wrid = kcalloc(1, sq->buf.entry_cnt * sizeof(uint64_t), GFP_KERNEL);
 	if (!sq->wrid) {
 		if (!sq->cstm)
-			udma_k_free_buf(dev, &sq->buf);
+			udma_k_free_buf(dev, &sq->buf, true);
 		return -ENOMEM;
 	}
 
@@ -473,7 +479,7 @@ static int udma_jfs_copy_resp(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	struct udma_create_jetty_resp resp = {};
 	unsigned long byte;
 
-	if (sq->non_pin || !dev->sq_reserved_info.sq_reserved)
+	if (!sq->dtu_en && (sq->non_pin || !dev->sq_reserved_info.sq_reserved))
 		return 0;
 
 	if (udma_check_base_param(udata->udrv_data->out_addr,

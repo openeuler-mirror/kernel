@@ -750,12 +750,58 @@ static void udma_free_hugepage(struct udma_dev *dev, struct udma_hugepage *hugep
 	kfree(hugepage);
 }
 
-int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf)
+static void *udma_iova_map(struct udma_dev *udma_dev, uint32_t size, struct udma_buf *buf)
+{
+	uint32_t align_size = PAGE_ALIGN(size);
+	uint64_t pa_addr;
+
+	buf->pages = alloc_pages_node(udma_dev->dtu_info.dtu_mem_node_id,
+				      GFP_HIGHUSER_MOVABLE | __GFP_ZERO, get_order(align_size));
+	if (!buf->pages) {
+		dev_err(udma_dev->dev, "failed to alloc pages.\n");
+		return NULL;
+	}
+
+	pa_addr = page_to_phys(buf->pages);
+	if (pa_addr < udma_dev->dtu_info.pa_base) {
+		dev_err(udma_dev->dev, "phy addr is error.\n");
+		goto err_free_mem;
+	}
+	buf->addr = pa_addr - udma_dev->dtu_info.pa_base + udma_dev->dtu_info.iova_base;
+
+	return page_address(buf->pages);
+
+err_free_mem:
+	__free_pages(buf->pages, get_order(align_size));
+
+	return NULL;
+}
+
+static void udma_iova_unmap(struct udma_dev *udma_dev, uint32_t size, struct udma_buf *buf)
+{
+	uint32_t align_size = PAGE_ALIGN(size);
+
+	if (buf->pages)
+		__free_pages(buf->pages, get_order(align_size));
+}
+
+int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 {
 	uint32_t size = buf->entry_size * buf->entry_cnt;
 	uint32_t hugepage_size;
 	int ret = 0;
 
+	if (need_dtu && dev->dtu_info.k_dtu_enable) {
+		buf->kva = udma_iova_map(dev, size, buf);
+		if (buf->kva) {
+			buf->k_dtu_enable = true;
+			return ret;
+		}
+
+		dev_warn(dev->dev, "map iova failed.\n");
+	}
+
+	buf->k_dtu_enable = false;
 	if (ubase_adev_prealloc_supported(dev->comdev.adev)) {
 		hugepage_size = ALIGN(size, UDMA_HW_PAGE_SIZE);
 		buf->hugepage = udma_alloc_hugepage(dev, hugepage_size);
@@ -775,9 +821,14 @@ int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf)
 	return ret;
 }
 
-void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf)
+void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 {
 	uint32_t size = buf->entry_cnt * buf->entry_size;
+
+	if (buf->k_dtu_enable) {
+		udma_iova_unmap(dev, size, buf);
+		return;
+	}
 
 	if (buf->is_hugepage)
 		udma_free_hugepage(dev, buf->hugepage);
@@ -902,4 +953,74 @@ void udma_destroy_hugepage(struct udma_dev *dev)
 	}
 	mutex_unlock(&dev->hugepage_lock);
 	mutex_destroy(&dev->hugepage_lock);
+}
+
+void udma_dtu_uva_unremap(struct udma_dev *dev, struct udma_buf *buf,
+			  struct udma_dtu_pg_info *dtu_pg_info)
+{
+	struct vm_area_struct *vma;
+	uint32_t size;
+
+	if (current->mm) {
+		size = buf->entry_cnt * buf->entry_size;
+		mmap_write_lock(current->mm);
+		vma = find_vma(current->mm, dev->dtu_info.va_base);
+		if (vma != NULL && vma->vm_start <= buf->addr &&
+		    vma->vm_end >= buf->addr + size)
+			zap_vma_ptes(vma, buf->addr, size);
+		mmap_write_unlock(current->mm);
+	}
+	__free_pages(dtu_pg_info->pg, dtu_pg_info->order);
+}
+
+int udma_dtu_uva_remap(struct udma_dev *dev, struct udma_buf *buf,
+		       struct udma_dtu_pg_info *dtu_pg_info)
+{
+	struct vm_area_struct *vma;
+	uint32_t buf_len;
+	int ret;
+
+	buf_len = ALIGN(buf->len, PAGE_SIZE);
+	dtu_pg_info->order = get_order(buf_len);
+
+	mmap_write_lock(current->mm);
+	dtu_pg_info->pg = alloc_pages_node(dev->dtu_info.dtu_mem_node_id,
+					   GFP_HIGHUSER_MOVABLE | __GFP_ZERO, dtu_pg_info->order);
+	if (dtu_pg_info->pg == NULL) {
+		dev_err(dev->dev, "failed to alloc pages, order = %d.\n", dtu_pg_info->order);
+		ret = -ENOMEM;
+		goto err_unlock;
+	}
+
+	buf->addr = dev->dtu_info.va_base + page_to_phys(dtu_pg_info->pg) - dev->dtu_info.pa_base;
+	vma = find_vma(current->mm, buf->addr);
+	if (vma == NULL || vma->vm_start > buf->addr || vma->vm_end < buf->addr + buf_len) {
+		dev_err(dev->dev, "failed to find vma.\n");
+		ret = -EINVAL;
+		goto err_free_pages;
+	}
+	if (!((vma->vm_flags & VM_WIPEONFORK) && (vma->vm_flags & VM_DONTEXPAND) &&
+	    (vma->vm_flags & VM_DONTCOPY) && (vma->vm_flags & VM_IO))) {
+		dev_err(dev->dev, "failed to check vma flags.\n");
+		ret = -EINVAL;
+		goto err_free_pages;
+	}
+
+	ret = remap_pfn_range(vma, buf->addr, (uint64_t)page_to_pfn(dtu_pg_info->pg),
+			      buf_len, vma->vm_page_prot);
+	if (ret) {
+		dev_err(dev->dev, "failed to remap pfn, ret = %d.\n", ret);
+		goto err_free_pages;
+	}
+	mmap_write_unlock(current->mm);
+
+	return ret;
+
+err_free_pages:
+	__free_pages(dtu_pg_info->pg, dtu_pg_info->order);
+	buf->addr = 0;
+err_unlock:
+	mmap_write_unlock(current->mm);
+
+	return ret;
 }

@@ -57,7 +57,7 @@ static int udma_get_k_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 	jfr->rq.buf.entry_cnt = jfr->wqe_cnt;
 
 	if (!jfr->rq.cstm) {
-		ret = udma_k_alloc_buf(dev, &jfr->rq.buf);
+		ret = udma_k_alloc_buf(dev, &jfr->rq.buf, false);
 		if (ret) {
 			dev_err(dev->dev, "failed to alloc rq buffer, id=%u.\n", jfr->rq.id);
 			return ret;
@@ -97,7 +97,7 @@ err_wrid:
 	udma_free_normal_buf(dev, idx_buf_size, &jfr->idx_que.buf);
 err_idx_que:
 	if (!jfr->rq.cstm)
-		udma_k_free_buf(dev, &jfr->rq.buf);
+		udma_k_free_buf(dev, &jfr->rq.buf, false);
 
 	return -ENOMEM;
 }
@@ -245,7 +245,7 @@ static void udma_put_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr, bool di
 
 	if (jfr->udma_ctx == NULL) {
 		if (!jfr->rq.cstm)
-			udma_k_free_buf(dev, &jfr->rq.buf);
+			udma_k_free_buf(dev, &jfr->rq.buf, false);
 
 		udma_free_sw_db(dev, &jfr->sw_db);
 

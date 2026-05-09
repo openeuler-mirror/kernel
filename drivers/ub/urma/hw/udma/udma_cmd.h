@@ -8,6 +8,7 @@
 #include <ub/ubase/ubase_comm_mbx.h>
 #include <ub/ubase/ubase_comm_ctrlq.h>
 #include "udma_dev.h"
+#include "udma_ctx.h"
 
 extern bool debug_switch;
 
@@ -20,6 +21,8 @@ extern bool debug_switch;
 #define SPEED_25G   25000
 
 #define UDMA_CTRLQ_SEID_NUM	64
+#define ADDR_BASE_MASK GENMASK(31, 0)
+#define ADDR_BASE_H_OFFSET 32U
 
 struct udma_ctrlq_eid_info {
 	uint32_t eid_idx;
@@ -73,6 +76,7 @@ enum udma_ctrlq_dev_mgmt_opcode {
 
 enum udma_cmd_opcode_type {
 	UDMA_CMD_QUERY_UE_RES = 0x0002,
+	UDMA_CMD_CONFIG_DTU_TBL = 0x0006,
 	UDMA_CMD_QUERY_UCP_RES = 0x0008,
 	UDMA_CMD_QUERY_UE_INDEX = 0x241d,
 	UDMA_CMD_CFG_CONG_PARAM = 0x3003,
@@ -249,6 +253,36 @@ struct udma_cmd_wqebb_va {
 	uint32_t ue_num;
 };
 
+struct udma_cmd_config_dtu_tbl {
+	uint8_t en;
+	uint8_t resv1;
+	uint16_t win_num;
+	uint8_t exclusive : 1;
+	uint8_t resv2 : 7;
+	uint8_t perm_read : 1;
+	uint8_t perm_write : 1;
+	uint8_t perm_atomic : 1;
+	uint8_t resv3 : 5;
+	uint8_t bufferable : 1;
+	uint8_t modified : 1;
+	uint8_t read_allocate : 1;
+	uint8_t write_allocate : 1;
+	uint8_t resv4 : 4;
+	uint8_t snoop : 1;
+	uint8_t resv5 : 7;
+	uint32_t eid;
+	uint32_t tid;
+	uint32_t base_addr_l;
+	uint32_t base_addr_h;
+	uint32_t limit_addr_l;
+	uint32_t limit_addr_h;
+	uint32_t target_addr_l;
+	uint32_t target_addr_h;
+	uint32_t tokenvalue0;
+	uint32_t tokenvalue1;
+	uint8_t resv6[8];
+};
+
 #define UDMA_CMD_QUERY_ALL_AUX_INFO 0xF
 
 struct udma_cmd_query_cqe_aux_info {
@@ -306,5 +340,7 @@ int udma_open_ue_rx(struct udma_dev *dev, bool check_feature_enable, bool check_
 int udma_open_ue_rx_with_retry(struct udma_dev *dev, bool check_feature_enable, bool check_ta_flush,
 			       bool is_reset, uint32_t tp_num);
 
+void udma_unset_dtu_va_info(struct udma_dev *dev, struct udma_context *ctx);
+int udma_set_dtu_va_info(struct udma_dev *dev, struct udma_context *ctx);
 
 #endif /* __UDMA_CMD_H__ */

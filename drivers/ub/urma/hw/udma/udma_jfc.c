@@ -148,11 +148,17 @@ static int udma_alloc_u_cq(struct udma_dev *dev, struct udma_create_jfc_ucmd *uc
 		dev_err(dev->dev, "failed to get jfc db page.\n");
 		return ret;
 	}
-
-	if (ucmd->is_hugepage) {
+	jfc->dtu_en = ucmd->dtu_en;
+	jfc->buf.entry_size = dev->caps.cqe_size;
+	if (jfc->dtu_en) {
+		ret = udma_dtu_uva_remap(dev, &jfc->buf, &jfc->dtu_pg_info);
+		if (ret) {
+			dev_err(dev->dev, "failed to remap cq, ret = %d.\n", ret);
+			goto err_get_buf_page;
+		}
+	} else if (ucmd->is_hugepage) {
 		if (!udma_alloc_u_hugepage(jfc->ctx, jfc->buf.addr, jfc->buf.len)) {
 			dev_err(dev->dev, "failed to create cq.\n");
-
 			goto err_get_buf_page;
 		}
 		jfc->buf.is_hugepage = true;
@@ -180,7 +186,7 @@ static int udma_alloc_k_cq(struct udma_dev *dev, struct udma_jfc *jfc)
 
 	jfc->buf.entry_size = dev->caps.cqe_size;
 	jfc->tid = dev->tid;
-	ret = udma_k_alloc_buf(dev, &jfc->buf);
+	ret = udma_k_alloc_buf(dev, &jfc->buf, true);
 	if (ret) {
 		dev_err(dev->dev, "failed to alloc cq buffer, id=%u.\n", jfc->jfcn);
 		return ret;
@@ -189,7 +195,7 @@ static int udma_alloc_k_cq(struct udma_dev *dev, struct udma_jfc *jfc)
 	ret = udma_alloc_sw_db(dev, &jfc->db, UDMA_JFC_TYPE_DB);
 	if (ret) {
 		dev_err(dev->dev, "failed to alloc sw db for jfc(%u).\n", jfc->jfcn);
-		udma_k_free_buf(dev, &jfc->buf);
+		udma_k_free_buf(dev, &jfc->buf, true);
 	}
 
 	return ret;
@@ -200,10 +206,12 @@ static void udma_free_cq(struct udma_dev *dev, struct udma_jfc *jfc)
 	if (jfc->mode != UDMA_NORMAL_JFC_TYPE)
 		return;
 	if (jfc->buf.kva) {
-		udma_k_free_buf(dev, &jfc->buf);
+		udma_k_free_buf(dev, &jfc->buf, true);
 		udma_free_sw_db(dev, &jfc->db);
 	} else {
-		if (jfc->buf.is_hugepage)
+		if (jfc->dtu_en)
+			udma_dtu_uva_unremap(dev, &jfc->buf, &jfc->dtu_pg_info);
+		else if (jfc->buf.is_hugepage)
 			udma_free_u_hugepage(jfc->ctx, jfc->buf.addr);
 		else
 			udma_put_map_page_priv(jfc->ctx, jfc->buf.page_priv);
@@ -411,6 +419,34 @@ err_store_jfcn:
 	return ret;
 }
 
+static int udma_jfc_copy_resp(struct udma_dev *dev, struct udma_jfc *jfc,
+			      struct ubcore_udata *udata)
+{
+	struct udma_create_jfc_resp resp = {};
+	unsigned long byte;
+
+	if (!jfc->dtu_en)
+		return 0;
+
+	if (udma_check_base_param(udata->udrv_data->out_addr,
+				  udata->udrv_data->out_len, sizeof(resp))) {
+		dev_err(dev->dev, "invalid out_addr or out_len=%u.\n",
+			udata->udrv_data->out_len);
+		return -EINVAL;
+	}
+
+	resp.buf_addr = jfc->buf.addr;
+
+	byte = copy_to_user((void *)(uintptr_t)udata->udrv_data->out_addr,
+			    &resp, sizeof(resp));
+	if (byte) {
+		dev_err(dev->dev, "failed to copy to user, ret = %lu.\n", byte);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
 struct ubcore_jfc *udma_create_jfc(struct ubcore_device *ubcore_dev,
 				   struct ubcore_jfc_cfg *cfg,
 				   struct ubcore_udata *udata)
@@ -466,6 +502,11 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *ubcore_dev,
 	ret = udata ? udma_alloc_u_cq(dev, &ucmd, jfc) : udma_alloc_k_cq(dev, jfc);
 	if (ret)
 		goto err_get_jfc_buf;
+	if (udata) {
+		ret = udma_jfc_copy_resp(dev, jfc, udata);
+		if (ret)
+			goto err_alloc_cqc;
+	}
 
 	ret = udma_post_create_jfc_mbox(dev, jfc);
 	if (ret)
