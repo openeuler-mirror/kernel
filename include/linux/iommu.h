@@ -429,15 +429,23 @@ struct iommu_iotlb_gather {
  *
  * @va: IOVA representing the start of the range to be flushed
  * @size: representing the size of the range to be flushed
+ * @plbi_list: other plbi to be flushed
  *
  * This structure is intended to be updated by invoking the ->grant()
  * or ->ungrant() function in struct iommu_ops before eventually being passed
- * into iommu_plb_sync(). In the ->grant() and ->ungrant() function,
- * drivers can adjust the range to be flushed.
+ * into iommu_plb_sync(). In the ->grant() and ->ungrant() functions,
+ * drivers can adjust the range to be flushed,
+ * and add extra plbi cmds to plbi_list.
  */
 struct iommu_plb_gather {
 	void *va;
 	size_t size;
+	struct list_head plbi_list;
+
+	KABI_RESERVE(1)
+	KABI_RESERVE(2)
+	KABI_RESERVE(3)
+	KABI_RESERVE(4)
 };
 
 /**
@@ -1020,6 +1028,13 @@ static inline void iommu_iotlb_gather_init(struct iommu_iotlb_gather *gather)
 		.start	= ULONG_MAX,
 		.freelist = LIST_HEAD_INIT(gather->freelist),
 	};
+}
+
+static inline void iommu_plb_gather_init(struct iommu_plb_gather *plb_gather)
+{
+	plb_gather->va = 0;
+	plb_gather->size = 0;
+	INIT_LIST_HEAD(&plb_gather->plbi_list);
 }
 
 extern int bus_iommu_probe(const struct bus_type *bus);
