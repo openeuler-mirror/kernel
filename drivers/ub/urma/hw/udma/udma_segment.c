@@ -12,6 +12,20 @@
 #include "udma_tid.h"
 #include "udma_segment.h"
 
+static int udma_align_segment(struct udma_segment *seg)
+{
+	uint64_t end_addr;
+
+	if (seg->addr > U64_MAX - seg->length)
+		return -EINVAL;
+
+	end_addr = PAGE_ALIGN(seg->addr + seg->length);
+	seg->addr = PAGE_ALIGN_DOWN(seg->addr);
+	seg->length = end_addr - seg->addr;
+
+	return 0;
+}
+
 static int udma_pin_segment(struct ubcore_device *ub_dev, struct ubcore_seg_cfg *cfg,
 			    struct udma_segment *seg, bool is_writable)
 {
@@ -20,8 +34,8 @@ static int udma_pin_segment(struct ubcore_device *ub_dev, struct ubcore_seg_cfg 
 	int ret = 0;
 
 	param.ub_dev = ub_dev;
-	param.va = cfg->va;
-	param.len = cfg->len;
+	param.va = seg->addr;
+	param.len = seg->length;
 
 	param.flag.bs.writable = is_writable;
 	param.flag.bs.non_pin = cfg->flag.bs.non_pin;
@@ -174,39 +188,335 @@ static void udma_dfx_delete_seg(struct udma_dev *udma_dev, uint32_t token_id,
 	write_unlock(&udma_dev->dfx_info->seg.rwlock);
 }
 
-static int pin_pages_and_ioummu_map(struct ubcore_device *ub_dev, struct udma_context *ctx,
-				    struct udma_segment *seg, struct ubcore_seg_cfg *cfg, int tid)
+static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg)
 {
-	uint32_t access = seg->core_tseg.seg.attr.bs.access;
-	int prot = IOMMU_WRITE | IOMMU_READ;
-	int ret;
+	uint64_t page_left = udma_cal_npages(seg->addr, seg->length);
+	uint64_t arr_num = PAGE_SIZE / sizeof(struct page *);
+	uint64_t va = seg->addr;
+	struct page **pages;
+	int ret = -ENOMEM;
+	uint64_t pfn;
+	uint64_t i;
 
-	ret = udma_pin_segment(ub_dev, cfg, seg, true);
-	if (unlikely(ret)) {
-		prot = IOMMU_READ;
-		ret = udma_pin_segment(ub_dev, cfg, seg, false);
-		if (unlikely(ret)) {
-			dev_err(ctx->dev->dev, "pin sva segment failed, ret = %d.\n", ret);
-			return ret;
+	if (page_left == 0 || page_left > UINT_MAX) {
+		dev_err(dev->dev, "invalid page_num %llu.\n", page_left);
+		return -EINVAL;
+	}
+
+	seg->umem = kzalloc(sizeof(*seg->umem), GFP_KERNEL);
+	if (!seg->umem)
+		return ret;
+
+	pages = kcalloc(arr_num, sizeof(*pages), GFP_KERNEL);
+	if (!pages)
+		goto err_alloc_pages;
+
+	while (page_left != 0) {
+		for (i = 0; i < min_t(uint64_t, page_left, arr_num); i++) {
+			if (!remap_va_to_pfn(dev, va, &pfn))
+				goto err_tr_va;
+
+			if (!pfn_valid(pfn)) {
+				dev_err(dev->dev, "invalid pfn=0x%llx.\n", pfn);
+				goto err_tr_va;
+			}
+
+			pages[i] = pfn_to_page(pfn);
+			if (!pages[i] || PageReserved(pages[i])) {
+				dev_err(dev->dev, "invalid page structure for pfn=0x%llx.\n", pfn);
+				goto err_tr_va;
+			}
+
+			if (!seg->first_page)
+				seg->first_page = pages[i];
+
+			va += PAGE_SIZE;
+		}
+		page_left -= i;
+		ret = sg_alloc_append_table_from_pages(&seg->umem->append, pages,
+						       i, 0, i * PAGE_SIZE, UINT_MAX,
+						       page_left, GFP_KERNEL);
+		if (ret) {
+			dev_err(dev->dev, "failed to sg alloc append table, ret=%d.\n", ret);
+			goto err_append;
 		}
 	}
-	ret = udma_ioummu_map(ctx, (access & UBCORE_ACCESS_LOCAL_ONLY) ? UMMU_INVALID_TID : tid,
-						   prot, seg->addr, &(seg->umem->append.sgt));
-	if (unlikely(ret)) {
-		udma_umem_release(seg->umem, seg->kernel_mode, false);
-		dev_err(ctx->dev->dev, "ioummu map failed, ret = %d.\n", ret);
+
+	if (!try_get_page(seg->first_page)) {
+		dev_err(dev->dev, "failed to get_page.\n");
+		goto err_get_page;
 	}
+
+	kfree(pages);
+
+	return 0;
+
+err_get_page:
+err_append:
+err_tr_va:
+	sg_free_append_table(&seg->umem->append);
+	kfree(pages);
+err_alloc_pages:
+	kfree(seg->umem);
+	seg->umem = NULL;
+
 	return ret;
 }
 
-static void unpin_pages_and_unioummu_map(struct udma_context *ctx, struct udma_segment *seg,
-					 int tid)
+static void udma_put_user_page(struct udma_segment *seg)
+{
+	put_page(seg->first_page);
+	sg_free_append_table(&seg->umem->append);
+	kfree(seg->umem);
+	seg->umem = NULL;
+}
+
+static int udma_pin_seg_pages(struct ubcore_device *ub_dev,
+			      struct udma_context *ctx, struct udma_segment *seg,
+			      struct ubcore_seg_cfg *cfg, int *prot)
+{
+	struct vm_area_struct *vma;
+	int ret;
+
+	mmap_read_lock(current->mm);
+	vma = vma_lookup(current->mm, seg->addr);
+	if (!vma) {
+		mmap_read_unlock(current->mm);
+		dev_err(ctx->dev->dev, "failed to vma_lookup.\n");
+		return -EINVAL;
+	}
+
+	if (vma->vm_end < seg->addr + seg->length) {
+		mmap_read_unlock(current->mm);
+		dev_err(ctx->dev->dev, "invalid vma, seg length=0x%llx.\n", seg->length);
+		return -EINVAL;
+	}
+
+	if (vma->vm_flags & VM_PFNMAP) {
+		ret = udma_get_user_page(ctx->dev, seg);
+		mmap_read_unlock(current->mm);
+	} else {
+		mmap_read_unlock(current->mm);
+
+		ret = udma_align_segment(seg);
+		if (unlikely(ret)) {
+			dev_err(ctx->dev->dev, "failed to align segment addr and length.\n");
+			return ret;
+		}
+
+		ret = udma_pin_segment(ub_dev, cfg, seg, true);
+		if (unlikely(ret)) {
+			*prot = IOMMU_READ;
+			ret = udma_pin_segment(ub_dev, cfg, seg, false);
+		}
+	}
+
+	if (unlikely(ret)) {
+		dev_err(ctx->dev->dev, "failed to get_user_page, ret = %d.\n", ret);
+		return ret;
+	}
+
+	return ret;
+}
+
+static void udma_unpin_seg_pages(struct udma_segment *seg, bool dirty)
+{
+	if (seg == NULL)
+		return;
+
+	if (seg->umem->va)
+		udma_umem_release(seg->umem, seg->kernel_mode, dirty);
+	else
+		udma_put_user_page(seg);
+}
+
+static int udma_ioummu_remote_map(uint32_t tid, struct udma_segment *seg, int prot)
+{
+	return udma_ioummu_map(UMMU_INVALID_TID, tid, prot,
+			       seg->addr, &(seg->umem->append.sgt));
+}
+
+static int udma_iommu_partial_overlap_seg(struct ubcore_device *ub_dev,
+					  struct udma_context *ctx,
+					  struct udma_segment *seg,
+					  struct ubcore_seg_cfg *cfg,
+					  struct udma_range_list *pageList)
+{
+	struct udma_range_list_node *none_overlap_node;
+	struct udma_range_list mappedList = {};
+	struct udma_segment none_overlap_seg;
+	int prot = IOMMU_WRITE | IOMMU_READ;
+	bool dirty = false;
+	int ret = 0;
+
+	none_overlap_seg.kernel_mode = seg->kernel_mode;
+	udma_init_seg_cfg(&none_overlap_seg, cfg);
+	none_overlap_node = pageList->head;
+	while (none_overlap_node != NULL) {
+		none_overlap_seg.addr = none_overlap_node->start;
+		none_overlap_seg.length = none_overlap_node->length;
+		ret = udma_pin_seg_pages(ub_dev, ctx, &none_overlap_seg,
+					 cfg, &prot);
+		if (unlikely(ret)) {
+			dev_err(ctx->dev->dev, "failed to pin none_overlap_seg, ret = %d.\n", ret);
+			goto err_local_page_ping_segment;
+		}
+
+		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, prot,
+				      none_overlap_seg.addr,
+				      &(none_overlap_seg.umem->append.sgt));
+		if (unlikely(ret)) {
+			dev_err(ctx->dev->dev, "failed to iommu map none_overlap_seg, ret = %d.\n",
+				ret);
+			goto err_local_page_ioummu_map;
+		}
+
+		ret = udma_range_list_rollback(&mappedList, none_overlap_node);
+		if (unlikely(ret)) {
+			dirty = true;
+			dev_err(ctx->dev->dev, "failed to rollback list, ret = %d.\n", ret);
+			goto err_local_page_ioummu_map;
+		}
+
+		udma_unpin_seg_pages(&none_overlap_seg, true);
+		none_overlap_node = none_overlap_node->next;
+	}
+
+	udma_range_list_destroy(&mappedList);
+
+	return 0;
+
+err_local_page_ioummu_map:
+	udma_unpin_seg_pages(&none_overlap_seg, dirty);
+err_local_page_ping_segment:
+	none_overlap_node = mappedList.head;
+	while (none_overlap_node != NULL) {
+		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID,
+				  none_overlap_node->start,
+				  PAGE_SIZE * udma_cal_npages(none_overlap_node->start,
+				  none_overlap_node->length));
+		none_overlap_node = none_overlap_node->next;
+	}
+	udma_range_list_destroy(&mappedList);
+
+	return ret;
+}
+
+static int udma_iommu_local_map(struct ubcore_device *ub_dev,
+				struct udma_context *ctx, struct udma_segment *seg,
+				struct ubcore_seg_cfg *cfg, int prot)
+{
+	struct udma_range_list pageList = {};
+	int ret;
+
+	mutex_lock(&ctx->seg_node->lock);
+	ret = udma_seg_range_occupy(ctx->seg_node, seg->addr,
+				    seg->addr + PAGE_ALIGN(seg->length) - 1,
+				    &pageList);
+	if (unlikely(ret)) {
+		mutex_unlock(&ctx->seg_node->lock);
+		dev_err(ctx->dev->dev, "segment have invalid parameter,ret = %d.\n", ret);
+		return ret;
+	}
+
+	if (pageList.head == NULL) {
+		mutex_unlock(&ctx->seg_node->lock);
+		return 0;
+	}
+
+	if (pageList.head->length == PAGE_ALIGN(seg->length)) {
+		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, prot,
+				      seg->addr, &(seg->umem->append.sgt));
+		if (unlikely(ret)) {
+			udma_range_list_destroy(&pageList);
+			mutex_unlock(&ctx->seg_node->lock);
+			dev_err(ctx->dev->dev, "ioummu segment failed, ret = %d.\n", ret);
+			return ret;
+		}
+	} else {
+		ret = udma_iommu_partial_overlap_seg(ub_dev, ctx, seg, cfg,
+						     &pageList);
+		if (unlikely(ret)) {
+			udma_range_list_destroy(&pageList);
+			mutex_unlock(&ctx->seg_node->lock);
+			dev_err(ctx->dev->dev,
+				"ioummu partial overlap segment failed, ret = %d.\n", ret);
+			return ret;
+		}
+	}
+
+	udma_range_list_destroy(&pageList);
+	mutex_unlock(&ctx->seg_node->lock);
+	return ret;
+}
+
+static int udma_pin_pages_and_ioummu_map(struct ubcore_device *ub_dev, struct udma_context *ctx,
+					 struct udma_segment *seg, struct ubcore_seg_cfg *cfg,
+					 uint32_t tid)
 {
 	uint32_t access = seg->core_tseg.seg.attr.bs.access;
+	bool local_only = access & UBCORE_ACCESS_LOCAL_ONLY;
+	int prot = IOMMU_WRITE | IOMMU_READ;
+	bool dirty = false;
+	int ret = 0;
 
-	udma_ioummu_unmap(ctx, (access & UBCORE_ACCESS_LOCAL_ONLY) ? UMMU_INVALID_TID : tid,
-			  seg->addr, PAGE_SIZE * udma_cal_npages(seg->addr, seg->length));
-	udma_umem_release(seg->umem, seg->kernel_mode, true);
+	ret = udma_pin_seg_pages(ub_dev, ctx, seg, cfg, &prot);
+	if (unlikely(ret))
+		return ret;
+
+	if (!local_only) {
+		ret = udma_ioummu_remote_map(tid, seg, prot);
+		if (unlikely(ret)) {
+			dev_err(ctx->dev->dev, "ioummu remote map failed, ret = %d.\n", ret);
+			goto err_ioummu_remote_map;
+		}
+	}
+
+	ret = udma_iommu_local_map(ub_dev, ctx, seg, cfg, prot);
+	if (unlikely(ret)) {
+		dirty = true;
+		dev_err(ctx->dev->dev, "ioummu local map failed, ret = %d.\n", ret);
+		goto err_ioummu_local_map;
+	}
+
+	return ret;
+
+err_ioummu_local_map:
+	if (!local_only)
+		udma_ioummu_unmap(UMMU_INVALID_TID, tid, seg->addr,
+				  PAGE_SIZE * udma_cal_npages(seg->addr, seg->length));
+err_ioummu_remote_map:
+	udma_unpin_seg_pages(seg, dirty);
+
+	return ret;
+}
+
+static void udma_unpin_pages_and_unioummu_map(struct udma_context *ctx, struct udma_segment *seg,
+					      uint32_t tid)
+{
+	uint32_t access = seg->core_tseg.seg.attr.bs.access;
+	bool local_only = access & UBCORE_ACCESS_LOCAL_ONLY;
+	struct udma_range_list_node *current_node;
+	struct udma_range_list pageList = {};
+
+	if (!local_only)
+		udma_ioummu_unmap(UMMU_INVALID_TID, tid, seg->addr,
+				  PAGE_SIZE * udma_cal_npages(seg->addr, seg->length));
+
+	mutex_lock(&ctx->seg_node->lock);
+	udma_seg_range_realease(ctx->seg_node, seg->addr,
+				seg->addr + PAGE_ALIGN(seg->length) - 1, &pageList);
+	current_node = pageList.head;
+	while (current_node != NULL) {
+		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID, current_node->start,
+				  PAGE_SIZE * udma_cal_npages(current_node->start,
+				  current_node->length));
+		current_node = current_node->next;
+	}
+	udma_range_list_destroy(&pageList);
+	mutex_unlock(&ctx->seg_node->lock);
+
+	udma_unpin_seg_pages(seg, true);
 }
 
 struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
@@ -232,8 +542,8 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 	udma_tid = to_udma_tid(seg->core_tseg.token_id);
 
 	if (udata && udma_dev->caps.sva_sep_mode_en) {
-		ret = pin_pages_and_ioummu_map(ub_dev, to_udma_context(udata->uctx), seg,
-					       cfg, udma_tid->tid);
+		ret = udma_pin_pages_and_ioummu_map(ub_dev, to_udma_context(udata->uctx), seg,
+						    cfg, udma_tid->tid);
 		if (ret) {
 			dev_err(udma_dev->dev, "ioummu map failed, ret = %d.\n", ret);
 			goto err_pin_seg;
@@ -327,7 +637,8 @@ int udma_unregister_seg(struct ubcore_target_seg *ubcore_seg)
 
 common_process:
 	if (!seg->kernel_mode && udma_dev->caps.sva_sep_mode_en)
-		unpin_pages_and_unioummu_map(to_udma_context(ubcore_seg->uctx), seg, udma_tid->tid);
+		udma_unpin_pages_and_unioummu_map(to_udma_context(ubcore_seg->uctx),
+						  seg, udma_tid->tid);
 	else
 		udma_unpin_seg(seg, true);
 	seg->token_value = 0;
@@ -372,4 +683,19 @@ int udma_unimport_seg(struct ubcore_target_seg *tseg)
 	kfree(seg);
 
 	return 0;
+}
+
+void udma_destroy_seg_tree_table(struct udma_dev *dev)
+{
+	struct udma_seg_tree_node *seg_node = NULL;
+	unsigned long tid = 0;
+
+	mutex_lock(&dev->seg_tree_mutex);
+	xa_for_each(&dev->seg_tree_table, tid, seg_node) {
+		__xa_erase(&dev->seg_tree_table, tid);
+		udma_seg_tree_destroy(seg_node);
+	}
+	mutex_unlock(&dev->seg_tree_mutex);
+	xa_destroy(&dev->seg_tree_table);
+	mutex_destroy(&dev->seg_tree_mutex);
 }

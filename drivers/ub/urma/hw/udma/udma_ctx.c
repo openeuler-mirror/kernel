@@ -59,37 +59,91 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 
 static void udma_put_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 {
-	if (dev->caps.sva_sep_mode_en)
+	struct ummu_invalid_cfg_param inva_param = { ctx->mm, ctx->tid };
+	int ret;
+
+	if (dev->caps.sva_sep_mode_en) {
+		mutex_lock(&dev->seg_tree_mutex);
+		if (refcount_dec_and_test(&ctx->seg_node->ctx_refcnt)) {
+			udma_seg_tree_destroy(ctx->seg_node);
+			__xa_erase(&dev->seg_tree_table, ctx->tid);
+
+			ret = ummu_core_invalidate_cfg(&inva_param);
+			if (ret)
+				dev_err(dev->dev, "invalidate cfg_table failed, ret=%d.\n", ret);
+		}
+		mutex_unlock(&dev->seg_tree_mutex);
+
 		ummu_core_free_tdev(ctx->ummu_dev);
-	else
-		ummu_sva_unbind_device(ctx->sva);
+	} else {
+		ret = ummu_core_invalidate_cfg(&inva_param);
+		if (ret)
+			dev_err(dev->dev, "invalidate cfg_table failed, ret=%d.\n", ret);
+
+		iommu_sva_unbind_device_isolated(ctx->sva);
+	}
 }
 
 static int udma_get_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 {
-	int ret = 0;
+#ifdef CONFIG_UB_UMMU_SVA_SEPARATED_PAGES
+	struct tdev_opt opt = { current->mm, true };
+#endif
+	int ret = -ENOMEM;
 
 	if (dev->caps.sva_sep_mode_en) {
 		ctx->tid = UMMU_INVALID_TID;
+#ifdef CONFIG_UB_UMMU_SVA_SEPARATED_PAGES
+		ctx->ummu_dev = ummu_core_alloc_separate_tdev(&opt, &ctx->tid);
+#else
 		ctx->ummu_dev = ummu_alloc_tdev_separated(&ctx->tid);
+#endif
 		if (!ctx->ummu_dev) {
 			dev_err(dev->dev, "Failed to alloc separate pages USVA device.\n");
-			ret = -ENOMEM;
+			goto err_alloc_tdev_separated;
 		}
+
+		mutex_lock(&dev->seg_tree_mutex);
+		ctx->seg_node = xa_load(&dev->seg_tree_table, ctx->tid);
+		if (ctx->seg_node) {
+			refcount_inc(&ctx->seg_node->ctx_refcnt);
+			ret = 0;
+		} else {
+			ctx->seg_node = udma_seg_range_init();
+			if (!ctx->seg_node) {
+				dev_err(dev->dev, "Failed to init segment_range.\n");
+				goto err_segment_range_init;
+			}
+			ret = xa_err(__xa_store(&dev->seg_tree_table, ctx->tid,
+						ctx->seg_node, GFP_ATOMIC));
+			if (ret) {
+				dev_err(dev->dev, "Failed to store segment_range, ret=%d.\n", ret);
+				goto err_segment_range_store;
+			}
+		}
+		mutex_unlock(&dev->seg_tree_mutex);
 	} else {
-		ctx->sva = ummu_sva_bind_device(dev->dev, current->mm, NULL);
-		if (!ctx->sva) {
+		ctx->sva = iommu_sva_bind_device_isolated(dev->dev, current->mm, NULL);
+		if (IS_ERR(ctx->sva)) {
 			dev_err(dev->dev, "SVA failed to bind device.\n");
-			ret = -EINVAL;
-			return ret;
+			return -EINVAL;
 		}
 
 		ret = ummu_get_tid(dev->dev, ctx->sva, &ctx->tid);
 		if (ret) {
 			dev_err(dev->dev, "Failed to get tid, ret = %d.\n", ret);
-			ummu_sva_unbind_device(ctx->sva);
+			iommu_sva_unbind_device_isolated(ctx->sva);
 		}
 	}
+
+	return ret;
+
+err_segment_range_store:
+	udma_seg_tree_destroy(ctx->seg_node);
+err_segment_range_init:
+	mutex_unlock(&dev->seg_tree_mutex);
+	ummu_core_free_tdev(ctx->ummu_dev);
+err_alloc_tdev_separated:
 
 	return ret;
 }
@@ -148,21 +202,13 @@ err_free_ctx:
 int udma_free_ucontext(struct ubcore_ucontext *ucontext)
 {
 	struct udma_dev *udma_dev = to_udma_dev(ucontext->ub_dev);
-	struct ummu_invalid_cfg_param inva_param = {};
 	struct udma_hugepage_priv *priv;
 	struct udma_hugepage_priv *tmp;
 	struct vm_area_struct *vma;
 	struct udma_context *ctx;
-	int ret;
 	int i;
 
 	ctx = to_udma_context(ucontext);
-
-	inva_param.tid = ctx->tid;
-	inva_param.mm = ctx->mm;
-	ret = ummu_core_invalidate_cfg(&inva_param);
-	if (ret)
-		dev_err(udma_dev->dev, "invalidate cfg_table failed, ret=%d.\n", ret);
 
 	mutex_destroy(&ctx->pgdir_mutex);
 	udma_unset_dtu_va_info(udma_dev, ctx);
@@ -487,7 +533,7 @@ struct udma_page_priv *udma_get_map_page_priv(struct udma_context *ctx, uint64_t
 		return priv;
 
 	if (ctx->dev->caps.sva_sep_mode_en) {
-		ret = udma_ioummu_map(ctx, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
+		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
 				      (uint64_t)priv->va_base, &(priv->sgt));
 		if (ret) {
 			dev_err(ctx->dev->dev, "udma iommu map failed, ret = %d.\n", ret);
@@ -502,7 +548,8 @@ struct udma_page_priv *udma_get_map_page_priv(struct udma_context *ctx, uint64_t
 void udma_put_map_page_priv(struct udma_context *ctx, struct udma_page_priv *priv)
 {
 	if (ctx->dev->caps.sva_sep_mode_en)
-		udma_ioummu_unmap(ctx, UMMU_INVALID_TID, (uintptr_t)priv->va_base, priv->va_len);
+		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID,
+				  (uintptr_t)priv->va_base, priv->va_len);
 
 	udma_free_page_priv(ctx, priv);
 }
@@ -609,7 +656,7 @@ udma_alloc_u_hugepage_priv(struct udma_context *ctx, struct vm_area_struct *vma)
 			goto err_create_sgt_from_pages;
 		}
 
-		ret = udma_ioummu_map(ctx, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
+		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
 				      vma->vm_start, &priv->sgt);
 		if (ret) {
 			dev_err(ctx->dev->dev, "failed to map sgt, ret = %d.\n", ret);
@@ -704,7 +751,8 @@ void udma_free_u_hugepage(struct udma_context *ctx, uint64_t buf_addr)
 	}
 
 	if (ctx->dev->caps.sva_sep_mode_en) {
-		udma_ioummu_unmap(ctx, UMMU_INVALID_TID, (uintptr_t)priv->va_base, priv->va_len);
+		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID,
+				  (uintptr_t)priv->va_base, priv->va_len);
 		sg_free_table(&priv->sgt);
 	}
 	if (current->mm) {
