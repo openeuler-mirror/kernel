@@ -587,6 +587,61 @@ static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
 		udma_dump_jetty_id_range(udma_dev);
 }
 
+static void udma_dump_ucp_id_range(struct udma_dev *udma_dev)
+{
+#define UCP_JFX_CNT 3
+	const char *jfx_name[UCP_JFX_CNT] = {
+		"ucp_jetty",
+		"ucp_jfc",
+		"ucp_jfr",
+	};
+	struct udma_res *ucp_jfx_list[UCP_JFX_CNT] = {
+		&udma_dev->caps.ucp_caps.ucp_jetty,
+		&udma_dev->caps.ucp_caps.ucp_jfc,
+		&udma_dev->caps.ucp_caps.ucp_jfr,
+	};
+	uint32_t i;
+
+	for (i = 0; i < UCP_JFX_CNT; i++)
+		dev_info(udma_dev->dev, "%s start_idx = %u, max_cnt = %u\n",
+			 jfx_name[i], ucp_jfx_list[i]->start_idx,
+			 ucp_jfx_list[i]->max_cnt);
+
+	dev_info(udma_dev->dev, "rsvd_jetty_cnt = %u.\n", udma_dev->caps.rsvd_jetty_cnt);
+}
+
+static void udma_get_ucp_jfx_id_range(struct udma_dev *udma_dev, struct udma_cmd_ucp_resource *cmd)
+{
+	udma_dev->caps.ucp_caps.ucp_jetty.start_idx = cmd->ucp_jetty_start;
+	udma_dev->caps.ucp_caps.ucp_jetty.max_cnt = cmd->ucp_jetty_num;
+	udma_dev->caps.ucp_caps.ucp_jetty.next_idx = udma_dev->caps.ucp_caps.ucp_jetty.start_idx;
+	udma_dev->caps.ucp_caps.ucp_jfc.start_idx = cmd->ucp_jfc_start;
+	udma_dev->caps.ucp_caps.ucp_jfc.max_cnt = cmd->ucp_jfc_num;
+	udma_dev->caps.ucp_caps.ucp_jfc.next_idx = udma_dev->caps.ucp_caps.ucp_jfc.start_idx;
+	udma_dev->caps.ucp_caps.ucp_jfr.start_idx = cmd->ucp_jfr_start;
+	udma_dev->caps.ucp_caps.ucp_jfr.max_cnt = cmd->ucp_jfr_num;
+	udma_dev->caps.ucp_caps.ucp_jfr.next_idx = udma_dev->caps.ucp_caps.ucp_jfr.start_idx;
+	udma_dev->caps.rsvd_jetty_cnt += udma_dev->caps.ucp_caps.ucp_jetty.max_cnt;
+
+	if (debug_switch)
+		udma_dump_ucp_id_range(udma_dev);
+}
+
+static int udma_set_ucp_res(struct udma_dev *udma_dev)
+{
+	struct udma_cmd_ucp_resource ucp_cmd = {};
+	int ret;
+
+	ret = udma_query_ucp_res(udma_dev, (void *)&ucp_cmd);
+	if (ret) {
+		dev_err(udma_dev->dev, "fail to query ucp resource from FW %d\n", ret);
+		return ret;
+	}
+	udma_get_ucp_jfx_id_range(udma_dev, &ucp_cmd);
+
+	return 0;
+}
+
 static int query_caps_from_firmware(struct udma_dev *udma_dev)
 {
 	struct udma_cmd_ue_resource cmd = {};
@@ -614,6 +669,14 @@ static int query_caps_from_firmware(struct udma_dev *udma_dev)
 	udma_dev->caps.atomic_feat = cmd.atomic_feat;
 
 	udma_get_jetty_id_range(udma_dev, &cmd);
+
+	if (ubase_adev_ucp_supported(udma_dev->comdev.adev)) {
+		ret = udma_set_ucp_res(udma_dev);
+		if (ret) {
+			dev_err(udma_dev->dev, "fail to set ucp resource.\n");
+			return ret;
+		}
+	}
 
 	udma_dev->caps.feature = cmd.cap_info;
 	udma_dev->caps.ue_cnt = cmd.ue_cnt >= UDMA_DEV_UE_NUM ?
@@ -860,6 +923,7 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 		INIT_LIST_HEAD(&udma_dev->db_list[i]);
 
 	udma_init_hugepage(udma_dev);
+	spin_lock_init(&udma_dev->caps.udp.lock);
 
 	if (!ubase_adev_mbx_supported(udma_dev->comdev.adev)) {
 		ret = udma_init_mbox_over_cmdq(udma_dev);
