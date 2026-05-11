@@ -419,6 +419,7 @@ struct ubase_dev {
 	struct ubase_dtu_info	dtu_info;
 	struct ubase_mem_init_ops	mem_init_ops;
 	struct ubase_mm_ops	mm_ops;
+	gfp_t			gfp;
 };
 
 #define UBASE_ERR_MSG_LEN	128
@@ -558,6 +559,11 @@ static inline bool ubase_dev_dtu_supported(struct ubase_dev *udev)
 static inline bool ubase_dev_usc_supported(struct ubase_dev *udev)
 {
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_USC_B);
+}
+
+static inline bool ubase_dev_non_mirror_mem_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_NON_MIRROR_MEM_B);
 }
 
 static inline u32 ubase_jfs_num(struct ubase_dev *udev)

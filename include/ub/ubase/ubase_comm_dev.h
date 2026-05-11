@@ -388,6 +388,7 @@ u32 ubase_get_hw_ver(struct auxiliary_device *adev);
 bool ubase_adev_ubl_supported(struct auxiliary_device *adev);
 bool ubase_adev_ctrlq_supported(struct auxiliary_device *adev);
 bool ubase_adev_eth_mac_supported(struct auxiliary_device *adev);
+bool ubase_adev_non_mirror_mem_supported(struct auxiliary_device *adev);
 bool ubase_adev_mac_stats_supported(struct auxiliary_device *aux_dev);
 bool ubase_adev_mbx_supported(struct auxiliary_device *adev);
 bool ubase_adev_prealloc_supported(struct auxiliary_device *aux_dev);
