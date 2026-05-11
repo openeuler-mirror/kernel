@@ -117,6 +117,7 @@ udma_reserved_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	struct vm_area_struct *vma;
 	uint64_t buf_addr;
 	uint32_t buf_len;
+	gfp_t flag;
 	int ret;
 
 	buf_addr = dev->sq_reserved_info.va_per_ue +
@@ -145,8 +146,12 @@ udma_reserved_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 		goto err_unlock;
 	}
 
-	sq->reserved_info.pg = udma_alloc_pages(GFP_KERNEL | __GFP_ZERO | GFP_HIGHUSER_MOVABLE,
-								sq->reserved_info.order);
+	if (debug_switch)
+		dev_info_ratelimited(dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
+				     vma->vm_flags, vma->vm_page_prot.pgprot);
+	flag = dev->caps.non_mirror_en == true ? (GFP_HIGHUSER_MOVABLE | __GFP_ZERO) :
+		(GFP_KERNEL | __GFP_ZERO);
+	sq->reserved_info.pg = udma_alloc_pages(flag, sq->reserved_info.order);
 	if (sq->reserved_info.pg == NULL) {
 		dev_err(dev->dev, "failed to alloc_pages, order=%u.\n", sq->reserved_info.order);
 		ret = -ENOMEM;
@@ -334,6 +339,9 @@ void udma_init_jfsc(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
 	ctx->sqe_pld_tokenid = jfs->sq.tid & (uint32_t)SQE_PLD_TOKEN_ID_MASK;
 	ctx->next_send_ssn = get_random_u16();
 	ctx->next_rcv_ssn = ctx->next_send_ssn;
+
+	if (!!(dev->caps.feature & UDMA_CAP_FEATURE_RC_CTP_MULTIPLE_PATH_MODE))
+		ctx->ctp_rc_mul_path_mode = cfg->flag.bs.ctp_rc_mul_path_mode;
 }
 
 int udma_verify_jfs_param(struct udma_dev *dev, struct ubcore_jfs_cfg *cfg,
@@ -392,7 +400,7 @@ void udma_dfx_store_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *udma_jfs)
 
 	write_lock(&udma_dev->dfx_info->jfs.rwlock);
 	ret = xa_err(xa_store(&udma_dev->dfx_info->jfs.table, udma_jfs->sq.id,
-			      jfs, GFP_KERNEL));
+			      jfs, GFP_ATOMIC));
 	if (ret) {
 		write_unlock(&udma_dev->dfx_info->jfs.rwlock);
 		dev_err(udma_dev->dev, "store jfs_id(%u) to table failed in DFX.\n",
@@ -1586,7 +1594,7 @@ int udma_post_sq_wr(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
 	}
 
 err_post_wr:
-	if (unlikely(sq->db_status)) {
+	if (unlikely(sq->db_status || wr->flag.bs.db_bypass)) {
 		sq->need_ring_db = true;
 	} else {
 		if (likely(wr_cnt && udma_dev->status != UDMA_SUSPEND)) {

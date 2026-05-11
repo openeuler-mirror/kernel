@@ -160,6 +160,7 @@ static void udma_set_dev_caps(struct ubcore_device_attr *attr, struct udma_dev *
 		     sizeof(struct ubcore_sl_info) * UDMA_MAX_SL_NUM);
 	attr->dev_cap.feature.bs.ipourma_en = udma_dev->caps.ipourma_en;
 	attr->dev_cap.feature.bs.ctp_en = udma_dev->caps.ctp_en;
+	attr->dev_cap.feature.bs.uboe = !ubase_adev_ubl_supported(udma_dev->comdev.adev);
 }
 
 static int udma_query_device_attr(struct ubcore_device *dev,
@@ -385,8 +386,6 @@ void udma_destroy_tables(struct udma_dev *udma_dev)
 	if (!udma_dev->is_ue)
 		udma_destroy_eid_guid_table(udma_dev);
 
-	udma_ctrlq_destroy_tpid_list(&udma_dev->ctrlq_tpid_table);
-
 	udma_destroy_seg_tree_table(udma_dev);
 	udma_destroy_eid_table(udma_dev);
 	mutex_destroy(&udma_dev->disable_ue_rx_mutex);
@@ -454,7 +453,6 @@ static void udma_init_managed_by_ctrl_cpu_table(struct udma_dev *udma_dev)
 {
 	mutex_init(&udma_dev->eid_mutex);
 	xa_init(&udma_dev->eid_table);
-	xa_init(&udma_dev->ctrlq_tpid_table);
 }
 
 int udma_init_tables(struct udma_dev *udma_dev)
@@ -706,6 +704,7 @@ static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
 	udma_dev->port_id = ubase_caps->io_port_id;
 	udma_dev->port_logic_id = ubase_caps->io_port_logic_id;
 	udma_dev->ue_id = ubase_caps->ue_id;
+	udma_dev->caps.non_mirror_en = ubase_adev_non_mirror_mem_supported(udma_dev->comdev.adev);
 
 	udma_dev->dtu_info.k_dtu_enable = ubase_adev_dtu_supported(udma_dev->comdev.adev);
 	if (!udma_dev->dtu_info.k_dtu_enable)
@@ -866,6 +865,7 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	udma_dev->caps.jfc.max_cnt = a_caps->jfc.max_cnt;
 	udma_dev->caps.jfc.depth = a_caps->jfc.depth;
 	udma_dev->caps.jfc.start_idx = a_caps->jfc.start_idx;
+	udma_dev->caps.jfc.next_idx = udma_dev->caps.jfc.start_idx;
 	udma_dev->caps.jetty.max_cnt = a_caps->jfs.max_cnt;
 	udma_dev->caps.jetty.depth = a_caps->jfs.depth;
 	udma_dev->caps.jetty.start_idx = a_caps->jfs.start_idx;
@@ -923,6 +923,12 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 	udma_dev->db_base = mem_base->addr_unmapped;
 	udma_dev->k_db_base = mem_base->addr;
 	udma_dev->adev_id = udma_dev->comdev.adev->id;
+
+	udma_dev->hw_ver = ubase_get_hw_ver(udma_dev->comdev.adev);
+	if (udma_dev->hw_ver == UBASE_HW_VER_UNKNOWN) {
+		dev_err(udma_dev->dev, "failed to get hw version.\n");
+		return -EINVAL;
+	}
 
 	ret = udma_set_hw_caps(udma_dev);
 	if (ret) {
@@ -1066,7 +1072,7 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 		udma_dev->dtu_info.k_dtu_enable = false;
 	}
 
-	return ret;
+	return 0;
 
 err_sva_grant_range:
 err_get_tid:

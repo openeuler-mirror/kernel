@@ -92,10 +92,20 @@ struct udma_jfc_ctx {
 	/* DW1 */
 	uint32_t cqe_va_h;
 	/* DW2 */
-	uint32_t cqe_token_id : 20;
-	uint32_t cq_cnt_mode : 1;
-	uint32_t rsv0 : 3;
-	uint32_t ceqn : 8;
+	union {
+		struct {
+			uint32_t cqe_token_id : 20;
+			uint32_t cq_cnt_mode : 1;
+			uint32_t rsv0 : 2;
+			uint32_t ceqn : 9;
+		} hw_ver_1;
+		struct {
+			uint32_t cqe_token_id : 20;
+			uint32_t cq_cnt_mode : 1;
+			uint32_t rsv0 : 3;
+			uint32_t ceqn : 8;
+		} hw_ver_0;
+	};
 	/* DW3 */
 	uint32_t cqe_token_value : 24;
 	uint32_t rsv1 : 8;

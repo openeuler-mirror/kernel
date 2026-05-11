@@ -167,6 +167,8 @@ static void udma_init_jettyc(struct udma_dev *dev, struct ubcore_jetty_cfg *cfg,
 	ctx->sqe_pld_tokenid = jetty->sq.tid & (uint32_t)SQE_PLD_TOKEN_ID_MASK;
 	ctx->next_send_ssn = get_random_u16();
 	ctx->next_rcv_ssn = ctx->next_send_ssn;
+	if (!!(dev->caps.feature & UDMA_CAP_FEATURE_RC_CTP_MULTIPLE_PATH_MODE))
+		ctx->ctp_rc_mul_path_mode = cfg->flag.bs.ctp_rc_mul_path_mode;
 }
 
 static int udma_specify_rsvd_jetty_id(struct udma_dev *udma_dev, uint32_t cfg_id)
@@ -462,7 +464,7 @@ static void udma_dfx_store_jetty_id(struct udma_dev *udma_dev,
 
 	write_lock(&udma_dev->dfx_info->jetty.rwlock);
 	ret = xa_err(xa_store(&udma_dev->dfx_info->jetty.table, udma_jetty->sq.id,
-			      jetty, GFP_KERNEL));
+			      jetty, GFP_ATOMIC));
 	if (ret) {
 		write_unlock(&udma_dev->dfx_info->jetty.rwlock);
 		dev_err(udma_dev->dev, "store jetty_id(%u) to jetty_table failed in dfx.\n",

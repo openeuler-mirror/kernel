@@ -686,7 +686,7 @@ static void dump_fill_cqe_err_aux_info(struct udma_dev *dev,
 					 struct udma_cmd_query_cqe_aux_info *info,
 					 enum udma_cqe_aux_info_type *type, uint32_t aux_info_num)
 {
-	int aux_info_type;
+	uint32_t aux_info_type;
 	uint32_t i;
 
 	if (aux_info_out->aux_info_type != NULL &&
@@ -816,7 +816,7 @@ static int send_cmd_query_all_cqe_aux_info(struct udma_dev *udma_dev,
 	int ret;
 
 	size = ARRAY_SIZE(cqe_type_arr) * UDMA_CQE_NUM_PER_TYPE *
-	       sizeof(struct udma_cmd_query_cqe_aux_info);
+		sizeof(struct udma_cmd_query_cqe_aux_info);
 	info_arr = kzalloc(size, GFP_KERNEL);
 
 	for (i = 0; i < ARRAY_SIZE(cqe_type_arr); i++) {
@@ -824,8 +824,8 @@ static int send_cmd_query_all_cqe_aux_info(struct udma_dev *udma_dev,
 			if (cqe_type_arr[i][j].type_list == NULL)
 				continue;
 
-			info_arr[i][j].status = i;
-			info_arr[i][j].is_client = j;
+			info_arr[i][j].status = (uint32_t)i;
+			info_arr[i][j].is_client = (uint32_t)j;
 
 			ret = send_cmd_query_single_cqe_aux_info(udma_dev, &info_arr[i][j]);
 			if (ret) {
