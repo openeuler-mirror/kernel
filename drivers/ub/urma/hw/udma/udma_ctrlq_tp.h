@@ -32,6 +32,7 @@ enum udma_ctrlq_cmd_code_type {
 	UDMA_CMD_CTRLQ_REMOVE_SINGLE_TP = 0x13,
 	UDMA_CMD_CTRLQ_TP_FLUSH_DONE,
 	UDMA_CMD_CTRLQ_CHECK_TP_ACTIVE,
+	UDMA_CMD_CTRLQ_TP_PORT_CHANGE = 0x16,
 	UDMA_CMD_CTRLQ_GET_EID_BY_IP = 0x17,
 	UDMA_CMD_CTRLQ_GET_IP_BY_EID,
 	UDMA_CMD_CTRLQ_GET_TP_LIST = 0x21,
@@ -157,6 +158,11 @@ struct udma_ctrlq_check_tp_active_rsp_info {
 	uint32_t num : 8;
 	uint32_t rsv : 24;
 	struct udma_ctrlq_check_tp_active_rsp_data data[0];
+};
+
+struct udma_ctrlq_tp_port_change_req_data {
+	uint32_t tpn : 24;
+	uint32_t rsv : 8;
 };
 
 struct udma_ctrlq_get_tp_list_req_data {
@@ -326,6 +332,7 @@ int udma_send_tp_resp_to_ue(struct udma_dev *udev, struct udma_entity_msg *req, 
 int udma_active_tp(struct ubcore_device *dev, struct ubcore_active_tp_cfg *active_cfg);
 int udma_deactive_tp(struct ubcore_device *dev, union ubcore_tp_handle tp_handle,
 		     struct ubcore_udata *udata);
+int udma_ctrlq_notify_tp_port_change(struct udma_dev *udev, uint32_t tpn);
 int udma_get_smac(struct ubcore_device *dev, uint8_t *mac);
 int udma_get_eid_by_ip(struct ubcore_device *dev, const struct ubcore_net_addr *net_addr,
 		       union ubcore_eid *eid);

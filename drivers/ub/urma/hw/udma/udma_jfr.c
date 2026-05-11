@@ -138,7 +138,6 @@ static int udma_u_alloc_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr,
 		if (!udma_alloc_u_hugepage(jfr->udma_ctx, jfr->rq.buf.addr, jfr->rq.buf.len)) {
 			dev_err(dev->dev, "failed to create rq.\n");
 			return -ENOMEM;
-
 		}
 		jfr->rq.buf.is_hugepage = true;
 	} else {
@@ -376,6 +375,7 @@ static int udma_hw_init_jfrc(struct udma_dev *dev, struct ubcore_jfr_cfg *cfg,
 
 	ctx = (struct udma_jfr_ctx *)mailbox->buf;
 	ctx->token_value = 0;
+
 	udma_free_cmd_mailbox(dev, mailbox);
 
 	return ret;
@@ -506,6 +506,7 @@ err_get_jfr_buf:
 	udma_id_free(&udma_dev->jfr_table.ida_table, udma_jfr->rq.id);
 err_alloc_jfr_id:
 	kfree(udma_jfr);
+
 	return ERR_PTR(ret);
 }
 
@@ -612,7 +613,8 @@ static int udma_modify_and_del_jfr(struct udma_dev *udma_dev, struct udma_jfr *u
 		large_payload = !!(*(bool *)udma_jfr->jfr_sleep_buf.virt_addr);
 	if (need_sleep) {
 		sleep_time = large_payload ? jfr_sleep_time : UDMA_DEF_JFR_SLEEP_TIME;
-		dev_info_ratelimited(udma_dev->dev, "jfr sleep time = %u us.\n", sleep_time);
+		if (debug_switch)
+			dev_info_ratelimited(udma_dev->dev, "jfr sleep time=%u us.\n", sleep_time);
 		usleep_range(sleep_time, sleep_time + UDMA_SLEEP_DELAY_TIME);
 	}
 
@@ -633,7 +635,6 @@ static void udma_free_jfr_prepare(struct ubcore_jfr *jfr)
 		udma_dfx_delete_id(udma_dev, &udma_dev->dfx_info->jfr, udma_jfr->rq.id);
 
 	xa_erase(&udma_dev->jfr_table.xa, udma_jfr->rq.id);
-
 	if (refcount_dec_and_test(&udma_jfr->ae_refcount))
 		complete(&udma_jfr->ae_comp);
 	wait_for_completion(&udma_jfr->ae_comp);
