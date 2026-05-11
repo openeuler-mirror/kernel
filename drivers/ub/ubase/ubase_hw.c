@@ -225,6 +225,12 @@ static void ubase_parse_dev_caps_udma(struct ubase_dev *udev,
 	udma_caps->rc_que_depth = le32_to_cpu(resp->udma_rc_depth);
 }
 
+static void ubase_set_dev_gfp(struct ubase_dev *udev)
+{
+	udev->gfp = ubase_get_cap_bit(udev, UBASE_SUPPORT_NON_MIRROR_MEM_B) ?
+		    GFP_HIGHUSER_MOVABLE : GFP_KERNEL;
+}
+
 static void ubase_parse_dev_caps(struct ubase_dev *udev,
 				 const struct ubase_res_cmd_resp *resp)
 {
@@ -236,6 +242,7 @@ static void ubase_parse_dev_caps(struct ubase_dev *udev,
 			   udev->cap_bits[i]);
 	}
 
+	ubase_set_dev_gfp(udev);
 	ubase_parse_dev_caps_comm(udev, resp);
 	ubase_parse_dev_caps_unic(udev, resp);
 	ubase_parse_dev_caps_udma(udev, resp);
