@@ -833,6 +833,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_query_chip_info, NULL
 	},
 	{
+		"init die list", UBASE_SUP_ALL, 0,
+		ubase_die_list_init, ubase_die_list_uninit
+	},
+	{
 		"query controller_info", UBASE_SUP_NO_PMU, 0,
 		ubase_query_controller_info, NULL
 	},
