@@ -472,7 +472,7 @@ static int ub_mem_ras_handler(uint64_t phys_addr, enum ras_err_type err_type)
 	int ret;
 
 	if (!g_ub_mem_fault_enable)
-		return NOTIFY_OK;
+		return 0;
 
 	pr_info("ub mem error: type=%d\n", err_type);
 
