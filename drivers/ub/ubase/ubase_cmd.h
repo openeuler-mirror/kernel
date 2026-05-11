@@ -157,6 +157,11 @@ struct ubase_cfg_ets_vl_sch_cmd {
 	__le32 port_bitmap;
 };
 
+struct ubase_close_perf_stats_cmd {
+	__le32	logic_port_bitmap[2];
+	u8	rsv[16];
+};
+
 struct ubase_query_dl_pkt_stats_cmd {
 	__le16	logic_port_id;
 	u8	rsvd[2];
