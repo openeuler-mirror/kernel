@@ -39,14 +39,17 @@ static void udma_construct_jfc_ctx(struct udma_dev *dev,
 		ctx->inline_en = jfc->inline_en;
 	ctx->cqe_va_l = jfc->buf.addr >> CQE_VA_L_OFFSET;
 	ctx->cqe_va_h = jfc->buf.addr >> CQE_VA_H_OFFSET;
-	ctx->cqe_token_id = jfc->tid;
+	ctx->hw_ver_0.cqe_token_id = jfc->tid;
 
 	if (cqe_mode)
-		ctx->cq_cnt_mode = UDMA_CQE_CNT_MODE_BY_CI_PI_GAP;
+		ctx->hw_ver_0.cq_cnt_mode = UDMA_CQE_CNT_MODE_BY_CI_PI_GAP;
 	else
-		ctx->cq_cnt_mode = UDMA_CQE_CNT_MODE_BY_COUNT;
+		ctx->hw_ver_0.cq_cnt_mode = UDMA_CQE_CNT_MODE_BY_COUNT;
 
-	ctx->ceqn = jfc->ceqn;
+	if (dev->hw_ver == UBASE_HW_VER_K_1 || dev->hw_ver == UBASE_HW_VER_A_1)
+		ctx->hw_ver_1.ceqn = jfc->ceqn;
+	else
+		ctx->hw_ver_0.ceqn = jfc->ceqn;
 	if (jfc->stars_en) {
 		ctx->stars_en = UDMA_STARS_SWITCH;
 		ctx->record_db_en = UDMA_NO_RECORD_EN;

@@ -545,7 +545,7 @@ void udma_dfx_store_id(struct udma_dev *udma_dev, struct udma_dfx_entity *entity
 	*entry = id;
 
 	write_lock(&entity->rwlock);
-	ret = xa_err(xa_store(&entity->table, id, entry, GFP_KERNEL));
+	ret = xa_err(xa_store(&entity->table, id, entry, GFP_ATOMIC));
 	if (ret) {
 		write_unlock(&entity->rwlock);
 		dev_err(udma_dev->dev, "store %s to table failed in DFX.\n", name);
@@ -664,7 +664,7 @@ udma_alloc_hugepage_priv(struct udma_dev *dev, uint32_t len)
 	priv->seq = (uint32_t)atomic_inc_return(&dev->hugepage_seq);
 	list_add(&priv->list, &dev->hugepage_list);
 
-	if (dfx_switch)
+	if (debug_switch)
 		dev_info_ratelimited(dev->dev, "alloc_hugepage, seq=%u, 2m_page_num=%u.\n",
 				     priv->seq, priv->va_len >> UDMA_HUGEPAGE_SHIFT);
 	return priv;
@@ -712,7 +712,7 @@ udma_alloc_hugepage(struct udma_dev *dev, uint32_t len)
 	priv->left_va_len -= len;
 	mutex_unlock(&dev->hugepage_lock);
 
-	if (dfx_switch)
+	if (debug_switch)
 		dev_info_ratelimited(dev->dev, "occupy_hugepage, seq=%u, 4k_page_num=%u.\n",
 				     priv->seq, len >> UDMA_HW_PAGE_SHIFT);
 	return hugepage;
@@ -727,11 +727,11 @@ static void udma_free_hugepage(struct udma_dev *dev, struct udma_hugepage *hugep
 
 	priv = hugepage->priv;
 
-	if (dfx_switch)
+	if (debug_switch)
 		dev_info_ratelimited(dev->dev, "return_hugepage, seq=%u.\n", priv->seq);
 	mutex_lock(&dev->hugepage_lock);
 	if (refcount_dec_and_test(&priv->refcnt)) {
-		if (dfx_switch)
+		if (debug_switch)
 			dev_info_ratelimited(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		list_del(&priv->list);
 
@@ -973,14 +973,17 @@ int udma_dtu_uva_remap(struct udma_dev *dev, struct udma_buf *buf,
 {
 	struct vm_area_struct *vma;
 	uint32_t buf_len;
+	gfp_t flag;
 	int ret;
 
 	buf_len = ALIGN(buf->len, PAGE_SIZE);
 	dtu_pg_info->order = get_order(buf_len);
 
 	mmap_write_lock(current->mm);
+	flag = dev->caps.non_mirror_en == true ? (GFP_HIGHUSER_MOVABLE | __GFP_ZERO) :
+					  (GFP_KERNEL | __GFP_ZERO);
 	dtu_pg_info->pg = alloc_pages_node(dev->dtu_info.dtu_mem_node_id,
-					   GFP_HIGHUSER_MOVABLE | __GFP_ZERO, dtu_pg_info->order);
+					   flag, dtu_pg_info->order);
 	if (dtu_pg_info->pg == NULL) {
 		dev_err(dev->dev, "failed to alloc pages, order = %d.\n", dtu_pg_info->order);
 		ret = -ENOMEM;

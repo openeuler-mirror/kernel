@@ -3,6 +3,7 @@
 
 #define dev_fmt(fmt) "UDMA: " fmt
 
+#include <linux/vmalloc.h>
 #include "udma_cmd.h"
 #include "udma_jfr.h"
 #include "udma_jfs.h"
@@ -264,21 +265,20 @@ static int udma_query_res_list(struct udma_dev *udma_dev,
 		return 0;
 	}
 
-	res_list->list = vmalloc(sizeof(uint32_t) * entity->cnt);
+	res_list->list = __vmalloc(sizeof(uint32_t) * entity->cnt, GFP_ATOMIC);
 	if (!res_list->list) {
-		read_unlock(&entity->rwlock);
 		dev_err(udma_dev->dev, "failed to vmalloc %s_list, %s_cnt = %u!\n",
 			name, name, entity->cnt);
+		read_unlock(&entity->rwlock);
 		return -ENOMEM;
 	}
 
 	xa_for_each(&entity->table, idx, id) {
 		if (res_list->cnt >= entity->cnt) {
+			dev_err(udma_dev->dev, "failed to query %s_id, %s_cnt = %u!\n",
+				name, name, entity->cnt);
 			read_unlock(&entity->rwlock);
 			vfree(res_list->list);
-			dev_err(udma_dev->dev,
-				"failed to query %s_id, %s_cnt = %u!\n",
-				name, name, entity->cnt);
 			return -EINVAL;
 		}
 		res_list->list[res_list->cnt] = idx;
@@ -305,7 +305,7 @@ static int udma_query_res_dev_seg(struct udma_dev *udma_dev,
 		return 0;
 	}
 
-	seg_list = vmalloc(sizeof(*seg_list) * udma_dev->dfx_info->seg.cnt);
+	seg_list = __vmalloc(sizeof(*seg_list) * udma_dev->dfx_info->seg.cnt, GFP_ATOMIC);
 	if (!seg_list) {
 		read_unlock(&udma_dev->dfx_info->seg.rwlock);
 		return -ENOMEM;
@@ -313,11 +313,10 @@ static int udma_query_res_dev_seg(struct udma_dev *udma_dev,
 
 	xa_for_each(&udma_dev->dfx_info->seg.table, idx, seg) {
 		if (res_list->seg_cnt >= udma_dev->dfx_info->seg.cnt) {
+			dev_err(udma_dev->dev, "failed to query seg_list, seg_cnt = %u!\n",
+				udma_dev->dfx_info->seg.cnt);
 			read_unlock(&udma_dev->dfx_info->seg.rwlock);
 			vfree(seg_list);
-			dev_err(udma_dev->dev,
-				"failed to query seg_list, seg_cnt = %u!\n",
-				udma_dev->dfx_info->seg.cnt);
 			return -EINVAL;
 		}
 		seg_list[res_list->seg_cnt].token_id = seg->id;
@@ -678,7 +677,7 @@ static int udma_query_res_seg(struct udma_dev *udma_dev, struct ubcore_res_key *
 		return -EINVAL;
 	}
 
-	res_seg->seg_list = vmalloc(sizeof(struct ubcore_seg_info));
+	res_seg->seg_list = __vmalloc(sizeof(struct ubcore_seg_info), GFP_ATOMIC);
 	if (!res_seg->seg_list) {
 		read_unlock(&udma_dev->dfx_info->seg.rwlock);
 		return -ENOMEM;

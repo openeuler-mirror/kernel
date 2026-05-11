@@ -163,6 +163,7 @@ struct udma_dev {
 	struct list_head db_list[UDMA_DB_TYPE_NUM];
 	struct mutex db_mutex;
 	struct udma_dfx_info *dfx_info;
+	uint32_t hw_ver;
 	uint32_t status;
 	uint32_t ue_num;
 	struct udma_ex_jfc_addr cq_addr_array[UDMA_JFC_TYPE_NUM];

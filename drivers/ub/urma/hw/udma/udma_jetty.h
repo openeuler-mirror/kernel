@@ -112,7 +112,7 @@ struct udma_jetty_ctx {
 	/* DW1 */
 	uint32_t sqe_token_id_h : 8;
 	uint32_t err_mode : 1;
-	uint32_t rsv : 1;
+	uint32_t ctp_rc_mul_path_mode : 1;
 	uint32_t cmp_odr : 1;
 	uint32_t rsv1 : 1;
 	uint32_t sqe_base_addr_l : 20;

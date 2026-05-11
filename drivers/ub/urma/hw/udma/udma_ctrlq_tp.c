@@ -176,20 +176,21 @@ int udma_ctrlq_tpn_flush_done(struct udma_dev *dev, struct xarray *ctrlq_tpid_ta
 	return ret;
 }
 
-static void udma_ctrlq_erase_one_tpid(struct xarray *ctrlq_tpid_table,
-				      uint32_t tpid)
+int udma_ctrlq_notify_tp_port_change(struct udma_dev *udev, uint32_t tpn)
 {
-	struct udma_ctrlq_tpid *tpid_entity;
+	struct udma_ctrlq_tp_port_change_req_data tp_cfg_req = {};
+	struct ubase_ctrlq_msg ctrlq_msg = {};
+	int ret;
 
-	xa_lock(ctrlq_tpid_table);
-	tpid_entity = xa_load(ctrlq_tpid_table, tpid);
-	if (!tpid_entity) {
-		xa_unlock(ctrlq_tpid_table);
-		return;
-	}
-	__xa_erase(ctrlq_tpid_table, tpid);
-	kfree(tpid_entity);
-	xa_unlock(ctrlq_tpid_table);
+	tp_cfg_req.tpn = tpn;
+	ctrlq_msg.opcode = UDMA_CMD_CTRLQ_TP_PORT_CHANGE;
+	udma_ctrlq_set_tp_msg(&ctrlq_msg, (void *)&tp_cfg_req, sizeof(tp_cfg_req), NULL, 0);
+
+	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &ctrlq_msg);
+	if (ret)
+		dev_err(udev->dev, "multi-plane tp port change, tp %u failed, ret %d.\n", tpn, ret);
+
+	return ret;
 }
 
 int udma_get_dev_resource_ratio(struct ubcore_device *dev, struct ubcore_ucontext *uctx,
@@ -526,40 +527,6 @@ static int udma_notify_mue_save_tp(struct udma_dev *dev, union ubcore_tp_handle 
 	return ret;
 }
 
-static int udma_ctrlq_store_one_tpid(struct udma_dev *udev, struct xarray *ctrlq_tpid_table,
-				     struct udma_ctrlq_tpid *tpid)
-{
-	struct udma_ctrlq_tpid *tpid_entity;
-	int ret;
-
-	if (debug_switch)
-		dev_info_ratelimited(udev->dev, "udma ctrlq store one tpid start. tpid %u\n",
-				     tpid->tpid);
-
-	if (xa_load(ctrlq_tpid_table, tpid->tpid)) {
-		dev_warn(udev->dev,
-			 "the tpid already exists in ctrlq tpid table, tpid = %u.\n",
-			 tpid->tpid);
-		return 0;
-	}
-
-	tpid_entity = kzalloc(sizeof(*tpid_entity), GFP_KERNEL);
-	if (!tpid_entity)
-		return -ENOMEM;
-
-	memcpy(tpid_entity, tpid, sizeof(*tpid));
-
-	ret = xa_err(xa_store(ctrlq_tpid_table, tpid->tpid, tpid_entity, GFP_KERNEL));
-	if (ret) {
-		dev_err(udev->dev,
-			"store tpid entity failed, ret = %d, tpid = %u.\n",
-			ret, tpid->tpid);
-		kfree(tpid_entity);
-	}
-
-	return ret;
-}
-
 static int udma_ctrlq_get_tpid_list(struct udma_dev *udev,
 				    struct udma_ctrlq_get_tp_list_req_data *tp_cfg_req,
 				    struct ubcore_get_tp_cfg *tpid_cfg,
@@ -598,33 +565,6 @@ static int udma_ctrlq_get_tpid_list(struct udma_dev *udev,
 	return ret;
 }
 
-static int udma_ctrlq_store_tpid_list(struct udma_dev *udev,
-				      struct xarray *ctrlq_tpid_table,
-				      struct udma_ctrlq_tpid_list_rsp *tpid_list_resp)
-{
-	int ret;
-	int i;
-
-	if (debug_switch)
-		dev_info_ratelimited(udev->dev, "udma ctrlq store tpid list tp_list_cnt = %u.\n",
-			 tpid_list_resp->tp_list_cnt);
-
-	for (i = 0; i < (int)tpid_list_resp->tp_list_cnt; i++) {
-		ret = udma_ctrlq_store_one_tpid(udev, ctrlq_tpid_table,
-						&tpid_list_resp->tpid_list[i]);
-		if (ret)
-			goto err_store_one_tpid;
-	}
-
-	return 0;
-
-err_store_one_tpid:
-	for (i--; i >= 0; i--)
-		udma_ctrlq_erase_one_tpid(ctrlq_tpid_table, tpid_list_resp->tpid_list[i].tpid);
-
-	return ret;
-}
-
 int udma_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *tpid_cfg,
 		     uint32_t *tp_cnt, struct ubcore_tp_info *tp_list,
 		     struct ubcore_udata *udata)
@@ -632,8 +572,8 @@ int udma_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *tpid_c
 	struct udma_ctrlq_get_tp_list_req_data tp_cfg_req = {};
 	struct udma_ctrlq_tpid_list_rsp tpid_list_resp = {};
 	struct udma_dev *udev = to_udma_dev(dev);
+	uint32_t i;
 	int ret;
-	int i;
 
 	if (current->flags & PF_KTHREAD)
 		tp_cfg_req.flag = UDMA_DEFAULT_PID;
@@ -660,10 +600,6 @@ int udma_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *tpid_c
 			tpid_list_resp.tpid_list[i].tpn_cnt & UDMA_TPN_CNT_MASK;
 	}
 	*tp_cnt = tpid_list_resp.tp_list_cnt;
-
-	ret = udma_ctrlq_store_tpid_list(udev, &udev->ctrlq_tpid_table, &tpid_list_resp);
-	if (ret)
-		dev_err(udev->dev, "udma ctrlq store list failed, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -790,7 +726,7 @@ int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_ha
 	deactive_tp_req.tp_id = tp_id;
 	deactive_tp_req.tpn_cnt = tp_handle.bs.tp_cnt;
 	deactive_tp_req.start_tpn = tp_handle.bs.tpn_start;
-	if (current->flags & PF_KTHREAD)
+	if ((current->flags & PF_KTHREAD) || udev->status == UDMA_SUSPEND)
 		deactive_tp_req.pid_flag = UDMA_DEFAULT_PID;
 	else
 		deactive_tp_req.pid_flag = (uint32_t)current->tgid & UDMA_PID_MASK;
@@ -805,8 +741,6 @@ int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_ha
 			udma_open_ue_rx_with_retry(udev, true, false, false, tp_num);
 		return ret;
 	}
-
-	udma_ctrlq_erase_one_tpid(&udev->ctrlq_tpid_table, tp_id);
 
 	return (ret == -EAGAIN) ? 0 : ret;
 }

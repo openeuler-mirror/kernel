@@ -159,7 +159,7 @@ static void udma_dfx_store_seg(struct udma_dev *udma_dev,
 
 	write_lock(&udma_dev->dfx_info->seg.rwlock);
 	ret = xa_err(xa_store(&udma_dev->dfx_info->seg.table, cfg->token_id->token_id,
-			      seg, GFP_KERNEL));
+			      seg, GFP_ATOMIC));
 	if (ret) {
 		write_unlock(&udma_dev->dfx_info->seg.rwlock);
 		dev_err(udma_dev->dev, "store segment to table failed in DFX.\n");
