@@ -143,12 +143,13 @@ static int __ubase_dtu_tbl_uninit(struct ubase_dev *udev, u16 dtu_win_num)
 }
 
 /**
- * ubase_dtu_tbl_init() - initialize dtu table
+ * ubase_dtu_tbl_init() - initialize dtu table for kernel-mode udma dirver
  * @adev: auxiliary device
  * @tid: ub entity tid
  * @dtu_win_num: window number of dtu table
  *
- * This function is used to initialize dtu table.
+ * This function is used to initialize dtu table for kernel-mode udma dirver.
+ * If there is an unreleased window, release it first before allocating new one.
  *
  * Context: Process context. Takes and releases <lock>, BH-safe.
  * Return: 0 on success, negative error code otherwise
@@ -156,22 +157,35 @@ static int __ubase_dtu_tbl_uninit(struct ubase_dev *udev, u16 dtu_win_num)
 int ubase_dtu_tbl_init(struct auxiliary_device *aux_dev, u32 tid, u16 *dtu_win_num)
 {
 	struct ubase_dev *udev;
+	int ret;
 
 	if (!aux_dev || !dtu_win_num)
 		return -EINVAL;
 
 	udev = ubase_get_udev_by_adev(aux_dev);
 
-	return __ubase_dtu_tbl_init(udev, tid, dtu_win_num);
+	if (udev->dtu_info.dtu_win_num_udma != UBASE_DTU_WIN_NUM_INVLID) {
+		ret = __ubase_dtu_tbl_uninit(udev, udev->dtu_info.dtu_win_num_udma);
+		if (ret)
+			return ret;
+
+		udev->dtu_info.dtu_win_num_udma = UBASE_DTU_WIN_NUM_INVLID;
+	}
+
+	ret = __ubase_dtu_tbl_init(udev, tid, dtu_win_num);
+	if (!ret)
+		udev->dtu_info.dtu_win_num_udma = *dtu_win_num;
+
+	return ret;
 }
 EXPORT_SYMBOL(ubase_dtu_tbl_init);
 
 /**
- * ubase_dtu_tbl_uninit() - uninitialize dtu table
+ * ubase_dtu_tbl_uninit() - uninitialize dtu table for kernel-mode udma dirver
  * @adev: auxiliary device
  * @dtu_win_num: window number of dtu table
  *
- * This function is used to uninitialize dtu table.
+ * This function is used to uninitialize dtu table for kernel-mode udma dirver.
  *
  * Context: Process context. Takes and releases <lock>, BH-safe.
  * Return: 0 on success, negative error code otherwise
@@ -179,13 +193,18 @@ EXPORT_SYMBOL(ubase_dtu_tbl_init);
 int ubase_dtu_tbl_uninit(struct auxiliary_device *aux_dev, u16 dtu_win_num)
 {
 	struct ubase_dev *udev;
+	int ret;
 
 	if (!aux_dev)
 		return -EINVAL;
 
 	udev = ubase_get_udev_by_adev(aux_dev);
 
-	return __ubase_dtu_tbl_uninit(udev, dtu_win_num);
+	ret = __ubase_dtu_tbl_uninit(udev, dtu_win_num);
+	if (!ret)
+		udev->dtu_info.dtu_win_num_udma = UBASE_DTU_WIN_NUM_INVLID;
+
+	return ret;
 }
 EXPORT_SYMBOL(ubase_dtu_tbl_uninit);
 
@@ -201,6 +220,8 @@ int ubase_dtu_mem_init(struct ubase_dev *udev)
 	ret = ubase_query_dtu_info(udev);
 	if (ret)
 		return ret;
+
+	udev->dtu_info.dtu_win_num_udma = UBASE_DTU_WIN_NUM_INVLID;
 
 	udev->dtu_info.domain = iommu_get_domain_for_dev(udev->dev);
 	if (!udev->dtu_info.domain) {
@@ -238,8 +259,6 @@ void ubase_dtu_mem_uninit(struct ubase_dev *udev)
 		return;
 
 	__ubase_dtu_tbl_uninit(udev, udev->dtu_info.dtu_win_num);
-
-	udev->dtu_info.dtu_win_num = 0;
 
 	dma_free_iova(udev->dtu_info.dtu_slot);
 }
