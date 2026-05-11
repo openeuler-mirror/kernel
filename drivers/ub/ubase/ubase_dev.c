@@ -130,6 +130,12 @@ bool ubase_dev_fwctl_supported(struct ubase_dev *udev)
 	return ubase_dev_pmu_supported(udev);
 }
 
+static bool ubase_dev_proxy_supported(struct ubase_dev *udev)
+{
+	return udev->caps.dev_caps.ue_num > 1 &&
+	       ubase_dev_mbx_proxy_supported(udev);
+}
+
 static struct ubase_adev_device {
 	const char *suffix;
 	bool (*is_supported)(struct ubase_dev *dev);
@@ -160,7 +166,7 @@ static struct ubase_adev_device {
 	},
 	[UBASE_DRV_UBASEPROXY] = {
 		.suffix = "ubaseproxy",
-		.is_supported = &ubase_dev_mbx_proxy_supported
+		.is_supported = &ubase_dev_proxy_supported
 	},
 };
 
