@@ -655,6 +655,7 @@ static int unic_sq_alloc_tx_buff_resources(struct auxiliary_device *adev,
 					   struct unic_tx_buff *tx_buff,
 					   u16 page_num)
 {
+	struct unic_dev *unic_dev = dev_get_drvdata(&adev->dev);
 	struct unic_tx_page_info *page_info;
 	int ret;
 	u16 i;
@@ -669,7 +670,8 @@ static int unic_sq_alloc_tx_buff_resources(struct auxiliary_device *adev,
 
 	for (i = 0; i < page_num; i++) {
 		page_info = &tx_buff->page_info[i];
-		page_info->p = alloc_page(GFP_KERNEL);
+		page_info->p = alloc_pages_node(dev_to_node(adev->dev.parent),
+						unic_dev->gfp, 0);
 		if (!page_info->p) {
 			dev_err(adev->dev.parent,
 				"failed to alloc %uth tx page.\n", i);
@@ -718,7 +720,7 @@ static int unic_sq_alloc_resource(struct unic_dev *unic_dev, struct unic_sq *sq)
 	}
 
 	sq->sqebb = dma_alloc_coherent(adev->dev.parent, size,
-				       &sq->sqebb_dma_addr, GFP_KERNEL);
+				       &sq->sqebb_dma_addr, unic_dev->gfp);
 	if (!sq->sqebb) {
 		dev_err(adev->dev.parent, "failed to dma alloc unic sqebb.\n");
 		ret = -ENOMEM;

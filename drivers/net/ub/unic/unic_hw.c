@@ -581,6 +581,14 @@ static void unic_parse_dev_caps(struct unic_dev *unic_dev,
 	unic_parse_mac_cfg(unic_dev, resp);
 }
 
+static void unic_set_dev_gfp(struct unic_dev *unic_dev)
+{
+	struct auxiliary_device *adev = unic_dev->comdev.adev;
+
+	unic_dev->gfp = ubase_adev_non_mirror_mem_supported(adev) ?
+			GFP_HIGHUSER_MOVABLE : GFP_KERNEL;
+}
+
 int unic_query_dev_res(struct unic_dev *unic_dev)
 {
 	struct auxiliary_device *adev = unic_dev->comdev.adev;
@@ -604,6 +612,7 @@ int unic_query_dev_res(struct unic_dev *unic_dev)
 	}
 
 	unic_parse_dev_caps(unic_dev, &resp);
+	unic_set_dev_gfp(unic_dev);
 
 	return 0;
 }

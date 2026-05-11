@@ -61,6 +61,7 @@ enum {
 	UBASE_SUPPORT_USC_B			= 22,
 	UBASE_SUPPORT_UCP_B			= 23,
 	UBASE_SUPPORT_PMU_IRQ_B			= 24,
+	UBASE_SUPPORT_NON_MIRROR_MEM_B		= 25,
 
 	/* must be last entry and it should <= UBASE_CAP_LEN * 32 */
 	UBASE_SUPPORT_MASK_NBITS

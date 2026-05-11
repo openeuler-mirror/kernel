@@ -297,6 +297,7 @@ struct unic_dev {
 	u32			tid;
 	u8			sw_link_status;
 	struct unic_bond_status	bond_status;
+	gfp_t			gfp;
 };
 
 int unic_dev_init(struct auxiliary_device *adev);

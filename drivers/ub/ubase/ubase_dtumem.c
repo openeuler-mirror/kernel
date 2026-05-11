@@ -274,7 +274,7 @@ void *ubase_dtu_alloc(struct ubase_dev *udev, struct page **page,
 	int ret;
 
 	*page = alloc_pages_node(udev->dtu_info.dtu_mem_node_id,
-				 GFP_KERNEL | __GFP_ZERO, order);
+				 udev->gfp | __GFP_ZERO, order);
 	if (!(*page)) {
 		ubase_err(udev, "failed to alloc pages, size = %lu, order = %d.\n",
 			  size, order);

@@ -58,10 +58,11 @@ static void unic_init_jfc_ctx(struct unic_cq *cq, u8 jfc_shift, u32 tid,
 static int unic_cq_alloc_resource(struct auxiliary_device *adev,
 				  struct unic_cq *cq, u32 cqe_depth)
 {
+	struct unic_dev *unic_dev = dev_get_drvdata(&adev->dev);
 	u32 size = cqe_depth * unic_get_cqe_size();
 
-	cq->cqe = dma_alloc_coherent(adev->dev.parent, size,
-				     &cq->cqe_dma_addr, GFP_KERNEL);
+	cq->cqe = dma_alloc_coherent(adev->dev.parent, size, &cq->cqe_dma_addr,
+				     unic_dev->gfp);
 	if (!cq->cqe) {
 		dev_err(adev->dev.parent, "failed to dma alloc unic cqe.\n");
 		return -ENOMEM;

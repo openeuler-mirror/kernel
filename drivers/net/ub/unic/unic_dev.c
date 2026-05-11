@@ -760,7 +760,8 @@ static int unic_alloc_vport_buf(struct unic_dev *unic_dev)
 	for (i = 0; i < unic_dev->caps.vport_buf_num; i++) {
 		unic_dev->vbuf[i].buf = dma_alloc_coherent(adev->dev.parent,
 							   unic_dev->caps.vport_buf_size,
-							   &unic_dev->vbuf[i].dma_addr, GFP_KERNEL);
+							   &unic_dev->vbuf[i].dma_addr,
+							   unic_dev->gfp);
 		if (!unic_dev->vbuf[i].buf) {
 			dev_err(adev->dev.parent,
 				"failed to alloc vport buffer.\n");
