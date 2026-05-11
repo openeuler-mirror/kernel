@@ -26,7 +26,7 @@ static char *err_desc[IPOURMA_MAX_ERRNO] = {
 	"IPoURMA URMA post receive failed",
 	"IPoURMA rearm JFC failed",
 	"IPoURMA incorrect completion record status",
-	"IPoURMA incorrect WQE jetty index in the completion record",
+	"IPoURMA incorrect WQE jetty id in the completion record",
 	"IPoURMA incorrect WQE index in the completion record",
 	"IPoURMA poll JFC failed",
 	"IPoURMA create JFR table failed",
