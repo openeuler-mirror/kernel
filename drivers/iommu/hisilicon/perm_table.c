@@ -157,7 +157,7 @@ static int ummu_alloc_mapt_mem_for_entry(struct ummu_domain *ummu_domain,
 		return ummu_get_mapt_mem(ummu_domain, blk_para);
 
 	/* allocate new mapt blk */
-	page = alloc_pages(GFP_HIGHUSER_MOVABLE | __GFP_COMP | __GFP_ZERO,
+	page = alloc_pages(UMMU_GFP(GFP_KERNEL) | __GFP_ZERO | __GFP_COMP,
 			   blk_para->block_size_order);
 	if (!page) {
 		pr_err("allocate mapt block(%lu bytes) failed\n",
@@ -200,7 +200,7 @@ static int ummu_alloc_mapt_mem_for_table(struct ummu_domain *ummu_domain,
 		return -ENOMEM;
 
 	/* allocate new mapt blk */
-	page = alloc_pages(GFP_HIGHUSER_MOVABLE | __GFP_COMP | __GFP_ZERO,
+	page = alloc_pages(UMMU_GFP(GFP_KERNEL) | __GFP_ZERO | __GFP_COMP,
 			   blk_para->block_size_order);
 	if (!page) {
 		pr_err("allocate mapt block(%lu bytes) failed.\n",

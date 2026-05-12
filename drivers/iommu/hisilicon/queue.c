@@ -158,31 +158,65 @@ int ummu_queue_remove_raw(struct ummu_queue *queue, u64 *ent)
 	return 0;
 }
 
+static void ummu_device_free_queue(struct ummu_queue *q)
+{
+	size_t qsz;
+
+	if (!q->base)
+		return;
+
+	qsz = ENTRY_DWORDS_TO_SIZE((1 << q->llq.log2size) * q->ent_dwords);
+	free_pages((unsigned long)q->base, get_order(qsz));
+	q->base = NULL;
+}
+
+void ummu_device_free_mcmdq(struct ummu_device *ummu)
+{
+	struct ummu_mcmdq *mcmdq;
+	int cpu;
+
+	if (!ummu->mcmdq || !ummu->nr_mcmdq)
+		return;
+
+	for_each_possible_cpu(cpu) {
+		mcmdq = *per_cpu_ptr(ummu->mcmdq, cpu);
+		if (!mcmdq || !mcmdq->q.base)
+			continue;
+
+		ummu_device_free_queue(&mcmdq->q);
+	}
+}
+
 static int ummu_common_init_queue(struct ummu_device *ummu,
 				  struct ummu_queue *q, size_t dwords)
 {
+	struct page *page = NULL;
 	size_t qsz;
 
 	q->base = NULL;
 	do {
 		qsz = ENTRY_DWORDS_TO_SIZE((1 << q->llq.log2size) * dwords);
-		if (get_order(qsz) <= MAX_ORDER)
-			q->base = (__le64 *)devm_get_free_pages(ummu->dev, GFP_KERNEL,
-								get_order(qsz));
+		if (get_order(qsz) <= MAX_ORDER) {
+			page = alloc_pages_node(dev_to_node(ummu->dev),
+						UMMU_GFP(GFP_KERNEL) | __GFP_ZERO,
+						get_order(qsz));
+			if (page)
+				q->base = (__le64 *)page_address(page);
+		}
+
 		q->llq.log2size--;
 	} while (!q->base && qsz > PAGE_SIZE);
 
 	/* confirm right log2size after the loop */
 	q->llq.log2size++;
 
-	if (q->base) {
-		q->base_pa = virt_to_phys(q->base);
-	} else {
+	if (!q->base) {
 		dev_err(ummu->dev,
 			"failed to allocate queue (0x%zx bytes)\n", qsz);
 		return -ENOMEM;
 	}
 
+	q->base_pa = virt_to_phys(q->base);
 	q->ent_dwords = dwords;
 	q->q_base = Q_BASE_RWA;
 	q->q_base |= q->base_pa & Q_BASE_ADDR_MASK;
@@ -215,6 +249,7 @@ static int ummu_mcmdq_allocate(struct ummu_device *ummu)
 			mcmdq = per_cpu_ptr(mcmdqs, host_cpu);
 			mcmdq->shared = 1;
 		}
+		mcmdq->q.base = NULL;
 		*per_cpu_ptr(ummu->mcmdq, cpu) = mcmdq;
 	}
 
@@ -278,15 +313,18 @@ static int ummu_mcmdq_init(struct ummu_device *ummu)
 		mcmdq->q.cons_reg = (u32 *)(mcmdq->base + MCMDQ_CONS_OFFSET);
 		ret = ummu_common_init_queue(ummu, &mcmdq->q, MCMDQ_ENT_DWORDS);
 		if (ret)
-			goto err;
+			goto free_q;
 		ret = ummu_mcmdq_cfg_para(ummu, mcmdq);
 		if (ret)
-			goto err;
+			goto free_q;
 
 		base_addr += MCMDQ_ENT_SIZE;
 	}
 
 	return 0;
+
+free_q:
+	ummu_device_free_mcmdq(ummu);
 err:
 	ummu->nr_mcmdq = 0;
 	return -ENOMEM;
@@ -384,6 +422,11 @@ int ummu_write_evtq_regs(struct ummu_device *ummu)
 	return ummu_write_reg_sync(ummu, cr0, UMMU_CR0, UMMU_CR0ACK);
 }
 
+void ummu_device_free_evtq(struct ummu_device *ummu)
+{
+	ummu_device_free_queue(&ummu->evtq.q);
+}
+
 static int ummu_evtq_init(struct ummu_device *ummu)
 {
 	struct ummu_queue *q = &ummu->evtq.q;
@@ -397,8 +440,13 @@ static int ummu_evtq_init(struct ummu_device *ummu)
 		return ret;
 
 	if ((ummu->cap.features & UMMU_FEAT_SVA) &&
-	    (ummu->cap.features & UMMU_FEAT_STALLS))
-		return ummu_iopf_queue_alloc(ummu);
+	    (ummu->cap.features & UMMU_FEAT_STALLS)) {
+		ret =  ummu_iopf_queue_alloc(ummu);
+		if (ret) {
+			ummu_device_free_queue(q);
+			return ret;
+		}
+	}
 
 	return 0;
 }
