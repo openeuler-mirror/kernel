@@ -357,46 +357,6 @@ int ubcore_get_topo_info(struct sk_buff *skb, struct genl_info *info)
 	return ret;
 }
 
-int ubcore_get_topo_bonding_dev_ops(struct sk_buff *skb, struct genl_info *info)
-{
-	struct ubcore_cmd_topo_bonding_dev *arg = NULL;
-	uint64_t args_addr;
-	int ret = -EINVAL;
-
-	if (!info->attrs[UBCORE_HDR_ARGS_ADDR]) {
-		ubcore_log_err("Invalid argument.\n");
-		return ret;
-	}
-
-	arg = kzalloc(sizeof(*arg), GFP_KERNEL);
-	if (!arg)
-		return -ENOMEM;
-
-	args_addr = nla_get_u64(info->attrs[UBCORE_HDR_ARGS_ADDR]);
-	ret = ubcore_copy_from_user(arg, (void __user *)(uintptr_t)args_addr,
-				    sizeof(struct ubcore_cmd_topo_bonding_dev));
-	if (ret != 0) {
-		ubcore_log_err("Failed to copy from user.\n");
-		kfree(arg);
-		return -EINVAL;
-	}
-
-	ret = ubcore_get_topo_bonding_dev_by_agg_eid(&arg->in.agg_eid, &arg->out.bonding_dev);
-	if (ret != 0) {
-		ubcore_log_err("Failed to get bonding info %d.\n", ret);
-		kfree(arg);
-		return ret;
-	}
-
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)args_addr, arg,
-		sizeof(struct ubcore_cmd_topo_bonding_dev));
-	if (ret != 0)
-		ubcore_log_err("Failed to copy to user, ret = %d\n", ret);
-
-	kfree(arg);
-	return ret;
-}
-
 int ubcore_set_sl(struct sk_buff *skb, struct genl_info *info)
 {
 	struct ubcore_cmd_set_sl arg = {0};

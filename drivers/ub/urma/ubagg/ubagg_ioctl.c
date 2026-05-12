@@ -142,8 +142,7 @@ static bool is_eid_match(const char *eid1, const char *eid2)
 	return memcmp(eid1, eid2, EID_LEN) == 0;
 }
 
-static int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid,
-			 uint32_t *eid_idx)
+int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid, uint32_t *eid_idx)
 {
 	spin_lock(&dev->eid_table.lock);
 	for (int32_t i = 0; i < dev->eid_table.eid_cnt; i++) {
@@ -160,7 +159,7 @@ static int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid,
 	return -ENOENT;
 }
 
-static int get_physical_device(struct ubagg_device *ubagg_dev,
+int get_physical_device(struct ubagg_device *ubagg_dev,
 			       struct ubagg_physical_device_out *out,
 			       union ubcore_eid *bonding_eid)
 {
