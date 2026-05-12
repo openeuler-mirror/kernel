@@ -74,6 +74,14 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_NL_SSU_P2P: Query ssu_p2p queue non-empty dfx statistics
 	 */
 	UTOOL_CMD_QUERY_NL_SSU_P2P = 0x0007,
+	/**
+	 * @UTOOL_CMD_CONF_NL_SSU_VL_PKT: Config NL layer ssu_vl_pkt related registers
+	 */
+	UTOOL_CMD_CONF_NL_SSU_VL_PKT = 0x0008,
+	/**
+	 * @UTOOL_CMD_QUERY_NL_SSU_VL_PKT: Query NL layer ssu_vl_pkt related registers
+	 */
+	UTOOL_CMD_QUERY_NL_SSU_VL_PKT = 0x0009,
 
 	/**
 	 * @UTOOL_CMD_QUERY_TP: Query all registers at the TP layer
