@@ -215,22 +215,23 @@ static irqreturn_t ummu_gerror_handler(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
-static void ummu_evt_to_iommu_fault(struct ummu_device *ummu, u64 *evt,
-			     struct iommu_fault *flt)
+static void ummu_make_iommu_fault(struct ummu_device *ummu,
+				  struct ummu_device_event *evt,
+				  struct iommu_fault *flt)
 {
 	flt->type = IOMMU_FAULT_PAGE_REQ;
 	flt->prm.flags = IOMMU_FAULT_PAGE_REQUEST_LAST_PAGE |
 			 IOMMU_FAULT_PAGE_REQUEST_PRIV_DATA |
 			 IOMMU_FAULT_PAGE_REQUEST_PASID_VALID;
-	flt->prm.grpid = FIELD_GET(EVTQ_ENT1_STAG, evt[1]);
-	flt->prm.perm = (evt[0] & EVTQ_ENT0_IND ? IOMMU_FAULT_PERM_EXEC : 0) |
-			(evt[0] & EVTQ_ENT0_PNU ? IOMMU_FAULT_PERM_PRIV : 0) |
-			(evt[0] & EVTQ_ENT0_RNW ? IOMMU_FAULT_PERM_READ :
-						  IOMMU_FAULT_PERM_WRITE);
-	flt->prm.addr = FIELD_GET(EVTQ_ENT3_IADDR, evt[3]);
-	flt->prm.private_data[0] = FIELD_GET(EVTQ_ENT4_TECTE_TAG, evt[4]);
+	flt->prm.grpid = evt->stag;
+	flt->prm.perm = (evt->instruction ? IOMMU_FAULT_PERM_EXEC : 0) |
+			(evt->privileged ? IOMMU_FAULT_PERM_PRIV : 0) |
+			(evt->read ? IOMMU_FAULT_PERM_READ :
+				     IOMMU_FAULT_PERM_WRITE);
+	flt->prm.addr = evt->iova;
+	flt->prm.private_data[0] = evt->tect_tag;
 	flt->prm.private_data[1] = (u64)(uintptr_t)ummu;
-	flt->prm.pasid = FIELD_GET(EVTQ_ENT0_TID, evt[0]);
+	flt->prm.pasid = evt->tid;
 }
 
 void ummu_page_response(struct device *dev, struct iopf_fault *evt,
@@ -238,7 +239,6 @@ void ummu_page_response(struct device *dev, struct iopf_fault *evt,
 {
 	struct iommu_fault_page_request *prm = &evt->fault.prm;
 	struct ummu_device *ummu = (struct ummu_device *)(uintptr_t)prm->private_data[1];
-	struct device *ummu_dev = ummu->dev;
 	struct ummu_mcmdq_ent cmd = { 0 };
 
 	if (!(prm->flags & IOMMU_FAULT_PAGE_REQUEST_PRIV_DATA)) {
@@ -254,7 +254,7 @@ void ummu_page_response(struct device *dev, struct iopf_fault *evt,
 	case IOMMU_PAGE_RESP_INVALID:
 	case IOMMU_PAGE_RESP_FAILURE:
 		cmd.stall_resume.abort = true;
-		dev_err_ratelimited(ummu_dev,
+		dev_err_ratelimited(ummu->dev,
 			"page fault failed. pasid=0x%x grpid=0x%x perm=0x%x tect_tag=0x%llx\n",
 			prm->pasid, prm->grpid, prm->perm, prm->private_data[0]);
 		break;
@@ -280,7 +280,7 @@ static inline void ummu_abort_page_fault(struct ummu_device *ummu,
 	ummu_mcmdq_issue_cmd(ummu, &cmd);
 }
 
-static bool is_evt_src_sva(struct device *evt_src, u32 tid)
+static bool ummu_report_iommu_fault(struct device *evt_src, u32 tid)
 {
 	struct iommu_domain *domain = ummu_core_get_domain_by_tid(evt_src, tid);
 
@@ -298,62 +298,80 @@ static bool is_evt_src_sva(struct device *evt_src, u32 tid)
 }
 
 /* IRQ and event handlers */
-static int ummu_handle_iopf(struct ummu_device *ummu, struct device *evt_src,
-			    u64 *evt)
+static int ummu_handle_iopf(struct ummu_device *ummu,
+			    struct ummu_device_event *evt)
 {
 	struct iopf_fault pf_fault = { 0 };
 	struct iommu_fault *iommu_flt = &pf_fault.fault;
+	struct device *dev = evt->dev;
 	int ret;
 
-	/* ummu directly abort page faults without stall, driver do nothing */
-	if ((evt[0] & EVTQ_ENT0_STALL) == 0)
-		return -EOPNOTSUPP;
-
-	ummu_evt_to_iommu_fault(ummu, evt, iommu_flt);
+	ummu_make_iommu_fault(ummu, evt, iommu_flt);
 	/* S2 never fault */
-	if (evt[0] & EVTQ_ENT0_S2) {
+	if (evt->s2) {
 		ret = -EFAULT;
 		goto abort_req;
 	}
 	/* tid or tid related device has been released */
-	if (!evt_src) {
+	if (!dev) {
 		ret = -EINVAL;
 		goto abort_req;
 	}
+
 	/* DMA Fault or KSVA Fault should be filtered */
-	if (!is_evt_src_sva(evt_src, iommu_flt->prm.pasid)) {
+	if (!ummu_report_iommu_fault(dev, iommu_flt->prm.pasid)) {
 		ret = -EOPNOTSUPP;
-		goto out;
+		goto abort_req;
 	}
-	ret = iommu_report_device_fault(evt_src, &pf_fault);
+	ret = iommu_report_device_fault(dev, &pf_fault);
 	if (ret)
 		goto abort_req;
 
-	return ret;
+	return 0;
 
 abort_req:
 	ummu_abort_page_fault(ummu, iommu_flt->prm.grpid,
 			      iommu_flt->prm.private_data[0]);
 	pr_err("handle iopf failed, ret = %d\n", ret);
 
-out:
 	return ret;
 }
 
-static inline bool evt_is_iopf(int evt_code)
+static void ummu_device_decode_event(struct ummu_device *ummu, u64 *raw,
+				     struct ummu_device_event *event)
 {
-	switch (evt_code) {
-	case EVT_A_TRANSLATION:
-	case EVT_A_ADDR_SIZE:
-	case EVT_ACCESS:
-	case EVT_A_PERMISSION:
-		return true;
-	default:
-		return false;
-	}
+	event->code = FIELD_GET(EVTQ_ENT0_CODE, raw[0]);
+	event->read = FIELD_GET(EVTQ_ENT0_RNW, raw[0]);
+	event->instruction = FIELD_GET(EVTQ_ENT0_IND, raw[0]);
+	event->privileged = FIELD_GET(EVTQ_ENT0_PNU, raw[0]);
+	event->cls = FIELD_GET(EVTQ_ENT0_CLS, raw[0]);
+	event->ns_ipa = FIELD_GET(EVTQ_ENT0_NSIPA, raw[0]);
+	event->s2 = FIELD_GET(EVTQ_ENT0_S2, raw[0]);
+	event->stall = FIELD_GET(EVTQ_ENT0_STALL, raw[0]);
+	event->tid = FIELD_GET(EVTQ_ENT0_TID, raw[0]);
+	event->stag = FIELD_GET(EVTQ_ENT1_STAG, raw[1]);
+	event->ipa = raw[2] & EVTQ_ENT2_IPA;
+	event->iova = FIELD_GET(EVTQ_ENT3_IADDR, raw[3]);
+	event->tect_tag = FIELD_GET(EVTQ_ENT4_TECTE_TAG, raw[4]);
+
+	event->dev = ummu_core_get_device(&ummu->core_dev, event->tid);
 }
 
-static void ummu_print_event(struct ummu_device *ummu, u8 code, u64 *evt)
+static int ummu_device_handle_evt(struct ummu_device *ummu,
+				  struct ummu_device_event *event)
+{
+	int ret;
+
+	if (event->stall)
+		ret = ummu_handle_iopf(ummu, event);
+	else
+		ret = -EOPNOTSUPP;
+
+	return ret;
+}
+
+static void ummu_device_dump_event(struct ummu_device *ummu, u64 *raw,
+				   struct ummu_device_event *evt)
 {
 	static DEFINE_RATELIMIT_STATE(rs, DEFAULT_RATELIMIT_INTERVAL,
 				      DEFAULT_RATELIMIT_BURST);
@@ -364,14 +382,15 @@ static void ummu_print_event(struct ummu_device *ummu, u8 code, u64 *evt)
 	if (!__ratelimit(&rs))
 		return;
 
-	if (last_evt_code == code && time_is_after_jiffies64(timeout))
+	if (last_evt_code == evt->code && time_is_after_jiffies64(timeout))
 		return;
 
-	last_evt_code = code;
+	last_evt_code = evt->code;
 	timeout = get_jiffies_64() + msecs_to_jiffies(EVT_LOG_LIMIT_TIMEOUT);
-	dev_info(ummu->dev, "event 0x%02x received:\n", code);
+
+	dev_info(ummu->dev, "event 0x%02x received:\n", evt->code);
 	for (i = 0; i < EVTQ_ENT_DWORDS; ++i)
-		dev_info(ummu->dev, "\t0x%016llx\n", (u64)evt[i]);
+		dev_info(ummu->dev, "\t0x%016llx\n", raw[i]);
 }
 
 /* implementation is based on the ARM SMMU arm_smmu_evtq_thread */
@@ -380,44 +399,25 @@ static irqreturn_t ummu_evtq_thread(int irq, void *dev)
 	struct ummu_device *ummu = (struct ummu_device *)dev;
 	struct ummu_queue *q = &ummu->evtq.q;
 	struct ummu_ll_queue *llq = &q->llq;
+	struct ummu_device_event event = {0};
 	u64 evt[EVTQ_ENT_DWORDS];
-	struct device *evt_src;
-	u32 tid;
-	u8 code;
-	int ret;
 
 	do {
 		while (!ummu_queue_remove_raw(q, evt)) {
-			ret = -1;
-			code = FIELD_GET(EVTQ_ENT0_CODE, evt[0]);
-			trace_ummu_event(dev_name(ummu->dev), code, evt, EVTQ_ENT_DWORDS);
-
-			tid = FIELD_GET(EVTQ_ENT0_TID, evt[0]);
-			evt_src = ummu_core_get_device(&ummu->core_dev, tid);
-
-			if (evt_is_iopf(code))
-				ret = ummu_handle_iopf(ummu, evt_src, evt);
-
-			if (ret)
-				ummu_print_event(ummu, code, evt);
-			ummu_core_put_device(evt_src);
+			ummu_device_decode_event(ummu, evt, &event);
+			trace_ummu_event(dev_name(ummu->dev), event.code, evt, EVTQ_ENT_DWORDS);
+			if (ummu_device_handle_evt(ummu, &event))
+				ummu_device_dump_event(ummu, evt, &event);
+			ummu_core_put_device(event.dev);
 			cond_resched();
 		}
 
 		if (ummu_queue_sync_prod_in(q) == -EOVERFLOW)
-			dev_err(ummu->dev,
-				"EVTQ overflow detected -- events lost\n");
+			dev_err(ummu->dev, "EVTQ overflow -- events lost\n");
 	} while (!ummu_queue_empty(llq));
 
-	if (likely(Q_OVF(llq->prod) == Q_OVF(llq->cons)))
-		goto handled;
-
 	/* Sync overflow flag */
-	llq->cons = Q_OVF(llq->prod) | Q_WRP(llq, llq->cons) |
-		    Q_IDX(llq, llq->cons);
-	__iomb();
-	writel_relaxed(q->llq.cons, q->cons_reg);
-handled:
+	ummu_queue_sync_cons_ovf(q);
 	return IRQ_HANDLED;
 }
 

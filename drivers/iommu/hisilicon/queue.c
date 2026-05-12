@@ -71,6 +71,19 @@ static void ummu_queue_sync_cons_out(struct ummu_queue *q)
 	writel_relaxed(q->llq.cons, q->cons_reg);
 }
 
+void ummu_queue_sync_cons_ovf(struct ummu_queue *q)
+{
+	struct ummu_ll_queue *llq = &q->llq;
+
+	if (likely(Q_OVF(llq->prod) == Q_OVF(llq->cons)))
+		return;
+
+	llq->cons = Q_OVF(llq->prod) | Q_WRP(llq, llq->cons) |
+		    Q_IDX(llq, llq->cons);
+
+	ummu_queue_sync_cons_out(q);
+}
+
 static void ummu_queue_inc_cons(struct ummu_ll_queue *q)
 {
 	u32 cons = (Q_WRP(q, q->cons) | Q_IDX(q, q->cons)) + 1;
@@ -84,10 +97,6 @@ int ummu_queue_sync_prod_in(struct ummu_queue *q)
 	int ret = 0;
 
 	prod = readl(q->prod_reg);
-	/*
-	 * We can't use the variable _relaxed() here because we have to prevent
-	 * speculative read of the queue before we determine The prod has moved.
-	 */
 	if (Q_OVF(prod) != Q_OVF(q->llq.prod))
 		ret = -EOVERFLOW;
 
