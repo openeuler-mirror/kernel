@@ -670,6 +670,73 @@ static void dup_mm_exe_file(struct mm_struct *mm, struct mm_struct *oldmm)
 }
 
 #ifdef CONFIG_MMU
+#ifdef CONFIG_I_MMAP_SHARDS
+struct dup_mmap_file_batch {
+	struct address_space *mapping;
+	unsigned int count;
+	struct vm_area_struct *vmas[8];
+	struct vm_area_struct *prev[8];
+};
+
+static void dup_mmap_file_batch_init(struct dup_mmap_file_batch *batch)
+{
+	batch->mapping = NULL;
+	batch->count = 0;
+}
+
+static void dup_mmap_file_batch_flush(struct dup_mmap_file_batch *batch)
+{
+	struct address_space *mapping = batch->mapping;
+	unsigned int i;
+
+	if (!batch->count)
+		return;
+
+	i_mmap_lock_write(mapping);
+	flush_dcache_mmap_lock(mapping);
+	for (i = 0; i < batch->count; i++) {
+		if (batch->vmas[i]->vm_flags & VM_SHARED)
+			mapping_allow_writable(mapping);
+		vma_interval_tree_insert_after(batch->vmas[i], batch->prev[i],
+					       &mapping->i_mmap);
+	}
+	flush_dcache_mmap_unlock(mapping);
+	i_mmap_unlock_write(mapping);
+
+	dup_mmap_file_batch_init(batch);
+}
+
+static void dup_mmap_file_batch_add(struct dup_mmap_file_batch *batch,
+				    struct vm_area_struct *vma,
+				    struct vm_area_struct *prev)
+{
+	struct address_space *mapping = vma->vm_file->f_mapping;
+
+	if (batch->count && batch->mapping != mapping)
+		dup_mmap_file_batch_flush(batch);
+
+	batch->mapping = mapping;
+	batch->vmas[batch->count] = vma;
+	batch->prev[batch->count] = prev;
+	batch->count++;
+
+	if (batch->count == ARRAY_SIZE(batch->vmas))
+		dup_mmap_file_batch_flush(batch);
+}
+
+static bool dup_mmap_needs_page_copy(struct vm_area_struct *dst_vma,
+				     struct vm_area_struct *src_vma)
+{
+	if (userfaultfd_wp(dst_vma))
+		return true;
+
+	if (src_vma->vm_flags & (VM_PFNMAP | VM_MIXEDMAP))
+		return true;
+
+	return src_vma->anon_vma;
+}
+#endif
+
 static __latent_entropy int dup_mmap(struct mm_struct *mm,
 					struct mm_struct *oldmm)
 {
@@ -678,12 +745,18 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 	unsigned long charge = 0;
 	LIST_HEAD(uf);
 	VMA_ITERATOR(vmi, mm, 0);
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct dup_mmap_file_batch file_batch;
+#endif
 
 	uprobe_start_dup_mmap();
 	if (mmap_write_lock_killable(oldmm)) {
 		retval = -EINTR;
 		goto fail_uprobe_end;
 	}
+#ifdef CONFIG_I_MMAP_SHARDS
+	dup_mmap_file_batch_init(&file_batch);
+#endif
 	flush_cache_dup_mm(oldmm);
 	uprobe_dup_mmap(oldmm, mm);
 	/*
@@ -773,6 +846,10 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 
 		file = tmp->vm_file;
 		if (file) {
+#ifdef CONFIG_I_MMAP_SHARDS
+			get_file(file);
+			dup_mmap_file_batch_add(&file_batch, tmp, mpnt);
+#else
 			struct address_space *mapping = file->f_mapping;
 
 			get_file(file);
@@ -785,10 +862,19 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 					&mapping->i_mmap);
 			flush_dcache_mmap_unlock(mapping);
 			i_mmap_unlock_write(mapping);
+#endif
 		}
 
+#ifdef CONFIG_I_MMAP_SHARDS
+		if (!(tmp->vm_flags & VM_WIPEONFORK)) {
+			if (dup_mmap_needs_page_copy(tmp, mpnt))
+				dup_mmap_file_batch_flush(&file_batch);
+			retval = copy_page_range(tmp, mpnt);
+		}
+#else
 		if (!(tmp->vm_flags & VM_WIPEONFORK))
 			retval = copy_page_range(tmp, mpnt);
+#endif
 
 		if (retval) {
 			mpnt = vma_next(&vmi);
@@ -798,6 +884,9 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 	/* a new mm has just been created */
 	retval = arch_dup_mmap(oldmm, mm);
 loop_out:
+#ifdef CONFIG_I_MMAP_SHARDS
+	dup_mmap_file_batch_flush(&file_batch);
+#endif
 	vma_iter_free(&vmi);
 	if (!retval) {
 		mt_set_in_rcu(vmi.mas.tree);
