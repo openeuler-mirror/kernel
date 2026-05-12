@@ -1168,13 +1168,13 @@ static int ummu_table_clear_node_by_level(struct ummu_data_info *data_info,
 		if (data_info->lvl == level)
 			data_info->head_flag = (i == base_idx) ? 1 : 0;
 
-		if (data_info->mapt_info->free_bit) {
-			ret = ummu_table_clear_head_node_free_bit(data_info,
-			level, pre_node, cur_node, node_base, node_limit);
-		} else {
-			ret = ummu_table_clear_head_node(data_info, level,
-				pre_node, cur_node, node_base, node_limit);
-		}
+		if (data_info->mapt_info->free_bit)
+			ret = ummu_table_clear_head_node_free_bit(data_info, level, pre_node,
+								  cur_node, node_base, node_limit);
+		else
+			ret = ummu_table_clear_head_node(data_info, level, pre_node, cur_node,
+							 node_base, node_limit);
+
 		if (ret)
 			return ret;
 	}
@@ -1437,7 +1437,7 @@ int ummu_perm_grant(struct iommu_domain *domain, void *va, size_t size,
 
 	plb_gather->va = (void *)data_info.data_base;
 	/* plb_gather->size = 0 indicates PLB will not be flushed */
-	if (data_info.op == UMMU_GRANT && !ret)
+	if (mapt_info->positive_plbi || (data_info.op == UMMU_GRANT && !ret))
 		plb_gather->size = 0;
 	else
 		plb_gather->size = data_info.data_size;

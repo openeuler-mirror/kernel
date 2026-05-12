@@ -175,6 +175,7 @@ struct ummu_capability {
 #define UMMU_FEAT_PERMQ			BIT(25)
 #define UMMU_FEAT_NESTING		BIT(26)
 #define UMMU_FEAT_FREE_BIT		BIT(27)
+#define UMMU_FEAT_PPLBI			BIT(28)
 	u32 features;
 	u32 deid_bits;
 	u32 tid_bits;
