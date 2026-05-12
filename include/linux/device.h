@@ -725,10 +725,6 @@ struct device {
 					   core doesn't touch it */
 	void		*driver_data;	/* Driver data, set and get with
 					   dev_set_drvdata/dev_get_drvdata */
-	struct {
-		const char	*name;
-		spinlock_t	lock;
-	} driver_override;
 	struct mutex		mutex;	/* mutex to synchronize calls to
 					 * its driver.
 					 */
@@ -837,8 +833,15 @@ struct device {
 #else
 	KABI_RESERVE(4)
 #endif
+#ifndef __GENKSYMS__
+	struct {
+		const char	*name;
+		spinlock_t	lock;
+	} driver_override;
+#else
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
+#endif
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
 };

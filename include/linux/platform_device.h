@@ -32,6 +32,8 @@ struct platform_device {
 
 	const struct platform_device_id	*id_entry;
 
+	KABI_DEPRECATE(const char *, driver_override)
+
 	/* MFD cell pointer */
 	struct mfd_cell *mfd_cell;
 

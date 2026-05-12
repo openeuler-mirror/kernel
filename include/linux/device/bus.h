@@ -104,10 +104,9 @@ struct bus_type {
 
 	const struct dev_pm_ops *pm;
 
-	bool driver_override;
 	bool need_parent_lock;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, bool driver_override)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
