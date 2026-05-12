@@ -406,6 +406,10 @@ static int ubctl_query_mar_table_data(struct ubctl_dev *ucdev,
 	struct ubctl_query_dp query_dp[] = {
 		{ UBCTL_QUERY_MAR_TABLE_DFX, UBCTL_MAR_TABLE_LEN, UBCTL_READ, NULL, 0 },
 	};
+
+	if (!query_cmd_param || !query_cmd_param->in)
+		return -EINVAL;
+
 	struct fwctl_pkt_in_table *mar_table =
 			(struct fwctl_pkt_in_table *)(query_cmd_param->in->data);
 
@@ -452,6 +456,9 @@ static int ubctl_config_scc_debug(struct ubctl_dev *ucdev,
 	struct ubctl_query_dp query_dp[] = {
 		{ UBCTL_QUERY_SCC_DEBUG_DFX, UBCTL_SCC_DEBUG_EN_LEN, UBCTL_WRITE, NULL, 0 },
 	};
+
+	if (!query_cmd_param || !query_cmd_param->in)
+		return -EINVAL;
 
 	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_enable)) {
 		ubctl_err(ucdev, "user data of scc debug is invalid.\n");
@@ -538,6 +545,9 @@ static int ubctl_config_loopback(struct ubctl_dev *ucdev,
 	ret = ubctl_query_data(ucdev, query_cmd_param, query_func,
 			       query_dp, ARRAY_SIZE(query_dp));
 
+	if (!query_cmd_param || !query_cmd_param->out)
+		return -EINVAL;
+
 	if (query_cmd_param->out->retval == -EBUSY)
 		ubctl_err(ucdev, "Current port has been enabled for another loopback mode.\n");
 	if (query_cmd_param->out->retval == -EMLINK)
@@ -570,6 +580,9 @@ static int ubctl_config_prbs(struct ubctl_dev *ucdev,
 	ret = ubctl_query_data(ucdev, query_cmd_param, query_func,
 			       query_dp, ARRAY_SIZE(query_dp));
 
+	if (!query_cmd_param || !query_cmd_param->out)
+		return -EINVAL;
+
 	if (query_cmd_param->out->retval == -EMLINK)
 		ubctl_err(ucdev, "Another port has already been enabled.\n");
 
@@ -585,6 +598,9 @@ static int ubctl_query_fw_version(struct ubctl_dev *ucdev,
 		{ UBCTL_QUERY_FIRMWARE_VERSION_DFX, UBCTL_FIRMWARE_VERSION_LEN,
 		  UBCTL_READ, NULL, 0 },
 	};
+
+	if (!query_cmd_param || !query_cmd_param->in)
+		return -EINVAL;
 
 	*query_cmd_param->in->data = QUERY_TYPE;
 	return ubctl_query_data(ucdev, query_cmd_param, query_func,
