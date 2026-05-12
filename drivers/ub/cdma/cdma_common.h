@@ -4,6 +4,7 @@
 #ifndef __CDMA_COMMON_H__
 #define __CDMA_COMMON_H__
 
+#include <linux/iommu.h>
 #include <linux/types.h>
 #include "cdma_context.h"
 #include "cdma.h"
@@ -105,5 +106,15 @@ int cdma_k_alloc_buf(struct cdma_dev *cdev, size_t memory_size,
 		     struct cdma_buf *buf);
 void cdma_k_free_buf(struct cdma_dev *cdev, size_t memory_size,
 		     struct cdma_buf *buf);
+
+static inline void cdma_ksva_tlb_inv(struct iommu_domain *domain,
+				     unsigned long addr, size_t size)
+{
+	struct iommu_iotlb_gather gather;
+
+	iommu_iotlb_gather_init(&gather);
+	iommu_iotlb_gather_add_range(&gather, addr, PAGE_ALIGN(size));
+	iommu_iotlb_sync(domain, &gather);
+}
 
 #endif /* __CDMA_COMMON_H__ */

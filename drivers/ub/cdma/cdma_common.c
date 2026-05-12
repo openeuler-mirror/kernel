@@ -187,6 +187,10 @@ void cdma_put_umem(struct cdma_umem *umem, bool is_kernel)
 	if (IS_ERR_OR_NULL(umem))
 		return;
 
+	if (is_kernel && umem->dev->ksva)
+		cdma_ksva_tlb_inv(umem->dev->ksva->handle.domain, umem->va,
+				  umem->length);
+
 	if (!is_kernel && umem->sva_mode == UMMU_SVA_SEPARATE_MODE)
 		cdma_sva_matt_unmap(umem);
 	cdma_put_target_umem(umem, is_kernel);
