@@ -749,6 +749,7 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 					    ret);
 
 			atomic_add_unless(&mailbox->count, -1, 0);
+			ctx->mbx_buff = NULL;
 			return -ETIMEDOUT;
 		}
 
