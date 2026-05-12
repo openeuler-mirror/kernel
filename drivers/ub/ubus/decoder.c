@@ -177,8 +177,12 @@ static void unset_queue_reg(struct ub_decoder *decoder)
 
 static u32 set_decoder_enable(struct ub_decoder *decoder)
 {
-	u32 ret = (u32)ub_cfg_write_dword(decoder->uent, DECODER_CTRL, 1);
+	u32 ret;
 
+	if (!decoder->create_matt)
+		return 0;
+
+	ret = (u32)ub_cfg_write_dword(decoder->uent, DECODER_CTRL, 1);
 	if (ret)
 		ub_err(decoder->uent, "set decoder enable failed\n");
 
@@ -188,6 +192,9 @@ static u32 set_decoder_enable(struct ub_decoder *decoder)
 static void unset_decoder_enable(struct ub_decoder *decoder)
 {
 	struct ub_entity *uent = decoder->uent;
+
+	if (!decoder->create_matt)
+		return;
 
 	if (ub_cfg_write_dword(uent, DECODER_CTRL, 0))
 		ub_err(uent, "unset decoder enable fail\n");
