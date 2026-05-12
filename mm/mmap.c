@@ -137,15 +137,24 @@ void unlink_file_vma(struct vm_area_struct *vma)
 
 void unlink_file_vma_batch_init(struct unlink_vma_file_batch *vb)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	vb->mapping = NULL;
+#endif
 	vb->count = 0;
 }
 
 static void unlink_file_vma_batch_process(struct unlink_vma_file_batch *vb)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct address_space *mapping = vb->mapping;
+#else
 	struct address_space *mapping;
+#endif
 	int i;
 
+#ifndef CONFIG_I_MMAP_SHARDS
 	mapping = vb->vmas[0]->vm_file->f_mapping;
+#endif
 	i_mmap_lock_write(mapping);
 	for (i = 0; i < vb->count; i++) {
 		VM_WARN_ON_ONCE(vb->vmas[i]->vm_file->f_mapping != mapping);
@@ -159,13 +168,25 @@ static void unlink_file_vma_batch_process(struct unlink_vma_file_batch *vb)
 void unlink_file_vma_batch_add(struct unlink_vma_file_batch *vb,
 			       struct vm_area_struct *vma)
 {
+#ifdef CONFIG_I_MMAP_SHARDS
+	struct address_space *mapping;
+#endif
+
 	if (vma->vm_file == NULL)
 		return;
 
-	if ((vb->count > 0 && vb->vmas[0]->vm_file != vma->vm_file) ||
+#ifdef CONFIG_I_MMAP_SHARDS
+	mapping = vma->vm_file->f_mapping;
+	if ((vb->count > 0 && vb->mapping != mapping) ||
 	    vb->count == ARRAY_SIZE(vb->vmas))
 		unlink_file_vma_batch_process(vb);
 
+	vb->mapping = mapping;
+#else
+	if ((vb->count > 0 && vb->vmas[0]->vm_file != vma->vm_file) ||
+	    vb->count == ARRAY_SIZE(vb->vmas))
+		unlink_file_vma_batch_process(vb);
+#endif
 	vb->vmas[vb->count] = vma;
 	vb->count++;
 }
