@@ -326,6 +326,8 @@ static int ummu_sva_collect_domain_cfg(struct ummu_domain *domain, ioasid_t id)
 			if (ret)
 				goto out_cfg;
 		} else {
+			if (ummu->cap.features & UMMU_FEAT_FREE_BIT)
+				domain->cfgs.s1_cfg.io_pt_cfg.free_bit = 1;
 			domain->cfgs.s1_cfg.io_pt_cfg.domain =
 						&domain->base_domain.domain;
 			ret = ummu_init_ksva_mapt(domain, mode);

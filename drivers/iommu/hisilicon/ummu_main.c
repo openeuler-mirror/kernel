@@ -451,6 +451,9 @@ static void ummu_device_hw_probe_cap5(struct ummu_device *ummu)
 	u32 reg;
 
 	reg = readl_relaxed(ummu->base + UMMU_CAP5);
+	if (reg & CAP5_FREE_BIT_SUPPORT)
+		ummu->cap.features |= UMMU_FEAT_FREE_BIT;
+
 	if (reg & CAP5_RANGE_PLBI_BIT)
 		ummu->cap.features |= UMMU_FEAT_RANGE_PLBI;
 

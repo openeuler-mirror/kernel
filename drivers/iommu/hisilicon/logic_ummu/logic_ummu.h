@@ -42,5 +42,7 @@ int logic_ummu_device_init(void);
 void logic_ummu_device_exit(void);
 int logic_ummu_register_support_attr(tdev_select_logic_ummu func);
 void logic_ummu_unregister_support_attr(tdev_select_logic_ummu func);
+void logic_ummu_plbi_free_bit(struct iommu_domain *domain, u32 next_lvl_idx,
+			 u32 next_lvl_offset);
 
 #endif  /* __LOGIC_UMMU_H__ */

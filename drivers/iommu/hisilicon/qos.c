@@ -204,7 +204,7 @@ static int ummu_get_st_mode(__le64 *tecte, u32 tect_tag,
 	return 0;
 }
 
-int ummu_set_master_mpam(struct ummu_device *ummu, struct ummu_mpam *mpam)
+static int ummu_set_master_mpam(struct ummu_device *ummu, struct ummu_mpam *mpam)
 {
 	bool is_nested = false;
 	bool s1_only = false;
@@ -310,7 +310,7 @@ static int ummu_get_mpam_from_tcte(struct ummu_device *ummu,
 	return 0;
 }
 
-int ummu_get_master_mpam(struct ummu_device *ummu, struct ummu_mpam *mpam)
+static int ummu_get_master_mpam(struct ummu_device *ummu, struct ummu_mpam *mpam)
 {
 	u32 tect_tag;
 	__le64 *tecte;
@@ -419,7 +419,7 @@ int ummu_group_set_mpam(struct iommu_group *group, u16 partid, u8 pmg)
 
 	/* It's likely that we'll want to use the new tcte soon */
 	ummu_device_prefetch_cfg(ummu, 0, tid);
-	pr_info("partid %d, pmg %d already matched\n", partid, pmg);
+	pr_info("partid %u, pmg %u already matched\n", partid, pmg);
 	return 0;
 }
 

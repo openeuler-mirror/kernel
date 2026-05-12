@@ -107,6 +107,8 @@
 #define CMD_PLBI_0_RANGE GENMASK_ULL(37, 32)
 #define CMD_PLBI_1_ADDR_MASK GENMASK_ULL(63, 0)
 #define CMD_PLBI_2_TECTE_TAG GENMASK_ULL(15, 0)
+#define CMD_PLBI_1_NEXT_LEVEL_INDEX_MASK GENMASK_ULL(15, 0)
+#define CMD_PLBI_1_NEXT_LEVEL_OFFSET_MASK GENMASK_ULL(61, 32)
 
 #define CMD_CREATE_KVTBL0_EVT_EN BIT(8)
 #define CMD_CREATE_KVTBL0_TAG_MASK GENMASK_ULL(31, 16)
@@ -297,6 +299,13 @@ struct ummu_mcmdq_ent {
 				} check_pa_conti;
 			};
 		} null_op;
+#define CMD_PLBI_OS_N 0x63
+		struct {
+			u32 tid;
+			u16 tecte_tag;
+			u32 next_lvl_idx;
+			u32 next_lvl_offset;
+		} plbi_free_bit;
 	};
 };
 

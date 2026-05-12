@@ -734,6 +734,14 @@ int ummu_mcmdq_build_cmd(struct ummu_device *ummu, u64 *cmd,
 		break;
 	case CMD_NULL_OP:
 		return ummu_mcmdq_build_nop_cmd(cmd, ent);
+	case CMD_PLBI_OS_N:
+		cmd[0] |= FIELD_PREP(CMD_PLBI_0_TID, ent->plbi_free_bit.tid);
+		cmd[1] |= FIELD_PREP(CMD_PLBI_1_NEXT_LEVEL_INDEX_MASK,
+				     ent->plbi_free_bit.next_lvl_idx);
+		cmd[1] |= FIELD_PREP(CMD_PLBI_1_NEXT_LEVEL_OFFSET_MASK,
+				     ent->plbi_free_bit.next_lvl_offset);
+		cmd[2] |= FIELD_PREP(CMD_TLBI_2_TECTE_TAG, ent->plbi_free_bit.tecte_tag);
+		break;
 	default:
 		return -EINVAL;
 	}
