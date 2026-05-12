@@ -643,6 +643,32 @@ static int ubctl_query_nl_ssu_p2p(struct ubctl_dev *ucdev,
 				query_dp, ARRAY_SIZE(query_dp));
 }
 
+static int ubctl_conf_nl_ssu_vl_pkt(struct ubctl_dev *ucdev,
+				    struct ubctl_query_cmd_param *query_cmd_param,
+				    struct ubctl_func_dispatch *query_func)
+{
+	struct ubctl_query_dp query_dp[] = {
+		{ UBCTL_QUERY_CONF_NL_SSU_VL_PKT_DFX, UBCTL_NL_SSU_VL_PKT_LEN,
+		  UBCTL_WRITE, NULL, 0 },
+	};
+
+	return ubctl_query_data(ucdev, query_cmd_param, query_func,
+				query_dp, ARRAY_SIZE(query_dp));
+}
+
+static int ubctl_query_nl_ssu_vl_pkt(struct ubctl_dev *ucdev,
+				     struct ubctl_query_cmd_param *query_cmd_param,
+				     struct ubctl_func_dispatch *query_func)
+{
+	struct ubctl_query_dp query_dp[] = {
+		{ UBCTL_QUERY_CONF_NL_SSU_VL_PKT_DFX, UBCTL_NL_SSU_VL_PKT_LEN,
+		  UBCTL_READ, NULL, 0 },
+	};
+
+	return ubctl_query_data(ucdev, query_cmd_param, query_func,
+				query_dp, ARRAY_SIZE(query_dp));
+}
+
 static int ubctl_query_dump_data(struct ubctl_dev *ucdev,
 				 struct ubctl_query_cmd_param *query_cmd_param,
 				 struct ubctl_func_dispatch *query_func)
@@ -712,6 +738,8 @@ static struct ubctl_func_dispatch g_ubctl_query_reg[] = {
 	{ UTOOL_CMD_QUERY_NL_SSU_SW, ubctl_query_nl_ssu_sw, ubctl_query_data_deal },
 	{ UTOOL_CMD_QUERY_NL_SSU_OQ, ubctl_query_nl_ssu_oq, ubctl_query_data_deal },
 	{ UTOOL_CMD_QUERY_NL_SSU_P2P, ubctl_query_nl_ssu_p2p, ubctl_query_data_deal },
+	{ UTOOL_CMD_CONF_NL_SSU_VL_PKT, ubctl_conf_nl_ssu_vl_pkt, ubctl_query_data_deal },
+	{ UTOOL_CMD_QUERY_NL_SSU_VL_PKT, ubctl_query_nl_ssu_vl_pkt, ubctl_query_data_deal },
 
 	{ UTOOL_CMD_QUERY_DL, ubctl_query_dl_data, ubctl_query_data_deal },
 	{ UTOOL_CMD_QUERY_DL_PKT_STATS, ubctl_query_dl_pkt_stats_data,
