@@ -102,6 +102,7 @@ struct ummu_mapt_info {
 	} block_base;
 
 	u16 valid;
+	u8 positive_plbi;
 	u8 free_bit;
 };
 

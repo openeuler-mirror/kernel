@@ -433,6 +433,9 @@ static int ummu_device_hw_probe_cap4(struct ummu_device *ummu)
 	u32 reg = readl_relaxed(ummu->base + UMMU_CAP4);
 	int hw_permq_ent;
 
+	if (reg & CAP4_PPLB_SUPPORT)
+		ummu->cap.features |= UMMU_FEAT_PPLBI;
+
 	hw_permq_ent = 1 << FIELD_GET(CAP4_UCMDQ_LOG2SIZE, reg);
 	ummu->cap.permq_ent_num.cmdq_num =
 		min_t(int, round_up(PAGE_SIZE / PCMDQ_ENT_BYTES, PCMDQ_ENT_BYTES),
@@ -580,10 +583,18 @@ static int ummu_device_mapt_enable(struct ummu_device *ummu)
 	reg |= CR0_MAPT_EN;
 
 	ret = ummu_write_reg_sync(ummu, reg, UMMU_CR0, UMMU_CR0ACK);
-	if (ret)
+	if (ret) {
 		dev_err(ummu->dev, "enable ummu mapt func failed, ret = %d.\n", ret);
+		return ret;
+	}
 
-	return ret;
+	if (ummu->cap.features & UMMU_FEAT_PPLBI) {
+		reg = readl_relaxed(ummu->base + UMMU_CR2);
+		reg |= CR2_POSITIVE_PLB;
+		writel_relaxed(reg, ummu->base + UMMU_CR2);
+	}
+
+	return 0;
 }
 
 static int ummu_device_reset(struct ummu_device *ummu)

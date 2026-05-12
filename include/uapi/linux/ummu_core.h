@@ -104,6 +104,7 @@ struct ummu_tid_info {
 #define HW_CAP_KCMD_PLBI (1UL << 2)
 #define HW_CAP_IOPF (1UL << 3)
 #define HW_CAP_FREE_BIT (1UL << 4)
+#define HW_CAP_PPLBI (1UL << 5)
 
 #define TID_MISC_NAME "ummu/tid"
 #define TID_DEVICE_NAME "/dev/" TID_MISC_NAME

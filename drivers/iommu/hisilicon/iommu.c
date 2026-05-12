@@ -285,6 +285,8 @@ static void ummu_domain_attach_mapt(struct ummu_domain *u_domain)
 
 	mode = ummu_core_get_mapt_mode(&ummu->core_dev, tid);
 	if (mode != MAPT_MODE_END) {
+		if (ummu->cap.features & UMMU_FEAT_PPLBI)
+			u_domain->cfgs.s1_cfg.io_pt_cfg.positive_plbi = 1;
 		if (ummu->cap.features & UMMU_FEAT_FREE_BIT)
 			u_domain->cfgs.s1_cfg.io_pt_cfg.free_bit = 1;
 		u_domain->cfgs.sva_mode = UMMU_MODE_SVA_SEPARATE_PG;
@@ -827,6 +829,8 @@ static int ummu_device_get_hw_cap(struct device *dev, u32 *hw_cap)
 		feature |= HW_CAP_DOUBLE_PLBI;
 	if (cap->options & UMMU_OPT_KCMD_PLBI)
 		feature |= HW_CAP_KCMD_PLBI;
+	if (cap->features & UMMU_FEAT_PPLBI)
+		feature |= HW_CAP_PPLBI;
 	if (ummu_get_mapt_blk_exp())
 		feature |= HW_CAP_EXPAN;
 	if (!ummu_sva_separated_enabled() ||
