@@ -91,7 +91,7 @@ static struct unic_dfx_regs_group unic_dfx_reg_arr[] = {
 		.regs_idx = UNIC_REG_NUM_IDX_NL,
 		.tag = UNIC_TAG_NL,
 		.opcode = UBASE_OPC_DFX_NL_REG,
-		.property = UBASE_SUP_UBL,
+		.property = UBASE_SUP_UBL_ETH,
 		.is_supported = unic_dfx_reg_support
 	},
 	{
