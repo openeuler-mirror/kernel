@@ -8,6 +8,10 @@
 
 #include <linux/types.h>
 
+#ifndef UBFWCTL_UBENGINE
+#define FWCTL_DEVICE_TYPE_UB 5
+#endif
+
 /**
  * struct fwctl_rpc_ub_in - ioctl(FWCTL_RPC) input
  * @rpc_cmd: user specified opcode
@@ -315,7 +319,7 @@ struct fwctl_pkt_in_table {
 };
 
 /**
- * struct fwctl_pkt_in_enable - ioctl(FWCTL_RPC) input
+ * struct fwctl_pkt_in_port - ioctl(FWCTL_RPC) input
  * @port_id: The value of param '-p'
  */
 struct fwctl_pkt_in_port {
@@ -323,7 +327,7 @@ struct fwctl_pkt_in_port {
 };
 
 /**
- * struct fwctl_pkt_in_enable - ioctl(FWCTL_RPC) input
+ * struct fwctl_pkt_in_index - ioctl(FWCTL_RPC) input
  * @index: The value of param '-i'
  */
 struct fwctl_pkt_in_index {
@@ -331,7 +335,7 @@ struct fwctl_pkt_in_index {
 };
 
 /**
- * struct fwctl_pkt_in_enable - ioctl(FWCTL_RPC) input
+ * struct fwctl_pkt_in_ummuid_value - ioctl(FWCTL_RPC) input
  * @ummu_id: The value of param '-u'
  * @value: The value of param '-e'
  */
