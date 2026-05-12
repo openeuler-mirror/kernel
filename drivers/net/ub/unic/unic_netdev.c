@@ -283,6 +283,9 @@ int unic_net_open(struct net_device *netdev)
 	if (test_bit(UNIC_STATE_RESETTING, &unic_dev->state))
 		return -EBUSY;
 
+	if (test_bit(UNIC_STATE_CHANNEL_INVALID, &unic_dev->state))
+		return -ENODATA;
+
 	if (!test_bit(UNIC_STATE_DOWN, &unic_dev->state)) {
 		unic_warn(unic_dev, "net open repeatedly.\n");
 		return 0;
