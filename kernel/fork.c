@@ -671,6 +671,8 @@ static void dup_mm_exe_file(struct mm_struct *mm, struct mm_struct *oldmm)
 
 #ifdef CONFIG_MMU
 #ifdef CONFIG_I_MMAP_SHARDS
+#define DUP_MMAP_FILE_BATCH_NR	4
+
 struct dup_mmap_file_batch {
 	struct address_space *mapping;
 	unsigned int count;
@@ -706,24 +708,6 @@ static void dup_mmap_file_batch_flush(struct dup_mmap_file_batch *batch)
 	dup_mmap_file_batch_init(batch);
 }
 
-static void dup_mmap_file_batch_add(struct dup_mmap_file_batch *batch,
-				    struct vm_area_struct *vma,
-				    struct vm_area_struct *prev)
-{
-	struct address_space *mapping = vma->vm_file->f_mapping;
-
-	if (batch->count && batch->mapping != mapping)
-		dup_mmap_file_batch_flush(batch);
-
-	batch->mapping = mapping;
-	batch->vmas[batch->count] = vma;
-	batch->prev[batch->count] = prev;
-	batch->count++;
-
-	if (batch->count == ARRAY_SIZE(batch->vmas))
-		dup_mmap_file_batch_flush(batch);
-}
-
 static bool dup_mmap_needs_page_copy(struct vm_area_struct *dst_vma,
 				     struct vm_area_struct *src_vma)
 {
@@ -746,7 +730,8 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 	LIST_HEAD(uf);
 	VMA_ITERATOR(vmi, mm, 0);
 #ifdef CONFIG_I_MMAP_SHARDS
-	struct dup_mmap_file_batch file_batch;
+	struct dup_mmap_file_batch file_batches[DUP_MMAP_FILE_BATCH_NR];
+	unsigned int batch_idx;
 #endif
 
 	uprobe_start_dup_mmap();
@@ -755,7 +740,8 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 		goto fail_uprobe_end;
 	}
 #ifdef CONFIG_I_MMAP_SHARDS
-	dup_mmap_file_batch_init(&file_batch);
+	for (batch_idx = 0; batch_idx < DUP_MMAP_FILE_BATCH_NR; batch_idx++)
+		dup_mmap_file_batch_init(&file_batches[batch_idx]);
 #endif
 	flush_cache_dup_mm(oldmm);
 	uprobe_dup_mmap(oldmm, mm);
@@ -847,8 +833,40 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 		file = tmp->vm_file;
 		if (file) {
 #ifdef CONFIG_I_MMAP_SHARDS
+			struct address_space *mapping = file->f_mapping;
+			struct dup_mmap_file_batch *batch = NULL;
+
 			get_file(file);
-			dup_mmap_file_batch_add(&file_batch, tmp, mpnt);
+			for (batch_idx = 0;
+			     batch_idx < DUP_MMAP_FILE_BATCH_NR; batch_idx++) {
+				if (file_batches[batch_idx].count &&
+				    file_batches[batch_idx].mapping == mapping) {
+					batch = &file_batches[batch_idx];
+					break;
+				}
+			}
+			if (!batch) {
+				for (batch_idx = 0;
+				     batch_idx < DUP_MMAP_FILE_BATCH_NR;
+				     batch_idx++) {
+					if (!file_batches[batch_idx].count) {
+						batch = &file_batches[batch_idx];
+						break;
+					}
+				}
+			}
+			if (!batch) {
+				batch = &file_batches[0];
+				dup_mmap_file_batch_flush(batch);
+			}
+
+			batch->mapping = mapping;
+			batch->vmas[batch->count] = tmp;
+			batch->prev[batch->count] = mpnt;
+			batch->count++;
+
+			if (batch->count == ARRAY_SIZE(batch->vmas))
+				dup_mmap_file_batch_flush(batch);
 #else
 			struct address_space *mapping = file->f_mapping;
 
@@ -867,8 +885,13 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 
 #ifdef CONFIG_I_MMAP_SHARDS
 		if (!(tmp->vm_flags & VM_WIPEONFORK)) {
-			if (dup_mmap_needs_page_copy(tmp, mpnt))
-				dup_mmap_file_batch_flush(&file_batch);
+			if (dup_mmap_needs_page_copy(tmp, mpnt)) {
+				for (batch_idx = 0;
+				     batch_idx < DUP_MMAP_FILE_BATCH_NR;
+				     batch_idx++)
+					dup_mmap_file_batch_flush(
+						&file_batches[batch_idx]);
+			}
 			retval = copy_page_range(tmp, mpnt);
 		}
 #else
@@ -882,10 +905,15 @@ static __latent_entropy int dup_mmap(struct mm_struct *mm,
 		}
 	}
 	/* a new mm has just been created */
+#ifdef CONFIG_I_MMAP_SHARDS
+	for (batch_idx = 0; batch_idx < DUP_MMAP_FILE_BATCH_NR; batch_idx++)
+		dup_mmap_file_batch_flush(&file_batches[batch_idx]);
+#endif
 	retval = arch_dup_mmap(oldmm, mm);
 loop_out:
 #ifdef CONFIG_I_MMAP_SHARDS
-	dup_mmap_file_batch_flush(&file_batch);
+	for (batch_idx = 0; batch_idx < DUP_MMAP_FILE_BATCH_NR; batch_idx++)
+		dup_mmap_file_batch_flush(&file_batches[batch_idx]);
 #endif
 	vma_iter_free(&vmi);
 	if (!retval) {
