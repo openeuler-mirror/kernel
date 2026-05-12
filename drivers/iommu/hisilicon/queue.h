@@ -309,10 +309,28 @@ struct ummu_mcmdq_ent {
 	};
 };
 
+struct ummu_device_event {
+	u8		code;
+	u8		read : 1;
+	u8		instruction : 1;
+	u8		privileged : 1;
+	u8		cls : 2;
+	u8		ns_ipa : 1;
+	u8		s2 : 1;
+	u8		stall : 1;
+	u16		stag;
+	u16		tect_tag;
+	u32		tid;
+	u64		ipa;
+	u64		iova;
+	struct device	*dev;
+};
+
 void ummu_queue_write(__le64 *dst, u64 *src, size_t n_dwords);
 void ummu_queue_read(u64 *dst, __le64 *src, size_t n_dwords);
 int ummu_queue_remove_raw(struct ummu_queue *q, u64 *ent);
 int ummu_queue_sync_prod_in(struct ummu_queue *q);
+void ummu_queue_sync_cons_ovf(struct ummu_queue *q);
 bool ummu_queue_empty(struct ummu_ll_queue *q);
 int ummu_write_evtq_regs(struct ummu_device *ummu);
 int ummu_init_queues(struct ummu_device *ummu);
