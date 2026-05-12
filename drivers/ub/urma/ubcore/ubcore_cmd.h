@@ -64,7 +64,6 @@ enum ubcore_cmd {
 	UBCORE_CMD_UPDATE_MUE_DEV_INFO_RESP,
 	UBCORE_CMD_VTP_STATUS_NOTIFY,
 	UBCORE_CMD_MSG_ACK,
-	UBCORE_CMD_GET_TOPO_BONDING_DEV,
 	UBCORE_CMD_MAX
 };
 
@@ -133,15 +132,6 @@ struct ubcore_cmd_topo_info {
 	struct {
 		uint32_t node_num;
 		struct ubcore_topo_node topo_info;
-	} out;
-};
-
-struct ubcore_cmd_topo_bonding_dev {
-	struct {
-		union ubcore_eid agg_eid;
-	} in;
-	struct {
-		struct ubcore_topo_bonding_dev bonding_dev;
 	} out;
 };
 
