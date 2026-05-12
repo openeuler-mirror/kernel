@@ -153,6 +153,7 @@ struct ubase_dev_caps {
 struct ubase_mbox_cmd {
 	struct dma_pool *pool;
 	struct semaphore sem;
+	raw_spinlock_t mbx_lock;
 	struct ubase_mbx_event_context ctx;
 	atomic_t mbx_cnt;
 };

@@ -403,9 +403,13 @@ static void ubase_init_aeq_work(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 static void ubase_mbx_complete(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 {
 	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
+	unsigned long flags;
 
-	if (aeqe->event.cmd.seq_num != ctx->seq_num)
+	raw_spin_lock_irqsave(&udev->mb_cmd.mbx_lock, flags);
+	if (aeqe->event.cmd.seq_num != ctx->seq_num) {
+		raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 		return;
+	}
 
 	ubase_mailbox_buff_free(udev);
 
@@ -413,6 +417,7 @@ static void ubase_mbx_complete(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 	ctx->out_param = aeqe->event.cmd.out_param;
 
 	complete(&ctx->done);
+	raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 }
 
 static int ubase_async_event_handler(struct ubase_dev *udev)
