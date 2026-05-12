@@ -316,6 +316,8 @@ int ummu_queue_sync_prod_in(struct ummu_queue *q);
 bool ummu_queue_empty(struct ummu_ll_queue *q);
 int ummu_write_evtq_regs(struct ummu_device *ummu);
 int ummu_init_queues(struct ummu_device *ummu);
+void ummu_device_free_mcmdq(struct ummu_device *ummu);
+void ummu_device_free_evtq(struct ummu_device *ummu);
 int ummu_device_mcmdq_init_cfg(struct ummu_device *ummu);
 int ummu_mcmdq_issue_cmd(struct ummu_device *ummu, struct ummu_mcmdq_ent *ent);
 int ummu_mcmdq_build_cmd(struct ummu_device *ummu, u64 *cmd,

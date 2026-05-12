@@ -49,10 +49,12 @@ static DEFINE_SPINLOCK(ummu_global);
 
 static struct ummu_tecte_data ummu_clear_tecte = {0};
 
-static int ummu_init_tect(const struct ummu_capability *cap,
+static int ummu_init_tect(struct ummu_device *ummu,
+			  const struct ummu_capability *cap,
 			  struct ummu_tect_cfg *tect);
 
-static int ummu_alloc_tct(const struct ummu_capability *cap,
+static int ummu_alloc_tct(struct ummu_device *ummu,
+			  const struct ummu_capability *cap,
 			  struct ummu_tct_desc_cfg *tct_cfg);
 static void ummu_free_tct(struct ummu_tct_desc_cfg *tct_cfg);
 
@@ -340,7 +342,7 @@ const struct ummu_capability *ummu_get_cap(void)
 	return &ummu_global_info.cap;
 }
 
-static struct ummu_tct_desc_cfg *ummu_get_local_tct_table(void)
+static struct ummu_tct_desc_cfg *ummu_get_local_tct_table(struct ummu_device *ummu)
 {
 	struct ummu_tct_desc_cfg *cfg = NULL;
 	struct os_meta *meta;
@@ -359,7 +361,7 @@ static struct ummu_tct_desc_cfg *ummu_get_local_tct_table(void)
 		if (!ummu_global_info.cap_valid)
 			return NULL;
 
-		ret = ummu_alloc_tct(&ummu_global_info.cap, cfg);
+		ret = ummu_alloc_tct(ummu, &ummu_global_info.cap, cfg);
 		if (ret)
 			return NULL;
 	}
@@ -368,7 +370,7 @@ static struct ummu_tct_desc_cfg *ummu_get_local_tct_table(void)
 	return cfg;
 }
 
-static struct ummu_tect_cfg *ummu_get_tect_table(void)
+static struct ummu_tect_cfg *ummu_get_tect_table(struct ummu_device *ummu)
 {
 	struct ummu_tect_cfg *tect;
 	int ret;
@@ -378,7 +380,7 @@ static struct ummu_tect_cfg *ummu_get_tect_table(void)
 	if (!tect->tbl_vaddr) {
 		if (!ummu_global_info.cap_valid)
 			return NULL;
-		ret = ummu_init_tect(&ummu_global_info.cap, tect);
+		ret = ummu_init_tect(ummu, &ummu_global_info.cap, tect);
 		if (ret)
 			return NULL;
 	}
@@ -463,16 +465,20 @@ static void ummu_tecte_pre_init(struct ummu_tecte_data *tect, u32 num_ents)
 }
 
 /* The TECT memory layout implementation is based on the ARM SMMU STE reference.*/
-static int ummu_init_tect_linear(struct ummu_tect_cfg *tect)
+static int ummu_init_tect_linear(struct ummu_device *ummu,
+				 struct ummu_tect_cfg *tect)
 {
 	u32 size = PAGE_ALIGN(tect->num_ents * TECT_ENTRY_SIZE_BYTES);
+	struct page *page;
 	u32 reg;
 
-	tect->tbl_vaddr = (__le64 *)__get_free_pages(GFP_ATOMIC | __GFP_ZERO,
-						     get_order(size));
-	if (!tect->tbl_vaddr)
+	page = alloc_pages_node(dev_to_node(ummu->dev),
+				UMMU_GFP(GFP_ATOMIC) | __GFP_ZERO,
+				get_order(size));
+	if (!page)
 		return -ENOMEM;
 
+	tect->tbl_vaddr = (__le64 *)page_address(page);
 	tect->phys = virt_to_phys(tect->tbl_vaddr);
 	tect->tbl_size = size;
 
@@ -496,9 +502,12 @@ static void ummu_write_tect_l1_desc(__le64 *tecte, struct ummu_tect_l1_desc *des
 	WRITE_ONCE(*tecte, cpu_to_le64(val));
 }
 
-static int ummu_init_tect_second_lvl(struct ummu_tect_cfg *tect, u32 tect_tag)
+static int ummu_init_tect_second_lvl(struct ummu_device *ummu,
+				     struct ummu_tect_cfg *tect,
+				     u32 tect_tag)
 {
 	struct ummu_tect_l1_desc *desc = &tect->l1_tect_desc[tect_tag >> TECT_SPLIT];
+	struct page *page;
 	__le64 *tecte;
 	u32 size;
 
@@ -509,11 +518,13 @@ static int ummu_init_tect_second_lvl(struct ummu_tect_cfg *tect, u32 tect_tag)
 	size = PAGE_ALIGN(size);
 
 	desc->l2_tecte_num = 1UL << TECT_SPLIT;
-	desc->l2ptr = (__le64 *)__get_free_pages(GFP_ATOMIC | __GFP_ZERO,
-						 get_order(size));
-	if (!desc->l2ptr)
+	page = alloc_pages_node(dev_to_node(ummu->dev),
+				UMMU_GFP(GFP_ATOMIC) | __GFP_ZERO,
+				get_order(size));
+	if (!page)
 		return -ENOMEM;
 
+	desc->l2ptr = (__le64 *)page_address(page);
 	desc->l2ptr_pa = virt_to_phys(desc->l2ptr);
 
 	ummu_tecte_pre_init((struct ummu_tecte_data *)(desc->l2ptr),
@@ -523,16 +534,20 @@ static int ummu_init_tect_second_lvl(struct ummu_tect_cfg *tect, u32 tect_tag)
 	return 0;
 }
 
-static int ummu_init_tect_first_lvl(struct ummu_tect_cfg *tect)
+static int ummu_init_tect_first_lvl(struct ummu_device *ummu,
+				    struct ummu_tect_cfg *tect)
 {
 	u32 l1_size = PAGE_ALIGN(tect->num_ents * TECT_L1_ENTRY_BYTES);
+	struct page *page;
 	u32 reg;
 
-	tect->tbl_vaddr = (__le64 *)__get_free_pages(GFP_ATOMIC | __GFP_ZERO,
-						     get_order(l1_size));
-	if (!tect->tbl_vaddr)
+	page = alloc_pages_node(dev_to_node(ummu->dev),
+				UMMU_GFP(GFP_ATOMIC) | __GFP_ZERO,
+				get_order(l1_size));
+	if (!page)
 		return -ENOMEM;
 
+	tect->tbl_vaddr = (__le64 *)page_address(page);
 	tect->phys = virt_to_phys(tect->tbl_vaddr);
 	tect->tbl_size = l1_size;
 
@@ -554,7 +569,8 @@ static int ummu_init_tect_first_lvl(struct ummu_tect_cfg *tect)
 	return 0;
 }
 
-static int ummu_init_tect(const struct ummu_capability *cap,
+static int ummu_init_tect(struct ummu_device *ummu,
+			  const struct ummu_capability *cap,
 			  struct ummu_tect_cfg *tect)
 {
 	u64 reg_val;
@@ -565,11 +581,11 @@ static int ummu_init_tect(const struct ummu_capability *cap,
 		ent_bit = cap->deid_bits - TECT_SPLIT;
 		tect->num_ents = 1UL << ent_bit;
 		tect->tect_fmt = TECT_BASE_CFG_FMT_2LVL;
-		ret = ummu_init_tect_first_lvl(tect);
+		ret = ummu_init_tect_first_lvl(ummu, tect);
 	} else {
 		tect->num_ents = 1UL << cap->deid_bits;
 		tect->tect_fmt = TECT_BASE_CFG_FMT_LINEAR;
-		ret = ummu_init_tect_linear(tect);
+		ret = ummu_init_tect_linear(ummu, tect);
 	}
 
 	if (ret)
@@ -640,11 +656,11 @@ int ummu_prepare_tect_tct(struct ummu_device *ummu)
 	struct ummu_tect_cfg *tect;
 	int ret;
 
-	tect = ummu_get_tect_table();
+	tect = ummu_get_tect_table(ummu);
 	if (!tect)
 		return -EINVAL;
 
-	local = ummu_get_local_tct_table();
+	local = ummu_get_local_tct_table(ummu);
 	if (!local) {
 		ret = -EINVAL;
 		goto put_tect;
@@ -677,26 +693,32 @@ int ummu_check_cap(struct ummu_device *ummu)
 	return 0;
 }
 
-static int ummu_alloc_tct_linear(struct ummu_tct_desc_cfg *tct_cfg)
+static int ummu_alloc_tct_linear(struct ummu_device *ummu,
+				 struct ummu_tct_desc_cfg *tct_cfg)
 {
+	struct page *page;
 	u32 tbl_size;
 
 	tbl_size = tct_cfg->l1_tcte_num * TCT_ENTRY_SIZE_BYTES;
 	tbl_size = PAGE_ALIGN(tbl_size);
 
-	tct_cfg->tct_ptr = (__le64 *)__get_free_pages(GFP_ATOMIC | __GFP_ZERO,
-						      get_order(tbl_size));
-	if (!tct_cfg->tct_ptr)
+	page = alloc_pages_node(dev_to_node(ummu->dev),
+				UMMU_GFP(GFP_ATOMIC) | __GFP_ZERO,
+				get_order(tbl_size));
+	if (!page)
 		return -ENOMEM;
+	tct_cfg->tct_ptr = (__le64 *)page_address(page);
 	tct_cfg->tct_phys_addr = virt_to_phys(tct_cfg->tct_ptr);
 
 	return 0;
 }
 
-static int ummu_alloc_tct_first_lvl(struct ummu_tct_desc_cfg *tct_cfg)
+static int ummu_alloc_tct_first_lvl(struct ummu_device *ummu,
+				    struct ummu_tct_desc_cfg *tct_cfg)
 {
 	unsigned long l1_tcte_num = tct_cfg->l1_tcte_num;
 	unsigned long l1_tbl_size;
+	struct page *page;
 	int ret;
 
 	tct_cfg->l1_tct_desc = kcalloc(l1_tcte_num,
@@ -707,13 +729,15 @@ static int ummu_alloc_tct_first_lvl(struct ummu_tct_desc_cfg *tct_cfg)
 	l1_tbl_size = l1_tcte_num * TCT_L1_ENTRY_SIZE_BYTES;
 	l1_tbl_size = PAGE_ALIGN(l1_tbl_size);
 
-	tct_cfg->tct_ptr = (__le64 *)__get_free_pages(GFP_ATOMIC | __GFP_ZERO,
-						      get_order(l1_tbl_size));
-	if (!tct_cfg->tct_ptr) {
+	page = alloc_pages_node(dev_to_node(ummu->dev),
+				UMMU_GFP(GFP_ATOMIC) | __GFP_ZERO,
+				get_order(l1_tbl_size));
+	if (!page) {
 		ret = -ENOMEM;
 		goto err_free_l1_desc;
 	}
 
+	tct_cfg->tct_ptr = (__le64 *)page_address(page);
 	tct_cfg->tct_phys_addr = virt_to_phys(tct_cfg->tct_ptr);
 
 	return 0;
@@ -724,22 +748,28 @@ err_free_l1_desc:
 	return ret;
 }
 
-static int ummu_alloc_tct_second_lvl(struct ummu_l1_tct_desc *l1_desc)
+static int ummu_alloc_tct_second_lvl(struct ummu_device *ummu,
+				     struct ummu_l1_tct_desc *l1_desc)
 {
 	size_t l2size = TCT_L2_ENTRIES * TCT_ENTRY_SIZE_BYTES;
+	struct page *page;
 
 	l2size = PAGE_ALIGN(l2size);
-	l1_desc->l2ptr = (__le64 *)__get_free_pages(GFP_KERNEL | __GFP_ZERO,
-						    get_order(l2size));
-	if (!l1_desc->l2ptr)
+
+	page = alloc_pages_node(dev_to_node(ummu->dev),
+				UMMU_GFP(GFP_KERNEL) | __GFP_ZERO,
+				get_order(l2size));
+	if (!page)
 		return -ENOMEM;
 
+	l1_desc->l2ptr = (__le64 *)page_address(page);
 	l1_desc->l2ptr_phys = virt_to_phys(l1_desc->l2ptr);
 
 	return 0;
 }
 
-static int ummu_alloc_tct(const struct ummu_capability *cap,
+static int ummu_alloc_tct(struct ummu_device *ummu,
+			  const struct ummu_capability *cap,
 			  struct ummu_tct_desc_cfg *tct_cfg)
 {
 	if (cap->features & UMMU_FEAT_2_LVL_TCT) {
@@ -747,12 +777,12 @@ static int ummu_alloc_tct(const struct ummu_capability *cap,
 		tct_cfg->tct_fmt = TCT_FMT_LVL2_64K;
 		tct_cfg->l1_tcte_num =
 			DIV_ROUND_UP(1 << tct_cfg->tcte_max_bits, TCT_L2_ENTRIES);
-		return ummu_alloc_tct_first_lvl(tct_cfg);
+		return ummu_alloc_tct_first_lvl(ummu, tct_cfg);
 	}
 	tct_cfg->tcte_max_bits = min(cap->tid_bits, TCT_LINEAR_ENTS_MAX);
 	tct_cfg->tct_fmt = TCT_FMT_LINEAR;
 	tct_cfg->l1_tcte_num = 1 << tct_cfg->tcte_max_bits;
-	return ummu_alloc_tct_linear(tct_cfg);
+	return ummu_alloc_tct_linear(ummu, tct_cfg);
 }
 
 static void ummu_free_tct(struct ummu_tct_desc_cfg *tct_cfg)
@@ -820,7 +850,8 @@ __le64 *ummu_get_tcte_ptr(struct ummu_tct_desc_cfg *tct_cfg, u32 tid)
 	return l1_desc->l2ptr + l2_idx * TCT_ENTRY_SIZE_DWORDS;
 }
 
-static __le64 *ummu_alloc_tcte(struct ummu_tct_desc_cfg *tct_cfg, u32 tid)
+static __le64 *ummu_alloc_tcte(struct ummu_device *ummu,
+			       struct ummu_tct_desc_cfg *tct_cfg, u32 tid)
 {
 	struct ummu_l1_tct_desc *l1_desc;
 	__le64 *tcte_ptr;
@@ -833,7 +864,7 @@ static __le64 *ummu_alloc_tcte(struct ummu_tct_desc_cfg *tct_cfg, u32 tid)
 	l1_idx = tid >> TCT_SPLIT_64K;
 	l1_desc = &tct_cfg->l1_tct_desc[l1_idx];
 	if (!l1_desc->l2ptr) {
-		if (ummu_alloc_tct_second_lvl(l1_desc)) {
+		if (ummu_alloc_tct_second_lvl(ummu, l1_desc)) {
 			pr_err("alloc second lvl tct table failed.\n");
 			return NULL;
 		}
@@ -865,7 +896,7 @@ int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
 		return -ERANGE;
 
 	mutex_lock(&ummu_dev_tct_lock);
-	tcte = ummu_alloc_tcte(tct_cfg, tid);
+	tcte = ummu_alloc_tcte(ummu, tct_cfg, tid);
 	mutex_unlock(&ummu_dev_tct_lock);
 	if (!tcte) {
 		dev_err(ummu->dev, "can not find tct entry to write!");
@@ -982,7 +1013,7 @@ static struct ummu_tecte_data *ummu_alloc_tecte(struct ummu_device *ummu, u32 te
 	l1_index = tect_tag >> TECT_SPLIT;
 	l1_desc = &tect->l1_tect_desc[l1_index];
 	if (!l1_desc->l2ptr) {
-		ret = ummu_init_tect_second_lvl(tect, tect_tag);
+		ret = ummu_init_tect_second_lvl(ummu, tect, tect_tag);
 		if (ret)
 			return NULL;
 	}
@@ -992,7 +1023,8 @@ static struct ummu_tecte_data *ummu_alloc_tecte(struct ummu_device *ummu, u32 te
 		tect_index * TECT_ENTRY_SIZE_DWORDS);
 }
 
-static int ummu_alloc_os_meta(const struct ummu_capability *cap,
+static int ummu_alloc_os_meta(struct ummu_device *ummu,
+			      const struct ummu_capability *cap,
 			      guid_t *guid, struct os_meta **os_data)
 {
 	struct os_meta *meta;
@@ -1002,7 +1034,7 @@ static int ummu_alloc_os_meta(const struct ummu_capability *cap,
 	meta = kzalloc(sizeof(*meta), GFP_ATOMIC);
 	if (!meta)
 		return -ENOMEM;
-	ret = ummu_alloc_tct(cap, &meta->tct_tbl);
+	ret = ummu_alloc_tct(ummu, cap, &meta->tct_tbl);
 	if (ret)
 		goto out_free_meta;
 
@@ -1268,7 +1300,7 @@ int ummu_add_eid(struct ummu_core_device *core_dev, guid_t *guid, eid_t eid, enu
 		 * os_meta is a singleton, and its release time is
 		 * when no EID is attached to it.
 		 */
-		ret = ummu_alloc_os_meta(cap, guid, &meta);
+		ret = ummu_alloc_os_meta(ummu, cap, guid, &meta);
 		if (ret)
 			return ret;
 	}

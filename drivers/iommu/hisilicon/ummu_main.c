@@ -628,7 +628,8 @@ static int ummu_device_reset(struct ummu_device *ummu)
 static void release_ummu_dev_res(void *data)
 {
 	struct ummu_device *ummu = (struct ummu_device *)data;
-
+	ummu_device_free_mcmdq(ummu);
+	ummu_device_free_evtq(ummu);
 	ummu_iopf_queue_free(ummu);
 	ummu_device_uninit_permqs(ummu);
 }
