@@ -147,8 +147,10 @@ struct bus_type {
 	struct subsys_private *p;
 	struct lock_class_key lock_key;
 
-	bool driver_override;
 	bool need_parent_lock;
+#ifndef __GENKSYMS__
+	bool driver_override;
+#endif
 };
 
 extern int __must_check bus_register(struct bus_type *bus);
@@ -1005,10 +1007,6 @@ struct device {
 					   core doesn't touch it */
 	void		*driver_data;	/* Driver data, set and get with
 					   dev_set/get_drvdata */
-	struct {
-		const char	*name;
-		spinlock_t	lock;
-	} driver_override;
 	struct dev_links_info	links;
 	struct dev_pm_info	power;
 	struct dev_pm_domain	*pm_domain;
@@ -1101,8 +1099,15 @@ struct device {
 #else
 	KABI_RESERVE(2)
 #endif
+#ifndef __GENKSYMS__
+	struct {
+		const char	*name;
+		spinlock_t	lock;
+	} driver_override;
+#else
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
+#endif
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
