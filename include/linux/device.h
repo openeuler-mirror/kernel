@@ -493,10 +493,6 @@ struct device {
 #ifdef CONFIG_PROVE_LOCKING
 	struct mutex		lockdep_mutex;
 #endif
-	struct {
-		const char	*name;
-		spinlock_t	lock;
-	} driver_override;
 	struct mutex		mutex;	/* mutex to synchronize calls to
 					 * its driver.
 					 */
@@ -603,8 +599,15 @@ struct device {
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 #endif
+#ifndef __GENKSYMS__
+	struct {
+		const char	*name;
+		spinlock_t	lock;
+	} driver_override;
+#else
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
+#endif
 	KABI_RESERVE(7)
 	KABI_RESERVE(8)
 	KABI_RESERVE(9)

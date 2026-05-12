@@ -114,8 +114,8 @@ struct bus_type {
 	struct subsys_private *p;
 	struct lock_class_key lock_key;
 
-	bool driver_override;
 	bool need_parent_lock;
+	KABI_FILL_HOLE(bool driver_override)
 };
 
 extern int __must_check bus_register(struct bus_type *bus);
