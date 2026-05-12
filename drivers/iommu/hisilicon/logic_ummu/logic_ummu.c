@@ -606,6 +606,10 @@ static int logic_ummu_grant(struct iommu_domain *d, void *va, size_t size,
 			local_plb_gather.size = ummu_gather.plbis[idx].plbi_va.size;
 			logic_ummu_plb_sync(d, &local_plb_gather);
 			break;
+		case CMD_PLBI_OS_N:
+			logic_ummu_plbi_free_bit(d, ummu_gather.plbis[idx].plbi_f_bit.lvl_idx,
+						 ummu_gather.plbis[idx].plbi_f_bit.lvl_offset);
+			break;
 		default:
 			pr_warn("wrong cmd op code in logic grant.\n");
 			break;
@@ -643,6 +647,10 @@ static int logic_ummu_ungrant(struct iommu_domain *d, void *va, size_t size,
 			local_plb_gather.va = (void *)ummu_gather.plbis[idx].plbi_va.va;
 			local_plb_gather.size = ummu_gather.plbis[idx].plbi_va.size;
 			logic_ummu_plb_sync(d, &local_plb_gather);
+			break;
+		case CMD_PLBI_OS_N:
+			logic_ummu_plbi_free_bit(d, ummu_gather.plbis[idx].plbi_f_bit.lvl_idx,
+						 ummu_gather.plbis[idx].plbi_f_bit.lvl_offset);
 			break;
 		default:
 			pr_warn("wrong cmd op code in logic ungrant.\n");
@@ -1683,7 +1691,7 @@ static int logic_ummu_add_eid(struct ummu_core_device *device, guid_t *guid,
 	if (is_eid_added(eid))
 		return -EEXIST;
 
-	info = kzalloc(sizeof(*info), GFP_KERNEL);
+	info = kzalloc(sizeof(*info), GFP_ATOMIC);
 	if (!info)
 		return -ENOMEM;
 
@@ -2082,6 +2090,21 @@ out_del_list:
 	list_del(&ummu->list);
 	logic_ummu.ummu_cnt--;
 	return ret;
+}
+
+void logic_ummu_plbi_free_bit(struct iommu_domain *d, u32 next_lvl_idx, u32 next_lvl_offset)
+{
+	struct logic_ummu_domain *logic_domain = iommu_to_logic_domain(d);
+	const struct ummu_device_helper *helper = get_agent_helper();
+	struct ummu_base_domain *base_domain;
+
+	if (!helper || !helper->plbi_free_bit) {
+		pr_err("find agent domain failed.\n");
+		return;
+	}
+
+	list_for_each_entry(base_domain, &logic_domain->base_domain.list, list)
+		helper->plbi_free_bit(&base_domain->domain, next_lvl_idx, next_lvl_offset);
 }
 
 int logic_add_ummu_device(struct ummu_device *ummu,
