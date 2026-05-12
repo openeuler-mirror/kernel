@@ -67,6 +67,9 @@ struct fwnode_handle;
  * @p:		The private data of the driver core, only the driver core can
  *		touch this.
  * @lock_key:	Lock class key for use by the lock validator
+ * @driver_override:	Set to true if this bus supports the driver_override
+ *			mechanism, which allows userspace to force a specific
+ *			driver to bind to a device via a sysfs attribute.
  * @need_parent_lock:	When probing or removing a device on this bus, the
  *			device core should lock the device's parent.
  *
@@ -111,6 +114,7 @@ struct bus_type {
 	struct subsys_private *p;
 	struct lock_class_key lock_key;
 
+	bool driver_override;
 	bool need_parent_lock;
 };
 
