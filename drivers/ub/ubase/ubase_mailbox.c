@@ -237,6 +237,7 @@ int ubase_mbox_cmd_init(struct ubase_dev *udev)
 
 	sema_init(&udev->mb_cmd.sem, 1);
 	init_completion(&ctx->done);
+	raw_spin_lock_init(&udev->mb_cmd.mbx_lock);
 
 	atomic_set(&udev->mb_cmd.mbx_cnt, 0);
 	return 0;
