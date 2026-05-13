@@ -75,6 +75,7 @@ struct ubase_log_rs {
 	UBASE_DEFINE_RATELIMIT(ctrlq_space_insuffice);
 	UBASE_DEFINE_RATELIMIT(ue_send_ctrlq_to_cmdq_fail);
 	UBASE_DEFINE_RATELIMIT(ctrlq_is_disabled);
+	UBASE_DEFINE_RATELIMIT(ctrlq_msg_queue_wait_timeout);
 	UBASE_DEFINE_RATELIMIT(ctrlq_seq_insuffice);
 	UBASE_DEFINE_RATELIMIT(send_ctrlq_unsup_resp_fail);
 	UBASE_DEFINE_RATELIMIT(send_ue_ctrlq_msg_to_cmdq_fail);
