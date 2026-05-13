@@ -605,7 +605,7 @@ static void ubase_free_buf_ctx_page(struct ubase_dev *udev,
 	refcount_dec(&ctx_page->refcount);
 	if (refcount_dec_if_one(&ctx_page->refcount)) {
 		ubase_info(udev,
-			   "refcout of ctx page is equal to one and the ctx_page is going to erased.\n");
+			   "refcount of ctx page is equal to one and the ctx_page is going to be erased.\n");
 		xa_erase(&ctx_buf->ctx_xa, npage);
 		ubase_destroy_ctx_page(udev, ctx_page, ctx_buf);
 	}
@@ -613,7 +613,7 @@ static void ubase_free_buf_ctx_page(struct ubase_dev *udev,
 	mutex_unlock(&ctx_buf->ctx_mutex);
 }
 
-static struct ubase_ctx_buf_cap*
+static struct ubase_ctx_buf_cap *
 ubase_parse_common_buf(struct ubase_mbx_attr *attr,
 		       struct mbx_op_match op_matches[],
 		       enum ubase_mb_type *type, u32 size)
@@ -643,7 +643,7 @@ static bool ubase_is_jfs_opcode(u8 op)
 	}
 }
 
-static struct ubase_ctx_buf_cap*
+static struct ubase_ctx_buf_cap *
 ubase_parse_ta_opcode_buf(struct ubase_dev *udev, struct ubase_mbx_attr *attr,
 			  enum ubase_mb_type *type)
 {
@@ -674,7 +674,7 @@ ubase_parse_ta_opcode_buf(struct ubase_dev *udev, struct ubase_mbx_attr *attr,
 	return ubase_parse_common_buf(attr, ta_matches, type, size);
 }
 
-static struct ubase_ctx_buf_cap*
+static struct ubase_ctx_buf_cap *
 ubase_parse_opcode_buf(struct ubase_dev *udev, struct ubase_mbx_attr *attr,
 		       enum ubase_mb_type *type)
 {

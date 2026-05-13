@@ -226,7 +226,7 @@ static int unic_dbg_dump_rss_cfg_hw(struct seq_file *s, void *data)
 	if (ret)
 		return ret;
 
-	seq_printf(s, "%-10u", resp.tc_vaild);
+	seq_printf(s, "%-10u", resp.tc_valid);
 	seq_printf(s, "%-9u", resp.tc_mode);
 	jfr_cnt = min(le16_to_cpu(resp.jfr_reg_num), UNIC_RSS_MAX_CNT);
 	jfr_cnt = min(UNIC_RSS_CFG_ITEMS_NUM, jfr_cnt);

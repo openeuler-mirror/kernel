@@ -39,7 +39,7 @@ static int unic_check_rss_size_param(struct unic_dev *unic_dev, u32 new_rss_size
 
 	if (max_rss_size % new_rss_size) {
 		unic_err(unic_dev,
-			 "the rss_size(%u) can't distributed to max_rss_size(%u).\n",
+			 "the rss_size(%u) can't divisible by max_rss_size(%u).\n",
 			 new_rss_size, max_rss_size);
 		return -EINVAL;
 	}

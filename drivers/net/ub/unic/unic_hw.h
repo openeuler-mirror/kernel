@@ -63,7 +63,7 @@ struct unic_promisc_en {
 #define UNIC_RSS_MAX_CNT	10U
 struct unic_cfg_rss_cmd {
 	u8 tc_mode;
-	u8 tc_vaild;
+	u8 tc_valid;
 	u8 jfr_reg_num;
 	u8 rsvd;
 	__le16 jfr_idx[UNIC_RSS_MAX_CNT];
@@ -108,7 +108,7 @@ int unic_set_fec_mode(struct unic_dev *unic_dev, u32 fec_mode);
 int unic_update_fec_stats(struct unic_dev *unic_dev);
 int unic_set_vlan_filter_hw(struct unic_dev *unic_dev, bool filter_en);
 int unic_set_port_vlan_hw(struct unic_dev *unic_dev, u16 vlan_id, bool is_kill);
-int unic_set_rss_tc_mode(struct unic_dev *unic_dev, u8 tc_vaild);
+int unic_set_rss_tc_mode(struct unic_dev *unic_dev, u8 tc_valid);
 int unic_query_rss_cfg(struct unic_dev *unic_dev,
 		       struct unic_cfg_rss_cmd *resp);
 
