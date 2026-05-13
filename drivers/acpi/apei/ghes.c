@@ -1727,3 +1727,8 @@ void ghes_unregister_report_chain(struct notifier_block *nb)
 	atomic_notifier_chain_unregister(&ghes_report_chain, nb);
 }
 EXPORT_SYMBOL_GPL(ghes_unregister_report_chain);
+
+int apei_claim_sei(struct pt_regs *regs)
+{
+	return ghes_armp_vendor_handle_sei(regs);
+}
