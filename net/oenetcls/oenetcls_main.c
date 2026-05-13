@@ -64,9 +64,13 @@ unsigned int sft_num = 0x100000;
 module_param(sft_num, uint, 0444);
 MODULE_PARM_DESC(sft_num, "sock flow table entries, default 0x100000");
 
-int lo_numa_rps;
-module_param(lo_numa_rps, int, 0644);
-MODULE_PARM_DESC(lo_numa_rps, "enable loopback flow numa affinity");
+int rps_policy = 1;
+module_param(rps_policy, int, 0644);
+MODULE_PARM_DESC(rps_policy, "phy nic rps policy, default 1");
+
+int lo_rps_policy;
+module_param(lo_rps_policy, int, 0644);
+MODULE_PARM_DESC(lo_rps_policy, "loopback rps policy, default 0");
 
 static int rxq_multiplex_limit = 1;
 module_param(rxq_multiplex_limit, int, 0444);
@@ -536,7 +540,7 @@ static int init_single_oecls_dev(char *if_name, unsigned int length)
 		ret = oecls_filter_enable(dev_name, &old_state);
 		if (ret) {
 			oecls_error("dev [%s] not support ntuple! ret=%d\n", dev_name, ret);
-			if (lo_numa_rps)
+			if (lo_rps_policy)
 				goto out;
 		}
 	}
@@ -1129,7 +1133,7 @@ static __init int oecls_init(void)
 		err = oecls_ntuple_res_init();
 		if (err)
 			goto clean_rxq;
-		if (lo_numa_rps)
+		if (lo_rps_policy || rps_policy)
 			err = oecls_flow_res_init();
 	} else {
 		err = oecls_flow_res_init();
@@ -1138,7 +1142,7 @@ static __init int oecls_init(void)
 	if (err)
 		goto clean_rxq;
 
-	if (lo_numa_rps)
+	if (lo_rps_policy)
 		static_branch_inc(&oecls_localrps_needed);
 
 	return 0;
@@ -1152,12 +1156,12 @@ clean_numa:
 
 static __exit void oecls_exit(void)
 {
-	if (lo_numa_rps)
+	if (lo_rps_policy)
 		static_branch_dec(&oecls_localrps_needed);
 
 	if (mode == 0) {
 		oecls_ntuple_res_clean();
-		if (lo_numa_rps)
+		if (lo_rps_policy || rps_policy)
 			oecls_flow_res_clean();
 	} else {
 		oecls_flow_res_clean();

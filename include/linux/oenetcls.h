@@ -51,9 +51,9 @@ oenetcls_skb_set_cpu(struct sk_buff *skb, enqueue_f enq_func, int *ret)
 	ops = rcu_dereference(oecls_ops);
 	if (ops) {
 		/* mode 1 always use oecls_set_cpu hook for physical NIC or lo.
-		 * mode 0 set this hook to NULL, to avoid unneeded ops in
-		 * oenetcls_skblist_set_cpu() for physical NIC flows, and use
-		 * oecls_set_localcpu hook for loopback flows.
+		 * mode 0 set this hook to NULL if rps_policy is 0 , to avoid
+		 * unneeded ops in oenetcls_skblist_set_cpu() for physical NIC
+		 * flows, and use oecls_set_localcpu hook for loopback flows.
 		 */
 		if (ops->oecls_set_cpu)
 			ops->oecls_set_cpu(skb, &cpu, &last_qtail);
@@ -74,8 +74,6 @@ oenetcls_skb_set_localcpu(struct sk_buff *skb, enqueue_f enq_func, int *ret)
 	struct net_device *dev = skb->dev;
 	bool result = false;
 
-	if (!static_branch_unlikely(&oecls_localrps_needed))
-		return result;
 	if (!dev || !(dev->type == ARPHRD_LOOPBACK && dev->flags & IFF_LOOPBACK))
 		return result;
 

@@ -641,7 +641,7 @@ static void clean_oecls_sk_rules(void)
 	mutex_unlock(&oecls_sk_rules.mutex);
 }
 
-static const struct oecls_hook_ops oecls_ntuple_ops = {
+static struct oecls_hook_ops oecls_ntuple_ops = {
 	.oecls_flow_update = _oecls_flow_update,
 	.oecls_set_localcpu = _oecls_set_cpu,
 	.oecls_set_cpu = NULL,
@@ -658,6 +658,8 @@ int oecls_ntuple_res_init(void)
 	}
 
 	init_oecls_sk_rules();
+	if (rps_policy)
+		oecls_ntuple_ops.oecls_set_cpu = _oecls_set_cpu;
 	RCU_INIT_POINTER(oecls_ops, &oecls_ntuple_ops);
 	synchronize_rcu();
 	return 0;
