@@ -1946,10 +1946,14 @@ static void nvme_update_disk_info(struct gendisk *disk,
 		 * and whether it should be used instead of AWUPF. If NAWUPF ==
 		 * 0 then AWUPF must be used instead.
 		 */
-		if (id->nsfeat & NVME_NS_FEAT_ATOMICS && id->nawupf)
+		if (id->nsfeat & NVME_NS_FEAT_ATOMICS && id->nawupf) {
 			atomic_bs = (1 + le16_to_cpu(id->nawupf)) * bs;
-		else
-			atomic_bs = (1 + ns->ctrl->subsys->awupf) * bs;
+		} else {
+			if (ns->ctrl->subsys->awupf)
+				dev_info_once(ns->ctrl->device,
+					"AWUPF ignored, only NAWUPF accepted\n");
+			atomic_bs = bs;
+		}
 
 		nvme_update_atomic_write_disk_info(ns, id, &disk->queue->limits,
 						    bs, atomic_bs);
