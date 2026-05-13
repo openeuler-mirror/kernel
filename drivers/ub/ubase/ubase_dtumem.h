@@ -9,7 +9,7 @@
 
 #include "ubase_dev.h"
 
-#define UBASE_DTU_WIN_NUM_INVLID 0xFFFF
+#define UBASE_DTU_WIN_NUM_INVALID 0xFFFF
 
 struct ubase_query_dtu_info_cmd {
 	__le32 pa_base_addr_l;

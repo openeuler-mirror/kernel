@@ -205,7 +205,7 @@ static void unic_update_pause_state(u8 pause_mode,
 static void unic_record_user_pauseparam(struct unic_dev *unic_dev,
 					struct ethtool_pauseparam *eth_pauseparam)
 {
-	struct	unic_pfc_info *pfc_info = &unic_dev->channels.vl.pfc_info;
+	struct unic_pfc_info *pfc_info = &unic_dev->channels.vl.pfc_info;
 	u32 rx_en = eth_pauseparam->rx_pause;
 	u32 tx_en = eth_pauseparam->tx_pause;
 

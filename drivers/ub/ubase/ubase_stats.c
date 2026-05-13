@@ -81,7 +81,6 @@ out_send_cmd_fail:
  * The function is used to clear eth port stats.
  *
  * Context: Process context. Takes and releases <lock>, BH-safe. Sleep.
- * Return: 0 on success, negative error code otherwise
  */
 void ubase_clear_eth_port_stats(struct auxiliary_device *adev)
 {
@@ -105,7 +104,7 @@ EXPORT_SYMBOL(ubase_clear_eth_port_stats);
  * ubase_get_ub_port_stats() - (deprecated) get ub port stats
  * @adev: auxiliary device
  * @port_id: port id
- * @data: ub date link layer stats
+ * @data: ub data link layer stats
  *
  * The function is used to get ub port stats.
  *

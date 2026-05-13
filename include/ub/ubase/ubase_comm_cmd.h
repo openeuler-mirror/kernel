@@ -111,7 +111,7 @@ enum ubase_opcode_type {
 
 	/* Mailbox commands */
 	UBASE_OPC_POST_MB		= 0x7000,
-	UBASE_OPC_QUERY_MB_ST		= 0X7001,
+	UBASE_OPC_QUERY_MB_ST		= 0x7001,
 
 	/* Ubctl commands */
 	UBASE_OPC_QUERY_PORT_BITMAP	= 0xA017,
@@ -228,7 +228,7 @@ struct ubase_proxy_resp_msg {
  * @mbx_ue_id: mailbox ub entity id
  * @ctx_type: context va type
  * @result: result of context va configuration
- * @rsv: reserved bits
+ * @resv: reserved bits
  */
 struct ubase_proxy_set_ctx_va_cmd {
 	__le16	bus_ue_id;

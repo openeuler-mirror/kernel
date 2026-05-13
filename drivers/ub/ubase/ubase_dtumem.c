@@ -164,12 +164,12 @@ int ubase_dtu_tbl_init(struct auxiliary_device *aux_dev, u32 tid, u16 *dtu_win_n
 
 	udev = ubase_get_udev_by_adev(aux_dev);
 
-	if (udev->dtu_info.dtu_win_num_udma != UBASE_DTU_WIN_NUM_INVLID) {
+	if (udev->dtu_info.dtu_win_num_udma != UBASE_DTU_WIN_NUM_INVALID) {
 		ret = __ubase_dtu_tbl_uninit(udev, udev->dtu_info.dtu_win_num_udma);
 		if (ret)
 			return ret;
 
-		udev->dtu_info.dtu_win_num_udma = UBASE_DTU_WIN_NUM_INVLID;
+		udev->dtu_info.dtu_win_num_udma = UBASE_DTU_WIN_NUM_INVALID;
 	}
 
 	ret = __ubase_dtu_tbl_init(udev, tid, dtu_win_num);
@@ -202,7 +202,7 @@ int ubase_dtu_tbl_uninit(struct auxiliary_device *aux_dev, u16 dtu_win_num)
 
 	ret = __ubase_dtu_tbl_uninit(udev, dtu_win_num);
 	if (!ret)
-		udev->dtu_info.dtu_win_num_udma = UBASE_DTU_WIN_NUM_INVLID;
+		udev->dtu_info.dtu_win_num_udma = UBASE_DTU_WIN_NUM_INVALID;
 
 	return ret;
 }
@@ -221,7 +221,7 @@ int ubase_dtu_mem_init(struct ubase_dev *udev)
 	if (ret)
 		return ret;
 
-	udev->dtu_info.dtu_win_num_udma = UBASE_DTU_WIN_NUM_INVLID;
+	udev->dtu_info.dtu_win_num_udma = UBASE_DTU_WIN_NUM_INVALID;
 
 	udev->dtu_info.domain = iommu_get_domain_for_dev(udev->dev);
 	if (!udev->dtu_info.domain) {

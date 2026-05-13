@@ -14,4 +14,4 @@ int unic_get_selftest_count(struct unic_dev *unic_dev);
 void unic_self_test(struct net_device *ndev,
 		    struct ethtool_test *eth_test, u64 *data);
 
-#endif /* __UNIC_IP_H__ */
+#endif /* __UNIC_LB_H__ */

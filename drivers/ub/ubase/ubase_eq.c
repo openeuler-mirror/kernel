@@ -331,7 +331,7 @@ static bool ubase_is_comm_event(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 	case UBASE_EVENT_TYPE_MB:
 		return true;
 	default:
-		return false;
+		break;
 	}
 
 	return false;

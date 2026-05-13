@@ -108,9 +108,9 @@ unlock_and_exit:
 	return ret;
 }
 
-int unic_handle_stack_ip_feedback(struct unic_vport *vport,
-				  enum UNIC_COMM_ADDR_STATE state,
-				  struct sockaddr *addr, u16 ip_mask)
+static int unic_handle_stack_ip_feedback(struct unic_vport *vport,
+					 enum UNIC_COMM_ADDR_STATE state,
+					 struct sockaddr *addr, u16 ip_mask)
 {
 	struct auxiliary_device *adev = vport->back->comdev.adev;
 	struct unic_dev *unic_dev = dev_get_drvdata(&adev->dev);

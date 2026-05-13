@@ -956,7 +956,7 @@ static void unic_set_rss_multi_tc_param(struct auxiliary_device *adev,
 	}
 }
 
-int unic_set_rss_tc_mode(struct unic_dev *unic_dev, u8 tc_vaild)
+int unic_set_rss_tc_mode(struct unic_dev *unic_dev, u8 tc_valid)
 {
 	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_channels *channels = &unic_dev->channels;
@@ -972,11 +972,11 @@ int unic_set_rss_tc_mode(struct unic_dev *unic_dev, u8 tc_vaild)
 
 	unic_caps = ubase_get_unic_caps(adev);
 
-	req.tc_vaild = tc_vaild;
+	req.tc_valid = tc_valid;
 	req.tc_mode = channels->rss_vl_num <= 1 ? UNIC_RSS_TC_MODE0 :
 		      UNIC_RSS_TC_MODE1;
 	req.jfr_reg_num = min(unic_caps->jfr.max_cnt, UNIC_RSS_MAX_CNT);
-	if (req.tc_vaild) {
+	if (req.tc_valid) {
 		if (req.tc_mode == UNIC_RSS_TC_MODE0)
 			unic_set_rss_tc0_param(channels, req.jfr_reg_num,
 					       req.jfr_idx);

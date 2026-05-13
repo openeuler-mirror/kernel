@@ -62,7 +62,7 @@ enum ubase_reset_stage {
 /**
  * struct ubase_caps - ubase capabilities
  * @num_ceq_vectors: completion event vectors number
- * @num_aeq_vectors: asynchronous event vectors umber
+ * @num_aeq_vectors: asynchronous event vectors number
  * @num_misc_vectors: misc event vectors number
  * @aeqe_depth: the depth of asynchronous event vector queue
  * @ceqe_depth: the depth of completion event vector queue
