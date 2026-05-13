@@ -351,8 +351,10 @@ int ubase_ctrlq_init(struct ubase_dev *udev)
 		goto err_table_init;
 
 	udev->ctrlq.csq_next_seq = 1;
+	udev->ctrlq.last_clean_idx = 0;
 	atomic_set(&udev->ctrlq.req_cnt, 0);
 	sema_init(&udev->ctrlq.sem, UBASE_CTRLQ_SEM_VAL);
+	sema_init(&udev->ctrlq.msg_queue_sem, ubase_ctrlq_msg_queue_depth(udev));
 
 success:
 	set_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state);
@@ -417,7 +419,7 @@ static void ubase_ctrlq_clean_pending_msgs(struct ubase_dev *udev)
 	u32 i;
 
 	spin_lock_bh(&csq->lock);
-	for (i = 1; i < depth; i++) {
+	for (i = 0; i < depth; i++) {
 		ctx = &udev->ctrlq.msg_queue[i];
 		if (!completion_done(&ctx->done))
 			complete(&ctx->done);
@@ -720,18 +722,21 @@ static void ubase_ctrlq_addto_msg_queue(struct ubase_dev *udev, u16 seq,
 					struct ubase_ctrlq_msg *msg,
 					struct ubase_ctrlq_ue_info *ue_info)
 {
+	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
 	u32 depth = ubase_ctrlq_msg_queue_depth(udev);
 	struct ubase_ctrlq_msg_ctx *ctx;
+	unsigned int dead_time;
 
 	if (!(ubase_ctrlq_msg_is_sync_req(msg) ||
 	      ubase_ctrlq_msg_is_async_req(msg)))
 		return;
 
+	dead_time = UBASE_CTRLQ_DEAD_TIME(msg->timeout ? msg->timeout : csq->tx_timeout);
 	ctx = &udev->ctrlq.msg_queue[seq % depth];
 	ctx->valid = 1;
 	ctx->is_sync = ubase_ctrlq_msg_is_sync_req(msg) ? 1 : 0;
 	ctx->result = ETIME;
-	ctx->dead_jiffies = jiffies + msecs_to_jiffies(UBASE_CTRLQ_DEAD_TIME);
+	ctx->dead_jiffies = jiffies + msecs_to_jiffies(dead_time);
 	ctx->out = msg->out;
 	ctx->out_size = msg->out_size;
 
@@ -823,10 +828,21 @@ static int ubase_ctrlq_send_real(struct ubase_dev *udev,
 				 u16 num, bool need_retry,
 				 struct ubase_ctrlq_ue_info *ue_info)
 {
+#define CTRLQ_MSG_QUEUE_WAIT_MS 10000
+
 	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
 	struct ubase_ctrlq_base_block head = {0};
 	u16 seq, retry = 0;
 	int ret;
+
+	if (!ubase_ctrlq_msg_is_resp(msg)) {
+		if (down_timeout(&udev->ctrlq.msg_queue_sem,
+				 (long)msecs_to_jiffies(CTRLQ_MSG_QUEUE_WAIT_MS))) {
+			ubase_err_rl(udev, ctrlq_msg_queue_wait_timeout,
+				     "ctrlq msg queue wait timeout.\n");
+			return -EBUSY;
+		}
+	}
 
 	spin_lock_bh(&csq->lock);
 
@@ -834,6 +850,7 @@ static int ubase_ctrlq_send_real(struct ubase_dev *udev,
 		ret = ubase_ctrlq_alloc_seq(udev, &seq);
 		if (ret) {
 			spin_unlock_bh(&csq->lock);
+			up(&udev->ctrlq.msg_queue_sem);
 			ubase_warn_rl(udev, ctrlq_seq_insuffice,
 				      "no enough seq in ctrlq.\n");
 			return ret;
@@ -872,14 +889,18 @@ static int ubase_ctrlq_send_real(struct ubase_dev *udev,
 		 retry++ < UBASE_CTRLQ_RETRY_TIMES);
 
 	if (ubase_ctrlq_msg_is_sync_req(msg) ||
-	    ubase_ctrlq_msg_is_notify_req(msg))
+	    ubase_ctrlq_msg_is_notify_req(msg)) {
 		ubase_ctrlq_free_seq(udev, seq);
+		up(&udev->ctrlq.msg_queue_sem);
+	}
 
 	return ret;
 
 free_seq:
-	if (!ubase_ctrlq_msg_is_resp(msg))
+	if (!ubase_ctrlq_msg_is_resp(msg)) {
 		ubase_ctrlq_free_seq(udev, seq);
+		up(&udev->ctrlq.msg_queue_sem);
+	}
 	return ret;
 }
 
@@ -1160,10 +1181,11 @@ void ubase_ctrlq_handle_crq_msg(struct ubase_dev *udev,
 		}
 		ctx->valid = 0;
 		spin_unlock_bh(&csq->lock);
+
+		up(&udev->ctrlq.msg_queue_sem);
 	}
 
 	ubase_ctrlq_crq_event_callback(udev, head, msg_data, data_len, seq);
-	return;
 }
 
 static void ubase_ctrlq_handle_self_msg(struct ubase_dev *udev,
@@ -1201,6 +1223,7 @@ static void ubase_ctrlq_handle_other_msg(struct ubase_dev *udev,
 	struct ubase_ue2ue_ctrlq_head *ue2ue_head;
 	struct ubase_ctrlq_msg_ctx ctx = {0};
 	struct ubase_cmd_buf in;
+	bool need_up = false;
 	int ret = 0, async;
 	void *resp, *msg;
 
@@ -1214,9 +1237,14 @@ static void ubase_ctrlq_handle_other_msg(struct ubase_dev *udev,
 				      seq, head->opcode, head->service_type);
 			return;
 		}
-		if (!ctx.is_sync)
+		if (!ctx.is_sync) {
 			udev->ctrlq.msg_queue[seq % depth].valid = 0;
+			need_up = true;
+		}
 		spin_unlock_bh(&csq->lock);
+
+		if (need_up)
+			up(&udev->ctrlq.msg_queue_sem);
 	}
 
 	resp_len = head->bb_num * UBASE_CTRLQ_BB_LEN +
@@ -1369,21 +1397,33 @@ void ubase_ctrlq_crq_service_task(struct ubase_delay_work *ubase_work)
 
 void ubase_ctrlq_clean_service_task(struct ubase_dev *udev)
 {
+#define CTRLQ_MSG_CLEAN_CNT 100
+
 	u32 i, depth = ubase_ctrlq_msg_queue_depth(udev);
 	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
 	struct ubase_ctrlq_msg_ctx *ctx;
+	u32 loop = 0, up_cnt = 0;
 
 	if (!test_bit(UBASE_CTRLQ_STATE_ENABLE, &udev->ctrlq.state) ||
 	    ubase_dev_pmu_supported(udev))
 		return;
 
 	spin_lock_bh(&csq->lock);
-	for (i = 0; i < depth; i++) {
+	for (i = udev->ctrlq.last_clean_idx;
+	     i < depth && loop < CTRLQ_MSG_CLEAN_CNT;
+	     i++, loop++) {
 		ctx = &udev->ctrlq.msg_queue[i];
-		if (ctx->valid && time_is_before_eq_jiffies(ctx->dead_jiffies))
+		if (!ctx->is_sync && ctx->valid &&
+		    time_is_before_eq_jiffies(ctx->dead_jiffies)) {
 			ctx->valid = 0;
+			up_cnt++;
+		}
 	}
+	udev->ctrlq.last_clean_idx = i == depth ? 0 : i;
 	spin_unlock_bh(&csq->lock);
+
+	while (up_cnt--)
+		up(&udev->ctrlq.msg_queue_sem);
 }
 
 /**

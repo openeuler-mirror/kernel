@@ -260,6 +260,8 @@ struct ubase_ctrlq {
 	struct ubase_ctrlq_ue_req_table		ue_req_table;
 	struct ubase_ctrlq_ue_resp_table	ue_resp_table;
 	struct semaphore			sem;
+	struct semaphore			msg_queue_sem;
+	u32					last_clean_idx;
 };
 
 struct ubase_ctx_status {
