@@ -51,6 +51,14 @@ static char irqname[64] = "comp";
 module_param_string(irqname, irqname, sizeof(irqname), 0644);
 MODULE_PARM_DESC(irqname, "nic irq name string, default comp");
 
+unsigned int dft_num = 0x1000;
+module_param(dft_num, uint, 0444);
+MODULE_PARM_DESC(dft_num, "dev flow table entries, default 0x1000");
+
+unsigned int sft_num = 0x100000;
+module_param(sft_num, uint, 0444);
+MODULE_PARM_DESC(sft_num, "sock flow table entries, default 0x100000");
+
 static bool check_params(void)
 {
 	if (mode != 0 && mode != 1 && mode != 2)

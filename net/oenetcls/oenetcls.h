@@ -102,8 +102,6 @@ struct oecls_sock_flow_table {
 	u32 ents[] ____cacheline_aligned_in_smp;
 };
 
-#define OECLS_DEV_FLOW_TABLE_NUM	0x1000
-#define OECLS_SOCK_FLOW_TABLE_NUM	0x100000
 #define OECLS_DEV_FLOW_TABLE_SIZE(_num) (sizeof(struct oecls_dev_flow_table) + \
 		((_num) * sizeof(struct oecls_dev_flow)))
 #define OECLS_SOCK_FLOW_TABLE_SIZE(_num) (offsetof(struct oecls_sock_flow_table, ents[_num]))
@@ -135,6 +133,8 @@ extern int mode;
 extern int rcpu_probability;
 extern int oecls_netdev_num;
 extern int oecls_numa_num;
+extern unsigned int dft_num;
+extern unsigned int sft_num;
 
 #define oecls_debug(fmt, ...)					\
 	do {							\
