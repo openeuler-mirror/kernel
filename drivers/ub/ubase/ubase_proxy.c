@@ -148,17 +148,17 @@ int ubase_handle_ue_ctx_va_resp(void *dev, void *data, u32 len)
 	u16 ctx_type;
 
 	if (len != sizeof(*cmd)) {
-		ubase_err(udev,
-			  "ubase handle ctx va event msg len(%u) error, except len = %zu.\n",
-			  len, sizeof(*cmd));
+		dev_err_ratelimited(udev->dev,
+				    "ubase handle ctx va event msg len(%u) error, except len = %zu.\n",
+				    len, sizeof(*cmd));
 		return -EINVAL;
 	}
 
 	ctx_type = le16_to_cpu(cmd->ctx_type);
 	if (ctx_type >= UBASE_CTX_VA_TYPE_NUM) {
-		ubase_err(udev,
-			  "ubase handle ctx va event ctx type(%u) error.\n",
-			  ctx_type);
+		dev_err_ratelimited(udev->dev,
+				    "ubase handle ctx va event ctx type(%u) error.\n",
+				    ctx_type);
 		return -EINVAL;
 	}
 

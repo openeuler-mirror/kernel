@@ -181,8 +181,8 @@ void ubase_add_to_arq(struct ubase_dev *udev, u16 opcode, void *msg_data,
 	struct ubase_arq_msg_ring *arq = &udev->arq;
 
 	if (atomic_read(&arq->count) >= MAX_ARQ_MSG_NUM) {
-		ubase_warn(udev,
-			   "arq queue full, drop opcode = 0x%x.\n", opcode);
+		ubase_warn_rl(udev, arq_queue_full,
+			      "arq queue full, drop opcode = 0x%x.\n", opcode);
 		return;
 	}
 

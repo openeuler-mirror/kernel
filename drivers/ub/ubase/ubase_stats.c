@@ -40,7 +40,7 @@ static int ubase_update_mac_stats(struct ubase_dev *udev, u16 port_id, u64 *data
 	int ret;
 
 	if (!ubase_dev_mac_stats_supported(udev)) {
-		ubase_err(udev, "not support get mac stats.\n");
+		dev_err_ratelimited(udev->dev, "not support get mac stats.\n");
 		return -EOPNOTSUPP;
 	}
 

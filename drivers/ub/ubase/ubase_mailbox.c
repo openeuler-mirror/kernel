@@ -182,7 +182,8 @@ int ubase_handle_mbx_over_cmdq_resp(void *dev, void *data, u32 len)
 	info = udev->moc_info;
 
 	if (len < sizeof(*resp)) {
-		ubase_err(udev, "proxy resp len error, len = %u.\n", len);
+		dev_err_ratelimited(udev->dev,
+				    "proxy resp len error, len = %u.\n", len);
 		return -EINVAL;
 	}
 
@@ -192,16 +193,18 @@ int ubase_handle_mbx_over_cmdq_resp(void *dev, void *data, u32 len)
 	completion = xa_load(&info->seq_tbl, resp->seq_num);
 	if (!completion) {
 		xa_unlock(&info->seq_tbl);
-		ubase_err(udev, "proxy resp seq is invalid, seq = %u.\n",
-			  resp->seq_num);
+		ubase_err_rl(udev, proxy_resp_seq_invalid,
+			     "proxy resp seq is invalid, seq = %u.\n",
+			     resp->seq_num);
 		return -EINVAL;
 	}
 
 	if (resp->data_len != completion->mbox_resp_len) {
 		xa_unlock(&info->seq_tbl);
-		ubase_err(udev, "eq(%u) proxy resp len error, cur = %u, expect = %u.\n",
-			  resp->seq_num, resp->data_len,
-			  completion->mbox_resp_len);
+		dev_err_ratelimited(udev->dev,
+				    "seq(%u) proxy resp len error, cur = %u, expect = %u.\n",
+				    resp->seq_num, resp->data_len,
+				    completion->mbox_resp_len);
 		return -EINVAL;
 	}
 
@@ -263,20 +266,20 @@ struct ubase_cmd_mailbox *__ubase_alloc_cmd_mailbox(struct ubase_dev *udev)
 	struct ubase_cmd_mailbox *mailbox;
 
 	if (!udev->mb_cmd.pool) {
-		ubase_err(udev, "failed to alloc mailbox, pool is null.\n");
+		dev_err_ratelimited(udev->dev,
+				    "failed to alloc mailbox, pool is null.\n");
 		return NULL;
 	}
 
 	mailbox = kzalloc(sizeof(*mailbox), GFP_KERNEL);
-	if (!mailbox) {
-		ubase_err(udev, "failed to alloc mailbox.\n");
+	if (!mailbox)
 		goto failed_alloc_mailbox;
-	}
 
 	mailbox->buf = dma_pool_zalloc(udev->mb_cmd.pool, GFP_KERNEL,
 				       &mailbox->dma);
 	if (!mailbox->buf) {
-		ubase_err(udev, "failed to alloc buffer of mailbox.\n");
+		dev_err_ratelimited(udev->dev,
+				    "failed to alloc buffer of mailbox.\n");
 		goto failed_alloc_mailbox_buf;
 	}
 
@@ -490,9 +493,9 @@ static int ubase_cmd_mbox_event(struct ubase_dev *udev,
 
 	ret = ubase_post_mailbox_by_event(udev, &in, &out, mailbox);
 	if (ret)
-		ubase_err(udev,
-			  "failed to post mailbox 0x%x in event mode, ret = %d.\n",
-			  attr->op, ret);
+		ubase_err_rl(udev, post_mailbox_fail,
+			     "failed to post mailbox 0x%x in event mode, ret = %d.\n",
+			     attr->op, ret);
 
 	return ret;
 }
@@ -769,17 +772,17 @@ int __ubase_hw_upgrade_ctx_ex(struct ubase_dev *udev,
 		} else if (type == UBASE_MB_QUERY) {
 			ret = ubase_check_buf_ctx_page(udev, ctx_buf, attr->tag);
 			if (ret) {
-				ubase_info(udev,
-					   "A query operation is performed before the create operation, 0 is returned by default, op = 0x%x.\n",
-					   attr->op);
+				dev_info_ratelimited(udev->dev,
+						     "query ctx before create, op = 0x%x.\n",
+						     attr->op);
 				return 0;
 			}
 		} else if (type == UBASE_MB_MODIFY || type == UBASE_MB_DESTROY) {
 			ret = ubase_check_buf_ctx_page(udev, ctx_buf, attr->tag);
 			if (ret) {
-				ubase_info(udev,
-					   "An access operation is performed before the create operation, op = 0x%x.\n",
-					   attr->op);
+				dev_info_ratelimited(udev->dev,
+						     "access ctx before create, op = 0x%x.\n",
+						     attr->op);
 				return ret;
 			}
 		}

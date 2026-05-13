@@ -440,6 +440,37 @@ static int ubase_dbg_dump_prealloc_mem_info(struct seq_file *s, void *data)
 	return 0;
 }
 
+static int ubase_dbg_dump_limit_log_cnt(struct seq_file *s, void *data)
+{
+#define UBASE_PRINT_LOG_CNT(name) \
+	seq_printf(s, #name "_cnt:%u\n", udev->log_rs.name##_cnt)
+
+	struct ubase_dev *udev = dev_get_drvdata(s->private);
+
+	UBASE_PRINT_LOG_CNT(ctrlq_other_seq_invalid);
+	UBASE_PRINT_LOG_CNT(ctrlq_wait_resp_timeout);
+	UBASE_PRINT_LOG_CNT(ctrlq_crq_pi_invalid);
+	UBASE_PRINT_LOG_CNT(ctrlq_space_insuffice);
+	UBASE_PRINT_LOG_CNT(ue_send_ctrlq_to_cmdq_fail);
+	UBASE_PRINT_LOG_CNT(ctrlq_is_disabled);
+	UBASE_PRINT_LOG_CNT(ctrlq_seq_insuffice);
+	UBASE_PRINT_LOG_CNT(send_ctrlq_unsup_resp_fail);
+	UBASE_PRINT_LOG_CNT(send_ue_ctrlq_msg_to_cmdq_fail);
+	UBASE_PRINT_LOG_CNT(mbx_buff_not_empty);
+	UBASE_PRINT_LOG_CNT(cmdq_is_disable);
+	UBASE_PRINT_LOG_CNT(mailbox_cmd_timeout);
+	UBASE_PRINT_LOG_CNT(cmdq_space_insuffice);
+	UBASE_PRINT_LOG_CNT(post_mailbox_fail);
+	UBASE_PRINT_LOG_CNT(wait_mbox_fail);
+	UBASE_PRINT_LOG_CNT(aeq_event_type_exceed_max);
+	UBASE_PRINT_LOG_CNT(arq_queue_full);
+	UBASE_PRINT_LOG_CNT(send_ue_ctrlq_msg_fail);
+	UBASE_PRINT_LOG_CNT(proxy_resp_seq_invalid);
+	UBASE_PRINT_LOG_CNT(err_msn_in_act_resp);
+
+	return 0;
+}
+
 static bool __ubase_dbg_dentry_support(struct device *dev, u32 property)
 {
 	struct ubase_dev *udev = dev_get_drvdata(dev);
@@ -751,6 +782,14 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.support = __ubase_dbg_dentry_support,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_initial_qset_info,
+	},
+	{
+		.name = "limit_log_cnt",
+		.dentry_index = UBASE_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_ALL | UBASE_SUP_UBL_ETH,
+		.support = __ubase_dbg_dentry_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_limit_log_cnt,
 	},
 };
 
