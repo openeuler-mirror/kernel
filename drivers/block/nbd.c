@@ -985,7 +985,7 @@ static int find_fallback(struct nbd_device *nbd, int index)
 		goto no_fallback;
 
 	fallback = nsock->fallback_index;
-	if (fallback >= 0 && fallback < config->num_connections) {
+	if (fallback >= 0) {
 		fallback_nsock = xa_load(&config->socks, fallback);
 		if (fallback_nsock && !fallback_nsock->dead)
 			return fallback;
@@ -1040,12 +1040,6 @@ static blk_status_t nbd_handle_cmd(struct nbd_cmd *cmd, int index)
 		return BLK_STS_IOERR;
 	}
 
-	if (index >= config->num_connections) {
-		dev_err_ratelimited(disk_to_dev(nbd->disk),
-				    "Attempted send on invalid socket\n");
-		nbd_config_put(nbd);
-		return BLK_STS_IOERR;
-	}
 	cmd->status = BLK_STS_OK;
 again:
 	nsock = xa_load(&config->socks, index);
@@ -1390,11 +1384,9 @@ static void nbd_config_put(struct nbd_device *nbd)
 		}
 		nbd_clear_sock(nbd);
 
-		if (config->num_connections) {
-			xa_for_each(&config->socks, i, nsock) {
-				sockfd_put(nsock->sock);
-				kfree(nsock);
-			}
+		xa_for_each(&config->socks, i, nsock) {
+			sockfd_put(nsock->sock);
+			kfree(nsock);
 		}
 		xa_destroy(&config->socks);
 
