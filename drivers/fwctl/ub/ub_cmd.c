@@ -397,6 +397,172 @@ static int ubctl_query_dl_trace_data(struct ubctl_dev *ucdev,
 	return ret;
 }
 
+static int ubctl_query_perf_data(struct ubctl_dev *ucdev,
+				 struct ubctl_query_cmd_param *query_cmd_param,
+				 u32 port_bitmap, u32 period, u32 rpc_cmd)
+{
+	struct ubase_perf_stats_result *result_data;
+	u8 *perf_out_data;
+	int ret = 0;
+	u32 i = 0;
+
+	if (!ucdev || !query_cmd_param)
+		return -EINVAL;
+
+	if (!query_cmd_param->in || !query_cmd_param->out) {
+		ubctl_err(ucdev, "ubctl in or out is null.\n");
+		return -EINVAL;
+	}
+
+	if (query_cmd_param->out_len != UBCTL_MAX_PORT_NUM * UBCTL_DL_PERF_STATS_LEN ||
+	    sizeof(*result_data) < UBCTL_DL_PERF_STATS_LEN) {
+		ubctl_err(ucdev, "result data size is not equal to out len.\n");
+		return -EINVAL;
+	}
+
+	result_data = kvzalloc((UBCTL_MAX_PORT_NUM * sizeof(*result_data)), GFP_KERNEL);
+	if (!result_data)
+		return -ENOMEM;
+
+	if (rpc_cmd == UTOOL_CMD_QUERY_DL_PERF) {
+		ret = ubctl_query_perf_stats(ucdev, port_bitmap, result_data, UBCTL_MAX_PORT_NUM);
+		if (ret)
+			goto query_perf_failed;
+	} else {
+		ret = ubctl_query_perf(ucdev, port_bitmap, result_data, UBCTL_MAX_PORT_NUM, period);
+		if (ret)
+			goto query_perf_failed;
+	}
+
+	perf_out_data = (u8 *)query_cmd_param->out->data;
+	for (i = 0; i < UBCTL_MAX_PORT_NUM; i++) {
+		memcpy(perf_out_data, result_data, UBCTL_DL_PERF_STATS_LEN);
+		query_cmd_param->out->data_size += UBCTL_DL_PERF_STATS_LEN;
+		perf_out_data += UBCTL_DL_PERF_STATS_LEN;
+		result_data++;
+	}
+
+query_perf_failed:
+	if (ret)
+		ubctl_err(ucdev, "ubctl query perf failed, ret = %d.\n", ret);
+	kvfree(result_data);
+	return ret;
+}
+
+static int ubctl_query_dl_perf_data(struct ubctl_dev *ucdev,
+				    struct ubctl_query_cmd_param *query_cmd_param,
+				    struct ubctl_func_dispatch *query_func)
+{
+	if (query_cmd_param->in == NULL) {
+		ubctl_err(ucdev, "The input data is empty.\n");
+		return -EFAULT;
+	}
+
+	struct fwctl_pkt_in_port_time *pkt_in =
+		(struct fwctl_pkt_in_port_time *)query_cmd_param->in->data;
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port_time)) {
+		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		return -EINVAL;
+	}
+
+	return ubctl_query_perf_data(ucdev, query_cmd_param, pkt_in->port_id,
+				     pkt_in->time, query_func->rpc_cmd);
+}
+
+static int ubctl_query_dl_all_perf_data(struct ubctl_dev *ucdev,
+					struct ubctl_query_cmd_param *query_cmd_param,
+					struct ubctl_func_dispatch *query_func)
+{
+	struct fwctl_pkt_in_time *pkt_in = (struct fwctl_pkt_in_time *)query_cmd_param->in->data;
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_time)) {
+		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		return -EINVAL;
+	}
+
+	return ubctl_query_perf_data(ucdev, query_cmd_param, 0, pkt_in->time, query_func->rpc_cmd);
+}
+
+static int ubctl_query_dl_perf_stats_data(struct ubctl_dev *ucdev,
+					  struct ubctl_query_cmd_param *query_cmd_param,
+					  struct ubctl_func_dispatch *query_func)
+{
+	int ret;
+
+	if (query_cmd_param->in == NULL) {
+		ubctl_err(ucdev, "The input data is empty.\n");
+		return -EFAULT;
+	}
+
+	struct fwctl_pkt_in_port *pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
+		ubctl_err(ucdev, "user data of trace is invalid.\n");
+		return -EINVAL;
+	}
+
+	ret = ubctl_query_perf_data(ucdev, query_cmd_param, pkt_in->port_id,
+				    0, query_func->rpc_cmd);
+	query_cmd_param->out->retval = ret;
+
+	return ret;
+}
+
+static int ubctl_query_dl_start_perf_data(struct ubctl_dev *ucdev,
+					  struct ubctl_query_cmd_param *query_cmd_param,
+					  struct ubctl_func_dispatch *query_func)
+{
+	struct fwctl_pkt_in_port_time *pkt_in;
+	int ret;
+
+	if (query_cmd_param->in == NULL) {
+		ubctl_err(ucdev, "The input data is empty.\n");
+		return -EFAULT;
+	}
+
+	pkt_in = (struct fwctl_pkt_in_port_time *)query_cmd_param->in->data;
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port_time)) {
+		ubctl_err(ucdev, "user data of perf is invalid.\n");
+		return -EINVAL;
+	}
+
+	ret = ubase_open_perf_stats(ucdev->adev, pkt_in->port_id, pkt_in->time);
+	if (ret)
+		ubctl_err(ucdev, "ubase open perf stats failed, ret = %d.\n", ret);
+
+	query_cmd_param->out->retval = ret;
+
+	return ret;
+}
+
+static int ubctl_query_dl_stop_perf_data(struct ubctl_dev *ucdev,
+					 struct ubctl_query_cmd_param *query_cmd_param,
+					 struct ubctl_func_dispatch *query_func)
+{
+	struct fwctl_pkt_in_port *pkt_in;
+	int ret;
+
+	if (query_cmd_param->in == NULL) {
+		ubctl_err(ucdev, "The input data is empty.\n");
+		return -EFAULT;
+	}
+
+	if (query_cmd_param->in->data_size != sizeof(struct fwctl_pkt_in_port)) {
+		ubctl_err(ucdev, "user data of perf is invalid.\n");
+		return -EINVAL;
+	}
+
+	pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
+
+	ret = ubase_close_perf_stats(ucdev->adev, pkt_in->port_id);
+	if (ret)
+		ubctl_err(ucdev, "ubase close perf stats failed, ret = %d.\n", ret);
+
+	return ret;
+}
+
 static int ubctl_scc_data_deal(struct ubctl_dev *ucdev, u32 index,
 			       struct fwctl_rpc_ub_out *out,
 			       struct ubctl_scc_data *scc)
@@ -1537,6 +1703,12 @@ static struct ubctl_func_dispatch g_ubctl_query_func[] = {
 
 	{ UTOOL_CMD_QUERY_SCC_VERSION, ubctl_query_scc_data, ubctl_scc_version_deal },
 	{ UTOOL_CMD_QUERY_SCC_LOG, ubctl_query_scc_data, ubctl_scc_log_deal },
+
+	{ UTOOL_CMD_QUERY_DL_PERFORMANCE, ubctl_query_dl_perf_data, NULL },
+	{ UTOOL_CMD_QUERY_DL_ALL_PERF, ubctl_query_dl_all_perf_data, NULL },
+	{ UTOOL_CMD_QUERY_DL_PERF, ubctl_query_dl_perf_stats_data, NULL },
+	{ UTOOL_CMD_QUERY_DL_PERF_START, ubctl_query_dl_start_perf_data, NULL },
+	{ UTOOL_CMD_QUERY_DL_PERF_STOP, ubctl_query_dl_stop_perf_data, NULL },
 
 	{ UTOOL_CMD_QUERY_MSGQ_QUE_STATS, ubctl_query_msgq_que_stats_data,
 	  ubctl_msgq_que_data_deal },
