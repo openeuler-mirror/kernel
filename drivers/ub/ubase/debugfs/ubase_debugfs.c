@@ -453,6 +453,7 @@ static int ubase_dbg_dump_limit_log_cnt(struct seq_file *s, void *data)
 	UBASE_PRINT_LOG_CNT(ctrlq_space_insuffice);
 	UBASE_PRINT_LOG_CNT(ue_send_ctrlq_to_cmdq_fail);
 	UBASE_PRINT_LOG_CNT(ctrlq_is_disabled);
+	UBASE_PRINT_LOG_CNT(ctrlq_msg_queue_wait_timeout);
 	UBASE_PRINT_LOG_CNT(ctrlq_seq_insuffice);
 	UBASE_PRINT_LOG_CNT(send_ctrlq_unsup_resp_fail);
 	UBASE_PRINT_LOG_CNT(send_ue_ctrlq_msg_to_cmdq_fail);
