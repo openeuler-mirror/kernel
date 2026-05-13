@@ -362,7 +362,7 @@ static void ubase_report_rate_limited_log_cnt(struct ubase_dev *udev)
 {
 	if (udev->log_rs.aeq_event_type_exceed_max_cnt) {
 		ubase_warn(udev,
-			   "rate limited log: aeq_event_type_exceed_max_cnt = %llu.\n",
+			   "rate limited log: aeq_event_type_exceed_max_cnt = %u.\n",
 			   udev->log_rs.aeq_event_type_exceed_max_cnt);
 		udev->log_rs.aeq_event_type_exceed_max_cnt = 0;
 	}
@@ -552,7 +552,9 @@ static int ubase_handle_ue2ue_ctrlq_req(struct ubase_dev *udev,
 	}
 
 	if (cmd->in_size > (len - (sizeof(*cmd) + UBASE_CTRLQ_HDR_LEN))) {
-		ubase_err(udev, "ubase ue2ue cmd len = %u error.\n", cmd->in_size);
+		dev_err_ratelimited(udev->dev,
+				    "ubase ue2ue cmd len = %u error.\n",
+				    cmd->in_size);
 		return -EINVAL;
 	}
 
@@ -580,10 +582,9 @@ static int ubase_handle_ue2ue_ctrlq_req(struct ubase_dev *udev,
 
 	ret = __ubase_ctrlq_send(udev, &msg, false, &ue_info);
 	if (ret)
-		ubase_err(udev,
-			  "failed to send ue's ctrlq msg, ser_type = 0x%x, opc = 0x%x, bus_ue_id = %u, seq = %u, ret = %d.\n",
-			  head->service_type, head->opcode, ue_info.bus_ue_id,
-			  ue_info.seq, ret);
+		ubase_err_rl(udev, send_ue_ctrlq_msg_fail,
+			     "failed to send ue's ctrlq msg, ser_type = 0x%x, opc = 0x%x, bus_ue_id = %u, seq = %u, ret = %d.\n",
+			     head->service_type, head->opcode, ue_info.bus_ue_id, ue_info.seq, ret);
 
 	return ret;
 }
@@ -596,7 +597,8 @@ static int ubase_handle_ue2ue_ctrlq_event(struct ubase_dev *udev, void *data,
 	u32 ue2ue_data_len, ctrlq_msg_len;
 
 	if (len < (sizeof(*cmd) + UBASE_CTRLQ_HDR_LEN)) {
-		ubase_err(udev, "invalid ue2ue ctrlq event len(%u).\n", len);
+		dev_err_ratelimited(udev->dev,
+				    "invalid ue2ue ctrlq event len(%u).\n", len);
 		return -EINVAL;
 	}
 
@@ -645,8 +647,9 @@ static int ubase_handle_ue2ue_event(void *dev, void *data, u32 len)
 								   len);
 	}
 
-	ubase_warn(udev, "unknown ubase ue2ue event, sub_cmd = %u.\n",
-		   head->sub_cmd);
+	dev_warn_ratelimited(udev->dev,
+			     "unknown ubase ue2ue event, sub_cmd = %u.\n",
+			     head->sub_cmd);
 
 	return 0;
 }
@@ -691,9 +694,9 @@ static int ubase_handle_activate_resp(void *dev, void *data, u32 len)
 		return 0;
 	}
 
-	ubase_warn(udev,
-		   "unknown msn in activate resp, msn = %u, self msn = %u, other msn = %u.\n",
-		   msn, self->wait_msn, other->wait_msn);
+	ubase_warn_rl(udev, err_msn_in_act_resp,
+		      "unknown msn in activate resp, msn = %u, self msn = %u, other msn = %u.\n",
+		      msn, self->wait_msn, other->wait_msn);
 
 	return -EIO;
 }
@@ -773,12 +776,26 @@ static int ubase_notify_drv_capbilities(struct ubase_dev *udev)
 
 static int ubase_log_rs_init(struct ubase_dev *udev)
 {
-#define UBASE_RATELIMIT_INTERVAL (1 * HZ)
-#define UBASE_RATELIMIT_BURST 5
-
-	raw_spin_lock_init(&udev->log_rs.rs.lock);
-	udev->log_rs.rs.interval = UBASE_RATELIMIT_INTERVAL;
-	udev->log_rs.rs.burst = UBASE_RATELIMIT_BURST;
+	UBASE_RATELIMIT_INIT(udev, ctrlq_other_seq_invalid);
+	UBASE_RATELIMIT_INIT(udev, ctrlq_wait_resp_timeout);
+	UBASE_RATELIMIT_INIT(udev, ctrlq_crq_pi_invalid);
+	UBASE_RATELIMIT_INIT(udev, ctrlq_space_insuffice);
+	UBASE_RATELIMIT_INIT(udev, ue_send_ctrlq_to_cmdq_fail);
+	UBASE_RATELIMIT_INIT(udev, ctrlq_is_disabled);
+	UBASE_RATELIMIT_INIT(udev, ctrlq_seq_insuffice);
+	UBASE_RATELIMIT_INIT(udev, send_ctrlq_unsup_resp_fail);
+	UBASE_RATELIMIT_INIT(udev, send_ue_ctrlq_msg_to_cmdq_fail);
+	UBASE_RATELIMIT_INIT(udev, mbx_buff_not_empty);
+	UBASE_RATELIMIT_INIT(udev, cmdq_is_disable);
+	UBASE_RATELIMIT_INIT(udev, mailbox_cmd_timeout);
+	UBASE_RATELIMIT_INIT(udev, cmdq_space_insuffice);
+	UBASE_RATELIMIT_INIT(udev, post_mailbox_fail);
+	UBASE_RATELIMIT_INIT(udev, wait_mbox_fail);
+	UBASE_RATELIMIT_INIT(udev, aeq_event_type_exceed_max);
+	UBASE_RATELIMIT_INIT(udev, arq_queue_full);
+	UBASE_RATELIMIT_INIT(udev, send_ue_ctrlq_msg_fail);
+	UBASE_RATELIMIT_INIT(udev, proxy_resp_seq_invalid);
+	UBASE_RATELIMIT_INIT(udev, err_msn_in_act_resp);
 
 	return 0;
 }
@@ -1583,7 +1600,7 @@ void ubase_virt_handler(struct ubase_dev *udev, u16 bus_ue_id, bool is_en)
 	mutex_unlock(&udev->priv.uadev_lock);
 }
 
-bool ubase_dbg_default(void)
+bool ubase_dbg_log(void)
 {
 	return ubase_debug;
 }

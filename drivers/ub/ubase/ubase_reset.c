@@ -315,7 +315,8 @@ void ubase_errhandle_service_task(struct ubase_delay_work *ubase_work)
 		return;
 
 	if (!ubase_dev_err_handle_supported(udev)) {
-		ubase_err(udev, "not support err handle processing.\n");
+		dev_err_ratelimited(udev->dev,
+				    "not support err handle processing.\n");
 		return;
 	}
 
