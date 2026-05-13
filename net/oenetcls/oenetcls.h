@@ -17,6 +17,8 @@
 #define OECLS_CMD_MATCHED      1
 #define OECLS_CMD_NO_MATCH     2
 
+#define RXQ_MAX_USECNT        0xFF
+
 struct oecls_netdev_queue_info {
 	int irq;
 	int affinity_cpu;
@@ -42,7 +44,7 @@ struct oecls_numa_clusterinfo {
 };
 
 struct oecls_numa_bound_dev_info {
-	DECLARE_BITMAP(bitmap_rxq, OECLS_MAX_RXQ_NUM_PER_DEV);
+	unsigned char bitmap_rxq[OECLS_MAX_RXQ_NUM_PER_DEV];
 	struct oecls_numa_clusterinfo *cluster_info;
 };
 
