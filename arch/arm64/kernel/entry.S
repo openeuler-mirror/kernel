@@ -29,6 +29,29 @@
 #include <asm/asm-uaccess.h>
 #include <asm/unistd.h>
 
+	.macro sync_sei, label = esb
+#ifdef CONFIG_ARM64_SYNC_SEI
+	.if     \label != xcall
+	/* Use ESB to synchronize SEI at the entry and exit of exception */
+	esb
+	.endif
+	.endm
+
+	.macro sei_restore_sp_el0, tmp1:req, tmp2:req
+	/*
+	 * It must restore SP_EL0 from per-cpu variable __entry_task, since TF
+	 * firmware clobbers the SP_EL0 before SEI is delegated back.
+	 */
+	mov	\tmp1, (1UL << VA_BITS)
+	mrs	\tmp2, sp_el0
+	cmp	\tmp2, \tmp1
+	b.cs	.Lskip_sp_el0_restore
+	ldr_this_cpu  \tmp2, __entry_task, \tmp1
+	msr	sp_el0, \tmp2
+.Lskip_sp_el0_restore:
+#endif /* CONFIG_ARM64_SYNC_SEI */
+	.endm
+
 	.macro	clear_gp_regs
 	.irp	n,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29
 	mov	x\n, xzr
@@ -39,6 +62,7 @@
 	.align 7
 .Lventry_start\@:
 	.if	\el == 0
+	sync_sei \label
 	/*
 	 * This must be the first instruction of the EL0 vector entries. It is
 	 * skipped by the trampoline vectors, to trigger the cleanup.
@@ -75,7 +99,15 @@
 	tbnz	x0, #THREAD_SHIFT, 0f
 	sub	x0, sp, x0			// x0'' = sp' - x0' = (sp + x0) - sp = x0
 	sub	sp, sp, x0			// sp'' = sp' - x0 = (sp + x0) - x0 = sp
+#ifdef CONFIG_FAST_SYSCALL
+	.if	\label == xcall
+	b	el\el\ht\()_\regsize\()_sync
+	.else
 	b	el\el\ht\()_\regsize\()_\label
+	.endif
+#else
+	b	el\el\ht\()_\regsize\()_\label
+#endif
 
 0:
 	/*
@@ -107,7 +139,15 @@
 	sub	sp, sp, x0
 	mrs	x0, tpidrro_el0
 #endif
+#ifdef CONFIG_FAST_SYSCALL
+	.if	\label == xcall
+	b	el\el\ht\()_\regsize\()_sync
+	.else
 	b	el\el\ht\()_\regsize\()_\label
+	.endif
+#else
+	b	el\el\ht\()_\regsize\()_\label
+#endif
 .org .Lventry_start\@ + 128	// Did we overflow the ventry slot?
 	.endm
 
@@ -715,6 +755,13 @@ SYM_CODE_START_LOCAL(el\el\ht\()_\regsize\()_\label)
 	.endif
 #endif
 	kernel_entry \el, \regsize
+
+#ifdef CONFIG_ARM64_SYNC_SEI
+	.if \el == 1 && \ht == h && \label == error
+	sei_restore_sp_el0 x20, x21
+	.endif
+#endif
+
 	mov	x0, sp
 	bl	el\el\ht\()_\regsize\()_\label\()_handler
 	.if \el == 0
@@ -832,6 +879,7 @@ alternative_else_nop_endif
 	.macro tramp_ventry, vector_start, regsize, kpti, bhb
 	.align	7
 1:
+	sync_sei
 	.if	\regsize == 64
 	msr	tpidrro_el0, x30	// Restored in kernel_ventry
 	.endif
@@ -906,6 +954,10 @@ alternative_endif
 	.endif // \bhb == BHB_MITIGATION_FW
 
 	add	x30, x30, #(1b - \vector_start + 4)
+#ifdef CONFIG_ARM64_SYNC_SEI
+	/* Skip the 'ESB' and 'B' at default vector entry */
+	add	x30, x30, #4
+#endif
 	ret
 .org 1b + 128	// Did we overflow the ventry slot?
 	.endm
