@@ -3669,6 +3669,6 @@ static inline bool cachefiles_ondemand_is_enabled(void)
 }
 #endif
 
-bool generic_atomic_write_valid(struct iov_iter *iter, loff_t pos);
+bool generic_atomic_write_valid(struct kiocb *iocb, struct iov_iter *iter);
 
 #endif /* _LINUX_FS_H */
