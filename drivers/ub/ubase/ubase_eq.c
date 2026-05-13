@@ -285,8 +285,9 @@ static bool ubase_is_udma_tp_event(struct ubase_dev *udev, u32 tpn)
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
 	if (!tpg) {
-		ubase_warn(udev, "unexpected tp event, tpn = %u.\n", tpn);
 		spin_unlock(&udev->tp_ctx.tpg_lock);
+		dev_warn_ratelimited(udev->dev,
+				     "unexpected tp event, tpn = %u.\n", tpn);
 		return true;
 	}
 
@@ -346,7 +347,7 @@ static void ubase_aeq_event_handler(struct ubase_dev *udev,
 	u8 idx;
 
 	if (event_type >= UBASE_EVENT_TYPE_MAX) {
-		ubase_err_rl(udev, udev->log_rs.aeq_event_type_exceed_max_cnt,
+		ubase_err_rl(udev, aeq_event_type_exceed_max,
 			     "event type wrong, event_type = %u.\n", event_type);
 		return;
 	}

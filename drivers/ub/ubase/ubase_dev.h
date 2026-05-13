@@ -23,55 +23,11 @@
 
 #include "ubase.h"
 #include "ubase_eq.h"
+#include "ubase_log.h"
 #include "ubase_proxy.h"
 #include "ubase_ubus.h"
 
 #define UBASE_MOD_VERSION		"1.0"
-
-#define ubase_dbg(_udev, fmt, ...) do {	                                      \
-	if (ubase_dbg_default())                                              \
-		dev_info(_udev->dev, "(pid %d) " fmt,                         \
-			 current->pid, ##__VA_ARGS__);                        \
-	} while (0)
-
-#define ubase_err(_udev, fmt, ...)                                            \
-	dev_err(_udev->dev, "(pid %d) " fmt,                                  \
-		current->pid, ##__VA_ARGS__)
-
-#define ubase_info(_udev, fmt, ...)                                           \
-	dev_info(_udev->dev, "(pid %d) " fmt,                                 \
-		 current->pid, ##__VA_ARGS__)
-
-#define ubase_warn(_udev, fmt, ...)                                           \
-	dev_warn(_udev->dev, "(pid %d) " fmt,                                 \
-		 current->pid, ##__VA_ARGS__)
-
-#define ubase_err_rl(_udev, log_cnt, fmt, ...) do {                           \
-	if (__ratelimit(&(_udev->log_rs.rs))) {                               \
-		ubase_err(_udev, fmt, ##__VA_ARGS__);                         \
-	} else {                                                              \
-		(log_cnt)++;                                                  \
-		ubase_dbg(_udev, fmt, ##__VA_ARGS__);                         \
-	}                                                                     \
-} while (0)
-
-#define ubase_info_rl(_udev, log_cnt, fmt, ...) do {                          \
-	if (__ratelimit(&(_udev->log_rs.rs))) {                               \
-		ubase_info(_udev, fmt, ##__VA_ARGS__);                        \
-	} else {                                                              \
-		(log_cnt)++;                                                  \
-		ubase_dbg(_udev, fmt, ##__VA_ARGS__);                         \
-	}                                                                     \
-} while (0)
-
-#define ubase_warn_rl(_udev, log_cnt, fmt, ...) do {                          \
-	if (__ratelimit(&(_udev->log_rs.rs))) {                               \
-		ubase_warn(_udev, fmt, ##__VA_ARGS__);                        \
-	} else {                                                              \
-		(log_cnt)++;                                                  \
-		ubase_dbg(_udev, fmt, ##__VA_ARGS__);                         \
-	}                                                                     \
-} while (0)
 
 struct ubase_ctx_buf {
 	struct ubase_ctx_buf_cap jfs;
@@ -375,15 +331,6 @@ struct ubase_mbox_over_cmdq_info {
 	wait_queue_head_t queue;
 };
 
-struct ubase_log_rs {
-	struct ratelimit_state rs;
-	u16 ctrlq_other_seq_invalid_log_cnt;
-	u64 aeq_event_type_exceed_max_cnt;
-	u32 ctrlq_wait_resp_timeout_cnt;
-	u32 ctrlq_pi_invalid_cnt;
-	u32 mbx_buff_not_empty_cnt;
-};
-
 struct ubase_dtu_info {
 	struct iommu_domain	*domain;
 	struct iova_slot	*dtu_slot;
@@ -479,7 +426,7 @@ struct ubase_init_function {
 	void (*uninit_func)(struct ubase_dev *udev);
 };
 
-bool ubase_dbg_default(void);
+bool ubase_dbg_log(void);
 bool ubase_dev_urma_supported(struct ubase_dev *udev);
 bool ubase_dev_unic_supported(struct ubase_dev *udev);
 bool ubase_dev_cdma_supported(struct ubase_dev *udev);
