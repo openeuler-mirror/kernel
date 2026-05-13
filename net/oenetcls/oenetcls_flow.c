@@ -257,6 +257,11 @@ static void __oecls_set_cpu(struct sk_buff *skb, struct net_device *ndev,
 	else
 		newcpu = last_recv_cpu;
 
+	if (rflow->isvalid && cpu_to_node(rflow->cpu) == cpu_to_node(newcpu)) {
+		rflow->timeout = jiffies;
+		return;
+	}
+
 	if (cpu_to_node(cpu) == cpu_to_node(newcpu))
 		return;
 
@@ -348,9 +353,8 @@ static int oecls_dev_flow_table_release(void)
 static int _oecls_dev_flow_table_init(struct net_device *netdev)
 {
 	struct oecls_dev_flow_table *table;
-	int size = OECLS_DEV_FLOW_TABLE_NUM;
+	int size = dft_num, i, j, ret = 0;
 	struct netdev_rx_queue *queue;
-	int i, j, ret = 0;
 
 	size = roundup_pow_of_two(size);
 	oecls_debug("dev:%s, num_rx_queues:%d, mask:0x%x\n", netdev->name, netdev->num_rx_queues,
@@ -428,8 +432,7 @@ static int oecls_sock_flow_table_release(void)
 static int oecls_sock_flow_table_init(void)
 {
 	struct oecls_sock_flow_table *table;
-	int size = OECLS_SOCK_FLOW_TABLE_NUM;
-	int i;
+	int size = sft_num, i;
 
 	size = roundup_pow_of_two(size);
 	table = vmalloc(OECLS_SOCK_FLOW_TABLE_SIZE(size));
