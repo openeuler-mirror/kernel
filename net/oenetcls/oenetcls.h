@@ -3,6 +3,7 @@
 #define _NET_OENETCLS_H
 #include <linux/if.h>
 #include <linux/mutex.h>
+#include <linux/skbuff.h>
 #include <linux/cpufeature.h>
 
 #define OECLS_MAX_NETDEV_NUM 8
@@ -55,7 +56,9 @@ struct oecls_numa_info {
 
 struct cmd_context {
 	char netdev[IFNAMSIZ];
+	bool is_ipv6;
 	u32 dip4;
+	u32 dip6[4];
 	u16 dport;
 	u16 action;
 	u32 ruleid;
@@ -76,11 +79,13 @@ struct oecls_sk_rule {
 	struct hlist_node node;
 	int devid;
 	void *sk;
-	int dip4;
-	int dport;
+	bool is_ipv6;
+	u32 dip4;
+	u32 dip6[4];
+	u16 dport;
 	int action;
 	int ruleid;
-	int cpu;
+	int nid;
 };
 
 struct oecls_sk_entry {
@@ -130,6 +135,7 @@ struct cfg_param {
 	struct cmd_context ctx;
 	struct sock *sk;
 	bool is_del;
+	int nid;
 	int cpu;
 };
 
