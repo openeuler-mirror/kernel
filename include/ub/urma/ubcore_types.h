@@ -1318,6 +1318,8 @@ struct ubcore_jfc {
 	uint64_t urma_jfc; /* user space jfc pointer */
 	struct hlist_node hnode;
 	atomic_t use_cnt;
+	struct kref ref_cnt;
+	struct completion comp;
 	struct ubcore_jfc_opt jfc_opt;
 };
 

@@ -497,6 +497,7 @@ static inline void blk_throtl_update_limit_valid(struct throtl_data *td)
 }
 #endif
 
+static void tg_flush_bios(struct throtl_grp *tg);
 static void throtl_upgrade_state(struct throtl_data *td);
 static void throtl_pd_offline(struct blkg_policy_data *pd)
 {
@@ -511,6 +512,8 @@ static void throtl_pd_offline(struct blkg_policy_data *pd)
 
 	if (!tg->td->limit_valid[tg->td->limit_index])
 		throtl_upgrade_state(tg->td);
+
+	tg_flush_bios(tg);
 }
 
 static void throtl_pd_free(struct blkg_policy_data *pd)
@@ -783,14 +786,23 @@ static inline void throtl_trim_slice(struct throtl_grp *tg, bool rw)
 	 * sooner, then we need to reduce slice_end. A high bogus slice_end
 	 * is bad because it does not allow new slice to start.
 	 */
-
 	throtl_set_slice_end(tg, rw, jiffies + tg->td->throtl_slice);
 
 	time_elapsed = rounddown(jiffies - tg->slice_start[rw],
 				 tg->td->throtl_slice);
-	if (!time_elapsed)
+	/* Don't trim slice until at least 2 slices are used */
+	if (time_elapsed < tg->td->throtl_slice * 2)
 		return;
 
+	/*
+	 * The bio submission time may be a few jiffies more than the expected
+	 * waiting time, due to 'extra_bytes' can't be divided in
+	 * tg_within_bps_limit(), and also due to timer wakeup delay. In this
+	 * case, adjust slice_start will discard the extra wait time, causing
+	 * lower rate than expected. Therefore, other than the above rounddown,
+	 * one extra slice is preserved for deviation.
+	 */
+	time_elapsed -= tg->td->throtl_slice;
 	bytes_trim = calculate_bytes_allowed(tg_bps_limit(tg, rw),
 					     time_elapsed) +
 		     tg->carryover_bytes[rw];
@@ -877,6 +889,9 @@ static unsigned long tg_within_iops_limit(struct throtl_grp *tg, struct bio *bio
 
 	/* Calc approx time to dispatch */
 	jiffy_wait = jiffy_elapsed_rnd - jiffy_elapsed;
+
+	/* make sure at least one io can be dispatched after waiting */
+	jiffy_wait = max(jiffy_wait, HZ / iops_limit + 1);
 	return jiffy_wait;
 }
 
@@ -1734,6 +1749,37 @@ static void throtl_shutdown_wq(struct request_queue *q)
 	cancel_work_sync(&td->dispatch_work);
 }
 
+static void tg_flush_bios(struct throtl_grp *tg)
+{
+	struct throtl_service_queue *sq = &tg->service_queue;
+
+	if (tg->flags & THROTL_TG_CANCELING)
+		return;
+	/*
+	 * Set the flag to make sure throtl_pending_timer_fn() won't
+	 * stop until all throttled bios are dispatched.
+	 */
+	tg->flags |= THROTL_TG_CANCELING;
+
+	/*
+	 * Do not dispatch cgroup without THROTL_TG_PENDING or cgroup
+	 * will be inserted to service queue without THROTL_TG_PENDING
+	 * set in tg_update_disptime below. Then IO dispatched from
+	 * child in tg_dispatch_one_bio will trigger double insertion
+	 * and corrupt the tree.
+	 */
+	if (!(tg->flags & THROTL_TG_PENDING))
+		return;
+
+	/*
+	 * Update disptime after setting the above flag to make sure
+	 * throtl_select_dispatch() won't exit without dispatching.
+	 */
+	tg_update_disptime(tg);
+
+	throtl_schedule_pending_timer(sq, jiffies + 1);
+}
+
 struct blkcg_policy blkcg_policy_throtl = {
 	.dfl_cftypes		= throtl_files,
 	.legacy_cftypes		= throtl_legacy_files,
@@ -1759,32 +1805,15 @@ void blk_throtl_cancel_bios(struct gendisk *disk)
 	 */
 	rcu_read_lock();
 	blkg_for_each_descendant_post(blkg, pos_css, q->root_blkg) {
-		struct throtl_grp *tg = blkg_to_tg(blkg);
-		struct throtl_service_queue *sq = &tg->service_queue;
-
 		/*
-		 * Set the flag to make sure throtl_pending_timer_fn() won't
-		 * stop until all throttled bios are dispatched.
+		 * disk_release will call pd_offline_fn to cancel bios.
+		 * However, disk_release can't be called if someone get
+		 * the refcount of device and issued bios which are
+		 * inflight after del_gendisk.
+		 * Cancel bios here to ensure no bios are inflight after
+		 * del_gendisk.
 		 */
-		tg->flags |= THROTL_TG_CANCELING;
-
-		/*
-		 * Do not dispatch cgroup without THROTL_TG_PENDING or cgroup
-		 * will be inserted to service queue without THROTL_TG_PENDING
-		 * set in tg_update_disptime below. Then IO dispatched from
-		 * child in tg_dispatch_one_bio will trigger double insertion
-		 * and corrupt the tree.
-		 */
-		if (!(tg->flags & THROTL_TG_PENDING))
-			continue;
-
-		/*
-		 * Update disptime after setting the above flag to make sure
-		 * throtl_select_dispatch() won't exit without dispatching.
-		 */
-		tg_update_disptime(tg);
-
-		throtl_schedule_pending_timer(sq, jiffies + 1);
+		tg_flush_bios(blkg_to_tg(blkg));
 	}
 	rcu_read_unlock();
 	spin_unlock_irq(&q->queue_lock);
@@ -2202,6 +2231,15 @@ static void throtl_upgrade_state(struct throtl_data *td)
 }
 #endif
 
+static bool tg_within_limit(struct throtl_grp *tg, struct bio *bio, bool rw)
+{
+	/* throtl is FIFO - if bios are already queued, should queue */
+	if (tg->service_queue.nr_queued[rw])
+		return false;
+
+	return tg_may_dispatch(tg, bio, NULL);
+}
+
 bool __blk_throtl_bio(struct bio *bio)
 {
 	struct request_queue *q = bdev_get_queue(bio->bi_bdev);
@@ -2229,12 +2267,34 @@ again:
 			tg->last_low_overflow_time[rw] = jiffies;
 		throtl_downgrade_check(tg);
 		throtl_upgrade_check(tg);
-		/* throtl is FIFO - if bios are already queued, should queue */
-		if (sq->nr_queued[rw])
-			break;
+		if (tg_within_limit(tg, bio, rw)) {
+			/* within limits, let's charge and dispatch directly */
+			throtl_charge_bio(tg, bio);
 
-		/* if above limits, break to queue */
-		if (!tg_may_dispatch(tg, bio, NULL)) {
+			/*
+			 * We need to trim slice even when bios are not being
+			 * queued otherwise it might happen that a bio is not
+			 * queued for a long time and slice keeps on extending
+			 * and trim is not called for a long time. Now if limits
+			 * are reduced suddenly we take into account all the IO
+			 * dispatched so far at new low rate and * newly queued
+			 * IO gets a really long dispatch time.
+			 *
+			 * So keep on trimming slice even if bio is not queued.
+			 */
+			throtl_trim_slice(tg, rw);
+		} else if (bio_issue_as_root_blkg(bio)) {
+			/*
+			 * IOs which may cause priority inversions are
+			 * dispatched directly, even if they're over limit.
+			 *
+			 * Charge and dispatch directly, and our throttle
+			 * control algorithm is adaptive, and extra IO byte
+			 * will be throttled for paying the debt
+			 */
+			throtl_charge_bio(tg, bio);
+		} else {
+			/* if above limits, break to queue */
 			tg->last_low_overflow_time[rw] = jiffies;
 			if (throtl_can_upgrade(td, tg)) {
 				throtl_upgrade_state(td);
@@ -2242,22 +2302,6 @@ again:
 			}
 			break;
 		}
-
-		/* within limits, let's charge and dispatch directly */
-		throtl_charge_bio(tg, bio);
-
-		/*
-		 * We need to trim slice even when bios are not being queued
-		 * otherwise it might happen that a bio is not queued for
-		 * a long time and slice keeps on extending and trim is not
-		 * called for a long time. Now if limits are reduced suddenly
-		 * we take into account all the IO dispatched so far at new
-		 * low rate and * newly queued IO gets a really long dispatch
-		 * time.
-		 *
-		 * So keep on trimming slice even if bio is not queued.
-		 */
-		throtl_trim_slice(tg, rw);
 
 		/*
 		 * @bio passed through this layer without being throttled.

@@ -62,6 +62,9 @@ struct fwnode_handle;
  *			this bus.
  * @pm:		Power management operations of this bus, callback the specific
  *		device driver's pm-ops.
+ * @driver_override:	Set to true if this bus supports the driver_override
+ *			mechanism, which allows userspace to force a specific
+ *			driver to bind to a device via a sysfs attribute.
  * @need_parent_lock:	When probing or removing a device on this bus, the
  *			device core should lock the device's parent.
  *
@@ -103,7 +106,7 @@ struct bus_type {
 
 	bool need_parent_lock;
 
-	KABI_RESERVE(1)
+	KABI_USE(1, bool driver_override)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

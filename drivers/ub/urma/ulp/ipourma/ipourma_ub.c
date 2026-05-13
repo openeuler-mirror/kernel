@@ -764,14 +764,13 @@ void ipourma_handle_tx_wc(struct net_device *dev,
 	if (unlikely(cr->status == UBCORE_CR_FLUSH_ERR))
 		priv->runtime_stats.tx_stats.flush_jetty_success++;
 
-	eid_idx = cr->local_id - IPOURMA_WELL_KNOWN_JETTY_ID;
 	if (unlikely(cr->local_id < IPOURMA_WELL_KNOWN_JETTY_ID ||
 		cr->local_id >= IPOURMA_MAX_EID_CNT + IPOURMA_WELL_KNOWN_JETTY_ID)) {
 		netdev_dbg(dev, "%s:%u\n",
-				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_JETTY_IDX), eid_idx);
+				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_JETTY_IDX), cr->local_id);
 		return;
 	}
-
+	eid_idx = cr->local_id - IPOURMA_WELL_KNOWN_JETTY_ID;
 	idx = cr->user_ctx;
 	if (IS_ERR_OR_NULL(priv->tx_ring[eid_idx]) ||
 		unlikely(idx >= ipourma_tx_ring_size)) {
@@ -844,13 +843,13 @@ void ipourma_handle_rx_wc(struct net_device *dev,
 		return;
 	}
 	priv->runtime_stats.rx_stats.cqe_success++;
-	eid_idx = cr->local_id - IPOURMA_WELL_KNOWN_JETTY_ID;
 	if (unlikely(cr->local_id < IPOURMA_WELL_KNOWN_JETTY_ID ||
 		cr->local_id >= IPOURMA_MAX_EID_CNT + IPOURMA_WELL_KNOWN_JETTY_ID)) {
 		netdev_dbg(dev, "%s:%u\n",
-				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_JETTY_IDX), eid_idx);
+				   ipourma_err_desc(IPOURMA_INCORRECT_WQE_JETTY_IDX), cr->local_id);
 		return;
 	}
+	eid_idx = cr->local_id - IPOURMA_WELL_KNOWN_JETTY_ID;
 	idx = cr->user_ctx;
 	if (IS_ERR_OR_NULL(priv->rx_ring[eid_idx]) ||
 		unlikely(idx >= ipourma_rx_ring_size)) {

@@ -30,7 +30,7 @@
 #include "ubcore_device.h"
 #include "ubcore_opt.h"
 
-const struct ubcore_opt_map_t g_ubcore_jfc_opt_table[] = {
+const struct ubcore_opt_map g_ubcore_jfc_opt_table[] = {
 	/* opt, mask, target, offset, size */
 	/* ---- CFG ---- */
 	{ UBCORE_JFC_DEPTH,         UBCORE_CFG_MASK,     TARGET_CFG,
@@ -71,7 +71,7 @@ const struct ubcore_opt_map_t g_ubcore_jfc_opt_table[] = {
 
 const size_t g_ubcore_jfc_opt_map_count = ARRAY_SIZE(g_ubcore_jfc_opt_table);
 
-const struct ubcore_opt_map_t g_ubcore_jfr_opt_table[] = {
+const struct ubcore_opt_map g_ubcore_jfr_opt_table[] = {
 	/* opt, mask, target, offset, size */
 
 	{ UBCORE_JFR_DEPTH,         UBCORE_CFG_MASK,     TARGET_CFG,
@@ -121,7 +121,7 @@ const struct ubcore_opt_map_t g_ubcore_jfr_opt_table[] = {
 };
 const size_t g_ubcore_jfr_opt_map_count = ARRAY_SIZE(g_ubcore_jfr_opt_table);
 
-const struct ubcore_opt_map_t g_ubcore_jfs_opt_table[] = {
+const struct ubcore_opt_map g_ubcore_jfs_opt_table[] = {
 	/* opt, mask, target, offset, size */
 	{ UBCORE_JFS_DEPTH,         UBCORE_CFG_MASK,     TARGET_CFG,
 	  offsetof(struct ubcore_jfs_cfg, depth),        4 },
@@ -178,7 +178,7 @@ const struct ubcore_opt_map_t g_ubcore_jfs_opt_table[] = {
 };
 const size_t g_ubcore_jfs_opt_map_count = ARRAY_SIZE(g_ubcore_jfs_opt_table);
 
-const struct ubcore_opt_map_t g_ubcore_jetty_opt_table[] = {
+const struct ubcore_opt_map g_ubcore_jetty_opt_table[] = {
 	/* opt, mask, target, offset, size */
 	{ UBCORE_JETTY_ID,       UBCORE_CFG_MASK, TARGET_CFG,
 		offsetof(struct ubcore_jetty_cfg, id), 4 },
@@ -224,6 +224,26 @@ const struct ubcore_opt_map_t g_ubcore_jetty_opt_table[] = {
 };
 
 const size_t g_ubcore_jetty_opt_map_count = ARRAY_SIZE(g_ubcore_jetty_opt_table);
+
+static void ubcore_jfc_kref_release(struct kref *ref_cnt)
+{
+	struct ubcore_jfc *jfc =
+		container_of(ref_cnt, struct ubcore_jfc, ref_cnt);
+
+	complete(&jfc->comp);
+}
+void ubcore_jfc_get(void *obj)
+{
+	struct ubcore_jfc *jfc = obj;
+
+	kref_get(&jfc->ref_cnt);
+}
+
+void ubcore_put_jfc(struct ubcore_jfc *jfc)
+{
+	if (jfc)
+		(void)kref_put(&jfc->ref_cnt, ubcore_jfc_kref_release);
+}
 
 static void ubcore_jfs_kref_release(struct kref *ref_cnt)
 {
@@ -333,7 +353,7 @@ static int check_and_fill_jfc_attr(struct ubcore_jfc_cfg *cfg,
 	return 0;
 }
 
-int ubcore_check_opt_valid(void *opt_mask_addr, const struct ubcore_opt_map_t *table,
+int ubcore_check_opt_valid(void *opt_mask_addr, const struct ubcore_opt_map *table,
 	size_t table_cnt, uint64_t opt, uint32_t len)
 {
 	size_t i;
@@ -354,7 +374,7 @@ int ubcore_check_opt_valid(void *opt_mask_addr, const struct ubcore_opt_map_t *t
 	return 0;
 }
 
-int ubcore_set_options_common(const struct ubcore_opt_map_t *table,
+int ubcore_set_options_common(const struct ubcore_opt_map *table,
 	size_t table_cnt, uint64_t opt, void *buf, uint32_t len,
 	void *cfg_base, void *opt_base)
 {
@@ -408,6 +428,8 @@ struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev,
 	jfc->ub_dev = dev;
 	jfc->uctx = ubcore_get_uctx(udata);
 	atomic_set(&jfc->use_cnt, 0);
+	kref_init(&jfc->ref_cnt);
+	init_completion(&jfc->comp);
 
 	ret = ubcore_hash_table_find_add(&dev->ht[UBCORE_HT_JFC], &jfc->hnode,
 					 jfc->id);
@@ -470,12 +492,17 @@ int ubcore_delete_jfc(struct ubcore_jfc *jfc)
 
 	jfc_id = jfc->id;
 	dev = jfc->ub_dev;
-	ubcore_hash_table_remove(&dev->ht[UBCORE_HT_JFC], &jfc->hnode);
+
+	(void)ubcore_hash_table_check_remove(&dev->ht[UBCORE_HT_JFC], &jfc->hnode);
+	ubcore_put_jfc(jfc);
+	wait_for_completion(&jfc->comp);
+
 	ret = dev->ops->destroy_jfc(jfc);
 	if (ret != 0) {
 		ubcore_log_err(
 			"[DRV] failed to destroy jfc, dev_name: %s, jfc_id: %u, ret: %d\n",
 			dev->dev_name, jfc_id, ret);
+		kref_init(&jfc->ref_cnt);
 		return ret;
 	}
 	ubcore_log_info("[JFC DELETE] Deleted JFC: id: %u, dev_name: %s.",
@@ -564,6 +591,8 @@ int ubcore_alloc_jfc(struct ubcore_device *dev, struct ubcore_jfc_cfg *cfg,
 	(*jfc)->ub_dev = dev;
 	(*jfc)->uctx = ubcore_get_uctx(udata);
 	atomic_set(&(*jfc)->use_cnt, 0);
+	kref_init(&(*jfc)->ref_cnt);
+	init_completion(&(*jfc)->comp);
 
 	(*jfc)->jfc_opt.is_actived = false;
 	return ret;
@@ -670,6 +699,25 @@ int ubcore_get_jfc_opt(struct ubcore_jfc *jfc, uint64_t opt, void *buf, uint32_t
 }
 EXPORT_SYMBOL(ubcore_get_jfc_opt);
 
+int ubcore_get_jfc_opt_by_id(struct ubcore_device *dev, uint32_t jfc_id, uint64_t opt,
+	void *buf, uint32_t len)
+{
+	struct ubcore_jfc *jfc;
+	int ret = 0;
+
+	jfc = ubcore_find_get_jfc(dev, jfc_id);
+	if (IS_ERR_OR_NULL(jfc)) {
+		ubcore_log_err("failed to find resource by id = %u.\n", jfc_id);
+		return -EINVAL;
+	}
+	ret = ubcore_get_jfc_opt(jfc, opt, buf, len, NULL);
+	if (ret != 0)
+		ubcore_log_err("failed to query jfc ctx, jfc_id:%u.\n", jfc_id);
+
+	ubcore_put_jfc(jfc);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_get_jfc_opt_by_id);
 
 int ubcore_active_jfc(struct ubcore_jfc *jfc, struct ubcore_udata *udata)
 {
@@ -1198,6 +1246,26 @@ int ubcore_get_jfs_opt(struct ubcore_jfs *jfs, uint64_t opt, void *buf, uint32_t
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_get_jfs_opt);
+
+int ubcore_get_jfs_opt_by_id(struct ubcore_device *dev, uint32_t jfs_id, uint64_t opt,
+	void *buf, uint32_t len)
+{
+	struct ubcore_jfs *jfs;
+	int ret = 0;
+
+	jfs = ubcore_find_get_jfs(dev, jfs_id);
+	if (IS_ERR_OR_NULL(jfs)) {
+		ubcore_log_err("failed to find resource by id = %u.\n", jfs_id);
+		return -EINVAL;
+	}
+	ret = ubcore_get_jfs_opt(jfs, opt, buf, len, NULL);
+	if (ret != 0)
+		ubcore_log_err("failed to query jfs ctx, jfs_id:%u.\n", jfs_id);
+
+	ubcore_put_jfs(jfs);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_get_jfs_opt_by_id);
 
 int ubcore_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 {
@@ -1906,6 +1974,26 @@ int ubcore_get_jfr_opt(struct ubcore_jfr *jfr, uint64_t opt, void *buf, uint32_t
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_get_jfr_opt);
+
+int ubcore_get_jfr_opt_by_id(struct ubcore_device *dev, uint32_t jfr_id, uint64_t opt,
+	void *buf, uint32_t len)
+{
+	struct ubcore_jfr *jfr;
+	int ret = 0;
+
+	jfr = ubcore_find_get_jfr(dev, jfr_id);
+	if (IS_ERR_OR_NULL(jfr)) {
+		ubcore_log_err("failed to find resource by id = %u.\n", jfr_id);
+		return -EINVAL;
+	}
+	ret = ubcore_get_jfr_opt(jfr, opt, buf, len, NULL);
+	if (ret != 0)
+		ubcore_log_err("failed to query jfr ctx, jfr_id:%u.\n", jfr_id);
+
+	ubcore_put_jfr(jfr);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_get_jfr_opt_by_id);
 
 int ubcore_active_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 {
@@ -3784,6 +3872,26 @@ int ubcore_get_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf, ui
 }
 EXPORT_SYMBOL(ubcore_get_jetty_opt);
 
+int ubcore_get_jetty_opt_by_id(struct ubcore_device *dev, uint32_t jetty_id, uint64_t opt,
+	void *buf, uint32_t len)
+{
+	struct ubcore_jetty *jetty;
+	int ret = 0;
+
+	jetty = ubcore_find_get_jetty(dev, jetty_id);
+	if (IS_ERR_OR_NULL(jetty)) {
+		ubcore_log_err("failed to find resource by id = %u.\n", jetty_id);
+		return -EINVAL;
+	}
+	ret = ubcore_get_jetty_opt(jetty, opt, buf, len, NULL);
+	if (ret != 0)
+		ubcore_log_err("failed to query jetty ctx, jetty_id:%u.\n", jetty_id);
+
+	ubcore_put_jetty(jetty);
+	return ret;
+}
+EXPORT_SYMBOL(ubcore_get_jetty_opt_by_id);
+
 int ubcore_active_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 {
 	struct ubcore_device *dev = jetty->ub_dev;
@@ -3876,6 +3984,15 @@ int ubcore_deactive_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_deactive_jetty);
+
+struct ubcore_jfc *ubcore_find_get_jfc(struct ubcore_device *dev, uint32_t jfc_id)
+{
+	if (dev == NULL) {
+		ubcore_log_err("dev is NULL\n");
+		return NULL;
+	}
+	return ubcore_hash_table_lookup_get(&dev->ht[UBCORE_HT_JFC], jfc_id, &jfc_id);
+}
 
 struct ubcore_jfs *ubcore_find_get_jfs(struct ubcore_device *dev, uint32_t jfs_id)
 {
