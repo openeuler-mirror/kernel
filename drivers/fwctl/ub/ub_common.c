@@ -216,3 +216,40 @@ int ubctl_query_data_deal(struct ubctl_dev *ucdev,
 
 	return 0;
 }
+
+int ubctl_query_perf(struct ubctl_dev *ucdev, u32 port_bitmap,
+		     struct ubase_perf_stats_result *result_data,
+		     u32 result_data_size, u32 period)
+{
+	int ret = 0;
+
+	if (!ucdev || !result_data) {
+		ubctl_err(ucdev, "ucdev or result data is NULL.\n");
+		return -EINVAL;
+	}
+
+	ret = ubase_perf_stats(ucdev->adev, (u64)port_bitmap, period,
+			       result_data, result_data_size);
+	if (ret)
+		ubctl_err(ucdev, "Failed to collecting performance.\n");
+
+	return ret;
+}
+
+int ubctl_query_perf_stats(struct ubctl_dev *ucdev, u32 port_bitmap,
+			   struct ubase_perf_stats_result *result_data,
+			   u32 result_data_size)
+{
+	int ret = 0;
+
+	if (!ucdev || !result_data) {
+		ubctl_err(ucdev, "ucdev or result data is NULL.\n");
+		return -EINVAL;
+	}
+
+	ret = ubase_query_perf_stats(ucdev->adev, (u64)port_bitmap, result_data, result_data_size);
+	if (ret)
+		ubctl_err(ucdev, "Failed to collecting performance.\n");
+
+	return ret;
+}
