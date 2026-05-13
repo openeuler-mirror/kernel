@@ -11,6 +11,7 @@
 #include <linux/dcbnl.h>
 #include <linux/list.h>
 #include <ub/ubase/ubase_comm_mbx.h>
+#include <ub/ubus/ubus.h>
 
 struct iova_slot;
 
@@ -43,6 +44,15 @@ struct iova_slot;
 #define UBASE_HW_VER_A_1	(1001U)
 #define UBASE_HW_VER_K_0	(2000U)
 #define UBASE_HW_VER_K_1	(2001U)
+
+#define UBASE_URMA_RTP_ROI	UB_URMA_RTP_ROI
+#define UBASE_URMA_RTP_ROT	UB_URMA_RTP_ROT
+#define UBASE_URMA_RTP_ROL	UB_URMA_RTP_ROL
+#define UBASE_URMA_CTP_ROI	UB_URMA_CTP_ROI
+#define UBASE_URMA_CTP_ROT	UB_URMA_CTP_ROT
+#define UBASE_URMA_CTP_ROL	UB_URMA_CTP_ROL
+#define UBASE_URMA_CTP_UNO	UB_URMA_CTP_UNO
+#define UBASE_URMA_UTP_UNO	UB_URMA_UTP_UNO
 
 enum ubase_reset_type {
 	UBASE_NO_RESET,
@@ -450,5 +460,6 @@ int ubase_adev_query_rc_ctx(struct auxiliary_device *adev, u32 rc_queue_idx,
 			    void *ctx, u32 ctx_size);
 
 int ubase_himac_reset(struct auxiliary_device *adev);
+unsigned long long ubase_get_ub_feature(void);
 
 #endif /* _UBASE_COMM_DEV_H_ */

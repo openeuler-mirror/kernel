@@ -540,3 +540,16 @@ void ubase_ubus_fault_log(struct ubase_dev *udev, u32 event_id, void *data)
 
 	ub_fault_log(ue, event_id, data);
 }
+
+/**
+ * ubase_get_ub_feature() - get ub feature
+ *
+ * This function is called when user wants to get ub feature.
+ *
+ * Context: Any context.
+ */
+unsigned long long ubase_get_ub_feature(void)
+{
+	return ub_feature_get();
+}
+EXPORT_SYMBOL(ubase_get_ub_feature);
