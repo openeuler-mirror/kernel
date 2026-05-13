@@ -128,27 +128,32 @@ void _oecls_flow_update(struct sock *sk, struct sk_buff *skb)
 
 static int flow_get_queue_idx(struct net_device *dev, int nid, struct sk_buff *skb)
 {
-	struct oecls_netdev_info *netdev_info;
-	int netdev_loop;
-	u32 hash, index;
-	struct oecls_numa_info *numa_info;
 	struct oecls_numa_bound_dev_info *bound_dev = NULL;
-	int rxq_id, rxq_num, i;
+	struct oecls_netdev_info *netdev_info;
+	struct oecls_numa_info *numa_info;
+	int rxq_id, rxq_num, i, devid;
+	u32 hash, index;
 
 	numa_info = get_oecls_numa_info(nid);
 	if (!numa_info)
 		return -1;
 
-	for_each_oecls_netdev(netdev_loop, netdev_info) {
+	for_each_oecls_netdev(devid, netdev_info) {
 		if (strcmp(netdev_info->dev_name, dev->name) == 0) {
-			bound_dev = &numa_info->bound_dev[netdev_loop];
+			bound_dev = &numa_info->bound_dev[devid];
 			break;
 		}
 	}
 
 	if (!bound_dev)
 		return -1;
-	rxq_num = bitmap_weight(bound_dev->bitmap_rxq, OECLS_MAX_RXQ_NUM_PER_DEV);
+
+	rxq_num = 0;
+	for (i = 0; i < OECLS_MAX_RXQ_NUM_PER_DEV; i++) {
+		if (bound_dev->bitmap_rxq[i] == RXQ_MAX_USECNT)
+			continue;
+		rxq_num++;
+	}
 	if (rxq_num == 0)
 		return -1;
 
@@ -156,10 +161,14 @@ static int flow_get_queue_idx(struct net_device *dev, int nid, struct sk_buff *s
 	index = hash % rxq_num;
 
 	i = 0;
-	for_each_set_bit(rxq_id, bound_dev->bitmap_rxq, OECLS_MAX_RXQ_NUM_PER_DEV)
-		if (index == i++)
+	for (rxq_id = 0; rxq_id < OECLS_MAX_RXQ_NUM_PER_DEV; rxq_id++) {
+		if (bound_dev->bitmap_rxq[rxq_id] == RXQ_MAX_USECNT)
+			continue;
+		if (i++ == index)
 			return rxq_id;
+	}
 
+	oecls_debug("skb:%p, no found rxq\n", skb);
 	return -1;
 }
 
