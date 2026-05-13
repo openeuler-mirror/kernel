@@ -68,6 +68,10 @@ int lo_numa_rps;
 module_param(lo_numa_rps, int, 0644);
 MODULE_PARM_DESC(lo_numa_rps, "enable loopback flow numa affinity");
 
+static int rxq_multiplex_limit = 1;
+module_param(rxq_multiplex_limit, int, 0444);
+MODULE_PARM_DESC(rxq_multiplex_limit, "rxq multiplex limit num, default 1");
+
 static bool check_params(void)
 {
 	if (mode != 0 && mode != 1 && mode != 2)
@@ -650,12 +654,12 @@ static int init_numa_rxq_bitmap(int nid, struct oecls_numa_info *numa_info)
 	int bound_rxq_num, cluster_id, cluster_idx, cur_idx;
 	struct oecls_numa_bound_dev_info *bound_dev;
 	struct oecls_netdev_info *oecls_dev;
-	int rxq_id, devid, cpu, ret = 0;
+	int i, j, rxq_id, devid, cpu, ret = 0;
 
 	for_each_oecls_netdev(devid, oecls_dev) {
 		bound_rxq_num = 0;
 		bound_dev = &numa_info->bound_dev[devid];
-		bitmap_zero(bound_dev->bitmap_rxq, OECLS_MAX_RXQ_NUM_PER_DEV);
+		memset(bound_dev->bitmap_rxq, RXQ_MAX_USECNT, sizeof(bound_dev->bitmap_rxq));
 		bound_dev->cluster_info = kcalloc(oecls_cluster_per_numa,
 						  sizeof(*bound_dev->cluster_info), GFP_ATOMIC);
 		if (!bound_dev->cluster_info) {
@@ -663,25 +667,31 @@ static int init_numa_rxq_bitmap(int nid, struct oecls_numa_info *numa_info)
 			goto out;
 		}
 
+		for (i = 0; i < oecls_cluster_per_numa; i++) {
+			for (j = 0; j < OECLS_MAX_RXQ_NUM_PER_DEV; j++) {
+				bound_dev->cluster_info[i].rxqs[j].rxq_id = -1;
+				bound_dev->cluster_info[i].rxqs[j].status = RXQ_MAX_USECNT;
+			}
+		}
+
 		for (rxq_id = 0; rxq_id < oecls_dev->rxq_num; rxq_id++) {
 			cpu = oecls_dev->rxq[rxq_id].affinity_cpu;
 			if (cpu_to_node(cpu) == nid) {
-				set_bit(rxq_id, bound_dev->bitmap_rxq);
+				bound_dev->bitmap_rxq[rxq_id] = 0;
 				cluster_id = cpu / oecls_cluster_cpu_num;
 				cluster_idx = cluster_id % oecls_cluster_per_numa;
 				bound_dev->cluster_info[cluster_idx].cluster_id = cluster_id;
 				cur_idx = bound_dev->cluster_info[cluster_idx].cur_freeidx++;
 				bound_dev->cluster_info[cluster_idx].rxqs[cur_idx].rxq_id = rxq_id;
-				bound_dev->cluster_info[cluster_idx].rxqs[cur_idx].status = 1;
+				bound_dev->cluster_info[cluster_idx].rxqs[cur_idx].status = 0;
 				bound_rxq_num++;
 				oecls_debug("cpu:%d cluster_id:%d cluster_idx:%d rxq_id:%d cur_idx:%d\n",
 					    cpu, cluster_id, cluster_idx, rxq_id, cur_idx);
 			}
 		}
 
-		oecls_debug("nid:%d, dev_id:%d, dev:%s, rxq_num:%d, bit_num:%d, bitmap_rxq:%*pbl\n",
-			    nid, devid, oecls_dev->dev_name, oecls_dev->rxq_num,
-			    bound_rxq_num, OECLS_MAX_RXQ_NUM_PER_DEV, bound_dev->bitmap_rxq);
+		oecls_debug("nid:%d, dev_id:%d, dev:%s, rxq_num:%d, bound_rxq_num:%d\n",
+			    nid, devid, oecls_dev->dev_name, oecls_dev->rxq_num, bound_rxq_num);
 	}
 	return ret;
 
@@ -690,26 +700,36 @@ out:
 	return ret;
 }
 
-static int get_cluster_rxq(int cpu, struct oecls_numa_bound_dev_info *bound_dev)
+static int get_cluster_rxq(struct oecls_numa_bound_dev_info *bound_dev, int cpu)
 {
 	int cluster_id = cpu / oecls_cluster_cpu_num;
+	int min_used_count = RXQ_MAX_USECNT;
 	int i, j, rxq_id;
 
 	for (i = 0; i < oecls_cluster_per_numa; i++) {
 		if (cluster_id != bound_dev->cluster_info[i].cluster_id)
 			continue;
 		for (j = 0; j < OECLS_MAX_RXQ_NUM_PER_DEV; j++) {
-			if (bound_dev->cluster_info[i].rxqs[j].status == 1) {
-				bound_dev->cluster_info[i].rxqs[j].status = 2;
-				rxq_id = bound_dev->cluster_info[i].rxqs[j].rxq_id;
-				oecls_debug("cluster:%d cpu:%d alloc rxq_id:%d\n",
-					    cluster_id, cpu, rxq_id);
-				return rxq_id;
+			if (bound_dev->cluster_info[i].rxqs[j].rxq_id == -1)
+				continue;
+			if (bound_dev->cluster_info[i].rxqs[j].status < min_used_count) {
+				min_used_count = bound_dev->cluster_info[i].rxqs[j].status;
+				break;
 			}
 		}
+		if (min_used_count >= RXQ_MAX_USECNT || min_used_count >= rxq_multiplex_limit) {
+			rxq_id = -1;
+			oecls_debug("cluster:%d no free rxq for cpu:%d\n", cluster_id, cpu);
+		} else {
+			rxq_id = bound_dev->cluster_info[i].rxqs[j].rxq_id;
+			bound_dev->cluster_info[i].rxqs[j].status++;
+			oecls_debug("cluster:%d cpu:%d alloc rxq_id:%d use:%d\n", cluster_id, cpu,
+				    rxq_id, bound_dev->cluster_info[i].rxqs[j].status);
+		}
 	}
-	oecls_debug("cluster:%d no free rxq for cpu:%d\n", cluster_id, cpu);
-	return -1;
+	oecls_debug("allcluster:%d rxq:%d for cpu:%d\n", cluster_id, rxq_id, cpu);
+
+	return rxq_id;
 }
 
 static int put_cluster_rxq(struct oecls_numa_bound_dev_info *bound_dev, int rxq_id)
@@ -718,10 +738,11 @@ static int put_cluster_rxq(struct oecls_numa_bound_dev_info *bound_dev, int rxq_
 
 	for (i = 0; i < oecls_cluster_per_numa; i++) {
 		for (j = 0; j < OECLS_MAX_RXQ_NUM_PER_DEV; j++) {
-			if (bound_dev->cluster_info[i].rxqs[j].status == 2 &&
+			if (bound_dev->cluster_info[i].rxqs[j].status > 0 &&
 			    bound_dev->cluster_info[i].rxqs[j].rxq_id == rxq_id) {
-				bound_dev->cluster_info[i].rxqs[j].status = 1;
-				oecls_debug("free rxq_id:%d\n", rxq_id);
+				bound_dev->cluster_info[i].rxqs[j].status--;
+				oecls_debug("free rxq_id:%d use:%d\n", rxq_id,
+					    bound_dev->cluster_info[i].rxqs[j].status);
 				return 0;
 			}
 		}
@@ -733,9 +754,9 @@ static int put_cluster_rxq(struct oecls_numa_bound_dev_info *bound_dev, int rxq_
 int alloc_rxq_id(int cpu, int devid)
 {
 	struct oecls_numa_bound_dev_info *bound_dev;
+	int i, rxq_id, min_used_count = RXQ_MAX_USECNT;
 	struct oecls_numa_info *numa_info;
 	int nid = cpu_to_node(cpu);
-	int rxq_id;
 
 	numa_info = get_oecls_numa_info(nid);
 	if (!numa_info) {
@@ -750,22 +771,29 @@ int alloc_rxq_id(int cpu, int devid)
 	bound_dev = &numa_info->bound_dev[devid];
 
 	if (strategy == 1) {
-		rxq_id = get_cluster_rxq(cpu, bound_dev);
+		rxq_id = get_cluster_rxq(bound_dev, cpu);
 		if (rxq_id < 0 || rxq_id >= OECLS_MAX_RXQ_NUM_PER_DEV)
-			pr_info("failed to get rxq_id:%d in cluster, try numa\n", rxq_id);
+			oecls_debug("failed to get rxq_id:%d in cluster, try numa\n", rxq_id);
 		else
 			goto found;
 	}
 
-	rxq_id = find_first_bit(bound_dev->bitmap_rxq, OECLS_MAX_RXQ_NUM_PER_DEV);
-	if (rxq_id >= OECLS_MAX_RXQ_NUM_PER_DEV) {
-		oecls_error("error rxq_id:%d\n", rxq_id);
+	for (i = 0; i < OECLS_MAX_RXQ_NUM_PER_DEV; i++) {
+		if (bound_dev->bitmap_rxq[i] < min_used_count) {
+			min_used_count = bound_dev->bitmap_rxq[i];
+			rxq_id = i;
+		}
+	}
+
+	if (min_used_count >= RXQ_MAX_USECNT || min_used_count >= rxq_multiplex_limit) {
+		oecls_error("alloc rxq fail! nid:%d, devid:%d\n", nid, devid);
 		return -EINVAL;
 	}
 
 found:
-	clear_bit(rxq_id, bound_dev->bitmap_rxq);
-	oecls_debug("alloc cpu:%d, nid:%d, devid:%d, rxq_id:%d\n", cpu, nid, devid, rxq_id);
+	bound_dev->bitmap_rxq[rxq_id]++;
+	oecls_debug("alloc nid:%d, dev_id:%d, rxq_id:%d use:%d\n", nid, devid,
+		    rxq_id, bound_dev->bitmap_rxq[rxq_id]);
 	return rxq_id;
 }
 
@@ -795,13 +823,14 @@ void free_rxq_id(int cpu, int devid, int rxq_id)
 	if (strategy == 1)
 		put_cluster_rxq(bound_dev, rxq_id);
 
-	if (test_bit(rxq_id, bound_dev->bitmap_rxq)) {
+	if (bound_dev->bitmap_rxq[rxq_id] <= 0) {
 		oecls_error("error nid:%d, devid:%d, rxq_id:%d\n", nid, devid, rxq_id);
 		return;
 	}
 
-	set_bit(rxq_id, bound_dev->bitmap_rxq);
-	oecls_debug("free nid:%d, dev_id:%d, rxq_id:%d\n", nid, devid, rxq_id);
+	bound_dev->bitmap_rxq[rxq_id]--;
+	oecls_debug("free nid:%d, dev_id:%d, rxq_id:%d use:%d\n", nid, devid,
+		    rxq_id, bound_dev->bitmap_rxq[rxq_id]);
 }
 
 static int init_oecls_numa_info(void)
