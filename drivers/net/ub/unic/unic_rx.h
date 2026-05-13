@@ -82,7 +82,7 @@ struct unic_rq_stats {
 	u64 alloc_frag_err;
 };
 
-struct  unic_jfr_ctx {
+struct unic_jfr_ctx {
 	/* DW0 */
 	u32 state : 2;
 	u32 limit_wl : 2;

@@ -604,7 +604,7 @@ static bool ubase_cmd_crq_empty(struct ubase_dev *udev, struct ubase_hw *hw)
 	return hw->cmdq.crq.pi == hw->cmdq.crq.ci;
 }
 
-void ubase_cmd_crq_handler(struct ubase_dev *udev)
+static void ubase_cmd_crq_handler(struct ubase_dev *udev)
 {
 	struct ubase_cmdq_ring *crq = &udev->hw.cmdq.crq;
 	u32 msg_data_len;

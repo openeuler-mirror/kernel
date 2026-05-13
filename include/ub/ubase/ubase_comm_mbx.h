@@ -21,7 +21,7 @@
 #define UBASE_JTG_CTX_SIZE	8
 
 /**
- * struct ubase_cmd_mailbox - mailbox cmmand address
+ * struct ubase_cmd_mailbox - mailbox command address
  * @buf: virtual address
  * @dma: dma address
  * @count: reference count

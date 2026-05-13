@@ -128,7 +128,7 @@ struct ubase_ctrlq_event_nb {
 };
 
 /**
- * ubase_ctrlq_ue_msg_nb - ubase ctrlq ue msg notification block structure
+ * struct ubase_ctrlq_ue_msg_nb - ubase ctrlq ue msg notification block structure
  * @service_type: ctrlq ue msg service type
  * @opcode: ctrlq ue msg opcode
  * @back: arbitrary registered pointer
@@ -148,7 +148,7 @@ struct ubase_ctrlq_ue_msg_nb {
 };
 
 /**
- * ubase_ctrlq_ue_msg_info - ubase ctrlq ue msg information structure
+ * struct ubase_ctrlq_ue_msg_info - ubase ctrlq ue msg information structure
  * @service_ver: ctrlq ue msg service version
  * @bus_ue_id: bus ub entity id
  * @mbx_ue_id: mailbox ub entity id

@@ -7,6 +7,7 @@
 #define dev_fmt(fmt) "unic: (pid %d) " fmt, current->pid
 
 #include <linux/etherdevice.h>
+#include <linux/jiffies.h>
 #include <linux/limits.h>
 #include <net/page_pool/helpers.h>
 #if IS_ENABLED(CONFIG_UB_UNIC_UBL)

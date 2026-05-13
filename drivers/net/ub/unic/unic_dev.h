@@ -224,16 +224,16 @@ struct unic_stats {
 };
 
 struct unic_addr_tbl {
-	spinlock_t		ip_list_lock; /* protect ip address need to add/detele */
+	spinlock_t		ip_list_lock; /* protect ip address need to add/delete */
 	struct list_head	ip_list; /* Store ip table */
 
 	spinlock_t		tmp_ip_lock; /* protect ip address from controller */
-	struct list_head	tmp_ip_list; /* Store temprary ip table */
+	struct list_head	tmp_ip_list; /* Store temporary ip table */
 
 	spinlock_t		bond_ip_list_lock; /* protect bond ip address from controller */
 	struct list_head	bond_ip_list; /* Store bond ip table */
 
-	spinlock_t		mac_list_lock; /* protect mac address need to add/detele */
+	spinlock_t		mac_list_lock; /* protect mac address need to add/delete */
 	struct list_head	uc_mac_list; /* store unicast mac table */
 	struct list_head	mc_mac_list; /* store multicast mac table */
 };

@@ -339,8 +339,7 @@ u16 unic_cqe_period_round_down(u16 cqe_period)
 	u16 i;
 
 	for (i = 0; i < ARRAY_SIZE(period) - 1; i++) {
-		if (cqe_period >= period[i] &&
-		    cqe_period < period[i + 1])
+		if (cqe_period >= period[i] && cqe_period < period[i + 1])
 			return period[i];
 	}
 
