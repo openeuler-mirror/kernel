@@ -165,6 +165,8 @@ const struct oecls_hook_ops __rcu *oecls_ops __read_mostly;
 EXPORT_SYMBOL_GPL(oecls_ops);
 struct static_key_false oecls_rps_needed __read_mostly;
 EXPORT_SYMBOL(oecls_rps_needed);
+struct static_key_false oecls_localrps_needed __read_mostly;
+EXPORT_SYMBOL(oecls_localrps_needed);
 #endif
 
 static DEFINE_SPINLOCK(ptype_lock);
@@ -5227,6 +5229,12 @@ static int netif_rx_internal(struct sk_buff *skb)
 
 	trace_netif_rx(skb);
 
+#if IS_ENABLED(CONFIG_OENETCLS)
+	if (static_branch_unlikely(&oecls_localrps_needed)) {
+		if (oenetcls_skb_set_localcpu(skb, enqueue_to_backlog, &ret))
+			return ret;
+	}
+#endif
 #ifdef CONFIG_RPS
 	if (static_branch_unlikely(&rps_needed)) {
 		struct rps_dev_flow voidflow, *rflow = &voidflow;

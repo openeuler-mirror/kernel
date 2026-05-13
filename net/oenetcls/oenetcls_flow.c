@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <linux/inetdevice.h>
-#include <linux/netdevice.h>
-#include <linux/rtnetlink.h>
+#include <linux/inet.h>
+#include <linux/in.h>
+#include <linux/in6.h>
+#include <linux/inet.h>
 #include <linux/irq.h>
 #include <linux/irqdesc.h>
-#include <linux/inet.h>
 #include <linux/random.h>
+#include <linux/netdevice.h>
+#include <linux/oenetcls.h>
+#include <linux/rtnetlink.h>
+#include <net/inet_sock.h>
+#include <net/ipv6.h>
 #include <net/netdev_rx_queue.h>
 #include <net/sock.h>
-#include <linux/oenetcls.h>
 #include "oenetcls.h"
 
+static u16 *rps_cpus;
+static int rps_cpus_nums;
 static u32 oecls_cpu_mask;
 static struct oecls_sock_flow_table __rcu *oecls_sock_flow_table;
 static DEFINE_MUTEX(oecls_sock_flow_mutex);
@@ -60,22 +67,50 @@ static bool _oecls_timeout(struct net_device *dev, u16 rxq_index,
 	return expire;
 }
 
-static void _oecls_flow_update(struct sock *sk)
+static inline bool sk_is_loopback(struct sock *sk)
+{
+	if (sk->sk_family == AF_INET) {
+		if (ipv4_is_loopback(sk->sk_daddr) || ipv4_is_loopback(sk->sk_rcv_saddr))
+			return true;
+	}
+
+	if (sk->sk_family == AF_INET6) {
+		if (ipv6_addr_loopback(&sk->sk_v6_daddr) ||
+		    ipv6_addr_loopback(&sk->sk_v6_rcv_saddr) ||
+		    ipv6_addr_v4mapped_loopback(&sk->sk_v6_daddr) ||
+		    ipv6_addr_v4mapped_loopback(&sk->sk_v6_rcv_saddr) ||
+		    ipv6_addr_equal(&sk->sk_v6_daddr, &sk->sk_v6_rcv_saddr))
+			return true;
+	}
+	return false;
+}
+
+void _oecls_flow_update(struct sock *sk, struct sk_buff *skb)
 {
 	struct oecls_sock_flow_table *tb;
 	unsigned int hash, index;
-	u32 val;
-	u32 cpu = raw_smp_processor_id();
+	u32 val, cpu;
 
 	if (sk->sk_state != TCP_ESTABLISHED)
 		return;
 
-	if (check_appname(current->comm))
+	if (unlikely(sk->oecls_cmd_matched == OECLS_CMD_UNKNOWN)) {
+		if (check_appname(current->comm)) {
+			sk->oecls_cmd_matched = OECLS_CMD_NO_MATCH;
+			return;
+		}
+		sk->oecls_cmd_matched = OECLS_CMD_MATCHED;
+	}
+	if (sk->oecls_cmd_matched != OECLS_CMD_MATCHED)
 		return;
 
+	cpu = raw_smp_processor_id();
 	rcu_read_lock();
 	tb = rcu_dereference(oecls_sock_flow_table);
-	hash = READ_ONCE(sk->sk_rxhash);
+	if (lo_numa_rps && skb && sk_is_loopback(sk))
+		hash = READ_ONCE(skb->sym_hash);
+	else
+		hash = READ_ONCE(sk->sk_rxhash);
 	if (tb && hash) {
 		index = hash & tb->mask;
 		val = hash & ~oecls_cpu_mask;
@@ -184,7 +219,7 @@ static bool oecls_do_hash(void)
 	return get_random_u32_below(100) < rcpu_probability;
 }
 
-static int get_cpu_in_mask(int tcpu, u32 hash)
+static inline int get_cpu_in_mask(int tcpu, u32 hash)
 {
 	const struct cpumask *mask;
 	int nr_cpus, cpu, index;
@@ -269,7 +304,40 @@ static void __oecls_set_cpu(struct sk_buff *skb, struct net_device *ndev,
 		set_oecls_cpu(ndev, skb, rflow, old_rxq_id, newcpu);
 }
 
-static void _oecls_set_cpu(struct sk_buff *skb, int *cpu, int *last_qtail)
+static inline void loopback_numa_rps(struct sk_buff *skb, int *rcpu)
+{
+	struct oecls_sock_flow_table *stb;
+	u32 last_recv_cpu, hash, val;
+	int newcpu, index;
+
+	skb_reset_network_header(skb);
+	hash = __skb_get_hash_symmetric(skb);
+	if (!hash)
+		return;
+
+	WRITE_ONCE(skb->sym_hash, hash);
+	rcu_read_lock();
+	stb = rcu_dereference(oecls_sock_flow_table);
+	if (stb) {
+		val = READ_ONCE(stb->ents[hash & stb->mask]);
+		last_recv_cpu = val & oecls_cpu_mask;
+	} else {
+		rcu_read_unlock();
+		return;
+	}
+	rcu_read_unlock();
+
+	if ((val ^ hash) & ~oecls_cpu_mask)
+		return;
+
+	newcpu = cpumask_first(cpumask_of_node(cpu_to_node(last_recv_cpu)));
+	index = rps_cpus[reciprocal_scale(hash, rps_cpus_nums - 1)];
+	newcpu += index;
+	*rcpu = newcpu;
+	oecls_debug("last:%u curcpu:%d newcpu:%d\n", last_recv_cpu, raw_smp_processor_id(), newcpu);
+}
+
+void _oecls_set_cpu(struct sk_buff *skb, int *cpu, int *last_qtail)
 {
 	struct net_device *ndev = skb->dev;
 	struct oecls_sock_flow_table *stb;
@@ -281,6 +349,11 @@ static void _oecls_set_cpu(struct sk_buff *skb, int *cpu, int *last_qtail)
 	last_qtail = 0;//unused
 	if (!ndev)
 		return;
+
+	if (lo_numa_rps && (ndev->type == ARPHRD_LOOPBACK && ndev->flags & IFF_LOOPBACK)) {
+		loopback_numa_rps(skb, cpu);
+		return;
+	}
 
 	if (!is_oecls_config_netdev(ndev->name))
 		return;
@@ -425,6 +498,7 @@ static int oecls_sock_flow_table_release(void)
 	mutex_unlock(&oecls_sock_flow_mutex);
 	synchronize_rcu();
 	vfree(tb);
+	kfree(rps_cpus);
 
 	return 0;
 }
@@ -434,10 +508,20 @@ static int oecls_sock_flow_table_init(void)
 	struct oecls_sock_flow_table *table;
 	int size = sft_num, i;
 
+	rps_cpus_nums = cpumask_weight(cpumask_of_node(0));
+	rps_cpus = kmalloc_array(rps_cpus_nums, sizeof(u16), GFP_KERNEL);
+	if (!rps_cpus)
+		return -ENOMEM;
+	for (i = 0; i < rps_cpus_nums; i++)
+		rps_cpus[i] = i;
+	oecls_debug("rps_cpus_nums:%d\n", rps_cpus_nums);
+
 	size = roundup_pow_of_two(size);
 	table = vmalloc(OECLS_SOCK_FLOW_TABLE_SIZE(size));
-	if (!table)
+	if (!table) {
+		kfree(rps_cpus);
 		return -ENOMEM;
+	}
 
 	oecls_cpu_mask = roundup_pow_of_two(nr_cpu_ids) - 1;
 	oecls_debug("nr_cpu_ids:%d, oecls_cpu_mask:0x%x\n", nr_cpu_ids, oecls_cpu_mask);
@@ -456,6 +540,7 @@ static int oecls_sock_flow_table_init(void)
 static const struct oecls_hook_ops oecls_flow_ops = {
 	.oecls_flow_update = _oecls_flow_update,
 	.oecls_set_cpu = _oecls_set_cpu,
+	.oecls_set_localcpu = NULL,
 	.oecls_timeout = _oecls_timeout,
 	.oecls_cfg_rxcls = NULL,
 };
@@ -474,7 +559,8 @@ int oecls_flow_res_init(void)
 		return err;
 	}
 
-	RCU_INIT_POINTER(oecls_ops, &oecls_flow_ops);
+	if (mode != 0) //for lo rps
+		RCU_INIT_POINTER(oecls_ops, &oecls_flow_ops);
 	synchronize_rcu();
 
 #ifdef CONFIG_RPS
