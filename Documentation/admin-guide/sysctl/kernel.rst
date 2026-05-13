@@ -238,6 +238,33 @@ Note:
   to decide what to do with it.
 
 
+arm64_sync_sei (ARM64 only)
+===========================
+
+Enable or disable ESB (Error Synchronization Barrier) instruction at
+exception entry from EL0 and exception return to EL0 (before ERET), as
+well as the vendor-specific SEI handler (apei_claim_sei) for
+Uncorrected Recoverable (UER) errors.
+
+When enabled:
+
+- ESB synchronizes SEI (SError Interrupt) at exception boundaries in the
+  firmware-first RAS model, ensuring that any pending SError is handled
+  at a known point.
+- The vendor SEI handler is invoked for UER-type SError, allowing
+  platform-specific error recovery instead of panicking.
+
+This has a performance impact on system call throughput and is disabled
+by default.
+
+Requires the CPU to support the RAS extension (ARM64_HAS_RAS_EXTN).
+Writing 1 on a CPU without RAS extension has no effect.
+
+This sysctl does not affect the SP_EL0 restoration in the SError
+handler (``sei_restore_sp_el0``), which is always active on RAS-capable
+platforms for firmware-first correctness.
+
+
 dmesg_restrict
 ==============
 
