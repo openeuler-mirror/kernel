@@ -141,9 +141,29 @@ enum ub_fwctl_cmdrpc_type {
 	 */
 	UTOOL_CMD_QUERY_DL_BIST_ERR = 0x0019,
 	/**
+	 * @UTOOL_CMD_QUERY_DL_PERFORMANCE: Query DL layer PERF related registers
+	 */
+	UTOOL_CMD_QUERY_DL_PERFORMANCE = 0x001A,
+	/**
+	 * @UTOOL_CMD_QUERY_DL_ALL_PERF: Query DL layer all the PERF related registers
+	 */
+	UTOOL_CMD_QUERY_DL_ALL_PERF = 0x001B,
+	/**
 	 * @UTOOL_CMD_QUERY_DL_RT_BANDWIDTH: Query DL layer real time bandwidth
 	 */
 	UTOOL_CMD_QUERY_DL_RT_BANDWIDTH = 0x001C,
+	/**
+	 * @UTOOL_CMD_QUERY_DL_PERF_START: Enable port traffic statistics
+	 */
+	UTOOL_CMD_QUERY_DL_PERF_START = 0x001D,
+	/**
+	 * @UTOOL_CMD_QUERY_DL_PERF: Query DL layer bandwidth registers
+	 */
+	UTOOL_CMD_QUERY_DL_PERF = 0x001E,
+	/**
+	 * @UTOOL_CMD_QUERY_DL_PERF_STOP: Disable port traffic statistics
+	 */
+	UTOOL_CMD_QUERY_DL_PERF_STOP = 0x001F,
 
 	/**
 	 * @UTOOL_CMD_QUERY_TA: Query all registers at the TA layer
@@ -350,6 +370,24 @@ struct fwctl_pkt_in_index {
 struct fwctl_pkt_in_ummuid_value {
 	__u32 ummu_id;
 	__u32 value;
+};
+
+/**
+ * struct fwctl_pkt_in_port_time - ioctl(FWCTL_RPC) input
+ * @port_id: The value of param '-p'
+ * @time: The value of param '-t'
+ */
+struct fwctl_pkt_in_port_time {
+	__u32 port_id;
+	__u32 time;
+};
+
+/**
+ * struct fwctl_pkt_in_time - ioctl(FWCTL_RPC) input
+ * @time: The value of param '-t'
+ */
+struct fwctl_pkt_in_time {
+	__u32 time;
 };
 
 #endif

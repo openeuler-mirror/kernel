@@ -97,6 +97,11 @@
 #define UBCTL_DL_BIST_ERR_LEN 24
 #define UBCTL_DL_TRACE_LEN 1016
 
+/*
+ * @UBCTL_DL_PERF_STATS_LEN: Valid length of struct ubase_perf_stats_result
+ */
+#define UBCTL_DL_PERF_STATS_LEN 148
+
 #define UBCTL_BA_PKT_STATS_LEN 792
 #define UBCTL_BA_MAR_LEN 440
 #define UBCTL_MAR_TABLE_LEN 88
