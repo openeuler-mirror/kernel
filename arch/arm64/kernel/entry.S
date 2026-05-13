@@ -29,15 +29,26 @@
 #include <asm/asm-uaccess.h>
 #include <asm/unistd.h>
 
+#ifdef CONFIG_ARM64_SYNC_SEI
+/* External symbols from arm64_sync_sei.c */
+ .extern arm64_sync_sei_cb
+#endif
+
 	.macro sync_sei, label = esb
 #ifdef CONFIG_ARM64_SYNC_SEI
 	.if     \label != xcall
-	/* Use ESB to synchronize SEI at the entry and exit of exception */
-	esb
+	.pushsection    ".esb_patch_table", "a"
+	.quad           .Lesb_insn\@
+	.popsection
+.Lesb_insn\@:
+	nop
 	.endif
+#endif
 	.endm
 
 	.macro sei_restore_sp_el0, tmp1:req, tmp2:req
+#ifdef CONFIG_ARM64_SYNC_SEI
+alternative_cb	ARM64_ALWAYS_SYSTEM, arm64_sync_sei_cb
 	/*
 	 * It must restore SP_EL0 from per-cpu variable __entry_task, since TF
 	 * firmware clobbers the SP_EL0 before SEI is delegated back.
@@ -49,6 +60,7 @@
 	ldr_this_cpu  \tmp2, __entry_task, \tmp1
 	msr	sp_el0, \tmp2
 .Lskip_sp_el0_restore:
+alternative_cb_end
 #endif /* CONFIG_ARM64_SYNC_SEI */
 	.endm
 
@@ -955,7 +967,7 @@ alternative_endif
 
 	add	x30, x30, #(1b - \vector_start + 4)
 #ifdef CONFIG_ARM64_SYNC_SEI
-	/* Skip the 'ESB' and 'B' at default vector entry */
+	/* Skip the sync_sei NOP/ESB and the 'B' at default vector entry */
 	add	x30, x30, #4
 #endif
 	ret
