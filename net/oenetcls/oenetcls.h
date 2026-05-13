@@ -147,7 +147,8 @@ extern int oecls_netdev_num;
 extern int oecls_numa_num;
 extern unsigned int dft_num;
 extern unsigned int sft_num;
-extern int lo_numa_rps;
+extern int rps_policy;
+extern int lo_rps_policy;
 
 #define oecls_debug(fmt, ...)					\
 	do {							\
