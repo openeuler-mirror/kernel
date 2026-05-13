@@ -209,13 +209,13 @@ SYM_CODE_START_LOCAL(el0t_fast_syscall)
 SYM_CODE_END(el0t_fast_syscall)
 
 SYM_CODE_START_LOCAL(el0t_64_sync_ventry)
-	kernel_ventry 0, t, 64, sync
+	kernel_ventry 0, t, 64, xcall
 SYM_CODE_END(el0t_64_sync_ventry)
 
 SYM_CODE_START_LOCAL(el0t_64_sync_ventry_vector)
 	ldp	x20, x21, [sp, #16 * 10]
 	add	sp, sp, #PT_REGS_SIZE
-	kernel_ventry 0, t, 64, sync
+	kernel_ventry 0, t, 64, xcall
 SYM_CODE_END(el0t_64_sync_ventry_vector)
 
 SYM_CODE_START_LOCAL(el0t_64_sync_table)
@@ -240,6 +240,7 @@ SYM_CODE_END(el0t_64_sync_table)
 	.macro xcall_ventry
 	.align 7
 .Lventry_start\@:
+	sync_sei
 	/*
 	 * This must be the first instruction of the EL0 vector entries. It is
 	 * skipped by the trampoline vectors, to trigger the cleanup.
@@ -266,6 +267,7 @@ SYM_CODE_END(el0t_64_sync_table)
 	.macro sync_ventry
 	.align 7
 .Lventry_start\@:
+	sync_sei
 	/*
 	 * This must be the first instruction of the EL0 vector entries. It is
 	 * skipped by the trampoline vectors, to trigger the cleanup.
