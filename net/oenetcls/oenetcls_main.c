@@ -6,6 +6,7 @@
 #include <linux/irq.h>
 #include <linux/irqdesc.h>
 #include <linux/rtnetlink.h>
+#include <linux/oenetcls.h>
 #include "oenetcls.h"
 
 int oecls_netdev_num;
@@ -62,6 +63,10 @@ MODULE_PARM_DESC(dft_num, "dev flow table entries, default 0x1000");
 unsigned int sft_num = 0x100000;
 module_param(sft_num, uint, 0444);
 MODULE_PARM_DESC(sft_num, "sock flow table entries, default 0x100000");
+
+int lo_numa_rps;
+module_param(lo_numa_rps, int, 0644);
+MODULE_PARM_DESC(lo_numa_rps, "enable loopback flow numa affinity");
 
 static bool check_params(void)
 {
@@ -527,7 +532,8 @@ static int init_single_oecls_dev(char *if_name, unsigned int length)
 		ret = oecls_filter_enable(dev_name, &old_state);
 		if (ret) {
 			oecls_error("dev [%s] not support ntuple! ret=%d\n", dev_name, ret);
-			goto out;
+			if (lo_numa_rps)
+				goto out;
 		}
 	}
 
@@ -1091,13 +1097,21 @@ static __init int oecls_init(void)
 	if (mode == 2 && rcpu_probability < 0)
 		fixup_rcpu_load();
 
-	if (mode == 0)
+	if (mode == 0) {
 		err = oecls_ntuple_res_init();
-	else
+		if (err)
+			goto clean_rxq;
+		if (lo_numa_rps)
+			err = oecls_flow_res_init();
+	} else {
 		err = oecls_flow_res_init();
+	}
 
 	if (err)
 		goto clean_rxq;
+
+	if (lo_numa_rps)
+		static_branch_inc(&oecls_localrps_needed);
 
 	return 0;
 
@@ -1110,10 +1124,16 @@ clean_numa:
 
 static __exit void oecls_exit(void)
 {
-	if (mode == 0)
+	if (lo_numa_rps)
+		static_branch_dec(&oecls_localrps_needed);
+
+	if (mode == 0) {
 		oecls_ntuple_res_clean();
-	else
+		if (lo_numa_rps)
+			oecls_flow_res_clean();
+	} else {
 		oecls_flow_res_clean();
+	}
 
 #ifdef CONFIG_XPS
 	set_netdev_xps_queue(false);
