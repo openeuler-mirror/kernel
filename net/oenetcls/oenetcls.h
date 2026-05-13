@@ -13,6 +13,10 @@
 #define OECLS_NO_FILTER 0xffff
 #define OECLS_NO_CPU 0xffff
 
+#define OECLS_CMD_UNKNOWN      0
+#define OECLS_CMD_MATCHED      1
+#define OECLS_CMD_NO_MATCH     2
+
 struct oecls_netdev_queue_info {
 	int irq;
 	int affinity_cpu;
@@ -135,6 +139,7 @@ extern int oecls_netdev_num;
 extern int oecls_numa_num;
 extern unsigned int dft_num;
 extern unsigned int sft_num;
+extern int lo_numa_rps;
 
 #define oecls_debug(fmt, ...)					\
 	do {							\
@@ -199,5 +204,7 @@ void *alloc_from_l0(int size);
 void free_to_l0(void *addr);
 int l3t_shared_lock(int nid, unsigned long pfn, unsigned long size);
 int l3t_shared_unlock(int nid, unsigned long pfn, unsigned long size);
+void _oecls_flow_update(struct sock *sk, struct sk_buff *skb);
+void _oecls_set_cpu(struct sk_buff *skb, int *cpu, int *last_qtail);
 
 #endif	/* _NET_OENETCLS_H */
