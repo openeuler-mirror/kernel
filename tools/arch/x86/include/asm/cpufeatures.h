@@ -454,8 +454,6 @@
 #define X86_FEATURE_AUTOIBRS		(20*32+ 8) /* "" Automatic IBRS */
 #define X86_FEATURE_NO_SMM_CTL_MSR	(20*32+ 9) /* "" SMM_CTL MSR is not present */
 
-/* VIA/Cyrix/Centaur-defined CPU features, CPUID level 0xC0000006, word 20 */
-#define X86_FEATURE_ZXPAUSE			(30*32 + 0) /* ZHAOXIN ZXPAUSE */
 #define X86_FEATURE_VERW_CLEAR		(20*32+ 5) /* The memory form of VERW mitigates TSA */
 #define X86_FEATURE_GP_ON_USER_CPUID	(20*32+17) /* User CPUID faulting */
 #define X86_FEATURE_PREFETCHI		(20*32+20) /* Prefetch Data/Instruction to Cache Level */
@@ -472,6 +470,9 @@
 #define X86_FEATURE_PREFER_YMM		(21*32 + 8) /* Avoid ZMM registers due to downclocking */
 #define X86_FEATURE_APX			(21*32+ 9) /* Advanced Performance Extensions */
 #define X86_FEATURE_INDIRECT_THUNK_ITS	(21*32+10) /* Use thunk for indirect branches in lower half of cacheline */
+
+/* Zhaoxin/Centaur-defined CPU features, CPUID level 0xC0000006, word 30 */
+#define X86_FEATURE_PAUSEOPT		(30*32 + 0) /* ZHAOXIN PAUSEOPT */
 
 /*
  * BUG word(s)
