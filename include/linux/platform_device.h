@@ -29,7 +29,12 @@ struct platform_device {
 	struct resource	*resource;
 
 	const struct platform_device_id	*id_entry;
-	char *driver_override; /* Driver name to force a match */
+
+#ifndef __GENKSYMS__
+	char *kabi_reserved_driver_override;
+#else
+	char *driver_override;
+#endif
 
 	/* MFD cell pointer */
 	struct mfd_cell *mfd_cell;
