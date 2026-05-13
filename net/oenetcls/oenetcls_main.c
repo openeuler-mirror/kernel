@@ -417,8 +417,20 @@ static bool check_irq_name(const char *irq_name, struct oecls_netdev_info *oecls
 static void get_netdev_queue_info(struct oecls_netdev_info *oecls_dev)
 {
 	struct oecls_netdev_queue_info *rxq_info;
+	struct ethtool_channels echannels = {0};
+	int irq, cpu, ret, combined_channels;
+	struct cmd_context ctx = {0};
 	struct irq_desc *desc;
-	int irq, cpu;
+
+	strncpy(ctx.netdev, oecls_dev->dev_name, IFNAMSIZ);
+	echannels.cmd = ETHTOOL_GCHANNELS;
+	ret = send_ethtool_ioctl(&ctx, &echannels);
+	if (ret) {
+		oecls_error("get %s channels fail ret:%d\n", oecls_dev->dev_name, ret);
+		return;
+	}
+
+	combined_channels = echannels.combined_count;
 
 	for_each_irq_desc(irq, desc) {
 		if (!desc->action)
@@ -429,6 +441,10 @@ static void get_netdev_queue_info(struct oecls_netdev_info *oecls_dev)
 			continue;
 		if (oecls_dev->rxq_num >= OECLS_MAX_RXQ_NUM_PER_DEV)
 			break;
+		if (oecls_dev->rxq_num > combined_channels - 1)
+			break;
+		oecls_debug("rxq_num:%d channels:%d\n", oecls_dev->rxq_num, combined_channels);
+
 		rxq_info = &oecls_dev->rxq[oecls_dev->rxq_num++];
 		rxq_info->irq = irq;
 		cpu = cpumask_first(irq_data_get_effective_affinity_mask(&desc->irq_data));
