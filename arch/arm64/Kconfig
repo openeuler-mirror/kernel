@@ -2505,6 +2505,15 @@ config ARM64_PSEUDO_NMI
 
 	  If unsure, say N
 
+config ARM64_SYNC_SEI
+	bool "Use ESB to Synchronize SEI At Exception Boundary(EXPERIMENTAL)"
+	depends on ARM64_RAS_EXTN
+	help
+	  For Firmware-First, Use the ESB to synchronize SEI occurs before
+	  exception entry from EL0 and exit to EL0.
+
+	  if unsure, say N
+
 if ARM64_PSEUDO_NMI
 config ARM64_DEBUG_PRIORITY_MASKING
 	bool "Debug interrupt priority masking"
