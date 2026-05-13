@@ -33,12 +33,10 @@ static int zhaoxin_rng_init(struct hwrng *rng)
 	return 0;
 }
 
-static inline int rep_xstore(size_t size, size_t factor, void *result)
+static inline void rep_xstore(size_t size, size_t factor, void *result)
 {
 	asm(".byte 0xf3, 0x0f, 0xa7, 0xc0"
 		: "=m"(*(size_t *)result), "+c"(size), "+d"(factor), "+D"(result));
-
-	return 0;
 }
 
 static int zhaoxin_rng_read(struct hwrng *rng, void *data, size_t max, bool wait)
@@ -69,12 +67,10 @@ static int __init zhaoxin_rng_mod_init(void)
 {
 	int err;
 
-	if (!x86_match_cpu(zhaoxin_rng_cpu_ids)) {
-		pr_err(PFX "The CPU isn't support XSTORE.\n");
+	if (!x86_match_cpu(zhaoxin_rng_cpu_ids))
 		return -ENODEV;
-	}
 
-	pr_info("Zhaoxin RNG detected\n");
+	pr_info(PFX "RNG detected\n");
 
 	err = hwrng_register(&zhaoxin_rng);
 	if (err)
