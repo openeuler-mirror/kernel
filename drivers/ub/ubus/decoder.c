@@ -58,7 +58,7 @@ static u32 set_mmio_base_reg(struct ub_decoder *decoder)
 	ret = (u32)ub_cfg_write_dword(ent, DECODER_MMIO_BA0,
 				      0xffffffff);
 	ret |= (u32)ub_cfg_write_dword(ent, DECODER_MMIO_BA1,
-				      0xffffffff);
+				       0xffffffff);
 	ret |= (u32)ub_cfg_read_dword(ent, DECODER_MMIO_BA0, &low_bit);
 	ret |= (u32)ub_cfg_read_dword(ent, DECODER_MMIO_BA1, &high_bit);
 	if (ret) {
@@ -90,7 +90,7 @@ static u32 set_page_table_reg(struct ub_decoder *decoder)
 	ret = (u32)ub_cfg_write_dword(ent, DECODER_MATT_BA0,
 				      0xffffffff);
 	ret |= (u32)ub_cfg_write_dword(ent, DECODER_MATT_BA1,
-				      0xffffffff);
+				       0xffffffff);
 	ret |= (u32)ub_cfg_read_dword(ent, DECODER_MATT_BA0, &low_bit);
 	ret |= (u32)ub_cfg_read_dword(ent, DECODER_MATT_BA1, &high_bit);
 	if (ret) {
