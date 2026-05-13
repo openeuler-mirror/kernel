@@ -5940,11 +5940,15 @@ static int netif_receive_skb_internal(struct sk_buff *skb)
 		return NET_RX_SUCCESS;
 
 	rcu_read_lock();
-#ifdef CONFIG_RPS
 #if IS_ENABLED(CONFIG_OENETCLS)
-	if (static_branch_unlikely(&oecls_rps_needed))
-		goto oecls_rps;
+	if (static_branch_unlikely(&oecls_rps_needed)) {
+		if (oenetcls_skb_set_cpu(skb, enqueue_to_backlog, &ret)) {
+			rcu_read_unlock();
+			return ret;
+		}
+	}
 #endif
+#ifdef CONFIG_RPS
 	if (static_branch_unlikely(&rps_needed)) {
 		struct rps_dev_flow voidflow, *rflow = &voidflow;
 		int cpu = get_rps_cpu(skb->dev, skb, &rflow);
@@ -5956,15 +5960,6 @@ static int netif_receive_skb_internal(struct sk_buff *skb)
 		}
 	}
 #endif
-
-#if IS_ENABLED(CONFIG_OENETCLS)
-oecls_rps:
-	if (oenetcls_skb_set_cpu(skb, enqueue_to_backlog, &ret)) {
-		rcu_read_unlock();
-		return ret;
-	}
-#endif
-
 	ret = __netif_receive_skb(skb);
 	rcu_read_unlock();
 	return ret;
@@ -5985,11 +5980,11 @@ void netif_receive_skb_list_internal(struct list_head *head)
 	list_splice_init(&sublist, head);
 
 	rcu_read_lock();
-#ifdef CONFIG_RPS
 #if IS_ENABLED(CONFIG_OENETCLS)
 	if (static_branch_unlikely(&oecls_rps_needed))
-		goto oecls_rps_list;
+		oenetcls_skblist_set_cpu(head, enqueue_to_backlog);
 #endif
+#ifdef CONFIG_RPS
 	if (static_branch_unlikely(&rps_needed)) {
 		list_for_each_entry_safe(skb, next, head, list) {
 			struct rps_dev_flow voidflow, *rflow = &voidflow;
@@ -6003,12 +5998,6 @@ void netif_receive_skb_list_internal(struct list_head *head)
 		}
 	}
 #endif
-
-#if IS_ENABLED(CONFIG_OENETCLS)
-oecls_rps_list:
-	oenetcls_skblist_set_cpu(head, enqueue_to_backlog);
-#endif
-
 	__netif_receive_skb_list(head);
 	rcu_read_unlock();
 }
