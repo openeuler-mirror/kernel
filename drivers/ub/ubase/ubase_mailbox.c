@@ -110,10 +110,8 @@ static int ubase_wait_resp_from_proxy(struct ubase_dev *udev,
 	completion.get_resp = false;
 	completion.ret = -ETIME;
 
-	xa_lock(&info->seq_tbl);
-	ret = xa_err(__xa_store(&info->seq_tbl, req->seq_num, &completion,
-				GFP_KERNEL));
-	xa_unlock(&info->seq_tbl);
+	ret = xa_err(xa_store(&info->seq_tbl, req->seq_num, &completion,
+			      GFP_KERNEL));
 	if (ret) {
 		ubase_err(udev, "failed to save eq(%u) proxy resp completion, ret = %d.\n",
 			  req->seq_num, ret);
@@ -193,17 +191,17 @@ int ubase_handle_mbx_over_cmdq_resp(void *dev, void *data, u32 len)
 	xa_lock(&info->seq_tbl);
 	completion = xa_load(&info->seq_tbl, resp->seq_num);
 	if (!completion) {
+		xa_unlock(&info->seq_tbl);
 		ubase_err(udev, "proxy resp seq is invalid, seq = %u.\n",
 			  resp->seq_num);
-		xa_unlock(&info->seq_tbl);
 		return -EINVAL;
 	}
 
 	if (resp->data_len != completion->mbox_resp_len) {
+		xa_unlock(&info->seq_tbl);
 		ubase_err(udev, "eq(%u) proxy resp len error, cur = %u, expect = %u.\n",
 			  resp->seq_num, resp->data_len,
 			  completion->mbox_resp_len);
-		xa_unlock(&info->seq_tbl);
 		return -EINVAL;
 	}
 
