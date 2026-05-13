@@ -797,11 +797,10 @@ found:
 	return rxq_id;
 }
 
-void free_rxq_id(int cpu, int devid, int rxq_id)
+void free_rxq_id(int nid, int devid, int rxq_id)
 {
 	struct oecls_numa_bound_dev_info *bound_dev;
 	struct oecls_numa_info *numa_info;
-	int nid = cpu_to_node(cpu);
 
 	numa_info = get_oecls_numa_info(nid);
 	if (!numa_info) {
