@@ -343,16 +343,6 @@ struct queue_limits {
 	unsigned int		discard_alignment;
 	unsigned int		zone_write_granularity;
 
-	/* atomic write limits */
-	unsigned int		atomic_write_hw_max;
-	unsigned int		atomic_write_max_sectors;
-	unsigned int		atomic_write_hw_boundary;
-	unsigned int		atomic_write_boundary_sectors;
-	unsigned int		atomic_write_hw_unit_min;
-	unsigned int		atomic_write_unit_min;
-	unsigned int		atomic_write_hw_unit_max;
-	unsigned int		atomic_write_unit_max;
-
 	unsigned short		max_segments;
 	unsigned short		max_integrity_segments;
 	unsigned short		max_discard_segments;
@@ -369,10 +359,12 @@ struct queue_limits {
 	 */
 	unsigned int		dma_alignment;
 
-	KABI_RESERVE(1)
-	KABI_RESERVE(2)
-	KABI_RESERVE(3)
-	KABI_RESERVE(4)
+	/* atomic write limits */
+	KABI_USE2(1, unsigned int atomic_write_hw_max, unsigned int atomic_write_max_sectors)
+	KABI_USE2(2, unsigned int atomic_write_hw_boundary, unsigned int atomic_write_boundary_sectors)
+	KABI_USE2(3, unsigned int atomic_write_hw_unit_min, unsigned int atomic_write_unit_min)
+	KABI_USE2(4, unsigned int atomic_write_hw_unit_max, unsigned int atomic_write_unit_max)
+
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
