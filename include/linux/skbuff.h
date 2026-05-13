@@ -1056,7 +1056,11 @@ struct sk_buff {
 #else
 	KABI_RESERVE(1)
 #endif
+#if IS_ENABLED(CONFIG_OENETCLS)
+	KABI_USE(2, __u32 sym_hash)
+#else
 	KABI_RESERVE(2)
+#endif
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 

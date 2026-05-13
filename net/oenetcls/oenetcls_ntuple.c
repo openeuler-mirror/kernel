@@ -584,7 +584,8 @@ static void clean_oecls_sk_rules(void)
 }
 
 static const struct oecls_hook_ops oecls_ntuple_ops = {
-	.oecls_flow_update = NULL,
+	.oecls_flow_update = _oecls_flow_update,
+	.oecls_set_localcpu = _oecls_set_cpu,
 	.oecls_set_cpu = NULL,
 	.oecls_timeout = NULL,
 	.oecls_cfg_rxcls = ethtool_cfg_rxcls,

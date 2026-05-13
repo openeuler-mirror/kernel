@@ -2172,6 +2172,9 @@ struct sock *sk_alloc(struct net *net, int family, gfp_t priority,
 		sock_update_classid(&sk->sk_cgrp_data);
 		sock_update_netprioidx(&sk->sk_cgrp_data);
 		sk_tx_queue_clear(sk);
+#if IS_ENABLED(CONFIG_OENETCLS)
+		sk->oecls_cmd_matched = 0;
+#endif
 	}
 
 	return sk;

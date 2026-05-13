@@ -13,6 +13,10 @@
 #define OECLS_NO_FILTER 0xffff
 #define OECLS_NO_CPU 0xffff
 
+#define OECLS_CMD_UNKNOWN      0
+#define OECLS_CMD_MATCHED      1
+#define OECLS_CMD_NO_MATCH     2
+
 struct oecls_netdev_queue_info {
 	int irq;
 	int affinity_cpu;
@@ -136,6 +140,7 @@ extern int oecls_numa_num;
 extern int check_nic_feature;
 extern unsigned int dft_num;
 extern unsigned int sft_num;
+extern int lo_numa_rps;
 
 #define oecls_debug(fmt, ...)					\
 	do {							\
@@ -184,5 +189,7 @@ int oecls_ntuple_res_init(void);
 void oecls_ntuple_res_clean(void);
 int oecls_flow_res_init(void);
 void oecls_flow_res_clean(void);
+void _oecls_flow_update(struct sock *sk, struct sk_buff *skb);
+void _oecls_set_cpu(struct sk_buff *skb, int *cpu, int *last_qtail);
 
 #endif	/* _NET_OENETCLS_H */
