@@ -5,6 +5,7 @@
 #include <linux/irq.h>
 #include <linux/irqdesc.h>
 #include <linux/inet.h>
+#include <linux/random.h>
 #include <net/netdev_rx_queue.h>
 #include <net/sock.h>
 #include <linux/oenetcls.h>
@@ -172,6 +173,17 @@ static void set_oecls_cpu(struct net_device *dev, struct sk_buff *skb,
 	rflow->cpu = next_cpu;
 }
 
+static bool oecls_do_hash(void)
+{
+	if (rcpu_probability <= 0)
+		return false;
+
+	if (rcpu_probability >= 100)
+		return true;
+
+	return get_random_u32_below(100) < rcpu_probability;
+}
+
 static int get_cpu_in_mask(int tcpu, u32 hash)
 {
 	const struct cpumask *mask;
@@ -219,6 +231,25 @@ static void __oecls_set_cpu(struct sk_buff *skb, struct net_device *ndev,
 
 	if ((val ^ hash) & ~oecls_cpu_mask)
 		return;
+
+	if (mode == 2) {
+		if (!oecls_do_hash()) {
+			*rcpu = last_recv_cpu;
+			return;
+		}
+		if (last_recv_cpu != cpu)
+			return;
+		newcpu = get_cpu_in_mask(last_recv_cpu, hash);
+		if (newcpu < 0)
+			newcpu = cpu;
+		if (newcpu == cpu) {
+			newcpu = cpumask_first(cpumask_of_node(cpu_to_node(cpu)));
+			newcpu = newcpu + (cpu + 1) % (nr_cpu_ids / oecls_numa_num);
+		}
+		oecls_debug("last_recv_cpu:%d irq_cpu:%d newcpu:%d\n", last_recv_cpu, cpu, newcpu);
+		*rcpu = newcpu;
+		return;
+	}
 
 	newcpu = get_cpu_in_mask(last_recv_cpu, hash);
 	if (newcpu >= 0)
