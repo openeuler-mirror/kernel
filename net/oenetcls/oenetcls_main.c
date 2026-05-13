@@ -55,6 +55,14 @@ int check_nic_feature = 1;
 module_param(check_nic_feature, int, 0444);
 MODULE_PARM_DESC(check_nic_feature, "check nic feature, default 1");
 
+unsigned int dft_num = 0x1000;
+module_param(dft_num, uint, 0444);
+MODULE_PARM_DESC(dft_num, "dev flow table entries, default 0x1000");
+
+unsigned int sft_num = 0x100000;
+module_param(sft_num, uint, 0444);
+MODULE_PARM_DESC(sft_num, "sock flow table entries, default 0x100000");
+
 static bool check_params(void)
 {
 	if (mode != 0 && mode != 1 && mode != 2)
