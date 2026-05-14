@@ -282,6 +282,7 @@ static void __ubase_ubus_remove(struct ub_entity *ue)
 {
 	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
 
+	set_bit(UBASE_STATE_REMOVING_B, &udev->state_bits);
 	ubase_ubus_unreg_share_port(udev);
 	ubase_dev_uninit(udev);
 	ubase_ubus_uninit(ue);
