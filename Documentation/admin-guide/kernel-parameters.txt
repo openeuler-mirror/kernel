@@ -718,6 +718,12 @@
 			which is located in node nid, if the allocation fails,
 			they will fallback to the global default memory area.
 
+	copy_opt_disable	[ARM64]
+			Disable the optimized copy_from_user path on Hisilicon
+			CPUs that support it. By default the optimization is
+			enabled; this parameter forces all copies through
+			the standard unoptimized path.
+
 	cmo_free_hint=	[PPC] Format: { yes | no }
 			Specify whether pages are marked as being inactive
 			when they are freed.  This is used in CMO environments
