@@ -11,7 +11,7 @@
 
 #include "ubagg_topo_info.h"
 #include "ubagg_log.h"
-
+#include "ubagg_connect_bonding.h"
 #include "ubagg_jetty.h"
 
 struct ubagg_target_jetty {
@@ -63,6 +63,11 @@ struct ubcore_tjetty *ubagg_import_jfr(struct ubcore_device *dev,
 	    udata->udrv_data == NULL)
 		return NULL;
 
+	if (ubagg_connect_exchange_udata_when_import_jetty(cfg, udata, true, dev) != 0) {
+		ubagg_log_err("failed to exchange udata when import jfr\n");
+		return ERR_PTR(-ENOEXEC);
+	}
+
 	ret = fill_udata(cfg, udata);
 	if (ret != 0) {
 		ubagg_log_err("Failed to fill udata, ret:%d\n", ret);
@@ -101,6 +106,11 @@ struct ubcore_tjetty *ubagg_import_jetty(struct ubcore_device *dev,
 	if (cfg == NULL || dev == NULL || udata == NULL ||
 	    udata->udrv_data == NULL)
 		return NULL;
+
+	if (ubagg_connect_exchange_udata_when_import_jetty(cfg, udata, false, dev) != 0) {
+		ubagg_log_err("failed to exchange udata when import jetty\n");
+		return ERR_PTR(-ENOEXEC);
+	}
 
 	ret = fill_udata(cfg, udata);
 	if (ret != 0) {

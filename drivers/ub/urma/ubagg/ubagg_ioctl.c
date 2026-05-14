@@ -119,7 +119,7 @@ static struct ubagg_device *ubagg_find_dev_by_name(char *dev_name)
 	return NULL;
 }
 
-static bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev)
+bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev)
 {
 	struct ubagg_topo_agg_dev empty_dev = {0};
 
@@ -357,104 +357,6 @@ static int ubagg_get_jetty_id(struct ubcore_device *dev,
 	return ret;
 }
 
-static int ubagg_get_seg_info(struct ubcore_device *dev,
-			      struct ubcore_user_ctl *user_ctl)
-{
-	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
-	struct ubagg_hash_table *ubagg_seg_ht = NULL;
-	struct ubagg_seg_hash_node *tmp_seg = NULL;
-	struct seg_info_req *req = NULL;
-
-	if ((ubagg_dev == NULL) || (ubagg_dev->segment_bitmap == NULL)) {
-		ubagg_log_err("ubagg_dev->segment_bitmap NULL");
-		return -1;
-	}
-
-	if (user_ctl->uctx != NULL ||
-	    user_ctl->in.addr == 0 ||
-	    user_ctl->in.len != sizeof(struct seg_info_req)) {
-		ubagg_log_err("Invalid user in");
-		return -1;
-	}
-	req = (struct seg_info_req *)user_ctl->in.addr;
-
-	ubagg_seg_ht = &ubagg_dev->ubagg_ht[UBAGG_HT_SEGMENT_HT];
-	spin_lock(&ubagg_seg_ht->lock);
-	tmp_seg = ubagg_hash_table_lookup_nolock(ubagg_seg_ht, req->token_id,
-						 &req->token_id);
-	if (tmp_seg == NULL) {
-		spin_unlock(&ubagg_seg_ht->lock);
-		ubagg_log_err("Failed to find seg.\n");
-		return -1;
-	}
-	if (user_ctl->out.addr != 0 &&
-	    user_ctl->out.len < sizeof(tmp_seg->ex_info.slaves)) {
-		spin_unlock(&ubagg_seg_ht->lock);
-		ubagg_log_err("Invalid user out");
-		return -1;
-	}
-	memcpy((void *)user_ctl->out.addr, tmp_seg->ex_info.slaves,
-	       sizeof(tmp_seg->ex_info.slaves));
-	spin_unlock(&ubagg_seg_ht->lock);
-	return 0;
-}
-
-static int ubagg_get_jetty_info(struct ubcore_device *dev,
-				struct ubcore_user_ctl *user_ctl)
-{
-	struct ubagg_hash_table *ht = NULL;
-	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
-	struct jetty_info_req *req = NULL;
-
-	if ((ubagg_dev == NULL) || (ubagg_dev->segment_bitmap == NULL)) {
-		ubagg_log_err("ubagg_dev->segment_bitmap NULL");
-		return -1;
-	}
-
-	if (user_ctl->uctx != NULL ||
-	    user_ctl->in.addr == 0 ||
-	    user_ctl->in.len != sizeof(struct jetty_info_req)) {
-		ubagg_log_err("Invalid user in");
-		return -1;
-	}
-	req = (struct jetty_info_req *)user_ctl->in.addr;
-
-	if (req->is_jfr) {
-		struct ubagg_jfr_hash_node *tmp_jfr = NULL;
-
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFR_HT];
-		spin_lock(&ht->lock);
-		tmp_jfr = ubagg_hash_table_lookup_nolock(ht, req->jetty_id.id,
-							 &req->jetty_id.id);
-		if (tmp_jfr == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jfr, jetty_id:%u.\n",
-				      req->jetty_id.id);
-			return -1;
-		}
-		memcpy((void *)user_ctl->out.addr, &tmp_jfr->ex_info,
-		       sizeof(tmp_jfr->ex_info));
-		spin_unlock(&ht->lock);
-	} else {
-		struct ubagg_jetty_hash_node *tmp_jetty = NULL;
-
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JETTY_HT];
-		spin_lock(&ht->lock);
-		tmp_jetty = ubagg_hash_table_lookup_nolock(ht, req->jetty_id.id,
-							   &req->jetty_id.id);
-		if (tmp_jetty == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jetty, jetty_id:%u.\n",
-				      req->jetty_id.id);
-			return -1;
-		}
-		memcpy((void *)user_ctl->out.addr, &tmp_jetty->ex_info,
-		       sizeof(tmp_jetty->ex_info));
-		spin_unlock(&ht->lock);
-	}
-	return 0;
-}
-
 int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 {
 	int ret = 0;
@@ -476,12 +378,6 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 		break;
 	case GET_JETTY_ID:
 		ret = ubagg_get_jetty_id(dev, user_ctl);
-		break;
-	case GET_SEG_INFO:
-		ret = ubagg_get_seg_info(dev, user_ctl);
-		break;
-	case GET_JETTY_INFO:
-		ret = ubagg_get_jetty_info(dev, user_ctl);
 		break;
 	default:
 		ubagg_log_err("unsupported ubagg userctl opcde:%u",

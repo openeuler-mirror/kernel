@@ -114,10 +114,6 @@ int ubcore_update_topo_map(struct ubcore_topo_map *new_topo_map,
 void ubcore_show_topo_map(struct ubcore_topo_map *topo_map);
 int ubcore_get_primary_eid(union ubcore_eid *eid, union ubcore_eid *primary_eid,
 	uint32_t *entity_id, uint32_t *chip_id, uint32_t *nd_id);
-
-int ubcore_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
-	union ubcore_eid *primary_eid, uint32_t ue_id);
-
 int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
 	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
 	bool iodie_level, struct ubcore_path_set *path_set);

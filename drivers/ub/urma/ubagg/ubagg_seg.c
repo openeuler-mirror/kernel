@@ -12,7 +12,7 @@
 #include "ubagg_bitmap.h"
 #include "ubagg_log.h"
 #include "ubagg_topo_info.h"
-
+#include "ubagg_connect_bonding.h"
 #include "ubagg_seg.h"
 
 #define URMA_UBAGG_DEV_MAX_NUM (20)
@@ -156,6 +156,11 @@ struct ubcore_target_seg *ubagg_import_seg(struct ubcore_device *dev,
 	    udata->uctx == NULL) {
 		ubagg_log_err("Invalid param");
 		return NULL;
+	}
+
+	if (ubagg_connect_exchange_udata_when_import_seg(&cfg->seg, udata, dev) != 0) {
+		ubagg_log_err("failed to exchange udata when import seg\n");
+		return ERR_PTR(-ENOEXEC);
 	}
 
 	ret = fill_udata(cfg, udata);

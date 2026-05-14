@@ -12,6 +12,8 @@ ubagg_hash_table.o \
 ubagg_ioctl.o \
 ubagg_topo_info.o \
 ubagg_netlink.o \
+ubagg_session.o \
+ubagg_connect_bonding.o \
 ubagg_main.o \
 ubagg_jetty.o
 

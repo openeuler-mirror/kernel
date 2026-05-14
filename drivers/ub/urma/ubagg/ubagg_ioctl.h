@@ -175,8 +175,6 @@ enum ubagg_userctl_opcode {
 	GET_TOPO_INFO = 2,
 	GET_JFR_ID = 3,
 	GET_JETTY_ID = 4,
-	GET_SEG_INFO = 5,
-	GET_JETTY_INFO = 6,
 };
 
 struct ubagg_physical_device_out {
@@ -214,6 +212,7 @@ struct ubagg_cmd_physical_device {
 };
 
 long ubagg_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
+bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev);
 void ubagg_put_ubcore_device(struct ubcore_device *dev);
 void ubagg_clear_dev_list(void);
 int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid, uint32_t *eid_idx);

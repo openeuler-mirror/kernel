@@ -190,13 +190,24 @@ static int ubcore_ubcm_service_connect_send_to(struct ubcore_comm_msg *msg,
 static int ubcore_ubcm_service_gen_send_to(struct ubcore_comm_msg *msg,
 				struct ubcore_cm_send_buf *send_buf)
 {
+	/*
+	* The well-know jetty channel currently configures MSN based on req
+	* or resp types. Bonding device message types are hard-coded here
+	* temporarily. The hard-code will be removed after the well-known
+	* jetty refactoring is completed.
+	*/
+	const uint8_t ubagg_net_bonding_seg_info_req = 0;
+	const uint8_t ubagg_net_bonding_seg_info_resp = 1;
+	const uint8_t ubagg_net_bonding_jetty_info_req = 2;
+	const uint8_t ubagg_net_bonding_jetty_info_resp = 3;
+
 	if (!msg || !send_buf)
 		return -EINVAL;
-	if (msg->type == UBCORE_NET_BONDING_SEG_INFO_REQ ||
-		msg->type == UBCORE_NET_BONDING_JETTY_INFO_REQ)
+	if (msg->type == ubagg_net_bonding_seg_info_req ||
+		msg->type == ubagg_net_bonding_jetty_info_req)
 		send_buf->msg_type = UBCORE_CM_GEN_DATA;
-	else if (msg->type == UBCORE_NET_BONDING_SEG_INFO_RESP ||
-		msg->type == UBCORE_NET_BONDING_JETTY_INFO_RESP)
+	else if (msg->type == ubagg_net_bonding_seg_info_resp ||
+		msg->type == ubagg_net_bonding_jetty_info_resp)
 		send_buf->msg_type = UBCORE_CM_GEN_RESP;
 	else {
 		ubcore_log_err("Connect service, Unrecognized msg type %u\n", msg->type);
