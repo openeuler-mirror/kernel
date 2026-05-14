@@ -31,13 +31,13 @@ static int cdma_ae_jfs_check_error(struct auxiliary_device *adev,
 
 	base_jfs = &jfs->base_jfs;
 
-	if (base_jfs->jfae_handler && base_jfs->ctx) {
+	if (base_jfs->jfae_handler && base_jfs->jfae) {
 		refcount_inc(&jfs->ae_ref_cnt);
 		spin_unlock(&cdev->jfs_table.lock);
 		ae.dev = base_jfs->dev;
 		ae.element.jfs = base_jfs;
 		ae.event_type = CDMA_EVENT_JFS_ERR;
-		base_jfs->jfae_handler(&ae, base_jfs->ctx);
+		base_jfs->jfae_handler(&ae, base_jfs->jfae);
 		if (refcount_dec_and_test(&jfs->ae_ref_cnt)) {
 			complete(&jfs->ae_comp);
 			dev_dbg(cdev->dev, "jfs ae handler done.\n");
@@ -68,13 +68,13 @@ static int cdma_ae_jfc_check_error(struct auxiliary_device *adev,
 	}
 	base_jfc = &jfc->base;
 
-	if (base_jfc->jfae_handler && base_jfc->ctx) {
+	if (base_jfc->jfae_handler && base_jfc->jfae) {
 		refcount_inc(&jfc->event_refcount);
 		spin_unlock_irqrestore(&cdev->jfc_table.lock, flags);
 		ae.dev = base_jfc->dev;
 		ae.element.jfc = base_jfc;
 		ae.event_type = CDMA_EVENT_JFC_ERR;
-		base_jfc->jfae_handler(&ae, base_jfc->ctx);
+		base_jfc->jfae_handler(&ae, base_jfc->jfae);
 		if (refcount_dec_and_test(&jfc->event_refcount)) {
 			complete(&jfc->event_comp);
 			dev_dbg(cdev->dev, "jfc ae handler done.\n");

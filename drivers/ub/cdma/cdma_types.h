@@ -9,6 +9,8 @@
 #include <linux/spinlock.h>
 #include "cdma.h"
 
+struct cdma_jfae;
+
 enum cdma_event_type {
 	CDMA_EVENT_JFC_ERR,
 	CDMA_EVENT_JFS_ERR,
@@ -79,6 +81,7 @@ struct cdma_base_tp {
 
 struct cdma_udata {
 	struct cdma_context *uctx;
+	struct cdma_jfae *jfae;
 	struct cdma_udrv_priv *udrv_data;
 };
 
@@ -93,11 +96,12 @@ struct cdma_event {
 };
 
 typedef void (*cdma_event_callback_t)(struct cdma_event *event,
-				      struct cdma_context *ctx);
+				      struct cdma_jfae *jfae);
 
 struct cdma_base_jfs {
 	struct cdma_dev *dev;
 	struct cdma_context *ctx;
+	struct cdma_jfae *jfae;
 	struct cdma_jfs_cfg cfg;
 	cdma_event_callback_t jfae_handler;
 	u32 id;
@@ -118,6 +122,7 @@ typedef void (*cdma_comp_callback_t)(struct cdma_base_jfc *jfc);
 struct cdma_base_jfc {
 	struct cdma_dev *dev;
 	struct cdma_context *ctx;
+	struct cdma_jfae *jfae;
 	struct cdma_jfc_cfg jfc_cfg;
 	u32 id;
 	cdma_comp_callback_t jfce_handler;
@@ -146,6 +151,7 @@ struct cdma_file {
 	struct list_head list;
 	struct mutex ctx_mutex;
 	struct cdma_context *uctx;
+	struct cdma_jfae *jfae;
 	struct idr idr;
 	spinlock_t idr_lock;
 	struct mutex umap_mutex;

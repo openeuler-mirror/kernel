@@ -91,16 +91,15 @@ static int cdma_create_ucontext(struct cdma_ioctl_hdr *hdr,
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
-	ctx->jfae = cdma_alloc_jfae(cfile);
-	if (!ctx->jfae) {
+	jfae = cdma_alloc_jfae(cfile);
+	if (!jfae) {
 		dev_err(cdev->dev, "create jfae failed, ctx handle = %d.\n",
 			ctx->handle);
 		ret = -EFAULT;
 		goto free_context;
 	}
 
-	jfae = ctx->jfae;
-	jfae->ctx = ctx;
+	cfile->jfae = jfae;
 	args.out.cqe_size = cdev->caps.cqe_size;
 	args.out.dwqe_enable =
 		!!(cdev->caps.feature & CDMA_CAP_FEATURE_DIRECT_WQE);
@@ -118,6 +117,7 @@ static int cdma_create_ucontext(struct cdma_ioctl_hdr *hdr,
 
 free_jfae:
 	cfile->uctx = NULL;
+	cfile->jfae = NULL;
 	cdma_free_jfae(ctx->jfae);
 free_context:
 	cdma_free_context(cdev, ctx);
@@ -323,6 +323,7 @@ static int cdma_cmd_create_jfs(struct cdma_ioctl_hdr *hdr,
 	}
 
 	udata.uctx = cfile->uctx;
+	udata.jfae = cfile->jfae;
 	udata.udrv_data = (struct cdma_udrv_priv *)&arg.udata;
 	arg.in.queue_id = queue->id;
 	cdma_config_jfs(&cfg, &arg);
@@ -651,6 +652,7 @@ static int cdma_cmd_create_jfc(struct cdma_ioctl_hdr *hdr,
 	cfg.ceqn = arg.in.ceqn;
 	cfg.queue_id = queue->id;
 	udata.uctx = cfile->uctx;
+	udata.jfae = cfile->jfae;
 	udata.udrv_data = (struct cdma_udrv_priv *)&arg.udata;
 	jfc = cdma_create_jfc(cdev, &cfg, &udata);
 	if (!jfc) {
@@ -661,7 +663,7 @@ static int cdma_cmd_create_jfc(struct cdma_ioctl_hdr *hdr,
 
 	jfc_event = &jfc->jfc_event;
 	uobj->object = jfc;
-	cdma_init_jfc_event(jfc_event, jfc);
+	cdma_init_jfc_event(jfc_event);
 
 	arg.out.id = jfc->id;
 	arg.out.depth = jfc->jfc_cfg.depth;

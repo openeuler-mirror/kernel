@@ -224,7 +224,6 @@ struct cdma_jfs_event {
 };
 
 struct cdma_jfc_event {
-	struct cdma_base_jfc *jfc;
 	struct cdma_jfce *jfce;
 	struct list_head comp_event_list;
 	struct list_head async_event_list;
