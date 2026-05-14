@@ -372,7 +372,7 @@ static int unic_rq_alloc_resource(struct unic_dev *unic_dev, struct unic_rq *rq)
 
 	size = rqe_depth * sizeof(struct unic_rqe);
 	rq->rqe = dma_alloc_coherent(adev->dev.parent, size,
-				     &rq->rqe_base_dma_addr, GFP_KERNEL);
+				     &rq->rqe_base_dma_addr, unic_dev->gfp);
 	if (!rq->rqe) {
 		dev_err(adev->dev.parent, "failed to dma alloc unic rqe.\n");
 		ret = -ENOMEM;
@@ -382,7 +382,7 @@ static int unic_rq_alloc_resource(struct unic_dev *unic_dev, struct unic_rq *rq)
 	rq->sw_db.db_addr = dma_alloc_coherent(adev->dev.parent,
 					       UNIC_JFR_DB_SIZE,
 					       &rq->sw_db.db_dma_addr,
-					       GFP_KERNEL);
+					       unic_dev->gfp);
 	if (!rq->sw_db.db_addr) {
 		dev_err(adev->dev.parent,
 			"failed to dma alloc software db addr.\n");

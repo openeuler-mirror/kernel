@@ -190,8 +190,6 @@ int __ubase_cmd_ctx_buf_alloc(struct ubase_dev *udev,
 			      struct ubase_mbx_attr *attr);
 void __ubase_cmd_ctx_buf_free(struct ubase_dev *udev,
 			      struct ubase_ctx_buf_cap *ctx_buf);
-int __ubase_perf_stats(struct ubase_dev *udev, u64 port_bitmap, u32 period,
-		       struct ubase_perf_stats_result *data, u32 data_size);
 int ubase_config_ctx_buf_to_hw(struct ubase_dev *udev,
 			       struct ubase_ctx_buf_cap *ctx_buf,
 			       struct ubase_mbx_attr *attr);

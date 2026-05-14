@@ -833,6 +833,10 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_query_chip_info, NULL
 	},
 	{
+		"init die list", UBASE_SUP_ALL, 0,
+		ubase_die_list_init, ubase_die_list_uninit
+	},
+	{
 		"query controller_info", UBASE_SUP_NO_PMU, 0,
 		ubase_query_controller_info, NULL
 	},
@@ -1215,6 +1219,24 @@ bool ubase_adev_eth_mac_supported(struct auxiliary_device *adev)
 	return ubase_dev_eth_mac_supported(__ubase_get_udev_by_adev(adev));
 }
 EXPORT_SYMBOL(ubase_adev_eth_mac_supported);
+
+/**
+ * ubase_adev_non_mirror_mem_supported() - determine whether mirror mem is supported
+ * @adev: auxiliary device
+ *
+ * This function is used to determine whether mirror mem is supported.
+ *
+ * Context: Any context.
+ * Return: true or false
+ */
+bool ubase_adev_non_mirror_mem_supported(struct auxiliary_device *adev)
+{
+	if (!adev)
+		return false;
+
+	return ubase_dev_non_mirror_mem_supported(__ubase_get_udev_by_adev(adev));
+}
+EXPORT_SYMBOL(ubase_adev_non_mirror_mem_supported);
 
 /**
  * ubase_get_io_base() - get io space base address
@@ -2259,7 +2281,7 @@ void *ubase_alloc_buf(struct ubase_dev *udev, size_t size,
 	if (ubase_dev_dtu_supported(udev))
 		va = ubase_dtu_alloc(udev, page, size, iova);
 	else
-		va = dma_alloc_coherent(udev->dev, size, iova, GFP_KERNEL);
+		va = dma_alloc_coherent(udev->dev, size, iova, udev->gfp);
 
 	return va;
 }

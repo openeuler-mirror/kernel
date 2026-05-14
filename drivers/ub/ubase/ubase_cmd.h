@@ -89,6 +89,11 @@ enum ubase_drv_cap_bit {
 	UBASE_PMU_CRQ_SUPPORT_B  = 1,
 };
 
+enum ubase_vl_map_type {
+	UBASE_PRIO_VL_MAP,
+	UBASE_DSCP_VL_MAP,
+};
+
 struct ubase_notify_drv_cap_cmd {
 	u8	cap_bits[24]; /* see ubase_drv_cap_bit */
 };
@@ -150,6 +155,11 @@ struct ubase_cfg_ets_vl_sch_cmd {
 	u8 rsvd[2];
 	u8 vl_bw[UBASE_MAX_VL_NUM];
 	__le32 port_bitmap;
+};
+
+struct ubase_close_perf_stats_cmd {
+	__le32	logic_port_bitmap[2];
+	u8	rsv[16];
 };
 
 struct ubase_query_dl_pkt_stats_cmd {
@@ -310,6 +320,12 @@ struct ubase_config_vl_speed_cmd {
 	__le16 vl_bitmap;
 	__le32 max_speed[UBASE_MAX_VL_NUM];
 	u8 resv1[20];
+};
+
+struct ubase_config_dscp_tc_cmd {
+	u8 map_type;
+	u8 rsv[23];
+	u8 vl[UBASE_MAX_DSCP];
 };
 
 struct ubase_activate_req {
