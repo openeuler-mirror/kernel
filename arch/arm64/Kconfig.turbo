@@ -84,4 +84,15 @@ config DYNAMIC_XCALL
 	  and a kernel module which provides customized
 	  implementation.
 
+config ARM64_COPY_FROM_USER_OPT
+	bool "Hisilicon Optimized Copy From User enabled"
+	depends on ARCH_HISI
+	default y
+	help
+	  Enable an optimized copy_from_user implementation for
+	  supported cores (e.g. Hisilicon HIP11, Hisilicon HIP12,
+	  Linxicore9100). This trades a small PAN toggle overhead
+	  for higher throughput on large copies. This can be
+	  disabled at boot via copy_opt_disable.
+
 endmenu # "Turbo features selection"
