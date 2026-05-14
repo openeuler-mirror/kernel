@@ -296,7 +296,7 @@ void dma_free_iova(struct iova_slot *slot)
 }
 EXPORT_SYMBOL_GPL(dma_free_iova);
 
-int ummu_fill_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages)
+int ummu_core_fill_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages, gfp_t gfp)
 {
 	struct page **pages;
 	unsigned long i;
@@ -311,7 +311,7 @@ int ummu_fill_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pa
 	if (!check_iova_bitmap_region(slot, iova_bitmap_offset(slot, iova), nr_pages, true))
 		return -EEXIST;
 
-	pages = allocate_pages(slot->dev, nr_pages, GFP_KERNEL | __GFP_ZERO);
+	pages = allocate_pages(slot->dev, nr_pages, gfp);
 	if (!pages)
 		return -ENOMEM;
 
@@ -329,9 +329,15 @@ err_free_pages:
 	kvfree(pages);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(ummu_core_fill_pages);
+
+int ummu_fill_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages)
+{
+	return ummu_core_fill_pages(slot, iova, nr_pages, GFP_KERNEL | __GFP_ZERO);
+}
 EXPORT_SYMBOL_GPL(ummu_fill_pages);
 
-int ummu_drain_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages)
+int ummu_core_drain_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages)
 {
 	if (!IS_ALIGNED(iova, PAGE_SIZE) || !nr_pages)
 		return -EINVAL;
@@ -345,5 +351,11 @@ int ummu_drain_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_p
 	drain_pages(slot, iova, nr_pages);
 	bitmap_clear(slot->bitmap, iova_bitmap_offset(slot, iova), nr_pages);
 	return 0;
+}
+EXPORT_SYMBOL_GPL(ummu_core_drain_pages);
+
+int ummu_drain_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages)
+{
+	return ummu_core_drain_pages(slot, iova, nr_pages);
 }
 EXPORT_SYMBOL_GPL(ummu_drain_pages);
