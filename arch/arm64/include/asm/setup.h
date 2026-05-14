@@ -44,4 +44,15 @@ static inline bool arch_parse_debug_rodata(char *arg)
 }
 #define arch_parse_debug_rodata arch_parse_debug_rodata
 
+#ifdef CONFIG_ARM64_SYNC_SEI
+bool arm64_sync_sei_enabled(void);
+extern unsigned long __start_esb_patch_table[];
+extern unsigned long __stop_esb_patch_table[];
+#else
+static inline bool arm64_sync_sei_enabled(void)
+{
+	return false;
+}
+#endif
+
 #endif
