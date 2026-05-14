@@ -18,6 +18,7 @@
 #include <linux/module.h>
 #include <linux/vfio.h>
 #include <linux/types.h>
+#include <linux/eventfd.h>
 
 #include "vfio_ub_private.h"
 
@@ -74,6 +75,22 @@ static void vfio_ub_remove(struct ub_entity *uent)
 	ub_dbg(uent, "vfio-ub driver has removed\n");
 }
 
+static int vfio_ub_reinit(struct ub_entity *uent)
+{
+	struct vfio_ub_core_device *vdev =
+		(struct vfio_ub_core_device *)dev_get_drvdata(&uent->dev);
+
+	mutex_lock(&vdev->igate);
+
+	if (vdev->reinit_trigger)
+		eventfd_signal(vdev->reinit_trigger, 1);
+	else
+		ub_warn(uent, "vfio-ub reinit_trigger isn't set\n");
+
+	mutex_unlock(&vdev->igate);
+	return 0;
+}
+
 static const struct ub_device_id vfio_ub_table[] = {
 	{ UB_DRIVER_OVERRIDE_ENTITY_VFIO(UB_ANY_ID, UB_ANY_ID) }, /* match all by default */
 	{}
@@ -85,6 +102,7 @@ static struct ub_driver vfio_ub_driver = {
 	.id_table = vfio_ub_table,
 	.probe = vfio_ub_probe,
 	.remove = vfio_ub_remove,
+	.reinit = vfio_ub_reinit,
 	.driver_managed_dma = true,
 };
 

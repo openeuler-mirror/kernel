@@ -30,17 +30,6 @@ struct entity_rs_info {
 	u32 sa_h;
 };
 
-struct pool_fad {
-	struct entity_base_info base;
-	struct entity_rs_info ers[MAX_UB_RES_NUM];
-
-	bool attach;
-	bool ers_valid;
-	struct ub_entity *uent;
-	struct list_head node;
-	struct ub_bus_controller *ubc;
-};
-
 struct entity_reg_msg_pld {
 	/* DW0~DW13 */
 	struct entity_base_info base;
@@ -67,7 +56,6 @@ struct port_reset_notify_pld {
 };
 #define PORT_RESET_NOTIFY_PLD_SIZE 4
 struct msg_pkt_header;
-struct ub_entity *ub_get_fad_ent_by_eid(unsigned int eid);
 bool ub_rsp_msg_init(struct msg_pkt_header *header, u8 status, u32 plen);
 void ub_pool_rx_msg_handler(struct ub_bus_controller *ubc, void *pkt, u16 len);
 

@@ -14,6 +14,7 @@
 #include "route.h"
 #include "ubus_entity.h"
 #include "ubus_driver.h"
+#include "task.h"
 #include "services/hotplug/hotplug.h"
 #include "link.h"
 
@@ -132,7 +133,7 @@ static int ublc_update_route_link_up(struct ub_port *port)
  *	into right(switch1 & device0) and route of right into left
  * 4. start switch1 and device0
  */
-static int ublc_handle_new_device_link_up(struct ub_port *port)
+static int ublc_handle_new_device_link_up(struct ub_port *port, int src)
 {
 	struct list_head dev_list;
 	int ret;
@@ -168,7 +169,7 @@ static int ublc_handle_new_device_link_up(struct ub_port *port)
 		goto err_link_up;
 	}
 
-	ret = ub_enum_entities_active(&dev_list);
+	ret = ub_enum_entities_active(&dev_list, src);
 	if (ret) {
 		ub_err(port->uent, "link up start devices failed, ret=%d\n", ret);
 		goto err_link_up;
@@ -244,7 +245,7 @@ static void ublc_mark_detached_devices(struct ub_entity *root,
  * 5. handle route link down at p1, del route of right(switch1 & device0)
  *	from left(controller0 & switch0)
  */
-static void ublc_handle_all_link_down(struct ub_port *port, struct ub_entity *r_uent)
+void ublc_handle_all_link_down(struct ub_port *port, struct ub_entity *r_uent)
 {
 	struct list_head dev_list;
 
@@ -282,15 +283,16 @@ static void port_link_state_change(struct ub_port *port, struct ub_port *r_port)
 		r_port->link_state = LINK_STATE_DONE;
 }
 
-void ublc_link_up_handle(struct ub_port *port)
+int ublc_link_up_handle(struct ub_port *port, int src)
 {
 	struct ub_entity *uent = port->uent;
 	struct ub_entity *r_uent;
 	struct ub_port *r_port;
-	int ret;
+	int ret = 0;
 
 	if (port->r_uent) {
 		ub_warn(uent, "port%u is already up\n", port->index);
+		ret = ub_create_existed_entity_handler(port->r_uent);
 		goto link_up_notify;
 	}
 
@@ -298,7 +300,7 @@ void ublc_link_up_handle(struct ub_port *port)
 
 	r_uent = ublc_get_port_r_uent(port);
 	if (!r_uent) {
-		ret = ublc_handle_new_device_link_up(port);
+		ret = ublc_handle_new_device_link_up(port, src);
 		if (ret) {
 			ubhp_handle_power(port->slot, false);
 		} else {
@@ -326,7 +328,9 @@ out:
 	device_unlock(&uent->dev);
 link_up_notify:
 	ub_notify_share_port(port, UB_PORT_EVENT_LINK_UP);
+	return ret;
 }
+EXPORT_SYMBOL_GPL(ublc_link_up_handle);
 
 static void check_entity_disconnected(struct ub_port *port)
 {
@@ -366,18 +370,20 @@ static void check_entity_disconnected(struct ub_port *port)
 
 	/* If no connection is detected, mark ent_far as disconnected */
 	if (!is_connected) {
-		ub_info(ent_far, "ub entity is down\n");
+		ub_info(ent_far, "ub entity is down, mark disconnect\n");
 		ub_entity_assign_priv_flag(ent_far, UB_ENTITY_DISCONNECTED, true);
 	}
 }
 
-void ublc_link_down_handle(struct ub_port *port)
+int ublc_link_down_handle(struct ub_port *port)
 {
-	struct ub_entity *uent = port->uent;
+	struct ub_entity *uent = port->uent, *r_uent = port->r_uent;
 	struct ub_port *r_port;
+	int ret = 0;
 
-	if (!port->r_uent) {
+	if (!r_uent) {
 		ub_warn(uent, "port%u is already down\n", port->index);
+		ret = -ENODEV;
 		goto link_down_notify;
 	}
 
@@ -386,16 +392,28 @@ void ublc_link_down_handle(struct ub_port *port)
 	device_lock(&uent->dev);
 
 	if (ublc_device_is_down(port)) {
-		ub_entity_assign_priv_flag(port->r_uent, UB_ENTITY_DISCONNECTED, true);
+		ub_info(r_uent, "linkdown, mark disconnect\n");
+		ub_entity_assign_priv_flag(r_uent, UB_ENTITY_DISCONNECTED, true);
 		ub_info(uent, "port%u link down\n", port->index);
-		ublc_handle_all_link_down(port, port->r_uent);
-		ub_info(uent, "all port link down and remove device\n");
-		device_unlock(&uent->dev);
 
+		if (ub_entity_test_task_src(r_uent, TASK_SRC_SELF)) {
+			ublc_handle_all_link_down(port, r_uent);
+			ub_info(uent, "all port link down and remove device\n");
+		} else { /* Just set r_uent, doesn't recursion */
+			atomic_set(&r_uent->ent_mgmt_state,
+				   MGMT_STATE_UNREGISTERING);
+			ret = ub_add_delay_task(r_uent, port,
+						TASK_TYPE_LINKDOWN);
+			if (ret)
+				atomic_set(&r_uent->ent_mgmt_state,
+					   MGMT_STATE_IDLE);
+		}
+
+		device_unlock(&uent->dev);
 		goto link_down_notify;
 	}
 
-	r_port = port->r_uent->ports + port->r_index;
+	r_port = r_uent->ports + port->r_index;
 
 	ub_route_table_clear_for_port(port, r_port);
 	ub_port_disconnect(port);
@@ -405,12 +423,14 @@ void ublc_link_down_handle(struct ub_port *port)
 	ub_info(uent, "port%u link down\n", port->index);
 link_down_notify:
 	ub_notify_share_port(port, UB_PORT_EVENT_LINK_DOWN);
+	return ret;
 }
+EXPORT_SYMBOL_GPL(ublc_link_down_handle);
 
 static void ub_link_handle_event(struct ub_port *port, enum ub_link_event event)
 {
 	if (event == UB_LINK_UP)
-		ublc_link_up_handle(port);
+		ublc_link_up_handle(port, TASK_SRC_SELF);
 	else
 		ublc_link_down_handle(port);
 }

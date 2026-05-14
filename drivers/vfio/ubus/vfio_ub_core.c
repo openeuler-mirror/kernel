@@ -143,6 +143,12 @@ void vfio_ub_core_close_device(struct vfio_device *core_vdev)
 		eventfd_ctx_put(vdev->req_trigger);
 		vdev->req_trigger = NULL;
 	}
+
+	if (vdev->reinit_trigger) {
+		eventfd_ctx_put(vdev->reinit_trigger);
+		vdev->reinit_trigger = NULL;
+	}
+
 	mutex_unlock(&vdev->igate);
 }
 
@@ -229,7 +235,8 @@ static int vfio_ub_get_irq_count(struct vfio_ub_core_device *vdev, int irq_type)
 		if (!(uent->no_intr == 0 && uent->intr_type1 == 0))
 			return 0;
 		return ub_intr_vec_count(vdev->uent);
-	} else if (irq_type == VFIO_UB_REQ_IRQ_INDEX) {
+	} else if (irq_type == VFIO_UB_REQ_IRQ_INDEX ||
+		   irq_type == VFIO_UB_REINIT_IRQ_INDEX) {
 		return 1;
 	}
 
@@ -260,6 +267,7 @@ static int vfio_ub_get_irq_info(struct vfio_ub_core_device *vdev, unsigned long 
 		info.count = (u32)ret;
 		break;
 	case VFIO_UB_REQ_IRQ_INDEX:
+	case VFIO_UB_REINIT_IRQ_INDEX:
 		info.count = (u32)vfio_ub_get_irq_count(vdev, info.index);
 		break;
 	default:
