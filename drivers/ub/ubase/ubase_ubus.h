@@ -62,7 +62,7 @@ void ubase_ubus_irq_vectors_free(struct device *dev);
 int ubase_ubus_irq_vector(struct device *dev, u32 idx);
 
 int ubase_ubus_reset_entry(struct device *dev);
-void ubase_ubus_reinit(struct device *dev);
+int ubase_ubus_reset_init(struct device *dev);
 
 void ubase_ubus_fault_log(struct ubase_dev *udev, u32 event_id, void *data);
 
