@@ -95,10 +95,14 @@ alternative_else_nop_endif
 		_asm_extable_uaccess	8888b, \l;
 	.endm
 
+#ifdef CONFIG_ARM64_COPY_FROM_USER_OPT
+
 	.macro user_ldst_pair_index l, inst, reg1, reg2, addr, val
 8888:		\inst		\reg1, \reg2, [\addr, \val];
 
 		_asm_extable_uaccess	8888b, \l;
 	.endm
+
+#endif /* CONFIG_ARM64_COPY_FROM_USER_OPT */
 
 #endif

@@ -391,6 +391,8 @@ do {									\
 	} while (0);							\
 } while(0)
 
+#ifdef CONFIG_ARM64_COPY_FROM_USER_OPT
+
 #define COPY_OPT_THRESHOLD  4096
 
 static __always_inline bool use_copy_opt(unsigned long n)
@@ -398,6 +400,15 @@ static __always_inline bool use_copy_opt(unsigned long n)
 	return (n) >= COPY_OPT_THRESHOLD &&
 		alternative_has_cap_unlikely(ARM64_HAS_COPY_OPT);
 }
+
+#else /* !CONFIG_ARM64_COPY_FROM_USER_OPT */
+
+static __always_inline bool use_copy_opt(unsigned long n)
+{
+	return false;
+}
+
+#endif /* CONFIG_ARM64_COPY_FROM_USER_OPT */
 
 extern unsigned long __must_check __arch_copy_from_user_opt(void *to,
 				const void __user *from, unsigned long n);
