@@ -232,11 +232,11 @@ static inline u32 get_rps_cpu(u32 last_recv_cpu, u32 hash, int policy)
 
 	if (policy == 1) {
 		newcpu = cpumask_first(cpumask_of_node(cpu_to_node(last_recv_cpu)));
-		index = rps_cpus[reciprocal_scale(hash, rps_cpus_nums - 1)];
+		index = rps_cpus[reciprocal_scale(hash, rps_cpus_nums)];
 		newcpu += index;
 	} else if (policy == 2) {
 		newcpu = cpumask_first(topology_cluster_cpumask(last_recv_cpu));
-		index = cluster_rps_cpus[reciprocal_scale(hash, cluster_rps_cpus_nums - 1)];
+		index = cluster_rps_cpus[reciprocal_scale(hash, cluster_rps_cpus_nums)];
 		newcpu += index;
 	} else {
 		newcpu = last_recv_cpu;
