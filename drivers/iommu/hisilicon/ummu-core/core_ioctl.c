@@ -23,10 +23,6 @@
 #define MMAP_BLOCK_INDEX_MASK GENMASK(11, 2)
 #define MMAP_BLK_TID_MASK GENMASK(31, 12)
 #define MMAP_QUE_TID_MASK GENMASK(21, 2)
-#define KEY_TIME_REGIN GENMASK_ULL(47, 16)
-#define KEY_OFFSET_SHIFT 32
-#define GET_PROC_KEY(tgid, stime) ((((u64)(tgid)) << (KEY_OFFSET_SHIFT)) \
-			| ((u64)(FIELD_GET(KEY_TIME_REGIN, stime))))
 
 struct ktid_info {
 	u8 pcmdq_order;
@@ -93,13 +89,12 @@ static int get_tid_res(struct ktid_info *entry)
 
 static int proc_manager_open(struct inode *inode, struct file *filp)
 {
+	struct mm_struct *mm = current->mm;
 	struct proc_manager *manager;
-	unsigned long key;
 	int ret;
 
 	mutex_lock(&global_proc_mtx);
-	key = GET_PROC_KEY(current->tgid, current->start_time);
-	manager = xa_load(&proc_info_xa, key);
+	manager = xa_load(&proc_info_xa, (unsigned long)mm);
 	if (manager) {
 		mutex_unlock(&global_proc_mtx);
 		return -EEXIST;
@@ -113,14 +108,15 @@ static int proc_manager_open(struct inode *inode, struct file *filp)
 
 	mutex_init(&manager->proc_mtx);
 	mutex_lock(&manager->proc_mtx);
-	ret = xa_err(xa_store(&proc_info_xa, key, manager, GFP_KERNEL));
+	ret = xa_err(xa_store(&proc_info_xa, (unsigned long)mm, manager, GFP_KERNEL));
 	if (ret)
 		goto mtx_unlock;
 
 	mutex_unlock(&global_proc_mtx);
+	mmgrab(mm);
 
 	xa_init(&manager->tid_xa);
-	filp->private_data = (void *)(uintptr_t)key;
+	filp->private_data = mm;
 	mutex_unlock(&manager->proc_mtx);
 
 	return 0;
@@ -170,21 +166,22 @@ static void release_tid_resource(struct ktid_info *entry)
 
 static int proc_manager_close(struct inode *inode, struct file *filp)
 {
-	unsigned long key = (unsigned long)(uintptr_t)filp->private_data;
+	struct mm_struct *mm = filp->private_data;
 	struct proc_manager *manager;
 	struct ktid_info *entry;
 	unsigned long idx = 0;
 
 	mutex_lock(&global_proc_mtx);
-	manager = xa_load(&proc_info_xa, key);
+	manager = xa_load(&proc_info_xa, (unsigned long)mm);
 	if (!manager) {
 		mutex_unlock(&global_proc_mtx);
 		return -EINVAL;
 	}
 
-	WARN_ON(!xa_erase(&proc_info_xa, key));
+	xa_erase(&proc_info_xa, (unsigned long)mm);
 	mutex_lock(&manager->proc_mtx);
 	mutex_unlock(&global_proc_mtx);
+	mmdrop(mm);
 	if (!xa_empty(&manager->tid_xa))
 		xa_for_each(&manager->tid_xa, idx, entry) {
 			release_tid_resource(entry);
@@ -865,6 +862,40 @@ static long tid_ioctl(struct file *filp, u32 cmd, unsigned long arg)
 		ret = alloc_tid_response(&tid_data, key, entry, arg);
 
 	return ret;
+}
+
+int ummu_core_invalidate_tid(struct mm_struct *mm, u32 tid)
+{
+	struct proc_manager *manager;
+	struct iommu_domain *domain;
+	struct ktid_info *entry;
+
+	mutex_lock(&global_proc_mtx);
+	manager = xa_load(&proc_info_xa, (unsigned long)mm);
+	if (!manager) {
+		mutex_unlock(&global_proc_mtx);
+		return -ESRCH;
+	}
+
+	guard(mutex)(&manager->proc_mtx);
+	mutex_unlock(&global_proc_mtx);
+
+	entry = xa_load(&manager->tid_xa, tid);
+	if (!entry)
+		return -ENOENT;
+
+	if (entry->sva)
+		domain = entry->sva->handle.domain;
+	else
+		domain = iommu_get_domain_for_dev(entry->dev);
+
+	if (!domain)
+		return -ENODEV;
+
+	if (!global_core_device->ops || !global_core_device->ops->invalidate_cfg)
+		return -EOPNOTSUPP;
+
+	return global_core_device->ops->invalidate_cfg(to_ummu_base_domain(domain));
 }
 
 static const struct file_operations misc_fops = {
