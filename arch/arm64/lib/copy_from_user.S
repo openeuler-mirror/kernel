@@ -71,3 +71,35 @@ USER(9998f, ldtrb tmp1w, [srcin])
 	ret
 SYM_FUNC_END(__arch_copy_from_user)
 EXPORT_SYMBOL(__arch_copy_from_user)
+
+	.macro ldp2 reg1, reg2, ptr, val
+	user_ldst_pair_index 9997f, ldp, \reg1, \reg2, \ptr, \val
+	.endm
+
+	.macro stp2 reg1, reg2, ptr, val
+	stp \reg1, \reg2, [\ptr, \val]
+	.endm
+
+SYM_FUNC_START(__arch_copy_from_user_opt)
+	add	end, x0, x2
+	mov	srcin, x1
+
+	ALTERNATIVE("nop", __stringify(SET_PSTATE_PAN(0)), ARM64_HAS_PAN)
+
+#include "copy_template_opt.S"
+	mov	x0, #0				// Nothing to copy
+
+.L__arch_copy_from_user_opt_exit:
+	ALTERNATIVE("nop", __stringify(SET_PSTATE_PAN(1)), ARM64_HAS_PAN)
+	ret
+
+	// Exception fixups
+9997:	cmp	dst, dstin
+	b.ne	9998f
+	// Before being absolutely sure we couldn't copy anything, try harder
+USER(9998f, ldtrb tmp1w, [srcin])
+	strb	tmp1w, [dst], #1
+9998:	sub	x0, end, dst			// bytes not copied
+	b	.L__arch_copy_from_user_opt_exit
+SYM_FUNC_END(__arch_copy_from_user_opt)
+EXPORT_SYMBOL(__arch_copy_from_user_opt)

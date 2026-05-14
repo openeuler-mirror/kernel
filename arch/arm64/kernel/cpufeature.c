@@ -2580,6 +2580,31 @@ static void cpu_enable_arch_xcall_xint(const struct arm64_cpu_capabilities *__un
 }
 #endif
 
+static bool copy_opt_disable __ro_after_init;
+
+static int __init parse_copy_opt_disable(char *str)
+{
+	copy_opt_disable = true;
+	return 0;
+}
+early_param("copy_opt_disable", parse_copy_opt_disable);
+
+static bool has_copy_opt(const struct arm64_cpu_capabilities *cap, int scope)
+{
+	/* List of CPUs that support copy_from_user_opt */
+	static const struct midr_range copy_opt_cpus[] = {
+		MIDR_ALL_VERSIONS(MIDR_HISI_HIP11),
+		MIDR_ALL_VERSIONS(MIDR_HISI_HIP12),
+		MIDR_ALL_VERSIONS(MIDR_HISI_LINXICORE9100),
+		{ }
+	};
+
+	if (copy_opt_disable)
+		return false;
+
+	return is_midr_in_range_list(copy_opt_cpus);
+}
+
 static const struct arm64_cpu_capabilities arm64_features[] = {
 	{
 		.capability = ARM64_ALWAYS_BOOT,
@@ -3155,6 +3180,12 @@ static const struct arm64_cpu_capabilities arm64_features[] = {
 		.cpu_enable = cpu_enable_arch_xcall_xint,
 	},
 #endif
+	{
+		.desc = "Hisilicon Optimized Copy From User enabled",
+		.capability = ARM64_HAS_COPY_OPT,
+		.type = ARM64_CPUCAP_SYSTEM_FEATURE,
+		.matches = has_copy_opt,
+	},
 	{},
 };
 
