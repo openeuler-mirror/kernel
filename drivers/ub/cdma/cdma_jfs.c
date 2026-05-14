@@ -50,6 +50,7 @@ static int cdma_get_user_jfs_cmd(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 
 	ctx = udata->uctx;
 	jfs->base_jfs.ctx = ctx;
+	jfs->base_jfs.jfae = udata->jfae;
 	jfs->sq.tid = ctx->tid;
 	jfs->jfs_addr = ucmd->jetty_addr;
 	jfs->sq.id = ucmd->jfs_id;
@@ -301,7 +302,7 @@ struct cdma_base_jfs *cdma_create_jfs(struct cdma_dev *cdev,
 		goto err_get_jfs_buf;
 
 	if (udata) {
-		ret = cdma_get_jfae(jfs->base_jfs.ctx);
+		ret = cdma_get_jfae_ref(jfs->base_jfs.jfae);
 		if (ret)
 			goto err_get_jfae;
 	}
@@ -326,7 +327,7 @@ struct cdma_base_jfs *cdma_create_jfs(struct cdma_dev *cdev,
 
 err_create_hw_jfsc:
 	if (udata)
-		cdma_put_jfae(jfs->base_jfs.ctx);
+		cdma_put_jfae_ref(jfs->base_jfs.jfae);
 err_get_jfae:
 	cdma_free_sq_buf(cdev, &jfs->sq);
 err_get_jfs_buf:
@@ -524,7 +525,7 @@ static int cdma_modify_and_destroy_jfs(struct cdma_dev *cdev,
 
 static inline void cdma_release_jfs_event(struct cdma_jfs *jfs)
 {
-	cdma_release_async_event(jfs->base_jfs.ctx,
+	cdma_release_async_event(jfs->base_jfs.jfae,
 		&jfs->base_jfs.jfs_event.async_event_list);
 }
 

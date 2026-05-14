@@ -199,9 +199,6 @@ void cdma_free_context(struct cdma_dev *cdev, struct cdma_context *ctx)
 	if (!cdev || !ctx)
 		return;
 
-	if (ctx->jfae)
-		ctx->jfae->ctx = NULL;
-
 	cdma_ctx_free_tid(cdev, ctx);
 	cdma_ctx_handle_free(cdev, ctx);
 	mutex_destroy(&ctx->pgdir_mutex);
