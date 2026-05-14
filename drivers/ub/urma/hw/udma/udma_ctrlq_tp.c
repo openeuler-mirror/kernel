@@ -100,7 +100,7 @@ void udma_tp_ae_work(struct work_struct *work)
 
 		kfree(tp_ue_idx_info);
 	} else {
-		ret = udma_open_ue_rx(udev, true, false, false, 0);
+		ret = udma_open_ue_rx_with_retry(udev, true, false, false, 0);
 		if (ret)
 			dev_warn(udev->dev, "udma open ue rx failed in tp ae work.\n");
 	}
@@ -130,7 +130,7 @@ int udma_ctrlq_tp_flush_done(struct udma_dev *udev, uint32_t tpn)
 
 		kfree(tp_ue_idx_info);
 	} else {
-		ret = udma_open_ue_rx(udev, true, false, false, 0);
+		ret = udma_open_ue_rx_with_retry(udev, true, false, false, 0);
 		if (ret)
 			dev_err(udev->dev, "udma open ue rx failed in tp flush done.\n");
 	}
@@ -802,7 +802,7 @@ int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_ha
 		dev_err(udev->dev, "deactivate tp send msg failed, tp_id = %u, ret = %d.\n",
 			tp_id, ret);
 		if (tp_num)
-			udma_open_ue_rx(udev, true, false, false, tp_num);
+			udma_open_ue_rx_with_retry(udev, true, false, false, tp_num);
 		return ret;
 	}
 

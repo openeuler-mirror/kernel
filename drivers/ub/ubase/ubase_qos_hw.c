@@ -936,6 +936,8 @@ static int ubase_ctrlq_query_vl(struct ubase_dev *udev)
 
 	ret = __ubase_ctrlq_send(udev, &msg, true, NULL);
 	if (ret) {
+		if (ret == -ETIMEDOUT)
+			set_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits);
 		ubase_err(udev,
 			  "failed to send ctrlq msg when query vl, ret = %d.\n",
 			  ret);
@@ -998,8 +1000,11 @@ static int ubase_ctrlq_query_sl(struct ubase_dev *udev)
 
 	ret = __ubase_ctrlq_send(udev, &msg, true, NULL);
 	if (ret) {
+		if (ret == -ETIMEDOUT)
+			set_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits);
 		ubase_err(udev,
-			  "failed to send ctrlq msg when query sl, ret = %d.\n", ret);
+			  "failed to send ctrlq msg when query sl, ret = %d.\n",
+			  ret);
 		return ret;
 	}
 

@@ -54,6 +54,22 @@ static const struct ub_device_id ubase_ubus_tbl[] = {
 };
 MODULE_DEVICE_TABLE(ub, ubase_ubus_tbl);
 
+static int ubase_entity_enable(struct ubase_dev *udev, struct ub_entity *ue, u8 enable)
+{
+	int ret = 0;
+
+	if (udev->ub_entity_enable_ret)
+		ret = udev->ub_entity_enable_ret(ue, enable);
+	else
+		ub_entity_enable(ue, enable);
+
+	if (ret)
+		ubase_err(udev, "failed to enable ub entity. ret = %d, enable = %d\n",
+			  ret, enable);
+
+	return ret;
+}
+
 static int ubase_ubus_init(struct ub_entity *ue)
 {
 #define UBASE_UBUS_DMA_BIT	48
@@ -61,7 +77,17 @@ static int ubase_ubus_init(struct ub_entity *ue)
 	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
 	int ret;
 
-	ub_entity_enable(ue, 1);
+	udev->ub_entity_enable_ret =
+		(ub_entity_enable_ret)symbol_get(ub_entity_enable_return);
+	if (!udev->ub_entity_enable_ret)
+		ubase_warn(udev, "ub_entity_enable_ret is NULL.\n");
+
+	ret = ubase_entity_enable(udev, ue, 1);
+	if (ret) {
+		if (ret == -ETIMEDOUT)
+			set_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits);
+		goto err_ubase_entity_enable;
+	}
 
 	ret = dma_set_mask_and_coherent(&ue->dev,
 					DMA_BIT_MASK(UBASE_UBUS_DMA_BIT));
@@ -106,7 +132,12 @@ err_unmap_io_base:
 	ub_iounmap(udev->hw.io_base.addr);
 	udev->hw.io_base.addr = NULL;
 err_enable_device:
-	ub_entity_enable(ue, 0);
+	ubase_entity_enable(udev, ue, 0);
+err_ubase_entity_enable:
+	if (udev->ub_entity_enable_ret) {
+		symbol_put(ub_entity_enable_return);
+		udev->ub_entity_enable_ret = NULL;
+	}
 
 	return ret;
 }
@@ -130,7 +161,11 @@ static void ubase_ubus_uninit(struct ub_entity *ue)
 		udev->hw.rs0_base.addr = NULL;
 	}
 
-	ub_entity_enable(ue, 0);
+	ubase_entity_enable(udev, ue, 0);
+	if (udev->ub_entity_enable_ret) {
+		symbol_put(ub_entity_enable_return);
+		udev->ub_entity_enable_ret = NULL;
+	}
 }
 
 static void ubase_port_event_notify(struct ub_entity *ue, u16 port_id, int event)
@@ -272,6 +307,8 @@ err_udev_init:
 err_ubus_init:
 	dev_set_drvdata(&ue->dev, NULL);
 	ubase_adev_idx_free(udev->dev_id);
+	ret = test_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits) ?
+	      -EAGAIN : -EFAULT;
 	devm_kfree(&ue->dev, udev);
 	ub_unset_user_info(ue);
 
@@ -283,6 +320,7 @@ static void __ubase_ubus_remove(struct ub_entity *ue)
 	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
 
 	set_bit(UBASE_STATE_REMOVING_B, &udev->state_bits);
+
 	ubase_ubus_unreg_share_port(udev);
 	ubase_dev_uninit(udev);
 	ubase_ubus_uninit(ue);
@@ -320,6 +358,31 @@ static void ubase_ubus_shutdown(struct ub_entity *ue)
 	__ubase_ubus_remove(ue);
 
 	dev_info(&ue->dev, "ubase shutdown end.\n");
+}
+
+static int ubase_ubus_reinit(struct ub_entity *ue)
+{
+	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
+	int ret;
+
+	ubase_info(udev, "UBUS reinit start.\n");
+
+	if (test_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits)) {
+		ubase_reset_task_schedule_immediately(udev);
+		return -EAGAIN;
+	}
+
+	if (test_bit(UBASE_DEV_NEED_TO_ACTIVATE_B, &udev->status)) {
+		ret = __ubase_activate_dev(udev);
+		if (ret)
+			goto out;
+		clear_bit(UBASE_DEV_NEED_TO_ACTIVATE_B, &udev->status);
+	}
+
+	ret = ubase_reinit_aux_devices(udev);
+out:
+	ubase_info(udev, "UBUS reinit end.\n");
+	return ret;
 }
 
 int ubase_ubus_irq_vectors_alloc(struct device *dev)
@@ -390,7 +453,7 @@ static int ubase_ubus_resume(struct device *dev)
 	struct ubase_dev *udev = dev_get_drvdata(dev);
 
 	ubase_info(udev, "UBUS resume start.\n");
-	ubase_resume(udev);
+	ubase_resume(udev, 0);
 
 	return 0;
 }
@@ -459,7 +522,7 @@ static void ubase_ubus_reset_done(struct ub_entity *ue)
 {
 	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
 
-	ubase_resume(udev);
+	ubase_resume(udev, 0);
 	ubase_info(udev, "UBUS ELR done.\n");
 }
 
@@ -481,10 +544,32 @@ static ub_ers_result_t ubase_ubus_error_detected(struct ub_entity *ue,
 	}
 }
 
+static int ubase_ubus_reset_prepare_return(struct ub_entity *ue)
+{
+	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
+
+	ubase_info(udev, "UBUS ELR start.\n");
+	ubase_suspend(udev);
+
+	return 0;
+}
+
+static int ubase_ubus_reset_done_with_pret(struct ub_entity *ue, int pret)
+{
+	struct ubase_dev *udev = dev_get_drvdata(&ue->dev);
+
+	ubase_resume(udev, pret);
+	ubase_info(udev, "UBUS ELR done, pret = %d.\n", pret);
+
+	return 0;
+}
+
 static const struct ub_error_handlers ubase_ubus_err_handler = {
-	.ub_reset_prepare	= ubase_ubus_reset_prepare,
-	.ub_reset_done		= ubase_ubus_reset_done,
-	.ub_error_detected	= ubase_ubus_error_detected,
+	.ub_reset_prepare		= ubase_ubus_reset_prepare,
+	.ub_reset_prepare_return	= ubase_ubus_reset_prepare_return,
+	.ub_reset_done			= ubase_ubus_reset_done,
+	.ub_reset_done_with_pret	= ubase_ubus_reset_done_with_pret,
+	.ub_error_detected		= ubase_ubus_error_detected,
 };
 
 static struct ub_driver ubase_ubus_driver = {
@@ -493,6 +578,7 @@ static struct ub_driver ubase_ubus_driver = {
 	.probe		= ubase_ubus_probe,
 	.remove		= ubase_ubus_remove,
 	.shutdown	= ubase_ubus_shutdown,
+	.reinit		= ubase_ubus_reinit,
 	.virt_configure	= ubase_ubus_virt_configure,
 	.virt_notify	= ubase_ubus_virt_notify,
 	.err_handler	= &ubase_ubus_err_handler,
@@ -526,12 +612,13 @@ int ubase_ubus_reset_entry(struct device *dev)
 	return ret;
 }
 
-void ubase_ubus_reinit(struct device *dev)
+int ubase_ubus_reset_init(struct device *dev)
 {
 	struct ub_entity *ue = container_of(dev, struct ub_entity, dev);
+	struct ubase_dev *udev = dev_get_drvdata(dev);
 
 	ub_set_user_info(ue);
-	ub_entity_enable(ue, 1);
+	return ubase_entity_enable(udev, ue, 1);
 }
 
 void ubase_ubus_fault_log(struct ubase_dev *udev, u32 event_id, void *data)

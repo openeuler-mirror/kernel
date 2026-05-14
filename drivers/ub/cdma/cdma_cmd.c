@@ -223,8 +223,9 @@ void cdma_cmd_inc(struct cdma_dev *cdev)
 
 void cdma_cmd_dec(struct cdma_dev *cdev)
 {
-	if (atomic_dec_and_test(&cdev->cmdcnt))
-		complete(&cdev->cmddone);
+	if (atomic_add_unless(&cdev->cmdcnt, -1, 1))
+		return;
+	complete(&cdev->cmddone);
 }
 
 void cdma_cmd_flush(struct cdma_dev *cdev)
@@ -242,8 +243,9 @@ void cdma_kcmd_inc(struct cdma_dev *cdev)
 
 void cdma_kcmd_dec(struct cdma_dev *cdev)
 {
-	if (atomic_dec_and_test(&cdev->kcmdcnt))
-		complete(&cdev->kcmddone);
+	if (atomic_add_unless(&cdev->kcmdcnt, -1, 1))
+		return;
+	complete(&cdev->kcmddone);
 }
 
 void cdma_kcmd_flush(struct cdma_dev *cdev)

@@ -212,74 +212,119 @@ void ubase_port_up(struct ubase_dev *udev)
 	ubase_port_handler(udev, 1);
 }
 
-static void ubase_comm_adev_release(struct device *dev)
+static void ubase_init_adev_lock(struct ubase_adev *uadev)
 {
-	struct ubase_adev *ubase_adev =
-				container_of(dev, struct ubase_adev, adev.dev);
-
-	kfree(ubase_adev);
+	mutex_init(&uadev->virt_lock);
+	mutex_init(&uadev->port_lock);
+	mutex_init(&uadev->reset_lock);
+	mutex_init(&uadev->activate_lock);
+	mutex_init(&uadev->reinit_lock);
 }
 
-static struct ubase_adev *ubase_add_one_adev(struct ubase_dev *udev, int idx)
+static void ubase_destroy_adev_lock(struct ubase_adev *uadev)
+{
+	mutex_destroy(&uadev->reinit_lock);
+	mutex_destroy(&uadev->activate_lock);
+	mutex_destroy(&uadev->reset_lock);
+	mutex_destroy(&uadev->port_lock);
+	mutex_destroy(&uadev->virt_lock);
+}
+
+static void ubase_destroy_one_adev(struct ubase_adev *uadev)
+{
+	ubase_destroy_adev_lock(uadev);
+	kfree(uadev);
+}
+
+static void ubase_release_one_adev(struct device *dev)
+{
+	struct ubase_adev *uadev = container_of(dev, struct ubase_adev, adev.dev);
+
+	ubase_destroy_one_adev(uadev);
+}
+
+static struct ubase_adev *ubase_create_one_adev(struct ubase_dev *udev, int idx)
 {
 	struct ubase_adev *uadev;
-	int ret;
 
 	uadev = kzalloc(sizeof(struct ubase_adev), GFP_KERNEL);
 	if (!uadev) {
 		ubase_err(udev, "failed to alloc auxiliary device(%s.%d).\n",
 			  ubase_adev_devices[idx].suffix, udev->dev_id);
-		return ERR_PTR(-ENOMEM);
+		return NULL;
 	}
 
 	uadev->adev.name = ubase_adev_devices[idx].suffix;
 	uadev->adev.id = (u32)udev->dev_id;
 	uadev->adev.dev.parent = udev->dev;
-	uadev->adev.dev.release = ubase_comm_adev_release;
+	uadev->adev.dev.release = ubase_release_one_adev;
 	uadev->idx = idx;
 	uadev->udev = udev;
+
 	ATOMIC_INIT_NOTIFIER_HEAD(&uadev->comp_nh);
 
-	ret = auxiliary_device_init(&uadev->adev);
-	if (ret) {
-		kfree(uadev);
-		ubase_err(udev,
-			  "failed to init auxiliary device(%s.%d), ret = %d\n",
-			  ubase_adev_devices[idx].suffix, udev->dev_id, ret);
-		return ERR_PTR(ret);
-	}
-
-	ret = auxiliary_device_add(&uadev->adev);
-	if (ret) {
-		auxiliary_device_uninit(&uadev->adev);
-		ubase_err(udev,
-			  "failed to add auxiliary device(%s.%d), ret = %d\n",
-			  ubase_adev_devices[idx].suffix, udev->dev_id, ret);
-		return ERR_PTR(ret);
-	}
-
-	mutex_init(&uadev->virt_lock);
-	mutex_init(&uadev->port_lock);
-	mutex_init(&uadev->reset_lock);
-	mutex_init(&uadev->activate_lock);
+	ubase_init_adev_lock(uadev);
 
 	return uadev;
 }
 
+static int ubase_add_one_adev(struct ubase_dev *udev, int idx)
+{
+	struct ubase_adev *uadev;
+	int ret;
+
+	uadev = ubase_create_one_adev(udev, idx);
+	if (!uadev)
+		return -ENOMEM;
+
+	ret = auxiliary_device_init(&uadev->adev);
+	if (ret) {
+		ubase_destroy_one_adev(uadev);
+		ubase_err(udev,
+			  "failed to init auxiliary device(%s.%d), ret = %d\n",
+			  uadev->adev.name, udev->dev_id, ret);
+		return ret;
+	}
+
+	ret = auxiliary_device_add(&uadev->adev);
+	if (ret) {
+		ubase_err(udev,
+			  "failed to add auxiliary device(%s.%d), ret = %d\n",
+			  uadev->adev.name, udev->dev_id, ret);
+		goto err_adev_add;
+	}
+
+	if (test_bit(UBASE_ADEV_PROBE_FAIL_B, &udev->priv.adev_status[idx])) {
+		ubase_err(udev,
+			  "auxiliary device(%s.%d) probe failed\n",
+			  uadev->adev.name, udev->dev_id);
+		set_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits);
+		ret = -EAGAIN;
+		goto err_probe_fail;
+	}
+
+	udev->priv.uadev[idx] = uadev;
+	return 0;
+
+err_probe_fail:
+	auxiliary_device_delete(&uadev->adev);
+err_adev_add:
+	auxiliary_device_uninit(&uadev->adev);
+	udev->priv.uadev[idx] = NULL;
+
+	return ret;
+}
+
 static void ubase_del_one_adev(struct ubase_dev *udev, int idx)
 {
-	struct ubase_priv *priv = &udev->priv;
-	struct ubase_adev *uadev;
+	struct ubase_adev *uadev = udev->priv.uadev[idx];
 
-	uadev = priv->uadev[idx];
+	if (!uadev)
+		return;
 
-	mutex_destroy(&uadev->activate_lock);
-	mutex_destroy(&uadev->reset_lock);
-	mutex_destroy(&uadev->port_lock);
-	mutex_destroy(&uadev->virt_lock);
 	auxiliary_device_delete(&uadev->adev);
 	auxiliary_device_uninit(&uadev->adev);
-	priv->uadev[idx] = NULL;
+	udev->priv.uadev[idx] = NULL;
 }
 
 static int ubase_init_aux_devices(struct ubase_dev *udev)
@@ -288,35 +333,20 @@ static int ubase_init_aux_devices(struct ubase_dev *udev)
 	int i, ret;
 
 	for (i = 0; i < ARRAY_SIZE(ubase_adev_devices); i++) {
-		if (priv->uadev[i])
+		if (!ubase_adev_devices[i].is_supported(udev))
 			continue;
 
-		if (!ubase_adev_devices[i].is_supported ||
-		    !ubase_adev_devices[i].is_supported(udev))
-			continue;
-
-		priv->uadev[i] = ubase_add_one_adev(udev, i);
-		if (IS_ERR(priv->uadev[i])) {
-			ret = PTR_ERR(priv->uadev[i]);
-			priv->uadev[i] = NULL;
-			ubase_err(udev,
-				  "failed to load auxiliary device(%s.%d)\n",
-				  ubase_adev_devices[i].suffix, udev->dev_id);
-			goto err_add_aux_dev;
-		}
+		ret = ubase_add_one_adev(udev, i);
+		if (ret)
+			goto error;
 	}
 
-	mutex_init(&udev->priv.uadev_lock);
+	mutex_init(&priv->uadev_lock);
 
 	return 0;
-
-err_add_aux_dev:
-	for (; i >= 0; i--) {
-		if (!priv->uadev[i])
-			continue;
-
-		ubase_del_one_adev(udev, i);
-	}
+error:
+	for (; i > 0; i--)
+		ubase_del_one_adev(udev, i - 1);
 
 	return ret;
 }
@@ -331,16 +361,10 @@ static void ubase_uninit_aux_devices(struct ubase_dev *udev)
 	 */
 	ubase_disable_ce_irqs(udev);
 
-	mutex_lock(&priv->uadev_lock);
-	for (i = ARRAY_SIZE(ubase_adev_devices) - 1; i >= 0; i--) {
-		if (!priv->uadev[i])
-			continue;
-
+	for (i = ARRAY_SIZE(ubase_adev_devices) - 1; i >= 0; i--)
 		ubase_del_one_adev(udev, i);
-	}
-	mutex_unlock(&priv->uadev_lock);
 
-	mutex_destroy(&udev->priv.uadev_lock);
+	mutex_destroy(&priv->uadev_lock);
 }
 
 static void ubase_update_stats_for_all(struct ubase_dev *udev)
@@ -957,23 +981,31 @@ err_init:
 
 void ubase_dev_uninit(struct ubase_dev *udev)
 {
-	int i, ret;
+	int i;
 
 	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
-		/* If ELR fails before remove, the cmdq is disabled. Since
-		 * remove relies on cmdq, configuration messages (e.g., destroy
-		 * ctx res, disable promiscuous mode, restore QoS) cannot be
-		 * sent to the firmware, resulting in configuration residue.
-		 * Therefore, the cmdq needs to be reinitialized.
+		/* If ELR fails before remove, the cmdq & ctrlq may be disabled.
+		 * Since remove relies on cmdq\ctrlq, configuration messages
+		 * (e.g., destroy ctx res, close promiscuous, restore QoS..)
+		 * cannot be sent to the firmware, resulting in configuration
+		 * residue. Therefore, try to reinit these resources as much
+		 * as possible.
 		 */
 		ubase_warn(udev, "cmdq is disabled. try to restore it.\n");
-		ret = ubase_cmd_init(udev);
-		if (ret)
-			ubase_err(udev, "failed to restore cmdq, ret = %d.\n",
-				  ret);
-		set_bit(UBASE_STATE_RESTORE_CMDQ_B, &udev->state_bits);
+		set_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
+		ubase_ctrlq_uninit(udev);
+		ubase_irq_table_uninit(udev);
+		if (ubase_cmd_init(udev))
+			goto start_uninit;
+		if (ubase_irq_table_init(udev))
+			goto start_uninit;
+		clear_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
+		ubase_ctrlq_init(udev);
+		ubase_register_ae_event(udev);
+		ubase_register_cmdq_crq_event(udev);
 	}
 
+start_uninit:
 	if (udev->service_task.service_task.work.func)
 		cancel_delayed_work_sync(&udev->service_task.service_task);
 	flush_workqueue(udev->ubase_async_wq);
@@ -1039,13 +1071,13 @@ void ubase_dev_reset_uninit(struct ubase_dev *udev)
 	__ubase_reset_uninit(udev, ARRAY_SIZE(ubase_init_func_map) - 1);
 }
 
-void ubase_suspend_aux_devices(struct ubase_dev *udev)
+void ubase_suspend_aux_devices(struct ubase_dev *udev,
+			       enum ubase_reset_stage stage)
 {
 	struct ubase_priv *priv = &udev->priv;
 	struct ubase_adev *uadev;
 	int i;
 
-	mutex_lock(&priv->uadev_lock);
 	for (i = ARRAY_SIZE(ubase_adev_devices) - 1; i >= 0; i--) {
 		uadev = priv->uadev[i];
 		if (!uadev)
@@ -1053,19 +1085,18 @@ void ubase_suspend_aux_devices(struct ubase_dev *udev)
 
 		mutex_lock(&uadev->reset_lock);
 		if (uadev->reset_handler)
-			uadev->reset_handler(&uadev->adev, udev->reset_stage);
+			uadev->reset_handler(&uadev->adev, stage);
 		mutex_unlock(&uadev->reset_lock);
 	}
-	mutex_unlock(&priv->uadev_lock);
 }
 
-void ubase_resume_aux_devices(struct ubase_dev *udev)
+int ubase_resume_aux_devices(struct ubase_dev *udev,
+			     enum ubase_reset_stage stage)
 {
 	struct ubase_priv *priv = &udev->priv;
 	struct ubase_adev *uadev;
-	int i;
+	int i, ret = 0;
 
-	mutex_lock(&priv->uadev_lock);
 	for (i = 0; i < ARRAY_SIZE(ubase_adev_devices); i++) {
 		uadev = priv->uadev[i];
 		if (!uadev)
@@ -1073,11 +1104,55 @@ void ubase_resume_aux_devices(struct ubase_dev *udev)
 
 		mutex_lock(&uadev->reset_lock);
 		if (uadev->reset_handler)
-			uadev->reset_handler(&uadev->adev,
-					     UBASE_RESET_STAGE_INIT);
+			ret = uadev->reset_handler(&uadev->adev, stage);
 		mutex_unlock(&uadev->reset_lock);
+
+		ret = stage == UBASE_RESET_STAGE_INIT ? ret : 0;
+		if (ret) {
+			ubase_err(udev,
+				  "auxiliary device(%s.%d) reset init failed, ret = %d.\n",
+				  uadev->adev.name, udev->dev_id, ret);
+			break;
+		}
+	}
+	return ret;
+}
+
+int ubase_reinit_aux_devices(struct ubase_dev *udev)
+{
+	struct ubase_priv *priv = &udev->priv;
+	struct ubase_adev *uadev;
+	int i, ret = 0;
+
+	mutex_lock(&priv->uadev_lock);
+	for (i = 0; i < ARRAY_SIZE(ubase_adev_devices); i++) {
+		uadev = priv->uadev[i];
+
+		if (test_and_clear_bit(UBASE_ADEV_PROBE_FAIL_B, &priv->adev_status[i])) {
+			ubase_info(udev, "re-probe auxiliary device[%d].\n", i);
+			ubase_del_one_adev(udev, i);
+			ret = ubase_add_one_adev(udev, i);
+			if (ret)
+				break;
+		} else if (uadev) {
+			mutex_lock(&uadev->reinit_lock);
+			if (uadev->reinit_handler) {
+				ubase_info(udev, "reinit auxiliary device(%s.%d).\n",
+					   uadev->adev.name, udev->dev_id);
+				ret = uadev->reinit_handler(&uadev->adev);
+			}
+			mutex_unlock(&uadev->reinit_lock);
+			if (ret) {
+				ubase_err(udev,
+					  "failed to reinit auxiliary device(%s.%d), ret = %d.\n",
+					  uadev->adev.name, udev->dev_id, ret);
+				break;
+			}
+		}
 	}
 	mutex_unlock(&priv->uadev_lock);
+
+	return ret;
 }
 
 /**
@@ -1495,8 +1570,8 @@ EXPORT_SYMBOL(ubase_port_unregister);
  * Context: Process context. Takes and releases <mutex>.
  */
 void ubase_reset_register(struct auxiliary_device *adev,
-			  void (*reset_handler)(struct auxiliary_device *adev,
-						enum ubase_reset_stage stage))
+			  int (*reset_handler)(struct auxiliary_device *adev,
+					       enum ubase_reset_stage stage))
 {
 	struct ubase_adev *uadev;
 
@@ -1743,12 +1818,8 @@ EXPORT_SYMBOL(ubase_adev_ucp_supported);
 static void ubase_activate_notify(struct ubase_dev *udev,
 				  struct auxiliary_device *adev, bool activate)
 {
-	bool disable_state = test_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
 	struct ubase_adev *uadev;
 	int i;
-
-	if (!disable_state)
-		mutex_lock(&udev->priv.uadev_lock);
 
 	for (i = 0; i < UBASE_DRV_MAX; i++) {
 		uadev = udev->priv.uadev[i];
@@ -1760,9 +1831,6 @@ static void ubase_activate_notify(struct ubase_dev *udev,
 			uadev->activate_handler(&uadev->adev, activate);
 		mutex_unlock(&uadev->activate_lock);
 	}
-
-	if (!disable_state)
-		mutex_unlock(&udev->priv.uadev_lock);
 }
 
 /**
@@ -1827,10 +1895,13 @@ static int ubase_wait_activate_done(struct ubase_dev *udev, u16 bus_ue_id,
 				    struct ubase_act_info *info)
 {
 #define UBASE_ACTIVE_DEV_TIMEOUT_FAST 1000
-#define UBASE_ACTIVE_DEV_TIMEOUT 10000
+#define UBASE_ACTIVE_DEV_TIMEOUT 3000
 
+	/* If cmdq crq is unavailable, we can't recv the resp.
+	 * so no need to wait too long
+	 */
 	bool fast = ubase_fast_shutdown(udev, info) ||
-		    test_bit(UBASE_STATE_RESTORE_CMDQ_B, &udev->state_bits);
+		    test_bit(UBASE_STATE_CMD_CRQ_UNAVAIL_B, &udev->state_bits);
 	u32 timeout;
 
 	timeout = fast ? UBASE_ACTIVE_DEV_TIMEOUT_FAST :
@@ -1873,14 +1944,32 @@ static void ubase_alloc_msn(struct ubase_dev *udev, u16 *msn)
 	mutex_unlock(&ctx->lock);
 }
 
+static bool ubase_need_retry_activation_req(struct ubase_dev *udev,
+					    struct ubase_act_info *info,
+					    u16 bus_ue_id, int ret)
+{
+	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
+
+	if (ubase_fast_shutdown(udev, info))
+		return false;
+
+	if (ue->entity_idx != bus_ue_id)
+		return false;
+
+	return ret == -ETIMEDOUT || ret == -ENOSPC || ret == -EBUSY;
+}
+
 static int ubase_send_activate_dev_req(struct ubase_dev *udev, bool activate,
 				       u16 bus_ue_id)
 {
+#define UBASE_ACTIVATE_DEV_RETRY_INTERVAL 100
+#define UBASE_ACTIVATE_DEV_RETRY_CNT 3
+
 	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
 	struct ubase_activate_req req = {0};
 	struct ubase_act_info *info;
 	struct ubase_cmd_buf in;
-	u16 msn;
+	u16 msn, try_cnt = 0;
 	int ret;
 
 	info = (ue->entity_idx == bus_ue_id) ? &udev->act_ctx.self :
@@ -1895,6 +1984,13 @@ static int ubase_send_activate_dev_req(struct ubase_dev *udev, bool activate,
 	if (ubase_fast_shutdown(udev, info) && activate)
 		return -EPERM;
 
+	if (test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits) &&
+	    test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+		ubase_warn(udev, "cmdq is disabled, can't send %s req.\n",
+			   activate ? "activate" : "deactivate");
+		return 0;
+	}
+
 	req.activate = activate ? 1 : 0;
 	req.bus_ue_id = cpu_to_le16(bus_ue_id);
 	req.shutdown = ubase_shutting_down(udev);
@@ -1904,15 +2000,26 @@ static int ubase_send_activate_dev_req(struct ubase_dev *udev, bool activate,
 
 	ubase_fill_inout_buf(&in, UBASE_OPC_ACTIVATE_REQ, false, sizeof(req),
 			     &req);
-	ret = __ubase_cmd_send_in(udev, &in);
-	if (ret) {
-		ubase_err(udev,
-			  "failed to send activate dev req, ue id=%u, ret=%d.\n",
-			  bus_ue_id, ret);
-		return ret;
-	}
+	do {
+		if (try_cnt) {
+			msleep(UBASE_ACTIVATE_DEV_RETRY_INTERVAL);
+			ubase_dbg(udev, "cmdq send %s dev req retry = %u.\n",
+				  activate ? "activate" : "deactivate", try_cnt);
+		}
 
-	return ubase_wait_activate_done(udev, bus_ue_id, info);
+		ret = __ubase_cmd_send_in(udev, &in);
+		if (ret) {
+			ubase_err(udev,
+				  "failed to send %s dev req, ue id = %u, msn = %u, ret = %d.\n",
+				  activate ? "activate" : "deactivate", bus_ue_id, msn, ret);
+			continue;
+		}
+
+		ret = ubase_wait_activate_done(udev, bus_ue_id, info);
+	} while (try_cnt++ < UBASE_ACTIVATE_DEV_RETRY_CNT &&
+		 ubase_need_retry_activation_req(udev, info, bus_ue_id, ret));
+
+	return ret;
 }
 
 int ubase_activate_handler(struct ubase_dev *udev, u32 bus_ue_id)
@@ -1932,6 +2039,35 @@ void ubase_flush_workqueue(struct ubase_dev *udev)
 	flush_workqueue(udev->ubase_async_wq);
 	flush_workqueue(udev->ubase_period_wq);
 	flush_workqueue(udev->ubase_arq_wq);
+}
+
+int __ubase_activate_dev(struct ubase_dev *udev)
+{
+	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
+	int ret;
+
+#ifdef CONFIG_EQUIP
+	if (!ubase_dev_rack_server_supported(udev))
+		return 0;
+#endif
+
+	if (ubase_activate_proxy_supported(udev))
+		ret = ub_activate_entity(ue, ue->entity_idx);
+	else
+		ret = ubase_activate_handler(udev, ue->entity_idx);
+
+	if (ret) {
+		if (ret == -ETIMEDOUT)
+			ret = -EAGAIN;
+		goto activate_dev_err;
+	}
+
+	ubase_activate_notify(udev, NULL, true);
+
+activate_dev_err:
+	ubase_update_activate_stats(udev, true, ret);
+
+	return ret;
 }
 
 /**
@@ -2294,3 +2430,103 @@ void ubase_free_buf(struct ubase_dev *udev, size_t size,
 	else
 		dma_free_coherent(udev->dev, size, va, iova);
 }
+
+/**
+ * ubase_reinit_register() - register auxiliary device reinit function
+ * @adev: auxiliary device
+ * @reinit_handler: the function pointer to reinit handling. adev: the
+ * same as the parameter 'adev'.
+ *
+ * The function is used to register auxiliary device reinit function.
+ *
+ * Context: Process context. Takes and releases <mutex>.
+ */
+void ubase_reinit_register(struct auxiliary_device *adev,
+			   int (*reinit_handler)(struct auxiliary_device *adev))
+{
+	struct ubase_adev *uadev;
+
+	if (!adev || !reinit_handler)
+		return;
+
+	uadev = container_of(adev, struct ubase_adev, adev);
+
+	mutex_lock(&uadev->reinit_lock);
+	uadev->reinit_handler = reinit_handler;
+	mutex_unlock(&uadev->reinit_lock);
+}
+EXPORT_SYMBOL(ubase_reinit_register);
+
+/**
+ * ubase_reinit_unregister() - unregister auxiliary device reinit function
+ * @adev: auxiliary device
+ *
+ * The function is used to unregister auxiliary device reinit function.
+ *
+ * Context: Process context. Takes and releases <mutex>.
+ */
+void ubase_reinit_unregister(struct auxiliary_device *adev)
+{
+	struct ubase_adev *uadev;
+
+	if (!adev)
+		return;
+
+	uadev = container_of(adev, struct ubase_adev, adev);
+
+	mutex_lock(&uadev->reinit_lock);
+	uadev->reinit_handler = NULL;
+	mutex_unlock(&uadev->reinit_lock);
+}
+EXPORT_SYMBOL(ubase_reinit_unregister);
+
+/**
+ * ubase_update_dev_status() - Update the ue device status.
+ * @adev: auxiliary device
+ * @status: ue device status
+ *
+ * This function is used to update the ue device status.
+ *
+ * Context: Any context.
+ */
+void ubase_update_dev_status(struct auxiliary_device *adev, unsigned long status)
+{
+	struct ubase_dev *udev;
+
+	if (!adev)
+		return;
+
+	udev = __ubase_get_udev_by_adev(adev);
+
+	ubase_set_bitmap(&udev->status, status);
+
+	ubase_info(udev, "%s.%d updated dev status, status = 0x%lx.\n",
+		   adev->name, udev->dev_id, status);
+}
+EXPORT_SYMBOL(ubase_update_dev_status);
+
+/**
+ * ubase_update_adev_status() - Update the status of auxiliary device.
+ * @adev: auxiliary device
+ * @status: the status of auxiliary device
+ *
+ * This function is used to update the status of auxiliary device.
+ *
+ * Context: Any context.
+ */
+void ubase_update_adev_status(struct auxiliary_device *adev, unsigned long status)
+{
+	struct ubase_adev *uadev;
+	struct ubase_dev *udev;
+
+	if (!adev)
+		return;
+
+	uadev = container_of(adev, struct ubase_adev, adev);
+	udev = __ubase_get_udev_by_adev(adev);
+
+	ubase_set_bitmap(&udev->priv.adev_status[uadev->idx], status);
+	ubase_info(udev, "%s.%d updated adev status, status = 0x%lx.\n",
+		   adev->name, udev->dev_id, status);
+}
+EXPORT_SYMBOL(ubase_update_adev_status);

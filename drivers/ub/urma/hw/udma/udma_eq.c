@@ -990,18 +990,33 @@ int udma_register_workqueue(struct udma_dev *udma_dev)
 	udma_dev->ae_workq = alloc_workqueue("udma_ae_workq", WQ_UNBOUND, 0);
 	if (!udma_dev->ae_workq) {
 		dev_err(udma_dev->dev, "failed to create ae workqueue.\n");
-		flush_workqueue(udma_dev->act_workq);
-		destroy_workqueue(udma_dev->act_workq);
-		return -ENOMEM;
+		goto err_alloc_ae_workq;
+	}
+
+	udma_dev->ue_rx_workq = alloc_workqueue("udma_ue_rx_workq", WQ_UNBOUND, 0);
+	if (!udma_dev->ue_rx_workq) {
+		dev_err(udma_dev->dev, "failed to create open ue rx workqueue.\n");
+		goto err_alloc_ue_rx_workq;
 	}
 
 	return 0;
+
+err_alloc_ue_rx_workq:
+	flush_workqueue(udma_dev->ae_workq);
+	destroy_workqueue(udma_dev->ae_workq);
+err_alloc_ae_workq:
+	flush_workqueue(udma_dev->act_workq);
+	destroy_workqueue(udma_dev->act_workq);
+
+	return -ENOMEM;
 }
 
 void udma_unregister_workqueue(struct udma_dev *udma_dev)
 {
 	flush_workqueue(udma_dev->act_workq);
-	flush_workqueue(udma_dev->ae_workq);
 	destroy_workqueue(udma_dev->act_workq);
+	flush_workqueue(udma_dev->ae_workq);
 	destroy_workqueue(udma_dev->ae_workq);
+	flush_workqueue(udma_dev->ue_rx_workq);
+	destroy_workqueue(udma_dev->ue_rx_workq);
 }
