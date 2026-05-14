@@ -72,6 +72,8 @@ USER(9998f, ldtrb tmp1w, [srcin])
 SYM_FUNC_END(__arch_copy_from_user)
 EXPORT_SYMBOL(__arch_copy_from_user)
 
+#ifdef CONFIG_ARM64_COPY_FROM_USER_OPT
+
 	.macro ldp2 reg1, reg2, ptr, val
 	user_ldst_pair_index 9997f, ldp, \reg1, \reg2, \ptr, \val
 	.endm
@@ -103,3 +105,5 @@ USER(9998f, ldtrb tmp1w, [srcin])
 	b	.L__arch_copy_from_user_opt_exit
 SYM_FUNC_END(__arch_copy_from_user_opt)
 EXPORT_SYMBOL(__arch_copy_from_user_opt)
+
+#endif /* CONFIG_ARM64_COPY_FROM_USER_OPT */
