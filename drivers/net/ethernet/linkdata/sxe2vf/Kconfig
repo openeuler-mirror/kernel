@@ -7,9 +7,10 @@ config SXE2_VF
 	tristate "sxe2vf PCI Express adapters support"
 	depends on (X86) && PCI
 	select MDIO
-        select PHYLIB
-        select PTP_1588_CLOCK
-        default m
+	select PHYLIB
+	select PTP_1588_CLOCK
+	select AUXILIARY_BUS
+	default n
 	help
 	  This driver supports sxe2vf PCI Express family of adapters.
 
