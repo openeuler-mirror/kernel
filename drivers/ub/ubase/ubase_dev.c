@@ -953,7 +953,22 @@ err_init:
 
 void ubase_dev_uninit(struct ubase_dev *udev)
 {
-	int i;
+	int i, ret;
+
+	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
+		/* If ELR fails before remove, the cmdq is disabled. Since
+		 * remove relies on cmdq, configuration messages (e.g., destroy
+		 * ctx res, disable promiscuous mode, restore QoS) cannot be
+		 * sent to the firmware, resulting in configuration residue.
+		 * Therefore, the cmdq needs to be reinitialized.
+		 */
+		ubase_warn(udev, "cmdq is disabled. try to restore it.\n");
+		ret = ubase_cmd_init(udev);
+		if (ret)
+			ubase_err(udev, "failed to restore cmdq, ret = %d.\n",
+				  ret);
+		set_bit(UBASE_STATE_RESTORE_CMDQ_B, &udev->state_bits);
+	}
 
 	if (udev->service_task.service_task.work.func)
 		cancel_delayed_work_sync(&udev->service_task.service_task);
@@ -1789,20 +1804,21 @@ static bool ubase_fast_shutdown(struct ubase_dev *udev,
 static int ubase_wait_activate_done(struct ubase_dev *udev, u16 bus_ue_id,
 				    struct ubase_act_info *info)
 {
-#define UBASE_ACTIVE_DEV_TIMEOUT_SHUTDOWN 1000
+#define UBASE_ACTIVE_DEV_TIMEOUT_FAST 1000
 #define UBASE_ACTIVE_DEV_TIMEOUT 10000
 
-	bool shutdown = ubase_fast_shutdown(udev, info);
+	bool fast = ubase_fast_shutdown(udev, info) ||
+		    test_bit(UBASE_STATE_RESTORE_CMDQ_B, &udev->state_bits);
 	u32 timeout;
 
-	timeout = shutdown ? UBASE_ACTIVE_DEV_TIMEOUT_SHUTDOWN :
-			     UBASE_ACTIVE_DEV_TIMEOUT;
+	timeout = fast ? UBASE_ACTIVE_DEV_TIMEOUT_FAST :
+			 UBASE_ACTIVE_DEV_TIMEOUT;
 	if (!wait_for_completion_timeout(&info->activate_done,
 					 msecs_to_jiffies(timeout))) {
 		ubase_err(udev,
 			  "wait activate dev resp timeout(%u ms), bus_ue_id = %u, msn = %u.\n",
 			  timeout, bus_ue_id, info->wait_msn);
-		return shutdown ? 0 : -ETIMEDOUT;
+		return fast ? 0 : -ETIMEDOUT;
 	}
 
 	return info->result;
@@ -1978,9 +1994,6 @@ void __ubase_deactivate_dev(struct ubase_dev *udev)
 {
 	struct ub_entity *ue = container_of(udev->dev, struct ub_entity, dev);
 	int ret;
-
-	if (!ubase_dev_urma_supported(udev))
-		return;
 
 	if (ubase_activate_proxy_supported(udev))
 		ret = ub_deactivate_entity(ue, ue->entity_idx);
