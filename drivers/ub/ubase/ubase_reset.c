@@ -31,6 +31,9 @@ static void ubase_reset_task_schedule(struct ubase_dev *udev)
 
 static void ubase_reset_err_handle(struct ubase_dev *udev)
 {
+	if (test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits))
+		return;
+
 	udev->reset_stat.reset_fail_cnt++;
 	udev->reset_stat.reset_retry_cnt++;
 	if (udev->reset_stat.reset_retry_cnt < UBASE_RST_MAX_RETRY_CNT) {
@@ -315,7 +318,8 @@ void ubase_errhandle_service_task(struct ubase_delay_work *ubase_work)
 		return;
 
 	if (!ubase_dev_err_handle_supported(udev)) {
-		ubase_err(udev, "not support err handle processing.\n");
+		dev_err_ratelimited(udev->dev,
+				    "not support err handle processing.\n");
 		return;
 	}
 

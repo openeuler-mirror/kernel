@@ -7,6 +7,7 @@
 #define dev_fmt(fmt) "unic: (pid %d) " fmt, current->pid
 
 #include <linux/etherdevice.h>
+#include <linux/jiffies.h>
 #include <linux/limits.h>
 #include <net/page_pool/helpers.h>
 #if IS_ENABLED(CONFIG_UB_UNIC_UBL)
@@ -1159,8 +1160,10 @@ int unic_poll_rx(struct unic_channel *c, int budget,
 			break;
 
 		trace_unic_rx_cqe(rq->netdev, cq, rq->pi, rq->ci, cq_mask);
-		if (unic_rx_construct_skb(rq, napi, cqe, &bytes))
+		if (unic_rx_construct_skb(rq, napi, cqe, &bytes)) {
+			failure = true;
 			break;
+		}
 
 		rx_fn(c, rq->skb);
 

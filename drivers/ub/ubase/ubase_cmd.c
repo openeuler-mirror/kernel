@@ -9,6 +9,7 @@
 #include "ubase_cmd.h"
 #include "ubase_arq.h"
 #include "ubase_hw.h"
+#include "ubase_mailbox.h"
 
 /* When use tracepoint, must define "CREATE_TRACE_POINTS" before include the
  * trace header file.
@@ -273,9 +274,9 @@ int ubase_send_cmd(struct ubase_dev *udev,
 	free_num = ubase_remain_cmdq_space(csq);
 	if (num > free_num) {
 		csq->ci = ubase_read_dev(&udev->hw, UBASE_CSQ_HEAD_REG);
-		ubase_warn(udev,
-			   "the requested space(%d) exceeds the remaining space(%d), csq ci: %u.\n",
-			   num, free_num, csq->ci);
+		ubase_warn_rl(udev, cmdq_space_insuffice,
+			      "the requested space(%d) exceeds the remaining space(%d), csq ci: %u.\n",
+			      num, free_num, csq->ci);
 		ret = -EBUSY;
 		goto err_unlock;
 	}
@@ -604,7 +605,7 @@ static bool ubase_cmd_crq_empty(struct ubase_dev *udev, struct ubase_hw *hw)
 	return hw->cmdq.crq.pi == hw->cmdq.crq.ci;
 }
 
-void ubase_cmd_crq_handler(struct ubase_dev *udev)
+static void ubase_cmd_crq_handler(struct ubase_dev *udev)
 {
 	struct ubase_cmdq_ring *crq = &udev->hw.cmdq.crq;
 	u32 msg_data_len;
@@ -615,8 +616,8 @@ void ubase_cmd_crq_handler(struct ubase_dev *udev)
 
 	while (!ubase_cmd_crq_empty(udev, &udev->hw)) {
 		if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
-			ubase_warn(udev,
-				   "command queue needs re-initializing.\n");
+			ubase_warn_rl(udev, cmdq_is_disable,
+				      "command queue needs re-initializing.\n");
 			return;
 		}
 
@@ -685,9 +686,9 @@ static int ubase_cmd_wait_mbx_completed(struct ubase_dev *udev,
 	complete(&aeq->poll);
 	if (!wait_for_completion_timeout(&ctx->done,
 					 msecs_to_jiffies(UBASE_CMDQ_MBX_TX_TIMEOUT))) {
-		ubase_err(udev,
-			  "cmd seq_num 0x%x mailbox cmd code 0x%x timeout.\n",
-			  ctx->seq_num, mbx->cmd);
+		ubase_err_rl(udev, mailbox_cmd_timeout,
+			     "cmd seq_num 0x%x mailbox cmd code 0x%x timeout.\n",
+			     ctx->seq_num, mbx->cmd);
 		atomic_dec(&udev->mb_cmd.mbx_cnt);
 		return -EBUSY;
 	}
@@ -716,7 +717,7 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 {
 	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
 	union ubase_mbox *mbx = (union ubase_mbox *)in->data;
-	unsigned long end;
+	unsigned long end, flags;
 	int ret;
 
 	if (!mbx) {
@@ -724,13 +725,18 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 		return -EINVAL;
 	}
 
+	raw_spin_lock_irqsave(&udev->mb_cmd.mbx_lock, flags);
 	if (ctx->mbx_buff) {
-		ubase_err_rl(udev, udev->log_rs.mbx_buff_not_empty_cnt,
-			     "Incomplete mailbox events exist.\n");
+		raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
+		ubase_err_rl(udev, mbx_buff_not_empty,
+			     "incomplete mailbox events exist.\n");
 		return -EBUSY;
 	}
 
+	reinit_completion(&ctx->done);
 	ubase_setup_mbx_info(udev, mbx);
+	raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
+
 	trace_ubase_alloc_mailbox_user(udev->dev, &mailbox->count, ctx->seq_num);
 	if (atomic_inc_not_zero(&mailbox->count))
 		ctx->mbx_buff = mailbox;
@@ -744,11 +750,13 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 			break;
 
 		if (time_after(jiffies, end)) {
-			dev_err_ratelimited(udev->dev,
-					    "failed to wait mbox, ret = %d.\n",
-					    ret);
+			ubase_err_rl(udev, wait_mbox_fail,
+				     "failed to wait mbox, ret = %d.\n",
+				     ret);
 
-			atomic_add_unless(&mailbox->count, -1, 0);
+			raw_spin_lock_irqsave(&udev->mb_cmd.mbx_lock, flags);
+			ubase_mailbox_buff_free(udev);
+			raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 			return -ETIMEDOUT;
 		}
 

@@ -285,8 +285,9 @@ static bool ubase_is_udma_tp_event(struct ubase_dev *udev, u32 tpn)
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
 	if (!tpg) {
-		ubase_warn(udev, "unexpected tp event, tpn = %u.\n", tpn);
 		spin_unlock(&udev->tp_ctx.tpg_lock);
+		dev_warn_ratelimited(udev->dev,
+				     "unexpected tp event, tpn = %u.\n", tpn);
 		return true;
 	}
 
@@ -331,7 +332,7 @@ static bool ubase_is_comm_event(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 	case UBASE_EVENT_TYPE_MB:
 		return true;
 	default:
-		return false;
+		break;
 	}
 
 	return false;
@@ -346,7 +347,7 @@ static void ubase_aeq_event_handler(struct ubase_dev *udev,
 	u8 idx;
 
 	if (event_type >= UBASE_EVENT_TYPE_MAX) {
-		ubase_err_rl(udev, udev->log_rs.aeq_event_type_exceed_max_cnt,
+		ubase_err_rl(udev, aeq_event_type_exceed_max,
 			     "event type wrong, event_type = %u.\n", event_type);
 		return;
 	}
@@ -403,9 +404,13 @@ static void ubase_init_aeq_work(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 static void ubase_mbx_complete(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 {
 	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
+	unsigned long flags;
 
-	if (aeqe->event.cmd.seq_num != ctx->seq_num)
+	raw_spin_lock_irqsave(&udev->mb_cmd.mbx_lock, flags);
+	if (aeqe->event.cmd.seq_num != ctx->seq_num) {
+		raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 		return;
+	}
 
 	ubase_mailbox_buff_free(udev);
 
@@ -413,6 +418,7 @@ static void ubase_mbx_complete(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 	ctx->out_param = aeqe->event.cmd.out_param;
 
 	complete(&ctx->done);
+	raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 }
 
 static int ubase_async_event_handler(struct ubase_dev *udev)

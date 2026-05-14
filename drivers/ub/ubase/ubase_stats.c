@@ -40,7 +40,7 @@ static int ubase_update_mac_stats(struct ubase_dev *udev, u16 port_id, u64 *data
 	int ret;
 
 	if (!ubase_dev_mac_stats_supported(udev)) {
-		ubase_err(udev, "not support get mac stats.\n");
+		dev_err_ratelimited(udev->dev, "not support get mac stats.\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -81,7 +81,6 @@ out_send_cmd_fail:
  * The function is used to clear eth port stats.
  *
  * Context: Process context. Takes and releases <lock>, BH-safe. Sleep.
- * Return: 0 on success, negative error code otherwise
  */
 void ubase_clear_eth_port_stats(struct auxiliary_device *adev)
 {
@@ -105,7 +104,7 @@ EXPORT_SYMBOL(ubase_clear_eth_port_stats);
  * ubase_get_ub_port_stats() - (deprecated) get ub port stats
  * @adev: auxiliary device
  * @port_id: port id
- * @data: ub date link layer stats
+ * @data: ub data link layer stats
  *
  * The function is used to get ub port stats.
  *
@@ -145,8 +144,9 @@ static int ubase_query_dl_pkt_stats(struct ubase_dev *udev, u16 port_id,
 
 	ret = __ubase_cmd_send_inout(udev, &in, &out);
 	if (ret && ret != -EPERM)
-		ubase_err(udev, "failed to query ub dl pkt stats, ret = %d.\n",
-			  ret);
+		dev_err_ratelimited(udev->dev,
+				    "failed to query ub dl pkt stats, ret = %d.\n",
+				    ret);
 
 	return ret == -EPERM ? -EOPNOTSUPP : ret;
 }

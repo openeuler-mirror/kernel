@@ -41,10 +41,8 @@ struct unic_comm_addr_node {
 #define UNIC_FORMAT_MAC_OFFSET_5	5
 static inline void unic_comm_format_mac_addr(char *format_mac, const u8 *mac)
 {
-	snprintf(format_mac, UNIC_FORMAT_MAC_LEN,
-		 "%02x:**:**:**:%02x:%02x",
-		 mac[UNIC_FORMAT_MAC_OFFSET_0],
-		 mac[UNIC_FORMAT_MAC_OFFSET_4],
+	snprintf(format_mac, UNIC_FORMAT_MAC_LEN, "%02x:**:**:**:%02x:%02x",
+		 mac[UNIC_FORMAT_MAC_OFFSET_0], mac[UNIC_FORMAT_MAC_OFFSET_4],
 		 mac[UNIC_FORMAT_MAC_OFFSET_5]);
 }
 
