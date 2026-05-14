@@ -104,12 +104,8 @@ copy_user_generic(void *to, const void *from, unsigned len)
 	unsigned ret;
 	/* Check if Hygon large memory copy support enabled. */
 	if (static_branch_unlikely(&hygon_lmc_key)) {
-		if (Hygon_LMC_check(len)) {
-			unsigned long ret;
-
-			ret = copy_large_memory_generic_string(to, from, len);
-			return ret;
-		}
+		if (Hygon_LMC_check(len))
+			return copy_large_memory_generic_string(to, from, len);
 	}
 
 	/*
