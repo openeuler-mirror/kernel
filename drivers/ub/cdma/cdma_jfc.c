@@ -48,6 +48,7 @@ static int cdma_get_cmd_from_user(struct cdma_create_jfc_ucmd *ucmd,
 
 	ctx = udata->uctx;
 	jfc->base.ctx = ctx;
+	jfc->base.jfae = udata->jfae;
 	jfc->tid = ctx->tid;
 
 	if (cdev->caps.cqe_size == CDMA_DEFAULT_CQE_SIZE)
@@ -463,7 +464,7 @@ static void cdma_release_jfc_event(struct cdma_jfc *jfc)
 {
 	cdma_release_comp_event(jfc->base.jfc_event.jfce,
 			&jfc->base.jfc_event.comp_event_list);
-	cdma_release_async_event(jfc->base.ctx,
+	cdma_release_async_event(jfc->base.jfae,
 		&jfc->base.jfc_event.async_event_list);
 }
 
@@ -508,7 +509,7 @@ struct cdma_base_jfc *cdma_create_jfc(struct cdma_dev *cdev,
 		goto err_get_jfc_buf;
 
 	if (udata) {
-		ret = cdma_get_jfae(jfc->base.ctx);
+		ret = cdma_get_jfae_ref(jfc->base.jfae);
 		if (ret)
 			goto err_get_jfae;
 	}
@@ -524,13 +525,13 @@ struct cdma_base_jfc *cdma_create_jfc(struct cdma_dev *cdev,
 	jfc->base.dev = cdev;
 
 	dev_info(cdev->dev, "create jfc, id = %u, queue id = %u.\n",
-		jfc->jfcn, cfg->queue_id);
+		 jfc->jfcn, cfg->queue_id);
 
 	return &jfc->base;
 
 err_alloc_cqc:
 	if (udata)
-		cdma_put_jfae(jfc->base.ctx);
+		cdma_put_jfae_ref(jfc->base.jfae);
 err_get_jfae:
 	cdma_free_jfc_buf(cdev, jfc);
 err_get_jfc_buf:
