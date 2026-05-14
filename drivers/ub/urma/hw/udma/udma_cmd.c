@@ -11,6 +11,7 @@
 #include "udma_jfc.h"
 #include "udma_jfr.h"
 #include "udma_jetty.h"
+#include "udma_eq.h"
 
 bool debug_switch;
 
@@ -203,13 +204,66 @@ int udma_close_ue_rx(struct udma_dev *dev, bool check_feature_enable, bool check
 		}
 	}
 	if (tp_num)
-		dev->disable_ue_rx_count += tp_num;
+		dev->disable_ue_rx_count += (int)tp_num;
 	else
 		dev->disable_ue_rx_count++;
 out:
 	mutex_unlock(&dev->disable_ue_rx_mutex);
 
 	return ret;
+}
+
+static void udma_retry_open_ue_rx(struct work_struct *work)
+{
+#define MIN_SLEEP_TIME 100
+#define MAX_SLEEP_TIME 3000
+#define TIME_SLEEP_RATE 2
+	struct udma_flush_work *open_ue_rx_work =
+		container_of(work, struct udma_flush_work, work);
+	bool check_ta_flush = open_ue_rx_work->check_ta_flush;
+	struct udma_dev *udma_dev = open_ue_rx_work->udev;
+	uint32_t tp_num = open_ue_rx_work->tp_num;
+	uint32_t wait_time = MIN_SLEEP_TIME;
+	int ret = 0;
+
+	while (true) {
+		mutex_lock(&udma_dev->open_rx_mutex);
+		if (udma_dev->open_ue_rx_failed) {
+			ret = udma_open_ue_rx(udma_dev, true, check_ta_flush, false, tp_num);
+			if (!ret) {
+				udma_dev->open_ue_rx_failed = false;
+				mutex_unlock(&udma_dev->open_rx_mutex);
+				break;
+			}
+			mutex_unlock(&udma_dev->open_rx_mutex);
+			msleep(wait_time);
+			if (wait_time < MAX_SLEEP_TIME)
+				wait_time *= TIME_SLEEP_RATE;
+			dev_err_ratelimited(udma_dev->dev, "failed to open ue rx when retry\n");
+			continue;
+		}
+		mutex_unlock(&udma_dev->open_rx_mutex);
+		break;
+	}
+
+	kfree(open_ue_rx_work);
+	open_ue_rx_work = NULL;
+}
+
+static void udma_init_open_ue_rx_work(struct udma_dev *udma_dev, uint32_t tp_num,
+				      bool check_ta_flush)
+{
+	struct udma_flush_work *open_ue_rx_work;
+
+	open_ue_rx_work = kzalloc(sizeof(struct udma_flush_work), GFP_KERNEL);
+	if (!open_ue_rx_work)
+		return;
+	open_ue_rx_work->udev = udma_dev;
+	open_ue_rx_work->check_ta_flush = check_ta_flush;
+	open_ue_rx_work->tp_num = tp_num;
+
+	INIT_WORK(&open_ue_rx_work->work, udma_retry_open_ue_rx);
+	queue_work(udma_dev->ue_rx_workq, &open_ue_rx_work->work);
 }
 
 int udma_open_ue_rx(struct udma_dev *dev, bool check_feature_enable, bool check_ta_flush,
@@ -224,16 +278,41 @@ int udma_open_ue_rx(struct udma_dev *dev, bool check_feature_enable, bool check_
 		return ret;
 
 	mutex_lock(&dev->disable_ue_rx_mutex);
+	if (!is_reset && ((tp_num && dev->disable_ue_rx_count == tp_num) ||
+	   (!tp_num && dev->disable_ue_rx_count == 1))) {
+		ret = ubase_activate_dev(dev->comdev.adev);
+		if (ret) {
+			dev_err(dev->dev, "failed to open ue rx, ret = %d.\n", ret);
+			goto out;
+		}
+	}
+
 	if (tp_num)
-		dev->disable_ue_rx_count -= tp_num;
+		dev->disable_ue_rx_count -= (int)tp_num;
 	else
 		dev->disable_ue_rx_count--;
-	if (dev->disable_ue_rx_count == 0 && !is_reset) {
-		ret = ubase_activate_dev(dev->comdev.adev);
-		if (ret)
-			dev_err(dev->dev, "failed to open ue rx, ret = %d.\n", ret);
-	}
+out:
 	mutex_unlock(&dev->disable_ue_rx_mutex);
+
+	return ret;
+}
+
+int udma_open_ue_rx_with_retry(struct udma_dev *dev, bool check_feature_enable, bool check_ta_flush,
+			       bool is_reset, uint32_t tp_num)
+{
+	int ret;
+
+	mutex_lock(&dev->open_rx_mutex);
+	ret = udma_open_ue_rx(dev, check_feature_enable, check_ta_flush, is_reset, tp_num);
+	if (ret == -ETIMEDOUT) {
+		dev->open_ue_rx_failed = true;
+		dev->current_handle_tp_num = tp_num;
+		mutex_unlock(&dev->open_rx_mutex);
+		dev_err(dev->dev, "failed to open ue rx, ret = %d, will retry later.\n", ret);
+		udma_init_open_ue_rx_work(dev, tp_num, check_ta_flush);
+		return ret;
+	}
+	mutex_unlock(&dev->open_rx_mutex);
 
 	return ret;
 }

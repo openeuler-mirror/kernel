@@ -237,10 +237,6 @@ static int cdma_init_dev_param(struct cdma_dev *cdev)
 	init_completion(&cdev->kcmddone);
 	dev_set_drvdata(&adev->dev, cdev);
 
-	ret = cdma_ctrlq_query_eu(cdev);
-	if (ret)
-		dev_warn(cdev->dev, "query eu failed, ret = %d.\n", ret);
-
 	return 0;
 }
 
@@ -517,7 +513,7 @@ struct cdma_dev *cdma_create_dev(struct auxiliary_device *adev)
 
 	cdev = kzalloc((sizeof(*cdev)), GFP_KERNEL);
 	if (!cdev)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 
 	cdev->adev = adev;
 	cdev->dev = adev->dev.parent;
@@ -530,9 +526,14 @@ struct cdma_dev *cdma_create_dev(struct auxiliary_device *adev)
 		if (ret) {
 			dev_err(cdev->dev, "Failed to init %s, ret = %d\n",
 				cdma_dev_func_map[i].err_msg, ret);
+			ret = -EFAULT;
 			goto err_init;
 		}
 	}
+
+	ret = cdma_ctrlq_query_eu(cdev);
+	if (ret == -ETIMEDOUT)
+		goto err_init;
 
 	return cdev;
 
@@ -542,7 +543,8 @@ err_init:
 			cdma_dev_func_map[i].uninit_func(cdev);
 
 	kfree(cdev);
-	return NULL;
+
+	return ERR_PTR(ret);
 }
 
 bool cdma_find_seid_in_eus(struct eu_info *eus, u8 eu_num, struct dev_eid *eid,

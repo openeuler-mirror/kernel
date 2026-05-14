@@ -78,20 +78,25 @@ static int unic_dev_resume(struct unic_dev *unic_dev)
 	return ret;
 }
 
-static void unic_reset_init(struct auxiliary_device *adev)
+static int unic_reset_init(struct auxiliary_device *adev)
 {
 	struct unic_dev *priv = (struct unic_dev *)dev_get_drvdata(&adev->dev);
 	struct net_device *netdev = priv->comdev.netdev;
 	int ret;
 
 	if (!test_bit(UNIC_STATE_RESETTING, &priv->state))
-		return;
+		return 0;
+
+	ret = unic_query_ip_addr(adev);
+	if (ret == -ETIMEDOUT) {
+		ret = -EAGAIN;
+		goto err_unic_resume;
+	}
 
 	ret = unic_dev_resume(priv);
 	if (ret)
 		goto err_unic_resume;
 
-	unic_query_ip_addr(adev);
 	unic_start_period_task(netdev);
 
 	clear_bit(UNIC_STATE_RESETTING, &priv->state);
@@ -104,16 +109,31 @@ static void unic_reset_init(struct auxiliary_device *adev)
 
 	unic_info(priv, "unic reset done.\n");
 
-	return;
+	return 0;
 
 err_unic_resume:
 	clear_bit(UNIC_STATE_RESETTING, &priv->state);
 	clear_bit(UNIC_STATE_DISABLED, &priv->state);
+
+	return ret;
 }
 
-void unic_reset_handler(struct auxiliary_device *adev,
-			enum ubase_reset_stage stage)
+static void unic_reset_abort(struct auxiliary_device *adev)
 {
+	struct unic_dev *priv = (struct unic_dev *)dev_get_drvdata(&adev->dev);
+
+	if (!test_bit(UNIC_STATE_RESETTING, &priv->state))
+		return;
+
+	clear_bit(UNIC_STATE_RESETTING, &priv->state);
+	clear_bit(UNIC_STATE_DISABLED, &priv->state);
+}
+
+int unic_reset_handler(struct auxiliary_device *adev,
+		       enum ubase_reset_stage stage)
+{
+	int ret = 0;
+
 	switch (stage) {
 	case UBASE_RESET_STAGE_DOWN:
 		unic_reset_down(adev);
@@ -122,9 +142,14 @@ void unic_reset_handler(struct auxiliary_device *adev,
 		unic_reset_uninit(adev);
 		break;
 	case UBASE_RESET_STAGE_INIT:
-		unic_reset_init(adev);
+		ret = unic_reset_init(adev);
+		break;
+	case UBASE_RESET_STAGE_ABORT:
+		unic_reset_abort(adev);
 		break;
 	default:
 		break;
 	}
+
+	return ret;
 }

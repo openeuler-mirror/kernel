@@ -693,12 +693,12 @@ int udma_deactive_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 		dev_info(dev->dev, "udma modify error and destroy jfs failed, id: %u.\n",
 			 jfs->jfs_id.id);
 		if (!ujfs->ue_rx_closed)
-			udma_open_ue_rx(dev, true, true, false, 0);
+			udma_open_ue_rx_with_retry(dev, true, true, false, 0);
 		return ret;
 	}
 
 	udma_free_jfs_detail(jfs);
-	udma_open_ue_rx(dev, true, true, false, 0);
+	udma_open_ue_rx_with_retry(dev, true, true, false, 0);
 	ujfs->sq.activated = false;
 
 	return 0;
@@ -788,14 +788,14 @@ static int udma_modify_jfs_state(struct udma_dev *udma_dev, struct udma_jfs *udm
 		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE)) {
 			if (udma_modify_jetty_precondition(udma_dev, &udma_jfs->sq)) {
 				ret = -ENOMEM;
-				udma_open_ue_rx(udma_dev, true, true, false, 0);
+				udma_open_ue_rx_with_retry(udma_dev, true, true, false, 0);
 				break;
 			}
 		}
 
 		ret = udma_set_jetty_state(udma_dev, udma_jfs->sq.id, to_jetty_state(attr->state));
 		if (ret)
-			udma_open_ue_rx(udma_dev, true, true, false, 0);
+			udma_open_ue_rx_with_retry(udma_dev, true, true, false, 0);
 		else
 			udma_jfs->ue_rx_closed = true;
 		break;

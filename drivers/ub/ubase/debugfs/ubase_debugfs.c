@@ -8,6 +8,7 @@
 #include <linux/delay.h>
 #include <linux/kernel.h>
 #include <ub/ubase/ubase_comm_debugfs.h>
+#include <ub/ubase/ubase_comm_eq.h>
 
 #include "ubase_cmd.h"
 #include "ubase_ctx_debugfs.h"
@@ -25,6 +26,7 @@ static struct dentry *ubase_dbgfs_root;
 static int ubase_dbg_dump_rst_info(struct seq_file *s, void *data)
 {
 	struct ubase_dev *udev = dev_get_drvdata(s->private);
+	int i;
 
 	seq_printf(s, "ELR reset count: %u\n", udev->reset_stat.elr_reset_cnt);
 	seq_printf(s, "port reset count: %u\n", udev->reset_stat.port_reset_cnt);
@@ -33,6 +35,11 @@ static int ubase_dbg_dump_rst_info(struct seq_file *s, void *data)
 	seq_printf(s, "HW reset done count: %u\n", udev->reset_stat.hw_reset_done_cnt);
 	seq_printf(s, "reset fail count: %u\n", udev->reset_stat.reset_fail_cnt);
 	seq_printf(s, "udev state: 0x%lx\n", udev->state_bits);
+	seq_printf(s, "udev status: 0x%lx\n", udev->status);
+
+	for (i = 0; i < UBASE_DRV_MAX; i++)
+		seq_printf(s, "adev[%d] dev_id %d status: 0x%lx\n",
+			   i, udev->dev_id, udev->priv.adev_status[i]);
 
 	return 0;
 }
