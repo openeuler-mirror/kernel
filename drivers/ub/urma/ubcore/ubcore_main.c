@@ -18,7 +18,6 @@
 #include "net/ubcore_comm.h"
 #include "net/ubcore_session.h"
 #include "ubcore_connect_adapter.h"
-#include "ubcore_connect_bonding.h"
 #include "ubcore_genl.h"
 #include "ubcm/ub_cm.h"
 #include "ubmgr/ubmgr.h"
@@ -39,7 +38,6 @@ static int __init ubcore_init(void)
 	int ret;
 
 	ubcore_exchange_init();
-	ubcore_connect_bonding_init();
 
 	ret = ubcore_class_register();
 	if (ret != 0)

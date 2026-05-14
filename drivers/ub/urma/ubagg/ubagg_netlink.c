@@ -19,6 +19,7 @@
 #include "ubagg_log.h"
 #include "ubagg_ioctl.h"
 #include "ubagg_netlink.h"
+#include "ubagg_connect_bonding.h"
 
 #define UBAGG_MAX_NL_MSG_BUF_LEN 2048
 #define UBAGG_GENL_FAMILY_NAME "UBAGG_GENL"
@@ -31,12 +32,6 @@ enum ubagg_genl_cmd {
 	UBAGG_NL_CMD_USER_PAYLOAD,
 	UBAGG_NL_CMD_GET_PHYSICAL_DEVICE,
 	UBAGG_NL_CMD_MAX,
-};
-
-/* Sub-types within ubagg's UBCORE_SERVICE_BONDING_USER service.
- */
-enum ubagg_net_msg_type {
-	UBAGG_NET_USER_MSG = 0,
 };
 
 enum ubagg_genl_attr {
@@ -68,7 +63,7 @@ static const struct genl_multicast_group ubagg_genl_mcgrps[] = {
 
 static struct genl_family genl_family __ro_after_init;
 
-static void ubagg_nl_bonding_user_msg_handler(struct ubcore_device *dev,
+void ubagg_nl_bonding_user_msg_handler(struct ubcore_device *dev,
 					      struct ubcore_comm_msg *msg,
 					      void *conn)
 {
@@ -170,7 +165,7 @@ static int ubagg_nl_handle_user_msg(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	msg.session_id = 0;
-	msg.protocol_id = 2;
+	msg.protocol_id = UBAGG_COMM_PROTOCOL;
 	msg.type = UBAGG_NET_USER_MSG;
 	msg.len = (uint16_t)payload_len;
 	msg.data = (void *)payload;
@@ -281,30 +276,16 @@ static struct genl_family genl_family __ro_after_init = {
 	.n_mcgrps = ARRAY_SIZE(ubagg_genl_mcgrps),
 };
 
-int ubagg_netlink_init(void)
+int ubagg_genl_register_family(void)
 {
-	int ret;
+	int ret = genl_register_family(&genl_family);
 
-	ret = genl_register_family(&genl_family);
-	if (ret != 0) {
-		ubagg_log_err("Failed to register ubagg genl family, ret:%d\n",
-			      ret);
-		return ret;
-	}
-
-	ret = ubcore_register_comm_msg_handler(2, ubagg_nl_bonding_user_msg_handler);
-	if (ret != 0) {
-		ubagg_log_err(
-			"Failed to register ubagg bonding user msg handler, ret:%d\n",
-			ret);
-		(void)genl_unregister_family(&genl_family);
-	}
-
+	if (ret != 0)
+		ubagg_log_err("Failed to register ubagg genl family, ret=%d\n", ret);
 	return ret;
 }
 
-void ubagg_netlink_uninit(void)
+void ubagg_genl_unregister_family(void)
 {
-	ubcore_unregister_comm_msg_handler(2);
 	(void)genl_unregister_family(&genl_family);
 }
