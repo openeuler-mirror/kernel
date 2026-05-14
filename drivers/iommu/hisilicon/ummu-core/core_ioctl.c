@@ -778,6 +778,7 @@ static int sva_mode_plbi(struct proc_manager *manager,
 		iommu_get_domain_for_dev(entry->dev);
 
 	if (cmd == UMMU_IOCPLBI_VA) {
+		iommu_plb_gather_init(&plb_gather);
 		plb_gather.va = (void *)(uintptr_t)tid_data->va;
 		plb_gather.size = tid_data->size;
 		iommu_plb_sync(domain, &plb_gather);
