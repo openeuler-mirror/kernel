@@ -286,5 +286,8 @@ int udma_close_ue_rx(struct udma_dev *dev, bool check_feature_enable, bool check
 		     bool is_reset, uint32_t tp_num);
 int udma_open_ue_rx(struct udma_dev *dev, bool check_feature_enable, bool check_ta_flush,
 		    bool is_reset, uint32_t tp_num);
+int udma_open_ue_rx_with_retry(struct udma_dev *dev, bool check_feature_enable, bool check_ta_flush,
+			       bool is_reset, uint32_t tp_num);
+
 
 #endif /* __UDMA_CMD_H__ */

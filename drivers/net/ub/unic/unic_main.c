@@ -72,6 +72,9 @@ static struct auxiliary_driver unic_drv = {
 	.probe = unic_probe,
 	.remove = unic_remove,
 	.name = "unic",
+	.driver = {
+		.probe_type = PROBE_FORCE_SYNCHRONOUS,
+	},
 	.id_table = unic_id_table,
 };
 
