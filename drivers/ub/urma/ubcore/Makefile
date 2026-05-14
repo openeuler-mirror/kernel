@@ -14,7 +14,6 @@ ubcore_cgroup.o \
 net/ubcore_comm.o \
 ubcore_cdev_file.o \
 ubcore_connect_adapter.o \
-ubcore_connect_bonding.o \
 ubcore_log.o \
 net/ubcore_cm.o \
 ubcore_topo_info.o \

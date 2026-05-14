@@ -50,10 +50,6 @@ static const char *const msg_type_str_list[UBCORE_NET_MSG_MAX] = {
 	[UBCORE_NET_CREATE_ACK] = "create-ack",
 	[UBCORE_NET_DESTROY_REQ] = "destroy-req",
 	[UBCORE_NET_DESTROY_RESP] = "destroy-resp",
-	[UBCORE_NET_BONDING_SEG_INFO_REQ] = "seg_req",
-	[UBCORE_NET_BONDING_SEG_INFO_RESP] = "seg_resp",
-	[UBCORE_NET_BONDING_JETTY_INFO_REQ] = "jetty_req",
-	[UBCORE_NET_BONDING_JETTY_INFO_RESP] = "jetty_resp",
 };
 
 enum ubcore_connect_type {

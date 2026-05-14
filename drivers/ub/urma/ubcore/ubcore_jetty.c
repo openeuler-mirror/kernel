@@ -20,7 +20,6 @@
 #include <ub/urma/ubcore_uapi.h>
 #include <ub/urma/ubcore_jetty.h>
 #include "ubcore_connect_adapter.h"
-#include "ubcore_connect_bonding.h"
 #include "ubcore_log.h"
 #include "ubcore_priv.h"
 #include "ubcore_hash_table.h"
@@ -1603,13 +1602,6 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 	if (ubcore_check_ctrlplane_compat(dev->ops->import_jfr))
 		return ubcore_import_jfr_compat(dev, cfg, udata);
 
-	if (ubcore_is_bonding_dev(dev)) {
-		if (ubcore_connect_exchange_udata_when_import_jetty(
-			    cfg, udata, true, dev) != 0) {
-			return ERR_PTR(-ENOEXEC);
-		}
-	}
-
 	tjfr = dev->ops->import_jfr(dev, cfg, udata);
 	if (IS_ERR_OR_NULL(tjfr)) {
 		ubcore_log_err("Failed to import jfr, dev_name is %s,jfr_id:%u.\n",
@@ -2593,13 +2585,6 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 
 	if (ubcore_check_ctrlplane_compat(dev->ops->import_jetty))
 		return ubcore_import_jetty_compat(dev, cfg, udata);
-
-	if (ubcore_is_bonding_dev(dev)) {
-		if (ubcore_connect_exchange_udata_when_import_jetty(
-			    cfg, udata, false, dev) != 0) {
-			return ERR_PTR(-ENOEXEC);
-		}
-	}
 
 	tjetty = dev->ops->import_jetty(dev, cfg, udata);
 	if (IS_ERR_OR_NULL(tjetty)) {
