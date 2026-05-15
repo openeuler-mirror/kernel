@@ -11,12 +11,12 @@ static int cdma_rw_check(struct cdma_dev *cdev, struct dma_seg *rmt_seg,
 			 struct dma_seg *local_seg)
 {
 	if (!rmt_seg->len || !local_seg->len) {
-		dev_err(cdev->dev, "invalid len.\n");
+		dev_err(cdev->dev, "invalid len\n");
 		return -EINVAL;
 	}
 
 	if (!rmt_seg->sva || !local_seg->sva) {
-		dev_err(cdev->dev, "invalid address.\n");
+		dev_err(cdev->dev, "invalid address\n");
 		return -EINVAL;
 	}
 
@@ -58,7 +58,7 @@ int cdma_write(struct cdma_dev *cdev, struct cdma_queue *queue,
 	int ret;
 
 	if (cdma_rw_check(cdev, rmt_seg, local_seg)) {
-		dev_err(cdev->dev, "write param check failed.\n");
+		dev_err(cdev->dev, "write param check failed\n");
 		return -EINVAL;
 	}
 
@@ -81,7 +81,7 @@ int cdma_write(struct cdma_dev *cdev, struct cdma_queue *queue,
 
 	ret = cdma_post_jfs_wr((struct cdma_jfs *)queue->jfs, &wr, &bad_wr);
 	if (ret)
-		dev_err(cdev->dev, "post jfs for write failed, ret = %d.\n", ret);
+		dev_err(cdev->dev, "post jfs for write failed, ret = %d\n", ret);
 
 	return ret;
 }
@@ -95,7 +95,7 @@ int cdma_read(struct cdma_dev *cdev, struct cdma_queue *queue,
 	int ret;
 
 	if (cdma_rw_check(cdev, rmt_seg, local_seg)) {
-		dev_err(cdev->dev, "read param check failed.\n");
+		dev_err(cdev->dev, "read param check failed\n");
 		return -EINVAL;
 	}
 
@@ -110,7 +110,7 @@ int cdma_read(struct cdma_dev *cdev, struct cdma_queue *queue,
 
 	ret = cdma_post_jfs_wr((struct cdma_jfs *)queue->jfs, &wr, &bad_wr);
 	if (ret)
-		dev_err(cdev->dev, "post jfs for read failed, ret = %d.\n", ret);
+		dev_err(cdev->dev, "post jfs for read failed, ret = %d\n", ret);
 
 	return ret;
 }
@@ -125,7 +125,7 @@ int cdma_cas(struct cdma_dev *cdev, struct cdma_queue *queue,
 	int ret;
 
 	if (cdma_rw_check(cdev, rmt_seg, local_seg)) {
-		dev_err(cdev->dev, "cas param check failed.\n");
+		dev_err(cdev->dev, "cas param check failed\n");
 		return -EINVAL;
 	}
 
@@ -146,7 +146,7 @@ int cdma_cas(struct cdma_dev *cdev, struct cdma_queue *queue,
 
 	ret = cdma_post_jfs_wr((struct cdma_jfs *)queue->jfs, &wr, &bad_wr);
 	if (ret)
-		dev_err(cdev->dev, "post jfs for cas failed, ret = %d.\n", ret);
+		dev_err(cdev->dev, "post jfs for cas failed, ret = %d\n", ret);
 
 	return ret;
 }
@@ -160,7 +160,7 @@ int cdma_faa(struct cdma_dev *cdev, struct cdma_queue *queue,
 	int ret;
 
 	if (cdma_rw_check(cdev, rmt_seg, local_seg)) {
-		dev_err(cdev->dev, "faa param check failed.\n");
+		dev_err(cdev->dev, "faa param check failed\n");
 		return -EINVAL;
 	}
 
@@ -174,7 +174,7 @@ int cdma_faa(struct cdma_dev *cdev, struct cdma_queue *queue,
 
 	ret = cdma_post_jfs_wr((struct cdma_jfs *)queue->jfs, &wr, &bad_wr);
 	if (ret)
-		dev_err(cdev->dev, "post jfs for faa failed, ret = %d.\n", ret);
+		dev_err(cdev->dev, "post jfs for faa failed, ret = %d\n", ret);
 
 	return ret;
 }

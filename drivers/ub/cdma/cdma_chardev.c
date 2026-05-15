@@ -68,7 +68,7 @@ static long cdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	int ret;
 
 	if (!cfile->cdev || cfile->cdev->status >= CDMA_SUSPEND) {
-		pr_info("ioctl cdev is invalid.\n");
+		pr_info("ioctl cdev is invalid\n");
 		return -ENODEV;
 	}
 	cdma_cmd_inc(cfile->cdev);
@@ -76,7 +76,7 @@ static long cdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	if (cmd == CDMA_SYNC) {
 		ret = copy_from_user(&hdr, (void *)arg, sizeof(hdr));
 		if (ret || hdr.args_len > CDMA_MAX_CMD_SIZE) {
-			pr_err("copy user ret = %d, input parameter len = %u.\n",
+			pr_err("copy user ret = %d, input parameter len = %u\n",
 				ret, hdr.args_len);
 			cdma_cmd_dec(cfile->cdev);
 			return -EINVAL;
@@ -86,7 +86,7 @@ static long cdma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		return ret;
 	}
 
-	pr_err("invalid ioctl command, command = %u.\n", cmd);
+	pr_err("invalid ioctl command, command = %u\n", cmd);
 	cdma_cmd_dec(cfile->cdev);
 	return -ENOIOCTLCMD;
 }
@@ -101,7 +101,7 @@ static int cdma_remap_check_jfs_id(struct cdma_file *cfile, u32 jfs_id)
 	jfs = idr_find(&cdev->jfs_table.idr_tbl.idr, jfs_id);
 	if (!jfs) {
 		spin_unlock(&cdev->jfs_table.lock);
-		dev_err(cdev->dev, "check failed, jfs_id = %u not exist.\n",
+		dev_err(cdev->dev, "check failed, jfs_id = %u not exist\n",
 			jfs_id);
 		return ret;
 	}
@@ -127,7 +127,7 @@ static int cdma_remap_pfn_range(struct cdma_file *cfile, struct vm_area_struct *
 	u32 cmd;
 
 	if (cdev->status >= CDMA_SUSPEND) {
-		dev_warn(cdev->dev, "cdev is resetting.\n");
+		dev_warn(cdev->dev, "cdev is resetting\n");
 		return -EBUSY;
 	}
 
@@ -142,7 +142,7 @@ static int cdma_remap_pfn_range(struct cdma_file *cfile, struct vm_area_struct *
 				       (uint64_t)db_addr >> PAGE_SHIFT :
 				       page_to_pfn(cdev->arm_db_page),
 				       PAGE_SIZE, vma->vm_page_prot)) {
-			dev_err(cdev->dev, "remap jfc page fail.\n");
+			dev_err(cdev->dev, "remap jfc page fail\n");
 			return -EAGAIN;
 		}
 		break;
@@ -158,13 +158,13 @@ static int cdma_remap_pfn_range(struct cdma_file *cfile, struct vm_area_struct *
 
 		if (io_remap_pfn_range(vma, vma->vm_start, address >> PAGE_SHIFT,
 				       PAGE_SIZE, vma->vm_page_prot)) {
-			dev_err(cdev->dev, "remap jetty page failed.\n");
+			dev_err(cdev->dev, "remap jetty page failed\n");
 			return -EAGAIN;
 		}
 		break;
 	default:
 		dev_err(cdev->dev,
-			"mmap failed, cmd(%u) is not supported.\n", cmd);
+			"mmap failed, cmd(%u) is not supported\n", cmd);
 		return -EINVAL;
 	}
 
@@ -179,7 +179,7 @@ static int cdma_mmap(struct file *file, struct vm_area_struct *vma)
 	int ret;
 
 	if (!cfile->cdev || cfile->cdev->status >= CDMA_SUSPEND) {
-		pr_info("mmap cdev is invalid.\n");
+		pr_info("mmap cdev is invalid\n");
 		return -ENODEV;
 	}
 
@@ -215,7 +215,7 @@ static void cdma_mmu_release(struct mmu_notifier *mn, struct mm_struct *mm)
 	struct cdma_file *cfile = container_of(mn_notifier, struct cdma_file, mn_notifier);
 
 	if (mn_notifier->mm != mm || mn_notifier->mm == NULL) {
-		pr_info("mm already released.\n");
+		pr_info("mm already released\n");
 		return;
 	}
 	mn_notifier->mm = NULL;
@@ -269,7 +269,7 @@ static int cdma_open(struct inode *inode, struct file *file)
 	cdev = container_of(chardev, struct cdma_dev, chardev);
 
 	if (cdev->status >= CDMA_SUSPEND) {
-		dev_warn(cdev->dev, "cdev is resetting.\n");
+		dev_warn(cdev->dev, "cdev is resetting\n");
 		return -EBUSY;
 	}
 
@@ -279,7 +279,7 @@ static int cdma_open(struct inode *inode, struct file *file)
 
 	ret = cdma_register_mmu(cfile);
 	if (ret) {
-		dev_err(cdev->dev, "register mmu failed, ret = %d.\n", ret);
+		dev_err(cdev->dev, "register mmu failed, ret = %d\n", ret);
 		kfree(cfile);
 		return ret;
 	}
@@ -328,7 +328,7 @@ static int cdma_close(struct inode *inode, struct file *file)
 	mutex_unlock(&cfile->ctx_mutex);
 	mutex_unlock(&g_cdma_reset_mutex);
 	kref_put(&cfile->ref, cdma_release_file);
-	pr_info("cdma close success.\n");
+	pr_info("cdma close success\n");
 
 	return 0;
 }
