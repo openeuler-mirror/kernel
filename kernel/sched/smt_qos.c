@@ -8,7 +8,6 @@
 #include <linux/sched/topology.h>
 #include <linux/sysctl.h>
 
-#include <asm/xint.h>
 #include "sched.h"
 
 static DEFINE_PER_CPU_ALIGNED(cpumask_t, smt_prefer_cpus);
@@ -95,45 +94,6 @@ void restore_qos_task_select_cpus(struct task_struct *p, const cpumask_t *backup
 	p->select_cpus = backup_select_cpus;
 }
 
-bool should_restrict(void)
-{
-	int this_cpu = smp_processor_id();
-	int cpu;
-
-	if (idle_cpu(this_cpu))
-		return false;
-
-	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
-		if (cpu == this_cpu)
-			continue;
-
-		/* SMT master CPU is idle, need not throttle */
-		if (idle_cpu(cpu))
-			return false;
-
-		/* SMT master CPU has finished online task */
-		if (per_cpu(qos_smt_status, cpu) < QOS_LEVEL_ONLINE)
-			return false;
-	}
-
-	return true;
-}
-
-static inline void send_ipi_throttle_smt(int this_cpu)
-{
-	int cpu;
-
-	if (!system_uses_xint())
-		return;
-
-	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {
-		if (cpu == this_cpu)
-			continue;
-
-		arch_smp_send_ipi_user(cpu);
-	}
-}
-
 void smt_qos_update_qos_level(int cpu, struct task_struct *p)
 {
 	int new_status;
@@ -147,9 +107,6 @@ void smt_qos_update_qos_level(int cpu, struct task_struct *p)
 		return;
 
 	__this_cpu_write(qos_smt_status, new_status);
-
-	if (cpumask_test_cpu(cpu, &master_smt_cpumask))
-		send_ipi_throttle_smt(cpu);
 }
 
 static __always_inline bool is_slave_to_master(int src_cpu, int dst_cpu)
