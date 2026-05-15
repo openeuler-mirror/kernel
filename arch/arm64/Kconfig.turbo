@@ -95,4 +95,21 @@ config ARM64_COPY_FROM_USER_OPT
 	  for higher throughput on large copies. This can be
 	  disabled at boot via copy_opt_disable.
 
+config SMT_QOS
+	bool "Support userspace timer/wft to reduce intra-core contention"
+	depends on SCHED_SMT
+	depends on FAST_IRQ
+	depends on QOS_SCHED_DYNAMIC_AFFINITY
+	depends on CFS_BANDWIDTH && CGROUP_SCHED
+	select QOS_LEVEL
+	default y
+	help
+	  Cloud Service Provider deploy Best-Effort and Latency Sensitive tasks
+	  on the same physical core to maximize the resource utilization. We
+	  observe the LS task needs more cycles to complete the same workload
+	  due to the uarch resource contention. This feature control the
+	  instruction throughput of BS task into pipeline, so that the other
+	  SMT running LS task could occupy more uarch resources to reach better
+	  IPC.
+
 endmenu # "Turbo features selection"

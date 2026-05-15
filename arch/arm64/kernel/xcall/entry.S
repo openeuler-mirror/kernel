@@ -293,3 +293,80 @@ alternative_else_nop_endif
 	br	x20
 .org .Lventry_start\@ + 128	// Did we overflow the ventry slot?
 	.endm
+
+#ifdef CONFIG_FAST_IRQ
+#include <asm/xint.h>
+
+SYM_CODE_START_LOCAL(el0t_64_irq_entry)
+	ldp	x20, x21, [sp, #16 * 10]
+	kernel_entry 0, 64
+	mov	x0, sp
+	bl	el0t_64_acked_irq_handler
+	b	ret_to_user
+SYM_CODE_END(el0t_64_irq_entry)
+
+#ifdef CONFIG_SMT_QOS
+SYM_CODE_START_LOCAL(el0_xint_ipi)
+	ldp	x20, x21, [sp, #16 * 10]
+	hw_xcall_save_base_regs
+	mov	x0, sp
+	bl	el0_xint_ipi_handler
+	hw_xcall_restore_base_regs
+SYM_CODE_END(el0_xint_ipi)
+#endif
+
+SYM_CODE_START_LOCAL(el0t_64_irq_table)
+	/* Add more of SGIs or PPIs handled in el0 here */
+	.rept NR_IPI_USER
+	.word el0t_64_irq_table - el0t_64_irq_entry
+	.endr
+#ifdef CONFIG_SMT_QOS
+	.word el0t_64_irq_table - el0_xint_ipi
+#else
+	.word el0t_64_irq_table - el0t_64_irq_entry
+#endif
+	.rept 31 - NR_IPI_USER
+	.word el0t_64_irq_table - el0t_64_irq_entry
+	.endr
+SYM_CODE_END(el0t_64_irq_table)
+
+	.macro irq_ventry
+	.align 7
+.Lventry_start\@:
+	/*
+	 * This must be the first instruction of the EL0 vector entries. It is
+	 * skipped by the trampoline vectors, to trigger the cleanup.
+	 */
+	b	.Lskip_tramp_vectors_cleanup\@
+	mrs	x30, tpidrro_el0
+	msr	tpidrro_el0, xzr
+.Lskip_tramp_vectors_cleanup\@:
+	sub	sp, sp, #PT_REGS_SIZE
+alternative_if_not ARM64_HAS_XINT
+	b	el0t_64_irq
+alternative_else_nop_endif
+	stp	x20, x21, [sp, #16 * 10]
+alternative_if ARM64_USES_NMI
+	mrs	x21, isr_el1
+	tbz	x21, ISR_EL1_IS_SHIFT, 0f
+	mrs_s	x21, SYS_ICC_NMIAR1_EL1
+	dsb	sy
+	b	1f
+alternative_else_nop_endif
+0:
+	mrs_s	x21, SYS_ICC_IAR1_EL1
+	dsb	sy
+1:
+	/* Save irqnr for use later */
+	str	x21, [sp, #(S_SYSCALLNO - 8)]
+	/* All SPI and LPI back to kernel native entry */
+	cmp	x21, 32
+	b.ge	el0t_64_irq_entry
+	/* Using jump table for different SGIs and PPIs */
+	adr	x20, el0t_64_irq_table
+	ldr	w21, [x20, x21, lsl #2]
+	sub	x20, x20, x21
+	br	x20
+.org .Lventry_start\@ + 128	// Did we overflow the ventry slot?
+	.endm
+#endif /* CONFIG_FAST_IRQ */

@@ -165,8 +165,8 @@ static bool qos_smt_expelled(int this_cpu);
 static bool is_offline_task(struct task_struct *p);
 #endif
 
-#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
-static DEFINE_PER_CPU(int, qos_smt_status);
+#ifdef CONFIG_QOS_LEVEL
+DEFINE_PER_CPU_ALIGNED(int, qos_smt_status);
 #endif
 
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
@@ -6955,7 +6955,6 @@ static DEFINE_MUTEX(smart_grid_used_mutex);
 static unsigned long capacity_of(int cpu);
 static int sched_idle_cpu(int cpu);
 static unsigned long cpu_runnable(struct rq *rq);
-static inline bool prefer_cpus_valid(struct task_struct *p);
 
 struct static_key __smart_grid_used;
 
@@ -6967,18 +6966,6 @@ static void smart_grid_usage_inc(void)
 static void smart_grid_usage_dec(void)
 {
 	static_key_slow_dec(&__smart_grid_used);
-}
-
-static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
-{
-	if (!smart_grid_used() ||
-	    !task_group(p)->auto_affinity)
-		return p->prefer_cpus;
-
-	if (task_group(p)->auto_affinity->mode == 0)
-		return (void *)p->cpus_ptr;
-
-	return sched_grid_prefer_cpus(p);
 }
 
 static inline int dynamic_affinity_mode(struct task_struct *p)
@@ -7444,13 +7431,6 @@ unlock_all:
 static void __maybe_unused destroy_auto_affinity(struct task_group *tg) {}
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-static inline bool prefer_cpus_valid(struct task_struct *p);
-
-static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
-{
-	return p->prefer_cpus;
-}
-
 static inline int dynamic_affinity_mode(struct task_struct *p)
 {
 	return 0;
@@ -9187,19 +9167,6 @@ out:
 }
 __setup("dynamic_affinity=", dynamic_affinity_switch_setup);
 
-static inline bool prefer_cpus_valid(struct task_struct *p)
-{
-	struct cpumask *prefer_cpus = task_prefer_cpus(p);
-
-	if (dynamic_affinity_enabled() || sched_paral_used()) {
-		return !cpumask_empty(prefer_cpus) &&
-			!cpumask_equal(prefer_cpus, p->cpus_ptr) &&
-			cpumask_subset(prefer_cpus, p->cpus_ptr);
-	}
-
-	return false;
-}
-
 static inline unsigned long taskgroup_cpu_util(struct task_group *tg,
 					       int cpu)
 {
@@ -9349,6 +9316,18 @@ out:
 }
 #endif
 
+#ifdef CONFIG_QOS_SCHED
+static __always_inline bool qos_sched_enabled(void)
+{
+#ifdef CONFIG_SMT_QOS
+	if (sched_feat(SMT_TAG_PULL))
+		return false;
+#endif
+
+	return true;
+}
+#endif
+
 /*
  * select_task_rq_fair: Select target runqueue for the waking task in domains
  * that have the relevant SD flag set. In practice, this is SD_BALANCE_WAKE,
@@ -9371,6 +9350,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	/* SD_flags and WF_flags share the first nibble */
 	int sd_flag = wake_flags & 0xF;
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	const cpumask_t *backup_select_cpus = NULL;
 	int idlest_cpu = -1;
 #endif
 #ifdef CONFIG_BPF_SCHED
@@ -9387,6 +9367,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	set_task_select_cpus(p, &idlest_cpu, sd_flag);
+	set_qos_task_select_cpus(p, &idlest_cpu, prev_cpu, &backup_select_cpus);
 #endif
 
 	if (wake_flags & WF_TTWU) {
@@ -9481,7 +9462,10 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		new_cpu = idlest_cpu;
 		schedstat_inc(p->stats.nr_wakeups_force_preferred_cpus);
 	}
+
+	restore_qos_task_select_cpus(p, backup_select_cpus);
 #endif
+
 	return new_cpu;
 }
 
@@ -9624,7 +9608,7 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 		return;
 
 #ifdef CONFIG_QOS_SCHED
-	if (unlikely(is_offline_task(curr) && !is_offline_task(p)))
+	if (qos_sched_enabled() && unlikely(is_offline_task(curr) && !is_offline_task(p)))
 		goto preempt;
 #endif
 
@@ -9874,6 +9858,9 @@ static int unthrottle_qos_cfs_rqs(int cpu)
 
 static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
+	if (!qos_sched_enabled())
+		return false;
+
 	if (unlikely(__this_cpu_read(qos_cpu_overload)))
 		return false;
 
@@ -9978,6 +9965,9 @@ static void start_qos_hrtimer(int cpu)
 	ktime_t time;
 	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
 
+	if (!qos_sched_enabled())
+		return;
+
 	time = ktime_add_ms(hrtimer->base->get_time(), (u64)sysctl_overload_detect_period);
 	hrtimer_set_expires(hrtimer, time);
 	hrtimer_start_expires(hrtimer, HRTIMER_MODE_ABS_PINNED);
@@ -9986,6 +9976,9 @@ static void start_qos_hrtimer(int cpu)
 void init_qos_hrtimer(int cpu)
 {
 	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
+
+	if (!qos_sched_enabled())
+		return;
 
 	hrtimer_init(hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
 	hrtimer->function = qos_overload_timer_handler;
@@ -10054,7 +10047,7 @@ static bool qos_sched_idle_cpu(int this_cpu)
 
 static bool qos_smt_expelled(int this_cpu)
 {
-	if (!static_branch_likely(&qos_smt_expell_switch))
+	if (!static_branch_likely(&qos_smt_expell_switch) || !qos_sched_enabled())
 		return false;
 
 	/*
@@ -10113,7 +10106,7 @@ static void qos_smt_send_ipi(int this_cpu)
 
 static void qos_smt_expel(int this_cpu, struct task_struct *p)
 {
-	if (!static_branch_likely(&qos_smt_expell_switch))
+	if (!static_branch_likely(&qos_smt_expell_switch) || !qos_sched_enabled())
 		return;
 
 	if (qos_smt_update_status(p))
@@ -10122,7 +10115,7 @@ static void qos_smt_expel(int this_cpu, struct task_struct *p)
 
 static inline bool qos_smt_enabled(void)
 {
-	if (!static_branch_likely(&qos_smt_expell_switch))
+	if (!static_branch_likely(&qos_smt_expell_switch) || !qos_sched_enabled())
 		return false;
 
 	if (!sched_smt_active())
@@ -10245,7 +10238,7 @@ again:
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	if (!prev || prev->sched_class != &fair_sched_class) {
 #ifdef CONFIG_QOS_SCHED
-		if (cfs_rq->idle_h_nr_running != 0 && rq->online)
+		if (qos_sched_enabled() && cfs_rq->idle_h_nr_running != 0 && rq->online)
 			goto qos_simple;
 		else
 #endif
@@ -10403,6 +10396,7 @@ done: __maybe_unused;
 	qos_smt_expel(this_cpu, p);
 #endif
 
+	smt_qos_update_qos_level(rq->cpu, p);
 	return p;
 
 idle:
@@ -10461,6 +10455,8 @@ idle:
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	qos_smt_expel(this_cpu, NULL);
 #endif
+
+	smt_qos_update_qos_level(rq->cpu, NULL);
 
 	return NULL;
 }
@@ -10887,6 +10883,9 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 			return ret;
 	}
 #endif
+
+	if (!smt_qos_can_migrate_task(p, env->src_cpu, env->dst_cpu))
+		return 0;
 
 	/*
 	 * We do not migrate tasks that are:
@@ -11520,6 +11519,10 @@ struct sd_lb_stats {
 
 	struct sg_lb_stats busiest_stat;/* Statistics of the busiest group */
 	struct sg_lb_stats local_stat;	/* Statistics of the local group */
+#ifdef CONFIG_SMT_QOS
+	unsigned long total_smt_util;     /* Total utilization of all groups in sd */
+	unsigned long total_smt_capacity; /* Total capacity of all groups in sd */
+#endif
 };
 
 static inline void init_sd_lb_stats(struct sd_lb_stats *sds)
@@ -11922,6 +11925,19 @@ sched_reduced_capacity(struct rq *rq, struct sched_domain *sd)
 	return check_cpu_capacity(rq, sd);
 }
 
+#ifdef CONFIG_SMT_QOS
+static inline void smt_qos_update_sg_lb_stats(struct sd_lb_stats *sds, int cpu)
+{
+	if (!smt_qos_enabled())
+		return;
+
+	if (!cpumask_test_cpu(cpu, &master_smt_cpumask)) {
+		sds->total_smt_util += cpu_util_cfs(cpu);
+		sds->total_smt_capacity += capacity_orig_of(cpu);
+	}
+}
+#endif
+
 /**
  * update_sg_lb_stats - Update sched_group's statistics for load balancing.
  * @env: The load balancing environment.
@@ -11950,6 +11966,10 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 		sgs->group_util += cpu_util_cfs(i);
 		sgs->group_runnable += cpu_runnable(rq);
 		sgs->sum_h_nr_running += rq->cfs.h_nr_running;
+
+#ifdef CONFIG_SMT_QOS
+		smt_qos_update_sg_lb_stats(sds, i);
+#endif
 
 		nr_running = rq->nr_running;
 		sgs->sum_nr_running += nr_running;
@@ -12684,6 +12704,10 @@ next_group:
 	}
 
 	update_idle_cpu_scan(env, sum_util);
+#ifdef CONFIG_SMT_QOS
+	update_sd_ld_qos_stats(env->sd, env->dst_cpu, sds->total_smt_capacity,
+			       sds->total_smt_util);
+#endif
 }
 
 /**
@@ -13076,6 +13100,9 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 
 		nr_running = rq->cfs.h_nr_running;
 		if (!nr_running)
+			continue;
+
+		if (smt_qos_should_not_busiest(i, env->dst_cpu))
 			continue;
 
 		capacity = capacity_of(i);

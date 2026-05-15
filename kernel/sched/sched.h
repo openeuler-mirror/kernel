@@ -11,6 +11,7 @@
 #include <linux/sched/cpufreq.h>
 #include <linux/sched/deadline.h>
 #include <linux/sched.h>
+#include <linux/sched/grid_qos.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/rseq_api.h>
@@ -459,7 +460,7 @@ struct task_group {
 
 	struct cfs_bandwidth	cfs_bandwidth;
 
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 	long qos_level;
 #endif
 
@@ -1583,20 +1584,6 @@ do {						\
 } while (0)
 
 #ifdef CONFIG_QOS_SCHED
-#ifdef CONFIG_QOS_SCHED_MULTILEVEL
-enum task_qos_level {
-	QOS_LEVEL_OFFLINE_EX = -2,
-	QOS_LEVEL_OFFLINE = -1,
-	QOS_LEVEL_ONLINE = 0,
-	QOS_LEVEL_HIGH = 1,
-	QOS_LEVEL_HIGH_EX = 2
-};
-#else
-enum task_qos_level {
-	QOS_LEVEL_OFFLINE = -1,
-	QOS_LEVEL_ONLINE = 0,
-};
-#endif
 void init_qos_hrtimer(int cpu);
 #endif
 
@@ -3487,7 +3474,7 @@ static inline bool is_per_cpu_kthread(struct task_struct *p)
 }
 #endif
 
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 static inline int qos_idle_policy(int policy)
 {
 	return policy == QOS_LEVEL_OFFLINE;
@@ -3801,5 +3788,72 @@ static inline int destroy_soft_domain(struct task_group *tg)
 }
 
 #endif
+
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+#ifdef CONFIG_QOS_SCHED_SMART_GRID
+static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
+{
+	if (!smart_grid_used() ||
+	    !task_group(p)->auto_affinity)
+		return p->prefer_cpus;
+
+	if (task_group(p)->auto_affinity->mode == 0)
+		return (void *)p->cpus_ptr;
+
+	return sched_grid_prefer_cpus(p);
+}
+#else
+static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
+{
+	return p->prefer_cpus;
+}
+#endif /* CONFIG_QOS_SCHED_SMART_GRID */
+
+static inline bool prefer_cpus_valid(struct task_struct *p)
+{
+	struct cpumask *prefer_cpus = task_prefer_cpus(p);
+
+	if (dynamic_affinity_enabled() || sched_paral_used()) {
+		return !cpumask_empty(prefer_cpus) &&
+			!cpumask_equal(prefer_cpus, p->cpus_ptr) &&
+			cpumask_subset(prefer_cpus, p->cpus_ptr);
+	}
+
+	return false;
+}
+#endif /* CONFIG_QOS_SCHED_DYNAMIC_AFFINITY */
+
+#ifdef CONFIG_SMT_QOS
+extern cpumask_t master_smt_cpumask;
+
+static inline bool smt_qos_enabled(void)
+{
+	return sched_smt_active() && sched_feat(SMT_TAG_PULL);
+}
+
+extern void set_qos_task_select_cpus(struct task_struct *p, int *idlest_cpu, int prev_cpu,
+				     const cpumask_t **backup_select_cpus);
+extern void restore_qos_task_select_cpus(struct task_struct *p,
+					 const cpumask_t *backup_select_cpus);
+extern void smt_qos_update_qos_level(int cpu, struct task_struct *p);
+extern bool smt_qos_should_not_busiest(int src_cpu, int dst_cpu);
+extern bool smt_qos_can_migrate_task(struct task_struct *p, int src_cpu, int dst_cpu);
+extern void update_sd_ld_qos_stats(struct sched_domain *sd, int dst_cpu,
+				   unsigned long smt_capacity, unsigned long smt_util);
+#else
+static inline void set_qos_task_select_cpus(struct task_struct *p, int *idlest_cpu, int prev_cpu,
+					    const cpumask_t **backup_select_cpus) { }
+static inline void restore_qos_task_select_cpus(struct task_struct *p,
+						const cpumask_t *backup_select_cpus) { }
+static inline void smt_qos_update_qos_level(int cpu, struct task_struct *p) { }
+static inline bool smt_qos_should_not_busiest(int src_cpu, int dst_cpu)
+{
+	return false;
+}
+static inline bool smt_qos_can_migrate_task(struct task_struct *p, int src_cpu, int dst_cpu)
+{
+	return true;
+}
+#endif /* CONFIG_SMT_QOS */
 
 #endif /* _KERNEL_SCHED_SCHED_H */
