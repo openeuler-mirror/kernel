@@ -2536,12 +2536,13 @@ struct sched_class {
 	KABI_REPLACE(void (*check_preempt_curr)(struct rq *rq, struct task_struct *p, int flags),
 		void (*wakeup_preempt)(struct rq *rq, struct task_struct *p, int flags))
 
-	int (*balance)(struct rq *rq, struct task_struct *prev, struct rq_flags *rf);
 	struct task_struct *(*pick_next_task)(struct rq *rq);
 
 	void (*put_prev_task)(struct rq *rq, struct task_struct *p);
 	void (*set_next_task)(struct rq *rq, struct task_struct *p, bool first);
 
+
+	int (*balance)(struct rq *rq, struct task_struct *prev, struct rq_flags *rf);
 #ifdef CONFIG_SMP
 	int  (*select_task_rq)(struct task_struct *p, int task_cpu, int flags);
 
