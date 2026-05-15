@@ -165,8 +165,8 @@ static bool qos_smt_expelled(int this_cpu);
 static bool is_offline_task(struct task_struct *p);
 #endif
 
-#ifdef CONFIG_QOS_LEVEL
-DEFINE_PER_CPU_ALIGNED(int, qos_smt_status);
+#ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
+static DEFINE_PER_CPU(int, qos_smt_status);
 #endif
 
 #ifdef CONFIG_QOS_SCHED_PRIO_LB
