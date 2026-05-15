@@ -1156,8 +1156,11 @@ static __init int oecls_init(void)
 		err = oecls_ntuple_res_init();
 		if (err)
 			goto clean_rxq;
-		if (lo_rps_policy || rps_policy)
+		if (lo_rps_policy || rps_policy) {
 			err = oecls_flow_res_init();
+			if (err)
+				goto clean_ntuple;
+		}
 	} else {
 		err = oecls_flow_res_init();
 	}
@@ -1170,6 +1173,8 @@ static __init int oecls_init(void)
 
 	return 0;
 
+clean_ntuple:
+	oecls_ntuple_res_clean();
 clean_rxq:
 clean_numa:
 	clean_oecls_netdev_info();
