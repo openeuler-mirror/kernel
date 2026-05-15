@@ -248,6 +248,7 @@ int uburma_close(struct inode *inode, struct file *filp)
 	if (!ubc_dev) {
 		uburma_log_info("ubcore device release in another proccess.\n");
 		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
+		kref_put(&file->ref, uburma_release_file);
 		return 0;
 	}
 

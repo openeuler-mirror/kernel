@@ -434,16 +434,11 @@ static int uburma_delete_jfae(struct inode *inode, struct file *filp)
 		container_of(uobj, struct uburma_jfae_uobj, uobj);
 	struct uburma_file *ufile;
 
-	if (!uobj || !jfae || !uobj->ufile || !uobj->ufile->ucontext)
+	if (!uobj || !jfae || !uobj->ufile)
 		return 0;
 
 	ufile = uobj->ufile;
 	down_write(&ufile->ucontext_rwsem);
-	if (!uobj->ufile || !uobj->ufile->ucontext) {
-		uburma_log_err("jfae has been released.\n");
-		up_write(&ufile->ucontext_rwsem);
-		return 0;
-	}
 	uobj_get(uobj);
 	/* call uburma_hot_unplug_jfae when cleanup is not going on */
 	uburma_close_uobj_fd(filp);
