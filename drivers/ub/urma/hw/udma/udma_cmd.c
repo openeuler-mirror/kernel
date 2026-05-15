@@ -6,6 +6,7 @@
 #include <linux/slab.h>
 #include <linux/dmapool.h>
 #include <ub/ubase/ubase_comm_dev.h>
+#include "udma_safe_mode.h"
 #include "udma_eid.h"
 #include "udma_cmd.h"
 #include "udma_jfc.h"
@@ -97,7 +98,9 @@ int udma_post_mbox(struct udma_dev *dev, struct ubase_cmd_mailbox *mailbox,
 				     "Send cmd mailbox, data: %08x %04x%04x.\n",
 				     attr->tag, attr->op, attr->mbx_ue_id);
 
-	ret = ubase_hw_upgrade_ctx_ex(dev->comdev.adev, attr, mailbox);
+	ret = ubase_adev_mbx_supported(dev->comdev.adev) ?
+	      ubase_hw_upgrade_ctx_ex(dev->comdev.adev, attr, mailbox) :
+	      udma_post_mbox_over_cmdq(dev, attr, mailbox);
 
 	return (ret == -EAGAIN &&
 		udma_op_ignore_eagain(attr->op, mailbox->buf)) ? 0 : ret;
@@ -127,6 +130,18 @@ int udma_cmd_query_hw_resource(struct udma_dev *udma_dev, void *out_addr)
 	udma_fill_buf(&in, UDMA_CMD_QUERY_UE_RES, true, 0, NULL);
 	udma_fill_buf(&out, UDMA_CMD_QUERY_UE_RES, true,
 		      sizeof(struct udma_cmd_ue_resource), out_addr);
+
+	return ubase_cmd_send_inout(udma_dev->comdev.adev, &in, &out);
+}
+
+int udma_query_ucp_res(struct udma_dev *udma_dev, void *out_addr)
+{
+	struct ubase_cmd_buf out = {};
+	struct ubase_cmd_buf in = {};
+
+	udma_fill_buf(&in, UDMA_CMD_QUERY_UCP_RES, true, 0, NULL);
+	udma_fill_buf(&out, UDMA_CMD_QUERY_UCP_RES, true,
+		      sizeof(struct udma_cmd_ucp_resource), out_addr);
 
 	return ubase_cmd_send_inout(udma_dev->comdev.adev, &in, &out);
 }
@@ -315,6 +330,76 @@ int udma_open_ue_rx_with_retry(struct udma_dev *dev, bool check_feature_enable, 
 	mutex_unlock(&dev->open_rx_mutex);
 
 	return ret;
+}
+
+void udma_unset_dtu_va_info(struct udma_dev *dev, struct udma_context *ctx)
+{
+	struct udma_cmd_config_dtu_tbl dtu_info = {};
+	struct ubase_cmd_buf in;
+	int ret;
+
+	if (!ctx->dtu_en)
+		return;
+
+	dtu_info.en = 0;
+	dtu_info.win_num = ctx->dtu_win_num;
+
+	udma_fill_buf(&in, UDMA_CMD_CONFIG_DTU_TBL, false,
+		      sizeof(dtu_info), (void *)&dtu_info);
+
+	ret = ubase_cmd_send_in(dev->comdev.adev, &in);
+	if (ret)
+		dev_warn(dev->dev, "failed to delete dtu info, ret = %d.\n", ret);
+}
+
+int udma_set_dtu_va_info(struct udma_dev *dev, struct udma_context *ctx)
+{
+	struct udma_cmd_config_dtu_tbl dtu_info = {};
+	struct ubase_cmd_buf in, out;
+	uint64_t total_limit;
+	int ret;
+
+	if (!ctx->dtu_en)
+		return 0;
+
+	total_limit = dev->dtu_info.va_base + dev->dtu_info.pa_size;
+	if (dev->dtu_info.va_base > U64_MAX - dev->dtu_info.pa_size) {
+		dev_err(dev->dev, "check the sum of 'va base' and 'pa size' failed.\n");
+		return -EINVAL;
+	}
+
+	dtu_info.en = 1;
+	dtu_info.exclusive = 1;
+	dtu_info.perm_read = 1;
+	dtu_info.perm_write = 1;
+	dtu_info.perm_atomic = 1;
+	dtu_info.bufferable = 1;
+	dtu_info.modified = 1;
+	dtu_info.read_allocate = 1;
+	dtu_info.write_allocate = 1;
+	dtu_info.snoop = 1;
+	dtu_info.tid = ctx->tid;
+	dtu_info.base_addr_l = dev->dtu_info.va_base & (uint32_t)ADDR_BASE_MASK;
+	dtu_info.base_addr_h = (dev->dtu_info.va_base >> ADDR_BASE_H_OFFSET) &
+			       (uint32_t)ADDR_BASE_MASK;
+	dtu_info.limit_addr_l = total_limit & (uint32_t)ADDR_BASE_MASK;
+	dtu_info.limit_addr_h = (total_limit >> ADDR_BASE_H_OFFSET) & (uint32_t)ADDR_BASE_MASK;
+	dtu_info.target_addr_l = dev->dtu_info.pa_base & (uint32_t)ADDR_BASE_MASK;
+	dtu_info.target_addr_h = (dev->dtu_info.pa_base >> ADDR_BASE_H_OFFSET) &
+				 (uint32_t)ADDR_BASE_MASK;
+
+	udma_fill_buf(&in, UDMA_CMD_CONFIG_DTU_TBL, false,
+		      sizeof(dtu_info), (void *)&dtu_info);
+	udma_fill_buf(&out, UDMA_CMD_CONFIG_DTU_TBL, true,
+		      sizeof(dtu_info), (void *)&dtu_info);
+	ret = ubase_cmd_send_inout(dev->comdev.adev, &in, &out);
+	if (ret) {
+		dev_err(dev->dev, "failed to set dtu info, ret = %d.\n", ret);
+		return -EFAULT;
+	}
+	ctx->dtu_win_num = dtu_info.win_num;
+
+	return 0;
 }
 
 module_param(debug_switch, bool, 0444);

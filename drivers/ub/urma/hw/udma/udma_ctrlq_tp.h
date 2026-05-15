@@ -11,7 +11,7 @@
 #define UDMA_CNA_SIZE		16
 #define UDMA_PID_MASK		0xFFFFFF
 #define UDMA_DEFAULT_PID	1
-#define UDMA_UE_NUM			64
+#define UDMA_UE_NUM		64
 #define UDMA_MAX_UE_IDX		256
 #define UDMA_MAX_TPID_NUM	5
 #define UDMA_IP_SIZE		16
@@ -20,11 +20,19 @@
 #define UDMA_CTRLQ_UBMEM_INFO_NUM (205)
 #define UDMA_CTRLQ_HOST_UBMEM_INFO_NUM (8)
 #define UDMA_TPN_CNT_MASK 0x1F
+#define UDMA_GLOBAL_TP_HANDLE	UINT32_MAX
+#define UDMA_UDP_RANGE_MAX	8
+#define UDMA_UDP_ATTR_MASK	0x1F
+#define UDMA_UDP_ATTR_SHIFT	12
+#define UDMA_UDP_ATTR_NUM	5
+#define UDMA_UDP_GLOBAL_MASK	0x1
+#define UDMA_UDP_GLOBAL_SHIFT	16
 
 enum udma_ctrlq_cmd_code_type {
 	UDMA_CMD_CTRLQ_REMOVE_SINGLE_TP = 0x13,
 	UDMA_CMD_CTRLQ_TP_FLUSH_DONE,
 	UDMA_CMD_CTRLQ_CHECK_TP_ACTIVE,
+	UDMA_CMD_CTRLQ_TP_PORT_CHANGE = 0x16,
 	UDMA_CMD_CTRLQ_GET_EID_BY_IP = 0x17,
 	UDMA_CMD_CTRLQ_GET_IP_BY_EID,
 	UDMA_CMD_CTRLQ_GET_TP_LIST = 0x21,
@@ -150,6 +158,11 @@ struct udma_ctrlq_check_tp_active_rsp_info {
 	uint32_t num : 8;
 	uint32_t rsv : 24;
 	struct udma_ctrlq_check_tp_active_rsp_data data[0];
+};
+
+struct udma_ctrlq_tp_port_change_req_data {
+	uint32_t tpn : 24;
+	uint32_t rsv : 8;
 };
 
 struct udma_ctrlq_get_tp_list_req_data {
@@ -310,15 +323,16 @@ int udma_set_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 		     const uint8_t tp_attr_cnt, const uint32_t tp_attr_bitmap,
 		     const struct ubcore_tp_attr_value *tp_attr, struct ubcore_udata *udata);
 int udma_get_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
-		    uint8_t *tp_attr_cnt, uint32_t *tp_attr_bitmap,
-		    struct ubcore_tp_attr_value *tp_attr, struct ubcore_udata *udata);
+		     uint8_t *tp_attr_cnt, uint32_t *tp_attr_bitmap,
+		     struct ubcore_tp_attr_value *tp_attr, struct ubcore_udata *udata);
 int udma_send_msg_to_ue(struct udma_dev *udma_dev, struct udma_entity_buf *add_buf,
-				   uint8_t dst_ue_idx, uint16_t opcode);
+			uint8_t dst_ue_idx, uint16_t opcode);
 int udma_recv_tp_resp_from_mue(struct udma_dev *udev, struct udma_entity_msg *resp, uint32_t len);
 int udma_send_tp_resp_to_ue(struct udma_dev *udev, struct udma_entity_msg *req, int ret);
 int udma_active_tp(struct ubcore_device *dev, struct ubcore_active_tp_cfg *active_cfg);
 int udma_deactive_tp(struct ubcore_device *dev, union ubcore_tp_handle tp_handle,
 		     struct ubcore_udata *udata);
+int udma_ctrlq_notify_tp_port_change(struct udma_dev *udev, uint32_t tpn);
 int udma_get_smac(struct ubcore_device *dev, uint8_t *mac);
 int udma_get_eid_by_ip(struct ubcore_device *dev, const struct ubcore_net_addr *net_addr,
 		       union ubcore_eid *eid);

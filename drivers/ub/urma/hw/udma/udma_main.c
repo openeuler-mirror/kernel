@@ -30,6 +30,7 @@
 #include "udma_common.h"
 #include "udma_ctrlq_tp.h"
 #include "udma_mue.h"
+#include "udma_safe_mode.h"
 #include "udma_jetty_group.h"
 
 #define UDMA_DRV_VER "1.0"
@@ -45,6 +46,7 @@ uint32_t jfr_sleep_time = 1000;
 uint32_t jfc_arm_mode;
 bool dump_aux_info;
 bool hugepage_enable = true;
+bool jfc_share_enable = true;
 
 static const struct auxiliary_device_id udma_id_table[] = {
 	{
@@ -158,6 +160,7 @@ static void udma_set_dev_caps(struct ubcore_device_attr *attr, struct udma_dev *
 		     sizeof(struct ubcore_sl_info) * UDMA_MAX_SL_NUM);
 	attr->dev_cap.feature.bs.ipourma_en = udma_dev->caps.ipourma_en;
 	attr->dev_cap.feature.bs.ctp_en = udma_dev->caps.ctp_en;
+	attr->dev_cap.feature.bs.uboe = !ubase_adev_ubl_supported(udma_dev->comdev.adev);
 }
 
 static int udma_query_device_attr(struct ubcore_device *dev,
@@ -383,8 +386,7 @@ void udma_destroy_tables(struct udma_dev *udma_dev)
 	if (!udma_dev->is_ue)
 		udma_destroy_eid_guid_table(udma_dev);
 
-	udma_ctrlq_destroy_tpid_list(&udma_dev->ctrlq_tpid_table);
-
+	udma_destroy_seg_tree_table(udma_dev);
 	udma_destroy_eid_table(udma_dev);
 	mutex_destroy(&udma_dev->disable_ue_rx_mutex);
 	if (!ida_is_empty(&udma_dev->rsvd_jetty_ida_table.ida))
@@ -451,7 +453,6 @@ static void udma_init_managed_by_ctrl_cpu_table(struct udma_dev *udma_dev)
 {
 	mutex_init(&udma_dev->eid_mutex);
 	xa_init(&udma_dev->eid_table);
-	xa_init(&udma_dev->ctrlq_tpid_table);
 }
 
 int udma_init_tables(struct udma_dev *udma_dev)
@@ -483,6 +484,8 @@ int udma_init_tables(struct udma_dev *udma_dev)
 	ida_init(&udma_dev->rsvd_jetty_ida_table.ida);
 	mutex_init(&udma_dev->disable_ue_rx_mutex);
 	udma_init_managed_by_ctrl_cpu_table(udma_dev);
+	mutex_init(&udma_dev->seg_tree_mutex);
+	xa_init(&udma_dev->seg_tree_table);
 
 	if (udma_dev->is_ue)
 		return 0;
@@ -585,6 +588,61 @@ static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
 		udma_dump_jetty_id_range(udma_dev);
 }
 
+static void udma_dump_ucp_id_range(struct udma_dev *udma_dev)
+{
+#define UCP_JFX_CNT 3
+	const char *jfx_name[UCP_JFX_CNT] = {
+		"ucp_jetty",
+		"ucp_jfc",
+		"ucp_jfr",
+	};
+	struct udma_res *ucp_jfx_list[UCP_JFX_CNT] = {
+		&udma_dev->caps.ucp_caps.ucp_jetty,
+		&udma_dev->caps.ucp_caps.ucp_jfc,
+		&udma_dev->caps.ucp_caps.ucp_jfr,
+	};
+	uint32_t i;
+
+	for (i = 0; i < UCP_JFX_CNT; i++)
+		dev_info(udma_dev->dev, "%s start_idx = %u, max_cnt = %u\n",
+			 jfx_name[i], ucp_jfx_list[i]->start_idx,
+			 ucp_jfx_list[i]->max_cnt);
+
+	dev_info(udma_dev->dev, "rsvd_jetty_cnt = %u.\n", udma_dev->caps.rsvd_jetty_cnt);
+}
+
+static void udma_get_ucp_jfx_id_range(struct udma_dev *udma_dev, struct udma_cmd_ucp_resource *cmd)
+{
+	udma_dev->caps.ucp_caps.ucp_jetty.start_idx = cmd->ucp_jetty_start;
+	udma_dev->caps.ucp_caps.ucp_jetty.max_cnt = cmd->ucp_jetty_num;
+	udma_dev->caps.ucp_caps.ucp_jetty.next_idx = udma_dev->caps.ucp_caps.ucp_jetty.start_idx;
+	udma_dev->caps.ucp_caps.ucp_jfc.start_idx = cmd->ucp_jfc_start;
+	udma_dev->caps.ucp_caps.ucp_jfc.max_cnt = cmd->ucp_jfc_num;
+	udma_dev->caps.ucp_caps.ucp_jfc.next_idx = udma_dev->caps.ucp_caps.ucp_jfc.start_idx;
+	udma_dev->caps.ucp_caps.ucp_jfr.start_idx = cmd->ucp_jfr_start;
+	udma_dev->caps.ucp_caps.ucp_jfr.max_cnt = cmd->ucp_jfr_num;
+	udma_dev->caps.ucp_caps.ucp_jfr.next_idx = udma_dev->caps.ucp_caps.ucp_jfr.start_idx;
+	udma_dev->caps.rsvd_jetty_cnt += udma_dev->caps.ucp_caps.ucp_jetty.max_cnt;
+
+	if (debug_switch)
+		udma_dump_ucp_id_range(udma_dev);
+}
+
+static int udma_set_ucp_res(struct udma_dev *udma_dev)
+{
+	struct udma_cmd_ucp_resource ucp_cmd = {};
+	int ret;
+
+	ret = udma_query_ucp_res(udma_dev, (void *)&ucp_cmd);
+	if (ret) {
+		dev_err(udma_dev->dev, "fail to query ucp resource from FW %d\n", ret);
+		return ret;
+	}
+	udma_get_ucp_jfx_id_range(udma_dev, &ucp_cmd);
+
+	return 0;
+}
+
 static int query_caps_from_firmware(struct udma_dev *udma_dev)
 {
 	struct udma_cmd_ue_resource cmd = {};
@@ -613,6 +671,14 @@ static int query_caps_from_firmware(struct udma_dev *udma_dev)
 
 	udma_get_jetty_id_range(udma_dev, &cmd);
 
+	if (ubase_adev_ucp_supported(udma_dev->comdev.adev)) {
+		ret = udma_set_ucp_res(udma_dev);
+		if (ret) {
+			dev_err(udma_dev->dev, "fail to set ucp resource.\n");
+			return ret;
+		}
+	}
+
 	udma_dev->caps.feature = cmd.cap_info;
 	udma_dev->caps.ue_cnt = cmd.ue_cnt >= UDMA_DEV_UE_NUM ?
 		UDMA_DEV_UE_NUM - 1 : cmd.ue_cnt;
@@ -638,6 +704,25 @@ static void get_dev_caps_from_ubase(struct udma_dev *udma_dev)
 	udma_dev->port_id = ubase_caps->io_port_id;
 	udma_dev->port_logic_id = ubase_caps->io_port_logic_id;
 	udma_dev->ue_id = ubase_caps->ue_id;
+	udma_dev->caps.non_mirror_en = ubase_adev_non_mirror_mem_supported(udma_dev->comdev.adev);
+
+	udma_dev->dtu_info.k_dtu_enable = ubase_adev_dtu_supported(udma_dev->comdev.adev);
+	if (!udma_dev->dtu_info.k_dtu_enable)
+		return;
+
+	if (ubase_caps->dtu_pa_base == 0 || ubase_caps->dtu_pa_size == 0 ||
+	    ubase_caps->dtu_va_base == 0 || ubase_caps->dtu_iova_base == 0) {
+		dev_warn(udma_dev->dev, "dtu para invalid.\n");
+		udma_dev->dtu_info.k_dtu_enable = false;
+		return;
+	}
+
+	udma_dev->dtu_info.u_dtu_enable = true;
+	udma_dev->dtu_info.pa_base = ubase_caps->dtu_pa_base;
+	udma_dev->dtu_info.pa_size = ubase_caps->dtu_pa_size;
+	udma_dev->dtu_info.va_base = ubase_caps->dtu_va_base;
+	udma_dev->dtu_info.iova_base = ubase_caps->dtu_iova_base;
+	udma_dev->dtu_info.dtu_mem_node_id = ubase_adev_get_mem_node_id(udma_dev->comdev.adev);
 }
 
 static int udma_construct_qos_param(struct udma_dev *dev)
@@ -780,6 +865,7 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	udma_dev->caps.jfc.max_cnt = a_caps->jfc.max_cnt;
 	udma_dev->caps.jfc.depth = a_caps->jfc.depth;
 	udma_dev->caps.jfc.start_idx = a_caps->jfc.start_idx;
+	udma_dev->caps.jfc.next_idx = udma_dev->caps.jfc.start_idx;
 	udma_dev->caps.jetty.max_cnt = a_caps->jfs.max_cnt;
 	udma_dev->caps.jetty.depth = a_caps->jfs.depth;
 	udma_dev->caps.jetty.start_idx = a_caps->jfs.start_idx;
@@ -796,6 +882,12 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	ret = udma_query_wqebb_va(udma_dev);
 	if (ret)
 		return ret;
+
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_NOT_SHARE_JFC))
+		udma_dev->caps.no_share_jfc_en = true;
+
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_WRITE_ATOMIC_ADD))
+		udma_dev->caps.atomic_add_en = true;
 
 	udma_dev->caps.max_msg_len = MAX_MSG_LEN;
 	udma_dev->caps.jetty_in_grp = MAX_JETTY_IN_JETTY_GRP;
@@ -832,6 +924,12 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 	udma_dev->k_db_base = mem_base->addr;
 	udma_dev->adev_id = udma_dev->comdev.adev->id;
 
+	udma_dev->hw_ver = ubase_get_hw_ver(udma_dev->comdev.adev);
+	if (udma_dev->hw_ver == UBASE_HW_VER_UNKNOWN) {
+		dev_err(udma_dev->dev, "failed to get hw version.\n");
+		return -EINVAL;
+	}
+
 	ret = udma_set_hw_caps(udma_dev);
 	if (ret) {
 		dev_err(udma_dev->dev, "failed to query hw caps, ret = %d\n", ret);
@@ -852,12 +950,30 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 		INIT_LIST_HEAD(&udma_dev->db_list[i]);
 
 	udma_init_hugepage(udma_dev);
+	spin_lock_init(&udma_dev->caps.udp.lock);
+
+	if (!ubase_adev_mbx_supported(udma_dev->comdev.adev)) {
+		ret = udma_init_mbox_over_cmdq(udma_dev);
+		if (ret) {
+			dev_err(udma_dev->dev,
+				"Failed to init mbox over cmdq, ret = %d\n", ret);
+			udma_destroy_hugepage(udma_dev);
+
+			mutex_destroy(&udma_dev->db_mutex);
+			dev_set_drvdata(&udma_dev->comdev.adev->dev, NULL);
+			udma_destroy_tables(udma_dev);
+			return ret;
+		}
+	}
 
 	return 0;
 }
 
 static void udma_uninit_dev_param(struct udma_dev *udma_dev)
 {
+	if (!ubase_adev_mbx_supported(udma_dev->comdev.adev))
+		udma_uninit_mbox_over_cmdq(udma_dev);
+
 	udma_destroy_hugepage(udma_dev);
 	mutex_destroy(&udma_dev->db_mutex);
 	dev_set_drvdata(&udma_dev->comdev.adev->dev, NULL);
@@ -926,8 +1042,8 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 		goto err_enable_ksva;
 	}
 
-	udma_dev->ksva = ummu_ksva_bind_device(udma_dev->dev, &param);
-	if (!udma_dev->ksva) {
+	udma_dev->ksva = iommu_ksva_bind_device(udma_dev->dev, &param);
+	if (IS_ERR(udma_dev->ksva)) {
 		dev_err(udma_dev->dev, "ksva bind device failed.\n");
 		ret = -EINVAL;
 		goto err_ksva_bind_device;
@@ -939,18 +1055,28 @@ static int udma_alloc_dev_tid(struct udma_dev *udma_dev)
 		goto err_get_tid;
 	}
 
-	ret = ummu_sva_grant_range(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE,
+	ret = iommu_sva_grant(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE,
 				   UMMU_DEV_WRITE | UMMU_DEV_READ, &seg_attr);
 	if (ret) {
 		dev_err(udma_dev->dev, "Failed to sva grant range for udma device.\n");
 		goto err_sva_grant_range;
 	}
 
-	return ret;
+	if (!udma_dev->dtu_info.k_dtu_enable)
+		return ret;
+
+	ret = ubase_dtu_tbl_init(udma_dev->comdev.adev, udma_dev->tid,
+				 &udma_dev->dtu_info.win_num);
+	if (ret) {
+		dev_warn(udma_dev->dev, "Failed to init dtu for udma device.\n");
+		udma_dev->dtu_info.k_dtu_enable = false;
+	}
+
+	return 0;
 
 err_sva_grant_range:
 err_get_tid:
-	ummu_ksva_unbind_device(udma_dev->ksva);
+	iommu_ksva_unbind_device(udma_dev->ksva);
 err_ksva_bind_device:
 	if (iommu_dev_disable_feature(udma_dev->dev, IOMMU_DEV_FEAT_KSVA))
 		dev_warn(udma_dev->dev, "disable ksva failed.\n");
@@ -966,7 +1092,14 @@ static void udma_free_dev_tid(struct udma_dev *udma_dev)
 	size_t token_id;
 	int ret;
 
-	ret = ummu_sva_ungrant_range(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE, NULL);
+	if (udma_dev->dtu_info.k_dtu_enable) {
+		ret = ubase_dtu_tbl_uninit(udma_dev->comdev.adev,
+					   udma_dev->dtu_info.win_num);
+		if (ret)
+			dev_warn(udma_dev->dev, "uninit dtu failed, ret = %d.\n", ret);
+	}
+
+	ret = iommu_sva_ungrant(udma_dev->ksva, 0, UDMA_MAX_GRANT_SIZE, NULL);
 	if (ret)
 		dev_warn(udma_dev->dev,
 			 "sva ungrant range for udma device failed, ret = %d.\n",
@@ -975,11 +1108,11 @@ static void udma_free_dev_tid(struct udma_dev *udma_dev)
 	mutex_lock(&udma_dev->ksva_mutex);
 	xa_for_each(&udma_dev->ksva_table, token_id, ksva) {
 		__xa_erase(&udma_dev->ksva_table, token_id);
-		ummu_ksva_unbind_device(ksva);
+		iommu_ksva_unbind_device(ksva);
 	}
 	mutex_unlock(&udma_dev->ksva_mutex);
 
-	ummu_ksva_unbind_device(udma_dev->ksva);
+	iommu_ksva_unbind_device(udma_dev->ksva);
 
 	ret = iommu_dev_disable_feature(udma_dev->dev, IOMMU_DEV_FEAT_KSVA);
 	if (ret)
@@ -1545,3 +1678,6 @@ MODULE_PARM_DESC(dump_aux_info,
 
 module_param(hugepage_enable, bool, 0644);
 MODULE_PARM_DESC(hugepage_enable, "Set huge page enable, default: 1(0:disable, 1:enable)");
+
+module_param(jfc_share_enable, bool, 0644);
+MODULE_PARM_DESC(jfc_share_enable, "Set jfc share enable, default: 1(0:disable, 1:enable)");

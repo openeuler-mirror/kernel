@@ -236,28 +236,23 @@ void udma_umem_release(struct udma_umem *umem, bool is_kernel, bool dirty)
 	kfree(umem);
 }
 
-int udma_ioummu_map(struct udma_context *ctx, int r_tid, int prot, uint64_t addr,
+int udma_ioummu_map(uint32_t l_tid, uint32_t r_tid, int prot, uint64_t addr,
 		    struct sg_table *sgt)
 {
 	struct ummu_matt_domain domain = {};
-	int ret;
 
-	domain.l_tid = ctx->tid;
+	domain.l_tid = l_tid;
 	domain.r_tid = r_tid;
 	domain.mm = current->mm;
 
-	ret = ummu_sva_matt_map(&domain, addr, sgt, prot);
-	if (ret)
-		dev_err(ctx->dev->dev, "failed to ummu sva matt map, ret:%d.\n", ret);
-
-	return ret;
+	return ummu_sva_matt_map(&domain, addr, sgt, prot);
 }
 
-void udma_ioummu_unmap(struct udma_context *ctx, int r_tid, uint64_t addr, size_t size)
+void udma_ioummu_unmap(uint32_t l_tid, uint32_t r_tid, uint64_t addr, size_t size)
 {
 	struct ummu_matt_domain domain = {};
 
-	domain.l_tid = ctx->tid;
+	domain.l_tid = l_tid;
 	domain.r_tid = r_tid;
 	domain.mm = current->mm;
 
@@ -550,7 +545,7 @@ void udma_dfx_store_id(struct udma_dev *udma_dev, struct udma_dfx_entity *entity
 	*entry = id;
 
 	write_lock(&entity->rwlock);
-	ret = xa_err(xa_store(&entity->table, id, entry, GFP_KERNEL));
+	ret = xa_err(xa_store(&entity->table, id, entry, GFP_ATOMIC));
 	if (ret) {
 		write_unlock(&entity->rwlock);
 		dev_err(udma_dev->dev, "store %s to table failed in DFX.\n", name);
@@ -669,7 +664,7 @@ udma_alloc_hugepage_priv(struct udma_dev *dev, uint32_t len)
 	priv->seq = (uint32_t)atomic_inc_return(&dev->hugepage_seq);
 	list_add(&priv->list, &dev->hugepage_list);
 
-	if (dfx_switch)
+	if (debug_switch)
 		dev_info_ratelimited(dev->dev, "alloc_hugepage, seq=%u, 2m_page_num=%u.\n",
 				     priv->seq, priv->va_len >> UDMA_HUGEPAGE_SHIFT);
 	return priv;
@@ -717,7 +712,7 @@ udma_alloc_hugepage(struct udma_dev *dev, uint32_t len)
 	priv->left_va_len -= len;
 	mutex_unlock(&dev->hugepage_lock);
 
-	if (dfx_switch)
+	if (debug_switch)
 		dev_info_ratelimited(dev->dev, "occupy_hugepage, seq=%u, 4k_page_num=%u.\n",
 				     priv->seq, len >> UDMA_HW_PAGE_SHIFT);
 	return hugepage;
@@ -732,11 +727,11 @@ static void udma_free_hugepage(struct udma_dev *dev, struct udma_hugepage *hugep
 
 	priv = hugepage->priv;
 
-	if (dfx_switch)
+	if (debug_switch)
 		dev_info_ratelimited(dev->dev, "return_hugepage, seq=%u.\n", priv->seq);
 	mutex_lock(&dev->hugepage_lock);
 	if (refcount_dec_and_test(&priv->refcnt)) {
-		if (dfx_switch)
+		if (debug_switch)
 			dev_info_ratelimited(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		list_del(&priv->list);
 
@@ -750,12 +745,58 @@ static void udma_free_hugepage(struct udma_dev *dev, struct udma_hugepage *hugep
 	kfree(hugepage);
 }
 
-int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf)
+static void *udma_iova_map(struct udma_dev *udma_dev, uint32_t size, struct udma_buf *buf)
+{
+	uint32_t align_size = PAGE_ALIGN(size);
+	uint64_t pa_addr;
+
+	buf->pages = alloc_pages_node(udma_dev->dtu_info.dtu_mem_node_id,
+				      GFP_HIGHUSER_MOVABLE | __GFP_ZERO, get_order(align_size));
+	if (!buf->pages) {
+		dev_err(udma_dev->dev, "failed to alloc pages.\n");
+		return NULL;
+	}
+
+	pa_addr = page_to_phys(buf->pages);
+	if (pa_addr < udma_dev->dtu_info.pa_base) {
+		dev_err(udma_dev->dev, "phy addr is error.\n");
+		goto err_free_mem;
+	}
+	buf->addr = pa_addr - udma_dev->dtu_info.pa_base + udma_dev->dtu_info.iova_base;
+
+	return page_address(buf->pages);
+
+err_free_mem:
+	__free_pages(buf->pages, get_order(align_size));
+
+	return NULL;
+}
+
+static void udma_iova_unmap(struct udma_dev *udma_dev, uint32_t size, struct udma_buf *buf)
+{
+	uint32_t align_size = PAGE_ALIGN(size);
+
+	if (buf->pages)
+		__free_pages(buf->pages, get_order(align_size));
+}
+
+int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 {
 	uint32_t size = buf->entry_size * buf->entry_cnt;
 	uint32_t hugepage_size;
 	int ret = 0;
 
+	if (need_dtu && dev->dtu_info.k_dtu_enable) {
+		buf->kva = udma_iova_map(dev, size, buf);
+		if (buf->kva) {
+			buf->k_dtu_enable = true;
+			return ret;
+		}
+
+		dev_warn(dev->dev, "map iova failed.\n");
+	}
+
+	buf->k_dtu_enable = false;
 	if (ubase_adev_prealloc_supported(dev->comdev.adev)) {
 		hugepage_size = ALIGN(size, UDMA_HW_PAGE_SIZE);
 		buf->hugepage = udma_alloc_hugepage(dev, hugepage_size);
@@ -775,14 +816,63 @@ int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf)
 	return ret;
 }
 
-void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf)
+void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu)
 {
 	uint32_t size = buf->entry_cnt * buf->entry_size;
+
+	if (buf->k_dtu_enable) {
+		udma_iova_unmap(dev, size, buf);
+		return;
+	}
 
 	if (buf->is_hugepage)
 		udma_free_hugepage(dev, buf->hugepage);
 	else
 		udma_free_normal_buf(dev, size, buf);
+}
+
+bool remap_va_to_pfn(struct udma_dev *dev, uint64_t va, uint64_t *pfn)
+{
+	pte_t *ptep;
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+
+	pgd = pgd_offset(current->mm, va);
+	if (pgd_none(*pgd) || pgd_bad(*pgd)) {
+		dev_err(dev->dev, "failed to get pgd.\n");
+		return false;
+	}
+
+	p4d = p4d_offset(pgd, va);
+	if (p4d_none(*p4d) || p4d_bad(*p4d)) {
+		dev_err(dev->dev, "failed to get p4d.\n");
+		return false;
+	}
+
+	pud = pud_offset(p4d, va);
+	if (pud_none(*pud) || pud_bad(*pud)) {
+		dev_err(dev->dev, "failed to get pud.\n");
+		return false;
+	}
+
+	pmd = pmd_offset(pud, va);
+	if (pmd_leaf(*pmd)) {
+		*pfn = pmd_pfn(*pmd);
+	} else if (pmd_none(*pmd) || pmd_bad(*pmd)) {
+		dev_err(dev->dev, "failed to get pmd.\n");
+		return false;
+	}
+
+	ptep = __pte_map(pmd, va);
+	if (!pte_present(ptep_get(ptep))) {
+		dev_err(dev->dev, "failed to get pte.\n");
+		return false;
+	}
+	*pfn = pte_pfn(*ptep);
+
+	return true;
 }
 
 int udma_query_ue_idx(struct ubcore_device *ubcore_dev, struct ubcore_devid *devid,
@@ -858,4 +948,77 @@ void udma_destroy_hugepage(struct udma_dev *dev)
 	}
 	mutex_unlock(&dev->hugepage_lock);
 	mutex_destroy(&dev->hugepage_lock);
+}
+
+void udma_dtu_uva_unremap(struct udma_dev *dev, struct udma_buf *buf,
+			  struct udma_dtu_pg_info *dtu_pg_info)
+{
+	struct vm_area_struct *vma;
+	uint32_t size;
+
+	if (current->mm) {
+		size = buf->entry_cnt * buf->entry_size;
+		mmap_write_lock(current->mm);
+		vma = find_vma(current->mm, dev->dtu_info.va_base);
+		if (vma != NULL && vma->vm_start <= buf->addr &&
+		    vma->vm_end >= buf->addr + size)
+			zap_vma_ptes(vma, buf->addr, size);
+		mmap_write_unlock(current->mm);
+	}
+	__free_pages(dtu_pg_info->pg, dtu_pg_info->order);
+}
+
+int udma_dtu_uva_remap(struct udma_dev *dev, struct udma_buf *buf,
+		       struct udma_dtu_pg_info *dtu_pg_info)
+{
+	struct vm_area_struct *vma;
+	uint32_t buf_len;
+	gfp_t flag;
+	int ret;
+
+	buf_len = ALIGN(buf->len, PAGE_SIZE);
+	dtu_pg_info->order = get_order(buf_len);
+
+	mmap_write_lock(current->mm);
+	flag = dev->caps.non_mirror_en == true ? (GFP_HIGHUSER_MOVABLE | __GFP_ZERO) :
+					  (GFP_KERNEL | __GFP_ZERO);
+	dtu_pg_info->pg = alloc_pages_node(dev->dtu_info.dtu_mem_node_id,
+					   flag, dtu_pg_info->order);
+	if (dtu_pg_info->pg == NULL) {
+		dev_err(dev->dev, "failed to alloc pages, order = %d.\n", dtu_pg_info->order);
+		ret = -ENOMEM;
+		goto err_unlock;
+	}
+
+	buf->addr = dev->dtu_info.va_base + page_to_phys(dtu_pg_info->pg) - dev->dtu_info.pa_base;
+	vma = find_vma(current->mm, buf->addr);
+	if (vma == NULL || vma->vm_start > buf->addr || vma->vm_end < buf->addr + buf_len) {
+		dev_err(dev->dev, "failed to find vma.\n");
+		ret = -EINVAL;
+		goto err_free_pages;
+	}
+	if (!((vma->vm_flags & VM_WIPEONFORK) && (vma->vm_flags & VM_DONTEXPAND) &&
+	    (vma->vm_flags & VM_DONTCOPY) && (vma->vm_flags & VM_IO))) {
+		dev_err(dev->dev, "failed to check vma flags.\n");
+		ret = -EINVAL;
+		goto err_free_pages;
+	}
+
+	ret = remap_pfn_range(vma, buf->addr, (uint64_t)page_to_pfn(dtu_pg_info->pg),
+			      buf_len, vma->vm_page_prot);
+	if (ret) {
+		dev_err(dev->dev, "failed to remap pfn, ret = %d.\n", ret);
+		goto err_free_pages;
+	}
+	mmap_write_unlock(current->mm);
+
+	return ret;
+
+err_free_pages:
+	__free_pages(dtu_pg_info->pg, dtu_pg_info->order);
+	buf->addr = 0;
+err_unlock:
+	mmap_write_unlock(current->mm);
+
+	return ret;
 }

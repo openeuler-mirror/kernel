@@ -25,6 +25,11 @@ struct udma_jetty_grp {
 	struct completion ae_comp;
 };
 
+struct udma_dtu_pg_info {
+	struct page *pg;
+	int order;
+};
+
 struct udma_jetty_queue {
 	struct udma_buf buf;
 	void *kva_curr;
@@ -62,6 +67,8 @@ struct udma_jetty_queue {
 	bool pi_type;
 	bool activated;
 	bool cstm;
+	bool dtu_en;
+	struct udma_dtu_pg_info dtu_pg_info;
 };
 
 enum tp_state {
@@ -322,9 +329,9 @@ struct udma_tp_ctx {
 	uint32_t scc_data[8];
 };
 
-int udma_ioummu_map(struct udma_context *ctx, int r_tid, int prot, uint64_t addr,
+int udma_ioummu_map(uint32_t l_tid, uint32_t r_tid, int prot, uint64_t addr,
 		    struct sg_table *sgt);
-void udma_ioummu_unmap(struct udma_context *ctx, int r_tid, uint64_t addr, size_t size);
+void udma_ioummu_unmap(uint32_t l_tid, uint32_t r_tid, uint64_t addr, size_t size);
 struct udma_umem *udma_umem_get(struct udma_umem_param *param);
 void udma_umem_release(struct udma_umem *umem, bool is_kernel, bool dirty);
 void udma_init_udma_table(struct udma_table *table, uint32_t max, uint32_t min, bool irq_lock);
@@ -339,11 +346,9 @@ void udma_dfx_delete_id(struct udma_dev *udma_dev, struct udma_dfx_entity *entit
 			uint32_t id);
 int udma_alloc_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct udma_buf *buf);
 void udma_free_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct udma_buf *buf);
-int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf);
-void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf);
-void *udma_alloc_iova(struct udma_dev *udma_dev, size_t memory_size, dma_addr_t *addr);
-void udma_free_iova(struct udma_dev *udma_dev, size_t memory_size, void *kva_or_slot,
-		    dma_addr_t addr);
+int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu);
+void udma_k_free_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu);
+bool remap_va_to_pfn(struct udma_dev *dev, uint64_t va, uint64_t *pfn);
 
 static inline void udma_write64(struct udma_dev *udma_dev,
 				uint64_t *val, void __iomem *dest)
@@ -407,5 +412,9 @@ void udma_swap_endian(const uint8_t arr[], uint8_t res[], uint32_t res_size);
 void udma_init_hugepage(struct udma_dev *dev);
 void udma_destroy_hugepage(struct udma_dev *dev);
 void udma_destroy_eid_guid_table(struct udma_dev *udma_dev);
+void udma_dtu_uva_unremap(struct udma_dev *dev, struct udma_buf *buf,
+			  struct udma_dtu_pg_info *dtu_pg_info);
+int udma_dtu_uva_remap(struct udma_dev *dev, struct udma_buf *buf,
+		       struct udma_dtu_pg_info *dtu_pg_info);
 
 #endif /* __UDMA_COMM_H__ */

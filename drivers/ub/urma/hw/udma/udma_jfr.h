@@ -116,7 +116,8 @@ struct udma_jfr_ctx {
 	/* DW1 */
 	uint32_t rqe_token_id_h : 6;
 	uint32_t type : 3;
-	uint32_t rsv : 3;
+	uint32_t rsv : 2;
+	uint32_t jfr_type : 1;
 	uint32_t rqe_base_addr_l : 20;
 	/* DW2 */
 	uint32_t rqe_base_addr_h;

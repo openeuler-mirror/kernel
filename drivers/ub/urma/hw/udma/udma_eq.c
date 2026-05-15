@@ -9,6 +9,7 @@
 #include <ub/ubase/ubase_comm_cmd.h>
 #include <ub/ubase/ubase_comm_ctrlq.h>
 #include <ub/ubase/ubase_comm_dev.h>
+#include <ub/urma/udma/udma_ctl.h>
 #include "udma_ctrlq_tp.h"
 #include "udma_dev.h"
 #include "udma_cmd.h"
@@ -17,7 +18,7 @@
 #include "udma_jfc.h"
 #include "udma_jetty.h"
 #include "udma_eid.h"
-#include <ub/urma/udma/udma_ctl.h>
+#include "udma_safe_mode.h"
 #include "udma_eq.h"
 
 static int udma_ae_tp_ctrlq_msg_deal(struct udma_dev *udma_dev,
@@ -39,6 +40,10 @@ static int udma_ae_tp_ctrlq_msg_deal(struct udma_dev *udma_dev,
 		return 0;
 	case UBASE_EVENT_TYPE_TP_LEVEL_ERROR:
 		return udma_ctrlq_remove_single_tp(udma_dev, queue_num, TP_ERROR);
+	case UBASE_EVENT_TYPE_CHECK_TOKEN:
+		if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_PORT_CHANGE_AE))
+			return udma_ctrlq_notify_tp_port_change(udma_dev, queue_num);
+		return 0;
 	default:
 		dev_warn(udma_dev->dev, "udma get unsupported async event %u.\n",
 			 info->event_type);
@@ -283,6 +288,8 @@ static struct ae_operation udma_ae_opts[] = {
 	{UBASE_EVENT_TYPE_JFR_LIMIT_REACHED, udma_ae_jetty_level_error},
 	{UBASE_EVENT_TYPE_TP_LEVEL_ERROR, udma_ae_tp_level_error},
 	{UBASE_EVENT_TYPE_TP_FLUSH_DONE, udma_ae_tp_level_error},
+	/* TODO: Update this macro name when ubase changes according to chip documentation. */
+	{UBASE_EVENT_TYPE_CHECK_TOKEN, udma_ae_tp_level_error},
 };
 
 void udma_unregister_ae_event(struct auxiliary_device *adev)
@@ -363,7 +370,7 @@ int udma_register_ce_event(struct auxiliary_device *adev)
 static inline bool udma_check_tpn_ue_idx(struct udma_ue_idx_table *tp_ue_idx_info,
 					 uint8_t ue_idx)
 {
-	int i;
+	uint32_t i;
 
 	for (i = 0; i < tp_ue_idx_info->num; i++) {
 		if (tp_ue_idx_info->ue_idx[i] == ue_idx)
@@ -386,7 +393,6 @@ static int udma_save_tpn_ue_idx_info(struct udma_dev *udma_dev, uint8_t ue_idx,
 			xa_unlock(&udma_dev->tpn_ue_idx_table);
 			dev_err(udma_dev->dev,
 				"num exceeds the maximum value.\n");
-
 			return -EINVAL;
 		}
 
@@ -539,6 +545,7 @@ static int udma_crq_recv_msg_from_mue(void *dev, void *data, uint32_t len)
 static struct ubase_crq_event_nb udma_crq_opts[] = {
 	{UBASE_OPC_UE_TO_MUE, NULL, udma_crq_recv_msg_from_ue},
 	{UBASE_OPC_MUE_TO_UE, NULL, udma_crq_recv_msg_from_mue},
+	{UBASE_OPC_PROXY_TO_UDMA, NULL, udma_recv_resp_from_proxy},
 };
 
 void udma_unregister_crq_event(struct auxiliary_device *adev)
