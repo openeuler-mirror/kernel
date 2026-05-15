@@ -20,7 +20,7 @@ static int cdma_alloc_seg_handle(struct cdma_dev *cdev,
 	handle = idr_alloc(&seg_table->idr_tbl.idr, seg, seg_table->idr_tbl.min,
 			   seg_table->idr_tbl.max, GFP_NOWAIT);
 	if (handle < 0)
-		dev_err(cdev->dev, "alloc seg handle failed.\n");
+		dev_err(cdev->dev, "alloc seg handle failed\n");
 
 	spin_unlock(&seg_table->lock);
 	idr_preload_end();
@@ -98,7 +98,7 @@ int cdma_seg_grant(struct cdma_dev *cdev, struct cdma_segment *seg,
 	ret = iommu_sva_grant(seg->ksva, (void *)cfg->sva, cfg->len,
 			      MAPT_PERM_RW, (void *)&seg_attr);
 	if (ret)
-		dev_err(cdev->dev, "grant seg failed, ret = %d.\n", ret);
+		dev_err(cdev->dev, "grant seg failed, ret = %d\n", ret);
 
 	return ret;
 }
