@@ -9402,6 +9402,11 @@ out:
 #ifdef CONFIG_QOS_SCHED
 static __always_inline bool qos_sched_enabled(void)
 {
+#ifdef CONFIG_SMT_QOS
+	if (sched_feat(SMT_TAG_PULL))
+		return false;
+#endif
+
 	return true;
 }
 #endif
@@ -9428,6 +9433,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	/* SD_flags and WF_flags share the first nibble */
 	int sd_flag = wake_flags & 0xF;
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
+	const cpumask_t *backup_select_cpus = NULL;
 	int idlest_cpu = -1;
 #endif
 #ifdef CONFIG_BPF_SCHED
@@ -9444,6 +9450,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 	set_task_select_cpus(p, &idlest_cpu, sd_flag);
+	set_qos_task_select_cpus(p, &idlest_cpu, prev_cpu, &backup_select_cpus);
 #endif
 
 	if (wake_flags & WF_TTWU) {
@@ -9538,7 +9545,10 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 		new_cpu = idlest_cpu;
 		schedstat_inc(p->stats.nr_wakeups_force_preferred_cpus);
 	}
+
+	restore_qos_task_select_cpus(p, backup_select_cpus);
 #endif
+
 	return new_cpu;
 }
 
@@ -10452,6 +10462,8 @@ idle:
 	qos_smt_expel(this_cpu, NULL);
 #endif
 
+	smt_qos_update_qos_level(rq->cpu, NULL);
+
 	return NULL;
 }
 
@@ -10877,6 +10889,9 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 			return ret;
 	}
 #endif
+
+	if (!smt_qos_can_migrate_task(p, env->src_cpu, env->dst_cpu))
+		return 0;
 
 	/*
 	 * We do not migrate tasks that are:
@@ -11500,6 +11515,10 @@ struct sd_lb_stats {
 
 	struct sg_lb_stats busiest_stat;/* Statistics of the busiest group */
 	struct sg_lb_stats local_stat;	/* Statistics of the local group */
+#ifdef CONFIG_SMT_QOS
+	unsigned long total_smt_util;     /* Total utilization of all groups in sd */
+	unsigned long total_smt_capacity; /* Total capacity of all groups in sd */
+#endif
 };
 
 static inline void init_sd_lb_stats(struct sd_lb_stats *sds)
@@ -11902,6 +11921,19 @@ sched_reduced_capacity(struct rq *rq, struct sched_domain *sd)
 	return check_cpu_capacity(rq, sd);
 }
 
+#ifdef CONFIG_SMT_QOS
+static inline void smt_qos_update_sg_lb_stats(struct sd_lb_stats *sds, int cpu)
+{
+	if (!smt_qos_enabled())
+		return;
+
+	if (!cpumask_test_cpu(cpu, &master_smt_cpumask)) {
+		sds->total_smt_util += cpu_util_cfs(cpu);
+		sds->total_smt_capacity += capacity_orig_of(cpu);
+	}
+}
+#endif
+
 /**
  * update_sg_lb_stats - Update sched_group's statistics for load balancing.
  * @env: The load balancing environment.
@@ -11930,6 +11962,10 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 		sgs->group_util += cpu_util_cfs(i);
 		sgs->group_runnable += cpu_runnable(rq);
 		sgs->sum_h_nr_running += rq->cfs.h_nr_running;
+
+#ifdef CONFIG_SMT_QOS
+		smt_qos_update_sg_lb_stats(sds, i);
+#endif
 
 		nr_running = rq->nr_running;
 		sgs->sum_nr_running += nr_running;
@@ -12664,6 +12700,10 @@ next_group:
 	}
 
 	update_idle_cpu_scan(env, sum_util);
+#ifdef CONFIG_SMT_QOS
+	update_sd_ld_qos_stats(env->sd, env->dst_cpu, sds->total_smt_capacity,
+			       sds->total_smt_util);
+#endif
 }
 
 /**
@@ -13056,6 +13096,9 @@ static struct rq *find_busiest_queue(struct lb_env *env,
 
 		nr_running = rq->cfs.h_nr_running;
 		if (!nr_running)
+			continue;
+
+		if (smt_qos_should_not_busiest(i, env->dst_cpu))
 			continue;
 
 		capacity = capacity_of(i);
@@ -15201,6 +15244,8 @@ static void __set_next_task_fair(struct rq *rq, struct task_struct *p, bool firs
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 	qos_smt_expel(rq->cpu, p);
 #endif
+
+	smt_qos_update_qos_level(rq->cpu, p);
 }
 
 /*

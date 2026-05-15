@@ -68,3 +68,7 @@
 #endif
 
 #include "syscalls.c"
+
+#ifdef CONFIG_SMT_QOS
+#include "smt_qos.c"
+#endif

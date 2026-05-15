@@ -4168,4 +4168,37 @@ static inline bool prefer_cpus_valid(struct task_struct *p)
 }
 #endif /* CONFIG_QOS_SCHED_DYNAMIC_AFFINITY */
 
+#ifdef CONFIG_SMT_QOS
+extern cpumask_t master_smt_cpumask;
+
+static inline bool smt_qos_enabled(void)
+{
+	return sched_smt_active() && sched_feat(SMT_TAG_PULL);
+}
+
+extern void set_qos_task_select_cpus(struct task_struct *p, int *idlest_cpu, int prev_cpu,
+				     const cpumask_t **backup_select_cpus);
+extern void restore_qos_task_select_cpus(struct task_struct *p,
+					 const cpumask_t *backup_select_cpus);
+extern void smt_qos_update_qos_level(int cpu, struct task_struct *p);
+extern bool smt_qos_should_not_busiest(int src_cpu, int dst_cpu);
+extern bool smt_qos_can_migrate_task(struct task_struct *p, int src_cpu, int dst_cpu);
+extern void update_sd_ld_qos_stats(struct sched_domain *sd, int dst_cpu,
+				   unsigned long smt_capacity, unsigned long smt_util);
+#else
+static inline void set_qos_task_select_cpus(struct task_struct *p, int *idlest_cpu, int prev_cpu,
+					    const cpumask_t **backup_select_cpus) { }
+static inline void restore_qos_task_select_cpus(struct task_struct *p,
+						const cpumask_t *backup_select_cpus) { }
+static inline void smt_qos_update_qos_level(int cpu, struct task_struct *p) { }
+static inline bool smt_qos_should_not_busiest(int src_cpu, int dst_cpu)
+{
+	return false;
+}
+static inline bool smt_qos_can_migrate_task(struct task_struct *p, int src_cpu, int dst_cpu)
+{
+	return true;
+}
+#endif /* CONFIG_SMT_QOS */
+
 #endif /* _KERNEL_SCHED_SCHED_H */
