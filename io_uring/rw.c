@@ -668,7 +668,7 @@ static bool need_complete_io(struct io_kiocb *req)
 		S_ISBLK(file_inode(req->file)->i_mode);
 }
 
-static int io_rw_init_file(struct io_kiocb *req, fmode_t mode)
+static int io_rw_init_file(struct io_kiocb *req, fmode_t mode, int rw_type)
 {
 	struct io_rw *rw = io_kiocb_to_cmd(req, struct io_rw);
 	struct kiocb *kiocb = &rw->kiocb;
@@ -683,7 +683,7 @@ static int io_rw_init_file(struct io_kiocb *req, fmode_t mode)
 		req->flags |= io_file_get_flags(file);
 
 	kiocb->ki_flags = file->f_iocb_flags;
-	ret = kiocb_set_rw_flags(kiocb, rw->flags);
+	ret = kiocb_set_rw_flags(kiocb, rw->flags, rw_type);
 	if (unlikely(ret))
 		return ret;
 	kiocb->ki_flags |= IOCB_ALLOC_CACHE;
@@ -751,7 +751,7 @@ static int __io_read(struct io_kiocb *req, unsigned int issue_flags)
 		iov_iter_restore(&s->iter, &s->iter_state);
 		iovec = NULL;
 	}
-	ret = io_rw_init_file(req, FMODE_READ);
+	ret = io_rw_init_file(req, FMODE_READ, READ);
 	if (unlikely(ret)) {
 		kfree(iovec);
 		return ret;
@@ -926,7 +926,7 @@ int io_write(struct io_kiocb *req, unsigned int issue_flags)
 		iov_iter_restore(&s->iter, &s->iter_state);
 		iovec = NULL;
 	}
-	ret = io_rw_init_file(req, FMODE_WRITE);
+	ret = io_rw_init_file(req, FMODE_WRITE, WRITE);
 	if (unlikely(ret)) {
 		kfree(iovec);
 		return ret;

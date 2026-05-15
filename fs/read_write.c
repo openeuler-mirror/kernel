@@ -726,7 +726,7 @@ static ssize_t do_iter_readv_writev(struct file *filp, struct iov_iter *iter,
 	ssize_t ret;
 
 	init_sync_kiocb(&kiocb, filp);
-	ret = kiocb_set_rw_flags(&kiocb, flags);
+	ret = kiocb_set_rw_flags(&kiocb, flags, type);
 	if (ret)
 		return ret;
 	kiocb.ki_pos = (ppos ? *ppos : 0);
@@ -1765,6 +1765,26 @@ int generic_file_rw_checks(struct file *file_in, struct file *file_out)
 
 	return 0;
 }
+
+int generic_atomic_write_valid(struct kiocb *iocb, struct iov_iter *iter)
+{
+	size_t len = iov_iter_count(iter);
+
+	if (!iter_is_ubuf(iter))
+		return -EINVAL;
+
+	if (!is_power_of_2(len))
+		return -EINVAL;
+
+	if (!IS_ALIGNED(iocb->ki_pos, len))
+		return -EINVAL;
+
+	if (!(iocb->ki_flags & IOCB_DIRECT))
+		return -EOPNOTSUPP;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(generic_atomic_write_valid);
 
 #ifdef CONFIG_BPF_READAHEAD
 static void fs_file_read_ctx_init(struct fs_file_read_ctx *ctx,
