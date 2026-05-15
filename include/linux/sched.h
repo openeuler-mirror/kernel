@@ -2708,4 +2708,24 @@ static inline bool smart_grid_used(void)
 	return false;
 }
 #endif
+
+#ifdef CONFIG_QOS_LEVEL
+#ifdef CONFIG_QOS_SCHED_MULTILEVEL
+enum task_qos_level {
+	QOS_LEVEL_OFFLINE_EX = -2,
+	QOS_LEVEL_OFFLINE = -1,
+	QOS_LEVEL_ONLINE = 0,
+	QOS_LEVEL_HIGH = 1,
+	QOS_LEVEL_HIGH_EX = 2
+};
+#else
+enum task_qos_level {
+	QOS_LEVEL_OFFLINE = -1,
+	QOS_LEVEL_ONLINE = 0,
+};
+#endif
+
+DECLARE_PER_CPU_ALIGNED(int, qos_smt_status);
+#endif
+
 #endif

@@ -748,7 +748,7 @@ recheck:
 	}
 change:
 
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 	/*
 	 * If the scheduling policy of an offline task is set to a policy
 	 * other than SCHED_IDLE, the online task preemption and cpu resource
