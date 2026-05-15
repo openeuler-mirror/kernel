@@ -121,7 +121,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(sched_update_nr_running_tp);
 DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 DEFINE_PER_CPU(struct rnd_state, sched_rnd_state);
 
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 static void sched_change_qos_group(struct task_struct *tsk, struct task_group *tg);
 #endif
 
@@ -4882,7 +4882,7 @@ void sched_cgroup_fork(struct task_struct *p, struct kernel_clone_args *kargs)
 				  struct task_group, css);
 		tg = autogroup_task_group(p, tg);
 		p->sched_task_group = tg;
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 		tg_qos = tg;
 #endif
 	}
@@ -4893,7 +4893,7 @@ void sched_cgroup_fork(struct task_struct *p, struct kernel_clone_args *kargs)
 	 * so use __set_task_cpu().
 	 */
 	__set_task_cpu(p, smp_processor_id());
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 	sched_change_qos_group(p, tg_qos);
 #endif
 
@@ -7851,7 +7851,7 @@ recheck:
 	}
 change:
 
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 	/*
 	 * If the scheduling policy of an offline task is set to a policy
 	 * other than SCHED_IDLE, the online task preemption and cpu resource
@@ -10525,7 +10525,7 @@ void ia64_set_curr_task(int cpu, struct task_struct *p)
 /* task_group_lock serializes the addition/removal of task groups */
 static DEFINE_SPINLOCK(task_group_lock);
 
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 static inline int alloc_qos_sched_group(struct task_group *tg,
 					struct task_group *parent)
 {
@@ -10552,7 +10552,9 @@ static void sched_change_qos_group(struct task_struct *tsk, struct task_group *t
 		__setscheduler_prio(tsk, normal_prio(tsk));
 	}
 }
+#endif
 
+#ifdef CONFIG_QOS_SCHED
 struct offline_args {
 	struct work_struct work;
 	struct task_struct *p;
@@ -10643,7 +10645,7 @@ struct task_group *sched_create_group(struct task_group *parent)
 	if (!alloc_fair_sched_group(tg, parent))
 		goto err;
 
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 	if (!alloc_qos_sched_group(tg, parent))
 		goto err;
 #endif
@@ -10738,7 +10740,7 @@ static void sched_change_group(struct task_struct *tsk, struct task_group *group
 {
 	tsk->sched_task_group = group;
 
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 	sched_change_qos_group(tsk, group);
 #endif
 
@@ -11658,7 +11660,7 @@ static int cpu_rebuild_affinity_domain_u64(struct cgroup_subsys_state *css,
 }
 #endif /* CONFIG_QOS_SCHED_SMART_GRID */
 
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 static int tg_change_scheduler(struct task_group *tg, void *data)
 {
 	int policy;
@@ -11991,7 +11993,7 @@ static struct cftype cpu_legacy_files[] = {
 		.write = cpu_uclamp_max_write,
 	},
 #endif
-#ifdef CONFIG_QOS_SCHED
+#ifdef CONFIG_QOS_LEVEL
 	{
 		.name = "qos_level",
 		.flags = CFTYPE_NOT_ON_ROOT,
