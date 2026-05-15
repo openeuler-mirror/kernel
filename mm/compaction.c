@@ -1122,6 +1122,14 @@ isolate_migratepages_block(struct compact_control *cc, unsigned long low_pfn,
 		if (!folio_test_lru(folio))
 			goto isolate_fail_put;
 
+		/*
+		 * CMA folios are allocated from reserved CMA regions and must
+		 * stay there. Migrating them out breaks cma_folio_put() which
+		 * expects the pages to remain in the CMA area.
+		 */
+		if (folio_test_fcma(folio))
+			goto isolate_fail_put;
+
 		/* Compaction might skip unevictable pages but CMA takes them */
 		if (!(mode & ISOLATE_UNEVICTABLE) && folio_test_unevictable(folio))
 			goto isolate_fail_put;

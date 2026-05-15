@@ -1565,4 +1565,16 @@ config FILEMAP_LOCAL_ALLOC
 	  non-cpuless numa's memory. If set to 0 (default), the kernel follows the
 	  standard memory allocation policy.
 
+config CMA_FOLIO
+	bool "CMA based folio allocation"
+	depends on CMA && TRANSPARENT_HUGEPAGE
+	depends on ARM64
+	help
+	  This option enables allocating folios from reserved CMA
+	  areas. When enabled via the "folio_cma=" kernel command
+	  line, folios  will be allocated from CMA areas if available.
+	  The memory is returned to CMA upon release.
+
+	  If unsure, say "n".
+
 endmenu

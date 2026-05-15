@@ -2501,6 +2501,17 @@ struct page *__alloc_pages_mpol(gfp_t gfp, unsigned int order,
 	return page;
 }
 
+#ifdef CONFIG_CMA_FOLIO
+struct folio *folio_alloc_cma_mpol(gfp_t gfp, unsigned int order,
+			struct mempolicy *pol, pgoff_t ilx, int nid)
+{
+	nodemask_t *nodemask;
+
+	nodemask = policy_nodemask(gfp, pol, ilx, &nid);
+	return folio_alloc_cma(gfp, order, nid, nodemask);
+}
+#endif
+
 /**
  * vma_alloc_folio - Allocate a folio for a VMA.
  * @gfp: GFP flags.
@@ -2523,8 +2534,16 @@ struct folio *vma_alloc_folio(gfp_t gfp, int order, struct vm_area_struct *vma,
 	struct mempolicy *pol;
 	pgoff_t ilx;
 	struct page *page;
+	struct folio *folio;
 
 	pol = get_vma_policy(vma, addr, order, &ilx);
+
+	folio = folio_alloc_cma_mpol(gfp | __GFP_COMP, order, pol, ilx, numa_node_id());
+	if (folio) {
+		mpol_cond_put(pol);
+		return folio;
+	}
+
 	page = __alloc_pages_mpol(gfp | __GFP_COMP, order,
 				pol, ilx, numa_node_id(), true);
 	mpol_cond_put(pol);

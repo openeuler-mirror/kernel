@@ -96,6 +96,12 @@
 #define IF_HAVE_PG_POOL(_name)
 #endif
 
+#ifdef CONFIG_CMA_FOLIO
+#define IF_HAVE_PG_FCMA(_name) ,{1UL << PG_##_name, __stringify(_name)}
+#else
+#define IF_HAVE_PG_FCMA(_name)
+#endif
+
 #ifdef CONFIG_ARCH_USES_PG_ARCH_X
 #define IF_HAVE_PG_ARCH_X(_name) ,{1UL << PG_##_name, __stringify(_name)}
 #else
@@ -132,6 +138,7 @@ IF_HAVE_PG_HWPOISON(hwpoison)						\
 IF_HAVE_PG_IDLE(idle)							\
 IF_HAVE_PG_IDLE(young)							\
 IF_HAVE_PG_POOL(pool)							\
+IF_HAVE_PG_FCMA(fcma)							\
 IF_HAVE_PG_ARCH_X(arch_2)						\
 IF_HAVE_PG_ARCH_X(arch_3)
 
