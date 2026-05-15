@@ -92,7 +92,7 @@ static void cdma_umap_close(struct vm_area_struct *vma)
 	kfree(priv);
 	vma->vm_private_data = NULL;
 
-	pr_info("cdma umap close success.\n");
+	pr_info("cdma umap close success\n");
 }
 
 static vm_fault_t cdma_umap_fault(struct vm_fault *vmf)
@@ -127,13 +127,13 @@ static vm_fault_t cdma_umap_fault(struct vm_fault *vmf)
 
 static int cdma_umap_remap(struct vm_area_struct *vma)
 {
-	pr_err("cdma umap remap is not permitted.\n");
+	pr_err("cdma umap remap is not permitted\n");
 	return -EINVAL;
 }
 
 static int cdma_umap_can_split(struct vm_area_struct *vma, unsigned long addr)
 {
-	pr_err("cdma umap split is not permitted.\n");
+	pr_err("cdma umap split is not permitted\n");
 	return -EINVAL;
 }
 

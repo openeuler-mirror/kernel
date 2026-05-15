@@ -187,6 +187,7 @@ struct cdma_dev {
 	u32 tid;
 	int sva_mode;
 	u32 iopf_feature;
+	u32 hw_ver;
 	u32 status;
 	u8 sl_num;
 	u8 sl[CDMA_MAX_SL_NUM];
