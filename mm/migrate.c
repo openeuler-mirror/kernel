@@ -2030,6 +2030,7 @@ int migrate_pages(struct list_head *from, new_folio_t get_new_folio,
 	LIST_HEAD(folios);
 	LIST_HEAD(ret_folios);
 	LIST_HEAD(split_folios);
+	LIST_HEAD(skip_folios);
 	struct migrate_pages_stats stats;
 
 	trace_mm_migrate_pages_start(mode, reason);
@@ -2047,6 +2048,12 @@ again:
 		/* Retried hugetlb folios will be kept in list  */
 		if (folio_test_hugetlb(folio)) {
 			list_move_tail(&folio->lru, &ret_folios);
+			continue;
+		}
+
+		/* CMA folios must stay in their reserved CMA region */
+		if (folio_test_fcma(folio)) {
+			list_move_tail(&folio->lru, &skip_folios);
 			continue;
 		}
 
@@ -2093,7 +2100,7 @@ out:
 	 * will be put back to the right list by the caller.
 	 */
 	list_splice(&ret_folios, from);
-
+	list_splice(&skip_folios, from);
 	/*
 	 * Return 0 in case all split folios of fail-to-migrate large folios
 	 * are migrated successfully.
@@ -2745,6 +2752,9 @@ int migrate_misplaced_folio(struct folio *folio, struct vm_area_struct *vma,
 	 * dirty folios in MIGRATE_ASYNC mode which is a waste of cycles.
 	 */
 	if (folio_is_file_lru(folio) && folio_test_dirty(folio))
+		goto out;
+
+	if (folio_test_fcma(folio))
 		goto out;
 
 	isolated = numamigrate_isolate_folio(pgdat, folio);

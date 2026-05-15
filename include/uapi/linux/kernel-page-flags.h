@@ -37,5 +37,6 @@
 #define KPF_IDLE		25
 #define KPF_PGTABLE		26
 #define KPF_POOL		27
+#define KPF_CMA_FOLIO		28
 
 #endif /* _UAPILINUX_KERNEL_PAGE_FLAGS_H */

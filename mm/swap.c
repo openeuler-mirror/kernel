@@ -108,6 +108,11 @@ void __folio_put(struct folio *folio)
 		return;
 	}
 
+	if (unlikely(folio_test_fcma(folio))) {
+		folio_put_cma(folio);
+		return;
+	}
+
 	page_cache_release(folio);
 	folio_unqueue_deferred_split(folio);
 	mem_cgroup_uncharge(folio);

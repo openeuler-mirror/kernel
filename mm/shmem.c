@@ -1849,8 +1849,16 @@ static struct folio *shmem_alloc_folio(gfp_t gfp, int order,
 	struct mempolicy *mpol;
 	pgoff_t ilx;
 	struct page *page;
+	struct folio *folio;
 
 	mpol = shmem_get_pgoff_policy(info, index, order, &ilx);
+
+	folio = folio_alloc_cma_mpol(gfp, order, mpol, ilx, numa_node_id());
+	if (folio) {
+		mpol_cond_put(mpol);
+		return folio;
+	}
+
 	page = alloc_pages_mpol(gfp, order, mpol, ilx, numa_node_id());
 	mpol_cond_put(mpol);
 
