@@ -447,17 +447,13 @@ struct soft_domain_ctx {
 struct task_group {
 	struct cgroup_subsys_state css;
 
-#ifdef CONFIG_GROUP_SCHED_WEIGHT
-	/* A positive value indicates that this is a SCHED_IDLE group. */
-	int			idle;
-#endif
-
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* schedulable entities of this group on each CPU */
 	struct sched_entity	**se;
 	/* runqueue "owned" by this group on each CPU */
 	struct cfs_rq		**cfs_rq;
 	unsigned long		shares;
+	KABI_BROKEN_REMOVE(int idle)
 #ifdef	CONFIG_SMP
 	/*
 	 * load_avg can be heavily contended at clock tick time, so put
@@ -525,7 +521,14 @@ struct task_group {
 #else
 	KABI_RESERVE(3)
 #endif
+
+#ifdef CONFIG_GROUP_SCHED_WEIGHT
+	/* A positive value indicates that this is a SCHED_IDLE group. */
+	KABI_USE(4, int idle)
+#else
 	KABI_RESERVE(4)
+#endif
+
 	KABI_RESERVE(5)
 	KABI_RESERVE(6)
 	KABI_RESERVE(7)
