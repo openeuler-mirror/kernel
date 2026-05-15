@@ -55,7 +55,3 @@
 #ifdef CONFIG_SCHED_SOFT_DOMAIN
 #include "soft_domain.c"
 #endif
-
-#ifdef CONFIG_SMT_QOS
-#include "smt_qos.c"
-#endif
