@@ -1019,44 +1019,6 @@ static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs
 }
 
 #ifdef CONFIG_FAST_IRQ
-#include <asm/xint.h>
-
-/*
- * Since the IRQ is taken from EL0 and IRQ Ack completed in entry code,
- * So no need to read IAR here, Most of code comes from
- * __gic_handle_irq_from_irqson().
- */
-asmlinkage void __exception_irq_entry gic_handle_irq_noack(struct pt_regs *regs)
-{
-	bool is_nmi = gic_rpr_is_nmi_prio();
-	u32 irqnr = regs->orig_x0;
-
-	if (is_nmi) {
-		nmi_enter();
-		__gic_handle_nmi(irqnr, regs);
-		nmi_exit();
-	}
-
-	if (gic_prio_masking_enabled()) {
-		gic_pmr_mask_irqs();
-		gic_arch_enable_irqs();
-	} else if (has_v3_3_nmi()) {
-#ifdef CONFIG_ARM64_NMI
-		_allint_clear();
-#endif
-	}
-
-	if (!is_nmi)
-		__gic_handle_irq(irqnr, regs);
-}
-
-asmlinkage void __exception_irq_entry gic_handle_nmi_noack(struct pt_regs *regs)
-{
-	u32 irqnr = regs->orig_x0;
-
-	__gic_handle_nmi(irqnr, regs);
-}
-
 DECLARE_BITMAP(irqnr_xint_map, 1024);
 
 static bool can_set_xint(unsigned int hwirq)
