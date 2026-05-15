@@ -390,6 +390,7 @@ static int ubagg_get_seg_info(struct ubcore_device *dev,
 	}
 	if (user_ctl->out.addr != 0 &&
 	    user_ctl->out.len < sizeof(tmp_seg->ex_info.slaves)) {
+		spin_unlock(&ubagg_seg_ht->lock);
 		ubagg_log_err("Invalid user out");
 		return -1;
 	}
