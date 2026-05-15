@@ -2051,6 +2051,14 @@ static inline bool folio_is_longterm_pinnable(struct folio *folio)
 #ifdef CONFIG_CMA
 	int mt = folio_migratetype(folio);
 
+	/*
+	 * CMA folios are allocated for user-space mappings and must stay
+	 * in their reserved CMA region; migrating them on pin defeats the
+	 * purpose of the allocation.
+	 */
+	if (folio_test_fcma(folio))
+		return true;
+
 	if (mt == MIGRATE_CMA || mt == MIGRATE_ISOLATE)
 		return false;
 #endif
@@ -4487,6 +4495,17 @@ static inline bool mm_is_critical_error(struct mm_struct *mm)
 static inline void set_node_critical_err(int nid) { return; }
 static inline void clear_node_critical_err(int nid) { return; }
 static inline bool node_is_critical_err(int nid) { return false; }
+#endif
+
+#ifdef CONFIG_CMA_FOLIO
+void __init folio_cma_reserve(void);
+bool use_folio_cma(void);
+#else
+static inline void folio_cma_reserve(void) { }
+static inline bool use_folio_cma(void)
+{
+	return false;
+}
 #endif
 
 #endif /* _LINUX_MM_H */

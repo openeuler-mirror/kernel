@@ -2762,6 +2762,11 @@ void free_unref_folios(struct folio_batch *folios)
 			continue;
 		}
 
+		if (unlikely(folio_test_fcma(folio))) {
+			folio_put_cma(folio);
+			continue;
+		}
+
 		if (!free_pages_prepare(&folio->page, order))
 			continue;
 

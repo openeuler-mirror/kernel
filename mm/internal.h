@@ -1578,4 +1578,29 @@ static inline  struct page *__alloc_pages_mpol_local(gfp_t gfp, unsigned int ord
 			struct mempolicy *pol, pgoff_t ilx, int nid) {return NULL; }
 #endif /* CONFIG_FILEMAP_LOCAL_ALLOC */
 
+#ifdef CONFIG_CMA_FOLIO
+struct folio *folio_alloc_cma(gfp_t gfp, unsigned int order,
+			int preferred_nid, nodemask_t *nodemask);
+void folio_put_cma(struct folio *folio);
+struct folio *folio_alloc_cma_mpol(gfp_t gfp, unsigned int order,
+		struct mempolicy *pol, pgoff_t ilx, int nid);
+void folio_put_cma_fallback(struct folio *folio);
+
+#else /* CONFIG_CMA_FOLIO */
+static inline struct folio *folio_alloc_cma(gfp_t gfp, unsigned int order,
+					int preferred_nid, nodemask_t *nodemask)
+{
+	return NULL;
+}
+
+static inline void folio_put_cma(struct folio *folio) { }
+static inline struct folio *folio_alloc_cma_mpol(gfp_t gfp, unsigned int order,
+				struct mempolicy *pol, pgoff_t ilx, int nid)
+{
+	return NULL;
+}
+
+static inline void folio_put_cma_fallback(struct folio *folio) {}
+#endif /* CONFIG_CMA_FOLIO */
+
 #endif	/* __MM_INTERNAL_H */

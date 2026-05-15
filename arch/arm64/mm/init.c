@@ -598,6 +598,7 @@ void __init bootmem_init(void)
 	reserve_crashkernel();
 
 	reserve_memmap_regions();
+	folio_cma_reserve();
 
 	memblock_dump_all();
 }
