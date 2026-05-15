@@ -11,7 +11,6 @@
 #include <linux/sched/cpufreq.h>
 #include <linux/sched/deadline.h>
 #include <linux/sched.h>
-#include <linux/sched/grid_qos.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/rseq_api.h>
@@ -3788,39 +3787,5 @@ static inline int destroy_soft_domain(struct task_group *tg)
 }
 
 #endif
-
-#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-#ifdef CONFIG_QOS_SCHED_SMART_GRID
-static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
-{
-	if (!smart_grid_used() ||
-	    !task_group(p)->auto_affinity)
-		return p->prefer_cpus;
-
-	if (task_group(p)->auto_affinity->mode == 0)
-		return (void *)p->cpus_ptr;
-
-	return sched_grid_prefer_cpus(p);
-}
-#else
-static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
-{
-	return p->prefer_cpus;
-}
-#endif /* CONFIG_QOS_SCHED_SMART_GRID */
-
-static inline bool prefer_cpus_valid(struct task_struct *p)
-{
-	struct cpumask *prefer_cpus = task_prefer_cpus(p);
-
-	if (dynamic_affinity_enabled() || sched_paral_used()) {
-		return !cpumask_empty(prefer_cpus) &&
-			!cpumask_equal(prefer_cpus, p->cpus_ptr) &&
-			cpumask_subset(prefer_cpus, p->cpus_ptr);
-	}
-
-	return false;
-}
-#endif /* CONFIG_QOS_SCHED_DYNAMIC_AFFINITY */
 
 #endif /* _KERNEL_SCHED_SCHED_H */
