@@ -135,3 +135,7 @@ SCHED_FEAT(SOFT_QUOTA, false)
 #endif
 
 SCHED_FEAT(WA_SMT, false)
+
+#ifdef CONFIG_SMT_QOS
+SCHED_FEAT(SMT_TAG_PULL, false)
+#endif
