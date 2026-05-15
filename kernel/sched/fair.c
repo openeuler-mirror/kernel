@@ -9349,6 +9349,13 @@ out:
 }
 #endif
 
+#ifdef CONFIG_QOS_SCHED
+static __always_inline bool qos_sched_enabled(void)
+{
+	return true;
+}
+#endif
+
 /*
  * select_task_rq_fair: Select target runqueue for the waking task in domains
  * that have the relevant SD flag set. In practice, this is SD_BALANCE_WAKE,
@@ -9624,7 +9631,7 @@ static void check_preempt_wakeup(struct rq *rq, struct task_struct *p, int wake_
 		return;
 
 #ifdef CONFIG_QOS_SCHED
-	if (unlikely(is_offline_task(curr) && !is_offline_task(p)))
+	if (qos_sched_enabled() && unlikely(is_offline_task(curr) && !is_offline_task(p)))
 		goto preempt;
 #endif
 
@@ -9874,6 +9881,9 @@ static int unthrottle_qos_cfs_rqs(int cpu)
 
 static bool check_qos_cfs_rq(struct cfs_rq *cfs_rq)
 {
+	if (!qos_sched_enabled())
+		return false;
+
 	if (unlikely(__this_cpu_read(qos_cpu_overload)))
 		return false;
 
@@ -9978,6 +9988,9 @@ static void start_qos_hrtimer(int cpu)
 	ktime_t time;
 	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
 
+	if (!qos_sched_enabled())
+		return;
+
 	time = ktime_add_ms(hrtimer->base->get_time(), (u64)sysctl_overload_detect_period);
 	hrtimer_set_expires(hrtimer, time);
 	hrtimer_start_expires(hrtimer, HRTIMER_MODE_ABS_PINNED);
@@ -9986,6 +9999,9 @@ static void start_qos_hrtimer(int cpu)
 void init_qos_hrtimer(int cpu)
 {
 	struct hrtimer *hrtimer = &(per_cpu(qos_overload_timer, cpu));
+
+	if (!qos_sched_enabled())
+		return;
 
 	hrtimer_init(hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
 	hrtimer->function = qos_overload_timer_handler;
@@ -10054,7 +10070,7 @@ static bool qos_sched_idle_cpu(int this_cpu)
 
 static bool qos_smt_expelled(int this_cpu)
 {
-	if (!static_branch_likely(&qos_smt_expell_switch))
+	if (!static_branch_likely(&qos_smt_expell_switch) || !qos_sched_enabled())
 		return false;
 
 	/*
@@ -10113,7 +10129,7 @@ static void qos_smt_send_ipi(int this_cpu)
 
 static void qos_smt_expel(int this_cpu, struct task_struct *p)
 {
-	if (!static_branch_likely(&qos_smt_expell_switch))
+	if (!static_branch_likely(&qos_smt_expell_switch) || !qos_sched_enabled())
 		return;
 
 	if (qos_smt_update_status(p))
@@ -10122,7 +10138,7 @@ static void qos_smt_expel(int this_cpu, struct task_struct *p)
 
 static inline bool qos_smt_enabled(void)
 {
-	if (!static_branch_likely(&qos_smt_expell_switch))
+	if (!static_branch_likely(&qos_smt_expell_switch) || !qos_sched_enabled())
 		return false;
 
 	if (!sched_smt_active())
@@ -10245,7 +10261,7 @@ again:
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	if (!prev || prev->sched_class != &fair_sched_class) {
 #ifdef CONFIG_QOS_SCHED
-		if (cfs_rq->idle_h_nr_running != 0 && rq->online)
+		if (qos_sched_enabled() && cfs_rq->idle_h_nr_running != 0 && rq->online)
 			goto qos_simple;
 		else
 #endif
