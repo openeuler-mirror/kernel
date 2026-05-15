@@ -7020,7 +7020,6 @@ static DEFINE_MUTEX(smart_grid_used_mutex);
 static unsigned long capacity_of(int cpu);
 static int sched_idle_cpu(int cpu);
 static unsigned long cpu_runnable(struct rq *rq);
-static inline bool prefer_cpus_valid(struct task_struct *p);
 
 struct static_key __smart_grid_used;
 
@@ -7032,18 +7031,6 @@ static void smart_grid_usage_inc(void)
 static void smart_grid_usage_dec(void)
 {
 	static_key_slow_dec(&__smart_grid_used);
-}
-
-static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
-{
-	if (!smart_grid_used() ||
-	    !task_group(p)->auto_affinity)
-		return p->prefer_cpus;
-
-	if (task_group(p)->auto_affinity->mode == 0)
-		return (void *)p->cpus_ptr;
-
-	return sched_grid_prefer_cpus(p);
 }
 
 static inline int dynamic_affinity_mode(struct task_struct *p)
@@ -7509,13 +7496,6 @@ unlock_all:
 static void __maybe_unused destroy_auto_affinity(struct task_group *tg) {}
 
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-static inline bool prefer_cpus_valid(struct task_struct *p);
-
-static inline struct cpumask *task_prefer_cpus(struct task_struct *p)
-{
-	return p->prefer_cpus;
-}
-
 static inline int dynamic_affinity_mode(struct task_struct *p)
 {
 	return 0;
@@ -9251,19 +9231,6 @@ out:
 	return ret;
 }
 __setup("dynamic_affinity=", dynamic_affinity_switch_setup);
-
-static inline bool prefer_cpus_valid(struct task_struct *p)
-{
-	struct cpumask *prefer_cpus = task_prefer_cpus(p);
-
-	if (dynamic_affinity_enabled() || sched_paral_used()) {
-		return !cpumask_empty(prefer_cpus) &&
-			!cpumask_equal(prefer_cpus, p->cpus_ptr) &&
-			cpumask_subset(prefer_cpus, p->cpus_ptr);
-	}
-
-	return false;
-}
 
 static inline unsigned long taskgroup_cpu_util(struct task_group *tg,
 					       int cpu)
