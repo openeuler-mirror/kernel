@@ -1066,8 +1066,10 @@ enum bpf_attach_type {
 	BPF_HISOCK_EGRESS,
 	BPF_HISOCK_INGRESS,
 #endif
+#ifndef __GENKSYMS__
 	BPF_NETKIT_PRIMARY,
 	BPF_NETKIT_PEER,
+#endif
 	__MAX_BPF_ATTACH_TYPE
 };
 
@@ -1087,7 +1089,9 @@ enum bpf_link_type {
 	BPF_LINK_TYPE_NETFILTER = 10,
 	BPF_LINK_TYPE_TCX = 11,
 	BPF_LINK_TYPE_UPROBE_MULTI = 12,
+#ifndef __GENKSYMS__
 	BPF_LINK_TYPE_NETKIT = 13,
+#endif
 	MAX_BPF_LINK_TYPE,
 };
 
@@ -1683,6 +1687,7 @@ union bpf_attr {
 				__u32		flags;
 				__u32		pid;
 			} uprobe_multi;
+#ifndef __GENKSYMS__
 			struct {
 				union {
 					__u32	relative_fd;
@@ -1690,6 +1695,7 @@ union bpf_attr {
 				};
 				__u64		expected_revision;
 			} netkit;
+#endif
 		};
 	} link_create;
 
@@ -6619,10 +6625,12 @@ struct bpf_link_info {
 			__u32 ifindex;
 			__u32 attach_type;
 		} tcx;
+#ifndef __GENKSYMS__
 		struct {
 			__u32 ifindex;
 			__u32 attach_type;
 		} netkit;
+#endif
 	};
 } __attribute__((aligned(8)));
 
