@@ -606,7 +606,7 @@ tsk	.req	x28		// current thread_info
 
 	.text
 
-#ifdef CONFIG_FAST_SYSCALL
+#if defined(CONFIG_FAST_SYSCALL) || defined(CONFIG_FAST_IRQ)
 #include "xcall/entry.S"
 #endif
 
@@ -631,8 +631,12 @@ SYM_CODE_START(vectors)
 	sync_ventry				// Synchronous 64-bit EL0
 #else
 	kernel_ventry	0, t, 64, sync		// Synchronous 64-bit EL0
-#endif
+#endif /* CONFIG_FAST_SYSCALL */
+#ifdef CONFIG_FAST_IRQ
+	irq_ventry				// XINT 64-bit EL0
+#else
 	kernel_ventry	0, t, 64, irq		// IRQ 64-bit EL0
+#endif
 	kernel_ventry	0, t, 64, fiq		// FIQ 64-bit EL0
 	kernel_ventry	0, t, 64, error		// Error 64-bit EL0
 
@@ -659,8 +663,12 @@ SYM_CODE_START(vectors_xcall_xint)
 	sync_ventry				// Synchronous 64-bit EL0
 #else
 	kernel_ventry	0, t, 64, sync		// Synchronous 64-bit EL0
-#endif
+#endif /* CONFIG_FAST_SYSCALL */
+#ifdef CONFIG_FAST_IRQ
+	irq_ventry				// XINT 64-bit EL0
+#else
 	kernel_ventry	0, t, 64, irq		// IRQ 64-bit EL0
+#endif
 	kernel_ventry	0, t, 64, fiq		// FIQ 64-bit EL0
 	kernel_ventry	0, t, 64, error		// Error 64-bit EL0
 
