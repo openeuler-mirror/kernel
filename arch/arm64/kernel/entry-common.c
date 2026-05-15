@@ -26,7 +26,6 @@
 #include <asm/stacktrace.h>
 #include <asm/sysreg.h>
 #include <asm/system_misc.h>
-#include <asm/xint.h>
 
 /*
  * Handle IRQ/context state management when entering from kernel mode.
@@ -945,18 +944,6 @@ static void noinstr __el0_irq_handler_common(struct pt_regs *regs)
 {
 	el0_interrupt(regs, ISR_EL1_IS, handle_arch_irq, handle_arch_nmi_irq);
 }
-
-#ifdef CONFIG_FAST_IRQ
-/*
- * The generic exception handler for SPI and LPI taken from EL0 on eary CPUs
- * before HIP12. Most of code comes from el0_interrupt(), except that it pass
- * irqnr to GIC driver due to the IRQ Ack is completed in entry code.
- */
-asmlinkage void noinstr el0t_64_acked_irq_handler(struct pt_regs *regs)
-{
-	el0_interrupt(regs, ISR_EL1_IS, gic_handle_irq_noack, gic_handle_nmi_noack);
-}
-#endif /* CONFIG_FAST_IRQ */
 
 asmlinkage void noinstr el0t_64_irq_handler(struct pt_regs *regs)
 {
