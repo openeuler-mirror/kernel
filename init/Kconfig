@@ -1096,11 +1096,16 @@ menuconfig CGROUP_SCHED
 	  tasks.
 
 if CGROUP_SCHED
+config QOS_LEVEL
+	bool
+	depends on CGROUP_SCHED && CFS_BANDWIDTH
+
 config QOS_SCHED
 	bool "Qos task scheduling"
 	depends on CGROUP_SCHED
 	depends on CFS_BANDWIDTH
 	depends on SMP
+	select QOS_LEVEL
 	default n
 	help
 	  This option enable qos scheduler, and support co-location online
