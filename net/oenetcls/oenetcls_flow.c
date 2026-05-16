@@ -3,7 +3,6 @@
 #include <linux/inet.h>
 #include <linux/in.h>
 #include <linux/in6.h>
-#include <linux/inet.h>
 #include <linux/irq.h>
 #include <linux/irqdesc.h>
 #include <linux/random.h>
