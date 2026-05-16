@@ -2507,6 +2507,9 @@ struct folio *folio_alloc_cma_mpol(gfp_t gfp, unsigned int order,
 {
 	nodemask_t *nodemask;
 
+	if (!(current->flags & PF_FOLIO_CMA))
+		return NULL;
+
 	nodemask = policy_nodemask(gfp, pol, ilx, &nid);
 	return folio_alloc_cma(gfp, order, nid, nodemask);
 }
