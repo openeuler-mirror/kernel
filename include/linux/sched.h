@@ -786,6 +786,11 @@ struct task_struct {
 	/* to be used once the psi infrastructure lands upstream. */
 	unsigned			use_memdelay:1;
 #endif
+	/* kabi fill hole */
+#if !defined(__GENKSYMS__)
+	/* Save user-dumpable when mm goes away */
+	unsigned			user_dumpable:1;
+#endif
 
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
 
