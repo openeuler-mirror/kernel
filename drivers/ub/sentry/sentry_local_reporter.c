@@ -7,6 +7,7 @@
  * Create: 2025-02-17
  */
 
+#include <ub/ubus/ubus.h>
 #include <acpi/button.h>
 #include <linux/module.h>
 #include <linux/fs.h>
@@ -44,6 +45,7 @@ static int g_ub_mem_fault_with_kill = 1;
 static bool g_oom_enable;
 static bool g_power_off_enable;
 static bool g_ub_mem_fault_enable;
+static bool g_link_event_enable;
 
 /**
  * check_if_timeout_param_valid - Validate timeout parameters
@@ -628,6 +630,198 @@ static int ub_mem_ras_handler(uint64_t phys_addr, enum ras_err_type err_type)
 	return 0;
 }
 
+int link_event_handler(uint16_t port_id, unsigned int scna, int link_event)
+{
+	struct sentry_msg_helper_msg msg = {0};
+	int ret;
+
+	if (!READ_ONCE(g_link_event_enable))
+		return 0;
+
+	if (link_event != UB_PORT_EVENT_LINK_DOWN && link_event != UB_PORT_EVENT_LINK_UP) {
+		pr_err("invalid link event value: %d (must be 0 or 1)\n", link_event);
+		return -EINVAL;
+	}
+
+	msg.type = SMH_MESSAGE_LINK_EVENT;
+	msg.helper_msg_info.link_info.port_id = port_id;
+	msg.helper_msg_info.link_info.scna = scna;
+	msg.helper_msg_info.link_info.link_event = link_event;
+	msg.msgid = smh_get_new_msg_id();
+	msg.start_send_time = ktime_get_ns();
+	msg.timeout_time = ULLONG_MAX;
+
+	pr_info("link event: port_id=%u scna=%u event=%s\n",
+		port_id, scna, link_event == UB_PORT_EVENT_LINK_UP ? "up" : "down");
+
+	ret = smh_message_send(&msg, false);
+	if (ret)
+		pr_err("Failed to send link event to userspace. %d\n", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(link_event_handler);
+
+static void sentry_port_event_notify(struct ub_entity *ue, uint16_t port_id, int event)
+{
+	unsigned int scna;
+
+	if (IS_ERR_OR_NULL(ue))
+		return;
+
+	if (!READ_ONCE(g_link_event_enable))
+		return;
+	scna = ue->cna;
+
+	if (event == UB_PORT_EVENT_LINK_DOWN || event == UB_PORT_EVENT_LINK_UP) {
+		pr_info("%s: recv link %s event, start to send it\n",
+			__func__,
+			event == UB_PORT_EVENT_LINK_DOWN ? "down" : "up");
+		link_event_handler(port_id, scna, event);
+	} else {
+		pr_info("%s: recv link event type=%d, ignore it\n", __func__, event);
+	}
+}
+
+static struct ub_share_port_ops sentry_share_port_ops = {
+	.event_notify = sentry_port_event_notify
+};
+
+#define MAX_UBC_NUM 28
+
+static struct ub_entity *g_ubc_entities[MAX_UBC_NUM];
+static unsigned int g_ubc_count;
+
+static int sentry_link_event_init(void)
+{
+	struct ub_entity *uent;
+	uint16_t port_id;
+	int i;
+	int ret, register_success_num = 0;
+
+	ret = ub_get_bus_controller(g_ubc_entities, MAX_UBC_NUM, &g_ubc_count);
+	if (ret) {
+		pr_err("failed to get ub bus controllers, ret=%d\n", ret);
+		return -EINVAL;
+	}
+
+	if (g_ubc_count > MAX_UBC_NUM) {
+		pr_err("ubc is too much (%u), exceeding threshold: %u\n", g_ubc_count, MAX_UBC_NUM);
+		ub_put_bus_controller(g_ubc_entities, g_ubc_count);
+		g_ubc_count = 0;
+		return -EINVAL;
+	}
+
+	pr_info("found %u ub bus controllers\n", g_ubc_count);
+	for (i = 0; i < g_ubc_count; i++) {
+		uent = g_ubc_entities[i];
+		if (!uent || !uent->ports || uent->port_nums == 0) {
+			pr_warn("ubc entity %u has no ports, skip\n", i);
+			continue;
+		}
+
+		for (port_id = 0; port_id < uent->port_nums; port_id++) {
+			ret = ub_register_share_port(uent, port_id, &sentry_share_port_ops);
+			if (ret) {
+				pr_err("failed to register share port %u for ubc %u, ret=%d\n",
+					   port_id, i, ret);
+				continue;
+			}
+			register_success_num++;
+			pr_info("registered share port %u for ubc %u\n", port_id, i);
+		}
+	}
+	if (register_success_num == 0) {
+		ub_put_bus_controller(g_ubc_entities, g_ubc_count);
+		g_ubc_count = 0;
+		pr_err("no ports registered successfully\n");
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static void sentry_link_event_fini(void)
+{
+	struct ub_entity *uent;
+	unsigned int i;
+	uint16_t port_id;
+
+	for (i = 0; i < g_ubc_count; i++) {
+		uent = g_ubc_entities[i];
+		if (!uent || !uent->ports)
+			continue;
+
+		for (port_id = 0; port_id < uent->port_nums; port_id++)
+			ub_unregister_share_port(uent, port_id, &sentry_share_port_ops);
+	}
+	ub_put_bus_controller(g_ubc_entities, g_ubc_count);
+	memset(g_ubc_entities, 0, sizeof(g_ubc_entities));
+	g_ubc_count = 0;
+}
+
+static ssize_t proc_link_event_enable_write(struct file *file,
+					    const char __user *ubuf,
+					    size_t cnt, loff_t *ppos)
+{
+	int ret;
+	char enable[ENABLE_VALUE_MAX_LEN + 1] = {0};
+
+	if (cnt > ENABLE_VALUE_MAX_LEN) {
+		pr_err("invalid value for link_event, the value can only be 'off' or 'on'.\n");
+		return -EINVAL;
+	}
+
+	ret = copy_from_user(enable, ubuf, cnt);
+	if (ret)
+		return -EFAULT;
+
+	if (cnt > 0 && enable[cnt - 1] == '\n')
+		enable[cnt - 1] = '\0';
+
+	if (strcmp(enable, "on") == 0) {
+		if (g_ubc_count > 0) {
+			WRITE_ONCE(g_link_event_enable, true);
+			pr_info("link event already init successful\n");
+		} else {
+			ret = sentry_link_event_init();
+			if (ret == 0) {
+				WRITE_ONCE(g_link_event_enable, true);
+				pr_info("link event init successful\n");
+			} else {
+				WRITE_ONCE(g_link_event_enable, false);
+				pr_info("link event init failed\n");
+				return -EINVAL;
+			}
+		}
+	} else if (strcmp(enable, "off") == 0) {
+		WRITE_ONCE(g_link_event_enable, false);
+		if (g_ubc_count > 0) {
+			sentry_link_event_fini();
+			pr_info("link event fini successful\n");
+		}
+	} else {
+		pr_err("invalid value for link_event\n");
+		return -EINVAL;
+	}
+	pr_info("%s link event report\n", READ_ONCE(g_link_event_enable) ? "enable" : "disable");
+	return cnt;
+}
+
+static ssize_t proc_link_event_enable_show(struct file *file,
+					   char __user *buf,
+					   size_t count, loff_t *ppos)
+{
+	const char *value = READ_ONCE(g_link_event_enable) ? "on" : "off";
+	size_t len = READ_ONCE(g_link_event_enable) ? 2 : 3;
+
+	return simple_read_from_buffer(buf, count, ppos, value, len);
+}
+
+static const struct proc_ops proc_link_event_file_operations = {
+	.proc_read	= proc_link_event_enable_show,
+	.proc_write	= proc_link_event_enable_write,
+};
+
 /**
  * sentry_reporter_init - Module initialization function
  *
@@ -665,6 +859,9 @@ static int __init sentry_reporter_init(void)
 	ret |= sentry_create_proc_file("oom_rate_limit",
 				      g_sentry_reporter_proc_dir,
 				      &proc_oom_rate_limit_file_operations);
+	ret |= sentry_create_proc_file("link_event",
+				      g_sentry_reporter_proc_dir,
+				      &proc_link_event_file_operations);
 	if (ret < 0)
 		goto remove_proc_dir;
 
@@ -697,6 +894,12 @@ remove_proc_dir:
  */
 static void __exit sentry_reporter_exit(void)
 {
+	WRITE_ONCE(g_link_event_enable, false);
+	if (g_ubc_count > 0) {
+		sentry_link_event_fini();
+		pr_info("link event fini successful\n");
+	}
+
 	unregister_acpi_power_notifier(&acpi_power_notifier);
 	pr_info("power notifier unregistered\n");
 
