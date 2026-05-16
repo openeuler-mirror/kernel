@@ -860,9 +860,6 @@ struct task_struct {
 	 */
 	unsigned			sched_remote_wakeup:1;
 
-	/* Save user-dumpable when mm goes away */
-	unsigned			user_dumpable:1;
-
 	/* Bit to tell LSMs we're in execve(): */
 	unsigned			in_execve:1;
 	unsigned			in_iowait:1;
@@ -891,6 +888,8 @@ struct task_struct {
 #ifdef CONFIG_IOMMU_SVA
 	KABI_FILL_HOLE(unsigned		pasid_activated:1)
 #endif
+	/* Save user-dumpable when mm goes away */
+	KABI_FILL_HOLE(unsigned		user_dumpable:1)
 
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
 
