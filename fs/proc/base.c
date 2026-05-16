@@ -3454,6 +3454,72 @@ static const struct file_operations proc_pid_sg_level_operations = {
 };
 #endif
 
+#ifdef CONFIG_CMA_FOLIO
+static ssize_t folio_cma_write(struct file *file, const char __user *buf,
+			       size_t count, loff_t *offset)
+{
+	struct task_struct *p;
+	struct inode *inode = file_inode(file);
+	int val, ret;
+
+	if (!use_folio_cma()) {
+		pr_warn_once("folio_cma not enabled in cmdline\n");
+		return -EINVAL;
+	}
+
+	ret = kstrtoint_from_user(buf, count, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val != 0 && val != 1)
+		return -EINVAL;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	task_lock(p);
+	if (val)
+		p->flags |= PF_FOLIO_CMA;
+	else
+		p->flags &= ~PF_FOLIO_CMA;
+	task_unlock(p);
+
+	put_task_struct(p);
+
+	return count;
+}
+
+static int folio_cma_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *p;
+
+	p = get_proc_task(inode);
+	if (!p)
+		return -ESRCH;
+
+	seq_printf(m, "%u\n", !!(p->flags & PF_FOLIO_CMA));
+
+	put_task_struct(p);
+
+	return 0;
+}
+
+static int folio_cma_open(struct inode *inode, struct file *filep)
+{
+	return single_open(filep, folio_cma_show, inode);
+}
+
+static const struct file_operations proc_folio_cma_operations = {
+	.open		= folio_cma_open,
+	.read		= seq_read,
+	.write		= folio_cma_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+#endif
+
 /*
  * Thread groups
  */
@@ -3482,6 +3548,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #endif
 #ifdef CONFIG_FAST_SYSCALL
 	REG("xcall", 0640, proc_pid_xcall_operations),
+#endif
+#ifdef CONFIG_CMA_FOLIO
+	REG("folio_cma_enabled", 0640, proc_folio_cma_operations),
 #endif
 #ifdef CONFIG_SCHED_AUTOGROUP
 	REG("autogroup",  S_IRUGO|S_IWUSR, proc_pid_sched_autogroup_operations),
