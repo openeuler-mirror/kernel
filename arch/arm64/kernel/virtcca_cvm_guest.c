@@ -240,6 +240,7 @@ void virtcca_its_free_shared_pages(void *addr, int order)
 
 #define QUEUE_SIZE (64 * 1024 - 8) // Queue size (64KB - 8B)
 #define ALLOC_PAGE (4)
+#define ALLOC_SIZE ((1 << ALLOC_PAGE) * PAGE_SIZE)  /* 64KB */
 
 struct driver_data {
 	dev_t devno;
@@ -317,6 +318,14 @@ static int migvm_queue_dev_mmap(struct mig_queue_device *dev, struct vm_area_str
 		return -EINVAL;
 	unsigned long size = vma->vm_end - vma->vm_start;
 	unsigned long pfn;
+
+	if (size > ALLOC_SIZE) {
+		pr_err("migvm_queue: mmap size %lu exceeds alloc %lu\n",
+		size, (unsigned long)ALLOC_SIZE);
+		return -EINVAL;
+	}
+	if (remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot))
+		return -EAGAIN;
 
 	switch (vma->vm_pgoff) {
 	case 0:
