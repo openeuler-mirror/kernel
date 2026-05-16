@@ -888,6 +888,8 @@ struct task_struct {
 #ifdef CONFIG_IOMMU_SVA
 	KABI_FILL_HOLE(unsigned		pasid_activated:1)
 #endif
+	/* Save user-dumpable when mm goes away */
+	KABI_FILL_HOLE(unsigned		user_dumpable:1)
 
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
 
