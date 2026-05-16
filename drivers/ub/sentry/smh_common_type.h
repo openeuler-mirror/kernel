@@ -52,6 +52,7 @@ enum sentry_msg_helper_msg_type {
 	SMH_MESSAGE_KERNEL_REBOOT_ACK,
 	SMH_MESSAGE_HEARTBEAT,
 	SMH_MESSAGE_HEARTBEAT_ACK,
+	SMH_MESSAGE_LINK_EVENT,
 	SMH_MESSAGE_UNKNOWN,
 };
 
@@ -91,6 +92,11 @@ struct sentry_msg_helper_msg {
 			int fault_with_kill;
 			enum ras_err_type raw_ubus_mem_err_type;
 		} ub_mem_info;
+		struct {
+			uint16_t port_id;
+			unsigned int scna;
+			int link_event;
+		} link_info;
     } helper_msg_info;
     unsigned long res;
 };
@@ -147,13 +153,19 @@ static inline int sentry_create_proc_file(const char *name, struct proc_dir_entr
  * Return: Pointer to a constant C string representing the message type.
  *         Returns "unknown" for unrecognized type values.
  */
-static inline char *get_msg_type_name(enum sentry_msg_helper_msg_type type)
+static inline const char *get_msg_type_name(enum sentry_msg_helper_msg_type type)
 {
 	switch (type) {
+	case SMH_MESSAGE_POWER_OFF:
+		return "power off";
+	case SMH_MESSAGE_OOM:
+		return "oom";
 	case SMH_MESSAGE_PANIC:
 		return "panic";
 	case SMH_MESSAGE_KERNEL_REBOOT:
 		return "kernel reboot";
+	case SMH_MESSAGE_UB_MEM_ERR:
+		return "ub mem err";
 	case SMH_MESSAGE_PANIC_ACK:
 		return "panic ack";
 	case SMH_MESSAGE_KERNEL_REBOOT_ACK:
@@ -162,6 +174,8 @@ static inline char *get_msg_type_name(enum sentry_msg_helper_msg_type type)
 		return "heartbeat";
 	case SMH_MESSAGE_HEARTBEAT_ACK:
 		return "heartbeat ack";
+	case SMH_MESSAGE_LINK_EVENT:
+		return "link event";
 	default:
 		return "unknown";
 	}
