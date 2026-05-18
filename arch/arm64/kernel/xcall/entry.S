@@ -333,6 +333,7 @@ SYM_CODE_END(el0t_64_irq_table)
 	.macro irq_ventry
 	.align 7
 .Lventry_start\@:
+	sync_sei
 	/*
 	 * This must be the first instruction of the EL0 vector entries. It is
 	 * skipped by the trampoline vectors, to trigger the cleanup.
