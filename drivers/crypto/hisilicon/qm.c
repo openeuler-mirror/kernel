@@ -250,6 +250,11 @@
 #define QM_QOS_MAX_CIR_U		6
 #define QM_AUTOSUSPEND_DELAY		3000
 
+/* qm function err mask */
+#define QM_FUNC_AXI_ERR_ST0		0x100280
+#define QM_RAS_FUNC_ERROR		(BIT(0) | BIT(1))
+#define QM_FUNC_RAS_CLEAR_ALL		GENMASK(63, 0)
+
 /* qm isolation state mask */
 #define QM_ISOLATED_STATE		BIT(31)
 #define QM_ISOLATED_THRESHOLD_MASK	GENMASK(15, 0)
@@ -318,6 +323,7 @@ enum qm_ifc_cmd {
 	QM_VF_START_FAIL,
 	QM_PF_SET_QOS,
 	QM_VF_GET_QOS,
+	QM_FUNCTION_RESET,
 	QM_VF_GET_ISOLATE,
 	QM_PF_SET_ISOLATE,
 };
@@ -498,6 +504,7 @@ static void qm_irqs_unregister(struct hisi_qm *qm);
 static int qm_reset_device(struct hisi_qm *qm);
 static void hisi_qm_stop_qp(struct hisi_qp *qp);
 static void qm_dev_err_uninit(struct hisi_qm *qm);
+static int qm_restart(struct hisi_qm *qm);
 
 int hisi_qm_q_num_set(const char *val, const struct kernel_param *kp,
 		      unsigned int device)
@@ -1208,18 +1215,20 @@ static void qm_reset_function(struct hisi_qm *qm)
 		return;
 	}
 
+	dev_info(dev, "function reset start...\n");
 	ret = hisi_qm_stop(qm, QM_DOWN);
 	if (ret) {
 		dev_err(dev, "failed to stop qm when reset function\n");
 		goto clear_bit;
 	}
 
-	ret = hisi_qm_start(qm);
+	ret = qm_restart(qm);
 	if (ret)
 		dev_err(dev, "failed to start qm when reset function\n");
 
 clear_bit:
 	qm_reset_bit_clear(qm);
+	dev_info(dev, "function reset end...\n");
 }
 
 static irqreturn_t qm_aeq_thread(int irq, void *data)
@@ -1543,6 +1552,8 @@ static void qm_hw_error_cfg(struct hisi_qm *qm)
 	qm->error_mask = qm_err->nfe | qm_err->ce | qm_err->fe;
 	/* clear QM hw residual error source */
 	writel(QM_RAS_CLEAR_ALL, qm->io_base + QM_ABNORMAL_INT_SOURCE);
+	if (qm->ver >= QM_HW_V5)
+		writeq(QM_FUNC_RAS_CLEAR_ALL, qm->io_base + QM_FUNC_AXI_ERR_ST0);
 
 	/* configure error type */
 	writel(qm_err->ce, qm->io_base + QM_RAS_CE_ENABLE);
@@ -1633,6 +1644,15 @@ static enum acc_err_result qm_hw_error_handle_v2(struct hisi_qm *qm)
 			qm->err_status.is_qm_ecc_mbit = true;
 
 		qm_log_hw_error(qm, error_status);
+		/* Trigger func reset only when error is detected in bit 0 or bit 1. */
+		if ((qm->ver >= QM_HW_V5) &&
+		    (error_status & QM_RAS_FUNC_ERROR) &&
+		    (error_status & qm_err->reset_mask) == 0) {
+			writel(error_status, qm->io_base + QM_ABNORMAL_INT_SOURCE);
+			writel(qm_err->nfe, qm->io_base + QM_RAS_NFE_ENABLE);
+			return ACC_ERR_NEED_FUNC_RESET;
+		}
+
 		if (error_status & qm_err->reset_mask) {
 			/* Disable the same error reporting until device is recovered. */
 			writel(qm_err->nfe & (~error_status), qm->io_base + QM_RAS_NFE_ENABLE);
@@ -4426,10 +4446,13 @@ static enum acc_err_result qm_process_dev_error(struct hisi_qm *qm)
 
 	/* log device error */
 	dev_ret = qm_dev_err_handle(qm);
+	if (qm_ret == ACC_ERR_NEED_RESET || dev_ret == ACC_ERR_NEED_RESET)
+		return ACC_ERR_NEED_RESET;
 
-	return (qm_ret == ACC_ERR_NEED_RESET ||
-		dev_ret == ACC_ERR_NEED_RESET) ?
-		ACC_ERR_NEED_RESET : ACC_ERR_RECOVERED;
+	if (qm_ret == ACC_ERR_NEED_FUNC_RESET)
+		return ACC_ERR_NEED_FUNC_RESET;
+
+	return ACC_ERR_RECOVERED;
 }
 
 /**
@@ -4454,7 +4477,7 @@ pci_ers_result_t hisi_qm_dev_err_detected(struct pci_dev *pdev,
 		return PCI_ERS_RESULT_DISCONNECT;
 
 	ret = qm_process_dev_error(qm);
-	if (ret == ACC_ERR_NEED_RESET)
+	if (ret == ACC_ERR_NEED_RESET || ret == ACC_ERR_NEED_FUNC_RESET)
 		return PCI_ERS_RESULT_NEED_RESET;
 
 	return PCI_ERS_RESULT_RECOVERED;
@@ -5194,9 +5217,53 @@ void hisi_qm_dev_shutdown(struct pci_dev *pdev)
 }
 EXPORT_SYMBOL_GPL(hisi_qm_dev_shutdown);
 
+static u64 qm_get_function_mask(struct hisi_qm *qm)
+{
+	return readq(qm->io_base + QM_FUNC_AXI_ERR_ST0);
+}
+
+static void qm_clear_function_mask(struct hisi_qm *qm, u64 func_mask)
+{
+	/* Register write 1 clear */
+	writeq(func_mask, qm->io_base + QM_FUNC_AXI_ERR_ST0);
+}
+
+static void qm_function_reset(struct hisi_qm *qm)
+{
+	struct device *dev = &qm->pdev->dev;
+	u64 func_mask;
+	u32 fun_num;
+	int ret;
+
+	func_mask = qm_get_function_mask(qm);
+	if (!func_mask) {
+		dev_info(dev, "no function need reset!\n");
+		return;
+	}
+
+	for (fun_num = 1; fun_num <= qm->vfs_num; fun_num++) {
+		if (func_mask & BIT(fun_num)) {
+			ret = qm_ping_single_vf(qm, QM_FUNCTION_RESET, 0, fun_num);
+			/* When function ping fail, user decides the VF reset method. */
+			if (ret)
+				dev_err(dev, "failed to send command(0x%x) to VF(%u)!\n",
+					(unsigned int)QM_FUNCTION_RESET, fun_num);
+		}
+	}
+
+	if (func_mask & BIT(0)) {
+		dev_info(dev, "function reset start...\n");
+		qm_reset_function(qm);
+		dev_info(dev, "function reset end!\n");
+	}
+
+	qm_clear_function_mask(qm, func_mask);
+}
+
 static void hisi_qm_controller_reset(struct work_struct *rst_work)
 {
 	struct hisi_qm *qm = container_of(rst_work, struct hisi_qm, rst_work);
+	enum acc_err_result err_result;
 	int ret;
 
 	ret = qm_pm_get_sync(qm);
@@ -5205,9 +5272,11 @@ static void hisi_qm_controller_reset(struct work_struct *rst_work)
 		return;
 	}
 
-	ret = qm_process_dev_error(qm);
-	if (ret == ACC_ERR_NEED_RESET)
+	err_result = qm_process_dev_error(qm);
+	if (err_result == ACC_ERR_NEED_RESET)
 		(void)qm_controller_reset(qm);
+	else if (err_result == ACC_ERR_NEED_FUNC_RESET)
+		qm_function_reset(qm);
 
 	qm_pm_put_sync(qm);
 }
@@ -5254,7 +5323,7 @@ static void qm_pf_reset_vf_done(struct hisi_qm *qm)
 	int ret;
 
 	pci_restore_state(pdev);
-	ret = hisi_qm_start(qm);
+	ret = qm_restart(qm);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to start QM, ret = %d.\n", ret);
 		cmd = QM_VF_START_FAIL;
@@ -5405,6 +5474,11 @@ static void qm_handle_cmd_msg(struct hisi_qm *qm, u32 fun_num)
 		break;
 	case QM_PF_SET_QOS:
 		qm->mb_qos = data;
+		break;
+	case QM_FUNCTION_RESET:
+		dev_info(dev, "function reset start...\n");
+		qm_reset_function(qm);
+		dev_info(dev, "function reset end!\n");
 		break;
 	case QM_VF_GET_ISOLATE:
 		/* Read the isolation policy of the PF during VF initialization. */
