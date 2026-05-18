@@ -932,7 +932,11 @@ struct sk_buff {
 #else
 	KABI_RESERVE(2)
 #endif
+#if IS_ENABLED(CONFIG_OENETCLS)
+	KABI_USE(3, __u32 sym_hash)
+#else
 	KABI_RESERVE(3)
+#endif
 	KABI_RESERVE(4)
 
 	/* These elements must be at the end, see alloc_skb() for details.  */
