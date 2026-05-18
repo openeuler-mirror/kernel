@@ -9,6 +9,7 @@
 #define OBMM_CORE_H
 
 #include <uapi/ub/obmm.h>
+#include <linux/atomic.h>
 #include <linux/device.h>
 #include <linux/cdev.h>
 #include <linux/printk.h>
@@ -112,8 +113,8 @@ struct obmm_region {
 	 * OBMM_MEM_ALLOW_NONCACHEABLE_MMAP: Supports non-cacheable mapping
 	 */
 	unsigned long mem_cap;
-	/* number of mmap */
-	unsigned long mmap_count;
+	/* number of mmap (atomic to avoid deadlock in vma_open during split) */
+	atomic_t mmap_count;
 
 	struct obmm_ownership_info *ownership_info;
 	/* protect ownership_info and serialize concurrent page table change requests */
