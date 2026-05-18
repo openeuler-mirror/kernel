@@ -344,6 +344,9 @@ struct ipourma_dev_priv {
 	atomic_t rx_jfr_ref;
 	bool *tx_ring_is_full;
 	atomic_t tx_ring_blocked;
+	atomic_t need_set_ip;
+	struct list_head set_ip_list;
+	spinlock_t set_ip_lock;
 	/* tjetty lru */
 	struct ipourma_tjetty_lru tjetty_lru;
 	/* runtime stats statistics */

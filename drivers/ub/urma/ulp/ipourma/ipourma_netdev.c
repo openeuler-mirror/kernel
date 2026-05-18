@@ -583,8 +583,11 @@ static int ipourma_priv_base_init(struct net_device *dev,
 	INIT_DELAYED_WORK(&(priv->redundant_dwork), ipourma_create_redundant_jetty_callback);
 	atomic_set(&priv->rx_jfr_ref, 0);
 	atomic_set(&priv->tx_ring_blocked, 0);
+	atomic_set(&priv->need_set_ip, 1);
 	spin_lock_init(&priv->tjetty_lru.lock);
+	spin_lock_init(&priv->set_ip_lock);
 	INIT_LIST_HEAD(&priv->tjetty_lru.list);
+	INIT_LIST_HEAD(&priv->set_ip_list);
 
 	priv->register_wq = alloc_workqueue("ipourma_register_wq", WQ_MEM_RECLAIM, 0);
 	if (IS_ERR_OR_NULL(priv->register_wq))
@@ -648,26 +651,24 @@ static void set_ip_callback(struct work_struct *work)
 	int eid_idx = set_ip_work->eid_idx;
 	int ret = IPOURMA_OK;
 
+	if (atomic_read(&priv->need_set_ip) == 0)
+		return;
 	if (!netif_running(priv->dev)) {
 		schedule_delayed_work(d_work, msecs_to_jiffies(MSEC_PER_SEC));
 		return;
 	}
 	ret = ipourma_send_ipv6_netlink(priv->dev, &(priv->eid_info[eid_idx].eid), RTM_NEWADDR);
 	if (ret != 0)
-		goto free_work;
+		return;
 
 	ret = ipourma_add_route_rule(priv, &(priv->eid_info[eid_idx].eid));
 	if (ret != 0) {
 		ret = ipourma_send_ipv6_netlink(priv->dev,
 						&(priv->eid_info[eid_idx].eid),
 						RTM_DELADDR);
-		goto free_work;
+		return;
 	}
-
 	ipourma_add_route_entry(&(priv->set_route_entry));
-
-free_work:
-	kfree(set_ip_work);
 }
 
 static void ipourma_init_set_ip_work(struct ipourma_dev_priv *priv, u32 eid_idx)
@@ -684,6 +685,14 @@ static void ipourma_init_set_ip_work(struct ipourma_dev_priv *priv, u32 eid_idx)
 	set_ip_work->eid_idx = eid_idx;
 	d_work = &set_ip_work->d_work;
 	INIT_DELAYED_WORK(d_work, set_ip_callback);
+	spin_lock(&priv->set_ip_lock);
+		if (atomic_read(&priv->need_set_ip) == 0) {
+			spin_unlock(&priv->set_ip_lock);
+			kfree(set_ip_work);
+			return;
+		}
+		list_add(&set_ip_work->list, &priv->set_ip_list);
+	spin_unlock(&priv->set_ip_lock);
 	schedule_delayed_work(d_work, msecs_to_jiffies(MSEC_PER_SEC));
 }
 
