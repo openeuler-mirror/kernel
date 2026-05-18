@@ -2546,6 +2546,9 @@ skip_copy:
 		if (used + offset < skb->len)
 			continue;
 
+#if IS_ENABLED(CONFIG_OENETCLS)
+		oenetcls_flow_update(sk, skb);
+#endif
 		if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
 			goto found_fin_ok;
 		if (!(flags & MSG_PEEK))
@@ -2590,7 +2593,7 @@ int tcp_recvmsg(struct sock *sk, struct msghdr *msg, size_t len, int flags,
 		return inet_recv_error(sk, msg, len, addr_len);
 
 #if IS_ENABLED(CONFIG_OENETCLS)
-	oenetcls_flow_update(sk);
+	oenetcls_flow_update(sk, NULL);
 #endif
 	if (sk_can_busy_loop(sk) &&
 	    skb_queue_empty_lockless(&sk->sk_receive_queue) &&

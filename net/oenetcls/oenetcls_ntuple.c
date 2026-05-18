@@ -7,8 +7,9 @@
 #include <linux/irqdesc.h>
 #include <linux/inet.h>
 #include <linux/jhash.h>
-#include <net/sock.h>
 #include <linux/oenetcls.h>
+#include <net/addrconf.h>
+#include <net/sock.h>
 #include "oenetcls.h"
 
 struct oecls_sk_rule_list oecls_sk_rules, oecls_sk_list;
@@ -24,9 +25,24 @@ static void init_oecls_sk_rules(void)
 	mutex_init(&oecls_sk_rules.mutex);
 }
 
-static inline struct hlist_head *get_rule_hashlist(u32 dip4, u16 dport)
+static inline u32 get_hash(struct cmd_context ctx)
 {
-	return oecls_sk_rules.hash + (jhash_2words(dip4, dport, 0) & OECLS_SK_RULE_HASHMASK);
+	u32 hash;
+
+	if (ctx.is_ipv6)
+		hash = jhash_2words(jhash(ctx.dip6, 16, 0), ctx.dport, 0);
+	else
+		hash = jhash_2words(ctx.dip4, ctx.dport, 0);
+
+	return hash;
+}
+
+static inline struct hlist_head *get_rule_hashlist(struct cmd_context ctx)
+{
+	u32 hash;
+
+	hash = get_hash(ctx);
+	return oecls_sk_rules.hash + (hash & OECLS_SK_RULE_HASHMASK);
 }
 
 static inline struct hlist_head *get_sk_hashlist(void *sk)
@@ -34,35 +50,39 @@ static inline struct hlist_head *get_sk_hashlist(void *sk)
 	return oecls_sk_list.hash + (jhash(sk, sizeof(sk), 0) & OECLS_SK_RULE_HASHMASK);
 }
 
-static void add_sk_rule(int devid, u32 dip4, u16 dport, void *sk, int action, int ruleid, int cpu)
+static void add_sk_rule(int devid, struct cmd_context ctx, void *sk, int nid)
 {
-	struct hlist_head *hlist = get_rule_hashlist(dip4, dport);
+	struct hlist_head *hlist = get_rule_hashlist(ctx);
 	struct hlist_head *sk_hlist = get_sk_hashlist(sk);
 	struct oecls_sk_rule *rule;
 	struct oecls_sk_entry *entry;
 
 	rule = kzalloc(sizeof(*rule), GFP_ATOMIC);
+	if (!rule) {
+		oecls_error("alloc rule failed\n");
+		return;
+	}
 	entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
-	if (!rule || !entry)
-		goto out;
+	if (!entry) {
+		oecls_error("alloc entry failed\n");
+		kfree(rule);
+		return;
+	}
 
 	rule->sk = sk;
-	rule->dip4 = dip4;
-	rule->dport = dport;
+	rule->is_ipv6 = ctx.is_ipv6;
+	rule->dip4 = ctx.dip4;
+	memcpy(rule->dip6, ctx.dip6, sizeof(rule->dip6));
+	rule->dport = ctx.dport;
 	rule->devid = devid;
-	rule->action = action;
-	rule->ruleid = ruleid;
-	rule->cpu = cpu;
+	rule->action = ctx.action;
+	rule->ruleid = ctx.ret_loc;
+	rule->nid = nid;
 	hlist_add_head(&rule->node, hlist);
 
 	entry->sk = sk;
-	entry->sk_rule_hash = jhash_2words(dip4, dport, 0);
+	entry->sk_rule_hash = get_hash(ctx);
 	hlist_add_head(&entry->node, sk_hlist);
-	return;
-out:
-	oecls_debug("alloc rule failed\n");
-	kfree(entry);
-	kfree(rule);
 }
 
 static struct oecls_sk_entry *get_sk_entry(void *sk)
@@ -92,13 +112,17 @@ static void del_sk_rule(struct oecls_sk_rule *rule)
 	kfree(rule);
 }
 
-static struct oecls_sk_rule *get_sk_rule(int devid, u32 dip4, u16 dport)
+static struct oecls_sk_rule *get_sk_rule(int devid, struct cmd_context ctx)
 {
-	struct hlist_head *hlist = get_rule_hashlist(dip4, dport);
+	struct hlist_head *hlist = get_rule_hashlist(ctx);
 	struct oecls_sk_rule *rule = NULL;
 
 	hlist_for_each_entry(rule, hlist, node) {
-		if (rule->devid == devid && rule->dip4 == dip4 && rule->dport == dport)
+		if (rule->devid != devid || rule->dport != ctx.dport)
+			continue;
+		if (!rule->is_ipv6 && rule->dip4 == ctx.dip4)
+			break;
+		if (rule->is_ipv6 && !memcmp(rule->dip6, ctx.dip6, sizeof(rule->dip6)))
 			break;
 	}
 	return rule;
@@ -122,9 +146,9 @@ static struct oecls_sk_rule *get_rule_from_sk(int devid, void *sk)
 	return rule;
 }
 
-static inline bool reuseport_check(int devid, u32 dip4, u16 dport)
+static inline bool reuseport_check(int devid, struct cmd_context ctx)
 {
-	return !!get_sk_rule(devid, dip4, dport);
+	return !!get_sk_rule(devid, ctx);
 }
 
 static u32 get_first_ip4_addr(struct net *net)
@@ -146,7 +170,7 @@ static u32 get_first_ip4_addr(struct net *net)
 		in_dev_for_each_ifa_rcu(ifa, in_dev) {
 			if (!strcmp(dev->name, ifa->ifa_label)) {
 				dip4 = ifa->ifa_local;
-				oecls_debug("dev: %s, dip4:%pI4\n", dev->name, &dip4);
+				oecls_debug("dev:%s dip4:%pI4\n", dev->name, &dip4);
 				goto out;
 			}
 		}
@@ -157,19 +181,63 @@ out:
 	return dip4;
 }
 
-static void get_sk_rule_addr(struct sock *sk, u32 *dip4, u16 *dport)
+static void get_first_ip6_addr(struct net *net, u32 *dip6)
 {
+	struct inet6_dev *idev;
+	struct net_device *dev;
+	struct inet6_ifaddr *ifp;
+
+	rtnl_lock();
+	rcu_read_lock();
+	for_each_netdev(net, dev) {
+		if (dev->flags & IFF_LOOPBACK || !(dev->flags & IFF_UP))
+			continue;
+		idev = __in6_dev_get(dev);
+		if (!idev)
+			continue;
+		list_for_each_entry_rcu(ifp, &idev->addr_list, if_list) {
+			if (ifp->scope == RT_SCOPE_HOST)
+				continue;
+			if (ifp->flags & (IFA_F_TENTATIVE | IFA_F_DEPRECATED))
+				continue;
+			memcpy(dip6, &ifp->addr, sizeof(ifp->addr));
+			oecls_debug("dev:%s dip:%pI6\n", dev->name, dip6);
+			goto out;
+		}
+	}
+out:
+	rcu_read_unlock();
+	rtnl_unlock();
+}
+
+static void get_sk_rule_addr(struct sock *sk, struct cfg_param *ctx_p)
+{
+	bool is_ipv6 = !!(sk->sk_family == AF_INET6);
+	u16 *dport = &ctx_p->ctx.dport;
+	u32 *dip4 = &ctx_p->ctx.dip4;
+	u32 *dip6 = &ctx_p->ctx.dip6[0];
+
 	*dport = htons(sk->sk_num);
+	ctx_p->ctx.is_ipv6 = is_ipv6;
 
 	if (!match_ip_flag) {
 		*dip4 = 0;
+		memset(dip6, 0, sizeof(sk->sk_v6_rcv_saddr));
 		return;
 	}
 
-	if (sk->sk_rcv_saddr)
-		*dip4 = sk->sk_rcv_saddr;
-	else
-		*dip4 = get_first_ip4_addr(sock_net(sk));
+	if (is_ipv6) {
+		if (!ipv6_addr_any(&sk->sk_v6_rcv_saddr))
+			memcpy(dip6, &sk->sk_v6_rcv_saddr, sizeof(sk->sk_v6_rcv_saddr));
+		else
+			get_first_ip6_addr(sock_net(sk), dip6);
+
+	} else {
+		if (sk->sk_rcv_saddr)
+			*dip4 = sk->sk_rcv_saddr;
+		else
+			*dip4 = get_first_ip4_addr(sock_net(sk));
+	}
 }
 
 static int rxclass_rule_del(struct cmd_context *ctx, __u32 loc)
@@ -349,53 +417,21 @@ static int rxclass_rule_ins(struct cmd_context *ctx,
 	return 0;
 }
 
-static void flow_spec_to_ntuple(struct ethtool_rx_flow_spec *fsp,
-				struct ethtool_rx_ntuple_flow_spec *ntuple)
-{
-	int i;
-
-	memset(ntuple, ~0, sizeof(*ntuple));
-	ntuple->flow_type = fsp->flow_type;
-	ntuple->action = fsp->ring_cookie;
-	memcpy_r(&ntuple->h_u, &fsp->h_u, sizeof(fsp->h_u));
-	memcpy_r(&ntuple->m_u, &fsp->m_u, sizeof(fsp->m_u));
-	for (i = 0; i < sizeof(ntuple->m_u); i++)
-		ntuple->m_u.hdata[i] ^= 0xFF;
-	ntuple->flow_type &= ~FLOW_EXT;
-}
-
-static int do_srxntuple(struct cmd_context *ctx, struct ethtool_rx_flow_spec *fsp)
-{
-	struct ethtool_rx_ntuple ntuplecmd;
-	struct ethtool_value eval;
-	int ret = 0;
-
-	flow_spec_to_ntuple(fsp, &ntuplecmd.fs);
-
-	if (check_nic_feature) {
-		eval.cmd = ETHTOOL_GFLAGS;
-		ret = send_ethtool_ioctl(ctx, &eval);
-		if (ret || !(eval.data & ETH_FLAG_NTUPLE))
-			return -1;
-	}
-
-	ntuplecmd.cmd = ETHTOOL_SRXNTUPLE;
-	ret = send_ethtool_ioctl(ctx, &ntuplecmd);
-	if (ret)
-		oecls_debug("Cannot add new rule via N-tuple, ret:%d\n", ret);
-
-	return ret;
-}
-
 static int cfg_ethtool_rule(struct cmd_context *ctx, bool is_del)
 {
 	struct ethtool_rx_flow_spec *fsp, rx_rule_fs;
 	u32 rss_context = 0;
-	int ret;
+	bool is_ipv6 = ctx->is_ipv6;
+	int ret, i;
 
-	oecls_debug("is_del:%d netdev:%s, dip4:%pI4, dport:%d, action:%d, ruleid:%u, del_ruleid:%u\n",
-		    is_del, ctx->netdev, &ctx->dip4, ntohs(ctx->dport), ctx->action, ctx->ruleid,
-		    ctx->del_ruleid);
+	if (ctx->is_ipv6)
+		oecls_debug("del:%d dev:%s dip:%pI6 dport:%d action:%d ruleid:%u del_ruleid:%u\n",
+			    is_del, ctx->netdev, &ctx->dip6, ntohs(ctx->dport), ctx->action,
+			    ctx->ruleid, ctx->del_ruleid);
+	else
+		oecls_debug("del:%d dev:%s dip:%pI4 dport:%d action:%d ruleid:%u del_ruleid:%u\n",
+			    is_del, ctx->netdev, &ctx->dip4, ntohs(ctx->dport), ctx->action,
+			    ctx->ruleid, ctx->del_ruleid);
 
 	if (is_del)
 		return rxclass_rule_del(ctx, ctx->del_ruleid);
@@ -404,20 +440,27 @@ static int cfg_ethtool_rule(struct cmd_context *ctx, bool is_del)
 
 	fsp = &rx_rule_fs;
 	memset(fsp, 0, sizeof(*fsp));
-	fsp->flow_type = TCP_V4_FLOW;
+	if (is_ipv6) {
+		fsp->flow_type = TCP_V6_FLOW;
+		memcpy(fsp->h_u.tcp_ip6_spec.ip6dst, ctx->dip6, sizeof(ctx->dip6));
+		fsp->h_u.tcp_ip6_spec.pdst = ctx->dport;
+		fsp->m_u.tcp_ip6_spec.pdst = (u16)~0ULL;
+		if (ctx->dip6[0] | ctx->dip6[1] | ctx->dip6[2] | ctx->dip6[3]) {
+			for (i = 0; i < 4; i++)
+				fsp->m_u.tcp_ip6_spec.ip6dst[i] = (u32)~0ULL;
+		}
+	} else {
+		fsp->flow_type = TCP_V4_FLOW;
+		fsp->h_u.tcp_ip4_spec.ip4dst = ctx->dip4;
+		fsp->h_u.tcp_ip4_spec.pdst = ctx->dport;
+		fsp->m_u.tcp_ip4_spec.pdst = (u16)~0ULL;
+		if (ctx->dip4)
+			fsp->m_u.tcp_ip4_spec.ip4dst = (u32)~0ULL;
+	}
 	fsp->location = RX_CLS_LOC_ANY;
-	fsp->h_u.tcp_ip4_spec.ip4dst = ctx->dip4;
-	fsp->h_u.tcp_ip4_spec.pdst = ctx->dport;
-	if (ctx->dip4)
-		fsp->m_u.tcp_ip4_spec.ip4dst = (u32)~0ULL;
-	fsp->m_u.tcp_ip4_spec.pdst = (u16)~0ULL;
 	if (ctx->ruleid)
 		fsp->location = ctx->ruleid;
 	fsp->ring_cookie = ctx->action;
-
-	ret = do_srxntuple(ctx, &rx_rule_fs);
-	if (!ret)
-		return 0;
 
 	ret = rxclass_rule_ins(ctx, &rx_rule_fs, rss_context);
 	if (!ret)
@@ -430,16 +473,19 @@ static void cfg_work(struct work_struct *work)
 	struct cfg_param *ctx_p = container_of(work, struct cfg_param, work);
 	struct oecls_netdev_info *oecls_dev;
 	struct oecls_sk_rule *rule;
-	int devid, rxq_id;
-	int err;
+	int devid, rxq_id, err;
 
 	mutex_lock(&oecls_sk_rules.mutex);
 	for_each_oecls_netdev(devid, oecls_dev) {
 		strncpy(ctx_p->ctx.netdev, oecls_dev->dev_name, IFNAMSIZ);
 		if (!ctx_p->is_del) {
-			if (reuseport_check(devid, ctx_p->ctx.dip4, ctx_p->ctx.dport)) {
-				oecls_error("dip4:%pI4, dport:%d reuse!\n", &ctx_p->ctx.dip4,
-					    ctx_p->ctx.dport);
+			if (reuseport_check(devid, ctx_p->ctx)) {
+				if (ctx_p->ctx.is_ipv6)
+					oecls_debug("dip:%pI6, dport:%d reuse!\n",
+						    &ctx_p->ctx.dip6, ntohs(ctx_p->ctx.dport));
+				else
+					oecls_debug("dip:%pI4, dport:%d reuse!\n",
+						    &ctx_p->ctx.dip4, ntohs(ctx_p->ctx.dport));
 				continue;
 			}
 
@@ -451,13 +497,13 @@ static void cfg_work(struct work_struct *work)
 			// Config Ntuple rule to dev
 			ctx_p->ctx.action = (u16)rxq_id;
 			err = cfg_ethtool_rule(&ctx_p->ctx, ctx_p->is_del);
-			// Add sk rule only on success
 			if (err) {
-				free_rxq_id(ctx_p->cpu, devid, rxq_id);
+				oecls_debug("Add sk:%p, dev_id:%d, rxq:%d, err:%d\n",
+					    ctx_p->sk, devid, rxq_id, err);
+				free_rxq_id(ctx_p->nid, devid, rxq_id);
 				continue;
 			}
-			add_sk_rule(devid, ctx_p->ctx.dip4, ctx_p->ctx.dport, ctx_p->sk,
-				    ctx_p->ctx.action, ctx_p->ctx.ret_loc, ctx_p->cpu);
+			add_sk_rule(devid, ctx_p->ctx, ctx_p->sk, ctx_p->nid);
 		} else {
 			rule = get_rule_from_sk(devid, ctx_p->sk);
 			if (!rule) {
@@ -471,7 +517,7 @@ static void cfg_work(struct work_struct *work)
 			ctx_p->ctx.del_ruleid = rule->ruleid;
 			err = cfg_ethtool_rule(&ctx_p->ctx, ctx_p->is_del);
 			// Free the bound queue
-			free_rxq_id(rule->cpu, devid, rule->action);
+			free_rxq_id(rule->nid, devid, rule->action);
 			// Delete sk rule
 			del_sk_rule(rule);
 		}
@@ -505,7 +551,7 @@ static void del_ntuple_rule(struct sock *sk)
 	ctx_p = kzalloc(sizeof(*ctx_p), GFP_ATOMIC);
 	if (!ctx_p)
 		return;
-	get_sk_rule_addr(sk, &ctx_p->ctx.dip4, &ctx_p->ctx.dport);
+	get_sk_rule_addr(sk, ctx_p);
 
 	ctx_p->is_del = true;
 	ctx_p->sk = sk;
@@ -517,6 +563,7 @@ static void del_ntuple_rule(struct sock *sk)
 static void add_ntuple_rule(struct sock *sk)
 {
 	struct cfg_param *ctx_p;
+	int cpu;
 
 	if (check_appname(current->comm))
 		return;
@@ -524,11 +571,13 @@ static void add_ntuple_rule(struct sock *sk)
 	ctx_p = kzalloc(sizeof(*ctx_p), GFP_ATOMIC);
 	if (!ctx_p)
 		return;
-	get_sk_rule_addr(sk, &ctx_p->ctx.dip4, &ctx_p->ctx.dport);
+	get_sk_rule_addr(sk, ctx_p);
 
+	cpu = raw_smp_processor_id();
 	ctx_p->is_del = false;
 	ctx_p->sk = sk;
-	ctx_p->cpu = raw_smp_processor_id();
+	ctx_p->cpu = cpu;
+	ctx_p->nid = cpu_to_node(cpu);
 	INIT_WORK(&ctx_p->work, cfg_work);
 	queue_work(do_cfg_workqueue, &ctx_p->work);
 	atomic_inc(&oecls_worker_count);
@@ -536,14 +585,23 @@ static void add_ntuple_rule(struct sock *sk)
 
 static void ethtool_cfg_rxcls(struct sock *sk, int is_del)
 {
+	bool is_ipv6;
+
 	if (sk->sk_state != TCP_LISTEN)
 		return;
 
 	if (sk->sk_family != AF_INET && sk->sk_family != AF_INET6)
 		return;
 
-	oecls_debug("[cpu:%d] app:%s, sk:%p, is_del:%d, ip:%pI4, port:%d\n", raw_smp_processor_id(),
-		    current->comm, sk, is_del, &sk->sk_rcv_saddr, (u16)sk->sk_num);
+	is_ipv6 = !!(sk->sk_family == AF_INET6);
+	if (is_ipv6)
+		oecls_debug("[cpu:%d] app:%s, sk:%p, is_del:%d, IPv6:%pI6, port:%d\n",
+			    raw_smp_processor_id(), current->comm, sk, is_del,
+			    &sk->sk_v6_rcv_saddr, (u16)sk->sk_num);
+	else
+		oecls_debug("[cpu:%d] app:%s, sk:%p, is_del:%d, IPv4:%pI4, port:%d\n",
+			    raw_smp_processor_id(), current->comm, sk, is_del,
+			    &sk->sk_rcv_saddr, (u16)sk->sk_num);
 
 	if (is_del)
 		del_ntuple_rule(sk);
@@ -583,8 +641,9 @@ static void clean_oecls_sk_rules(void)
 	mutex_unlock(&oecls_sk_rules.mutex);
 }
 
-static const struct oecls_hook_ops oecls_ntuple_ops = {
-	.oecls_flow_update = NULL,
+static struct oecls_hook_ops oecls_ntuple_ops = {
+	.oecls_flow_update = _oecls_flow_update,
+	.oecls_set_localcpu = _oecls_set_cpu,
 	.oecls_set_cpu = NULL,
 	.oecls_timeout = NULL,
 	.oecls_cfg_rxcls = ethtool_cfg_rxcls,
@@ -599,6 +658,8 @@ int oecls_ntuple_res_init(void)
 	}
 
 	init_oecls_sk_rules();
+	if (rps_policy)
+		oecls_ntuple_ops.oecls_set_cpu = _oecls_set_cpu;
 	RCU_INIT_POINTER(oecls_ops, &oecls_ntuple_ops);
 	synchronize_rcu();
 	return 0;

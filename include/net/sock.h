@@ -554,7 +554,11 @@ struct sock {
 		u64	sk_gid_padding;
 	};
 #endif
+#if IS_ENABLED(CONFIG_OENETCLS)
+	KABI_USE(1, u8 oecls_cmd_matched)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
