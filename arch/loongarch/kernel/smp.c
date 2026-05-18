@@ -456,7 +456,8 @@ int loongson_cpu_disable(void)
 	clear_cpu_llc_shared_map(cpu);
 	calculate_cpu_foreign_map();
 	local_irq_save(flags);
-	fixup_irqs();
+	irq_migrate_all_off_this_cpu();
+	clear_csr_ecfg(ECFG0_IM);
 	local_irq_restore(flags);
 	local_flush_tlb_all();
 
