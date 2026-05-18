@@ -372,7 +372,8 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 
 	kvm_arm_init_hypercalls(kvm);
 
-	kvm_arm_timer_early_inject_vm_init(kvm);
+	if (!kvm_is_realm(kvm))
+		kvm_arm_timer_early_inject_vm_init(kvm);
 
 	bitmap_zero(kvm->arch.vcpu_features, KVM_VCPU_MAX_FEATURES);
 
@@ -653,7 +654,8 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	kvm_arm_pvsched_vcpu_init(&vcpu->arch);
 
 #ifdef CONFIG_VIRT_VTIMER_PV_STATUS
-	kvm_arm_pvtimer_status_vcpu_init(&vcpu->arch);
+	if (!kvm_is_realm(vcpu->kvm))
+		kvm_arm_pvtimer_status_vcpu_init(&vcpu->arch);
 #endif
 
 	vcpu->arch.hw_mmu = &vcpu->kvm->arch.mmu;
