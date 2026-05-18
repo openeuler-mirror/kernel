@@ -57,6 +57,14 @@ static inline unsigned long ownership_size_to_nentries(const struct obmm_region 
 	return size >> PAGE_SHIFT;
 }
 
+/* Check if address is aligned according to mmap granularity */
+static inline bool obmm_is_aligned(const struct obmm_region *reg, unsigned long addr)
+{
+	if (reg->mmap_granu == OBMM_MMAP_GRANU_PMD)
+		return IS_ALIGNED(addr, PMD_SIZE);
+	return IS_ALIGNED(addr, PAGE_SIZE);
+}
+
 /* Convert VM flags to mem_state */
 static inline unsigned long vm_flags_to_mem_state(vm_flags_t vm_flags, bool cacheable)
 {
