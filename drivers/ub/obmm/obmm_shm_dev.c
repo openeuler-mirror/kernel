@@ -5,6 +5,7 @@
  */
 
 #include <asm/tlbflush.h>
+#include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/pagewalk.h>
@@ -120,12 +121,65 @@ static vm_fault_t obmm_vma_fault(struct vm_fault *vmf __always_unused)
 	pr_warn("Unexpected fault\n");
 	return VM_FAULT_SIGBUS;
 }
-static int obmm_vma_access(struct vm_area_struct *vma __always_unused,
-			   unsigned long addr __always_unused, void *buf __always_unused,
-			   int len __always_unused, int write __always_unused)
+/* Custom access handler for ptrace/GDB on PFNMAP VMAs */
+static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
+			   void *buf, int len, int write)
 {
-	pr_warn("access not supported\n");
-	return -EOPNOTSUPP;
+	resource_size_t phys_addr;
+	unsigned long prot;
+	void __iomem *maddr;
+	pte_t *ptep, pte;
+	spinlock_t *ptl;
+	int offset = offset_in_page(addr);
+	int ret = -EINVAL;
+
+	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)))
+		return -EINVAL;
+
+retry:
+	if (follow_pte(vma->vm_mm, addr, &ptep, &ptl))
+		return -EINVAL;
+
+	pte = ptep_get(ptep);
+	pte_unmap_unlock(ptep, ptl);
+
+	/* Extract protection bits from user PTE */
+	prot = pgprot_val(pte_pgprot(pte));
+	phys_addr = (resource_size_t)pte_pfn(pte) << PAGE_SHIFT;
+
+	/* Check write permission */
+	if (write && !pte_write(pte))
+		return -EINVAL;
+
+	/* Clear PTE_USER/PTE_NG for kernel access with PAN enabled */
+	prot &= ~(PTE_USER | PTE_NG);
+	prot |= (PTE_PXN | PTE_UXN);
+
+	maddr = ioremap_prot(phys_addr, PAGE_ALIGN(len + offset), prot);
+	if (!maddr)
+		return -ENOMEM;
+
+	/* Re-check PTE to prevent TOCTOU race */
+	if (follow_pte(vma->vm_mm, addr, &ptep, &ptl))
+		goto out_unmap;
+
+	if (!pte_same(pte, ptep_get(ptep))) {
+		pte_unmap_unlock(ptep, ptl);
+		iounmap(maddr);
+		goto retry;
+	}
+
+	/* Perform the actual memory access */
+	if (write)
+		ret = copy_mc_to_kernel((__force void *)(maddr + offset), buf, len) ? -EFAULT : len;
+	else
+		ret = copy_mc_to_kernel(buf, (__force void *)(maddr + offset), len) ? -EFAULT : len;
+	pte_unmap_unlock(ptep, ptl);
+
+out_unmap:
+	iounmap(maddr);
+
+	return ret;
 }
 static const char *obmm_vma_name(struct vm_area_struct *vma __always_unused)
 {
