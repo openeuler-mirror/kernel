@@ -612,6 +612,7 @@ static void clean_oecls_sk_rules(void)
 {
 	struct oecls_netdev_info *oecls_dev;
 	struct cmd_context ctx = { 0 };
+	struct oecls_sk_entry *entry;
 	struct oecls_sk_rule *rule;
 	struct hlist_head *hlist;
 	struct hlist_node *n;
@@ -619,6 +620,15 @@ static void clean_oecls_sk_rules(void)
 	int err;
 
 	mutex_lock(&oecls_sk_rules.mutex);
+	for (i = 0; i < OECLS_SK_RULE_HASHSIZE; i++) {
+		hlist = &oecls_sk_list.hash[i];
+
+		hlist_for_each_entry_safe(entry, n, hlist, node) {
+			hlist_del_init(&entry->node);
+			free_to_l0(entry);
+		}
+	}
+
 	for (i = 0; i < OECLS_SK_RULE_HASHSIZE; i++) {
 		hlist = &oecls_sk_rules.hash[i];
 
@@ -632,7 +642,7 @@ static void clean_oecls_sk_rules(void)
 			oecls_debug("sk:%p, dev_id:%d, action:%d, ruleid:%d, err:%d\n", rule->sk,
 				    rule->devid, rule->action, rule->ruleid, err);
 
-			hlist_del(&rule->node);
+			hlist_del_init(&rule->node);
 			oecls_debug("clean rule=%p\n", rule);
 			free_to_l0(rule);
 		}
