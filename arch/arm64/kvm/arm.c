@@ -3629,6 +3629,11 @@ static int __init early_kvm_mode_cfg(char *arg)
 		return 0;
 	}
 
+	if (strcmp(arg, "pvm") == 0) {
+		kvm_mode = KVM_MODE_PVM;
+		return 0;
+	}
+
 	if (!is_hyp_mode_available()) {
 		pr_warn_once("KVM is not available. Ignoring kvm-arm.mode\n");
 		return 0;
