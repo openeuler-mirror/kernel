@@ -1,366 +1,143 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
- * Description：OBMM Framework's implementations.
+ * Description: OBMM ownership tracking - region level R/W counters
  */
 
-#include <linux/bitmap.h>
+#include <linux/slab.h>
 #include <linux/vmalloc.h>
 
+#include "obmm_cache.h"
 #include "obmm_core.h"
 #include "obmm_ownership.h"
 
-static inline uint32_t merge_counts(uint32_t read, uint32_t write)
+/* Merge cache ops: WB_ONLY + INVAL = WB_INVAL, others return stronger op */
+uint8_t merge_cache_ops(uint8_t ops1, uint8_t ops2)
 {
-	return (read << READ_SHIFT) | (write << WRITE_SHIFT);
+	if (ops1 == OBMM_SHM_CACHE_NONE)
+		return ops2;
+	if (ops2 == OBMM_SHM_CACHE_NONE)
+		return ops1;
+	if (ops1 == OBMM_SHM_CACHE_WB_INVAL || ops2 == OBMM_SHM_CACHE_WB_INVAL)
+		return OBMM_SHM_CACHE_WB_INVAL;
+	if ((ops1 == OBMM_SHM_CACHE_WB_ONLY && ops2 == OBMM_SHM_CACHE_INVAL) ||
+	    (ops1 == OBMM_SHM_CACHE_INVAL && ops2 == OBMM_SHM_CACHE_WB_ONLY))
+		return OBMM_SHM_CACHE_WB_INVAL;
+	return ops1;
 }
 
-/*
- * dirty -> non-dirty: INVAL_WB
- * non-dirty cacheable -> NC: INVAL
- * cache capability rise: NONE
- * cache operation coverage: INVAL_WB > INVAL > NONE
- */
-uint8_t infer_cache_ops(uint8_t cur_state, uint8_t target_state)
+/* Update R/W counters for a page, return cache op needed */
+static uint8_t update_page_ownership(struct obmm_ownership_info *ownership,
+				     unsigned long pgoff,
+				     uint8_t old_access,
+				     uint8_t new_access)
 {
-	bool cur_dirty, cur_none, target_dirty, target_none, target_clean;
-	uint8_t ops = OBMM_SHM_CACHE_NONE;
+	struct obmm_page_state *page = &ownership->page_states[pgoff];
+	uint16_t old_w = page->w_count;
+	uint16_t old_r = page->r_count;
+	uint16_t new_w, new_r;
 
-	cur_dirty = ((cur_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_READWRITE &&
-		     (cur_state & OBMM_SHM_MEM_CACHE_MASK) == OBMM_SHM_MEM_NORMAL);
-	target_dirty = ((target_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_READWRITE &&
-			(target_state & OBMM_SHM_MEM_CACHE_MASK) == OBMM_SHM_MEM_NORMAL);
-	target_clean = ((target_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_READONLY &&
-			(target_state & OBMM_SHM_MEM_CACHE_MASK) == OBMM_SHM_MEM_NORMAL);
-	cur_none = ((cur_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_NO_ACCESS ||
-		    (cur_state & OBMM_SHM_MEM_CACHE_MASK) != OBMM_SHM_MEM_NORMAL);
-	target_none = ((target_state & OBMM_SHM_MEM_ACCESS_MASK) == OBMM_SHM_MEM_NO_ACCESS ||
-		       (target_state & OBMM_SHM_MEM_CACHE_MASK) != OBMM_SHM_MEM_NORMAL);
-	if (cur_dirty && target_clean)
-		ops = OBMM_SHM_CACHE_WB_ONLY;
-	else if (cur_dirty && !target_dirty)
-		ops = OBMM_SHM_CACHE_WB_INVAL;
-	else if (!cur_none && target_none)
-		ops = OBMM_SHM_CACHE_INVAL;
+	if (obmm_access_is_writer(old_access))
+		page->w_count--;
+	if (obmm_access_is_reader(old_access))
+		page->r_count--;
+	if (obmm_access_is_writer(new_access))
+		page->w_count++;
+	if (obmm_access_is_reader(new_access))
+		page->r_count++;
 
-	pr_debug("%s: target_state = %u; ops = %u\n", __func__, target_state, ops);
-	return ops;
+	new_w = page->w_count;
+	new_r = page->r_count;
+
+	if (old_w > 0 && new_w == 0)
+		return new_r > 0 ? OBMM_SHM_CACHE_WB_ONLY : OBMM_SHM_CACHE_WB_INVAL;
+	if (old_r > 0 && new_r == 0 && new_w == 0)
+		return OBMM_SHM_CACHE_INVAL;
+	return OBMM_SHM_CACHE_NONE;
 }
 
-/**
- * Calculate the local page state index corresponding to the VMA address
- */
-int vma_addr_to_page_idx_local(struct vm_area_struct *vma, unsigned long addr)
+/* Update counters for VMA range, return combined cache op */
+uint8_t update_vma_perm_count(struct obmm_region *reg,
+			      unsigned long region_pgoff,
+			      unsigned long npages,
+			      uint8_t old_access,
+			      uint8_t new_access)
 {
-	unsigned long offset_in_vma = addr - vma->vm_start;
+	struct obmm_ownership_info *ownership = reg->ownership_info;
+	uint8_t combined_ops = OBMM_SHM_CACHE_NONE, op;
+	unsigned long start_idx, nentries, i;
 
-	return offset_in_vma >> PAGE_SHIFT;
+	if (!ownership)
+		return OBMM_SHM_CACHE_NONE;
+
+	start_idx = ownership_pgoff_to_index(reg, region_pgoff);
+	nentries = ownership_size_to_nentries(reg, npages << PAGE_SHIFT);
+
+	for (i = 0; i < nentries; i++) {
+		op = update_page_ownership(ownership, start_idx + i, old_access, new_access);
+		combined_ops = merge_cache_ops(combined_ops, op);
+	}
+
+	return combined_ops;
 }
 
-/**
- * Calculate the global page state index corresponding to the VMA address
- */
-static int vma_addr_to_page_idx(struct vm_area_struct *vma,
-				struct obmm_local_state_info *local_state_info, unsigned long addr)
+/* Convert access bits to vm_flags (R/W only, preserves existing EXEC) */
+vm_flags_t access_to_vm_flags(uint8_t access)
 {
-	return local_state_info->orig_pgoff + vma_addr_to_page_idx_local(vma, addr);
-}
-
-/* Check if new permissions conflict with existing mappings */
-static int check_target_state_allowed(uint32_t state_count, uint8_t target_mem_state)
-{
-	uint32_t read_count, write_count;
-
-	read_count = GET_R_COUNTER(state_count);
-	write_count = GET_W_COUNTER(state_count);
-
-	switch (target_mem_state & OBMM_SHM_MEM_ACCESS_MASK) {
-	case OBMM_SHM_MEM_READONLY:
-		fallthrough;
-	case OBMM_SHM_MEM_READEXEC:
-		if (read_count == MAX_READ_COUNT) {
-			pr_warn("%s: readonly map failed, read_count=%d\n", __func__, read_count);
-			return -EBUSY;
-		}
-		break;
+	switch (access & OBMM_SHM_MEM_ACCESS_MASK) {
 	case OBMM_SHM_MEM_READWRITE:
-		if (write_count == MAX_WRITE_COUNT) {
-			pr_warn("%s: readwrite map failed, write_count=%d\n", __func__,
-				write_count);
-			return -EBUSY;
-		}
-		break;
-	default:
-		break;
-	}
-	return 0;
-}
-
-/**
- * Check whether mmap operation is possible.
- * The caller holds region state_mutex lock.
- */
-int check_mmap_allowed(struct obmm_region *reg, struct vm_area_struct *vma, uint8_t mem_state)
-{
-	int idx_offset, page_idx_start, page_count, ret;
-	uint32_t state_count;
-	struct obmm_local_state_info *local_state_info;
-	struct obmm_ownership_info *info;
-
-	info = reg->ownership_info;
-	local_state_info = (struct obmm_local_state_info *)vma->vm_private_data;
-	page_idx_start = vma_addr_to_page_idx(vma, local_state_info, vma->vm_start);
-	page_count = local_state_info->npages;
-
-	for (idx_offset = 0; idx_offset < page_count; idx_offset++) {
-		state_count = info->mem_state_arr[page_idx_start + idx_offset];
-		ret = check_target_state_allowed(state_count, mem_state);
-		if (ret)
-			return ret;
-	}
-	return 0;
-}
-
-/*
- * Update the count of the corresponding permission in the state.
- */
-static uint32_t update_state_count(uint32_t state_count, uint8_t target_mem_state, bool inc)
-{
-	uint32_t read_count, write_count;
-	int delta;
-
-	delta = inc ? 1 : -1;
-	read_count = GET_R_COUNTER(state_count);
-	write_count = GET_W_COUNTER(state_count);
-
-	/* inc new permission count */
-	switch (target_mem_state & OBMM_SHM_MEM_ACCESS_MASK) {
-	case OBMM_SHM_MEM_NO_ACCESS:
-		break;
-	case OBMM_SHM_MEM_READONLY:
-		fallthrough;
+		return VM_READ | VM_WRITE | VM_MAYREAD | VM_MAYWRITE;
 	case OBMM_SHM_MEM_READEXEC:
-		read_count += delta;
-		break;
-	case OBMM_SHM_MEM_READWRITE:
-		write_count += delta;
-		break;
+		return VM_READ | VM_MAYREAD;
+	case OBMM_SHM_MEM_READONLY:
+		return VM_READ | VM_MAYREAD;
 	default:
-		break;
-	}
-	return merge_counts(read_count, write_count);
-}
-
-/**
- * Check whether permissions can be modified.
- * The caller holds region state_mutex lock.
- */
-int check_modify_ownership_allowed(struct obmm_region *reg, struct vm_area_struct *vma,
-				   const struct obmm_cmd_update_range *update_info)
-{
-	int idx_offset, page_idx_start, page_count, local_page_idx_start, ret;
-	uint32_t state_count;
-	struct obmm_local_state_info *local_state_info;
-	struct obmm_ownership_info *info;
-	uint8_t old_state;
-
-	info = reg->ownership_info;
-	local_state_info = (struct obmm_local_state_info *)vma->vm_private_data;
-
-	page_idx_start = vma_addr_to_page_idx(vma, local_state_info, update_info->start);
-	local_page_idx_start = vma_addr_to_page_idx_local(vma, update_info->start);
-	page_count = (update_info->end - update_info->start) >> PAGE_SHIFT;
-
-	for (idx_offset = 0; idx_offset < page_count; idx_offset++) {
-		old_state =
-			local_state_info->local_mem_state_arr[local_page_idx_start + idx_offset];
-		state_count = info->mem_state_arr[page_idx_start + idx_offset];
-
-		/* Check for conflicts after simulating permission changes */
-		/* Remove old permissions */
-		state_count = update_state_count(state_count, old_state, false);
-		ret = check_target_state_allowed(state_count, update_info->mem_state);
-		if (ret)
-			return ret;
-	}
-
-	return 0;
-}
-
-/**
- * Increase global page permission count (for mmap).
- * The caller holds region state_mutex lock.
- */
-void add_mapping_permission(struct obmm_region *reg, struct vm_area_struct *vma, uint8_t mem_state)
-{
-	int idx_offset, page_idx_start, page_count;
-	uint32_t state_count;
-	struct obmm_local_state_info *local_state_info;
-	struct obmm_ownership_info *info;
-
-	info = reg->ownership_info;
-	local_state_info = (struct obmm_local_state_info *)vma->vm_private_data;
-	page_idx_start = vma_addr_to_page_idx(vma, local_state_info, vma->vm_start);
-	page_count = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
-
-	for (idx_offset = 0; idx_offset < page_count; idx_offset++) {
-		state_count = info->mem_state_arr[page_idx_start + idx_offset];
-		state_count = update_state_count(state_count, mem_state, true);
-		info->mem_state_arr[page_idx_start + idx_offset] = state_count;
+		return 0;
 	}
 }
 
-/**
- * Update global page permission count and VMA local permissions.
- * The caller holds region state_mutex lock.
- */
-void update_ownership(struct obmm_region *reg, struct vm_area_struct *vma,
-		      const struct obmm_cmd_update_range *update_info)
-{
-	int idx_offset, page_idx_start, page_count, local_page_idx_start;
-	uint32_t state_count;
-	uint8_t old_state;
-	struct obmm_local_state_info *local_state_info;
-	struct obmm_ownership_info *info;
-
-	info = reg->ownership_info;
-	local_state_info = (struct obmm_local_state_info *)vma->vm_private_data;
-
-	page_idx_start = vma_addr_to_page_idx(vma, local_state_info, update_info->start);
-	local_page_idx_start = vma_addr_to_page_idx_local(vma, update_info->start);
-	page_count = (update_info->end - update_info->start) >> PAGE_SHIFT;
-
-	for (idx_offset = 0; idx_offset < page_count; idx_offset++) {
-		old_state =
-			local_state_info->local_mem_state_arr[local_page_idx_start + idx_offset];
-
-		state_count = info->mem_state_arr[page_idx_start + idx_offset];
-		/* Remove old permissions */
-		state_count = update_state_count(state_count, old_state, false);
-		/* Add new permissions */
-		state_count = update_state_count(state_count, update_info->mem_state, true);
-
-		/* update mem_state_arr */
-		info->mem_state_arr[page_idx_start + idx_offset] = state_count;
-		/* update vma local_state_info */
-		local_state_info->local_mem_state_arr[local_page_idx_start + idx_offset] =
-			update_info->mem_state;
-	}
-}
-
-/**
- * Remove global page permission count.
- * The caller holds region state_mutex lock.
- */
-void remove_mapping_permission(struct obmm_region *reg, struct vm_area_struct *vma,
-			       unsigned long start, unsigned long end)
-{
-	int idx_offset, page_idx_start, page_count, local_page_idx_start;
-	uint32_t state_count;
-	uint8_t old_state;
-	struct obmm_local_state_info *local_state_info;
-	struct obmm_ownership_info *info;
-
-	info = reg->ownership_info;
-	local_state_info = (struct obmm_local_state_info *)vma->vm_private_data;
-
-	page_idx_start = vma_addr_to_page_idx(vma, local_state_info, start);
-	local_page_idx_start = vma_addr_to_page_idx_local(vma, start);
-	page_count = (end - start) >> PAGE_SHIFT;
-
-	for (idx_offset = 0; idx_offset < page_count; idx_offset++) {
-		old_state =
-			local_state_info->local_mem_state_arr[local_page_idx_start + idx_offset];
-		state_count = info->mem_state_arr[page_idx_start + idx_offset];
-
-		/*  Remove permissions */
-		state_count = update_state_count(state_count, old_state, false);
-		info->mem_state_arr[page_idx_start + idx_offset] = state_count;
-	}
-}
-
-int init_local_state_info(struct vm_area_struct *vma, uint8_t mem_state)
-{
-	struct obmm_local_state_info *local_state_info;
-	unsigned long size;
-	int ret, i;
-
-	size = vma->vm_end - vma->vm_start;
-	local_state_info = kzalloc(sizeof(struct obmm_local_state_info), GFP_KERNEL);
-	if (local_state_info == NULL)
-		return -ENOMEM;
-
-	local_state_info->npages = size >> PAGE_SHIFT;
-	local_state_info->local_mem_state_arr = vmalloc(sizeof(uint8_t) * local_state_info->npages);
-
-	if (local_state_info->local_mem_state_arr == NULL) {
-		ret = -ENOMEM;
-		goto out_local_state_info;
-	}
-	for (i = 0; i < local_state_info->npages; i++)
-		local_state_info->local_mem_state_arr[i] = mem_state;
-
-	local_state_info->orig_pgoff = vma->vm_pgoff;
-	vma->vm_private_data = local_state_info;
-
-	pr_debug("init vma local state: npages=%d, state=%#x\n", local_state_info->npages,
-		 mem_state);
-	return 0;
-out_local_state_info:
-	kfree(local_state_info);
-	return ret;
-}
-
-void release_local_state_info(struct vm_area_struct *vma)
-{
-	struct obmm_local_state_info *local_state_info;
-
-	local_state_info = (struct obmm_local_state_info *)vma->vm_private_data;
-
-	vma->vm_private_data = NULL;
-	vfree(local_state_info->local_mem_state_arr);
-	kfree(local_state_info);
-}
-
-/*
- * Initialize the global page permission count array.
- * The obmm_ownership_info is created when the region is mmapped for the first time,
- * so the caller need to hold region state_mutex lock.
- */
 int init_ownership_info(struct obmm_region *reg)
 {
 	struct obmm_ownership_info *info;
-	int i, ret;
+	unsigned long nentries;
 
 	if (reg->ownership_info)
 		return 0;
-	info = kzalloc(sizeof(struct obmm_ownership_info), GFP_KERNEL);
-	if (info == NULL)
+
+	if (reg->mmap_granu == OBMM_MMAP_GRANU_NONE) {
+		pr_err("init ownership: mmap_granu not set\n");
+		return -EINVAL;
+	}
+
+	info = kzalloc(sizeof(*info), GFP_KERNEL);
+	if (!info)
 		return -ENOMEM;
 
-	info->npages = reg->mem_size >> PAGE_SHIFT;
-	info->mem_state_arr = vmalloc(sizeof(uint32_t) * info->npages);
-	if (info->mem_state_arr == NULL) {
-		ret = -ENOMEM;
-		goto out_free_info;
-	}
-	for (i = 0; i < info->npages; i++)
-		info->mem_state_arr[i] = 0;
+	nentries = ownership_size_to_nentries(reg, reg->mem_size);
+	info->page_states = vzalloc(sizeof(struct obmm_page_state) * nentries);
+	if (!info->page_states)
+		goto err_pages;
 
+	/* mem_size >> PMD_SHIFT always fits in int */
+	info->nentries = (int)nentries;
 	reg->ownership_info = info;
 
-	pr_debug("init ownership: npages=%d, state=%#x\n", info->npages, 0U);
+	pr_debug("init ownership: granu=%d nentries=%lu\n", reg->mmap_granu, nentries);
 	return 0;
-out_free_info:
+
+err_pages:
 	kfree(info);
-	return ret;
+	return -ENOMEM;
 }
 
 void release_ownership_info(struct obmm_region *reg)
 {
 	struct obmm_ownership_info *info = reg->ownership_info;
 
+	if (!info)
+		return;
+
 	reg->ownership_info = NULL;
-	vfree(info->mem_state_arr);
+	vfree(info->page_states);
 	kfree(info);
 }
