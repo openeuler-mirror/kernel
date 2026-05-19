@@ -1042,6 +1042,7 @@ static const struct x86_cpu_id i10nm_cpuids[] = {
 	X86_MATCH_VFM(INTEL_GRANITERAPIDS_D,  &gnr_cfg),
 	X86_MATCH_VFM(INTEL_ATOM_CRESTMONT_X, &gnr_cfg),
 	X86_MATCH_VFM(INTEL_ATOM_CRESTMONT,   &gnr_cfg),
+	X86_MATCH_VFM(INTEL_ATOM_DARKMONT_X,  &gnr_cfg),
 	{}
 };
 MODULE_DEVICE_TABLE(x86cpu, i10nm_cpuids);
