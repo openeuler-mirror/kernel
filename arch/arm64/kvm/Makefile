@@ -30,6 +30,7 @@ kvm-$(CONFIG_HISI_VIRTCCA_HOST) += tmi.o
 kvm-$(CONFIG_HISI_VIRTCCA_HOST) += virtcca_cvm.o
 kvm-$(CONFIG_HISI_VIRTCCA_HOST) += virtcca_cvm_exit.o
 kvm-$(CONFIG_HISI_CCA) += rme-hisi-cca.o
+kvm-$(CONFIG_HISI_CCA) += rme-debugfs.o
 kvm-$(CONFIG_HISI_CCADA_HOST) += hisi-cca-da.o
 obj-$(CONFIG_KVM_HISI_VIRT) += hisilicon/
 
