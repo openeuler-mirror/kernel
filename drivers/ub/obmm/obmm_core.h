@@ -38,7 +38,7 @@ extern size_t __obmm_memseg_size;
 /*
  * The maximum of {OBMM_MEMSEG_SIZE, PAGE_SIZE and CACHE_MAINTAIN_GRANU}.
  */
-#define OBMM_BASIC_GRANU PMD_SIZE
+#define OBMM_BASIC_GRANU ((unsigned long)SZ_2M)
 
 #define MAX_MEMINFO_COUNT MAX_IMPORT_COUNT
 

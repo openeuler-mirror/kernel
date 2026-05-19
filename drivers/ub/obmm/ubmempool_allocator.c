@@ -456,10 +456,12 @@ static int select_mem_allocator(void)
 		pr_err("invalid mem allocator specified: %s\n", mempool_allocator);
 		return ALLOCATOR_MAX;
 	}
+#ifndef CONFIG_ARM64_64K_PAGES
 	if (contig_mem_pool_percent != 100 && i == ALLOCATOR_HUGETLB_PMD) {
 		pr_err("using allocator %s when pmd_mapping not 100%%\n", allocator_names[i]);
 		i = ALLOCATOR_MAX;
 	}
+#endif
 
 	return i;
 }
@@ -484,8 +486,10 @@ static int init_mem_allocator_granu(enum allocator_id aid)
 	if (!mem_allocator_granu) {
 		if (aid == ALLOCATOR_HUGETLB_PUD)
 			__obmm_memseg_size = PUD_SIZE;
-		else
+		else if (aid == ALLOCATOR_HUGETLB_PMD)
 			__obmm_memseg_size = PMD_SIZE;
+		else
+			__obmm_memseg_size = OBMM_BASIC_GRANU;
 
 		print_granu(def_granu, __obmm_memseg_size);
 		mem_allocator_granu = def_granu;
