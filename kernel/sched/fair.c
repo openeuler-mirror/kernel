@@ -5384,6 +5384,7 @@ static inline bool steal_fail_ni_enabled(void) { return false; }
 
 #else /* CONFIG_SMP */
 
+static inline bool steal_fail_ni_enabled(void){ return false; }
 static inline bool cfs_rq_is_decayed(struct cfs_rq *cfs_rq)
 {
 	return !cfs_rq->nr_running;
@@ -10462,7 +10463,9 @@ idle:
 	qos_smt_expel(this_cpu, NULL);
 #endif
 
+#ifdef CONFIG_SMP
 	smt_qos_update_qos_level(rq->cpu, NULL);
+#endif
 
 	return NULL;
 }
@@ -15245,7 +15248,9 @@ static void __set_next_task_fair(struct rq *rq, struct task_struct *p, bool firs
 	qos_smt_expel(rq->cpu, p);
 #endif
 
+#ifdef CONFIG_SMP
 	smt_qos_update_qos_level(rq->cpu, p);
+#endif
 }
 
 /*
