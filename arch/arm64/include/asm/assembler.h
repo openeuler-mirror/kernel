@@ -234,7 +234,7 @@ lr	.req	x30		// link register
 	/*
 	 * @dst: destination register
 	 */
-#if defined(__KVM_NVHE_HYPERVISOR__) || defined(__KVM_VHE_HYPERVISOR__)
+#if defined(__KVM_NVHE_HYPERVISOR__)
 	.macro	get_this_cpu_offset, dst
 	mrs	\dst, tpidr_el2
 	.endm
