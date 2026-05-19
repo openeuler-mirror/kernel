@@ -16,6 +16,7 @@
 #include <asm/set_memory.h>
 #include <asm/tlbflush.h>
 #include <asm/virtcca_cvm_smc.h>
+#include <asm/kvm_tmi.h>
 
 #define CVM_PTE_NS_BIT   5
 #define CVM_PTE_NS_MASK  (1 << CVM_PTE_NS_BIT)
@@ -265,6 +266,7 @@ static struct driver_data *driver_data_ptr;
 
 static struct mig_queue_device *migvm_queue_dev_create(unsigned long rd)
 {
+	uint64_t ret = 0;
 	struct mig_queue_device *dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 
 	if (!dev)
@@ -290,7 +292,13 @@ static struct mig_queue_device *migvm_queue_dev_create(unsigned long rd)
 	dev->queue_addr.recv_buf_ipa = page_to_phys(dev->recv_page);
 	memset(page_address(dev->recv_page), 0, QUEUE_SIZE);
 
-	if (tsi_mig_integrity_checksum_init(rd, virt_to_phys((void *)&dev->queue_addr))) {
+	if (is_virtcca_cvm_world())
+		ret = tsi_mig_integrity_checksum_init(rd, virt_to_phys((void *)&dev->queue_addr));
+	else
+		ret = tmi_mig_integrity_checksum_init(rd, virt_to_phys((void *)&dev->queue_addr));
+
+	if (ret) {
+		pr_err("Failed to init integrity checksum, ret = 0x%llx", ret);
 		__free_page(dev->send_page);
 		__free_page(dev->recv_page);
 		kfree(dev);

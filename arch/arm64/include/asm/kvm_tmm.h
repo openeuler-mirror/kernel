@@ -48,14 +48,34 @@ struct tmi_cvm_params {
 #endif
 };
 
+#define CVM_NAME_LEN 64
+#define CVM_MIG_IP_LEN 16
+#define CVM_MIG_SYNC_NUM_MAX 1
+
 /* the guest cvm and migcvm both use this structure */
 #define KVM_CVM_MIGVM_VERSION 0
 struct mig_cvm {
 	/* used by guest cvm */
-	uint8_t  version; /* kvm version of migcvm*/
 	uint64_t migvm_cid; /* vsock cid of migvm */
+	uint8_t  version; /* kvm version of migcvm*/
 	uint16_t dst_port;  /* port of destination cvm */
-	char dst_ip[16];    /* ip of destination cvm */
+	char     dst_ip[CVM_MIG_IP_LEN];    /* ip of destination cvm */
+	uint8_t  is_migcvm; /* indicates whether the device is a migcvm. */
+	char     reserved;
+};
+
+#define TMI_MAGIC 'T'
+#define VIRTCCA_TMI_IOCTL_ENTER _IOWR(TMI_MAGIC, 0x1, struct virtcca_tmi_cmd)
+/* virtcca tmi sub-ioctl() commands. */
+enum virtcca_tmi_cmd_id {
+	VIRTCCA_TMI_IOCTL_VERSION = 0,
+	VIRTCCA_TMI_GET_NOTIFY,
+	VIRTCCA_GET_MIGVM_MEM_CHECKSUM,
+	VIRTCCA_GET_DSTVM_RD,
+	VIRTCCA_GET_MIG_KEY,
+	VIRTCCA_SET_MIG_KEY,
+
+	VIRTCCA_TMI_IOCTL_CMD_MAX,
 };
 
 struct cvm {
@@ -130,6 +150,68 @@ struct virtcca_cvm_tec {
 #define CVM_RW_32_BIT	0x20
 #define CVM_RW_64_BIT	0x40
 
+struct virtcca_tmi_cmd {
+	__u32 id;
+	__u32 flags;
+	__u64 data;
+	__u64 ret_val;
+};
+
+/* Mark verifier status to indicate mig agent to update migration info */
+enum virtcca_mig_verifier_status {
+	VIRTCCA_MIG_NEW = 0,
+	VIRTCCA_MIG_UPDATED,
+	VIRTCCA_MIG_NOTIFIED,
+	VIRTCCA_MIG_KEY_UPDATED,
+
+	VIRTCCA_MIG_STATUS_MAX,
+};
+
+/* info to agent */
+struct virtcca_mig_agent_notify_info {
+	char		name[CVM_NAME_LEN];
+	char		dst_ip[CVM_MIG_IP_LEN];
+	uint64_t	rd;
+	uint16_t	dst_port;
+	uint16_t	cvm_vmid;
+	uint16_t	is_src;
+};
+
+struct virtcca_mig_verifier {
+	char		name[CVM_NAME_LEN];
+	char		dst_ip[CVM_MIG_IP_LEN];
+	uint64_t	rd;
+	uint16_t	dst_port;
+	uint16_t	cvm_vmid;
+	uint16_t	is_src;
+	wait_queue_head_t wait_queue;
+	atomic_t	status;
+	struct list_head list;
+};
+
+/* info from qemu */
+struct virtcca_mig_dst_host_info {
+	char      name[CVM_NAME_LEN];
+	char      dst_ip[CVM_MIG_IP_LEN];
+	uint16_t  dst_port;
+	uint8_t   is_src;
+	uint8_t   migcvm_enabled;
+	uint8_t   version;
+};
+
+struct mig_host_key_info {
+	uint8_t msk[32];
+	uint8_t rand_iv[32];
+	uint8_t tag[16];
+};
+
+/* used for mig agent forwarding data between the secure and non-secure worlds. */
+struct virtcca_mig_host_agent_info {
+	uint64_t      rd;
+	void          *content;
+	unsigned long size;
+};
+
 struct cvm_ttt_addr {
 	struct list_head list;
 	u64 addr;
@@ -187,8 +269,7 @@ static inline unsigned long cvm_ttt_level_mapsize(int level)
 enum kvm_cvm_cmd_id {
 	/*  virtcca MIG migcvm commands. */
 	KVM_CVM_MIGCVM_SET_CID = 0,
-	KVM_CVM_MIGCVM_ATTEST,
-	KVM_CVM_MIGCVM_ATTEST_DST,
+	KVM_CVM_MIG_NOTIFY,
 	KVM_CVM_GET_BIND_STATUS,
 	KVM_CVM_MIG_EXPORT_ABORT,
 	/* virtcca MIG stream commands. */
@@ -250,12 +331,6 @@ struct kvm_dev_virtcca_mig_attr {
 struct virtcca_bind_info {
 	int16_t version;
 	bool premig_done;
-};
-
-struct virtcca_dst_host_info {
-	char dst_ip[16];
-	uint16_t dst_port;
-	uint8_t version;
 };
 
 struct virtcca_mig_mbmd_data {  /* both kvm and tmm can access */
