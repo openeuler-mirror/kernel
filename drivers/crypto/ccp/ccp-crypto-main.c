@@ -327,18 +327,24 @@ static int ccp_register_algs(void)
 	int ret;
 
 #ifdef CONFIG_HYGON_GM
-	if (!sm_disable && boot_cpu_data.x86_vendor == X86_VENDOR_HYGON) {
-		ret = ccp_register_sm2_hygon_algs(&akcipher_algs);
-		if (ret)
-			return ret;
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON) {
+		if (!sm_disable) {
+			ret = ccp_register_sm2_hygon_algs(&akcipher_algs);
+			if (ret)
+				return ret;
 
-		ret = ccp_register_sm3_hygon_algs(&hash_algs);
-		if (ret)
-			return ret;
+			ret = ccp_register_sm3_hygon_algs(&hash_algs);
+			if (ret)
+				return ret;
 
-		ret = ccp_register_sm4_hygon_algs(&skcipher_algs);
-		if (ret)
-			return ret;
+			ret = ccp_register_sm4_hygon_algs(&skcipher_algs);
+			if (ret)
+				return ret;
+
+			ret = ccp_register_sm4_hygon_aeads(&aead_algs);
+			if (ret)
+				return ret;
+		}
 
 		/* Return on hygon platform */
 		return 0;
