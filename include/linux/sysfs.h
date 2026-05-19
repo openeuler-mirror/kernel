@@ -223,7 +223,8 @@ struct bin_attribute {
 	int (*mmap)(struct file *, struct kobject *, struct bin_attribute *attr,
 		    struct vm_area_struct *vma);
 
-	KABI_RESERVE(1)
+	KABI_USE(1, loff_t (*llseek)(struct file *, struct kobject *,
+				     struct bin_attribute *, loff_t, int))
 };
 
 /**
