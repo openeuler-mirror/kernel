@@ -2163,6 +2163,10 @@ void _kvm_init_rme(void)
 	if (rme_vmid_init())
 		return;
 
+#ifdef CONFIG_HISI_CCA
+	realm_hisi_cca_init_debug();
+#endif
+
 	static_branch_enable(&kvm_rme_is_available);
 }
 
