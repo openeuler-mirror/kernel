@@ -78,11 +78,25 @@ MODULE_PARM_DESC(rxq_multiplex_limit, "rxq multiplex limit num, default 1");
 
 static bool check_params(void)
 {
-	if (mode != 0 && mode != 1 && mode != 2)
+	if (mode != 0 && mode != 1 && mode != 2) {
+		oecls_error("invalid mode=%d, expected 0/1/2\n", mode);
 		return false;
+	}
 
-	if (strlen(ifname) == 0)
+	if (strlen(ifname) == 0) {
+		oecls_error("invalid ifname, empty string\n");
 		return false;
+	}
+
+	if (dft_num == 0) {
+		oecls_error("invalid dft_num=%u, must be > 0\n", dft_num);
+		return false;
+	}
+
+	if (sft_num == 0) {
+		oecls_error("invalid sft_num=%u, must be > 0\n", sft_num);
+		return false;
+	}
 
 	return true;
 }
