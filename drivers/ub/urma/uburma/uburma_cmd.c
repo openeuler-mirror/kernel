@@ -493,7 +493,7 @@ static int uburma_cmd_modify_jfs(struct ubcore_device *ubc_dev,
 
 	uobj = uobj_get_write(UOBJ_CLASS_JFS, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
-		uburma_log_err("failed to find jfs.\n");
+		uburma_log_err_rl("failed to find jfs.\n");
 		return -EINVAL;
 	}
 
@@ -501,7 +501,7 @@ static int uburma_cmd_modify_jfs(struct ubcore_device *ubc_dev,
 	ret = ubcore_modify_jfs(jfs, &attr, &udata);
 	if (ret != 0) {
 		uobj_put_write(uobj);
-		uburma_log_err("modify jfs failed, ret:%d.\n", ret);
+		uburma_log_err_rl("modify jfs failed, ret:%d.\n", ret);
 		return ret;
 	}
 
@@ -1218,7 +1218,7 @@ static int uburma_cmd_modify_jfr(struct ubcore_device *ubc_dev,
 
 	uobj = uobj_get_write(UOBJ_CLASS_JFR, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
-		uburma_log_err("failed to find jfr.\n");
+		uburma_log_err_rl("failed to find jfr.\n");
 		return -EINVAL;
 	}
 
@@ -1226,7 +1226,7 @@ static int uburma_cmd_modify_jfr(struct ubcore_device *ubc_dev,
 	ret = ubcore_modify_jfr(jfr, &attr, &udata);
 	if (ret != 0) {
 		uobj_put_write(uobj);
-		uburma_log_err("modify jfr failed, ret:%d.\n", ret);
+		uburma_log_err_rl("modify jfr failed, ret:%d.\n", ret);
 		return ret;
 	}
 
@@ -1861,7 +1861,7 @@ static int uburma_cmd_modify_jfc(struct ubcore_device *ubc_dev,
 
 	uobj = uobj_get_write(UOBJ_CLASS_JFC, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
-		uburma_log_err("failed to find jfc.\n");
+		uburma_log_err_rl("failed to find jfc.\n");
 		return -EINVAL;
 	}
 
@@ -1869,7 +1869,7 @@ static int uburma_cmd_modify_jfc(struct ubcore_device *ubc_dev,
 	ret = ubcore_modify_jfc(jfc, &attr, &udata);
 	if (ret != 0) {
 		uobj_put_write(uobj);
-		uburma_log_err("modify jfc failed, ret:%d.\n", ret);
+		uburma_log_err_rl("modify jfc failed, ret:%d.\n", ret);
 		return ret;
 	}
 
@@ -2507,7 +2507,7 @@ static int uburma_cmd_modify_jetty(struct ubcore_device *ubc_dev,
 
 	uobj = uobj_get_write(UOBJ_CLASS_JETTY, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
-		uburma_log_err("failed to find jetty.\n");
+		uburma_log_err_rl("failed to find jetty.\n");
 		return -EINVAL;
 	}
 
@@ -2515,7 +2515,7 @@ static int uburma_cmd_modify_jetty(struct ubcore_device *ubc_dev,
 	ret = ubcore_modify_jetty(jetty, &attr, &udata);
 	if (ret != 0) {
 		uobj_put_write(uobj);
-		uburma_log_err("modify jetty failed, ret:%d.\n", ret);
+		uburma_log_err_rl("modify jetty failed, ret:%d.\n", ret);
 		return ret;
 	}
 
