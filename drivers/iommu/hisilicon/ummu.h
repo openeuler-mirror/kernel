@@ -326,6 +326,26 @@ struct ummu_master {
 	refcount_t		ksva_ref;
 };
 
+#define UMMU_GATHER_MAX_CNT 12
+struct logic_ummu_plb {
+	u32 opcode;
+	union {
+		struct {
+			u64 va;
+			u64 size;
+		} plbi_va;
+		struct {
+			u64 lvl_idx;
+			u64 lvl_offset;
+		} plbi_f_bit;
+	};
+};
+struct ummu_plbi_gather {
+	void *cookie;
+	struct logic_ummu_plb plbis[UMMU_GATHER_MAX_CNT];
+	u32 data_cnt;
+};
+
 static inline
 struct ummu_device *core_to_ummu_device(struct ummu_core_device *ummu_core_dev)
 {

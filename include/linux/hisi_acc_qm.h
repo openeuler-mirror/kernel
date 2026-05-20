@@ -52,6 +52,9 @@
 #define QM_MB_EVENT_SHIFT               8
 #define QM_MB_BUSY_SHIFT		13
 #define QM_MB_OP_SHIFT			14
+#define QM_MB_CMD_DATA_ADDR_L		0x304
+#define QM_MB_CMD_DATA_ADDR_H		0x308
+#define QM_MB_MAX_WAIT_CNT		6000
 
 /* doorbell */
 #define QM_DOORBELL_CMD_SQ              0
@@ -99,6 +102,12 @@
 
 #define QM_MIG_REGION_SEL		0x100198
 #define QM_MIG_REGION_EN		BIT(0)
+
+#define QM_MAX_CHANNEL_NUM		8
+#define QM_CHANNEL_USAGE_OFFSET		0x1100
+#define QM_MAX_DEV_USAGE		100
+#define QM_DEV_USAGE_RATE		100
+#define QM_CHANNEL_ADDR_INTRVL		0x4
 
 /* uacce mode of the driver */
 #define UACCE_MODE_NOUACCE		0 /* don't use uacce */
@@ -357,6 +366,11 @@ struct qm_rsv_buf {
 	struct qm_dma qcdma;
 };
 
+struct qm_channel {
+	int channel_num;
+	const char *channel_name[QM_MAX_CHANNEL_NUM];
+};
+
 struct hisi_qm {
 	enum qm_hw_ver ver;
 	enum qm_fun_type fun_type;
@@ -432,6 +446,7 @@ struct hisi_qm {
 	struct qm_err_isolate isolate_data;
 
 	struct hisi_qm_cap_tables cap_tables;
+	struct qm_channel channel_data;
 };
 
 struct hisi_qp_status {
@@ -547,8 +562,6 @@ int hisi_qm_init(struct hisi_qm *qm);
 void hisi_qm_uninit(struct hisi_qm *qm);
 int hisi_qm_start(struct hisi_qm *qm);
 int hisi_qm_stop(struct hisi_qm *qm, enum qm_stop_reason r);
-int hisi_qm_start_qp(struct hisi_qp *qp, unsigned long arg);
-void hisi_qm_stop_qp(struct hisi_qp *qp);
 int hisi_qp_send(struct hisi_qp *qp, const void *msg);
 void hisi_qm_debug_init(struct hisi_qm *qm);
 void hisi_qm_debug_regs_clear(struct hisi_qm *qm);
@@ -568,9 +581,10 @@ void hisi_qm_reset_prepare(struct pci_dev *pdev);
 void hisi_qm_reset_done(struct pci_dev *pdev);
 
 int hisi_qm_wait_mb_ready(struct hisi_qm *qm);
-int hisi_qm_mb_write(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr,
-			       u16 queue, bool op);
-int hisi_qm_mb_read(struct hisi_qm *qm, u64 *msg, u8 cmd, u16 queue);
+int hisi_qm_mb(struct hisi_qm *qm, u8 cmd, dma_addr_t dma_addr, u16 queue,
+	       bool op);
+int hisi_qm_mb_read(struct hisi_qm *qm, u64 *base, u8 cmd, u16 queue);
+
 struct hisi_acc_sgl_pool;
 struct hisi_acc_hw_sgl *hisi_acc_sg_buf_map_to_hw_sgl(struct device *dev,
 	struct scatterlist *sgl, struct hisi_acc_sgl_pool *pool,
