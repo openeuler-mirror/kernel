@@ -22,12 +22,6 @@ module_param(skip_cache_maintain, bool, 0444);
 MODULE_PARM_DESC(skip_cache_maintain,
 		 "Whether to skip cache maintain operation (to suppress errors in simulations).");
 
-static bool is_valid_cache_ops(unsigned long cache_ops)
-{
-	return cache_ops == OBMM_SHM_CACHE_NONE || cache_ops == OBMM_SHM_CACHE_INVAL ||
-	       cache_ops == OBMM_SHM_CACHE_WB_ONLY || cache_ops == OBMM_SHM_CACHE_WB_INVAL;
-}
-
 #define UB_MEM_DRAIN_TMOUT_MSEC 1000
 
 int ub_write_queue_flush(uint32_t scna)
@@ -75,10 +69,8 @@ int flush_cache_by_pa(phys_addr_t addr, size_t size, unsigned long cache_ops)
 		return 0;
 	}
 
-	if (!is_valid_cache_ops(cache_ops)) {
-		pr_err("invalid cache_ops %lu.\n", cache_ops);
+	if (!obmm_is_valid_cache_ops(cache_ops))
 		return -EINVAL;
-	}
 
 	down(&sem);
 	while (remain_size != 0) {
@@ -126,10 +118,8 @@ int obmm_region_flush_range(struct obmm_region *reg, unsigned long offset, unsig
 	struct obmm_export_region *e_reg;
 
 	/* validation */
-	if (!is_valid_cache_ops(cache_ops)) {
-		pr_err("invalid cache operation %u\n", cache_ops);
+	if (!obmm_is_valid_cache_ops(cache_ops))
 		return -EINVAL;
-	}
 	if (offset >= reg->mem_size || length > reg->mem_size - offset ||
 		!IS_ALIGNED(offset, PAGE_SIZE) || !IS_ALIGNED(length, PAGE_SIZE)) {
 		pr_err("invalid flush range for region=%d: offset=0x%lx, flush_length=0x%lx, region_length=0x%llx\n",

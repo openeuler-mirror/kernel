@@ -1019,6 +1019,8 @@ struct task_struct {
 	/* Run delayed due to bandwidth throttling */
 	KABI_FILL_HOLE(unsigned	in_throttle:1)
 #endif
+	/* Save user-dumpable when mm goes away */
+	KABI_FILL_HOLE(unsigned         user_dumpable:1)
 
 	unsigned long			atomic_flags; /* Flags requiring atomic access. */
 
