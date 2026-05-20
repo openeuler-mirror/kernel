@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2025 Mucse Corporation. */
 
 #ifndef __RNPGBE_VF_H__
 #define __RNPGBE_VF_H__
@@ -31,28 +31,28 @@ struct rnp_mac_operations {
 	s32 (*stop_adapter)(struct rnpgbevf_hw *hw);
 	s32 (*get_bus_info)(struct rnpgbevf_hw *hw);
 	int (*read_eth_reg)(struct rnpgbevf_hw *hw, int reg, u32 *value);
-
 	int (*get_mtu)(struct rnpgbevf_hw *hw);
 	int (*set_mtu)(struct rnpgbevf_hw *hw, int mtu);
 	int (*req_reset_pf)(struct rnpgbevf_hw *hw);
-
 	/* Link */
 	s32 (*setup_link)(struct rnpgbevf_hw *hw, rnp_link_speed speed,
 			  bool autoneg, bool autoneg_wait_to_complete);
 	s32 (*check_link)(struct rnpgbevf_hw *hw, rnp_link_speed *speed,
 			  bool *link_up, bool autoneg_wait_to_complete);
-	s32 (*get_link_capabilities)(struct rnpgbevf_hw *hw, rnp_link_speed *speed,
+	s32 (*get_link_capabilities)(struct rnpgbevf_hw *hw,
+				     rnp_link_speed *speed,
 				     bool *autoneg_wait_to_complete);
-
 	/* RAR, Multicast, VLAN */
 	s32 (*set_rar)(struct rnpgbevf_hw *hw, u32 index, u8 *addr, u32 vmdq);
 	s32 (*set_uc_addr)(struct rnpgbevf_hw *hw, u32 index, u8 *addr);
 	s32 (*init_rx_addrs)(struct rnpgbevf_hw *hw);
-	s32 (*update_mc_addr_list)(struct rnpgbevf_hw *hw, struct net_device *netdev);
+	s32 (*update_mc_addr_list)(struct rnpgbevf_hw *hw,
+				   struct net_device *netdev);
 	s32 (*enable_mc)(struct rnpgbevf_hw *hw);
 	s32 (*disable_mc)(struct rnpgbevf_hw *hw);
 	s32 (*clear_vfta)(struct rnpgbevf_hw *hw);
-	s32 (*set_vfta)(struct rnpgbevf_hw *hw, u32 vlan, u32 vind, bool vlan_on);
+	s32 (*set_vfta)(struct rnpgbevf_hw *hw, u32 vlan, u32 vind,
+			bool vlan_on);
 	s32 (*set_vlan_strip)(struct rnpgbevf_hw *hw, bool vlan_on);
 };
 
@@ -75,12 +75,9 @@ struct rnp_mac_info {
 	struct rnp_mac_operations ops;
 	u8 addr[6];
 	u8 perm_addr[6];
-
 	enum rnp_mac_type type;
-
 	s32 mc_filter_type;
 	u32 dma_version;
-
 	bool get_link_status;
 	u32 max_tx_queues;
 	u32 max_rx_queues;
@@ -112,8 +109,10 @@ struct rnp_mbx_operations {
 	s32 (*init_params)(struct rnpgbevf_hw *hw);
 	s32 (*read)(struct rnpgbevf_hw *hw, u32 *msg, u16 size, bool to_cm3);
 	s32 (*write)(struct rnpgbevf_hw *hw, u32 *msg, u16 size, bool to_cm3);
-	s32 (*read_posted)(struct rnpgbevf_hw *hw, u32 *msg, u16 size, bool to_cm3);
-	s32 (*write_posted)(struct rnpgbevf_hw *hw, u32 *msg, u16 size, bool to_cm3);
+	s32 (*read_posted)(struct rnpgbevf_hw *hw, u32 *msg, u16 size,
+			   bool to_cm3);
+	s32 (*write_posted)(struct rnpgbevf_hw *hw, u32 *msg, u16 size,
+			    bool to_cm3);
 	s32 (*check_for_msg)(struct rnpgbevf_hw *hw, bool to_cm3);
 	s32 (*check_for_ack)(struct rnpgbevf_hw *hw, bool to_cm3);
 	s32 (*check_for_rst)(struct rnpgbevf_hw *hw, bool to_cm3);
@@ -121,14 +120,14 @@ struct rnp_mbx_operations {
 };
 
 struct rnpgbevf_hw_operations {
-	void (*set_veb_mac)(struct rnpgbevf_hw *hw, u8 *mac, u32 vf_num, u32 ring);
+	void (*set_veb_mac)(struct rnpgbevf_hw *hw, u8 *mac, u32 vf_num,
+			    u32 ring);
 	void (*set_veb_vlan)(struct rnpgbevf_hw *hw, u16 vid, u32 vf_num);
 };
 
 struct rnp_mbx_stats {
 	u32 msgs_tx;
 	u32 msgs_rx;
-
 	u32 acks;
 	u32 reqs;
 	u32 rsts;
@@ -141,30 +140,25 @@ struct rnp_mbx_info {
 	u32 udelay;
 	u32 v2p_mailbox;
 	u16 size;
-
 	u16 pf_req;
 	u16 pf_ack;
 	u16 cpu_req;
 	u16 cpu_ack;
-
 	u32 vf_num_mask;
-	// add reg define
 	int mbx_size;
-
 	int mbx_mem_size;
-	// cm3 <-> pf mbx
+	/* cm3 <-> pf mbx */
 	u32 cpu_pf_shm_base;
 	u32 pf2cpu_mbox_ctrl;
 	u32 pf2cpu_mbox_mask;
 	u32 cpu_pf_mbox_mask;
 	u32 cpu2pf_mbox_vec;
-	// cm3 <-> vf mbx
+	/* cm3 <-> vf mbx */
 	u32 cpu_vf_shm_base;
 	u32 cpu2vf_mbox_vec_base;
 	u32 cpu_vf_mbox_mask_lo_base;
 	u32 cpu_vf_mbox_mask_hi_base;
-
-	// pf <--> vf mbx
+	/* pf <--> vf mbx */
 	u32 pf_vf_shm_base;
 	u32 vf2cpu_mbox_ctrl_base;
 	u32 pf2vf_mbox_ctrl_base;
@@ -188,19 +182,16 @@ struct rnpgbevf_hw_stats {
 	u64 base_vfgorc;
 	u64 base_vfgotc;
 	u64 base_vfmprc;
-
 	u64 last_vfgprc;
 	u64 last_vfgptc;
 	u64 last_vfgorc;
 	u64 last_vfgotc;
 	u64 last_vfmprc;
-
 	u64 vfgprc;
 	u64 vfgptc;
 	u64 vfgorc;
 	u64 vfgotc;
 	u64 vfmprc;
-
 	u64 saved_reset_vfgprc;
 	u64 saved_reset_vfgptc;
 	u64 saved_reset_vfgorc;
@@ -216,6 +207,4 @@ struct rnpgbevf_info {
 };
 
 void rnpgbevf_rlpml_set_vf(struct rnpgbevf_hw *hw, u16 max_size);
-//int rnpgbevf_negotiate_api_version(struct rnpgbevf_hw *hw, int api);
-//int rnpgbevf_get_queues(struct rnpgbevf_hw *hw, unsigned int *num_tcs, unsigned int *default_tc);
-#endif /* __RNP_VF_H__ */
+#endif /* __RNPGBE_VF_H__ */
