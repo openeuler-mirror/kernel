@@ -270,6 +270,7 @@ static int cdma_probe(struct auxiliary_device *auxdev,
 
 	cdma_client_callback(cdev, CDMA_CLIENT_ADD);
 	ubase_reset_register(auxdev, cdma_reset_handler);
+	ubase_update_adev_status(auxdev, 0);
 
 	return 0;
 }

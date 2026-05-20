@@ -38,6 +38,7 @@ static int unic_probe(struct auxiliary_device *adev,
 	}
 
 	set_bit(UNIC_STATE_INITED, &unic_dev->state);
+	ubase_update_adev_status(adev, 0);
 
 	return 0;
 }
