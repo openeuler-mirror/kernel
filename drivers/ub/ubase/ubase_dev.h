@@ -633,7 +633,10 @@ static inline void ubase_set_bitmap(unsigned long *dst, unsigned long src)
 {
 	unsigned long old = *dst;
 
-	bitmap_or(dst, &old, &src, BITS_PER_LONG);
+	if (!src)
+		*dst = src;
+	else
+		bitmap_or(dst, &old, &src, BITS_PER_LONG);
 }
 
 int ubase_adev_idx_alloc(void);
