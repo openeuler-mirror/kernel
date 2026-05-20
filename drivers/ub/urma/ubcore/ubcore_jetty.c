@@ -460,7 +460,7 @@ int ubcore_modify_jfc(struct ubcore_jfc *jfc, struct ubcore_jfc_attr *attr,
 
 	ret = dev->ops->modify_jfc(jfc, attr, udata);
 	if (ret != 0) {
-		ubcore_log_err("[DRV_ERROR]Failed to modify jfc, jfc_id:%u, ret: %d.\n",
+		ubcore_log_err_rl("[DRV_ERROR]Failed to modify jfc, jfc_id:%u, ret: %d.\n",
 			       jfc_id, ret);
 		return ret;
 	}
@@ -914,7 +914,7 @@ int ubcore_modify_jfs(struct ubcore_jfs *jfs, struct ubcore_jfs_attr *attr,
 	dev = jfs->ub_dev;
 	ret = dev->ops->modify_jfs(jfs, attr, udata);
 	if (ret != 0) {
-		ubcore_log_err("[DRV_ERROR]Failed to modify jfs, jfs_id:%u, ret: %d.\n",
+		ubcore_log_err_rl("[DRV_ERROR]Failed to modify jfs, jfs_id:%u, ret: %d.\n",
 				   jfs_id, ret);
 		return ret;
 	}
@@ -1421,7 +1421,7 @@ int ubcore_modify_jfr(struct ubcore_jfr *jfr, struct ubcore_jfr_attr *attr,
 	dev = jfr->ub_dev;
 	ret = dev->ops->modify_jfr(jfr, attr, udata);
 	if (ret != 0) {
-		ubcore_log_err("[DRV_ERROR]Failed to modify jfr, jfr_id:%u.\n",
+		ubcore_log_err_rl("[DRV_ERROR]Failed to modify jfr, jfr_id:%u.\n",
 				   jfr_id);
 		return ret;
 	}
@@ -2319,7 +2319,7 @@ int ubcore_modify_jetty(struct ubcore_jetty *jetty,
 
 	ret = jetty->ub_dev->ops->modify_jetty(jetty, attr, udata);
 	if (ret != 0) {
-		ubcore_log_err("[DRV_ERROR]Failed to modify jetty, id:%u, ret: %d.\n",
+		ubcore_log_err_rl("[DRV_ERROR]Failed to modify jetty, id:%u, ret: %d.\n",
 			       jetty_id, ret);
 		return ret;
 	}
