@@ -3,6 +3,7 @@
 #define _NET_OENETCLS_H
 #include <linux/if.h>
 #include <linux/mutex.h>
+#include <linux/skbuff.h>
 #include <linux/cpufeature.h>
 
 #define OECLS_MAX_NETDEV_NUM 8
@@ -12,6 +13,12 @@
 #define OECLS_TIMEOUT (5 * HZ)
 #define OECLS_NO_FILTER 0xffff
 #define OECLS_NO_CPU 0xffff
+
+#define OECLS_CMD_UNKNOWN      0
+#define OECLS_CMD_MATCHED      1
+#define OECLS_CMD_NO_MATCH     2
+
+#define RXQ_MAX_USECNT        0xFF
 
 struct oecls_netdev_queue_info {
 	int irq;
@@ -38,7 +45,7 @@ struct oecls_numa_clusterinfo {
 };
 
 struct oecls_numa_bound_dev_info {
-	DECLARE_BITMAP(bitmap_rxq, OECLS_MAX_RXQ_NUM_PER_DEV);
+	unsigned char bitmap_rxq[OECLS_MAX_RXQ_NUM_PER_DEV];
 	struct oecls_numa_clusterinfo *cluster_info;
 };
 
@@ -49,7 +56,9 @@ struct oecls_numa_info {
 
 struct cmd_context {
 	char netdev[IFNAMSIZ];
+	bool is_ipv6;
 	u32 dip4;
+	u32 dip6[4];
 	u16 dport;
 	u16 action;
 	u32 ruleid;
@@ -70,11 +79,13 @@ struct oecls_sk_rule {
 	struct hlist_node node;
 	int devid;
 	void *sk;
-	int dip4;
-	int dport;
+	bool is_ipv6;
+	u32 dip4;
+	u32 dip6[4];
+	u16 dport;
 	int action;
 	int ruleid;
-	int cpu;
+	int nid;
 };
 
 struct oecls_sk_entry {
@@ -102,8 +113,6 @@ struct oecls_sock_flow_table {
 	u32 ents[] ____cacheline_aligned_in_smp;
 };
 
-#define OECLS_DEV_FLOW_TABLE_NUM	0x1000
-#define OECLS_SOCK_FLOW_TABLE_NUM	0x100000
 #define OECLS_DEV_FLOW_TABLE_SIZE(_num) (sizeof(struct oecls_dev_flow_table) + \
 		((_num) * sizeof(struct oecls_dev_flow)))
 #define OECLS_SOCK_FLOW_TABLE_SIZE(_num) (offsetof(struct oecls_sock_flow_table, ents[_num]))
@@ -126,14 +135,21 @@ struct cfg_param {
 	struct cmd_context ctx;
 	struct sock *sk;
 	bool is_del;
+	int nid;
 	int cpu;
 };
 
 extern int match_ip_flag;
 extern int debug;
+extern int mode;
+extern int rcpu_probability;
 extern int oecls_netdev_num;
 extern int oecls_numa_num;
 extern int check_nic_feature;
+extern unsigned int dft_num;
+extern unsigned int sft_num;
+extern int rps_policy;
+extern int lo_rps_policy;
 
 #define oecls_debug(fmt, ...)					\
 	do {							\
@@ -182,5 +198,7 @@ int oecls_ntuple_res_init(void);
 void oecls_ntuple_res_clean(void);
 int oecls_flow_res_init(void);
 void oecls_flow_res_clean(void);
+void _oecls_flow_update(struct sock *sk, struct sk_buff *skb);
+void _oecls_set_cpu(struct sk_buff *skb, int *cpu, int *last_qtail);
 
 #endif	/* _NET_OENETCLS_H */

@@ -16,6 +16,7 @@
 #include <asm/set_memory.h>
 #include <asm/tlbflush.h>
 #include <asm/virtcca_cvm_smc.h>
+#include <asm/kvm_tmi.h>
 
 #define CVM_PTE_NS_BIT   5
 #define CVM_PTE_NS_MASK  (1 << CVM_PTE_NS_BIT)
@@ -240,6 +241,7 @@ void virtcca_its_free_shared_pages(void *addr, int order)
 
 #define QUEUE_SIZE (64 * 1024 - 8) // Queue size (64KB - 8B)
 #define ALLOC_PAGE (4)
+#define ALLOC_SIZE ((1 << ALLOC_PAGE) * PAGE_SIZE)  /* 64KB */
 
 struct driver_data {
 	dev_t devno;
@@ -264,6 +266,7 @@ static struct driver_data *driver_data_ptr;
 
 static struct mig_queue_device *migvm_queue_dev_create(unsigned long rd)
 {
+	uint64_t ret = 0;
 	struct mig_queue_device *dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 
 	if (!dev)
@@ -289,7 +292,13 @@ static struct mig_queue_device *migvm_queue_dev_create(unsigned long rd)
 	dev->queue_addr.recv_buf_ipa = page_to_phys(dev->recv_page);
 	memset(page_address(dev->recv_page), 0, QUEUE_SIZE);
 
-	if (tsi_mig_integrity_checksum_init(rd, virt_to_phys((void *)&dev->queue_addr))) {
+	if (is_virtcca_cvm_world())
+		ret = tsi_mig_integrity_checksum_init(rd, virt_to_phys((void *)&dev->queue_addr));
+	else
+		ret = tmi_mig_integrity_checksum_init(rd, virt_to_phys((void *)&dev->queue_addr));
+
+	if (ret) {
+		pr_err("Failed to init integrity checksum, ret = 0x%llx", ret);
 		__free_page(dev->send_page);
 		__free_page(dev->recv_page);
 		kfree(dev);
@@ -317,6 +326,14 @@ static int migvm_queue_dev_mmap(struct mig_queue_device *dev, struct vm_area_str
 		return -EINVAL;
 	unsigned long size = vma->vm_end - vma->vm_start;
 	unsigned long pfn;
+
+	if (size > ALLOC_SIZE) {
+		pr_err("migvm_queue: mmap size %lu exceeds alloc %lu\n",
+		size, (unsigned long)ALLOC_SIZE);
+		return -EINVAL;
+	}
+	if (remap_pfn_range(vma, vma->vm_start, pfn, size, vma->vm_page_prot))
+		return -EAGAIN;
 
 	switch (vma->vm_pgoff) {
 	case 0:

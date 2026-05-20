@@ -818,7 +818,7 @@ void cgroup1_release_agent(struct work_struct *work)
 		goto out_free;
 
 	ret = cgroup_path_ns(cgrp, pathbuf, PATH_MAX, &init_cgroup_ns);
-	if (ret < 0 || ret >= PATH_MAX)
+	if (ret < 0)
 		goto out_free;
 
 	argv[0] = agentbuf;
@@ -851,7 +851,7 @@ static int cgroup1_rename(struct kernfs_node *kn, struct kernfs_node *new_parent
 
 	if (kernfs_type(kn) != KERNFS_DIR)
 		return -ENOTDIR;
-	if (kn->parent != new_parent)
+	if (rcu_access_pointer(kn->__parent) != new_parent)
 		return -EIO;
 
 	/*

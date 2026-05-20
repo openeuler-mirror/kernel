@@ -17,18 +17,18 @@ int sysctl_apei_page_offline_policy __read_mostly =
 	APEI_PAGE_OFFLINE_ALLOW_BASE_PAGE;
 EXPORT_SYMBOL(sysctl_apei_page_offline_policy);
 
-static ATOMIC_NOTIFIER_HEAD(apei_page_offline_notifier_chain);
+static BLOCKING_NOTIFIER_HEAD(apei_page_offline_notifier_chain);
 
 int register_apei_page_offline_notifier(struct notifier_block *nb)
 {
-	return atomic_notifier_chain_register(
+	return blocking_notifier_chain_register(
 			&apei_page_offline_notifier_chain, nb);
 }
 EXPORT_SYMBOL(register_apei_page_offline_notifier);
 
 int unregister_apei_page_offline_notifier(struct notifier_block *nb)
 {
-	return atomic_notifier_chain_unregister(
+	return blocking_notifier_chain_unregister(
 			&apei_page_offline_notifier_chain, nb);
 }
 EXPORT_SYMBOL(unregister_apei_page_offline_notifier);
@@ -48,7 +48,7 @@ static int apei_page_offline_policy_handler(struct ctl_table *table,
 		pr_debug("APEI policy: 0x%x -> 0x%x\n", old_val, new_val);
 
 		if ((old_val ^ new_val) & APEI_PAGE_OFFLINE_NOTIFY)
-			atomic_notifier_call_chain(
+			blocking_notifier_call_chain(
 				&apei_page_offline_notifier_chain, 0,
 				&new_val);
 	}

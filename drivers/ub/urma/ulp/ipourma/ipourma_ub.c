@@ -794,8 +794,13 @@ static void ipourma_do_handle_rx_wc(struct net_device *dev,
 	/* hold the skb & segments */
 	skb = rx_req->skb_pass_up;
 	rx_req->skb_pass_up = NULL;
+	if (IS_ERR_OR_NULL(skb)) {
+		priv->runtime_stats.rx_stats.cr_len_err++;
+		goto rx_wc_out;
+	}
 	if (cr->completion_len > priv->tx_buf_size ||
-		cr->completion_len <= (u32)sizeof(struct ipourma_header)) {
+		cr->completion_len <= (u32)sizeof(struct ipourma_header) ||
+		IS_ERR_OR_NULL(rx_req->buf_aligned)) {
 		dev_kfree_skb_any(skb);
 		priv->runtime_stats.rx_stats.cr_len_err++;
 		goto rx_wc_out;
