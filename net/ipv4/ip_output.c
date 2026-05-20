@@ -446,6 +446,7 @@ int ip_output(struct net *net, struct sock *sk, struct sk_buff *skb)
 	rcu_read_unlock();
 	return ret_val;
 }
+EXPORT_SYMBOL(ip_output);
 
 /*
  * copy saddr and daddr, possibly using 64bit load/stores
