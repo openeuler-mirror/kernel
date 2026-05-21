@@ -596,6 +596,13 @@ u16 pci_find_next_ext_capability(struct pci_dev *dev, u16 start, int cap)
 		return 0;
 
 	while (ttl-- > 0) {
+#ifdef CONFIG_X86
+		if (boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR ||
+		    boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN)
+			if (header == 0xffffffff)
+				return 0;
+#endif
+
 		if (PCI_EXT_CAP_ID(header) == cap && pos != start)
 			return pos;
 
