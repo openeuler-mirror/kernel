@@ -13,39 +13,24 @@
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 
 #include <linux/cpu.h>
-#include <linux/debugfs.h>
-#include <linux/fs.h>
-#include <linux/fs_parser.h>
-#include <linux/sysfs.h>
-#include <linux/kernfs.h>
-#include <linux/resctrl.h>
-#include <linux/seq_buf.h>
-#include <linux/seq_file.h>
-#include <linux/sched/signal.h>
-#include <linux/sched/task.h>
 #include <linux/slab.h>
-#include <linux/task_work.h>
-#include <linux/user_namespace.h>
 
-#include <uapi/linux/magic.h>
-
+#include <asm/resctrl.h>
 #include "internal.h"
 
 DEFINE_STATIC_KEY_FALSE(rdt_enable_key);
-
 DEFINE_STATIC_KEY_FALSE(rdt_mon_enable_key);
-
 DEFINE_STATIC_KEY_FALSE(rdt_alloc_enable_key);
 
 /*
- * This is safe against resctrl_arch_sched_in() called from __switch_to()
+ * This is safe against resctrl_sched_in() called from __switch_to()
  * because __switch_to() is executed with interrupts disabled. A local call
  * from update_closid_rmid() is protected against __switch_to() because
  * preemption is disabled.
  */
-void resctrl_arch_sync_cpu_closid_rmid(void *info)
+void resctrl_arch_sync_cpu_defaults(void *info)
 {
-	struct resctrl_cpu_defaults *r = info;
+	struct resctrl_cpu_sync *r = info;
 
 	if (r) {
 		this_cpu_write(pqr_state.default_closid, r->closid);
@@ -57,7 +42,7 @@ void resctrl_arch_sync_cpu_closid_rmid(void *info)
 	 * executing task might have its own closid selected. Just reuse
 	 * the context switch code.
 	 */
-	resctrl_arch_sched_in(current);
+	resctrl_sched_in(current);
 }
 
 #define INVALID_CONFIG_INDEX   UINT_MAX
@@ -84,34 +69,37 @@ static inline unsigned int mon_event_config_index_get(u32 evtid)
 	}
 }
 
-void resctrl_arch_mon_event_config_read(void *_config_info)
+void resctrl_arch_mon_event_config_read(void *info)
 {
-	struct resctrl_mon_config_info *config_info = _config_info;
+	struct resctrl_mon_config_info *mon_info = info;
 	unsigned int index;
 	u64 msrval;
 
-	index = mon_event_config_index_get(config_info->evtid);
+	index = mon_event_config_index_get(mon_info->evtid);
 	if (index == INVALID_CONFIG_INDEX) {
-		pr_warn_once("Invalid event id %d\n", config_info->evtid);
+		pr_warn_once("Invalid event id %d\n", mon_info->evtid);
 		return;
 	}
 	rdmsrl(MSR_IA32_EVT_CFG_BASE + index, msrval);
 
 	/* Report only the valid event configuration bits */
-	config_info->mon_config = msrval & MAX_EVT_CONFIG_BITS;
+	mon_info->mon_config = msrval & MAX_EVT_CONFIG_BITS;
 }
 
-void resctrl_arch_mon_event_config_write(void *_config_info)
+void resctrl_arch_mon_event_config_write(void *info)
 {
-	struct resctrl_mon_config_info *config_info = _config_info;
+	struct resctrl_mon_config_info *mon_info = info;
 	unsigned int index;
 
-	index = mon_event_config_index_get(config_info->evtid);
+	index = mon_event_config_index_get(mon_info->evtid);
 	if (index == INVALID_CONFIG_INDEX) {
-		pr_warn_once("Invalid event id %d\n", config_info->evtid);
+		pr_warn_once("Invalid event id %d\n", mon_info->evtid);
+		mon_info->err = -EINVAL;
 		return;
 	}
-	wrmsr(MSR_IA32_EVT_CFG_BASE + index, config_info->mon_config, 0);
+	wrmsr(MSR_IA32_EVT_CFG_BASE + index, mon_info->mon_config, 0);
+
+	mon_info->err = 0;
 }
 
 static void l3_qos_cfg_update(void *arg)
@@ -131,9 +119,9 @@ static void l2_qos_cfg_update(void *arg)
 static int set_cache_qos_cfg(int level, bool enable)
 {
 	void (*update)(void *arg);
-	struct rdt_ctrl_domain *d;
 	struct rdt_resource *r_l;
 	cpumask_var_t cpu_mask;
+	struct rdt_domain *d;
 	int cpu;
 
 	/* Walking r->domains, ensure it can't race with cpuhp */
@@ -150,14 +138,14 @@ static int set_cache_qos_cfg(int level, bool enable)
 		return -ENOMEM;
 
 	r_l = &rdt_resources_all[level].r_resctrl;
-	list_for_each_entry(d, &r_l->ctrl_domains, hdr.list) {
+	list_for_each_entry(d, &r_l->domains, list) {
 		if (r_l->cache.arch_has_per_cpu_cfg)
 			/* Pick all the CPUs in the domain instance */
-			for_each_cpu(cpu, &d->hdr.cpu_mask)
+			for_each_cpu(cpu, &d->cpu_mask)
 				cpumask_set_cpu(cpu, cpu_mask);
 		else
 			/* Pick one CPU from each domain instance to update MSR */
-			cpumask_set_cpu(cpumask_any(&d->hdr.cpu_mask), cpu_mask);
+			cpumask_set_cpu(cpumask_any(&d->cpu_mask), cpu_mask);
 	}
 
 	/* Update QOS_CFG MSR on all the CPUs in cpu_mask */
@@ -223,21 +211,20 @@ int resctrl_arch_set_cdp_enabled(enum resctrl_res_level l, bool enable)
 	return 0;
 }
 
-bool resctrl_arch_get_cdp_enabled(enum resctrl_res_level l)
-{
-	return rdt_resources_all[l].cdp_enabled;
-}
-
-void resctrl_arch_reset_all_ctrls(struct rdt_resource *r)
+static int reset_all_ctrls(struct rdt_resource *r)
 {
 	struct rdt_hw_resource *hw_res = resctrl_to_arch_res(r);
-	struct rdt_hw_ctrl_domain *hw_dom;
+	struct rdt_hw_domain *hw_dom;
 	struct msr_param msr_param;
-	struct rdt_ctrl_domain *d;
+	cpumask_var_t cpu_mask;
+	struct rdt_domain *d;
 	int i;
 
 	/* Walking r->domains, ensure it can't race with cpuhp */
 	lockdep_assert_cpus_held();
+
+	if (!zalloc_cpumask_var(&cpu_mask, GFP_KERNEL))
+		return -ENOMEM;
 
 	msr_param.res = r;
 	msr_param.low = 0;
@@ -245,17 +232,29 @@ void resctrl_arch_reset_all_ctrls(struct rdt_resource *r)
 
 	/*
 	 * Disable resource control for this resource by setting all
-	 * CBMs in all ctrl_domains to the maximum mask value. Pick one CPU
+	 * CBMs in all domains to the maximum mask value. Pick one CPU
 	 * from each domain to update the MSRs below.
 	 */
-	list_for_each_entry(d, &r->ctrl_domains, hdr.list) {
-		hw_dom = resctrl_to_arch_ctrl_dom(d);
+	list_for_each_entry(d, &r->domains, list) {
+		hw_dom = resctrl_to_arch_dom(d);
+		cpumask_set_cpu(cpumask_any(&d->cpu_mask), cpu_mask);
 
 		for (i = 0; i < hw_res->num_closid; i++)
-			hw_dom->ctrl_val[i] = resctrl_get_default_ctrl(r);
-		msr_param.dom = d;
-		smp_call_function_any(&d->hdr.cpu_mask, rdt_ctrl_update, &msr_param, 1);
+			hw_dom->ctrl_val[i] = r->default_ctrl;
 	}
 
-	return;
+	/* Update CBM on all the CPUs in cpu_mask */
+	on_each_cpu_mask(cpu_mask, rdt_ctrl_update, &msr_param, 1);
+
+	free_cpumask_var(cpu_mask);
+
+	return 0;
+}
+
+void resctrl_arch_reset_resources(void)
+{
+	struct rdt_resource *r;
+
+	for_each_capable_rdt_resource(r)
+		reset_all_ctrls(r);
 }
