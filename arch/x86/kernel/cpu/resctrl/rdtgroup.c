@@ -3312,12 +3312,6 @@ static int mkdir_rdt_prepare_rmid_alloc(struct rdtgroup *rdtgrp)
 	return 0;
 }
 
-static void mkdir_rdt_prepare_rmid_free(struct rdtgroup *rgrp)
-{
-	if (rdt_mon_capable)
-		free_rmid(rgrp->mon.rmid);
-}
-
 static int mkdir_rdt_prepare(struct kernfs_node *parent_kn,
 			     const char *name, umode_t mode,
 			     enum rdt_group_type rtype, struct rdtgroup **r)
@@ -3390,6 +3384,12 @@ static int mkdir_rdt_prepare(struct kernfs_node *parent_kn,
 		goto out_destroy;
 	}
 
+	ret = mkdir_rdt_prepare_rmid_alloc(rdtgrp);
+	if (ret)
+		goto out_destroy;
+
+	kernfs_activate(kn);
+
 	/*
 	 * The caller unlocks the parent_kn upon success.
 	 */
@@ -3408,6 +3408,7 @@ out_unlock:
 static void mkdir_rdt_prepare_clean(struct rdtgroup *rgrp)
 {
 	kernfs_remove(rgrp->kn);
+	free_rmid(rgrp->mon.rmid);
 	rdtgroup_remove(rgrp);
 }
 
@@ -3429,21 +3430,12 @@ static int rdtgroup_mkdir_mon(struct kernfs_node *parent_kn,
 	prgrp = rdtgrp->mon.parent;
 	rdtgrp->closid = prgrp->closid;
 
-	ret = mkdir_rdt_prepare_rmid_alloc(rdtgrp);
-	if (ret) {
-		mkdir_rdt_prepare_clean(rdtgrp);
-		goto out_unlock;
-	}
-
-	kernfs_activate(rdtgrp->kn);
-
 	/*
 	 * Add the rdtgrp to the list of rdtgrps the parent
 	 * ctrl_mon group has to track.
 	 */
 	list_add_tail(&rdtgrp->mon.crdtgrp_list, &prgrp->mon.crdtgrp_list);
 
-out_unlock:
 	rdtgroup_kn_unlock(parent_kn);
 	return ret;
 }
@@ -3474,16 +3466,9 @@ static int rdtgroup_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 	ret = 0;
 
 	rdtgrp->closid = closid;
-
-	ret = mkdir_rdt_prepare_rmid_alloc(rdtgrp);
-	if (ret)
-		goto out_closid_free;
-
-	kernfs_activate(rdtgrp->kn);
-
 	ret = rdtgroup_init_alloc(rdtgrp);
 	if (ret < 0)
-		goto out_rmid_free;
+		goto out_id_free;
 
 	list_add(&rdtgrp->rdtgroup_list, &rdt_all_groups);
 
@@ -3503,9 +3488,7 @@ static int rdtgroup_mkdir_ctrl_mon(struct kernfs_node *parent_kn,
 
 out_del_list:
 	list_del(&rdtgrp->rdtgroup_list);
-out_rmid_free:
-	mkdir_rdt_prepare_rmid_free(rdtgrp);
-out_closid_free:
+out_id_free:
 	closid_free(closid);
 out_common_fail:
 	mkdir_rdt_prepare_clean(rdtgrp);
