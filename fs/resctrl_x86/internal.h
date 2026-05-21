@@ -52,25 +52,18 @@ static inline struct rdt_fs_context *rdt_fc2context(struct fs_context *fc)
 }
 
 /**
- * struct mon_evt - Properties of a monitor event
+ * struct mon_evt - Entry in the event list of a resource
  * @evtid:		event id
- * @rid:		resource id for this event
  * @name:		name of the event
  * @configurable:	true if the event is configurable
- * @enabled:		true if the event is enabled
+ * @list:		entry in &rdt_resource->evt_list
  */
 struct mon_evt {
 	enum resctrl_event_id	evtid;
-	enum resctrl_res_level	rid;
 	char			*name;
 	bool			configurable;
-	bool			enabled;
+	struct list_head	list;
 };
-
-extern struct mon_evt mon_event_all[QOS_NUM_EVENTS];
-
-#define for_each_mon_event(mevt) for (mevt = &mon_event_all[QOS_FIRST_EVENT];	\
-				      mevt < &mon_event_all[QOS_NUM_EVENTS]; mevt++)
 
 /**
  * struct mon_data - Monitoring details for each event file.
