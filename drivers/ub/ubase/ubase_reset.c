@@ -20,8 +20,8 @@
 static void __ubase_reset_task_schedule(struct ubase_dev *udev,
 					unsigned long delay)
 {
-	ubase_info(udev, "schedule reset task(%u), delay = %ums.\n",
-		   udev->reset_stat.reset_retry_cnt, jiffies_to_msecs(delay));
+	ubase_info(udev, "schedule reset task, delay = %ums.\n",
+		   jiffies_to_msecs(delay));
 
 	udev->last_reset_scheduled = jiffies;
 	mod_delayed_work(udev->ubase_reset_wq,
@@ -55,18 +55,17 @@ static void ubase_reset_err_handle(struct ubase_dev *udev)
 {
 #define UBASE_RST_MAX_RETRY_CNT	5
 
-	u32 reset_max_cnt;
-
 	if (test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits))
 		return;
 
-	reset_max_cnt =
-		test_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits) ?
-			 U32_MAX : UBASE_RST_MAX_RETRY_CNT;
-
 	udev->reset_stat.reset_fail_cnt++;
-	udev->reset_stat.reset_retry_cnt++;
-	if (udev->reset_stat.reset_retry_cnt < reset_max_cnt) {
+
+	if (test_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits))
+		udev->reset_stat.reset_retry_cnt = 0;
+	else
+		udev->reset_stat.reset_retry_cnt++;
+
+	if (udev->reset_stat.reset_retry_cnt < UBASE_RST_MAX_RETRY_CNT) {
 		ubase_reset_task_schedule(udev);
 		return;
 	}
@@ -225,7 +224,8 @@ static int ubase_ue_reset_done_check(struct ubase_dev *udev)
 		msleep(UBASE_RST_WAIT_REG_TIME);
 	}
 
-	ubase_warn(udev, "wait reset done reg time out.\n");
+	ubase_warn(udev, "wait reset done reg time out, reg = 0x%x.\n",
+		   reset_done_reg);
 	return -ETIMEDOUT;
 }
 
@@ -307,13 +307,15 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 		return;
 	}
 
-	if (pret == -ETIMEDOUT) {
+	if (pret) {
 		/* Try to restore resource space. Otherwise, if a removing
 		 * is performed immediately after this ELR, issues may arise
 		 * because the CMDQ will be unavailable.
 		 */
 		ubase_ubus_reset_init(udev->dev);
-		goto timeout_resume;
+		if (pret == -ETIMEDOUT)
+			goto timeout_resume;
+		goto err_resume;
 	}
 
 	clear_bit(UBASE_STATE_RST_WAIT_DEACTIVE_B, &udev->state_bits);
@@ -321,8 +323,11 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 	ubase_suspend_aux_devices(udev, UBASE_RESET_STAGE_UNINIT);
 	ubase_dev_reset_uninit(udev);
 	ret = ubase_ubus_reset_init(udev->dev);
-	if (ret == -ETIMEDOUT)
-		goto timeout_resume;
+	if (ret) {
+		if (ret == -ETIMEDOUT)
+			goto timeout_resume;
+		goto err_resume;
+	}
 
 	udev->reset_stage = UBASE_RESET_STAGE_NONE;
 	ret = ubase_ue_reset_done_check(udev);
@@ -337,8 +342,11 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 	}
 
 	ret = ubase_resume_aux_devices(udev, UBASE_RESET_STAGE_INIT);
-	if (ret == -EAGAIN)
-		goto timeout_resume;
+	if (ret) {
+		if (ret == -EAGAIN)
+			goto timeout_resume;
+		goto err_resume;
+	}
 	ubase_reset_done(udev);
 
 	udev->reset_stat.reset_done_cnt++;
@@ -348,9 +356,9 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 	return;
 
 timeout_resume:
-	udev->reset_stage = UBASE_RESET_STAGE_NONE;
 	set_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits);
 err_resume:
+	udev->reset_stage = UBASE_RESET_STAGE_NONE;
 	ubase_resume_aux_devices(udev, UBASE_RESET_STAGE_ABORT);
 	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
 	clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);

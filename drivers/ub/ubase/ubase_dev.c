@@ -1004,6 +1004,8 @@ void ubase_dev_uninit(struct ubase_dev *udev)
 start_uninit:
 	if (udev->service_task.service_task.work.func)
 		cancel_delayed_work_sync(&udev->service_task.service_task);
+	if (udev->reset_service_task.service_task.work.func)
+		cancel_delayed_work_sync(&udev->reset_service_task.service_task);
 	flush_workqueue(udev->ubase_async_wq);
 
 	for (i = ARRAY_SIZE(ubase_init_func_map) - 1; i >= 0; i--) {
