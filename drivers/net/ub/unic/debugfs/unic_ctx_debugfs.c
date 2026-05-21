@@ -6,11 +6,13 @@
 
 #include <linux/debugfs.h>
 #include <ub/ubase/ubase_comm_debugfs.h>
+#include <ub/ubase/ubase_comm_dev.h>
 #include <ub/ubase/ubase_comm_mbx.h>
 
 #include "unic_debugfs.h"
 #include "unic_dev.h"
 #include "unic_event.h"
+#include "unic_txrx.h"
 #include "unic_ctx_debugfs.h"
 
 static inline void unic_jfs_ctx_titles_print(struct seq_file *s)
@@ -62,6 +64,7 @@ static inline void unic_jfc_ctx_titles_print(struct seq_file *s)
 static void unic_dump_jfc_ctx_info_sw(struct unic_cq *cq, struct seq_file *s,
 				      u32 index)
 {
+	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
 	struct unic_jfc_ctx *ctx = &cq->jfc_ctx;
 
 	seq_printf(s, "%-7u", index);
@@ -70,7 +73,12 @@ static void unic_dump_jfc_ctx_info_sw(struct unic_cq *cq, struct seq_file *s,
 	seq_printf(s, "%-11u", ctx->inline_en);
 	seq_printf(s, "%-7u", ctx->shift);
 	seq_printf(s, "%-14u", ctx->cqe_coalesce_cnt);
-	seq_printf(s, "%-6u", ctx->ceqn);
+
+	if (unic_jfc_support_ceqn9(unic_dev))
+		seq_printf(s, "%-6u", ctx->dw2_ceqn9.ceqn);
+
+	else
+		seq_printf(s, "%-6u", ctx->dw2_ceqn8.ceqn);
 	seq_printf(s, "%-14u", ctx->record_db_en);
 	seq_printf(s, "%-18u\n", ctx->cqe_coalesce_period);
 }
