@@ -1,9 +1,9 @@
 .. SPDX-License-Identifier: GPL-2.0
 .. include:: <isonum.txt>
 
-=====================================================
-User Interface for Resource Control feature (resctrl)
-=====================================================
+===========================================
+User Interface for Resource Control feature
+===========================================
 
 :Copyright: |copy| 2016 Intel Corporation
 :Authors: - Fenghua Yu <fenghua.yu@intel.com>
