@@ -95,6 +95,7 @@ struct udma_caps {
 	bool ipourma_en;
 	bool sva_sep_mode_en;
 	bool non_mirror_en;
+	bool st64b_en;
 	bool atomic_add_en;
 };
 
@@ -187,7 +188,6 @@ struct udma_buf {
 		struct iova_slot	*slot;
 		void			*kva_or_slot;
 	};
-	void			*aligned_va;
 	struct udma_umem	*umem;
 	uint32_t		entry_size;
 	uint32_t		entry_cnt;
@@ -197,7 +197,7 @@ struct udma_buf {
 	bool			is_hugepage;
 	bool			k_dtu_enable;
 	struct udma_hugepage	*hugepage;
-	uint32_t		len;
+	uint64_t		len;
 	struct udma_page_priv	*page_priv;
 };
 

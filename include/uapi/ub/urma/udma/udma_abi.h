@@ -40,8 +40,6 @@
 #define UDMA_INTER_ERR 1
 #define UDMA_CQE_DEFAULT_SUBSTATUS 0
 
-#define UDMA_MAX_GRANT_SIZE 0xFFFFFFFFF000
-
 #define UDMA_TID_SHIFT 8U
 #define UDMA_MAX_TID 0xFFFFFU
 
@@ -109,11 +107,12 @@ struct udma_create_ctx_resp {
 	__u32 reduce_enable : 1;
 	__u32 dump_aux_info : 1;
 	__u32 sq_reserved : 1;
-	__u32 atomic_add_en : 1;
 	__u32 hugepage_enable : 1;
+	__u32 atomic_add_en : 1;
 	__u32 sva_sep_mode_en : 1;
 	__u32 u_dtu_enable : 1;
-	__u32 rsv : 16;
+	__u32 st64b_en : 1;
+	__u32 rsv : 15;
 	__u32 ue_id;
 	__u32 chip_id;
 	__u32 die_id;

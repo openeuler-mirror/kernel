@@ -524,8 +524,10 @@ udma_alloc_jetty_sq(struct udma_dev *udma_dev, struct udma_jetty *jetty,
 	jetty->ubcore_jetty.jetty_cfg = *cfg;
 
 	ret = udma_get_jetty_buf(udma_dev, jetty, udata, cfg, &ucmd);
-	if (ret)
+	if (ret) {
 		free_jetty_id(udma_dev, jetty, !!cfg->jetty_grp);
+		return ret;
+	}
 
 	if (udata) {
 		ret = udma_jetty_copy_resp(udma_dev, jetty, udata);
@@ -819,7 +821,7 @@ static bool udma_query_jetty_fd(struct udma_dev *dev, struct udma_jetty_queue *s
 	return false;
 }
 
-int udma_modify_jetty_precondition(struct udma_dev *dev, struct udma_jetty_queue *sq)
+void udma_modify_jetty_precondition(struct udma_dev *dev, struct udma_jetty_queue *sq)
 {
 	struct udma_jetty_ctx ctx = {};
 	uint16_t rcv_send_diff = 0;
@@ -838,9 +840,9 @@ int udma_modify_jetty_precondition(struct udma_dev *dev, struct udma_jetty_queue
 			    ctx.state == JETTY_READY)
 				break;
 
-		if (rcv_send_diff < UDMA_RCV_SEND_MAX_DIFF &&
-		    ctx.state == JETTY_ERROR)
-			break;
+			if (rcv_send_diff < UDMA_RCV_SEND_MAX_DIFF &&
+			    ctx.state == JETTY_ERROR)
+				break;
 		}
 
 		if (udma_wait_timeout(&sum_times, times, sq->ta_timeout)) {
@@ -851,8 +853,6 @@ int udma_modify_jetty_precondition(struct udma_dev *dev, struct udma_jetty_queue
 		}
 		times++;
 	}
-
-	return 0;
 }
 
 static bool udma_destroy_jetty_precondition(struct udma_dev *dev, struct udma_jetty_queue *sq)
@@ -865,8 +865,7 @@ static bool udma_destroy_jetty_precondition(struct udma_dev *dev, struct udma_je
 	if (dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE)
 		goto modify_to_err;
 
-	if (udma_modify_jetty_precondition(dev, sq))
-		return false;
+	udma_modify_jetty_precondition(dev, sq);
 
 modify_to_err:
 	if (udma_set_jetty_state(dev, sq->id, JETTY_ERROR)) {
@@ -1366,13 +1365,8 @@ static int udma_modify_jetty_state(struct udma_dev *udma_dev, struct udma_jetty 
 		if (ret)
 			break;
 
-		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE)) {
-			if (udma_modify_jetty_precondition(udma_dev, &udma_jetty->sq)) {
-				ret = -ENOMEM;
-				udma_open_ue_rx_with_retry(udma_dev, true, true, false, 0);
-				break;
-			}
-		}
+		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE))
+			udma_modify_jetty_precondition(udma_dev, &udma_jetty->sq);
 
 		ret = udma_set_jetty_state(udma_dev, udma_jetty->sq.id,
 					   to_jetty_state(attr->state));

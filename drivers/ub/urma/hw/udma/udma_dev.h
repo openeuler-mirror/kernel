@@ -66,9 +66,11 @@ extern bool jfc_share_enable;
 					UDMA_FAULT_EVENT_REMOVE)
 
 enum udma_status {
+	UDMA_INITIALIZING,
 	UDMA_NORMAL,
-	UDMA_SUSPEND,
-	UDMA_ABORT,
+	UDMA_RESETTING,
+	UDMA_REMOVING,
+	UDMA_ELR_ABORT,
 };
 
 struct udma_ida {
@@ -187,7 +189,7 @@ struct udma_dev {
 	struct mutex hugepage_lock;
 	struct list_head hugepage_list;
 	atomic_t hugepage_seq;
-	struct udma_tp_cmdq_info *wait_cmdq_info;
+	struct udma_cmdq_info *wait_cmdq_info;
 	struct udma_sq_reserved_info sq_reserved_info;
 	struct udma_mbox_over_cmdq_info *mbox_over_cmdq_info;
 	struct udma_dtu_info dtu_info;
