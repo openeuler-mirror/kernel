@@ -21,7 +21,7 @@ static int fd_release(struct inode *inode, struct file *file)
 	struct mfs_cache_object *object = file->private_data;
 
 	down_write(&object->rwsem);
-	if (object->fd > 0) {
+	if (object->fd >= 0) {
 		object->fd = -1;
 		up_write(&object->rwsem);
 		iput(object->mfs_inode);
@@ -437,13 +437,13 @@ int try_hook_fd(struct mfs_event *event)
 	int fd;
 
 	down_read(&object->rwsem);
-	if (object->fd > 0) {
+	if (object->fd >= 0) {
 		up_read(&object->rwsem);
 		return object->fd;
 	}
 	up_read(&object->rwsem);
 	down_write(&object->rwsem);
-	if (object->fd > 0) {
+	if (object->fd >= 0) {
 		up_write(&object->rwsem);
 		return object->fd;
 	}
