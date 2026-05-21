@@ -23,15 +23,6 @@
 
 #include "internal.h"
 
-struct rdt_parse_data {
-	struct rdtgroup		*rdtgrp;
-	char			*buf;
-};
-
-typedef int (ctrlval_parser_t)(struct rdt_parse_data *data,
-			       struct resctrl_schema *s,
-			       struct rdt_ctrl_domain *d);
-
 /*
  * Check whether MBA bandwidth percentage value is correct. The value is
  * checked against the minimum and max bandwidth values specified by the
@@ -73,8 +64,8 @@ static bool bw_validate(char *buf, u32 *data, struct rdt_resource *r)
 	return true;
 }
 
-static int parse_bw(struct rdt_parse_data *data, struct resctrl_schema *s,
-		    struct rdt_ctrl_domain *d)
+int parse_bw(struct rdt_parse_data *data, struct resctrl_schema *s,
+	     struct rdt_ctrl_domain *d)
 {
 	struct resctrl_staged_config *cfg;
 	u32 closid = data->rdtgrp->closid;
@@ -152,8 +143,8 @@ static bool cbm_validate(char *buf, u32 *data, struct rdt_resource *r)
  * Read one cache bit mask (hex). Check that it is valid for the current
  * resource type.
  */
-static int parse_cbm(struct rdt_parse_data *data, struct resctrl_schema *s,
-		     struct rdt_ctrl_domain *d)
+int parse_cbm(struct rdt_parse_data *data, struct resctrl_schema *s,
+	      struct rdt_ctrl_domain *d)
 {
 	struct rdtgroup *rdtgrp = data->rdtgrp;
 	struct resctrl_staged_config *cfg;
@@ -219,7 +210,6 @@ static int parse_line(char *line, struct resctrl_schema *s,
 		      struct rdtgroup *rdtgrp)
 {
 	enum resctrl_conf_type t = s->conf_type;
-	ctrlval_parser_t *parse_ctrlval = NULL;
 	struct resctrl_staged_config *cfg;
 	struct rdt_resource *r = s->res;
 	struct rdt_parse_data data;
@@ -229,18 +219,6 @@ static int parse_line(char *line, struct resctrl_schema *s,
 
 	/* Walking r->domains, ensure it can't race with cpuhp */
 	lockdep_assert_cpus_held();
-
-	switch (r->schema_fmt) {
-	case RESCTRL_SCHEMA_BITMAP:
-		parse_ctrlval = &parse_cbm;
-		break;
-	case RESCTRL_SCHEMA_RANGE:
-		parse_ctrlval = &parse_bw;
-		break;
-	}
-
-	if (WARN_ON_ONCE(!parse_ctrlval))
-		return -EINVAL;
 
 	if (rdtgrp->mode == RDT_MODE_PSEUDO_LOCKSETUP &&
 	    (r->rid == RDT_RESOURCE_MBA || r->rid == RDT_RESOURCE_SMBA)) {
@@ -262,7 +240,7 @@ next:
 		if (d->hdr.id == dom_id) {
 			data.buf = dom;
 			data.rdtgrp = rdtgrp;
-			if (parse_ctrlval(&data, s, d))
+			if (r->parse_ctrlval(&data, s, d))
 				return -EINVAL;
 			if (rdtgrp->mode ==  RDT_MODE_PSEUDO_LOCKSETUP) {
 				cfg = &d->staged_config[t];
