@@ -165,7 +165,7 @@ static int unic_lb_config(struct net_device *ndev, int loop_type, bool en)
 
 	if (ret && ret != -EOPNOTSUPP)
 		unic_err(unic_dev,
-			 "lb_config return error, ret = %d, enable = %d.\n",
+			 "loopback_config return error, ret = %d, enable = %d.\n",
 			 ret, en);
 
 	unic_set_promisc_mode(unic_dev, en ? &promisc_all_en : &promisc_en);

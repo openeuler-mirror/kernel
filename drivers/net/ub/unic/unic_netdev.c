@@ -939,8 +939,8 @@ static int unic_update_bond_status(struct unic_dev *unic_dev,
 	unic_dev->bond_status.cur_status = lag_info->tx_enabled;
 	mutex_unlock(&bond_status->mutex);
 
-	unic_info(unic_dev, "[UNIC DEBUG] update bond_status: %u.\n",
-		  unic_dev->bond_status.cur_status);
+	unic_dbg(unic_dev,
+		 "update bond_status: %u.\n", unic_dev->bond_status.cur_status);
 
 	unic_bond_status_record(unic_dev->comdev.netdev, lag_info->tx_enabled);
 
