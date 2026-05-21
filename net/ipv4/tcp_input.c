@@ -4148,6 +4148,22 @@ static bool tcp_parse_ums_option(const struct tcphdr *th,
 	return false;
 }
 
+static bool tcp_parse_ubs_option(const struct tcphdr *th,
+				 struct tcp_options_received *opt_rx,
+				 const unsigned char *ptr,
+				 int opsize)
+{
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	if (th->syn && !(opsize & 1) &&
+	    opsize >= TCPOLEN_EXP_UB_SOCKET_BASE &&
+	    get_unaligned_be32(ptr) == TCPOPT_UB_SOCKET_MAGIC) {
+		opt_rx->ubs_ok = 1;
+		return true;
+	}
+#endif
+	return false;
+}
+
 /* Try to parse the MSS option from the TCP header. Return 0 on failure, clamped
  * value on success.
  */
@@ -4312,6 +4328,10 @@ void tcp_parse_options(const struct net *net,
 					break;
 
 				if (tcp_parse_ums_option(th, opt_rx, ptr,
+				    opsize))
+					break;
+
+				if (tcp_parse_ubs_option(th, opt_rx, ptr,
 				    opsize))
 					break;
 
@@ -6379,6 +6399,14 @@ static void ums_check_reset_syn(struct tcp_sock *tp)
 #endif
 }
 
+static void ubs_check_reset_syn(struct tcp_sock *tp)
+{
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	if (tp->syn_ubs && !tp->rx_opt.ubs_ok)
+		tp->syn_ubs = 0;
+#endif
+}
+
 static void tcp_try_undo_spurious_syn(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
@@ -6512,6 +6540,8 @@ consume:
 		smc_check_reset_syn(tp);
 
 		ums_check_reset_syn(tp);
+
+		ubs_check_reset_syn(tp);
 
 		smp_mb();
 
@@ -7031,6 +7061,9 @@ static void tcp_openreq_init(struct request_sock *req,
 #if IS_ENABLED(CONFIG_UB_UMS)
 	ireq->ums_ok = rx_opt->ums_ok;
 #endif
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	ireq->ubs_ok = rx_opt->ubs_ok;
+#endif
 }
 
 struct request_sock *inet_reqsk_alloc(const struct request_sock_ops *ops,
@@ -7217,6 +7250,11 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 #if IS_ENABLED(CONFIG_UB_UMS)
 	if (want_cookie)
 		tmp_opt.ums_ok = 0;
+#endif
+
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	if (want_cookie)
+		tmp_opt.ubs_ok = 0;
 #endif
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;

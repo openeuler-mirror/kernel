@@ -3721,6 +3721,14 @@ int do_tcp_setsockopt(struct sock *sk, int level, int optname,
 			tcp_enable_tx_delay();
 		WRITE_ONCE(tp->tcp_tx_delay, val);
 		break;
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	case TCP_UB_SOCKET_HANDSHAKE:
+		if (val > 1 || val < 0 || sk->sk_state != TCP_CLOSE)
+			err = -EINVAL;
+		else
+			tp->syn_ubs = val;
+		break;
+#endif
 	default:
 		err = -ENOPROTOOPT;
 		break;
@@ -4327,6 +4335,11 @@ zerocopy_rcv_out:
 	case TCP_IS_MPTCP:
 		val = 0;
 		break;
+#if IS_ENABLED(CONFIG_UB_SOCKET_HANDSHAKE)
+	case TCP_UB_SOCKET_HANDSHAKE:
+		val = tp->syn_ubs;
+		break;
+#endif
 	default:
 		return -ENOPROTOOPT;
 	}
