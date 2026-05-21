@@ -80,7 +80,7 @@ static int cdma_create_ucontext(struct cdma_ioctl_hdr *hdr,
 	if (!hdr->args_addr || hdr->args_len < sizeof(args))
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&args, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&args, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(args));
 	if (ret) {
 		dev_err(cdev->dev, "get user data failed, ret = %d\n", ret);
@@ -106,7 +106,7 @@ static int cdma_create_ucontext(struct cdma_ioctl_hdr *hdr,
 	args.out.async_fd = jfae->fd;
 	cfile->uctx = ctx;
 
-	ret = (int)copy_to_user((void *)hdr->args_addr, &args,
+	ret = (int)copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &args,
 				(u32)sizeof(args));
 	if (ret) {
 		dev_err(cdev->dev, "copy ctx to user failed, ret = %d\n", ret);
@@ -162,7 +162,7 @@ static int cdma_cmd_create_ctp(struct cdma_ioctl_hdr *hdr,
 	if (!hdr->args_addr || hdr->args_len < sizeof(arg) || !cfile->uctx)
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(&cdev->adev->dev,
@@ -199,7 +199,7 @@ static int cdma_cmd_create_ctp(struct cdma_ioctl_hdr *hdr,
 
 	arg.out.handle = uobj->id;
 	arg.out.tpn = ctp->tpn;
-	ret = (int)copy_to_user((void *)hdr->args_addr, &arg, (u32)sizeof(arg));
+	ret = (int)copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg, (u32)sizeof(arg));
 	if (ret) {
 		dev_err(&cdev->adev->dev,
 			"create tp copy to user data failed, ret = %d\n", ret);
@@ -232,7 +232,7 @@ static int cdma_cmd_delete_ctp(struct cdma_ioctl_hdr *hdr,
 	if (!hdr->args_addr || hdr->args_len < sizeof(arg))
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(&cdev->adev->dev,
@@ -299,7 +299,7 @@ static int cdma_cmd_create_jfs(struct cdma_ioctl_hdr *hdr,
 	if (!hdr->args_addr || hdr->args_len != (u32)sizeof(arg) || !cfile->uctx)
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(&cdev->adev->dev,
@@ -346,7 +346,7 @@ static int cdma_cmd_create_jfs(struct cdma_ioctl_hdr *hdr,
 	arg.out.max_sge = jfs->cfg.max_sge;
 	arg.out.max_rsge = jfs->cfg.max_rsge;
 
-	ret = (int)copy_to_user((void *)hdr->args_addr, &arg, (u32)sizeof(arg));
+	ret = (int)copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg, (u32)sizeof(arg));
 	if (ret) {
 		ret = -EFAULT;
 		dev_err(&cdev->adev->dev,
@@ -378,7 +378,7 @@ static int cdma_cmd_delete_jfs(struct cdma_ioctl_hdr *hdr,
 	if (!hdr->args_addr || hdr->args_len != (u32)sizeof(arg))
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(&cdev->adev->dev,
@@ -428,7 +428,7 @@ static int cdma_cmd_create_queue(struct cdma_ioctl_hdr *hdr, struct cdma_file *c
 	if (!hdr->args_addr || hdr->args_len != sizeof(arg) || !cfile->uctx)
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(cdev->dev, "create queue get user data failed, ret = %d\n", ret);
@@ -457,7 +457,7 @@ static int cdma_cmd_create_queue(struct cdma_ioctl_hdr *hdr, struct cdma_file *c
 	uobj->object = queue;
 	arg.out.queue_id = queue->id;
 	arg.out.handle = uobj->id;
-	ret = (int)copy_to_user((void *)hdr->args_addr, &arg, (u32)sizeof(arg));
+	ret = (int)copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg, (u32)sizeof(arg));
 	if (ret) {
 		dev_err(cdev->dev, "create queue copy to user failed, ret = %d\n", ret);
 		ret = -EFAULT;
@@ -484,7 +484,7 @@ static int cdma_cmd_delete_queue(struct cdma_ioctl_hdr *hdr, struct cdma_file *c
 	if (!hdr->args_addr || hdr->args_len != sizeof(arg))
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(cdev->dev, "delete queue get user data failed, ret = %d\n", ret);
@@ -528,7 +528,7 @@ static int cdma_cmd_register_seg(struct cdma_ioctl_hdr *hdr,
 		return -EINVAL;
 	}
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(cdev->dev,
@@ -556,7 +556,7 @@ static int cdma_cmd_register_seg(struct cdma_ioctl_hdr *hdr,
 	arg.out.handle = uobj->id;
 	uobj->object = seg;
 
-	ret = (int)copy_to_user((void *)hdr->args_addr, &arg, (u32)sizeof(arg));
+	ret = (int)copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg, (u32)sizeof(arg));
 	if (ret) {
 		dev_err(cdev->dev,
 			"register seg copy to user failed, ret = %d\n", ret);
@@ -588,7 +588,7 @@ static int cdma_cmd_unregister_seg(struct cdma_ioctl_hdr *hdr,
 		return -EINVAL;
 	}
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(cdev->dev,
@@ -621,12 +621,12 @@ static int cdma_cmd_create_jfc(struct cdma_ioctl_hdr *hdr,
 	struct cdma_base_jfc *jfc;
 	struct cdma_queue *queue;
 	struct cdma_uobj *uobj;
-	int ret = 0;
+	int ret;
 
 	if (!hdr->args_addr || hdr->args_len != (u32)sizeof(arg) || !cfile->uctx)
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(cdev->dev, "get user data failed, ret = %d\n", ret);
@@ -673,7 +673,7 @@ static int cdma_cmd_create_jfc(struct cdma_ioctl_hdr *hdr,
 		ret = -EFAULT;
 		goto err_get_jfce;
 	}
-	ret = (int)copy_to_user((void *)hdr->args_addr, &arg, (u32)sizeof(arg));
+	ret = (int)copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg, (u32)sizeof(arg));
 	if (ret != 0) {
 		dev_err(cdev->dev, "copy jfc to user failed, ret = %d\n", ret);
 		ret = -EFAULT;
@@ -704,7 +704,7 @@ static int cdma_cmd_delete_jfc(struct cdma_ioctl_hdr *hdr,
 	if (!hdr->args_addr || hdr->args_len != (u32)sizeof(arg))
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret) {
 		dev_err(cdev->dev, "get user data failed, ret = %d\n", ret);
@@ -736,7 +736,7 @@ static int cdma_cmd_delete_jfc(struct cdma_ioctl_hdr *hdr,
 	cdma_set_queue_res(cdev, queue, QUEUE_RES_JFC, NULL);
 	cdma_uobj_delete(uobj);
 
-	ret = (int)copy_to_user((void *)hdr->args_addr, &arg, (u32)sizeof(arg));
+	ret = (int)copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg, (u32)sizeof(arg));
 	if (ret) {
 		dev_err(cdev->dev,
 			"delete jfc copy to user data failed, ret = %d\n",
@@ -757,7 +757,7 @@ static int cdma_cmd_create_jfce(struct cdma_ioctl_hdr *hdr,
 	if (!hdr->args_addr || hdr->args_len != (u32)sizeof(arg))
 		return -EINVAL;
 
-	ret = (int)copy_from_user(&arg, (void *)hdr->args_addr,
+	ret = (int)copy_from_user(&arg, (void __user *)(uintptr_t)hdr->args_addr,
 				  (u32)sizeof(arg));
 	if (ret)
 		return -EFAULT;
@@ -768,7 +768,7 @@ static int cdma_cmd_create_jfce(struct cdma_ioctl_hdr *hdr,
 
 	arg.out.fd = jfce->fd;
 	arg.out.id = jfce->id;
-	ret = (int)copy_to_user((void *)hdr->args_addr, &arg, (u32)sizeof(arg));
+	ret = (int)copy_to_user((void __user *)(uintptr_t)hdr->args_addr, &arg, (u32)sizeof(arg));
 	if (ret) {
 		ret = -EFAULT;
 		goto err_out;

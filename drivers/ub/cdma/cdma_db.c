@@ -61,7 +61,7 @@ err_bitmap:
 
 static void cdma_free_db_page(struct cdma_dev *cdev, struct cdma_sw_db *db)
 {
-	cdma_k_free_buf(cdev, PAGE_SIZE, &db->kpage->db_buf);
+	cdma_k_free_buf(cdev, &db->kpage->db_buf);
 	bitmap_free(db->kpage->bitmap);
 	kfree(db->kpage);
 	db->kpage = NULL;
