@@ -594,10 +594,9 @@ int rdtgroup_mondata_show(struct seq_file *m, void *arg)
 	struct rmid_read rr = {0};
 	struct rdt_mon_domain *d;
 	struct rdtgroup *rdtgrp;
-	int domid, cpu, ret = 0;
 	struct rdt_resource *r;
-	struct cacheinfo *ci;
 	struct mon_data *md;
+	int domid, ret = 0;
 
 	rdtgrp = rdtgroup_kn_lock_live(of->kn);
 	if (!rdtgrp) {
@@ -624,14 +623,10 @@ int rdtgroup_mondata_show(struct seq_file *m, void *arg)
 		 * one that matches this cache id.
 		 */
 		list_for_each_entry(d, &r->mon_domains, hdr.list) {
-			if (d->ci_id == domid) {
-				rr.ci_id = d->ci_id;
-				cpu = cpumask_any(&d->hdr.cpu_mask);
-				ci = get_cpu_cacheinfo_level(cpu, RESCTRL_L3_CACHE);
-				if (!ci)
-					continue;
+			if (d->ci->id == domid) {
+				rr.ci = d->ci;
 				mon_event_read(&rr, r, NULL, rdtgrp,
-					       &ci->shared_cpu_map, evtid, false);
+					       &d->ci->shared_cpu_map, evtid, false);
 				goto checkresult;
 			}
 		}
