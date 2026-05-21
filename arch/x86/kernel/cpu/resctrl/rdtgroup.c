@@ -130,8 +130,8 @@ static bool resctrl_is_mbm_event(int e)
 }
 
 /*
- * Trivial allocator for CLOSIDs. Use BITMAP APIs to manipulate a bitmap
- * of free CLOSIDs.
+ * Trivial allocator for CLOSIDs. Since h/w only supports a small number,
+ * we can keep a bitmap of free CLOSIDs in a single integer.
  *
  * Using a global CLOSID across all resources has some advantages and
  * some drawbacks:
@@ -144,7 +144,7 @@ static bool resctrl_is_mbm_event(int e)
  * - Our choices on how to configure each resource become progressively more
  *   limited as the number of resources grows.
  */
-static unsigned long *closid_free_map;
+static unsigned long closid_free_map;
 static int closid_free_map_len;
 
 int closids_supported(void)
@@ -152,35 +152,20 @@ int closids_supported(void)
 	return closid_free_map_len;
 }
 
-static int closid_init(void)
+static void closid_init(void)
 {
 	struct resctrl_schema *s;
-	u32 rdt_min_closid = ~0;
-
-	/* Monitor only platforms still call closid_init() */
-	if (list_empty(&resctrl_schema_all))
-		return 0;
+	u32 rdt_min_closid = 32;
 
 	/* Compute rdt_min_closid across all resources */
 	list_for_each_entry(s, &resctrl_schema_all, list)
 		rdt_min_closid = min(rdt_min_closid, s->num_closid);
 
-	closid_free_map = bitmap_alloc(rdt_min_closid, GFP_KERNEL);
-	if (!closid_free_map)
-		return -ENOMEM;
-	bitmap_fill(closid_free_map, rdt_min_closid);
+	closid_free_map = BIT_MASK(rdt_min_closid) - 1;
 
 	/* RESCTRL_RESERVED_CLOSID is always reserved for the default group */
-	__clear_bit(RESCTRL_RESERVED_CLOSID, closid_free_map);
+	__clear_bit(RESCTRL_RESERVED_CLOSID, &closid_free_map);
 	closid_free_map_len = rdt_min_closid;
-
-	return 0;
-}
-
-static void closid_exit(void)
-{
-	bitmap_free(closid_free_map);
-	closid_free_map = NULL;
 }
 
 static int closid_alloc(void)
@@ -197,11 +182,12 @@ static int closid_alloc(void)
 			return cleanest_closid;
 		closid = cleanest_closid;
 	} else {
-		closid = find_first_bit(closid_free_map, closid_free_map_len);
-		if (closid == closid_free_map_len)
+		closid = ffs(closid_free_map);
+		if (closid == 0)
 			return -ENOSPC;
+		closid--;
 	}
-	__clear_bit(closid, closid_free_map);
+	__clear_bit(closid, &closid_free_map);
 
 	return closid;
 }
@@ -210,7 +196,7 @@ void closid_free(int closid)
 {
 	lockdep_assert_held(&rdtgroup_mutex);
 
-	__set_bit(closid, closid_free_map);
+	__set_bit(closid, &closid_free_map);
 }
 
 /**
@@ -224,7 +210,7 @@ bool closid_allocated(unsigned int closid)
 {
 	lockdep_assert_held(&rdtgroup_mutex);
 
-	return !test_bit(closid, closid_free_map);
+	return !test_bit(closid, &closid_free_map);
 }
 
 /**
@@ -2779,22 +2765,20 @@ static int rdt_get_tree(struct fs_context *fc)
 		goto out_ctx;
 	}
 
-	ret = closid_init();
-	if (ret)
-		goto out_schemata_free;
+	closid_init();
 
 	if (resctrl_arch_mon_capable())
 		flags |= RFTYPE_MON;
 
 	ret = rdtgroup_add_files(rdtgroup_default.kn, flags);
 	if (ret)
-		goto out_closid_exit;
+		goto out_schemata_free;
 
 	kernfs_activate(rdtgroup_default.kn);
 
 	ret = rdtgroup_create_info_dir(rdtgroup_default.kn);
 	if (ret < 0)
-		goto out_closid_exit;
+		goto out_schemata_free;
 
 	if (resctrl_arch_mon_capable()) {
 		ret = mongroup_create_dir(rdtgroup_default.kn,
@@ -2845,8 +2829,6 @@ out_mongrp:
 		kernfs_remove(kn_mongrp);
 out_info:
 	kernfs_remove(kn_info);
-out_closid_exit:
-	closid_exit();
 out_schemata_free:
 	schemata_list_destroy();
 out_ctx:
@@ -3094,7 +3076,6 @@ static void rdt_kill_sb(struct super_block *sb)
 	rmdir_all_sub();
 	rdt_pseudo_lock_release();
 	rdtgroup_default.mode = RDT_MODE_SHAREABLE;
-	closid_exit();
 	schemata_list_destroy();
 	rdtgroup_destroy_root();
 	if (resctrl_arch_alloc_capable())
