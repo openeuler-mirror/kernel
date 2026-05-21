@@ -445,7 +445,8 @@ struct rdt_hw_resource {
 	struct rdt_resource	r_resctrl;
 	u32			num_closid;
 	unsigned int		msr_base;
-	void			(*msr_update)(struct msr_param *m);
+	void (*msr_update)	(struct rdt_domain *d, struct msr_param *m,
+				 struct rdt_resource *r);
 	unsigned int		mon_scale;
 	unsigned int		mbm_width;
 	unsigned int		mbm_cfg_mask;
