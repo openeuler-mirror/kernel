@@ -476,25 +476,35 @@ static int udma_crq_recv_msg_from_ue(void *dev, void *data, uint32_t len)
 	struct udma_ue_tp_info *tp_info;
 	int ret;
 
-	if (len < sizeof(*recv_msg) + sizeof(*tp_info)) {
-		dev_err(udma_dev->dev, "len of crq recv to mue is too small, len = %u.\n", len);
-		return -EINVAL;
-	}
 	recv_msg = (struct udma_entity_msg *)data;
 
-	if (recv_msg->opcode != UDMA_CMD_NOTIFY_MUE_SAVE_TP) {
-		dev_err(udma_dev->dev, "ue to mue opcode error, opcode = %u.\n", recv_msg->opcode);
-		return -EINVAL;
+	switch (recv_msg->opcode) {
+	case UDMA_CMD_NOTIFY_MUE_SAVE_TP:
+		if (len < sizeof(*recv_msg) + sizeof(*tp_info)) {
+			dev_err(udma_dev->dev, "len of crq recv to mue is small, len = %u.\n", len);
+			return -EINVAL;
+		}
+
+		tp_info = (struct udma_ue_tp_info *)(uintptr_t)recv_msg->buf.data;
+		ret = udma_save_tp_info(udma_dev, tp_info, recv_msg->dst_ue_idx);
+		if (ret)
+			dev_err(udma_dev->dev, "udma save tp info failed, ret = %d.\n", ret);
+
+		ret = udma_send_resp_to_ue(udma_dev, recv_msg, ret, UDMA_CMD_NOTIFY_MUE_SAVE_TP);
+		if (ret)
+			dev_err(udma_dev->dev, "udma send resp failed, ret = %d.\n", ret);
+		break;
+	case UDMA_CMD_NOTIFY_MUE_DELETE_GUID:
+		udma_del_eid_guid_by_ue_id(udma_dev, recv_msg->dst_ue_idx);
+		ret = udma_send_resp_to_ue(udma_dev, recv_msg, 0, UDMA_CMD_NOTIFY_MUE_DELETE_GUID);
+		if (ret)
+			dev_err(udma_dev->dev, "udma send resp failed, ret = %d.\n", ret);
+		break;
+	default:
+		dev_err(udma_dev->dev, "ue to mue opcode error, opcode=%hhu.\n", recv_msg->opcode);
+		ret = -EINVAL;
+		break;
 	}
-
-	tp_info = (struct udma_ue_tp_info *)recv_msg->buf.data;
-	ret = udma_save_tp_info(udma_dev, tp_info, recv_msg->dst_ue_idx);
-	if (ret)
-		dev_err(udma_dev->dev, "udma save tp info failed, ret = %d.\n", ret);
-
-	ret = udma_send_tp_resp_to_ue(udma_dev, recv_msg, ret);
-	if (ret)
-		dev_err(udma_dev->dev, "udma send tp resp failed, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -533,8 +543,9 @@ static int udma_crq_recv_msg_from_mue(void *dev, void *data, uint32_t len)
 		INIT_WORK(&flush_work->work, udma_activate_dev_work);
 		queue_work(udma_dev->act_workq, &flush_work->work);
 		return 0;
-	} else if (recv_msg->opcode == UDMA_CMD_NOTIFY_MUE_SAVE_TP) {
-		return udma_recv_tp_resp_from_mue(udma_dev, recv_msg, len);
+	} else if (recv_msg->opcode == UDMA_CMD_NOTIFY_MUE_SAVE_TP ||
+		   recv_msg->opcode == UDMA_CMD_NOTIFY_MUE_DELETE_GUID) {
+		return udma_recv_resp_from_mue(udma_dev, recv_msg, len);
 	}
 	dev_err(udma_dev->dev, "udma receive invalid opcode, opcode = %u.\n",
 		recv_msg->opcode);
@@ -550,7 +561,7 @@ static struct ubase_crq_event_nb udma_crq_opts[] = {
 
 void udma_unregister_crq_event(struct auxiliary_device *adev)
 {
-	struct udma_tp_cmdq_wait_info *wait_completion = NULL;
+	struct udma_cmdq_wait_info *wait_completion = NULL;
 	struct udma_dev *udma_dev = get_udma_dev(adev);
 	struct ubase_crq_event_nb *nb = NULL;
 	size_t index;
@@ -714,13 +725,10 @@ static int udma_ctrlq_check_tp_status(struct udma_dev *udev, void *data, uint16_
 				      uint32_t *rsp_info_len)
 {
 #define UDMA_CTRLQ_CHECK_TP_OFFSET 0xFF
-struct udma_tp_active_req_info {
-	struct udma_ctrlq_check_tp_active_req_info *info;
-	struct rcu_head rcu;
-};
 
-	struct udma_tp_active_req_info tp_active_req;
+	struct udma_ctrlq_check_tp_active_req_info *req_info;
 	uint32_t req_info_len;
+	struct pid *kpid;
 	uint32_t tp_num;
 	uint32_t i;
 
@@ -731,37 +739,34 @@ struct udma_tp_active_req_info {
 		dev_err(udev->dev, "msg param num(%u) is invalid.\n", tp_num);
 		return -EINVAL;
 	}
-	tp_active_req.info = kzalloc(req_info_len, GFP_KERNEL);
-	if (!tp_active_req.info)
+	req_info = kzalloc(req_info_len, GFP_KERNEL);
+	if (!req_info)
 		return -ENOMEM;
-	memcpy(tp_active_req.info, data, req_info_len);
+	memcpy(req_info, data, req_info_len);
 
 	*rsp_info_len = sizeof(struct udma_ctrlq_check_tp_active_rsp_info) +
 			sizeof(struct udma_ctrlq_check_tp_active_rsp_data) * tp_num;
 	*rsp_info = kzalloc(*rsp_info_len, GFP_KERNEL);
 	if (!(*rsp_info)) {
 		*rsp_info_len = 0;
-		kfree_rcu(&tp_active_req, rcu);
+		kfree(req_info);
 		return -ENOMEM;
 	}
 
-	rcu_read_lock();
-	for (i = 0; i < tp_active_req.info->num; i++) {
-		if (find_vpid(tp_active_req.info->data[i].pid_flag))
-			(*rsp_info)->data[i].result = UDMA_CTRLQ_TPID_IN_USE;
-		else
-			(*rsp_info)->data[i].result = UDMA_CTRLQ_TPID_EXITED;
-
-		(*rsp_info)->data[i].tp_id = tp_active_req.info->data[i].tp_id;
+	for (i = 0; i < req_info->num; i++) {
+		kpid = find_get_pid(req_info->data[i].pid_flag);
+		(*rsp_info)->data[i].result = kpid ? UDMA_CTRLQ_TPID_IN_USE :
+					      UDMA_CTRLQ_TPID_EXITED;
+		put_pid(kpid);
+		(*rsp_info)->data[i].tp_id = req_info->data[i].tp_id;
 	}
 	(*rsp_info)->num = tp_num;
-	rcu_read_unlock();
 
 	if (debug_switch)
 		udma_dfx_ctx_print(udev, "udma check tp active", (*rsp_info)->data[0].tp_id,
 				   *rsp_info_len / sizeof(uint32_t), (uint32_t *)(*rsp_info));
 
-	kfree_rcu(&tp_active_req, rcu);
+	kfree(req_info);
 
 	return 0;
 }
@@ -785,12 +790,7 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 				      uint8_t service_ver, void *data,
 				      uint16_t len, uint16_t seq)
 {
-struct udma_tp_active_rsq_info {
-	struct udma_ctrlq_check_tp_active_rsp_info *info;
-	struct rcu_head rcu;
-};
-
-	struct udma_tp_active_rsq_info tp_active_rsq;
+	struct udma_ctrlq_check_tp_active_rsp_info *rsp_info;
 	struct udma_dev *udev = get_udma_dev(adev);
 	struct ubase_ctrlq_msg msg = {};
 	uint32_t rsp_info_len = 0;
@@ -803,8 +803,7 @@ struct udma_tp_active_rsq_info {
 
 	ret = udma_ctrlq_check_tp_active_param(udev, data, len);
 	if (ret == 0) {
-		ret = udma_ctrlq_check_tp_status(udev, data, len, &tp_active_rsq.info,
-						 &rsp_info_len);
+		ret = udma_ctrlq_check_tp_status(udev, data, len, &rsp_info, &rsp_info_len);
 		if (ret)
 			dev_err(udev->dev, "check tp status failed, ret(%d).\n", ret);
 	}
@@ -815,7 +814,7 @@ struct udma_tp_active_rsq_info {
 	msg.need_resp = 0;
 	msg.is_resp = 1;
 	msg.in_size = (uint16_t)rsp_info_len;
-	msg.in = (void *)tp_active_rsq.info;
+	msg.in = (void *)rsp_info;
 	msg.resp_seq = seq;
 	msg.resp_ret = (uint8_t)(-ret);
 
@@ -823,7 +822,7 @@ struct udma_tp_active_rsq_info {
 	if (ret)
 		dev_err(udev->dev, "send check tp active ctrlq msg failed, ret(%d).\n", ret);
 
-	kfree_rcu(&tp_active_rsq, rcu);
+	kfree(rsp_info);
 
 	return ret;
 }

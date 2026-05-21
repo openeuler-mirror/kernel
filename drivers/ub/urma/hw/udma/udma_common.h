@@ -13,6 +13,10 @@
 #define TP_ACK_UDP_SPORT_H_OFFSET 8
 #define UDMA_TPHANDLE_TPID_SHIFT 0xFFFFFF
 #define UDMA_EID_GUID_INDEX_OFFSET 24
+#define UDMA_MIN_SLEEP_TIME 100
+#define UDMA_REMOVE_MAX_SLEEP_TIME 800
+#define UDMA_OPEN_RX_MAX_SLEEP_TIME 3000
+#define UDMA_TIME_SLEEP_RATE 2
 
 struct udma_jetty_grp {
 	struct ubcore_jetty_group ubcore_jetty_grp;
@@ -344,6 +348,7 @@ void udma_dfx_store_id(struct udma_dev *udma_dev, struct udma_dfx_entity *entity
 		       uint32_t id, const char *name);
 void udma_dfx_delete_id(struct udma_dev *udma_dev, struct udma_dfx_entity *entity,
 			uint32_t id);
+void udma_iotlb_sync(struct udma_dev *dev, uint64_t va, uint64_t len);
 int udma_alloc_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct udma_buf *buf);
 void udma_free_normal_buf(struct udma_dev *udma_dev, size_t memory_size, struct udma_buf *buf);
 int udma_k_alloc_buf(struct udma_dev *dev, struct udma_buf *buf, bool need_dtu);

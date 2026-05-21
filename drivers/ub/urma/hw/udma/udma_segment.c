@@ -211,6 +211,7 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg)
 	if (!pages)
 		goto err_alloc_pages;
 
+	seg->first_page = NULL;
 	while (page_left != 0) {
 		for (i = 0; i < min_t(uint64_t, page_left, arr_num); i++) {
 			if (!remap_va_to_pfn(dev, va, &pfn))
@@ -244,6 +245,7 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg)
 
 	if (!try_get_page(seg->first_page)) {
 		dev_err(dev->dev, "failed to get_page.\n");
+		ret = -EINVAL;
 		goto err_get_page;
 	}
 
@@ -283,12 +285,6 @@ static int udma_pin_seg_pages(struct ubcore_device *ub_dev,
 	if (!vma) {
 		mmap_read_unlock(current->mm);
 		dev_err(ctx->dev->dev, "failed to vma_lookup.\n");
-		return -EINVAL;
-	}
-
-	if (vma->vm_end < seg->addr + seg->length) {
-		mmap_read_unlock(current->mm);
-		dev_err(ctx->dev->dev, "invalid vma, seg length=0x%llx.\n", seg->length);
 		return -EINVAL;
 	}
 
@@ -631,6 +627,7 @@ int udma_unregister_seg(struct ubcore_target_seg *ubcore_seg)
 	}
 	mutex_unlock(&udma_dev->ksva_mutex);
 
+	udma_iotlb_sync(udma_dev, seg->addr, seg->length);
 	if (dfx_switch)
 		udma_dfx_delete_seg(udma_dev, ubcore_seg->token_id->token_id,
 				    ubcore_seg->seg.ubva.va);

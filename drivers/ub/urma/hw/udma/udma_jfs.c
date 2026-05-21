@@ -284,7 +284,7 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 		}
 	}
 
-	sq->wrid = kcalloc(1, sq->buf.entry_cnt * sizeof(uint64_t), GFP_KERNEL);
+	sq->wrid = kcalloc(sq->buf.entry_cnt, sizeof(uint64_t), GFP_KERNEL);
 	if (!sq->wrid) {
 		if (!sq->cstm)
 			udma_k_free_buf(dev, &sq->buf, true);
@@ -593,7 +593,8 @@ int udma_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 		return ret;
 	}
 
-	if (udma_bind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC))
+	ret = udma_bind_jfc(dev, cfg->jfc->id, UDMA_SEND_JFC);
+	if (ret)
 		goto err_bind_jfc;
 
 	ret = udma_create_hw_jfs_ctx(dev, ujfs, cfg);
@@ -813,13 +814,8 @@ static int udma_modify_jfs_state(struct udma_dev *udma_dev, struct udma_jfs *udm
 		if (ret)
 			break;
 
-		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE)) {
-			if (udma_modify_jetty_precondition(udma_dev, &udma_jfs->sq)) {
-				ret = -ENOMEM;
-				udma_open_ue_rx_with_retry(udma_dev, true, true, false, 0);
-				break;
-			}
-		}
+		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE))
+			udma_modify_jetty_precondition(udma_dev, &udma_jfs->sq);
 
 		ret = udma_set_jetty_state(udma_dev, udma_jfs->sq.id, to_jetty_state(attr->state));
 		if (ret)
@@ -1533,7 +1529,6 @@ static int udma_post_one_wr(struct udma_jetty_queue *sq, struct ubcore_jfs_wr *w
 	return 0;
 }
 
-#ifdef ST64B
 static void st64b(uint64_t *src, uint64_t *dst)
 {
 	asm volatile (
@@ -1548,12 +1543,13 @@ static void st64b(uint64_t *src, uint64_t *dst)
 		"ldr x6, [x9, #48]\n"
 		"ldr x7, [x9, #56]\n"
 		".inst 0xf83f9140\n"
-		::"r" (src), "r"(dst):"cc", "memory"
+		::"r" (src), "r"(dst)
+		: "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",
+		  "x9", "x10", "cc", "memory"
 	);
 }
-#endif
 
-static void udma_write_dsqe(struct udma_jetty_queue *sq,
+static void udma_write_dsqe(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
 			    struct udma_sqe_ctl *ctrl)
 {
 #define DWQE_SIZE 8
@@ -1561,16 +1557,15 @@ static void udma_write_dsqe(struct udma_jetty_queue *sq,
 
 	ctrl->sqe_bb_idx = sq->pi;
 
-#ifdef ST64B
-	st64b(((uint64_t *)ctrl), (uint64_t *)sq->dwqe_addr);
-#else
-	for (i = 0; i < DWQE_SIZE; i++)
-		writeq_relaxed(*((uint64_t *)ctrl + i),
-				(uint64_t *)sq->dwqe_addr + i);
-#endif
+	if (udma_dev->caps.st64b_en) {
+		st64b(((uint64_t *)ctrl), (uint64_t *)sq->dwqe_addr);
+	} else {
+		for (i = 0; i < DWQE_SIZE; i++)
+			writeq_relaxed(*((uint64_t *)ctrl + i),
+					(uint64_t *)sq->dwqe_addr + i);
+	}
 }
 
-/* thanks to drivers/infiniband/hw/bnxt_re/ib_verbs.c */
 int udma_post_sq_wr(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
 		    struct ubcore_jfs_wr *wr, struct ubcore_jfs_wr **bad_wr)
 {
@@ -1597,10 +1592,10 @@ err_post_wr:
 	if (unlikely(sq->db_status || wr->flag.bs.db_bypass)) {
 		sq->need_ring_db = true;
 	} else {
-		if (likely(wr_cnt && udma_dev->status != UDMA_SUSPEND)) {
+		if (likely(wr_cnt && udma_dev->status == UDMA_NORMAL)) {
 			wmb(); /* set sqe before doorbell */
 			if (wr_cnt == 1 && dwqe_enable && (sq->pi - sq->ci == 1))
-				udma_write_dsqe(sq, wqe_addr);
+				udma_write_dsqe(udma_dev, sq, wqe_addr);
 			else
 				udma_k_update_sq_db(sq);
 		}

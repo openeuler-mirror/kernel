@@ -342,7 +342,7 @@ err_alloc_cqc:
 err_store_jfcn:
 	udma_id_free(&dev->jfc_table.ida_table, jfc->jfcn);
 
-	return -ENOMEM;
+	return ret;
 }
 
 static int udma_alloc_jfc_id(struct udma_dev *udma_dev, uint32_t *idx, struct udma_res *jetty_res)
@@ -383,7 +383,7 @@ static int udma_jfc_alloc_resource(struct udma_dev *dev, struct ubcore_jfc_cfg *
 	bool jfc_seted_before = jfc->jfcn != UDMA_INIT_JFC_ID;
 	unsigned long flags_store;
 	unsigned long flags_erase;
-	int ret;
+	int ret = 0;
 
 	if (!jfc_seted_before) {
 		ret = udma_alloc_jfc_id(dev, &jfc->jfcn, &dev->caps.jfc);
