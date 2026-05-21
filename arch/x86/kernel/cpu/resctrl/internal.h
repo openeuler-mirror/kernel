@@ -60,36 +60,19 @@
  * cpumask_any_housekeeping() - Choose any CPU in @mask, preferring those that
  *			        aren't marked nohz_full
  * @mask:	The mask to pick a CPU from.
- * @exclude_cpu:The CPU to avoid picking.
  *
- * Returns a CPU from @mask, but not @exclude_cpu. If there are housekeeping
- * CPUs that don't use nohz_full, these are preferred. Pass
- * RESCTRL_PICK_ANY_CPU to avoid excluding any CPUs.
- *
- * When a CPU is excluded, returns >= nr_cpu_ids if no CPUs are available.
+ * Returns a CPU in @mask. If there are housekeeping CPUs that don't use
+ * nohz_full, these are preferred.
  */
-static inline unsigned int
-cpumask_any_housekeeping(const struct cpumask *mask, int exclude_cpu)
+static inline unsigned int cpumask_any_housekeeping(const struct cpumask *mask)
 {
 	unsigned int cpu, hk_cpu;
 
-	if (exclude_cpu == RESCTRL_PICK_ANY_CPU)
-		cpu = cpumask_any(mask);
-	else
-		cpu = cpumask_any_but(mask, exclude_cpu);
-
-	if (!IS_ENABLED(CONFIG_NO_HZ_FULL))
+	cpu = cpumask_any(mask);
+	if (!tick_nohz_full_cpu(cpu))
 		return cpu;
 
-	/* If the CPU picked isn't marked nohz_full nothing more needs doing. */
-	if (cpu < nr_cpu_ids && !tick_nohz_full_cpu(cpu))
-		return cpu;
-
-	/* Try to find a CPU that isn't nohz_full to use in preference */
 	hk_cpu = cpumask_nth_andnot(0, mask, tick_nohz_full_mask);
-	if (hk_cpu == exclude_cpu)
-		hk_cpu = cpumask_nth_andnot(1, mask, tick_nohz_full_mask);
-
 	if (hk_cpu < nr_cpu_ids)
 		cpu = hk_cpu;
 
@@ -590,13 +573,11 @@ void mon_event_read(struct rmid_read *rr, struct rdt_resource *r,
 		    struct rdt_domain *d, struct rdtgroup *rdtgrp,
 		    int evtid, int first);
 void mbm_setup_overflow_handler(struct rdt_domain *dom,
-				unsigned long delay_ms,
-				int exclude_cpu);
+				unsigned long delay_ms);
 void mbm_handle_overflow(struct work_struct *work);
 void __init intel_rdt_mbm_apply_quirk(void);
 bool is_mba_sc(struct rdt_resource *r);
-void cqm_setup_limbo_handler(struct rdt_domain *dom, unsigned long delay_ms,
-			     int exclude_cpu);
+void cqm_setup_limbo_handler(struct rdt_domain *dom, unsigned long delay_ms);
 void cqm_handle_limbo(struct work_struct *work);
 bool has_busy_rmid(struct rdt_domain *d);
 void __check_limbo(struct rdt_domain *d, bool force_free);
