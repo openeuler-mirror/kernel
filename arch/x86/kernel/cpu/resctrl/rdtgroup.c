@@ -1450,14 +1450,18 @@ out:
 unsigned int rdtgroup_cbm_to_size(struct rdt_resource *r,
 				  struct rdt_domain *d, unsigned long cbm)
 {
+	struct cpu_cacheinfo *ci;
 	unsigned int size = 0;
-	struct cacheinfo *ci;
-	int num_b;
+	int num_b, i;
 
 	num_b = bitmap_weight(&cbm, r->cache.cbm_len);
-	ci = get_cpu_cacheinfo_level(cpumask_any(&d->cpu_mask), r->cache_level);
-	if (ci)
-		size = ci->size / r->cache.cbm_len * num_b;
+	ci = get_cpu_cacheinfo(cpumask_any(&d->cpu_mask));
+	for (i = 0; i < ci->num_leaves; i++) {
+		if (ci->info_list[i].level == r->cache_level) {
+			size = ci->info_list[i].size / r->cache.cbm_len * num_b;
+			break;
+		}
+	}
 
 	return size;
 }
