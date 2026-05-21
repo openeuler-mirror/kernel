@@ -59,20 +59,10 @@ struct resctrl_staged_config {
 };
 
 /**
- * struct rdt_domain_hdr - common header for different domain types
+ * struct rdt_domain - group of CPUs sharing a resctrl resource
  * @list:		all instances of this resource
  * @id:			unique id for this instance
  * @cpu_mask:		which CPUs share this resource
- */
-struct rdt_domain_hdr {
-	struct list_head		list;
-	int				id;
-	struct cpumask			cpu_mask;
-};
-
-/**
- * struct rdt_domain - group of CPUs sharing a resctrl resource
- * @hdr:		common header for different domain types
  * @rmid_busy_llc:	bitmap of which limbo RMIDs are above threshold
  * @mbm_total:		saved state for MBM total bandwidth
  * @mbm_local:		saved state for MBM local bandwidth
@@ -87,7 +77,9 @@ struct rdt_domain_hdr {
  *			by closid
  */
 struct rdt_domain {
-	struct rdt_domain_hdr		hdr;
+	struct list_head		list;
+	int				id;
+	struct cpumask			cpu_mask;
 	unsigned long			*rmid_busy_llc;
 	struct mbm_state		*mbm_total;
 	struct mbm_state		*mbm_local;
