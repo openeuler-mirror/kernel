@@ -2,12 +2,6 @@
 #ifndef _RESCTRL_H
 #define _RESCTRL_H
 
-#ifdef CONFIG_X86_CPU_RESCTRL
-
-#include <linux/resctrl_x86.h>
-
-#else
-
 #include <linux/cpu.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
@@ -480,5 +474,4 @@ resctrl_arch_match_iommu_closid_rmid(struct iommu_group *group,
 	return false;
 }
 #endif /* CONFIG_RESCTRL_IOMMU */
-#endif /* CONFIG_X86_CPU_RESCTRL */
 #endif /* _RESCTRL_H */
