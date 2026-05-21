@@ -170,8 +170,8 @@ static int cdma_sva_matt_map(struct cdma_umem *umem)
 	ret = ummu_sva_matt_map(&matt_domain, umem->va, &umem->sgt_append.sgt,
 				prot);
 	if (ret)
-		dev_err(umem->dev->dev,
-			"ummu sva matt map failed, ret = %d\n", ret);
+		dev_err(umem->dev->dev, "ummu sva matt map failed, ret = %d\n",
+			ret);
 
 	return ret;
 }
@@ -302,7 +302,7 @@ struct cdma_umem *cdma_umem_get(struct cdma_dev *cdev, u64 va, u64 len,
 		}
 	}
 
-	return umem;
+	goto free_page;
 
 release_umem:
 	cdma_put_target_umem(umem, is_kernel);
@@ -321,8 +321,7 @@ int cdma_k_alloc_buf(struct cdma_dev *cdev, size_t memory_size,
 	aligned_memory_size = memory_size + CDMA_HW_PAGE_SIZE - 1;
 	buf->aligned_va = vmalloc(aligned_memory_size);
 	if (!buf->aligned_va) {
-		dev_err(cdev->dev,
-			"vmalloc kernel buf failed, size = %lu\n",
+		dev_err(cdev->dev, "vmalloc kernel buf failed, size = %lu\n",
 			aligned_memory_size);
 		return -ENOMEM;
 	}
@@ -338,14 +337,13 @@ int cdma_k_alloc_buf(struct cdma_dev *cdev, size_t memory_size,
 	}
 
 	buf->addr = ((u64)buf->aligned_va + CDMA_HW_PAGE_SIZE - 1) &
-			~(CDMA_HW_PAGE_SIZE - 1);
+		    ~(CDMA_HW_PAGE_SIZE - 1);
 	buf->kva = (void *)buf->addr;
 
 	return 0;
 }
 
-void cdma_k_free_buf(struct cdma_dev *cdev, size_t memory_size,
-		     struct cdma_buf *buf)
+void cdma_k_free_buf(struct cdma_dev *cdev, struct cdma_buf *buf)
 {
 	cdma_put_umem(buf->umem, true);
 	vfree(buf->aligned_va);
