@@ -394,7 +394,7 @@ int unic_init_rx(struct unic_dev *unic_dev, u32 num)
 		if (ret) {
 			dev_err(unic_dev->comdev.adev->dev.parent,
 				"failed to init rx cq(%u), ret=%d.\n", i, ret);
-				goto err_create_cq;
+			goto err_create_cq;
 		}
 	}
 

@@ -227,7 +227,7 @@ static int unic_setets_config(struct net_device *ndev, struct ieee_ets *ets,
 		if (ret != -EPERM)
 			return ret;
 		unic_warn(unic_dev,
-			  "ets tsa and bw configuration is not<  permitted.\n");
+			  "ets tsa and bw configuration is not permitted.\n");
 	}
 
 	unic_dev->channels.vl.vl_num = vl_num;

@@ -163,7 +163,6 @@ int ubase_dtu_tbl_init(struct auxiliary_device *aux_dev, u32 tid, u16 *dtu_win_n
 		return -EINVAL;
 
 	udev = ubase_get_udev_by_adev(aux_dev);
-
 	if (udev->dtu_info.dtu_win_num_udma != UBASE_DTU_WIN_NUM_INVALID) {
 		ret = __ubase_dtu_tbl_uninit(udev, udev->dtu_info.dtu_win_num_udma);
 		if (ret)

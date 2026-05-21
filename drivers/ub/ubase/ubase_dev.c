@@ -804,12 +804,12 @@ static int ubase_log_rs_init(struct ubase_dev *udev)
 	UBASE_RATELIMIT_INIT(udev, ctrlq_space_insuffice);
 	UBASE_RATELIMIT_INIT(udev, ue_send_ctrlq_to_cmdq_fail);
 	UBASE_RATELIMIT_INIT(udev, ctrlq_is_disabled);
+	UBASE_RATELIMIT_INIT(udev, ctrlq_msg_queue_wait_timeout);
 	UBASE_RATELIMIT_INIT(udev, ctrlq_seq_insuffice);
 	UBASE_RATELIMIT_INIT(udev, send_ctrlq_unsup_resp_fail);
 	UBASE_RATELIMIT_INIT(udev, send_ue_ctrlq_msg_to_cmdq_fail);
 	UBASE_RATELIMIT_INIT(udev, mbx_buff_not_empty);
 	UBASE_RATELIMIT_INIT(udev, cmdq_is_disable);
-	UBASE_RATELIMIT_INIT(udev, ctrlq_msg_queue_wait_timeout);
 	UBASE_RATELIMIT_INIT(udev, mailbox_cmd_timeout);
 	UBASE_RATELIMIT_INIT(udev, cmdq_space_insuffice);
 	UBASE_RATELIMIT_INIT(udev, post_mailbox_fail);
