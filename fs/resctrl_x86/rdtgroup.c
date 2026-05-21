@@ -2608,8 +2608,10 @@ static int rdt_get_tree(struct fs_context *fc)
 		goto out_root;
 
 	ret = schemata_list_create();
-	if (ret)
-		goto out_schemata_free;
+	if (ret) {
+		schemata_list_destroy();
+		goto out_ctx;
+	}
 
 	ret = closid_init();
 	if (ret)
@@ -2681,6 +2683,7 @@ out_closid_exit:
 	closid_exit();
 out_schemata_free:
 	schemata_list_destroy();
+out_ctx:
 	rdt_disable_ctx();
 out_root:
 	rdtgroup_destroy_root();
