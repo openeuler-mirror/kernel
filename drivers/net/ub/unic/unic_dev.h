@@ -458,7 +458,7 @@ static inline u8 unic_get_rss_vl_num(struct unic_dev *unic_dev, u8 max_vl)
 {
 	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct ubase_adev_qos *qos = ubase_get_adev_qos(adev);
-	u8 vl_num = min(UNIC_RSS_MAX_VL_NUM, qos->nic_vl_num);
+	u8 vl_num = min_t(u8, UNIC_RSS_MAX_VL_NUM, qos->nic_vl_num);
 
 	return max_vl < vl_num ? max_vl : vl_num;
 }

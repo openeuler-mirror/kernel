@@ -503,7 +503,6 @@ static void ubase_free_eq_buf(struct ubase_dev *udev, struct ubase_eq *eq)
 {
 	ubase_free_buf(udev, eq->addr.size, eq->addr.addr, eq->addr.dma_addr,
 		       eq->addr.page);
-
 	eq->addr.addr = NULL;
 }
 

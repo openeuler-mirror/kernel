@@ -8,7 +8,6 @@
 #define __UNIC_ENTRY_DEBUGFS_H__
 
 #include <linux/in6.h>
-#include <linux/if_ether.h>
 #include <ub/ubase/ubase_comm_debugfs.h>
 
 #include "unic_guid.h"

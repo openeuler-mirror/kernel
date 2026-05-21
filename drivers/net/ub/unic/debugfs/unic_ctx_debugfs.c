@@ -255,7 +255,7 @@ int unic_dbg_dump_sq_rq_cq_info(struct seq_file *s, void *data)
 {
 	struct unic_dbg_context {
 		void (*print_titles)(struct seq_file *s);
-		void (*get_info)(struct unic_dev *priv, struct seq_file *s,
+		void (*get_info)(struct unic_dev *unic_dev, struct seq_file *s,
 				 u32 index);
 	} dbg_ctx[] = {
 		{

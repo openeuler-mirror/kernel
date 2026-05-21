@@ -309,4 +309,4 @@ int ubase_query_perf_stats(struct auxiliary_device *adev, u64 port_bitmap,
 			   struct ubase_perf_stats_result *data, u32 data_size);
 int ubase_close_perf_stats(struct auxiliary_device *adev, u64 port_bitmap);
 
-#endif /* _UBASE_COMM_STATS_H_ */
+#endif /* _UB_UBASE_COMM_STATS_H_ */
