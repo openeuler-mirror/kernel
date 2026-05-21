@@ -160,6 +160,7 @@ struct ummu_tecte_data {
 #define TCT_ENT0_MAPT_EN (1UL << 19)
 #define TCT_ENT0_MAC_EN (1UL << 20)
 #define TCT_ENT0_EBIT_EN (1UL << 21)
+#define TCT_ENT0_MATT_BYPASS (1UL << 22)
 #define TCT_ENT0_ASID GENMASK_ULL(47, 32)
 
 #define TCT_ENT1_SZ GENMASK(5, 0)
