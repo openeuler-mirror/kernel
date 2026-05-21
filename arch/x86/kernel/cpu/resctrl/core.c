@@ -136,15 +136,15 @@ static inline void cache_alloc_hsw_probe(void)
 {
 	struct rdt_hw_resource *hw_res = &rdt_resources_all[RDT_RESOURCE_L3];
 	struct rdt_resource *r  = &hw_res->r_resctrl;
-	u64 max_cbm = BIT_ULL_MASK(20) - 1, l3_cbm_0;
+	u32 l, h, max_cbm = BIT_MASK(20) - 1;
 
-	if (wrmsrl_safe(MSR_IA32_L3_CBM_BASE, max_cbm))
+	if (wrmsr_safe(MSR_IA32_L3_CBM_BASE, max_cbm, 0))
 		return;
 
-	rdmsrl(MSR_IA32_L3_CBM_BASE, l3_cbm_0);
+	rdmsr(MSR_IA32_L3_CBM_BASE, l, h);
 
 	/* If all the bits were set in MSR, return success */
-	if (l3_cbm_0 != max_cbm)
+	if (l != max_cbm)
 		return;
 
 	hw_res->num_closid = 4;
