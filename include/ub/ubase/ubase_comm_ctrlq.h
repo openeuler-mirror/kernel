@@ -186,4 +186,4 @@ int ubase_ctrlq_send_ue_req(struct auxiliary_device *adev, void *data, u16 len);
 u16 ubase_ctrlq_ue_msg_header_len(void);
 void ubase_ctrlq_parse_ue_msg(struct auxiliary_device *adev, void *data, u16 len,
 			      struct ubase_ctrlq_ue_msg_info *info);
-#endif /* _UBASE_COMM_CTRLQ_H_ */
+#endif /* _UB_UBASE_COMM_CTRLQ_H_ */
