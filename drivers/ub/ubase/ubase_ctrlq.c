@@ -1085,6 +1085,15 @@ static void ubase_ctrlq_crq_event_callback(struct ubase_dev *udev,
 		   "ctrlq recv notice req: seq=%u, ser_type=%u, ser_ver=%u, opc=0x%x.",
 		   seq, head->service_type, head->service_ver, head->opcode);
 
+	if (head->ret) {
+		/* according to the definition of the CTRLQ interface,
+		 * the 'ret' value of request should always be 0.
+		 */
+		ubase_err(udev, "ctrlq notice req ret is not 0, ret = -%u.",
+			  head->ret);
+		return;
+	}
+
 	mutex_lock(&crq_tab->lock);
 	for (i = 0; i < crq_tab->crq_nb_cnt; i++) {
 		if (crq_tab->crq_nbs[i].service_type == head->service_type &&
