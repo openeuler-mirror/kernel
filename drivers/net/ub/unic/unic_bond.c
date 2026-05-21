@@ -264,9 +264,9 @@ int unic_sync_bond_status(struct net_device *netdev)
 		ret = unic_send_bond_status_change_notify(unic_dev->comdev.adev,
 							  bond_cmd);
 		if (!ret) {
-			unic_info(unic_dev,
-				  "update last_notify_status: %u -> %u.\n",
-				  bond_status->last_notify_status, cur_status);
+			unic_dbg(unic_dev,
+				 "update last_notify_status: %u -> %u.\n",
+				 bond_status->last_notify_status, cur_status);
 			bond_status->last_notify_status = cur_status;
 		}
 	}

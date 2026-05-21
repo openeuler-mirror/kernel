@@ -744,7 +744,7 @@ int unic_dbg_init(struct auxiliary_device *adev)
 	unic_dev = (struct unic_dev *)dev_get_drvdata(dev);
 
 	if (!ubase_root_dentry) {
-		unic_err(unic_dev, "dbgfs root dentry does not exist.\n");
+		unic_err(unic_dev, "debugfs root dentry does not exist.\n");
 		return -ENOENT;
 	}
 
