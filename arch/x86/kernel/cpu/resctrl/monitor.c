@@ -15,12 +15,13 @@
  * Software Developer Manual June 2016, volume 3, section 17.17.
  */
 
-#define pr_fmt(fmt)	"resctrl: " fmt
-
 #include <linux/cpu.h>
-#include <linux/resctrl.h>
+#include <linux/module.h>
+#include <linux/sizes.h>
+#include <linux/slab.h>
 
 #include <asm/cpu_device_id.h>
+#include <asm/resctrl.h>
 
 #include "internal.h"
 
@@ -30,12 +31,15 @@
  */
 bool rdt_mon_capable;
 
+/*
+ * Global to indicate which monitoring events are enabled.
+ */
+unsigned int rdt_mon_features;
+
 #define CF(cf)	((unsigned long)(1048576 * (cf) + 0.5))
 
-static int snc_nodes_per_l3_cache = 1;
-
 /*
- * The correction factor table is documented in Documentation/filesystems/resctrl.rst.
+ * The correction factor table is documented in Documentation/arch/x86/resctrl.rst.
  * If rmid > rmid threshold, MBM total and local values should be multiplied
  * by the correction factor.
  *
@@ -84,7 +88,6 @@ static const struct mbm_correction_factor_table {
 };
 
 static u32 mbm_cf_rmidthreshold __read_mostly = UINT_MAX;
-
 static u64 mbm_cf __read_mostly;
 
 static inline u64 get_corrected_mbm_count(u32 rmid, unsigned long val)
@@ -96,43 +99,7 @@ static inline u64 get_corrected_mbm_count(u32 rmid, unsigned long val)
 	return val;
 }
 
-/*
- * When Sub-NUMA Cluster (SNC) mode is not enabled (as indicated by
- * "snc_nodes_per_l3_cache == 1") no translation of the RMID value is
- * needed. The physical RMID is the same as the logical RMID.
- *
- * On a platform with SNC mode enabled, Linux enables RMID sharing mode
- * via MSR 0xCA0 (see the "RMID Sharing Mode" section in the "Intel
- * Resource Director Technology Architecture Specification" for a full
- * description of RMID sharing mode).
- *
- * In RMID sharing mode there are fewer "logical RMID" values available
- * to accumulate data ("physical RMIDs" are divided evenly between SNC
- * nodes that share an L3 cache). Linux creates an rdt_mon_domain for
- * each SNC node.
- *
- * The value loaded into IA32_PQR_ASSOC is the "logical RMID".
- *
- * Data is collected independently on each SNC node and can be retrieved
- * using the "physical RMID" value computed by this function and loaded
- * into IA32_QM_EVTSEL. @cpu can be any CPU in the SNC node.
- *
- * The scope of the IA32_QM_EVTSEL and IA32_QM_CTR MSRs is at the L3
- * cache.  So a "physical RMID" may be read from any CPU that shares
- * the L3 cache with the desired SNC node, not just from a CPU in
- * the specific SNC node.
- */
-static int logical_rmid_to_physical_rmid(int cpu, int lrmid)
-{
-	struct rdt_resource *r = &rdt_resources_all[RDT_RESOURCE_L3].r_resctrl;
-
-	if (snc_nodes_per_l3_cache == 1)
-		return lrmid;
-
-	return lrmid + (cpu_to_node(cpu) % snc_nodes_per_l3_cache) * r->num_rmid;
-}
-
-static int __rmid_read_phys(u32 prmid, enum resctrl_event_id eventid, u64 *val)
+static int __rmid_read(u32 rmid, enum resctrl_event_id eventid, u64 *val)
 {
 	u64 msr_val;
 
@@ -144,7 +111,7 @@ static int __rmid_read_phys(u32 prmid, enum resctrl_event_id eventid, u64 *val)
 	 * IA32_QM_CTR.Error (bit 63) and IA32_QM_CTR.Unavailable (bit 62)
 	 * are error bits.
 	 */
-	wrmsr(MSR_IA32_QM_EVTSEL, eventid, prmid);
+	wrmsr(MSR_IA32_QM_EVTSEL, eventid, rmid);
 	rdmsrl(MSR_IA32_QM_CTR, msr_val);
 
 	if (msr_val & RMID_VAL_ERROR)
@@ -156,36 +123,40 @@ static int __rmid_read_phys(u32 prmid, enum resctrl_event_id eventid, u64 *val)
 	return 0;
 }
 
-static struct arch_mbm_state *get_arch_mbm_state(struct rdt_hw_mon_domain *hw_dom,
+static struct arch_mbm_state *get_arch_mbm_state(struct rdt_hw_domain *hw_dom,
 						 u32 rmid,
 						 enum resctrl_event_id eventid)
 {
-	struct arch_mbm_state *state;
-
-	if (!resctrl_is_mbm_event(eventid))
+	switch (eventid) {
+	case QOS_L3_OCCUP_EVENT_ID:
 		return NULL;
+	case QOS_L3_MBM_TOTAL_EVENT_ID:
+		return &hw_dom->arch_mbm_total[rmid];
+	case QOS_L3_MBM_LOCAL_EVENT_ID:
+		return &hw_dom->arch_mbm_local[rmid];
+	default:
+		break;
+	}
 
-	state = hw_dom->arch_mbm_states[MBM_STATE_IDX(eventid)];
+	/* Never expect to get here */
+	WARN_ON_ONCE(1);
 
-	return state ? &state[rmid] : NULL;
+	return NULL;
 }
 
-void resctrl_arch_reset_rmid(struct rdt_resource *r, struct rdt_mon_domain *d,
+void resctrl_arch_reset_rmid(struct rdt_resource *r, struct rdt_domain *d,
 			     u32 unused, u32 rmid,
 			     enum resctrl_event_id eventid)
 {
-	struct rdt_hw_mon_domain *hw_dom = resctrl_to_arch_mon_dom(d);
-	int cpu = cpumask_any(&d->hdr.cpu_mask);
+	struct rdt_hw_domain *hw_dom = resctrl_to_arch_dom(d);
 	struct arch_mbm_state *am;
-	u32 prmid;
 
 	am = get_arch_mbm_state(hw_dom, rmid, eventid);
 	if (am) {
 		memset(am, 0, sizeof(*am));
 
-		prmid = logical_rmid_to_physical_rmid(cpu, rmid);
 		/* Record any initial, non-zero count value. */
-		__rmid_read_phys(prmid, eventid, &am->prev_msr);
+		__rmid_read(rmid, eventid, &am->prev_msr);
 	}
 }
 
@@ -193,19 +164,17 @@ void resctrl_arch_reset_rmid(struct rdt_resource *r, struct rdt_mon_domain *d,
  * Assumes that hardware counters are also reset and thus that there is
  * no need to record initial non-zero counts.
  */
-void resctrl_arch_reset_rmid_all(struct rdt_resource *r, struct rdt_mon_domain *d)
+void resctrl_arch_reset_rmid_all(struct rdt_resource *r, struct rdt_domain *d)
 {
-	struct rdt_hw_mon_domain *hw_dom = resctrl_to_arch_mon_dom(d);
-	enum resctrl_event_id eventid;
-	int idx;
+	struct rdt_hw_domain *hw_dom = resctrl_to_arch_dom(d);
 
-	for_each_mbm_event_id(eventid) {
-		if (!resctrl_is_mon_event_enabled(eventid))
-			continue;
-		idx = MBM_STATE_IDX(eventid);
-		memset(hw_dom->arch_mbm_states[idx], 0,
-		       sizeof(*hw_dom->arch_mbm_states[0]) * r->num_rmid);
-	}
+	if (resctrl_arch_is_mbm_total_enabled())
+		memset(hw_dom->arch_mbm_total, 0,
+		       sizeof(*hw_dom->arch_mbm_total) * r->num_rmid);
+
+	if (resctrl_arch_is_mbm_local_enabled())
+		memset(hw_dom->arch_mbm_local, 0,
+		       sizeof(*hw_dom->arch_mbm_local) * r->num_rmid);
 }
 
 static u64 mbm_overflow_count(u64 prev_msr, u64 cur_msr, unsigned int width)
@@ -216,26 +185,30 @@ static u64 mbm_overflow_count(u64 prev_msr, u64 cur_msr, unsigned int width)
 	return chunks >> shift;
 }
 
-int resctrl_arch_rmid_read(struct rdt_resource *r, struct rdt_mon_domain *d,
+int resctrl_arch_rmid_read(struct rdt_resource *r, struct rdt_domain *d,
 			   u32 unused, u32 rmid, enum resctrl_event_id eventid,
 			   u64 *val, void *ignored)
 {
-	struct rdt_hw_mon_domain *hw_dom = resctrl_to_arch_mon_dom(d);
 	struct rdt_hw_resource *hw_res = resctrl_to_arch_res(r);
-	int cpu = cpumask_any(&d->hdr.cpu_mask);
+	struct rdt_hw_domain *hw_dom = resctrl_to_arch_dom(d);
 	struct arch_mbm_state *am;
 	u64 msr_val, chunks;
-	u32 prmid;
 	int ret;
 
 	resctrl_arch_rmid_read_context_check();
 
-	prmid = logical_rmid_to_physical_rmid(cpu, rmid);
-	ret = __rmid_read_phys(prmid, eventid, &msr_val);
-	if (ret)
-		return ret;
+	if (!cpumask_test_cpu(smp_processor_id(), &d->cpu_mask))
+		return -EINVAL;
 
 	am = get_arch_mbm_state(hw_dom, rmid, eventid);
+
+	ret = __rmid_read(rmid, eventid, &msr_val);
+	if (ret) {
+		if (am && ret == -EINVAL)
+			am->prev_msr = 0;
+		return ret;
+	}
+
 	if (am) {
 		am->chunks += mbm_overflow_count(am->prev_msr, msr_val,
 						 hw_res->mbm_width);
@@ -250,101 +223,15 @@ int resctrl_arch_rmid_read(struct rdt_resource *r, struct rdt_mon_domain *d,
 	return 0;
 }
 
-/*
- * The power-on reset value of MSR_RMID_SNC_CONFIG is 0x1
- * which indicates that RMIDs are configured in legacy mode.
- * This mode is incompatible with Linux resctrl semantics
- * as RMIDs are partitioned between SNC nodes, which requires
- * a user to know which RMID is allocated to a task.
- * Clearing bit 0 reconfigures the RMID counters for use
- * in RMID sharing mode. This mode is better for Linux.
- * The RMID space is divided between all SNC nodes with the
- * RMIDs renumbered to start from zero in each node when
- * counting operations from tasks. Code to read the counters
- * must adjust RMID counter numbers based on SNC node. See
- * logical_rmid_to_physical_rmid() for code that does this.
- */
-void arch_mon_domain_online(struct rdt_resource *r, struct rdt_mon_domain *d)
-{
-	if (snc_nodes_per_l3_cache > 1)
-		msr_clear_bit(MSR_RMID_SNC_CONFIG, 0);
-}
-
-/* CPU models that support MSR_RMID_SNC_CONFIG */
-static const struct x86_cpu_id snc_cpu_ids[] __initconst = {
-	X86_MATCH_VFM(INTEL_ICELAKE_X, 0),
-	X86_MATCH_VFM(INTEL_SAPPHIRERAPIDS_X, 0),
-	X86_MATCH_VFM(INTEL_EMERALDRAPIDS_X, 0),
-	X86_MATCH_VFM(INTEL_GRANITERAPIDS_X, 0),
-	X86_MATCH_VFM(INTEL_ATOM_CRESTMONT_X, 0),
-	X86_MATCH_VFM(INTEL_ATOM_DARKMONT_X, 0),
-	{}
-};
-
-/*
- * There isn't a simple hardware bit that indicates whether a CPU is running
- * in Sub-NUMA Cluster (SNC) mode. Infer the state by comparing the
- * number of CPUs sharing the L3 cache with CPU0 to the number of CPUs in
- * the same NUMA node as CPU0.
- * It is not possible to accurately determine SNC state if the system is
- * booted with a maxcpus=N parameter. That distorts the ratio of SNC nodes
- * to L3 caches. It will be OK if system is booted with hyperthreading
- * disabled (since this doesn't affect the ratio).
- */
-static __init int snc_get_config(void)
-{
-	struct cacheinfo *ci = get_cpu_cacheinfo_level(0, RESCTRL_L3_CACHE);
-	const cpumask_t *node0_cpumask;
-	int cpus_per_node, cpus_per_l3;
-	int ret;
-
-	if (!x86_match_cpu(snc_cpu_ids) || !ci)
-		return 1;
-
-	cpus_read_lock();
-	if (num_online_cpus() != num_present_cpus())
-		pr_warn("Some CPUs offline, SNC detection may be incorrect\n");
-	cpus_read_unlock();
-
-	node0_cpumask = cpumask_of_node(cpu_to_node(0));
-
-	cpus_per_node = cpumask_weight(node0_cpumask);
-	cpus_per_l3 = cpumask_weight(&ci->shared_cpu_map);
-
-	if (!cpus_per_node || !cpus_per_l3)
-		return 1;
-
-	ret = cpus_per_l3 / cpus_per_node;
-
-	/* sanity check: Only valid results are 1, 2, 3, 4, 6 */
-	switch (ret) {
-	case 1:
-		break;
-	case 2 ... 4:
-	case 6:
-		pr_info("Sub-NUMA Cluster mode detected with %d nodes per L3 cache\n", ret);
-		rdt_resources_all[RDT_RESOURCE_L3].r_resctrl.mon_scope = RESCTRL_L3_NODE;
-		break;
-	default:
-		pr_warn("Ignore improbable SNC node count %d\n", ret);
-		ret = 1;
-		break;
-	}
-
-	return ret;
-}
-
 int __init rdt_get_mon_l3_config(struct rdt_resource *r)
 {
 	unsigned int mbm_offset = boot_cpu_data.x86_cache_mbm_width_offset;
 	struct rdt_hw_resource *hw_res = resctrl_to_arch_res(r);
 	unsigned int threshold;
 
-	snc_nodes_per_l3_cache = snc_get_config();
-
 	resctrl_rmid_realloc_limit = boot_cpu_data.x86_cache_size * 1024;
-	hw_res->mon_scale = boot_cpu_data.x86_cache_occ_scale / snc_nodes_per_l3_cache;
-	r->num_rmid = (boot_cpu_data.x86_cache_max_rmid + 1) / snc_nodes_per_l3_cache;
+	hw_res->mon_scale = boot_cpu_data.x86_cache_occ_scale;
+	r->num_rmid = boot_cpu_data.x86_cache_max_rmid + 1;
 	hw_res->mbm_width = MBM_CNTR_WIDTH_BASE;
 
 	if (mbm_offset > 0 && mbm_offset <= MBM_CNTR_WIDTH_OFFSET_MAX)
@@ -368,14 +255,6 @@ int __init rdt_get_mon_l3_config(struct rdt_resource *r)
 	 */
 	resctrl_rmid_realloc_threshold = resctrl_arch_round_mon_val(threshold);
 
-	if (rdt_cpu_has(X86_FEATURE_BMEC)) {
-		u32 eax, ebx, ecx, edx;
-
-		/* Detect list of bandwidth sources that can be tracked */
-		cpuid_count(0x80000020, 3, &eax, &ebx, &ecx, &edx);
-		r->mbm_cfg_mask = ecx & MAX_EVT_CONFIG_BITS;
-	}
-
 	r->mon_capable = true;
 
 	return 0;
@@ -393,4 +272,56 @@ void __init intel_rdt_mbm_apply_quirk(void)
 
 	mbm_cf_rmidthreshold = mbm_cf_table[cf_index].rmidthreshold;
 	mbm_cf = mbm_cf_table[cf_index].cf;
+}
+
+static struct mon_evt llc_occupancy_event = {
+	.name		= "llc_occupancy",
+	.evtid		= QOS_L3_OCCUP_EVENT_ID,
+};
+
+static struct mon_evt mbm_total_event = {
+	.name		= "mbm_total_bytes",
+	.evtid		= QOS_L3_MBM_TOTAL_EVENT_ID,
+};
+
+static struct mon_evt mbm_local_event = {
+	.name		= "mbm_local_bytes",
+	.evtid		= QOS_L3_MBM_LOCAL_EVENT_ID,
+};
+
+/*
+ * Initialize the event list for the resource.
+ *
+ * Note that MBM events are also part of RDT_RESOURCE_L3 resource
+ * because as per the SDM the total and local memory bandwidth
+ * are enumerated as part of L3 monitoring.
+ */
+static void l3_mon_evt_init(struct rdt_resource *r)
+{
+	INIT_LIST_HEAD(&r->evt_list);
+
+	if (resctrl_arch_is_llc_occupancy_enabled())
+		list_add_tail(&llc_occupancy_event.list, &r->evt_list);
+	if (resctrl_arch_is_mbm_total_enabled())
+		list_add_tail(&mbm_total_event.list, &r->evt_list);
+	if (resctrl_arch_is_mbm_local_enabled())
+		list_add_tail(&mbm_local_event.list, &r->evt_list);
+}
+
+int resctrl_arch_mon_resource_init(void)
+{
+	struct rdt_resource *r = resctrl_arch_get_resource(RDT_RESOURCE_L3);
+
+	l3_mon_evt_init(r);
+
+	if (resctrl_arch_is_evt_configurable(QOS_L3_MBM_TOTAL_EVENT_ID)) {
+		mbm_total_event.configurable = true;
+		mbm_config_rftype_init("mbm_total_bytes_config");
+	}
+	if (resctrl_arch_is_evt_configurable(QOS_L3_MBM_LOCAL_EVENT_ID)) {
+		mbm_local_event.configurable = true;
+		mbm_config_rftype_init("mbm_local_bytes_config");
+	}
+
+	return 0;
 }

@@ -5218,7 +5218,7 @@ int proc_cpuset_show(struct seq_file *m, struct pid_namespace *ns,
 	spin_unlock_irq(&css_set_lock);
 	rcu_read_unlock();
 
-	if (retval == -E2BIG)
+	if (retval >= PATH_MAX)
 		retval = -ENAMETOOLONG;
 	if (retval < 0)
 		goto out_free;
