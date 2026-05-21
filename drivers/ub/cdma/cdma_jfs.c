@@ -220,11 +220,8 @@ static int cdma_create_hw_jfs_ctx(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 
 static void cdma_free_sq_buf(struct cdma_dev *cdev, struct cdma_jetty_queue *sq)
 {
-	u32 size;
-
 	if (sq->buf.kva) {
-		size = sq->buf.entry_cnt * sq->buf.entry_size;
-		cdma_k_free_buf(cdev, size, &sq->buf);
+		cdma_k_free_buf(cdev, &sq->buf);
 	} else {
 		cdma_put_umem(sq->buf.umem, false);
 		sq->buf.umem = NULL;
@@ -545,6 +542,8 @@ int cdma_delete_jfs(struct cdma_dev *cdev, u32 jfs_id)
 
 	spin_lock(&cdev->jfs_table.lock);
 	jfs = idr_find(&cdev->jfs_table.idr_tbl.idr, jfs_id);
+	if (jfs)
+		idr_remove(&cdev->jfs_table.idr_tbl.idr, jfs_id);
 	spin_unlock(&cdev->jfs_table.lock);
 	if (!jfs) {
 		dev_err(cdev->dev, "get jfs from table failed, id = %u\n", jfs_id);
@@ -561,8 +560,6 @@ int cdma_delete_jfs(struct cdma_dev *cdev, u32 jfs_id)
 	wait_for_completion(&jfs->ae_comp);
 
 	cdma_free_sq_buf(cdev, &jfs->sq);
-
-	cdma_free_jfs_id(cdev, jfs_id);
 
 	dev_info(cdev->dev, "delete jfs, id = %u\n", jfs_id);
 
@@ -602,7 +599,7 @@ static inline u32 cdma_get_normal_sge_num(u8 opcode, struct cdma_sqe_ctl *tmp_sq
 	}
 }
 
-static bool cdma_k_check_sge_num(u8 opcode, struct cdma_jetty_queue *sq,
+static bool cdma_k_sge_num_exceed(u8 opcode, struct cdma_jetty_queue *sq,
 				 struct cdma_jfs_wr *wr)
 {
 	switch (opcode) {
@@ -955,7 +952,7 @@ static int cdma_post_one_wr(struct cdma_jetty_queue *sq, struct cdma_jfs_wr *wr,
 		return -EINVAL;
 	}
 
-	if (cdma_k_check_sge_num(opcode, sq, wr)) {
+	if (cdma_k_sge_num_exceed(opcode, sq, wr)) {
 		dev_err(cdev->dev, "cdma sge num invalid, opcode = %u\n",
 			opcode);
 		return -EINVAL;

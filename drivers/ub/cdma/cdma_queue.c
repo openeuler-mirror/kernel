@@ -200,14 +200,16 @@ int cdma_delete_queue(struct cdma_dev *cdev, u32 queue_id)
 		return -EINVAL;
 	}
 
-	queue = cdma_find_queue(cdev, queue_id);
+	spin_lock(&cdev->queue_table.lock);
+	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	if (queue)
+		idr_remove(&cdev->queue_table.idr_tbl.idr, queue_id);
+	spin_unlock(&cdev->queue_table.lock);
 	if (!queue) {
 		dev_err(cdev->dev, "get queue from table failed, id = %u\n",
 			queue_id);
 		return -EINVAL;
 	}
-
-	cdma_delete_queue_id(cdev, queue_id);
 
 	if (queue->is_kernel)
 		cdma_delete_queue_res(cdev, queue);

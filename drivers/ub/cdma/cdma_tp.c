@@ -237,14 +237,16 @@ void cdma_destroy_ctp_imm(struct cdma_dev *cdev, u32 tp_id)
 	if (!cdev)
 		return;
 
-	tp = cdma_id_find_ctp(cdev, tp_id);
-	if (!tp)
-		return;
-
 	spin_lock(&cdev->ctp_table.lock);
+	tp = idr_find(&cdev->ctp_table.idr_tbl.idr, tp_id);
+	if (!tp) {
+		dev_err(cdev->dev, "get ctp from table failed, id = %u\n", tp_id);
+		spin_unlock(&cdev->ctp_table.lock);
+		return;
+	}
+	idr_remove(&cdev->ctp_table.idr_tbl.idr, tp_id);
 	tpn = tp->base.tpn;
 	cfg = tp->base.cfg;
-	idr_remove(&cdev->ctp_table.idr_tbl.idr, tp_id);
 	kfree(tp);
 	spin_unlock(&cdev->ctp_table.lock);
 
