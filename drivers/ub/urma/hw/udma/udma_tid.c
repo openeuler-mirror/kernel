@@ -12,7 +12,7 @@ static int udma_get_key_id_from_user(struct udma_dev *udma_dev,
 				     struct udma_tid *udma_tid)
 {
 	unsigned long byte;
-	uint32_t tid;
+	uint32_t tid = 0;
 
 	if (!udata->udrv_data || !udata->udrv_data->in_addr) {
 		dev_err(udma_dev->dev, "udrv_data or in_addr is null.\n");
@@ -117,7 +117,7 @@ int udma_free_tid(struct ubcore_token_id *token_id)
 	struct ummu_invalid_cfg_param inva_param = {};
 	struct udma_context *ctx;
 	struct iommu_sva *ksva;
-	int ret;
+	int ret = 0;
 
 	if (!udma_tid->kernel_mode) {
 		ctx = to_udma_context(token_id->uctx);
@@ -128,7 +128,7 @@ int udma_free_tid(struct ubcore_token_id *token_id)
 		inva_param.tid = udma_tid->tid;
 		inva_param.mm = ctx->mm;
 		ret = ummu_core_invalidate_cfg(&inva_param);
-		if (ret)
+		if (ret && ret != -ENOENT && ret != -ESRCH)
 			dev_err_ratelimited(udma_dev->dev,
 					    "invalidate cfg_table failed, ret=%d.\n", ret);
 

@@ -45,6 +45,7 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.ccu_jetty_max_cnt = dev->caps.ccu_jetty.max_cnt;
 	resp.hugepage_enable = ubase_adev_prealloc_supported(dev->comdev.adev) & hugepage_enable;
 	resp.sva_sep_mode_en = dev->caps.sva_sep_mode_en;
+	resp.st64b_en = dev->caps.st64b_en;
 
 	byte = copy_to_user((void *)(uintptr_t)udrv_data->out_addr, &resp,
 			   (uint32_t)sizeof(resp));
@@ -59,27 +60,16 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 
 static void udma_put_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 {
-	struct ummu_invalid_cfg_param inva_param = { ctx->mm, ctx->tid };
-	int ret;
-
 	if (dev->caps.sva_sep_mode_en) {
 		mutex_lock(&dev->seg_tree_mutex);
 		if (refcount_dec_and_test(&ctx->seg_node->ctx_refcnt)) {
 			udma_seg_tree_destroy(ctx->seg_node);
 			__xa_erase(&dev->seg_tree_table, ctx->tid);
-
-			ret = ummu_core_invalidate_cfg(&inva_param);
-			if (ret)
-				dev_err(dev->dev, "invalidate cfg_table failed, ret=%d.\n", ret);
 		}
 		mutex_unlock(&dev->seg_tree_mutex);
 
 		ummu_core_free_tdev(ctx->ummu_dev);
 	} else {
-		ret = ummu_core_invalidate_cfg(&inva_param);
-		if (ret)
-			dev_err(dev->dev, "invalidate cfg_table failed, ret=%d.\n", ret);
-
 		iommu_sva_unbind_device_isolated(ctx->sva);
 	}
 }
@@ -217,6 +207,11 @@ int udma_free_ucontext(struct ubcore_ucontext *ucontext)
 	mutex_lock(&ctx->hugepage_lock);
 	list_for_each_entry_safe(priv, tmp, &ctx->hugepage_list, list) {
 		list_del(&priv->list);
+		if (ctx->dev->caps.sva_sep_mode_en) {
+			udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID,
+					  (uintptr_t)priv->va_base, priv->va_len);
+			sg_free_table(&priv->sgt);
+		}
 		if (current->mm) {
 			mmap_write_lock(current->mm);
 			vma = find_vma(current->mm, (unsigned long)priv->va_base);
@@ -361,6 +356,7 @@ udma_alloc_page_priv(struct udma_context *ctx, struct vm_area_struct *vma, uint3
 	return priv;
 
 err_remap_pfn_range:
+	zap_vma_ptes(vma, vma->vm_start, i * PAGE_SIZE);
 err_alloc_pages:
 	for (i = 0; i < priv->page_num; i++) {
 		if (priv->pages[i])

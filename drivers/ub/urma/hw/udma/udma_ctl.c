@@ -153,7 +153,7 @@ static int udma_get_sq_buf_ex(struct udma_dev *dev, struct udma_jetty_queue *sq,
 
 	sq->buf.kva = (void *)(uintptr_t)sq->buf.addr;
 
-	sq->wrid = kcalloc(1, sq->buf.entry_cnt * sizeof(uint64_t), GFP_KERNEL);
+	sq->wrid = kcalloc(sq->buf.entry_cnt, sizeof(uint64_t), GFP_KERNEL);
 	if (!sq->wrid) {
 		sq->buf.kva = NULL;
 		sq->buf.addr = 0;
@@ -818,6 +818,8 @@ static int send_cmd_query_all_cqe_aux_info(struct udma_dev *udma_dev,
 	size = ARRAY_SIZE(cqe_type_arr) * UDMA_CQE_NUM_PER_TYPE *
 		sizeof(struct udma_cmd_query_cqe_aux_info);
 	info_arr = kzalloc(size, GFP_KERNEL);
+	if (!info_arr)
+		return -ENOMEM;
 
 	for (i = 0; i < ARRAY_SIZE(cqe_type_arr); i++) {
 		for (j = 0; j < UDMA_CQE_NUM_PER_TYPE; j++) {

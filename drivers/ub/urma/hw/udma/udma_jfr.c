@@ -74,7 +74,7 @@ static int udma_get_k_jfr_buf(struct udma_dev *dev, struct udma_jfr *jfr)
 		goto err_idx_que;
 	}
 
-	jfr->rq.wrid = kcalloc(1, jfr->rq.buf.entry_cnt * sizeof(uint64_t), GFP_KERNEL);
+	jfr->rq.wrid = kcalloc(jfr->rq.buf.entry_cnt, sizeof(uint64_t), GFP_KERNEL);
 	if (!jfr->rq.wrid)
 		goto err_wrid;
 
@@ -1211,7 +1211,7 @@ int udma_alloc_jfr(struct ubcore_device *dev, struct ubcore_jfr_cfg *cfg, struct
 
 	udma_jfr = kzalloc(sizeof(*udma_jfr), GFP_KERNEL);
 	if (!udma_jfr)
-		return -EINVAL;
+		return -ENOMEM;
 
 	udma_jfr->ubcore_jfr.jfr_cfg = *cfg;
 	*jfr = &udma_jfr->ubcore_jfr;
@@ -1230,8 +1230,9 @@ int udma_active_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 	if (udma_verify_jfr_param(udma_dev, cfg))
 		return -EINVAL;
 
-	if (udma_alloc_jfr_id(udma_dev, jfr_opt->urma_jfr_id, &udma_jfr->rq.id))
-		return -EINVAL;
+	ret = udma_alloc_jfr_id(udma_dev, jfr_opt->urma_jfr_id, &udma_jfr->rq.id);
+	if (ret)
+		return ret;
 
 	set_jfr_param(udma_jfr, cfg);
 
@@ -1239,7 +1240,8 @@ int udma_active_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 	if (ret)
 		goto err_get_jfr_buf;
 
-	if (udma_bind_jfc(udma_dev, cfg->jfc->id, UDMA_RECV_JFC))
+	ret = udma_bind_jfc(udma_dev, cfg->jfc->id, UDMA_RECV_JFC);
+	if (ret)
 		goto err_xa_store;
 
 	ret = xa_err(xa_store(&udma_dev->jfr_table.xa, udma_jfr->rq.id, udma_jfr, GFP_KERNEL));
