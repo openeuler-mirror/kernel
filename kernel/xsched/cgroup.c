@@ -930,7 +930,5 @@ struct cgroup_subsys xcu_cgrp_subsys = {
 #ifdef CONFIG_CGROUP_FREEZER
 	.legacy_cftypes = files,
 	.legacy_name = "freezer",
-#else
-	.legacy_cftypes = xcu_cg_files,
 #endif
 };
