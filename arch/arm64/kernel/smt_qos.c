@@ -11,7 +11,7 @@
 
 #include <vdso/time64.h>
 
-static unsigned int sysctl_sched_wfi_timeout = 50;
+unsigned int sysctl_sched_wfi_timeout = 50;
 static DEFINE_STATIC_KEY_TRUE(split_mode);
 static u32 arch_timer_freq;
 
