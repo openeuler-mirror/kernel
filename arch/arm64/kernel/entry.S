@@ -36,7 +36,7 @@
 
 	.macro sync_sei, label = esb
 #ifdef CONFIG_ARM64_SYNC_SEI
-	.if     \label != xcall
+	.ifnc     \label, xcall
 	.pushsection    ".esb_patch_table", "a"
 	.quad           .Lesb_insn\@
 	.popsection
@@ -112,7 +112,7 @@ alternative_cb_end
 	sub	x0, sp, x0			// x0'' = sp' - x0' = (sp + x0) - sp = x0
 	sub	sp, sp, x0			// sp'' = sp' - x0 = (sp + x0) - x0 = sp
 #ifdef CONFIG_FAST_SYSCALL
-	.if	\label == xcall
+	.ifc	\label, xcall
 	b	el\el\ht\()_\regsize\()_sync
 	.else
 	b	el\el\ht\()_\regsize\()_\label
@@ -152,7 +152,7 @@ alternative_cb_end
 	mrs	x0, tpidrro_el0
 #endif
 #ifdef CONFIG_FAST_SYSCALL
-	.if	\label == xcall
+	.ifc	\label, xcall
 	b	el\el\ht\()_\regsize\()_sync
 	.else
 	b	el\el\ht\()_\regsize\()_\label
@@ -777,8 +777,12 @@ SYM_CODE_START_LOCAL(el\el\ht\()_\regsize\()_\label)
 	kernel_entry \el, \regsize
 
 #ifdef CONFIG_ARM64_SYNC_SEI
-	.if \el == 1 && \ht == h && \label == error
+	.if \el == 1
+	.ifc \ht, h
+	.ifc \label, error
 	sei_restore_sp_el0 x20, x21
+	.endif
+	.endif
 	.endif
 #endif
 
