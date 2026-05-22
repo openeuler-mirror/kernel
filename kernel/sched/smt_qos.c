@@ -123,7 +123,7 @@ static inline void send_ipi_throttle_smt(int this_cpu)
 {
 	int cpu;
 
-	if (!system_uses_xint())
+	if (!system_uses_xint() || !sysctl_sched_wfi_timeout)
 		return;
 
 	for_each_cpu(cpu, cpu_smt_mask(this_cpu)) {

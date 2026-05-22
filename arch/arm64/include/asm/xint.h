@@ -5,6 +5,8 @@
 #define NR_IPI_USER	7  // SGI
 
 #ifndef __ASSEMBLY__
+extern unsigned int sysctl_sched_wfi_timeout;
+
 extern void gic_handle_irq_noack(struct pt_regs *regs);
 extern void gic_handle_nmi_noack(struct pt_regs *regs);
 extern void arch_smp_send_ipi_user(int cpu);
