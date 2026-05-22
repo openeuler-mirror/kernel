@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
  * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
- * Description：UBM MAPPING CORE API
+ * Description:UBM MAPPING CORE API
  */
 #define pr_fmt(fmt) "UBMEMPFD: " fmt
 
@@ -287,7 +287,6 @@ static int ubmempfd_check_req(const char __user *buf, size_t count)
 
 	if (count < req_len) {
 		pr_err("Invalid count\n");
-
 		return -EINVAL;
 	}
 
