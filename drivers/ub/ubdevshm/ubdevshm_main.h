@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
-
 /*
  * Copyright (c) 2025 HiSilicon Technologies Co., Ltd. All rights reserved.
  * Description: ubdevshm struct defines and function prototypes

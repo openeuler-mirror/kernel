@@ -27,7 +27,7 @@ struct uba_eid {
  * union uba_attr - permissions info of ub address.
  * @bs.readable: read permissions.
  * @bs.writeable: write permissions.
- * @bs.executeable: execute permissions.
+ * @bs.executable: execute permissions.
  * @bs.token_value_required: enable token value.
  * @reserved: will be ignored.
  * @value:This parameter is used when the detail permission information
@@ -37,7 +37,7 @@ union uba_attr {
 	struct {
 		u64 readable : 1;
 		u64 writeable : 1;
-		u64 executeable : 1;
+		u64 executable : 1;
 		u64 token_value_required : 1;
 		u64 reserved : 60;
 	} bs;
@@ -93,10 +93,10 @@ struct mem_uba {
 
 enum identity_type {
 	/*
-	 * IDENTIY_TGID constraint:
+	 * IDENTITY_TGID constraint:
 	 * The shared and user processes must reside within the same PID namespace.
 	 */
-	IDENTIY_TGID,
+	IDENTITY_TGID,
 	IDENTIY_TYPE_MAX,
 };
 
@@ -121,7 +121,6 @@ struct shm_user {
 struct access_ctx {
 	u32 shm_container_id;
 	u32 access_ctx_id;
-
 };
 
 typedef int (*invalidate)(u64 invalidate_tag);
@@ -146,7 +145,7 @@ struct ubdevshm_mem_ops {
  * Return whether ubdevshm is initialization.
  *
  * Context: Any context.
- * Return: true indicates ubdevshm is avaialbe, false indicates not.
+ * Return: true indicates ubdevshm is available, false indicates not.
  */
 bool ubdevshm_is_inited(void);
 
