@@ -578,6 +578,13 @@ static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
 	udma_dev->caps.jetty.start_idx = cmd->standard_jetty_start;
 	udma_dev->caps.jetty.max_cnt = cmd->standard_jetty_num;
 
+	udma_dev->caps.ccu_jfc.start_idx = cmd->ccu_jfc_start;
+	udma_dev->caps.ccu_jfc.max_cnt =  cmd->ccu_jfc_num;
+	udma_dev->caps.ccu_jfc.next_idx = udma_dev->caps.ccu_jfc.start_idx;
+	udma_dev->caps.stars_jfc.start_idx = cmd->stars_jfc_start;
+	udma_dev->caps.stars_jfc.max_cnt = cmd->stars_jfc_num;
+	udma_dev->caps.stars_jfc.next_idx = udma_dev->caps.stars_jfc.start_idx;
+
 	udma_dev->caps.rsvd_jetty_cnt = udma_dev->caps.public_jetty.max_cnt +
 					udma_dev->caps.ccu_jetty.max_cnt +
 					udma_dev->caps.hdc_jetty.max_cnt +

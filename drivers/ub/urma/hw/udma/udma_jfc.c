@@ -269,7 +269,8 @@ static int udma_verify_stars_jfc_param(struct udma_dev *dev,
 	size = jfc->buf.entry_cnt * dev->caps.cqe_size;
 
 	if (size != jfc_addr->cq_len) {
-		dev_err(dev->dev, "cqe buff size is wrong, buf size = %u.\n", size);
+		dev_err(dev->dev, "cqe buff size is wrong, buf size = %u, cq_len = %u.\n",
+			size, jfc_addr->cq_len);
 		return -EINVAL;
 	}
 
@@ -292,21 +293,71 @@ static int udma_get_stars_jfc_buf(struct udma_dev *dev, struct udma_jfc *jfc)
 	return 0;
 }
 
+int udma_alloc_ccu_stars_id(struct udma_dev *dev, struct udma_ida *ida_table,
+			    struct udma_res *jfc_res, uint32_t *idx)
+{
+	uint32_t max = jfc_res->start_idx + jfc_res->max_cnt - 1;
+	uint32_t min = jfc_res->start_idx;
+	int id;
+
+	spin_lock(&ida_table->lock);
+	id = ida_alloc_range(&ida_table->ida, jfc_res->next_idx, max, GFP_ATOMIC);
+	if (id < 0) {
+		id = ida_alloc_range(&ida_table->ida, min, max, GFP_ATOMIC);
+		if (id < 0) {
+			spin_unlock(&ida_table->lock);
+			dev_err(dev->dev, "failed to alloc id, ret = %d.\n", id);
+			return id == -ENOSPC ? -ENOSR : id;
+		}
+	}
+
+	jfc_res->next_idx = (uint32_t)id + 1 > max ? min : (uint32_t)id + 1;
+
+	*idx = (uint32_t)id;
+	spin_unlock(&ida_table->lock);
+
+	return 0;
+}
+
+static int udma_alloc_stars_ccu_jfc_id_detail(struct udma_dev *dev, struct udma_jfc *jfc)
+{
+	struct udma_ida *ida_table = &dev->jfc_table.ida_table;
+	struct udma_res *stars_jfc = &dev->caps.stars_jfc;
+	struct udma_res *ccu_jfc = &dev->caps.ccu_jfc;
+	int ret;
+
+	if (jfc->mode == UDMA_STARS_JFC_TYPE)
+		ret = udma_alloc_ccu_stars_id(dev, ida_table, stars_jfc, &jfc->jfcn);
+	else
+		ret = udma_alloc_ccu_stars_id(dev, ida_table, ccu_jfc, &jfc->jfcn);
+	if (ret) {
+		dev_err(dev->dev, "failed to alloc id for stars or ccu jfc, ret=%d, jfc_mode=%u.\n",
+			ret, jfc->mode);
+		return ret;
+	}
+
+	return 0;
+}
+
 static int udma_create_stars_jfc(struct udma_dev *dev,
 				 struct udma_jfc *jfc,
 				 struct ubcore_jfc_cfg *cfg,
 				 struct ubcore_udata *udata,
 				 struct udma_create_jfc_ucmd *ucmd)
 {
+	struct udma_res *stars_jfc = &dev->caps.stars_jfc;
+	struct udma_res *ccu_jfc = &dev->caps.ccu_jfc;
 	unsigned long flags_store;
 	unsigned long flags_erase;
 	int ret;
 
-	ret = udma_id_alloc_auto_grow(dev, &dev->jfc_table.ida_table, &jfc->jfcn);
-	if (ret) {
-		dev_err(dev->dev, "failed to alloc id for stars JFC.\n");
+	if ((ccu_jfc->start_idx != 0 && ccu_jfc->max_cnt != 0) ||
+	    (stars_jfc->start_idx != 0 && stars_jfc->max_cnt != 0))
+		ret = udma_alloc_stars_ccu_jfc_id_detail(dev, jfc);
+	else
+		ret = udma_id_alloc_auto_grow(dev, &dev->jfc_table.ida_table, &jfc->jfcn);
+	if (ret)
 		return ret;
-	}
 
 	udma_init_jfc_param(cfg, jfc);
 	xa_lock_irqsave(&dev->jfc_table.xa, flags_store);
@@ -345,35 +396,90 @@ err_store_jfcn:
 	return ret;
 }
 
-static int udma_alloc_jfc_id(struct udma_dev *udma_dev, uint32_t *idx, struct udma_res *jetty_res)
+static int udma_alloc_normal_jfc_id(struct udma_dev *udma_dev, uint32_t min,
+				    uint32_t max, uint32_t *idx)
 {
-	uint32_t max = jetty_res->start_idx + jetty_res->max_cnt - 1;
-	struct ida *ida = &udma_dev->jfc_table.ida_table.ida;
-	uint32_t min = jetty_res->start_idx;
-	uint32_t next = jetty_res->next_idx;
-	int ret;
+	struct udma_ida *ida_table = &udma_dev->jfc_table.ida_table;
+	int id;
 
-	if (jetty_res->max_cnt == 0) {
-		dev_err(udma_dev->dev, "ida alloc failed max_cnt is 0.\n");
-		return -EINVAL;
+	id = ida_alloc_range(&ida_table->ida, ida_table->next, max, GFP_ATOMIC);
+	if (id < 0) {
+		dev_err(udma_dev->dev, "failed to alloc id, ret = %d, next = %u, max = %u.\n",
+			id, ida_table->next, max);
+		return id;
 	}
 
-	spin_lock(&udma_dev->jfc_table.ida_table.lock);
-	ret = ida_alloc_range(ida, next, max, GFP_ATOMIC);
-	if (ret < 0) {
-		ret = ida_alloc_range(ida, min, max, GFP_ATOMIC);
-		if (ret < 0) {
-			spin_unlock(&udma_dev->jfc_table.ida_table.lock);
-			dev_err(udma_dev->dev, "ida alloc failed %d.\n", ret);
-			return ret == -ENOSPC ? -ENOSR : ret;
-		}
-	}
-
-	*idx = (uint32_t)ret;
-	jetty_res->next_idx = (*idx + 1) > max ? min : (*idx + 1);
-	spin_unlock(&udma_dev->jfc_table.ida_table.lock);
+	ida_table->next = (uint32_t)id + 1;
+	*idx = (uint32_t)id;
 
 	return 0;
+}
+
+static int udma_alloc_normal_jfc_id_detail(struct udma_dev *udma_dev, uint32_t *idx)
+{
+	struct udma_ida *ida_table = &udma_dev->jfc_table.ida_table;
+	struct udma_res *stars_jfc = &udma_dev->caps.stars_jfc;
+	struct udma_res *ccu_jfc = &udma_dev->caps.ccu_jfc;
+	uint32_t min;
+	uint32_t max;
+	int ret;
+
+	if (ida_table->max == 0)
+		return -EINVAL;
+
+	if ((ccu_jfc->start_idx != 0 && ccu_jfc->max_cnt != 0) ||
+	    (stars_jfc->start_idx != 0 && stars_jfc->max_cnt != 0)) {
+		spin_lock(&ida_table->lock);
+
+		min = ida_table->min;
+		max = ccu_jfc->start_idx - 1;
+		if (ida_table->next >= min && ida_table->next <= max) {
+			ret = udma_alloc_normal_jfc_id(udma_dev, min, max, idx);
+			if (ret == 0) {
+				if (ida_table->next > max)
+					ida_table->next = ccu_jfc->start_idx + ccu_jfc->max_cnt;
+				spin_unlock(&ida_table->lock);
+				return 0;
+			}
+			ida_table->next = ccu_jfc->start_idx + ccu_jfc->max_cnt;
+		}
+
+		min = ccu_jfc->start_idx + ccu_jfc->max_cnt;
+		max = stars_jfc->start_idx - 1;
+		if (ida_table->next >= min && ida_table->next <= max) {
+			ret = udma_alloc_normal_jfc_id(udma_dev, min, max, idx);
+			if (ret == 0) {
+				if (ida_table->next > max)
+					ida_table->next = stars_jfc->start_idx + stars_jfc->max_cnt;
+				spin_unlock(&ida_table->lock);
+				return 0;
+			}
+			ida_table->next = stars_jfc->start_idx + stars_jfc->max_cnt;
+		}
+
+		min = stars_jfc->start_idx + stars_jfc->max_cnt;
+		max = ida_table->max;
+		if (ida_table->next >= min && ida_table->next <= max) {
+			ret = udma_alloc_normal_jfc_id(udma_dev, min, max, idx);
+			if (ret == 0) {
+				if (ida_table->next > ida_table->max)
+					ida_table->next = ida_table->min;
+				spin_unlock(&ida_table->lock);
+				return 0;
+			}
+			ida_table->next = ida_table->min;
+		}
+
+		spin_unlock(&ida_table->lock);
+	} else {
+		ret = udma_id_alloc_auto_grow(udma_dev, &udma_dev->jfc_table.ida_table, idx);
+		if (ret == 0)
+			return 0;
+	}
+
+	dev_err(udma_dev->dev, "udma alloc jfc id failed, ret=%d, ida_tablb_next=%u.\n",
+		ret, ida_table->next);
+	return ret;
 }
 
 static int udma_jfc_alloc_resource(struct udma_dev *dev, struct ubcore_jfc_cfg *cfg,
@@ -386,7 +492,7 @@ static int udma_jfc_alloc_resource(struct udma_dev *dev, struct ubcore_jfc_cfg *
 	int ret = 0;
 
 	if (!jfc_seted_before) {
-		ret = udma_alloc_jfc_id(dev, &jfc->jfcn, &dev->caps.jfc);
+		ret = udma_alloc_normal_jfc_id_detail(dev, &jfc->jfcn);
 		if (ret) {
 			dev_err(dev->dev, "failed to alloc id for JFC.\n");
 			return ret;
@@ -485,8 +591,7 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *ubcore_dev,
 		return &jfc->base;
 	}
 
-	ret = udma_id_alloc_auto_grow(dev, &dev->jfc_table.ida_table,
-				      &jfc->jfcn);
+	ret = udma_alloc_normal_jfc_id_detail(dev, &jfc->jfcn);
 	if (ret)
 		goto err_get_cmd;
 
@@ -711,8 +816,8 @@ err_get_page_dir:
 
 static int set_jfc_mode(struct udma_jfc *jfc, struct udma_dev *dev, uint32_t jfc_id)
 {
-	struct udma_res stars_jfc = dev->caps.stars_jetty;
-	struct udma_res ccu_jfc = dev->caps.ccu_jetty;
+	struct udma_res stars_jfc = dev->caps.stars_jfc;
+	struct udma_res ccu_jfc = dev->caps.ccu_jfc;
 	struct udma_res jfc_all = dev->caps.jfc;
 	struct udma_res ucp_jfc = dev->caps.ucp_caps.ucp_jfc;
 

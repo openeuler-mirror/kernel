@@ -341,6 +341,7 @@ static struct ubcore_jfc *udma_create_jfc_ex(struct ubcore_device *ubcore_dev,
 					     struct udma_jfc_cfg_ex *cfg_ex)
 {
 	struct udma_dev *dev = to_udma_dev(ubcore_dev);
+	struct udma_res *stars_jfc = &dev->caps.stars_jfc;
 	struct ubcore_jfc_cfg *cfg = &cfg_ex->base_cfg;
 	unsigned long flags_store;
 	unsigned long flags_erase;
@@ -358,7 +359,11 @@ static struct ubcore_jfc *udma_create_jfc_ex(struct ubcore_device *ubcore_dev,
 	if (ret)
 		goto err_check_cfg;
 
-	ret = udma_id_alloc_auto_grow(dev, &dev->jfc_table.ida_table, &jfc->jfcn);
+	if (stars_jfc->start_idx != 0 && stars_jfc->max_cnt != 0)
+		ret = udma_alloc_ccu_stars_id(dev, &dev->jfc_table.ida_table,
+					      &dev->caps.stars_jfc, &jfc->jfcn);
+	else
+		ret = udma_id_alloc_auto_grow(dev, &dev->jfc_table.ida_table, &jfc->jfcn);
 	if (ret)
 		goto err_alloc_jfc_id;
 

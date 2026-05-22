@@ -83,6 +83,8 @@ struct udma_caps {
 	struct udma_res stars_jetty;
 	struct udma_res public_jetty;
 	struct udma_res user_ctrl_normal_jetty;
+	struct udma_res ccu_jfc;
+	struct udma_res stars_jfc;
 	struct udma_ucp_caps ucp_caps;
 	uint8_t ack_queue_num;
 	uint8_t port_num;
