@@ -640,6 +640,9 @@ static int vstream_hbm_alloc(struct vstream_args *arg)
 	if (!dmem_cgroup_enabled())
 		return -EPERM;
 
+	if (arg->vm_args.size == 0)
+		return -EINVAL;
+
 	xcu_found = xcu_find(XCU_TYPE_XPU, arg->dev_id, arg->channel_id);
 	if (!xcu_found)
 		return -ENODEV;
