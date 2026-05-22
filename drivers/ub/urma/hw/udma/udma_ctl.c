@@ -153,7 +153,7 @@ static int udma_get_sq_buf_ex(struct udma_dev *dev, struct udma_jetty_queue *sq,
 
 	sq->buf.kva = (void *)(uintptr_t)sq->buf.addr;
 
-	sq->wrid = kcalloc(1, sq->buf.entry_cnt * sizeof(uint64_t), GFP_KERNEL);
+	sq->wrid = kcalloc(sq->buf.entry_cnt, sizeof(uint64_t), GFP_KERNEL);
 	if (!sq->wrid) {
 		sq->buf.kva = NULL;
 		sq->buf.addr = 0;
@@ -341,6 +341,7 @@ static struct ubcore_jfc *udma_create_jfc_ex(struct ubcore_device *ubcore_dev,
 					     struct udma_jfc_cfg_ex *cfg_ex)
 {
 	struct udma_dev *dev = to_udma_dev(ubcore_dev);
+	struct udma_res *stars_jfc = &dev->caps.stars_jfc;
 	struct ubcore_jfc_cfg *cfg = &cfg_ex->base_cfg;
 	unsigned long flags_store;
 	unsigned long flags_erase;
@@ -358,7 +359,11 @@ static struct ubcore_jfc *udma_create_jfc_ex(struct ubcore_device *ubcore_dev,
 	if (ret)
 		goto err_check_cfg;
 
-	ret = udma_id_alloc_auto_grow(dev, &dev->jfc_table.ida_table, &jfc->jfcn);
+	if (stars_jfc->start_idx != 0 && stars_jfc->max_cnt != 0)
+		ret = udma_alloc_ccu_stars_id(dev, &dev->jfc_table.ida_table,
+					      &dev->caps.stars_jfc, &jfc->jfcn);
+	else
+		ret = udma_id_alloc_auto_grow(dev, &dev->jfc_table.ida_table, &jfc->jfcn);
 	if (ret)
 		goto err_alloc_jfc_id;
 
@@ -818,6 +823,8 @@ static int send_cmd_query_all_cqe_aux_info(struct udma_dev *udma_dev,
 	size = ARRAY_SIZE(cqe_type_arr) * UDMA_CQE_NUM_PER_TYPE *
 		sizeof(struct udma_cmd_query_cqe_aux_info);
 	info_arr = kzalloc(size, GFP_KERNEL);
+	if (!info_arr)
+		return -ENOMEM;
 
 	for (i = 0; i < ARRAY_SIZE(cqe_type_arr); i++) {
 		for (j = 0; j < UDMA_CQE_NUM_PER_TYPE; j++) {

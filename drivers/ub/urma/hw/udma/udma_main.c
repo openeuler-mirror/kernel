@@ -578,6 +578,13 @@ static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
 	udma_dev->caps.jetty.start_idx = cmd->standard_jetty_start;
 	udma_dev->caps.jetty.max_cnt = cmd->standard_jetty_num;
 
+	udma_dev->caps.ccu_jfc.start_idx = cmd->ccu_jfc_start;
+	udma_dev->caps.ccu_jfc.max_cnt =  cmd->ccu_jfc_num;
+	udma_dev->caps.ccu_jfc.next_idx = udma_dev->caps.ccu_jfc.start_idx;
+	udma_dev->caps.stars_jfc.start_idx = cmd->stars_jfc_start;
+	udma_dev->caps.stars_jfc.max_cnt = cmd->stars_jfc_num;
+	udma_dev->caps.stars_jfc.next_idx = udma_dev->caps.stars_jfc.start_idx;
+
 	udma_dev->caps.rsvd_jetty_cnt = udma_dev->caps.public_jetty.max_cnt +
 					udma_dev->caps.ccu_jetty.max_cnt +
 					udma_dev->caps.hdc_jetty.max_cnt +
@@ -874,6 +881,8 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	udma_dev->caps.ipourma_en = ubase_adev_ip_over_urma_supported(udma_dev->comdev.adev);
 	udma_dev->caps.ctp_en = !(ubase_adev_ip_over_urma_utp_supported(udma_dev->comdev.adev));
 	udma_dev->caps.rc_max_cnt = a_caps->rc_max_cnt;
+	udma_dev->caps.st64b_en = (udma_dev->hw_ver != UBASE_HW_VER_A_0) &&
+				  (udma_dev->hw_ver != UBASE_HW_VER_A_1);
 
 	ret = udma_construct_qos_param(udma_dev);
 	if (ret)
@@ -1165,7 +1174,6 @@ static struct udma_dev *udma_create_dev(struct auxiliary_device *adev)
 		return NULL;
 
 	udma_dev->comdev.adev = adev;
-	udma_dev->status = UDMA_SUSPEND;
 	mutex_init(&udma_dev->open_rx_mutex);
 
 	for (i = 0; i < ARRAY_SIZE(udma_dev_func_map); i++) {
@@ -1344,7 +1352,10 @@ static int udma_reset_handler(struct auxiliary_device *adev,
 		break;
 	case UBASE_RESET_STAGE_ABORT:
 		ret = udma_reset_abort(adev);
+		break;
 	default:
+		ret = -EINVAL;
+		dev_err(&adev->dev, "udma reset handler invalid stage:%u.\n", stage);
 		break;
 	}
 
@@ -1458,7 +1469,7 @@ int udma_reset_down(struct auxiliary_device *adev)
 		return 0;
 	}
 
-	if (udma_dev->status == UDMA_ABORT) {
+	if (udma_dev->status == UDMA_ELR_ABORT) {
 		mutex_unlock(&udma_reset_mutex);
 		dev_info(&adev->dev, "udma device status ABORT.\n");
 		return 0;
@@ -1472,7 +1483,7 @@ int udma_reset_down(struct auxiliary_device *adev)
 
 	ubcore_stop_requests(&udma_dev->ub_dev);
 	udma_report_reset_event(UBCORE_EVENT_ELR_ERR, udma_dev);
-	udma_dev->status = UDMA_SUSPEND;
+	udma_dev->status = UDMA_RESETTING;
 	mutex_unlock(&udma_reset_mutex);
 
 	return 0;
@@ -1490,7 +1501,7 @@ int udma_reset_uninit(struct auxiliary_device *adev)
 		return 0;
 	}
 
-	if (udma_dev->status != UDMA_SUSPEND && udma_dev->status != UDMA_ABORT) {
+	if (udma_dev->status != UDMA_RESETTING && udma_dev->status != UDMA_ELR_ABORT) {
 		dev_info(&adev->dev, "udma device status(%u).\n", udma_dev->status);
 		mutex_unlock(&udma_reset_mutex);
 		return -EINVAL;
@@ -1531,7 +1542,7 @@ int udma_reset_abort(struct auxiliary_device *adev)
 		return 0;
 	}
 
-	udma_dev->status = UDMA_ABORT;
+	udma_dev->status = UDMA_ELR_ABORT;
 	mutex_unlock(&udma_reset_mutex);
 
 	return 0;
@@ -1547,15 +1558,14 @@ int udma_probe(struct auxiliary_device *adev,
 
 	ubase_reinit_register(adev, udma_reinit_handler);
 	ubase_reset_register(adev, udma_reset_handler);
+	ubase_update_adev_status(adev, 0);
+
 	return 0;
 }
 
 void udma_remove(struct auxiliary_device *adev)
 {
-#define MIN_SLEEP_TIME 100
-#define MAX_SLEEP_TIME 800
-#define TIME_SLEEP_RATE 2
-	uint32_t wait_time = MIN_SLEEP_TIME;
+	uint32_t wait_time = UDMA_MIN_SLEEP_TIME;
 	struct udma_dev *udma_dev;
 
 	ubase_reset_unregister(adev);
@@ -1570,23 +1580,25 @@ void udma_remove(struct auxiliary_device *adev)
 			return;
 		}
 
-		if (udma_dev->status == UDMA_SUSPEND) {
+		if (udma_dev->status == UDMA_REMOVING) {
 			mutex_unlock(&udma_reset_mutex);
 			msleep(wait_time);
-			if (wait_time < MAX_SLEEP_TIME)
-				wait_time *= TIME_SLEEP_RATE;
+			if (wait_time < UDMA_REMOVE_MAX_SLEEP_TIME)
+				wait_time *= UDMA_TIME_SLEEP_RATE;
 			continue;
 		} else {
-			udma_dev->status = UDMA_SUSPEND;
+			udma_dev->status = UDMA_REMOVING;
 			mutex_unlock(&udma_reset_mutex);
 			break;
 		}
 	}
 
+	if (udma_dev->is_ue)
+		udma_notify_mue_delete_guid(udma_dev);
 	ubcore_stop_requests(&udma_dev->ub_dev);
 	while (true) {
 		if (!udma_close_ue_rx(udma_dev, false, false, false, 0)) {
-			if (wait_time != MIN_SLEEP_TIME)
+			if (wait_time != UDMA_MIN_SLEEP_TIME)
 				ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_REMOVE, NULL);
 			break;
 		}
@@ -1597,10 +1609,10 @@ void udma_remove(struct auxiliary_device *adev)
 		}
 
 		msleep(wait_time);
-		if (wait_time == MIN_SLEEP_TIME)
+		if (wait_time == UDMA_MIN_SLEEP_TIME)
 			ubase_adev_fault_log(adev, UDMA_FAULT_EVENT_ID_REMOVE, NULL);
-		if (wait_time < MAX_SLEEP_TIME)
-			wait_time *= TIME_SLEEP_RATE;
+		if (wait_time < UDMA_REMOVE_MAX_SLEEP_TIME)
+			wait_time *= UDMA_TIME_SLEEP_RATE;
 		dev_err_ratelimited(&adev->dev, "udma close ue rx failed in remove process.\n");
 	}
 	udma_report_reset_event(UBCORE_EVENT_ELR_ERR, udma_dev);

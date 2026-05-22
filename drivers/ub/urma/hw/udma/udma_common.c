@@ -595,33 +595,41 @@ static void udma_unpin_k_addr(struct udma_umem *umem)
 	udma_umem_release(umem, true, true);
 }
 
+void udma_iotlb_sync(struct udma_dev *dev, uint64_t va, uint64_t len)
+{
+	struct iommu_iotlb_gather gather;
+
+	iommu_iotlb_gather_init(&gather);
+	iommu_iotlb_gather_add_range(&gather, va, PAGE_ALIGN(len));
+	iommu_iotlb_sync(dev->ksva->handle.domain, &gather);
+}
+
 int udma_alloc_normal_buf(struct udma_dev *udma_dev, size_t memory_size,
 			  struct udma_buf *buf)
 {
-	size_t aligned_memory_size = PAGE_ALIGN(memory_size);
+	buf->len = (uint64_t)PAGE_ALIGN(memory_size);
 	int ret;
 
-	buf->aligned_va = vmalloc(aligned_memory_size);
-	if (!buf->aligned_va) {
+	buf->kva = vmalloc(buf->len);
+	if (!buf->kva) {
 		dev_err(udma_dev->dev,
-			"failed to vmalloc kernel buf, size = %lu.\n",
-			aligned_memory_size);
+			"failed to vmalloc kernel buf, size = %llu.\n",
+			buf->len);
 		return -ENOMEM;
 	}
 
-	memset(buf->aligned_va, 0, aligned_memory_size);
-	buf->umem = udma_pin_k_addr(&udma_dev->ub_dev, (uint64_t)buf->aligned_va,
-				    aligned_memory_size);
+	memset(buf->kva, 0, buf->len);
+	buf->umem = udma_pin_k_addr(&udma_dev->ub_dev, (uintptr_t)buf->kva,
+				    buf->len);
 	if (IS_ERR(buf->umem)) {
 		ret = PTR_ERR(buf->umem);
-		vfree(buf->aligned_va);
-		buf->aligned_va = NULL;
+		vfree(buf->kva);
+		buf->kva = NULL;
 		dev_err(udma_dev->dev, "pin kernel buf failed, ret = %d.\n", ret);
 		return ret;
 	}
 
-	buf->addr = (uintptr_t)buf->aligned_va;
-	buf->kva = buf->aligned_va;
+	buf->addr = (uintptr_t)buf->kva;
 
 	return 0;
 }
@@ -630,8 +638,8 @@ void udma_free_normal_buf(struct udma_dev *udma_dev, size_t memory_size,
 		     struct udma_buf *buf)
 {
 	udma_unpin_k_addr(buf->umem);
-	vfree(buf->aligned_va);
-	buf->aligned_va = NULL;
+	udma_iotlb_sync(udma_dev, (uintptr_t)buf->kva, buf->len);
+	vfree(buf->kva);
 	buf->kva = NULL;
 	buf->addr = 0;
 }
@@ -736,6 +744,7 @@ static void udma_free_hugepage(struct udma_dev *dev, struct udma_hugepage *hugep
 		list_del(&priv->list);
 
 		udma_unpin_k_addr(priv->umem);
+		udma_iotlb_sync(dev, (uintptr_t)priv->va_base, priv->va_len);
 		vfree(priv->va_base);
 		kfree(priv);
 	} else {
@@ -860,7 +869,10 @@ bool remap_va_to_pfn(struct udma_dev *dev, uint64_t va, uint64_t *pfn)
 	pmd = pmd_offset(pud, va);
 	if (pmd_leaf(*pmd)) {
 		*pfn = pmd_pfn(*pmd);
-	} else if (pmd_none(*pmd) || pmd_bad(*pmd)) {
+		return true;
+	}
+
+	if (pmd_none(*pmd) || pmd_bad(*pmd)) {
 		dev_err(dev->dev, "failed to get pmd.\n");
 		return false;
 	}
@@ -943,6 +955,7 @@ void udma_destroy_hugepage(struct udma_dev *dev)
 		list_del(&priv->list);
 		dev_info_ratelimited(dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		udma_unpin_k_addr(priv->umem);
+		udma_iotlb_sync(dev, (uintptr_t)priv->va_base, priv->va_len);
 		vfree(priv->va_base);
 		kfree(priv);
 	}

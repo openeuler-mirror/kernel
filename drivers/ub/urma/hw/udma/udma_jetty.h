@@ -291,7 +291,7 @@ int udma_modify_and_destroy_jetty(struct udma_dev *dev,
 				  struct udma_jetty_queue *sq);
 int udma_alloc_jetty_id(struct udma_dev *udma_dev, uint32_t *idx,
 			struct udma_res *jetty_res);
-int udma_modify_jetty_precondition(struct udma_dev *dev, struct udma_jetty_queue *sq);
+void udma_modify_jetty_precondition(struct udma_dev *dev, struct udma_jetty_queue *sq);
 
 struct ubcore_tjetty *udma_import_jetty_ex(struct ubcore_device *ub_dev,
 					    struct ubcore_tjetty_cfg *cfg,

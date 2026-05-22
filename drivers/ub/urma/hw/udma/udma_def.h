@@ -83,6 +83,8 @@ struct udma_caps {
 	struct udma_res stars_jetty;
 	struct udma_res public_jetty;
 	struct udma_res user_ctrl_normal_jetty;
+	struct udma_res ccu_jfc;
+	struct udma_res stars_jfc;
 	struct udma_ucp_caps ucp_caps;
 	uint8_t ack_queue_num;
 	uint8_t port_num;
@@ -95,6 +97,7 @@ struct udma_caps {
 	bool ipourma_en;
 	bool sva_sep_mode_en;
 	bool non_mirror_en;
+	bool st64b_en;
 	bool atomic_add_en;
 };
 
@@ -187,7 +190,6 @@ struct udma_buf {
 		struct iova_slot	*slot;
 		void			*kva_or_slot;
 	};
-	void			*aligned_va;
 	struct udma_umem	*umem;
 	uint32_t		entry_size;
 	uint32_t		entry_cnt;
@@ -197,7 +199,7 @@ struct udma_buf {
 	bool			is_hugepage;
 	bool			k_dtu_enable;
 	struct udma_hugepage	*hugepage;
-	uint32_t		len;
+	uint64_t		len;
 	struct udma_page_priv	*page_priv;
 };
 

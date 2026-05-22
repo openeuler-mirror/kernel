@@ -228,17 +228,14 @@ out:
 	return ret;
 }
 
-static void udma_retry_open_ue_rx(struct work_struct *work)
+static void udma_open_ue_rx_work(struct work_struct *work)
 {
-#define MIN_SLEEP_TIME 100
-#define MAX_SLEEP_TIME 3000
-#define TIME_SLEEP_RATE 2
 	struct udma_flush_work *open_ue_rx_work =
 		container_of(work, struct udma_flush_work, work);
 	bool check_ta_flush = open_ue_rx_work->check_ta_flush;
 	struct udma_dev *udma_dev = open_ue_rx_work->udev;
 	uint32_t tp_num = open_ue_rx_work->tp_num;
-	uint32_t wait_time = MIN_SLEEP_TIME;
+	uint32_t wait_time = UDMA_MIN_SLEEP_TIME;
 	int ret = 0;
 
 	while (true) {
@@ -252,8 +249,8 @@ static void udma_retry_open_ue_rx(struct work_struct *work)
 			}
 			mutex_unlock(&udma_dev->open_rx_mutex);
 			msleep(wait_time);
-			if (wait_time < MAX_SLEEP_TIME)
-				wait_time *= TIME_SLEEP_RATE;
+			if (wait_time < UDMA_OPEN_RX_MAX_SLEEP_TIME)
+				wait_time *= UDMA_TIME_SLEEP_RATE;
 			dev_err_ratelimited(udma_dev->dev, "failed to open ue rx when retry\n");
 			continue;
 		}
@@ -277,7 +274,7 @@ static void udma_init_open_ue_rx_work(struct udma_dev *udma_dev, uint32_t tp_num
 	open_ue_rx_work->check_ta_flush = check_ta_flush;
 	open_ue_rx_work->tp_num = tp_num;
 
-	INIT_WORK(&open_ue_rx_work->work, udma_retry_open_ue_rx);
+	INIT_WORK(&open_ue_rx_work->work, udma_open_ue_rx_work);
 	queue_work(udma_dev->ue_rx_workq, &open_ue_rx_work->work);
 }
 

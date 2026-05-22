@@ -15,6 +15,7 @@ struct udma_seid_upi {
 
 int udma_add_one_eid(struct udma_dev *udma_dev, struct udma_ctrlq_eid_info *eid_info);
 int udma_del_one_eid(struct udma_dev *udma_dev, struct udma_ctrlq_eid_info *eid_info);
+void udma_del_eid_guid_by_ue_id(struct udma_dev *udma_dev, uint32_t ue_id);
 int udma_query_eid_from_ctrl_cpu(struct udma_dev *udma_dev);
 int udma_add_one_eid_guid(struct udma_dev *udma_dev,
 			  struct udma_ctrlq_ue_eid_guid_out *eid_guid_info);

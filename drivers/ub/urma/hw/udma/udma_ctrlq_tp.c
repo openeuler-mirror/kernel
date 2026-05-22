@@ -392,9 +392,9 @@ static int udma_send_sync_msg_to_mue(struct udma_dev *udev,
 {
 #define UDMA_WAIT_RESP_TIME msecs_to_jiffies(500)
 
-	struct udma_tp_cmdq_wait_info *wait_completion_tmp = NULL;
-	struct udma_tp_cmdq_info *info = udev->wait_cmdq_info;
-	struct udma_tp_cmdq_wait_info wait_completion = {};
+	struct udma_cmdq_wait_info *wait_completion_tmp = NULL;
+	struct udma_cmdq_info *info = udev->wait_cmdq_info;
+	struct udma_cmdq_wait_info wait_completion = {};
 	struct udma_entity_msg *req_msg;
 	struct ubase_cmd_buf in;
 	uint32_t msg_len;
@@ -449,7 +449,8 @@ post_process:
 	return ret;
 }
 
-int udma_send_tp_resp_to_ue(struct udma_dev *udev, struct udma_entity_msg *req, int ret_val)
+int udma_send_resp_to_ue(struct udma_dev *udev,
+			 struct udma_entity_msg *req, int ret_val, uint16_t opcode)
 {
 	struct udma_entity_buf *msg_buf;
 	int msg_len;
@@ -464,7 +465,7 @@ int udma_send_tp_resp_to_ue(struct udma_dev *udev, struct udma_entity_msg *req, 
 	msg_buf->len = sizeof(ret_val);
 	(void)memcpy(msg_buf->data, (uint8_t *)&ret_val, sizeof(ret_val));
 
-	ret = udma_send_msg_to_ue(udev, msg_buf, req->dst_ue_idx, UDMA_CMD_NOTIFY_MUE_SAVE_TP);
+	ret = udma_send_msg_to_ue(udev, msg_buf, req->dst_ue_idx, opcode);
 	if (ret)
 		dev_err(udev->dev, "send resp msg cmd failed, ret is %d.\n", ret);
 
@@ -473,10 +474,11 @@ int udma_send_tp_resp_to_ue(struct udma_dev *udev, struct udma_entity_msg *req, 
 	return ret;
 }
 
-int udma_recv_tp_resp_from_mue(struct udma_dev *udev, struct udma_entity_msg *resp, uint32_t len)
+int udma_recv_resp_from_mue(struct udma_dev *udev,
+			    struct udma_entity_msg *resp, uint32_t len)
 {
-	struct udma_tp_cmdq_info *info = udev->wait_cmdq_info;
-	struct udma_tp_cmdq_wait_info *wait_completion;
+	struct udma_cmdq_info *info = udev->wait_cmdq_info;
+	struct udma_cmdq_wait_info *wait_completion;
 
 	xa_lock(&info->seq_tbl);
 	wait_completion = xa_load(&info->seq_tbl, resp->buf.seq_num);
@@ -500,6 +502,23 @@ int udma_recv_tp_resp_from_mue(struct udma_dev *udev, struct udma_entity_msg *re
 	xa_unlock(&info->seq_tbl);
 
 	return 0;
+}
+
+void udma_notify_mue_delete_guid(struct udma_dev *dev)
+{
+	struct udma_entity_buf *ue_buf;
+	int ret;
+
+	ue_buf = kzalloc(sizeof(*ue_buf), GFP_KERNEL);
+	if (!ue_buf)
+		return;
+
+	ue_buf->len = 0;
+	ret = udma_send_sync_msg_to_mue(dev, ue_buf, UDMA_CMD_NOTIFY_MUE_DELETE_GUID);
+	if (ret)
+		dev_err(dev->dev, "fail to notify mue delete guid, ret %d.\n", ret);
+
+	kfree(ue_buf);
 }
 
 static int udma_notify_mue_save_tp(struct udma_dev *dev, union ubcore_tp_handle *tp_handle)
@@ -726,7 +745,7 @@ int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_ha
 	deactive_tp_req.tp_id = tp_id;
 	deactive_tp_req.tpn_cnt = tp_handle.bs.tp_cnt;
 	deactive_tp_req.start_tpn = tp_handle.bs.tpn_start;
-	if ((current->flags & PF_KTHREAD) || udev->status == UDMA_SUSPEND)
+	if ((current->flags & PF_KTHREAD) || udev->status != UDMA_NORMAL)
 		deactive_tp_req.pid_flag = UDMA_DEFAULT_PID;
 	else
 		deactive_tp_req.pid_flag = (uint32_t)current->tgid & UDMA_PID_MASK;

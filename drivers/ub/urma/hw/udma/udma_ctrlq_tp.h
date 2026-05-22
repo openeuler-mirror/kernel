@@ -177,6 +177,7 @@ enum udma_cmd_ue_opcode {
 	UDMA_CMD_UBCORE_COMMAND = 0x1,
 	UDMA_CMD_NOTIFY_MUE_SAVE_TP = 0x2,
 	UDMA_CMD_NOTIFY_UE_FLUSH_DONE = 0x3,
+	UDMA_CMD_NOTIFY_MUE_DELETE_GUID = 0x4,
 };
 
 struct udma_ue_tp_info {
@@ -224,13 +225,13 @@ struct udma_ctrlq_get_tp_attr_req {
 	struct udma_ctrlq_tpid tpid;
 };
 
-struct udma_tp_cmdq_info {
+struct udma_cmdq_info {
 	struct xarray seq_tbl;
 	uint32_t seq_num;
 	struct mutex seq_lock;
 };
 
-struct udma_tp_cmdq_wait_info {
+struct udma_cmdq_wait_info {
 	struct completion ret_completion;
 	uint32_t seq_num;
 	int ret;
@@ -327,8 +328,10 @@ int udma_get_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 		     struct ubcore_tp_attr_value *tp_attr, struct ubcore_udata *udata);
 int udma_send_msg_to_ue(struct udma_dev *udma_dev, struct udma_entity_buf *add_buf,
 			uint8_t dst_ue_idx, uint16_t opcode);
-int udma_recv_tp_resp_from_mue(struct udma_dev *udev, struct udma_entity_msg *resp, uint32_t len);
-int udma_send_tp_resp_to_ue(struct udma_dev *udev, struct udma_entity_msg *req, int ret);
+void udma_notify_mue_delete_guid(struct udma_dev *dev);
+int udma_recv_resp_from_mue(struct udma_dev *udev, struct udma_entity_msg *resp, uint32_t len);
+int udma_send_resp_to_ue(struct udma_dev *udev,
+			 struct udma_entity_msg *req, int ret_val, uint16_t opcode);
 int udma_active_tp(struct ubcore_device *dev, struct ubcore_active_tp_cfg *active_cfg);
 int udma_deactive_tp(struct ubcore_device *dev, union ubcore_tp_handle tp_handle,
 		     struct ubcore_udata *udata);
