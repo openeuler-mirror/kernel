@@ -362,6 +362,7 @@ void pci_iov_remove_virtfn(struct pci_dev *dev, int id)
 {
 	char buf[VIRTFN_ID_LEN];
 	struct pci_dev *virtfn;
+	u32 virtfn_devid;
 
 	virtfn = pci_get_domain_bus_and_slot(pci_domain_nr(dev->bus),
 					     pci_iov_virtfn_bus(dev, id),
@@ -382,11 +383,14 @@ void pci_iov_remove_virtfn(struct pci_dev *dev, int id)
 	pci_stop_and_remove_bus_device(virtfn);
 	virtfn_remove_bus(dev->bus, virtfn->bus);
 
+	/* Save device ID before releasing virtfn */
+	virtfn_devid = pci_dev_id(virtfn);
+
 	/* balance pci_get_domain_bus_and_slot() */
 	pci_dev_put(virtfn);
 	pci_dev_put(dev);
-	if (is_virtcca_cc_dev(pci_dev_id(virtfn))) {
-		virtcca_dev_destroy(pci_dev_id(virtfn), true);
+	if (is_virtcca_cc_dev(virtfn_devid)) {
+		virtcca_dev_destroy(virtfn_devid, true);
 	}
 }
 
