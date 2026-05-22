@@ -845,10 +845,25 @@ static __always_inline int kvm_pvm_guest_insn_read(struct kvm_vcpu *vcpu,
  * A PVM guest kernel runs at physical EL0, so its privileged instructions trap
  * with EC=UNKNOWN.  Return the syndrome they would trap with from EL1, for the
  * host to emulate them through its regular exit handlers, or @esr to keep
- * EC=UNKNOWN.
+ * EC=UNKNOWN.  The host's system register table decides which MRS and MSR are
+ * emulated.
  */
 static inline u64 kvm_pvm_insn_to_esr(u32 insn, u64 esr)
 {
+	u32 sysreg, rt;
+
+	if (aarch64_insn_is_mrs(insn) || aarch64_insn_is_msr_reg(insn) ||
+	    aarch64_insn_is_msr_imm(insn)) {
+		sysreg = (u32)aarch64_insn_decode_immediate(AARCH64_INSN_IMM_16,
+							    insn) << 5;
+		rt = aarch64_insn_decode_register(AARCH64_INSN_REGTYPE_RT, insn);
+		return ESR_ELx_IL | ESR_ELx_EC_SYS64 << ESR_ELx_EC_SHIFT |
+		       sysreg_to_esr_sys64_iss(sysreg) |
+		       rt << ESR_ELx_SYS64_ISS_RT_SHIFT |
+		       (aarch64_insn_is_mrs(insn) ? ESR_ELx_SYS64_ISS_DIR_READ :
+						    ESR_ELx_SYS64_ISS_DIR_WRITE);
+	}
+
 	return esr;
 }
 

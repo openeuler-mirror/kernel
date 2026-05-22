@@ -199,6 +199,20 @@ static int kvm_handle_unknown_ec(struct kvm_vcpu *vcpu)
 	return 1;
 }
 
+static int kvm_handle_unknown(struct kvm_vcpu *vcpu)
+{
+	/*
+	 * An EC=UNKNOWN trap from a PVM guest's userspace is UNDEFINED at EL0
+	 * on real hardware as well, so deliver it as such.
+	 */
+	if (pvm_vcpu_in_user_ctxt(vcpu)) {
+		kvm_inject_undefined(vcpu);
+		return 1;
+	}
+
+	return kvm_handle_unknown_ec(vcpu);
+}
+
 /*
  * Guest access to SVE registers should be routed to this handler only
  * when the system doesn't support SVE.
@@ -258,6 +272,7 @@ static int handle_svc(struct kvm_vcpu *vcpu)
 
 static exit_handle_fn arm_exit_handlers[] = {
 	[0 ... ESR_ELx_EC_MAX]	= kvm_handle_unknown_ec,
+	[ESR_ELx_EC_UNKNOWN]	= kvm_handle_unknown,
 	[ESR_ELx_EC_WFx]	= kvm_handle_wfx,
 	[ESR_ELx_EC_CP15_32]	= kvm_handle_cp15_32,
 	[ESR_ELx_EC_CP15_64]	= kvm_handle_cp15_64,
