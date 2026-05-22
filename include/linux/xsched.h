@@ -65,7 +65,6 @@ extern struct list_head xsched_class_list;
 #define for_each_vstream_in_ctx(vs, ctx)                                       \
 	list_for_each_entry((vs), &((ctx)->vstream_list), ctx_node)
 
-
 /* Manages xsched RT-like class linked list based runqueue.
  *
  * Now RT-like class runqueue structs is identical
@@ -302,8 +301,6 @@ struct xsched_group {
 
 #define parent_xse_of(__xse) (&(xse_parent_grp_xcu((__xse))->xse))
 
-#define xsched_cfs_rq_of(xse) (xse_parent_grp_xcu((xse))->cfs_rq)
-
 #define xsched_group_cfs_rq(__xg, __id) ((__xg)->perxcu_priv[(__id)].cfs_rq)
 
 #define for_each_xse(__xse)		\
@@ -312,6 +309,15 @@ struct xsched_group {
 
 #define for_each_xsched_group(__xg)		\
 	for (; (__xg) != root_xcg; (__xg) = (__xg)->parent)
+
+static inline struct xsched_rq_cfs *xsched_cfs_rq_of(struct xsched_entity *xse)
+{
+	/* detach from group */
+	if (unlikely(!xse->parent_grp))
+		return xse->cfs.cfs_rq;
+
+	return xse_parent_grp_xcu((xse))->cfs_rq;
+}
 
 /**
  * Only group xsched entities are permitted to call.
@@ -334,11 +340,14 @@ static inline bool xsched_entity_throttled(struct xsched_entity *xse)
 
 	return cfs_rq->throttled;
 }
-#else
-
-#define xsched_cfs_rq_of(xse) (&((xse)->xcu->xrq.cfs))
+#else /* !CONFIG_CGROUP_XCU */
 
 #define for_each_xse(__xse) for (; (__xse); (__xse) = NULL)
+
+static inline struct xsched_rq_cfs *xsched_cfs_rq_of(struct xsched_entity *xse)
+{
+	return &(xse->xcu->xrq.cfs);
+}
 
 #endif /* CONFIG_CGROUP_XCU */
 
@@ -353,6 +362,15 @@ static inline int xse_integrity_check(struct xsched_entity *xse)
 		XSCHED_ERR("xse->class is null @ %s\n", __func__);
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_XCU_SCHED_CFS
+	/* The cfs_rq of xse may be NULL in some scenarios */
+	if (xse->class == &fair_xsched_class && !xsched_cfs_rq_of(xse)) {
+		XSCHED_ERR("the cfs_rq of this xse [%d] can't be NULL @ %s\n",
+			xse->tgid, __func__);
+		return -EINVAL;
+	}
+#endif
 
 #ifdef CONFIG_CGROUP_XCU
 	if (xse->is_group && !xse_this_cfs_rq(xse)) {
