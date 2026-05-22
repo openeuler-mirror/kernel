@@ -121,10 +121,8 @@ void enqueue_ctx(struct xsched_entity *xse, struct xsched_cu *xcu)
 {
 	lockdep_assert_held(&xcu->xcu_lock);
 
-	if (xse_integrity_check(xse)) {
-		XSCHED_ERR("Fail to check xse integrity @ %s\n", __func__);
+	if (xse_integrity_check(xse))
 		return;
-	}
 
 	if (!xse->on_rq) {
 		xse->xcu = xcu;
@@ -135,12 +133,10 @@ void enqueue_ctx(struct xsched_entity *xse, struct xsched_cu *xcu)
 
 void dequeue_ctx(struct xsched_entity *xse)
 {
-	if (xse_integrity_check(xse)) {
-		XSCHED_ERR("Fail to check xse integrity @ %s\n", __func__);
-		return;
-	}
-
 	lockdep_assert_held(&xse->xcu->xcu_lock);
+
+	if (xse_integrity_check(xse))
+		return;
 
 	if (xse->on_rq) {
 		xse->class->dequeue_ctx(xse);
