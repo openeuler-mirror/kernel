@@ -633,7 +633,6 @@ int vstream_kick(struct vstream_args *arg)
 #ifdef CONFIG_CGROUP_DMEM
 static int vstream_hbm_alloc(struct vstream_args *arg)
 {
-	vstream_info_t vstream_info;
 	struct xsched_cu *xcu_found;
 	struct xsched_context *ctx;
 	int ret = 0;
@@ -648,22 +647,13 @@ static int vstream_hbm_alloc(struct vstream_args *arg)
 	/* it will either allocate or find a context */
 	mutex_lock(&xcu_found->ctx_list_lock);
 	ctx = ctx_find_by_tgid_and_xcu(current->tgid, xcu_found);
-	if (ctx) {
+	if (ctx)
 		kref_get(&ctx->kref);
-	} else {
-		vstream_info.tgid = current->tgid;
-		vstream_info.xcu = xcu_found;
-		vstream_info.dev_id = arg->dev_id;
-		vstream_info.channel_id = arg->channel_id;
-		vstream_info.fd = arg->fd;
-
-		ret = alloc_ctx_from_vstream(&vstream_info, &ctx);
-	}
 	mutex_unlock(&xcu_found->ctx_list_lock);
 
-	if (ret != 0) {
+	if (!ctx) {
 		XSCHED_ERR("Failed to find a context for HBM alloc");
-		return ret;
+		return -ENOENT;
 	}
 
 	ret = xsched_dmem_alloc(ctx, arg);
