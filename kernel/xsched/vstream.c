@@ -245,7 +245,7 @@ static int alloc_ctx_from_vstream(struct vstream_info *vstream_info,
 		XSCHED_ERR("Fail to initialize XSE for context @ %s\n",
 			__func__);
 		kfree(*ctx);
-		return -EINVAL;
+		return ret;
 	}
 
 	list_add(&(*ctx)->ctx_node, &xcu->ctx_list);
@@ -415,10 +415,8 @@ static int sqcq_alloc(struct vstream_args *arg)
 	vstream->task_type = arg->task_type;
 
 	ret = vstream_bind_to_xcu(vstream);
-	if (ret < 0) {
-		ret = -EINVAL;
+	if (ret != 0)
 		goto out_err_vstream_free;
-	}
 
 	/* Allocates vstream's SQ and CQ memory on a XCU for processing. */
 	params.group = vstream->xcu->group;
@@ -645,7 +643,7 @@ static int vstream_hbm_alloc(struct vstream_args *arg)
 
 	xcu_found = xcu_find(XCU_TYPE_XPU, arg->dev_id, arg->channel_id);
 	if (!xcu_found)
-		return -EINVAL;
+		return -ENODEV;
 
 	/* it will either allocate or find a context */
 	mutex_lock(&xcu_found->ctx_list_lock);
