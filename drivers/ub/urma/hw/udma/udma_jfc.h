@@ -232,5 +232,7 @@ int udma_bind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type
 void udma_unbind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type type);
 int udma_jetty_bind_jfc(struct udma_dev *dev, uint32_t send_jfc_id, uint32_t recv_jfc_id);
 void udma_jetty_unbind_jfc(struct udma_dev *dev, uint32_t send_jfc_id);
+int udma_alloc_ccu_stars_id(struct udma_dev *dev, struct udma_ida *ida_table,
+			    struct udma_res *jfc_res, uint32_t *idx);
 
 #endif /* __UDMA_JFC_H__ */

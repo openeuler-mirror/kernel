@@ -221,7 +221,11 @@ struct udma_cmd_ue_resource {
 	uint32_t max_cas_size;
 	uint32_t max_fetch_and_add_size;
 	uint32_t atomic_feat;
-	uint32_t rsvd4[3];
+	uint16_t ccu_jfc_start;
+	uint16_t ccu_jfc_num;
+	uint16_t stars_jfc_start;
+	uint16_t stars_jfc_num;
+	uint32_t rsvd4;
 };
 
 struct udma_cmd_ucp_resource {
