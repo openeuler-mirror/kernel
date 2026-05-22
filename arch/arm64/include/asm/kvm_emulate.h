@@ -184,6 +184,18 @@ static __always_inline unsigned long *vcpu_cpsr(const struct kvm_vcpu *vcpu)
 }
 
 /*
+ * PVM runs the guest's kernel and its userspace at the same physical EL0, so
+ * a trap alone does not tell which of them executed the instruction;
+ * the virtual mode in the vCPU PSTATE tells them apart.  Outside a guest
+ * run it is the virtual EL1h or EL0t restored by synchronize_vcpu_pstate().
+ */
+static __always_inline bool pvm_vcpu_in_user_ctxt(const struct kvm_vcpu *vcpu)
+{
+	return is_pvm_mode() &&
+	       (*vcpu_cpsr((struct kvm_vcpu *)vcpu) & PSR_MODE_MASK) == PSR_MODE_EL0t;
+}
+
+/*
  * PVM DAIF virtualization: the L2 guest's DAIF mask bits live only in
  * ctxt (regs.pstate); the physical eret target always runs EL0 with DAIF
  * forced open, so EL1-targeted physical/virtual interrupts are never

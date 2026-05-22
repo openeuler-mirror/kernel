@@ -3359,6 +3359,33 @@ static void perform_access(struct kvm_vcpu *vcpu,
 	}
 
 	/*
+	 * Only system registers with Op1 == 3 are architecturally accessible
+	 * from EL0.  Refuse any other access from a PVM guest's userspace, as
+	 * the hardware would, rather than emulate it with kernel privilege.
+	 */
+	if (pvm_vcpu_in_user_ctxt(vcpu) && params->Op1 != 3) {
+		kvm_inject_undefined(vcpu);
+		return;
+	}
+
+	/*
+	 * A PVM guest kernel runs at EL0, so all its EL1 system register
+	 * accesses trap, including those KVM never traps otherwise and has no
+	 * accessor for.  Inject an UNDEF for these rather than BUG().
+	 */
+	if (is_pvm_mode() && unlikely(!r->pvm_access && !r->access)) {
+		print_sys_reg_msg(params, "%s", "Unhandled PVM sys_reg access");
+		kvm_inject_undefined(vcpu);
+		return;
+	}
+
+	if (is_pvm_mode() && r->pvm_access) {
+		if (likely(r->pvm_access(vcpu, params, r)))
+			kvm_incr_pc(vcpu);
+		return;
+	}
+
+	/*
 	 * Not having an accessor means that we have configured a trap
 	 * that we don't know how to handle. This certainly qualifies
 	 * as a gross bug that should be fixed right away.
