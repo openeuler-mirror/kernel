@@ -3,6 +3,7 @@
 #define __LEGACY_BOOT_H_
 #include <linux/screen_info.h>
 #include <linux/of_address.h>
+#include <linux/acpi.h>
 #include <asm/loongson.h>
 #define ADDRESS_TYPE_SYSRAM	1
 #define ADDRESS_TYPE_RESERVED	2
