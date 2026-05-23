@@ -17,6 +17,7 @@ if NET_VENDOR_HUAWEI
 
 source "drivers/net/ethernet/huawei/hinic/Kconfig"
 source "drivers/net/ethernet/huawei/hinic3/Kconfig"
+source "drivers/net/ethernet/huawei/hinic5/Kconfig"
 source "drivers/net/ethernet/huawei/bma/Kconfig"
 source "drivers/net/ethernet/huawei/hibifur/Kconfig"
 
