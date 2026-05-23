@@ -9747,6 +9747,13 @@ F:	drivers/net/ethernet/huawei/hinic3/hw/
 F:	drivers/net/ethernet/huawei/hinic3/include/
 
 HUAWEI ETHERNET DRIVER
+M:	Wulike(Collin) <wulike1@huawei.com>
+L:	netdev@vger.kernel.org
+S:	Supported
+F:	Documentation/networking/hinic5.rst
+F:	drivers/net/ethernet/huawei/hinic5/
+
+HUAWEI ETHERNET DRIVER
 M:	Huangjunhua <huangjunhua14@huawei.com>
 L:	netdev@vger.kernel.org
 S:	Maintained
