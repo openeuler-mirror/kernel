@@ -5942,6 +5942,39 @@ static void prev_balance(struct rq *rq, struct task_struct *prev,
 
 }
 
+#ifdef CONFIG_SCHED_SOFT_QUOTA
+/*
+ * sched_class::pick_task() and sched_class::pick_next_task() have different
+ * contracts.  pick_task() only selects a candidate; the core scheduler still
+ * has to call put_prev_set_next_task().  pick_next_task(), on the other hand,
+ * may perform the class specific put-prev/set-next sequence before returning.
+ *
+ * The soft quota idle path is an OLK exception to that model.  pick_task_idle()
+ * is wired as idle_sched_class.pick_task(), but when SOFT_QUOTA is enabled it
+ * may unthrottle a CFS rq and call pick_next_task_fair() to immediately repick
+ * a fair task.  That means a caller which expected a plain pick_task() result
+ * may actually receive a task for which fair has already run set_next_entity().
+ * Calling put_prev_set_next_task() again for that task can put/set the same
+ * fair entity twice and corrupt EEVDF accounting.
+ */
+static inline bool soft_quota_pick_next_done(struct rq *rq,
+					     struct task_struct *prev,
+					     struct task_struct *next)
+{
+	if (!sched_feat(SOFT_QUOTA) || next == rq->idle || next == prev ||
+	    next->sched_class != &fair_sched_class)
+		return false;
+
+	/*
+	 * A plain fair pick_task() result is only selected, not installed.  If
+	 * the entity is already cfs_rq->curr, pick_next_task_fair() has already
+	 * installed it through set_next_entity(), so the surrounding core path
+	 * must skip its own put_prev_set_next_task().
+	 */
+	return task_cfs_rq(next)->curr == &next->se;
+}
+#endif
+
 /*
  * Pick up the highest-prio task:
  */
@@ -5970,6 +6003,10 @@ __pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 		/* Assume the next prioritized class is idle_sched_class */
 		if (!p) {
 			p = pick_task_idle(rq);
+#ifdef CONFIG_SCHED_SOFT_QUOTA
+			if (soft_quota_pick_next_done(rq, prev, p))
+				return p;
+#endif
 			put_prev_set_next_task(rq, prev, p);
 		}
 
@@ -5989,8 +6026,14 @@ restart:
 			if (p) {
 				const struct sched_class *prev_class = prev->sched_class;
 
+#ifdef CONFIG_SCHED_SOFT_QUOTA
+				if (soft_quota_pick_next_done(rq, prev, p))
+					goto out;
+#endif
 				put_prev_set_next_task(rq, prev, p);
-				
+#ifdef CONFIG_SCHED_SOFT_QUOTA
+out:
+#endif
 				if (class != prev_class && prev_class->switch_class)
 					prev_class->switch_class(rq, p);
 				return p;
@@ -6252,7 +6295,14 @@ pick_next_task(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 	}
 
 out_set_next:
+#ifdef CONFIG_SCHED_SOFT_QUOTA
+	if (soft_quota_pick_next_done(rq, prev, next))
+		goto out;
+#endif
 	put_prev_set_next_task(rq, prev, next);
+#ifdef CONFIG_SCHED_SOFT_QUOTA
+out:
+#endif
 	if (rq->core->core_forceidle_count && next == rq->idle)
 		queue_core_balance(rq);
 
