@@ -1,0 +1,60 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Copyright (C), 2026-2026, Huawei Tech. Co., Ltd.
+ * File Name     : hinic5_ethtool.h
+ * Version       : Initial Draft
+ * Created       : 2026/5/20
+ * Last Modified : 2026/5/20
+ * Description   :
+ */
+
+#ifndef HINIC5_ETHTOOL_H
+#define	HINIC5_ETHTOOL_H
+
+#include <linux/ethtool.h>
+#include <linux/netdevice.h>
+
+#define COALESCE_ALL_QUEUE		0xFFFF
+#define COALESCE_PENDING_LIMIT_UNIT	8
+#define	COALESCE_TIMER_CFG_UNIT		5
+#define COALESCE_MAX_PENDING_LIMIT	(255 * COALESCE_PENDING_LIMIT_UNIT)
+#define COALESCE_MAX_TIMER_CFG		(255 * COALESCE_TIMER_CFG_UNIT)
+#define HINIC5_WAIT_PKTS_TO_RX_BUFFER	200
+#define HINIC5_WAIT_CLEAR_LP_TEST	100
+
+#define SFF8079_I2C_ADDRESS_HIGH	0x51
+#define HINIC5_ETHTOOL_PAGE_A2H		0x2
+
+#ifndef SET_ETHTOOL_OPS
+#define SET_ETHTOOL_OPS(netdev, ops) \
+	((netdev)->ethtool_ops = (ops))
+#endif
+
+#ifdef NEED_ETHTOOL_COALESCE_USECS_LOW_HIGH
+#define ETHTOOL_COALESCE_USECS_LOW_HIGH					\
+	(ETHTOOL_COALESCE_RX_USECS_LOW | ETHTOOL_COALESCE_TX_USECS_LOW | \
+	ETHTOOL_COALESCE_RX_USECS_HIGH | ETHTOOL_COALESCE_TX_USECS_HIGH)
+#endif
+
+#ifdef NEED_ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH
+#define ETHTOOL_COALESCE_MAX_FRAMES_LOW_HIGH	\
+	(ETHTOOL_COALESCE_RX_MAX_FRAMES_LOW |	\
+	ETHTOOL_COALESCE_TX_MAX_FRAMES_LOW |	\
+	ETHTOOL_COALESCE_RX_MAX_FRAMES_HIGH |	\
+	ETHTOOL_COALESCE_TX_MAX_FRAMES_HIGH)
+#endif
+
+#ifdef NEED_ETHTOOL_COALESCE_PKT_RATE_RX_USECS
+#define ETHTOOL_COALESCE_PKT_RATE_RX_USECS				\
+	(ETHTOOL_COALESCE_USE_ADAPTIVE_RX |				\
+	ETHTOOL_COALESCE_RX_USECS_LOW | ETHTOOL_COALESCE_RX_USECS_HIGH | \
+	ETHTOOL_COALESCE_PKT_RATE_LOW | ETHTOOL_COALESCE_PKT_RATE_HIGH | \
+	ETHTOOL_COALESCE_RATE_SAMPLE_INTERVAL)
+#endif
+
+/* Include sub-module headers */
+#include "hinic5_ethtool_coalesce.h"
+#include "hinic5_ethtool_lb_test.h"
+#include "hinic5_ethtool_priv_flags.h"
+
+#endif
