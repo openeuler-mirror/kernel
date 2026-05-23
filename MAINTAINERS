@@ -8179,6 +8179,13 @@ S:	Supported
 F:	Documentation/networking/hinic3.txt
 F:	drivers/net/ethernet/huawei/hinic3/
 
+HUAWEI ETHERNET DRIVER
+M:	Wulike(Collin) <wulike1@huawei.com>
+L:	netdev@vger.kernel.org
+S:	Supported
+F:	Documentation/networking/hinic5.txt
+F:	drivers/net/ethernet/huawei/hinic5/
+
 HUGETLB FILESYSTEM
 M:	Mike Kravetz <mike.kravetz@oracle.com>
 L:	linux-mm@kvack.org
