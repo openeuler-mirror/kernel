@@ -121,11 +121,16 @@ int uburma_mmap(struct file *filp, struct vm_area_struct *vma)
 
 	vma->vm_ops = uburma_get_umap_ops();
 	ret = ubc_dev->ops->mmap(file->ucontext, vma);
+	if (ret != 0)
+		goto out;
+
 	if (!down_read_trylock(&file->cleanup_rwsem))
 		goto out;
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
-	if (!priv)
+	if (!priv) {
+		ret = -ENOMEM;
 		goto unlock_read;
+	}
 	uburma_umap_priv_init(priv, vma);
 
 unlock_read:
