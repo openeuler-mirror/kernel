@@ -49,6 +49,7 @@
 #include <linux/sunrpc/svcauth.h>
 #include <linux/sunrpc/svcauth_gss.h>
 #include <linux/sunrpc/cache.h>
+#include <linux/sunrpc/gss_krb5.h>
 
 #include <trace/events/rpcgss.h>
 
@@ -983,6 +984,8 @@ unwrap_priv_data(struct svc_rqst *rqstp, struct xdr_buf *buf, u32 seq, struct gs
 	 * not yet read from the head, so these two values are different: */
 	remaining_len = total_buf_len(buf);
 	if (priv_len > remaining_len)
+		goto unwrap_failed;
+	if (priv_len <= GSS_KRB5_TOK_HDR_LEN)
 		goto unwrap_failed;
 	pad = remaining_len - priv_len;
 	buf->len -= pad;
