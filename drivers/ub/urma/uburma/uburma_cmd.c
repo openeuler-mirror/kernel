@@ -193,8 +193,10 @@ static int uburma_cmd_free_token_id(struct ubcore_device *ubc_dev,
 	}
 
 	token = (struct ubcore_token_id *)uobj->object;
-	if (arg.in.token_id != token->token_id)
+	if (arg.in.token_id != token->token_id) {
+		uobj_put_del(uobj);
 		return -EPERM;
+	}
 
 	ret = uobj_remove_commit(uobj);
 	if (ret != 0)
