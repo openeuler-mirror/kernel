@@ -377,6 +377,7 @@ void xsched_group_xse_detach(struct xsched_entity *xse)
 
 	spin_lock(&xcg->lock);
 	list_del(&xse->group_node);
+	xse->parent_grp = NULL;
 	spin_unlock(&xcg->lock);
 }
 
@@ -930,7 +931,5 @@ struct cgroup_subsys xcu_cgrp_subsys = {
 #ifdef CONFIG_CGROUP_FREEZER
 	.legacy_cftypes = files,
 	.legacy_name = "freezer",
-#else
-	.legacy_cftypes = xcu_cg_files,
 #endif
 };
