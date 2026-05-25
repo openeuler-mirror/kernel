@@ -17,6 +17,7 @@
 #include "ubcore_device.h"
 #include "ubcore_priv.h"
 #include "ubcore_cmd_tlv.h"
+#include "ubcore_main_ue_eid.h"
 #include "ubcore_topo_info.h"
 #include "net/ubcore_cm.h"
 #include "ubmgr/ubmgr_topo.h"
@@ -327,7 +328,7 @@ static int ubcore_cmd_get_topo(struct ubcore_global_file *file,
 }
 
 static int ubcore_cmd_get_route_list(struct ubcore_global_file *file,
-	struct ubcore_cmd_hdr *hdr)
+				     struct ubcore_cmd_hdr *hdr)
 {
 	struct ubcore_cmd_get_route_list arg;
 
@@ -373,6 +374,108 @@ static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 	return ret;
 }
 
+static int ubcore_insert_main_ue_eid_batch(
+	const union ubcore_eid *main_ue_eid, uint32_t eid_num,
+	const union ubcore_eid *eids)
+{
+	uint32_t i;
+	int ret;
+
+	if (main_ue_eid == NULL || eids == NULL || eid_num == 0 ||
+	    eid_num > UBCORE_MAIN_UE_EID_BATCH_EID_MAX) {
+		ubcore_log_err("invalid main ue eid batch.\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < eid_num; i++) {
+		ret = ubcore_insert_main_ue_eid(&eids[i], main_ue_eid);
+		if (ret != 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int ubcore_cmd_insert_main_ue_eid(struct ubcore_global_file *file,
+	struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_main_ue_eid_entry arg;
+	int ret;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
+	if (ret != 0)
+		return ret;
+
+	return ubcore_insert_main_ue_eid(&arg.in.eid,
+		&arg.in.main_ue_eid);
+}
+
+static int ubcore_cmd_delete_main_ue_eid(struct ubcore_global_file *file,
+	struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_main_ue_eid_delete arg;
+	int ret;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
+	if (ret != 0)
+		return ret;
+
+	return ubcore_delete_main_ue_eid(&arg.in.eid);
+}
+
+static int ubcore_cmd_lookup_main_ue_eid(struct ubcore_global_file *file,
+	struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_main_ue_eid_lookup arg;
+	int ret;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_lookup_main_ue_eid(&arg.in.eid,
+		&arg.out.main_ue_eid);
+	if (ret != 0)
+		return ret;
+
+	if (ubcore_global_tlv_append(hdr, (void *)&arg) != 0)
+		return -EPERM;
+
+	return 0;
+}
+
+static int ubcore_cmd_flush_main_ue_eid(struct ubcore_global_file *file,
+	struct ubcore_cmd_hdr *hdr)
+{
+	if (hdr->args_len != 0) {
+		ubcore_log_err("Invalid flush main ue eid args_len: %u.\n",
+			hdr->args_len);
+		return -EINVAL;
+	}
+
+	ubcore_flush_main_ue_eid();
+	return 0;
+}
+
+static int ubcore_cmd_insert_main_ue_eid_batch(
+	struct ubcore_global_file *file, struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_main_ue_eid_batch *arg;
+	int ret;
+
+	arg = kzalloc(sizeof(*arg), GFP_KERNEL);
+	if (arg == NULL)
+		return -ENOMEM;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)arg);
+	if (ret == 0)
+		ret = ubcore_insert_main_ue_eid_batch(&arg->in.main_ue_eid,
+			arg->in.eid_num, arg->in.eids);
+
+	kfree(arg);
+	return ret;
+}
+
 typedef int (*ubcore_uvs_global_cmd_handler)(struct ubcore_global_file *file,
 					     struct ubcore_cmd_hdr *hdr);
 struct ubcore_uvs_global_cmd_func {
@@ -386,6 +489,16 @@ static struct ubcore_uvs_global_cmd_func g_ubcore_uvs_global_cmd_funcs[] = {
 	[UBCORE_CMD_GET_ROUTE_LIST] = { ubcore_cmd_get_route_list, false },
 	[UBCORE_CMD_GET_TOPO] = { ubcore_cmd_get_topo, false },
 	[UBCORE_CMD_GET_PATH_SET] = { ubcore_cmd_get_path_set, false },
+	[UBCORE_CMD_INSERT_MAIN_UE_EID] = {
+		ubcore_cmd_insert_main_ue_eid, true },
+	[UBCORE_CMD_DELETE_MAIN_UE_EID] = {
+		ubcore_cmd_delete_main_ue_eid, true },
+	[UBCORE_CMD_LOOKUP_MAIN_UE_EID] = {
+		ubcore_cmd_lookup_main_ue_eid, false },
+	[UBCORE_CMD_FLUSH_MAIN_UE_EID] = {
+		ubcore_cmd_flush_main_ue_eid, true },
+	[UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH] = {
+		ubcore_cmd_insert_main_ue_eid_batch, true },
 };
 
 int ubcore_uvs_global_cmd_parse(struct ubcore_global_file *file,
