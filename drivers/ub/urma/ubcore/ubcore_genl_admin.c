@@ -23,6 +23,7 @@
 #include "ubcore_cmd.h"
 #include "ubcore_device.h"
 #include "ubcore_main.h"
+#include "ubcore_main_ue_eid.h"
 #include "ubcore_genl_admin.h"
 #include "ubcore_topo_info.h"
 
@@ -89,6 +90,91 @@ static int ubcore_parse_admin_res_cmd(struct netlink_callback *cb, void *dst,
 
 	return ubcore_copy_from_user(dst, (void __user *)(uintptr_t)args_addr,
 				     copy_len);
+}
+
+static int ubcore_admin_get_eid_attr(struct genl_info *info, int attr,
+				     const union ubcore_eid **eid)
+{
+	if (info->attrs[attr] == NULL)
+		return -EINVAL;
+
+	if (nla_len(info->attrs[attr]) != sizeof(**eid)) {
+		ubcore_log_err("invalid eid attr len: %u/%zu.\n",
+			       (uint32_t)nla_len(info->attrs[attr]),
+			       sizeof(**eid));
+		return -EINVAL;
+	}
+
+	*eid = nla_data(info->attrs[attr]);
+	return 0;
+}
+
+static int ubcore_admin_reply_main_ue_eid(struct genl_info *info,
+					  const union ubcore_eid *main_ue_eid)
+{
+	struct sk_buff *msg;
+	void *hdr;
+	int ret;
+
+	msg = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (msg == NULL)
+		return -ENOMEM;
+
+	hdr = genlmsg_put_reply(msg, info, &ubcore_genl_family, 0,
+				UBCORE_CMD_ADMIN_LOOKUP_MAIN_UE_EID);
+	if (hdr == NULL) {
+		nlmsg_free(msg);
+		return -ENOMEM;
+	}
+
+	ret = nla_put(msg, UBCORE_ATTR_MAIN_UE_EID, sizeof(*main_ue_eid),
+		      main_ue_eid);
+	if (ret != 0) {
+		genlmsg_cancel(msg, hdr);
+		nlmsg_free(msg);
+		return ret;
+	}
+
+	genlmsg_end(msg, hdr);
+	return genlmsg_reply(msg, info);
+}
+
+static int ubcore_admin_get_eid_batch_attrs(struct genl_info *info,
+					    const union ubcore_eid **main_ue_eid,
+					    const union ubcore_eid **eids,
+					    uint32_t *eid_num)
+{
+	size_t eid_list_len;
+	int ret;
+
+	ret = ubcore_admin_get_eid_attr(info, UBCORE_ATTR_MAIN_UE_EID,
+				       main_ue_eid);
+	if (ret != 0)
+		return ret;
+
+	if (info->attrs[UBCORE_ATTR_EID_NUM] == NULL ||
+	    info->attrs[UBCORE_ATTR_EID_LIST] == NULL)
+		return -EINVAL;
+
+	*eid_num = nla_get_u32(info->attrs[UBCORE_ATTR_EID_NUM]);
+	if (*eid_num == 0 ||
+	    *eid_num > UBCORE_MAIN_UE_EID_BATCH_EID_MAX) {
+		ubcore_log_err("invalid main ue eid batch num: %u.\n",
+			       *eid_num);
+		return -EINVAL;
+	}
+
+	eid_list_len = (size_t)(*eid_num) * sizeof(**eids);
+	if ((size_t)nla_len(info->attrs[UBCORE_ATTR_EID_LIST]) !=
+	    eid_list_len) {
+		ubcore_log_err("invalid eid list len: %u/%zu.\n",
+			       (uint32_t)nla_len(info->attrs[UBCORE_ATTR_EID_LIST]),
+			       eid_list_len);
+		return -EINVAL;
+	}
+
+	*eids = nla_data(info->attrs[UBCORE_ATTR_EID_LIST]);
+	return 0;
 }
 
 int ubcore_query_stats_ops(struct sk_buff *skb, struct genl_info *info)
@@ -396,6 +482,86 @@ int ubcore_set_sl(struct sk_buff *skb, struct genl_info *info)
 	if (ret != 0)
 		ubcore_log_err("ops ubcore->set_sl failed!\n");
 	return ret;
+}
+
+int ubcore_admin_insert_main_ue_eid(struct sk_buff *skb,
+				    struct genl_info *info)
+{
+	const union ubcore_eid *main_ue_eid;
+	const union ubcore_eid *eid;
+	int ret;
+
+	ret = ubcore_admin_get_eid_attr(info, UBCORE_ATTR_EID, &eid);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_admin_get_eid_attr(info, UBCORE_ATTR_MAIN_UE_EID,
+					&main_ue_eid);
+	if (ret != 0)
+		return ret;
+
+	return ubcore_insert_main_ue_eid(eid, main_ue_eid);
+}
+
+int ubcore_admin_delete_main_ue_eid(struct sk_buff *skb,
+				    struct genl_info *info)
+{
+	const union ubcore_eid *eid;
+	int ret;
+
+	ret = ubcore_admin_get_eid_attr(info, UBCORE_ATTR_EID, &eid);
+	if (ret != 0)
+		return ret;
+
+	return ubcore_delete_main_ue_eid(eid);
+}
+
+int ubcore_admin_lookup_main_ue_eid(struct sk_buff *skb,
+				    struct genl_info *info)
+{
+	union ubcore_eid main_ue_eid;
+	const union ubcore_eid *eid;
+	int ret;
+
+	ret = ubcore_admin_get_eid_attr(info, UBCORE_ATTR_EID, &eid);
+	if (ret != 0)
+		return ret;
+
+	ret = ubcore_lookup_main_ue_eid(eid, &main_ue_eid);
+	if (ret != 0)
+		return ret;
+
+	return ubcore_admin_reply_main_ue_eid(info, &main_ue_eid);
+}
+
+int ubcore_admin_flush_main_ue_eid(struct sk_buff *skb,
+				   struct genl_info *info)
+{
+	ubcore_flush_main_ue_eid();
+	return 0;
+}
+
+int ubcore_admin_insert_main_ue_eid_batch(struct sk_buff *skb,
+					  struct genl_info *info)
+{
+	const union ubcore_eid *main_ue_eid;
+	const union ubcore_eid *eids;
+	uint32_t eid_num;
+	uint32_t i;
+	int ret;
+
+	ret = ubcore_admin_get_eid_batch_attrs(info, &main_ue_eid, &eids,
+					       &eid_num);
+	if (ret != 0)
+		return ret;
+
+	for (i = 0; i < eid_num; i++) {
+		ret = ubcore_insert_main_ue_eid(&eids[i], main_ue_eid);
+		if (ret != 0)
+			return ret;
+	}
+
+	return 0;
 }
 
 static void ubcore_fill_res_binary(void *res_buf, struct sk_buff *msg,

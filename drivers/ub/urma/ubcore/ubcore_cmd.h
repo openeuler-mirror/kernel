@@ -27,6 +27,7 @@ struct ubcore_cmd_hdr {
 #define UBCORE_CMD_MAGIC 'C'
 #define UBCORE_CMD _IOWR(UBCORE_CMD_MAGIC, 1, struct ubcore_cmd_hdr)
 #define UBCORE_MAX_CMD_SIZE 0x4000
+#define UBCORE_MAIN_UE_EID_BATCH_EID_MAX 128
 
 /* only for ubcore device ioctl */
 enum ubcore_cmd {
@@ -64,6 +65,12 @@ enum ubcore_cmd {
 	UBCORE_CMD_UPDATE_MUE_DEV_INFO_RESP,
 	UBCORE_CMD_VTP_STATUS_NOTIFY,
 	UBCORE_CMD_MSG_ACK,
+	/* 33 and 34 are used by user-space admin command definitions. */
+	UBCORE_CMD_ADMIN_INSERT_MAIN_UE_EID = 35,
+	UBCORE_CMD_ADMIN_DELETE_MAIN_UE_EID,
+	UBCORE_CMD_ADMIN_LOOKUP_MAIN_UE_EID,
+	UBCORE_CMD_ADMIN_FLUSH_MAIN_UE_EID,
+	UBCORE_CMD_ADMIN_INSERT_MAIN_UE_EID_BATCH,
 	UBCORE_CMD_MAX
 };
 
