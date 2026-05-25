@@ -1634,6 +1634,7 @@ ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 		return ERR_PTR(-EPERM);
 	}
 
+	memset(&cg_obj, 0, sizeof(cg_obj));
 	ret = ubcore_cgroup_try_charge(&cg_obj, dev,
 				       UBCORE_RESOURCE_HCA_HANDLE);
 	if (ret != 0) {
