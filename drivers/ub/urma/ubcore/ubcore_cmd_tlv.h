@@ -950,6 +950,11 @@ enum ubcore_lookup_main_ue_eid_type {
 	LOOKUP_MAIN_UE_EID_OUT_NUM,
 };
 
+enum ubcore_flush_main_ue_eid_type {
+	FLUSH_MAIN_UE_EID_OUT_STATUS = UBCORE_CMD_OUT_TYPE_INIT,
+	FLUSH_MAIN_UE_EID_OUT_NUM,
+};
+
 enum ubcore_insert_main_ue_eid_batch_type {
 	INSERT_MAIN_UE_EID_BATCH_IN_ENTRY,
 	INSERT_MAIN_UE_EID_BATCH_IN_NUM,

@@ -139,6 +139,34 @@ static int ubcore_admin_reply_main_ue_eid(struct genl_info *info,
 	return genlmsg_reply(msg, info);
 }
 
+static int ubcore_admin_reply_status(struct genl_info *info, uint8_t cmd,
+				     int status)
+{
+	struct sk_buff *msg;
+	void *hdr;
+	int ret;
+
+	msg = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (msg == NULL)
+		return -ENOMEM;
+
+	hdr = genlmsg_put_reply(msg, info, &ubcore_genl_family, 0, cmd);
+	if (hdr == NULL) {
+		nlmsg_free(msg);
+		return -ENOMEM;
+	}
+
+	ret = nla_put_s32(msg, UBCORE_ATTR_STATUS, status);
+	if (ret != 0) {
+		genlmsg_cancel(msg, hdr);
+		nlmsg_free(msg);
+		return ret;
+	}
+
+	genlmsg_end(msg, hdr);
+	return genlmsg_reply(msg, info);
+}
+
 static int ubcore_admin_get_eid_batch_attrs(struct genl_info *info,
 					    const union ubcore_eid **main_ue_eid,
 					    const union ubcore_eid **eids,
@@ -538,7 +566,9 @@ int ubcore_admin_flush_main_ue_eid(struct sk_buff *skb,
 				   struct genl_info *info)
 {
 	ubcore_flush_main_ue_eid();
-	return 0;
+	return ubcore_admin_reply_status(info,
+					 UBCORE_CMD_ADMIN_FLUSH_MAIN_UE_EID,
+					 0);
 }
 
 int ubcore_admin_insert_main_ue_eid_batch(struct sk_buff *skb,
