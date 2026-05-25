@@ -14,6 +14,12 @@
 #include "cdma_uobj.h"
 #include "cdma_event.h"
 
+void cdma_cleanup_uninstalled_jfe(int fd, struct file *file)
+{
+	fput(file);
+	put_unused_fd(fd);
+}
+
 static __poll_t cdma_jfe_poll(struct cdma_jfe *jfe, struct file *filp,
 			      struct poll_table_struct *wait)
 {
@@ -401,7 +407,6 @@ struct cdma_jfce *cdma_alloc_jfce(struct cdma_file *cfile)
 	jfce->file = file;
 	jfce->cfile = cfile;
 	kref_get(&cfile->ref);
-	fd_install(new_fd, file);
 
 	return jfce;
 
@@ -413,15 +418,6 @@ err_put_unused_fd:
 	put_unused_fd(new_fd);
 
 	return ERR_PTR(ret);
-}
-
-void cdma_free_jfce(struct cdma_jfce *jfce)
-{
-	if (!jfce)
-		return;
-
-	fput(jfce->file);
-	put_unused_fd(jfce->fd);
 }
 
 void cdma_destroy_jfce(struct cdma_jfce *jfce)
@@ -582,7 +578,7 @@ static int cdma_delete_jfae(struct inode *inode, struct file *filp)
 	mutex_unlock(&cfile->ctx_mutex);
 	cdma_close_uobj_fd(cfile);
 
-	pr_debug("jfae is release\n");
+	pr_info("jfae is release\n");
 	return 0;
 }
 
@@ -635,7 +631,6 @@ struct cdma_jfae *cdma_alloc_jfae(struct cdma_file *cfile)
 	jfae->fd = fd;
 	jfae->file = file;
 	jfae->cfile = cfile;
-	fd_install(fd, file);
 	kref_get(&cfile->ref);
 	return jfae;
 
@@ -645,15 +640,6 @@ err_put_unused_fd:
 	put_unused_fd(fd);
 
 	return NULL;
-}
-
-void cdma_free_jfae(struct cdma_jfae *jfae)
-{
-	if (!jfae)
-		return;
-
-	fput(jfae->file);
-	put_unused_fd(jfae->fd);
 }
 
 void cdma_init_jfc_event(struct cdma_jfc_event *event)
