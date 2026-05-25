@@ -50,9 +50,15 @@ static void ub_delay_task_device_attach(struct ub_entity *uent, bool retry)
 {
 	int ret;
 
+	if (!uent->is_mue)
+		device_lock(&uent->pue->dev);
+
 	ret = device_attach(&uent->dev);
 	if (ret < 0 && ret != -EPROBE_DEFER)
 		ub_warn(uent, "device attach failed, ret=%d\n", ret);
+
+	if (!uent->is_mue)
+		device_unlock(&uent->pue->dev);
 
 	if (!retry)
 		atomic_set(&uent->ent_mgmt_state, MGMT_STATE_IDLE);
@@ -113,7 +119,12 @@ static void ub_delay_task_work(struct work_struct *work)
 
 	switch (task_type) {
 	case TASK_TYPE_START:
+		if (!uent->is_mue)
+			device_lock(&uent->pue->dev);
 		ub_start_ent(uent);
+		if (!uent->is_mue)
+			device_unlock(&uent->pue->dev);
+
 		atomic_set(&uent->ent_mgmt_state, MGMT_STATE_IDLE);
 		break;
 	case TASK_TYPE_ATTACH:
