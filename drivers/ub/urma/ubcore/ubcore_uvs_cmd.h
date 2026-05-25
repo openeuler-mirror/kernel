@@ -91,6 +91,12 @@ struct ubcore_cmd_main_ue_eid_lookup {
 	} out;
 };
 
+struct ubcore_cmd_main_ue_eid_flush {
+	struct {
+		int status;
+	} out;
+};
+
 struct ubcore_cmd_main_ue_eid_batch {
 	struct {
 		union ubcore_eid main_ue_eid;
