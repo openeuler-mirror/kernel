@@ -49,15 +49,11 @@ struct cdma_jfce {
 
 struct cdma_jfce *cdma_alloc_jfce(struct cdma_file *cfile);
 
-void cdma_free_jfce(struct cdma_jfce *jfce);
-
 void cdma_jfs_async_event_cb(struct cdma_event *event, struct cdma_jfae *jfae);
 
 void cdma_jfc_async_event_cb(struct cdma_event *event, struct cdma_jfae *jfae);
 
 struct cdma_jfae *cdma_alloc_jfae(struct cdma_file *cfile);
-
-void cdma_free_jfae(struct cdma_jfae *jfae);
 
 int cdma_get_jfae_ref(struct cdma_jfae *jfae);
 
@@ -74,6 +70,8 @@ void cdma_release_comp_event(struct cdma_jfce *jfce, struct list_head *event_lis
 void cdma_release_async_event(struct cdma_jfae *jfae, struct list_head *event_list);
 
 void cdma_put_jfae_ref(struct cdma_jfae *jfae);
+
+void cdma_cleanup_uninstalled_jfe(int fd, struct file *file);
 
 static inline struct cdma_context *cdma_jfae_to_ctx(struct cdma_jfae *jfae)
 {

@@ -3,6 +3,7 @@
 
 #define dev_fmt(fmt) "CDMA: " fmt
 
+#include <linux/file.h>
 #include <ub/ubus/ubus.h>
 
 #include <uapi/ub/cdma/cdma_abi.h>
@@ -110,15 +111,18 @@ static int cdma_create_ucontext(struct cdma_ioctl_hdr *hdr,
 				(u32)sizeof(args));
 	if (ret) {
 		dev_err(cdev->dev, "copy ctx to user failed, ret = %d\n", ret);
+		ret = -EFAULT;
 		goto free_jfae;
 	}
+
+	fd_install(jfae->fd, jfae->file);
 
 	return ret;
 
 free_jfae:
 	cfile->uctx = NULL;
 	cfile->jfae = NULL;
-	cdma_free_jfae(jfae);
+	cdma_cleanup_uninstalled_jfe(jfae->fd, jfae->file);
 free_context:
 	cdma_free_context(cdev, ctx);
 
@@ -774,10 +778,12 @@ static int cdma_cmd_create_jfce(struct cdma_ioctl_hdr *hdr,
 		goto err_out;
 	}
 
+	fd_install(jfce->fd, jfce->file);
+
 	return 0;
 
 err_out:
-	cdma_free_jfce(jfce);
+	cdma_cleanup_uninstalled_jfe(jfce->fd, jfce->file);
 
 	return ret;
 }
