@@ -12,7 +12,7 @@
 #include <linux/jiffies.h>
 #include <linux/jhash.h>
 #include <ub/urma/ubcore_uapi.h>
-#include "ubcore_topo_info.h"
+#include "ubcore_main_ue_eid.h"
 #include "net/ubcore_cm.h"
 #include "ubcore_log.h"
 #include "ubcore_priv.h"
@@ -814,7 +814,7 @@ int ubmad_post_send(struct ubcore_device *device,
 
 	/* import well-known jetty */
 	// unimport in ubmad_uninit_jetty_rsrc()
-	ret = ubcore_get_main_primary_eid(&send_buf->dst_eid, &dst_primary_eid);
+	ret = ubcore_lookup_main_ue_eid(&send_buf->dst_eid, &dst_primary_eid);
 	if (ret != 0) {
 		ubcore_log_err("get primary eid failed\n");
 		goto put_device_priv;

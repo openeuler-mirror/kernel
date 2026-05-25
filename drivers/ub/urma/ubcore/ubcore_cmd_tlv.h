@@ -932,6 +932,29 @@ enum ubcore_get_path_set_type {
 	GET_PATH_SET_OUT_NUM,
 };
 
+enum ubcore_insert_main_ue_eid_type {
+	INSERT_MAIN_UE_EID_IN_ENTRY,
+	INSERT_MAIN_UE_EID_IN_NUM,
+};
+
+enum ubcore_delete_main_ue_eid_type {
+	DELETE_MAIN_UE_EID_IN_EID,
+	DELETE_MAIN_UE_EID_IN_NUM,
+};
+
+enum ubcore_lookup_main_ue_eid_type {
+	LOOKUP_MAIN_UE_EID_IN_EID,
+	LOOKUP_MAIN_UE_EID_IN_NUM,
+
+	LOOKUP_MAIN_UE_EID_OUT_MAIN_UE_EID = UBCORE_CMD_OUT_TYPE_INIT,
+	LOOKUP_MAIN_UE_EID_OUT_NUM,
+};
+
+enum ubcore_insert_main_ue_eid_batch_type {
+	INSERT_MAIN_UE_EID_BATCH_IN_ENTRY,
+	INSERT_MAIN_UE_EID_BATCH_IN_NUM,
+};
+
 int ubcore_mue_tlv_parse(struct ubcore_cmd_hdr *hdr, void *arg);
 int ubcore_mue_tlv_append(struct ubcore_cmd_hdr *hdr, void *arg);
 int ubcore_global_tlv_parse(struct ubcore_cmd_hdr *hdr, void *arg);

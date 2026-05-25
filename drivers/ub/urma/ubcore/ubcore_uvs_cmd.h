@@ -33,6 +33,11 @@ enum ubcore_uvs_global_cmd {
 	UBCORE_CMD_GET_ROUTE_LIST = 2,
 	UBCORE_CMD_GET_TOPO = 3,
 	UBCORE_CMD_GET_PATH_SET = 4,
+	UBCORE_CMD_INSERT_MAIN_UE_EID = 5,
+	UBCORE_CMD_DELETE_MAIN_UE_EID = 6,
+	UBCORE_CMD_LOOKUP_MAIN_UE_EID = 7,
+	UBCORE_CMD_FLUSH_MAIN_UE_EID = 8,
+	UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH = 9,
 	UBCORE_CMD_GLOBAL_LAST
 };
 
@@ -62,6 +67,36 @@ struct ubcore_cmd_get_path_set {
 		bool iodie_level;
 	} in;
 	struct ubcore_path_set out;
+};
+
+struct ubcore_cmd_main_ue_eid_entry {
+	struct {
+		union ubcore_eid eid;
+		union ubcore_eid main_ue_eid;
+	} in;
+};
+
+struct ubcore_cmd_main_ue_eid_delete {
+	struct {
+		union ubcore_eid eid;
+	} in;
+};
+
+struct ubcore_cmd_main_ue_eid_lookup {
+	struct {
+		union ubcore_eid eid;
+	} in;
+	struct {
+		union ubcore_eid main_ue_eid;
+	} out;
+};
+
+struct ubcore_cmd_main_ue_eid_batch {
+	struct {
+		union ubcore_eid main_ue_eid;
+		uint32_t eid_num;
+		union ubcore_eid eids[UBCORE_MAIN_UE_EID_BATCH_EID_MAX];
+	} in;
 };
 
 int ubcore_uvs_mue_cmd_parse(struct ubcore_mue_file *file,

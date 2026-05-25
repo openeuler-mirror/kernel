@@ -12,6 +12,7 @@
 #include <ub/urma/ubcore_types.h>
 #include "ubcore_device.h"
 #include "ubcore_log.h"
+#include "ubcore_main_ue_eid.h"
 #include "ubcore_topo_info.h"
 
 #include "ubmgr_topo.h"
@@ -54,7 +55,7 @@ int ubmgr_get_first_primary_eid(struct ubcore_device *dev,
 	if (ret != 0)
 		return -EINVAL;
 
-	ret = ubcore_get_main_primary_eid(&first_eid, &primary_eid);
+	ret = ubcore_lookup_main_ue_eid(&first_eid, &primary_eid);
 	if (ret != 0)
 		return -EINVAL;
 

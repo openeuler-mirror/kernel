@@ -114,8 +114,6 @@ int ubcore_update_topo_map(struct ubcore_topo_map *new_topo_map,
 void ubcore_show_topo_map(struct ubcore_topo_map *topo_map);
 int ubcore_get_primary_eid(union ubcore_eid *eid, union ubcore_eid *primary_eid,
 	uint32_t *entity_id, uint32_t *chip_id, uint32_t *nd_id);
-int ubcore_get_main_primary_eid(union ubcore_eid *eid,
-	union ubcore_eid *main_primary_eid);
 
 int ubcore_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
 	union ubcore_eid *primary_eid, uint32_t ue_id);
