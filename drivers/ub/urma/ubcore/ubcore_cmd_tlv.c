@@ -152,6 +152,15 @@ static void ubcore_lookup_main_ue_eid_fill_spec_out(void *arg_addr,
 	     arg->out.main_ue_eid);
 }
 
+static void ubcore_flush_main_ue_eid_fill_spec_out(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_main_ue_eid_flush *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, FLUSH_MAIN_UE_EID_OUT_STATUS, arg->out.status);
+}
+
 static void ubcore_insert_main_ue_eid_batch_fill_spec_in(void *arg_addr,
 	struct ubcore_cmd_spec *spec)
 {
@@ -209,8 +218,8 @@ static struct ubcore_tlv_handler
 		[UBCORE_CMD_FLUSH_MAIN_UE_EID] = {
 			NULL,
 			0,
-			NULL,
-			0,
+			ubcore_flush_main_ue_eid_fill_spec_out,
+			FLUSH_MAIN_UE_EID_OUT_NUM,
 		},
 		[UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH] = {
 			ubcore_insert_main_ue_eid_batch_fill_spec_in,

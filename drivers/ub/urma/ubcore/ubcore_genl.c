@@ -45,7 +45,8 @@ static const struct nla_policy ubcore_policy[NUM_UBCORE_ATTR] = {
 	[UBCORE_ATTR_MAIN_UE_EID] = { .type = NLA_BINARY,
 				      .len = UBCORE_EID_SIZE },
 	[UBCORE_ATTR_EID_NUM] = { .type = NLA_U32 },
-	[UBCORE_ATTR_EID_LIST] = { .type = NLA_BINARY }
+	[UBCORE_ATTR_EID_LIST] = { .type = NLA_BINARY },
+	[UBCORE_ATTR_STATUS] = { .type = NLA_S32 }
 };
 
 static const struct genl_ops ubcore_genl_ops[] = {

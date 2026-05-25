@@ -447,14 +447,13 @@ static int ubcore_cmd_lookup_main_ue_eid(struct ubcore_global_file *file,
 static int ubcore_cmd_flush_main_ue_eid(struct ubcore_global_file *file,
 	struct ubcore_cmd_hdr *hdr)
 {
-	if (hdr->args_len != 0) {
-		ubcore_log_err("Invalid flush main ue eid args_len: %u.\n",
-			hdr->args_len);
-		return -EINVAL;
-	}
+	struct ubcore_cmd_main_ue_eid_flush arg = {
+		.out.status = -1,
+	};
 
 	ubcore_flush_main_ue_eid();
-	return 0;
+	arg.out.status = 0;
+	return ubcore_global_tlv_append(hdr, &arg);
 }
 
 static int ubcore_cmd_insert_main_ue_eid_batch(
