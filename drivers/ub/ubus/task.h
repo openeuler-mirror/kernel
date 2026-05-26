@@ -44,15 +44,27 @@ struct ub_retry_task {
 	int task_type;
 };
 
+#define TASK_SRC_BIT_OFFSET 32 /* Fix the issue of some platforms strictly validating 8-byte address offsets */
+
 static inline void ub_entity_assign_task_src(struct ub_entity *uent, int bit,
 					     bool flag)
 {
+#ifdef CONFIG_64BIT
+	assign_bit(TASK_SRC_BIT_OFFSET + bit, (unsigned long *)&uent->reserved1,
+		   flag);
+#else
 	assign_bit(bit, (unsigned long *)&uent->task_src, flag);
+#endif
 }
 
 static inline bool ub_entity_test_task_src(struct ub_entity *uent, int bit)
 {
+#ifdef CONFIG_64BIT
+	return test_bit(TASK_SRC_BIT_OFFSET + bit,
+			(unsigned long *)&uent->reserved1);
+#else
 	return test_bit(bit, (unsigned long *)&uent->task_src);
+#endif
 }
 
 int ub_delay_task_wq_init(void);
