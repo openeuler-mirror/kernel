@@ -194,6 +194,9 @@ struct vcpu_svm {
 	u32 ghcb_sa_len;
 	bool ghcb_sa_sync;
 	bool ghcb_sa_free;
+
+	/* CSV2 migrated ghcb mapping state support */
+	bool receiver_ghcb_map_fail;
 };
 
 struct svm_cpu_data {
@@ -534,6 +537,39 @@ void svm_vcpu_unblocking(struct kvm_vcpu *vcpu);
 #define GHCB_VERSION_MAX		1ULL
 #define GHCB_VERSION_MIN		1ULL
 
+/*
+ * CSV2 live migration support:
+ *     If MSR_AMD64_SEV_ES_GHCB in migration didn't apply GHCB MSR protocol,
+ *     reuse bits [52-63] to indicate vcpu status. The following status are
+ *     currently included:
+ *         * ghcb_map: indicate whether GHCB page was mapped. The mapped GHCB
+ *                     page may be filled with GPRs before VMRUN, so we must
+ *                     remap GHCB page on the recipient's side.
+ *         * received_first_sipi: indicate AP's INIT-SIPI-SIPI stage. Reuse
+ *                     these bits for received_first_sipi is acceptable cause
+ *                     runtime stage of guest's linux only applies GHCB page
+ *                     protocol.
+ *                     It's unlikely that the migration encounter other stages
+ *                     of guest's linux. Once encountered, AP bringup may fail
+ *                     which will not impact user payload.
+ *     Otherbits keep their's original meaning. (See GHCB Spec 2.3.1 for detail)
+ */
+#define GHCB_MSR_KVM_STATUS_POS		52
+#define GHCB_MSR_KVM_STATUS_BITS	12
+#define GHCB_MSR_KVM_STATUS_MASK			\
+	((BIT_ULL(GHCB_MSR_KVM_STATUS_BITS) - 1)	\
+			<< GHCB_MSR_KVM_STATUS_POS)
+#define GHCB_MSR_MAPPED_POS		63
+#define GHCB_MSR_MAPPED_BITS		1
+#define GHCB_MSR_MAPPED_MASK				\
+	((BIT_ULL(GHCB_MSR_MAPPED_BITS) - 1)		\
+			<< GHCB_MSR_MAPPED_POS)
+#define GHCB_MSR_RECEIVED_FIRST_SIPI_POS	62
+#define GHCB_MSR_RECEIVED_FIRST_SIPI_BITS	1
+#define GHCB_MSR_RECEIVED_FIRST_SIPI_MASK			\
+	((BIT_ULL(GHCB_MSR_RECEIVED_FIRST_SIPI_BITS) - 1)	\
+			<< GHCB_MSR_RECEIVED_FIRST_SIPI_POS)
+
 #define GHCB_MSR_INFO_POS		0
 #define GHCB_MSR_INFO_MASK		(BIT_ULL(12) - 1)
 
@@ -573,6 +609,11 @@ static inline bool svm_sev_enabled(void)
 	return IS_ENABLED(CONFIG_KVM_AMD_SEV) ? max_sev_asid : 0;
 }
 
+static inline bool is_ghcb_msr_protocol(u64 ghcb_val)
+{
+	return ghcb_val & GHCB_MSR_INFO_MASK;
+}
+
 void sev_vm_destroy(struct kvm *kvm);
 int svm_mem_enc_op(struct kvm *kvm, void __user *argp);
 int svm_register_enc_region(struct kvm *kvm,
@@ -592,6 +633,7 @@ void sev_es_create_vcpu(struct vcpu_svm *svm);
 void sev_es_vcpu_load(struct vcpu_svm *svm, int cpu);
 void sev_es_vcpu_put(struct vcpu_svm *svm);
 void sev_vcpu_deliver_sipi_vector(struct kvm_vcpu *vcpu, u8 vector);
+int sev_es_ghcb_map(struct vcpu_svm *svm, u64 ghcb_gpa);
 
 /* vmenter.S */
 

@@ -1759,13 +1759,15 @@ void svm_set_cr0(struct kvm_vcpu *vcpu, unsigned long cr0)
 	if (vcpu->arch.efer & EFER_LME) {
 		if (!is_paging(vcpu) && (cr0 & X86_CR0_PG)) {
 			vcpu->arch.efer |= EFER_LMA;
-			if (!vcpu->arch.guest_state_protected)
+			if (!vcpu->arch.guest_state_protected ||
+			    boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
 				svm->vmcb->save.efer |= EFER_LMA | EFER_LME;
 		}
 
 		if (is_paging(vcpu) && !(cr0 & X86_CR0_PG)) {
 			vcpu->arch.efer &= ~EFER_LMA;
-			if (!vcpu->arch.guest_state_protected)
+			if (!vcpu->arch.guest_state_protected ||
+			    boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
 				svm->vmcb->save.efer &= ~(EFER_LMA | EFER_LME);
 		}
 	}
@@ -2762,6 +2764,31 @@ static int svm_get_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 	case MSR_AMD64_DE_CFG:
 		msr_info->data = svm->msr_decfg;
 		break;
+	case MSR_AMD64_SEV_ES_GHCB:
+		if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON) {
+			/*
+			 * Only support userspace get/set from/to
+			 * vmcb.control.ghcb_gpa
+			 */
+			if (!msr_info->host_initiated ||
+			    !sev_es_guest(svm->vcpu.kvm))
+				return 1;
+
+			msr_info->data = svm->vmcb->control.ghcb_gpa;
+
+			/* Only set status bits when using GHCB page protocol */
+			if (msr_info->data &&
+			    !is_ghcb_msr_protocol(msr_info->data)) {
+				if (svm->ghcb)
+					msr_info->data |= GHCB_MSR_MAPPED_MASK;
+
+				if (svm->received_first_sipi)
+					msr_info->data |=
+						GHCB_MSR_RECEIVED_FIRST_SIPI_MASK;
+			}
+			break;
+		}
+		return 1;
 	default:
 		return kvm_get_msr_common(vcpu, msr_info);
 	}
@@ -2975,6 +3002,47 @@ static int svm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr)
 		svm->msr_decfg = data;
 		break;
 	}
+	case MSR_AMD64_SEV_ES_GHCB:
+		if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON) {
+			/*
+			 * Only support userspace get/set from/to
+			 * vmcb.control.ghcb_gpa
+			 */
+			if (!msr->host_initiated ||
+			    !sev_es_guest(svm->vcpu.kvm))
+				return 1;
+
+			/*
+			 * Value 0 means uninitialized userspace MSR data,
+			 * userspace need get the initial MSR data afterwards.
+			 */
+			if (!data)
+				return 0;
+
+			/* Extract status info when using GHCB page protocol */
+			if (!is_ghcb_msr_protocol(data)) {
+				if (!svm->ghcb &&
+				    (data & GHCB_MSR_MAPPED_MASK)) {
+					/*
+					 * This happened on recipient of migration,
+					 * should return error if cannot map the
+					 * ghcb page.
+					 */
+					if (sev_es_ghcb_map(to_svm(vcpu),
+						data & ~GHCB_MSR_KVM_STATUS_MASK))
+						return 1;
+				}
+
+				if (data & GHCB_MSR_RECEIVED_FIRST_SIPI_MASK)
+					svm->received_first_sipi = true;
+
+				data &= ~GHCB_MSR_KVM_STATUS_MASK;
+			}
+
+			svm->vmcb->control.ghcb_gpa = data;
+			break;
+		}
+		return 1;
 	case MSR_IA32_APICBASE:
 		if (kvm_vcpu_apicv_active(vcpu))
 			avic_update_vapic_bar(to_svm(vcpu), data);
@@ -3802,6 +3870,19 @@ static __no_kcsan fastpath_t svm_vcpu_run(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 
+	/*
+	 * For receipient side of CSV2 guest, fake the exit code as
+	 * SVM_EXIT_ERR and return directly if failed to mapping
+	 * the necessary GHCB page. When handling the exit code
+	 * afterwards, it can exit to userspace and stop the guest.
+	 */
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON &&
+	    sev_es_guest(vcpu->kvm) &&
+	    svm->receiver_ghcb_map_fail) {
+		svm->vmcb->control.exit_code = SVM_EXIT_ERR;
+		return EXIT_FASTPATH_NONE;
+	}
+
 	svm->vmcb->save.rax = vcpu->arch.regs[VCPU_REGS_RAX];
 	svm->vmcb->save.rsp = vcpu->arch.regs[VCPU_REGS_RSP];
 	svm->vmcb->save.rip = vcpu->arch.regs[VCPU_REGS_RIP];
@@ -3996,6 +4077,15 @@ static bool svm_has_emulated_msr(struct kvm *kvm, u32 index)
 	case MSR_IA32_SMBASE:
 		/* SEV-ES guests do not support SMM, so report false */
 		if (kvm && sev_es_guest(kvm))
+			return false;
+		break;
+	case MSR_AMD64_SEV_ES_GHCB:
+		/*
+		 * Only CSV2 guests support to export this MSR, this should
+		 * be determined after KVM_CREATE_VM.
+		 */
+		if (boot_cpu_data.x86_vendor != X86_VENDOR_HYGON ||
+		    (kvm && !sev_es_guest(kvm)))
 			return false;
 		break;
 	default:

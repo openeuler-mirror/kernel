@@ -1543,6 +1543,8 @@ static const u32 emulated_msrs_all[] = {
 
 	MSR_K7_HWCR,
 	MSR_KVM_POLL_CONTROL,
+
+	MSR_AMD64_SEV_ES_GHCB,
 };
 
 static u32 emulated_msrs[ARRAY_SIZE(emulated_msrs_all)];
@@ -4233,6 +4235,17 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 		break;
 	case KVM_CAP_X86_NOTIFY_VMEXIT:
 		r = kvm_has_notify_vmexit;
+		break;
+	case KVM_CAP_SEV_ES_GHCB:
+		r = 0;
+
+		/* Both CSV2 and SEV-ES guests support MSR_AMD64_SEV_ES_GHCB,
+		 * but only CSV2 guest support export to emulate
+		 * MSR_AMD64_SEV_ES_GHCB.
+		 */
+		if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+			r = kvm_x86_ops.has_emulated_msr(kvm,
+						MSR_AMD64_SEV_ES_GHCB);
 		break;
 	default:
 		break;
@@ -10443,20 +10456,23 @@ static int __set_sregs(struct kvm_vcpu *vcpu, struct kvm_sregs *sregs)
 	if (kvm_set_apic_base(vcpu, &apic_base_msr))
 		goto out;
 
-	if (vcpu->arch.guest_state_protected)
+	if (vcpu->arch.guest_state_protected &&
+	    boot_cpu_data.x86_vendor != X86_VENDOR_HYGON)
 		goto skip_protected_regs;
 
-	dt.size = sregs->idt.limit;
-	dt.address = sregs->idt.base;
-	kvm_x86_ops.set_idt(vcpu, &dt);
-	dt.size = sregs->gdt.limit;
-	dt.address = sregs->gdt.base;
-	kvm_x86_ops.set_gdt(vcpu, &dt);
+	if (!vcpu->arch.guest_state_protected) {
+		dt.size = sregs->idt.limit;
+		dt.address = sregs->idt.base;
+		kvm_x86_ops.set_idt(vcpu, &dt);
+		dt.size = sregs->gdt.limit;
+		dt.address = sregs->gdt.base;
+		kvm_x86_ops.set_gdt(vcpu, &dt);
 
-	vcpu->arch.cr2 = sregs->cr2;
-	mmu_reset_needed |= kvm_read_cr3(vcpu) != sregs->cr3;
-	vcpu->arch.cr3 = sregs->cr3;
-	kvm_register_mark_available(vcpu, VCPU_EXREG_CR3);
+		vcpu->arch.cr2 = sregs->cr2;
+		mmu_reset_needed |= kvm_read_cr3(vcpu) != sregs->cr3;
+		vcpu->arch.cr3 = sregs->cr3;
+		kvm_register_mark_available(vcpu, VCPU_EXREG_CR3);
+	}
 
 	kvm_set_cr8(vcpu, sregs->cr8);
 
@@ -10470,33 +10486,37 @@ static int __set_sregs(struct kvm_vcpu *vcpu, struct kvm_sregs *sregs)
 	mmu_reset_needed |= kvm_read_cr4(vcpu) != sregs->cr4;
 	kvm_x86_ops.set_cr4(vcpu, sregs->cr4);
 
-	idx = srcu_read_lock(&vcpu->kvm->srcu);
-	if (is_pae_paging(vcpu)) {
-		load_pdptrs(vcpu, vcpu->arch.walk_mmu, kvm_read_cr3(vcpu));
-		mmu_reset_needed = 1;
+	if (!vcpu->arch.guest_state_protected) {
+		idx = srcu_read_lock(&vcpu->kvm->srcu);
+		if (is_pae_paging(vcpu)) {
+			load_pdptrs(vcpu, vcpu->arch.walk_mmu, kvm_read_cr3(vcpu));
+			mmu_reset_needed = 1;
+		}
+		srcu_read_unlock(&vcpu->kvm->srcu, idx);
 	}
-	srcu_read_unlock(&vcpu->kvm->srcu, idx);
 
 	if (mmu_reset_needed)
 		kvm_mmu_reset_context(vcpu);
 
-	kvm_set_segment(vcpu, &sregs->cs, VCPU_SREG_CS);
-	kvm_set_segment(vcpu, &sregs->ds, VCPU_SREG_DS);
-	kvm_set_segment(vcpu, &sregs->es, VCPU_SREG_ES);
-	kvm_set_segment(vcpu, &sregs->fs, VCPU_SREG_FS);
-	kvm_set_segment(vcpu, &sregs->gs, VCPU_SREG_GS);
-	kvm_set_segment(vcpu, &sregs->ss, VCPU_SREG_SS);
+	if (!vcpu->arch.guest_state_protected) {
+		kvm_set_segment(vcpu, &sregs->cs, VCPU_SREG_CS);
+		kvm_set_segment(vcpu, &sregs->ds, VCPU_SREG_DS);
+		kvm_set_segment(vcpu, &sregs->es, VCPU_SREG_ES);
+		kvm_set_segment(vcpu, &sregs->fs, VCPU_SREG_FS);
+		kvm_set_segment(vcpu, &sregs->gs, VCPU_SREG_GS);
+		kvm_set_segment(vcpu, &sregs->ss, VCPU_SREG_SS);
 
-	kvm_set_segment(vcpu, &sregs->tr, VCPU_SREG_TR);
-	kvm_set_segment(vcpu, &sregs->ldt, VCPU_SREG_LDTR);
+		kvm_set_segment(vcpu, &sregs->tr, VCPU_SREG_TR);
+		kvm_set_segment(vcpu, &sregs->ldt, VCPU_SREG_LDTR);
 
-	update_cr8_intercept(vcpu);
+		update_cr8_intercept(vcpu);
 
-	/* Older userspace won't unhalt the vcpu on reset. */
-	if (kvm_vcpu_is_bsp(vcpu) && kvm_rip_read(vcpu) == 0xfff0 &&
-	    sregs->cs.selector == 0xf000 && sregs->cs.base == 0xffff0000 &&
-	    !is_protmode(vcpu))
-		vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;
+		/* Older userspace won't unhalt the vcpu on reset. */
+		if (kvm_vcpu_is_bsp(vcpu) && kvm_rip_read(vcpu) == 0xfff0 &&
+		    sregs->cs.selector == 0xf000 && sregs->cs.base == 0xffff0000 &&
+		    !is_protmode(vcpu))
+			vcpu->arch.mp_state = KVM_MP_STATE_RUNNABLE;
+	}
 
 skip_protected_regs:
 	max_bits = KVM_NR_INTERRUPTS;

@@ -1616,6 +1616,190 @@ e_free:
 	return ret;
 }
 
+/* Userspace wants to query either header or trans length. */
+static int
+__sev_send_update_vmsa_query_lengths(struct kvm *kvm, struct kvm_sev_cmd *argp,
+				     struct kvm_sev_send_update_vmsa *params)
+{
+	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
+	struct sev_data_send_update_vmsa *vmsa;
+	int ret;
+
+	vmsa = kzalloc(sizeof(*vmsa), GFP_KERNEL_ACCOUNT);
+	if (!vmsa)
+		return -ENOMEM;
+
+	vmsa->handle = sev->handle;
+	ret = sev_issue_cmd(kvm, SEV_CMD_SEND_UPDATE_VMSA, vmsa, &argp->error);
+
+	params->hdr_len = vmsa->hdr_len;
+	params->trans_len = vmsa->trans_len;
+
+	if (copy_to_user((void __user *)argp->data, params,
+			 sizeof(struct kvm_sev_send_update_vmsa)))
+		ret = -EFAULT;
+
+	kfree(vmsa);
+	return ret;
+}
+
+static int sev_send_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
+{
+	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
+	struct sev_data_send_update_vmsa *vmsa;
+	struct kvm_sev_send_update_vmsa params;
+	struct kvm_vcpu *vcpu;
+	void *hdr, *trans_data;
+	int ret;
+
+	if (!sev_es_guest(kvm))
+		return -ENOTTY;
+
+	if (copy_from_user(&params, (void __user *)(uintptr_t)argp->data,
+			   sizeof(struct kvm_sev_send_update_vmsa)))
+		return -EFAULT;
+
+	/* userspace wants to query either header or trans length */
+	if (!params.trans_len || !params.hdr_len)
+		return __sev_send_update_vmsa_query_lengths(kvm, argp, &params);
+
+	if (!params.trans_uaddr || !params.hdr_uaddr)
+		return -EINVAL;
+
+	/* Get the target vcpu */
+	vcpu = kvm_get_vcpu_by_id(kvm, params.vcpu_id);
+	if (!vcpu) {
+		pr_err("%s: invalid vcpu\n", __func__);
+		return -EINVAL;
+	}
+
+	pr_debug("%s: vcpu (%d)\n", __func__, vcpu->vcpu_id);
+
+	/* allocate memory for header and transport buffer */
+	ret = -ENOMEM;
+	hdr = kzalloc(params.hdr_len, GFP_KERNEL_ACCOUNT);
+	if (!hdr)
+		return ret;
+
+	trans_data = kzalloc(params.trans_len, GFP_KERNEL_ACCOUNT);
+	if (!trans_data)
+		goto e_free_hdr;
+
+	vmsa = kzalloc(sizeof(*vmsa), GFP_KERNEL);
+	if (!vmsa)
+		goto e_free_trans_data;
+
+	vmsa->hdr_address = __psp_pa(hdr);
+	vmsa->hdr_len = params.hdr_len;
+	vmsa->trans_address = __psp_pa(trans_data);
+	vmsa->trans_len = params.trans_len;
+
+	/* The SEND_UPDATE_VMSA command requires C-bit to be always set. */
+	vmsa->guest_address = __pa(to_svm(vcpu)->vmsa) | sev_me_mask;
+	vmsa->guest_len = PAGE_SIZE;
+	vmsa->handle = sev->handle;
+
+	ret = sev_issue_cmd(kvm, SEV_CMD_SEND_UPDATE_VMSA, vmsa, &argp->error);
+
+	if (ret)
+		goto e_free;
+
+	/* copy transport buffer to user space */
+	if (copy_to_user((void __user *)(uintptr_t)params.trans_uaddr,
+			 trans_data, params.trans_len)) {
+		ret = -EFAULT;
+		goto e_free;
+	}
+
+	/* Copy packet header to userspace. */
+	ret = copy_to_user((void __user *)(uintptr_t)params.hdr_uaddr, hdr,
+			   params.hdr_len);
+
+e_free:
+	kfree(vmsa);
+e_free_trans_data:
+	kfree(trans_data);
+e_free_hdr:
+	kfree(hdr);
+
+	return ret;
+}
+
+static int sev_receive_update_vmsa(struct kvm *kvm, struct kvm_sev_cmd *argp)
+{
+	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
+	struct kvm_sev_receive_update_vmsa params;
+	struct sev_data_receive_update_vmsa *vmsa;
+	struct kvm_vcpu *vcpu;
+	void *hdr = NULL, *trans = NULL;
+	int ret;
+
+	if (!sev_es_guest(kvm))
+		return -ENOTTY;
+
+	if (copy_from_user(&params, (void __user *)(uintptr_t)argp->data,
+			   sizeof(struct kvm_sev_receive_update_vmsa)))
+		return -EFAULT;
+
+	if (!params.hdr_uaddr || !params.hdr_len ||
+	    !params.trans_uaddr || !params.trans_len)
+		return -EINVAL;
+
+	/* Get the target vcpu */
+	vcpu = kvm_get_vcpu_by_id(kvm, params.vcpu_id);
+	if (!vcpu) {
+		pr_err("%s: invalid vcpu\n", __func__);
+		return -EINVAL;
+	}
+
+	pr_debug("%s: vcpu (%d)\n", __func__, vcpu->vcpu_id);
+
+	hdr = psp_copy_user_blob(params.hdr_uaddr, params.hdr_len);
+	if (IS_ERR(hdr))
+		return PTR_ERR(hdr);
+
+	trans = psp_copy_user_blob(params.trans_uaddr, params.trans_len);
+	if (IS_ERR(trans)) {
+		ret = PTR_ERR(trans);
+		goto e_free_hdr;
+	}
+
+	ret = -ENOMEM;
+	vmsa = kzalloc(sizeof(*vmsa), GFP_KERNEL);
+	if (!vmsa)
+		goto e_free_trans;
+
+	vmsa->hdr_address = __psp_pa(hdr);
+	vmsa->hdr_len = params.hdr_len;
+	vmsa->trans_address = __psp_pa(trans);
+	vmsa->trans_len = params.trans_len;
+
+	/*
+	 * Flush before RECEIVE_UPDATE_VMSA, the PSP encrypts the
+	 * written VMSA memory content with the guest's key), and
+	 * the cache may contain dirty, unencrypted data.
+	 */
+	clflush_cache_range(to_svm(vcpu)->vmsa, PAGE_SIZE);
+
+	/* The RECEIVE_UPDATE_VMSA command requires C-bit to be always set. */
+	vmsa->guest_address = __pa(to_svm(vcpu)->vmsa) | sev_me_mask;
+	vmsa->guest_len = PAGE_SIZE;
+	vmsa->handle = sev->handle;
+
+	ret = sev_issue_cmd(kvm, SEV_CMD_RECEIVE_UPDATE_VMSA, vmsa, &argp->error);
+
+	if (!ret)
+		vcpu->arch.guest_state_protected = true;
+
+	kfree(vmsa);
+e_free_trans:
+	kfree(trans);
+e_free_hdr:
+	kfree(hdr);
+
+	return ret;
+}
+
 int svm_mem_enc_op(struct kvm *kvm, void __user *argp)
 {
 	struct kvm_sev_cmd sev_cmd;
@@ -1681,11 +1865,23 @@ int svm_mem_enc_op(struct kvm *kvm, void __user *argp)
 	case KVM_SEV_SEND_CANCEL:
 		r = sev_send_cancel(kvm, &sev_cmd);
 		break;
+	case KVM_SEV_SEND_UPDATE_VMSA:
+		if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+			r = sev_send_update_vmsa(kvm, &sev_cmd);
+		else
+			r = -EINVAL;
+		break;
 	case KVM_SEV_RECEIVE_START:
 		r = sev_receive_start(kvm, &sev_cmd);
 		break;
 	case KVM_SEV_RECEIVE_UPDATE_DATA:
 		r = sev_receive_update_data(kvm, &sev_cmd);
+		break;
+	case KVM_SEV_RECEIVE_UPDATE_VMSA:
+		if (boot_cpu_data.x86_vendor == X86_VENDOR_HYGON)
+			r = sev_receive_update_vmsa(kvm, &sev_cmd);
+		else
+			r = -EINVAL;
 		break;
 	case KVM_SEV_RECEIVE_FINISH:
 		r = sev_receive_finish(kvm, &sev_cmd);
@@ -2043,6 +2239,9 @@ void sev_free_vcpu(struct kvm_vcpu *vcpu)
 	if (vcpu->arch.guest_state_protected)
 		sev_flush_guest_memory(svm, svm->vmsa, PAGE_SIZE);
 	__free_page(virt_to_page(svm->vmsa));
+
+	if (svm->ghcb)
+		kvm_vcpu_unmap(&svm->vcpu, &svm->ghcb_map, false);
 
 	if (svm->ghcb_sa_free)
 		kfree(svm->ghcb_sa);
@@ -2746,4 +2945,23 @@ void sev_vcpu_deliver_sipi_vector(struct kvm_vcpu *vcpu, u8 vector)
 		return;
 
 	ghcb_set_sw_exit_info_2(svm->ghcb, 1);
+}
+
+int sev_es_ghcb_map(struct vcpu_svm *svm, u64 ghcb_gpa)
+{
+	if (kvm_vcpu_map(&svm->vcpu, ghcb_gpa >> PAGE_SHIFT, &svm->ghcb_map)) {
+		/* Unable to map GHCB from guest */
+		vcpu_unimpl(&svm->vcpu, "Missing GHCB [%#llx] from guest\n",
+			    ghcb_gpa);
+
+		svm->receiver_ghcb_map_fail = true;
+		return -EINVAL;
+	}
+
+	svm->ghcb = svm->ghcb_map.hva;
+	svm->receiver_ghcb_map_fail = false;
+
+	pr_info("Mapping GHCB [%#llx] from guest at recipient\n", ghcb_gpa);
+
+	return 0;
 }
