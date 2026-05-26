@@ -498,8 +498,7 @@ clear_cna:
 static void ub_set_route_table_entry(struct ub_entity *uent, u32 dst_cna,
 				     u32 *route_table_entry)
 {
-	int i;
-	u32 offset;
+	u32 offset, i;
 
 	/* Routing Table Block is not required for single-port devices. */
 	if (uent->port_nums == 1)
