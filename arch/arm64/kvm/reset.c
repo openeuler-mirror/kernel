@@ -183,7 +183,8 @@ void kvm_arm_vcpu_destroy(struct kvm_vcpu *vcpu)
 	kfree(sve_state);
 	kfree(vcpu->arch.ccsidr);
 	kvm_destroy_rec(vcpu);
-	kfree(vcpu->arch.rec);
+	if (kvm_is_realm(vcpu->kvm))
+		kfree(vcpu->arch.rec);
 
 #ifdef CONFIG_ARM64_HDBSS
 	if (vcpu->arch.hdbss.br_el2) {
