@@ -248,6 +248,14 @@ void ummu_non_agent_iotlb_sync(struct iommu_domain *domain,
 	ummu_tlbi_range(&range, false, u_domain);
 }
 
+void ummu_flush_iotlb_all_asid(struct iommu_domain *domain)
+{
+	struct ummu_domain *u_domain = to_ummu_domain(domain);
+
+	u_domain->tlbi_asid = true;
+	ummu_tlbi_context(u_domain);
+}
+
 void ummu_flush_iotlb_all(struct iommu_domain *domain)
 {
 	struct ummu_domain *u_domain = to_ummu_domain(domain);

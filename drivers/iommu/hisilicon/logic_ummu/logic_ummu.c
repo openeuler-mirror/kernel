@@ -17,6 +17,8 @@
 #include <linux/cleanup.h>
 #include <linux/iommufd.h>
 #include <linux/ummu_core.h>
+#include <linux/mmu_notifier.h>
+#include <linux/rwsem.h>
 #include <linux/hisi_ummu.h>
 
 #include "../queue.h"
@@ -41,6 +43,13 @@ struct logic_ummu_domain {
 	struct ummu_base_domain base_domain;
 	struct ummu_base_domain *agent_domain;
 	struct logic_ummu_viommu *logic_viommu;
+	struct list_head list;
+};
+
+struct logic_ummu_mn {
+	struct mmu_notifier mmu_notifier;
+	struct rw_semaphore rwsem;
+	struct list_head list;
 };
 
 struct eid_info {
@@ -68,6 +77,7 @@ static LIST_HEAD(support_cb_list_head);
 static DEFINE_SPINLOCK(eid_list_lock);
 static LIST_HEAD(cached_eid_list);
 static DEFINE_XARRAY(logic_ummu_ops_info);
+static DEFINE_XARRAY(mmu_notifier_xa);
 static u32 global_ummu_cnt;
 static struct logic_ummu_device logic_ummu;
 static struct platform_device *logic_ummu_dev;
@@ -493,6 +503,23 @@ static void logic_nested_domain_free(struct logic_ummu_domain *logic_domain,
 	}
 }
 
+static void logic_ummu_mmu_notifier_list_del(struct logic_ummu_domain *logic_domain)
+{
+	struct iommu_domain *domain = &logic_domain->base_domain.domain;
+	struct logic_ummu_mn *logic_mn;
+
+	logic_mn = xa_load(&mmu_notifier_xa, (u64)(domain->mm));
+	if (logic_mn) {
+		down_write(&logic_mn->rwsem);
+		list_del(&logic_domain->list);
+		if (list_empty(&logic_mn->list)) {
+			xa_erase(&mmu_notifier_xa, (u64)(domain->mm));
+			mmu_notifier_put(&logic_mn->mmu_notifier);
+		}
+		up_write(&logic_mn->rwsem);
+	}
+}
+
 static void logic_ummu_free(struct iommu_domain *domain)
 {
 	struct logic_ummu_domain *logic_domain;
@@ -506,6 +533,9 @@ static void logic_ummu_free(struct iommu_domain *domain)
 		pr_err("find ummu agent domain failed.\n");
 		return;
 	}
+
+	if ((domain->type == IOMMU_DOMAIN_SVA) && !iommu_is_ksva_domain(domain))
+		logic_ummu_mmu_notifier_list_del(logic_domain);
 
 	ops = agent_domain->domain.ops;
 	if (!ops || !ops->free) {
@@ -853,6 +883,114 @@ static int logic_domain_set_ops(struct logic_ummu_domain *logic_domain)
 	return ret;
 }
 
+/*
+ * Cloned from the MAX_TLBI_OPS in arch/arm64/include/asm/tlbflush.h, this
+ * is used as a threshold to replace per-page TLBI commands to issue in the
+ * command queue with an address-space TLBI command, when UMMU w/o a range
+ * invalidation feature handles too many per-page TLBI commands, which will
+ * otherwise result in a soft lockup.
+ */
+#define CMDQ_MAX_TLBI_OPS		(1 << (PAGE_SHIFT - 3))
+
+static void logic_ummu_mm_arch_invalidate_secondary_tlbs(struct mmu_notifier *mn,
+						struct mm_struct *mm,
+						unsigned long start,
+						unsigned long end)
+{
+	const struct ummu_device_helper *helper = get_agent_helper();
+	struct logic_ummu_domain *logic_domain;
+	struct ummu_base_domain *base_domain;
+	struct iommu_iotlb_gather gather = {};
+	struct logic_ummu_mn *logic_mn;
+	struct ummu_device *agent_ummu;
+	size_t size;
+
+	/*
+	 * The mm_types defines vm_end as the first byte after the end address,
+	 * different from IOMMU subsystem using the last address of an address
+	 * range. So do a simple translation here by calculating size correctly.
+	 */
+	size = end - start;
+	logic_mn = container_of(mn, struct logic_ummu_mn, mmu_notifier);
+
+	if (!down_read_trylock(&logic_mn->rwsem))
+		return;
+
+	if (list_empty(&logic_mn->list))
+		goto unlock;
+
+	logic_domain = list_first_entry(&logic_mn->list, struct logic_ummu_domain, list);
+	agent_ummu = logic_ummu.agent_device;
+
+	if (!(agent_ummu->cap.features & UMMU_FEAT_RANGE_INV)) {
+		if (size >= CMDQ_MAX_TLBI_OPS * PAGE_SIZE)
+			size = 0;
+	} else {
+		if (size == ULONG_MAX)
+			size = 0;
+	}
+
+	if (!size) {
+		list_for_each_entry(base_domain, &logic_domain->base_domain.list, list)
+			helper->sync_iotlb_all_asid(&base_domain->domain);
+	} else {
+		gather.start = start;
+		gather.end = end - 1;
+		gather.pgsize = PAGE_SIZE;
+		logic_ummu_iotlb_sync(&logic_domain->base_domain.domain, &gather);
+	}
+
+unlock:
+	up_read(&logic_mn->rwsem);
+}
+
+static void logic_ummu_mmu_notifier_free(struct mmu_notifier *mn)
+{
+	kfree(container_of(mn, struct logic_ummu_mn, mmu_notifier));
+}
+
+static const struct mmu_notifier_ops logic_ummu_mmu_notifier_ops = {
+	.arch_invalidate_secondary_tlbs	= logic_ummu_mm_arch_invalidate_secondary_tlbs,
+	.free_notifier			= logic_ummu_mmu_notifier_free,
+};
+
+static int logic_ummu_mmu_notifier_register(struct logic_ummu_domain *logic_domain,
+					    struct mm_struct *mm)
+{
+	struct logic_ummu_mn *logic_mn;
+	int ret;
+
+	logic_mn = xa_load(&mmu_notifier_xa, (u64)(mm));
+	if (!logic_mn) {
+		logic_mn = kzalloc(sizeof(*logic_mn), GFP_KERNEL);
+		if (!logic_mn)
+			return -ENOMEM;
+
+		init_rwsem(&logic_mn->rwsem);
+		INIT_LIST_HEAD(&logic_mn->list);
+
+		logic_mn->mmu_notifier.ops = &logic_ummu_mmu_notifier_ops;
+		ret = mmu_notifier_register(&logic_mn->mmu_notifier, mm);
+		if (ret) {
+			ret = -EFAULT;
+			goto mn_error;
+		}
+		ret = xa_err(xa_store(&mmu_notifier_xa, (u64)(mm), logic_mn, GFP_KERNEL));
+		if (ret)
+			goto store_mn_error;
+	}
+	down_write(&logic_mn->rwsem);
+	list_add_tail(&logic_domain->list, &logic_mn->list);
+	up_write(&logic_mn->rwsem);
+	return 0;
+
+store_mn_error:
+	mmu_notifier_unregister(&logic_mn->mmu_notifier, mm);
+mn_error:
+	kfree(logic_mn);
+	return ret;
+}
+
 static struct iommu_domain *logic_ummu_domain_alloc_sva(struct device *dev, struct mm_struct *mm)
 {
 	const struct iommu_ops *ops = get_agent_iommu_ops();
@@ -870,6 +1008,7 @@ static struct iommu_domain *logic_ummu_domain_alloc_sva(struct device *dev, stru
 		return ERR_PTR(-ENOMEM);
 
 	INIT_LIST_HEAD(&logic_domain->base_domain.list);
+	INIT_LIST_HEAD(&logic_domain->list);
 
 	list_for_each_entry(ummu, &logic_ummu.dev_list, list) {
 		domain = ops->domain_alloc_sva(dev, mm);
@@ -890,6 +1029,13 @@ static struct iommu_domain *logic_ummu_domain_alloc_sva(struct device *dev, stru
 				goto error_handle;
 		}
 	}
+
+	if (!(logic_ummu.agent_device->cap.features & UMMU_FEAT_BTM) && mm == current->mm) {
+		ret = logic_ummu_mmu_notifier_register(logic_domain, mm);
+		if (ret)
+			goto error_handle;
+	}
+
 	return &logic_domain->base_domain.domain;
 
 error_handle:
