@@ -18,6 +18,8 @@ void ub_mem_decoder_uninit(struct ub_entity *uent);
 void ub_mem_init_usi(struct ub_entity *uent);
 void ub_mem_uninit_usi(struct ub_entity *uent);
 
+extern struct mutex mem_ras_mutex;
+
 struct ub_mem_ras_err_info {
 	enum ras_err_type type;
 	u64 val0; /* addr or transaction id + port bitmap or 0*/
