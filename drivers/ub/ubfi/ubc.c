@@ -302,7 +302,7 @@ static int add_ubc_irq_resource(struct ubc_node *node,
 		ret = dts_register_irq(ubc->ctl_no, 0, "UBUS", &res);
 
 	if (ret) {
-		pr_err("register irq fail, ret=%d\n", ret);
+		pr_err("register irq failed, ret=%d\n", ret);
 		return ret;
 	}
 
@@ -350,11 +350,18 @@ static int init_ubc(struct ub_bus_controller *ubc)
 
 	INIT_LIST_HEAD(&ubc->devs);
 	device_initialize(dev);
-	set_dev_node(dev, pxm_to_node(ubc->attr.proximity_domain));
 
 	dev->release = ub_release_ubc_dev;
 	dev->coherent_dma_mask = GENMASK_ULL(31, 0);
 	dev_set_name(dev, "ub_bus_controller%u", ubc->ctl_no);
+
+	if (firmware_mode == ACPI) {
+		set_dev_node(dev, pxm_to_node(ubc->attr.proximity_domain));
+		pr_info("%s numa node is %d\n", ubc->name, pxm_to_node(ubc->attr.proximity_domain));
+	} else {
+		set_dev_node(dev, ubc->attr.proximity_domain);
+		pr_info("%s numa node is %u\n", ubc->name, ubc->attr.proximity_domain);
+	}
 
 	ret = device_add(dev);
 	if (ret) {
@@ -449,21 +456,20 @@ static void ubc_declare_resources(struct ub_bus_controller *ubc)
 {
 	struct resource_entry *window;
 	resource_size_t offset;
-	char addr[SZ_64], *fmt;
+	char addr[SZ_64];
 	struct resource *res;
 
 	/* Show ub bus controller's resources */
 	resource_list_for_each_entry(window, &ubc->resources) {
 		offset = window->offset;
 		res = window->res;
-		if (offset) {
-			fmt = " (bus address [0x%#010llx-0x%#010llx])";
-			snprintf(addr, sizeof(addr), fmt,
+		if (offset)
+			snprintf(addr, sizeof(addr),
+				 " (bus address [0x%#010llx-0x%#010llx])",
 				 (unsigned long long)(res->start - offset),
 				 (unsigned long long)(res->end - offset));
-		} else {
+		else
 			addr[0] = '\0';
-		}
 
 		pr_info("ubc resource %pR%s\n", res, addr);
 	}
