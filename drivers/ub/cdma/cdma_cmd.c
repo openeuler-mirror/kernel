@@ -191,13 +191,13 @@ int cdma_ctrlq_query_eu(struct cdma_dev *cdev)
 	ret = ubase_ctrlq_send_msg(cdev->adev, &msg);
 	if (ret) {
 		dev_err(cdev->dev,
-			"query seid upi from ctrl cpu failed, ret = %d.\n", ret);
+			"query seid upi from ctrl cpu failed, ret = %d\n", ret);
 		return ret;
 	}
 
 	if (!out_query.seid_num || out_query.seid_num > CDMA_MAX_EU_NUM) {
 		dev_err(cdev->dev,
-			"query seid upi num is invalid, num = %u.\n",
+			"query seid upi num is invalid, num = %u\n",
 			out_query.seid_num);
 		return -EINVAL;
 	}
@@ -209,7 +209,7 @@ int cdma_ctrlq_query_eu(struct cdma_dev *cdev)
 	for (i = 0; i < attr->eu_num; i++)
 		dev_info(
 			cdev->dev,
-			"init eus[%u], upi = 0x%x, eid = 0x%x, eid_idx = 0x%x.\n",
+			"init eus[%u], upi = 0x%x, eid = 0x%x, eid_idx = 0x%x\n",
 			i, eus[i].upi, eus[i].eid.dw0, eus[i].eid_idx);
 	mutex_unlock(&cdev->eu_mutex);
 

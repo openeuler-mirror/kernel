@@ -187,6 +187,7 @@ struct cdma_dev {
 	u32 tid;
 	int sva_mode;
 	u32 iopf_feature;
+	u32 hw_ver;
 	u32 status;
 	u8 sl_num;
 	u8 sl[CDMA_MAX_SL_NUM];
@@ -224,7 +225,6 @@ struct cdma_jfs_event {
 };
 
 struct cdma_jfc_event {
-	struct cdma_base_jfc *jfc;
 	struct cdma_jfce *jfce;
 	struct list_head comp_event_list;
 	struct list_head async_event_list;

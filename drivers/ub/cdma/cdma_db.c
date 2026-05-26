@@ -40,7 +40,7 @@ static struct cdma_k_sw_db_page *cdma_alloc_db_page(struct cdma_dev *dev)
 
 	page->bitmap = bitmap_alloc(page->num_db, GFP_KERNEL);
 	if (!page->bitmap) {
-		dev_err(dev->dev, "alloc db bitmap failed.\n");
+		dev_err(dev->dev, "alloc db bitmap failed\n");
 		goto err_bitmap;
 	}
 
@@ -61,7 +61,7 @@ err_bitmap:
 
 static void cdma_free_db_page(struct cdma_dev *cdev, struct cdma_sw_db *db)
 {
-	cdma_k_free_buf(cdev, PAGE_SIZE, &db->kpage->db_buf);
+	cdma_k_free_buf(cdev, &db->kpage->db_buf);
 	bitmap_free(db->kpage->bitmap);
 	kfree(db->kpage);
 	db->kpage = NULL;
@@ -91,7 +91,7 @@ int cdma_pin_sw_db(struct cdma_context *ctx, struct cdma_sw_db *db)
 	page->umem = cdma_umem_get(ctx->cdev, page_addr, PAGE_SIZE, false, ctx);
 	if (IS_ERR(page->umem)) {
 		ret = PTR_ERR(page->umem);
-		dev_err(ctx->cdev->dev, "get umem failed, ret = %d.\n", ret);
+		dev_err(ctx->cdev->dev, "get umem failed, ret = %d\n", ret);
 		kfree(page);
 		goto out;
 	}
@@ -138,7 +138,7 @@ int cdma_alloc_sw_db(struct cdma_dev *cdev, struct cdma_sw_db *db)
 	page = cdma_alloc_db_page(cdev);
 	if (!page) {
 		ret = -ENOMEM;
-		dev_err(cdev->dev, "alloc sw db page failed.\n");
+		dev_err(cdev->dev, "alloc sw db page failed\n");
 		goto out;
 	}
 
@@ -146,7 +146,7 @@ int cdma_alloc_sw_db(struct cdma_dev *cdev, struct cdma_sw_db *db)
 
 	ret = cdma_alloc_db_from_page(page, db);
 	if (ret)
-		dev_err(cdev->dev, "alloc sw db from page failed, ret = %d.\n", ret);
+		dev_err(cdev->dev, "alloc sw db from page failed, ret = %d\n", ret);
 out:
 	mutex_unlock(&cdev->db_mutex);
 
