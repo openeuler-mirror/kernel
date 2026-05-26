@@ -131,18 +131,14 @@ void build_soft_domain(void)
 		return;
 
 	cpumask_copy(&cpus, cpu_active_mask);
-	rcu_read_lock();
 	for (i = 0; i < nr_node_ids; i++) {
 		/* build soft domain for each numa domain. */
 		ret = build_soft_sub_domain(i, &cpus);
 		if (ret) {
 			free_soft_domain();
-			goto out;
+			return;
 		}
 	}
-
-out:
-	rcu_read_unlock();
 }
 
 static DEFINE_MUTEX(soft_domain_mutex);
