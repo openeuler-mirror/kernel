@@ -146,6 +146,20 @@ static struct oecls_sk_rule *get_rule_from_sk(int devid, void *sk)
 	return rule;
 }
 
+static bool has_sock_rule(struct sock *sk)
+{
+	struct oecls_netdev_info *oecls_dev;
+	struct oecls_sk_rule *rule;
+	int devid;
+
+	for_each_oecls_netdev(devid, oecls_dev) {
+		rule = get_rule_from_sk(devid, sk);
+		if (rule)
+			return true;
+	}
+	return false;
+}
+
 static inline bool reuseport_check(int devid, struct cmd_context ctx)
 {
 	return !!get_sk_rule(devid, ctx);
@@ -476,6 +490,11 @@ static void cfg_work(struct work_struct *work)
 	struct oecls_sk_rule *rule;
 	int devid, rxq_id, err;
 
+	mutex_lock(&oecls_sk_rules.mutex);
+	if (ctx_p->is_del && !has_sock_rule(ctx_p->sk))
+		goto out_lock;
+	mutex_unlock(&oecls_sk_rules.mutex);
+
 	get_sk_rule_addr(ctx_p);
 
 	mutex_lock(&oecls_sk_rules.mutex);
@@ -525,32 +544,17 @@ static void cfg_work(struct work_struct *work)
 			del_sk_rule(rule);
 		}
 	}
+
+out_lock:
 	mutex_unlock(&oecls_sk_rules.mutex);
 	put_net(ctx_p->sk_snapshot.net);
 	kfree(ctx_p);
 	atomic_dec(&oecls_worker_count);
 }
 
-static bool has_sock_rule(struct sock *sk)
-{
-	struct oecls_netdev_info *oecls_dev;
-	struct oecls_sk_rule *rule;
-	int devid;
-
-	for_each_oecls_netdev(devid, oecls_dev) {
-		rule = get_rule_from_sk(devid, sk);
-		if (rule)
-			return true;
-	}
-	return false;
-}
-
 static void del_ntuple_rule(struct sock *sk)
 {
 	struct cfg_param *ctx_p;
-
-	if (!has_sock_rule(sk))
-		return;
 
 	ctx_p = kzalloc(sizeof(*ctx_p), GFP_ATOMIC);
 	if (!ctx_p)
