@@ -187,10 +187,13 @@ struct ummu_capability {
 #define UMMU_OPT_DOUBLE_PLBI		(1UL << 1)
 #define UMMU_OPT_KCMD_PLBI		(1UL << 2)
 #define UMMU_OPT_CHK_MAPT_CONTINUITY	(1UL << 3)
-#define UMMU_OPT_MCMDQ_DECREASE		(1UL << 4)
+#define UMMU_OPT_ONE_MCMDQ		(1UL << 4)
 #define UMMU_OPT_SYNC_WITH_PLBI		(1UL << 5)
 #define UMMU_OPT_KV_CAM_CONTINUITY	(1UL << 6)
 #define UMMU_OPT_UMAU			(1UL << 7)
+#define UMMU_OPT_DOUBLE_TLBI		(1UL << 8)
+#define UMMU_OPT_TLBI_LIMIT_SCALE	(1UL << 9)
+#define UMMU_OPT_MCMDQ_DECREASE		(1UL << 10)
 	u32 options;
 
 #define UMMU_MAX_ASIDS			(1UL << 16)
@@ -285,6 +288,7 @@ struct ummu_device_helper {
 	void (*plbi_free_bit)(struct iommu_domain *domain, u32 next_lvl_idx,
 			      u32 next_lvl_offset);
 	void (*sync_iotlb_all)(struct iommu_domain *domain);
+	void (*sync_iotlb_all_asid)(struct iommu_domain *domain);
 };
 
 struct ummu_device {
@@ -342,6 +346,7 @@ struct ummu_domain {
 	bool dirty_tracking;
 	struct ummu_domain_cfgs cfgs;
 	struct kvm *kvm;
+	bool tlbi_asid;
 };
 
 /* UMMU private data for each master */

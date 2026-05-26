@@ -19,6 +19,7 @@ void ummu_init_flush_iotlb(struct ummu_device *ummu);
 
 /* for default_domain_ops */
 void ummu_flush_iotlb_all(struct iommu_domain *iommu_domain);
+void ummu_flush_iotlb_all_asid(struct iommu_domain *iommu_domain);
 void ummu_iotlb_sync(struct iommu_domain *iommu_domain,
 		     struct iommu_iotlb_gather *gather);
 void ummu_non_agent_iotlb_sync(struct iommu_domain *iommu_domain,
