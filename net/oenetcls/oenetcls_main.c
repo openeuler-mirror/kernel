@@ -65,11 +65,11 @@ module_param(sft_num, uint, 0444);
 MODULE_PARM_DESC(sft_num, "sock flow table entries, default 0x100000");
 
 int rps_policy = 1;
-module_param(rps_policy, int, 0644);
+module_param(rps_policy, int, 0444);
 MODULE_PARM_DESC(rps_policy, "phy nic rps policy, default 1");
 
 int lo_rps_policy;
-module_param(lo_rps_policy, int, 0644);
+module_param(lo_rps_policy, int, 0444);
 MODULE_PARM_DESC(lo_rps_policy, "loopback rps policy, default 0");
 
 static int rxq_multiplex_limit = 1;
