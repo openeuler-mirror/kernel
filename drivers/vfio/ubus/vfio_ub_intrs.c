@@ -145,7 +145,7 @@ static int vfio_ub_intr_set_block(struct vfio_ub_core_device *vdev, unsigned int
 	if ((start >= vdev->num_ctx) || ((start + count) > vdev->num_ctx))
 		return -EINVAL;
 
-	for (i = 0, j = start; i < count; i++, j++) {
+	for (i = 0, j = (int)start; i < (int)count; i++, j++) {
 		int fd = fds ? fds[i] : -1;
 
 		ret = vfio_ub_intr_set_vector_signal(vdev, j, fd);
