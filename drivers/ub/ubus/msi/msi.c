@@ -188,12 +188,43 @@ static void __iomem *ub_intr_find_one_addr(struct msi_msg *msg,
 static void ub_int_type1_clear_msg(struct msi_desc *entry, struct msi_msg *msg)
 {
 	struct ub_entity *uent = msi_desc_to_ub_entity(entry);
+	int ret;
 
-	ub_cfg_write_byte(uent, UB_INT_TYPE1_ENABLE, 0);
-	ub_cfg_write_dword(uent, UB_INT_TYPE1_EN_INT_NUM, 0);
-	ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_DATA, 0);
-	ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_ADDR_L, 0);
-	ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_ADDR_H, 0);
+	/*
+	 * In the interrupt release process,
+	 * the kernel uses spin_lock_irqsave.
+	 * If the message times out while this lock is held,
+	 * the hardware watchdog will be triggered.
+	 */
+	ret = ub_cfg_write_byte(uent, UB_INT_TYPE1_ENABLE, 0);
+	if (ret == -ETIMEDOUT) {
+		pr_err("ub int type1 clear UB_INT_TYPE1_ENABLE failed\n");
+		return;
+	}
+
+	ret = ub_cfg_write_dword(uent, UB_INT_TYPE1_EN_INT_NUM, 0);
+	if (ret == -ETIMEDOUT) {
+		pr_err("ub int type1 clear UB_INT_TYPE1_EN_INT_NUM failed\n");
+		return;
+	}
+
+	ret = ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_DATA, 0);
+	if (ret == -ETIMEDOUT) {
+		pr_err("ub int type1 clear UB_INT_TYPE1_INT_DATA failed\n");
+		return;
+	}
+
+	ret = ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_ADDR_L, 0);
+	if (ret == -ETIMEDOUT) {
+		pr_err("ub int type1 clear UB_INT_TYPE1_INT_ADDR_L failed\n");
+		return;
+	}
+
+	ret = ub_cfg_write_dword(uent, UB_INT_TYPE1_INT_ADDR_H, 0);
+	if (ret == -ETIMEDOUT) {
+		pr_err("ub int type1 clear UB_INT_TYPE1_INT_ADDR_H failed\n");
+		return;
+	}
 }
 
 static void ub_int_type2_clear_msg(struct msi_desc *entry, struct msi_msg *msg)
