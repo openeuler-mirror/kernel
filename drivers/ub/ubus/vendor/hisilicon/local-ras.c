@@ -139,7 +139,7 @@ static void hisi_ubus_ras_print(struct ub_entity *uent,
 	};
 	u8 i;
 
-	ub_info(uent, "HISI : Ubus local RAS error\n");
+	ub_info(uent, "HISI: Ubus local RAS error\n");
 	ub_info(uent, "Table version = %u\n", edata->version);
 	for (i = 0; i < ARRAY_SIZE(ras_err_info); i++)
 		if (edata->val_bits & ras_err_info[i].val_bit)
@@ -210,15 +210,19 @@ static int ubus_port_recover_cluster(struct ub_entity *uent, u16 port_id)
 	}
 
 	port = uent->ports + port_id;
+	mutex_lock(port->port_lock);
 	ub_notify_share_port(port, UB_PORT_EVENT_RESET_PREPARE);
 
 	ret = hi_send_port_reset_msg(uent, port_id);
 	if (ret) {
 		pr_err("ub vdm port reset failed, ret:%d\n", ret);
+		ub_notify_share_port(port, UB_PORT_EVENT_RESET_FAILED);
+		mutex_unlock(port->port_lock);
 		return ret;
 	}
 
 	ub_notify_share_port(port, UB_PORT_EVENT_RESET_DONE);
+	mutex_unlock(port->port_lock);
 
 	return 0;
 }

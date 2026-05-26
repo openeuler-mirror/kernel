@@ -541,7 +541,7 @@ void ub_ports_del(struct ub_entity *uent)
 		kobject_put(&port->kobj);
 }
 
-static void ub_port_init(struct ub_entity *uent, struct ub_port *port)
+static int ub_port_init(struct ub_entity *uent, struct ub_port *port)
 {
 	port->uent = uent;
 	port->type = PHYSICAL;
@@ -553,6 +553,12 @@ static void ub_port_init(struct ub_entity *uent, struct ub_port *port)
 	bitmap_zero(port->cna_maps, UB_MAX_CNA_NUM);
 	bitmap_zero(port->cap_map, UB_PORT_CAP_NUM);
 	kobject_init(&port->kobj, &ub_port_ktype);
+	port->port_lock = kzalloc(sizeof(struct mutex), GFP_KERNEL);
+	if (!port->port_lock)
+		return -ENOMEM;
+	mutex_init(port->port_lock);
+
+	return 0;
 }
 
 int ub_ports_setup(struct ub_entity *uent)
@@ -571,16 +577,29 @@ int ub_ports_setup(struct ub_entity *uent)
 
 	for_each_uent_port(port, uent) {
 		port->index = port - uent->ports;
-		ub_port_init(uent, port);
+		if (ub_port_init(uent, port))
+			goto err_free;
 	}
 
 	return 0;
+
+err_free:
+	for_each_uent_port(port, uent)
+		kfree(port->port_lock);
+	kvfree(uent->ports);
+	uent->ports = NULL;
+	return -ENOMEM;
 }
 
 void ub_ports_unset(struct ub_entity *uent)
 {
+	struct ub_port *port;
+
 	if (!uent)
 		return;
+
+	for_each_uent_port(port, uent)
+		kfree(port->port_lock);
 
 	kvfree(uent->ports);
 	uent->ports = NULL;
@@ -696,7 +715,7 @@ void ub_notify_share_port(struct ub_port *port,
 	struct ub_share_port_ops *ops;
 	struct ub_entity *uent;
 
-	if (!port || type > UB_PORT_EVENT_RESET_DONE)
+	if (!port || type > UB_PORT_EVENT_RESET_FAILED)
 		return;
 
 	uent = port->uent;
