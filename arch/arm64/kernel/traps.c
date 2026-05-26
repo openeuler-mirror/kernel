@@ -31,6 +31,7 @@
 #include <linux/ubsan.h>
 #include <linux/cfi.h>
 #include <linux/acpi.h>
+#include <acpi/ghes.h>
 
 #include <asm/atomic.h>
 #include <asm/bug.h>
