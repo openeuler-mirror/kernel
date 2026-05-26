@@ -827,7 +827,7 @@ void ipourma_uninit_urma_resources(struct net_device *dev)
 
 static int ipourma_init_misc(struct ipourma_dev_priv *priv)
 {
-	int ctp_en = priv->urma_dev->attr.dev_cap.feature.bs.ctp_en;
+	int ctp_en = 0;
 
 	priv->max_send_sge = IPOURMA_MAX_URMA_SEND_SGES;
 	priv->urma_mtu = IPOURMA_URMA_MAX_MTU;

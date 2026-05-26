@@ -125,9 +125,7 @@ static struct ubcore_tjetty *ipourma_import_jetty(struct net_device *dev,
 	struct ubcore_device *urma_dev = priv->urma_dev;
 	struct ubcore_tjetty_cfg tjetty_cfg = { 0 };
 	struct ubcore_tjetty *tjetty;
-	uint32_t ctp_en;
-
-	ctp_en = urma_dev->attr.dev_cap.feature.bs.ctp_en;
+	uint32_t ctp_en = 0;
 
 	ipourma_build_tjetty_cfg(&tjetty_cfg, dst_eid, jetty_id, eid_index, ctp_en);
 	tjetty = ubcore_import_jetty(urma_dev, &tjetty_cfg, NULL);
