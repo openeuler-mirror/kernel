@@ -54,7 +54,6 @@ typedef u32 rnp_link_speed;
 #define RNP_START_ITR 648 /* ~6000 ints/sec */
 #define RNP_4K_ITR 980
 #define RNP_20K_ITR 196
-#define RNP_70K_ITR
 #define RNP_LOWEREST_ITR 5
 
 /* Interrupt Vector Allocation Registers */
