@@ -5961,7 +5961,7 @@ static inline bool soft_quota_pick_next_done(struct rq *rq,
 					     struct task_struct *prev,
 					     struct task_struct *next)
 {
-	if (!sched_feat(SOFT_QUOTA) || next == rq->idle || next == prev ||
+	if (!sched_feat(SOFT_QUOTA) || !next || next == rq->idle || next == prev ||
 	    next->sched_class != &fair_sched_class)
 		return false;
 
