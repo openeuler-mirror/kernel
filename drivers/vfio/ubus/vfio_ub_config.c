@@ -550,6 +550,11 @@ static void init_ub_cfg0_basic_attr_perm(struct perm_bits *perm)
 	p_attr_setb(perm, UB_CC_EN, (u8)NO_ENTITY0_EO, (u8)ENTITYN_RO, (u8)FUNC_EXIST);
 	p_attr_setd(perm, UB_TH_EN, ENTITY0_EO, NO_ENTITYN_RO, FUNC_EXIST);
 	p_attr_setd(perm, UB_FM_CNA, ENTITY0_EO, NO_ENTITYN_RO, FUNC_EXIST);
+
+	p_attr_setd(perm, UB_FEATURE_SUPPORT_0 + 0x4, NO_ENTITY0_EO, NO_ENTITYN_RO, FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_FEATURE_SUPPORT_0 + 0x8, NO_ENTITY0_EO, NO_ENTITYN_RO, FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_FEATURE_SUPPORT_0 + 0xc, NO_ENTITY0_EO, NO_ENTITYN_RO, FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_ENTITY_RST + 0x4, NO_ENTITY0_EO, NO_ENTITYN_RO, FUNC_NO_EXIST);
 }
 
 static int init_ub_cfg0_basic_perm(struct perm_bits *perm)
@@ -604,7 +609,7 @@ static int vfio_ub_cfg1_basic_write(struct vfio_ub_core_device *vdev, u64 pos,
 		*elr = *elr & (u8)~UB_ELR_BIT;
 		ret = ub_reset_entity(vdev->uent);
 		if (ret) {
-			ub_warn(vdev->uent, "do elr reset failed\n");
+			ub_warn(vdev->uent, "do elr reset failed, ret=%d\n", ret);
 			return ret;
 		}
 	}
@@ -691,6 +696,27 @@ static void init_ub_cfg1_basic_attr_perm(struct perm_bits *perm)
 		    FUNC_NO_EXIST);
 	p_attr_setd(perm, UB_CLASS_CODE - UB_CFG1_BASIC, NO_ENTITY0_EO, NO_ENTITYN_RO,
 		    FUNC_EXIST);
+
+	p_attr_setd(perm, UB_ELR_DONE - UB_CFG1_BASIC + 0x4, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_ELR_DONE - UB_CFG1_BASIC + 0x8, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_ELR_DONE - UB_CFG1_BASIC + 0xc, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_EU_TEN - UB_CFG1_BASIC + 0x4, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_EU_TEN - UB_CFG1_BASIC + 0x8, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_EU_TEN - UB_CFG1_BASIC + 0xc, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_EU_TEN - UB_CFG1_BASIC + 0x10, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_CLASS_CODE - UB_CFG1_BASIC + 0x4, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_CLASS_CODE - UB_CFG1_BASIC + 0x8, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
+	p_attr_setd(perm, UB_CLASS_CODE - UB_CFG1_BASIC + 0xc, NO_ENTITY0_EO, NO_ENTITYN_RO,
+		    FUNC_NO_EXIST);
 }
 
 static int init_ub_cfg1_basic_perm(struct perm_bits *perm)
@@ -862,7 +888,7 @@ static int vfio_ub_fill_slice_vconfig(struct vfio_ub_core_device *vdev,
 	for (u32 i = 0; i < size; i += DWORD_SIZE) {
 		ret = vfio_ub_user_config_read(vdev->uent, pos + i, &val, DWORD_SIZE);
 		if (ret) {
-			ub_info(vdev->uent, "read cfgspace pos[%#x] failed, used default val 0\n",
+			ub_warn(vdev->uent, "read cfgspace pos[%#x] failed, used default val 0\n",
 				pos + i);
 			val = 0;
 		}
@@ -904,7 +930,7 @@ static int vfio_ub_init_slice_config_info(struct vfio_ub_core_device *vdev,
 	}
 
 	if (ret) {
-		ub_err(vdev->uent, "get cap[%#x] slice header failed\n", cap_id);
+		ub_err(vdev->uent, "get cap[%#x] slice header failed, ret=%d\n", cap_id, ret);
 		return ret;
 	}
 	used_size = (val >> SZ_4) << SZ_2;
