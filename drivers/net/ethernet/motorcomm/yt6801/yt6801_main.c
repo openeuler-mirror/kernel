@@ -27,6 +27,18 @@
 
 const struct net_device_ops *fxgmac_get_netdev_ops(void);
 static void fxgmac_napi_enable(struct fxgmac_pdata *priv);
+const struct ethtool_ops *fxgmac_get_ethtool_ops(void);
+
+static const struct ethtool_ops fxgmac_ethtool_ops = {
+	.get_link		= ethtool_op_get_link,
+	.get_link_ksettings	= phy_ethtool_get_link_ksettings,
+	.set_link_ksettings	= phy_ethtool_set_link_ksettings
+};
+
+const struct ethtool_ops *fxgmac_get_ethtool_ops(void)
+{
+	return &fxgmac_ethtool_ops;
+}
 
 #define PHY_WR_CONFIG(reg_offset)	(0x8000205 + ((reg_offset) * 0x10000))
 static int fxgmac_phy_write_reg(struct fxgmac_pdata *priv, u32 reg_id, u32 data)
@@ -1899,6 +1911,7 @@ static int fxgmac_init(struct fxgmac_pdata *priv, bool save_private_reg)
 		FXGMAC_JUMBO_PACKET_MTU + (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN);
 
 	ndev->netdev_ops = fxgmac_get_netdev_ops();/* Set device operations */
+	ndev->ethtool_ops = fxgmac_get_ethtool_ops();/* Set device operations */
 
 	/* Set device features */
 	if (priv->hw_feat.tso) {
