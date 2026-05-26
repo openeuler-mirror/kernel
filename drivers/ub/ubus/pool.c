@@ -413,7 +413,7 @@ static void ub_cfg_cpl_notify_msg_rsp(struct ub_bus_controller *ubc,
 		dev_err(&ubc->dev, "send notify rsp failed, ret=%d\n", ret);
 }
 
-int ub_fm_flush_ubc_info(struct ub_bus_controller *ubc)
+static int ub_fm_flush_ubc_info(struct ub_bus_controller *ubc)
 {
 	struct device *dev = &ubc->dev;
 	int ret = -ENOMEM;
