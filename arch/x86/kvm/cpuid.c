@@ -747,6 +747,9 @@ void kvm_set_cpu_caps(void)
 		kvm_cpu_cap_set(X86_FEATURE_NULL_SEL_CLR_BASE);
 	kvm_cpu_cap_set(X86_FEATURE_NO_SMM_CTL_MSR);
 
+	kvm_cpu_cap_init_kvm_defined(CPUID_8C86_0000_EDX,
+		0 | F(HYGON_SM3) | F(HYGON_SM4));
+
 	kvm_cpu_cap_mask(CPUID_C000_0001_EDX,
 		F(XSTORE) | F(XSTORE_EN) | F(XCRYPT) | F(XCRYPT_EN) |
 		F(ACE2) | F(ACE2_EN) | F(PHE) | F(PHE_EN) |
@@ -1209,6 +1212,10 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 		entry->ebx = entry->ecx = entry->edx = 0;
 		cpuid_entry_override(entry, CPUID_8000_0021_EAX);
 		break;
+	case 0x8C860000:
+		entry->eax = 0x8C860000;
+		cpuid_entry_override(entry, CPUID_8C86_0000_EDX);
+		break;
 	/*Add support for Centaur's CPUID instruction*/
 	case 0xC0000000:
 		/*Just support up to 0xC0000004 now*/
@@ -1262,6 +1269,15 @@ static int get_cpuid_func(struct kvm_cpuid_array *array, u32 func,
 		return r;
 
 	limit = array->entries[array->nent - 1].eax;
+
+	if ((func == 0x80000000) &&
+	    (boot_cpu_has(X86_FEATURE_HYGON_SM3) ||
+	     boot_cpu_has(X86_FEATURE_HYGON_SM4))) {
+		r = do_cpuid_func(array, 0x8C860000, type);
+		if (r)
+			return r;
+	}
+
 	for (func = func + 1; func <= limit; ++func) {
 		r = do_cpuid_func(array, func, type);
 		if (r)

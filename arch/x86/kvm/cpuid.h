@@ -16,6 +16,7 @@ enum kvm_only_cpuid_leafs {
 	CPUID_12_EAX	 = NCAPINTS,
 	CPUID_7_1_EDX,
 	CPUID_8000_0021_EAX,
+	CPUID_8C86_0000_EDX,
 	NR_KVM_CPU_CAPS,
 
 	NKVMCAPINTS = NR_KVM_CPU_CAPS - NCAPINTS,
@@ -48,6 +49,10 @@ enum kvm_only_cpuid_leafs {
 #define KVM_X86_FEATURE_SBPB		KVM_X86_FEATURE(CPUID_8000_0021_EAX, 27)
 #define KVM_X86_FEATURE_IBPB_BRTYPE	KVM_X86_FEATURE(CPUID_8000_0021_EAX, 28)
 #define KVM_X86_FEATURE_SRSO_NO		KVM_X86_FEATURE(CPUID_8000_0021_EAX, 29)
+
+/* HYGON-defined CPU features, CPUID level 0x8c860000:0 (EDX), word 21 */
+#define KVM_X86_FEATURE_HYGON_SM3	KVM_X86_FEATURE(CPUID_8C86_0000_EDX, 1)
+#define KVM_X86_FEATURE_HYGON_SM4	KVM_X86_FEATURE(CPUID_8C86_0000_EDX, 2)
 
 extern u32 kvm_cpu_caps[NR_KVM_CPU_CAPS] __read_mostly;
 void kvm_set_cpu_caps(void);
@@ -135,6 +140,7 @@ static const struct cpuid_reg reverse_cpuid[] = {
 	[CPUID_12_EAX]        = {0x00000012, 0, CPUID_EAX},
 	[CPUID_7_1_EDX]       = {         7, 1, CPUID_EDX},
 	[CPUID_8000_0021_EAX] = {0x80000021, 0, CPUID_EAX},
+	[CPUID_8C86_0000_EDX] = {0x8c860000, 0, CPUID_EDX},
 };
 
 /*
@@ -182,6 +188,11 @@ static __always_inline u32 __feature_translate(int x86_feature)
 		return KVM_X86_FEATURE_IBPB_BRTYPE;
 	else if (x86_feature == X86_FEATURE_SRSO_NO)
 		return KVM_X86_FEATURE_SRSO_NO;
+
+	if (x86_feature == X86_FEATURE_HYGON_SM3)
+		return KVM_X86_FEATURE_HYGON_SM3;
+	else if (x86_feature == X86_FEATURE_HYGON_SM4)
+		return KVM_X86_FEATURE_HYGON_SM4;
 
 	return x86_feature;
 }
