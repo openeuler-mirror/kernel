@@ -61,13 +61,11 @@ int uvb_send(const struct sentry_binary_msg *str, uint32_t dst_cna, bool is_sync
 		res = cis_call_by_uvb(UBIOS_CALL_ID_PANIC_CALL, UVB_SENDER_ID_SYSSENTRY,
 			      UVB_RECEIVER_ID_SYSSENTRY(dst_cna), &msg, is_sync);
 		if (res != 0) {
-			pr_err("Send to a specified node, uvb send [%s] msg to %u failed.\n",
-					get_msg_type_name(str->type), dst_cna);
+			pr_err("Send to a specified node, uvb send msg to %u failed.\n", dst_cna);
 			return -1;
 		}
 		cnt++;
-		pr_info("Send to a specified node, uvb send [%s] msg to %u success.\n",
-				get_msg_type_name(str->type), dst_cna);
+		pr_info("Send to a specified node, uvb send msg to %u success.\n", dst_cna);
 		return cnt;
 	}
 
@@ -80,12 +78,10 @@ int uvb_send(const struct sentry_binary_msg *str, uint32_t dst_cna, bool is_sync
 			res = cis_call_by_uvb(UBIOS_CALL_ID_PANIC_CALL, UVB_SENDER_ID_SYSSENTRY,
 					  UVB_RECEIVER_ID_SYSSENTRY(g_server_cna_array[i]), &msg, is_sync);
 			if (res != 0) {
-				pr_err("uvb send [%s] msg to %u failed.\n",
-					get_msg_type_name(str->type), g_server_cna_array[i]);
+				pr_err("uvb send msg to %u failed.\n", g_server_cna_array[i]);
 				continue;
 			}
-			pr_info("uvb send [%s] msg to %u success.\n",
-					get_msg_type_name(str->type), g_server_cna_array[i]);
+			pr_info("uvb send msg to %u success.\n", g_server_cna_array[i]);
 			cnt++;
 		}
 	}
