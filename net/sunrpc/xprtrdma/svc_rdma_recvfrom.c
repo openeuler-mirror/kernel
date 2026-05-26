@@ -411,11 +411,14 @@ static void svc_rdma_build_arg_xdr(struct svc_rqst *rqstp,
  * Return values:
  *       %true: Read list is valid. @rctxt's xdr_stream is updated
  *		to point to the first byte past the Read list.
- *      %false: Read list is corrupt. @rctxt's xdr_stream is left
- *		in an unknown state.
+ *      %false: Read list is corrupt or exceeds the page budget. @rctxt's
+ *		xdr_stream is left in an unknown state.
  */
-static bool xdr_check_read_list(struct svc_rdma_recv_ctxt *rctxt)
+static bool xdr_check_read_list(struct svc_rdma_recv_ctxt *rctxt,
+				unsigned int maxpages)
 {
+	unsigned int maxlen = maxpages << PAGE_SHIFT;
+	unsigned int total_len = 0;
 	u32 position, len;
 	bool first;
 	__be32 *p;
@@ -424,7 +427,6 @@ static bool xdr_check_read_list(struct svc_rdma_recv_ctxt *rctxt)
 	if (!p)
 		return false;
 
-	len = 0;
 	first = true;
 	while (xdr_item_is_present(p)) {
 		p = xdr_inline_decode(&rctxt->rc_stream,
@@ -439,13 +441,18 @@ static bool xdr_check_read_list(struct svc_rdma_recv_ctxt *rctxt)
 			return false;
 		}
 		p += 2;
-		len += be32_to_cpup(p);
+		len = be32_to_cpup(p);
+		if (len > maxlen)
+			return false;
+		total_len += len;
+		if (PAGE_ALIGN(total_len) > maxlen)
+			return false;
 
 		p = xdr_inline_decode(&rctxt->rc_stream, sizeof(*p));
 		if (!p)
 			return false;
 	}
-	return len <= MAX_BYTES_SPECIAL_CHUNK;
+	return true;
 }
 
 /* The segment count is limited to how many segments can
@@ -625,7 +632,8 @@ static void svc_rdma_get_inv_rkey(struct svcxprt_rdma *rdma,
  * - The transport header is entirely contained in the head iovec.
  */
 static int svc_rdma_xdr_decode_req(struct xdr_buf *rq_arg,
-				   struct svc_rdma_recv_ctxt *rctxt)
+				   struct svc_rdma_recv_ctxt *rctxt,
+				   unsigned int maxpages)
 {
 	__be32 *p, *rdma_argp;
 	unsigned int hdr_len;
@@ -654,7 +662,7 @@ static int svc_rdma_xdr_decode_req(struct xdr_buf *rq_arg,
 		goto out_proc;
 	}
 
-	if (!xdr_check_read_list(rctxt))
+	if (!xdr_check_read_list(rctxt, maxpages))
 		goto out_inval;
 	if (!xdr_check_write_list(rctxt))
 		goto out_inval;
@@ -834,7 +842,8 @@ int svc_rdma_recvfrom(struct svc_rqst *rqstp)
 	rqstp->rq_next_page = rqstp->rq_respages;
 
 	p = (__be32 *)rqstp->rq_arg.head[0].iov_base;
-	ret = svc_rdma_xdr_decode_req(&rqstp->rq_arg, ctxt);
+	ret = svc_rdma_xdr_decode_req(&rqstp->rq_arg, ctxt,
+				      rqstp->rq_page_end - rqstp->rq_pages);
 	if (ret < 0)
 		goto out_err;
 	if (ret == 0)
