@@ -37,6 +37,12 @@
 #undef pr_fmt
 #define pr_fmt(fmt) "[sentry][remote client]: " fmt
 
+#define sentry_print_with_timestamp(fmt, ...) do {            \
+	s64 ms_timestamp;                                         \
+	ms_timestamp = ktime_get_real_fast_ns() / 1000000;        \
+	pr_info("[%lld]" fmt, ms_timestamp, ##__VA_ARGS__);       \
+} while (0)
+
 struct sentry_client_context {
 	char eid_str[MAX_DIE_NUM][EID_MAX_LEN];
 	char eid_raw_str[LOCAL_EID_MAX_LEN]; /* for proc show */
@@ -210,11 +216,11 @@ int remote_event_handler(enum sentry_msg_helper_msg_type remote_type,
 			continue;
 		}
 
+check_reboot_ack_msg:
 		if (!sentry_client_ctx.is_in_panic_status) {
 			/* Not in panic status, check shared buffer */
 			if (atomic_read(&sentry_remote_ctx.remote_event_ack_done) != 1) {
-				msleep(MILLISECONDS_OF_EACH_MDELAY);
-				continue;
+				goto check_ack_and_sleep;
 			}
 
 			spin_lock(&sentry_buf_lock);
@@ -223,6 +229,8 @@ int remote_event_handler(enum sentry_msg_helper_msg_type remote_type,
 			spin_unlock(&sentry_buf_lock);
 			goto check_ack_and_sleep;
 		}
+
+check_panic_ack_msg:
 		/* Handle acknowledgment in panic mode */
 		if (uvb_send_success) {
 			/* In panic status, UVB uses sync mode */
@@ -273,7 +281,7 @@ do_urma_recv:
 check_ack_and_sleep:
 		/* Check if acknowledgment received */
 		if (ack_done) {
-			pr_info("Receive ack message, stop blocking early\n");
+			sentry_print_with_timestamp("Receive ack message, stop blocking early\n");
 			break;
 		}
 
@@ -283,10 +291,13 @@ check_ack_and_sleep:
 
 		if (code_run_times_ms < MILLISECONDS_OF_EACH_MDELAY) {
 			int sleep_time = MILLISECONDS_OF_EACH_MDELAY - code_run_times_ms;
-			if (sentry_client_ctx.is_in_panic_status)
+			if (sentry_client_ctx.is_in_panic_status) {
 				mdelay(sleep_time);
-			else
+				goto check_panic_ack_msg;
+			} else {
 				msleep(sleep_time);
+				goto check_reboot_ack_msg;
+			}
 		}
 	}
 
@@ -357,7 +368,7 @@ int panic_handler(struct notifier_block *nb, unsigned long code, void *unused)
 		return NOTIFY_OK;
 
 	sentry_client_ctx.is_in_panic_status = true;
-	pr_info("Panic handler: received panic message\n");
+	sentry_print_with_timestamp("Panic handler: received panic message\n");
 
 	if (check_if_eid_cna_is_set() || check_if_urma_or_uvb_is_ready())
 		return NOTIFY_OK;
@@ -385,7 +396,7 @@ int kernel_reboot_handler(struct notifier_block *nb, unsigned long code, void *u
 	if (!sentry_client_ctx.kernel_reboot_enable)
 		return NOTIFY_OK;
 
-	pr_info("kernel reboot handler: received kernel reboot message\n");
+	sentry_print_with_timestamp("kernel reboot handler: received kernel reboot message\n");
 
 	if (check_if_eid_cna_is_set() || check_if_urma_or_uvb_is_ready())
 		return NOTIFY_OK;
