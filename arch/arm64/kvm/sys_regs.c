@@ -2224,6 +2224,17 @@ static bool access_sp_el1(struct kvm_vcpu *vcpu,
 	return true;
 }
 
+static bool access_currentel(struct kvm_vcpu *vcpu,
+			     struct sys_reg_params *p,
+			     const struct sys_reg_desc *r)
+{
+	if (p->is_write)
+		return write_to_read_only(vcpu, p, r);
+
+	p->regval = CurrentEL_EL1;
+	return true;
+}
+
 static bool access_elr(struct kvm_vcpu *vcpu,
 		       struct sys_reg_params *p,
 		       const struct sys_reg_desc *r)
@@ -2668,6 +2679,9 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	  .pvm_access = access_spsr },
 	{ SYS_DESC(SYS_ELR_EL1), access_elr,
 	  .pvm_access = access_elr },
+
+	{ SYS_DESC(SYS_CurrentEL), undef_access,
+	  .pvm_access = access_currentel },
 
 	{ SYS_DESC(SYS_ALLINT), undef_access },
 

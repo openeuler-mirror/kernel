@@ -295,6 +295,8 @@
 #define SYS_SPSR_EL1			sys_reg(3, 0, 4, 0, 0)
 #define SYS_ELR_EL1			sys_reg(3, 0, 4, 0, 1)
 
+#define SYS_CurrentEL			sys_reg(3, 0, 4, 2, 2)
+
 #define SYS_ALLINT			sys_reg(3, 0, 4, 3, 0)
 
 #define SYS_ICC_PMR_EL1			sys_reg(3, 0, 4, 6, 0)
