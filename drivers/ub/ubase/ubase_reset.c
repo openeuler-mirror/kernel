@@ -58,8 +58,6 @@ static void ubase_reset_err_handle(struct ubase_dev *udev)
 	if (test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits))
 		return;
 
-	udev->reset_stat.reset_fail_cnt++;
-
 	if (test_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits))
 		udev->reset_stat.reset_retry_cnt = 0;
 	else
@@ -358,6 +356,7 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 timeout_resume:
 	set_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits);
 err_resume:
+	udev->reset_stat.reset_fail_cnt++;
 	udev->reset_stage = UBASE_RESET_STAGE_NONE;
 	ubase_resume_aux_devices(udev, UBASE_RESET_STAGE_ABORT);
 	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
