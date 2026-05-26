@@ -162,7 +162,7 @@ u8 ub_idevice_pue_add_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt 
 		goto put_pue;
 
 	if (!ub_bus_instance_exist(pld->user_eid[0])) {
-		ub_err(pue, "mue add msg user eid[%#x] not exist\n",
+		ub_err(pue, "mue add msg user eid[%#x] does not exist\n",
 		       pld->user_eid[0]);
 		status = UB_MSG_RSP_EXEC_EINVAL;
 		goto put_pue;
@@ -170,7 +170,7 @@ u8 ub_idevice_pue_add_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt 
 
 	uent = ub_find_entity(pue, true, pld->pue_entity_idx);
 	if (uent) {
-		ub_warn(pue, "The mue idx[%u] is already exist\n",
+		ub_warn(pue, "The mue idx[%u] already exists\n",
 			pld->pue_entity_idx);
 		ret = ub_create_existed_entity_handler(uent);
 		status = err_to_msg_rsp(ret);
@@ -254,7 +254,7 @@ u8 ub_idevice_pue_rls_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt 
 		status = err_to_msg_rsp(ret);
 		ub_entity_put(mue);
 	} else {
-		ub_info(ent0, "mue[%u] not exist in mue unreg\n",
+		ub_info(ent0, "mue[%u] does not exist in mue unreg\n",
 			pld->pue_entity_idx);
 		status = UB_MSG_RSP_EXEC_ENODEV;
 	}
@@ -294,7 +294,7 @@ static u8 ue_reg_para_valid_check(struct ub_entity *mue, int idx, u32 ueid)
 	}
 
 	if (!ub_bus_instance_exist(ueid)) {
-		ub_err(mue, "ue add msg user eid[%#x] not exist\n", ueid);
+		ub_err(mue, "ue add msg user eid[%#x] does not exist\n", ueid);
 		return UB_MSG_RSP_EXEC_EINVAL;
 	}
 
@@ -321,7 +321,7 @@ u8 ub_idevice_ue_add_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt *
 
 	ue = ub_find_entity(mue, false, ue_idx);
 	if (ue) {
-		ub_warn(mue, "The ue idx[%u] is already exist\n", ue_idx);
+		ub_warn(mue, "The ue idx[%u] already exists\n", ue_idx);
 		ret = ub_create_existed_entity_handler(ue);
 		ub_entity_put(ue);
 	} else {

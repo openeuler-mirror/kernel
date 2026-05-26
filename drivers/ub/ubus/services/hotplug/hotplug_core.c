@@ -674,7 +674,7 @@ clear_state:
 	ubhp_set_indicators(slot, INDICATOR_OFF, INDICATOR_NOOP);
 	ub_info(slot->uent, "slot%u off\n", slot->slot_id);
 	mutex_unlock(&slot->state_lock);
-	ub_info(slot->uent, "slot%u handle hotplug failed\n", slot->slot_id);
+	ub_warn(slot->uent, "slot%u handle hotplug failed\n", slot->slot_id);
 }
 
 static void ubhp_present_handler(struct work_struct *work)

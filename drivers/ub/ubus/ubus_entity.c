@@ -227,13 +227,12 @@ static int ub_uent_cfg(struct ub_entity *uent, u32 uent_num)
 
 	dev_set_name(&uent->dev, "%05x", uent_num);
 	uent->uent_num = uent_num;
-
-	(void)ub_show_guid(guid, buf);
-	ub_info(uent, "guid=%s, uent_num=%#05x\n", buf, uent_num);
-
 	uent->dev.bus = &ub_bus_type;
 	/* Card driver set to 64bit if support */
 	uent->dma_mask = GENMASK(31, 0);
+
+	(void)ub_show_guid(guid, buf);
+	ub_info(uent, "guid=%s\n", buf);
 
 	if (is_primary(uent) || is_p_device(uent))
 		ret = ub_setup_ent_primary(uent);
