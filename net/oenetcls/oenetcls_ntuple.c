@@ -210,33 +210,34 @@ out:
 	rtnl_unlock();
 }
 
-static void get_sk_rule_addr(struct sock *sk, struct cfg_param *ctx_p)
+static void get_sk_rule_addr(struct cfg_param *ctx_p)
 {
-	bool is_ipv6 = !!(sk->sk_family == AF_INET6);
+	bool is_ipv6 = !!(ctx_p->sk_snapshot.family == AF_INET6);
 	u16 *dport = &ctx_p->ctx.dport;
 	u32 *dip4 = &ctx_p->ctx.dip4;
 	u32 *dip6 = &ctx_p->ctx.dip6[0];
 
-	*dport = htons(sk->sk_num);
+	*dport = htons(ctx_p->sk_snapshot.lport);
 	ctx_p->ctx.is_ipv6 = is_ipv6;
 
 	if (!match_ip_flag) {
 		*dip4 = 0;
-		memset(dip6, 0, sizeof(sk->sk_v6_rcv_saddr));
+		memset(dip6, 0, sizeof(ctx_p->sk_snapshot.rcv_saddr_v6));
 		return;
 	}
 
 	if (is_ipv6) {
-		if (!ipv6_addr_any(&sk->sk_v6_rcv_saddr))
-			memcpy(dip6, &sk->sk_v6_rcv_saddr, sizeof(sk->sk_v6_rcv_saddr));
+		if (!ipv6_addr_any(&ctx_p->sk_snapshot.rcv_saddr_v6))
+			memcpy(dip6, &ctx_p->sk_snapshot.rcv_saddr_v6,
+			       sizeof(ctx_p->sk_snapshot.rcv_saddr_v6));
 		else
-			get_first_ip6_addr(sock_net(sk), dip6);
+			get_first_ip6_addr(ctx_p->sk_snapshot.net, dip6);
 
 	} else {
-		if (sk->sk_rcv_saddr)
-			*dip4 = sk->sk_rcv_saddr;
+		if (ctx_p->sk_snapshot.rcv_saddr_v4)
+			*dip4 = ctx_p->sk_snapshot.rcv_saddr_v4;
 		else
-			*dip4 = get_first_ip4_addr(sock_net(sk));
+			*dip4 = get_first_ip4_addr(ctx_p->sk_snapshot.net);
 	}
 }
 
@@ -475,6 +476,8 @@ static void cfg_work(struct work_struct *work)
 	struct oecls_sk_rule *rule;
 	int devid, rxq_id, err;
 
+	get_sk_rule_addr(ctx_p);
+
 	mutex_lock(&oecls_sk_rules.mutex);
 	for_each_oecls_netdev(devid, oecls_dev) {
 		strncpy(ctx_p->ctx.netdev, oecls_dev->dev_name, IFNAMSIZ);
@@ -523,6 +526,7 @@ static void cfg_work(struct work_struct *work)
 		}
 	}
 	mutex_unlock(&oecls_sk_rules.mutex);
+	put_net(ctx_p->sk_snapshot.net);
 	kfree(ctx_p);
 	atomic_dec(&oecls_worker_count);
 }
@@ -551,10 +555,15 @@ static void del_ntuple_rule(struct sock *sk)
 	ctx_p = kzalloc(sizeof(*ctx_p), GFP_ATOMIC);
 	if (!ctx_p)
 		return;
-	get_sk_rule_addr(sk, ctx_p);
 
 	ctx_p->is_del = true;
 	ctx_p->sk = sk;
+	ctx_p->sk_snapshot.net = get_net(sock_net(sk));
+	ctx_p->sk_snapshot.family = sk->sk_family;
+	ctx_p->sk_snapshot.lport = sk->sk_num;
+	ctx_p->sk_snapshot.rcv_saddr_v4 = sk->sk_rcv_saddr;
+	ctx_p->sk_snapshot.rcv_saddr_v6 = sk->sk_v6_rcv_saddr;
+
 	INIT_WORK(&ctx_p->work, cfg_work);
 	queue_work(do_cfg_workqueue, &ctx_p->work);
 	atomic_inc(&oecls_worker_count);
@@ -571,13 +580,18 @@ static void add_ntuple_rule(struct sock *sk)
 	ctx_p = kzalloc(sizeof(*ctx_p), GFP_ATOMIC);
 	if (!ctx_p)
 		return;
-	get_sk_rule_addr(sk, ctx_p);
 
 	cpu = raw_smp_processor_id();
 	ctx_p->is_del = false;
-	ctx_p->sk = sk;
 	ctx_p->cpu = cpu;
 	ctx_p->nid = cpu_to_node(cpu);
+	ctx_p->sk = sk;
+	ctx_p->sk_snapshot.net = get_net(sock_net(sk));
+	ctx_p->sk_snapshot.family = sk->sk_family;
+	ctx_p->sk_snapshot.lport = sk->sk_num;
+	ctx_p->sk_snapshot.rcv_saddr_v4 = sk->sk_rcv_saddr;
+	ctx_p->sk_snapshot.rcv_saddr_v6 = sk->sk_v6_rcv_saddr;
+
 	INIT_WORK(&ctx_p->work, cfg_work);
 	queue_work(do_cfg_workqueue, &ctx_p->work);
 	atomic_inc(&oecls_worker_count);
