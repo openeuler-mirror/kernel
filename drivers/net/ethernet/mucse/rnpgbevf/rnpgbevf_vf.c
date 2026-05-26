@@ -681,8 +681,6 @@ static void rnpgbevf_set_veb_mac_n500(struct rnpgbevf_hw *hw, u8 *mac, u32 vf_nu
 
 	maclow = (mac[2] << 24) | (mac[3] << 16) | (mac[4] << 8) | mac[5];
 	machi = (mac[0] << 8) | mac[1];
-	maclow = (mac[2] << 24) | (mac[3] << 16) | (mac[4] << 8) | mac[5];
-	machi = (mac[0] << 8) | mac[1];
 
 	wr32(hw, RNPGBE_DMA_PORT_VBE_MAC_LO_TBL_N500, maclow);
 	wr32(hw, RNPGBE_DMA_PORT_VBE_MAC_HI_TBL_N500, machi);

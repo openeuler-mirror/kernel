@@ -1040,6 +1040,7 @@ static bool rnpgbevf_check_src_mac(struct sk_buff *skb,
 		if (memcmp(data + netdev->addr_len, netdev->dev_addr, netdev->addr_len) == 0) {
 			dev_kfree_skb_any(skb);
 			ret = true;
+			return ret;
 		}
 		/* if src mac equal own mac */
 		netdev_for_each_uc_addr(ha, netdev) {
@@ -1953,7 +1954,7 @@ rnpgbevf_irq_disable_queues(struct rnpgbevf_q_vector *q_vector)
 
 	rnpgbevf_for_each_ring(ring, q_vector->tx) {
 		ring_wr32(ring, RNPGBE_DMA_INT_TRIG,
-			  (0x3 << 16) | (~TX_INT_MASK | RX_INT_MASK));
+			  (0x3 << 16) | ~(TX_INT_MASK | RX_INT_MASK));
 		rnpgbevf_wr_reg(ring->dma_int_mask,
 				(RX_INT_MASK | TX_INT_MASK));
 	}
@@ -4194,7 +4195,6 @@ pf_has_reset:
 			  round_jiffies(jiffies + (2 * HZ)));
 	}
 
-	mod_timer(&adapter->watchdog_timer, round_jiffies(jiffies + (2 * HZ)));
 	adapter->flags &= ~RNPVF_FLAG_IN_WATCHDOG_TASK;
 }
 
