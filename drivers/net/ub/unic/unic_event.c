@@ -266,6 +266,196 @@ static void unic_unregister_ae_event(struct auxiliary_device *adev,
 		ubase_event_unregister(adev, &unic_dev->ae_nbs[i]);
 }
 
+static void unic_mask_jfs_ctx_key_words(void *buf)
+{
+	struct unic_jfs_ctx *jfs = (struct unic_jfs_ctx *)buf;
+
+	jfs->sqe_base_addr_l = 0;
+	jfs->sqe_base_addr_h = 0;
+	jfs->user_data_l = 0;
+	jfs->user_data_h = 0;
+}
+
+static void unic_mask_jfr_ctx_key_words(void *buf)
+
+{
+	struct unic_jfr_ctx *jfr = (struct unic_jfr_ctx *)buf;
+
+	jfr->rqe_base_addr_l = 0;
+	jfr->rqe_base_addr_h = 0;
+	jfr->token_value = 0;
+	jfr->user_data_l = 0;
+	jfr->user_data_h = 0;
+	jfr->idx_que_addr_l = 0;
+	jfr->idx_que_addr_h = 0;
+	jfr->record_db_addr_l = 0;
+	jfr->record_db_addr_m = 0;
+	jfr->record_db_addr_h = 0;
+}
+
+static void unic_mask_jfc_ctx_key_words(void *buf)
+{
+	struct unic_jfc_ctx *jfc = (struct unic_jfc_ctx *)buf;
+
+	jfc->cqe_base_addr_l = 0;
+	jfc->cqe_base_addr_h = 0;
+	jfc->record_db_addr_l = 0;
+	jfc->record_db_addr_h = 0;
+	jfc->remote_token_value = 0;
+}
+
+void unic_mask_ctx_key_words(void *buf, enum unic_dbg_ctx_type ctx_type)
+{
+	switch (ctx_type) {
+	case UNIC_DBG_JFS_CTX:
+		unic_mask_jfs_ctx_key_words(buf);
+		break;
+	case UNIC_DBG_JFR_CTX:
+		unic_mask_jfr_ctx_key_words(buf);
+		break;
+	case UNIC_DBG_SQ_JFC_CTX:
+	case UNIC_DBG_RQ_JFC_CTX:
+		unic_mask_jfc_ctx_key_words(buf);
+		break;
+	default:
+		break;
+	}
+}
+
+int unic_get_ctx_info(struct unic_dev *unic_dev,
+		      enum unic_dbg_ctx_type ctx_type,
+		      struct unic_ctx_info *ctx_info)
+{
+	struct ubase_adev_caps *unic_caps = ubase_get_unic_caps(unic_dev->comdev.adev);
+
+	if (!unic_caps) {
+		unic_err(unic_dev, "failed to get unic caps.\n");
+		return -ENODATA;
+	}
+
+	switch (ctx_type) {
+	case UNIC_DBG_JFS_CTX:
+		ctx_info->start_idx = unic_caps->jfs.start_idx;
+		ctx_info->ctx_size = UBASE_JFS_CTX_SIZE;
+		ctx_info->op = UBASE_MB_QUERY_JFS_CONTEXT;
+		ctx_info->ctx_name = "jfs";
+		break;
+	case UNIC_DBG_JFR_CTX:
+		ctx_info->start_idx = unic_caps->jfr.start_idx;
+		ctx_info->ctx_size = UBASE_JFR_CTX_SIZE;
+		ctx_info->op = UBASE_MB_QUERY_JFR_CONTEXT;
+		ctx_info->ctx_name = "jfr";
+		break;
+	case UNIC_DBG_SQ_JFC_CTX:
+		ctx_info->start_idx = unic_caps->jfc.start_idx;
+		ctx_info->ctx_size = UBASE_JFC_CTX_SIZE;
+		ctx_info->op = UBASE_MB_QUERY_JFC_CONTEXT;
+		ctx_info->ctx_name = "sq_jfc";
+		break;
+	case UNIC_DBG_RQ_JFC_CTX:
+		ctx_info->start_idx = unic_caps->jfc.start_idx +
+				      unic_dev->channels.num;
+		ctx_info->ctx_size = UBASE_JFC_CTX_SIZE;
+		ctx_info->op = UBASE_MB_QUERY_JFC_CONTEXT;
+		ctx_info->ctx_name = "rq_jfc";
+		break;
+	default:
+		unic_err(unic_dev, "failed to get ctx info, ctx_type = %u.\n",
+			 ctx_type);
+		return -ENODATA;
+	}
+
+	return 0;
+}
+
+static void unic_context_print(struct unic_dev *udev, void *ctx_addr,
+			       u32 ctx_len)
+{
+#define OFFSET_1 1
+#define OFFSET_2 2
+#define OFFSET_3 3
+#define OFFSET_4 4
+
+	__le32 *p = (__le32 *)ctx_addr;
+	u32 i;
+
+	ctx_len = ctx_len / sizeof(u32);
+	for (i = 0; (i + OFFSET_3) < ctx_len; i += OFFSET_4, p += OFFSET_4) {
+		pr_info("%04zu %08x  %04zu %08x  %04zu %08x  %04zu %08x\n",
+			(i + OFFSET_1) * sizeof(u32), le32_to_cpu(*p),
+			(i + OFFSET_2) * sizeof(u32), le32_to_cpu(*(p + OFFSET_1)),
+			(i + OFFSET_3) * sizeof(u32), le32_to_cpu(*(p + OFFSET_2)),
+			(i + OFFSET_4) * sizeof(u32), le32_to_cpu(*(p + OFFSET_3)));
+	}
+
+	switch (ctx_len - i) {
+	case OFFSET_3:
+		pr_info("%04zu %08x  %04zu %08x  %04zu %08x\n",
+			(i + OFFSET_1) * sizeof(u32), le32_to_cpu(*p),
+			(i + OFFSET_2) * sizeof(u32), le32_to_cpu(*(p + OFFSET_1)),
+			(i + OFFSET_3) * sizeof(u32), le32_to_cpu(*(p + OFFSET_2)));
+		break;
+	case OFFSET_2:
+		pr_info("%04zu %08x  %04zu %08x\n",
+			(i + OFFSET_1) * sizeof(u32), le32_to_cpu(*p),
+			(i + OFFSET_2) * sizeof(u32), le32_to_cpu(*(p + OFFSET_1)));
+		break;
+	case OFFSET_1:
+		pr_info("%04zu %08x\n",
+			(i + OFFSET_1) * sizeof(u32), le32_to_cpu(*p));
+		break;
+	default:
+		break;
+	}
+}
+
+static void unic_context_hw_print(struct unic_dev *udev,
+				  enum unic_dbg_ctx_type ctx_type)
+{
+	struct auxiliary_device *adev = udev->comdev.adev;
+	struct unic_ctx_info ctx_info = {0};
+	struct ubase_cmd_mailbox *mailbox;
+	struct ubase_mbx_attr attr = {0};
+	int ret = 0;
+	u32 i;
+
+	if (!mutex_trylock(&udev->channels.mutex))
+		return;
+
+	if (__unic_resetting(udev) || !udev->channels.c)
+		goto unlock;
+
+	mailbox = ubase_alloc_cmd_mailbox(adev);
+	if (IS_ERR_OR_NULL(mailbox)) {
+		unic_err(udev, "failed to alloc mailbox for dump context.\n");
+		goto unlock;
+	}
+
+	ret = unic_get_ctx_info(udev, ctx_type, &ctx_info);
+	if (ret)
+		goto free_mailbox;
+
+	for (i = 0; i < udev->channels.num; i++) {
+		ubase_fill_mbx_attr(&attr, i + ctx_info.start_idx, ctx_info.op,
+				    0);
+		ret = ubase_hw_upgrade_ctx_ex(adev, &attr, mailbox);
+		if (ret) {
+			unic_err(udev,
+				 "failed to query %s ctx mbx, ret = %d.\n",
+				 ctx_info.ctx_name, ret);
+			goto free_mailbox;
+		}
+		unic_info(udev, "%s%u\n", ctx_info.ctx_name, i);
+		unic_mask_ctx_key_words(mailbox->buf, ctx_type);
+		unic_context_print(udev, mailbox->buf, ctx_info.ctx_size);
+	}
+
+free_mailbox:
+	ubase_free_cmd_mailbox(adev, mailbox);
+unlock:
+	mutex_unlock(&udev->channels.mutex);
+}
+
 static int unic_ae_jetty_level_error(struct notifier_block *nb,
 				     unsigned long event, void *data)
 {
@@ -284,6 +474,11 @@ static int unic_ae_jetty_level_error(struct notifier_block *nb,
 	unic_err(unic_dev,
 		 "recv jetty level error, event_type = 0x%x, sub_type = 0x%x, queue_num = %u.\n",
 		 info->event_type, info->sub_type, queue_num);
+
+	unic_context_hw_print(unic_dev, UNIC_DBG_JFS_CTX);
+	unic_context_hw_print(unic_dev, UNIC_DBG_JFR_CTX);
+	unic_context_hw_print(unic_dev, UNIC_DBG_SQ_JFC_CTX);
+	unic_context_hw_print(unic_dev, UNIC_DBG_RQ_JFC_CTX);
 
 	ubase_reset_event(adev, UBASE_UE_RESET);
 
