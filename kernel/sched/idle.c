@@ -460,15 +460,19 @@ static void set_next_task_idle(struct rq *rq, struct task_struct *next, bool fir
 
 struct task_struct *pick_task_idle(struct rq *rq)
 {
-	scx_update_idle(rq, true, false);
-	
 #ifdef CONFIG_SCHED_SOFT_QUOTA
+	struct task_struct *p;
+
 	if (sched_feat(SOFT_QUOTA)) {
-		if (unthrottle_cfs_rq_soft_quota(rq) && rq->cfs.nr_running)
-			return pick_next_task_fair(rq, rq->curr, NULL);
+		if (unthrottle_cfs_rq_soft_quota(rq) && rq->cfs.nr_running) {
+			p = pick_next_task_fair(rq, rq->curr, NULL);
+			if (likely(p))
+				return p;
+		}
 	}
 #endif
 
+	scx_update_idle(rq, true, false);
 	return rq->idle;
 }
 
