@@ -30,7 +30,7 @@ struct ubcore_comm_endpoint;
  */
 typedef void (*ubcore_comm_recv_cb)(struct ubcore_comm_endpoint *ep,
 				   struct ubcore_device *dev,
-				   struct ubcore_net_msg *msg, void *conn);
+				   struct ubcore_comm_msg *msg, void *conn);
 
 /**
  * Endpoint operation set: Implemented and bound by specific transport (sock/ubcm)
@@ -55,7 +55,7 @@ struct ubcore_comm_ops {
 	 */
 	int (*send)(struct ubcore_comm_endpoint *ep,
 		    struct ubcore_device *dev,
-		    void *conn, struct ubcore_net_msg *msg);
+		    void *conn, struct ubcore_comm_msg *msg);
 
 	/**
 	 * Send to the specified address
@@ -63,7 +63,7 @@ struct ubcore_comm_ops {
 	int (*send_to)(struct ubcore_comm_endpoint *ep,
 		       struct ubcore_device *dev,
 		       union ubcore_eid addr,
-		       struct ubcore_net_msg *msg);
+		       struct ubcore_comm_msg *msg);
 };
 
 struct ubcore_comm_ubcm_cfg {
@@ -90,12 +90,12 @@ void ubcore_comm_destroy_endpoint(struct ubcore_comm_endpoint *ep);
 
 int ubcore_comm_send(struct ubcore_comm_endpoint *ep,
 		     struct ubcore_device *dev,
-		     void *conn, struct ubcore_net_msg *msg);
+		     void *conn, struct ubcore_comm_msg *msg);
 
 int ubcore_comm_send_to(struct ubcore_comm_endpoint *ep,
 			struct ubcore_device *dev,
 			union ubcore_eid addr,
-			struct ubcore_net_msg *msg);
+			struct ubcore_comm_msg *msg);
 
 struct ubcore_comm_endpoint *ubcore_comm_get_default_endpoint(void);
 
@@ -104,11 +104,6 @@ void ubcore_comm_set_default_endpoint(struct ubcore_comm_endpoint *ep);
 struct ubcore_comm_endpoint *
 ubcore_comm_create_default(enum ubcore_comm_type type,
 			   union ubcore_comm_cfg *cfg);
-
-int ubcore_net_send(struct ubcore_device *dev, struct ubcore_net_msg *msg,
-		    void *conn);
-int ubcore_net_send_to(struct ubcore_device *dev, struct ubcore_net_msg *msg,
-		       union ubcore_eid addr);
 
 extern uint32_t g_ubcore_connect_type;
 
