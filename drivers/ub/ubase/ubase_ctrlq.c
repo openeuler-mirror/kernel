@@ -303,6 +303,7 @@ static int ubase_ctrlq_queue_init(struct ubase_dev *udev)
 
 	spin_lock_init(&csq->lock);
 	spin_lock_init(&crq->lock);
+	spin_lock_init(&udev->ctrlq.send_lock);
 
 	ret = ubase_ctrlq_get_queue_depth(udev);
 	if (ret) {
@@ -623,18 +624,17 @@ static int ubase_ctrlq_send_msg_to_sq(struct ubase_dev *udev,
 				      struct ubase_ctrlq_base_block *head,
 				      struct ubase_ctrlq_msg *msg, u8 num)
 {
-	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
 	int ret;
 
 	if (ubase_dev_ctrlq_supported(udev)) {
-		spin_lock_bh(&csq->lock);
+		spin_lock_bh(&udev->ctrlq.send_lock);
 		ret = ubase_ctrlq_check_csq_enough(udev, num);
 		if (ret) {
-			spin_unlock_bh(&csq->lock);
+			spin_unlock_bh(&udev->ctrlq.send_lock);
 			return ret;
 		}
 		ubase_ctrlq_send_to_csq(udev, head, msg, num);
-		spin_unlock_bh(&csq->lock);
+		spin_unlock_bh(&udev->ctrlq.send_lock);
 		return 0;
 	}
 
@@ -646,22 +646,15 @@ static int ubase_ctrlq_send_msg_to_sq(struct ubase_dev *udev,
 }
 
 static int ubase_ctrlq_wait_completed(struct ubase_dev *udev, u16 seq,
-				      struct ubase_ctrlq_msg *msg)
+				      struct ubase_ctrlq_msg *msg, u32 timeout)
 {
 #define UBASE_CTRLQ_TIMEOUT_CASE_SHUT_DOWN 500
 
-	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
 	u32 depth = ubase_ctrlq_msg_queue_depth(udev);
 	struct ubase_ctrlq_msg_ctx *ctx;
-	u32 timeout;
 	int ret;
 
 	ctx = &udev->ctrlq.msg_queue[seq % depth];
-	if (ubase_shutting_down(udev) && ubase_is_ctrl_node(udev))
-		timeout = UBASE_CTRLQ_TIMEOUT_CASE_SHUT_DOWN;
-	else
-		timeout = msg->timeout ? msg->timeout : csq->tx_timeout;
-
 	if (!wait_for_completion_timeout(&ctx->done,
 					 msecs_to_jiffies(timeout))) {
 		ubase_err_rl(udev, ctrlq_wait_resp_timeout,
@@ -824,16 +817,14 @@ static int ubase_ctrlq_check_send_state(struct ubase_dev *udev,
 	return 0;
 }
 
-static int ubase_ctrlq_send_real(struct ubase_dev *udev,
-				 struct ubase_ctrlq_msg *msg,
-				 u16 num, bool need_retry,
-				 struct ubase_ctrlq_ue_info *ue_info)
+static int ubase_ctrlq_acquire_send_resources(struct ubase_dev *udev,
+					      struct ubase_ctrlq_msg *msg,
+					      struct ubase_ctrlq_ue_info *ue_info,
+					      u16 *seq)
 {
 #define CTRLQ_MSG_QUEUE_WAIT_MS 10000
 
 	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
-	struct ubase_ctrlq_base_block head = {0};
-	u16 seq, retry = 0;
 	int ret;
 
 	if (!ubase_ctrlq_msg_is_resp(msg)) {
@@ -848,7 +839,7 @@ static int ubase_ctrlq_send_real(struct ubase_dev *udev,
 	spin_lock_bh(&csq->lock);
 
 	if (!ubase_ctrlq_msg_is_resp(msg)) {
-		ret = ubase_ctrlq_alloc_seq(udev, &seq);
+		ret = ubase_ctrlq_alloc_seq(udev, seq);
 		if (ret) {
 			spin_unlock_bh(&csq->lock);
 			up(&udev->ctrlq.msg_queue_sem);
@@ -857,51 +848,105 @@ static int ubase_ctrlq_send_real(struct ubase_dev *udev,
 			return ret;
 		}
 	} else {
-		seq = msg->resp_seq;
+		*seq = msg->resp_seq;
 	}
 
-	ubase_ctrlq_addto_msg_queue(udev, seq, msg, ue_info);
+	ubase_ctrlq_addto_msg_queue(udev, *seq, msg, ue_info);
 
 	spin_unlock_bh(&csq->lock);
+
+	return 0;
+}
+
+static void ubase_ctrlq_release_send_resources(struct ubase_dev *udev,
+					       struct ubase_ctrlq_msg *msg,
+					       u16 seq, int pret)
+{
+	if (pret) {
+		if (!ubase_ctrlq_msg_is_resp(msg)) {
+			ubase_ctrlq_free_seq(udev, seq);
+			up(&udev->ctrlq.msg_queue_sem);
+		}
+	} else {
+		if (ubase_ctrlq_msg_is_sync_req(msg) ||
+		    ubase_ctrlq_msg_is_notify_req(msg)) {
+			ubase_ctrlq_free_seq(udev, seq);
+			up(&udev->ctrlq.msg_queue_sem);
+		}
+	}
+}
+
+static u32 ubase_ctrlq_get_send_timeout(struct ubase_dev *udev,
+					struct ubase_ctrlq_msg *msg)
+{
+	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
+
+	if (ubase_shutting_down(udev) && ubase_is_ctrl_node(udev))
+		return UBASE_CTRLQ_TIMEOUT_CASE_SHUT_DOWN;
+
+	return msg->timeout ? msg->timeout : csq->tx_timeout;
+}
+
+static bool ubase_ctrlq_send_error_retry(int ret, bool need_retry)
+{
+	return (ret == -ETIMEDOUT || ret == -ENOSPC || ret == -EBUSY) && need_retry;
+}
+
+static int ubase_ctrlq_do_send_with_retry(struct ubase_dev *udev,
+					  struct ubase_ctrlq_msg *msg,
+					  struct ubase_ctrlq_base_block *head,
+					  bool need_retry)
+{
+	u32 timeout = ubase_ctrlq_get_send_timeout(udev, msg);
+	u16 seq = le16_to_cpu(head->seq);
+	u16 retry = 0;
+	int ret;
+
+	do {
+		if (retry)
+			ubase_dbg(udev, "ctrlq send msg retry = %u.\n", retry);
+
+		ret = ubase_ctrlq_check_send_state(udev, msg);
+		if (ret)
+			return ret;
+
+		ret = ubase_ctrlq_send_msg_to_sq(udev, head, msg, head->bb_num);
+		if (ubase_ctrlq_send_error_retry(ret, need_retry))
+			msleep(timeout);
+		else if (ret)
+			return ret;
+		else if (ubase_ctrlq_msg_is_sync_req(msg))
+			ret = ubase_ctrlq_wait_completed(udev, seq, msg, timeout);
+
+		if (ubase_shutting_down(udev) && ubase_is_ctrl_node(udev))
+			break;
+	} while (ubase_ctrlq_send_error_retry(ret, need_retry) &&
+		 retry++ < UBASE_CTRLQ_RETRY_TIMES);
+
+	return ret;
+}
+
+static int ubase_ctrlq_do_send(struct ubase_dev *udev,
+			       struct ubase_ctrlq_msg *msg,
+			       u16 num, bool need_retry,
+			       struct ubase_ctrlq_ue_info *ue_info)
+{
+	struct ubase_ctrlq_base_block head = {0};
+	u16 seq;
+	int ret;
+
+	ret = ubase_ctrlq_acquire_send_resources(udev, msg, ue_info, &seq);
+	if (ret)
+		return ret;
 
 	head.bb_num = num;
 	head.seq = cpu_to_le16(seq);
 	ubase_ctrlq_fill_first_bb(udev, &head, msg, ue_info);
 
-	do {
-		if (retry) {
-			msleep(UBASE_CTRLQ_RETRY_INTERVAL);
-			ubase_dbg(udev, "ctrlq send msg retry = %u.\n", retry);
-		}
+	ret = ubase_ctrlq_do_send_with_retry(udev, msg, &head, need_retry);
 
-		ret = ubase_ctrlq_check_send_state(udev, msg);
-		if (ret)
-			goto free_seq;
-		ret = ubase_ctrlq_send_msg_to_sq(udev, &head, msg, num);
-		if (ret && !(ret == -ETIMEDOUT || ret == -ENOSPC || ret == -EBUSY))
-			goto free_seq;
+	ubase_ctrlq_release_send_resources(udev, msg, seq, ret);
 
-		if (ubase_ctrlq_msg_is_sync_req(msg))
-			ret = ubase_ctrlq_wait_completed(udev, seq, msg);
-
-		if (ubase_shutting_down(udev) && ubase_is_ctrl_node(udev))
-			break;
-	} while (need_retry && ret == -ETIMEDOUT &&
-		 retry++ < UBASE_CTRLQ_RETRY_TIMES);
-
-	if (ubase_ctrlq_msg_is_sync_req(msg) ||
-	    ubase_ctrlq_msg_is_notify_req(msg)) {
-		ubase_ctrlq_free_seq(udev, seq);
-		up(&udev->ctrlq.msg_queue_sem);
-	}
-
-	return ret;
-
-free_seq:
-	if (!ubase_ctrlq_msg_is_resp(msg)) {
-		ubase_ctrlq_free_seq(udev, seq);
-		up(&udev->ctrlq.msg_queue_sem);
-	}
 	return ret;
 }
 
@@ -923,7 +968,7 @@ int __ubase_ctrlq_send(struct ubase_dev *udev, struct ubase_ctrlq_msg *msg,
 	num = ubase_ctrlq_calc_bb_num(msg->in_size);
 
 	atomic_inc(&udev->ctrlq.req_cnt);
-	ret = ubase_ctrlq_send_real(udev, msg, num, need_retry, ue_info);
+	ret = ubase_ctrlq_do_send(udev, msg, num, need_retry, ue_info);
 	atomic_dec(&udev->ctrlq.req_cnt);
 
 	return ret;
