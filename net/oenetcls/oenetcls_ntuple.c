@@ -56,15 +56,15 @@ static void add_sk_rule(int devid, struct cmd_context ctx, void *sk, int nid)
 	struct oecls_sk_rule *rule;
 	struct oecls_sk_entry *entry;
 
-	rule = alloc_from_l0(sizeof(struct oecls_sk_rule));
+	rule = kzalloc(sizeof(*rule), GFP_KERNEL);
 	if (!rule) {
 		oecls_error("alloc rule failed\n");
 		return;
 	}
-	entry = alloc_from_l0(sizeof(struct oecls_sk_entry));
+	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 	if (!entry) {
 		oecls_error("alloc entry failed\n");
-		free_to_l0(rule);
+		kfree(rule);
 		return;
 	}
 
@@ -104,11 +104,11 @@ static void del_sk_rule(struct oecls_sk_rule *rule)
 	if (!entry)
 		return;
 	hlist_del_init(&entry->node);
-	free_to_l0(entry);
+	kfree(entry);
 
 	oecls_debug("del rule=%p\n", rule);
 	hlist_del_init(&rule->node);
-	free_to_l0(rule);
+	kfree(rule);
 }
 
 static struct oecls_sk_rule *get_sk_rule(int devid, struct cmd_context ctx)
@@ -625,7 +625,7 @@ static void clean_oecls_sk_rules(void)
 
 		hlist_for_each_entry_safe(entry, n, hlist, node) {
 			hlist_del_init(&entry->node);
-			free_to_l0(entry);
+			kfree(entry);
 		}
 	}
 
@@ -644,7 +644,7 @@ static void clean_oecls_sk_rules(void)
 
 			hlist_del_init(&rule->node);
 			oecls_debug("clean rule=%p\n", rule);
-			free_to_l0(rule);
+			kfree(rule);
 		}
 	}
 	mutex_unlock(&oecls_sk_rules.mutex);
