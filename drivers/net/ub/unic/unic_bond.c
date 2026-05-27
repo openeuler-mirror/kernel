@@ -249,27 +249,16 @@ static int unic_send_bond_status_change_notify(struct auxiliary_device *adev,
 int unic_sync_bond_status(struct net_device *netdev)
 {
 	struct unic_dev *unic_dev = netdev_priv(netdev);
-	struct unic_bond_status *bond_status = &unic_dev->bond_status;
-	enum unic_bond_port_change_cmd bond_cmd;
-	u8 cur_status;
-	int ret = 0;
+	enum unic_bond_port_change_cmd bonding_cmd;
+	struct net_device *master;
 
-	mutex_lock(&bond_status->mutex);
-	cur_status = bond_status->cur_status;
-	mutex_unlock(&bond_status->mutex);
+	rcu_read_lock();
+	master = netdev_master_upper_dev_get_rcu(netdev);
+	rcu_read_unlock();
 
-	bond_cmd = cur_status ?
-		   UNIC_CTRLQ_BOND_ADD_PORT : UNIC_CTRLQ_BOND_DEL_PORT;
-	if (cur_status != bond_status->last_notify_status) {
-		ret = unic_send_bond_status_change_notify(unic_dev->comdev.adev,
-							  bond_cmd);
-		if (!ret) {
-			unic_info(unic_dev,
-				  "update last_notify_status: %u -> %u.\n",
-				  bond_status->last_notify_status, cur_status);
-			bond_status->last_notify_status = cur_status;
-		}
-	}
+	bonding_cmd = master && netif_is_bond_master(master) ?
+		      UNIC_CTRLQ_BOND_ADD_PORT : UNIC_CTRLQ_BOND_DEL_PORT;
 
-	return ret;
+	return unic_send_bond_status_change_notify(unic_dev->comdev.adev,
+						   bonding_cmd);
 }

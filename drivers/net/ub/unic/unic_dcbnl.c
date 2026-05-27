@@ -223,12 +223,8 @@ static int unic_setets_config(struct net_device *ndev, struct ieee_ets *ets,
 		return ret;
 
 	ret = unic_handle_vl_tsa_bw_change(unic_dev, ets, changed);
-	if (ret) {
-		if (ret != -EPERM)
-			return ret;
-		unic_warn(unic_dev,
-			  "ets tsa and bw configuration is not<  permitted.\n");
-	}
+	if (ret)
+		return ret;
 
 	unic_dev->channels.vl.vl_num = vl_num;
 	if (unic_rss_vl_num_changed(unic_dev, vl_num))
@@ -563,8 +559,6 @@ static int unic_ieee_setmaxrate(struct net_device *ndev,
 	struct unic_dev *unic_dev = netdev_priv(ndev);
 	struct unic_vl *vl = &unic_dev->channels.vl;
 	u64 tc_maxrate[IEEE_8021QAZ_MAX_TCS];
-	struct auxiliary_device *adev;
-	struct ubase_caps *caps;
 	int ret;
 
 	if (!unic_dev_ets_supported(unic_dev) ||
@@ -583,9 +577,7 @@ static int unic_ieee_setmaxrate(struct net_device *ndev,
 	if (ret)
 		return ret;
 
-	adev = unic_dev->comdev.adev;
-	caps = ubase_get_dev_caps(adev);
-	memcpy(vl->vl_maxrate, tc_maxrate, caps->vl_num * sizeof(u64));
+	memcpy(vl->vl_maxrate, tc_maxrate, sizeof(tc_maxrate));
 
 	return 0;
 }
