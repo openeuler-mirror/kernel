@@ -863,4 +863,5 @@ const struct ummu_device_helper ummu_helper = {
 	.cache_invalidate_user = ummu_viommu_cache_invalidate_user,
 	.plbi_free_bit = ummu_plbi_free_bit,
 	.sync_iotlb_all = ummu_flush_iotlb_all,
+	.sync_iotlb_all_asid = ummu_flush_iotlb_all_asid,
 };

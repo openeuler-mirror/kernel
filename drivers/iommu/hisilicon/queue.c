@@ -289,14 +289,20 @@ static int ummu_mcmdq_cfg_para(struct ummu_device *ummu,
 static int ummu_mcmdq_init(struct ummu_device *ummu)
 {
 	struct ummu_mcmdq *mcmdq;
-	u32 shift;
 	u64 base_addr = 0;
+	u32 log2size;
 	int cpu, ret;
 
-	ummu->nr_mcmdq = 1UL << ummu->cap.mcmdq_log2num;
-	if (ummu->cap.options & UMMU_OPT_MCMDQ_DECREASE)
-		ummu->nr_mcmdq -= 1;
-	shift = order_base_2(num_possible_cpus() / ummu->nr_mcmdq);
+	if (ummu->cap.options & UMMU_OPT_ONE_MCMDQ) {
+		ummu->nr_mcmdq = 1;
+		log2size = ummu->cap.mcmdq_log2size;
+	} else {
+		ummu->nr_mcmdq = 1UL << ummu->cap.mcmdq_log2num;
+		if (ummu->cap.options & UMMU_OPT_MCMDQ_DECREASE)
+			ummu->nr_mcmdq -= 1;
+		log2size = MCMDQ_MAX_SZ_SHIFT + order_base_2(
+				num_possible_cpus() / ummu->nr_mcmdq);
+	}
 
 	ummu->mcmdq = devm_alloc_percpu(ummu->dev, struct ummu_mcmdq *);
 	if (!ummu->mcmdq) {
@@ -316,7 +322,7 @@ static int ummu_mcmdq_init(struct ummu_device *ummu)
 		if (!mcmdq || mcmdq->mcmdq_prod == MCMDQ_PROD_EN)
 			continue;
 
-		mcmdq->q.llq.log2size = MCMDQ_MAX_SZ_SHIFT + shift;
+		mcmdq->q.llq.log2size = log2size;
 		mcmdq->base = ummu->base + UMMU_MCMDQ_OFFSET + base_addr;
 		mcmdq->q.prod_reg = (u32 *)(mcmdq->base + MCMDQ_PROD_OFFSET);
 		mcmdq->q.cons_reg = (u32 *)(mcmdq->base + MCMDQ_CONS_OFFSET);
@@ -1242,18 +1248,42 @@ int ummu_mcmdq_issue_cmdlist(struct ummu_device *ummu, u64 *cmds,
 	return ret;
 }
 
+static bool non_va_range_tlbi(int opcode)
+{
+	switch (opcode) {
+	case CMD_TLBI_OS_ALL:
+	case CMD_TLBI_OS_TID:
+	case CMD_TLBI_HYP_ALL:
+	case CMD_TLBI_HYP_TID:
+	case CMD_TLBI_S1S2_VMALL:
+	case CMD_TLBI_NS_OS_ALL:
+	case CMD_TLBI_OS_ALL_U:
+	case CMD_TLBI_OS_ASID_U:
+	case CMD_TLBI_HYP_ASID_U:
+	case CMD_TLBI_S1S2_VMALL_U:
+		return true;
+	default:
+		return false;
+	}
+}
+
 static int __ummu_mcmdq_issue_cmd(struct ummu_device *ummu,
 				  struct ummu_mcmdq_ent *ent, bool sync)
 {
-	u64 cmd[MCMDQ_ENT_DWORDS];
+	u64 cmds[2 * MCMDQ_ENT_DWORDS];
+	int num = 1;
 
-	if (unlikely(ummu_mcmdq_build_cmd(ummu, cmd, ent))) {
+	if (unlikely(ummu_mcmdq_build_cmd(ummu, cmds, ent))) {
 		dev_warn(ummu->dev, "ignoring unknown MCMDQ opcode = 0x%x\n",
 			 ent->opcode);
 		return -EINVAL;
 	}
 
-	return ummu_mcmdq_issue_cmdlist(ummu, cmd, 1, sync);
+	if ((ummu->cap.options & UMMU_OPT_DOUBLE_TLBI) && non_va_range_tlbi(ent->opcode)) {
+		memcpy(cmds + MCMDQ_ENT_DWORDS, cmds, MCMDQ_ENT_DWORDS * sizeof(u64));
+		num = 2;
+	}
+	return ummu_mcmdq_issue_cmdlist(ummu, cmds, num, sync);
 }
 
 int ummu_mcmdq_issue_cmd(struct ummu_device *ummu, struct ummu_mcmdq_ent *ent)

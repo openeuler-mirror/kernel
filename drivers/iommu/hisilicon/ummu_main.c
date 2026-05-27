@@ -12,6 +12,7 @@
 #include <ub/ubfi/ubfi.h>
 #include <linux/acpi.h>
 #include <linux/of.h>
+#include <linux/mmu_notifier.h>
 
 #include "logic_ummu/logic_ummu.h"
 #include "ummu_impl.h"
@@ -836,6 +837,7 @@ static int __init ummu_driver_register(struct platform_driver *drv)
 
 static void __exit ummu_driver_unregister(struct platform_driver *drv)
 {
+	mmu_notifier_synchronize();
 	platform_driver_unregister(drv);
 	ummu_release_partid_map();
 	ummu_free_global_meta();
