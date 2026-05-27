@@ -119,11 +119,14 @@ struct folio *folio_alloc_cma(gfp_t gfp, unsigned int order,
 	if (nid == NUMA_NO_NODE)
 		nid = numa_mem_id();
 
-	if (folio_cma_area[nid]) {
-		page = cma_alloc_compound(folio_cma_area[nid], order);
-		if (page)
-			goto prep;
+	if (!nodemask || node_isset(nid, *nodemask)) {
+		if (folio_cma_area[nid]) {
+			page = cma_alloc_compound(folio_cma_area[nid], order);
+			if (page)
+				goto prep;
+		}
 	}
+
 	if (nodemask)
 		nodes = nodemask;
 	else

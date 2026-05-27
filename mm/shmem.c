@@ -1853,7 +1853,8 @@ static struct folio *shmem_alloc_folio(gfp_t gfp, int order,
 
 	mpol = shmem_get_pgoff_policy(info, index, order, &ilx);
 
-	folio = folio_alloc_cma_mpol(gfp, order, mpol, ilx, numa_node_id());
+	folio = folio_alloc_cma_mpol(gfp, order, mpol, ilx,
+				numa_node_id(), false);
 	if (folio) {
 		mpol_cond_put(mpol);
 		return folio;
