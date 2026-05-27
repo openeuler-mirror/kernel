@@ -5,8 +5,13 @@
  * Description: ubcore comm module implementation (替代 ubcore_net)
  */
 
+#include <linux/hashtable.h>
 #include <linux/list.h>
+#include <linux/module.h>
+#include <linux/rcupdate.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/srcu.h>
 #include "ubcore_log.h"
 #include "ubcore_comm.h"
 #include "ubcore_protocol.h"
@@ -21,11 +26,11 @@ static int ubcore_comm_ubcm_create(struct ubcore_comm_endpoint *ep, void *cfg);
 static void ubcore_comm_ubcm_destroy(struct ubcore_comm_endpoint *ep);
 static int ubcore_comm_ubcm_send(struct ubcore_comm_endpoint *ep,
 				 struct ubcore_device *dev,
-				 void *conn, struct ubcore_net_msg *msg);
+				 void *conn, struct ubcore_comm_msg *msg);
 static int ubcore_comm_ubcm_send_to(struct ubcore_comm_endpoint *ep,
 				    struct ubcore_device *dev,
 				    union ubcore_eid addr,
-				    struct ubcore_net_msg *msg);
+				    struct ubcore_comm_msg *msg);
 
 static const struct ubcore_comm_ops ubcore_comm_ubcm_ops = {
 	.create = ubcore_comm_ubcm_create,
@@ -34,8 +39,8 @@ static const struct ubcore_comm_ops ubcore_comm_ubcm_ops = {
 	.send_to = ubcore_comm_ubcm_send_to,
 };
 
-struct ubcore_net_msg_descriptor {
-	ubcore_net_msg_handler handler;
+struct ubcore_comm_msg_descriptor {
+	ubcore_comm_msg_handler handler;
 	uint16_t msg_len;
 };
 
@@ -49,7 +54,6 @@ static const char *const msg_type_str_list[UBCORE_NET_MSG_MAX] = {
 	[UBCORE_NET_BONDING_SEG_INFO_RESP] = "seg_resp",
 	[UBCORE_NET_BONDING_JETTY_INFO_REQ] = "jetty_req",
 	[UBCORE_NET_BONDING_JETTY_INFO_RESP] = "jetty_resp",
-	[UBCORE_NET_BONDING_USER_MSG] = "bonding-user-msg",
 };
 
 enum ubcore_connect_type {
@@ -57,9 +61,78 @@ enum ubcore_connect_type {
 	UBCORE_CONNECT_SOCK,
 };
 
-static struct ubcore_net_msg_descriptor g_msg_descriptors[UBCORE_NET_MSG_MAX];
+static struct ubcore_comm_msg_descriptor g_msg_descriptors[UBCORE_NET_MSG_MAX];
 
 uint32_t g_ubcore_connect_type = UBCORE_CONNECT_WK_JETTY;
+
+#define UBCORE_SERVICE_HASH_BITS 4
+
+struct ubcore_service_entry {
+	struct hlist_node node;
+	uint16_t protocol_id;
+	ubcore_comm_msg_handler handler;
+};
+
+static DEFINE_HASHTABLE(g_service_table, UBCORE_SERVICE_HASH_BITS);
+static DEFINE_SPINLOCK(g_service_lock);
+DEFINE_STATIC_SRCU(g_service_srcu);
+
+static inline struct hlist_head *ubcore_service_bucket(uint16_t protocol_id)
+{
+	return &g_service_table[hash_min(protocol_id,
+					 HASH_BITS(g_service_table))];
+}
+
+/* Caller must hold g_service_lock. */
+static struct ubcore_service_entry *
+ubcore_lookup_service_locked(uint16_t protocol_id)
+{
+	struct ubcore_service_entry *entry;
+
+	hlist_for_each_entry(entry, ubcore_service_bucket(protocol_id), node) {
+		if (entry->protocol_id == protocol_id)
+			return entry;
+	}
+	return NULL;
+}
+
+/* Caller must hold an srcu read section on g_service_srcu. */
+static struct ubcore_service_entry *
+ubcore_lookup_service_srcu(uint16_t protocol_id)
+{
+	struct ubcore_service_entry *entry;
+
+	hlist_for_each_entry_srcu(entry, ubcore_service_bucket(protocol_id),
+				  node,
+				  srcu_read_lock_held(&g_service_srcu)) {
+		if (entry->protocol_id == protocol_id)
+			return entry;
+	}
+	return NULL;
+}
+
+static void ubcore_handle_service_msg(struct ubcore_device *dev,
+				      struct ubcore_comm_msg *msg, void *conn)
+{
+	struct ubcore_service_entry *entry;
+	int srcu_idx;
+
+	if (!dev || !msg) {
+		ubcore_log_err("Invalid param: dev or msg is null");
+		return;
+	}
+
+	srcu_idx = srcu_read_lock(&g_service_srcu);
+	entry = ubcore_lookup_service_srcu(msg->protocol_id);
+	if (!entry) {
+		srcu_read_unlock(&g_service_srcu, srcu_idx);
+		ubcore_log_err("No handler for protocol %u, " MSG_FMT,
+			       msg->protocol_id, MSG_ARG(msg));
+		return;
+	}
+	entry->handler(dev, msg, conn);
+	srcu_read_unlock(&g_service_srcu, srcu_idx);
+}
 
 const char *msg_type_str(enum ubcore_net_msg_type type)
 {
@@ -67,7 +140,7 @@ const char *msg_type_str(enum ubcore_net_msg_type type)
 }
 
 int ubcore_net_register_msg_handler(enum ubcore_net_msg_type type,
-				    ubcore_net_msg_handler handler,
+				    ubcore_comm_msg_handler handler,
 				    uint16_t msg_len)
 {
 	if (type >= UBCORE_NET_MSG_MAX || g_msg_descriptors[type].handler != NULL) {
@@ -81,12 +154,16 @@ int ubcore_net_register_msg_handler(enum ubcore_net_msg_type type,
 }
 
 void ubcore_net_handle_msg(struct ubcore_device *dev,
-			   struct ubcore_net_msg *msg, void *conn)
+			   struct ubcore_comm_msg *msg, void *conn)
 {
-	struct ubcore_net_msg_descriptor *desc;
+	struct ubcore_comm_msg_descriptor *desc;
 
 	if (!dev || !msg) {
 		ubcore_log_err("Invalid param: dev or msg is null");
+		return;
+	}
+	if (msg->protocol_id != 0) {
+		ubcore_handle_service_msg(dev, msg, conn);
 		return;
 	}
 	if (msg->type >= UBCORE_NET_MSG_MAX) {
@@ -105,6 +182,59 @@ void ubcore_net_handle_msg(struct ubcore_device *dev,
 	}
 	desc->handler(dev, msg, conn);
 }
+
+int ubcore_register_comm_msg_handler(uint16_t protocol_id,
+				     ubcore_comm_msg_handler handler)
+{
+	struct ubcore_service_entry *entry;
+	unsigned long flags;
+
+	if (!handler) {
+		ubcore_log_err("Invalid arg: handler is null");
+		return -EINVAL;
+	}
+	if (protocol_id == 0) {
+		ubcore_log_err("Invalid arg: protocol_id 0 is reserved");
+		return -EINVAL;
+	}
+
+	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+	if (!entry)
+		return -ENOMEM;
+	INIT_HLIST_NODE(&entry->node);
+	entry->protocol_id = protocol_id;
+	entry->handler = handler;
+
+	spin_lock_irqsave(&g_service_lock, flags);
+	if (ubcore_lookup_service_locked(protocol_id)) {
+		spin_unlock_irqrestore(&g_service_lock, flags);
+		kfree(entry);
+		return -EEXIST;
+	}
+	hlist_add_head_rcu(&entry->node, ubcore_service_bucket(protocol_id));
+	spin_unlock_irqrestore(&g_service_lock, flags);
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_register_comm_msg_handler);
+
+void ubcore_unregister_comm_msg_handler(uint16_t protocol_id)
+{
+	struct ubcore_service_entry *entry;
+	unsigned long flags;
+
+	spin_lock_irqsave(&g_service_lock, flags);
+	entry = ubcore_lookup_service_locked(protocol_id);
+	if (entry)
+		hlist_del_rcu(&entry->node);
+	spin_unlock_irqrestore(&g_service_lock, flags);
+
+	if (!entry)
+		return;
+
+	synchronize_srcu(&g_service_srcu);
+	kfree(entry);
+}
+EXPORT_SYMBOL(ubcore_unregister_comm_msg_handler);
 
 static bool ubcore_is_loopback(struct ubcore_device *dev,
 			       union ubcore_eid *addr)
@@ -126,7 +256,7 @@ static bool ubcore_is_loopback(struct ubcore_device *dev,
 	return false;
 }
 
-int ubcore_net_send(struct ubcore_device *dev, struct ubcore_net_msg *msg,
+int ubcore_send_comm_msg(struct ubcore_device *dev, struct ubcore_comm_msg *msg,
 		    void *conn)
 {
 	struct ubcore_comm_endpoint *ep;
@@ -153,8 +283,9 @@ int ubcore_net_send(struct ubcore_device *dev, struct ubcore_net_msg *msg,
 		return -EINVAL;
 	}
 }
+EXPORT_SYMBOL(ubcore_send_comm_msg);
 
-int ubcore_net_send_to(struct ubcore_device *dev, struct ubcore_net_msg *msg,
+int ubcore_send_comm_msg_to(struct ubcore_device *dev, struct ubcore_comm_msg *msg,
 		       union ubcore_eid addr)
 {
 	struct ubcore_comm_endpoint *ep;
@@ -181,10 +312,11 @@ int ubcore_net_send_to(struct ubcore_device *dev, struct ubcore_net_msg *msg,
 		return -EINVAL;
 	}
 }
+EXPORT_SYMBOL(ubcore_send_comm_msg_to);
 
 static void ubcore_comm_default_recv_cb(struct ubcore_comm_endpoint *ep,
 					struct ubcore_device *dev,
-					struct ubcore_net_msg *msg, void *conn)
+					struct ubcore_comm_msg *msg, void *conn)
 {
 	(void)ep;
 	ubcore_net_handle_msg(dev, msg, conn);
@@ -256,7 +388,7 @@ void ubcore_comm_destroy_endpoint(struct ubcore_comm_endpoint *ep)
 
 int ubcore_comm_send(struct ubcore_comm_endpoint *ep,
 		     struct ubcore_device *dev,
-		     void *conn, struct ubcore_net_msg *msg)
+		     void *conn, struct ubcore_comm_msg *msg)
 {
 	if (!ep || !ep->ops || !ep->ops->send)
 		return -EINVAL;
@@ -266,7 +398,7 @@ int ubcore_comm_send(struct ubcore_comm_endpoint *ep,
 int ubcore_comm_send_to(struct ubcore_comm_endpoint *ep,
 			struct ubcore_device *dev,
 			union ubcore_eid addr,
-			struct ubcore_net_msg *msg)
+			struct ubcore_comm_msg *msg)
 {
 	if (!ep || !ep->ops || !ep->ops->send_to)
 		return -EINVAL;
@@ -324,7 +456,7 @@ static void ubcore_comm_ubcm_destroy(struct ubcore_comm_endpoint *ep)
 
 static int ubcore_comm_ubcm_send(struct ubcore_comm_endpoint *ep,
 				 struct ubcore_device *dev,
-				 void *conn, struct ubcore_net_msg *msg)
+				 void *conn, struct ubcore_comm_msg *msg)
 {
 	struct ubcore_comm_ubcm_priv *priv = ep->priv;
 
@@ -337,7 +469,7 @@ static int ubcore_comm_ubcm_send(struct ubcore_comm_endpoint *ep,
 static int ubcore_comm_ubcm_send_to(struct ubcore_comm_endpoint *ep,
 				    struct ubcore_device *dev,
 				    union ubcore_eid addr,
-				    struct ubcore_net_msg *msg)
+				    struct ubcore_comm_msg *msg)
 {
 	if (!dev || !msg) {
 		ubcore_log_err("Invalid param: dev or msg is null");
@@ -365,6 +497,10 @@ ubcore_comm_create_default(enum ubcore_comm_type type,
 void ubcore_comm_uninit(void)
 {
 	struct ubcore_comm_endpoint *ep, *tmp;
+	struct ubcore_service_entry *entry;
+	struct hlist_node *tmp_node;
+	HLIST_HEAD(graveyard);
+	int bkt;
 
 	spin_lock(&g_ep_lock);
 	list_for_each_entry_safe(ep, tmp, &g_ep_list, list) {
@@ -375,4 +511,19 @@ void ubcore_comm_uninit(void)
 	}
 	g_default_ep = NULL;
 	spin_unlock(&g_ep_lock);
+
+	spin_lock(&g_service_lock);
+	hash_for_each_safe(g_service_table, bkt, tmp_node, entry, node) {
+		hlist_del_rcu(&entry->node);
+		hlist_add_head(&entry->node, &graveyard);
+	}
+	spin_unlock(&g_service_lock);
+
+	if (!hlist_empty(&graveyard))
+		synchronize_srcu(&g_service_srcu);
+
+	hlist_for_each_entry_safe(entry, tmp_node, &graveyard, node) {
+		hlist_del(&entry->node);
+		kfree(entry);
+	}
 }

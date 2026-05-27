@@ -103,6 +103,7 @@ class_init:
 static void __exit ubcore_exit(void)
 {
 	ubcm_uninit();
+	ubcore_unregister_comm_msg_handler(1);
 	ubcore_comm_uninit();
 	ubcore_session_uninit();
 	ubcore_destroy_workqueues();

@@ -33,6 +33,12 @@ enum ubagg_genl_cmd {
 	UBAGG_NL_CMD_MAX,
 };
 
+/* Sub-types within ubagg's UBCORE_SERVICE_BONDING_USER service.
+ */
+enum ubagg_net_msg_type {
+	UBAGG_NET_USER_MSG = 0,
+};
+
 enum ubagg_genl_attr {
 	UBAGG_ATTR_UNSPEC,
 	UBAGG_ATTR_LOCAL_EID,
@@ -63,12 +69,21 @@ static const struct genl_multicast_group ubagg_genl_mcgrps[] = {
 static struct genl_family genl_family __ro_after_init;
 
 static void ubagg_nl_bonding_user_msg_handler(struct ubcore_device *dev,
-					      void *payload,
-					      uint16_t payload_len, void *conn)
+					      struct ubcore_comm_msg *msg,
+					      void *conn)
 {
+	void *payload;
+	uint16_t payload_len;
 	void *hdr = NULL;
 	struct sk_buff *skb = NULL;
 	int ret;
+
+	if (!msg) {
+		ubagg_log_err("Invalid parameter, msg is null\n");
+		return;
+	}
+	payload = msg->data;
+	payload_len = msg->len;
 
 	if ((payload == NULL && payload_len != 0) ||
 	    payload_len > UBAGG_MAX_NL_MSG_BUF_LEN) {
@@ -117,6 +132,7 @@ static int ubagg_nl_handle_user_msg(struct sk_buff *skb, struct genl_info *info)
 	struct ubcore_device *dev;
 	union ubcore_eid local_eid;
 	union ubcore_eid peer_eid;
+	struct ubcore_comm_msg msg = { 0 };
 	const void *payload;
 	uint32_t payload_len;
 	int ret;
@@ -153,8 +169,12 @@ static int ubagg_nl_handle_user_msg(struct sk_buff *skb, struct genl_info *info)
 		return -ENODEV;
 	}
 
-	ret = ubcore_net_send_bonding_user_msg(dev, peer_eid, 0, payload,
-					       payload_len);
+	msg.session_id = 0;
+	msg.protocol_id = 2;
+	msg.type = UBAGG_NET_USER_MSG;
+	msg.len = (uint16_t)payload_len;
+	msg.data = (void *)payload;
+	ret = ubcore_send_comm_msg_to(dev, &msg, peer_eid);
 	if (ret != 0)
 		ubagg_log_err(
 			"Failed to send ubagg payload by ubcore, ret:%d, local_eid:" EID_FMT
@@ -272,8 +292,7 @@ int ubagg_netlink_init(void)
 		return ret;
 	}
 
-	ret = ubcore_net_register_bonding_user_msg_handler(
-		ubagg_nl_bonding_user_msg_handler);
+	ret = ubcore_register_comm_msg_handler(2, ubagg_nl_bonding_user_msg_handler);
 	if (ret != 0) {
 		ubagg_log_err(
 			"Failed to register ubagg bonding user msg handler, ret:%d\n",
@@ -286,7 +305,6 @@ int ubagg_netlink_init(void)
 
 void ubagg_netlink_uninit(void)
 {
-	ubcore_net_unregister_bonding_user_msg_handler(
-		ubagg_nl_bonding_user_msg_handler);
+	ubcore_unregister_comm_msg_handler(2);
 	(void)genl_unregister_family(&genl_family);
 }

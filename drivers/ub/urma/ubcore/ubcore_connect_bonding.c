@@ -83,101 +83,6 @@ static int ubcore_get_bonding_ue_idx_from_udata(struct ubcore_udata *udata,
 	return 0;
 }
 
-static DEFINE_MUTEX(bonding_user_msg_lock);
-static void (*bonding_user_msg_handler)(struct ubcore_device *dev,
-					void *payload, uint16_t payload_len,
-					void *conn);
-static bool bonding_user_msg_registered;
-
-static void ubcore_handle_bonding_user_msg(struct ubcore_device *dev,
-					   struct ubcore_net_msg *msg,
-					   void *conn)
-{
-	void (*handler)(struct ubcore_device *dev,
-			void *payload, uint16_t payload_len, void *conn);
-
-	mutex_lock(&bonding_user_msg_lock);
-	handler = bonding_user_msg_handler;
-	mutex_unlock(&bonding_user_msg_lock);
-
-	if (!handler) {
-		ubcore_log_err(
-			"No bonding user msg handler registered, " MSG_FMT,
-			MSG_ARG(msg));
-		return;
-	}
-
-	handler(dev, msg->data, msg->len, conn);
-}
-
-int ubcore_net_send_bonding_user_msg(struct ubcore_device *dev,
-				     union ubcore_eid peer_eid,
-				     uint32_t session_id,
-				     const void *payload,
-				     uint16_t payload_len)
-{
-	struct ubcore_net_msg msg = { 0 };
-
-	if (!dev || (!payload && payload_len != 0)) {
-		ubcore_log_err("Invalid bonding user msg param");
-		return -EINVAL;
-	}
-
-	msg.type = UBCORE_NET_BONDING_USER_MSG;
-	msg.len = payload_len;
-	msg.session_id = session_id;
-	msg.data = (void *)payload;
-
-	return ubcore_net_send_to(dev, &msg, peer_eid);
-}
-EXPORT_SYMBOL(ubcore_net_send_bonding_user_msg);
-
-int ubcore_net_register_bonding_user_msg_handler(
-	void (*handler)(struct ubcore_device *dev,
-			void *payload, uint16_t payload_len, void *conn))
-{
-	int ret = 0;
-
-	if (!handler) {
-		ubcore_log_err("Invalid bonding user msg handler");
-		return -EINVAL;
-	}
-
-	mutex_lock(&bonding_user_msg_lock);
-	if (!bonding_user_msg_registered) {
-		ret = ubcore_net_register_msg_handler(
-			UBCORE_NET_BONDING_USER_MSG,
-			ubcore_handle_bonding_user_msg,
-			0);
-		if (ret == 0)
-			bonding_user_msg_registered = true;
-	}
-	if (ret == 0 && bonding_user_msg_handler &&
-	    bonding_user_msg_handler != handler)
-		ret = -EEXIST;
-	if (ret == 0)
-		bonding_user_msg_handler = handler;
-	mutex_unlock(&bonding_user_msg_lock);
-
-	if (ret != 0)
-		ubcore_log_err(
-			"Failed to register bonding user msg handler, ret:%d",
-			ret);
-	return ret;
-}
-EXPORT_SYMBOL(ubcore_net_register_bonding_user_msg_handler);
-
-void ubcore_net_unregister_bonding_user_msg_handler(
-	void (*handler)(struct ubcore_device *dev,
-			void *payload, uint16_t payload_len, void *conn))
-{
-	mutex_lock(&bonding_user_msg_lock);
-	if (bonding_user_msg_handler == handler)
-		bonding_user_msg_handler = NULL;
-	mutex_unlock(&bonding_user_msg_lock);
-}
-EXPORT_SYMBOL(ubcore_net_unregister_bonding_user_msg_handler);
-
 static struct ubcore_device *ubcore_find_physical_device(struct ubcore_device *agg_dev,
 							 uint32_t ue_id)
 {
@@ -330,10 +235,11 @@ create_session_for_exchange_udata(struct ubcore_device *dev,
 static int send_seg_info_req(struct ubcore_device *dev, uint32_t session_id,
 			     struct msg_seg_info_req *req, uint32_t ue_id)
 {
-	struct ubcore_net_msg msg = { 0 };
+	struct ubcore_comm_msg msg = { 0 };
 	union ubcore_eid dest_eid = { 0 };
 	int ret;
 
+	msg.protocol_id = 1;
 	msg.type = UBCORE_NET_BONDING_SEG_INFO_REQ;
 	msg.len = sizeof(struct msg_seg_info_req);
 	msg.session_id = session_id;
@@ -345,7 +251,7 @@ static int send_seg_info_req(struct ubcore_device *dev, uint32_t session_id,
 
 	ubcore_log_info("Send seg info req to " EID_FMT ", Send cm messagem: " MSG_FMT "\n",
 		EID_ARGS(dest_eid), MSG_ARG(&msg));
-	ret = ubcore_net_send_to(dev, &msg, dest_eid);
+	ret = ubcore_send_comm_msg_to(dev, &msg, dest_eid);
 	if (ret != 0) {
 		ubcore_log_err("Failed to send msg.\n");
 		return ret;
@@ -357,15 +263,16 @@ static int send_seg_info_resp(struct ubcore_device *dev, void *conn,
 			      uint32_t session_id,
 			      struct msg_seg_info_resp *resp)
 {
-	struct ubcore_net_msg msg = { 0 };
+	struct ubcore_comm_msg msg = { 0 };
 	int ret;
 
+	msg.protocol_id = 1;
 	msg.type = UBCORE_NET_BONDING_SEG_INFO_RESP;
 	msg.len = sizeof(struct msg_seg_info_resp);
 	msg.session_id = session_id;
 	msg.data = resp;
 
-	ret = ubcore_net_send(dev, &msg, conn);
+	ret = ubcore_send_comm_msg(dev, &msg, conn);
 	if (ret != 0) {
 		ubcore_log_err("Failed to send msg");
 		return ret;
@@ -376,10 +283,11 @@ static int send_seg_info_resp(struct ubcore_device *dev, void *conn,
 static int send_jetty_info_req(struct ubcore_device *dev, uint32_t session_id,
 			       struct msg_jetty_info_req *req, uint32_t ue_id)
 {
-	struct ubcore_net_msg msg = { 0 };
+	struct ubcore_comm_msg msg = { 0 };
 	union ubcore_eid dest_eid = { 0 };
 	int ret;
 
+	msg.protocol_id = 1;
 	msg.type = UBCORE_NET_BONDING_JETTY_INFO_REQ;
 	msg.len = sizeof(struct msg_jetty_info_req);
 	msg.session_id = session_id;
@@ -391,7 +299,7 @@ static int send_jetty_info_req(struct ubcore_device *dev, uint32_t session_id,
 		return ret;
 
 	ubcore_log_info("Send jetty info req to " EID_FMT "\n", EID_ARGS(dest_eid));
-	ret = ubcore_net_send_to(dev, &msg, dest_eid);
+	ret = ubcore_send_comm_msg_to(dev, &msg, dest_eid);
 	if (ret != 0) {
 		ubcore_log_err_rl("Failed to send msg to " EID_FMT"\n", EID_ARGS(dest_eid));
 		return ret;
@@ -403,15 +311,16 @@ static int send_jetty_info_resp(struct ubcore_device *dev, void *conn,
 				uint32_t session_id,
 				struct msg_jetty_info_resp *resp)
 {
-	struct ubcore_net_msg msg = { 0 };
+	struct ubcore_comm_msg msg = { 0 };
 	int ret;
 
+	msg.protocol_id = 1;
 	msg.type = UBCORE_NET_BONDING_JETTY_INFO_RESP;
 	msg.len = sizeof(struct msg_jetty_info_resp);
 	msg.session_id = session_id;
 	msg.data = resp;
 
-	ret = ubcore_net_send(dev, &msg, conn);
+	ret = ubcore_send_comm_msg(dev, &msg, conn);
 	if (ret != 0) {
 		ubcore_log_err("Failed to send msg");
 		return ret;
@@ -572,7 +481,7 @@ put_device:
 }
 
 static void handle_seg_info_req(struct ubcore_device *dev,
-				struct ubcore_net_msg *msg, void *conn)
+				struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_seg_info_req *req = (struct msg_seg_info_req *)msg->data;
 	struct ubcore_device *bonding_dev = ubcore_find_bonding_device(&req->ubva.eid);
@@ -604,7 +513,7 @@ put_device:
 }
 
 static void handle_jetty_info_req(struct ubcore_device *dev,
-				  struct ubcore_net_msg *msg, void *conn)
+				  struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_jetty_info_req *req = (struct msg_jetty_info_req *)msg->data;
 	struct ubcore_device *bonding_dev = ubcore_find_bonding_device(&req->jetty_id.eid);
@@ -669,7 +578,7 @@ complete_session:
 }
 
 static void handle_seg_info_resp(struct ubcore_device *dev,
-				 struct ubcore_net_msg *msg, void *conn)
+				 struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_seg_info_resp *resp = (struct msg_seg_info_resp *)msg->data;
 
@@ -678,7 +587,7 @@ static void handle_seg_info_resp(struct ubcore_device *dev,
 }
 
 static void handle_jetty_info_resp(struct ubcore_device *dev,
-				   struct ubcore_net_msg *msg, void *conn)
+				   struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_jetty_info_resp *resp =
 		(struct msg_jetty_info_resp *)msg->data;
@@ -687,18 +596,63 @@ static void handle_jetty_info_resp(struct ubcore_device *dev,
 				   &resp->jetty_info);
 }
 
+static void handle_bonding_msg(struct ubcore_device *dev,
+			       struct ubcore_comm_msg *msg, void *conn)
+{
+	uint16_t expected;
+
+	if (!msg) {
+		ubcore_log_err("Invalid param: msg is null");
+		return;
+	}
+
+	switch (msg->type) {
+	case UBCORE_NET_BONDING_SEG_INFO_REQ:
+		expected = sizeof(struct msg_seg_info_req);
+		if (msg->len != expected) {
+			ubcore_log_err("Invalid param: SEG_INFO_REQ len %u, expected %u",
+				       msg->len, expected);
+			return;
+		}
+		handle_seg_info_req(dev, msg, conn);
+		break;
+	case UBCORE_NET_BONDING_SEG_INFO_RESP:
+		expected = sizeof(struct msg_seg_info_resp);
+		if (msg->len != expected) {
+			ubcore_log_err("Invalid param: SEG_INFO_RESP len %u, expected %u",
+				       msg->len, expected);
+			return;
+		}
+		handle_seg_info_resp(dev, msg, conn);
+		break;
+	case UBCORE_NET_BONDING_JETTY_INFO_REQ:
+		expected = sizeof(struct msg_jetty_info_req);
+		if (msg->len != expected) {
+			ubcore_log_err("Invalid param: JETTY_INFO_REQ len %u, expected %u",
+				       msg->len, expected);
+			return;
+		}
+		handle_jetty_info_req(dev, msg, conn);
+		break;
+	case UBCORE_NET_BONDING_JETTY_INFO_RESP:
+		expected = sizeof(struct msg_jetty_info_resp);
+		if (msg->len != expected) {
+			ubcore_log_err("Invalid param: JETTY_INFO_RESP len %u, expected %u",
+				       msg->len, expected);
+			return;
+		}
+		handle_jetty_info_resp(dev, msg, conn);
+		break;
+	default:
+		ubcore_log_err("Unhandled msg type %u in bonding service",
+			       msg->type);
+	}
+}
+
 void ubcore_connect_bonding_init(void)
 {
-	ubcore_net_register_msg_handler(UBCORE_NET_BONDING_SEG_INFO_REQ,
-					handle_seg_info_req,
-					sizeof(struct msg_seg_info_req));
-	ubcore_net_register_msg_handler(UBCORE_NET_BONDING_SEG_INFO_RESP,
-					handle_seg_info_resp,
-					sizeof(struct msg_seg_info_resp));
-	ubcore_net_register_msg_handler(UBCORE_NET_BONDING_JETTY_INFO_REQ,
-					handle_jetty_info_req,
-					sizeof(struct msg_jetty_info_req));
-	ubcore_net_register_msg_handler(UBCORE_NET_BONDING_JETTY_INFO_RESP,
-					handle_jetty_info_resp,
-					sizeof(struct msg_jetty_info_resp));
+	int ret = ubcore_register_comm_msg_handler(1, handle_bonding_msg);
+
+	if (ret != 0)
+		ubcore_log_err("Bonding service register failed, ret %d", ret);
 }
