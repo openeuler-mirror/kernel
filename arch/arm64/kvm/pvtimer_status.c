@@ -11,6 +11,7 @@
 #include <asm/pvtimer-status-abi.h>
 
 #include <kvm/arm_hypercalls.h>
+#include "vgic/vgic.h"
 
 #ifdef CONFIG_VIRT_VTIMER_PV_STATUS
 gpa_t kvm_init_pvtimer_status(struct kvm_vcpu *vcpu)
@@ -99,15 +100,12 @@ void kvm_arm_pvtimer_status_set_active(struct kvm_vcpu *vcpu, bool active)
 	struct kvm *kvm = vcpu->kvm;
 	u64 base = vcpu->arch.pvtimer_status.base;
 	u64 offset = offsetof(struct pvtimer_status_vcpu_state, active);
-	int idx;
-	u32 act = active;
+	u32 act = cpu_to_le32(active);
 
 	if (base == INVALID_GPA)
 		return;
 
-	idx = srcu_read_lock(&kvm->srcu);
-	kvm_put_guest(kvm, base + offset, cpu_to_le32(act));
-	srcu_read_unlock(&kvm->srcu, idx);
+	vgic_write_guest_lock(kvm, base + offset, &act, sizeof(act));
 }
 
 #endif
