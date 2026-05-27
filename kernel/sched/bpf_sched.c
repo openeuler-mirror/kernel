@@ -210,6 +210,7 @@ __bpf_kfunc long bpf_sched_tag_of_entity(struct sched_entity *se)
 	return group_cfs_rq(se)->tg->tag;
 }
 
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 __bpf_kfunc int bpf_sched_set_task_prefer_nid(struct task_struct *task, int nid)
 {
 	cpumask_t mask;
@@ -223,12 +224,15 @@ __bpf_kfunc int bpf_sched_set_task_prefer_nid(struct task_struct *task, int nid)
 	cpumask_and(&mask, task->cpus_ptr, cpumask_of_node(nid));
 	return set_prefer_cpus_ptr(task, &mask);
 }
+#endif
 
 BTF_KFUNCS_START(sched_task_kfunc_btf_ids)
 BTF_ID_FLAGS(func, bpf_sched_entity_is_task)
 BTF_ID_FLAGS(func, bpf_sched_entity_to_task)
 BTF_ID_FLAGS(func, bpf_sched_tag_of_entity)
+#ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
 BTF_ID_FLAGS(func, bpf_sched_set_task_prefer_nid)
+#endif
 BTF_KFUNCS_END(sched_task_kfunc_btf_ids)
 
 static const struct btf_kfunc_id_set sched_task_kfunc_set = {
