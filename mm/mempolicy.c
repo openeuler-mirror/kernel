@@ -2426,6 +2426,25 @@ static void mpol_update_interleave_stats(struct mempolicy *pol, struct page *pag
 	}
 }
 
+static void mpol_apply_smart_grid(struct mempolicy *pol, nodemask_t *nodemask,
+				int *nid, bool use_smart_grid)
+{
+	int preferred_nid;
+
+	if (!use_smart_grid || !smart_grid_used())
+		return;
+
+	if ((pol->mode == MPOL_INTERLEAVE) ||
+		(pol->mode == MPOL_WEIGHTED_INTERLEAVE)) {
+		preferred_nid = sched_grid_preferred_interleave_nid(pol);
+
+		if (preferred_nid != NUMA_NO_NODE)
+			*nid = preferred_nid;
+	} else {
+		*nid = sched_grid_preferred_nid(*nid, nodemask);
+	}
+}
+
 /**
  * __alloc_pages_mpol - Allocate pages according to NUMA mempolicy.
  * @gfp: GFP flags.
@@ -2481,18 +2500,7 @@ struct page *__alloc_pages_mpol(gfp_t gfp, unsigned int order,
 		}
 	}
 
-	if (use_smart_grid && smart_grid_used()) {
-		if ((pol->mode == MPOL_INTERLEAVE) ||
-		    (pol->mode == MPOL_WEIGHTED_INTERLEAVE)) {
-			int preferred_nid;
-
-			preferred_nid = sched_grid_preferred_interleave_nid(pol);
-			if (preferred_nid != NUMA_NO_NODE)
-				nid = preferred_nid;
-		} else {
-			nid = sched_grid_preferred_nid(nid, nodemask);
-		}
-	}
+	mpol_apply_smart_grid(pol, nodemask, &nid, use_smart_grid);
 
 	page = __alloc_pages(gfp, order, nid, nodemask);
 
@@ -2503,15 +2511,42 @@ struct page *__alloc_pages_mpol(gfp_t gfp, unsigned int order,
 
 #ifdef CONFIG_CMA_FOLIO
 struct folio *folio_alloc_cma_mpol(gfp_t gfp, unsigned int order,
-			struct mempolicy *pol, pgoff_t ilx, int nid)
+			struct mempolicy *pol, pgoff_t ilx, int nid,
+			bool use_smart_grid)
 {
 	nodemask_t *nodemask;
+	struct folio *folio;
 
 	if (!(current->flags & PF_FOLIO_CMA))
 		return NULL;
 
 	nodemask = policy_nodemask(gfp, pol, ilx, &nid);
-	return folio_alloc_cma(gfp, order, nid, nodemask);
+
+	if (pol->mode == MPOL_PREFERRED_MANY) {
+		folio = folio_alloc_cma(gfp | __GFP_NOWARN, order, nid, nodemask);
+		if (!folio)
+			folio = folio_alloc_cma(gfp, order, nid, NULL);
+		return folio;
+	}
+
+	if (order == HPAGE_PMD_ORDER && ilx != NO_INTERLEAVE_INDEX) {
+		if (pol->mode != MPOL_INTERLEAVE &&
+			pol->mode != MPOL_WEIGHTED_INTERLEAVE &&
+			(!nodemask || node_isset(nid, *nodemask))) {
+			folio = folio_alloc_cma(gfp | __GFP_THISNODE | __GFP_NORETRY,
+						order, nid, nodemask);
+			if (folio || !(gfp & __GFP_DIRECT_RECLAIM))
+				return folio;
+		}
+	}
+
+	mpol_apply_smart_grid(pol, nodemask, &nid, use_smart_grid);
+
+	folio = folio_alloc_cma(gfp, order, nid, nodemask);
+
+	mpol_update_interleave_stats(pol, folio ? &folio->page : NULL, nid);
+
+	return folio;
 }
 #endif
 
@@ -2541,7 +2576,8 @@ struct folio *vma_alloc_folio(gfp_t gfp, int order, struct vm_area_struct *vma,
 
 	pol = get_vma_policy(vma, addr, order, &ilx);
 
-	folio = folio_alloc_cma_mpol(gfp | __GFP_COMP, order, pol, ilx, numa_node_id());
+	folio = folio_alloc_cma_mpol(gfp | __GFP_COMP, order,
+				pol, ilx, numa_node_id(), true);
 	if (folio) {
 		mpol_cond_put(pol);
 		return folio;
