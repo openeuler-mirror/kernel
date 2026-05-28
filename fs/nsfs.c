@@ -145,6 +145,38 @@ int ns_get_path(struct path *path, struct task_struct *task,
 	return ns_get_path_cb(path, ns_get_path_task, &args);
 }
 
+static struct ns_common *ns_get_from_common(void *private_data)
+{
+	struct ns_common *ns = private_data;
+
+	refcount_inc(&ns->count);
+	return ns;
+}
+
+/**
+ * open_namespace_file - open a file for an existing namespace
+ * @ns: namespace to open
+ *
+ * The caller must pass a live namespace reference. This helper consumes that
+ * reference independent of success or failure. Temporary references are
+ * acquired through ns_get_path_cb() so stashed nsfs dentry lookup can retry.
+ */
+struct file *open_namespace_file(struct ns_common *ns)
+{
+	struct path path = {};
+	struct file *file;
+	int err;
+
+	err = ns_get_path_cb(&path, ns_get_from_common, ns);
+	ns->ops->put(ns);
+	if (err)
+		return ERR_PTR(err);
+
+	file = dentry_open(&path, O_RDONLY, current_cred());
+	path_put(&path);
+	return file;
+}
+
 int open_related_ns(struct ns_common *ns,
 		   struct ns_common *(*get_ns)(struct ns_common *ns))
 {
