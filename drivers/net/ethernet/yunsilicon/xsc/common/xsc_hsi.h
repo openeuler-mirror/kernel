@@ -58,23 +58,20 @@
 #define XSC_RX_FRAG_SZ          (PAGE_SIZE << XSC_RX_FRAG_SZ_ORDER)
 #define DEFAULT_FRAG_SIZE       (2048)
 
-/* message opcode */
-enum {
-	XSC_MSG_OPCODE_SEND		= 0,
-	XSC_MSG_OPCODE_RDMA_WRITE	= 1,
-	XSC_MSG_OPCODE_RDMA_READ	= 2,
-	XSC_MSG_OPCODE_MAD		= 3,
-	XSC_MSG_OPCODE_RDMA_ACK		= 4,
-	XSC_MSG_OPCODE_RDMA_ACK_READ	= 5,
-	XSC_MSG_OPCODE_RDMA_CNP		= 6,
-	XSC_MSG_OPCODE_RAW		= 7,
-	XSC_MSG_OPCODE_VIRTIO_NET	= 8,
-	XSC_MSG_OPCODE_VIRTIO_BLK	= 9,
-	XSC_MSG_OPCODE_RAW_TPE		= 10,
-	XSC_MSG_OPCODE_INIT_QP_REQ	= 11,
-	XSC_MSG_OPCODE_INIT_QP_RSP	= 12,
-	XSC_MSG_OPCODE_INIT_PATH_REQ	= 13,
-	XSC_MSG_OPCODE_INIT_PATH_RSP	= 14,
+struct xsc_msg_opcode {
+	u32	send;
+	u32	send_with_imm;
+	u32	rdma_write;
+	u32	rdma_write_with_imm;
+	u32	rdma_read;
+	u32	local_inv;
+	u32	reg_mr;
+	u32	send_with_inv;
+	u32	atomic_cmp_and_swp;
+	u32	atomic_fetch_and_add;
+	u32	masked_atomic_cmp_and_swp;
+	u32	masked_atomic_fetch_and_add;
+	u32	mad;
 };
 
 /* TODO: sw cqe opcode*/
@@ -141,6 +138,7 @@ enum {
 	XSC_QUEUE_TYPE_RAW_TSO		= 6,
 	XSC_QUEUE_TYPE_RAW_TX		= 7,
 	XSC_QUEUE_TYPE_SNIFFER		= 8,
+	XSC_QUEUE_TYPE_WORC		= 9,
 	XSC_QUEUE_TYPE_INVALID		= 0xFF,
 };
 
@@ -209,6 +207,11 @@ struct xsc_cqe {
 	__le16		rsv[2];
 	__le16		rsv2:15;
 	u8		owner:1;
+};
+
+struct xsc_cqe64 {
+	struct xsc_cqe	cqe;
+	u8		padding[32];
 };
 
 /* EQE TBD */

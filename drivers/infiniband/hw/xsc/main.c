@@ -31,6 +31,7 @@
 #include "xsc_ib.h"
 #include "xsc_rdma_ctrl.h"
 #include "xsc_rdma_prgrmmbl_cc_ctrl.h"
+#include "xsc_sample_ctrl.h"
 
 #define DRIVER_NAME "xsc_ib"
 
@@ -91,7 +92,7 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	props->device_cap_flags |= IB_DEVICE_MEM_MGT_EXTENSIONS;
 
 	props->page_size_cap	   = dev->xdev->caps.min_page_sz;
-	props->max_mr_size	   = dev->xdev->caps.max_mtt * PAGE_SIZE;
+	props->max_mr_size	   = xsc_get_max_mr_size(dev->xdev);
 	props->max_qp		   = dev->xdev->caps.max_qp;
 	props->max_qp_wr	   = xsc_get_max_qp_depth(dev->xdev);
 	max_rq_sg = dev->xdev->caps.max_rq_desc_sz / sizeof(struct xsc_wqe_data_seg);
@@ -104,18 +105,18 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 	props->max_sge_rd	   = 1;/*max sge per read wqe*/
 	props->max_cq		   = dev->xdev->caps.max_cq;
 	props->max_cqe		   = dev->xdev->caps.max_cqes;
-	props->max_mr		   = 1 << dev->xdev->caps.log_max_mkey;
+	props->max_mr		   = (1 << dev->xdev->caps.log_max_mkey) - 1;
 	props->max_pd		   = dev->xdev->caps.max_pd;
-	props->max_qp_rd_atom	   = dev->xdev->caps.max_ra_req_qp;
-	props->max_qp_init_rd_atom = dev->xdev->caps.max_ra_res_qp;
+	props->max_qp_rd_atom	   = dev->xdev->caps.max_ra_res_qp;
+	props->max_qp_init_rd_atom = dev->xdev->caps.max_ra_req_qp;
 	props->max_res_rd_atom	   = props->max_qp_rd_atom * props->max_qp;
-	props->max_srq		   =
-		dev->xdev->caps.log_max_srq ? (1 << dev->xdev->caps.log_max_srq) : 0;
-	props->max_srq_wr	   = dev->xdev->caps.max_srq_wqes - 1;
-	props->max_srq_sge	   = dev->xdev->caps.log_max_srq ? (max_rq_sg - 1) : 0;
+	props->max_srq		   = xsc_max_srq ?
+		roundup_pow_of_two(min_t(unsigned int, xsc_max_srq, XSC_MAX_SRQ_NUM)) : 0;
+	props->max_srq_wr	   = dev->xdev->caps.max_srq_wqes;
+	props->max_srq_sge	   = 4;
 	props->max_fast_reg_page_list_len = (unsigned int)-1;
 	props->local_ca_ack_delay  = dev->xdev->caps.local_ca_ack_delay;
-	props->atomic_cap	   = dev->xdev->caps.flags & XSC_DEV_CAP_FLAG_ATOMIC ?
+	props->atomic_cap	   = is_support_rdma_atomic(dev->xdev) ?
 		IB_ATOMIC_HCA : IB_ATOMIC_NONE;
 	props->masked_atomic_cap   = IB_ATOMIC_HCA;
 	props->max_mcast_grp	   =
@@ -131,6 +132,9 @@ static int xsc_ib_query_device(struct ib_device *ibdev,
 		(dev->xdev->hotfix_num & 0xffff);
 	props->max_pkeys = 0x80;
 	props->max_wq_type_rq = dev->xdev->caps.max_qp;
+#ifdef HAVE_IB_DEV_ATTR_MAX_SGL_RD
+	props->max_sgl_rd = dev->xdev->caps.max_sgl_rd;
+#endif
 
 	props->hca_core_clock = dev->xdev->caps.hca_core_clock * 1000;//KHz
 	props->rss_caps.max_rwq_indirection_tables =
@@ -254,6 +258,7 @@ int xsc_ib_query_port(struct ib_device *ibdev, u32 port,
 	struct xsc_ib_dev *dev = to_mdev(ibdev);
 	struct net_device *ndev = dev->netdev;
 	struct xsc_core_device *xdev = dev->xdev;
+	struct net_device *upper = NULL;
 
 	if (port < 1 || port > xdev->caps.num_ports) {
 		xsc_ib_warn(dev, "invalid port number %d\n", port);
@@ -262,8 +267,23 @@ int xsc_ib_query_port(struct ib_device *ibdev, u32 port,
 
 	memset(props, 0, sizeof(*props));
 
-	props->state = IB_PORT_ACTIVE;
-	props->max_mtu = IB_MTU_4096;
+	if (netif_running(ndev) && netif_carrier_ok(ndev))
+		props->state = IB_PORT_ACTIVE;
+	else
+		props->state = IB_PORT_DOWN;
+
+	props->max_mtu = is_support_8k_mtu(xdev) ? IB_MTU_8192 : IB_MTU_4096;
+
+	if (xsc_lag_is_roce(xdev) || xsc_lag_is_sriov(xdev)) {
+		rcu_read_lock();
+		upper = netdev_master_upper_dev_get_rcu(ndev);
+		if (upper) {
+			ndev = upper;
+			dev_hold(ndev);
+		}
+		rcu_read_unlock();
+	}
+
 	props->active_mtu = min(props->max_mtu, xsc_net_to_ib_mtu(ndev->mtu));
 	props->gid_tbl_len = 256;
 	props->port_cap_flags = 0x4010000;
@@ -287,6 +307,10 @@ int xsc_ib_query_port(struct ib_device *ibdev, u32 port,
 
 	props->phys_state = netif_carrier_ok(ndev) ? XSC_RDMA_PHY_STATE_LINK_UP :
 				XSC_RDMA_PHY_STATE_DISABLED;
+
+	if (upper)
+		dev_put(ndev);
+
 	return 0;
 }
 
@@ -464,12 +488,26 @@ xsc_ib_alloc_ucontext_def()
 	if (err)
 		return RET_VALUE(err);
 
+	if (req.abi_ver != CURRENT_UCONTEXT_ABI_VER && !xsc_is_rdma_comptible_device(dev->xdev)) {
+		xsc_ib_err(dev, "ucontext abi version mismatch, user is %d, kernel is %d\n",
+			   req.abi_ver, CURRENT_UCONTEXT_ABI_VER);
+		return RET_VALUE(-EINVAL);
+	}
+
+	memset(&resp, 0, sizeof(resp));
 	resp.qp_tab_size      = dev->xdev->caps.max_qp;
 	resp.cache_line_size  = L1_CACHE_BYTES;
 	resp.max_sq_desc_sz = dev->xdev->caps.max_sq_desc_sz;
 	resp.max_rq_desc_sz = dev->xdev->caps.max_rq_desc_sz;
 	resp.max_send_wqebb = dev->xdev->caps.max_wqes;
 	resp.max_recv_wr = dev->xdev->caps.max_wqes;
+	resp.max_srq = xsc_max_srq ?
+		roundup_pow_of_two(min_t(unsigned int, xsc_max_srq, XSC_MAX_SRQ_NUM)) : 0;
+	resp.max_srq_recv_wr = dev->xdev->caps.max_srq_wqes;
+	resp.srq_min_wr_num = min_t(unsigned int, xsc_srq_min_wr, dev->xdev->caps.max_wqes);
+	resp.srq_min_wr_num = max_t(unsigned int, resp.srq_min_wr_num, XSC_SRQ_MIN_WR_NUM);
+	resp.srq_max_wr_num = min_t(unsigned int, xsc_srq_max_wr, dev->xdev->caps.max_wqes);
+	resp.srq_max_wr_num = max_t(unsigned int, resp.srq_max_wr_num, XSC_SRQ_MIN_WR_NUM);
 	xsc_get_db_addr(dev->xdev, &resp.qpm_tx_db, &resp.qpm_rx_db,
 			&resp.cqm_armdb, &resp.cqm_next_cid_reg, NULL);
 	resp.send_ds_num = dev->xdev->caps.send_ds_num;
@@ -477,13 +515,21 @@ xsc_ib_alloc_ucontext_def()
 	resp.cmds_supp_uhw |= XSC_USER_CMDS_SUPP_UHW_QUERY_DEVICE;
 	resp.device_id = dev->xdev->pdev->device;
 
+	if (req.abi_ver >= ALLOC_UCONTEXT_VER_V1) {
+		xsc_get_multidb_info(dev->xdev, &resp.multidb_num, &resp.tx_multidb_base);
+		resp.rdma_proto_mode = dev->xdev->rdma_proto_mode;
+	}
+
+	if (is_support_cqe64(dev->xdev))
+		resp.hw_feature_flag |= XSC_HW_FEATURE_FLAG_SUPPORT_CQE64;
+
 	context = to_xucontext(uctx);
 
 	INIT_LIST_HEAD(&context->db_page_list);
 	mutex_init(&context->db_page_mutex);
 
 	resp.num_ports = dev->xdev->caps.num_ports;
-	err = ib_copy_to_udata(udata, &resp, sizeof(resp));
+	err = ib_copy_to_udata(udata, &resp, min_t(int, udata->outlen, sizeof(resp)));
 	if (err)
 		goto out_ctx;
 
@@ -521,6 +567,12 @@ static int xsc_ib_mmap(struct ib_ucontext *ibcontext, struct vm_area_struct *vma
 		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) + (cq_reg & PAGE_MASK);
 	else if (offset == (cq_db & PAGE_MASK))
 		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) + (cq_db & PAGE_MASK);
+	else if (offset == (QPM_TX_MDB_BASE_REG_ADDR & PAGE_MASK))
+		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) +
+			(QPM_TX_MDB_BASE_REG_ADDR & PAGE_MASK);
+	else if (offset == (xdev->caps.mdb_base & PAGE_MASK))
+		reg_base = pci_resource_start(xdev->pdev, xdev->bar_num) +
+			(xdev->caps.mdb_base & PAGE_MASK);
 	else
 		return -EINVAL;
 
@@ -587,7 +639,7 @@ static int xsc_port_immutable(struct ib_device *ibdev, u32 port_num,
 	immutable->gid_tbl_len = attr.gid_tbl_len;
 	immutable->core_cap_flags = RDMA_CORE_PORT_IBA_ROCE |
 				    RDMA_CORE_PORT_IBA_ROCE_UDP_ENCAP;
-	immutable->max_mad_size = IB_MGMT_MAD_SIZE * 2;
+	immutable->max_mad_size = IB_MGMT_MAD_SIZE;
 
 	return 0;
 }
@@ -604,25 +656,29 @@ static struct net_device *xsc_get_netdev(struct ib_device *ibdev, u32 port_num)
 	struct xsc_ib_dev *xsc_ib_dev = to_mdev(ibdev);
 	struct net_device *dev = xsc_ib_dev->netdev;
 	struct xsc_core_device *xdev = xsc_ib_dev->xdev;
+	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
 
 	if (dev) {
-		xsc_board_lag_lock(xdev);
-		if (xsc_lag_is_roce(xdev)) {
-			struct net_device *upper = NULL;
+		if (board_lag) {
+			xsc_board_lag_lock(xdev);
+			if (xsc_lag_is_roce(xdev)) {
+				struct net_device *upper = NULL;
 
-			rcu_read_lock();
-			upper = netdev_master_upper_dev_get_rcu(dev);
-			if (upper) {
-				struct net_device *active;
+				rcu_read_lock();
+				upper = netdev_master_upper_dev_get_rcu(dev);
+				if (upper) {
+					struct net_device *active;
 
-				active = bond_option_active_slave_get_rcu(netdev_priv(upper));
-				if (active)
-					dev = active;
+					active = bond_option_active_slave_get_rcu(
+							netdev_priv(upper));
+					if (active)
+						dev = active;
+				}
+				rcu_read_unlock();
 			}
-			rcu_read_unlock();
+			xsc_board_lag_unlock(xdev);
 		}
 		dev_hold(dev);
-		xsc_board_lag_unlock(xdev);
 	}
 
 	return dev;
@@ -841,12 +897,17 @@ static void xsc_ib_get_dev_fw_str(struct ib_device *ibdev, char *str)
 	}
 }
 
+static void xsc_ib_disassociate_ucontext(struct ib_ucontext *ibcontext)
+{
+}
+
 static void xsc_ib_dev_setting(struct xsc_ib_dev *dev)
 {
 	dev->ib_dev.ops.owner		= THIS_MODULE;
 	dev->ib_dev.ops.uverbs_abi_ver	= XSC_IB_UVERBS_ABI_VERSION;
 	dev->ib_dev.ops.driver_id = (enum rdma_driver_id)RDMA_DRIVER_XSC5;
 	dev->ib_dev.ops.uverbs_no_driver_id_binding = 1;
+	dev->ib_dev.ops.disassociate_ucontext = xsc_ib_disassociate_ucontext;
 	dev->ib_dev.ops.query_device	= xsc_ib_query_device;
 	dev->ib_dev.ops.query_port	= xsc_ib_query_port;
 	dev->ib_dev.ops.query_gid	= xsc_ib_query_gid;
@@ -873,8 +934,8 @@ static void xsc_ib_dev_setting(struct xsc_ib_dev *dev)
 	dev->ib_dev.ops.modify_qp		= xsc_ib_modify_qp;
 	dev->ib_dev.ops.query_qp		= xsc_ib_query_qp;
 	dev->ib_dev.ops.destroy_qp		= xsc_ib_destroy_qp;
-	dev->ib_dev.ops.post_send		= xsc_ib_post_send;
-	dev->ib_dev.ops.post_recv		= xsc_ib_post_recv;
+	dev->ib_dev.ops.post_send		= xsc_ib_post_send_nodrain;
+	dev->ib_dev.ops.post_recv		= xsc_ib_post_recv_nodrain;
 	dev->ib_dev.ops.create_cq		= xsc_ib_create_cq;
 	dev->ib_dev.ops.destroy_cq		= xsc_ib_destroy_cq;
 	dev->ib_dev.ops.poll_cq		= xsc_ib_poll_cq;
@@ -891,12 +952,19 @@ static void xsc_ib_dev_setting(struct xsc_ib_dev *dev)
 	dev->ib_dev.ops.drain_sq		= xsc_ib_drain_sq;
 	dev->ib_dev.ops.drain_rq		= xsc_ib_drain_rq;
 	dev->ib_dev.ops.get_dev_fw_str	= xsc_ib_get_dev_fw_str;
+	dev->ib_dev.ops.create_srq		= xsc_ib_create_srq;
+	dev->ib_dev.ops.destroy_srq		= xsc_ib_destroy_srq;
+	dev->ib_dev.ops.query_srq		= xsc_ib_query_srq;
+	dev->ib_dev.ops.modify_srq		= xsc_ib_modify_srq;
+	dev->ib_dev.ops.post_srq_recv	= xsc_ib_post_srq_recv;
 
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_ah, xsc_ib_ah, ibah);
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_cq, xsc_ib_cq, ibcq);
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_pd, xsc_ib_pd, ibpd);
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_ucontext, xsc_ib_ucontext, ibucontext);
 	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_qp, xsc_ib_qp, ibqp);
+	dev->ib_dev.ops INIT_RDMA_OBJ_SIZE(ib_srq, xsc_ib_srq, ibsrq);
+
 }
 
 static void xsc_get_port_state(struct net_device *ndev, enum xsc_dev_event *ev)
@@ -940,13 +1008,6 @@ static int xsc_register_netdev_notifier(struct xsc_ib_dev *ibdev)
 static int xsc_unregister_netdev_notifier(struct xsc_ib_dev *ibdev)
 {
 	return unregister_netdevice_notifier(&ibdev->nb);
-}
-
-static void xsc_get_ibdev_name(void *xdev, u8 *name, int len)
-{
-	struct xsc_ib_dev *dev = (struct xsc_ib_dev *)((struct xsc_core_device *)xdev)->xsc_ib_dev;
-
-	memcpy(name, dev->ib_dev.name, len);
 }
 
 static void xsc_get_mdev_ibdev_name(struct net_device *netdev, char *name, int len)
@@ -996,6 +1057,16 @@ next:
 	path_put(&parent_path);
 }
 
+static void xsc_cm_ip_id_init(struct xsc_ib_dev *dev)
+{
+	u16 rand_val = 0;
+
+	get_random_bytes(&rand_val, sizeof(rand_val));
+	atomic_set(&dev->xdev->cm_ip_id, rand_val);
+	xsc_ib_info(dev, "RDMA dev %s cm ip.id init with random val: 0x%04x\n",
+		    dev->ib_dev.name, rand_val);
+}
+
 static int init_one(struct xsc_core_device *xdev,
 		    struct xsc_ib_dev **m_ibdev)
 {
@@ -1029,10 +1100,13 @@ static int init_one(struct xsc_core_device *xdev,
 	dev->ib_dev.num_comp_vectors	= dev->num_comp_vectors;
 	dev->ib_dev.dev.parent = &xdev->pdev->dev;
 	xsc_ib_dev_setting(dev);
-	dev->cm_dscp = DSCP_PCP_UNSET;
-	dev->cm_pcp = DSCP_PCP_UNSET;
-	dev->force_pcp = DSCP_PCP_UNSET;
-	dev->force_dscp = DSCP_PCP_UNSET;
+	dev->xdev->priv.cm_dscp = DSCP_PCP_UNSET;
+	dev->xdev->priv.cm_pcp = DSCP_PCP_UNSET;
+	dev->xdev->priv.force_pcp = DSCP_PCP_UNSET;
+	dev->xdev->priv.force_dscp = DSCP_PCP_UNSET;
+	dev->xdev->rdma_proto_mode = RDMA_PROTO_ROCEV2;
+	dev->xdev->cm_udp_dst_port = ROCE_V2_UDP_DPORT;
+	dev->xdev->veroce_udp_dst_port = VEROCE_UDP_DPORT;
 
 	dev->ib_dev.uverbs_cmd_mask	=
 		(1ull << IB_USER_VERBS_CMD_GET_CONTEXT)		|
@@ -1073,6 +1147,8 @@ static int init_one(struct xsc_core_device *xdev,
 
 	crc_table_init(dev);
 
+	build_opcode_map(dev);
+
 	populate_specs_root(dev);
 
 	xsc_reg_local_dma_mr(xdev);
@@ -1080,13 +1156,12 @@ static int init_one(struct xsc_core_device *xdev,
 	if (ib_register_device(&dev->ib_dev, dev->ib_dev.name, dev->xdev->device))
 		goto err_rsrc;
 
+	memcpy(dev->xdev->priv.ibdev_name, dev->ib_dev.name, IB_DEVICE_NAME_MAX);
+
 	rdma_roce_rescan_device(&dev->ib_dev);
 	dev->ib_active = true;
 	*m_ibdev = dev;
 
-	xdev->xsc_ib_dev = dev;
-
-	xdev->get_ibdev_name = xsc_get_ibdev_name;
 	xdev->get_rdma_ctrl_info = xsc_get_rdma_ctrl_info;
 	xsc_register_get_mdev_ibdev_name_func(xsc_get_mdev_ibdev_name);
 
@@ -1097,6 +1172,8 @@ static int init_one(struct xsc_core_device *xdev,
 	xsc_rtt_sysfs_init(&dev->ib_dev, xdev);
 
 	xsc_ib_sysfs_init(&dev->ib_dev, xdev);
+
+	xsc_cm_ip_id_init(dev);
 
 	return 0;
 
@@ -1113,6 +1190,8 @@ static void remove_one(struct xsc_core_device *xdev, void *intf_ctx)
 {
 	struct xsc_ib_dev *dev = (struct xsc_ib_dev *)intf_ctx;
 
+	xdev->get_rdma_ctrl_info = NULL;
+	xsc_unregister_get_mdev_ibdev_name_func();
 	xsc_rtt_sysfs_fini(xdev);
 	xsc_ib_sysfs_fini(&dev->ib_dev, xdev);
 	xsc_counters_fini(&dev->ib_dev, xdev);
@@ -1197,30 +1276,11 @@ static struct xsc_interface xsc_interface = {
 	.protocol  = XSC_INTERFACE_PROTOCOL_IB,
 };
 
-static int xsc_ib_reboot_event_handler(struct notifier_block *nb, unsigned long action, void *data)
-{
-	pr_info("xsc ib driver recv %lu event\n", action);
-
-	if (exist_incomplete_qp_flush()) {
-		xsc_set_exit_flag();
-		return NOTIFY_OK;
-	}
-
-	xsc_remove_rdma_driver();
-
-	return NOTIFY_OK;
-}
-
-struct notifier_block xsc_ib_nb = {
-	.notifier_call = xsc_ib_reboot_event_handler,
-	.next = NULL,
-	.priority = 2,
-};
-
 void xsc_remove_rdma_driver(void)
 {
 	xsc_rdma_ctrl_fini();
 	xsc_rdma_prgrmmbl_cc_ctrl_fini();
+	xsc_sample_ctrl_fini();
 	xsc_unregister_interface(&xsc_interface);
 }
 
@@ -1246,7 +1306,12 @@ static int __init xsc_ib_init(void)
 		goto out;
 	}
 
-	register_reboot_notifier(&xsc_ib_nb);
+	ret = xsc_sample_ctrl_init();
+	if (ret != 0) {
+		pr_err("failed to register sample control node\n");
+		xsc_unregister_interface(&xsc_interface);
+		goto out;
+	}
 
 	return 0;
 out:
@@ -1255,7 +1320,6 @@ out:
 
 static void __exit xsc_ib_cleanup(void)
 {
-	unregister_reboot_notifier(&xsc_ib_nb);
 	xsc_remove_rdma_driver();
 }
 

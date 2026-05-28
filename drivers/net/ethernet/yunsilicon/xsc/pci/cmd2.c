@@ -17,6 +17,7 @@
 #include <linux/debugfs.h>
 #include "common/xsc_hsi.h"
 #include "common/xsc_core.h"
+#include "health.h"
 
 enum {
 	CMD_IF_REV = 3,
@@ -464,6 +465,12 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_IOCTL_GET_RATE_LIMIT:
 		return "GET_RATE_LIMIT";
 
+	case XSC_CMD_OP_IOCTL_SET_RATE_LIMIT_V2:
+		return "SET_RATE_LIMIT_V2";
+
+	case XSC_CMD_OP_IOCTL_GET_RATE_LIMIT_V2:
+		return "GET_RATE_LIMIT_V2";
+
 	case XSC_CMD_OP_IOCTL_SET_SP:
 		return "SET_SP";
 
@@ -499,6 +506,9 @@ const char *xsc_command_str(int command)
 
 	case XSC_CMD_OP_IOCTL_GET_WATCHDOG_PERIOD:
 		return "GET_WATCHDOG_PERIOD";
+
+	case XSC_CMD_OP_IOCTL_GET_QP_QOS_CFG:
+		return "GET_QP_QOS_CFG";
 
 	case XSC_CMD_OP_IOCTL_SET_ENABLE_RP:
 		return "ENABLE_RP";
@@ -626,6 +636,15 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_IOCTL_QUERY_PFC_STALL_STATS:
 		return "QUERY_PFC_STALL_STATS";
 
+	case XSC_CMD_OP_IOCTL_QUERY_PFC_STALL_PRIO_STATS:
+		return "QUERY_PFC_STALL_PRIO_STATS";
+
+	case XSC_CMD_OP_IOCTL_QUERY_PFC_STALL_WARN_STATS:
+		return "QUERY_PFC_STALL_WARN_STATS";
+
+	case XSC_CMD_OP_IOCTL_QUERY_PFC_STALL_WARN_PRIO_STATS:
+		return "QUERY_PFC_STALL_WARN_PRIO_STATS";
+
 	case XSC_CMD_OP_QUERY_HW_STATS_RDMA:
 		return "QUERY_HW_STATS_RDMA";
 
@@ -635,17 +654,14 @@ const char *xsc_command_str(int command)
 	case XSC_CMD_OP_QUERY_HW_PF_UC_STATS:
 		return "QUERY_HW_PF_UC_STATS";
 
+	case XSC_CMD_OP_QUERY_HW_LINK_FLAPPING_STATS:
+		return "QUERY_HW_LINK_FLAPPING_STATS";
+
 	case XSC_CMD_OP_SET_VPORT_RATE_LIMIT:
 		return "SET_VPORT_RATE_LIMIT";
 
 	case XSC_CMD_OP_GET_LINK_SUB_STATE:
 		return "GET_LINK_SUB_STATE";
-
-	case XSC_CMD_OP_IOCTL_SET_ROCE_ACCL_NEXT:
-		return "SET_ROCE_ACCL_NEXT";
-
-	case XSC_CMD_OP_IOCTL_GET_ROCE_ACCL_NEXT:
-		return "GET_ROCE_ACCL_NEXT";
 
 	case XSC_CMD_OP_ENABLE_RELAXED_ORDER:
 		return "ENABLE_RELAXED_ORDER";
@@ -682,6 +698,12 @@ const char *xsc_command_str(int command)
 
 	case XSC_CMD_OP_SYNC_MR_FROM_FW:
 		return "SYNC_MR_FROM_FW";
+
+	case XSC_CMD_OP_IOCTL_USER_RES:
+		return "USER_RES";
+
+	case XSC_CMD_OP_IOCTL_USER_INFO:
+		return "USER_INFO";
 
 	default: return "unknown command opcode";
 	}
@@ -766,6 +788,9 @@ static void cmd_work_handler(struct work_struct *work)
 	mmiowb();
 	spin_unlock_irqrestore(&cmd->doorbell_lock, flags);
 
+#ifdef XSC_DEBUG
+	xsc_core_dbg(xdev, "write 0x%x to command doorbell, idx %u\n", cmd->cmd_pid, ent->idx);
+#endif
 }
 
 static const char *deliv_status_to_str(u8 status)
@@ -859,6 +884,7 @@ static int xsc_cmd_invoke(struct xsc_core_device *xdev, struct xsc_cmd_msg *in,
 
 	err = wait_func(xdev, ent);
 	if (err == -ETIMEDOUT) {
+		cmd->ent_arr[ent->idx] = NULL;
 		xsc_core_err(xdev, "cmd(%s) timeout\n", xsc_command_str(msg_to_opcode(in)));
 		goto out;
 	}
@@ -937,7 +963,7 @@ static int xsc_copy_to_cmd_msg(struct xsc_cmd_msg *to, void *from, int size)
 
 	next = to->next;
 	while (size) {
-		if (!next) {
+		if (!next || !next->buf) {
 			/* this is a BUG */
 			return -ENOMEM;
 		}
@@ -1089,6 +1115,11 @@ static struct xsc_rsp_msg *xsc_alloc_rsp_msg(struct xsc_core_device *xdev,
 	int err;
 	int n;
 	int i;
+
+	if (size < sizeof(struct xsc_outbox_hdr)) {
+		xsc_core_err(xdev, "bad size :%d to alloc cmd msg\n", size);
+		return ERR_PTR(-EFAULT);
+	}
 
 	msg = kzalloc(sizeof(*msg), GFP_KERNEL);
 	if (!msg)
@@ -1384,6 +1415,11 @@ static struct xsc_cmd_msg *alloc_msg(struct xsc_core_device *xdev, int in_size)
 	struct xsc_cmd *cmd = &xdev->cmd;
 	struct cache_ent *ent = NULL;
 
+	if (in_size < sizeof(struct xsc_inbox_hdr)) {
+		xsc_core_err(xdev, "bad size :%d to alloc cmd msg\n", in_size);
+		return ERR_PTR(-EFAULT);
+	}
+
 	if (in_size > MED_LIST_SIZE && in_size <= LONG_LIST_SIZE)
 		ent = &cmd->cache.large;
 	else if (in_size > 16 && in_size <= MED_LIST_SIZE)
@@ -1617,19 +1653,24 @@ send_dummy_fail:
 	return err;
 }
 
-int _xsc_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out,
-		  int out_size)
+static bool xsc_cmd_is_down(struct xsc_core_device *dev)
+{
+	return xsc_pci_not_working(dev) ||
+	       pci_channel_offline(dev->pdev) ||
+	       dev->cmd.cmd_status != XSC_CMD_STATUS_NORMAL ||
+	       dev->state == XSC_DEVICE_STATE_INTERNAL_ERROR;
+}
+
+static int __xsc_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out,
+			  int out_size)
 {
 	struct xsc_cmd_msg *inb;
 	struct xsc_rsp_msg *outb;
 	int err;
 	u8 status = 0;
-	struct xsc_cmd *cmd = &xdev->cmd;
 
-	if (cmd->cmd_status == XSC_CMD_STATUS_TIMEDOUT) {
-		xsc_core_warn(xdev, "cmd queue is blocked, return directly\n");
-		return -ETIMEDOUT;
-	}
+	if (xsc_cmd_is_down(xdev))
+		return -ENXIO;
 
 	inb = alloc_msg(xdev, in_size);
 	if (IS_ERR(inb)) {
@@ -1668,6 +1709,66 @@ out_out:
 out_in:
 	free_msg(xdev, inb);
 	return err;
+}
+
+static int xsc_internal_err_ret_value(struct xsc_core_device *dev, u16 opcode, u8 *status)
+{
+	switch (opcode) {
+	case XSC_CMD_OP_TEARDOWN_HCA:
+	case XSC_CMD_OP_DISABLE_HCA:
+	case XSC_CMD_OP_RELEASE_IA_LOCK:
+	case XSC_CMD_OP_DESTROY_MKEY:
+	case XSC_CMD_OP_DEREG_MR:
+	case XSC_CMD_OP_DESTROY_EQ:
+	case XSC_CMD_OP_DESTROY_CQ:
+	case XSC_CMD_OP_DESTROY_QP:
+	case XSC_CMD_OP_2ERR_QP:
+	case XSC_CMD_OP_2RST_QP:
+	case XSC_CMD_OP_QUERY_QP_FLUSH_STATUS:
+	case XSC_CMD_OP_DEALLOC_QP_COUNTER_SET:
+	case XSC_CMD_OP_DEALLOC_QPN:
+	case XSC_CMD_QP_UNSET_QP_INFO:
+	case XSC_CMD_OP_DESTROY_PSV:
+	case XSC_CMD_OP_DESTROY_SRQ:
+	case XSC_CMD_OP_DEALLOC_PD:
+	case XSC_CMD_OP_DEALLOC_UAR:
+	case XSC_CMD_OP_DEALLOC_XRCD:
+	case XSC_CMD_OP_DISABLE_NIC_HCA:
+	case XSC_CMD_OP_LAG_DESTROY:
+	case XSC_CMD_OP_ESW_DISABLE_VF_REP:
+	case XSC_CMD_OP_MODIFY_NIC_HCA:
+	case XSC_CMD_OP_SET_PORT_ADMIN_STATUS:
+	case XSC_CMD_OP_QUERY_ETH_GUID:
+	case XSC_CMD_OP_QUERY_LINK_INFO:
+		*status = 0;
+		return XSC_CMD_STATUS_OK;
+	default:
+		*status = XSC_CMD_STATUS_DRIVER_ABORTED;
+		return -ENOLINK;
+	}
+}
+
+static int xsc_cmd_check(struct xsc_core_device *dev, int err, void *in, void *out)
+{
+	u16 opcode = be16_to_cpu(((struct xsc_inbox_hdr *)in)->opcode);
+	u8 status;
+
+	if (err == -ENXIO) {
+		err = xsc_internal_err_ret_value(dev, opcode, &status);
+		((struct xsc_outbox_hdr *)out)->status = status;
+		if (!err)
+			return 0;
+	}
+
+	return err;
+}
+
+int _xsc_cmd_exec(struct xsc_core_device *xdev, void *in, int in_size, void *out,
+		  int out_size)
+{
+	int err = __xsc_cmd_exec(xdev, in, in_size, out, out_size);
+
+	return xsc_cmd_check(xdev, err, in, out);
 }
 EXPORT_SYMBOL(_xsc_cmd_exec);
 
@@ -1741,14 +1842,29 @@ static void xsc_cmd_comp_handler(struct xsc_core_device *xdev, u8 idx, struct xs
 	struct xsc_cmd_work_ent *ent;
 	struct xsc_inbox_hdr *hdr;
 
-	if (idx > cmd->max_reg_cmds || (cmd->bitmask & (1 << idx))) {
+	if (idx >= cmd->max_reg_cmds || (cmd->bitmask & (1 << idx))) {
 		xsc_core_err(xdev, "idx[%d] exceed max cmds, or has no relative request.\n", idx);
 		return;
 	}
 	ent = cmd->ent_arr[idx];
+	if (!ent) {
+		xsc_core_err(xdev, "bad cmd entry buffer pointer\n");
+		return;
+	}
+
 	ent->rsp_lay = rsp;
 	ktime_get_ts64(&ent->ts2);
 
+	if (!ent->rsp_lay || !ent->in || !ent->out) {
+		xsc_core_err(xdev, "bad cmd entry in/out buffer pointer\n");
+		return;
+	}
+
+	if (ent->in->len < sizeof(struct xsc_inbox_hdr) ||
+	    ent->out->len < sizeof(struct xsc_outbox_hdr)) {
+		xsc_core_err(xdev, "bad cmd entry in/out buffer size\n");
+		return;
+	}
 	memcpy(ent->out->first.data, ent->rsp_lay->out, sizeof(ent->rsp_lay->out));
 	dump_command(xdev, ent->out->next, ent, 0, ent->out->len);
 	if (!cmd->checksum_disabled)
@@ -1780,7 +1896,11 @@ static int cmd_cq_polling(void *data)
 			schedule();
 		cq_pid = xsc_get_cmdq_rsp_pid(xdev);
 		if (cmd->cq_cid == cq_pid) {
+#ifdef COSIM
+			mdelay(1000);
+#else
 			mdelay(3);
+#endif
 			continue;
 		}
 
@@ -1887,7 +2007,8 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 		err = -ENOMEM;
 		goto err_free_cmd;
 	}
-
+	memset(cmd->cmd_buf, 0, PAGE_SIZE);
+	memset(cmd->cq_buf, 0, PAGE_SIZE);
 	cmd->dma = dma_map_single(&xdev->pdev->dev, cmd->cmd_buf, PAGE_SIZE,
 				  DMA_BIDIRECTIONAL);
 	if (dma_mapping_error(&xdev->pdev->dev, cmd->dma)) {
@@ -1912,28 +2033,7 @@ int xsc_cmd_init(struct xsc_core_device *xdev)
 #define Q_DEPTH_LOG	5 //32
 
 	cmd->log_sz = Q_DEPTH_LOG;
-	cmd->log_stride = xsc_get_cmdq_log_stride(xdev);
-	xsc_set_cmdq_depth(xdev, 1 << cmd->log_sz);
-	if (cmd->log_stride != ELEMENT_SIZE_LOG) {
-		dev_err(&xdev->pdev->dev, "firmware failed to init cmdq, log_stride=(%d, %d)\n",
-			cmd->log_stride, ELEMENT_SIZE_LOG);
-		err = -ENODEV;
-		goto err_map;
-	}
-
-	if (1 << cmd->log_sz > XSC_MAX_COMMANDS) {
-		dev_err(&xdev->pdev->dev, "firmware reports too many outstanding commands %d\n",
-			1 << cmd->log_sz);
-		err = -EINVAL;
-		goto err_map;
-	}
-
-	if (cmd->log_sz + cmd->log_stride > PAGE_SHIFT) {
-		dev_err(&xdev->pdev->dev, "command queue size overflow\n");
-		err = -EINVAL;
-		goto err_map;
-	}
-
+	cmd->log_stride = ELEMENT_SIZE_LOG;
 	cmd->checksum_disabled = 1;
 	cmd->max_reg_cmds = (1 << cmd->log_sz) - 1;
 	cmd->bitmask = (1 << cmd->max_reg_cmds) - 1;
@@ -2047,7 +2147,11 @@ void xsc_cmd_cleanup(struct xsc_core_device *xdev)
 	struct xsc_cmd *cmd = &xdev->cmd;
 
 	clean_debug_files(xdev);
-	destroy_workqueue(cmd->wq);
+	cmd->cmd_status = XSC_CMD_STATUS_DISABLED;
+	if (cmd->wq) {
+		flush_workqueue(cmd->wq);
+		destroy_workqueue(cmd->wq);
+	}
 	if (cmd->cq_task)
 		kthread_stop(cmd->cq_task);
 	destroy_msg_cache(xdev);
@@ -2071,6 +2175,7 @@ static const struct xsc_cmd_status_code_map cmd_status_code_map[XSC_CMD_STATUS_C
 	[XSC_CMD_STATUS_BUSY]		= { -EBUSY, "operation busy" },
 	[XSC_CMD_STATUS_PENDING]	= { -EIO, "operation pending" },
 	[XSC_CMD_STATUS_INVAL_DATA]	= { -EIO, "invalid data" },
+	[XSC_CMD_STATUS_DRIVER_ABORTED] = { -EIO, "driver aborted"},
 	[XSC_CMD_STATUS_NOT_FOUND]	= { -ENODEV, "function or resource not found" },
 	[XSC_CMD_STATUS_NO_RES]		= { -EIO, "out of resources" },
 

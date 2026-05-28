@@ -31,6 +31,7 @@ void xsc_init_hal(struct xsc_core_device *xdev, u32 device_id)
 		hal->hw_arch = HW_ARCH_ANDES;
 		break;
 	case XSC_MC_PF_DEV_ID_DIAMOND:
+	case XSC_MC_PF_DEV_ID_CUSTOM:
 		hal = get_diamond_pf_hal();
 		hal->hw_arch = HW_ARCH_DIAMOND;
 		break;
@@ -138,8 +139,9 @@ void xsc_ia_write(struct xsc_core_device *xdev, u32 addr, void *data, int nr)
 void xsc_update_tx_db(struct xsc_core_device *xdev, u32 sqn, u32 next_pid)
 {
 	struct xsc_hw_abstract_layer *hal = xdev->hal;
+	bool mdb = is_support_multi_doorbell(xdev);
 
-	hal->ops->ring_tx_doorbell(hal, xdev->bar, sqn, next_pid);
+	hal->ops->ring_tx_doorbell(hal, xdev->bar, sqn, next_pid, mdb);
 }
 EXPORT_SYMBOL_GPL(xsc_update_tx_db);
 
@@ -448,22 +450,6 @@ u8 xsc_get_cqe_opcode(struct xsc_core_device *xdev, void *cqe)
 }
 EXPORT_SYMBOL_GPL(xsc_get_cqe_opcode);
 
-u16 xsc_get_eth_channel_num(struct xsc_core_device *xdev)
-{
-	struct xsc_hw_abstract_layer *hal = xdev->hal;
-
-	return xsc_is_diamond_like_arch(hal->hw_arch) ?
-		1 : xdev->dev_res->eq_table.num_comp_vectors;
-}
-EXPORT_SYMBOL_GPL(xsc_get_eth_channel_num);
-
-u32 xsc_get_max_mtt_num(struct xsc_core_device *xdev)
-{
-	struct xsc_hw_abstract_layer *hal = xdev->hal;
-
-	return hal->ops->get_max_mtt_num(hal);
-}
-
 u32 xsc_get_max_mpt_num(struct xsc_core_device *xdev)
 {
 	struct xsc_hw_abstract_layer *hal = xdev->hal;
@@ -471,16 +457,23 @@ u32 xsc_get_max_mpt_num(struct xsc_core_device *xdev)
 	return hal->ops->get_max_mpt_num(hal);
 }
 
-u32 xsc_get_rdma_stat_mask(struct xsc_core_device *xdev)
+u64 xsc_get_rdma_stat_mask(struct xsc_core_device *xdev, u16 ver)
 {
 	struct xsc_hw_abstract_layer *hal = xdev->hal;
-	u32 mask;
+	u64 mask;
 
-	if (xsc_core_is_pf(xdev))
-		mask = xsc_is_diamond_like_arch(hal->hw_arch) ? 0x1FFFFCFF : 0xFFFFFF;
-	else
+	if (xsc_core_is_pf(xdev)) {
+		if (xsc_is_diamond_like_arch(hal->hw_arch)) {
+			if (ver >= XSC_CMDQ_GET_HW_STATS_RDMA_V1)
+				mask = 0x3FFFFFFCFF;
+			else
+				mask = 0x3FFFFCFF;
+		} else {
+			mask = 0xFFFFFF;
+		}
+	} else {
 		mask = 0xfff;
-
+	}
 	return mask;
 }
 EXPORT_SYMBOL_GPL(xsc_get_rdma_stat_mask);
@@ -491,7 +484,7 @@ u32 xsc_get_eth_stat_mask(struct xsc_core_device *xdev)
 	u32 mask;
 
 	if (xsc_core_is_pf(xdev))
-		mask = xsc_is_diamond_like_arch(hal->hw_arch) ? 0x30ff : 0x3fff;
+		mask = xsc_is_diamond_like_arch(hal->hw_arch) ? 0x7fff : 0x7fff;
 	else
 		mask = 0xf;
 
@@ -506,14 +499,6 @@ void xsc_set_data_seg(struct xsc_core_device *xdev, void *data_seg, u64 addr, u3
 	hal->ops->set_data_seg(data_seg, length, key, addr);
 }
 EXPORT_SYMBOL_GPL(xsc_set_data_seg);
-
-u8 xsc_get_mad_msg_opcode(struct xsc_core_device *xdev)
-{
-	struct xsc_hw_abstract_layer *hal = xdev->hal;
-
-	return xsc_is_diamond_like_arch(hal->hw_arch) ? XSC_MSG_OPCODE_RAW : XSC_MSG_OPCODE_MAD;
-}
-EXPORT_SYMBOL_GPL(xsc_get_mad_msg_opcode);
 
 u32 xsc_get_max_qp_depth(struct xsc_core_device *xdev)
 {
@@ -537,3 +522,124 @@ bool xsc_check_max_qp_depth(struct xsc_core_device *xdev, u32 *wqe_cnt, u32 max_
 	return false;
 }
 EXPORT_SYMBOL_GPL(xsc_check_max_qp_depth);
+
+u32 xsc_get_raw_rqcq_logsz(struct xsc_core_device *xdev, int rq_log)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+
+	return xsc_is_diamond_like_arch(hal->hw_arch) ?
+		(rq_log + 1) : (xdev->caps.log_max_qp_depth + 1);
+}
+EXPORT_SYMBOL_GPL(xsc_get_raw_rqcq_logsz);
+
+u32 xsc_get_raw_sqcq_logsz(struct xsc_core_device *xdev, int sq_log)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+
+	return xsc_is_diamond_like_arch(hal->hw_arch) ? sq_log : xdev->caps.log_max_qp_depth;
+}
+EXPORT_SYMBOL_GPL(xsc_get_raw_sqcq_logsz);
+
+int xsc_get_fw_init_done(struct xsc_core_device *xdev)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+
+	return hal->ops->get_fw_init_done(hal, xdev->bar);
+}
+
+u32 xsc_get_fw_reset_info(struct xsc_core_device *xdev)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+
+	return hal->ops->get_fw_reset_info(hal, xdev->bar);
+}
+
+void xsc_update_fw_reset_info(struct xsc_core_device *xdev, u64 state)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+
+	hal->ops->update_fw_reset_info(hal, xdev->bar, state);
+}
+
+u32 xsc_get_recv_ds_num(struct xsc_core_device *xdev)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+
+	return xsc_is_diamond_like_arch(hal->hw_arch) ? 4 : xdev->caps.recv_ds_num;
+}
+EXPORT_SYMBOL_GPL(xsc_get_recv_ds_num);
+
+void *xsc_get_msg_opcode(struct xsc_core_device *xdev)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+
+	return hal->ops->get_msg_opcode();
+}
+
+bool xsc_not_support_cmdq_raw(struct xsc_core_device *xdev)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+
+	return xsc_is_diamond_like_arch(hal->hw_arch);
+}
+EXPORT_SYMBOL_GPL(xsc_not_support_cmdq_raw);
+
+u64 xsc_get_max_mr_size(struct xsc_core_device *xdev)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+	u64 max_mpt_mr_size = xdev->caps.max_mr_size;
+	u64 max_mtt_mr_size = xdev->caps.max_mtt * PAGE_SIZE;
+	u64 max_mr_size = 0;
+
+	if (xsc_is_diamond_like_arch(hal->hw_arch))
+		max_mr_size = max_mpt_mr_size;
+	else
+		max_mr_size = min_t(u64, max_mpt_mr_size, max_mtt_mr_size);
+
+	return max_mr_size;
+}
+EXPORT_SYMBOL_GPL(xsc_get_max_mr_size);
+
+void xsc_get_multidb_info(struct xsc_core_device *xdev, u32 *num, u32 *base)
+{
+	struct xsc_hw_abstract_layer *hal = xdev->hal;
+
+	if (is_support_multi_doorbell(xdev)) {
+		if (xsc_is_diamond_like_arch(hal->hw_arch)) {
+			*num = xdev->caps.mdb_num;
+			*base = xdev->caps.mdb_base;
+		} else {
+			*num = MDB_NUM;
+			*base = QPM_TX_MDB_BASE_REG_ADDR;
+		}
+	} else {
+		*num = 0;
+		*base = 0;
+	}
+}
+EXPORT_SYMBOL_GPL(xsc_get_multidb_info);
+
+void xsc_set_wqe_id(struct xsc_core_device *dev, void *cseg, u32 wqe_id)
+{
+	struct xsc_hw_abstract_layer *hal = dev->hal;
+
+	hal->ops->set_wqe_id(cseg, wqe_id);
+}
+EXPORT_SYMBOL_GPL(xsc_set_wqe_id);
+
+int xsc_get_cqe_wqe_id(struct xsc_core_device *dev, void *cqe)
+{
+	struct xsc_hw_abstract_layer *hal = dev->hal;
+
+	return hal->ops->get_cqe_wqe_id(cqe);
+}
+EXPORT_SYMBOL_GPL(xsc_get_cqe_wqe_id);
+
+bool xsc_is_rdma_comptible_device(struct xsc_core_device *dev)
+{
+	struct xsc_hw_abstract_layer *hal = dev->hal;
+
+	return hal->hw_arch == HW_ARCH_ANDES;
+}
+EXPORT_SYMBOL_GPL(xsc_is_rdma_comptible_device);
+

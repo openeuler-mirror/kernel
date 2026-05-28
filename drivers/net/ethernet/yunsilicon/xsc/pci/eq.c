@@ -126,6 +126,10 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 		 * checked the ownership bit.
 		 */
 		rmb();
+#ifdef XSC_DEBUG
+		xsc_core_dbg(eq->dev, "eqn=%d, eqe_type=%d, cqn/qpn=%d\n",
+			     eq->eqn, eqe->type, eqe->queue_id);
+#endif
 		switch (eqe->type) {
 		case XSC_EVENT_TYPE_COMP:
 		case XSC_EVENT_TYPE_INTERNAL_ERROR:
@@ -172,6 +176,10 @@ static int xsc_eq_int(struct xsc_core_device *dev, struct xsc_eq *eq)
 
 	xsc_update_eq_ci(eq->dev, eq->eqn, eq->cons_index, eq_db_arm);
 
+#ifdef XSC_DEBUG
+	xsc_core_dbg(dev, "EQ%d eq_num=%d qpn=%d, db_arm=%d\n",
+		     eq->eqn, set_ci, (eqe ? eqe->queue_id : 0), eq_db_arm);
+#endif
 
 	return eqes_found;
 }
@@ -180,6 +188,9 @@ static irqreturn_t xsc_msix_handler(int irq, void *eq_ptr)
 {
 	struct xsc_eq *eq = eq_ptr;
 	struct xsc_core_device *dev = eq->dev;
+#ifdef XSC_DEBUG
+	xsc_core_dbg(dev, "EQ %d hint irq: %d\n", eq->eqn, irq);
+#endif
 	xsc_eq_int(dev, eq);
 
 	/* MSI-X vectors always belong to us */
@@ -197,7 +208,7 @@ static void init_eq_buf(struct xsc_eq *eq)
 	}
 }
 
-int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
+int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u16 vecidx,
 		      int nent, const char *name)
 {
 	struct xsc_dev_resource *dev_res = dev->dev_res;
@@ -279,9 +290,6 @@ EXPORT_SYMBOL_GPL(xsc_create_map_eq);
 int xsc_destroy_unmap_eq(struct xsc_core_device *dev, struct xsc_eq *eq)
 {
 	int err;
-
-	if (!xsc_fw_is_available(dev))
-		return 0;
 
 	free_irq(eq->irqn, eq);
 	err = xsc_cmd_destroy_eq(dev, eq->eqn);

@@ -37,4 +37,9 @@ int xsc_query_module_eeprom(struct xsc_core_device *dev,
 int xsc_query_module_eeprom_by_page(struct xsc_core_device *dev,
 				    struct xsc_module_eeprom_query_params *params,
 				    u8 *data);
+/* for hongshan 4x25 special, set optical module power state */
+#define OPTICAL_POWER_STATE_ADDR	0xc00
+#define OPTICAL_POWER_ON	1
+#define OPTICAL_POWER_OFF	2
+int xsc_set_optical_power_state(struct xsc_core_device *xdev, u32 power_state);
 #endif

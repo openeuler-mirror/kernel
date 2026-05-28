@@ -14,6 +14,15 @@ int xsc_ib_create_ah(struct ib_ah *ibah, struct rdma_ah_init_attr *ah_attr,
 #define xsc_ib_create_ah_def() int xsc_ib_create_ah(\
 	struct ib_ah *ibah, struct rdma_ah_init_attr *init_attr, struct ib_udata *udata)
 
+int xsc_ib_create_srq(struct ib_srq *ib_srq,
+		      struct ib_srq_init_attr *init_attr,
+		      struct ib_udata *udata);
+int xsc_ib_modify_srq(struct ib_srq *ibsrq, struct ib_srq_attr *attr,
+		      enum ib_srq_attr_mask attr_mask, struct ib_udata *udata);
+int xsc_ib_query_srq(struct ib_srq *ibsrq, struct ib_srq_attr *srq_attr);
+int xsc_ib_post_srq_recv(struct ib_srq *ibsrq, const struct ib_recv_wr *wr,
+			 const struct ib_recv_wr **bad_wr);
+
 int xsc_ib_destroy_ah(struct ib_ah *ah, u32 flags);
 #define xsc_ib_destroy_ah_def() int xsc_ib_destroy_ah(struct ib_ah *ah, u32 flags)
 
@@ -36,6 +45,8 @@ int xsc_ib_destroy_cq(struct ib_cq *cq, struct ib_udata *udata);
 #define xsc_ib_destroy_cq_def() int xsc_ib_destroy_cq(struct ib_cq *cq, struct ib_udata *udata)
 
 #define xsc_ib_destroy_qp_def() int xsc_ib_destroy_qp(struct ib_qp *qp, struct ib_udata *udata)
+int xsc_ib_destroy_srq(struct ib_srq *srq, struct ib_udata *udata);
+#define xsc_ib_destroy_srq_def() int xsc_ib_destroy_srq(struct ib_srq *srq, struct ib_udata *udata)
 #define xsc_ib_dereg_mr_def() int xsc_ib_dereg_mr(struct ib_mr *ibmr, struct ib_udata *udata)
 #define xsc_ib_alloc_ucontext_def() int xsc_ib_alloc_ucontext(\
 	struct ib_ucontext *uctx, struct ib_udata *udata)

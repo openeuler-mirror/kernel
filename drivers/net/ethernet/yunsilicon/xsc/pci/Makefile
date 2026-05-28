@@ -11,7 +11,7 @@ endif
 obj-$(CONFIG_YUNSILICON_XSC_PCI) += xsc_pci.o
 
 xsc_pci-y := main.o eq.o intf.o debugfs.o alloc.o wq.o cq.o qp.o \
-		cmd2.o fw.o port.o mr.o pd.o xsc_lag.o xsc_pci_ctrl.o xsc_prgrmmbl_cc_ctrl.o\
+		cmd2.o fw.o port.o mr.o pd.o xsc_lag.o xsc_pci_ctrl.o xsc_prgrmmbl_cc_ctrl.o xsc_sample_port_ctrl.o\
 		pci_irq.o vport.o sriov.o sriov_sysfs.o devlink.o eswitch.o xsc_port_ctrl.o res_obj.o qpts.o\
 		fw/cmd.o \
 		fw/xsc_flow.o \
@@ -20,4 +20,20 @@ xsc_pci-y := main.o eq.o intf.o debugfs.o alloc.o wq.o cq.o qp.o \
 		hal/andes_impl.o \
 		hal/diamond_impl.o \
 		hal/diamond_next_impl.o \
-		tunnel_cmd.o
+		xsc_flow_tbl.o \
+		xsc_flow_pool.o \
+		xsc_flow.o \
+		eswitch_legacy.o \
+		eswitch_offloads.o \
+		tunnel_cmd.o \
+		fs_chains.o \
+		fs_cmd.o \
+		fs_core.o \
+		fs_ft_pool.o \
+		diag/fs_tracepoint.o \
+		fs_counters.o \
+		vpd.o \
+		health.o \
+		xsc_lag_debugfs.o \
+		srq.o \
+		iova_ctrl.o

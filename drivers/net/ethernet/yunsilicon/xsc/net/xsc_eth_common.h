@@ -15,6 +15,8 @@
 #define SW_DEFAULT_MTU		1500
 #define SW_MAX_MTU		9600
 
+#define XSC_BQL_THRESHOLD	64
+
 #define XSC_ETH_HW_MTU_SEND	9800		/*need to obtain from hardware*/
 #define XSC_ETH_HW_MTU_RECV	9800		/*need to obtain from hardware*/
 #define XSC_SW2HW_MTU(mtu)	((mtu) + 14 + 4)
@@ -48,34 +50,22 @@
 
 #define XSC_MIN_LOG_RQ_SZ		(1 + XSC_LOG_MAX_RX_WQE_BULK)
 #define XSC_DEF_LOG_RQ_SZ		0xa
-#define XSC_MAX_LOG_RQ_SZ		0xd
-
 #define XSC_MIN_LOG_SQ_SZ		0x6
 #define XSC_DEF_LOG_SQ_SZ		0xa
-#define XSC_MAX_LOG_SQ_SZ		0xd
 
-#define XSC_SQ_ELE_NUM_DEF	BIT(XSC_DEF_LOG_SQ_SZ)
-#define XSC_RQ_ELE_NUM_DEF	BIT(XSC_DEF_LOG_RQ_SZ)
-
-#define XSC_LOG_RQCQ_SZ		0xb
-#define XSC_LOG_SQCQ_SZ		0xa
-
-#define XSC_RQCQ_ELE_NUM	BIT(XSC_LOG_RQCQ_SZ)
-#define XSC_SQCQ_ELE_NUM	BIT(XSC_LOG_SQCQ_SZ)
-#define XSC_RQ_ELE_NUM		XSC_RQ_ELE_NUM_DEF //ds number of a wqebb
-#define XSC_SQ_ELE_NUM		XSC_SQ_ELE_NUM_DEF //DS number
-#define XSC_EQ_ELE_NUM		XSC_SQ_ELE_NUM_DEF //number of eq entry???
+#define XSC_MAX_LOG_RQ_SZ		0xb
+#define XSC_MAX_LOG_SQ_SZ		0xb
 
 #define XSC_RQCQ_ELE_SZ		32	//size of a rqcq entry
 #define XSC_SQCQ_ELE_SZ		32	//size of a sqcq entry
+#define XSC_RQCQ_ELE_SZ64	64	//size of a rqcq entry
+#define XSC_SQCQ_ELE_SZ64	64	//size of a sqcq entry
 #define XSC_RQ_ELE_SZ		XSC_RECV_WQE_BB
 #define XSC_SQ_ELE_SZ		XSC_SEND_WQE_BB
 #define XSC_EQ_ELE_SZ		8	//size of a eq entry
 
 #define XSC_CQ_POLL_BUDGET	64
 #define XSC_TX_POLL_BUDGET	128
-
-#define XSC_NET_DIM_ENABLE_THRESHOLD	16
 
 #define XSC_MAX_BW_ALLOC	100 /* Max percentage of BW allocation */
 #define XSC_MAX_PRIORITY	8
@@ -132,7 +122,7 @@ struct xsc_eth_rx_wqe_cyc {
 #ifdef DECLARE_FLEX_ARRAY
 	DECLARE_FLEX_ARRAY(struct xsc_wqe_data_seg, data);
 #else
-	struct xsc_wqe_data_seg      data[0];
+	struct xsc_wqe_data_seg	data[0];
 #endif
 };
 
@@ -156,13 +146,11 @@ struct xsc_rq_param {
 };
 
 struct xsc_sq_param {
-//	struct xsc_rq_cmd_param sqc;
 	struct xsc_wq_param wq;
 	struct xsc_queue_attr sq_attr;
 };
 
 struct xsc_qp_param {
-//	struct xsc_qp_cmd_param qpc;
 	struct xsc_queue_attr qp_attr;
 };
 
@@ -205,12 +193,13 @@ struct xsc_channel {
 } ____cacheline_aligned_in_smp;
 
 enum xsc_eth_priv_flag {
-	XSC_PFLAG_RX_NO_CSUM_COMPLETE,
-	XSC_PFLAG_SNIFFER,
-	XSC_PFLAG_DROPLESS_RQ,
 	XSC_PFLAG_RX_COPY_BREAK,
 	XSC_PFLAG_RX_CQE_BASED_MODER,
 	XSC_PFLAG_TX_CQE_BASED_MODER,
+	XSC_PFLAG_RX_TC_SKB_EXT,
+	XSC_PFLAG_ARP_FILTER,
+	XSC_PFLAG_LINK_DOWN_ON_CLOSE,
+	XSC_PFLAG_TUNNEL_GSO,
 	XSC_NUM_PFLAGS, /* Keep last */
 };
 
@@ -228,6 +217,7 @@ struct xsc_eth_params {
 	u16	num_channels;
 	u16	max_num_ch;
 	u8	num_tc;
+	u8	bql_thresh;
 	u32	mtu;
 	u32	hard_mtu;
 	u32	comp_vectors;
@@ -237,13 +227,13 @@ struct xsc_eth_params {
 	u32	rq_size;
 	u32	rq_max_size;
 	u32	rq_frags_size;
-
 	u16	num_rl_txqs;
 	u8	rx_cqe_compress_def;
 	u8	tunneled_offload_en;
 	u8	lro_en;
 	u8	tx_min_inline_mode;
-	u8	vlan_strip_disable;
+	u8	vlan_strip_enabled;
+	u8	pph_usr_cnt;
 	u8	scatter_fcs_en;
 	u8	rx_dim_enabled;
 	u8	tx_dim_enabled;

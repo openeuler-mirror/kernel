@@ -19,7 +19,7 @@ struct xsc_hw_ops {
 	void (*write)(void __iomem *bar, u32 addr, void *data);
 	void (*ia_read)(void *hal, void __iomem *bar, u32 addr, void *data, int nr);
 	void (*ia_write)(void *hal, void __iomem *bar, u32 addr, void *data, int nr);
-	void (*ring_tx_doorbell)(void *hal, void __iomem *bar, u32 sqn, u32 next_pid);
+	void (*ring_tx_doorbell)(void *hal, void __iomem *bar, u32 sqn, u32 next_pid, bool mdb);
 	void (*ring_rx_doorbell)(void *hal, void __iomem *bar, u32 rqn, u32 next_pid);
 	void (*update_cq_db)(void *hal, void __iomem *bar, u32 cqn, u32 next_cid, u8 solicited);
 	void (*set_cq_ci)(void *hal, void __iomem *bar, u32 cqn, u32 next_cid);
@@ -39,10 +39,15 @@ struct xsc_hw_ops {
 	bool (*is_err_cqe)(void *cqe);
 	u8 (*get_cqe_error_code)(void *cqe);
 	u8 (*get_cqe_opcode)(void *cqe);
-	u32 (*get_max_mtt_num)(void *hal);
 	u32 (*get_max_mpt_num)(void *hal);
 	void (*set_data_seg)(void *data_seg, u32 length, u32 key, u64 addr);
 	bool (*skb_need_linearize)(int ds_num);
+	int (*get_fw_init_done)(void *hal, void __iomem *bar);
+	int (*get_fw_reset_info)(void *hal, void __iomem *bar);
+	void (*update_fw_reset_info)(void *hal, void __iomem *bar, u64 state);
+	struct xsc_msg_opcode *(*get_msg_opcode)(void);
+	void (*set_wqe_id)(void *cseg, u32 wqe_id);
+	int (*get_cqe_wqe_id)(void *cqe);
 };
 
 struct xsc_hw_reg {
@@ -95,6 +100,8 @@ struct xsc_hw_reg {
 	u32 mtt_inst_stride;
 	u32 mtt_inst_num_log;
 	u32 mtt_inst_depth;
+	u32 fw_init_done_addr;
+	u32 fw_reset_info_addr;
 };
 
 struct xsc_hw_abstract_layer {

@@ -395,7 +395,6 @@ rtt_attr_err:
 
 void xsc_rtt_sysfs_fini(struct xsc_core_device *xdev)
 {
-	int err;
 	struct xsc_rtt_en_mbox_in in;
 	struct xsc_rtt_en_mbox_out out;
 	struct xsc_rtt_period_mbox_in period_in;
@@ -411,11 +410,8 @@ void xsc_rtt_sysfs_fini(struct xsc_core_device *xdev)
 	in.hdr.opcode = __cpu_to_be16(XSC_CMD_OP_SET_RTT_EN);
 	in.en = 0;
 
-	err = xsc_cmd_exec(xdev, (void *)&in, sizeof(struct xsc_rtt_en_mbox_in),
-			   (void *)&out, sizeof(struct xsc_rtt_en_mbox_out));
-	if (err || (out.hdr.status && out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED))
-		xsc_core_err(xdev, "Failed to set rtt disable, err(%u), status(%u)\n",
-			     err, out.hdr.status);
+	xsc_cmd_exec(xdev, (void *)&in, sizeof(struct xsc_rtt_en_mbox_in),
+		     (void *)&out, sizeof(struct xsc_rtt_en_mbox_out));
 
 	memset(&period_in, 0, sizeof(period_in));
 	memset(&period_out, 0, sizeof(period_out));
@@ -423,11 +419,8 @@ void xsc_rtt_sysfs_fini(struct xsc_core_device *xdev)
 	period_in.hdr.opcode = __cpu_to_be16(XSC_CMD_OP_SET_RTT_PERIOD);
 	period_in.period = __cpu_to_be32(RTT_CFG_PERIOD_MAX);
 
-	err = xsc_cmd_exec(xdev, (void *)&period_in, sizeof(struct xsc_rtt_period_mbox_in),
-			   (void *)&period_out, sizeof(struct xsc_rtt_period_mbox_out));
-	if (err || (period_out.hdr.status && out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED))
-		xsc_core_err(xdev, "Failed to set rtt period default, err(%u), status(%u)\n",
-			     err, out.hdr.status);
+	xsc_cmd_exec(xdev, (void *)&period_in, sizeof(struct xsc_rtt_period_mbox_in),
+		     (void *)&period_out, sizeof(struct xsc_rtt_period_mbox_out));
 
 	rtt = xdev->rtt_priv;
 	kobject_put(&rtt->kobj);

@@ -22,21 +22,22 @@
 #define XSC_RTT_CFG_QPN_MAX 32
 #define XSC_QP_MEASURE_QP_NUM_MAX  128
 
-#define XSC_PCIE_LAT_CFG_INTERVAL_MAX	8
-#define XSC_PCIE_LAT_CFG_HISTOGRAM_MAX	9
-#define XSC_PCIE_LAT_EN_DISABLE		0
-#define XSC_PCIE_LAT_EN_ENABLE		1
-#define XSC_PCIE_LAT_PERIOD_MIN		1
-#define XSC_PCIE_LAT_PERIOD_MAX		20
 #define DPU_PORT_WGHT_CFG_MAX		1
 
 #define XSC_MAX_NUM_PCIE_INTF		2
 #define XSC_MAX_PF_NUM_PER_PCIE		8
 
+#define CM_DEF_TOS_UNSET	0
+
 /* xsc_cmd_status_code is used to indicate the result of a xsc cmd executing.
  * How to use it please refer to the design doc:
  * https://eb72aga9oq.feishu.cn/docx/UF0GdlGBRoEtvvx1FrAcrnmLnug
  */
+enum {
+	XSC_CMD_EXEC_DRT_NEED_FALSE = 0,
+	XSC_CMD_EXEC_DRT_NEED_TRUE,
+	XSC_CMD_EXEC_DRT_NEED_LENGTH_ERR,
+};
 enum xsc_cmd_status_code {
 	/* common status code, range: 0x0 ~ 0x1f */
 	XSC_CMD_STATUS_OK			= 0x0,
@@ -47,6 +48,7 @@ enum xsc_cmd_status_code {
 	XSC_CMD_STATUS_BUSY			= 0x6,
 	XSC_CMD_STATUS_PENDING			= 0x7,
 	XSC_CMD_STATUS_INVAL_DATA		= 0x8,
+	XSC_CMD_STATUS_DRIVER_ABORTED		= 0x9,
 	XSC_CMD_STATUS_NOT_FOUND		= 0xa,
 	XSC_CMD_STATUS_NO_RES			= 0xf,
 
@@ -92,9 +94,6 @@ enum {
 	DPU_PRIO_WGHT_TARGET_NUM,
 };
 
-#define XSC_AP_FEAT_UDP_SPORT_MIN	1024
-#define XSC_AP_FEAT_UDP_SPORT_MAX	65535
-
 enum {
 	XSC_CMD_OP_QUERY_HCA_CAP		= 0x100,
 	XSC_CMD_OP_QUERY_ADAPTER		= 0x101,
@@ -124,6 +123,9 @@ enum {
 	XSC_CMD_OP_RECV_TUNNEL_CMD_RESP		= 0x119,
 	XSC_CMD_OP_GET_IOCTL_INFO		= 0x11a,
 	XSC_CMD_OP_ANNOUNCE_DRIVER_INSTANCE	= 0x11b,
+	XSC_CMD_OP_FUNCTION_RESET_LITE		= 0x11c,
+	XSC_CMD_OP_QUERY_FW_VERSION		= 0x11d,
+	XSC_CMD_OP_SET_HOST_ENDIANNESS		= 0x11e,
 
 	XSC_CMD_OP_CREATE_MKEY			= 0x200,
 	XSC_CMD_OP_QUERY_MKEY			= 0x201,
@@ -179,6 +181,7 @@ enum {
 	XSC_CMD_OP_DEALLOC_QPN			= 0x520,
 	XSC_CMD_OP_SET_QP_INFO			= 0x521,
 	XSC_CMD_QP_UNSET_QP_INFO		= 0x522,
+	XSC_CMD_OP_GET_QP_BASE_INFO             = 0x523,
 
 	XSC_CMD_OP_CREATE_PSV			= 0x600,
 	XSC_CMD_OP_DESTROY_PSV			= 0x601,
@@ -232,21 +235,43 @@ enum {
 	XSC_CMD_OP_MODIFY_FEC_PARAM		= 0x836,
 	XSC_CMD_OP_MODIFY_NIC_VPORT_UC_MAC	= 0x837,
 	XSC_CMD_OP_MODIFY_NIC_VPORT_MC_MAC	= 0x838,
+	XSC_CMD_OP_QUERY_PORT_PRESENT		= 0x839,
 
-	XSC_CMD_OP_LAG_CREATE				= 0x840,
-	XSC_CMD_OP_LAG_ADD_MEMBER			= 0x841,
+	XSC_CMD_OP_LAG_CREATE			= 0x840,
+	XSC_CMD_OP_LAG_ADD_MEMBER		= 0x841,
 	XSC_CMD_OP_LAG_REMOVE_MEMBER		= 0x842,
 	XSC_CMD_OP_LAG_UPDATE_MEMBER_STATUS	= 0x843,
 	XSC_CMD_OP_LAG_UPDATE_HASH_TYPE		= 0x844,
-	XSC_CMD_OP_LAG_DESTROY				= 0x845,
+	XSC_CMD_OP_LAG_DESTROY			= 0x845,
 
 	XSC_CMD_OP_LAG_SET_QOS			= 0x848,
 	XSC_CMD_OP_ENABLE_MSIX			= 0x850,
+	XSC_CMD_OP_ALLOC_MSIX_RES		= 0x851,
+	XSC_CMD_OP_SET_MSIX_VEC_COUNT		= 0x852,
+
+	XSC_CMD_OP_ESW_STERRING_CREATE		= 0x870,
+	XSC_CMD_OP_ESW_STERRING_DESTROY		= 0x871,
+	XSC_CMD_OP_ESW_ENABLE_VF_REP		= 0x872,
+	XSC_CMD_OP_ESW_DISABLE_VF_REP		= 0x873,
+	XSC_CMD_OP_QUERY_ETH_GUID		= 0x874,
+	XSC_CMD_OP_QUERY_ESW_CAP		= 0x875,
+	XSC_CMD_OP_ESW_MODIFY_VF_REP		= 0x876,
 
 	XSC_CMD_OP_IOCTL_FLOW			= 0x900,
 	XSC_CMD_OP_IOCTL_OTHER			= 0x901,
 	XSC_CMD_OP_IOCTL_NETLINK		= 0x902,
 	XSC_CMD_OP_IOCTL_GET_HW_COUNTERS	= 0x903,
+
+	XSC_CMD_OP_HW_FLOW_CREATE		= 0x904,
+	XSC_CMD_OP_HW_FLOW_DELETE		= 0x905,
+	XSC_CMD_OP_GET_RES_MGR_TBL_INFO		= 0x906,
+	XSC_CMD_OP_GET_OFLD_TBL_INFO		= 0x907,
+	XSC_CMD_OP_FLOW_GROUP_CREATE		= 0x908,
+	XSC_CMD_OP_FLOW_COUNTER_BULK_QUERY	= 0x909,
+	XSC_CMD_OP_IOCTL_USER_RES		= 0x910,
+	XSC_CMD_OP_IOCTL_USER_INFO		= 0x911,
+	XSC_CMD_OP_RELEASE_USER_IDX		= 0x912,
+	XSC_CMD_OP_GET_NIC_DDR_STATUS		= 0x913,
 
 	XSC_CMD_OP_IOCTL_SET_DSCP_PMT		= 0x1000,
 	XSC_CMD_OP_IOCTL_GET_DSCP_PMT		= 0x1001,
@@ -276,6 +301,12 @@ enum {
 	XSC_CMD_OP_IOCTL_GET_PFC_CFG_STATUS	= 0x1019,
 	XSC_CMD_OP_IOCTL_SET_PFC_NEW		= 0x101a,
 	XSC_CMD_OP_IOCTL_GET_PFC_CFG_STATUS_NEW	= 0x101b,
+	XSC_CMD_OP_IOCTL_SET_RATE_LIMIT_V2	= 0x101c,
+	XSC_CMD_OP_IOCTL_GET_RATE_LIMIT_V2	= 0x101d,
+	XSC_CMD_OP_IOCTL_GET_QP_QOS_CFG		= 0x101e,
+	XSC_CMD_OP_IOCTL_SET_WATCHDOG_WARN_PERIOD	= 0x101f,
+	XSC_CMD_OP_IOCTL_GET_WATCHDOG_WARN_PERIOD	= 0x1020,
+	XSC_CMD_OP_IOCTL_SET_PFC_NEW_V1		= 0x1021,
 
 	XSC_CMD_OP_IOCTL_SET_ENABLE_RP = 0x1030,
 	XSC_CMD_OP_IOCTL_SET_ENABLE_NP = 0x1031,
@@ -316,6 +347,13 @@ enum {
 	XSC_CMD_OP_QUERY_HW_GLOBAL_STATS = 0X1210,
 	XSC_CMD_OP_QUERY_HW_PF_UC_STATS = 0X1211,
 	XSC_CMD_OP_QUERY_HW_PRS_CHK_ERR_STATS = 0x1212,
+	XSC_CMD_OP_QUERY_HW_LINK_FLAPPING_STATS = 0x1213,
+	XSC_CMD_OP_QUERY_HW_PHY_ERR_STATS = 0x1214,
+	XSC_CMD_OP_IOCTL_QUERY_PFC_STALL_PRIO_STATS = 0x1215,
+	XSC_CMD_OP_IOCTL_QUERY_PFC_STALL_WARN_STATS = 0x1216,
+	XSC_CMD_OP_IOCTL_QUERY_PFC_STALL_WARN_PRIO_STATS = 0x1217,
+	XSC_CMD_OP_QUERY_HW_CLSF_CTRL_CHK_ERR_STATS = 0x1218,
+	XSC_CMD_OP_IOCTL_QUERY_RX_DISCARD_PRIO_STATS = 0x1219,
 
 	XSC_CMD_OP_SET_RTT_EN = 0X1220,
 	XSC_CMD_OP_GET_RTT_EN = 0X1221,
@@ -331,6 +369,7 @@ enum {
 	XSC_CMD_OP_AP_FEAT			= 0x1400,
 	XSC_CMD_OP_PCIE_LAT_FEAT		= 0x1401,
 	XSC_CMD_OP_OOO_STATISTIC_FEAT		= 0x1402,
+	XSC_CMD_OP_RTT_HISTOGRAM		= 0x1403,
 
 	XSC_CMD_OP_GET_LLDP_STATUS = 0x1500,
 	XSC_CMD_OP_SET_LLDP_STATUS = 0x1501,
@@ -339,22 +378,41 @@ enum {
 
 	XSC_CMD_OP_IOCTL_SET_ROCE_ACCL	= 0x1700,
 	XSC_CMD_OP_IOCTL_GET_ROCE_ACCL	= 0x1701,
-	XSC_CMD_OP_IOCTL_SET_ROCE_ACCL_NEXT	= 0x1702,
-	XSC_CMD_OP_IOCTL_GET_ROCE_ACCL_NEXT	= 0x1703,
 	XSC_CMD_OP_IOCTL_PRGRMMBL_CC	= 0x1704,
 	XSC_CMD_OP_IOCTL_SET_FLEXCC_NEXT	= 0x1705,
 	XSC_CMD_OP_IOCTL_GET_FLEXCC_NEXT	= 0x1706,
 	XSC_CMD_OP_IOCTL_GET_STAT_FLEXCC_NEXT	= 0x1707,
-	XSC_CMD_OP_IOCTL_GET_SPORT_ROCE_ACCL_NEXT = 0x1708,
+	XSC_CMD_OP_IOCTL_GET_PATH_UDP_SPORT_ROCE_ACCL = 0x1708,
 	XSC_CMD_OP_IOCTL_SET_ROCE_ACCL_DISC_SPORT = 0x1709,
 	XSC_CMD_OP_IOCTL_GET_ROCE_ACCL_DISC_SPORT = 0x170a,
+	XSC_CMD_OP_IOCTL_SET_BCC		= 0x170b,
+	XSC_CMD_OP_IOCTL_GET_BCC		= 0x170c,
+	XSC_CMD_OP_IOCTL_GET_STAT_BCC		= 0x170d,
+	XSC_CMD_OP_IOCTL_GET_REG_BCC		= 0x170e,
 
 	XSC_CMD_OP_GET_LINK_SUB_STATE = 0x1800,
 	XSC_CMD_OP_SET_PORT_ADMIN_STATUS = 0x1801,
 
 	XSC_CMD_OP_IOCTL_GET_BYTE_CNT = 0x1900,
 
+	XSC_CMD_OP_IOCTL_SET_SAMPLE_EN    = 0x2000,
+	XSC_CMD_OP_IOCTL_SET_SAMPLE_MODE  = 0x2001,
+	XSC_CMD_OP_IOCTL_SET_SAMPLE_PERIOD = 0x2002,
+	XSC_CMD_OP_IOCTL_SET_SAMPLE_ACTV  = 0x2003,
+	XSC_CMD_OP_IOCTL_GET_SAMPLE_DATA  = 0x2004,
+	XSC_CMD_OP_IOCTL_GET_SAMPLE_CFG   = 0x2005,
+	XSC_CMD_OP_IOCTL_GET_SAMPLE_STATS = 0x2006,
+
+	XSC_CMD_OP_IOCTL_SET_RATE_RDC_PERIOD = 0x3000,
+	XSC_CMD_OP_IOCTL_SET_MIN_DEC_FACTOR = 0x3001,
+	XSC_CMD_OP_IOCTL_SET_RATE_TH = 0x3002,
+	XSC_CMD_OP_IOCTL_SET_CC_ALG = 0x3003,
+
+	XSC_CMD_OP_IOCTL_GET_PORTMAP = 0x4000,
+	XSC_CMD_OP_GET_IB_MAPPING_TABLE_USAGE_CNT = 0x4001,
+
 	XSC_CMD_OP_USER_EMU_CMD = 0x8000,
+	XSC_CMD_OP_GET_AIDPU_MODE = 0x8001,
 
 	XSC_CMD_OP_MAX
 };
@@ -367,11 +425,13 @@ enum {
 	XSC_CMD_EVENT_RECV_TUNNEL_CMD_RSP	= 0x0010,
 	XSC_CMD_EVENT_CHANGE_TO_EXCLUSIVE	= 0x0020,
 	XSC_CMD_EVENT_CHANGE_TO_SHARE		= 0x0040,
+	XSC_CMD_EVENT_CHANGE_PORT_PRESENT	= 0x0080,
 };
 
 enum xsc_eth_qp_num_sel {
 	XSC_ETH_QP_NUM_8K_SEL = 0,
 	XSC_ETH_QP_NUM_8K_8TC_SEL,
+	XSC_ETH_QP_NUM_VF_CHANNEL_SEL,
 	XSC_ETH_QP_NUM_SEL_MAX,
 };
 
@@ -427,10 +487,35 @@ enum xsc_hw_feature_flag {
 	XSC_HW_PFC_PRIO_STATISTIC_SUPPORT = 0x2,
 	XSC_HW_THIRD_FEATURE = 0x4,
 	XSC_HW_PFC_STALL_STATS_SUPPORT = 0x8,
+	XSC_HW_RX_DISCARD_PRIO_STATISTIC_SUPPORT = 0x10,
+
 	XSC_HW_RDMA_CM_SUPPORT = 0x20,
 	XSC_HW_OFFLOAD_UNSUPPORT = 0x40,
 	XSC_HW_PF_UC_STATISTIC_SUPPORT = 0x80,
 	XSC_HW_PRGRMMBL_CC_SUPPORT = 0x100,
+	XSC_HW_LINK_FLAPPING_SUPPORT = 0x200,
+	XSC_HW_SAMPLE_SUPPORT = 0x400,
+	XSC_HW_MTU_8192_SUPPORT = 0x800,
+	XSC_HW_TC_OFFLOAD = 0x1000,
+	XSC_HW_HEALTH_CHECK_SUPPORT = 0x2000,
+	XSC_HW_HEALTH_REPORT_SUPPORT = 0x4000,
+	XSC_HW_RX_VLAN_STRIP = 0x8000,
+	XSC_HW_OFFLOAD_RSS_SUPPORT = 0x10000,
+	XSC_HW_RDMA_ATOMIC_SUPPORT = 0x20000,
+
+	XSC_HW_MULTIDOORBELL_SUPPORT = 0x40000,
+	XSC_HW_DPDK_SEAMLESS_UPGRADE = 0x80000,
+
+	XSC_HW_PHY_ERR_STATISTIC_SUPPORT = 0x100000,
+	XSC_HW_CQE64_SUPPORT = 0x200000,
+
+	XSC_HW_PFC_STALL_PRIO_STATS_SUPPORT = 0x400000,
+	XSC_HW_ARP_FILTER_SUPPORT = 0x800000,
+
+	XSC_HW_PFC_STALL_WARN_STATS_SUPPORT = 0x1000000,
+	XSC_HW_PFC_STALL_WARN_PRIO_STATS_SUPPORT = 0x2000000,
+
+	XSC_HW_PHY_CLSF_CHK_STATISTIC_SUPPORT = 0x4000000,
 
 	XSC_HW_LAST_FEATURE = 0x80000000,
 };
@@ -438,6 +523,12 @@ enum xsc_hw_feature_flag {
 enum xsc_lldp_dcbx_sub_cmd {
 	XSC_OS_HANDLE_LLDP_STATUS = 0x1,
 	XSC_DCBX_STATUS
+};
+
+enum xsc_cmd_aidpu_mode {
+	AIDPU_INVALID_MODE = 0,
+	AIDPU_BM_MODE,
+	AIDPU_VM_MODE,
 };
 
 struct xsc_inbox_hdr {
@@ -531,7 +622,9 @@ struct xsc_create_cq_mbox_in {
 struct xsc_cq_context_ex {
 	struct xsc_cq_context ctx;
 	u8		page_shift;
-	u8		rsvd[7];
+	u8		overrun_ignore;
+	u8		rsvd[2];
+	u32		pa_num_ex;
 };
 
 struct xsc_create_cq_ex_mbox_in {
@@ -556,6 +649,8 @@ struct xsc_destroy_cq_mbox_out {
 	struct xsc_outbox_hdr	hdr;
 	u8			rsvd[8];
 };
+
+#define CMD_SET_CQ_CONTEXT_V1	1
 
 struct xsc_set_cq_context_mbox_in {
 	struct xsc_inbox_hdr	hdr;
@@ -632,9 +727,12 @@ struct xsc_query_qp_flush_status_mbox_out {
 enum qp_access_flag {
 	QP_ACCESS_REMOTE_READ = (1 << 0),
 	QP_ACCESS_REMOTE_WRITE = (1 << 1),
+	QP_ACCESS_REMOTE_ATOMIC = (1 << 2),
+	QP_ACCESS_MODIFY_QP_TYPE = (1 << 3),
 };
 
 #define	XSC_QP_CONTEXT_V1	1
+#define XSC_QP_CONTEXT_V2	2
 struct xsc_qp_context {
 	__be32		remote_qpn;
 	__be32		cqn_send;
@@ -665,9 +763,11 @@ struct xsc_qp_context {
 	u8		pcie_no;
 	__be16		lag_id;
 	__be16		func_id;
-	__be16		rsvd;
+	u8		max_sra;
+	u8		max_rra;
 	u8		no_need_wait;
-	u8		rsvd0[3];
+	u8		swith_qp_type;
+	u8		rsvd0[2];
 	__be32		qp_access_flags;
 };
 
@@ -780,6 +880,44 @@ struct xsc_unset_qp_info_out {
 	struct xsc_outbox_hdr	hdr;
 };
 
+struct xsc_get_qp_base_info_in {
+	struct xsc_inbox_hdr	hdr;
+	__be32			qp_max_num;
+	u8			rsvd[4];
+};
+
+struct xsc_get_qp_base_info_out {
+	struct xsc_outbox_hdr	hdr;
+	__be16			virtio_qp_id_base;
+	__be16			virtio_qp_id_end;
+	__be16			raweth_tso_qp_id_base;
+	__be16			raweth_tso_qp_id_end;
+	__be16			raweth_qp_id_base;
+	__be16			raweth_qp_id_end;
+	__be16			sniffer_qp_id_base;
+	__be16			sniffer_qp_id_end;
+	__be16			mad_qp_id_base;
+	__be16			mad_qp_id_end;
+	__be16			rdma_qp_id_base;
+	__be16			rdma_qp_id_end;
+	__be16			rawtpe_qp_id_base;
+	__be16			rawtpe_qp_id_end;
+	u8			rsvd[4];
+	__be32			qp_tbl_bitmap[];
+};
+
+struct xsc_alloc_msix_res_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	__be16			cpu_num;
+	u8			rsvd[2];
+};
+
+struct xsc_alloc_msix_res_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	__be16			msix_base;
+	__be16			msix_num;
+};
+
 /* MSIX TABLE mbox */
 struct xsc_msix_table_info_mbox_in {
 	struct xsc_inbox_hdr	hdr;
@@ -792,6 +930,19 @@ struct xsc_msix_table_info_mbox_out {
 	__be32			addr_lo;
 	__be32			addr_hi;
 	__be32			data;
+};
+
+struct xsc_set_msix_vec_count_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			other_func;
+	u16			vf_id;
+	u16			msix_count;
+	u8			rsvd[4];
+};
+
+struct xsc_set_msix_vec_count_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			rsvd[4];
 };
 
 /*EQ mbox*/
@@ -897,7 +1048,8 @@ struct xsc_mpt_item {
 	__be32		pa_num;
 	__be32		len;
 	__be32		mkey;
-	u8		rsvd[5];
+	__be32		len_h;
+	u8		is_gpu;
 	u8		acc;
 	u8		page_mode;
 	u8		map_en;
@@ -1121,8 +1273,10 @@ struct xsc_hca_cap {
 	u8		rsvd18;
 	u8		log_pg_sz;
 	__be16		bf_log_bf_reg_size;
+	/* V5 */
 	__be16		msix_base;
 	__be16		msix_num;
+
 	__be16		max_desc_sz_sq;
 	u8		rsvd20[2];
 	__be16		max_desc_sz_rq;
@@ -1205,12 +1359,33 @@ struct xsc_hca_cap {
 	__be16		vf_id;
 	u8		pcie_host_num;
 	u8		pf_num_per_pcie;
+	/* V6 */
+	u16		ft_support;
+
+	/* V7 */
+	__be16		total_dynamic_vf_msix;
+	__be16		min_dynamic_vf_msix;
+	__be16		max_dynamic_vf_msix;
+
+	/* V8 */
+	u8		max_sgl_rd;
+	u8		rsvd30;
+
+	/* V9 */
+	__be32		mdb_num;
+	u8		rsvd31[4];
+	__be64		mdb_base;
 };
 
 #define CMD_QUERY_HCA_CAP_V1	1
 #define CMD_QUERY_HCA_CAP_V2	2
 #define CMD_QUERY_HCA_CAP_V3	3
 #define CMD_QUERY_HCA_CAP_V4	4
+#define CMD_QUERY_HCA_CAP_V5	5
+#define CMD_QUERY_HCA_CAP_V6	6
+#define CMD_QUERY_HCA_CAP_V7	7
+#define CMD_QUERY_HCA_CAP_V8	8
+#define CMD_QUERY_HCA_CAP_V9	9
 struct xsc_cmd_query_hca_cap_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	__be16			cpu_num;
@@ -1223,6 +1398,23 @@ struct xsc_cmd_query_hca_cap_mbox_out {
 	struct xsc_hca_cap	hca_cap;
 };
 
+enum {
+	LE,
+	BE,
+};
+
+struct xsc_cmd_set_host_endianness_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8	host_endianness;
+	u8	rsvd[7];
+};
+
+struct xsc_cmd_set_host_endianness_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+};
+
+#define CMD_ENABLE_HCA_CAP_V1	1
+
 struct xsc_cmd_enable_hca_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	__be16	vf_num;
@@ -1230,6 +1422,8 @@ struct xsc_cmd_enable_hca_mbox_in {
 	__be16	cpu_num;
 	u8	pp_bypass;
 	u8	esw_mode;
+	/* V1 */
+	u8	enable_dynamic_msix;
 };
 
 struct xsc_cmd_enable_hca_mbox_out {
@@ -1237,11 +1431,15 @@ struct xsc_cmd_enable_hca_mbox_out {
 	u8	rsvd0[4];
 };
 
+#define CMD_DISABLE_HCA_CAP_V1	1
+
 struct xsc_cmd_disable_hca_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	__be16	vf_num;
 	u8	pp_bypass;
 	u8	esw_mode;
+	/* V1 */
+	u8	disable_dynamic_msix;
 };
 
 struct xsc_cmd_disable_hca_mbox_out {
@@ -1407,7 +1605,7 @@ struct xsc_modify_nic_vport_mc_mac_in {
 	struct xsc_inbox_hdr	hdr;
 	u8			action;
 	u8			mac[ETH_ALEN];
-	u8			rsvd;
+	u8			rsvd[1];
 };
 
 struct xsc_query_hca_vport_context_out {
@@ -1479,6 +1677,11 @@ struct xsc_query_vport_state_out {
 	struct xsc_outbox_hdr	hdr;
 	u8			admin_state:4;
 	u8			state:4;
+};
+
+struct xsc_query_port_present_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			state;
 };
 
 struct xsc_query_vport_state_in {
@@ -1649,7 +1852,8 @@ struct xsc_set_lag_qos_request {
 	__be16	lag_id;
 	u8	member_idx;
 	u8	lag_op;
-	u8	resv[4];
+	u8	pcie_no;
+	u8	resv[3];
 };
 
 struct xsc_create_lag_mbox_in {
@@ -1807,6 +2011,16 @@ struct xsc_hw_stats_rdma_pf {
 	u64 rdma_ndp_rx_pkts;
 	u64 rdma_ndp_rx_trimmed_pkts;
 	u64 rdma_ndp_trimmed_pkts_sr;
+	u64 rx_icrc_encapsulated;
+	/*XSC_CMDQ_GET_HW_STATS_RDMA_V1*/
+	u64 roce_rtt_req_sent;
+	u64 roce_rtt_req_rcvd;
+	u64 roce_rtt_rsp_sent;
+	u64 roce_rtt_rsp_rcvd;
+	u64 veroce_rtt_req_sent;
+	u64 veroce_rtt_req_rcvd;
+	u64 veroce_rtt_rsp_sent;
+	u64 veroce_rtt_rsp_rcvd;
 };
 
 struct xsc_hw_stats_rdma_vf {
@@ -1828,7 +2042,8 @@ struct xsc_hw_stats_rdma_vf {
 
 struct xsc_hw_stats_rdma {
 	u8 is_pf;
-	u8 rsv[3];
+	u8 rsv;
+	__be16 ver;
 	union {
 		struct xsc_hw_stats_rdma_pf pf_stats;
 		struct xsc_hw_stats_rdma_vf vf_stats;
@@ -1852,6 +2067,8 @@ struct xsc_hw_stats_eth_pf {
 	/*by global*/
 	u64 rdma_loopback_pkts;
 	u64 rdma_loopback_bytes;
+	// v1
+	u64 out_of_buffer;
 };
 
 struct xsc_hw_uc_stats_eth {
@@ -1882,12 +2099,29 @@ struct xsc_hw_uc_stats {
 	struct xsc_hw_uc_stats_eth eth_uc_stats;
 };
 
+struct xsc_hw_phy_err_stats {
+	u64 tx_mcast_phy_err;
+	u64 tx_bcast_phy_err;
+	u64 tx_ucast_phy_err;
+	u64 rx_mcast_phy_err;
+	u64 rx_bcast_phy_err;
+	u64 rx_ucast_phy_err;
+};
+
+#define CMD_QUERY_HW_STATS_V1 1
 struct xsc_hw_stats_mbox_in {
 	struct xsc_inbox_hdr hdr;
 	u8 mac_port;
 	u8 is_lag;
 	u8 lag_member_num;
 	u8 member_port[];
+};
+
+enum {
+	XSC_CMDQ_GET_HW_STATS_RDMA_V0 = 0,
+	XSC_CMDQ_GET_HW_STATS_RDMA_V1 = 1,
+
+	XSC_CMDQ_GET_HW_STATS_RDMA_UNKNOW,
 };
 
 struct xsc_hw_stats_rdma_mbox_out {
@@ -1920,6 +2154,32 @@ struct xsc_hw_uc_stats_mbox_out {
 	struct xsc_hw_uc_stats	hw_uc_stats;
 };
 
+struct xsc_hw_phy_err_stats_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8 mac_port;
+};
+
+struct xsc_hw_phy_err_stats_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	struct xsc_hw_phy_err_stats hw_phy_err_stats;
+};
+
+struct xsc_query_link_flapping_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8	mac_port;
+	u8	rsvd[7];
+};
+
+struct xsc_hw_link_flapping_stats {
+	__be64	link_up_cnt;
+	__be64	link_down_cnt;
+};
+
+struct xsc_query_link_flapping_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	struct xsc_hw_link_flapping_stats	stats;
+};
+
 struct xsc_hw_global_stats_mbox_in {
 	struct xsc_inbox_hdr hdr;
 	u8 rsv[4];
@@ -1930,6 +2190,7 @@ struct xsc_hw_global_stats_mbox_out {
 	struct xsc_hw_global_stats_rdma	hw_stats;
 };
 
+#define PFC_PRIO_MAX 7
 struct xsc_pfc_stall_stats {
 	/*by mac port*/
 	u64 tx_pause_storm_triggered;
@@ -1943,6 +2204,63 @@ struct xsc_pfc_stall_stats_mbox_in {
 struct xsc_pfc_stall_stats_mbox_out {
 	struct xsc_outbox_hdr hdr;
 	struct xsc_pfc_stall_stats pfc_stall_stats;
+};
+
+struct xsc_pfc_stall_prio_stats {
+	u64 tx_pause_storm_triggered;
+};
+
+struct xsc_pfc_stall_prio_stats_mbox_in {
+	struct xsc_inbox_hdr hdr;
+	u8 mac_port;
+};
+
+struct xsc_pfc_stall_prio_stats_mbox_out {
+	struct xsc_outbox_hdr hdr;
+	struct xsc_pfc_stall_prio_stats pfc_stall_prio_stats[PFC_PRIO_MAX + 1];
+};
+
+struct xsc_pfc_stall_warn_stats {
+	/*by mac port*/
+	u64 tx_pause_storm_warn;
+};
+
+struct xsc_pfc_stall_warn_stats_mbox_in {
+	struct xsc_inbox_hdr hdr;
+	u8 mac_port;
+};
+
+struct xsc_pfc_stall_warn_stats_mbox_out {
+	struct xsc_outbox_hdr hdr;
+	struct xsc_pfc_stall_warn_stats pfc_stall_warn_stats;
+};
+
+struct xsc_pfc_stall_warn_prio_stats {
+	u64 tx_pause_storm_warn;
+};
+
+struct xsc_pfc_stall_warn_prio_stats_mbox_in {
+	struct xsc_inbox_hdr hdr;
+	u8 mac_port;
+};
+
+struct xsc_pfc_stall_warn_prio_stats_mbox_out {
+	struct xsc_outbox_hdr hdr;
+	struct xsc_pfc_stall_warn_prio_stats pfc_stall_warn_prio_stats[PFC_PRIO_MAX + 1];
+};
+
+struct xsc_rx_discard_prio_stats {
+	__be64 rx_discards;
+};
+
+struct xsc_rx_discard_prio_stats_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			mac_port;
+};
+
+struct xsc_rx_discard_prio_stats_mbox_out {
+	struct xsc_outbox_hdr		hdr;
+	struct xsc_rx_discard_prio_stats	prio_stats[QOS_PRIO_MAX + 1];
 };
 
 struct xsc_prs_chk_err_stats {
@@ -1981,10 +2299,63 @@ struct xsc_query_hw_prs_chk_err_stats_mbox_out {
 	struct xsc_prs_chk_err_stats stats;
 };
 
+struct xsc_clsf_chk_err_stats {
+	__be64 mac_filter_drop;
+	__be64 mac_filter_excpt;
+	__be64 out_vlan_filter_drop;
+	__be64 vlan_stack_trap2soc_flag;
+	__be64 vlan_epat_tpid_func_drop;
+	__be64 vlan_epat_pop_func_drop;
+	__be64 vlan_fwd_out_drop;
+	__be64 vlan_stack_udf;
+	__be64 vlan_stack_ovf;
+	__be64 vlan_ipat_push_func_drop;
+	__be64 vlan_oripat_push_excpt_flag;
+	__be64 rss_hash_templt_excpt_flag;
+	__be64 in_vlan_fwd_drop;
+	__be64 in_vlan_filter_drop;
+	__be64 int_err_flag;
+	__be64 inner_no_mac_flag;
+	__be64 lag_ecmp_mem_unavaliable_flag;
+	__be64 lag_ecmp_mem_ad_vld_miss_flag;
+	__be64 epat_uptosoc_dst_nopcie_flag;
+	__be64 epat_ad_vld_miss_flag;
+	__be64 pst_unavilable_flag;
+	__be64 tnl_ecap_ad_vld_miss_flag;
+	__be64 outer_ct_ses_legacy_flag;
+	__be64 outer_fat_ad_vld_miss_flag;
+	__be64 outer_flow_miss_leagcy_flag;
+	__be64 inner_ct_ses_legacy_flag;
+	__be64 iacl_fat_ad_vld_miss_flag;
+	__be64 inner_fat_ad_vld_miss_flag;
+	__be64 inner_flow_miss_leagcy_flag;
+	__be64 inner_fat_idx_invalid_flag;
+	__be64 bomt_domain_num_rsv_flag;
+	__be64 bomt_ad_vld_miss_flag;
+	__be64 bmt_ad_vld_miss_flag;
+	__be64 mir_ad_vld_miss_flag;
+	__be64 wct_miss_legacy_flag;
+	__be64 iacl_miss_flag;
+	__be64 pct_miss_flag;
+	__be64 smac_filter_drop_flag;
+	__be64 inpat_ad_vld_miss_flag;
+	__be64 iplmt_ovf_flag;
+};
+
+struct xsc_query_hw_clsf_chk_err_stats_mbox_in {
+	struct xsc_inbox_hdr hdr;
+};
+
+struct xsc_query_hw_clsf_chk_err_stats_mbox_out {
+	struct xsc_outbox_hdr hdr;
+	struct xsc_clsf_chk_err_stats stats;
+};
+
 struct xsc_dscp_pmt_set {
 	u8 dscp;
 	u8 priority;
-	u8 rsvd[6];
+	u8 flush;
+	u8 rsvd[5];
 };
 
 struct xsc_dscp_pmt_get {
@@ -2043,6 +2414,46 @@ struct xsc_watchdog_period_set {
 
 struct xsc_watchdog_period_get {
 	u32 period;
+};
+
+#define PFC_WATCHDOG_WARN_PERIOD_MIN 1
+#define PFC_WATCHDOG_WARN_PERIOD_MAX 4000000
+struct xsc_watchdog_warn_period_set {
+	u32 period;
+};
+
+struct xsc_watchdog_warn_period_get {
+	u32 period;
+};
+
+struct xsc_qp_qos_config_get {
+	u8	qos_src_port;
+	u8	qos_dst_port;
+	u8	s3_cir_shap_type;
+	u8	s3_eir_shap_type;
+	u8	s2_cir_shap_type;
+	u8	s2_eir_shap_type;
+	u8	s1_cir_shap_type;
+	u8	s1_weight;
+	u8	s0_cir_shap_type;
+	u8	s0_weight;
+	u8	rsvd0[2];
+
+	u16	qpn;
+	u16	s3_id;
+	u16	s2_id;
+	u16	s1_id;
+	u16	s0_id;
+	u8	rsvd1[2];
+
+	u32	s3_cir_shap_val;
+	u32	s3_eir_shap_val;
+	u32	s2_cir_shap_val;
+	u32	s2_eir_shap_val;
+	u32	s1_cir_shap_val;
+	u32	s0_cir_shap_val;
+
+	u8	rsvd2[8];
 };
 
 struct xsc_event_resp {
@@ -2132,10 +2543,13 @@ struct xsc_event_modify_linkinfo_mbox_out {
 	u32	status;
 };
 
+#define CMD_SET_PORT_ADMIN_STATUS_V1	1
+
 struct xsc_event_set_port_admin_status_mbox_in {
 	struct xsc_inbox_hdr	hdr;
 	u16	admin_status;
-
+	u8 force;
+	u8 resv[17];
 };
 
 struct xsc_event_set_port_admin_status_mbox_out {
@@ -2237,7 +2651,6 @@ struct xsc_pfc_set {
 	u8 lossless_num;
 };
 
-#define PFC_PRIO_MAX 7
 struct xsc_pfc_get {
 	u8 pfc_on[PFC_PRIO_MAX + 1];
 	u8 max_prio;
@@ -2281,18 +2694,46 @@ struct xsc_get_pfc_cfg_status_mbox_out {
 	u8 comp;
 };
 
+struct xsc_pfc_set_new_v1 {
+	u8 prio_pfc_en;//every bit represents one priority, eg: 0x1 represents prio_0 pfc on
+};
+
 struct xsc_rate_limit_set {
 	u32 rate_cir;
 	u32 limit_id;
 	u8 limit_level;
-	u8 rsvd[7];
+	u8 prio;
+	u8 rsvd[6];
 };
 
 struct xsc_rate_limit_get {
 	u32 rate_cir[QOS_PRIO_MAX + 1];
 	u32 max_limit_id;
 	u8 limit_level;
-	u8 rsvd[3];
+	u8 prio;
+	u8 rsvd[2];
+};
+
+struct xsc_rate_limit_set_v2 {
+	u32 rate_cir;
+	u32 limit_id;
+	u32 func_id;
+	u8 with_func_id;
+	u8 limit_level;
+	u8 prio;
+	u8 dma_direct;
+	u8 rsvd[8];
+};
+
+struct xsc_rate_limit_get_v2 {
+	u32 rate_cir[QOS_PRIO_MAX + 1];
+	u32 max_limit_id;
+	u32 func_id;
+	u8 with_func_id;
+	u8 limit_level;
+	u8 prio;
+	u8 dma_direct;
+	u8 rsvd[4];
 };
 
 struct xsc_sp_set {
@@ -2352,6 +2793,12 @@ struct xsc_cc_ctrl_cmd {
 	u8 val[];
 };
 
+struct xsc_cc_cmd_alg {
+	u16 cmd;
+	u16 len;
+	u32 alg;
+};
+
 struct xsc_cc_cmd_enable_rp {
 	u16 cmd;
 	u16 len;
@@ -2380,18 +2827,22 @@ struct xsc_cc_cmd_g {
 	u32 section;
 };
 
+#define PARAM_AI_LEN		8
 struct xsc_cc_cmd_ai {
 	u16 cmd;
 	u16 len;
 	u32 ai;
 	u32 section;
+	u32 ai_th[PARAM_AI_LEN];
 };
 
+#define PARAM_HAI_LEN		8
 struct xsc_cc_cmd_hai {
 	u16 cmd;
 	u16 len;
 	u32 hai;
 	u32 section;
+	u32 hai_th[PARAM_HAI_LEN];
 };
 
 struct xsc_cc_cmd_th {
@@ -2490,6 +2941,42 @@ struct xsc_cc_cmd_scale {
 	u16 len;
 	u32 scale;
 	u32 section;
+	u32 scale_low;
+	u32 scale_high;
+};
+
+struct xsc_cc_cmd_rate_rdc_period {
+	u16 cmd;
+	u16 len;
+	u32 period;
+	u32 section;
+};
+
+struct xsc_cc_cmd_min_dec_factor {
+	u16 cmd;
+	u16 len;
+	u32 min_dec_factor;
+	u32 section;
+};
+
+#define PARAM_RATE_TH_LEN	7
+struct xsc_cc_cmd_rate_th {
+	u16 cmd;
+	u16 len;
+	u32 rate_th[PARAM_RATE_TH_LEN];
+	u32 section;
+};
+
+#define XSC_BCC_INC_RATE_TH_NUM	7
+#define XSC_BCC_INC_AI_NUM	8
+#define XSC_BCC_INC_HAI_NUM	8
+
+enum {
+	XSC_CMDQ_GET_CC_CFG_V0 = 0,
+	XSC_CMDQ_GET_CC_CFG_V1 = 1,
+	XSC_CMDQ_GET_CC_CFG_V2 = 2,
+
+	XSC_CMDQ_GET_CC_CFG_UNKNOW,
 };
 
 struct xsc_cc_cmd_get_cfg {
@@ -2517,6 +3004,48 @@ struct xsc_cc_cmd_get_cfg {
 	u32 max_hai_factor;
 	u32 scale;
 	u32 section;
+	u32 scale_low;
+	u32 scale_high;
+	u32 rate_rdc_period;
+	u32 min_dec_factor;
+	u32 ai_th[PARAM_AI_LEN];
+	u32 hai_th[PARAM_HAI_LEN];
+	u32 rate_th[PARAM_RATE_TH_LEN];
+
+	/*XSC_CMDQ_GET_CC_CFG_V2 append*/
+	u32 alg;
+	u32 fastcc_hyper_ai;
+	u32 fastcc_ooo_event;
+	u32 fastcc_rto_event;
+	u32 fastcc_rtt_req;
+	u32 fastcc_rtt_rsp;
+	u32 fastcc_cnp_event;
+	u32 fastcc_tx_bytes_event;
+	u32 fastcc_update_psn_win;
+	u32 fastcc_ecn_cnp_gen;
+	u32 fastcc_rate_init;
+	u32 fastcc_rate_rto;
+	u32 fastcc_rate_min;
+	u32 fastcc_rate_max;
+	u32 fastcc_inc_rate_th[XSC_BCC_INC_RATE_TH_NUM];
+	u32 fastcc_inc_ai[XSC_BCC_INC_AI_NUM];
+	u32 fastcc_inc_hai[XSC_BCC_INC_HAI_NUM];
+	u32 fastcc_dec_cnp;
+	u32 fastcc_dec_ooo;
+	u32 fastcc_hyper_ai_th;
+	u32 fastcc_tx_bytes_th;
+	u32 fastcc_dec_cnp_interval_th;
+	u32 fastcc_dec_ooo_interval_th;
+	u32 fastcc_rtt_init;
+	u32 fastcc_rtt_g;
+	u32 fastcc_psn_win_min;
+	u32 fastcc_psn_win_max;
+	u32 fastcc_sel_rtt_lat_mode;
+	u32 fastcc_sel_rttrsp_cc_inst;
+	u32 fastcc_rtt_rsp_dscp;
+	u32 fastcc_rtt_rsp_attr_modif;
+	u32 fastcc_rtt_compensation;
+	u32 fastcc_configurable_max_rate;
 };
 
 struct xsc_cc_cmd_get_stat {
@@ -2525,11 +3054,35 @@ struct xsc_cc_cmd_get_stat {
 	u32 section;
 };
 
+enum {
+	XSC_CMDQ_GET_CC_STAT_V0 = 0,
+	XSC_CMDQ_GET_CC_STAT_V1 = 1,
+
+	XSC_CMDQ_GET_CC_STAT_UNKNOW,
+};
+
 struct xsc_cc_cmd_stat {
 	u32 cnp_handled;
 	u32 alpha_recovery;
 	u32 reset_timeout;
 	u32 reset_bytecount;
+
+	/* XSC_CMDQ_GET_CC_STAT_V1 append*/
+	u32 fastcc_cnp_evt_delivered;
+	u32 fastcc_rtt_rsp_evt_delivered;
+	u32 fastcc_ooo_evt_delivered;
+	u32 fastcc_rto_evt_delivered;
+	u32 fastcc_tx_evt_delivered;
+	u32 fastcc_create_evt_delivered;
+	u32 fastcc_rtt_req_evt_delivered;
+	u32 fastcc_cnp_evt_drop;
+	u32 fastcc_rtt_rsp_evt_drop;
+	u32 fastcc_ooo_evt_drop;
+	u32 fastcc_rto_evt_drop;
+	u32 fastcc_tx_evt_drop;
+	u32 fastcc_create_evt_drop;
+	u32 fastcc_update_win_cnt;
+	u32 fastcc_update_rate_cnt;
 };
 
 struct xsc_perf_rate_measure {
@@ -2590,6 +3143,10 @@ struct hwc_set_t {
 	u8 dcbx_status[XSC_MAX_MAC_NUM];
 	u8 dcbx_port_cnt;
 	u8 read_flush;
+	u8 conn_wise;
+	u8 roce_seamless_lag_enable;
+	u8 rdma_qp_protocol;
+	u8 rdma_protocol_default;
 };
 
 struct hwc_get_t {
@@ -2633,6 +3190,14 @@ struct hwc_get_t {
 	u8 dcbx_port_cnt;
 	u8 cur_read_flush;
 	u8 next_read_flush;
+	u8 cur_conn_wise;
+	u8 next_conn_wise;
+	u8 cur_roce_seamless_lag_enable;
+	u8 next_roce_seamless_lag_enable;
+	u8 cur_rdma_qp_protocol;
+	u8 next_rdma_qp_protocol;
+	u8 cur_rdma_protocol_default;
+	u8 next_rdma_protocol_default;
 };
 
 struct xsc_set_mtu_mbox_out {
@@ -2676,6 +3241,7 @@ enum {
 	XSC_TBM_CAP_PP_BYPASS,
 	XSC_TBM_CAP_MAC_DROP_CONFIG,
 	XSC_TBM_CAP_PF_ISOLATE_CONFIG,
+	XSC_TBM_CAP_VLAN_STRIP,
 };
 
 struct xsc_nic_attr {
@@ -2815,6 +3381,41 @@ struct xsc_ooo_statistic_feat_mbox_out {
 	struct xsc_ooo_statistic ooo_statistic;
 };
 
+#define XSC_RTT_HISTOGRAM_CNT_MAX 9
+#define XSC_RTT_HISTOGRAM_INTERVAL_MAX 8
+
+enum {
+	XSC_RTT_HISTOGRAM_SET_EN = 0,
+	XSC_RTT_HISTOGRAM_GET_EN,
+	XSC_RTT_HISTOGRAM_GET_CNT,
+	XSC_RTT_HISTOGRAM_GET_INTERVAL,
+};
+
+struct xsc_rtt_histogram {
+	u32 rtt_histogram_en;
+	u32 rtt_histogram_cnt[XSC_RTT_HISTOGRAM_CNT_MAX];
+	u32 rtt_histogram_interval[XSC_RTT_HISTOGRAM_INTERVAL_MAX];
+};
+
+struct xsc_rtt_histogram_mbox_in {
+	struct xsc_inbox_hdr hdr;
+	__be16 xsc_rtt_histogram_opcode;
+	struct xsc_rtt_histogram rtt_histogram;
+};
+
+struct xsc_rtt_histogram_mbox_out {
+	struct xsc_outbox_hdr hdr;
+	__be16 xsc_rtt_histogram_opcode;
+	struct xsc_rtt_histogram rtt_histogram;
+};
+
+#define XSC_PCIE_LAT_CFG_INTERVAL_MAX	8
+#define XSC_PCIE_LAT_CFG_HISTOGRAM_MAX	9
+#define XSC_PCIE_LAT_EN_DISABLE		0
+#define XSC_PCIE_LAT_EN_ENABLE		1
+#define XSC_PCIE_LAT_PERIOD_MIN		1
+#define XSC_PCIE_LAT_PERIOD_MAX		20
+
 enum {
 	XSC_PCIE_LAT_FEAT_SET_EN	= 0,
 	XSC_PCIE_LAT_FEAT_GET_EN,
@@ -2932,6 +3533,9 @@ enum {
 	XSC_AP_FEAT_SET_UDP_SPORT = 0,
 };
 
+#define XSC_AP_FEAT_UDP_SPORT_MIN	1024
+#define XSC_AP_FEAT_UDP_SPORT_MAX	65535
+
 struct xsc_ap_feat_set_udp_sport {
 	u32 qpn;
 	u32 udp_sport;
@@ -2977,6 +3581,12 @@ struct xsc_roce_accl_mbox_out {
 };
 
 #define XSC_DISCRETE_SPORT_NUM_MAX  128
+#define ROCE_ACCL_PATH_UDP_SPORT_NUM_MAX	16
+
+#define BIT_U64(n)    (1ULL << (n))
+#define ROCE_ACCL_FLAG_VEROCE_PROTOCOL_MODE_MASK	BIT_U64(30)
+#define ROCE_ACCL_FLAG_ROCE_DST_PORT_MASK	BIT_U64(1)
+#define ROCE_ACCL_FLAG_VEROCE_DST_PORT_MASK	BIT_U64(2)
 
 struct xsc_roce_accl_set {
 	u64 sr_timeout;
@@ -2994,6 +3604,43 @@ struct xsc_roce_accl_set {
 	u16  disturb_th;
 	u8   mac_port;
 	u8  lag_mode;
+	u64	flag2;
+	u8	ndp_en;
+	u8	rsvd2;
+	u16	roce_dst_port;
+	u16	veroce_dst_port;
+	u8	veroce_bth_rsv7;
+	u8	rsvd3;
+	u32	veroce_sack_threshold;
+	u32	veroce_sack_timeout;
+	u32	ack_aggregation_req_threshold;
+	u32	ack_aggregation_rsp_window;
+	u32	ack_aggregation_rsp_timeout;
+	u32	veroce_path_num;
+	u32	veroce_packet_spray_mode;
+	u32	qp_id;
+	u32	path_udp_sport[ROCE_ACCL_PATH_UDP_SPORT_NUM_MAX];
+	u32	path_udp_sport_num;
+	u32	veroce_req_sack_max_psn_ofst;
+	u8	veroce_path_num_min;
+	u8	veroce_path_reopen_enable;
+	u8	veroce_path_shutdown_rtt_timeout_enable;
+	u8	veroce_path_shutdown_rtt_no_resp_enable;
+	u32	veroce_path_rtt_check_period;
+	u32	veroce_path_shutdown_rtt_th;
+	u32	veroce_path_shutdown_timeout_count_th;
+	u32	veroce_path_shutdown_no_resp_count_th;
+	u32	veroce_path_reopen_probe_period;
+	u32	veroce_path_reopen_rtt_th;
+	u32	veroce_path_reopen_rtt_count_th;
+	u32	veroce_path_reopen_init_rate;
+	u8	veroce_path_shutdown_rtt_timeout_ratio_th;
+	u8	veroce_path_shutdown_rtt_no_resp_ratio_th;
+	u8	veroce_protocol_mode;
+	u8	rto_ack_timeout;
+	u16	veroce_path_shutdown_slow_path_th;
+	u16	veroce_path_slow_path_check_period;
+	u8	veroce_path_shutdown_slow_path_cnt_th;
 };
 
 struct xsc_roce_accl_get {
@@ -3010,7 +3657,42 @@ struct xsc_roce_accl_get {
 	u16  disturb_period;
 	u16  disturb_th;
 	u8  lag_mode;
-	u8  rsv[5];
+	u8	rsv[1];
+	u32	flag;
+	u64	flag2;
+	u8	ndp_en;
+	u8	rsvd2;
+	u16	roce_dst_port;
+	u16	veroce_dst_port;
+	u8	veroce_bth_rsv7;
+	u8	rsvd3;
+	u32	veroce_sack_threshold;
+	u32	veroce_sack_timeout;
+	u32	ack_aggregation_req_threshold;
+	u32	ack_aggregation_rsp_window;
+	u32	ack_aggregation_rsp_timeout;
+	u32	veroce_path_num;
+	u32	veroce_packet_spray_mode;
+	u32	veroce_req_sack_max_psn_ofst;
+	u8	veroce_path_num_min;
+	u8	veroce_path_reopen_enable;
+	u8	veroce_path_shutdown_rtt_timeout_enable;
+	u8	veroce_path_shutdown_rtt_no_resp_enable;
+	u32	veroce_path_rtt_check_period;
+	u32	veroce_path_shutdown_rtt_th;
+	u32	veroce_path_shutdown_timeout_count_th;
+	u32	veroce_path_shutdown_no_resp_count_th;
+	u32	veroce_path_reopen_probe_period;
+	u32	veroce_path_reopen_rtt_th;
+	u32	veroce_path_reopen_rtt_count_th;
+	u32	veroce_path_reopen_init_rate;
+	u8	veroce_path_shutdown_rtt_timeout_ratio_th;
+	u8	veroce_path_shutdown_rtt_no_resp_ratio_th;
+	u8	veroce_protocol_mode;
+	u8	rto_ack_timeout;
+	u16	veroce_path_shutdown_slow_path_th;
+	u16	veroce_path_slow_path_check_period;
+	u8	veroce_path_shutdown_slow_path_cnt_th;
 };
 
 struct xsc_roce_accl_disc_sport {
@@ -3061,83 +3743,14 @@ struct xsc_cmd_read_flush_hw_config_mbox_out {
 	u8			rsvd[7];
 };
 
-enum {
-	ROCE_ACCL_NEXT_FLAG_SHOW_SHIFT				= 0,
-	ROCE_ACCL_NEXT_FLAG_SACK_THRESHOLD_SHIFT		= 2,
-	ROCE_ACCL_NEXT_FLAG_SACK_TIMEOUT_SHIFT			= 3,
-	ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_MODE_SHIFT		= 4,
-	ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_REQ_THRESHOLD_SHIFT	= 5,
-	ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_RSP_WINDOW_SHIFT	= 6,
-	ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_RSP_TIMEOUT_SHIFT	= 7,
-	ROCE_ACCL_NEXT_FLAG_PATH_NUM_SHIFT			= 8,
-	ROCE_ACCL_NEXT_FLAG_PACKET_SPRAY_MODE_SHIFT		= 9,
-	ROCE_ACCL_NEXT_FLAG_QP_ID_SHIFT				= 10,
-	ROCE_ACCL_NEXT_FLAG_PATH_UDP_SPORT_SHIFT		= 11,
-	ROCE_ACCL_NEXT_FLAG_SHOW_PATH_UDP_SPORT_SHIFT		= 12,
-	ROCE_ACCL_NEXT_FLAG_MAX_NUM				= 13,
-};
-
-#define ROCE_ACCL_NEXT_FLAG_SHOW_MASK				\
-	(1ULL << ROCE_ACCL_NEXT_FLAG_SHOW_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_SACK_THRESHOLD_MASK			\
-	(1ULL << ROCE_ACCL_NEXT_FLAG_SACK_THRESHOLD_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_SACK_TIMEOUT_MASK			\
-	(1ULL <<  ROCE_ACCL_NEXT_FLAG_SACK_TIMEOUT_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_MODE_MASK		\
-	(1ULL <<  ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_MODE_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_REQ_THRESHOLD_MASK	\
-	(1ULL <<  ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_REQ_THRESHOLD_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_RSP_WINDOW_MASK	\
-	(1ULL <<  ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_RSP_WINDOW_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_RSP_TIMEOUT_MASK	\
-	(1ULL <<  ROCE_ACCL_NEXT_FLAG_ACK_AGGREGATION_RSP_TIMEOUT_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_PATH_NUM_MASK			\
-	(1ULL <<  ROCE_ACCL_NEXT_FLAG_PATH_NUM_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_PACKET_SPRAY_MODE_MASK		\
-	(1ULL <<  ROCE_ACCL_NEXT_FLAG_PACKET_SPRAY_MODE_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_QP_ID_MASK				\
-	(1ULL << ROCE_ACCL_NEXT_FLAG_QP_ID_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_PATH_UDP_SPORT_MASK			\
-	(1ULL << ROCE_ACCL_NEXT_FLAG_PATH_UDP_SPORT_SHIFT)
-#define ROCE_ACCL_NEXT_FLAG_SHOW_PATH_UDP_SPORT_MASK		\
-	(1ULL << ROCE_ACCL_NEXT_FLAG_SHOW_PATH_UDP_SPORT_SHIFT)
-
-struct xsc_roce_accl_next_mbox_in {
+struct xsc_cmd_query_fw_ver_mbox_in {
 	struct xsc_inbox_hdr	hdr;
-	u8			data[];
+	u8			rsvd[8];
 };
 
-struct xsc_roce_accl_next_mbox_out {
+struct xsc_cmd_query_fw_ver_mbox_out {
 	struct xsc_outbox_hdr	hdr;
-	u8			data[];
-};
-
-#define ROCE_ACCL_NEXT_PATH_UDP_SPORT_NUM_MAX	16
-
-struct xsc_roce_accl_next_set {
-	u64	flag;
-	u32	sack_threshold;
-	u32	sack_timeout;
-	u32	ack_aggregation_mode;
-	u32	ack_aggregation_req_threshold;
-	u32	ack_aggregation_rsp_window;
-	u32	ack_aggregation_rsp_timeout;
-	u32	path_num;
-	u32	packet_spray_mode;
-	u32	qp_id;
-	u32	path_udp_sport[ROCE_ACCL_NEXT_PATH_UDP_SPORT_NUM_MAX];
-	u32	path_udp_sport_num;
-};
-
-struct xsc_roce_accl_next_get {
-	u32	sack_threshold;
-	u32	sack_timeout;
-	u32	ack_aggregation_mode;
-	u32	ack_aggregation_req_threshold;
-	u32	ack_aggregation_rsp_window;
-	u32	ack_aggregation_rsp_timeout;
-	u32	path_num;
-	u32	packet_spray_mode;
+	struct xsc_fw_version	fw_ver;
 };
 
 struct xsc_flexcc_next_mbox_in {
@@ -3372,6 +3985,491 @@ struct xsc_cmd_ioctl_get_hw_counters_mbox_out {
 	struct xsc_outbox_hdr	hdr;
 	u8			rsvd[8];
 	u8			data[];
+};
+
+struct sample_ctrl_cmd_hdr {
+	u16 cmd;
+};
+
+struct sample_ctrl_resp_ret {
+	struct sample_ctrl_cmd_hdr hdr;
+	u32 ret;
+};
+
+struct sample_ctrl_req {
+	struct sample_ctrl_cmd_hdr hdr;
+	u8 val;
+};
+
+struct xsc_sample_stats {
+	u64 cdata_overflow_cnt;
+	u64 sample_upload_cnt;
+	u64 sample_ovfl_mode1_cnt;
+	u64 sample_total_vld_pcie_cnt;
+	u64 sample_total_vld_sv_cnt;
+	u64 sample_total_vld_pg_cnt;
+	u64 sample_aful_drop_cnt;
+};
+
+struct xsc_sample_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_sample_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			data[];
+};
+
+#define SAMPLE_IOCTL_USER_DATA_MAX 8191
+struct sample_ioctl_buf {
+	u8 data[SAMPLE_IOCTL_USER_DATA_MAX];
+};
+
+struct xsc_cmd_get_res_mgr_tbl_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			rsvd[8];
+};
+
+struct xsc_cmd_get_res_mgr_tbl_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_cmd_get_ofld_tbl_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			rsvd[8];
+};
+
+struct xsc_cmd_get_ofld_tbl_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_create_flow_grp_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_create_flow_grp_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_create_hw_flow_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_create_hw_flow_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_del_hw_flow_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_del_hw_flow_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			rsvd[8];
+};
+
+struct xsc_ifc_query_flow_counter_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u32 base_id;
+	u32 num_counters;
+	u8 rsvd[8];
+};
+
+struct xsc_ifc_traffic_counter {
+	u64        packets;
+	u64        bytes;
+};
+
+struct xsc_ifc_query_flow_counter_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	struct xsc_ifc_traffic_counter flow_stats[];
+};
+
+struct xsc_create_esw_sterring_request {
+	u8 esw_rep_mode;
+};
+
+struct xsc_destroy_esw_sterring_request {
+};
+
+struct xsc_create_esw_sterring_in {
+	struct xsc_inbox_hdr		hdr;
+	struct xsc_create_esw_sterring_request	req;
+};
+
+struct xsc_create_esw_sterring_out {
+	struct xsc_outbox_hdr	hdr;
+	u8	rsvd[8];
+};
+
+struct xsc_destroy_esw_sterring_in {
+	struct xsc_inbox_hdr		hdr;
+	struct xsc_destroy_esw_sterring_request	req;
+};
+
+struct xsc_destroy_esw_sterring_out {
+	struct xsc_outbox_hdr	hdr;
+	u8	rsvd[8];
+};
+
+struct xsc_vf_rep_attr {
+	__be16 vport_number;
+};
+
+struct xsc_enable_vf_rep_in {
+	struct xsc_inbox_hdr	hdr;
+	struct xsc_vf_rep_attr	vf_rep;
+	struct xsc_nic_attr	nic;
+	struct xsc_rss_attr	rss;
+};
+
+struct xsc_enable_vf_rep_out {
+	struct xsc_outbox_hdr	hdr;
+	u8	rsvd[8];
+};
+
+struct xsc_modify_vf_rep_in {
+	struct xsc_inbox_hdr	hdr;
+	struct xsc_vf_rep_attr	vf_rep;
+	struct xsc_nic_attr	nic;
+	struct xsc_rss_attr	rss;
+	u8	rsvd[8];
+};
+
+struct xsc_modify_vf_rep_out {
+	struct xsc_outbox_hdr	hdr;
+	u8	rsvd[8];
+};
+
+struct xsc_disable_vf_rep_in {
+	struct xsc_inbox_hdr	hdr;
+	struct xsc_vf_rep_attr	vf_rep;
+};
+
+struct xsc_disable_vf_rep_out {
+	struct xsc_outbox_hdr	hdr;
+	u8	rsvd[8];
+};
+
+struct xsc_bcc_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_bcc_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			data[];
+};
+
+#define YUN_BCC_CMD_DATA_LEN_MAX 240
+
+enum {
+	YUN_BCC_CMD_GET_ALL,
+	YUN_BCC_CMD_GET_ALL_V,
+	YUN_BCC_CMD_GET_ALL_REG,
+	YUN_BCC_CMD_GET_ALL_STAT,
+	YUN_BCC_CMD_SET_EN,
+	YUN_BCC_CMD_SET_HYPER_AI,
+	YUN_BCC_CMD_SET_OOO_EVENT,
+	YUN_BCC_CMD_SET_RTO_EVENT,
+	YUN_BCC_CMD_SET_RTT_REQ,
+	YUN_BCC_CMD_SET_RTT_RSP,
+	YUN_BCC_CMD_SET_CNP_EVENT,
+	YUN_BCC_CMD_SET_TX_BYTES_EVENT,
+	YUN_BCC_CMD_SET_UPDATE_PSN_WIN,
+	YUN_BCC_CMD_SET_ECN_CNP_GEN,
+	YUN_BCC_CMD_SET_RATE_INIT,
+	YUN_BCC_CMD_SET_RATE_RTO,
+	YUN_BCC_CMD_SET_RATE_MIN,
+	YUN_BCC_CMD_SET_RATE_MAX,
+	YUN_BCC_CMD_SET_INC_RATE_TH,
+	YUN_BCC_CMD_SET_INC_AI,
+	YUN_BCC_CMD_SET_INC_HAI,
+	YUN_BCC_CMD_SET_DEC_CNP,
+	YUN_BCC_CMD_SET_DEC_OOO,
+	YUN_BCC_CMD_SET_HYPER_AI_TH,
+	YUN_BCC_CMD_SET_TX_BYTES_TH,
+	YUN_BCC_CMD_SET_DEC_CNP_INTERVAL_TH,
+	YUN_BCC_CMD_SET_DEC_OOO_INTERVAL_TH,
+	YUN_BCC_CMD_SET_RTT_INIT,
+	YUN_BCC_CMD_SET_RTT_G,
+	YUN_BCC_CMD_SET_PSN_WIN_MIN,
+	YUN_BCC_CMD_SET_PSN_WIN_MAX,
+	YUN_BCC_CMD_SET_SEL_RTT_LAT_MODE,
+	YUN_BCC_CMD_SET_SEL_RTTRSP_CC_INST,
+	YUN_BCC_CMD_SET_RTT_RSP_DSCP,
+	YUN_BCC_CMD_SET_RTT_RSP_ATTR_MODIF,
+	YUN_FASTCC_CMD_SET_RTT_COMPENSATION,
+	YUN_BCC_CMD_MAX,
+};
+
+struct yun_bcc_hyper_ai {
+	u32 hyper_ai;
+};
+
+struct yun_bcc_ooo_event {
+	u32 ooo_event;
+};
+
+struct yun_bcc_rto_event {
+	u32 rto_event;
+};
+
+struct yun_bcc_rtt_req {
+	u32 rtt_req;
+};
+
+struct yun_bcc_rtt_rsp {
+	u32 rtt_rsp;
+};
+
+struct yun_bcc_cnp_event {
+	u32 cnp_event;
+};
+
+struct yun_bcc_tx_bytes_event {
+	u32 tx_bytes_event;
+};
+
+struct yun_bcc_update_psn_win {
+	u32 update_psn_win;
+};
+
+struct yun_bcc_ecn_cnp_gen {
+	u32 ecn_cnp_gen;
+};
+
+struct yun_bcc_rate_init {
+	u32 rate_init;
+};
+
+struct yun_bcc_rate_rto {
+	u32 rate_rto;
+};
+
+struct yun_bcc_rate_min {
+	u32 rate_min;
+};
+
+struct yun_bcc_rate_max {
+	u32 rate_max;
+};
+
+struct yun_bcc_inc_rate_th {
+	u32 inc_rate_th[XSC_BCC_INC_RATE_TH_NUM];
+};
+
+struct yun_bcc_inc_ai {
+	u32 inc_ai[XSC_BCC_INC_AI_NUM];
+};
+
+struct yun_bcc_inc_hai {
+	u32 inc_hai[XSC_BCC_INC_HAI_NUM];
+};
+
+struct yun_bcc_dec_cnp {
+	u32 dec_cnp;
+};
+
+struct yun_bcc_dec_ooo {
+	u32 dec_ooo;
+};
+
+struct yun_bcc_hyper_ai_th {
+	u32 hyper_ai_th;
+};
+
+struct yun_bcc_tx_bytes_th {
+	u32 tx_bytes_th;
+};
+
+struct yun_bcc_dec_cnp_interval_th {
+	u32 dec_cnp_interval_th;
+};
+
+struct yun_bcc_dec_ooo_interval_th {
+	u32 dec_ooo_interval_th;
+};
+
+struct yun_bcc_rtt_init {
+	u32 rtt_init;
+};
+
+struct yun_bcc_rtt_g {
+	u32 rtt_g;
+};
+
+struct yun_bcc_psn_win_min {
+	u32 psn_win_min;
+};
+
+struct yun_bcc_psn_win_max {
+	u32 psn_win_max;
+};
+
+struct yun_bcc_sel_rtt_lat_mode {
+	u32 sel_rtt_lat_mode;
+};
+
+struct yun_bcc_sel_rttrsp_cc_inst {
+	u32 sel_rttrsp_cc_inst;
+};
+
+struct yun_bcc_rtt_rsp_dscp {
+	u32 rtt_rsp_dscp;
+};
+
+struct yun_bcc_rtt_rsp_attr_modif {
+	u32 rtt_rsp_attr_modif;
+};
+
+struct yun_fastcc_rtt_compensation {
+	u32 rtt_compensation;
+};
+
+struct yun_bcc_cmd_hdr {
+	int cmd;
+	u32 len;
+	u8 data[];
+};
+
+struct xsc_cmd_query_eth_guid_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			rsvd[8];
+};
+
+struct xsc_cmd_query_eth_guid_out {
+	struct xsc_outbox_hdr	hdr;
+	__be64			guid;
+};
+
+struct xsc_esw_cap_query {
+	u8 esw_rep_mode;
+	u8 resv[8];
+};
+
+struct xsc_esw_caps {
+	u32	fdb_support;
+	u32	large_group_num;
+	u16	max_modify_header_actions;
+	u8	fdb_modify_header_fwd_to_table;
+	u8	pop_vlan_2;
+	u8	push_vlan_2;
+	u8	log_max_flow_counter;
+	u16	log_max_ft_size;
+	u16	outer_second_vid;
+	u8	modify_root;
+	u8	merged_eswitch;
+	u8	fdb_multi_path_to_table;
+	u8	log_max_fdb_encap_uplink;
+	u8	flow_counter_bulk_alloc;
+	u8	log_max_flow_counter_bulk;
+	u8	counter_eswitch_affinity;
+	u16	pct_start;
+	u16	pct_end;
+};
+
+struct xsc_cmd_query_esw_cap_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	struct xsc_esw_cap_query cap_in;
+	u8	rsvd[8];
+};
+
+struct xsc_cmd_query_esw_cap_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	struct xsc_esw_caps cap_out;
+	u8	rsvd[8];
+};
+
+struct xsc_port_map {
+	u8			pcie_no;
+	u8			phy_port;
+	u8			mac_port;
+	u8			is_pf;
+};
+
+struct xsc_cmd_query_port_map_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_cmd_query_port_map_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_release_user_idx_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			user_idx;
+	u8			rsvd[8];
+};
+
+struct xsc_release_user_idx_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			rsvd[8];
+};
+
+struct xsc_ib_mapping_tbl_cnt {
+	u16 mac_tbl_num;
+	u16 used_mac_tbl_num;
+	u16 ip_tbl_num;
+	u16 used_ip_tbl_num;
+	u16 ib_tbl_num;
+	u16 used_ib_tbl_num;
+};
+
+struct xsc_cmd_get_ib_tbl_cnt_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_cmd_get_ib_tbl_cnt_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			data[];
+};
+
+struct xsc_cmd_get_nic_ddr_status_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			rsvd[8];
+};
+
+struct xsc_nic_ddr_status {
+	__be32	ddr2_calibration_status;
+	__be32	ddr3_calibration_status;
+	__be32	ddr2_trans_status;
+	__be32	ddr3_trans_status;
+	__be32	sv_ddr2sv_rsp_err_cnt;
+	__be32	sv_p0_gen_rdata_err_cnt;
+	__be32	sv_p1_gen_rdata_err_cnt;
+	__be32	qpm_ddr2qpm_ch1_rd_back_err_cnt;
+	__be32	qpm_ddr2qpm_ch2_rd_back_err_cnt;
+	__be32	qpm_ddr2qpm_ch3_rd_rsp_err_cnt;
+	__be32	ede_hbcc_ddr_rsp_crc_err_cnt;
+	__be32	cem_cq_ddr_rsp_crc_err_cnt;
+};
+
+struct xsc_cmd_get_nic_ddr_status_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	struct xsc_nic_ddr_status status;
+};
+
+struct xsc_get_aidpu_mode_mbox_in {
+	struct xsc_inbox_hdr	hdr;
+	u8			rsvd[8];
+};
+
+struct xsc_get_aidpu_mode_mbox_out {
+	struct xsc_outbox_hdr	hdr;
+	u8			aidpu_mode;
+	u8			rsvd[7];
 };
 
 #endif /* XSC_CMD_H */

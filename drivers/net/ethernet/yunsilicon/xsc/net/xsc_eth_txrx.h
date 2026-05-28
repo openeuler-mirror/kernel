@@ -76,5 +76,7 @@ void xsc_page_release_dynamic(struct xsc_rq *rq,
 			      bool recycle);
 
 enum hrtimer_restart xsc_dim_reduce_timer_fn(struct hrtimer *timer);
+netdev_tx_t xsc_eth_xmit_start(struct sk_buff *skb, struct net_device *netdev);
+
 
 #endif /* XSC_RXTX_H */

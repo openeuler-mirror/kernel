@@ -13,12 +13,14 @@
 static int xsc_device_enable_sriov(struct xsc_core_device *dev, int num_vfs)
 {
 	struct xsc_core_sriov *sriov = &dev->priv.sriov;
+	struct xsc_eswitch *esw = dev->priv.eswitch;
 	u16 vf;
-	u16 max_msix = 0;
+	u16 max_msix = 0xffff;
+	struct xsc_caps *caps = &dev->caps;
+	u16 total_dynamic_vf_msix = caps->total_dynamic_vf_msix;
+	u16 def_dynamic_vf_msix = caps->min_dynamic_vf_msix;
 	int err;
 
-	max_msix = xsc_get_irq_matrix_global_available(dev);
-	xsc_core_info(dev, "global_available=%u\n", max_msix);
 	err = xsc_cmd_enable_hca(dev, num_vfs, max_msix);
 	if (err)
 		return err;
@@ -26,9 +28,10 @@ static int xsc_device_enable_sriov(struct xsc_core_device *dev, int num_vfs)
 	if (!XSC_ESWITCH_MANAGER(dev))
 		goto enable_vfs;
 
-	err = xsc_eswitch_enable(dev->priv.eswitch, XSC_ESWITCH_LEGACY,
-				 num_vfs);
+	esw->mode = XSC_ESWITCH_LEGACY;
+	err = xsc_eswitch_enable(dev->priv.eswitch, num_vfs);
 	if (err) {
+		esw->mode = XSC_ESWITCH_NONE;
 		xsc_core_err(dev, "failed to enable eswitch SRIOV (%d)\n", err);
 		return err;
 	}
@@ -37,13 +40,25 @@ enable_vfs:
 	err = xsc_create_vfs_sysfs(dev, num_vfs);
 	if (err) {
 		xsc_core_err(dev, "failed to create SRIOV sysfs (%d)\n", err);
-		if (XSC_ESWITCH_MANAGER(dev))
+		if (XSC_ESWITCH_MANAGER(dev)) {
 			xsc_eswitch_disable(dev->priv.eswitch, true);
+			esw->mode = XSC_ESWITCH_NONE;
+		}
 		return err;
 	}
 
-	for (vf = 0; vf < num_vfs; vf++)
+	for (vf = 0; vf < num_vfs; vf++) {
 		sriov->vfs_ctx[vf].enabled = 1;
+		if (total_dynamic_vf_msix) {
+			err = xsc_set_msix_vec_count(dev, vf + 1, def_dynamic_vf_msix);
+			if (err) {
+				xsc_core_warn(dev,
+					      "failed to set MSI-X vector counts VF %d, err %d\n",
+					      vf, err);
+				continue;
+			}
+		}
+	}
 
 	return 0;
 }
@@ -52,6 +67,7 @@ static void xsc_device_disable_sriov(struct xsc_core_device *dev,
 				     int num_vfs, bool clear_vf)
 {
 	struct xsc_core_sriov *sriov = &dev->priv.sriov;
+	struct xsc_eswitch *esw = dev->priv.eswitch;
 	int vf, err;
 
 	err = xsc_cmd_disable_hca(dev, (u16)num_vfs);
@@ -68,8 +84,10 @@ static void xsc_device_disable_sriov(struct xsc_core_device *dev,
 		sriov->vfs_ctx[vf].enabled = 0;
 	}
 
-	if (XSC_ESWITCH_MANAGER(dev))
-		xsc_eswitch_disable(dev->priv.eswitch, clear_vf);
+	if (XSC_ESWITCH_MANAGER(dev)) {
+		xsc_eswitch_disable(esw, clear_vf);
+		esw->offloads.rep_mode = XSC_REP_MODE_DPDK;
+	}
 
 	xsc_destroy_vfs_sysfs(dev, num_vfs);
 }
@@ -155,26 +173,37 @@ int xsc_core_sriov_configure(struct pci_dev *pdev, int num_vfs)
 	return err ? err : num_vfs;
 }
 
-int xsc_sriov_attach(struct xsc_core_device *dev)
+int xsc_core_sriov_set_msix_vec_count(struct pci_dev *vf, int msix_vec_count)
 {
-	struct pci_dev *pdev = dev->pdev;
-	struct xsc_core_device *pf_xdev;
+	struct pci_dev *pf = pci_physfn(vf);
 	struct xsc_core_sriov *sriov;
+	struct xsc_core_device *dev;
+	struct xsc_caps *caps;
+	int total_msix, min_msix, id;
 
-	if (!xsc_core_is_pf(dev)) {
-		if (!pdev->physfn)    /*for vf passthrough vm*/
-			return 0;
+	dev = pci_get_drvdata(pf);
+	caps = &dev->caps;
+	total_msix = caps->total_dynamic_vf_msix;
+	min_msix = caps->min_dynamic_vf_msix;
 
-		pf_xdev = pci_get_drvdata(pdev->physfn);
-		if (!pf_xdev)
-			return -1;
-		sriov = &pf_xdev->priv.sriov;
-
-		sriov->vfs[dev->vf_id].vf = dev->vf_id;
-		sriov->vfs[dev->vf_id].dev = dev;
-		return 0;
+	if (!total_msix) {
+		xsc_core_err(dev, "vf dynamic msix configure is not enabled");
+		return -EOPNOTSUPP;
 	}
 
+	if (!msix_vec_count)
+		msix_vec_count = min_msix;
+
+	sriov = &dev->priv.sriov;
+	id = pci_iov_vf_id(vf);
+	if (id < 0 || !sriov->vfs_ctx[id].enabled)
+		return -EINVAL;
+
+	return xsc_set_msix_vec_count(dev, id + 1, msix_vec_count);
+}
+
+int xsc_sriov_attach(struct xsc_core_device *dev)
+{
 	if (!dev->priv.sriov.num_vfs)
 		return 0;
 

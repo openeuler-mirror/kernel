@@ -6,6 +6,50 @@
 #include "common/driver.h"
 #include <linux/module.h>
 #include "eswitch.h"
+#include "fw/xsc_fw.h"
+#include "xsc_flow_tbl.h"
+#include "xsc_flow_pool.h"
+
+#ifdef RUN_WITH_PSV
+int xsc_cmd_query_psv_funcid(struct xsc_core_device *dev,
+			     struct xsc_caps *caps)
+{
+	struct xsc_cmd_query_hca_cap_mbox_out *out;
+	struct xsc_cmd_query_hca_cap_mbox_in in;
+	int err;
+
+	out = kzalloc(sizeof(*out), GFP_KERNEL);
+	if (!out)
+		return -ENOMEM;
+
+	memset(&in, 0, sizeof(in));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_PSV_FUNCID);
+
+	err = xsc_cmd_exec(dev, &in, sizeof(in), out, sizeof(*out));
+	if (err)
+		goto out_out;
+
+	if (out->hdr.status) {
+		err = xsc_cmd_status_to_err(&out->hdr);
+		goto out_out;
+	}
+
+	caps->pf0_vf_funcid_base = be16_to_cpu(out->hca_cap.pf0_vf_funcid_base);
+	caps->pf0_vf_funcid_top  = be16_to_cpu(out->hca_cap.pf0_vf_funcid_top);
+	caps->pf1_vf_funcid_base = be16_to_cpu(out->hca_cap.pf1_vf_funcid_base);
+	caps->pf1_vf_funcid_top  = be16_to_cpu(out->hca_cap.pf1_vf_funcid_top);
+	caps->pcie0_pf_funcid_base     = be16_to_cpu(out->hca_cap.pcie0_pf_funcid_base);
+	caps->pcie0_pf_funcid_top      = be16_to_cpu(out->hca_cap.pcie0_pf_funcid_top);
+	caps->pcie1_pf_funcid_base     = be16_to_cpu(out->hca_cap.pcie1_pf_funcid_base);
+	caps->pcie1_pf_funcid_top      = be16_to_cpu(out->hca_cap.pcie1_pf_funcid_top);
+	caps->pcie_host = out->hca_cap.pcie_host;
+
+out_out:
+	kfree(out);
+
+	return err;
+}
+#endif
 
 static struct xsc_board_info *board_info[MAX_BOARD_NUM];
 
@@ -16,13 +60,13 @@ static struct xsc_board_info *xsc_get_board_info(char *board_sn)
 	for (i = 0; i < MAX_BOARD_NUM; i++) {
 		if (!board_info[i])
 			continue;
-		if (!strncmp(board_info[i]->board_sn, board_sn, XSC_BOARD_SN_LEN))
+		if (!memcmp(board_info[i]->board_sn, board_sn, XSC_BOARD_SN_LEN))
 			return board_info[i];
 	}
 	return NULL;
 }
 
-static struct xsc_board_info *xsc_alloc_board_info(void)
+static struct xsc_board_info *xsc_alloc_board_info(struct xsc_core_device *dev)
 {
 	int i;
 
@@ -31,23 +75,102 @@ static struct xsc_board_info *xsc_alloc_board_info(void)
 			break;
 	}
 	if (i == MAX_BOARD_NUM)
-		return NULL;
-	board_info[i] = vmalloc(sizeof(*board_info[i]));
+		goto err;
+	board_info[i] = vzalloc(sizeof(*board_info[i]));
 	if (!board_info[i])
-		return NULL;
-	memset(board_info[i], 0, sizeof(*board_info[i]));
+		goto err;
 	board_info[i]->board_id = i;
-	rwlock_init(&board_info[i]->mr_sync_lock);
+	init_rwsem(&board_info[i]->mr_sync_lock);
 	INIT_LIST_HEAD(&board_info[i]->func_list);
+
+	if (is_support_tc_offload(dev)) {
+		board_info[i]->flow_tbl_mgr = xsc_flow_tbl_mgr_alloc(dev);
+		board_info[i]->flow_pool = xsc_flow_pool_alloc(dev);
+		board_info[i]->flow_grp_pool = xsc_flow_grp_pool_alloc(dev);
+		board_info[i]->flow_grp_res_mgr = xsc_flow_grp_res_mgr_alloc(dev);
+	}
+
+	spin_lock_init(&board_info[i]->srq_res.lock);
+	board_info[i]->srq_res.max_srq_num = XSC_MAX_SRQ_NUM;
+	board_info[i]->srq_res.srq_tbl = vmalloc(board_info[i]->srq_res.max_srq_num >> 3);
+	if (!board_info[i]->srq_res.srq_tbl)
+		goto err_srq_tbl;
+	memset(board_info[i]->srq_res.srq_tbl, 0xFF, board_info[i]->srq_res.max_srq_num >> 3);
+	board_info[i]->srq_res.srq_cache_wr =
+		vzalloc(board_info[i]->srq_res.max_srq_num * sizeof(struct xsc_srq_cache_wr));
+	if (!board_info[i]->srq_res.srq_cache_wr)
+		goto err_srq_cache_wr;
+
 	return board_info[i];
+
+err_srq_cache_wr:
+	xsc_core_err(dev, "alloc memory for srq_cache_wr failed.\n");
+	vfree(board_info[i]->srq_res.srq_tbl);
+err_srq_tbl:
+	xsc_core_err(dev, "alloc memory for srq_tbl failed.\n");
+	vfree(board_info[i]);
+	board_info[i] = NULL;
+err:
+	xsc_core_err(dev, "alloc memory for board_info failed.\n");
+	return NULL;
+}
+
+void xsc_get_global_board_info(struct xsc_ioctl_board_info *info_tbl)
+{
+	int i, j;
+	struct xsc_resources *xsc_res;
+
+	for (i = 0, j = 0; i < MAX_BOARD_NUM; i++) {
+		if (!board_info[i]) {
+			continue;
+		} else {
+			info_tbl[j].board_id = board_info[i]->board_id;
+			memcpy(info_tbl[j].board_sn, board_info[i]->board_sn, XSC_BOARD_SN_LEN);
+			info_tbl[j].guid = board_info[i]->guid;
+			info_tbl[j].resource_access_mode =  board_info[i]->resource_access_mode;
+			info_tbl[j].ref_cnt = board_info[i]->ref_cnt;
+
+			if (board_info[i]->resource_access_mode == EXCLUSIVE_MODE) {
+				xsc_res = get_xsc_res_by_board_id(board_info[i]->board_id);
+				info_tbl[j].iae_lock_num = XSC_RES_NUM_IAE_GRP;
+				info_tbl[j].mpt_entry_num = xsc_res->max_mpt_num;
+				info_tbl[j].mtt_page_num = xsc_res->max_mtt_num;
+			}
+			j++;
+		}
+	}
+}
+
+int xsc_get_global_board_cnt(void)
+{
+	int i, cnt = 0;
+
+	for (i = 0; i < MAX_BOARD_NUM; i++) {
+		if (!board_info[i])
+			continue;
+		else
+			cnt++;
+	}
+
+	return cnt;
 }
 
 void xsc_free_board_info(void)
 {
 	int i;
 
-	for (i = 0; i < MAX_BOARD_NUM; i++)
+	for (i = 0; i < MAX_BOARD_NUM; i++) {
+		if (!board_info[i])
+			continue;
+
+		vfree(board_info[i]->srq_res.srq_tbl);
+		vfree(board_info[i]->srq_res.srq_cache_wr);
+		xsc_flow_tbl_mgr_free(board_info[i]->flow_tbl_mgr);
+		xsc_flow_pool_free(board_info[i]->flow_pool);
+		xsc_flow_grp_pool_free(board_info[i]->flow_grp_pool);
+		xsc_flow_grp_res_mgr_free(board_info[i]->flow_grp_res_mgr);
 		vfree(board_info[i]);
+	}
 }
 
 int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
@@ -65,7 +188,7 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 
 	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_HCA_CAP);
-	in.hdr.ver = cpu_to_be16(CMD_QUERY_HCA_CAP_V2);
+	in.hdr.ver = cpu_to_be16(CMD_QUERY_HCA_CAP_V4);
 	in.cpu_num = cpu_to_be16(num_online_cpus());
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), out, sizeof(*out));
@@ -116,11 +239,23 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 		dev->pcie_host_num = out->hca_cap.pcie_host_num;
 		dev->pf_num_per_pcie = out->hca_cap.pf_num_per_pcie;
 		caps->pf0_vf_funcid_base =
-			be16_to_cpu(out->hca_cap.vf_funcid_base[dev->pcie_no][0]);
-		caps->pf0_vf_funcid_top = be16_to_cpu(out->hca_cap.vf_funcid_top[dev->pcie_no][0]);
+				be16_to_cpu(out->hca_cap.vf_funcid_base[dev->pcie_no][0]);
+		caps->pf0_vf_funcid_top =
+			be16_to_cpu(out->hca_cap.vf_funcid_top[dev->pcie_no][0]);
 		caps->pf1_vf_funcid_base =
 			be16_to_cpu(out->hca_cap.vf_funcid_base[dev->pcie_no][1]);
-		caps->pf1_vf_funcid_top = be16_to_cpu(out->hca_cap.vf_funcid_top[dev->pcie_no][1]);
+		caps->pf1_vf_funcid_top =
+			be16_to_cpu(out->hca_cap.vf_funcid_top[dev->pcie_no][1]);
+		if (dev->pcie_host_num == 2) {
+			caps->vf_funcid_base[0][0] = be16_to_cpu(out->hca_cap.vf_funcid_base[0][0]);
+			caps->vf_funcid_top[0][0] = be16_to_cpu(out->hca_cap.vf_funcid_top[0][0]);
+			caps->vf_funcid_base[0][1] = be16_to_cpu(out->hca_cap.vf_funcid_base[0][1]);
+			caps->vf_funcid_top[0][1] = be16_to_cpu(out->hca_cap.vf_funcid_top[0][1]);
+			caps->vf_funcid_base[1][0] = be16_to_cpu(out->hca_cap.vf_funcid_base[1][0]);
+			caps->vf_funcid_top[1][0] = be16_to_cpu(out->hca_cap.vf_funcid_top[1][0]);
+			caps->vf_funcid_base[1][1] = be16_to_cpu(out->hca_cap.vf_funcid_base[1][1]);
+			caps->vf_funcid_top[1][1] = be16_to_cpu(out->hca_cap.vf_funcid_top[1][1]);
+		}
 		caps->pcie0_pf_funcid_base = be16_to_cpu(out->hca_cap.pf_funcid_base[0]);
 		caps->pcie0_pf_funcid_top = be16_to_cpu(out->hca_cap.pf_funcid_top[0]);
 		caps->pcie1_pf_funcid_base = be16_to_cpu(out->hca_cap.pf_funcid_base[1]);
@@ -134,6 +269,7 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 		caps->pcie0_pf_funcid_top = be16_to_cpu(out->hca_cap.pcie0_pf_funcid_top);
 		caps->pcie1_pf_funcid_base = be16_to_cpu(out->hca_cap.pcie1_pf_funcid_base);
 		caps->pcie1_pf_funcid_top = be16_to_cpu(out->hca_cap.pcie1_pf_funcid_top);
+		dev->pcie_host_num = 1;
 
 		funcid_to_pf_vf_index(&dev->caps, dev->glb_func_id, &dev->pcie_no,
 				      &dev->pf_id, &dev->vf_id);
@@ -157,6 +293,7 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	caps->raw_tpe_qp_num = be16_to_cpu(out->hca_cap.raw_tpe_qp_num);
 	caps->max_cqes = 1 << out->hca_cap.log_max_cq_sz;
 	caps->max_wqes = 1 << out->hca_cap.log_max_qp_sz;
+	caps->max_eqes = 1 << out->hca_cap.log_max_eq_sz;
 	caps->max_sq_desc_sz = be16_to_cpu(out->hca_cap.max_desc_sz_sq);
 	caps->max_rq_desc_sz = be16_to_cpu(out->hca_cap.max_desc_sz_rq);
 	caps->flags = be64_to_cpu(out->hca_cap.flags);
@@ -180,13 +317,16 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 
 	caps->embedded_cpu = 0;
 	caps->ecpf_vport_exists = 0;
-	caps->eswitch_manager = 1;
-	caps->vport_group_manager = 1;
+	if (xsc_core_is_pf(dev)) {
+		caps->eswitch_manager = 1;
+		caps->vport_group_manager = 1;
+		if (be16_to_cpu(out->hdr.ver) >= CMD_QUERY_HCA_CAP_V6)
+			caps->ft_support = be16_to_cpu(out->hca_cap.ft_support);
+	}
 	caps->log_max_current_uc_list = 0;
 	caps->log_max_current_mc_list = 0;
 	caps->log_max_vlan_list = 8;
 	caps->log_max_mkey = out->hca_cap.log_max_mkey & 0x3f;
-	caps->log_max_srq = out->hca_cap.log_max_srqs & 0x1f;
 	caps->local_ca_ack_delay = out->hca_cap.local_ca_ack_delay & 0x1f;
 	caps->log_max_mcg = out->hca_cap.log_max_mcg;
 	caps->log_max_tso = out->hca_cap.log_max_tso;
@@ -198,16 +338,17 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	caps->max_qp_mcg = be16_to_cpu(out->hca_cap.max_qp_mcg);
 	caps->max_ra_res_qp = 1 << (out->hca_cap.log_max_ra_res_qp & 0x3f);
 	caps->max_ra_req_qp = 1 << (out->hca_cap.log_max_ra_req_qp & 0x3f);
-	caps->max_srq_wqes = 1 << out->hca_cap.log_max_srq_sz;
+	caps->max_srq_wqes = 32768;
 	caps->rx_pkt_len_max = be32_to_cpu(out->hca_cap.rx_pkt_len_max);
 	caps->max_vfs = be16_to_cpu(out->hca_cap.max_vfs);
 	caps->qp_rate_limit_min = be32_to_cpu(out->hca_cap.qp_rate_limit_min);
 	caps->qp_rate_limit_max = be32_to_cpu(out->hca_cap.qp_rate_limit_max);
 
 	caps->msix_enable = 1;
-
-	caps->msix_base = be16_to_cpu(out->hca_cap.msix_base);
-	caps->msix_num = be16_to_cpu(out->hca_cap.msix_num);
+	if (be16_to_cpu(out->hdr.ver) < CMD_QUERY_HCA_CAP_V5) {
+		caps->msix_base = be16_to_cpu(out->hca_cap.msix_base);
+		caps->msix_num = be16_to_cpu(out->hca_cap.msix_num);
+	}
 
 	t16 = be16_to_cpu(out->hca_cap.bf_log_bf_reg_size);
 	if (t16 & 0x8000) {
@@ -228,6 +369,20 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 	caps->mac_bit = out->hca_cap.mac_bit;
 	caps->lag_logic_port_ofst = out->hca_cap.lag_logic_port_ofst;
 
+	if (be16_to_cpu(out->hdr.ver) >= CMD_QUERY_HCA_CAP_V7) {
+		caps->total_dynamic_vf_msix = be16_to_cpu(out->hca_cap.total_dynamic_vf_msix);
+		caps->min_dynamic_vf_msix = be16_to_cpu(out->hca_cap.min_dynamic_vf_msix);
+		caps->max_dynamic_vf_msix = be16_to_cpu(out->hca_cap.max_dynamic_vf_msix);
+	}
+
+	if (be16_to_cpu(out->hdr.ver) >= CMD_QUERY_HCA_CAP_V8)
+		caps->max_sgl_rd = out->hca_cap.max_sgl_rd;
+
+	if (be16_to_cpu(out->hdr.ver) >= CMD_QUERY_HCA_CAP_V9) {
+		caps->mdb_base = be64_to_cpu(out->hca_cap.mdb_base);
+		caps->mdb_num = be32_to_cpu(out->hca_cap.mdb_num);
+	}
+
 	dev->chip_ver_h = be32_to_cpu(out->hca_cap.chip_ver_h);
 	dev->chip_ver_m = be32_to_cpu(out->hca_cap.chip_ver_m);
 	dev->chip_ver_l = be32_to_cpu(out->hca_cap.chip_ver_l);
@@ -237,7 +392,7 @@ int xsc_cmd_query_hca_cap(struct xsc_core_device *dev,
 
 	board_info = xsc_get_board_info(out->hca_cap.board_sn);
 	if (!board_info) {
-		board_info = xsc_alloc_board_info();
+		board_info = xsc_alloc_board_info(dev);
 		if (!board_info)
 			return -ENOMEM;
 
@@ -273,12 +428,15 @@ int xsc_cmd_enable_hca(struct xsc_core_device *dev, u16 vf_num, u16 max_msix)
 	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_ENABLE_HCA);
+	in.hdr.ver = cpu_to_be16(CMD_ENABLE_HCA_CAP_V1);
 
 	in.vf_num = cpu_to_be16(vf_num);
 	in.max_msix_vec = cpu_to_be16(max_msix);
 	in.cpu_num = cpu_to_be16(num_online_cpus());
 	in.pp_bypass = xsc_get_pp_bypass_res(dev, false);
 	in.esw_mode = XSC_ESWITCH_LEGACY;
+	if (dev->caps.total_dynamic_vf_msix)
+		in.enable_dynamic_msix = 1;
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	if (err || out.hdr.status) {
@@ -300,9 +458,12 @@ int xsc_cmd_disable_hca(struct xsc_core_device *dev, u16 vf_num)
 	memset(&in, 0, sizeof(in));
 	memset(&out, 0, sizeof(out));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DISABLE_HCA);
+	in.hdr.ver = cpu_to_be16(CMD_DISABLE_HCA_CAP_V1);
 	in.vf_num = cpu_to_be16(vf_num);
 	in.pp_bypass = xsc_get_pp_bypass_res(dev, false);
 	in.esw_mode = XSC_ESWITCH_NONE;
+	if (dev->caps.total_dynamic_vf_msix)
+		in.disable_dynamic_msix = 1;
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	if (err || out.hdr.status) {
@@ -324,7 +485,7 @@ int xsc_cmd_modify_hca(struct xsc_core_device *dev)
 	memset(&out, 0, sizeof(out));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_MODIFY_HCA);
 	in.pp_bypass = xsc_get_pp_bypass_res(dev, true);
-	in.esw_mode = xsc_get_eswitch_mode(dev);
+	in.esw_mode = XSC_ESWITCH_OFFLOADS;
 
 	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	if (err)
@@ -355,4 +516,33 @@ int xsc_cmd_query_read_flush(struct xsc_core_device *dev)
 	dev->read_flush = out.read_flush;
 	return 0;
 }
+
+int xsc_cmd_query_fw_version(struct xsc_core_device *dev)
+{
+	struct xsc_cmd_query_fw_ver_mbox_in in;
+	struct xsc_cmd_query_fw_ver_mbox_out out;
+
+	int err = 0;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_FW_VERSION);
+	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (err)
+		return err;
+
+	if (out.hdr.status)
+		err = xsc_cmd_status_to_err(&out.hdr);
+
+	if (err)
+		return err;
+
+	dev->fw_version_major = out.fw_ver.fw_version_major;
+	dev->fw_version_minor = out.fw_ver.fw_version_minor;
+	dev->fw_version_patch = be16_to_cpu(out.fw_ver.fw_version_patch);
+	dev->fw_version_tweak = be32_to_cpu(out.fw_ver.fw_version_tweak);
+	dev->fw_version_extra_flag = out.fw_ver.fw_version_extra_flag;
+	return err;
+}
+EXPORT_SYMBOL_GPL(xsc_cmd_query_fw_version);
 

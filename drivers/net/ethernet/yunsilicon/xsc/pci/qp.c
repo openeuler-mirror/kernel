@@ -97,7 +97,8 @@ static int xsc_qp_flush_check(void *arg)
 		list_del(&entry->node);
 		spin_unlock(&delayed_release_list.lock);
 
-		if (!exit_flag && !xsc_qp_flush_finished(entry->xdev, entry->qpn)) {
+		if (!exit_flag && !xsc_qp_flush_finished(entry->xdev, entry->qpn) &&
+		    entry->xdev->state != XSC_DEVICE_STATE_INTERNAL_ERROR) {
 			spin_lock(&delayed_release_list.lock);
 			list_add_tail(&entry->node, &delayed_release_list.head);
 			spin_unlock(&delayed_release_list.lock);
@@ -133,7 +134,7 @@ static void xsc_wait_qp_flush_complete(struct xsc_core_device *xdev, u32 qpn)
 	struct xsc_qp_rsc qp_rsc;
 	int err = 0;
 
-	if (exit_flag)
+	if (exit_flag || xdev->state == XSC_DEVICE_STATE_INTERNAL_ERROR)
 		return;
 
 	init_completion(&qp_rsc.delayed_release);
@@ -298,7 +299,8 @@ int xsc_set_qp_info(struct xsc_core_device *xdev, struct xsc_create_qp_request *
 
 	memset(&out, 0, sizeof(out));
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_SET_QP_INFO);
-	memcpy(&in->qp_info, qp_info, sizeof(*qp_info) + pas_buf_size);
+	memcpy(&in->qp_info, qp_info, sizeof(*qp_info));
+	memcpy(in->qp_info.pas, qp_info->pas, pas_buf_size);
 
 	err = xsc_cmd_exec(xdev, in, in_size, &out, sizeof(out));
 	if (err)
@@ -315,6 +317,106 @@ out:
 	return err;
 }
 EXPORT_SYMBOL(xsc_set_qp_info);
+
+int xsc_get_qp_base_info(struct xsc_core_device *xdev, void *input,
+			 struct xsc_ioctl_qp_base_info *qp_info, int outlen)
+{
+	struct xsc_get_qp_base_info_in *in;
+	struct xsc_get_qp_base_info_out *out, *tmp;
+	struct xsc_ioctl_attr *attr = (struct xsc_ioctl_attr *)input;
+	size_t in_size, out_size;
+	int err;
+
+	in_size = sizeof(*in);
+	in = kvzalloc(in_size, GFP_KERNEL);
+	if (!in)
+		return -ENOMEM;
+
+	out_size = sizeof(*out);
+	out = kvzalloc(out_size, GFP_KERNEL);
+	if (!out) {
+		kfree(in);
+		return -ENOMEM;
+	}
+
+	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_GET_QP_BASE_INFO);
+	in->qp_max_num = 0;
+	err = xsc_cmd_exec(xdev, in, in_size, out, out_size);
+	if (err)
+		goto out;
+
+	if (out->hdr.status) {
+		err = xsc_cmd_status_to_err(&out->hdr);
+		attr->error = out->hdr.status;
+		goto out;
+	}
+
+	qp_info->virtio_qp_id_base = be16_to_cpu(out->virtio_qp_id_base);
+	qp_info->virtio_qp_id_end = be16_to_cpu(out->virtio_qp_id_end);
+	qp_info->raweth_tso_qp_id_base = be16_to_cpu(out->raweth_tso_qp_id_base);
+	qp_info->raweth_tso_qp_id_end = be16_to_cpu(out->raweth_tso_qp_id_end);
+	qp_info->raweth_qp_id_base = be16_to_cpu(out->raweth_qp_id_base);
+	qp_info->raweth_qp_id_end = be16_to_cpu(out->raweth_qp_id_end);
+	qp_info->sniffer_qp_id_base = be16_to_cpu(out->sniffer_qp_id_base);
+	qp_info->sniffer_qp_id_end = be16_to_cpu(out->sniffer_qp_id_end);
+	qp_info->mad_qp_id_base = be16_to_cpu(out->mad_qp_id_base);
+	qp_info->mad_qp_id_end = be16_to_cpu(out->mad_qp_id_end);
+	qp_info->rdma_qp_id_base = be16_to_cpu(out->rdma_qp_id_base);
+	qp_info->rdma_qp_id_end = be16_to_cpu(out->rdma_qp_id_end);
+	qp_info->rawtpe_qp_id_base = be16_to_cpu(out->rawtpe_qp_id_base);
+	qp_info->rawtpe_qp_id_end = be16_to_cpu(out->rawtpe_qp_id_end);
+
+	qp_info->qp_max_num = (qp_info->virtio_qp_id_end > qp_info->qp_max_num) ?
+			       qp_info->virtio_qp_id_end : qp_info->qp_max_num;
+	qp_info->qp_max_num = (qp_info->raweth_tso_qp_id_end > qp_info->qp_max_num) ?
+			       qp_info->raweth_tso_qp_id_end : qp_info->qp_max_num;
+	qp_info->qp_max_num = (qp_info->raweth_qp_id_end > qp_info->qp_max_num) ?
+			       qp_info->raweth_qp_id_end : qp_info->qp_max_num;
+	qp_info->qp_max_num = (qp_info->sniffer_qp_id_end > qp_info->qp_max_num) ?
+			       qp_info->sniffer_qp_id_end : qp_info->qp_max_num;
+	qp_info->qp_max_num = (qp_info->mad_qp_id_end > qp_info->qp_max_num) ?
+			       qp_info->mad_qp_id_end : qp_info->qp_max_num;
+	qp_info->qp_max_num = (qp_info->rdma_qp_id_end > qp_info->qp_max_num) ?
+			       qp_info->rdma_qp_id_end : qp_info->qp_max_num;
+	qp_info->qp_max_num = (qp_info->rawtpe_qp_id_end > qp_info->qp_max_num) ?
+			       qp_info->rawtpe_qp_id_end : qp_info->qp_max_num;
+
+	out_size = sizeof(*out) + BITS_TO_LONGS(qp_info->qp_max_num) * sizeof(unsigned long);
+	if (outlen < out_size) {
+		xsc_core_err(xdev,
+			     "ioctl user data length input length is too small\n");
+		err = -EFAULT;
+		goto out;
+	}
+	tmp = krealloc(out, out_size, GFP_KERNEL);
+	if (tmp)
+		out = tmp;
+	else
+		goto out;
+
+	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_GET_QP_BASE_INFO);
+	in->qp_max_num = cpu_to_be32(qp_info->qp_max_num);
+	err = xsc_cmd_exec(xdev, in, in_size, out, out_size);
+	if (err)
+		goto out;
+
+	if (out->hdr.status) {
+		err = xsc_cmd_status_to_err(&out->hdr);
+		goto out;
+	}
+
+	memcpy(qp_info->qp_tbl_bitmap, out->qp_tbl_bitmap,
+	       BITS_TO_LONGS(qp_info->qp_max_num) * sizeof(unsigned long));
+
+	kfree(in);
+	kfree(out);
+	return 0;
+out:
+	kfree(in);
+	kfree(out);
+	return err;
+}
+EXPORT_SYMBOL(xsc_get_qp_base_info);
 
 int xsc_core_create_qp(struct xsc_core_device *xdev,
 		       struct xsc_core_qp *qp,
@@ -516,11 +618,17 @@ int xsc_core_qp_modify(struct xsc_core_device *xdev, enum xsc_qp_state cur_state
 		qp->trace_info->sub_ver = YS_QPTRACE_VER_MINOR;
 		qp->trace_info->qp_type = qp->qp_type;
 		qp->trace_info->s_port = in->ctx.src_udp_port;
-		qp->trace_info->d_port = cpu_to_be16(4791);
+
+		if (qp->qp_protocol_mode == RDMA_PROTO_VEROCE)
+			qp->trace_info->d_port = cpu_to_be16(xdev->veroce_udp_dst_port);
+		else
+			qp->trace_info->d_port = cpu_to_be16(xdev->cm_udp_dst_port);
+
 		qp->trace_info->lqpn = qp->qpn;
 		qp->trace_info->rqpn = be32_to_cpu(in->ctx.remote_qpn);
 		qp->trace_info->affinity_idx = (in->ctx.lag_sel_en == 0 ? 0 : in->ctx.lag_sel);
 		qp->trace_info->af_type = (in->ctx.ip_type == 0 ? AF_INET : AF_INET6);
+		qp->trace_info->qp_protocol_mode = qp->qp_protocol_mode;
 
 		if (in->ctx.ip_type == 0) {
 			qp->trace_info->s_addr.s_addr4 = in->ctx.sip[0];
@@ -578,3 +686,76 @@ void xsc_cleanup_qp_table(struct xsc_core_device *xdev)
 	xsc_qp_debugfs_cleanup(xdev);
 	xsc_qptrace_debugfs_cleanup(xdev);
 }
+
+int xsc_eth_create_multiqp(struct xsc_core_device *xdev, void *in, int in_size,
+			   void *out, int out_size)
+{
+	struct xsc_create_multiqp_mbox_in *req = in;
+	struct xsc_create_multiqp_mbox_out *resp = out;
+	u16 qp_cnt = be16_to_cpu(req->qp_num);
+	u8 qp_type = req->qp_type;
+	u16 qpn_base = 0;
+	struct xsc_create_qp_request *qp_info = NULL;
+	size_t pas_buf_size;
+	u8 *ptr;
+	int i, j;
+	int ret = 0;
+	int in_size_check;
+
+	if (qp_cnt > 0) {
+		if (in_size < sizeof(struct xsc_create_multiqp_mbox_in) +
+		    sizeof(struct xsc_create_qp_request)) {
+			ret = -EFAULT;
+			xsc_core_info(xdev, "user data length is too small\n");
+			return ret;
+		}
+	} else {
+		xsc_core_info(xdev, "qp counter is 0,don't need create multiqp\n");
+		return ret;
+	}
+	in_size_check = sizeof(struct xsc_create_multiqp_mbox_in);
+
+	ret = xsc_alloc_qpn(xdev, &qpn_base, qp_cnt, qp_type);
+	if (ret == -EOPNOTSUPP) {
+		xsc_core_info(xdev, "alloc qpn not available\n");
+		goto alloc_qpn_not_supp;
+	} else if (ret) {
+		xsc_core_err(xdev, "alloc qpn failed\n");
+		goto alloc_qpn_err;
+	}
+
+	ptr = req->data;
+	for (i = 0; i < qp_cnt; i++) {
+		qp_info = (struct xsc_create_qp_request *)ptr;
+		qp_info->input_qpn = cpu_to_be16(qpn_base + i);
+		pas_buf_size = be16_to_cpu(qp_info->pa_num) * sizeof(__be64);
+		in_size_check += sizeof(struct xsc_create_qp_request) + pas_buf_size;
+		if (in_size < in_size_check) {
+			xsc_core_err(xdev, "failed to set qp info for qp%d\n", qpn_base + i);
+			for (j = 0; j < i; j++)
+				xsc_unset_qp_info(xdev, qpn_base + j);
+			ret = -EFAULT;
+			goto set_qp_err;
+		}
+		if (xsc_set_qp_info(xdev, qp_info, pas_buf_size)) {
+			xsc_core_err(xdev, "failed to set qp info for qp%d\n", qpn_base + i);
+			for (j = 0; j < i; j++)
+				xsc_unset_qp_info(xdev, qpn_base + j);
+			ret = -EFAULT;
+			goto set_qp_err;
+		}
+		ptr += sizeof(*qp_info) + pas_buf_size;
+	}
+	resp->hdr.status = 0;
+	resp->qpn_base = cpu_to_be32((u32)qpn_base);
+	return 0;
+set_qp_err:
+	xsc_dealloc_qpn(xdev, qpn_base, qp_cnt, qp_type);
+alloc_qpn_err:
+	resp->hdr.status = XSC_CMD_STATUS_NO_QPN_RES;
+	return ret;
+alloc_qpn_not_supp:
+	ret = xsc_cmd_exec(xdev, in, in_size, out, out_size);
+	return ret;
+}
+EXPORT_SYMBOL(xsc_eth_create_multiqp);

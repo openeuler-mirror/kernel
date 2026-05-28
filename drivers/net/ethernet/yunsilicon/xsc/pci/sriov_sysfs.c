@@ -892,6 +892,7 @@ static struct attribute *pf_eth_attrs[] = {
 	&pf_attr_min_pf_tx_rate.attr,
 	NULL,
 };
+
 ATTRIBUTE_GROUPS(pf_eth);
 
 static const struct kobj_type pf_type_eth = {
@@ -997,6 +998,7 @@ void xsc_destroy_vf_group_sysfs(struct xsc_core_device *dev,
 int xsc_create_vfs_sysfs(struct xsc_core_device *dev, int num_vfs)
 {
 	struct xsc_core_sriov *sriov = &dev->priv.sriov;
+	static const struct kobj_type *sysfs = &vf_type_eth;
 	struct xsc_sriov_vf *tmp;
 	int err;
 	int vf;
@@ -1009,7 +1011,7 @@ int xsc_create_vfs_sysfs(struct xsc_core_device *dev, int num_vfs)
 		tmp = &sriov->vfs[vf];
 		tmp->dev = dev;
 		tmp->vf = vf;
-		err = kobject_init_and_add(&tmp->kobj, &vf_type_eth, sriov->config,
+		err = kobject_init_and_add(&tmp->kobj, sysfs, sriov->config,
 					   "%d", vf);
 		if (err)
 			goto err_vf;

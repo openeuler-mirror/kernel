@@ -73,6 +73,8 @@ int xsc_tunnel_cmd_exec(struct xsc_core_device *xdev, void *in, int inlen, void 
 	ret = wait_for_completion_timeout(&xdev->recv_tunnel_resp_event, timeout);
 	if (!ret) {
 		ret = -ETIMEDOUT;
+		((struct xsc_outbox_hdr *)out)->status = ret;
+		xsc_core_err(xdev, "no tunnel response recved\n");
 		goto err_send_req;
 	}
 
@@ -108,7 +110,7 @@ static void xsc_read_hw_counter(char *file_fn, char *buf, size_t count)
 	loff_t pos = 0;
 
 	filp = filp_open(file_fn, O_RDONLY, 0);
-	if (!filp)
+	if (IS_ERR(filp))
 		return;
 	kernel_read(filp, buf, count, &pos);
 }
@@ -124,6 +126,11 @@ static void xsc_ioctl_get_hw_counters(struct xsc_core_device *xdev, void *indata
 	int end = be32_to_cpu(in->length);
 
 	memcpy(dev, in->data, 8);
+	if (strncmp(dev, "mlx", strlen("mlx"))) {
+		out->hdr.status = XSC_CMD_STATUS_NOT_SUPPORTED;
+		return;
+	}
+
 	offset += 8;
 
 	while (offset < end) {
@@ -197,8 +204,11 @@ int xsc_tunnel_cmd_recv_req(struct xsc_core_device *xdev)
 		target_xdev = xdev;
 	} else {
 		target_xdev = xsc_pci_get_xdev_by_bus_and_slot(domain, bus, devfn);
-		if (!target_xdev)
-			goto err_recv_req;
+		if (!target_xdev) {
+			out = (struct xsc_cmd_get_ioctl_info_mbox_out *)resp_in->data;
+			out->hdr.status = XSC_CMD_STATUS_BAD_PARAM;
+			goto send_resp;
+		}
 	}
 
 	hdr = (struct xsc_inbox_hdr *)req_out->data;
@@ -232,7 +242,8 @@ int xsc_tunnel_cmd_recv_req(struct xsc_core_device *xdev)
 		}
 		goto send_resp;
 	case XSC_CMD_OP_IOCTL_NETLINK:
-		target_xdev->handle_netlink_cmd(target_xdev, req_out->data, resp_in->data);
+		if (target_xdev->handle_netlink_cmd)
+			target_xdev->handle_netlink_cmd(target_xdev, req_out->data, resp_in->data);
 		goto send_resp;
 	case XSC_CMD_OP_IOCTL_GET_HW_COUNTERS:
 		xsc_ioctl_get_hw_counters(target_xdev, req_out->data, resp_in->data);
@@ -274,6 +285,7 @@ int xsc_tunnel_cmd_recv_req(struct xsc_core_device *xdev)
 	case XSC_CMD_OP_IOCTL_GET_WATCHDOG_EN:
 	case XSC_CMD_OP_IOCTL_SET_WATCHDOG_PERIOD:
 	case XSC_CMD_OP_IOCTL_GET_WATCHDOG_PERIOD:
+	case XSC_CMD_OP_IOCTL_GET_QP_QOS_CFG:
 		qos_in = (struct xsc_qos_mbox_in *)req_out->data;
 		qos_in->req_prfx.mac_port = target_xdev->mac_port;
 		break;

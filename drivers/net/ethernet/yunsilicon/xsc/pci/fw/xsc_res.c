@@ -21,6 +21,8 @@ static int xsc_alloc_free_list_res(struct xsc_free_list_wl *list, int max_num)
 	free_node->start = 0;
 	free_node->end = free_node->start + max_num - 1;
 	list_add(&free_node->list, &list->head.list);
+	list->num = 1;
+	list->total_avail = max_num;
 
 	return 0;
 }
@@ -43,6 +45,7 @@ static int xsc_res_iae_init(struct xsc_core_device *dev)
 	struct xsc_resources *res = get_xsc_res(dev);
 	struct xsc_alloc_ia_lock_mbox_in in;
 	struct xsc_alloc_ia_lock_mbox_out out;
+	int ia_num_per_pcie;
 
 	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_ALLOC_IA_LOCK);
@@ -54,12 +57,23 @@ static int xsc_res_iae_init(struct xsc_core_device *dev)
 		return -EINVAL;
 	}
 
-	for (i = 0; i < XSC_RES_NUM_IAE_GRP; i++) {
-		res->iae_idx[i] = out.lock_idx[i];
-		spin_lock_init(&res->iae_lock[i]);
-	}
+	ia_num_per_pcie = XSC_RES_NUM_IAE_GRP / dev->pcie_host_num;
+	res->iae_grp_mask = ia_num_per_pcie - 1;
+	if (dev->pcie_host_num == 2) {
+		for (i = 0; i < XSC_RES_NUM_IAE_GRP; i++) {
+			res->iae_idx[i / ia_num_per_pcie][i % ia_num_per_pcie] = out.lock_idx[i];
+			spin_lock_init(&res->iae_lock[i / ia_num_per_pcie][i % ia_num_per_pcie]);
+		}
 
-	atomic_set(&res->iae_grp, 0);
+		for (i = 0; i < dev->pcie_host_num; i++)
+			atomic_set(&res->iae_grp[i], 0);
+	} else {
+		for (i = 0; i < XSC_RES_NUM_IAE_GRP; i++) {
+			res->iae_idx[dev->pcie_no][i] = out.lock_idx[i];
+			spin_lock_init(&res->iae_lock[dev->pcie_no][i]);
+		}
+		atomic_set(&res->iae_grp[dev->pcie_no], 0);
+	}
 
 	xsc_core_info(dev, "allocated %d iae groups", i);
 
@@ -73,11 +87,19 @@ static void xsc_res_iae_release(struct xsc_core_device *dev)
 	struct xsc_resources *res = get_xsc_res(dev);
 	struct xsc_release_ia_lock_mbox_in in;
 	struct xsc_release_ia_lock_mbox_out out;
+	int ia_num_per_pcie;
 
 	memset(&in, 0, sizeof(in));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_RELEASE_IA_LOCK);
-	for (i = 0; i < XSC_RES_NUM_IAE_GRP; i++)
-		in.lock_idx[i] = res->iae_idx[i];
+	ia_num_per_pcie = XSC_RES_NUM_IAE_GRP / dev->pcie_host_num;
+
+	if (dev->pcie_host_num == 2) {
+		for (i = 0; i < XSC_RES_NUM_IAE_GRP; i++)
+			in.lock_idx[i] = res->iae_idx[i / ia_num_per_pcie][i % ia_num_per_pcie];
+	} else {
+		for (i = 0; i < XSC_RES_NUM_IAE_GRP; i++)
+			in.lock_idx[i] = res->iae_idx[dev->pcie_no][i];
+	}
 
 	ret = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	if (ret)
@@ -105,7 +127,7 @@ int xsc_create_res(struct xsc_core_device *dev)
 	memset(xres->mpt_tbl, 0xFF, xres->max_mpt_num >> 3);
 	/* reserved for local dma lkey */
 	clear_bit(0, (unsigned long *)xres->mpt_tbl);
-	xres->mpt_entry = vmalloc(xres->max_mpt_num * sizeof(struct xsc_mpt_info));
+	xres->mpt_entry = vzalloc(xres->max_mpt_num * sizeof(struct xsc_mpt_info));
 	if (!xres->mpt_entry)
 		goto err_mpt_entry;
 
@@ -113,7 +135,7 @@ int xsc_create_res(struct xsc_core_device *dev)
 	if (ret)
 		goto err_iae_init;
 
-	xres->max_mtt_num = xsc_get_max_mtt_num(dev);
+	xres->max_mtt_num = dev->caps.max_mtt;
 	ret = xsc_alloc_free_list_res(&xres->mtt_list, xres->max_mtt_num);
 	if (ret)
 		goto err_mtt;
@@ -147,6 +169,11 @@ void xsc_destroy_res(struct xsc_core_device *dev)
 struct xsc_resources *get_xsc_res(struct xsc_core_device *dev)
 {
 	return g_xres[dev->board_info->board_id];
+}
+
+struct xsc_resources *get_xsc_res_by_board_id(u32 board_id)
+{
+	return g_xres[board_id];
 }
 
 static int xsc_alloc_res(u32 *res, u8 *res_tbl, u32 max)
@@ -191,6 +218,7 @@ static int alloc_from_free_list(struct xsc_free_list_wl *list, int required, u32
 				new_node->end = start - 1;
 				__list_add(&new_node->list, free_node->list.prev,
 					   &free_node->list);
+				list->num++;
 			}
 			*alloc = start;
 			free_node->start = start + required;
@@ -201,6 +229,7 @@ static int alloc_from_free_list(struct xsc_free_list_wl *list, int required, u32
 				free_node->end = start - 1;
 			} else {
 				list_del(&free_node->list);
+				list->num--;
 				kfree(free_node);
 			}
 			break;
@@ -210,6 +239,7 @@ static int alloc_from_free_list(struct xsc_free_list_wl *list, int required, u32
 	if (*alloc == -1)
 		return -EINVAL;
 
+	list->total_avail -= required;
 	return 0;
 }
 
@@ -229,6 +259,7 @@ void save_mtt_to_free_list(struct xsc_core_device *dev, u32 base, u32 num)
 	if (base == pos->start) {
 		if (base + num - 1 == pos->end) {
 			list_del(&pos->list);
+			xres->mtt_list.num--;
 			kfree(pos);
 		} else {
 			pos->start = base + num;
@@ -240,11 +271,13 @@ void save_mtt_to_free_list(struct xsc_core_device *dev, u32 base, u32 num)
 				new->start = base + num;
 				new->end = pos->end;
 				__list_add(&new->list, &pos->list, pos->list.next);
+				xres->mtt_list.num++;
 			}
 		}
 		pos->end = base - 1;
 	}
 	spin_unlock_irqrestore(&xres->mtt_list.lock, flags);
+	xres->mtt_list.total_avail -= num;
 }
 
 static int release_to_free_list(struct xsc_free_list_wl *list, uint32_t release_base,
@@ -271,6 +304,7 @@ static int release_to_free_list(struct xsc_free_list_wl *list, uint32_t release_
 			/* merge to last node */
 			if (prev->end + 1 == release_base) {
 				prev->end = release_base + num_released - 1;
+				list->total_avail += num_released;
 				return 0;
 			}
 			prev_node = head->prev;
@@ -287,6 +321,7 @@ static int release_to_free_list(struct xsc_free_list_wl *list, uint32_t release_
 			/* merge to first node */
 			if (release_base + num_released == pos->start) {
 				pos->start = release_base;
+				list->total_avail += num_released;
 				return 0;
 			}
 
@@ -300,17 +335,21 @@ static int release_to_free_list(struct xsc_free_list_wl *list, uint32_t release_
 			    release_base + num_released == pos->start) {
 				prev->end = pos->end;
 				list_del(&pos->list);
+				list->num--;
+				list->total_avail += num_released;
 				kfree(pos);
 
 				return 0;
 			}
 			if (prev->end + 1 == release_base) {
 				prev->end = release_base + num_released - 1;
+				list->total_avail += num_released;
 				return 0;
 			}
 
 			if (release_base + num_released == pos->start) {
 				pos->start = release_base;
+				list->total_avail += num_released;
 				return 0;
 			}
 
@@ -327,15 +366,62 @@ create_new_node:
 	new->start = release_base;
 	new->end = release_base + num_released - 1;
 	__list_add(&new->list, prev_node, next_node);
+	list->num++;
+	list->total_avail += num_released;
 	return 0;
+}
+
+struct mtt_range {
+	u32 start;
+	u32 end;
+};
+
+void xsc_show_mtt_node(struct xsc_core_device *dev)
+{
+	struct xsc_resources *xres = get_xsc_res(dev);
+	unsigned long flags;
+	struct mtt_range *data;
+	u32 num = xres->mtt_list.num;
+	struct list_head *h = &xres->mtt_list.head.list;
+	struct xsc_free_list *pos;
+	struct xsc_free_list *n;
+	int i = 0;
+
+	data = kmalloc_array(num, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return;
+
+	spin_lock_irqsave(&xres->mtt_list.lock, flags);
+	list_for_each_entry_safe(pos, n, h, list) {
+		data[i].start = pos->start;
+		data[i].end = pos->end;
+		i++;
+		if (i == num)
+			break;
+	}
+	spin_unlock_irqrestore(&xres->mtt_list.lock, flags);
+
+	pr_info("show mtt free node info:\n");
+	for (i = 0; i < num; i++)
+		pr_info("node %d:[%d, %d]\n", i, data[i].start, data[i].end);
+}
+
+void xsc_get_mtt_info(struct xsc_core_device *dev, u32 *total_avail, u32 *num)
+{
+	struct xsc_resources *xres = get_xsc_res(dev);
+
+	*total_avail = xres->mtt_list.total_avail;
+	*num = xres->mtt_list.num;
 }
 
 int alloc_mpt_entry(struct xsc_core_device *dev, u32 *mpt_idx)
 {
 	struct xsc_resources *xres = get_xsc_res(dev);
 
-	if (xsc_alloc_res(mpt_idx, xres->mpt_tbl, xres->max_mpt_num))
+	if (xsc_alloc_res(mpt_idx, xres->mpt_tbl, xres->max_mpt_num)) {
+		xsc_core_err(dev, "alloc mpt entry fail\n");
 		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -344,8 +430,10 @@ int dealloc_mpt_entry(struct xsc_core_device *dev, u32 *mpt_idx)
 {
 	struct xsc_resources *xres = get_xsc_res(dev);
 
-	if (xsc_dealloc_res(mpt_idx, xres->mpt_tbl))
+	if (xsc_dealloc_res(mpt_idx, xres->mpt_tbl)) {
+		xsc_core_err(dev, "dealloc mpt entry fail\n");
 		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -360,8 +448,12 @@ int alloc_mtt_entry(struct xsc_core_device *dev, u32 pages_num, u32 *mtt_base)
 	ret = alloc_from_free_list(&xres->mtt_list, pages_num, mtt_base, 1);
 	spin_unlock_irqrestore(&xres->mtt_list.lock, flags);
 
-	xsc_core_dbg(dev, "alloc mtt for %d pages start from %d\n",
-		     pages_num, *mtt_base);
+	if (ret)
+		xsc_core_err(dev, "alloc mtt fail, ret %d pages %d num %d total_avail %u\n",
+			     ret, pages_num, xres->mtt_list.num, xres->mtt_list.total_avail);
+	else
+		xsc_core_dbg(dev, "alloc mtt for %d pages start from %d\n",
+			     pages_num, *mtt_base);
 
 	return ret;
 }
@@ -382,3 +474,22 @@ int dealloc_mtt_entry(struct xsc_core_device *dev, int pages_num, u32 mtt_base)
 	return ret;
 }
 
+int alloc_srq_entry(struct xsc_core_device *dev, u32 *srq_idx)
+{
+	struct xsc_srq_res *xres = &dev->board_info->srq_res;
+
+	if (xsc_alloc_res(srq_idx, xres->srq_tbl, xres->max_srq_num))
+		return -EINVAL;
+
+	return 0;
+}
+
+int dealloc_srq_entry(struct xsc_core_device *dev, u32 *srq_idx)
+{
+	struct xsc_srq_res *xres = &dev->board_info->srq_res;
+
+	if (xsc_dealloc_res(srq_idx, xres->srq_tbl))
+		return -EINVAL;
+
+	return 0;
+}

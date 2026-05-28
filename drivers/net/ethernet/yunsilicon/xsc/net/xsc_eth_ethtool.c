@@ -13,13 +13,8 @@
 #include "common/xsc_pp.h"
 #include "common/port.h"
 #include "xsc_eth_dim.h"
-
-typedef int (*xsc_pflag_handler)(struct net_device *dev, bool enable);
-
-struct pflag_desc {
-	char name[ETH_GSTRING_LEN];
-	xsc_pflag_handler handler;
-};
+#include "rep/xsc_eth_rep.h"
+#include "common/xsc_core.h"
 
 static const char * const fpga_type_name[] = {"S", "L"};
 static const char * const hps_ddr_name[] = {"1", "2", "4", "unknown"};
@@ -87,35 +82,6 @@ static int xsc_test_link_speed(struct xsc_adapter *adapter)
 	return 0;
 }
 
-static int set_pflag_rx_no_csum_complete(struct net_device *dev,
-					 bool enable)
-{
-	struct xsc_adapter *priv = netdev_priv(dev);
-
-	XSC_SET_PFLAG(&priv->nic_param, XSC_PFLAG_RX_NO_CSUM_COMPLETE, enable);
-
-	return 0;
-}
-
-static int set_pflag_sniffer(struct net_device *dev, bool enable)
-{
-	struct xsc_adapter *priv = netdev_priv(dev);
-
-	XSC_SET_PFLAG(&priv->nic_param, XSC_PFLAG_SNIFFER, enable);
-
-	return 0;
-}
-
-static int set_pflag_dropless_rq(struct net_device *dev,
-				 bool enable)
-{
-	struct xsc_adapter *priv = netdev_priv(dev);
-
-	XSC_SET_PFLAG(&priv->nic_param, XSC_PFLAG_DROPLESS_RQ, enable);
-
-	return 0;
-}
-
 static int set_pflag_rx_copy_break(struct net_device *dev,
 				   bool enable)
 {
@@ -170,13 +136,82 @@ static int set_pflag_tx_cqe_moder(struct net_device *dev, bool enable)
 	return set_pflag_cqe_based_moder(dev, enable, false);
 }
 
-static const struct pflag_desc xsc_priv_flags[XSC_NUM_PFLAGS] = {
-	{ "rx_no_csum_complete",	set_pflag_rx_no_csum_complete },
-	{ "sniffer",			set_pflag_sniffer },
-	{ "dropless_rq",		set_pflag_dropless_rq},
+static int set_pflag_rx_tc_skb_ext(struct net_device *dev, bool enable)
+{
+	struct xsc_adapter *priv = netdev_priv(dev);
+
+	XSC_SET_PFLAG(&priv->nic_param, XSC_PFLAG_RX_TC_SKB_EXT, enable);
+
+	return set_feature_rx_tc_skb_ext(dev, enable);
+}
+
+static int set_pflag_arp_filter(struct net_device *dev, bool enable)
+{
+	struct xsc_adapter *priv = netdev_priv(dev);
+
+	if (!xsc_support_hw_feature(priv->xdev, XSC_HW_ARP_FILTER_SUPPORT))
+		return -EOPNOTSUPP;
+
+	XSC_SET_PFLAG(&priv->nic_param, XSC_PFLAG_ARP_FILTER, enable);
+
+	return 0;
+}
+
+static int set_pflag_link_down_on_close(struct net_device *dev, bool enable)
+{
+	struct xsc_adapter *priv = netdev_priv(dev);
+
+	if (!xsc_core_is_pf(priv->xdev))
+		return 0;
+
+	XSC_SET_PFLAG(&priv->nic_param, XSC_PFLAG_LINK_DOWN_ON_CLOSE, enable);
+
+	return 0;
+}
+
+static int set_pflag_tunnel_gso(struct net_device *dev, bool enable)
+{
+	struct xsc_adapter *priv = netdev_priv(dev);
+
+	if (xsc_support_hw_feature(priv->xdev, XSC_HW_OFFLOAD_UNSUPPORT))
+		return -EOPNOTSUPP;
+
+	XSC_SET_PFLAG(&priv->nic_param, XSC_PFLAG_TUNNEL_GSO, enable);
+
+	if (enable) {
+		dev->hw_enc_features |= NETIF_F_IP_CSUM |
+				NETIF_F_IPV6_CSUM |
+				NETIF_F_TSO |
+				NETIF_F_TSO6 |
+				NETIF_F_GSO_PARTIAL |
+				NETIF_F_GSO_UDP_TUNNEL |
+				NETIF_F_GSO_UDP_TUNNEL_CSUM;
+
+		dev->hw_features |= NETIF_F_GSO_UDP_TUNNEL | NETIF_F_GSO_UDP_TUNNEL_CSUM;
+	} else {
+		dev->hw_enc_features &=
+			~(NETIF_F_IP_CSUM |
+			  NETIF_F_IPV6_CSUM |
+			  NETIF_F_TSO |
+			  NETIF_F_TSO6 |
+			  NETIF_F_GSO_PARTIAL |
+			  NETIF_F_GSO_UDP_TUNNEL |
+			  NETIF_F_GSO_UDP_TUNNEL_CSUM);
+
+		dev->hw_features &= ~(NETIF_F_GSO_UDP_TUNNEL | NETIF_F_GSO_UDP_TUNNEL_CSUM);
+	}
+
+	return 0;
+}
+
+const struct pflag_desc xsc_priv_flags[XSC_NUM_PFLAGS] = {
 	{ "rx_copy_break",		set_pflag_rx_copy_break},
 	{ "rx_cqe_moder",		set_pflag_rx_cqe_moder},
 	{ "tx_cqe_moder",		set_pflag_tx_cqe_moder},
+	{ "rx_tc_skb_ext",		set_pflag_rx_tc_skb_ext},
+	{ "arp_filter",			set_pflag_arp_filter},
+	{ "link-down-on-close",	set_pflag_link_down_on_close},
+	{ "tunnel_gso",			set_pflag_tunnel_gso},
 };
 
 static int xsc_handle_pflag(struct net_device *dev,
@@ -200,7 +235,7 @@ static int xsc_handle_pflag(struct net_device *dev,
 	return err;
 }
 
-static int xsc_set_priv_flags(struct net_device *dev, u32 pflags)
+int xsc_set_priv_flags(struct net_device *dev, u32 pflags)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	enum xsc_eth_priv_flag pflag;
@@ -356,7 +391,7 @@ static int xsc_get_module_eeprom_by_page(struct net_device *netdev,
 	return i;
 }
 
-static u32 xsc_get_priv_flags(struct net_device *dev)
+u32 xsc_get_priv_flags(struct net_device *dev)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 
@@ -365,36 +400,48 @@ static u32 xsc_get_priv_flags(struct net_device *dev)
 
 static void xsc_set_drv_fw_version(struct ethtool_drvinfo *info, struct xsc_core_device *xdev)
 {
-	u8 fw_ver_major = xdev->fw_version_major;
-	u8 fw_ver_minor = xdev->fw_version_minor;
-	u16 fw_ver_patch = xdev->fw_version_patch;
-	u32 fw_ver_tweak = xdev->fw_version_tweak;
-	u8 fw_ver_extra_flag = xdev->fw_version_extra_flag;
+	u8 fw_ver_major;
+	u8 fw_ver_minor;
+	u16 fw_ver_patch;
+	u32 fw_ver_tweak;
+	u8 fw_ver_extra_flag;
+	int ret;
+
+	ret = xsc_cmd_query_fw_version(xdev);
+
+	fw_ver_major = xdev->fw_version_major;
+	fw_ver_minor = xdev->fw_version_minor;
+	fw_ver_patch = xdev->fw_version_patch;
+	fw_ver_tweak = xdev->fw_version_tweak;
+	fw_ver_extra_flag = xdev->fw_version_extra_flag;
 
 	if (fw_ver_tweak == 0) {
 		if (fw_ver_extra_flag == 0) {
-			snprintf(info->fw_version, sizeof(info->fw_version), "v%u.%u.%u",
+			snprintf(info->fw_version, sizeof(info->fw_version), "%u.%u.%u",
 				 fw_ver_major, fw_ver_minor, fw_ver_patch);
 		} else {
-			snprintf(info->fw_version, sizeof(info->fw_version), "v%u.%u.%u-dirty",
+			snprintf(info->fw_version, sizeof(info->fw_version), "%u.%u.%u-dirty",
 				 fw_ver_major, fw_ver_minor, fw_ver_patch);
 		}
 	} else {
 		if (fw_ver_extra_flag == 0) {
-			snprintf(info->fw_version, sizeof(info->fw_version), "v%u.%u.%u+%u",
+			snprintf(info->fw_version, sizeof(info->fw_version), "%u.%u.%u.%u",
 				 fw_ver_major, fw_ver_minor, fw_ver_patch, fw_ver_tweak);
 		} else {
-			snprintf(info->fw_version, sizeof(info->fw_version), "v%u.%u.%u+%u-dirty",
+			snprintf(info->fw_version, sizeof(info->fw_version), "%u.%u.%u.%u-dirty",
 				 fw_ver_major, fw_ver_minor, fw_ver_patch, fw_ver_tweak);
 		}
 	}
 }
 
-static void xsc_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
+void xsc_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 {
 	struct xsc_adapter *adapter = netdev_priv(dev);
 
-	snprintf(info->driver, sizeof(info->driver), "%s", XSCALE_DRIVER_NAME);
+	if (!xsc_is_vport_rep(adapter))
+		snprintf(info->driver, sizeof(info->driver), "%s", XSCALE_DRIVER_NAME);
+	else
+		snprintf(info->driver, sizeof(info->driver), "%s", XSCALE_REP_DRIVER_NAME);
 
 	if (HOTFIX_NUM == 0)
 		snprintf(info->version, sizeof(info->version), "%d.%d.%d.%d",
@@ -411,8 +458,21 @@ static void xsc_fill_stats_strings(struct xsc_adapter *adapter, u8 *data)
 {
 	int i, idx = 0;
 
-	for (i = 0; i < xsc_num_stats_grps; i++)
-		idx = xsc_stats_grps[i].fill_strings(adapter, data, idx);
+	if (is_dpu_host_pf(adapter->xdev->pdev->device)) {
+		for (i = 0; i < xsc_num_sw_stats_grps; i++)
+			idx = xsc_sw_stats_grps[i].fill_strings(adapter, data, idx);
+	} else {
+		for (i = 0; i < xsc_num_stats_grps; i++)
+			idx = xsc_stats_grps[i].fill_strings(adapter, data, idx);
+	}
+}
+
+void xsc_rep_fill_stats_strings(struct xsc_adapter *adapter, u8 *data)
+{
+	int i, idx = 0;
+
+	for (i = 0; i < xsc_rep_num_stats_grps; i++)
+		idx = xsc_rep_stats_grps[i].fill_strings(adapter, data, idx);
 }
 
 static int xsc_self_test_num(struct xsc_adapter *adapter)
@@ -429,7 +489,7 @@ static void xsc_ethtool_get_strings(struct xsc_adapter *adapter, u32 stringset, 
 		xsc_fill_stats_strings(adapter, data);
 		break;
 	case ETH_SS_PHY_STATS:
-		xsc_get_prs_chk_err_stats_strings(adapter, data);
+		xsc_get_phy_chk_err_stats_strings(adapter, data);
 		break;
 	case ETH_SS_TEST:
 		for (i = 0; i < xsc_self_test_num(adapter); i++)
@@ -456,17 +516,43 @@ static void xsc_get_strings(struct net_device *dev, u32 stringset, u8 *data)
 	xsc_ethtool_get_strings(adapter, stringset, data);
 }
 
+unsigned int xsc_stats_total_num(struct xsc_adapter *adapter)
+{
+	int i, num_stats = 0;
+
+	for (i = 0; i < xsc_num_stats_grps; i++)
+		num_stats += xsc_stats_grps[i].get_num_stats(adapter);
+
+	return num_stats;
+}
+
+unsigned int xsc_rep_stats_total_num(struct xsc_adapter *adapter)
+{
+	int i, num_stats = 0;
+
+	for (i = 0; i < xsc_rep_num_stats_grps; i++)
+		num_stats += xsc_rep_stats_grps[i].get_num_stats(adapter);
+
+	return num_stats;
+}
+
 static int xsc_ethtool_get_sset_count(struct xsc_adapter *adapter, int sset)
 {
 	int i, num_stats = 0;
 
 	switch (sset) {
 	case ETH_SS_STATS:
-		for (i = 0; i < xsc_num_stats_grps; i++)
-			num_stats += xsc_stats_grps[i].get_num_stats(adapter);
+		if (is_dpu_host_pf(adapter->xdev->pdev->device)) {
+			for (i = 0; i < xsc_num_sw_stats_grps; i++)
+				num_stats += xsc_sw_stats_grps[i].get_num_stats(adapter);
+		} else {
+			for (i = 0; i < xsc_num_stats_grps; i++)
+				num_stats += xsc_stats_grps[i].get_num_stats(adapter);
+		}
 		return num_stats;
+
 	case ETH_SS_PHY_STATS:
-		return xsc_get_prs_chk_err_stats_count(adapter);
+		return xsc_get_phy_chk_err_stats_count(adapter);
 	case ETH_SS_PRIV_FLAGS:
 		return XSC_NUM_PFLAGS;
 	case ETH_SS_TEST:
@@ -526,13 +612,19 @@ static void xsc_update_stats(struct xsc_adapter *adapter)
 {
 	int i;
 
-	for (i = xsc_num_stats_grps - 1; i >= 0; i--)
-		if (xsc_stats_grps[i].update_stats)
-			xsc_stats_grps[i].update_stats(adapter);
+	if (is_dpu_host_pf(adapter->xdev->pdev->device)) {
+		for (i = xsc_num_sw_stats_grps - 1; i >= 0; i--)
+			if (xsc_sw_stats_grps[i].update_stats)
+				xsc_sw_stats_grps[i].update_stats(adapter);
+	} else {
+		for (i = xsc_num_stats_grps - 1; i >= 0; i--)
+			if (xsc_stats_grps[i].update_stats)
+				xsc_stats_grps[i].update_stats(adapter);
+	}
 }
 
-static void xsc_ethtool_get_ethtool_stats(struct xsc_adapter *adapter,
-					  struct ethtool_stats *stats, u64 *data)
+static void xsc_ethtool_get_stats(struct xsc_adapter *adapter,
+				  struct ethtool_stats *stats, u64 *data)
 {
 	int i, idx = 0;
 
@@ -540,8 +632,13 @@ static void xsc_ethtool_get_ethtool_stats(struct xsc_adapter *adapter,
 	xsc_update_stats(adapter);
 	mutex_unlock(&adapter->state_lock);
 
-	for (i = 0; i < xsc_num_stats_grps; i++)
-		idx = xsc_stats_grps[i].fill_stats(adapter, data, idx);
+	if (is_dpu_host_pf(adapter->xdev->pdev->device)) {
+		for (i = 0; i < xsc_num_sw_stats_grps; i++)
+			idx = xsc_sw_stats_grps[i].fill_stats(adapter, data, idx);
+	} else {
+		for (i = 0; i < xsc_num_stats_grps; i++)
+			idx = xsc_stats_grps[i].fill_stats(adapter, data, idx);
+	}
 }
 
 static void xsc_get_ethtool_stats(struct net_device *dev,
@@ -549,7 +646,29 @@ static void xsc_get_ethtool_stats(struct net_device *dev,
 {
 	struct xsc_adapter *adapter = netdev_priv(dev);
 
-	xsc_ethtool_get_ethtool_stats(adapter, stats, data);
+	xsc_ethtool_get_stats(adapter, stats, data);
+}
+
+static void xsc_rep_update_stats(struct xsc_adapter *adapter)
+{
+	int i;
+
+	for (i = xsc_rep_num_stats_grps - 1; i >= 0; i--)
+		if (xsc_rep_stats_grps[i].update_stats)
+			xsc_rep_stats_grps[i].update_stats(adapter);
+}
+
+void xsc_rep_ethtool_get_stats(struct xsc_adapter *adapter,
+			       struct ethtool_stats *stats, u64 *data)
+{
+	int i, idx = 0;
+
+	mutex_lock(&adapter->state_lock);
+	xsc_rep_update_stats(adapter);
+	mutex_unlock(&adapter->state_lock);
+
+	for (i = 0; i < xsc_rep_num_stats_grps; i++)
+		idx = xsc_rep_stats_grps[i].fill_stats(adapter, data, idx);
 }
 
 static void xsc_get_ethtool_phy_stats(struct net_device *dev,
@@ -557,7 +676,7 @@ static void xsc_get_ethtool_phy_stats(struct net_device *dev,
 {
 	struct xsc_adapter *adapter = netdev_priv(dev);
 
-	xsc_fill_prs_chk_err_stats(adapter, data);
+	xsc_fill_phy_chk_err_stats(adapter, data);
 }
 
 static u32 xsc_get_msglevel(struct net_device *dev)
@@ -570,23 +689,23 @@ static void xsc_set_msglevel(struct net_device *dev, u32 val)
 	((struct xsc_adapter *)netdev_priv(dev))->msglevel = val;
 }
 
-static void xsc_get_ringparam(struct net_device *dev,
-			      struct ethtool_ringparam *param,
-			      struct kernel_ethtool_ringparam *kernel_param,
-			      struct netlink_ext_ack *extack)
+void xsc_get_ringparam(struct net_device *dev,
+		       struct ethtool_ringparam *param,
+		       struct kernel_ethtool_ringparam *kernel_param,
+		       struct netlink_ext_ack *extack)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 
-	param->rx_max_pending = 8192; //hack for H3C
+	param->rx_max_pending = priv->nic_param.rq_max_size;
 	param->rx_pending     = priv->nic_param.rq_size;
-	param->tx_max_pending = 8192; //hack for H3C
+	param->tx_max_pending = priv->nic_param.sq_max_size;
 	param->tx_pending     = priv->nic_param.sq_size;
 }
 
-static int xsc_set_ringparam(struct net_device *dev,
-			     struct ethtool_ringparam *param,
-			     struct kernel_ethtool_ringparam *kernel_param,
-			     struct netlink_ext_ack *extack)
+int xsc_set_ringparam(struct net_device *dev,
+		      struct ethtool_ringparam *param,
+		      struct kernel_ethtool_ringparam *kernel_param,
+		      struct netlink_ext_ack *extack)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	u32 old_rq_size, old_sq_size;
@@ -611,7 +730,7 @@ static int xsc_set_ringparam(struct net_device *dev,
 	if (param->rx_pending > priv->nic_param.rq_max_size) {
 		netdev_info(priv->netdev, "%s: rx_pending (%d) > max (%d)\n",
 			    __func__, param->rx_pending, priv->nic_param.rq_max_size);
-		param->rx_pending = priv->nic_param.rq_max_size;
+		return -EINVAL;
 	}
 
 	if (param->tx_pending < BIT(XSC_MIN_LOG_SQ_SZ)) {
@@ -622,7 +741,7 @@ static int xsc_set_ringparam(struct net_device *dev,
 	if (param->tx_pending > priv->nic_param.sq_max_size) {
 		netdev_info(priv->netdev, "%s: tx_pending (%d) > max (%d)\n",
 			    __func__, param->tx_pending, priv->nic_param.sq_max_size);
-		param->tx_pending = priv->nic_param.sq_max_size;
+		return -EINVAL;
 	}
 
 	if (param->rx_pending == priv->nic_param.rq_size &&
@@ -630,9 +749,6 @@ static int xsc_set_ringparam(struct net_device *dev,
 		return 0;
 
 	mutex_lock(&priv->state_lock);
-
-	if (priv->status != XSCALE_ETH_DRIVER_OK)
-		goto unlock;
 
 	old_rq_size = priv->nic_param.rq_size;
 	old_sq_size = priv->nic_param.sq_size;
@@ -642,6 +758,10 @@ static int xsc_set_ringparam(struct net_device *dev,
 	netdev_info(priv->netdev, "%s: tx_pending(%d->%d), rx_pending(%d->%d)\n",
 		    __func__, old_sq_size, param->tx_pending,
 		    old_rq_size, priv->nic_param.rq_size);
+
+	if (priv->status != XSCALE_ETH_DRIVER_OK)
+		goto unlock;
+
 	err = xsc_safe_switch_channels(priv, NULL, NULL);
 	if (err) {
 		priv->nic_param.rq_size = old_rq_size;
@@ -656,7 +776,7 @@ unlock:
 	return err;
 }
 
-static void xsc_get_channels(struct net_device *dev, struct ethtool_channels *ch)
+void xsc_get_channels(struct net_device *dev, struct ethtool_channels *ch)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 
@@ -668,7 +788,7 @@ static void xsc_get_channels(struct net_device *dev, struct ethtool_channels *ch
 	mutex_unlock(&priv->state_lock);
 }
 
-static int  xsc_set_channels(struct net_device *dev, struct ethtool_channels *ch)
+int xsc_set_channels(struct net_device *dev, struct ethtool_channels *ch)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 	struct xsc_eth_params *params = &priv->nic_param;
@@ -886,14 +1006,14 @@ static int xsc_set_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
 	return err;
 }
 
-static u32 xsc_get_rxfh_key_size(struct net_device *dev)
+u32 xsc_get_rxfh_key_size(struct net_device *dev)
 {
 	struct xsc_adapter *priv = netdev_priv(dev);
 
 	return sizeof(priv->rss_params.toeplitz_hash_key);
 }
 
-static u32 xsc_get_rxfh_indir_size(struct net_device *netdev)
+u32 xsc_get_rxfh_indir_size(struct net_device *netdev)
 {
 	return XSC_INDIR_RQT_SIZE;
 }
@@ -950,8 +1070,8 @@ static int xsc_set_rxfh(struct net_device *dev, const u32 *indir, const u8 *key,
 	return err;
 }
 
-static int xsc_get_link_ksettings(struct net_device *netdev,
-				  struct ethtool_link_ksettings *cmd)
+int xsc_get_link_ksettings(struct net_device *netdev,
+			   struct ethtool_link_ksettings *cmd)
 {
 	struct xsc_adapter *adapter = netdev_priv(netdev);
 	struct xsc_event_linkinfo linkinfo;
@@ -1029,8 +1149,8 @@ static int xsc_get_link_ksettings(struct net_device *netdev,
 	return 0;
 }
 
-static int xsc_set_link_ksettings(struct net_device *netdev,
-				  const struct ethtool_link_ksettings *cmd)
+int xsc_set_link_ksettings(struct net_device *netdev,
+			   const struct ethtool_link_ksettings *cmd)
 {
 	struct xsc_adapter *adapter = netdev_priv(netdev);
 	struct xsc_event_linkinfo linkinfo;
@@ -1241,10 +1361,10 @@ static int xsc_get_fecparam(struct net_device *netdev,
 	return err;
 }
 
-static int xsc_get_coalesce(struct net_device *netdev,
-			    struct ethtool_coalesce *coal,
-			    struct kernel_ethtool_coalesce *kernel_coal,
-			    struct netlink_ext_ack *extack)
+int xsc_get_coalesce(struct net_device *netdev,
+		     struct ethtool_coalesce *coal,
+		     struct kernel_ethtool_coalesce *kernel_coal,
+		     struct netlink_ext_ack *extack)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	xsc_dim_cq_moder_t *rx_moder, *tx_moder;
@@ -1269,10 +1389,10 @@ static int xsc_get_coalesce(struct net_device *netdev,
 	return 0;
 }
 
-static int xsc_set_coalesce(struct net_device *netdev,
-			    struct ethtool_coalesce *coal,
-			    struct kernel_ethtool_coalesce *kernel_coal,
-			    struct netlink_ext_ack *extack)
+int xsc_set_coalesce(struct net_device *netdev,
+		     struct ethtool_coalesce *coal,
+		     struct kernel_ethtool_coalesce *kernel_coal,
+		     struct netlink_ext_ack *extack)
 {
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	xsc_dim_cq_moder_t *rx_moder, *tx_moder;

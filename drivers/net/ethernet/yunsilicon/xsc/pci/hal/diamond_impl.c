@@ -11,6 +11,27 @@
 #include "common/xsc_hsi.h"
 #include "xsc_hal.h"
 
+/* message opcode */
+enum {
+	XSC_MSG_OPCODE_SEND		= 0,
+	XSC_MSG_OPCODE_RDMA_WRITE	= 1,
+	XSC_MSG_OPCODE_RDMA_READ	= 2,
+	XSC_MSG_OPCODE_MAD		= 3,
+	XSC_MSG_OPCODE_RDMA_ACK		= 4,
+	XSC_MSG_OPCODE_RDMA_ACK_READ	= 5,
+	XSC_MSG_OPCODE_RDMA_CNP		= 6,
+	XSC_MSG_OPCODE_RAW		= 7,
+	XSC_MSG_OPCODE_VIRTIO_NET	= 8,
+	XSC_MSG_OPCODE_VIRTIO_BLK	= 9,
+	XSC_MSG_OPCODE_RAW_TPE		= 10,
+	XSC_MSG_OPCODE_INIT_QP_REQ	= 11,
+	XSC_MSG_OPCODE_INIT_QP_RSP	= 12,
+	XSC_MSG_OPCODE_INIT_PATH_REQ	= 13,
+	XSC_MSG_OPCODE_INIT_PATH_RSP	= 14,
+
+	XSC_MSG_OPCODE_UNSUPPORT	= -1,
+};
+
 #define REG_ADDR(bp, offset)	((bp) + (offset))
 
 #define HIF_CPM_IDA_DATA_MEM_STRIDE		0x40
@@ -23,6 +44,9 @@
 #define CPM_IAE_DATA_MEM_STRIDE			HIF_CPM_IDA_DATA_MEM_STRIDE
 
 #define CPM_IAE_DATA_MEM_MAX_LEN		16
+
+#define APS_SHARE_DATA_FW_INIT_STAGE_REG_ADDR	(APS_SHARE_DATA_REG_ADDR + 0x30)
+#define APS_SHARE_DATA_FW_RESET_INFO_REG_ADDR	(APS_SHARE_DATA_REG_ADDR + 0x40)
 
 static inline void acquire_ia64_lock(void *hal, void __iomem *bar, int *iae_idx)
 {
@@ -172,13 +196,13 @@ static void xsc_ia64_write(void *hal, void __iomem *bar, u32 addr, void *data, i
 	release_ia64_lock(_hal, bar, idx);
 }
 
-static void diamond_ring_tx_doorbell(void *hal, void __iomem *bar, u32 sqn, u32 next_pid)
+static void diamond_ring_tx_doorbell(void *hal, void __iomem *bar, u32 sqn, u32 next_pid, bool mdb)
 {
 	struct xsc_hw_abstract_layer *_hal = hal;
 	union xsc2_send_doorbell {
 		struct{
-			u64  next_pid : 17;
-			u64 qp_id : 14;
+			u64  next_pid : 21;
+			u64 qp_id : 16;
 		};
 		u64 raw;
 	} db;
@@ -199,8 +223,8 @@ static void diamond_ring_rx_doorbell(void *hal, void __iomem *bar, u32 rqn, u32 
 	struct xsc_hw_abstract_layer *_hal = hal;
 	union xsc2_recv_doorbell {
 		struct{
-			u64  next_pid : 14;
-			u64 qp_id : 14;
+			u64  next_pid : 18;
+			u64 qp_id : 16;
 		};
 		u64 raw;
 	} db;
@@ -219,7 +243,7 @@ static void diamond_ring_rx_doorbell(void *hal, void __iomem *bar, u32 rqn, u32 
 union diamond_cq_doorbell {
 	struct{
 		u64	cq_next_cid:23;
-		u64	cq_id:14;
+		u64	cq_id:16;
 		u64	cq_sta:2;
 	};
 	u64	raw;
@@ -248,7 +272,7 @@ static void diamond_set_cq_ci(void *hal, void __iomem *bar, u32 cqn, u32 next_ci
 
 	db.cq_next_cid = next_cid;
 	db.cq_id = cqn;
-	db.cq_sta = CQ_STAT_FIRED;
+	db.cq_sta = CQ_STAT_KEEP;
 	/* make sure val write to memory done */
 	wmb();
 	xsc_write64(bar, _hal->regs->complete_db, &db.raw);
@@ -260,7 +284,7 @@ static void diamond_set_eq_ci(void *hal, void __iomem *bar, u32 eqn, u32 next_ci
 	union diamond_eq_doorbell {
 		struct{
 			u64 eq_next_cid : 12;
-			u64 eq_id : 8;
+			u64 eq_id : 16;
 			u64 eq_sta : 1;
 		};
 		u64 raw;
@@ -365,16 +389,17 @@ static void diamond_set_mtt_tbl(void *hal, void __iomem *bar, int iae_idx,
 	u32 reg_addr;
 	u32 mtt_base_addr = _hal->regs->mtt_inst_base_addr;
 	u32 stride = _hal->regs->mtt_inst_stride;
-	u8 inst_mask = (1 << _hal->regs->mtt_inst_num_log) - 1;
 	u8 inst;
+	u32 inst_block_depth = _hal->regs->mtt_inst_depth;
+	u32 inner;
 
 	for (i = 0; i < pa_num; i++) {
 		pa = req->pas[i];
 		pa = be64_to_cpu(pa);
 		pa = pa >> PAGE_SHIFT_4K;
-		inst = (mtt_base + i) & inst_mask;
-		reg_addr = mtt_base_addr + (inst * stride) +
-			((mtt_base + i) >> _hal->regs->mtt_inst_num_log) * sizeof(u64);
+		inst = (mtt_base + i) / inst_block_depth;
+		inner = (mtt_base + i) % inst_block_depth;
+		reg_addr = mtt_base_addr + (inst * stride) + inner * sizeof(u64);
 		xsc_write64(bar, reg_addr, &pa);
 	}
 }
@@ -419,13 +444,19 @@ struct diamond_cqe {
 	__le32		msg_len;
 	__le32		vni;
 	__le64		ts:48;
-	__le16		wqe_id;
+	__le16		rsv3;
 	u8		msg_opcode;
-	u8		rsv;
-	__le16		rsv1[2];
+	u8		rsv:4;
+	__le32		wqe_id:20;
+	__le16		rsv1;
 	__le16		rsv2:15;
 	u8		owner:1;
 };
+
+static int diamond_get_cqe_wqe_id(void *cqe)
+{
+	return ((struct diamond_cqe *)cqe)->wqe_id;
+}
 
 static bool diamond_is_err_cqe(void *cqe)
 {
@@ -453,13 +484,6 @@ static u8 diamond_get_cqe_opcode(void *cqe)
 	return xsc_msg_opcode[msg_opcode][_cqe->type][_cqe->with_immdt];
 }
 
-static u32 diamond_get_max_mtt_num(void *hal)
-{
-	struct xsc_hw_abstract_layer *_hal = hal;
-
-	return _hal->regs->mtt_inst_depth << _hal->regs->mtt_inst_num_log;
-}
-
 static u32 diamond_get_max_mpt_num(void *hal)
 {
 	struct xsc_hw_abstract_layer *_hal = hal;
@@ -482,9 +506,91 @@ static void diamond_set_data_seg(void *data_seg, u32 length, u32 key, u64 addr)
 	seg->addr = addr;
 }
 
+struct diamond_send_wqe_ctrl_seg {
+	__le32		msg_opcode:8;
+	__le32		with_immdt:1;
+	__le32		csum_en:2;
+	__le32		ds_data_num:5;
+	__le32		rsvd:16;
+	__le32		msg_len;
+	union {
+		__le32		opcode_data;
+		struct {
+			u8		has_pph:1;
+			u8		so_type:1;
+			__le16		so_data_size:14;
+			u8:8;
+			u8		so_hdr_len:8;
+		};
+		struct {
+			__le16		desc_id;
+			__le16		is_last_wqe:1;
+			__le16		dst_qp_id:15;
+		};
+	};
+	__le32		se:1;
+	__le32		ce:1;
+	__le32		rsv1:10;
+	__le32		wqe_id:20;
+};
+
+static void diamond_set_wqe_id(void *cseg, u32 wqe_id)
+{
+	((struct diamond_send_wqe_ctrl_seg *)cseg)->wqe_id = cpu_to_le32(wqe_id);
+}
+
 static bool diamond_skb_need_linearize(int ds_num)
 {
 	return ds_num > 4;
+}
+
+#define XSC_FW_INIT_DONE	0x116
+static int diamond_get_fw_init_done(void *hal, void __iomem *bar)
+{
+	struct xsc_hw_abstract_layer *_hal = hal;
+	u64 data;
+
+	xsc_read64(bar, _hal->regs->fw_init_done_addr, &data, sizeof(data));
+
+	return data >= XSC_FW_INIT_DONE;
+}
+
+static int diamond_get_fw_reset_info(void *hal, void __iomem *bar)
+{
+	struct xsc_hw_abstract_layer *_hal = hal;
+	u64 data;
+
+	xsc_read64(bar, _hal->regs->fw_reset_info_addr, &data, sizeof(u64));
+
+	return data;
+}
+
+static void diamond_update_fw_reset_info(void *hal, void __iomem *bar, u64 state)
+{
+	struct xsc_hw_abstract_layer *_hal = hal;
+
+	xsc_write64(bar, _hal->regs->fw_reset_info_addr, &state);
+}
+
+static struct xsc_msg_opcode xsc_ib_opcode = {
+	.send = XSC_MSG_OPCODE_SEND,
+	.send_with_imm = XSC_MSG_OPCODE_SEND,
+	.rdma_write = XSC_MSG_OPCODE_RDMA_WRITE,
+	.rdma_write_with_imm = XSC_MSG_OPCODE_RDMA_WRITE,
+	.rdma_read = XSC_MSG_OPCODE_RDMA_READ,
+	.local_inv = XSC_MSG_OPCODE_SEND,
+	.reg_mr = XSC_MSG_OPCODE_SEND,
+	.send_with_inv = XSC_MSG_OPCODE_SEND,
+	.atomic_cmp_and_swp = XSC_MSG_OPCODE_UNSUPPORT,
+	.atomic_fetch_and_add = XSC_MSG_OPCODE_UNSUPPORT,
+	.masked_atomic_cmp_and_swp = XSC_MSG_OPCODE_UNSUPPORT,
+	.masked_atomic_fetch_and_add = XSC_MSG_OPCODE_UNSUPPORT,
+	.mad = XSC_MSG_OPCODE_RAW,
+};
+
+static struct xsc_msg_opcode *diamond_get_msg_opcode(void)
+{
+	return &xsc_ib_opcode;
 }
 
 static struct xsc_hw_ops diamond_arch_ops = {
@@ -509,10 +615,15 @@ static struct xsc_hw_ops diamond_arch_ops = {
 	.is_err_cqe = diamond_is_err_cqe,
 	.get_cqe_error_code = diamond_get_cqe_error_code,
 	.get_cqe_opcode = diamond_get_cqe_opcode,
-	.get_max_mtt_num = diamond_get_max_mtt_num,
 	.get_max_mpt_num = diamond_get_max_mpt_num,
 	.set_data_seg = diamond_set_data_seg,
 	.skb_need_linearize = diamond_skb_need_linearize,
+	.get_fw_init_done = diamond_get_fw_init_done,
+	.get_fw_reset_info = diamond_get_fw_reset_info,
+	.update_fw_reset_info = diamond_update_fw_reset_info,
+	.get_msg_opcode = diamond_get_msg_opcode,
+	.set_wqe_id = diamond_set_wqe_id,
+	.get_cqe_wqe_id = diamond_get_cqe_wqe_id,
 };
 
 static struct xsc_hw_reg diamond_pf_regs = {
@@ -538,10 +649,12 @@ static struct xsc_hw_reg diamond_pf_regs = {
 	.mpt_tbl_addr = MMC_MPT_TBL_MEM_ADDR - 0xa0000000,
 	.mpt_tbl_depth = MMC_MPT_TBL_MEM_DEPTH,
 	.mpt_tbl_width = MMC_MPT_TBL_MEM_WIDTH,
-	.mtt_inst_base_addr = MMC_MTT_TBL_MEM_ADDR - 0xa0000000,
+	.mtt_inst_base_addr = 0,
 	.mtt_inst_stride = 0,
 	.mtt_inst_num_log = 0,
-	.mtt_inst_depth = MMC_MTT_TBL_MEM_DEPTH,
+	.mtt_inst_depth = 0,
+	.fw_init_done_addr = APS_SHARE_DATA_FW_INIT_STAGE_REG_ADDR - 0xa0000000,
+	.fw_reset_info_addr = APS_SHARE_DATA_FW_RESET_INFO_REG_ADDR - 0xa0000000,
 };
 
 static struct xsc_hw_reg diamond_vf_regs = {
@@ -572,10 +685,12 @@ static struct xsc_hw_reg diamond_vf_regs = {
 	.mpt_tbl_addr = MMC_MPT_TBL_MEM_ADDR - 0xa0000000,
 	.mpt_tbl_depth = MMC_MPT_TBL_MEM_DEPTH,
 	.mpt_tbl_width = MMC_MPT_TBL_MEM_WIDTH,
-	.mtt_inst_base_addr = MMC_MTT_TBL_MEM_ADDR - 0xa0000000,
+	.mtt_inst_base_addr = 0,
 	.mtt_inst_stride = 0,
 	.mtt_inst_num_log = 0,
-	.mtt_inst_depth = MMC_MTT_TBL_MEM_DEPTH,
+	.mtt_inst_depth = 0,
+	.fw_init_done_addr = APS_SHARE_DATA_FW_INIT_STAGE_REG_ADDR - 0xa0000000,
+	.fw_reset_info_addr = APS_SHARE_DATA_FW_RESET_INFO_REG_ADDR - 0xa0000000,
 };
 
 struct xsc_hw_abstract_layer diamond_pf_hal = {

@@ -16,6 +16,7 @@
 #include "common/xsc_core.h"
 #include "common/driver.h"
 #include "common/cq.h"
+#include "common/srq.h"
 #include "common/qp.h"
 #include <linux/types.h>
 #include <linux/iommu.h>
@@ -79,6 +80,15 @@ struct xsc_ib_ucontext {
 				XSC_PAGE_SZ_2M |	\
 				XSC_PAGE_SZ_1G)
 
+#define MAX_QP1_SQ_HDR_SIZE_V2	512
+#define MAX_QP1_SQ_HDR_SIZE	86
+	/* Ethernet header	=  14 */
+	/* ib_grh		=  40 (provided by MAD) */
+	/* ib_bth + ib_deth	=  20 */
+	/* MAD			= 256 (provided by MAD) */
+	/* iCRC			=   4 */
+#define MAX_QP1_RQ_HDR_SIZE_V2	512
+
 static inline struct xsc_ib_ucontext *to_xucontext(struct ib_ucontext *ibucontext)
 {
 	return container_of(ibucontext, struct xsc_ib_ucontext, ibucontext);
@@ -119,17 +129,17 @@ struct xsc_ib_wq {
 	int			wqe_shift;
 	unsigned int		head;
 	unsigned int		tail;
-	u16			cur_post;
-	u16			last_poll;
+	u32			cur_post;
+	u32			last_poll;
 	void		       *qend;
-	void		*hdr_buf;
-	u32			hdr_size;
-	dma_addr_t	hdr_dma;
-	int			mad_queue_depth;
+	struct xsc_buf	mad_buf;
 	int			mad_index;
 	u32			*wr_opcode;
 	u32			*need_flush;
 	atomic_t	flush_wqe_cnt;
+	int			*prev_ce_wqe;
+	int			last_comp_ce_wqe;
+	int			last_post_ce_wqe;
 };
 
 enum {
@@ -176,12 +186,21 @@ struct xsc_ib_qp {
 	u32			pa_lkey;
 	/* For QP1 */
 	struct ib_ud_header	qp1_hdr;
+	u64			*recv_sge_addr;
 	u32			send_psn;
 	struct xsc_qp_context	ctx;
 	struct ib_cq		*send_cq;
 	struct ib_cq		*recv_cq;
 	/* For qp resources */
 	spinlock_t		lock;
+
+	struct list_head	cq_recv_list;
+	struct list_head	cq_send_list;
+	bool		post_send_invalid;
+	bool		post_recv_invalid;
+	struct ib_recv_wr *srq_head_wr;
+	struct ib_recv_wr *srq_tail_wr;
+	bool has_trig_cq_comp_handle;
 };
 
 struct xsc_ib_cq_buf {
@@ -216,8 +235,44 @@ struct xsc_ib_cq {
 	struct xsc_ib_cq_resize *resize_buf;
 	struct ib_umem	       *resize_umem;
 	int			cqe_size;
+	struct list_head	send_qp_list;
+	struct list_head	recv_qp_list;
 	struct list_head	err_state_qp_list;
+	u32			create_flags;
+	int			invalid;
 };
+
+#define XSC_SRQ_MIN_WR_NUM 16
+
+enum {
+	XSC_SRQ_USER,
+	XSC_SRQ_KERNEL,
+};
+
+struct xsc_ib_srq {
+	struct ib_srq		ibsrq;
+	struct xsc_core_srq	xsrq;
+	struct xsc_db		db;
+	u64		       *wrid;
+	/* protect SRQ hanlding
+	 */
+	spinlock_t		lock;
+	int			head;
+	int			tail;
+	u16			wqe_ctr;
+	struct ib_umem	       *umem;
+	/* serialize arming a SRQ
+	 */
+	struct mutex		mutex;
+	int			wq_sig;
+	int			qp_num;
+	int			create_type;
+};
+
+void xsc_resotre_cache_srq_wrs(struct xsc_ib_srq *srq, struct xsc_ib_qp *qp);
+void xsc_free_one_cache_srq_wr(struct xsc_ib_srq *srq, struct xsc_ib_qp *qp, u64 wr_id);
+void xsc_free_all_cache_wrs(struct ib_recv_wr *wr);
+void xsc_post_cache_wrs(struct xsc_ib_srq *srq, struct xsc_ib_qp *qp, int wr_num, bool init);
 
 struct xsc_ib_xrcd {
 	struct ib_xrcd		ibxrcd;
@@ -302,6 +357,8 @@ struct xsc_ib_resources {
 	struct ib_srq	*s0;
 };
 
+#define MAX_OPCODE	IB_WR_REG_MR
+
 struct xsc_ib_dev {
 	struct ib_device		ib_dev;
 	struct uverbs_object_tree_def *driver_trees[6];
@@ -321,12 +378,9 @@ struct xsc_ib_dev {
 	struct xsc_ib_resources	devr;
 	struct xsc_mr_cache		cache;
 	u32				crc_32_table[256];
-	int cm_pcp;
-	int cm_dscp;
-	int force_pcp;
-	int force_dscp;
 	int iommu_state;
 	struct notifier_block nb;
+	u32				opcode_map[MAX_OPCODE + 1];
 };
 
 union xsc_ib_fw_ver {
@@ -382,6 +436,16 @@ static inline struct xsc_ib_pd *to_mpd(struct ib_pd *ibpd)
 	return container_of(ibpd, struct xsc_ib_pd, ibpd);
 }
 
+static inline struct xsc_ib_srq *to_xsrq(struct ib_srq *ibsrq)
+{
+	return container_of(ibsrq, struct xsc_ib_srq, ibsrq);
+}
+
+static inline struct xsc_ib_srq *to_xibsrq(struct xsc_core_srq *xsrq)
+{
+	return container_of(xsrq, struct xsc_ib_srq, xsrq);
+}
+
 static inline struct xsc_ib_qp *to_xqp(struct ib_qp *ibqp)
 {
 	return container_of(ibqp, struct xsc_ib_qp, ibqp);
@@ -407,6 +471,8 @@ static inline struct xsc_ib_dev *xdev2ibdev(struct xsc_core_device *xdev)
 	return container_of((void *)xdev, struct xsc_ib_dev, xdev);
 }
 
+void build_opcode_map(struct xsc_ib_dev *dev);
+
 int xsc_ib_query_port(struct ib_device *ibdev, u32 port,
 		      struct ib_port_attr *props);
 
@@ -418,15 +484,40 @@ void __xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 qpn);
 void xsc_ib_cq_clean(struct xsc_ib_cq *cq, u32 qpn);
 
 int xsc_ib_query_ah(struct ib_ah *ibah, struct rdma_ah_attr *ah_attr);
+int xsc_ib_err_state_qp(struct xsc_ib_dev *dev, struct xsc_ib_qp *qp,
+			enum xsc_qp_state cur_state, enum xsc_qp_state state);
 int xsc_ib_modify_qp(struct ib_qp *ibqp, struct ib_qp_attr *attr,
 		     int attr_mask, struct ib_udata *udata);
 int xsc_ib_query_qp(struct ib_qp *ibqp, struct ib_qp_attr *qp_attr, int qp_attr_mask,
 		    struct ib_qp_init_attr *qp_init_attr);
 
 int xsc_ib_post_send(struct ib_qp *ibqp, const struct ib_send_wr *wr,
-		     const struct ib_send_wr **bad_wr);
+		     const struct ib_send_wr **bad_wr, bool drain);
 int xsc_ib_post_recv(struct ib_qp *ibqp, const struct ib_recv_wr *wr,
-		     const struct ib_recv_wr **bad_wr);
+		     const struct ib_recv_wr **bad_wr, bool drain);
+static inline int xsc_ib_post_send_nodrain(struct ib_qp *ibqp, const struct ib_send_wr *wr,
+					   const struct ib_send_wr **bad_wr)
+{
+	return xsc_ib_post_send(ibqp, wr, bad_wr, false);
+}
+
+static inline int xsc_ib_post_send_drain(struct ib_qp *ibqp, const struct ib_send_wr *wr,
+					 const struct ib_send_wr **bad_wr)
+{
+	return xsc_ib_post_send(ibqp, wr, bad_wr, true);
+}
+
+static inline int xsc_ib_post_recv_nodrain(struct ib_qp *ibqp, const struct ib_recv_wr *wr,
+					   const struct ib_recv_wr **bad_wr)
+{
+	return xsc_ib_post_recv(ibqp, wr, bad_wr, false);
+}
+
+static inline int xsc_ib_post_recv_drain(struct ib_qp *ibqp, const struct ib_recv_wr *wr,
+					 const struct ib_recv_wr **bad_wr)
+{
+	return xsc_ib_post_recv(ibqp, wr, bad_wr, true);
+}
 
 void *xsc_get_send_wqe(struct xsc_ib_qp *qp, int n);
 int xsc_ib_poll_cq(struct ib_cq *ibcq, int num_entries, struct ib_wc *wc);
@@ -473,13 +564,16 @@ static inline u8 convert_access(int acc)
 	       XSC_PERM_LOCAL_READ;
 }
 
+#define IB_MTU_8192	6
+
 static inline enum ib_mtu xsc_net_to_ib_mtu(unsigned int mtu)
 {
 	mtu = mtu - (IB_GRH_BYTES + IB_UDP_BYTES + IB_BTH_BYTES +
 		     IB_EXT_XRC_BYTES + IB_EXT_ATOMICETH_BYTES +
 		     IB_ICRC_BYTES);
-
-	if (mtu >= ib_mtu_enum_to_int(IB_MTU_4096))
+	if (mtu >= 8192)
+		return IB_MTU_8192;
+	else if (mtu >= ib_mtu_enum_to_int(IB_MTU_4096))
 		return IB_MTU_4096;
 	else if (mtu >= ib_mtu_enum_to_int(IB_MTU_1024))
 		return IB_MTU_1024;
@@ -616,7 +710,7 @@ static inline void *xsc_ib_send_mad_sg_virt_addr(struct ib_device *ibdev,
 }
 
 static inline void *xsc_ib_recv_mad_sg_virt_addr(struct ib_device *ibdev,
-						 struct ib_wc *wc,
+						 struct ib_cqe *wr_cqe,
 						 u64 sg_addr)
 {
 	struct ib_mad_private_header *mad_priv_hdr;
@@ -631,12 +725,24 @@ static inline void *xsc_ib_recv_mad_sg_virt_addr(struct ib_device *ibdev,
 	if (iommu_state == XSC_IB_IOMMU_MAP_NORMAL)
 		return xsc_ib_iova_to_virt(ibdev, sg_addr);
 
-	mad_list = container_of(wc->wr_cqe, struct ib_mad_list_head, cqe);
+	mad_list = container_of(wr_cqe, struct ib_mad_list_head, cqe);
 	mad_priv_hdr = container_of(mad_list, struct ib_mad_private_header, mad_list);
 	recv = container_of(mad_priv_hdr, struct ib_mad_private, header);
 	return &recv->grh;
 }
 
 int xsc_get_rdma_ctrl_info(struct xsc_core_device *xdev, u16 opcode, void *out, int out_size);
+
+struct xsc_ib_burst_info {
+	__u32       max_burst_sz;
+	__u16       typical_pkt_sz;
+	__u16       reserved;
+};
+
+struct xsc_ib_modify_qp {
+	__u32		reserved;
+	struct xsc_ib_burst_info  burst_info;
+	__u32		profile;
+};
 
 #endif /* XSC_IB_H */

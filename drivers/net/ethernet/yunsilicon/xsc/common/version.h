@@ -3,8 +3,8 @@
  * All rights reserved.
  */
 
-#define BRANCH_VERSION 1
-#define MAJOR_VERSION 4
-#define MINOR_VERSION 0
-#define BUILD_VERSION 321
-#define HOTFIX_NUM 158
+#define BRANCH_VERSION 25
+#define MAJOR_VERSION 12
+#define MINOR_VERSION 1230
+#define BUILD_VERSION 1
+#define HOTFIX_NUM 580

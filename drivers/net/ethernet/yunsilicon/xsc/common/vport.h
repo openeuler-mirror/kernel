@@ -40,9 +40,17 @@ enum {
 	XSC_JOIN,
 };
 
+enum {
+	XSC_ESWITCH_VPORT_MATCH_METADATA = BIT(0),
+	XSC_ESWITCH_REG_C1_LOOPBACK_ENABLED = BIT(1),
+	XSC_ESWITCH_VPORT_ACL_NS_CREATED = BIT(2),
+	XSC_ESWITCH_PET_INSERT = BIT(3),
+};
+
 u8 xsc_query_vport_state(struct xsc_core_device *dev, u16 opmod, u16 vport);
-int xsc_modify_vport_admin_state(struct xsc_core_device *dev, u16 opmod,
-				 u16 vport, u8 other_vport, u8 state);
+u8 xsc_query_port_present(struct xsc_core_device *dev, u16 opmod, u16 vport);
+int xsc_modify_vport_admin_state(struct xsc_core_device *dev, u16 vport,
+				 u8 other_vport, u8 state);
 int xsc_query_nic_vport_mac_address(struct xsc_core_device *dev,
 				    u16 vport, u8 *addr);
 int xsc_query_other_nic_vport_mac_address(struct xsc_core_device *dev,

@@ -20,7 +20,7 @@ enum {
 	XSC_PERM_LOCAL_WRITE	= 1 << 1,
 	XSC_PERM_REMOTE_READ	= 1 << 2,
 	XSC_PERM_REMOTE_WRITE	= 1 << 3,
-	XSC_PERM_ATOMIC	= 1 << 6,
+	XSC_PERM_ATOMIC	= 1 << 4,
 	XSC_PERM_UMR_EN	= 1 << 7,
 };
 
@@ -136,5 +136,124 @@ static inline u8 hash_func_type(u8 hash_func)
 		return XSC_HASH_FUNC_TOP;
 	}
 }
+
+#define __xsc_nullp(typ) ((struct xsc_ifc_##typ *)0)
+#define __xsc_byte_sz(typ, fld) sizeof(__xsc_nullp(typ)->fld)
+#define __xsc_byte_off(typ, fld) (offsetof(struct xsc_ifc_##typ, fld))
+#define __xsc_16_off(typ, fld) (__xsc_byte_off(typ, fld) / 2)
+#define __xsc_dw_off(typ, fld) (__xsc_byte_off(typ, fld) / 4)
+#define __xsc_64_off(typ, fld) (__xsc_byte_off(typ, fld) / 8)
+
+#define __xsc_bit_sz(typ, fld) (__xsc_byte_sz(typ, fld) * 8)
+#define __xsc_bit_off(typ, fld) (__xsc_byte_off(typ, fld) * 8)
+#define __xsc_16_bit_off(typ, fld) (16 - __xsc_bit_sz(typ, fld) - (__xsc_bit_off(typ, fld) & 0xf))
+#define __xsc_dw_bit_off(typ, fld) (32 - __xsc_bit_sz(typ, fld) - (__xsc_bit_off(typ, fld) & 0x1f))
+#define __xsc_mask(typ, fld) ((u32)((1ULL << (__xsc_bit_sz(typ, fld) & 0x3f)) - 1ULL))
+#define __xsc_dw_mask(typ, fld) (((u32)__xsc_mask(typ, fld)) << (__xsc_dw_bit_off(typ, fld) & 0x1f))
+#define __xsc_mask16(typ, fld) ((u16)((1ULL << (__xsc_bit_sz(typ, fld) & 0xf)) - 1ULL))
+#define __xsc_16_mask(typ, fld) \
+	(((u16)__xsc_mask16(typ, fld)) << (__xsc_16_bit_off(typ, fld) & 0xf))
+#define __xsc_st_sz_byte(typ) sizeof(struct xsc_ifc_##typ)
+
+#define XSC_FLD_SZ_BYTES(typ, fld) (__xsc_byte_sz(typ, fld))
+#define XSC_ST_SZ_BYTES(typ) (sizeof(struct xsc_ifc_##typ))
+#define XSC_ST_SZ_DW(typ) (sizeof(struct xsc_ifc_##typ) / 4)
+#define XSC_ST_SZ_QW(typ) (sizeof(struct xsc_ifc_##typ) / 8)
+#define XSC_UN_SZ_BYTES(typ) (sizeof(union xsc_ifc_##typ))
+#define XSC_UN_SZ_DW(typ) (sizeof(union xsc_ifc_##typ) / 4)
+#define XSC_BYTE_OFF(typ, fld) (__xsc_byte_off(typ, fld))
+#define XSC_ADDR_OF(typ, p, fld) ((void *)((uint8_t *)(p) + XSC_BYTE_OFF(typ, fld)))
+
+/* insert a value to a struct */
+#define XSC_SET(typ, p, fld, v) do { \
+	u32 _v = v; \
+	BUILD_BUG_ON(XSC_ST_SZ_BYTES(typ) % 4);             \
+	*((__be32 *)(p) + __xsc_dw_off(typ, fld)) = \
+	cpu_to_be32((be32_to_cpu(*((__be32 *)(p) + __xsc_dw_off(typ, fld))) & \
+		     (~__xsc_dw_mask(typ, fld))) | (((_v) & __xsc_mask(typ, fld)) \
+		     << (__xsc_dw_bit_off(typ, fld) & 0x1f))); \
+} while (0)
+
+#define XSC_ARRAY_SET(typ, p, fld, idx, v) do { \
+	BUILD_BUG_ON(__xsc_bit_off(typ, fld) % 32); \
+	XSC_SET(typ, p, fld[idx], v); \
+} while (0)
+
+#define XSC_SET_TO_ONES(typ, p, fld) do { \
+	BUILD_BUG_ON(XSC_ST_SZ_BYTES(typ) % 4);             \
+	*((__be32 *)(p) + __xsc_dw_off(typ, fld)) = \
+	cpu_to_be32((be32_to_cpu(*((__be32 *)(p) + __xsc_dw_off(typ, fld))) & \
+		     (~__xsc_dw_mask(typ, fld))) | ((__xsc_mask(typ, fld)) \
+		     << (__xsc_dw_bit_off(typ, fld) & 0x1f))); \
+} while (0)
+
+#define XSC_GET(typ, p, fld) ((be32_to_cpu(*((__be32 *)(p) +\
+	__xsc_dw_off(typ, fld))) >> (__xsc_dw_bit_off(typ, fld) & 0x1f)) & \
+	__xsc_mask(typ, fld))
+
+#define XSC_GET_PR(typ, p, fld) ({ \
+	u32 ___t = XSC_GET(typ, p, fld); \
+	pr_debug(#fld " = 0x%x\n", ___t); \
+	___t; \
+})
+
+#define __XSC_SET64(typ, p, fld, v) do { \
+	BUILD_BUG_ON(__xsc_bit_sz(typ, fld) != 64); \
+	*((__be64 *)(p) + __xsc_64_off(typ, fld)) = cpu_to_be64(v); \
+} while (0)
+
+#define XSC_SET64(typ, p, fld, v) do { \
+	BUILD_BUG_ON(__xsc_bit_off(typ, fld) % 64); \
+	__XSC_SET64(typ, p, fld, v); \
+} while (0)
+
+#define XSC_ARRAY_SET64(typ, p, fld, idx, v) do { \
+	BUILD_BUG_ON(__xsc_bit_off(typ, fld) % 64); \
+	__XSC_SET64(typ, p, fld[idx], v); \
+} while (0)
+
+#define XSC_GET64(typ, p, fld) be64_to_cpu(*((__be64 *)(p) + __xsc_64_off(typ, fld)))
+
+#define XSC_GET64_PR(typ, p, fld) ({ \
+	u64 ___t = XSC_GET64(typ, p, fld); \
+	pr_debug(#fld " = 0x%llx\n", ___t); \
+	___t; \
+})
+
+#define XSC_GET16(typ, p, fld) ((be16_to_cpu(*((__be16 *)(p) +\
+__xsc_16_off(typ, fld))) >> __xsc_16_bit_off(typ, fld)) & \
+__xsc_mask16(typ, fld))
+
+#define XSC_SET16(typ, p, fld, v) do { \
+	u16 _v = v; \
+	BUILD_BUG_ON(__xsc_st_sz_byte(typ) % 2);             \
+	*((__be16 *)(p) + __xsc_16_off(typ, fld)) = \
+	cpu_to_be16((be16_to_cpu(*((__be16 *)(p) + __xsc_16_off(typ, fld))) & \
+		     (~__xsc_16_mask(typ, fld))) | (((_v) & __xsc_mask16(typ, fld)) \
+		     << __xsc_16_bit_off(typ, fld))); \
+} while (0)
+
+/* Big endian getters */
+#define XSC_GET64_BE(typ, p, fld) (*((__be64 *)(p) +\
+	__xsc_64_off(typ, fld)))
+
+#define XSC_GET_BE(type_t, typ, p, fld) ({				  \
+		type_t tmp;						  \
+		switch (sizeof(tmp)) {					  \
+		case sizeof(u8):					  \
+			tmp = (__force type_t)XSC_GET(typ, p, fld);	  \
+			break;						  \
+		case sizeof(u16):					  \
+			tmp = (__force type_t)cpu_to_be16(XSC_GET(typ, p, fld)); \
+			break;						  \
+		case sizeof(u32):					  \
+			tmp = (__force type_t)cpu_to_be32(XSC_GET(typ, p, fld)); \
+			break;						  \
+		case sizeof(u64):					  \
+			tmp = (__force type_t)XSC_GET64_BE(typ, p, fld); \
+			break;						  \
+			}						  \
+		tmp;							  \
+		})
 
 #endif /* XSC_DEVICE_H */

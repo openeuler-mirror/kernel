@@ -22,39 +22,48 @@
 
 static const struct counter_desc hw_rdma_stats_pf_desc[] = {
 	/*by mac port*/
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_tx_pkts) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_tx_bytes) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_rx_pkts) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_rx_bytes) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  np_cnp_sent) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rp_cnp_handled) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  np_ecn_marked_roce_packets) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rp_cnp_ignored) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  read_rsp_out_of_seq) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  implied_nak_seq_err) },
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_tx_pkts) },//0
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_tx_bytes) },//1
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_rx_pkts) },//2
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_rx_bytes) },//3
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  np_cnp_sent) },//4
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rp_cnp_handled) },//5
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  np_ecn_marked_roce_packets) },//6
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rp_cnp_ignored) },//7
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  read_rsp_out_of_seq) },//8
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  implied_nak_seq_err) },//9
 	/*by function*/
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  out_of_sequence) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  packet_seq_err) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  out_of_buffer) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rnr_nak_retry_err) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  local_ack_timeout_err) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rx_read_requests) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rx_write_requests) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  duplicate_requests) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_tx_pkts_func) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_tx_payload_bytes) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_rx_pkts_func) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_rx_payload_bytes) },
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  out_of_sequence) },//10
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  packet_seq_err) },//11
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  out_of_buffer) },//12
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rnr_nak_retry_err) },//13
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  local_ack_timeout_err) },//14
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rx_read_requests) },//15
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rx_write_requests) },//16
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  duplicate_requests) },//17
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_tx_pkts_func) },//18
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_tx_payload_bytes) },//19
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_rx_pkts_func) },//20
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_rx_payload_bytes) },//21
 	/*global*/
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_loopback_pkts) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_loopback_bytes) },
-
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_loopback_pkts) },//22
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_loopback_bytes) },//23
 	/*for diamond*/
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  out_of_sequence_sr) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  packet_seq_err_sr) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_ndp_rx_pkts) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_ndp_rx_trimmed_pkts) },
-	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_ndp_trimmed_pkts_sr) },
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  out_of_sequence_sr) },//24
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  packet_seq_err_sr) },//25
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_ndp_rx_pkts) },//26
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_ndp_rx_trimmed_pkts) },//27
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rdma_ndp_trimmed_pkts_sr) },//28
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  rx_icrc_encapsulated) },//29
+	/*XSC_CMDQ_GET_HW_STATS_RDMA_V1*/
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  roce_rtt_req_sent) },//30
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  roce_rtt_req_rcvd) },//31
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  roce_rtt_rsp_sent) },//32
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  roce_rtt_rsp_rcvd) },//33
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  veroce_rtt_req_sent) },//34
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  veroce_rtt_req_rcvd) },//35
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  veroce_rtt_rsp_sent) },//36
+	{ XSC_DECLARE_STAT(struct xsc_hw_stats_rdma_pf,  veroce_rtt_rsp_rcvd) },//37
 };
 
 static const struct counter_desc hw_rdma_stats_vf_desc[] = {
@@ -91,6 +100,7 @@ static int get_hw_stats_rdma(struct xsc_core_device *dev, struct xsc_hw_stats_rd
 	struct xsc_hw_stats_mbox_in *in;
 	struct xsc_hw_stats_rdma_mbox_out out;
 	struct xsc_core_device *xdev_tmp;
+	struct xsc_board_lag *board_lag = xsc_board_lag_get(dev);
 
 	memset(stats_rdma, 0, sizeof(*stats_rdma));
 
@@ -102,19 +112,25 @@ static int get_hw_stats_rdma(struct xsc_core_device *dev, struct xsc_hw_stats_rd
 	if (!in)
 		return -ENOMEM;
 
-	xsc_board_lag_lock(dev);
-	if (xsc_lag_is_roce(dev)) {
-		lag = xsc_get_lag(dev);
-		in->lag_member_num = lag->xsc_member_cnt;
-		list_for_each_entry(xdev_tmp, &lag->slave_list, slave_node)
-			in->member_port[i++] = xdev_tmp->mac_port;
-		in->is_lag = 1;
+	if (board_lag) {
+		xsc_board_lag_lock(dev);
+		if (xsc_lag_is_roce(dev)) {
+			lag = xsc_get_lag(dev);
+			in->lag_member_num = lag->xsc_member_cnt;
+			list_for_each_entry(xdev_tmp, &lag->slave_list, slave_node)
+				in->member_port[i++] = xdev_tmp->mac_port;
+			in->is_lag = 1;
+		} else {
+			in->is_lag = 0;
+			in->mac_port = dev->mac_port;
+		}
+		xsc_board_lag_unlock(dev);
 	} else {
 		in->is_lag = 0;
 		in->mac_port = dev->mac_port;
 	}
-	xsc_board_lag_unlock(dev);
 
+	in->hdr.ver = cpu_to_be16(XSC_CMDQ_GET_HW_STATS_RDMA_V1);
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_HW_STATS_RDMA);
 	memset(&out, 0, sizeof(out));
 	ret = xsc_cmd_exec(dev, (void *)in, inlen, (void *)&out, sizeof(out));
@@ -132,15 +148,21 @@ static ssize_t counters_names_show(struct kobject *kobjs,
 				   struct attribute *attr, char *buf)
 {
 	int i;
+	int ret;
 	int desc_size;
 	ssize_t count = 0;
 	const struct counter_desc *desc;
+	struct xsc_hw_stats_rdma stats_rdma;
 	struct xsc_counters_attribute *xsc_counters_name_attr;
-	u32 mask = 0;
+	u64 mask = 0;
 
 	xsc_counters_name_attr = container_of(attr,
 					      struct xsc_counters_attribute,
 					      attr);
+
+	ret = get_hw_stats_rdma(xsc_counters_name_attr->dev, &stats_rdma);
+	if (ret)
+		return 0;
 
 	if (is_support_hw_pf_stats(xsc_counters_name_attr->dev)) {
 		desc = &hw_rdma_stats_pf_desc[0];
@@ -150,9 +172,9 @@ static ssize_t counters_names_show(struct kobject *kobjs,
 		desc_size = ARRAY_SIZE(hw_rdma_stats_vf_desc);
 	}
 
-	mask = xsc_get_rdma_stat_mask(xsc_counters_name_attr->dev);
+	mask = xsc_get_rdma_stat_mask(xsc_counters_name_attr->dev, be16_to_cpu(stats_rdma.ver));
 	for (i = 0 ; i < desc_size; i++) {
-		if (!((1 << i) & mask))
+		if (!((1ULL << i) & mask))
 			continue;
 		count += sprintf(&buf[count], "%s\n", desc[i].format);
 	}
@@ -172,7 +194,7 @@ static ssize_t counters_show(struct kobject *kobjs,
 	const struct counter_desc *desc;
 	struct xsc_hw_stats_rdma stats_rdma;
 	struct xsc_counters_attribute *xsc_counters_attr;
-	u32 mask = 0;
+	u64 mask = 0;
 
 	xsc_counters_attr = container_of(attr,
 					 struct xsc_counters_attribute,
@@ -192,9 +214,9 @@ static ssize_t counters_show(struct kobject *kobjs,
 		stats = (u8 *)&stats_rdma.stats.vf_stats;
 	}
 
-	mask = xsc_get_rdma_stat_mask(xsc_counters_attr->dev);
+	mask = xsc_get_rdma_stat_mask(xsc_counters_attr->dev, be16_to_cpu(stats_rdma.ver));
 	for (i = 0 ; i < desc_size; i++) {
-		if (!((1 << i) & mask))
+		if (!((1ULL << i) & mask))
 			continue;
 		value = *(u64 *)(stats + desc[i].offset);
 		value = be64_to_cpu(value);
@@ -221,7 +243,7 @@ static ssize_t counters_value_read(struct file *file,
 	const struct counter_desc *desc;
 	struct xsc_hw_stats_rdma stats_rdma;
 	struct xsc_counters_bin_attribute *xsc_counters_bin_attr;
-	u32 mask = 0;
+	u64 mask = 0;
 
 	xsc_counters_bin_attr = container_of(&bin_attr->attr,
 					     struct xsc_counters_bin_attribute,
@@ -253,13 +275,13 @@ static ssize_t counters_value_read(struct file *file,
 	if (!tmp_value)
 		return 0;
 
-	mask = xsc_get_rdma_stat_mask(xdev);
+	mask = xsc_get_rdma_stat_mask(xdev, be16_to_cpu(stats_rdma.ver));
 	j = 0;
 	for (i = 0; i < desc_size; i++) {
-		if (!((1 << i) & mask))
+		if (!((1ULL << i) & mask))
 			continue;
 		tmp_value[j] = *(u64 *)(stats + desc[i].offset);
-		tmp_value[j] = be64_to_cpu(tmp_value[i]);
+		tmp_value[j] = be64_to_cpu(tmp_value[j]);
 		j++;
 	}
 

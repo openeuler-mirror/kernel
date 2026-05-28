@@ -9,13 +9,14 @@
 #include <linux/types.h>
 #include <linux/netdevice.h>
 #include <linux/workqueue.h>
-
+#include "common/xsc_core.h"
 
 enum xsc_list_type {
 	XSC_NVPRT_LIST_TYPE_UC   = 0x0,
 	XSC_NVPRT_LIST_TYPE_MC   = 0x1,
 	XSC_NVPRT_LIST_TYPE_VLAN = 0x2,
-	XSC_NVPRT_LIST_TYPE_VLAN_OFFLOAD = 0x03,
+	XSC_NVPRT_LIST_TYPE_VLAN_OFFLOAD = 0x3,
+	XSC_NVPRT_LIST_TYPE_VLAN_STRIP = 0x4,
 };
 
 enum xsc_vlan_rule_type {
@@ -55,14 +56,18 @@ struct xsc_l2_table {
 	u8	promisc_enabled;
 };
 
-struct xsc_flow_steering {
+struct xsc_eth_flow_steering {
 	struct xsc_vlan_table         vlan;
 	struct xsc_l2_table           l2;
 };
+
+struct xsc_adapter;
 
 int xsc_vlan_rx_add_vid(struct net_device *dev, __always_unused __be16 proto,
 			u16 vid);
 int xsc_vlan_rx_kill_vid(struct net_device *dev, __always_unused __be16 proto,
 			 u16 vid);
 void xsc_set_rx_mode_work(struct work_struct *work);
+void xsc_eth_l2_fs_cleanup(struct xsc_adapter *adapter);
+
 #endif

@@ -4,6 +4,8 @@
  */
 
 #include "common/xsc_core.h"
+#include "common/xsc_eswitch.h"
+#include "eswitch.h"
 
 LIST_HEAD(intf_list);
 LIST_HEAD(xsc_dev_list);
@@ -165,7 +167,7 @@ void xsc_detach_device(struct xsc_core_device *dev)
 	struct xsc_interface *intf;
 
 	mutex_lock(&xsc_intf_mutex);
-	list_for_each_entry(intf, &intf_list, list)
+	list_for_each_entry_reverse(intf, &intf_list, list)
 		xsc_detach_interface(intf, priv);
 	mutex_unlock(&xsc_intf_mutex);
 }
@@ -263,6 +265,12 @@ void xsc_register_get_mdev_info_func(int (*get_mdev_info)(void *data))
 }
 EXPORT_SYMBOL(xsc_register_get_mdev_info_func);
 
+void xsc_unregister_get_mdev_info_func(void)
+{
+	_xsc_get_mdev_info_func = NULL;
+}
+EXPORT_SYMBOL(xsc_unregister_get_mdev_info_func);
+
 void xsc_get_devinfo(u8 *data, u32 len)
 {
 	struct xsc_cmd_get_ioctl_info_mbox_out *out =
@@ -272,6 +280,9 @@ void xsc_get_devinfo(u8 *data, u32 len)
 	struct xsc_priv *priv;
 	struct xsc_core_device *xdev;
 	int used = 0;
+	void (*get_ifname)(void *, u8 *, int) = NULL;
+	void (*get_ip_addr)(void *, u32 *) = NULL;
+	void (*get_mac)(void *, u8 *) = NULL;
 
 	out->hdr.status = 0;
 	used += sizeof(struct xsc_outbox_hdr) + sizeof(u64);
@@ -290,21 +301,105 @@ void xsc_get_devinfo(u8 *data, u32 len)
 		devinfo->domain = cpu_to_be32(pci_domain_nr(xdev->pdev->bus));
 		devinfo->bus = cpu_to_be32(xdev->pdev->bus->number);
 		devinfo->devfn = cpu_to_be32(xdev->pdev->devfn);
-		if (xdev->get_ifname)
-			xdev->get_ifname(xdev, devinfo->ifname, MAX_IFNAME_LEN);
-		if (xdev->get_ibdev_name)
-			xdev->get_ibdev_name(xdev, devinfo->ibdev_name, MAX_IFNAME_LEN);
-		if (xdev->get_ip_addr) {
-			xdev->get_ip_addr(xdev, &devinfo->ip_addr);
+		rcu_read_lock();
+		get_ifname = rcu_dereference_raw(xdev->get_ifname);
+		if (get_ifname)
+			get_ifname(xdev, devinfo->ifname, MAX_IFNAME_LEN);
+		memcpy(devinfo->ibdev_name, xdev->priv.ibdev_name, MAX_IFNAME_LEN);
+		get_ip_addr = rcu_dereference_raw(xdev->get_ip_addr);
+		if (get_ip_addr) {
+			get_ip_addr(xdev, &devinfo->ip_addr);
 			devinfo->ip_addr = cpu_to_be32(devinfo->ip_addr);
 		}
+		get_mac = rcu_dereference_raw(xdev->get_mac);
+		if (get_mac)
+			get_mac(xdev, devinfo->mac);
+		rcu_read_unlock();
 		devinfo->vendor_id = cpu_to_be32(xdev->pdev->vendor);
 		devinfo += 1;
 		info->dev_num++;
 	}
 	mutex_unlock(&xsc_intf_mutex);
 
-	info->dev_num += _xsc_get_mdev_info_func((void *)devinfo);
+	if (_xsc_get_mdev_info_func)
+		info->dev_num += _xsc_get_mdev_info_func((void *)devinfo);
 	info->dev_num = cpu_to_be32(info->dev_num);
 }
 
+void xsc_get_board_esw_info(struct xsc_core_device *xdev,
+			    struct xsc_ioctl_board_esw_info *info_tbl)
+{
+	struct xsc_priv *priv;
+	struct xsc_core_device *xdev_tmp;
+	struct board_esw_info *esw_info;
+
+	mutex_lock(&xsc_intf_mutex);
+	list_for_each_entry(priv, &xsc_dev_list, dev_list) {
+		xdev_tmp = container_of(priv, struct xsc_core_device, priv);
+		if (!xsc_core_is_pf(xdev_tmp) ||
+		    xdev_tmp->board_info->board_id != xdev->board_info->board_id)
+			continue;
+
+		esw_info = &info_tbl->esw_info[xdev_tmp->pcie_no][xdev_tmp->pf_id];
+
+		esw_info->esw_mode = xsc_get_eswitch_mode(xdev_tmp);
+		esw_info->rep_mode = xsc_get_eswitch_rep_mode(xdev_tmp);
+
+		info_tbl->pcie_bitmap |= BIT(xdev_tmp->pcie_no);
+		info_tbl->pf_bitmap[xdev_tmp->pcie_no] |= BIT(xdev_tmp->pf_id);
+	}
+
+	info_tbl->pct_start =  xsc_get_eswitch_pct_start(xdev);
+
+	mutex_unlock(&xsc_intf_mutex);
+}
+
+static int xsc_get_board_mac_num(struct xsc_core_device *xdev)
+{
+	DECLARE_BITMAP(mac_bitmap, XSC_MAX_MAC_NUM);
+	struct xsc_core_device *xdev_tmp;
+
+	bitmap_zero(mac_bitmap, XSC_MAX_MAC_NUM);
+
+	list_for_each_entry(xdev_tmp, &xdev->board_info->func_list, func_node) {
+		if (!xsc_core_is_pf(xdev_tmp))
+			continue;
+
+		set_bit(xdev_tmp->mac_port, mac_bitmap);
+	}
+
+	return bitmap_weight(mac_bitmap, XSC_MAX_MAC_NUM);
+}
+
+struct xsc_core_device *xsc_get_peer_pf(struct xsc_core_device *xdev)
+{
+	struct xsc_core_device *peer_xdev = NULL;
+	int mac_num = xsc_get_board_mac_num(xdev);
+
+	if (mac_num != 2 || !xsc_core_is_pf(xdev))
+		return NULL;
+
+	list_for_each_entry(peer_xdev, &xdev->board_info->func_list, func_node) {
+		if (!xsc_core_is_pf(peer_xdev) || peer_xdev->mac_port == xdev->mac_port)
+			continue;
+
+		if (xsc_core_is_ocp_4pf(xdev) &&
+		    (peer_xdev->pcie_no == xdev->pcie_no || peer_xdev->pf_id == xdev->pf_id))
+			continue;
+
+		break;
+	}
+
+	return peer_xdev;
+}
+EXPORT_SYMBOL(xsc_get_peer_pf);
+
+struct xsc_eswitch *xsc_get_peer_esw(struct xsc_core_device *xdev)
+{
+	struct xsc_core_device *peer_xdev = xsc_get_peer_pf(xdev);
+
+	if (!peer_xdev)
+		return NULL;
+
+	return peer_xdev->priv.eswitch;
+}

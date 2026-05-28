@@ -13,6 +13,7 @@
 #include <linux/bitmap.h>
 #include <net/devlink.h>
 #include "common/xsc_core.h"
+#include "common/xsc_eswitch.h"
 #include "common/vport.h"
 
 struct xsc_vport_drop_stats {
@@ -20,17 +21,18 @@ struct xsc_vport_drop_stats {
 	u64 tx_dropped;
 };
 
+enum bond_act {
+	BOND_ENSLAVE = 0,
+	BOND_MODIFY_MAC,
+	BOND_RELEASE,
+};
+
 int xsc_eswitch_init(struct xsc_core_device *dev);
 void xsc_eswitch_cleanup(struct xsc_core_device *dev);
-int xsc_eswitch_enable_locked(struct xsc_eswitch *esw, int mode, int num_vfs);
-int xsc_eswitch_enable(struct xsc_eswitch *esw, int mode, int num_vfs);
+int xsc_eswitch_enable_locked(struct xsc_eswitch *esw, int num_vfs);
+int xsc_eswitch_enable(struct xsc_eswitch *esw, int num_vfs);
 void xsc_eswitch_disable_locked(struct xsc_eswitch *esw, bool clear_vf);
 void xsc_eswitch_disable(struct xsc_eswitch *esw, bool clear_vf);
-
-int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mod
-				, struct netlink_ext_ack *extack
-				);
-int xsc_devlink_eswitch_mode_get(struct devlink *devlink, u16 *mode);
 
 struct xsc_vport *__must_check
 xsc_eswitch_get_vport(struct xsc_eswitch *esw, u16 vport_num);
@@ -87,6 +89,11 @@ int xsc_eswitch_set_vport_rate(struct xsc_eswitch *esw, u16 vport,
 		(vport) = &(esw)->vports[(i)],  \
 		(i) <= (nvfs); (i)++)
 
+#define	xsc_esw_for_all_reps(esw, i, rep)		\
+	for ((i) = XSC_VPORT_PF;			\
+	     (rep) = &(esw)->offloads.vport_reps[i],	\
+	     (i) < (esw)->total_vports; (i)++)
+
 static inline int xsc_eswitch_uplink_idx(struct xsc_eswitch *esw)
 {
 	/* Uplink always locate at the last element of the array.*/
@@ -142,6 +149,26 @@ static inline u8 xsc_get_eswitch_mode(struct xsc_core_device *dev)
 	return ESW_ALLOWED(esw) ? esw->mode : XSC_ESWITCH_NONE;
 }
 
+static inline u8 xsc_get_eswitch_rep_mode(struct xsc_core_device *dev)
+{
+	struct xsc_eswitch *esw = dev->priv.eswitch;
+
+	if (xsc_get_eswitch_mode(dev) != XSC_ESWITCH_OFFLOADS)
+		return XSC_REP_MODE_INVALID;
+
+	return esw->offloads.rep_mode;
+}
+
+static inline u16 xsc_get_eswitch_pct_start(struct xsc_core_device *dev)
+{
+	struct xsc_eswitch *esw = dev->priv.eswitch;
+
+	if (xsc_get_eswitch_rep_mode(dev) != XSC_REP_MODE_KERNEL)
+		return XSC_REP_MODE_INVALID;
+
+	return esw->esw_caps.pct_start;
+}
+
 static inline bool xsc_host_is_dpu_mode(struct xsc_core_device *dev)
 {
 	return (dev->pdev->device == XSC_MF_HOST_PF_DEV_ID ||
@@ -175,23 +202,45 @@ static inline bool xsc_dev_is_pf(struct xsc_core_device *dev)
 		(dev->pdev->device == XSC_MV_SOC_PF_DEV_ID);
 }
 
-static inline bool xsc_get_pf_isolate_config(struct xsc_core_device *dev, bool up)
+static inline bool xsc_is_slave(struct xsc_core_device *dev, enum bond_act act)
 {
 	struct net_device *netdev = dev->netdev;
-	bool is_not_slave = up ? (!(netdev->flags & IFF_SLAVE)) :
-				  (!(netdev->priv_flags & IFF_BONDING));
+	bool is_slave = false;
 
-	return xsc_dev_is_pf(dev) && is_not_slave;
+	switch (act) {
+	case BOND_ENSLAVE:
+		is_slave = (netdev->flags & IFF_SLAVE);
+		break;
+	case BOND_RELEASE:
+		is_slave = (netdev->priv_flags & IFF_BONDING);
+		break;
+	case BOND_MODIFY_MAC:
+		is_slave = (netdev->flags & IFF_SLAVE) ||
+			(netdev->priv_flags & IFF_BONDING);
+		break;
+	default:
+		break;
+	}
+
+	return is_slave;
 }
 
-static inline bool xsc_get_mac_drop_config(struct xsc_core_device *dev, bool up)
+static inline bool xsc_get_pf_isolate_config(struct xsc_core_device *dev, enum bond_act act)
 {
-	struct net_device *netdev = dev->netdev;
-	bool is_not_slave = up ? (!(netdev->flags & IFF_SLAVE)) :
-				(!(netdev->priv_flags & IFF_BONDING));
-
-	return xsc_dev_is_pf(dev) && is_not_slave;
+	return xsc_dev_is_pf(dev) && !xsc_is_slave(dev, act);
 }
+
+static inline bool xsc_get_mac_drop_config(struct xsc_core_device *dev, enum bond_act act)
+{
+	return xsc_dev_is_pf(dev) && !xsc_is_slave(dev, act);
+}
+
+int xsc_eswitch_enable_pf_vf_vports(struct xsc_eswitch *esw,
+				    enum xsc_eswitch_vport_event enabled_events);
+void xsc_eswitch_disable_pf_vf_vports(struct xsc_eswitch *esw);
+int xsc_esw_try_lock(struct xsc_eswitch *esw);
+int xsc_esw_lock(struct xsc_eswitch *esw);
+void xsc_esw_unlock(struct xsc_eswitch *esw);
 
 #endif /* ESWITCH_H */
 

@@ -9,6 +9,9 @@
 #include "common/vport.h"
 #include "eswitch.h"
 #include "common/xsc_lag.h"
+#include "devlink.h"
+#include "eswitch_offloads.h"
+#include "eswitch_legacy.h"
 
 static int xsc_eswitch_check(const struct xsc_core_device *dev)
 {
@@ -18,6 +21,119 @@ static int xsc_eswitch_check(const struct xsc_core_device *dev)
 		return -EOPNOTSUPP;
 
 	return 0;
+}
+
+/**
+ * xsc_esw_hold() - Try to take a read lock on esw mode lock.
+ * @xdev: xsc core device.
+ *
+ * Should be called by esw resources callers.
+ *
+ * Return: true on success or false.
+ */
+bool xsc_esw_hold(struct xsc_core_device *xdev)
+{
+	struct xsc_eswitch *esw = xdev->priv.eswitch;
+
+	/* e.g. VF doesn't have eswitch so nothing to do */
+	if (!ESW_ALLOWED(esw))
+		return true;
+
+	if (down_read_trylock(&esw->mode_lock) != 0) {
+		if (esw->eswitch_operation_in_progress) {
+			up_read(&esw->mode_lock);
+			return false;
+		}
+		return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(xsc_esw_hold);
+
+/**
+ * xsc_esw_release() - Release a read lock on esw mode lock.
+ * @xdev: xsc core device.
+ */
+void xsc_esw_release(struct xsc_core_device *xdev)
+{
+	struct xsc_eswitch *esw = xdev->priv.eswitch;
+
+	if (ESW_ALLOWED(esw))
+		up_read(&esw->mode_lock);
+}
+EXPORT_SYMBOL(xsc_esw_release);
+
+/**
+ * xsc_esw_get() - Increase esw user count.
+ * @mdev: xsc core device.
+ */
+void xsc_esw_get(struct xsc_core_device *xdev)
+{
+	struct xsc_eswitch *esw = xdev->priv.eswitch;
+
+	if (ESW_ALLOWED(esw))
+		atomic64_inc(&esw->user_count);
+}
+EXPORT_SYMBOL(xsc_esw_get);
+
+/**
+ * xsc_esw_put() - Decrease esw user count.
+ * @mdev: xsc core device.
+ */
+void xsc_esw_put(struct xsc_core_device *xdev)
+{
+	struct xsc_eswitch *esw = xdev->priv.eswitch;
+
+	if (ESW_ALLOWED(esw))
+		atomic64_dec_if_positive(&esw->user_count);
+}
+EXPORT_SYMBOL(xsc_esw_put);
+
+/**
+ * xsc_esw_try_lock() - Take a write lock on esw mode lock.
+ * @esw: eswitch device.
+ *
+ * Should be called by esw mode change routine.
+ *
+ * Return:
+ * * 0       - esw mode if successfully locked and refcount is 0.
+ * * -EBUSY  - refcount is not 0.
+ * * -EINVAL - In the middle of switching mode or lock is already held.
+ */
+int xsc_esw_try_lock(struct xsc_eswitch *esw)
+{
+	if (down_write_trylock(&esw->mode_lock) == 0)
+		return -EINVAL;
+
+	if (esw->eswitch_operation_in_progress ||
+	    atomic64_read(&esw->user_count) > 0) {
+		up_write(&esw->mode_lock);
+		return -EBUSY;
+	}
+
+	return esw->mode;
+}
+
+int xsc_esw_lock(struct xsc_eswitch *esw)
+{
+	down_write(&esw->mode_lock);
+
+	if (esw->eswitch_operation_in_progress) {
+		up_write(&esw->mode_lock);
+		return -EBUSY;
+	}
+
+	return 0;
+}
+
+/**
+ * xsc_esw_unlock() - Release write lock on esw mode lock
+ * @esw: eswitch device.
+ */
+void xsc_esw_unlock(struct xsc_eswitch *esw)
+{
+	up_write(&esw->mode_lock);
 }
 
 struct xsc_vport *__must_check
@@ -39,10 +155,9 @@ xsc_eswitch_get_vport(struct xsc_eswitch *esw, u16 vport_num)
 }
 EXPORT_SYMBOL(xsc_eswitch_get_vport);
 
-
-static int eswitch_devlink_pf_support_check(const struct xsc_eswitch *esw)
+static bool is_esw_manager_vport(const struct xsc_eswitch *esw, u16 vport_num)
 {
-	return 0;
+	return esw->manager_vport == vport_num;
 }
 
 static int esw_mode_from_devlink(u16 mode, u16 *xsc_mode)
@@ -83,7 +198,7 @@ int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode
 {
 	struct xsc_core_device *dev = devlink_priv(devlink);
 	struct xsc_eswitch *esw = dev->priv.eswitch;
-	u16 cur_xsc_mode, xsc_mode = 0;
+	u16 cur_xsc_mode, xsc_mode = XSC_ESWITCH_NONE;
 	int err = 0;
 
 	err = xsc_eswitch_check(dev);
@@ -93,35 +208,63 @@ int xsc_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode
 	if (esw_mode_from_devlink(mode, &xsc_mode))
 		return -EINVAL;
 
-	mutex_lock(&esw->mode_lock);
-	err = eswitch_devlink_pf_support_check(esw);
-	if (err)
-		goto done;
+	err = xsc_esw_try_lock(esw);
+	if (err < 0) {
+		NL_SET_ERR_MSG_MOD(extack, "Can't change mode, E-Switch is busy");
+		return err;
+	}
 
-	cur_xsc_mode = esw->mode;
-
-	if (cur_xsc_mode == xsc_mode)
-		goto done;
+	cur_xsc_mode = err;
+	if (xsc_mode == cur_xsc_mode)
+		goto unlock;
 
 	if (xsc_host_is_dpu_mode(dev) ||
 	    (cur_xsc_mode != XSC_ESWITCH_LEGACY && xsc_mode == XSC_ESWITCH_OFFLOADS) ||
 	    (cur_xsc_mode == XSC_ESWITCH_OFFLOADS && xsc_mode == XSC_ESWITCH_LEGACY)) {
 		xsc_core_err(dev, "%s failed: do not set mode %d to mode %d\n",
 			     __func__, cur_xsc_mode, xsc_mode);
-		mutex_unlock(&esw->mode_lock);
-		return -EOPNOTSUPP;
+		err = -EOPNOTSUPP;
+		goto unlock;
 	}
 
-	xsc_lag_disable(dev);
+	if (xsc_mode == XSC_ESWITCH_OFFLOADS &&
+	    esw->offloads.rep_mode == XSC_REP_MODE_KERNEL &&
+	    !is_support_tc_offload(esw->dev)) {
+		xsc_core_info(esw->dev, "kernel rep is not support!\n");
+		err = -EOPNOTSUPP;
+		goto unlock;
+	}
 
-	esw->mode = xsc_mode;
-	if (esw->mode == XSC_ESWITCH_OFFLOADS)
-		xsc_cmd_modify_hca(dev);
+	esw->eswitch_operation_in_progress = true;
+	up_write(&esw->mode_lock);
 
-	xsc_lag_enable(dev);
+	if (xsc_mode == XSC_ESWITCH_OFFLOADS) {
+		xsc_lag_disable(dev);
 
-done:
-	mutex_unlock(&esw->mode_lock);
+		err = xsc_cmd_modify_hca(dev);
+		if (err)
+			goto err_modify_hca;
+
+		if (esw->offloads.rep_mode == XSC_REP_MODE_KERNEL)
+			esw_legacy_disable(esw);
+
+		esw->mode = XSC_ESWITCH_OFFLOADS;
+
+		if (esw->offloads.rep_mode == XSC_REP_MODE_KERNEL &&
+		    !esw->offloads.rep_established)
+			err = esw_offloads_start(esw);
+
+err_modify_hca:
+		if (err)
+			esw->mode = cur_xsc_mode;
+
+		xsc_lag_enable(dev);
+	}
+
+	down_write(&esw->mode_lock);
+	esw->eswitch_operation_in_progress = false;
+unlock:
+	xsc_esw_unlock(esw);
 	return err;
 }
 
@@ -135,15 +278,23 @@ int xsc_devlink_eswitch_mode_get(struct devlink *devlink, u16 *mode)
 	if (err)
 		return err;
 
-	mutex_lock(&esw->mode_lock);
+	xsc_esw_lock(esw);
 	if (xsc_host_is_dpu_mode(dev))
 		err = -EOPNOTSUPP;
 	else
 		err = esw_mode_to_devlink(esw->mode, mode);
-	mutex_unlock(&esw->mode_lock);
+	xsc_esw_unlock(esw);
 
 	return err;
 }
+
+bool is_xdev_switchdev_mode(const struct xsc_core_device *dev)
+{
+	struct xsc_eswitch *esw = dev->priv.eswitch;
+
+	return (esw->mode == XSC_ESWITCH_OFFLOADS);
+}
+EXPORT_SYMBOL_GPL(is_xdev_switchdev_mode);
 
 static void esw_vport_change_handle_locked(struct xsc_vport *vport)
 {
@@ -165,12 +316,21 @@ static void esw_vport_change_handler(struct work_struct *work)
 }
 
 static void xsc_eswitch_enable_vport(struct xsc_eswitch *esw,
-				     struct xsc_vport *vport,
-				     enum xsc_eswitch_vport_event enabled_events)
+			      u16 vport_num,
+			      enum xsc_eswitch_vport_event enabled_events)
 {
+	struct xsc_vport *vport = xsc_eswitch_get_vport(esw, vport_num);
+
 	mutex_lock(&esw->state_lock);
 	if (vport->enabled)
 		goto unlock_out;
+
+	if (!is_esw_manager_vport(esw, vport_num) &&
+	    esw->mode == XSC_ESWITCH_LEGACY) {
+		xsc_modify_vport_admin_state(esw->dev,
+					     vport_num, 1,
+					     vport->info.link_state);
+	}
 
 	bitmap_zero(vport->req_vlan_bitmap, VLAN_N_VID);
 	bitmap_zero(vport->acl_vlan_8021q_bitmap, VLAN_N_VID);
@@ -185,71 +345,156 @@ unlock_out:
 	mutex_unlock(&esw->state_lock);
 }
 
-static void xsc_eswitch_enable_pf_vf_vports(struct xsc_eswitch *esw,
-					    enum xsc_eswitch_vport_event enabled_events)
+static void xsc_eswitch_disable_vport(struct xsc_eswitch *esw, u16 vport_num)
+{
+	struct xsc_vport *vport = xsc_eswitch_get_vport(esw, vport_num);
+
+	mutex_lock(&esw->state_lock);
+	if (!vport->enabled)
+		goto done;
+
+	xsc_core_dbg(esw->dev, "Disabling vport(%d)\n", vport_num);
+	/* Mark this vport as disabled to discard new events */
+	vport->enabled = false;
+	if (!is_esw_manager_vport(esw, vport_num) &&
+	    esw->mode == XSC_ESWITCH_LEGACY) {
+		xsc_modify_vport_admin_state(esw->dev,
+					     vport_num, 1,
+					     XSC_VPORT_ADMIN_STATE_DOWN);
+	}
+	esw->enabled_vports--;
+
+done:
+	mutex_unlock(&esw->state_lock);
+}
+
+static void xsc_eswitch_clear_vf_vports_info(struct xsc_eswitch *esw)
 {
 	struct xsc_vport *vport;
 	int i;
 
-	vport = xsc_eswitch_get_vport(esw, XSC_VPORT_PF);
-	xsc_eswitch_enable_vport(esw, vport, enabled_events);
-
-	xsc_esw_for_each_vf_vport(esw, i, vport, esw->num_vfs)
-		xsc_eswitch_enable_vport(esw, vport, enabled_events);
+	xsc_esw_for_each_vf_vport(esw, i, vport, esw->num_vfs) {
+		memset(&vport->info, 0, sizeof(vport->info));
+		vport->info.link_state = XSC_VPORT_ADMIN_STATE_AUTO;
+		vport->info.vlan_proto = htons(ETH_P_8021Q);
+		vport->info.roce = true;
+	}
 }
 
-#define XSC_LEGACY_SRIOV_VPORT_EVENTS (XSC_VPORT_UC_ADDR_CHANGE | \
-					XSC_VPORT_MC_ADDR_CHANGE | \
-					XSC_VPORT_PROMISC_CHANGE | \
-					XSC_VPORT_VLAN_CHANGE)
+static int xsc_eswitch_load_vport(struct xsc_eswitch *esw, u16 vport_num,
+				  enum xsc_eswitch_vport_event enabled_events)
+{
+	int err;
 
-static int esw_legacy_enable(struct xsc_eswitch *esw)
+	xsc_eswitch_enable_vport(esw, vport_num, enabled_events);
+
+	err = esw_offloads_rep_load(esw, vport_num);
+	if (err)
+		goto err_rep;
+
+	return 0;
+
+err_rep:
+	xsc_eswitch_disable_vport(esw, vport_num);
+	return err;
+}
+
+static void xsc_eswitch_unload_vport(struct xsc_eswitch *esw, u16 vport_num)
+{
+	esw_offloads_unload_rep(esw, vport_num);
+	xsc_eswitch_disable_vport(esw, vport_num);
+}
+
+static void xsc_eswitch_unload_vf_vports(struct xsc_eswitch *esw, u16 num_vfs)
 {
 	struct xsc_vport *vport;
 	unsigned long i;
 
-	xsc_esw_for_each_vf_vport(esw, i, vport, esw->num_vfs) {
-		vport->info.link_state = XSC_VPORT_ADMIN_STATE_AUTO;
+	xsc_esw_for_each_vf_vport(esw, i, vport, num_vfs) {
+		if (!vport->enabled)
+			continue;
+		xsc_eswitch_unload_vport(esw, vport->vport);
 	}
-	xsc_eswitch_enable_pf_vf_vports(esw, XSC_LEGACY_SRIOV_VPORT_EVENTS);
-	return 0;
 }
 
-int xsc_eswitch_enable_locked(struct xsc_eswitch *esw, int mode, int num_vfs)
+static int xsc_eswitch_load_vf_vports(struct xsc_eswitch *esw, u16 num_vfs,
+				      enum xsc_eswitch_vport_event enabled_events)
+{
+	struct xsc_vport *vport;
+	unsigned long i;
+	int err;
+
+	xsc_esw_for_each_vf_vport(esw, i, vport, num_vfs) {
+		err = xsc_eswitch_load_vport(esw, vport->vport, enabled_events);
+		if (err)
+			goto vf_err;
+	}
+
+	return 0;
+
+vf_err:
+	xsc_eswitch_unload_vf_vports(esw, num_vfs);
+	return err;
+}
+
+int xsc_eswitch_enable_pf_vf_vports(struct xsc_eswitch *esw,
+				    enum xsc_eswitch_vport_event enabled_events)
+{
+	int err = 0;
+
+	if (esw->mode != XSC_ESWITCH_OFFLOADS) {
+		err = xsc_eswitch_load_vport(esw, XSC_VPORT_PF, enabled_events);
+		if (err)
+			return err;
+	}
+
+	err = xsc_eswitch_load_vf_vports(esw, esw->num_vfs, enabled_events);
+	if (err)
+		goto vf_err;
+
+	return 0;
+
+vf_err:
+	if (esw->mode != XSC_ESWITCH_OFFLOADS)
+		xsc_eswitch_unload_vport(esw, XSC_VPORT_PF);
+
+	return err;
+}
+
+void xsc_eswitch_disable_pf_vf_vports(struct xsc_eswitch *esw)
+{
+	xsc_eswitch_unload_vf_vports(esw, esw->num_vfs);
+	xsc_eswitch_unload_vport(esw, XSC_VPORT_PF);
+}
+
+int xsc_eswitch_enable_locked(struct xsc_eswitch *esw, int num_vfs)
 {
 	int err;
 
 	lockdep_assert_held(&esw->mode_lock);
 
-	esw->num_vfs = num_vfs;
-
-	if (esw->mode == XSC_ESWITCH_NONE)
+	if (esw->mode == XSC_ESWITCH_LEGACY) {
+		esw->num_vfs = num_vfs;
 		err = esw_legacy_enable(esw);
-	else
-		err = -EOPNOTSUPP;
+	} else {
+		err = esw_offloads_enable(esw);
+	}
 
-	if (err)
-		goto ret;
+	xsc_core_info(esw->dev, "Enable: mode(%s), rep_mode(%s), nvfs(%d), active_vports(%d), err=%d\n",
+		      esw->mode == XSC_ESWITCH_LEGACY ? "LEGACY" : "OFFLOADS",
+		      esw->offloads.rep_mode == XSC_REP_MODE_KERNEL ? "kernel" : "dpdk",
+		      num_vfs, esw->enabled_vports, err);
 
-	esw->mode = mode;
-
-	xsc_core_info(esw->dev, "Enable: mode(%s), nvfs(%d), active vports(%d)\n",
-		      mode == XSC_ESWITCH_LEGACY ? "LEGACY" : "OFFLOADS",
-		      num_vfs, esw->enabled_vports);
-
-	return 0;
-
-ret:
 	return err;
 }
 
-int xsc_eswitch_enable(struct xsc_eswitch *esw, int mode, int num_vfs)
+int xsc_eswitch_enable(struct xsc_eswitch *esw, int num_vfs)
 {
 	int ret;
 
-	mutex_lock(&esw->mode_lock);
-	ret = xsc_eswitch_enable_locked(esw, mode, num_vfs);
-	mutex_unlock(&esw->mode_lock);
+	down_write(&esw->mode_lock);
+	ret = xsc_eswitch_enable_locked(esw, num_vfs);
+	up_write(&esw->mode_lock);
 	return ret;
 }
 
@@ -265,8 +510,16 @@ void xsc_eswitch_disable_locked(struct xsc_eswitch *esw, bool clear_vf)
 	xsc_core_info(esw->dev, "Disable: mode(%s)\n",
 		      esw->mode == XSC_ESWITCH_LEGACY ? "LEGACY" : "OFFLOADS");
 
+	if (esw->mode == XSC_ESWITCH_LEGACY)
+		esw_legacy_disable(esw);
+	else if (esw->mode == XSC_ESWITCH_OFFLOADS)
+		esw_offloads_disable(esw);
+
 	old_mode = esw->mode;
 	esw->mode = XSC_ESWITCH_NONE;
+
+	if (clear_vf)
+		xsc_eswitch_clear_vf_vports_info(esw);
 
 	esw->num_vfs = 0;
 }
@@ -276,16 +529,82 @@ void xsc_eswitch_disable(struct xsc_eswitch *esw, bool clear_vf)
 	if (!ESW_ALLOWED(esw))
 		return;
 
-	mutex_lock(&esw->mode_lock);
+	down_write(&esw->mode_lock);
 	xsc_eswitch_disable_locked(esw, clear_vf);
-	mutex_unlock(&esw->mode_lock);
+	up_write(&esw->mode_lock);
+}
+
+static int xsc_esw_vports_init(struct xsc_eswitch *esw)
+{
+	struct xsc_core_device *dev = esw->dev;
+	struct xsc_vport *vport;
+	int err = 0;
+	int i;
+
+	esw->vports = xsc_vzalloc(esw->total_vports * sizeof(struct xsc_vport));
+	if (!esw->vports) {
+		xsc_core_err(dev, "failed to alloc mem for eswitch vports\n");
+		err = -ENOMEM;
+		goto err_out;
+	}
+
+	xsc_esw_for_all_vports(esw, i, vport) {
+		vport->dev = dev;
+		vport->vport = xsc_eswitch_index_to_vport_num(esw, i);
+		vport->info.link_state = XSC_VPORT_ADMIN_STATE_AUTO;
+		vport->info.vlan_proto = htons(ETH_P_8021Q);
+		vport->info.roce = true;
+
+		INIT_WORK(&vport->vport_change_handler, esw_vport_change_handler);
+	}
+
+err_out:
+	return err;
+}
+
+static void xsc_esw_vports_deinit(struct xsc_eswitch *esw)
+{
+	xsc_vfree(esw->vports);
+}
+
+static int xsc_esw_reps_init(struct xsc_eswitch *esw)
+{
+	struct xsc_core_device *dev = esw->dev;
+	struct xsc_eswitch_rep *rep;
+	u8 rep_type;
+	int vport_index;
+	int err = 0;
+
+	mutex_init(&esw->offloads.uplink_netdev_lock);
+	esw->offloads.rep_mode = XSC_REP_MODE_DPDK;
+	esw->offloads.vport_reps = xsc_vzalloc(esw->total_vports * sizeof(struct xsc_eswitch_rep));
+	if (!esw->offloads.vport_reps) {
+		xsc_core_err(dev, "failed to alloc mem for eswitch vport_reps\n");
+		err = -ENOMEM;
+		goto err_out;
+	}
+
+	xsc_esw_for_all_reps(esw, vport_index, rep) {
+		rep->vport = xsc_eswitch_index_to_vport_num(esw, vport_index);
+
+		for (rep_type = 0; rep_type < NUM_REP_TYPES; rep_type++)
+			atomic_set(&rep->rep_data[rep_type].state, REP_UNREGISTERED);
+	}
+
+err_out:
+	return err;
+}
+
+static void xsc_esw_reps_deinit(struct xsc_eswitch *esw)
+{
+	mutex_destroy(&esw->offloads.uplink_netdev_lock);
+	xsc_vfree(esw->offloads.vport_reps);
 }
 
 int xsc_eswitch_init(struct xsc_core_device *dev)
 {
 	struct xsc_eswitch *esw;
-	struct xsc_vport *vport;
-	int i, total_vports, err;
+	int total_vports, err;
 
 	if (!XSC_VPORT_MANAGER(dev)) {
 		if (xsc_core_is_pf(dev))
@@ -304,43 +623,41 @@ int xsc_eswitch_init(struct xsc_core_device *dev)
 	esw->dev = dev;
 	esw->manager_vport = xsc_eswitch_manager_vport(dev);
 	esw->first_host_vport = xsc_eswitch_first_host_vport_num(dev);
+	esw->total_vports = total_vports;
+
+	dev->priv.eswitch = esw;
+
 	esw->work_queue = create_singlethread_workqueue("xsc_esw_wq");
 	if (!esw->work_queue) {
 		xsc_core_err(dev, "failed to create eswitch work queue\n");
 		err = -ENOMEM;
 		goto abort;
 	}
-	esw->vports = xsc_vzalloc(total_vports * sizeof(struct xsc_vport));
-	if (!esw->vports) {
-		xsc_core_err(dev, "failed to alloc mem for eswitch vports\n");
-		err = -ENOMEM;
-		goto abort;
-	}
-	esw->total_vports = total_vports;
+
+	err = xsc_esw_vports_init(esw);
+	if (err)
+		goto err_vport;
+
+	err = xsc_esw_reps_init(esw);
+	if (err)
+		goto err_offloads;
 
 	mutex_init(&esw->state_lock);
-	mutex_init(&esw->mode_lock);
+	init_rwsem(&esw->mode_lock);
 
-	xsc_esw_for_all_vports(esw, i, vport) {
-		vport->vport = xsc_eswitch_index_to_vport_num(esw, i);
-		vport->info.link_state = XSC_VPORT_ADMIN_STATE_AUTO;
-		vport->info.vlan_proto = htons(ETH_P_8021Q);
-		vport->info.roce = true;
-
-		vport->dev = dev;
-		INIT_WORK(&vport->vport_change_handler,
-			  esw_vport_change_handler);
-	}
 	esw->enabled_vports = 0;
 	esw->mode = XSC_ESWITCH_NONE;
 
-	dev->priv.eswitch = esw;
 	return 0;
 
-abort:
+err_offloads:
+	xsc_esw_vports_deinit(esw);
+err_vport:
 	if (esw->work_queue)
 		destroy_workqueue(esw->work_queue);
-	xsc_vfree(esw->vports);
+	esw->total_vports = 0;
+abort:
+	dev->priv.eswitch = NULL;
 	kfree(esw);
 	return err;
 }
@@ -353,8 +670,8 @@ void xsc_eswitch_cleanup(struct xsc_core_device *dev)
 	xsc_core_dbg(dev, "cleanup\n");
 
 	destroy_workqueue(dev->priv.eswitch->work_queue);
-	xsc_vfree(dev->priv.eswitch->vports);
-	kfree(dev->priv.eswitch);
+	xsc_esw_vports_deinit(dev->priv.eswitch);
+	xsc_esw_reps_deinit(dev->priv.eswitch);
 }
 
 #ifdef XSC_ESW_GUID_ENABLE
@@ -464,8 +781,16 @@ static int __xsc_eswitch_set_vport_vlan(struct xsc_eswitch *esw, int vport, u16 
 	in->nic_vport_ctx.vlan = cpu_to_be16(vlan);
 
 	err = xsc_modify_nic_vport_context(esw->dev, in, in_sz);
-
 	kfree(in);
+
+	if (err == EBUSY) {
+		xsc_core_err(esw->dev,
+			     "Failed to set vport%d vlan vst mode because vlan strip exist.\n",
+			     vport);
+		xsc_core_err(esw->dev,
+			     "<ethtool -K eth0 rxvlan off> to disable vlan strip and try again\n");
+	}
+
 	return err;
 }
 
@@ -486,7 +811,7 @@ int xsc_eswitch_set_vport_vlan(struct xsc_eswitch *esw, int vport,
 	mutex_lock(&esw->state_lock);
 	if (esw->mode != XSC_ESWITCH_LEGACY) {
 		if (!vlan)
-			goto unlock; /* compatibility with libvirt */
+			goto unlock;
 
 		err = -EOPNOTSUPP;
 		goto unlock;
@@ -531,12 +856,12 @@ int xsc_eswitch_set_vport_state(struct xsc_eswitch *esw,
 
 	if (!ESW_ALLOWED(esw))
 		return -EPERM;
+
 	if (IS_ERR(evport))
 		return PTR_ERR(evport);
 
 	mutex_lock(&esw->state_lock);
-	err = xsc_modify_vport_admin_state(esw->dev, XSC_CMD_OP_MODIFY_VPORT_STATE,
-					   vport, 1, xsc_link);
+	err = xsc_modify_vport_admin_state(esw->dev, vport, 1, xsc_link);
 	if (err) {
 		xsc_core_warn(esw->dev,
 			      "Failed to set vport %d link state %d, err = %d",

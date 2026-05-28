@@ -5,6 +5,8 @@
 
 #include <linux/tcp.h>
 #include <linux/skbuff.h>
+#include <linux/netdevice.h>
+#include <net/gso.h>
 #include "xsc_eth_stats.h"
 #include "xsc_eth_common.h"
 #include "common/xsc_hsi.h"
@@ -12,8 +14,48 @@
 #include "xsc_eth.h"
 #include "xsc_eth_txrx.h"
 #include "xsc_accel.h"
+#include "common/xsc_core.h"
+#include "rep/xsc_eth_rep.h"
 
-#define XSC_OPCODE_RAW     0x7
+#define XSC_OPCODE_RAW		0x7
+
+static int xsc_build_pph_head(struct net_device *netdev, struct sk_buff *skb)
+{
+	struct xsc_adapter *adapter = netdev_priv(netdev);
+	struct xsc_core_device *xdev = adapter->xdev;
+	struct xsc_rep_priv *rpriv = adapter->ppriv;
+	struct xsc_eswitch_rep *rep = rpriv->rep;
+	struct soc_pph *sw_pph;
+	char head_data[XSC_PPH_HEAD_LEN];
+	u16 dstinfo;
+	u16 vf_func_id;
+	u16 vf_id =  rep->vport - 1;
+
+	memset(head_data, 0, sizeof(head_data));
+
+	if (xdev->pf_id == 0)
+		vf_func_id = xdev->caps.pf0_vf_funcid_base + vf_id;
+	else
+		vf_func_id =  xdev->caps.pf1_vf_funcid_base + vf_id;
+	dstinfo = vf_func_id + xdev->caps.funcid_to_logic_port;
+
+	XSC_SET_HOST_SOC2IPP_PPH_PKTTYPE(head_data, PKT_TYPE_SOC_WITH_PPH);
+	XSC_SET_HOST_SOC2IPP_PPH_DSTINFO(head_data, dstinfo);
+	XSC_SET_HOST_SOC2IPP_PPH_FUNCID(head_data, xdev->glb_func_id);
+
+	sw_pph = (struct soc_pph *)head_data;
+	sw_pph->qpcs = cpu_to_be16((rep->vport + 1) << 7);
+
+	if (skb_headroom(skb) < XSC_PPH_HEAD_LEN) {
+		if (pskb_expand_head(skb, XSC_PPH_HEAD_LEN, 0, GFP_ATOMIC))
+			return -ENOMEM;
+	}
+
+	skb_push(skb, XSC_PPH_HEAD_LEN);
+	memcpy(skb->data, head_data, XSC_PPH_HEAD_LEN);
+
+	return 0;
+}
 
 static inline void *xsc_sq_fetch_wqe(struct xsc_sq *sq, size_t size, u16 *pi)
 {
@@ -109,7 +151,8 @@ static void xsc_dma_unmap_wqe_err(struct xsc_sq *sq, u8 num_dma)
 	}
 }
 
-static void xsc_txwqe_build_csegs(struct xsc_sq *sq, struct sk_buff *skb,
+static void xsc_txwqe_build_csegs(struct xsc_adapter *adapter,
+				  struct xsc_sq *sq, struct sk_buff *skb,
 				  u16 mss, u16 ihs, u16 headlen,
 				  u8 opcode, u16 ds_cnt, u32 num_bytes,
 				  struct xsc_send_wqe_ctrl_seg *cseg)
@@ -126,8 +169,11 @@ static void xsc_txwqe_build_csegs(struct xsc_sq *sq, struct sk_buff *skb,
 		cseg->so_data_size = cpu_to_le16(mss);
 	}
 
+	if (xsc_is_vf_rep(adapter->netdev))
+		cseg->has_pph = 1;
+
 	cseg->msg_opcode =  opcode;
-	cseg->wqe_id = cpu_to_le16(sq->pc << send_wqe_ds_num_log);
+	xsc_set_wqe_id(xdev, cseg, sq->pc << send_wqe_ds_num_log);
 	cseg->ds_data_num = ds_cnt - XSC_SEND_WQEBB_CTRL_NUM_DS;
 	cseg->msg_len = cpu_to_le32(num_bytes);
 
@@ -205,30 +251,34 @@ static inline void xsc_sq_notify_hw(struct xsc_wq_cyc *wq, u16 pc,
 static void xsc_txwqe_complete(struct xsc_sq *sq, struct sk_buff *skb,
 			       u8 opcode, u16 ds_cnt, u8 num_wqebbs,
 			       u32 num_bytes, u8 num_dma,
-			       struct xsc_tx_wqe_info *wi)
+			       struct xsc_tx_wqe_info *wi,
+			       bool xsc_xmit_more)
 {
 	struct xsc_wq_cyc *wq = &sq->wq;
+	u16 pc = sq->pc;
+	u8 bql_thresh = sq->channel->adapter->xdev->bql_thresh;
+	u32 room;
 
 	wi->num_bytes = num_bytes;
 	wi->num_dma = num_dma;
 	wi->num_wqebbs = num_wqebbs;
 	wi->skb = skb;
 
-	ETH_SQ_STATE(sq);
-	netdev_tx_sent_queue(sq->txq, num_bytes);
-	ETH_SQ_STATE(sq);
-
 	if (unlikely(skb_shinfo(skb)->tx_flags & SKBTX_HW_TSTAMP))
 		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 
 	sq->pc += wi->num_wqebbs;
-
-	if (unlikely(!xsc_wqc_has_room_for(wq, sq->cc, sq->pc, sq->stop_room))) {
+	room = xsc_wq_cyc_ctr2ix(wq, sq->cc - sq->pc);
+	if (room < sq->stop_room || sq->cc == sq->pc) {
 		netif_tx_stop_queue(sq->txq);
 		sq->stats->stopped++;
 	}
 
-	if (!xsc_netdev_xmit_more(skb) || netif_xmit_stopped(sq->txq))
+	sq->stats->room = room;
+
+	if ((pc & bql_thresh) == bql_thresh)
+		netdev_tx_sent_queue(sq->txq, num_bytes);
+	if ((!xsc_netdev_xmit_more(skb) && !xsc_xmit_more) || netif_xmit_stopped(sq->txq))
 		xsc_sq_notify_hw(wq, sq->pc, sq);
 }
 
@@ -242,10 +292,16 @@ static void xsc_dump_error_sqcqe(struct xsc_sq *sq,
 			    netdev->name, sq->cq.xcq.cqn, ci,
 			    sq->sqn, xsc_get_cqe_error_code(sq->cq.xdev, cqe), cqe->qp_id);
 
+#ifdef XSC_DEBUG
+	xsc_dump_err_cqe(sq->cq.xdev, cqe);
+#endif
 }
 
 void xsc_free_tx_wqe(struct device *dev, struct xsc_sq *sq)
 {
+	struct xsc_adapter *adapter = sq->channel->adapter;
+	u8 bql_thresh = adapter->xdev->bql_thresh;
+	u32 tx_completed_bytes = 0;
 	struct xsc_tx_wqe_info *wi;
 	struct sk_buff *skb;
 	u16 ci, npkts = 0;
@@ -273,9 +329,11 @@ void xsc_free_tx_wqe(struct device *dev, struct xsc_sq *sq)
 		npkts++;
 		nbytes += wi->num_bytes;
 		sq->cc += wi->num_wqebbs;
+		if ((ci & bql_thresh) == bql_thresh)
+			tx_completed_bytes += wi->num_bytes;
 	}
 
-	netdev_tx_completed_queue(sq->txq, npkts, nbytes);
+	netdev_tx_completed_queue(sq->txq, npkts, tx_completed_bytes);
 }
 
 #ifdef NEED_CREATE_RX_THREAD
@@ -294,6 +352,8 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 	u16 npkts = 0;
 	u16 sqcc;
 	int i = 0;
+	u8 bql_thresh = 0;
+	u32 tx_completed_bytes = 0;
 
 	sq = container_of(cq, struct xsc_sq, cq);
 	if (!test_bit(XSC_ETH_SQ_STATE_ENABLED, &sq->state))
@@ -301,7 +361,7 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 
 	adapter = sq->channel->adapter;
 	dev = adapter->dev;
-
+	bql_thresh = adapter->xdev->bql_thresh;
 	cqe = xsc_cqwq_get_cqe(&cq->wq);
 	if (!cqe)
 		goto out;
@@ -346,6 +406,8 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 
 			xsc_tx_dma_unmap(dev, dma);
 		}
+		if ((ci & bql_thresh) == bql_thresh)
+			tx_completed_bytes += wi->num_bytes;
 
 #ifndef NEED_CREATE_RX_THREAD
 		npkts++;
@@ -372,9 +434,7 @@ bool xsc_poll_tx_cq(struct xsc_cq *cq, int napi_budget)
 	sq->dma_fifo_cc = dma_fifo_cc;
 	sq->cc = sqcc;
 
-	ETH_SQ_STATE(sq);
-	netdev_tx_completed_queue(sq->txq, npkts, nbytes);
-	ETH_SQ_STATE(sq);
+	netdev_tx_completed_queue(sq->txq, npkts, tx_completed_bytes);
 
 	if (netif_tx_queue_stopped(sq->txq) &&
 	    xsc_wqc_has_room_for(&sq->wq, sq->cc, sq->pc, sq->stop_room)) {
@@ -386,11 +446,14 @@ out:
 	return (i == napi_budget);
 }
 
-static uint32_t xsc_eth_xmit_frame(struct sk_buff *skb,
+static uint32_t xsc_eth_xmit_frame(struct net_device *netdev,
+				   struct sk_buff *skb,
 				   struct xsc_sq *sq,
 				   struct xsc_tx_wqe *wqe,
-				   u16 pi)
+				   u16 pi,
+				   bool xsc_xmit_more)
 {
+	struct xsc_adapter *adapter = netdev_priv(netdev);
 	struct xsc_send_wqe_ctrl_seg *cseg;
 	struct xsc_wqe_data_seg *dseg;
 	struct xsc_tx_wqe_info *wi;
@@ -402,6 +465,13 @@ static uint32_t xsc_eth_xmit_frame(struct sk_buff *skb,
 	u32 num_bytes;
 	u32 num_dma = 0;
 	u8 num_wqebbs = 0;
+	int err;
+
+	if (xsc_is_vf_rep(adapter->netdev)) {
+		err = xsc_build_pph_head(netdev, skb);
+		if (err)
+			return NETDEV_TX_BUSY;
+	}
 
 retry_send:
 	/* Calc ihs and ds cnt, no writes to wqe yet */
@@ -454,7 +524,7 @@ retry_send:
 	if (unlikely(num_bytes == 0))
 		goto err_drop;
 
-	xsc_txwqe_build_csegs(sq, skb, mss, ihs, headlen,
+	xsc_txwqe_build_csegs(adapter, sq, skb, mss, ihs, headlen,
 			      opcode, ds_cnt, num_bytes, cseg);
 
 	/*inline header is also use dma to transport*/
@@ -463,7 +533,7 @@ retry_send:
 		goto err_drop;
 
 	xsc_txwqe_complete(sq, skb, opcode, ds_cnt, num_wqebbs, num_bytes,
-			   num_dma, wi);
+			   num_dma, wi, xsc_xmit_more);
 
 	stats->bytes     += num_bytes;
 	stats->xmit_more += xsc_netdev_xmit_more(skb);
@@ -482,12 +552,56 @@ err_drop:
 	return NETDEV_TX_OK;
 }
 
+static netdev_tx_t xsc_eth_tunnel_gso_xmit(struct sk_buff *skb, struct net_device *netdev)
+{
+	struct xsc_adapter *adapter = netdev_priv(netdev);
+	struct sk_buff *segs, *next;
+	netdev_features_t features;
+	struct xsc_sq *sq;
+	struct xsc_tx_wqe *wqe;
+	u16 pi;
+	bool xsc_xmit_more = false;
+	int loop = 0;
+
+	sq = adapter->txq2sq[skb_get_queue_mapping(skb)];
+	if (unlikely(!sq))
+		return NETDEV_TX_BUSY;
+
+	features = netif_skb_features(skb);
+	features &= ~(NETIF_F_GSO_UDP_TUNNEL | NETIF_F_GSO_UDP_TUNNEL_CSUM);
+
+	segs = skb_gso_segment(skb, features);
+	if (IS_ERR(segs)) {
+		goto out_kfree_skb;
+	} else if (segs) {
+		consume_skb(skb);
+		skb = segs;
+	}
+
+	while (skb) {
+		next = skb->next;
+		wqe = xsc_sq_fetch_wqe(sq, adapter->xdev->caps.send_ds_num * XSC_SEND_WQE_DS, &pi);
+
+		xsc_xmit_more = !!next;
+		xsc_eth_xmit_frame(netdev, skb, sq, wqe, pi, xsc_xmit_more);
+		skb = next;
+		loop++;
+	}
+
+	return NETDEV_TX_OK;
+
+out_kfree_skb:
+	kfree_skb(skb);
+	return NETDEV_TX_OK;
+}
+
 netdev_tx_t xsc_eth_xmit_start(struct sk_buff *skb, struct net_device *netdev)
 {
 	struct xsc_adapter *adapter = netdev_priv(netdev);
 	struct xsc_sq *sq;
 	struct xsc_tx_wqe *wqe;
 	u16 pi;
+	bool xsc_xmit_more = false;
 
 	if (!adapter || !adapter->xdev || adapter->status != XSCALE_ETH_DRIVER_OK)
 		return NETDEV_TX_BUSY;
@@ -496,8 +610,12 @@ netdev_tx_t xsc_eth_xmit_start(struct sk_buff *skb, struct net_device *netdev)
 	if (unlikely(!sq))
 		return NETDEV_TX_BUSY;
 
-	wqe = xsc_sq_fetch_wqe(sq, adapter->xdev->caps.send_ds_num * XSC_SEND_WQE_DS, &pi);
-	skb = xsc_accel_handle_tx(skb);
+	if (skb->encapsulation && skb_is_gso(skb))
+		return xsc_eth_tunnel_gso_xmit(skb, netdev);
 
-	return xsc_eth_xmit_frame(skb, sq, wqe, pi);
+	wqe = xsc_sq_fetch_wqe(sq, adapter->xdev->caps.send_ds_num * XSC_SEND_WQE_DS, &pi);
+	if (!xsc_accel_handle_tx(sq, skb))
+		return NETDEV_TX_OK;
+
+	return xsc_eth_xmit_frame(netdev, skb, sq, wqe, pi, xsc_xmit_more);
 }

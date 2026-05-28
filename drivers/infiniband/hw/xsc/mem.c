@@ -61,6 +61,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 {
 	struct scatterlist *sg;
 	unsigned long va;
+	unsigned long skip_offset;
 	dma_addr_t pa;
 	struct xsc_pa_chunk *chunk, *tmp;
 	struct list_head chunk_list;
@@ -76,10 +77,13 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 	u64 chunk_pa;
 	int chunk_npages;
 	unsigned long page_shift = PAGE_SHIFT;
+	u64 expect_pa = 0;
+	u64 actual_pa = 0;
 
 	pgsz_bitmap &= GENMASK(BITS_PER_LONG - 1, 0);
 
 	va = (virt >> page_shift) << page_shift;
+	skip_offset = virt & ((1 << page_shift) - 1);
 
 	INIT_LIST_HEAD(&chunk_list);
 	chunk = kzalloc(sizeof(*chunk), GFP_KERNEL);
@@ -97,6 +101,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 			chunk->pa = pa;
 			chunk->length = sg_dma_len(sg);
 			va += chunk->length;
+			expect_pa = pa;
 			continue;
 		}
 
@@ -131,6 +136,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 	pgsz_bitmap &= GENMASK(min_count_0, 0);
 	pgsz = rounddown_pow_of_two(pgsz_bitmap);
 	*shift = ilog2(pgsz);
+	skip_offset >>= *shift;
 	*npages = 0;
 
 	if (chunk_cnt == 1) {
@@ -151,6 +157,7 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 		list_for_each_entry(chunk, &chunk_list, list) {
 			*npages += DIV_ROUND_UP(chunk->length, pgsz);
 		}
+		*npages -= skip_offset;
 
 		*pas = vmalloc(*npages * sizeof(u64));
 		if (!*pas) {
@@ -162,19 +169,26 @@ int xsc_find_best_pgsz(struct ib_umem *umem,
 		list_for_each_entry(chunk, &chunk_list, list) {
 			chunk_npages = DIV_ROUND_UP(chunk->length, pgsz);
 			chunk_pa = chunk->pa;
-			for (i = 0; i < chunk_npages; i++) {
-				if (pa_index == 0) {
-					mask = GENMASK(*shift - 1,
-						       min_t(int, page_shift, *shift));
-					chunk_pa -= (virt & mask);
-				}
-				(*pas)[pa_index] = chunk_pa + i * pgsz;
+			if (pa_index == 0) {
+				chunk_npages -= skip_offset;
+				chunk_pa += skip_offset << (*shift);
+				mask = GENMASK(*shift - 1, min_t(int, page_shift, *shift));
+				chunk_pa -= (virt & mask);
+			}
 
+			for (i = 0; i < chunk_npages; i++) {
+				(*pas)[pa_index] = chunk_pa + i * pgsz;
 				pa_index++;
 			}
 		}
 	}
 
+	expect_pa += virt & ((1 << page_shift) - 1);
+	actual_pa = (*pas)[0] + (virt & ((1 << *shift) - 1));
+	if (expect_pa != actual_pa) {
+		pr_err("mtt is not correct!\n");
+		err = -EINVAL;
+	}
 err_alloc:
 	list_for_each_entry_safe(chunk, tmp, &chunk_list, list) {
 		list_del(&chunk->list);

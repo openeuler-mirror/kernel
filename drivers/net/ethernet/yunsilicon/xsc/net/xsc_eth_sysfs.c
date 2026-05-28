@@ -327,7 +327,6 @@ remove_pcie_lat:
 
 static void xsc_pcie_lat_sysfs_fini(struct net_device *dev, struct xsc_core_device *xdev)
 {
-	int err;
 	struct xsc_pcie_lat_work *tmp;
 	struct xsc_pcie_lat_feat_mbox_in in;
 	struct xsc_pcie_lat_feat_mbox_out out;
@@ -341,11 +340,8 @@ static void xsc_pcie_lat_sysfs_fini(struct net_device *dev, struct xsc_core_devi
 	in.xsc_pcie_lat_feature_opcode = __cpu_to_be16(XSC_PCIE_LAT_FEAT_SET_EN);
 	in.pcie_lat.pcie_lat_enable = XSC_PCIE_LAT_EN_DISABLE;
 
-	err = xsc_cmd_exec(xdev, (void *)&in, sizeof(struct xsc_pcie_lat_feat_mbox_in),
-			   (void *)&out, sizeof(struct xsc_pcie_lat_feat_mbox_out));
-	if (err || out.hdr.status)
-		xsc_core_err(xdev, "Failed to set pcie_lat disable, err(%u), status(%u)\n",
-				 err, out.hdr.status);
+	xsc_cmd_exec(xdev, (void *)&in, sizeof(struct xsc_pcie_lat_feat_mbox_in),
+		     (void *)&out, sizeof(struct xsc_pcie_lat_feat_mbox_out));
 
 	if (tmp->enable == XSC_PCIE_LAT_EN_ENABLE)
 		cancel_delayed_work_sync(&tmp->work);
@@ -550,6 +546,70 @@ static void xsc_ooo_statistic_sysfs_fini(struct net_device *dev, struct xsc_core
 	sysfs_remove_group(&dev->dev.kobj, &ooo_statistic_group);
 }
 
+static ssize_t bql_threshold_store(struct device *device,
+				   struct device_attribute *attr,
+				   const char *buf, size_t count)
+{
+	struct net_device *netdev = to_net_dev(device);
+	struct xsc_adapter *adapter = netdev_priv(netdev);
+	u8 bql_thresh, old_bql_thresh;
+	int ret;
+
+	ret = kstrtou8(buf, 0, &bql_thresh);
+	if (ret)
+		return -EINVAL;
+
+	old_bql_thresh = adapter->nic_param.bql_thresh;
+	adapter->nic_param.bql_thresh = bql_thresh;
+	ret = xsc_safe_switch_channels(adapter, xsc_bql_threshold_set, NULL);
+	if (ret) {
+		netdev_err(netdev, "Failed to set bql threshold %d, ret: %d\n", bql_thresh, ret);
+		adapter->nic_param.bql_thresh = old_bql_thresh;
+		return ret;
+	}
+
+	netdev_info(netdev, "Set bql threshold to 0x%x\n", adapter->nic_param.bql_thresh);
+
+	return count;
+}
+
+static ssize_t bql_threshold_show(struct device *device,
+				  struct device_attribute *attr,
+				  char *buf)
+{
+	struct net_device *netdev = to_net_dev(device);
+	struct xsc_adapter *adapter = netdev_priv(netdev);
+	ssize_t count;
+
+	count = sprintf(buf, "0x%02x\n", adapter->nic_param.bql_thresh);
+	return count;
+}
+
+static DEVICE_ATTR_RW(bql_threshold);
+
+static const struct attribute *bql_thresh_attrs[] = {
+	&dev_attr_bql_threshold.attr,
+	NULL,
+};
+
+static int xsc_eth_bql_threshold_sysfs_init(struct net_device *dev)
+{
+	int ret;
+
+	ret = sysfs_create_files(&dev->dev.kobj, bql_thresh_attrs);
+	if (ret) {
+		netdev_err(dev, "Failed to create bql threshold sysfs");
+		return ret;
+	}
+
+	return 0;
+}
+
+static void  xsc_eth_bql_threshold_sysfs_remove(struct net_device *dev)
+{
+	sysfs_remove_files(&dev->dev.kobj, bql_thresh_attrs);
+}
+
 int xsc_eth_sysfs_create(struct net_device *dev, struct xsc_core_device *xdev)
 {
 	int err = 0;
@@ -558,6 +618,8 @@ int xsc_eth_sysfs_create(struct net_device *dev, struct xsc_core_device *xdev)
 		err = xsc_pcie_lat_sysfs_init(dev, xdev);
 		err = xsc_ooo_statistic_sysfs_init(dev, xdev);
 	}
+
+	xsc_eth_bql_threshold_sysfs_init(dev);
 
 	return err;
 }
@@ -568,4 +630,6 @@ void xsc_eth_sysfs_remove(struct net_device *dev, struct xsc_core_device *xdev)
 		xsc_pcie_lat_sysfs_fini(dev, xdev);
 		xsc_ooo_statistic_sysfs_fini(dev, xdev);
 	}
+
+	xsc_eth_bql_threshold_sysfs_remove(dev);
 }

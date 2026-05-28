@@ -198,7 +198,8 @@ static int xsc_query_port_ets_rate_limit(struct xsc_core_device *xdev, u64 *rate
 	return 0;
 }
 
-static int xsc_modify_port_ets_rate_limit(struct xsc_core_device *xdev, u64 *ratelimit)
+static int xsc_modify_port_ets_rate_limit(struct xsc_core_device *xdev,
+					  u64 *ratelimit)
 {
 	u8 i;
 	struct xsc_rate_limit_set req;
@@ -302,19 +303,27 @@ static int xsc_query_port_pfc_stats(struct xsc_core_device *xdev, struct ieee_pf
 
 static int xsc_set_port_pfc(struct xsc_core_device *xdev, u8 pfcbitmap)
 {
-	u8 i;
+	u8 i, j;
 	u8 pfc_en[IEEE_8021QAZ_MAX_TCS] = {0};
 	struct xsc_pfc_set_new req;
 	struct xsc_pfc_set_new rsp;
+	struct ieee_pfc get_pfc;
 
 	xsc_pfc_bitmap2array(pfcbitmap, pfc_en);
 
 	memset(&req, 0, sizeof(struct xsc_pfc_set));
-	for (i = 0; i <= xsc_max_tc(xdev); i++) {
+	for (i = 0, j = 0; i < IEEE_8021QAZ_MAX_TCS; i++) {
 		req.pfc_on = pfc_en[i];
-		req.req_prio = i;
-		xsc_core_dbg(xdev, "%s: prio %d, pfc %d\n", __func__, i, req.pfc_on);
-		xsc_hw_kernel_call(xdev, XSC_CMD_OP_IOCTL_SET_PFC_NEW, &req, &rsp);
+		if (req.pfc_on) {
+			if (j++ > xsc_max_tc(xdev))
+				break;
+			req.req_prio = i;
+			xsc_query_port_pfc_stats(xdev, &get_pfc);
+			req.cur_prio_en = get_pfc.pfc_en;
+			xsc_core_dbg(xdev, "%s: prio %d, pfc %d, cur prio: %x\n", __func__,
+				     i, req.pfc_on, req.cur_prio_en);
+			xsc_hw_kernel_call(xdev, XSC_CMD_OP_IOCTL_SET_PFC_NEW, &req, &rsp);
+		}
 	}
 	return 0;
 }
@@ -767,6 +776,7 @@ static int xsc_dcbnl_ieee_getmaxrate(struct net_device *netdev,
 	struct xsc_adapter *priv = netdev_priv(netdev);
 	struct xsc_core_device *xdev = priv->xdev;
 	u64 max_bw_value[IEEE_8021QAZ_MAX_TCS] = {0};
+	u64 maxrate_tmp;
 	int i, err;
 
 	if (!priv->dcbx.enable)
@@ -779,7 +789,9 @@ static int xsc_dcbnl_ieee_getmaxrate(struct net_device *netdev,
 		return err;
 
 	for (i = 0; i <= xsc_max_tc(xdev); i++) {
-		maxrate->tc_maxrate[i] = max_bw_value[i] * XSC_RATE_LIMIT_BASE / XSC_1GB;
+/*100M step rate can only used below 2G, we need to compensate for the conversion error*/
+		maxrate_tmp = ((max_bw_value[i] + 125) / 250) * 250;
+		maxrate->tc_maxrate[i] = maxrate_tmp * XSC_RATE_LIMIT_BASE / 8;
 	}
 
 	return 0;
@@ -801,7 +813,7 @@ static int xsc_dcbnl_ieee_setmaxrate(struct net_device *netdev,
 	for (i = 0; i <= xsc_max_tc(xdev); i++) {
 		if (!maxrate->tc_maxrate[i])
 			continue;
-		max_bw_value[i] = maxrate->tc_maxrate[i] * XSC_1GB / XSC_RATE_LIMIT_BASE;
+		max_bw_value[i] = maxrate->tc_maxrate[i] * 8 / XSC_RATE_LIMIT_BASE;
 		xsc_core_dbg(xdev, "%s: tc_%d <=> max_bw %llu * 16kbps\n",
 			     __func__, i, max_bw_value[i]);
 	}
@@ -1366,6 +1378,7 @@ static int xsc_set_dscp2prio(struct xsc_adapter *priv, u8 dscp, u8 prio)
 		return err;
 
 	priv->dcbx_dp.dscp2prio[dscp] = prio;
+
 	return err;
 }
 

@@ -24,13 +24,21 @@
 #define XSC_IOCTL_USER_MODE \
 	_IOWR(XSC_IOCTL_MAGIC, 8, struct xsc_ioctl_hdr)
 
+#define XSC_IOVA_IOCTL_MAGIC	0x1f
+#define XSC_IOVA_CTRL	_IOWR(XSC_IOVA_IOCTL_MAGIC, 1, struct xsc_iova_sg_req)
+
 
 #define XSC_IOCTL_CHECK_FILED		0x01234567
+
+#define XSC_USER_INFO_FLAG_USER_IDX	BIT(0)
+#define XSC_USER_INFO_FLAG_ASSOC_PID	BIT(1)
+
 enum {
 	XSC_IOCTL_OP_GET_LOCAL,
 	XSC_IOCTL_OP_GET_VF_INFO,
 	XSC_IOCTL_OP_GET_CONTEXT,
 	XSC_IOCTL_OP_GET_INFO_BY_BDF,
+	XSC_IOCTL_OP_GET_BOARD_ESW_INFO,
 	XSC_IOCTL_OP_GET_MAX
 };
 
@@ -61,9 +69,14 @@ enum {
 };
 
 enum {
-	XSC_IOCTL_GET_VECTOR_MATRIX	= 0x400,
 	XSC_IOCTL_SET_LOG_LEVEL		= 0x401,
 	XSC_IOCTL_SET_CMD_VERBOSE	= 0x402,
+	XSC_IOCTL_GET_RUN_INFO		= 0x403,
+	XSC_IOCTL_GET_BOARD_INFO	= 0x404,
+	XSC_IOCTL_GET_BOARD_CNT		= 0x405,
+	XSC_IOCTL_GET_QP_BASE_INFO	= 0x406,
+	XSC_IOCTL_GET_IB_TBL_CNT	= 0x408,
+	XSC_IOCTL_GET_NIC_DDR_STATUS	= 0x409,
 	XSC_IOCTL_DRIVER_MAX
 };
 
@@ -200,11 +213,72 @@ struct xsc_devinfo {
 	u8	ibdev_name[MAX_IFNAME_LEN + 1];
 	u32	ip_addr;
 	u32	vendor_id;
+	u8	mac[8];
 };
 
 struct xsc_ioctl_get_devinfo {
 	u32	dev_num;
 	struct xsc_devinfo data[];
+};
+
+#define SN_LEN	32
+struct xsc_device_run_info {
+	char	board_sn[SN_LEN];
+	u16	global_func_id;
+	u16	msix_vec_base;
+	u16	bond_id;
+	u8	user_mode;
+	u8	read_flush;
+	u32	resource_access_mode;
+	u32	mtt_total_avail;
+	u32	mtt_node_num;
+};
+
+struct xsc_ioctl_board_info {
+	u32	board_id;
+	char	board_sn[SN_LEN];
+	u64	guid;
+	u32	resource_access_mode;
+	u32	ref_cnt;
+
+	u16	iae_lock_num;
+	u32	mpt_entry_num;
+	u32	mtt_page_num;
+};
+
+struct board_esw_info {
+	u8 esw_mode:4;
+	u8 rep_mode:4;
+	u8 resv;
+};
+
+struct xsc_ioctl_board_esw_info {
+	struct board_esw_info esw_info[XSC_MAX_NUM_PCIE_INTF][XSC_MAX_PF_NUM_PER_PCIE];
+	u16	vf_funcid_base[XSC_MAX_NUM_PCIE_INTF][XSC_MAX_PF_NUM_PER_PCIE];
+	u16	vf_funcid_top[XSC_MAX_NUM_PCIE_INTF][XSC_MAX_PF_NUM_PER_PCIE];
+	u64	pf_bitmap[XSC_MAX_NUM_PCIE_INTF];
+	u16	pct_start;
+	u8	pcie_bitmap;
+	u8	rsv[5];
+};
+
+struct xsc_ioctl_qp_base_info {
+	u16			virtio_qp_id_base;
+	u16			virtio_qp_id_end;
+	u16			raweth_tso_qp_id_base;
+	u16			raweth_tso_qp_id_end;
+	u16			raweth_qp_id_base;
+	u16			raweth_qp_id_end;
+	u16			sniffer_qp_id_base;
+	u16			sniffer_qp_id_end;
+	u16			mad_qp_id_base;
+	u16			mad_qp_id_end;
+	u16			rdma_qp_id_base;
+	u16			rdma_qp_id_end;
+	u16			rawtpe_qp_id_base;
+	u16			rawtpe_qp_id_end;
+	u32			qp_max_num;
+	u32			qp_tbl_bitmap[];
 };
 
 /* get phy info */
@@ -246,6 +320,7 @@ struct xsc_ioctl_get_phy_info_res {
 	u8 on_chip_tbl_vld;
 	u8 dma_rw_tbl_vld;
 	u8 pct_compress_vld;
+	u8 aidpu_mode;
 	u32 chip_version;
 	u32 hca_core_clock;
 	u8 mac_bit;
@@ -351,4 +426,28 @@ struct xsc_ioctl_hdr {
 	struct xsc_ioctl_attr attr;
 };
 
+struct xsc_iova_sg_req {
+	u64 va;
+	u64 size;
+	u64 iova_array;
+	u32 array_size;
+	u32 num_entries;
+	s32 result;
+};
+
+struct xsc_ioctl_user_info {
+	u8 user_idx;
+	u8 flags;
+	u8 rsv[2];
+	u32 assoc_pid;
+};
+
+struct xsc_ioctl_ib_tbl_cnt {
+	u16 mac_tbl_num;
+	u16 used_mac_tbl_num;
+	u16 ip_tbl_num;
+	u16 used_ip_tbl_num;
+	u16 ib_mapping_tbl_num;
+	u16 used_ib_mapping_tbl_num;
+};
 #endif

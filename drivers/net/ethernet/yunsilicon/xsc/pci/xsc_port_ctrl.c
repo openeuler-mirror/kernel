@@ -15,13 +15,15 @@
 #include "common/xsc_port_ctrl.h"
 #include "common/xsc_prgrmmbl_cc_ctrl.h"
 #include "common/res_obj.h"
-
+#include "common/xsc_sample_port_ctrl.h"
+#include "iova_ctrl.h"
 
 #define XSC_PORT_CTRL_MAX		1024
 #define XSC_PORT_CTRL_NAME_PRE		"yunsilicon"
 #define XSC_PORT_CTRL_NAME		"port_ctrl"
 #define XSC_PORT_CTRL_CB_NAME_LEN	15
 DECLARE_BITMAP(g_bitmap_dev_id, XSC_PORT_CTRL_MAX);
+spinlock_t g_dev_id_lock;	/* protect dev id bitmap */
 
 struct xsc_port_ctrl_reg {
 	struct list_head node;
@@ -39,26 +41,41 @@ struct mutex g_port_ctrl_cbs_lock;	/* protect port ctrl node list */
 static int _port_ctrl_open(struct inode *inode, struct file *filp)
 {
 	struct xsc_port_ctrl *ctrl = container_of(inode->i_cdev, struct xsc_port_ctrl, cdev);
-	struct xsc_port_ctrl_file *file;
+	struct xsc_port_ctrl_file *file, *tmp_file, *n;
 
-	file = kzalloc(sizeof(*file), GFP_KERNEL);
+	file = kvzalloc(sizeof(*file), GFP_KERNEL);
 	if (!file)
 		return -ENOMEM;
 
+	kref_init(&file->kref);
+	kref_get(&file->kref);
 	INIT_RADIX_TREE(&file->bdf_tree, GFP_ATOMIC);
 	spin_lock_init(&file->bdf_lock);
 	file->ctrl = ctrl;
+	file->pid = current->pid;
 
-	file->root_bdf = kzalloc(sizeof(*file->root_bdf), GFP_KERNEL);
+	file->root_bdf = kvzalloc(sizeof(*file->root_bdf), GFP_KERNEL);
 	if (!file->root_bdf) {
 		kfree(file);
 		return -ENOMEM;
 	}
+
+	kref_init(&file->root_bdf->kref);
+	kref_get(&file->root_bdf->kref);
 	INIT_RADIX_TREE(&file->root_bdf->obj_tree, GFP_ATOMIC);
 	spin_lock_init(&file->root_bdf->obj_lock);
 	file->root_bdf->xdev = container_of(ctrl, struct xsc_core_device, port_ctrl);
+	file->root_bdf->port_ctrl_file = file;
 
 	spin_lock(&ctrl->file_lock);
+	list_for_each_entry_safe(tmp_file, n, &ctrl->file_list, file_node) {
+		if (tmp_file->pid == file->pid && tmp_file->assoc_pid) {
+			file->assoc_pid = tmp_file->assoc_pid;
+			xsc_core_info(file->root_bdf->xdev, "port_ctrl_file addr:%p, pid:%d, assoc_pid:%d",
+				      file, file->pid, file->assoc_pid);
+			break;
+		}
+	}
 	list_add_tail(&file->file_node, &ctrl->file_list);
 	spin_unlock(&ctrl->file_lock);
 	filp->private_data = file;
@@ -75,13 +92,13 @@ static void xsc_release_port_ctrl_file(struct xsc_port_ctrl_file *file)
 	void **slot;
 
 	xsc_close_bdf_file(file->root_bdf);
-	kfree(file->root_bdf);
+	kref_put(&file->root_bdf->kref, xsc_free_bdf_file);
 	spin_lock(&file->bdf_lock);
 	radix_tree_for_each_slot(slot, &file->bdf_tree, &iter, 0) {
 		bdf_file = (struct xsc_bdf_file *)(*slot);
 		xsc_close_bdf_file(bdf_file);
 		radix_tree_iter_delete(&file->bdf_tree, &iter, slot);
-		kfree(bdf_file);
+		kref_put(&bdf_file->kref, xsc_free_bdf_file);
 	}
 	spin_unlock(&file->bdf_lock);
 }
@@ -94,7 +111,7 @@ static int _port_ctrl_release(struct inode *inode, struct file *filp)
 	spin_lock(&file->ctrl->file_lock);
 	list_del(&file->file_node);
 	spin_unlock(&file->ctrl->file_lock);
-	kfree(file);
+	kref_put(&file->kref, xsc_free_port_ctrl_file);
 
 	return 0;
 }
@@ -203,6 +220,12 @@ static inline struct xsc_bdf_file *get_bdf_file(struct xsc_port_ctrl_file *file,
 
 	xdev = container_of(file->ctrl, struct xsc_core_device, port_ctrl);
 	xsc_core_dbg(xdev, "domain=%x, bus=%x, devfn=%x\n", hdr->domain, hdr->bus, hdr->devfn);
+
+	if (xdev->pdev->vendor != XSC_PCI_VENDOR_ID &&
+	    xdev->pdev->vendor != XSC_PCI_VENDOR_ID_CUSTOM) {
+		xsc_core_err(xdev, "dismatch vendor id\n");
+		return NULL;
+	}
 	if ((hdr->domain == 0 && hdr->bus == 0 && hdr->devfn == 0) ||
 	    (hdr->domain == pci_domain_nr(xdev->pdev->bus) &&
 	    hdr->bus == xdev->pdev->bus->number &&
@@ -220,16 +243,19 @@ static inline struct xsc_bdf_file *get_bdf_file(struct xsc_port_ctrl_file *file,
 
 	rl_xdev = xsc_pci_get_xdev_by_bus_and_slot(hdr->domain, hdr->bus, hdr->devfn);
 	if (!rl_xdev) {
-		xsc_core_err(bdf_file->xdev, "fail to get xdev:domain=%x, bus=%x, devfn=%x\n",
+		xsc_core_err(xdev, "fail to get xdev:domain=%x, bus=%x, devfn=%x\n",
 			     hdr->domain, hdr->bus, hdr->devfn);
 		return NULL;
 	}
 
-	bdf_file = kzalloc(sizeof(*bdf_file), GFP_KERNEL);
+	bdf_file = kvzalloc(sizeof(*bdf_file), GFP_KERNEL);
 	if (!bdf_file)
 		return NULL;
 
 	bdf_file->key = key;
+	bdf_file->port_ctrl_file = file;
+	kref_init(&bdf_file->kref);
+	kref_get(&bdf_file->kref);
 	INIT_RADIX_TREE(&bdf_file->obj_tree, GFP_ATOMIC);
 	spin_lock_init(&bdf_file->obj_lock);
 	bdf_file->xdev = rl_xdev;
@@ -253,6 +279,9 @@ static long _port_ctrl_ioctl(struct file *filp, unsigned int cmd, unsigned long 
 	int err;
 
 	file = filp->private_data;
+	if (!file)
+		return -EFAULT;
+
 	user_hdr = (struct xsc_ioctl_hdr __user *)arg;
 	err = copy_from_user(&hdr, user_hdr, sizeof(hdr));
 	if (err) {
@@ -266,6 +295,8 @@ static long _port_ctrl_ioctl(struct file *filp, unsigned int cmd, unsigned long 
 		return -EFAULT;
 	}
 
+	err = -ENXIO;
+
 	list_for_each_entry(p, &g_port_ctrl_cbs, node) {
 		if (p->cb) {
 			err = p->cb(bdf_file, cmd, user_hdr, p->data);
@@ -274,7 +305,7 @@ static long _port_ctrl_ioctl(struct file *filp, unsigned int cmd, unsigned long 
 		}
 	}
 
-	return err;
+	return err != TRY_NEXT_CB ? err : -ENXIO;
 }
 
 static const struct file_operations g_port_ctrl_fops = {
@@ -335,6 +366,27 @@ static int _port_ctrl_data_init(void)
 	return 0;
 }
 
+static int alloc_dev_id(void)
+{
+	int dev_id;
+
+	spin_lock(&g_dev_id_lock);
+	dev_id = find_first_zero_bit(g_bitmap_dev_id, XSC_PORT_CTRL_MAX);
+	g_port_ctrl_dev_cnt++;
+	set_bit(dev_id, g_bitmap_dev_id);
+	spin_unlock(&g_dev_id_lock);
+
+	return dev_id;
+}
+
+static void release_dev_id(int dev_id)
+{
+	spin_lock(&g_dev_id_lock);
+	clear_bit(dev_id, g_bitmap_dev_id);
+	g_port_ctrl_dev_cnt--;
+	spin_unlock(&g_dev_id_lock);
+}
+
 static void _port_ctrl_dev_del(struct xsc_core_device *dev)
 {
 	struct xsc_port_ctrl *ctrl;
@@ -348,17 +400,18 @@ static void _port_ctrl_dev_del(struct xsc_core_device *dev)
 	dev_id = MINOR(ctrl->devid);
 	spin_lock(&ctrl->file_lock);
 	list_for_each_entry_safe(file, n, &ctrl->file_list, file_node) {
+		file->dev_del = true;
 		xsc_release_port_ctrl_file(file);
 		list_del(&file->file_node);
 		kfree(file);
 	}
 	spin_unlock(&ctrl->file_lock);
 
+	destroy_workqueue(ctrl->wq);
 	device_destroy(g_port_ctrl_class, ctrl->devid);
 	cdev_del(&ctrl->cdev);
 
-	clear_bit(dev_id, g_bitmap_dev_id);
-	g_port_ctrl_dev_cnt--;
+	release_dev_id(dev_id);
 }
 
 static int _port_ctrl_dev_add(struct xsc_core_device *dev)
@@ -373,7 +426,12 @@ static int _port_ctrl_dev_add(struct xsc_core_device *dev)
 	}
 
 	ctrl = &dev->port_ctrl;
-	dev_id = find_first_zero_bit(g_bitmap_dev_id, XSC_PORT_CTRL_MAX);
+	ctrl->wq = create_singlethread_workqueue("xsc_obj_rel");
+	if (!ctrl->wq) {
+		xsc_core_err(dev, "failed to create obj_rel workqueue\n");
+		return -ENOMEM;
+	}
+	dev_id = alloc_dev_id();
 	ctrl->devid = g_port_ctrl_root_dev + dev_id;
 	ctrl->cdev.owner = THIS_MODULE;
 	INIT_LIST_HEAD(&ctrl->file_list);
@@ -382,7 +440,8 @@ static int _port_ctrl_dev_add(struct xsc_core_device *dev)
 	ret = cdev_add(&ctrl->cdev, ctrl->devid, 1);
 	if (ret != 0) {
 		xsc_core_err(dev, "failed to add cdev\n");
-		kfree(ctrl);
+		destroy_workqueue(ctrl->wq);
+		release_dev_id(dev_id);
 		return -ENOMEM;
 	}
 
@@ -394,13 +453,11 @@ static int _port_ctrl_dev_add(struct xsc_core_device *dev)
 				     PCI_FUNC(dev->pdev->devfn));
 	if (IS_ERR(ctrl->device)) {
 		xsc_core_err(dev, "failed to create port control device\n");
+		destroy_workqueue(ctrl->wq);
 		cdev_del(&ctrl->cdev);
-		kfree(ctrl);
+		release_dev_id(dev_id);
 		return -ENOMEM;
 	}
-
-	g_port_ctrl_dev_cnt++;
-	set_bit(dev_id, g_bitmap_dev_id);
 
 	return 0;
 }
@@ -420,6 +477,7 @@ static void _port_ctrl_cb_fini(void)
 static int _port_ctrl_cb_init(void)
 {
 	mutex_init(&g_port_ctrl_cbs_lock);
+	spin_lock_init(&g_dev_id_lock);
 	return 0;
 }
 
@@ -429,10 +487,12 @@ static void _port_ctrl_dev_flush(void)
 
 void xsc_port_ctrl_fini(void)
 {
+	iova_ctrl_cb_fini();
 	_port_ctrl_dev_flush();
 	_port_ctrl_data_fini();
 	_port_ctrl_cb_fini();
 	xsc_prgrmmbl_cc_ctrl_cb_fini();
+	xsc_sample_port_ctrl_cb_fini();
 }
 
 int xsc_port_ctrl_init(void)
@@ -458,6 +518,21 @@ int xsc_port_ctrl_init(void)
 		_port_ctrl_data_fini();
 		return -1;
 	}
+
+	ret = xsc_sample_port_ctrl_cb_init();
+	if (ret != 0) {
+		pr_err("failed to initialize sample port ctrl cb\n");
+		_port_ctrl_data_fini();
+		return -1;
+	}
+
+	ret = iova_ctrl_cb_init();
+	if (ret != 0) {
+		pr_err("failed to initialize iova ctrl cb\n");
+		_port_ctrl_data_fini();
+		return -1;
+	}
+
 	return 0;
 }
 
@@ -471,8 +546,7 @@ static void xsc_prgrmmbl_cc_ctrl_dev_del_wrapper(struct xsc_core_device *dev)
 	if (xsc_prgrmmbl_cc_ctrl_dev_del(dev, g_port_ctrl_class, &dev_id))
 		return;
 
-	clear_bit(dev_id, g_bitmap_dev_id);
-	g_port_ctrl_dev_cnt--;
+	release_dev_id(dev_id);
 }
 
 static int xsc_prgrmmbl_cc_ctrl_dev_add_wrapper(struct xsc_core_device *dev)
@@ -488,12 +562,44 @@ static int xsc_prgrmmbl_cc_ctrl_dev_add_wrapper(struct xsc_core_device *dev)
 		return -ENOMEM;
 	}
 
-	dev_id = find_first_zero_bit(g_bitmap_dev_id, XSC_PORT_CTRL_MAX);
+	dev_id = alloc_dev_id();
 	ret = xsc_prgrmmbl_cc_ctrl_dev_add(dev, g_port_ctrl_class, g_port_ctrl_root_dev + dev_id);
-	if (!ret) {
-		g_port_ctrl_dev_cnt++;
-		set_bit(dev_id, g_bitmap_dev_id);
+	if (ret)
+		release_dev_id(dev_id);
+
+	return ret;
+}
+
+static void xsc_sample_port_ctrl_dev_del_wrapper(struct xsc_core_device *dev)
+{
+	int dev_id = 0;
+
+	if (!xsc_sample_port_ctrl_is_supported(dev))
+		return;
+
+	if (xsc_sample_port_ctrl_dev_del(dev, g_port_ctrl_class, &dev_id))
+		return;
+
+	release_dev_id(dev_id);
+}
+
+static int xsc_sample_port_ctrl_dev_add_wrapper(struct xsc_core_device *dev)
+{
+	int ret = 0;
+	int dev_id = 0;
+
+	if (!xsc_sample_port_ctrl_is_supported(dev))
+		return ret;
+
+	if (g_port_ctrl_dev_cnt >= XSC_PORT_CTRL_MAX) {
+		xsc_core_err(dev, "too many port control devices\n");
+		return -ENOMEM;
 	}
+
+	dev_id = alloc_dev_id();
+	ret = xsc_sample_port_ctrl_dev_add(dev, g_port_ctrl_class, g_port_ctrl_root_dev + dev_id);
+	if (ret)
+		release_dev_id(dev_id);
 
 	return ret;
 }
@@ -502,6 +608,7 @@ void xsc_port_ctrl_remove(struct xsc_core_device *dev)
 {
 	_port_ctrl_dev_del(dev);
 	xsc_prgrmmbl_cc_ctrl_dev_del_wrapper(dev);
+	xsc_sample_port_ctrl_dev_del_wrapper(dev);
 }
 
 int xsc_port_ctrl_probe(struct xsc_core_device *dev)
@@ -517,6 +624,10 @@ int xsc_port_ctrl_probe(struct xsc_core_device *dev)
 	ret = xsc_prgrmmbl_cc_ctrl_dev_add_wrapper(dev);
 	if (ret != 0)
 		xsc_core_err(dev, "failed to add programmable cc control device\n");
+
+	ret = xsc_sample_port_ctrl_dev_add_wrapper(dev);
+	if (ret != 0)
+		xsc_core_err(dev, "failed to add sample port control device\n");
 
 	return ret;
 }
@@ -536,7 +647,7 @@ int xsc_port_ctrl_cb_reg(const char *name, port_ctrl_cb cb, void *data)
 		return -1;
 	}
 
-	reg_node = kmalloc(sizeof(*reg_node), GFP_KERNEL);
+	reg_node = kvzalloc(sizeof(*reg_node), GFP_KERNEL);
 	if (!reg_node)
 		return -1;
 

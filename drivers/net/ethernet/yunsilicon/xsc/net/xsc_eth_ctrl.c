@@ -40,6 +40,22 @@ static void decode_watchdog_get(void *data)
 	resp->period = __be32_to_cpu(resp->period);
 }
 
+static void encode_watchdog_warn_set(void *data, u32 mac_port)
+{
+	struct xsc_watchdog_warn_period_set *req =
+		(struct xsc_watchdog_warn_period_set *)data;
+
+	req->period = __cpu_to_be32(req->period);
+}
+
+static void decode_watchdog_warn_get(void *data)
+{
+	struct xsc_watchdog_warn_period_get *resp =
+		(struct xsc_watchdog_warn_period_get *)data;
+
+	resp->period = __be32_to_cpu(resp->period);
+}
+
 static void encode_rlimit_set(void *data, u32 mac_port)
 {
 	struct xsc_rate_limit_set *req = (struct xsc_rate_limit_set *)data;
@@ -59,8 +75,52 @@ static void decode_rlimit_get(void *data)
 	resp->max_limit_id = __be32_to_cpu(resp->max_limit_id);
 }
 
+static void encode_rlimit_set_v2(void *data, u32 mac_port)
+{
+	struct xsc_rate_limit_set_v2 *req = (struct xsc_rate_limit_set_v2 *)data;
+
+	req->rate_cir = __cpu_to_be32(req->rate_cir);
+	req->limit_id = __cpu_to_be32(req->limit_id);
+}
+
+static void decode_rlimit_get_v2(void *data)
+{
+	struct xsc_rate_limit_get_v2 *resp = (struct xsc_rate_limit_get_v2 *)data;
+	int i;
+
+	for (i = 0; i <= QOS_PRIO_MAX; i++)
+		resp->rate_cir[i] = __be32_to_cpu(resp->rate_cir[i]);
+
+	resp->max_limit_id = __be32_to_cpu(resp->max_limit_id);
+}
+
+static void encode_qp_qos_cfg_get(void *data, u32 mac_port)
+{
+	struct xsc_qp_qos_config_get *req = (struct xsc_qp_qos_config_get *)data;
+
+	req->qpn = __cpu_to_be16(req->qpn);
+}
+
+static void decode_qp_qos_cfg_get(void *data)
+{
+	struct xsc_qp_qos_config_get *resp = (struct xsc_qp_qos_config_get *)data;
+
+	resp->s3_id = __be16_to_cpu(resp->s3_id);
+	resp->s2_id = __be16_to_cpu(resp->s2_id);
+	resp->s1_id = __be16_to_cpu(resp->s1_id);
+	resp->s0_id = __be16_to_cpu(resp->s0_id);
+
+	resp->s3_cir_shap_val = __be32_to_cpu(resp->s3_cir_shap_val);
+	resp->s3_eir_shap_val = __be32_to_cpu(resp->s3_eir_shap_val);
+	resp->s2_cir_shap_val = __be32_to_cpu(resp->s2_cir_shap_val);
+	resp->s2_eir_shap_val = __be32_to_cpu(resp->s2_eir_shap_val);
+	resp->s1_cir_shap_val = __be32_to_cpu(resp->s1_cir_shap_val);
+	resp->s0_cir_shap_val = __be32_to_cpu(resp->s0_cir_shap_val);
+}
+
 static void encode_roce_accl_set(void *data, u32 mac_port)
 {
+	u32 i;
 	struct xsc_roce_accl_set *req =
 		(struct xsc_roce_accl_set *)data;
 
@@ -75,12 +135,71 @@ static void encode_roce_accl_set(void *data, u32 mac_port)
 	req->disturb_period = __cpu_to_be16(req->disturb_period);
 	req->disturb_th = __cpu_to_be16(req->disturb_th);
 	req->mac_port = mac_port;
+	req->flag2 = __cpu_to_be64(req->flag2);
+	req->roce_dst_port = __cpu_to_be16(req->roce_dst_port);
+	req->veroce_dst_port = __cpu_to_be16(req->veroce_dst_port);
+	req->veroce_sack_threshold = __cpu_to_be32(req->veroce_sack_threshold);
+	req->veroce_sack_timeout = __cpu_to_be32(req->veroce_sack_timeout);
+	req->ack_aggregation_req_threshold = __cpu_to_be32(req->ack_aggregation_req_threshold);
+	req->ack_aggregation_rsp_window = __cpu_to_be32(req->ack_aggregation_rsp_window);
+	req->ack_aggregation_rsp_timeout = __cpu_to_be32(req->ack_aggregation_rsp_timeout);
+	req->veroce_path_num = __cpu_to_be32(req->veroce_path_num);
+	req->veroce_packet_spray_mode = __cpu_to_be32(req->veroce_packet_spray_mode);
+	req->qp_id = __cpu_to_be32(req->qp_id);
+	for (i = 0; i < ROCE_ACCL_PATH_UDP_SPORT_NUM_MAX; i++)
+		req->path_udp_sport[i] = __cpu_to_be32(req->path_udp_sport[i]);
+	req->path_udp_sport_num = __cpu_to_be32(req->path_udp_sport_num);
+	req->veroce_req_sack_max_psn_ofst = __cpu_to_be32(req->veroce_req_sack_max_psn_ofst);
+	req->veroce_path_rtt_check_period = __cpu_to_be32(req->veroce_path_rtt_check_period);
+	req->veroce_path_shutdown_rtt_th = __cpu_to_be32(req->veroce_path_shutdown_rtt_th);
+	req->veroce_path_shutdown_timeout_count_th =
+		__cpu_to_be32(req->veroce_path_shutdown_timeout_count_th);
+	req->veroce_path_shutdown_no_resp_count_th =
+		__cpu_to_be32(req->veroce_path_shutdown_no_resp_count_th);
+	req->veroce_path_reopen_probe_period = __cpu_to_be32(req->veroce_path_reopen_probe_period);
+	req->veroce_path_reopen_rtt_th = __cpu_to_be32(req->veroce_path_reopen_rtt_th);
+	req->veroce_path_reopen_rtt_count_th = __cpu_to_be32(req->veroce_path_reopen_rtt_count_th);
+	req->veroce_path_reopen_init_rate = __cpu_to_be32(req->veroce_path_reopen_init_rate);
+	req->veroce_path_shutdown_slow_path_th =
+		__cpu_to_be16(req->veroce_path_shutdown_slow_path_th);
+	req->veroce_path_slow_path_check_period =
+		__cpu_to_be16(req->veroce_path_slow_path_check_period);
 }
 
-static void decode_roce_accl_get(void *data)
+static void decode_roce_accl_set(void *dev, void *data, void *out)
 {
+	struct xsc_roce_accl_set *req =
+		(struct xsc_roce_accl_set *)data;
+	struct xsc_core_device *xdev = (struct xsc_core_device *)dev;
+	struct xsc_roce_accl_mbox_out *mout = (struct xsc_roce_accl_mbox_out *)out;
+	u64 flag = __be64_to_cpu(req->flag2);
+
+	if (!mout->hdr.status) {
+		if (flag & ROCE_ACCL_FLAG_VEROCE_PROTOCOL_MODE_MASK) {
+			xdev->rdma_proto_mode = req->veroce_protocol_mode;
+			xsc_core_info(xdev, "set protocol mode to %s success.\n",
+				      xdev->rdma_proto_mode ? "veRoCE" : "RoCEv2");
+		}
+
+		if (flag & ROCE_ACCL_FLAG_ROCE_DST_PORT_MASK) {
+			xdev->cm_udp_dst_port = __be16_to_cpu(req->roce_dst_port);
+			xsc_core_info(xdev, "set roce dst port to %d success.\n",
+				      xdev->cm_udp_dst_port);
+		}
+
+		if (flag & ROCE_ACCL_FLAG_VEROCE_DST_PORT_MASK) {
+			xdev->veroce_udp_dst_port = __be16_to_cpu(req->veroce_dst_port);
+			xsc_core_info(xdev, "set veroce dst port to %d success.\n",
+				      xdev->veroce_udp_dst_port);
+		}
+	}
+}
+
+static void decode_roce_accl_get(void *dev, void *data, void *out)
+{
+	struct xsc_roce_accl_mbox_out *mout = (struct xsc_roce_accl_mbox_out *)out;
 	struct xsc_roce_accl_get *resp =
-		(struct xsc_roce_accl_get *)data;
+		(struct xsc_roce_accl_get *)mout->data;
 
 	resp->sr_timeout = __be64_to_cpu(resp->sr_timeout);
 	resp->sr_count = __be16_to_cpu(resp->sr_count);
@@ -91,6 +210,49 @@ static void decode_roce_accl_get(void *data)
 	resp->max_num_exponent = __be16_to_cpu(resp->max_num_exponent);
 	resp->disturb_period = __be16_to_cpu(resp->disturb_period);
 	resp->disturb_th = __be16_to_cpu(resp->disturb_th);
+
+	resp->flag = __be32_to_cpu(resp->flag);
+	resp->flag2 = __be64_to_cpu(resp->flag2);
+	resp->roce_dst_port = __be16_to_cpu(resp->roce_dst_port);
+	resp->veroce_dst_port = __be16_to_cpu(resp->veroce_dst_port);
+	resp->veroce_sack_threshold = __be32_to_cpu(resp->veroce_sack_threshold);
+	resp->veroce_sack_timeout = __be32_to_cpu(resp->veroce_sack_timeout);
+	resp->ack_aggregation_req_threshold = __be32_to_cpu(resp->ack_aggregation_req_threshold);
+	resp->ack_aggregation_rsp_window = __be32_to_cpu(resp->ack_aggregation_rsp_window);
+	resp->ack_aggregation_rsp_timeout = __be32_to_cpu(resp->ack_aggregation_rsp_timeout);
+	resp->veroce_path_num = __be32_to_cpu(resp->veroce_path_num);
+	resp->veroce_packet_spray_mode = __be32_to_cpu(resp->veroce_packet_spray_mode);
+	resp->veroce_req_sack_max_psn_ofst = __be32_to_cpu(resp->veroce_req_sack_max_psn_ofst);
+	resp->veroce_path_rtt_check_period = __be32_to_cpu(resp->veroce_path_rtt_check_period);
+	resp->veroce_path_shutdown_rtt_th = __be32_to_cpu(resp->veroce_path_shutdown_rtt_th);
+	resp->veroce_path_shutdown_timeout_count_th =
+		__be32_to_cpu(resp->veroce_path_shutdown_timeout_count_th);
+	resp->veroce_path_shutdown_no_resp_count_th =
+		__be32_to_cpu(resp->veroce_path_shutdown_no_resp_count_th);
+	resp->veroce_path_reopen_probe_period =
+		__be32_to_cpu(resp->veroce_path_reopen_probe_period);
+	resp->veroce_path_reopen_rtt_th = __be32_to_cpu(resp->veroce_path_reopen_rtt_th);
+	resp->veroce_path_reopen_rtt_count_th =
+		__be32_to_cpu(resp->veroce_path_reopen_rtt_count_th);
+	resp->veroce_path_reopen_init_rate = __be32_to_cpu(resp->veroce_path_reopen_init_rate);
+	resp->veroce_path_shutdown_slow_path_th =
+		__be16_to_cpu(resp->veroce_path_shutdown_slow_path_th);
+	resp->veroce_path_slow_path_check_period =
+		__be16_to_cpu(resp->veroce_path_slow_path_check_period);
+}
+
+static void decode_roce_accl_get_veroce_sport(void *dev, void *data, void *out)
+{
+	struct xsc_roce_accl_mbox_out *mout = (struct xsc_roce_accl_mbox_out *)out;
+	struct xsc_roce_accl_set *resp =
+		(struct xsc_roce_accl_set *)mout->data;
+	int i;
+
+	resp->qp_id = __be32_to_cpu(resp->qp_id);
+	for (i = 0; i < ROCE_ACCL_PATH_UDP_SPORT_NUM_MAX; i++)
+		resp->path_udp_sport[i] = __be32_to_cpu(resp->path_udp_sport[i]);
+	resp->path_udp_sport_num = __be32_to_cpu(resp->path_udp_sport_num);
+
 }
 
 static void encode_roce_accl_get(void *data, u32 mac_port)
@@ -113,11 +275,12 @@ static void encode_roce_accl_disc_sport_set(void *data, u32 mac_port)
 	req->mac_port = mac_port;
 }
 
-static void decode_roce_accl_disc_sport_get(void *data)
+static void decode_roce_accl_disc_sport_get(void *dev, void *data, void *out)
 {
 	int i;
+	struct xsc_roce_accl_mbox_out *mout = (struct xsc_roce_accl_mbox_out *)out;
 	struct xsc_roce_accl_disc_sport *resp =
-		(struct xsc_roce_accl_disc_sport *)data;
+		(struct xsc_roce_accl_disc_sport *)mout->data;
 
 	resp->discrete_sports_num = __be32_to_cpu(resp->discrete_sports_num);
 
@@ -156,60 +319,182 @@ static void decode_perf_rate_measure(void *data)
 	}
 }
 
-static void encode_roce_accl_next_set(void *data, u32 mac_port)
+static void encode_bcc_set(void *data, u32 mac_port)
 {
-	struct xsc_roce_accl_next_set *req =
-		(struct xsc_roce_accl_next_set *)data;
+	struct yun_bcc_cmd_hdr *req =
+		(struct yun_bcc_cmd_hdr *)data;
+	u32 tmp;
 	int i;
 
-	req->flag = __cpu_to_be64(req->flag);
-	req->sack_threshold = __cpu_to_be32(req->sack_threshold);
-	req->sack_timeout = __cpu_to_be32(req->sack_timeout);
-	req->ack_aggregation_mode = __cpu_to_be32(req->ack_aggregation_mode);
-	req->ack_aggregation_req_threshold = __cpu_to_be32(req->ack_aggregation_req_threshold);
-	req->ack_aggregation_rsp_window = __cpu_to_be32(req->ack_aggregation_rsp_window);
-	req->ack_aggregation_rsp_timeout = __cpu_to_be32(req->ack_aggregation_rsp_timeout);
-	req->path_num = __cpu_to_be32(req->path_num);
-	req->packet_spray_mode = __cpu_to_be32(req->packet_spray_mode);
-	req->qp_id = __cpu_to_be32(req->qp_id);
-	req->path_udp_sport_num = __cpu_to_be32(req->path_udp_sport_num);
-	for (i = 0; i < ROCE_ACCL_NEXT_PATH_UDP_SPORT_NUM_MAX; i++)
-		req->path_udp_sport[i] = __cpu_to_be32(req->path_udp_sport[i]);
-}
+	switch (req->cmd) {
+	case YUN_BCC_CMD_SET_HYPER_AI:
+		tmp = ((struct yun_bcc_hyper_ai *)req->data)->hyper_ai;
+		((struct yun_bcc_hyper_ai *)req->data)->hyper_ai = cpu_to_be32(tmp);
+		break;
 
-static void decode_roce_accl_next_get_sport(void *data)
-{
-	struct xsc_roce_accl_next_set *resp =
-		(struct xsc_roce_accl_next_set *)data;
-	int i;
+	case YUN_BCC_CMD_SET_OOO_EVENT:
+		tmp = ((struct yun_bcc_ooo_event *)req->data)->ooo_event;
+		((struct yun_bcc_ooo_event *)req->data)->ooo_event = cpu_to_be32(tmp);
+		break;
 
-	resp->sack_threshold = __be32_to_cpu(resp->sack_threshold);
-	resp->sack_timeout = __be32_to_cpu(resp->sack_timeout);
-	resp->ack_aggregation_mode = __be32_to_cpu(resp->ack_aggregation_mode);
-	resp->ack_aggregation_req_threshold = __be32_to_cpu(resp->ack_aggregation_req_threshold);
-	resp->ack_aggregation_rsp_window = __be32_to_cpu(resp->ack_aggregation_rsp_window);
-	resp->ack_aggregation_rsp_timeout = __be32_to_cpu(resp->ack_aggregation_rsp_timeout);
-	resp->path_num = __be32_to_cpu(resp->path_num);
-	resp->packet_spray_mode = __be32_to_cpu(resp->packet_spray_mode);
-	resp->qp_id = __be32_to_cpu(resp->qp_id);
-	resp->path_udp_sport_num = __be32_to_cpu(resp->path_udp_sport_num);
-	for (i = 0; i < ROCE_ACCL_NEXT_PATH_UDP_SPORT_NUM_MAX; i++)
-		resp->path_udp_sport[i] = __be32_to_cpu(resp->path_udp_sport[i]);
-}
+	case YUN_BCC_CMD_SET_RTO_EVENT:
+		tmp = ((struct yun_bcc_rto_event *)req->data)->rto_event;
+		((struct yun_bcc_rto_event *)req->data)->rto_event = cpu_to_be32(tmp);
+		break;
 
-static void decode_roce_accl_next_get(void *data)
-{
-	struct xsc_roce_accl_next_get *resp =
-		(struct xsc_roce_accl_next_get *)data;
+	case YUN_BCC_CMD_SET_RTT_REQ:
+		tmp = ((struct yun_bcc_rtt_req *)req->data)->rtt_req;
+		((struct yun_bcc_rtt_req *)req->data)->rtt_req = cpu_to_be32(tmp);
+		break;
 
-	resp->sack_threshold = __be32_to_cpu(resp->sack_threshold);
-	resp->sack_timeout = __be32_to_cpu(resp->sack_timeout);
-	resp->ack_aggregation_mode = __be32_to_cpu(resp->ack_aggregation_mode);
-	resp->ack_aggregation_req_threshold = __be32_to_cpu(resp->ack_aggregation_req_threshold);
-	resp->ack_aggregation_rsp_window = __be32_to_cpu(resp->ack_aggregation_rsp_window);
-	resp->ack_aggregation_rsp_timeout = __be32_to_cpu(resp->ack_aggregation_rsp_timeout);
-	resp->path_num = __be32_to_cpu(resp->path_num);
-	resp->packet_spray_mode = __be32_to_cpu(resp->packet_spray_mode);
+	case YUN_BCC_CMD_SET_RTT_RSP:
+		tmp = ((struct yun_bcc_rtt_rsp *)req->data)->rtt_rsp;
+		((struct yun_bcc_rtt_rsp *)req->data)->rtt_rsp = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_CNP_EVENT:
+		tmp = ((struct yun_bcc_cnp_event *)req->data)->cnp_event;
+		((struct yun_bcc_cnp_event *)req->data)->cnp_event = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_TX_BYTES_EVENT:
+		tmp = ((struct yun_bcc_tx_bytes_event *)req->data)->tx_bytes_event;
+		((struct yun_bcc_tx_bytes_event *)req->data)->tx_bytes_event = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_UPDATE_PSN_WIN:
+		tmp = ((struct yun_bcc_update_psn_win *)req->data)->update_psn_win;
+		((struct yun_bcc_update_psn_win *)req->data)->update_psn_win = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_ECN_CNP_GEN:
+		tmp = ((struct yun_bcc_ecn_cnp_gen *)req->data)->ecn_cnp_gen;
+		((struct yun_bcc_ecn_cnp_gen *)req->data)->ecn_cnp_gen = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_RATE_INIT:
+		tmp = ((struct yun_bcc_rate_init *)req->data)->rate_init;
+		((struct yun_bcc_rate_init *)req->data)->rate_init = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_RATE_RTO:
+		tmp = ((struct yun_bcc_rate_rto *)req->data)->rate_rto;
+		((struct yun_bcc_rate_rto *)req->data)->rate_rto = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_RATE_MIN:
+		tmp = ((struct yun_bcc_rate_min *)req->data)->rate_min;
+		((struct yun_bcc_rate_min *)req->data)->rate_min = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_RATE_MAX:
+		tmp = ((struct yun_bcc_rate_max *)req->data)->rate_max;
+		((struct yun_bcc_rate_max *)req->data)->rate_max = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_INC_RATE_TH:
+		for (i = 0; i < XSC_BCC_INC_RATE_TH_NUM; i++) {
+			tmp = ((struct yun_bcc_inc_rate_th *)req->data)->inc_rate_th[i];
+			((struct yun_bcc_inc_rate_th *)req->data)->inc_rate_th[i] =
+				cpu_to_be32(tmp);
+		}
+		break;
+
+	case YUN_BCC_CMD_SET_INC_AI:
+		for (i = 0; i < XSC_BCC_INC_AI_NUM; i++) {
+			tmp = ((struct yun_bcc_inc_ai *)req->data)->inc_ai[i];
+			((struct yun_bcc_inc_ai *)req->data)->inc_ai[i] = cpu_to_be32(tmp);
+		}
+		break;
+
+	case YUN_BCC_CMD_SET_INC_HAI:
+		for (i = 0; i < XSC_BCC_INC_HAI_NUM; i++) {
+			tmp = ((struct yun_bcc_inc_hai *)req->data)->inc_hai[i];
+			((struct yun_bcc_inc_hai *)req->data)->inc_hai[i] = cpu_to_be32(tmp);
+		}
+		break;
+
+	case YUN_BCC_CMD_SET_DEC_CNP:
+		tmp = ((struct yun_bcc_dec_cnp *)req->data)->dec_cnp;
+		((struct yun_bcc_dec_cnp *)req->data)->dec_cnp = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_DEC_OOO:
+		tmp = ((struct yun_bcc_dec_ooo *)req->data)->dec_ooo;
+		((struct yun_bcc_dec_ooo *)req->data)->dec_ooo = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_HYPER_AI_TH:
+		tmp = ((struct yun_bcc_hyper_ai_th *)req->data)->hyper_ai_th;
+		((struct yun_bcc_hyper_ai_th *)req->data)->hyper_ai_th = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_TX_BYTES_TH:
+		tmp = ((struct yun_bcc_tx_bytes_th *)req->data)->tx_bytes_th;
+		((struct yun_bcc_tx_bytes_th *)req->data)->tx_bytes_th = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_DEC_CNP_INTERVAL_TH:
+		tmp = ((struct yun_bcc_dec_cnp_interval_th *)req->data)->dec_cnp_interval_th;
+		((struct yun_bcc_dec_cnp_interval_th *)req->data)->dec_cnp_interval_th =
+			cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_DEC_OOO_INTERVAL_TH:
+		tmp = ((struct yun_bcc_dec_ooo_interval_th *)req->data)->dec_ooo_interval_th;
+		((struct yun_bcc_dec_ooo_interval_th *)req->data)->dec_ooo_interval_th =
+			cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_RTT_INIT:
+		tmp = ((struct yun_bcc_rtt_init *)req->data)->rtt_init;
+		((struct yun_bcc_rtt_init *)req->data)->rtt_init = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_RTT_G:
+		tmp = ((struct yun_bcc_rtt_g *)req->data)->rtt_g;
+		((struct yun_bcc_rtt_g *)req->data)->rtt_g = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_PSN_WIN_MIN:
+		tmp = ((struct yun_bcc_psn_win_min *)req->data)->psn_win_min;
+		((struct yun_bcc_psn_win_min *)req->data)->psn_win_min = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_PSN_WIN_MAX:
+		tmp = ((struct yun_bcc_psn_win_max *)req->data)->psn_win_max;
+		((struct yun_bcc_psn_win_max *)req->data)->psn_win_max = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_SEL_RTT_LAT_MODE:
+		tmp = ((struct yun_bcc_sel_rtt_lat_mode *)req->data)->sel_rtt_lat_mode;
+		((struct yun_bcc_sel_rtt_lat_mode *)req->data)->sel_rtt_lat_mode =
+			cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_SEL_RTTRSP_CC_INST:
+		tmp = ((struct yun_bcc_sel_rttrsp_cc_inst *)req->data)->sel_rttrsp_cc_inst;
+		((struct yun_bcc_sel_rttrsp_cc_inst *)req->data)->sel_rttrsp_cc_inst =
+			cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_RTT_RSP_DSCP:
+		tmp = ((struct yun_bcc_rtt_rsp_dscp *)req->data)->rtt_rsp_dscp;
+		((struct yun_bcc_rtt_rsp_dscp *)req->data)->rtt_rsp_dscp = cpu_to_be32(tmp);
+		break;
+
+	case YUN_BCC_CMD_SET_RTT_RSP_ATTR_MODIF:
+		tmp = ((struct yun_bcc_rtt_rsp_attr_modif *)req->data)->rtt_rsp_attr_modif;
+		((struct yun_bcc_rtt_rsp_attr_modif *)req->data)->rtt_rsp_attr_modif =
+			cpu_to_be32(tmp);
+		break;
+
+	case YUN_FASTCC_CMD_SET_RTT_COMPENSATION:
+		tmp = ((struct yun_fastcc_rtt_compensation *)req->data)->rtt_compensation;
+		((struct yun_fastcc_rtt_compensation *)req->data)->rtt_compensation =
+			cpu_to_be32(tmp);
+		break;
+	}
 }
 
 static void encode_flexcc_next_set(void *data, u32 mac_port)
@@ -653,25 +938,18 @@ static int handle_pfc_cfg_new(struct xsc_core_device *xdev,
 			      struct xsc_qos_mbox_out *out, int out_size,
 			      u8 tunnel_cmd, struct xsc_ioctl_tunnel_hdr *tunnel_hdr)
 {
-	const struct xsc_pfc_set_new *req = (struct xsc_pfc_set_new *)in->data;
 	u8 mac_port = in->req_prfx.mac_port;
 	int err = 0;
 	u8 status = SET_PFC_STATUS_MAX, comp = SET_PFC_COMP_MAX;
 	u32 timeout_cnt = 0;
 
-	if (req->req_prio < 0 || req->req_prio > PFC_PRIO_MAX) {
-		xsc_core_err(xdev,
-			     "PFC cfg fail, req invalid req_prio: %d\n",
-			     req->req_prio);
-		out->hdr.status = EINVAL;
-
-		return -EINVAL;
-	}
 	if (tunnel_cmd)
 		err = xsc_tunnel_cmd_exec(xdev, in, in_size, out, out_size, tunnel_hdr);
 	else
 		err = xsc_cmd_exec(xdev, in, in_size, out, out_size);
-	if (out->hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED) {
+
+	if (out->hdr.status == XSC_CMD_STATUS_NOT_SUPPORTED ||
+	    out->hdr.status == XSC_CMD_STATUS_INVAL_DATA) {
 		xsc_core_dbg(xdev,
 			     "PFC cfg not support, status: %d\n",
 			     out->hdr.status);
@@ -683,6 +961,9 @@ static int handle_pfc_cfg_new(struct xsc_core_device *xdev,
 	} else if (out->hdr.status == EAGAIN) {
 		xsc_core_dbg(xdev,
 			     "Try agine\n");
+		return err;
+	} else if (err == ETIMEDOUT) {
+		xsc_core_dbg(xdev, "PFC cfg cmd exec timeout\n");
 		return err;
 	} else if (out->hdr.status == EINPROGRESS) {
 		xsc_core_dbg(xdev, "PFC cfg in process\n");
@@ -866,7 +1147,7 @@ static int _eth_ctrl_ioctl_qos(struct xsc_core_device *xdev,
 
 	kvfree(in);
 	kvfree(out);
-	return 0;
+	return err;
 
 err:
 	kvfree(out);
@@ -964,7 +1245,7 @@ static int _eth_ctrl_ioctl_roce_accl(struct xsc_core_device *xdev,
 				     u16 expect_req_size,
 				     u16 expect_resp_size,
 				     void (*encode)(void *, u32),
-				     void (*decode)(void *))
+				     void (*decode)(void *, void *, void *))
 {
 	struct xsc_roce_accl_mbox_in *in;
 	struct xsc_roce_accl_mbox_out *out;
@@ -993,10 +1274,13 @@ static int _eth_ctrl_ioctl_roce_accl(struct xsc_core_device *xdev,
 
 	err = xsc_cmd_exec(xdev, in, sizeof(*in) + expect_req_size, out,
 			   sizeof(*out) + expect_resp_size);
+	if (err)
+		goto err;
 
 	hdr->attr.error = out->hdr.status;
+	hdr->attr.ver = be16_to_cpu(out->hdr.ver);
 	if (decode)
-		decode((void *)out->data);
+		decode((void *)xdev, (void *)in->data, (void *)out);
 
 	if (copy_to_user((void *)user_hdr, hdr, sizeof(*hdr)))
 		goto err;
@@ -1025,63 +1309,6 @@ static int _eth_ctrl_ioctl_rate_measure(struct xsc_core_device *xdev,
 {
 	struct xsc_perf_mbox_in *in;
 	struct xsc_perf_mbox_out *out;
-	u16 user_size;
-	int err;
-
-	user_size = expect_req_size > expect_resp_size ? expect_req_size : expect_resp_size;
-	if (hdr->attr.length != user_size)
-		return -EINVAL;
-
-	in = kvzalloc(sizeof(*in) + expect_req_size, GFP_KERNEL);
-	if (!in)
-		goto err_in;
-	out = kvzalloc(sizeof(*out) + expect_resp_size, GFP_KERNEL);
-	if (!out)
-		goto err_out;
-
-	err = copy_from_user(&in->data, user_hdr->attr.data, expect_req_size);
-	if (err)
-		goto err;
-
-	in->hdr.opcode = __cpu_to_be16(hdr->attr.opcode);
-	in->hdr.ver = cpu_to_be16(hdr->attr.ver);
-	if (encode)
-		encode((void *)in->data, xdev->mac_port);
-
-	err = xsc_cmd_exec(xdev, in, sizeof(*in) + expect_req_size, out,
-			   sizeof(*out) + expect_resp_size);
-
-	hdr->attr.error = out->hdr.status;
-	if (decode)
-		decode((void *)out->data);
-
-	if (copy_to_user((void *)user_hdr, hdr, sizeof(*hdr)))
-		goto err;
-	if (copy_to_user((void *)user_hdr->attr.data, &out->data, expect_resp_size))
-		goto err;
-
-	kvfree(in);
-	kvfree(out);
-	return 0;
-
-err:
-	kvfree(out);
-err_out:
-	kvfree(in);
-err_in:
-	return -EFAULT;
-}
-
-static int _eth_ctrl_ioctl_roce_accl_next(struct xsc_core_device *xdev,
-					  struct xsc_ioctl_hdr __user *user_hdr,
-					  struct xsc_ioctl_hdr *hdr,
-					  u16 expect_req_size,
-					  u16 expect_resp_size,
-					  void (*encode)(void *, u32),
-					  void (*decode)(void *))
-{
-	struct xsc_roce_accl_next_mbox_in *in;
-	struct xsc_roce_accl_next_mbox_out *out;
 	u16 user_size;
 	int err;
 
@@ -1173,22 +1400,97 @@ err:
 	return -EFAULT;
 }
 
+static inline char *get_ifname_from_nlmsg(u8 *nlmsg)
+{
+	return (char *)(nlmsg + sizeof(struct dcbnl_msg) + sizeof(struct nlattr));
+}
+
 void xsc_handle_netlink_cmd(struct xsc_core_device *xdev, void *in, void *out)
 {
 	struct xsc_cmd_netlink_msg_mbox_in *_in = in;
 	struct xsc_cmd_netlink_msg_mbox_out *_out = out;
 	u8 *nlmsg = _in->data;
-	int nlmsg_len = _in->nlmsg_len;
+	int nlmsg_len = be16_to_cpu(_in->nlmsg_len);
 	int err;
 	struct socket *sock = xdev->sock;
 	struct kvec iov[1];
 	struct msghdr msg;
+	struct net_device *netdev;
+	struct net *net = sock_net(sock->sk);
+	char *ifname;
+
+	ifname = get_ifname_from_nlmsg(nlmsg);
+	netdev = __dev_get_by_name(net, ifname);
+	if (!netdev) {
+		xsc_core_err(xdev, "netdev not found by name[%s]\n", ifname);
+		_out->hdr.status = EINVAL;
+		return;
+	}
 
 	memset(&msg, 0, sizeof(msg));
 	iov[0].iov_base = nlmsg;
 	iov[0].iov_len = nlmsg_len;
 	err = kernel_sendmsg(sock, &msg, iov, 1, nlmsg_len);
-	_out->hdr.status = err;
+	_out->hdr.status = (err == nlmsg_len) ? 0 : EINVAL;
+	if (_out->hdr.status)
+		xsc_core_err(xdev, "%s: kernel_sendmsg errer\n", __func__);
+}
+
+static int _eth_ctrl_ioctl_bcc(struct xsc_core_device *xdev,
+			       struct xsc_ioctl_hdr __user *user_hdr,
+			       struct xsc_ioctl_hdr *hdr,
+			       u16 expect_req_size,
+			       u16 expect_resp_size,
+			       void (*encode)(void *, u32),
+			       void (*decode)(void *))
+{
+	struct xsc_bcc_mbox_in *in;
+	struct xsc_bcc_mbox_out *out;
+	u16 user_size;
+	int err;
+
+	user_size = expect_req_size > expect_resp_size ? expect_req_size : expect_resp_size;
+	if (user_size > YUN_BCC_CMD_DATA_LEN_MAX)
+		return -EINVAL;
+
+	in = kvzalloc(sizeof(*in) + expect_req_size, GFP_KERNEL);
+	if (!in)
+		goto err_in;
+	out = kvzalloc(sizeof(*out) + expect_resp_size, GFP_KERNEL);
+	if (!out)
+		goto err_out;
+
+	err = copy_from_user(&in->data, user_hdr->attr.data, expect_req_size);
+	if (err)
+		goto err;
+
+	in->hdr.opcode = __cpu_to_be16(hdr->attr.opcode);
+	in->hdr.ver = cpu_to_be16(hdr->attr.ver);
+	if (encode)
+		encode((void *)in->data, xdev->mac_port);
+
+	err = xsc_cmd_exec(xdev, in, sizeof(*in) + expect_req_size, out,
+			   sizeof(*out) + expect_resp_size);
+
+	hdr->attr.error = out->hdr.status;
+	if (decode)
+		decode((void *)out->data);
+
+	if (copy_to_user((void *)user_hdr, hdr, sizeof(*hdr)))
+		goto err;
+	if (copy_to_user((void *)user_hdr->attr.data, &out->data, expect_resp_size))
+		goto err;
+
+	kvfree(in);
+	kvfree(out);
+	return 0;
+
+err:
+	kvfree(out);
+err_out:
+	kvfree(in);
+err_in:
+	return -EFAULT;
 }
 
 static int _eth_ctrl_ioctl_flexcc_next(struct xsc_core_device *xdev,
@@ -1230,6 +1532,81 @@ static int _eth_ctrl_ioctl_flexcc_next(struct xsc_core_device *xdev,
 	hdr->attr.error = out->hdr.status;
 	if (decode)
 		decode((void *)out->data);
+
+	if (copy_to_user((void *)user_hdr, hdr, sizeof(*hdr)))
+		goto err;
+	if (copy_to_user((void *)user_hdr->attr.data, &out->data, expect_resp_size))
+		goto err;
+
+	kvfree(in);
+	kvfree(out);
+	return 0;
+
+err:
+	kvfree(out);
+err_out:
+	kvfree(in);
+err_in:
+	return -EFAULT;
+}
+
+static int _eth_ctrl_ioctl_get_portmap(struct xsc_core_device *xdev,
+				       struct xsc_ioctl_hdr __user *user_hdr,
+				       struct xsc_ioctl_hdr *hdr,
+				       u16 expect_req_size,
+				       u16 expect_resp_size)
+{
+	struct xsc_cmd_query_port_map_mbox_in *in;
+	struct xsc_cmd_query_port_map_mbox_out *out;
+	u16 user_size;
+	int err;
+	struct xsc_ioctl_tunnel_hdr tunnel_hdr;
+
+	user_size = expect_req_size > expect_resp_size ? expect_req_size : expect_resp_size;
+	if (hdr->attr.tunnel_cmd)
+		hdr->attr.length -= sizeof(tunnel_hdr);
+	if (hdr->attr.length != user_size)
+		return -EINVAL;
+
+	in = kvzalloc(sizeof(*in) + expect_req_size, GFP_KERNEL);
+	if (!in)
+		goto err_in;
+	out = kvzalloc(sizeof(*out) + expect_resp_size, GFP_KERNEL);
+	if (!out)
+		goto err_out;
+
+	if (hdr->attr.tunnel_cmd) {
+		err = copy_from_user(&tunnel_hdr, user_hdr->attr.data, sizeof(tunnel_hdr));
+		if (err)
+			goto err;
+		err = copy_from_user(&in->data, user_hdr->attr.data + sizeof(tunnel_hdr),
+				     expect_req_size);
+		if (err)
+			goto err;
+	} else {
+		err = copy_from_user(&in->data, user_hdr->attr.data, expect_req_size);
+		if (err)
+			goto err;
+	}
+
+	in->hdr.opcode = __cpu_to_be16(hdr->attr.opcode);
+	in->hdr.ver = cpu_to_be16(hdr->attr.ver);
+
+	if (hdr->attr.tunnel_cmd)
+		err = xsc_tunnel_cmd_exec(xdev, in, sizeof(*in) + expect_req_size, out,
+					  sizeof(*out) + expect_resp_size, &tunnel_hdr);
+	else
+		err = xsc_cmd_exec(xdev, in, sizeof(*in) + expect_req_size, out,
+				   sizeof(*out) + expect_resp_size);
+
+	hdr->attr.error = out->hdr.status;
+
+	if (err)
+		goto err;
+
+	if (out->hdr.status)
+		xsc_core_info(xdev, "hwconfig, rsp hdr status: %d\n",
+			      out->hdr.status);
 
 	if (copy_to_user((void *)user_hdr, hdr, sizeof(*hdr)))
 		goto err;
@@ -1296,6 +1673,10 @@ static long _eth_ctrl_ioctl_cmdq(struct xsc_core_device *xdev,
 					   sizeof(struct xsc_pfc_set),
 					   sizeof(struct xsc_pfc_set),
 					   NULL, NULL);
+	case XSC_CMD_OP_IOCTL_SET_PFC_NEW_V1:
+		return _eth_ctrl_ioctl_pfc(xdev, user_hdr, &hdr,
+					   sizeof(struct xsc_pfc_set_new_v1), 0,
+					   NULL, NULL);
 	case XSC_CMD_OP_IOCTL_GET_PFC:
 		return _eth_ctrl_ioctl_qos(xdev, user_hdr, &hdr,
 					   0, sizeof(struct xsc_pfc_get), NULL, NULL);
@@ -1307,6 +1688,15 @@ static long _eth_ctrl_ioctl_cmdq(struct xsc_core_device *xdev,
 		return _eth_ctrl_ioctl_qos(xdev, user_hdr, &hdr, sizeof(struct xsc_rate_limit_get),
 					   sizeof(struct xsc_rate_limit_get),
 					   NULL, decode_rlimit_get);
+	case XSC_CMD_OP_IOCTL_SET_RATE_LIMIT_V2:
+		return _eth_ctrl_ioctl_qos(xdev, user_hdr, &hdr,
+					   sizeof(struct xsc_rate_limit_set_v2), 0,
+					   encode_rlimit_set_v2, NULL);
+	case XSC_CMD_OP_IOCTL_GET_RATE_LIMIT_V2:
+		return _eth_ctrl_ioctl_qos(xdev, user_hdr, &hdr,
+					   sizeof(struct xsc_rate_limit_get_v2),
+					   sizeof(struct xsc_rate_limit_get_v2),
+					   NULL, decode_rlimit_get_v2);
 	case XSC_CMD_OP_IOCTL_SET_SP:
 		return _eth_ctrl_ioctl_qos(xdev, user_hdr, &hdr,
 					   sizeof(struct xsc_sp_set), 0, NULL, NULL);
@@ -1355,10 +1745,23 @@ static long _eth_ctrl_ioctl_cmdq(struct xsc_core_device *xdev,
 		return _eth_ctrl_ioctl_qos(xdev, user_hdr, &hdr,
 					   0, sizeof(struct xsc_watchdog_period_get),
 					   NULL, decode_watchdog_get);
+	case XSC_CMD_OP_IOCTL_SET_WATCHDOG_WARN_PERIOD:
+		return _eth_ctrl_ioctl_qos(xdev, user_hdr, &hdr,
+					   sizeof(struct xsc_watchdog_warn_period_set), 0,
+					   encode_watchdog_warn_set, NULL);
+	case XSC_CMD_OP_IOCTL_GET_WATCHDOG_WARN_PERIOD:
+		return _eth_ctrl_ioctl_qos(xdev, user_hdr, &hdr,
+					   0, sizeof(struct xsc_watchdog_warn_period_get),
+					   NULL, decode_watchdog_warn_get);
+	case XSC_CMD_OP_IOCTL_GET_QP_QOS_CFG:
+		return _eth_ctrl_ioctl_qos(xdev, user_hdr, &hdr,
+					   sizeof(struct xsc_qp_qos_config_get),
+					   sizeof(struct xsc_qp_qos_config_get),
+					   encode_qp_qos_cfg_get, decode_qp_qos_cfg_get);
 	case XSC_CMD_OP_IOCTL_SET_ROCE_ACCL:
 		return _eth_ctrl_ioctl_roce_accl(xdev, user_hdr, &hdr,
 						 sizeof(struct xsc_roce_accl_set), 0,
-						 encode_roce_accl_set, NULL);
+						 encode_roce_accl_set, decode_roce_accl_set);
 	case XSC_CMD_OP_IOCTL_GET_ROCE_ACCL:
 		return _eth_ctrl_ioctl_roce_accl(xdev, user_hdr, &hdr,
 						 sizeof(u8), sizeof(struct xsc_roce_accl_get),
@@ -1378,22 +1781,14 @@ static long _eth_ctrl_ioctl_cmdq(struct xsc_core_device *xdev,
 						 sizeof(struct xsc_perf_rate_measure),
 						 encode_perf_rate_measure,
 						 decode_perf_rate_measure);
-	case XSC_CMD_OP_IOCTL_SET_ROCE_ACCL_NEXT:
-		return _eth_ctrl_ioctl_roce_accl_next(xdev, user_hdr, &hdr,
-						 sizeof(struct xsc_roce_accl_next_set), 0,
-						 encode_roce_accl_next_set, NULL);
-	case XSC_CMD_OP_IOCTL_GET_ROCE_ACCL_NEXT:
-		return _eth_ctrl_ioctl_roce_accl_next(xdev, user_hdr, &hdr,
-						 0, sizeof(struct xsc_roce_accl_next_get),
-						 NULL, decode_roce_accl_next_get);
 	case XSC_CMD_OP_IOCTL_NETLINK:
 		return xsc_ioctl_netlink_cmd(xdev, user_hdr, &hdr);
-	case XSC_CMD_OP_IOCTL_GET_SPORT_ROCE_ACCL_NEXT:
-		return _eth_ctrl_ioctl_roce_accl_next(xdev, user_hdr, &hdr,
-						 sizeof(struct xsc_roce_accl_next_set),
-						 sizeof(struct xsc_roce_accl_next_set),
-						 encode_roce_accl_next_set,
-						 decode_roce_accl_next_get_sport);
+	case XSC_CMD_OP_IOCTL_GET_PATH_UDP_SPORT_ROCE_ACCL:
+		return _eth_ctrl_ioctl_roce_accl(xdev, user_hdr, &hdr,
+						 sizeof(struct xsc_roce_accl_set),
+						 sizeof(struct xsc_roce_accl_set),
+						 encode_roce_accl_set,
+						 decode_roce_accl_get_veroce_sport);
 	case XSC_CMD_OP_IOCTL_SET_FLEXCC_NEXT:
 		return _eth_ctrl_ioctl_flexcc_next(xdev, user_hdr, &hdr,
 						YUN_CC_CMD_DATA_LEN_MAX, 0,
@@ -1406,6 +1801,13 @@ static long _eth_ctrl_ioctl_cmdq(struct xsc_core_device *xdev,
 		return _eth_ctrl_ioctl_flexcc_next(xdev, user_hdr, &hdr,
 						0, sizeof(struct yun_cc_next_get_all_stat),
 						NULL, decode_flexcc_next_get_stat);
+	case XSC_CMD_OP_IOCTL_SET_BCC:
+		return _eth_ctrl_ioctl_bcc(xdev, user_hdr, &hdr,
+						YUN_BCC_CMD_DATA_LEN_MAX, 0,
+						encode_bcc_set, NULL);
+	case XSC_CMD_OP_IOCTL_GET_PORTMAP:
+		return _eth_ctrl_ioctl_get_portmap(xdev, user_hdr, &hdr, 0,
+						sizeof(struct xsc_port_map));
 	default:
 		return TRY_NEXT_CB;
 	}
@@ -1443,7 +1845,7 @@ static void xsc_eth_restore_nic_hca(void *data)
 	struct xsc_bdf_file *file = obj->file;
 
 	xsc_eth_enable_nic_hca((struct xsc_adapter *)file->xdev->eth_priv);
-	xsc_free_user_mode_obj(file, XSC_IOCTL_OPCODE_VF_USER_MODE);
+	xsc_free_user_mode_obj(file, obj, XSC_IOCTL_OPCODE_VF_USER_MODE);
 }
 
 static void xsc_eth_restore_pkt_dst_info(void *data)
@@ -1465,7 +1867,7 @@ static void xsc_eth_restore_pkt_dst_info(void *data)
 						    BIT(j), attrs[i].dst_info[j]);
 		}
 	}
-	xsc_free_user_mode_obj(file, XSC_IOCTL_OPCODE_PF_USER_MODE);
+	xsc_free_user_mode_obj(file, obj, XSC_IOCTL_OPCODE_PF_USER_MODE);
 }
 
 static int xsc_change_user_mode(struct xsc_bdf_file *file, u16 opcode,
@@ -1541,6 +1943,11 @@ static int xsc_ioctl_user_mode(struct xsc_bdf_file *file, struct xsc_core_device
 	if (hdr.check_filed != XSC_IOCTL_CHECK_FILED) {
 		xsc_core_err(dev, "invalid check filed %u\n", hdr.check_filed);
 		return -EINVAL;
+	}
+
+	if (hdr.attr.length < sizeof(struct xsc_ioctl_user_mode_attr)) {
+		xsc_core_err(dev, "invalid ioctl buffer length\n");
+		return -EFAULT;
 	}
 
 	buf = kvzalloc(hdr.attr.length, GFP_KERNEL);

@@ -25,7 +25,6 @@
 #include <linux/kernel.h>
 #include <linux/if_vlan.h>
 #include "xsc_eth_txrx.h"
-#include "xsc_eth_stats.h"
 #include "xsc_eth_debug.h"
 
 #ifdef NEED_CREATE_RX_THREAD
