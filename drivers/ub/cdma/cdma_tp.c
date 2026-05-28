@@ -98,20 +98,6 @@ static void cdma_ctrlq_delete_ctp(struct cdma_dev *cdev, u32 tpn,
 			tpn, cfg->dcna, ret);
 }
 
-static struct cdma_tp *cdma_id_find_ctp(struct cdma_dev *cdev, u32 id)
-{
-	struct cdma_tp *tp;
-
-	spin_lock(&cdev->ctp_table.lock);
-	tp = idr_find(&cdev->ctp_table.idr_tbl.idr, id);
-	if (!tp)
-		dev_err(cdev->dev,
-			"get tp from table failed, id = %u\n", id);
-	spin_unlock(&cdev->ctp_table.lock);
-
-	return tp;
-}
-
 static struct cdma_tp *cdma_tpn_find_ctp(struct cdma_dev *cdev, u32 tpn)
 {
 	struct cdma_tp *tmp;
@@ -204,11 +190,14 @@ void cdma_delete_ctp(struct cdma_dev *cdev, u32 tp_id, bool invalid)
 	if (!cdev)
 		return;
 
-	tp = cdma_id_find_ctp(cdev, tp_id);
-	if (!tp)
-		return;
-
 	spin_lock(&cdev->ctp_table.lock);
+	tp = idr_find(&cdev->ctp_table.idr_tbl.idr, tp_id);
+	if (!tp) {
+		dev_err(cdev->dev, "get ctp from table failed, id = %u\n", tp_id);
+		spin_unlock(&cdev->ctp_table.lock);
+		return;
+	}
+
 	refcount_dec(&tp->refcount);
 	if (refcount_dec_if_one(&tp->refcount)) {
 		if (cdev->status == CDMA_NORMAL && !invalid) {
