@@ -1068,6 +1068,17 @@ static struct mount *skip_mnt_tree(struct mount *p)
 	return p;
 }
 
+static void mnt_add_tree_to_ns(struct mnt_namespace *ns, struct mount *root)
+{
+	struct mount *mnt;
+
+	for (mnt = root; mnt; mnt = next_mnt(mnt, root)) {
+		mnt->mnt_ns = ns;
+		ns->mounts++;
+	}
+	list_add_tail(&ns->list, &root->mnt_list);
+}
+
 /**
  * vfs_create_mount - Create a mount for a configured superblock
  * @fc: The configuration context with the superblock attached
@@ -2596,9 +2607,11 @@ static int do_change_type(struct path *path, int ms_flags)
 	return err;
 }
 
-static struct mount *__do_loopback(struct path *old_path, int recurse)
+static struct mount *__do_loopback(struct path *old_path,
+				   unsigned int flags, unsigned int copy_flags)
 {
 	struct mount *mnt = ERR_PTR(-EINVAL), *old = real_mount(old_path->mnt);
+	bool recurse = flags & AT_RECURSIVE;
 
 	if (IS_MNT_UNBINDABLE(old))
 		return mnt;
@@ -2609,10 +2622,22 @@ static struct mount *__do_loopback(struct path *old_path, int recurse)
 	if (!recurse && has_locked_children(old, old_path->dentry))
 		return mnt;
 
+	/*
+	 * When creating a new mount namespace we don't want to copy over
+	 * mounts of mount namespaces to avoid the risk of cycles and also to
+	 * minimize the default complex interdependencies between mount
+	 * namespaces.
+	 *
+	 * We could ofc just check whether all mount namespace files aren't
+	 * creating cycles but really let's keep this simple.
+	 */
+	if (!(flags & OPEN_TREE_NAMESPACE))
+		copy_flags |= CL_COPY_MNT_NS_FILE;
+
 	if (recurse)
-		mnt = copy_tree(old, old_path->dentry, CL_COPY_MNT_NS_FILE);
+		mnt = copy_tree(old, old_path->dentry, copy_flags);
 	else
-		mnt = clone_mnt(old, old_path->dentry, 0);
+		mnt = clone_mnt(old, old_path->dentry, copy_flags);
 
 	if (!IS_ERR(mnt))
 		mnt->mnt.mnt_flags &= ~MNT_LOCKED;
@@ -2629,7 +2654,9 @@ static int do_loopback(struct path *path, const char *old_name,
 	struct path old_path;
 	struct mount *mnt = NULL, *parent;
 	struct mountpoint *mp;
+	unsigned int flags = recurse ? AT_RECURSIVE : 0;
 	int err;
+
 	if (!old_name || !*old_name)
 		return -EINVAL;
 	err = kern_path(old_name, LOOKUP_FOLLOW|LOOKUP_AUTOMOUNT, &old_path);
@@ -2650,7 +2677,7 @@ static int do_loopback(struct path *path, const char *old_name,
 	if (!check_mnt(parent))
 		goto out2;
 
-	mnt = __do_loopback(&old_path, recurse);
+	mnt = __do_loopback(&old_path, flags, 0);
 	if (IS_ERR(mnt)) {
 		err = PTR_ERR(mnt);
 		goto out2;
@@ -2669,7 +2696,7 @@ out:
 	return err;
 }
 
-static struct file *open_detached_copy(struct path *path, bool recursive)
+static struct file *open_detached_copy(struct path *path, unsigned int flags)
 {
 	struct user_namespace *user_ns = current->nsproxy->mnt_ns->user_ns;
 	struct mnt_namespace *ns = alloc_mnt_ns(user_ns, true);
@@ -2680,7 +2707,7 @@ static struct file *open_detached_copy(struct path *path, bool recursive)
 		return ERR_CAST(ns);
 
 	namespace_lock();
-	mnt = __do_loopback(path, recursive);
+	mnt = __do_loopback(path, flags, 0);
 	if (IS_ERR(mnt)) {
 		namespace_unlock();
 		free_mnt_ns(ns);
@@ -2708,12 +2735,110 @@ static struct file *open_detached_copy(struct path *path, bool recursive)
 	return file;
 }
 
+static struct mountpoint *lock_mount_exact(struct path *path);
+
+static struct mnt_namespace *create_new_namespace(struct path *path, unsigned int flags)
+{
+	struct mnt_namespace *new_ns;
+	struct path to_path = {};
+	struct mnt_namespace *ns = current->nsproxy->mnt_ns;
+	struct user_namespace *user_ns = current_user_ns();
+	struct mountpoint *mp;
+	struct mount *new_ns_root;
+	struct mount *mnt;
+	unsigned int copy_flags = 0;
+	int err;
+
+	if (user_ns != ns->user_ns)
+		copy_flags |= CL_SLAVE;
+
+	new_ns = alloc_mnt_ns(user_ns, false);
+	if (IS_ERR(new_ns))
+		return new_ns;
+
+	namespace_lock();
+	new_ns_root = clone_mnt(ns->root, ns->root->mnt.mnt_root, copy_flags);
+	if (IS_ERR(new_ns_root)) {
+		namespace_unlock();
+		err = PTR_ERR(new_ns_root);
+		goto err_free_ns;
+	}
+	namespace_unlock();
+
+	/*
+	 * We dropped the namespace semaphore so we can actually lock
+	 * the copy for mounting. The copied mount isn't attached to any
+	 * mount namespace and it is thus excluded from any propagation.
+	 * So realistically we're isolated and the mount can't be
+	 * overmounted.
+	 */
+
+	/* Borrow the reference from clone_mnt(). */
+	to_path.mnt = &new_ns_root->mnt;
+	to_path.dentry = dget(new_ns_root->mnt.mnt_root);
+
+	/* Now lock for actual mounting. */
+	mp = lock_mount_exact(&to_path);
+	if (unlikely(IS_ERR(mp))) {
+		err = PTR_ERR(mp);
+		goto err_path_put;
+	}
+
+	/*
+	 * We don't emulate unshare()ing a mount namespace. We stick to the
+	 * restrictions of creating detached bind-mounts. It has a lot
+	 * saner and simpler semantics.
+	 */
+	mnt = __do_loopback(path, flags, copy_flags);
+	if (IS_ERR(mnt)) {
+		err = PTR_ERR(mnt);
+		unlock_mount(mp);
+		goto err_path_put;
+	}
+
+	lock_mount_hash();
+	/*
+	 * Now mount the detached tree on top of the copy of the
+	 * real rootfs we created.
+	 */
+	attach_mnt(mnt, new_ns_root, mp, false);
+	if (user_ns != ns->user_ns)
+		lock_mnt_tree(new_ns_root);
+	unlock_mount_hash();
+
+	/* Add all mounts to the new namespace. */
+	mnt_add_tree_to_ns(new_ns, new_ns_root);
+
+	new_ns->root = new_ns_root;
+	unlock_mount(mp);
+	to_path.mnt = NULL;
+	path_put(&to_path);
+
+	return new_ns;
+
+err_path_put:
+	path_put(&to_path);
+err_free_ns:
+	free_mnt_ns(new_ns);
+	return ERR_PTR(err);
+}
+
+static struct file *open_new_namespace(struct path *path, unsigned int flags)
+{
+	struct mnt_namespace *new_ns;
+
+	new_ns = create_new_namespace(path, flags);
+	if (IS_ERR(new_ns))
+		return ERR_CAST(new_ns);
+
+	return open_namespace_file(from_mnt_ns(new_ns));
+}
+
 SYSCALL_DEFINE3(open_tree, int, dfd, const char __user *, filename, unsigned, flags)
 {
 	struct file *file;
 	struct path path;
 	int lookup_flags = LOOKUP_AUTOMOUNT | LOOKUP_FOLLOW;
-	bool detached = flags & OPEN_TREE_CLONE;
 	int error;
 	int fd;
 
@@ -2721,10 +2846,14 @@ SYSCALL_DEFINE3(open_tree, int, dfd, const char __user *, filename, unsigned, fl
 
 	if (flags & ~(AT_EMPTY_PATH | AT_NO_AUTOMOUNT | AT_RECURSIVE |
 		      AT_SYMLINK_NOFOLLOW | OPEN_TREE_CLONE |
-		      OPEN_TREE_CLOEXEC))
+		      OPEN_TREE_CLOEXEC | OPEN_TREE_NAMESPACE))
 		return -EINVAL;
 
-	if ((flags & (AT_RECURSIVE | OPEN_TREE_CLONE)) == AT_RECURSIVE)
+	if ((flags & (AT_RECURSIVE | OPEN_TREE_CLONE | OPEN_TREE_NAMESPACE)) ==
+	    AT_RECURSIVE)
+		return -EINVAL;
+
+	if (hweight32(flags & (OPEN_TREE_CLONE | OPEN_TREE_NAMESPACE)) > 1)
 		return -EINVAL;
 
 	if (flags & AT_NO_AUTOMOUNT)
@@ -2734,7 +2863,16 @@ SYSCALL_DEFINE3(open_tree, int, dfd, const char __user *, filename, unsigned, fl
 	if (flags & AT_EMPTY_PATH)
 		lookup_flags |= LOOKUP_EMPTY;
 
-	if (detached && !may_mount())
+	/*
+	 * If we create a new mount namespace with the cloned mount tree we
+	 * just care about being privileged over our current user namespace.
+	 * The new mount namespace will be owned by it.
+	 */
+	if ((flags & OPEN_TREE_NAMESPACE) &&
+	    !ns_capable(current_user_ns(), CAP_SYS_ADMIN))
+		return -EPERM;
+
+	if ((flags & OPEN_TREE_CLONE) && !may_mount())
 		return -EPERM;
 
 	fd = get_unused_fd_flags(flags & O_CLOEXEC);
@@ -2745,8 +2883,10 @@ SYSCALL_DEFINE3(open_tree, int, dfd, const char __user *, filename, unsigned, fl
 	if (unlikely(error)) {
 		file = ERR_PTR(error);
 	} else {
-		if (detached)
-			file = open_detached_copy(&path, flags & AT_RECURSIVE);
+		if (flags & OPEN_TREE_NAMESPACE)
+			file = open_new_namespace(&path, flags);
+		else if (flags & OPEN_TREE_CLONE)
+			file = open_detached_copy(&path, flags);
 		else
 			file = dentry_open(&path, O_PATH, current_cred());
 		path_put(&path);
@@ -3381,6 +3521,31 @@ static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
 
 	put_fs_context(fc);
 	return err;
+}
+
+static struct mountpoint *lock_mount_exact(struct path *path)
+{
+	struct dentry *dentry = path->dentry;
+	struct mountpoint *mp;
+	int err = 0;
+
+	inode_lock(dentry->d_inode);
+	namespace_lock();
+	if (unlikely(cant_mount(dentry))) {
+		err = -ENOENT;
+	} else if (path_overmounted(path)) {
+		err = -EBUSY;
+	} else {
+		mp = get_mountpoint(dentry);
+		if (IS_ERR(mp))
+			err = PTR_ERR(mp);
+	}
+	if (unlikely(err)) {
+		namespace_unlock();
+		inode_unlock(dentry->d_inode);
+		return ERR_PTR(err);
+	}
+	return mp;
 }
 
 int finish_automount(struct vfsmount *m, const struct path *path)

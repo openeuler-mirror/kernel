@@ -17,6 +17,7 @@ struct fs_context;
 struct pipe_inode_info;
 struct iov_iter;
 struct mnt_idmap;
+struct ns_common;
 
 /*
  * block/bdev.c
@@ -230,6 +231,7 @@ extern void mnt_pin_kill(struct mount *m);
  * fs/nsfs.c
  */
 extern const struct dentry_operations ns_dentry_operations;
+struct file *open_namespace_file(struct ns_common *ns);
 
 /*
  * fs/stat.c:
