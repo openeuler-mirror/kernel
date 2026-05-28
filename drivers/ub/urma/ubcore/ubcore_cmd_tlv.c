@@ -103,7 +103,7 @@ static void ubcore_get_path_set_fill_spec_in(void *arg_addr,
 	SPEC(s++, GET_PATH_SET_IN_SRC_BONDING_EID, arg->in.src_bonding_eid);
 	SPEC(s++, GET_PATH_SET_IN_DST_BONDING_EID, arg->in.dst_bonding_eid);
 	SPEC(s++, GET_PATH_SET_IN_TP_TYPE, arg->in.tp_type);
-	SPEC(s++, GET_PATH_SET_IN_MULTI_PATH, arg->in.multi_path);
+	SPEC(s++, GET_PATH_SET_IN_IODIE_LEVEL, arg->in.iodie_level);
 }
 
 static void ubcore_get_path_set_fill_spec_out(void *arg_addr,

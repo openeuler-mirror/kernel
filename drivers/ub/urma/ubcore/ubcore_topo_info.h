@@ -48,9 +48,8 @@ struct ubcore_topo_node {
 	uint32_t super_node_id;
 	uint32_t node_id;
 	uint32_t is_current;
-	struct ubcore_topo_link links[IODIE_NUM][PORT_NUM]; /*Links[i] represents
-		the destination information connected to the current node's port[i].
-		It is not filled in Clos topology and relies on preset information.*/
+	bool links[IODIE_NUM * PORT_NUM][IODIE_NUM * PORT_NUM]; /* links[local_idx][remote_idx] represents
+		connectivity between this node's port local_idx and node i's port remote_idx. */
 	struct ubcore_topo_agg_dev agg_devs[DEV_NUM];
 };
 
@@ -123,6 +122,6 @@ int ubcore_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
 
 int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
 	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
-	bool multi_path, struct ubcore_path_set *path_set);
+	bool iodie_level, struct ubcore_path_set *path_set);
 
 #endif // UBCORE_TOPO_INFO_H
