@@ -2739,12 +2739,12 @@ static struct mountpoint *lock_mount_exact(struct path *path);
 
 static struct mnt_namespace *create_new_namespace(struct path *path, unsigned int flags)
 {
-	struct mnt_namespace *new_ns;
-	struct path to_path = {};
 	struct mnt_namespace *ns = current->nsproxy->mnt_ns;
 	struct user_namespace *user_ns = current_user_ns();
+	struct mnt_namespace *new_ns;
+	struct mount *new_ns_root, *old_ns_root;
+	struct path to_path;
 	struct mountpoint *mp;
-	struct mount *new_ns_root;
 	struct mount *mnt;
 	unsigned int copy_flags = 0;
 	int err;
@@ -2756,68 +2756,55 @@ static struct mnt_namespace *create_new_namespace(struct path *path, unsigned in
 	if (IS_ERR(new_ns))
 		return new_ns;
 
-	namespace_lock();
-	new_ns_root = clone_mnt(ns->root, ns->root->mnt.mnt_root, copy_flags);
-	if (IS_ERR(new_ns_root)) {
-		namespace_unlock();
-		err = PTR_ERR(new_ns_root);
+	old_ns_root = ns->root;
+	to_path.mnt = &old_ns_root->mnt;
+	to_path.dentry = old_ns_root->mnt.mnt_root;
+
+	mp = lock_mount_exact(&to_path);
+	if (IS_ERR(mp)) {
+		err = PTR_ERR(mp);
 		goto err_free_ns;
 	}
-	namespace_unlock();
 
-	/*
-	 * We dropped the namespace semaphore so we can actually lock
-	 * the copy for mounting. The copied mount isn't attached to any
-	 * mount namespace and it is thus excluded from any propagation.
-	 * So realistically we're isolated and the mount can't be
-	 * overmounted.
-	 */
-
-	/* Borrow the reference from clone_mnt(). */
-	to_path.mnt = &new_ns_root->mnt;
-	to_path.dentry = dget(new_ns_root->mnt.mnt_root);
-
-	/* Now lock for actual mounting. */
-	mp = lock_mount_exact(&to_path);
-	if (unlikely(IS_ERR(mp))) {
-		err = PTR_ERR(mp);
-		goto err_path_put;
+	new_ns_root = clone_mnt(ns->root, ns->root->mnt.mnt_root, copy_flags);
+	if (IS_ERR(new_ns_root)) {
+		err = PTR_ERR(new_ns_root);
+		goto err_unlock_mp;
 	}
 
 	/*
-	 * We don't emulate unshare()ing a mount namespace. We stick to the
-	 * restrictions of creating detached bind-mounts. It has a lot
-	 * saner and simpler semantics.
+	 * We don't emulate unshare()ing a mount namespace. We stick
+	 * to the restrictions of creating detached bind-mounts. It
+	 * has a lot saner and simpler semantics.
 	 */
 	mnt = __do_loopback(path, flags, copy_flags);
-	if (IS_ERR(mnt)) {
-		err = PTR_ERR(mnt);
-		unlock_mount(mp);
-		goto err_path_put;
-	}
 
 	lock_mount_hash();
+	if (IS_ERR(mnt)) {
+		err = PTR_ERR(mnt);
+		umount_tree(new_ns_root, 0);
+		unlock_mount_hash();
+		goto err_unlock_mp;
+	}
+
 	/*
-	 * Now mount the detached tree on top of the copy of the
-	 * real rootfs we created.
+	 * now mount the detached tree on top of the copy
+	 * of the real rootfs we created.
 	 */
 	attach_mnt(mnt, new_ns_root, mp, false);
 	if (user_ns != ns->user_ns)
 		lock_mnt_tree(new_ns_root);
 	unlock_mount_hash();
 
-	/* Add all mounts to the new namespace. */
 	mnt_add_tree_to_ns(new_ns, new_ns_root);
 
 	new_ns->root = new_ns_root;
 	unlock_mount(mp);
-	to_path.mnt = NULL;
-	path_put(&to_path);
 
 	return new_ns;
 
-err_path_put:
-	path_put(&to_path);
+err_unlock_mp:
+	unlock_mount(mp);
 err_free_ns:
 	free_mnt_ns(new_ns);
 	return ERR_PTR(err);
@@ -3533,8 +3520,6 @@ static struct mountpoint *lock_mount_exact(struct path *path)
 	namespace_lock();
 	if (unlikely(cant_mount(dentry))) {
 		err = -ENOENT;
-	} else if (path_overmounted(path)) {
-		err = -EBUSY;
 	} else {
 		mp = get_mountpoint(dentry);
 		if (IS_ERR(mp))
