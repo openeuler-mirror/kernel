@@ -344,17 +344,14 @@ static int udma_query_res_rc(struct udma_dev *udma_dev,
 
 	if (key->key_cnt == 0) {
 		if (udma_dev->caps.rc_max_cnt == 0) {
-			dev_err(udma_dev->dev, "invalid rc_max_cnt.\n");
+			dev_err(udma_dev->dev, "invalid RC max count.\n");
 			return -EINVAL;
 		}
 
 		res_list = (struct ubcore_res_list_val *)val->addr;
 		res_list->list = vmalloc(sizeof(uint32_t) * udma_dev->caps.rc_max_cnt);
-		if (!res_list->list) {
-			dev_err(udma_dev->dev, "failed to vmalloc rc_list, rc_cnt = %u!\n",
-				udma_dev->caps.rc_max_cnt);
+		if (!res_list->list)
 			return -ENOMEM;
-		}
 
 		for (i = 0; i < udma_dev->caps.rc_max_cnt; i++)
 			res_list->list[i] = i;
@@ -364,7 +361,7 @@ static int udma_query_res_rc(struct udma_dev *udma_dev,
 		ret = ubase_adev_query_rc_ctx(udma_dev->comdev.adev, key->key,
 					      (void *)&rcc, sizeof(rcc));
 		if (ret) {
-			dev_err(udma_dev->dev, "failed to query rc, rc_id = %u.\n", key->key);
+			dev_err(udma_dev->dev, "failed to query RC, RC id = %u.\n", key->key);
 			return ret;
 		}
 
@@ -401,7 +398,7 @@ static int udma_query_res_jetty(struct udma_dev *udma_dev,
 	jetty = (struct udma_dfx_jetty *)xa_load(&udma_dev->dfx_info->jetty.table, key->key);
 	if (!jetty) {
 		read_unlock(&udma_dev->dfx_info->jetty.rwlock);
-		dev_err(udma_dev->dev, "failed to query jetty, jetty_id = %u.\n",
+		dev_err(udma_dev->dev, "failed to query jetty, jetty id = %u.\n",
 			key->key);
 		return -EINVAL;
 	}
@@ -458,7 +455,7 @@ static int udma_query_res_jetty_grp(struct udma_dev *udma_dev,
 
 	jetty_grp_id = (uint32_t *)xa_load(&udma_dev->dfx_info->jetty_grp.table, key->key);
 	if (!jetty_grp_id) {
-		dev_err(udma_dev->dev, "failed to query jetty grp, jetty_grp_id = %u.\n",
+		dev_err(udma_dev->dev, "failed to query jetty group, jetty group id = %u.\n",
 			key->key);
 		return -EINVAL;
 	}
@@ -514,7 +511,7 @@ static int udma_query_res_jfc(struct udma_dev *udma_dev,
 
 	jfc_id = (uint32_t *)xa_load(&udma_dev->dfx_info->jfc.table, key->key);
 	if (!jfc_id) {
-		dev_err(udma_dev->dev, "failed to query jfc, jfc_id = %u.\n",
+		dev_err(udma_dev->dev, "failed to query JFC, JFC id = %u.\n",
 			key->key);
 		return -EINVAL;
 	}
@@ -563,7 +560,7 @@ static int udma_query_res_jfs(struct udma_dev *udma_dev,
 	jfs = (struct udma_dfx_jfs *)xa_load(&udma_dev->dfx_info->jfs.table, key->key);
 	if (!jfs) {
 		read_unlock(&udma_dev->dfx_info->jfs.rwlock);
-		dev_err(udma_dev->dev, "failed to query jfs, jfs_id = %u.\n",
+		dev_err(udma_dev->dev, "failed to query JFS, JFS id = %u.\n",
 			key->key);
 		return -EINVAL;
 	}
@@ -616,7 +613,7 @@ static int udma_query_res_jfr(struct udma_dev *udma_dev,
 
 	jfr_id = (uint32_t *)xa_load(&udma_dev->dfx_info->jfr.table, key->key);
 	if (!jfr_id) {
-		dev_err(udma_dev->dev, "failed to query jfr, jfr_id = %u.\n",
+		dev_err(udma_dev->dev, "failed to query JFR, JFR id = %u.\n",
 			key->key);
 		return -EINVAL;
 	}

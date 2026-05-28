@@ -42,7 +42,7 @@ int udma_ctrlq_remove_single_tp(struct udma_dev *udev, uint32_t tpn, int status)
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "remove single tp %u failed, ret %d status %d.\n",
+		dev_err(udev->dev, "remove single TP %u failed, ret %d status %d.\n",
 			tpn, ret, r_status);
 
 	return ret;
@@ -59,7 +59,7 @@ static void udma_notify_ue_tp_flush_done(struct udma_dev *udma_dev, uint8_t ue_i
 		ret = udma_send_msg_to_ue(udma_dev, &ue_buf, ue_idx, UDMA_CMD_NOTIFY_UE_FLUSH_DONE);
 	} while (ret != 0 && retry++ < UDMA_RETRY_TIMES);
 	if (ret != 0)
-		dev_err(udma_dev->dev, "notify ue %u tp flush done failed, ret %d.\n", ue_idx, ret);
+		dev_err(udma_dev->dev, "notify UE %u TP flush done failed, ret %d.\n", ue_idx, ret);
 
 	return;
 }
@@ -102,7 +102,7 @@ void udma_tp_ae_work(struct work_struct *work)
 	} else {
 		ret = udma_open_ue_rx_with_retry(udev, true, false, false, 0);
 		if (ret)
-			dev_warn(udev->dev, "udma open ue rx failed in tp ae work.\n");
+			dev_warn(udev->dev, "udma open UE rx skipped in TP AE work.\n");
 	}
 
 	tp_cfg_req.tpn = ae_work->tpn;
@@ -132,7 +132,7 @@ int udma_ctrlq_tp_flush_done(struct udma_dev *udev, uint32_t tpn)
 	} else {
 		ret = udma_open_ue_rx_with_retry(udev, true, false, false, 0);
 		if (ret)
-			dev_err(udev->dev, "udma open ue rx failed in tp flush done.\n");
+			dev_err(udev->dev, "udma open UE rx failed in TP flush done.\n");
 	}
 
 	tp_cfg_req.tpn = tpn;
@@ -140,7 +140,7 @@ int udma_ctrlq_tp_flush_done(struct udma_dev *udev, uint32_t tpn)
 	udma_ctrlq_set_tp_msg(&msg, (void *)&tp_cfg_req, sizeof(tp_cfg_req), NULL, 0);
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "tp flush done ctrlq tp %u failed, ret %d.\n", tpn, ret);
+		dev_err(udev->dev, "TP flush done ctrl queue TP %u failed, ret %d.\n", tpn, ret);
 
 	return ret;
 }
@@ -158,7 +158,7 @@ int udma_ctrlq_tpn_flush_done(struct udma_dev *dev, struct xarray *ctrlq_tpid_ta
 	tpid_entity = xa_load(ctrlq_tpid_table, tp_id);
 	if (tpid_entity == NULL) {
 		xa_unlock(ctrlq_tpid_table);
-		dev_err(dev->dev, "tpid_entity is NULL tp_id %u.\n", tp_id);
+		dev_err(dev->dev, "TP id entity is NULL, TP id %u.\n", tp_id);
 		return -EINVAL;
 	}
 
@@ -169,7 +169,7 @@ int udma_ctrlq_tpn_flush_done(struct udma_dev *dev, struct xarray *ctrlq_tpid_ta
 	for (i = 0; i < tp_num; i++) {
 		ret = udma_ctrlq_tp_flush_done(dev, tp_start + i);
 		if (ret != 0)
-			dev_err(dev->dev, "tpn flush done failed tp_id %u tp_start %u tpn %u.\n",
+			dev_err(dev->dev, "TPN flush done failed tp_id %u tp_start %u TPN %u.\n",
 				tp_id, tp_start, i);
 	}
 
@@ -188,7 +188,7 @@ int udma_ctrlq_notify_tp_port_change(struct udma_dev *udev, uint32_t tpn)
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &ctrlq_msg);
 	if (ret)
-		dev_err(udev->dev, "multi-plane tp port change, tp %u failed, ret %d.\n", tpn, ret);
+		dev_err(udev->dev, "multi-plane TP port change, TP %u failed, ret %d.\n", tpn, ret);
 
 	return ret;
 }
@@ -202,12 +202,13 @@ int udma_get_dev_resource_ratio(struct ubcore_device *dev, struct ubcore_ucontex
 	int ret = 0;
 
 	if (udma_check_base_param(in->addr, in->len, sizeof(dev_res.index))) {
-		dev_err(udev->dev, "parameter invalid in get dev res, len = %u.\n", in->len);
+		dev_err(udev->dev,
+			"parameter invalid in get device resource, length = %u.\n", in->len);
 		return -EINVAL;
 	}
 
 	if (out->addr == 0) {
-		dev_err(udev->dev, "get dev resource ratio, addr is NULL.\n");
+		dev_err(udev->dev, "get device resource ratio, address is NULL.\n");
 		return -EINVAL;
 	}
 
@@ -215,7 +216,7 @@ int udma_get_dev_resource_ratio(struct ubcore_device *dev, struct ubcore_ucontex
 
 	ret = ubase_get_bus_eid(udev->comdev.adev, &dev_res.eid);
 	if (ret) {
-		dev_err(udev->dev, "get dev bus eid failed, ret is %d.\n", ret);
+		dev_err(udev->dev, "get device bus EID failed, ret is %d.\n", ret);
 		return ret;
 	}
 
@@ -230,7 +231,8 @@ int udma_get_dev_resource_ratio(struct ubcore_device *dev, struct ubcore_ucontex
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &ctrlq_msg);
 	if (ret)
-		dev_err(udev->dev, "get dev res send ctrlq msg failed, ret is %d.\n", ret);
+		dev_err(udev->dev,
+			"get device resource send ctrl queue message failed, ret=%d.\n", ret);
 
 	return ret;
 }
@@ -251,14 +253,14 @@ static int udma_dev_res_ratio_ctrlq_handler(struct auxiliary_device *adev,
 	mutex_lock(&udev->npu_nb_mutex);
 	udma_cb = xa_load(&udev->npu_nb_table, UDMA_CTRLQ_NOTIFY_DEV_RESOURCE_RATIO);
 	if (!udma_cb) {
-		dev_err(udev->dev, "failed to query npu info cb while xa_load.\n");
+		dev_err(udev->dev, "failed to query NPU info callback while xa_load.\n");
 		mutex_unlock(&udev->npu_nb_mutex);
 		return -EINVAL;
 	}
 
 	ret = udma_cb->crq_handler(&udev->ub_dev, data, len);
 	if (ret)
-		dev_err(udev->dev, "npu crq handler failed, ret = %d.\n", ret);
+		dev_err(udev->dev, "NPU control queue handler failed, ret = %d.\n", ret);
 	mutex_unlock(&udev->npu_nb_mutex);
 
 	return ret;
@@ -273,7 +275,8 @@ int udma_register_npu_cb(struct ubcore_device *dev, struct ubcore_ucontext *uctx
 	int ret;
 
 	if (udma_check_base_param(in->addr, in->len, sizeof(udma_cb->crq_handler))) {
-		dev_err(udev->dev, "parameter invalid in register npu cb, len = %u.\n", in->len);
+		dev_err(udev->dev,
+			"parameter invalid in register NPU callback, length = %u.\n", in->len);
 		return -EINVAL;
 	}
 
@@ -305,7 +308,8 @@ int udma_register_npu_cb(struct ubcore_device *dev, struct ubcore_ucontext *uctx
 	ret = ubase_ctrlq_register_crq_event(udev->comdev.adev, &ubase_cb);
 	if (ret) {
 		__xa_erase(&udev->npu_nb_table, UDMA_CTRLQ_NOTIFY_DEV_RESOURCE_RATIO);
-		dev_err(udev->dev, "ubase register npu crq event failed, ret is %d.\n", ret);
+		dev_err(udev->dev,
+			"ubase register NPU control queue event failed, ret is %d.\n", ret);
 		goto err_release_udma_cb;
 	}
 	mutex_unlock(&udev->npu_nb_mutex);
@@ -331,7 +335,7 @@ int udma_unregister_npu_cb(struct ubcore_device *dev, struct ubcore_ucontext *uc
 	mutex_lock(&udev->npu_nb_mutex);
 	nb = xa_load(&udev->npu_nb_table, UDMA_CTRLQ_NOTIFY_DEV_RESOURCE_RATIO);
 	if (!nb) {
-		dev_warn(udev->dev, "query npu info cb not exist.\n");
+		dev_warn(udev->dev, "query NPU info callback not exist.\n");
 		goto err_find_npu_nb;
 	}
 
@@ -382,7 +386,7 @@ struct udma_ctrlq_trans_map {
 		return 0;
 	}
 
-	dev_err(dev->dev, "the trans_mode %u is not support.\n", trans_mode);
+	dev_err(dev->dev, "the transport mode %u is not supported.\n", trans_mode);
 
 	return -EINVAL;
 }
@@ -416,7 +420,7 @@ static int udma_send_sync_msg_to_mue(struct udma_dev *udev,
 	ret = xa_err(__xa_store(&info->seq_tbl, buf->seq_num, &wait_completion, GFP_ATOMIC));
 	xa_unlock(&info->seq_tbl);
 	if (ret) {
-		dev_err(udev->dev, "save resp completion failed, ret = %d.\n", ret);
+		dev_err(udev->dev, "save response completion failed, ret = %d.\n", ret);
 		goto post_process;
 	}
 
@@ -484,14 +488,14 @@ int udma_recv_resp_from_mue(struct udma_dev *udev,
 	wait_completion = xa_load(&info->seq_tbl, resp->buf.seq_num);
 	if (!wait_completion) {
 		xa_unlock(&info->seq_tbl);
-		dev_err(udev->dev, "seq_num of crq resp is invalid, seq_num = %u.\n",
+		dev_err(udev->dev, "sequence number of control queue response is invalid, seq_num = %u.\n",
 				resp->buf.seq_num);
 		return -EINVAL;
 	}
 
 	if (resp->buf.len != sizeof(wait_completion->ret)) {
 		xa_unlock(&info->seq_tbl);
-		dev_err(udev->dev, "len of data in crq resp is invalid, len = %u.\n",
+		dev_err(udev->dev, "length of data in control queue response is invalid, len = %u.\n",
 				resp->buf.len);
 		return -EINVAL;
 	}
@@ -539,7 +543,7 @@ static int udma_notify_mue_save_tp(struct udma_dev *dev, union ubcore_tp_handle 
 
 	ret = udma_send_sync_msg_to_mue(dev, ue_buf, UDMA_CMD_NOTIFY_MUE_SAVE_TP);
 	if (ret)
-		dev_err(dev->dev, "fail to notify mue save tp, ret %d.\n", ret);
+		dev_err(dev->dev, "fail to notify MUE save TP, ret %d.\n", ret);
 
 	kfree(ue_buf);
 
@@ -561,7 +565,8 @@ static int udma_ctrlq_get_tpid_list(struct udma_dev *udev,
 		tp_cfg_req->trans_type = UDMA_CTRLQ_TRANS_TYPE_CTP;
 	} else {
 		if (udma_ctrlq_get_trans_type(udev, link_mode, tpid_cfg->trans_mode, &trans_type)) {
-			dev_err(udev->dev, "udma get ctrlq trans_type failed, trans_mode = %d.\n",
+			dev_err(udev->dev,
+				"udma get control queue transport type failed, trans_mode = %u.\n",
 				tpid_cfg->trans_mode);
 			return -EINVAL;
 		}
@@ -579,7 +584,7 @@ static int udma_ctrlq_get_tpid_list(struct udma_dev *udev,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "ctrlq send msg failed, ret = %d.\n", ret);
+		dev_err(udev->dev, "ctrl queue send message failed, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -601,7 +606,7 @@ int udma_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *tpid_c
 
 	ret = udma_ctrlq_get_tpid_list(udev, &tp_cfg_req, tpid_cfg, &tpid_list_resp);
 	if (ret) {
-		dev_err(udev->dev, "udma ctrlq get tpid list failed, ret = %d.\n", ret);
+		dev_err(udev->dev, "udma control queue get TP id list failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -670,7 +675,7 @@ static int udma_k_ctrlq_create_active_tp_msg(struct udma_dev *udev,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret) {
-		dev_err(udev->dev, "udma active tp send failed, ret = %d.\n", ret);
+		dev_err(udev->dev, "udma active TP send failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -711,7 +716,7 @@ static int udma_k_ctrlq_save_tpn(struct udma_dev *udev, uint32_t tp_id, uint32_t
 	msg.opcode = UDMA_CMD_CTRLQ_GET_TP_INFO;
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret) {
-		dev_err(udev->dev, "get tp_id = %u info failed, ret = %d.\n", tp_id, ret);
+		dev_err(udev->dev, "get TP id = %u info failed, ret = %d.\n", tp_id, ret);
 		return ret;
 	}
 
@@ -736,7 +741,7 @@ int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_ha
 	if (tp_num) {
 		ret = udma_close_ue_rx(udev, true, false, false, tp_num);
 		if (ret) {
-			dev_err(udev->dev, "close ue rx failed in deactivate tp.\n");
+			dev_err(udev->dev, "close UE rx failed in deactivate tp.\n");
 			return ret;
 		}
 	}
@@ -754,7 +759,7 @@ int udma_k_ctrlq_deactive_tp(struct udma_dev *udev, union ubcore_tp_handle tp_ha
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret != -EAGAIN && ret) {
-		dev_err(udev->dev, "deactivate tp send msg failed, tp_id = %u, ret = %d.\n",
+		dev_err(udev->dev, "deactivate TP send message failed, TP id = %u, ret = %d.\n",
 			tp_id, ret);
 		if (tp_num)
 			udma_open_ue_rx_with_retry(udev, true, false, false, tp_num);
@@ -773,7 +778,7 @@ int udma_ctrlq_query_ubmem_info(struct ubcore_device *dev, struct ubcore_ucontex
 	int ret;
 
 	if (out->addr == 0) {
-		dev_err(udev->dev, "query ubmem info failed, addr is NULL.\n");
+		dev_err(udev->dev, "query UBMEM info failed, address is NULL.\n");
 		return -EINVAL;
 	}
 
@@ -803,14 +808,14 @@ int udma_ctrlq_query_host_ubmem_info(struct ubcore_device *dev, struct ubcore_uc
 	int ret = 0;
 
 	if (out->addr == 0) {
-		dev_err(udev->dev, "query host ubmem info failed, addr is NULL.\n");
+		dev_err(udev->dev, "query host UBMEM info failed, address is NULL.\n");
 		return -EINVAL;
 	}
 
 	ret = ubase_get_bus_eid(udev->comdev.adev, &eid);
 	if (ret) {
 		dev_err(udev->dev,
-			"get dev bus eid failed in query host ubmem info, ret is %d.\n", ret);
+			"get device bus EID failed in query host UBMEM info, ret is %d.\n", ret);
 		return ret;
 	}
 
@@ -826,7 +831,7 @@ int udma_ctrlq_query_host_ubmem_info(struct ubcore_device *dev, struct ubcore_uc
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &ctrlq_msg);
 	if (ret)
 		dev_err(udev->dev,
-			"query host ubmem info send ctrlq msg failed, ret is %d.\n", ret);
+			"query host UBMEM info send ctrlq msg failed, ret is %d.\n", ret);
 
 	return ret;
 }
@@ -981,7 +986,7 @@ int udma_set_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "set tp attr failed, tpid = %u, ret = %d.\n",
+		dev_err(udev->dev, "set TP attribute failed, TP id = %u, ret = %d.\n",
 			tp_attr_req.tpid, ret);
 
 	return ret;
@@ -1040,7 +1045,7 @@ int udma_get_tp_attr(struct ubcore_device *dev, const uint64_t tp_handle,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret) {
-		dev_err(udev->dev, "get tp attr failed, tpid = %u, ret = %d.\n",
+		dev_err(udev->dev, "get TP attribute failed, TP id = %u, ret = %d.\n",
 			tp_attr_req.tpid.tpid, ret);
 		return ret;
 	}
@@ -1099,7 +1104,7 @@ int udma_active_tp(struct ubcore_device *dev, struct ubcore_active_tp_cfg *activ
 
 	ret = udma_ctrlq_set_active_tp_ex(udma_dev, active_cfg);
 	if (ret)
-		dev_err(udma_dev->dev, "Failed to set active tp msg, ret %d.\n", ret);
+		dev_err(udma_dev->dev, "failed to set active TP message, ret %d.\n", ret);
 
 	return ret;
 }
@@ -1110,7 +1115,7 @@ int udma_deactive_tp(struct ubcore_device *dev, union ubcore_tp_handle tp_handle
 	struct udma_dev *udma_dev = to_udma_dev(dev);
 
 	if (debug_switch)
-		dev_info_ratelimited(udma_dev->dev, "udma deactivate tp ex tp_id = %u\n",
+		dev_info_ratelimited(udma_dev->dev, "udma deactivate TP, TP id = %u\n",
 				     tp_handle.bs.tpid);
 
 	return udma_k_ctrlq_deactive_tp(udma_dev, tp_handle, udata);
@@ -1125,13 +1130,13 @@ int udma_query_pair_dev_count(struct ubcore_device *dev, struct ubcore_ucontext 
 	int ret;
 
 	if (out->addr == 0) {
-		dev_err(udev->dev, "query pair dev count, addr is NULL.\n");
+		dev_err(udev->dev, "query pair dev count, address is NULL.\n");
 		return -EINVAL;
 	}
 
 	ret = ubase_get_bus_eid(udev->comdev.adev, &eid);
 	if (ret) {
-		dev_err(udev->dev, "get dev bus eid failed, ret is %d.\n", ret);
+		dev_err(udev->dev, "get device bus EID failed, ret is %d.\n", ret);
 		return ret;
 	}
 
@@ -1146,7 +1151,8 @@ int udma_query_pair_dev_count(struct ubcore_device *dev, struct ubcore_ucontext 
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &ctrlq_msg);
 	if (ret)
-		dev_err(udev->dev, "get dev res send ctrlq msg failed, ret is %d.\n", ret);
+		dev_err(udev->dev,
+			"get device resource send ctrl queue message failed, ret=%d.\n", ret);
 
 	return ret;
 }
@@ -1158,7 +1164,7 @@ int udma_get_smac(struct ubcore_device *dev, uint8_t *mac)
 
 	ret = ubase_get_dev_mac(udev->comdev.adev, mac, UBCORE_MAC_BYTES);
 	if (ret)
-		dev_err(udev->dev, "Failed to get smac, ret %d.\n", ret);
+		dev_err(udev->dev, "failed to get smac, ret %d.\n", ret);
 
 	return ret;
 }
@@ -1180,7 +1186,7 @@ int udma_get_eid_by_ip(struct ubcore_device *dev, const struct ubcore_net_addr *
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret) {
-		dev_err(udev->dev, "get eid by ip failed, addr_type = %u, ret = %d.\n",
+		dev_err(udev->dev, "get EID by ip failed, addr_type = %u, ret = %d.\n",
 			net_addr->type, ret);
 		return ret;
 	}
@@ -1207,7 +1213,7 @@ int udma_get_ip_by_eid(struct ubcore_device *dev, const union ubcore_eid *eid,
 
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret) {
-		dev_err(udev->dev, "get ip by eid failed, ret = %d.\n", ret);
+		dev_err(udev->dev, "get ip by EID failed, ret = %d.\n", ret);
 		return ret;
 	}
 

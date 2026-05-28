@@ -199,7 +199,7 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg)
 	uint64_t i;
 
 	if (page_left == 0 || page_left > UINT_MAX) {
-		dev_err(dev->dev, "invalid page_num %llu.\n", page_left);
+		dev_err(dev->dev, "invalid page number %llu.\n", page_left);
 		return -EINVAL;
 	}
 
@@ -218,13 +218,13 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg)
 				goto err_tr_va;
 
 			if (!pfn_valid(pfn)) {
-				dev_err(dev->dev, "invalid pfn=0x%llx.\n", pfn);
+				dev_err(dev->dev, "invalid PFN=0x%llx.\n", pfn);
 				goto err_tr_va;
 			}
 
 			pages[i] = pfn_to_page(pfn);
 			if (!pages[i] || PageReserved(pages[i])) {
-				dev_err(dev->dev, "invalid page structure for pfn=0x%llx.\n", pfn);
+				dev_err(dev->dev, "invalid page structure for PFN=0x%llx.\n", pfn);
 				goto err_tr_va;
 			}
 
@@ -238,7 +238,7 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg)
 						       i, 0, i * PAGE_SIZE, UINT_MAX,
 						       page_left, GFP_KERNEL);
 		if (ret) {
-			dev_err(dev->dev, "failed to sg alloc append table, ret=%d.\n", ret);
+			dev_err(dev->dev, "failed to SG alloc append table, ret=%d.\n", ret);
 			goto err_append;
 		}
 	}
@@ -308,7 +308,7 @@ static int udma_pin_seg_pages(struct ubcore_device *ub_dev,
 	}
 
 	if (unlikely(ret)) {
-		dev_err(ctx->dev->dev, "failed to get_user_page, ret = %d.\n", ret);
+		dev_err(ctx->dev->dev, "failed to get user page, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -362,7 +362,7 @@ static int udma_iommu_partial_overlap_seg(struct ubcore_device *ub_dev,
 				      none_overlap_seg.addr,
 				      &(none_overlap_seg.umem->append.sgt));
 		if (unlikely(ret)) {
-			dev_err(ctx->dev->dev, "failed to iommu map none_overlap_seg, ret = %d.\n",
+			dev_err(ctx->dev->dev, "failed to IOMMU map none_overlap_seg, ret = %d.\n",
 				ret);
 			goto err_local_page_ioummu_map;
 		}
@@ -426,7 +426,7 @@ static int udma_iommu_local_map(struct ubcore_device *ub_dev,
 		if (unlikely(ret)) {
 			udma_range_list_destroy(&pageList);
 			mutex_unlock(&ctx->seg_node->lock);
-			dev_err(ctx->dev->dev, "ioummu segment failed, ret = %d.\n", ret);
+			dev_err(ctx->dev->dev, "IOMMU segment failed, ret = %d.\n", ret);
 			return ret;
 		}
 	} else {
@@ -436,7 +436,7 @@ static int udma_iommu_local_map(struct ubcore_device *ub_dev,
 			udma_range_list_destroy(&pageList);
 			mutex_unlock(&ctx->seg_node->lock);
 			dev_err(ctx->dev->dev,
-				"ioummu partial overlap segment failed, ret = %d.\n", ret);
+				"IOMMU partial overlap segment failed, ret = %d.\n", ret);
 			return ret;
 		}
 	}
@@ -463,7 +463,7 @@ static int udma_pin_pages_and_ioummu_map(struct ubcore_device *ub_dev, struct ud
 	if (!local_only) {
 		ret = udma_ioummu_remote_map(tid, seg, prot);
 		if (unlikely(ret)) {
-			dev_err(ctx->dev->dev, "ioummu remote map failed, ret = %d.\n", ret);
+			dev_err(ctx->dev->dev, "IOMMU remote map failed, ret = %d.\n", ret);
 			goto err_ioummu_remote_map;
 		}
 	}
@@ -471,7 +471,7 @@ static int udma_pin_pages_and_ioummu_map(struct ubcore_device *ub_dev, struct ud
 	ret = udma_iommu_local_map(ub_dev, ctx, seg, cfg, prot);
 	if (unlikely(ret)) {
 		dirty = true;
-		dev_err(ctx->dev->dev, "ioummu local map failed, ret = %d.\n", ret);
+		dev_err(ctx->dev->dev, "IOMMU local map failed, ret = %d.\n", ret);
 		goto err_ioummu_local_map;
 	}
 
@@ -541,7 +541,7 @@ struct ubcore_target_seg *udma_register_seg(struct ubcore_device *ub_dev,
 		ret = udma_pin_pages_and_ioummu_map(ub_dev, to_udma_context(udata->uctx), seg,
 						    cfg, udma_tid->tid);
 		if (ret) {
-			dev_err(udma_dev->dev, "ioummu map failed, ret = %d.\n", ret);
+			dev_err(udma_dev->dev, "IOMMU map failed, ret = %d.\n", ret);
 			goto err_pin_seg;
 		}
 		return &seg->core_tseg;

@@ -135,19 +135,19 @@ static int udma_get_sq_buf_ex(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->buf.entry_cnt = size >> WQE_BB_SIZE_SHIFT;
 
 	if (size != cfg_ex->cstm_cfg.sq.buff_size) {
-		dev_err(dev->dev, "buff size is wrong, buf size = %u.\n", size);
+		dev_err(dev->dev, "buffer size is wrong, buffer size = %u.\n", size);
 		return -EINVAL;
 	}
 
 	if (cfg_ex->cstm_cfg.sq.buff == 0) {
-		dev_err(dev->dev, "cstm_cfg sq buff is wrong.\n");
+		dev_err(dev->dev, "custom config SQ buffer is wrong.\n");
 		return -EINVAL;
 	}
 
 	sq->buf.addr = (dma_addr_t)(uintptr_t)phys_to_virt((uint64_t)
 		       (uintptr_t)cfg_ex->cstm_cfg.sq.buff);
 	if (sq->buf.addr == 0) {
-		dev_err(dev->dev, "sq buff addr is wrong.\n");
+		dev_err(dev->dev, "SQ buffer address is wrong.\n");
 		return -EINVAL;
 	}
 
@@ -158,7 +158,7 @@ static int udma_get_sq_buf_ex(struct udma_dev *dev, struct udma_jetty_queue *sq,
 		sq->buf.kva = NULL;
 		sq->buf.addr = 0;
 		dev_err(dev->dev,
-			"failed to alloc wrid for jfs id = %u when entry cnt = %u.\n",
+			"failed to alloc work request id for JFS id = %u when entry count = %u.\n",
 			sq->id, sq->buf.entry_cnt);
 		return -ENOMEM;
 	}
@@ -181,7 +181,7 @@ static int udma_get_jfs_buf_ex(struct udma_dev *dev, struct udma_jfs *jfs,
 	ret = udma_get_sq_buf_ex(dev, &jfs->sq, cfg_ex);
 	if (ret)
 		dev_err(dev->dev,
-			"failed to get sq buf in jfs process, ret = %d.\n", ret);
+			"failed to get SQ buffer in jfs process, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -219,24 +219,24 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 
 	ret = xa_err(xa_store(&dev->jetty_table.xa, jfs->sq.id, &jfs->sq, GFP_KERNEL));
 	if (ret) {
-		dev_err(dev->dev, "store jfs sq(%u) failed, ret = %d.\n",
+		dev_err(dev->dev, "store JFS SQ(%u) failed, ret = %d.\n",
 			jfs->sq.id, ret);
 		goto err_store_jfs_sq;
 	}
 
-	dev_info_ratelimited(dev->dev, "start get stars jfs buf!\n");
+	dev_info_ratelimited(dev->dev, "start get stars JFS buf!\n");
 	ret = udma_get_jfs_buf_ex(dev, jfs, cfg_ex);
 	if (ret)
 		goto err_alloc_jfs_id;
 
-	udma_set_query_flush_time(&jfs->sq, cfg->err_timeout);
+	udma_set_query_flush_time(dev, &jfs->sq, cfg->err_timeout);
 	jfs->sq.state = UBCORE_JETTY_STATE_READY;
 	udma_init_jfsc(dev, cfg, jfs, &ctx);
 	attr.tag = jfs->sq.id;
 	attr.op = UDMA_CMD_CREATE_JFS_CONTEXT;
 	ret = post_mailbox_update_ctx(dev, &ctx, sizeof(ctx), &attr);
 	if (ret) {
-		dev_err(dev->dev, "failed to upgrade JFSC, ret = %d.\n", ret);
+		dev_err(dev->dev, "failed to upgrade JFS context, ret = %d.\n", ret);
 		goto err_update_ctx;
 	}
 
@@ -247,7 +247,7 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 	if (dfx_switch)
 		udma_dfx_store_jfs_id(dev, jfs);
 
-	dev_info_ratelimited(dev->dev, "create stars jfs success!\n");
+	dev_info_ratelimited(dev->dev, "create stars JFS success!\n");
 
 	return &jfs->ubcore_jfs;
 
@@ -271,7 +271,7 @@ static int udma_create_jfs_ops_ex(struct ubcore_device *dev, struct ubcore_ucont
 
 	if (udma_check_base_param(in->addr, in->len, sizeof(struct udma_jfs_cfg_ex)) ||
 		udma_check_base_param(out->addr, out->len, sizeof(struct ubcore_jfs *))) {
-		dev_err(udev->dev, "param invalid in create jfs, in_len = %u, out_len = %u.\n",
+		dev_err(udev->dev, "param invalid in create JFS, input length = %u, output length = %u.\n",
 			in->len, out->len);
 		return -EINVAL;
 	}
@@ -294,7 +294,7 @@ static int udma_delete_jfs_ops_ex(struct ubcore_device *dev, struct ubcore_ucont
 	struct ubcore_jfs *jfs;
 
 	if (udma_check_base_param(in->addr, in->len, sizeof(struct ubcore_jfs *))) {
-		dev_err(udev->dev, "parameter invalid in delete jfs, len = %u.\n",
+		dev_err(udev->dev, "parameter invalid in delete JFS, length = %u.\n",
 			in->len);
 		return -EFAULT;
 	}
@@ -321,14 +321,14 @@ static int udma_get_jfc_buf_ex(struct udma_dev *dev,
 	size = jfc->buf.entry_size * jfc->buf.entry_cnt;
 
 	if (size != cfg_ex->cstm_cfg.cq.buff_size) {
-		dev_err(dev->dev, "cqe buff size is wrong, buf size = %u.\n", size);
+		dev_err(dev->dev, "CQE buffer size is wrong, buffer size = %u.\n", size);
 		return -EINVAL;
 	}
 
 	jfc->buf.addr = (dma_addr_t)(uintptr_t)cfg_ex->cstm_cfg.cq.buff;
 
 	if (jfc->buf.addr == 0) {
-		dev_err(dev->dev, "cq buff addr is wrong.\n");
+		dev_err(dev->dev, "CQ buffer address is wrong.\n");
 		return -EINVAL;
 	}
 
@@ -379,7 +379,7 @@ static struct ubcore_jfc *udma_create_jfc_ex(struct ubcore_device *ubcore_dev,
 	xa_unlock_irqrestore(&dev->jfc_table.xa, flags_store);
 	if (ret) {
 		dev_err(dev->dev,
-			"failed to stored jfc id to jfc_table, jfcn: %u.\n",
+			"failed to stored JFC id to JFC table, jfcn: %u.\n",
 			jfc->jfcn);
 		goto err_store_jfcn;
 	}
@@ -422,7 +422,7 @@ static int udma_create_jfc_ops_ex(struct ubcore_device *dev, struct ubcore_ucont
 
 	if (udma_check_base_param(in->addr, in->len, sizeof(struct udma_jfc_cfg_ex)) ||
 		udma_check_base_param(out->addr, out->len, sizeof(struct ubcore_jfc *))) {
-		dev_err(udev->dev, "input parameter invalid in create jfc, in_len = %u, out_len = %u.\n",
+		dev_err(udev->dev, "input parameter invalid in create JFC, input length = %u, output length = %u.\n",
 			in->len, out->len);
 		return -EINVAL;
 	}
@@ -446,7 +446,7 @@ static int udma_delete_jfc_ops_ex(struct ubcore_device *dev, struct ubcore_ucont
 	struct ubcore_jfc *jfc;
 
 	if (udma_check_base_param(in->addr, in->len, sizeof(struct ubcore_jfc *))) {
-		dev_err(udev->dev, "parameter invalid in delete jfc, len = %u.\n",
+		dev_err(udev->dev, "parameter invalid in delete JFC, length = %u.\n",
 			in->len);
 		return -EINVAL;
 	}
@@ -471,7 +471,7 @@ static int udma_set_cqe_ex(struct ubcore_device *dev, struct ubcore_ucontext *uc
 	uint32_t cq_depth;
 
 	if (udma_check_base_param(in->addr, in->len, sizeof(struct udma_set_cqe_ex))) {
-		dev_err(udev->dev, "parameter invalid in set cqe, len = %u.\n",
+		dev_err(udev->dev, "parameter invalid in set CQE, length = %u.\n",
 			in->len);
 		return -EINVAL;
 	}
@@ -481,12 +481,12 @@ static int udma_set_cqe_ex(struct ubcore_device *dev, struct ubcore_ucontext *uc
 
 	if (cqe_ex.jfc_type != UDMA_STARS_JFC_TYPE &&
 	    cqe_ex.jfc_type != UDMA_CCU_JFC_TYPE) {
-		dev_err(udev->dev, "invalid jfc type, mode = %u.\n", cqe_ex.jfc_type);
+		dev_err(udev->dev, "invalid JFC type, mode = %u.\n", cqe_ex.jfc_type);
 		return -EINVAL;
 	}
 
 	if (cqe_ex.addr == 0) {
-		dev_err(udev->dev, "cq addr is wrong in set cqe.\n");
+		dev_err(udev->dev, "CQ address is wrong in set CQE.\n");
 		return -EINVAL;
 	}
 
@@ -494,7 +494,7 @@ static int udma_set_cqe_ex(struct ubcore_device *dev, struct ubcore_ucontext *uc
 	if (cq_depth < UDMA_JFC_DEPTH_MIN || cq_depth > udev->caps.jfc.depth ||
 	    (cqe_ex.len % udev->caps.cqe_size) != 0 ||
 	    cq_depth != roundup_pow_of_two(cq_depth)) {
-		dev_err(udev->dev, "cq buff size is wrong in set cqe, size = %u.\n",
+		dev_err(udev->dev, "CQ buffer size is wrong in set CQE, size = %u.\n",
 			cqe_ex.len);
 		return -EINVAL;
 	}
@@ -513,7 +513,7 @@ static int udma_query_ue_info_ex(struct ubcore_device *dev, struct ubcore_uconte
 	struct udma_ue_info_ex info = {};
 
 	if (udma_check_base_param(out->addr, out->len, sizeof(struct udma_ue_info_ex))) {
-		dev_err(udev->dev, "parameter invalid in query ue, len = %u.\n",
+		dev_err(udev->dev, "parameter invalid in query UE, length = %u.\n",
 			out->len);
 		return -EINVAL;
 	}
@@ -543,13 +543,13 @@ static int udma_ctrlq_query_tp_sport(struct ubcore_device *dev, struct ubcore_uc
 
 	if (udma_check_base_param(out->addr, out->len, sizeof(struct udma_tp_sport_out)) ||
 	    udma_check_base_param(in->addr, in->len, sizeof(struct udma_tp_sport_in))) {
-		dev_err(udev->dev, "parameter invalid in query tp sport, in_len = %u, out_len = %u.\n",
+		dev_err(udev->dev, "parameter invalid in query TP sport, input length = %u, output length = %u.\n",
 			in->len, out->len);
 		return -EINVAL;
 	}
 
 	if (udev->is_ue) {
-		dev_err(udev->dev, "ue is not supported.\n");
+		dev_err(udev->dev, "UE is not supported.\n");
 		return -EINVAL;
 	}
 
@@ -806,7 +806,7 @@ static int send_cmd_query_single_cqe_aux_info(struct udma_dev *udma_dev,
 	ret = ubase_cmd_send_inout(udma_dev->comdev.adev, &cmd_in, &cmd_out);
 	if (ret)
 		dev_err(udma_dev->dev,
-			"failed to query cqe aux info, ret = %d.\n", ret);
+			"failed to query CQE aux info, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -837,7 +837,7 @@ static int send_cmd_query_all_cqe_aux_info(struct udma_dev *udma_dev,
 			ret = send_cmd_query_single_cqe_aux_info(udma_dev, &info_arr[i][j]);
 			if (ret) {
 				dev_err(udma_dev->dev,
-					"failed to query cqe aux info, ret = %d.\n", ret);
+					"failed to query CQE aux info, ret = %d.\n", ret);
 				kfree(info_arr);
 				return ret;
 			}
@@ -944,7 +944,8 @@ static int copy_out_cqe_data_to_user(struct udma_dev *udma_dev,
 					    sizeof(enum udma_cqe_aux_info_type));
 			if (byte) {
 				dev_err(udma_dev->dev,
-					"copy resp to aux info type failed, byte = %lu.\n", byte);
+					"copy response to aux info type failed, byte = %lu.\n",
+					byte);
 				return -EFAULT;
 			}
 
@@ -954,7 +955,8 @@ static int copy_out_cqe_data_to_user(struct udma_dev *udma_dev,
 					    sizeof(uint32_t));
 			if (byte) {
 				dev_err(udma_dev->dev,
-					"copy resp to aux info value failed, byte = %lu.\n", byte);
+					"copy response to aux info value failed, byte = %lu.\n",
+					byte);
 				return -EFAULT;
 			}
 
@@ -1244,7 +1246,8 @@ static int copy_out_ae_data_to_user(struct udma_dev *udma_dev,
 					    sizeof(enum udma_ae_aux_info_type));
 			if (byte) {
 				dev_err(udma_dev->dev,
-					"copy resp to aux info type failed, byte = %lu.\n", byte);
+					"copy response to aux info type failed, byte = %lu.\n",
+					byte);
 				return -EFAULT;
 			}
 
@@ -1254,7 +1257,8 @@ static int copy_out_ae_data_to_user(struct udma_dev *udma_dev,
 					    sizeof(uint32_t));
 			if (byte) {
 				dev_err(udma_dev->dev,
-					"copy resp to aux info value failed, byte = %lu.\n", byte);
+					"copy response to aux info value failed, byte = %lu.\n",
+					byte);
 				return -EFAULT;
 			}
 
@@ -1365,7 +1369,7 @@ static int udma_user_data(struct ubcore_device *dev,
 	int ret;
 
 	if (k_user_ctl->in.len >= UDMA_HW_PAGE_SIZE || k_user_ctl->out.len >= UDMA_HW_PAGE_SIZE) {
-		dev_err(udev->dev, "The len exceeds the maximum value in user ctrl.\n");
+		dev_err(udev->dev, "The length exceeds the maximum value in user ctrl.\n");
 		return -EINVAL;
 	}
 

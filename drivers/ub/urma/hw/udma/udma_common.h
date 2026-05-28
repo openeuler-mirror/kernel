@@ -376,12 +376,6 @@ static inline void *get_buf_entry(struct udma_buf *buf, uint32_t n)
 	return (char *)buf->kva + (entry_index * buf->entry_size);
 }
 
-static inline uint8_t to_ta_timeout(uint32_t err_timeout)
-{
-#define TA_TIMEOUT_DIVISOR 8
-	return err_timeout / TA_TIMEOUT_DIVISOR;
-}
-
 static inline uint64_t udma_cal_npages(uint64_t va, uint64_t len)
 {
 	return (ALIGN(va + len, PAGE_SIZE) - ALIGN_DOWN(va, PAGE_SIZE)) / PAGE_SIZE;

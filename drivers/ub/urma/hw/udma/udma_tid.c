@@ -15,7 +15,7 @@ static int udma_get_key_id_from_user(struct udma_dev *udma_dev,
 	uint32_t tid = 0;
 
 	if (!udata->udrv_data || !udata->udrv_data->in_addr) {
-		dev_err(udma_dev->dev, "udrv_data or in_addr is null.\n");
+		dev_err(udma_dev->dev, "user driver data or input address is null.\n");
 		return -EINVAL;
 	}
 
@@ -49,7 +49,7 @@ static int udma_alloc_k_tid(struct udma_dev *udma_dev,
 
 	ret = ummu_get_tid(udma_dev->dev, ksva, &tid);
 	if (ret) {
-		dev_err(udma_dev->dev, "get tid from ummu failed, ret = %d.\n", ret);
+		dev_err(udma_dev->dev, "get TID from UMMU failed, ret = %d.\n", ret);
 		goto err_get_tid;
 	}
 
@@ -122,7 +122,7 @@ int udma_free_tid(struct ubcore_token_id *token_id)
 	if (!udma_tid->kernel_mode) {
 		ctx = to_udma_context(token_id->uctx);
 		if (!ctx) {
-			dev_err(udma_dev->dev, "udma free tid failed, ctx is null.\n");
+			dev_err(udma_dev->dev, "udma free TID failed, context is null.\n");
 			goto out;
 		}
 		inva_param.tid = udma_tid->tid;

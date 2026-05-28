@@ -41,7 +41,7 @@ static void udma_send_ue_msg(struct udma_dev *udev, void *data, uint16_t len,
 	total_msg_len = rsp_msg_len + hdr_len;
 
 	if (len < hdr_len) {
-		dev_err(udev->dev, "send mue2ue msg failed, len(%u) is too small.\n", len);
+		dev_err(udev->dev, "send MUE2UE message failed, len(%u) is too small.\n", len);
 		return;
 	}
 
@@ -61,7 +61,7 @@ static void udma_send_ue_msg(struct udma_dev *udev, void *data, uint16_t len,
 	ret = ubase_ctrlq_send_mue2ue_resp(udev->comdev.adev, rsp_msg,
 					   total_msg_len, result);
 	if (ret)
-		dev_err(udev->dev, "udma send mue2ue msg failed, opcode = %u.\n", opcode);
+		dev_err(udev->dev, "udma send MUE2UE message failed, opcode = %u.\n", opcode);
 
 	kfree(rsp_msg);
 }
@@ -94,7 +94,8 @@ static int udma_handle_ue_req_msg(struct auxiliary_device *adev, void *data,
 	uint16_t hdr_len;
 
 	if (adev == NULL || data == NULL) {
-		pr_err("adev is null %d, data is null %d.\n", adev == NULL, data == NULL);
+		pr_err("auxiliary device is null %d, data is null %d.\n",
+		       adev == NULL, data == NULL);
 		return 0;
 	}
 
@@ -156,7 +157,7 @@ static int udma_handle_ue_get_tp_info_msg(struct udma_dev *udev,
 
 	ubase_ctrlq_parse_ue_msg(udev->comdev.adev, data, len, &msg_info);
 	if (msg_info.ret) {
-		dev_err(udev->dev, "udma get tp info failed, ret = %d.\n", msg_info.ret);
+		dev_err(udev->dev, "udma get TP info failed, ret = %d.\n", msg_info.ret);
 		return -EINVAL;
 	}
 
@@ -165,7 +166,7 @@ static int udma_handle_ue_get_tp_info_msg(struct udma_dev *udev,
 
 	memcpy(&tp_info_resp, (uint8_t *)data + hdr_len, rsp_msg_len);
 	if (tp_info_resp.resp_tpn_cnt != tp_info_resp.req_tpn_cnt) {
-		dev_err(udev->dev, "resp tp cnt = %u not equal to req tp cnt = %u.\n",
+		dev_err(udev->dev, "response TP count = %u not equal to request TP count = %u.\n",
 			tp_info_resp.resp_tpn_cnt, tp_info_resp.req_tpn_cnt);
 		return -EINVAL;
 	}
@@ -174,7 +175,7 @@ static int udma_handle_ue_get_tp_info_msg(struct udma_dev *udev,
 	tp_info.tp_cnt = tp_info_resp.resp_tpn_cnt;
 	ret = udma_save_tp_info(udev, &tp_info, msg_info.mbx_ue_id);
 	if (ret)
-		dev_err(udev->dev, "udma save tp info failed, ret = %d.\n", ret);
+		dev_err(udev->dev, "udma save TP info failed, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -190,7 +191,7 @@ static int udma_handle_ue_get_tp_list_msg(struct udma_dev *udev,
 
 	ubase_ctrlq_parse_ue_msg(udev->comdev.adev, data, len, &msg_info);
 	if (msg_info.ret) {
-		dev_err(udev->dev, "udma get tp list failed, ret = %d.\n", msg_info.ret);
+		dev_err(udev->dev, "udma get TP list failed, ret = %d.\n", msg_info.ret);
 		return -EINVAL;
 	}
 
@@ -200,14 +201,14 @@ static int udma_handle_ue_get_tp_list_msg(struct udma_dev *udev,
 	memcpy(&tpid_list_resp, (uint8_t *)data + hdr_len, rsp_msg_len);
 	if (tpid_list_resp.tp_list_cnt == 0) {
 		dev_err(udev->dev,
-			"check ue tp list count failed, count = %u.\n",
+			"check UE TP list count failed, count = %u.\n",
 			tpid_list_resp.tp_list_cnt);
 		return -EINVAL;
 	}
 
 	for (i = 0; i < tpid_list_resp.tp_list_cnt; i++)
 		if (tpid_list_resp.tpid_list[i].migr) {
-			dev_err(udev->dev, "no support migr. tpid = %u.\n",
+			dev_err(udev->dev, "no support migration, TP id = %u.\n",
 			tpid_list_resp.tpid_list[i].tpid);
 			return -EINVAL;
 		}
@@ -222,7 +223,7 @@ static int udma_handle_ue_rsp_msg(struct auxiliary_device *adev, void *data,
 	uint16_t hdr_len;
 
 	if (adev == NULL || data == NULL) {
-		pr_err("adev is null %d, data is null %d\n",
+		pr_err("auxiliary device is null %d, data is null %d\n",
 		adev == NULL, data == NULL);
 		return 0;
 	}
@@ -244,7 +245,7 @@ static int udma_handle_ue_rsp_msg(struct auxiliary_device *adev, void *data,
 		}
 	} else if (opcode == UDMA_CMD_CTRLQ_GET_TP_INFO) {
 		if (udma_handle_ue_get_tp_info_msg(udma_dev, data, len)) {
-			dev_err(udma_dev->dev, "from ctrlq get_tp_info msg is invalid.\n");
+			dev_err(udma_dev->dev, "from ctrl queue get TP info message is invalid.\n");
 			goto err_and_send_ue_msg;
 		}
 	}
