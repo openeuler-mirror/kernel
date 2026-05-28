@@ -33,6 +33,7 @@
 #define KERNEL_REBOOT_TIMEOUT_MS_MIN	0
 #define KERNEL_REBOOT_TIMEOUT_MS_MAX	3600000
 #define LOCAL_EID_MAX_LEN		(EID_MAX_LEN * MAX_DIE_NUM + 1 + 1)
+#define MSLEEP_TIME_EACH_ROUND_OF_ACK_CHECK  10  // < MILLISECONDS_OF_EACH_MDELAY
 
 #undef pr_fmt
 #define pr_fmt(fmt) "[sentry][remote client]: " fmt
@@ -290,12 +291,11 @@ check_ack_and_sleep:
 		code_run_times_ms = code_run_count * 1000 / counts_per_sec;
 
 		if (code_run_times_ms < MILLISECONDS_OF_EACH_MDELAY) {
-			int sleep_time = MILLISECONDS_OF_EACH_MDELAY - code_run_times_ms;
 			if (sentry_client_ctx.is_in_panic_status) {
-				mdelay(sleep_time);
+				mdelay(MSLEEP_TIME_EACH_ROUND_OF_ACK_CHECK);
 				goto check_panic_ack_msg;
 			} else {
-				msleep(sleep_time);
+				msleep(MSLEEP_TIME_EACH_ROUND_OF_ACK_CHECK);
 				goto check_reboot_ack_msg;
 			}
 		}
