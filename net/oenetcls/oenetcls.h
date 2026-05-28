@@ -205,21 +205,6 @@ void oecls_ntuple_res_clean(void);
 int oecls_flow_res_init(void);
 void oecls_flow_res_clean(void);
 
-#define L0_MAX_PAGE_SIZE (8192)
-#define L0_MAX_PAGE_NUM  (4096)
-
-struct l0_vma_data {
-	struct page *page;
-	unsigned long size;
-	int nid;
-};
-
-void clean_oecls_l0_cache(void);
-void init_oecls_l0_cache(void);
-void *alloc_from_l0(int size);
-void free_to_l0(void *addr);
-int l3t_shared_lock(int nid, unsigned long pfn, unsigned long size);
-int l3t_shared_unlock(int nid, unsigned long pfn, unsigned long size);
 void _oecls_flow_update(struct sock *sk, struct sk_buff *skb);
 void _oecls_set_cpu(struct sk_buff *skb, int *cpu, int *last_qtail);
 

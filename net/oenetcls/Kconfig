@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 config OENETCLS
 	tristate "Network classification"
-	depends on MODULES && m && HISI_L0
+	depends on MODULES && m
 	default n
 	help
 	  This introduces a kind of network optimization method, which can

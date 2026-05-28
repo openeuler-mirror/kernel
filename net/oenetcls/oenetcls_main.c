@@ -658,7 +658,7 @@ struct oecls_numa_info *get_oecls_numa_info(unsigned int nid)
 static void clean_oecls_numa_info(void)
 {
 	oecls_numa_num = 0;
-	free_to_l0(oecls_numa_info_table);
+	kfree(oecls_numa_info_table);
 }
 
 static void init_numa_avail_cpus(int nid, struct oecls_numa_info *numa_info)
@@ -686,7 +686,7 @@ static void clean_oecls_rxq(void)
 	for_each_oecls_numa(nid, numa_info) {
 		for_each_oecls_netdev(devid, oecls_dev) {
 			bound_dev = &numa_info->bound_dev[devid];
-			free_to_l0(bound_dev->cluster_info);
+			kfree(bound_dev->cluster_info);
 		}
 	}
 }
@@ -702,8 +702,9 @@ static int init_numa_rxq_bitmap(int nid, struct oecls_numa_info *numa_info)
 		bound_rxq_num = 0;
 		bound_dev = &numa_info->bound_dev[devid];
 		memset(bound_dev->bitmap_rxq, RXQ_MAX_USECNT, sizeof(bound_dev->bitmap_rxq));
-		bound_dev->cluster_info = alloc_from_l0(sizeof(struct oecls_numa_clusterinfo)
-							* oecls_cluster_per_numa);
+		bound_dev->cluster_info = kcalloc(oecls_cluster_per_numa,
+						  sizeof(struct oecls_numa_clusterinfo),
+						  GFP_KERNEL);
 		if (!bound_dev->cluster_info) {
 			ret = -ENOMEM;
 			goto out;
@@ -880,7 +881,8 @@ static int init_oecls_numa_info(void)
 	int nid, ret = 0;
 
 	oecls_numa_num = num_online_nodes();
-	oecls_numa_info_table = alloc_from_l0(sizeof(struct oecls_numa_info) * oecls_numa_num);
+	oecls_numa_info_table = kcalloc(oecls_numa_num, sizeof(struct oecls_numa_info),
+					GFP_KERNEL);
 	if (!oecls_numa_info_table) {
 		ret = -ENOMEM;
 		oecls_error("oecls_numa_info_table alloc failed:%d\n", ret);
@@ -1140,10 +1142,10 @@ static __init int oecls_init(void)
 	if (!check_params())
 		return -EINVAL;
 
-	init_oecls_l0_cache();
 	err = init_oecls_numa_info();
 	if (err)
-		goto clean_l0;
+		return err;
+
 	err = init_oecls_netdev_info(ifname);
 	if (err)
 		goto clean_numa;
@@ -1193,8 +1195,6 @@ clean_rxq:
 clean_numa:
 	clean_oecls_netdev_info();
 	clean_oecls_numa_info();
-clean_l0:
-	clean_oecls_l0_cache();
 	return err;
 }
 
@@ -1218,7 +1218,6 @@ static __exit void oecls_exit(void)
 	clean_oecls_rxq();
 	clean_oecls_netdev_info();
 	clean_oecls_numa_info();
-	clean_oecls_l0_cache();
 }
 
 module_init(oecls_init);
