@@ -18,6 +18,8 @@
 #include <linux/mutex.h>
 #include <linux/idr.h>
 #include <linux/kthread.h>
+#include <linux/sched/task.h>
+#include <linux/version.h>
 #include <ub/ubdevshm/ubdevshm.h>
 #include "ubdevshm_attr.h"
 #include "ubdevshm_main.h"
@@ -88,7 +90,8 @@ int ubdevshm_register_ops(struct ubdevshm_mem_ops *ops, unsigned long *handle)
 	int ret;
 
 	if (!ops || !ops->acquire || !ops->release || !handle) {
-		pr_err("invalid param\n");
+		pr_err("invalid param, ops: %d, ops->acquire: %d, ops->release: %d, handle: %d\n",
+			!!ops, ops ? !!ops->acquire : 0, ops ? !!ops->release : 0, !!handle);
 		return -EINVAL;
 	}
 
@@ -132,7 +135,7 @@ int ubdevshm_unregister_ops(unsigned long *handle)
 	int ret;
 
 	if (!handle) {
-		pr_err("handle is NULL\n");
+		pr_err("unregister ops: handle is NULL\n");
 		return -EINVAL;
 	}
 	handle_id = (int)*handle;
@@ -140,7 +143,7 @@ int ubdevshm_unregister_ops(unsigned long *handle)
 	down_write(&ubdevshm_rw_semlock);
 	provider = idr_find(&mem_provider_idr, handle_id);
 	if (!provider) {
-		pr_err("invalid handle[%d] without matching provider\n", handle_id);
+		pr_err("unregister ops: invalid handle[%d] without matching provider\n", handle_id);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -347,7 +350,7 @@ static int shm_area_insert(struct shm_container *cntr, u64 va, u64 size,
 
 	sa = shm_area_find(cntr, va, size, true);
 	if (sa) {
-		pr_err("area[%pK, %llx] already exist\n", (void *)va, size);
+		pr_err("area with size[%llx] already exist\n", size);
 		return -EEXIST;
 	}
 
@@ -626,7 +629,8 @@ int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
 	int ret;
 
 	if (!handle || !va || !va->size) {
-		pr_err("invalid param\n");
+		pr_err("invalid param: handle: %d, va: %d, size: %llu\n",
+			!!handle, !!va, va ? va->size : 0);
 		return -EINVAL;
 	}
 
@@ -647,7 +651,7 @@ int ubdevshm_register_segment(unsigned long *handle, struct mem_uva *va)
 			goto fail;
 	}
 
-	// check segment register repeatly
+	// check segment register repeatedly
 	if (found) {
 		rp.role = fill_role_info(role, current);
 		rp.provider = provider;
@@ -761,7 +765,7 @@ int ubdevshm_unregister_segment(unsigned long *handle, struct mem_uva *va)
 	int ret;
 
 	if (!handle || !va) {
-		pr_err("invalid param\n");
+		pr_err("invalid param: handle: %d, va: %d\n", !!handle, !!va);
 		return -EINVAL;
 	}
 
@@ -878,7 +882,7 @@ static int find_get_shm_container_access_ctx(struct access_ctx *ctx, struct mem_
 	if (!ctx) { // simple mode
 		cntr = find_get_shm_container(is_same_role_task, current);
 		if (!cntr) {
-			pr_err("find cntr failed: current tgid:%d, start_time: %llx\n",
+			pr_err("find cntr failed in acquire uba: current tgid:%d, start_time: %llx\n",
 				current->tgid, current->group_leader->start_time);
 			return -ENOENT;
 		}
@@ -925,7 +929,7 @@ int ubdevshm_acquire_uba(struct access_ctx *ctx, struct mem_uva *va, union acqui
 	int ret;
 
 	if (!va || !attr || !uba) {
-		pr_err("invalid param\n");
+		pr_err("invalid param: va: %d, attr: %d, uba: %d\n", !!va, !!attr, !!uba);
 		return -EINVAL;
 	}
 
@@ -964,7 +968,7 @@ static bool is_equal_uba(struct mem_uba *a, struct mem_uba *b)
 		a->token_id == b->token_id &&
 		a->eid.eid == b->eid.eid &&
 		a->attr.bs.readable == b->attr.bs.readable &&
-		a->attr.bs.executeable == b->attr.bs.executeable &&
+		a->attr.bs.executable == b->attr.bs.executable &&
 		a->attr.bs.token_value_required == b->attr.bs.token_value_required &&
 		a->attr.value == b->attr.value &&
 		a->attr.bs.writeable == b->attr.bs.writeable)
@@ -1052,7 +1056,7 @@ int ubdevshm_release_uba(struct access_ctx *ctx, struct mem_uba *uba)
 		 * counting to zero if it happens to execute the current line of code.
 		 */
 		mutex_lock(&cntr->lock);
-		// This situtation should not have happened.
+		// This situation should not have happened.
 		if (refcount_inc_not_zero(&ctx_inner->acquire_refcnt))
 			pr_warn("refcnt is not zero, refcount is fail.\n");
 		mutex_unlock(&cntr->lock);
@@ -1082,7 +1086,7 @@ static struct task_struct *get_task_by_peer_tgid(struct task_struct *peer, pid_t
 
 static inline int user_tgid(struct shm_user *user, pid_t *rtgid)
 {
-	if (user->type != IDENTIY_TGID || user->user_len != sizeof(*rtgid))
+	if (user->type != IDENTITY_TGID || user->user_len != sizeof(*rtgid))
 		return -EINVAL;
 
 	*rtgid = *((pid_t *)user->user);
@@ -1144,8 +1148,9 @@ int ubdevshm_grant_access(unsigned long *handle, struct shm_user *user,
 	struct role_info role;
 	int ret;
 
-	if (!handle || !user || !va || !ctx || user->type != IDENTIY_TGID) {
-		pr_err("invalid param\n");
+	if (!handle || !user || !va || !ctx || user->type != IDENTITY_TGID) {
+		pr_err("invalid param: handle: %d, user: %d, va :%d, ctx: %d, type: %d\n",
+			!!handle, !!user, !!va, !!ctx, user ? user->type : -1);
 		return -EINVAL;
 	}
 
@@ -1159,7 +1164,7 @@ int ubdevshm_grant_access(unsigned long *handle, struct shm_user *user,
 
 	cntr = find_get_shm_container(is_same_role_task, current);
 	if (!cntr) {
-		pr_err("find cntr failed: current tgid:%d, start_time: %llx\n",
+		pr_err("find cntr failed in grant access: current tgid: %d, start_time: %llx\n",
 			current->tgid, current->group_leader->start_time);
 		ret = -EINVAL;
 		goto out_put_task_provider;
@@ -1225,7 +1230,7 @@ int ubdevshm_ungrant_access(struct access_ctx *ctx)
 	int ret = 0;
 
 	if (!ctx) {
-		pr_err("invalid param\n");
+		pr_err("invalid param: ctx: %d\n", !!ctx);
 		return -EINVAL;
 	}
 
