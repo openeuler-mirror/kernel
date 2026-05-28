@@ -5744,26 +5744,26 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 
 		switch ((hw->vfnum & 0x60) >> 5) {
 		case 0x00:
-			adapter->port = pf0_cards_found++;
 			adapter->bd_number = pf0_cards_found++;
+			adapter->port = adapter->bd_number;
 			if (pf0_cards_found == 1000)
 				pf0_cards_found = 0;
 			break;
 		case 0x01:
-			adapter->port = pf1_cards_found++;
 			adapter->bd_number = pf1_cards_found++;
+			adapter->port = adapter->bd_number;
 			if (pf1_cards_found == 1000)
 				pf1_cards_found = 0;
 			break;
 		case 0x02:
-			adapter->port = pf2_cards_found++;
 			adapter->bd_number = pf2_cards_found++;
+			adapter->port = adapter->bd_number;
 			if (pf2_cards_found == 1000)
 				pf2_cards_found = 0;
 			break;
 		case 0x03:
-			adapter->port = pf3_cards_found++;
 			adapter->bd_number = pf3_cards_found++;
+			adapter->port = adapter->bd_number;
 			if (pf3_cards_found == 1000)
 				pf3_cards_found = 0;
 			break;
@@ -5791,27 +5791,26 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 
 		switch ((hw->vfnum & 0x60) >> 5) {
 		case 0x00:
-			adapter->port = pf0_cards_found++;
 			adapter->bd_number = pf0_cards_found++;
+			adapter->port = adapter->bd_number;
 			if (pf0_cards_found == 1000)
 				pf0_cards_found = 0;
 			break;
 		case 0x01:
-			adapter->port = pf1_cards_found++;
 			adapter->bd_number = pf1_cards_found++;
+			adapter->port = adapter->bd_number;
 			if (pf1_cards_found == 1000)
 				pf1_cards_found = 0;
 			break;
 		case 0x02:
-			adapter->port = pf2_cards_found++;
 			adapter->bd_number = pf2_cards_found++;
+			adapter->port = adapter->bd_number;
 			if (pf2_cards_found == 1000)
 				pf2_cards_found = 0;
 			break;
 		case 0x03:
-			adapter->port = pf3_cards_found++;
 			adapter->bd_number = pf3_cards_found++;
-
+			adapter->port = adapter->bd_number;
 			if (pf3_cards_found == 1000)
 				pf3_cards_found = 0;
 			break;
