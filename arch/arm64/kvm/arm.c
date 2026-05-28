@@ -672,9 +672,11 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	if (err)
 		goto sched_affinity_vcpu_destroy;
 
-	err = kvm_arch_rec_init(&vcpu->arch);
-	if (err)
-		goto unshare_hyp;
+	if (kvm_is_realm(vcpu->kvm)) {
+		err = kvm_arch_rec_init(&vcpu->arch);
+		if (err)
+			goto unshare_hyp;
+	}
 
 	return err;
 
