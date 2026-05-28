@@ -1023,40 +1023,16 @@ static int update_dev_info(struct ubagg_topo_node *new_topo_info,
 static int update_link_info(struct ubagg_topo_node *new_topo_info,
 				struct ubagg_topo_node *old_topo_info)
 {
-	int iodie_id, port_id, new_remote_port_id, old_remote_port_id;
+	int local_idx, remote_idx;
 
-	for (iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
-		for (port_id = 0; port_id < MAX_PORT_NUM; ++port_id) {
-			new_remote_port_id = new_topo_info->links[iodie_id][port_id].peer_port;
-			old_remote_port_id = old_topo_info->links[iodie_id][port_id].peer_port;
-			if (new_remote_port_id == UINT32_MAX) {
-				/* if new link is not connected, skip it */
+	for (local_idx = 0; local_idx < IODIE_NUM * PORT_NUM; local_idx++) {
+		for (remote_idx = 0; remote_idx < IODIE_NUM * PORT_NUM; remote_idx++) {
+			// if new link is not connected, skip it
+			if (!new_topo_info->links[local_idx][remote_idx])
 				continue;
-			} else if (old_remote_port_id == UINT32_MAX) {
-				/* if old link is not connected, update it */
-				(void)memcpy(&old_topo_info->links[iodie_id][port_id],
-					&new_topo_info->links[iodie_id][port_id],
-					sizeof(struct ubagg_topo_link));
-			} else {
-				/* if old link is connected and new link is connected,
-				   check if they are the same */
-				if (memcmp(&old_topo_info->links[iodie_id][port_id],
-						&new_topo_info->links[iodie_id][port_id],
-						sizeof(struct ubagg_topo_link)) != 0) {
-					ubagg_log_err("link is not the same, new: ");
-					ubagg_log_err(
-						"peer_node[%u]/peer_iodie[%u]/peer_port[%u], ",
-						new_topo_info->links[iodie_id][port_id].peer_node,
-						new_topo_info->links[iodie_id][port_id].peer_iodie,
-						new_topo_info->links[iodie_id][port_id].peer_port);
-					ubagg_log_err(
-						"old: peer_node[%u]/peer_iodie[%u]/peer_port[%u]\n",
-						old_topo_info->links[iodie_id][port_id].peer_node,
-						old_topo_info->links[iodie_id][port_id].peer_iodie,
-						old_topo_info->links[iodie_id][port_id].peer_port);
-					return -1;
-				}
-			}
+			// if old link is not connected, update it
+			if (!old_topo_info->links[local_idx][remote_idx])
+				old_topo_info->links[local_idx][remote_idx] = true;
 		}
 	}
 	return 0;
@@ -1423,7 +1399,7 @@ static void find_add_master_dev(const char *agg_eid, const char *name)
 
 static void print_topo_map(struct ubagg_topo_map *topo_map)
 {
-	int node_idx, dev_idx, iodie_idx, port_idx;
+	int node_idx, dev_idx, iodie_idx, port_idx, local_idx, remote_idx;
 	struct ubagg_topo_node *node;
 
 	if (!topo_map) {
@@ -1441,16 +1417,14 @@ static void print_topo_map(struct ubagg_topo_map *topo_map)
 			node->node_id, node->is_current);
 
 		/* print link table for this node */
-		for (iodie_idx = 0; iodie_idx < IODIE_NUM; iodie_idx++) {
-			for (port_idx = 0; port_idx < MAX_PORT_NUM; port_idx++) {
-				ubagg_log_info("link[iodie_idx:%d][port_idx:%d] -> ",
-					iodie_idx,
-					port_idx);
+		for (local_idx = 0; local_idx < IODIE_NUM * PORT_NUM; local_idx++) {
+			for (remote_idx = 0; remote_idx < IODIE_NUM * PORT_NUM; remote_idx++) {
+				if (!node->links[local_idx][remote_idx])
+					continue;
 				ubagg_log_info(
-					"peer_node: %u, peer_iodie: %u, peer_port: %u\n",
-					node->links[iodie_idx][port_idx].peer_node,
-					node->links[iodie_idx][port_idx].peer_iodie,
-					node->links[iodie_idx][port_idx].peer_port);
+					"link: local iodie%d port%d <-> remote iodie%d port%d connected\n",
+					local_idx / PORT_NUM, local_idx % PORT_NUM,
+					remote_idx / PORT_NUM, remote_idx % PORT_NUM);
 			}
 		}
 

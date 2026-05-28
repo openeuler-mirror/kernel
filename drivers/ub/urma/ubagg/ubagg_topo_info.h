@@ -37,18 +37,12 @@ struct ubagg_topo_agg_dev {
 	struct ubagg_topo_ue ues[IODIE_NUM];
 };
 
-struct ubagg_topo_link {
-	uint32_t peer_node; // node id
-	uint32_t peer_iodie; // iodie idx
-	uint32_t peer_port; // port idx, UINT32_MAX indicates no connection
-};
-
 struct ubagg_topo_node {
 	uint32_t type;
 	uint32_t super_node_id;
 	uint32_t node_id;
 	uint32_t is_current;
-	struct ubagg_topo_link links[IODIE_NUM][PORT_NUM];
+	bool links[IODIE_NUM * PORT_NUM][IODIE_NUM * PORT_NUM];
 	struct ubagg_topo_agg_dev agg_devs[DEV_NUM];
 };
 
