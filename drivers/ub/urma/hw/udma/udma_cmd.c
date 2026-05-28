@@ -117,7 +117,7 @@ int udma_config_ctx_buf_to_hw(struct udma_dev *udma_dev,
 	ret = udma_post_mbox(udma_dev, &mailbox, attr);
 	if (ret)
 		dev_err(udma_dev->dev,
-			"failed to config ctx_buf to hw, ret = %d.\n", ret);
+			"failed to config context buffer to hw, ret = %d.\n", ret);
 
 	return ret;
 }
@@ -182,7 +182,7 @@ struct ubase_cmd_mailbox *udma_mailbox_query_ctx(struct udma_dev *udma_dev,
 	mailbox = udma_alloc_cmd_mailbox(udma_dev);
 	if (!mailbox) {
 		dev_err(udma_dev->dev,
-			"failed to alloc mailbox query ctx, opcode = %u, id = %u.\n",
+			"failed to alloc mailbox query context, opcode = %hhu, id = %u.\n",
 			attr->op, attr->tag);
 		return NULL;
 	}
@@ -214,7 +214,7 @@ int udma_close_ue_rx(struct udma_dev *dev, bool check_feature_enable, bool check
 	if (dev->disable_ue_rx_count == 0 && !is_reset) {
 		ret = ubase_deactivate_dev(dev->comdev.adev);
 		if (ret) {
-			dev_err(dev->dev, "failed to close ue rx, ret = %d.\n", ret);
+			dev_err(dev->dev, "failed to close UE rx, ret = %d.\n", ret);
 			goto out;
 		}
 	}
@@ -290,11 +290,11 @@ int udma_open_ue_rx(struct udma_dev *dev, bool check_feature_enable, bool check_
 		return ret;
 
 	mutex_lock(&dev->disable_ue_rx_mutex);
-	if (!is_reset && ((tp_num && dev->disable_ue_rx_count == tp_num) ||
+	if (!is_reset && ((tp_num && dev->disable_ue_rx_count == (int)tp_num) ||
 	   (!tp_num && dev->disable_ue_rx_count == 1))) {
 		ret = ubase_activate_dev(dev->comdev.adev);
 		if (ret) {
-			dev_err(dev->dev, "failed to open ue rx, ret = %d.\n", ret);
+			dev_err(dev->dev, "failed to open UE rx, ret = %d.\n", ret);
 			goto out;
 		}
 	}
@@ -320,7 +320,7 @@ int udma_open_ue_rx_with_retry(struct udma_dev *dev, bool check_feature_enable, 
 		dev->open_ue_rx_failed = true;
 		dev->current_handle_tp_num = tp_num;
 		mutex_unlock(&dev->open_rx_mutex);
-		dev_err(dev->dev, "failed to open ue rx, ret = %d, will retry later.\n", ret);
+		dev_err(dev->dev, "failed to open UE rx, ret = %d, will retry later.\n", ret);
 		udma_init_open_ue_rx_work(dev, tp_num, check_ta_flush);
 		return ret;
 	}
@@ -346,7 +346,7 @@ void udma_unset_dtu_va_info(struct udma_dev *dev, struct udma_context *ctx)
 
 	ret = ubase_cmd_send_in(dev->comdev.adev, &in);
 	if (ret)
-		dev_warn(dev->dev, "failed to delete dtu info, ret = %d.\n", ret);
+		dev_warn(dev->dev, "failed to delete DTU info, ret = %d.\n", ret);
 }
 
 int udma_set_dtu_va_info(struct udma_dev *dev, struct udma_context *ctx)
@@ -391,7 +391,7 @@ int udma_set_dtu_va_info(struct udma_dev *dev, struct udma_context *ctx)
 		      sizeof(dtu_info), (void *)&dtu_info);
 	ret = ubase_cmd_send_inout(dev->comdev.adev, &in, &out);
 	if (ret) {
-		dev_err(dev->dev, "failed to set dtu info, ret = %d.\n", ret);
+		dev_err(dev->dev, "failed to set DTU info, ret = %d.\n", ret);
 		return -EFAULT;
 	}
 	ctx->dtu_win_num = dtu_info.win_num;

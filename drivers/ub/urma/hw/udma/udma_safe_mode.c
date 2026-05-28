@@ -125,7 +125,7 @@ static int udma_wait_resp_from_proxy(struct udma_dev *udev,
 	ret = xa_err(__xa_store(&info->seq_tbl, req->seq_num, &wait_completion, GFP_KERNEL));
 	mutex_unlock(&info->tbl_lock);
 	if (ret) {
-		dev_err(udev->dev, "save resp completion failed, ret = %d.\n", ret);
+		dev_err(udev->dev, "save response completion failed, ret = %d.\n", ret);
 		return -EFAULT;
 	}
 
@@ -138,7 +138,7 @@ static int udma_wait_resp_from_proxy(struct udma_dev *udev,
 	mutex_unlock(&info->tbl_lock);
 
 	if (!wait_completion.ret_success)
-		dev_err(udev->dev, "wait resp failed.\n");
+		dev_err(udev->dev, "wait response failed.\n");
 
 	return wait_completion.ret;
 }
@@ -170,7 +170,7 @@ int udma_post_mbox_over_cmdq(struct udma_dev *udev,
 	udma_fill_buf(&in, UBASE_OPC_UE_TO_PROXY, false, data_len, req);
 	ret = ubase_cmd_send_in(udev->comdev.adev, &in);
 	if (ret) {
-		dev_err(udev->dev, "send mbox req msg failed, ret is %d.\n", ret);
+		dev_err(udev->dev, "send mailbox request message failed, ret is %d.\n", ret);
 		goto post_process;
 	}
 
@@ -191,7 +191,7 @@ int udma_recv_resp_from_proxy(void *dev, void *data, uint32_t len)
 	uint32_t data_len;
 
 	if (len < sizeof(*resp)) {
-		dev_err(udev->dev, "len of resp is too small, len = %u.\n", len);
+		dev_err(udev->dev, "length of response is too small, len = %u.\n", len);
 		return -EINVAL;
 	}
 	resp = (struct ubase_proxy_resp_msg *)data;
@@ -200,14 +200,14 @@ int udma_recv_resp_from_proxy(void *dev, void *data, uint32_t len)
 	wait_completion = xa_load(&info->seq_tbl, resp->seq_num);
 	if (!wait_completion) {
 		mutex_unlock(&info->tbl_lock);
-		dev_err(udev->dev, "seq of resp is invalid, seq = %u.\n", resp->seq_num);
+		dev_err(udev->dev, "sequence of response is invalid, seq = %u.\n", resp->seq_num);
 		return -EINVAL;
 	}
 
 	data_len = len - sizeof(*resp);
 	if (data_len < wait_completion->mbox_len) {
 		mutex_unlock(&info->tbl_lock);
-		dev_err(udev->dev, "len of data in resp is invalid, len = %u.\n", data_len);
+		dev_err(udev->dev, "length of data in response is invalid, len = %u.\n", data_len);
 		return -EINVAL;
 	}
 
