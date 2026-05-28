@@ -24,7 +24,7 @@
 
 int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
 	union ubcore_eid *dst_bonding_eid, enum ubcore_tp_type tp_type,
-	bool multi_path, struct ubcore_path_set *path_set);
+	bool iodie_level, struct ubcore_path_set *path_set);
 
 static int ubcore_eidtbl_add_entry(struct ubcore_device *dev,
 				   union ubcore_eid *eid, uint32_t *eid_idx,
@@ -362,7 +362,7 @@ static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 		return ret;
 	}
 	ret = ubcore_get_path_set(&arg.in.src_bonding_eid, &arg.in.dst_bonding_eid,
-		arg.in.tp_type, arg.in.multi_path, &arg.out);
+		arg.in.tp_type, arg.in.iodie_level, &arg.out);
 	if (ret != 0) {
 		ubcore_log_err("Failed to get_path_set, ret: %d.\n", ret);
 		return ret;

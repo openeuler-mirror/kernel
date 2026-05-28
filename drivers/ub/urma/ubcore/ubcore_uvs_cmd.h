@@ -59,7 +59,7 @@ struct ubcore_cmd_get_path_set {
 		union ubcore_eid src_bonding_eid;
 		union ubcore_eid dst_bonding_eid;
 		enum ubcore_tp_type tp_type;
-		bool multi_path;
+		bool iodie_level;
 	} in;
 	struct ubcore_path_set out;
 };
