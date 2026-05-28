@@ -37,6 +37,7 @@ ubcore_umem.o \
 ubmgr/ubmgr.o \
 ubmgr/ubmgr_ping.o \
 ubmgr/ubmgr_topo.o \
-ubcore_dmac.o
+ubcore_dmac.o \
+ubcore_main_ue_eid.o
 
 obj-$(CONFIG_UB_URMA) += ubcore.o
