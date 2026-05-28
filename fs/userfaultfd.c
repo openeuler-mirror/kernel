@@ -1798,8 +1798,8 @@ static int userfaultfd_copy(struct userfaultfd_ctx *ctx,
 	ret = -EINVAL;
 	if (uffdio_copy.mode & ~(UFFDIO_COPY_MODE_DONTWAKE |
 				 UFFDIO_COPY_MODE_WP |
-				 IS_ENABLED(CONFIG_USERSWAP) ?
-				 UFFDIO_COPY_MODE_DIRECT_MAP : 0))
+				 (IS_ENABLED(CONFIG_USERSWAP) ?
+				  UFFDIO_COPY_MODE_DIRECT_MAP : 0)))
 		goto out;
 	if (uffdio_copy.mode & UFFDIO_COPY_MODE_WP)
 		flags |= MFILL_ATOMIC_WP;
