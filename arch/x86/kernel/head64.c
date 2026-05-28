@@ -40,7 +40,7 @@
 #include <asm/desc.h>
 #include <asm/extable.h>
 #include <asm/trapnr.h>
-#include <asm/sev-es.h>
+#include <asm/sev.h>
 
 /*
  * Manage page tables very early on.
