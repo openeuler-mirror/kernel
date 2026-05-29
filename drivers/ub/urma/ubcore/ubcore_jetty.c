@@ -2088,7 +2088,7 @@ static int check_jetty_check_dev_cap(struct ubcore_device *dev,
 
 	if (cfg->jetty_grp) {
 		mutex_lock(&cfg->jetty_grp->lock);
-		if (cfg->jetty_grp->jetty_cnt >= cap->max_jetty_in_jetty_grp) {
+		if (cfg->jetty_grp->jetty_cnt > cap->max_jetty_in_jetty_grp) {
 			mutex_unlock(&cfg->jetty_grp->lock);
 			ubcore_log_err(
 				"jetty_grp jetty cnt:%u, max_jetty in grp:%u.\n",
@@ -3799,8 +3799,8 @@ int ubcore_set_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf, ui
 		jetty->ub_dev->ops->set_jetty_opt == NULL || buf == NULL)
 		return -EINVAL;
 
-	ret = ubcore_check_opt_valid(NULL, g_ubcore_jetty_opt_table,
-		g_ubcore_jetty_opt_map_count, opt, len);
+	ret = ubcore_check_opt_valid(&jetty->jetty_opt.jfs_opt.jfs_opt_mask.value,
+		g_ubcore_jetty_opt_table, g_ubcore_jetty_opt_map_count, opt, len);
 	if (ret != 0) {
 		ubcore_log_err("invalid opt.\n");
 		return ret;
@@ -3838,8 +3838,8 @@ int ubcore_get_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf, ui
 		jetty->ub_dev->ops->get_jetty_opt == NULL || buf == NULL)
 		return -EINVAL;
 
-	ret = ubcore_check_opt_valid(NULL, g_ubcore_jetty_opt_table,
-		g_ubcore_jetty_opt_map_count, opt, len);
+	ret = ubcore_check_opt_valid(&jetty->jetty_opt.jfs_opt.jfs_opt_mask.value,
+		g_ubcore_jetty_opt_table, g_ubcore_jetty_opt_map_count, opt, len);
 	if (ret != 0) {
 		ubcore_log_err("invalid opt.\n");
 		return ret;
