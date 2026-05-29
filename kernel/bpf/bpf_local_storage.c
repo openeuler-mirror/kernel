@@ -389,6 +389,9 @@ int bpf_selem_unlink(struct bpf_local_storage_elem *selem, bool reuse_now)
 	unsigned long flags;
 	int err = 0;
 
+	if (in_nmi())
+		return -EOPNOTSUPP;
+
 	if (unlikely(!selem_linked_to_storage_lockless(selem)))
 		/* selem has already been unlinked from sk */
 		return 0;
