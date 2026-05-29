@@ -77,19 +77,24 @@ void ub_bus_controller_remove(struct ub_bus_controller *ubc)
 unsigned long long hi_feature_get(void)
 {
 	struct ub_bus_controller *ubc;
-	u64 raw;
+	u64 raw, feature;
 
 	if (list_empty(&ubc_list))
-		return 0;
+		return U64_MAX;
 
 	ubc = list_first_entry(&ubc_list, struct ub_bus_controller, node);
 	if (!ubc->data)
-		return 0;
+		return U64_MAX;
 
 #define UBC_VENDOR_FEATURE_SETS_OFFSET 144
 #define UBC_VENDOR_FEATURE_SETS_SIZE 8
 	memcpy(&raw, (u8 *)ubc->data + UBC_VENDOR_FEATURE_SETS_OFFSET,
 	       UBC_VENDOR_FEATURE_SETS_SIZE);
+	feature = raw >> SZ_32;
+	if (!feature) {
+		dev_info(&ubc->dev, "Feature sets data is not initialized.\n");
+		return U64_MAX;
+	}
 
-	return (raw >> 32) & GENMASK_ULL(31, 0);
+	return feature;
 }
