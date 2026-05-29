@@ -69,3 +69,4 @@ obj-$(CONFIG_AMD_MEM_ENCRYPT)	+= mem_encrypt_identity.o
 obj-$(CONFIG_AMD_MEM_ENCRYPT)	+= mem_encrypt_boot.o
 
 obj-$(CONFIG_HYGON_CSV)		+= mem_encrypt_hygon.o
+obj-$(CONFIG_HYGON_CSV)		+= csv_guest_mem.o
