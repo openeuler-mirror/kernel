@@ -49,7 +49,7 @@ static int update_jetty_grp_ctx_valid(struct udma_dev *udma_dev,
 	ret = post_mailbox_update_ctx(udma_dev, ctx, sizeof(ctx), &mbox_attr);
 	if (ret)
 		dev_err(udma_dev->dev,
-			"post mailbox update jetty grp ctx failed, ret = %d.\n",
+			"post mailbox update jetty group context failed, ret = %d.\n",
 			ret);
 
 	return ret;
@@ -69,7 +69,7 @@ int add_jetty_to_grp(struct udma_dev *udma_dev, struct ubcore_jetty_group *jetty
 						      &udma_jetty_grp->next_jetty_id);
 
 	if (bit_idx >= UDMA_BITS_PER_INT || (udma_jetty_grp->valid & BIT(bit_idx))) {
-		dev_err(udma_dev->dev, "jg(%u.%u) vallid %u is full or user id(%u) error",
+		dev_err(udma_dev->dev, "jetty group(%u.%u) valid %u is full or user id(%u) error",
 			udma_jetty_grp->jetty_grp_id, udma_jetty_grp->start_jetty_id,
 			udma_jetty_grp->valid, cfg_id);
 		ret = -ENOMEM;
@@ -83,7 +83,7 @@ int add_jetty_to_grp(struct udma_dev *udma_dev, struct ubcore_jetty_group *jetty
 	ret = update_jetty_grp_ctx_valid(udma_dev, udma_jetty_grp);
 	if (ret) {
 		dev_err(udma_dev->dev,
-			"update jetty grp ctx valid failed, jetty_grp id is %u.\n",
+			"update jetty group context valid failed, jetty group id is %u.\n",
 			udma_jetty_grp->jetty_grp_id);
 
 		udma_jetty_grp->valid &= ~BIT(bit_idx);
@@ -103,7 +103,7 @@ void remove_jetty_from_grp(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 	bit_idx = jetty->sq.id - jetty_grp->start_jetty_id;
 	if (bit_idx >= UDMA_BITS_PER_INT) {
 		dev_err(udma_dev->dev,
-			"jetty_id(%u) is not in jetty grp, start_jetty_id(%u).\n",
+			"jetty id(%u) is not in jetty group, start jetty id(%u).\n",
 			jetty->sq.id, jetty_grp->start_jetty_id);
 		return;
 	}
@@ -115,7 +115,7 @@ void remove_jetty_from_grp(struct udma_dev *udma_dev, struct udma_jetty *jetty)
 	ret = update_jetty_grp_ctx_valid(udma_dev, jetty_grp);
 	if (ret)
 		dev_err(udma_dev->dev,
-			"update jetty grp ctx valid failed, jetty_grp id is %u.\n",
+			"update jetty group context valid failed, jetty group id is %u.\n",
 			jetty_grp->jetty_grp_id);
 
 	mutex_unlock(&jetty_grp->valid_lock);
@@ -126,14 +126,14 @@ int udma_check_jetty_grp_info(struct ubcore_tjetty_cfg *cfg, struct udma_dev *de
 	if (cfg->type == UBCORE_JETTY_GROUP) {
 		if (cfg->trans_mode != UBCORE_TP_RM) {
 			dev_err(dev->dev,
-				"import jg only support RM, transmode is %u.\n",
+				"import jetty group only support RM, transmode is %u.\n",
 				cfg->trans_mode);
 			return -EINVAL;
 		}
 
 		if (cfg->policy != UBCORE_JETTY_GRP_POLICY_HASH_HINT) {
 			dev_err(dev->dev,
-				"import jg only support hint, policy is %u.\n",
+				"import jetty group only support hint, policy is %u.\n",
 				cfg->policy);
 			return -EINVAL;
 		}
@@ -174,7 +174,7 @@ static int udma_alloc_jetty_grp_id(struct udma_dev *udma_dev,
 					&jetty_grp->start_jetty_id);
 	if (ret) {
 		dev_err(udma_dev->dev,
-			"alloc jetty id for grp failed, ret = %d.\n", ret);
+			"alloc jetty id for group failed, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -182,7 +182,7 @@ static int udma_alloc_jetty_grp_id(struct udma_dev *udma_dev,
 				      &jetty_grp->jetty_grp_id);
 	if (ret) {
 		dev_err(udma_dev->dev,
-			"alloc jetty grp id failed, ret = %d.\n", ret);
+			"alloc jetty group id failed, ret = %d.\n", ret);
 		udma_adv_id_free(&udma_dev->jetty_table.bitmap_table,
 				 jetty_grp->start_jetty_id, true);
 		return ret;

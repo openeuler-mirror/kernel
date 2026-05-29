@@ -45,7 +45,7 @@ static int udma_ae_tp_ctrlq_msg_deal(struct udma_dev *udma_dev,
 			return udma_ctrlq_notify_tp_port_change(udma_dev, queue_num);
 		return 0;
 	default:
-		dev_warn(udma_dev->dev, "udma get unsupported async event %u.\n",
+		dev_warn(udma_dev->dev, "udma get unsupported asynchronous event %u.\n",
 			 info->event_type);
 		return 0;
 	}
@@ -81,7 +81,7 @@ static int udma_ae_tp_level_error(struct notifier_block *nb,
 	udma_dev = get_udma_dev(adev);
 
 	dev_warn_ratelimited(udma_dev->dev,
-		"trigger tp level ae, event type is %u, sub type is %u, queue_num is %u.\n",
+		"trigger TP level AE, event type is %u, sub type is %u, queue_num is %u.\n",
 		info->event_type, info->sub_type, queue_num);
 
 	return udma_ae_tp_ctrlq_msg_deal(udma_dev, info, queue_num);
@@ -273,7 +273,7 @@ static int udma_ae_jetty_level_error(struct notifier_block *nb,
 		return udma_ae_jetty_group_check_err(adev, queue_num);
 	default:
 		dev_warn(&adev->dev,
-			 "udma get unsupported async event.\n");
+			 "udma get unsupported asynchronous event.\n");
 		return -EINVAL;
 	}
 }
@@ -414,7 +414,7 @@ static int udma_save_tpn_ue_idx_info(struct udma_dev *udma_dev, uint8_t ue_idx,
 			      GFP_KERNEL));
 	if (ret) {
 		dev_err(udma_dev->dev,
-			"store tpn ue idx table failed, ret is %d.\n", ret);
+			"store tpn UE index table failed, ret is %d.\n", ret);
 		goto err_store_ue_id;
 	}
 
@@ -452,7 +452,7 @@ int udma_save_tp_info(struct udma_dev *udma_dev, struct udma_ue_tp_info *info,
 		tpn = info->start_tpn + i;
 		ret = udma_save_tpn_ue_idx_info(udma_dev, ue_idx, tpn);
 		if (ret) {
-			dev_err(udma_dev->dev, "save tpn info fail, ret = %d, tpn = %u.\n",
+			dev_err(udma_dev->dev, "save TPN info fail, ret = %d, tpn = %u.\n",
 				ret, tpn);
 			goto err_save_ue_id;
 		}
@@ -517,7 +517,7 @@ static void udma_activate_dev_work(struct work_struct *work)
 
 	ret = udma_open_ue_rx(udev, true, false, false, 0);
 	if (ret)
-		dev_err(udev->dev, "udma open ue rx failed, ret = %d.\n", ret);
+		dev_err(udev->dev, "udma open UE rx failed, ret = %d.\n", ret);
 
 	kfree(flush_work);
 }
@@ -529,7 +529,8 @@ static int udma_crq_recv_msg_from_mue(void *dev, void *data, uint32_t len)
 	struct udma_entity_msg *recv_msg;
 
 	if (len < sizeof(*recv_msg)) {
-		dev_err(udma_dev->dev, "len of crq recv to ue is too small, len = %u.\n", len);
+		dev_err(udma_dev->dev,
+			"length of control queue recv to UE is too small, len = %u.\n", len);
 		return -EINVAL;
 	}
 	recv_msg = (struct udma_entity_msg *)data;
@@ -667,7 +668,7 @@ static int udma_ctrlq_send_eid_update_response(struct udma_dev *udma_dev, uint16
 
 	ret = ubase_ctrlq_send_msg(udma_dev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udma_dev->dev, "send eid update response failed, ret = %d, ret_val = %d.\n",
+		dev_err(udma_dev->dev, "send EID update response failed, ret = %d, ret_val = %d.\n",
 			ret, ret_val);
 	return ret;
 }
@@ -680,7 +681,7 @@ static int udma_ctrlq_eid_update(struct auxiliary_device *adev, uint8_t service_
 	int ret;
 
 	if (adev == NULL || data == NULL) {
-		pr_err("adev or data is NULL.\n");
+		pr_err("auxiliary device or data is NULL.\n");
 		return -EINVAL;
 	}
 
@@ -694,16 +695,16 @@ static int udma_ctrlq_eid_update(struct auxiliary_device *adev, uint8_t service_
 		return udma_ctrlq_send_eid_update_response(udma_dev, seq, 0);
 
 	if (len < sizeof(struct udma_ctrlq_eid_out_update)) {
-		dev_err(udma_dev->dev, "msg len(%u) is invalid.\n", len);
+		dev_err(udma_dev->dev, "message length(%u) is invalid.\n", len);
 		return udma_ctrlq_send_eid_update_response(udma_dev, seq, -EINVAL);
 	}
 	memcpy(&eid_entry, data, sizeof(eid_entry));
 	if (eid_entry.op_type != UDMA_CTRLQ_EID_ADD && eid_entry.op_type != UDMA_CTRLQ_EID_DEL) {
-		dev_err(udma_dev->dev, "update eid op type(%u) is invalid.\n", eid_entry.op_type);
+		dev_err(udma_dev->dev, "update EID op type(%u) is invalid.\n", eid_entry.op_type);
 		return udma_ctrlq_send_eid_update_response(udma_dev, seq, -EINVAL);
 	}
 	if (eid_entry.eid_info.eid_idx >= SEID_TABLE_SIZE) {
-		dev_err(udma_dev->dev, "update invalid eid_idx = %u.\n",
+		dev_err(udma_dev->dev, "update invalid EID index = %u.\n",
 			eid_entry.eid_info.eid_idx);
 		return udma_ctrlq_send_eid_update_response(udma_dev, seq, -EINVAL);
 	}
@@ -713,7 +714,7 @@ static int udma_ctrlq_eid_update(struct auxiliary_device *adev, uint8_t service_
 	else
 		ret = udma_del_one_eid(udma_dev, &(eid_entry.eid_info));
 	if (ret)
-		dev_err(udma_dev->dev, "update eid failed, op = %u, index = %u, ret = %d.\n",
+		dev_err(udma_dev->dev, "update EID failed, op = %u, index = %u, ret = %d.\n",
 			eid_entry.op_type, eid_entry.eid_info.eid_idx, ret);
 	mutex_unlock(&udma_dev->eid_mutex);
 
@@ -736,7 +737,7 @@ static int udma_ctrlq_check_tp_status(struct udma_dev *udev, void *data, uint16_
 	req_info_len = sizeof(struct udma_ctrlq_check_tp_active_req_info) +
 		       sizeof(struct udma_ctrlq_check_tp_active_req_data) * tp_num;
 	if (len < req_info_len) {
-		dev_err(udev->dev, "msg param num(%u) is invalid.\n", tp_num);
+		dev_err(udev->dev, "message parameter number(%u) is invalid.\n", tp_num);
 		return -EINVAL;
 	}
 	req_info = kzalloc(req_info_len, GFP_KERNEL);
@@ -779,7 +780,7 @@ static int udma_ctrlq_check_tp_active_param(struct udma_dev *udev, void *data, u
 	}
 
 	if (len < sizeof(struct udma_ctrlq_check_tp_active_req_info)) {
-		dev_err(udev->dev, "msg data len(%u) is invalid.\n", len);
+		dev_err(udev->dev, "message data length(%u) is invalid.\n", len);
 		return -EINVAL;
 	}
 
@@ -805,7 +806,7 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 	if (ret == 0) {
 		ret = udma_ctrlq_check_tp_status(udev, data, len, &rsp_info, &rsp_info_len);
 		if (ret)
-			dev_err(udev->dev, "check tp status failed, ret(%d).\n", ret);
+			dev_err(udev->dev, "check TP status failed, ret(%d).\n", ret);
 	}
 
 	msg.service_ver = UBASE_CTRLQ_SER_VER_01;
@@ -820,7 +821,7 @@ static int udma_ctrlq_check_tp_active(struct auxiliary_device *adev,
 
 	ret = ubase_ctrlq_send_msg(adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "send check tp active ctrlq msg failed, ret(%d).\n", ret);
+		dev_err(udev->dev, "send check TP active ctrlq msg failed, ret(%d).\n", ret);
 
 	kfree(rsp_info);
 
@@ -847,7 +848,7 @@ static int udma_ctrlq_send_eid_guid_response(struct udma_dev *udma_dev,
 
 	ret = ubase_ctrlq_send_msg(udma_dev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udma_dev->dev, "send eid-guid rsp failed, ret = %d.\n",
+		dev_err(udma_dev->dev, "send EID-guid rsp failed, ret = %d.\n",
 			ret);
 
 	return ret;
@@ -864,7 +865,7 @@ static int udma_ctrlq_notify_mue_eid_guid(struct auxiliary_device *adev,
 	int ret;
 
 	if (adev == NULL || data == NULL) {
-		pr_err("adev is null : %d, data is null : %d.\n",
+		pr_err("auxiliary device is null: %d, data is null: %d.\n",
 			adev == NULL, data == NULL);
 		return -EINVAL;
 	}
@@ -881,19 +882,19 @@ static int udma_ctrlq_notify_mue_eid_guid(struct auxiliary_device *adev,
 	if (udma_dev->status != UDMA_NORMAL)
 		return udma_ctrlq_send_eid_guid_response(udma_dev, seq, 0);
 	if (len < sizeof(struct udma_ctrlq_ue_eid_guid_out)) {
-		dev_err(udma_dev->dev, "eid-guid len(%u) is invalid.\n", len);
+		dev_err(udma_dev->dev, "EID-guid len(%u) is invalid.\n", len);
 		return udma_ctrlq_send_eid_guid_response(udma_dev, seq, -EINVAL);
 	}
 	memcpy(&eid_guid_entry, data, sizeof(eid_guid_entry));
 	if (eid_guid_entry.op_type != UDMA_CTRLQ_EID_GUID_ADD &&
 	    eid_guid_entry.op_type != UDMA_CTRLQ_EID_GUID_DEL) {
-		dev_err(udma_dev->dev, "eid-guid type(%u) is invalid.\n",
+		dev_err(udma_dev->dev, "EID-guid type(%u) is invalid.\n",
 			eid_guid_entry.op_type);
 		return udma_ctrlq_send_eid_guid_response(udma_dev, seq,
 							 -EINVAL);
 	}
 	if (eid_guid_entry.eid_info.eid_idx >= SEID_TABLE_SIZE) {
-		dev_err(udma_dev->dev, "invalid ue eid_idx = %u.\n",
+		dev_err(udma_dev->dev, "invalid UE EID index = %u.\n",
 			eid_guid_entry.eid_info.eid_idx);
 		return udma_ctrlq_send_eid_guid_response(udma_dev, seq,
 							 -EINVAL);
@@ -995,13 +996,13 @@ int udma_register_workqueue(struct udma_dev *udma_dev)
 
 	udma_dev->ae_workq = alloc_workqueue("udma_ae_workq", WQ_UNBOUND, 0);
 	if (!udma_dev->ae_workq) {
-		dev_err(udma_dev->dev, "failed to create ae workqueue.\n");
+		dev_err(udma_dev->dev, "failed to create asynchronous event workqueue.\n");
 		goto err_alloc_ae_workq;
 	}
 
 	udma_dev->ue_rx_workq = alloc_workqueue("udma_ue_rx_workq", WQ_UNBOUND, 0);
 	if (!udma_dev->ue_rx_workq) {
-		dev_err(udma_dev->dev, "failed to create open ue rx workqueue.\n");
+		dev_err(udma_dev->dev, "failed to create open UE rx workqueue.\n");
 		goto err_alloc_ue_rx_workq;
 	}
 
