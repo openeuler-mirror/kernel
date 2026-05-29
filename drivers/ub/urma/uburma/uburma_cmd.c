@@ -3896,7 +3896,8 @@ static int uburma_fill_eid_list(struct ubcore_device *dev,
 	max_eid_cnt = min(dev->eid_table.eid_cnt, eid_list->in.max_eid_cnt);
 	for (i = 0; i < max_eid_cnt; i++) {
 		e = &dev->eid_table.eid_entries[i];
-		if (!e->valid || !net_eq(e->net, current->nsproxy->net_ns))
+		if (!e->valid || (!ubcore_eid_ns_shared() &&
+				  !net_eq(e->net, current->nsproxy->net_ns)))
 			continue;
 
 		eid_list->out.eid_list[eid_cnt].eid_index = e->eid_index;

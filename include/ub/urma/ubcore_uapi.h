@@ -1204,4 +1204,7 @@ int ubcore_send_comm_msg(struct ubcore_device *dev, struct ubcore_comm_msg *msg,
 int ubcore_send_comm_msg_to(struct ubcore_device *dev,
 			    struct ubcore_comm_msg *msg, union ubcore_eid addr);
 
+bool ubcore_dev_ns_shared(void);
+bool ubcore_eid_ns_shared(void);
+
 #endif
