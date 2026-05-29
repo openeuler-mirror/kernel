@@ -388,15 +388,26 @@ int ubcore_set_eid_mode_ops(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
-int ubcore_set_ns_mode_ops(struct sk_buff *skb, struct genl_info *info)
+int ubcore_set_dev_ns_mode_ops(struct sk_buff *skb, struct genl_info *info)
 {
 	uint8_t ns_mode;
 
-	if (!info->attrs[UBCORE_ATTR_NS_MODE])
+	if (!info->attrs[UBCORE_ATTR_DEV_NS_MODE])
 		return -EINVAL;
 
-	ns_mode = nla_get_u8(info->attrs[UBCORE_ATTR_NS_MODE]);
-	return ubcore_set_ns_mode((ns_mode == 0 ? false : true));
+	ns_mode = nla_get_u8(info->attrs[UBCORE_ATTR_DEV_NS_MODE]);
+	return ubcore_set_dev_ns_mode(ns_mode != 0);
+}
+
+int ubcore_set_eid_ns_mode_ops(struct sk_buff *skb, struct genl_info *info)
+{
+	uint8_t ns_mode;
+
+	if (!info->attrs[UBCORE_ATTR_EID_NS_MODE])
+		return -EINVAL;
+
+	ns_mode = nla_get_u8(info->attrs[UBCORE_ATTR_EID_NS_MODE]);
+	return ubcore_set_eid_ns_mode(ns_mode != 0);
 }
 
 int ubcore_set_dev_ns_ops(struct sk_buff *skb, struct genl_info *info)
