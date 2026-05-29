@@ -1,17 +1,56 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2025 Mucse Corporation. */
 
 #include "rnpgbevf_mbx.h"
 #include "rnpgbevf.h"
 
+struct counter {
+	union {
+		struct {
+			unsigned short pf_req;
+			unsigned short pf_ack;
+		};
+		struct {
+			unsigned short cpu_req;
+			unsigned short cpu_ack;
+		};
+	};
+	unsigned short vf_req;
+	unsigned short vf_ack;
+} __packed;
+
 static s32 rnpgbevf_poll_for_msg(struct rnpgbevf_hw *hw, bool to_cm3);
 static s32 rnpgbevf_poll_for_ack(struct rnpgbevf_hw *hw, bool to_cm3);
+
+/* == VEC == */
+#define PF2VF_MBOX_VEC(mbx, vf) ((mbx)->pf2vf_mbox_vec_base + 4 * (vf))
+#define CPU2VF_MBOX_VEC(mbx, vf) ((mbx)->cpu2vf_mbox_vec_base + 4 * (vf))
+/* == PF <--> VF mailbox ==== */
+#define PF_VF_SHM(mbx, vf)                                                     \
+	(((mbx)->pf_vf_shm_base) +                                               \
+	 (64 * (vf)))
+#define PF2VF_COUNTER(mbx, vf) (PF_VF_SHM(mbx, vf) + 0)
+#define VF2PF_COUNTER(mbx, vf) (PF_VF_SHM(mbx, vf) + 4)
+#define PF_VF_SHM_DATA(mbx, vf) (PF_VF_SHM(mbx, vf) + 8)
+#define VF2PF_MBOX_CTRL(mbx, vf) (((mbx)->vf2pf_mbox_ctrl_base) + (4 * (vf)))
+/* === CPU <--> VF === */
+#define CPU_VF_SHM(mbx, vf) ((mbx)->cpu_vf_shm_base + (64 * (vf)))
+#define CPU2VF_COUNTER(mbx, vf) (CPU_VF_SHM(mbx, vf) + 0)
+#define VF2CPU_COUNTER(mbx, vf) (CPU_VF_SHM(mbx, vf) + 4)
+#define CPU_VF_SHM_DATA(mbx, vf) (CPU_VF_SHM(mbx, vf) + 8)
+#define VF2CPU_MBOX_CTRL(mbx, vf) ((mbx)->vf2cpu_mbox_ctrl_base + 64 * (vf))
+#define CPU_VF_MBOX_MASK_LO(mbx, vf) ((mbx)->cpu_vf_mbox_mask_lo_base + 64 * (vf))
+#define CPU_VF_MBOX_MASK_HI(mbx, vf) ((mbx)->cpu_vf_mbox_mask_hi_base + 64 * (vf))
+#define MBOX_CTRL_REQ BIT(0) /* WO */
+#define MBOX_CTRL_VF_HOLD_SHM BIT(2) /* VF:WR, PF:RO */
+#define MBOX_IRQ_EN 0
+#define MBOX_IRQ_DISABLE 1
+
 /**
  *  rnpgbevf_read_posted_mbx - Wait for message notification and receive message
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
- *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully received a message notification and
  *  copied it into the receive buffer.
@@ -30,7 +69,8 @@ static s32 rnpgbevf_read_posted_mbx(struct rnpgbevf_hw *hw, u32 *msg, u16 size,
 	/* if ack received read message, otherwise we timed out */
 	if (!ret_val)
 		ret_val = mbx->ops.read(hw, msg, size, to_cm3);
-
+	else
+		pr_debug("poll read timeout\n");
 out:
 	return ret_val;
 }
@@ -40,7 +80,6 @@ out:
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
- *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully copied message into the buffer and
  *  received an ack to that message within delay * timeout period
@@ -124,7 +163,6 @@ static inline void rnpgbevf_mbx_inc_vfack(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_check_for_msg_vf - checks to see if the PF has sent mail
  *  @hw: pointer to the HW structure
- *  @to_cm3: to cm3 or not
  *
  *  returns 0 if the PF has set the Status bit or else ERR_MBX
  **/
@@ -154,7 +192,6 @@ static s32 rnpgbevf_check_for_msg_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_poll_for_msg - Wait for message notification
  *  @hw: pointer to the HW structure
- *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully received a message notification
  **/
@@ -172,11 +209,10 @@ static s32 rnpgbevf_poll_for_msg(struct rnpgbevf_hw *hw, bool to_cm3)
 }
 
 /**
- *  rnpgbevf_poll_for_ack - Wait for message acknowledgment
+ *  rnpgbevf_poll_for_ack - Wait for message acknowledgement
  *  @hw: pointer to the HW structure
- *  @to_cm3: to cm3 or not
  *
- *  returns 0 if it successfully received a message acknowledgment
+ *  returns 0 if it successfully received a message acknowledgement
  **/
 static s32 rnpgbevf_poll_for_ack(struct rnpgbevf_hw *hw, bool to_cm3)
 {
@@ -200,7 +236,6 @@ static s32 rnpgbevf_poll_for_ack(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_check_for_rst_msg_vf - checks to see if the PF has ACK'd
  *  @hw: pointer to the HW structure
- *  @to_cm3: to cm3 or not
  *
  *  returns 0 if the PF has set the ACK bit or else ERR_MBX
  **/
@@ -220,10 +255,9 @@ static s32 rnpgbevf_check_for_rst_msg_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 		mbx->ops.read(hw, &data, 1, 0);
 		data &= ~RNPGBE_PF_VFNUM_MASK;
 		/* add other mailbox setup */
-		if (((data) & (~RNPGBE_VT_MSGTYPE_CTS)) ==
+		if (((data) & ~RNPGBE_VT_MSGTYPE_CTS) ==
 		    RNPGBE_PF_CONTROL_PRING_MSG) {
 		} else if ((data) == RNPGBE_PF_SET_FCS) {
-			// to-do
 			data = mbx_rd32(hw, DATA_REG + 4);
 			if (data) {
 				adapter->priv_flags |= RNPVF_PRIV_FLAG_FCS_ON;
@@ -233,7 +267,7 @@ static s32 rnpgbevf_check_for_rst_msg_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 					(~RNPVF_PRIV_FLAG_FCS_ON);
 				adapter->netdev->features &= (~NETIF_F_RXFCS);
 			}
-
+			/* if fcs on we must turn off rx-chksum */
 			if ((adapter->priv_flags & RNPVF_PRIV_FLAG_FCS_ON) &&
 			    (adapter->netdev->features & NETIF_F_RXCSUM)) {
 				adapter->netdev->features &= (~NETIF_F_RXCSUM);
@@ -247,6 +281,7 @@ static s32 rnpgbevf_check_for_rst_msg_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 					adapter->netdev->features &=
 						(~NETIF_F_RXCSUM);
 			}
+
 		} else if ((data) == RNPGBE_PF_SET_PAUSE) {
 			hw->fc.current_mode = mbx_rd32(hw, DATA_REG + 4);
 		} else if ((data) == RNPGBE_PF_SET_FT_PADDING) {
@@ -271,7 +306,6 @@ static s32 rnpgbevf_check_for_rst_msg_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 					adapter->netdev->features |=
 						NETIF_F_HW_VLAN_STAG_FILTER;
 				}
-
 			} else {
 				if (hw->feature_flags &
 				    RNPVF_NET_FEATURE_VLAN_OFFLOAD) {
@@ -288,53 +322,87 @@ static s32 rnpgbevf_check_for_rst_msg_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 			struct rnp_mbx_info *mbx = &hw->mbx;
 
 			data = mbx_rd32(hw, DATA_REG + 4);
+			/* pf set vlan for this vf */
 			adapter->flags |= RNPVF_FLAG_PF_UPDATE_VLAN;
 			if (data) {
 				adapter->flags |= RNPVF_FLAG_PF_SET_VLAN;
 				adapter->vf_vlan = data;
-				if (adapter->netdev->features & NETIF_F_HW_VLAN_CTAG_RX)
-					adapter->priv_flags |= RNPVF_FLAG_RX_CVLAN_OFFLOAD;
+				/* should close tx vlan offload */
+				/* should open rx vlan offload */
+				if (adapter->netdev->features &
+				    NETIF_F_HW_VLAN_CTAG_RX)
+					adapter->priv_flags |=
+						RNPVF_FLAG_RX_CVLAN_OFFLOAD;
 				else
-					adapter->priv_flags &= ~RNPVF_FLAG_RX_CVLAN_OFFLOAD;
+					adapter->priv_flags &=
+						~RNPVF_FLAG_RX_CVLAN_OFFLOAD;
 
-				adapter->netdev->features |= NETIF_F_HW_VLAN_CTAG_RX;
-				if (adapter->netdev->features & NETIF_F_HW_VLAN_CTAG_TX)
-					adapter->priv_flags |= RNPVF_FLAG_TX_CVLAN_OFFLOAD;
+				adapter->netdev->features |=
+					NETIF_F_HW_VLAN_CTAG_RX;
+				if (adapter->netdev->features &
+				    NETIF_F_HW_VLAN_CTAG_TX)
+					adapter->priv_flags |=
+						RNPVF_FLAG_TX_CVLAN_OFFLOAD;
 				else
-					adapter->priv_flags &= ~RNPVF_FLAG_TX_CVLAN_OFFLOAD;
+					adapter->priv_flags &=
+						~RNPVF_FLAG_TX_CVLAN_OFFLOAD;
 				adapter->netdev->features &=
 					~NETIF_F_HW_VLAN_CTAG_TX;
-				if (adapter->netdev->features & NETIF_F_HW_VLAN_STAG_RX)
-					adapter->priv_flags |= RNPVF_FLAG_RX_SVLAN_OFFLOAD;
+				if (adapter->netdev->features &
+				    NETIF_F_HW_VLAN_STAG_RX)
+					adapter->priv_flags |=
+						RNPVF_FLAG_RX_SVLAN_OFFLOAD;
 				else
-					adapter->priv_flags &= ~RNPVF_FLAG_RX_SVLAN_OFFLOAD;
+					adapter->priv_flags &=
+						~RNPVF_FLAG_RX_SVLAN_OFFLOAD;
 
-				adapter->netdev->features |= NETIF_F_HW_VLAN_STAG_RX;
-				if (adapter->netdev->features & NETIF_F_HW_VLAN_STAG_TX)
-					adapter->priv_flags |= RNPVF_FLAG_TX_SVLAN_OFFLOAD;
+				adapter->netdev->features |=
+					NETIF_F_HW_VLAN_STAG_RX;
+				if (adapter->netdev->features &
+				    NETIF_F_HW_VLAN_STAG_TX)
+					adapter->priv_flags |=
+						RNPVF_FLAG_TX_SVLAN_OFFLOAD;
 				else
-					adapter->priv_flags &= ~RNPVF_FLAG_TX_SVLAN_OFFLOAD;
+					adapter->priv_flags &=
+						~RNPVF_FLAG_TX_SVLAN_OFFLOAD;
 
-				adapter->netdev->features &= ~NETIF_F_HW_VLAN_STAG_TX;
+				adapter->netdev->features &=
+					~NETIF_F_HW_VLAN_STAG_TX;
+
 			} else {
 				adapter->flags &= (~RNPVF_FLAG_PF_SET_VLAN);
 				adapter->vf_vlan = 0;
-				if (adapter->priv_flags & RNPVF_FLAG_RX_CVLAN_OFFLOAD)
-					adapter->netdev->features |= NETIF_F_HW_VLAN_CTAG_RX;
+				if (adapter->priv_flags &
+				    RNPVF_FLAG_RX_CVLAN_OFFLOAD)
+					adapter->netdev->features |=
+						NETIF_F_HW_VLAN_CTAG_RX;
 				else
-					adapter->netdev->features &= ~NETIF_F_HW_VLAN_CTAG_RX;
-				if (adapter->priv_flags & RNPVF_FLAG_TX_CVLAN_OFFLOAD)
-					adapter->netdev->features |= NETIF_F_HW_VLAN_CTAG_TX;
+					adapter->netdev->features &=
+						~NETIF_F_HW_VLAN_CTAG_RX;
+
+				if (adapter->priv_flags &
+				    RNPVF_FLAG_TX_CVLAN_OFFLOAD)
+					adapter->netdev->features |=
+						NETIF_F_HW_VLAN_CTAG_TX;
 				else
-					adapter->netdev->features &= ~NETIF_F_HW_VLAN_CTAG_TX;
-				if (adapter->priv_flags & RNPVF_FLAG_RX_SVLAN_OFFLOAD)
-					adapter->netdev->features |= NETIF_F_HW_VLAN_STAG_RX;
+					adapter->netdev->features &=
+						~NETIF_F_HW_VLAN_CTAG_TX;
+
+				if (adapter->priv_flags &
+				    RNPVF_FLAG_RX_SVLAN_OFFLOAD)
+					adapter->netdev->features |=
+						NETIF_F_HW_VLAN_STAG_RX;
 				else
-					adapter->netdev->features &= ~NETIF_F_HW_VLAN_STAG_RX;
-				if (adapter->priv_flags & RNPVF_FLAG_TX_SVLAN_OFFLOAD)
-					adapter->netdev->features |= NETIF_F_HW_VLAN_STAG_TX;
+					adapter->netdev->features &=
+						~NETIF_F_HW_VLAN_STAG_RX;
+
+				if (adapter->priv_flags &
+				    RNPVF_FLAG_TX_SVLAN_OFFLOAD)
+					adapter->netdev->features |=
+						NETIF_F_HW_VLAN_STAG_TX;
 				else
-					adapter->netdev->features &= ~NETIF_F_HW_VLAN_STAG_TX;
+					adapter->netdev->features &=
+						~NETIF_F_HW_VLAN_STAG_TX;
 			}
 			hw->ops.set_veb_vlan(hw, data, VFNUM(mbx, hw->vfnum));
 		} else if ((data) == RNPGBE_PF_SET_LINK) {
@@ -363,7 +431,6 @@ static s32 rnpgbevf_check_for_rst_msg_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_check_for_ack_vf - checks to see if the PF has ACK'd
  *  @hw: pointer to the HW structure
- *  @to_cm3: to cm3 or not
  *
  *  returns 0 if the PF has set the ACK bit or else ERR_MBX
  **/
@@ -393,15 +460,15 @@ static s32 rnpgbevf_check_for_ack_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 /**
  *  rnpgbevf_obtain_mbx_lock_vf - obtain mailbox lock
  *  @hw: pointer to the HW structure
- *  @to_cm3: to cm3 or not
  *
  *  return 0 if we obtained the mailbox lock
  **/
 static s32 rnpgbevf_obtain_mbx_lock_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 {
-	int try_cnt = 2 * 1000; // 1s
+	int try_cnt = 2 * 1000;
 	struct rnp_mbx_info *mbx = &hw->mbx;
 	u8 vfnum = VFNUM(mbx, hw->vfnum);
+	struct rnpgbevf_adapter *adapter = hw->back;
 	u32 CTRL_REG = (to_cm3) ? VF2CPU_MBOX_CTRL(mbx, vfnum) :
 				  VF2PF_MBOX_CTRL(mbx, vfnum);
 
@@ -416,6 +483,7 @@ static s32 rnpgbevf_obtain_mbx_lock_vf(struct rnpgbevf_hw *hw, bool to_cm3)
 		udelay(500);
 	}
 
+	pr_debug("[rnpvf] %s: failed to get mbx-lock\n", adapter->name);
 	return RNPGBE_ERR_MBX;
 }
 
@@ -424,7 +492,6 @@ static s32 rnpgbevf_obtain_mbx_lock_vf(struct rnpgbevf_hw *hw, bool to_cm3)
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
- *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully copied message into the buffer
  **/
@@ -442,8 +509,11 @@ static s32 rnpgbevf_write_mbx_vf(struct rnpgbevf_hw *hw, u32 *msg, u16 size,
 
 	/* lock the mailbox to prevent pf/vf race condition */
 	ret_val = rnpgbevf_obtain_mbx_lock_vf(hw, to_cm3);
-	if (ret_val)
+	if (ret_val) {
+		pr_debug("%s: get mbx wlock failed. ret:%d. req:0x%08x-0x%08x\n",
+			 __func__, ret_val, msg[0], msg[1]);
 		goto out_no_write;
+	}
 
 	/* add mailbox_id [27:21] */
 #define VF_NUM_OFFSET (21)
@@ -477,7 +547,6 @@ out_no_write:
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
- *  @to_cm3: to cm3 or not
  *
  *  returns 0 if it successfully read message from buffer
  **/
@@ -531,9 +600,11 @@ static void rnpgbevf_reset_mbx(struct rnpgbevf_hw *hw)
 	struct rnp_mbx_info *mbx = &hw->mbx;
 	u8 vfnum = VFNUM(mbx, hw->vfnum);
 
+	/* release vfu */
 	mbx_wr32(hw, VF2CPU_MBOX_CTRL(mbx, vfnum), 0);
 	mbx_wr32(hw, VF2PF_MBOX_CTRL(mbx, vfnum), 0);
 
+	/* fetch mbx counter values */
 	v = mbx_rd32(hw, PF2VF_COUNTER(mbx, vfnum));
 	hw->mbx.pf_req = v & 0xffff;
 	hw->mbx.pf_ack = (v >> 16) & 0xffff;
@@ -549,6 +620,7 @@ static s32 rnpgbevf_mbx_configure_vf(struct rnpgbevf_hw *hw, int nr_vec,
 	struct rnp_mbx_info *mbx = &hw->mbx;
 	int mbx_vec_reg, vfnum = VFNUM(mbx, hw->vfnum);
 
+	/* PF --> VF */
 	mbx_vec_reg = PF2VF_MBOX_VEC(mbx, vfnum);
 	mbx_wr32(hw, mbx_vec_reg, nr_vec);
 
@@ -570,7 +642,6 @@ static s32 rnpgbevf_init_mbx_params_vf(struct rnpgbevf_hw *hw)
 	 */
 	mbx->timeout = 0;
 	mbx->udelay = RNPGBE_VF_MBX_INIT_DELAY;
-
 	mbx->stats.msgs_tx = 0;
 	mbx->stats.msgs_rx = 0;
 	mbx->stats.reqs = 0;
@@ -578,7 +649,6 @@ static s32 rnpgbevf_init_mbx_params_vf(struct rnpgbevf_hw *hw)
 	mbx->stats.rsts = 0;
 	mbx->size = RNPGBE_VFMAILBOX_SIZE;
 	rnpgbevf_reset_mbx(hw);
-
 	return 0;
 }
 
