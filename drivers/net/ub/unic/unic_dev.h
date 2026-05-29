@@ -55,6 +55,7 @@ enum unic_channel_state {
 	UNIC_RX_CHANGED,
 	UNIC_TX_INITED,
 	UNIC_RX_INITED,
+	UNIC_NAPI_ENABLED,
 };
 
 #define UNIC_CQE_PERIOD_0	0
