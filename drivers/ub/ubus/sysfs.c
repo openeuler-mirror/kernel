@@ -468,15 +468,10 @@ static const struct {
 
 static ssize_t ub_feature_show(const struct bus_type *bus, char *buf)
 {
-	const struct ub_manage_subsystem_ops *manage_subsystem_ops;
 	unsigned long long f;
 	int n = 0, i, ret;
 
-	manage_subsystem_ops = get_ub_manage_subsystem_ops();
-	if (!manage_subsystem_ops || !manage_subsystem_ops->feature_get)
-		return sysfs_emit(buf, "%#llx\n", U64_MAX);
-
-	f = manage_subsystem_ops->feature_get();
+	f = ub_feature_get();
 	ret = sysfs_emit_at(buf, n, "%#.16llx\n", f);
 	if (ret < 0)
 		return ret;
