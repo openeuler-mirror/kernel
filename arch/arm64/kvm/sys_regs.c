@@ -2656,14 +2656,17 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	PTRAUTH_KEY(APDB),
 	PTRAUTH_KEY(APGA),
 
-	{ SYS_DESC(SYS_SPSR_EL1), access_spsr},
-	{ SYS_DESC(SYS_ELR_EL1), access_elr},
+	{ SYS_DESC(SYS_SPSR_EL1), access_spsr,
+	  .pvm_access = access_spsr },
+	{ SYS_DESC(SYS_ELR_EL1), access_elr,
+	  .pvm_access = access_elr },
 
 	{ SYS_DESC(SYS_ALLINT), undef_access },
 
 	{ SYS_DESC(SYS_AFSR0_EL1), access_vm_reg, reset_unknown, AFSR0_EL1 },
 	{ SYS_DESC(SYS_AFSR1_EL1), access_vm_reg, reset_unknown, AFSR1_EL1 },
-	{ SYS_DESC(SYS_ESR_EL1), access_vm_reg, reset_unknown, ESR_EL1 },
+	{ SYS_DESC(SYS_ESR_EL1), access_vm_reg, reset_unknown, ESR_EL1,
+	  .pvm_access = access_rw },
 
 	{ SYS_DESC(SYS_ERRIDR_EL1), trap_raz_wi },
 	{ SYS_DESC(SYS_ERRSELR_EL1), trap_raz_wi },
@@ -2677,7 +2680,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	MTE_REG(TFSR_EL1),
 	MTE_REG(TFSRE0_EL1),
 
-	{ SYS_DESC(SYS_FAR_EL1), access_vm_reg, reset_unknown, FAR_EL1 },
+	{ SYS_DESC(SYS_FAR_EL1), access_vm_reg, reset_unknown, FAR_EL1,
+	  .pvm_access = access_rw },
 	{ SYS_DESC(SYS_PAR_EL1), NULL, reset_unknown, PAR_EL1 },
 
 	{ SYS_DESC(SYS_PMSCR_EL1), undef_access },
@@ -2716,7 +2720,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 
 	{ SYS_DESC(SYS_MPAM1_EL1), workaround_bad_mpam_abi },
 	{ SYS_DESC(SYS_MPAM0_EL1), workaround_bad_mpam_abi },
-	{ SYS_DESC(SYS_VBAR_EL1), access_rw, reset_val, VBAR_EL1, 0 },
+	{ SYS_DESC(SYS_VBAR_EL1), access_rw, reset_val, VBAR_EL1, 0,
+	  .pvm_access = access_rw },
 	{ SYS_DESC(SYS_DISR_EL1), NULL, reset_val, DISR_EL1, 0 },
 
 	{ SYS_DESC(SYS_ICC_IAR0_EL1), write_to_read_only },
