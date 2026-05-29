@@ -29,7 +29,7 @@ struct ubrt_resv_mem_node {
 	struct ub_table_header header;
 	u16 count;
 	u8 reserved[6];
-	u8 ranges[]; __counted_by(count)
+	u8 ranges[] __counted_by(count);
 };
 
 static void parse_ummu_reserved_memory(void *info_node, struct list_head *list)
