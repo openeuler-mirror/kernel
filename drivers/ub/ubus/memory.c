@@ -52,15 +52,22 @@ void ub_mem_decoder_uninit(struct ub_entity *uent)
 		dev_warn(&ubc->dev, "ubc ops mem_decoder_remove is null.\n");
 }
 
+DEFINE_MUTEX(mem_ras_mutex);
+EXPORT_SYMBOL_GPL(mem_ras_mutex);
+
 void ub_mem_ras_handler_register(ubmem_ras_handler rh)
 {
+	mutex_lock(&mem_ras_mutex);
 	handler = rh;
+	mutex_unlock(&mem_ras_mutex);
 }
 EXPORT_SYMBOL_GPL(ub_mem_ras_handler_register);
 
 void ub_mem_ras_handler_unregister(void)
 {
+	mutex_lock(&mem_ras_mutex);
 	handler = NULL;
+	mutex_unlock(&mem_ras_mutex);
 }
 EXPORT_SYMBOL_GPL(ub_mem_ras_handler_unregister);
 
