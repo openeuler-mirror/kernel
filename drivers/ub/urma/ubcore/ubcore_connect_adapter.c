@@ -184,7 +184,7 @@ create_session_for_create_connection(struct ubcore_device *dev)
 static int send_create_req(struct ubcore_device *dev, uint32_t session_id,
 			   struct msg_create_conn_req *req)
 {
-	struct ubcore_net_msg msg = { 0 };
+	struct ubcore_comm_msg msg = { 0 };
 	int ret;
 
 	msg.type = UBCORE_NET_CREATE_REQ;
@@ -192,7 +192,7 @@ static int send_create_req(struct ubcore_device *dev, uint32_t session_id,
 	msg.session_id = session_id;
 	msg.data = req;
 
-	ret = ubcore_net_send_to(dev, &msg, req->get_tp_cfg.peer_eid);
+	ret = ubcore_send_comm_msg_to(dev, &msg, req->get_tp_cfg.peer_eid);
 	if (ret != 0) {
 		ubcore_log_err("Failed to send msg, dev_name is %s, peer_eid is "EID_FMT"\n",
 			dev->dev_name, EID_ARGS(req->get_tp_cfg.peer_eid));
@@ -205,7 +205,7 @@ static int send_create_resp(struct ubcore_device *dev, void *conn,
 			    uint32_t session_id,
 			    struct msg_create_conn_resp *resp)
 {
-	struct ubcore_net_msg msg = { 0 };
+	struct ubcore_comm_msg msg = { 0 };
 	int ret;
 
 	msg.type = UBCORE_NET_CREATE_RESP;
@@ -213,7 +213,7 @@ static int send_create_resp(struct ubcore_device *dev, void *conn,
 	msg.session_id = session_id;
 	msg.data = resp;
 
-	ret = ubcore_net_send(dev, &msg, conn);
+	ret = ubcore_send_comm_msg(dev, &msg, conn);
 	if (ret != 0) {
 		ubcore_log_err("Failed to send msg");
 		return ret;
@@ -519,7 +519,7 @@ static void ubcore_tpid_put(struct ubcore_tpid_ctx *ctx)
 
 void ubcore_reuse_target_rtp_tpid(struct ubcore_device *dev,
 	struct ubcore_tpid_ctx *ctx, struct ubcore_get_tp_cfg *cfg,
-	struct ubcore_net_msg *msg, void *conn)
+	struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_create_conn_resp resp = { 0 };
 	int ret;
@@ -704,7 +704,7 @@ err_out:
 	return -EINVAL;
 }
 
-static void handle_create_req(struct ubcore_device *dev, struct ubcore_net_msg *msg, void *conn)
+static void handle_create_req(struct ubcore_device *dev, struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_create_conn_req *req = (struct msg_create_conn_req *)msg->data;
 	struct ubcore_get_tp_cfg get_tp_cfg = req->get_tp_cfg;
@@ -775,7 +775,7 @@ send_resp:
 		ubcore_log_err("Failed to send create resp message.\n");
 }
 
-static void handle_create_resp(struct ubcore_device *dev, struct ubcore_net_msg *msg, void *conn)
+static void handle_create_resp(struct ubcore_device *dev, struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_create_conn_resp *resp = (struct msg_create_conn_resp *)msg->data;
 	struct ubcore_session *session;
@@ -802,7 +802,7 @@ static int send_destroy_req(struct ubcore_device *dev, union ubcore_eid peer_add
 	union ubcore_tp_handle peer_tp_handle, uint32_t s_jetty_id, uint32_t d_jetty_id,
 	union ubcore_eid local_addr, enum ubcore_transport_mode trans_mode)
 {
-	struct ubcore_net_msg msg = { 0 };
+	struct ubcore_comm_msg msg = { 0 };
 	struct msg_destroy_conn_req req = { 0 };
 	int ret;
 
@@ -818,7 +818,7 @@ static int send_destroy_req(struct ubcore_device *dev, union ubcore_eid peer_add
 	msg.session_id = 0;
 	msg.data = &req;
 
-	ret = ubcore_net_send_to(dev, &msg, peer_addr);
+	ret = ubcore_send_comm_msg_to(dev, &msg, peer_addr);
 	if (ret != 0) {
 		ubcore_log_err("Failed to send msg");
 		return ret;
@@ -886,7 +886,7 @@ static int send_destroy_stp_req(struct ubcore_device *dev,
 				struct ubcore_rm_tp_key *key,
 				union ubcore_tp_handle tp_handle)
 {
-	struct ubcore_net_msg msg = { 0 };
+	struct ubcore_comm_msg msg = { 0 };
 	struct msg_destroy_conn_req req = { 0 };
 	int ret;
 
@@ -902,7 +902,7 @@ static int send_destroy_stp_req(struct ubcore_device *dev,
 	msg.session_id = 0;
 	msg.data = &req;
 
-	ret = ubcore_net_send_to(dev, &msg, key->peer_eid);
+	ret = ubcore_send_comm_msg_to(dev, &msg, key->peer_eid);
 	if (ret != 0) {
 		ubcore_log_err("Failed to send msg");
 		return ret;
@@ -1043,7 +1043,7 @@ int ubcore_adapter_layer_rm_stp_disconnect(struct ubcore_tjetty *tjetty)
 }
 
 static void handle_destroy_req(struct ubcore_device *dev,
-			       struct ubcore_net_msg *msg, void *conn)
+			       struct ubcore_comm_msg *msg, void *conn)
 {
 	struct ubcore_hash_table *rm_ht = &dev->ht[UBCORE_HT_RM_TP_ID];
 	struct msg_destroy_conn_req *req =

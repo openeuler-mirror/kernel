@@ -65,9 +65,9 @@ int ubcore_call_cm_eid_ops(struct ubcore_device *dev,
 			   enum ubcore_mgmt_event_type event_type);
 
 int ubcore_ubcm_send(struct ubcore_device *dev, void *conn,
-		     struct ubcore_net_msg *msg);
+		     struct ubcore_comm_msg *msg);
 int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
-			struct ubcore_net_msg *msg);
+			struct ubcore_comm_msg *msg);
 
 void ubcore_cm_register_endpoint(struct ubcore_comm_endpoint *ep,
 				 struct ubcore_device *dev,
