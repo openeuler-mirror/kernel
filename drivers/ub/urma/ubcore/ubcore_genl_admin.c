@@ -332,8 +332,10 @@ int ubcore_get_topo_info(struct sk_buff *skb, struct genl_info *info)
 	args_addr = nla_get_u64(info->attrs[UBCORE_HDR_ARGS_ADDR]);
 	ret = ubcore_copy_from_user(arg, (void __user *)(uintptr_t)args_addr,
 				    sizeof(struct ubcore_cmd_topo_info));
-	if (ret != 0)
+	if (ret != 0) {
+		kfree(arg);
 		return -EPERM;
+	}
 	topo_map = ubcore_get_global_topo_map();
 	if (topo_map == NULL) {
 		ubcore_log_err("topo map is empty!\n");
