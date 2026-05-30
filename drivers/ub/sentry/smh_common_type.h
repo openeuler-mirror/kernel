@@ -30,7 +30,6 @@
 #define COMM_PARM_NOT_SET (-2)
 #define ENABLE_VALUE_MAX_LEN 4 // 'off' + '\0'
 
-#define URMA_REBUILD_THRESHOLD 3
 #define URMA_ACK_RETRY_NUM     10
 
 #define PROC_FILE_PERMISSION 0600
