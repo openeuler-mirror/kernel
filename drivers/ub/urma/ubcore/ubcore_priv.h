@@ -97,6 +97,7 @@ struct ubcore_global_file {
 };
 
 extern uint32_t ubcore_max_retry_cnt;
+extern uint32_t ubmad_retry_interval_ms;
 
 static inline struct ubcore_ucontext *
 ubcore_get_uctx(struct ubcore_udata *udata)

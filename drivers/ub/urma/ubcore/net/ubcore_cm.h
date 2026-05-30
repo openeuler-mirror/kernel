@@ -25,6 +25,9 @@ enum ubcore_cm_msg_type {
 	UBCORE_CM_CONN_REQ = 2, /* Consistent with UBMAD_UBC_CONN_REQ */
 	UBCORE_CM_CONN_RESP = 3, /* Consistent with UBMAD_UBC_CONN_RESP */
 	UBCORE_CM_SINGLE_REQ = 4, /* Consistent with UBMAD_UBC_SINGLE_REQ */
+	UBCORE_CM_GEN_DATA = 0x10, /* Consistent with UBMAD_GEN_DATA */
+	UBCORE_CM_GEN_ACK, /* Consistent with UBMAD_GEN_ACK */
+	UBCORE_CM_GEN_RESP, /* Consistent with UBMAD_GEN_RESP */
 	UBCORE_CM_MSG_NUM
 };
 

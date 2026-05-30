@@ -23,8 +23,9 @@ enum ubmad_msg_type {
 	UBMAD_UBC_CONN_REQ = UBCORE_CM_CONN_REQ,
 	UBMAD_UBC_CONN_RESP = UBCORE_CM_CONN_RESP,
 	UBMAD_UBC_SINGLE_REQ = UBCORE_CM_SINGLE_REQ,
-	UBMAD_AUTHN_DATA = 0x10,
-	UBMAD_AUTHN_ACK,
+	UBMAD_GEN_DATA = 0x10,
+	UBMAD_GEN_ACK,
+	UBMAD_GEN_RESP,
 	// cm send close request to all tjetty before remove kmod, one-way notification
 	UBMAD_CLOSE_REQ = 0x20,
 };

@@ -187,6 +187,24 @@ static int ubcore_ubcm_service_connect_send_to(struct ubcore_comm_msg *msg,
 	return 0;
 }
 
+static int ubcore_ubcm_service_gen_send_to(struct ubcore_comm_msg *msg,
+				struct ubcore_cm_send_buf *send_buf)
+{
+	if (!msg || !send_buf)
+		return -EINVAL;
+	if (msg->type == UBCORE_NET_BONDING_SEG_INFO_REQ ||
+		msg->type == UBCORE_NET_BONDING_JETTY_INFO_REQ)
+		send_buf->msg_type = UBCORE_CM_GEN_DATA;
+	else if (msg->type == UBCORE_NET_BONDING_SEG_INFO_RESP ||
+		msg->type == UBCORE_NET_BONDING_JETTY_INFO_RESP)
+		send_buf->msg_type = UBCORE_CM_GEN_RESP;
+	else {
+		ubcore_log_err("Connect service, Unrecognized msg type %u\n", msg->type);
+		return -EINVAL;
+	}
+	return 0;
+}
+
 int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
 			struct ubcore_comm_msg *msg)
 {
@@ -215,6 +233,12 @@ int ubcore_ubcm_send_to(struct ubcore_device *dev, union ubcore_eid addr,
 	send_buf->dst_eid = addr;
 	if (msg->protocol_id == 0) {
 		ret = ubcore_ubcm_service_connect_send_to(msg, send_buf);
+		if (ret != 0) {
+			kfree(send_buf);
+			return ret;
+		}
+	} else if (msg->protocol_id == 1) {
+		ret = ubcore_ubcm_service_gen_send_to(msg, send_buf);
 		if (ret != 0) {
 			kfree(send_buf);
 			return ret;
