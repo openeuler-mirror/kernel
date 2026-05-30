@@ -223,6 +223,7 @@ static int ub_enum_topo_scan_init(void)
 static void ub_enum_topo_scan_uninit(void)
 {
 	kfree(topo_scan.buf);
+	topo_scan.buf = NULL;
 }
 
 static inline void ub_enum_refresh_and_init_buffer_header(struct ub_entity *uent,
@@ -676,13 +677,13 @@ static int ub_enum_cluster_query(struct ub_entity *uent, void *buf)
 
 	ret = ub_query_ent_na(uent, buf);
 	if (ret) {
-		dev_err(&uent->ubc->dev, "query cluster ubc dev cna err\n");
+		dev_err(&uent->ubc->dev, "query cluster ubc dev cna error\n");
 		return ret;
 	}
 
 	ret = ub_query_port_na(uent, buf);
 	if (ret)
-		dev_err(&uent->ubc->dev, "query cluster ubc port cna err\n");
+		dev_err(&uent->ubc->dev, "query cluster ubc port cna error\n");
 
 	return ret;
 }
@@ -861,16 +862,16 @@ static int bfs_route_test_and_put(struct ub_port *p, struct ub_entity *uent)
 	path.uent = uent;
 
 	if (!kfifo_put(&bfs_route.kfifo, path)) {
-		pr_info("multiple paths join the kfifo, kfifo put failed\n");
+		pr_warn("multiple paths join the kfifo, kfifo put failed\n");
 		return 0;
 	}
 
 	return 1;
 }
 
-static int cna2index(int cna)
+static u32 cna2index(int cna)
 {
-	int i;
+	u32 i;
 
 	for (i = 0; i < bfs_route.cna_used; ++i) {
 		if (bfs_route.cna_map[i] == cna)
@@ -883,7 +884,7 @@ static int cna2index(int cna)
 static void ub_enum_bfs_layer_update(struct ub_entity *uent, int *curr, int *next,
 				     int *layer)
 {
-	int i;
+	u32 i;
 
 	*curr = *next;
 	*next = 0;
