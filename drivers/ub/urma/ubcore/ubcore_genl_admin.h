@@ -33,6 +33,16 @@ int ubcore_delete_eid_start(struct netlink_callback *cb);
 int ubcore_delete_eid_done(struct netlink_callback *cb);
 int ubcore_delete_eid_dump(struct sk_buff *skb, struct netlink_callback *cb);
 int ubcore_set_sl(struct sk_buff *skb, struct genl_info *info);
+int ubcore_admin_insert_main_ue_eid(struct sk_buff *skb,
+				    struct genl_info *info);
+int ubcore_admin_delete_main_ue_eid(struct sk_buff *skb,
+				    struct genl_info *info);
+int ubcore_admin_lookup_main_ue_eid(struct sk_buff *skb,
+				    struct genl_info *info);
+int ubcore_admin_flush_main_ue_eid(struct sk_buff *skb,
+				   struct genl_info *info);
+int ubcore_admin_insert_main_ue_eid_batch(struct sk_buff *skb,
+					  struct genl_info *info);
 
 extern struct genl_family ubcore_genl_family;
 
