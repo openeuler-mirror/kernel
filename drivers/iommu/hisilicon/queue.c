@@ -1012,7 +1012,7 @@ static int check_pa_continuity_nop_exec(struct ummu_queue *q, u32 prod)
 {
 	u64 cmd;
 
-	cmd = (u64)le64_to_cpu(Q_ENT(q, prod));
+	cmd = le64_to_cpu(*(Q_ENT(q, prod)));
 	if (FIELD_GET(CMD_0_OP, cmd) == CMD_NULL_OP &&
 	    FIELD_GET(CMD_NULL_OP_SUB_OP, cmd) ==
 		      SUB_CMD_NULL_CHECK_PA_CONTINUITY) {
