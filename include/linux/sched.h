@@ -588,7 +588,8 @@ struct sched_entity {
 	struct list_head		group_node;
 	unsigned int on_rq;
 	KABI_FILL_HOLE(unsigned char rel_deadline)
-					/* 3 holes left here */
+	unsigned char			custom_slice;
+					/* 2 holes left here */
 
 	u64				exec_start;
 	u64				sum_exec_runtime;
