@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/debugfs.h>
 #include <linux/module.h>
@@ -7,20 +7,19 @@
 #include "rnpgbe.h"
 
 static struct dentry *rnpgbe_dbg_root;
-
 static char rnpgbe_dbg_reg_ops_buf[256] = "";
 
 /**
  * rnpgbe_dbg_reg_ops_read - read for reg_ops datum
- * @filp: the opened file
+ * @file: the opened file
  * @buffer: where to write the data for the user to read
  * @count: the size of the user's buffer
  * @ppos: file position offset
  **/
-static ssize_t rnpgbe_dbg_reg_ops_read(struct file *filp, char __user *buffer,
+static ssize_t rnpgbe_dbg_reg_ops_read(struct file *file, char __user *buffer,
 				       size_t count, loff_t *ppos)
 {
-	struct rnpgbe_adapter *adapter = filp->private_data;
+	struct rnpgbe_adapter *adapter = file->private_data;
 	char *buf;
 	int len;
 
@@ -46,16 +45,16 @@ static ssize_t rnpgbe_dbg_reg_ops_read(struct file *filp, char __user *buffer,
 
 /**
  * rnpgbe_dbg_reg_ops_write - write into reg_ops datum
- * @filp: the opened file
+ * @file: the opened file
  * @buffer: where to find the user's data
  * @count: the length of the user's data
  * @ppos: file position offset
  **/
-static ssize_t rnpgbe_dbg_reg_ops_write(struct file *filp,
+static ssize_t rnpgbe_dbg_reg_ops_write(struct file *file,
 					const char __user *buffer, size_t count,
 					loff_t *ppos)
 {
-	struct rnpgbe_adapter *adapter = filp->private_data;
+	struct rnpgbe_adapter *adapter = file->private_data;
 	struct rnpgbe_hw *hw = &adapter->hw;
 	int len;
 
@@ -130,16 +129,16 @@ static char rnpgbe_dbg_netdev_ops_buf[256] = "";
 
 /**
  * rnpgbe_dbg_netdev_ops_read - read for netdev_ops datum
- * @filp: the opened file
+ * @file: the opened file
  * @buffer: where to write the data for the user to read
  * @count: the size of the user's buffer
  * @ppos: file position offset
  **/
-static ssize_t rnpgbe_dbg_netdev_ops_read(struct file *filp,
+static ssize_t rnpgbe_dbg_netdev_ops_read(struct file *file,
 					  char __user *buffer, size_t count,
 					  loff_t *ppos)
 {
-	struct rnpgbe_adapter *adapter = filp->private_data;
+	struct rnpgbe_adapter *adapter = file->private_data;
 	char *buf;
 	int len;
 
@@ -165,16 +164,16 @@ static ssize_t rnpgbe_dbg_netdev_ops_read(struct file *filp,
 
 /**
  * rnpgbe_dbg_netdev_ops_write - write into netdev_ops datum
- * @filp: the opened file
+ * @file: the opened file
  * @buffer: where to find the user's data
  * @count: the length of the user's data
  * @ppos: file position offset
  **/
-static ssize_t rnpgbe_dbg_netdev_ops_write(struct file *filp,
+static ssize_t rnpgbe_dbg_netdev_ops_write(struct file *file,
 					   const char __user *buffer,
 					   size_t count, loff_t *ppos)
 {
-	struct rnpgbe_adapter *adapter = filp->private_data;
+	struct rnpgbe_adapter *adapter = file->private_data;
 	int len;
 
 	/* don't allow partial writes */
@@ -197,7 +196,7 @@ static ssize_t rnpgbe_dbg_netdev_ops_write(struct file *filp,
 			    adapter->tx_timeout_count);
 	} else if (strncmp(rnpgbe_dbg_netdev_ops_buf, "tx_timeout", 10) == 0) {
 		adapter->netdev->netdev_ops->ndo_tx_timeout(adapter->netdev,
-				UINT_MAX);
+							    UINT_MAX);
 		e_dev_info("tx_timeout called\n");
 	} else {
 		e_dev_info("Unknown command: %s\n", rnpgbe_dbg_netdev_ops_buf);
@@ -225,10 +224,10 @@ static void debugfs_command_help(struct device *dev, char *cmd_buf)
 }
 
 /**
- * rnpgbe_dbg_command_write - write into netdev_ops datum
+ * rnpgbe_dbg_netdev_ops_write - write into netdev_ops datum
  * @file: the opened file
  * @buf: where to find the user's data
- * @count: the size of the user's buffer
+ * @count: the length of the user's data
  * @ppos: file position offset
  **/
 static ssize_t rnpgbe_dbg_command_write(struct file *file,
@@ -302,15 +301,22 @@ static const struct file_operations rnpgbe_dbg_command_fops = {
 	.write = rnpgbe_dbg_command_write,
 };
 
-static ssize_t rnpgbe_dbg_netdev_temp_read(struct file *filp,
+/**
+ * rnpgbe_dbg_netdev_temp_read - read temperature from hw
+ * @file: the opened file
+ * @buffer: where to find the user's data
+ * @count: the length of the user's data
+ * @ppos: file position offset
+ **/
+static ssize_t rnpgbe_dbg_netdev_temp_read(struct file *file,
 					   char __user *buffer, size_t count,
 					   loff_t *ppos)
 {
-	struct rnpgbe_adapter *adapter = filp->private_data;
+	struct rnpgbe_adapter *adapter = file->private_data;
 	struct rnpgbe_hw *hw = &adapter->hw;
+	int temp = 0, voltage = 0;
 	char *buf;
 	int len;
-	int temp = 0, voltage = 0;
 
 	/* don't allow partial reads */
 	if (*ppos != 0)
@@ -374,7 +380,6 @@ void rnpgbe_dbg_adapter_init(struct rnpgbe_adapter *adapter)
 					    adapter, &rnpgbe_dbg_command_fops);
 		if (!pfile)
 			e_dev_err("debugfs temp for command failed\n");
-
 	} else {
 		e_dev_err("debugfs entry for %s failed\n", name);
 	}
@@ -382,7 +387,7 @@ void rnpgbe_dbg_adapter_init(struct rnpgbe_adapter *adapter)
 
 /**
  * rnpgbe_dbg_adapter_exit - clear out the adapter's debugfs entries
- * @adapter: the pf that is stopping
+ * @adapter: the adapter that is starting up
  **/
 void rnpgbe_dbg_adapter_exit(struct rnpgbe_adapter *adapter)
 {
