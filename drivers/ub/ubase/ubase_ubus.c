@@ -54,6 +54,15 @@ static const struct ub_device_id ubase_ubus_tbl[] = {
 };
 MODULE_DEVICE_TABLE(ub, ubase_ubus_tbl);
 
+static_assert(UBASE_URMA_RTP_ROI == UB_URMA_RTP_ROI, "UBASE_URMA_RTP_ROI mismatch");
+static_assert(UBASE_URMA_RTP_ROT == UB_URMA_RTP_ROT, "UBASE_URMA_RTP_ROT mismatch");
+static_assert(UBASE_URMA_RTP_ROL == UB_URMA_RTP_ROL, "UBASE_URMA_RTP_ROL mismatch");
+static_assert(UBASE_URMA_CTP_ROI == UB_URMA_CTP_ROI, "UBASE_URMA_CTP_ROI mismatch");
+static_assert(UBASE_URMA_CTP_ROT == UB_URMA_CTP_ROT, "UBASE_URMA_CTP_ROT mismatch");
+static_assert(UBASE_URMA_CTP_ROL == UB_URMA_CTP_ROL, "UBASE_URMA_CTP_ROL mismatch");
+static_assert(UBASE_URMA_CTP_UNO == UB_URMA_CTP_UNO, "UBASE_URMA_CTP_UNO mismatch");
+static_assert(UBASE_URMA_UTP_UNO == UB_URMA_UTP_UNO, "UBASE_URMA_UTP_UNO mismatch");
+
 static int ubase_entity_enable(struct ubase_dev *udev, struct ub_entity *ue, u8 enable)
 {
 	int ret = 0;
