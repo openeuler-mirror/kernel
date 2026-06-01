@@ -605,35 +605,27 @@ static void ubase_ctrlq_send_to_csq(struct ubase_dev *udev,
 	ubase_ctrlq_csq_report_irq(udev);
 }
 
-static int ubase_ctrlq_check_csq_enough(struct ubase_dev *udev, u16 num)
-{
-	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
-
-	csq->ci = (u16)ubase_read_dev(&udev->hw, UBASE_CTRLQ_CSQ_HEAD_REG);
-	if (num > ubase_ctrlq_remain_space(udev)) {
-		ubase_warn_rl(udev, ctrlq_space_insuffice,
-			      "no enough space in ctrlq, ci = %u, num = %u.\n",
-			      csq->ci, num);
-		return -EBUSY;
-	}
-
-	return 0;
-}
-
 static int ubase_ctrlq_send_msg_to_sq(struct ubase_dev *udev,
 				      struct ubase_ctrlq_base_block *head,
 				      struct ubase_ctrlq_msg *msg, u8 num)
 {
+	struct ubase_ctrlq_ring *csq = &udev->ctrlq.csq;
 	int ret;
 
 	if (ubase_dev_ctrlq_supported(udev)) {
 		spin_lock_bh(&udev->ctrlq.send_lock);
-		ret = ubase_ctrlq_check_csq_enough(udev, num);
-		if (ret) {
+
+		csq->ci = (u16)ubase_read_dev(&udev->hw, UBASE_CTRLQ_CSQ_HEAD_REG);
+		if (num > ubase_ctrlq_remain_space(udev)) {
 			spin_unlock_bh(&udev->ctrlq.send_lock);
-			return ret;
+			ubase_warn_rl(udev, ctrlq_space_insuffice,
+				      "no enough space in ctrlq, ci = %u, num = %u.\n",
+				      csq->ci, num);
+			return -EBUSY;
 		}
+
 		ubase_ctrlq_send_to_csq(udev, head, msg, num);
+
 		spin_unlock_bh(&udev->ctrlq.send_lock);
 		return 0;
 	}
