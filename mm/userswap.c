@@ -544,10 +544,3 @@ out_put_page:
 	put_page(page);
 	return ret;
 }
-
-static int __init enable_userswap_setup(char *str)
-{
-	static_branch_enable(&userswap_enabled);
-	return 1;
-}
-__setup("enable_userswap", enable_userswap_setup);
