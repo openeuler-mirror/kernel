@@ -31,7 +31,7 @@
 #define UMMU_DRV_NAME "ummu"
 #define HISI_VENDOR_ID 0xCC08
 
-static bool sva_separated_mode;
+static bool sva_separated_mode = true;
 module_param(sva_separated_mode, bool, 0444);
 MODULE_PARM_DESC(sva_separated_mode,
 	"Enable user-mode SVA with an independent page table (no process page table sharing).");
