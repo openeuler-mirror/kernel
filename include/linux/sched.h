@@ -584,12 +584,11 @@ struct sched_entity {
 	struct rb_node			run_node;
 	u64				deadline;
 	u64				min_vruntime;
-	u64				min_slice;
 
 	struct list_head		group_node;
 	unsigned int on_rq;
 	KABI_FILL_HOLE(unsigned char rel_deadline)
-	unsigned char			custom_slice;
+	KABI_FILL_HOLE(unsigned char custom_slice)
 					/* 2 holes left here */
 
 	u64				exec_start;
@@ -632,7 +631,7 @@ struct sched_entity {
 	 */
 	struct sched_avg		avg;
 #endif
-	KABI_RESERVE(1)
+	KABI_USE(1, u64 min_slice)
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
