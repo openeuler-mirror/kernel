@@ -350,6 +350,13 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	bool cacheable, o_sync;
 
 	print_mmap_param(file, vma);
+
+	if (!(vma->vm_flags & VM_MAYSHARE)) {
+		pr_err("mmap region %d: MAP_PRIVATE is not supported, use MAP_SHARED\n",
+		       reg->regionid);
+		return -EINVAL;
+	}
+
 	if (!region_allow_mmap(reg)) {
 		pr_err("mmap region %d: not allow to be mmaped\n", reg->regionid);
 		return -EPERM;

@@ -163,7 +163,6 @@ int kernel_pgtable_set_export_invalid(struct obmm_export_region *e_reg, unsigned
 struct map_range_info {
 	struct obmm_export_region *e_reg;
 	struct vm_area_struct *vma;
-	unsigned long orig_pgoff;
 	enum obmm_mmap_granu mmap_granu;
 	int ret;
 };
@@ -174,14 +173,7 @@ static int map_range_call(phys_addr_t start, phys_addr_t end, unsigned long offs
 	unsigned long length = end - start + 1;
 	unsigned long vm_offset;
 
-	/*
-	 * The offset is offset_from_head.
-	 *
-	 * In the case of private mapping, after remap_pfn_range is called,
-	 * vma->vm_pgoff will be set to pfn,
-	 * but we still need the original offset relative to the start of the region.
-	 */
-	vm_offset = offset - (info->orig_pgoff << PAGE_SHIFT);
+	vm_offset = offset - (info->vma->vm_pgoff << PAGE_SHIFT);
 	if (info->mmap_granu == OBMM_MMAP_GRANU_PAGE) {
 		info->ret = remap_pfn_range(info->vma, info->vma->vm_start + vm_offset,
 					    start >> PAGE_SHIFT, length, info->vma->vm_page_prot);
@@ -211,7 +203,6 @@ int map_export_region(struct vm_area_struct *vma, struct obmm_export_region *e_r
 	info.e_reg = e_reg;
 	info.vma = vma;
 	info.ret = 0;
-	info.orig_pgoff = vma->vm_pgoff;
 	info.mmap_granu = mmap_granu;
 
 	size = vma->vm_end - vma->vm_start;
