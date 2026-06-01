@@ -8,7 +8,6 @@
 #define _UB_UBASE_COMM_QOS_H_
 
 #include <linux/dcbnl.h>
-#include <ub/ubus/ubus.h>
 #include <ub/ubase/ubase_comm_dev.h>
 
 enum ubase_sl_sched_mode {
