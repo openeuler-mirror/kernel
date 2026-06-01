@@ -564,6 +564,7 @@ void cputime_adjust(struct task_cputime *curr, struct prev_cputime *prev,
 		    u64 *ut, u64 *st)
 {
 	u64 rtime, stime, utime;
+	u64 s, u, sum;
 	unsigned long flags;
 
 	/* Serialize concurrent callers such that we can honour our guarantees */
@@ -599,7 +600,23 @@ void cputime_adjust(struct task_cputime *curr, struct prev_cputime *prev,
 		goto update;
 	}
 
-	stime = mul_u64_u64_div_u64(stime, rtime, stime + utime);
+	s = stime;
+	u = utime;
+	sum = s + u;
+
+	/*
+	 * Detect unsigned overflow: if sum < either operand,
+	 * overflow occurred. A single right shift is sufficient
+	 * to guarantee that the new sum won't overflow.
+	 */
+	if (unlikely(sum < s)) {
+		s >>= 1;
+		u >>= 1;
+		sum = s + u;
+		stime = mul_u64_u64_div_u64(s, rtime, sum);
+	} else {
+		stime = mul_u64_u64_div_u64(stime, rtime, stime + utime);
+	}
 	/*
 	 * Because mul_u64_u64_div_u64() can approximate on some
 	 * achitectures; enforce the constraint that: a*b/(b+c) <= a.
