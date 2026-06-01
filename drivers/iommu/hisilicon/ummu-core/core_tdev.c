@@ -292,13 +292,29 @@ struct device *ummu_core_alloc_separate_tdev(struct tdev_opt *opt, u32 *ptid)
 		mutex_unlock(&mm_tid_xa_lock);
 		return &tdev->pdev.dev;
 	}
+	mutex_unlock(&mm_tid_xa_lock);
 
 	dev = ummu_core_alloc_tdev(&attr, ptid);
 	if (!dev)
-		goto err_out;
+		return NULL;
+
+	mutex_lock(&mm_tid_xa_lock);
+	tdev = xa_load(&mm_tid_xa, (unsigned long)(uintptr_t)opt->mm);
+	if (tdev) {
+		if (ummu_get_tid(&tdev->pdev.dev, NULL, ptid)) {
+			mutex_unlock(&mm_tid_xa_lock);
+			ummu_core_free_tdev(dev);
+			return NULL;
+		}
+		kref_get(&tdev->ref);
+		mutex_unlock(&mm_tid_xa_lock);
+		ummu_core_free_tdev(dev);
+		return &tdev->pdev.dev;
+	}
 
 	tdev = to_tid_dev(dev);
 	tdev->mm = opt->mm;
+
 	ret = xa_err(__xa_store(&mm_tid_xa, (unsigned long)(uintptr_t)opt->mm,
 		tdev, GFP_KERNEL));
 	mutex_unlock(&mm_tid_xa_lock);
