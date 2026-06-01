@@ -7792,9 +7792,6 @@ static int dequeue_entities(struct rq *rq, struct sched_entity *se, int flags)
 #ifdef CONFIG_QOS_SCHED_SMT_EXPELLER
 		qos_idle_h_nr_running = task_has_qos_idle_policy(p);
 #endif
-	} else {
-		cfs_rq = group_cfs_rq(se);
-		slice = cfs_rq_min_slice(cfs_rq);
 	}
 
 	for_each_sched_entity(se) {
