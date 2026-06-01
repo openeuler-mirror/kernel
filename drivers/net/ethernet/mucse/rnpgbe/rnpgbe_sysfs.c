@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/module.h>
 #include <linux/types.h>
@@ -7,19 +7,16 @@
 #include <linux/kobject.h>
 #include <linux/device.h>
 #include <linux/netdevice.h>
+#include <linux/hwmon.h>
 #include <linux/ctype.h>
 #include <linux/crc32.h>
 
 #include "rnpgbe.h"
 #include "rnpgbe_common.h"
 #include "rnpgbe_type.h"
+#include "version.h"
 #include "rnpgbe_mbx.h"
 #include "rnpgbe_mbx_fw.h"
-#include "version.h"
-
-#ifdef RNPGBE_HWMON
-#include <linux/hwmon.h>
-#endif /* RNPGBE_HWMON */
 
 struct maintain_req {
 	int magic;
@@ -29,8 +26,8 @@ struct maintain_req {
 	int arg0;
 	int req_data_bytes;
 	int reply_bytes;
-	char data[0];
-} __attribute__((packed));
+	char data[];
+} __packed;
 
 struct maintain_reply {
 	int magic;
@@ -39,17 +36,8 @@ struct maintain_reply {
 	int arg0;
 	int data_bytes;
 	int rev;
-	int data[0];
-} __attribute__((packed));
-
-struct ucfg_mac_sn {
-	unsigned char macaddr[64];
-	unsigned char sn[32];
-	int magic;
-#define MAC_SN_MAGIC 0x87654321
-	char rev[52];
-	unsigned char pn[32];
-} __attribute__((packed, aligned(4)));
+	int data[];
+} __packed;
 
 static int print_desc(char *buf, void *data, int len)
 {
@@ -63,7 +51,7 @@ static int print_desc(char *buf, void *data, int len)
 	return ret;
 }
 
-#ifdef RNPGBE_HWMON
+#if IS_ENABLED(CONFIG_HWMON)
 static ssize_t rnpgbe_hwmon_show_location(struct device __always_unused *dev,
 					  struct device_attribute *attr,
 					  char *buf)
@@ -138,8 +126,8 @@ static ssize_t rnpgbe_hwmon_show_maxopthresh(struct device __always_unused *dev,
 static int rnpgbe_add_hwmon_attr(struct rnpgbe_adapter *adapter,
 				 unsigned int offset, int type)
 {
-	unsigned int n_attr;
 	struct hwmon_attr *rnpgbe_attr;
+	unsigned int n_attr;
 
 	n_attr = adapter->rnpgbe_hwmon_buff->n_hwmon;
 	rnpgbe_attr = &adapter->rnpgbe_hwmon_buff->hwmon_list[n_attr];
@@ -188,10 +176,11 @@ static int rnpgbe_add_hwmon_attr(struct rnpgbe_adapter *adapter,
 
 	return 0;
 }
-#endif /* RNPGBE_HWMON */
+#endif /* CONFIG_HWMON */
 
 #define to_net_device(n) container_of(n, struct net_device, dev)
-static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
+
+static ssize_t maintain_read(struct file *file, struct kobject *kobj,
 			     struct bin_attribute *attr, char *buf, loff_t off,
 			     size_t count)
 {
@@ -205,6 +194,7 @@ static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
 
 	if (off + count > adapter->maintain_buf_len)
 		rbytes = adapter->maintain_buf_len - off;
+
 	memcpy(buf, adapter->maintain_buf + off, rbytes);
 
 	if ((off + rbytes) >= adapter->maintain_buf_len) {
@@ -212,24 +202,29 @@ static ssize_t maintain_read(struct file *filp, struct kobject *kobj,
 		adapter->maintain_buf = NULL;
 		adapter->maintain_buf_len = 0;
 	}
+
 	return rbytes;
 }
 
-static void n500_exchange_share_ram(struct rnpgbe_hw *hw, u32 *buf, int flag, int len)
+static void n500_exchange_share_ram(struct rnpgbe_hw *hw,
+				    u32 *buf, int flag,
+				    int len)
 {
-	int i;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
-	u32 addr = mbx->cpu_vf_share_ram;
+	int i;
 
 	if (len > mbx->share_size)
 		return;
+	/* write */
 	if (flag) {
-		for (i = 0; i < len; i = i + 4)
-			rnpgbe_wr_reg(hw->hw_addr + addr + i,
+		for (i = 0; i < len; i = i + 4) {
+			rnpgbe_wr_reg(hw->hw_addr + mbx->cpu_vf_share_ram + i,
 				      *(buf + i / 4));
+		}
 	} else {
+		/* read */
 		for (i = 0; i < len; i = i + 4)
-			*(buf + i / 4) = rnpgbe_rd_reg(hw->hw_addr + addr + i);
+			*(buf + i / 4) = rnpgbe_rd_reg(hw->hw_addr + mbx->cpu_vf_share_ram + i);
 	}
 }
 
@@ -295,18 +290,19 @@ static int check_fw_type(struct rnpgbe_hw *hw, const u8 *data, int len)
 	return ret;
 }
 
-static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
-			      struct bin_attribute *attr, char *buf, loff_t off,
+static ssize_t maintain_write(struct file *file, struct kobject *kobj,
+			      struct bin_attribute *attr, char *buf,
+			      loff_t off,
 			      size_t count)
 {
 	struct device *dev = kobj_to_dev(kobj);
-	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbe_hw *hw = &adapter->hw;
 	struct maintain_req *req;
 	void *dma_buf = NULL;
 	dma_addr_t dma_phy;
+	int err = -EINVAL;
 	int bytes;
 
 	if (off == 0) {
@@ -315,13 +311,12 @@ static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
 		req = (struct maintain_req *)buf;
 		if (req->magic != MAINTAIN_MAGIC)
 			return -EINVAL;
+
 		bytes = max_t(int, req->req_data_bytes, req->reply_bytes);
 		bytes += sizeof(*req);
-
 		kfree(adapter->maintain_buf);
 		adapter->maintain_buf = NULL;
 		adapter->maintain_buf_len = 0;
-
 		dma_buf = dma_alloc_coherent(&hw->pdev->dev, bytes, &dma_phy,
 					     GFP_ATOMIC);
 		if (!dma_buf)
@@ -341,15 +336,14 @@ static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
 	dma_buf = adapter->maintain_dma_buf;
 	dma_phy = adapter->maintain_dma_phy;
 	req = (struct maintain_req *)dma_buf;
-
 	memcpy(dma_buf + off, buf, count);
 
 	/* all data got, send req */
 	if ((off + count) >= adapter->maintain_in_bytes) {
+		struct rnpgbe_mbx_info *mbx = &hw->mbx;
 		int reply_bytes = req->reply_bytes;
 		int offset;
-		struct rnpgbe_mbx_info *mbx = &hw->mbx;
-
+		/* add check fw here /n210 n500 flag */
 		if (req->cmd == 1) {
 			if (check_fw_type(hw, (u8 *)(dma_buf + sizeof(*req)),
 					  req->req_data_bytes)) {
@@ -359,46 +353,53 @@ static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
 		}
 
 		if (req->cmd) {
-			int data_len;
 			int ram_size = mbx->share_size;
+			int data_len;
 
 			offset = 0;
-
-			if (req->req_data_bytes > ram_size && req->cmd == 1)
+			if (req->req_data_bytes > ram_size &&
+			    req->cmd == 1) {
 				offset += ram_size;
-			/* if n210 first clean header */
-			if (hw->hw_type == rnpgbe_hw_n210 ||
-			    hw->hw_type == rnpgbe_hw_n210L) {
-				n210_clean_share_ram(hw);
-				err = rnpgbe_maintain_req(hw, req->cmd,
-							  req->arg0,
-							  0, 0, 0);
-				if (err != 0)
-					goto err_quit;
+				/* if n210 first clean header */
+				if (hw->hw_type == rnpgbe_hw_n210 ||
+				    hw->hw_type == rnpgbe_hw_n210L) {
+					n210_clean_share_ram(hw);
+					err = rnpgbe_maintain_req(hw, req->cmd,
+								  req->arg0,
+								  0, 0, 0);
+					if (err != 0)
+						goto err_quit;
+				}
 			}
 
 			while (offset < req->req_data_bytes) {
-				data_len = (req->req_data_bytes - offset) >
-					ram_size ? ram_size :
-					(req->req_data_bytes - offset);
+				data_len =
+					(req->req_data_bytes - offset) >
+					ram_size ?
+					ram_size :
+					(req->req_data_bytes -
+					 offset);
 				/* copy to ram */
 				n500_exchange_share_ram(hw,
-					(u32 *)(dma_buf + offset + sizeof(*req)),
-					1, data_len);
-				err = rnpgbe_maintain_req(hw,
-					req->cmd, req->arg0, offset, 0, 0);
+							(u32 *)(dma_buf + offset +
+							sizeof(*req)),
+							1, data_len);
+				err = rnpgbe_maintain_req(hw, req->cmd,
+							  req->arg0,
+							  offset, 0, 0);
 				if (err != 0)
 					goto err_quit;
 
 				offset += data_len;
 			}
-
+			/* write header if update hw */
 			if (req->req_data_bytes > ram_size && req->cmd == 1) {
-				u32 *data = (u32 *)dma_buf + sizeof(*req);
-
+				offset = 0;
 				data_len = ram_size;
 				/* copy to ram */
-				n500_exchange_share_ram(hw, data,
+				n500_exchange_share_ram(hw,
+							(u32 *)(dma_buf + offset +
+							sizeof(*req)),
 							1, data_len);
 				err = rnpgbe_maintain_req(hw, req->cmd,
 							  req->arg0,
@@ -406,14 +407,15 @@ static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
 				if (err != 0)
 					goto err_quit;
 			}
+
 		} else {
-			int data_len;
+			/* it is read ? */
 			int ram_size = mbx->share_size;
 			struct maintain_reply reply;
-			/* it is a read */
+			int data_len;
+
 			adapter->maintain_buf_len = (reply_bytes + 3) & (~3);
-			adapter->maintain_buf =
-				kmalloc(adapter->maintain_buf_len, GFP_KERNEL);
+			adapter->maintain_buf = kmalloc(adapter->maintain_buf_len, GFP_KERNEL);
 			if (!adapter->maintain_buf) {
 				err = -ENOMEM;
 
@@ -425,27 +427,32 @@ static ssize_t maintain_write(struct file *filp, struct kobject *kobj,
 			reply.data_bytes = req->reply_bytes;
 			memcpy(adapter->maintain_buf, &reply,
 			       sizeof(struct maintain_reply));
+
 			reply_bytes = reply_bytes - sizeof(*req);
 			/* copy req first */
 			offset = 0;
 			while (offset < reply_bytes) {
-				data_len = (reply_bytes - offset) > ram_size ?
-							 ram_size :
-							 (reply_bytes - offset);
-				err = rnpgbe_maintain_req(hw,
-					req->cmd, req->arg0, 0, offset, 0);
+				data_len = (reply_bytes - offset) >
+					   ram_size ?
+					   ram_size :
+					   (reply_bytes - offset);
+				err = rnpgbe_maintain_req(hw, req->cmd,
+							  req->arg0, 0,
+							  offset, 0);
 				if (err != 0)
 					goto err_quit;
+				/* copy to ram */
 				n500_exchange_share_ram(hw,
-					(u32 *)(adapter->maintain_buf + offset +
-					sizeof(*req)), 0, data_len);
+							(u32 *)(adapter->maintain_buf +
+							offset + sizeof(*req)),
+							0, data_len);
 				offset += data_len;
 			}
 		}
 		if (dma_buf) {
 			dma_free_coherent(&hw->pdev->dev,
-					  adapter->maintain_dma_size, dma_buf,
-					  dma_phy);
+					  adapter->maintain_dma_size,
+					  dma_buf, dma_phy);
 		}
 		adapter->maintain_dma_buf = NULL;
 	}
@@ -460,7 +467,7 @@ err_quit:
 	return err;
 }
 
-static BIN_ATTR(maintain, 0644, maintain_read, maintain_write, 1 * 1024 * 1024);
+static BIN_ATTR_RW(maintain, 1 * 1024 * 1024);
 
 static ssize_t version_info_show(struct device *dev, struct device_attribute *attr,
 				 char *buf)
@@ -494,15 +501,17 @@ static ssize_t rx_desc_info_show(struct device *dev,
 	u32 rx_ring_num = adapter->sysfs_rx_ring_num;
 	u32 rx_desc_num = adapter->sysfs_rx_desc_num;
 	struct rnpgbe_ring *ring = adapter->rx_ring[rx_ring_num];
-	int ret = 0;
 	union rnpgbe_rx_desc *desc;
+	int ret = 0;
 
-	if (test_bit(__RNP_DOWN, &adapter->state))
+	if (test_bit(__RNP_DOWN, &adapter->state)) {
+		ret += sprintf(buf + ret, "port not up\n");
 		return ret;
+	}
 
 	desc = RNP_RX_DESC(ring, rx_desc_num);
 	ret += sprintf(buf + ret, "rx ring %d desc %d:\n", rx_ring_num,
-		       rx_desc_num);
+			rx_desc_num);
 	ret += print_desc(buf + ret, desc, sizeof(*desc));
 	ret += sprintf(buf + ret, "\n");
 
@@ -542,15 +551,14 @@ static ssize_t tcp_sync_info_show(struct device *dev,
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	int ret = 0;
 
-	if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC) {
-		ret += sprintf(buf + ret,
-			       "tcp sync remap on queue %d prio %s\n",
+	if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC)
+		ret += sprintf(buf + ret, "tcp syn to queue %d prio %s\n",
 			       adapter->tcp_sync_queue,
 			       (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC_PRIO) ?
-			       "NO" : "OFF");
-	} else {
+			       "NO" :
+			       "OFF");
+	else
 		ret += sprintf(buf + ret, "tcp sync remap off\n");
-	}
 
 	return ret;
 }
@@ -562,8 +570,8 @@ static ssize_t tcp_sync_info_store(struct device *dev,
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbe_hw *hw = &adapter->hw;
-	int ret = count;
 	u32 tcp_sync_queue;
+	int ret = count;
 
 	if (kstrtou32(buf, 0, &tcp_sync_queue) != 0)
 		return -EINVAL;
@@ -572,19 +580,20 @@ static ssize_t tcp_sync_info_store(struct device *dev,
 		adapter->tcp_sync_queue = tcp_sync_queue;
 		adapter->priv_flags |= RNP_PRIV_FLAG_TCP_SYNC;
 
-		if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC_PRIO) {
+		if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC_PRIO)
 			hw->ops.set_tcp_sync_remapping(hw,
-				adapter->tcp_sync_queue, true, true);
-		} else {
+						       adapter->tcp_sync_queue,
+						       true, true);
+		else
 			hw->ops.set_tcp_sync_remapping(hw,
-				adapter->tcp_sync_queue, true, false);
-		}
+						       adapter->tcp_sync_queue,
+						       true, false);
 
 	} else {
 		adapter->priv_flags &= ~RNP_PRIV_FLAG_TCP_SYNC;
 
 		hw->ops.set_tcp_sync_remapping(hw, adapter->tcp_sync_queue,
-					       false, false);
+				false, false);
 	}
 
 	return ret;
@@ -626,14 +635,13 @@ static ssize_t rx_drop_info_store(struct device *dev,
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbe_hw *hw = &adapter->hw;
-	int ret = count;
 	u64 rx_drop_status;
+	int ret = count;
 
 	if (kstrtou64(buf, 0, &rx_drop_status) != 0)
 		return -EINVAL;
 
 	adapter->rx_drop_status = rx_drop_status;
-
 	hw->ops.update_rx_drop(hw);
 
 	return ret;
@@ -717,7 +725,6 @@ static ssize_t tx_stags_info_store(struct device *dev,
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbe_hw *hw = &adapter->hw;
-
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	int ret = count;
 	u16 tx_stags;
@@ -763,7 +770,7 @@ static ssize_t gephy_test_info_store(struct device *dev,
 #define MAX_MODE (5)
 	if (kstrtou32(buf, 0, &test_mode) != 0)
 		return -EINVAL;
-	if (test_mode < 5)
+	if (test_mode < MAX_MODE)
 		adapter->gephy_test_mode = test_mode;
 	else
 		ret = -EINVAL;
@@ -781,11 +788,13 @@ static ssize_t tx_desc_info_show(struct device *dev,
 	u32 tx_ring_num = adapter->sysfs_tx_ring_num;
 	u32 tx_desc_num = adapter->sysfs_tx_desc_num;
 	struct rnpgbe_ring *ring = adapter->tx_ring[tx_ring_num];
-	int ret = 0;
 	struct rnpgbe_tx_desc *desc;
+	int ret = 0;
 
-	if (test_bit(__RNP_DOWN, &adapter->state))
+	if (test_bit(__RNP_DOWN, &adapter->state)) {
+		ret += sprintf(buf + ret, "port not up\n");
 		return ret;
+	}
 
 	desc = RNP_TX_DESC(ring, tx_desc_num);
 	ret += sprintf(buf + ret, "tx ring %d desc %d:\n", tx_ring_num,
@@ -802,10 +811,10 @@ static ssize_t tx_desc_info_store(struct device *dev,
 {
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
-	int ret = count;
 	u32 tx_desc_num = adapter->sysfs_tx_desc_num;
 	u32 tx_ring_num = adapter->sysfs_tx_ring_num;
 	struct rnpgbe_ring *ring = adapter->tx_ring[tx_ring_num];
+	int ret = count;
 
 	if (test_bit(__RNP_DOWN, &adapter->state))
 		return ret;
@@ -827,17 +836,17 @@ static ssize_t rx_ring_info_show(struct device *dev,
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	u32 rx_ring_num = adapter->sysfs_rx_ring_num;
 	struct rnpgbe_ring *ring = adapter->rx_ring[rx_ring_num];
-	int ret = 0;
 	union rnpgbe_rx_desc *rx_desc;
+	int ret = 0;
 
-	if (test_bit(__RNP_DOWN, &adapter->state))
+	if (test_bit(__RNP_DOWN, &adapter->state)) {
+		ret += sprintf(buf + ret, "port not up\n");
 		return ret;
+	}
 
 	ret += sprintf(buf + ret, "queue %d info:\n", rx_ring_num);
-
 	ret += sprintf(buf + ret, "next_to_use %d\n", ring->next_to_use);
 	ret += sprintf(buf + ret, "next_to_clean %d\n", ring->next_to_clean);
-
 	rx_desc = RNP_RX_DESC(ring, ring->next_to_clean);
 	ret += sprintf(buf + ret, "next_to_clean desc: ");
 	ret += print_desc(buf + ret, rx_desc, sizeof(*rx_desc));
@@ -876,12 +885,14 @@ static ssize_t tx_ring_info_show(struct device *dev,
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	u32 tx_ring_num = adapter->sysfs_tx_ring_num;
 	struct rnpgbe_ring *ring = adapter->tx_ring[tx_ring_num];
-	int ret = 0;
 	struct rnpgbe_tx_buffer *tx_buffer;
 	struct rnpgbe_tx_desc *eop_desc;
+	int ret = 0;
 
-	if (test_bit(__RNP_DOWN, &adapter->state))
+	if (test_bit(__RNP_DOWN, &adapter->state)) {
+		ret += sprintf(buf + ret, "port not up\n");
 		return ret;
+	}
 
 	ret += sprintf(buf + ret, "queue %d info:\n", tx_ring_num);
 	ret += sprintf(buf + ret, "next_to_use %d\n", ring->next_to_use);
@@ -925,66 +936,17 @@ static ssize_t tx_ring_info_store(struct device *dev,
 	return ret;
 }
 
-static ssize_t queue_mapping_show(struct device *dev,
-				  struct device_attribute *attr, char *buf)
-{
-	int ret = 0;
-	int i;
-	struct net_device *netdev = to_net_device(dev);
-	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
-	struct rnpgbe_ring *ring;
-	struct rnpgbe_q_vector *q_vector;
-
-	ret += sprintf(buf + ret, "tx_queue count %d\n",
-		       adapter->num_tx_queues);
-	ret += sprintf(buf + ret, "queue-mapping :\n");
-	for (i = 0; i < adapter->num_tx_queues; i++) {
-		ring = adapter->tx_ring[i];
-		ret += sprintf(buf + ret, "tx queue %d <---> ring %d\n", i,
-			       ring->rnpgbe_queue_idx);
-	}
-	ret += sprintf(buf + ret, "rx_queue count %d\n",
-		       adapter->num_rx_queues);
-	ret += sprintf(buf + ret, "queue-mapping :\n");
-	for (i = 0; i < adapter->num_rx_queues; i++) {
-		ring = adapter->rx_ring[i];
-		ret += sprintf(buf + ret, "rx queue %d <---> ring %d\n", i,
-			       ring->rnpgbe_queue_idx);
-	}
-	ret += sprintf(buf + ret, "vector-queue mapping:\n");
-	for (i = 0; i < adapter->num_q_vectors; i++) {
-		q_vector = adapter->q_vector[i];
-		ret += sprintf(buf + ret, "---vector %d---\n", i);
-		rnpgbe_for_each_ring(ring, q_vector->tx) {
-			ret += sprintf(buf + ret, "tx ring %d\n",
-				       ring->rnpgbe_queue_idx);
-		}
-		rnpgbe_for_each_ring(ring, q_vector->rx) {
-			ret += sprintf(buf + ret, "rx ring %d\n",
-				       ring->rnpgbe_queue_idx);
-		}
-	}
-
-	return ret;
-}
-
-static ssize_t queue_mapping_store(struct device *dev,
-				   struct device_attribute *attr,
-				   const char *buf, size_t count)
-{
-	return count;
-}
-
 static ssize_t active_vid_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
-	u16 vid;
-	u16 current_vid = 0;
-	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbe_hw *hw = &adapter->hw;
 	u8 vfnum = hw->max_vfs - 1;
+	u16 current_vid = 0;
+	int ret = 0;
+	u16 vid;
+	/* use last-vf's table entry. the last */
 
 	if ((adapter->flags & RNP_FLAG_SRIOV_ENABLED)) {
 		current_vid = hw_rd32(hw, RNP_DMA_PORT_VEB_VID_TBL(adapter->port,
@@ -1003,12 +965,14 @@ static ssize_t active_vid_store(struct device *dev,
 				struct device_attribute *attr, const char *buf,
 				size_t count)
 {
-	u16 vid;
-	int err = -EINVAL;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
+	int err = -EINVAL;
 	struct rnpgbe_hw *hw = &adapter->hw;
 	u8 vfnum = hw->max_vfs - 1;
+	/* use last-vf's table entry. the last */
+	int port = 0;
+	u16 vid;
 
 	if (!(adapter->flags & RNP_FLAG_SRIOV_ENABLED))
 		return -EIO;
@@ -1018,7 +982,9 @@ static ssize_t active_vid_store(struct device *dev,
 
 	if (vid < 4096 && test_bit(vid, adapter->active_vlans)) {
 		if (hw_rd32(hw, RNP_DMA_VERSION) >= 0x20201231) {
-			hw_wr32(hw, RNP_DMA_PORT_VEB_VID_TBL(0, vfnum), vid);
+			for (port = 0; port < 4; port++)
+				hw_wr32(hw, RNP_DMA_PORT_VEB_VID_TBL(port, vfnum),
+					vid);
 		} else {
 			hw_wr32(hw, RNP_DMA_PORT_VEB_VID_TBL(adapter->port, vfnum),
 				vid);
@@ -1042,28 +1008,22 @@ static ssize_t port_idx_show(struct device *dev, struct device_attribute *attr,
 
 static DEVICE_ATTR_RO(port_idx);
 
-static ssize_t pci_store(struct device *dev, struct device_attribute *attr,
-			 const char *buf, size_t count)
+static ssize_t debug_link_stat_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
 {
-	int err = -EINVAL;
+	int ret = 0;
 	struct net_device *netdev = to_net_device(dev);
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbe_hw *hw = &adapter->hw;
-	int gen = 3, lanes = 8;
 
-	if (count > 30)
-		return -EINVAL;
-
-	if (sscanf(buf, "gen%dx%d", &gen, &lanes) != 2)
-		return -EINVAL;
-
-	if (gen > 3 || lanes > 8)
-		return -EINVAL;
-
-	err = rnpgbe_set_lane_fun(hw, LANE_FUN_PCI_LANE, gen, lanes, 0, 0);
-
-	return err ? err : count;
+	ret += sprintf(buf, "%d %d dumy:0x%x up-flag:%lx carry:%d\n",
+		       adapter->link_up, adapter->hw.link, hw_rd32(hw, 0xc),
+		       adapter->flags & RNP_FLAG_NEED_LINK_UPDATE,
+		       netif_carrier_ok(netdev));
+	return ret;
 }
+
+static DEVICE_ATTR_RO(debug_link_stat);
 
 static ssize_t pci_show(struct device *dev, struct device_attribute *attr,
 			char *buf)
@@ -1080,7 +1040,8 @@ static ssize_t pci_show(struct device *dev, struct device_attribute *attr,
 
 	return ret;
 }
-static DEVICE_ATTR_RW(pci);
+
+static DEVICE_ATTR_RO(pci);
 
 static ssize_t temperature_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
@@ -1089,15 +1050,14 @@ static ssize_t temperature_show(struct device *dev,
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbe_hw *hw = &adapter->hw;
 	int ret = 0, temp = 0, voltage = 0;
-
-	/* only n500 support temperature */
+	/* n210 not support temp */
 	if (hw->hw_type != rnpgbe_hw_n500) {
 		ret += sprintf(buf, "chip not support this\n");
+
 	} else {
 		temp = rnpgbe_mbx_get_temp(hw, &voltage);
 		ret += sprintf(buf, "temp:%d oC\n", temp);
 	}
-
 	return ret;
 }
 
@@ -1135,7 +1095,6 @@ static ssize_t root_slot_info_show(struct device *dev,
 static DEVICE_ATTR_RO(root_slot_info);
 static DEVICE_ATTR_RO(temperature);
 static DEVICE_ATTR_RW(active_vid);
-static DEVICE_ATTR_RW(queue_mapping);
 static DEVICE_ATTR_RW(tx_ring_info);
 static DEVICE_ATTR_RW(rx_ring_info);
 static DEVICE_ATTR_RW(tx_desc_info);
@@ -1159,16 +1118,16 @@ static struct attribute *vendor_dev_attrs[] = {
 	&dev_attr_rx_drop_info.attr,
 	&dev_attr_outer_vlan_info.attr,
 	&dev_attr_rx_skip_info.attr,
-	&dev_attr_gephy_test_info.attr,
+	&dev_attr_debug_link_stat.attr,
 	NULL,
 };
 
 static struct attribute *dev_attrs[] = {
 	&dev_attr_tx_stags_info.attr,
+	&dev_attr_gephy_test_info.attr,
+	&dev_attr_version_info.attr,
 	&dev_attr_root_slot_info.attr,
 	&dev_attr_active_vid.attr,
-	&dev_attr_queue_mapping.attr,
-	&dev_attr_version_info.attr,
 	&dev_attr_port_idx.attr,
 	NULL,
 };
@@ -1197,7 +1156,7 @@ static const struct attribute_group *attr_grps[] = {
 static void
 rnpgbe_sysfs_del_adapter(struct rnpgbe_adapter __maybe_unused *adapter)
 {
-#ifdef RNPGBE_HWMON
+#if IS_ENABLED(CONFIG_HWMON)
 	if (!adapter)
 		return;
 
@@ -1205,7 +1164,7 @@ rnpgbe_sysfs_del_adapter(struct rnpgbe_adapter __maybe_unused *adapter)
 		hwmon_device_unregister(adapter->hwmon_dev);
 		adapter->hwmon_dev = NULL;
 	}
-#endif /* RNPGBE_HWMON */
+#endif /* CONFIG_HWMON */
 }
 
 /* called from rnpgbe_main.c */
@@ -1213,7 +1172,6 @@ void rnpgbe_sysfs_exit(struct rnpgbe_adapter *adapter)
 {
 	rnpgbe_sysfs_del_adapter(adapter);
 	sysfs_remove_groups(&adapter->netdev->dev.kobj, &attr_grps[0]);
-
 	kfree(adapter->maintain_buf);
 	adapter->maintain_buf = NULL;
 	adapter->maintain_buf_len = 0;
@@ -1222,13 +1180,13 @@ void rnpgbe_sysfs_exit(struct rnpgbe_adapter *adapter)
 /* called from rnpgbe_main.c */
 int rnpgbe_sysfs_init(struct rnpgbe_adapter *adapter)
 {
-	int rc = 0;
-	int flag;
-#ifdef RNPGBE_HWMON
+#if IS_ENABLED(CONFIG_HWMON)
 	struct hwmon_buff *rnpgbe_hwmon;
 	struct device *hwmon_dev;
 	unsigned int i;
-#endif /* RNPGBE_HWMON */
+#endif /* CONFIG_HWMON */
+	int rc = 0;
+	int flag;
 
 	flag = sysfs_create_groups(&adapter->netdev->dev.kobj, &attr_grps[0]);
 	if (flag != 0) {
@@ -1236,7 +1194,7 @@ int rnpgbe_sysfs_init(struct rnpgbe_adapter *adapter)
 			"sysfs_create_group failed:flag:%d\n", flag);
 		return flag;
 	}
-#ifdef RNPGBE_HWMON
+#if IS_ENABLED(CONFIG_HWMON)
 	/* If this method isn't defined we don't support thermals */
 	if (!adapter->hw.ops.init_thermal_sensor_thresh)
 		goto no_thermal;
@@ -1256,14 +1214,16 @@ int rnpgbe_sysfs_init(struct rnpgbe_adapter *adapter)
 	adapter->rnpgbe_hwmon_buff = rnpgbe_hwmon;
 
 	for (i = 0; i < RNPGBE_MAX_SENSORS; i++) {
-		/* Only create hwmon sysfs entries for sensors that have
+		/*
+		 * Only create hwmon sysfs entries for sensors that have
 		 * meaningful data for.
 		 */
 		if (adapter->hw.thermal_sensor_data.sensor[i].location == 0)
 			continue;
 
 		/* Bail if any hwmon attr struct fails to initialize */
-		rc = rnpgbe_add_hwmon_attr(adapter, i, RNPGBE_HWMON_TYPE_CAUTION);
+		rc = rnpgbe_add_hwmon_attr(adapter, i,
+					   RNPGBE_HWMON_TYPE_CAUTION);
 		if (rc)
 			goto err;
 		rc = rnpgbe_add_hwmon_attr(adapter, i, RNPGBE_HWMON_TYPE_LOC);
@@ -1280,8 +1240,9 @@ int rnpgbe_sysfs_init(struct rnpgbe_adapter *adapter)
 	rnpgbe_hwmon->groups[0] = &rnpgbe_hwmon->group;
 	rnpgbe_hwmon->group.attrs = rnpgbe_hwmon->attrs;
 
-	hwmon_dev = devm_hwmon_device_register_with_groups(
-		&adapter->pdev->dev, "rnpgbe", rnpgbe_hwmon, rnpgbe_hwmon->groups);
+	hwmon_dev = hwmon_device_register_with_groups(&adapter->pdev->dev,
+						      "rnpgbe", rnpgbe_hwmon,
+						      rnpgbe_hwmon->groups);
 
 	if (IS_ERR(hwmon_dev)) {
 		rc = PTR_ERR(hwmon_dev);
@@ -1289,7 +1250,7 @@ int rnpgbe_sysfs_init(struct rnpgbe_adapter *adapter)
 	}
 	adapter->hwmon_dev = hwmon_dev;
 no_thermal:
-#endif /* RNPGBE_HWMON */
+#endif /* CONFIG_HWMON */
 	goto exit;
 
 err:

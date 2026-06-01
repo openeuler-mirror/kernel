@@ -1,59 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include "rnpgbe.h"
 #include "rnpgbe_sriov.h"
 #include "rnpgbe_common.h"
-
-/**
- * rnpgbe_cache_ring_dcb - Descriptor ring to register mapping for DCB
- * @adapter: board private structure to initialize
- *
- * Cache the descriptor ring offsets for DCB to the assigned rings.
- *
- **/
-static bool rnpgbe_cache_ring_dcb(struct rnpgbe_adapter *adapter)
-{
-	struct net_device *dev = adapter->netdev;
-	unsigned int tx_idx, rx_idx;
-	int tc, offset, rss_i, i, step;
-	u8 num_tcs = netdev_get_num_tc(dev);
-	struct rnpgbe_ring *ring;
-	struct rnpgbe_hw *hw = &adapter->hw;
-	struct rnpgbe_dma_info *dma = &hw->dma;
-
-	/* verify we have DCB queueing enabled before proceeding */
-	if (num_tcs <= 1)
-		return false;
-
-	rss_i = adapter->ring_feature[RING_F_RSS].indices;
-
-	step = 4;
-	for (tc = 0, offset = 0; tc < num_tcs; tc++, offset += rss_i) {
-		tx_idx = tc;
-		rx_idx = tc;
-		for (i = 0; i < rss_i; i++, tx_idx += step, rx_idx += step) {
-			ring = adapter->tx_ring[offset + i];
-
-			ring->ring_addr =
-				dma->dma_ring_addr + RING_OFFSET(tx_idx);
-			ring->rnpgbe_queue_idx = tx_idx;
-			ring->dma_int_stat = ring->ring_addr + RNP_DMA_INT_STAT;
-			ring->dma_int_mask = ring->ring_addr + RNP_DMA_INT_MASK;
-			ring->dma_int_clr = ring->ring_addr + RNP_DMA_INT_CLR;
-
-			ring = adapter->rx_ring[offset + i];
-			ring->ring_addr =
-				dma->dma_ring_addr + RING_OFFSET(rx_idx);
-			ring->rnpgbe_queue_idx = rx_idx;
-			ring->dma_int_stat = ring->ring_addr + RNP_DMA_INT_STAT;
-			ring->dma_int_mask = ring->ring_addr + RNP_DMA_INT_MASK;
-			ring->dma_int_clr = ring->ring_addr + RNP_DMA_INT_CLR;
-		}
-	}
-
-	return true;
-}
 
 /**
  * rnpgbe_cache_ring_sriov - Descriptor ring to register mapping for sriov
@@ -80,11 +30,11 @@ static bool rnpgbe_cache_ring_sriov(struct rnpgbe_adapter *adapter)
  **/
 static bool rnpgbe_cache_ring_rss(struct rnpgbe_adapter *adapter)
 {
-	int i;
-	int ring_step = 1;
-	struct rnpgbe_ring *ring;
 	struct rnpgbe_hw *hw = &adapter->hw;
 	struct rnpgbe_dma_info *dma = &hw->dma;
+	struct rnpgbe_ring *ring;
+	int ring_step = 1;
+	int i;
 
 	/* some ring alloc rules can be added here */
 	for (i = 0; i < adapter->num_rx_queues; i++) {
@@ -124,9 +74,6 @@ static bool rnpgbe_cache_ring_rss(struct rnpgbe_adapter *adapter)
  **/
 static void rnpgbe_cache_ring_register(struct rnpgbe_adapter *adapter)
 {
-	/* start with default case */
-	if (rnpgbe_cache_ring_dcb(adapter))
-		return;
 	/* sriov ring alloc is added before, this maybe no use */
 	if (rnpgbe_cache_ring_sriov(adapter))
 		return;
@@ -134,51 +81,8 @@ static void rnpgbe_cache_ring_register(struct rnpgbe_adapter *adapter)
 	rnpgbe_cache_ring_rss(adapter);
 }
 
-#define RNP_RSS_128Q_MASK 0x7F
-#define RNP_RSS_64Q_MASK 0x3F
-#define RNP_RSS_16Q_MASK 0xF
-#define RNP_RSS_32Q_MASK 0x1F
 #define RNP_RSS_8Q_MASK 0x7
-#define RNP_RSS_4Q_MASK 0x3
-#define RNP_RSS_2Q_MASK 0x1
 #define RNP_RSS_DISABLED_MASK 0x0
-
-static bool rnpgbe_set_dcb_queues(struct rnpgbe_adapter *adapter)
-{
-	struct net_device *dev = adapter->netdev;
-	struct rnpgbe_ring_feature *f;
-	int rss_i, rss_m, i;
-	int tcs;
-
-	/* Map queue offset and counts onto allocated tx queues */
-	tcs = netdev_get_num_tc(dev);
-	/* verify we have DCB queueing enabled before proceeding */
-	if (tcs <= 1)
-		return false;
-	/* determine the upper limit for our current DCB mode */
-	rss_i = dev->num_tx_queues / tcs;
-	rss_i = min_t(u16, rss_i, 32);
-	rss_m = RNP_RSS_32Q_MASK;
-
-	/* set RSS mask and indices */
-	/* f->limit is relative with cpu_vector */
-	f = &adapter->ring_feature[RING_F_RSS];
-	/* use f->limit to change rss */
-	rss_i = min_t(int, rss_i, f->limit);
-	f->indices = rss_i;
-	f->mask = rss_m;
-
-	/* disable ATR as it is not supported when multiple TCs are enabled */
-	adapter->flags &= ~RNP_FLAG_FDIR_HASH_CAPABLE;
-	/* setup queue tc num */
-	for (i = 0; i < tcs; i++)
-		netdev_set_tc_queue(dev, i, rss_i, rss_i * i);
-
-	adapter->num_tx_queues = rss_i * tcs;
-	adapter->num_rx_queues = rss_i * tcs;
-
-	return true;
-}
 
 /**
  * rnpgbe_set_sriov_queues - Allocate queues for SR-IOV devices
@@ -191,10 +95,10 @@ static bool rnpgbe_set_dcb_queues(struct rnpgbe_adapter *adapter)
  **/
 static bool rnpgbe_set_sriov_queues(struct rnpgbe_adapter *adapter)
 {
-	u16 vmdq_m = 0;
 	u16 rss_i = adapter->ring_feature[RING_F_RSS].limit;
-	u16 rss_m = RNP_RSS_DISABLED_MASK;
 	struct rnpgbe_hw *hw = &adapter->hw;
+	u16 rss_m = RNP_RSS_DISABLED_MASK;
+	u16 vmdq_m = 0;
 
 	/* only proceed if SR-IOV is enabled */
 	if (!(adapter->flags & RNP_FLAG_SRIOV_ENABLED))
@@ -210,20 +114,20 @@ static bool rnpgbe_set_sriov_queues(struct rnpgbe_adapter *adapter)
 	adapter->ring_feature[RING_F_RSS].mask = rss_m;
 	adapter->num_rx_queues = hw->sriov_ring_limit;
 	adapter->num_tx_queues = hw->sriov_ring_limit;
-
 	/* disable ATR as it is not supported when VMDq is enabled */
 	adapter->flags &= ~RNP_FLAG_FDIR_HASH_CAPABLE;
 
 	return true;
 }
 
+/**
+ * rnpgbe_rss_indir_tbl_entries - return indir_tlb_entries
+ * @adapter: board private structure to initialize
+ *
+ */
 u32 rnpgbe_rss_indir_tbl_entries(struct rnpgbe_adapter *adapter)
 {
-	if (adapter->hw.rss_type == rnpgbe_rss_uv3p)
-		return 8;
-	else if (adapter->hw.rss_type == rnpgbe_rss_uv440)
-		return 128;
-	else if (adapter->hw.rss_type == rnpgbe_rss_n10)
+	if (adapter->hw.rss_type == rnpgbe_rss_n500)
 		return 128;
 	else
 		return 128;
@@ -243,22 +147,14 @@ static bool rnpgbe_set_rss_queues(struct rnpgbe_adapter *adapter)
 	u16 rss_i;
 
 	f = &adapter->ring_feature[RING_F_RSS];
-	/* use thid to change ring num */
+	/* use this to change ring num */
 	rss_i = f->limit;
 	/* set limit -> indices */
 	f->indices = rss_i;
 
 	/* should init rss mask */
 	switch (adapter->hw.rss_type) {
-	case rnpgbe_rss_uv3p:
-		f->mask = RNP_RSS_8Q_MASK;
-		break;
-	case rnpgbe_rss_uv440:
-		f->mask = RNP_RSS_64Q_MASK;
-		break;
-	case rnpgbe_rss_n10:
-		f->mask = RNP_RSS_128Q_MASK;
-		break;
+		/* maybe not good */
 	case rnpgbe_rss_n500:
 		f->mask = RNP_RSS_8Q_MASK;
 		break;
@@ -268,6 +164,7 @@ static bool rnpgbe_set_rss_queues(struct rnpgbe_adapter *adapter)
 		break;
 	}
 
+	/* set rss_i -> adapter->num_tx_queues */
 	/* should not more than irq */
 	adapter->num_tx_queues =
 		min_t(int, rss_i, adapter->max_ring_pair_counts);
@@ -286,8 +183,7 @@ static bool rnpgbe_set_rss_queues(struct rnpgbe_adapter *adapter)
  * This is the top level queue allocation routine.  The order here is very
  * important, starting with the "most" number of features turned on at once,
  * and ending with the smallest set of features.  This way large combinations
- * can be allocated if they're turned on, and smaller combinations are the
- * fallthrough conditions.
+ * can be allocated if they're turned on.
  *
  **/
 static void rnpgbe_set_num_queues(struct rnpgbe_adapter *adapter)
@@ -296,16 +192,14 @@ static void rnpgbe_set_num_queues(struct rnpgbe_adapter *adapter)
 	adapter->num_tx_queues = 1;
 	adapter->num_rx_queues = 1;
 
-	if (rnpgbe_set_dcb_queues(adapter))
-		return;
-
 	if (rnpgbe_set_sriov_queues(adapter))
 		return;
 	/* at last we support rss */
 	rnpgbe_set_rss_queues(adapter);
 }
 
-static int rnpgbe_acquire_msix_vectors(struct rnpgbe_adapter *adapter, int vectors)
+static int rnpgbe_acquire_msix_vectors(struct rnpgbe_adapter *adapter,
+				       int vectors)
 {
 	int err;
 
@@ -318,14 +212,13 @@ static int rnpgbe_acquire_msix_vectors(struct rnpgbe_adapter *adapter, int vecto
 		adapter->msix_entries = NULL;
 		return -EINVAL;
 	}
-	/* Adjust for only the vectors we'll use, which is minimum
+	/*
+	 * Adjust for only the vectors we'll use, which is minimum
 	 * of max_msix_q_vectors + NON_Q_VECTORS, or the number of
 	 * vectors we were allocated.
 	 */
 	vectors -= adapter->num_other_vectors;
 	adapter->num_q_vectors = min(vectors, adapter->max_q_vectors);
-	if (adapter->flags & RNP_FLAG_DCB_ENABLED)
-		adapter->num_q_vectors = min(32, adapter->num_q_vectors);
 
 	return 0;
 }
@@ -338,13 +231,42 @@ static void rnpgbe_add_ring(struct rnpgbe_ring *ring,
 	head->count++;
 }
 
+/*
+ * get cpu with specified node and index
+ * return CPU index on success, return -1 on failure.
+ */
+static int rnpgbe_get_cpu_on_node(int node, int index, unsigned int offset)
+{
+	int cpu_count = 0;
+	int target;
+	int cpu;
+
+	if (node == NUMA_NO_NODE || node < 0)
+		return -1;
+
+	for_each_cpu_and(cpu, cpumask_of_node(node), cpu_online_mask)
+		cpu_count++;
+
+	if (cpu_count == 0)
+		return -1;
+
+	target = (offset + index) % cpu_count;
+
+	for_each_cpu_and(cpu, cpumask_of_node(node), cpu_online_mask) {
+		if (target-- == 0)
+			return cpu;
+	}
+
+	return -1;
+}
+
 /**
  * rnpgbe_alloc_q_vector - Allocate memory for a single interrupt vector
  * @adapter: board private structure to initialize
- * @eth_queue_idx: eth queue idx
- * @v_idx: index of vector in adapter struct
- * @r_idx: index of first Tx ring to allocate
- * @r_count: total number of Rx rings to allocate
+ * @eth_queue_idx: queue_index idx for this q_vector
+ * @v_idx: index of vector used for this q_vector
+ * @r_idx: total number of Tx rings to allocate
+ * @r_count: ring count
  * @step: ring step
  *
  * We allocate one q_vector.  If allocation fails we return -ENOMEM.
@@ -353,28 +275,45 @@ static int rnpgbe_alloc_q_vector(struct rnpgbe_adapter *adapter,
 				 int eth_queue_idx, int v_idx, int r_idx,
 				 int r_count, int step)
 {
-	struct rnpgbe_q_vector *q_vector;
-	struct rnpgbe_ring *ring;
 	struct rnpgbe_hw *hw = &adapter->hw;
 	struct rnpgbe_dma_info *dma = &hw->dma;
-	int node = NUMA_NO_NODE;
-	int cpu = -1;
-	int ring_count, size;
-	int txr_count, rxr_count, idx;
 	int rxr_idx = r_idx, txr_idx = r_idx;
+	struct rnpgbe_q_vector *q_vector;
+	int txr_count, rxr_count, idx;
+	struct rnpgbe_ring *ring;
+	int node = NUMA_NO_NODE;
+	int ring_count, size;
 	int cpu_offset = 0;
+	int cpu = -1;
+	struct device *dev = &adapter->pdev->dev;
+	int orig_node = dev_to_node(dev);
+	int queue_index = v_idx - adapter->q_vector_off;
 
+	DPRINTK(PROBE, INFO,
+		"eth_queue_idx:%d v_idx:%d(off:%d) ring:%d ring_cnt:%d, step:%d\n",
+		eth_queue_idx, v_idx, adapter->q_vector_off, r_idx, r_count,
+		step);
+
+	txr_count = r_count;
 	rxr_count = r_count;
-	txr_count = rxr_count;
+
 	ring_count = txr_count + rxr_count;
 	size = sizeof(struct rnpgbe_q_vector) +
 	       (sizeof(struct rnpgbe_ring) * ring_count);
 
-	/* should minis adapter->q_vector_off */
-	if (cpu_online(cpu_offset + v_idx - adapter->q_vector_off)) {
-		/* cpu 1 - 7 */
-		cpu = cpu_offset + v_idx - adapter->q_vector_off;
-		node = cpu_to_node(cpu);
+	/* Find the first online CPU on the same NUMA node as the NIC.
+	 * Then assign q_vectors to CPUs on this node in a round-robin fashion.
+	 */
+	cpu = rnpgbe_get_cpu_on_node(orig_node, queue_index, cpu_offset);
+	if (cpu >= 0) {
+		node = orig_node;
+		pr_debug("RNPGBE: q_vector[%d] attached to CPU %d on NUMA node %d\n",
+			 v_idx, cpu, node);
+	} else {
+		pr_warn("RNPGBE: WARNING: No online CPUs on NIC's NUMA node %d!\n",
+			orig_node);
+		cpu = -1;
+		node = NUMA_NO_NODE;
 	}
 
 	/* allocate q_vector and rings */
@@ -388,6 +327,7 @@ static int rnpgbe_alloc_q_vector(struct rnpgbe_adapter *adapter,
 	if (cpu != -1)
 		cpumask_set_cpu(cpu, &q_vector->affinity_mask);
 	q_vector->numa_node = node;
+
 	netif_napi_add_weight(adapter->netdev, &q_vector->napi, rnpgbe_poll,
 			      adapter->napi_budge);
 	/* tie q_vector and adapter together */
@@ -414,15 +354,7 @@ static int rnpgbe_alloc_q_vector(struct rnpgbe_adapter *adapter,
 
 		/* apply Tx specific ring traits */
 		ring->count = adapter->tx_ring_item_count;
-		if (adapter->flags & RNP_FLAG_DCB_ENABLED) {
-			int rss_i;
-
-			rss_i = adapter->ring_feature[RING_F_RSS].indices;
-			/* in dcb mode should assign rss */
-			ring->queue_index = eth_queue_idx + idx * rss_i;
-		} else {
-			ring->queue_index = eth_queue_idx + idx;
-		}
+		ring->queue_index = eth_queue_idx + idx;
 		/* rnpgbe_queue_idx can be changed after */
 		/* it is used to location hw reg */
 		ring->rnpgbe_queue_idx = txr_idx;
@@ -432,7 +364,8 @@ static int rnpgbe_alloc_q_vector(struct rnpgbe_adapter *adapter,
 		ring->dma_int_clr = ring->ring_addr + RNP_DMA_INT_CLR;
 		ring->device_id = adapter->pdev->device;
 		ring->pfvfnum = hw->pfvfnum;
-
+		/* not support tunnel */
+		ring->ring_flags |= RNP_RING_NO_TUNNEL_SUPPORT;
 		/* assign ring to adapter */
 		adapter->tx_ring[ring->queue_index] = ring;
 
@@ -462,15 +395,7 @@ static int rnpgbe_alloc_q_vector(struct rnpgbe_adapter *adapter,
 		ring->count = adapter->rx_ring_item_count;
 		/* rnpgbe_queue_idx can be changed after */
 		/* it is used to location hw reg */
-		if (adapter->flags & RNP_FLAG_DCB_ENABLED) {
-			int rss_i;
-
-			rss_i = adapter->ring_feature[RING_F_RSS].indices;
-			/* in dcb mode should assign rss */
-			ring->queue_index = eth_queue_idx + idx * rss_i;
-		} else {
-			ring->queue_index = eth_queue_idx + idx;
-		}
+		ring->queue_index = eth_queue_idx + idx;
 		ring->rnpgbe_queue_idx = rxr_idx;
 		ring->ring_addr = dma->dma_ring_addr + RING_OFFSET(rxr_idx);
 		ring->dma_int_stat = ring->ring_addr + RNP_DMA_INT_STAT;
@@ -478,6 +403,9 @@ static int rnpgbe_alloc_q_vector(struct rnpgbe_adapter *adapter,
 		ring->dma_int_clr = ring->ring_addr + RNP_DMA_INT_CLR;
 		ring->device_id = adapter->pdev->device;
 		ring->pfvfnum = hw->pfvfnum;
+
+		ring->ring_flags |= RNP_RING_NO_TUNNEL_SUPPORT;
+		ring->ring_flags |= RNP_RING_STAGS_SUPPORT;
 
 		/* assign ring to adapter */
 		adapter->rx_ring[ring->queue_index] = ring;
@@ -491,6 +419,8 @@ static int rnpgbe_alloc_q_vector(struct rnpgbe_adapter *adapter,
 		/* push pointer to next ring */
 		ring++;
 	}
+
+	q_vector->vector_flags |= RNP_QVECTOR_FLAG_ITR_FEATURE;
 	q_vector->new_rx_count = adapter->rx_frames;
 	q_vector->old_rx_count = adapter->rx_frames;
 	q_vector->itr_rx = adapter->rx_usecs;
@@ -524,7 +454,11 @@ static void rnpgbe_free_q_vector(struct rnpgbe_adapter *adapter, int v_idx)
 	adapter->q_vector[v_idx] = NULL;
 	netif_napi_del(&q_vector->napi);
 
-	/* rnpgbe_get_stats64() might access the rings on this vector,
+	if (q_vector->vector_flags & RNP_QVECTOR_FLAG_IRQ_MISS_CHECK)
+		hrtimer_cancel(&q_vector->irq_miss_check_timer);
+
+	/*
+	 * rnpgbe_get_stats64() might access the rings on this vector,
 	 * we must wait a grace period before freeing it.
 	 */
 	kfree_rcu(q_vector, rcu);
@@ -539,40 +473,40 @@ static void rnpgbe_free_q_vector(struct rnpgbe_adapter *adapter, int v_idx)
  **/
 static int rnpgbe_alloc_q_vectors(struct rnpgbe_adapter *adapter)
 {
-	int v_idx = adapter->q_vector_off;
-	int ring_idx = 0;
 	int r_remaing =
 		min_t(int, adapter->num_tx_queues, adapter->num_rx_queues);
-	int ring_step = 1;
 	int err, ring_cnt, v_remaing = adapter->num_q_vectors;
-	int q_vector_nums = 0;
 	struct rnpgbe_hw *hw = &adapter->hw;
+	int v_idx = adapter->q_vector_off;
+	int q_vector_nums = 0;
+	int ring_step = 1;
+	int ring_idx = 0;
 
 	if (adapter->flags & RNP_FLAG_SRIOV_ENABLED) {
 		ring_idx = 0;
 		/* only 2 rings when sriov enabled */
 		/* from back */
-		ring_idx = adapter->max_ring_pair_counts -
-			ring_step * hw->sriov_ring_limit;
-		r_remaing = hw->sriov_ring_limit;
+		if (hw->feature_flags & RNP_NET_FEATURE_VF_FIXED) {
+			// this mode pf use vf 0 ring
+			ring_idx = 0;
+			r_remaing = hw->sriov_ring_limit;
+
+		} else {
+			ring_idx = adapter->max_ring_pair_counts -
+				   ring_step * hw->sriov_ring_limit;
+			r_remaing = hw->sriov_ring_limit;
+		}
 	}
 
 	adapter->eth_queue_idx = 0;
 	BUG_ON(adapter->num_q_vectors == 0);
 
-	if (adapter->flags & RNP_FLAG_DCB_ENABLED) {
-		rnpgbe_dbg("in dcb mode r_remaing %d, num_q_vectors %d\n",
-			   r_remaing, v_remaing);
-	}
-
 	rnpgbe_dbg("r_remaing:%d, ring_step:%d num_q_vectors:%d\n", r_remaing,
 		   ring_step, v_remaing);
 
-	/* can support muti rings in one q_vector */
+	/* can support multi rings in one q_vector */
 	for (; r_remaing > 0 && v_remaing > 0; v_remaing--) {
 		ring_cnt = DIV_ROUND_UP(r_remaing, v_remaing);
-		if (adapter->flags & RNP_FLAG_DCB_ENABLED)
-			BUG_ON(ring_cnt != adapter->num_tc);
 
 		err = rnpgbe_alloc_q_vector(adapter, adapter->eth_queue_idx,
 					    v_idx, ring_idx, ring_cnt,
@@ -583,11 +517,7 @@ static int rnpgbe_alloc_q_vectors(struct rnpgbe_adapter *adapter)
 		r_remaing -= ring_cnt;
 		v_idx++;
 		q_vector_nums++;
-		/* dcb mode only add 1 */
-		if (adapter->flags & RNP_FLAG_DCB_ENABLED)
-			adapter->eth_queue_idx += 1;
-		else
-			adapter->eth_queue_idx += ring_cnt;
+		adapter->eth_queue_idx += ring_cnt;
 	}
 	/* should fix the real used q_vectors_nums */
 	adapter->num_q_vectors = q_vector_nums;
@@ -636,7 +566,7 @@ static void rnpgbe_reset_interrupt_capability(struct rnpgbe_adapter *adapter)
 	adapter->msix_entries = NULL;
 	adapter->q_vector_off = 0;
 
-	/* frist clean msix flags */
+	/* first clean msix flags */
 	adapter->flags &= (~RNP_FLAG_MSIX_ENABLED);
 	adapter->flags &= (~RNP_FLAG_MSI_ENABLED);
 }
@@ -650,27 +580,23 @@ static void rnpgbe_reset_interrupt_capability(struct rnpgbe_adapter *adapter)
  **/
 static int rnpgbe_set_interrupt_capability(struct rnpgbe_adapter *adapter)
 {
+	int irq_mode_back = adapter->irq_mode;
 	struct rnpgbe_hw *hw = &adapter->hw;
 	int vector, v_budget, err = 0;
-	int irq_mode_back = adapter->irq_mode;
 
 	v_budget = min_t(int, adapter->num_tx_queues, adapter->num_rx_queues);
 
 	/* in one ring mode should reset v_budget */
 	v_budget = min_t(int, v_budget, num_online_cpus());
 	v_budget += adapter->num_other_vectors;
+
 	v_budget = min_t(int, v_budget, hw->mac.max_msix_vectors);
 
 	if (adapter->irq_mode == irq_mode_msix) {
-		adapter->msix_entries = kcalloc(v_budget,
-			sizeof(struct msix_entry), GFP_KERNEL);
+		adapter->msix_entries = kcalloc(v_budget, sizeof(struct msix_entry), GFP_KERNEL);
 
-		if (!adapter->msix_entries) {
-			rnpgbe_err("alloc msix_entries failed!\n");
+		if (!adapter->msix_entries)
 			return -EINVAL;
-		}
-		dbg("[%s] adapter:%p msix_entry:%p\n", __func__, adapter,
-		    adapter->msix_entries);
 
 		for (vector = 0; vector < v_budget; vector++)
 			adapter->msix_entries[vector].entry = vector;
@@ -699,11 +625,12 @@ static int rnpgbe_set_interrupt_capability(struct rnpgbe_adapter *adapter)
 	/* if has msi capability or set irq_mode */
 	if (adapter->irq_mode == irq_mode_msi) {
 		err = pci_enable_msi(adapter->pdev);
-		/* msi mode use only 1 irq */
-		if (err)
+		if (err) {
 			pr_info("Failed to allocate MSI interrupt, falling back to legacy. Error");
-		else
+		} else {
+			/* msi mode use only 1 irq */
 			adapter->flags |= RNP_FLAG_MSI_ENABLED;
+		}
 	}
 	/* write back origin irq_mode */
 	adapter->irq_mode = irq_mode_back;
@@ -713,6 +640,42 @@ static int rnpgbe_set_interrupt_capability(struct rnpgbe_adapter *adapter)
 
 out:
 	return err;
+}
+
+static void rnpgbe_print_ring_info(struct rnpgbe_adapter *adapter)
+{
+	struct rnpgbe_q_vector *q_vector;
+	struct rnpgbe_ring *ring;
+	int i;
+
+	rnpgbe_dbg("tx_queue count %d\n", adapter->num_tx_queues);
+	rnpgbe_dbg("queue-mapping :\n");
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		ring = adapter->tx_ring[i];
+		rnpgbe_dbg(" queue %d , physical ring %d\n", i,
+			   ring->rnpgbe_queue_idx);
+	}
+	rnpgbe_dbg("rx_queue count %d\n", adapter->num_rx_queues);
+	rnpgbe_dbg("queue-mapping :\n");
+	for (i = 0; i < adapter->num_rx_queues; i++) {
+		ring = adapter->rx_ring[i];
+		rnpgbe_dbg(" queue %d , physical ring %d\n", i,
+			   ring->rnpgbe_queue_idx);
+	}
+	rnpgbe_dbg("q_vector count %d\n", adapter->num_q_vectors);
+	rnpgbe_dbg("vector-queue mapping:\n");
+	for (i = 0; i < adapter->num_q_vectors; i++) {
+		q_vector = adapter->q_vector[i];
+		rnpgbe_dbg("vector %d\n", i);
+		rnpgbe_for_each_ring(ring, q_vector->tx) {
+			rnpgbe_dbg(" tx physical ring %d\n",
+				   ring->rnpgbe_queue_idx);
+		}
+		rnpgbe_for_each_ring(ring, q_vector->rx) {
+			rnpgbe_dbg(" rx physical ring %d\n",
+				   ring->rnpgbe_queue_idx);
+		}
+	}
 }
 
 static void update_ring_count(struct rnpgbe_adapter *adapter)
@@ -763,11 +726,11 @@ int rnpgbe_init_interrupt_scheme(struct rnpgbe_adapter *adapter)
 	}
 	rnpgbe_cache_ring_register(adapter);
 
-	/* printk now qvctor ring setup */
 	DPRINTK(PROBE, INFO,
 		"Multiqueue %s: Rx Queue count = %u, Tx Queue count = %u\n\n",
 		(adapter->num_rx_queues > 1) ? "Enabled" : "Disabled",
 		adapter->num_rx_queues, adapter->num_tx_queues);
+	rnpgbe_print_ring_info(adapter);
 
 	set_bit(__RNP_DOWN, &adapter->state);
 
@@ -798,20 +761,21 @@ void rnpgbe_clear_interrupt_scheme(struct rnpgbe_adapter *adapter)
 /**
  * rnpgbe_tx_ctxtdesc - Send a control desc to hw
  * @tx_ring: target ring of this control desc
- * @mss_len_vf_num: mss length
- * @inner_vlan_tunnel_len: inner vlan tunnel length
- * @ignore_vlan: ignore vlan flag
- * @crc_pad: padding flag
+ * @mss_len_vf_num: mss vf num
+ * @inner_vlan_tunnel_len: inner vlan length
+ * @ignore_vlan: ignore vlan flags
+ * @crc_pad: crc pad or not
  *
  **/
-
-static void rnpgbe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring, u32 mss_len_vf_num,
-			       u32 inner_vlan_tunnel_len, int ignore_vlan,
+static void rnpgbe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring,
+			       u32 mss_len_vf_num,
+			       u32 inner_vlan_tunnel_len,
+			       int ignore_vlan,
 			       bool crc_pad)
 {
+	struct rnpgbe_adapter *adapter = RING2ADAPT(tx_ring);
 	struct rnpgbe_tx_ctx_desc *context_desc;
 	u16 i = tx_ring->next_to_use;
-	struct rnpgbe_adapter *adapter = RING2ADAPT(tx_ring);
 	u32 type_tucmd = 0;
 
 	context_desc = RNP_TX_CTXTDESC(tx_ring, i);
@@ -839,10 +803,9 @@ static void rnpgbe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring, u32 mss_len_vf_num,
 	context_desc->resv_cmd = cpu_to_le32(type_tucmd);
 	context_desc->resv = 0;
 	if (tx_ring->q_vector->adapter->flags & RNP_FLAG_SRIOV_ENABLED) {
-		if (ignore_vlan) {
+		if (ignore_vlan)
 			context_desc->inner_vlan_tunnel_len |=
 				cpu_to_le32(VF_VEB_IGNORE_VLAN);
-		}
 	}
 	buf_dump_line("ctx  ", __LINE__, context_desc, sizeof(*context_desc));
 }
@@ -850,6 +813,7 @@ static void rnpgbe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring, u32 mss_len_vf_num,
 void rnpgbe_maybe_tx_ctxtdesc(struct rnpgbe_ring *tx_ring,
 			      struct rnpgbe_tx_buffer *first, u32 ignore_vlan)
 {
+	/* sriov mode pf use the last vf */
 	if (first->ctx_flag) {
 		rnpgbe_tx_ctxtdesc(tx_ring, first->mss_len_vf_num,
 				   first->inner_vlan_tunnel_len, ignore_vlan,
@@ -861,14 +825,13 @@ void rnpgbe_store_reta(struct rnpgbe_adapter *adapter)
 {
 	u32 i, reta_entries = rnpgbe_rss_indir_tbl_entries(adapter);
 	struct rnpgbe_hw *hw = &adapter->hw;
-	u32 reta = 0;
 	struct rnpgbe_ring *rx_ring;
+	u32 reta = 0;
 
 	/* Write redirection table to HW */
 	for (i = 0; i < reta_entries; i++) {
 		if (adapter->flags & RNP_FLAG_SRIOV_ENABLED) {
 			reta = adapter->rss_indir_tbl[i];
-
 		} else {
 			rx_ring = adapter->rx_ring[adapter->rss_indir_tbl[i]];
 			reta = rx_ring->rnpgbe_queue_idx;
@@ -880,16 +843,16 @@ void rnpgbe_store_reta(struct rnpgbe_adapter *adapter)
 
 void rnpgbe_store_key(struct rnpgbe_adapter *adapter)
 {
-	struct rnpgbe_hw *hw = &adapter->hw;
 	bool sriov_flag = !!(adapter->flags & RNP_FLAG_SRIOV_ENABLED);
+	struct rnpgbe_hw *hw = &adapter->hw;
 
 	hw->ops.set_rss_key(hw, sriov_flag);
 }
 
 int rnpgbe_init_rss_key(struct rnpgbe_adapter *adapter)
 {
-	struct rnpgbe_hw *hw = &adapter->hw;
 	bool sriov_flag = !!(adapter->flags & RNP_FLAG_SRIOV_ENABLED);
+	struct rnpgbe_hw *hw = &adapter->hw;
 
 	/* only init rss key once */
 	/* no change rss key if user input one */
@@ -904,25 +867,16 @@ int rnpgbe_init_rss_key(struct rnpgbe_adapter *adapter)
 
 int rnpgbe_init_rss_table(struct rnpgbe_adapter *adapter)
 {
+	u32 reta_entries = rnpgbe_rss_indir_tbl_entries(adapter);
 	int rx_nums = adapter->num_rx_queues;
-	int i, j;
 	struct rnpgbe_hw *hw = &adapter->hw;
 	struct rnpgbe_ring *rx_ring;
 	u32 reta = 0;
-	u32 reta_entries = rnpgbe_rss_indir_tbl_entries(adapter);
+	int i, j;
 
-	if (adapter->flags & RNP_FLAG_DCB_ENABLED) {
-		rx_nums = rx_nums / adapter->num_tc;
-		for (i = 0, j = 0; i < 8; i++) {
-			adapter->rss_tc_tbl[i] = j;
-			hw->rss_tc_tbl[i] = j;
-			j = (j + 1) % adapter->num_tc;
-		}
-	} else {
-		for (i = 0, j = 0; i < 8; i++) {
-			hw->rss_tc_tbl[i] = 0;
-			adapter->rss_tc_tbl[i] = 0;
-		}
+	for (i = 0, j = 0; i < 8; i++) {
+		hw->rss_tc_tbl[i] = 0;
+		adapter->rss_tc_tbl[i] = 0;
 	}
 
 	/* adapter->num_q_vectors is not correct */
@@ -947,7 +901,6 @@ int rnpgbe_init_rss_table(struct rnpgbe_adapter *adapter)
 	/* tbl only init once */
 	adapter->rss_tbl_setup_flag = 1;
 	hw->ops.set_rss_table(hw);
-
 	return 0;
 }
 
@@ -971,13 +924,10 @@ s32 rnpgbe_fdir_erase_perfect_filter(int fdir_mode, struct rnpgbe_hw *hw,
 				     union rnpgbe_atr_input *input, u16 pri_id)
 {
 	/* just disable filter */
-	if (input->formatted.flow_type == RNP_ATR_FLOW_TYPE_ETHER) {
+	if (input->formatted.flow_type == RNP_ATR_FLOW_TYPE_ETHER)
 		hw->ops.clr_layer2_remapping(hw, pri_id);
-		dbg("disable layer2 %d\n", pri_id);
-	} else {
+	else
 		hw->ops.clr_tuple5_remapping(hw, pri_id);
-		dbg("disable tuple5 %d\n", pri_id);
-	}
 
 	return 0;
 }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/pci.h>
 #include <linux/delay.h>
@@ -11,32 +11,13 @@
 #include "rnpgbe_ethtool.h"
 #include "rnpgbe_sriov.h"
 
-#define RNP_N500_PKT_LEN_ERR (2)
-#define RNP_N500_HDR_LEN_ERR (1)
-#define RNP_N500_MAX_VF 8
-#define RNP_N500_RSS_TBL_NUM 128
-#define RNP_N500_RSS_TC_TBL_NUM 8
-#define RNP_N500_MAX_TX_QUEUES 8
-#define RNP_N500_MAX_RX_QUEUES 8
-#define NCSI_RAR_NUM (2)
-#define NCSI_MC_NUM (5)
-/* we reseve 2 rar for ncsi */
-#define RNP_N500_RAR_ENTRIES (32 - NCSI_RAR_NUM)
-#define NCSI_RAR_IDX_START (32 - NCSI_RAR_NUM)
-#define RNP_N500_MC_TBL_SIZE 128
-#define RNP_N500_VFT_TBL_SIZE 128
-#ifndef RNP_N500_MSIX_VECTORS
-#define RNP_N500_MSIX_VECTORS 26
-#endif
-#define RNPGBE_MAX_LAYER2_FILTERS 16
-#define RNPGBE_MAX_TUPLE5_FILTERS 128
-
-enum n500_priv_bits {
-	n500_mac_loopback = 0,
-	n500_padding_enable = 8,
+enum rnpgbe_priv_bits {
+	rnpgbe_mac_loopback = 0,
+	rnpgbe_padding_enable = 8,
 };
 
 static const char rnpgbe_priv_flags_strings[][ETH_GSTRING_LEN] = {
+//#define RNPGBE_MAC_LOOPBACK BIT(0)
 #define RNPGBE_FORCE_CLOSE BIT(0)
 #define RNPGBE_TX_SOLF_PADDING BIT(1)
 #define RNPGBE_PADDING_DEBUG BIT(2)
@@ -56,6 +37,7 @@ static const char rnpgbe_priv_flags_strings[][ETH_GSTRING_LEN] = {
 #define RNPGBE_SRIOV_VLAN_MODE BIT(16)
 #define RNPGBE_LLDP_EN BIT(17)
 	"link_down_on_close",
+//	"mac_loopback",
 	"soft_tx_padding_off",
 	"padding_debug",
 	"simulate_link_down",
@@ -81,6 +63,7 @@ static const char rnpgbe_priv_flags_strings[][ETH_GSTRING_LEN] = {
 static void rnpgbe_dma_set_tx_maxrate(struct rnpgbe_dma_info *dma,
 				      u16 queue, u32 max_rate)
 {
+	/* todo */
 }
 
 /* setup mac with vf_num to veb table */
@@ -124,13 +107,15 @@ static void rnpgbe_dma_set_veb_vlan_mask(struct rnpgbe_dma_info *dma,
 
 static void rnpgbe_dma_clr_veb_all(struct rnpgbe_dma_info *dma)
 {
-	int port = 0, i;
+	int port, i;
 
-	for (i = 0; i < RNPGBE_VEB_TBL_CNTS; i++) {
-		dma_wr32(dma, RNPGBE_DMA_PORT_VBE_MAC_LO_TBL(port, i), 0);
-		dma_wr32(dma, RNPGBE_DMA_PORT_VBE_MAC_HI_TBL(port, i), 0);
-		dma_wr32(dma, RNPGBE_DMA_PORT_VEB_VID_TBL(port, i), 0);
-		dma_wr32(dma, RNPGBE_DMA_PORT_VEB_VF_RING_TBL(port, i), 0);
+	for (port = 0; port < 1; port++) {
+		for (i = 0; i < RNPGBE_VEB_TBL_CNTS; i++) {
+			dma_wr32(dma, RNPGBE_DMA_PORT_VBE_MAC_LO_TBL(port, i), 0);
+			dma_wr32(dma, RNPGBE_DMA_PORT_VBE_MAC_HI_TBL(port, i), 0);
+			dma_wr32(dma, RNPGBE_DMA_PORT_VEB_VID_TBL(port, i), 0);
+			dma_wr32(dma, RNPGBE_DMA_PORT_VEB_VF_RING_TBL(port, i), 0);
+		}
 	}
 }
 
@@ -152,13 +137,13 @@ static struct rnpgbe_dma_operations dma_ops_rnpgbe = {
  *
  *  Puts an ethernet address into a receive address register.
  **/
-static s32 rnpgbe_eth_set_rar(struct rnpgbe_eth_info *eth, u32 index,
-			      u8 *addr,
+static s32 rnpgbe_eth_set_rar(struct rnpgbe_eth_info *eth,
+			      u32 index, u8 *addr,
 			      bool enable_addr)
 {
-	u32 mcstctrl;
-	u32 rar_low, rar_high = 0;
 	u32 rar_entries = eth->num_rar_entries;
+	u32 rar_low, rar_high = 0;
+	u32 mcstctrl;
 
 	/* Make sure we are using a valid rar index range */
 	if (index >= rar_entries) {
@@ -168,12 +153,14 @@ static s32 rnpgbe_eth_set_rar(struct rnpgbe_eth_info *eth, u32 index,
 
 	eth_dbg(eth, "    RAR[%d] <= %pM.  vmdq:%d enable:0x%x\n", index, addr);
 
-	/* HW expects these in big endian so we reverse the byte
+	/*
+	 * HW expects these in big endian so we reverse the byte
 	 * order from network order (big endian) to little endian
 	 */
 	rar_low = ((u32)addr[5] | ((u32)addr[4] << 8) | ((u32)addr[3] << 16) |
 		   ((u32)addr[2] << 24));
-	/* Some parts put the VMDq setting in the extra RAH bits,
+	/*
+	 * Some parts put the VMDq setting in the extra RAH bits,
 	 * so save everything except the lower 16 bits that hold part
 	 * of the address and the address valid bit.
 	 */
@@ -208,8 +195,8 @@ static s32 rnpgbe_eth_set_rar(struct rnpgbe_eth_info *eth, u32 index,
 static s32 rnpgbe_eth_clear_rar(struct rnpgbe_eth_info *eth,
 				u32 index)
 {
-	u32 rar_high;
 	u32 rar_entries = eth->num_rar_entries;
+	u32 rar_high;
 
 	/* Make sure we are using a valid rar index range */
 	if (index >= rar_entries) {
@@ -217,13 +204,13 @@ static s32 rnpgbe_eth_clear_rar(struct rnpgbe_eth_info *eth,
 		return RNP_ERR_INVALID_ARGUMENT;
 	}
 
-	/* Some parts put the VMDq setting in the extra RAH bits,
+	/*
+	 * Some parts put the VMDq setting in the extra RAH bits,
 	 * so save everything except the lower 16 bits that hold part
 	 * of the address and the address valid bit.
 	 */
 	rar_high = eth_rd32(eth, RNPGBE_ETH_RAR_RH(index));
 	rar_high &= ~(0x0000FFFF | RNPGBE_RAH_AV);
-
 	eth_wr32(eth, RNPGBE_ETH_RAR_RL(index), 0);
 	eth_wr32(eth, RNPGBE_ETH_RAR_RH(index), rar_high);
 
@@ -322,16 +309,17 @@ static s32 rnpgbe_mta_vector(struct rnpgbe_eth_info *eth, u8 *mc_addr)
 
 static void rnpgbe_set_mta(struct rnpgbe_hw *hw, u8 *mc_addr)
 {
-	u32 vector;
+	struct rnpgbe_eth_info *eth = &hw->eth;
 	u32 vector_bit;
 	u32 vector_reg;
-	struct rnpgbe_eth_info *eth = &hw->eth;
+	u32 vector;
 
 	hw->addr_ctrl.mta_in_use++;
 
 	vector = rnpgbe_mta_vector(eth, mc_addr);
 
-	/* The MTA is a register array of 128 32-bit registers. It is treated
+	/*
+	 * The MTA is a register array of 128 32-bit registers. It is treated
 	 * like an array of 4096 bits.  We want to set bit
 	 * BitArray[vector_value]. So we figure out what register the bit is
 	 * in, read it, OR in the new bit, then write back the new value.  The
@@ -349,9 +337,9 @@ static void rnpgbe_set_mta(struct rnpgbe_hw *hw, u8 *mc_addr)
 static void rnpgbe_set_vf_mta(struct rnpgbe_hw *hw, u16 vector)
 {
 	/* vf/pf use the same multicast table */
+	struct rnpgbe_eth_info *eth = &hw->eth;
 	u32 vector_bit;
 	u32 vector_reg;
-	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	hw->addr_ctrl.mta_in_use++;
 
@@ -383,9 +371,9 @@ static u8 *rnpgbe_addr_list_itr(struct rnpgbe_hw __maybe_unused *hw,
 
 /**
  *  rnpgbe_eth_update_mc_addr_list - Updates MAC list of multicast addresses
- *  @eth: pointer to hardware structure
+ *  @eth: pointer to eth structure
  *  @netdev: pointer to net device structure
- *  @sriov_on: sriov status
+ *  @sriov_on: sriov flags
  *
  *  The given list replaces any existing list. Clears the MC addrs from receive
  *  address registers and the multicast table. Uses unused receive address
@@ -398,15 +386,15 @@ static s32 rnpgbe_eth_update_mc_addr_list(struct rnpgbe_eth_info *eth,
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)eth->back;
 	struct netdev_hw_addr *ha;
+	u8 *addr_list = NULL;
+	int addr_count = 0;
+	u8 ncsi_mc_addr[6];
+	int ret;
 	u32 i;
 	u32 v;
-	int addr_count = 0;
-	u8 *addr_list = NULL;
-	int ret;
-	u8 ncsi_mc_addr[6];
-	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 
-	/* Set the new number of MC addresses that we are being requested to
+	/*
+	 * Set the new number of MC addresses that we are being requested to
 	 * use.
 	 */
 	hw->addr_ctrl.num_mc_addrs = netdev_mc_count(netdev);
@@ -414,12 +402,10 @@ static s32 rnpgbe_eth_update_mc_addr_list(struct rnpgbe_eth_info *eth,
 
 	/* Clear mta_shadow */
 	eth_dbg(eth, " Clearing MTA(multicast table)\n");
-
 	memset(&eth->mta_shadow, 0, sizeof(eth->mta_shadow));
 
 	/* Update mta shadow */
 	eth_dbg(eth, " Updating MTA..\n");
-
 	addr_count = netdev_mc_count(netdev);
 
 	ha = list_first_entry(&netdev->mc.list, struct netdev_hw_addr, list);
@@ -429,25 +415,22 @@ static s32 rnpgbe_eth_update_mc_addr_list(struct rnpgbe_eth_info *eth,
 		rnpgbe_set_mta(hw, rnpgbe_addr_list_itr(hw, &addr_list));
 	}
 
-	if (!sriov_on)
-		goto skip_sriov;
+	if (sriov_on) {
+		struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 
-	/* sriov mode should set for vf multicast */
-	for (i = 0; i < adapter->num_vfs; i++) {
-		struct vf_data_storage *vfinfo;
-		int j;
+		for (i = 0; i < adapter->num_vfs; i++) {
+			struct vf_data_storage *vfinfo;
+			int j;
 
-		if (!adapter->vfinfo)
-			continue;
-
-		vfinfo = &adapter->vfinfo[i];
-		for (j = 0; j < vfinfo->num_vf_mc_hashes; j++)
-			rnpgbe_set_vf_mta(hw, vfinfo->vf_mc_hashes[j]);
+			if (!adapter->vfinfo)
+				break;
+			vfinfo =  &adapter->vfinfo[i];
+			for (j = 0; j < vfinfo->num_vf_mc_hashes; j++)
+				rnpgbe_set_vf_mta(hw, vfinfo->vf_mc_hashes[j]);
+		}
 	}
-
-skip_sriov:
 	/* update ncsi multicast address */
-	for (i = NCSI_RAR_NUM; i < NCSI_MC_NUM; i++) {
+	for (i = NCSI_RAR_NUM; i < (NCSI_RAR_NUM + NCSI_MC_NUM); i++) {
 		ret = hw->ops.get_ncsi_mac(hw, ncsi_mc_addr, i);
 		if (!ret)
 			rnpgbe_set_mta(hw, ncsi_mc_addr);
@@ -470,7 +453,6 @@ skip_sriov:
 
 	eth_dbg(eth, " update MTA Done. mta_in_use:%d\n",
 		hw->addr_ctrl.mta_in_use);
-
 	return hw->addr_ctrl.mta_in_use;
 }
 
@@ -486,20 +468,20 @@ static void rnpgbe_eth_clr_mc_addr(struct rnpgbe_eth_info *eth)
 /**
  *  rnpgbe_eth_set_rss_hfunc - Remove Rx address register
  *  @eth: pointer to eth structure
- *  @hfunc: hash function type
+ *  @hfunc: type
  *
  *  update rss key to eth regs
  **/
-static int rnpgbe_eth_set_rss_hfunc(struct rnpgbe_eth_info *eth,
-				    int hfunc)
+static int rnpgbe_eth_set_rss_hfunc(struct rnpgbe_eth_info *eth, int hfunc)
 {
 	u32 data;
 
 	data = eth_rd32(eth, RNPGBE_ETH_RSS_CONTROL);
+	/* clean mode only bit[14:15] */
 	data &= ~(BIT(14) | BIT(15));
 
 	if (hfunc == rss_func_top)
-		data |= 0;
+		;
 	else if (hfunc == rss_func_xor)
 		data |= BIT(14);
 	else if (hfunc == rss_func_order)
@@ -525,19 +507,20 @@ static void rnpgbe_eth_update_rss_key(struct rnpgbe_eth_info *eth,
 				      bool sriov_flag)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)eth->back;
-	int i;
-	u8 key_temp[RNP_RSS_KEY_SIZE];
-	int key_len = RNP_RSS_KEY_SIZE;
-	u8 *key = hw->rss_key;
-	u32 data;
 	u32 iov_en = (sriov_flag) ? RNPGBE_IOV_ENABLED : 0;
+	int key_len = RNP_RSS_KEY_SIZE;
+	u8 key_temp[RNP_RSS_KEY_SIZE];
+	u8 *key = hw->rss_key;
 	u32 *value;
+	u32 data;
+	int i;
 
 	data = eth_rd32(eth, RNPGBE_ETH_RSS_CONTROL);
 
-	/* reoder the key */
+	/* reorder the key */
 	for (i = 0; i < key_len; i++)
 		*(key_temp + key_len - i - 1) = *(key + i);
+
 	value = (u32 *)key_temp;
 
 	for (i = 0; i < key_len; i = i + 4)
@@ -568,7 +551,9 @@ static void rnpgbe_eth_update_rss_table(struct rnpgbe_eth_info *eth)
 		eth_wr32(eth, RNPGBE_ETH_RSS_INDIR_TBL(i),
 			 hw->rss_indir_tbl[i]);
 
-	/* if we update rss table ,we should update deault ring same with rss[0] */
+	/* if we update rss table,
+	 * we should update default ring same with rss[0]
+	 */
 	eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_RING, hw->rss_indir_tbl[0]);
 }
 
@@ -580,25 +565,19 @@ static void rnpgbe_eth_update_rss_table(struct rnpgbe_eth_info *eth)
  *
  *  Turn on/off specified VLAN in the VLAN filter table.
  **/
-static s32 rnpgbe_eth_set_vfta(struct rnpgbe_eth_info *eth,
-			       u32 vlan,
+static s32 rnpgbe_eth_set_vfta(struct rnpgbe_eth_info *eth, u32 vlan,
 			       bool vlan_on)
 {
+	bool vfta_changed = false;
+	u32 targetbit;
 	s32 regindex;
 	u32 bitindex;
 	u32 vfta;
-	u32 targetbit;
-	bool vfta_changed = false;
 
-	/* todo in vf mode vlvf regester can be set according to vind*/
+	/* todo in vf mode vlvf register can be set according to vind*/
 	if (vlan > 4095)
 		return RNP_ERR_PARAM;
 
-	/* The VFTA is a bitstring made up of 128 32-bit registers
-	 * that enable the particular VLAN id, much like the MTA:
-	 *    bits[11-5]: which register
-	 *    bits[4-0]:  which bit in the register
-	 */
 	regindex = (vlan >> 5) & 0x7F;
 	bitindex = vlan & 0x1F;
 	targetbit = (1 << bitindex);
@@ -698,16 +677,14 @@ static void rnpgbe_eth_set_layer2(struct rnpgbe_eth_info *eth,
 	/* setup action */
 	if (queue == RNP_FDIR_DROP_QUEUE) {
 		eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQS(hw_id), (0x1 << 31));
-
 	} else {
 		/* setup ring_number */
-		if (prio_flag) {
+		if (prio_flag)
 			eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQS(hw_id),
 				 (0x1 << 30) | (queue << 20) | (0x1 << 28));
-		} else {
+		else
 			eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQS(hw_id),
 				 (0x1 << 30) | (queue << 20));
-		}
 	}
 }
 
@@ -722,7 +699,7 @@ static void rnpgbe_eth_clr_layer2(struct rnpgbe_eth_info *eth, u16 pri_id)
 static void rnpgbe_eth_clr_all_layer2(struct rnpgbe_eth_info *eth)
 {
 	int i;
-#define RNPGBE_MAX_LAYER2_FILTERS 16
+
 	for (i = 0; i < RNPGBE_MAX_LAYER2_FILTERS; i++)
 		eth_wr32(eth, RNPGBE_ETH_LAYER2_ETQF(i), 0);
 }
@@ -742,14 +719,12 @@ static void rnpgbe_eth_set_tuple5(struct rnpgbe_eth_info *eth,
 #define RNPGBE_SRC_PORT_MASK BIT(2)
 #define RNPGBE_DST_PORT_MASK BIT(3)
 #define RNPGBE_L4_PROTO_MASK BIT(4)
-
-	u32 port = 0;
-	u8 mask_temp = 0;
 	u8 l4_proto_type = 0;
+	u8 mask_temp = 0;
+	u32 port = 0;
 	u16 hw_id;
 
 	hw_id = rnpgbe_tuple5_pritologic(pri_id);
-
 	if (input->formatted.src_ip[0] != 0) {
 		eth_wr32(eth, RNPGBE_ETH_TUPLE5_SAQF(hw_id),
 			 ntohl(input->formatted.src_ip[0]));
@@ -804,18 +779,16 @@ static void rnpgbe_eth_set_tuple5(struct rnpgbe_eth_info *eth,
 		eth_wr32(eth, RNPGBE_ETH_TUPLE5_POLICY(hw_id), (0x1 << 31));
 	} else {
 		/* setup ring_number */
-		if (prio_flag) {
+		if (prio_flag)
 			eth_wr32(eth, RNPGBE_ETH_TUPLE5_POLICY(hw_id),
 				 ((0x1 << 30) | (queue << 20) | (0x1 << 28)));
-		} else {
+		else
 			eth_wr32(eth, RNPGBE_ETH_TUPLE5_POLICY(hw_id),
 				 ((0x1 << 30) | (queue << 20)));
-		}
 	}
 }
 
-static void rnpgbe_eth_clr_tuple5(struct rnpgbe_eth_info *eth,
-				  u16 pri_id)
+static void rnpgbe_eth_clr_tuple5(struct rnpgbe_eth_info *eth, u16 pri_id)
 {
 	u16 hw_id;
 
@@ -838,10 +811,10 @@ static void rnpgbe_eth_set_tcp_sync(struct rnpgbe_eth_info *eth,
 	if (flag) {
 		eth_wr32(eth, RNPGBE_ETH_SYNQF, (0x1 << 30) | (queue << 20));
 		if (prio)
-			eth_wr32(eth, RNPGBE_ETH_SYNQF_PRIORITY, BIT(31) | 0x1);
+			eth_wr32(eth, RNPGBE_ETH_SYNQF_PRIORITY,
+				 (0x1 << 31) | 0x1);
 		else
-			eth_wr32(eth, RNPGBE_ETH_SYNQF_PRIORITY, BIT(31));
-
+			eth_wr32(eth, RNPGBE_ETH_SYNQF_PRIORITY, (0x1 << 31));
 	} else {
 		eth_wr32(eth, RNPGBE_ETH_SYNQF, 0);
 		eth_wr32(eth, RNPGBE_ETH_SYNQF_PRIORITY, 0);
@@ -871,8 +844,8 @@ static void rnpgbe_eth_set_vlan_strip(struct rnpgbe_eth_info *eth,
 				      u16 queue, bool enable)
 {
 	u32 reg = RNPGBE_ETH_VLAN_VME_REG(queue / 32);
-	u32 offset = queue % 32;
 	u32 data = eth_rd32(eth, reg);
+	u32 offset = queue % 32;
 
 	if (enable)
 		data |= (1 << offset);
@@ -927,7 +900,6 @@ static void rnpgbe_eth_set_vf_vlan_mode(struct rnpgbe_eth_info *eth,
 		value |= BIT(31);
 
 	eth_wr32(eth, RNPGBE_VLVF(vf), value);
-	/* n500 1 vf only can setup 1 vlan */
 	eth_wr32(eth, RNPGBE_VLVF_TABLE(vf), vf);
 }
 
@@ -935,27 +907,31 @@ static s32 rnpgbe_eth_set_fc_mode(struct rnpgbe_eth_info *eth)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)eth->back;
 	s32 ret_val = 0;
-	int i = 0;
-	/* n500 has only 1 traffic class */
-
-	if ((hw->fc.current_mode & rnpgbe_fc_tx_pause) &&
-	    hw->fc.high_water[i]) {
-		if (!hw->fc.low_water[i] ||
-		    hw->fc.low_water[i] >= hw->fc.high_water[i]) {
-			hw_dbg(hw, "Invalid water mark configuration\n");
-			ret_val = RNP_ERR_INVALID_LINK_SETTINGS;
-			goto out;
+	int i;
+	/* rnpgbe has only 1 traffic class */
+	for (i = 0; i < 1; i++) {
+		if ((hw->fc.current_mode & rnpgbe_fc_tx_pause) &&
+		    hw->fc.high_water[i]) {
+			if (!hw->fc.low_water[i] ||
+			    hw->fc.low_water[i] >= hw->fc.high_water[i]) {
+				hw_dbg(hw,
+				       "Invalid water mark configuration\n");
+				ret_val = RNP_ERR_INVALID_LINK_SETTINGS;
+				goto out;
+			}
 		}
 	}
 
-	if ((hw->fc.current_mode & rnpgbe_fc_tx_pause)) {
-		if (hw->fc.high_water[i]) {
-			eth_wr32(eth, RNPGBE_ETH_HIGH_WATER(i),
-				 hw->fc.high_water[i]);
-		}
-		if (hw->fc.low_water[i]) {
-			eth_wr32(eth, RNPGBE_ETH_LOW_WATER(i),
-				 hw->fc.low_water[i]);
+	for (i = 0; i < 1; i++) {
+		if ((hw->fc.current_mode & rnpgbe_fc_tx_pause)) {
+			if (hw->fc.high_water[i]) {
+				eth_wr32(eth, RNPGBE_ETH_HIGH_WATER(i),
+					 hw->fc.high_water[i]);
+			}
+			if (hw->fc.low_water[i]) {
+				eth_wr32(eth, RNPGBE_ETH_LOW_WATER(i),
+					 hw->fc.low_water[i]);
+			}
 		}
 	}
 out:
@@ -969,10 +945,15 @@ static struct rnpgbe_eth_operations eth_ops_rnpgbe = {
 	.clear_vmdq = &rnpgbe_eth_clear_vmdq,
 	.update_mc_addr_list = &rnpgbe_eth_update_mc_addr_list,
 	.clr_mc_addr = &rnpgbe_eth_clr_mc_addr,
+	/* store rss info to eth */
 	.set_rss_hfunc = &rnpgbe_eth_set_rss_hfunc,
 	.set_rss_key = &rnpgbe_eth_update_rss_key,
 	.set_rss_table = &rnpgbe_eth_update_rss_table,
-	.set_rx_hash = &rnpgbe_eth_set_rx_hash,
+	.set_vfta = &rnpgbe_eth_set_vfta,
+	.clr_vfta = &rnpgbe_eth_clr_vfta,
+	.set_vlan_filter = &rnpgbe_eth_set_vlan_filter,
+	.set_outer_vlan_type = &rnpgbe_eth_set_outer_vlan_type,
+	.set_double_vlan = &rnpgbe_eth_set_doulbe_vlan,
 	.set_layer2_remapping = &rnpgbe_eth_set_layer2,
 	.clr_layer2_remapping = &rnpgbe_eth_clr_layer2,
 	.clr_all_layer2_remapping = &rnpgbe_eth_clr_all_layer2,
@@ -983,11 +964,7 @@ static struct rnpgbe_eth_operations eth_ops_rnpgbe = {
 	.set_rx_skip = &rnpgbe_eth_set_rx_skip,
 	.set_min_max_packet = &rnpgbe_eth_set_min_max_packets,
 	.set_vlan_strip = &rnpgbe_eth_set_vlan_strip,
-	.set_vfta = &rnpgbe_eth_set_vfta,
-	.clr_vfta = &rnpgbe_eth_clr_vfta,
-	.set_vlan_filter = &rnpgbe_eth_set_vlan_filter,
-	.set_outer_vlan_type = &rnpgbe_eth_set_outer_vlan_type,
-	.set_double_vlan = &rnpgbe_eth_set_doulbe_vlan,
+	.set_rx_hash = &rnpgbe_eth_set_rx_hash,
 	.set_fc_mode = &rnpgbe_eth_set_fc_mode,
 	.set_rx = &rnpgbe_eth_set_rx,
 	.set_fcs = &rnpgbe_eth_fcs,
@@ -1010,9 +987,11 @@ static s32 rnpgbe_init_hw_ops(struct rnpgbe_hw *hw)
 
 	/* Reset the hardware */
 	status = hw->ops.reset_hw(hw);
-	/* Start the HW */
-	if (status == 0)
+
+	if (status == 0) {
+		/* Start the HW */
 		status = hw->ops.start_hw(hw);
+	}
 
 	return status;
 }
@@ -1020,30 +999,30 @@ static s32 rnpgbe_init_hw_ops(struct rnpgbe_hw *hw)
 static s32 rnpgbe_get_permtion_mac_addr(struct rnpgbe_hw *hw,
 					u8 *mac_addr)
 {
-	if (rnpgbe_fw_get_macaddr(hw, hw->pfvfnum, mac_addr, hw->nr_lane))
-		eth_random_addr(mac_addr);
-	/* should check valid mac */
-	if (!is_valid_ether_addr(mac_addr))
-		eth_random_addr(mac_addr);
+	struct device *dev = &hw->pdev->dev;
 
+	if (rnpgbe_fw_get_macaddr(hw, hw->pfvfnum, mac_addr, hw->nr_lane)) {
+		dev_info(dev, "generate random macaddress...\n");
+		eth_random_addr(mac_addr);
+	} else {
+		if (!is_valid_ether_addr(mac_addr))
+			eth_random_addr(mac_addr);
+	}
 	hw->mac.mac_flags |= RNP_FLAGS_INIT_MAC_ADDRESS;
-
 	return 0;
 }
 
 static s32 rnpgbe_reset_hw_ops(struct rnpgbe_hw *hw)
 {
-	int i;
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	struct rnpgbe_eth_info *eth = &hw->eth;
+	int i;
 
 	/* Call adapter stop to disable tx/rx and clear interrupts */
 	dma_wr32(dma, RNP_DMA_AXI_EN, 0);
 	rnpgbe_mbx_fw_reset_phy(hw);
-
 	/* tcam not reset */
 	eth->ops.clr_all_tuple5_remapping(eth);
-
 	/* Store the permanent mac address */
 	if (!(hw->mac.mac_flags & RNP_FLAGS_INIT_MAC_ADDRESS)) {
 		rnpgbe_get_permtion_mac_addr(hw, hw->mac.perm_addr);
@@ -1051,17 +1030,13 @@ static s32 rnpgbe_reset_hw_ops(struct rnpgbe_hw *hw)
 	}
 
 	hw->ops.init_rx_addrs(hw);
-
 	/* default drop */
 	eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR, 0);
-
 	hw_wr32(hw, RNP_DMA_RX_DATA_PROG_FULL_THRESH, 0xa);
 
-	/* reset all ring msix table to 0 */
 	for (i = 0; i < 12; i++)
 		rnpgbe_wr_reg(hw->ring_msix_base + RING_VECTOR(i), 0);
 
-	/* if ncsi on, sync hw status */
 	if (hw->ncsi_en)
 		rnpgbe_mbx_phy_pause_get(hw, &hw->fc.requested_mode);
 	else
@@ -1075,20 +1050,14 @@ static s32 rnpgbe_reset_hw_ops(struct rnpgbe_hw *hw)
 
 static s32 rnpgbe_start_hw_ops(struct rnpgbe_hw *hw)
 {
-	s32 ret_val = 0;
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_dma_info *dma = &hw->dma;
+	s32 ret_val = 0;
 
-	/* ETH Registers */
 	eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR, 0);
-
 	eth_wr32(eth, RNPGBE_ETH_BYPASS, 0);
 	eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_RING, 0);
-
-	/* DMA common Registers */
 	dma_wr32(dma, RNP_DMA_CONFIG, DMA_VEB_BYPASS);
-
-	/* enable-dma-axi */
 	dma_wr32(dma, RNP_DMA_AXI_EN, (RX_AXI_RW_EN | TX_AXI_RW_EN));
 
 	{
@@ -1100,13 +1069,13 @@ static s32 rnpgbe_start_hw_ops(struct rnpgbe_hw *hw)
 	return ret_val;
 }
 
-/* set n500 min/max packet according to new_mtu
+/* set rnpgbe min/max packet according to new_mtu
  * we support mtu + 14 + 4 * 3 as max packet LENGTH_ERROR
  */
 static void rnpgbe_set_mtu_hw_ops(struct rnpgbe_hw *hw, int new_mtu)
 {
-	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
+	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	int min;
 	int max = new_mtu + ETH_HLEN + ETH_FCS_LEN * 2;
@@ -1118,11 +1087,10 @@ static void rnpgbe_set_mtu_hw_ops(struct rnpgbe_hw *hw, int new_mtu)
 	else
 		min = DEFAULT_SHORT;
 
-	/* we receive jumbo fram only in jumbo enable or rx all mode */
+	/* we receive jumbo frame only in jumbo enable or rx all mode */
 	if ((adapter->priv_flags & RNP_PRIV_FLAG_JUMBO) ||
 	    (adapter->priv_flags & RNP_PRIV_FLAG_RX_ALL))
 		max = hw->max_length;
-
 	/* if ncsi not set max too small */
 	if (hw->ncsi_en && max < 1522)
 		max = 1522;
@@ -1132,7 +1100,6 @@ static void rnpgbe_set_mtu_hw_ops(struct rnpgbe_hw *hw, int new_mtu)
 	eth->ops.set_min_max_packet(eth, min, max);
 }
 
-/* setup n500 vlan filter status */
 static void rnpgbe_set_vlan_filter_en_hw_ops(struct rnpgbe_hw *hw,
 					     bool status)
 {
@@ -1141,20 +1108,18 @@ static void rnpgbe_set_vlan_filter_en_hw_ops(struct rnpgbe_hw *hw,
 	eth->ops.set_vlan_filter(eth, status);
 }
 
-/* set vlan to n500 vlan filter table & veb */
-/* pf setup call */
 static void rnpgbe_set_vlan_filter_hw_ops(struct rnpgbe_hw *hw, u16 vid,
 					  bool enable, bool sriov_flag)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	u16 ncsi_vid;
-	int i;
 	int ret;
+	int i;
 
-	/* use the last vfnum */
+	//todo set up own veb , use the last vfnum
 	u32 vfnum = hw->max_vfs - 1;
-	/* setup n500 eth vlan table */
+	/* setup rnpgbe eth vlan table */
 	eth->ops.set_vfta(eth, vid, enable);
 
 	/* setup veb */
@@ -1171,17 +1136,19 @@ static void rnpgbe_set_vlan_filter_hw_ops(struct rnpgbe_hw *hw, u16 vid,
 	/* always setup nsci vid */
 	for (i = 0; i < 2; i++) {
 		ret = hw->ops.get_ncsi_vlan(hw, &ncsi_vid, i);
-		if (!ret)
+		if (!ret) {
 			eth->ops.set_vfta(eth, ncsi_vid, 1);
+			//printk(KERN_DEBUG "update ncsi vid %d\n", ncsi_vid);
+		}
 	}
 }
 
 static int rnpgbe_set_veb_vlan_mask_hw_ops(struct rnpgbe_hw *hw, u16 vid,
 					   int vf, bool enable)
 {
-	struct list_head *pos;
-	struct vf_vebvlans *entry;
 	struct rnpgbe_dma_info *dma = &hw->dma;
+	struct vf_vebvlans *entry;
+	struct list_head *pos;
 	bool find = false;
 	int err = 0;
 	/* 1 try to find is this vid is in vlan mask table */
@@ -1205,7 +1172,6 @@ static int rnpgbe_set_veb_vlan_mask_hw_ops(struct rnpgbe_hw *hw, u16 vid,
 			}
 		}
 	} else {
-		/* it is a new vid */
 		/* 2 try to get new entries */
 		list_for_each(pos, &hw->vf_vas.l) {
 			entry = list_entry(pos, struct vf_vebvlans, l);
@@ -1215,7 +1181,6 @@ static int rnpgbe_set_veb_vlan_mask_hw_ops(struct rnpgbe_hw *hw, u16 vid,
 			}
 		}
 		if (find) {
-			/* use this entry */
 			entry->free = false;
 			entry->vid = vid;
 			entry->mask |= (1 << vf);
@@ -1238,7 +1203,7 @@ static void rnpgbe_set_vf_vlan_filter_hw_ops(struct rnpgbe_hw *hw, u16 vid,
 	struct rnpgbe_dma_info *dma = &hw->dma;
 
 	if (!veb_only) {
-		// call set vfta without veb setup
+		/* call set vfta without veb setup */
 		hw->ops.set_vlan_filter(hw, vid, enable, false);
 
 	} else {
@@ -1257,7 +1222,6 @@ static void rnpgbe_clr_vlan_veb_hw_ops(struct rnpgbe_hw *hw)
 	dma->ops.set_veb_vlan(dma, 0, vfnum);
 }
 
-/* setup n500 vlan strip status */
 static void rnpgbe_set_vlan_strip_hw_ops(struct rnpgbe_hw *hw, u16 queue,
 					 bool strip)
 {
@@ -1266,15 +1230,16 @@ static void rnpgbe_set_vlan_strip_hw_ops(struct rnpgbe_hw *hw, u16 queue,
 	eth->ops.set_vlan_strip(eth, queue, strip);
 }
 
-/* update new n500 mac */
 static void rnpgbe_set_mac_hw_ops(struct rnpgbe_hw *hw, u8 *mac,
 				  bool sriov_flag)
 {
+	struct rnpgbe_mac_info *mac_info = &hw->mac;
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_dma_info *dma = &hw->dma;
-	struct rnpgbe_mac_info *mac_info = &hw->mac;
 	/* use this queue index to setup veb */
-	/* vfnum is the last vfnum */
+	/* now pf use queue 0 /1
+	 * vfnum is the last vfnum
+	 */
 	int queue = hw->veb_ring;
 	int vfnum = hw->vfnum;
 
@@ -1283,15 +1248,15 @@ static void rnpgbe_set_mac_hw_ops(struct rnpgbe_hw *hw, u8 *mac,
 		eth->ops.set_vmdq(eth, 0, queue / hw->sriov_ring_limit);
 		dma->ops.set_veb_mac(dma, mac, vfnum, queue);
 	}
-	/* update pasue mac */
+
 	mac_info->ops.set_mac(mac_info, mac, 0);
 }
 
 /**
  * rnpgbe_write_uc_addr_list - write unicast addresses to RAR table
- * @hw: hardware structure
+ * @hw: hw structure
  * @netdev: network interface device structure
- * @sriov_flag: sriov on or not
+ * @sriov_flag: sriov flag
  *
  * Writes unicast address list to the RAR table.
  * Returns: -ENOMEM on failure/insufficient address space
@@ -1303,11 +1268,11 @@ static int rnpgbe_write_uc_addr_list(struct rnpgbe_hw *hw,
 				     bool sriov_flag)
 {
 	unsigned int rar_entries = hw->num_rar_entries - 1;
-	u32 vfnum = hw->vfnum;
 	struct rnpgbe_eth_info *eth = &hw->eth;
+	u32 vfnum = hw->vfnum;
+	u8 ncsi_addr[6];
 	int count = 0;
 	int i = 0;
-	u8 ncsi_addr[6];
 	int ret;
 
 	/* In SR-IOV mode significantly less RAR entries are available */
@@ -1341,7 +1306,6 @@ static int rnpgbe_write_uc_addr_list(struct rnpgbe_hw *hw,
 			count++;
 		}
 	}
-	/* should update ncsi rar address */
 	for (i = 0; i < NCSI_RAR_NUM; i++) {
 		ret = hw->ops.get_ncsi_mac(hw, ncsi_addr, i);
 		if (!ret) {
@@ -1362,10 +1326,10 @@ static void rnpgbe_set_rx_mode_hw_ops(struct rnpgbe_hw *hw,
 				      struct net_device *netdev,
 				      bool sriov_flag)
 {
-	u32 fctrl;
 	netdev_features_t features = netdev->features;
-	int count;
 	struct rnpgbe_eth_info *eth = &hw->eth;
+	int count;
+	u32 fctrl;
 
 	/* broadcast always bypass */
 	fctrl = eth_rd32(eth, RNPGBE_ETH_DMAC_FCTRL) | RNPGBE_FCTRL_BPE;
@@ -1387,7 +1351,6 @@ static void rnpgbe_set_rx_mode_hw_ops(struct rnpgbe_hw *hw,
 			 * then we should just turn on promiscuous mode so
 			 * that we can at least receive multicast traffic
 			 */
-			/* we always update vf multicast info */
 			count = eth->ops.update_mc_addr_list(eth, netdev, true);
 			if (count < 0)
 				fctrl |= RNPGBE_FCTRL_MPE;
@@ -1395,7 +1358,8 @@ static void rnpgbe_set_rx_mode_hw_ops(struct rnpgbe_hw *hw,
 		hw->addr_ctrl.user_set_promisc = false;
 	}
 
-	/* Write addresses to available RAR registers, if there is not
+	/*
+	 * Write addresses to available RAR registers, if there is not
 	 * sufficient space to store all the addresses then enable
 	 * unicast promiscuous mode
 	 */
@@ -1408,7 +1372,6 @@ static void rnpgbe_set_rx_mode_hw_ops(struct rnpgbe_hw *hw,
 	else
 		eth->ops.set_vlan_filter(eth, false);
 
-	/* update mtu */
 	hw->ops.set_mtu(hw, netdev->mtu);
 }
 
@@ -1432,8 +1395,8 @@ static void rnpgbe_clr_rar_hw_ops(struct rnpgbe_hw *hw, int idx)
 
 static void rnpgbe_clr_rar_all_hw_ops(struct rnpgbe_hw *hw)
 {
-	struct rnpgbe_eth_info *eth = &hw->eth;
 	unsigned int rar_entries = hw->num_rar_entries - 1;
+	struct rnpgbe_eth_info *eth = &hw->eth;
 	int i;
 
 	for (i = 0; i < rar_entries; i++)
@@ -1449,12 +1412,18 @@ static void rnpgbe_set_fcs_mode_hw_ops(struct rnpgbe_hw *hw, bool status)
 	eth->ops.set_fcs(eth, status);
 }
 
+static void rnpgbe_set_mac_speed_hw_ops(struct rnpgbe_hw *hw, bool link,
+					u32 speed, bool duplex)
+{
+	/* rnpgbe hw control this */
+}
+
 static void rnpgbe_set_mac_rx_hw_ops(struct rnpgbe_hw *hw, bool status)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
-	if (pci_channel_offline(hw->pdev))
+	if (pci_device_check_offline(hw->pdev))
 		return;
 
 	if (status) {
@@ -1486,6 +1455,8 @@ static void rnpgbe_set_sriov_status_hw_ops(struct rnpgbe_hw *hw,
 		v = eth_rd32(eth, RNPGBE_MRQC_IOV_EN);
 		v |= RNPGBE_IOV_ENABLED;
 		eth_wr32(eth, RNPGBE_MRQC_IOV_EN, v);
+		/* 1 setup veb vlan type */
+
 	} else {
 		eth_wr32(eth, RNPGBE_ETH_DMAC_FCTRL, fctrl);
 		v = eth_rd32(eth, RNPGBE_MRQC_IOV_EN);
@@ -1502,7 +1473,6 @@ static void rnpgbe_set_sriov_vf_mc_hw_ops(struct rnpgbe_hw *hw,
 	u32 vector_bit;
 	u32 vector_reg;
 	u32 mta_reg;
-	/* pf/ vf share one mc table */
 
 	vector_reg = (mc_addr >> 5) & 0x7F;
 	vector_bit = mc_addr & 0x1F;
@@ -1527,32 +1497,29 @@ static void rnpgbe_set_pause_mode_hw_ops(struct rnpgbe_hw *hw)
 
 static void rnpgbe_get_pause_mode_hw_ops(struct rnpgbe_hw *hw)
 {
-	// n500 can get pause mode in link event
+	/* rnpgbe can get pause mode in link event */
 }
 
 static void rnpgbe_update_hw_info_hw_ops(struct rnpgbe_hw *hw)
 {
+	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_mac_info *mac = &hw->mac;
-	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	u32 data;
 	/* 1 enable eth filter */
 	eth_wr32(eth, RNPGBE_HOST_FILTER_EN, 1);
 	/* 2 open redir en */
 	eth_wr32(eth, RNPGBE_REDIR_EN, 1);
-
 	/* 3 open sctp checksum and other checksum */
 	if (hw->feature_flags & RNP_NET_FEATURE_TX_CHECKSUM)
 		eth_wr32(eth, RNPGBE_ETH_SCTP_CHECKSUM_EN, 1);
-
 	/* 4 mark muticaset as broadcast */
-	dma_wr32(dma, RNP_VEB_MAC_MASK_LO, 0xffffffff);
-	dma_wr32(dma, RNP_VEB_MAC_MASK_HI, 0xfeff);
-
+	dma_wr32(dma, RNPGBE_VEB_MAC_MASK_LO, 0xffffffff);
+	dma_wr32(dma, RNPGBE_VEB_MAC_MASK_HI, 0xfeff);
 	/* 5 setup ft padding and veb vlan mode */
 	data = dma_rd32(dma, RNP_DMA_CONFIG);
-	/* force close padding in n500 */
+	/* force close padding in rnpgbe */
 	CLR_BIT(8, data);
 
 #define N500_VLAN_POLL_EN BIT(3)
@@ -1565,7 +1532,6 @@ static void rnpgbe_update_hw_info_hw_ops(struct rnpgbe_hw *hw)
 		eth->ops.set_double_vlan(eth, true);
 	else
 		eth->ops.set_double_vlan(eth, false);
-
 	/* 7 setup rss-hash mode */
 	eth->ops.set_rss_hfunc(eth, adapter->rss_func_mode);
 	/* 8 setup outer-vlan type */
@@ -1573,11 +1539,9 @@ static void rnpgbe_update_hw_info_hw_ops(struct rnpgbe_hw *hw)
 	/* 9 setup tcp sync remapping */
 	if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC) {
 		if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC_PRIO)
-			hw->ops.set_tcp_sync_remapping(hw,
-				adapter->tcp_sync_queue, true, true);
+			hw->ops.set_tcp_sync_remapping(hw, adapter->tcp_sync_queue, true, true);
 		else
-			hw->ops.set_tcp_sync_remapping(hw,
-				adapter->tcp_sync_queue, true, false);
+			hw->ops.set_tcp_sync_remapping(hw, adapter->tcp_sync_queue, true, false);
 	} else {
 		hw->ops.set_tcp_sync_remapping(hw, adapter->tcp_sync_queue,
 					       false, false);
@@ -1588,12 +1552,9 @@ static void rnpgbe_update_hw_info_hw_ops(struct rnpgbe_hw *hw)
 		data |= GMAC_FLOW_CTRL_UP;
 	else
 		data &= (~GMAC_FLOW_CTRL_UP);
-
 	mac_wr32(mac, GMAC_FLOW_CTRL, data);
-
 	/* 11 open tx double vlan according to stags */
 	eth_wr32(eth, RNPGBE_ETH_TX_VLAN_CONTROL_EANBLE, 1);
-
 	/* 12 test */
 	eth_wr32(eth, RNPGBE_ETH_WHOLE_PKT_LEN_ERR_DROP, 1);
 
@@ -1608,19 +1569,18 @@ static void rnpgbe_update_hw_info_hw_ops(struct rnpgbe_hw *hw)
 		eth_wr32(eth, RNPGBE_MAC_ERR_MASK,
 			 RUN_FRAME_ERROR | GAINT_FRAME_ERROR | CRC_ERROR |
 				 LENGTH_ERROR);
+		/* we open this in rx all mode */
 		eth_wr32(eth, RNPGBE_ETH_DOUBLE_VLAN_DROP, 0);
 #define FORWARD_ALL_CONTROL (0x2)
 		eth_wr32(eth, RNPGBE_BAD_PACKETS_RECEIVE_EN, 1);
 		mac_wr32(mac, GMAC_FRAME_FILTER,
 			 0x00000001 | (FORWARD_ALL_CONTROL << 6));
-
 	} else {
 		eth_wr32(eth, RNPGBE_MAC_ERR_MASK,
 			 RUN_FRAME_ERROR | GAINT_FRAME_ERROR);
 		eth_wr32(eth, RNPGBE_BAD_PACKETS_RECEIVE_EN, 0);
 		mac_wr32(mac, GMAC_FRAME_FILTER, 0x00000001);
 	}
-
 	/* setup eth_err_mask */
 	if ((adapter->priv_flags & RNP_PRIV_FLAG_RX_ALL) ||
 	    (adapter->priv_flags & RNP_PRIV_FLAG_REC_HDR_LEN_ERR)) {
@@ -1632,13 +1592,12 @@ static void rnpgbe_update_hw_info_hw_ops(struct rnpgbe_hw *hw)
 		eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR, 0);
 	}
 
-	/* 15 update water acoording to max length */
+	/* 15 update water according to max length */
 	{
 #define FIFO_ALL (1024)
 		int water_high =
 			FIFO_ALL - ((hw->max_length_current + 15) >> 4);
-
-		/* n500 only use one */
+		/* rnpgbe only use one */
 		hw->fc.high_water[0] = water_high;
 		hw->fc.low_water[0] = water_high;
 
@@ -1656,20 +1615,17 @@ static void rnpgbe_update_hw_info_hw_ops(struct rnpgbe_hw *hw)
 
 	/* 17 setup tso fifo */
 	dma_wr32(dma, RNP_DMA_PKT_FIFO_DATA_PROG_FULL_THRESH, 36);
-
 	/* 18 setup priv skip */
 	if (adapter->priv_flags & RNP_PRIV_FLAG_RX_SKIP_EN)
 		data = PRIV_DATA_EN | adapter->priv_skip_count;
 	else
 		data = 0;
 	eth_wr32(eth, RNPGBE_ETH_PRIV_DATA_CONTROL_REG, data);
-
 	/* 19 setup mac count read self clear */
-	data = mac_rd32(mac, RNPGBE_MAC_COUNT_CONTROL);
+	data = mac_rd32(mac, GMAC_COUNT_CONTROL);
 #define READ_CLEAR BIT(2)
 	data |= READ_CLEAR;
-	mac_wr32(mac, RNPGBE_MAC_COUNT_CONTROL, data);
-
+	mac_wr32(mac, GMAC_COUNT_CONTROL, data);
 	/* 20 setup prio */
 	if (adapter->priv_flags &
 	    (RNP_PRIV_FLAG_8023_PRIO | RNP_PRIV_FLAG_REMAP_PRIO)) {
@@ -1688,8 +1644,8 @@ static void rnpgbe_update_hw_info_hw_ops(struct rnpgbe_hw *hw)
 static void rnpgbe_update_hw_rx_drop_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
-	int i;
 	struct rnpgbe_ring *ring;
+	int i;
 
 	for (i = 0; i < adapter->num_rx_queues; i++) {
 		ring = adapter->rx_ring[i];
@@ -1710,17 +1666,22 @@ static void rnpgbe_set_rx_hash_hw_ops(struct rnpgbe_hw *hw, bool status,
 	eth->ops.set_rx_hash(eth, status, sriov_flag);
 }
 
+/*
+ * setup mac to rar 0
+ * clean vmdq
+ * clean mc addr
+ */
 static s32 rnpgbe_init_rx_addrs_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
-
-	u32 i;
 	u32 rar_entries = eth->num_rar_entries;
+	u32 i;
 	u32 v;
 
 	hw_dbg(hw, "init_rx_addrs:rar_entries:%d, mac.addr:%pM\n", rar_entries,
 	       hw->mac.addr);
-	/* If the current mac address is valid, assume it is a software override
+	/*
+	 * If the current mac address is valid, assume it is a software override
 	 * to the permanent address.
 	 * Otherwise, use the permanent address from the eeprom.
 	 */
@@ -1734,7 +1695,6 @@ static s32 rnpgbe_init_rx_addrs_hw_ops(struct rnpgbe_hw *hw)
 		hw_dbg(hw, " New MAC Addr =%pM\n", hw->mac.addr);
 
 		eth->ops.set_rar(eth, 0, hw->mac.addr, true);
-
 		/*  clear VMDq pool/queue selection for RAR 0 */
 		eth->ops.clear_vmdq(eth, 0, RNP_CLEAR_VMDQ_ALL);
 	}
@@ -1743,7 +1703,6 @@ static s32 rnpgbe_init_rx_addrs_hw_ops(struct rnpgbe_hw *hw)
 
 	/* Zero out the other receive addresses. */
 	hw_dbg(hw, "Clearing RAR[1-%d]\n", rar_entries - 1);
-	/* if not enable ncsi clean it */
 	if (!hw->ncsi_en) {
 		for (i = 1; i < rar_entries; i++)
 			eth->ops.clear_rar(eth, i);
@@ -1763,7 +1722,6 @@ static s32 rnpgbe_init_rx_addrs_hw_ops(struct rnpgbe_hw *hw)
 	return 0;
 }
 
-/* clean vlan filter tables */
 static void rnpgbe_clr_vfta_hw_ops(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_eth_info *eth = &hw->eth;
@@ -1773,12 +1731,13 @@ static void rnpgbe_clr_vfta_hw_ops(struct rnpgbe_hw *hw)
 
 static void rnpgbe_set_txvlan_mode_hw_ops(struct rnpgbe_hw *hw, bool cvlan)
 {
+	/* rnpgbe not support this */
 }
 
 static int rnpgbe_set_rss_hfunc_hw_ops(struct rnpgbe_hw *hw, u8 hfunc)
 {
-	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
+	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	switch (hfunc) {
 	case ETH_RSS_HASH_TOP:
@@ -1793,15 +1752,14 @@ static int rnpgbe_set_rss_hfunc_hw_ops(struct rnpgbe_hw *hw, u8 hfunc)
 	}
 
 	eth->ops.set_rss_hfunc(eth, adapter->rss_func_mode);
-
 	return 0;
 }
 
 static void rnpgbe_set_rss_key_hw_ops(struct rnpgbe_hw *hw,
 				      bool sriov_flag)
 {
-	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
+	struct rnpgbe_eth_info *eth = &hw->eth;
 	int key_len = RNP_RSS_KEY_SIZE;
 
 	memcpy(hw->rss_key, adapter->rss_key, key_len);
@@ -1845,20 +1803,25 @@ static s32 rnpgbe_check_mac_link_hw_ops(struct rnpgbe_hw *hw,
 {
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 
-	if (hw->speed == 10)
-		*speed = RNP_LINK_SPEED_10_FULL;
-	else if (hw->speed == 100)
-		*speed = RNP_LINK_SPEED_100_FULL;
-	else if (hw->speed == 1000)
-		*speed = RNP_LINK_SPEED_1GB_FULL;
-	else if (hw->speed == 10000)
-		*speed = RNP_LINK_SPEED_10GB_FULL;
-	else if (hw->speed == 25000)
-		*speed = RNP_LINK_SPEED_25GB_FULL;
-	else if (hw->speed == 40000)
-		*speed = RNP_LINK_SPEED_40GB_FULL;
-	else
-		*speed = RNP_LINK_SPEED_UNKNOWN;
+	if (hw->duplex) {
+		if (hw->speed == 10)
+			*speed = RNP_LINK_SPEED_10_FULL;
+		else if (hw->speed == 100)
+			*speed = RNP_LINK_SPEED_100_FULL;
+		else if (hw->speed == 1000)
+			*speed = RNP_LINK_SPEED_1GB_FULL;
+		else
+			*speed = RNP_LINK_SPEED_UNKNOWN;
+	} else {
+		if (hw->speed == 10)
+			*speed = RNP_LINK_SPEED_10_HALF;
+		else if (hw->speed == 100)
+			*speed = RNP_LINK_SPEED_100_HALF;
+		else if (hw->speed == 1000)
+			*speed = RNP_LINK_SPEED_1GB_HALF;
+		else
+			*speed = RNP_LINK_SPEED_UNKNOWN;
+	}
 
 	*link_up = hw->link;
 
@@ -1873,8 +1836,7 @@ static s32 rnpgbe_check_mac_link_hw_ops(struct rnpgbe_hw *hw,
 static s32 rnpgbe_setup_mac_link_hw_ops(struct rnpgbe_hw *hw,
 					u32 adv,
 					u32 autoneg,
-					u32 speed,
-					u32 duplex)
+					u32 speed, u32 duplex)
 {
 	rnpgbe_mbx_phy_link_set(hw, adv, autoneg, speed, duplex,
 				hw->tp_mdix_ctrl);
@@ -2004,7 +1966,8 @@ static s32 rnpgbe_phy_write_reg_hw_ops(struct rnpgbe_hw *hw,
 	return status;
 }
 
-static void rnpgbe_setup_wol_hw_ops(struct rnpgbe_hw *hw, u32 mode)
+static void rnpgbe_setup_wol_hw_ops(struct rnpgbe_hw *hw,
+				    u32 mode)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
@@ -2017,9 +1980,7 @@ static void rnpgbe_setup_eee_hw_ops(struct rnpgbe_hw *hw,
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
-	/* update eee timer to mac */
 	mac->ops.set_eee_timer(mac, ls, tw);
-	/* update local eee to firmware */
 	rnpgbe_mbx_phy_eee_set(hw, tw, local_eee);
 }
 
@@ -2038,7 +1999,8 @@ static void rnpgbe_reset_eee_mode_hw_ops(struct rnpgbe_hw *hw)
 	mac->ops.reset_eee_mode(mac);
 }
 
-static void rnpgbe_set_eee_pls_hw_ops(struct rnpgbe_hw *hw, int link)
+static void rnpgbe_set_eee_pls_hw_ops(struct rnpgbe_hw *hw,
+				      int link)
 {
 	struct rnpgbe_mac_info *mac = &hw->mac;
 
@@ -2055,15 +2017,22 @@ static u32 rnpgbe_get_lpi_status_hw_ops(struct rnpgbe_hw *hw)
 static int rnpgbe_get_ncsi_mac_hw_ops(struct rnpgbe_hw *hw,
 				      u8 *addr, int idx)
 {
-#define NCSI_MAC_H(i) (0x48 + (i) * 0x8)
-#define NCSI_MAC_L(i) (0x4C + (i) * 0x8)
 	struct rnpgbe_mac_info *mac = &hw->mac;
 	u32 rar_h, rar_l;
+#define OLD_IDX 7
+	if (idx < OLD_IDX) {
+#define NCSI_MAC_H(i) (0x48 + (i) * 0x8)
+#define NCSI_MAC_L(i) (0x4C + (i) * 0x8)
+		rar_h = mac_rd32(mac, NCSI_MAC_H(idx));
+		rar_l = mac_rd32(mac, NCSI_MAC_L(idx));
+	} else {
+#define NCSI_MAC_H_NEW(i) (0x800 + (i) * 0x8)
+#define NCSI_MAC_L_NEW(i) (0x804 + (i) * 0x8)
+		rar_h = mac_rd32(mac, NCSI_MAC_H_NEW(idx - OLD_IDX));
+		rar_l = mac_rd32(mac, NCSI_MAC_L_NEW(idx - OLD_IDX));
+	}
 
-	rar_h = mac_rd32(mac, NCSI_MAC_H(idx));
-	rar_l = mac_rd32(mac, NCSI_MAC_L(idx));
-
-	if ((rar_h & 0x0000ffff) != 0x0000ffff || rar_l != 0xffffffff) {
+	if (((rar_h & 0x0000ffff) != 0x0000ffff) || rar_l != 0xffffffff) {
 		*(addr + 3) = (rar_l & 0xff000000) >> 24;
 		*(addr + 2) = (rar_l & 0xff0000) >> 16;
 		*(addr + 1) = (rar_l & 0xff00) >> 8;
@@ -2093,6 +2062,16 @@ static int rnpgbe_get_ncsi_vlan_hw_ops(struct rnpgbe_hw *hw,
 	}
 }
 
+static void rnpgbe_set_lldp_hw_ops(struct rnpgbe_hw *hw,
+				   bool enable)
+{
+	rnpgbe_mbx_lldp_set(hw, enable);
+}
+
+static void rnpgbe_get_lldp_hw_ops(struct rnpgbe_hw *hw)
+{
+}
+
 static void rnpgbe_dump_rings_regs(struct rnpgbe_hw *hw)
 {
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
@@ -2107,11 +2086,17 @@ static void rnpgbe_dump_rings_regs(struct rnpgbe_hw *hw)
 		ring = adapter->tx_ring[i];
 		head = ring_rd32(ring, RNP_DMA_REG_TX_DESC_BUF_HEAD),
 		tail = ring_rd32(ring, RNP_DMA_REG_TX_DESC_BUF_TAIL),
-		dev_info(dev, "\tTxq-%-3u (0x%08x)-head : (%4u),\t",
+		dev_info(dev, "\tTxq-%-3u "
+
+			 "(0x%08x)-head : (%4u),\t"
+			 "(0x%08x)-tail : (%4u),\t"
+			 "ntu  : (%4u),\t"
+			 "ntc  : (%4u),\t"
+			 "\n",
 			 ring->rnpgbe_queue_idx,
 			 RNPGBE_RING_BASE + RING_OFFSET(ring->rnpgbe_queue_idx) +
-			 RNP_DMA_REG_TX_DESC_BUF_HEAD, head);
-		dev_info(dev, "(0x%08x)-tail : (%4u),\t ntu  : (%4u),\t ntc  : (%4u),\t\n",
+			 RNP_DMA_REG_TX_DESC_BUF_HEAD,
+			 head,
 			 RNPGBE_RING_BASE + RING_OFFSET(ring->rnpgbe_queue_idx) +
 			 RNP_DMA_REG_TX_DESC_BUF_TAIL,
 			 tail,
@@ -2123,13 +2108,17 @@ static void rnpgbe_dump_rings_regs(struct rnpgbe_hw *hw)
 		ring = adapter->rx_ring[i];
 		head = ring_rd32(ring, RNP_DMA_REG_RX_DESC_BUF_HEAD),
 		tail = ring_rd32(ring, RNP_DMA_REG_RX_DESC_BUF_TAIL),
-		dev_info(dev, "\tTxq-%-3u (0x%08x)-head : (%4u),\t",
+		dev_info(dev, "\tTxq-%-3u "
+
+			 "(0x%08x)-head : (%4u),\t"
+			 "(0x%08x)-tail : (%4u),\t"
+			 "ntu  : (%4u),\t"
+			 "ntc  : (%4u)\t"
+			 "\n",
 			 ring->rnpgbe_queue_idx,
 			 RNPGBE_RING_BASE + RING_OFFSET(ring->rnpgbe_queue_idx) +
 			 RNP_DMA_REG_RX_DESC_BUF_HEAD,
-			 head);
-
-		dev_info(dev, "(0x%08x)-tail : (%4u),\t ntu  : (%4u),\t ntc  : (%4u)\t\n",
+			 head,
 			 RNPGBE_RING_BASE + RING_OFFSET(ring->rnpgbe_queue_idx) +
 			 RNP_DMA_REG_RX_DESC_BUF_TAIL,
 			 tail,
@@ -2234,7 +2223,7 @@ static const struct rnpgbe_debug_reg rx_debug_reg_pip_parse[] = {
 	{"pkts(udp)", RNPGBE_PARSE_PKTS_UDP},
 	{"pkts(tcp)", RNPGBE_PARSE_PKTS_TCP},
 	{"pkts(arp cut)", RNPGBE_PARSE_PKTS_ARP_CUT},
-	{"pkts(ND_CUT)", RNPGBE_PARSE_PKTS_ND_CUT},
+	{"pkts(ND cut)", RNPGBE_PARSE_PKTS_ND_CUT},
 	{"pkts(sctp)", RNPGBE_PARSE_PKTS_SCTP},
 	{"pkts(tcp syn)", RNPGBE_PARSE_PKTS_TCP_SYN},
 	{"pkts(fragment)", RNPGBE_PARSE_PKTS_FRAGMENT},
@@ -2318,6 +2307,7 @@ static void rnpgbe_dump_rx_regs(struct rnpgbe_hw *hw)
 			 value, value);
 	}
 
+	/* emac gater */
 	dev_info(dev, "\temac gather module:\n");
 	for (i = 0; i < sizeof(rx_debug_reg_gather) / sizeof(struct rnpgbe_debug_reg); i++) {
 		value = eth_rd32(eth, rx_debug_reg_gather[i].offset);
@@ -2351,13 +2341,16 @@ static void rnpgbe_dump_rx_regs(struct rnpgbe_hw *hw)
 		/* for each bits */
 		for (j = 0; j < 32; j++) {
 			/* only check flags set value */
-			if ((value & regs_debug[i].flags) & (1 << j)) {
-				dev_info(dev,
-					 "\t%s detected\n", regs_debug[i].name[j]);
-			}
+			if ((value & regs_debug[i].flags) & (1 << j))
+				dev_info(dev, "\t%s detected\n", regs_debug[i].name[j]);
 		}
 	}
 	dev_info(dev, "\tend\n");
+}
+
+static void rnpgbe_check_status(struct rnpgbe_hw *hw)
+{
+	// todo
 }
 
 static void rnpgbe_dump_gephy(struct rnpgbe_hw *hw)
@@ -2379,8 +2372,7 @@ static void rnpgbe_dump_gephy(struct rnpgbe_hw *hw)
 	hw->ops.phy_write_reg(hw, 0x1f, 0, 0);
 }
 
-static int rnpgbe_dump_debug_regs_hw_ops(struct rnpgbe_hw *hw,
-					 char *cmd)
+static int rnpgbe_dump_debug_regs_hw_ops(struct rnpgbe_hw *hw, char *cmd)
 {
 	int ret = -1;
 
@@ -2393,20 +2385,13 @@ static int rnpgbe_dump_debug_regs_hw_ops(struct rnpgbe_hw *hw,
 	} else if (!strncmp(cmd, "rx", 2)) {
 		rnpgbe_dump_rx_regs(hw);
 		ret = 0;
+	} else if (!strncmp(cmd, "check", 5)) {
+		rnpgbe_check_status(hw);
 	} else if (!strncmp(cmd, "gephy", 5)) {
 		rnpgbe_dump_gephy(hw);
 		ret = 0;
 	}
 	return ret;
-}
-
-static void rnpgbe_set_lldp_hw_ops(struct rnpgbe_hw *hw, bool enable)
-{
-	rnpgbe_mbx_lldp_set(hw, enable);
-}
-
-static void rnpgbe_get_lldp_hw_ops(struct rnpgbe_hw *hw)
-{
 }
 
 static void rnpgbe_set_eee_timer_hw_ops(struct rnpgbe_hw *hw,
@@ -2421,8 +2406,8 @@ static void rnpgbe_set_vf_vlan_mode_hw_ops(struct rnpgbe_hw *hw,
 					   u16 vlan, int vf,
 					   bool enable)
 {
-	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
+	struct rnpgbe_eth_info *eth = &hw->eth;
 
 	if (adapter->priv_flags & RNP_PRIV_FLAG_SRIOV_VLAN_MODE)
 		eth->ops.set_vf_vlan_mode(eth, vlan, vf, enable);
@@ -2462,10 +2447,9 @@ static void rnpgbe_clr_tuple5_hw_ops(struct rnpgbe_hw *hw, u16 pri_id)
 	eth->ops.clr_tuple5_remapping(eth, pri_id);
 }
 
-static void
-rnpgbe_update_hw_status_hw_ops(struct rnpgbe_hw *hw,
-			       struct rnpgbe_hw_stats *hw_stats,
-			       struct net_device_stats *net_stats)
+static void rnpgbe_update_hw_status_hw_ops(struct rnpgbe_hw *hw,
+					   struct rnpgbe_hw_stats *hw_stats,
+					   struct net_device_stats *net_stats)
 {
 	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	struct rnpgbe_dma_info *dma = &hw->dma;
@@ -2477,18 +2461,15 @@ rnpgbe_update_hw_status_hw_ops(struct rnpgbe_hw *hw,
 	int i;
 
 	net_stats->rx_length_errors = eth_rd32(eth, RNPGBE_RXTRANS_LEN_ERR_NUM) +
-				      eth_rd32(eth, RNPGBE_RXTRANS_SLEN_ERR_NUM) +
-				      eth_rd32(eth, RNPGBE_RXTRANS_GLEN_ERR_NUM);
-
+				eth_rd32(eth, RNPGBE_RXTRANS_SLEN_ERR_NUM) +
+				eth_rd32(eth, RNPGBE_RXTRANS_GLEN_ERR_NUM);
 	net_stats->rx_crc_errors = eth_rd32(eth, RNPGBE_RXTRANS_FCS_ERR_NUM);
 	net_stats->rx_frame_errors = eth_rd32(eth, RNPGBE_RXTRANS_LCS_ERR_NUM);
 	net_stats->rx_fifo_errors = eth_rd32(eth, RNPGBE_RXTRANS_DROP);
 	net_stats->rx_missed_errors = net_stats->rx_fifo_errors +
-				      eth_rd32(eth, RNPGBE_RXTRANS_CUT_ERR_PKTS) +
-				      eth_rd32(eth, RNPGBE_RXTRANS_EXCEPT_NUM);
-
+				eth_rd32(eth, RNPGBE_RXTRANS_CUT_ERR_PKTS) +
+				eth_rd32(eth, RNPGBE_RXTRANS_EXCEPT_NUM);
 	net_stats->collisions = eth_rd32(eth, RNPGBE_RX_MAC_LCS_ERR_NUM);
-
 	hw_stats->invalid_droped_packets =
 		eth_rd32(eth, RNPGBE_RX_DROP_PKT_NUM);
 	hw_stats->rx_capabity_lost = eth_rd32(eth, RNPGBE_RXTRANS_DROP) +
@@ -2505,7 +2486,6 @@ rnpgbe_update_hw_status_hw_ops(struct rnpgbe_hw *hw,
 		eth_rd32(eth, RNPGBE_ETH_TCP_SYN_DROP_PKTS);
 	hw_stats->redir_tuple5_match_drop =
 		eth_rd32(eth, RNPGBE_ETH_REDIR_TUPLE5_DROP_PKTS);
-
 	hw_stats->tx_multicast = eth_rd32(eth, RNPGBE_TX_MULTI_NUM);
 	hw_stats->tx_broadcast = eth_rd32(eth, RNPGBE_TX_BROADCAST_NUM);
 
@@ -2514,9 +2494,10 @@ rnpgbe_update_hw_status_hw_ops(struct rnpgbe_hw *hw,
 		int idx = tx_ring->rnpgbe_queue_idx;
 
 		rx_over_errors += dma_rd32(dma, RNPGBE_RX_TIMEOUT_DROP(idx));
-		/* we should use the true idex */
-		mac_rx_multicast += dma_rd32(dma, RNPGBE_VEB_VFMPRC(idx));
-		mac_rx_broadcast += dma_rd32(dma, RNPGBE_VEB_VFBPRC(idx));
+		mac_rx_multicast +=
+			dma_rd32(dma, RNPGBE_VEB_VFMPRC(idx));
+		mac_rx_broadcast +=
+			dma_rd32(dma, RNPGBE_VEB_VFBPRC(idx));
 	}
 
 	hw_stats->mac_rx_broadcast = mac_rx_broadcast;
@@ -2571,10 +2552,10 @@ static const struct rnpgbe_stats rnpgbe_gstrings_net_stats[] = {
 };
 
 #define RNPGBE_GLOBAL_STATS_LEN ARRAY_SIZE(rnpgbe_gstrings_net_stats)
+
 static struct rnpgbe_stats rnpgbe_hwstrings_stats[] = {
 	RNP_HW_STAT("vlan_add_cnt", hw_stats.vlan_add_cnt),
 	RNP_HW_STAT("vlan_strip_cnt", hw_stats.vlan_strip_cnt),
-	/* === drop== */
 	RNP_HW_STAT("invalid_droped_packets", hw_stats.invalid_droped_packets),
 	RNP_HW_STAT("rx_capabity_drop", hw_stats.rx_capabity_lost),
 	RNP_HW_STAT("filter_dropped_packets", hw_stats.filter_dropped_packets),
@@ -2616,12 +2597,13 @@ static int rnpgbe_get_link_ksettings(struct net_device *netdev,
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbe_hw *hw = &adapter->hw;
-	rnpgbe_link_speed supported_link;
 	rnpgbe_link_speed advertised_link;
+	rnpgbe_link_speed supported_link;
 	bool autoneg = hw->autoneg;
 
 	ethtool_link_ksettings_zero_link_mode(cmd, supported);
 	ethtool_link_ksettings_zero_link_mode(cmd, advertising);
+
 	supported_link = hw->supported_link;
 	advertised_link = hw->advertised_link;
 
@@ -2645,28 +2627,29 @@ static int rnpgbe_get_link_ksettings(struct net_device *netdev,
 			ethtool_link_ksettings_add_link_mode(cmd, supported,
 							     10baseT_Half);
 
-		if (autoneg && !hw->fake_autoneg) {
+		if ((autoneg) && !hw->fake_autoneg) {
 			if (advertised_link & RNP_LINK_SPEED_1GB_FULL)
 				ethtool_link_ksettings_add_link_mode(cmd,
-					advertising, 1000baseT_Full);
+								     advertising, 1000baseT_Full);
 			if (advertised_link & RNP_LINK_SPEED_100_FULL)
 				ethtool_link_ksettings_add_link_mode(cmd,
-					advertising, 100baseT_Full);
+								     advertising, 100baseT_Full);
 			if (advertised_link & RNP_LINK_SPEED_10_FULL)
 				ethtool_link_ksettings_add_link_mode(cmd,
-					advertising, 10baseT_Full);
+								     advertising, 10baseT_Full);
 			if (advertised_link & RNP_LINK_SPEED_1GB_HALF)
 				ethtool_link_ksettings_add_link_mode(cmd,
-					advertising, 1000baseT_Half);
+								     advertising, 1000baseT_Half);
 			if (advertised_link & RNP_LINK_SPEED_100_HALF)
 				ethtool_link_ksettings_add_link_mode(cmd,
-					advertising, 100baseT_Half);
+								     advertising, 100baseT_Half);
 			if (advertised_link & RNP_LINK_SPEED_10_HALF)
 				ethtool_link_ksettings_add_link_mode(cmd,
-					advertising, 10baseT_Half);
+								     advertising, 10baseT_Half);
 		}
 
 		ethtool_link_ksettings_add_link_mode(cmd, supported, TP);
+
 		if (!hw->fake_autoneg)
 			ethtool_link_ksettings_add_link_mode(cmd, advertising, TP);
 
@@ -2677,6 +2660,7 @@ static int rnpgbe_get_link_ksettings(struct net_device *netdev,
 			cmd->base.eth_tp_mdix = hw->tp_mdx;
 		else
 			cmd->base.eth_tp_mdix = ETH_TP_MDI_INVALID;
+
 		cmd->base.eth_tp_mdix_ctrl = hw->tp_mdix_ctrl;
 	} else {
 		if (supported_link & RNP_LINK_SPEED_1GB_FULL) {
@@ -2695,7 +2679,7 @@ static int rnpgbe_get_link_ksettings(struct net_device *netdev,
 
 	ethtool_link_ksettings_add_link_mode(cmd, supported, Autoneg);
 
-	if (autoneg && !hw->fake_autoneg) {
+	if ((autoneg) && !hw->fake_autoneg) {
 		ethtool_link_ksettings_add_link_mode(cmd, advertising, Autoneg);
 		cmd->base.autoneg = AUTONEG_ENABLE;
 	} else {
@@ -2705,6 +2689,7 @@ static int rnpgbe_get_link_ksettings(struct net_device *netdev,
 	if (hw->fake_autoneg)
 		cmd->base.autoneg = AUTONEG_DISABLE;
 
+	/* set pause support */
 	ethtool_link_ksettings_add_link_mode(cmd, supported, Pause);
 	ethtool_link_ksettings_add_link_mode(cmd, supported, Asym_Pause);
 
@@ -2744,33 +2729,34 @@ static int rnpgbe_set_link_ksettings(struct net_device *netdev,
 				     const struct ethtool_link_ksettings *cmd)
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
+	u32 speed = 0, autoneg = 0, duplex = 0;
 	struct rnpgbe_hw *hw = &adapter->hw;
+	struct device *dev = &hw->pdev->dev;
 	u32 advertised, old;
 	s32 err = 0;
-	u32 speed = 0, autoneg = 0, duplex = 0;
 
 	if (hw->phy_type == rnpgbe_media_type_copper ||
 	    hw->phy.multispeed_fiber) {
-		/* this function does not support duplex forcing, but can
+		/*
+		 * this function does not support duplex forcing, but can
 		 * limit the advertising of the adapter to the specified speed
 		 */
-
 		/* only allow one speed at a time if no  */
 		if (!cmd->base.autoneg) {
-			if (cmd->base.speed != SPEED_1000 &&
-			    cmd->base.speed != SPEED_100 &&
-			    cmd->base.speed != SPEED_10)
+			if (cmd->base.speed != SPEED_100 &&
+			    cmd->base.speed != SPEED_10 &&
+			    cmd->base.speed != SPEED_1000)
 				return -EINVAL;
-
 			autoneg = 0;
 			speed = cmd->base.speed;
 			duplex = cmd->base.duplex;
+			/* if set force 1000, we should open autoneg */
 			if (cmd->base.speed == SPEED_1000) {
 				autoneg = 1;
 				hw->fake_autoneg = 1;
 			}
 		} else {
-			hw->fake_autoneg = 1;
+			hw->fake_autoneg = 0;
 			autoneg = 1;
 		}
 
@@ -2814,7 +2800,7 @@ static int rnpgbe_set_link_ksettings(struct net_device *netdev,
 			advertised |= RNP_LINK_SPEED_1GB_FULL;
 
 		/* if autoneg on, adv can not set 0 */
-		if (!advertised && (autoneg))
+		if (!advertised && autoneg)
 			return -EINVAL;
 
 		/* this sets the link speed and restarts auto-neg */
@@ -2825,7 +2811,8 @@ static int rnpgbe_set_link_ksettings(struct net_device *netdev,
 		err = hw->ops.setup_link(hw, advertised, autoneg, speed,
 					 duplex);
 		if (err) {
-			e_info(probe, "setup link failed with code %d\n", err);
+			dev_info(dev, "setup link failed with code %d\n",
+				 err);
 			hw->ops.setup_link(hw, old, autoneg, speed, duplex);
 		} else {
 			hw->advertised_link = advertised;
@@ -2865,7 +2852,6 @@ static void rnpgbe_get_drvinfo(struct net_device *netdev,
 		 ((unsigned char *)&hw->fw_version)[2],
 		 ((unsigned char *)&hw->fw_version)[1],
 		 ((unsigned char *)&hw->fw_version)[0]);
-
 	strscpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info));
 	drvinfo->n_stats = RNPGBE_STATS_LEN;
@@ -2876,6 +2862,7 @@ static void rnpgbe_get_drvinfo(struct net_device *netdev,
 
 static int rnpgbe_get_eeprom_len(struct net_device *netdev)
 {
+	/* not support this */
 	return 0;
 }
 
@@ -2884,8 +2871,8 @@ static int rnpgbe_get_eeprom(struct net_device *netdev,
 {
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbe_hw *hw = &adapter->hw;
-	u32 *eeprom_buff;
 	int first_u32, last_u32, eeprom_len;
+	u32 *eeprom_buff;
 	int ret_val = 0;
 
 	if (hw->hw_type == rnpgbe_hw_n210)
@@ -2909,8 +2896,6 @@ static int rnpgbe_get_eeprom(struct net_device *netdev,
 	kfree(eeprom_buff);
 
 	return ret_val;
-
-	return 0;
 }
 
 static int rnpgbe_set_eeprom(struct net_device *netdev,
@@ -2950,12 +2935,7 @@ static int rnpgbe_set_pauseparam(struct net_device *netdev,
 	struct rnpgbe_hw *hw = &adapter->hw;
 	struct rnpgbe_fc_info fc = hw->fc;
 
-	/* we not support change in dcb mode */
-	if (adapter->flags & RNP_FLAG_DCB_ENABLED)
-		return -EINVAL;
-
 	fc.disable_fc_autoneg = (pause->autoneg != AUTONEG_ENABLE);
-
 	fc.requested_mode = 0;
 
 	if (pause->autoneg) {
@@ -2967,8 +2947,8 @@ static int rnpgbe_set_pauseparam(struct net_device *netdev,
 			fc.requested_mode |= PAUSE_RX;
 	}
 	rnpgbe_mbx_phy_pause_set(hw, fc.requested_mode);
-	hw->fc = fc;
 
+	hw->fc = fc;
 	return 0;
 }
 
@@ -3003,6 +2983,7 @@ static void rnpgbe_get_strings(struct net_device *netdev, u32 stringset,
 	int i;
 
 	switch (stringset) {
+	/* maybe we don't support test? */
 	case ETH_SS_TEST:
 		for (i = 0; i < RNPGBE_TEST_LEN; i++) {
 			memcpy(data, rnpgbe_gstrings_test[i], ETH_GSTRING_LEN);
@@ -3135,6 +3116,7 @@ static void rnpgbe_get_strings(struct net_device *netdev, u32 stringset,
 static int rnpgbe_get_sset_count(struct net_device *netdev, int sset)
 {
 	switch (sset) {
+	/* now we don't support test */
 	case ETH_SS_TEST:
 		return RNPGBE_TEST_LEN;
 	case ETH_SS_STATS:
@@ -3152,6 +3134,8 @@ static u32 rnpgbe_get_priv_flags(struct net_device *netdev)
 		(struct rnpgbe_adapter *)netdev_priv(netdev);
 	u32 priv_flags = 0;
 
+	//if (adapter->priv_flags & RNP_PRIV_FLAG_MAC_LOOPBACK)
+	//	priv_flags |= RNPGBE_MAC_LOOPBACK;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_PADDING_DEBUG)
 		priv_flags |= RNPGBE_PADDING_DEBUG;
 	if (adapter->priv_flags & RNP_PRIV_FLAG_SIMUATE_DOWN)
@@ -3205,6 +3189,15 @@ static int rnpgbe_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 
 	data_old = dma_rd32(dma, RNP_DMA_CONFIG);
 	data_new = data_old;
+	dbg("data old is %x\n", data_old);
+
+	//if (priv_flags & RNPGBE_MAC_LOOPBACK) {
+	//	SET_BIT(rnpgbe_mac_loopback, data_new);
+	//	adapter->priv_flags |= RNP_PRIV_FLAG_MAC_LOOPBACK;
+	//} else if (adapter->priv_flags & RNP_PRIV_FLAG_MAC_LOOPBACK) {
+	//	adapter->priv_flags &= (~RNP_PRIV_FLAG_MAC_LOOPBACK);
+	//	CLR_BIT(rnpgbe_mac_loopback, data_new);
+	//}
 
 	if (priv_flags & RNPGBE_PADDING_DEBUG)
 		adapter->priv_flags |= RNP_PRIV_FLAG_PADDING_DEBUG;
@@ -3221,18 +3214,19 @@ static int rnpgbe_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		adapter->flags |= RNP_FLAG_NEED_LINK_UPDATE;
 	}
 
+	/* if open ultra short function */
 	if (priv_flags & RNPGBE_ULTRA_SHORT) {
 		int min = 33;
 
 		adapter->priv_flags |= RNP_PRIV_FLAG_ULTRA_SHORT;
 		eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_MIN_LEN, min);
+
 	} else {
 		int min = 60;
 
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_ULTRA_SHORT);
 		eth_wr32(eth, RNPGBE_ETH_DEFAULT_RX_MIN_LEN, min);
 	}
-
 	if (priv_flags & RNPGBE_PAUSE_OWN) {
 		u32 data;
 
@@ -3240,6 +3234,7 @@ static int rnpgbe_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		data |= GMAC_FLOW_CTRL_UP;
 		adapter->priv_flags |= RNP_PRIV_FLAG_PAUSE_OWN;
 		mac_wr32(mac, GMAC_FLOW_CTRL, data);
+
 	} else {
 		u32 data;
 
@@ -3252,7 +3247,6 @@ static int rnpgbe_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 	if (priv_flags & RNPGBE_DOUBLE_VLAN) {
 		adapter->priv_flags |= RNP_PRIV_FLAG_DOUBLE_VLAN;
 		eth->ops.set_double_vlan(eth, true);
-
 	} else {
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_DOUBLE_VLAN);
 		eth->ops.set_double_vlan(eth, false);
@@ -3263,14 +3257,15 @@ static int rnpgbe_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		adapter->flags2 |= RNP_FLAG2_VLAN_STAGS_ENABLED;
 		eth->ops.set_vfta(eth, adapter->stags_vid, true);
 	} else {
-		int true_remove = 1;
 		int vid = adapter->stags_vid;
+		int true_remove = 1;
 
 		eth_wr32(eth, RNPGBE_ETH_TX_VLAN_CONTROL_EANBLE, 0);
 		adapter->flags2 &= (~RNP_FLAG2_VLAN_STAGS_ENABLED);
 		if (vid) {
 			if (test_bit(vid, adapter->active_vlans))
 				true_remove = 0;
+
 			if (test_bit(vid, adapter->active_vlans_stags))
 				true_remove = 0;
 			if (true_remove)
@@ -3299,6 +3294,7 @@ static int rnpgbe_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 	if (priv_flags & RNPGBE_REC_HDR_LEN_ERR) {
 		adapter->priv_flags |= RNP_PRIV_FLAG_REC_HDR_LEN_ERR;
 		eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR, 0);
+
 	} else if (adapter->priv_flags & RNP_PRIV_FLAG_REC_HDR_LEN_ERR) {
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_REC_HDR_LEN_ERR);
 		eth_wr32(eth, RNPGBE_ETH_ERR_MASK_VECTOR,
@@ -3325,37 +3321,42 @@ static int rnpgbe_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 
 		adapter->priv_flags |= RNP_PRIV_FLAG_SRIOV_VLAN_MODE;
 		if (!(adapter->flags & RNP_FLAG_SRIOV_INIT_DONE))
-			goto skip_setup_vf_vlan_n500;
+			goto skip_setup_vf_vlan;
+		/* should setup vlvf table */
 		for (i = 0; i < adapter->num_vfs; i++) {
 			if (!hw->ops.set_vf_vlan_mode)
 				break;
-
 			if (adapter->vfinfo[i].vf_vlan)
 				hw->ops.set_vf_vlan_mode(hw,
-						adapter->vfinfo[i].vf_vlan,
-						i, true);
-
+							 adapter->vfinfo[i].vf_vlan,
+							 i, true);
 			if (adapter->vfinfo[i].pf_vlan)
 				hw->ops.set_vf_vlan_mode(hw,
-						adapter->vfinfo[i].pf_vlan,
-						i, true);
+							 adapter->vfinfo[i].pf_vlan,
+							 i, true);
 		}
 
 	} else if (adapter->priv_flags & RNP_PRIV_FLAG_SRIOV_VLAN_MODE) {
 		int i;
 
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_SRIOV_VLAN_MODE);
+		/* should clean vlvf table */
 		for (i = 0; i < hw->max_vfs; i++) {
-			if (hw->ops.set_vf_vlan_mode)
-				hw->ops.set_vf_vlan_mode(hw, 0, i, false);
+			if (!hw->ops.set_vf_vlan_mode)
+				break;
+			hw->ops.set_vf_vlan_mode(hw, 0, i, false);
 		}
 	}
 
+skip_setup_vf_vlan:
 	if (priv_flags & RNPGBE_LLDP_EN) {
+		/* open lldp */
 		hw->ops.set_lldp(hw, true);
-		adapter->priv_flags |=  RNP_PRIV_FLAG_LLDP;
+		adapter->priv_flags |= RNP_PRIV_FLAG_LLDP;
+
 	} else if (adapter->priv_flags & RNP_PRIV_FLAG_LLDP) {
 		adapter->priv_flags &= (~RNP_PRIV_FLAG_LLDP);
+		/* close lldp */
 		hw->ops.set_lldp(hw, false);
 	}
 
@@ -3364,19 +3365,20 @@ static int rnpgbe_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 		if (priv_flags & RNPGBE_FORCE_CLOSE) {
 			if (!(adapter->priv_flags & RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE)) {
 				adapter->priv_flags |= RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE;
-				hw->ops.driver_status(hw, true,
-						      rnpgbe_driver_force_control_phy);
+				if (hw->ops.driver_status)
+					hw->ops.driver_status(hw, true,
+						rnpgbe_driver_force_control_phy);
 			}
 		} else if (adapter->priv_flags & RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE) {
 			adapter->priv_flags &= (~RNP_PRIV_FLAG_LINK_DOWN_ON_CLOSE);
-			hw->ops.driver_status(hw, false,
-					      rnpgbe_driver_force_control_phy);
+			if (hw->ops.driver_status)
+				hw->ops.driver_status(hw, false,
+						rnpgbe_driver_force_control_phy);
 		}
-	}  else if (priv_flags & RNPGBE_FORCE_CLOSE) {
+	} else if (priv_flags & RNPGBE_FORCE_CLOSE) {
 		rnpgbe_err("firmware not support set this feature.\n");
+		return -1;
 	}
-
-skip_setup_vf_vlan_n500:
 
 	if (priv_flags & RNPGBE_8023_PRIO) {
 		adapter->priv_flags |= RNP_PRIV_FLAG_8023_PRIO;
@@ -3400,20 +3402,17 @@ skip_setup_vf_vlan_n500:
 	}
 
 	if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC) {
-		if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC_PRIO) {
-			hw->ops.set_tcp_sync_remapping(hw,
-					adapter->tcp_sync_queue, true, true);
-		} else {
-			hw->ops.set_tcp_sync_remapping(hw,
-				adapter->tcp_sync_queue, true, false);
-		}
+		if (adapter->priv_flags & RNP_PRIV_FLAG_TCP_SYNC_PRIO)
+			hw->ops.set_tcp_sync_remapping(hw, adapter->tcp_sync_queue, true, true);
+		else
+			hw->ops.set_tcp_sync_remapping(hw, adapter->tcp_sync_queue, true, false);
 	}
 
 	if (data_old != data_new)
 		dma_wr32(dma, RNP_DMA_CONFIG, data_new);
 	/* if ft_padding changed */
-	if (CHK_BIT(n500_padding_enable, data_old) !=
-	    CHK_BIT(n500_padding_enable, data_new)) {
+	if (CHK_BIT(rnpgbe_padding_enable, data_old) !=
+	    CHK_BIT(rnpgbe_padding_enable, data_new)) {
 		rnpgbe_msg_post_status(adapter, PF_FT_PADDING_STATUS);
 	}
 
@@ -3426,8 +3425,8 @@ static void rnpgbe_get_ethtool_stats(struct net_device *netdev,
 	struct rnpgbe_adapter *adapter = netdev_priv(netdev);
 	struct net_device_stats *net_stats = &netdev->stats;
 	struct rnpgbe_ring *ring;
-	int i, j;
 	char *p = NULL;
+	int i, j;
 
 	rnpgbe_update_stats(adapter);
 
@@ -3501,10 +3500,8 @@ static void rnpgbe_get_ethtool_stats(struct net_device *netdev,
 			data[i++] = 0;
 			continue;
 		}
-
 		data[i++] = ring->stats.packets;
 		data[i++] = ring->stats.bytes;
-
 		data[i++] = ring->tx_stats.restart_queue;
 		data[i++] = ring->tx_stats.tx_busy;
 		data[i++] = ring->tx_stats.tx_done_old;
@@ -3561,7 +3558,6 @@ static void rnpgbe_get_ethtool_stats(struct net_device *netdev,
 		}
 		data[i++] = ring->stats.packets;
 		data[i++] = ring->stats.bytes;
-
 		data[i++] = ring->rx_stats.driver_drop_packets;
 		data[i++] = ring->rx_stats.rsc_count;
 		data[i++] = ring->rx_stats.rsc_flush;
@@ -3591,7 +3587,6 @@ static void rnpgbe_get_ethtool_stats(struct net_device *netdev,
 	}
 }
 
-/* n500 ethtool_ops ops here */
 static const struct ethtool_ops rnpgbe_ethtool_ops = {
 	.get_link_ksettings = rnpgbe_get_link_ksettings,
 	.set_link_ksettings = rnpgbe_set_link_ksettings,
@@ -3621,14 +3616,18 @@ static const struct ethtool_ops rnpgbe_ethtool_ops = {
 	.get_coalesce = rnpgbe_get_coalesce,
 	.set_coalesce = rnpgbe_set_coalesce,
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
+				     ETHTOOL_COALESCE_USE_ADAPTIVE |
 				     ETHTOOL_COALESCE_MAX_FRAMES_IRQ |
 				     ETHTOOL_COALESCE_MAX_FRAMES,
+
 	.get_rxnfc = rnpgbe_get_rxnfc,
 	.set_rxnfc = rnpgbe_set_rxnfc,
+
 	.get_eee = rnpgbe_get_eee,
 	.set_eee = rnpgbe_set_eee,
 	.get_channels = rnpgbe_get_channels,
 	.set_channels = rnpgbe_set_channels,
+	.get_module_info = rnpgbe_get_module_info,
 	.get_module_eeprom = rnpgbe_get_module_eeprom,
 	.get_ts_info = rnpgbe_get_ts_info,
 	.get_rxfh_indir_size = rnpgbe_rss_indir_size,
@@ -3638,6 +3637,7 @@ static const struct ethtool_ops rnpgbe_ethtool_ops = {
 	.get_dump_flag = rnpgbe_get_dump_flag,
 	.get_dump_data = rnpgbe_get_dump_data,
 	.set_dump = rnpgbe_set_dump,
+
 	.flash_device = rnpgbe_flash_device,
 };
 
@@ -3655,7 +3655,6 @@ static struct rnpgbe_hw_operations hw_ops_rnpgbe = {
 	.set_vlan_filter = &rnpgbe_set_vlan_filter_hw_ops,
 	.set_veb_vlan_mask = &rnpgbe_set_veb_vlan_mask_hw_ops,
 	.set_vf_vlan_filter = &rnpgbe_set_vf_vlan_filter_hw_ops,
-	.clr_vfta = &rnpgbe_clr_vfta_hw_ops,
 	.set_vlan_strip = &rnpgbe_set_vlan_strip_hw_ops,
 	.set_mac = &rnpgbe_set_mac_hw_ops,
 	.set_rx_mode = &rnpgbe_set_rx_mode_hw_ops,
@@ -3666,22 +3665,26 @@ static struct rnpgbe_hw_operations hw_ops_rnpgbe = {
 	.set_txvlan_mode = &rnpgbe_set_txvlan_mode_hw_ops,
 	.set_fcs_mode = &rnpgbe_set_fcs_mode_hw_ops,
 	.set_mac_rx = &rnpgbe_set_mac_rx_hw_ops,
-	.update_sriov_info = &rnpgbe_update_sriov_info_hw_ops,
-	.set_sriov_status = &rnpgbe_set_sriov_status_hw_ops,
-	.set_sriov_vf_mc = &rnpgbe_set_sriov_vf_mc_hw_ops,
+	.set_mac_speed = &rnpgbe_set_mac_speed_hw_ops,
+	.set_rx_hash = &rnpgbe_set_rx_hash_hw_ops,
 	.set_pause_mode = &rnpgbe_set_pause_mode_hw_ops,
 	.get_pause_mode = &rnpgbe_get_pause_mode_hw_ops,
 	.update_hw_info = &rnpgbe_update_hw_info_hw_ops,
-	.set_rx_hash = &rnpgbe_set_rx_hash_hw_ops,
+	.update_rx_drop = &rnpgbe_update_hw_rx_drop_hw_ops,
+	.update_sriov_info = &rnpgbe_update_sriov_info_hw_ops,
+	.set_sriov_status = &rnpgbe_set_sriov_status_hw_ops,
+	.set_sriov_vf_mc = &rnpgbe_set_sriov_vf_mc_hw_ops,
+	.init_rx_addrs = &rnpgbe_init_rx_addrs_hw_ops,
+	.clr_vfta = &rnpgbe_clr_vfta_hw_ops,
 	.set_rss_hfunc = &rnpgbe_set_rss_hfunc_hw_ops,
 	.set_rss_key = &rnpgbe_set_rss_key_hw_ops,
 	.set_rss_table = &rnpgbe_set_rss_table_hw_ops,
+	.update_hw_status = &rnpgbe_update_hw_status_hw_ops,
 	.set_mbx_link_event = &rnpgbe_set_mbx_link_event_hw_ops,
 	.set_mbx_ifup = &rnpgbe_set_mbx_ifup_hw_ops,
 	.check_link = &rnpgbe_check_mac_link_hw_ops,
 	.setup_link = &rnpgbe_setup_mac_link_hw_ops,
 	.clean_link = &rnpgbe_clean_link_hw_ops,
-	.init_rx_addrs = &rnpgbe_init_rx_addrs_hw_ops,
 	.set_layer2_remapping = &rnpgbe_set_layer2_hw_ops,
 	.clr_layer2_remapping = &rnpgbe_clr_layer2_hw_ops,
 	.clr_all_layer2_remapping = &rnpgbe_clr_all_layer2_hw_ops,
@@ -3691,8 +3694,6 @@ static struct rnpgbe_hw_operations hw_ops_rnpgbe = {
 	.set_tcp_sync_remapping = &rnpgbe_set_tcp_sync_hw_ops,
 	.set_rx_skip = &rnpgbe_set_rx_skip_hw_ops,
 	.set_outer_vlan_type = &rnpgbe_set_outer_vlan_type_hw_ops,
-	.update_hw_status = &rnpgbe_update_hw_status_hw_ops,
-	.update_rx_drop = &rnpgbe_update_hw_rx_drop_hw_ops,
 	.setup_ethtool = &rnpgbe_set_ethtool_hw_ops,
 	.get_thermal_sensor_data = &rnpgbe_get_thermal_sensor_data_hw_ops,
 	.init_thermal_sensor_thresh =
@@ -3715,7 +3716,7 @@ static struct rnpgbe_hw_operations hw_ops_rnpgbe = {
 	.dump_debug_regs = &rnpgbe_dump_debug_regs_hw_ops,
 };
 
-static void rnpgbe_mac_set_rx(struct rnpgbe_mac_info *mac, bool status)
+static void gmac_set_rx(struct rnpgbe_mac_info *mac, bool status)
 {
 	u32 value = mac_rd32(mac, GMAC_CONTROL);
 
@@ -3725,18 +3726,16 @@ static void rnpgbe_mac_set_rx(struct rnpgbe_mac_info *mac, bool status)
 		value &= ~(GMAC_CONTROL_RE);
 
 	mac_wr32(mac, GMAC_CONTROL, value);
-
 	value = mac_rd32(mac, GMAC_FRAME_FILTER);
 	mac_wr32(mac, GMAC_FRAME_FILTER, value | 1);
 }
 
-static void rnpgbe_mac_set_speed(struct rnpgbe_mac_info *mac, bool link,
-				 u32 speed, bool duplex)
+static void gmac_set_speed(struct rnpgbe_mac_info *mac, bool link,
+			   u32 speed, bool duplex)
 {
-
 }
 
-static void rnpgbe_mac_fcs(struct rnpgbe_mac_info *mac, bool status)
+static void gmac_fcs(struct rnpgbe_mac_info *mac, bool status)
 {
 #define RNPGBE_CST_MASK BIT(25)
 	u32 value = mac_rd32(mac, GMAC_CONTROL);
@@ -3749,21 +3748,22 @@ static void rnpgbe_mac_fcs(struct rnpgbe_mac_info *mac, bool status)
 }
 
 /**
- *  rnpgbe_mac_fc_mode - Enable flow control
- *  @mac: pointer to hardware structure
+ *  gmac_fc_mode - Enable flow control
+ *  @mac: pointer to mac structure
  *
  *  Enable flow control according to the current settings.
  **/
-static s32 rnpgbe_mac_fc_mode(struct rnpgbe_mac_info *mac)
+static s32 gmac_fc_mode(struct rnpgbe_mac_info *mac)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)mac->back;
-	s32 ret_val = 0;
 	unsigned int flow = GMAC_FLOW_CTRL_UP;
+	s32 ret_val = 0;
 
 	flow = mac_rd32(mac, GMAC_FLOW_CTRL);
 	flow &= GMAC_FLOW_CTRL_UP;
 
-	/* Validate the water mark configuration for packet buffer 0.  Zero
+	/*
+	 * Validate the water mark configuration for packet buffer 0.  Zero
 	 * water marks indicate that the packet buffer was not configured
 	 * and the watermarks for packet buffer 0 should always be configured.
 	 */
@@ -3774,12 +3774,14 @@ static s32 rnpgbe_mac_fc_mode(struct rnpgbe_mac_info *mac)
 
 	switch (hw->fc.current_mode) {
 	case rnpgbe_fc_none:
-		/* Flow control is disabled by software override or autoneg.
+		/*
+		 * Flow control is disabled by software override or autoneg.
 		 * The code below will actually disable it in the HW.
 		 */
 		break;
 	case rnpgbe_fc_rx_pause:
-		/* Rx Flow control is enabled and Tx Flow control is
+		/*
+		 * Rx Flow control is enabled and Tx Flow control is
 		 * disabled by software override. Since there really
 		 * isn't a way to advertise that we are capable of RX
 		 * Pause ONLY, we will advertise that we support both
@@ -3789,7 +3791,8 @@ static s32 rnpgbe_mac_fc_mode(struct rnpgbe_mac_info *mac)
 		flow |= GMAC_FLOW_CTRL_RFE;
 		break;
 	case rnpgbe_fc_tx_pause:
-		/* Tx Flow control is enabled, and Rx Flow control is
+		/*
+		 * Tx Flow control is enabled, and Rx Flow control is
 		 * disabled by software override.
 		 */
 		flow |= GMAC_FLOW_CTRL_TFE;
@@ -3806,7 +3809,6 @@ static s32 rnpgbe_mac_fc_mode(struct rnpgbe_mac_info *mac)
 	}
 
 	flow |= (hw->fc.pause_time << GMAC_FLOW_CTRL_PT_SHIFT);
-
 	mac_wr32(mac, GMAC_FLOW_CTRL, flow);
 
 out:
@@ -3858,12 +3860,13 @@ static int rnpgbe_mdio_read(struct rnpgbe_mac_info *mac, int phyreg)
 	return data;
 }
 
-static void rnpgbe_mac_check_link(struct rnpgbe_mac_info *mac,
-				  rnpgbe_link_speed *speed,
-				  bool *link_up,
-				  bool link_up_wait_to_complete)
+static void gmac_check_link(struct rnpgbe_mac_info *mac,
+			    rnpgbe_link_speed *speed,
+			    bool *link_up,
+			    bool link_up_wait_to_complete)
 {
 	struct rnpgbe_hw *hw = (struct rnpgbe_hw *)mac->back;
+	/* always assume link is up, if no check link function */
 	u32 data;
 #define AUTONEGOTATION_COMPLETE (0x20)
 #define LINK_IS_UP (0x04)
@@ -3905,25 +3908,27 @@ static void rnpgbe_mac_check_link(struct rnpgbe_mac_info *mac,
 	}
 }
 
-static void rnpgbe_mac_set_mac(struct rnpgbe_mac_info *mac, u8 *addr, int index)
+static void gmac_set_mac(struct rnpgbe_mac_info *mac,
+			 u8 *addr, int index)
 {
 	u32 rar_low, rar_high = 0;
 
 	rar_low = ((u32)addr[0] | ((u32)addr[1] << 8) | ((u32)addr[2] << 16) |
 		   ((u32)addr[3] << 24));
 	rar_high = RNP_RAH_AV | ((u32)addr[4] | (u32)addr[5] << 8);
-	mac_wr32(mac, RNPGBE_MAC_UNICAST_HIGH(index), rar_high);
-	mac_wr32(mac, RNPGBE_MAC_UNICAST_LOW(index), rar_low);
+	mac_wr32(mac, GMAC_MAC_UNICAST_HIGH(index), rar_high);
+	mac_wr32(mac, GMAC_MAC_UNICAST_LOW(index), rar_low);
 }
 
-static int rnpgbe_mac_mdio_read(struct rnpgbe_mac_info *mac, u32 phyreg,
-				u32 *regvalue)
+static int gmac_mdio_read(struct rnpgbe_mac_info *mac,
+			  u32 phyreg,
+			  u32 *regvalue)
 {
 	unsigned int mii_address = mac->mii.addr;
 	unsigned int mii_data = mac->mii.data;
+	int phyaddr = mac->phy_addr;
 	u32 value = MII_BUSY;
 	int data = 0;
-	int phyaddr = mac->phy_addr;
 
 	value |= (phyaddr << mac->mii.addr_shift) & mac->mii.addr_mask;
 	value |= (phyreg << mac->mii.reg_shift) & mac->mii.reg_mask;
@@ -3946,14 +3951,15 @@ static int rnpgbe_mac_mdio_read(struct rnpgbe_mac_info *mac, u32 phyreg,
 	return data;
 }
 
-static int rnpgbe_mac_mdio_write(struct rnpgbe_mac_info *mac, int phyreg,
-				 int phydata)
+static int gmac_mdio_write(struct rnpgbe_mac_info *mac,
+			   int phyreg,
+			   int phydata)
 {
 	unsigned int mii_address = mac->mii.addr;
 	unsigned int mii_data = mac->mii.data;
+	int phyaddr = mac->phy_addr;
 	u32 value = MII_BUSY;
 	int data = phydata;
-	int phyaddr = mac->phy_addr;
 
 	value |= (phyaddr << mac->mii.addr_shift) & mac->mii.addr_mask;
 	value |= (phyreg << mac->mii.reg_shift) & mac->mii.reg_mask;
@@ -3973,7 +3979,8 @@ static int rnpgbe_mac_mdio_write(struct rnpgbe_mac_info *mac, int phyreg,
 	return poll_free_mdio(mac->mac_addr + mii_address, MII_BUSY, 100);
 }
 
-static void rnpgbe_mac_pmt(struct rnpgbe_mac_info *mac, u32 mode, bool ncsi_en)
+static void gmac_pmt(struct rnpgbe_mac_info *mac,
+		     u32 mode, bool ncsi_en)
 {
 	unsigned int pmt = 0;
 
@@ -3992,14 +3999,15 @@ static void rnpgbe_mac_pmt(struct rnpgbe_mac_info *mac, u32 mode, bool ncsi_en)
 	mac_wr32(mac, GMAC_PMT, pmt);
 }
 
-static void rnpgbe_mac_set_eee_mode(struct rnpgbe_mac_info *mac,
-				    bool en_tx_lpi_clockgating)
+static void gmac_set_eee_mode(struct rnpgbe_mac_info *mac,
+			      bool en_tx_lpi_clockgating)
 {
 	u32 value = 0;
 
-	/* TODO - en_tx_lpi_clockgating treatment */
+	/*TODO - en_tx_lpi_clockgating treatment */
 
-	/* Enable the link status receive on RGMII, SGMII ore SMII
+	/*
+	 * Enable the link status receive on RGMII, SGMII ore SMII
 	 * receive path and instruct the transmit to enter in LPI
 	 * state.
 	 */
@@ -4008,7 +4016,7 @@ static void rnpgbe_mac_set_eee_mode(struct rnpgbe_mac_info *mac,
 	mac_wr32(mac, GMAC_LPI_CTRL_STATUS, value);
 }
 
-static void rnpgbe_mac_reset_eee_mode(struct rnpgbe_mac_info *mac)
+static void gmac_reset_eee_mode(struct rnpgbe_mac_info *mac)
 {
 	u32 value = 0;
 
@@ -4017,7 +4025,8 @@ static void rnpgbe_mac_reset_eee_mode(struct rnpgbe_mac_info *mac)
 	mac_wr32(mac, GMAC_LPI_CTRL_STATUS, value);
 }
 
-static void rnpgbe_mac_set_eee_timer(struct rnpgbe_mac_info *mac, int ls, int tw)
+static void gmac_set_eee_timer(struct rnpgbe_mac_info *mac,
+			       int ls, int tw)
 {
 	int value = ((tw & 0xffff)) | ((ls & 0x7ff) << 16);
 
@@ -4028,11 +4037,10 @@ static void rnpgbe_mac_set_eee_timer(struct rnpgbe_mac_info *mac, int ls, int tw
 	 * TW: minimum time (us) for which the core waits
 	 *  after it has stopped transmitting the LPI pattern.
 	 */
-
 	mac_wr32(mac, GMAC_LPI_TIMER_CTRL, value);
 }
 
-static void rnpgbe_mac_set_eee_pls(struct rnpgbe_mac_info *mac, int link)
+static void gmac_set_eee_pls(struct rnpgbe_mac_info *mac, int link)
 {
 	u32 value = 0;
 
@@ -4046,7 +4054,7 @@ static void rnpgbe_mac_set_eee_pls(struct rnpgbe_mac_info *mac, int link)
 	mac_wr32(mac, GMAC_LPI_CTRL_STATUS, value);
 }
 
-static u32 rnpgbe_mac_get_lpi_status(struct rnpgbe_mac_info *mac)
+static u32 gmac_get_lpi_status(struct rnpgbe_mac_info *mac)
 {
 	if (mac_rd32(mac, GMAC_INT_STATUS) & GMAC_INT_STATUS_LPIIS)
 		return mac_rd32(mac, GMAC_LPI_CTRL_STATUS);
@@ -4054,66 +4062,67 @@ static u32 rnpgbe_mac_get_lpi_status(struct rnpgbe_mac_info *mac)
 		return 0;
 }
 
-static struct rnpgbe_mac_operations mac_ops_rnpgbe = {
-	.set_mac_rx = &rnpgbe_mac_set_rx,
-	.set_mac_speed = &rnpgbe_mac_set_speed,
-	.set_mac_fcs = &rnpgbe_mac_fcs,
-	.set_fc_mode = &rnpgbe_mac_fc_mode,
-	.check_link = &rnpgbe_mac_check_link,
-	.set_mac = &rnpgbe_mac_set_mac,
-	.mdio_write = &rnpgbe_mac_mdio_write,
-	.mdio_read = &rnpgbe_mac_mdio_read,
-	.pmt = &rnpgbe_mac_pmt,
-	.set_eee_mode = rnpgbe_mac_set_eee_mode,
-	.reset_eee_mode = rnpgbe_mac_reset_eee_mode,
-	.set_eee_timer = rnpgbe_mac_set_eee_timer,
-	.set_eee_pls = rnpgbe_mac_set_eee_pls,
-	.get_lpi_status = rnpgbe_mac_get_lpi_status,
-
+static struct rnpgbe_mac_operations mac_ops_gmac = {
+	.set_mac_rx = &gmac_set_rx,
+	.set_mac_speed = &gmac_set_speed,
+	.set_mac_fcs = &gmac_fcs,
+	.set_fc_mode = &gmac_fc_mode,
+	.check_link = &gmac_check_link,
+	.set_mac = &gmac_set_mac,
+	.mdio_write = &gmac_mdio_write,
+	.mdio_read = &gmac_mdio_read,
+	.pmt = &gmac_pmt,
+	.set_eee_mode = gmac_set_eee_mode,
+	.reset_eee_mode = gmac_reset_eee_mode,
+	.set_eee_timer = gmac_set_eee_timer,
+	.set_eee_pls = gmac_set_eee_pls,
+	.get_lpi_status = gmac_get_lpi_status,
 };
 
-static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
+static void rnpgbe_get_invariants_common(struct rnpgbe_hw *hw)
 {
+	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	struct rnpgbe_mac_info *mac = &hw->mac;
 	struct rnpgbe_dma_info *dma = &hw->dma;
 	struct rnpgbe_eth_info *eth = &hw->eth;
 	struct rnpgbe_nic_info *nic = &hw->nic;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
-	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
 	int i;
 
 	nic->nic_base_addr = hw->hw_addr + RNPGBE_NIC_BASE;
 	/* setup dma info */
 	dma->dma_base_addr = hw->hw_addr;
 	dma->dma_ring_addr = hw->hw_addr + RNPGBE_RING_BASE;
-	dma->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
-	dma->max_rx_queues = RNP_N500_MAX_RX_QUEUES;
+	dma->max_tx_queues = RNPGBE_MAX_TX_QUEUES;
+	dma->max_rx_queues = RNPGBE_MAX_RX_QUEUES;
 	dma->back = hw;
 	memcpy(&hw->dma.ops, &dma_ops_rnpgbe, sizeof(hw->dma.ops));
 
 	/* setup eth info */
 	memcpy(&hw->eth.ops, &eth_ops_rnpgbe, sizeof(hw->eth.ops));
+
 	eth->eth_base_addr = hw->hw_addr + RNPGBE_ETH_BASE;
 	eth->back = hw;
 	eth->mc_filter_type = 0;
-	eth->mcft_size = RNP_N500_MC_TBL_SIZE;
-	eth->vft_size = RNP_N500_VFT_TBL_SIZE;
-	eth->num_rar_entries = RNP_N500_RAR_ENTRIES + NCSI_RAR_NUM;
-	eth->max_rx_queues = RNP_N500_MAX_RX_QUEUES;
-	eth->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
+	eth->mcft_size = RNPGBE_MC_TBL_SIZE;
+	eth->vft_size = RNPGBE_VFT_TBL_SIZE;
+	eth->num_rar_entries = RNPGBE_RAR_ENTRIES + NCSI_RAR_NUM;
+	eth->max_rx_queues = RNPGBE_MAX_RX_QUEUES;
+	eth->max_tx_queues = RNPGBE_MAX_TX_QUEUES;
 
 	/* setup mac info */
-	memcpy(&hw->mac.ops, &mac_ops_rnpgbe, sizeof(hw->mac.ops));
+	memcpy(&hw->mac.ops, &mac_ops_gmac, sizeof(hw->mac.ops));
 	mac->mac_addr = hw->hw_addr + RNPGBE_MAC_BASE;
 	mac->back = hw;
 	mac->mac_type = mac_dwc_g;
+	/* move this to eth todo */
 	mac->mc_filter_type = 0;
 	mac->mcft_size = 2;
 	mac->vft_size = 1;
-	mac->num_rar_entries = RNP_N500_RAR_ENTRIES;
-	mac->max_rx_queues = RNP_N500_MAX_RX_QUEUES;
-	mac->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
-	mac->max_msix_vectors = RNP_N500_MSIX_VECTORS;
+	mac->num_rar_entries = RNPGBE_RAR_ENTRIES;
+	mac->max_rx_queues = RNPGBE_MAX_RX_QUEUES;
+	mac->max_tx_queues = RNPGBE_MAX_TX_QUEUES;
+	mac->max_msix_vectors = RNPGBE_MSIX_VECTORS;
 	mac->mii.addr = GMAC_MII_ADDR;
 	mac->mii.data = GMAC_MII_DATA;
 	mac->mii.addr_shift = 11;
@@ -4126,12 +4135,6 @@ static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
 
 	mac->phy_addr = 0x11;
 
-	if (!hw->axi_mhz)
-		hw->usecstocount = 125;
-	else
-		hw->usecstocount = hw->axi_mhz;
-
-	/* set up hw feature */
 	hw->feature_flags |=
 		RNP_NET_FEATURE_SG | RNP_NET_FEATURE_TX_CHECKSUM |
 		RNP_NET_FEATURE_RX_CHECKSUM | RNP_NET_FEATURE_TSO |
@@ -4143,28 +4146,64 @@ static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
 	hw->feature_flags |= RNP_HW_FEATURE_EEE;
 
 	/* setup some fdir resource */
-	hw->min_length = RNP_MIN_MTU;
+	hw->min_length = RNPGBE_MIN_MTU;
 	hw->max_length = RNPGBE_MAX_JUMBO_FRAME_SIZE;
-	hw->max_msix_vectors = RNP_N500_MSIX_VECTORS;
-	hw->num_rar_entries = RNP_N500_RAR_ENTRIES;
+	hw->max_msix_vectors = RNPGBE_MSIX_VECTORS;
+	hw->num_rar_entries = RNPGBE_RAR_ENTRIES;
 	hw->fdir_mode = fdir_mode_tuple5;
-	hw->max_vfs = RNP_N500_MAX_VF;
-	hw->max_vfs_noari = 1;
+	hw->max_vfs = RNPGBE_MAX_VF;
 	hw->layer2_count = RNPGBE_MAX_LAYER2_FILTERS - 1;
 	hw->tuple5_count = RNPGBE_MAX_TUPLE5_FILTERS - 1;
-	/* n500 support magic wol */
+
+	/* rnpgbe support magic wol */
 	hw->wol_supported = WAKE_MAGIC;
+
 	hw->num_vebvlan_entries = 8;
 	hw->default_rx_queue = 0;
-	hw->rss_indir_tbl_num = RNP_N500_RSS_TBL_NUM;
-	hw->rss_tc_tbl_num = RNP_N500_RSS_TC_TBL_NUM;
+	hw->rss_indir_tbl_num = RNPGBE_RSS_TBL_NUM;
+	hw->rss_tc_tbl_num = RNPGBE_RSS_TC_TBL_NUM;
 	/* vf use the last vfnum */
-	hw->vfnum = RNP_N500_MAX_VF - 1;
+	hw->vfnum = RNPGBE_MAX_VF - 1;
+
 	hw->sriov_ring_limit = 1;
-	hw->max_pf_macvlans = RNP_MAX_PF_MACVLANS_N500;
-	hw->veb_ring = RNP_N500_MAX_RX_QUEUES - 1;
+	hw->max_pf_macvlans = RNPGBE_MAX_PF_MACVLANS;
+	hw->veb_ring = RNPGBE_MAX_RX_QUEUES - 1;
 	memcpy(&hw->ops, &hw_ops_rnpgbe, sizeof(hw->ops));
 	hw->supported_link = RNP_LINK_SPEED_1GB_FULL;
+	mbx->mbx_feature |= MBX_FEATURE_NO_ZERO;
+
+	memcpy(&hw->mbx.ops, &rnpgbe_mbx_ops_generic, sizeof(hw->mbx.ops));
+
+	adapter->priv_flags |= RNP_PRIV_FLAG_PAUSE_OWN;
+	adapter->drop_time = 100;
+
+	hw->msix_vector_base = 0x28000;
+
+	/* initialization default pause flow */
+	hw->fc.requested_mode = PAUSE_AUTO;
+	hw->fc.pause_time = RNP_DEFAULT_FCPAUSE;
+	hw->autoneg = 1;
+
+	/* we start from auto mode */
+	hw->tp_mdix_ctrl = ETH_TP_MDI_AUTO;
+	for (i = 0; i < RNP_MAX_TRAFFIC_CLASS; i++) {
+		hw->fc.high_water[i] = RNPGBE_DEFAULT_HIGH_WATER;
+		hw->fc.low_water[i] = RNPGBE_DEFAULT_LOW_WATER;
+	}
+	hw->eeprom.word_size = 10;
+}
+
+static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
+{
+	struct rnpgbe_mbx_info *mbx = &hw->mbx;
+
+	rnpgbe_get_invariants_common(hw);
+	if (!hw->axi_mhz)
+		hw->usecstocount = 125;
+	else
+		hw->usecstocount = hw->axi_mhz;
+
+	hw->max_vfs_noari = 1;
 
 	/* mbx setup */
 	mbx->vf2pf_mbox_vec_base = 0x28900;
@@ -4180,117 +4219,26 @@ static s32 rnpgbe_get_invariants_n500(struct rnpgbe_hw *hw)
 	mbx->cpu_vf_share_ram = 0x2b000;
 	mbx->share_size = 512;
 
-	adapter->priv_flags |= RNP_PRIV_FLAG_PAUSE_OWN;
-	adapter->drop_time = 100;
-
 	hw->msix_vector_base = 0x28200;
-	/*initialization default pause flow */
-	hw->fc.requested_mode = PAUSE_AUTO;
-	hw->fc.pause_time = RNP_DEFAULT_FCPAUSE;
-	hw->autoneg = 1;
-
-	/* we start from auto mode */
-	hw->tp_mdix_ctrl = ETH_TP_MDI_AUTO;
-	for (i = 0; i < RNP_MAX_TRAFFIC_CLASS; i++) {
-		hw->fc.high_water[i] = RNPGBE_DEFAULT_HIGH_WATER;
-		hw->fc.low_water[i] = RNPGBE_DEFAULT_LOW_WATER;
-	}
-	hw->eeprom.word_size = 10;
 
 	return 0;
 }
 
 static s32 rnpgbe_get_invariants_n210(struct rnpgbe_hw *hw)
 {
-	struct rnpgbe_mac_info *mac = &hw->mac;
-	struct rnpgbe_dma_info *dma = &hw->dma;
-	struct rnpgbe_eth_info *eth = &hw->eth;
-	struct rnpgbe_nic_info *nic = &hw->nic;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
-	struct rnpgbe_adapter *adapter = (struct rnpgbe_adapter *)hw->back;
-	int i;
 
-	nic->nic_base_addr = hw->hw_addr + RNPGBE_NIC_BASE;
-	/* setup dma info */
-	dma->dma_base_addr = hw->hw_addr;
-	dma->dma_ring_addr = hw->hw_addr + RNPGBE_RING_BASE;
-	dma->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
-	dma->max_rx_queues = RNP_N500_MAX_RX_QUEUES;
-	dma->back = hw;
-	memcpy(&hw->dma.ops, &dma_ops_rnpgbe, sizeof(hw->dma.ops));
-
-	/* setup eth info */
-	memcpy(&hw->eth.ops, &eth_ops_rnpgbe, sizeof(hw->eth.ops));
-	eth->eth_base_addr = hw->hw_addr + RNPGBE_ETH_BASE;
-	eth->back = hw;
-	eth->mc_filter_type = 0;
-	eth->mcft_size = RNP_N500_MC_TBL_SIZE;
-	eth->vft_size = RNP_N500_VFT_TBL_SIZE;
-	eth->num_rar_entries = RNP_N500_RAR_ENTRIES + NCSI_RAR_NUM;
-	eth->max_rx_queues = RNP_N500_MAX_RX_QUEUES;
-	eth->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
-
-	/* setup mac info */
-	memcpy(&hw->mac.ops, &mac_ops_rnpgbe, sizeof(hw->mac.ops));
-	mac->mac_addr = hw->hw_addr + RNPGBE_MAC_BASE;
-	mac->back = hw;
-	mac->mac_type = mac_dwc_g;
-	/* move this to eth todo */
-	mac->mc_filter_type = 0;
-	mac->mcft_size = 2;
-	mac->vft_size = 1;
-	mac->num_rar_entries = RNP_N500_RAR_ENTRIES;
-	mac->max_rx_queues = RNP_N500_MAX_RX_QUEUES;
-	mac->max_tx_queues = RNP_N500_MAX_TX_QUEUES;
-	mac->max_msix_vectors = RNP_N500_MSIX_VECTORS;
-	mac->mii.addr = GMAC_MII_ADDR;
-	mac->mii.data = GMAC_MII_DATA;
-	mac->mii.addr_shift = 11;
-	mac->mii.addr_mask = 0x0000F800;
-	mac->mii.reg_shift = 6;
-	mac->mii.reg_mask = 0x000007C0;
-	mac->mii.clk_csr_shift = 2;
-	mac->mii.clk_csr_mask = GENMASK(5, 2);
-	mac->clk_csr = 0x02; /* csr 25M */
-	mac->phy_addr = 0x11;
+	rnpgbe_get_invariants_common(hw);
 
 	if (!hw->axi_mhz)
 		hw->usecstocount = 62;
 	else
 		hw->usecstocount = hw->axi_mhz;
 
-	/* set up hw feature */
-	hw->feature_flags |=
-		RNP_NET_FEATURE_SG | RNP_NET_FEATURE_TX_CHECKSUM |
-		RNP_NET_FEATURE_RX_CHECKSUM | RNP_NET_FEATURE_TSO |
-		RNP_NET_FEATURE_VLAN_FILTER | RNP_NET_FEATURE_VLAN_OFFLOAD |
-		RNP_NET_FEATURE_RX_NTUPLE_FILTER | RNP_NET_FEATURE_RX_HASH |
-		RNP_NET_FEATURE_USO | RNP_NET_FEATURE_RX_FCS |
-		RNP_NET_FEATURE_STAG_FILTER | RNP_NET_FEATURE_STAG_OFFLOAD;
-
-	/* setup some fdir resource */
-	hw->min_length = RNP_MIN_MTU;
-	hw->max_length = RNPGBE_MAX_JUMBO_FRAME_SIZE;
-	hw->max_msix_vectors = RNP_N500_MSIX_VECTORS;
-	hw->num_rar_entries = RNP_N500_RAR_ENTRIES;
-	hw->fdir_mode = fdir_mode_tuple5;
-	hw->max_vfs = RNP_N500_MAX_VF;
+	/* n210 only 1 pf, can open 7 in no ari */
 	hw->max_vfs_noari = 7;
-	hw->layer2_count = RNPGBE_MAX_LAYER2_FILTERS - 1;
-	hw->tuple5_count = RNPGBE_MAX_TUPLE5_FILTERS - 1;
-	hw->wol_supported = WAKE_MAGIC;
-	hw->num_vebvlan_entries = 8;
-	hw->default_rx_queue = 0;
-	hw->rss_indir_tbl_num = RNP_N500_RSS_TBL_NUM;
-	hw->rss_tc_tbl_num = RNP_N500_RSS_TC_TBL_NUM;
-	/* vf use the last vfnum */
-	hw->vfnum = RNP_N500_MAX_VF - 1;
-	hw->sriov_ring_limit = 1;
-	hw->max_pf_macvlans = RNP_MAX_PF_MACVLANS_N500;
-	hw->veb_ring = RNP_N500_MAX_RX_QUEUES - 1;
-	memcpy(&hw->ops, &hw_ops_rnpgbe, sizeof(hw->ops));
-	hw->supported_link = RNP_LINK_SPEED_1GB_FULL;
 
+	/* mbx setup */
 	mbx->vf2pf_mbox_vec_base = 0x29200;
 	mbx->cpu2pf_mbox_vec = 0x29400;
 	mbx->pf_vf_shm_base = 0x29900;
@@ -4304,58 +4252,28 @@ static s32 rnpgbe_get_invariants_n210(struct rnpgbe_hw *hw)
 	mbx->cpu_vf_share_ram = 0x2b900;
 	mbx->share_size = 512;
 
-	adapter->priv_flags |= RNP_PRIV_FLAG_PAUSE_OWN;
-	adapter->drop_time = 100;
-
 	hw->msix_vector_base = 0x28000;
-	/*initialization default pause flow */
-	/* we start from auto */
-	hw->fc.requested_mode = PAUSE_AUTO;
-	hw->fc.pause_time = RNP_DEFAULT_FCPAUSE;
-	hw->autoneg = 1;
-
-	hw->tp_mdix_ctrl = ETH_TP_MDI_AUTO;
-	for (i = 0; i < RNP_MAX_TRAFFIC_CLASS; i++) {
-		hw->fc.high_water[i] = RNPGBE_DEFAULT_HIGH_WATER;
-		hw->fc.low_water[i] = RNPGBE_DEFAULT_LOW_WATER;
-	}
-	hw->eeprom.word_size = 10;
 
 	return 0;
 }
 
 struct rnpgbe_info rnpgbe_n500_info = {
-	.one_pf_with_two_dma = false,
-	.total_queue_pair_cnts = RNP_N500_MAX_TX_QUEUES,
-	.adapter_cnt = 1,
+	.total_queue_pair_cnts = RNPGBE_MAX_TX_QUEUES,
 	.rss_type = rnpgbe_rss_n500,
 	.hw_type = rnpgbe_hw_n500,
 	.get_invariants = &rnpgbe_get_invariants_n500,
-	.mac_ops = &mac_ops_rnpgbe,
-	.eeprom_ops = NULL,
-	.mbx_ops = &rnpgbe_mbx_ops_generic,
 };
 
 struct rnpgbe_info rnpgbe_n210_info = {
-	.one_pf_with_two_dma = false,
-	.total_queue_pair_cnts = RNP_N500_MAX_TX_QUEUES,
-	.adapter_cnt = 1,
+	.total_queue_pair_cnts = RNPGBE_MAX_TX_QUEUES,
 	.rss_type = rnpgbe_rss_n500,
 	.hw_type = rnpgbe_hw_n210,
 	.get_invariants = &rnpgbe_get_invariants_n210,
-	.mac_ops = &mac_ops_rnpgbe,
-	.eeprom_ops = NULL,
-	.mbx_ops = &rnpgbe_mbx_ops_generic,
 };
 
 struct rnpgbe_info rnpgbe_n210L_info = {
-	.one_pf_with_two_dma = false,
-	.total_queue_pair_cnts = RNP_N500_MAX_TX_QUEUES,
-	.adapter_cnt = 1,
+	.total_queue_pair_cnts = RNPGBE_MAX_TX_QUEUES,
 	.rss_type = rnpgbe_rss_n500,
 	.hw_type = rnpgbe_hw_n210L,
 	.get_invariants = &rnpgbe_get_invariants_n210,
-	.mac_ops = &mac_ops_rnpgbe,
-	.eeprom_ops = NULL,
-	.mbx_ops = &rnpgbe_mbx_ops_generic,
 };
