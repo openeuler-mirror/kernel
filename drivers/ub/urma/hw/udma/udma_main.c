@@ -35,7 +35,7 @@
 
 #define UDMA_DRV_VER "1.0"
 
-bool dev_name_style;
+bool dev_name_style = true;
 bool cqe_mode = true;
 uint32_t batch_flush_query_freq = 10;
 uint32_t batch_flush_query_timeout = 64000;
@@ -507,12 +507,11 @@ static int udma_set_ubcore_dev(struct udma_dev *udma_dev)
 	ub_dev->dma_dev = ub_dev->dev.parent;
 	ub_dev->attr.dev_cap.feature.value = udma_dev->caps.feature;
 
-	if (dev_name_style) {
+	if (dev_name_style)
 		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME,
-			"udmac%ud%ue%u", udma_dev->chip_id, udma_dev->die_id, udma_dev->ue_id);
-	} else {
+			  "udmac%ud%ue%u", udma_dev->chip_id, udma_dev->die_id, udma_dev->ue_id);
+	else
 		scnprintf(udma_dev->dev_name, UBCORE_MAX_DEV_NAME, "udma%hu", udma_dev->adev_id);
-	}
 	strscpy(ub_dev->dev_name, udma_dev->dev_name, UBCORE_MAX_DEV_NAME);
 	scnprintf(ub_dev->ops->driver_name, UBCORE_MAX_DRIVER_NAME, "udma");
 
@@ -1631,7 +1630,6 @@ void udma_remove(struct auxiliary_device *adev)
 	/* Crq event should unregister after wait flush done,  */
 	udma_unregister_crq_event(adev);
 	udma_destroy_dev(udma_dev);
-	mutex_unlock(&udma_reset_mutex);
 	dev_info(&adev->dev, "udma device remove success.\n");
 }
 
@@ -1667,8 +1665,8 @@ module_exit(udma_exit);
 MODULE_VERSION(UDMA_DRV_VER);
 MODULE_LICENSE("GPL");
 
-module_param(dev_name_style, bool, 0644);
-MODULE_PARM_DESC(dev_name_style, "Set device name style, default: 0(0:disable, 1:enable)");
+module_param(dev_name_style, bool, 0444);
+MODULE_PARM_DESC(dev_name_style, "Set device name style, default: 1(0:disable, 1:enable)");
 
 module_param(cqe_mode, bool, 0444);
 MODULE_PARM_DESC(cqe_mode, "Set cqe reporting mode, default: 1 (0:BY_COUNT, 1:BY_CI_PI_GAP)");
