@@ -104,12 +104,13 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 {
 	int ret;
 	int times = msg->timeout_time / MILLISECONDS_OF_EACH_MDELAY;
-	int i, j;
+	int i, j, urma_ack_success_num = 0;
+	int sleep_time;
 	union ubcore_eid dst_ubcore_eid;
 
 	if (str_to_eid(msg->helper_msg_info.remote_info.eid, &dst_ubcore_eid) < 0) {
-		pr_err("send_msg_to_userspace: invalid dst eid [%s]\n",
-				msg->helper_msg_info.remote_info.eid);
+		pr_err("%s: invalid dst eid [%s]\n",
+				__func__, msg->helper_msg_info.remote_info.eid);
 		return -EINVAL;
 	}
 
@@ -125,7 +126,7 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 
 		ret = smh_message_get_ack(msg);
 		if (!ret) {
-			int sleep_time = MILLISECONDS_OF_EACH_MDELAY -
+			sleep_time = MILLISECONDS_OF_EACH_MDELAY -
 					(int)((ktime_get_ns() - cur_time) / NSEC_PER_MSEC);
 			if (sleep_time > 0)
 				msleep_interruptible(sleep_time);
@@ -152,8 +153,13 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 			for (j = 0; j < URMA_ACK_RETRY_NUM; j++) {
 				ret = urma_send(&binary_ack,
 						msg->helper_msg_info.remote_info.eid, -1);
-				if (ret == COMM_PARM_NOT_SET)
+				if (ret == COMM_PARM_NOT_SET || ret == -ENODEV) {
+					pr_err("%s: urma_send ack failed, ret is %d, skip sending ack msg\n",
+						__func__, ret);
 					break;
+				}
+				if (ret == URMA_ACK_SUCCESS)
+					urma_ack_success_num++;
 				msleep_interruptible(MILLISECONDS_OF_EACH_MDELAY);
 			}
 		} else {
@@ -162,13 +168,18 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 				msg->helper_msg_info.remote_info.cna, false);
 		}
 
-		if (ret <= 0) {
+		if ((comm_type == COMM_TYPE_URMA && urma_ack_success_num == 0)
+			|| (comm_type == COMM_TYPE_UVB && ret <= 0)) {
 			pr_warn("Failed to send %s ack message to client (cna:%u, eid:%s)\n",
 				comm_type == COMM_TYPE_URMA ? "urma" : "uvb",
 				msg->helper_msg_info.remote_info.cna,
 				msg->helper_msg_info.remote_info.eid);
 			return -EFAULT;
 		}
+		pr_info("send %s ack message to client (cna:%u, eid:%s) success\n",
+			comm_type == COMM_TYPE_URMA ? "urma" : "uvb",
+			msg->helper_msg_info.remote_info.cna,
+			msg->helper_msg_info.remote_info.eid);
 		return 0;
 	}
 
@@ -216,6 +227,8 @@ static int process_remote_event_msg(void *data)
 
 	ack_type = get_ack_type(child_data->msg->type);
 	if (ack_type == SMH_MESSAGE_UNKNOWN) {
+		pr_err("%s: get unknown msg type, msg from %s\n",
+			__func__, child_data->msg->helper_msg_info.remote_info.eid);
 		ret = -EINVAL;
 		goto cleanup_child;
 	}
@@ -322,8 +335,8 @@ int create_kthread_to_process_msg(const struct sentry_binary_msg *event_msg,
 
 	ret = convert_binary_to_smh_msg(event_msg, &msg, &random_id);
 	if (ret) {
-		pr_err("convert %s binary data: to smh msg failed\n",
-		       comm_type == COMM_TYPE_URMA ? "urma" : "uvb");
+		pr_err("%s: convert %s binary data: to smh msg failed\n",
+		       __func__, comm_type == COMM_TYPE_URMA ? "urma" : "uvb");
 		return -EINVAL;
 	}
 
@@ -358,7 +371,8 @@ int create_kthread_to_process_msg(const struct sentry_binary_msg *event_msg,
 	if (IS_ERR(child_thread)) {
 		kfree(child_data->msg);
 		kfree(child_data);
-		pr_err("Failed to create child thread\n");
+		pr_err("Failed to create child thread to process msg from %s\n",
+			msg.helper_msg_info.remote_info.eid);
 		return PTR_ERR(child_thread);
 	}
 

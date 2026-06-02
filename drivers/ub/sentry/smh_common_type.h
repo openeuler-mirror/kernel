@@ -31,6 +31,8 @@
 #define ENABLE_VALUE_MAX_LEN 4 // 'off' + '\0'
 
 #define URMA_ACK_RETRY_NUM     10
+// return value for urma_send(ack) msg
+#define URMA_ACK_SUCCESS 1
 
 #define PROC_FILE_PERMISSION 0600
 #define PROC_DIR_PERMISSION 0550
