@@ -125,6 +125,55 @@ static vm_fault_t obmm_vma_fault(struct vm_fault *vmf __always_unused)
 	return VM_FAULT_SIGBUS;
 }
 
+/*
+ * Walk the page table for @addr and extract the PFN.
+ * Handles both PTE entries and PMD leaf (huge page) entries.
+ * Caller must hold mmap_read_lock (or mmap_write_lock) so that the page
+ * table entries cannot be torn or freed concurrently.
+ */
+static int obmm_lookup_pfn(struct mm_struct *mm, unsigned long addr,
+			   unsigned long *pfn)
+{
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *ptep;
+	spinlock_t *ptl;
+
+	pgd = pgd_offset(mm, addr);
+	if (pgd_none(*pgd) || unlikely(pgd_bad(*pgd)))
+		return -EINVAL;
+
+	p4d = p4d_offset(pgd, addr);
+	if (p4d_none(*p4d) || unlikely(p4d_bad(*p4d)))
+		return -EINVAL;
+
+	pud = pud_offset(p4d, addr);
+	if (pud_none(*pud) || unlikely(pud_bad(*pud)))
+		return -EINVAL;
+
+	pmd = pmd_offset(pud, addr);
+
+	/* PMD leaf (huge page): extract PFN directly */
+	if (pmd_leaf(*pmd)) {
+		if (!pmd_present(*pmd))
+			return -EINVAL;
+		*pfn = pmd_pfn(*pmd) + ((addr & ~PMD_MASK) >> PAGE_SHIFT);
+		return 0;
+	}
+
+	if (pmd_none(*pmd) || unlikely(pmd_bad(*pmd)))
+		return -EINVAL;
+
+	/* Regular PTE: follow_pte handles PTE-level lock and mapping */
+	if (follow_pte(mm, addr, &ptep, &ptl))
+		return -EINVAL;
+	*pfn = pte_pfn(ptep_get(ptep));
+	pte_unmap_unlock(ptep, ptl);
+	return 0;
+}
+
 /* Custom access handler for ptrace/GDB on PFNMAP VMAs */
 static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 			   void *buf, int len, int write)
@@ -133,8 +182,6 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 	unsigned long pfn, prot;
 	void *kaddr;
 	bool is_vmap;
-	pte_t *ptep, pte;
-	spinlock_t *ptl;
 	int offset = offset_in_page(addr);
 	int ret = -EINVAL;
 
@@ -145,29 +192,25 @@ static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)))
 		return -EINVAL;
 
-retry:
-	if (follow_pte(vma->vm_mm, addr, &ptep, &ptl))
+	/* Check permission from vm_flags */
+	if (!(vma->vm_flags & VM_READ))
+		return -EINVAL;
+	if (write && !(vma->vm_flags & VM_WRITE))
 		return -EINVAL;
 
-	pte = ptep_get(ptep);
-	pte_unmap_unlock(ptep, ptl);
-
-	/* Extract protection bits from user PTE */
-	prot = pgprot_val(pte_pgprot(pte));
-	pfn = pte_pfn(pte);
-
-	/* Check write permission */
-	if (write && !pte_write(pte))
+	/* Get PFN from page table walk */
+	if (obmm_lookup_pfn(vma->vm_mm, addr, &pfn))
 		return -EINVAL;
 
-	/* Clear PTE_USER/PTE_NG for kernel access with PAN enabled */
+	/* Derive prot from vma->vm_page_prot, adjust for kernel access */
+	prot = pgprot_val(vma->vm_page_prot);
 	prot &= ~(PTE_USER | PTE_NG);
 	prot |= (PTE_PXN | PTE_UXN);
 
+	/* Map one page */
+	len = min(len, (int)(PAGE_SIZE - offset));
+
 	if (reg->type == OBMM_EXPORT_REGION) {
-		/* Export: local RAM, valid struct page, linear mapping invalidated.
-		 * PFNs may be discontiguous across sg entries, so map one page.
-		 */
 		struct page *page;
 
 		if (!pfn_valid(pfn))
@@ -176,9 +219,6 @@ retry:
 		kaddr = vmap(&page, 1, VM_MAP, __pgprot(prot));
 		is_vmap = true;
 	} else {
-		/* Import: UB PA space, no struct page. ioremap_prot works since
-		 * pfn_is_map_memory() is false.  PFNs are contiguous.
-		 */
 		resource_size_t phys_addr = (resource_size_t)pfn << PAGE_SHIFT;
 
 		kaddr = (__force void *)ioremap_prot(phys_addr, PAGE_SIZE, prot);
@@ -187,29 +227,11 @@ retry:
 	if (!kaddr)
 		return -ENOMEM;
 
-	/* Re-validate PTE to close TOCTOU race */
-	if (follow_pte(vma->vm_mm, addr, &ptep, &ptl))
-		goto out_unmap;
-	if (!pte_same(pte, ptep_get(ptep))) {
-		pte_unmap_unlock(ptep, ptl);
-		if (is_vmap)
-			vunmap(kaddr);
-		else
-			iounmap((__force void __iomem *)kaddr);
-		goto retry;
-	}
-
-	/* Clamp to single page for export (vmap mapped only one page) */
-	if (is_vmap)
-		len = min(len, (int)(PAGE_SIZE - offset));
-
 	if (write)
 		ret = copy_mc_to_kernel(kaddr + offset, buf, len) ? -EFAULT : len;
 	else
 		ret = copy_mc_to_kernel(buf, kaddr + offset, len) ? -EFAULT : len;
-	pte_unmap_unlock(ptep, ptl);
 
-out_unmap:
 	if (is_vmap)
 		vunmap(kaddr);
 	else
