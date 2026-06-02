@@ -526,8 +526,9 @@ static int update_pmd_entry(pmd_t *pmd, unsigned long addr,
 			__set_pte((pte_t *)pmd, pmd_pte(new_pmd));
 		}
 		spin_unlock(ptl);
-		/* Skip PTE-level walk for huge pages */
-		return 1;
+		/* Skip PTE-level walk and split_huge_pmd for PFN-mapped huge pages */
+		walk->action = ACTION_CONTINUE;
+		return 0;
 	}
 
 	/* Continue to PTE-level walk */
@@ -553,6 +554,16 @@ static int update_pte_entry(pte_t *pte, unsigned long addr __always_unused,
 	return 0;
 }
 
+/*
+ * Bypass VM_PFNMAP skip in walk_page_test -- OBMM PFN mappings
+ * have no struct page but do need page table permission updates.
+ */
+static int obmm_walk_test(unsigned long start __always_unused,
+			  unsigned long end __always_unused, struct mm_walk *walk __always_unused)
+{
+	return 0;
+}
+
 static int update_vma_page_range(struct vm_area_struct *vma, uint8_t mem_state)
 {
 	pgprot_t pgprot = mem_state_to_pgprot(mem_state);
@@ -561,6 +572,7 @@ static int update_vma_page_range(struct vm_area_struct *vma, uint8_t mem_state)
 	unsigned long start = vma->vm_start;
 	unsigned long end = vma->vm_end;
 	struct mm_walk_ops walk_ops = {
+		.test_walk = obmm_walk_test,
 		.pmd_entry = update_pmd_entry,
 		.pte_entry = update_pte_entry,
 	};
