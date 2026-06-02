@@ -1449,15 +1449,7 @@ static struct ubase_crq_event_nb ubctl_crq_events = {
 int ubctl_port_link_status_init(struct auxiliary_device *adev, struct ubctl_dev *ucdev)
 {
 	struct ubase_caps *ucaps;
-	u32 env_type;
 	int ret = 0;
-
-	env_type = ubase_get_hw_ver(adev);
-	if (env_type != UBASE_HW_VER_A_0 && env_type != UBASE_HW_VER_A_1) {
-		ubctl_info(ucdev, "port link status cannot be used in current env type(%u).\n",
-			   env_type);
-		return ret;
-	}
 
 	ucaps = ubase_get_dev_caps(adev);
 	if (ucaps == NULL || ucaps->die_id >= UBCTL_MAX_DIE_NUM)
@@ -1483,11 +1475,6 @@ void ubctl_port_link_status_uninit(struct auxiliary_device *adev)
 	struct ubctl_port_link_list *current_node, *next;
 	struct ubctl_link_status *del_node, *del_next;
 	struct ubase_caps *ucaps;
-	u32 env_type;
-
-	env_type = ubase_get_hw_ver(adev);
-	if (env_type != UBASE_HW_VER_A_0 && env_type != UBASE_HW_VER_A_1)
-		return;
 
 	ucaps = ubase_get_dev_caps(adev);
 	if (ucaps == NULL || ucaps->die_id >= UBCTL_MAX_DIE_NUM)
@@ -1539,6 +1526,7 @@ int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
 			    port_link_list) {
 		if (current_node->port != port)
 			continue;
+
 		ret = ubctl_port_add_link_node(current_node, link_info, current_node->size);
 		if (ret) {
 			mutex_unlock(&g_ubctl_port_link_mutex);
@@ -1546,6 +1534,7 @@ int ubctl_handle_link_status_event(void *dev, void *data, u32 len)
 		}
 		if (current_node->size < UBCTL_LINK_SIZE_MAX)
 			current_node->size++;
+
 		mutex_unlock(&g_ubctl_port_link_mutex);
 		return ret;
 	}
