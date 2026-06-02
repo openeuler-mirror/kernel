@@ -82,4 +82,4 @@ void ubase_print_context_hw(struct seq_file *s, void *ctx_addr, u32 ctx_len);
 bool ubase_dbg_dentry_support(struct auxiliary_device *adev, u32 property);
 int ubase_dbg_format_time(time64_t time, struct seq_file *s);
 
-#endif /* _UBASE_COMM_DEBUGFS_H_ */
+#endif /* _UB_UBASE_COMM_DEBUGFS_H_ */

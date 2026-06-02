@@ -136,4 +136,4 @@ int ubase_comp_register(struct auxiliary_device *adev,
 					    unsigned long jfcn, void *data));
 void ubase_comp_unregister(struct auxiliary_device *adev);
 
-#endif /* _UBASE_COMM_EQ_H_ */
+#endif /* _UB_UBASE_COMM_EQ_H_ */

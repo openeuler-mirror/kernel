@@ -765,12 +765,26 @@ static struct unic_dev *unic_get_bond_slave(struct net_device *ndev)
 	return unic_dev;
 }
 
+static bool unic_is_linklocal_ip(struct sockaddr *sa)
+{
+	const struct sockaddr_in6 *addr6;
+
+	if (!sa || sa->sa_family != AF_INET6)
+		return false;
+
+	addr6 = (const struct sockaddr_in6 *)sa;
+	return !!(ipv6_addr_type(&addr6->sin6_addr) & IPV6_ADDR_LINKLOCAL);
+}
+
 static int unic_eth_ip_event(struct sockaddr *sa, struct net_device *ndev,
 			     u16 ip_mask, unsigned long event)
 {
 	enum UNIC_COMM_ADDR_STATE state;
 	struct unic_dev *unic_dev;
 	int ret = NOTIFY_OK;
+
+	if (unic_is_linklocal_ip(sa))
+		return NOTIFY_DONE;
 
 	unic_dev = unic_get_bond_slave(ndev);
 	if (!unic_dev)
@@ -913,8 +927,8 @@ static int unic_update_bond_status(struct unic_dev *unic_dev,
 	unic_dev->bond_status.cur_status = lag_info->tx_enabled;
 	mutex_unlock(&bond_status->mutex);
 
-	unic_info(unic_dev, "[UNIC DEBUG] update bond_status: %u.\n",
-		  unic_dev->bond_status.cur_status);
+	unic_dbg(unic_dev,
+		 "update bond_status: %u.\n", unic_dev->bond_status.cur_status);
 
 	unic_bond_status_record(unic_dev->comdev.netdev, lag_info->tx_enabled);
 
