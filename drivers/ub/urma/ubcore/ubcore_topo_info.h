@@ -15,7 +15,7 @@
 #include <ub/urma/ubcore_types.h>
 
 #define EID_LEN (16)
-#define MAX_NODE_NUM (64)
+#define MAX_NODE_NUM (1024)
 #define ENTITY_AGG_DEV_NUM (3) // bonding device number per entity
 #define PORT_NUM (9)
 #define CHIP_NUM (2)

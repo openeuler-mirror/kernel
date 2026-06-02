@@ -15,7 +15,7 @@
 #include <ub/urma/ubcore_types.h>
 
 #define EID_LEN (16)
-#define MAX_NODE_NUM (64)
+#define MAX_NODE_NUM (1024)
 #define MAX_PORT_NUM (9)
 #define IODIE_NUM_PER_CHIP (1)
 #define PORT_NUM (9)
