@@ -98,6 +98,7 @@ struct sentry_ubcore_resource {
 	/* dev resource */
 	struct ubcore_device *sentry_ubcore_dev;
 	struct ubcore_tjetty *tjetty[MAX_NODE_NUM];
+	struct ubcore_tpid *tpid[MAX_NODE_NUM];
 	struct ubcore_jfs_wr jfs_wr[MAX_NODE_NUM];
 	struct ubcore_jfr_wr jfr_wr[MAX_NODE_NUM];
 	struct ubcore_sge s_sge[MAX_NODE_NUM];
@@ -242,6 +243,11 @@ static int unimport_tjetty(int die_index)
 		if (sentry_urma_dev[die_index].tjetty[i]) {
 			ubcore_unimport_jetty(sentry_urma_dev[die_index].tjetty[i]);
 			sentry_urma_dev[die_index].tjetty[i] = NULL;
+		}
+		if (sentry_urma_dev[die_index].tpid[i]) {
+			ubcore_delete_tpid(sentry_urma_dev[die_index].sentry_ubcore_dev,
+				sentry_urma_dev[die_index].tpid[i]);
+			sentry_urma_dev[die_index].tpid[i] = NULL;
 		}
 	}
 
@@ -912,9 +918,35 @@ err_create_urma_resource:
 	return ret;
 }
 
+
+/**
+ * create_tpid - Create an available tp from internal resource pooling
+ * @eid_index: EID index for the tp
+ * @die_index: Die index for resource access
+ *
+ * Return: Pointer to created tp on success, NULL on failure
+ *
+ * This function creates a available tp from internal resource pooling
+ * endpoint specified by the EID index.
+ */
+static struct ubcore_tpid *create_tpid(int eid_index, int die_index)
+{
+	struct ubcore_tpid_cfg ub_tp_cfg = {
+		.local_eid = sentry_urma_dev[die_index].local_eid,
+		.peer_eid = sentry_urma_dev[die_index].server_eid[eid_index],
+		.tp_mode = UBCORE_TP_RM,
+		.tp_type = UBCORE_CTP,
+	};
+
+	return ubcore_create_tpid(sentry_urma_dev[die_index].sentry_ubcore_dev,
+			&ub_tp_cfg, NULL);
+}
+
+
 /**
  * create_tjetty - Create a target jetty for remote communication
  * @tjetty_cfg: Target jetty configuration
+ * @tpid: tp resource
  * @eid_index: EID index for the target
  * @die_index: Die index for resource access
  *
@@ -924,34 +956,17 @@ err_create_urma_resource:
  * endpoint specified by the EID index.
  */
 static struct ubcore_tjetty *create_tjetty(struct ubcore_tjetty_cfg *tjetty_cfg,
+					   struct ubcore_tpid *tpid,
 					   int eid_index, int die_index)
 {
-	int ret;
-
 	if (!sentry_urma_dev[die_index].sentry_ubcore_dev) {
 		pr_err("%s failed: urma %d dev is not exist\n", __func__, die_index);
 		return NULL;
 	}
 
-	struct ubcore_get_tp_cfg tp_cfg = {
-		.flag.bs.ctp = 1,
-		.trans_mode = UBCORE_TP_RM,
-		.local_eid = sentry_urma_dev[die_index].local_eid,
-		.peer_eid = sentry_urma_dev[die_index].server_eid[eid_index],
-	};
-	uint32_t tp_cnt = 1;
-	struct ubcore_tp_info tp_list = {};
 	struct ubcore_active_tp_cfg active_tp_cfg = {};
 
-	ret = ubcore_get_tp_list(sentry_urma_dev[die_index].sentry_ubcore_dev,
-				 &tp_cfg, &tp_cnt, &tp_list, NULL);
-	if (ret != 0) {
-		pr_err("ubcore_get_tp_list failed, ret %d, server eid %s\n",
-		       ret, sentry_urma_dev[die_index].server_eid_array[eid_index]);
-		return NULL;
-	}
-
-	active_tp_cfg.tp_handle = tp_list.tp_handle;
+	active_tp_cfg.tp_handle = tpid->tp_handle;
 	return ubcore_import_jetty_ex(sentry_urma_dev[die_index].sentry_ubcore_dev,
 				      tjetty_cfg, &active_tp_cfg, NULL);
 }
@@ -1048,12 +1063,26 @@ int import(void)
 		/* Import target jetties for remote servers (skip local EID at index 0) */
 		for (i = 1; i < sentry_urma_dev[die_index].server_eid_valid_num; i++) {
 			tjetty_cfg.id.eid = sentry_urma_dev[die_index].server_eid[i];
-			sentry_urma_dev[die_index].tjetty[i] =
-				create_tjetty(&tjetty_cfg, i, die_index);
+			sentry_urma_dev[die_index].tpid[i] = create_tpid(i, die_index);
+			if (IS_ERR_OR_NULL(sentry_urma_dev[die_index].tpid[i])) {
+				pr_warn("%s: create tpid[%d] failed, server eid is %s\n",
+						__func__,
+						i,
+						sentry_urma_dev[die_index].server_eid_array[i]);
+				sentry_urma_dev[die_index].tpid[i] = NULL;
+				continue;
+			}
+			sentry_urma_dev[die_index].tjetty[i] = create_tjetty(&tjetty_cfg,
+				sentry_urma_dev[die_index].tpid[i], i, die_index);
 			if (IS_ERR_OR_NULL(sentry_urma_dev[die_index].tjetty[i])) {
 				pr_warn("ubcore_import_jetty_ex err, server eid %s\n",
 					sentry_urma_dev[die_index].server_eid_array[i]);
 				sentry_urma_dev[die_index].tjetty[i] = NULL;
+
+				// release useless tpid
+				ubcore_delete_tpid(sentry_urma_dev[die_index].sentry_ubcore_dev,
+					sentry_urma_dev[die_index].tpid[i]);
+				sentry_urma_dev[die_index].tpid[i] = NULL;
 				continue;
 			}
 			tjetty_valid_num++;
@@ -1842,6 +1871,8 @@ static int rebuild_tjetty(int idx, int die_index)
 {
 	struct ubcore_tjetty *tjetty_tmp = NULL;
 	struct ubcore_tjetty *tjetty_to_clear = NULL;
+	struct ubcore_tpid *tpid_tmp = NULL;
+	struct ubcore_tpid *tpid_to_clear = NULL;
 
 	if (!sentry_urma_dev[die_index].sentry_ubcore_dev) {
 		pr_err("%s failed: urma %d dev is not exist\n", __func__, die_index);
@@ -1868,23 +1899,37 @@ static int rebuild_tjetty(int idx, int die_index)
 		return -EBUSY;
 	}
 
-	tjetty_tmp = create_tjetty(&cfg, idx, die_index);
+	tpid_tmp = create_tpid(idx, die_index);
+	if (IS_ERR_OR_NULL(tpid_tmp)) {
+		urma_mutex_lock_op(URMA_UNLOCK);
+		pr_err("%s: tpid[%d] create failed, eid %s\n",
+				__func__, idx, sentry_urma_dev[die_index].server_eid_array[idx]);
+		return -EFAULT;
+	}
+
+	tjetty_tmp = create_tjetty(&cfg, tpid_tmp, idx, die_index);
 	if (IS_ERR_OR_NULL(tjetty_tmp)) {
+		ubcore_delete_tpid(sentry_urma_dev[die_index].sentry_ubcore_dev, tpid_tmp);
 		urma_mutex_lock_op(URMA_UNLOCK);
 		pr_err("%s: tjetty[%d] ubcore_import_jetty_ex err, eid %s\n",
 		       __func__, idx, sentry_urma_dev[die_index].server_eid_array[idx]);
 		return -EFAULT;
 	}
 
-	/* Replace old tjetty if it exists */
+	/* Replace old tjetty and tpid if it exists */
 	if (sentry_urma_dev[die_index].tjetty[idx])
 		tjetty_to_clear = sentry_urma_dev[die_index].tjetty[idx];
+	if (sentry_urma_dev[die_index].tpid[idx])
+		tpid_to_clear = sentry_urma_dev[die_index].tpid[idx];
 
 	sentry_urma_dev[die_index].tjetty[idx] = tjetty_tmp;
+	sentry_urma_dev[die_index].tpid[idx] = tpid_tmp;
 
-	/* Clean up old tjetty */
+	/* Clean up old tjetty and tpid*/
 	if (tjetty_to_clear)
 		ubcore_unimport_jetty(tjetty_to_clear);
+	if (tpid_to_clear)
+		ubcore_delete_tpid(sentry_urma_dev[die_index].sentry_ubcore_dev, tpid_to_clear);
 
 	/* Repost receive work request */
 	sentry_post_recv(sentry_urma_dev[die_index].jetty,
