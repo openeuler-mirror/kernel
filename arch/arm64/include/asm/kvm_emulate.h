@@ -295,6 +295,11 @@ static __always_inline unsigned long pvm_to_phys_pstate(unsigned long virt)
 	return pvm_clear_daif((virt & ~PSR_MODE_MASK) | PSR_MODE_EL0t);
 }
 
+static __always_inline unsigned long *vcpu_sp(const struct kvm_vcpu *vcpu)
+{
+	return (unsigned long *)&vcpu_gp_regs(vcpu)->sp;
+}
+
 static __always_inline bool vcpu_mode_is_32bit(const struct kvm_vcpu *vcpu)
 {
 	return !!(*vcpu_cpsr(vcpu) & PSR_MODE32_BIT);

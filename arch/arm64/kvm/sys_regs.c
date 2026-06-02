@@ -2235,6 +2235,44 @@ static bool access_currentel(struct kvm_vcpu *vcpu,
 	return true;
 }
 
+static bool access_spsel(struct kvm_vcpu *vcpu,
+			 struct sys_reg_params *p,
+			 const struct sys_reg_desc *r)
+{
+	u64 spsel;
+
+	/* The guest kernel always runs in EL1h, see below. */
+	if (!p->is_write) {
+		p->regval = 1;
+		return true;
+	}
+
+	switch (reg_to_encoding(r)) {
+	case SYS_SPSel_EL0:
+		spsel = 0;
+		break;
+	case SYS_SPSel_EL1:
+		spsel = 1;
+		break;
+	default:
+		spsel = p->regval & 1;
+		break;
+	}
+
+	/*
+	 * PVM does not support EL1t: the guest kernel always runs on its
+	 * SP_EL1, and the only other mode PVM tracks, EL0t, would mark the
+	 * kernel as its own userspace.  Refuse SPSel = 0 instead of disguising
+	 * EL1t as EL0t; SPSel = 1 leaves the guest in EL1h.
+	 */
+	if (!spsel) {
+		kvm_inject_undefined(vcpu);
+		return false;
+	}
+
+	return true;
+}
+
 static bool access_elr(struct kvm_vcpu *vcpu,
 		       struct sys_reg_params *p,
 		       const struct sys_reg_desc *r)
@@ -2255,6 +2293,18 @@ static bool access_spsr(struct kvm_vcpu *vcpu,
 		__vcpu_sys_reg(vcpu, SPSR_EL1) = p->regval;
 	else
 		p->regval = __vcpu_sys_reg(vcpu, SPSR_EL1);
+
+	return true;
+}
+
+static bool access_sp_el0(struct kvm_vcpu *vcpu,
+			  struct sys_reg_params *p,
+			  const struct sys_reg_desc *r)
+{
+	if (p->is_write)
+		*vcpu_sp(vcpu) = p->regval;
+	else
+		p->regval = *vcpu_sp(vcpu);
 
 	return true;
 }
@@ -2386,6 +2436,11 @@ static int set_imp_id_reg(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r,
  * guest...
  */
 static const struct sys_reg_desc sys_reg_descs[] = {
+	{ SYS_DESC(SYS_SPSel_EL0), undef_access,
+	  .pvm_access = access_spsel },
+	{ SYS_DESC(SYS_SPSel_EL1), undef_access,
+	  .pvm_access = access_spsel },
+
 	{ SYS_DESC(SYS_ALLINT_CLR), undef_access },
 	{ SYS_DESC(SYS_ALLINT_SET), undef_access },
 
@@ -2679,6 +2734,12 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	  .pvm_access = access_spsr },
 	{ SYS_DESC(SYS_ELR_EL1), access_elr,
 	  .pvm_access = access_elr },
+
+	{ SYS_DESC(SYS_SP_EL0), undef_access,
+	  .pvm_access = access_sp_el0 },
+
+	{ SYS_DESC(SYS_SPSel), undef_access,
+	  .pvm_access = access_spsel },
 
 	{ SYS_DESC(SYS_CurrentEL), undef_access,
 	  .pvm_access = access_currentel },
