@@ -76,6 +76,19 @@ enum {
 	UBCORE_ATTR_RES_LAST
 };
 
+enum ubcore_show_res_type {
+	UBCORE_SHOW_RES_JETTY = 0,
+	UBCORE_SHOW_RES_JFS,
+	UBCORE_SHOW_RES_JFR,
+	UBCORE_SHOW_RES_JFC,
+	UBCORE_SHOW_RES_SEG,
+};
+
+struct ubagg_show_res {
+	struct ubcore_jetty_id jetty_id;
+	enum ubcore_show_res_type  res_type;
+};
+
 static int ubcore_parse_admin_res_cmd(struct netlink_callback *cb, void *dst,
 				      uint32_t copy_len)
 {
@@ -592,6 +605,57 @@ int ubcore_admin_insert_main_ue_eid_batch(struct sk_buff *skb,
 	}
 
 	return 0;
+}
+
+int ubcore_get_v2p_res(struct sk_buff *skb, struct genl_info *info)
+{
+	struct ubagg_show_res res = {0};
+	struct ubcore_cmd_show_res arg = {0};
+	struct ubcore_device *bonding_dev;
+	uint64_t args_addr;
+	int ret = 0;
+
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
+	if (!info->attrs[UBCORE_HDR_ARGS_LEN] || !info->attrs[UBCORE_HDR_ARGS_ADDR]) {
+		ubcore_log_err("info attr invalid!\n");
+		return -EINVAL;
+	}
+	args_addr = nla_get_u64(info->attrs[UBCORE_HDR_ARGS_ADDR]);
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)args_addr,
+		sizeof(struct ubcore_cmd_show_res));
+	if (ret != 0)
+		return ret;
+
+	bonding_dev = ubcore_find_device_with_name(arg.in.dev_name);
+	if (bonding_dev == NULL) {
+		ubcore_log_err("failed to get bonding_dev");
+		return -EINVAL;
+	}
+
+	res.res_type = arg.in.type;
+	res.jetty_id.id = arg.in.key;
+
+	struct ubcore_user_ctl k_user_ctl = {
+		.in.addr = (uint64_t)(uintptr_t)&res,
+		.in.len = sizeof(res),
+		.out.addr = arg.out.addr,
+		.out.len = arg.out.len,
+	};
+	if (arg.in.key_cnt == 0)
+		k_user_ctl.in.opcode = 7; /* GET_LIST_RES in ubagg */
+	else
+		k_user_ctl.in.opcode = 8; /* GET_SHOW_RES in ubagg */
+
+	ret = ubcore_user_control(bonding_dev, &k_user_ctl);
+	ubcore_put_device(bonding_dev);
+	if (ret != 0) {
+		ubcore_log_err("ubcore_user_control failed, ret:%d.\n", ret);
+		return ret;
+	}
+
+	arg.out.len = k_user_ctl.out.len;
+	return ubcore_copy_to_user((void __user *)(uintptr_t)args_addr, &arg,
+			   sizeof(struct ubcore_cmd_show_res));
 }
 
 static void ubcore_fill_res_binary(void *res_buf, struct sk_buff *msg,

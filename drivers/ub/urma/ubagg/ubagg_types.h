@@ -28,6 +28,8 @@ enum ubagg_ht_param_num {
 	UBAGG_HT_SEGMENT_HT,
 	UBAGG_HT_JETTY_HT,
 	UBAGG_HT_JFR_HT,
+	UBAGG_HT_JFS_HT,
+	UBAGG_HT_JFC_HT,
 	UBAGG_HT_MAX,
 };
 
@@ -118,10 +120,16 @@ struct ubagg_jfr_hash_node {
 
 struct ubagg_jfc {
 	struct ubcore_jfc base;
+	uint32_t token_id;
+	struct ubagg_jetty_id slaves[UBAGG_DEV_MAX_NUM];
+	struct hlist_node hnode;
 };
 
 struct ubagg_jfs {
 	struct ubcore_jfs base;
+	uint32_t token_id;
+	struct ubagg_jetty_id slaves[UBAGG_DEV_MAX_NUM];
+	struct hlist_node hnode;
 };
 
 struct ubagg_physical_device {
