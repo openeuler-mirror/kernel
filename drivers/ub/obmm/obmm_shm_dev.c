@@ -723,8 +723,10 @@ static long obmm_shm_update_range(struct file *file,
 			goto rollback;
 		}
 		/* Check VMA belongs to this region */
-		if (vma->vm_file->private_data != reg) {
-			pr_err("VMA belongs to different region: vma=[%#lx, %#lx)\n",
+		if (vma->vm_ops != &obmm_vm_ops ||
+		    !vma->vm_file ||
+		    vma->vm_file->private_data != reg) {
+			pr_err("VMA does not belong to this region: vma=[%#lx, %#lx)\n",
 			       vma->vm_start, vma->vm_end);
 			ret = -EFAULT;
 			goto rollback;
