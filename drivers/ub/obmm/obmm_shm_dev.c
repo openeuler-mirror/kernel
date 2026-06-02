@@ -11,6 +11,7 @@
 #include <linux/pagewalk.h>
 #include <linux/pgtable.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 #include "obmm_cache.h"
 #include "obmm_sysfs.h"
@@ -109,6 +110,7 @@ static bool validate_update_info(const struct obmm_region *region,
 
 	return true;
 }
+
 static int obmm_vma_mprotect(struct vm_area_struct *vma __always_unused,
 			     unsigned long start __always_unused, unsigned long end __always_unused,
 			     unsigned long newflags __always_unused)
@@ -116,22 +118,29 @@ static int obmm_vma_mprotect(struct vm_area_struct *vma __always_unused,
 	pr_warn("mprotect not supported\n");
 	return -EOPNOTSUPP;
 }
+
 static vm_fault_t obmm_vma_fault(struct vm_fault *vmf __always_unused)
 {
 	pr_warn("Unexpected fault\n");
 	return VM_FAULT_SIGBUS;
 }
+
 /* Custom access handler for ptrace/GDB on PFNMAP VMAs */
 static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 			   void *buf, int len, int write)
 {
-	resource_size_t phys_addr;
-	unsigned long prot;
-	void __iomem *maddr;
+	struct obmm_region *reg = vma->vm_file->private_data;
+	unsigned long pfn, prot;
+	void *kaddr;
+	bool is_vmap;
 	pte_t *ptep, pte;
 	spinlock_t *ptl;
 	int offset = offset_in_page(addr);
 	int ret = -EINVAL;
+
+	pr_debug("addr=%#lx len=%d write=%d region=%d type=%s\n",
+		 addr, len, write, reg->regionid,
+		 reg->type == OBMM_EXPORT_REGION ? "export" : "import");
 
 	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)))
 		return -EINVAL;
@@ -145,7 +154,7 @@ retry:
 
 	/* Extract protection bits from user PTE */
 	prot = pgprot_val(pte_pgprot(pte));
-	phys_addr = (resource_size_t)pte_pfn(pte) << PAGE_SHIFT;
+	pfn = pte_pfn(pte);
 
 	/* Check write permission */
 	if (write && !pte_write(pte))
@@ -155,32 +164,59 @@ retry:
 	prot &= ~(PTE_USER | PTE_NG);
 	prot |= (PTE_PXN | PTE_UXN);
 
-	maddr = ioremap_prot(phys_addr, PAGE_ALIGN(len + offset), prot);
-	if (!maddr)
+	if (reg->type == OBMM_EXPORT_REGION) {
+		/* Export: local RAM, valid struct page, linear mapping invalidated.
+		 * PFNs may be discontiguous across sg entries, so map one page.
+		 */
+		struct page *page;
+
+		if (!pfn_valid(pfn))
+			return -EINVAL;
+		page = pfn_to_page(pfn);
+		kaddr = vmap(&page, 1, VM_MAP, __pgprot(prot));
+		is_vmap = true;
+	} else {
+		/* Import: UB PA space, no struct page. ioremap_prot works since
+		 * pfn_is_map_memory() is false.  PFNs are contiguous.
+		 */
+		resource_size_t phys_addr = (resource_size_t)pfn << PAGE_SHIFT;
+
+		kaddr = (__force void *)ioremap_prot(phys_addr, PAGE_SIZE, prot);
+		is_vmap = false;
+	}
+	if (!kaddr)
 		return -ENOMEM;
 
-	/* Re-check PTE to prevent TOCTOU race */
+	/* Re-validate PTE to close TOCTOU race */
 	if (follow_pte(vma->vm_mm, addr, &ptep, &ptl))
 		goto out_unmap;
-
 	if (!pte_same(pte, ptep_get(ptep))) {
 		pte_unmap_unlock(ptep, ptl);
-		iounmap(maddr);
+		if (is_vmap)
+			vunmap(kaddr);
+		else
+			iounmap((__force void __iomem *)kaddr);
 		goto retry;
 	}
 
-	/* Perform the actual memory access */
+	/* Clamp to single page for export (vmap mapped only one page) */
+	if (is_vmap)
+		len = min(len, (int)(PAGE_SIZE - offset));
+
 	if (write)
-		ret = copy_mc_to_kernel((__force void *)(maddr + offset), buf, len) ? -EFAULT : len;
+		ret = copy_mc_to_kernel(kaddr + offset, buf, len) ? -EFAULT : len;
 	else
-		ret = copy_mc_to_kernel(buf, (__force void *)(maddr + offset), len) ? -EFAULT : len;
+		ret = copy_mc_to_kernel(buf, kaddr + offset, len) ? -EFAULT : len;
 	pte_unmap_unlock(ptep, ptl);
 
 out_unmap:
-	iounmap(maddr);
-
+	if (is_vmap)
+		vunmap(kaddr);
+	else
+		iounmap((__force void __iomem *)kaddr);
 	return ret;
 }
+
 static const char *obmm_vma_name(struct vm_area_struct *vma __always_unused)
 {
 	return "OBMM_SHM";
