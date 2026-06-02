@@ -161,6 +161,12 @@ static const struct genl_ops ubcore_genl_ops[] = {
 		.flags = GENL_ADMIN_PERM,
 		.doit = ubcore_admin_insert_main_ue_eid_batch
 	},
+	{
+		.cmd = UBCORE_CMD_GET_V2P_RES,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.doit = ubcore_get_v2p_res
+	},
 };
 
 /* ubcore family definition */
