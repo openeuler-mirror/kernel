@@ -8,4 +8,3 @@ obj-$(CONFIG_UB_URMA)	+= ubagg/
 
 obj-$(CONFIG_UB_URMA)	+= uburma/
 obj-$(CONFIG_UB_URMA)	+= ulp/
-

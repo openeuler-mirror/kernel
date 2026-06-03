@@ -1,0 +1,134 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ *
+ * Description: Global latency tracer with histogram for nano-scale functions
+ * Author: Perf Module
+ * Create: 2026-05-12
+ * Note: No per-process tracking, global aggregation only.
+ * History: 2026-05-12 Create file
+ */
+
+#ifndef UB_CORE_PERF_H
+#define UB_CORE_PERF_H
+
+#include <linux/types.h>
+#include <linux/timekeeping.h>
+#include <linux/cache.h>
+
+enum ub_perf_record_type {
+	PERF_URMA_CMD_CREATE_JETTY,
+	PERF_CORE_CREATE_JETTY,
+	PERF_AGG_CREATE_JETTY,
+	PERF_UB_CREATE_JETTY,
+	PERF_URMA_CMD_CREATE_CTX,
+	PERF_CORE_ALLOC_UCONTEXT,
+	PERF_AGG_ALLOC_UCONTEXT,
+	PERF_UB_ALLOC_UCONTEXT,
+	PERF_URMA_CMD_CREATE_JFCE,
+	PERF_URMA_CMD_CREATE_JFC,
+	PERF_CORE_CREATE_JFC,
+	PERF_AGG_CREATE_JFC,
+	PERF_UB_CREATE_JFC,
+	PERF_URMA_CMD_CREATE_JFR,
+	PERF_CORE_CREATE_JFR,
+	PERF_AGG_CREATE_JFR,
+	PERF_UB_CREATE_JFR,
+	PERF_URMA_CMD_CREATE_JFS,
+	PERF_CORE_CREATE_JFS,
+	PERF_AGG_CREATE_JFS,
+	PERF_UB_CREATE_JFS,
+	PERF_URMA_CMD_REGISTER_SEG,
+	PERF_CORE_REGISTER_SEG,
+	PERF_AGG_REGISTER_SEG,
+	PERF_UB_REGISTER_SEG,
+	PERF_URMA_CMD_ALLOC_TOKEN_ID,
+	PERF_CORE_ALLOC_TOKEN_ID,
+	PERF_UB_ALLOC_TOKEN_ID,
+
+	PERF_URMA_CMD_IMPORT_JETTY_EX,
+	PERF_CORE_IMPORT_JETTY,
+	PERF_AGG_IMPORT_JETTY,
+	PERF_CORE_EXCHANGE_UDATA_WHEN_IMPORT_JETTY,
+	PERF_CORE_EXCHANGE_UDATA_WHEN_IMPORT_SEG,
+	PERF_UB_GET_TP_LIST,
+	PERF_UB_ACTIVE_TP,
+	PERF_UB_IMPORT_JETTY,
+	PERF_URMA_CMD_IMPORT_JFR_EX,
+	PERF_CORE_IMPORT_JFR,
+	PERF_AGG_IMPORT_JFR,
+	PERF_UB_IMPORT_JFR,
+	PERF_URMA_CMD_BIND_JETTY_EX,
+	PERF_CORE_BIND_JETTY,
+	PERF_UB_BIND_JETTY,
+	PERF_URMA_CMD_IMPORT_SEG,
+	PERF_CORE_IMPORT_SEG,
+	PERF_AGG_IMPORT_SEG,
+	PERF_UB_IMPORT_SEG,
+
+	PERF_URMA_CMD_UNIMPORT_SEG,
+	PERF_CORE_UNIMPORT_SEG,
+	PERF_AGG_UNIMPORT_SEG,
+	PERF_UB_UNIMPORT_SEG,
+	PERF_URMA_CMD_UNBIND_JETTY,
+	PERF_CORE_UNBIND_JETTY,
+	PERF_UB_DEACTIVE_TP,
+	PERF_UB_UNBIND_JETTY,
+	PERF_URMA_CMD_UNIMPORT_JETTY,
+	PERF_CORE_UNIMPORT_JETTY,
+	PERF_UB_UNIMPORT_JETTY,
+	PERF_URMA_CMD_UNIMPORT_JFR,
+	PERF_CORE_UNIMPORT_JFR,
+	PERF_UB_UNIMPORT_JFR,
+
+	PERF_URMA_CMD_FREE_TOKEN_ID,
+	PERF_CORE_FREE_TOKEN_ID,
+	PERF_UB_FREE_TOKEN_ID,
+	PERF_URMA_CMD_UNREGISTER_SEG,
+	PERF_CORE_UNREGISTER_SEG,
+	PERF_AGG_UNREGISTER_SEG,
+	PERF_UB_UNREGISTER_SEG,
+	PERF_URMA_CMD_DELETE_JETTY,
+	PERF_CORE_DELETE_JETTY,
+	PERF_AGG_DESTROY_JETTY,
+	PERF_UB_DESTROY_JETTY,
+	PERF_URMA_CMD_DELETE_JFS,
+	PERF_CORE_DELETE_JFS,
+	PERF_AGG_DESTROY_JFS,
+	PERF_UB_DESTROY_JFS,
+	PERF_URMA_CMD_DELETE_JFR,
+	PERF_CORE_DELETE_JFR,
+	PERF_AGG_DESTROY_JFR,
+	PERF_UB_DESTROY_JFR,
+	PERF_RECORD_TYPE_MAX,
+};
+
+struct ubcore_latency_record_stat {
+	u32 record_type;
+	u64 count;
+	u64 min_ns;
+	u64 max_ns;
+	u64 avg_ns;
+	u64 p90_ns;
+	u64 p99_ns;
+	u64 p9999_ns;
+};
+
+struct ubcore_latency_stat {
+	u32 version;
+	struct ubcore_latency_record_stat perf_stat_table[PERF_RECORD_TYPE_MAX];
+};
+
+void ubcore_perf_start(void);
+void ubcore_perf_stop(void);
+void ubcore_perf_dump_info(struct ubcore_latency_stat *stat);
+void ubcore_perf_record(u32 record_type, u64 delta_ns);
+
+#define UBCORE_PERF_TRACE_BEGIN(record_type) \
+	u64 ub_start_##record_type = ktime_get_mono_fast_ns()
+
+#define UBCORE_PERF_TRACE_END(record_type) \
+	ubcore_perf_record(record_type, \
+		(u64)(ktime_get_mono_fast_ns() - ub_start_##record_type))
+
+#endif /* UB_CORE_PERF_H */

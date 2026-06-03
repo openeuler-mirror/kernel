@@ -1139,9 +1139,11 @@ static int ubcore_active_tp_vtpn(struct ubcore_device *dev,
 		return -EINVAL;
 	}
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_UB_ACTIVE_TP);
 	start = ktime_get_ns();
 	ret = dev->ops->active_tp(dev, active_tp_cfg);
 	duration = (ktime_get_ns() - start) / UBCORE_NS_TO_MS;
+	UBCORE_PERF_TRACE_END(PERF_UB_ACTIVE_TP);
 	if (ret != 0) {
 		ubcore_log_err("[DRV_ERROR]Failed to active tp, ret: %d, dev_name: %s.\n",
 			       ret, dev->dev_name);

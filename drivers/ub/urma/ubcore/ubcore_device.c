@@ -18,6 +18,7 @@
 #include <net/netns/generic.h>
 #include <ub/urma/ubcore_uapi.h>
 #include <ub/urma/ubcore_jetty.h>
+#include <ub/urma/ubcore_perf.h>
 #include "ubcore_log.h"
 #include "ubcore_device.h"
 #include "ubcore_tp_table.h"
@@ -1681,7 +1682,10 @@ ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 {
 	struct ubcore_ucontext *ucontext;
 	struct ubcore_cg_object cg_obj;
+	uint32_t perf_alloc_ucontext_type;
 	int ret;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_ALLOC_UCONTEXT);
 
 	if (dev == NULL ||
 	    strnlen(dev->dev_name, UBCORE_MAX_DEV_NAME) >=
@@ -1689,12 +1693,14 @@ ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 	    dev->ops == NULL || dev->ops->alloc_ucontext == NULL ||
 	    eid_index >= UBCORE_MAX_EID_CNT) {
 		ubcore_log_err("Invalid argument.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 		return ERR_PTR(-EINVAL);
 	}
 
 	if (!ubcore_dev_accessible(dev, current->nsproxy->net_ns) ||
 		!ubcore_eid_accessible(dev, eid_index)) {
 		ubcore_log_err("Device or EID not accessible.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 		return ERR_PTR(-EPERM);
 	}
 
@@ -1704,14 +1710,24 @@ ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 	if (ret != 0) {
 		ubcore_log_err("cgroup charge fail:%d ,dev_name :%s\n", ret,
 			       dev->dev_name);
+		UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 		return ERR_PTR(ret);
 	}
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_alloc_ucontext_type = PERF_AGG_ALLOC_UCONTEXT;
+	else
+		perf_alloc_ucontext_type = PERF_UB_ALLOC_UCONTEXT;
+
+	UBCORE_PERF_TRACE_BEGIN(perf_alloc_ucontext_type);
 	ucontext = dev->ops->alloc_ucontext(dev, eid_index, udrv_data);
+	UBCORE_PERF_TRACE_END(perf_alloc_ucontext_type);
+
 	if (IS_ERR_OR_NULL(ucontext)) {
 		ubcore_log_err("failed to alloc ucontext.\n");
 		ubcore_cgroup_uncharge(&cg_obj, dev,
 				       UBCORE_RESOURCE_HCA_HANDLE);
+		UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 		return UBCORE_CHECK_RETURN_ERR_PTR(ucontext, UBCORE_DRV_ERRNO);
 	}
 
@@ -1719,6 +1735,7 @@ ubcore_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
 	ucontext->ub_dev = dev;
 	ucontext->cg_obj = cg_obj;
 
+	UBCORE_PERF_TRACE_END(PERF_CORE_ALLOC_UCONTEXT);
 	return ucontext;
 }
 EXPORT_SYMBOL(ubcore_alloc_ucontext);

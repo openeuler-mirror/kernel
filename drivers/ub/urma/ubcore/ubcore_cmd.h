@@ -15,6 +15,8 @@
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <ub/urma/ubcore_types.h>
+#include <ub/urma/ubcore_perf.h>
+
 #include "ubcore_log.h"
 #include "ubcore_topo_info.h"
 
@@ -71,6 +73,9 @@ enum ubcore_cmd {
 	UBCORE_CMD_ADMIN_LOOKUP_MAIN_UE_EID,
 	UBCORE_CMD_ADMIN_FLUSH_MAIN_UE_EID,
 	UBCORE_CMD_ADMIN_INSERT_MAIN_UE_EID_BATCH,
+	UBCORE_CMD_PERF_START,
+	UBCORE_CMD_PERF_STOP,
+	UBCORE_CMD_PERF_SHOW,
 	UBCORE_CMD_MAX
 };
 
@@ -163,6 +168,12 @@ struct ubcore_cmd_set_sl {
 
 		uint32_t priority;
 	} in;
+};
+
+struct ubcore_cmd_perf_show {
+	struct {
+		struct ubcore_latency_stat stat;
+	} out;
 };
 
 /* copy from user_space addr to kernel args */

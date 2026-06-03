@@ -167,6 +167,24 @@ static const struct genl_ops ubcore_genl_ops[] = {
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.doit = ubcore_get_v2p_res
 	},
+	{
+		.cmd = UBCORE_CMD_PERF_START,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.doit = ubcore_perf_start_ops
+	},
+	{
+		.cmd = UBCORE_CMD_PERF_STOP,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.doit = ubcore_perf_stop_ops
+	},
+	{
+		.cmd = UBCORE_CMD_PERF_SHOW,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.doit = ubcore_perf_show_ops
+	},
 };
 
 /* ubcore family definition */

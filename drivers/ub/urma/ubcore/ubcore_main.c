@@ -22,6 +22,8 @@
 #include "ubcm/ub_cm.h"
 #include "ubmgr/ubmgr.h"
 
+#include "ub/urma/ubcore_perf.h"
+
 #define UBCORE_LOG_FILE_PERMISSION (0644)
 
 module_param(g_ubcore_log_level, uint, UBCORE_LOG_FILE_PERMISSION);
@@ -39,9 +41,14 @@ static int __init ubcore_init(void)
 
 	ubcore_exchange_init();
 
+	ret = ubcore_perf_init();
+	if (ret != 0) {
+		ubcore_log_err("Failed to init ubcore perf, ret = %d.\n", ret);
+		return ret;
+	}
 	ret = ubcore_class_register();
 	if (ret != 0)
-		return -1;
+		goto ubperf;
 
 	ret = ubcore_cdev_register();
 	if (ret != 0)
@@ -97,6 +104,8 @@ genl_init:
 	ubcore_cdev_unregister();
 class_init:
 	ubcore_class_unregister();
+ubperf:
+	ubcore_perf_uninit();
 	return ret;
 }
 
@@ -111,6 +120,7 @@ static void __exit ubcore_exit(void)
 	ubcore_genl_exit();
 	ubcore_cdev_unregister();
 	ubcore_class_unregister();
+	ubcore_perf_uninit();
 	ubcore_log_info("ubcore module exits.\n");
 }
 

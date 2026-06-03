@@ -19,6 +19,8 @@
 #include <ub/urma/ubcore_types.h>
 #include <ub/urma/ubcore_uapi.h>
 #include <ub/urma/ubcore_jetty.h>
+#include "ub/urma/ubcore_perf.h"
+
 #include "ubcore_connect_adapter.h"
 #include "ubcore_log.h"
 #include "ubcore_priv.h"
@@ -405,21 +407,36 @@ struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev,
 				     struct ubcore_udata *udata)
 {
 	struct ubcore_jfc *jfc;
+	uint32_t perf_create_jfc_type;
 	int ret;
 
-	if (!dev || !cfg || !dev->ops ||
-		!dev->ops->create_jfc || !dev->ops->destroy_jfc)
-		return ERR_PTR(-EINVAL);
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JFC);
 
+	if (!dev || !cfg || !dev->ops ||
+		!dev->ops->create_jfc || !dev->ops->destroy_jfc) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFC);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (ubcore_is_bonding_dev(dev))
+		perf_create_jfc_type = PERF_AGG_CREATE_JFC;
+	else
+		perf_create_jfc_type = PERF_UB_CREATE_JFC;
+
+	UBCORE_PERF_TRACE_BEGIN(perf_create_jfc_type);
 	jfc = dev->ops->create_jfc(dev, cfg, udata);
+	UBCORE_PERF_TRACE_END(perf_create_jfc_type);
+
 	if (IS_ERR_OR_NULL(jfc)) {
 		ubcore_log_err("failed to create jfc, dev_name: %s.\n", dev->dev_name);
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFC);
 		return UBCORE_CHECK_RETURN_ERR_PTR(jfc, UBCORE_DRV_ERRNO);
 	}
 
 	if (check_and_fill_jfc_attr(&jfc->jfc_cfg, cfg) != 0) {
 		(void)dev->ops->destroy_jfc(jfc);
 		ubcore_log_err("jfc cfg is not qualified.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFC);
 		return ERR_PTR(-EINVAL);
 	}
 	jfc->jfce_handler = jfce_handler;
@@ -434,11 +451,13 @@ struct ubcore_jfc *ubcore_create_jfc(struct ubcore_device *dev,
 					 jfc->id);
 	if (ret != 0) {
 		(void)dev->ops->destroy_jfc(jfc);
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFC);
 		return ERR_PTR(ret);
 	}
 	jfc->jfc_opt.is_actived = true;
 	ubcore_log_info("[JFC CREATE] Created JFC: id: %u, dev_name: %s.",
 		jfc->id, dev->dev_name);
+	UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFC);
 	return jfc;
 }
 EXPORT_SYMBOL(ubcore_create_jfc);
@@ -850,22 +869,40 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev,
 				     struct ubcore_udata *udata)
 {
 	struct ubcore_jfs *jfs;
+	uint32_t perf_create_jfs_type;
 	int ret;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JFS);
 
 	if (!dev || !dev->ops || !dev->ops->create_jfs ||
 	    !dev->ops->destroy_jfs || !cfg || !cfg->jfc ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata))
+	    !ubcore_eid_valid(dev, cfg->eid_index, udata)) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
 		return ERR_PTR(-EINVAL);
+	}
 
-	if (((uint16_t)cfg->trans_mode & dev->attr.dev_cap.trans_mode) == 0)
+	if (((uint16_t)cfg->trans_mode & dev->attr.dev_cap.trans_mode) == 0) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
 		return ERR_PTR(-EINVAL);
+	}
 
-	if (check_jfs_cfg(dev, cfg) != 0)
+	if (check_jfs_cfg(dev, cfg) != 0) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
 		return ERR_PTR(-EINVAL);
+	}
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_create_jfs_type = PERF_AGG_CREATE_JFS;
+	else
+		perf_create_jfs_type = PERF_UB_CREATE_JFS;
+
+	UBCORE_PERF_TRACE_BEGIN(perf_create_jfs_type);
 	jfs = dev->ops->create_jfs(dev, cfg, udata);
+	UBCORE_PERF_TRACE_END(perf_create_jfs_type);
+
 	if (IS_ERR_OR_NULL(jfs)) {
 		ubcore_log_err("[Drv]failed to create jfs, device: %s.\n", dev->dev_name);
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
 		return UBCORE_CHECK_RETURN_ERR_PTR(jfs, UBCORE_DRV_ERRNO);
 	}
 
@@ -873,6 +910,7 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev,
 	if (check_and_fill_jfs_attr(&jfs->jfs_cfg, cfg) != 0) {
 		(void)dev->ops->destroy_jfs(jfs);
 		ubcore_log_err("jfs cfg is not qualified.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
 		return ERR_PTR(-EINVAL);
 	}
 	jfs->ub_dev = dev;
@@ -888,12 +926,14 @@ struct ubcore_jfs *ubcore_create_jfs(struct ubcore_device *dev,
 	if (ret != 0) {
 		ubcore_destroy_tptable(&jfs->tptable);
 		(void)dev->ops->destroy_jfs(jfs);
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
 		return ERR_PTR(ret);
 	}
 	ubcore_log_info("[JFS CREATE] Created JFS: id: %u, dev_name: %s, eid_idx: %u.\n",
 		jfs->jfs_id.id, dev->dev_name, jfs->jfs_cfg.eid_index);
 	jfs->jfs_opt.is_actived = true;
 	atomic_inc(&cfg->jfc->use_cnt);
+	UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFS);
 	return jfs;
 }
 EXPORT_SYMBOL(ubcore_create_jfs);
@@ -952,19 +992,30 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 	struct ubcore_jfc *jfc;
 	uint32_t jfs_id;
 	int ret;
+	uint32_t perf_delete_jfs_type;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_DELETE_JFS);
 
 	if (!jfs || !jfs->ub_dev || !jfs->ub_dev->ops ||
-	    !jfs->ub_dev->ops->destroy_jfs)
+	    !jfs->ub_dev->ops->destroy_jfs) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFS);
 		return -EINVAL;
+	}
 
 	if (jfs->jfs_opt.is_actived == false) {
 		ubcore_log_err("Failed to delete jfs, because status is still activated");
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFS);
 		return -EINVAL;
 	}
 
 	jfc = jfs->jfs_cfg.jfc;
 	jfs_id = jfs->jfs_id.id;
 	dev = jfs->ub_dev;
+
+	if (ubcore_is_bonding_dev(dev))
+		perf_delete_jfs_type = PERF_AGG_DESTROY_JFS;
+	else
+		perf_delete_jfs_type = PERF_UB_DESTROY_JFS;
 
 	(void)ubcore_hash_table_check_remove(&dev->ht[UBCORE_HT_JFS],
 					     &jfs->hnode);
@@ -973,16 +1024,20 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 	ubcore_put_jfs(jfs);
 	wait_for_completion(&jfs->comp);
 
+	UBCORE_PERF_TRACE_BEGIN(perf_delete_jfs_type);
 	ret = dev->ops->destroy_jfs(jfs);
+	UBCORE_PERF_TRACE_END(perf_delete_jfs_type);
 	if (ret != 0) {
 		ubcore_log_err("[DRV] Failed to destroy jfs, dev_name: %s, eid_idx: %u, jfs_id: %u.\n",
 			dev->dev_name, jfs->jfs_cfg.eid_index, jfs_id);
 		kref_init(&jfs->ref_cnt);
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFS);
 		return ret;
 	}
 	ubcore_log_info("[JFS DELETE] Delete jfs: dev_name: %s, eid_idx: %u, jfs_id: %u.\n",
 		dev->dev_name, jfs->jfs_cfg.eid_index, jfs_id);
 	atomic_dec(&jfc->use_cnt);
+	UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFS);
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_delete_jfs);
@@ -1361,25 +1416,42 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev,
 					 struct ubcore_udata *udata)
 {
 	struct ubcore_jfr *jfr;
+	uint32_t perf_create_jfr_type;
 	int ret;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JFR);
 
 	if (!dev || !dev->ops || !dev->ops->create_jfr ||
 	    !dev->ops->destroy_jfr || !cfg || !cfg->jfc ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata))
+	    !ubcore_eid_valid(dev, cfg->eid_index, udata)) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return ERR_PTR(-EINVAL);
+	}
 
-	if (ubcore_check_jfr_cfg(cfg) != 0)
+	if (ubcore_check_jfr_cfg(cfg) != 0) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return ERR_PTR(-EINVAL);
+	}
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_create_jfr_type = PERF_AGG_CREATE_JFR;
+	else
+		perf_create_jfr_type = PERF_UB_CREATE_JFR;
+
+	UBCORE_PERF_TRACE_BEGIN(perf_create_jfr_type);
 	jfr = dev->ops->create_jfr(dev, cfg, udata);
+	UBCORE_PERF_TRACE_END(perf_create_jfr_type);
+
 	if (IS_ERR_OR_NULL(jfr)) {
 		ubcore_log_err("[DRV]failed to create jfr,device: %s.\n", dev->dev_name);
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return UBCORE_CHECK_RETURN_ERR_PTR(jfr, UBCORE_DRV_ERRNO);
 	}
 
 	if (check_and_fill_jfr_attr(&jfr->jfr_cfg, cfg) != 0) {
 		ubcore_log_err("jfr cfg is not qualified.\n");
 		(void)dev->ops->destroy_jfr(jfr);
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return ERR_PTR(-EINVAL);
 	}
 	jfr->ub_dev = dev;
@@ -1395,12 +1467,14 @@ struct ubcore_jfr *ubcore_create_jfr(struct ubcore_device *dev,
 	if (ret != 0) {
 		ubcore_destroy_tptable(&jfr->tptable);
 		(void)dev->ops->destroy_jfr(jfr);
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 		return ERR_PTR(ret);
 	}
 	ubcore_log_info("[JFR CREATE] Created JFR: id: %u,device: %s,eid_idx: %u.\n",
 		jfr->jfr_id.id, dev->dev_name, jfr->jfr_cfg.eid_index);
 	jfr->jfr_opt.is_actived = true;
 	atomic_inc(&cfg->jfc->use_cnt);
+	UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JFR);
 	return jfr;
 }
 EXPORT_SYMBOL(ubcore_create_jfr);
@@ -1459,24 +1533,36 @@ int ubcore_delete_jfr(struct ubcore_jfr *jfr)
 	struct ubcore_jfc *jfc;
 	uint32_t jfr_id;
 	int ret;
+	uint32_t perf_delete_jfr_type;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_DELETE_JFR);
 
 	if (!jfr || !jfr->ub_dev || !jfr->ub_dev->ops ||
-		!jfr->ub_dev->ops->destroy_jfr)
+		!jfr->ub_dev->ops->destroy_jfr) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFR);
 		return -EINVAL;
+	}
 
 	if (jfr->jfr_opt.is_actived == false) {
 		ubcore_log_err("Failed to delete jfr, because status is still activated");
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFR);
 		return -EINVAL;
 	}
 
 	if (atomic_read(&jfr->use_cnt)) {
 		ubcore_log_err("The jfr is still being used");
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFR);
 		return -EBUSY;
 	}
 
 	jfc = jfr->jfr_cfg.jfc;
 	jfr_id = jfr->jfr_id.id;
 	dev = jfr->ub_dev;
+
+	if (ubcore_is_bonding_dev(dev))
+		perf_delete_jfr_type = PERF_AGG_DESTROY_JFR;
+	else
+		perf_delete_jfr_type = PERF_UB_DESTROY_JFR;
 
 	(void)ubcore_hash_table_check_remove(&dev->ht[UBCORE_HT_JFR],
 					     &jfr->hnode);
@@ -1485,16 +1571,20 @@ int ubcore_delete_jfr(struct ubcore_jfr *jfr)
 	ubcore_put_jfr(jfr);
 	wait_for_completion(&jfr->comp);
 
+	UBCORE_PERF_TRACE_BEGIN(perf_delete_jfr_type);
 	ret = dev->ops->destroy_jfr(jfr);
+	UBCORE_PERF_TRACE_END(perf_delete_jfr_type);
 	if (ret != 0) {
 		ubcore_log_err(
 			"[DRV] failed to destroy jfr, dev_name: %s, eid_idx: %u, jfr_id: %u, ret:%u\n",
 			dev->dev_name, jfr->jfr_cfg.eid_index, jfr_id, ret);
 		kref_init(&jfr->ref_cnt);
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFR);
 		return ret;
 	}
 
 	atomic_dec(&jfc->use_cnt);
+	UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFR);
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_delete_jfr);
@@ -1594,18 +1684,33 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 	struct ubcore_vtp_param vtp_param = { 0 };
 	struct ubcore_vtpn *vtpn = NULL;
 	struct ubcore_tjetty *tjfr;
+	uint32_t perf_import_jfr_type;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_IMPORT_JFR);
 
 	if (!ubcore_have_ops(dev) || !dev->ops->unimport_jfr ||
-	    !cfg || dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
+	    !cfg || dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return ERR_PTR(-EINVAL);
+	}
 
-	if (ubcore_check_ctrlplane_compat(dev->ops->import_jfr))
+	if (ubcore_check_ctrlplane_compat(dev->ops->import_jfr)) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return ubcore_import_jfr_compat(dev, cfg, udata);
+	}
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_import_jfr_type = PERF_AGG_IMPORT_JFR;
+	else
+		perf_import_jfr_type = PERF_UB_IMPORT_JFR;
+	UBCORE_PERF_TRACE_BEGIN(perf_import_jfr_type);
 	tjfr = dev->ops->import_jfr(dev, cfg, udata);
+	UBCORE_PERF_TRACE_END(perf_import_jfr_type);
+
 	if (IS_ERR_OR_NULL(tjfr)) {
 		ubcore_log_err("Failed to import jfr, dev_name is %s,jfr_id:%u.\n",
 			dev->dev_name, cfg->id.id);
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjfr, UBCORE_DRV_ERRNO);
 	}
 	tjfr->cfg = *cfg;
@@ -1627,8 +1732,11 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 			mutex_destroy(&tjfr->lock);
 			(void)dev->ops->unimport_jfr(tjfr);
 			ubcore_log_err("Failed to setup tp connection.\n");
-			if (!vtpn)
+			if (!vtpn) {
+				UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 				return ERR_PTR(-ECONNREFUSED);
+			}
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 			return (void *)vtpn;
 		}
 		tjfr->vtpn = vtpn;
@@ -1639,6 +1747,7 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 	tjfr->tp = NULL;
 	ubcore_log_info("[JFR IMPORT] Import TJFR: id: %u,device: %s,eid_idx: %u.\n",
 		cfg->id.id, dev->dev_name, tjfr->cfg.eid_index);
+	UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 	return tjfr;
 }
 EXPORT_SYMBOL(ubcore_import_jfr);
@@ -1651,17 +1760,31 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 	struct ubcore_vtp_param vtp_param = { 0 };
 	struct ubcore_vtpn *vtpn = NULL;
 	struct ubcore_tjetty *tjfr;
+	uint32_t perf_import_jfr_type;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_IMPORT_JFR);
 
 	if (!dev || !dev->ops ||
 	    !dev->ops->import_jfr_ex || !dev->ops->unimport_jfr ||
 	    !cfg || !active_tp_cfg ||
-	    dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
+	    dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return ERR_PTR(-EINVAL);
+	}
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_import_jfr_type = PERF_AGG_IMPORT_JFR;
+	else
+		perf_import_jfr_type = PERF_UB_IMPORT_JFR;
+
+	UBCORE_PERF_TRACE_BEGIN(perf_import_jfr_type);
 	tjfr = dev->ops->import_jfr_ex(dev, cfg, active_tp_cfg, udata);
+	UBCORE_PERF_TRACE_END(perf_import_jfr_type);
+
 	if (IS_ERR_OR_NULL(tjfr)) {
 		ubcore_log_err("[DRV] failed to import jfr ex, dev_name: %s, jfr_id:%u.\n",
 			dev->dev_name, cfg->id.id);
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjfr, UBCORE_DRV_ERRNO);
 	}
 	tjfr->cfg = *cfg;
@@ -1682,8 +1805,11 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 			mutex_destroy(&tjfr->lock);
 			(void)dev->ops->unimport_jfr(tjfr);
 			ubcore_log_err("Failed to setup tp connection.\n");
-			if (!vtpn)
+			if (!vtpn) {
+				UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 				return ERR_PTR(-ECONNREFUSED);
+			}
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 			return (void *)vtpn;
 		}
 		tjfr->vtpn = vtpn;
@@ -1694,6 +1820,7 @@ ubcore_import_jfr_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cf
 	tjfr->tp = NULL;
 	ubcore_log_info("[JFR IMPORT EX] Import TJFR EX: id: %u,device: %s,eid_idx: %u.\n",
 		cfg->id.id, dev->dev_name, tjfr->cfg.eid_index);
+	UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 	return tjfr;
 }
 
@@ -1804,10 +1931,14 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 	struct ubcore_device *dev;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_UNIMPORT_JFR);
+
 	if (!tjfr || !tjfr->ub_dev || !tjfr->ub_dev->ops ||
 	    !tjfr->ub_dev->ops->unimport_jfr ||
-	    !ubcore_have_ops(tjfr->ub_dev))
+	    !ubcore_have_ops(tjfr->ub_dev)) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
 		return -EINVAL;
+	}
 
 	dev = tjfr->ub_dev;
 	if (!ubcore_is_bonding_dev(dev) &&
@@ -1826,6 +1957,7 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 		if (ret != 0) {
 			ubcore_log_err("Failed to disconnect vtp.\n");
 			mutex_unlock(&tjfr->lock);
+			UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
 			return ret;
 		}
 		tjfr->vtpn = NULL;
@@ -1833,14 +1965,19 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 	}
 
 	mutex_destroy(&tjfr->lock);
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_UB_UNIMPORT_JFR);
 	ret = dev->ops->unimport_jfr(tjfr);
+	UBCORE_PERF_TRACE_END(PERF_UB_UNIMPORT_JFR);
 	if (ret != 0) {
 		ubcore_log_err("[DRV] Failed to unimport jfr, dev_name: %s, eid_idx: %u, tjfr_id: %u.\n",
 			dev->dev_name, tjfr->cfg.eid_index, tjfr_id);
+		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
 		return ret;
 	}
 	ubcore_log_info("[JFR UNIMPORT] Unimport TJFR EX: id: %u, dev_name: %s, eid_idx: %u.\n",
 		tjfr_id, dev->dev_name, tjfr->cfg.eid_index);
+	UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_unimport_jfr);
@@ -2313,17 +2450,32 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 {
 	struct ubcore_jetty *jetty;
 	int ret;
+	uint32_t perf_create_jetty_record_type;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_CREATE_JETTY);
 
 	if (!dev || !cfg || !dev->ops ||
 	    !dev->ops->create_jetty || !dev->ops->destroy_jetty ||
-	    !ubcore_eid_valid(dev, cfg->eid_index, udata))
+	    !ubcore_eid_valid(dev, cfg->eid_index, udata)) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JETTY);
 		return ERR_PTR(-EINVAL);
+	}
 
-	if (ubcore_jetty_pre_check(dev, cfg) != 0)
+	if (ubcore_jetty_pre_check(dev, cfg) != 0) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JETTY);
 		return ERR_PTR(-EINVAL);
+	}
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_create_jetty_record_type = PERF_AGG_CREATE_JETTY;
+	else
+		perf_create_jetty_record_type = PERF_UB_CREATE_JETTY;
+
+	UBCORE_PERF_TRACE_BEGIN(perf_create_jetty_record_type);
 	jetty = dev->ops->create_jetty(dev, cfg, udata);
+	UBCORE_PERF_TRACE_END(perf_create_jetty_record_type);
 	if (IS_ERR_OR_NULL(jetty)) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JETTY);
 		ubcore_log_err("[DRV]failed to create jetty.\n");
 		return UBCORE_CHECK_RETURN_ERR_PTR(jetty, UBCORE_DRV_ERRNO);
 	}
@@ -2376,6 +2528,7 @@ struct ubcore_jetty *ubcore_create_jetty(struct ubcore_device *dev,
 	ubcore_log_info("[JETTY CREATE] Created JETTY: id: %u, dev_name: %s, eid_idx: %u.\n",
 		jetty->jetty_cfg.id, dev->dev_name, jetty->jetty_cfg.eid_index);
 	jetty->jetty_opt.is_actived = true;
+	UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JETTY);
 	return jetty;
 destroy_tptable:
 	ubcore_destroy_tptable(&jetty->tptable);
@@ -2384,6 +2537,7 @@ delete_jetty_to_grp:
 		jetty, (struct ubcore_jetty_group *)cfg->jetty_grp);
 destroy_jetty:
 	(void)dev->ops->destroy_jetty(jetty);
+	UBCORE_PERF_TRACE_END(PERF_CORE_CREATE_JETTY);
 	return ERR_PTR(ret);
 }
 EXPORT_SYMBOL(ubcore_create_jetty);
@@ -2466,12 +2620,18 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	struct ubcore_jfr *jfr;
 	uint32_t jetty_id;
 	int ret;
+	uint32_t perf_delete_jetty_record_type;
 
-	if (ubcore_check_jetty_attr(jetty) != 0)
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_DELETE_JETTY);
+
+	if (ubcore_check_jetty_attr(jetty) != 0) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JETTY);
 		return -EINVAL;
+	}
 
 	if (jetty->jetty_opt.is_actived == false) {
 		ubcore_log_err("Failed to delete deactivated jetty.");
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JETTY);
 		return -EINVAL;
 	}
 
@@ -2481,6 +2641,11 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	jfr = jetty->jetty_cfg.jfr;
 	jetty_id = jetty->jetty_id.id;
 	dev = jetty->ub_dev;
+
+	if (ubcore_is_bonding_dev(dev))
+		perf_delete_jetty_record_type = PERF_AGG_DESTROY_JETTY;
+	else
+		perf_delete_jetty_record_type = PERF_UB_DESTROY_JETTY;
 
 	(void)ubcore_hash_table_check_remove(&dev->ht[UBCORE_HT_JETTY],
 					     &jetty->hnode);
@@ -2506,11 +2671,14 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 		(void)ubcore_remove_jetty_from_jetty_grp(jetty, jetty_grp);
 		jetty->jetty_cfg.jetty_grp = NULL;
 	}
+	UBCORE_PERF_TRACE_BEGIN(perf_delete_jetty_record_type);
 	ret = dev->ops->destroy_jetty(jetty);
+	UBCORE_PERF_TRACE_END(perf_delete_jetty_record_type);
 	if (ret != 0) {
 		ubcore_log_err("[DRV]failed to destroy jetty, id: %u, dev_name: %s, eid_idx: %u, ret: %d.\n",
 			jetty_id, dev->dev_name, jetty->jetty_cfg.eid_index, ret);
 		kref_init(&jetty->ref_cnt);
+		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JETTY);
 		return ret;
 	}
 
@@ -2524,6 +2692,7 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	ubcore_log_info("[JETTY DELETE] Delete JETTY: id: %u, dev_name: %s, eid_idx: %u.\n",
 		jetty_id, dev->dev_name, jetty->jetty_cfg.eid_index);
 
+	UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JETTY);
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_delete_jetty);
@@ -2671,22 +2840,38 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	struct ubcore_vtp_param vtp_param = { 0 };
 	struct ubcore_vtpn *vtpn = NULL;
 	struct ubcore_tjetty *tjetty;
+	uint32_t perf_import_jetty_type;
+	struct ubcore_tjetty *result;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_IMPORT_JETTY);
 
 	if (!ubcore_have_ops(dev) || !dev->ops->unimport_jetty ||
-	    cfg == NULL || dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
+	    cfg == NULL || dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return ERR_PTR(-EINVAL);
+	}
 
 	if (ubcore_check_ctrlplane_compat(dev->ops->import_jetty)) {
 		ubcore_log_info_rl("Enter import jetty compat.\n");
-		return ubcore_import_jetty_compat(dev, cfg, udata);
+		result = ubcore_import_jetty_compat(dev, cfg, udata);
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
+		return result;
 	}
 
 	ubcore_log_info_rl("Quit import jetty compat.\n");
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_import_jetty_type = PERF_AGG_IMPORT_JETTY;
+	else
+		perf_import_jetty_type = PERF_UB_IMPORT_JETTY;
+	UBCORE_PERF_TRACE_BEGIN(perf_import_jetty_type);
 	tjetty = dev->ops->import_jetty(dev, cfg, udata);
+	UBCORE_PERF_TRACE_END(perf_import_jetty_type);
+
 	if (IS_ERR_OR_NULL(tjetty)) {
 		ubcore_log_err("[DRV] failed to import jetty,dev_name: %s, eid_idx: %u, jetty_id: %u.\n",
 			       dev->dev_name, cfg->eid_index, cfg->id.id);
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
 	tjetty->cfg = *cfg;
@@ -2711,8 +2896,11 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 			mutex_destroy(&tjetty->lock);
 			(void)dev->ops->unimport_jetty(tjetty);
 			ubcore_log_err("Failed to setup tp connection.\n");
-			if (!vtpn)
+			if (!vtpn) {
+				UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 				return ERR_PTR(-ECONNREFUSED);
+			}
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 			return (void *)vtpn;
 		}
 		tjetty->vtpn = vtpn;
@@ -2722,6 +2910,7 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	}
 	ubcore_log_info("[JETTY IMPORT] Import JETTY: id: %u, dev_name: %s, eid_idx: %u.\n",
 			cfg->id.id, dev->dev_name, cfg->eid_index);
+	UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 	return tjetty;
 }
 EXPORT_SYMBOL(ubcore_import_jetty);
@@ -2734,17 +2923,31 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 	struct ubcore_vtp_param vtp_param = { 0 };
 	struct ubcore_vtpn *vtpn = NULL;
 	struct ubcore_tjetty *tjetty;
+	uint32_t perf_import_jetty_type;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_IMPORT_JETTY);
 
 	if (!dev || !dev->ops ||
 	    !dev->ops->import_jetty_ex ||
 	    !dev->ops->unimport_jetty || !cfg ||
-	    !active_tp_cfg || dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
+	    !active_tp_cfg || dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return ERR_PTR(-EINVAL);
+	}
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_import_jetty_type = PERF_AGG_IMPORT_JETTY;
+	else
+		perf_import_jetty_type = PERF_UB_IMPORT_JETTY;
+
+	UBCORE_PERF_TRACE_BEGIN(perf_import_jetty_type);
 	tjetty = dev->ops->import_jetty_ex(dev, cfg, active_tp_cfg, udata);
+	UBCORE_PERF_TRACE_END(perf_import_jetty_type);
+
 	if (IS_ERR_OR_NULL(tjetty)) {
 		ubcore_log_err("[DRV] failed to import jetty, dev_name: %s, eid_idx: %u, jetty_id:%u.\n",
 			dev->dev_name, cfg->eid_index, cfg->id.id);
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
 	tjetty->cfg = *cfg;
@@ -2768,8 +2971,11 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 			mutex_destroy(&tjetty->lock);
 			(void)dev->ops->unimport_jetty(tjetty);
 			ubcore_log_err("Failed to setup tp connection.\n");
-			if (!vtpn)
+			if (!vtpn) {
+				UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 				return ERR_PTR(-ECONNREFUSED);
+			}
+			UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 			return (void *)vtpn;
 		}
 		tjetty->vtpn = vtpn;
@@ -2779,6 +2985,7 @@ ubcore_import_jetty_ex_old(struct ubcore_device *dev, struct ubcore_tjetty_cfg *
 	}
 	ubcore_log_info("[JETTY IMPORT EX] Import JETTY Ex: id: %u, dev_name: %s, eid_idx: %u.\n",
 				cfg->id.id, dev->dev_name, cfg->eid_index);
+	UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 	return tjetty;
 }
 
@@ -2890,10 +3097,14 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 	uint32_t eid_idx = tjetty->cfg.eid_index;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_UNIMPORT_JETTY);
+
 	if (!tjetty || !tjetty->ub_dev || !tjetty->ub_dev->ops ||
 	    !tjetty->ub_dev->ops->unimport_jetty ||
-	    !ubcore_have_ops(tjetty->ub_dev))
+	    !ubcore_have_ops(tjetty->ub_dev)) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
 		return -EINVAL;
+	}
 
 	dev = tjetty->ub_dev;
 
@@ -2915,6 +3126,7 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 		if (ret != 0) {
 			mutex_unlock(&tjetty->lock);
 			ubcore_log_err("Failed to disconnect vtp.\n");
+			UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
 			return ret;
 		}
 		tjetty->vtpn = NULL;
@@ -2922,19 +3134,25 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 	}
 
 	if (tjetty->cfg.trans_mode == UBCORE_TP_RC &&
-	    atomic_read(&tjetty->use_cnt))
+	    atomic_read(&tjetty->use_cnt)) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
 		return -EBUSY;
+	}
 
 	mutex_destroy(&tjetty->lock);
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_UB_UNIMPORT_JETTY);
 	ret = dev->ops->unimport_jetty(tjetty);
+	UBCORE_PERF_TRACE_END(PERF_UB_UNIMPORT_JETTY);
 	if (ret != 0) {
 		ubcore_log_err("[DRV] Failed to unimport_jetty, dev_name:%s, eid_idx:%u, id:%u, ret: %d.",
 			dev->dev_name, eid_idx, jetty_id, ret);
+		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
 		return ret;
 	}
 	ubcore_log_info("[JETTY UNIMPORT] Unimport JETTY Ex: id: %u, dev_name: %s, eid_idx: %u.\n",
 			jetty_id, dev->dev_name, eid_idx);
+	UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
 	return ret;
 }
 EXPORT_SYMBOL(ubcore_unimport_jetty);
@@ -3036,24 +3254,32 @@ static int ubcore_inner_bind_jetty(struct ubcore_jetty *jetty,
 int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 		      struct ubcore_udata *udata)
 {
+	int ret = 0;
+
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_BIND_JETTY);
+
 	if (!jetty || !tjetty ||
 	    !ubcore_have_ops(jetty->ub_dev)) {
 		ubcore_log_err("invalid parameter.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
 	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
 	    (tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
 		ubcore_log_err("trans mode is not rc type.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
 	if (jetty->remote_jetty == tjetty) {
 		ubcore_log_info("bind reentry, jetty: %u bind tjetty: %u\n",
 				jetty->jetty_id.id, tjetty->cfg.id.id);
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return 0;
 	}
 	if (jetty->remote_jetty) {
 		ubcore_log_err(
 			"The same jetty, different tjetty, prevent duplicate bind.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
 
@@ -3063,10 +3289,14 @@ int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 				     tjetty->cfg.flag.bs.share_tp))) {
 		ubcore_log_err(
 			"The tjetty, has already connect vtpn, prevent duplicate bind.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
 
-	return ubcore_inner_bind_jetty(jetty, tjetty, udata);
+	ret = ubcore_inner_bind_jetty(jetty, tjetty, udata);
+	UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
+
+	return ret;
 }
 EXPORT_SYMBOL(ubcore_bind_jetty);
 
@@ -3110,7 +3340,10 @@ static int ubcore_inner_bind_ub_jetty_ctrlplane(
 		return -EINVAL;
 	}
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_UB_BIND_JETTY);
 	ret = dev->ops->bind_jetty_ex(jetty, tjetty, active_tp_cfg, udata);
+	UBCORE_PERF_TRACE_END(PERF_UB_BIND_JETTY);
+
 	if (ret != 0) {
 		ubcore_log_err("[DRV_ERROR]Failed to bind jetty, ret: %d.\n", ret);
 		return ret;
@@ -3189,24 +3422,30 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 			 struct ubcore_active_tp_cfg *active_tp_cfg,
 			 struct ubcore_udata *udata)
 {
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_BIND_JETTY);
+
 	if (!jetty || !tjetty || !jetty->ub_dev ||
 	    !jetty->ub_dev->ops || !active_tp_cfg) {
 		ubcore_log_err("Invalid parameter.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
 	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) ||
 	    (tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
 		ubcore_log_err("trans mode is not rc type.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
 	if (jetty->remote_jetty == tjetty) {
 		ubcore_log_info("bind reentry, jetty: %u bind tjetty: %u.\n",
 				jetty->jetty_id.id, tjetty->cfg.id.id);
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return 0;
 	}
 	if (jetty->remote_jetty) {
 		ubcore_log_err(
 			"The same jetty, different tjetty, prevent duplicate bind.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
 
@@ -3216,9 +3455,11 @@ int ubcore_bind_jetty_ex(struct ubcore_jetty *jetty,
 				     tjetty->cfg.flag.bs.share_tp))) {
 		ubcore_log_err(
 			"The tjetty, has already connect vtpn, prevent duplicate bind.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 		return -EINVAL;
 	}
 
+	UBCORE_PERF_TRACE_END(PERF_CORE_BIND_JETTY);
 	return ubcore_inner_bind_jetty_ctrlplane(jetty, tjetty, active_tp_cfg,
 						 udata);
 }
@@ -3258,14 +3499,18 @@ int ubcore_unbind_jetty(struct ubcore_jetty *jetty)
 	struct ubcore_device *dev;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_UNBIND_JETTY);
+
 	if (!jetty || !jetty->ub_dev) {
 		ubcore_log_err("invalid parameter.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_UNBIND_JETTY);
 		return -EINVAL;
 	}
 	tjetty = jetty->remote_jetty;
 	if ((jetty->jetty_cfg.trans_mode != UBCORE_TP_RC) || !tjetty ||
 	    (tjetty->cfg.trans_mode != UBCORE_TP_RC)) {
 		ubcore_log_err("trans mode is not rc type.\n");
+		UBCORE_PERF_TRACE_END(PERF_CORE_UNBIND_JETTY);
 		return -EINVAL;
 	}
 
@@ -3273,8 +3518,10 @@ int ubcore_unbind_jetty(struct ubcore_jetty *jetty)
 
 	if (dev->transport_type == UBCORE_TRANSPORT_UB) {
 		ret = ubcore_inner_unbind_ub_jetty(jetty, tjetty);
-		if (ret != 0)
+		if (ret != 0) {
+			UBCORE_PERF_TRACE_END(PERF_CORE_UNBIND_JETTY);
 			return ret;
+		}
 	}
 
 	ubcore_log_info_rl("jetty: %u unbind tjetty: %u\n", jetty->jetty_id.id,
@@ -3284,11 +3531,15 @@ int ubcore_unbind_jetty(struct ubcore_jetty *jetty)
 		if (!dev->ops || !dev->ops->unbind_jetty) {
 			ubcore_log_err(
 				"Failed to unbind jetty, no ops->unbind_jetty\n");
+			UBCORE_PERF_TRACE_END(PERF_CORE_UNBIND_JETTY);
 			return -EINVAL;
 		}
+		UBCORE_PERF_TRACE_BEGIN(PERF_UB_UNBIND_JETTY);
 		ret = dev->ops->unbind_jetty(jetty);
+		UBCORE_PERF_TRACE_END(PERF_UB_UNBIND_JETTY);
 		if (ret != 0) {
 			ubcore_log_err("[DRV_ERROR]Failed to unbind jetty, ret: %d.\n", ret);
+			UBCORE_PERF_TRACE_END(PERF_CORE_UNBIND_JETTY);
 			return ret;
 		}
 	}
@@ -3296,6 +3547,7 @@ int ubcore_unbind_jetty(struct ubcore_jetty *jetty)
 	jetty->remote_jetty = NULL;
 	atomic_dec(&tjetty->use_cnt);
 	atomic_dec(&jetty->use_cnt);
+	UBCORE_PERF_TRACE_END(PERF_CORE_UNBIND_JETTY);
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_unbind_jetty);

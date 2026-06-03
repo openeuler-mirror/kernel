@@ -14,9 +14,11 @@
 #include <linux/ctype.h>
 #include <linux/time64.h>
 #include <linux/timekeeping.h>
+#include <linux/vmalloc.h>
 #include <ub/urma/ubcore_types.h>
 #include <ub/urma/ubcore_api.h>
 #include <ub/urma/ubcore_uapi.h>
+#include <ub/urma/ubcore_perf.h>
 #include "ubcore_genl_define.h"
 #include "ubcore_msg.h"
 #include "ubcore_priv.h"
@@ -1298,4 +1300,51 @@ int ubcore_delete_eid_start(struct netlink_callback *cb)
 int ubcore_add_eid_start(struct netlink_callback *cb)
 {
 	return ubcore_update_ueid(cb, UBCORE_MSG_ALLOC_EID);
+}
+
+int ubcore_perf_start_ops(struct sk_buff *skb, struct genl_info *info)
+{
+	ubcore_perf_start();
+	return 0;
+}
+
+int ubcore_perf_stop_ops(struct sk_buff *skb, struct genl_info *info)
+{
+	ubcore_perf_stop();
+	return 0;
+}
+
+int ubcore_perf_show_ops(struct sk_buff *skb, struct genl_info *info)
+{
+	struct ubcore_cmd_perf_show *arg = NULL;
+	uint64_t args_addr;
+	int ret = -EINVAL;
+
+	if (!info->attrs[UBCORE_HDR_ARGS_LEN] || !info->attrs[UBCORE_HDR_ARGS_ADDR]) {
+		ubcore_log_err("Invalid argument.\n");
+		return ret;
+	}
+
+	arg = vzalloc(sizeof(*arg));
+	if (!arg)
+		return -ENOMEM;
+
+	args_addr = nla_get_u64(info->attrs[UBCORE_HDR_ARGS_ADDR]);
+	ret = ubcore_copy_from_user(arg, (void __user *)(uintptr_t)args_addr,
+				    sizeof(struct ubcore_cmd_perf_show));
+	if (ret != 0) {
+		ubcore_log_err("Failed to copy from user.\n");
+		vfree(arg);
+		return -EINVAL;
+	}
+
+	ubcore_perf_dump_info(&arg->out.stat);
+
+	ret = ubcore_copy_to_user((void __user *)(uintptr_t)args_addr, arg,
+				   sizeof(struct ubcore_cmd_perf_show));
+	if (ret != 0)
+		ubcore_log_err("Failed to copy to user, ret = %d\n", ret);
+
+	vfree(arg);
+	return ret;
 }
