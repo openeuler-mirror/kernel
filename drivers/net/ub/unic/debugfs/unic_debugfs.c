@@ -385,11 +385,68 @@ static int unic_dbg_clear_bond_record(struct seq_file *s, void *data)
 	return 0;
 }
 
+static int unic_dbg_dump_abnormal_cqe_cnt(struct seq_file *s, void *data)
+{
+	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
+	static const char * const status_labels[] = {
+		"STATUS_0:   ",
+		"STATUS_1:   ",
+		"STATUS_2:   ",
+		"STATUS_3:   ",
+		"STATUS_4:   ",
+		"STATUS_5:   ",
+		"STATUS_6:   ",
+		"OTHERS:     "
+	};
+	struct unic_channel *c;
+	int i, j, k, ret = 0;
+
+	if (!mutex_trylock(&unic_dev->channels.mutex))
+		return -EBUSY;
+
+	if (__unic_resetting(unic_dev) || !unic_dev->channels.c) {
+		ret = -EBUSY;
+		goto out;
+	}
+
+	for (i = 0; i < unic_dev->channels.num; i++) {
+		c = &unic_dev->channels.c[i];
+		seq_printf(s, "txq%d:\n", i);
+		seq_printf(s, "TOTAL_ABN_CQE_COUNT:%-20llu\n", c->sq->stats.abn_cqe_total_cnt);
+		seq_printf(s, "%-12s%20s%20s%20s%20s%20s%20s\n", "", "SUB_0",
+			   "SUB_1", "SUB_2", "SUB_3", "SUB_4", "OTHERS");
+
+		for (j = 0; j < UNIC_CQE_STATUS_MAX; j++) {
+			seq_printf(s, "%s", status_labels[j]);
+			for (k = 0; k < UNIC_CQE_SUB_STATUS_MAX; k++)
+				seq_printf(s, "%20llu", c->sq->stats.abn_cqe_cnt[j][k]);
+
+			seq_puts(s, "\n");
+		}
+		seq_puts(s, "\n");
+	}
+
+out:
+	mutex_unlock(&unic_dev->channels.mutex);
+
+	return ret;
+}
+
 static bool unic_dbg_dentry_support(struct device *dev, u32 property)
 {
 	struct unic_dev *unic_dev = dev_get_drvdata(dev);
 
 	return ubase_dbg_dentry_support(unic_dev->comdev.adev, property);
+}
+
+static bool unic_dbg_abn_cqe_support(struct device *dev, u32 property)
+{
+	struct unic_dev *unic_dev = dev_get_drvdata(dev);
+
+	if (!unic_abn_cqe_count_support(unic_dev))
+		return false;
+
+	return unic_dbg_dentry_support(dev, property);
 }
 
 static struct ubase_dbg_dentry_info unic_dbg_dentry[] = {
@@ -665,6 +722,13 @@ static struct ubase_dbg_cmd_info unic_dbg_cmd[] = {
 		.support = unic_dbg_dentry_support,
 		.init = ubase_dbg_seq_file_init,
 		.read_func = unic_dbg_clear_bond_record,
+	}, {
+		.name = "abnormal_cqe_cnt",
+		.dentry_index = UNIC_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_UNIC | UBASE_SUP_UBL_ETH,
+		.support = unic_dbg_abn_cqe_support,
+		.init = ubase_dbg_seq_file_init,
+		.read_func = unic_dbg_dump_abnormal_cqe_cnt,
 	}
 };
 

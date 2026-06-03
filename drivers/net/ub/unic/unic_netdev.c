@@ -439,6 +439,7 @@ static void unic_fetch_stats_tx(struct rtnl_link_stats64 *stats,
 		stats->tx_errors += channel->sq->stats.fd_cnt;
 		stats->tx_errors += channel->sq->stats.drop_cnt;
 		stats->tx_errors += channel->sq->stats.cfg5_drop_cnt;
+		stats->tx_errors += channel->sq->stats.abn_cqe_total_cnt;
 
 		stats->tx_dropped += channel->sq->stats.pad_err;
 		stats->tx_dropped += channel->sq->stats.over_max_sge_num;
@@ -447,6 +448,7 @@ static void unic_fetch_stats_tx(struct rtnl_link_stats64 *stats,
 		stats->tx_dropped += channel->sq->stats.fd_cnt;
 		stats->tx_dropped += channel->sq->stats.drop_cnt;
 		stats->tx_dropped += channel->sq->stats.cfg5_drop_cnt;
+		stats->tx_dropped += channel->sq->stats.abn_cqe_total_cnt;
 	} while (u64_stats_fetch_retry(&channel->sq->syncp, start));
 }
 
