@@ -53,7 +53,6 @@ struct ubcore_topo_node {
 	struct ubcore_topo_agg_dev agg_devs[DEV_NUM];
 };
 
-
 enum ubcore_topo_type_t {
 	UBCORE_TOPO_TYPE_FULLMESH_1D,
 	UBCORE_TOPO_TYPE_CLOS

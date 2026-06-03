@@ -158,6 +158,7 @@ int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn);
 int ubcore_disconnect_rm_svtp(struct ubcore_tjetty *tjetty);
 int ubcore_disconnect_vtp_async(struct ubcore_vtpn *vtpn, int timeout,
 	struct ubcore_vtpn_cb_para *para);
+int ubcore_disconnect_vtp_with_tpid_reuse(struct ubcore_vtpn *vtpn);
 int ubcore_queue_destroy_vtp_task(struct ubcore_device *dev, struct ubcore_vtpn *vtpn,
 	uint32_t retry_times);
 void ubcore_flush_dev_vtp_work(struct ubcore_device *dev);
@@ -197,4 +198,15 @@ int ubcore_process_vtp_status_nofity(struct ubcore_device *dev,
 void ubcore_vtp_get(void *obj);
 void ubcore_vtpn_get(void *obj);
 void ubcore_vtp_kref_put(struct ubcore_vtp *vtp);
+
+struct ubcore_vtpn *
+	ubcore_get_vtpn(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata);
+struct ubcore_vtpn *
+	ubcore_connect_rc_tpid(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata);
 #endif
