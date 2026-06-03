@@ -19,6 +19,7 @@
 #include <linux/idr.h>
 
 #include <ub/ubus/ub-mem-decoder.h>
+#include <ub/ubus/ubus.h>
 
 #include "obmm_shm_dev.h"
 #include "obmm_cache.h"
@@ -34,6 +35,11 @@
 #include "obmm_core.h"
 
 size_t __obmm_memseg_size;
+
+#define UB_MEM_FEATURE_MASK (UB_MEM_BORROW_NC | UB_MEM_BORROW_CC | \
+			     UB_MEM_SHARE_NC | UB_MEM_SHARE_CC)
+
+DEFINE_STATIC_KEY_FALSE(obmm_enabled);
 
 /*
  * OBMM centers around regions -- "struct obmm_region". Each region represents
@@ -429,6 +435,11 @@ static long obmm_dev_ioctl(struct file *file __always_unused, unsigned int cmd, 
 		struct obmm_cmd_preimport preimport;
 	} cmd_param;
 
+	if (!static_branch_likely(&obmm_enabled)) {
+		pr_err("obmm feature not enabled\n");
+		return -EOPNOTSUPP;
+	}
+
 	switch (cmd) {
 	case OBMM_CMD_EXPORT: {
 		ret = (int)copy_from_user(&cmd_param.create, (void __user *)arg,
@@ -571,11 +582,24 @@ static struct miscdevice obmm_dev_handle = { .minor = MISC_DYNAMIC_MINOR,
 					     .name = OBMM_DEV_NAME,
 					     .fops = &obmm_dev_fops };
 
+static void ubmem_feature_probe(void)
+{
+	unsigned long long features = ub_feature_get();
+
+	if (features & UB_MEM_FEATURE_MASK)
+		static_branch_enable(&obmm_enabled);
+
+	pr_info("ub_feature: %#llx, obmm_enabled: %ld\n", features,
+		static_branch_likely(&obmm_enabled));
+}
+
 static int __init obmm_init(void)
 {
 	int ret;
 
 	pr_info("obmm_module: init started\n");
+
+	ubmem_feature_probe();
 
 	ret = ubmempool_allocator_init();
 	if (ret) {
