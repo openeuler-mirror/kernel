@@ -36,6 +36,10 @@ static const struct ubase_ctrlq_event_nb ubase_ctrlq_wlist_udma[] = {
 		.service_type = UBASE_CTRLQ_SER_TYPE_DEV_REGISTER,
 		.opcode = UBASE_CTRLQ_OPC_NOTIFY_RES_RATIO,
 	},
+	{
+		.service_type = UBASE_CTRLQ_SER_TYPE_TP_ACL,
+		.opcode = UBASE_CTRLQ_OPC_TPID_DEL_DONE,
+	},
 };
 
 /* CDMA ctrlq msg white list */

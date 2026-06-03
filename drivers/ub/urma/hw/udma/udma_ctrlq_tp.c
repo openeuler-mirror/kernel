@@ -553,7 +553,8 @@ static int udma_notify_mue_save_tp(struct udma_dev *dev, union ubcore_tp_handle 
 static int udma_ctrlq_get_tpid_list(struct udma_dev *udev,
 				    struct udma_ctrlq_get_tp_list_req_data *tp_cfg_req,
 				    struct ubcore_get_tp_cfg *tpid_cfg,
-				    struct udma_ctrlq_tpid_list_rsp *tpid_list_resp)
+				    struct udma_ctrlq_tpid_list_rsp *tpid_list_resp,
+				    uint32_t *tp_cnt)
 {
 	enum udma_ctrlq_trans_type trans_type;
 	struct ubase_ctrlq_msg msg = {};
@@ -573,6 +574,8 @@ static int udma_ctrlq_get_tpid_list(struct udma_dev *udev,
 		tp_cfg_req->trans_type = (uint32_t)trans_type;
 	}
 
+	tp_cfg_req->group_id = tpid_cfg->flag.bs.group_id;
+	tp_cfg_req->max_tp_cnt = *tp_cnt;
 	udma_swap_endian(tpid_cfg->local_eid.raw, tp_cfg_req->seid,
 			 UDMA_EID_SIZE);
 	udma_swap_endian(tpid_cfg->peer_eid.raw, tp_cfg_req->deid,
@@ -599,12 +602,7 @@ int udma_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *tpid_c
 	uint32_t i;
 	int ret;
 
-	if (current->flags & PF_KTHREAD)
-		tp_cfg_req.flag = UDMA_DEFAULT_PID;
-	else
-		tp_cfg_req.flag = (uint32_t)current->tgid & UDMA_PID_MASK;
-
-	ret = udma_ctrlq_get_tpid_list(udev, &tp_cfg_req, tpid_cfg, &tpid_list_resp);
+	ret = udma_ctrlq_get_tpid_list(udev, &tp_cfg_req, tpid_cfg, &tpid_list_resp, tp_cnt);
 	if (ret) {
 		dev_err(udev->dev, "udma control queue get TP id list failed, ret = %d.\n", ret);
 		return ret;
@@ -1221,4 +1219,18 @@ int udma_get_ip_by_eid(struct ubcore_device *dev, const union ubcore_eid *eid,
 	udma_swap_endian(ip_by_eid_resp.ip, net_addr->net_addr.raw, UDMA_IP_SIZE);
 
 	return 0;
+}
+
+void udma_dispatch_tpid_destroy_done(struct udma_dev *dev,
+				     struct udma_ctrlq_tpid_destroy_done_out_data *entry)
+{
+	struct ubcore_event ae = {};
+
+	ae.element.tpid_info.tpid = entry->tp_id;
+	if (debug_switch)
+		dev_info(dev->dev, "begin to dispatch tpid destroy done event, tpid %u.\n",
+			 entry->tp_id);
+	ae.ub_dev = &dev->ub_dev;
+	ae.event_type = UBCORE_EVENT_TPID_FLUSH_DONE;
+	ubcore_dispatch_async_event(&ae);
 }
