@@ -70,5 +70,7 @@ void chacha20_block(u32 *state, u8 *stream)
 		put_unaligned_le32(x[i] + state[i], &stream[i * sizeof(u32)]);
 
 	state[12]++;
+
+	memzero_explicit(x, sizeof(x));
 }
 EXPORT_SYMBOL(chacha20_block);
