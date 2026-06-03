@@ -16,6 +16,7 @@
 #include "ub/urma/ubcore_uapi.h"
 #include "ub/urma/ubcore_types.h"
 #include "ub/urma/ubcore_opcode.h"
+#include "ub/urma/ubcore_perf.h"
 #include "uburma_log.h"
 #include "uburma_types.h"
 #include "uburma_event.h"
@@ -64,9 +65,13 @@ static int uburma_cmd_create_ctx(struct ubcore_device *ubc_dev,
 	union ubcore_eid eid;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_CREATE_CTX);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_CTX);
 		return ret;
+	}
 
 	down_write(&file->ucontext_rwsem);
 
@@ -74,6 +79,7 @@ static int uburma_cmd_create_ctx(struct ubcore_device *ubc_dev,
 		up_write(&file->ucontext_rwsem);
 		uburma_log_err(
 			"ucontext eixt, should not create ctx in same fd.\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_CTX);
 		return -EEXIST;
 	}
 
@@ -83,6 +89,7 @@ static int uburma_cmd_create_ctx(struct ubcore_device *ubc_dev,
 		(struct ubcore_udrv_priv *)(void *)&arg.udata);
 	if (IS_ERR_OR_NULL(ucontext)) {
 		up_write(&file->ucontext_rwsem);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_CTX);
 		return PTR_ERR(ucontext);
 	}
 	ucontext->eid = eid;
@@ -105,6 +112,7 @@ static int uburma_cmd_create_ctx(struct ubcore_device *ubc_dev,
 	uobj_alloc_commit(uobj);
 	up_write(&file->ucontext_rwsem);
 	uburma_log_debug("uburma create context success.\n");
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_CTX);
 	return ret;
 
 free_jfae:
@@ -113,6 +121,7 @@ free_ctx:
 	ubcore_free_ucontext(ubc_dev, ucontext);
 	file->ucontext = NULL;
 	up_write(&file->ucontext_rwsem);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_CTX);
 	return ret;
 }
 
@@ -138,15 +147,20 @@ static int uburma_cmd_alloc_token_id(struct ubcore_device *ubc_dev,
 
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_ALLOC_TOKEN_ID);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_ALLOC_TOKEN_ID);
 		return ret;
+	}
 
 	flag.bs.multi_seg = arg.flag.bs.multi_seg;
 	fill_udata(&udata, file->ucontext, &arg.udata);
 	uobj = uobj_alloc(UOBJ_CLASS_TOKEN, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("UOBJ_CLASS_TOKEN alloc fail!\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_ALLOC_TOKEN_ID);
 		return -ENOMEM;
 	}
 
@@ -164,12 +178,14 @@ static int uburma_cmd_alloc_token_id(struct ubcore_device *ubc_dev,
 		goto err_free_token_id;
 
 	uobj_alloc_commit(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_ALLOC_TOKEN_ID);
 	return 0;
 
 err_free_token_id:
 	(void)ubcore_free_token_id(token_id);
 err_free_uobj:
 	uobj_alloc_abort(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_ALLOC_TOKEN_ID);
 	return ret;
 }
 
@@ -182,19 +198,25 @@ static int uburma_cmd_free_token_id(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_FREE_TOKEN_ID);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_FREE_TOKEN_ID);
 		return ret;
+	}
 
 	uobj = uobj_get_del(UOBJ_CLASS_TOKEN, (int)arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find token id.\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_FREE_TOKEN_ID);
 		return -EINVAL;
 	}
 
 	token = (struct ubcore_token_id *)uobj->object;
 	if (arg.in.token_id != token->token_id) {
 		uobj_put_del(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_FREE_TOKEN_ID);
 		return -EPERM;
 	}
 
@@ -203,6 +225,7 @@ static int uburma_cmd_free_token_id(struct ubcore_device *ubc_dev,
 		uburma_log_err("ubcore remove commit token_id failed.\n");
 
 	uobj_put_del(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_FREE_TOKEN_ID);
 	return ret;
 }
 
@@ -218,9 +241,13 @@ static int uburma_cmd_register_seg(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *token_id_uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_REGISTER_SEG);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_REGISTER_SEG);
 		return ret;
+	}
 
 	token_id_uobj = uobj_get_read(UOBJ_CLASS_TOKEN,
 				      (int)arg.in.token_id_handle, file);
@@ -254,6 +281,7 @@ static int uburma_cmd_register_seg(struct ubcore_device *ubc_dev,
 	if (!IS_ERR_OR_NULL(token_id_uobj))
 		uobj_put_read(token_id_uobj);
 	uobj_alloc_commit(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_REGISTER_SEG);
 	return 0;
 
 err_delete_seg:
@@ -263,6 +291,7 @@ err_free_uobj:
 err_put_token_id:
 	if (!IS_ERR_OR_NULL(token_id_uobj))
 		uobj_put_read(token_id_uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_REGISTER_SEG);
 	return ret;
 }
 
@@ -274,13 +303,18 @@ static int uburma_cmd_unregister_seg(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_UNREGISTER_SEG);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNREGISTER_SEG);
 		return ret;
+	}
 
 	uobj = uobj_get_del(UOBJ_CLASS_SEG, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find registered seg.\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNREGISTER_SEG);
 		return -EINVAL;
 	}
 	ret = uobj_remove_commit(uobj);
@@ -288,6 +322,7 @@ static int uburma_cmd_unregister_seg(struct ubcore_device *ubc_dev,
 		uburma_log_err("ubcore_unregister_seg failed.\n");
 
 	uobj_put_del(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNREGISTER_SEG);
 	return ret;
 }
 
@@ -399,9 +434,13 @@ static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
 	struct ubcore_jfs *jfs;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_CREATE_JFS);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFS);
 		return ret;
+	}
 
 	cfg.depth = arg.in.depth;
 	cfg.flag.value = arg.in.flag;
@@ -417,6 +456,7 @@ static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
 	jfs_uobj = (struct uburma_jfs_uobj *)uobj_alloc(UOBJ_CLASS_JFS, file);
 	if (IS_ERR_OR_NULL(jfs_uobj)) {
 		uburma_log_err("UOBJ_CLASS_JFS alloc fail!\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFS);
 		return -ENOMEM;
 	}
 	jfs_uobj->async_events_reported = 0;
@@ -459,6 +499,7 @@ static int uburma_cmd_create_jfs(struct ubcore_device *ubc_dev,
 
 	uobj_put_read(jfc_uobj);
 	uobj_alloc_commit(&jfs_uobj->uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFS);
 	return 0;
 
 err_put_jfae:
@@ -469,6 +510,7 @@ err_put_jfc:
 	uobj_put_read(jfc_uobj);
 err_alloc_abort:
 	uobj_alloc_abort(&jfs_uobj->uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFS);
 	return ret;
 }
 
@@ -564,13 +606,18 @@ static int uburma_cmd_delete_jfs(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_DELETE_JFS);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFS);
 		return ret;
+	}
 
 	uobj = uobj_get_del(UOBJ_CLASS_JFS, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find jfs");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFS);
 		return -EINVAL;
 	}
 
@@ -583,13 +630,16 @@ static int uburma_cmd_delete_jfs(struct ubcore_device *ubc_dev,
 		uburma_log_err("delete jfs failed, ret:%d.\n", ret);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFS);
 		return ret;
 	}
 
 	arg.out.async_events_reported = jfs_uobj->async_events_reported;
 	uobj_put(uobj);
 	uobj_put_del(uobj);
-	return uburma_tlv_append(hdr, (void *)&arg);
+	ret = uburma_tlv_append(hdr, (void *)&arg);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFS);
+	return ret;
 }
 
 static int uburma_cmd_delete_jfs_batch(struct ubcore_device *ubc_dev,
@@ -1054,13 +1104,18 @@ static int uburma_cmd_import_seg(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_IMPORT_SEG);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_SEG);
 		return ret;
+	}
 
 	uobj = uobj_alloc(UOBJ_CLASS_TARGET_SEG, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("UOBJ_CLASS_TARGET_SEG alloc fail!\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_SEG);
 		return -ENOMEM;
 	}
 
@@ -1074,6 +1129,7 @@ static int uburma_cmd_import_seg(struct ubcore_device *ubc_dev,
 	tseg = ubcore_import_seg(ubc_dev, &cfg, &udata);
 	if (IS_ERR_OR_NULL(tseg)) {
 		uobj_alloc_abort(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_SEG);
 		return PTR_ERR(tseg);
 	}
 
@@ -1084,9 +1140,11 @@ static int uburma_cmd_import_seg(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		(void)ubcore_unimport_seg(tseg);
 		uobj_alloc_abort(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_SEG);
 		return ret;
 	}
 	uobj_alloc_commit(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_SEG);
 	return ret;
 }
 
@@ -1098,13 +1156,18 @@ static int uburma_cmd_unimport_seg(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_UNIMPORT_SEG);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNIMPORT_SEG);
 		return ret;
+	}
 
 	uobj = uobj_get_del(UOBJ_CLASS_TARGET_SEG, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find imported target seg.\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNIMPORT_SEG);
 		return -EINVAL;
 	}
 	ret = uobj_remove_commit(uobj);
@@ -1112,6 +1175,7 @@ static int uburma_cmd_unimport_seg(struct ubcore_device *ubc_dev,
 		uburma_log_err("unimport seg failed.\n");
 
 	uobj_put_del(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNIMPORT_SEG);
 	return ret;
 }
 
@@ -1127,9 +1191,13 @@ static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev,
 	struct ubcore_jfr *jfr;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_CREATE_JFR);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFR);
 		return ret;
+	}
 
 	cfg.id = arg.in.id;
 	cfg.depth = arg.in.depth;
@@ -1144,6 +1212,7 @@ static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev,
 	jfr_uobj = (struct uburma_jfr_uobj *)uobj_alloc(UOBJ_CLASS_JFR, file);
 	if (IS_ERR_OR_NULL(jfr_uobj)) {
 		uburma_log_err("UOBJ_CLASS_JFR alloc fail!\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFR);
 		return -ENOMEM;
 	}
 	jfr_uobj->async_events_reported = 0;
@@ -1183,6 +1252,7 @@ static int uburma_cmd_create_jfr(struct ubcore_device *ubc_dev,
 
 	uobj_put_read(jfc_uobj);
 	uobj_alloc_commit(&jfr_uobj->uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFR);
 	return ret;
 
 err_put_jfae:
@@ -1193,6 +1263,7 @@ err_put_jfc:
 	uobj_put_read(jfc_uobj);
 err_alloc_abort:
 	uobj_alloc_abort(&jfr_uobj->uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFR);
 	return ret;
 }
 
@@ -1289,13 +1360,18 @@ static int uburma_cmd_delete_jfr(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_DELETE_JFR);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFR);
 		return ret;
+	}
 
 	uobj = uobj_get_del(UOBJ_CLASS_JFR, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find jfr");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFR);
 		return -EINVAL;
 	}
 
@@ -1308,13 +1384,16 @@ static int uburma_cmd_delete_jfr(struct ubcore_device *ubc_dev,
 		uburma_log_err("delete jfr failed, ret:%d.\n", ret);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFR);
 		return ret;
 	}
 
 	arg.out.async_events_reported = jfr_uobj->async_events_reported;
 	uobj_put(uobj);
 	uobj_put_del(uobj);
-	return uburma_tlv_append(hdr, (void *)&arg);
+	ret = uburma_tlv_append(hdr, (void *)&arg);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFR);
+	return ret;
 }
 
 static int uburma_cmd_delete_jfr_batch(struct ubcore_device *ubc_dev,
@@ -1771,9 +1850,13 @@ static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev,
 	struct ubcore_jfc *jfc;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_CREATE_JFC);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFC);
 		return ret;
+	}
 
 	cfg.depth = arg.in.depth;
 	cfg.flag.value = arg.in.flag;
@@ -1783,6 +1866,7 @@ static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev,
 	jfce = uburma_get_jfce_uobj(arg.in.jfce_fd, file);
 	if (arg.in.jfce_fd >= 0 && IS_ERR_OR_NULL(jfce)) {
 		uburma_log_err("Failed to get jfce.\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFC);
 		return -EINVAL;
 	}
 
@@ -1825,6 +1909,7 @@ static int uburma_cmd_create_jfc(struct ubcore_device *ubc_dev,
 		goto err_put_jfae;
 
 	uobj_alloc_commit(&jfc_uobj->uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFC);
 	return 0;
 
 err_put_jfae:
@@ -1836,6 +1921,7 @@ err_alloc_abort:
 err_put_jfce:
 	if (!IS_ERR_OR_NULL(jfce))
 		uobj_put(&jfce->uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFC);
 	return ret;
 }
 
@@ -2382,14 +2468,18 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	struct ubcore_jetty *jetty;
 	int ret = 0;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_CREATE_JETTY);
 	ret = uburma_tlv_parse(hdr, &arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JETTY);
 		return ret;
+	}
 
 	jetty_uobj =
 		(struct uburma_jetty_uobj *)uobj_alloc(UOBJ_CLASS_JETTY, file);
 	if (IS_ERR_OR_NULL(jetty_uobj)) {
 		uburma_log_err("UOBJ_CLASS_JETTY alloc fail!\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JETTY);
 		return -ENOMEM;
 	}
 	jetty_uobj->async_events_reported = 0;
@@ -2466,6 +2556,7 @@ static int uburma_cmd_create_jetty(struct ubcore_device *ubc_dev,
 	uobj_put_read(send_jfc_uobj);
 	uobj_put_read(recv_jfc_uobj);
 	uobj_alloc_commit(&jetty_uobj->uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JETTY);
 	return 0;
 
 err_put_jfae:
@@ -2482,6 +2573,7 @@ err_put:
 	if (!IS_ERR_OR_NULL(send_jfc_uobj))
 		uobj_put_read(send_jfc_uobj);
 	uobj_alloc_abort(&jetty_uobj->uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JETTY);
 	return ret;
 }
 
@@ -2591,13 +2683,18 @@ static int uburma_cmd_delete_jetty(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_DELETE_JETTY);
+
 	ret = uburma_tlv_parse(hdr, &arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JETTY);
 		return ret;
+	}
 
 	uobj = uobj_get_del(UOBJ_CLASS_JETTY, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find jetty");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JETTY);
 		return -EINVAL;
 	}
 
@@ -2610,13 +2707,16 @@ static int uburma_cmd_delete_jetty(struct ubcore_device *ubc_dev,
 		uburma_log_err("delete jetty failed, ret:%d.\n", ret);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JETTY);
 		return ret;
 	}
 
 	arg.out.async_events_reported = jetty_uobj->async_events_reported;
 	uobj_put(uobj);
 	uobj_put_del(uobj);
-	return uburma_tlv_append(hdr, &arg);
+	ret = uburma_tlv_append(hdr, &arg);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JETTY);
+	return ret;
 }
 
 static int uburma_cmd_delete_jetty_batch(struct ubcore_device *ubc_dev,
@@ -3160,9 +3260,13 @@ static int uburma_cmd_create_jfce(struct ubcore_device *ubc_dev,
 	struct uburma_jfce_uobj *jfce;
 	struct uburma_uobj *uobj;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_CREATE_JFCE);
+
 	uobj = uobj_alloc(UOBJ_CLASS_JFCE, file);
-	if (IS_ERR_OR_NULL(uobj))
+	if (IS_ERR_OR_NULL(uobj)) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFCE);
 		return PTR_ERR(uobj);
+	}
 
 	jfce = container_of(uobj, struct uburma_jfce_uobj, uobj);
 	uburma_init_jfe(&jfce->jfe);
@@ -3170,6 +3274,7 @@ static int uburma_cmd_create_jfce(struct ubcore_device *ubc_dev,
 	arg.out.fd = uobj->id; /* should get fd before commit uobj */
 	uobj_alloc_commit(uobj);
 
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_CREATE_JFCE);
 	return uburma_tlv_append(hdr, (void *)&arg);
 }
 
@@ -3241,13 +3346,18 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_IMPORT_JFR_EX);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JFR_EX);
 		return ret;
+	}
 
 	uobj = uobj_alloc(UOBJ_CLASS_TARGET_JFR, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("UOBJ_CLASS_TARGET_JFR alloc fail!\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JFR_EX);
 		return -ENOMEM;
 	}
 
@@ -3276,6 +3386,7 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 	if (IS_ERR_OR_NULL(tjfr)) {
 		uburma_log_err("Failed to import jfr in ex.\n");
 		uobj_alloc_abort(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JFR_EX);
 		return IS_ERR(tjfr) ? PTR_ERR(tjfr) : -1;
 	}
 
@@ -3292,9 +3403,11 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		ubcore_unimport_jfr(tjfr);
 		uobj_alloc_abort(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JFR_EX);
 		return ret;
 	}
 	uobj_alloc_commit(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JFR_EX);
 	return 0;
 }
 
@@ -3306,13 +3419,18 @@ static int uburma_cmd_unimport_jfr(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_UNIMPORT_JFR);
+
 	ret = uburma_tlv_parse(hdr, &arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNIMPORT_JFR);
 		return ret;
+	}
 
 	uobj = uobj_get_del(UOBJ_CLASS_TARGET_JFR, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find tjfr");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNIMPORT_JFR);
 		return -EINVAL;
 	}
 	ret = uobj_remove_commit(uobj);
@@ -3320,6 +3438,7 @@ static int uburma_cmd_unimport_jfr(struct ubcore_device *ubc_dev,
 		uburma_log_err("Remove tjfr uobj failed.\n");
 
 	uobj_put_del(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNIMPORT_JFR);
 	return ret;
 }
 
@@ -3413,11 +3532,17 @@ static int uburma_cmd_unimport_jetty(struct ubcore_device *ubc_dev,
 	struct uburma_cmd_unimport_jetty arg;
 	int ret;
 
-	ret = uburma_tlv_parse(hdr, &arg);
-	if (ret != 0)
-		return ret;
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_UNIMPORT_JETTY);
 
-	return uburma_unimport_jetty(file, false, arg.in.handle);
+	ret = uburma_tlv_parse(hdr, &arg);
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNIMPORT_JETTY);
+		return ret;
+	}
+
+	ret = uburma_unimport_jetty(file, false, arg.in.handle);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNIMPORT_JETTY);
+	return ret;
 }
 
 static int uburma_get_jetty_tjetty_objs(struct uburma_file *file,
@@ -3519,14 +3644,20 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 	struct ubcore_tjetty *tjetty;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_BIND_JETTY_EX);
+
 	ret = uburma_tlv_parse(hdr, &arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_BIND_JETTY_EX);
 		return ret;
+	}
 
 	if (uburma_get_jetty_tjetty_objs(file, arg.in.jetty_handle,
 					 arg.in.tjetty_handle, &jetty_uobj,
-					 &tjetty_uobj))
+					 &tjetty_uobj)) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_BIND_JETTY_EX);
 		return -EINVAL;
+	}
 
 	active_tp_cfg.tp_handle.value = arg.in.tp_handle;
 	active_tp_cfg.peer_tp_handle.value = arg.in.peer_tp_handle;
@@ -3547,6 +3678,7 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		uburma_log_err_rl("bind jetty failed, ret: %d.\n", ret);
 		uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_BIND_JETTY_EX);
 		return ret;
 	}
 
@@ -3564,6 +3696,7 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 		(void)ubcore_unbind_jetty(jetty_uobj->object);
 
 	uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_BIND_JETTY_EX);
 	return ret;
 }
 
@@ -3600,12 +3733,18 @@ static int uburma_cmd_unbind_jetty(struct ubcore_device *ubc_dev,
 	struct uburma_cmd_unadvise_jetty arg;
 	int ret;
 
-	ret = uburma_tlv_parse(hdr, &arg);
-	if (ret != 0)
-		return ret;
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_UNBIND_JETTY);
 
-	return uburma_unbind_jetty(file, false, arg.in.jetty_handle,
-				   arg.in.tjetty_handle);
+	ret = uburma_tlv_parse(hdr, &arg);
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNBIND_JETTY);
+		return ret;
+	}
+
+	ret = uburma_unbind_jetty(file, false, arg.in.jetty_handle,
+				  arg.in.tjetty_handle);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_UNBIND_JETTY);
+	return ret;
 }
 
 static int uburma_cmd_create_jetty_grp(struct ubcore_device *ubc_dev,
@@ -4784,14 +4923,19 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	struct uburma_uobj *uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_IMPORT_JETTY_EX);
+
 	ret = uburma_tlv_parse(hdr, &arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JETTY_EX);
 		return ret;
+	}
 
 	uobj = uobj_alloc(UOBJ_CLASS_TARGET_JETTY, file);
 	if (IS_ERR(uobj)) {
 		uburma_log_err("Failed to alloc uobj, class_id: %d.\n",
 			       UOBJ_CLASS_TARGET_JETTY);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JETTY_EX);
 		return -ENOMEM;
 	}
 
@@ -4823,6 +4967,7 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	if (IS_ERR_OR_NULL(tjetty)) {
 		uburma_log_err("ubcore_import_jetty failed.\n");
 		uobj_alloc_abort(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JETTY_EX);
 		return IS_ERR(tjetty) ? PTR_ERR(tjetty) : -1;
 	}
 
@@ -4839,9 +4984,11 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	if (ret != 0) {
 		(void)ubcore_unimport_jetty(tjetty);
 		uobj_alloc_abort(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JETTY_EX);
 		return ret;
 	}
 	uobj_alloc_commit(uobj);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JETTY_EX);
 	return 0;
 }
 

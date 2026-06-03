@@ -12,6 +12,7 @@
 #include <linux/delay.h>
 #include <linux/random.h>
 #include <ub/urma/ubcore_uapi.h>
+#include "ub/urma/ubcore_perf.h"
 #include "ubcore_log.h"
 #include "net/ubcore_protocol.h"
 #include "net/ubcore_comm.h"
@@ -286,9 +287,11 @@ int ubcore_active_tp(struct ubcore_device *dev,
 			active_cfg->tp_handle.value,
 			active_cfg->peer_tp_handle.value);
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_UB_ACTIVE_TP);
 	start = ktime_get_ns();
 	ret = dev->ops->active_tp(dev, active_cfg);
 	duration = (ktime_get_ns() - start) / UBCORE_NS_TO_MS;
+	UBCORE_PERF_TRACE_END(PERF_UB_ACTIVE_TP);
 	if (ret != 0)
 		ubcore_log_err(
 			"Failed to active tp, ret: %d, local tpid: %u.\n", ret,
@@ -314,7 +317,9 @@ int ubcore_deactive_tp(struct ubcore_device *dev,
 
 	ubcore_log_info_rl("Deactivate tp, tp_handle:%lld.\n", tp_handle.value);
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_UB_DEACTIVE_TP);
 	ret = dev->ops->deactive_tp(dev, tp_handle, udata);
+	UBCORE_PERF_TRACE_END(PERF_UB_DEACTIVE_TP);
 	if (ret != 0) {
 		ubcore_log_err("[DRV_ERROR]Failed to deactivate tp, ret: %d.\n", ret);
 		return ret;

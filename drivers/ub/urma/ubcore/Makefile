@@ -5,6 +5,7 @@
 ccflags-y += -I$(src)
 
 ubcore-objs := \
+ubcore_perf.o \
 ubcore_workqueue.o \
 ubcore_main.o \
 ubcore_hash_table.o \

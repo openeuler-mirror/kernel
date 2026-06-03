@@ -233,4 +233,8 @@ static inline bool ubcore_is_ub_device(struct ubcore_device *dev)
 	return (dev->transport_type == UBCORE_TRANSPORT_UB);
 }
 
+// for UB profiling
+int ubcore_perf_init(void);
+void ubcore_perf_uninit(void);
+
 #endif
