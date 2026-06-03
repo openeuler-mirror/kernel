@@ -499,76 +499,6 @@ void ubmad_put_tjetty(struct ubmad_tjetty *tjetty)
 	kref_put(&tjetty->kref, ubmad_release_tjetty);
 }
 
-static int ubmad_fill_get_tp_cfg(struct ubcore_device *dev,
-				 struct ubcore_get_tp_cfg *get_tp_cfg,
-				 struct ubcore_tjetty_cfg *cfg)
-{
-	uint32_t eid_index = cfg->eid_index;
-
-	get_tp_cfg->flag.bs.ctp = 0;
-	get_tp_cfg->flag.bs.rtp = 0;
-	get_tp_cfg->flag.bs.utp = 1;
-
-	get_tp_cfg->trans_mode = cfg->trans_mode;
-
-	spin_lock(&dev->eid_table.lock);
-	if (eid_index >= dev->eid_table.eid_cnt ||
-	    dev->eid_table.eid_entries == NULL ||
-	    dev->eid_table.eid_entries[eid_index].valid == false) {
-		spin_unlock(&dev->eid_table.lock);
-		ubcore_log_err("Invalid parameter, eid_index: %u.\n",
-			       eid_index);
-		return -EINVAL;
-	}
-	/* Need to adapt bonding primary eid */
-	get_tp_cfg->local_eid = dev->eid_table.eid_entries[eid_index].eid;
-	spin_unlock(&dev->eid_table.lock);
-	get_tp_cfg->peer_eid = cfg->id.eid;
-
-	return 0;
-}
-
-static struct ubcore_tjetty *
-ubmad_import_jetty_compat(struct ubcore_device *dev,
-			  struct ubcore_tjetty_cfg *cfg,
-			  struct ubcore_udata *udata)
-{
-	struct ubcore_active_tp_cfg active_tp_cfg = { 0 };
-	struct ubcore_get_tp_cfg get_tp_cfg = { 0 };
-	struct ubcore_tp_info tp_list = { 0 };
-	struct ubcore_tjetty *tjetty = NULL;
-	uint32_t tp_cnt = 1;
-	int ret;
-
-	if (!ubcore_have_tp_ctrlplane_ops(dev) ||
-	    dev->ops->unimport_jfr == NULL || cfg == NULL ||
-	    dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
-		return ERR_PTR(-EINVAL);
-
-	if (ubmad_fill_get_tp_cfg(dev, &get_tp_cfg, cfg) != 0)
-		return NULL;
-
-	ret = ubcore_get_tp_list(dev, &get_tp_cfg, &tp_cnt, &tp_list, NULL);
-	if (ret != 0 || tp_cnt != 1) {
-		ubcore_log_err("Failed to get tp list, ret: %d, tp_cnt: %u.\n",
-			       ret, tp_cnt);
-		return NULL;
-	}
-	active_tp_cfg.tp_handle = tp_list.tp_handle;
-	ubcore_log_info("Finish to get tp, tpid: %u, tp_cnt: %u, leid: " EID_FMT
-			", deid: " EID_FMT ".\n",
-			(uint32_t)tp_list.tp_handle.bs.tpid,
-			(uint32_t)tp_list.tp_handle.bs.tp_cnt,
-			EID_ARGS(get_tp_cfg.local_eid),
-			EID_ARGS(get_tp_cfg.peer_eid));
-
-	tjetty = ubcore_import_jetty_ex(dev, cfg, &active_tp_cfg, udata);
-	if (IS_ERR_OR_NULL(tjetty))
-		ubcore_log_err("Failed to import jetty ex.\n");
-
-	return tjetty;
-}
-
 /* need to put twice to release tjetty.
  * First put for kref_get() is called by user after finish using tjetty locally.
  * Second put for kref_init() is in ubmad_unimport_jetty().
@@ -606,7 +536,8 @@ struct ubmad_tjetty *ubmad_import_jetty(struct ubcore_device *device,
 	tjetty_cfg.trans_mode = UBCORE_TP_UM;
 	tjetty_cfg.type = UBCORE_JETTY;
 	tjetty_cfg.eid_index = rsrc->jetty->jetty_cfg.eid_index;
-	new_target = ubmad_import_jetty_compat(device, &tjetty_cfg, NULL);
+	tjetty_cfg.tp_type = UBCORE_UTP;
+	new_target = ubcore_import_jetty(device, &tjetty_cfg, NULL);
 	if (IS_ERR_OR_NULL(new_target)) {
 		ubcore_log_err("import tjetty: %u failed. eid " EID_FMT "\n",
 			     rsrc->jetty_id, EID_ARGS(*dst_eid));

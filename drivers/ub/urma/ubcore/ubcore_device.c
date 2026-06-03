@@ -592,14 +592,36 @@ static void ubcore_free_ex_tp_obj(void *obj)
 	ubcore_free_driver_obj(obj, UBCORE_HT_EX_TP);
 }
 
-static void ubcore_free_rc_tp_id_obj(void *obj)
+static void ubcore_free_rc_tpid_obj(void *obj)
 {
 	ubcore_free_driver_obj(obj, UBCORE_HT_RC_TP_ID);
 }
 
-static void ubcore_free_rm_tp_id_obj(void *obj)
+static void ubcore_free_rm_tpid_obj(void *obj)
 {
 	ubcore_free_driver_obj(obj, UBCORE_HT_RM_TP_ID);
+}
+
+static inline void ubcore_free_tpid_list_obj(void *obj)
+{
+	ubcore_free_driver_obj(obj, UBCORE_HT_TPID_LIST);
+}
+
+static inline void ubcore_free_tp_state_ht_obj(void *obj)
+{
+	ubcore_free_driver_obj(obj, UBCORE_HT_TP_ID_STATE);
+}
+
+static inline void ubcore_free_tp_reuse_ht_obj(void *obj)
+{
+	ubcore_free_driver_obj(obj, UBCORE_HT_TPID_REUSE);
+}
+
+static void ubcore_tpid_reuse_get(void *obj)
+{
+	struct ubcore_tpid_reuse *entry = obj;
+
+	kref_get(&entry->ref_cnt);
 }
 
 static struct ubcore_ht_param g_ht_params[] = {
@@ -642,13 +664,31 @@ static struct ubcore_ht_param g_ht_params[] = {
 			      offsetof(struct ubcore_tpid_ctx, hnode),
 			      offsetof(struct ubcore_tpid_ctx, key),
 			      sizeof(struct ubcore_tpid_key), NULL,
-			      ubcore_free_rc_tp_id_obj, ubcore_tpid_get },
+			      ubcore_free_rc_tpid_obj, ubcore_tpid_get },
 	[UBCORE_HT_RM_TP_ID] = { UBCORE_HASH_TABLE_SIZE,
 				offsetof(struct ubcore_rm_tp_info, hnode),
 				offsetof(struct ubcore_rm_tp_info, key),
 				sizeof(struct ubcore_rm_tp_key),
-				NULL, ubcore_free_rm_tp_id_obj,
+				NULL, ubcore_free_rm_tpid_obj,
 				NULL },
+	[UBCORE_HT_TPID_LIST] = {UBCORE_HASH_TABLE_SIZE,
+				offsetof(struct ubcore_tpid_list, hnode),
+				offsetof(struct ubcore_tpid_list, lk),
+				sizeof(struct ubcore_tpid_list_key),
+				NULL, ubcore_free_tpid_list_obj,
+				ubcore_tpid_list_get},
+	[UBCORE_HT_TP_ID_STATE] = {UBCORE_HASH_TABLE_SIZE,
+				offsetof(struct ubcore_tpid_state, hnode),
+				offsetof(struct ubcore_tpid_state, tp_id),
+				sizeof(uint64_t),
+				NULL, ubcore_free_tp_state_ht_obj,
+				ubcore_tpid_state_get},
+	[UBCORE_HT_TPID_REUSE] = {UBCORE_HASH_TABLE_SIZE,
+				offsetof(struct ubcore_tpid_reuse, hnode),
+				offsetof(struct ubcore_tpid_reuse, rk),
+				sizeof(struct ubcore_tpid_reuse_key),
+				NULL, ubcore_free_tp_reuse_ht_obj,
+				ubcore_tpid_reuse_get},
 };
 
 static inline void ubcore_set_vtpn_hash_table_size(uint32_t vtpn_size)
@@ -1428,12 +1468,36 @@ void ubcore_unregister_event_handler(struct ubcore_device *dev,
 }
 EXPORT_SYMBOL(ubcore_unregister_event_handler);
 
+static bool ubcore_preprocess_event(struct ubcore_event *event)
+{
+	struct ubcore_flushdone_tp_cfg flushdone_cfg = {0};
+	union ubcore_modify_tpid_cfg cfg = {
+			.flushdone_cfg = &flushdone_cfg
+		};
+
+	if (event->event_type == UBCORE_EVENT_TPID_FLUSH_DONE) {
+		ubcore_log_info_rl("ubcore detect tp id: %u flush done, update state.\n",
+			event->element.tpid_info.tpid);
+
+		cfg.flushdone_cfg->tpid = event->element.tpid_info.tpid;
+		if (ubcore_modify_tpid(event->ub_dev, UBCORE_TPID_STATE_RESET, &cfg) != 0)
+			return false;
+		else
+			return true;
+	}
+
+	return false;
+}
+
 void ubcore_dispatch_async_event(struct ubcore_event *event)
 {
 	if (event == NULL || event->ub_dev == NULL) {
 		ubcore_log_err("Invalid argument.\n");
 		return;
 	}
+
+	if (ubcore_preprocess_event(event))
+		return;
 
 	if (ubcore_dispatch_event(event) != 0)
 		ubcore_log_err("ubcore_dispatch_event failed");
@@ -2492,4 +2556,3 @@ struct ubcore_device *ubcore_get_device_by_eid(union ubcore_eid *eid,
 	return target;
 }
 EXPORT_SYMBOL(ubcore_get_device_by_eid);
-

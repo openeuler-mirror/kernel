@@ -41,6 +41,7 @@
 #define UBCORE_MAX_UE_CNT 1024
 #define UBCORE_MAX_DEV_NAME 64
 #define UBCORE_MAX_DRIVER_NAME 64
+#define UBCORE_MAX_GET_TP_GROUP_CNT 32
 #define UBCORE_HASH_TABLE_SIZE 10240
 #define UBCORE_NET_ADDR_BYTES (16)
 #define UBCORE_IP_ADDR_BYTES 16
@@ -372,7 +373,8 @@ enum ubcore_event_type {
 	UBCORE_EVENT_ELR_ERR,
 	UBCORE_EVENT_ELR_DONE,
 	UBCORE_EVENT_MIGRATE_VTP_SWITCH,
-	UBCORE_EVENT_MIGRATE_VTP_ROLLBACK
+	UBCORE_EVENT_MIGRATE_VTP_ROLLBACK,
+	UBCORE_EVENT_TPID_FLUSH_DONE
 };
 
 /* transport mode */
@@ -1137,6 +1139,7 @@ struct ubcore_vtpn {
 	uint64_t peer_tp_handle;
 	uint64_t tag;
 	bool uspace; /* true: user space; false: kernel space */
+	struct ubcore_tpid_reuse *tpid_reuse;
 };
 
 union ubcore_vtp_cfg_flag {
@@ -1248,6 +1251,10 @@ struct ubcore_resp_host {
 	struct ubcore_resp resp;
 };
 
+struct ubcore_tpid_info {
+	uint32_t tpid;
+};
+
 struct ubcore_event {
 	struct ubcore_device *ub_dev;
 	union {
@@ -1260,6 +1267,7 @@ struct ubcore_event {
 		struct ubcore_vtp *vtp;
 		uint32_t port_id;
 		uint32_t eid_idx;
+		struct ubcore_tpid_info tpid_info;
 	} element;
 	enum ubcore_event_type event_type;
 };
@@ -2043,7 +2051,10 @@ struct ubcore_tp_attr_value {
 	uint8_t spray_en : 1;
 	uint8_t udp_global_en : 1;
 	uint8_t reserve_0 : 2;
-	uint8_t reserved[73];
+	uint16_t sl_bitmap;
+	uint8_t dscp_config_mode : 1;
+	uint8_t reserve_1 : 7;
+	uint8_t reserved[70];
 };
 #pragma pack()
 
@@ -2072,7 +2083,9 @@ union ubcore_get_tp_cfg_flag {
 		uint32_t uboe : 1;
 		uint32_t pre_defined : 1;
 		uint32_t dynamic_defined : 1;
-		uint32_t reserved : 26;
+		uint32_t udp : 5;
+		uint32_t group_id : 15;
+		uint32_t reserved : 6;
 	} bs;
 	uint32_t value;
 };
@@ -2082,6 +2095,14 @@ struct ubcore_get_tp_cfg {
 	enum ubcore_transport_mode trans_mode;
 	union ubcore_eid local_eid;
 	union ubcore_eid peer_eid;
+	struct ubcore_share_tp_cfg stp_cfg;
+};
+
+struct ubcore_reuse_tp_cfg {
+	union ubcore_eid local_eid;
+	union ubcore_eid peer_eid;
+	uint64_t stag;
+	uint64_t dtag;
 };
 
 struct ubcore_tp_info {
@@ -2099,6 +2120,7 @@ struct ubcore_active_tp_cfg {
 	union ubcore_tp_handle peer_tp_handle;
 	uint64_t tag;
 	struct ubcore_active_tp_attr tp_attr;
+	struct ubcore_tpid_reuse *tpid_reuse;
 };
 
 struct ubcore_ops {
@@ -3277,6 +3299,9 @@ enum ubcore_hash_table_type {
 	UBCORE_HT_RM_TP_ID, /* key: seid + deid + tag */
 	UBCORE_HT_RC_TP_ID, /* seid + deid + sjettyid + djettyid + tag */
 	UBCORE_HT_UTP_ID, /* key: seid + deid + tag */
+	UBCORE_HT_TPID_LIST,
+	UBCORE_HT_TP_ID_STATE,
+	UBCORE_HT_TPID_REUSE,
 	UBCORE_HT_NUM
 };
 
@@ -3405,6 +3430,137 @@ struct ubcore_device {
 	/* for vtp audit */
 	struct ubcore_vtp_bitmap vtp_bitmap;
 };
+
+enum ubcore_tpid_status {
+	UBCORE_TPID_STATE_RESET = 0,
+	UBCORE_TPID_STATE_RTR,
+	UBCORE_TPID_STATE_RTS,
+	UBCORE_TPID_STATE_SUSPENDED,
+	UBCORE_TPID_STATE_ERR,
+	UBCORE_TPID_MAX,
+};
+
+enum ubcore_tpid_attr_mask {
+	UBCORE_TPID_STATE = 0x1
+};
+
+struct ubcore_tpid_attr {
+	uint32_t mask;
+	enum ubcore_tpid_status state;
+};
+
+enum ubcore_tpid_share_mode {
+	UBCORE_TPID_SHARE_NONE = 0,
+	UBCORE_TPID_SHARE_NODE,
+	UBCORE_TPID_SHARE_CONTAINER,
+	UBCORE_TPID_SHARE_JETTY,
+	UBCORE_TPID_SHARE_CUSTOM,
+};
+
+enum ubcore_tpid_owner_type {
+	UBCORE_TPID_OWNER_NONE = 0,
+	UBCORE_TPID_OWNER_USER_AWARE,
+	UBCORE_TPID_OWNER_USER_UNAWARE
+};
+
+enum ubcore_tpid_semantic {
+	UBCORE_TPID_QUERY = 0,
+	UBCORE_TPID_CREATE
+};
+
+enum ubcore_tpid_reuse_state {
+	UBCORE_TPID_REUSE_RESET = 0,
+	UBCORE_TPID_REUSE_READY,
+	UBCORE_TPID_REUSE_ERROR
+};
+
+enum ubcore_link_type {
+	UBCORE_LINK_ETHERNET,
+	UBCORE_LINK_UBOE
+};
+
+struct ubcore_tpid_cfg {
+	union ubcore_eid local_eid;
+	union ubcore_eid peer_eid;
+	enum ubcore_transport_mode tp_mode;
+	enum ubcore_tp_type tp_type;
+	enum ubcore_link_type link_type;
+};
+
+struct ubcore_tpid {
+	union ubcore_tp_handle tp_handle;
+};
+
+struct ubcore_tpid_list_node {
+	struct list_head node;
+	struct ubcore_tp_info tp_info;
+};
+
+struct ubcore_tpid_list_key {
+	union ubcore_eid local_eid;
+	union ubcore_eid peer_eid;
+	enum ubcore_transport_mode trans_mode;
+	enum ubcore_tpid_share_mode share_mode;
+	uint32_t tp_type;
+	uint32_t link_type;
+};
+
+struct ubcore_tpid_reuse_key {
+	struct ubcore_tpid_list_key lk;
+	uint64_t stag;
+	uint64_t dtag;
+};
+
+struct ubcore_tpid_list {
+	struct ubcore_device *ub_dev;
+	struct hlist_node hnode;
+
+	struct ubcore_tpid_list_key lk;
+
+	struct list_head unaware_list;
+	struct list_head aware_list;
+	uint32_t acnt;
+	uint32_t ucnt;
+	uint32_t capacity;
+
+	struct kref ref_cnt;
+	struct completion comp;
+	struct mutex lock;
+	struct mutex fetch_lock;
+};
+
+struct ubcore_tpid_state {
+	struct ubcore_device *ub_dev;
+
+	struct hlist_node hnode;
+
+	uint64_t tp_id;
+
+	enum ubcore_tpid_status tpid_status;
+	enum ubcore_tpid_owner_type tp_id_owner_type;
+	bool alloced;
+
+	struct kref ref_cnt;
+	struct completion comp;
+	struct mutex lock;
+};
+
+struct ubcore_tpid_reuse {
+	struct ubcore_device *ub_dev;
+
+	struct hlist_node hnode;
+
+	struct ubcore_tpid_reuse_key rk;
+
+	union ubcore_tp_handle tp_handle;
+	enum ubcore_tpid_reuse_state reuse_state;
+
+	struct kref ref_cnt;
+	atomic_t use_cnt;
+	struct completion comp;
+	struct mutex lock;
+};
+
 
 struct ubcore_client {
 	struct list_head list_node;

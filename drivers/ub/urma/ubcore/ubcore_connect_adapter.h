@@ -78,9 +78,8 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 						 struct ubcore_tjetty_cfg *cfg,
 						 struct ubcore_udata *udata);
 
-int ubcore_bind_jetty_compat(struct ubcore_jetty *jetty,
-			     struct ubcore_tjetty *tjetty,
-			     struct ubcore_udata *udata);
+int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
+	struct ubcore_tjetty *tjetty, struct ubcore_udata *udata);
 
 int ubcore_adapter_layer_disconnect(struct ubcore_vtpn *vtpn);
 
@@ -99,5 +98,16 @@ struct ubcore_tpid_ctx *ubcore_fget_tpid_ctx(
 	struct ubcore_device *dev, struct ubcore_tpid_key *key);
 
 uint32_t ubcore_get_conn_timeout(void);
+
+struct ubcore_tjetty *ubcore_get_tjetty(struct ubcore_device *dev,
+					struct ubcore_tjetty_cfg *cfg,
+					struct ubcore_active_tp_cfg *active_tp_cfg,
+					struct ubcore_udata *udata);
+
+void ubcore_tpid_reuse_kref_put(struct ubcore_tpid_reuse *entry);
+
+int ubcore_free_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse);
+void ubcore_hash_table_rmv_tpid_reuse(struct ubcore_device *dev,
+					     struct ubcore_tpid_reuse *entry);
 
 #endif

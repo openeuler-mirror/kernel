@@ -1126,7 +1126,7 @@ struct ubcore_vtpn *ubcore_connect_vtp(struct ubcore_device *dev,
 	return vtpn;
 }
 
-static int ubcore_active_tp(struct ubcore_device *dev,
+static int ubcore_active_tp_vtpn(struct ubcore_device *dev,
 			    struct ubcore_active_tp_cfg *active_tp_cfg,
 			    struct ubcore_vtpn *vtpn)
 {
@@ -1206,6 +1206,9 @@ struct ubcore_vtpn *
 	struct ubcore_vtpn *exist_vtpn = NULL;
 	struct ubcore_vtpn *vtpn;
 	int ret;
+	union ubcore_modify_tpid_cfg cfg = {
+		.active_cfg = active_tp_cfg,
+	};
 
 	// 1. try to reuse vtpn
 	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
@@ -1233,7 +1236,8 @@ struct ubcore_vtpn *
 
 	// 4. active tp
 	mutex_lock(&vtpn->state_lock);
-	ret = ubcore_active_tp(dev, active_tp_cfg, vtpn);
+	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
+
 	if (ret == 0) {
 		atomic_inc(&vtpn->use_cnt);
 		vtpn->state = UBCORE_VTPS_READY;
@@ -1256,6 +1260,26 @@ struct ubcore_vtpn *
 		EID_ARGS(param->peer_eid), active_tp_cfg->tp_handle.value,
 		active_tp_cfg->peer_tp_handle.value, active_tp_cfg->tp_attr.tx_psn,
 		active_tp_cfg->tp_attr.rx_psn);
+	return vtpn;
+}
+
+struct ubcore_vtpn *
+	ubcore_get_vtpn(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata)
+{
+	struct ubcore_vtpn *vtpn;
+
+	vtpn = ubcore_create_vtpn(dev, param, active_tp_cfg, udata);
+	if (IS_ERR_OR_NULL(vtpn)) {
+		ubcore_log_err("failed to alloc vtpn.\n");
+		return vtpn;
+	}
+
+	vtpn->state = UBCORE_VTPS_READY;
+	vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
+	vtpn->tpid_reuse = active_tp_cfg->tpid_reuse;
 	return vtpn;
 }
 
@@ -1314,7 +1338,7 @@ struct ubcore_vtpn *
 
 	mutex_lock(&info_ext->lock);
 	if (atomic_read(&info_ext->tp_state) == RM_STP_CREATED) {
-		ret = ubcore_active_tp(dev, active_tp_cfg, vtpn);
+		ret = ubcore_active_tp_vtpn(dev, active_tp_cfg, vtpn);
 		if (ret == 0)
 			atomic_set(&info_ext->tp_state, RM_STP_ACTIVE);
 		else
@@ -1358,6 +1382,9 @@ struct ubcore_vtpn *
 	struct ubcore_vtpn *exist_vtpn = NULL;
 	struct ubcore_vtpn *vtpn;
 	int ret;
+	union ubcore_modify_tpid_cfg cfg = {
+		.active_cfg = active_tp_cfg,
+	};
 
 	// 1. try to reuse vtpn
 	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
@@ -1385,7 +1412,8 @@ struct ubcore_vtpn *
 
 	// 4. active tp
 	mutex_lock(&vtpn->state_lock);
-	ret = ubcore_active_tp(dev, active_tp_cfg, vtpn);
+	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
+
 	if (ret == 0) {
 		atomic_inc(&vtpn->use_cnt);
 		vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
@@ -1404,6 +1432,55 @@ struct ubcore_vtpn *
 	}
 
 	ubcore_log_info("connect vtpn:%u, trans_mode:%u, l_eid " EID_FMT
+		", p_eid "EID_FMT", tphdl %llu, ptphdl %llu, tx_psn %u, rx_psn %u.\n",
+		vtpn->vtpn, vtpn->trans_mode, EID_ARGS(param->local_eid),
+		EID_ARGS(param->peer_eid), active_tp_cfg->tp_handle.value,
+		active_tp_cfg->peer_tp_handle.value, active_tp_cfg->tp_attr.tx_psn,
+		active_tp_cfg->tp_attr.rx_psn);
+	return vtpn;
+}
+
+struct ubcore_vtpn *
+	ubcore_connect_rc_tpid(struct ubcore_device *dev,
+	struct ubcore_vtp_param *param,
+	struct ubcore_active_tp_cfg *active_tp_cfg,
+	struct ubcore_udata *udata)
+{
+	enum ubcore_tpid_reuse_state reuse_state;
+	union ubcore_modify_tpid_cfg modify_tpid_cfg = {
+		.active_cfg = active_tp_cfg,
+	};
+	struct ubcore_vtpn *vtpn;
+	int ret;
+
+	if (!active_tp_cfg->tpid_reuse)
+		return ubcore_connect_rc_vtp_ctrlplane(dev, param, active_tp_cfg, udata);
+
+	mutex_lock(&active_tp_cfg->tpid_reuse->lock);
+	reuse_state = active_tp_cfg->tpid_reuse->reuse_state;
+	if (reuse_state == UBCORE_TPID_REUSE_RESET) {
+		ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &modify_tpid_cfg);
+		if (ret != 0) {
+			ubcore_log_err("Failed to modify tpid:%u to RTS, ret:%d.\n",
+					(uint32_t)active_tp_cfg->tp_handle.bs.tpid, ret);
+			mutex_unlock(&active_tp_cfg->tpid_reuse->lock);
+			return ERR_PTR(ret);
+		}
+	}
+	mutex_unlock(&active_tp_cfg->tpid_reuse->lock);
+
+	vtpn = ubcore_get_vtpn(dev, param, active_tp_cfg, udata);
+	if (IS_ERR_OR_NULL(vtpn)) {
+		(void)ubcore_modify_tpid(dev, UBCORE_TPID_STATE_ERR, &modify_tpid_cfg);
+		ubcore_log_err("Failed to get vtpn for tjetty.\n");
+		return vtpn ? (void *)vtpn : ERR_PTR(-ECONNREFUSED);
+	}
+
+	mutex_lock(&vtpn->state_lock);
+	vtpn->tpid_reuse = active_tp_cfg->tpid_reuse;
+	mutex_unlock(&vtpn->state_lock);
+
+	ubcore_log_info_rl("connect vtpn:%u, trans_mode:%u, l_eid " EID_FMT
 		", p_eid "EID_FMT", tphdl %llu, ptphdl %llu, tx_psn %u, rx_psn %u.\n",
 		vtpn->vtpn, vtpn->trans_mode, EID_ARGS(param->local_eid),
 		EID_ARGS(param->peer_eid), active_tp_cfg->tp_handle.value,
@@ -1560,6 +1637,53 @@ ERR_WQ_WORK:
 	mutex_unlock(&vtpn->state_lock);
 	(void)ubcore_free_vtpn(vtpn);
 	return NULL;
+}
+
+int ubcore_disconnect_vtp_with_tpid_reuse(struct ubcore_vtpn *vtpn)
+{
+	struct ubcore_device *dev;
+	struct ubcore_tpid_reuse *tpid_reuse;
+	int ret = 0;
+
+	if (vtpn == NULL || vtpn->tpid_reuse == NULL || vtpn->tpid_reuse->ub_dev == NULL)
+		return -EINVAL;
+
+	tpid_reuse = vtpn->tpid_reuse;
+	dev = tpid_reuse->ub_dev;
+	mutex_lock(&tpid_reuse->lock);
+	if (atomic_dec_return(&tpid_reuse->use_cnt) > 0) {
+		ubcore_log_info_rl("vtpn in use, tpid id = %u, vtpn use_cnt = %d",
+				tpid_reuse->tp_handle.bs.tpid, atomic_read(&tpid_reuse->use_cnt));
+		mutex_unlock(&tpid_reuse->lock);
+		return 0;
+	}
+
+	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
+
+	if (atomic_read(&tpid_reuse->use_cnt) > 0) {
+		mutex_unlock(&tpid_reuse->lock);
+		return 0;
+	}
+
+	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
+		ret = ubcore_adapter_layer_disconnect(vtpn);
+		tpid_reuse->reuse_state = UBCORE_TPID_REUSE_ERROR;
+	} else {
+		ubcore_log_info_rl("tpid_reuse in deleted state, tpid_reuse:%u, state%u",
+				tpid_reuse->tp_handle.bs.tpid, tpid_reuse->reuse_state);
+	}
+	ubcore_log_info_rl("disconnect tpid_reuse:%u, ret:%d, tpid_reuse_state:%u",
+			   tpid_reuse->tp_handle.bs.tpid, ret, tpid_reuse->reuse_state);
+	mutex_unlock(&tpid_reuse->lock);
+
+	if (atomic_read(&tpid_reuse->use_cnt) == 0) {
+		if (ret == 0 || ret == -ENOENT) {
+			(void)ubcore_free_tpid_reuse(tpid_reuse);
+			(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		}
+	}
+
+	return ret;
 }
 
 int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn)
