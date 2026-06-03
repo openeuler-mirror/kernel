@@ -12881,6 +12881,15 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env,
 			dst_reg->var_off = ptr_reg->var_off;
 			dst_reg->off = ptr_reg->off + smin_val;
 			dst_reg->raw = ptr_reg->raw;
+
+			if (reg_is_pkt_pointer(ptr_reg)) {
+				/*
+				 * Clear AT_PKT_END / BEYOND_PKT_END from prior comparison
+				 * as any pointer arithmetic invalidates them.
+				 */
+				if (dst_reg->range < 0)
+					memset(&dst_reg->raw, 0, sizeof(dst_reg->raw));
+			}
 			break;
 		}
 		/* A new variable offset is created.  Note that off_reg->off
@@ -12913,7 +12922,10 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env,
 		dst_reg->raw = ptr_reg->raw;
 		if (reg_is_pkt_pointer(ptr_reg)) {
 			dst_reg->id = ++env->id_gen;
-			/* something was added to pkt_ptr, set range to zero */
+			/*
+			 * Clear range for unknown addends since we can't know
+			 * where the pkt pointer ended up.
+			 */
 			memset(&dst_reg->raw, 0, sizeof(dst_reg->raw));
 		}
 		break;
@@ -12944,6 +12956,15 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env,
 			dst_reg->id = ptr_reg->id;
 			dst_reg->off = ptr_reg->off - smin_val;
 			dst_reg->raw = ptr_reg->raw;
+
+			if (reg_is_pkt_pointer(ptr_reg)) {
+				/*
+				 * Clear AT_PKT_END / BEYOND_PKT_END from prior comparison
+				 * as arithmetic invalidates them.
+				 */
+				if (dst_reg->range < 0)
+					memset(&dst_reg->raw, 0, sizeof(dst_reg->raw));
+			}
 			break;
 		}
 		/* A new variable offset is created.  If the subtrahend is known
@@ -12972,8 +12993,14 @@ static int adjust_ptr_min_max_vals(struct bpf_verifier_env *env,
 		dst_reg->raw = ptr_reg->raw;
 		if (reg_is_pkt_pointer(ptr_reg)) {
 			dst_reg->id = ++env->id_gen;
-			/* something was added to pkt_ptr, set range to zero */
-			if (smin_val < 0)
+			/*
+			 * Clear range if the subtrahend may be negative since
+			 * pkt pointer could move past its bounds. A positive
+			 * subtrahend moves it backwards keeping positive range
+			 * intact. Also clear AT_PKT_END / BEYOND_PKT_END from
+			 * prior comparison as arithmetic invalidates them.
+			 */
+			if (smin_val < 0 || dst_reg->range < 0)
 				memset(&dst_reg->raw, 0, sizeof(dst_reg->raw));
 		}
 		break;
