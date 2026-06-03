@@ -427,6 +427,11 @@ static int crypto_authenc_esn_create(struct crypto_template *tmpl,
 		goto err_free_inst;
 
 	crypto_set_skcipher_spawn(&ctx->enc, aead_crypto_instance(inst));
+	if (auth->digestsize > 0 && auth->digestsize < 4) {
+		err = -EINVAL;
+		goto err_free_inst;
+	}
+
 	err = crypto_grab_skcipher(&ctx->enc, enc_name, 0,
 				   crypto_requires_sync(algt->type,
 							algt->mask));
