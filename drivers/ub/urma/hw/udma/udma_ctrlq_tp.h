@@ -13,7 +13,7 @@
 #define UDMA_DEFAULT_PID	1
 #define UDMA_UE_NUM		64
 #define UDMA_MAX_UE_IDX		256
-#define UDMA_MAX_TPID_NUM	5
+#define UDMA_MAX_TPID_NUM	32
 #define UDMA_IP_SIZE		16
 #define UDMA_CTRLQ_SER_TYPE_UBMEM 5
 #define UDMA_CTRLQ_EID_TYPE_128 1
@@ -41,6 +41,8 @@ enum udma_ctrlq_cmd_code_type {
 	UDMA_CMD_CTRLQ_SET_TP_ATTR,
 	UDMA_CMD_CTRLQ_GET_TP_ATTR,
 	UDMA_CMD_CTRLQ_GET_TP_INFO,
+	UDMA_CMD_CTRLQ_GET_TPID_NUM,
+	UDMA_CMD_CTRLQ_TPID_DESTROY_DONE,
 	UDMA_CMD_CTRLQ_MAX
 };
 
@@ -149,6 +151,16 @@ struct udma_ctrlq_check_tp_active_req_info {
 	struct udma_ctrlq_check_tp_active_req_data data[0];
 };
 
+struct udma_ctrlq_tpid_destroy_done_out_data {
+	uint32_t tp_id : 24;
+	uint32_t rsv : 8;
+};
+
+struct udma_ctrlq_tpid_destroy_done_rsp_data {
+	uint32_t tp_id : 24;
+	uint32_t rsv : 8;
+};
+
 struct udma_ctrlq_check_tp_active_rsp_data {
 	uint32_t tp_id : 24;
 	uint32_t result : 8;
@@ -169,8 +181,10 @@ struct udma_ctrlq_get_tp_list_req_data {
 	uint8_t seid[UDMA_EID_SIZE];
 	uint8_t deid[UDMA_EID_SIZE];
 	uint32_t trans_type : 4;
-	uint32_t rsv : 4;
-	uint32_t flag : 24;
+	uint32_t rsv : 28;
+	uint32_t rsv1 : 8;
+	uint32_t group_id : 16;
+	uint32_t max_tp_cnt : 8;
 };
 
 enum udma_cmd_ue_opcode {
@@ -342,5 +356,7 @@ int udma_get_eid_by_ip(struct ubcore_device *dev, const struct ubcore_net_addr *
 int udma_get_ip_by_eid(struct ubcore_device *dev, const union ubcore_eid *eid,
 		       struct ubcore_net_addr *net_addr);
 void udma_tp_ae_work(struct work_struct *work);
+void udma_dispatch_tpid_destroy_done(struct udma_dev *dev,
+				     struct udma_ctrlq_tpid_destroy_done_out_data *tpid_entry);
 
 #endif /* __UDMA_CTRLQ_TP_H__ */

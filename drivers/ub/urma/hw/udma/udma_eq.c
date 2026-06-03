@@ -721,6 +721,21 @@ static int udma_ctrlq_eid_update(struct auxiliary_device *adev, uint8_t service_
 	return udma_ctrlq_send_eid_update_response(udma_dev, seq, ret);
 }
 
+static void udma_get_tpid_status(struct udma_dev *udev,
+				 uint32_t tp_id, struct udma_ctrlq_check_tp_active_rsp_data *data)
+{
+	struct ubcore_tpid_attr attr = {};
+	int ret;
+
+	ret = ubcore_query_tpid(&udev->ub_dev, tp_id, &attr);
+	if (ret)
+		dev_err(udev->dev, "failed to query tpid(%d) in ubcore, ret = %d.\n", tp_id, ret);
+	if (!ret && (attr.mask & UBCORE_TPID_STATE) && attr.state == UBCORE_TPID_STATE_RTS)
+		data->result = UDMA_CTRLQ_TPID_IN_USE;
+	else
+		data->result = UDMA_CTRLQ_TPID_EXITED;
+}
+
 static int udma_ctrlq_check_tp_status(struct udma_dev *udev, void *data, uint16_t len,
 				      struct udma_ctrlq_check_tp_active_rsp_info **rsp_info,
 				      uint32_t *rsp_info_len)
@@ -729,7 +744,6 @@ static int udma_ctrlq_check_tp_status(struct udma_dev *udev, void *data, uint16_
 
 	struct udma_ctrlq_check_tp_active_req_info *req_info;
 	uint32_t req_info_len;
-	struct pid *kpid;
 	uint32_t tp_num;
 	uint32_t i;
 
@@ -755,10 +769,7 @@ static int udma_ctrlq_check_tp_status(struct udma_dev *udev, void *data, uint16_
 	}
 
 	for (i = 0; i < req_info->num; i++) {
-		kpid = find_get_pid(req_info->data[i].pid_flag);
-		(*rsp_info)->data[i].result = kpid ? UDMA_CTRLQ_TPID_IN_USE :
-					      UDMA_CTRLQ_TPID_EXITED;
-		put_pid(kpid);
+		udma_get_tpid_status(udev, req_info->data[i].tp_id, &(*rsp_info)->data[i]);
 		(*rsp_info)->data[i].tp_id = req_info->data[i].tp_id;
 	}
 	(*rsp_info)->num = tp_num;
@@ -914,6 +925,60 @@ static int udma_ctrlq_notify_mue_eid_guid(struct auxiliary_device *adev,
 	return udma_ctrlq_send_eid_guid_response(udma_dev, seq, ret);
 }
 
+static int udma_ctrlq_tpid_destroy_done_response(struct udma_dev *udma_dev,
+		 uint16_t seq, int ret_val,
+		 struct udma_ctrlq_tpid_destroy_done_out_data *tpid_entry)
+{
+	struct udma_ctrlq_tpid_destroy_done_rsp_data tpid_entry_rsp = {};
+	struct ubase_ctrlq_msg msg = {};
+	int ret;
+
+	tpid_entry_rsp.tp_id = tpid_entry->tp_id;
+	msg.service_ver = UBASE_CTRLQ_SER_VER_01;
+	msg.service_type = UBASE_CTRLQ_SER_TYPE_TP_ACL;
+	msg.opcode = UDMA_CMD_CTRLQ_TPID_DESTROY_DONE;
+	msg.need_resp = 0;
+	msg.is_resp = 1;
+	msg.resp_seq = seq;
+	msg.resp_ret = (uint8_t)(-ret_val);
+	msg.in = (void *)&tpid_entry_rsp;
+	msg.in_size = sizeof(tpid_entry_rsp);
+
+	ret = ubase_ctrlq_send_msg(udma_dev->comdev.adev, &msg);
+	if (ret)
+		dev_err(udma_dev->dev, "send tpid destroy done rsp failed, ret = %d.\n", ret);
+
+	return ret;
+}
+
+static int udma_ctrlq_tpid_destroy_done(struct auxiliary_device *adev,
+					uint8_t service_ver, void *data,
+					uint16_t len, uint16_t seq)
+{
+	struct udma_ctrlq_tpid_destroy_done_out_data tpid_entry = {};
+	struct udma_dev *udma_dev;
+
+	if (adev == NULL || data == NULL) {
+		pr_err("adev or data is NULL.\n");
+		return -EINVAL;
+	}
+
+	udma_dev = get_udma_dev(adev);
+	if (service_ver != UBASE_CTRLQ_SER_VER_01) {
+		dev_err(udma_dev->dev, "unsupported service version (%u).\n", service_ver);
+		return -EOPNOTSUPP;
+	}
+
+	if (len < sizeof(struct udma_ctrlq_tpid_destroy_done_out_data)) {
+		dev_err(udma_dev->dev, "msg len(%u) is invalid.\n", len);
+		return udma_ctrlq_tpid_destroy_done_response(udma_dev, seq, -EINVAL, &tpid_entry);
+	}
+	memcpy(&tpid_entry, data, sizeof(tpid_entry));
+	udma_dispatch_tpid_destroy_done(udma_dev, &tpid_entry);
+
+	return udma_ctrlq_tpid_destroy_done_response(udma_dev, seq, 0, &tpid_entry);
+}
+
 static struct ubase_ctrlq_event_nb udma_ctrlq_opts[] = {
 	{UBASE_CTRLQ_SER_TYPE_TP_ACL, UDMA_CMD_CTRLQ_CHECK_TP_ACTIVE, NULL,
 	 udma_ctrlq_check_tp_active},
@@ -921,6 +986,8 @@ static struct ubase_ctrlq_event_nb udma_ctrlq_opts[] = {
 	 udma_ctrlq_eid_update},
 	{UBASE_CTRLQ_SER_TYPE_DEV_REGISTER, UDMA_CTRLQ_OPC_UPDATE_UE_SEID_GUID, NULL,
 	 udma_ctrlq_notify_mue_eid_guid},
+	{UBASE_CTRLQ_SER_TYPE_TP_ACL, UDMA_CMD_CTRLQ_TPID_DESTROY_DONE, NULL,
+	udma_ctrlq_tpid_destroy_done},
 };
 
 static int udma_register_one_ctrlq_event(struct auxiliary_device *adev,
