@@ -3077,6 +3077,7 @@ static void bpf_uprobe_unregister(struct path *path, struct bpf_uprobe *uprobes,
 	for (i = 0; i < cnt; i++) {
 		uprobe_unregister(d_real_inode(path->dentry), uprobes[i].offset,
 				  &uprobes[i].consumer);
+		cond_resched();
 	}
 }
 
