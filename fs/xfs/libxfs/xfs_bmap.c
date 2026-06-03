@@ -1656,8 +1656,7 @@ xfs_bmap_add_extent_delay_real(
 		 */
 		old = LEFT;
 		temp = PREV.br_blockcount - new->br_blockcount;
-		da_new = XFS_FILBLKS_MIN(xfs_bmap_worst_indlen(bma->ip, temp),
-				startblockval(PREV.br_startblock));
+		da_new = xfs_bmap_worst_indlen(bma->ip, temp);
 
 		LEFT.br_blockcount += new->br_blockcount;
 
@@ -1724,9 +1723,7 @@ xfs_bmap_add_extent_delay_real(
 		}
 
 		temp = PREV.br_blockcount - new->br_blockcount;
-		da_new = XFS_FILBLKS_MIN(xfs_bmap_worst_indlen(bma->ip, temp),
-			startblockval(PREV.br_startblock) -
-			(bma->cur ? bma->cur->bc_ino.allocated : 0));
+		da_new = xfs_bmap_worst_indlen(bma->ip, temp);
 
 		PREV.br_startoff = new_endoff;
 		PREV.br_blockcount = temp;
@@ -1763,8 +1760,7 @@ xfs_bmap_add_extent_delay_real(
 		}
 
 		temp = PREV.br_blockcount - new->br_blockcount;
-		da_new = XFS_FILBLKS_MIN(xfs_bmap_worst_indlen(bma->ip, temp),
-			startblockval(PREV.br_startblock));
+		da_new = xfs_bmap_worst_indlen(bma->ip, temp);
 
 		PREV.br_blockcount = temp;
 		PREV.br_startblock = nullstartblock(da_new);
@@ -1812,9 +1808,7 @@ xfs_bmap_add_extent_delay_real(
 		}
 
 		temp = PREV.br_blockcount - new->br_blockcount;
-		da_new = XFS_FILBLKS_MIN(xfs_bmap_worst_indlen(bma->ip, temp),
-			startblockval(PREV.br_startblock) -
-			(bma->cur ? bma->cur->bc_ino.allocated : 0));
+		da_new = xfs_bmap_worst_indlen(bma->ip, temp);
 
 		PREV.br_startblock = nullstartblock(da_new);
 		PREV.br_blockcount = temp;
