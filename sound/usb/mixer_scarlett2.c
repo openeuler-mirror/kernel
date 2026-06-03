@@ -1011,7 +1011,7 @@ static const struct scarlett2_device_entry scarlett2_devices[] = {
 	{ USB_ID(0x1235, 0x820c), &clarett_8pre_info, "Clarett+" },
 
 	/* End of list */
-	{ 0, NULL },
+	{ 0, NULL, NULL },
 };
 
 /* get the starting port index number for a given port type/direction */
@@ -3897,6 +3897,8 @@ static int scarlett2_find_fc_interface(struct usb_device *dev,
 		struct usb_endpoint_descriptor *epd;
 
 		if (desc->bInterfaceClass != 255)
+			continue;
+		if (desc->bNumEndpoints < 1)
 			continue;
 
 		epd = get_endpoint(intf->altsetting, 0);
