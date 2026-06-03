@@ -157,4 +157,13 @@ void ubcore_free_eid_list(struct ubcore_eid_info *eid_list);
  */
 void ubcore_dispatch_mgmt_event(struct ubcore_mgmt_event *event);
 
+/**
+ * Query TP ID attr
+ * @param[in] dev: the ubcore device
+ * @param[in] tpid: tpid
+ * @param[out] attr: tpid attr
+ * @return: 0 on success, other value on error
+ */
+int ubcore_query_tpid(struct ubcore_device *dev, uint32_t tpid, struct ubcore_tpid_attr *attr);
+
 #endif

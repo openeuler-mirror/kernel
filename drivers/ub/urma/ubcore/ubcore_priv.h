@@ -192,6 +192,21 @@ static inline uint32_t ubcore_get_vtp_hash(union ubcore_eid *local_eid)
 		     sizeof(union ubcore_eid) + sizeof(union ubcore_eid), 0);
 }
 
+static inline uint32_t ubcore_get_tpid_reuse_hash(struct ubcore_hash_table *ht, void *key_addr)
+{
+	return jhash(key_addr, ht->p.key_size, 0);
+}
+
+static inline uint32_t ubcore_get_tpid_list_hash(struct ubcore_hash_table *ht, void *key_addr)
+{
+	return jhash(key_addr, ht->p.key_size, 0);
+}
+
+static inline uint32_t ubcore_get_tpid_state_hash(struct ubcore_hash_table *ht, void *key_addr)
+{
+	return jhash(key_addr, ht->p.key_size, 0);
+}
+
 static inline uint32_t ubcore_get_rc_vtp_hash(union ubcore_eid *peer_eid)
 {
 	return jhash(peer_eid, sizeof(union ubcore_eid) + sizeof(uint32_t), 0);
