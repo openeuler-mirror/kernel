@@ -182,8 +182,25 @@ static bool unic_check_hw_ci_late(struct unic_sq *sq, u32 sq_pi, u32 sq_ci)
 	return false;
 }
 
-static bool unic_reclaim_sq_space(struct unic_sq *sq, int budget, u64 *bytes,
-				  u64 *packets, bool clear)
+static void unic_count_tx_comp_stats(struct unic_sq *sq, union unic_cqe *cqe,
+				     struct unic_tx_comp_stats *stats,
+				     struct sk_buff *skb)
+{
+	struct unic_dev *unic_dev = netdev_priv(sq->netdev);
+
+	if (unlikely(cqe->tx.status || cqe->tx.sub_status) &&
+	    unic_abn_cqe_count_support(unic_dev)) {
+		unic_sq_abn_cqe_inc(sq, cqe->tx.status, cqe->tx.sub_status);
+		stats->abn_bytes += skb_headlen(skb);
+		stats->abn_packets++;
+	} else {
+		stats->bytes += skb_headlen(skb);
+		stats->packets++;
+	}
+}
+
+static bool unic_reclaim_sq_space(struct unic_sq *sq, int budget,
+				  bool clear, struct unic_tx_comp_stats *stats)
 {
 	struct net_device *netdev = sq->netdev;
 	struct unic_dev *unic_dev = netdev_priv(netdev);
@@ -223,10 +240,8 @@ static bool unic_reclaim_sq_space(struct unic_sq *sq, int budget, u64 *bytes,
 			break;
 		}
 
-		if (!clear && likely(!unic_check_hw_ci_late(sq, sq_pi, sq_ci))) {
-			*bytes += skb_headlen(skb);
-			(*packets)++;
-		}
+		if (!clear && likely(!unic_check_hw_ci_late(sq, sq_pi, sq_ci)))
+			unic_count_tx_comp_stats(sq, cqe, stats, skb);
 
 		napi_consume_skb(skb, budget);
 		sq->skbs[sq_ci & sqebb_mask] = NULL;
@@ -248,21 +263,21 @@ void unic_poll_tx(struct unic_sq *sq, int budget)
 #define UNIC_MIN_SPARE_PAGE	2
 
 	struct net_device *netdev = sq->netdev;
+	struct unic_tx_comp_stats stats = {0};
 	struct netdev_queue *dev_queue;
 	struct unic_dev *unic_dev;
-	u64 packets = 0;
-	u64 bytes = 0;
 
-	if (unlikely(!unic_reclaim_sq_space(sq, budget, &bytes, &packets, false)))
+	if (unlikely(!unic_reclaim_sq_space(sq, budget, false, &stats)))
 		return;
 
 	u64_stats_update_begin(&sq->syncp);
-	sq->stats.bytes += bytes;
-	sq->stats.packets += packets;
+	sq->stats.bytes += stats.bytes;
+	sq->stats.packets += stats.packets;
 	u64_stats_update_end(&sq->syncp);
 
 	dev_queue = netdev_get_tx_queue(netdev, sq->queue_index);
-	netdev_tx_completed_queue(dev_queue, packets, bytes);
+	netdev_tx_completed_queue(dev_queue, stats.packets + stats.abn_packets,
+				  stats.bytes + stats.abn_bytes);
 
 	if (unlikely(netif_carrier_ok(netdev) &&
 		     unic_get_spare_sqebb_num(sq) >= UNIC_MIN_SPARE_SQEBB &&
@@ -1279,7 +1294,7 @@ xmit_pad_err:
 
 void unic_clear_sq(struct unic_sq *sq)
 {
-	unic_reclaim_sq_space(sq, 0, NULL, NULL, true);
+	unic_reclaim_sq_space(sq, 0, true, NULL);
 	sq->start_pi = sq->pi;
 	sq->check_ci_late = true;
 }
@@ -1315,30 +1330,32 @@ void unic_dump_sq_stats(struct net_device *netdev, u32 queue_idx)
 
 	unic_info(unic_dev,
 		  "tx timeout, queue index: %u, state: %lu\n"
-		  "sq->pi:           %u\n"
-		  "sq->ci:           %u\n"
-		  "pad_err:          %llu\n"
-		  "bytes:            %llu\n"
-		  "packets:          %llu\n"
-		  "busy:             %llu\n"
-		  "more:             %llu\n"
-		  "restart_queue:    %llu\n"
-		  "over_max_sge_num: %llu\n"
-		  "csum_err:         %llu\n"
-		  "ci_mismatch:      %llu\n"
-		  "fd_cnt:           %llu\n"
-		  "drop_cnt:         %llu\n"
-		  "cfg5_drop_cnt:    %llu\n"
-		  "polled_old_pi:    %llu\n"
-		  "polled_skb_null   %llu\n"
-		  "pi_ci_over_depth: %llu\n",
+		  "sq->pi:            %u\n"
+		  "sq->ci:            %u\n"
+		  "pad_err:           %llu\n"
+		  "bytes:             %llu\n"
+		  "packets:           %llu\n"
+		  "busy:              %llu\n"
+		  "more:              %llu\n"
+		  "restart_queue:     %llu\n"
+		  "over_max_sge_num:  %llu\n"
+		  "csum_err:          %llu\n"
+		  "ci_mismatch:       %llu\n"
+		  "fd_cnt:            %llu\n"
+		  "drop_cnt:          %llu\n"
+		  "cfg5_drop_cnt:     %llu\n"
+		  "polled_old_pi:     %llu\n"
+		  "polled_skb_null:   %llu\n"
+		  "pi_ci_over_depth:  %llu\n"
+		  "abn_cqe_total_cnt: %llu\n",
 		  queue_idx, queue->state, sq->pi, sq->ci,
 		  sq_stats->pad_err, sq_stats->bytes, sq_stats->packets,
 		  sq_stats->busy, sq_stats->more, sq_stats->restart_queue,
 		  sq_stats->over_max_sge_num, sq_stats->csum_err,
 		  sq_stats->ci_mismatch, sq_stats->fd_cnt, sq_stats->drop_cnt,
 		  sq_stats->cfg5_drop_cnt, sq_stats->polled_old_pi,
-		  sq_stats->polled_skb_null, sq_stats->pi_ci_over_depth);
+		  sq_stats->polled_skb_null, sq_stats->pi_ci_over_depth,
+		  sq_stats->abn_cqe_total_cnt);
 }
 
 void unic_mask_key_words(void *sqebb)

@@ -885,6 +885,7 @@ static int unic_init_netdev_priv(struct net_device *netdev,
 	priv->comdev.adev = adev;
 	priv->msg_enable = netif_msg_init(netif_debug, DEFAULT_MSG_LEVEL);
 	priv->tid = ubase_get_dev_caps(adev)->tid;
+	priv->hw_ver = ubase_get_hw_ver(adev);
 	mutex_init(&priv->act_info.mutex);
 	mutex_init(&priv->bond_status.mutex);
 	mutex_init(&priv->stats.bond_record.lock);
