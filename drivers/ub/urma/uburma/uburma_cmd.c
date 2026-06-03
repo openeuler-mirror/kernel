@@ -3205,8 +3205,9 @@ static int uburma_cmd_import_jfr(struct ubcore_device *ubc_dev,
 
 	tjfr = ubcore_import_jfr(ubc_dev, &cfg, &udata);
 	if (IS_ERR_OR_NULL(tjfr)) {
+		uburma_log_err("Failed to import jfr.\n");
 		uobj_alloc_abort(uobj);
-		return PTR_ERR(tjfr);
+		return IS_ERR(tjfr) ? PTR_ERR(tjfr) : -1;
 	}
 
 	uobj->object = tjfr;
@@ -3273,8 +3274,9 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 		tjfr = ubcore_import_jfr_ex(ubc_dev, &cfg, &active_tp_cfg, &udata);
 
 	if (IS_ERR_OR_NULL(tjfr)) {
+		uburma_log_err("Failed to import jfr in ex.\n");
 		uobj_alloc_abort(uobj);
-		return PTR_ERR(tjfr);
+		return IS_ERR(tjfr) ? PTR_ERR(tjfr) : -1;
 	}
 
 	uobj->object = tjfr;
@@ -3355,8 +3357,9 @@ static int uburma_cmd_import_jetty(struct ubcore_device *ubc_dev,
 
 	tjetty = ubcore_import_jetty(ubc_dev, &cfg, &udata);
 	if (IS_ERR_OR_NULL(tjetty)) {
+		uburma_log_err("Failed to import jetty.\n");
 		uobj_alloc_abort(uobj);
-		return PTR_ERR(tjetty);
+		return IS_ERR(tjetty) ? PTR_ERR(tjetty) : -1;
 	}
 
 	uobj->object = tjetty;
@@ -4820,7 +4823,7 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	if (IS_ERR_OR_NULL(tjetty)) {
 		uburma_log_err("ubcore_import_jetty failed.\n");
 		uobj_alloc_abort(uobj);
-		return PTR_ERR(tjetty);
+		return IS_ERR(tjetty) ? PTR_ERR(tjetty) : -1;
 	}
 
 	uobj->object = tjetty;

@@ -696,6 +696,13 @@ int ubcore_deactive_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata
  */
 int ubcore_free_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata);
 
+/**
+ * import jfr to ubcore device.
+ * @param[in] dev: the ubcore device handle;
+ * @param[in] cfg: remote jfr attributes and import configurations;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: target jfr pointer on success, NULL on error
+ */
 struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 					struct ubcore_tjetty_cfg *cfg,
 					struct ubcore_udata *udata);
