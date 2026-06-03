@@ -298,6 +298,7 @@ struct unic_dev {
 	u8			sw_link_status;
 	struct unic_bond_status	bond_status;
 	gfp_t			gfp;
+	u32			hw_ver;
 };
 
 int unic_dev_init(struct auxiliary_device *adev);
@@ -486,6 +487,13 @@ static inline u32 unic_cmd_timeout(struct unic_dev *unic_dev)
 #define UNIC_CMD_TIMEOUT 5000
 
 	return __unic_removing(unic_dev) ? UNIC_CMD_TIMEOUT : 0;
+}
+
+static inline bool unic_abn_cqe_count_support(struct unic_dev *unic_dev)
+{
+	return unic_dev->hw_ver != UBASE_HW_VER_UNKNOWN &&
+	       unic_dev->hw_ver != UBASE_HW_VER_K_0 &&
+	       unic_dev->hw_ver != UBASE_HW_VER_A_0;
 }
 
 #endif /* __UNIC_DEV_H__ */
