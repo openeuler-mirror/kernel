@@ -158,8 +158,10 @@ drm_gem_fb_create_with_funcs(struct drm_device *dev, struct drm_file *file,
 		return ERR_PTR(-EINVAL);
 
 	for (i = 0; i < info->num_planes; i++) {
-		unsigned int width = mode_cmd->width / (i ? info->hsub : 1);
-		unsigned int height = mode_cmd->height / (i ? info->vsub : 1);
+		unsigned int width = i ? DIV_ROUND_UP(mode_cmd->width, info->hsub) :
+								mode_cmd->width;
+        	unsigned int height = i ? DIV_ROUND_UP(mode_cmd->height, info->vsub) :
+								mode_cmd->height;
 		unsigned int min_size;
 
 		objs[i] = drm_gem_object_lookup(file, mode_cmd->handles[i]);
