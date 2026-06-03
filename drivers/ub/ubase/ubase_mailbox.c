@@ -527,8 +527,9 @@ int ubase_create_ctx_page(struct ubase_dev *udev,
 	(*ctx_page)->iova = ctx_buf->dma_ctx_buf_ba + npage * PAGE_SIZE;
 	refcount_set(&(*ctx_page)->refcount, 1);
 	(*ctx_page)->npage = npage;
-	ret = ummu_fill_pages(ctx_buf->slot, (*ctx_page)->iova,
-			      UBASE_IOVA_COMM_PFN_CNT);
+	ret = ummu_core_fill_pages(ctx_buf->slot, (*ctx_page)->iova,
+				   UBASE_IOVA_COMM_PFN_CNT,
+				   udev->gfp | __GFP_ZERO);
 	if (ret) {
 		ubase_err(udev, "failed to fill pages in ummu, ret = %d\n", ret);
 		kfree(*ctx_page);
@@ -544,8 +545,8 @@ void ubase_destroy_ctx_page(struct ubase_dev *udev,
 {
 	int ret;
 
-	ret = ummu_drain_pages(ctx_buf->slot, ctx_page->iova,
-			       UBASE_IOVA_COMM_PFN_CNT);
+	ret = ummu_core_drain_pages(ctx_buf->slot, ctx_page->iova,
+				    UBASE_IOVA_COMM_PFN_CNT);
 	if (ret)
 		ubase_err(udev,
 			  "failed to drain pages in ummu, npage = %u, ret = %d.\n",
