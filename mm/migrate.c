@@ -2100,7 +2100,7 @@ out:
 	 * will be put back to the right list by the caller.
 	 */
 	list_splice(&ret_folios, from);
-	list_splice(&skip_folios, from);
+	putback_movable_pages(&skip_folios);
 	/*
 	 * Return 0 in case all split folios of fail-to-migrate large folios
 	 * are migrated successfully.
@@ -2262,6 +2262,9 @@ static int __add_folio_for_migration(struct folio *folio, int node,
 
 	if (folio_likely_mapped_shared(folio) && !migrate_all)
 		return -EACCES;
+
+	if (folio_test_fcma(folio))
+		return -EBUSY;
 
 	if (folio_test_hugetlb(folio)) {
 		if (isolate_hugetlb(folio, pagelist))
