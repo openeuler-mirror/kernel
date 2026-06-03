@@ -89,6 +89,8 @@ bpf_selem_alloc(struct bpf_local_storage_map *smap, void *owner,
 	}
 
 	if (selem) {
+		RCU_INIT_POINTER(SDATA(selem)->smap, smap);
+
 		if (value)
 			copy_map_value(&smap->map, SDATA(selem)->data, value);
 		/* No need to call check_and_init_map_value as memory is zero init */
@@ -213,9 +215,12 @@ static void bpf_selem_free_trace_rcu(struct rcu_head *rcu)
 }
 
 void bpf_selem_free(struct bpf_local_storage_elem *selem,
-		    struct bpf_local_storage_map *smap,
 		    bool reuse_now)
 {
+	struct bpf_local_storage_map *smap;
+
+	smap = rcu_dereference_check(SDATA(selem)->smap, bpf_rcu_lock_held());
+
 	bpf_obj_free_fields(smap->map.record, SDATA(selem)->data);
 
 	if (!smap->bpf_ma) {
@@ -286,7 +291,7 @@ static bool bpf_selem_unlink_storage_nolock(struct bpf_local_storage *local_stor
 	    SDATA(selem))
 		RCU_INIT_POINTER(local_storage->cache[smap->cache_idx], NULL);
 
-	bpf_selem_free(selem, smap, reuse_now);
+	bpf_selem_free(selem, reuse_now);
 
 	if (rcu_access_pointer(local_storage->smap) == smap)
 		RCU_INIT_POINTER(local_storage->smap, NULL);
@@ -368,7 +373,6 @@ int bpf_selem_link_map(struct bpf_local_storage_map *smap,
 
 	b = select_bucket(smap, local_storage);
 	raw_spin_lock_irqsave(&b->lock, flags);
-	RCU_INIT_POINTER(SDATA(selem)->smap, smap);
 	hlist_add_head_rcu(&selem->map_node, &b->list);
 	raw_spin_unlock_irqrestore(&b->lock, flags);
 
@@ -600,7 +604,7 @@ bpf_local_storage_update(void *owner, struct bpf_local_storage_map *smap,
 
 		err = bpf_local_storage_alloc(owner, smap, selem, gfp_flags);
 		if (err) {
-			bpf_selem_free(selem, smap, true);
+			bpf_selem_free(selem, true);
 			mem_uncharge(smap, owner, smap->elem_size);
 			return ERR_PTR(err);
 		}
@@ -680,7 +684,7 @@ unlock:
 	raw_spin_unlock_irqrestore(&local_storage->lock, flags);
 	if (alloc_selem) {
 		mem_uncharge(smap, owner, smap->elem_size);
-		bpf_selem_free(alloc_selem, smap, true);
+		bpf_selem_free(alloc_selem, true);
 	}
 	return err ? ERR_PTR(err) : SDATA(selem);
 }
