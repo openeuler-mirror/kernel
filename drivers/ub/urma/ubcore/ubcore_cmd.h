@@ -42,8 +42,8 @@ enum ubcore_cmd {
 	UBCORE_CMD_UNEXPOSE_DEV_NS,
 	UBCORE_CMD_SET_DEV_EID_NS,
 	UBCORE_CMD_GET_TOPO_INFO,
+	UBCORE_CMD_GET_V2P_RES,
 	UBCORE_CMD_SET_SL,
-	UBCORE_CMD_SET_GENL_PID,
 	UBCORE_CMD_UVS_INIT_RES,
 	/* alpha netlink ops begin: */
 	UBCORE_CMD_QUERY_TP_REQ,
@@ -98,6 +98,20 @@ struct ubcore_cmd_query_res {
 		uint32_t key_ext;
 		uint32_t key_cnt;
 		bool query_cnt;
+	} in;
+	struct {
+		uint64_t addr;
+		uint32_t len;
+		uint64_t save_ptr; /* save ubcore address for second ioctl */
+	} out;
+};
+
+struct ubcore_cmd_show_res {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+		uint32_t type;
+		uint32_t key;
+		uint32_t key_cnt;
 	} in;
 	struct {
 		uint64_t addr;
