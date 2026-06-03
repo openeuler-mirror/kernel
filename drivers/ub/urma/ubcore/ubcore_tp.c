@@ -20,6 +20,7 @@
 #include <linux/inetdevice.h>
 #include <linux/list.h>
 #include <ub/urma/ubcore_types.h>
+#include "ub/urma/ubcore_perf.h"
 #include "ubcore_tp.h"
 #include "ubcore_priv.h"
 #include "ubcore_log.h"
@@ -507,6 +508,7 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 		return -EINVAL;
 	}
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_UB_GET_TP_LIST);
 	ubcore_set_tpid_list_key(dev, cfg, &tpid_list_key);
 	req_total_tp_cnt = *tp_cnt;
 	tpid_list = ubcore_ht_find_get_tpid_list(dev, &tpid_list_key);
@@ -518,8 +520,10 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 			ubcore_tpid_list_kref_put(tpid_list);
 			if (ret != 0) {
 				ubcore_log_err("put tp list from tpid list failed.\n");
+				UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
 				return ret;
 			}
+			UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
 			return 0;
 		}
 		req_total_tp_cnt += err_cnt + tpid_list->ucnt;
@@ -531,6 +535,7 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 	tpid_list = ubcore_create_tpid_list(dev, &tpid_list_key);
 	if (tpid_list == NULL) {
 		ubcore_log_err("failed to alloc new tpid list.\n");
+		UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
 		return -ENOMEM;
 	}
 
@@ -543,6 +548,7 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 	} else if (ret != 0) {
 		ubcore_log_err("Failed to add tpid_list into hash table.\n");
 		(void)ubcore_free_tpid_list(tpid_list);
+		UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
 		return ret;
 	}
 
@@ -551,6 +557,7 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 get_tp_list_helper:
 	ret = ubcore_get_tp_list_helper(dev, cfg, &req_total_tp_cnt, tpid_list,
 		udata, &tpid_list_key, tp_list, UBCORE_TPID_OWNER_USER_AWARE);
+	UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
 	if (ret != 0) {
 		ubcore_log_err("get tp list helper failed.\n");
 		return ret;
