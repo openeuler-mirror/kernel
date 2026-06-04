@@ -1329,7 +1329,6 @@ static int of_qcom_slim_ngd_register(struct device *parent,
 	const struct of_device_id *match;
 	struct device_node *node;
 	u32 id;
-	int ret;
 
 	match = of_match_node(qcom_slim_ngd_dt_match, parent->of_node);
 	data = match->data;
@@ -1346,18 +1345,9 @@ static int of_qcom_slim_ngd_register(struct device *parent,
 			kfree(ngd);
 			return -ENOMEM;
 		}
-
-		ret = device_set_driver_override(&ngd->pdev->dev,
-						 QCOM_SLIM_NGD_DRV_NAME);
-		if (ret) {
-			platform_device_put(ngd->pdev);
-			kfree(ngd);
-			of_node_put(node);
-			return ret;
-		}
-
 		ngd->id = id;
 		ngd->pdev->dev.parent = parent;
+		ngd->pdev->driver_override = QCOM_SLIM_NGD_DRV_NAME;
 		ngd->pdev->dev.of_node = node;
 		ctrl->ngd = ngd;
 		platform_set_drvdata(ngd->pdev, ctrl);
