@@ -132,7 +132,7 @@ static uint64_t udma_k_pin_pages(struct udma_dev *dev, struct udma_umem *umem,
 
 	ret = sg_alloc_table(&umem->append.sgt, (unsigned int)npages, GFP_KERNEL);
 	if (ret) {
-		dev_err(dev->dev, "failed to SG alloc table failed.\n");
+		dev_err(dev->dev, "failed to SG alloc table.\n");
 		return 0;
 	}
 	sg_cur = umem->append.sgt.sgl;
@@ -188,7 +188,7 @@ static struct udma_umem *udma_get_target_umem(struct udma_umem_param *param)
 	} else {
 		gup_flags = (param->flag.bs.writable == 1) ? FOLL_WRITE : 0;
 		page_list = (struct page **)__get_free_page(GFP_KERNEL);
-		if (page_list == 0) {
+		if (!page_list) {
 			ret = -ENOMEM;
 			goto umem_kfree;
 		}
