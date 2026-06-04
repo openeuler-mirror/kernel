@@ -48,7 +48,6 @@ static int sentry_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr 
 #define MAX_JETTY_ID			1023
 #define JETTY_ID_MAX_LEN		6
 #define UVS_IPV4_MAP_IPV6_PREFIX	0x0000ffff
-#define URMA_CNT_MAX_NUM		(1U << 20)
 #define HB_WAIT_ACK_SLEEP_MS		3000
 #define HEARTBEAT_INTERVAL_MS		60000  /* 60s */
 #define URMA_LOCK			1
@@ -120,8 +119,6 @@ struct sentry_ubcore_resource {
 	uint32_t primary_eid_index;
 
 	/* cnt for retry */
-	atomic_t send_cnt[MAX_NODE_NUM];
-	atomic_t remote_recv_cnt[MAX_NODE_NUM];
 	atomic_t urma_hb_ack_list[MAX_NODE_NUM];  /* 0 = down, 1 = up */
 };
 
@@ -233,22 +230,22 @@ static int compare_ubcore_eid(const union ubcore_eid src_eid,
  */
 static int unimport_tjetty(int die_index)
 {
-        int i;
+	int i;
 
-        if (die_index < 0 || die_index >= MAX_DIE_NUM) {
-                pr_err("invalid die_index (%d), range is [0, %d]\n",
-                       die_index, MAX_DIE_NUM - 1);
-                return -EINVAL;
-        }
+	if (die_index < 0 || die_index >= MAX_DIE_NUM) {
+		pr_err("invalid die_index (%d), range is [0, %d]\n",
+		       die_index, MAX_DIE_NUM - 1);
+		return -EINVAL;
+	}
 
-        for (i = 0; i < MAX_NODE_NUM; i++) {
-                if (sentry_urma_dev[die_index].tjetty[i]) {
-                        ubcore_unimport_jetty(sentry_urma_dev[die_index].tjetty[i]);
-                        sentry_urma_dev[die_index].tjetty[i] = NULL;
-                }
-        }
+	for (i = 0; i < MAX_NODE_NUM; i++) {
+		if (sentry_urma_dev[die_index].tjetty[i]) {
+			ubcore_unimport_jetty(sentry_urma_dev[die_index].tjetty[i]);
+			sentry_urma_dev[die_index].tjetty[i] = NULL;
+		}
+	}
 
-        return 0;
+	return 0;
 }
 
 
@@ -543,8 +540,6 @@ int str_to_eid(const char *eid_str, union ubcore_eid *eid)
 	}
 
 	if (in6_pton(eid_str, EID_MAX_LEN, (u8 *)eid, '\0', NULL) > 0) {
-		pr_info("parse eid success, config eid: %llx, %x, %x\n",
-			eid->in4.reserved, eid->in4.prefix, eid->in4.addr);
 		return 0;
 	}
 
@@ -606,7 +601,6 @@ int ubcore_eid_to_str_full(const union ubcore_eid *eid, char *dst_eid_str, int l
 		return -EINVAL;
 	}
 
-	pr_info("%s: Covert ubcore eid to full string: %s\n", __func__, dst_eid_str);
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_eid_to_str_full);
@@ -1116,10 +1110,6 @@ static struct ubcore_device *match_dev_by_local_eid(const union ubcore_eid *eid,
 		eid_list = eid_info;
 		/* One device may have multiple EIDs */
 		for (i = 0; i < cnt; i++) {
-			pr_info("eid_info->eid: %llx, %x, %x, try to match\n",
-				eid_info->eid.in4.reserved, eid_info->eid.in4.prefix,
-				eid_info->eid.in4.addr);
-
 			if (compare_ubcore_eid(eid_info->eid, *eid) == 0) {
 				pr_info("Match device %s, use it to send/recv data\n",
 					dev_node->dev->dev_name);
@@ -1451,8 +1441,10 @@ static ssize_t proc_client_info_write(struct file *file, const char __user *user
 	/*
 	 * Parse server EID part and client jetty ID part
 	 * ((39 + 1) * 32 - 1) * 2 + 1 = 2559
+	 * client_jetty_id_part buffer size is JETTY_ID_MAX_LEN (6),
+	 * so use %5[^\n] to read max 5 chars + null terminator = 6
 	 */
-	ret = sscanf(kbuf, "%2559[^ ] %6[^\n]%n",
+	ret = sscanf(kbuf, "%2559[^ ] %5[^\n]%n",
 		     server_buf_part,
 		     client_jetty_id_part,
 		     &n);
@@ -1786,7 +1778,6 @@ static int sentry_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr 
 			   int die_index)
 {
 	int cnt;
-	int k;
 
 	if (die_index < 0 || die_index >= MAX_DIE_NUM) {
 		pr_err("invalid die_index (%d), range is [0, %d]\n",
@@ -1796,22 +1787,6 @@ static int sentry_poll_jfc(struct ubcore_jfc *jfc, int cr_cnt, struct ubcore_cr 
 
 	cnt = ubcore_poll_jfc(jfc, cr_cnt, cr);
 	pr_info("ubcore_poll_jfc cr.status is %d, cnt is %d\n", cr->status, cnt);
-	if (cnt <= 0)
-		return cnt;
-
-	/* Process successful completions */
-	for (k = 0; k < cnt; k++) {
-		int idx = -1;
-		int tmp_die_index = die_index;
-
-		match_index_by_remote_ub_eid(cr[k].remote_id.eid, &idx, &tmp_die_index);
-		if (idx >= 0)
-			atomic_inc(&sentry_urma_dev[tmp_die_index].remote_recv_cnt[idx]);
-		else
-			pr_warn("%s: cr[%d].status is %d, match index failed\n",
-					__func__, k, cr[k].status);
-	}
-
 	return cnt;
 }
 
@@ -1834,15 +1809,18 @@ static int update_remote_recv_cnt(int die_index)
 		return -EINVAL;
 	}
 
-	if (!sentry_urma_ctx.is_panic_mode && !mutex_trylock(&sentry_urma_mutex))
+	if (!sentry_urma_ctx.is_panic_mode && !mutex_trylock(&sentry_urma_mutex)) {
+		pr_warn("%s: lock busy, skip polling jfc, die index is %d\n",
+			__func__, die_index);
 		return -EBUSY;
+	}
 
 	memset(sentry_urma_ctx.update_recv_cnt_cr, 0, sizeof(struct ubcore_cr) * MAX_NODE_NUM);
 	cnt = sentry_poll_jfc(sentry_urma_dev[die_index].sender_jfc, MAX_NODE_NUM, sentry_urma_ctx.update_recv_cnt_cr, die_index);
 	urma_mutex_lock_op(URMA_UNLOCK);
 
 	if (cnt < 0) {
-		pr_err("update_remote_recv_cnt: poll sender_jfc error, ret %d\n", cnt);
+		pr_err("%s: poll sender_jfc error, ret %d\n", __func__, cnt);
 		return -EFAULT;
 	}
 
@@ -1885,16 +1863,16 @@ static int rebuild_tjetty(int idx, int die_index)
 
 	if (!sentry_urma_ctx.is_panic_mode &&
 	    !mutex_trylock(&sentry_urma_mutex)) {
-		pr_debug("rebuild_tjetty: lock busy, skipping node %d, eid %s\n",
-			 idx, sentry_urma_dev[die_index].server_eid_array[idx]);
+		pr_warn("%s: lock busy, skipping node %d, eid %s\n",
+			 __func__, idx, sentry_urma_dev[die_index].server_eid_array[idx]);
 		return -EBUSY;
 	}
 
 	tjetty_tmp = create_tjetty(&cfg, idx, die_index);
 	if (IS_ERR_OR_NULL(tjetty_tmp)) {
 		urma_mutex_lock_op(URMA_UNLOCK);
-		pr_err("rebuild_tjetty: tjetty[%d] ubcore_import_jetty_ex err, eid %s\n",
-		       idx, sentry_urma_dev[die_index].server_eid_array[idx]);
+		pr_err("%s: tjetty[%d] ubcore_import_jetty_ex err, eid %s\n",
+		       __func__, idx, sentry_urma_dev[die_index].server_eid_array[idx]);
 		return -EFAULT;
 	}
 
@@ -1903,10 +1881,6 @@ static int rebuild_tjetty(int idx, int die_index)
 		tjetty_to_clear = sentry_urma_dev[die_index].tjetty[idx];
 
 	sentry_urma_dev[die_index].tjetty[idx] = tjetty_tmp;
-
-	/* Reset counters */
-	atomic_set(&sentry_urma_dev[die_index].send_cnt[idx], 0);
-	atomic_set(&sentry_urma_dev[die_index].remote_recv_cnt[idx], 0);
 
 	/* Clean up old tjetty */
 	if (tjetty_to_clear)
@@ -1921,49 +1895,6 @@ static int rebuild_tjetty(int idx, int die_index)
 	return 0;
 }
 
-/**
- * check_and_rebuild_single_tjetty - Check and rebuild tjetty if needed
- * @idx: Node index to check
- * @die_index: Die index for resource access
- *
- * Return: 0 on success, negative error code on failure or if rebuild not needed
- *
- * This function checks the send and receive counters for a specific node and
- * rebuilds the tjetty if the difference exceeds the rebuild threshold.
- * It also handles counter overflow by resetting when they reach maximum values.
- */
-static int check_and_rebuild_single_tjetty(int idx, int die_index)
-{
-	int ret = 0;
-	int scnt, rcnt;
-
-	if (die_index < 0 || die_index >= MAX_DIE_NUM) {
-		pr_err("invalid die_index (%d), range is [0, %d]\n",
-		       die_index, MAX_DIE_NUM - 1);
-		return -EINVAL;
-	}
-
-	scnt = atomic_read(&sentry_urma_dev[die_index].send_cnt[idx]);
-	rcnt = atomic_read(&sentry_urma_dev[die_index].remote_recv_cnt[idx]);
-
-	/* Check if rebuild threshold is exceeded */
-	if (scnt - rcnt > URMA_REBUILD_THRESHOLD) {
-		pr_info("tjetty[%d] %s check failed: send_cnt=%d, remote_recv_cnt=%d, rebuild\n",
-			idx, sentry_urma_dev[die_index].server_eid_array[idx], scnt, rcnt);
-		/* Reset counters and rebuild */
-		atomic_set(&sentry_urma_dev[die_index].send_cnt[idx], 0);
-		atomic_set(&sentry_urma_dev[die_index].remote_recv_cnt[idx], 0);
-		ret = rebuild_tjetty(idx, die_index);
-	}
-
-	/* Handle counter overflow */
-	if (scnt > URMA_CNT_MAX_NUM && rcnt > URMA_CNT_MAX_NUM) {
-		atomic_set(&sentry_urma_dev[die_index].send_cnt[idx], 0);
-		atomic_set(&sentry_urma_dev[die_index].remote_recv_cnt[idx], 0);
-	}
-
-	return ret;
-}
 
 /**
  * sentry_post_jetty_send_wr - Post a send work request to a jetty
@@ -1992,8 +1923,11 @@ int sentry_post_jetty_send_wr(const struct sentry_binary_msg *buf, int tjetty_id
 
 	if (!sentry_urma_ctx.is_panic_mode &&
 	    !mutex_trylock(&sentry_urma_mutex)) {
-		pr_debug("%s: lock busy, skipping %d\n", __func__, tjetty_idx);
-		return 0;
+		pr_warn("%s: lock busy, skip sending msg to %s, msg type is %d\n",
+			__func__,
+			sentry_urma_dev[die_index].server_eid_array[tjetty_idx],
+			buf->type);
+		return -EBUSY;
 	}
 
 	if (!sentry_urma_dev[die_index].sentry_ubcore_dev) {
@@ -2011,6 +1945,10 @@ int sentry_post_jetty_send_wr(const struct sentry_binary_msg *buf, int tjetty_id
 	}
 
 	if (!tj_i) {
+		pr_err("%s: tjetty is NULL, unable to send msg to %s, msg type is %d\n",
+			__func__,
+			sentry_urma_dev[die_index].server_eid_array[tjetty_idx],
+			buf->type);
 		urma_mutex_lock_op(URMA_UNLOCK);
 		return -ENODEV;
 	}
@@ -2042,14 +1980,11 @@ int sentry_post_jetty_send_wr(const struct sentry_binary_msg *buf, int tjetty_id
 					&sentry_urma_dev[die_index].jfs_wr[tjetty_idx],
 					&bad_wr);
 	if (ret) {
-		pr_err("ubcore_post_jetty_send_wr err, send [%s] msg to %s failed\n",
-				get_msg_type_name(buf->type),
-				sentry_urma_dev[die_index].server_eid_array[tjetty_idx]);
+		pr_err("ubcore_post_jetty_send_wr err, msg dst is %s, type is %d\n",
+			sentry_urma_dev[die_index].server_eid_array[tjetty_idx], buf->type);
 	} else {
-		atomic_inc(&sentry_urma_dev[die_index].send_cnt[tjetty_idx]);
-		pr_info("ubcore_post_jetty_send_wr success, send [%s] msg to %s success\n",
-				get_msg_type_name(buf->type),
-				sentry_urma_dev[die_index].server_eid_array[tjetty_idx]);
+		pr_info("ubcore_post_jetty_send_wr success, msg dst is %s, type is %d\n",
+			sentry_urma_dev[die_index].server_eid_array[tjetty_idx], buf->type);
 	}
 
 	urma_mutex_lock_op(URMA_UNLOCK);
@@ -2081,23 +2016,19 @@ static int urma_send_to_all_nodes(const struct sentry_binary_msg *buf, int die_i
 	}
 
 	/* Update remote receive counters */
-	if (update_remote_recv_cnt(die_index))
+	if (update_remote_recv_cnt(die_index)) {
+		pr_err("%s: skip broadcasting messages to all nodes, msg type is %d",
+			__func__, buf->type);
 		return -EFAULT;
+	}
 
 	/* sentry_urma_dev[die_index].server_eid[0] is local_eid */
 	for (i = 1; i < sentry_urma_dev[die_index].server_eid_valid_num; i++) {
 		int ret = 0;
 
-		/* Check and rebuild tjetty if needed (skip in panic mode) */
-		if (!sentry_urma_ctx.is_panic_mode)
-			ret = check_and_rebuild_single_tjetty(i, die_index);
-
-		if (!ret) {
-			pr_info("start to send msg to [%s]\n",
-				sentry_urma_dev[die_index].server_eid_array[i]);
-			ret = sentry_post_jetty_send_wr(buf, i, die_index);
-		}
-
+		pr_info("start to send msg to [%s]\n",
+			sentry_urma_dev[die_index].server_eid_array[i]);
+		ret = sentry_post_jetty_send_wr(buf, i, die_index);
 		if (ret == COMM_PARM_NOT_SET)
 			return COMM_PARM_NOT_SET;
 
@@ -2122,7 +2053,6 @@ static int urma_send_to_all_nodes(const struct sentry_binary_msg *buf, int die_i
 static int urma_send_to_given_node(const struct sentry_binary_msg *buf,
 				   const char *dst_eid, int die_index)
 {
-	int cnt = 0;
 	int ret;
 	int node_idx = -1;
 	union ubcore_eid dst_ubcore_eid;
@@ -2139,28 +2069,24 @@ static int urma_send_to_given_node(const struct sentry_binary_msg *buf,
 	/* Find node and die indices */
 	match_index_by_remote_ub_eid(dst_ubcore_eid, &node_idx, &die_index);
 	if (node_idx < 0) {
-		pr_warn("urma_send: msg format invalid, dst eid is %s\n", dst_eid);
-		return 0;
+		pr_err("urma_send: msg format invalid, dst eid is %s\n", dst_eid);
+		return -EINVAL;
 	}
 
 	/* Update remote receive counters */
 	ret = update_remote_recv_cnt(die_index);
-	if (ret)
+	if (ret) {
+		pr_err("%s: skip send messages to %s, msg type is %d",
+			__func__, dst_eid, buf->type);
 		return ret;
-
-	/* Check and rebuild tjetty if needed (skip in panic mode) */
-	if (!sentry_urma_ctx.is_panic_mode)
-		ret = check_and_rebuild_single_tjetty(node_idx, die_index);
-
-	if (!ret) {
-		pr_info("start to send msg to [%s]\n", dst_eid);
-		ret = sentry_post_jetty_send_wr(buf, node_idx, die_index);
 	}
 
+	pr_info("start to send msg to [%s]\n", dst_eid);
+	ret = sentry_post_jetty_send_wr(buf, node_idx, die_index);
 	if (!ret)
-		cnt++;
+		return URMA_ACK_SUCCESS;
 
-	return cnt;
+	return ret;
 }
 
 /**
@@ -2214,6 +2140,7 @@ int urma_recv(struct sentry_binary_msg *buf_arr, size_t array_size)
 	int ret;
 	int valid_msg_num = 0;
 	int die_index;
+	union ubcore_eid remote_eid;
 
 	if (!buf_arr)
 		return -EINVAL;
@@ -2231,6 +2158,7 @@ int urma_recv(struct sentry_binary_msg *buf_arr, size_t array_size)
 	/* Check each die for incoming messages */
 	for (die_index = 0; die_index < sentry_urma_ctx.local_eid_num_configured; die_index++) {
 		int cnt;
+
 		memset(sentry_urma_ctx.urma_recv_cr, 0, sizeof(struct ubcore_cr) * MAX_NODE_NUM);
 
 		if (!sentry_urma_ctx.is_panic_mode &&
@@ -2266,23 +2194,22 @@ int urma_recv(struct sentry_binary_msg *buf_arr, size_t array_size)
 			/* Match remote EID to node index */
 			match_index_by_remote_ub_eid(sentry_urma_ctx.urma_recv_cr[i].remote_id.eid, &node_idx, &tmp_die_index);
 			if (node_idx < 0) {
-				pr_warn("%s: cr[%d] eid (%llx, %x, %x) not matched\n",
-					__func__,
-					i,
-					sentry_urma_ctx.urma_recv_cr[i].remote_id.eid.in4.reserved,
-					sentry_urma_ctx.urma_recv_cr[i].remote_id.eid.in4.prefix,
-					sentry_urma_ctx.urma_recv_cr[i].remote_id.eid.in4.addr);
+				char remote_eid_string[EID_MAX_LEN] = {};
+
+				remote_eid = sentry_urma_ctx.urma_recv_cr[i].remote_id.eid;
+				ubcore_eid_to_str_full(&remote_eid, remote_eid_string, EID_MAX_LEN);
+				pr_warn("%s: cr[%d] remote eid (%s) not matched\n",
+						__func__, i, remote_eid_string);
 				continue;
 			}
 
 			/* Check if binary message */
 			binary_msg = (struct sentry_binary_msg *)
 				sentry_urma_ctx.urma_recv_cr[i].user_ctx;
-			pr_info("%s: cr[%d] get msg from node[%d] eid=%s\n",
+			pr_info("%s: get msg from %s, msg type is %d\n",
 				__func__,
-				i,
-				node_idx,
-				sentry_urma_dev[tmp_die_index].server_eid_array[node_idx]);
+				sentry_urma_dev[tmp_die_index].server_eid_array[node_idx],
+				binary_msg->type);
 
 			/* Handle different message types */
 			if (binary_msg->type == SMH_MESSAGE_HEARTBEAT) {

@@ -164,7 +164,7 @@ int smh_message_send(struct sentry_msg_helper_msg *msg, bool ack)
 	handle->msg = *msg;
 	handle->ack = ack;
 
-	RM_LOG_INFO("smh_message_send: %llu start\n", msg->msgid);
+	RM_LOG_INFO("%s: %llu start\n", __func__, msg->msgid);
 
 	ret = kfifo_in_spinlocked(&msg_ctx.msgbuf_send, &handle,
 				  sizeof(handle), &msg_ctx.msgbuf_send_lock);
@@ -179,7 +179,7 @@ int smh_message_send(struct sentry_msg_helper_msg *msg, bool ack)
 	if (waitqueue_active(&msg_ctx.user_wq))
 		wake_up(&msg_ctx.user_wq);
 
-	RM_LOG_INFO("smh_message_send: %llu end\n", msg->msgid);
+	RM_LOG_INFO("%s: %llu end\n", __func__, msg->msgid);
 
 	return 0;
 }
@@ -208,7 +208,7 @@ ssize_t smh_message_get(void __user *buf)
 					   sizeof(handle), &msg_ctx.msgbuf_send_lock);
 		if (ret) {
 			if (check_msg_is_timeout(&handle->msg)) {
-				RM_LOG_INFO("smh_message_get: %llu timeout\n", handle->msg.msgid);
+				RM_LOG_INFO("%s: %llu timeout\n", __func__, handle->msg.msgid);
 				kfree(handle);
 				handle = NULL;
 				continue;
@@ -230,7 +230,7 @@ ssize_t smh_message_get(void __user *buf)
 	if (!handle)
 		return -ENOMSG;
 
-	RM_LOG_INFO("smh_message_get: get msg, msgid is %llu\n", handle->msg.msgid);
+	RM_LOG_INFO("%s: get msg, msgid is %llu\n", __func__, handle->msg.msgid);
 
 	ret = copy_to_user(buf, &handle->msg, sizeof(handle->msg));
 	if (ret) {
@@ -277,15 +277,15 @@ int smh_message_ack(struct sentry_msg_helper_msg *msg)
 	struct smh_msg_handler *handle;
 	bool found = false;
 
-	RM_LOG_INFO("smh_message_ack: %llu\n", msg->msgid);
+	RM_LOG_INFO("%s: %llu\n", __func__, msg->msgid);
 
 	FIND_AND_REMOVE_TIMEOUT_FROM_LIST(handle, &msg_ctx.msgbuf_ack_lock,
 					  &msg_ctx.msgbuf_ack, ack_list,
 					  msg->msgid, found);
 
 	if (!found) {
-		RM_LOG_ERR("smh_message_ack: %llu not found, maybe this message is not exist or has been timeout\n",
-		       msg->msgid);
+		RM_LOG_ERR("%s: %llu not found, maybe this msg is not exist or has been timeout\n",
+			__func__, msg->msgid);
 		return -ENOENT;
 	}
 
