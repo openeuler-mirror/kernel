@@ -543,8 +543,6 @@ int str_to_eid(const char *eid_str, union ubcore_eid *eid)
 	}
 
 	if (in6_pton(eid_str, EID_MAX_LEN, (u8 *)eid, '\0', NULL) > 0) {
-		pr_info("parse eid success, config eid: %llx, %x, %x\n",
-			eid->in4.reserved, eid->in4.prefix, eid->in4.addr);
 		return 0;
 	}
 
@@ -1887,16 +1885,16 @@ static int rebuild_tjetty(int idx, int die_index)
 
 	if (!sentry_urma_ctx.is_panic_mode &&
 	    !mutex_trylock(&sentry_urma_mutex)) {
-		pr_debug("rebuild_tjetty: lock busy, skipping node %d, eid %s\n",
-			 idx, sentry_urma_dev[die_index].server_eid_array[idx]);
+		pr_warn("%s: lock busy, skipping node %d, eid %s\n",
+			 __func__, idx, sentry_urma_dev[die_index].server_eid_array[idx]);
 		return -EBUSY;
 	}
 
 	tjetty_tmp = create_tjetty(&cfg, idx, die_index);
 	if (IS_ERR_OR_NULL(tjetty_tmp)) {
 		urma_mutex_lock_op(URMA_UNLOCK);
-		pr_err("rebuild_tjetty: tjetty[%d] ubcore_import_jetty_ex err, eid %s\n",
-		       idx, sentry_urma_dev[die_index].server_eid_array[idx]);
+		pr_err("%s: tjetty[%d] ubcore_import_jetty_ex err, eid %s\n",
+		       __func__, idx, sentry_urma_dev[die_index].server_eid_array[idx]);
 		return -EFAULT;
 	}
 
@@ -1994,7 +1992,7 @@ int sentry_post_jetty_send_wr(const struct sentry_binary_msg *buf, int tjetty_id
 
 	if (!sentry_urma_ctx.is_panic_mode &&
 	    !mutex_trylock(&sentry_urma_mutex)) {
-		pr_debug("%s: lock busy, skipping %d\n", __func__, tjetty_idx);
+		pr_warn("%s: lock busy, skipping %d\n", __func__, tjetty_idx);
 		return 0;
 	}
 
@@ -2044,14 +2042,10 @@ int sentry_post_jetty_send_wr(const struct sentry_binary_msg *buf, int tjetty_id
 					&sentry_urma_dev[die_index].jfs_wr[tjetty_idx],
 					&bad_wr);
 	if (ret) {
-		pr_err("ubcore_post_jetty_send_wr err, send [%s] msg to %s failed\n",
-				get_msg_type_name(buf->type),
+		pr_err("ubcore_post_jetty_send_wr err, send msg to %s failed\n",
 				sentry_urma_dev[die_index].server_eid_array[tjetty_idx]);
 	} else {
 		atomic_inc(&sentry_urma_dev[die_index].send_cnt[tjetty_idx]);
-		pr_info("ubcore_post_jetty_send_wr success, send [%s] msg to %s success\n",
-				get_msg_type_name(buf->type),
-				sentry_urma_dev[die_index].server_eid_array[tjetty_idx]);
 	}
 
 	urma_mutex_lock_op(URMA_UNLOCK);
@@ -2280,10 +2274,8 @@ int urma_recv(struct sentry_binary_msg *buf_arr, size_t array_size)
 			/* Check if binary message */
 			binary_msg = (struct sentry_binary_msg *)
 				sentry_urma_ctx.urma_recv_cr[i].user_ctx;
-			pr_info("%s: cr[%d] get msg from node[%d] eid=%s\n",
+			pr_info("%s: get msg from %s\n",
 				__func__,
-				i,
-				node_idx,
 				sentry_urma_dev[tmp_die_index].server_eid_array[node_idx]);
 
 			/* Handle different message types */
