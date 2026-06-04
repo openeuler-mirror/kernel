@@ -1067,6 +1067,10 @@ static int tegra_slink_probe(struct platform_device *pdev)
 	}
 
 	spi_irq = platform_get_irq(pdev, 0);
+	if (spi_irq < 0) {
+		ret = spi_irq;
+		goto exit_clk_disable;
+	}
 	tspi->irq = spi_irq;
 	ret = request_threaded_irq(tspi->irq, tegra_slink_isr,
 			tegra_slink_isr_thread, IRQF_ONESHOT,
