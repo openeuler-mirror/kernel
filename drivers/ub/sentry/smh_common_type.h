@@ -30,8 +30,9 @@
 #define COMM_PARM_NOT_SET (-2)
 #define ENABLE_VALUE_MAX_LEN 4 // 'off' + '\0'
 
-#define URMA_REBUILD_THRESHOLD 3
 #define URMA_ACK_RETRY_NUM     10
+// return value for urma_send(ack) msg
+#define URMA_ACK_SUCCESS 1
 
 #define PROC_FILE_PERMISSION 0600
 #define PROC_DIR_PERMISSION 0550
@@ -135,35 +136,5 @@ static inline int sentry_create_proc_file(const char *name, struct proc_dir_entr
 		ret = -ENOMEM;
     }
     return ret;
-}
-
-/**
- * get_msg_type_name - Convert message type enum to human-readable string
- * @type: The message type enum value (sentry_msg_helper_msg_type)
- *
- * Returns a static string describing the message type. Useful for debugging
- * and logging purposes.
- *
- * Return: Pointer to a constant C string representing the message type.
- *         Returns "unknown" for unrecognized type values.
- */
-static inline char *get_msg_type_name(enum sentry_msg_helper_msg_type type)
-{
-	switch (type) {
-	case SMH_MESSAGE_PANIC:
-		return "panic";
-	case SMH_MESSAGE_KERNEL_REBOOT:
-		return "kernel reboot";
-	case SMH_MESSAGE_PANIC_ACK:
-		return "panic ack";
-	case SMH_MESSAGE_KERNEL_REBOOT_ACK:
-		return "kernel reboot ack";
-	case SMH_MESSAGE_HEARTBEAT:
-		return "heartbeat";
-	case SMH_MESSAGE_HEARTBEAT_ACK:
-		return "heartbeat ack";
-	default:
-		return "unknown";
-	}
 }
 #endif
