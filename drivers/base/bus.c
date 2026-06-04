@@ -457,41 +457,6 @@ int bus_for_each_drv(struct bus_type *bus, struct device_driver *start,
 }
 EXPORT_SYMBOL_GPL(bus_for_each_drv);
 
-static ssize_t driver_override_store(struct device *dev,
-				     struct device_attribute *attr,
-				     const char *buf, size_t count)
-{
-	int ret;
-
-	ret = __device_set_driver_override(dev, buf, count);
-	if (ret)
-		return ret;
-
-	return count;
-}
-
-static ssize_t driver_override_show(struct device *dev,
-				    struct device_attribute *attr, char *buf)
-{
-	int ret;
-
-	spin_lock(&dev->driver_override.lock);
-	ret = sysfs_emit(buf, "%s\n", dev->driver_override.name);
-	spin_unlock(&dev->driver_override.lock);
-
-	return ret;
-}
-static DEVICE_ATTR_RW(driver_override);
-
-static struct attribute *driver_override_dev_attrs[] = {
-	&dev_attr_driver_override.attr,
-	NULL,
-};
-
-static const struct attribute_group driver_override_dev_group = {
-	.attrs = driver_override_dev_attrs,
-};
-
 /**
  * bus_add_device - add device to bus
  * @dev: device being added
@@ -510,17 +475,10 @@ int bus_add_device(struct device *dev)
 		error = device_add_groups(dev, bus->dev_groups);
 		if (error)
 			goto out_put;
-
-		if (dev->bus->driver_override) {
-			error = device_add_group(dev, &driver_override_dev_group);
-			if (error)
-				goto out_groups;
-		}
-
 		error = sysfs_create_link(&bus->p->devices_kset->kobj,
 						&dev->kobj, dev_name(dev));
 		if (error)
-			goto out_override;
+			goto out_groups;
 		error = sysfs_create_link(&dev->kobj,
 				&dev->bus->p->subsys.kobj, "subsystem");
 		if (error)
@@ -531,9 +489,6 @@ int bus_add_device(struct device *dev)
 
 out_subsys:
 	sysfs_remove_link(&bus->p->devices_kset->kobj, dev_name(dev));
-out_override:
-	if (dev->bus->driver_override)
-		device_remove_group(dev, &driver_override_dev_group);
 out_groups:
 	device_remove_groups(dev, bus->dev_groups);
 out_put:
@@ -592,8 +547,6 @@ void bus_remove_device(struct device *dev)
 	sysfs_remove_link(&dev->kobj, "subsystem");
 	sysfs_remove_link(&dev->bus->p->devices_kset->kobj,
 			  dev_name(dev));
-	if (dev->bus->driver_override)
-		device_remove_group(dev, &driver_override_dev_group);
 	device_remove_groups(dev, dev->bus->dev_groups);
 	if (klist_node_attached(&dev->p->knode_bus))
 		klist_del(&dev->p->knode_bus);

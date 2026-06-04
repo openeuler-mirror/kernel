@@ -1069,8 +1069,6 @@ static void device_release(struct kobject *kobj)
 	 */
 	devres_release_all(dev);
 
-	kfree(dev->driver_override.name);
-
 	if (dev->release)
 		dev->release(dev);
 	else if (dev->type && dev->type->release)
@@ -1684,7 +1682,6 @@ void device_initialize(struct device *dev)
 	kobject_init(&dev->kobj, &device_ktype);
 	INIT_LIST_HEAD(&dev->dma_pools);
 	mutex_init(&dev->mutex);
-	spin_lock_init(&dev->driver_override.lock);
 	lockdep_set_novalidate_class(&dev->mutex);
 	spin_lock_init(&dev->devres_lock);
 	INIT_LIST_HEAD(&dev->devres_head);
