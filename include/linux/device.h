@@ -101,9 +101,6 @@ extern void bus_remove_file(struct bus_type *, struct bus_attribute *);
  * @p:		The private data of the driver core, only the driver core can
  *		touch this.
  * @lock_key:	Lock class key for use by the lock validator
- * @driver_override:	Set to true if this bus supports the driver_override
- *			mechanism, which allows userspace to force a specific
- *			driver to bind to a device via a sysfs attribute.
  * @need_parent_lock:	When probing or removing a device on this bus, the
  *			device core should lock the device's parent.
  *
@@ -147,7 +144,6 @@ struct bus_type {
 	struct subsys_private *p;
 	struct lock_class_key lock_key;
 
-	bool driver_override;
 	bool need_parent_lock;
 };
 
@@ -929,8 +925,6 @@ struct dev_links_info {
  * 		on.  This shrinks the "Board Support Packages" (BSPs) and
  * 		minimizes board-specific #ifdefs in drivers.
  * @driver_data: Private pointer for driver specific info.
- * @driver_override: Driver name to force a match.  Do not touch directly; use
- *		     device_set_driver_override() instead.
  * @links:	Links to suppliers and consumers of this device.
  * @power:	For device power management.
  *		See Documentation/driver-api/pm/devices.rst for details.
@@ -1005,10 +999,6 @@ struct device {
 					   core doesn't touch it */
 	void		*driver_data;	/* Driver data, set and get with
 					   dev_set/get_drvdata */
-	struct {
-		const char	*name;
-		spinlock_t	lock;
-	} driver_override;
 	struct dev_links_info	links;
 	struct dev_pm_info	power;
 	struct dev_pm_domain	*pm_domain;
@@ -1125,66 +1115,6 @@ struct rcu_device {
 static inline struct device *kobj_to_dev(struct kobject *kobj)
 {
 	return container_of(kobj, struct device, kobj);
-}
-
-int __device_set_driver_override(struct device *dev, const char *s, size_t len);
-
-/**
-+ * device_set_driver_override() - Helper to set or clear driver override.
-+ * @dev: Device to change
-+ * @s: NUL-terminated string, new driver name to force a match, pass empty
-+ *     string to clear it ("" or "\n", where the latter is only for sysfs
-+ *     interface).
-+ *
-+ * Helper to set or clear driver override of a device.
-+ *
-+ * Returns: 0 on success or a negative error code on failure.
-+ */
-static inline int device_set_driver_override(struct device *dev, const char *s)
-{
-	return __device_set_driver_override(dev, s, s ? strlen(s) : 0);
-}
-
-/**
-+ * device_has_driver_override() - Check if a driver override has been set.
-+ * @dev: device to check
-+ *
-+ * Returns true if a driver override has been set for this device.
-+ */
-static inline bool device_has_driver_override(struct device *dev)
-{
-	int ret;
-
-	spin_lock(&dev->driver_override.lock);
-	ret = !!dev->driver_override.name;
-	spin_unlock(&dev->driver_override.lock);
-
-	return ret;
-}
-
-/**
-+ * device_match_driver_override() - Match a driver against the device's driver_override.
-+ * @dev: device to check
-+ * @drv: driver to match against
-+ *
-+ * Returns > 0 if a driver override is set and matches the given driver, 0 if a
-+ * driver override is set but does not match, or < 0 if a driver override is not
-+ * set at all.
-+ */
-static inline int device_match_driver_override(struct device *dev, 
-					      const struct device_driver *drv)
-{
-	int ret;
-
-	spin_lock(&dev->driver_override.lock);
-	if (dev->driver_override.name) {
-		ret = !strcmp(dev->driver_override.name, drv->name);
-		spin_unlock(&dev->driver_override.lock);
-		return ret;
-	}
-	spin_unlock(&dev->driver_override.lock);
-
-	return -1;
 }
 
 /* Get the wakeup routines, which depend on struct device */
