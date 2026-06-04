@@ -136,34 +136,4 @@ static inline int sentry_create_proc_file(const char *name, struct proc_dir_entr
     }
     return ret;
 }
-
-/**
- * get_msg_type_name - Convert message type enum to human-readable string
- * @type: The message type enum value (sentry_msg_helper_msg_type)
- *
- * Returns a static string describing the message type. Useful for debugging
- * and logging purposes.
- *
- * Return: Pointer to a constant C string representing the message type.
- *         Returns "unknown" for unrecognized type values.
- */
-static inline char *get_msg_type_name(enum sentry_msg_helper_msg_type type)
-{
-	switch (type) {
-	case SMH_MESSAGE_PANIC:
-		return "panic";
-	case SMH_MESSAGE_KERNEL_REBOOT:
-		return "kernel reboot";
-	case SMH_MESSAGE_PANIC_ACK:
-		return "panic ack";
-	case SMH_MESSAGE_KERNEL_REBOOT_ACK:
-		return "kernel reboot ack";
-	case SMH_MESSAGE_HEARTBEAT:
-		return "heartbeat";
-	case SMH_MESSAGE_HEARTBEAT_ACK:
-		return "heartbeat ack";
-	default:
-		return "unknown";
-	}
-}
 #endif

@@ -49,9 +49,6 @@ int send_msg_to_userspace(struct sentry_msg_helper_msg *msg, union ubcore_eid ds
 	int node_idx = -1;
 	int die_index = -1;
 
-	pr_info("send %s message to userspace\n",
-		comm_type == COMM_TYPE_URMA ? "urma" : "uvb");
-
 	if (comm_type == COMM_TYPE_URMA) {
 		match_index_by_remote_ub_eid(dst_eid, &node_idx, &die_index);
 	} else if (comm_type == COMM_TYPE_UVB) {
@@ -143,9 +140,12 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 		binary_ack.eid = dst_ubcore_eid;
 		binary_ack.res = msg->res;
 
-		pr_info("Start to send %s ack msg to %u\n",
-			comm_type == COMM_TYPE_URMA ? "urma" : "uvb",
-			msg->helper_msg_info.remote_info.cna);
+		if (comm_type == COMM_TYPE_URMA)
+			pr_info("Start to send urma ack msg to %s\n",
+					msg->helper_msg_info.remote_info.eid);
+		else
+			pr_info("Start to send uvb ack msg to %u\n",
+					msg->helper_msg_info.remote_info.cna);
 
 		if (comm_type == COMM_TYPE_URMA) {
 			/* Retry URMA acknowledgment sending */

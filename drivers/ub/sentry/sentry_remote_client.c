@@ -187,11 +187,8 @@ int remote_event_handler(enum sentry_msg_helper_msg_type remote_type,
 					break;
 
 				ret = urma_send(&send_data[j], NULL, j);
-				if (ret > 0) {
+				if (ret > 0)
 					urma_send_success = true;
-					pr_info("URMA send binary msg [%d]: SUCCESS. die index %d\n",
-						i + 1, j);
-				}
 			}
 		}
 
@@ -199,10 +196,8 @@ int remote_event_handler(enum sentry_msg_helper_msg_type remote_type,
 		if (sentry_client_ctx.use_uvb) {
 			ret = uvb_send(&send_data[0], -1,
 				       sentry_client_ctx.is_in_panic_status ? true : false);
-			if (ret > 0) {
+			if (ret > 0)
 				uvb_send_success = true;
-				pr_info("UVB send data [%d]: SUCCESS\n", i + 1);
-			}
 		}
 
 		/* Handle send failure */
@@ -257,7 +252,6 @@ do_urma_recv:
 							MAX_NODE_NUM * MAX_DIE_NUM);
 			if (recv_msg_nodes <= 0)
 				goto check_ack_and_sleep;
-			pr_info("urma received %d nodes\n", recv_msg_nodes);
 			for (int l = 0; l < recv_msg_nodes; l++) {
 				struct sentry_msg_helper_msg msg;
 				uint32_t random_id_stub;
@@ -282,9 +276,6 @@ check_ack_and_sleep:
 			pr_info("Receive ack message, stop blocking early\n");
 			break;
 		}
-
-		pr_debug("No ACK for %d polling, wait %d ms\n",
-				i, MILLISECONDS_OF_EACH_MDELAY);
 
 		/* Calculate precise sleep time */
 		code_run_count = read_sysreg(cntpct_el0) - current_count;
@@ -371,10 +362,6 @@ int panic_handler(struct notifier_block *nb, unsigned long code, void *unused)
 	if (check_if_eid_cna_is_set() || check_if_urma_or_uvb_is_ready())
 		return NOTIFY_OK;
 
-	pr_info("panic_timeout_ms %lu, cna [%u], eid [%s]\n",
-		sentry_client_ctx.panic_timeout_ms, g_local_cna,
-		sentry_client_ctx.eid_raw_str);
-
 	set_urma_panic_mode(true);
 	remote_event_handler(SMH_MESSAGE_PANIC, sentry_client_ctx.panic_timeout_ms);
 	pr_info("Panic handler: Blocking finished\n");
@@ -402,10 +389,6 @@ int kernel_reboot_handler(struct notifier_block *nb, unsigned long code, void *u
 
 	if (check_if_eid_cna_is_set() || check_if_urma_or_uvb_is_ready())
 		return NOTIFY_OK;
-
-	pr_info("kernel_reboot_timeout_ms %lu, cna [%u], eid [%s]\n",
-		sentry_client_ctx.kernel_reboot_timeout_ms, g_local_cna,
-		sentry_client_ctx.eid_raw_str);
 
 	set_urma_panic_mode(false);
 	remote_event_handler(SMH_MESSAGE_KERNEL_REBOOT,
