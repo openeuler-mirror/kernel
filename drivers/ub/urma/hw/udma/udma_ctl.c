@@ -200,7 +200,7 @@ static struct ubcore_jfs *udma_create_jfs_ex(struct ubcore_device *ub_dev,
 	if (ret)
 		return NULL;
 
-	jfs = kcalloc(1, sizeof(*jfs), GFP_KERNEL);
+	jfs = kzalloc(sizeof(*jfs), GFP_KERNEL);
 	if (!jfs)
 		return NULL;
 
@@ -686,6 +686,8 @@ struct udma_cqe_aux_info_type_arr cqe_type_arr[14][2] = {
 	{{NULL, MAX_CQE_AUX_INFO_TYPE_NUM}, {NULL, MAX_CQE_AUX_INFO_TYPE_NUM}},
 };
 
+struct udma_cmd_query_cqe_aux_info cqe_aux_info[ARRAY_SIZE(cqe_type_arr)][UDMA_CQE_NUM_PER_TYPE];
+
 static void dump_fill_cqe_err_aux_info(struct udma_dev *dev,
 					 struct udma_cqe_aux_info_out *aux_info_out,
 					 struct udma_cmd_query_cqe_aux_info *info,
@@ -814,31 +816,23 @@ static int send_cmd_query_single_cqe_aux_info(struct udma_dev *udma_dev,
 static int send_cmd_query_all_cqe_aux_info(struct udma_dev *udma_dev,
 					   struct udma_cmd_query_cqe_aux_info *info)
 {
-	struct udma_cmd_query_cqe_aux_info **info_arr;
-	uint32_t k, i, j;
-	int size;
+	uint32_t k;
+	int i, j;
 	int type;
 	int ret;
-
-	size = ARRAY_SIZE(cqe_type_arr) * UDMA_CQE_NUM_PER_TYPE *
-		sizeof(struct udma_cmd_query_cqe_aux_info);
-	info_arr = kzalloc(size, GFP_KERNEL);
-	if (!info_arr)
-		return -ENOMEM;
 
 	for (i = 0; i < ARRAY_SIZE(cqe_type_arr); i++) {
 		for (j = 0; j < UDMA_CQE_NUM_PER_TYPE; j++) {
 			if (cqe_type_arr[i][j].type_list == NULL)
 				continue;
 
-			info_arr[i][j].status = (uint32_t)i;
-			info_arr[i][j].is_client = (uint32_t)j;
+			cqe_aux_info[i][j].status = (uint32_t)i;
+			cqe_aux_info[i][j].is_client = (uint32_t)j;
 
-			ret = send_cmd_query_single_cqe_aux_info(udma_dev, &info_arr[i][j]);
+			ret = send_cmd_query_single_cqe_aux_info(udma_dev, &cqe_aux_info[i][j]);
 			if (ret) {
 				dev_err(udma_dev->dev,
 					"failed to query CQE aux info, ret = %d.\n", ret);
-				kfree(info_arr);
 				return ret;
 			}
 		}
@@ -851,12 +845,11 @@ static int send_cmd_query_all_cqe_aux_info(struct udma_dev *udma_dev,
 
 			for (k = 0; k < cqe_type_arr[i][j].type_len; k++) {
 				type = cqe_type_arr[i][j].type_list[k];
-				info->cqe_aux_info[type] = info_arr[i][j].cqe_aux_info[type];
+				info->cqe_aux_info[type] = cqe_aux_info[i][j].cqe_aux_info[type];
 			}
 		}
 	}
 
-	kfree(info_arr);
 	return ret;
 }
 

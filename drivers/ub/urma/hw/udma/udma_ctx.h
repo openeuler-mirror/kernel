@@ -7,7 +7,6 @@
 #include <linux/ummu_core.h>
 #include <ub/urma/ubcore_api.h>
 #include "udma_dev.h"
-#include "udma_seg_tree.h"
 
 struct udma_context {
 	struct ubcore_ucontext base;
