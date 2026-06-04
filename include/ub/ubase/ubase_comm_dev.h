@@ -11,7 +11,6 @@
 #include <linux/dcbnl.h>
 #include <linux/list.h>
 #include <ub/ubase/ubase_comm_mbx.h>
-#include <ub/ubus/ubus.h>
 
 struct iova_slot;
 
@@ -45,14 +44,14 @@ struct iova_slot;
 #define UBASE_HW_VER_K_0	(2000U)
 #define UBASE_HW_VER_K_1	(2001U)
 
-#define UBASE_URMA_RTP_ROI	UB_URMA_RTP_ROI
-#define UBASE_URMA_RTP_ROT	UB_URMA_RTP_ROT
-#define UBASE_URMA_RTP_ROL	UB_URMA_RTP_ROL
-#define UBASE_URMA_CTP_ROI	UB_URMA_CTP_ROI
-#define UBASE_URMA_CTP_ROT	UB_URMA_CTP_ROT
-#define UBASE_URMA_CTP_ROL	UB_URMA_CTP_ROL
-#define UBASE_URMA_CTP_UNO	UB_URMA_CTP_UNO
-#define UBASE_URMA_UTP_UNO	UB_URMA_UTP_UNO
+#define UBASE_URMA_RTP_ROI	BIT(16)
+#define UBASE_URMA_RTP_ROT	BIT(17)
+#define UBASE_URMA_RTP_ROL	BIT(18)
+#define UBASE_URMA_CTP_ROI	BIT(19)
+#define UBASE_URMA_CTP_ROT	BIT(20)
+#define UBASE_URMA_CTP_ROL	BIT(21)
+#define UBASE_URMA_CTP_UNO	BIT(22)
+#define UBASE_URMA_UTP_UNO	BIT(23)
 
 #define UBASE_DEV_NEED_TO_ACTIVATE	BIT(0)
 #define UBASE_ADEV_PROBE_FAIL		BIT(0)

@@ -10,6 +10,7 @@
 
 #include "unic_debugfs.h"
 #include "unic_dev.h"
+#include "unic_event.h"
 #include "unic_ctx_debugfs.h"
 
 static inline void unic_jfs_ctx_titles_print(struct seq_file *s)
@@ -182,13 +183,6 @@ static void unic_get_rq_jfc_ctx_sw(struct unic_channels *channels,
 	unic_dump_jfc_ctx_info_sw(channel->rq->cq, s, index);
 }
 
-enum unic_dbg_ctx_type {
-	UNIC_DBG_JFS_CTX = 0,
-	UNIC_DBG_JFR_CTX,
-	UNIC_DBG_SQ_JFC_CTX,
-	UNIC_DBG_RQ_JFC_CTX,
-};
-
 static int unic_dbg_dump_ctx_sw(struct seq_file *s, void *data,
 				enum unic_dbg_ctx_type ctx_type)
 {
@@ -257,13 +251,6 @@ int unic_dbg_dump_sq_jfc_ctx_sw(struct seq_file *s, void *data)
 	return unic_dbg_dump_ctx_sw(s, data, UNIC_DBG_SQ_JFC_CTX);
 }
 
-struct unic_ctx_info {
-	u32 start_idx;
-	u32 ctx_size;
-	u8 op;
-	const char *ctx_name;
-};
-
 int unic_dbg_dump_sq_rq_cq_info(struct seq_file *s, void *data)
 {
 	struct unic_dbg_context {
@@ -312,108 +299,6 @@ int unic_dbg_dump_sq_rq_cq_info(struct seq_file *s, void *data)
 out:
 	mutex_unlock(&priv->channels.mutex);
 	return ret;
-}
-
-static int unic_get_ctx_info(struct unic_dev *unic_dev,
-			     enum unic_dbg_ctx_type ctx_type,
-			     struct unic_ctx_info *ctx_info)
-{
-	struct ubase_adev_caps *unic_caps = ubase_get_unic_caps(unic_dev->comdev.adev);
-
-	if (!unic_caps) {
-		unic_err(unic_dev, "failed to get unic caps.\n");
-		return -ENODATA;
-	}
-
-	switch (ctx_type) {
-	case UNIC_DBG_JFS_CTX:
-		ctx_info->start_idx = unic_caps->jfs.start_idx;
-		ctx_info->ctx_size = UBASE_JFS_CTX_SIZE;
-		ctx_info->op = UBASE_MB_QUERY_JFS_CONTEXT;
-		ctx_info->ctx_name = "jfs";
-		break;
-	case UNIC_DBG_JFR_CTX:
-		ctx_info->start_idx = unic_caps->jfr.start_idx;
-		ctx_info->ctx_size = UBASE_JFR_CTX_SIZE;
-		ctx_info->op = UBASE_MB_QUERY_JFR_CONTEXT;
-		ctx_info->ctx_name = "jfr";
-		break;
-	case UNIC_DBG_SQ_JFC_CTX:
-		ctx_info->start_idx = unic_caps->jfc.start_idx;
-		ctx_info->ctx_size = UBASE_JFC_CTX_SIZE;
-		ctx_info->op = UBASE_MB_QUERY_JFC_CONTEXT;
-		ctx_info->ctx_name = "sq_jfc";
-		break;
-	case UNIC_DBG_RQ_JFC_CTX:
-		ctx_info->start_idx = unic_caps->jfc.start_idx +
-				      unic_dev->channels.num;
-		ctx_info->ctx_size = UBASE_JFC_CTX_SIZE;
-		ctx_info->op = UBASE_MB_QUERY_JFC_CONTEXT;
-		ctx_info->ctx_name = "rq_jfc";
-		break;
-	default:
-		unic_err(unic_dev, "failed to get ctx info, ctx_type = %u.\n",
-			 ctx_type);
-		return -ENODATA;
-	}
-
-	return 0;
-}
-
-static void unic_mask_jfs_ctx_key_words(void *buf)
-{
-	struct unic_jfs_ctx *jfs = (struct unic_jfs_ctx *)buf;
-
-	jfs->sqe_base_addr_l = 0;
-	jfs->sqe_base_addr_h = 0;
-	jfs->user_data_l = 0;
-	jfs->user_data_h = 0;
-}
-
-static void unic_mask_jfr_ctx_key_words(void *buf)
-{
-	struct unic_jfr_ctx *jfr = (struct unic_jfr_ctx *)buf;
-
-	jfr->rqe_base_addr_l = 0;
-	jfr->rqe_base_addr_h = 0;
-	jfr->token_value = 0;
-	jfr->user_data_l = 0;
-	jfr->user_data_h = 0;
-	jfr->idx_que_addr_l = 0;
-	jfr->idx_que_addr_h = 0;
-	jfr->record_db_addr_l = 0;
-	jfr->record_db_addr_m = 0;
-	jfr->record_db_addr_h = 0;
-}
-
-static void unic_mask_jfc_ctx_key_words(void *buf)
-{
-	struct unic_jfc_ctx *jfc = (struct unic_jfc_ctx *)buf;
-
-	jfc->cqe_base_addr_l = 0;
-	jfc->cqe_base_addr_h = 0;
-	jfc->record_db_addr_l = 0;
-	jfc->record_db_addr_h = 0;
-	jfc->remote_token_value = 0;
-}
-
-static void unic_mask_ctx_key_words(void *buf,
-				    enum unic_dbg_ctx_type ctx_type)
-{
-	switch (ctx_type) {
-	case UNIC_DBG_JFS_CTX:
-		unic_mask_jfs_ctx_key_words(buf);
-		break;
-	case UNIC_DBG_JFR_CTX:
-		unic_mask_jfr_ctx_key_words(buf);
-		break;
-	case UNIC_DBG_SQ_JFC_CTX:
-	case UNIC_DBG_RQ_JFC_CTX:
-		unic_mask_jfc_ctx_key_words(buf);
-		break;
-	default:
-		break;
-	}
 }
 
 static int unic_dbg_dump_context_hw(struct seq_file *s, void *data,
