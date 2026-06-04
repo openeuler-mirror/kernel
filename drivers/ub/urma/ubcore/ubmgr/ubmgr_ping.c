@@ -41,6 +41,7 @@ struct ubmgr_ping_ctx {
 	struct workqueue_struct *wq;
 	struct hlist_head tjetty_hlist[PING_TJETTY_HASH_SIZE];
 	spinlock_t tjetty_lock;
+	spinlock_t wq_lock;     /* protects wq pointer + queue_work */
 };
 
 /* Hash func */
@@ -304,6 +305,11 @@ static void ping_wq_on_sended(struct ubmgr_ping_ctx *ctx, struct ubcore_cr *cr)
 		ubcore_log_err("Tx status error. status %d, comp_len %u.\n",
 			       cr->status, cr->completion_len);
 
+	if (cr->status == UBCORE_CR_WR_FLUSH_ERR_DONE || cr->user_ctx == 0) {
+		ubcore_log_err("Send WR flushed or cr user_ctx is NULL.\n");
+		return;
+	}
+
 	struct ubmgr_ping_resp_ctx *resp_ctx = (struct ubmgr_ping_resp_ctx *)cr->user_ctx;
 
 	ping_tjetty_put(ctx, resp_ctx->entry);
@@ -378,15 +384,14 @@ static void ping_send_work_handler(struct work_struct *w)
 static int ping_wq_queue_work(struct ubcore_jfc *jfc,
 			      void (*handler)(struct work_struct *))
 {
-	int ret;
-
 	struct ubmgr_ping_ctx *ctx;
+
+	struct ubmgr_ping_work *pwork;
+	unsigned long flags;
 
 	ctx = ubcore_get_client_ctx_data(jfc->ub_dev, &g_ping_client);
 	if (IS_ERR_OR_NULL(ctx))
 		return -EINVAL;
-
-	struct ubmgr_ping_work *pwork;
 
 	pwork = kzalloc(sizeof(struct ubmgr_ping_work), GFP_ATOMIC);
 	if (pwork == NULL)
@@ -396,11 +401,25 @@ static int ping_wq_queue_work(struct ubcore_jfc *jfc,
 	pwork->jfc = jfc;
 	pwork->ctx = ctx;
 
-	ret = queue_work(pwork->ctx->wq, &pwork->work);
-	if (ret < 0) {
+	/*
+	 * Hold wq_lock across NULL-check + queue_work so that
+	 * ping_on_remove_device() cannot slip in between: it sets
+	 * ctx->wq = NULL under the same lock before drain_workqueue().
+	 * Either we enqueue before wq is cleared (work runs during drain,
+	 * JFCs still alive), or we see wq == NULL and bail out safely.
+	 */
+	spin_lock_irqsave(&ctx->wq_lock, flags);
+	if (!ctx->wq) {
+		spin_unlock_irqrestore(&ctx->wq_lock, flags);
 		kfree(pwork);
-		return ret;
+		return -ESHUTDOWN;
 	}
+	if (!queue_work(ctx->wq, &pwork->work)) {
+		spin_unlock_irqrestore(&ctx->wq_lock, flags);
+		kfree(pwork);
+		return -EBUSY;
+	}
+	spin_unlock_irqrestore(&ctx->wq_lock, flags);
 	return 0;
 }
 
@@ -593,6 +612,7 @@ static int ping_on_add_device(struct ubcore_device *dev)
 
 	mutex_init(&ping_ctx->init_mutex);
 	spin_lock_init(&ping_ctx->tjetty_lock);
+	spin_lock_init(&ping_ctx->wq_lock);
 	ping_tjetty_htable_init(ping_ctx);
 	ping_ctx->wq = alloc_workqueue(
 		"ping_wq", WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_FREEZABLE, 0);
@@ -634,18 +654,30 @@ free_ctx:
 static void ping_on_remove_device(struct ubcore_device *dev, void *client_ctx)
 {
 	struct ubmgr_ping_ctx *ping_ctx = client_ctx;
+	struct workqueue_struct *wq;
 
 	if (ping_ctx == NULL)
 		return;
 
-	// Ensure all work are completed and no more work will be queued
-	drain_workqueue(ping_ctx->wq);
-	flush_workqueue(ping_ctx->wq);
+	/*
+	 * Set ctx->wq = NULL under wq_lock first. ping_wq_queue_work()
+	 * holds the same lock around its NULL-check + queue_work, so
+	 * after we release the lock here, no new work can ever be
+	 * enqueued. drain_workqueue() then waits for any already-queued
+	 * work to finish; the JFCs are still alive at that point, so
+	 * ubcore_poll_jfc() inside the handlers is safe.
+	 */
+	spin_lock_irq(&ping_ctx->wq_lock);
+	wq = ping_ctx->wq;
+	ping_ctx->wq = NULL;
+	spin_unlock_irq(&ping_ctx->wq_lock);
+
+	drain_workqueue(wq);
 
 	ping_tjetty_clear(ping_ctx);
 	ping_ctx_uninit_jetty(ping_ctx);
 
-	destroy_workqueue(ping_ctx->wq);
+	destroy_workqueue(wq);
 	mutex_destroy(&ping_ctx->init_mutex);
 	vfree(ping_ctx->buf);
 	vfree(ping_ctx);

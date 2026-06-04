@@ -65,11 +65,11 @@ module_param(sft_num, uint, 0444);
 MODULE_PARM_DESC(sft_num, "sock flow table entries, default 0x100000");
 
 int rps_policy = 1;
-module_param(rps_policy, int, 0644);
+module_param(rps_policy, int, 0444);
 MODULE_PARM_DESC(rps_policy, "phy nic rps policy, default 1");
 
 int lo_rps_policy;
-module_param(lo_rps_policy, int, 0644);
+module_param(lo_rps_policy, int, 0444);
 MODULE_PARM_DESC(lo_rps_policy, "loopback rps policy, default 0");
 
 static int rxq_multiplex_limit = 1;
@@ -78,11 +78,25 @@ MODULE_PARM_DESC(rxq_multiplex_limit, "rxq multiplex limit num, default 1");
 
 static bool check_params(void)
 {
-	if (mode != 0 && mode != 1 && mode != 2)
+	if (mode != 0 && mode != 1 && mode != 2) {
+		oecls_error("invalid mode=%d, expected 0/1/2\n", mode);
 		return false;
+	}
 
-	if (strlen(ifname) == 0)
+	if (strlen(ifname) == 0) {
+		oecls_error("invalid ifname, empty string\n");
 		return false;
+	}
+
+	if (dft_num == 0) {
+		oecls_error("invalid dft_num=%u, must be > 0\n", dft_num);
+		return false;
+	}
+
+	if (sft_num == 0) {
+		oecls_error("invalid sft_num=%u, must be > 0\n", sft_num);
+		return false;
+	}
 
 	return true;
 }

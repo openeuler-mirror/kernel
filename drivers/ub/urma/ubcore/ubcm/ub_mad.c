@@ -17,7 +17,7 @@
 #include "ubcore_log.h"
 #include "ub_mad_priv.h"
 #include "ubcore_log.h"
-#include "ubcore_topo_info.h"
+#include "ubcore_main_ue_eid.h"
 
 // udma jetty id starts from 1 currently
 #define WK_JETTY_ID_INITIALIZER                  \
@@ -271,7 +271,7 @@ static int ubmad_ubc_eid_ops(struct ubcore_device *dev,
 		return -1;
 	}
 
-	ret = ubcore_get_main_primary_eid(&eid_info->eid, &main_primary_eid);
+	ret = ubcore_lookup_main_ue_eid(&eid_info->eid, &main_primary_eid);
 	if (ret != 0) {
 		mutex_unlock(&g_ubc_eid_lock);
 		ubcore_log_err_rl("Invalid eid "EID_FMT".\n", EID_ARGS(eid_info->eid));
@@ -485,6 +485,7 @@ static void ubmad_release_tjetty(struct kref *kref)
 	}
 	spin_unlock_irqrestore(&tjetty->tgt_hash_lock, flag);
 
+	ubmad_uninit_msn_mgr(&tjetty->recv_msn_mgr);
 	ubmad_uninit_msn_mgr(&tjetty->msn_mgr);
 
 	ret = ubcore_unimport_jetty(tjetty->tjetty);
@@ -627,6 +628,7 @@ struct ubmad_tjetty *ubmad_import_jetty(struct ubcore_device *device,
 	new_tjetty->rsrc = rsrc;
 
 	ubmad_init_msn_mgr(&new_tjetty->msn_mgr);
+	ubmad_init_msn_mgr(&new_tjetty->recv_msn_mgr);
 
 	spin_lock_irqsave(&rsrc->tjetty_hlist_lock, flag);
 	/* get again in case of concurrence */
@@ -656,6 +658,7 @@ struct ubmad_tjetty *ubmad_import_jetty(struct ubcore_device *device,
 	return new_tjetty;
 
 uninit_msn_mgr:
+	ubmad_uninit_msn_mgr(&new_tjetty->recv_msn_mgr);
 	ubmad_uninit_msn_mgr(&new_tjetty->msn_mgr);
 	ubcore_unimport_jetty(new_target);
 free:

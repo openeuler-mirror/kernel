@@ -15,7 +15,7 @@
 #include <ub/urma/ubcore_types.h>
 
 #define EID_LEN (16)
-#define MAX_NODE_NUM (64)
+#define MAX_NODE_NUM (1024)
 #define MAX_PORT_NUM (9)
 #define IODIE_NUM_PER_CHIP (1)
 #define PORT_NUM (9)
@@ -37,18 +37,12 @@ struct ubagg_topo_agg_dev {
 	struct ubagg_topo_ue ues[IODIE_NUM];
 };
 
-struct ubagg_topo_link {
-	uint32_t peer_node; // node id
-	uint32_t peer_iodie; // iodie idx
-	uint32_t peer_port; // port idx, UINT32_MAX indicates no connection
-};
-
 struct ubagg_topo_node {
 	uint32_t type;
 	uint32_t super_node_id;
 	uint32_t node_id;
 	uint32_t is_current;
-	struct ubagg_topo_link links[IODIE_NUM][PORT_NUM];
+	bool links[IODIE_NUM * PORT_NUM][IODIE_NUM * PORT_NUM];
 	struct ubagg_topo_agg_dev agg_devs[DEV_NUM];
 };
 
@@ -69,6 +63,7 @@ create_global_ubagg_topo_map(struct ubagg_topo_node *topo_infos,
 void delete_global_ubagg_topo_map(void);
 
 struct ubagg_topo_map *get_global_ubagg_map(void);
+struct ubagg_topo_node *get_current_topo_node(void);
 int find_linked_port(
 	union ubcore_eid *dst_eid,
 	bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM]);
@@ -83,5 +78,6 @@ struct ubagg_topo_node *find_cur_topo_node(struct ubagg_topo_map *topo_map);
 struct ubagg_topo_agg_dev *
 find_cur_topo_agg_dev(struct ubagg_topo_map *topo_map,
 		      union ubcore_eid *bonding_eid);
-
-#endif // ubcore_topo_node_H
+int ubagg_get_primary_eid_by_agg_eid(union ubcore_eid *agg_eid,
+	union ubcore_eid *primary_eid, uint32_t ue_id);
+#endif // ubagg_topo_node_H

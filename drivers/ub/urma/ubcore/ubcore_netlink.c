@@ -602,7 +602,7 @@ int ubcore_get_uvs_init_res_dump(struct sk_buff *skb,
 {
 	long info_type = cb->args[CB_ARGS_INFO_TYPE];
 	long dev_cnt = cb->args[CB_ARGS_DEV_CNT];
-	int ret;
+	int ret = 0;
 
 	if (dev_cnt <= 0)
 		return 0;

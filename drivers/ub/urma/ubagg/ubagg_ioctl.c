@@ -119,7 +119,7 @@ static struct ubagg_device *ubagg_find_dev_by_name(char *dev_name)
 	return NULL;
 }
 
-static bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev)
+bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev)
 {
 	struct ubagg_topo_agg_dev empty_dev = {0};
 
@@ -142,8 +142,7 @@ static bool is_eid_match(const char *eid1, const char *eid2)
 	return memcmp(eid1, eid2, EID_LEN) == 0;
 }
 
-static int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid,
-			 uint32_t *eid_idx)
+int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid, uint32_t *eid_idx)
 {
 	spin_lock(&dev->eid_table.lock);
 	for (int32_t i = 0; i < dev->eid_table.eid_cnt; i++) {
@@ -160,7 +159,7 @@ static int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid,
 	return -ENOENT;
 }
 
-static int get_physical_device(struct ubagg_device *ubagg_dev,
+int get_physical_device(struct ubagg_device *ubagg_dev,
 			       struct ubagg_physical_device_out *out,
 			       union ubcore_eid *bonding_eid)
 {
@@ -358,104 +357,6 @@ static int ubagg_get_jetty_id(struct ubcore_device *dev,
 	return ret;
 }
 
-static int ubagg_get_seg_info(struct ubcore_device *dev,
-			      struct ubcore_user_ctl *user_ctl)
-{
-	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
-	struct ubagg_hash_table *ubagg_seg_ht = NULL;
-	struct ubagg_seg_hash_node *tmp_seg = NULL;
-	struct seg_info_req *req = NULL;
-
-	if ((ubagg_dev == NULL) || (ubagg_dev->segment_bitmap == NULL)) {
-		ubagg_log_err("ubagg_dev->segment_bitmap NULL");
-		return -1;
-	}
-
-	if (user_ctl->uctx != NULL ||
-	    user_ctl->in.addr == 0 ||
-	    user_ctl->in.len != sizeof(struct seg_info_req)) {
-		ubagg_log_err("Invalid user in");
-		return -1;
-	}
-	req = (struct seg_info_req *)user_ctl->in.addr;
-
-	ubagg_seg_ht = &ubagg_dev->ubagg_ht[UBAGG_HT_SEGMENT_HT];
-	spin_lock(&ubagg_seg_ht->lock);
-	tmp_seg = ubagg_hash_table_lookup_nolock(ubagg_seg_ht, req->token_id,
-						 &req->token_id);
-	if (tmp_seg == NULL) {
-		spin_unlock(&ubagg_seg_ht->lock);
-		ubagg_log_err("Failed to find seg.\n");
-		return -1;
-	}
-	if (user_ctl->out.addr != 0 &&
-	    user_ctl->out.len < sizeof(tmp_seg->ex_info.slaves)) {
-		spin_unlock(&ubagg_seg_ht->lock);
-		ubagg_log_err("Invalid user out");
-		return -1;
-	}
-	memcpy((void *)user_ctl->out.addr, tmp_seg->ex_info.slaves,
-	       sizeof(tmp_seg->ex_info.slaves));
-	spin_unlock(&ubagg_seg_ht->lock);
-	return 0;
-}
-
-static int ubagg_get_jetty_info(struct ubcore_device *dev,
-				struct ubcore_user_ctl *user_ctl)
-{
-	struct ubagg_hash_table *ht = NULL;
-	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
-	struct jetty_info_req *req = NULL;
-
-	if ((ubagg_dev == NULL) || (ubagg_dev->segment_bitmap == NULL)) {
-		ubagg_log_err("ubagg_dev->segment_bitmap NULL");
-		return -1;
-	}
-
-	if (user_ctl->uctx != NULL ||
-	    user_ctl->in.addr == 0 ||
-	    user_ctl->in.len != sizeof(struct jetty_info_req)) {
-		ubagg_log_err("Invalid user in");
-		return -1;
-	}
-	req = (struct jetty_info_req *)user_ctl->in.addr;
-
-	if (req->is_jfr) {
-		struct ubagg_jfr_hash_node *tmp_jfr = NULL;
-
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFR_HT];
-		spin_lock(&ht->lock);
-		tmp_jfr = ubagg_hash_table_lookup_nolock(ht, req->jetty_id.id,
-							 &req->jetty_id.id);
-		if (tmp_jfr == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jfr, jetty_id:%u.\n",
-				      req->jetty_id.id);
-			return -1;
-		}
-		memcpy((void *)user_ctl->out.addr, &tmp_jfr->ex_info,
-		       sizeof(tmp_jfr->ex_info));
-		spin_unlock(&ht->lock);
-	} else {
-		struct ubagg_jetty_hash_node *tmp_jetty = NULL;
-
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JETTY_HT];
-		spin_lock(&ht->lock);
-		tmp_jetty = ubagg_hash_table_lookup_nolock(ht, req->jetty_id.id,
-							   &req->jetty_id.id);
-		if (tmp_jetty == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jetty, jetty_id:%u.\n",
-				      req->jetty_id.id);
-			return -1;
-		}
-		memcpy((void *)user_ctl->out.addr, &tmp_jetty->ex_info,
-		       sizeof(tmp_jetty->ex_info));
-		spin_unlock(&ht->lock);
-	}
-	return 0;
-}
-
 int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 {
 	int ret = 0;
@@ -477,12 +378,6 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 		break;
 	case GET_JETTY_ID:
 		ret = ubagg_get_jetty_id(dev, user_ctl);
-		break;
-	case GET_SEG_INFO:
-		ret = ubagg_get_seg_info(dev, user_ctl);
-		break;
-	case GET_JETTY_INFO:
-		ret = ubagg_get_jetty_info(dev, user_ctl);
 		break;
 	default:
 		ubagg_log_err("unsupported ubagg userctl opcde:%u",
@@ -1024,40 +919,16 @@ static int update_dev_info(struct ubagg_topo_node *new_topo_info,
 static int update_link_info(struct ubagg_topo_node *new_topo_info,
 				struct ubagg_topo_node *old_topo_info)
 {
-	int iodie_id, port_id, new_remote_port_id, old_remote_port_id;
+	int local_idx, remote_idx;
 
-	for (iodie_id = 0; iodie_id < IODIE_NUM; iodie_id++) {
-		for (port_id = 0; port_id < MAX_PORT_NUM; ++port_id) {
-			new_remote_port_id = new_topo_info->links[iodie_id][port_id].peer_port;
-			old_remote_port_id = old_topo_info->links[iodie_id][port_id].peer_port;
-			if (new_remote_port_id == UINT32_MAX) {
-				/* if new link is not connected, skip it */
+	for (local_idx = 0; local_idx < IODIE_NUM * PORT_NUM; local_idx++) {
+		for (remote_idx = 0; remote_idx < IODIE_NUM * PORT_NUM; remote_idx++) {
+			// if new link is not connected, skip it
+			if (!new_topo_info->links[local_idx][remote_idx])
 				continue;
-			} else if (old_remote_port_id == UINT32_MAX) {
-				/* if old link is not connected, update it */
-				(void)memcpy(&old_topo_info->links[iodie_id][port_id],
-					&new_topo_info->links[iodie_id][port_id],
-					sizeof(struct ubagg_topo_link));
-			} else {
-				/* if old link is connected and new link is connected,
-				   check if they are the same */
-				if (memcmp(&old_topo_info->links[iodie_id][port_id],
-						&new_topo_info->links[iodie_id][port_id],
-						sizeof(struct ubagg_topo_link)) != 0) {
-					ubagg_log_err("link is not the same, new: ");
-					ubagg_log_err(
-						"peer_node[%u]/peer_iodie[%u]/peer_port[%u], ",
-						new_topo_info->links[iodie_id][port_id].peer_node,
-						new_topo_info->links[iodie_id][port_id].peer_iodie,
-						new_topo_info->links[iodie_id][port_id].peer_port);
-					ubagg_log_err(
-						"old: peer_node[%u]/peer_iodie[%u]/peer_port[%u]\n",
-						old_topo_info->links[iodie_id][port_id].peer_node,
-						old_topo_info->links[iodie_id][port_id].peer_iodie,
-						old_topo_info->links[iodie_id][port_id].peer_port);
-					return -1;
-				}
-			}
+			// if old link is not connected, update it
+			if (!old_topo_info->links[local_idx][remote_idx])
+				old_topo_info->links[local_idx][remote_idx] = true;
 		}
 	}
 	return 0;
@@ -1424,7 +1295,7 @@ static void find_add_master_dev(const char *agg_eid, const char *name)
 
 static void print_topo_map(struct ubagg_topo_map *topo_map)
 {
-	int node_idx, dev_idx, iodie_idx, port_idx;
+	int node_idx, dev_idx, iodie_idx, port_idx, local_idx, remote_idx;
 	struct ubagg_topo_node *node;
 
 	if (!topo_map) {
@@ -1442,16 +1313,14 @@ static void print_topo_map(struct ubagg_topo_map *topo_map)
 			node->node_id, node->is_current);
 
 		/* print link table for this node */
-		for (iodie_idx = 0; iodie_idx < IODIE_NUM; iodie_idx++) {
-			for (port_idx = 0; port_idx < MAX_PORT_NUM; port_idx++) {
-				ubagg_log_info("link[iodie_idx:%d][port_idx:%d] -> ",
-					iodie_idx,
-					port_idx);
+		for (local_idx = 0; local_idx < IODIE_NUM * PORT_NUM; local_idx++) {
+			for (remote_idx = 0; remote_idx < IODIE_NUM * PORT_NUM; remote_idx++) {
+				if (!node->links[local_idx][remote_idx])
+					continue;
 				ubagg_log_info(
-					"peer_node: %u, peer_iodie: %u, peer_port: %u\n",
-					node->links[iodie_idx][port_idx].peer_node,
-					node->links[iodie_idx][port_idx].peer_iodie,
-					node->links[iodie_idx][port_idx].peer_port);
+					"link: local iodie%d port%d <-> remote iodie%d port%d connected\n",
+					local_idx / PORT_NUM, local_idx % PORT_NUM,
+					remote_idx / PORT_NUM, remote_idx % PORT_NUM);
 			}
 		}
 

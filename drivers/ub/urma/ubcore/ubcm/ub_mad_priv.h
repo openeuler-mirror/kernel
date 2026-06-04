@@ -53,6 +53,7 @@
 #define UBMAD_TGT_RTBUFFER_MASK 1023
 #define UBMAD_RTBUFFER_PKTSIZE 1024
 #define UBMAD_TGT_HASH_SIZE 1024
+#define UBMAD_RECV_MSN_MAX 4096
 
 /* common */
 struct ubmad_bitmap {
@@ -68,6 +69,8 @@ struct ubmad_msn_mgr {
 	// msn_hlist holds msn that posted but not ack yet. key: msn, val: msn_node
 	struct hlist_head msn_hlist[UBMAD_MSN_HLIST_SIZE]; // ubmad_msn_node
 	spinlock_t msn_hlist_lock;
+	atomic_t cnt; // current number of msn_node in msn_hlist
+	struct list_head msn_lru_list; // LRU list for eviction (oldest at tail)
 };
 
 /* jetty */
@@ -98,12 +101,14 @@ struct ubmad_jetty_resource {
 struct ubmad_ini_rtbuffer {
 	struct hlist_node node;
 	uint64_t msn;
+	uint32_t msg_type;
 	uint32_t payload_len;
 	uint8_t data[UBMAD_RTBUFFER_PKTSIZE];
 };
 
 struct ubmad_tgt_rtbuffer {
 	uint64_t msn;
+	uint32_t msg_type;
 	uint32_t payload_len;
 	uint8_t data[UBMAD_RTBUFFER_PKTSIZE];
 };
@@ -111,6 +116,7 @@ struct ubmad_tgt_rtbuffer {
 struct ubmad_tgt_hash_node {
 	struct hlist_node node;
 	uint64_t msn;
+	uint32_t msg_type;
 	uint64_t idx;
 };
 
@@ -121,6 +127,7 @@ struct ubmad_tjetty {
 
 	/* reliable communication */
 	struct ubmad_msn_mgr msn_mgr; // for retransmit, only for initiator
+	struct ubmad_msn_mgr recv_msn_mgr; // for target side to track received msns
 	spinlock_t ini_rt_spinlock;
 	struct hlist_head ini_rt_hlist[UBMAD_INI_RTBUFFER_SIZE];
 
@@ -214,7 +221,10 @@ struct ubmad_jetty_work {
 // add msn_node to msn_hlist when post and remove when recv ack
 struct ubmad_msn_node {
 	struct hlist_node node; // ubmad_msn_mgr.msn_hlist
+	struct list_head lru_node; // ubmad_msn_mgr.msn_lru_list
 	uint64_t msn;
+	uint32_t msg_type;
+	struct ubmad_rt_work *rt_work;
 };
 
 /* try to find msn_node in msn_hlist when timeout. If find, repost and re-add work,
@@ -224,6 +234,7 @@ struct ubmad_rt_work {
 	struct delayed_work delay_work; // ubmad_device_priv.rt_wq
 
 	uint64_t msn;
+	uint32_t msg_type;
 	uint32_t rt_cnt; /* Retry count, no larger than ubcore_max_retry_cnt */
 	struct ubmad_msn_mgr *msn_mgr;
 	struct ubmad_jetty_resource *rsrc;

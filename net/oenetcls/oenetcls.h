@@ -134,6 +134,13 @@ struct cfg_param {
 	struct work_struct work;
 	struct cmd_context ctx;
 	struct sock *sk;
+	struct {
+		struct net *net;
+		u16 family;
+		u16 lport;
+		__be32 rcv_saddr_v4;
+		struct in6_addr rcv_saddr_v6;
+	} sk_snapshot;
 	bool is_del;
 	int nid;
 	int cpu;

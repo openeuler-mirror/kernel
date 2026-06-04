@@ -128,9 +128,9 @@ static struct pid_namespace *create_pid_namespace(struct user_namespace *user_ns
 	ns->loadavg = kmem_cache_zalloc(pidns_loadavg_cachep, GFP_KERNEL);
 	if (ns->loadavg == NULL)
 		goto out_free_idr;
-	spin_lock(&pidns_list_lock);
+	spin_lock_bh(&pidns_list_lock);
 	list_add_tail(&ns->loadavg->list, &init_pidns_loadavg.list);
-	spin_unlock(&pidns_list_lock);
+	spin_unlock_bh(&pidns_list_lock);
 #endif
 
 	return ns;
@@ -164,9 +164,9 @@ static void destroy_pid_namespace(struct pid_namespace *ns)
 	 * ns->loadavg's lifecycle aligns precisely with ns,
 	 * so don't need RCU delayed free.
 	 */
-	spin_lock(&pidns_list_lock);
+	spin_lock_bh(&pidns_list_lock);
 	list_del(&ns->loadavg->list);
-	spin_unlock(&pidns_list_lock);
+	spin_unlock_bh(&pidns_list_lock);
 	kmem_cache_free(pidns_loadavg_cachep, ns->loadavg);
 #endif
 	call_rcu(&ns->rcu, delayed_free_pidns);
@@ -537,13 +537,13 @@ static void pidns_list_reset(void)
 {
 	struct list_head *pos, *tmp;
 
-	spin_lock(&pidns_list_lock);
+	spin_lock_bh(&pidns_list_lock);
 	list_for_each_safe(pos, tmp, &init_pidns_loadavg.list) {
 		struct pidns_loadavg *entry = list_entry(pos, struct pidns_loadavg, list);
 
 		entry->load_tasks = 0; // reset
 	}
-	spin_unlock(&pidns_list_lock);
+	spin_unlock_bh(&pidns_list_lock);
 }
 
 static void pidns_update_load_tasks(void)
@@ -574,7 +574,7 @@ static void pidns_calc_avenrun(void)
 {
 	struct list_head *pos;
 
-	spin_lock(&pidns_list_lock);
+	spin_lock_bh(&pidns_list_lock);
 	/*
 	 * As the loadavg of init_pid_ns is exactly /proc/loadavg, avoid redundant
 	 * re-calculation for init_pid_ns, and reuse init_pidns_loadavg.list as the
@@ -590,7 +590,7 @@ static void pidns_calc_avenrun(void)
 		entry->avenrun[1] = calc_load(entry->avenrun[1], EXP_5, active);
 		entry->avenrun[2] = calc_load(entry->avenrun[2], EXP_15, active);
 	}
-	spin_unlock(&pidns_list_lock);
+	spin_unlock_bh(&pidns_list_lock);
 }
 
 static void pidns_calc_loadavg_workfn(struct work_struct *work)

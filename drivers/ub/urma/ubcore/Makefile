@@ -14,7 +14,6 @@ ubcore_cgroup.o \
 net/ubcore_comm.o \
 ubcore_cdev_file.o \
 ubcore_connect_adapter.o \
-ubcore_connect_bonding.o \
 ubcore_log.o \
 net/ubcore_cm.o \
 ubcore_topo_info.o \
@@ -37,6 +36,7 @@ ubcore_umem.o \
 ubmgr/ubmgr.o \
 ubmgr/ubmgr_ping.o \
 ubmgr/ubmgr_topo.o \
-ubcore_dmac.o
+ubcore_dmac.o \
+ubcore_main_ue_eid.o
 
 obj-$(CONFIG_UB_URMA) += ubcore.o

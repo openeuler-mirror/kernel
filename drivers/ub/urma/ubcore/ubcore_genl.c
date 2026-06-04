@@ -40,7 +40,13 @@ static const struct nla_policy ubcore_policy[NUM_UBCORE_ATTR] = {
 	[UBORE_SRC_ID] = { .len = UBCORE_EID_SIZE },
 	[UBORE_DST_ID] = { .len = UBCORE_EID_SIZE },
 	[UBCORE_PAYLOAD_DATA] = { .type = NLA_BINARY },
-	[UBCORE_UPDATE_EID_RET] = { .type = NLA_S32 }
+	[UBCORE_UPDATE_EID_RET] = { .type = NLA_S32 },
+	[UBCORE_ATTR_EID] = { .type = NLA_BINARY, .len = UBCORE_EID_SIZE },
+	[UBCORE_ATTR_MAIN_UE_EID] = { .type = NLA_BINARY,
+				      .len = UBCORE_EID_SIZE },
+	[UBCORE_ATTR_EID_NUM] = { .type = NLA_U32 },
+	[UBCORE_ATTR_EID_LIST] = { .type = NLA_BINARY },
+	[UBCORE_ATTR_STATUS] = { .type = NLA_S32 }
 };
 
 static const struct genl_ops ubcore_genl_ops[] = {
@@ -122,10 +128,38 @@ static const struct genl_ops ubcore_genl_ops[] = {
 		.doit = ubcore_set_sl
 	},
 	{
-		.cmd = UBCORE_CMD_GET_TOPO_BONDING_DEV,
+		.cmd = UBCORE_CMD_ADMIN_INSERT_MAIN_UE_EID,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-		.doit = ubcore_get_topo_bonding_dev_ops
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_admin_insert_main_ue_eid
+	},
+	{
+		.cmd = UBCORE_CMD_ADMIN_DELETE_MAIN_UE_EID,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_admin_delete_main_ue_eid
+	},
+	{
+		.cmd = UBCORE_CMD_ADMIN_LOOKUP_MAIN_UE_EID,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.doit = ubcore_admin_lookup_main_ue_eid
+	},
+	{
+		.cmd = UBCORE_CMD_ADMIN_FLUSH_MAIN_UE_EID,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_admin_flush_main_ue_eid
+	},
+	{
+		.cmd = UBCORE_CMD_ADMIN_INSERT_MAIN_UE_EID_BATCH,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_admin_insert_main_ue_eid_batch
 	},
 };
 

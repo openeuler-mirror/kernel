@@ -9,7 +9,7 @@
  * History: 2022-07-28: Yan Fangfang move segment implementation here
  */
 
-#include "ubcore_connect_bonding.h"
+#include "ubcore_device.h"
 #include "ubcore_log.h"
 #include "ubcore_priv.h"
 #include "ubcore_hash_table.h"
@@ -260,16 +260,6 @@ struct ubcore_target_seg *ubcore_import_seg(struct ubcore_device *dev,
 	    dev->ops->import_seg == NULL || dev->ops->unimport_seg == NULL) {
 		ubcore_log_err("invalid parameter.\n");
 		return ERR_PTR(-EINVAL);
-	}
-
-	if (ubcore_is_bonding_dev(dev)) {
-		if (ubcore_connect_exchange_udata_when_import_seg(&cfg->seg,
-								  udata, dev) != 0) {
-			ubcore_log_err(
-				"failed to exchange udata when import seg, dev_name is %s\n",
-				dev->dev_name);
-			return ERR_PTR(-ENOEXEC);
-		}
 	}
 
 	tseg = dev->ops->import_seg(dev, cfg, udata);

@@ -18,7 +18,6 @@
 #include "net/ubcore_comm.h"
 #include "net/ubcore_session.h"
 #include "ubcore_connect_adapter.h"
-#include "ubcore_connect_bonding.h"
 #include "ubcore_genl.h"
 #include "ubcm/ub_cm.h"
 #include "ubmgr/ubmgr.h"
@@ -30,14 +29,15 @@ MODULE_PARM_DESC(g_ubcore_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
 module_param(ubcore_conn_timeout, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(ubcore_conn_timeout, "unit milliseconds");
 module_param(ubcore_max_retry_cnt, uint, UBCORE_LOG_FILE_PERMISSION);
-MODULE_PARM_DESC(ubcore_max_retry_cnt, "maximum retry count for wk-jetty");
+MODULE_PARM_DESC(ubcore_max_retry_cnt, "maximum retry count for wk-jetty (default: 11)");
+module_param(ubmad_retry_interval_ms, uint, UBCORE_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(ubmad_retry_interval_ms, "retransmission interval in ms for ubmad (default: 5000)");
 
 static int __init ubcore_init(void)
 {
 	int ret;
 
 	ubcore_exchange_init();
-	ubcore_connect_bonding_init();
 
 	ret = ubcore_class_register();
 	if (ret != 0)
@@ -103,6 +103,7 @@ class_init:
 static void __exit ubcore_exit(void)
 {
 	ubcm_uninit();
+	ubcore_unregister_comm_msg_handler(1);
 	ubcore_comm_uninit();
 	ubcore_session_uninit();
 	ubcore_destroy_workqueues();
