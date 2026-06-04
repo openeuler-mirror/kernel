@@ -16,7 +16,7 @@
 #include <ub/urma/ubcore_types.h>
 #include <ub/urma/ubcore_uapi.h>
 #include "ubcore_log.h"
-#include "ubmgr_topo.h"
+#include "ubcore_main_ue_eid.h"
 
 #include "ubmgr_ping.h"
 
@@ -42,6 +42,7 @@ struct ubmgr_ping_ctx {
 	struct hlist_head tjetty_hlist[PING_TJETTY_HASH_SIZE];
 	spinlock_t tjetty_lock;
 	spinlock_t wq_lock;     /* protects wq pointer + queue_work */
+	bool wq_stopped;        /* blocks queue_work during jetty teardown */
 };
 
 /* Hash func */
@@ -207,6 +208,29 @@ static void ping_tjetty_htable_init(struct ubmgr_ping_ctx *ctx)
 {
 	for (int i = 0; i < PING_TJETTY_HASH_SIZE; i++)
 		INIT_HLIST_HEAD(&ctx->tjetty_hlist[i]);
+}
+
+static int ping_find_eid_by_main_ue_eid(const union ubcore_eid *main_ue_eid,
+					 struct ubcore_device *dev,
+					 struct ubcore_eid_info *eid_info)
+{
+	int i;
+
+	spin_lock(&dev->eid_table.lock);
+	for (i = 0; i < dev->eid_table.eid_cnt; i++) {
+		if (!dev->eid_table.eid_entries[i].valid)
+			continue;
+
+		if (memcmp(&dev->eid_table.eid_entries[i].eid, main_ue_eid,
+			   UBCORE_EID_SIZE) == 0) {
+			eid_info->eid = dev->eid_table.eid_entries[i].eid;
+			eid_info->eid_index = dev->eid_table.eid_entries[i].eid_index;
+			spin_unlock(&dev->eid_table.lock);
+			return 0;
+		}
+	}
+	spin_unlock(&dev->eid_table.lock);
+	return -EINVAL;
 }
 
 /* Workqueue func */
@@ -402,14 +426,11 @@ static int ping_wq_queue_work(struct ubcore_jfc *jfc,
 	pwork->ctx = ctx;
 
 	/*
-	 * Hold wq_lock across NULL-check + queue_work so that
-	 * ping_on_remove_device() cannot slip in between: it sets
-	 * ctx->wq = NULL under the same lock before drain_workqueue().
-	 * Either we enqueue before wq is cleared (work runs during drain,
-	 * JFCs still alive), or we see wq == NULL and bail out safely.
+	 * Hold wq_lock across state-check + queue_work so teardown cannot
+	 * race between the check and queueing a new work item.
 	 */
 	spin_lock_irqsave(&ctx->wq_lock, flags);
-	if (!ctx->wq) {
+	if (!ctx->wq || ctx->wq_stopped) {
 		spin_unlock_irqrestore(&ctx->wq_lock, flags);
 		kfree(pwork);
 		return -ESHUTDOWN;
@@ -588,11 +609,59 @@ unregister_seg:
 
 static void ping_ctx_uninit_jetty(struct ubmgr_ping_ctx *ctx)
 {
-	ubcore_delete_jetty(ctx->jetty);
-	ubcore_delete_jfr(ctx->jfr);
-	ubcore_delete_jfc(ctx->recv_jfc);
-	ubcore_delete_jfc(ctx->send_jfc);
-	ubcore_unregister_seg(ctx->seg);
+	if (ctx->jetty != NULL) {
+		ubcore_delete_jetty(ctx->jetty);
+		ctx->jetty = NULL;
+	}
+
+	if (ctx->jfr != NULL) {
+		ubcore_delete_jfr(ctx->jfr);
+		ctx->jfr = NULL;
+	}
+
+	if (ctx->recv_jfc != NULL) {
+		ubcore_delete_jfc(ctx->recv_jfc);
+		ctx->recv_jfc = NULL;
+	}
+
+	if (ctx->send_jfc != NULL) {
+		ubcore_delete_jfc(ctx->send_jfc);
+		ctx->send_jfc = NULL;
+	}
+
+	if (ctx->seg != NULL) {
+		ubcore_unregister_seg(ctx->seg);
+		ctx->seg = NULL;
+	}
+}
+
+static struct workqueue_struct *ping_stop_wq(struct ubmgr_ping_ctx *ctx,
+					     bool detach)
+{
+	struct workqueue_struct *wq;
+	unsigned long flags;
+
+	/* Stop new ping work before draining in-flight handlers. */
+	spin_lock_irqsave(&ctx->wq_lock, flags);
+	wq = ctx->wq;
+	ctx->wq_stopped = true;
+	if (detach)
+		ctx->wq = NULL;
+	spin_unlock_irqrestore(&ctx->wq_lock, flags);
+
+	if (wq != NULL)
+		drain_workqueue(wq);
+
+	return wq;
+}
+
+static void ping_start_wq(struct ubmgr_ping_ctx *ctx)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&ctx->wq_lock, flags);
+	ctx->wq_stopped = false;
+	spin_unlock_irqrestore(&ctx->wq_lock, flags);
 }
 
 static int ping_on_add_device(struct ubcore_device *dev)
@@ -621,29 +690,9 @@ static int ping_on_add_device(struct ubcore_device *dev)
 		goto free_buf;
 	}
 
-	struct ubcore_eid_info eid_info = { 0 };
-
-	if (ubmgr_get_first_primary_eid(dev, &eid_info) != 0) {
-		ubcore_log_info(
-			"Primary eid not found, init deferred, dev:%s\n",
-			dev->dev_name);
-		goto complete;
-	}
-
-	ret = ping_ctx_init_jetty(dev, ping_ctx, eid_info.eid_index);
-	if (ret != 0) {
-		ubcore_log_err("Failed to init ping ctx, dev:%s, ret=%d\n",
-			       dev->dev_name, ret);
-		goto destroy_wq;
-	}
-
-complete:
 	ubcore_set_client_ctx_data(dev, &g_ping_client, ping_ctx);
 	return 0;
 
-destroy_wq:
-	destroy_workqueue(ping_ctx->wq);
-	mutex_destroy(&ping_ctx->init_mutex);
 free_buf:
 	vfree(ping_ctx->buf);
 free_ctx:
@@ -659,25 +708,13 @@ static void ping_on_remove_device(struct ubcore_device *dev, void *client_ctx)
 	if (ping_ctx == NULL)
 		return;
 
-	/*
-	 * Set ctx->wq = NULL under wq_lock first. ping_wq_queue_work()
-	 * holds the same lock around its NULL-check + queue_work, so
-	 * after we release the lock here, no new work can ever be
-	 * enqueued. drain_workqueue() then waits for any already-queued
-	 * work to finish; the JFCs are still alive at that point, so
-	 * ubcore_poll_jfc() inside the handlers is safe.
-	 */
-	spin_lock_irq(&ping_ctx->wq_lock);
-	wq = ping_ctx->wq;
-	ping_ctx->wq = NULL;
-	spin_unlock_irq(&ping_ctx->wq_lock);
-
-	drain_workqueue(wq);
+	wq = ping_stop_wq(ping_ctx, true);
 
 	ping_tjetty_clear(ping_ctx);
 	ping_ctx_uninit_jetty(ping_ctx);
 
-	destroy_workqueue(wq);
+	if (wq != NULL)
+		destroy_workqueue(wq);
 	mutex_destroy(&ping_ctx->init_mutex);
 	vfree(ping_ctx->buf);
 	vfree(ping_ctx);
@@ -691,10 +728,9 @@ struct ubcore_client g_ping_client = {
 	.stop = NULL,
 };
 
-static void ping_on_event(enum ubmgr_event_type event_type, void *event_data,
-			  void *priv)
+static void ping_try_init_ctx(const union ubcore_eid *main_ue_eid,
+			       struct ubcore_device *dev)
 {
-	struct ubcore_device *dev = (struct ubcore_device *)event_data;
 	struct ubmgr_ping_ctx *ping_ctx;
 	int ret;
 
@@ -712,7 +748,7 @@ static void ping_on_event(enum ubmgr_event_type event_type, void *event_data,
 	}
 	struct ubcore_eid_info eid_info = { 0 };
 
-	if (ubmgr_get_first_primary_eid(dev, &eid_info) != 0) {
+	if (ping_find_eid_by_main_ue_eid(main_ue_eid, dev, &eid_info) != 0) {
 		ubcore_log_info(
 			"Primary eid not found, init deferred, dev:%s\n",
 			dev->dev_name);
@@ -728,21 +764,71 @@ static void ping_on_event(enum ubmgr_event_type event_type, void *event_data,
 	mutex_unlock(&ping_ctx->init_mutex);
 }
 
-struct ubmgr_event_notifier notifier = {
-	.cb = ping_on_event,
-	.priv = NULL,
-	.node = LIST_HEAD_INIT(notifier.node),
-};
+static void ping_try_uninit_ctx(struct ubcore_device *dev)
+{
+	struct ubmgr_ping_ctx *ping_ctx;
+
+	ping_ctx = ubcore_get_client_ctx_data(dev, &g_ping_client);
+	if (IS_ERR_OR_NULL(ping_ctx)) {
+		ubcore_log_err("Failed to get ping client ctx, dev:%s\n",
+			       dev->dev_name);
+		return;
+	}
+
+	mutex_lock(&ping_ctx->init_mutex);
+	if (ping_ctx->jetty == NULL) {
+		mutex_unlock(&ping_ctx->init_mutex);
+		return;
+	}
+
+	/* LAST_DEL tears down ping jetty resources until a later FIRST_ADD. */
+	(void)ping_stop_wq(ping_ctx, false);
+	ping_tjetty_clear(ping_ctx);
+	ping_ctx_uninit_jetty(ping_ctx);
+	ping_start_wq(ping_ctx);
+	mutex_unlock(&ping_ctx->init_mutex);
+}
+
+static void ping_on_main_ue_eid_event(
+	const union ubcore_eid *main_ue_eid,
+	enum ubcore_main_ue_eid_event_type event_type)
+{
+	struct ubcore_device *dev;
+
+	dev = ubcore_get_device_by_eid((union ubcore_eid *)main_ue_eid,
+				       UBCORE_TRANSPORT_UB);
+	if (dev == NULL)
+		return;
+
+	switch (event_type) {
+	case UBCORE_MAIN_UE_EID_FIRST_ADD:
+		ping_try_init_ctx(main_ue_eid, dev);
+		break;
+	case UBCORE_MAIN_UE_EID_LAST_DEL:
+		ping_try_uninit_ctx(dev);
+		break;
+	default:
+		break;
+	}
+
+	ubcore_put_device(dev);
+}
 
 int ubmgr_ping_init(void)
 {
 	int ret;
 
-	ubmgr_register_event_notifier(&notifier);
+	ret = ubcore_register_main_ue_eid_event_cb(ping_on_main_ue_eid_event);
+	if (ret != 0) {
+		ubcore_log_err("Failed to register main ue eid event cb, ret=%d\n",
+			       ret);
+		return ret;
+	}
 
 	ret = ubcore_register_client(&g_ping_client);
 	if (ret != 0) {
 		ubcore_log_err("Failed to register ping client, ret=%d\n", ret);
+		(void)ubcore_unregister_main_ue_eid_event_cb(ping_on_main_ue_eid_event);
 		return ret;
 	}
 
@@ -752,5 +838,5 @@ int ubmgr_ping_init(void)
 void ubmgr_ping_uninit(void)
 {
 	ubcore_unregister_client(&g_ping_client);
-	ubmgr_unregister_event_notifier(&notifier);
+	(void)ubcore_unregister_main_ue_eid_event_cb(ping_on_main_ue_eid_event);
 }
