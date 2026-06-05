@@ -31,6 +31,8 @@ module_param(g_ubcore_log_level, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(g_ubcore_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
 module_param(ubcore_conn_timeout, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(ubcore_conn_timeout, "unit milliseconds");
+module_param(ubcore_enable_shared_ctp, bool, UBCORE_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(ubcore_enable_shared_ctp, "enable shared-CTP, 0: off, 1: on (default: 0)");
 module_param(ubcore_max_retry_cnt, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(ubcore_max_retry_cnt, "maximum retry count for wk-jetty (default: 11)");
 module_param(ubmad_retry_interval_ms, uint, UBCORE_LOG_FILE_PERMISSION);
