@@ -1127,15 +1127,11 @@ int ubmad_post_send(struct ubcore_device *device,
 
 	/* import well-known jetty */
 	// unimport in ubmad_uninit_jetty_rsrc()
-	ubcore_log_err("lookup primary eid for dst eid " EID_FMT "\n",
-		     EID_ARGS(send_buf->dst_eid));
 	ret = ubcore_lookup_main_ue_eid(&send_buf->dst_eid, &dst_primary_eid);
 	if (ret != 0) {
 		ubcore_log_err("get primary eid failed, ret = %d\n", ret);
 		goto put_device_priv;
 	}
-	ubcore_log_err("dst_primary_eid " EID_FMT "\n",
-		     EID_ARGS(dst_primary_eid));
 	hash = jhash(&dst_primary_eid, sizeof(union ubcore_eid), 0) %
 		UBMAD_MAX_TJETTY_NUM;
 	spin_lock_irqsave(&rsrc->tjetty_hlist_lock, flag);
