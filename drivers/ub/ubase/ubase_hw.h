@@ -9,8 +9,8 @@
 
 #include <ub/ubase/ubase_comm_mbx.h>
 
-#include "ubase_dev.h"
 #include "ubase_cmd.h"
+#include "ubase_dev.h"
 
 #define UBASE_CTX_REMOVE_ALL		(-2)
 

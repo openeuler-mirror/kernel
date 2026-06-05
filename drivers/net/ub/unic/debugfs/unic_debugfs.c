@@ -26,6 +26,8 @@ static int unic_dbg_dump_dev_info(struct seq_file *s, void *data)
 
 	seq_printf(s, "%-25s", "DEV_NAME:");
 	seq_printf(s, "%-12s\n", netdev->name);
+	seq_printf(s, "%-25s", "unic_dev state:");
+	seq_printf(s, "0x%lx\n", unic_dev->state);
 
 	if (!unic_dev_ubl_supported(unic_dev)) {
 		ret = unic_check_validate_dump_mtu(unic_dev, netdev->mtu,
