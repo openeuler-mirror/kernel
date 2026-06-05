@@ -104,7 +104,11 @@ struct work_struct {
 	struct lockdep_map lockdep_map;
 #endif
 
+#ifdef CONFIG_FB_DEFERRED_IO
+	KABI_USE(1, struct fb_deferred_io_state *fbdefio_state)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)

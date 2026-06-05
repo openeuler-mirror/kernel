@@ -282,9 +282,9 @@ int fb_deferred_io_mmap(struct fb_info *info, struct vm_area_struct *vma)
 	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
 	if (!(info->flags & FBINFO_VIRTFB))
 		vma->vm_flags |= VM_IO;
-	vma->vm_private_data = info->fbdefio_state;
+	vma->vm_private_data = info->queue.fbdefio_state;
 
-	fb_deferred_io_state_get(info->fbdefio_state); /* released in vma->vm_ops->close() */
+	fb_deferred_io_state_get(info->queue.fbdefio_state); /* released in vma->vm_ops->close() */
 
 	return 0;
 }
@@ -297,7 +297,7 @@ static void fb_deferred_io_work(struct work_struct *work)
 	struct list_head *node, *next;
 	struct page *cur;
 	struct fb_deferred_io *fbdefio = info->fbdefio;
-	struct fb_deferred_io_state *fbdefio_state = info->fbdefio_state;
+	struct fb_deferred_io_state *fbdefio_state = info->queue.fbdefio_state;
 
 	/* here we mkclean the pages, then do all deferred IO */
 	mutex_lock(&fbdefio_state->lock);
@@ -333,7 +333,7 @@ void fb_deferred_io_init(struct fb_info *info)
 	if (fbdefio->delay == 0) /* set a default of 1 s */
 		fbdefio->delay = HZ;
 
-	info->fbdefio_state = fbdefio_state;
+	info->queue.fbdefio_state = fbdefio_state;
 }
 EXPORT_SYMBOL_GPL(fb_deferred_io_init);
 
@@ -350,7 +350,7 @@ void fb_deferred_io_cleanup(struct fb_info *info)
 	struct fb_deferred_io *fbdefio = info->fbdefio;
 	struct page *page;
 	int i;
-	struct fb_deferred_io_state *fbdefio_state = info->fbdefio_state;
+	struct fb_deferred_io_state *fbdefio_state = info->queue.fbdefio_state;
 
 	BUG_ON(!fbdefio);
 	cancel_delayed_work_sync(&info->deferred_work);
@@ -361,7 +361,7 @@ void fb_deferred_io_cleanup(struct fb_info *info)
 		page->mapping = NULL;
 	}
 
-	info->fbdefio_state = NULL;
+	info->queue.fbdefio_state = NULL;
 
 	mutex_lock(&fbdefio_state->lock);
 	fbdefio_state->info = NULL;
