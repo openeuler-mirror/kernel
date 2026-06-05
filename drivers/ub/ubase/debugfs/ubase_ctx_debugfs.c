@@ -235,9 +235,6 @@ static int ubase_dbg_dump_ctx_hw(struct seq_file *s, void *data,
 	    test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
 		return -EBUSY;
 
-	if (!ubase_dev_mbx_supported(udev))
-		return -EOPNOTSUPP;
-
 	mailbox = __ubase_alloc_cmd_mailbox(udev);
 	if (IS_ERR_OR_NULL(mailbox)) {
 		ubase_err(udev,

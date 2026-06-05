@@ -11,6 +11,7 @@
 #include "ubase_cmd.h"
 #include "ubase_hw.h"
 #include "ubase_proxy.h"
+#include "ubase_rct.h"
 #include "ubase_trace.h"
 #include "ubase_usc.h"
 #include "ubase_mailbox.h"
@@ -70,6 +71,11 @@ static u16 ubase_get_trans_len_by_opc(u16 opc)
 	case UBASE_MB_DESTROY_AEQ_CONTEXT:
 	case UBASE_MB_DESTROY_CEQ_CONTEXT:
 		return 0;
+	case UBASE_MB_CREATE_RC_CONTEXT:
+		return sizeof(struct ubase_rc_ctx);
+	case UBASE_MB_DESTROY_RC_CONTEXT:
+	case UBASE_MB_QUERY_RC_CONTEXT:
+		return 0;
 	default:
 		break;
 	}
@@ -88,6 +94,11 @@ static u16 ubase_get_resp_len_by_opc(u16 opc)
 	case UBASE_MB_QUERY_AEQ_CONTEXT:
 	case UBASE_MB_QUERY_CEQ_CONTEXT:
 		return sizeof(struct ubase_eq_ctx);
+	case UBASE_MB_CREATE_RC_CONTEXT:
+	case UBASE_MB_DESTROY_RC_CONTEXT:
+		return 0;
+	case UBASE_MB_QUERY_RC_CONTEXT:
+		return sizeof(struct ubase_rc_ctx);
 	default:
 		break;
 	}
@@ -99,8 +110,6 @@ static int ubase_wait_resp_from_proxy(struct ubase_dev *udev,
 				      struct ubase_proxy_req_msg *req,
 				      struct ubase_cmd_mailbox *mbox)
 {
-#define UBASE_WAIT_RESP_TIME 1000
-
 	struct ubase_mbox_over_cmdq_info *info = udev->moc_info;
 	struct ubase_mbox_over_cmdq_completion completion;
 	int ret;
@@ -113,15 +122,16 @@ static int ubase_wait_resp_from_proxy(struct ubase_dev *udev,
 	ret = xa_err(xa_store(&info->seq_tbl, req->seq_num, &completion,
 			      GFP_KERNEL));
 	if (ret) {
-		ubase_err(udev, "failed to save eq(%u) proxy resp completion, ret = %d.\n",
+		ubase_err(udev,
+			  "failed to save proxy resp completion, seq = %u, ret = %d.\n",
 			  req->seq_num, ret);
 		return -EFAULT;
 	}
 
 	ret = wait_event_timeout(info->queue, completion.get_resp,
-				 msecs_to_jiffies(UBASE_WAIT_RESP_TIME));
+				 msecs_to_jiffies(UBASE_WAIT_PROXY_RESP_TIME));
 	if (!ret && !completion.get_resp)
-		ubase_err(udev, "wait eq(%u) proxy resp timeout.\n",
+		ubase_err(udev, "wait proxy resp timeout, seq = %u.\n",
 			  req->seq_num);
 
 	xa_erase(&info->seq_tbl, req->seq_num);
@@ -136,6 +146,9 @@ int ubase_hw_upgrade_ctx_over_cmdq(struct ubase_dev *udev,
 	struct ubase_cmd_buf in;
 	ssize_t data_len;
 	int ret;
+
+	if (udev->reset_stage == UBASE_RESET_STAGE_UNINIT)
+		return 0;
 
 	data_len = ubase_get_trans_len_by_opc(attr->op);
 	req = kzalloc(sizeof(*req) + data_len, GFP_KERNEL);
@@ -157,16 +170,18 @@ int ubase_hw_upgrade_ctx_over_cmdq(struct ubase_dev *udev,
 			       req);
 	ret = __ubase_cmd_send_in(udev, &in);
 	if (ret) {
-		ubase_err(udev, "failed to send eq(%u) mbox over cmdq req, ret = %d.\n",
-			  req->seq_num, ret);
+		ubase_err(udev,
+			  "failed to send mbox over cmdq req, opc = 0x%x, seq = %u, ret = %d.\n",
+			   req->opcode, req->seq_num, ret);
 		kfree(req);
 		return ret;
 	}
 
 	ret = ubase_wait_resp_from_proxy(udev, req, mailbox);
 	if (ret)
-		ubase_err(udev, "failed to wait eq(%u) mbox over cmdq resp, ret = %d.\n",
-			  req->seq_num, ret);
+		ubase_err(udev,
+			  "failed to wait mbox over cmdq resp, opc = 0x%x, seq = %u, ret = %d.\n",
+			  req->opcode, req->seq_num, ret);
 
 	kfree(req);
 	return ret;
