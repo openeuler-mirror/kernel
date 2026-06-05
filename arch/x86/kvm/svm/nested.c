@@ -750,7 +750,7 @@ int nested_svm_vmexit(struct vcpu_svm *svm)
 
 	rc = nested_svm_load_cr3(&svm->vcpu, hsave->save.cr3, false);
 	if (rc)
-		return 1;
+		kvm_make_request(KVM_REQ_TRIPLE_FAULT, &svm->vcpu);
 
 	if (npt_enabled)
 		svm->vmcb->save.cr3 = hsave->save.cr3;
@@ -763,7 +763,10 @@ int nested_svm_vmexit(struct vcpu_svm *svm)
 	kvm_clear_exception_queue(&svm->vcpu);
 	kvm_clear_interrupt_queue(&svm->vcpu);
 
-	return 0;
+	if (rc)
+		return 1;
+	else
+		return 0;
 }
 
 int svm_allocate_nested(struct vcpu_svm *svm)
