@@ -103,7 +103,9 @@ int ubase_create_rc_queue_ctx(struct ubase_dev *udev, u32 rc_queue_idx)
 	memcpy(mailbox->buf, &ctx, sizeof(ctx));
 
 	ubase_fill_mbx_attr(&attr, rc_queue_idx, UBASE_MB_CREATE_RC_CONTEXT, 0);
-	ret = __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox);
+	ret = ubase_dev_mbx_supported(udev) ?
+	      __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mailbox);
 	if (ret)
 		ubase_err(udev, "failed to post mailbox for rc queue, ret = %d.\n",
 			  ret);
@@ -126,7 +128,9 @@ int ubase_destroy_rc_queue_ctx(struct ubase_dev *udev, u32 rc_queue_idx)
 	}
 
 	ubase_fill_mbx_attr(&attr, rc_queue_idx, UBASE_MB_DESTROY_RC_CONTEXT, 0);
-	ret = __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox);
+	ret = ubase_dev_mbx_supported(udev) ?
+	      __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mailbox);
 	if (ret)
 		ubase_err(udev, "failed to destroy rc queue ctx, ret = %d.\n", ret);
 
@@ -221,7 +225,9 @@ int ubase_adev_query_rc_ctx(struct auxiliary_device *adev, u32 rc_queue_idx,
 	}
 
 	ubase_fill_mbx_attr(&attr, rc_queue_idx, UBASE_MB_QUERY_RC_CONTEXT, 0);
-	ret = __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox);
+	ret = ubase_dev_mbx_supported(udev) ?
+	      __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mailbox);
 	if (ret) {
 		ubase_err(udev, "failed to query rc queue ctx[%u], ret = %d.\n",
 			  rc_queue_idx, ret);

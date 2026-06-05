@@ -873,24 +873,20 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_query_port_bitmap, NULL
 	},
 	{
-		"init irq table", UBASE_SUP_ALL, 1,
-		ubase_irq_table_init, ubase_irq_table_uninit
-	},
-	{
 		"init ctrl queue", UBASE_SUP_NO_PMU, 1,
 		ubase_ctrlq_init, ubase_ctrlq_uninit
-	},
-	{
-		"register aeq event", UBASE_SUP_NO_PMU, 0,
-		ubase_register_ae_event, ubase_unregister_ae_event
 	},
 	{
 		"register cmdq crq event", UBASE_SUP_NO_PMU, 0,
 		ubase_register_cmdq_crq_event, ubase_unregister_cmdq_crq_event
 	},
 	{
-		"register ctrlq crq event", UBASE_SUP_NO_PMU, 0,
-		NULL, NULL
+		"init irq table", UBASE_SUP_ALL, 1,
+		ubase_irq_table_init, ubase_irq_table_uninit
+	},
+	{
+		"register aeq event", UBASE_SUP_NO_PMU, 0,
+		ubase_register_ae_event, ubase_unregister_ae_event
 	},
 	{
 		"init qos", UBASE_SUP_NO_PMU, 0,
