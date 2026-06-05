@@ -190,9 +190,26 @@ static bool ubase_wait_for_resp(struct ubase_dev *udev)
 	return false;
 }
 
+static inline bool ubase_peer_cmdq_unready(u16 ret)
+{
+	return ret == ENXIO;
+}
+
+static bool ubase_is_cmdq_e2e_msg(struct ubase_dev *udev,
+				  struct ubase_cmdq_desc *desc)
+{
+	struct ubase_ue2ue_ctrlq_head *ue2ue_head =
+		(struct ubase_ue2ue_ctrlq_head *)desc->data;
+	u16 opcode = le16_to_cpu(desc->opcode);
+
+	return !ubase_dev_ctrlq_supported(udev) &&
+	       opcode == UBASE_OPC_UE2UE_UBASE &&
+	       ue2ue_head->head.sub_cmd == UBASE_UE2UE_CTRLQ_MSG;
+}
+
 static int ubase_get_cmd_result(struct ubase_dev *udev,
 				struct ubase_cmdq_desc *desc,
-				int num, u32 sw_pi)
+				int num, u32 sw_pi, bool *is_unready)
 {
 	struct ubase_cmdq_ring *csq = &udev->hw.cmdq.csq;
 	u32 pi = sw_pi;
@@ -207,10 +224,22 @@ static int ubase_get_cmd_result(struct ubase_dev *udev,
 			pi = 0;
 	}
 
-	if (desc->flag & UBASE_CMD_FLAG_OUT)
+	if (desc->flag & UBASE_CMD_FLAG_OUT) {
 		ret = le16_to_cpu(desc->ret);
-	else
+		/*
+		 * If the MUE's cmdq is not ready, the E2E message sent by the
+		 * UE will fail, and the firmware returns error code ENXIO.
+		 * In this case, change the error code to ETIMEDOUT so that the
+		 * UE can retry during the ELR or probe process.
+		 */
+		if (ubase_peer_cmdq_unready(ret) &&
+		    ubase_is_cmdq_e2e_msg(udev, desc)) {
+			*is_unready = true;
+			ret = ETIMEDOUT;
+		}
+	} else {
 		ret = ETIMEDOUT;
+	}
 
 	return -ret;
 }
@@ -260,6 +289,7 @@ int ubase_send_cmd(struct ubase_dev *udev,
 {
 	struct ubase_cmdq_ring *csq = &udev->hw.cmdq.csq;
 	bool is_completed = false;
+	bool is_unready = false;
 	int cleaned, free_num;
 	u32 sw_pi;
 	int ret;
@@ -267,18 +297,20 @@ int ubase_send_cmd(struct ubase_dev *udev,
 	spin_lock_bh(&csq->lock);
 	atomic_inc(&udev->hw.cmdq.csq_cnt);
 	if (test_bit(UBASE_STATE_CMD_DISABLE, &udev->hw.state)) {
-		ret = -EBUSY;
-		goto err_unlock;
+		atomic_dec(&udev->hw.cmdq.csq_cnt);
+		spin_unlock_bh(&csq->lock);
+		return -EBUSY;
 	}
 
 	free_num = ubase_remain_cmdq_space(csq);
 	if (num > free_num) {
 		csq->ci = ubase_read_dev(&udev->hw, UBASE_CSQ_HEAD_REG);
+		atomic_dec(&udev->hw.cmdq.csq_cnt);
+		spin_unlock_bh(&csq->lock);
 		ubase_warn_rl(udev, cmdq_space_insuffice,
 			      "the requested space(%d) exceeds the remaining space(%d), csq ci: %u.\n",
 			      num, free_num, csq->ci);
-		ret = -EBUSY;
-		goto err_unlock;
+		return -EBUSY;
 	}
 
 	/**
@@ -293,18 +325,22 @@ int ubase_send_cmd(struct ubase_dev *udev,
 		ret = -EBADE;
 		goto err_clr_cmdq;
 	}
-	ret = ubase_get_cmd_result(udev, desc, num, sw_pi);
+	ret = ubase_get_cmd_result(udev, desc, num, sw_pi, &is_unready);
 
 err_clr_cmdq:
 	cleaned = ubase_csq_clean(udev);
+
+	atomic_dec(&udev->hw.cmdq.csq_cnt);
+	spin_unlock_bh(&csq->lock);
+
 	if (cleaned < 0)
 		ret = cleaned;
 	else if (cleaned != num)
 		ubase_warn(udev,
 			   "cleaned %dBD, need to clean %dBD.\n", cleaned, num);
-err_unlock:
-	atomic_dec(&udev->hw.cmdq.csq_cnt);
-	spin_unlock_bh(&csq->lock);
+
+	if (is_unready)
+		ubase_warn(udev, "peer cmdq is not ready.\n");
 
 	return ret;
 }
