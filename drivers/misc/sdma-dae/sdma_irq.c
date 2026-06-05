@@ -99,10 +99,12 @@ int sdma_irq_init(struct hisi_sdma_device *sdma)
 
 void sdma_irq_deinit(struct hisi_sdma_device *sdma)
 {
+	struct platform_device *pdev;
 	void __iomem *io_addr;
 	u32 i;
 
-	for (i = HISI_STARS_CHN_NUM; i < sdma->nr_channel + HISI_STARS_CHN_NUM; i++) {
+	pdev = sdma->pdev;
+	for (i = 0; i < sdma->nr_channel + HISI_STARS_CHN_NUM; i++) {
 		io_addr = sdma->io_orig_base + i * HISI_SDMA_CHANNEL_IOMEM_SIZE;
 		sdma_channel_set_irq_mask(io_addr, SDMA_IOC_IOE_MASKED_STATUS);
 	}

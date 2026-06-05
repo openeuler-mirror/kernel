@@ -4,6 +4,7 @@
 
 #include <linux/bitfield.h>
 #include <linux/cdev.h>
+#include <linux/idr.h>
 #include <linux/types.h>
 #include <linux/hashtable.h>
 #include <linux/io.h>
@@ -20,8 +21,24 @@
 #define HISI_SDMA_HAL_HASH_BUCKETS_BITS 8
 
 /* HISI_SDMA_POLL_TIMOUT_VAL */
+#define SDMA_POLL_ERR_TIMEOUT	110
 #define SDMA_POLL_DELAY		1
-#define SDMA_POLL_TIMEOUT	100
+#define SDMA_POLL_TIMEOUT	80
+
+#define HISI_SDMA_IO_READ32_POLL_TIMEOUT(_addr, _val, _cond, _delay_us, _timeout_us) \
+	({ \
+		uint32_t __timeout = 0; \
+		uint32_t __delay = (_delay_us); \
+		while (__timeout < (_timeout_us)) { \
+			(_val) = readl(_addr); \
+			if (_cond) \
+				break; \
+			__timeout += (__delay); \
+			mdelay(__delay); \
+		} \
+		(_val) = readl(_addr); \
+		(_cond) ? 0 : -SDMA_POLL_ERR_TIMEOUT; \
+	})
 
 /**
  * struct hisi_sdma_channel - Information about one channel in the SDMA device
@@ -55,12 +72,6 @@ struct hisi_sdma_channel_node {
 	struct hlist_node node;
 };
 
-/**
- * struct hisi_sdma_pid_ref_hte - SDMA device pid table entry
- * @pid: Process's id
- * @ref: Number of devices opened in this process
- * @node: Entry node of process in the hash table
- */
 struct hisi_sdma_pid_ref_hte {
 	u32 pid;
 	u32 ref;
@@ -78,11 +89,6 @@ struct hisi_sdma_pid_ref_hte {
  * @io_base: io_orig_base + 32 channel address offsets
  * @base_addr: SDMA I/O base phyisical address
  * @name: SDMA device name in the /dev directory
- * @sdma_dev_ref_cnt: SDMA device register mmu_notifier count
- * @dev_exit_ref_cnt: SDMA device trigger mmu_notifier count
- * @dev_exit_flag: SDMA device pause channels flag (1 for paused)
- * @sdma_pause_mm_list: List of SDMA devices which register pause mmu_notifier
- * @sdma_resume_mm_list: List of SDMA devices which register resume mmu_notifier
  */
 struct hisi_sdma_device {
 	u16 idx;
@@ -108,14 +114,8 @@ struct hisi_sdma_device {
 
 	int irq_cnt;
 	int irq[SDMA_IRQ_NUM_MAX];
-
-	atomic_t sdma_dev_ref_cnt;
-	atomic_t dev_exit_ref_cnt;
-	atomic_t dev_exit_flag;
-
-	struct mutex mutex_lock;
-	struct list_head sdma_pause_mm_list;
-	struct list_head sdma_resume_mm_list;
+	DECLARE_HASHTABLE(sdma_pid_ref_ht, HISI_SDMA_HAL_HASH_BUCKETS_BITS);
+	spinlock_t pid_lock;
 };
 
 struct hisi_sdma_core_device {
@@ -130,20 +130,18 @@ struct hisi_sdma_global_info {
 	bool *sdma_mode;
 	struct hisi_sdma_core_device *core_dev;
 	struct ida *fd_ida;
-	DECLARE_HASHTABLE(sdma_pid_ref_ht, HISI_SDMA_HAL_HASH_BUCKETS_BITS);
+	struct mutex *mutex_lock;
+	struct list_head sdma_pause_mm_list;
+	struct list_head sdma_resume_mm_list;
 };
 
-struct hisi_sdma_debugfs_info {
-	u32 *share_chns;
-	struct hisi_sdma_core_device *core_dev;
-};
-
-void sdma_cdev_init(struct cdev *cdev);
-void sdma_clear_pid_ref(void);
+void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan);
+void sdma_clear_pid_ref(struct hisi_sdma_device *psdma_dev);
 void sdma_clear_ida_ref(struct hisi_sdma_channel *pchannel);
 int sdma_create_dbg_node(struct dentry *sdma_dbgfs_dir);
+void sdma_cdev_init(struct cdev *cdev);
 void sdma_info_sync_cdev(struct hisi_sdma_core_device *p, u32 *share_chns, struct ida *fd_ida,
-			 bool *safe_mode);
+			 bool *safe_mode, struct mutex *mutex_lock);
 void sdma_info_sync_dbg(struct hisi_sdma_core_device *p, u32 *share_chns);
 
 static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val, u32 mask)
@@ -153,6 +151,7 @@ static inline void chn_set_val(struct hisi_sdma_channel *pchan, int reg, u32 val
 	reg_val &= ~mask;
 	reg_val |= FIELD_PREP(mask, val);
 	/* calculate reg_val before writing into register */
+	wmb();
 
 	writel(reg_val, pchan->io_base + reg);
 }
@@ -166,12 +165,7 @@ static inline u32 chn_get_val(struct hisi_sdma_channel *pchan, int reg, u32 mask
 
 static inline void sdma_channel_set_pause(struct hisi_sdma_channel *pchan)
 {
-	u32 reg_val = readl(pchan->io_base + HISI_SDMA_CH_TEST_REG);
-
-	reg_val &= ~HISI_SDMA_CH_PAUSE_MSK;
-	reg_val |= FIELD_PREP(HISI_SDMA_CH_PAUSE_MSK, 1);
-
-	writel(reg_val, pchan->io_base + HISI_SDMA_CH_TEST_REG);
+	chn_set_val(pchan, HISI_SDMA_CH_TEST_REG, 1, HISI_SDMA_CH_PAUSE_MSK);
 }
 
 static inline bool sdma_channel_is_paused(struct hisi_sdma_channel *pchan)
@@ -214,6 +208,7 @@ static inline void sdma_channel_write_resume(struct hisi_sdma_channel *pchan)
 
 	reg_val &= ~HISI_SDMA_CH_RESUME_MSK;
 	reg_val |= FIELD_PREP(HISI_SDMA_CH_RESUME_MSK, 1);
+	wmb();
 
 	writel(reg_val, pchan->io_base + HISI_SDMA_CH_TEST_REG);
 }
@@ -267,12 +262,7 @@ static inline u32 sdma_channel_get_sq_head(struct hisi_sdma_channel *pchan)
 
 static inline void sdma_channel_set_cq_head(struct hisi_sdma_channel *pchan, u32 val)
 {
-	u32 reg_val = readl(pchan->io_base + HISI_SDMA_CH_CQHDBR_REG);
-
-	reg_val &= ~HISI_SDMA_U32_MSK;
-	reg_val |= FIELD_PREP(HISI_SDMA_U32_MSK, 1);
-
-	writel(reg_val, pchan->io_base + HISI_SDMA_CH_CQHDBR_REG);
+	chn_set_val(pchan, HISI_SDMA_CH_CQHDBR_REG, val, HISI_SDMA_U32_MSK);
 }
 
 static inline u32 sdma_channel_get_cq_tail(struct hisi_sdma_channel *pchan)
@@ -297,6 +287,9 @@ static inline u32 sdma_channel_get_err_status(struct hisi_sdma_channel *pchan)
 
 static inline void sdma_channel_clear_ioe_status(void __iomem *io_addr)
 {
+	union sdmam_irq_status reg_val = {0};
+
+	reg_val.bits.ch_ioe_status = 1;
 	writel(HISI_SDMA_U32_MSK, io_addr + HISI_SDMA_IRQ_STATUS);
 }
 

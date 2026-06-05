@@ -5,8 +5,7 @@
 #include <linux/hashtable.h>
 #include <linux/pagemap.h>
 #include <linux/slab.h>
-#include <linux/list.h>
-#include <linux/idr.h>
+#include "sdma_hal.h"
 
 #define HISI_SDMA_HASH_BUCKETS_BITS	3
 #define COOKIE_IDA_SHIFT		32
