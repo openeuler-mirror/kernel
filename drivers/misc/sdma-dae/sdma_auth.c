@@ -143,7 +143,7 @@ static int sdma_add_authority_ht(struct hisi_sdma_own_pid_hte *entry, u32 count,
 		if (sub_entry)
 			continue;
 
-		sub_entry = kzalloc(sizeof(struct hisi_sdma_sub_pid_hte), GFP_KERNEL);
+		sub_entry = kzalloc(sizeof(struct hisi_sdma_sub_pid_hte), GFP_ATOMIC);
 		if (!sub_entry) {
 			sdma_clear_residual_auth_ht(entry, list, j);
 			return -ENOMEM;
@@ -170,10 +170,7 @@ static int sdma_create_authority_ht(u32 pid, u32 pasid, u32 num, u32 *list)
 	entry->pasid = pasid;
 	hash_init(entry->sdma_submitter_pid_ht);
 	ret = sdma_add_authority_ht(entry, num, list);
-	if (ret != 0)
-		kfree(entry);
-	else
-		hash_add(g_authority->sdma_owner_pid_ht, &entry->node, entry->pid);
+	hash_add(g_authority->sdma_owner_pid_ht, &entry->node, entry->pid);
 
 	return ret;
 }
@@ -218,7 +215,7 @@ int sdma_check_authority(u32 pasid, u32 owner_pid, u32 submitter_pid, u32 *owner
 	}
 	sub_entry = sdma_search_submitter_pid(entry, submitter_pid);
 	if (!sub_entry) {
-		pr_err("The submitter[%u] not authorized\n", submitter_pid);
+		pr_err("The submitter[%u] not authorithed\n", submitter_pid);
 		read_unlock(&g_authority->owner_pid_lock);
 		return -ENODATA;
 	}
