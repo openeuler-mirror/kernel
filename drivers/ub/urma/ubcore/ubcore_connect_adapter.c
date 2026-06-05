@@ -19,6 +19,7 @@
 #include "net/ubcore_session.h"
 #include "ubcore_connect_adapter.h"
 #include "ubcore_priv.h"
+#include "ubcore_host_info.h"
 #include "ubcore_hash_table.h"
 #include "ubcore_workqueue.h"
 
@@ -86,6 +87,7 @@ struct msg_isref_conn_req {
 
 #define UBCORE_TPID_REUSE_MAX_WAIT_TIMES (30 * 1000 / 20)
 #define UBCORE_TPID_REUSE_WAIT_TIME 20
+#define UBCORE_ENABLE_SHARED_CTP_DEFAULT false
 
 /* Default as 30s */
 uint32_t ubcore_conn_timeout = UBCORE_CONN_MAX_TIMEOUT;
@@ -95,15 +97,56 @@ uint32_t ubcore_get_conn_timeout(void)
 	return ubcore_conn_timeout;
 }
 
-static void ubcore_fill_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
+/* Default as off */
+bool ubcore_enable_shared_ctp = UBCORE_ENABLE_SHARED_CTP_DEFAULT;
+
+bool ubcore_get_enable_shared_ctp(void)
+{
+	return ubcore_enable_shared_ctp;
+}
+
+static int ubcore_lookup_host_info_local_and_peer(
+	const union ubcore_eid *local_src_eid, union ubcore_eid *local_dst_eid,
+	const union ubcore_eid *peer_src_eid, union ubcore_eid *peer_dst_eid)
+{
+	struct ubcore_host_info local_host_info;
+	struct ubcore_host_info peer_host_info;
+
+	int local_ret = ubcore_lookup_host_info(local_src_eid, &local_host_info);
+	int peer_ret = ubcore_lookup_host_info(peer_src_eid, &peer_host_info);
+
+	if (local_ret == 0 && peer_ret == 0) {
+		*local_dst_eid = local_host_info.eid;
+		*peer_dst_eid = peer_host_info.eid;
+		ubcore_log_debug("local_host_eid=" EID_FMT " , peer_host_eid=" EID_FMT "\n",
+			EID_ARGS(local_host_info.eid), EID_ARGS(peer_host_info.eid));
+		return 0;
+	}
+	if (local_ret != 0)
+		ubcore_log_err(
+			"Failed to lookup local host eid, ret=%d, local_port_eid=" EID_FMT "\n",
+			local_ret, EID_ARGS(*local_src_eid));
+	if (peer_ret != 0)
+		ubcore_log_err(
+			"Failed to lookup peer host eid, ret=%d, peer_port_eid=" EID_FMT "\n",
+			peer_ret, EID_ARGS(*peer_src_eid));
+	return -ENOENT;
+}
+
+static int ubcore_fill_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 				 struct ubcore_get_tp_cfg *get_tp_cfg,
 				 struct ubcore_tjetty_cfg *cfg)
 {
 	if (key == NULL || get_tp_cfg == NULL || cfg == NULL)
-		return;
+		return -EINVAL;
 
 	key->lk.local_eid = get_tp_cfg->local_eid;
 	key->lk.peer_eid = get_tp_cfg->peer_eid;
+	if (ubcore_get_enable_shared_ctp()) {
+		if (ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
+			&key->lk.local_eid, &get_tp_cfg->peer_eid, &key->lk.peer_eid) != 0)
+			return -ENOENT;
+	}
 	key->lk.trans_mode = cfg->trans_mode;
 	key->lk.share_mode = cfg->flag.bs.share_tp ?
 		UBCORE_TPID_SHARE_CONTAINER : UBCORE_TPID_SHARE_NONE;
@@ -118,18 +161,24 @@ static void ubcore_fill_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 		key->lk.tp_type = UBCORE_UTP;
 
 	key->lk.link_type = (get_tp_cfg->flag.bs.uboe) ? UBCORE_LINK_UBOE : UBCORE_LINK_ETHERNET;
+	return 0;
 }
 
-static void ubcore_fill_bind_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
+static int ubcore_fill_bind_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 				 struct ubcore_get_tp_cfg *get_tp_cfg,
 				 struct ubcore_tjetty_cfg *cfg,
 				 struct ubcore_jetty *sjetty)
 {
 	if (key == NULL || get_tp_cfg == NULL || cfg == NULL)
-		return;
+		return -EINVAL;
 
 	key->lk.local_eid = get_tp_cfg->local_eid;
 	key->lk.peer_eid = get_tp_cfg->peer_eid;
+	if (ubcore_get_enable_shared_ctp()) {
+		if (ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
+			&key->lk.local_eid, &get_tp_cfg->peer_eid, &key->lk.peer_eid) != 0)
+			return -ENOENT;
+	}
 	key->lk.trans_mode = cfg->trans_mode;
 	key->lk.share_mode = cfg->flag.bs.share_tp ?
 		UBCORE_TPID_SHARE_CONTAINER : UBCORE_TPID_SHARE_NONE;
@@ -144,13 +193,22 @@ static void ubcore_fill_bind_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 		key->lk.tp_type = UBCORE_UTP;
 
 	key->lk.link_type = (get_tp_cfg->flag.bs.uboe) ? UBCORE_LINK_UBOE : UBCORE_LINK_ETHERNET;
+	return 0;
 }
 
-static void ubcore_fill_tpid_cfg(struct ubcore_tpid_cfg *tpid_cfg,
+static int ubcore_fill_tpid_cfg(struct ubcore_tpid_cfg *tpid_cfg,
 	struct ubcore_get_tp_cfg *get_tp_cfg)
 {
+	if (tpid_cfg == NULL || get_tp_cfg == NULL)
+		return -EINVAL;
+
 	tpid_cfg->local_eid = get_tp_cfg->local_eid;
 	tpid_cfg->peer_eid = get_tp_cfg->peer_eid;
+	if (ubcore_get_enable_shared_ctp()) {
+		if (ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
+			&tpid_cfg->local_eid, &get_tp_cfg->peer_eid, &tpid_cfg->peer_eid) != 0)
+			return -ENOENT;
+	}
 	tpid_cfg->tp_mode = get_tp_cfg->trans_mode;
 	if (get_tp_cfg->flag.bs.ctp)
 		tpid_cfg->tp_type = UBCORE_CTP;
@@ -160,6 +218,7 @@ static void ubcore_fill_tpid_cfg(struct ubcore_tpid_cfg *tpid_cfg,
 		tpid_cfg->tp_type = UBCORE_UTP;
 	tpid_cfg->link_type = (get_tp_cfg->flag.bs.uboe == 1) ? UBCORE_LINK_UBOE :
 		UBCORE_LINK_ETHERNET;
+	return 0;
 }
 
 static void ubcore_tpid_reuse_kref_release(struct kref *ref_cnt)
@@ -904,6 +963,15 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	get_tp_cfg.peer_eid = req->get_tp_cfg.local_eid;
 	key.lk.local_eid = get_tp_cfg.local_eid;
 	key.lk.peer_eid = get_tp_cfg.peer_eid;
+	if (ubcore_get_enable_shared_ctp()) {
+		ret = ubcore_lookup_host_info_local_and_peer(&get_tp_cfg.local_eid,
+			&key.lk.local_eid, &get_tp_cfg.peer_eid, &key.lk.peer_eid);
+		if (ret != 0) {
+			ubcore_log_err("Failed to lookup host info in create req.\n");
+			ret = GET_TP_LIST_ERROR;
+			goto send_resp;
+		}
+	}
 	key.lk.trans_mode = get_tp_cfg.trans_mode;
 	key.stag = req->dtag;
 	key.dtag = req->stag;
@@ -956,7 +1024,12 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 		ret = GET_TP_LIST_ERROR;
 		goto send_resp;
 	}
-	ubcore_fill_tpid_cfg(&tpid_cfg, &get_tp_cfg);
+	ret = ubcore_fill_tpid_cfg(&tpid_cfg, &get_tp_cfg);
+	if (ret != 0) {
+		ubcore_log_err("Failed to fill tpid cfg, ret=%d", ret);
+		ret = GET_TP_LIST_ERROR;
+		goto send_resp;
+	}
 	return_tpid = ubcore_create_tpid_priv(dev, &tpid_cfg, NULL, false);
 	if (return_tpid == NULL) {
 		ubcore_log_err("Failed to create tpid for reuse, ret: %d.\n", ret);
@@ -974,8 +1047,8 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 
 	ubcore_log_info("Rcv req, local eid " EID_FMT ", peer eid " EID_FMT
 		", tphdl: %llu, p_tphdl: %llu, tx_psn: %u, rx_psn: %u.\n",
-		EID_ARGS(get_tp_cfg.local_eid),
-		EID_ARGS(get_tp_cfg.peer_eid), return_tpid->tp_handle.value,
+		EID_ARGS(tpid_cfg.local_eid),
+		EID_ARGS(tpid_cfg.peer_eid), return_tpid->tp_handle.value,
 		active_cfg.peer_tp_handle.value, tx_psn, req->tx_psn);
 
 	mutex_lock(&tpid_reuse->lock);
@@ -1303,6 +1376,14 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 
 	key.lk.local_eid = req->peer_eid;
 	key.lk.peer_eid = req->local_eid;
+	if (ubcore_get_enable_shared_ctp()) {
+		ret = ubcore_lookup_host_info_local_and_peer(&req->peer_eid, &key.lk.local_eid,
+			&req->local_eid, &key.lk.peer_eid);
+		if (ret != 0) {
+			ubcore_log_err("Failed to lookup host info in destroy req, ret=%d\n", ret);
+			return;
+		}
+	}
 	key.lk.trans_mode = req->trans_mode;
 	key.lk.tp_type = req->tp_type;
 	key.lk.link_type = req->link_type;
@@ -1354,9 +1435,19 @@ static void handle_isref_req(struct ubcore_device *dev,
 		(struct msg_isref_conn_req *)msg->data;
 	struct ubcore_tpid_reuse_key key = { 0 };
 	struct ubcore_tpid_reuse *tpid_reuse;
+	int ret;
 
 	key.lk.local_eid = req->peer_eid;
 	key.lk.peer_eid = req->local_eid;
+	if (ubcore_get_enable_shared_ctp()) {
+		ret = ubcore_lookup_host_info_local_and_peer(&req->peer_eid,
+			&key.lk.local_eid, &req->local_eid, &key.lk.peer_eid);
+		if (ret != 0) {
+			ubcore_log_err(
+				"Failed to lookup host info in isref_req, ret=%d\n", ret);
+			return;
+		}
+	}
 	key.lk.trans_mode = req->trans_mode;
 	key.lk.tp_type = req->tp_type;
 	key.lk.link_type = req->link_type;
@@ -1435,7 +1526,11 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 	if (ubcore_fill_get_tp_cfg(dev, &get_tp_cfg, cfg) != 0)
 		return NULL;
 
-	ubcore_fill_tpid_reuse_key(&key, &get_tp_cfg, cfg);
+	ret = ubcore_fill_tpid_reuse_key(&key, &get_tp_cfg, cfg);
+	if (ret != 0) {
+		ubcore_log_err("Failed to fill tpid reuse key, ret=%d", ret);
+		return NULL;
+	}
 	ubcore_log_info_rl("try to get tpid reuse.\n");
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
 	if (tpid_reuse != NULL) {
@@ -1471,17 +1566,11 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 		return NULL;
 	}
 
-	tpid_cfg.local_eid = get_tp_cfg.local_eid;
-	tpid_cfg.peer_eid = get_tp_cfg.peer_eid;
-	tpid_cfg.tp_mode = get_tp_cfg.trans_mode;
-	if (get_tp_cfg.flag.bs.ctp)
-		tpid_cfg.tp_type = UBCORE_CTP;
-	if (get_tp_cfg.flag.bs.rtp)
-		tpid_cfg.tp_type = UBCORE_RTP;
-	if (get_tp_cfg.flag.bs.utp)
-		tpid_cfg.tp_type = UBCORE_UTP;
-	tpid_cfg.link_type = (get_tp_cfg.flag.bs.uboe == 1) ?
-						  UBCORE_LINK_UBOE : UBCORE_LINK_ETHERNET;
+	ret = ubcore_fill_tpid_cfg(&tpid_cfg, &get_tp_cfg);
+	if (ret != 0) {
+		ubcore_log_err("Failed to fill tpid cfg, ret=%d", ret);
+		goto err_out;
+	}
 
 	return_tpid = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, false);
 	if (return_tpid == NULL) {
@@ -1506,8 +1595,8 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 			ubcore_log_err("Exchange_tp_info Failed: dev_name is %s,local_tp_handle is %llu",
 				dev->dev_name, return_tpid->tp_handle.value);
 			ubcore_log_err("  local eid " EID_FMT ", peer eid " EID_FMT,
-				EID_ARGS(get_tp_cfg.local_eid),
-				EID_ARGS(get_tp_cfg.peer_eid));
+				EID_ARGS(tpid_cfg.local_eid),
+				EID_ARGS(tpid_cfg.peer_eid));
 			goto err_out;
 		}
 	}
@@ -1562,7 +1651,12 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 	if (ubcore_fill_get_tp_cfg(dev, &get_tp_cfg, cfg) != 0)
 		return NULL;
 
-	ubcore_fill_tpid_reuse_key(&key, &get_tp_cfg, cfg);
+	ret = ubcore_fill_tpid_reuse_key(&key, &get_tp_cfg, cfg);
+	if (ret != 0) {
+		ubcore_log_err("Failed to fill tpid reuse key, ret=%d", ret);
+		return NULL;
+	}
+
 	ubcore_log_info_rl("try to get tpid reuse.\n");
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
 	if (tpid_reuse != NULL) {
@@ -1622,8 +1716,8 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 			ubcore_log_err("Exchange_tp_info Failed: dev_name is %s, local_tp_handle is %llu",
 				dev->dev_name, return_tpid->tp_handle.value);
 			ubcore_log_err("localeid " EID_FMT ", peereid " EID_FMT,
-				EID_ARGS(get_tp_cfg.local_eid),
-				EID_ARGS(get_tp_cfg.peer_eid));
+				EID_ARGS(tpid_cfg.local_eid),
+				EID_ARGS(tpid_cfg.peer_eid));
 			goto err_out;
 		}
 	}
@@ -1747,7 +1841,11 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 	if (ret != 0)
 		return ret;
 
-	ubcore_fill_bind_tpid_reuse_key(&key, &get_tp_cfg, &tjetty->cfg, jetty);
+	ret = ubcore_fill_bind_tpid_reuse_key(&key, &get_tp_cfg, &tjetty->cfg, jetty);
+	if (ret != 0) {
+		ubcore_log_err("Failed to fill bind tpid reuse key, ret=%d\n", ret);
+		return ret;
+	}
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
 	if (tpid_reuse != NULL) {
 		tpid_reuse = ubcore_reuse_tpid(tpid_reuse);
@@ -1793,19 +1891,12 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 		return ret;
 	}
 
-	tpid_cfg.local_eid = get_tp_cfg.local_eid;
-	tpid_cfg.peer_eid = get_tp_cfg.peer_eid;
-	tpid_cfg.tp_mode = get_tp_cfg.trans_mode;
-	if (get_tp_cfg.flag.bs.ctp)
-		tpid_cfg.tp_type = UBCORE_CTP;
-	if (get_tp_cfg.flag.bs.rtp)
-		tpid_cfg.tp_type = UBCORE_RTP;
-	if (get_tp_cfg.flag.bs.utp)
-		tpid_cfg.tp_type = UBCORE_UTP;
-	if (get_tp_cfg.flag.bs.uboe)
-		tpid_cfg.link_type = UBCORE_LINK_UBOE;
-	else
-		tpid_cfg.link_type = UBCORE_LINK_ETHERNET;
+	ret = ubcore_fill_tpid_cfg(&tpid_cfg, &get_tp_cfg);
+	if (ret != 0) {
+		ubcore_log_err("Failed to fill tpid cfg, ret=%d\n", ret);
+		goto err_out;
+	}
+
 	return_tpid = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, false);
 	if (return_tpid == NULL) {
 		ubcore_log_err("Failed to create tpid for reuse, ret: %d.\n", ret);
