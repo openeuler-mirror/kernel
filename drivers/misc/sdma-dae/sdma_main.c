@@ -168,11 +168,11 @@ static void sdma_free_all_sq_cq(struct hisi_sdma_device *psdma_dev)
 {
 	struct hisi_sdma_channel *pchan;
 	int sync_size;
-	u16 i;
+	int i;
 
 	sync_size = sizeof(struct hisi_sdma_queue_info);
 
-	for (i = 0; i < psdma_dev->nr_channel; i++) {
+	for (i = psdma_dev->nr_channel - 1; i >= 0; i--) {
 		pchan = psdma_dev->channels + i;
 		if (pchan->io_base)
 			sdma_channel_reset(pchan);
