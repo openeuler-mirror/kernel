@@ -167,6 +167,34 @@ static int ubmad_check_eid_in_dev(struct ubcore_device *dev,
 	return -1;
 }
 
+static int ubmad_get_eid_info_by_eid(struct ubcore_device *dev,
+				     const union ubcore_eid *eid,
+				     struct ubcore_eid_info *eid_info)
+{
+	int i;
+
+	if (IS_ERR_OR_NULL(dev) || IS_ERR_OR_NULL(eid) ||
+	    IS_ERR_OR_NULL(eid_info) || IS_ERR_OR_NULL(dev->eid_table.eid_entries))
+		return -EINVAL;
+
+	spin_lock(&dev->eid_table.lock);
+	for (i = 0; i < dev->eid_table.eid_cnt; i++) {
+		if (!dev->eid_table.eid_entries[i].valid)
+			continue;
+
+		if (memcmp(&dev->eid_table.eid_entries[i].eid, eid,
+			   sizeof(union ubcore_eid)) == 0) {
+			eid_info->eid = dev->eid_table.eid_entries[i].eid;
+			eid_info->eid_index =
+				dev->eid_table.eid_entries[i].eid_index;
+			spin_unlock(&dev->eid_table.lock);
+			return 0;
+		}
+	}
+	spin_unlock(&dev->eid_table.lock);
+	return -ENOENT;
+}
+
 static int
 ubmad_update_device_priv_resources(struct ubmad_device_priv *dev_priv,
 				   struct ubcore_eid_info *eid_info)
@@ -295,6 +323,47 @@ static int ubmad_ubc_eid_ops(struct ubcore_device *dev,
 	}
 	mutex_unlock(&g_ubc_eid_lock);
 	return 0;
+}
+
+static void ubmad_on_main_ue_eid_event(
+	const union ubcore_eid *main_ue_eid,
+	enum ubcore_main_ue_eid_event_type event_type)
+{
+	struct ubcore_device *dev;
+	struct ubcore_eid_info eid_info = { 0 };
+	enum ubcore_mgmt_event_type mgmt_event_type;
+	int ret;
+
+	switch (event_type) {
+	case UBCORE_MAIN_UE_EID_FIRST_ADD:
+		mgmt_event_type = UBCORE_MGMT_EVENT_EID_ADD;
+		break;
+	case UBCORE_MAIN_UE_EID_LAST_DEL:
+		mgmt_event_type = UBCORE_MGMT_EVENT_EID_RMV;
+		break;
+	default:
+		return;
+	}
+
+	dev = ubcore_get_device_by_eid((union ubcore_eid *)main_ue_eid,
+				       UBCORE_TRANSPORT_UB);
+	if (dev == NULL)
+		return;
+
+	ret = ubmad_get_eid_info_by_eid(dev, main_ue_eid, &eid_info);
+	if (ret != 0) {
+		ubcore_put_device(dev);
+		return;
+	}
+
+	mutex_lock(&g_ubc_eid_lock);
+	ret = ubmad_ubc_eid_ops_inner(dev, &eid_info, mgmt_event_type);
+	mutex_unlock(&g_ubc_eid_lock);
+	if (ret != 0)
+		ubcore_log_err("Failed to handle main ue eid event, eid " EID_FMT
+			       ", event_type: %d, ret: %d.\n",
+			       EID_ARGS(*main_ue_eid), event_type, ret);
+	ubcore_put_device(dev);
 }
 
 /* jetty ops */
@@ -980,12 +1049,9 @@ ubmad_create_device_priv_resources(struct ubmad_device_priv *dev_priv)
 static void
 ubmad_destroy_device_priv_resources(struct ubmad_device_priv *dev_priv)
 {
-	if (!dev_priv->valid) {
-		ubcore_log_warn(
-			"dev_priv rsrc not inited. No need to uninit. dev_name: %s\n",
-			dev_priv->device->dev_name);
+	if (!dev_priv->valid)
 		return;
-	}
+
 	dev_priv->valid = false;
 
 	ubmad_uninit_jetty_rsrc_array(dev_priv->jetty_rsrc);
@@ -1043,7 +1109,7 @@ void ubmad_put_device_priv(struct ubmad_device_priv *dev_priv)
 	kref_put(&dev_priv->kref, ubmad_release_device_priv);
 }
 
-// init dev_priv rsrc fail won't cause this func ret err
+/* device resources are created lazily on main ue eid events */
 static int ubmad_open_device(struct ubcore_device *device)
 {
 	struct ubmad_device_priv *dev_priv;
@@ -1058,20 +1124,12 @@ static int ubmad_open_device(struct ubcore_device *device)
 	dev_priv->handler.event_callback = ubmad_event_cb;
 	ubcore_register_event_handler(device, &dev_priv->handler);
 
-	/* rsrc */
-	if (ubmad_create_device_priv_resources(dev_priv) != 0) {
-		// It could be due to eid not added. Wait for ubcore add eid event to init again.
-		ubcore_log_warn("fail to create dev_priv rsrc. dev_name: %s\n",
-			      device->dev_name);
-	}
-
 	/* reliable communication */
 	dev_priv->rt_wq = alloc_workqueue("%s",
 		WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 0, "ubmad rt_wq");
 	if (IS_ERR_OR_NULL(dev_priv->rt_wq)) {
 		ubcore_log_err("create rt_wq failed. dev_name: %s\n",
 			     device->dev_name);
-		ubmad_destroy_device_priv_resources(dev_priv);
 		ubcore_unregister_event_handler(dev_priv->device,
 						&dev_priv->handler);
 		kfree(dev_priv);
@@ -1085,7 +1143,6 @@ static int ubmad_open_device(struct ubcore_device *device)
 			     device->dev_name);
 		drain_workqueue(dev_priv->rt_wq);
 		destroy_workqueue(dev_priv->rt_wq);
-		ubmad_destroy_device_priv_resources(dev_priv);
 		ubcore_unregister_event_handler(dev_priv->device,
 						&dev_priv->handler);
 		kfree(dev_priv);
@@ -1135,6 +1192,11 @@ static void ubmad_notify_close(struct ubcore_device *device)
 	if (dev_priv == NULL) {
 		ubcore_log_err("Failed to get dev_priv, dev_name: %s\n",
 			     device->dev_name);
+		return;
+	}
+
+	if (!dev_priv->valid) {
+		ubmad_put_device_priv(dev_priv);
 		return;
 	}
 
@@ -1210,10 +1272,19 @@ int ubmad_init(void)
 	INIT_LIST_HEAD(&g_ubmad_device_list);
 	INIT_LIST_HEAD(&g_ubmad_agent_list);
 
+	ret = ubcore_register_main_ue_eid_event_cb(ubmad_on_main_ue_eid_event);
+	if (ret != 0) {
+		ubcore_log_err("Failed to register main ue eid event cb, ret: %d.\n",
+			       ret);
+		return ret;
+	}
+
 	ret = ubcore_register_client(&g_ubmad_client);
 	if (ret != 0) {
 		ubcore_log_err("Failed to register ub_mad client, ret: %d.\n",
 			     ret);
+		(void)ubcore_unregister_main_ue_eid_event_cb(
+			ubmad_on_main_ue_eid_event);
 		return ret;
 	}
 
@@ -1224,6 +1295,7 @@ int ubmad_init(void)
 
 void ubmad_uninit(void)
 {
+	(void)ubcore_unregister_main_ue_eid_event_cb(ubmad_on_main_ue_eid_event);
 	ubcore_unregister_client(&g_ubmad_client);
 }
 
