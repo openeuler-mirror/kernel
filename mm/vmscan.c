@@ -7623,9 +7623,9 @@ static unsigned long shrinker_v2_to_v1_scan_objects(struct shrinker_v2 *shk_v2,
 						    struct shrink_control *sc)
 {
 	if (shk_v2->v1)
-		return shk_v2->v1->count_objects(shk_v2->v1, sc);
+		return shk_v2->v1->scan_objects(shk_v2->v1, sc);
 
-	return SHRINK_EMPTY;
+	return SHRINK_STOP;
 }
 
 int register_shrinker(struct shrinker *shrinker, const char *fmt, ...)
