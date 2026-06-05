@@ -270,7 +270,7 @@ static inline void sdma_channel_set_cq_head(struct hisi_sdma_channel *pchan, u32
 	u32 reg_val = readl(pchan->io_base + HISI_SDMA_CH_CQHDBR_REG);
 
 	reg_val &= ~HISI_SDMA_U32_MSK;
-	reg_val |= FIELD_PREP(HISI_SDMA_U32_MSK, val);
+	reg_val |= FIELD_PREP(HISI_SDMA_U32_MSK, 1);
 
 	writel(reg_val, pchan->io_base + HISI_SDMA_CH_CQHDBR_REG);
 }
