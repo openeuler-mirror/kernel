@@ -4450,8 +4450,7 @@ static int uburma_cmd_import_jetty_async(struct ubcore_device *ubc_dev,
 	arg.out.handle = (uint64_t)uobj->id;
 	ret = uburma_tlv_append(hdr, &arg);
 	if (ret != 0) {
-		ubcore_unimport_jetty_async(tjetty, 0, NULL);
-		uobj_alloc_abort(uobj);
+		uburma_unimport_jetty(file, true, arg.out.handle);
 		return ret;
 	}
 	return 0;
