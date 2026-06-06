@@ -32,7 +32,7 @@ static struct loongarch_iommu_mem {
 	bool init_failed;
 } iommu_mem;
 
-static int __init loongarch_iommu_mem_init(void)
+void __init loongarch_iommu_mem_init(void)
 {
 	struct acpi_table_header *ivrs_base;
 	acpi_status status;
@@ -43,7 +43,7 @@ static int __init loongarch_iommu_mem_init(void)
 	if (status == AE_NOT_FOUND) {
 		iommu_mem.init_failed = true;
 		pr_info("%s get ivrs table failed\n", __func__);
-		return 0;
+		return;
 	}
 	acpi_put_table(ivrs_base);
 
@@ -53,18 +53,19 @@ static int __init loongarch_iommu_mem_init(void)
 		iommu_mem.init_failed = true;
 		pr_info("%s Unable to alloc memory for iommu page table\n",
 				__func__);
-		return 0;
+		return;
 	}
 
 	iommu_mem.vaddr = TO_UNCACHE(phys);
 	bytes = ALLOC_PAGES / 8;
 	iommu_mem.bitmap_sz = (ALLOC_PAGES % 8) ? (bytes + 1) : bytes;
-	iommu_mem.mem_bitmap = bitmap_zalloc(iommu_mem.bitmap_sz, GFP_KERNEL);
+	iommu_mem.mem_bitmap = memblock_alloc(iommu_mem.bitmap_sz, GFP_KERNEL);
 
 	spin_lock_init(&iommu_mem.bitmap_lock);
-	pr_info("%s alloc iommu page table mem %lx bitmap %lx map_size %lu\n",
+	pr_info("%s alloc iommu page table mem %lx-%lx bitmap %lx map_size %lu\n",
 			__func__,
 			iommu_mem.vaddr,
+			iommu_mem.vaddr + ALLOC_MEM,
 			(ulong)iommu_mem.mem_bitmap,
 			iommu_mem.bitmap_sz);
 
@@ -73,9 +74,8 @@ static int __init loongarch_iommu_mem_init(void)
 		pr_info("%s Failed to allocate bitmap for iommu\n",
 			__func__);
 	}
-	return 0;
+	return;
 }
-arch_initcall(loongarch_iommu_mem_init);
 
 void *loongarch_iommu_alloc_page(void)
 {
