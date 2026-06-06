@@ -407,7 +407,9 @@ static void ubase_mbx_complete(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 	unsigned long flags;
 
 	raw_spin_lock_irqsave(&udev->mb_cmd.mbx_lock, flags);
+	udev->mbx_stats.ae_cnt++;
 	if (aeqe->event.cmd.seq_num != ctx->seq_num) {
+		udev->mbx_stats.seq_num_err_cnt++;
 		raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 		return;
 	}
@@ -678,8 +680,10 @@ static int ubase_ae_task_handle(void *data)
 
 	while (!kthread_should_stop()) {
 		if (wait_for_completion_timeout(&aeq->poll,
-						msecs_to_jiffies(UBASE_WAIT_COMPLETION_TIME)))
+						msecs_to_jiffies(UBASE_WAIT_COMPLETION_TIME))) {
 			ubase_poll_aeqe(udev, aeq);
+			cond_resched();
+		}
 	}
 
 	ubase_info(udev, "ubase ae task exit.\n");
