@@ -18,6 +18,7 @@
 #include "ubcore_priv.h"
 #include "ubcore_cmd_tlv.h"
 #include "ubcore_main_ue_eid.h"
+#include "ubcore_host_info.h"
 #include "ubcore_topo_info.h"
 #include "net/ubcore_cm.h"
 #include "ubcore_uvs_cmd.h"
@@ -277,6 +278,33 @@ static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 	return ret;
 }
 
+static int ubcore_insert_host_eid_batch(
+	const union ubcore_eid *host_eid, uint32_t eid_num,
+	const union ubcore_eid *eids)
+{
+	struct ubcore_host_info host_info = {0};
+	uint32_t i;
+	int ret;
+
+	if (host_eid == NULL || eids == NULL || eid_num == 0 ||
+	    eid_num > UBCORE_HOST_EID_BATCH_EID_MAX) {
+		ubcore_log_err("invalid host eid batch.\n");
+		return -EINVAL;
+	}
+
+	host_info.eid = *host_eid;
+	for (i = 0; i < eid_num; i++) {
+		ret = ubcore_insert_host_info(&eids[i], &host_info);
+		if (ret != 0) {
+			ubcore_log_err("insert host eid batch failed, idx: %u, ret: %d\n",
+				       i, ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 static int ubcore_insert_main_ue_eid_batch(
 	const union ubcore_eid *main_ue_eid, uint32_t eid_num,
 	const union ubcore_eid *eids)
@@ -292,8 +320,11 @@ static int ubcore_insert_main_ue_eid_batch(
 
 	for (i = 0; i < eid_num; i++) {
 		ret = ubcore_insert_main_ue_eid(&eids[i], main_ue_eid);
-		if (ret != 0)
+		if (ret != 0) {
+			ubcore_log_err("insert main ue eid batch failed, idx: %u, ret: %d\n",
+				       i, ret);
 			return ret;
+		}
 	}
 
 	return 0;
@@ -323,7 +354,11 @@ static int ubcore_cmd_delete_main_ue_eid(struct ubcore_global_file *file,
 	if (ret != 0)
 		return ret;
 
-	return ubcore_delete_main_ue_eid(&arg.in.eid);
+	ret = ubcore_delete_main_ue_eid(&arg.in.eid);
+	if (ret != 0)
+		ubcore_log_err("delete main ue eid failed, ret: %d\n", ret);
+
+	return ret;
 }
 
 static int ubcore_cmd_lookup_main_ue_eid(struct ubcore_global_file *file,
@@ -338,8 +373,10 @@ static int ubcore_cmd_lookup_main_ue_eid(struct ubcore_global_file *file,
 
 	ret = ubcore_lookup_main_ue_eid(&arg.in.eid,
 		&arg.out.main_ue_eid);
-	if (ret != 0)
+	if (ret != 0) {
+		ubcore_log_err("lookup main ue eid failed, ret: %d\n", ret);
 		return ret;
+	}
 
 	if (ubcore_global_tlv_append(hdr, (void *)&arg) != 0)
 		return -EPERM;
@@ -378,6 +415,26 @@ static int ubcore_cmd_insert_main_ue_eid_batch(
 	return ret;
 }
 
+static int ubcore_cmd_insert_host_eid_batch(
+	struct ubcore_global_file *file, struct ubcore_cmd_hdr *hdr)
+{
+	struct ubcore_cmd_host_eid_batch *arg;
+	int ret;
+
+	arg = kzalloc(sizeof(*arg), GFP_KERNEL);
+	if (arg == NULL)
+		return -ENOMEM;
+
+	ret = ubcore_global_tlv_parse(hdr, (void *)arg);
+	if (ret == 0)
+		ret = ubcore_insert_host_eid_batch(&arg->in.host_eid,
+						   arg->in.eid_num,
+						   arg->in.eids);
+
+	kfree(arg);
+	return ret;
+}
+
 typedef int (*ubcore_uvs_global_cmd_handler)(struct ubcore_global_file *file,
 					     struct ubcore_cmd_hdr *hdr);
 struct ubcore_uvs_global_cmd_func {
@@ -401,6 +458,8 @@ static struct ubcore_uvs_global_cmd_func g_ubcore_uvs_global_cmd_funcs[] = {
 		ubcore_cmd_flush_main_ue_eid, true },
 	[UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH] = {
 		ubcore_cmd_insert_main_ue_eid_batch, true },
+	[UBCORE_CMD_INSERT_HOST_EID_BATCH] = {
+		ubcore_cmd_insert_host_eid_batch, true },
 };
 
 int ubcore_uvs_global_cmd_parse(struct ubcore_global_file *file,

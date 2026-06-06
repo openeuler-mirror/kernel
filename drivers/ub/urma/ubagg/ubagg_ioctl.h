@@ -22,12 +22,20 @@ enum ubagg_cmd {
 	UBAGG_CMD_CREATE_DEV,
 	UBAGG_CMD_DELETE_DEV,
 	UBAGG_CMD_GET_DEV_NAME,
+	UBAGG_CMD_GET_TOPO_INFO,
 };
 
 struct ubagg_cmd_hdr {
 	uint32_t command;
 	uint32_t args_len;
 	uint64_t args_addr;
+};
+
+struct ubagg_get_topo_info_arg {
+	struct {
+		void *topo;
+		uint32_t topo_num;
+	} out;
 };
 
 #define UBAGG_CMD_MAGIC 'B'
