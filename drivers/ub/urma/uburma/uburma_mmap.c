@@ -16,6 +16,7 @@
 
 #include "uburma_log.h"
 #include "uburma_types.h"
+#include "uburma_file_ops.h"
 
 void uburma_umap_priv_init(struct uburma_umap_priv *priv,
 			   struct vm_area_struct *vma)
@@ -25,6 +26,7 @@ void uburma_umap_priv_init(struct uburma_umap_priv *priv,
 	priv->vma = vma;
 	vma->vm_private_data = priv;
 
+	kref_get(&ufile->ref);
 	mutex_lock(&ufile->umap_mutex);
 	list_add(&priv->node, &ufile->umaps_list);
 	mutex_unlock(&ufile->umap_mutex);
@@ -107,10 +109,11 @@ static void uburma_umap_close(struct vm_area_struct *vma)
 		return;
 
 	mutex_lock(&ufile->umap_mutex);
-	list_del(&priv->node);
+	list_del_init(&priv->node);
 	mutex_unlock(&ufile->umap_mutex);
 	kfree(priv);
 	vma->vm_private_data = NULL;
+	kref_put(&ufile->ref, uburma_release_file);
 }
 
 static vm_fault_t uburma_umap_fault(struct vm_fault *vmf)

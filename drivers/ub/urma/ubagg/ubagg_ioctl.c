@@ -1743,7 +1743,7 @@ void ubagg_delete_topo_map(void)
 static int ubagg_create_dev(struct ubagg_create_dev_arg *arg)
 {
 	struct ubagg_add_dev_by_uvs uvs_arg = {0};
-	struct ubagg_topo_agg_dev *agg_dev;
+	struct ubagg_topo_agg_dev *agg_dev = NULL;
 	struct ubagg_topo_node *cur_node;
 	struct ubagg_topo_map *topo_map;
 	uint32_t dev_name_len = 0;
@@ -1920,7 +1920,7 @@ static struct ubagg_device *ubagg_find_dev_by_agg_eid(const char *agg_eid)
 
 static int ubagg_delete_dev(const struct ubagg_delete_dev_arg *arg)
 {
-	struct ubagg_topo_agg_dev *agg_dev;
+	struct ubagg_topo_agg_dev *agg_dev = NULL;
 	struct ubagg_topo_node *cur_node;
 	struct ubagg_topo_map *topo_map;
 	struct ubagg_device *dev;
