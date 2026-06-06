@@ -359,6 +359,7 @@ void ubase_mailbox_buff_free(struct ubase_dev *udev)
 	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
 
 	if (ctx->mbx_buff) {
+		udev->mbx_stats.buff_free_cnt++;
 		trace_ubase_free_mailbox_self(udev->dev, &ctx->mbx_buff->count, ctx->seq_num);
 		__ubase_free_cmd_mailbox(udev, ctx->mbx_buff);
 		ctx->mbx_buff = NULL;
@@ -397,9 +398,7 @@ static int ubase_post_mailbox(struct ubase_dev *udev,
 		cond_resched();
 	}
 
-	if (!ret)
-		*complete_status =
-			(u8)(is_read ? mb->query_status : mb->status);
+	*complete_status = (u8)(is_read ? mb->query_status : mb->status);
 
 	return ret;
 }
