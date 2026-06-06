@@ -1557,13 +1557,13 @@ EXPORT_SYMBOL(tcp_v4_conn_request);
  * The three way handshake has completed - we got a valid synack -
  * now create the new socket.
  */
-struct sock *tcp_v4_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
-				  struct request_sock *req,
-				  struct dst_entry *dst,
-				  struct request_sock *req_unhash,
-				  bool *own_req,
-				  void (*opt_child_init)(struct sock *newsk,
-							 const struct sock *sk))
+struct sock *__tcp_v4_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
+				    struct request_sock *req,
+				    struct dst_entry *dst,
+				    struct request_sock *req_unhash,
+				    bool *own_req,
+				    void (*opt_child_init)(struct sock *newsk,
+							   const struct sock *sk))
 {
 	struct inet_request_sock *ireq;
 	bool found_dup_sk = false;
@@ -1675,6 +1675,17 @@ put_and_exit:
 	inet_csk_prepare_forced_close(newsk);
 	tcp_done(newsk);
 	goto exit;
+}
+EXPORT_SYMBOL(__tcp_v4_syn_recv_sock);
+
+struct sock *tcp_v4_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
+				  struct request_sock *req,
+				  struct dst_entry *dst,
+				  struct request_sock *req_unhash,
+				  bool *own_req)
+{
+	return __tcp_v4_syn_recv_sock(sk, skb, req, dst, req_unhash,
+				      own_req, NULL);
 }
 EXPORT_SYMBOL(tcp_v4_syn_recv_sock);
 
