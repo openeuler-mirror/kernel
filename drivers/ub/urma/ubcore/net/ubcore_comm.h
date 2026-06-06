@@ -14,6 +14,8 @@
 #include <ub/urma/ubcore_types.h>
 #include "ubcore_protocol.h"
 
+#define UBCORE_COMM_MSG_CUR_VERSION 0U
+
 enum ubcore_comm_type {
 	UBCORE_COMM_UBCM_WK_JETTY,
 	UBCORE_COMM_SOCK,
