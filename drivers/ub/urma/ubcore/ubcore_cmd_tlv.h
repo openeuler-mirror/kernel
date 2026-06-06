@@ -960,6 +960,11 @@ enum ubcore_insert_main_ue_eid_batch_type {
 	INSERT_MAIN_UE_EID_BATCH_IN_NUM,
 };
 
+enum ubcore_insert_host_eid_batch_type {
+	INSERT_HOST_EID_BATCH_IN_ENTRY,
+	INSERT_HOST_EID_BATCH_IN_NUM,
+};
+
 int ubcore_mue_tlv_parse(struct ubcore_cmd_hdr *hdr, void *arg);
 int ubcore_mue_tlv_append(struct ubcore_cmd_hdr *hdr, void *arg);
 int ubcore_global_tlv_parse(struct ubcore_cmd_hdr *hdr, void *arg);

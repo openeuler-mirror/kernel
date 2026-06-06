@@ -170,6 +170,15 @@ static void ubcore_insert_main_ue_eid_batch_fill_spec_in(void *arg_addr,
 	SPEC(s++, INSERT_MAIN_UE_EID_BATCH_IN_ENTRY, arg->in);
 }
 
+static void ubcore_insert_host_eid_batch_fill_spec_in(void *arg_addr,
+	struct ubcore_cmd_spec *spec)
+{
+	struct ubcore_cmd_host_eid_batch *arg = arg_addr;
+	struct ubcore_cmd_spec *s = spec;
+
+	SPEC(s++, INSERT_HOST_EID_BATCH_IN_ENTRY, arg->in);
+}
+
 static struct ubcore_tlv_handler
 	g_global_tlv_handler[] = {
 		[0] = { 0 },
@@ -224,6 +233,12 @@ static struct ubcore_tlv_handler
 		[UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH] = {
 			ubcore_insert_main_ue_eid_batch_fill_spec_in,
 			INSERT_MAIN_UE_EID_BATCH_IN_NUM,
+			NULL,
+			0,
+		},
+		[UBCORE_CMD_INSERT_HOST_EID_BATCH] = {
+			ubcore_insert_host_eid_batch_fill_spec_in,
+			INSERT_HOST_EID_BATCH_IN_NUM,
 			NULL,
 			0,
 		},

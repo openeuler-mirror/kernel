@@ -19,6 +19,7 @@
 #include "net/ubcore_session.h"
 #include "ubcore_connect_adapter.h"
 #include "ubcore_genl.h"
+#include "ubcore_topo_info.h"
 #include "ubcm/ub_cm.h"
 #include "ubmgr/ubmgr.h"
 

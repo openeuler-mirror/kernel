@@ -154,10 +154,13 @@ int ubcore_update_topo_map(struct ubcore_topo_map *new_topo_map,
 	}
 
 	for (i = 0; i < new_topo_map->node_num; i++) {
+		bool found = false;
+
 		new_node = &new_topo_map->topo_infos[i];
 		for (j = 0; j < old_topo_map->node_num; j++) {
 			old_node = &old_topo_map->topo_infos[j];
 			if (new_node->node_id == old_node->node_id) {
+				found = true;
 				if (update_link_info(new_node, old_node)) {
 					ubcore_log_err("update link info failed\n");
 					return -EINVAL;
@@ -166,7 +169,17 @@ int ubcore_update_topo_map(struct ubcore_topo_map *new_topo_map,
 					ubcore_log_err("update dev info failed\n");
 					return -EINVAL;
 				}
+				break;
 			}
+		}
+		if (!found) {
+			if (old_topo_map->node_num >= MAX_NODE_NUM) {
+				ubcore_log_err("topo map is full\n");
+				return -ENOSPC;
+			}
+			(void)memcpy(&old_topo_map->topo_infos[old_topo_map->node_num],
+				     new_node, sizeof(*new_node));
+			old_topo_map->node_num++;
 		}
 	}
 

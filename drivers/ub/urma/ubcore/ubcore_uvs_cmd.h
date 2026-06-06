@@ -27,6 +27,7 @@
 #define UBCORE_MAX_EID_CONFIG_CNT 32
 #define UBCORE_MAX_DSCP_VL_NUM 64
 #define UBCORE_CMD_MAX_MUE_NUM 128
+#define UBCORE_HOST_EID_BATCH_EID_MAX 32
 
 enum ubcore_uvs_global_cmd {
 	UBCORE_CMD_SET_TOPO = 1,
@@ -38,6 +39,7 @@ enum ubcore_uvs_global_cmd {
 	UBCORE_CMD_LOOKUP_MAIN_UE_EID = 7,
 	UBCORE_CMD_FLUSH_MAIN_UE_EID = 8,
 	UBCORE_CMD_INSERT_MAIN_UE_EID_BATCH = 9,
+	UBCORE_CMD_INSERT_HOST_EID_BATCH = 10,
 	UBCORE_CMD_GLOBAL_LAST
 };
 
@@ -102,6 +104,14 @@ struct ubcore_cmd_main_ue_eid_batch {
 		union ubcore_eid main_ue_eid;
 		uint32_t eid_num;
 		union ubcore_eid eids[UBCORE_MAIN_UE_EID_BATCH_EID_MAX];
+	} in;
+};
+
+struct ubcore_cmd_host_eid_batch {
+	struct {
+		union ubcore_eid host_eid;
+		uint32_t eid_num;
+		union ubcore_eid eids[UBCORE_HOST_EID_BATCH_EID_MAX];
 	} in;
 };
 
