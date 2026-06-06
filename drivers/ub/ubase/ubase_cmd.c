@@ -726,6 +726,7 @@ static int ubase_cmd_wait_mbx_completed(struct ubase_dev *udev,
 			     "cmd seq_num 0x%x mailbox cmd code 0x%x timeout.\n",
 			     ctx->seq_num, mbx->cmd);
 		atomic_dec(&udev->mb_cmd.mbx_cnt);
+		udev->mbx_stats.event_hw_timeout_cnt++;
 		return -EBUSY;
 	}
 
@@ -764,8 +765,17 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 	raw_spin_lock_irqsave(&udev->mb_cmd.mbx_lock, flags);
 	if (ctx->mbx_buff) {
 		raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
+		udev->mbx_stats.buff_not_empty_cnt++;
 		ubase_err_rl(udev, mbx_buff_not_empty,
-			     "incomplete mailbox events exist.\n");
+			     "incomplete mailbox events exist, mbx stats: %llu, %llu, %llu, %llu, %llu, %llu, %llu, %llu\n",
+			     udev->mbx_stats.event_hw_cnt,
+			     udev->mbx_stats.cmd_timeout_cnt,
+			     udev->mbx_stats.event_hw_timeout_cnt,
+			     udev->mbx_stats.ae_cnt,
+			     udev->mbx_stats.seq_num_err_cnt,
+			     udev->mbx_stats.buff_cnt,
+			     udev->mbx_stats.buff_free_cnt,
+			     udev->mbx_stats.buff_not_empty_cnt);
 		return -EBUSY;
 	}
 
@@ -774,8 +784,10 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 	raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 
 	trace_ubase_alloc_mailbox_user(udev->dev, &mailbox->count, ctx->seq_num);
-	if (atomic_inc_not_zero(&mailbox->count))
+	if (atomic_inc_not_zero(&mailbox->count)) {
 		ctx->mbx_buff = mailbox;
+		udev->mbx_stats.buff_cnt++;
+	}
 
 	trace_ubase_add_mailbox_count(udev->dev, &mailbox->count, ctx->seq_num);
 
@@ -789,7 +801,7 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 			ubase_err_rl(udev, wait_mbox_fail,
 				     "failed to wait mbox, ret = %d.\n",
 				     ret);
-
+			udev->mbx_stats.cmd_timeout_cnt++;
 			raw_spin_lock_irqsave(&udev->mb_cmd.mbx_lock, flags);
 			ubase_mailbox_buff_free(udev);
 			raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
@@ -798,6 +810,8 @@ int ubase_post_mailbox_by_event(struct ubase_dev *udev,
 
 		cond_resched();
 	}
+
+	udev->mbx_stats.event_hw_cnt++;
 
 	return ubase_cmd_wait_mbx_completed(udev, mbx);
 }

@@ -300,6 +300,7 @@ int ubase_config_ctx_buf_to_hw(struct ubase_dev *udev,
 	struct ubase_cmd_mailbox mailbox;
 	int ret;
 
+	atomic_set(&mailbox.count, 0);
 	mailbox.dma = ctx_buf->dma_ctx_buf_ba;
 	ret = __ubase_hw_upgrade_ctx(udev, attr, &mailbox);
 	if (ret)
@@ -466,6 +467,7 @@ static int ubase_config_ctx_buf_by_dtu(struct ubase_dev *udev,
 		return -ENOMEM;
 	}
 
+	atomic_set(&mailbox.count, 0);
 	mailbox.dma = ctx_buf->dma_ctx_buf_ba;
 	ret = __ubase_hw_upgrade_ctx(udev, attr, &mailbox);
 	if (ret) {
@@ -483,6 +485,7 @@ static int ubase_config_jfs_ctx_buf_by_pmem(struct ubase_dev *udev,
 	struct ubase_cmd_mailbox mailbox;
 	int ret;
 
+	atomic_set(&mailbox.count, 0);
 	mailbox.dma = udev->pmem_info.comm.dma_addr;
 	ret = __ubase_hw_upgrade_ctx(udev, attr, &mailbox);
 	if (ret)
