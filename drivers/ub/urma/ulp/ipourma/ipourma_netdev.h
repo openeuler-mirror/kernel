@@ -21,6 +21,6 @@ struct ipourma_set_ip_work {
 
 int ipourma_unalloc_netdev(struct net_device *dev);
 struct net_device *ipourma_alloc_netdev(struct ubcore_device *urma_dev);
-void ipourma_create_new_eid(struct ipourma_dev_priv *priv, u32 eid_idx);
+int ipourma_create_new_eid(struct ipourma_dev_priv *priv, u32 eid_idx);
 
 #endif
