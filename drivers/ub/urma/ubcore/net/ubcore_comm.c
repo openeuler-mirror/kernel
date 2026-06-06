@@ -162,6 +162,11 @@ void ubcore_net_handle_msg(struct ubcore_device *dev,
 		ubcore_handle_service_msg(dev, msg, conn);
 		return;
 	}
+	if (msg->version != UBCORE_COMM_MSG_CUR_VERSION) {
+		ubcore_log_err_rl("Unsupported msg version %u, expected %u, " MSG_FMT,
+				  msg->version, UBCORE_COMM_MSG_CUR_VERSION, MSG_ARG(msg));
+		return;
+	}
 	if (msg->type >= UBCORE_NET_MSG_MAX) {
 		ubcore_log_err("Invalid net msg type, " MSG_FMT, MSG_ARG(msg));
 		return;
@@ -261,6 +266,11 @@ int ubcore_send_comm_msg(struct ubcore_device *dev, struct ubcore_comm_msg *msg,
 		ubcore_log_err("Invalid param: dev or msg is null");
 		return -EINVAL;
 	}
+	if (msg->len > 0 && !msg->data) {
+		ubcore_log_err("Invalid tx msg: data is null, " MSG_FMT,
+			       MSG_ARG(msg));
+		return -EINVAL;
+	}
 	if (!conn) {
 		ubcore_log_info("Loopback detected, using shortcut.");
 		ubcore_net_handle_msg(dev, msg, NULL);
@@ -288,6 +298,11 @@ int ubcore_send_comm_msg_to(struct ubcore_device *dev, struct ubcore_comm_msg *m
 
 	if (!dev || !msg) {
 		ubcore_log_err("Invalid param: dev or msg is null");
+		return -EINVAL;
+	}
+	if (msg->len > 0 && !msg->data) {
+		ubcore_log_err("Invalid tx msg: data is null, " MSG_FMT,
+			       MSG_ARG(msg));
 		return -EINVAL;
 	}
 	if (ubcore_is_loopback(dev, &addr)) {

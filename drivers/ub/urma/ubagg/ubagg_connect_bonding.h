@@ -20,6 +20,7 @@
 
 #define UBAGG_NS_TO_MS            1000000
 #define UBAGG_EXC_THRESHOLD_MS    20
+#define UBAGG_BONDING_MSG_CUR_VERSION 0U
 
 int ubagg_connect_exchange_udata_when_import_seg(struct ubcore_seg *seg,
 				struct ubcore_udata *udata, struct ubcore_device *dev);

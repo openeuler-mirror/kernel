@@ -35,7 +35,7 @@
 #define UBMAD_MAX_TJETTY_NUM 10240
 
 /* datapath */
-#define UBMAD_MSG_VERSION_0 0 /* current version */
+#define UBMAD_MSG_CUR_VERSION 0 /* current version */
 
 // reliable communication
 #define UBMAD_MSN_HLIST_SIZE 1024

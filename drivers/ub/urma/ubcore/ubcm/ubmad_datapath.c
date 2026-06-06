@@ -597,7 +597,7 @@ static int ubmad_prepare_msg(uint64_t sge_addr, struct ubmad_send_buf *send_buf,
 		return -EINVAL;
 	}
 
-	msg->version = UBMAD_MSG_VERSION_0;
+	msg->version = UBMAD_MSG_CUR_VERSION;
 	msg->msn = msn;
 	msg->msg_type = send_buf->msg_type;
 	msg->payload_len = send_buf->payload_len;
@@ -1222,7 +1222,7 @@ static int ubmad_post_send_gen_ack(struct ubmad_jetty_resource *rsrc,
 
 	sge_addr = rsrc->send_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
 	msg = (struct ubmad_msg *)sge_addr;
-	msg->version = UBMAD_MSG_VERSION_0;
+	msg->version = UBMAD_MSG_CUR_VERSION;
 	msg->msg_type = UBMAD_GEN_ACK;
 	msg->payload_len = 0;
 	msg->reserved = acked_msg_type;
@@ -1278,7 +1278,7 @@ void ubmad_post_send_close_req(struct ubmad_jetty_resource *rsrc,
 
 	sge_addr = rsrc->send_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
 	msg = (struct ubmad_msg *)sge_addr;
-	msg->version = UBMAD_MSG_VERSION_0;
+	msg->version = UBMAD_MSG_CUR_VERSION;
 	msg->msg_type = UBMAD_CLOSE_REQ;
 	msg->payload_len = 0;
 	msg->msn = 0; // UBMAD_CLOSE_REQ is unreliable, msn does not work
@@ -1612,6 +1612,12 @@ static int ubmad_process_msg(struct ubcore_cr *cr,
 		ubcore_log_err(
 			"even header is incomplete. completion_len %u < header size %lu\n",
 			cr->completion_len, sizeof(struct ubmad_msg));
+		return -EINVAL;
+	}
+	if (msg->version != UBMAD_MSG_CUR_VERSION) {
+		ubcore_log_err_rl(
+			"Unsupported msg version, recv request version %u, current version %u.\n",
+			msg->version, UBMAD_MSG_CUR_VERSION);
 		return -EINVAL;
 	}
 	if (cr->completion_len != sizeof(struct ubmad_msg) + msg->payload_len) {

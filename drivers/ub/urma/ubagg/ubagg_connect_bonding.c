@@ -619,6 +619,11 @@ void handle_bonding_msg(struct ubcore_device *dev,
 		ubagg_log_err("Invalid param: msg is null");
 		return;
 	}
+	if (msg->version != UBAGG_BONDING_MSG_CUR_VERSION) {
+		ubagg_log_err_rl("Unsupported msg version %u, expected %u",
+				 msg->version, UBAGG_BONDING_MSG_CUR_VERSION);
+		return;
+	}
 
 	switch (msg->type) {
 	case UBAGG_NET_BONDING_SEG_INFO_REQ:
