@@ -47,6 +47,8 @@ static inline u64 virtcca_get_tmi_version(void)
 #endif
 
 #ifdef CONFIG_HISI_VIRTCCA_CODA
+struct pci_dev;
+
 size_t virtcca_pci_get_rom_size(void  *pdev, void __iomem *rom,
 			       size_t size);
 bool is_virtcca_cc_dev(u32 sid);
@@ -108,4 +110,15 @@ static inline bool virtcca_kvm_is_realm(struct kvm *kvm)
 	return false;
 }
 #endif /* CONFIG_HISI_VIRTCCA_CODA */
+
+
+#if defined(CONFIG_HISI_VIRTCCA_HOST) || defined(CONFIG_HISI_VIRTCCA_GUEST)
+
+void virtcca_raw_data_kern_ctx_cleanup(void *ctx);
+int virtcca_raw_data_attr_user_to_kernel(void *usr_data, void *ctx);
+int virtcca_raw_data_attr_kernel_to_user(void __user *usr_data_up, void *usr_data,
+						void *ctx);
+
+#endif
+
 #endif /* __VIRTCCA_CVM_DOMAIN_H */
