@@ -395,6 +395,9 @@ void ipourma_post_send(struct work_struct *work)
 	int ret;
 	struct ubcore_jfs_wr *jfs_bad_wr = NULL;
 
+	if (!test_bit(IPOURMA_DEV_ADMIN_UP, &priv->flags))
+		return;
+
 	priv->runtime_stats.tx_stats.post_send_start++;
 	pr_debug("post_send start, idx %u, jetty %u\n", tx_req->idx, tx_req->eid_index);
 	ret = ipourma_prepare_tx_data(priv->urma_dev, priv, tx_req);

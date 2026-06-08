@@ -392,8 +392,7 @@ static netdev_features_t ipourma_fix_features(struct net_device *dev,
 	if (IS_ERR_OR_NULL(dev))
 		return -EINVAL;
 
-	features &= ~(NETIF_F_GSO | NETIF_F_TSO | NETIF_F_SG);
-	return features;
+	return features & (~(NETIF_F_GSO | NETIF_F_TSO | NETIF_F_SG));
 }
 
 static netdev_tx_t ipourma_start_xmit(struct sk_buff *skb, struct net_device *dev)
