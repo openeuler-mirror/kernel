@@ -332,7 +332,9 @@ enum tmi_tmm_mig_control_fid_e {
 	TMI_TMM_MIG_EXPORT_ABORT,
 	TMI_TMM_MIG_EXPORT_PAUSE,
 	TMI_TMM_MIG_GET_MIG_KEY,
-	TMI_TMM_MIG_SET_MIG_KEY
+	TMI_TMM_MIG_SET_MIG_KEY,
+	TMI_TMM_DATA_KEY_GEN,
+	TMI_TMM_DATA_KEY_ENC
 };
 
 enum tmi_tmm_mig_data_fid_e {
@@ -548,5 +550,8 @@ struct arm_smccc_res tmi_mem_region_protect(u64 rd, u64 start, u64 end);
 u64 tmi_bind_clean(uint64_t rd);
 struct arm_smccc_res tmi_bind_peek(uint64_t rd);
 bool virtcca_kvm_adjust_dirty_log_range(struct kvm *kvm, phys_addr_t *start, phys_addr_t *end);
+
+u64 tmi_data_key_gen(uint64_t data_key_enc_p);
+u64 tmi_data_key_enc(uint64_t host_key_attr_p, uint64_t raw_data_attr_p);
 #endif
 #endif

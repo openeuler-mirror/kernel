@@ -50,6 +50,7 @@ static int virtcca_migcvm_enabled;
 #define CRC_SHIFT				8
 #define MAX_MAC_PAGES_PER_ARR	256
 #define MAX_BUF_PAGES			512
+
 /* migvm vsock retry times */
 #define SEND_RETRY_LIMIT		5
 #define RECV_RETRY_LIMIT		5
@@ -64,6 +65,13 @@ static uint32_t virtcca_crc32_table[CRC_LEN];
 static struct crc_config g_crc_configs[2] = {
 	[0] = { .is_secure = false, .enabled = false }, /* non-secure mem */
 	[1] = { .is_secure = true, .enabled = false }  /* secure mem */
+};
+
+struct virtcca_usr_data_key_attr {
+	uint8_t msk[DATA_KEY_MSK_LEN];
+	uint8_t rand_iv[DATA_KEY_IV_LEN];
+	uint8_t tag[DATA_KEY_TAG_LEN];
+	uint64_t data_rand_iv;
 };
 
 static int kvm_virtcca_mig_stream_ops_init(void);
@@ -3966,6 +3974,289 @@ out:
 	return ret;
 }
 
+static int virtcca_data_key_gen(struct virtcca_tmi_cmd *cmd)
+{
+	int ret = 0;
+	struct virtcca_usr_data_key_attr *key_attr = NULL;
+
+	if (!cmd->data) {
+		pr_err("%s: cmd->data is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	key_attr = kmalloc(sizeof(struct virtcca_usr_data_key_attr), GFP_KERNEL);
+	if (!key_attr)
+		return -ENOMEM;
+
+	if (copy_from_user(key_attr, (void __user *)cmd->data,
+						sizeof(struct virtcca_usr_data_key_attr))) {
+		pr_err("%s: failed to copy key_attr from user\n", __func__);
+		ret = -EFAULT;
+		goto out;
+	}
+
+	ret = tmi_data_key_gen((uint64_t)key_attr);
+	if (ret) {
+		pr_err("%s: data key gen failed, ret=%d\n", __func__, ret);
+		ret = -EFAULT;
+		goto out;
+	}
+
+	if (copy_to_user((void __user *)cmd->data, key_attr,
+		sizeof(struct virtcca_usr_data_key_attr))) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+out:
+	kfree(key_attr);
+	return ret;
+}
+
+void virtcca_raw_data_kern_ctx_cleanup(void *ctx_p)
+{
+	struct virtcca_raw_data_kern_ctx *ctx = (struct virtcca_raw_data_kern_ctx *)ctx_p;
+
+	if (!ctx)
+		return;
+
+	kfree(ctx->kern_key_attr);
+	kfree(ctx->ciphertext_buf);
+	kfree(ctx->plaintext_buf);
+	kfree(ctx->kern_attr);
+	ctx->kern_key_attr = NULL;
+	ctx->kern_attr = NULL;
+	ctx->ciphertext_buf = NULL;
+	ctx->plaintext_buf = NULL;
+}
+
+int virtcca_raw_data_attr_user_to_kernel(void *usr_data_p, void *ctx_p)
+{
+	int ret = 0;
+	struct virtcca_raw_data_kern_ctx *ctx = (struct virtcca_raw_data_kern_ctx *)ctx_p;
+	struct virtcca_usr_data_key_enc_s *usr_data =
+		(struct virtcca_usr_data_key_enc_s *)usr_data_p;
+
+	if (!ctx || !usr_data) {
+		pr_err("%s: Invalid params\n", __func__);
+		return -ENOMEM;
+	}
+
+	ctx->kern_key_attr = NULL;
+	ctx->kern_attr = NULL;
+	ctx->ciphertext_buf = NULL;
+	ctx->plaintext_buf = NULL;
+	ctx->usr_ciphertext_p = usr_data->raw_data_attr.ciphertext_p;
+	ctx->usr_plaintext_p = usr_data->raw_data_attr.plaintext_p;
+
+	ctx->kern_key_attr = kmalloc(sizeof(struct virtcca_key_attr_s), GFP_KERNEL);
+	if (!ctx->kern_key_attr)
+		return -ENOMEM;
+
+	memcpy(ctx->kern_key_attr, &usr_data->key_attr,
+			sizeof(struct virtcca_key_attr_s));
+
+	ctx->kern_attr = kmalloc(sizeof(struct virtcca_raw_data_attr_s), GFP_KERNEL);
+	if (!ctx->kern_attr) {
+		kfree(ctx->kern_key_attr);
+		ctx->kern_key_attr = NULL;
+		return -ENOMEM;
+	}
+	memcpy(ctx->kern_attr, &usr_data->raw_data_attr,
+			sizeof(struct virtcca_raw_data_attr_s));
+
+	if (ctx->kern_attr->mode == DATA_ENC_MODE && ctx->kern_attr->ciphertext_len > 0) {
+		ctx->ciphertext_buf = kmalloc(ctx->kern_attr->ciphertext_len, GFP_KERNEL);
+		if (!ctx->ciphertext_buf) {
+			ret = -ENOMEM;
+			goto err;
+		}
+		if (copy_from_user(ctx->ciphertext_buf,
+			(void __user *)ctx->usr_ciphertext_p,
+			ctx->kern_attr->ciphertext_len)) {
+			pr_err("%s: failed to copy ciphertext from user, usr_p=0x%llx, len=%u\n",
+				__func__, ctx->usr_ciphertext_p, ctx->kern_attr->ciphertext_len);
+			ret = -EFAULT;
+			goto err;
+		}
+		ctx->kern_attr->ciphertext_p = (uint64_t)ctx->ciphertext_buf;
+	} else if (ctx->kern_attr->mode == DATA_DEC_MODE && ctx->kern_attr->ciphertext_len > 0) {
+		ctx->ciphertext_buf = kmalloc(ctx->kern_attr->ciphertext_len, GFP_KERNEL);
+		if (!ctx->ciphertext_buf) {
+			ret = -ENOMEM;
+			goto err;
+		}
+		if (copy_from_user(ctx->ciphertext_buf,
+			(void __user *)ctx->usr_ciphertext_p,
+			ctx->kern_attr->ciphertext_len)) {
+			pr_err("%s: failed to copy ciphertext from user, usr_p=0x%llx, len=%u\n",
+				__func__, ctx->usr_ciphertext_p, ctx->kern_attr->ciphertext_len);
+			ret = -EFAULT;
+			goto err;
+		}
+		ctx->kern_attr->ciphertext_p = (uint64_t)ctx->ciphertext_buf;
+	} else {
+		pr_info("%s: ciphertext_len is 0, skip ciphertext copy\n", __func__);
+	}
+
+	if (ctx->kern_attr->mode == DATA_ENC_MODE && ctx->kern_attr->plaintext_len > 0) {
+		ctx->plaintext_buf = kmalloc(ctx->kern_attr->plaintext_len, GFP_KERNEL);
+		if (!ctx->plaintext_buf) {
+			ret = -ENOMEM;
+			goto err;
+		}
+		if (copy_from_user(ctx->plaintext_buf,
+			(void __user *)ctx->usr_plaintext_p,
+			ctx->kern_attr->plaintext_len)) {
+			pr_err("%s: failed to copy plaintext from user, usr_p=0x%llx, len=%u\n",
+				__func__, ctx->usr_plaintext_p, ctx->kern_attr->plaintext_len);
+			ret = -EFAULT;
+			goto err;
+		}
+	} else if (ctx->kern_attr->mode == DATA_DEC_MODE && ctx->kern_attr->plaintext_len > 0) {
+		ctx->plaintext_buf = kzalloc(ctx->kern_attr->plaintext_len, GFP_KERNEL);
+		if (!ctx->plaintext_buf) {
+			ret = -ENOMEM;
+			goto err;
+		}
+	} else {
+		pr_info("%s: plaintext_len is 0, skip plaintext copy\n", __func__);
+	}
+	return 0;
+err:
+	virtcca_raw_data_kern_ctx_cleanup(ctx);
+	return ret;
+}
+
+int virtcca_raw_data_attr_kernel_to_user(void __user *usr_data_up, void *usr_data_p,
+						void *ctx_p)
+{
+	int ret = 0;
+	struct virtcca_raw_data_kern_ctx *ctx = (struct virtcca_raw_data_kern_ctx *)ctx_p;
+	struct virtcca_usr_data_key_enc_s *usr_data =
+		(struct virtcca_usr_data_key_enc_s *)usr_data_p;
+
+	if (!ctx || !usr_data || !usr_data_up) {
+		pr_err("%s: Invalid params\n", __func__);
+		return -ENOMEM;
+	}
+
+	if (ctx->kern_attr->mode == DATA_ENC_MODE && ctx->ciphertext_buf) {
+		if (copy_to_user((void __user *)ctx->usr_ciphertext_p,
+			ctx->ciphertext_buf, ctx->kern_attr->ciphertext_len)) {
+			pr_err("%s: failed to copy ciphertext to user, usr_p=0x%llx, len=%u\n",
+				__func__, ctx->usr_ciphertext_p, ctx->kern_attr->ciphertext_len);
+			ret = -EFAULT;
+			goto out;
+		}
+	}
+
+	if (ctx->kern_attr->mode == DATA_DEC_MODE && ctx->plaintext_buf) {
+		if (copy_to_user((void __user *)ctx->usr_plaintext_p,
+			ctx->plaintext_buf, ctx->kern_attr->plaintext_len)) {
+			pr_err("%s: failed to copy plaintext to user, usr_p=0x%llx, len=%u\n",
+				__func__, ctx->usr_plaintext_p, ctx->kern_attr->plaintext_len);
+			ret = -EFAULT;
+			goto out;
+		}
+	}
+
+	memcpy(&usr_data->raw_data_attr.tag, &ctx->kern_attr->tag,
+			DATA_KEY_TAG_LEN);
+	memcpy(&usr_data->key_attr, ctx->kern_key_attr,
+			sizeof(struct virtcca_key_attr_s));
+
+	if (copy_to_user(usr_data_up, usr_data,
+		sizeof(struct virtcca_usr_data_key_enc_s))) {
+		pr_err("%s: failed to copy usr_data to user\n", __func__);
+		ret = -EFAULT;
+	}
+
+out:
+	virtcca_raw_data_kern_ctx_cleanup(ctx);
+	return ret;
+}
+
+static int virtcca_data_key_enc(struct virtcca_tmi_cmd *cmd)
+{
+	int ret = 0;
+	struct virtcca_usr_data_key_enc_s *usr_data = NULL;
+	struct virtcca_raw_data_kern_ctx kern_ctx = {0};
+
+	if (!cmd->data) {
+		pr_err("%s: cmd->data is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	usr_data = kmalloc(sizeof(struct virtcca_usr_data_key_enc_s), GFP_KERNEL);
+	if (!usr_data)
+		return -ENOMEM;
+
+	if (copy_from_user(usr_data, (void __user *)cmd->data,
+						sizeof(struct virtcca_usr_data_key_enc_s))) {
+		pr_err("%s: failed to copy usr_data from user\n", __func__);
+		ret = -EFAULT;
+		goto out;
+	}
+
+	if (usr_data->raw_data_attr.mode != DATA_ENC_MODE &&
+		usr_data->raw_data_attr.mode != DATA_DEC_MODE) {
+		pr_err("%s: invalid mode %d, must be %d(ENC) or %d(DEC)\n",
+			__func__, usr_data->raw_data_attr.mode, DATA_ENC_MODE, DATA_DEC_MODE);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (usr_data->raw_data_attr.ciphertext_len > MAX_DATA_KEY_BUF_SIZE ||
+		usr_data->raw_data_attr.plaintext_len > MAX_DATA_KEY_BUF_SIZE) {
+		pr_err("%s: buffer size exceeds limit, ciphertext_len=%u, plaintext_len=%u, max=%d\n",
+			__func__, usr_data->raw_data_attr.ciphertext_len,
+			usr_data->raw_data_attr.plaintext_len, MAX_DATA_KEY_BUF_SIZE);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (!access_ok((void __user *)usr_data->raw_data_attr.ciphertext_p,
+							usr_data->raw_data_attr.ciphertext_len) ||
+		!access_ok((void __user *)usr_data->raw_data_attr.plaintext_p,
+							usr_data->raw_data_attr.plaintext_len)) {
+		pr_err("%s: invalid user data pointer\n", __func__);
+		ret = -EFAULT;
+		goto out;
+	}
+
+	ret = virtcca_raw_data_attr_user_to_kernel(usr_data, &kern_ctx);
+	if (ret)
+		goto out;
+
+	if (kern_ctx.ciphertext_buf)
+		kern_ctx.kern_attr->ciphertext_p = (uint64_t)__pa(kern_ctx.ciphertext_buf);
+	if (kern_ctx.plaintext_buf)
+		kern_ctx.kern_attr->plaintext_p = (uint64_t)__pa(kern_ctx.plaintext_buf);
+
+	ret = tmi_data_key_enc((uint64_t)kern_ctx.kern_key_attr, (uint64_t)kern_ctx.kern_attr);
+	if (ret) {
+		pr_err("%s: tmi_data_key_enc failed, ret=%d\n", __func__, ret);
+		ret = -EFAULT;
+		goto out_cleanup;
+	}
+
+	ret = virtcca_raw_data_attr_kernel_to_user((void __user *)cmd->data,
+							usr_data, &kern_ctx);
+	if (ret)
+		goto out;
+
+	goto out;
+
+out_cleanup:
+	virtcca_raw_data_kern_ctx_cleanup(&kern_ctx);
+out:
+	kfree(usr_data);
+
+	return ret;
+}
+
+
 static long virtcca_tmi_ioctl_wrapper(struct file *file, unsigned int cmd, unsigned long arg);
 static const struct file_operations tmm_tmi_fops = {
 	.owner		  = THIS_MODULE,
@@ -4019,7 +4310,14 @@ static int virtcca_tmi_ioctl(unsigned long arg)
 	case VIRTCCA_SET_MIG_KEY:
 		ret = virtcca_mig_dst_set_key(&tmi_cmd);
 		break;
+	case VIRTCCA_DATA_KEY_GEN:
+		ret = virtcca_data_key_gen(&tmi_cmd);
+		break;
+	case VIRTCCA_DATA_KEY_ENC:
+		ret = virtcca_data_key_enc(&tmi_cmd);
+		break;
 	default:
+		pr_err("Invalid tmi cmd!\n");
 		ret = -EINVAL;
 	}
 

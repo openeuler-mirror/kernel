@@ -3,6 +3,7 @@
 #define __ASM_VIRTCCA_CVM_TSI_H_
 
 #include <linux/ioctl.h>
+#include <linux/types.h>
 
 #define TSI_MAGIC 'T'
 
@@ -112,5 +113,59 @@ struct virtcca_migvm_checksum_info {
 };
 
 #define TMM_GET_MIGVM_MEM_CHECKSUM _IOW(TSI_MAGIC, 4, struct virtcca_migvm_checksum_info)
+
+/*
+ * Common data key structures and helper functions shared by TMI and TSI modules.
+ */
+#define DATA_KEY_MSK_LEN    32
+#define DATA_KEY_IV_LEN     32
+#define DATA_KEY_TAG_LEN    16
+#define MAX_DATA_KEY_BUF_SIZE 4096 /* 4KB */
+
+enum virtcca_enc_data_mode {
+	DATA_ENC_MODE = 0,
+	DATA_DEC_MODE = 1
+};
+
+struct virtcca_key_attr_s {
+	__u8 rand_iv[DATA_KEY_IV_LEN];
+	__u8 tag[DATA_KEY_TAG_LEN];
+	__u64 data_rand_iv;
+};
+
+struct virtcca_raw_data_attr_s {
+	__u64         data_rand_iv;
+	__u64         ciphertext_p;
+	__u32         ciphertext_len;
+	__u64         plaintext_p;
+	__u32         plaintext_len;
+	__u8          tag[DATA_KEY_TAG_LEN];
+	enum virtcca_enc_data_mode      mode;
+};
+
+struct virtcca_usr_data_key_enc_s {
+	struct virtcca_key_attr_s    key_attr;
+	struct virtcca_raw_data_attr_s      raw_data_attr;
+};
+
+struct virtcca_raw_data_kern_ctx {
+	struct virtcca_key_attr_s *kern_key_attr;
+	struct virtcca_raw_data_attr_s *kern_attr;
+	void *ciphertext_buf;
+	void *plaintext_buf;
+	__u64 usr_ciphertext_p;
+	__u64 usr_plaintext_p;
+};
+
+struct virtcca_tsi_data_key_attr {
+	__u8 msk[DATA_KEY_MSK_LEN];
+	__u8 rand_iv[DATA_KEY_IV_LEN];
+	__u8 tag[DATA_KEY_TAG_LEN];
+	__u64 data_rand_iv;
+};
+
+#define TMM_DATA_KEY_GEN _IOWR(TSI_MAGIC, 5, struct virtcca_tsi_data_key_attr)
+
+#define TMM_DATA_KEY_ENC _IOWR(TSI_MAGIC, 6, struct virtcca_usr_data_key_enc_s)
 
 #endif  /* __ASM_VIRTCCA_CVM_TSI_H_ */
