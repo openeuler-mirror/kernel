@@ -17,6 +17,7 @@
 #define DAIF_ERRCTX		(PSR_I_BIT | PSR_A_BIT)
 #define DAIF_MASK		(PSR_D_BIT | PSR_A_BIT | PSR_I_BIT | PSR_F_BIT)
 
+#ifdef CONFIG_ARM64_NMI
 static __always_inline void _allint_clear(void)
 {
 	asm volatile(__msr_s(SYS_ALLINT_CLR, "xzr"));
@@ -26,6 +27,10 @@ static __always_inline void _allint_set(void)
 {
 	asm volatile(__msr_s(SYS_ALLINT_SET, "xzr"));
 }
+#else
+static __always_inline void _allint_clear(void) { }
+static __always_inline void _allint_set(void) { }
+#endif
 
 /* mask/save/unmask/restore all exceptions, including interrupts. */
 static inline void local_daif_mask(void)
