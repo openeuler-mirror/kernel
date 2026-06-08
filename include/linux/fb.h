@@ -215,13 +215,15 @@ struct fb_deferred_io {
 	unsigned long delay;
 	bool sort_pagereflist; /* sort pagelist by offset */
 	int open_count; /* number of opened files; protected by fb_info lock */
-	struct mutex lock; /* mutex that protects the pageref list */
+	KABI_BROKEN_REMOVE(struct mutex lock)
 	struct list_head pagereflist; /* list of pagerefs for touched pages */
 	/* callback */
 	void (*deferred_io)(struct fb_info *info, struct list_head *pagelist);
 	KABI_RESERVE(1)
 	KABI_RESERVE(2)
 };
+
+struct fb_deferred_io_state;
 #endif
 
 /*
@@ -504,7 +506,11 @@ struct fb_info {
 	void *par;
 
 	bool skip_vt_switch; /* no VT switch on suspend/resume required */
+#ifdef CONFIG_FB_DEFERRED_IO
+	KABI_USE(1, struct fb_deferred_io_state *fbdefio_state)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
