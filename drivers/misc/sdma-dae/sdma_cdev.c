@@ -326,7 +326,6 @@ static void sdma_mmu_release_pause(struct mmu_notifier *mn, struct mm_struct *mm
 
 	if (atomic_read(&exit_processes) == 0) {
 		atomic_set(&exit_processes, 1);
-		pr_warn("SDMA exit exceptionally, stop SDMA tasks before mm exit.\n");
 		for (i = 0; i < g_info.core_dev->sdma_device_num; i++) {
 			psdma_dev = g_info.core_dev->sdma_devices[i];
 			sdma_pause_channels(psdma_dev);
@@ -353,7 +352,6 @@ static void sdma_mmu_release_resume(struct mmu_notifier *mn, struct mm_struct *m
 		return;
 
 	if (atomic_read(&ttl_processes) == 0) {
-		pr_warn("Now resume SDMA channels after mm exit\n");
 		for (i = 0; i < g_info.core_dev->sdma_device_num; i++) {
 			psdma_dev = g_info.core_dev->sdma_devices[i];
 			sdma_resume_channel(psdma_dev);
