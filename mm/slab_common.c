@@ -837,11 +837,17 @@ static int shutdown_memcg_caches(struct kmem_cache *s)
 	return 0;
 }
 
-static void memcg_set_kmem_cache_dying(struct kmem_cache *s)
+static int memcg_test_and_set_kmem_cache_dying(struct kmem_cache *s)
 {
+	int ret;
+
 	spin_lock_irq(&memcg_kmem_wq_lock);
-	s->memcg_params.dying = true;
+	ret = s->memcg_params.dying;
+	if (!ret)
+		s->memcg_params.dying = true;
 	spin_unlock_irq(&memcg_kmem_wq_lock);
+
+	return ret;
 }
 
 static void flush_memcg_workqueue(struct kmem_cache *s)
@@ -890,7 +896,9 @@ void kmem_cache_destroy(struct kmem_cache *s)
 		goto out_unlock;
 
 #ifdef CONFIG_MEMCG_KMEM
-	memcg_set_kmem_cache_dying(s);
+	err = memcg_test_and_set_kmem_cache_dying(s);
+	if (err)
+		goto out_unlock;
 
 	mutex_unlock(&slab_mutex);
 
