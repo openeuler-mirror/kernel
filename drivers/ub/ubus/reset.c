@@ -12,6 +12,7 @@
 #include "route.h"
 #include "ubus_controller.h"
 #include "ubus_config.h"
+#include "ubus_entity.h"
 #include "reset.h"
 
 enum elr_type {
@@ -218,36 +219,38 @@ static int ub_reset_check(struct ub_entity *dev)
 	return 0;
 }
 
-int ub_reset_entity(struct ub_entity *dev)
+int ub_reset_entity(struct ub_entity *uent)
 {
 	int ret;
 
-	if (!dev) {
+	if (!uent) {
 		pr_err("device is NULL\n");
 		return -EINVAL;
 	}
 
-	ret = ub_reset_check(dev);
+	ret = ub_reset_check(uent);
 	if (ret)
 		return ret;
 
-	if (!device_trylock(&dev->dev))
+	if (!device_trylock(&uent->dev))
 		return -EBUSY;
 
-	ret = ub_save_state(dev);
+	ret = ub_save_state(uent);
 	if (ret)
 		goto unlock;
 
-	ret = ub_entity_enable_return(dev, 0);
+	mutex_lock(&uent->active_mutex);
+	ret = ub_entity_enable_force(uent, 0);
 	if (ret)
 		goto restore;
 
-	ret = ub_elr(dev);
+	ret = ub_elr(uent);
 
 restore:
-	ub_restore_state(dev, ret);
+	mutex_unlock(&uent->active_mutex);
+	ub_restore_state(uent, ret);
 unlock:
-	device_unlock(&dev->dev);
+	device_unlock(&uent->dev);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(ub_reset_entity);
