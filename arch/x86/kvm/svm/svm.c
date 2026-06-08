@@ -3680,6 +3680,9 @@ static void svm_flush_tlb_gva(struct kvm_vcpu *vcpu, gva_t gva)
 static void svm_prepare_guest_switch(struct kvm_vcpu *vcpu)
 {
 	amd_clear_divider();
+
+	if (sev_es_guest(vcpu->kvm))
+		sev_es_unmap_ghcb(to_svm(vcpu));
 }
 
 static inline void sync_cr8_to_lapic(struct kvm_vcpu *vcpu)
