@@ -30,6 +30,7 @@ module_param(safe_mode, bool, RW_R_R);
 MODULE_PARM_DESC(safe_mode, "| 0 - fast_mode| 1 - safe_mode(default)|");
 
 struct ida fd_ida;
+struct mutex g_mutex_lock;
 struct hisi_sdma_core_device hisi_sdma_core_device = {0};
 static struct class *sdma_class;
 static struct dentry *sdma_dbgfs_dir;
@@ -113,7 +114,7 @@ static void sdma_channel_init(struct hisi_sdma_channel *pchan)
 	sdma_channel_enable(pchan);
 }
 
-static void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan)
+void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan)
 {
 	u32 cq_head, cq_tail;
 
@@ -131,7 +132,6 @@ static void sdma_channel_reset_sq_cq(struct hisi_sdma_channel *pchan)
 
 static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
 {
-	u32 cq_tail;
 	int i = 0;
 
 	sdma_channel_reset_sq_cq(pchan);
@@ -145,8 +145,6 @@ static void sdma_channel_reset(struct hisi_sdma_channel *pchan)
 	}
 	i = 0;
 	while (!sdma_channel_is_quiescent(pchan)) {
-		cq_tail = sdma_channel_get_cq_tail(pchan);
-		sdma_channel_set_cq_head(pchan, cq_tail);
 		msleep(HISI_SDMA_FSM_INTERVAL);
 		if (++i > HISI_SDMA_FSM_TIMEOUT) {
 			pr_warn("Chn%u cannot get quiescent\n", pchan->idx);
@@ -168,11 +166,11 @@ static void sdma_free_all_sq_cq(struct hisi_sdma_device *psdma_dev)
 {
 	struct hisi_sdma_channel *pchan;
 	int sync_size;
-	u16 i;
+	int i;
 
 	sync_size = sizeof(struct hisi_sdma_queue_info);
 
-	for (i = 0; i < psdma_dev->nr_channel; i++) {
+	for (i = psdma_dev->nr_channel - 1; i >= 0; i--) {
 		pchan = psdma_dev->channels + i;
 		if (pchan->io_base)
 			sdma_channel_reset(pchan);
@@ -201,9 +199,9 @@ static void sdma_destroy_channels(struct hisi_sdma_device *psdma_dev)
 
 static int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
 {
-	u16 chn_num = psdma_dev->nr_channel;
+	u32 chn_num = psdma_dev->nr_channel;
 	struct hisi_sdma_channel *pchan;
-	u16 i;
+	u32 i;
 
 	psdma_dev->channels = kcalloc_node(chn_num, sizeof(struct hisi_sdma_channel), GFP_KERNEL,
 					   psdma_dev->node_idx);
@@ -220,21 +218,10 @@ static int sdma_init_channels(struct hisi_sdma_device *psdma_dev)
 			pchan->ida = -1;
 		spin_lock_init(&pchan->owner_chn_lock);
 
-		if (!sdma_channel_alloc_sq_cq(pchan, psdma_dev->node_idx))
+		if (sdma_channel_alloc_sq_cq(pchan, psdma_dev->node_idx) == false)
 			goto err_out;
 
 		pchan->io_base = psdma_dev->io_base + i * HISI_SDMA_CHANNEL_IOMEM_SIZE;
-
-		if (sdma_channel_is_paused(pchan) && sdma_channel_is_quiescent(pchan)) {
-			sdma_channel_write_resume(pchan);
-			continue;
-		}
-
-		if (sdma_channel_is_paused(pchan) && !sdma_channel_is_quiescent(pchan)) {
-			sdma_channel_reset_sq_cq(pchan);
-			pr_warn("Chn%u not quiescent, not init\n", pchan->idx);
-			continue;
-		}
 
 		sdma_channel_disable(pchan);
 		sdma_channel_init(pchan);
@@ -255,8 +242,9 @@ err_out:
 
 static int sdma_device_add(struct hisi_sdma_device *psdma_dev)
 {
-	u16 idx = psdma_dev->idx;
+	u32 idx = psdma_dev->idx;
 	struct cdev *cdev = NULL;
+	u32 sdma_minor;
 	int devno;
 	int ret;
 
@@ -266,9 +254,10 @@ static int sdma_device_add(struct hisi_sdma_device *psdma_dev)
 	}
 
 	spin_lock(&hisi_sdma_core_device.device_lock);
+	sdma_minor = idx;
 	hisi_sdma_core_device.sdma_devices[idx] = psdma_dev;
 	cdev = &hisi_sdma_core_device.sdma_devices[idx]->cdev;
-	devno = MKDEV(hisi_sdma_core_device.sdma_major, idx);
+	devno = MKDEV(hisi_sdma_core_device.sdma_major, sdma_minor);
 
 	sdma_cdev_init(cdev);
 	ret = cdev_add(cdev, devno, 1);
@@ -350,14 +339,14 @@ static int parse_sdma(struct hisi_sdma_device *psdma_dev, struct platform_device
 	if (device_property_read_u32(&pdev->dev, "sdma-chn-num", &nr_channel)) {
 		pr_err("ACPI sdma-chn-num get failed!\n");
 		return -EINVAL;
+	} else {
+		if (nr_channel <= HISI_STARS_CHN_NUM || nr_channel >
+		    HISI_SDMA_DEFAULT_CHANNEL_NUM + HISI_STARS_CHN_NUM) {
+			pr_err("ACPI sdma-chn-num = %u not as required\n", nr_channel);
+			return -EINVAL;
+		}
+		psdma_dev->nr_channel = (u16)(nr_channel - HISI_STARS_CHN_NUM);
 	}
-
-	if (nr_channel <= HISI_STARS_CHN_NUM || nr_channel > HISI_SDMA_MAX_CHN_NUM) {
-		pr_err("ACPI sdma-chn-num = %u not as required\n", nr_channel);
-		return -EINVAL;
-	}
-
-	psdma_dev->nr_channel = (u16)(nr_channel - HISI_STARS_CHN_NUM);
 
 	return 0;
 }
@@ -470,24 +459,19 @@ static int sdma_device_probe(struct platform_device *pdev)
 
 	psdma_dev->streamid = pdev->dev.iommu->fwspec->ids[0];
 	spin_lock_init(&psdma_dev->channel_lock);
+	hash_init(psdma_dev->sdma_pid_ref_ht);
+	spin_lock_init(&psdma_dev->pid_lock);
 
 	ret = sdma_device_add(psdma_dev);
 	if (ret)
 		goto sva_device_shutdown;
-
-	atomic_set(&psdma_dev->sdma_dev_ref_cnt, 0);
-	atomic_set(&psdma_dev->dev_exit_ref_cnt, 0);
-	atomic_set(&psdma_dev->dev_exit_flag, 0);
-
-	INIT_LIST_HEAD(&psdma_dev->sdma_pause_mm_list);
-	INIT_LIST_HEAD(&psdma_dev->sdma_resume_mm_list);
-	mutex_init(&psdma_dev->mutex_lock);
 
 	dev_info(&pdev->dev, "SDMA%u registered\n", psdma_dev->idx);
 
 	return 0;
 
 sva_device_shutdown:
+	sdma_clear_pid_ref(psdma_dev);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 deinit_device:
@@ -502,8 +486,8 @@ static int sdma_device_remove(struct platform_device *pdev)
 {
 	struct hisi_sdma_device *psdma_dev = dev_get_drvdata(&pdev->dev);
 
-	mutex_destroy(&psdma_dev->mutex_lock);
 	sdma_device_delete(psdma_dev);
+	sdma_clear_pid_ref(psdma_dev);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_SVA);
 	iommu_dev_disable_feature(&pdev->dev, IOMMU_DEV_FEAT_IOPF);
 	sdma_deinit_device_info(psdma_dev);
@@ -566,7 +550,8 @@ static int __init sdma_driver_init(void)
 	long ret;
 
 	ida_init(&fd_ida);
-	sdma_info_sync_cdev(&hisi_sdma_core_device, &share_chns, &fd_ida, &safe_mode);
+	sdma_info_sync_cdev(&hisi_sdma_core_device, &share_chns, &fd_ida, &safe_mode,
+			    &g_mutex_lock);
 	sdma_info_sync_dbg(&hisi_sdma_core_device, &share_chns);
 
 	sdma_class = class_create(THIS_MODULE, "sdma");
@@ -609,6 +594,8 @@ static int __init sdma_driver_init(void)
 		goto umem_hash_free;
 	}
 
+	mutex_init(&g_mutex_lock);
+
 	return 0;
 
 umem_hash_free:
@@ -629,9 +616,9 @@ destroy_ida:
 
 static void __exit sdma_driver_exit(void)
 {
+	mutex_destroy(&g_mutex_lock);
 	sdma_authority_ht_free();
 	sdma_hash_free();
-	sdma_clear_pid_ref();
 	platform_driver_unregister(&sdma_driver);
 	debugfs_remove_recursive(sdma_dbgfs_dir);
 

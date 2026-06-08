@@ -11,7 +11,7 @@
 #define SINGLE_CHANNEL_SELECTED 1
 #define R_R_R 0444
 
-static struct hisi_sdma_debugfs_info dbg_g_info;
+static struct hisi_sdma_global_info dbg_g_info;
 static u32 debug_mode;
 static u32 device_id;
 static u32 channel_id;
@@ -36,9 +36,6 @@ static struct hisi_sdma_chn_num sdma_chn_info(struct seq_file *f, struct hisi_sd
 	seq_printf(f, "SDMA[%u] Total channel num = %u,", dev->idx, chn_num.total_chn_num);
 	seq_printf(f, "share channel num = %u, exclusive channel num = %u\n",
 		   chn_num.share_chn_num, chn_num.total_chn_num - chn_num.share_chn_num);
-	seq_puts(f, "\n");
-	seq_printf(f, "SDMA[%u] channel send queue depth = %u, completion queue depth = %u\n",
-		   dev->idx, HISI_SDMA_SQ_LENGTH, HISI_SDMA_CQ_LENGTH);
 	split_line(f);
 
 	return chn_num;
@@ -89,6 +86,8 @@ static int sdma_debugfs_stats_show(struct seq_file *f, void *data SDMA_UNUSED)
 
 	split_line(f);
 	seq_printf(f, "SDMA Devices Num = %u\n", num);
+	if (num == 0)
+		return 0;
 
 	for (i = 0; i < num; i++) {
 		spin_lock(&dbg_g_info.core_dev->device_lock);
@@ -241,6 +240,8 @@ static int sdma_debugfs_error_show(struct seq_file *f, void *data SDMA_UNUSED)
 
 	split_line(f);
 	seq_printf(f, "SDMA Devices Num = %u\n", num);
+	if (num == 0)
+		return 0;
 
 	for (i = 0; i < num; i++) {
 		spin_lock(&dbg_g_info.core_dev->device_lock);
