@@ -631,3 +631,27 @@ u64 tmi_mig_set_migration_key(uint64_t rd, uint64_t hsot_mig_agent_attr_p)
 		rd, __pa(hsot_mig_agent_attr_p), &res);
 	return res.a1;
 }
+
+u64 tmi_data_key_gen(uint64_t data_key_enc_p)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(
+		TMI_TMM_MIG_CONTROL,
+		TMI_TMM_DATA_KEY_GEN,
+		__pa(data_key_enc_p), &res);
+	return res.a1;
+}
+
+u64 tmi_data_key_enc(uint64_t host_key_attr_p, uint64_t raw_data_attr_p)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(
+		TMI_TMM_MIG_CONTROL,
+		TMI_TMM_DATA_KEY_ENC,
+		__pa(host_key_attr_p),
+		__pa(raw_data_attr_p),
+		&res);
+	return res.a1;
+}

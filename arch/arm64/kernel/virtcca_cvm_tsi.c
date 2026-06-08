@@ -7,6 +7,7 @@
 #include <asm/virtcca_cvm_guest.h>
 #include <asm/virtcca_cvm_smc.h>
 #include <asm/virtcca_cvm_tsi.h>
+#include <linux/virtcca_cvm_domain.h>
 
 struct attestation_token {
 	void *buf;
@@ -24,6 +25,8 @@ static int tmm_get_attestation_token(struct virtcca_cvm_attestation_cmd __user *
 static int tmm_get_device_cert(struct virtcca_device_cert __user *arg);
 static int tmm_get_set_migration_info(struct virtcca_migvm_info __user *arg);
 static int tmm_migvm_mem_checksum_loop(struct virtcca_migvm_checksum_info checksum_info);
+static int tmm_tsi_data_key_gen(struct virtcca_tsi_data_key_attr __user *arg);
+static int tmm_tsi_data_key_enc(struct virtcca_usr_data_key_enc_s __user *arg);
 
 static const struct file_operations tmm_tsi_fops = {
 	.owner          = THIS_MODULE,
@@ -93,6 +96,12 @@ static long tmm_tsi_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 			return -ENOTTY;
 		}
 		ret = tmm_migvm_mem_checksum_loop(checksum_info);
+		break;
+	case TMM_DATA_KEY_GEN:
+		ret = tmm_tsi_data_key_gen((struct virtcca_tsi_data_key_attr __user *)arg);
+		break;
+	case TMM_DATA_KEY_ENC:
+		ret = tmm_tsi_data_key_enc((struct virtcca_usr_data_key_enc_s __user *)arg);
 		break;
 	default:
 		pr_err("tmm_tsi: unknown ioctl command (0x%x)!\n", cmd);
@@ -359,6 +368,125 @@ out:
 
 	return ret;
 }
+
+static int tmm_tsi_data_key_gen(struct virtcca_tsi_data_key_attr __user *arg)
+{
+	int ret = 0;
+	struct virtcca_tsi_data_key_attr *key_attr = NULL;
+
+	if (!arg) {
+		pr_err("tmm_tsi: tsi_data_key_gen: arg is NULL\n");
+		return -EINVAL;
+	}
+
+	key_attr = kmalloc(sizeof(struct virtcca_tsi_data_key_attr), GFP_KERNEL);
+	if (!key_attr)
+		return -ENOMEM;
+
+	if (copy_from_user(key_attr, arg,
+						sizeof(struct virtcca_tsi_data_key_attr))) {
+		pr_err("tmm_tsi: tsi_data_key_gen: failed to copy key_attr from user\n");
+		ret = -EFAULT;
+		goto out;
+	}
+
+	ret = tsi_data_key_gen(key_attr);
+	if (ret) {
+		pr_err("tmm_tsi: tsi_data_key_gen failed, ret=%d\n", ret);
+		ret = -EFAULT;
+		goto out;
+	}
+
+	if (copy_to_user(arg, key_attr,
+		sizeof(struct virtcca_tsi_data_key_attr))) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+out:
+	kfree(key_attr);
+	return ret;
+}
+
+static int tmm_tsi_data_key_enc(struct virtcca_usr_data_key_enc_s __user *arg)
+{
+	int ret = 0;
+	struct virtcca_usr_data_key_enc_s *usr_data = NULL;
+	struct virtcca_raw_data_kern_ctx kern_ctx = {0};
+
+	if (!arg) {
+		pr_err("tmm_tsi: tsi_data_key_enc: arg is NULL\n");
+		return -EINVAL;
+	}
+
+	usr_data = kmalloc(sizeof(struct virtcca_usr_data_key_enc_s), GFP_KERNEL);
+	if (!usr_data)
+		return -ENOMEM;
+
+	if (copy_from_user(usr_data, arg,
+						sizeof(struct virtcca_usr_data_key_enc_s))) {
+		pr_err("tmm_tsi: tsi_data_key_enc: failed to copy usr_data from user\n");
+		ret = -EFAULT;
+		goto out;
+	}
+
+	if (usr_data->raw_data_attr.mode != DATA_ENC_MODE &&
+		usr_data->raw_data_attr.mode != DATA_DEC_MODE) {
+		pr_err("%s: invalid mode %d, must be %d(ENC) or %d(DEC)\n",
+			__func__, usr_data->raw_data_attr.mode, DATA_ENC_MODE, DATA_DEC_MODE);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (usr_data->raw_data_attr.ciphertext_len > MAX_DATA_KEY_BUF_SIZE ||
+		usr_data->raw_data_attr.plaintext_len > MAX_DATA_KEY_BUF_SIZE) {
+		pr_err("%s: buffer size exceeds limit, ciphertext_len=%u, plaintext_len=%u, max=%d\n",
+			__func__, usr_data->raw_data_attr.ciphertext_len,
+			usr_data->raw_data_attr.plaintext_len, MAX_DATA_KEY_BUF_SIZE);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (!access_ok((void __user *)usr_data->raw_data_attr.ciphertext_p,
+							usr_data->raw_data_attr.ciphertext_len) ||
+		!access_ok((void __user *)usr_data->raw_data_attr.plaintext_p,
+							usr_data->raw_data_attr.plaintext_len)) {
+		pr_err("%s: invalid user data pointer\n", __func__);
+		ret = -EFAULT;
+		goto out;
+	}
+
+	ret = virtcca_raw_data_attr_user_to_kernel(usr_data, &kern_ctx);
+	if (ret)
+		goto out;
+
+	if (kern_ctx.ciphertext_buf)
+		kern_ctx.kern_attr->ciphertext_p = (uint64_t)__pa(kern_ctx.ciphertext_buf);
+	if (kern_ctx.plaintext_buf)
+		kern_ctx.kern_attr->plaintext_p = (uint64_t)__pa(kern_ctx.plaintext_buf);
+
+	ret = tsi_data_key_enc(kern_ctx.kern_key_attr, kern_ctx.kern_attr);
+	if (ret) {
+		pr_err("tmm_tsi: tsi_data_key_enc failed, ret=%d\n", ret);
+		ret = -EFAULT;
+		goto out_cleanup;
+	}
+
+	ret = virtcca_raw_data_attr_kernel_to_user(arg, usr_data, &kern_ctx);
+	if (ret)
+		goto out;
+
+	goto out;
+
+out_cleanup:
+	virtcca_raw_data_kern_ctx_cleanup(&kern_ctx);
+out:
+	kfree(usr_data);
+
+	return ret;
+}
+
+
 module_init(tmm_tsi_init);
 module_exit(tmm_tsi_exit);
 

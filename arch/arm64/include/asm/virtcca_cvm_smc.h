@@ -110,6 +110,20 @@
  */
 #define SMC_TSI_MIG_INTEGRITY_CHECKSUM_LOOP	SMC_TSI_FID(0x1A1)
 
+/*
+ * arg1: Paddr of data key attr structure
+ * ret0: Status / error
+ */
+#define SMC_TSI_DATA_KEY_GEN			SMC_TSI_FID(0x1A2)
+
+/*
+ * arg1: Paddr of key attr structure
+ * arg2: Paddr of raw data attr structure
+ * ret0: Status / error
+ */
+#define SMC_TSI_DATA_KEY_ENC			SMC_TSI_FID(0x1A3)
+
+
 static inline unsigned long tsi_get_version(void)
 {
 	struct arm_smccc_res res;
@@ -252,5 +266,25 @@ static inline unsigned long tsi_mig_integrity_checksum_loop(unsigned long guest_
 
 	return res.a0;
 }
+
+static inline unsigned long tsi_data_key_gen(void *data_key_attr)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(SMC_TSI_DATA_KEY_GEN, virt_to_phys(data_key_attr), &res);
+
+	return res.a0;
+}
+
+static inline unsigned long tsi_data_key_enc(void *key_attr, void *raw_data_attr)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_1_1_smc(SMC_TSI_DATA_KEY_ENC, virt_to_phys(key_attr),
+		virt_to_phys(raw_data_attr), &res);
+
+	return res.a0;
+}
+
 #endif /* CONFIG_HISI_VIRTCCA_GUEST */
 #endif  /* __ASM_VIRTCCA_CVM_SMC_H_ */
