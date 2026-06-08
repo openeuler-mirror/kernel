@@ -1040,7 +1040,7 @@ asmlinkage void __exception_irq_entry gic_handle_irq_noack(struct pt_regs *regs)
 	if (gic_prio_masking_enabled()) {
 		gic_pmr_mask_irqs();
 		gic_arch_enable_irqs();
-	} else if (system_uses_nmi()) {
+	} else if (has_v3_3_nmi()) {
 #ifdef CONFIG_ARM64_NMI
 		_allint_clear();
 #endif
@@ -2479,7 +2479,6 @@ static int __init gic_init_bases(phys_addr_t dist_phys_base,
 
 	gic_data.has_rss = !!(typer & GICD_TYPER_RSS);
 	gic_data.has_nmi = !!(typer & GICD_TYPER_NMI);
-	pr_info("GICD_TYPER NMI is%s supported.\n", gic_data.has_nmi ? "" : " not");
 
 	if (typer & GICD_TYPER_MBIS) {
 		err = mbi_init(handle, gic_data.domain);
