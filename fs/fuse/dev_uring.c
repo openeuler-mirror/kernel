@@ -422,6 +422,7 @@ static void fuse_uring_async_stop_queues(struct work_struct *work)
 				      FUSE_URING_TEARDOWN_INTERVAL);
 	} else {
 		wake_up_all(&ring->stop_waitq);
+		fuse_conn_put(ring->fc);
 	}
 }
 
@@ -442,6 +443,7 @@ void fuse_uring_stop_queues(struct fuse_ring *ring)
 	}
 
 	if (atomic_read(&ring->queue_refs) > 0) {
+		fuse_conn_get(ring->fc);
 		ring->teardown_time = jiffies;
 		INIT_DELAYED_WORK(&ring->async_teardown_work,
 				  fuse_uring_async_stop_queues);
