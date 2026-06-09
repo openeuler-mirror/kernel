@@ -93,9 +93,9 @@ static struct folio *filemap_alloc_folio_local(gfp_t gfp, unsigned int order)
 		mems_cookie = read_mems_allowed_begin();
 		local_nodes = filemap_local_nodes_mask();
 
-		/* No non-cpuless nodes available, allocation fails */
+		/* No non-cpuless nodes available, fallback to current numa */
 		if (nodes_empty(local_nodes))
-			return NULL;
+			node_set(numa_node_id(), local_nodes);
 
 		n = filemap_local_rotor_node(&local_nodes);
 		folio = __folio_alloc(gfp, order, n, &local_nodes);
