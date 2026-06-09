@@ -345,6 +345,9 @@ static int sec_alg_send_message_retry(struct sec_req *req)
 		ret = qp_send_message(req);
 	} while (ret == -EBUSY && ctr++ < SEC_RETRY_MAX_CNT);
 
+	if (ret == -EBUSY)
+		return -ENOSPC;
+
 	return ret;
 }
 
@@ -1984,14 +1987,11 @@ static int sec_process(struct sec_ctx *ctx, struct sec_req *req)
 		sec_update_iv(req, ctx->alg_type);
 
 	ret = ctx->req_op->bd_send(ctx, req);
-	if (unlikely((ret != -EBUSY && ret != -EINPROGRESS))) {
+	if (likely(ret == -EINPROGRESS || ret == -EBUSY))
+		return ret;
+	else if (ret != -ENOSPC)
 		dev_err_ratelimited(ctx->dev, "send sec request failed!\n");
-		goto err_send_req;
-	}
 
-	return ret;
-
-err_send_req:
 	/* As failing, restore the IV from user */
 	if (ctx->c_ctx.c_mode == SEC_CMODE_CBC && !req->c_req.encrypt) {
 		if (ctx->alg_type == SEC_SKCIPHER)
@@ -2006,12 +2006,6 @@ err_send_req:
 
 err_uninit_req:
 	sec_request_uninit(req);
-	if (ctx->alg_type == SEC_AEAD)
-		ret = sec_aead_soft_crypto(ctx, req->aead_req.aead_req,
-					   req->c_req.encrypt);
-	else
-		ret = sec_skcipher_soft_crypto(ctx, req->c_req.sk_req,
-					       req->c_req.encrypt);
 	return ret;
 }
 
