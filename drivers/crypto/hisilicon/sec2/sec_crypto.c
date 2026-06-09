@@ -234,13 +234,15 @@ static int qp_send_message(struct sec_req *req)
 	return -EINPROGRESS;
 }
 
-static void sec_alg_send_backlog_soft(struct sec_ctx *ctx, struct sec_qp_ctx *qp_ctx)
+static void sec_alg_send_backlog_soft(struct hisi_qp *qp)
 {
 	struct sec_req *req, *tmp;
+	struct sec_ctx *ctx;
 	int ret;
 
-	list_for_each_entry_safe(req, tmp, &qp_ctx->qp->backlog.list, list) {
+	list_for_each_entry_safe(req, tmp, &qp->backlog.list, list) {
 		list_del(&req->list);
+		ctx = req->qp_ctx->ctx;
 		ctx->req_op->buf_unmap(ctx, req);
 		if (req->req_id >= 0)
 			sec_free_req_id(req);
@@ -258,9 +260,8 @@ static void sec_alg_send_backlog_soft(struct sec_ctx *ctx, struct sec_qp_ctx *qp
 	}
 }
 
-static void sec_alg_send_backlog(struct sec_ctx *ctx, struct sec_qp_ctx *qp_ctx)
+static void sec_alg_send_backlog(struct hisi_qp *qp)
 {
-	struct hisi_qp *qp = qp_ctx->qp;
 	struct sec_req *req, *tmp;
 	int ret;
 
@@ -277,7 +278,7 @@ static void sec_alg_send_backlog(struct sec_ctx *ctx, struct sec_qp_ctx *qp_ctx)
 			goto unlock;
 		default:
 			/* Release memory resources and send all requests through software. */
-			sec_alg_send_backlog_soft(ctx, qp_ctx);
+			sec_alg_send_backlog_soft(qp);
 			goto unlock;
 		}
 	}
@@ -306,6 +307,7 @@ static void sec_req_cb(struct hisi_qp *qp, void *resp)
 
 	ctx->req_op->buf_unmap(ctx, req);
 	ctx->req_op->callback(ctx, req, err);
+	sec_alg_send_backlog(qp);
 }
 
 static void sec_req_cb3(struct hisi_qp *qp, void *resp)
@@ -331,6 +333,7 @@ static void sec_req_cb3(struct hisi_qp *qp, void *resp)
 
 	ctx->req_op->buf_unmap(ctx, req);
 	ctx->req_op->callback(ctx, req, err);
+	sec_alg_send_backlog(qp);
 }
 
 static int sec_alg_send_message_retry(struct sec_req *req)
@@ -1674,8 +1677,6 @@ static void sec_update_iv(struct sec_req *req, enum sec_alg_type alg_type)
 static void sec_skcipher_callback(struct sec_ctx *ctx, struct sec_req *req,
 				  int err)
 {
-	struct sec_qp_ctx *qp_ctx = req->qp_ctx;
-
 	if (req->req_id >= 0)
 		sec_free_req_id(req);
 
@@ -1685,7 +1686,6 @@ static void sec_skcipher_callback(struct sec_ctx *ctx, struct sec_req *req,
 		sec_update_iv(req, SEC_SKCIPHER);
 
 	crypto_request_complete(req->base, err);
-	sec_alg_send_backlog(ctx, qp_ctx);
 }
 
 static void set_aead_auth_iv(struct sec_ctx *ctx, struct sec_req *req)
@@ -1924,7 +1924,7 @@ static void sec_aead_callback(struct sec_ctx *c, struct sec_req *req, int err)
 	struct aead_request *a_req = req->aead_req.aead_req;
 	struct crypto_aead *tfm = crypto_aead_reqtfm(a_req);
 	size_t authsize = crypto_aead_authsize(tfm);
-	struct sec_qp_ctx *qp_ctx = req->qp_ctx;
+	int error = err;
 	size_t sz;
 
 	if (!err && req->c_req.encrypt) {
@@ -1935,15 +1935,14 @@ static void sec_aead_callback(struct sec_ctx *c, struct sec_req *req, int err)
 					  authsize, a_req->cryptlen + a_req->assoclen);
 		if (unlikely(sz != authsize)) {
 			dev_err(c->dev, "copy out mac err!\n");
-			err = -EINVAL;
+			error = -EINVAL;
 		}
 	}
 
 	if (req->req_id >= 0)
 		sec_free_req_id(req);
 
-	crypto_request_complete(req->base, err);
-	sec_alg_send_backlog(c, qp_ctx);
+	crypto_request_complete(req->base, error);
 }
 
 static void sec_request_uninit(struct sec_req *req)
