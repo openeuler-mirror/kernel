@@ -29,6 +29,7 @@
 
 #define HZIP_ALG_DEFLATE			GENMASK(5, 4)
 #define HZIP_ALG_LZ4				BIT(8)
+#define HZIP_INVAL_REQ_ID			((u16)0xFFFF)
 
 static DEFINE_MUTEX(zip_algs_lock);
 static unsigned int zip_available_devs;
@@ -56,11 +57,11 @@ struct hisi_zip_req {
 	dma_addr_t dma_src;
 	dma_addr_t dma_dst;
 	struct hisi_zip_qp_ctx *qp_ctx;
+	struct list_head list;
 	u16 req_id;
 };
 
 struct hisi_zip_req_q {
-	struct hisi_zip_req *q;
 	unsigned long *req_bitmap;
 	spinlock_t req_lock;
 	u16 size;
@@ -126,6 +127,9 @@ static int hisi_zip_fallback_do_work(struct crypto_comp *tfm, struct acomp_req *
 	const char *algo;
 	int ret;
 
+	if (!tfm)
+		return -EINVAL;
+
 	input = kmap_local_page(sg_page(acomp_req->src)) + acomp_req->src->offset;
 	output = kmap_local_page(sg_page(acomp_req->dst)) + acomp_req->dst->offset;
 
@@ -146,12 +150,10 @@ static int hisi_zip_fallback_do_work(struct crypto_comp *tfm, struct acomp_req *
 	return ret;
 }
 
-static struct hisi_zip_req *hisi_zip_create_req(struct hisi_zip_qp_ctx *qp_ctx,
-						struct acomp_req *req)
+static int hisi_zip_create_req(struct hisi_zip_req *req)
 {
+	struct hisi_zip_qp_ctx *qp_ctx = req->qp_ctx;
 	struct hisi_zip_req_q *req_q = &qp_ctx->req_q;
-	struct hisi_zip_req *q = req_q->q;
-	struct hisi_zip_req *req_cache;
 	int req_id;
 
 	spin_lock(&req_q->req_lock);
@@ -160,28 +162,26 @@ static struct hisi_zip_req *hisi_zip_create_req(struct hisi_zip_qp_ctx *qp_ctx,
 	if (req_id >= req_q->size) {
 		spin_unlock(&req_q->req_lock);
 		dev_dbg(&qp_ctx->qp->qm->pdev->dev, "req cache is full!\n");
-		return ERR_PTR(-EAGAIN);
+		return -EBUSY;
 	}
 	set_bit(req_id, req_q->req_bitmap);
 
 	spin_unlock(&req_q->req_lock);
 
-	req_cache = q + req_id;
-	req_cache->req_id = req_id;
-	req_cache->req = req;
-	req_cache->qp_ctx = qp_ctx;
+	req->req_id = req_id;
 
-	return req_cache;
+	return 0;
 }
 
-static void hisi_zip_remove_req(struct hisi_zip_qp_ctx *qp_ctx,
-				struct hisi_zip_req *req)
+static void hisi_zip_remove_req(struct hisi_zip_req *req)
 {
-	struct hisi_zip_req_q *req_q = &qp_ctx->req_q;
+	struct hisi_zip_req_q *req_q = &req->qp_ctx->req_q;
 
 	spin_lock(&req_q->req_lock);
 	clear_bit(req->req_id, req_q->req_bitmap);
 	spin_unlock(&req_q->req_lock);
+
+	req->req_id = HZIP_INVAL_REQ_ID;
 }
 
 static void hisi_zip_fill_addr(struct hisi_zip_sqe *sqe, struct hisi_zip_req *req)
@@ -258,19 +258,21 @@ static void hisi_zip_fill_sqe(struct hisi_zip_ctx *ctx, struct hisi_zip_sqe *sqe
 	ops->fill_sqe_type(sqe, ops->sqe_type);
 }
 
-static int hisi_zip_do_work(struct hisi_zip_qp_ctx *qp_ctx,
-			    struct hisi_zip_req *req)
+static void hisi_zip_enqueue_backlog(struct hisi_zip_req *req)
 {
-	struct hisi_acc_sgl_pool *pool = qp_ctx->sgl_pool;
-	struct hisi_zip_dfx *dfx = &qp_ctx->zip_dev->dfx;
-	struct acomp_req *a_req = req->req;
-	struct hisi_qp *qp = qp_ctx->qp;
-	struct device *dev = &qp->qm->pdev->dev;
-	struct hisi_zip_sqe zip_sqe;
-	int ret;
+	struct hisi_qp *qp = req->qp_ctx->qp;
 
-	if (unlikely(!a_req->src || !a_req->slen || !a_req->dst || !a_req->dlen))
-		return -EINVAL;
+	spin_lock_bh(&qp->backlog.lock);
+	list_add_tail(&req->list, &qp->backlog.list);
+	spin_unlock_bh(&qp->backlog.lock);
+}
+
+static int hisi_zip_map_req_buffers(struct hisi_zip_req *req)
+{
+	struct hisi_zip_qp_ctx *qp_ctx = req->qp_ctx;
+	struct hisi_acc_sgl_pool *pool = qp_ctx->sgl_pool;
+	struct device *dev = &qp_ctx->qp->qm->pdev->dev;
+	struct acomp_req *a_req = req->req;
 
 	req->hw_src = hisi_acc_sg_buf_map_to_hw_sgl(dev, a_req->src, pool,
 						    req->req_id << 1, &req->dma_src,
@@ -285,31 +287,112 @@ static int hisi_zip_do_work(struct hisi_zip_qp_ctx *qp_ctx,
 						    (req->req_id << 1) + 1,
 						    &req->dma_dst, DMA_FROM_DEVICE);
 	if (IS_ERR(req->hw_dst)) {
-		ret = PTR_ERR(req->hw_dst);
-		dev_err(dev, "failed to map the dst buffer to hw sgl (%d)!\n",
-			ret);
-		goto err_unmap_input;
+		dev_err(dev, "failed to map the dst buffer to hw sgl (%ld)!\n",
+			PTR_ERR(req->hw_dst));
+		hisi_acc_sg_buf_unmap(dev, a_req->src, req->hw_src, DMA_TO_DEVICE);
+		return PTR_ERR(req->hw_dst);
 	}
+
+	return 0;
+}
+
+static void hisi_zip_unmap_req_buffers(struct hisi_zip_req *req)
+{
+	struct device *dev = &req->qp_ctx->qp->qm->pdev->dev;
+	struct acomp_req *a_req = req->req;
+
+	hisi_acc_sg_buf_unmap(dev, a_req->dst, req->hw_dst, DMA_FROM_DEVICE);
+	hisi_acc_sg_buf_unmap(dev, a_req->src, req->hw_src, DMA_TO_DEVICE);
+}
+
+static int hisi_zip_do_work(struct hisi_zip_req *req)
+{
+	struct hisi_zip_qp_ctx *qp_ctx = req->qp_ctx;
+	struct hisi_zip_dfx *dfx = &qp_ctx->zip_dev->dfx;
+	struct hisi_qp *qp = qp_ctx->qp;
+	struct hisi_zip_sqe zip_sqe;
+	int ret;
 
 	hisi_zip_fill_sqe(qp_ctx->ctx, &zip_sqe, qp_ctx->req_type, req);
 
 	/* send command to start a task */
-	atomic64_inc(&dfx->send_cnt);
 	ret = hisi_qp_send(qp, &zip_sqe);
-	if (unlikely(ret < 0)) {
-		atomic64_inc(&dfx->send_busy_cnt);
-		ret = -EAGAIN;
-		dev_dbg_ratelimited(dev, "failed to send request!\n");
-		goto err_unmap_output;
+	if (likely(!ret)) {
+		atomic64_inc(&dfx->send_cnt);
+		return -EINPROGRESS;
 	}
 
-	return -EINPROGRESS;
+	if (ret == -EBUSY)
+		atomic64_inc(&dfx->send_busy_cnt);
 
-err_unmap_output:
-	hisi_acc_sg_buf_unmap(dev, a_req->dst, req->hw_dst, DMA_FROM_DEVICE);
-err_unmap_input:
-	hisi_acc_sg_buf_unmap(dev, a_req->src, req->hw_src, DMA_TO_DEVICE);
 	return ret;
+}
+
+static void hisi_zip_send_backlog_soft(struct hisi_zip_qp_ctx *qp_ctx)
+{
+	struct hisi_zip_ctx *ctx = qp_ctx->ctx;
+	bool is_decomp = qp_ctx->qp->alg_type;
+	struct  hisi_zip_req *req, *tmp;
+	int ret;
+
+	list_for_each_entry_safe(req, tmp, &qp_ctx->qp->backlog.list, list) {
+		list_del(&req->list);
+
+		if (req->req_id != HZIP_INVAL_REQ_ID) {
+			hisi_zip_unmap_req_buffers(req);
+			hisi_zip_remove_req(req);
+		}
+
+		ret = hisi_zip_fallback_do_work(ctx->soft_tfm, req->req,
+						is_decomp);
+
+		/* Wake up the busy thread first, then return the errno. */
+		if (req->req->base.complete) {
+			acomp_request_complete(req->req, -EINPROGRESS);
+			acomp_request_complete(req->req, ret);
+		}
+	}
+}
+
+static void hisi_zip_send_backlog(struct hisi_qp *qp)
+{
+	struct  hisi_zip_req *req, *tmp;
+	struct hisi_zip_req_q *req_q;
+	int ret;
+
+	spin_lock_bh(&qp->backlog.lock);
+	list_for_each_entry_safe(req, tmp, &qp->backlog.list, list) {
+		req_q = &req->qp_ctx->req_q;
+		if (req->req_id == HZIP_INVAL_REQ_ID) {
+			ret = hisi_zip_create_req(req);
+			if (ret)
+				continue;
+
+			ret = hisi_zip_map_req_buffers(req);
+			if (unlikely(ret)) {
+				hisi_zip_remove_req(req);
+				hisi_zip_send_backlog_soft(req->qp_ctx);
+				goto unlock;
+			}
+		}
+
+		ret = hisi_zip_do_work(req);
+		switch (ret) {
+		case -EINPROGRESS:
+			list_del(&req->list);
+			if (req->req->base.complete)
+				acomp_request_complete(req->req, -EINPROGRESS);
+			break;
+		case -EBUSY:
+			goto unlock;
+		default:
+			hisi_zip_send_backlog_soft(req->qp_ctx);
+			goto unlock;
+		}
+	}
+
+unlock:
+	spin_unlock_bh(&qp->backlog.lock);
 }
 
 static u32 hisi_zip_get_status(struct hisi_zip_sqe *sqe)
@@ -344,75 +427,101 @@ static void hisi_zip_acomp_cb(struct hisi_qp *qp, void *data)
 		err = -EIO;
 	}
 
-	hisi_acc_sg_buf_unmap(dev, acomp_req->dst, req->hw_dst, DMA_FROM_DEVICE);
-	hisi_acc_sg_buf_unmap(dev, acomp_req->src, req->hw_src, DMA_TO_DEVICE);
+	hisi_zip_unmap_req_buffers(req);
 
 	acomp_req->dlen = ops->get_dstlen(sqe);
+	hisi_zip_remove_req(req);
 
 	if (acomp_req->base.complete)
 		acomp_request_complete(acomp_req, err);
 
-	hisi_zip_remove_req(qp_ctx, req);
+	hisi_zip_send_backlog(qp);
+}
+
+static int hisi_zip_do_comp(struct hisi_zip_req *req, bool is_decompress)
+{
+	struct acomp_req *acomp_req = req->req;
+	struct hisi_zip_ctx *ctx = crypto_tfm_ctx(acomp_req->base.tfm);
+	struct hisi_qp *qp = req->qp_ctx->qp;
+	int ret;
+
+	if (unlikely(!acomp_req->src || !acomp_req->slen ||
+		     !acomp_req->dst || !acomp_req->dlen))
+		return -EINVAL;
+
+	if (ctx->fallback)
+		return hisi_zip_fallback_do_work(ctx->soft_tfm, acomp_req,
+						 is_decompress);
+
+	/* Check whether any request is being queued */
+	if ((acomp_req->base.flags & CRYPTO_TFM_REQ_MAY_BACKLOG) &&
+	    !list_empty(&qp->backlog.list)) {
+		req->req_id = HZIP_INVAL_REQ_ID;
+		hisi_zip_enqueue_backlog(req);
+		return -EBUSY;
+	}
+
+	ret = hisi_zip_create_req(req);
+	if (ret && (acomp_req->base.flags & CRYPTO_TFM_REQ_MAY_BACKLOG)) {
+		/* all req bitmaps are used add to backlog list */
+		req->req_id = HZIP_INVAL_REQ_ID;
+		hisi_zip_enqueue_backlog(req);
+		return -EBUSY;
+	} else if (unlikely(ret)) {
+		return -ENOSPC;
+	}
+
+	ret = hisi_zip_map_req_buffers(req);
+	if (unlikely(ret))
+		goto remove_req;
+
+	ret = hisi_zip_do_work(req);
+	if (ret == -EBUSY && (acomp_req->base.flags & CRYPTO_TFM_REQ_MAY_BACKLOG)) {
+		/* hardwre busy add to backlog list */
+		hisi_zip_enqueue_backlog(req);
+	} else if (unlikely(ret != -EINPROGRESS)) {
+		dev_info_ratelimited(&qp->qm->pdev->dev,
+				     "failed to do %scompress (%d)!\n",
+				     qp->alg_type ? "de" : "", ret);
+		ret = -ENOSPC;
+		goto unmap_req;
+	}
+
+	return ret;
+
+unmap_req:
+	hisi_zip_unmap_req_buffers(req);
+remove_req:
+	hisi_zip_remove_req(req);
+	return ret;
 }
 
 static int hisi_zip_acompress(struct acomp_req *acomp_req)
 {
 	struct hisi_zip_ctx *ctx = crypto_tfm_ctx(acomp_req->base.tfm);
-	struct hisi_zip_qp_ctx *qp_ctx = &ctx->qp_ctx[HZIP_QPC_COMP];
-	struct hisi_zip_req *req;
-	struct device *dev;
-	int ret;
+	struct hisi_zip_req *req = acomp_request_ctx(acomp_req);
 
-	if (ctx->fallback)
-		return hisi_zip_fallback_do_work(ctx->soft_tfm, acomp_req, 0);
-
-	dev = &qp_ctx->qp->qm->pdev->dev;
-
-	req = hisi_zip_create_req(qp_ctx, acomp_req);
-	if (IS_ERR(req))
-		return PTR_ERR(req);
-
-	ret = hisi_zip_do_work(qp_ctx, req);
-	if (unlikely(ret != -EINPROGRESS)) {
-		dev_info_ratelimited(dev, "failed to do compress (%d)!\n", ret);
-		hisi_zip_remove_req(qp_ctx, req);
-	}
-
-	return ret;
+	req->req = acomp_req;
+	req->qp_ctx = &ctx->qp_ctx[HZIP_QPC_COMP];
+	return hisi_zip_do_comp(req, HZIP_ALG_TYPE_COMP);
 }
 
 static int hisi_zip_adecompress(struct acomp_req *acomp_req)
 {
 	struct hisi_zip_ctx *ctx = crypto_tfm_ctx(acomp_req->base.tfm);
-	struct hisi_zip_qp_ctx *qp_ctx = &ctx->qp_ctx[HZIP_QPC_DECOMP];
-	struct hisi_zip_req *req;
-	struct device *dev;
-	int ret;
+	struct hisi_zip_req *req = acomp_request_ctx(acomp_req);
 
-	if (ctx->fallback)
-		return hisi_zip_fallback_do_work(ctx->soft_tfm, acomp_req, 1);
-
-	dev = &qp_ctx->qp->qm->pdev->dev;
-
-	req = hisi_zip_create_req(qp_ctx, acomp_req);
-	if (IS_ERR(req))
-		return PTR_ERR(req);
-
-	ret = hisi_zip_do_work(qp_ctx, req);
-	if (unlikely(ret != -EINPROGRESS)) {
-		dev_info_ratelimited(dev, "failed to do decompress (%d)!\n",
-				     ret);
-		hisi_zip_remove_req(qp_ctx, req);
-	}
-
-	return ret;
+	req->req = acomp_req;
+	req->qp_ctx = &ctx->qp_ctx[HZIP_QPC_DECOMP];
+	return hisi_zip_do_comp(req, HZIP_ALG_TYPE_DECOMP);
 }
 
 static int hisi_zip_decompress(struct acomp_req *acomp_req)
 {
 	struct hisi_zip_ctx *ctx = crypto_tfm_ctx(acomp_req->base.tfm);
 
-	return hisi_zip_fallback_do_work(ctx->soft_tfm, acomp_req, 1);
+	return hisi_zip_fallback_do_work(ctx->soft_tfm, acomp_req,
+					 HZIP_ALG_TYPE_DECOMP);
 }
 
 static const struct hisi_zip_sqe_ops hisi_zip_ops = {
@@ -476,7 +585,7 @@ static int hisi_zip_create_req_q(struct hisi_zip_ctx *ctx)
 {
 	u16 q_depth = ctx->qp_ctx[0].qp->sq_depth;
 	struct hisi_zip_req_q *req_q;
-	int i, ret;
+	int i;
 
 	for (i = 0; i < HZIP_CTX_Q_NUM; i++) {
 		req_q = &ctx->qp_ctx[i].req_q;
@@ -484,44 +593,21 @@ static int hisi_zip_create_req_q(struct hisi_zip_ctx *ctx)
 
 		req_q->req_bitmap = bitmap_zalloc(req_q->size, GFP_KERNEL);
 		if (!req_q->req_bitmap) {
-			ret = -ENOMEM;
-			if (i == 0)
-				return ret;
-
-			goto err_free_comp_q;
+			bitmap_free(ctx->qp_ctx[HZIP_QPC_COMP].req_q.req_bitmap);
+			return -ENOMEM;
 		}
 		spin_lock_init(&req_q->req_lock);
-
-		req_q->q = kcalloc(req_q->size, sizeof(struct hisi_zip_req),
-				   GFP_KERNEL);
-		if (!req_q->q) {
-			ret = -ENOMEM;
-			if (i == 0)
-				goto err_free_comp_bitmap;
-			else
-				goto err_free_decomp_bitmap;
-		}
 	}
 
 	return 0;
-
-err_free_decomp_bitmap:
-	bitmap_free(ctx->qp_ctx[HZIP_QPC_DECOMP].req_q.req_bitmap);
-err_free_comp_q:
-	kfree(ctx->qp_ctx[HZIP_QPC_COMP].req_q.q);
-err_free_comp_bitmap:
-	bitmap_free(ctx->qp_ctx[HZIP_QPC_COMP].req_q.req_bitmap);
-	return ret;
 }
 
 static void hisi_zip_release_req_q(struct hisi_zip_ctx *ctx)
 {
 	int i;
 
-	for (i = 0; i < HZIP_CTX_Q_NUM; i++) {
-		kfree(ctx->qp_ctx[i].req_q.q);
+	for (i = 0; i < HZIP_CTX_Q_NUM; i++)
 		bitmap_free(ctx->qp_ctx[i].req_q.req_bitmap);
-	}
 }
 
 static int hisi_zip_create_sgl_pool(struct hisi_zip_ctx *ctx)
@@ -571,7 +657,7 @@ static void hisi_zip_set_acomp_cb(struct hisi_zip_ctx *ctx,
 
 static int hisi_zip_fallback_init(struct hisi_zip_ctx *ctx, const char *alg_name)
 {
-	if (!IS_ERR_OR_NULL(ctx->soft_tfm))
+	if (ctx->soft_tfm)
 		return 0;
 
 	if (!crypto_has_comp(alg_name, 0, 0))
@@ -580,7 +666,8 @@ static int hisi_zip_fallback_init(struct hisi_zip_ctx *ctx, const char *alg_name
 	ctx->soft_tfm = crypto_alloc_comp(alg_name, 0, 0);
 	if (IS_ERR_OR_NULL(ctx->soft_tfm)) {
 		pr_err("could not alloc soft tfm %s\n", alg_name);
-		return PTR_ERR(ctx->soft_tfm);
+		ctx->soft_tfm = NULL;
+		return -ENOMEM;
 	}
 
 	return 0;
@@ -588,7 +675,7 @@ static int hisi_zip_fallback_init(struct hisi_zip_ctx *ctx, const char *alg_name
 
 static void hisi_zip_fallback_uninit(struct hisi_zip_ctx *ctx)
 {
-	if (IS_ERR_OR_NULL(ctx->soft_tfm))
+	if (!ctx->soft_tfm)
 		return;
 
 	crypto_free_comp(ctx->soft_tfm);
@@ -599,8 +686,10 @@ static int hisi_zip_acomp_init(struct crypto_acomp *tfm)
 {
 	const char *alg_name = crypto_tfm_alg_name(&tfm->base);
 	struct hisi_zip_ctx *ctx = crypto_tfm_ctx(&tfm->base);
+	int ret, fallback_err;
 	struct device *dev;
-	int ret;
+
+	fallback_err = hisi_zip_fallback_init(ctx, alg_name);
 
 	ret = hisi_zip_ctx_init(ctx, COMP_NAME_TO_TYPE(alg_name), tfm->base.node);
 	if (ret) {
@@ -631,8 +720,10 @@ err_release_req_q:
 err_ctx_exit:
 	hisi_zip_ctx_exit(ctx);
 switch_to_soft:
-	ctx->fallback = true;
-	return hisi_zip_fallback_init(ctx, alg_name);
+	if (!fallback_err)
+		ctx->fallback = true;
+
+	return fallback_err;
 }
 
 static int hisi_zip_acomp_init_fb(struct crypto_acomp *tfm)
@@ -672,6 +763,7 @@ static struct acomp_alg hisi_zip_acomp_deflate = {
 	.exit			= hisi_zip_acomp_exit,
 	.compress		= hisi_zip_acompress,
 	.decompress		= hisi_zip_adecompress,
+	.reqsize		= sizeof(struct hisi_zip_req),
 	.base			= {
 		.cra_name		= "deflate",
 		.cra_driver_name	= "hisi-deflate-acomp",
@@ -710,6 +802,7 @@ static struct acomp_alg hisi_zip_acomp_lz4 = {
 	.exit			= hisi_zip_acomp_exit,
 	.compress		= hisi_zip_acompress,
 	.decompress		= hisi_zip_decompress,
+	.reqsize		= sizeof(struct hisi_zip_req),
 	.base			= {
 		.cra_name		= "lz4",
 		.cra_driver_name	= "hisi-lz4-acomp",
