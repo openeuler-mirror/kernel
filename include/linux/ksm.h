@@ -34,6 +34,9 @@ static inline int ksm_fork(struct mm_struct *mm, struct mm_struct *oldmm)
 	int ret;
 
 	if (test_bit(MMF_VM_MERGEABLE, &oldmm->flags)) {
+		mm->ksm_merging_pages = 0;
+		mm->ksm_rmap_items = 0;
+
 		ret = __ksm_enter(mm);
 		if (ret)
 			return ret;
