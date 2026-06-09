@@ -492,6 +492,7 @@ static void ubmad_rt_work_handler(struct work_struct *work)
 	uint32_t hash = ubmad_reliable_hash(rt_work->msn, rt_work->msg_type,
 			UBMAD_MSN_HLIST_SIZE);
 	bool found = false;
+	struct ubmad_tjetty *tjetty;
 
 	spin_lock_irqsave(&msn_mgr->msn_hlist_lock, flag);
 	hlist_for_each_entry_safe(cur, next, &msn_mgr->msn_hlist[hash], node) {
@@ -535,8 +536,7 @@ clear_rt_work:
 	spin_unlock_irqrestore(&msn_mgr->msn_hlist_lock, flag);
 
 stop_retransmit:
-
-	struct ubmad_tjetty *tjetty = ubmad_get_tjetty(dst, rsrc);
+	tjetty = ubmad_get_tjetty(dst, rsrc);
 
 	if (!IS_ERR_OR_NULL(tjetty))
 		ubmad_release_ini_rtbuffer(tjetty, rt_work->msn, rt_work->msg_type);
