@@ -1971,6 +1971,7 @@ static int sec_request_init(struct sec_ctx *ctx, struct sec_req *req)
 
 static int sec_process(struct sec_ctx *ctx, struct sec_req *req)
 {
+	bool need_copy_iv = false;
 	int ret;
 
 	ret = sec_request_init(ctx, req);
@@ -1983,8 +1984,10 @@ static int sec_process(struct sec_ctx *ctx, struct sec_req *req)
 
 	/* Output IV as decrypto */
 	if (!req->c_req.encrypt && (ctx->c_ctx.c_mode == SEC_CMODE_CBC ||
-	    ctx->c_ctx.c_mode == SEC_CMODE_CTR))
+	    ctx->c_ctx.c_mode == SEC_CMODE_CTR)) {
+		need_copy_iv = true;
 		sec_update_iv(req, ctx->alg_type);
+	}
 
 	ret = ctx->req_op->bd_send(ctx, req);
 	if (likely(ret == -EINPROGRESS || ret == -EBUSY))
@@ -1993,7 +1996,7 @@ static int sec_process(struct sec_ctx *ctx, struct sec_req *req)
 		dev_err_ratelimited(ctx->dev, "send sec request failed!\n");
 
 	/* As failing, restore the IV from user */
-	if (ctx->c_ctx.c_mode == SEC_CMODE_CBC && !req->c_req.encrypt) {
+	if (need_copy_iv) {
 		if (ctx->alg_type == SEC_SKCIPHER)
 			memcpy(req->c_req.sk_req->iv, req->c_req.c_ivin,
 			       ctx->c_ctx.ivsize);
