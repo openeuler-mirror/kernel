@@ -1132,6 +1132,17 @@ bool kvm_set_spte_gfn(struct kvm *kvm, struct kvm_gfn_range *range)
 	if (!kvm->arch.mmu.pgt)
 		return 0;
 
+	/*
+	 * With the SVM/SVA feature, ->change_pte() (mmu_notifier_change_pte)
+	 * can be triggered from the ptep_set_access_flags() path in
+	 * handle_pte_fault(), and may probabilistically come in for BAR space
+	 * (device-type) page tables. Skip the handling for device pfns, as the
+	 * cache maintenance and stage-2 walk below are not valid for device
+	 * memory.
+	 */
+	if (WARN_ON_ONCE(kvm_is_device_pfn(pfn)))
+		return 0;
+
 	WARN_ON(range->end - range->start != 1);
 
 	/*
