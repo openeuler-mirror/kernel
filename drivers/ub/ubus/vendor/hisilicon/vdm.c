@@ -76,6 +76,8 @@ static int ub_idevice_enable_handle(struct ub_entity *pue, u16 idx, u8 is_mue,
 		dev->uem.start_entity_idx = map->start_entity_idx;
 		dev->uem.end_entity_idx = map->end_entity_idx;
 		dev->total_ues = map->end_entity_idx - map->start_entity_idx + 1;
+		if (map->start_entity_idx == dev->entity_idx)
+			dev->total_ues = 0;
 		dev->is_vdm_idev = 1;
 	}
 
@@ -128,8 +130,8 @@ static u8 ub_get_ue_map(struct ub_entity *uent, struct idev_pue_reg_pld *pld,
 	u8 status = UB_MSG_RSP_SUCCESS;
 
 	if (!pld->ue_cnt) {
-		map->start_entity_idx = uent->entity_idx;
-		map->end_entity_idx = uent->entity_idx;
+		map->start_entity_idx = pld->pue_entity_idx;
+		map->end_entity_idx = pld->pue_entity_idx;
 	} else if (pld->ue_cnt !=
 		   pld->end_ue_entity_idx - pld->start_ue_entity_idx + 1) {
 		ub_err(uent, "Invalid ue cnt: [%u] The ue cnt must be equal to end: [%d] - start: [%d] + 1\n",
