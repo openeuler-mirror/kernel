@@ -1,36 +1,36 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
-#ifndef RNPGBE_MBX_FW_H
-#define RNPGBE_MBX_FW_H
+#ifndef _RNPGBE_MBX_FW_H
+#define _RNPGBE_MBX_FW_H
 
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/wait.h>
 
-#ifndef _PACKED_ALIGN4
-#define _PACKED_ALIGN4 __attribute__((packed, aligned(4)))
-#endif
+#define VF2PF_MBOX_VEC(mbx, vf) ((mbx)->vf2pf_mbox_vec_base + 4 * (vf))
+#define CPU2PF_MBOX_VEC(mbx) ((mbx)->cpu2pf_mbox_vec)
 
-#define VF2PF_MBOX_VEC(mbx, vf) (mbx->vf2pf_mbox_vec_base + 4 * (vf))
-#define CPU2PF_MBOX_VEC(mbx) (mbx->cpu2pf_mbox_vec)
+/* == PF <--> VF mailbox ==== */
 #define SHARE_MEM_BYTES 64
-#define PF_VF_SHM(mbx, vf) (mbx->pf_vf_shm_base + mbx->mbx_mem_size * (vf))
+#define PF_VF_SHM(mbx, vf)                                                     \
+	((mbx)->pf_vf_shm_base +                                                 \
+	(mbx)->mbx_mem_size * (vf))
 #define PF2VF_COUNTER(mbx, vf) (PF_VF_SHM(mbx, vf) + 0)
 #define VF2PF_COUNTER(mbx, vf) (PF_VF_SHM(mbx, vf) + 4)
 #define PF_VF_SHM_DATA(mbx, vf) (PF_VF_SHM(mbx, vf) + 8)
-#define PF2VF_MBOX_CTRL(mbx, vf) (mbx->pf2vf_mbox_ctrl_base + 4 * (vf))
-#define PF_VF_MBOX_MASK_LO(mbx) (mbx->pf_vf_mbox_mask_lo)
-#define PF_VF_MBOX_MASK_HI(mbx) (mbx->pf_vf_mbox_mask_hi)
+#define PF2VF_MBOX_CTRL(mbx, vf) ((mbx)->pf2vf_mbox_ctrl_base + 4 * (vf))
+#define PF_VF_MBOX_MASK_LO(mbx) ((mbx)->pf_vf_mbox_mask_lo)
+#define PF_VF_MBOX_MASK_HI(mbx) ((mbx)->pf_vf_mbox_mask_hi)
 /* === CPU <--> PF === */
-#define CPU_PF_SHM(mbx) (mbx->cpu_pf_shm_base)
+#define CPU_PF_SHM(mbx) ((mbx)->cpu_pf_shm_base)
 #define CPU2PF_COUNTER(mbx) (CPU_PF_SHM(mbx) + 0)
 #define PF2CPU_COUNTER(mbx) (CPU_PF_SHM(mbx) + 4)
 #define CPU_PF_SHM_DATA(mbx) (CPU_PF_SHM(mbx) + 8)
-#define PF2CPU_MBOX_CTRL(mbx) (mbx->pf2cpu_mbox_ctrl)
-#define CPU_PF_MBOX_MASK(mbx) (mbx->cpu_pf_mbox_mask)
-#define MBOX_CTRL_REQ (1) /* WO */
-#define MBOX_CTRL_PF_HOLD_SHM (BIT(3)) /* VF:RO, PF:WR */
+#define PF2CPU_MBOX_CTRL(mbx) ((mbx)->pf2cpu_mbox_ctrl)
+#define CPU_PF_MBOX_MASK(mbx) ((mbx)->cpu_pf_mbox_mask)
+#define MBOX_CTRL_REQ BIT(0) /* WO */
+#define MBOX_CTRL_PF_HOLD_SHM BIT(3) /* VF:RO, PF:WR */
 #define MBOX_IRQ_EN 0
 #define MBOX_IRQ_DISABLE 1
 #define mbx_prd32(hw, reg) prnpgbe_rd_reg((hw)->hw_addr + (reg))
@@ -50,24 +50,12 @@ struct mbx_req_cookie {
 	wait_queue_head_t wait;
 	int done;
 	int priv_len;
-	char priv[];
+	char priv[64];
 };
 
 enum GENERIC_CMD {
-	/* generat */
+	/* generate */
 	GET_VERSION = 0x0001,
-	READ_REG = 0xFF03,
-	WRITE_REG = 0xFF04,
-	MODIFY_REG = 0xFF07,
-
-	/* virtualization */
-	IFUP_DOWN = 0x0800,
-	SEND_TO_PF = 0x0801,
-	SEND_TO_VF = 0x0802,
-	DRIVER_INSMOD = 0x0803,
-	SYSTEM_SUSPUSE = 0x0804,
-	SYSTEM_FORCE = 0x0805,
-
 	/* link configuration admin commands */
 	GET_PHY_ABALITY = 0x0601,
 	GET_MAC_ADDRES = 0x0602,
@@ -88,15 +76,20 @@ enum GENERIC_CMD {
 	PHY_PAUSE_GET = 0x0633,
 	PHY_EEE_SET = 0x0636,
 	PHY_EEE_GET = 0x0637,
-
-	/* sfp-module */
-	SFP_MODULE_READ = 0x0900,
-	SFP_MODULE_WRITE = 0x0901,
-
 	/* fw update */
 	FW_UPDATE = 0x0700,
 	FW_MAINTAIN = 0x0701,
-	FW_UPDATE_N500 = 0x0702,
+	FW_UPDATE_GBE = 0x0702,
+	/* virtualization */
+	IFUP_DOWN = 0x0800,
+	SEND_TO_PF = 0x0801,
+	SEND_TO_VF = 0x0802,
+	DRIVER_INSMOD = 0x0803,
+	SYSTEM_SUSPUSE = 0x0804,
+	SYSTEM_FORCE = 0x0805,
+	/*sfp-module*/
+	SFP_MODULE_READ = 0x0900,
+	SFP_MODULE_WRITE = 0x0901,
 	WOL_EN = 0x0910,
 	GET_DUMP = 0x0a00,
 	SET_DUMP = 0x0a10,
@@ -105,6 +98,9 @@ enum GENERIC_CMD {
 	SET_TEST_MODE = 0x0a13,
 	SHOW_TX_STAMP = 0x0a14,
 	LLDP_TX_CTRL = 0x0a15,
+	READ_REG = 0xFF03,
+	WRITE_REG = 0xFF04,
+	MODIFY_REG = 0xFF07,
 };
 
 enum link_event_mask {
@@ -123,166 +119,88 @@ enum pma_type {
 	PHY_TYPE_NONE = 0,
 	PHY_TYPE_1G_BASE_KX,
 	PHY_TYPE_SGMII,
-	PHY_TYPE_10G_BASE_KR,
-	PHY_TYPE_25G_BASE_KR,
-	PHY_TYPE_40G_BASE_KR4,
-	PHY_TYPE_10G_BASE_SR,
-	PHY_TYPE_40G_BASE_SR4,
-	PHY_TYPE_40G_BASE_CR4,
-	PHY_TYPE_40G_BASE_LR4,
-	PHY_TYPE_10G_BASE_LR,
-	PHY_TYPE_10G_BASE_ER,
 };
 
 struct phy_abilities {
-	unsigned char link_stat;
-	unsigned char lane_mask;
-
-	int speed;
-	short phy_type;
-	short nic_mode;
-	short pfnum;
-	unsigned int fw_version;
-	unsigned int axi_mhz;
+	u8 link_stat;
+	u8 lane_mask;
+	__le32 speed;
+	__le16 phy_type;
+	__le16 nic_mode;
+	__le16 pfnum;
+	__le32 fw_version;
+	__le32 axi_mhz;
 	union {
-		unsigned char port_id[4];
-		unsigned int port_ids;
+		u8 port_id[4];
+		__le32 port_ids;
 	};
-	unsigned int bd_uid;
-	int phy_id;
-	int wol_status;
-
+	__le32 bd_uid;
+	__le32 phy_id;
+	__le32 wol_status;
 	union {
-		int ext_ability;
+		__le32 ext_ablity;
 		struct {
-			unsigned int valid : 1;
-			unsigned int wol_en : 1;
-			unsigned int pci_preset_runtime_en : 1;
-			unsigned int smbus_en : 1;
-			unsigned int ncsi_en : 1;
-			unsigned int rpu_en : 1;
-			unsigned int v2 : 1;
-			unsigned int pxe_en : 1;
-			unsigned int mctp_en : 1;
-			unsigned int yt8614 : 1;
-			unsigned int pci_ext_reset : 1;
-			unsigned int rpu_availble : 1;
-			unsigned int fw_lldp_ability : 1;
-			unsigned int lldp_enabled : 1;
-			unsigned int only_1g : 1;
-			unsigned int force_down_en: 1;
+			u32 valid : 1;
+			u32 wol_en : 1;
+			u32 pci_preset_runtime_en : 1;
+			u32 smbus_en : 1;
+			u32 ncsi_en : 1;
+			u32 rpu_en : 1;
+			u32 v2 : 1;
+			u32 pxe_en : 1;
+			u32 mctp_en : 1;
+			u32 yt8614 : 1;
+			u32 pci_ext_reset : 1;
+			u32 rpu_availble : 1;
+			u32 fw_lldp_ablity : 1;
+			u32 lldp_enabled : 1;
+			u32 only_1g : 1;
+			u32 force_down_en: 1;
 		} e;
 	};
+} __packed;
 
-} _PACKED_ALIGN4;
+static inline void ability_update_host_endian(struct phy_abilities *abi)
+{
+	u32 host_val = le32_to_cpu(abi->ext_ablity);
 
-enum LOOPBACK_LEVEL {
-	LOOPBACK_DISABLE = 0,
-	LOOPBACK_MAC = 1,
-	LOOPBACK_PCS = 5,
-	LOOPBACK_EXTERNAL = 6,
-};
-
-enum LOOPBACK_TYPE {
-	/* Tx->Rx */
-	LOOPBACK_TYPE_LOCAL = 0x0,
-};
-
-enum LOOPBACK_FORCE_SPEED {
-	LOOPBACK_FORCE_SPEED_NONE = 0x0,
-	LOOPBACK_FORCE_SPEED_1GBS = 0x1,
-	LOOPBACK_FORCE_SPEED_10GBS = 0x2,
-	LOOPBACK_FORCE_SPEED_40_25GBS = 0x3,
-};
+	memcpy(&abi->e, &host_val, sizeof(abi->e));
+}
 
 enum PHY_INTERFACE {
 	PHY_INTERNAL_PHY = 0,
 	PHY_EXTERNAL_PHY_MDIO = 1,
 };
 
-/* Table 3-54.  Get link status response (opcode: 0x0607) */
-struct link_stat_data {
-	char phy_type;
-	unsigned char speed;
-#define LNK_STAT_SPEED_UNKOWN 0
-#define LNK_STAT_SPEED_10 1
-#define LNK_STAT_SPEED_100 2
-#define LNK_STAT_SPEED_1000 3
-#define LNK_STAT_SPEED_10000 4
-#define LNK_STAT_SPEED_25000 5
-#define LNK_STAT_SPEED_40000 6
-	/* 2 */
-	char link_stat : 1;
-#define LINK_UP 1
-#define LINK_DOWN 0
-	char link_fault : 4;
-#define LINK_LINK_FAULT BIT(0)
-#define LINK_TX_FAULT BIT(1)
-#define LINK_RX_FAULT BIT(2)
-#define LINK_REMOTE_FAULT BIT(3)
-	char extern_link_stat : 1;
-	char media_availble : 1;
-	char rev1 : 1;
-	/* 3:ignore */
-	char an_completed : 1;
-	char lp_an_ability : 1;
-	char parallel_detection_fault : 1;
-	char fec_enabled : 1;
-	char low_power_state : 1;
-	char link_pause_status : 2;
-	char qualified_odule : 1;
-	/* 4 */
-	char phy_temp_alarm : 1;
-	char excessive_link_errors : 1;
-	char port_tx_suspended : 2;
-	char force_40G_enabled : 1;
-	char external_25G_phy_err_code : 3;
-#define EXTERNAL_25G_PHY_NOT_PRESENT 1
-#define EXTERNAL_25G_PHY_NVM_CRC_ERR 2
-#define EXTERNAL_25G_PHY_MDIO_ACCESS_FAILD 6
-#define EXTERNAL_25G_PHY_INIT_SUCCED 7
-	/* 5 */
-	char loopback_enabled_status : 4;
-#define LOOPBACK_DISABLE 0x0
-#define LOOPBACK_MAC 0x1
-#define LOOPBACK_SERDES 0x2
-#define LOOPBACK_PHY_INTERNAL 0x3
-#define LOOPBACK_PHY_EXTERNAL 0x4
-	char loopback_type_status : 1;
-#define LOCAL_LOOPBACK 0 /* tx->rx */
-#define FAR_END_LOOPBACK 0 /* rx->Tx */
-	char rev3 : 1;
-	char external_dev_power_ability : 2;
-	/* 6-7 */
-	short max_frame_sz;
-	/* 8 */
-	char _25gb_kr_fec_enabled : 1;
-	char _25gb_rs_fec_enabled : 1;
-	char crc_enabled : 1;
-	char rev4 : 5;
-	/* 9 */
-	int link_type; /* same as Phy type */
-	char link_type_ext;
-} _PACKED_ALIGN4;
-
 struct port_stat {
 	u8 phyid;
-
 	u8 duplex : 1;
 	u8 autoneg : 1;
 	u8 fec : 1;
 	u16 speed;
-	u16 pause : 4;
-	u16 local_eee : 3;
-	u16 partner_eee : 3;
-	u16 tp_mdx : 2;
-	u16 lldp_status : 1;
-	u16 revs : 3;
-} __attribute__((packed));
+	union {
+		__le16 stat;
+		struct {
+			u16 pause : 4;
+			u16 local_eee : 3;
+			u16 partner_eee : 3;
+			u16 tp_mdx : 2;
+			u16 lldp_status : 1;
+			u16 revs : 3;
+		} v_host;
+	};
+} __packed;
+
+static inline void port_stat_update_host_endian(struct port_stat *stat)
+{
+	u16 host_val = le16_to_cpu(stat->stat);
+
+	stat->v_host = *(typeof(stat->v_host) *)&host_val;
+}
 
 struct phy_pause_data {
-	u32 pause_mode;
-} __attribute__((packed));
+	__le32 pause_mode;
+} __packed;
 
 struct lane_stat_data {
 	u8 nr_lane;
@@ -290,23 +208,26 @@ struct lane_stat_data {
 	u8 pci_lanes : 4;
 	u8 pma_type;
 	u8 phy_type;
-
-	u16 linkup : 1;
-	u16 duplex : 1;
-	u16 autoneg : 1;
-	u16 fec : 1;
-	u16 an : 1;
-	u16 link_traing : 1;
-	u16 media_availble : 1; //
-	u16 is_sgmii : 1; //
-	u16 link_fault : 4;
+	union {
+		__le16 link_st;
+		struct {
+			u16 linkup : 1;
+			u16 duplex : 1;
+			u16 autoneg : 1;
+			u16 fec : 1;
+			u16 an : 1;
+			u16 link_traing : 1;
+			u16 media_availble : 1;
+			u16 is_sgmii : 1;
+			u16 link_fault : 4;
 #define LINK_LINK_FAULT BIT(0)
 #define LINK_TX_FAULT BIT(1)
 #define LINK_RX_FAULT BIT(2)
 #define LINK_REMOTE_FAULT BIT(3)
-	u16 is_backplane : 1;
-	u16 tp_mdx : 2;
-
+			u16 is_backplane : 1;
+			u16 tp_mdx : 2;
+		} st_host;
+	};
 	union {
 		u8 phy_addr;
 		struct {
@@ -317,50 +238,34 @@ struct lane_stat_data {
 		} sfp;
 	};
 	u8 sfp_connector;
-	u32 speed;
+	__le32 speed;
+	__le32 si_main;
+	__le32 si_pre;
+	__le32 si_post;
+	__le32 si_tx_boost;
+	__le32 supported_link;
+	__le32 phy_id;
+	__le32 advertised_link;
+} __packed;
 
-	u32 si_main;
-	u32 si_pre;
-	u32 si_post;
-	u32 si_tx_boost;
-	u32 supported_link;
-	u32 phy_id;
-	u32 advertised_link;
-} __attribute__((packed));
+static inline void lane_update_host_endian(struct lane_stat_data *lane)
+{
+	u16 host_val = le16_to_cpu(lane->link_st);
 
-struct yt_phy_statistics {
-	u32 pkg_ib_valid; /* rx crc good and length 64-1518 */
-	u32 pkg_ib_os_good; /* rx crc good and length >1518 */
-	u32 pkg_ib_us_good; /* rx crc good and length <64 */
-	u16 pkg_ib_err; /* rx crc wrong and length 64-1518 */
-	u16 pkg_ib_os_bad; /* rx crc wrong and length >1518 */
-	u16 pkg_ib_frag; /* rx crc wrong and length <64 */
-	u16 pkg_ib_nosfd; /* rx sfd missed */
-	u32 pkg_ob_valid; /* tx crc good and length 64-1518 */
-	u32 pkg_ob_os_good; /* tx crc good and length >1518 */
-	u32 pkg_ob_us_good; /* tx crc good and length <64 */
-	u16 pkg_ob_err; /* tx crc wrong and length 64-1518 */
-	u16 pkg_ob_os_bad; /* tx crc wrong and length >1518 */
-	u16 pkg_ob_frag; /* tx crc wrong and length <64 */
-	u16 pkg_ob_nosfd; /* tx sfd missed */
-} __attribute__((packed));
+	lane->st_host = *(typeof(lane->st_host) *)&host_val;
+}
 
-struct phy_statistics {
-	union {
-		struct yt_phy_statistics yt;
-	};
-} __attribute__((packed));
 /* == flags == */
 #define FLAGS_DD BIT(0) /* driver clear 0, FW must set 1 */
 #define FLAGS_CMP BIT(1) /* driver clear 0, FW mucst set */
-#define FLAGS_ERR \
+#define FLAGS_ERR                                                              \
 	BIT(2) /* driver clear 0, FW must set only if it reporting an error */
 #define FLAGS_LB BIT(9)
 #define FLAGS_RD BIT(10) /* set if additional buffer has command parameters */
 #define FLAGS_BUF BIT(12) /* set 1 on indirect command */
 #define FLAGS_SI BIT(13) /* not irq when command complete */
 #define FLAGS_EI BIT(14) /* interrupt on error */
-#define FLAGS_FE BIT(15) /* flush erro */
+#define FLAGS_FE BIT(15) /* flush error */
 
 #ifndef SHM_DATA_MAX_BYTES
 #define SHM_DATA_MAX_BYTES (64 - 2 * 4)
@@ -371,243 +276,153 @@ struct phy_statistics {
 #define MBX_REQ_MAX_DATA_LEN (SHM_DATA_MAX_BYTES - MBX_REQ_HDR_LEN)
 #define MBX_REPLY_MAX_DATA_LEN (SHM_DATA_MAX_BYTES - MBX_REPLYHDR_LEN)
 
-/* req is little endian. bigendian should be conserened */
-
 struct mbx_fw_cmd_req {
-	unsigned short flags; /* 0-1 */
-	unsigned short opcode; /* 2-3 enum LINK_ADM_CMD */
-	unsigned short datalen; /* 4-5 */
-	unsigned short ret_value; /* 6-7 */
+	__le16 flags; /* 0-1 */
+	__le16 opcode; /* 2-3 enum LINK_ADM_CMD */
+	__le16 datalen; /* 4-5 */
+	__le16 ret_value; /* 6-7 */
 	union {
 		struct {
-			unsigned int cookie_lo; /* 8-11 */
-			unsigned int cookie_hi; /* 12-15 */
+			__le32 cookie_lo; /* 8-11 */
+			__le32 cookie_hi; /* 12-15 */
 		};
 		void *cookie;
 	};
-	unsigned int reply_lo; /* 16-19 5dw */
-	unsigned int reply_hi; /* 20-23 */
-	/* === data === 7dw [24-64] */
+	__le32 reply_lo; /* 16-19 5dw */
+	__le32 reply_hi; /* 20-23 */
+	/*=== data === 7dw [24-64] */
 	union {
-		char data[0];
-
+		u8 data[32];
 		struct {
-			unsigned int addr;
-			unsigned int bytes;
+			__le32 addr;
+			__le32 bytes;
 		} r_reg;
-
 		struct {
-			unsigned int addr;
-			unsigned int bytes;
-			unsigned int data[4];
+			__le32 addr;
+			__le32 bytes;
+			__le32 data[4];
 		} w_reg;
-
 		struct {
-			unsigned int lanes;
-		} ptp;
-
-		struct {
-			int lane;
-			int up;
+			__le32 lane;
+			__le32 up;
 		} ifup;
 		struct {
-			u32 sec;
-			u32 nanosec;
-
+			__le32 sec;
+			__le32 nanosec;
 		} tstamps;
-
 		struct {
-			int lane;
-			int status;
+			__le32 lane;
+			__le32 status;
 		} ifinsmod;
 		struct {
-			int lane;
-			int status;
+			__le32 lane;
+			__le32 status;
 		} ifforce;
-
 		struct {
-			int lane;
-			int status;
+			__le32 lane;
+			__le32 status;
 		} ifsuspuse;
-
 		struct {
-			int nr_lane;
+			__le32 nr_lane;
 		} get_lane_st;
-
 		struct {
-			int nr_lane;
-			int func;
-#define LANE_FUN_AN 0
-#define LANE_FUN_LINK_TRAING 1
-#define LANE_FUN_FEC 2
-#define LANE_FUN_SI 3
-#define LANE_FUN_SFP_TX_DISABLE 4
-#define LANE_FUN_PCI_LANE 5
-#define LANE_FUN_PRBS 6
-#define LANE_FUN_SPEED_CHANGE 7
-
-			int value0;
-			int value1;
-			int value2;
-			int value3;
-		} set_lane_fun;
-
-		struct {
-			int flag;
-			int nr_lane;
+			__le32 flag;
+			__le32 nr_lane;
 		} set_dump;
-
 		struct {
-			int lane;
-			int enable;
+			__le32 lane;
+			__le32 enable;
 		} wol;
-
 		struct {
-			int lane;
-			int mode;
+			__le32 lane;
+			__le32 mode;
 		} gephy_test;
-
 		struct {
-			int lane;
-			int op;
-			int enable;
-			int inteval;
+			__le32 lane;
+			__le32 op;
+			__le32 enable;
+			__le32 interval;
 		} lldp_tx;
-
 		struct {
-			unsigned int bytes;
-			unsigned int nr_lane;
-			unsigned int bin_offset;
-			unsigned int no_use;
+			__le32 bytes;
+			__le32 nr_lane;
+			__le32 bin_offset;
+			__le32 no_use;
 		} get_dump;
-
 		struct {
-			unsigned int nr_lane;
-			int value;
+			__le32 nr_lane;
+			__le32 value;
 #define LED_IDENTIFY_INACTIVE 0
 #define LED_IDENTIFY_ACTIVE 1
 #define LED_IDENTIFY_ON 2
 #define LED_IDENTIFY_OFF 3
 		} led_set;
-
 		struct {
-			unsigned int addr;
-			unsigned int data;
-			unsigned int mask;
+			__le32 addr;
+			__le32 data;
+			__le32 mask;
 		} modify_reg;
-
 		struct {
-			unsigned int adv_speed_mask;
-			unsigned int autoneg;
-			unsigned int speed;
-			unsigned int duplex;
-			int nr_lane;
-			unsigned int tp_mdix_ctrl;
+			__le32 adv_speed_mask;
+			__le32 autoneg;
+			__le32 speed;
+			__le32 duplex;
+			__le32 nr_lane;
+			__le32 tp_mdix_ctrl;
 		} phy_link_set;
-
 		struct {
-			unsigned int pause_mode;
-			int nr_lane;
+			__le32 pause_mode;
+			__le32 nr_lane;
 		} phy_pause_set;
 		struct {
-			unsigned int pause_mode;
-			int nr_lane;
+			__le32 pause_mode;
+			__le32 nr_lane;
 		} phy_pause_get;
 		struct {
-			u32 local_eee;
-			u32 tx_lpi_timer;
-			int nr_lane;
+			__le32 local_eee;
+			__le32 tx_lpi_timer;
+			__le32 nr_lane;
 		} phy_eee_set;
 		struct {
-			unsigned int nr_lane;
-			unsigned int sfp_adr; /* 0xa0 or 0xa2 */
-			unsigned int reg;
-			unsigned int cnt;
+			__le32 nr_lane;
+			__le32 sfp_adr; /* 0xa0 or 0xa2 */
+			__le32 reg;
+			__le32 cnt;
 		} sfp_read;
-
 		struct {
-			unsigned int nr_lane;
-			unsigned int sfp_adr; /* 0xa0 or 0xa2 */
-			unsigned int reg;
-			unsigned int val;
+			__le32 nr_lane;
+			__le32 sfp_adr; /* 0xa0 or 0xa2 */
+			__le32 reg;
+			__le32 val;
 		} sfp_write;
-
 		struct {
-			unsigned int nr_lane; /* 0-3 */
-		} get_linkstat;
-		struct {
-			unsigned short changed_lanes;
-			unsigned short lane_status;
-			unsigned int port_st_magic;
+			__le16 changed_lanes;
+			__le16 lane_status;
+			__le32 port_st_magic;
 #define SPEED_VALID_MAGIC 0xa4a6a8a9
 			struct port_stat st[4];
 		} link_stat; /* FW->RC */
-
 		struct {
-			unsigned short enable_stat;
-			unsigned short event_mask;
+			__le16 enable_stat;
+			__le16 event_mask;
 		} stat_event_mask;
-
-		struct { /* set loopback */
-			unsigned char loopback_level;
-			unsigned char loopback_type;
-			unsigned char loopback_force_speed;
-
-			char loopback_force_speed_enable : 1;
-		} loopback;
-
 		struct {
-			int cmd;
-			int arg0;
-			int req_bytes;
-			int reply_bytes;
-			int ddr_lo;
-			int ddr_hi;
+			__le32 cmd;
+			__le32 arg0;
+			__le32 req_bytes;
+			__le32 reply_bytes;
+			__le32 ddr_lo;
+			__le32 ddr_hi;
 		} maintain;
-
-		struct { /* set phy register */
-			char phy_interface;
-			union {
-				char page_num;
-				char external_phy_addr;
-			};
-			int phy_reg_addr;
-			int phy_w_data;
-			int reg_addr;
-			int w_data;
-			/* 1 = ignore page_num, use last QSFP */
-			char recall_qsfp_page : 1;
-			/* page value */
-			/* 0 = use page_num for QSFP */
-			char nr_lane;
-		} set_phy_reg;
 		struct {
-		} get_phy_ability;
-
-		struct {
-			int lane_mask;
-			int pfvf_num;
+			__le32 lane_mask;
+			__le32 pfvf_num;
 		} get_mac_addr;
-
 		struct {
-			char phy_interface;
-			union {
-				char page_num;
-				char external_phy_addr;
-			};
-			int phy_reg_addr;
-			char nr_lane;
-		} get_phy_reg;
-
-		struct {
-			unsigned int nr_lane;
-		} phy_statistics;
-
-		struct {
-			char paration;
-			unsigned int bytes;
-			unsigned int bin_phy_lo;
-			unsigned int bin_phy_hi;
+			u8 paration;
+			__le32 bytes;
+			__le32 bin_phy_lo;
+			__le32 bin_phy_hi;
 		} fw_update;
 	};
 } __packed;
@@ -616,83 +431,73 @@ struct mbx_fw_cmd_req {
 #define EEE_100BT BIT(1)
 
 struct rnpgbe_eee_cap {
-	unsigned int local_capability;
-	unsigned int local_eee;
-	unsigned int partner_eee;
+	__le32 local_capability;
+	__le32 local_eee;
+	__le32 partner_eee;
 };
 
 /* firmware -> driver */
 struct mbx_fw_cmd_reply {
-	unsigned short flags;
 	/* fw must set: DD, CMP, Error(if error), copy value */
+	__le16 flags;
 	/* from command: LB,RD,VFC,BUF,SI,EI,FE */
-	unsigned short opcode; /* 2-3: copy from req */
-	unsigned short error_code; /* 4-5: 0 if no error */
-	unsigned short datalen; /* 6-7 */
+	__le16 opcode; /* 2-3: copy from req */
+	__le16 error_code; /* 4-5: 0 if no error */
+	__le16 datalen; /* 6-7: */
 	union {
 		struct {
-			unsigned int cookie_lo; /* 8-11: */
-			unsigned int cookie_hi; /* 12-15: */
+			__le32 cookie_lo; /* 8-11: */
+			__le32 cookie_hi; /* 12-15: */
 		};
 		void *cookie;
 	};
 	/* ===== data ==== [16-64] */
 	union {
-		char data[0];
-
+		u8 data[40];
 		struct version {
-			unsigned int major;
-			unsigned int sub;
-			unsigned int modify;
+			__le32 major;
+			__le32 sub;
+			__le32 modify;
 		} version;
-
 		struct {
-			unsigned int value[4];
+			__le32 value[4];
 		} r_reg;
-
 		struct {
-			unsigned int new_value;
+			__le32 new_value;
 		} modify_reg;
-
 		struct get_temp {
-			int temp;
-			int volatage;
+			__le32 temp;
+			__le32 voltage;
 		} get_temp;
-
 		struct {
 #define MBX_SFP_READ_MAX_CNT 32
-			char value[MBX_SFP_READ_MAX_CNT];
+			u8 value[MBX_SFP_READ_MAX_CNT];
 		} sfp_read;
-
 		struct mac_addr {
-			int lanes;
+			__le32 lanes;
 			struct _addr {
-				/* for macaddr:01:02:03:04:05:06
+				/*
+				 * for macaddr:01:02:03:04:05:06
 				 * mac-hi=0x01020304 mac-lo=0x05060000
 				 */
-				unsigned char mac[8];
+				u8 mac[8];
 			} addrs[4];
 		} mac_addr;
-
 		struct get_dump_reply {
-			int flags;
-			int version;
-			int bytes;
-			int data[4];
+			__le32 flags;
+			__le32 version;
+			__le32 bytes;
+			__le32 data[4];
 		} get_dump;
-
 		struct get_lldp_reply {
-			int value;
-			int inteval;
+			__le32 value;
+			__le32 interval;
 		} get_lldp;
-
 		struct rnpgbe_eee_cap phy_eee_abilities;
 		struct lane_stat_data lanestat;
-		struct link_stat_data linkstat;
 		struct phy_abilities phy_abilities;
-		struct phy_statistics phy_statistics;
 	};
-} _PACKED_ALIGN4;
+} __packed __aligned(4);
 
 static inline void build_maintain_req(struct mbx_fw_cmd_req *req, void *cookie,
 				      int cmd, int arg0, int req_bytes,
@@ -700,53 +505,37 @@ static inline void build_maintain_req(struct mbx_fw_cmd_req *req, void *cookie,
 				      u32 dma_phy_hi)
 {
 	req->flags = 0;
-	req->opcode = FW_MAINTAIN;
-	req->datalen = sizeof(req->maintain);
+	req->opcode = cpu_to_le16(FW_MAINTAIN);
+	req->datalen = cpu_to_le16(sizeof(req->maintain));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->maintain.cmd = cmd;
-	req->maintain.arg0 = arg0;
-	req->maintain.req_bytes = req_bytes;
-	req->maintain.reply_bytes = reply_bytes;
-	req->maintain.ddr_lo = dma_phy_lo;
-	req->maintain.ddr_hi = dma_phy_hi;
+	req->maintain.cmd = cpu_to_le32(cmd);
+	req->maintain.arg0 = cpu_to_le32(arg0);
+	req->maintain.req_bytes = cpu_to_le32(req_bytes);
+	req->maintain.reply_bytes = cpu_to_le32(reply_bytes);
+	req->maintain.ddr_lo = cpu_to_le32(dma_phy_lo);
+	req->maintain.ddr_hi = cpu_to_le32(dma_phy_hi);
 }
 
-static inline void build_fw_update_req(struct mbx_fw_cmd_req *req, void *cookie,
-				       int partition, u32 fw_bin_phy_lo,
-				       u32 fw_bin_phy_hi, int fw_bytes)
+static inline void build_fw_update_gbe_req(struct mbx_fw_cmd_req *req,
+					   void *cookie, int partition,
+					   int fw_bytes)
 {
 	req->flags = 0;
-	req->opcode = FW_UPDATE;
-	req->datalen = sizeof(req->fw_update);
+	req->opcode = cpu_to_le16(FW_UPDATE_GBE);
+	req->datalen = cpu_to_le16(sizeof(req->fw_update));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
 	req->fw_update.paration = partition;
-	req->fw_update.bytes = fw_bytes;
-	req->fw_update.bin_phy_lo = fw_bin_phy_lo;
-	req->fw_update.bin_phy_hi = fw_bin_phy_hi;
-}
-
-static inline void build_fw_update_n500_req(struct mbx_fw_cmd_req *req,
-					    void *cookie, int partition,
-					    int fw_bytes)
-{
-	req->flags = 0;
-	req->opcode = FW_UPDATE_N500;
-	req->datalen = sizeof(req->fw_update);
-	req->cookie = cookie;
-	req->reply_lo = 0;
-	req->reply_hi = 0;
-	req->fw_update.paration = partition;
-	req->fw_update.bytes = fw_bytes;
+	req->fw_update.bytes = cpu_to_le32(fw_bytes);
 }
 
 static inline void build_reset_phy_req(struct mbx_fw_cmd_req *req, void *cookie)
 {
 	req->flags = 0;
-	req->opcode = RESET_PHY;
+	req->opcode = cpu_to_le16(RESET_PHY);
 	req->datalen = 0;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
@@ -757,22 +546,21 @@ static inline void build_phy_eee_abalities_req(struct mbx_fw_cmd_req *req,
 					       void *cookie)
 {
 	req->flags = 0;
-	req->opcode = PHY_EEE_GET;
+	req->opcode = cpu_to_le16(PHY_EEE_GET);
 	req->datalen = 0;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
 	req->cookie = cookie;
 }
 
-static inline void build_phy_abalities_req(struct mbx_fw_cmd_req *req,
-					   void *cookie)
+static inline void build_phy_abalities_req(struct mbx_fw_cmd_req *req)
 {
 	req->flags = 0;
-	req->opcode = GET_PHY_ABALITY;
+	req->opcode = cpu_to_le16(GET_PHY_ABALITY);
 	req->datalen = 0;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->cookie = cookie;
+	//req->cookie = cookie;
 }
 
 static inline void build_get_macaddress_req(struct mbx_fw_cmd_req *req,
@@ -780,20 +568,19 @@ static inline void build_get_macaddress_req(struct mbx_fw_cmd_req *req,
 					    void *cookie)
 {
 	req->flags = 0;
-	req->opcode = GET_MAC_ADDRES;
-	req->datalen = sizeof(req->get_mac_addr);
+	req->opcode = cpu_to_le16(GET_MAC_ADDRES);
+	req->datalen = cpu_to_le16(sizeof(req->get_mac_addr));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-
-	req->get_mac_addr.lane_mask = lane_mask;
-	req->get_mac_addr.pfvf_num = pfvfnum;
+	req->get_mac_addr.lane_mask = cpu_to_le32(lane_mask);
+	req->get_mac_addr.pfvf_num = cpu_to_le32(pfvfnum);
 }
 
 static inline void build_version_req(struct mbx_fw_cmd_req *req, void *cookie)
 {
 	req->flags = 0;
-	req->opcode = GET_VERSION;
+	req->opcode = cpu_to_le16(GET_VERSION);
 	req->reply_lo = 0;
 	req->reply_hi = 0;
 	req->datalen = 0;
@@ -804,13 +591,13 @@ static inline void build_readreg_req(struct mbx_fw_cmd_req *req, int reg_addr,
 				     void *cookie)
 {
 	req->flags = 0;
-	req->opcode = READ_REG;
-	req->datalen = sizeof(req->r_reg);
+	req->opcode = cpu_to_le16(READ_REG);
+	req->datalen = cpu_to_le16(sizeof(req->r_reg));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->r_reg.addr = reg_addr & ~(3);
-	req->r_reg.bytes = 4;
+	req->r_reg.addr = cpu_to_le32(reg_addr & ~(3));
+	req->r_reg.bytes = cpu_to_le32(4);
 }
 
 static inline void mbx_fw_req_set_reply(struct mbx_fw_cmd_req *req,
@@ -818,8 +605,8 @@ static inline void mbx_fw_req_set_reply(struct mbx_fw_cmd_req *req,
 {
 	u64 address = reply;
 
-	req->reply_hi = (address >> 32);
-	req->reply_lo = (address) & 0xffffffff;
+	req->reply_hi = cpu_to_le32(address >> 32);
+	req->reply_lo = cpu_to_le32((address) & 0xffffffff);
 }
 
 static inline void build_writereg_req(struct mbx_fw_cmd_req *req, void *cookie,
@@ -828,15 +615,15 @@ static inline void build_writereg_req(struct mbx_fw_cmd_req *req, void *cookie,
 	int i;
 
 	req->flags = 0;
-	req->opcode = WRITE_REG;
-	req->datalen = sizeof(req->w_reg);
+	req->opcode = cpu_to_le16(WRITE_REG);
+	req->datalen = cpu_to_le16(sizeof(req->w_reg));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->w_reg.addr = reg_addr & ~3;
-	req->w_reg.bytes = bytes;
+	req->w_reg.addr = cpu_to_le32(reg_addr & ~3);
+	req->w_reg.bytes = cpu_to_le32(bytes);
 	for (i = 0; i < bytes / 4; i++)
-		req->w_reg.data[i] = value[i];
+		req->w_reg.data[i] = cpu_to_le32(value[i]);
 }
 
 static inline void build_modifyreg_req(struct mbx_fw_cmd_req *req, void *cookie,
@@ -844,44 +631,32 @@ static inline void build_modifyreg_req(struct mbx_fw_cmd_req *req, void *cookie,
 				       unsigned int mask)
 {
 	req->flags = 0;
-	req->opcode = MODIFY_REG;
-	req->datalen = sizeof(req->modify_reg);
+	req->opcode = cpu_to_le16(MODIFY_REG);
+	req->datalen = cpu_to_le16(sizeof(req->modify_reg));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->modify_reg.addr = reg_addr;
-	req->modify_reg.data = value;
-	req->modify_reg.mask = mask;
+	req->modify_reg.addr = cpu_to_le32(reg_addr);
+	req->modify_reg.data = cpu_to_le32(value);
+	req->modify_reg.mask = cpu_to_le32(mask);
 }
 
 static inline void build_get_lane_status_req(struct mbx_fw_cmd_req *req,
 					     int nr_lane, void *cookie)
 {
 	req->flags = 0;
-	req->opcode = GET_LANE_STATUS;
-	req->datalen = sizeof(req->get_lane_st);
+	req->opcode = cpu_to_le16(GET_LANE_STATUS);
+	req->datalen = cpu_to_le16(sizeof(req->get_lane_st));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->get_lane_st.nr_lane = nr_lane;
-}
-
-static inline void build_get_link_status_req(struct mbx_fw_cmd_req *req,
-					     int nr_lane, void *cookie)
-{
-	req->flags = 0;
-	req->opcode = GET_LINK_STATUS;
-	req->datalen = sizeof(req->get_linkstat);
-	req->cookie = cookie;
-	req->reply_lo = 0;
-	req->reply_hi = 0;
-	req->get_linkstat.nr_lane = nr_lane;
+	req->get_lane_st.nr_lane = cpu_to_le32(nr_lane);
 }
 
 static inline void build_get_temp(struct mbx_fw_cmd_req *req, void *cookie)
 {
 	req->flags = 0;
-	req->opcode = GET_TEMP;
+	req->opcode = cpu_to_le16(GET_TEMP);
 	req->datalen = 0;
 	req->cookie = cookie;
 	req->reply_lo = 0;
@@ -893,123 +668,66 @@ static inline void build_get_dump_req(struct mbx_fw_cmd_req *req, void *cookie,
 				      u32 fw_bin_phy_hi, int bytes)
 {
 	req->flags = 0;
-	req->opcode = GET_DUMP;
-	req->datalen = sizeof(req->get_dump);
+	req->opcode = cpu_to_le16(GET_DUMP);
+	req->datalen = cpu_to_le16(sizeof(req->get_dump));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->get_dump.bytes = bytes;
-	req->get_dump.nr_lane = nr_lane;
-	req->get_dump.bin_offset = fw_bin_phy_lo;
-	req->get_dump.no_use = fw_bin_phy_hi;
+	req->get_dump.bytes = cpu_to_le32(bytes);
+	req->get_dump.nr_lane = cpu_to_le32(nr_lane);
+	req->get_dump.bin_offset = cpu_to_le32(fw_bin_phy_lo);
+	req->get_dump.no_use = cpu_to_le32(fw_bin_phy_hi);
 }
 
 static inline void build_set_dump(struct mbx_fw_cmd_req *req, int nr_lane,
 				  int flag)
 {
 	req->flags = 0;
-	req->opcode = SET_DUMP;
-	req->datalen = sizeof(req->set_dump);
+	req->opcode = cpu_to_le16(SET_DUMP);
+	req->datalen = cpu_to_le16(sizeof(req->set_dump));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->set_dump.flag = flag;
-	req->set_dump.nr_lane = nr_lane;
+	req->set_dump.flag = cpu_to_le32(flag);
+	req->set_dump.nr_lane = cpu_to_le32(nr_lane);
 }
 
 static inline void build_led_set(struct mbx_fw_cmd_req *req,
 				 unsigned int nr_lane, int value, void *cookie)
 {
 	req->flags = 0;
-	req->opcode = LED_SET;
-	req->datalen = sizeof(req->led_set);
+	req->opcode = cpu_to_le16(LED_SET);
+	req->datalen = cpu_to_le16(sizeof(req->led_set));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->led_set.nr_lane = nr_lane;
-	req->led_set.value = value;
-}
-
-static inline void build_set_lane_fun(struct mbx_fw_cmd_req *req, int nr_lane,
-				      int fun, int value0, int value1,
-				      int value2, int value3)
-{
-	req->flags = 0;
-	req->opcode = SET_LANE_FUN;
-	req->datalen = sizeof(req->set_lane_fun);
-	req->cookie = NULL;
-	req->reply_lo = 0;
-	req->reply_hi = 0;
-	req->set_lane_fun.func = fun;
-	req->set_lane_fun.nr_lane = nr_lane;
-	req->set_lane_fun.value0 = value0;
-	req->set_lane_fun.value1 = value1;
-	req->set_lane_fun.value2 = value2;
-	req->set_lane_fun.value3 = value3;
-}
-
-static inline void build_set_phy_reg(struct mbx_fw_cmd_req *req, void *cookie,
-				     enum PHY_INTERFACE phy_inf, char nr_lane,
-				     int reg, int w_data, int recall_qsfp_page)
-{
-	req->flags = 0;
-	req->opcode = SET_PHY_REG;
-	req->datalen = sizeof(req->set_phy_reg);
-	req->cookie = cookie;
-	req->reply_lo = 0;
-	req->reply_hi = 0;
-
-	req->set_phy_reg.phy_interface = phy_inf;
-	req->set_phy_reg.nr_lane = nr_lane;
-	req->set_phy_reg.phy_reg_addr = reg;
-	req->set_phy_reg.phy_w_data = w_data;
-
-	if (recall_qsfp_page)
-		req->set_phy_reg.recall_qsfp_page = 1;
-	else
-		req->set_phy_reg.recall_qsfp_page = 0;
-}
-
-static inline void build_get_phy_reg(struct mbx_fw_cmd_req *req, void *cookie,
-				     enum PHY_INTERFACE phy_inf, char nr_lane,
-				     int reg)
-{
-	req->flags = 0;
-	req->opcode = GET_PHY_REG;
-	req->datalen = sizeof(req->get_phy_reg);
-	req->cookie = cookie;
-	req->reply_lo = 0;
-	req->reply_hi = 0;
-
-	req->get_phy_reg.phy_interface = phy_inf;
-
-	req->get_phy_reg.nr_lane = nr_lane;
-	req->get_phy_reg.phy_reg_addr = reg;
+	req->led_set.nr_lane = cpu_to_le32(nr_lane);
+	req->led_set.value = cpu_to_le32(value);
 }
 
 static inline void build_phy_pause_set(struct mbx_fw_cmd_req *req,
 				       int pause_mode, int nr_lane)
 {
 	req->flags = 0;
-	req->opcode = PHY_PAUSE_SET;
-	req->datalen = sizeof(req->phy_pause_set);
+	req->opcode = cpu_to_le16(PHY_PAUSE_SET);
+	req->datalen = cpu_to_le16(sizeof(req->phy_pause_set));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->phy_pause_set.nr_lane = nr_lane;
-	req->phy_pause_set.pause_mode = pause_mode;
+	req->phy_pause_set.nr_lane = cpu_to_le32(nr_lane);
+	req->phy_pause_set.pause_mode = cpu_to_le32(pause_mode);
 }
 
 static inline void build_get_phy_pause_req(struct mbx_fw_cmd_req *req,
 					   int nr_lane, void *cookie)
 {
 	req->flags = 0;
-	req->opcode = PHY_PAUSE_GET;
-	req->datalen = sizeof(req->phy_pause_get);
+	req->opcode = cpu_to_le16(PHY_PAUSE_GET);
+	req->datalen = cpu_to_le16(sizeof(req->phy_pause_get));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->phy_pause_set.nr_lane = nr_lane;
+	req->phy_pause_set.nr_lane = cpu_to_le32(nr_lane);
 	req->phy_pause_set.pause_mode = 0;
 }
 
@@ -1017,14 +735,14 @@ static inline void build_phy_eee_set(struct mbx_fw_cmd_req *req, u32 local_eee,
 				     u32 tx_lpi_timer, int nr_lane)
 {
 	req->flags = 0;
-	req->opcode = PHY_EEE_SET;
-	req->datalen = sizeof(req->phy_eee_set);
+	req->opcode = cpu_to_le16(PHY_EEE_SET);
+	req->datalen = cpu_to_le16(sizeof(req->phy_eee_set));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->phy_eee_set.nr_lane = nr_lane;
-	req->phy_eee_set.local_eee = local_eee;
-	req->phy_eee_set.tx_lpi_timer = tx_lpi_timer;
+	req->phy_eee_set.nr_lane = cpu_to_le32(nr_lane);
+	req->phy_eee_set.local_eee = cpu_to_le32(local_eee);
+	req->phy_eee_set.tx_lpi_timer = cpu_to_le32(tx_lpi_timer);
 }
 
 static inline void build_phy_link_set(struct mbx_fw_cmd_req *req,
@@ -1034,82 +752,82 @@ static inline void build_phy_link_set(struct mbx_fw_cmd_req *req,
 				      unsigned int tp_mdix_ctrl)
 {
 	req->flags = 0;
-	req->opcode = PHY_LINK_SET;
-	req->datalen = sizeof(req->phy_link_set);
+	req->opcode = cpu_to_le16(PHY_LINK_SET);
+	req->datalen = cpu_to_le16(sizeof(req->phy_link_set));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->phy_link_set.nr_lane = nr_lane;
-	req->phy_link_set.adv_speed_mask = adv;
-	req->phy_link_set.autoneg = autoneg;
-	req->phy_link_set.speed = speed;
-	req->phy_link_set.duplex = duplex;
-	req->phy_link_set.tp_mdix_ctrl = tp_mdix_ctrl;
+	req->phy_link_set.nr_lane = cpu_to_le32(nr_lane);
+	req->phy_link_set.adv_speed_mask = cpu_to_le32(adv);
+	req->phy_link_set.autoneg = cpu_to_le32(autoneg);
+	req->phy_link_set.speed = cpu_to_le32(speed);
+	req->phy_link_set.duplex = cpu_to_le32(duplex);
+	req->phy_link_set.tp_mdix_ctrl = cpu_to_le32(tp_mdix_ctrl);
 }
 
 static inline void build_tstamp_show(struct mbx_fw_cmd_req *req, u32 sec,
 				     u32 nanosec)
 {
 	req->flags = 0;
-	req->opcode = SHOW_TX_STAMP;
-	req->datalen = sizeof(req->tstamps);
+	req->opcode = cpu_to_le16(SHOW_TX_STAMP);
+	req->datalen = cpu_to_le16(sizeof(req->tstamps));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->tstamps.sec = sec;
-	req->tstamps.nanosec = nanosec;
+	req->tstamps.sec = cpu_to_le32(sec);
+	req->tstamps.nanosec = cpu_to_le32(nanosec);
 }
 
 static inline void build_ifup_down(struct mbx_fw_cmd_req *req,
 				   unsigned int nr_lane, int up)
 {
 	req->flags = 0;
-	req->opcode = IFUP_DOWN;
-	req->datalen = sizeof(req->ifup);
+	req->opcode = cpu_to_le16(IFUP_DOWN);
+	req->datalen = cpu_to_le16(sizeof(req->ifup));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->ifup.lane = nr_lane;
-	req->ifup.up = up;
+	req->ifup.lane = cpu_to_le32(nr_lane);
+	req->ifup.up = cpu_to_le32(up);
 }
 
 static inline void build_ifinsmod(struct mbx_fw_cmd_req *req,
 				  unsigned int nr_lane, int status)
 {
 	req->flags = 0;
-	req->opcode = DRIVER_INSMOD;
-	req->datalen = sizeof(req->ifinsmod);
+	req->opcode = cpu_to_le16(DRIVER_INSMOD);
+	req->datalen = cpu_to_le16(sizeof(req->ifinsmod));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->ifinsmod.lane = nr_lane;
-	req->ifinsmod.status = status;
+	req->ifinsmod.lane = cpu_to_le32(nr_lane);
+	req->ifinsmod.status = cpu_to_le32(status);
 }
 
 static inline void build_ifsuspuse(struct mbx_fw_cmd_req *req,
 				   unsigned int nr_lane, int status)
 {
 	req->flags = 0;
-	req->opcode = SYSTEM_SUSPUSE;
-	req->datalen = sizeof(req->ifsuspuse);
+	req->opcode = cpu_to_le16(SYSTEM_SUSPUSE);
+	req->datalen = cpu_to_le16(sizeof(req->ifsuspuse));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->ifinsmod.lane = nr_lane;
-	req->ifinsmod.status = status;
+	req->ifsuspuse.lane = cpu_to_le32(nr_lane);
+	req->ifsuspuse.status = cpu_to_le32(status);
 }
 
 static inline void build_ifforce(struct mbx_fw_cmd_req *req,
 				 unsigned int nr_lane, int status)
 {
 	req->flags = 0;
-	req->opcode = SYSTEM_FORCE;
-	req->datalen = sizeof(req->ifforce);
+	req->opcode = cpu_to_le16(SYSTEM_FORCE);
+	req->datalen = cpu_to_le16(sizeof(req->ifforce));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->ifforce.lane = nr_lane;
-	req->ifforce.status = status;
+	req->ifforce.lane = cpu_to_le32(nr_lane);
+	req->ifforce.status = cpu_to_le32(status);
 }
 
 static inline void build_mbx_sfp_read(struct mbx_fw_cmd_req *req,
@@ -1117,16 +835,15 @@ static inline void build_mbx_sfp_read(struct mbx_fw_cmd_req *req,
 				      int reg, int cnt, void *cookie)
 {
 	req->flags = 0;
-	req->opcode = SFP_MODULE_READ;
-	req->datalen = sizeof(req->sfp_read);
+	req->opcode = cpu_to_le16(SFP_MODULE_READ);
+	req->datalen = cpu_to_le16(sizeof(req->sfp_read));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->sfp_read.nr_lane = nr_lane;
-	req->sfp_read.sfp_adr = sfp_addr;
-	req->sfp_read.reg = reg;
-	;
-	req->sfp_read.cnt = cnt;
+	req->sfp_read.nr_lane = cpu_to_le32(nr_lane);
+	req->sfp_read.sfp_adr = cpu_to_le32(sfp_addr);
+	req->sfp_read.reg = cpu_to_le32(reg);
+	req->sfp_read.cnt = cpu_to_le32(cnt);
 }
 
 static inline void build_mbx_sfp_write(struct mbx_fw_cmd_req *req,
@@ -1134,41 +851,41 @@ static inline void build_mbx_sfp_write(struct mbx_fw_cmd_req *req,
 				       int reg, int v)
 {
 	req->flags = 0;
-	req->opcode = SFP_MODULE_WRITE;
-	req->datalen = sizeof(req->sfp_write);
+	req->opcode = cpu_to_le16(SFP_MODULE_WRITE);
+	req->datalen = cpu_to_le16(sizeof(req->sfp_write));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->sfp_write.nr_lane = nr_lane;
-	req->sfp_write.sfp_adr = sfp_addr;
-	req->sfp_write.reg = reg;
-	req->sfp_write.val = v;
+	req->sfp_write.nr_lane = cpu_to_le32(nr_lane);
+	req->sfp_write.sfp_adr = cpu_to_le32(sfp_addr);
+	req->sfp_write.reg = cpu_to_le32(reg);
+	req->sfp_write.val = cpu_to_le32(v);
 }
 
 static inline void build_mbx_wol_set(struct mbx_fw_cmd_req *req,
 				     unsigned int nr_lane, u32 mode)
 {
 	req->flags = 0;
-	req->opcode = SET_WOL;
-	req->datalen = sizeof(req->sfp_write);
+	req->opcode = cpu_to_le16(SET_WOL);
+	req->datalen = cpu_to_le16(sizeof(req->sfp_write));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->wol.lane = nr_lane;
-	req->wol.enable = mode;
+	req->wol.lane = cpu_to_le32(nr_lane);
+	req->wol.enable = cpu_to_le32(mode);
 }
 
 static inline void build_mbx_gephy_test_set(struct mbx_fw_cmd_req *req,
 					    unsigned int nr_lane, u32 mode)
 {
 	req->flags = 0;
-	req->opcode = SET_TEST_MODE;
-	req->datalen = sizeof(req->sfp_write);
+	req->opcode = cpu_to_le16(SET_TEST_MODE);
+	req->datalen = cpu_to_le16(sizeof(req->sfp_write));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->gephy_test.lane = nr_lane;
-	req->gephy_test.mode = mode;
+	req->gephy_test.lane = cpu_to_le32(nr_lane);
+	req->gephy_test.mode = cpu_to_le32(mode);
 }
 
 static inline void build_get_lldp_req(struct mbx_fw_cmd_req *req, void *cookie,
@@ -1177,13 +894,13 @@ static inline void build_get_lldp_req(struct mbx_fw_cmd_req *req, void *cookie,
 #define LLDP_TX_GET (1)
 
 	req->flags = 0;
-	req->opcode = LLDP_TX_CTRL;
-	req->datalen = sizeof(req->lldp_tx);
+	req->opcode = cpu_to_le16(LLDP_TX_CTRL);
+	req->datalen = cpu_to_le16(sizeof(req->lldp_tx));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->lldp_tx.lane = nr_lane;
-	req->lldp_tx.op = LLDP_TX_GET;
+	req->lldp_tx.lane = cpu_to_le32(nr_lane);
+	req->lldp_tx.op = cpu_to_le32(LLDP_TX_GET);
 	req->lldp_tx.enable = 0;
 }
 
@@ -1192,54 +909,32 @@ static inline void build_mbx_lldp_set(struct mbx_fw_cmd_req *req,
 {
 #define LLDP_TX_SET (0)
 	req->flags = 0;
-	req->opcode = LLDP_TX_CTRL;
-	req->datalen = sizeof(req->sfp_write);
+	req->opcode = cpu_to_le16(LLDP_TX_CTRL);
+	req->datalen = cpu_to_le16(sizeof(req->sfp_write));
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->lldp_tx.lane = nr_lane;
-	req->lldp_tx.op = LLDP_TX_SET;
-	req->lldp_tx.enable = enable;
-	req->lldp_tx.inteval = 30;
+	req->lldp_tx.lane = cpu_to_le32(nr_lane);
+	req->lldp_tx.op = cpu_to_le32(LLDP_TX_SET);
+	req->lldp_tx.enable = cpu_to_le32(enable);
+	req->lldp_tx.interval = cpu_to_le32(30);
 }
 
-/* enum link_event_mask or */
 static inline void build_link_set_event_mask(struct mbx_fw_cmd_req *req,
-					     unsigned short event_mask,
-					     unsigned short enable,
+					     u16 event_mask,
+					     u16 enable,
 					     void *cookie)
 {
 	req->flags = 0;
-	req->opcode = SET_EVENT_MASK;
-	req->datalen = sizeof(req->stat_event_mask);
+	req->opcode = cpu_to_le16(SET_EVENT_MASK);
+	req->datalen = cpu_to_le16(sizeof(req->stat_event_mask));
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->stat_event_mask.event_mask = event_mask;
-	req->stat_event_mask.enable_stat = enable;
+	req->stat_event_mask.event_mask = cpu_to_le16(event_mask);
+	req->stat_event_mask.enable_stat = cpu_to_le16(enable);
 }
 
-static inline void
-build_link_set_loopback_req(struct mbx_fw_cmd_req *req, void *cookie,
-			    enum LOOPBACK_LEVEL level,
-			    enum LOOPBACK_FORCE_SPEED force_speed)
-{
-	req->flags = 0;
-	req->opcode = SET_LOOPBACK_MODE;
-	req->datalen = sizeof(req->loopback);
-	req->cookie = cookie;
-	req->reply_lo = 0;
-	req->reply_hi = 0;
-
-	req->loopback.loopback_level = level;
-	req->loopback.loopback_type = LOOPBACK_TYPE_LOCAL;
-	if (force_speed != LOOPBACK_FORCE_SPEED_NONE) {
-		req->loopback.loopback_force_speed = force_speed;
-		req->loopback.loopback_force_speed_enable = 1;
-	}
-}
-
-/* =========== errcode======= */
 enum MBX_ERR {
 	MBX_OK = 0,
 	MBX_ERR_NO_PERM,
@@ -1252,5 +947,4 @@ enum MBX_ERR {
 };
 
 int rnpgbe_fw_get_capability(struct rnpgbe_hw *hw, struct phy_abilities *abil);
-
-#endif
+#endif /* _RNPGBE_MBX_FW_H */
