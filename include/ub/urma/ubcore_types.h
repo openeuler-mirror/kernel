@@ -670,6 +670,7 @@ struct ubcore_device_cap {
 	uint32_t max_dip_cnt_per_ue;
 	uint32_t max_seid_cnt_per_ue;
 	uint16_t trans_mode; /* one or more from ubcore_transport_mode_t */
+	uint16_t reserved;
 	uint16_t congestion_ctrl_alg; /* one or more mode from ubcore_congestion_ctrl_alg_t */
 	uint16_t ceq_cnt; /* completion vector count */
 	uint32_t max_tp_in_tpg;
