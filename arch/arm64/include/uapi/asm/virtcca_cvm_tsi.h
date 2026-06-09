@@ -128,6 +128,7 @@ enum virtcca_enc_data_mode {
 };
 
 struct virtcca_key_attr_s {
+	__u8 msk_encrypted[DATA_KEY_MSK_LEN];
 	__u8 rand_iv[DATA_KEY_IV_LEN];
 	__u8 tag[DATA_KEY_TAG_LEN];
 	__u64 data_rand_iv;
