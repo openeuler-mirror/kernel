@@ -924,7 +924,7 @@ int ub_num_ue(struct ub_entity *uent)
 }
 EXPORT_SYMBOL_GPL(ub_num_ue);
 
-int ub_entity_enable_return(struct ub_entity *uent, u8 enable)
+static int ub_entity_enable_base(struct ub_entity *uent, u8 enable, bool force)
 {
 	int ret;
 
@@ -944,17 +944,19 @@ int ub_entity_enable_return(struct ub_entity *uent, u8 enable)
 		return ret;
 	}
 
-	mutex_lock(&uent->active_mutex);
-
-	if (!enable && !ub_entity_test_priv_flag(uent, UB_ENTITY_ACTIVE)) {
-		mutex_unlock(&uent->active_mutex);
-		return 0;
+	if (!force) {
+		mutex_lock(&uent->active_mutex);
+		if (!enable && !ub_entity_test_priv_flag(uent, UB_ENTITY_ACTIVE)) {
+			mutex_unlock(&uent->active_mutex);
+			return 0;
+		}
 	}
 
 	if (uent->ubc && uent->ubc->ops && uent->ubc->ops->entity_enable) {
 		ret = uent->ubc->ops->entity_enable(uent, enable);
 		if (ret) {
-			mutex_unlock(&uent->active_mutex);
+			if (!force)
+				mutex_unlock(&uent->active_mutex);
 			ub_err(uent, "entity enable, ret=%d, enable=%u\n",
 			       ret, enable);
 			return ret;
@@ -968,8 +970,20 @@ int ub_entity_enable_return(struct ub_entity *uent, u8 enable)
 	else
 		ub_entity_assign_priv_flag(uent, UB_ENTITY_ACTIVE, false);
 
-	mutex_unlock(&uent->active_mutex);
+	if (!force)
+		mutex_unlock(&uent->active_mutex);
+
 	return 0;
+}
+
+int ub_entity_enable_force(struct ub_entity *uent, u8 enable)
+{
+	return ub_entity_enable_base(uent, enable, true);
+}
+
+int ub_entity_enable_return(struct ub_entity *uent, u8 enable)
+{
+	return ub_entity_enable_base(uent, enable, false);
 }
 EXPORT_SYMBOL_GPL(ub_entity_enable_return);
 
