@@ -3762,7 +3762,6 @@ late_initcall(mempolicy_sysfs_init);
  * @pol: Pointer to the NUMA mempolicy.
  * @ilx: Index for interleave mempolicy.
  * @nid: Pointer to preferred node, will be updated to a local node.
- * @policy_nodes: Output nodemask for policy-specific local nodes.
  * @local_nodes: Output nodemask for all standard nodes (fallback).
  *
  * Creates a local-only copy of the policy by filtering out cpuless NUMA nodes
@@ -3772,13 +3771,13 @@ late_initcall(mempolicy_sysfs_init);
  * policy_nodes is set to that nodemask. If policy_nodemask() returns NULL
  * (e.g., PREFERRED, INTERLEAVE, LOCAL), policy_nodes is set to all local nodes.
  *
- * Return: 0 on success, -ENOMEM if no local nodes available.
+ * Return: Output nodemask for policy-specific local nodes.
  */
-int policy_nodemask_local(gfp_t gfp, struct mempolicy *pol, pgoff_t ilx,
-			int *nid, nodemask_t *policy_nodes, nodemask_t *local_nodes)
+static nodemask_t policy_nodemask_local(gfp_t gfp, struct mempolicy *pol, pgoff_t ilx,
+			int *nid, nodemask_t *local_nodes)
 {
 	struct mempolicy pol_local;
-	nodemask_t *nodemask;
+	nodemask_t *nodemask, policy_nodes;
 	int node;
 
 	/* Build local_nodes: all local nodes from mems_allowed */
@@ -3787,9 +3786,9 @@ int policy_nodemask_local(gfp_t gfp, struct mempolicy *pol, pgoff_t ilx,
 		if (numa_is_standard_node(node))
 			node_set(node, *local_nodes);
 	}
-	/* If no local nodes available, return error */
+	/* If no local nodes available, fallback to current numa */
 	if (nodes_empty(*local_nodes))
-		return -ENOMEM;
+		node_set(*nid, *local_nodes);
 
 	/* Copy policy and filter out cpuless nodes */
 	pol_local = *pol;
@@ -3816,11 +3815,11 @@ int policy_nodemask_local(gfp_t gfp, struct mempolicy *pol, pgoff_t ilx,
 	 * Otherwise, use local_nodes (all standard nodes).
 	 */
 	if (nodemask)
-		*policy_nodes = *nodemask;
+		policy_nodes = *nodemask;
 	else
-		*policy_nodes = *local_nodes;
+		policy_nodes = *local_nodes;
 
-	return 0;
+	return policy_nodes;
 }
 
 /**
@@ -3846,8 +3845,7 @@ struct page *__alloc_pages_mpol_local(gfp_t gfp, unsigned int order,
 	nodemask_t policy_nodes, local_nodes;
 	struct page *page;
 
-	if (policy_nodemask_local(gfp, pol, ilx, &nid, &policy_nodes, &local_nodes))
-		return NULL;
+	policy_nodes = policy_nodemask_local(gfp, pol, ilx, &nid, &local_nodes);
 
 	/* For PREFERRED_MANY, reuse alloc_pages_preferred_many with local fallback */
 	if (pol->mode == MPOL_PREFERRED_MANY)

@@ -262,10 +262,23 @@ static void ipourma_cleanup_res(struct net_device *dev)
 
 static void ipourma_proc_eid_exist(struct ipourma_dev_priv *priv)
 {
-	for (uint32_t i = 0; i < priv->eid_count; i++) {
+	uint32_t eid_count = priv->eid_count;
+
+	priv->eid_count = 0;
+	for (uint32_t i = 0; i < eid_count; i++) {
+		union ubcore_eid eid;
+		uint32_t eid_idx;
+
 		if (eid_is_empty(&priv->eid_info_exist[i].eid))
 			continue;
-		ipourma_create_new_eid(priv, priv->eid_info_exist[i].eid_index);
+		eid = priv->eid_info_exist[i].eid;
+		eid_idx = priv->eid_info_exist[i].eid_index;
+		memset(&priv->eid_info[eid_idx], 0, sizeof(priv->eid_info[eid_idx]));
+		priv->eid_info[eid_idx].eid = eid;
+		priv->eid_info[eid_idx].eid_index = eid_idx;
+		if (ipourma_create_new_eid(priv, eid_idx) != IPOURMA_OK)
+			continue;
+		priv->eid_count++;
 	}
 }
 
@@ -333,6 +346,7 @@ static void ipourma_do_eid_change_handler(struct ubcore_event *event,
 	union ubcore_eid eid;
 	uint32_t eid_idx_tmp;
 	uint32_t eid_cnt = 0;
+	int ret;
 
 	spin_lock(&ub_dev->eid_table.lock);
 	eid_cnt = ub_dev->eid_table.eid_cnt;
@@ -362,9 +376,14 @@ static void ipourma_do_eid_change_handler(struct ubcore_event *event,
 	}
 	priv->eid_info[eid_idx].eid = eid;
 	priv->eid_info[eid_idx].eid_index = eid_idx;
+	ret = ipourma_create_new_eid(priv, eid_idx);
+	if (ret != IPOURMA_OK) {
+		netdev_err(priv->dev, "create eid resources failed, index:%u, ret:%d\n",
+			eid_idx, ret);
+		return;
+	}
 	netdev_info(priv->dev, " get a new eid, index:%u, eid:"EID_FMT"\n",
 		eid_idx, EID_ARGS(priv->eid_info[eid_idx].eid));
-	ipourma_create_new_eid(priv, eid_idx);
 	priv->eid_count++;
 	return;
 unlock_table_out:

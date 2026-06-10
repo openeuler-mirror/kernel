@@ -11,7 +11,6 @@
 
 #include "../ubcore_log.h"
 #include "ubmgr_ping.h"
-#include "ubmgr_topo.h"
 
 #include "ubmgr.h"
 

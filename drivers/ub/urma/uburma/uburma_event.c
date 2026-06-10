@@ -126,7 +126,7 @@ void uburma_jfce_handler(struct ubcore_jfc *jfc)
 {
 	struct uburma_jfc_uobj *jfc_uobj;
 	struct uburma_jfce_uobj *jfce;
-	struct uburma_device *ubu_dev;
+	struct uburma_device *ubu_dev = NULL;
 	bool write_event = false;
 	u64 start_time, duration_ns;
 

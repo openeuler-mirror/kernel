@@ -1513,6 +1513,8 @@ uburma_query_device_fill_spec_out(void *arg_addr,
 	     arg->out.attr.dev_cap.atomic_feat);
 	SPEC(s++, QUERY_DEVICE_OUT_DEV_CAP_TRANS_MODE,
 	     arg->out.attr.dev_cap.trans_mode);
+	SPEC(s++, QUERY_DEVICE_OUT_DEV_CAP_RESERVED,
+	     arg->out.attr.dev_cap.reserved);
 	SPEC(s++, QUERY_DEVICE_OUT_DEV_CAP_CONGESTION_CTRL_ALG,
 	     arg->out.attr.dev_cap.congestion_ctrl_alg);
 	SPEC(s++, QUERY_DEVICE_OUT_DEV_CAP_CEQ_CNT,
