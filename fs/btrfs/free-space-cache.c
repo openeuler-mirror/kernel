@@ -488,6 +488,9 @@ static int io_ctl_check_crc(struct btrfs_io_ctl *io_ctl, int index)
 	u32 crc = ~(u32)0;
 	unsigned offset = 0;
 
+	if (index >= io_ctl->num_pages)
+		return -EIO;
+
 	if (!io_ctl->check_crcs) {
 		io_ctl_map_page(io_ctl, 0);
 		return 0;
