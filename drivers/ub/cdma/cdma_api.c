@@ -237,7 +237,7 @@ EXPORT_SYMBOL_GPL(dma_create_context);
 
 /**
  * dma_delete_context - Delete DMA context
- * @dma_dev: DMA device pointe
+ * @dma_dev: DMA device pointer
  * @handle: DMA context ID value
  * Context: Process context, must NOT be called concurrently.
  * Return: NA
@@ -736,7 +736,7 @@ EXPORT_SYMBOL_GPL(dma_read);
  * @rmt_seg: the remote segment pointer
  * @local_seg: the local segment pointer
  * @queue_id: DMA queue ID
- * @data: compare data and swap data for cas operaion
+ * @data: compare data and swap data for cas operation
  *
  * Initiate a request for a unilateral atomic CAS operation. Once the operation
  * is successful, the application can poll the queue to obtain the completion

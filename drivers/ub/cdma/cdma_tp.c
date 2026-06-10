@@ -207,7 +207,7 @@ void cdma_delete_ctp(struct cdma_dev *cdev, u32 tp_id, bool invalid)
 		}
 
 		dev_dbg(cdev->dev,
-			"refcout of tp %u is equal to one and erased\n", tp_id);
+			"refcount of tp %u is equal to one and erased\n", tp_id);
 		idr_remove(&cdev->ctp_table.idr_tbl.idr, tp_id);
 		kfree(tp);
 	}
