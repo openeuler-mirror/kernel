@@ -734,17 +734,18 @@ static void ipourma_create_redundant_jetty_callback(struct work_struct *work)
 	}
 }
 
-void ipourma_create_new_eid(struct ipourma_dev_priv *priv, u32 eid_idx)
+int ipourma_create_new_eid(struct ipourma_dev_priv *priv, u32 eid_idx)
 {
 	int ret;
 
 	ret = ipourma_urma_init_by_eid(priv, eid_idx);
 	if (ret != IPOURMA_OK) {
-		memset(&priv->eid_info[eid_idx].eid, 0, UBCORE_EID_SIZE);
-		return;
+		memset(&priv->eid_info[eid_idx], 0, sizeof(priv->eid_info[eid_idx]));
+		return ret;
 	}
 	ipourma_init_set_ip_work(priv, eid_idx);
 	cancel_delayed_work_sync(&priv->redundant_dwork);
 	queue_delayed_work(priv->net_config_wq, &priv->redundant_dwork,
 				IPOURMA_DWORK_TIME * msecs_to_jiffies(MSEC_PER_SEC));
+	return IPOURMA_OK;
 }

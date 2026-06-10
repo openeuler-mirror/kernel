@@ -7,6 +7,8 @@
 
 #include <uapi/linux/kvm.h>
 #include <asm/rmi_smc.h>
+#include <linux/virtcca_cvm_domain.h>
+
 enum virtcca_cvm_state {
 	CVM_STATE_NONE = 1,
 	CVM_STATE_NEW,
@@ -74,6 +76,8 @@ enum virtcca_tmi_cmd_id {
 	VIRTCCA_GET_DSTVM_RD,
 	VIRTCCA_GET_MIG_KEY,
 	VIRTCCA_SET_MIG_KEY,
+	VIRTCCA_DATA_KEY_GEN,
+	VIRTCCA_DATA_KEY_ENC,
 
 	VIRTCCA_TMI_IOCTL_CMD_MAX,
 };

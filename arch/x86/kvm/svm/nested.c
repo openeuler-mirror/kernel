@@ -1138,7 +1138,7 @@ int nested_svm_vmexit(struct vcpu_svm *svm)
 
 	rc = nested_svm_load_cr3(vcpu, vmcb01->save.cr3, false, true);
 	if (rc)
-		return 1;
+		kvm_make_request(KVM_REQ_TRIPLE_FAULT, vcpu);
 
 	/*
 	 * Drop what we picked up for L2 via svm_complete_interrupts() so it
@@ -1164,7 +1164,10 @@ int nested_svm_vmexit(struct vcpu_svm *svm)
 	if (kvm_apicv_activated(vcpu->kvm))
 		__kvm_vcpu_update_apicv(vcpu);
 
-	return 0;
+	if (rc)
+		return 1;
+	else
+		return 0;
 }
 
 static void nested_svm_triple_fault(struct kvm_vcpu *vcpu)

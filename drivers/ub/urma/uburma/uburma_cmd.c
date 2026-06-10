@@ -4049,6 +4049,8 @@ static void uburma_fill_device_attr(struct ubcore_device *ubc_dev,
 	attr->dev_cap.atomic_feat.value =
 		ubc_dev->attr.dev_cap.atomic_feat.value;
 	attr->dev_cap.trans_mode = ubc_dev->attr.dev_cap.trans_mode;
+	attr->dev_cap.reserved =
+		ubc_dev->attr.dev_cap.reserved;
 	attr->dev_cap.congestion_ctrl_alg =
 		ubc_dev->attr.dev_cap.congestion_ctrl_alg;
 	attr->dev_cap.ceq_cnt = ubc_dev->attr.dev_cap.ceq_cnt;
@@ -4345,6 +4347,7 @@ static void uburma_cmd_bind_jetty_async_callback(struct ubcore_jetty *jetty,
 	uburma_write_event_with_free_fn(&notifier->jfe,
 					(uint64_t)(uintptr_t)notify_event, 0,
 					NULL, NULL, uburma_free_notify_event);
+	uobj_put(&notifier->uobj);
 	kfree(user_arg);
 }
 
@@ -4461,7 +4464,6 @@ static int uburma_cmd_bind_jetty_async(struct ubcore_device *ubc_dev,
 	ret = uburma_tlv_append(hdr, &arg);
 	if (ret != 0) {
 		ubcore_unbind_jetty_async(jetty_uobj->object, 0, NULL);
-		uburma_delete_bind_callback(cb);
 	}
 
 	uburma_put_jetty_tjetty_objs(jetty_uobj, tjetty_uobj);

@@ -11,6 +11,7 @@
 #include <linux/pagewalk.h>
 #include <linux/pgtable.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 #include "obmm_cache.h"
 #include "obmm_sysfs.h"
@@ -109,6 +110,7 @@ static bool validate_update_info(const struct obmm_region *region,
 
 	return true;
 }
+
 static int obmm_vma_mprotect(struct vm_area_struct *vma __always_unused,
 			     unsigned long start __always_unused, unsigned long end __always_unused,
 			     unsigned long newflags __always_unused)
@@ -116,71 +118,127 @@ static int obmm_vma_mprotect(struct vm_area_struct *vma __always_unused,
 	pr_warn("mprotect not supported\n");
 	return -EOPNOTSUPP;
 }
+
 static vm_fault_t obmm_vma_fault(struct vm_fault *vmf __always_unused)
 {
 	pr_warn("Unexpected fault\n");
 	return VM_FAULT_SIGBUS;
 }
+
+/*
+ * Walk the page table for @addr and extract the PFN.
+ * Handles both PTE entries and PMD leaf (huge page) entries.
+ * Caller must hold mmap_read_lock (or mmap_write_lock) so that the page
+ * table entries cannot be torn or freed concurrently.
+ */
+static int obmm_lookup_pfn(struct mm_struct *mm, unsigned long addr,
+			   unsigned long *pfn)
+{
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *ptep;
+	spinlock_t *ptl;
+
+	pgd = pgd_offset(mm, addr);
+	if (pgd_none(*pgd) || unlikely(pgd_bad(*pgd)))
+		return -EINVAL;
+
+	p4d = p4d_offset(pgd, addr);
+	if (p4d_none(*p4d) || unlikely(p4d_bad(*p4d)))
+		return -EINVAL;
+
+	pud = pud_offset(p4d, addr);
+	if (pud_none(*pud) || unlikely(pud_bad(*pud)))
+		return -EINVAL;
+
+	pmd = pmd_offset(pud, addr);
+
+	/* PMD leaf (huge page): extract PFN directly */
+	if (pmd_leaf(*pmd)) {
+		if (!pmd_present(*pmd))
+			return -EINVAL;
+		*pfn = pmd_pfn(*pmd) + ((addr & ~PMD_MASK) >> PAGE_SHIFT);
+		return 0;
+	}
+
+	if (pmd_none(*pmd) || unlikely(pmd_bad(*pmd)))
+		return -EINVAL;
+
+	/* Regular PTE: follow_pte handles PTE-level lock and mapping */
+	if (follow_pte(mm, addr, &ptep, &ptl))
+		return -EINVAL;
+	*pfn = pte_pfn(ptep_get(ptep));
+	pte_unmap_unlock(ptep, ptl);
+	return 0;
+}
+
 /* Custom access handler for ptrace/GDB on PFNMAP VMAs */
 static int obmm_vma_access(struct vm_area_struct *vma, unsigned long addr,
 			   void *buf, int len, int write)
 {
-	resource_size_t phys_addr;
-	unsigned long prot;
-	void __iomem *maddr;
-	pte_t *ptep, pte;
-	spinlock_t *ptl;
+	struct obmm_region *reg = vma->vm_file->private_data;
+	unsigned long pfn, prot;
+	void *kaddr;
+	bool is_vmap;
 	int offset = offset_in_page(addr);
 	int ret = -EINVAL;
+
+	pr_debug("addr=%#lx len=%d write=%d region=%d type=%s\n",
+		 addr, len, write, reg->regionid,
+		 reg->type == OBMM_EXPORT_REGION ? "export" : "import");
 
 	if (!(vma->vm_flags & (VM_IO | VM_PFNMAP)))
 		return -EINVAL;
 
-retry:
-	if (follow_pte(vma->vm_mm, addr, &ptep, &ptl))
+	/* Check permission from vm_flags */
+	if (!(vma->vm_flags & VM_READ))
+		return -EINVAL;
+	if (write && !(vma->vm_flags & VM_WRITE))
 		return -EINVAL;
 
-	pte = ptep_get(ptep);
-	pte_unmap_unlock(ptep, ptl);
-
-	/* Extract protection bits from user PTE */
-	prot = pgprot_val(pte_pgprot(pte));
-	phys_addr = (resource_size_t)pte_pfn(pte) << PAGE_SHIFT;
-
-	/* Check write permission */
-	if (write && !pte_write(pte))
+	/* Get PFN from page table walk */
+	if (obmm_lookup_pfn(vma->vm_mm, addr, &pfn))
 		return -EINVAL;
 
-	/* Clear PTE_USER/PTE_NG for kernel access with PAN enabled */
+	/* Derive prot from vma->vm_page_prot, adjust for kernel access */
+	prot = pgprot_val(vma->vm_page_prot);
 	prot &= ~(PTE_USER | PTE_NG);
 	prot |= (PTE_PXN | PTE_UXN);
 
-	maddr = ioremap_prot(phys_addr, PAGE_ALIGN(len + offset), prot);
-	if (!maddr)
+	/* Map one page */
+	len = min(len, (int)(PAGE_SIZE - offset));
+
+	if (reg->type == OBMM_EXPORT_REGION) {
+		struct page *page;
+
+		if (!pfn_valid(pfn))
+			return -EINVAL;
+		page = pfn_to_page(pfn);
+		kaddr = vmap(&page, 1, VM_MAP, __pgprot(prot));
+		is_vmap = true;
+	} else {
+		resource_size_t phys_addr = (resource_size_t)pfn << PAGE_SHIFT;
+
+		kaddr = (__force void *)ioremap_prot(phys_addr, PAGE_SIZE, prot);
+		is_vmap = false;
+	}
+	if (!kaddr)
 		return -ENOMEM;
 
-	/* Re-check PTE to prevent TOCTOU race */
-	if (follow_pte(vma->vm_mm, addr, &ptep, &ptl))
-		goto out_unmap;
-
-	if (!pte_same(pte, ptep_get(ptep))) {
-		pte_unmap_unlock(ptep, ptl);
-		iounmap(maddr);
-		goto retry;
-	}
-
-	/* Perform the actual memory access */
 	if (write)
-		ret = copy_mc_to_kernel((__force void *)(maddr + offset), buf, len) ? -EFAULT : len;
+		ret = copy_mc_to_kernel(kaddr + offset, buf, len) ? -EFAULT : len;
 	else
-		ret = copy_mc_to_kernel(buf, (__force void *)(maddr + offset), len) ? -EFAULT : len;
-	pte_unmap_unlock(ptep, ptl);
+		ret = copy_mc_to_kernel(buf, kaddr + offset, len) ? -EFAULT : len;
 
-out_unmap:
-	iounmap(maddr);
-
+	if (is_vmap)
+		vunmap(kaddr);
+	else
+		iounmap((__force void __iomem *)kaddr);
 	return ret;
 }
+
 static const char *obmm_vma_name(struct vm_area_struct *vma __always_unused)
 {
 	return "OBMM_SHM";
@@ -350,6 +408,13 @@ static int obmm_shm_fops_mmap(struct file *file, struct vm_area_struct *vma)
 	bool cacheable, o_sync;
 
 	print_mmap_param(file, vma);
+
+	if (!(vma->vm_flags & VM_MAYSHARE)) {
+		pr_err("mmap region %d: MAP_PRIVATE is not supported, use MAP_SHARED\n",
+		       reg->regionid);
+		return -EINVAL;
+	}
+
 	if (!region_allow_mmap(reg)) {
 		pr_err("mmap region %d: not allow to be mmaped\n", reg->regionid);
 		return -EPERM;
@@ -519,8 +584,9 @@ static int update_pmd_entry(pmd_t *pmd, unsigned long addr,
 			__set_pte((pte_t *)pmd, pmd_pte(new_pmd));
 		}
 		spin_unlock(ptl);
-		/* Skip PTE-level walk for huge pages */
-		return 1;
+		/* Skip PTE-level walk and split_huge_pmd for PFN-mapped huge pages */
+		walk->action = ACTION_CONTINUE;
+		return 0;
 	}
 
 	/* Continue to PTE-level walk */
@@ -546,6 +612,16 @@ static int update_pte_entry(pte_t *pte, unsigned long addr __always_unused,
 	return 0;
 }
 
+/*
+ * Bypass VM_PFNMAP skip in walk_page_test -- OBMM PFN mappings
+ * have no struct page but do need page table permission updates.
+ */
+static int obmm_walk_test(unsigned long start __always_unused,
+			  unsigned long end __always_unused, struct mm_walk *walk __always_unused)
+{
+	return 0;
+}
+
 static int update_vma_page_range(struct vm_area_struct *vma, uint8_t mem_state)
 {
 	pgprot_t pgprot = mem_state_to_pgprot(mem_state);
@@ -554,6 +630,7 @@ static int update_vma_page_range(struct vm_area_struct *vma, uint8_t mem_state)
 	unsigned long start = vma->vm_start;
 	unsigned long end = vma->vm_end;
 	struct mm_walk_ops walk_ops = {
+		.test_walk = obmm_walk_test,
 		.pmd_entry = update_pmd_entry,
 		.pte_entry = update_pte_entry,
 	};
@@ -646,8 +723,10 @@ static long obmm_shm_update_range(struct file *file,
 			goto rollback;
 		}
 		/* Check VMA belongs to this region */
-		if (vma->vm_file->private_data != reg) {
-			pr_err("VMA belongs to different region: vma=[%#lx, %#lx)\n",
+		if (vma->vm_ops != &obmm_vm_ops ||
+		    !vma->vm_file ||
+		    vma->vm_file->private_data != reg) {
+			pr_err("VMA does not belong to this region: vma=[%#lx, %#lx)\n",
 			       vma->vm_start, vma->vm_end);
 			ret = -EFAULT;
 			goto rollback;

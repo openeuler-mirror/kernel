@@ -289,6 +289,142 @@ or completion events.
 **Default value**: false
 
 
+dev_name_style
+---------------
+
+``dev_name_style`` controls whether to set udma device name style
+
+**Parameter Values:**
+
+* false: Not set udma device name, driver name is named by adev id
+* true: Use chip id, die id and ue id to set udma driver name
+
+**Default value**: true
+
+
+batch_flush_query_freq
+----------------------
+
+``batch_flush_query_freq`` Set ta flush query frequency for batch
+when destroy jetty batch, udma driver could set batch_flush_query_freq
+to control frequency time to query jetty context.
+
+The allowed range is: ``[0,UINT32_MAX]``
+
+**Default value**: 10
+
+batch_flush_query_timeout
+-------------------------
+
+``batch_flush_query_timeout`` Set ta flush query timeout
+when destroy jetty, udma driver could set query ta timeout.
+
+The allowed range is: ``[0,UINT32_MAX]``
+
+**Default value**: 64000
+
+
+sq_reserved
+-----------
+
+``sq_reserved`` Set whether reserved sq
+In sq reserverd function, user can use reserverd sq address
+to create jfs/jetty.
+
+**Parameter Values:**
+
+* false: Not use reserverd sq address.
+* true: Use reserved sq address.
+
+**Default value**: false
+
+
+dump_aux_info
+-------------
+
+``dump_aux_info`` Set whether dump aux info
+In dump aux info function, user can dump register information
+when hardware is abnormal.
+
+**Parameter Values:**
+
+* false: Not use dump aux info.
+* true: Use dump aux info.
+
+**Default value**: false
+
+
+hugepage_enable
+---------------
+
+``hugepage_enable`` Set whether set huge page
+In set hugepage function, user can enable hugepage
+
+**Parameter Values:**
+
+* false: Not use hugepage.
+* true: Use hugepage.
+
+**Default value**: true
+
+
+jfc_share_enable
+----------------
+
+``jfc_share_enable`` Set whether set jfc share
+In jfc share function, udma driver could bind jfc
+to same resource.
+
+**Parameter Values:**
+
+* false: Not use share jfc.
+* true: Use share jfc.
+
+**Default value**: true
+
+
+dfx_switch
+----------
+
+``dfx_switch`` Set whether to enable the udma dfx function
+In dfx function, udma driver could store and delete
+resource id.
+
+**Parameter Values:**
+
+* false: Not use dfx function.
+* true: Use dfx function.
+
+**Default value**: false
+
+
+debug_switch
+----------
+
+``debug_switch`` Set whether to enable the udma debug print function
+
+**Parameter Values:**
+
+* false: Not use debug switch function.
+* true: Use debug switch function.
+
+**Default value**: false
+
+
+well_known_jetty_pgsz_check
+---------------------------
+
+``well_known_jetty_pgsz_check`` Whether check the system page size
+In this function, udma driver will check page size and hardware
+page size is equal.
+
+**Parameter Values:**
+
+* false: Not use check function.
+* true: Use check function.
+
+**Default value**: true
+
 Support
 =======
 
