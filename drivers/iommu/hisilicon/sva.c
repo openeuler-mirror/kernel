@@ -453,7 +453,7 @@ static const struct iommu_domain_ops ummu_sva_domain_ops = {
 static const struct iommu_domain_ops ummu_sva_domain_no_dvm_ops = {
 	.set_dev_pasid = ummu_sva_set_dev_pasid,
 	.flush_iotlb_all = ummu_flush_iotlb_all,
-	.iotlb_sync = ummu_non_agent_iotlb_sync,
+	.iotlb_sync = ummu_device_tlb_inv_walk,
 	.free = ummu_sva_domain_free,
 };
 
