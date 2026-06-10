@@ -1206,5 +1206,7 @@ void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
 			  u8 *module_type);
 int hclge_cfg_mac_mode(struct hclge_dev *hdev, bool enable);
 int hclge_query_scc_version(struct hclge_dev *hdev, u32 *scc_version);
+u32 hclge_get_port_number(enum HLCGE_PORT_TYPE port_type, u8 pf_id,
+			  u8 vf_id, u8 network_port_id);
 int hclge_mbx_event_notify(struct hclge_vport *vport, u64 event_bits);
 #endif
