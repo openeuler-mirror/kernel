@@ -221,7 +221,7 @@ static int cdma_delete_jfce(struct inode *inode, struct file *filp)
 	mutex_unlock(&cfile->ctx_mutex);
 	cdma_close_uobj_fd(cfile);
 
-	pr_info("jfce is release\n");
+	pr_info("jfce is released\n");
 	return 0;
 }
 
@@ -578,7 +578,7 @@ static int cdma_delete_jfae(struct inode *inode, struct file *filp)
 	mutex_unlock(&cfile->ctx_mutex);
 	cdma_close_uobj_fd(cfile);
 
-	pr_info("jfae is release\n");
+	pr_info("jfae is released\n");
 	return 0;
 }
 

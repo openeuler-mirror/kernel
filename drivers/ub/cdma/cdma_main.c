@@ -130,7 +130,7 @@ static int cdma_reset_down(struct auxiliary_device *adev)
 	mutex_lock(&g_cdma_reset_mutex);
 	cdev = get_cdma_dev(adev);
 	if (!cdev) {
-		dev_warn(&adev->dev, "reset down cdev is not exist\n");
+		dev_warn(&adev->dev, "reset down cdev does not exist\n");
 		goto unlock;
 	}
 
@@ -163,7 +163,7 @@ static int cdma_reset_uninit(struct auxiliary_device *adev)
 	mutex_lock(&g_cdma_reset_mutex);
 	cdev = get_cdma_dev(adev);
 	if (!cdev) {
-		dev_warn(&adev->dev, "reset uninit cdev is not exist\n");
+		dev_warn(&adev->dev, "reset uninit cdev does not exist\n");
 		goto unlock;
 	}
 
@@ -338,7 +338,7 @@ static void cdma_remove(struct auxiliary_device *auxdev)
 	cdev = (struct cdma_dev *)dev_get_drvdata(&auxdev->dev);
 	if (!cdev) {
 		mutex_unlock(&g_cdma_reset_mutex);
-		dev_err(&auxdev->dev, "cdma device is not exist\n");
+		dev_err(&auxdev->dev, "cdma device does not exist\n");
 		return;
 	}
 
