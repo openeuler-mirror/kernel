@@ -29,7 +29,7 @@ static const struct nla_policy ubcore_policy[NUM_UBCORE_ATTR] = {
 	[UBCORE_HDR_COMMAND] = { .type = NLA_U32 },
 	[UBCORE_HDR_ARGS_LEN] = { .type = NLA_U32 },
 	[UBCORE_HDR_ARGS_ADDR] = { .type = NLA_U64 },
-	[UBCORE_ATTR_NS_MODE] = { .type = NLA_U8 },
+	[UBCORE_ATTR_DEV_NS_MODE] = { .type = NLA_U8 },
 	[UBCORE_ATTR_DEV_NAME] = { .type = NLA_STRING,
 				   .len = UBCORE_MAX_DEV_NAME - 1 },
 	[UBCORE_ATTR_NS_FD] = { .type = NLA_U32 },
@@ -46,7 +46,8 @@ static const struct nla_policy ubcore_policy[NUM_UBCORE_ATTR] = {
 				      .len = UBCORE_EID_SIZE },
 	[UBCORE_ATTR_EID_NUM] = { .type = NLA_U32 },
 	[UBCORE_ATTR_EID_LIST] = { .type = NLA_BINARY },
-	[UBCORE_ATTR_STATUS] = { .type = NLA_S32 }
+	[UBCORE_ATTR_STATUS] = { .type = NLA_S32 },
+	[UBCORE_ATTR_EID_NS_MODE] = { .type = NLA_U8 },
 };
 
 static const struct genl_ops ubcore_genl_ops[] = {
@@ -84,12 +85,12 @@ static const struct genl_ops ubcore_genl_ops[] = {
 
 	  .flags = GENL_ADMIN_PERM,
 	  .doit = ubcore_set_eid_mode_ops },
-	{ .cmd = UBCORE_CMD_SET_NS_MODE,
+	{ .cmd = UBCORE_CMD_SET_DEV_NS_MODE,
 	  .policy = ubcore_policy,
 	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 
 	  .flags = GENL_ADMIN_PERM,
-	  .doit = ubcore_set_ns_mode_ops },
+	  .doit = ubcore_set_dev_ns_mode_ops },
 	{ .cmd = UBCORE_CMD_SET_DEV_NS,
 	  .policy = ubcore_policy,
 	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
@@ -184,6 +185,13 @@ static const struct genl_ops ubcore_genl_ops[] = {
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.doit = ubcore_perf_show_ops
+	},
+	{ .cmd = UBCORE_CMD_SET_EID_NS_MODE,
+	  .policy = ubcore_policy,
+	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+
+	  .flags = GENL_ADMIN_PERM,
+	  .doit = ubcore_set_eid_ns_mode_ops
 	},
 };
 
