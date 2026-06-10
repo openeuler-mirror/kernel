@@ -22,9 +22,11 @@ enum {
 	UDMA_CAP_FEATURE_REDUCE				= BIT(17),
 	UDMA_CAP_FEATURE_UE_RX_CLOSE			= BIT(18),
 	UDMA_CAP_FEATURE_RNR_RETRY			= BIT(19),
-	UDMA_CAP_FEATURE_WRITE_ATOMIC_ADD	        = BIT(21),
+	UDMA_CAP_FEATURE_WQE_LOCK_BUFFER_EN		= BIT(20),
+	UDMA_CAP_FEATURE_WRITE_ATOMIC_ADD		= BIT(21),
 	UDMA_CAP_FEATURE_RC_CTP_MULTIPLE_PATH_MODE	= BIT(26),
 	UDMA_CAP_FEATURE_NOT_SHARE_JFC			= BIT(27),
+	UDMA_CAP_FEATURE_SUPPORT_JFC_CTX_CCU_PROPERTY	= BIT(28),
 	UDMA_CAP_FEATURE_PORT_CHANGE_AE			= BIT(29),
 };
 
@@ -93,6 +95,9 @@ struct udma_caps {
 	struct udma_udp_sport udp;
 	uint32_t rc_max_cnt;
 	bool no_share_jfc_en;
+	bool lock_buffer_en;
+	bool ccu_jfc_property_en;
+	uint8_t lock_buf_bb_shift;
 	bool ctp_en;
 	bool ipourma_en;
 	bool sva_sep_mode_en;

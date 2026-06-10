@@ -174,7 +174,7 @@ int post_mailbox_update_ctx(struct udma_dev *udma_dev, void *ctx, uint32_t size,
 }
 
 struct ubase_cmd_mailbox *udma_mailbox_query_ctx(struct udma_dev *udma_dev,
-						struct ubase_mbx_attr *attr)
+						 struct ubase_mbx_attr *attr)
 {
 	struct ubase_cmd_mailbox *mailbox;
 	int ret;

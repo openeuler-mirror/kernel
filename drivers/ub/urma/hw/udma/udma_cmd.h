@@ -213,7 +213,10 @@ struct udma_cmd_ue_resource {
 	uint16_t normal_jetty_num;
 	uint16_t standard_jetty_start;
 	uint16_t standard_jetty_num;
-	uint32_t rsvd3[2];
+	uint8_t lock_buf_bb_shift;
+	uint8_t rsvd3;
+	uint16_t rsvd4;
+	uint32_t rsvd5;
 
 	/* BD3 */
 	uint32_t max_write_size;
@@ -225,7 +228,7 @@ struct udma_cmd_ue_resource {
 	uint16_t ccu_jfc_num;
 	uint16_t stars_jfc_start;
 	uint16_t stars_jfc_num;
-	uint32_t rsvd4;
+	uint32_t rsvd6;
 };
 
 struct udma_cmd_ucp_resource {

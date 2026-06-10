@@ -10,7 +10,7 @@
 #define MAP_INDEX_MASK 0xfffffff
 #define MAP_INDEX_SHIFT 4
 
-#define UDMA_SEGMENT_ACCESS_GUARD (1UL << 5)
+#define UDMA_SEGMENT_ACCESS_GUARD 0xf
 
 #define UDMA_CQE_COALESCE_SHIFT 10
 #define UDMA_CQE_COALESCE_CNT_MAX (1 << UDMA_CQE_COALESCE_SHIFT)
@@ -48,6 +48,7 @@ enum udma_jetty_type {
 	UDMA_CCU_JETTY_TYPE,
 	UDMA_NORMAL_JETTY_TYPE,
 	UDMA_URMA_NORMAL_JETTY_TYPE,
+	UDMA_LOCK_BUFFER_JETTY_TYPE,
 	UDMA_URMA_EX_JETTY_TYPE,
 	UDMA_JETTY_TYPE_MAX
 };
@@ -97,7 +98,8 @@ struct udma_create_jfc_ucmd {
 	__aligned_u64 db_addr;
 	__u32 is_hugepage : 1;
 	__u32 dtu_en : 1;
-	__u32 rsv : 30;
+	__u32 ccu_cqe_flag : 1;
+	__u32 rsv : 29;
 	__u32 rsv1;
 };
 
@@ -112,7 +114,10 @@ struct udma_create_ctx_resp {
 	__u32 sva_sep_mode_en : 1;
 	__u32 u_dtu_enable : 1;
 	__u32 st64b_en : 1;
-	__u32 rsv : 15;
+	__u32 lock_buffer_en : 1;
+	__u32 ccu_jfc_property_en : 1;
+	__u32 lock_buf_bb_shift : 8;
+	__u32 rsv : 5;
 	__u32 ue_id;
 	__u32 chip_id;
 	__u32 die_id;

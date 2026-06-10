@@ -24,6 +24,8 @@ static void udma_construct_jfc_ctx(struct udma_dev *dev,
 				   struct udma_jfc *jfc,
 				   struct udma_jfc_ctx *ctx)
 {
+	bool is_record_db;
+
 	memset(ctx, 0, sizeof(struct udma_jfc_ctx));
 
 	ctx->state = UDMA_JFC_STATE_VALID;
@@ -50,10 +52,18 @@ static void udma_construct_jfc_ctx(struct udma_dev *dev,
 		ctx->hw_ver_1.ceqn = jfc->ceqn;
 	else
 		ctx->hw_ver_0.ceqn = jfc->ceqn;
-	if (jfc->stars_en) {
+
+	ctx->record_db_en = UDMA_NO_RECORD_EN;
+	if (jfc->stars_en)
 		ctx->stars_en = UDMA_STARS_SWITCH;
-		ctx->record_db_en = UDMA_NO_RECORD_EN;
-	} else {
+	if (jfc->ccu_en)
+		ctx->ccu_en = UDMA_CCU_SWITCH;
+
+	if (jfc->ccu_cqe_flag)
+		ctx->ccucqe_other_die = UDMA_CCU_OTHER_DIE;
+	is_record_db = !jfc->stars_en && !jfc->ccu_en;
+
+	if (is_record_db) {
 		ctx->record_db_en = UDMA_RECORD_EN;
 		ctx->record_db_addr_l = jfc->db.db_addr >> UDMA_DB_L_OFFSET;
 		ctx->record_db_addr_h = jfc->db.db_addr >> UDMA_DB_H_OFFSET;
@@ -87,6 +97,11 @@ int udma_check_jfc_cfg(struct udma_dev *dev, struct udma_jfc *jfc,
 	if (cfg->ceqn >= dev->caps.comp_vector_cnt) {
 		dev_err(dev->dev, "invalid ceqn = %u, cap ceq cnt = %u.\n",
 			cfg->ceqn, dev->caps.comp_vector_cnt);
+		return -EINVAL;
+	}
+
+	if (jfc->mode == UDMA_LOCK_CCU_JFC_TYPE && !dev->caps.ccu_jfc_property_en) {
+		dev_err(dev->dev, "invalid JFC no support CCU JFC.\n");
 		return -EINVAL;
 	}
 
@@ -128,6 +143,12 @@ static int udma_get_cmd_from_user(
 	jfc->ctx = to_udma_context(udata->uctx);
 	if (jfc->mode > UDMA_NORMAL_JFC_TYPE && jfc->mode < UDMA_KERNEL_STARS_JFC_TYPE) {
 		jfc->buf.entry_cnt = ucmd->buf_len;
+		return 0;
+	}
+
+	if (jfc->mode == UDMA_LOCK_CCU_JFC_TYPE) {
+		jfc->buf.entry_cnt = ucmd->buf_len;
+		jfc->ccu_cqe_flag = ucmd->ccu_cqe_flag;
 		return 0;
 	}
 
@@ -222,6 +243,26 @@ static void udma_free_cq(struct udma_dev *dev, struct udma_jfc *jfc)
 	}
 }
 
+static void udma_set_jfc_ccu_or_stars(struct udma_dev *dev, struct udma_jfc *jfc)
+{
+	if (dev->caps.ccu_jfc_property_en) {
+		if (jfc->mode == UDMA_STARS_JFC_TYPE || jfc->mode == UDMA_KERNEL_STARS_JFC_TYPE)
+			jfc->stars_en = true;
+
+		if (jfc->mode == UDMA_CCU_JFC_TYPE) {
+			jfc->ccu_en = true;
+			jfc->ccu_cqe_flag = false;
+		}
+
+		if (jfc->mode == UDMA_LOCK_CCU_JFC_TYPE)
+			jfc->ccu_en = true;
+	} else {
+		if (jfc->mode == UDMA_CCU_JFC_TYPE || jfc->mode == UDMA_STARS_JFC_TYPE ||
+			jfc->mode == UDMA_KERNEL_STARS_JFC_TYPE)
+			jfc->stars_en = true;
+	}
+}
+
 int udma_post_create_jfc_mbox(struct udma_dev *dev, struct udma_jfc *jfc)
 {
 	struct ubase_mbx_attr mbox_attr = {};
@@ -234,9 +275,8 @@ int udma_post_create_jfc_mbox(struct udma_dev *dev, struct udma_jfc *jfc)
 		return -ENOMEM;
 	}
 
-	if (jfc->mode == UDMA_STARS_JFC_TYPE || jfc->mode == UDMA_CCU_JFC_TYPE ||
-	    jfc->mode == UDMA_KERNEL_STARS_JFC_TYPE)
-		jfc->stars_en = true;
+	udma_set_jfc_ccu_or_stars(dev, jfc);
+
 	udma_construct_jfc_ctx(dev, jfc, (struct udma_jfc_ctx *)mailbox->buf);
 
 	mbox_attr.tag = jfc->jfcn;
@@ -277,9 +317,9 @@ static int udma_verify_stars_jfc_param(struct udma_dev *dev,
 	return 0;
 }
 
-static int udma_get_stars_jfc_buf(struct udma_dev *dev, struct udma_jfc *jfc)
+static int udma_get_stars_jfc_buf(struct udma_dev *dev, struct udma_jfc *jfc, uint32_t mode)
 {
-	struct udma_ex_jfc_addr *jfc_addr = &dev->cq_addr_array[jfc->mode];
+	struct udma_ex_jfc_addr *jfc_addr = &dev->cq_addr_array[mode];
 	int ret;
 
 	jfc->tid = dev->tid;
@@ -370,7 +410,10 @@ static int udma_create_stars_jfc(struct udma_dev *dev,
 		goto err_store_jfcn;
 	}
 
-	ret = udma_get_stars_jfc_buf(dev, jfc);
+	if (jfc->mode == UDMA_LOCK_CCU_JFC_TYPE)
+		ret = udma_get_stars_jfc_buf(dev, jfc, UDMA_CCU_JFC_TYPE);
+	else
+		ret = udma_get_stars_jfc_buf(dev, jfc, jfc->mode);
 	if (ret)
 		goto err_alloc_cqc;
 
@@ -584,7 +627,8 @@ struct ubcore_jfc *udma_create_jfc(struct ubcore_device *ubcore_dev,
 	if (ret)
 		goto err_get_cmd;
 
-	if (jfc->mode == UDMA_STARS_JFC_TYPE || jfc->mode == UDMA_CCU_JFC_TYPE) {
+	if (jfc->mode == UDMA_STARS_JFC_TYPE || jfc->mode == UDMA_CCU_JFC_TYPE ||
+	    jfc->mode == UDMA_LOCK_CCU_JFC_TYPE) {
 		ret = udma_create_stars_jfc(dev, jfc, cfg, udata, &ucmd);
 		if (ret)
 			goto err_get_cmd;

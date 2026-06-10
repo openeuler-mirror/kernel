@@ -61,7 +61,7 @@ static void udma_u_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq
 
 void udma_free_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq)
 {
-	if (sq->buf.kva) {
+	if (is_support_ccu_jetty(dev, sq) || sq->buf.kva) {
 		if (!sq->cstm)
 			udma_k_free_buf(dev, &sq->buf, true);
 		kfree(sq->wrid);
@@ -253,6 +253,7 @@ int udma_alloc_u_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 			struct ubcore_jfs_cfg *jfs_cfg)
 {
+	uint32_t jetty_depth = jfs_cfg->depth;
 	uint32_t wqe_bb_depth;
 	uint32_t sqe_bb_cnt;
 	uint32_t size;
@@ -271,7 +272,14 @@ int udma_alloc_k_sq_buf(struct udma_dev *dev, struct udma_jetty_queue *sq,
 	sq->sqe_bb_cnt = sqe_bb_cnt > (uint32_t)MAX_WQEBB_NUM ? (uint32_t)MAX_WQEBB_NUM :
 			 sqe_bb_cnt;
 
-	wqe_bb_depth = roundup_pow_of_two(sq->sqe_bb_cnt * jfs_cfg->depth);
+	if (is_support_ccu_jetty(dev, sq)) {
+		sq->sqe_bb_cnt = UDMA_CCU_SQE_BB_CNT;
+		jetty_depth = (1 << dev->caps.lock_buf_bb_shift);
+		sq->buf.addr = (((uint64_t)sq->buf.addr) << SQE_VA_L_OFFSET);
+		sq->buf.kva = (void *)(uintptr_t)sq->buf.addr;
+	}
+
+	wqe_bb_depth = roundup_pow_of_two(sq->sqe_bb_cnt * jetty_depth);
 	sq->buf.entry_size = UDMA_JFS_WQEBB_SIZE;
 	size = ALIGN(wqe_bb_depth * sq->buf.entry_size, UDMA_HW_PAGE_SIZE);
 	sq->buf.entry_cnt = size >> WQE_BB_SIZE_SHIFT;
@@ -414,7 +422,7 @@ void udma_dfx_store_jfs_id(struct udma_dev *udma_dev, struct udma_jfs *udma_jfs)
 }
 
 static int udma_create_hw_jfs_ctx(struct udma_dev *dev, struct udma_jfs *jfs,
-				    struct ubcore_jfs_cfg *cfg)
+				  struct ubcore_jfs_cfg *cfg)
 {
 	struct ubase_mbx_attr attr = {};
 	struct udma_jetty_ctx ctx = {};

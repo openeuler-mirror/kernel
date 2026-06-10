@@ -48,11 +48,19 @@ struct udma_jfc_cfg_ex {
 	ubcore_event_callback_t jfae_handler;
 };
 
+struct udma_lock_buffer_jetty_cfg {
+	struct ubcore_jetty_cfg base_cfg;
+	struct ubcore_udata udata;
+	bool jetty_type; /* 1:wqe lock buffer jetty, 0:normal jetty, default: 1 */
+	uint32_t buf_idx; /* buf offset address idx */
+};
+
 enum udma_jfc_type {
 	UDMA_NORMAL_JFC_TYPE,
 	UDMA_STARS_JFC_TYPE,
 	UDMA_CCU_JFC_TYPE,
 	UDMA_KERNEL_STARS_JFC_TYPE,
+	UDMA_LOCK_CCU_JFC_TYPE,
 	UDMA_UCP_JFC_TYPE,
 	UDMA_JFC_TYPE_NUM,
 };
@@ -200,6 +208,8 @@ enum udma_user_ctl_opcode {
 	UDMA_USER_CTL_QUERY_UBMEM_INFO,
 	UDMA_USER_CTL_QUERY_PAIR_DEVNUM,
 	UDMA_USER_CTL_QUERY_HOST_UBMEM_INFO,
+	UDMA_USER_CTL_CREATE_LOCK_BUFFER_JETTY_EX,
+	UDMA_USER_CTL_DELETE_LOCK_BUFFER_JETTY_EX,
 	UDMA_USER_CTL_MAX,
 };
 
