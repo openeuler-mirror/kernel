@@ -1299,16 +1299,24 @@ union perf_mem_data_src {
 			mem_snoopx  :  2, /* Snoop mode, ext */
 			mem_blk     :  3, /* Access blocked */
 			mem_hops    :  3, /* Hop level */
+#ifdef __GENKSYMS__
+			mem_rsvd    : 18;
+#else
 			mem_region  :  5, /* cache/memory regions */
 			mem_rsvd    : 13;
+#endif
 	};
 };
 #elif defined(__BIG_ENDIAN_BITFIELD)
 union perf_mem_data_src {
 	__u64 val;
 	struct {
+#ifdef __GENKSYMS__
+		__u64	mem_rsvd    : 18,
+#else
 		__u64	mem_rsvd    : 13,
 			mem_region  :  5, /* cache/memory regions */
+#endif
 			mem_hops    :  3, /* Hop level */
 			mem_blk     :  3, /* Access blocked */
 			mem_snoopx  :  2, /* Snoop mode, ext */
