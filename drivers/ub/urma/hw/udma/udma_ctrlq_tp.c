@@ -110,7 +110,8 @@ void udma_tp_ae_work(struct work_struct *work)
 	udma_ctrlq_set_tp_msg(&msg, (void *)&tp_cfg_req, sizeof(tp_cfg_req), NULL, 0);
 	ret = ubase_ctrlq_send_msg(udev->comdev.adev, &msg);
 	if (ret)
-		dev_err(udev->dev, "tp ae work ctrlq tp %u failed, ret %d.\n", ae_work->tpn, ret);
+		dev_err(udev->dev, "TP asynchronous event work ctrl queue TP %u failed, ret %d.\n",
+			ae_work->tpn, ret);
 
 	kfree(ae_work);
 }

@@ -410,21 +410,6 @@ debug_switch
 
 **Default value**: false
 
-
-well_known_jetty_pgsz_check
----------------------------
-
-``well_known_jetty_pgsz_check`` Whether check the system page size
-In this function, udma driver will check page size and hardware
-page size is equal.
-
-**Parameter Values:**
-
-* false: Not use check function.
-* true: Use check function.
-
-**Default value**: true
-
 Support
 =======
 

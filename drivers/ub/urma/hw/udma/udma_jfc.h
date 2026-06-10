@@ -24,6 +24,9 @@
 
 #define UDMA_INIT_JFC_ID -1
 
+#define UDMA_CCU_SWITCH 1
+#define UDMA_CCU_OTHER_DIE 1
+
 enum udma_jfc_state {
 	UDMA_JFC_STATE_INVALID,
 	UDMA_JFC_STATE_VALID,
@@ -72,6 +75,8 @@ struct udma_jfc {
 	uint64_t stars_chnl_addr;
 	bool stars_en;
 	uint32_t cq_shift;
+	bool ccu_en;
+	uint32_t ccu_cqe_flag;
 	enum udma_jfc_bind_type bind_type;
 	refcount_t bind_refcount;
 	bool dtu_en;
@@ -138,7 +143,9 @@ struct udma_jfc_ctx {
 	/* DW15 */
 	uint32_t int_vector : 16;
 	uint32_t stars_en : 1;
-	uint32_t rsv6 : 15;
+	uint32_t ccu_en : 1;
+	uint32_t ccucqe_other_die : 1;
+	uint32_t rsv6 : 13;
 	/* DW16 */
 	uint32_t poll : 1;
 	uint32_t cqe_report_timer : 24;

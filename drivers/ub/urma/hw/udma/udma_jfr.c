@@ -40,7 +40,7 @@ static int udma_verify_jfr_param(struct udma_dev *dev,
 	}
 
 	if (cfg->flag.bs.token_policy > UBCORE_TOKEN_PLAIN_TEXT) {
-		dev_err(dev->dev, "jfr key policy = %d is not supported now.\n",
+		dev_err(dev->dev, "JFR key policy = %d is not supported now.\n",
 			cfg->flag.bs.token_policy);
 		return -EINVAL;
 	}
