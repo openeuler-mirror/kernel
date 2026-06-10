@@ -502,6 +502,35 @@ static int udma_jetty_copy_resp(struct udma_dev *dev, struct udma_jetty *jetty,
 	return 0;
 }
 
+static void udma_set_k_jetty_type(struct udma_dev *udma_dev, struct udma_jetty *jetty,
+				  struct ubcore_jetty_cfg *cfg, struct ubcore_udata *udata)
+{
+	if (udata || !cfg->id)
+		return;
+
+	if (CFGID_CHECK(cfg->id, udma_dev->caps.ccu_jetty)) {
+		jetty->sq.jetty_type = UDMA_CCU_JETTY_TYPE;
+		return;
+	}
+
+	if (CFGID_CHECK(cfg->id, udma_dev->caps.stars_jetty)) {
+		jetty->sq.jetty_type = UDMA_CACHE_LOCK_DWQE_JETTY_TYPE;
+		return;
+	}
+
+	if (CFGID_CHECK(cfg->id, udma_dev->caps.user_ctrl_normal_jetty)) {
+		jetty->sq.jetty_type = UDMA_NORMAL_JETTY_TYPE;
+		return;
+	}
+
+	if (CFGID_CHECK(cfg->id, udma_dev->caps.public_jetty) ||
+	    CFGID_CHECK(cfg->id, udma_dev->caps.hdc_jetty) ||
+	    CFGID_CHECK(cfg->id, udma_dev->caps.jetty)) {
+		jetty->sq.jetty_type = UDMA_URMA_NORMAL_JETTY_TYPE;
+		return;
+	}
+}
+
 static int
 udma_alloc_jetty_sq(struct udma_dev *udma_dev, struct udma_jetty *jetty,
 		    struct ubcore_jetty_cfg *cfg, struct ubcore_udata *udata)
@@ -515,6 +544,8 @@ udma_alloc_jetty_sq(struct udma_dev *udma_dev, struct udma_jetty *jetty,
 			"udma get user jetty ucmd failed, ret = %d.\n", ret);
 		return ret;
 	}
+
+	udma_set_k_jetty_type(udma_dev, jetty, cfg, udata);
 
 	ret = alloc_jetty_id(udma_dev, &jetty->sq, cfg->id, cfg->jetty_grp);
 	if (ret) {
