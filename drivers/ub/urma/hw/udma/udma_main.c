@@ -561,6 +561,7 @@ static void udma_get_jetty_id_range(struct udma_dev *udma_dev,
 	udma_dev->caps.ccu_jetty.start_idx = cmd->ccu_jetty_start;
 	udma_dev->caps.ccu_jetty.max_cnt = cmd->ccu_jetty_num;
 	udma_dev->caps.ccu_jetty.next_idx = udma_dev->caps.ccu_jetty.start_idx;
+	udma_dev->caps.lock_buf_bb_shift = cmd->lock_buf_bb_shift;
 
 	udma_dev->caps.hdc_jetty.start_idx = cmd->drv_jetty_start;
 	udma_dev->caps.hdc_jetty.max_cnt = cmd->drv_jetty_num;
@@ -890,6 +891,11 @@ static int udma_set_hw_caps(struct udma_dev *udma_dev)
 	ret = udma_query_wqebb_va(udma_dev);
 	if (ret)
 		return ret;
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_WQE_LOCK_BUFFER_EN))
+		udma_dev->caps.lock_buffer_en = true;
+
+	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_SUPPORT_JFC_CTX_CCU_PROPERTY))
+		udma_dev->caps.ccu_jfc_property_en = true;
 
 	if (!!(udma_dev->caps.feature & UDMA_CAP_FEATURE_NOT_SHARE_JFC))
 		udma_dev->caps.no_share_jfc_en = true;
@@ -921,7 +927,7 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 	if (!ubase_adev_ubl_supported(udma_dev->comdev.adev)) {
 		adev_com = ubase_get_mdrv_data(adev);
 		if (adev_com == NULL) {
-			dev_err(&adev->dev, "Failed to get mdrv data from ubase.\n");
+			dev_err(&adev->dev, "failed to get mdrv data from ubase.\n");
 			return -EINVAL;
 		}
 		udma_dev->comdev.netdev = adev_com->netdev;
@@ -940,14 +946,14 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 
 	ret = udma_set_hw_caps(udma_dev);
 	if (ret) {
-		dev_err(udma_dev->dev, "failed to query hardware capabilities, ret = %d\n", ret);
+		dev_err(udma_dev->dev, "failed to query hardware capabilities, ret = %d.\n", ret);
 		return ret;
 	}
 
 	ret = udma_init_tables(udma_dev);
 	if (ret) {
 		dev_err(udma_dev->dev,
-			"Failed to init tables, ret = %d\n", ret);
+			"failed to init tables, ret = %d.\n", ret);
 		return ret;
 	}
 
@@ -964,7 +970,7 @@ static int udma_init_dev_param(struct udma_dev *udma_dev)
 		ret = udma_init_mbox_over_cmdq(udma_dev);
 		if (ret) {
 			dev_err(udma_dev->dev,
-				"Failed to init mbox over cmdq, ret = %d\n", ret);
+				"failed to init mbox over cmdq, ret = %d.\n", ret);
 			udma_destroy_hugepage(udma_dev);
 
 			mutex_destroy(&udma_dev->db_mutex);

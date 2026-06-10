@@ -38,6 +38,9 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.sq_reserved = dev->sq_reserved_info.sq_reserved;
 	resp.sq_reserved_va = dev->sq_reserved_info.va_start;
 	resp.sq_reserved_len = dev->sq_reserved_info.va_size;
+	resp.lock_buffer_en = dev->caps.lock_buffer_en;
+	resp.ccu_jfc_property_en = dev->caps.ccu_jfc_property_en;
+	resp.lock_buf_bb_shift = dev->caps.lock_buf_bb_shift;
 	resp.atomic_add_en = dev->caps.atomic_add_en;
 	resp.u_dtu_enable = dtu_en;
 	resp.dtu_va_base = dev->dtu_info.va_base;

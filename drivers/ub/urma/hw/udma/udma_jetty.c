@@ -17,7 +17,6 @@
 #include "udma_jetty.h"
 #include "udma_jetty_group.h"
 
-bool well_known_jetty_pgsz_check = true;
 
 const char *state_name[] = {
 	"RESET",
@@ -33,6 +32,24 @@ const char *to_state_name(enum ubcore_jetty_state state)
 		return state_name[STATE_NUM];
 
 	return state_name[state];
+}
+
+bool is_support_ccu_jetty(struct udma_dev *dev, struct udma_jetty_queue *sq)
+{
+	if (!dev->caps.lock_buffer_en)
+		return false;
+
+	if (!CFGID_CHECK(sq->id, dev->caps.ccu_jetty))
+		return false;
+
+	if (!sq->is_jetty)
+		return false;
+
+	if (sq->jetty_type == UDMA_LOCK_BUFFER_JETTY_TYPE ||
+	    sq->jetty_type == UDMA_URMA_EX_JETTY_TYPE || sq->jetty_type == UDMA_CCU_JETTY_TYPE)
+		return true;
+
+	return false;
 }
 
 static int udma_get_user_jetty_cmd(struct udma_dev *dev, struct udma_jetty *jetty,
@@ -101,6 +118,7 @@ static int udma_get_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 		jetty->jetty_addr = (uintptr_t)&jetty->sq;
 
 	jetty->jfr = to_udma_jfr(cfg->jfr);
+	jetty->sq.is_jetty = true;
 
 	ret = udata ? udma_alloc_u_sq_buf(dev, &jetty->sq, ucmd) :
 		udma_alloc_k_sq_buf(dev, &jetty->sq, &jfs_cfg);
@@ -109,7 +127,6 @@ static int udma_get_jetty_buf(struct udma_dev *dev, struct udma_jetty *jetty,
 		return ret;
 	}
 	jetty->sq.trans_mode = jfs_cfg.trans_mode;
-	jetty->sq.is_jetty = true;
 
 	return ret;
 }
@@ -167,6 +184,8 @@ static void udma_init_jettyc(struct udma_dev *dev, struct ubcore_jetty_cfg *cfg,
 	ctx->sqe_pld_tokenid = jetty->sq.tid & (uint32_t)SQE_PLD_TOKEN_ID_MASK;
 	ctx->next_send_ssn = get_random_u16();
 	ctx->next_rcv_ssn = ctx->next_send_ssn;
+	ctx->wqe_lock_buffer_en = is_support_ccu_jetty(dev, &jetty->sq);
+
 	if (!!(dev->caps.feature & UDMA_CAP_FEATURE_RC_CTP_MULTIPLE_PATH_MODE))
 		ctx->ctp_rc_mul_path_mode = cfg->flag.bs.ctp_rc_mul_path_mode;
 }
@@ -252,8 +271,6 @@ static int udma_alloc_normal_jetty_id(struct udma_dev *udma_dev, uint32_t *idx)
 	return ret;
 }
 
-#define CFGID_CHECK(a, b) ((a) >= (b).start_idx && (a) < (b).start_idx + (b).max_cnt)
-
 static int udma_verify_jetty_type_dwqe(struct udma_dev *udma_dev,
 				       uint32_t cfg_id)
 {
@@ -272,8 +289,19 @@ static int udma_verify_jetty_type_ccu(struct udma_dev *udma_dev,
 				      uint32_t cfg_id)
 {
 	if (!CFGID_CHECK(cfg_id, udma_dev->caps.ccu_jetty)) {
-		dev_err(udma_dev->dev,
-			"user id %u error, CCU start index %u count %u.\n",
+		dev_err(udma_dev->dev, "user id %u error, CCU start index %u count %u.\n",
+			cfg_id, udma_dev->caps.ccu_jetty.start_idx,
+			udma_dev->caps.ccu_jetty.max_cnt);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int udma_verify_jetty_type_lock_buffer(struct udma_dev *udma_dev, uint32_t cfg_id)
+{
+	if (!CFGID_CHECK(cfg_id, udma_dev->caps.ccu_jetty)) {
+		dev_err(udma_dev->dev, "user id %u error, lock buffer start index %u count %u.\n",
 			cfg_id, udma_dev->caps.ccu_jetty.start_idx,
 			udma_dev->caps.ccu_jetty.max_cnt);
 		return -EINVAL;
@@ -313,13 +341,6 @@ CFGID_CHECK(cfg_id, udma_dev->caps.jetty))) {
 		return -EINVAL;
 	}
 
-	if ((CFGID_CHECK(cfg_id, udma_dev->caps.public_jetty) ||
-	     CFGID_CHECK(cfg_id, udma_dev->caps.jetty)) &&
-	     well_known_jetty_pgsz_check && PAGE_SIZE != UDMA_HW_PAGE_SIZE) {
-		dev_err(udma_dev->dev, "Does not support specifying jetty id on non-4KB page systems.\n");
-		return -EINVAL;
-	}
-
 	return 0;
 }
 
@@ -338,13 +359,6 @@ static int udma_verify_jetty_type_urma_ex(struct udma_dev *udma_dev, uint32_t cf
 		return -EINVAL;
 	}
 
-	if ((CFGID_CHECK(cfg_id, udma_dev->caps.public_jetty) ||
-		CFGID_CHECK(cfg_id, udma_dev->caps.jetty)) &&
-		well_known_jetty_pgsz_check && PAGE_SIZE != UDMA_HW_PAGE_SIZE) {
-		dev_err(udma_dev->dev, "Does not support specifying jetty id on non-4KB page systems.\n");
-		return -EINVAL;
-	}
-
 	return 0;
 }
 
@@ -357,6 +371,7 @@ static int udma_verify_jetty_type(struct udma_dev *udma_dev, enum udma_jetty_typ
 		udma_verify_jetty_type_ccu,
 		udma_verify_jetty_type_normal,
 		udma_verify_jetty_type_urma_normal,
+		udma_verify_jetty_type_lock_buffer,
 		udma_verify_jetty_type_urma_ex
 	};
 
@@ -386,6 +401,9 @@ static int udma_alloc_jetty_id_own(struct udma_dev *udma_dev, uint32_t *id,
 			&udma_dev->caps.user_ctrl_normal_jetty);
 		break;
 	case UDMA_CCU_JETTY_TYPE:
+		ret = udma_alloc_jetty_id(udma_dev, id, &udma_dev->caps.ccu_jetty);
+		break;
+	case UDMA_LOCK_BUFFER_JETTY_TYPE:
 		ret = udma_alloc_jetty_id(udma_dev, id, &udma_dev->caps.ccu_jetty);
 		break;
 	default:
@@ -477,6 +495,54 @@ static void udma_dfx_store_jetty_id(struct udma_dev *udma_dev,
 	write_unlock(&udma_dev->dfx_info->jetty.rwlock);
 }
 
+void udma_free_lock_buffer_sq_buf(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty)
+{
+	if (udma_jetty->sq.buf.kva)
+		udma_jetty->sq.buf.kva = NULL;
+	udma_jetty->sq.buf.addr = 0;
+
+	kfree(udma_jetty->sq.wrid);
+	udma_jetty->sq.wrid = NULL;
+}
+
+static int udma_get_from_user_lock_buffer_sq_buf(struct udma_dev *dev,
+						 struct udma_jetty_queue *sq,
+						 struct udma_create_jetty_ucmd *ucmd)
+{
+	if (ucmd->sqe_bb_cnt == 0 || ucmd->buf_len == 0) {
+		dev_err(dev->dev, "invalid param, sqe_bb_cnt=%u, buf_len=%u.\n",
+			ucmd->sqe_bb_cnt, ucmd->buf_len);
+		return -EINVAL;
+	}
+	sq->sqe_bb_cnt = ucmd->sqe_bb_cnt;
+	sq->buf.addr = (ucmd->buf_addr << SQE_VA_L_OFFSET);
+	sq->buf.entry_cnt = ucmd->buf_len >> WQE_BB_SIZE_SHIFT;
+
+	return 0;
+}
+
+static int udma_get_user_lock_buffer_jetty_buf(struct udma_dev *dev,
+					       struct udma_jetty *jetty,
+					       struct ubcore_jetty_cfg *cfg,
+					       struct udma_create_jetty_ucmd *ucmd)
+{
+	int ret;
+
+	jetty->jfr = to_udma_jfr(cfg->jfr);
+	jetty->sq.is_jetty = true;
+
+	ret = udma_get_from_user_lock_buffer_sq_buf(dev, &jetty->sq, ucmd);
+	if (ret) {
+		dev_err(dev->dev,
+			"failed to get SQ buffer in jfs process, ret = %d.\n", ret);
+		return ret;
+	}
+
+	jetty->sq.trans_mode = cfg->trans_mode;
+
+	return ret;
+}
+
 static int udma_jetty_copy_resp(struct udma_dev *dev, struct udma_jetty *jetty,
 				struct ubcore_udata *udata)
 {
@@ -555,11 +621,16 @@ udma_alloc_jetty_sq(struct udma_dev *udma_dev, struct udma_jetty *jetty,
 	jetty->ubcore_jetty.jetty_id.id = jetty->sq.id;
 	jetty->ubcore_jetty.jetty_cfg = *cfg;
 
-	ret = udma_get_jetty_buf(udma_dev, jetty, udata, cfg, &ucmd);
-	if (ret) {
-		free_jetty_id(udma_dev, jetty, !!cfg->jetty_grp);
+	if (jetty->sq.jetty_type == UDMA_LOCK_BUFFER_JETTY_TYPE) {
+		ret = udma_get_user_lock_buffer_jetty_buf(udma_dev, jetty, cfg, &ucmd);
+		if (ret)
+			goto err_get_jetty_buf;
 		return ret;
+	} else {
+		ret = udma_get_jetty_buf(udma_dev, jetty, udata, cfg, &ucmd);
 	}
+	if (ret)
+		goto err_get_jetty_buf;
 
 	if (udata) {
 		ret = udma_jetty_copy_resp(udma_dev, jetty, udata);
@@ -571,6 +642,7 @@ udma_alloc_jetty_sq(struct udma_dev *udma_dev, struct udma_jetty *jetty,
 
 err_copy_resp:
 	udma_free_sq_buf(udma_dev, &jetty->sq);
+err_get_jetty_buf:
 	free_jetty_id(udma_dev, jetty, !!cfg->jetty_grp);
 
 	return ret;
@@ -580,7 +652,10 @@ static void udma_free_jetty_id_buf(struct udma_dev *udma_dev,
 				   struct udma_jetty *udma_jetty,
 				   struct ubcore_jetty_cfg *cfg)
 {
-	udma_free_sq_buf(udma_dev, &udma_jetty->sq);
+	if (udma_jetty->sq.jetty_type == UDMA_LOCK_BUFFER_JETTY_TYPE)
+		udma_free_lock_buffer_sq_buf(udma_dev, udma_jetty);
+	else
+		udma_free_sq_buf(udma_dev, &udma_jetty->sq);
 	free_jetty_id(udma_dev, udma_jetty, !!cfg->jetty_grp);
 }
 
@@ -654,7 +729,7 @@ err_create_hw_jetty:
 }
 
 static int udma_active_jetty_detail(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty,
-			     struct ubcore_jetty_cfg *cfg, struct ubcore_udata *udata)
+				    struct ubcore_jetty_cfg *cfg, struct ubcore_udata *udata)
 {
 	int ret;
 
@@ -938,8 +1013,10 @@ static void udma_free_jetty_detail(struct ubcore_jetty *jetty)
 	if (refcount_dec_and_test(&udma_jetty->ae_refcount))
 		complete(&udma_jetty->ae_comp);
 	wait_for_completion(&udma_jetty->ae_comp);
-
-	udma_free_sq_buf(udma_dev, &udma_jetty->sq);
+	if (udma_jetty->sq.jetty_type == UDMA_LOCK_BUFFER_JETTY_TYPE)
+		udma_free_lock_buffer_sq_buf(udma_dev, udma_jetty);
+	else
+		udma_free_sq_buf(udma_dev, &udma_jetty->sq);
 	free_jetty_id(udma_dev, udma_jetty, !!udma_jetty->sq.jetty_grp);
 }
 
@@ -1663,8 +1740,9 @@ int udma_set_jetty_field(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,
 	switch (opt) {
 	case UBCORE_JFS_SQE_BASE_ADDR:
 		in_data = *(uint64_t *)buf;
-		if (in_data == 0) {
-			dev_err(udma_dev->dev, "JFS SQE base address is null\n");
+		if (in_data == 0 && !udma_dev->caps.lock_buffer_en) {
+			dev_err(udma_dev->dev,
+				"JFS SQE base address is null and no support wqe lock buffer\n");
 			return -EINVAL;
 		}
 		sq->buf.addr = in_data;
@@ -1722,11 +1800,43 @@ int udma_set_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf,
 	return udma_set_jetty_field(udma_dev, &udma_jetty->sq, opt, buf);
 }
 
+static int
+udma_k_check_wqe_lock_buffer_jetty(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty,
+				   struct ubcore_udata *udata)
+{
+	if (udata)
+		return 0;
+
+	if (!udma_jetty->sq.cstm) {
+		dev_err(udma_dev->dev, "ccu jetty no support address not configured.\n");
+		return -EINVAL;
+	}
+
+	if (((uint64_t)udma_jetty->sq.buf.addr) >= UDMA_WQE_LOCK_BUFFER_JETTY_IDX) {
+		dev_err(udma_dev->dev, "buffer index is out of range, buffer index = %llu.\n",
+			(uint64_t)udma_jetty->sq.buf.addr);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 int udma_active_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 {
 	struct udma_dev *udma_dev = to_udma_dev(jetty->ub_dev);
 	struct udma_jetty *udma_jetty = to_udma_jetty(jetty);
 	int ret = 0;
+
+	if (udma_dev->caps.lock_buffer_en &&
+	    CFGID_CHECK(jetty->jetty_cfg.id, udma_dev->caps.ccu_jetty)) {
+		if (udma_k_check_wqe_lock_buffer_jetty(udma_dev, udma_jetty, udata))
+			return -EINVAL;
+	} else {
+		if (udma_jetty->sq.cstm && !udata && udma_jetty->sq.buf.addr == 0) {
+			dev_err(udma_dev->dev, "JFS SQE base address is null\n");
+			return -EINVAL;
+		}
+	}
 
 	if (udma_jetty_bind_jfc(udma_dev, jetty->jetty_cfg.send_jfc->id,
 				jetty->jetty_cfg.recv_jfc->id))
@@ -1903,7 +2013,3 @@ int udma_free_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 
 	return 0;
 }
-
-module_param(well_known_jetty_pgsz_check, bool, 0444);
-MODULE_PARM_DESC(well_known_jetty_pgsz_check,
-		"Whether check the system page size. default: true(true:check; false: not check)");
