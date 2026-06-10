@@ -49,6 +49,14 @@ int ubcore_perf_start_ops(struct sk_buff *skb, struct genl_info *info);
 int ubcore_perf_stop_ops(struct sk_buff *skb, struct genl_info *info);
 int ubcore_perf_show_ops(struct sk_buff *skb, struct genl_info *info);
 
+int ubcore_show_tpid_list_start(struct netlink_callback *cb);
+int ubcore_show_tpid_list_dump(struct sk_buff *skb, struct netlink_callback *cb);
+int ubcore_show_tpid_list_done(struct netlink_callback *cb);
+
+int ubcore_show_tpid_reuse_start(struct netlink_callback *cb);
+int ubcore_show_tpid_reuse_dump(struct sk_buff *skb, struct netlink_callback *cb);
+int ubcore_show_tpid_reuse_done(struct netlink_callback *cb);
+
 extern struct genl_family ubcore_genl_family;
 
 #endif // UBCORE_GENERIC_NETLINK_ADMIN_H

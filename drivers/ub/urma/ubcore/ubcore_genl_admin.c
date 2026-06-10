@@ -28,6 +28,8 @@
 #include "ubcore_main_ue_eid.h"
 #include "ubcore_genl_admin.h"
 #include "ubcore_topo_info.h"
+#include "ubcore_tp.h"
+#include "ubcore_hash_table.h"
 
 #define CB_ARGS_DEV_BUF 0
 #define CB_ARGS_CMD_TYPE 1
@@ -1089,6 +1091,449 @@ static void *ubcore_query_dev_info(struct ubcore_device *dev,
 	}
 
 	return res_buf;
+}
+
+#define CB_ARGS_REC_CTX 0
+
+enum {
+	UBCORE_TPID_DUMP_PHASE_HDR = 0,
+	UBCORE_TPID_DUMP_PHASE_AWARE,
+	UBCORE_TPID_DUMP_PHASE_UNAWARE,
+};
+
+/*
+ * Incremental dumpit cursor. Only a small fixed-size context plus at most one
+ * referenced tpid_list is kept in kernel memory at any time; one record is
+ * produced per netlink message as the netlink core re-invokes dumpit until the
+ * whole hash table has been traversed.
+ */
+struct ubcore_tpid_dump_ctx {
+	struct ubcore_device *dev; /* referenced for the whole dump */
+	uint8_t cmd;
+	bool query_tpid;
+	bool finished;
+	uint64_t tpid;
+	uint32_t bucket; /* current hash bucket */
+	uint32_t lpos; /* index within the current bucket */
+	uint32_t phase; /* current phase when streaming a tpid_list */
+	uint32_t node_idx; /* node index within the current phase */
+	uint32_t aware_cnt;
+	uint32_t unaware_cnt;
+	struct ubcore_tpid_list *cur_tl; /* referenced list being streamed */
+};
+
+static int ubcore_tpid_emit_rec(struct sk_buff *skb,
+				struct netlink_callback *cb, uint8_t cmd,
+				uint32_t type, const void *data, uint32_t len)
+{
+	void *hdr;
+
+	hdr = genlmsg_put(skb, NETLINK_CB(cb->skb).portid, cb->nlh->nlmsg_seq,
+			  &ubcore_genl_family, NLM_F_MULTI, cmd);
+	if (hdr == NULL)
+		return -EMSGSIZE;
+
+	if (nla_put_u32(skb, UBCORE_TPID_SHOW_ATTR_REC_TYPE, type) != 0 ||
+	    nla_put(skb, UBCORE_TPID_SHOW_ATTR_REC_DATA, (int)len, data) != 0) {
+		genlmsg_cancel(skb, hdr);
+		return -EMSGSIZE;
+	}
+	genlmsg_end(skb, hdr);
+	return 0;
+}
+
+/* Find and reference the (bucket, lpos) tpid_list, advancing the cursor. */
+static struct ubcore_tpid_list *ubcore_tpid_dump_find_list(
+	struct ubcore_tpid_dump_ctx *ctx)
+{
+	struct ubcore_hash_table *ht = &ctx->dev->ht[UBCORE_HT_TPID_LIST];
+	struct ubcore_tpid_list *tl;
+	struct ubcore_tpid_list *found = NULL;
+	uint32_t bucket = ctx->bucket;
+	uint32_t pos = ctx->lpos;
+
+	spin_lock(&ht->lock);
+	if (ht->head == NULL) {
+		spin_unlock(&ht->lock);
+		return NULL;
+	}
+	while (bucket < ht->p.size) {
+		uint32_t cnt = 0;
+
+		hlist_for_each_entry(tl, &ht->head[bucket], hnode) {
+			if (cnt == pos) {
+				found = tl;
+				break;
+			}
+			cnt++;
+		}
+		if (found != NULL)
+			break;
+		bucket++;
+		pos = 0;
+	}
+	if (found != NULL) {
+		ubcore_tpid_list_get(found);
+		ctx->bucket = bucket;
+		ctx->lpos = pos;
+	}
+	spin_unlock(&ht->lock);
+	return found;
+}
+
+static void ubcore_tpid_dump_count_nodes(struct ubcore_tpid_list *tl,
+					 uint32_t *aware, uint32_t *unaware)
+{
+	struct ubcore_tpid_list_node *e;
+	uint32_t a = 0;
+	uint32_t u = 0;
+
+	mutex_lock(&tl->lock);
+	list_for_each_entry(e, &tl->aware_list, node)
+		a++;
+	list_for_each_entry(e, &tl->unaware_list, node)
+		u++;
+	mutex_unlock(&tl->lock);
+	*aware = a;
+	*unaware = u;
+}
+
+static bool ubcore_tpid_dump_fill_node(struct ubcore_tpid_list *tl,
+				       struct list_head *head, uint32_t idx,
+				       struct ubcore_show_tpid_node *out)
+{
+	struct ubcore_tpid_list_node *e;
+	uint32_t cnt = 0;
+	bool ok = false;
+
+	mutex_lock(&tl->lock);
+	list_for_each_entry(e, head, node) {
+		if (cnt == idx) {
+			out->tp_handle = e->tp_info.tp_handle.value;
+			ok = true;
+			break;
+		}
+		cnt++;
+	}
+	mutex_unlock(&tl->lock);
+	return ok;
+}
+
+static void ubcore_tpid_dump_fill_hdr(struct ubcore_tpid_list *tl,
+				      struct ubcore_show_tpid_list_hdr *hdr)
+{
+	mutex_lock(&tl->lock);
+	hdr->local_eid = tl->lk.local_eid;
+	hdr->peer_eid = tl->lk.peer_eid;
+	hdr->trans_mode = (uint32_t)tl->lk.trans_mode;
+	hdr->share_mode = (uint32_t)tl->lk.share_mode;
+	hdr->tp_type = tl->lk.tp_type;
+	hdr->link_type = tl->lk.link_type;
+	hdr->acnt = tl->acnt;
+	hdr->ucnt = tl->ucnt;
+	hdr->capacity = tl->capacity;
+	hdr->ref_cnt = (uint32_t)kref_read(&tl->ref_cnt);
+	mutex_unlock(&tl->lock);
+}
+
+/* Stream the next tpid_reuse entry, one per dumpit call. */
+static int ubcore_tpid_dump_reuse(struct sk_buff *skb,
+				  struct netlink_callback *cb,
+				  struct ubcore_tpid_dump_ctx *ctx)
+{
+	struct ubcore_hash_table *ht = &ctx->dev->ht[UBCORE_HT_TPID_REUSE];
+	struct ubcore_show_tpid_reuse_entry entry = { 0 };
+	struct ubcore_tpid_reuse *reuse;
+	bool found = false;
+	uint32_t bucket = ctx->bucket;
+	uint32_t pos = ctx->lpos;
+
+	spin_lock(&ht->lock);
+	if (ht->head != NULL) {
+		while (bucket < ht->p.size) {
+			uint32_t cnt = 0;
+
+			hlist_for_each_entry(reuse, &ht->head[bucket], hnode) {
+				if (cnt == pos) {
+					entry.local_eid =
+						reuse->rk.lk.local_eid;
+					entry.peer_eid =
+						reuse->rk.lk.peer_eid;
+					entry.trans_mode = (uint32_t)
+						reuse->rk.lk.trans_mode;
+					entry.share_mode = (uint32_t)
+						reuse->rk.lk.share_mode;
+					entry.tp_type =
+						reuse->rk.lk.tp_type;
+					entry.link_type =
+						reuse->rk.lk.link_type;
+					entry.stag = reuse->rk.stag;
+					entry.dtag = reuse->rk.dtag;
+					entry.tp_handle =
+						reuse->tp_handle.value;
+					entry.reuse_state = (uint32_t)
+						reuse->reuse_state;
+					entry.ref_cnt = (uint32_t)kref_read(
+						&reuse->ref_cnt);
+					entry.use_cnt = atomic_read(
+						&reuse->use_cnt);
+					found = true;
+					break;
+				}
+				cnt++;
+			}
+			if (found)
+				break;
+			bucket++;
+			pos = 0;
+		}
+	}
+	spin_unlock(&ht->lock);
+
+	if (!found) {
+		ctx->finished = true;
+		return 0;
+	}
+
+	ctx->bucket = bucket;
+	ctx->lpos = pos + 1;
+	(void)ubcore_tpid_emit_rec(skb, cb, ctx->cmd,
+				   UBCORE_TPID_SHOW_REC_REUSE_ENTRY, &entry,
+				   sizeof(entry));
+	return (int)skb->len;
+}
+
+/* Stream the next tpid_list record (header or one node), one per dumpit call. */
+static int ubcore_tpid_dump_list(struct sk_buff *skb,
+				 struct netlink_callback *cb,
+				 struct ubcore_tpid_dump_ctx *ctx)
+{
+	struct ubcore_tpid_list *tl;
+
+	if (ctx->query_tpid) {
+		struct ubcore_show_tpid_state st = { 0 };
+		struct ubcore_tpid_state *state;
+
+		st.found = 0;
+		st.status = UBCORE_TPID_MAX;
+		state = ubcore_find_get_tp_id_state_entry(ctx->dev, ctx->tpid);
+		if (state != NULL) {
+			st.found = 1;
+			mutex_lock(&state->lock);
+			st.status = (uint32_t)state->tpid_status;
+			st.owner_type = (uint32_t)state->tp_id_owner_type;
+			st.alloced = state->alloced ? 1 : 0;
+			st.ref_cnt = (uint32_t)kref_read(&state->ref_cnt);
+			mutex_unlock(&state->lock);
+			ubcore_tpid_state_kref_put(state);
+		}
+		ctx->finished = true;
+		(void)ubcore_tpid_emit_rec(skb, cb, ctx->cmd,
+					   UBCORE_TPID_SHOW_REC_TPID_STATE,
+					   &st, sizeof(st));
+		return (int)skb->len;
+	}
+
+	while (true) {
+		if (ctx->cur_tl == NULL) {
+			tl = ubcore_tpid_dump_find_list(ctx);
+			if (tl == NULL) {
+				ctx->finished = true;
+				return 0;
+			}
+			ctx->cur_tl = tl;
+			ctx->phase = UBCORE_TPID_DUMP_PHASE_HDR;
+			ctx->node_idx = 0;
+			ubcore_tpid_dump_count_nodes(tl, &ctx->aware_cnt,
+						     &ctx->unaware_cnt);
+		}
+		tl = ctx->cur_tl;
+
+		if (ctx->phase == UBCORE_TPID_DUMP_PHASE_HDR) {
+			struct ubcore_show_tpid_list_hdr hdr = { 0 };
+
+			ubcore_tpid_dump_fill_hdr(tl, &hdr);
+			hdr.aware_node_cnt = ctx->aware_cnt;
+			hdr.unaware_node_cnt = ctx->unaware_cnt;
+			ctx->phase = UBCORE_TPID_DUMP_PHASE_AWARE;
+			ctx->node_idx = 0;
+			(void)ubcore_tpid_emit_rec(
+				skb, cb, ctx->cmd,
+				UBCORE_TPID_SHOW_REC_LIST_HDR, &hdr,
+				sizeof(hdr));
+			return (int)skb->len;
+		}
+
+		if (ctx->phase == UBCORE_TPID_DUMP_PHASE_AWARE) {
+			struct ubcore_show_tpid_node node = { 0 };
+
+			if (ctx->node_idx < ctx->aware_cnt &&
+			    ubcore_tpid_dump_fill_node(tl,
+						       &tl->aware_list,
+						       ctx->node_idx,
+						       &node)) {
+				ctx->node_idx++;
+				(void)ubcore_tpid_emit_rec(
+					skb, cb, ctx->cmd,
+					UBCORE_TPID_SHOW_REC_AWARE_NODE,
+					&node, sizeof(node));
+				return (int)skb->len;
+			}
+			ctx->phase = UBCORE_TPID_DUMP_PHASE_UNAWARE;
+			ctx->node_idx = 0;
+			continue;
+		}
+
+		/* UBCORE_TPID_DUMP_PHASE_UNAWARE */
+		{
+			struct ubcore_show_tpid_node node = { 0 };
+
+			if (ctx->node_idx < ctx->unaware_cnt &&
+			    ubcore_tpid_dump_fill_node(tl,
+						       &tl->unaware_list,
+						       ctx->node_idx,
+						       &node)) {
+				ctx->node_idx++;
+				(void)ubcore_tpid_emit_rec(
+					skb, cb, ctx->cmd,
+					UBCORE_TPID_SHOW_REC_UNAWARE_NODE,
+					&node, sizeof(node));
+				return (int)skb->len;
+			}
+			ubcore_tpid_list_kref_put(tl);
+			ctx->cur_tl = NULL;
+			ctx->lpos++;
+		}
+	}
+}
+
+static int ubcore_tpid_show_common_dump(struct sk_buff *skb,
+					struct netlink_callback *cb)
+{
+	struct ubcore_tpid_dump_ctx *ctx =
+		(struct ubcore_tpid_dump_ctx *)cb->args[CB_ARGS_REC_CTX];
+
+	if (ctx == NULL || ctx->finished)
+		return 0;
+
+	if (ctx->cmd == UBCORE_CMD_SHOW_TPID_REUSE)
+		return ubcore_tpid_dump_reuse(skb, cb, ctx);
+
+	return ubcore_tpid_dump_list(skb, cb, ctx);
+}
+
+static int ubcore_tpid_show_common_done(struct netlink_callback *cb)
+{
+	struct ubcore_tpid_dump_ctx *ctx =
+		(struct ubcore_tpid_dump_ctx *)cb->args[CB_ARGS_REC_CTX];
+
+	if (ctx != NULL) {
+		if (ctx->cur_tl != NULL)
+			ubcore_tpid_list_kref_put(ctx->cur_tl);
+		if (ctx->dev != NULL)
+			ubcore_put_device(ctx->dev);
+		kfree(ctx);
+	}
+	cb->args[CB_ARGS_REC_CTX] = 0;
+	return 0;
+}
+
+int ubcore_show_tpid_list_start(struct netlink_callback *cb)
+{
+	struct nlattr **attrs = genl_dumpit_info(cb)->info.attrs;
+	struct ubcore_cmd_show_tpid_list arg = { 0 };
+	struct ubcore_tpid_dump_ctx *ctx;
+	struct ubcore_device *dev;
+	uint64_t args_addr;
+	int ret;
+
+	if (!attrs[UBCORE_HDR_ARGS_LEN] || !attrs[UBCORE_HDR_ARGS_ADDR])
+		return -EINVAL;
+
+	args_addr = nla_get_u64(attrs[UBCORE_HDR_ARGS_ADDR]);
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)args_addr,
+				    sizeof(arg));
+	if (ret != 0)
+		return -EPERM;
+
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
+	if (dev == NULL) {
+		ubcore_log_err("find dev failed, dev_name: %s.\n",
+			       arg.in.dev_name);
+		return -EINVAL;
+	}
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (ctx == NULL) {
+		ubcore_put_device(dev);
+		return -ENOMEM;
+	}
+	ctx->dev = dev; /* released in done */
+	ctx->cmd = UBCORE_CMD_SHOW_TPID_LIST;
+	ctx->query_tpid = (arg.in.query_tpid != 0);
+	ctx->tpid = arg.in.tpid;
+
+	cb->args[CB_ARGS_REC_CTX] = (long)ctx;
+	return 0;
+}
+
+int ubcore_show_tpid_list_dump(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	return ubcore_tpid_show_common_dump(skb, cb);
+}
+
+int ubcore_show_tpid_list_done(struct netlink_callback *cb)
+{
+	return ubcore_tpid_show_common_done(cb);
+}
+
+int ubcore_show_tpid_reuse_start(struct netlink_callback *cb)
+{
+	struct nlattr **attrs = genl_dumpit_info(cb)->info.attrs;
+	struct ubcore_cmd_show_tpid_reuse arg = { 0 };
+	struct ubcore_tpid_dump_ctx *ctx;
+	struct ubcore_device *dev;
+	uint64_t args_addr;
+	int ret;
+
+	if (!attrs[UBCORE_HDR_ARGS_LEN] || !attrs[UBCORE_HDR_ARGS_ADDR])
+		return -EINVAL;
+
+	args_addr = nla_get_u64(attrs[UBCORE_HDR_ARGS_ADDR]);
+	ret = ubcore_copy_from_user(&arg, (void __user *)(uintptr_t)args_addr,
+				    sizeof(arg));
+	if (ret != 0)
+		return -EPERM;
+
+	arg.in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
+	dev = ubcore_find_device_with_name(arg.in.dev_name);
+	if (dev == NULL) {
+		ubcore_log_err("find dev failed, dev_name: %s.\n",
+			       arg.in.dev_name);
+		return -EINVAL;
+	}
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (ctx == NULL) {
+		ubcore_put_device(dev);
+		return -ENOMEM;
+	}
+	ctx->dev = dev; /* released in done */
+	ctx->cmd = UBCORE_CMD_SHOW_TPID_REUSE;
+
+	cb->args[CB_ARGS_REC_CTX] = (long)ctx;
+	return 0;
+}
+
+int ubcore_show_tpid_reuse_dump(struct sk_buff *skb, struct netlink_callback *cb)
+{
+	return ubcore_tpid_show_common_dump(skb, cb);
+}
+
+int ubcore_show_tpid_reuse_done(struct netlink_callback *cb)
+{
+	return ubcore_tpid_show_common_done(cb);
 }
 
 int ubcore_query_res_start(struct netlink_callback *cb)
