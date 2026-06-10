@@ -7,6 +7,7 @@
 #include <linux/platform_device.h>
 #include <linux/preempt.h>
 #include <linux/bitops.h>
+#include <linux/ummu_core.h>
 
 #include "trace/trace.h"
 #include "ummu.h"
@@ -204,22 +205,17 @@ void ummu_tlbi_context(void *cookie)
 void ummu_tlbi_walk(unsigned long iova, size_t size, size_t granule,
 		    void *cookie)
 {
-	struct ummu_domain *domain = (struct ummu_domain *)cookie;
-	struct ummu_tlb_range range = {
-		.iova = iova,
-		.size = size,
-		.granule = granule,
-	};
+	struct ummu_domain *u_domain = (struct ummu_domain *)cookie;
 
-	ummu_tlbi_range(&range, false, domain);
+	ummu_core_tlb_inv_walk(u_domain->domain, iova, size, granule);
 }
 
 void ummu_tlbi_page(struct iommu_iotlb_gather *gather, unsigned long iova,
 		    size_t granule, void *cookie)
 {
-	struct ummu_domain *domain = (struct ummu_domain *)cookie;
+	struct ummu_domain *u_domain = (struct ummu_domain *)cookie;
 
-	iommu_iotlb_gather_add_page(&domain->base_domain.domain, gather, iova, granule);
+	iommu_iotlb_gather_add_page(u_domain->domain, gather, iova, granule);
 }
 
 void ummu_iotlb_sync(struct iommu_domain *domain,
@@ -235,7 +231,7 @@ void ummu_iotlb_sync(struct iommu_domain *domain,
 	ummu_tlbi_range(&range, true, u_domain);
 }
 
-void ummu_non_agent_iotlb_sync(struct iommu_domain *domain,
+void ummu_device_tlb_inv_walk(struct iommu_domain *domain,
 			       struct iommu_iotlb_gather *gather)
 {
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
@@ -261,6 +257,14 @@ void ummu_flush_iotlb_all(struct iommu_domain *domain)
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
 
 	ummu_tlbi_context(u_domain);
+}
+
+void ummu_sync_iommu_domain(struct ummu_base_domain *base_domain,
+			    struct iommu_domain *domain)
+{
+	struct ummu_domain *u_domain = to_ummu_domain(&base_domain->domain);
+
+	u_domain->domain = domain;
 }
 
 void ummu_init_flush_iotlb(struct ummu_device *ummu)
