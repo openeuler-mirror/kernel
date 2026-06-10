@@ -16,6 +16,7 @@
 #include <linux/ctype.h>
 #include <linux/version.h>
 #include <ub/urma/ubcore_api.h>
+#include <ub/urma/ubcore_perf.h>
 #include "ubcore_msg.h"
 #include "ubcore_cmd.h"
 #include "ubcore_device.h"
@@ -48,6 +49,16 @@ static const struct nla_policy ubcore_policy[NUM_UBCORE_ATTR] = {
 	[UBCORE_ATTR_EID_LIST] = { .type = NLA_BINARY },
 	[UBCORE_ATTR_STATUS] = { .type = NLA_S32 },
 	[UBCORE_ATTR_EID_NS_MODE] = { .type = NLA_U8 },
+	[UBCORE_ATTR_SL] = { .type = NLA_U32 },
+	[UBCORE_ATTR_PRIORITY] = { .type = NLA_U32 },
+	[UBCORE_ATTR_PERF_STAT] = { .type = NLA_BINARY,
+				     .len = sizeof(struct ubcore_latency_stat) },
+	[UBCORE_ATTR_TOOL_QUERY_KEY] = { .type = NLA_U32 },
+	[UBCORE_ATTR_TOOL_QUERY_KEY_TYPE] = { .type = NLA_U32 },
+	[UBCORE_ATTR_TOOL_QUERY_KEY_EXT] = { .type = NLA_U32 },
+	[UBCORE_ATTR_TOOL_QUERY_KEY_CNT] = { .type = NLA_U32 },
+	[UBCORE_ATTR_STATS] = { .type = NLA_BINARY,
+				     .len = sizeof(struct ubcore_stats) }
 };
 
 static const struct genl_ops ubcore_genl_ops[] = {
