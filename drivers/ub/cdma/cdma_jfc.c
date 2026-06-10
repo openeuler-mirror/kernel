@@ -280,7 +280,7 @@ static int cdma_destroy_and_flush_jfc(struct cdma_dev *cdev,
 		msleep(1 << wait_times);
 		wait_times++;
 	}
-	dev_err(cdev->dev, "jfc flush time out, id = %u\n", jfcn);
+	dev_err(cdev->dev, "jfc flush timeout, id = %u\n", jfcn);
 
 	return -ETIMEDOUT;
 }
@@ -329,10 +329,10 @@ static enum jfc_poll_state cdma_get_cr_status(u8 src_status,
 					      u8 substatus,
 					      enum dma_cr_status *dst_status)
 {
-struct cdma_cqe_status {
-	bool is_valid;
-	enum dma_cr_status cr_status;
-};
+	struct cdma_cqe_status {
+		bool is_valid;
+		enum dma_cr_status cr_status;
+	};
 
 	static struct cdma_cqe_status map[CDMA_CQE_STATUS_NUM][CDMA_CQE_SUB_STATUS_NUM] = {
 		{{true, DMA_CR_SUCCESS}, {false, DMA_CR_SUCCESS}, {false, DMA_CR_SUCCESS},
