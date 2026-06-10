@@ -48,6 +48,10 @@
 
 #define HIRAID_DEV_INFO_FLAG_VALID(flag) ((flag) & 0x01)
 #define HIRAID_DEV_INFO_FLAG_CHANGE(flag) ((flag) & 0x02)
+#define HIRAID_DEV_INFO_FLAG_DEV_MAGIC_DEV(flag) ((flag) >> 2)
+#define HIRAID_DEV_INFO_FLAG_DELETE_OR_ADD(flag, org_flag) \
+	(HIRAID_DEV_INFO_FLAG_DEV_MAGIC_DEV(flag) != \
+	HIRAID_DEV_INFO_FLAG_DEV_MAGIC_DEV(org_flag) ? 1 : 0)
 
 #define HIRAID_CAP_MQES(cap) ((cap) & 0xffff)
 #define HIRAID_CAP_STRIDE(cap) (((cap) >> 32) & 0xf)
@@ -76,6 +80,15 @@
 #define HIRAID_SERVER_DEVICE_RAID_DID	0x3758
 #define HIRAID_SERVER_DEVICE_RAIDS_DID	0x38D8
 
+#define HIRAID_SCSI_VPD_LEN SCSI_DEFAULT_VPD_LEN
+#define SCSI_RSVD_INIT_SHIFT 0XFC
+#define NCQ_PRIO_SUPPORT_BYTE 213
+#define VPD_NCQ_PRIO_SUPPORT_BIT 4
+
+#define HIRAID_CAP_CAC_STRIDE 8
+
+#define HIRAID_MAX_PD_NUM  (40 + 1)
+#define HIRAID_MAX_STREAM_NUM  8
 
 enum {
 	HIRAID_SC_SUCCESS = 0x0,
@@ -91,6 +104,7 @@ enum {
 
 enum {
 	HIRAID_REG_CAP  = 0x0000,
+	HIRAID_REG_VS   = 0x0008,
 	HIRAID_REG_CC   = 0x0014,
 	HIRAID_REG_CSTS = 0x001c,
 	HIRAID_REG_AQA  = 0x0024,
@@ -237,6 +251,20 @@ enum {
 	DISPATCH_BY_DISK,
 };
 
+enum hiraid_stream_type {
+	HIRAID_STREAM_TYPE_TOTAL,
+	HIRAID_STREAM_TYPE_WRITE,
+	HIRAID_STREAM_TYPE_READ,
+	HIRAID_STREAM_TYPE_CLEAN,
+	HIRAID_STREAM_TYPE_BOTTOM
+};
+
+enum hiraid_stream_io_operation_type {
+	HIRAID_STREAM_TYPE_DELETE_SINGLE_IO = 1,
+	HIRAID_STREAM_TYPE_DELETE_SINGLE_IO_LIST,
+	HIRAID_STREAM_TYPE_DELETE_ALL_IO_LIST
+};
+
 struct hiraid_completion {
 	__le32 result;
 	union {
@@ -270,6 +298,19 @@ struct hiraid_ctrl_info {
 	__u8   sn[32];
 	__u8   fw_version[16];
 	__u8   rsvd1[4020];
+};
+
+struct hiraid_stream {
+	/* recog-window */
+	u64 stream_lba;
+	u32 stream_len;
+	u16 did;
+	u16 type;
+	/* aging ctrl */
+	int aging_credit;
+	int aging_grade;
+	u16 stream_id;
+	u16 stream_is_using;
 };
 
 struct hiraid_dev {
@@ -319,6 +360,18 @@ struct hiraid_dev {
 	u8 hdd_dispatch;
 
 	struct request_queue *bsg_queue;
+
+	u16 hiraid_stream_io_count;
+	u64 hiraid_stream_aging_time;
+	u64 hiraid_stream_sent_io_size[HIRAID_MAX_PD_NUM]
+	[HIRAID_MAX_STREAM_NUM];
+	u16 hiraid_stream_io_num_per_pd[HIRAID_MAX_PD_NUM]
+	[HIRAID_STREAM_TYPE_BOTTOM + 1];
+	spinlock_t hiraid_stream_array_lock;
+	struct hiraid_stream hiraid_stream_array[HIRAID_MAX_PD_NUM]
+	[HIRAID_MAX_STREAM_NUM];
+	struct task_struct *hiraid_stream_submit_task;
+	u64 hiraid_stream_io_last_pull_time[HIRAID_MAX_PD_NUM];
 };
 
 struct hiraid_sgl_desc {
@@ -686,6 +739,7 @@ struct hiraid_queue {
 	atomic_t inflight;
 	void *sense_buffer_virt;
 	dma_addr_t sense_buffer_phy;
+	s32 pci_irq;
 	struct dma_pool *prp_small_pool;
 };
 
@@ -757,7 +811,21 @@ struct hiraid_sdev_hostdata {
 	u8 flag;
 	u8 rg_id;
 	u8 hwq;
+	u8 sata_ncq_prio_enable;
+	u8 rsvd[3];
 	u16 pend_count;
+};
+
+struct hiraid_stream_io_list {
+	struct list_head list;
+	struct hiraid_scsi_io_cmd io_cmd;
+	struct hiraid_queue *submit_queue;
+	unsigned int sector_size;
+};
+
+struct mutex_list_head {
+	struct list_head list;
+	struct mutex lock;
 };
 
 #endif
