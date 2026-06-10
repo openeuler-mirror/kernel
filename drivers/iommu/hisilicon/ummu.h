@@ -289,6 +289,8 @@ struct ummu_device_helper {
 			      u32 next_lvl_offset);
 	void (*sync_iotlb_all)(struct iommu_domain *domain);
 	void (*sync_iotlb_all_asid)(struct iommu_domain *domain);
+	void (*sync_iommu_domain)(struct ummu_base_domain *base_domain,
+				  struct iommu_domain *domain);
 };
 
 struct ummu_device {
@@ -341,6 +343,8 @@ struct ummu_domain_cfgs {
 struct ummu_domain {
 	struct mutex init_mutex; /* protect domain resources */
 	struct ummu_base_domain base_domain;
+	/* belongs IOMMU framework, using for multi-instance traversal */
+	struct iommu_domain *domain;
 	u32 qid;
 	bool has_cfged;
 	bool dirty_tracking;

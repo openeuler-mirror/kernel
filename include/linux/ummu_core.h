@@ -317,6 +317,9 @@ struct ummu_invalid_cfg_param {
  * @tdev_support_attr: Check whether the UMMU device supports the tdev attribute.
  * @get_hw_cap: Get UMMU capability for device.
  * @dev_config: UMMU device config.
+ * @tlb_inv_walk: Synchronously invalidate all intermediate TLB state
+ *                (sometimes referred to as the "walk cache") for a virtual
+ *                address range.
  */
 struct ummu_core_ops {
 	int (*get_resource)(struct ummu_base_domain *d, struct resource_args *arg);
@@ -331,8 +334,9 @@ struct ummu_core_ops {
 	bool (*tdev_support_attr)(struct ummu_core_device *dev, struct tdev_attr *attr);
 	int (*get_hw_cap)(struct device *dev, u32 *hw_cap);
 	KABI_USE(1, int (*dev_config)(struct device *dev, int type, int command, void *data))
+	KABI_USE(2, void (*tlb_inv_walk)(struct iommu_domain *domain, unsigned long iova,
+					 size_t size, size_t granule))
 
-	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
 	KABI_RESERVE(5)
@@ -600,6 +604,17 @@ int ummu_core_fill_pages(struct iova_slot *slot, dma_addr_t iova,
  */
 int ummu_core_drain_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages);
 
+/**
+ * ummu_core_tlb_inv_walk() - Synchronously invalidate all intermediate TLB state
+ * (sometimes referred to as the "walk cache") for a virtual address range.
+ * @domain: iommu domain
+ * @iova: IOVA representing the start of the range to be flushed
+ * @size: IOVA representing the end of the range to be flushed (inclusive)
+ * @granule: The interval at which to perform the flush
+ */
+void ummu_core_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
+			    size_t size, size_t granule);
+
 #else
 static inline int ummu_core_add_eid(guid_t *guid, eid_t eid, enum eid_type type)
 {
@@ -644,6 +659,12 @@ static inline int ummu_core_drain_pages(struct iova_slot *slot, dma_addr_t iova,
 {
 	return -EOPNOTSUPP;
 }
+
+static inline void ummu_core_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
+					  size_t size, size_t granule)
+{
+}
+
 #endif /* CONFIG_UB_UMMU_CORE */
 
 #if IS_ENABLED(CONFIG_UB_UMMU_CORE_DRIVER)

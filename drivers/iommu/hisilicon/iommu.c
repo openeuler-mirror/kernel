@@ -483,6 +483,10 @@ static void ummu_release_device(struct device *dev)
 	kfree(master);
 }
 
+static void ummu_probe_finalize(struct device *dev)
+{
+}
+
 static void ummu_get_resv_regions(struct device *device, struct list_head *head)
 {
 	struct iommu_resv_region *region;
@@ -648,6 +652,7 @@ struct iommu_ops ummu_iommu_ops = {
 	.domain_alloc_sva = ummu_domain_alloc_sva,
 	.probe_device = ummu_probe_device,
 	.release_device = ummu_release_device,
+	.probe_finalize = ummu_probe_finalize,
 	.device_group = ummu_device_group,
 	.get_resv_regions = ummu_get_resv_regions,
 	.dev_enable_feat = ummu_dev_enable_feat,
@@ -857,11 +862,12 @@ const struct ummu_core_ops ummu_ops = {
 };
 
 const struct ummu_device_helper ummu_helper = {
-	.sync_tlb = ummu_non_agent_iotlb_sync,
+	.sync_tlb = ummu_device_tlb_inv_walk,
 	.sync_dom_cfg = ummu_sync_dom_cfg,
 	.alloc_domain_nested = ummu_viommu_alloc_domain_nested,
 	.cache_invalidate_user = ummu_viommu_cache_invalidate_user,
 	.plbi_free_bit = ummu_plbi_free_bit,
 	.sync_iotlb_all = ummu_flush_iotlb_all,
 	.sync_iotlb_all_asid = ummu_flush_iotlb_all_asid,
+	.sync_iommu_domain = ummu_sync_iommu_domain,
 };
