@@ -429,6 +429,9 @@ struct kvm_sync_regs {
 	struct kvm_regs regs;
 	struct kvm_sregs sregs;
 	struct kvm_vcpu_events events;
+#ifndef __GENKSYMS__
+	__u64 mmio_scratch[2];
+#endif
 };
 
 #define KVM_X86_QUIRK_LINT0_REENABLED		(1 << 0)
