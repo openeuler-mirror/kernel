@@ -194,6 +194,7 @@ EXPORT_SYMBOL(smh_message_send);
 ssize_t smh_message_get(void __user *buf)
 {
 	int ret;
+	ssize_t msg_size;
 	struct smh_msg_handler *handle = NULL;
 	struct smh_msg_handler *handle_ack;
 	DEFINE_WAIT(wait);
@@ -246,6 +247,7 @@ ssize_t smh_message_get(void __user *buf)
 		return -EAGAIN;
 	}
 
+	msg_size = sizeof(handle->msg);
 	if (handle->ack) {
 		bool found = false;
 
@@ -258,12 +260,14 @@ ssize_t smh_message_get(void __user *buf)
 		}
 		if (!found)
 			list_add_tail(&handle->ack_list, &msg_ctx.msgbuf_ack);
+		else
+			kfree(handle);
 		spin_unlock(&msg_ctx.msgbuf_ack_lock);
 	} else {
 		kfree(handle);
 	}
 
-	return sizeof(handle->msg);
+	return msg_size;
 }
 
 /**
