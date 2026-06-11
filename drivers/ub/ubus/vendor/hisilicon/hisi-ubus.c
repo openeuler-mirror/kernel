@@ -16,6 +16,7 @@ MODULE_PARM_DESC(msg_wait, "message wait timeout, default: 1024ms");
 
 #define HISI_VENDOR_ID 0xCC08
 #define HISI_UBUS_DRV_NAME "hisi_ubus"
+#define HISI_UBUS_MOD_VERSION "2.0.0"
 
 static const struct ub_manage_subsystem_ops hisi_ub_manage_subsystem_ops = {
 	.vendor = HISI_VENDOR_ID,
@@ -51,6 +52,8 @@ static int __init hisi_ubus_driver_register(struct platform_driver *drv)
 {
 	int ret;
 
+	pr_info("hisi_ubus version: %s\n", HISI_UBUS_MOD_VERSION);
+
 	ret = register_ub_manage_subsystem_ops(&hisi_ub_manage_subsystem_ops);
 	if (ret)
 		return ret;
@@ -84,3 +87,4 @@ module_driver(hisi_ubus_driver, hisi_ubus_driver_register, hisi_ubus_driver_unre
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Hisilicon UnifiedBus Manage Subsystem");
 MODULE_IMPORT_NS(UB_UBUS);
+MODULE_VERSION(HISI_UBUS_MOD_VERSION);
