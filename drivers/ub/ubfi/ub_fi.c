@@ -14,6 +14,7 @@
 
 #define ACPI_SIG_UBRT "UBRT" /* UB Root Table */
 #define UBIOS_INFO_TABLE "linux,ubios-information-table"
+#define UBFI_MOD_VERSION "2.0.0"
 
 enum firmware_report_mode firmware_mode = UNKNOWN;
 
@@ -24,7 +25,8 @@ static void ub_firmware_mode_init(void)
 	else
 		firmware_mode = ACPI;
 
-	pr_info("Starting with mode: %d\n", firmware_mode);
+	pr_info("Starting with mode: %d, version: %s\n", firmware_mode,
+		UBFI_MOD_VERSION);
 }
 
 static int ubfi_get_acpi_ubrt(void)
@@ -129,3 +131,4 @@ module_exit(ubfi_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("UnifiedBus firmware interface driver");
 MODULE_IMPORT_NS(UB_UBFI);
+MODULE_VERSION(UBFI_MOD_VERSION);

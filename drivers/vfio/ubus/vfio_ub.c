@@ -22,6 +22,8 @@
 
 #include "vfio_ub_private.h"
 
+#define VFIO_UB_MOD_VERSION "2.0.0"
+
 static const struct vfio_device_ops vfio_ub_ops = {
 	.name = "vfio-ub",
 	.init = vfio_ub_core_init_dev,
@@ -110,6 +112,8 @@ static int __init vfio_ub_init(void)
 {
 	int ret;
 
+	pr_info("vfio-ub version: %s\n", VFIO_UB_MOD_VERSION);
+
 	ret = vfio_ub_init_perm_bits();
 	if (ret)
 		return ret;
@@ -136,3 +140,4 @@ module_exit(vfio_ub_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("VFIO UB - User Level meta-driver");
 MODULE_IMPORT_NS(UB_UBUS);
+MODULE_VERSION(VFIO_UB_MOD_VERSION);

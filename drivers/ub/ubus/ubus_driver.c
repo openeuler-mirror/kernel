@@ -39,6 +39,7 @@ MODULE_PARM_DESC(msg_retry, "support msg retry: 0(disable)");
 
 DECLARE_RWSEM(ub_bus_sem);
 
+#define UBUS_MOD_VERSION "2.0.0"
 #define UBC_GUID_VENDOR_SHIFT 48
 #define UBC_GUID_VENDOR_MASK GENMASK(15, 0)
 
@@ -799,7 +800,8 @@ EXPORT_SYMBOL_GPL(unregister_ub_manage_subsystem_ops);
 
 static int __init ubus_driver_init(void)
 {
-	pr_info("Ubus driver init successfully.\n");
+	pr_info("Ubus driver init successfully, version: %s\n",
+		UBUS_MOD_VERSION);
 	return 0;
 }
 
@@ -813,3 +815,4 @@ MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("UB bus driver");
 MODULE_IMPORT_NS(UB_UBFI);
 MODULE_IMPORT_NS(UB_UBUS);
+MODULE_VERSION(UBUS_MOD_VERSION);
