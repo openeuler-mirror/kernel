@@ -21,6 +21,19 @@
 #include <linux/slab.h>
 #include <linux/blkdev.h>
 #include <trace/events/jbd2.h>
+#include <linux/moduleparam.h>
+
+/*
+ * Max number of checkpoint buffers to examine while holding j_list_lock
+ * in a single pass.
+ *
+ * Tunable at runtime via /sys/module/jbd2/parameters/shrink_batch.
+ * A value of 0 disables the per-hold cap (legacy behaviour).
+ */
+static unsigned int jbd2_shrink_batch;
+module_param_named(shrink_batch, jbd2_shrink_batch, uint, 0644);
+MODULE_PARM_DESC(shrink_batch,
+		 "Max checkpoint buffers examined per j_list_lock hold during shrink (0 = unlimited)");
 
 /*
  * Unlink a buffer from a transaction checkpoint list.
@@ -366,7 +379,8 @@ enum shrink_type {SHRINK_DESTROY, SHRINK_BUSY_STOP, SHRINK_BUSY_SKIP};
  */
 static unsigned long journal_shrink_one_cp_list(struct journal_head *jh,
 						enum shrink_type type,
-						bool *released)
+						bool *released,
+						unsigned long *scan_budget)
 {
 	struct journal_head *last_jh;
 	struct journal_head *next_jh = jh;
@@ -385,6 +399,18 @@ static unsigned long journal_shrink_one_cp_list(struct journal_head *jh,
 		if (type == SHRINK_DESTROY) {
 			ret = __jbd2_journal_remove_checkpoint(jh);
 		} else {
+			/*
+			 * Charge budget per examined buffer, not per freed one,
+			 * so a run of busy buffers (the 'continue' path below,
+			 * freeing nothing) still bounds how long one j_list_lock
+			 * hold walks the checkpoint list.
+			 */
+			if (scan_budget) {
+				if (*scan_budget == 0)
+					break;
+				(*scan_budget)--;
+			}
+
 			ret = jbd2_journal_try_remove_checkpoint(jh);
 			if (ret < 0) {
 				if (type == SHRINK_BUSY_SKIP)
@@ -424,8 +450,19 @@ unsigned long jbd2_journal_shrink_checkpoint_list(journal_t *journal,
 	tid_t tid = 0;
 	unsigned long nr_freed = 0;
 	unsigned long freed;
+	unsigned long scan_budget;
+	unsigned int batch = READ_ONCE(jbd2_shrink_batch);
 
 again:
+	/*
+	 * Reset the per-hold examination budget on every (re)acquire of
+	 * j_list_lock: one hold examines at most `batch` buffers, decoupled
+	 * from journal size, list length and busy ratio, so the lock hold
+	 * stays short even when the whole list is busy and nothing is freed.
+	 * batch == 0 means no cap, exactly the legacy behaviour.
+	 */
+	scan_budget = batch;
+
 	spin_lock(&journal->j_list_lock);
 	if (!journal->j_checkpoint_transactions) {
 		spin_unlock(&journal->j_list_lock);
@@ -454,9 +491,13 @@ again:
 		tid = transaction->t_tid;
 
 		freed = journal_shrink_one_cp_list(transaction->t_checkpoint_list,
-						   SHRINK_BUSY_SKIP, &released);
+						   SHRINK_BUSY_SKIP, &released,
+						   batch ? &scan_budget : NULL);
 		nr_freed += freed;
 		(*nr_to_scan) -= min(*nr_to_scan, freed);
+
+		if (batch && scan_budget == 0)
+			break;
 		if (*nr_to_scan == 0)
 			break;
 		if (need_resched() || spin_needbreak(&journal->j_list_lock))
@@ -507,8 +548,9 @@ void __jbd2_journal_clean_checkpoint_list(journal_t *journal, bool destroy)
 	do {
 		transaction = next_transaction;
 		next_transaction = transaction->t_cpnext;
+		/* destroy/clean path: clear everything, no scan budget */
 		journal_shrink_one_cp_list(transaction->t_checkpoint_list,
-					   type, &released);
+					   type, &released, NULL);
 		/*
 		 * This function only frees up some memory if possible so we
 		 * dont have an obligation to finish processing. Bail out if
