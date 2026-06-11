@@ -17,8 +17,8 @@ static int cdma_alloc_seg_handle(struct cdma_dev *cdev,
 	idr_preload(GFP_KERNEL);
 	spin_lock(&seg_table->lock);
 
-	handle = idr_alloc(&seg_table->idr_tbl.idr, seg, seg_table->idr_tbl.min,
-			   seg_table->idr_tbl.max, GFP_NOWAIT);
+	handle = idr_alloc(&seg_table->idr_pool.idr, seg, seg_table->idr_pool.min,
+			   seg_table->idr_pool.max, GFP_NOWAIT);
 	if (handle < 0)
 		dev_err(cdev->dev, "alloc seg handle failed\n");
 
@@ -31,7 +31,7 @@ static int cdma_alloc_seg_handle(struct cdma_dev *cdev,
 static inline void cdma_free_seg_handle(struct cdma_dev *cdev, u64 handle)
 {
 	spin_lock(&cdev->seg_table.lock);
-	idr_remove(&cdev->seg_table.idr_tbl.idr, handle);
+	idr_remove(&cdev->seg_table.idr_pool.idr, handle);
 	spin_unlock(&cdev->seg_table.lock);
 }
 

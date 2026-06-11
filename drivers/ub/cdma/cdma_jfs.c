@@ -16,6 +16,8 @@
 #include "cdma_context.h"
 #include "cdma_jfs.h"
 
+#define CDMA_DESTROY_JETTY_DELAY_TIME 100U
+
 static int cdma_get_user_jfs_cmd(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 				 struct cdma_udata *udata,
 				 struct cdma_create_jfs_ucmd *ucmd)
@@ -62,21 +64,21 @@ static int cdma_get_user_jfs_cmd(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 
 static int cdma_alloc_jfs_id(struct cdma_dev *cdev, struct cdma_jfs *jfs)
 {
-	struct cdma_idr *idr_tbl = &cdev->jfs_table.idr_tbl;
-	u32 max = idr_tbl->max;
-	u32 min = idr_tbl->min;
+	struct cdma_idr *idr_pool = &cdev->jfs_table.idr_pool;
+	u32 max = idr_pool->max;
+	u32 min = idr_pool->min;
 	int id;
 
 	idr_preload(GFP_KERNEL);
 	spin_lock(&cdev->jfs_table.lock);
-	id = idr_alloc(&idr_tbl->idr, jfs, idr_tbl->next, max, GFP_NOWAIT);
+	id = idr_alloc(&idr_pool->idr, jfs, idr_pool->next, max, GFP_NOWAIT);
 	if (id < 0) {
-		id = idr_alloc(&idr_tbl->idr, jfs, min, max, GFP_NOWAIT);
+		id = idr_alloc(&idr_pool->idr, jfs, min, max, GFP_NOWAIT);
 		if (id < 0)
 			dev_err(cdev->dev, "alloc cdma jfs id failed\n");
 	}
 
-	idr_tbl->next = (id >= 0 && id + 1 <= max) ? id + 1 : min;
+	idr_pool->next = (id >= 0 && id + 1 <= max) ? id + 1 : min;
 	spin_unlock(&cdev->jfs_table.lock);
 	idr_preload_end();
 
@@ -92,7 +94,7 @@ static inline void cdma_set_kernel_db(struct cdma_dev *cdev,
 				      struct cdma_jetty_queue *queue)
 {
 	queue->dwqe_addr =
-		cdev->k_db_base + JETTY_DSQE_OFFSET + CDMA_HW_PAGE_SIZE * queue->id;
+		cdev->db_kva_base + JETTY_DSQE_OFFSET + CDMA_HW_PAGE_SIZE * queue->id;
 	queue->db_addr = queue->dwqe_addr + CDMA_DOORBELL_OFFSET;
 }
 
@@ -248,7 +250,7 @@ static void cdma_set_query_flush_time(struct cdma_jetty_queue *sq,
 static inline void cdma_free_jfs_id(struct cdma_dev *cdev, u32 id)
 {
 	spin_lock(&cdev->jfs_table.lock);
-	idr_remove(&cdev->jfs_table.idr_tbl.idr, id);
+	idr_remove(&cdev->jfs_table.idr_pool.idr, id);
 	spin_unlock(&cdev->jfs_table.lock);
 }
 
@@ -473,7 +475,6 @@ static int cdma_modify_jfs_precondition(struct cdma_dev *cdev,
 static bool cdma_destroy_jfs_precondition(struct cdma_dev *cdev,
 					  struct cdma_jetty_queue *sq)
 {
-#define CDMA_DESTROY_JETTY_DELAY_TIME 100U
 
 	if ((sq->state == CDMA_JETTY_READY) ||
 	    (sq->state == CDMA_JETTY_SUSPENDED)) {
@@ -505,7 +506,7 @@ static int cdma_modify_and_destroy_jfs(struct cdma_dev *cdev,
 	struct cdma_jetty_queue *sq = &jfs->sq;
 	int ret = 0;
 
-	if (cdev->status == CDMA_INVALID || (ctx && ctx->invalid)) {
+	if (cdev->status == CDMA_STATUS_INVALID || (ctx && ctx->invalid)) {
 		dev_info(cdev->dev,
 			 "resetting ignore jfs ctx, id = %u\n", sq->id);
 		return 0;
@@ -541,9 +542,9 @@ int cdma_delete_jfs(struct cdma_dev *cdev, u32 jfs_id)
 	}
 
 	spin_lock(&cdev->jfs_table.lock);
-	jfs = idr_find(&cdev->jfs_table.idr_tbl.idr, jfs_id);
+	jfs = idr_find(&cdev->jfs_table.idr_pool.idr, jfs_id);
 	if (jfs)
-		idr_remove(&cdev->jfs_table.idr_tbl.idr, jfs_id);
+		idr_remove(&cdev->jfs_table.idr_pool.idr, jfs_id);
 	spin_unlock(&cdev->jfs_table.lock);
 	if (!jfs) {
 		dev_err(cdev->dev, "get jfs from table failed, id = %u\n", jfs_id);
@@ -1029,7 +1030,7 @@ static int cdma_post_sq_wr(struct cdma_dev *cdev, struct cdma_jetty_queue *sq,
 
 post_wr:
 	if (wr_cnt) {
-		if (cdev->status == CDMA_NORMAL) {
+		if (cdev->status == CDMA_STATUS_NORMAL) {
 			/* Ensure the order of write memory operations */
 			wmb();
 			if (wr_cnt == 1 && dwqe_enable && (sq->pi - sq->ci == 1))

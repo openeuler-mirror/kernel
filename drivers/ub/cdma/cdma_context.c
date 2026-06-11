@@ -14,6 +14,9 @@
 #include "cdma_segment.h"
 #include "cdma_context.h"
 
+#define CDMA_CTX_START 0
+#define CDMA_CTX_END 0xff
+
 static void cdma_ctx_handle_free(struct cdma_dev *cdev,
 				 struct cdma_context *ctx)
 {
@@ -25,8 +28,6 @@ static void cdma_ctx_handle_free(struct cdma_dev *cdev,
 static int cdma_ctx_handle_alloc(struct cdma_dev *cdev,
 				 struct cdma_context *ctx)
 {
-#define CDMA_CTX_START 0
-#define CDMA_CTX_END 0xff
 	int id;
 
 	idr_preload(GFP_KERNEL);
@@ -223,7 +224,7 @@ static void cdma_cleanup_queue_res(struct cdma_dev *cdev, struct cdma_context *c
 			cdma_delete_jfc(cdev, queue->jfc->id, NULL);
 
 		spin_lock(&queue_tbl->lock);
-		idr_remove(&queue_tbl->idr_tbl.idr, queue->id);
+		idr_remove(&queue_tbl->idr_pool.idr, queue->id);
 		spin_unlock(&queue_tbl->lock);
 		kfree(queue);
 	}

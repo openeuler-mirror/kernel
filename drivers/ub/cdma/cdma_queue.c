@@ -16,7 +16,7 @@ struct cdma_queue *cdma_find_queue(struct cdma_dev *cdev, u32 queue_id)
 	struct cdma_queue *queue;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	spin_unlock(&cdev->queue_table.lock);
 
 	return queue;
@@ -128,8 +128,8 @@ static int cdma_alloc_queue_id(struct cdma_dev *cdev, struct cdma_queue *queue)
 
 	idr_preload(GFP_KERNEL);
 	spin_lock(&queue_tbl->lock);
-	id = idr_alloc(&queue_tbl->idr_tbl.idr, queue, queue_tbl->idr_tbl.min,
-		       queue_tbl->idr_tbl.max, GFP_NOWAIT);
+	id = idr_alloc(&queue_tbl->idr_pool.idr, queue, queue_tbl->idr_pool.min,
+		       queue_tbl->idr_pool.max, GFP_NOWAIT);
 	if (id < 0)
 		dev_err(cdev->dev, "alloc queue id failed\n");
 	spin_unlock(&queue_tbl->lock);
@@ -143,7 +143,7 @@ static void cdma_delete_queue_id(struct cdma_dev *cdev, int queue_id)
 	struct cdma_table *queue_tbl = &cdev->queue_table;
 
 	spin_lock(&queue_tbl->lock);
-	idr_remove(&queue_tbl->idr_tbl.idr, queue_id);
+	idr_remove(&queue_tbl->idr_pool.idr, queue_id);
 	spin_unlock(&queue_tbl->lock);
 }
 
@@ -201,9 +201,9 @@ int cdma_delete_queue(struct cdma_dev *cdev, u32 queue_id)
 	}
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (queue)
-		idr_remove(&cdev->queue_table.idr_tbl.idr, queue_id);
+		idr_remove(&cdev->queue_table.idr_pool.idr, queue_id);
 	spin_unlock(&cdev->queue_table.lock);
 	if (!queue) {
 		dev_err(cdev->dev, "get queue from table failed, id = %u\n",

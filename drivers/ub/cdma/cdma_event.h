@@ -20,7 +20,7 @@ struct cdma_jfe {
 	struct list_head event_list;
 	wait_queue_head_t poll_wait;
 	struct fasync_struct *async_queue;
-	uint32_t event_list_count;
+	u32 event_list_count;
 };
 
 struct cdma_jfae {

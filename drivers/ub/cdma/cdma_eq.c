@@ -21,7 +21,7 @@ static int cdma_ae_jfs_check_error(struct auxiliary_device *adev,
 	struct cdma_jfs *jfs;
 
 	spin_lock(&cdev->jfs_table.lock);
-	jfs = idr_find(&cdev->jfs_table.idr_tbl.idr, jetty_id);
+	jfs = idr_find(&cdev->jfs_table.idr_pool.idr, jetty_id);
 	if (!jfs) {
 		dev_err(cdev->dev, "ae get jfs from table failed, id = %u\n",
 			jetty_id);
@@ -59,7 +59,7 @@ static int cdma_ae_jfc_check_error(struct auxiliary_device *adev,
 	unsigned long flags;
 
 	spin_lock_irqsave(&cdev->jfc_table.lock, flags);
-	jfc = idr_find(&cdev->jfc_table.idr_tbl.idr, jetty_id);
+	jfc = idr_find(&cdev->jfc_table.idr_pool.idr, jetty_id);
 	if (!jfc) {
 		dev_err(cdev->dev, "get jfc from table failed, id = %u\n",
 			jetty_id);

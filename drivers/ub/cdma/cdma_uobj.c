@@ -31,7 +31,7 @@ static inline void cdma_uobj_remove_idr(struct cdma_uobj *uobj)
 }
 
 static struct cdma_uobj *cdma_uobj_alloc(struct cdma_file *cfile,
-					 enum UOBJ_TYPE obj_type)
+					 enum cdma_uobj_type obj_type)
 {
 	struct cdma_uobj *uobj;
 
@@ -64,7 +64,7 @@ void cdma_init_uobj_idr(struct cdma_file *cfile)
 }
 
 struct cdma_uobj *cdma_uobj_create(struct cdma_file *cfile,
-				   enum UOBJ_TYPE obj_type)
+				   enum cdma_uobj_type obj_type)
 {
 	struct cdma_uobj *uobj;
 	int ret;
@@ -92,7 +92,7 @@ void cdma_uobj_delete(struct cdma_uobj *uobj)
 }
 
 struct cdma_uobj *cdma_uobj_get(struct cdma_file *cfile, int id,
-				enum UOBJ_TYPE obj_type)
+				enum cdma_uobj_type obj_type)
 {
 	struct cdma_uobj *uobj;
 

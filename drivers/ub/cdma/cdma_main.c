@@ -17,8 +17,12 @@
 #include "cdma_uobj.h"
 #include "cdma_event.h"
 
+#define CDMA_RX_MIN_SLEEP_MS	100
+#define CDMA_RX_MAX_SLEEP_MS	800
+#define CDMA_RX_SLEEP_MULT	2
+
 static bool is_rmmod;
-DEFINE_MUTEX(g_cdma_reset_mutex);
+DEFINE_MUTEX(cdma_reset_mutex);
 
 /* Enabling jfc_arm_mode will cause jfc to report cqe; otherwise, it will not. */
 uint jfc_arm_mode;
@@ -32,8 +36,8 @@ MODULE_PARM_DESC(cqe_mode, "Set cqe reporting mode, default: 1 (0:BY_COUNT, 1:BY
 
 struct class *cdma_cdev_class;
 
-typedef void (*cdma_client_handler)(struct cdma_dev *cdev,
-				    struct dma_client *client);
+typedef void (*cdma_client_handlers)(struct cdma_dev *cdev,
+				     struct dma_client *client);
 
 static void cdma_client_stop(struct cdma_dev *cdev, struct dma_client *client)
 {
@@ -67,21 +71,21 @@ static void cdma_client_add(struct cdma_dev *cdev, struct dma_client *client)
 		 client->client_name, cdev->eid, ret);
 }
 
-static cdma_client_handler g_cdma_client_handler[] = {
-	[CDMA_CLIENT_STOP] = cdma_client_stop,
-	[CDMA_CLIENT_REMOVE] = cdma_client_remove,
-	[CDMA_CLIENT_ADD] = cdma_client_add,
+static cdma_client_handlers cdma_client_handler[] = {
+	[CDMA_CLIENT_OP_STOP] = cdma_client_stop,
+	[CDMA_CLIENT_OP_REMOVE] = cdma_client_remove,
+	[CDMA_CLIENT_OP_ADD] = cdma_client_add,
 };
 
 static void cdma_client_callback(struct cdma_dev *cdev,
-				 enum cdma_client_ops client_ops)
+				 enum cdma_client_op client_ops)
 {
 	struct dma_client *client;
 
-	down_write(&g_clients_rwsem);
-	list_for_each_entry(client, &g_client_list, list_node)
-		g_cdma_client_handler[client_ops](cdev, client);
-	up_write(&g_clients_rwsem);
+	down_write(&cdma_clients_rwsem);
+	list_for_each_entry(client, &cdma_client_list, list_node)
+		cdma_client_handler[client_ops](cdev, client);
+	up_write(&cdma_clients_rwsem);
 }
 
 static void cdma_reset_unmap_vma_pages(struct cdma_dev *cdev, bool is_reset)
@@ -127,25 +131,25 @@ static int cdma_reset_down(struct auxiliary_device *adev)
 {
 	struct cdma_dev *cdev;
 
-	mutex_lock(&g_cdma_reset_mutex);
+	mutex_lock(&cdma_reset_mutex);
 	cdev = get_cdma_dev(adev);
 	if (!cdev) {
 		dev_warn(&adev->dev, "reset down cdev does not exist\n");
 		goto unlock;
 	}
 
-	if (cdev->status >= CDMA_SUSPEND) {
+	if (cdev->status >= CDMA_STATUS_SUSPENDED) {
 		dev_warn(&adev->dev, "reset down status = %u\n", cdev->status);
 		goto unlock;
 	}
 
-	cdev->status = CDMA_INVALID;
+	cdev->status = CDMA_STATUS_INVALID;
 	cdma_cmd_flush(cdev);
 	cdma_reset_unmap_vma_pages(cdev, true);
-	cdma_client_callback(cdev, CDMA_CLIENT_STOP);
+	cdma_client_callback(cdev, CDMA_CLIENT_OP_STOP);
 
 unlock:
-	mutex_unlock(&g_cdma_reset_mutex);
+	mutex_unlock(&cdma_reset_mutex);
 
 	return 0;
 }
@@ -160,26 +164,26 @@ static int cdma_reset_uninit(struct auxiliary_device *adev)
 {
 	struct cdma_dev *cdev;
 
-	mutex_lock(&g_cdma_reset_mutex);
+	mutex_lock(&cdma_reset_mutex);
 	cdev = get_cdma_dev(adev);
 	if (!cdev) {
 		dev_warn(&adev->dev, "reset uninit cdev does not exist\n");
 		goto unlock;
 	}
 
-	if (cdev->status != CDMA_INVALID) {
+	if (cdev->status != CDMA_STATUS_INVALID) {
 		dev_warn(&adev->dev, "reset uninit status = %u\n", cdev->status);
 		goto unlock;
 	}
 
-	cdma_client_callback(cdev, CDMA_CLIENT_REMOVE);
+	cdma_client_callback(cdev, CDMA_CLIENT_OP_REMOVE);
 	cdma_destroy_chardev(cdev);
 	cdma_free_cfile_uobj(cdev);
 	cdma_kcmd_flush(cdev);
 	cdma_destroy_dev(cdev);
 
 unlock:
-	mutex_unlock(&g_cdma_reset_mutex);
+	mutex_unlock(&cdma_reset_mutex);
 
 	return 0;
 }
@@ -189,7 +193,7 @@ static int cdma_reset_init(struct auxiliary_device *adev)
 	struct cdma_dev *cdev;
 	int ret;
 
-	mutex_lock(&g_cdma_reset_mutex);
+	mutex_lock(&cdma_reset_mutex);
 
 	cdev = cdma_create_dev(adev);
 	if (IS_ERR(cdev)) {
@@ -210,10 +214,10 @@ static int cdma_reset_init(struct auxiliary_device *adev)
 		goto unlock;
 	}
 
-	cdma_client_callback(cdev, CDMA_CLIENT_ADD);
+	cdma_client_callback(cdev, CDMA_CLIENT_OP_ADD);
 
 unlock:
-	mutex_unlock(&g_cdma_reset_mutex);
+	mutex_unlock(&cdma_reset_mutex);
 
 	return ret;
 }
@@ -268,19 +272,15 @@ static int cdma_probe(struct auxiliary_device *auxdev,
 		return ret;
 	}
 
-	cdma_client_callback(cdev, CDMA_CLIENT_ADD);
+	cdma_client_callback(cdev, CDMA_CLIENT_OP_ADD);
 	ubase_reset_register(auxdev, cdma_reset_handler);
-	ubase_update_adev_status(auxdev, 0);
 
 	return 0;
 }
 
 static void cdma_wait_rx(struct auxiliary_device *auxdev)
 {
-#define MIN_SLEEP_TIME 100
-#define MAX_SLEEP_TIME 800
-#define TIME_SLEEP_RATE 2
-	u32 wait_time = MIN_SLEEP_TIME;
+	u32 wait_time = CDMA_RX_MIN_SLEEP_MS;
 	bool first_fail = true;
 
 	if (is_rmmod)
@@ -304,8 +304,8 @@ static void cdma_wait_rx(struct auxiliary_device *auxdev)
 		}
 
 		msleep(wait_time);
-		if (wait_time < MAX_SLEEP_TIME)
-			wait_time *= TIME_SLEEP_RATE;
+		if (wait_time < CDMA_RX_MAX_SLEEP_MS)
+			wait_time *= CDMA_RX_SLEEP_MULT;
 	}
 }
 
@@ -334,19 +334,19 @@ static void cdma_remove(struct auxiliary_device *auxdev)
 		 __func__, auxdev->name, auxdev->id);
 
 	ubase_reset_unregister(auxdev);
-	mutex_lock(&g_cdma_reset_mutex);
+	mutex_lock(&cdma_reset_mutex);
 	cdev = (struct cdma_dev *)dev_get_drvdata(&auxdev->dev);
 	if (!cdev) {
-		mutex_unlock(&g_cdma_reset_mutex);
+		mutex_unlock(&cdma_reset_mutex);
 		dev_err(&auxdev->dev, "cdma device does not exist\n");
 		return;
 	}
 
-	cdev->status = CDMA_SUSPEND;
+	cdev->status = CDMA_STATUS_SUSPENDED;
 	cdma_cmd_flush(cdev);
 	cdma_reset_unmap_vma_pages(cdev, false);
-	cdma_client_callback(cdev, CDMA_CLIENT_STOP);
-	cdma_client_callback(cdev, CDMA_CLIENT_REMOVE);
+	cdma_client_callback(cdev, CDMA_CLIENT_OP_STOP);
+	cdma_client_callback(cdev, CDMA_CLIENT_OP_REMOVE);
 	cdma_wait_rx(auxdev);
 	cdma_destroy_chardev(cdev);
 	cdma_free_cfile_uobj(cdev);
@@ -354,7 +354,7 @@ static void cdma_remove(struct auxiliary_device *auxdev)
 	cdma_destroy_dev(cdev);
 	cdma_restore_rx(auxdev);
 
-	mutex_unlock(&g_cdma_reset_mutex);
+	mutex_unlock(&cdma_reset_mutex);
 	dev_info(&auxdev->dev, "cdma device remove success\n");
 }
 

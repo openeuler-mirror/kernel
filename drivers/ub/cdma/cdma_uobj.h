@@ -5,18 +5,18 @@
 #define __CDMA_UOBJ_H__
 #include "cdma_types.h"
 
-enum UOBJ_TYPE {
-	UOBJ_TYPE_JFCE,
-	UOBJ_TYPE_JFC,
-	UOBJ_TYPE_CTP,
-	UOBJ_TYPE_JFS,
-	UOBJ_TYPE_QUEUE,
-	UOBJ_TYPE_SEGMENT
+enum cdma_uobj_type {
+	CDMA_UOBJ_TYPE_JFCE,
+	CDMA_UOBJ_TYPE_JFC,
+	CDMA_UOBJ_TYPE_CTP,
+	CDMA_UOBJ_TYPE_JFS,
+	CDMA_UOBJ_TYPE_QUEUE,
+	CDMA_UOBJ_TYPE_SEGMENT
 };
 
 struct cdma_uobj {
 	struct cdma_file *cfile;
-	enum UOBJ_TYPE type;
+	enum cdma_uobj_type type;
 	int id;
 	void *object;
 	atomic_t rcnt;
@@ -24,10 +24,10 @@ struct cdma_uobj {
 
 void cdma_init_uobj_idr(struct cdma_file *cfile);
 struct cdma_uobj *cdma_uobj_create(struct cdma_file *cfile,
-				   enum UOBJ_TYPE obj_type);
+				   enum cdma_uobj_type obj_type);
 void cdma_uobj_delete(struct cdma_uobj *uobj);
 struct cdma_uobj *cdma_uobj_get(struct cdma_file *cfile, int id,
-				enum UOBJ_TYPE type);
+				enum cdma_uobj_type type);
 void cdma_cleanup_context_uobj(struct cdma_file *cfile, enum cdma_remove_reason why);
 void cdma_close_uobj_fd(struct cdma_file *cfile);
 
