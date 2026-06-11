@@ -102,7 +102,7 @@ static int vfio_ub_enable(struct vfio_ub_core_device *vdev)
 	vdev->num_regions = 0;
 	vdev->num_vendor_irqs = 0;
 	vdev->num_vendor_regions = 0;
-	vdev->reset_works = 1; /* we assume ub support ELR for now. */
+	vdev->reset_works = 1; /* we assume ub supports ELR for now. */
 
 	ret = vfio_usi_info_init(vdev);
 	if (ret)
@@ -117,7 +117,7 @@ static void vfio_ub_disable(struct vfio_ub_core_device *vdev)
 	vfio_ub_set_irqs_ioctl(vdev, VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER,
 			       vdev->irq_type, 0, 0, NULL);
 
-	/* clear device caches when vm exit or crash */
+	/* clear device caches when VM exits or crashes */
 	if (vdev->reset_works)
 		ub_reset_entity(vdev->uent);
 }
@@ -391,7 +391,7 @@ int vfio_ub_core_mmap(struct vfio_device *core_vdev, struct vm_area_struct *vma)
 		return -EINVAL;
 
 	/*
-	 * VM_SHARED means user's changing to mmio can immediately arrive ub device,
+	 * VM_SHARED means user's changes to mmio can immediately arrive ub device,
 	 * or it is unspecified.
 	 */
 	if ((vma->vm_flags & VM_SHARED) == 0)
@@ -467,9 +467,9 @@ void vfio_ub_iommufd_physical_unbind(struct vfio_device *core_vdev)
 
 	vfio_iommufd_physical_unbind(core_vdev);
 
-	/* Now, valid tid are allocated at attach_ioas interface,
-	 * but tid free at this unbind interface.
-	 * detach_ioas interface are not called at vfio_compt mode.
+	/* Now, valid tid are allocated at the attach_ioas interface,
+	 * but freed at this unbind interface.
+	 * The detach_ioas interface is not called in vfio_compat mode.
 	 */
 	ub_unset_user_info(vdev->uent);
 }

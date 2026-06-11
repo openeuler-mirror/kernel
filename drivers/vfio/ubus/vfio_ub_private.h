@@ -51,7 +51,7 @@ struct vfio_ub_slice {
 struct vfio_ub_config {
 	struct vfio_ub_slice *slice;
 	int nums;
-	u8 final_slice_supported[UB_CFG1_MAX_CAP + 1]; /* do not incude port basic && port cap */
+	u8 final_slice_supported[UB_CFG1_MAX_CAP + 1]; /* do not include port basic && port cap */
 	int map[UB_CFG1_MAX_CAP + 1];
 };
 
@@ -67,7 +67,7 @@ struct vfio_ub_core_device {
 	int num_ext_irqs; /* vfio-ub additional extended irqs */
 	int num_vendor_regions; /* vfio-ub additional vendor-defined regions */
 	int num_vendor_irqs; /* vfio-ub additional vendor-defined irqs */
-	bool reset_works; /* vfio-ub support reset flag */
+	bool reset_works; /* vfio-ub supports reset flag */
 	u64 usi_vector_offset;
 	u32 usi_vector_size;
 	u64 usi_addr_offset;
