@@ -590,7 +590,7 @@ void ubhp_handle_power(struct ub_slot *slot, bool power_on)
 		ubhp_set_indicators(slot, INDICATOR_OFF, INDICATOR_NOOP);
 		ub_info(slot->uent, "slot%u off\n", slot->slot_id);
 		ub_info(slot->uent,
-			"slot%u handle hotplug unsuccess\n", slot->slot_id);
+			"slot%u handle hotplug unsuccessfully\n", slot->slot_id);
 	}
 
 out:
