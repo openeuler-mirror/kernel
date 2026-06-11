@@ -48,6 +48,7 @@ int ubcore_get_v2p_res(struct sk_buff *skb, struct genl_info *info);
 int ubcore_perf_start_ops(struct sk_buff *skb, struct genl_info *info);
 int ubcore_perf_stop_ops(struct sk_buff *skb, struct genl_info *info);
 int ubcore_perf_show_ops(struct sk_buff *skb, struct genl_info *info);
+int ubcore_show_system_ops(struct sk_buff *skb, struct genl_info *info);
 
 int ubcore_show_tpid_list_start(struct netlink_callback *cb);
 int ubcore_show_tpid_list_dump(struct sk_buff *skb, struct netlink_callback *cb);

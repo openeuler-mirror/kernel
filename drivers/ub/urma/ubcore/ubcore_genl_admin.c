@@ -412,6 +412,43 @@ int ubcore_set_eid_ns_mode_ops(struct sk_buff *skb, struct genl_info *info)
 	return ubcore_set_eid_ns_mode(ns_mode != 0);
 }
 
+int ubcore_show_system_ops(struct sk_buff *skb, struct genl_info *info)
+{
+	struct sk_buff *msg;
+	void *hdr;
+	int ret;
+
+	msg = genlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (msg == NULL)
+		return -ENOMEM;
+
+	hdr = genlmsg_put_reply(msg, info, &ubcore_genl_family, 0,
+				UBCORE_CMD_SHOW_SYSTEM);
+	if (hdr == NULL) {
+		nlmsg_free(msg);
+		return -ENOMEM;
+	}
+
+	ret = nla_put_u8(msg, UBCORE_ATTR_DEV_NS_MODE,
+			 ubcore_dev_ns_shared() ? 1 : 0);
+	if (ret != 0) {
+		genlmsg_cancel(msg, hdr);
+		nlmsg_free(msg);
+		return ret;
+	}
+
+	ret = nla_put_u8(msg, UBCORE_ATTR_EID_NS_MODE,
+			 ubcore_eid_ns_shared() ? 1 : 0);
+	if (ret != 0) {
+		genlmsg_cancel(msg, hdr);
+		nlmsg_free(msg);
+		return ret;
+	}
+
+	genlmsg_end(msg, hdr);
+	return genlmsg_reply(msg, info);
+}
+
 int ubcore_set_dev_ns_ops(struct sk_buff *skb, struct genl_info *info)
 {
 	if (!info->attrs[UBCORE_ATTR_DEV_NAME] ||

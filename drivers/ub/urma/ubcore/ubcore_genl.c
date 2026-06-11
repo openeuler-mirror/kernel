@@ -189,7 +189,6 @@ static const struct genl_ops ubcore_genl_ops[] = {
 	{ .cmd = UBCORE_CMD_SET_EID_NS_MODE,
 	  .policy = ubcore_policy,
 	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
 	  .flags = GENL_ADMIN_PERM,
 	  .doit = ubcore_set_eid_ns_mode_ops
 	},
@@ -208,6 +207,13 @@ static const struct genl_ops ubcore_genl_ops[] = {
 		.start = ubcore_show_tpid_reuse_start,
 		.dumpit = ubcore_show_tpid_reuse_dump,
 		.done = ubcore_show_tpid_reuse_done
+	},
+	{
+		.cmd = UBCORE_CMD_SHOW_SYSTEM,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_show_system_ops
 	},
 };
 
