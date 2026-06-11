@@ -14,6 +14,8 @@
 #include "cdma_jfs.h"
 #include "cdma_jfc.h"
 
+#define CDMA_JFC_QUERY_MAX_TIMES 5
+
 static int cdma_get_cmd_from_user(struct cdma_create_jfc_ucmd *ucmd,
 				  struct cdma_dev *cdev,
 				  struct cdma_udata *udata,
@@ -92,23 +94,23 @@ static void cdma_init_jfc_param(struct cdma_jfc_cfg *cfg, struct cdma_jfc *jfc)
 static int cdma_jfc_id_alloc(struct cdma_dev *cdev, struct cdma_jfc *jfc)
 {
 	struct cdma_table *jfc_tbl = &cdev->jfc_table;
-	u32 min = jfc_tbl->idr_tbl.min;
-	u32 max = jfc_tbl->idr_tbl.max;
+	u32 min = jfc_tbl->idr_pool.min;
+	u32 max = jfc_tbl->idr_pool.max;
 	unsigned long flags;
 	int id;
 
 	idr_preload(GFP_KERNEL);
 	spin_lock_irqsave(&jfc_tbl->lock, flags);
-	id = idr_alloc(&jfc_tbl->idr_tbl.idr, jfc, jfc_tbl->idr_tbl.next, max,
+	id = idr_alloc(&jfc_tbl->idr_pool.idr, jfc, jfc_tbl->idr_pool.next, max,
 		       GFP_NOWAIT);
 	if (id < 0) {
-		id = idr_alloc(&jfc_tbl->idr_tbl.idr, jfc, min, max,
+		id = idr_alloc(&jfc_tbl->idr_pool.idr, jfc, min, max,
 			       GFP_NOWAIT);
 		if (id < 0)
 			dev_err(cdev->dev, "alloc jfc id failed\n");
 	}
 
-	jfc_tbl->idr_tbl.next = (id >= 0 && id + 1 <= max) ? id + 1 : min;
+	jfc_tbl->idr_pool.next = (id >= 0 && id + 1 <= max) ? id + 1 : min;
 	spin_unlock_irqrestore(&jfc_tbl->lock, flags);
 	idr_preload_end();
 
@@ -123,7 +125,7 @@ static void cdma_jfc_id_free(struct cdma_dev *cdev, u32 jfcn)
 	unsigned long flags;
 
 	spin_lock_irqsave(&jfc_tbl->lock, flags);
-	idr_remove(&jfc_tbl->idr_tbl.idr, jfcn);
+	idr_remove(&jfc_tbl->idr_pool.idr, jfcn);
 	spin_unlock_irqrestore(&jfc_tbl->lock, flags);
 }
 
@@ -218,7 +220,7 @@ static void cdma_construct_jfc_ctx(struct cdma_dev *cdev,
 	ctx->record_db_addr_h = jfc->db.db_addr >> CDMA_DB_H_OFFSET;
 }
 
-static int cdma_query_jfc_destroy_done(struct cdma_dev *cdev, uint32_t jfcn)
+static int cdma_query_jfc_destroy_done(struct cdma_dev *cdev, u32 jfcn)
 {
 	struct ubase_mbx_attr attr = { 0 };
 	struct ubase_cmd_mailbox *mailbox;
@@ -253,13 +255,12 @@ static int cdma_post_destroy_jfc_mbox(struct cdma_dev *cdev, u32 jfcn,
 static int cdma_destroy_and_flush_jfc(struct cdma_dev *cdev,
 				      struct cdma_jfc *jfc)
 {
-#define QUERY_MAX_TIMES 5
 	struct cdma_context *ctx = jfc->base.ctx;
 	u32 jfcn = jfc->jfcn;
 	u32 wait_times = 0;
 	int ret;
 
-	if (cdev->status == CDMA_INVALID || (ctx && ctx->invalid)) {
+	if (cdev->status == CDMA_STATUS_INVALID || (ctx && ctx->invalid)) {
 		dev_info(cdev->dev,
 			 "resetting ignore jfc ctx, jfcn = %u\n", jfcn);
 		return 0;
@@ -275,7 +276,7 @@ static int cdma_destroy_and_flush_jfc(struct cdma_dev *cdev,
 	while (true) {
 		if (!cdma_query_jfc_destroy_done(cdev, jfcn))
 			return 0;
-		if (wait_times > QUERY_MAX_TIMES)
+		if (wait_times > CDMA_JFC_QUERY_MAX_TIMES)
 			break;
 		msleep(1 << wait_times);
 		wait_times++;
@@ -287,7 +288,7 @@ static int cdma_destroy_and_flush_jfc(struct cdma_dev *cdev,
 
 static inline void *cdma_get_buf_entry(struct cdma_buf *buf, u32 n)
 {
-	uint32_t entry_index = n & buf->entry_cnt_mask;
+	u32 entry_index = n & buf->entry_mask;
 
 	return (char *)buf->kva + (entry_index * buf->entry_size);
 }
@@ -298,7 +299,7 @@ static struct cdma_jfc_cqe *cdma_get_next_cqe(struct cdma_jfc *jfc, u32 n)
 	u32 valid_owner;
 
 	cqe = (struct cdma_jfc_cqe *)cdma_get_buf_entry(&jfc->buf, n);
-	valid_owner = (jfc->ci >> jfc->buf.entry_cnt_mask_ilog2) &
+	valid_owner = (jfc->ci >> jfc->buf.entry_shift) &
 		      CDMA_JFC_DB_VALID_OWNER_M;
 	if (!(cqe->owner ^ valid_owner))
 		return NULL;
@@ -552,9 +553,9 @@ int cdma_delete_jfc(struct cdma_dev *cdev, u32 jfcn,
 
 	jfc_tbl = &cdev->jfc_table;
 	spin_lock_irqsave(&jfc_tbl->lock, flags);
-	jfc = idr_find(&jfc_tbl->idr_tbl.idr, jfcn);
+	jfc = idr_find(&jfc_tbl->idr_pool.idr, jfcn);
 	if (jfc)
-		idr_remove(&jfc_tbl->idr_tbl.idr, jfcn);
+		idr_remove(&jfc_tbl->idr_pool.idr, jfcn);
 	spin_unlock_irqrestore(&jfc_tbl->lock, flags);
 	if (!jfc) {
 		dev_err(cdev->dev, "find jfc failed, jfcn = %u\n", jfcn);
@@ -601,7 +602,7 @@ int cdma_jfc_completion(struct notifier_block *nb, unsigned long jfcn,
 	cdev = get_cdma_dev(adev);
 	jfc_tbl = &cdev->jfc_table;
 	spin_lock_irqsave(&jfc_tbl->lock, flags);
-	jfc = idr_find(&jfc_tbl->idr_tbl.idr, jfcn);
+	jfc = idr_find(&jfc_tbl->idr_pool.idr, jfcn);
 	if (!jfc) {
 		dev_warn(cdev->dev, "can not find jfc, jfcn = %lu\n", jfcn);
 		spin_unlock_irqrestore(&jfc_tbl->lock, flags);
@@ -631,8 +632,8 @@ int cdma_poll_jfc(struct cdma_base_jfc *base_jfc, int cr_cnt,
 	enum jfc_poll_state err = JFC_OK;
 	int npolled = 0;
 
-	jfc->buf.entry_cnt_mask = jfc->buf.entry_cnt - 1;
-	jfc->buf.entry_cnt_mask_ilog2 = ilog2(jfc->buf.entry_cnt);
+	jfc->buf.entry_mask = jfc->buf.entry_cnt - 1;
+	jfc->buf.entry_shift = ilog2(jfc->buf.entry_cnt);
 
 	spin_lock(&jfc->lock);
 

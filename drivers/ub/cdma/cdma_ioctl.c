@@ -19,8 +19,8 @@
 #include "cdma_uobj.h"
 #include "cdma_ioctl.h"
 
-typedef int (*cdma_cmd_handler)(struct cdma_ioctl_hdr *hdr,
-				struct cdma_file *cfile);
+typedef int (*cdma_cmd_handlers)(struct cdma_ioctl_hdr *hdr,
+				 struct cdma_file *cfile);
 
 static void cdma_fill_device_attr(struct cdma_dev *cdev,
 				  struct cdma_device_cap *dev_cap)
@@ -174,7 +174,7 @@ static int cdma_cmd_create_ctp(struct cdma_ioctl_hdr *hdr,
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_get(cfile, arg.in.queue_id, UOBJ_TYPE_QUEUE);
+	uobj = cdma_uobj_get(cfile, arg.in.queue_id, CDMA_UOBJ_TYPE_QUEUE);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev,
 			"create ctp, get queue uobj failed, queue id = %u\n",
@@ -183,7 +183,7 @@ static int cdma_cmd_create_ctp(struct cdma_ioctl_hdr *hdr,
 	}
 	queue = (struct cdma_queue *)uobj->object;
 
-	uobj = cdma_uobj_create(cfile, UOBJ_TYPE_CTP);
+	uobj = cdma_uobj_create(cfile, CDMA_UOBJ_TYPE_CTP);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "create ctp uobj failed\n");
 		return -ENOMEM;
@@ -244,7 +244,7 @@ static int cdma_cmd_delete_ctp(struct cdma_ioctl_hdr *hdr,
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_get(cfile, arg.in.queue_id, UOBJ_TYPE_QUEUE);
+	uobj = cdma_uobj_get(cfile, arg.in.queue_id, CDMA_UOBJ_TYPE_QUEUE);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev,
 			"delete ctp, get queue uobj failed, queue id = %u\n",
@@ -253,7 +253,7 @@ static int cdma_cmd_delete_ctp(struct cdma_ioctl_hdr *hdr,
 	}
 	queue = uobj->object;
 
-	uobj = cdma_uobj_get(cfile, arg.in.handle, UOBJ_TYPE_CTP);
+	uobj = cdma_uobj_get(cfile, arg.in.handle, CDMA_UOBJ_TYPE_CTP);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "get ctp uobj failed, handle = %llu\n",
 			arg.in.handle);
@@ -311,7 +311,7 @@ static int cdma_cmd_create_jfs(struct cdma_ioctl_hdr *hdr,
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_get(cfile, arg.in.queue_id, UOBJ_TYPE_QUEUE);
+	uobj = cdma_uobj_get(cfile, arg.in.queue_id, CDMA_UOBJ_TYPE_QUEUE);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev,
 			"create jfs, get queue uobj failed, queue id = %u\n",
@@ -320,7 +320,7 @@ static int cdma_cmd_create_jfs(struct cdma_ioctl_hdr *hdr,
 	}
 	queue = (struct cdma_queue *)uobj->object;
 
-	uobj = cdma_uobj_create(cfile, UOBJ_TYPE_JFS);
+	uobj = cdma_uobj_create(cfile, CDMA_UOBJ_TYPE_JFS);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "create jfs uobj failed\n");
 		return -ENOMEM;
@@ -390,7 +390,7 @@ static int cdma_cmd_delete_jfs(struct cdma_ioctl_hdr *hdr,
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_get(cfile, arg.in.queue_id, UOBJ_TYPE_QUEUE);
+	uobj = cdma_uobj_get(cfile, arg.in.queue_id, CDMA_UOBJ_TYPE_QUEUE);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev,
 			"delete jfs, get queue uobj failed, queue id = %u\n",
@@ -399,7 +399,7 @@ static int cdma_cmd_delete_jfs(struct cdma_ioctl_hdr *hdr,
 	}
 	queue = uobj->object;
 
-	uobj = cdma_uobj_get(cfile, arg.in.handle, UOBJ_TYPE_JFS);
+	uobj = cdma_uobj_get(cfile, arg.in.handle, CDMA_UOBJ_TYPE_JFS);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "get jfs uobj failed, handle = %llu\n",
 			arg.in.handle);
@@ -439,7 +439,7 @@ static int cdma_cmd_create_queue(struct cdma_ioctl_hdr *hdr, struct cdma_file *c
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_create(cfile, UOBJ_TYPE_QUEUE);
+	uobj = cdma_uobj_create(cfile, CDMA_UOBJ_TYPE_QUEUE);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "create queue uobj failed\n");
 		return -ENOMEM;
@@ -495,7 +495,7 @@ static int cdma_cmd_delete_queue(struct cdma_ioctl_hdr *hdr, struct cdma_file *c
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_get(cfile, arg.in.handle, UOBJ_TYPE_QUEUE);
+	uobj = cdma_uobj_get(cfile, arg.in.handle, CDMA_UOBJ_TYPE_QUEUE);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "get queue uobj failed, handle = %llu\n",
 			arg.in.handle);
@@ -540,7 +540,7 @@ static int cdma_cmd_register_seg(struct cdma_ioctl_hdr *hdr,
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_create(cfile, UOBJ_TYPE_SEGMENT);
+	uobj = cdma_uobj_create(cfile, CDMA_UOBJ_TYPE_SEGMENT);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "create seg uobj failed\n");
 		return -ENOMEM;
@@ -601,7 +601,7 @@ static int cdma_cmd_unregister_seg(struct cdma_ioctl_hdr *hdr,
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_get(cfile, arg.in.handle, UOBJ_TYPE_SEGMENT);
+	uobj = cdma_uobj_get(cfile, arg.in.handle, CDMA_UOBJ_TYPE_SEGMENT);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "get seg uobj failed\n");
 		return -EINVAL;
@@ -637,7 +637,7 @@ static int cdma_cmd_create_jfc(struct cdma_ioctl_hdr *hdr,
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_get(cfile, arg.in.queue_id, UOBJ_TYPE_QUEUE);
+	uobj = cdma_uobj_get(cfile, arg.in.queue_id, CDMA_UOBJ_TYPE_QUEUE);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev,
 			"create jfc, get queue uobj failed, queue id = %u\n",
@@ -646,7 +646,7 @@ static int cdma_cmd_create_jfc(struct cdma_ioctl_hdr *hdr,
 	}
 	queue = (struct cdma_queue *)uobj->object;
 
-	uobj = cdma_uobj_create(cfile, UOBJ_TYPE_JFC);
+	uobj = cdma_uobj_create(cfile, CDMA_UOBJ_TYPE_JFC);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "create jfc uobj failed\n");
 		return -ENOMEM;
@@ -715,7 +715,7 @@ static int cdma_cmd_delete_jfc(struct cdma_ioctl_hdr *hdr,
 		return -EFAULT;
 	}
 
-	uobj = cdma_uobj_get(cfile, arg.in.queue_id, UOBJ_TYPE_QUEUE);
+	uobj = cdma_uobj_get(cfile, arg.in.queue_id, CDMA_UOBJ_TYPE_QUEUE);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev,
 			"delete jfc, get queue uobj failed, queue id = %u\n",
@@ -724,7 +724,7 @@ static int cdma_cmd_delete_jfc(struct cdma_ioctl_hdr *hdr,
 	}
 	queue = (struct cdma_queue *)uobj->object;
 
-	uobj = cdma_uobj_get(cfile, arg.in.handle, UOBJ_TYPE_JFC);
+	uobj = cdma_uobj_get(cfile, arg.in.handle, CDMA_UOBJ_TYPE_JFC);
 	if (IS_ERR(uobj)) {
 		dev_err(cdev->dev, "get jfc uobj failed\n");
 		return -EINVAL;
@@ -788,7 +788,7 @@ err_out:
 	return ret;
 }
 
-static cdma_cmd_handler g_cdma_cmd_handler[CDMA_CMD_MAX] = {
+static cdma_cmd_handlers cdma_cmd_handler[CDMA_CMD_MAX] = {
 	[CDMA_CMD_QUERY_DEV_INFO] = cdma_query_dev,
 	[CDMA_CMD_CREATE_CTX] = cdma_create_ucontext,
 	[CDMA_CMD_DELETE_CTX] = cdma_delete_ucontext,
@@ -810,7 +810,7 @@ int cdma_cmd_parse(struct cdma_file *cfile, struct cdma_ioctl_hdr *hdr)
 	struct cdma_dev *cdev = cfile->cdev;
 	int ret;
 
-	if (hdr->command >= CDMA_CMD_MAX || !g_cdma_cmd_handler[hdr->command]) {
+	if (hdr->command >= CDMA_CMD_MAX || !cdma_cmd_handler[hdr->command]) {
 		dev_err(cdev->dev,
 			"invalid cdma user command or no handler, command = %u\n",
 			hdr->command);
@@ -818,7 +818,7 @@ int cdma_cmd_parse(struct cdma_file *cfile, struct cdma_ioctl_hdr *hdr)
 	}
 
 	mutex_lock(&cfile->ctx_mutex);
-	ret = g_cdma_cmd_handler[hdr->command](hdr, cfile);
+	ret = cdma_cmd_handler[hdr->command](hdr, cfile);
 	mutex_unlock(&cfile->ctx_mutex);
 
 	return ret;

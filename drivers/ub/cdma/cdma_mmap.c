@@ -137,7 +137,7 @@ static int cdma_umap_can_split(struct vm_area_struct *vma, unsigned long addr)
 	return -EINVAL;
 }
 
-static const struct vm_operations_struct g_cdma_umap_ops = {
+static const struct vm_operations_struct cdma_umap_ops = {
 	.open = cdma_umap_open,
 	.close = cdma_umap_close,
 	.fault = cdma_umap_fault,
@@ -147,5 +147,5 @@ static const struct vm_operations_struct g_cdma_umap_ops = {
 
 const struct vm_operations_struct *cdma_get_umap_ops(void)
 {
-	return (const struct vm_operations_struct *)&g_cdma_umap_ops;
+	return (const struct vm_operations_struct *)&cdma_umap_ops;
 }
