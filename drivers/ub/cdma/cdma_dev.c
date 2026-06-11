@@ -56,18 +56,18 @@ static int cdma_add_device_to_list(struct cdma_dev *cdev)
 		return -EINVAL;
 	}
 
-	down_write(&g_device_rwsem);
+	down_write(&cdma_device_rwsem);
 	ret = xa_err(xa_store(&cdma_devs_tbl, adev->id, cdev, GFP_KERNEL));
 	if (ret) {
 		dev_err(cdev->dev,
 			"store cdma device to table failed, adev id = %u, ret = %d\n",
 			adev->id, ret);
-		up_write(&g_device_rwsem);
+		up_write(&cdma_device_rwsem);
 		return ret;
 	}
 
 	atomic_inc(&cdma_devs_num);
-	up_write(&g_device_rwsem);
+	up_write(&cdma_device_rwsem);
 
 	return 0;
 }
@@ -81,10 +81,10 @@ static void cdma_del_device_from_list(struct cdma_dev *cdev)
 		return;
 	}
 
-	down_write(&g_device_rwsem);
+	down_write(&cdma_device_rwsem);
 	atomic_dec(&cdma_devs_num);
 	xa_erase(&cdma_devs_tbl, adev->id);
-	up_write(&g_device_rwsem);
+	up_write(&cdma_device_rwsem);
 }
 
 static void cdma_tbl_init(struct cdma_table *table, u32 max, u32 min)
@@ -93,27 +93,27 @@ static void cdma_tbl_init(struct cdma_table *table, u32 max, u32 min)
 		return;
 
 	spin_lock_init(&table->lock);
-	idr_init(&table->idr_tbl.idr);
-	table->idr_tbl.max = max;
-	table->idr_tbl.min = min;
-	table->idr_tbl.next = min;
+	idr_init(&table->idr_pool.idr);
+	table->idr_pool.max = max;
+	table->idr_pool.min = min;
+	table->idr_pool.next = min;
 }
 
 static void cdma_tbl_destroy(struct cdma_dev *cdev, struct cdma_table *table,
 			     const char *table_name)
 {
-	if (!idr_is_empty(&table->idr_tbl.idr))
+	if (!idr_is_empty(&table->idr_pool.idr))
 		dev_err(cdev->dev, "IDR not empty in clean up %s table\n",
 			table_name);
-	idr_destroy(&table->idr_tbl.idr);
+	idr_destroy(&table->idr_pool.idr);
 }
 
 static void cdma_init_tables(struct cdma_dev *cdev)
 {
-	struct cdma_res *queue = &cdev->caps.queue;
-	struct cdma_res *jfce = &cdev->caps.jfce;
-	struct cdma_res *jfs = &cdev->caps.jfs;
-	struct cdma_res *jfc = &cdev->caps.jfc;
+	struct cdma_resource *queue = &cdev->caps.queue;
+	struct cdma_resource *jfce = &cdev->caps.jfce;
+	struct cdma_resource *jfs = &cdev->caps.jfs;
+	struct cdma_resource *jfc = &cdev->caps.jfc;
 
 	cdma_tbl_init(&cdev->queue_table, queue->start_idx + queue->max_cnt - 1,
 		      queue->start_idx);
@@ -146,15 +146,15 @@ static void cdma_release_table_res(struct cdma_dev *cdev)
 	struct cdma_tp *tmp;
 	int id;
 
-	idr_for_each_entry(&cdev->ctp_table.idr_tbl.idr, tmp, id)
+	idr_for_each_entry(&cdev->ctp_table.idr_pool.idr, tmp, id)
 		cdma_destroy_ctp_imm(cdev, tmp->base.tp_id);
-	idr_for_each_entry(&cdev->jfs_table.idr_tbl.idr, jfs, id)
+	idr_for_each_entry(&cdev->jfs_table.idr_pool.idr, jfs, id)
 		cdma_delete_jfs(cdev, jfs->id);
-	idr_for_each_entry(&cdev->jfc_table.idr_tbl.idr, jfc, id)
+	idr_for_each_entry(&cdev->jfc_table.idr_pool.idr, jfc, id)
 		cdma_delete_jfc(cdev, jfc->jfcn, NULL);
-	idr_for_each_entry(&cdev->queue_table.idr_tbl.idr, queue, id)
+	idr_for_each_entry(&cdev->queue_table.idr_pool.idr, queue, id)
 		cdma_delete_queue(cdev, queue->id);
-	idr_for_each_entry(&cdev->seg_table.idr_tbl.idr, seg, id)
+	idr_for_each_entry(&cdev->seg_table.idr_pool.idr, seg, id)
 		cdma_unregister_seg(cdev, seg);
 }
 
@@ -210,8 +210,8 @@ static int cdma_init_dev_param(struct cdma_dev *cdev)
 	if (!mem_base)
 		return -EINVAL;
 
-	cdev->k_db_base = mem_base->addr;
-	cdev->db_base = mem_base->addr_unmapped;
+	cdev->db_kva_base = mem_base->addr;
+	cdev->db_pa_base = mem_base->addr_unmapped;
 
 	ret = cdma_init_iopf_feature(cdev);
 	if (ret)
@@ -371,7 +371,7 @@ static int cdma_ctrlq_eu_update(struct auxiliary_device *adev, u8 service_ver,
 	struct cdma_ctrlq_eu_info eu = { 0 };
 	int ret = -EINVAL;
 
-	if (cdev->status != CDMA_NORMAL) {
+	if (cdev->status != CDMA_STATUS_NORMAL) {
 		dev_err(cdev->dev, "status is abnormal and don't update eu\n");
 		return cdma_ctrlq_eu_update_response(cdev, seq, 0);
 	}

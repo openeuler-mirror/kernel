@@ -319,24 +319,24 @@ int cdma_k_alloc_buf(struct cdma_dev *cdev, size_t memory_size,
 	int ret;
 
 	aligned_memory_size = memory_size + CDMA_HW_PAGE_SIZE - 1;
-	buf->aligned_va = vmalloc(aligned_memory_size);
-	if (!buf->aligned_va) {
+	buf->va_aligned = vmalloc(aligned_memory_size);
+	if (!buf->va_aligned) {
 		dev_err(cdev->dev, "vmalloc kernel buf failed, size = %lu\n",
 			aligned_memory_size);
 		return -ENOMEM;
 	}
 
-	memset(buf->aligned_va, 0, aligned_memory_size);
-	buf->umem = cdma_umem_get(cdev, (u64)buf->aligned_va,
+	memset(buf->va_aligned, 0, aligned_memory_size);
+	buf->umem = cdma_umem_get(cdev, (u64)buf->va_aligned,
 				  aligned_memory_size, true, NULL);
 	if (IS_ERR(buf->umem)) {
 		ret = PTR_ERR(buf->umem);
-		vfree(buf->aligned_va);
+		vfree(buf->va_aligned);
 		dev_err(cdev->dev, "pin kernel buf failed, ret = %d\n", ret);
 		return ret;
 	}
 
-	buf->addr = ((u64)buf->aligned_va + CDMA_HW_PAGE_SIZE - 1) &
+	buf->addr = ((u64)buf->va_aligned + CDMA_HW_PAGE_SIZE - 1) &
 		    ~(CDMA_HW_PAGE_SIZE - 1);
 	buf->kva = (void *)buf->addr;
 
@@ -346,8 +346,8 @@ int cdma_k_alloc_buf(struct cdma_dev *cdev, size_t memory_size,
 void cdma_k_free_buf(struct cdma_dev *cdev, struct cdma_buf *buf)
 {
 	cdma_put_umem(buf->umem, true);
-	vfree(buf->aligned_va);
-	buf->aligned_va = NULL;
+	vfree(buf->va_aligned);
+	buf->va_aligned = NULL;
 	buf->kva = NULL;
 	buf->addr = 0;
 }

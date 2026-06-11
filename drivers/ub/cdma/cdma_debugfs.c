@@ -19,6 +19,8 @@
 #define BUF_10_BASE 10
 #define BUF_SIZE 8
 #define CDMA_S_IRUSR 0400
+#define CDMA_DBG_CTX_SIZE_256 256
+#define CDMA_DBG_CTX_SIZE_128 128
 
 /* ctx debugfs start */
 static void cdma_get_ctx_info(struct cdma_dev *cdev,
@@ -26,8 +28,6 @@ static void cdma_get_ctx_info(struct cdma_dev *cdev,
 			      enum cdma_dbg_ctx_type ctx_type,
 			      struct cdma_ctx_info *ctx_info)
 {
-#define CDMA_DBG_CTX_SIZE_256 256
-#define UBASE_CTX_SIZE_128 128
 	switch (ctx_type) {
 	case CDMA_DBG_JFS_CTX:
 		ctx_info->start_idx = queue->jfs_id;
@@ -37,7 +37,7 @@ static void cdma_get_ctx_info(struct cdma_dev *cdev,
 		break;
 	case CDMA_DBG_SQ_JFC_CTX:
 		ctx_info->start_idx = queue->jfc_id;
-		ctx_info->ctx_size = UBASE_CTX_SIZE_128;
+		ctx_info->ctx_size = CDMA_DBG_CTX_SIZE_128;
 		ctx_info->op = UBASE_MB_QUERY_JFC_CONTEXT;
 		ctx_info->ctx_name = "sq_jfc";
 		break;
@@ -88,7 +88,7 @@ static int cdma_dbg_dump_ctx_hw(struct seq_file *s, enum cdma_dbg_ctx_type ctx_t
 	struct cdma_queue *queue;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
 		dev_err(&adev->dev, "find queue[%u] for dump context hw failed\n", queue_id);
@@ -220,7 +220,7 @@ static int cdma_dbg_dump_ctx(struct seq_file *s, enum cdma_dbg_ctx_type ctx_type
 	dbg_ctx[ctx_type].get_title(s);
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
 		dev_err(&cdev->adev->dev, "find queue[%u] for dump context failed\n", queue_id);
@@ -306,7 +306,7 @@ static int cdma_dbg_dump_queue_info(struct seq_file *s, void *data)
 	struct cdma_queue *queue;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
 		dev_err(&cdev->adev->dev, "find queue[%u] for dump queue info failed\n", queue_id);
@@ -377,7 +377,7 @@ static int cdma_dbg_dump_sqe(struct seq_file *s, void *data)
 	struct cdma_jfs *jfs;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
 		dev_err(&cdev->adev->dev, "find queue[%u] for dump sqe failed\n", queue_id);
@@ -420,7 +420,7 @@ static int cdma_dbg_dump_cqe(struct seq_file *s, void *data)
 	struct cdma_jfc *jfc;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
 		dev_err(&cdev->adev->dev, "find queue[%u] for dump cqe failed\n", queue_id);
