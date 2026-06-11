@@ -23,7 +23,7 @@
 /**
  * for any given reg in slot regs of slotN, it's pos can be get by:
  * SHP cap pos + 10(N-1) + reg pos in slot regs
- * the fronter two elements is represented as following UB_SLOT_BASE marco
+ * the fronter two elements is represented as following UB_SLOT_BASE macro
  */
 #define UB_SLOT_BASE(slot) (UB_SLOT_START + (slot)->slot_id * UB_SLOT_POS)
 

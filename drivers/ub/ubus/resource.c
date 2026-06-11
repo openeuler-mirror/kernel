@@ -516,7 +516,7 @@ int _ub_entity_setup_mmio(struct ub_entity *dev)
 		ret = ub_entity_alloc_mmio_idx(dev, i);
 		if (ret) {
 			ub_err(dev,
-			       "failed to alloc resource for mmio idx %d\n", i);
+			       "failed to allocate resource for mmio idx %d\n", i);
 			goto fail;
 		}
 

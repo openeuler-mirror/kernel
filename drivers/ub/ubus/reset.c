@@ -79,7 +79,7 @@ int ub_device_reset(struct ub_entity *ent)
 	}
 
 	if (is_ibus_controller(ent)) {
-		ub_warn(ent, "ub bus controller do not support reset.\n");
+		ub_warn(ent, "ub bus controller does not support reset.\n");
 		return -EINVAL;
 	}
 

@@ -505,7 +505,7 @@ static int ub_check_id_exist(struct ub_driver *udrv, u32 vendor, u32 device,
 static int ub_check_driver_data_valid(const struct ub_device_id *ids,
 				      unsigned long driver_data)
 {
-	/* Only accept driver_data values that match an exiting id_table entry */
+	/* Only accept driver_data values that match an existing id_table entry */
 	while (ids->vendor || ids->mod_vendor || ids->class_mask) {
 		if (driver_data == ids->driver_data)
 			return 0;
@@ -522,15 +522,15 @@ static ssize_t new_id_store(struct device_driver *driver, const char *buf,
 	u32 mod_vendor = UB_ANY_ID, module = UB_ANY_ID;
 	struct ub_driver *udrv = to_ub_driver(driver);
 	unsigned long driver_data = 0;
-	int fileds, ret;
+	int fields, ret;
 
-	fileds = sscanf(buf, "%x %x %x %x %x %x %lx", &vendor, &device,
+	fields = sscanf(buf, "%x %x %x %x %x %x %lx", &vendor, &device,
 			&mod_vendor, &module,
 			&class_code, &class_mask, &driver_data);
-	if (fileds < 2) /* 2 parameter for vender & device id */
+	if (fields < 2) /* 2 parameter for vender & device id */
 		return -EINVAL;
 
-	if (fileds != 7) { /* 7 for driver_data input */
+	if (fields != 7) { /* 7 for driver_data input */
 		ret = ub_check_id_exist(udrv, vendor, device, mod_vendor,
 					module, class_code);
 		if (ret)

@@ -8,7 +8,7 @@
 #define UB_SERVICE_HP_SHIFT 1
 #define UB_SERVICE_HP (1 << UB_SERVICE_HP_SHIFT)
 
-#define UB_MAXSERIVCES 3
+#define UB_MAXSERVICES 3
 
 struct ub_service_device {
 	int irq;

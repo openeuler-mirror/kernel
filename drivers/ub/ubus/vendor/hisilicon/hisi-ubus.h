@@ -8,10 +8,10 @@
 
 #include <ub/ubus/ubus.h>
 
-#define MEM_INFO_NUM			5
-#define MB_SIZE_OFFSET			20
-#define HI_UBC_PRIVATE_DATA_RESERVED	3
-#define HI_UBC_PRIVATE_DATA_RESERVED2	111
+#define MEM_INFO_NUM 5
+#define MB_SIZE_OFFSET 20
+#define HI_UBC_PRIVATE_DATA_RESERVED 3
+#define HI_UBC_PRIVATE_DATA_RESERVED2 111
 #define UB_MEM_VERSION_INVALID 0xffffffff
 #define UB_MEM_VERSION_0 0
 #define UB_MEM_VERSION_1 1

@@ -46,7 +46,7 @@ int ub_fault_register(ub_fault_record record)
 	mutex_lock(&fault_record_mutex);
 	ub_fault_record_func = record;
 	mutex_unlock(&fault_record_mutex);
-	pr_info("ub ub_fault_record register successfully\n");
+	pr_info("ub_fault_record register successfully\n");
 
 	return 0;
 }

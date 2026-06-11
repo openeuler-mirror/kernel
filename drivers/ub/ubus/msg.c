@@ -377,7 +377,7 @@ static int handle_vdm_rsp_msg(struct ub_entity *uent, struct ub_vdm_pld *vdm_pld
 	}
 
 	if (header->msgetah.rsp_status) {
-		ub_err(uent, " vdm rsp msg status error, status=%u\n",
+		ub_err(uent, "vdm rsp msg status error, status=%u\n",
 		       header->msgetah.rsp_status);
 		return -EINVAL;
 	}

@@ -348,7 +348,7 @@ cfg_fail:
 		i++;
 	}
 out:
-	/* upi no need unconfigure */
+	/* UPI does not need unconfigure */
 	(void)ub_cfg_bus_instance_eid(bi, false);
 	return ret;
 }
@@ -377,7 +377,7 @@ static void ub_unregister_bus_instance(struct ub_bus_instance *bi)
 					      bi->info.upi);
 	}
 
-	/* upi no need unconfigure */
+	/* UPI does not need unconfigure */
 	(void)ub_cfg_bus_instance_eid(bi, false);
 }
 

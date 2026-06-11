@@ -94,7 +94,7 @@ static const char *get_sub_module_name(u32 id)
 {
 	u8 i;
 
-	for (i = 0; i <  ARRAY_SIZE(hisi_ubus_sub_module); i++) {
+	for (i = 0; i < ARRAY_SIZE(hisi_ubus_sub_module); i++) {
 		if (hisi_ubus_sub_module[i].sub_module_id == id)
 			return hisi_ubus_sub_module[i].sub_module_name;
 	}
@@ -168,7 +168,7 @@ static inline bool is_nl_local_ras(u8 sub_module_id)
 
 #define LQC_MOUDULE_ERR_BIT 7
 #define LQC_MOUDULE_ERR_MISC 1
-static inline bool is_nl_ssu_link_credi_overtime_err(const struct hisi_ubus_error_data *edata)
+static inline bool is_nl_ssu_link_credit_overtime_err(const struct hisi_ubus_error_data *edata)
 {
 	if (DIV_ROUND_UP(edata->register_array_size, SZ_4) <= LQC_MOUDULE_ERR_MISC)
 		return false;
@@ -185,7 +185,7 @@ static bool ubus_need_recover(const struct hisi_ubus_error_data *edata)
 		return false;
 
 	if (is_nl_local_ras(edata->sub_module_id))
-		return is_nl_ssu_link_credi_overtime_err(edata);
+		return is_nl_ssu_link_credit_overtime_err(edata);
 
 	return true;
 }
@@ -252,17 +252,17 @@ static void hisi_ubus_handle_error(struct ub_entity *uent,
 	     min(edata->register_array_size, REGISTER_ARRAY_MAX_SIZE), SZ_4); i++)
 		ub_info(uent, "ERR_MISC_%u = %#x\n", i, edata->err_misc[i]);
 	if (edata->register_array_size > REGISTER_ARRAY_MAX_SIZE)
-		ub_warn(uent, "register array size is exceed max array size %d, only parts of data were printed.\n",
+		ub_warn(uent, "register array size exceeds max array size %d, only parts of data were printed.\n",
 			REGISTER_ARRAY_MAX_SIZE);
 
 	if (!ubus_need_recover(edata)) {
-		ub_info(uent, "ubus no need recover.\n");
+		ub_info(uent, "ubus no need to recover.\n");
 		return;
 	}
 
 	ret = ubus_recover(uent, edata);
 	if (ret)
-		ub_err(uent, "ubus recover failed, ret=%d\n", ret);
+		ub_err(uent, "ubus recovery failed, ret=%d\n", ret);
 }
 
 static bool ubus_error_supported(const struct hisi_ubus_error_data *error_data)
