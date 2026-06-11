@@ -1641,53 +1641,6 @@ ERR_WQ_WORK:
 	return NULL;
 }
 
-int ubcore_disconnect_vtp_with_tpid_reuse(struct ubcore_vtpn *vtpn)
-{
-	struct ubcore_device *dev;
-	struct ubcore_tpid_reuse *tpid_reuse;
-	int ret = 0;
-
-	if (vtpn == NULL || vtpn->tpid_reuse == NULL || vtpn->tpid_reuse->ub_dev == NULL)
-		return -EINVAL;
-
-	tpid_reuse = vtpn->tpid_reuse;
-	dev = tpid_reuse->ub_dev;
-	mutex_lock(&tpid_reuse->lock);
-	if (atomic_dec_return(&tpid_reuse->use_cnt) > 0) {
-		ubcore_log_info_rl("vtpn in use, tpid id = %u, vtpn use_cnt = %d",
-				tpid_reuse->tp_handle.bs.tpid, atomic_read(&tpid_reuse->use_cnt));
-		mutex_unlock(&tpid_reuse->lock);
-		return 0;
-	}
-
-	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
-
-	if (atomic_read(&tpid_reuse->use_cnt) > 0) {
-		mutex_unlock(&tpid_reuse->lock);
-		return 0;
-	}
-
-	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
-		ret = ubcore_adapter_layer_disconnect(vtpn);
-		tpid_reuse->reuse_state = UBCORE_TPID_REUSE_ERROR;
-	} else {
-		ubcore_log_info_rl("tpid_reuse in deleted state, tpid_reuse:%u, state%u",
-				tpid_reuse->tp_handle.bs.tpid, tpid_reuse->reuse_state);
-	}
-	ubcore_log_info_rl("disconnect tpid_reuse:%u, ret:%d, tpid_reuse_state:%u",
-			   tpid_reuse->tp_handle.bs.tpid, ret, tpid_reuse->reuse_state);
-	mutex_unlock(&tpid_reuse->lock);
-
-	if (atomic_read(&tpid_reuse->use_cnt) == 0) {
-		if (ret == 0 || ret == -ENOENT) {
-			(void)ubcore_free_tpid_reuse(tpid_reuse);
-			(void)ubcore_free_vtpn_ctrlplane(vtpn);
-		}
-	}
-
-	return ret;
-}
-
 int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn)
 {
 	struct ubcore_device *dev;

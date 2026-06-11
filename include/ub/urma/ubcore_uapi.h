@@ -873,8 +873,6 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 struct ubcore_tpid *ubcore_create_tpid(struct ubcore_device *dev,
 	struct ubcore_tpid_cfg *cfg, struct ubcore_udata *udata);
 
-int ubcore_query_tpid(struct ubcore_device *dev, uint32_t tpid, struct ubcore_tpid_attr *attr);
-
 /**
  * set tp attributions by control plane.
  * @param[in] dev: ubcore device pointer created before;
