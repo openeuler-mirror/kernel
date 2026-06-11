@@ -871,9 +871,10 @@ static int target_reuse_tpid(struct ubcore_device *dev, struct ubcore_tpid_reuse
 			tpid_reuse->is_ref = true;
 			mutex_unlock(&tpid_reuse->lock);
 			return CREATE_CONN_SUCCESS;
+		} else {
+			mutex_unlock(&tpid_reuse->lock);
+			return CREATE_CONN_FAIL;
 		}
-		mutex_unlock(&tpid_reuse->lock);
-		return CREATE_CONN_FAIL;
 	}
 	mutex_unlock(&tpid_reuse->lock);
 
