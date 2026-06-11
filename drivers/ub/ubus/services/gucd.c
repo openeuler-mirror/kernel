@@ -9,6 +9,7 @@
 #include "../decoder.h"
 #include "../ubus_driver.h"
 #include "../memory.h"
+#include "../services.h"
 #include "service.h"
 
 static const struct ub_device_id component_device_ids[] = {

@@ -195,7 +195,7 @@ put_pue:
 pue_reg_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
 	dev_info(&ubc->dev, "MUE reg: guid[%#llx-%#llx] idx[%u] cnt[%u] start[%u] end[%u] ueid[%#x] status[%#x]\n",
-		 *(u64 *)&pld->guid[2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 *(u64 *)&pld->guid[SZ_2], *(u64 *)pld->guid, pld->pue_entity_idx,
 		 pld->ue_cnt, pld->start_ue_entity_idx, pld->end_ue_entity_idx,
 		 pld->user_eid[0], status);
 	return status;
@@ -265,7 +265,7 @@ u8 ub_idevice_pue_rls_handler(struct ub_bus_controller *ubc, struct vdm_msg_pkt 
 rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
 	dev_info(&ubc->dev, "MUE unreg: guid[%#llx-%#llx] idx[%u] reason[%#x] status[%#x]\n",
-		 *(u64 *)&pld->guid[2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 *(u64 *)&pld->guid[SZ_2], *(u64 *)pld->guid, pld->pue_entity_idx,
 		 pld->rls_reason, status);
 	return status;
 }
@@ -355,7 +355,7 @@ put_mue:
 ue_reg_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
 	dev_info(&ubc->dev, "UE reg: guid[%#llx-%#llx] mue_idx[%u] idx[%u] ueid[%#x] status[%#x]\n",
-		 *(u64 *)&pld->guid[2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 *(u64 *)&pld->guid[SZ_2], *(u64 *)pld->guid, pld->pue_entity_idx,
 		 pld->ue_entity_idx, pld->user_eid[0], status);
 	return status;
 }
@@ -396,7 +396,7 @@ put_mue:
 ue_rls_rsp:
 	ub_vdm_msg_rsp(ubc, pkt, status);
 	dev_info(&ubc->dev, "UE unreg: guid[%#llx-%#llx] mue_idx[%u] idx[%u] reason[%#x] status[%#x]\n",
-		 *(u64 *)&pld->guid[2], *(u64 *)pld->guid, pld->pue_entity_idx,
+		 *(u64 *)&pld->guid[SZ_2], *(u64 *)pld->guid, pld->pue_entity_idx,
 		 pld->ue_entity_idx, pld->rls_reason, status);
 	return status;
 }
