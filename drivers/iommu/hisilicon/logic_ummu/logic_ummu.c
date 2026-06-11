@@ -324,70 +324,18 @@ static int logic_ummu_map_pages(struct iommu_domain *domain, unsigned long iova,
 			      pgcount, prot, gfp, mapped);
 }
 
-static void non_agent_ummu_flush_tlb(struct iommu_domain *domain,
-				     unsigned long start, unsigned long end,
-				     size_t pgsize)
-{
-	const struct ummu_device_helper *helper = get_agent_helper();
-	struct ummu_base_domain *ummu_base_domain, *next;
-	struct logic_ummu_domain *logic_domain;
-	struct iommu_iotlb_gather gather;
-
-	if (WARN_ON(start >= end || !helper || !helper->sync_tlb))
-		return;
-
-	logic_domain = iommu_to_logic_domain(domain);
-	iommu_iotlb_gather_init(&gather);
-	gather.start = start;
-	gather.end = end;
-	gather.pgsize = pgsize;
-	list_for_each_entry_safe(ummu_base_domain, next, &logic_domain->base_domain.list, list) {
-		if (ummu_base_domain == logic_domain->agent_domain)
-			continue;
-
-		helper->sync_tlb(&ummu_base_domain->domain, &gather);
-	}
-}
-
 static size_t logic_ummu_unmap_pages(struct iommu_domain *domain,
 				     unsigned long iova, size_t pgsize,
 				     size_t pgcount,
 				     struct iommu_iotlb_gather *gather)
 {
-	unsigned long ed = iova + pgsize * pgcount - 1, ed_old = gather->end;
-	unsigned long st = iova, st_old = gather->start;
 	struct ummu_base_domain *agent_domain;
 	const struct iommu_domain_ops *ops;
-	size_t ret, granule;
 
 	agent_domain = iommu_to_logic_domain(domain)->agent_domain;
 	ops = agent_domain->domain.ops;
 
-	granule = (gather->pgsize != 0) ? gather->pgsize : PAGE_SIZE;
-
-	ret = ops->unmap_pages(&agent_domain->domain, iova, pgsize, pgcount, gather);
-	if (!ret || iommu_iotlb_gather_queued(gather))
-		goto out_no_flush;
-
-	/*
-	 * The agent UMMU may flush some TLBs in the unmap implementation.
-	 * LOGIC UMMU needs to find the TLBs that are flushed internally
-	 * and to instruct non-agent UMMUs to do corresponding TLBI.
-	 */
-	if (st_old != ULONG_MAX)
-		non_agent_ummu_flush_tlb(domain, st_old, ed_old, granule);
-
-	if (gather->start == ULONG_MAX) {
-		non_agent_ummu_flush_tlb(domain, st, ed, granule);
-	} else {
-		if (gather->start > st)
-			non_agent_ummu_flush_tlb(domain, st, gather->start - 1, granule);
-
-		if (gather->end < ed)
-			non_agent_ummu_flush_tlb(domain, gather->end + 1, ed, granule);
-	}
-out_no_flush:
-	return ret;
+	return ops->unmap_pages(&agent_domain->domain, iova, pgsize, pgcount, gather);
 }
 
 static void logic_ummu_flush_iotlb_all(struct iommu_domain *domain)
@@ -1352,14 +1300,21 @@ static void logic_ummu_release_device(struct device *dev)
 
 static void logic_ummu_probe_finalize(struct device *dev)
 {
-	const struct iommu_ops *ops = get_agent_iommu_ops();
+	const struct ummu_device_helper *helper = get_agent_helper();
+	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
+	struct ummu_base_domain *base_domain, *next;
+	struct logic_ummu_domain *logic_domain;
 
-	if (!ops || !ops->probe_finalize) {
-		pr_err("invalid ops.\n");
+	if (!domain)
 		return;
-	}
 
-	ops->probe_finalize(dev);
+	logic_domain = iommu_to_logic_domain(domain);
+	if (!logic_domain)
+		return;
+
+	if (helper && helper->sync_iommu_domain)
+		list_for_each_entry_safe(base_domain, next, &logic_domain->base_domain.list, list)
+			helper->sync_iommu_domain(base_domain, domain);
 }
 
 static struct iommu_group *logic_ummu_device_group(struct device *dev)
@@ -2056,6 +2011,23 @@ static int logic_ummu_dev_config(struct device *dev, int type, int command, void
 	return 0;
 }
 
+static void logic_ummu_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
+				    size_t size, size_t pgsize)
+{
+	struct logic_ummu_domain *logic_domain = iommu_to_logic_domain(domain);
+	const struct ummu_device_helper *helper = get_agent_helper();
+	struct ummu_base_domain *base_domain, *next;
+	struct iommu_iotlb_gather gather = {
+		.start = iova,
+		.end = iova + size - 1,
+		.pgsize = pgsize,
+	};
+
+	if (helper && helper->sync_tlb)
+		list_for_each_entry_safe(base_domain, next, &logic_domain->base_domain.list, list)
+			helper->sync_tlb(&base_domain->domain, &gather);
+}
+
 static struct ummu_core_ops logic_ummu_core_ops = {
 	.cfg_sync_all = logic_ummu_cfg_sync_all,
 	.cfg_sync = logic_ummu_cfg_sync,
@@ -2067,6 +2039,7 @@ static struct ummu_core_ops logic_ummu_core_ops = {
 	.tdev_support_attr = logic_ummu_device_support_attr,
 	.get_hw_cap = logic_ummu_get_hw_cap,
 	.dev_config = logic_ummu_dev_config,
+	.tlb_inv_walk = logic_ummu_tlb_inv_walk,
 };
 
 /* workaround. should be in macro */

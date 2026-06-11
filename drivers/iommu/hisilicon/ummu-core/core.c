@@ -478,6 +478,15 @@ int ummu_core_invalidate_cfg(struct ummu_invalid_cfg_param *param)
 }
 EXPORT_SYMBOL_GPL(ummu_core_invalidate_cfg);
 
+void ummu_core_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
+			    size_t size, size_t granule)
+{
+	if (global_core_device && global_core_device->ops &&
+	    global_core_device->ops->tlb_inv_walk)
+		global_core_device->ops->tlb_inv_walk(domain, iova, size, granule);
+}
+EXPORT_SYMBOL_NS_GPL(ummu_core_tlb_inv_walk, UMMU_INTERNAL);
+
 static int __init ummu_core_init(void)
 {
 	int ret;
