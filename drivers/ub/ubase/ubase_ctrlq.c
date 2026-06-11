@@ -1422,7 +1422,7 @@ static void ubase_ctrlq_crq_handler(struct ubase_dev *udev)
 	}
 
 	if (!ubase_ctrlq_crq_is_empty(udev, &udev->hw))
-		ubase_ctrlq_task_schedule(udev, 1);
+		ubase_ctrlq_task_schedule(udev, 0);
 }
 
 void ubase_ctrlq_crq_service_task(struct ubase_delay_work *ubase_work)
