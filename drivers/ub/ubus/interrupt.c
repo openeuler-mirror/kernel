@@ -15,6 +15,7 @@
 #include <linux/interrupt.h>
 
 #include "ubus.h"
+#include "interrupt.h"
 
 enum ub_intr_tbl_type {
 	UB_INTR_VECTOR_TBL,

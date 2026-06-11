@@ -191,8 +191,8 @@ int message_rx_init(void)
 	for (i = 0; i < UB_MSG_CODE_NUM; i++) {
 		if (!msg_name[i])
 			continue;
-		q = alloc_ordered_workqueue(msg_name[i],
-					    WQ_HIGHPRI);
+		q = alloc_ordered_workqueue("%s", WQ_HIGHPRI,
+					    msg_name[i]);
 		if (!q) {
 			pr_err("alloc workqueue[%d] failed\n", i);
 			message_rx_uninit();
