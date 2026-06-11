@@ -83,7 +83,7 @@ static int vfio_ub_intr_set_vector_signal(struct vfio_ub_core_device *vdev,
 
 	irq_vec = ub_irq_vector(uent, vector);
 
-	/* if already assigned interrupts, just free it and reassigned it later. */
+	/* if already assigned interrupts, just free them and reassign them later. */
 	if (vdev->ctx[vector].trigger != NULL) {
 		irq_bypass_unregister_producer(&vdev->ctx[vector].producer);
 		free_irq(irq_vec, vdev->ctx[vector].trigger);
@@ -215,7 +215,7 @@ static int vfio_ub_intr_irq_trigger(struct vfio_ub_core_device *vdev,
 	if (flags & VFIO_IRQ_SET_DATA_EVENTFD) {
 		int32_t *fds = (int32_t *)data;
 
-		/* if ub device irq has setted, then update irq eventfd handler */
+		/* if ub device irq has been set, update irq eventfd handler */
 		if (irq_is(vdev, index))
 			return vfio_ub_intr_set_block(vdev, start, count, fds);
 

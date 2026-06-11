@@ -37,7 +37,7 @@ void ub_set_cap_bitmap(struct ub_entity *uent)
 	}
 }
 
-/* Check whether the capbility register is implemented. */
+/* Check whether the capability register is implemented. */
 static bool ub_cap_reg_implemented(struct ub_entity *uent, u32 cap)
 {
 	u32 i = (cap & 0xFF) / SZ_32;

@@ -963,7 +963,7 @@ static int ub_entity_enable_base(struct ub_entity *uent, u8 enable, bool force)
 		}
 	}
 
-	ub_info(uent, "Change the entity status to %s\n", enable ?  "normal" : "disable");
+	ub_info(uent, "Change the entity status to %s\n", enable ? "normal" : "disable");
 
 	if (enable)
 		ub_entity_assign_priv_flag(uent, UB_ENTITY_ACTIVE, true);
@@ -995,10 +995,12 @@ EXPORT_SYMBOL_GPL(ub_entity_enable);
 
 int ub_set_user_info(struct ub_entity *uent)
 {
+	u32 eid;
+
 	if (!uent || !uent->ubc || !uent->ubc->uent)
 		return -EINVAL;
 
-	u32 eid = uent->ubc->uent->eid;
+	eid = uent->ubc->uent->eid;
 
 	if (is_p_device(uent) ||
 	    (uent->ubc->cluster && is_ibus_controller(uent)))
@@ -1070,7 +1072,7 @@ int ub_activate_entity(struct ub_entity *uent, u32 entity_idx)
 
 	udrv = uent->driver;
 	if (!udrv || !udrv->activate) {
-		ub_err(uent, "udrv or activate is null\n");
+		ub_err(uent, "udrv or activate is NULL\n");
 		return -EINVAL;
 	}
 
@@ -1110,7 +1112,7 @@ int ub_deactivate_entity(struct ub_entity *uent, u32 entity_idx)
 
 	udrv = uent->driver;
 	if (!udrv || !udrv->deactivate) {
-		ub_err(uent, "udrv or deactivate is null\n");
+		ub_err(uent, "udrv or deactivate is NULL\n");
 		return -EINVAL;
 	}
 

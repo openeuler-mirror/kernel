@@ -69,7 +69,7 @@ int ub_port_write_dword(struct ub_port *port, u32 pos, u32 val)
 {
 	u64 base = UB_PORT_SLICE_START + port->index * UB_PORT_SLICE_SIZE;
 
-	return ub_cfg_write_dword(port->uent,  base + pos, val);
+	return ub_cfg_write_dword(port->uent, base + pos, val);
 }
 
 static ssize_t cna_show(struct ub_port *port, char *buf)
@@ -89,7 +89,7 @@ static ssize_t linkup_show(struct ub_port *port, char *buf)
 	u8 val;
 
 	if (port->type == VIRTUAL)
-		return sysfs_emit(buf, "Virtual port don't support\n");
+		return sysfs_emit(buf, "Virtual port does not have real link status\n");
 
 	if (ub_port_read_byte(port, UB_PORT_PHYSICAL_PORT_LINK_STATUS, &val)) {
 		ub_err(port->uent, "get port link cap fail\n");
@@ -629,7 +629,7 @@ int ub_register_share_port(struct ub_entity *entity, u16 port_id,
 
 	if (!is_idev(entity) && !is_ibus_controller(entity)) {
 		ub_err(entity,
-		       "don't support device with type %u register share port\n",
+		       "does not support device with type %u register share port\n",
 		       uent_type(entity));
 		return -EINVAL;
 	}
@@ -643,7 +643,7 @@ int ub_register_share_port(struct ub_entity *entity, u16 port_id,
 		/* check parent is controller */
 		parent = to_ub_entity(parent->dev.parent);
 		if (!is_ibus_controller(parent)) {
-			ub_err(entity, "don't support register share port at non-controller device with type %u\n",
+			ub_err(entity, "does not support register share port at non-controller device with type %u\n",
 			       uent_type(parent));
 			return -EINVAL;
 		}

@@ -191,8 +191,8 @@ int message_rx_init(void)
 	for (i = 0; i < UB_MSG_CODE_NUM; i++) {
 		if (!msg_name[i])
 			continue;
-		q = alloc_ordered_workqueue(msg_name[i],
-					    WQ_HIGHPRI);
+		q = alloc_ordered_workqueue("%s", WQ_HIGHPRI,
+					    msg_name[i]);
 		if (!q) {
 			pr_err("alloc workqueue[%d] failed\n", i);
 			message_rx_uninit();
@@ -377,7 +377,7 @@ static int handle_vdm_rsp_msg(struct ub_entity *uent, struct ub_vdm_pld *vdm_pld
 	}
 
 	if (header->msgetah.rsp_status) {
-		ub_err(uent, " vdm rsp msg status error, status=%u\n",
+		ub_err(uent, "vdm rsp msg status error, status=%u\n",
 		       header->msgetah.rsp_status);
 		return -EINVAL;
 	}

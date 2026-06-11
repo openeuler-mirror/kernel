@@ -9,6 +9,7 @@
 #include "../decoder.h"
 #include "../ubus_driver.h"
 #include "../memory.h"
+#include "../services.h"
 #include "service.h"
 
 static const struct ub_device_id component_device_ids[] = {
@@ -79,7 +80,7 @@ static int ub_component_service_register(struct ub_entity *uent)
 	if (!capabilities)
 		return 0;
 
-	for (i = 0; i < UB_MAXSERIVCES; i++) {
+	for (i = 0; i < UB_MAXSERVICES; i++) {
 		int service = 1 << i;
 
 		if (!(capabilities & service))
