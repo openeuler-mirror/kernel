@@ -44,7 +44,7 @@ static void ubase_reset_task_schedule(struct ubase_dev *udev)
 
 void ubase_reset_task_schedule_immediately(struct ubase_dev *udev)
 {
-#define RESET_TASK_DELAY_TIME_IM	msecs_to_jiffies(4)
+#define RESET_TASK_DELAY_TIME_IM	msecs_to_jiffies(50)
 
 	set_bit(UBASE_SERVICE_STATE_RESET_SCHED, &udev->service_task.state);
 
@@ -53,8 +53,6 @@ void ubase_reset_task_schedule_immediately(struct ubase_dev *udev)
 
 static void ubase_reset_err_handle(struct ubase_dev *udev)
 {
-#define UBASE_RST_MAX_RETRY_CNT	5
-
 	if (test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits))
 		return;
 
@@ -351,6 +349,7 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 	udev->reset_stat.reset_retry_cnt = 0;
 	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
 	clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+	clear_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits);
 	return;
 
 timeout_resume:
@@ -361,6 +360,7 @@ err_resume:
 	ubase_resume_aux_devices(udev, UBASE_RESET_STAGE_ABORT);
 	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
 	clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+	set_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits);
 	ubase_reset_err_handle(udev);
 }
 
