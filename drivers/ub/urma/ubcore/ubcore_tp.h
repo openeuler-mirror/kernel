@@ -13,6 +13,7 @@
 #define UBCORE_TP_H
 
 #include <ub/urma/ubcore_types.h>
+#include "ubcore_tpid_table.h"
 
 #define UBCORE_TP_ID_FETCH_NUM 1
 #define UBCORE_TP_ID_BATCH_NUM 1

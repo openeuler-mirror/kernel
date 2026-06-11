@@ -155,7 +155,8 @@ static bool ubmad_check_recv_msn_duplicate(struct ubmad_msn_mgr *msn_mgr,
 
 	if (atomic_read(&msn_mgr->cnt) > UBMAD_RECV_MSN_MAX) {
 		spin_lock_irqsave(&msn_mgr->msn_hlist_lock, flag);
-		cur = list_first_entry(&msn_mgr->msn_lru_list, struct ubmad_msn_node, lru_node);
+		cur = list_first_entry_or_null(
+			&msn_mgr->msn_lru_list, struct ubmad_msn_node, lru_node);
 		if (!IS_ERR_OR_NULL(cur)) {
 			hlist_del(&cur->node);
 			list_del(&cur->lru_node);
@@ -538,8 +539,10 @@ clear_rt_work:
 stop_retransmit:
 	tjetty = ubmad_get_tjetty(dst, rsrc);
 
-	if (!IS_ERR_OR_NULL(tjetty))
+	if (!IS_ERR_OR_NULL(tjetty)) {
 		ubmad_release_ini_rtbuffer(tjetty, rt_work->msn, rt_work->msg_type);
+		return;
+	}
 
 	ubcore_log_info_rl("Do not repost, found: %u, rt_work->rt_cnt: %u.\n",
 		      (uint32_t)found, rt_work->rt_cnt);
@@ -1771,7 +1774,6 @@ static void ubmad_send_work_handler(struct ubmad_device_priv *dev_priv,
 	} while (cr_cnt > 0);
 
 	ret = ubcore_rearm_jfc(jfc, false);
-	ubcore_log_info_rl("Rearm send jfc, jfc_id: %u, ret: %d.\n", jfc->id, ret);
 }
 
 // polling here indicates if recv msg
@@ -1791,10 +1793,7 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 	if (IS_ERR_OR_NULL(rsrc)) {
 		ubcore_log_err("Failed to match jfc for recv.\n");
 		return;
-	}
-
-	ret = ubcore_rearm_jfc(jfc, false);
-	ubcore_log_info_rl("Rearm recv jfc, jfc_id: %u, ret: %d.\n", jfc->id, ret);
+	};
 
 	do {
 		cr_cnt = ubcore_poll_jfc(jfc, 1, &cr);
@@ -1805,10 +1804,8 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 		if (cr_cnt == 0)
 			break;
 
-		ubcore_log_info_rl("cr_cnt = %d.\n", cr_cnt);
 		/* cr_cnt == 1 */
 		if (cr.status == UBCORE_CR_SUCCESS) {
-			ubcore_log_info_rl("ct.status = success.\n");
 			if (ubmad_process_msg(&cr, rsrc, dev_priv,
 					      jfce_work->agent_priv) != 0)
 				ubcore_log_err_rl("process msg failed\n");
@@ -1819,7 +1816,6 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 			ubcore_log_err(
 				"invalid cr.user_ctx. sge addr should not < seg addr\n");
 		} else {
-			ubcore_log_info_rl("ct.user_ctx >= va.\n");
 			sge_idx = (cr.user_ctx - rsrc->recv_seg->seg.ubva.va) /
 				  UBMAD_SGE_MAX_LEN;
 			// get in ubmad_post_recv()
@@ -1830,8 +1826,6 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 		if (ubmad_post_recv(rsrc) != 0)
 			ubcore_log_err("post recv in jfce handler failed.\n");
 
-		ubcore_log_info_rl("post_recv == 0.\n");
-
 		if (cr.status != UBCORE_CR_SUCCESS) {
 			ubcore_log_err(
 				"Rx status error. cr_cnt %d, status %d, comp_len %u, user_ctx: 0x%llx.\n",
@@ -1841,10 +1835,9 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 		}
 	} while (cr_cnt > 0);
 
-	ubcore_log_info_rl("end rearm poll jfc while.\n");
+	ret = ubcore_rearm_jfc(jfc, false);
 }
 
-// continue from ubmad_jfce_handler()
 static void ubmad_jfce_work_handler(struct work_struct *work)
 {
 	struct ubmad_jfce_work *jfce_work =

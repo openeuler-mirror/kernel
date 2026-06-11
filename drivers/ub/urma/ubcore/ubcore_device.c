@@ -633,7 +633,7 @@ static inline void ubcore_free_tpid_list_obj(void *obj)
 
 static inline void ubcore_free_tp_state_ht_obj(void *obj)
 {
-	ubcore_free_driver_obj(obj, UBCORE_HT_TP_ID_STATE);
+	ubcore_free_driver_obj(obj, UBCORE_HT_TPID_STATE);
 }
 
 static inline void ubcore_free_tp_reuse_ht_obj(void *obj)
@@ -701,7 +701,7 @@ static struct ubcore_ht_param g_ht_params[] = {
 				sizeof(struct ubcore_tpid_list_key),
 				NULL, ubcore_free_tpid_list_obj,
 				ubcore_tpid_list_get},
-	[UBCORE_HT_TP_ID_STATE] = {UBCORE_HASH_TABLE_SIZE,
+	[UBCORE_HT_TPID_STATE] = {UBCORE_HASH_TABLE_SIZE,
 				offsetof(struct ubcore_tpid_state, hnode),
 				offsetof(struct ubcore_tpid_state, tp_id),
 				sizeof(uint64_t),
