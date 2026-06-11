@@ -85,6 +85,6 @@ static void __exit hisi_ubus_driver_unregister(struct platform_driver *drv)
 MODULE_SOFTDEP("pre: ummu");
 module_driver(hisi_ubus_driver, hisi_ubus_driver_register, hisi_ubus_driver_unregister);
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Hisilicon UnifiedBus Manage Subsystem");
+MODULE_DESCRIPTION("HiSilicon UnifiedBus Manage Subsystem");
 MODULE_IMPORT_NS(UB_UBUS);
 MODULE_VERSION(HISI_UBUS_MOD_VERSION);

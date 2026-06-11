@@ -80,7 +80,7 @@ static int ub_component_service_register(struct ub_entity *uent)
 	if (!capabilities)
 		return 0;
 
-	for (i = 0; i < UB_MAXSERIVCES; i++) {
+	for (i = 0; i < UB_MAXSERVICES; i++) {
 		int service = 1 << i;
 
 		if (!(capabilities & service))

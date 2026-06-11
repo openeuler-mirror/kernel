@@ -168,7 +168,7 @@ static ub_ers_result_t ub_error_report(struct ub_entity *uent, ub_channel_state_
 	device_lock(&uent->dev);
 	udrv = uent->driver;
 	if (!udrv || !udrv->err_handler || !udrv->err_handler->ub_error_detected) {
-		ub_warn(uent, "No driver bounded or no handler provided.\n");
+		ub_warn(uent, "No driver bound or no handler provided.\n");
 		result = UB_ERS_RESULT_NO_ERR_DRIVER;
 		goto exit;
 	}
