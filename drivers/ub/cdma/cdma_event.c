@@ -255,8 +255,8 @@ static int cdma_jfce_id_alloc(struct cdma_dev *cdev, struct cdma_jfce *jfce)
 
 	idr_preload(GFP_KERNEL);
 	spin_lock(&jfce_tbl->lock);
-	id = idr_alloc(&jfce_tbl->idr_tbl.idr, jfce, jfce_tbl->idr_tbl.min,
-		       jfce_tbl->idr_tbl.max, GFP_NOWAIT);
+	id = idr_alloc(&jfce_tbl->idr_pool.idr, jfce, jfce_tbl->idr_pool.min,
+		       jfce_tbl->idr_pool.max, GFP_NOWAIT);
 	if (id < 0)
 		dev_err(cdev->dev, "alloc jfce id failed\n");
 	spin_unlock(&jfce_tbl->lock);
@@ -270,7 +270,7 @@ static void cdma_jfce_id_free(struct cdma_dev *cdev, u32 jfce_id)
 	struct cdma_table *jfce_tbl = &cdev->jfce_table;
 
 	spin_lock(&jfce_tbl->lock);
-	idr_remove(&jfce_tbl->idr_tbl.idr, jfce_id);
+	idr_remove(&jfce_tbl->idr_pool.idr, jfce_id);
 	spin_unlock(&jfce_tbl->lock);
 }
 
@@ -332,7 +332,7 @@ struct cdma_jfce *cdma_get_jfce_from_id(struct cdma_dev *cdev, int jfce_id)
 	struct file *file;
 
 	spin_lock(&jfce_table->lock);
-	jfce = idr_find(&jfce_table->idr_tbl.idr, jfce_id);
+	jfce = idr_find(&jfce_table->idr_pool.idr, jfce_id);
 	if (!jfce) {
 		dev_err(cdev->dev, "find jfce failed, id = %d\n", jfce_id);
 	} else {
@@ -490,7 +490,7 @@ static int cdma_get_async_event(struct cdma_jfae *jfae, struct file *filp,
 	ctx = cdma_jfae_to_ctx(jfae);
 	cdev = jfae->cfile->cdev;
 
-	if (!cdev || cdev->status == CDMA_INVALID || !ctx || ctx->invalid) {
+	if (!cdev || cdev->status == CDMA_STATUS_INVALID || !ctx || ctx->invalid) {
 		pr_info("wait dev invalid event success\n");
 		async_event.event_data = 0;
 		async_event.event_type = CDMA_EVENT_DEV_INVALID;
@@ -532,7 +532,7 @@ static __poll_t cdma_jfae_poll(struct file *filp, struct poll_table_struct *wait
 	ctx = cdma_jfae_to_ctx(jfae);
 	cdev = jfae->cfile->cdev;
 
-	if (!cdev || cdev->status == CDMA_INVALID || !ctx || ctx->invalid)
+	if (!cdev || cdev->status == CDMA_STATUS_INVALID || !ctx || ctx->invalid)
 		return POLLIN | POLLRDNORM;
 
 	return cdma_jfe_poll(&jfae->jfe, filp, wait);

@@ -16,9 +16,9 @@
 #include "cdma_handle.h"
 #include <ub/cdma/cdma_api.h>
 
-LIST_HEAD(g_client_list);
-DECLARE_RWSEM(g_clients_rwsem);
-DECLARE_RWSEM(g_device_rwsem);
+LIST_HEAD(cdma_client_list);
+DECLARE_RWSEM(cdma_clients_rwsem);
+DECLARE_RWSEM(cdma_device_rwsem);
 
 /**
  * dma_get_device_list - Get DMA device list
@@ -57,7 +57,7 @@ struct dma_device *dma_get_device_list(u32 *num_devices)
 
 	xa_for_each(cdma_devs_tbl, index, cdev) {
 		attr = &cdev->base.attr;
-		if (cdev->status >= CDMA_SUSPEND) {
+		if (cdev->status >= CDMA_STATUS_SUSPENDED) {
 			pr_warn("not prepared to get device list, eid = 0x%x\n",
 				attr->eid.dw0);
 			continue;
@@ -153,7 +153,7 @@ struct dma_device *dma_get_device_by_eid(struct dev_eid *eid)
 
 	xa_for_each(cdma_devs_tbl, index, cdev) {
 		attr = &cdev->base.attr;
-		if (cdev->status >= CDMA_SUSPEND) {
+		if (cdev->status >= CDMA_STATUS_SUSPENDED) {
 			pr_warn("not prepared to get device, eid = 0x%x\n",
 				attr->eid.dw0);
 			continue;
@@ -210,7 +210,7 @@ int dma_create_context(struct dma_device *dma_dev)
 		return -EINVAL;
 	}
 
-	if (cdev->status >= CDMA_SUSPEND) {
+	if (cdev->status >= CDMA_STATUS_SUSPENDED) {
 		pr_warn("not prepared to create context, eid = 0x%x\n",
 			dma_dev->attr.eid.dw0);
 		return -EINVAL;
@@ -274,11 +274,11 @@ void dma_delete_context(struct dma_device *dma_dev, int handle)
 		return;
 	}
 
-	cdma_kcmd_inc(cdev);
+	cdma_ref_inc(&cdev->kcmdcnt);
 	cdma_free_context(cdev, ctx);
 	ctx_res->ctx = NULL;
 	atomic_dec(&dma_dev->ref_cnt);
-	cdma_kcmd_dec(cdev);
+	cdma_ref_dec(&cdev->kcmdcnt, &cdev->kcmddone);
 }
 EXPORT_SYMBOL_GPL(dma_delete_context);
 
@@ -311,7 +311,7 @@ int dma_alloc_queue(struct dma_device *dma_dev, int ctx_id, struct queue_cfg *cf
 		return -EINVAL;
 	}
 
-	if (cdev->status >= CDMA_SUSPEND) {
+	if (cdev->status >= CDMA_STATUS_SUSPENDED) {
 		pr_warn("not prepared to alloc queue, eid = 0x%x\n",
 			dma_dev->attr.eid.dw0);
 		return -EINVAL;
@@ -385,10 +385,10 @@ void dma_free_queue(struct dma_device *dma_dev, int queue_id)
 	xa_erase(&ctx_res->queue_xa, queue_id);
 	ctx = queue->ctx;
 
-	cdma_kcmd_inc(cdev);
+	cdma_ref_inc(&cdev->kcmdcnt);
 	cdma_delete_queue(cdev, queue_id);
 	atomic_dec(&ctx->ref_cnt);
-	cdma_kcmd_dec(cdev);
+	cdma_ref_dec(&cdev->kcmdcnt, &cdev->kcmddone);
 }
 EXPORT_SYMBOL_GPL(dma_free_queue);
 
@@ -424,7 +424,7 @@ struct dma_seg *dma_register_seg(struct dma_device *dma_dev, int ctx_id,
 		return NULL;
 	}
 
-	if (cdev->status >= CDMA_SUSPEND) {
+	if (cdev->status >= CDMA_STATUS_SUSPENDED) {
 		pr_warn("not prepared to register segment, eid = 0x%x\n",
 			dma_dev->attr.eid.dw0);
 		return NULL;
@@ -511,12 +511,12 @@ void dma_unregister_seg(struct dma_device *dma_dev, struct dma_seg *dma_seg)
 	xa_erase(&ctx_res->seg_xa, dma_seg->handle);
 	ctx = seg->ctx;
 
-	cdma_kcmd_inc(cdev);
+	cdma_ref_inc(&cdev->kcmdcnt);
 	cdma_seg_ungrant(seg);
 	cdma_unregister_seg(cdev, seg);
 	kfree(dma_seg);
 	atomic_dec(&ctx->ref_cnt);
-	cdma_kcmd_dec(cdev);
+	cdma_ref_dec(&cdev->kcmdcnt, &cdev->kcmddone);
 }
 EXPORT_SYMBOL_GPL(dma_unregister_seg);
 
@@ -569,7 +569,7 @@ static int cdma_param_transfer(struct dma_device *dma_dev, int queue_id,
 		return -EINVAL;
 	}
 
-	if (tmp_dev->status >= CDMA_SUSPEND) {
+	if (tmp_dev->status >= CDMA_STATUS_SUSPENDED) {
 		pr_warn("not prepared to send packet, eid = 0x%x\n", eid);
 		return -EINVAL;
 	}
@@ -857,7 +857,7 @@ int dma_poll_queue(struct dma_device *dma_dev, int queue_id, u32 cr_cnt,
 		return -EINVAL;
 	}
 
-	if (cdev->status >= CDMA_SUSPEND) {
+	if (cdev->status >= CDMA_STATUS_SUSPENDED) {
 		pr_warn("not prepared to poll queue, eid = 0x%x\n", eid);
 		return -EINVAL;
 	}
@@ -908,12 +908,12 @@ int dma_register_client(struct dma_client *client)
 		return -EINVAL;
 	}
 
-	if (strnlen(client->client_name, DMA_MAX_DEV_NAME) >= DMA_MAX_DEV_NAME) {
+	if (strnlen(client->client_name, CDMA_CLIENT_NAME) >= CDMA_CLIENT_NAME) {
 		pr_err("invalid parameter, client name\n");
 		return -EINVAL;
 	}
 
-	down_write(&g_device_rwsem);
+	down_write(&cdma_device_rwsem);
 
 	cdma_devs_tbl = get_cdma_dev_tbl(&devs_num);
 
@@ -922,10 +922,10 @@ int dma_register_client(struct dma_client *client)
 			pr_err("dma client: %s add failed\n",
 				client->client_name);
 	}
-	down_write(&g_clients_rwsem);
-	list_add_tail(&client->list_node, &g_client_list);
-	up_write(&g_clients_rwsem);
-	up_write(&g_device_rwsem);
+	down_write(&cdma_clients_rwsem);
+	list_add_tail(&client->list_node, &cdma_client_list);
+	up_write(&cdma_clients_rwsem);
+	up_write(&cdma_device_rwsem);
 
 	pr_info("dma client: %s register success\n", client->client_name);
 	return 0;
@@ -955,12 +955,12 @@ void dma_unregister_client(struct dma_client *client)
 		return;
 	}
 
-	if (strnlen(client->client_name, DMA_MAX_DEV_NAME) >= DMA_MAX_DEV_NAME) {
+	if (strnlen(client->client_name, CDMA_CLIENT_NAME) >= CDMA_CLIENT_NAME) {
 		pr_err("invalid parameter, client name\n");
 		return;
 	}
 
-	down_write(&g_device_rwsem);
+	down_write(&cdma_device_rwsem);
 	cdma_devs_tbl = get_cdma_dev_tbl(&devs_num);
 
 	xa_for_each(cdma_devs_tbl, index, cdev) {
@@ -970,10 +970,10 @@ void dma_unregister_client(struct dma_client *client)
 		}
 	}
 
-	down_write(&g_clients_rwsem);
+	down_write(&cdma_clients_rwsem);
 	list_del(&client->list_node);
-	up_write(&g_clients_rwsem);
-	up_write(&g_device_rwsem);
+	up_write(&cdma_clients_rwsem);
+	up_write(&cdma_device_rwsem);
 
 	pr_info("dma client: %s unregister success\n", client->client_name);
 }
