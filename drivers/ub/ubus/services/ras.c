@@ -13,6 +13,7 @@
 #include "../msg.h"
 #include "../reset.h"
 #include "ras.h"
+#include "service.h"
 
 #define RAS_CE 0
 #define RAS_UC_NFE 1

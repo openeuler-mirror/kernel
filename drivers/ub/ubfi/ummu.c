@@ -268,7 +268,7 @@ static int acpi_update_ummu_config(struct ummu_node *ummu_node, u32 index)
 			goto rollback;
 		}
 
-		node_flag = index | ((u64)ummu_types[i].type << 32);
+		node_flag = index | ((u64)ummu_types[i].type << SZ_32);
 
 		status = acpi_get_devices(ummu_types[i].acpi_hid,
 					  acpi_processor_ummu,
