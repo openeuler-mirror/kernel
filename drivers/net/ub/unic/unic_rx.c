@@ -1065,7 +1065,7 @@ static int unic_rx_construct_skb(struct unic_rq *rq, struct napi_struct *napi,
 	rq->pending_buf += rqe_num;
 	ret = unic_create_skb(rq, napi, pkt_len);
 	if (unlikely(ret))
-		return ret;
+		goto err_create_skb;
 
 	ret = unic_handle_cqe(rq, cqe);
 	if (unlikely(ret))
@@ -1078,6 +1078,7 @@ static int unic_rx_construct_skb(struct unic_rq *rq, struct napi_struct *napi,
 
 destroy_skb:
 	dev_kfree_skb_any(rq->skb);
+err_create_skb:
 	rq->skb = NULL;
 	unic_page_pool_put_frags(rq, rqe_num);
 	return ret;
