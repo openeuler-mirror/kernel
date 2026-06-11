@@ -72,6 +72,29 @@ static inline unsigned int file_hash(struct nfs_fh *f)
 }
 
 /*
+ * Open the file on behalf of an NLM request, pinning the module that
+ * provides the nlmsvc_ops callbacks across the indirect call.
+ */
+static __be32 nlm_do_fopen(struct svc_rqst *rqstp, struct nfs_fh *f,
+			   struct file **filp)
+{
+	const struct nlmsvc_binding *ops;
+	__be32 nlmerr;
+
+	rcu_read_lock();
+	ops = rcu_dereference(nlmsvc_ops);
+	if (!ops || !try_module_get(ops->owner)) {
+		rcu_read_unlock();
+		return nlm_lck_denied_nolocks;
+	}
+	rcu_read_unlock();
+
+	nlmerr = ops->fopen(rqstp, f, filp);
+	module_put(ops->owner);
+	return nlmerr;
+}
+
+/*
  * Lookup file info. If it doesn't exist, create a file info struct
  * and open a (VFS) file for the given inode.
  *
@@ -117,7 +140,7 @@ nlm_lookup_file(struct svc_rqst *rqstp, struct nlm_file **result,
 	 * We have to make sure we have the right credential to open
 	 * the file.
 	 */
-	if ((nfserr = nlmsvc_ops->fopen(rqstp, f, &file->f_file)) != 0) {
+	if ((nfserr = nlm_do_fopen(rqstp, f, &file->f_file)) != 0) {
 		dprintk("lockd: open failed (error %d)\n", nfserr);
 		goto out_free;
 	}
@@ -140,6 +163,29 @@ out_free:
 }
 
 /*
+ * Release the struct file references held by a nlm_file.
+ */
+static void nlm_release_files(struct nlm_file *file)
+{
+	const struct nlmsvc_binding *ops;
+	bool have_ops;
+
+	rcu_read_lock();
+	ops = rcu_dereference(nlmsvc_ops);
+	have_ops = ops && try_module_get(ops->owner);
+	rcu_read_unlock();
+
+	if (have_ops) {
+		if (file->f_file)
+			ops->fclose(file->f_file);
+		module_put(ops->owner);
+	} else {
+		if (file->f_file)
+			fput(file->f_file);
+	}
+}
+
+/*
  * Delete a file after having released all locks, blocks and shares
  */
 static inline void
@@ -148,7 +194,7 @@ nlm_delete_file(struct nlm_file *file)
 	nlm_debug_print_file("closing file", file);
 	if (!hlist_unhashed(&file->f_list)) {
 		hlist_del(&file->f_list);
-		nlmsvc_ops->fclose(file->f_file);
+		nlm_release_files(file);
 		kfree(file);
 	} else {
 		printk(KERN_WARNING "lockd: attempt to release unknown file!\n");
