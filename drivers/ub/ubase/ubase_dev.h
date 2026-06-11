@@ -177,6 +177,7 @@ enum ubase_dev_state_bit {
 	UBASE_STATE_REMOVING_B,
 	UBASE_STATE_INIT_AGAIN_B,
 	UBASE_STATE_RST_TIMEOUT_RETRY_B,
+	UBASE_STATE_RST_FAILED_B,
 };
 
 struct ubase_crq_event_nbs {
