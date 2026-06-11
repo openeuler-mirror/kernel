@@ -1949,7 +1949,7 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 		mutex_lock(&tjfr->lock);
 
 		if (tjfr->vtpn->tpid_reuse) {
-			ret = ubcore_disconnect_vtp_with_tpid_reuse(tjfr->vtpn);
+			ret = ubcore_disconnect_tpid_with_tpid_reuse(tjfr->vtpn->tpid_reuse);
 		} else {
 			ret = ubcore_disconnect_vtp(tjfr->vtpn);
 		}
@@ -3118,7 +3118,7 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 	    tjetty->vtpn != NULL) {
 		mutex_lock(&tjetty->lock);
 		if (tjetty->vtpn->tpid_reuse) {
-			ret = ubcore_disconnect_vtp_with_tpid_reuse(tjetty->vtpn);
+			ret = ubcore_disconnect_tpid_with_tpid_reuse(tjetty->vtpn->tpid_reuse);
 		} else {
 			ret = ubcore_disconnect_vtp(tjetty->vtpn);
 		}
@@ -3476,7 +3476,8 @@ static int ubcore_inner_unbind_ub_jetty(struct ubcore_jetty *jetty,
 					    tjetty->cfg.flag.bs.share_tp)) {
 			mutex_lock(&tjetty->lock);
 			if (tjetty->vtpn->tpid_reuse) {
-				ret = ubcore_disconnect_vtp_with_tpid_reuse(tjetty->vtpn);
+				ret = ubcore_disconnect_tpid_with_tpid_reuse(
+					tjetty->vtpn->tpid_reuse);
 			} else {
 				ret = ubcore_disconnect_vtp(tjetty->vtpn);
 			}

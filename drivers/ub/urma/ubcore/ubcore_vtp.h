@@ -17,6 +17,7 @@
 #include "ubcore_msg.h"
 #include "ubcore_netlink.h"
 #include "ubcore_tp.h"
+#include "ubcore_tpid_table.h"
 
 #define UBCORE_VTP_TARGET 1
 #define UBCORE_VTP_INITIATOR 0
@@ -158,7 +159,6 @@ int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn);
 int ubcore_disconnect_rm_svtp(struct ubcore_tjetty *tjetty);
 int ubcore_disconnect_vtp_async(struct ubcore_vtpn *vtpn, int timeout,
 	struct ubcore_vtpn_cb_para *para);
-int ubcore_disconnect_vtp_with_tpid_reuse(struct ubcore_vtpn *vtpn);
 int ubcore_queue_destroy_vtp_task(struct ubcore_device *dev, struct ubcore_vtpn *vtpn,
 	uint32_t retry_times);
 void ubcore_flush_dev_vtp_work(struct ubcore_device *dev);
