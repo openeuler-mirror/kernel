@@ -376,9 +376,12 @@ static int ubase_ubus_reinit(struct ub_entity *ue)
 
 	ubase_info(udev, "UBUS reinit start.\n");
 
-	if (test_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits)) {
+	if (test_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits)) {
 		ubase_reset_task_schedule_immediately(udev);
-		return -EAGAIN;
+		ret = test_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits) ||
+		      udev->reset_stat.reset_retry_cnt < UBASE_RST_MAX_RETRY_CNT ?
+		      -EAGAIN : 0;
+		goto out;
 	}
 
 	if (test_bit(UBASE_DEV_NEED_TO_ACTIVATE_B, &udev->status)) {
