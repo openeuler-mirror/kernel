@@ -193,6 +193,22 @@ static const struct genl_ops ubcore_genl_ops[] = {
 	  .flags = GENL_ADMIN_PERM,
 	  .doit = ubcore_set_eid_ns_mode_ops
 	},
+	{
+		.cmd = UBCORE_CMD_SHOW_TPID_LIST,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.start = ubcore_show_tpid_list_start,
+		.dumpit = ubcore_show_tpid_list_dump,
+		.done = ubcore_show_tpid_list_done
+	},
+	{
+		.cmd = UBCORE_CMD_SHOW_TPID_REUSE,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.start = ubcore_show_tpid_reuse_start,
+		.dumpit = ubcore_show_tpid_reuse_dump,
+		.done = ubcore_show_tpid_reuse_done
+	},
 };
 
 /* ubcore family definition */
