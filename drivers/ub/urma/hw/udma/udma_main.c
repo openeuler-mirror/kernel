@@ -1420,6 +1420,7 @@ static int udma_init_dev(struct auxiliary_device *adev, bool is_probe)
 		goto err_set_ubcore_dev;
 	}
 
+	udma_dev->status = UDMA_NORMAL;
 	ret = udma_init_eid_table(udma_dev);
 	if (ret == -ETIMEDOUT && is_probe)
 		ubase_update_adev_status(udma_dev->comdev.adev, UBASE_ADEV_PROBE_FAIL);
@@ -1427,13 +1428,13 @@ static int udma_init_dev(struct auxiliary_device *adev, bool is_probe)
 		dev_err(udma_dev->dev, "init EID table failed.\n");
 		goto err_init_eid;
 	}
-	udma_dev->status = UDMA_NORMAL;
 	mutex_unlock(&udma_reset_mutex);
 	dev_info(udma_dev->dev, "init udma successfully.\n");
 
 	return 0;
 
 err_init_eid:
+	udma_dev->status = UDMA_INITIALIZING;
 	ubcore_unregister_device(&udma_dev->ub_dev);
 err_set_ubcore_dev:
 	udma_unregister_workqueue(udma_dev);
