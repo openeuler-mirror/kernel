@@ -3091,6 +3091,10 @@ config AMD_NODE
 	def_bool y
 	depends on CPU_SUP_AMD && PCI
 
+config HYGON_NB
+	def_bool y
+	depends on CPU_SUP_HYGON && PCI
+
 endmenu
 
 menu "Binary Emulations"
