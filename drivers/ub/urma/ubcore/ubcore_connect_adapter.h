@@ -13,6 +13,7 @@
 #define UBCORE_CONNECT_ADAPTER_H
 
 #include <ub/urma/ubcore_types.h>
+#include "ubcore_tpid_table.h"
 
 struct ubcore_ex_tp_info {
 	struct hlist_node hnode; /* key: tp_handle */
@@ -110,4 +111,5 @@ int ubcore_free_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse);
 void ubcore_hash_table_rmv_tpid_reuse(struct ubcore_device *dev,
 					     struct ubcore_tpid_reuse *entry);
 
+int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse);
 #endif

@@ -150,8 +150,10 @@ static void ubcore_set_tpid_list_key(struct ubcore_device *dev,
 
 	if (cfg->flag.bs.rtp)
 		tpid_list_key->tp_type = UBCORE_RTP;
-	if (cfg->flag.bs.ctp)
+	if (cfg->flag.bs.ctp) {
+		tpid_list_key->trans_mode = UBCORE_TP_RM;
 		tpid_list_key->tp_type = UBCORE_CTP;
+	}
 	if (cfg->flag.bs.utp)
 		tpid_list_key->tp_type = UBCORE_UTP;
 
@@ -566,8 +568,8 @@ get_tp_list_helper:
 }
 EXPORT_SYMBOL(ubcore_get_tp_list);
 
-static struct ubcore_tp_info
-*find_available_tp_id_nolock(struct ubcore_device *dev, struct ubcore_tpid_list *tp_id_list,
+static struct ubcore_tp_info *find_available_tp_id_nolock(struct ubcore_device *dev,
+	struct ubcore_tpid_list *tp_id_list,
 	bool is_aware)
 {
 	uint32_t tp_id;
@@ -617,12 +619,14 @@ static struct ubcore_tp_info
 	struct list_head *head;
 
 	if (tpid_list == NULL) {
-		ubcore_log_err_rl("Invalid parameter.\n");
+		ubcore_log_err_rl("Invalid parameter, tpid list is null.\n");
 		return NULL;
 	}
 	head = is_aware ? &tpid_list->aware_list : &tpid_list->unaware_list;
-	if (list_empty(head))
+	if (list_empty(head)) {
+		ubcore_log_err_rl("Invalid parameter, list head is null.\n");
 		return NULL;
+	}
 	ubcore_tpid_list_get(tpid_list);
 	tp_handle = find_available_tp_id_nolock(dev, tpid_list, is_aware);
 	ubcore_tpid_list_kref_put(tpid_list);
@@ -728,7 +732,7 @@ static int ubcore_query_select_tpid_list(struct ubcore_device *dev, struct ubcor
 		ubcore_log_err("Invalid parameter, trans_mode: %d.\n", (int)cfg->trans_mode);
 		return -EINVAL;
 	}
-ubcore_set_tpid_list_key(dev, cfg, &tpid_list_key);
+	ubcore_set_tpid_list_key(dev, cfg, &tpid_list_key);
 
 	tpid_list = ubcore_ht_find_get_tpid_list(dev, &tpid_list_key);
 
@@ -780,11 +784,9 @@ ubcore_set_tpid_list_key(dev, cfg, &tpid_list_key);
 		tp_list, tp_owner_type);
 	if (ret < 0 || old_cnt == (is_aware ? tpid_list->acnt : tpid_list->ucnt)) {
 		ubcore_log_err_rl("Failed to get tp list, ret = %d.\n", ret);
-		mutex_unlock(&tpid_list->fetch_lock);
-		return -ENOSPC;
+		ret =  -ENOSPC;
+		goto err_free_tp_list;
 	}
-	ubcore_log_info_rl("tp_list last tp handle value = %lld.\n",
-		tp_list[fetch_cnt - 1].tp_handle.value);
 
 	tp_selected = &tp_list[fetch_cnt - 1];
 	ubcore_log_info_rl("tp_selected handle value = %lld.\n", tp_selected->tp_handle.value);
@@ -792,8 +794,8 @@ ubcore_set_tpid_list_key(dev, cfg, &tpid_list_key);
 	state = ubcore_find_get_tp_id_state_entry(dev, tp_id);
 	if (state == NULL) {
 		ubcore_log_err_rl("Failed to find state of tp_id = %u.\n", tp_id);
-		mutex_unlock(&tpid_list->fetch_lock);
-		return -ENOSPC;
+		ret = -ENOSPC;
+		goto err_free_tp_list;
 	}
 	mutex_lock(&state->lock);
 	if (!state->alloced) {
@@ -809,6 +811,9 @@ done:
 	mutex_unlock(&state->lock);
 	ubcore_tpid_state_kref_put(state);
 	*selected_tpid = *tp_selected;
+
+err_free_tp_list:
+	kfree(tp_list);
 	mutex_unlock(&tpid_list->fetch_lock);
 	return ret;
 }
@@ -967,8 +972,9 @@ int ubcore_modify_tpid(struct ubcore_device *dev, enum ubcore_tpid_status state,
 			ubcore_log_err("Invalid state transition: %d -> RTS.\n", old_state);
 			mutex_unlock(&entry->lock);
 			ubcore_tpid_state_kref_put(entry);
-			return -EINVAL;
+			return 0;
 		}
+
 		ret = ubcore_active_tp(dev, cfg->active_cfg);
 		if (ret != 0) {
 			mutex_unlock(&entry->lock);
@@ -1076,7 +1082,7 @@ struct ubcore_tpid_state *ubcore_find_get_tp_id_state_entry(
 	struct ubcore_hash_table *ht = NULL;
 	uint32_t hash;
 
-	ht = &dev->ht[UBCORE_HT_TP_ID_STATE];
+	ht = &dev->ht[UBCORE_HT_TPID_STATE];
 
 	hash = ubcore_get_tpid_state_hash(ht, &tp_id);
 
@@ -1089,7 +1095,7 @@ int ubcore_find_add_tp_id_state_entry(struct ubcore_device *dev,
 	struct ubcore_hash_table *ht;
 	uint32_t hash;
 
-	ht = &dev->ht[UBCORE_HT_TP_ID_STATE];
+	ht = &dev->ht[UBCORE_HT_TPID_STATE];
 
 	hash = ubcore_get_tpid_state_hash(ht, &new_tp_state_entry->tp_id);
 
@@ -1112,7 +1118,7 @@ void ubcore_remove_tp_id_state_entry(struct ubcore_device *dev,
 {
 	struct ubcore_hash_table *ht;
 
-	ht = &dev->ht[UBCORE_HT_TP_ID_STATE];
+	ht = &dev->ht[UBCORE_HT_TPID_STATE];
 
 	ubcore_hash_table_remove(ht, &tp_state_entry->hnode);
 	kfree(tp_state_entry);
