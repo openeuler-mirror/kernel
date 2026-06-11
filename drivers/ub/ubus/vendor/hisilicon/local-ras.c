@@ -134,8 +134,11 @@ static const char *get_sub_module_name(u32 id)
 #define ASCEND950_SOC_ID 0x13
 #define NIMBUS_NUM 2
 #define UNION_DIE 1
+#define ZHULONG855_VERSION 1
+#define ZHULONG855_SOC_ID 0x20
+#define ZHULONG855_UB_MODULE_ID 0x2d
 
-/* only support on HIP12/13 and ASCEND950. */
+/* only support on HIP12/13 and ASCEND950 and ZHULONG855. */
 static const struct ubus_error_match ubus_error_table[] = {
 	{ HIP12_SOC_ID, HIP12_VERSION, UNION_DIE, HIP12_UB_MODULE_ID,
 	  VALID_SOC_ID | VALID_VERSION | VALID_NIMBUS_ID | VALID_MODULE_ID,
@@ -148,6 +151,8 @@ static const struct ubus_error_match ubus_error_table[] = {
 	  COMBINE_MODE },
 	{ ASCEND950_SOC_ID, ASCEND950_VERSION, 0, ASCEND950_UB_MODULE_ID,
 	  VALID_SOC_ID | VALID_VERSION | VALID_MODULE_ID, NIMBUS_MODE },
+	{ ZHULONG855_SOC_ID, ZHULONG855_VERSION, 0, ZHULONG855_UB_MODULE_ID,
+	  VALID_SOC_ID | VALID_VERSION | VALID_MODULE_ID, SOCKET_MODE },
 };
 
 static u32 ubus_calc_ctl_no(const struct ubus_error_match *match,
