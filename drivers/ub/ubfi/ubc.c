@@ -179,7 +179,7 @@ static int parse_ubc_info(struct ubc_node *node, struct ub_bus_controller *ubc)
 	ubc->attr.msg_int_attr = node->msg_int_attr;
 	ubc->attr.ubc_guid_low = node->ubc_guid_low;
 	ubc->attr.ubc_guid_high = node->ubc_guid_high;
-	pr_info("ubc interrupt id[0x%x-0x%x], ubc_guid[%llx-%llx], msg_int[0x%x]\n",
+	pr_info("ubc interrupt id [0x%x-0x%x], ubc_guid [%llx-%llx], msg_int [0x%x]\n",
 		ubc->attr.int_id_start, ubc->attr.int_id_end,
 		ubc->attr.ubc_guid_high, ubc->attr.ubc_guid_low,
 		ubc->attr.msg_int);

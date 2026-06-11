@@ -29,7 +29,7 @@ struct ubios_root_table *ubios_table;
 #define UBIOS_TABLE_TOTAL_SIZE_MAX (sizeof(struct ubrt_ubc_table) + \
 				    32 * sizeof(struct ubc_node))
 
-/* remember to use ub_table_put to release memory alloced by ub_table_get */
+/* remember to use ub_table_put to release memory allocated by ub_table_get */
 void *ub_table_get(u64 pa)
 {
 	void __iomem *va;
@@ -46,7 +46,7 @@ void *ub_table_get(u64 pa)
 	}
 
 	total_size = readl(va + UB_TABLE_HEADER_NAME_LEN);
-	pr_debug("ub table size is[0x%x]\n", total_size);
+	pr_debug("ub table size is [0x%x]\n", total_size);
 	if (total_size == 0 || total_size > UBIOS_TABLE_TOTAL_SIZE_MAX) {
 		pr_err("ubios table size is invalid, total_size=0x%x\n",
 		       total_size);
