@@ -706,8 +706,8 @@ int hi_send_port_reset_msg(struct ub_entity *uent, u16 port_idx)
 
 	ub_info(uent, "Sync request port reset msg\n");
 
-	ret = hi_message_sync_request(uent->message->mdev, &info,
-				      pkt.header.msgetah.code);
+	ret = hi_message_sync_request_sched(uent->message->mdev, &info,
+					    pkt.header.msgetah.code);
 	if (ret) {
 		ub_err(uent, "msg sync request ret=%d\n", ret);
 		return ret;
