@@ -58,7 +58,7 @@ void ubcore_tpid_list_kref_put(struct ubcore_tpid_list *tpid_list)
 	if (ref_cnt == 0)
 		dump_stack();
 
-	ubcore_log_err("kref_put: ref_cnt is %u", ref_cnt);
+	ubcore_log_info_rl("kref_put: ref_cnt is %u", ref_cnt);
 	(void)kref_put(&tpid_list->ref_cnt, ubcore_tpid_list_kref_release);
 }
 

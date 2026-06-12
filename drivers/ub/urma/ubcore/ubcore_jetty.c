@@ -1864,7 +1864,8 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 		return ERR_PTR(-EINVAL);
 
 	if (!active_tp_cfg->tpid_reuse) {
-		ubcore_log_err("active_tp_cfg tpid_reuse is false, do import_jfr_ex_old.\n");
+		ubcore_log_info_rl(
+			"active_tp_cfg tpid_reuse is false, do import_jfr_ex_old.\n");
 		return ubcore_import_jfr_ex_old(dev, cfg, active_tp_cfg, udata);
 	}
 	if (dev->transport_type == UBCORE_TRANSPORT_UB &&
@@ -3022,7 +3023,8 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 		return ERR_PTR(-EINVAL);
 
 	if (!active_tp_cfg->tpid_reuse) {
-		ubcore_log_err("active_tp_cfg tpid_reuse is false, do import_jetty_ex_old.\n");
+		ubcore_log_info_rl(
+			"active_tp_cfg tpid_reuse is false, do import_jetty_ex_old.\n");
 		return ubcore_import_jetty_ex_old(dev, cfg, active_tp_cfg, udata);
 	}
 
