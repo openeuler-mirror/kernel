@@ -1429,6 +1429,10 @@ static int fxgmac_net_powerdown(struct fxgmac_pdata *priv)
 		return 0; /* do nothing if already down */
 
 	__clear_bit(FXGMAC_POWER_STATE_UP, &priv->power_state);
+
+	if (priv->dev_state == FXGMAC_DEV_CLOSE)
+		return 0;  /* do nothing if already close */
+
 	netif_tx_stop_all_queues(ndev); /* Shut off incoming Tx traffic */
 
 	/* Call carrier off first to avoid false dev_watchdog timeouts */
