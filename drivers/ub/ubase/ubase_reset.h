@@ -21,6 +21,7 @@
 
 #define UBASE_RST_UE_WAIT_REG_TIME	200
 #define UBASE_RST_WAIT_TIME		100
+#define UBASE_RST_MAX_RETRY_CNT		5
 
 struct ubase_notify_ue_reset_cmd {
 	u16	bus_ue_id;
