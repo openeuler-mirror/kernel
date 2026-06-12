@@ -691,8 +691,10 @@ static int udma_ctrlq_eid_update(struct auxiliary_device *adev, uint8_t service_
 		return -EOPNOTSUPP;
 	}
 
-	if (udma_dev->status != UDMA_NORMAL)
-		return udma_ctrlq_send_eid_update_response(udma_dev, seq, 0);
+	if (udma_dev->status != UDMA_NORMAL) {
+		dev_err(udma_dev->dev, "udma dev does not exist!\n");
+		return udma_ctrlq_send_eid_update_response(udma_dev, seq, -EDRVNO);
+	}
 
 	if (len < sizeof(struct udma_ctrlq_eid_out_update)) {
 		dev_err(udma_dev->dev, "message length(%u) is invalid.\n", len);
@@ -891,7 +893,7 @@ static int udma_ctrlq_notify_mue_eid_guid(struct auxiliary_device *adev,
 		return 0;
 
 	if (udma_dev->status != UDMA_NORMAL)
-		return udma_ctrlq_send_eid_guid_response(udma_dev, seq, 0);
+		return udma_ctrlq_send_eid_guid_response(udma_dev, seq, -EDRVNO);
 	if (len < sizeof(struct udma_ctrlq_ue_eid_guid_out)) {
 		dev_err(udma_dev->dev, "EID-guid len(%u) is invalid.\n", len);
 		return udma_ctrlq_send_eid_guid_response(udma_dev, seq, -EINVAL);

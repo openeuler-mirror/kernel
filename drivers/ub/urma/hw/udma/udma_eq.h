@@ -8,6 +8,8 @@
 #include "udma_dev.h"
 #include "udma_ctrlq_tp.h"
 
+#define EDRVNO 255
+
 int udma_register_ae_event(struct auxiliary_device *adev);
 void udma_unregister_ae_event(struct auxiliary_device *adev);
 int udma_register_ce_event(struct auxiliary_device *adev);
