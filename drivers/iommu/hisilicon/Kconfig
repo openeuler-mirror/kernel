@@ -71,7 +71,7 @@ config UB_UMMU_BYPASSDEV
 
 config UB_UMMU_BYPASSEID
 	bool "Support UMMU to bypass in EID granularity"
-	depends on UMMU
+	depends on UB_UMMU
 	default n
 	help
 	  Support UMMU to bypass in EID granularity. When hardware
