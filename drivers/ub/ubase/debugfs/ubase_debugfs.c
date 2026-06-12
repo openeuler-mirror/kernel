@@ -480,6 +480,28 @@ static int ubase_dbg_dump_limit_log_cnt(struct seq_file *s, void *data)
 	return 0;
 }
 
+static int ubase_dbg_dump_mbx_stats(struct seq_file *s, void *data)
+{
+	struct ubase_dev *udev = dev_get_drvdata(s->private);
+
+	seq_printf(s, "mbx event_hw_cnt: %llu\n",
+		   udev->mbx_stats.event_hw_cnt);
+	seq_printf(s, "mbx event cmd_timeout_cnt: %llu\n",
+		   udev->mbx_stats.cmd_timeout_cnt);
+	seq_printf(s, "mbx event_hw_timeout_cnt: %llu\n",
+		   udev->mbx_stats.event_hw_timeout_cnt);
+	seq_printf(s, "mbx ae_cnt: %llu\n", udev->mbx_stats.ae_cnt);
+	seq_printf(s, "mbx seq_num_err_cnt: %llu\n",
+		   udev->mbx_stats.seq_num_err_cnt);
+	seq_printf(s, "mbx buff_cnt: %llu\n", udev->mbx_stats.buff_cnt);
+	seq_printf(s, "mbx buff_free_cnt: %llu\n",
+		   udev->mbx_stats.buff_free_cnt);
+	seq_printf(s, "mbx buff_not_empty_cnt: %llu\n",
+		   udev->mbx_stats.buff_not_empty_cnt);
+
+	return 0;
+}
+
 static bool __ubase_dbg_dentry_support(struct device *dev, u32 property)
 {
 	struct ubase_dev *udev = dev_get_drvdata(dev);
@@ -799,6 +821,14 @@ static struct ubase_dbg_cmd_info ubase_dbg_cmd[] = {
 		.support = __ubase_dbg_dentry_support,
 		.init = __ubase_dbg_seq_file_init,
 		.read_func = ubase_dbg_dump_limit_log_cnt,
+	},
+	{
+		.name = "mbx_stats",
+		.dentry_index = UBASE_DBG_DENTRY_ROOT,
+		.property = UBASE_SUP_URMA | UBASE_SUP_CDMA | UBASE_SUP_UBL_ETH,
+		.support = __ubase_dbg_dentry_support,
+		.init = __ubase_dbg_seq_file_init,
+		.read_func = ubase_dbg_dump_mbx_stats,
 	},
 };
 
