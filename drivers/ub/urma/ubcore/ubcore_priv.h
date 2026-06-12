@@ -96,6 +96,12 @@ struct ubcore_global_file {
 	struct ubcore_uvs_instance *uvs;
 };
 
+struct ubcore_host_info {
+	union ubcore_eid eid;
+	/* represents CNA as a ubcore_net_addr_union for interface consistency */
+	union ubcore_net_addr_union cna;
+};
+
 extern uint32_t ubcore_max_retry_cnt;
 extern uint32_t ubmad_retry_interval_ms;
 
