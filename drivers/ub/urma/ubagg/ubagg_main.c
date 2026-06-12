@@ -20,7 +20,8 @@
 #include "ubagg_seg.h"
 #include "ubagg_bitmap.h"
 #include "ubagg_hash_table.h"
-#include "ubagg_connect_bonding.h"
+#include "ubagg_connect.h"
+#include "ubagg_msg.h"
 #include "ubagg_session.h"
 
 #define UBAGG_MODULE_NAME "ubagg"
@@ -155,15 +156,23 @@ static int __init ubagg_init(void)
 		goto err_session;
 	}
 
-	ret = ubcore_register_comm_msg_handler(UBAGG_COMM_PROTOCOL, handle_bonding_msg);
+	ret = ubagg_connect_init();
+	if (ret != 0) {
+		ubagg_log_err("register ubagg connect handlers fail.\n");
+		goto err_connect_msg;
+	}
+
+	ret = ubagg_msg_init();
 	if (ret != 0) {
 		ubagg_log_err("register ubagg message handler fail.\n");
-		goto err_connect_bonding;
+		goto err_msg;
 	}
 
 	return 0;
 
-err_connect_bonding:
+err_msg:
+	ubagg_connect_uninit();
+err_connect_msg:
 	ubagg_session_uninit();
 err_session:
 	ubagg_genl_unregister_family();
@@ -175,7 +184,8 @@ err:
 
 static void __exit ubagg_exit(void)
 {
-	ubcore_unregister_comm_msg_handler(UBAGG_COMM_PROTOCOL);
+	ubagg_msg_uninit();
+	ubagg_connect_uninit();
 	ubagg_session_uninit();
 	ubagg_delete_topo_map();
 	ubagg_clear_dev_list();
