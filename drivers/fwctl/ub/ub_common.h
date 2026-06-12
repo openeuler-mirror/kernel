@@ -17,6 +17,8 @@
 
 #define UBCTL_READ true
 #define UBCTL_WRITE false
+#define UBCTL_PORT_TYPE_ETH 0U
+#define UBCTL_PORT_TYPE_UB 1U
 
 #define ubctl_err(ucdev, format, ...) \
 	dev_err(&ucdev->fwctl.dev, format, ##__VA_ARGS__)
