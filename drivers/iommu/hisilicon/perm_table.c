@@ -193,6 +193,12 @@ static int ummu_alloc_mapt_mem_for_table(struct ummu_domain *ummu_domain,
 		return -EINVAL;
 	}
 
+	if ((blk_para->index > 0 && !tct_desc->mapt_blk_tbl_phys) ||
+		blk_para->index >= UMMU_BLKTBL_MAX_ENTRIES) {
+		pr_err("unexpected mapt block index(%u)\n", blk_para->index);
+		return -EINVAL;
+	}
+
 	if (tct_desc->mapt_en && blk_para->index == 0)
 		return ummu_get_mapt_mem(ummu_domain, blk_para);
 
