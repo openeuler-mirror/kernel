@@ -829,11 +829,9 @@ static int ubase_parse_urma_sl_vl(struct ubase_dev *udev)
 	if (ret)
 		return ret;
 
-	if (ubase_dev_udma_supported(udev)) {
-		ret = ubase_parse_udma_vl(udev);
-		if (ret)
-			return ret;
-	}
+	ret = ubase_parse_udma_vl(udev);
+	if (ret)
+		return ret;
 
 	ubase_gather_urma_req_resp_vl(udev);
 	return 0;
@@ -904,8 +902,7 @@ static int ubase_parse_sl_vl(struct ubase_dev *udev)
 	if (ret)
 		return ret;
 
-	if (ubase_dev_udma_supported(udev))
-		ubase_init_udma_dscp_vl(udev);
+	ubase_init_udma_dscp_vl(udev);
 
 	if (ubase_utp_supported(udev) && ubase_dev_urma_supported(udev))
 		udev->caps.unic_caps.tpg.max_cnt = ubase_get_nic_max_vl(udev) + 1;
@@ -962,17 +959,21 @@ static int ubase_ctrlq_query_vl(struct ubase_dev *udev)
 	return 0;
 }
 
-static bool ubase_check_udma_sl_valid(struct ubase_dev *udev, u8 udma_tp_sl_cnt,
-				     u8 udma_ctp_sl_cnt)
+static bool ubase_check_sl_valid(struct ubase_dev *udev, u8 unic_sl_cnt,
+				 u8 udma_tp_sl_cnt, u8 udma_ctp_sl_cnt)
 {
-	if (!ubase_dev_udma_supported(udev))
-		return true;
+	u32 totol_cnt = 0;
 
-	if (ubase_dev_ubl_supported(udev) && !(udma_tp_sl_cnt + udma_ctp_sl_cnt))
+	totol_cnt = unic_sl_cnt + udma_tp_sl_cnt + udma_ctp_sl_cnt;
+	if (!totol_cnt) {
+		ubase_err(udev, "unic and udma does not have any sl.\n");
 		return false;
+	}
 
-	if (!ubase_dev_ubl_supported(udev) && !udma_tp_sl_cnt)
+	if (ubase_dev_unic_supported(udev) && !unic_sl_cnt) {
+		ubase_err(udev, "unic does not have sl.\n");
 		return false;
+	}
 
 	return true;
 }
@@ -1040,15 +1041,8 @@ static int ubase_ctrlq_query_sl(struct ubase_dev *udev)
 			udev->qos.adev_qos.ctp_sl[udma_ctp_sl_cnt++] = i;
 	}
 
-	if (!unic_sl_cnt) {
-		ubase_err(udev, "nic doesn't have any sl.\n");
+	if (!ubase_check_sl_valid(udev, unic_sl_cnt, udma_tp_sl_cnt, udma_ctp_sl_cnt))
 		return -EINVAL;
-	}
-
-	if (!ubase_check_udma_sl_valid(udev, udma_tp_sl_cnt, udma_ctp_sl_cnt)) {
-		ubase_err(udev, "udma doesn't have any sl.\n");
-		return -EINVAL;
-	}
 
 	udev->qos.adev_qos.nic_sl_num = unic_sl_cnt;
 	udev->qos.adev_qos.tp_sl_num = udma_tp_sl_cnt;
