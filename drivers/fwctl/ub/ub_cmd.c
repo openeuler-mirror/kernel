@@ -273,6 +273,38 @@ struct ubctl_port_link_stats_data {
 	u32 reserved[2];
 };
 
+struct ubctl_pkt_in_port_info {
+	uint32_t port_id;
+	uint16_t query_type;
+	uint16_t module_type;
+};
+
+#define UBCTL_LINK_PROC_ERR_STATE_SIZE 15
+struct utool_mac_dfx_link_state {
+	u16 cur_state;
+	u16 err_state[UBCTL_LINK_PROC_ERR_STATE_SIZE];
+};
+
+struct utool_port_link_info {
+	u32 port_id;
+	u16 query_type;
+	u16 module_type;
+	u8 target_speed;
+	u8 speed_ability_old;
+	u8 lane_num;
+	u8 fec;
+	u8 sds_rate;
+	u8 port_usage : 1;
+	u8 port_enable : 1;
+	u8 port_link : 1;
+	u8 reserved_0 : 5;
+	u8 driver_type;
+	u8 port_mode;
+	u32 link_down_err;
+	struct utool_mac_dfx_link_state mac_link_state;
+	u32 speed_ability;
+};
+
 static unsigned long g_ubctl_port_bitmap[UBCTL_MAX_DIE_NUM] = { 0 };
 struct ubctl_port_link_list g_port_link_list[UBCTL_MAX_DIE_NUM];
 static DEFINE_MUTEX(g_ubctl_port_link_mutex);
@@ -1379,6 +1411,48 @@ static int ubctl_query_port_bitmap_data(struct auxiliary_device *adev,
 	return ret;
 }
 
+static bool ubctl_get_port_link_status(struct auxiliary_device *adev, struct ubctl_dev *ucdev,
+				       u32 port_id, u32 port_type)
+{
+#define UTOOL_QUERY_TYPE_DATA 1
+#define UTOOL_MODULE_TYPE_LINK_INFO_ETH 1
+#define UTOOL_MODULE_TYPE_LINK_INFO_UB 4
+
+	struct ubctl_pkt_in_port_info pkt_in_data = {
+		.port_id = port_id,
+		.query_type = UTOOL_QUERY_TYPE_DATA,
+		.module_type = 0
+	};
+	struct utool_port_link_info out_data = {};
+	struct ubctl_cmd cmd = {};
+	int ret;
+
+	if (port_type == UBCTL_PORT_TYPE_UB) {
+		pkt_in_data.module_type = UTOOL_MODULE_TYPE_LINK_INFO_UB;
+	} else if (port_type == UBCTL_PORT_TYPE_ETH) {
+		pkt_in_data.module_type = UTOOL_MODULE_TYPE_LINK_INFO_ETH;
+	} else {
+		ubctl_err(ucdev, "unknown port type (%u).\n", port_type);
+		return false;
+	}
+
+	cmd.op_code = UBCTL_QUERY_PORT_INFO_DFX;
+	ret = ubctl_fill_cmd(&cmd, (void *)&pkt_in_data, (void *)&out_data, sizeof(out_data), true);
+	if (ret) {
+		ubctl_err(ucdev, "failed to fill the cmd params for query link status.\n");
+		return false;
+	}
+
+	ret = ubctl_ubase_cmd_send(adev, &cmd);
+	if (ret) {
+		ubctl_err(ucdev,
+			  "failed to execute ubase cmd for query link status, ret = %d.\n", ret);
+		return false;
+	}
+
+	return (out_data.port_link != 0);
+}
+
 static bool ubctl_check_port_link_stats(struct auxiliary_device *adev,
 					struct ubctl_dev *ucdev, u32 port_id)
 {
@@ -1399,7 +1473,7 @@ static bool ubctl_check_port_link_stats(struct auxiliary_device *adev,
 		ubctl_err(ucdev, "ubctl ubase cmd send failed, retval = %d.\n", ret);
 		return false;
 	}
-	return out_data.link_status ? true : false;
+	return ubctl_get_port_link_status(adev, ucdev, port_id, out_data.port_type);
 }
 
 static int ubctl_construct_first_link_data(struct auxiliary_device *adev,
