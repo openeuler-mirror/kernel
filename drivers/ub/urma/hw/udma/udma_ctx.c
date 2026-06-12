@@ -10,7 +10,6 @@
 #include "udma_jfs.h"
 #include "udma_jetty.h"
 #include "udma_ctrlq_tp.h"
-#include "udma_seg_tree.h"
 #include "udma_cmd.h"
 #include "udma_ctx.h"
 

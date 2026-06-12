@@ -10,7 +10,6 @@
 #include "udma_cmd.h"
 #include "udma_eid.h"
 #include "udma_tid.h"
-#include "udma_seg_tree.h"
 #include "udma_segment.h"
 
 static int udma_align_segment(struct udma_segment *seg)
@@ -426,7 +425,7 @@ static int udma_iommu_local_map(struct ubcore_device *ub_dev,
 	mutex_lock(&ctx->seg_node->lock);
 	ret = udma_seg_range_occupy(ctx->seg_node, seg->addr,
 				    seg->addr + PAGE_ALIGN(seg->length) - 1,
-				    &pageList, ctx);
+				    &pageList);
 	if (unlikely(ret)) {
 		mutex_unlock(&ctx->seg_node->lock);
 		dev_err(ctx->dev->dev, "segment have invalid parameter,ret = %d.\n", ret);
@@ -519,7 +518,7 @@ static void udma_unpin_pages_and_unioummu_map(struct udma_context *ctx, struct u
 
 	mutex_lock(&ctx->seg_node->lock);
 	udma_seg_range_release(ctx->seg_node, seg->addr,
-				seg->addr + PAGE_ALIGN(seg->length) - 1, &pageList);
+			       seg->addr + PAGE_ALIGN(seg->length) - 1, &pageList);
 	current_node = pageList.head;
 	while (current_node != NULL) {
 		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID, current_node->start,
