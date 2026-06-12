@@ -94,7 +94,8 @@ static void ubase_handle_activate_req(struct ubase_dev *udev, void *data,
 	else
 		ret = ubase_deactivate_ue(udev, ue, msn, bus_ue_id);
 
-	ubase_send_activate_resp(udev, req->bus_ue_id, req->msn, ret);
+	if (ret != -ETIMEDOUT)
+		ubase_send_activate_resp(udev, req->bus_ue_id, req->msn, ret);
 }
 
 struct ubase_arq_event {
