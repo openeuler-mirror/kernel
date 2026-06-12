@@ -29,6 +29,8 @@
 #define UDMA_SET_JETTY_OPT_MAX_NUM 4
 #define UDMA_SET_JFS_OPT_MAX_NUM 10
 
+#define CFGID_CHECK(a, b) ((a) >= (b).start_idx && (a) < (b).start_idx + (b).max_cnt)
+
 /* stub UBCORE */
 enum udma_set_get_jetty_opt_perm {
 	PERM_R = 1,
@@ -114,7 +116,7 @@ struct udma_jetty_ctx {
 	uint32_t err_mode : 1;
 	uint32_t ctp_rc_mul_path_mode : 1;
 	uint32_t cmp_odr : 1;
-	uint32_t rsv1 : 1;
+	uint32_t wqe_lock_buffer_en : 1;
 	uint32_t sqe_base_addr_l : 20;
 	/* DW2 */
 	uint32_t sqe_base_addr_h;
@@ -299,6 +301,7 @@ static inline void udma_set_query_flush_time(struct udma_dev *udev, struct udma_
 	sq->ta_timeout = udma_get_ta_timeout(gear);
 }
 
+bool is_support_ccu_jetty(struct udma_dev *dev, struct udma_jetty_queue *sq);
 void free_jetty_id(struct udma_dev *udma_dev,
 			  struct udma_jetty *udma_jetty, bool is_grp);
 enum jetty_state to_jetty_state(enum ubcore_jetty_state state);
@@ -347,6 +350,7 @@ int udma_batch_modify_and_destroy_jetty(struct udma_dev *dev,
 					uint32_t jetty_cnt, int *bad_jetty_index);
 int udma_add_xa_and_create_hw_ctx(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty,
 				  struct ubcore_jetty_cfg *cfg);
+void udma_free_lock_buffer_sq_buf(struct udma_dev *udma_dev, struct udma_jetty *udma_jetty);
 
 int udma_verify_jetty_opt(struct udma_dev *udma_dev, struct udma_jetty_opt_attr attr);
 int udma_set_jetty_field(struct udma_dev *udma_dev, struct udma_jetty_queue *sq,

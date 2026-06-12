@@ -144,8 +144,8 @@ static int udma_wait_resp_from_proxy(struct udma_dev *udev,
 }
 
 int udma_post_mbox_over_cmdq(struct udma_dev *udev,
-							 struct ubase_mbx_attr *attr,
-							 struct ubase_cmd_mailbox *mbox)
+			     struct ubase_mbx_attr *attr,
+			     struct ubase_cmd_mailbox *mbox)
 {
 	struct ubase_proxy_req_msg *req;
 	uint16_t ctx_len, data_len;
