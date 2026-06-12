@@ -4,15 +4,11 @@
 #ifndef __UDMA_SEG_TREE_H__
 #define __UDMA_SEG_TREE_H__
 
-#include "udma_ctx.h"
-
 #define BISECTOR 2
 
 struct udma_seg_tree_node {
 	uint64_t start;
 	uint64_t end;
-	uint64_t vm_start;
-	uint64_t vm_end;	// not including
 	int ref_count;
 	int lazy;
 	struct udma_seg_tree_node *left;
@@ -37,8 +33,8 @@ int udma_range_list_rollback(struct udma_range_list *list, struct udma_range_lis
 struct udma_seg_tree_node *udma_seg_range_init(void);
 void udma_seg_tree_destroy(struct udma_seg_tree_node *node);
 int udma_seg_range_occupy(struct udma_seg_tree_node *root, uint64_t start,
-			  uint64_t end, struct udma_range_list *list, struct udma_context *ctx);
+			  uint64_t end, struct udma_range_list *list);
 int udma_seg_range_release(struct udma_seg_tree_node *root, uint64_t start,
-			    uint64_t end, struct udma_range_list *list);
+			   uint64_t end, struct udma_range_list *list);
 
 #endif /* UDMA_SEG_TREE_H */
