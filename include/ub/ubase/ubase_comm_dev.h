@@ -43,6 +43,7 @@ struct iova_slot;
 #define UBASE_HW_VER_A_1	(1001U)
 #define UBASE_HW_VER_K_0	(2000U)
 #define UBASE_HW_VER_K_1	(2001U)
+#define UBASE_HW_VER_S_0	(3000U)
 
 #define UBASE_URMA_RTP_ROI	BIT(16)
 #define UBASE_URMA_RTP_ROT	BIT(17)
