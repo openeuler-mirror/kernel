@@ -281,11 +281,7 @@ static int hci_uart_open(struct hci_dev *hdev)
 /* Close device */
 static int hci_uart_close(struct hci_dev *hdev)
 {
-	struct hci_uart *hu = hci_get_drvdata(hdev);
-
 	BT_DBG("hdev %p", hdev);
-
-	cancel_work_sync(&hu->write_work);
 
 	hci_uart_flush(hdev);
 	hdev->flush = NULL;
