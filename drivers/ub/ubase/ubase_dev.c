@@ -1207,6 +1207,11 @@ u32 ubase_get_hw_ver(struct auxiliary_device *adev)
 	case UBASE_DEV_ID_A_V2_UBOE_MUE:
 	case UBASE_DEV_ID_A_V2_UBOE_UE:
 		return UBASE_HW_VER_A_1;
+	case UBASE_DEV_ID_S_0_URMA_MUE:
+	case UBASE_DEV_ID_S_0_URMA_UE:
+	case UBASE_DEV_ID_S_0_PMU_MUE:
+	case UBASE_DEV_ID_S_0_CDMA_MUE:
+		return UBASE_HW_VER_S_0;
 	default:
 		return UBASE_HW_VER_UNKNOWN;
 	}
