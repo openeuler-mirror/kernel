@@ -116,50 +116,6 @@ static int unic_update_vl_sl_map(struct unic_dev *unic_dev)
 	return 0;
 }
 
-static inline void unic_get_hw_prio_vl(struct ubase_caps *caps, u8 *sw_prio_vl,
-				       u8 *hw_prio_vl)
-{
-	int i;
-
-	for (i = 0; i < UNIC_MAX_PRIO_NUM; i++)
-		hw_prio_vl[i] = caps->req_vl[sw_prio_vl[i]];
-}
-
-static inline void unic_get_hw_dscp_vl(struct ubase_caps *caps, u8 *hw_prio_vl,
-				       u8 *dscp_prio, u8 *hw_dscp_vl)
-{
-	int i;
-
-	for (i = 0; i < UBASE_MAX_DSCP; i++)
-		hw_dscp_vl[i] = dscp_prio[i] == UNIC_INVALID_PRIORITY ?
-				caps->req_vl[0] : hw_prio_vl[dscp_prio[i]];
-}
-
-int unic_set_vl_map(struct unic_dev *unic_dev, u8 *dscp_prio, u8 *prio_vl,
-		    u8 map_type)
-{
-	struct ubase_caps *caps = ubase_get_dev_caps(unic_dev->comdev.adev);
-	u8 hw_prio_vl[UNIC_MAX_PRIO_NUM];
-	u8 hw_dscp_vl[UBASE_MAX_DSCP];
-	int ret;
-
-	unic_get_hw_prio_vl(caps, prio_vl, hw_prio_vl);
-	unic_get_hw_dscp_vl(caps, hw_prio_vl, dscp_prio, hw_dscp_vl);
-
-	if (unic_dev_ets_supported(unic_dev) &&
-	    !unic_dev_ubl_supported(unic_dev)) {
-		ret = unic_set_hw_vl_map(unic_dev, hw_dscp_vl, hw_prio_vl,
-					 map_type);
-		if (ret)
-			return ret;
-	}
-
-	ubase_update_udma_dscp_vl(unic_dev->comdev.adev, hw_dscp_vl,
-				  UBASE_MAX_DSCP);
-
-	return 0;
-}
-
 static int unic_init_vl_map(struct unic_dev *unic_dev)
 {
 	struct unic_vl *vl = &unic_dev->channels.vl;

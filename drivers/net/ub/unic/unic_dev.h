@@ -323,8 +323,6 @@ bool unic_rss_vl_num_changed(struct unic_dev *unic_dev, u8 vl_num);
 int unic_change_rss_size(struct unic_dev *unic_dev, u32 new_rss_size,
 			 u32 org_rss_size);
 int unic_update_channels(struct unic_dev *unic_dev, u8 vl_num);
-int unic_set_vl_map(struct unic_dev *unic_dev, u8 *dscp_prio, u8 *prio_vl,
-		    u8 map_type);
 int unic_dbg_log(void);
 
 static inline bool unic_dev_ubl_supported(struct unic_dev *unic_dev)
