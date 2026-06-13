@@ -12,10 +12,8 @@
 #include "ubagg_bitmap.h"
 #include "ubagg_log.h"
 #include "ubagg_topo_info.h"
-#include "ubagg_connect_bonding.h"
+#include "ubagg_connect.h"
 #include "ubagg_seg.h"
-
-#define URMA_UBAGG_DEV_MAX_NUM (20)
 
 struct ubagg_import_seg_udata {
 	/*
@@ -26,8 +24,37 @@ struct ubagg_import_seg_udata {
 	bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM];
 };
 
-static int fill_udata(struct ubcore_target_seg_cfg *cfg,
-		      struct ubcore_udata *udata)
+static int parse_ue_idx_from_udata(struct ubcore_udata *udata, uint32_t *ue_idx)
+{
+	unsigned long byte;
+
+	if (!udata->udrv_data->in_addr ||
+	    udata->udrv_data->in_len < sizeof(*ue_idx)) {
+		ubagg_log_err("invalid udata in_addr or in_len:%u.\n",
+			      udata->udrv_data->in_len);
+		return -EINVAL;
+	}
+
+	byte = copy_from_user(
+		ue_idx, (void __user *)(uintptr_t)udata->udrv_data->in_addr,
+		sizeof(*ue_idx));
+	if (byte != 0) {
+		ubagg_log_err("failed to copy ue_idx from user, byte:%lu.\n",
+			      byte);
+		return -EFAULT;
+	}
+
+	if (*ue_idx >= IODIE_NUM) {
+		ubagg_log_err("invalid ue_idx:%u.\n", *ue_idx);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int write_seg_udata(struct ubcore_target_seg_cfg *cfg,
+			   struct ubcore_udata *udata,
+			   struct ubagg_seg_info seg_info[UBAGG_DEV_MAX_NUM])
 {
 	struct ubagg_import_seg_udata *udata_typed;
 	bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM] = { 0 };
@@ -46,11 +73,18 @@ static int fill_udata(struct ubcore_target_seg_cfg *cfg,
 		return -EINVAL;
 	}
 
+	ret = copy_to_user((void __user *)udata_typed->peer_p_seg, seg_info,
+			   sizeof(struct ubagg_seg_info) * UBAGG_DEV_MAX_NUM);
+	if (ret != 0) {
+		ubagg_log_err("Failed to copy seg info to user, ret:%d", ret);
+		return -EFAULT;
+	}
+
 	ret = copy_to_user((void __user *)udata_typed->connected,
 			   (void *)connected, sizeof(udata_typed->connected));
 	if (ret != 0) {
 		ubagg_log_err("Failed to copy to user, ret:%d", ret);
-		return ret;
+		return -EFAULT;
 	}
 	return 0;
 }
@@ -149,24 +183,32 @@ struct ubcore_target_seg *ubagg_import_seg(struct ubcore_device *dev,
 					   struct ubcore_udata *udata)
 {
 	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
+	struct ubagg_seg_info seg_info[UBAGG_DEV_MAX_NUM] = { 0 };
 	struct ubcore_target_seg *tseg;
+	uint32_t ue_idx;
 	int ret;
 
 	if (ubagg_dev == NULL || cfg == NULL || udata == NULL ||
-	    udata->uctx == NULL) {
+	    udata->uctx == NULL || udata->udrv_data == NULL) {
 		ubagg_log_err("Invalid param");
 		return NULL;
 	}
 
-	if (ubagg_connect_exchange_udata_when_import_seg(&cfg->seg, udata, dev) != 0) {
+	ret = parse_ue_idx_from_udata(udata, &ue_idx);
+	if (ret != 0) {
+		ubagg_log_err("Failed to parse udata, ret:%d\n", ret);
+		return ERR_PTR(ret);
+	}
+
+	if (ubagg_connect_xchg_seg(&cfg->seg, ue_idx, dev, seg_info) != 0) {
 		ubagg_log_err("failed to exchange udata when import seg\n");
 		return ERR_PTR(-ENOEXEC);
 	}
 
-	ret = fill_udata(cfg, udata);
+	ret = write_seg_udata(cfg, udata, seg_info);
 	if (ret != 0) {
 		ubagg_log_err("Failed to fill udata, ret:%d\n", ret);
-		return NULL;
+		return ERR_PTR(ret);
 	}
 
 	tseg = kzalloc(sizeof(struct ubcore_target_seg), GFP_KERNEL);
