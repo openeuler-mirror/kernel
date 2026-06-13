@@ -901,7 +901,7 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_ue_init, ubase_ue_uninit
 	},
 	{
-		"init usc", UBASE_SUP_URMA, 0,
+		"init usc", UBASE_SUP_NO_PMU, 0,
 		ubase_usc_init, ubase_usc_uninit
 	},
 	{
