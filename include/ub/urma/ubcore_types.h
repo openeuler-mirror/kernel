@@ -86,6 +86,7 @@
 
 #define UBCORE_MAX_DSCP_NUM (64)
 #define UBCORE_MAX_ROUTE_NUM 16
+#define MAX_PATH_NUM (16)
 
 enum ubcore_transport_type {
 	UBCORE_TRANSPORT_INVALID = -1,
