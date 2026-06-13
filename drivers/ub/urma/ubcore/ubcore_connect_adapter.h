@@ -70,6 +70,7 @@ struct ubcore_deactive_stp_work {
 };
 
 extern uint32_t ubcore_conn_timeout;
+extern bool ubcore_enable_shared_ctp;
 
 struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 					       struct ubcore_tjetty_cfg *cfg,
