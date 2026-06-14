@@ -501,8 +501,7 @@ static inline bool cvm_timer_irq_can_fire(struct arch_timer_context *timer_ctx)
 {
 	return timer_ctx &&
 	       ((timer_get_ctl(timer_ctx) &
-		(ARCH_TIMER_CTRL_IT_MASK | ARCH_TIMER_CTRL_ENABLE)) ==
-		ARCH_TIMER_CTRL_ENABLE);
+		(ARCH_TIMER_CTRL_ENABLE)) == ARCH_TIMER_CTRL_ENABLE);
 }
 
 static void set_cvm_timers_loaded(struct kvm_vcpu *vcpu, bool loaded)
