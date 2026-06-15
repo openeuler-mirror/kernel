@@ -208,15 +208,17 @@ struct ubagg_add_dev_by_uvs {
 	struct ubagg_primary_port_eid slave_eid[IODIE_NUM];
 };
 
+struct ubagg_bonding_physical_device {
+	char dev_name[UBAGG_MAX_DEV_NAME_LEN];
+	uint32_t bonding_eid_idx;
+	struct ubagg_physical_device physical_devs[IODIE_NUM];
+};
+
 struct ubagg_cmd_physical_device {
 	struct {
 		union ubcore_eid bonding_eid;
 	} in;
-	struct {
-		char dev_name[UBAGG_MAX_DEV_NAME_LEN];
-		uint32_t bonding_eid_idx;
-		struct ubagg_physical_device physical_devs[IODIE_NUM];
-	} out;
+	struct ubagg_bonding_physical_device out;
 };
 
 long ubagg_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
