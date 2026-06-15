@@ -67,7 +67,7 @@ static uint32_t ubmad_reliable_hash(uint64_t msn, uint32_t msg_type, uint32_t si
 
 static struct ubmad_msn_node *
 ubmad_create_msn_node(uint64_t msn, uint32_t msg_type,
-		      struct ubmad_msn_mgr *msn_mgr, bool use_lru)
+		      struct ubmad_msn_mgr *msn_mgr)
 {
 	struct ubmad_msn_node *msn_node;
 	unsigned long flag;
@@ -86,8 +86,6 @@ ubmad_create_msn_node(uint64_t msn, uint32_t msg_type,
 	hash = ubmad_reliable_hash(msn, msg_type, UBMAD_MSN_HLIST_SIZE);
 	spin_lock_irqsave(&msn_mgr->msn_hlist_lock, flag);
 	hlist_add_head(&msn_node->node, &msn_mgr->msn_hlist[hash]);
-	if (use_lru)
-		list_add_tail(&msn_node->lru_node, &msn_mgr->msn_lru_list);
 	atomic_inc(&msn_mgr->cnt);
 	spin_unlock_irqrestore(&msn_mgr->msn_hlist_lock, flag);
 
@@ -352,7 +350,7 @@ static int ubmad_repost_send_conn_data(struct ubmad_rt_work *rt_work)
 								 rt_work->msg_type);
 
 	if (IS_ERR_OR_NULL(rtbuffer)) {
-		ubcore_log_err("Failed to get rtbuffer in repost, msn = %llu.\n", msn);
+		ubcore_log_info_rl("Failed to get rtbuffer in repost, msn = %llu.\n", msn);
 		goto repost_put_id;
 	}
 	memcpy((void *)sge_addr, rtbuffer->data, rtbuffer->payload_len);
@@ -633,7 +631,7 @@ static int ubmad_do_post_send_wk1_gen_data(struct ubcore_jetty *jetty,
 
 	int ret;
 
-	msn_node = ubmad_create_msn_node(msn, UBMAD_GEN_DATA, &tjetty->msn_mgr, false);
+	msn_node = ubmad_create_msn_node(msn, UBMAD_GEN_DATA, &tjetty->msn_mgr);
 	if (IS_ERR_OR_NULL(msn_node)) {
 		ubcore_log_err("create msn_node failed. msn %llu eid " EID_FMT
 			     "\n", msn, EID_ARGS(*dst_eid));
@@ -724,7 +722,7 @@ static int ubmad_do_post_send_wk0_conn_data(struct ubcore_jetty *jetty,
 	/* create msn_node before post to avoid recv ack before msn_node created and wrongly trigger
 	 * fast retransmission.
 	 */
-	msn_node = ubmad_create_msn_node(msn, UBMAD_UBC_CONN_REQ, &tjetty->msn_mgr, false);
+	msn_node = ubmad_create_msn_node(msn, UBMAD_UBC_CONN_REQ, &tjetty->msn_mgr);
 	if (IS_ERR_OR_NULL(msn_node)) {
 		ubcore_log_err("create msn_node failed. msn %llu eid " EID_FMT
 			     "\n",
@@ -876,7 +874,7 @@ static int ubmad_do_post_send_wk1_gen_resp(struct ubcore_jetty *jetty,
 		struct ubmad_rt_work *rt_work;
 		struct ubmad_ini_rtbuffer *rtbuffer;
 
-		msn_node = ubmad_create_msn_node(msn, UBMAD_GEN_RESP, &tjetty->msn_mgr, false);
+		msn_node = ubmad_create_msn_node(msn, UBMAD_GEN_RESP, &tjetty->msn_mgr);
 		if (IS_ERR_OR_NULL(msn_node)) {
 			ubcore_log_err("create msn_node for gen resp failed. msn %llu\n", msn);
 			goto gen_resp_out;
