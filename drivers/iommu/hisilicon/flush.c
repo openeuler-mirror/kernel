@@ -129,7 +129,7 @@ static void __ummu_tlbi_range(struct ummu_mcmdq_ent *cmd,
 			      struct ummu_domain *domain)
 {
 	struct ummu_device *ummu = core_to_ummu_device(domain->base_domain.core_dev);
-	unsigned long num_pages, gs, rg_start, rg_end, scale, num;
+	unsigned long num_pages, gs, rg_start, rg_end, scale, num, max_scale;
 	struct ummu_mcmdq_batch batch_cmds = {};
 	size_t ranged;
 
@@ -144,6 +144,10 @@ static void __ummu_tlbi_range(struct ummu_mcmdq_ent *cmd,
 		return;
 	}
 
+	max_scale = CMD_TLBI_RANGE_SCALE_MAX;
+	if (ummu->cap.options & UMMU_OPT_TLBI_LIMIT_SCALE)
+		max_scale = CMD_TLBI_RANGE_SCALE_LIMIT;
+
 	rg_start = range->iova;
 	rg_end = rg_start + range->size;
 	/* tg will be 12, 14, 16, indicating 4K, 16K, 64K pgtable */
@@ -157,10 +161,10 @@ static void __ummu_tlbi_range(struct ummu_mcmdq_ent *cmd,
 	while (rg_start < rg_end) {
 		cmd->tlbi.addr = rg_start;
 
-		scale = __ffs(num_pages);
+		scale = min(__ffs(num_pages), max_scale);
 		cmd->tlbi.scale = scale;
 
-		num = (num_pages >> scale) & CMD_TLBI_RANGE_NUM_MAX;
+		num = ((num_pages >> scale) & CMD_TLBI_RANGE_NUM_MAX) ?: CMD_TLBI_RANGE_NUM_MAX;
 		cmd->tlbi.num = num - 1;
 
 		ummu_mcmdq_batch_add(ummu, &batch_cmds, cmd);
@@ -178,7 +182,10 @@ static void ummu_tlbi_range(struct ummu_tlb_range *range, bool leaf,
 	struct ummu_mcmdq_ent cmd = {0};
 	int err;
 
-	err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_RNG, UMMU_TLBI_SCENE_DMA, &cmd);
+	if (domain->base_domain.domain.type == IOMMU_DOMAIN_SVA)
+		err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_RNG, UMMU_TLBI_SCENE_SVA, &cmd);
+	else
+		err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_RNG, UMMU_TLBI_SCENE_DMA, &cmd);
 	if (err)
 		return;
 
@@ -195,7 +202,10 @@ void ummu_tlbi_context(void *cookie)
 	struct ummu_mcmdq_ent cmd = {0};
 	int err;
 
-	err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_CTX, UMMU_TLBI_SCENE_DMA, &cmd);
+	if (domain->base_domain.domain.type == IOMMU_DOMAIN_SVA && domain->tlbi_asid)
+		err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_CTX, UMMU_TLBI_SCENE_SVA, &cmd);
+	else
+		err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_CTX, UMMU_TLBI_SCENE_DMA, &cmd);
 	if (err)
 		return;
 	trace_ummu_flush_iotlb_all(domain->base_domain.tid, dev_name(ummu->dev));
