@@ -18,7 +18,6 @@
 #include <ub/urma/ubcore_perf.h>
 
 #include "ubcore_log.h"
-#include "ubcore_topo_info.h"
 
 struct ubcore_cmd_hdr {
 	uint32_t command;
@@ -43,7 +42,7 @@ enum ubcore_cmd {
 	UBCORE_CMD_EXPOSE_DEV_NS,
 	UBCORE_CMD_UNEXPOSE_DEV_NS,
 	UBCORE_CMD_SET_DEV_EID_NS,
-	UBCORE_CMD_GET_TOPO_INFO,
+	UBCORE_CMD_GET_TOPO_INFO_RESERVE,
 	UBCORE_CMD_SET_SL,
 	UBCORE_CMD_SET_GENL_PID,
 	UBCORE_CMD_UVS_INIT_RES,
@@ -155,16 +154,6 @@ struct ubcore_cmd_set_eid_mode {
 		char dev_name[UBCORE_MAX_DEV_NAME];
 		bool eid_mode;
 	} in;
-};
-
-struct ubcore_cmd_topo_info {
-	struct {
-		int node_idx;
-	} in;
-	struct {
-		uint32_t node_num;
-		struct ubcore_topo_node topo_info;
-	} out;
 };
 
 /* record types streamed back during a tpid show dumpit */
