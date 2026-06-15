@@ -2831,10 +2831,9 @@ static int hns3_setup_tc_cls_flower(struct hns3_nic_priv *priv,
 static int hns3_setup_tc_block_cb(enum tc_setup_type type, void *type_data,
 				  void *cb_priv)
 {
-	struct flow_cls_common_offload *common = type_data;
 	struct hns3_nic_priv *priv = cb_priv;
 
-	if (!tc_can_offload_extack(priv->netdev, common->extack))
+	if (!tc_cls_can_offload_and_chain0(priv->netdev, type_data))
 		return -EOPNOTSUPP;
 
 	switch (type) {
