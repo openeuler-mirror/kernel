@@ -193,7 +193,6 @@ struct ummu_capability {
 #define UMMU_OPT_UMAU			(1UL << 7)
 #define UMMU_OPT_DOUBLE_TLBI		(1UL << 8)
 #define UMMU_OPT_TLBI_LIMIT_SCALE	(1UL << 9)
-#define UMMU_OPT_MCMDQ_DECREASE		(1UL << 10)
 	u32 options;
 
 #define UMMU_MAX_ASIDS			(1UL << 16)
