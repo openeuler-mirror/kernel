@@ -15,10 +15,8 @@
  */
 static bool rnpm_cache_ring_sriov(struct rnpm_adapter *adapter)
 {
-	/* only proceed if VMDq is enabled */
 	if (!(adapter->flags & RNPM_FLAG_VMDQ_ENABLED))
 		return false;
-
 	return true;
 }
 
@@ -105,12 +103,9 @@ static bool rnpm_cache_ring_rss(struct rnpm_adapter *adapter)
  **/
 static void rnpm_cache_ring_register(struct rnpm_adapter *adapter)
 {
-	/* start with default case */
-
 	/* sriov ring alloc is added before, this maybe no use */
 	if (rnpm_cache_ring_sriov(adapter))
 		return;
-
 	rnpm_cache_ring_rss(adapter);
 }
 
@@ -132,10 +127,9 @@ static void rnpm_cache_ring_register(struct rnpm_adapter *adapter)
  **/
 static bool rnpm_set_sriov_queues(struct rnpm_adapter *adapter)
 {
-	// u16 vmdq_i = adapter->ring_feature[RING_F_VMDQ].limit;
-	u16 vmdq_m = 0;
 	u16 rss_i = adapter->ring_feature[RING_F_RSS].limit;
 	u16 rss_m = RNPM_RSS_DISABLED_MASK;
+	u16 vmdq_m = 0;
 
 	/* only proceed if SR-IOV is enabled */
 	if (!(adapter->flags & RNPM_FLAG_SRIOV_ENABLED))
@@ -189,24 +183,19 @@ static bool rnpm_set_rss_queues(struct rnpm_adapter *adapter)
 	/* set limit -> indices */
 	f->indices = rss_i;
 	/* should init rss mask */
-	if (adapter->hw.rss_type == rnpm_rss_uv3p) {
+	if (adapter->hw.rss_type == rnpm_rss_uv3p)
 		f->mask = RNPM_RSS_8Q_MASK;
-	} else if (adapter->hw.rss_type == rnpm_rss_uv440) {
+	else if (adapter->hw.rss_type == rnpm_rss_uv440)
 		f->mask = RNPM_RSS_64Q_MASK;
-		/* maybe not good */
-	} else if (adapter->hw.rss_type == rnpm_rss_n10) {
+	else if (adapter->hw.rss_type == rnpm_rss_n10)
 		f->mask = RNPM_RSS_64Q_MASK;
-		/* maybe not good */
-	}
-
 	/* set rss_i -> adapter->num_tx_queues */
 	adapter->num_tx_queues =
 		min_t(int, rss_i, adapter->max_ring_pair_counts);
 	adapter->num_rx_queues = adapter->num_tx_queues;
 
-	rnpm_dbg("[%s] limit:%d indices:%d queues:%d\n",
-		 adapter->netdev->name, f->limit, f->indices,
-		 adapter->num_tx_queues);
+	netdev_dbg(adapter->netdev, "limit:%d indices:%d queues:%d\n",
+		   f->limit, f->indices, adapter->num_tx_queues);
 
 	return true;
 }
@@ -227,7 +216,6 @@ static void rnpm_set_num_queues(struct rnpm_adapter *adapter)
 	/* Start with base case */
 	adapter->num_tx_queues = 1;
 	adapter->num_rx_queues = 1;
-
 	if (rnpm_set_sriov_queues(adapter))
 		return;
 	/* at last we support rss */
@@ -240,8 +228,6 @@ int rnpm_acquire_msix_vectors(struct rnpm_adapter *adapter, int vectors)
 	int vectors_per_port = 0;
 	struct rnpm_hw *hw = &adapter->hw;
 	struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
-
-	dbg("%s %d\n", __func__, vectors);
 
 	switch (hw->mode) {
 	case MODE_NIC_MODE_1PORT:
@@ -268,8 +254,9 @@ int rnpm_acquire_msix_vectors(struct rnpm_adapter *adapter, int vectors)
 	err = pci_enable_msix_range(adapter->pdev, adapter->msix_entries,
 				    vectors, vectors);
 	if (err < 0) {
-		rnpm_err("pci_enable_msix failed: req:%d err:%d\n", vectors,
-			 err);
+		netdev_err(adapter->netdev,
+			   "pci_enable_msix failed: req:%d err:%d\n",
+			   vectors, err);
 		kfree(adapter->msix_entries);
 		adapter->msix_entries = NULL;
 		return -EINVAL;
@@ -296,7 +283,6 @@ static inline void rnpm_irq_disable_queues(struct rnpm_q_vector *q_vector)
 	struct rnpm_ring *ring;
 
 	rnpm_for_each_ring(ring, q_vector->tx) {
-		// update usecs
 		rnpm_wr_reg(ring->dma_int_mask,
 			    (RX_INT_MASK | TX_INT_MASK));
 	}
@@ -318,30 +304,21 @@ static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 	q_vector = container_of(hrtimer, struct rnpm_q_vector,
 				irq_miss_check_timer);
 	adapter = q_vector->adapter;
-	/*
-	 * rnp_for_each_ring(ring, q_vector->tx)
-	 *	rnp_wr_reg(ring->dma_int_mask, (RX_INT_MASK | TX_INT_MASK));
-	 */
 	if (test_bit(__RNPM_DOWN, &adapter->state) ||
 	    test_bit(__RNPM_RESETTING, &adapter->state))
 		goto do_self_napi;
 	set_bit(RNPM_IRQ_MISS_HANDLE_DONE, &q_vector->flags);
-	// check tx irq miss
+
 	rnpm_for_each_ring(ring, q_vector->tx) {
 		tx_next_to_clean = ring->next_to_clean;
 		tx_next_to_use = ring->next_to_use;
-		// have work to do
 		if (tx_next_to_use != tx_next_to_clean) {
 			tx_buffer =
 				&ring->tx_buffer_info[tx_next_to_clean];
 			eop_desc = tx_buffer->next_to_watch;
-			// have tx done
-			// next_to_watch maybe null in some condition
 			if (eop_desc) {
 				if ((eop_desc->vlan_cmd &
 				     cpu_to_le32(RNPM_TXD_STAT_DD))) {
-					// close irq
-					// printk("call irq self\n");
 					rnpm_irq_disable_queues(q_vector);
 					napi_schedule_irqoff(&q_vector->napi);
 					goto do_self_napi;
@@ -350,7 +327,6 @@ static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 		}
 	}
 
-	// check rx irq
 	rnpm_for_each_ring(ring, q_vector->rx) {
 		rx_desc = RNPM_RX_DESC(ring, ring->next_to_clean);
 		if (!rx_desc) {
@@ -359,7 +335,6 @@ static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 		}
 
 		if (rnpm_test_staterr(rx_desc, RNPM_RXD_STAT_DD)) {
-			// should check rx not zero
 			int size;
 
 			size = le16_to_cpu(rx_desc->wb.len);
@@ -367,7 +342,6 @@ static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 				rnpm_irq_disable_queues(q_vector);
 				napi_schedule_irqoff(&q_vector->napi);
 			} else {
-				// try to reset pf
 				struct rnpm_pf_adapter *pf_adapter =
 					adapter->pf_adapter;
 				set_bit(RNPM_PF_RESET, &pf_adapter->flags);
@@ -379,6 +353,35 @@ static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
 do_self_napi:
 	clear_bit(RNPM_IRQ_MISS_HANDLE_DONE, &q_vector->flags);
 	return HRTIMER_NORESTART;
+}
+
+/*
+ * get cpu with specified node and index
+ * return CPU index on success, return -1 on failure.
+ */
+static int rnpm_get_cpu_on_node(int node, int index, unsigned int offset)
+{
+	int cpu_count = 0;
+	int target;
+	int cpu;
+
+	if (node == NUMA_NO_NODE || node < 0)
+		return -1;
+
+	for_each_cpu_and(cpu, cpumask_of_node(node), cpu_online_mask)
+		cpu_count++;
+
+	if (cpu_count == 0)
+		return -1;
+
+	target = (offset + index) % cpu_count;
+
+	for_each_cpu_and(cpu, cpumask_of_node(node), cpu_online_mask) {
+		if (target-- == 0)
+			return cpu;
+	}
+
+	return -1;
 }
 
 /**
@@ -405,31 +408,37 @@ static int rnpm_alloc_q_vector(struct rnpm_adapter *adapter,
 	int ring_count, size;
 	int txr_count, rxr_count, idx;
 	int rxr_idx = r_idx, txr_idx = r_idx;
+	struct device *dev = &adapter->pdev->dev;
+	int orig_node = dev_to_node(dev);
+	int queue_index = v_idx - adapter->vector_off;
 
-	DPRINTK(PROBE, INFO,
-		"eth_queue_idx:%d v_idx:%d(off:%d) ring:%d ring_cnt:%d, step:%d\n",
-		eth_queue_idx, v_idx, adapter->vector_off, r_idx, r_count,
-		step);
-
+	netdev_dbg(adapter->netdev,
+		   "eth_queue_idx:%d v_idx:%d(off:%d) ring:%d ring_cnt:%d step:%d\n",
+		   eth_queue_idx, v_idx, adapter->vector_off, r_idx, r_count,
+		   step);
 	rxr_count = r_count;
 	txr_count = r_count;
 
 	ring_count = txr_count + rxr_count;
-
 	/* alloc ring memory together with q_vector */
 	size = sizeof(struct rnpm_q_vector) +
 	       (sizeof(struct rnpm_ring) * ring_count);
 
-	/* should minis adapter->vector_off */
-	if (cpu_online(v_idx - adapter->vector_off)) {
-		/* test feiteng, assign Manually */
-		/* cpu 48 - 55 */
-		/* node 6 */
-
-		/* cpu 1 - 7 */
-		//cpu = 1 + v_idx - adapter->vector_off;
-		cpu = v_idx - adapter->vector_off;
-		node = cpu_to_node(cpu);
+	/* Find the first online CPU on the same NUMA node as the NIC.
+	 * Then assign q_vectors to CPUs on this node in a round-robin fashion.
+	 */
+	if (orig_node != NUMA_NO_NODE) {
+		cpu = rnpm_get_cpu_on_node(orig_node, queue_index, cpu_offset);
+		if (cpu >= 0) {
+			node = orig_node;
+			pr_debug("RNPM: q_vector[%d] attached to CPU %d on NUMA node %d\n",
+				 v_idx, cpu, node);
+		} else {
+			pr_warn("RNPM: WARNING: No online CPUs on NIC's NUMA node %d!\n",
+				orig_node);
+			cpu = -1;
+			node = NUMA_NO_NODE;
+		}
 	}
 
 	/* allocate q_vector and rings */
@@ -439,31 +448,22 @@ static int rnpm_alloc_q_vector(struct rnpm_adapter *adapter,
 	if (!q_vector)
 		return -ENOMEM;
 
-	cpumask_copy(&q_vector->affinity_mask, cpu_possible_mask);
-
 	/* setup affinity mask and node */
+	if (cpu != -1)
+		cpumask_set_cpu(cpu, &q_vector->affinity_mask);
+
 	q_vector->numa_node = node;
 
-	/* initialize timer */
 	q_vector->irq_check_usecs = RNPM_IRQ_CHECK_USEC;
-	//q_vector->new_rx_count = RNPM_PKT_TIMEOUT;
-	//q_vector->old_rx_count = RNPM_PKT_TIMEOUT;
-
 	hrtimer_init(&q_vector->irq_miss_check_timer, CLOCK_MONOTONIC,
 		     HRTIMER_MODE_REL_PINNED);
 	q_vector->irq_miss_check_timer.function = irq_miss_check;
-
-	/* initialize NAPI */
 	netif_napi_add_weight(adapter->netdev, &q_vector->napi, rnpm_poll,
 			      adapter->napi_budge);
 
-	/* tie q_vector and adapter together */
 	adapter->q_vector[v_idx - adapter->vector_off] = q_vector;
 	q_vector->adapter = adapter;
-	/* this indicate vector table */
 	q_vector->v_idx = v_idx;
-
-	/* initialize work limits */
 	q_vector->tx.work_limit = adapter->tx_work_limit;
 
 	q_vector->itr = adapter->rx_frames;
@@ -475,26 +475,14 @@ static int rnpm_alloc_q_vector(struct rnpm_adapter *adapter,
 	q_vector->factor = 1;
 #endif
 
-	/* initialize pointer to rings */
 	ring = q_vector->ring;
-
 	for (idx = 0; idx < txr_count; idx++) {
-		/* assign generic ring traits */
 		ring->dev = &adapter->pdev->dev;
 		ring->netdev = adapter->netdev;
-
-		/* configure backlink on ring */
 		ring->q_vector = q_vector;
-
-		/* update q_vector Tx values */
 		rnpm_add_ring(ring, &q_vector->tx);
-
-		/* apply Tx specific ring traits */
 		ring->count = adapter->tx_ring_item_count;
 		ring->queue_index = eth_queue_idx + idx;
-
-		/* rnpm_queue_idx can be changed after */
-		/* it is used to location hw reg */
 		ring->rnpm_queue_idx = txr_idx;
 		ring->dma_int_stat =
 			hw->hw_addr +
@@ -503,36 +491,21 @@ static int rnpm_alloc_q_vector(struct rnpm_adapter *adapter,
 		ring->dma_int_clr = ring->dma_int_stat + 8;
 		ring->device_id = adapter->pdev->device;
 		ring->pfvfnum = hw->pfvfnum;
-
-		/* assign ring to adapter */
 		adapter->tx_ring[ring->queue_index] = ring;
-
-		/* update count and index */
 		txr_idx += step;
 
-		rnpm_dbg("\t\t%s:vector[%d] <--RNPM TxRing:%d, eth_queue:%d\n",
-			 adapter->netdev->name, v_idx, ring->rnpm_queue_idx,
-			 ring->queue_index);
-
-		/* push pointer to next ring */
+		dev_dbg(dev, "\t\t%s:vector[%d] <--RNPM TxRing:%d, eth_queue:%d\n",
+			adapter->netdev->name, v_idx, ring->rnpm_queue_idx,
+			ring->queue_index);
 		ring++;
 	}
 
 	for (idx = 0; idx < rxr_count; idx++) {
-		/* assign generic ring traits */
 		ring->dev = &adapter->pdev->dev;
 		ring->netdev = adapter->netdev;
-
-		/* configure backlink on ring */
 		ring->q_vector = q_vector;
-
-		/* update q_vector Rx values */
 		rnpm_add_ring(ring, &q_vector->rx);
-
-		/* apply Rx specific ring traits */
 		ring->count = adapter->rx_ring_item_count;
-		/* rnpm_queue_idx can be changed after */
-		/* it is used to location hw reg */
 		ring->queue_index = eth_queue_idx + idx;
 		ring->rnpm_queue_idx = rxr_idx;
 		ring->dma_int_stat =
@@ -543,16 +516,11 @@ static int rnpm_alloc_q_vector(struct rnpm_adapter *adapter,
 		ring->device_id = adapter->pdev->device;
 		ring->pfvfnum = hw->pfvfnum;
 
-		/* assign ring to adapter */
 		adapter->rx_ring[ring->queue_index] = ring;
-		rnpm_dbg("\t\t%s:vector[%d] <--RNPM RxRing:%d, eth_queue:%d\n",
-			 adapter->netdev->name, v_idx, ring->rnpm_queue_idx,
-			 ring->queue_index);
-
-		/* update count and index */
+		netdev_dbg(adapter->netdev,
+			   "\t\tvector[%d] <--RNPM RxRing:%d, eth_queue:%d\n",
+			   v_idx, ring->rnpm_queue_idx, ring->queue_index);
 		rxr_idx += step;
-
-		/* push pointer to next ring */
 		ring++;
 	}
 
@@ -573,23 +541,13 @@ static void rnpm_free_q_vector(struct rnpm_adapter *adapter, int v_idx)
 	struct rnpm_q_vector *q_vector = adapter->q_vector[v_idx];
 	struct rnpm_ring *ring;
 
-	dbg("v_idx:%d\n", v_idx);
-
 	hrtimer_cancel(&q_vector->irq_miss_check_timer);
-
 	rnpm_for_each_ring(ring, q_vector->tx)
 		adapter->tx_ring[ring->queue_index] = NULL;
-
 	rnpm_for_each_ring(ring, q_vector->rx)
 		adapter->rx_ring[ring->queue_index] = NULL;
-
 	adapter->q_vector[v_idx] = NULL;
 	netif_napi_del(&q_vector->napi);
-
-	/*
-	 * rnpm_get_stats64() might access the rings on this vector,
-	 * we must wait a grace period before freeing it.
-	 */
 	kfree_rcu(q_vector, rcu);
 }
 
@@ -613,17 +571,13 @@ static int rnpm_alloc_q_vectors(struct rnpm_adapter *adapter)
 
 	if ((adapter->flags & RNPM_FLAG_SRIOV_ENABLED)) {
 		ring_idx = 0;
-		// use 1ring  when vf  enabled
-		/* only 2 rings when sriov enabled */
-		/* from back */
 		ring_idx = adapter->max_ring_pair_counts -
 			   ring_step * PF_RING_CNT_WHEN_IOV_ENABLED;
 		r_remaing = PF_RING_CNT_WHEN_IOV_ENABLED;
 	}
-	BUG_ON(adapter->num_q_vectors == 0);
-	/* start from port num */
+	if (WARN_ON(adapter->num_q_vectors == 0))
+		return -EIO;
 	ring_idx = adapter->port;
-	/* eth_queue_idx always start from 0 */
 	adapter->eth_queue_idx = 0;
 	switch (hw->mode) {
 	case MODE_NIC_MODE_1PORT:
@@ -640,8 +594,9 @@ static int rnpm_alloc_q_vectors(struct rnpm_adapter *adapter)
 		break;
 	}
 
-	rnpm_dbg("r_remaing:%d, ring_step:%d num_q_vectors:%d\n",
-		 r_remaing, ring_step, v_remaing);
+	dev_dbg(ADAPTER_TO_DEV(adapter),
+		"r_remaing:%d, ring_step:%d num_q_vectors:%d\n",
+		r_remaing, ring_step, v_remaing);
 
 	/* can support muti rings in one q_vector */
 	for (; r_remaing > 0 && v_remaing > 0; v_remaing--) {
@@ -660,15 +615,12 @@ static int rnpm_alloc_q_vectors(struct rnpm_adapter *adapter)
 	/* should fix the real used q_vectors_nums */
 	adapter->num_q_vectors = q_vector_nums;
 	return 0;
-
 err_out:
 	adapter->num_tx_queues = 0;
 	adapter->num_rx_queues = 0;
 	adapter->num_q_vectors = 0;
-
 	while (v_idx--)
 		rnpm_free_q_vector(adapter, v_idx);
-
 	return -ENOMEM;
 }
 
@@ -687,7 +639,6 @@ static void rnpm_free_q_vectors(struct rnpm_adapter *adapter)
 	adapter->num_rx_queues = 0;
 	adapter->num_tx_queues = 0;
 	adapter->num_q_vectors = 0;
-
 	while (v_idx--)
 		rnpm_free_q_vector(adapter, v_idx);
 }
@@ -716,17 +667,12 @@ static int rnpm_set_interrupt_capability(struct rnpm_adapter *adapter)
 	v_budget = min_t(int, v_budget, num_online_cpus());
 	v_budget = min_t(int, v_budget, adapter->max_msix_counts);
 
-	/* muti port use only one other vector */
-	/* add one other vectors */
 	adapter->msix_entries =
 		kcalloc(v_budget, sizeof(struct msix_entry), GFP_KERNEL);
 	if (!adapter->msix_entries) {
-		rnpm_err("alloc msix_entries failed!\n");
+		netdev_err(adapter->netdev, "alloc msix_entries failed!\n");
 		return -EINVAL;
 	}
-	dbg("[%s] adapter:%p msix_entry:%p vector:%d\n", __func__, adapter,
-	    adapter->msix_entries, adapter->vector_off);
-
 	msix_offset = adapter->vector_off;
 	memcpy((u8 *)adapter->msix_entries,
 	       (u8 *)pf_adapter->msix_entries +
@@ -735,11 +681,11 @@ static int rnpm_set_interrupt_capability(struct rnpm_adapter *adapter)
 
 	adapter->num_q_vectors = min(v_budget, adapter->max_q_vectors);
 
-	rnpm_dbg("adapter%d alloc vectors: cnt:%d [%d~%d] num_q_vectors:%d msix_offset %d\n",
-		 adapter->bd_number, v_budget, adapter->vector_off,
-		 adapter->vector_off + v_budget - 1, adapter->num_q_vectors,
-		 msix_offset);
-
+	dev_dbg(ADAPTER_TO_DEV(adapter),
+		"adapter%d alloc vectors: cnt:%d [%d~%d] num_q_vectors:%d msix_offset %d\n",
+		adapter->bd_number, v_budget, adapter->vector_off,
+		adapter->vector_off + v_budget - 1, adapter->num_q_vectors,
+		msix_offset);
 	return err;
 }
 
@@ -754,29 +700,24 @@ static int rnpm_set_interrupt_capability(struct rnpm_adapter *adapter)
 int rnpm_init_interrupt_scheme(struct rnpm_adapter *adapter)
 {
 	int err;
-	// struct net_device *netdev = adapter->netdev;
 
 	/* Number of supported queues */
 	rnpm_set_num_queues(adapter);
-
 	/* Set interrupt mode */
 	rnpm_set_interrupt_capability(adapter);
-
 	err = rnpm_alloc_q_vectors(adapter);
 	if (err) {
-		e_dev_err("Unable to allocate memory for queue vectors\n");
+		dev_err(ADAPTER_TO_DEV(adapter),
+			"Unable to allocate memory for queue vectors\n");
 		goto err_alloc_q_vectors;
 	}
 	rnpm_cache_ring_register(adapter);
-
-	DPRINTK(PROBE, INFO,
-		"Multiqueue %s: Rx Queue count = %u, Tx Queue count = %u\n\n",
-		(adapter->num_rx_queues > 1) ? "Enabled" : "Disabled",
-		adapter->num_rx_queues, adapter->num_tx_queues);
-
+	netdev_dbg(adapter->netdev,
+		   "Multiqueue %s: Rx Queue count = %u, Tx Queue count = %u\n\n",
+		   (adapter->num_rx_queues > 1) ? "Enabled" : "Disabled",
+		   adapter->num_rx_queues, adapter->num_tx_queues);
 	set_bit(__RNPM_DOWN, &adapter->state);
 	return 0;
-
 err_alloc_q_vectors:
 	rnpm_reset_interrupt_capability(adapter);
 	return err;
@@ -808,48 +749,37 @@ void rnpm_clear_interrupt_scheme(struct rnpm_adapter *adapter)
  * @type_tucmd: cmd
  *
  **/
-
 void rnpm_tx_ctxtdesc(struct rnpm_ring *tx_ring, u32 mss_len_vf_num,
 		      u32 inner_vlan_tunnel_len, u32 type_tucmd)
 {
 	struct rnpm_tx_ctx_desc *context_desc;
 	u16 i = tx_ring->next_to_use;
-	// struct rnpm_adapter *adapter = RING2ADAPT(tx_ring);
 
 	context_desc = RNPM_TX_CTXTDESC(tx_ring, i);
 
 	i++;
 	tx_ring->next_to_use = (i < tx_ring->count) ? i : 0;
-
-	/* set bits to identify this as an advanced context descriptor */
-	//type_tucmd |= RNPM_TXD_CMD_RS | RNPM_TXD_CTX_CTRL_DESC;
 	type_tucmd |= RNPM_TXD_CTX_CTRL_DESC;
-
-	if (inner_vlan_tunnel_len & 0x00ffff00) {
-		/* if a inner vlan */
+	if (inner_vlan_tunnel_len & 0x00ffff00)
 		type_tucmd |= RNPM_TXD_CMD_INNER_VLAN;
-	}
-
 	context_desc->mss_len_vf_num = cpu_to_le32(mss_len_vf_num);
 	context_desc->inner_vlan_tunnel_len =
 		cpu_to_le32(inner_vlan_tunnel_len);
 	context_desc->resv_cmd = cpu_to_le32(type_tucmd);
-	buf_dump_line("ctx  ", __LINE__, context_desc,
-		      sizeof(*context_desc));
+	context_desc->resv = 0;
 }
 
 void rnpm_maybe_tx_ctxtdesc(struct rnpm_ring *tx_ring,
 			    struct rnpm_tx_buffer *first, u32 type_tucmd)
 {
 	struct rnpm_adapter *adapter = netdev_priv((tx_ring)->netdev);
-	/* sriov mode pf use the last vf */
+
 	if (first->ctx_flag) {
 		if (adapter->priv_flags & RNPM_PRIV_FLAG_TX_PADDING) {
 			if (!first->gso_need_padding)
 				type_tucmd |= RNPM_TXD_MTI_CRC_PAD_CTRL;
 			first->gso_need_padding = false;
 		}
-
 		rnpm_tx_ctxtdesc(tx_ring, first->mss_len_vf_num,
 				 first->inner_vlan_tunnel_len, type_tucmd);
 	}
@@ -859,14 +789,10 @@ void rnpm_store_reta(struct rnpm_adapter *adapter)
 {
 	u32 i, reta_entries = rnpm_rss_indir_tbl_entries(adapter);
 	struct rnpm_hw *hw = &adapter->hw;
-	u32 reta = 0;
-	// u8 *indir_tbl = adapter->rss_indir_tbl;
-	/* relative with rss table */
+	u32 reta = 0, port_offset;
 	u32 port = adapter->port;
-	int port_offset;
 	struct rnpm_ring *rx_ring;
 
-	/* Write redirection table to HW */
 	for (i = 0; i < reta_entries; i++) {
 		if (adapter->flags & RNPM_FLAG_SRIOV_ENABLED) {
 			reta = adapter->rss_indir_tbl[i];
@@ -874,13 +800,12 @@ void rnpm_store_reta(struct rnpm_adapter *adapter)
 			rx_ring =
 				adapter->rx_ring[adapter->rss_indir_tbl[i]];
 			if (adapter->flags & RNPM_FLAG_RXHASH_DISABLE) {
-				/* clean table to zero */
 				reta = adapter->port;
 			} else {
 				port_offset = rd32(hw,
 						   RNPM_ETH_TC_PORT_OFFSET_TABLE(adapter->port));
-
-				reta = rx_ring->rnpm_queue_idx - port_offset;
+				reta = rx_ring->rnpm_queue_idx -
+				       port_offset;
 			}
 		}
 		if (hw->rss_type == rnpm_rss_uv3p)
@@ -896,82 +821,58 @@ void rnpm_store_key(struct rnpm_pf_adapter *pf_adapter)
 {
 	u8 *key = pf_adapter->rss_key;
 	int key_len = RNPM_RSS_KEY_SIZE;
-	u8 *key_temp;
-	int i;
-	u32 *value;
+	u8 key_temp[RNPM_RSS_KEY_SIZE];
+	u32 *value, i;
 
-	key_temp = kmalloc(key_len, GFP_KERNEL);
 	for (i = 0; i < key_len; i++)
 		*(key_temp + key_len - i - 1) = *(key + i);
 	value = (u32 *)key_temp;
 	for (i = 0; i < key_len; i = i + 4)
 		rnpm_wr_reg(pf_adapter->hw_addr + RNPM_ETH_RSS_KEY + i,
 			    *(value + i / 4));
-	kfree(key_temp);
 }
 
 int rnpm_init_rss_key(struct rnpm_pf_adapter *pf_adapter)
 {
-	// int i;
-	//struct rnpm_hw *hw = &adapter->hw;
-	//struct rnpm_pf_adapter *pf_adapter = adapter->pf_adapter;
 	unsigned long flags;
-// for test only
-//#define DEBUG_RSS
-	//u32 iov_en = (adapter->flags & RNPM_FLAG_SRIOV_ENABLED)
-	//	? RNPM_IOV_ENABLED : 0;
 	u32 iov_en = 0;
 
-	/* only init rss key once */
-	/* no change rss key if user input one */
-	/* get the key */
 	spin_lock_irqsave(&pf_adapter->key_setup_lock, flags);
 	if (!pf_adapter->rss_key_setup_flag) {
-		//netdev_rss_key_fill(pf_adapter->rss_key, RNPM_RSS_KEY_SIZE);
 		netdev_rss_key_fill(pf_adapter->rss_key,
 				    RNPM_RSS_KEY_SIZE);
 		pf_adapter->rss_key_setup_flag = 1;
 	}
 	rnpm_store_key(pf_adapter);
-	/* open rss if rx hash is open ? */
 	wr32(pf_adapter, RNPM_ETH_RSS_CONTROL,
 	     RNPM_ETH_ENABLE_RSS_ONLY | iov_en);
 	spin_unlock_irqrestore(&pf_adapter->key_setup_lock, flags);
-
 	return 0;
 }
 
 int rnpm_init_rss_table(struct rnpm_adapter *adapter)
 {
 	int rx_nums = adapter->num_rx_queues;
-	int i, j;
+	int i, j, port_offset;
 	struct rnpm_hw *hw = &adapter->hw;
 	struct rnpm_ring *rx_ring;
+	struct device *dev = &adapter->pdev->dev;
 	u32 reta = 0;
 	u32 reta_entries = rnpm_rss_indir_tbl_entries(adapter);
 	u32 port = adapter->port;
-	int port_offset;
 
-	/* adapter->num_q_vectors is not correct */
 	for (i = 0, j = 0; i < reta_entries; i++) {
-		/* init with default value */
 		if (!adapter->rss_tbl_setup_flag)
 			adapter->rss_indir_tbl[i] = j;
-		/* in sriov mode reta in [0, rx_nums] */
 		if (adapter->flags & RNPM_FLAG_SRIOV_ENABLED) {
 			reta = j;
 		} else {
-			/* in no sriov, reta is real ring number */
 			rx_ring = adapter->rx_ring[adapter->rss_indir_tbl[i]];
 			if (adapter->flags & RNPM_FLAG_RXHASH_DISABLE) {
-				/* clean table to zero if rx hash off */
 				reta = adapter->port;
 			} else {
 				port_offset = rd32(hw,
 						   RNPM_ETH_TC_PORT_OFFSET_TABLE(adapter->port));
-				/* we use port_offset + rss_table to
-				 * real ring
-				 */
 				reta = rx_ring->rnpm_queue_idx - port_offset;
 			}
 		}
@@ -986,21 +887,18 @@ int rnpm_init_rss_table(struct rnpm_adapter *adapter)
 		}
 		j = (j + 1) % rx_nums;
 	}
-	/* tbl only init once */
 	adapter->rss_tbl_setup_flag = 1;
-
 	for (i = 0, j = 0; i < reta_entries; i++) {
-		dbg("indir %d table is %d\n", i,
-		    adapter->rss_indir_tbl[i]);
-		if (hw->rss_type == rnpm_rss_uv3p) {
-			dbg("reg %x is %d\n",
-			    RNPM_ETH_RSS_INDIR_TBL_UV3P(i),
-			    rd32(hw, RNPM_ETH_RSS_INDIR_TBL_UV3P(i)));
-		} else {
-			dbg("reg %x is %d\n",
-			    RNPM_ETH_RSS_INDIR_TBL(port, i),
-			    rd32(hw, RNPM_ETH_RSS_INDIR_TBL(port, i)));
-		}
+		dev_dbg(dev, "indir %d table is %d\n", i,
+			adapter->rss_indir_tbl[i]);
+		if (hw->rss_type == rnpm_rss_uv3p)
+			dev_dbg(dev, "reg %x is %d\n",
+				RNPM_ETH_RSS_INDIR_TBL_UV3P(i),
+				rd32(hw, RNPM_ETH_RSS_INDIR_TBL_UV3P(i)));
+		else
+			dev_dbg(dev, "reg %x is %d\n",
+				RNPM_ETH_RSS_INDIR_TBL(port, i),
+				rd32(hw, RNPM_ETH_RSS_INDIR_TBL(port, i)));
 	}
 	return 0;
 }
@@ -1017,41 +915,34 @@ void rnpm_setup_dma_rx(struct rnpm_adapter *adapter, int count_in_dw)
 }
 
 static void rnpm_setup_layer2_remapping(struct rnpm_hw *hw,
-					union rnpm_atr_input *input, u16 hw_id,
-					u8 queue)
+					union rnpm_atr_input *input,
+					u16 hw_id, u8 queue)
 {
 	struct rnpm_adapter *adapter = (struct rnpm_adapter *)hw->back;
 	u8 offset = adapter->port;
 
-	drection_dbg("try to eable layer2 %x\n",
-		     input->layer2_formate.proto);
-	/* enable l2 proto setup */
-	//rnpm_set_reg_bit(hw, RNPM_ETH_VLAN_FILTER_ENABLE, 31);
-	/* enable layer2 */
+	dev_dbg(HW_TO_DEV(hw), "try to eable layer2 %x\n",
+		input->layer2_formate.proto);
 	wr32(hw, RNPM_ETH_LAYER2_ETQF(hw_id),
 	     (0x1 << 31) | (ntohs(input->layer2_formate.proto)));
-	/* setup action */
-	if (queue == RNPM_FDIR_DROP_QUEUE) {
+	if (queue == RNPM_FDIR_DROP_QUEUE)
 		wr32(hw, RNPM_ETH_LAYER2_ETQS(hw_id), (0x1 << 31));
-	} else {
-		/* setup ring_number */
-		/* in multiple mode queue must minus port offset */
+	else
 		wr32(hw, RNPM_ETH_LAYER2_ETQS(hw_id),
 		     (0x1 << 30) | ((queue - offset) << 20));
-	}
 }
 
 static void rnpm_setup_tuple5_remapping(struct rnpm_hw *hw,
-					union rnpm_atr_input *input, u16 hw_id,
-					u8 queue)
+					union rnpm_atr_input *input,
+					u16 hw_id, u8 queue)
 {
+	struct rnpm_adapter *adapter = (struct rnpm_adapter *)hw->back;
+	u8 offset = adapter->port;
 	u32 port = 0;
 	u8 mask_temp = 0;
 	u8 l4_proto_type = 0;
-	struct rnpm_adapter *adapter = (struct rnpm_adapter *)hw->back;
-	u8 offset = adapter->port;
 
-	drection_dbg("try to eable tuple 5 %x\n", hw_id);
+	dev_dbg(HW_TO_DEV(hw), "try to eable tuple 5 %x\n", hw_id);
 	if (input->formatted.src_ip[0] != 0)
 		wr32(hw, RNPM_ETH_TUPLE5_SAQF(hw_id),
 		     htonl(input->formatted.src_ip[0]));
@@ -1098,19 +989,14 @@ static void rnpm_setup_tuple5_remapping(struct rnpm_hw *hw,
 	if (l4_proto_type == 0)
 		mask_temp |= RNPM_L4_PROTO_MASK;
 
-	/* setup ftqf*/
-	/* always set 0x3 */
 	wr32(hw, RNPM_ETH_TUPLE5_FTQF(hw_id),
 	     (1 << 31) | (mask_temp << 25) | (l4_proto_type << 16) | 0x3);
-
 	/* setup action */
-	if (queue == RNPM_FDIR_DROP_QUEUE) {
+	if (queue == RNPM_FDIR_DROP_QUEUE)
 		wr32(hw, RNPM_ETH_TUPLE5_POLICY(hw_id), (0x1 << 31));
-	} else {
-		/* setup ring_number */
+	else
 		wr32(hw, RNPM_ETH_TUPLE5_POLICY(hw_id),
 		     ((0x1 << 30) | ((queue - offset) << 20)));
-	}
 }
 
 struct tcam_val {
@@ -1158,12 +1044,12 @@ int rnpm_esp_tcam_enable(struct rnpm_pf_adapter *pf_adapter)
 	int i = 0;
 
 	if (!pf_adapter) {
-		rnpm_err("%s Params Input Error!\n", __func__);
+		dev_err(&pf_adapter->pdev->dev, "%s Params Input Error!\n",
+			__func__);
 		return -EINVAL;
 	}
 
 	hw = &pf_adapter->hw;
-
 	rnpm_wr_reg(RPU_TCAM_ENABLE_REG(hw), 0x1);
 	rnpm_wr_reg(RPU_TCAM_CONFIG_ENABLE_REG(hw), 0x1);
 	rnpm_wr_reg(RPU_TCAM_MODE_REG(hw), 0x1);
@@ -1173,7 +1059,6 @@ int rnpm_esp_tcam_enable(struct rnpm_pf_adapter *pf_adapter)
 	for (i = 0; i < (0x20 * 4096 / 4); i++)
 		rnpm_wr_reg(RPU_TCAM_POLICY_BASE_REG(hw) + i * 4, 0x0);
 	rnpm_wr_reg(RPU_TCAM_MODE_REG(hw), 0x1);
-
 	return 0;
 }
 
@@ -1188,7 +1073,8 @@ void rnpm_set_esp_to_mpe_tcam_rule(struct rnpm_pf_adapter *pf_adapter)
 	struct rnpm_hw *hw = NULL;
 
 	if (!pf_adapter) {
-		rnpm_err("%s Params Input Error!\n", __func__);
+		dev_err(&pf_adapter->pdev->dev, "%s Params Input Error!\n",
+			__func__);
 		return;
 	}
 
@@ -1196,42 +1082,32 @@ void rnpm_set_esp_to_mpe_tcam_rule(struct rnpm_pf_adapter *pf_adapter)
 	memset(&t_mask, 0, sizeof(t_mask));
 
 	hw = &pf_adapter->hw;
-
 	if (rnpm_is_pf1(pf_adapter->pdev))
-		t_val.port_num = 0xa; // rc2mpe use b, port2mpe use a
+		t_val.port_num = 0xa;
 	else
-		t_val.port_num = 0xb; // rc2mpe use a, port2mpe use b
+		t_val.port_num = 0xb;
 	t_val.mark_valid = 0;
 	t_val.port_valid = 1;
 	t_val.ring_valid = 0;
 	t_val.flag = 0;
-
 	t_val.proto = 50;
-
 	t_mask.src_ip_mask = 0;
 	t_mask.proto_mask = 0xff;
-
 	val_addr = RNPM_IPSEC_TCAM_POLICY_BASE_ADDR(hw) + g_cnt * 0x40 +
 		   i_cnt * 0x10;
 	mask_addr = RNPM_IPSEC_TCAM_POLICY_BASE_ADDR(hw) + g_cnt * 0x40 +
 		    i_cnt * 0x10 + 0x20;
-
-	// 3 set hw proto
 	rnpm_wr_reg(RPU_TCAM_MODE_REG(hw), 0x2);
-
 	memcpy(&a_val, &t_val, sizeof(t_val));
 	memcpy(&a_mask, &t_mask, sizeof(t_val));
-
 	iowrite32(a_val[0], val_addr + 0x0);
 	iowrite32(a_val[1], val_addr + 0x4);
 	iowrite32(a_val[2], val_addr + 0x8);
 	iowrite32(a_val[3], val_addr + 0xc);
-
 	iowrite32(a_mask[0], mask_addr + 0x0);
 	iowrite32(a_mask[1], mask_addr + 0x4);
 	iowrite32(a_mask[2], mask_addr + 0x8);
 	iowrite32(a_mask[3], mask_addr + 0xc);
-
 	rnpm_wr_reg(RPU_TCAM_MODE_REG(hw), 0x1);
 }
 
@@ -1249,8 +1125,7 @@ static void rnpm_setup_tuple5_remapping_tcam(struct rnpm_hw *hw,
 	u8 offset = adapter->port;
 
 	wr32(hw, RNPM_TCAM_MODE, 2);
-	//wr32(hw, RNPM_TCAM_CACHE_ENABLE, 1);
-	drection_dbg("try to eable tcam %x\n", hw_id);
+	dev_dbg(HW_TO_DEV(hw), "try to eable tcam %x\n", hw_id);
 	if (input->formatted.src_ip[0] != 0) {
 		wr32(hw, RNPM_TCAM_SAQF(hw_id),
 		     htonl(input->formatted.src_ip[0]));
@@ -1272,8 +1147,8 @@ static void rnpm_setup_tuple5_remapping_tcam(struct rnpm_hw *hw,
 	if (input->formatted.src_port != 0) {
 		port |= (htons(input->formatted.src_port) << 16);
 		port_mask |= (htons(input->formatted.src_port_mask) << 16);
-	} else {
 	}
+
 	if (input->formatted.dst_port != 0) {
 		port |= (htons(input->formatted.dst_port));
 		port_mask |= (htons(input->formatted.src_port_mask));
@@ -1310,7 +1185,6 @@ static void rnpm_setup_tuple5_remapping_tcam(struct rnpm_hw *hw,
 	if (l4_proto_type != 0) {
 		action |= l4_proto_type;
 		mark |= l4_proto_mask;
-	} else {
 	}
 
 	/* setup action */
@@ -1326,7 +1200,6 @@ static void rnpm_setup_tuple5_remapping_tcam(struct rnpm_hw *hw,
 	wr32(hw, RNPM_TCAM_MODE, 1);
 }
 
-/* setup to the hw  */
 s32 rnpm_fdir_write_perfect_filter(int fdir_mode, struct rnpm_hw *hw,
 				   union rnpm_atr_input *filter, u16 hw_id,
 				   u8 queue)
@@ -1341,7 +1214,6 @@ s32 rnpm_fdir_write_perfect_filter(int fdir_mode, struct rnpm_hw *hw,
 			rnpm_setup_tuple5_remapping_tcam(hw, filter, hw_id,
 							 queue);
 	}
-
 	return 0;
 }
 
@@ -1349,7 +1221,6 @@ int rnpm_card_partially_supported_10g_1g_sfp(struct rnpm_pf_adapter *pf_adapter)
 {
 	if (pf_adapter && pf_adapter->hw.ablity_speed == SPEED_10000)
 		return 1;
-
 	return 0;
 }
 
@@ -1359,15 +1230,14 @@ s32 rnpm_fdir_erase_perfect_filter(int fdir_mode, struct rnpm_hw *hw,
 	/* just disable filter */
 	if (input->formatted.flow_type == RNPM_ATR_FLOW_TYPE_ETHER) {
 		wr32(hw, RNPM_ETH_LAYER2_ETQF(hw_id), 0);
-		dbg("disable layer2 %d\n", hw_id);
+		dev_dbg(HW_TO_DEV(hw), "disable layer2 %d\n", hw_id);
 	} else {
 		if (fdir_mode != fdir_mode_tcam) {
 			wr32(hw, RNPM_ETH_TUPLE5_FTQF(hw_id), 0);
-			dbg("disable tuple5 %d\n", hw_id);
+			dev_dbg(HW_TO_DEV(hw), "disable tuple5 %d\n", hw_id);
 		} else {
 			/* earase tcam */
 			wr32(hw, RNPM_TCAM_MODE, 2);
-			//wr32(hw, RNPM_TCAM_CACHE_ENABLE, 1);
 			wr32(hw, RNPM_TCAM_SAQF(hw_id), 0);
 			wr32(hw, RNPM_TCAM_SAQF_MASK(hw_id), 0);
 			wr32(hw, RNPM_TCAM_DAQF(hw_id), 0);
@@ -1428,7 +1298,6 @@ s32 rnpm_disable_rxr_maxrate(struct net_device *netdev, u8 queue_index)
 	wr32(hw, RNPM_SELECT_RING_EN(reg_idx), 0);
 	/* Clear Tx Ring maxrate */
 	wr32(hw, RNPM_RX_RING_MAXRATE(reg_idx), 0);
-
 	return 0;
 }
 
@@ -1449,6 +1318,5 @@ s32 rnpm_enable_rxr_maxrate(struct net_device *netdev, u8 queue_index,
 	wr32(hw, RNPM_SELECT_RING_EN(reg_idx), true);
 	/* Clear Tx Ring maxrate */
 	wr32(hw, RNPM_RX_RING_MAXRATE(reg_idx), real_rate);
-
 	return 0;
 }

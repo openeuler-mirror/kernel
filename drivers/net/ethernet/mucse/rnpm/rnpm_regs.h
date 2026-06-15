@@ -20,7 +20,7 @@
 /*	TCAM	| 256KB	| C_0000H  | F_FFFFH */
 /* ------------------------------------------*/
 
-/* ==================== RNPM-DMA Global Registers ==================== */
+/* RNPM-DMA Global Registers */
 #define RNPM_DMA_VERSION (0x0000)
 #define RNPM_DMA_CONFIG (0x0004)
 #define DMA_MAC_LOOPBACK BIT(0)
@@ -60,7 +60,6 @@
 #define RNPM_DMA_RX_START(idx) (0x8010 + 0x100 * (idx))
 #define RNPM_DMA_RX_READY(idx) (0x8014 + 0x100 * (idx))
 #define RNPM_DMA_TX_START(idx) (0x8018 + 0x100 * (idx))
-// #define	RNPM_DMA_TX_START(idx)	(0x000c)
 #define RNPM_DMA_TX_READY(idx) (0x801c + 0x100 * (idx))
 #define RNPM_DMA_INT_STAT(idx) (0x8020 + 0x100 * (idx))
 #define RNPM_DMA_INT_MASK(idx) (0x8024 + 0x100 * (idx))
@@ -100,9 +99,8 @@
 	(0x80C0 + 4 * (port) + 0x100 * (vf))
 #define RNPM_DMA_PORT_VEB_VF_RING_TBL(port, vf) \
 	(0x80D0 + 4 * (port) + 0x100 * (vf))
-/* ================================================================== */
 
-/* ==================== RNPM-ETH Global Registers ==================== */
+/* RNPM-ETH Global Registers */
 #define RNPM_ETH_BASE (0x10000)
 
 #define ETH_ERR_SCTP BIT(4)
@@ -215,8 +213,8 @@
 #define RNPM_ETH_ERR_MASK_VECTOR (RNPM_ETH_BASE + 0x8060)
 #define RNPM_ETH_DEFAULT_RX_RING (RNPM_ETH_BASE + 0x806c)
 
-#define DROP_ALL_THRESH (2046) // drop all rx
-#define RECEIVE_ALL_THRESH (0x270) // receive all rx
+#define DROP_ALL_THRESH (2046)
+#define RECEIVE_ALL_THRESH (0x270)
 
 #define RNPM_ETH_RX_PROGFULL_THRESH_PORT(n) \
 	(RNPM_ETH_BASE + 0x8070 + 0x08 * (n))
@@ -336,7 +334,6 @@
 #define RNPM_ETH_LOCAL_DMAC_H(n) (RNPM_ETH_BASE + 0x8700 + 0x04 * (n))
 #define RNPM_ETH_LOCAL_DMAC_L(n) (RNPM_ETH_BASE + 0x8800 + 0x04 * (n))
 /* Rx Ring Flow Control */
-/* tc 8 */
 #define RNPM_RXTRANS_RX_PKTS(port) (RNPM_ETH_BASE + 0x8900 + 0x40 * (port))
 #define RNPM_RXTRANS_DROP_PKTS(port) \
 	(RNPM_ETH_BASE + 0x8904 + 0x40 * (port))
@@ -364,7 +361,6 @@
 	(RNPM_ETH_BASE + 0x8930 + 0x40 * (port))
 
 #define RNPM_RX_RING_MAXRATE(n) (RNPM_ETH_BASE + 0x8a00 + (0x4 * (n)))
-// emac_mng_filter no used in host
 #define RNPM_ETH_RX_PROGFULL_RTRN(n) (RNPM_ETH_BASE + 0x8c00 + 0x04 * (n))
 #define RNPM_ETH_CNT_PKT_EMAC_RX(n) (RNPM_ETH_BASE + 0x8c10 + 0x04 * (n))
 #define RNPM_ETH_CNT_PKT_PECL_RX(n) (RNPM_ETH_BASE + 0x8c20 + 0x04 * (n))
@@ -452,9 +448,7 @@
 #define RNPM_ETH_RSS_MODE (0x6fe00)
 #define RNPM_ETH_RSS_INDIR_TBL_UV3P(n) (0x6ff00 + 0x04 * (n))
 
-/* ================================================================== */
-
-/* ==================== RNPM-REG Global Registers ==================== */
+/* RNPM-REG Global Registers */
 #define RNPM_COMM_REG0 (0x30000)
 #define RNPM_TOP_NIC_VERSION (RNPM_COMM_REG0 + 0x0000)
 #define RNPM_TOP_NIC_CONFIG (RNPM_COMM_REG0 + 0x0004)
@@ -481,7 +475,6 @@
 #define RNPM_TOP_ETH_SHUT_DOWN (RNPM_COMM_REG0 + 0x8064)
 #define RNPM_TOP_ETH_OVS_SLIP (RNPM_COMM_REG0 + 0x8068)
 #define RNPM_TOP_ETH_OVS_SHUT_DOWN (RNPM_COMM_REG0 + 0x806c)
-/* ?? */
 #define RNPM_FC_PORT_ENABLE (RNPM_COMM_REG0 + 0x9004)
 #define RNPM_FC_PORT_PRIO_MAP(n) (RNPM_COMM_REG0 + 0x9008 + (0x04 * (n)))
 #define RNPM_FC_EN_CONF_AVAILBLE (RNPM_COMM_REG0 + 0x9018)
@@ -489,12 +482,9 @@
 /* mac top */
 #define RNPM_TOP_MAC_OUI (RNPM_COMM_REG0 + 0xc004)
 #define RNPM_TOP_MAC_SN (RNPM_COMM_REG0 + 0xc008)
-/* ================================================================== */
 
-/* ==================== RNPM-SERDES Global Registers ================= */
-
+/* RNPM-SERDES Global Registers */
 #define RNPM_SERDES (0x40000)
-
 #define RNPM_PCS_OFFSET (0x1000)
 
 #define RNPM_PCS_BASE(i) (RNPM_SERDES + RNPM_PCS_OFFSET * (i))
@@ -507,10 +497,7 @@
 #define RNPM_PCS_LINKUP BIT(2)
 #define RNPM_PCS_LINK_STATUS (0x30001)
 
-/* ================================================================== */
-
-/* ==================== RNPM-MAC Global Registers ==================== */
-/* === MAC Registers==  */
+/* RNPM-MAC Global Registers */
 #define RNPM_XLMAC (0x60000)
 
 #define MAC_OFFSET (0x10000)
@@ -523,9 +510,11 @@
 #define RNPM_RX_HUC BIT(1)
 #define RNPM_VLAN_HASH_EN BIT(16)
 #define RNPM_RA BIT(31)
+#define RNPM_LM BIT(10)
+
 #define RNPM_MAX_RX_CFG_IPC BIT(9)
-#define RNPM_HPF BIT(10)
 #define RNPM_MAC_PKT_FLT(i) (RNPM_XLMAC + 0x0008 + (i) * MAC_OFFSET)
+#define RNPM_HPF BIT(10)
 #define RNPM_FLT_HMC BIT(2)
 #define RNPM_FLT_HUC BIT(1)
 #define RNPM_MAC_MC_HASH_TABLE(i, idx) \
@@ -597,15 +586,11 @@
 
 #define RNPM_TX_FLOW_ENABLE_MASK (0x2)
 #define RNPM_RX_FLOW_ENABLE_MASK (0x1)
-/* ================================================================== */
 
-/* ==================== RNPM-MSIX Global Registers ==================== */
-//==== Ring-MSIX Registers (MSI-X_module_design.docs) ===
+/* RNPM-MSIX Global Registers */
 #define RING_VECTOR(n) (0x04 * (n))
 
-/* ================================================================== */
-
-/* ==================== RNPM-SWITCH Global Registers ================= */
+/* RNPM-SWITCH Global Registers */
 #define RNPM_SWITCH_BASE (0xB0000)
 
 /* port is 6 */
@@ -658,9 +643,7 @@
 #define RNPM_SWITCH_MEM_SLP (RNPM_SWITCH_BASE + 0xf02c)
 #define RNPM_SWITCH_EN_INVALID_DPORT_DROP_O (RNPM_SWITCH_BASE + 0xf030)
 
-/* ================================================================== */
-
-/* ==================== RNPM-TCAM Global Registers ==================== */
+/* RNPM-TCAM Global Registers */
 #define RNPM_TCAM_BASE (0xc0000)
 
 #define RNPM_TCAM_SDPQF(n) \
@@ -685,10 +668,7 @@
 #define RNPM_TCAM_CACHE_ADDR_CLR (RNPM_TCAM_BASE + 0x20008)
 #define RNPM_TCAM_CACHE_REQ_CLR (RNPM_TCAM_BASE + 0x2000c)
 
-/* ================================================================== */
-
-/* ==================== OTHER Global Registers ==================== */
-/* =====  PF-VF Functions ==== */
+/* PF-VF Functions */
 #define VF_NUM_REG (0xa3000)
 /* 8bit: 7:vf_actiove 6:fun0/fun1 [5:0]:vf_num */
 #define VF_NUM(vfnum, fun) \
@@ -704,6 +684,4 @@ enum NIC_MODE {
 	MODE_NIC_MODE_2PORT = 2,
 	MODE_NIC_MODE_4PORT = 3,
 };
-
-/* ================================================================== */
 #endif /* RNPM_REGS_H */

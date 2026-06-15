@@ -73,7 +73,6 @@
 enum MBX_ID {
 	MBX_VF0 = 0,
 	MBX_VF1,
-	//...
 	MBX_VF63,
 	MBX_CM3CPU,
 	MBX_FW = MBX_CM3CPU,
@@ -109,6 +108,8 @@ struct rnpm_pf_adapter;
 
 int rnpm_fw_get_macaddr(struct rnpm_hw *hw, int pfvfnum, u8 *mac_addr,
 			int lane);
+int rnpm_fw_get_pcs_reg(struct rnpm_hw *hw, int nr_lane, int reg,
+			int *req_reg);
 int rnpm_mbx_fw_reset_phy(struct rnpm_hw *hw);
 int rnpm_mbx_get_capability(struct rnpm_hw *hw, struct rnpm_info *info);
 int rnpm_fw_msg_handler(struct rnpm_pf_adapter *pf_adapter);
@@ -130,7 +131,6 @@ void rnpm_link_stat_mark_reset(struct rnpm_hw *hw);
 
 int rnpm_mbx_sfp_module_eeprom_info(struct rnpm_hw *hw, int sfp_addr,
 				    int reg, int data_len, u8 *buf);
-// int rnpm_mbx_sfp_read(struct rnpm_hw *hw, int sfp_addr, int reg);
 int rnpm_mbx_sfp_write(struct rnpm_hw *hw, int sfp_addr, int reg, short v);
 int rnpm_mbx_get_dump(struct rnpm_hw *hw, int flags, u8 *data_out,
 		      int bytes);
@@ -148,7 +148,7 @@ void rnpm_mbx_probe_stat_set(struct rnpm_pf_adapter *pf_adapter,
 			     int probe);
 int rnpm_mbx_get_phy_statistics(struct rnpm_hw *hw, u8 *data);
 int rnpm_mbx_get_link(struct rnpm_hw *hw);
-int rnpm_hw_set_clause73_autoneg_enable(struct rnpm_hw *hw, int enable);
+int rnpm_hw_set_clause37_autoneg_enable(struct rnpm_hw *hw, int enable);
 int rnpm_hw_set_fw_10g_1g_auto_detch(struct rnpm_hw *hw, int enable);
 int rnpm_mbx_reg_writev(struct rnpm_hw *hw, int fw_reg, int value[4],
 			int bytes);
@@ -169,8 +169,8 @@ int rnpm_mbx_ddr_csl_enable(struct rnpm_hw *hw, int enable,
 			    dma_addr_t dma_phy, int bytes);
 
 int rnpm_mpe_set_queue_info(struct rnpm_pf_adapter *adapter, int lane,
-			    int mpe_id_bitmask,
-			    int queue_start, int queue_end);
+			    int mpe_id_bitmask, int queue_start,
+			    int queue_end);
 struct rnpm_adapter;
 int rnpm_ipsec_rss_update_args(struct rnpm_adapter *adapter);
 int rnpm_get_port_stats2(struct rnpm_hw *hw, struct mbx_port_stat *stat);

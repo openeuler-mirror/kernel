@@ -129,7 +129,7 @@ config MXGBEM_FIX_MAC_PADDING
 
 	  If unsure, say N.
 
-config MXGBEM_OPTM_WITH_LARGE
+config MXGBEM_OPTM_WITH_LPAGE
 	bool "Reduce Memory Cost In Large PAGE_SIZE(>8192)"
 	default n
 	depends on MXGBEM

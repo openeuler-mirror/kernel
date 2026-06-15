@@ -4,7 +4,6 @@
 #include <linux/netdevice.h>
 #include <linux/ptp_classify.h>
 #include <linux/io.h>
-//#include <linux/iopoll.h>
 #include <linux/delay.h>
 #include <linux/clk.h>
 
@@ -34,8 +33,8 @@ static void config_sub_second_increment(void __iomem *ioaddr, u8 port,
 	 * 2000000000ULL / ptp_clock.
 	 */
 	if (ptp_clock == 0) {
-		ptp_dbg("%s:%dthis is a bug that the syskernel clock is zero\n",
-			__func__, __LINE__);
+		pr_debug("%s:%dthis is a bug that the syskernel clock is zero\n",
+			 __func__, __LINE__);
 		return;
 	}
 	if (value & RNPM_PTP_TCR_TSCFUPDT)
@@ -91,7 +90,6 @@ static int init_systime(void __iomem *ioaddr, u8 port, u32 sec, u32 nsec)
 	u32 target;
 	int timeout = 0;
 
-	//printk("init systime: %x\n", sec);
 	rnpm_wr_reg(ioaddr + RNPM_MAC_SYS_TIME_SEC_UPDATE(port), sec);
 	rnpm_wr_reg(ioaddr + RNPM_MAC_SYS_TIME_NANOSEC_UPDATE(port), nsec);
 	/* issue command to initialize the system time value */
@@ -111,11 +109,6 @@ static int init_systime(void __iomem *ioaddr, u8 port, u32 sec, u32 nsec)
 		return 0;
 	else
 		return -1;
-
-	/* wait for present system time initialize to complete */
-	//return readl_poll_timeout(ioaddr + RNPM_MAC_TS_CTRL(port), value,
-	//		!(value & RNPM_PTP_TCR_TSINIT),
-	//		10000, 100000);
 }
 
 static void get_systime(void __iomem *ioaddr, u8 port, u64 *systime)
@@ -165,7 +158,6 @@ static int adjust_systime(void __iomem *ioaddr, u8 port, u32 sec, u32 nsec,
 		 * programmed with (2^32 – <new_sec_value>)
 		 */
 		sec = -sec;
-
 		value = rnpm_rd_reg(ioaddr + RNPM_MAC_TS_CTRL(port));
 		if (value & RNPM_PTP_TCR_TSCTRLSSR)
 			nsec = (PTP_DIGITAL_ROLLOVER_MODE - nsec);
@@ -173,7 +165,6 @@ static int adjust_systime(void __iomem *ioaddr, u8 port, u32 sec, u32 nsec,
 			nsec = (PTP_BINARY_ROLLOVER_MODE - nsec);
 	}
 
-	//printk("adjust %x\n", sec);
 	rnpm_wr_reg(ioaddr + RNPM_MAC_SYS_TIME_SEC_UPDATE(port), sec);
 	value = (add_sub << PTP_STNSUR_ADDSUB_SHIFT) | nsec;
 	rnpm_wr_reg(ioaddr + RNPM_MAC_SYS_TIME_NANOSEC_UPDATE(port),
@@ -218,7 +209,7 @@ static int rnpm_ptp_adjfine(struct ptp_clock_info *ptp, long scaled_ppm)
 	u8 port = pf->port;
 
 	if (!pf) {
-		ptp_dbg("adapter_of contail is null\n");
+		pr_debug("adapter_of contail is null\n");
 		return 0;
 	}
 
@@ -308,7 +299,6 @@ static int rnpm_ptp_settime(struct ptp_clock_info *ptp,
 static int rnpm_ptp_feature_enable(struct ptp_clock_info *ptp,
 				   struct ptp_clock_request *rq, int on)
 {
-	/*TODO add support for enable the option 1588 feature PPS Auxiliary */
 	return -EOPNOTSUPP;
 }
 
@@ -328,27 +318,27 @@ static int rnpm_ptp_setup_ptp(struct rnpm_adapter *pf, u32 value)
 	struct timespec64 now;
 	u8 port = pf->port;
 
-	/*For now just use extrnal clock(the kernel-system clock)*/
-	//value |= RNPM_PTP_TCR_ESTI;
-	/* 1.Mask the Timestamp Trigger interrupt */
+	/* For now just use extrnal clock(the kernel-system clock)
+	 * Mask the Timestamp Trigger interrupt
+	 */
 	pf->hwts_ops->config_mac_irq_enable(pf->hw.hw_addr, port, false);
-	/* 2.enable time stamping */
-	/* 2.1 clear all bytes about time ctrl reg*/
+	/* enable time stamping
+	 * clear all bytes about time ctrl reg
+	 */
 	pf->hwts_ops->config_hw_tstamping(pf->hw.hw_addr, port, 0);
 
 	pf->hwts_ops->config_hw_tstamping(pf->hw.hw_addr, port, value);
-	/* 3.Program the PTPclock frequency */
-	/* program Sub Second Increment reg
+	/* Program the PTPclock frequency
+	 * program Sub Second Increment reg
 	 * we use kernel-system clock
 	 */
-	pf->hwts_ops->config_sub_second_increment(pf->hw.hw_addr, port,
-						  pf->clk_ptp_rate,
-						  &sec_inc);
-	/* 4.If use fine correction approash then,
+	pf->hwts_ops->config_sub_second_increment(pf->hw.hw_addr,
+						  port, pf->clk_ptp_rate, &sec_inc);
+	/* If use fine correction approash then,
 	 * Program MAC_Timestamp_Addend register
 	 */
 	if (sec_inc == 0) {
-		ptp_dbg("%s:%d the sec_inc is zero this is a bug\n",
+		pr_warn("%s:%d the sec_inc is zero this is a bug\n",
 			__func__, __LINE__);
 		return -EFAULT;
 	}
@@ -365,28 +355,18 @@ static int rnpm_ptp_setup_ptp(struct rnpm_adapter *pf, u32 value)
 
 	if (pf->clk_ptp_rate == 0) {
 		pf->clk_ptp_rate = 1000;
-		ptp_dbg("%s:%d clk_ptp_rate is zero\n", __func__,
-			__LINE__);
+		pr_debug("%s:%d clk_ptp_rate is zero\n", __func__, __LINE__);
 	}
 
 	pf->default_addend = div_u64(temp, pf->clk_ptp_rate);
 
 	pf->hwts_ops->config_addend(pf->hw.hw_addr, port,
 				    pf->default_addend);
-	/* 5.Poll wait for the TCR Update Addend Register*/
-	/* 6.enabled Fine Update method */
-	/* 7.program the second and nanosecond register*/
-	/*TODO If we need to enable one-step timestamp */
-
-	/* initialize system time */
 	ktime_get_real_ts64(&now);
-
 	/* lower 32 bits of tv_sec are safe until y2106 */
 	pf->hwts_ops->init_systime(pf->hw.hw_addr, port, (u32)now.tv_sec,
 				   now.tv_nsec);
-
 	pf->hwts_ops->config_mac_irq_enable(pf->hw.hw_addr, port, true);
-
 	return 0;
 }
 
@@ -507,7 +487,6 @@ int rnpm_ptp_set_ts_config(struct rnpm_adapter *pf, struct ifreq *ifr)
 		config.rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
 		ptp_v2 = RNPM_PTP_TCR_TSVER2ENA;
 		snap_type_sel = RNPM_PTP_TCR_SNAPTYPSEL_1;
-		// ts_event_en = RNPM_PTP_TCR_TSEVNTENA;
 		ptp_over_ipv4_udp = RNPM_PTP_TCR_TSIPV4ENA;
 		ptp_over_ipv6_udp = RNPM_PTP_TCR_TSIPV6ENA;
 		ptp_over_ethernet = RNPM_PTP_TCR_TSIPENA;
@@ -589,7 +568,6 @@ static struct ptp_clock_info rnpm_ptp_clock_ops = {
 
 	.adjfine = rnpm_ptp_adjfine,
 	.adjtime = rnpm_ptp_adjtime,
-
 	.gettime64 = rnpm_ptp_gettime,
 	.settime64 = rnpm_ptp_settime,
 	.enable = rnpm_ptp_feature_enable,
@@ -607,9 +585,9 @@ int rnpm_ptp_register(struct rnpm_adapter *pf)
 	pf->ptp_clock_ops = rnpm_ptp_clock_ops;
 
 	/*default mac clock rate is 50Mhz */
-	pf->clk_ptp_rate = 50000000; //50Mhz
+	pf->clk_ptp_rate = 50000000;
 	if (!pf->pdev)
-		ptp_dbg("pdev dev is null\n");
+		pr_debug("pdev dev is null\n");
 
 	pf->ptp_clock =
 		ptp_clock_register(&pf->ptp_clock_ops, &pf->pdev->dev);
@@ -643,9 +621,6 @@ void rnpm_tx_hwtstamp_work(struct work_struct *work)
 		container_of(work, struct rnpm_adapter, tx_hwtstamp_work);
 	void __iomem *ioaddr = adapter->hw.hw_addr;
 
-	/* 1. read port belone timestatmp status reg */
-	/* 2. status enabled read nsec and sec reg*/
-	/* 3. */
 	u64 nanosec = 0, sec = 0;
 	u8 port = adapter->port;
 
@@ -657,17 +632,10 @@ void rnpm_tx_hwtstamp_work(struct work_struct *work)
 		struct sk_buff *skb = adapter->ptp_tx_skb;
 		struct skb_shared_hwtstamps shhwtstamps;
 		u64 txstmp = 0;
-		/* read  and add nsec, sec turn to nsec*/
 
 		nanosec =
 			rnpm_rd_reg(ioaddr + RNPM_ETH_PTP_TX_LTIMES(port));
 		sec = rnpm_rd_reg(ioaddr + RNPM_ETH_PTP_TX_HTIMES(port));
-		/* when we read the timestamp finish need to notice the hardware
-		 * that the timestamp need to update via set tx_hwts_clear-reg
-		 * from high to low
-		 */
-		//printk("port %d call clean ptp %llx %llx\n", port, nanosec, sec);
-
 		rnpm_wr_reg(ioaddr + RNPM_ETH_PTP_TX_CLEAR(port),
 			    PTP_GET_TX_HWTS_FINISH);
 		rnpm_wr_reg(ioaddr + RNPM_ETH_PTP_TX_CLEAR(port),
@@ -722,7 +690,7 @@ void rnpm_ptp_get_rx_hwstamp(struct rnpm_adapter *adapter,
 
 	if (!skb || !adapter->ptp_rx_en) {
 		netdev_dbg(adapter->netdev,
-			   "hwstamp skb is null or rx_en iszero %u\n",
+			   "hwstamp skb is null or rx_en is zero %u\n",
 			   adapter->ptp_rx_en);
 		return;
 	}
@@ -735,14 +703,14 @@ void rnpm_ptp_get_rx_hwstamp(struct rnpm_adapter *adapter,
 	 * so we must move 16 bytes the skb->data to the mac head location
 	 * but for the head point if we need move the skb->head need to be diss
 	 */
-	/* low8bytes is null high8bytes is timestamp
-	 * high32bit is seconds low32bits is nanoseconds
+	/* low8 bytes is null high8bytes is timestamp
+	 * high 32bit is seconds low32 bits is nanoseconds
 	 */
 	skb_copy_from_linear_data_offset(skb, RNPM_RX_TIME_RESERVE,
 					 &tsvalueh, RNPM_RX_SEC_SIZE);
 	skb_copy_from_linear_data_offset(skb,
-					 RNPM_RX_TIME_RESERVE + RNPM_RX_SEC_SIZE,
-					 &tsvaluel, RNPM_RX_NANOSEC_SIZE);
+					 RNPM_RX_TIME_RESERVE + RNPM_RX_SEC_SIZE, &tsvaluel,
+					 RNPM_RX_NANOSEC_SIZE);
 	skb_pull(skb, RNPM_RX_HWTS_OFFSET);
 	tsvalueh = ntohl(tsvalueh);
 	tsvaluel = ntohl(tsvaluel);

@@ -5,7 +5,7 @@
 #define _RNPM_SRIOV_H_
 
 void rnpm_restore_vf_multicasts(struct rnpm_adapter *adapter);
-void rnpm_msg_task(struct rnpm_pf_adapter *adapter);
+void rnpm_msg_task(struct rnpm_pf_adapter *pf_adapter);
 int rnpm_vf_configuration(struct pci_dev *pdev, unsigned int event_mask);
 void rnpm_disable_tx_rx(struct rnpm_adapter *adapter);
 void rnpm_ping_all_vfs(struct rnpm_adapter *adapter);
@@ -25,11 +25,4 @@ int rnpm_disable_sriov(struct rnpm_adapter *adapter);
 void rnpm_enable_sriov(struct rnpm_adapter *adapter);
 #endif
 int rnpm_pci_sriov_configure(struct pci_dev *dev, int num_vfs);
-
-static inline void rnpm_set_vmvir(struct rnpm_adapter *adapter, u16 vid,
-				  u16 qos, u32 vf)
-{
-	// struct rnpm_hw *hw = &adapter->hw;
-}
-
 #endif /* _RNPM_SRIOV_H_ */
