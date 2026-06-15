@@ -78,3 +78,17 @@ config UB_UMMU_BYPASSEID
 	  support is available and the config is enabled, stage 2
 	  translation (GPA -> HPA) will be bypassed.
 	  If you need them say Y here.
+
+config UB_UMMU_HIGHUSER_MOVABLE_ALLOC
+	depends on ARM64
+	bool "Support GFP_HIGHUSER_MOVABLE for UMMU memory allocations"
+	default n
+	help
+	  Support using GFP_HIGHUSER_MOVABLE for UMMU internal memory
+	  allocations. When enabled, the UMMU driver will use
+	  GFP_HIGHUSER_MOVABLE (which includes __GFP_MOVABLE) for all
+	  internal memory allocations, allowing the memory management
+	  subsystem to migrate these pages. This can help with memory
+	  compaction and anti-fragmentation on systems without memory
+	  mirroring.
+	  Say Y here if your system does not use memory mirroring.
