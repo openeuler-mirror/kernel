@@ -27,7 +27,6 @@
 #include "ubcore_main.h"
 #include "ubcore_main_ue_eid.h"
 #include "ubcore_genl_admin.h"
-#include "ubcore_topo_info.h"
 #include "ubcore_tp.h"
 #include "ubcore_hash_table.h"
 
@@ -494,47 +493,6 @@ int ubcore_set_dev_eid_ns_ops(struct sk_buff *skb, struct genl_info *info)
 		(char *)nla_data(info->attrs[UBCORE_ATTR_DEV_NAME]),
 		nla_get_u16(info->attrs[UBCORE_ATTR_EID_IDX]),
 		nla_get_u32(info->attrs[UBCORE_ATTR_NS_FD]));
-}
-
-int ubcore_get_topo_info(struct sk_buff *skb, struct genl_info *info)
-{
-	struct ubcore_cmd_topo_info *arg = NULL;
-	struct ubcore_topo_map *topo_map;
-	uint64_t args_addr;
-	int ret = -EINVAL;
-
-	if (!info->attrs[UBCORE_HDR_ARGS_LEN] ||
-	    !info->attrs[UBCORE_HDR_ARGS_ADDR])
-		return ret;
-	arg = kzalloc(sizeof(*arg), GFP_KERNEL);
-	if (!arg)
-		return -ENOMEM;
-	args_addr = nla_get_u64(info->attrs[UBCORE_HDR_ARGS_ADDR]);
-	ret = ubcore_copy_from_user(arg, (void __user *)(uintptr_t)args_addr,
-				    sizeof(struct ubcore_cmd_topo_info));
-	if (ret != 0) {
-		kfree(arg);
-		return -EPERM;
-	}
-	topo_map = ubcore_get_global_topo_map();
-	if (topo_map == NULL) {
-		ubcore_log_err("topo map is empty!\n");
-		kfree(arg);
-		return -1;
-	}
-	if (arg->in.node_idx >= topo_map->node_num) {
-		ubcore_log_err("topo map idx > node_num!\n");
-		kfree(arg);
-		return -EINVAL;
-	}
-
-	arg->out.node_num = topo_map->node_num;
-	(void)memcpy(&arg->out.topo_info, &topo_map->topo_infos[arg->in.node_idx],
-		     sizeof(struct ubcore_topo_node));
-	ret = ubcore_copy_to_user((void __user *)(uintptr_t)args_addr, arg,
-				   sizeof(struct ubcore_cmd_topo_info));
-	kfree(arg);
-	return ret;
 }
 
 int ubcore_set_sl(struct sk_buff *skb, struct genl_info *info)

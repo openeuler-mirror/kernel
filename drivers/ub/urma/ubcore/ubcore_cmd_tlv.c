@@ -67,15 +67,6 @@ static void ubcore_set_topo_fill_spec_in(void *arg_addr,
 	SPEC(s++, SET_TOPO_IN_TOPO_NUM, arg->in.topo_num);
 }
 
-static void ubcore_get_topo_fill_spec_in(void *arg_addr,
-					 struct ubcore_cmd_spec *spec)
-{
-	struct ubcore_cmd_get_topo *arg = arg_addr;
-	struct ubcore_cmd_spec *s = spec;
-
-	SPEC(s++, GET_TOPO_OUT_TOPO_MAP, arg->out.topo_map);
-}
-
 static void ubcore_get_path_set_fill_spec_in(void *arg_addr,
 	struct ubcore_cmd_spec *spec)
 {
@@ -176,12 +167,6 @@ static struct ubcore_tlv_handler
 		[UBCORE_CMD_SET_TOPO] = {
 			ubcore_set_topo_fill_spec_in,
 			SET_TOPO_IN_NUM,
-			NULL,
-			0,
-		},
-		[UBCORE_CMD_GET_TOPO] = {
-			ubcore_get_topo_fill_spec_in,
-			GET_TOPO_OUT_NUM,
 			NULL,
 			0,
 		},
