@@ -1044,7 +1044,7 @@ static struct its_collection
 	u32 *dt_entry;
 	void __iomem *its_func_en = its->sgir_base + 0x80;
 	u32 tmp, tmp1, mask = 1 << 19;
-	int i = 100;
+	int i = 1000000;
 
 	/*
 	 * The device table is flat. Modify v to 0 in the dt entry of devid,
@@ -1062,6 +1062,10 @@ static struct its_collection
 	 * (offset is 0x20000), so address of GITS_FUNC_EN can be got by
 	 * sgir_base + 0x80. Bit 16 is used to clear DT cache, the flip of
 	 * bit 19 indicates that DT cache has been cleared.
+	 *
+	 * The time required to clear the cache once is approximately 100
+	 * nanoseconds. Based on a timeout period of 1 second, we set the
+	 * number of timeout attempts to 1,000,000.
 	 */
 	while (--i) {
 		tmp = readl_relaxed(its_func_en) & mask;
