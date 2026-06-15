@@ -367,6 +367,18 @@ static ssize_t ahci_read_em_buffer(struct device *dev,
 	return i;
 }
 
+static void __iomem *led_get_mmio_quirk(struct ata_port *ap, struct ahci_host_priv *hpriv)
+{
+#if defined(CONFIG_CPU_SUP_ZHAOXIN) || defined(CONFIG_CPU_SUP_CENTAUR)
+	if (hpriv->has_p0_p1 && hpriv->px_index == 0) {
+		if (hpriv->p1_mmio)
+			return hpriv->p1_mmio;
+		dev_warn_ratelimited(ap->host->dev, "P1 removed, LED mode unavailable\n");
+	}
+#endif
+	return hpriv->mmio;
+}
+
 static ssize_t ahci_store_em_buffer(struct device *dev,
 				    struct device_attribute *attr,
 				    const char *buf, size_t size)
@@ -390,6 +402,7 @@ static ssize_t ahci_store_em_buffer(struct device *dev,
 	ahci_rpm_get_port(ap);
 	spin_lock_irqsave(ap->lock, flags);
 
+	mmio = led_get_mmio_quirk(ap, hpriv);
 	em_ctl = readl(mmio + HOST_EM_CTL);
 	if (em_ctl & EM_CTL_TM) {
 		spin_unlock_irqrestore(ap->lock, flags);
@@ -1138,6 +1151,8 @@ static ssize_t ahci_transmit_led_message(struct ata_port *ap, u32 state,
 	 * if we are still busy transmitting a previous message,
 	 * do not allow
 	 */
+
+	mmio = led_get_mmio_quirk(ap, hpriv);
 	em_ctl = readl(mmio + HOST_EM_CTL);
 	if (em_ctl & EM_CTL_TM) {
 		spin_unlock_irqrestore(ap->lock, flags);
@@ -1145,6 +1160,7 @@ static ssize_t ahci_transmit_led_message(struct ata_port *ap, u32 state,
 		return -EBUSY;
 	}
 
+	mmio = hpriv->mmio;
 	if (hpriv->em_msg_type & EM_MSG_TYPE_LED) {
 		/*
 		 * create message header - this is all zero except for
@@ -1162,6 +1178,7 @@ static ssize_t ahci_transmit_led_message(struct ata_port *ap, u32 state,
 		/*
 		 * tell hardware to transmit the message
 		 */
+		mmio = led_get_mmio_quirk(ap, hpriv);
 		writel(em_ctl | EM_CTL_TM, mmio + HOST_EM_CTL);
 	}
 

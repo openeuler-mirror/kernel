@@ -36,6 +36,10 @@
 #define EM_MSG_LED_VALUE_ACTIVITY     0x00070000
 #define EM_MSG_LED_VALUE_OFF          0xfff80000
 #define EM_MSG_LED_VALUE_ON           0x00010000
+#if defined(CONFIG_CPU_SUP_ZHAOXIN) || defined(CONFIG_CPU_SUP_CENTAUR)
+/*fix zhaoxin Enclosure Management quirk*/
+#define ZX_GET_BUS_NUMBER_QUIRK		0x000012B0
+#endif /* CONFIG_CPU_SUP_ZHAOXIN || CONFIG_CPU_SUP_CENTAUR */
 
 enum {
 	AHCI_MAX_PORTS		= 32,
@@ -379,6 +383,13 @@ struct ahci_host_priv {
 	/* only required for per-port MSI(-X) support */
 	int			(*get_irq_vector)(struct ata_host *host,
 						  int port);
+#if defined(CONFIG_CPU_SUP_ZHAOXIN) || defined(CONFIG_CPU_SUP_CENTAUR)
+	/* fix zhaoxin Enclosure Management quirk */
+	void __iomem *p1_mmio;
+	u8 sx_index;
+	u8 px_index;
+	bool has_p0_p1;
+#endif /* CONFIG_CPU_SUP_ZHAOXIN || CONFIG_CPU_SUP_CENTAUR */
 };
 
 extern int ahci_ignore_sss;
