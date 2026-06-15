@@ -25,7 +25,6 @@ int ubcore_set_eid_ns_mode_ops(struct sk_buff *skb, struct genl_info *info);
 int ubcore_expose_dev_ns_ops(struct sk_buff *skb, struct genl_info *info);
 int ubcore_unexpose_dev_ns_ops(struct sk_buff *skb, struct genl_info *info);
 int ubcore_set_dev_eid_ns_ops(struct sk_buff *skb, struct genl_info *info);
-int ubcore_get_topo_info(struct sk_buff *skb, struct genl_info *info);
 int ubcore_set_dev_ns_ops(struct sk_buff *skb, struct genl_info *info);
 int ubcore_add_eid_start(struct netlink_callback *cb);
 int ubcore_add_eid_dump(struct sk_buff *skb, struct netlink_callback *cb);
