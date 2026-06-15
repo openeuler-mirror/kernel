@@ -161,6 +161,7 @@ struct ubcore_cmd_host_eid_batch {
 		union ubcore_eid host_eid;
 		uint32_t eid_num;
 		union ubcore_eid eids[UBCORE_HOST_EID_BATCH_EID_MAX];
+		union ubcore_net_addr_union cnas[UBCORE_HOST_EID_BATCH_EID_MAX];
 	} in;
 };
 
