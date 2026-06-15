@@ -16,6 +16,8 @@ struct udma_segment {
 	uint32_t tid;
 	uint64_t addr;
 	uint64_t length;
+	uint64_t vm_start;
+	uint64_t vm_end;
 };
 
 static inline struct udma_segment *to_udma_seg(struct ubcore_target_seg *seg)

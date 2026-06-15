@@ -11,6 +11,7 @@
 #include "udma_jetty.h"
 #include "udma_ctrlq_tp.h"
 #include "udma_cmd.h"
+#include "udma_seg_tree.h"
 #include "udma_ctx.h"
 
 static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data, bool dtu_en)
@@ -65,8 +66,8 @@ static void udma_put_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 {
 	if (dev->caps.sva_sep_mode_en) {
 		mutex_lock(&dev->seg_tree_mutex);
-		if (refcount_dec_and_test(&ctx->seg_node->ctx_refcnt)) {
-			udma_seg_tree_destroy(ctx->seg_node);
+		if (refcount_dec_and_test(&ctx->seg_tree->ctx_refcnt)) {
+			udma_seg_tree_destroy(ctx->seg_tree);
 			__xa_erase(&dev->seg_tree_table, ctx->tid);
 		}
 		mutex_unlock(&dev->seg_tree_mutex);
@@ -97,18 +98,18 @@ static int udma_get_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 		}
 
 		mutex_lock(&dev->seg_tree_mutex);
-		ctx->seg_node = xa_load(&dev->seg_tree_table, ctx->tid);
-		if (ctx->seg_node) {
-			refcount_inc(&ctx->seg_node->ctx_refcnt);
+		ctx->seg_tree = xa_load(&dev->seg_tree_table, ctx->tid);
+		if (ctx->seg_tree) {
+			refcount_inc(&ctx->seg_tree->ctx_refcnt);
 			ret = 0;
 		} else {
-			ctx->seg_node = udma_seg_range_init();
-			if (!ctx->seg_node) {
+			ctx->seg_tree = udma_seg_tree_init();
+			if (!ctx->seg_tree) {
 				dev_err(dev->dev, "failed to init segment_range.\n");
 				goto err_segment_range_init;
 			}
 			ret = xa_err(__xa_store(&dev->seg_tree_table, ctx->tid,
-						ctx->seg_node, GFP_ATOMIC));
+						ctx->seg_tree, GFP_ATOMIC));
 			if (ret) {
 				dev_err(dev->dev, "failed to store segment_range, ret=%d.\n", ret);
 				goto err_segment_range_store;
@@ -132,7 +133,7 @@ static int udma_get_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 	return ret;
 
 err_segment_range_store:
-	udma_seg_tree_destroy(ctx->seg_node);
+	udma_seg_tree_destroy(ctx->seg_tree);
 err_segment_range_init:
 	mutex_unlock(&dev->seg_tree_mutex);
 	ummu_core_free_tdev(ctx->ummu_dev);
