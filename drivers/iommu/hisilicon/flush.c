@@ -177,38 +177,42 @@ static void __ummu_tlbi_range(struct ummu_mcmdq_ent *cmd,
 }
 
 static void ummu_tlbi_range(struct ummu_tlb_range *range, bool leaf,
-			    struct ummu_domain *domain)
+			    struct ummu_domain *u_domain)
 {
 	struct ummu_mcmdq_ent cmd = {0};
 	int err;
 
-	if (domain->base_domain.domain.type == IOMMU_DOMAIN_SVA)
-		err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_RNG, UMMU_TLBI_SCENE_SVA, &cmd);
+	if (u_domain->base_domain.domain.type == IOMMU_DOMAIN_SVA)
+		err = ummu_domain_tlbi_cmd(u_domain, UMMU_TLBI_SCOPE_RNG,
+					   UMMU_TLBI_SCENE_SVA, &cmd);
 	else
-		err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_RNG, UMMU_TLBI_SCENE_DMA, &cmd);
+		err = ummu_domain_tlbi_cmd(u_domain, UMMU_TLBI_SCOPE_RNG,
+					   UMMU_TLBI_SCENE_DMA, &cmd);
 	if (err)
 		return;
 
 	cmd.tlbi.leaf = leaf;
-	__ummu_tlbi_range(&cmd, range, domain);
+	__ummu_tlbi_range(&cmd, range, u_domain);
 }
 
 /* for io_pgtable */
 void ummu_tlbi_context(void *cookie)
 {
-	struct ummu_domain *domain = (struct ummu_domain *)cookie;
+	struct ummu_domain *u_domain = (struct ummu_domain *)cookie;
 	struct ummu_device *ummu = core_to_ummu_device(
-					domain->base_domain.core_dev);
+					u_domain->base_domain.core_dev);
 	struct ummu_mcmdq_ent cmd = {0};
 	int err;
 
-	if (domain->base_domain.domain.type == IOMMU_DOMAIN_SVA && domain->tlbi_asid)
-		err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_CTX, UMMU_TLBI_SCENE_SVA, &cmd);
+	if (u_domain->base_domain.domain.type == IOMMU_DOMAIN_SVA && u_domain->tlbi_asid)
+		err = ummu_domain_tlbi_cmd(u_domain, UMMU_TLBI_SCOPE_CTX,
+					   UMMU_TLBI_SCENE_SVA, &cmd);
 	else
-		err = ummu_domain_tlbi_cmd(domain, UMMU_TLBI_SCOPE_CTX, UMMU_TLBI_SCENE_DMA, &cmd);
+		err = ummu_domain_tlbi_cmd(u_domain, UMMU_TLBI_SCOPE_CTX,
+					   UMMU_TLBI_SCENE_DMA, &cmd);
 	if (err)
 		return;
-	trace_ummu_flush_iotlb_all(domain->base_domain.tid, dev_name(ummu->dev));
+	trace_ummu_flush_iotlb_all(u_domain->base_domain.tid, dev_name(ummu->dev));
 	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd);
 }
 
