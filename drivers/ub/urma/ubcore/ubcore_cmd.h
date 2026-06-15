@@ -84,20 +84,22 @@ enum ubcore_cmd {
 	UBCORE_CMD_MAX
 };
 
+struct ubcore_stats {
+	uint64_t tx_pkt;
+	uint64_t rx_pkt;
+	uint64_t tx_bytes;
+	uint64_t rx_bytes;
+	uint64_t tx_pkt_err;
+	uint64_t rx_pkt_err;
+};
+
 struct ubcore_cmd_query_stats {
 	struct {
 		char dev_name[UBCORE_MAX_DEV_NAME];
 		uint32_t type;
 		uint32_t key;
 	} in;
-	struct {
-		uint64_t tx_pkt;
-		uint64_t rx_pkt;
-		uint64_t tx_bytes;
-		uint64_t rx_bytes;
-		uint64_t tx_pkt_err;
-		uint64_t rx_pkt_err;
-	} out;
+	struct ubcore_stats out;
 };
 
 struct ubcore_cmd_query_res {
