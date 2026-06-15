@@ -3,19 +3,16 @@
  * Copyright (C) 2021 - 2023, Shanghai Yunsilicon Technology Co., Ltd.
  * All rights reserved.
  */
-
 #include <rdma/ib_user_verbs.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/uverbs_types.h>
 #include <rdma/uverbs_ioctl.h>
 #include <rdma/ib_umem.h>
-#define UVERBS_MODULE_NAME xsc_ib
-#include <rdma/uverbs_named_ioctl.h>
-
 #include "common/driver.h"
 #include "xsc_ib.h"
+#define UVERBS_MODULE_NAME xsc_ib
+#include <rdma/uverbs_named_ioctl.h>
 #include "user.h"
-
 static struct xsc_ib_ucontext *devx_uattrs2uctx(struct uverbs_attr_bundle *attrs)
 {
 	return to_xucontext(ib_uverbs_get_ucontext(attrs));
@@ -45,8 +42,8 @@ static int UVERBS_HANDLER(XSC_IB_METHOD_DEVX_OTHER)(struct uverbs_attr_bundle *a
 	int err;
 
 	c = devx_uattrs2uctx(attrs);
-	if (IS_ERR(c))
-		return PTR_ERR(c);
+	if (!c)
+		return -EINVAL;
 	dev = to_mdev(c->ibucontext.device);
 
 	if (!devx_is_general_cmd(cmd_in))

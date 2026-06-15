@@ -58,16 +58,26 @@ enum {
 	XSC_QP_FLAG_RAWPACKET_TSO       = 1 << 9,
 	XSC_QP_FLAG_RAWPACKET_TX	= 1 << 10,
 	XSC_QP_FLAG_RAWPACKET_SNIFFER	= 1 << 11,
+	XSC_QP_FLAG_WORC		= 1 << 12,
 };
 
+#define ALLOC_UCONTEXT_VER_V1 1
+#define ALLOC_UCONTEXT_VER_V2 2
+
+#define CURRENT_UCONTEXT_ABI_VER	ALLOC_UCONTEXT_VER_V2
+
 struct xsc_ib_alloc_ucontext_req {
-	__u32	rsvd0;
+	__u32	abi_ver;
 	__u32	rsvd1;
 };
 
 enum xsc_user_cmds_supp_uhw {
 	XSC_USER_CMDS_SUPP_UHW_QUERY_DEVICE = 1 << 0,
 	XSC_USER_CMDS_SUPP_UHW_CREATE_AH    = 1 << 1,
+};
+
+enum {
+	XSC_HW_FEATURE_FLAG_SUPPORT_CQE64 = 1 << 0,
 };
 
 struct xsc_ib_alloc_ucontext_resp {
@@ -86,6 +96,16 @@ struct xsc_ib_alloc_ucontext_resp {
 	__u32	send_ds_num;
 	__u32	recv_ds_num;
 	__u32   cmds_supp_uhw;
+	__u32	pad;
+	__u32	multidb_num;
+	__u32	tx_multidb_base;
+	__u32	rdma_proto_mode;
+	__u32	hw_feature_flag;
+	__u32	max_srq;
+	__u32	max_srq_recv_wr;
+	__u32	srq_min_wr_num;
+	__u32	srq_max_wr_num;
+	__u32	reserved[28];
 };
 
 struct xsc_ib_create_qp {
@@ -95,6 +115,9 @@ struct xsc_ib_create_qp {
 	__u32	rq_wqe_count;
 	__u32	rq_wqe_shift;
 	__u32	flags;
+
+	int	dmabuf_fd;
+	size_t	dmabuf_sz;
 };
 
 struct xsc_ib_create_qp_resp {
@@ -102,10 +125,27 @@ struct xsc_ib_create_qp_resp {
 	__u32 reserved;
 };
 
+struct xsc_ib_create_srq {
+	__u64	buf_addr;
+	__u64	db_addr;
+	__u32	flags;
+	__u32	reserved0;
+	__u32	uidx;
+	__u32	reserved1;
+};
+
+struct xsc_ib_create_srq_resp {
+	__u32	srqn;
+	__u32	reserved;
+};
+
 struct xsc_ib_create_cq {
 	__u64 buf_addr;
 	__u64 db_addr;
 	__u32	cqe_size;
+
+	int	dmabuf_fd;
+	size_t	dmabuf_sz;
 };
 
 struct xsc_ib_create_cq_resp {

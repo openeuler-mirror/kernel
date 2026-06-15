@@ -7,6 +7,7 @@
 #define XSC_LAG_H
 
 #define XSC_BOARD_LAG_MAX    XSC_MAX_PORTS
+#define XSC_BOARD_NETDEV_MAX	8
 
 enum lag_event_type {
 	XSC_LAG_CREATE,
@@ -34,6 +35,7 @@ enum {
 	XSC_LAG_FLAG_ROCE	= 1 << 0,
 	XSC_LAG_FLAG_SRIOV	= 1 << 1,
 	XSC_LAG_FLAG_KERNEL	= 1 << 2,
+	XSC_LAG_FLAG_MPESW	= 1 << 3,
 };
 
 enum xsc_lag_hash {
@@ -87,6 +89,7 @@ struct xsc_lag_event {
 	u8		not_roce_lag_xdev_mask;
 	struct	slave_func_data roce_pf_func_data;
 	struct	slave_func_data func_data[6];
+	bool is_destorying;
 };
 
 struct lag_event_list {
@@ -100,6 +103,7 @@ struct lag_event_list {
 
 struct xsc_board_lag {
 	struct xsc_lag xsc_lag[XSC_BOARD_LAG_MAX];
+	struct net_device *netdev[XSC_BOARD_NETDEV_MAX];
 	u32 board_id;
 	struct kref	ref;
 	u8	bond_valid_mask;
@@ -121,6 +125,13 @@ u16 xsc_get_lag_id(struct xsc_core_device *xdev);
 struct xsc_board_lag *xsc_board_lag_get(struct xsc_core_device *xdev);
 bool xsc_lag_is_kernel(struct xsc_core_device *xdev);
 u16 xsc_lag_set_user_mode(struct xsc_core_device *xdev, u8 mode);
+bool xsc_lag_is_mpesw(struct xsc_core_device *dev);
+bool xsc_lag_is_active(struct xsc_core_device *dev);
+bool xsc_lag_is_sriov(struct xsc_core_device *dev);
+bool xsc_lag_mode_support(struct xsc_core_device *xdev);
+
+void xsc_ldev_add_debugfs(struct xsc_core_device *dev);
+void xsc_ldev_remove_debugfs(struct xsc_core_device *dev);
 
 static inline void xsc_board_lag_lock(struct xsc_core_device *xdev)
 {
@@ -136,6 +147,21 @@ static inline void xsc_board_lag_unlock(struct xsc_core_device *xdev)
 
 	if (xsc_core_is_pf(xdev))
 		mutex_unlock(&board_lag->lock);
+}
+
+static bool xsc_is_xsc_pf(struct pci_dev *pdev)
+{
+	return ((pdev->vendor == XSC_PCI_VENDOR_ID) &&
+		(pdev->device == XSC_MS_PF_DEV_ID ||
+		pdev->device == XSC_MV_SOC_PF_DEV_ID ||
+		pdev->device == XSC_MC_PF_DEV_ID_DIAMOND)) ||
+		((pdev->vendor == XSC_PCI_VENDOR_ID_CUSTOM) &&
+		(pdev->device == XSC_MC_PF_DEV_ID_CUSTOM));
+}
+
+static inline bool xsc_is_dev_support_lag(struct xsc_core_device *xdev)
+{
+	return xsc_is_xsc_pf(xdev->pdev) && !xsc_core_is_ocp_4pf(xdev);
 }
 
 #endif /* XSC_LAG_H */

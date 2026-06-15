@@ -7,7 +7,6 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/random.h>
-
 #include "xsc_ib.h"
 #include "user.h"
 

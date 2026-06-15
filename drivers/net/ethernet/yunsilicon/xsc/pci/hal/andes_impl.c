@@ -11,6 +11,27 @@
 #include "common/xsc_hsi.h"
 #include "xsc_hal.h"
 
+/* message opcode */
+enum {
+	XSC_MSG_OPCODE_SEND		= 0,
+	XSC_MSG_OPCODE_RDMA_WRITE	= 1,
+	XSC_MSG_OPCODE_RDMA_READ	= 2,
+	XSC_MSG_OPCODE_MAD		= 3,
+	XSC_MSG_OPCODE_RDMA_ACK		= 4,
+	XSC_MSG_OPCODE_RDMA_ACK_READ	= 5,
+	XSC_MSG_OPCODE_RDMA_CNP		= 6,
+	XSC_MSG_OPCODE_RAW		= 7,
+	XSC_MSG_OPCODE_VIRTIO_NET	= 8,
+	XSC_MSG_OPCODE_VIRTIO_BLK	= 9,
+	XSC_MSG_OPCODE_RAW_TPE		= 10,
+	XSC_MSG_OPCODE_INIT_QP_REQ	= 11,
+	XSC_MSG_OPCODE_INIT_QP_RSP	= 12,
+	XSC_MSG_OPCODE_INIT_PATH_REQ	= 13,
+	XSC_MSG_OPCODE_INIT_PATH_RSP	= 14,
+
+	XSC_MSG_OPCODE_UNSUPPORT	= -1,
+};
+
 #define REG_ADDR(bp, offset)	((bp) + (offset))
 
 #define HIF_CPM_IDA_DATA_MEM_STRIDE		0x40
@@ -172,7 +193,7 @@ static void xsc_ia32_write(void *hal, void __iomem *bar, u32 addr, void *data, i
 	release_ia32_lock(_hal, bar, idx);
 }
 
-static void andes_ring_tx_doorbell(void *hal, void __iomem *bar, u32 sqn, u32 next_pid)
+static void andes_ring_tx_doorbell(void *hal, void __iomem *bar, u32 sqn, u32 next_pid, bool mdb)
 {
 	struct xsc_hw_abstract_layer *_hal = (struct xsc_hw_abstract_layer *)hal;
 	union xsc_send_doorbell {
@@ -182,6 +203,8 @@ static void andes_ring_tx_doorbell(void *hal, void __iomem *bar, u32 sqn, u32 ne
 		};
 		u32 raw;
 	} db;
+	u32 db_reg = mdb ? QPM_TX_MDB_BASE_REG_ADDR + (sqn & (MDB_NUM - 1)) * sizeof(u32) :
+		_hal->regs->tx_db;
 
 	db.next_pid = next_pid;
 	db.qp_id = sqn;
@@ -191,7 +214,7 @@ static void andes_ring_tx_doorbell(void *hal, void __iomem *bar, u32 sqn, u32 ne
 	 */
 	wmb();
 
-	xsc_write32(bar, _hal->regs->tx_db, &db.raw);
+	xsc_write32(bar, db_reg, &db.raw);
 }
 
 static void andes_ring_rx_doorbell(void *hal, void __iomem *bar, u32 rqn, u32 next_pid)
@@ -522,6 +545,11 @@ struct andes_cqe {
 	u8		owner:1;
 };
 
+static int andes_get_cqe_wqe_id(void *cqe)
+{
+	return ((struct andes_cqe *)cqe)->wqe_id;
+}
+
 static bool andes_is_err_cqe(void *cqe)
 {
 	struct andes_cqe *_cqe = cqe;
@@ -548,13 +576,6 @@ static u8 andes_get_cqe_opcode(void *cqe)
 	return xsc_msg_opcode[msg_opcode][_cqe->type][_cqe->with_immdt];
 }
 
-static u32 andes_get_max_mtt_num(void *hal)
-{
-	struct xsc_hw_abstract_layer *_hal = hal;
-
-	return _hal->regs->mtt_inst_depth;
-}
-
 static u32 andes_get_max_mpt_num(void *hal)
 {
 	struct xsc_hw_abstract_layer *_hal = hal;
@@ -578,9 +599,87 @@ static void andes_set_data_seg(void *data_seg, u32 length, u32 key, u64 addr)
 	seg->addr = addr;
 }
 
+struct andes_send_wqe_ctrl_seg {
+	__le32		msg_opcode:8;
+	__le32		with_immdt:1;
+	__le32		csum_en:2;
+	__le32		ds_data_num:5;
+	__le32		wqe_id:16;
+	__le32		msg_len;
+	union {
+		__le32		opcode_data;
+		struct {
+			u8		has_pph:1;
+			u8		so_type:1;
+			__le16		so_data_size:14;
+			u8:8;
+			u8		so_hdr_len:8;
+		};
+		struct {
+			__le16		desc_id;
+			__le16		is_last_wqe:1;
+			__le16		dst_qp_id:15;
+		};
+	};
+	__le32		se:1;
+	__le32		ce:1;
+	__le32:30;
+};
+
+static void andes_set_wqe_id(void *cseg, u32 wqe_id)
+{
+	u16 _wqe_id = wqe_id;
+
+	((struct andes_send_wqe_ctrl_seg *)cseg)->wqe_id = cpu_to_le16(_wqe_id);
+}
+
 static bool andes_skb_need_linearize(int ds_num)
 {
 	return false;
+}
+
+static int andes_get_arm_boot_done(void *hal, void __iomem *bar)
+{
+	// struct xsc_hw_abstract_layer *_hal = (struct xsc_hw_abstract_layer *)hal;
+
+	// return readl(REG_ADDR(bar, _hal->regs->fw_init_done_addr));
+	return true;
+}
+
+static int andes_get_fw_reset_info(void *hal, void __iomem *bar)
+{
+	// struct xsc_hw_abstract_layer *_hal = (struct xsc_hw_abstract_layer *)hal;
+
+	// return readl(REG_ADDR(bar, _hal->regs->fw_reset_info_addr));
+	return false;
+}
+
+static void andes_update_fw_reset_info(void *hal, void __iomem *bar, u64 state)
+{
+	struct xsc_hw_abstract_layer *_hal = (struct xsc_hw_abstract_layer *)hal;
+
+	writel(state, REG_ADDR(bar, _hal->regs->fw_reset_info_addr));
+}
+
+static struct xsc_msg_opcode xsc_ib_opcode = {
+	.send = XSC_MSG_OPCODE_SEND,
+	.send_with_imm = XSC_MSG_OPCODE_SEND,
+	.rdma_write = XSC_MSG_OPCODE_RDMA_WRITE,
+	.rdma_write_with_imm = XSC_MSG_OPCODE_RDMA_WRITE,
+	.rdma_read = XSC_MSG_OPCODE_RDMA_READ,
+	.local_inv = XSC_MSG_OPCODE_SEND,
+	.reg_mr = XSC_MSG_OPCODE_SEND,
+	.send_with_inv = XSC_MSG_OPCODE_SEND,
+	.atomic_cmp_and_swp = XSC_MSG_OPCODE_UNSUPPORT,
+	.atomic_fetch_and_add = XSC_MSG_OPCODE_UNSUPPORT,
+	.masked_atomic_cmp_and_swp = XSC_MSG_OPCODE_UNSUPPORT,
+	.masked_atomic_fetch_and_add = XSC_MSG_OPCODE_UNSUPPORT,
+	.mad = XSC_MSG_OPCODE_MAD,
+};
+
+static struct xsc_msg_opcode *andes_get_msg_opcode(void)
+{
+	return &xsc_ib_opcode;
 }
 
 static struct xsc_hw_ops andes_arch_ops = {
@@ -605,10 +704,15 @@ static struct xsc_hw_ops andes_arch_ops = {
 	.is_err_cqe = andes_is_err_cqe,
 	.get_cqe_error_code = andes_get_cqe_error_code,
 	.get_cqe_opcode = andes_get_cqe_opcode,
-	.get_max_mtt_num = andes_get_max_mtt_num,
 	.get_max_mpt_num = andes_get_max_mpt_num,
 	.set_data_seg = andes_set_data_seg,
 	.skb_need_linearize = andes_skb_need_linearize,
+	.get_fw_init_done = andes_get_arm_boot_done,
+	.get_fw_reset_info = andes_get_fw_reset_info,
+	.update_fw_reset_info = andes_update_fw_reset_info,
+	.get_msg_opcode = andes_get_msg_opcode,
+	.set_wqe_id = andes_set_wqe_id,
+	.get_cqe_wqe_id = andes_get_cqe_wqe_id,
 };
 
 static struct xsc_hw_reg andes_pf_regs = {
@@ -656,6 +760,8 @@ static struct xsc_hw_reg andes_pf_regs = {
 	.mtt_inst_stride = 0,
 	.mtt_inst_num_log = 0,
 	.mtt_inst_depth = MMC_MTT_TBL_MEM_DEPTH,
+	.fw_init_done_addr = APS_ARM_BOOT_DONE_REG_ADDR,
+	.fw_reset_info_addr = FW_RESET_INFO_REG_ADDR,
 };
 
 static struct xsc_hw_reg andes_bar_compressed_pf_regs = {
@@ -708,6 +814,8 @@ static struct xsc_hw_reg andes_bar_compressed_pf_regs = {
 	.mtt_inst_stride = 0,
 	.mtt_inst_num_log = 0,
 	.mtt_inst_depth = MMC_MTT_TBL_MEM_DEPTH,
+	.fw_init_done_addr = APS_ARM_BOOT_DONE_REG_ADDR_NEW,
+	.fw_reset_info_addr = FW_RESET_INFO_REG_ADDR_NEW,
 };
 
 static struct xsc_hw_reg andes_vf_regs = {

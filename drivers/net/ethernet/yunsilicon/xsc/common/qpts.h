@@ -26,6 +26,7 @@ struct __packed xsc_qp_trace {
 	u64 timestamp;
 	u32 lqpn;
 	u32 rqpn;
+	u32 qp_protocol_mode;
 };
 
 struct __packed qpt_update_affinity {
@@ -63,7 +64,7 @@ enum {
 };
 
 #define YS_QPTRACE_VER_MAJOR    2
-#define YS_QPTRACE_VER_MINOR    0
+#define YS_QPTRACE_VER_MINOR    1
 
 int qpts_init(void);
 void qpts_fini(void);

@@ -4,7 +4,7 @@
  * All rights reserved.
  */
 /* generated time:
- * Tue Jan 21 16:02:05 CST 2025
+ * Thu 05 Jun 2025 07:43:48 PM CST
  */
 
 #ifndef XSC_HW_H
@@ -68,5 +68,6 @@
 #define HIF_IRQ_CFG_VECTOR_TABLE_MSG_DATA_REG_ADDR   0xa10001d8
 #define HIF_IRQ_CFG_VECTOR_TABLE_CTRL_REG_ADDR   0xa10001e0
 #define HIF_IRQ_CFG_VECTOR_TABLE_START_REG_ADDR   0xa10001b0
+#define APS_SHARE_DATA_REG_ADDR   0xa8000080
 
 #endif /* XSC_HW_H  */

@@ -18,6 +18,7 @@
 #include "common/xsc_cmd.h"
 #include "common/xsc_hsi.h"
 #include "common/qpts.h"
+#include "common/srq.h"
 
 #define LS_64(val, field) (((u64)(val) << field ## _SHIFT) & (field ## _MASK))
 #define RS_64(val, field) ((u64)((val) & field ## _MASK) >> field ## _SHIFT)
@@ -193,6 +194,7 @@ struct xsc_dev_resource {
 	struct dentry *cmdif_debugfs;
 	struct dentry *qptrace_debugfs;
 	struct dentry *dbg_root;
+	struct dentry *lag_debugfs;
 };
 
 struct xsc_db {
@@ -223,6 +225,15 @@ static inline void *xsc_buf_offset(struct xsc_buf *buf, int offset)
 		return buf->direct.buf + offset;
 	else
 		return buf->page_list[offset >> PAGE_SHIFT].buf +
+			(offset & (PAGE_SIZE - 1));
+}
+
+static inline dma_addr_t xsc_buf_dma_offset(struct xsc_buf *buf, int offset)
+{
+	if (buf->nbufs == 1)
+		return buf->direct.map + offset;
+	else
+		return buf->page_list[offset >> PAGE_SHIFT].map +
 			(offset & (PAGE_SIZE - 1));
 }
 
@@ -268,8 +279,10 @@ void xsc_buf_free(struct xsc_core_device *dev, struct xsc_buf *buf);
 int xsc_core_create_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr);
 int xsc_core_destroy_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr);
 int xsc_core_register_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr,
-			 struct xsc_register_mr_mbox_in *in, int inlen);
-int xsc_core_dereg_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr);
+			 struct xsc_register_mr_mbox_in *in, int inlen,
+			 bool fast_reg);
+int xsc_core_dereg_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr,
+		      bool fast_reg);
 void xsc_reg_local_dma_mr(struct xsc_core_device *dev);
 int xsc_core_alloc_pd(struct xsc_core_device *xdev, u32 *pdn);
 int xsc_core_dealloc_pd(struct xsc_core_device *xdev, u32 pdn);
@@ -285,7 +298,7 @@ void xsc_qp_event(struct xsc_core_device *xdev, u32 qpn, int event_type);
 int xsc_vector2eqn(struct xsc_core_device *dev, int vector, int *eqn,
 		   unsigned int *irqn);
 void xsc_cq_event(struct xsc_core_device *xdev, u32 cqn, int event_type);
-int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u8 vecidx,
+int xsc_create_map_eq(struct xsc_core_device *dev, struct xsc_eq *eq, u16 vecidx,
 		      int nent, const char *name);
 int xsc_destroy_unmap_eq(struct xsc_core_device *dev, struct xsc_eq *eq);
 int xsc_start_eqs(struct xsc_core_device *dev);
@@ -320,7 +333,8 @@ int xsc_frag_buf_alloc_node(struct xsc_core_device *xdev, int size,
 			    struct xsc_frag_buf *buf, int node);
 void xsc_db_free(struct xsc_core_device *xdev, struct xsc_db *db);
 void xsc_frag_buf_free(struct xsc_core_device *xdev, struct xsc_frag_buf *buf);
-
+int xsc_core_create_srq(struct xsc_core_device *dev, struct xsc_core_srq *srq);
+int xsc_core_destroy_srq(struct xsc_core_device *dev, struct xsc_core_srq *srq);
 enum {
 	XSC_PROF_MASK_QP_SIZE		= (u64)1 << 0,
 	XSC_PROF_MASK_CMDIF_CSUM	= (u64)1 << 1,

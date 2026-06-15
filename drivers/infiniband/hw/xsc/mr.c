@@ -8,19 +8,11 @@
 #include <linux/random.h>
 #include <linux/debugfs.h>
 #include <linux/export.h>
-#include <linux/dma-buf.h>
-#include <linux/dma-resv.h>
 #include <rdma/ib_umem.h>
 #include "common/xsc_cmd.h"
 #include <linux/dma-direct.h>
-#include "ib_umem_ex.h"
+#include "dmabuf.h"
 #include "xsc_ib.h"
-
-#ifndef CONFIG_INFINIBAND_PEER_MEMORY
-static void xsc_invalidate_umem(void *invalidation_cookie,
-				struct ib_umem_ex *umem,
-				unsigned long addr, size_t size);
-#endif
 
 enum {
 	DEF_CACHE_SIZE	= 10,
@@ -54,7 +46,7 @@ struct ib_mr *xsc_ib_get_dma_mr(struct ib_pd *pd, int acc)
 	if (err)
 		goto err_in;
 	req->mkey = cpu_to_be32(mr->mmr.key);
-	err = xsc_core_register_mr(xdev, &mr->mmr, in, sizeof(*in));
+	err = xsc_core_register_mr(xdev, &mr->mmr, in, sizeof(*in), false);
 	if (err)
 		goto err_reg_mr;
 	kfree(in);
@@ -127,7 +119,7 @@ static struct xsc_ib_mr *reg_create(struct ib_pd *pd, u64 virt_addr,
 	else
 		in->req.is_gpu = 0;
 	in->req.mkey = cpu_to_be32(mr->mmr.key);
-	err = xsc_core_register_mr(dev->xdev, &mr->mmr, in, inlen);
+	err = xsc_core_register_mr(dev->xdev, &mr->mmr, in, inlen, false);
 	if (err) {
 		xsc_ib_warn(dev, "register mr failed, err = %d\n", err);
 		goto err_reg_mr;
@@ -151,13 +143,17 @@ err_0:
 	return ERR_PTR(err);
 }
 
+inline void xsc_ib_umem_release(struct ib_umem *umem)
+{
+	ib_umem_release(umem);
+}
+
 struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 				 u64 virt_addr, int access_flags,
 				 struct ib_udata *udata)
 {
 	struct xsc_ib_dev *dev = to_mdev(pd->device);
 	struct xsc_ib_mr *mr = NULL;
-	struct ib_umem_ex *umem_ex;
 	struct ib_umem *umem;
 	int page_shift;
 	int npages;
@@ -172,8 +168,8 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		return ERR_PTR(-EINVAL);
 	}
 
-	xsc_ib_dbg(dev, "start 0x%llx, virt_addr 0x%llx, length 0x%llx\n",
-		   start, virt_addr, length);
+	xsc_ib_info(dev, "start 0x%llx, virt_addr 0x%llx, length 0x%llx\n",
+		    start, virt_addr, length);
 
 #ifdef CONFIG_INFINIBAND_PEER_MEMORY
 	umem = ib_umem_get_peer(&dev->ib_dev, start, length,
@@ -183,45 +179,16 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 #endif
 	if (IS_ERR(umem)) {
 		// check client peer memory
-#ifdef CONFIG_INFINIBAND_PEER_MEMORY
+		xsc_ib_warn(dev, "umem get failed\n");
 		return (void *)umem;
-#else
-		u8 peer_exists = 0;
-
-		umem_ex = ib_client_umem_get(pd->uobject->context,
-					     start, length, access_flags, 0, &peer_exists);
-		if (!peer_exists) {
-			xsc_ib_dbg(dev, "umem get failed\n");
-			return (void *)umem;
-		}
-		ib_peer_mem = umem_ex->ib_peer_mem;
-		xsc_ib_peer_id = kzalloc(sizeof(*xsc_ib_peer_id), GFP_KERNEL);
-		if (!xsc_ib_peer_id) {
-			err = -ENOMEM;
-			goto error;
-		}
-		init_completion(&xsc_ib_peer_id->comp);
-		err = ib_client_umem_activate_invalidation_notifier(umem_ex,
-								    xsc_invalidate_umem,
-								    xsc_ib_peer_id);
-		if (err)
-			goto error;
-		using_peer_mem = 1;
-#endif
 	} else {
-		umem_ex = ib_umem_ex(umem);
-		if (IS_ERR(umem_ex)) {
-			err = -ENOMEM;
-			goto error;
-		}
 #ifdef CONFIG_INFINIBAND_PEER_MEMORY
 		if (umem->is_peer)
 			using_peer_mem = 1;
 #endif
 	}
-	umem = &umem_ex->umem;
 
-	err = xsc_find_best_pgsz(umem, XSC_MR_PAGE_CAP_MASK, start, &npages, &page_shift, &pas);
+	err = xsc_find_best_pgsz(umem, XSC_MR_PAGE_CAP_MASK, virt_addr, &npages, &page_shift, &pas);
 	if (err) {
 		vfree(pas);
 		pas = NULL;
@@ -234,7 +201,7 @@ struct ib_mr *xsc_ib_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
 		goto error;
 	}
 
-	xsc_ib_dbg(dev, "npages %d, page_shift %d\n", npages, page_shift);
+	xsc_ib_info(dev, "npages %d, page_shift %d\n", npages, page_shift);
 
 	mr = reg_create(pd, virt_addr, length, umem, npages, pas,
 			page_shift, access_flags, using_peer_mem);
@@ -270,18 +237,8 @@ error:
 		xsc_ib_peer_id = NULL;
 	}
 
-	ib_umem_ex_release(umem_ex);
+	xsc_ib_umem_release(umem);
 	return ERR_PTR(err);
-}
-
-static struct ib_umem_dmabuf *
-xsc_ib_umem_dmabuf_get_pinned(struct ib_device *device,
-			      unsigned long offset,
-			      size_t size, int fd,
-			      int access)
-{
-	return ib_umem_dmabuf_get_pinned(device, offset, size,
-					 fd, access);
 }
 
 struct ib_mr *xsc_ib_reg_user_mr_dmabuf(struct ib_pd *pd, u64 offset,
@@ -301,9 +258,9 @@ struct ib_mr *xsc_ib_reg_user_mr_dmabuf(struct ib_pd *pd, u64 offset,
 	if (!IS_ENABLED(CONFIG_INFINIBAND_USER_MEM))
 		return ERR_PTR(-EOPNOTSUPP);
 
-	umem_dmabuf = xsc_ib_umem_dmabuf_get_pinned(&dev->ib_dev,
-						    offset, length,
-						    fd, access_flags);
+	umem_dmabuf = ib_umem_ex_dmabuf_get_pinned(&dev->ib_dev,
+						   offset, length,
+						   fd, access_flags);
 	if (IS_ERR(umem_dmabuf)) {
 		xsc_ib_info(dev, "umem_dmabuf get failed (%ld)\n",
 			    PTR_ERR(umem_dmabuf));
@@ -352,7 +309,6 @@ xsc_ib_dereg_mr_def()
 	struct xsc_ib_dev *dev = to_mdev(ibmr->device);
 	struct xsc_ib_mr *mr = to_mmr(ibmr);
 	struct ib_umem *umem = mr->umem;
-	struct ib_umem_ex *umem_ex = (struct ib_umem_ex *)umem;
 	int npages = mr->npages;
 	int err;
 
@@ -366,7 +322,7 @@ xsc_ib_dereg_mr_def()
 	}
 
 	if (mr->npages) {
-		err = xsc_core_dereg_mr(dev->xdev, &mr->mmr);
+		err = xsc_core_dereg_mr(dev->xdev, &mr->mmr, false);
 		if (err) {
 			xsc_ib_warn(dev, "failed to dereg mr 0x%x (%d)\n",
 				    mr->mmr.key, err);
@@ -382,8 +338,8 @@ xsc_ib_dereg_mr_def()
 		return err;
 	}
 
-	if (umem_ex) {
-		ib_umem_ex_release(umem_ex);
+	if (umem) {
+		xsc_ib_umem_release(umem);
 		spin_lock(&dev->mr_lock);
 		dev->xdev->dev_res->reg_pages -= npages;
 		spin_unlock(&dev->mr_lock);
@@ -394,35 +350,6 @@ xsc_ib_dereg_mr_def()
 
 	return 0;
 }
-
-#ifndef CONFIG_INFINIBAND_PEER_MEMORY
-static void xsc_invalidate_umem(void *invalidation_cookie,
-				struct ib_umem_ex *umem,
-				unsigned long addr,
-				size_t size)
-{
-	struct xsc_ib_mr *mr;
-	struct xsc_ib_dev *dev;
-	struct xsc_ib_peer_id *peer_id = (struct xsc_ib_peer_id *)invalidation_cookie;
-
-	wait_for_completion(&peer_id->comp);
-	if (!peer_id->mr)
-		return;
-
-	mr = peer_id->mr;
-	/* This function is called under client peer lock so its resources are race protected */
-	if (atomic_inc_return(&mr->invalidated) > 1) {
-		umem->invalidation_ctx->inflight_invalidation = 1;
-		return;
-	}
-
-	umem->invalidation_ctx->peer_callback = 1;
-	dev = to_mdev(mr->ibmr.device);
-	xsc_core_destroy_mkey(dev->xdev, &mr->mmr);
-	xsc_core_dereg_mr(dev->xdev, &mr->mmr);
-	complete(&mr->invalidation_comp);
-}
-#endif
 
 xsc_ib_alloc_mr_def()
 {
@@ -553,7 +480,7 @@ out:
 		   be64_to_cpu(in->req.len),
 		   be32_to_cpu(in->req.pa_num));
 
-	err = xsc_core_register_mr(dev->xdev, &mmr->mmr, in, sizeof(*in));
+	err = xsc_core_register_mr(dev->xdev, &mmr->mmr, in, sizeof(*in), true);
 
 	kfree(in);
 	return err;
@@ -567,7 +494,7 @@ int xsc_wr_invalidate_mr(struct xsc_ib_dev *dev, const struct ib_send_wr *wr)
 	if (!wr)
 		return -1;
 	mr.key = wr->ex.invalidate_rkey;
-	err = xsc_core_dereg_mr(dev->xdev, &mr);
+	err = xsc_core_dereg_mr(dev->xdev, &mr, true);
 	return err;
 }
 
@@ -586,7 +513,7 @@ void xsc_reg_local_dma_mr(struct xsc_core_device *dev)
 	in.req.map_en = !(XSC_MPT_MAP_EN);
 	in.req.va_base = 0;
 
-	err = xsc_core_register_mr(dev, NULL, &in, sizeof(in));
+	err = xsc_core_register_mr(dev, NULL, &in, sizeof(in), false);
 	if (err)
 		xsc_core_err(dev, "\n");
 }

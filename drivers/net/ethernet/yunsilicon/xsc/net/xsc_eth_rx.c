@@ -4,26 +4,35 @@
  */
 
 #include <linux/net_tstamp.h>
+#include <net/pkt_cls.h>
+#include <linux/netdevice.h>
+#include <linux/device.h>
 #include "xsc_eth.h"
 #include "xsc_eth_txrx.h"
 #include "xsc_eth_common.h"
 #include "xsc_eth_stats.h"
-#include <linux/device.h>
+#include "xsc_accel.h"
 #include "common/xsc_pp.h"
+#include "rep/xsc_eth_rep.h"
 
+#define XSC_REP_FAT_TAG	0xFF
 
 #define PAGE_REF_ELEV  (U16_MAX)
 /* Upper bound on number of packets that share a single page */
 #define PAGE_REF_THRSD (PAGE_SIZE / 64)
 
+const struct xsc_rx_handlers xsc_rx_handlers_nic = {
+	.handle_rx_cqe       = xsc_eth_handle_rx_cqe,
+};
+
 static inline void xsc_rq_notify_hw(struct xsc_rq *rq)
 {
 	struct xsc_core_device *xdev = rq->cq.xdev;
 	struct xsc_wq_cyc *wq = &rq->wqe.wq;
-	u64 rqwqe_id = wq->wqe_ctr << (ilog2(xdev->caps.recv_ds_num));
+	u64 rqwqe_id = wq->wqe_ctr << (ilog2(xsc_get_recv_ds_num(xdev)));
 
 	ETH_DEBUG_LOG("rq=%d, next_pid=%#x, recv_ds=%d\n",
-		      rq->rqn, rqwqe_id, xdev->caps.recv_ds_num);
+		      rq->rqn, rqwqe_id, xsc_get_recv_ds_num(xdev));
 
 	xsc_update_rx_db(xdev, rq->rqn, rqwqe_id);
 }
@@ -165,8 +174,19 @@ static inline bool handle_udp_frag_csum(struct sk_buff *skb, struct epp_pph *pph
 	return false;
 }
 
-static inline void xsc_handle_csum(struct xsc_cqe *cqe, struct xsc_rq *rq,
-				   struct sk_buff *skb, struct xsc_wqe_frag_info *wi)
+#if IS_ENABLED(CONFIG_NET_TC_SKB_EXT)
+static inline void xsc_set_tc_skb_ext(struct sk_buff *skb, u16 tag)
+{
+	struct tc_skb_ext *tc_skb_ext;
+
+	tc_skb_ext = tc_skb_ext_alloc(skb);
+	if (tag == XSC_REP_FAT_TAG)
+		tc_skb_ext->chain = 1;
+}
+#endif
+
+static inline void xsc_handle_pph(struct xsc_cqe *cqe, struct xsc_rq *rq,
+				  struct sk_buff *skb, struct xsc_wqe_frag_info *wi)
 {
 	struct xsc_rq_stats *stats = rq->stats;
 	struct xsc_channel *c = rq->cq.channel;
@@ -174,6 +194,13 @@ static inline void xsc_handle_csum(struct xsc_cqe *cqe, struct xsc_rq *rq,
 	struct xsc_dma_info *dma_info = wi->di;
 	int offset_from = wi->offset;
 	struct epp_pph *hw_pph = page_address(dma_info->page) + offset_from;
+
+#if IS_ENABLED(CONFIG_NET_TC_SKB_EXT)
+	if (XSC_GET_PFLAG(&c->adapter->nic_param, XSC_PFLAG_RX_TC_SKB_EXT) &&
+	    xsc_is_vf_rep(c->adapter->netdev) &&
+	    (XSC_GET_EPP2SOC_PPH_MARK_TAG(hw_pph) & MARK_TAG_VLD))
+		xsc_set_tc_skb_ext(skb, XSC_GET_EPP2SOC_PPH_TAG(hw_pph));
+#endif
 
 	if (unlikely((netdev->features & NETIF_F_RXCSUM) == 0))
 		goto csum_none;
@@ -219,39 +246,102 @@ out:
 	return;
 }
 
-static inline void xsc_build_rx_skb(struct xsc_cqe *cqe,
-				    u32 cqe_bcnt,
-				    struct xsc_rq *rq,
-				    struct sk_buff *skb,
-				    struct xsc_wqe_frag_info *wi)
+static inline void xsc_skb_set_vlan(struct xsc_adapter *adapter, struct xsc_rq *rq,
+				    struct sk_buff *skb, struct xsc_wqe_frag_info *wi)
+{
+	struct xsc_dma_info *dma_info = wi->di;
+	int offset_from = wi->offset;
+	struct epp_pph *pph = page_address(dma_info->page) + offset_from;
+	struct xsc_rq_stats *stats = rq->stats;
+	u16 vlan_info = 0;
+
+	if (!(adapter->netdev->features & NETIF_F_HW_VLAN_CTAG_RX))
+		return;
+
+	vlan_info = XSC_GET_EPP2SOC_VLAN_INFO(pph);
+	if (vlan_info) {
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
+				       be16_to_cpu(vlan_info));
+		stats->strip_vlan_pkts++;
+	}
+}
+
+static inline int xsc_unknown_multicast_filter(struct xsc_adapter *adapter,
+					       struct xsc_rq *rq,
+					       struct sk_buff *skb,
+					       u32 cqe_bcnt)
+{
+	u8 *dmac = eth_hdr(skb)->h_dest;
+	struct xsc_rq_stats *stats = rq->stats;
+	u8 found = 0;
+
+	found = xsc_mc_hash_lookup(adapter->mc_hash_tbl, dmac);
+	if (found == 0) {
+		stats->unknown_multicast++;
+		stats->packets--;
+		stats->bytes -= cqe_bcnt;
+		dev_kfree_skb_any(skb);
+		return -1;
+	}
+
+	return 0;
+}
+
+static inline int xsc_build_rx_skb(struct xsc_cqe *cqe,
+				   u32 cqe_bcnt,
+				   struct xsc_rq *rq,
+				   struct sk_buff *skb,
+				   struct xsc_wqe_frag_info *wi)
 {
 	struct xsc_channel *c = rq->cq.channel;
 	struct net_device *netdev = c->netdev;
 	struct xsc_adapter *adapter = c->adapter;
+	int ret;
 
 	skb->mac_len = ETH_HLEN;
 
 	skb_record_rx_queue(skb, rq->ix);
-	xsc_handle_csum(cqe, rq, skb, wi);
+	xsc_handle_pph(cqe, rq, skb, wi);
 
 	skb->protocol = eth_type_trans(skb, netdev);
+
+	if (mc_filter && adapter->mc_hash_tbl &&
+	    skb->pkt_type == PACKET_MULTICAST &&
+	    adapter->eth_sterring.l2.promisc_enabled == 0 &&
+	    adapter->eth_sterring.l2.allmulti_enabled == 0) {
+		ret = xsc_unknown_multicast_filter(adapter, rq, skb, cqe_bcnt);
+		if (ret)
+			return ret;
+	}
+
 	xsc_skb_set_hash(adapter, cqe, skb);
+
+	xsc_skb_set_vlan(adapter, rq, skb, wi);
+
+	if (!xsc_accel_handle_rx(rq, skb))
+		return -EINVAL;
+
+	return 0;
 }
 
-static inline void xsc_complete_rx_cqe(struct xsc_rq *rq,
-				       struct xsc_cqe *cqe,
-				       u32 cqe_bcnt,
-				       struct sk_buff *skb,
-				       struct xsc_wqe_frag_info *wi)
+static inline int xsc_complete_rx_cqe(struct xsc_rq *rq,
+				      struct xsc_cqe *cqe,
+				      u32 cqe_bcnt,
+				      struct sk_buff *skb,
+				      struct xsc_wqe_frag_info *wi)
 {
 	struct xsc_rq_stats *stats = rq->stats;
+	int ret;
 
 	stats->packets++;
 	stats->bytes += cqe_bcnt;
-	xsc_build_rx_skb(cqe, cqe_bcnt, rq, skb, wi);
+	ret = xsc_build_rx_skb(cqe, cqe_bcnt, rq, skb, wi);
+	if (ret)
+		return ret;
 
 	rq->dim_obj.sample.pkt_ctr  = rq->stats->packets;
 	rq->dim_obj.sample.byte_ctr = rq->stats->bytes;
+	return 0;
 }
 
 static inline void xsc_add_skb_frag(struct xsc_rq *rq,
@@ -550,17 +640,20 @@ static void xsc_dump_error_rqcqe(struct xsc_rq *rq,
 			    netdev->name, rq->cq.xcq.cqn, ci,
 			    rq->rqn, cqe->qp_id, xsc_get_cqe_error_code(rq->cq.xdev, cqe));
 
+#ifdef XSC_DEBUG
+	xsc_dump_err_cqe(rq->cq.xdev, cqe);
+#endif
 }
 
 void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
 			   struct xsc_rq *rq, struct xsc_cqe *cqe)
 {
 	struct xsc_wq_cyc *wq = &rq->wqe.wq;
-	struct xsc_channel *c = rq->cq.channel;
 	struct xsc_wqe_frag_info *wi;
 	struct sk_buff *skb;
 	u32 cqe_bcnt;
 	u16 ci;
+	int ret;
 
 	ci = xsc_wq_cyc_ctr2ix(wq, cqwq->cc);
 	wi = get_frag(rq, ci);
@@ -577,12 +670,8 @@ void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
 	}
 
 	if (unlikely(cqe_bcnt > rq->frags_sz)) {
-		if (!XSC_GET_PFLAG(&c->adapter->nic_param, XSC_PFLAG_DROPLESS_RQ)) {
-			rq->stats->oversize_pkts_sw_drop += cqe_bcnt;
-			goto free_wqe;
-		} else {
-			rq->stats->oversize_pkts_err++;
-		}
+		rq->stats->oversize_pkts_sw_drop += cqe_bcnt;
+		goto free_wqe;
 	}
 
 	cqe_bcnt = min_t(u32, cqe_bcnt, rq->frags_sz);
@@ -590,9 +679,11 @@ void xsc_eth_handle_rx_cqe(struct xsc_cqwq *cqwq,
 	if (!skb)
 		goto free_wqe;
 
-	xsc_complete_rx_cqe(rq, cqe,
-			    cqe->has_pph == 1 ? cqe_bcnt - XSC_PPH_HEAD_LEN : cqe_bcnt,
-			    skb, wi);
+	ret = xsc_complete_rx_cqe(rq, cqe,
+				  cqe->has_pph == 1 ? cqe_bcnt - XSC_PPH_HEAD_LEN : cqe_bcnt,
+				  skb, wi);
+	if (ret)
+		goto free_wqe;
 
 #ifdef NEED_CREATE_RX_THREAD
 	netif_rx_ni(skb);

@@ -16,6 +16,9 @@ struct xsc_res_obj {
 	void (*release_method)(void *obj);
 	char *data;
 	unsigned int datalen;
+	u32	ref_cnt;
+	unsigned long key;
+	struct work_struct rel_work;
 };
 
 struct xsc_pd_obj {
@@ -83,15 +86,40 @@ struct xsc_flow_pct_v6_del {
 	unsigned int priority;
 };
 
+struct xsc_flow_wct_add {
+	u8 key[60];
+	u8 mask[60];
+	u8 ad[2];
+	u32 priority;
+};
+
+struct xsc_flow_wct_del {
+	u8 key[60];
+	u8 mask[60];
+	u32 priority;
+};
+
+struct xsc_umem_obj {
+	struct xsc_res_obj obj;
+	unsigned int umem_id;
+};
+
+struct xsc_user_idx_obj {
+	struct xsc_res_obj obj;
+	unsigned int idx;
+};
+
 enum RES_OBJ_TYPE {
-	RES_OBJ_PD,
-	RES_OBJ_MR,
-	RES_OBJ_CQ,
 	RES_OBJ_QP,
+	RES_OBJ_CQ,
+	RES_OBJ_MR,
+	RES_OBJ_PD,
 	RES_OBJ_PCT,
 	RES_OBJ_WCT,
 	RES_OBJ_EM,
 	RES_OBJ_USER_MODE,
+	RES_OBJ_UMEM,
+	RES_OBJ_USER_IDX,
 	RES_OBJ_MAX
 };
 
@@ -118,14 +146,28 @@ void xsc_destroy_qp_obj(struct xsc_bdf_file *file, unsigned int qpn);
 
 int xsc_alloc_pct_obj(struct xsc_bdf_file *file, unsigned int priority,
 		      char *data, unsigned int datalen);
-void xsc_destroy_pct_obj(struct xsc_bdf_file *file, unsigned int priority);
+void xsc_destroy_pct_obj(struct xsc_bdf_file *file, unsigned int priority, bool *tbl_op);
 
 void xsc_close_bdf_file(struct xsc_bdf_file *file);
 
 void xsc_send_cmd_2rst_qp(struct xsc_core_device *xdev, unsigned int qpn);
 int xsc_alloc_user_mode_obj(struct xsc_bdf_file *file, void (*release_func)(void *),
 			    unsigned int mode, char *data, unsigned int len);
-void xsc_free_user_mode_obj(struct xsc_bdf_file *file, unsigned int mode);
+void xsc_free_user_mode_obj(struct xsc_bdf_file *file, void *obj, unsigned int mode);
 void xsc_release_user_mode(struct xsc_bdf_file *file, unsigned int mode);
+
+int xsc_alloc_wct_obj(struct xsc_bdf_file *file, u32 priority, char *data, u32 datalen);
+void xsc_destroy_wct_obj(struct xsc_bdf_file *file, u32 priority);
+
+int xsc_alloc_umem_obj(struct xsc_bdf_file *file, void (*release_func)(void *),
+		       unsigned int umem_id, void *data, unsigned int datalen);
+void xsc_free_umem_obj(struct xsc_bdf_file *file, void *obj, unsigned int umem_id);
+void *xsc_find_umem_obj(struct xsc_bdf_file *file, unsigned int umem_id);
+void xsc_destroy_umem_obj(struct xsc_bdf_file *file, unsigned int umem_id);
+int xsc_alloc_user_idx_obj(struct xsc_bdf_file *file, unsigned int idx,
+			   char *data, unsigned int datalen);
+
+void xsc_free_bdf_file(struct kref *kref);
+void xsc_free_port_ctrl_file(struct kref *kref);
 
 #endif

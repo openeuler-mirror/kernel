@@ -21,12 +21,12 @@ int xsc_core_create_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 	key = 0x80 + dev->dev_res->mkey_key++;
 	spin_unlock(&dev->dev_res->mkey_lock);
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_CREATE_MKEY);
-	read_lock(&dev->board_info->mr_sync_lock);
+	down_read(&dev->board_info->mr_sync_lock);
 	if (dev->board_info->resource_access_mode == SHARE_MODE)
 		err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	else
 		err = xsc_create_mkey(dev, &in, &out);
-	read_unlock(&dev->board_info->mr_sync_lock);
+	up_read(&dev->board_info->mr_sync_lock);
 
 	if (err) {
 		xsc_core_err(dev, "cmd exec faile %d\n", err);
@@ -56,12 +56,12 @@ int xsc_core_destroy_mkey(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DESTROY_MKEY);
 	in.mkey = cpu_to_be32(mr->key);
-	read_lock(&dev->board_info->mr_sync_lock);
+	down_read(&dev->board_info->mr_sync_lock);
 	if (dev->board_info->resource_access_mode == SHARE_MODE)
 		err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	else
 		err = xsc_destroy_mkey(dev, &in, &out);
-	read_unlock(&dev->board_info->mr_sync_lock);
+	up_read(&dev->board_info->mr_sync_lock);
 
 	if (err)
 		return err;
@@ -93,11 +93,14 @@ static int xsc_set_mpt_via_cmdq(struct xsc_core_device *dev,
 	mem_size = be64_to_cpu(req->len);
 	in->mpt_item.len = (u32)mem_size;
 	in->mpt_item.len = cpu_to_be32(in->mpt_item.len);
+	in->mpt_item.len_h = (u32)(mem_size >> 32);
+	in->mpt_item.len_h = cpu_to_be32(in->mpt_item.len_h);
 	in->mpt_item.mkey = req->mkey;
 	in->mpt_item.acc = req->acc;
 	in->mpt_item.page_mode = req->page_mode;
 	in->mpt_item.map_en = req->map_en;
 	in->mpt_item.va_base = req->va_base;
+	in->mpt_item.is_gpu = req->is_gpu;
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_SET_MPT);
 	memset(&out, 0, sizeof(out));
 	err = xsc_cmd_exec(dev, in, sizeof(*in), &out, sizeof(out));
@@ -205,34 +208,42 @@ set_mtt_err:
 }
 
 int xsc_core_register_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr,
-			 struct xsc_register_mr_mbox_in *in, int inlen)
+			 struct xsc_register_mr_mbox_in *in, int inlen,
+			 bool fast_reg)
 {
 	struct xsc_register_mr_mbox_out out;
 	int err;
 
 	memset(&out, 0, sizeof(out));
 	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_REG_MR);
-	read_lock(&dev->board_info->mr_sync_lock);
-	if (dev->board_info->resource_access_mode == SHARE_MODE)
-		err = xsc_reg_mr_via_cmdq(dev, in);
-	else
-		err = xsc_reg_mr(dev, in, &out);
-	read_unlock(&dev->board_info->mr_sync_lock);
 
-	if (err) {
-		xsc_core_err(dev, "cmd exec failed %d\n", err);
-		return err;
-	}
-	if (out.hdr.status) {
-		xsc_core_err(dev, "status %d\n", out.hdr.status);
-		return xsc_cmd_status_to_err(&out.hdr);
-	}
+	if (fast_reg) {
+		if (dev->board_info->resource_access_mode == SHARE_MODE)
+			err = -1;
+		else
+			err = xsc_reg_mr(dev, in, &out);
+	} else {
+		down_read(&dev->board_info->mr_sync_lock);
+		if (dev->board_info->resource_access_mode == SHARE_MODE)
+			err = xsc_reg_mr_via_cmdq(dev, in);
+		else
+			err = xsc_reg_mr(dev, in, &out);
+		up_read(&dev->board_info->mr_sync_lock);
 
-	return 0;
+		if (err) {
+			xsc_core_err(dev, "cmd exec failed %d\n", err);
+			return err;
+		}
+		if (out.hdr.status) {
+			xsc_core_err(dev, "status %d\n", out.hdr.status);
+			return xsc_cmd_status_to_err(&out.hdr);
+		}
+	}
+	return err;
 }
 EXPORT_SYMBOL(xsc_core_register_mr);
 
-int xsc_core_dereg_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr)
+int xsc_core_dereg_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr, bool fast_reg)
 {
 	struct xsc_unregister_mr_mbox_in in;
 	struct xsc_unregister_mr_mbox_out out;
@@ -243,23 +254,30 @@ int xsc_core_dereg_mr(struct xsc_core_device *dev, struct xsc_core_mr *mr)
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_DEREG_MR);
 	/*covert mkey to mpt_idx*/
 	in.mkey = cpu_to_be32(xsc_mkey_to_idx(dev, mr->key));
-	read_lock(&dev->board_info->mr_sync_lock);
-	if (dev->board_info->resource_access_mode == SHARE_MODE)
-		err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
-	else
-		err = xsc_dereg_mr(dev, &in, &out);
-	read_unlock(&dev->board_info->mr_sync_lock);
+	if (fast_reg) {
+		if (dev->board_info->resource_access_mode == SHARE_MODE)
+			err = -1;
+		else
+			err = xsc_dereg_mr(dev, &in, &out);
+	} else {
+		down_read(&dev->board_info->mr_sync_lock);
+		if (dev->board_info->resource_access_mode == SHARE_MODE)
+			err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+		else
+			err = xsc_dereg_mr(dev, &in, &out);
+		up_read(&dev->board_info->mr_sync_lock);
 
-	if (err) {
-		xsc_core_err(dev, "cmd exec failed %d\n", err);
-		return err;
-	}
-	if (out.hdr.status) {
-		xsc_core_err(dev, "status %d\n", out.hdr.status);
-		return xsc_cmd_status_to_err(&out.hdr);
+		if (err) {
+			xsc_core_err(dev, "cmd exec failed %d\n", err);
+			return err;
+		}
+		if (out.hdr.status) {
+			xsc_core_err(dev, "status %d\n", out.hdr.status);
+			return xsc_cmd_status_to_err(&out.hdr);
+		}
 	}
 
-	return 0;
+	return err;
 }
 EXPORT_SYMBOL(xsc_core_dereg_mr);
 

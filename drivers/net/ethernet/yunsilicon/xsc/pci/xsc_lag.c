@@ -67,6 +67,8 @@ static enum netdev_lag_tx_type bond_lag_tx_type(struct bonding *bond)
 		return NETDEV_LAG_TX_TYPE_BROADCAST;
 	case BOND_MODE_XOR:
 	case BOND_MODE_8023AD:
+	case BOND_MODE_TLB:
+	case BOND_MODE_ALB:
 		return NETDEV_LAG_TX_TYPE_HASH;
 	default:
 		return NETDEV_LAG_TX_TYPE_UNKNOWN;
@@ -103,8 +105,23 @@ static inline bool __xsc_lag_is_roce(struct xsc_lag *lag)
 
 static inline bool __xsc_lag_is_kernel(struct xsc_lag *lag)
 {
-
 	return !!(lag->lag_type & XSC_LAG_FLAG_KERNEL);
+}
+
+static inline bool __xsc_lag_is_sriov(struct xsc_lag *lag)
+{
+	return !!(lag->lag_type & XSC_LAG_FLAG_SRIOV);
+}
+
+static inline bool __xsc_lag_is_mpesw(struct xsc_lag *lag)
+{
+	return !!(lag->lag_type & XSC_LAG_FLAG_MPESW);
+}
+
+static inline bool __xsc_lag_mode_support(struct xsc_lag *lag)
+{
+	return (lag->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP ||
+		lag->tx_type == NETDEV_LAG_TX_TYPE_HASH);
 }
 
 static inline struct xsc_lag *__xsc_get_lag(struct xsc_core_device *xdev)
@@ -120,6 +137,60 @@ static inline struct xsc_lag *__xsc_get_lag(struct xsc_core_device *xdev)
 
 	return &board_lag->xsc_lag[xdev->bond_id];
 }
+
+bool xsc_lag_is_sriov(struct xsc_core_device *dev)
+{
+	struct xsc_lag *lag = __xsc_get_lag(dev);
+
+	return lag && __xsc_lag_is_sriov(lag);
+}
+EXPORT_SYMBOL(xsc_lag_is_sriov);
+
+bool xsc_lag_is_mpesw(struct xsc_core_device *dev)
+{
+	struct xsc_lag *lag = __xsc_get_lag(dev);
+
+	return lag && __xsc_lag_is_mpesw(lag);
+}
+EXPORT_SYMBOL(xsc_lag_is_mpesw);
+
+bool xsc_lag_is_active(struct xsc_core_device *dev)
+{
+	struct xsc_lag *lag;
+	bool is_active = false;
+	struct xsc_board_lag *board_lag = xsc_board_lag_get(dev);
+
+	if (!board_lag)
+		return false;
+
+	xsc_board_lag_lock(dev);
+	lag = __xsc_get_lag(dev);
+	if (lag && __xsc_lag_is_active(lag))
+		is_active = true;
+	xsc_board_lag_unlock(dev);
+
+	return is_active;
+}
+EXPORT_SYMBOL(xsc_lag_is_active);
+
+bool xsc_lag_mode_support(struct xsc_core_device *dev)
+{
+	struct xsc_lag *lag;
+	bool is_lag_support = false;
+	struct xsc_board_lag *board_lag = xsc_board_lag_get(dev);
+
+	if (!board_lag)
+		return false;
+
+	xsc_board_lag_lock(dev);
+	lag = __xsc_get_lag(dev);
+	if (lag && __xsc_lag_mode_support(lag))
+		is_lag_support = true;
+	xsc_board_lag_unlock(dev);
+
+	return is_lag_support;
+}
+EXPORT_SYMBOL(xsc_lag_mode_support);
 
 static int xsc_cmd_create_lag(struct xsc_lag_event *entry)
 {
@@ -139,7 +210,8 @@ static int xsc_cmd_create_lag(struct xsc_lag_event *entry)
 	in.req.bond_mode = entry->bond_mode;
 	in.req.slave_status = entry->slave_status;
 
-	memcpy(in.req.netdev_addr, netdev->dev_addr, ETH_ALEN);
+	if (netdev)
+		memcpy(in.req.netdev_addr, netdev->dev_addr, ETH_ALEN);
 
 	xsc_core_info(xdev, "create LAG: lag_id = %d, lag_type = %d, lag_sel_mode = %d, bond_mode = %d\n",
 		      entry->lag_id, entry->lag_type, entry->lag_sel_mode, entry->bond_mode);
@@ -176,7 +248,8 @@ static int xsc_cmd_add_lag_member(struct xsc_lag_event *entry)
 	in.hdr.ver = LAG_CMD_V1;
 	in.req.roce_pf_func_data = entry->roce_pf_func_data;
 
-	memcpy(in.req.netdev_addr, netdev->dev_addr, ETH_ALEN);
+	if (netdev)
+		memcpy(in.req.netdev_addr, netdev->dev_addr, ETH_ALEN);
 
 	xsc_core_info(xdev, "add LAG member: lag_id = %d, lag_type = %d, bond_mode = %d\n",
 		      entry->lag_id, entry->lag_type, entry->bond_mode);
@@ -312,7 +385,8 @@ static int xsc_cmd_destroy_lag(struct xsc_lag_event *entry)
 	return 0;
 }
 
-static int xsc_lag_set_qos(struct xsc_core_device *xdev, u16 lag_id, u8 member_idx, u8 lag_op)
+static int xsc_lag_set_qos(struct xsc_core_device *xdev, u16 lag_id, u8 member_idx,
+			   u8 pcie_no, u8 lag_op)
 {
 	struct xsc_set_lag_qos_mbox_in in;
 	struct xsc_set_lag_qos_mbox_out out;
@@ -326,12 +400,13 @@ static int xsc_lag_set_qos(struct xsc_core_device *xdev, u16 lag_id, u8 member_i
 	req->lag_id = cpu_to_be16(lag_id);
 	req->member_idx = member_idx;
 	req->lag_op = lag_op;
+	req->pcie_no = pcie_no;
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_LAG_SET_QOS);
 
 	ret = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
 	if (ret || (out.hdr.status != 0 && out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED)) {
-		xsc_core_err(xdev, "failed to set lag qos, err =%d out.status= %u\n",
-			     ret, out.hdr.status);
+		xsc_core_err(xdev, "failed to set lag%d pcie%d_pf%d qos, err=%d out.status=%u\n",
+			     lag_id, pcie_no, member_idx, ret, out.hdr.status);
 		return -ENOEXEC;
 	}
 
@@ -341,10 +416,9 @@ static int xsc_lag_set_qos(struct xsc_core_device *xdev, u16 lag_id, u8 member_i
 static inline int xsc_lag_abnormal_operate_check(struct xsc_core_device *xdev,
 						 u8 lag_type)
 {
-	if (lag_type != XSC_LAG_FLAG_SRIOV && xsc_get_user_mode(xdev)) {
-		xsc_core_err(xdev, "Failed to opetate non sriov LAG while ovs is on");
-		return  -EOPNOTSUPP;
-	}
+	if (xsc_get_user_mode(xdev))
+		xsc_core_err(xdev, "Failed to deactivate LAG while ovs is on, driver restart required\n");
+
 	return 0;
 }
 
@@ -354,11 +428,13 @@ static void xsc_create_lag(struct xsc_lag_event *entry)
 	bool roce_lag = entry->lag_type & XSC_LAG_FLAG_ROCE;
 	struct xsc_core_device *xdev = entry->xdev;
 
-	if (xsc_lag_abnormal_operate_check(xdev, entry->lag_type))
-		return;
-
 	if (roce_lag)
 		xsc_remove_dev_by_protocol(xdev, XSC_INTERFACE_PROTOCOL_IB);
+
+	if (xsc_lag_set_qos(xdev, entry->lag_id, 0, 0, QOS_LAG_OP_CREATE)) {
+		xsc_core_err(xdev, "failed to create QoS LAG %u\n", entry->lag_id);
+		goto out;
+	}
 
 	ret = xsc_cmd_create_lag(entry);
 	if (ret) {
@@ -366,13 +442,9 @@ static void xsc_create_lag(struct xsc_lag_event *entry)
 		goto out;
 	}
 
-	if (xsc_lag_set_qos(xdev, entry->lag_id, 0, QOS_LAG_OP_CREATE)) {
-		xsc_core_err(xdev, "failed to create QoS LAG %u\n", entry->lag_id);
-		goto out;
-	}
-
 	if (entry->slave_status == XSC_LAG_SLAVE_ACTIVE) {
-		if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id, QOS_LAG_OP_ADD_MEMBER))
+		if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id,
+				    xdev->pcie_no, QOS_LAG_OP_ADD_MEMBER))
 			xsc_core_err(xdev, "failed to add member %u for QoS LAG %u\n",
 				     xdev->pf_id, entry->lag_id);
 	}
@@ -388,9 +460,6 @@ static void xsc_add_lag_member(struct xsc_lag_event *entry)
 	bool roce_lag = entry->lag_type & XSC_LAG_FLAG_ROCE;
 	struct xsc_core_device *xdev = entry->xdev;
 
-	if (xsc_lag_abnormal_operate_check(xdev, entry->lag_type))
-		return;
-
 	if (roce_lag)
 		xsc_remove_dev_by_protocol(xdev, XSC_INTERFACE_PROTOCOL_IB);
 
@@ -401,7 +470,8 @@ static void xsc_add_lag_member(struct xsc_lag_event *entry)
 	}
 
 	if (entry->slave_status == XSC_LAG_SLAVE_ACTIVE) {
-		if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id, QOS_LAG_OP_ADD_MEMBER))
+		if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id,
+				    xdev->pcie_no, QOS_LAG_OP_ADD_MEMBER))
 			xsc_core_err(xdev, "failed to add member %u for QoS LAG %u\n",
 				     xdev->pf_id, entry->lag_id);
 	}
@@ -420,8 +490,7 @@ static void xsc_remove_lag_member(struct xsc_lag_event *entry)
 	struct xsc_core_device *xdev = entry->xdev;
 	struct xsc_core_device *roce_lag_xdev = entry->roce_lag_xdev;
 
-	if (xsc_lag_abnormal_operate_check(xdev, entry->lag_type))
-		return;
+	xsc_lag_abnormal_operate_check(xdev, entry->lag_type);
 
 	if (roce_lag && entry->is_roce_lag_xdev)
 		xsc_remove_dev_by_protocol(xdev, XSC_INTERFACE_PROTOCOL_IB);
@@ -433,21 +502,23 @@ static void xsc_remove_lag_member(struct xsc_lag_event *entry)
 	}
 
 	if (roce_lag && entry->is_roce_lag_xdev) {
-		xsc_add_dev_by_protocol(xdev, XSC_INTERFACE_PROTOCOL_IB);
-		xsc_add_dev_by_protocol(roce_lag_xdev, XSC_INTERFACE_PROTOCOL_IB);
+		if (!entry->is_destorying)
+			xsc_add_dev_by_protocol(xdev, XSC_INTERFACE_PROTOCOL_IB);
+		if (!entry->is_destorying)
+			xsc_add_dev_by_protocol(roce_lag_xdev, XSC_INTERFACE_PROTOCOL_IB);
 	}
 
-	if (roce_lag && !entry->is_roce_lag_xdev)
+	if (roce_lag && !entry->is_roce_lag_xdev && !entry->is_destorying)
 		xsc_add_dev_by_protocol(xdev, XSC_INTERFACE_PROTOCOL_IB);
 
-	if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id, QOS_LAG_OP_DEL_MEMBER))
+	if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id, xdev->pcie_no, QOS_LAG_OP_DEL_MEMBER))
 		xsc_core_err(xdev, "failed to del member %u for QoS LAG %u\n",
 			     xdev->pf_id, entry->lag_id);
 
 	return;
 
 out:
-	if (roce_lag && entry->is_roce_lag_xdev)
+	if (roce_lag && entry->is_roce_lag_xdev && !entry->is_destorying)
 		xsc_add_dev_by_protocol(xdev, XSC_INTERFACE_PROTOCOL_IB);
 }
 
@@ -461,11 +532,13 @@ static void xsc_update_lag_member_status(struct xsc_lag_event *entry)
 		xsc_core_err(xdev, "failed to update LAG member status, err =%d\n", ret);
 
 	if (entry->slave_status == XSC_LAG_SLAVE_ACTIVE) {
-		if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id, QOS_LAG_OP_ADD_MEMBER))
+		if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id,
+				    xdev->pcie_no, QOS_LAG_OP_ADD_MEMBER))
 			xsc_core_err(xdev, "failed to add member %u for QoS LAG %u\n",
 				     xdev->pf_id, entry->lag_id);
 	} else if (entry->slave_status == XSC_LAG_SLAVE_INACTIVE) {
-		if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id, QOS_LAG_OP_DEL_MEMBER))
+		if (xsc_lag_set_qos(xdev, entry->lag_id, xdev->pf_id,
+				    xdev->pcie_no, QOS_LAG_OP_DEL_MEMBER))
 			xsc_core_err(xdev, "failed to del member %u for QoS LAG %u\n",
 				     xdev->pf_id, entry->lag_id);
 	}
@@ -487,6 +560,8 @@ static void xsc_destroy_lag(struct xsc_lag_event *entry)
 	bool roce_lag = entry->lag_type & XSC_LAG_FLAG_ROCE;
 	struct xsc_core_device *xdev = entry->xdev;
 
+	xsc_lag_abnormal_operate_check(xdev, entry->lag_type);
+
 	if (roce_lag)
 		xsc_remove_dev_by_protocol(xdev, XSC_INTERFACE_PROTOCOL_IB);
 
@@ -496,11 +571,11 @@ static void xsc_destroy_lag(struct xsc_lag_event *entry)
 		goto out;
 	}
 
-	if (xsc_lag_set_qos(xdev, entry->lag_id, 0, QOS_LAG_OP_DESTROY))
+	if (xsc_lag_set_qos(xdev, entry->lag_id, 0, 0, QOS_LAG_OP_DESTROY))
 		xsc_core_err(xdev, "failed to destroy QoS LAG %u\n", entry->lag_id);
 
 out:
-	if (roce_lag)
+	if (roce_lag && !entry->is_destorying)
 		xsc_add_dev_by_protocol(xdev, XSC_INTERFACE_PROTOCOL_IB);
 }
 
@@ -565,9 +640,13 @@ static inline bool xsc_is_roce_lag_allowed(struct xsc_lag *lag)
 	bool roce_lag_support = true;
 
 	list_for_each_entry(xdev, &lag->slave_list, slave_node) {
-		roce_lag_support &= !xsc_sriov_is_enabled(xdev);
+		roce_lag_support &=
+			(!xsc_sriov_is_enabled(xdev) && !xsc_host_is_multi_pcie(xdev) &&
+			 !xsc_get_user_mode(xdev));
 		if (!roce_lag_support) {
-			xsc_core_info(xdev, "create ROCE LAG while sriov is open\n");
+			xsc_core_info(xdev, "not support to create ROCE LAG: sriov(%d), multi_pcie(%d), user_mode(%d)\n",
+				      xsc_sriov_is_enabled(xdev), xsc_host_is_multi_pcie(xdev),
+				      xsc_get_user_mode(xdev));
 			break;
 		}
 	}
@@ -589,6 +668,21 @@ static bool xsc_is_sriov_lag_allowed(struct xsc_lag *lag)
 	return sriov_lag_support;
 }
 
+static bool xsc_is_sriov_mpesw(struct xsc_lag *lag)
+{
+	struct xsc_core_device *xdev;
+	bool is_kernel_switchdev = true;
+
+	list_for_each_entry(xdev, &lag->slave_list, slave_node) {
+		is_kernel_switchdev &=
+			(xdev->priv.eswitch->offloads.rep_mode == XSC_REP_MODE_KERNEL);
+		if (!is_kernel_switchdev)
+			xsc_core_info(xdev, "create SRIOV LAG while kernel switchdev disable\n");
+	}
+
+	return is_kernel_switchdev;
+}
+
 static bool xsc_is_dpu_soc_lag(struct xsc_lag *lag)
 {
 	struct xsc_core_device *xdev = list_first_entry(&lag->slave_list,
@@ -597,19 +691,25 @@ static bool xsc_is_dpu_soc_lag(struct xsc_lag *lag)
 	return xsc_is_soc_pf(xdev);
 }
 
-static u8 xsc_get_lag_type(struct xsc_lag *lag)
+static u8 xsc_get_lag_type(struct xsc_lag *lag, struct xsc_core_device *xdev)
 {
 	u8 lag_type;
 	bool roce_lag;
 	bool sriov_lag;
-	u8	lag_mode_support;
+	u8 lag_mode_support;
+
+	if (!xsc_is_dev_support_lag(xdev))
+		return XSC_LAG_FLAG_KERNEL;
 
 	lag_mode_support = (lag->tx_type == NETDEV_LAG_TX_TYPE_ACTIVEBACKUP ||
 			 lag->tx_type == NETDEV_LAG_TX_TYPE_HASH);
 	roce_lag = lag_mode_support && xsc_is_roce_lag_allowed(lag);
 	sriov_lag = lag_mode_support && (xsc_is_sriov_lag_allowed(lag) || xsc_is_dpu_soc_lag(lag));
 	lag_type = sriov_lag ? XSC_LAG_FLAG_SRIOV :
-		(roce_lag ? XSC_LAG_FLAG_ROCE : XSC_LAG_FLAG_KERNEL);
+		   (roce_lag ? XSC_LAG_FLAG_ROCE : XSC_LAG_FLAG_KERNEL);
+
+	if (sriov_lag && xsc_is_sriov_mpesw(lag))
+		lag_type |= XSC_LAG_FLAG_MPESW;
 
 	return lag_type;
 }
@@ -645,7 +745,7 @@ out:
 }
 
 static void pack_lag_create(struct xsc_lag *lag,
-			    struct xsc_core_device *xdev, bool no_wq)
+			    struct xsc_core_device *xdev)
 {
 	struct net_device *ndev = xdev->netdev;
 	struct xsc_lag_event *entry;
@@ -658,7 +758,7 @@ static void pack_lag_create(struct xsc_lag *lag,
 	if (!entry)
 		return;
 
-	lag->lag_type = xsc_get_lag_type(lag);
+	lag->lag_type = xsc_get_lag_type(lag, xdev);
 
 	entry->event_type = XSC_LAG_CREATE;
 	entry->xdev = xdev;
@@ -671,10 +771,7 @@ static void pack_lag_create(struct xsc_lag *lag,
 	xsc_core_info(xdev, "lag_sel_mode = %d, slave_status = %d, lag_type = %d\n",
 		      entry->lag_sel_mode, entry->slave_status, entry->lag_type);
 
-	if (!no_wq)
-		pack_add_and_wake_wq(board_lag, entry);
-	else
-		xsc_create_lag(entry);
+	pack_add_and_wake_wq(board_lag, entry);
 }
 
 static inline void xsc_salve_func_data_set(struct xsc_core_device *xdev,
@@ -686,7 +783,7 @@ static inline void xsc_salve_func_data_set(struct xsc_core_device *xdev,
 }
 
 static void pack_lag_add_member(struct xsc_lag *lag,
-				struct xsc_core_device *xdev, bool no_wq)
+				struct xsc_core_device *xdev)
 {
 	struct xsc_lag_event *entry;
 	struct net_device *ndev = xdev->netdev;
@@ -700,7 +797,7 @@ static void pack_lag_add_member(struct xsc_lag *lag,
 	if (!entry)
 		return;
 
-	entry->lag_type = xsc_get_lag_type(lag);
+	entry->lag_type = xsc_get_lag_type(lag, xdev);
 	if (entry->lag_type != lag->lag_type) {
 		xsc_core_err(xdev, "do not permit add slave to different type lag, xdev_lag_type = %d, lag_type = %d\n",
 			     entry->lag_type, lag->lag_type);
@@ -723,14 +820,11 @@ static void pack_lag_add_member(struct xsc_lag *lag,
 	xsc_core_info(xdev, "lag_sel_mode = %d, slave_status = %d, lag_type = %d\n",
 		      entry->lag_sel_mode, entry->slave_status, entry->lag_type);
 
-	if (!no_wq)
-		pack_add_and_wake_wq(board_lag, entry);
-	else
-		xsc_add_lag_member(entry);
+	pack_add_and_wake_wq(board_lag, entry);
 }
 
 static void pack_lag_remove_member(struct xsc_lag *lag,
-				   struct xsc_core_device *xdev, bool no_wq)
+				   struct xsc_core_device *xdev, bool is_destroying)
 {
 	struct xsc_lag_event *entry;
 	struct xsc_core_device *roce_lag_xdev = NULL;
@@ -751,6 +845,7 @@ static void pack_lag_remove_member(struct xsc_lag *lag,
 	entry->lag_id = lag->lag_id;
 	entry->bond_mode = lag->bond_mode;
 	entry->lag_type = lag->lag_type;
+	entry->is_destorying = is_destroying;
 
 	if (entry->lag_type & XSC_LAG_FLAG_ROCE) {
 		roce_lag_xdev = list_first_entry(&lag->slave_list,
@@ -779,11 +874,7 @@ static void pack_lag_remove_member(struct xsc_lag *lag,
 	xsc_core_info(xdev, "lag_type = %d, is_roce_lag_xdev = %d, roce_pf_func_data = %d\n",
 		      entry->lag_type, entry->is_roce_lag_xdev,
 		      *(u8 *)&entry->roce_pf_func_data);
-
-	if (!no_wq)
-		pack_add_and_wake_wq(board_lag, entry);
-	else
-		xsc_remove_lag_member(entry);
+	pack_add_and_wake_wq(board_lag, entry);
 }
 
 static void pack_lag_update_member_status(struct xsc_lag *lag,
@@ -795,7 +886,8 @@ static void pack_lag_update_member_status(struct xsc_lag *lag,
 	struct xsc_core_device *xdev = adapter->xdev;
 	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
 
-	if (lag->mode_changes_in_progress || lag->lag_type & XSC_LAG_FLAG_KERNEL)
+	if (lag->mode_changes_in_progress ||
+	    ((lag->lag_type & XSC_LAG_FLAG_KERNEL) && !__xsc_lag_mode_support(lag)))
 		return;
 
 	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
@@ -822,7 +914,8 @@ static void pack_lag_update_hash_type(struct xsc_lag *lag,
 	struct xsc_core_device *xdev = NULL;
 	struct xsc_board_lag *board_lag;
 
-	if (lag->mode_changes_in_progress || lag->lag_type & XSC_LAG_FLAG_KERNEL)
+	if (lag->mode_changes_in_progress ||
+	    ((lag->lag_type & XSC_LAG_FLAG_KERNEL) && !__xsc_lag_mode_support(lag)))
 		return;
 
 	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
@@ -845,7 +938,7 @@ static void pack_lag_update_hash_type(struct xsc_lag *lag,
 	pack_add_and_wake_wq(board_lag, entry);
 }
 
-static void pack_lag_destroy(struct xsc_lag *lag, struct xsc_core_device *xdev, bool no_wq)
+static void pack_lag_destroy(struct xsc_lag *lag, struct xsc_core_device *xdev, bool is_destroying)
 {
 	struct xsc_lag_event *entry;
 	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
@@ -862,16 +955,14 @@ static void pack_lag_destroy(struct xsc_lag *lag, struct xsc_core_device *xdev, 
 	entry->lag_id = lag->lag_id;
 	entry->bond_mode = lag->bond_mode;
 	entry->lag_type = lag->lag_type;
+	entry->is_destorying = is_destroying;
 
 	lag->lag_type = 0;
 
 	xsc_core_info(xdev, "lag_id = %d, board_id = %d, lag_type = %d\n",
 		      lag->lag_id, lag->board_id, entry->lag_type);
 
-	if (!no_wq)
-		pack_add_and_wake_wq(board_lag, entry);
-	else
-		xsc_destroy_lag(entry);
+	pack_add_and_wake_wq(board_lag, entry);
 }
 
 static u8 xsc_get_valid_bond_id(struct xsc_board_lag *board_lag)
@@ -890,8 +981,7 @@ static u8 xsc_get_valid_bond_id(struct xsc_board_lag *board_lag)
 
 static void xsc_lag_setup(struct xsc_board_lag *board_lag,
 			  struct net_device *upper,
-			  struct xsc_core_device *xdev,
-			  bool no_wq)
+			  struct xsc_core_device *xdev)
 {
 	struct bonding *bond = netdev_priv(upper);
 	struct xsc_lag *lag = NULL;
@@ -918,17 +1008,7 @@ static void xsc_lag_setup(struct xsc_board_lag *board_lag,
 	xsc_core_info(xdev, "lag_id = %d, board_id = %d, bond_mode = %d\n",
 		      lag->lag_id, lag->board_id, lag->bond_mode);
 
-	pack_lag_create(lag, xdev, false);
-}
-
-static bool xsc_is_ndev_xsc_pf(struct net_device *slave_ndev)
-{
-	struct device *dev = &slave_ndev->dev;
-	struct pci_dev *pdev = to_pci_dev(dev->parent);
-
-	return (pdev->device == XSC_MS_PF_DEV_ID ||
-		pdev->device == XSC_MV_SOC_PF_DEV_ID ||
-		pdev->device == XSC_MC_PF_DEV_ID_DIAMOND);
+	pack_lag_create(lag, xdev);
 }
 
 static u8 xsc_get_bond_board_xsc_cnt(struct net_device *upper,
@@ -938,12 +1018,16 @@ static u8 xsc_get_bond_board_xsc_cnt(struct net_device *upper,
 	struct xsc_core_device *xdev;
 	struct net_device *ndev_tmp;
 	u8 slave_cnt = 0;
+	struct device *dev;
+	struct pci_dev *pdev;
 
 	rcu_read_lock();
 	for_each_netdev_in_bond_rcu(upper, ndev_tmp) {
 		if (!ndev_tmp)
 			continue;
-		if (xsc_is_ndev_xsc_pf(ndev_tmp)) {
+		dev = &ndev_tmp->dev;
+		pdev = to_pci_dev(dev->parent);
+		if (xsc_is_xsc_pf(pdev)) {
 			adapter = netdev_priv(ndev_tmp);
 			xdev = adapter->xdev;
 			if (xdev->board_info->board_id == board_id)
@@ -956,7 +1040,7 @@ static u8 xsc_get_bond_board_xsc_cnt(struct net_device *upper,
 }
 
 static void xsc_lag_member_add(struct xsc_lag *lag,
-			       struct xsc_core_device *xdev, bool no_wq)
+			       struct xsc_core_device *xdev)
 {
 	list_add_tail(&xdev->slave_node, &lag->slave_list);
 	lag->xsc_member_cnt++;
@@ -965,11 +1049,11 @@ static void xsc_lag_member_add(struct xsc_lag *lag,
 	xsc_core_dbg(xdev, "xsc_member_cnt = %d\n",
 		     lag->xsc_member_cnt);
 
-	pack_lag_add_member(lag, xdev, no_wq);
+	pack_lag_add_member(lag, xdev);
 }
 
 static void xsc_lag_member_remove(struct xsc_lag *lag,
-				  struct xsc_core_device *xdev, bool no_wq)
+				  struct xsc_core_device *xdev, bool is_destroying)
 {
 	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
 	u8 bond_valid_mask;
@@ -980,9 +1064,9 @@ static void xsc_lag_member_remove(struct xsc_lag *lag,
 		      lag->xsc_member_cnt);
 
 	if (lag->xsc_member_cnt > 0) {
-		pack_lag_remove_member(lag, xdev, no_wq);
+		pack_lag_remove_member(lag, xdev, is_destroying);
 	} else {
-		pack_lag_destroy(lag, xdev, no_wq);
+		pack_lag_destroy(lag, xdev, is_destroying);
 
 		lag->lag_id = LAG_ID_INVALID;
 		lag->board_id = BOARD_ID_INVALID;
@@ -1007,7 +1091,7 @@ static void xsc_lag_update_member(struct xsc_lag *lag,
 		     xsc_slave_cnt, lag->xsc_member_cnt);
 
 	if (xsc_slave_cnt > lag->xsc_member_cnt)
-		xsc_lag_member_add(lag, xdev, false);
+		xsc_lag_member_add(lag, xdev);
 
 	if (xsc_slave_cnt < lag->xsc_member_cnt)
 		xsc_lag_member_remove(lag, xdev, false);
@@ -1067,11 +1151,17 @@ static struct xsc_board_lag *xsc_board_lag_filter(struct xsc_board_lag *board_la
 {
 	struct xsc_adapter *adapter;
 	struct xsc_core_device *xdev;
+	u8 netdev_id;
+	struct device *dev = &ndev->dev;
+	struct pci_dev *pdev = to_pci_dev(dev->parent);
 
-	if (xsc_is_ndev_xsc_pf(ndev)) {
+	if (xsc_is_xsc_pf(pdev)) {
 		adapter = netdev_priv(ndev);
 		xdev = adapter->xdev;
-		if (xdev->board_info->board_id == board_lag->board_id)
+		netdev_id = xdev->pcie_no * XSC_MAX_PORTS + xdev->pf_id;
+
+		if (board_lag->netdev[netdev_id] == ndev &&
+		    xdev->board_info->board_id == board_lag->board_id)
 			return board_lag;
 	}
 
@@ -1115,7 +1205,7 @@ static void xsc_handle_changeupper_event(struct xsc_board_lag *board_lag,
 		if (lag->xsc_member_cnt == 0)
 			memset(lag, 0, sizeof(*lag));
 	} else {
-		xsc_lag_setup(board_lag, upper, xdev, false);
+		xsc_lag_setup(board_lag, upper, xdev);
 	}
 	mutex_unlock(&board_lag->lock);
 }
@@ -1289,6 +1379,8 @@ static int __xsc_lag_add_xdev(struct xsc_core_device *xdev)
 		kref_get(&board_lag->ref);
 	}
 
+	if (xsc_is_dev_support_lag(xdev))
+		xsc_ldev_add_debugfs(xdev);
 	xdev->bond_id = BOND_ID_INVALID;
 
 	return 0;
@@ -1333,6 +1425,8 @@ void xsc_lag_remove_xdev(struct xsc_core_device *xdev)
 	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
 
 	xsc_dev_list_lock();
+	if (xsc_is_dev_support_lag(xdev))
+		xsc_ldev_remove_debugfs(xdev);
 	if (board_lag)
 		kref_put(&board_lag->ref, xsc_lag_dev_free);
 	xsc_dev_list_unlock();
@@ -1345,6 +1439,9 @@ void xsc_lag_disable(struct xsc_core_device *xdev)
 	struct xsc_core_device *xdev_tmp = NULL;
 	u8 cnt = 0;
 	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
+
+	if (!board_lag)
+		return;
 
 	mutex_lock(&board_lag->lock);
 	lag = __xsc_get_lag(xdev);
@@ -1373,6 +1470,9 @@ void xsc_lag_enable(struct xsc_core_device *xdev)
 	u8 cnt = 0;
 	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
 
+	if (!board_lag)
+		return;
+
 	mutex_lock(&board_lag->lock);
 	lag = __xsc_get_lag(xdev);
 	if (!lag || __xsc_lag_is_active(lag)) {
@@ -1383,9 +1483,9 @@ void xsc_lag_enable(struct xsc_core_device *xdev)
 	lag->mode_changes_in_progress--;
 	list_for_each_entry(xdev_tmp, &lag->slave_list, slave_node) {
 		if (cnt == 0)
-			pack_lag_create(lag, xdev_tmp, false);
+			pack_lag_create(lag, xdev_tmp);
 		else
-			pack_lag_add_member(lag, xdev_tmp, false);
+			pack_lag_add_member(lag, xdev_tmp);
 
 		cnt++;
 	}
@@ -1403,9 +1503,14 @@ void xsc_lag_add_netdev(struct net_device *ndev)
 	u8 bond_id = BOND_ID_INVALID;
 	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
 	struct xsc_lag *lag;
+	u8 netdev_id = xdev->pcie_no * XSC_MAX_PORTS + xdev->pf_id;
 
-	if (!board_lag || ndev->reg_state != NETREG_REGISTERED ||
-	    !netif_is_bond_slave(ndev))
+	if (!board_lag || ndev->reg_state != NETREG_REGISTERED)
+		return;
+
+	board_lag->netdev[netdev_id] = ndev;
+
+	if (!netif_is_bond_slave(ndev))
 		return;
 
 	rcu_read_lock();
@@ -1420,9 +1525,9 @@ void xsc_lag_add_netdev(struct net_device *ndev)
 	lag = __xsc_get_lag(xdev);
 
 	if (bond_id != BOND_ID_INVALID)
-		xsc_lag_member_add(lag, xdev, true);
+		xsc_lag_member_add(lag, xdev);
 	else
-		xsc_lag_setup(board_lag, upper, xdev, true);
+		xsc_lag_setup(board_lag, upper, xdev);
 	mutex_unlock(&board_lag->lock);
 }
 EXPORT_SYMBOL(xsc_lag_add_netdev);
@@ -1433,9 +1538,12 @@ void xsc_lag_remove_netdev(struct net_device *ndev)
 	struct xsc_core_device *xdev = adapter->xdev;
 	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
 	struct xsc_lag *lag;
+	u8 netdev_id = xdev->pcie_no * XSC_MAX_PORTS + xdev->pf_id;
 
 	if (!board_lag)
 		return;
+
+	board_lag->netdev[netdev_id] = NULL;
 
 	mutex_lock(&board_lag->lock);
 	lag = __xsc_get_lag(xdev);
@@ -1475,6 +1583,10 @@ u16 xsc_get_lag_id(struct xsc_core_device *xdev)
 {
 	struct xsc_lag *lag;
 	u16 lag_id = LAG_ID_INVALID;
+	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
+
+	if (!board_lag)
+		return LAG_ID_INVALID;
 
 	xsc_board_lag_lock(xdev);
 	lag = __xsc_get_lag(xdev);
@@ -1490,6 +1602,10 @@ bool xsc_lag_is_kernel(struct xsc_core_device *xdev)
 {
 	struct xsc_lag *lag;
 	bool is_kernel = false;
+	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
+
+	if (!board_lag)
+		return false;
 
 	xsc_board_lag_lock(xdev);
 	lag = __xsc_get_lag(xdev);
@@ -1503,18 +1619,19 @@ EXPORT_SYMBOL(xsc_lag_is_kernel);
 
 struct xsc_core_device *xsc_get_roce_lag_xdev(struct xsc_core_device *xdev)
 {
-	struct xsc_core_device *roce_lag_xdev;
+	struct xsc_core_device *roce_lag_xdev = xdev;
 	struct xsc_lag *lag;
+	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
 
-	xsc_board_lag_lock(xdev);
-	if (xsc_lag_is_roce(xdev)) {
-		lag = __xsc_get_lag(xdev);
-		roce_lag_xdev = list_first_entry(&lag->slave_list,
-						 struct xsc_core_device, slave_node);
-	} else {
-		roce_lag_xdev = xdev;
+	if (board_lag) {
+		xsc_board_lag_lock(xdev);
+		if (xsc_lag_is_roce(xdev)) {
+			lag = __xsc_get_lag(xdev);
+			roce_lag_xdev = list_first_entry(&lag->slave_list,
+							 struct xsc_core_device, slave_node);
+		}
+		xsc_board_lag_unlock(xdev);
 	}
-	xsc_board_lag_unlock(xdev);
 
 	return roce_lag_xdev;
 }
@@ -1526,14 +1643,16 @@ u16 xsc_lag_set_user_mode(struct xsc_core_device *xdev, u8 mode)
 	struct xsc_core_device *tmp_xdev;
 	struct xsc_board_lag *board_lag = xsc_board_lag_get(xdev);
 
-	mutex_lock(&board_lag->lock);
-	lag = __xsc_get_lag(xdev);
-	if (lag && __xsc_lag_is_active(lag)) {
-		list_for_each_entry(tmp_xdev, &lag->slave_list, slave_node) {
-			xsc_set_user_mode(tmp_xdev, mode);
+	if (board_lag) {
+		mutex_lock(&board_lag->lock);
+		lag = __xsc_get_lag(xdev);
+		if (lag && __xsc_lag_is_active(lag)) {
+			list_for_each_entry(tmp_xdev, &lag->slave_list, slave_node) {
+				xsc_set_user_mode(tmp_xdev, mode);
+			}
 		}
+		mutex_unlock(&board_lag->lock);
 	}
-	mutex_unlock(&board_lag->lock);
 
 	return 0;
 }

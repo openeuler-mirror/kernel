@@ -12,6 +12,7 @@
 #include "common/version.h"
 #include <net/dcbnl.h>
 #include "common/xsc_fs.h"
+#include "common/xsc_mc_filter.h"
 
 #define XSC_INVALID_LKEY	0x100
 
@@ -23,6 +24,7 @@
 #define XSC_PAGE_CACHE			1
 
 #define XSCALE_DRIVER_NAME "xsc_eth"
+#define XSCALE_REP_DRIVER_NAME "xsc_rep"
 #define XSCALE_RET_SUCCESS		0
 #define XSCALE_RET_ERROR		1
 
@@ -132,7 +134,7 @@ struct xsc_adapter {
 	struct xsc_rss_params  rss_params;
 	struct xsc_vlan_params vlan_params;
 
-	struct xsc_flow_steering fs;
+	struct xsc_eth_flow_steering eth_sterring;
 
 	struct workqueue_struct		*workq;
 	struct work_struct		update_carrier_work;
@@ -155,6 +157,10 @@ struct xsc_adapter {
 	struct task_struct *task;
 
 	int channel_tc2realtxq[XSC_ETH_MAX_NUM_CHANNELS][XSC_MAX_NUM_TC];
+
+	const struct xsc_profile *profile;
+	void                     *ppriv;
+	struct xsc_mc_hash *mc_hash_tbl;
 };
 
 struct xsc_rx_buffer {
@@ -194,15 +200,34 @@ struct xsc_user_mode_attr {
 	u16 dst_info[8];
 };
 
-typedef int (*xsc_eth_fp_preactivate)(struct xsc_adapter *priv);
-typedef int (*xsc_eth_fp_postactivate)(struct xsc_adapter *priv);
+struct xsc_rx_handlers {
+	xsc_fp_handle_rx_cqe handle_rx_cqe;
+};
+
+struct xsc_profile {
+	int	(*init)(struct net_device *netdev);
+	void	(*cleanup)(struct xsc_adapter *adapter);
+	int	(*init_rx)(struct xsc_adapter *adapter);
+	void	(*cleanup_rx)(struct xsc_adapter *adapter);
+	int	(*init_tx)(struct xsc_adapter *adapter);
+	void	(*cleanup_tx)(struct xsc_adapter *adapter);
+	void	(*enable)(struct xsc_adapter *adapter);
+	void	(*disable)(struct xsc_adapter *adapter);
+	int	(*max_nch_limit)(struct xsc_core_device *xdev);
+	const struct xsc_rx_handlers *rx_handlers;
+	int	max_tc;
+};
+
+typedef int (*xsc_eth_fp_preactivate)(struct xsc_adapter *adapter);
+typedef int (*xsc_eth_fp_postactivate)(struct xsc_adapter *adapter);
 
 int xsc_safe_switch_channels(struct xsc_adapter *adapter,
 			     xsc_eth_fp_preactivate preactivate,
 			     xsc_eth_fp_postactivate postactivate);
-int xsc_eth_num_channels_changed(struct xsc_adapter *priv);
+int xsc_eth_num_channels_changed(struct xsc_adapter *adapter);
 int xsc_eth_modify_nic_hca(struct xsc_adapter *adapter, u32 change);
 bool xsc_eth_get_link_status(struct xsc_adapter *adapter);
+bool xsc_eth_get_port_present(struct xsc_adapter *adapter);
 int xsc_eth_get_link_info(struct xsc_adapter *adapter,
 			  struct xsc_event_linkinfo *plinkinfo);
 int xsc_eth_set_link_info(struct xsc_adapter *adapter,
@@ -236,4 +261,32 @@ void xsc_dcbnl_initialize(struct xsc_adapter *priv);
 void xsc_dcbnl_init_app(struct xsc_adapter *priv);
 void xsc_dcbnl_delete_app(struct xsc_adapter *priv);
 #endif
+
+int xsc_eth_open_locked(struct net_device *netdev);
+int xsc_eth_close_locked(struct net_device *netdev);
+int xsc_eth_change_mtu(struct net_device *netdev, int new_mtu);
+void xsc_eth_mtu_set(struct net_device *netdev);
+int xsc_eth_open(struct net_device *netdev);
+int xsc_eth_close(struct net_device *netdev);
+int xsc_eth_nic_init(struct net_device *netdev);
+int xsc_eth_priv_init(struct xsc_adapter *adapter,
+		      const struct xsc_profile *profile,
+		      struct net_device *netdev,
+		      struct xsc_core_device *xdev);
+void xsc_eth_priv_cleanup(struct xsc_adapter *adapter);
+void xsc_detach_netdev(struct xsc_adapter *adapter);
+struct net_device *xsc_create_netdev(struct xsc_core_device *xdev,
+				     const struct xsc_profile *profile);
+int xsc_attach_netdev(struct xsc_adapter *adapter);
+void xsc_destroy_netdev(struct xsc_adapter *adapter);
+int xsc_get_phys_port_name(struct net_device *dev, char *buf, size_t len);
+
+int xsc_get_port_parent_id(struct net_device *dev,
+			   struct netdev_phys_item_id *ppid);
+
+struct xsc_core_device *xsc_get_pf_xdev(struct xsc_core_device *xdev);
+int xsc_max_nch_limit(struct xsc_core_device *xdev);
+int xsc_bql_threshold_set(struct xsc_adapter *adapter);
+int set_feature_rx_tc_skb_ext(struct net_device *netdev, bool enable);
+
 #endif /* XSC_ETH_H */

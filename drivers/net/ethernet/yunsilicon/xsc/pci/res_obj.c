@@ -25,6 +25,7 @@ static int xsc_alloc_obj(struct xsc_res_obj *obj, struct xsc_bdf_file *file,
 		memcpy(obj->data, data, datalen);
 	}
 
+	obj->key = key;
 	radix_tree_preload(GFP_KERNEL);
 	spin_lock(&file->obj_lock);
 	radix_tree_insert(&file->obj_tree, key, (void *)obj);
@@ -70,12 +71,10 @@ static void xsc_free_pd_obj(void *obj)
 {
 	struct xsc_pd_obj *pd_obj = container_of(obj, struct xsc_pd_obj, obj);
 	struct xsc_bdf_file *file = pd_obj->obj.file;
-	unsigned long key;
-	struct xsc_res_obj *_obj;
 
 	xsc_send_cmd_dealloc_pd(file->xdev, pd_obj->pdn);
-	key = xsc_idx_to_key(RES_OBJ_PD, pd_obj->pdn);
-	xsc_free_obj(file, key, &_obj);
+	if (pd_obj->obj.datalen)
+		kfree(pd_obj->obj.data);
 	xsc_core_info(pd_obj->obj.file->xdev, "free pd obj: %d\n", pd_obj->pdn);
 	kfree(pd_obj);
 }
@@ -159,13 +158,12 @@ static void xsc_free_mr_obj(void *obj)
 {
 	struct xsc_mr_obj *mr_obj = container_of(obj, struct xsc_mr_obj, obj);
 	struct xsc_bdf_file *file = mr_obj->obj.file;
-	unsigned long key = xsc_idx_to_key(RES_OBJ_MR, mr_obj->mkey);
-	struct xsc_res_obj *_obj;
 
 	xsc_send_cmd_destroy_mkey(file->xdev, mr_obj->mkey);
 	xsc_send_cmd_dereg_mr(file->xdev, mr_obj->mkey);
 
-	xsc_free_obj(file, key, &_obj);
+	if (mr_obj->obj.datalen)
+		kfree(mr_obj->obj.data);
 	xsc_core_info(file->xdev, "free mr obj: %d\n", mr_obj->mkey);
 	kfree(mr_obj);
 }
@@ -236,11 +234,10 @@ static void xsc_free_cq_obj(void *obj)
 {
 	struct xsc_cq_obj *cq_obj = container_of(obj, struct xsc_cq_obj, obj);
 	struct xsc_bdf_file *file = cq_obj->obj.file;
-	unsigned long key = xsc_idx_to_key(RES_OBJ_CQ, cq_obj->cqn);
-	struct xsc_res_obj *_obj;
 
 	xsc_send_cmd_destroy_cq(file->xdev, cq_obj->cqn);
-	xsc_free_obj(file, key, &_obj);
+	if (cq_obj->obj.datalen)
+		kfree(cq_obj->obj.data);
 	xsc_core_info(file->xdev, "free cq obj: %d\n", cq_obj->cqn);
 	kfree(cq_obj);
 }
@@ -314,14 +311,12 @@ static void xsc_free_qp_obj(void *obj)
 {
 	struct xsc_qp_obj *qp_obj = container_of(obj, struct xsc_qp_obj, obj);
 	struct xsc_bdf_file *file = qp_obj->obj.file;
-	unsigned long key;
-	struct xsc_res_obj *_obj;
 
 	xsc_send_cmd_2rst_qp(file->xdev, qp_obj->qpn);
 	xsc_send_cmd_destroy_qp(file->xdev, qp_obj->qpn);
 
-	key = xsc_idx_to_key(RES_OBJ_QP, qp_obj->qpn);
-	xsc_free_obj(file, key, &_obj);
+	if (qp_obj->obj.datalen)
+		kfree(qp_obj->obj.data);
 	xsc_core_info(file->xdev, "free qp obj: %d\n", qp_obj->qpn);
 	kfree(qp_obj);
 }
@@ -408,16 +403,104 @@ static void xsc_send_cmd_del_pct(struct xsc_core_device *xdev,
 	kfree(out);
 }
 
+static struct xsc_pct_obj *xsc_update_pct_obj_refcnt(struct xsc_bdf_file *file,
+						     unsigned int priority,
+						     u32 *ref_cnt, bool is_add)
+{
+	struct xsc_pct_obj *pct_obj = NULL;
+	struct xsc_res_obj *obj = NULL;
+	unsigned long key = xsc_idx_to_key(RES_OBJ_PCT, priority);
+
+	if (!file)
+		return NULL;
+
+	spin_lock(&file->obj_lock);
+	obj = xsc_get_obj(file, key);
+	if (obj) {
+		pct_obj = container_of(obj, struct xsc_pct_obj, obj);
+		if (is_add) {
+			obj->ref_cnt++;
+		} else {
+			if (obj->ref_cnt >= 1)
+				obj->ref_cnt--;
+		}
+		*ref_cnt = obj->ref_cnt;
+	}
+	spin_unlock(&file->obj_lock);
+
+	return pct_obj;
+}
+
+static struct xsc_pct_obj *xsc_update_assoc_pct_obj(struct xsc_core_device *xdev, u32 assoc_pid,
+						    u32 priority, u32 *ref_cnt, bool is_add)
+{
+	struct xsc_port_ctrl *ctrl = &xdev->port_ctrl;
+	struct xsc_port_ctrl_file *file, *n;
+	struct xsc_bdf_file *bdf_file;
+	struct radix_tree_iter iter;
+	void **slot;
+	struct xsc_pct_obj *pct_obj = NULL;
+
+	if (!ctrl)
+		return NULL;
+
+	spin_lock(&ctrl->file_lock);
+	list_for_each_entry_safe(file, n, &ctrl->file_list, file_node) {
+		if (file->pid == assoc_pid) {
+			bdf_file = file->root_bdf;
+
+			pct_obj = xsc_update_pct_obj_refcnt(bdf_file, priority, ref_cnt, is_add);
+			if (pct_obj)
+				break;
+
+			spin_lock(&file->bdf_lock);
+			radix_tree_for_each_slot(slot, &file->bdf_tree, &iter, 0) {
+				bdf_file = (struct xsc_bdf_file *)(*slot);
+				pct_obj = xsc_update_pct_obj_refcnt(bdf_file, priority,
+								    ref_cnt, is_add);
+				if (pct_obj)
+					break;
+			}
+			spin_unlock(&file->bdf_lock);
+		}
+
+		if (pct_obj) {
+			xsc_core_info(xdev, "found assoc pct, priority:%d, assoc_pid:%d, is_add:%d, ref_cnt:%d",
+				      priority, assoc_pid, is_add, *ref_cnt);
+			break;
+		}
+	}
+	spin_unlock(&ctrl->file_lock);
+
+	return pct_obj;
+}
+
 static void xsc_free_pct_obj(void *obj)
 {
 	struct xsc_pct_obj *pct_obj = container_of(obj, struct xsc_pct_obj, obj);
+	struct xsc_pct_obj *assoc_pct_obj = NULL;
 	struct xsc_bdf_file *file = pct_obj->obj.file;
-	struct xsc_res_obj *_obj;
-	unsigned long key = xsc_idx_to_key(RES_OBJ_PCT, pct_obj->pct_idx);
+	struct xsc_port_ctrl_file *port_ctrl_file = file->port_ctrl_file;
+	u32 assoc_pid = 0;
+	u32 ref_cnt;
+	bool is_add = false;
+	bool tbl_del = true;
 
-	xsc_send_cmd_del_pct(file->xdev, pct_obj->pct_idx);
-	xsc_free_obj(file, key, &_obj);
-	xsc_core_info(file->xdev, "free pct obj, priority:%d\n", pct_obj->pct_idx);
+	if (port_ctrl_file && !port_ctrl_file->dev_del &&
+	    port_ctrl_file->assoc_pid && pct_obj->obj.ref_cnt > 1) {
+		assoc_pid = port_ctrl_file->assoc_pid;
+		assoc_pct_obj = xsc_update_assoc_pct_obj(file->xdev, assoc_pid,
+							 pct_obj->pct_idx, &ref_cnt, is_add);
+		if (assoc_pct_obj)
+			tbl_del = false;
+	}
+
+	if (tbl_del)
+		xsc_send_cmd_del_pct(file->xdev, pct_obj->pct_idx);
+	if (pct_obj->obj.datalen)
+		kfree(pct_obj->obj.data);
+	xsc_core_info(file->xdev, "free pct obj, priority:%d, assoc_pid:%d, tbl_del:%d\n",
+		      pct_obj->pct_idx, assoc_pid, tbl_del);
 	kfree(pct_obj);
 }
 
@@ -428,8 +511,13 @@ int xsc_alloc_pct_obj(struct xsc_bdf_file *file, unsigned int priority,
 		      char *data, unsigned int datalen)
 {
 	struct xsc_pct_obj *pct_obj;
+	struct xsc_pct_obj *assoc_pct_obj;
+	struct xsc_port_ctrl_file *port_ctrl_file = file->port_ctrl_file;
 	int ret;
 	unsigned long key = xsc_idx_to_key(RES_OBJ_PCT, priority);
+	u32 assoc_pid = 0;
+	u32 ref_cnt;
+	bool is_add = true;
 
 	pct_obj = kzalloc(sizeof(*pct_obj), GFP_KERNEL);
 	if (!pct_obj)
@@ -439,25 +527,145 @@ int xsc_alloc_pct_obj(struct xsc_bdf_file *file, unsigned int priority,
 	ret = xsc_alloc_obj(&pct_obj->obj, file, xsc_free_pct_obj, key, data, datalen);
 	if (ret)
 		kfree(pct_obj);
-	xsc_core_dbg(file->xdev, "alloc pct %d obj\n", priority);
+
+	pct_obj->obj.ref_cnt = 1;
+	ref_cnt = pct_obj->obj.ref_cnt;
+	if (port_ctrl_file && !port_ctrl_file->dev_del && port_ctrl_file->assoc_pid) {
+		assoc_pid = port_ctrl_file->assoc_pid;
+		assoc_pct_obj = xsc_update_assoc_pct_obj(file->xdev, assoc_pid,
+							 priority, &ref_cnt, is_add);
+		if (assoc_pct_obj)
+			pct_obj->obj.ref_cnt = ref_cnt;
+	}
+
+	xsc_core_info(file->xdev, "alloc pct obj priority:%d, assoc_pid:%d, ref_cnt:%d\n",
+		      priority, assoc_pid, pct_obj->obj.ref_cnt);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(xsc_alloc_pct_obj);
 
-void xsc_destroy_pct_obj(struct xsc_bdf_file *file, unsigned int priority)
+void xsc_destroy_pct_obj(struct xsc_bdf_file *file, unsigned int priority, bool *tbl_op)
 {
 	struct xsc_pct_obj *pct_obj;
+	struct xsc_pct_obj *assoc_pct_obj;
 	struct xsc_res_obj *obj;
+	struct xsc_port_ctrl_file *port_ctrl_file = file->port_ctrl_file;
 	unsigned long key = xsc_idx_to_key(RES_OBJ_PCT, priority);
+	u32 assoc_pid = 0;
+	u32 ref_cnt;
+	bool is_add = false;
 
 	spin_lock(&file->obj_lock);
 	xsc_free_obj(file, key, &obj);
 	spin_unlock(&file->obj_lock);
 	pct_obj = container_of(obj, struct xsc_pct_obj, obj);
+
+	if (port_ctrl_file && !port_ctrl_file->dev_del &&
+	    port_ctrl_file->assoc_pid && pct_obj->obj.ref_cnt > 1) {
+		assoc_pid = port_ctrl_file->assoc_pid;
+		assoc_pct_obj = xsc_update_assoc_pct_obj(file->xdev, assoc_pid,
+							 pct_obj->pct_idx, &ref_cnt, is_add);
+		if (assoc_pct_obj)
+			*tbl_op = false;
+	}
+
 	kfree(pct_obj);
-	xsc_core_dbg(file->xdev, "destroy pct %d obj\n", priority);
+	xsc_core_info(file->xdev, "destroy pct %d obj, assoc_pid:%d, tbl_op:%d\n",
+		      priority, assoc_pid, *tbl_op);
 }
 EXPORT_SYMBOL_GPL(xsc_destroy_pct_obj);
+
+static void xsc_send_cmd_del_wct(struct xsc_core_device *xdev,
+				 unsigned int priority)
+{
+	struct xsc_ioctl_mbox_in *in;
+	struct xsc_ioctl_mbox_out *out;
+	struct xsc_ioctl_data_tl *tl;
+	struct xsc_flow_wct_del *wct;
+	unsigned int inlen;
+	unsigned int outlen;
+	int ret;
+
+	inlen = sizeof(struct xsc_ioctl_mbox_in) + sizeof(struct xsc_ioctl_data_tl)
+		+ sizeof(struct xsc_flow_wct_del);
+	in = kzalloc(inlen, GFP_KERNEL);
+	if (!in)
+		return;
+
+	outlen = sizeof(struct xsc_ioctl_mbox_out) + sizeof(struct xsc_ioctl_data_tl)
+		+ sizeof(struct xsc_flow_wct_del);
+	out = kzalloc(outlen, GFP_KERNEL);
+	if (!out) {
+		kfree(in);
+		return;
+	}
+
+	in->hdr.opcode = cpu_to_be16(XSC_CMD_OP_IOCTL_FLOW);
+	in->len = sizeof(struct xsc_ioctl_data_tl) + sizeof(struct xsc_flow_wct_del);
+	in->len = cpu_to_be16(in->len);
+	tl = (struct xsc_ioctl_data_tl *)in->data;
+	tl->opmod = XSC_IOCTL_OP_DEL;
+	tl->table = XSC_FLOW_TBL_WCT;
+	tl->length = sizeof(struct xsc_flow_wct_del);
+	wct = (struct xsc_flow_wct_del *)(tl + 1);
+	wct->priority = priority;
+	out->len = in->len;
+	ret = xsc_cmd_exec(xdev, in, inlen, out, outlen);
+	if (ret || out->hdr.status != 0)
+		xsc_core_err(xdev, "failed to del wct %d\n", priority);
+
+	kfree(in);
+	kfree(out);
+}
+
+static void xsc_free_wct_obj(void *obj)
+{
+	struct xsc_wct_obj *wct_obj = container_of(obj, struct xsc_wct_obj, obj);
+	struct xsc_bdf_file *file = wct_obj->obj.file;
+
+	xsc_send_cmd_del_wct(file->xdev, wct_obj->wct_idx);
+	if (wct_obj->obj.datalen)
+		kfree(wct_obj->obj.data);
+	xsc_core_info(file->xdev, "free wct obj, priority:%d\n", wct_obj->wct_idx);
+	kfree(wct_obj);
+}
+
+int xsc_alloc_wct_obj(struct xsc_bdf_file *file, u32 priority, char *data, u32 datalen)
+{
+	struct xsc_wct_obj *wct_obj;
+	int ret;
+	unsigned long key = xsc_idx_to_key(RES_OBJ_WCT, priority);
+
+	wct_obj = kzalloc(sizeof(*wct_obj), GFP_KERNEL);
+	if (!wct_obj)
+		return -ENOMEM;
+
+	wct_obj->wct_idx = priority;
+	ret = xsc_alloc_obj(&wct_obj->obj, file, xsc_free_wct_obj, key, data, datalen);
+	if (ret) {
+		kfree(wct_obj);
+		return ret;
+	}
+
+	xsc_core_dbg(file->xdev, "alloc wct obj, wct_idx = %d\n", priority);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xsc_alloc_wct_obj);
+
+void xsc_destroy_wct_obj(struct xsc_bdf_file *file, u32 priority)
+{
+	struct xsc_wct_obj *wct_obj;
+	struct xsc_res_obj *obj;
+	unsigned long key = xsc_idx_to_key(RES_OBJ_WCT, priority);
+
+	spin_lock(&file->obj_lock);
+	xsc_free_obj(file, key, &obj);
+	spin_unlock(&file->obj_lock);
+	wct_obj = container_of(obj, struct xsc_wct_obj, obj);
+	kfree(wct_obj);
+	xsc_core_dbg(file->xdev, "destroy wct obj, wct_idx = %d\n", priority);
+}
+EXPORT_SYMBOL_GPL(xsc_destroy_wct_obj);
 
 int xsc_alloc_user_mode_obj(struct xsc_bdf_file *file, void (*release_func)(void *),
 			    unsigned int mode, char *data, unsigned int len)
@@ -485,14 +693,14 @@ int xsc_alloc_user_mode_obj(struct xsc_bdf_file *file, void (*release_func)(void
 }
 EXPORT_SYMBOL_GPL(xsc_alloc_user_mode_obj);
 
-void xsc_free_user_mode_obj(struct xsc_bdf_file *file, unsigned int mode)
+void xsc_free_user_mode_obj(struct xsc_bdf_file *file, void *obj, unsigned int mode)
 {
-	unsigned long key = xsc_idx_to_key(RES_OBJ_USER_MODE, mode);
 	struct xsc_user_mode_obj *user_mode_obj;
-	struct xsc_res_obj *obj;
+	struct xsc_res_obj *_obj = (struct xsc_res_obj *)obj;
 
-	xsc_free_obj(file, key, &obj);
-	user_mode_obj = container_of(obj, struct xsc_user_mode_obj, obj);
+	user_mode_obj = container_of(_obj, struct xsc_user_mode_obj, obj);
+	if (user_mode_obj->obj.datalen)
+		kfree(user_mode_obj->obj.data);
 	kfree(user_mode_obj);
 
 	if (mode == XSC_IOCTL_OPCODE_PF_USER_MODE)
@@ -508,13 +716,57 @@ void xsc_release_user_mode(struct xsc_bdf_file *file, unsigned int mode)
 	struct xsc_res_obj *obj;
 
 	spin_lock(&file->obj_lock);
-	obj = xsc_get_obj(file, key);
-	obj->release_method(obj);
+	obj = radix_tree_delete(&file->obj_tree, key);
 	spin_unlock(&file->obj_lock);
+	obj->release_method(obj);
 
 	xsc_core_dbg(file->xdev, "release user mode %d obj\n", mode);
 }
 EXPORT_SYMBOL_GPL(xsc_release_user_mode);
+
+void xsc_free_bdf_file(struct kref *kref)
+{
+	struct xsc_bdf_file *bdf_file = container_of(kref, struct xsc_bdf_file, kref);
+
+	kfree(bdf_file);
+}
+
+static void xsc_release_assoc_pid(struct xsc_port_ctrl_file *file)
+{
+	struct xsc_port_ctrl *ctrl = file->ctrl;
+	struct xsc_port_ctrl_file *tmp_file, *n;
+
+	if (!ctrl)
+		return;
+
+	spin_lock(&ctrl->file_lock);
+	list_for_each_entry_safe(tmp_file, n, &ctrl->file_list, file_node) {
+		if (tmp_file->pid == file->assoc_pid)
+			tmp_file->assoc_pid = 0;
+	}
+	file->assoc_pid = 0;
+	spin_unlock(&ctrl->file_lock);
+}
+
+void xsc_free_port_ctrl_file(struct kref *kref)
+{
+	struct xsc_port_ctrl_file *file = container_of(kref, struct xsc_port_ctrl_file, kref);
+
+	if (!file->dev_del && file->assoc_pid)
+		xsc_release_assoc_pid(file);
+
+	kfree(file);
+}
+
+static void obj_rel_work(struct work_struct *work)
+{
+	struct xsc_res_obj *obj = container_of(work, struct xsc_res_obj, rel_work);
+	struct xsc_bdf_file *file = obj->file;
+
+	obj->release_method(obj);
+	kref_put(&file->kref, xsc_free_bdf_file);
+	kref_put(&file->port_ctrl_file->kref, xsc_free_port_ctrl_file);
+}
 
 void xsc_close_bdf_file(struct xsc_bdf_file *file)
 {
@@ -526,9 +778,129 @@ void xsc_close_bdf_file(struct xsc_bdf_file *file)
 	spin_lock(&file->obj_lock);
 	radix_tree_for_each_slot(slot, &file->obj_tree, &iter, 0) {
 		obj = (struct xsc_res_obj *)(*slot);
-		obj->release_method(obj);
+		radix_tree_delete(&file->obj_tree, obj->key);
+		kref_get(&file->kref);
+		kref_get(&file->port_ctrl_file->kref);
+		INIT_WORK(&obj->rel_work, obj_rel_work);
+		queue_work(file->port_ctrl_file->ctrl->wq, &obj->rel_work);
 	}
+
 	spin_unlock(&file->obj_lock);
 }
 EXPORT_SYMBOL_GPL(xsc_close_bdf_file);
 
+void *xsc_find_umem_obj(struct xsc_bdf_file *file, unsigned int umem_id)
+{
+	struct xsc_res_obj *obj;
+	struct xsc_umem_obj *umem_obj;
+	unsigned long key = xsc_idx_to_key(RES_OBJ_UMEM, umem_id);
+
+	obj = xsc_get_obj(file, key);
+	umem_obj = container_of(obj, struct xsc_umem_obj, obj);
+
+	return umem_obj;
+}
+EXPORT_SYMBOL_GPL(xsc_find_umem_obj);
+
+int xsc_alloc_umem_obj(struct xsc_bdf_file *file, void (*release_func)(void *),
+		       unsigned int umem_id, void *data, unsigned int datalen)
+{
+	struct xsc_umem_obj *umem_obj;
+	unsigned long key = xsc_idx_to_key(RES_OBJ_UMEM, umem_id);
+	int ret;
+
+	umem_obj = kzalloc(sizeof(*umem_obj), GFP_KERNEL);
+	if (!umem_obj)
+		return -ENOMEM;
+
+	umem_obj->umem_id = umem_id;
+	ret = xsc_alloc_obj(&umem_obj->obj, file, release_func, key, data, datalen);
+	if (ret) {
+		kfree(umem_obj);
+		return ret;
+	}
+
+	xsc_core_info(file->xdev, "alloc umem 0x%x obj, key 0x%lx\n", umem_id, key);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xsc_alloc_umem_obj);
+
+void xsc_free_umem_obj(struct xsc_bdf_file *file, void *obj, unsigned int umem_id)
+{
+	struct xsc_umem_obj *umem_obj;
+	struct xsc_res_obj *_obj = obj;
+
+	umem_obj = container_of(_obj, struct xsc_umem_obj, obj);
+	if (umem_obj->obj.datalen)
+		kfree(umem_obj->obj.data);
+	kfree(umem_obj);
+	xsc_core_info(file->xdev, "free umem 0x%x obj\n", umem_id);
+}
+EXPORT_SYMBOL_GPL(xsc_free_umem_obj);
+
+void xsc_destroy_umem_obj(struct xsc_bdf_file *file, unsigned int umem_id)
+{
+	struct xsc_res_obj *obj;
+	unsigned long key = xsc_idx_to_key(RES_OBJ_UMEM, umem_id);
+
+	spin_lock(&file->obj_lock);
+	obj = radix_tree_delete(&file->obj_tree, key);
+	spin_unlock(&file->obj_lock);
+	obj->release_method(obj);
+	xsc_core_info(file->xdev, "destroy umem 0x%x obj, key 0x%lx\n", umem_id, key);
+}
+EXPORT_SYMBOL_GPL(xsc_destroy_umem_obj);
+
+static void xsc_send_cmd_del_user_idx(struct xsc_core_device *xdev,
+				      u8 user_idx)
+{
+	struct xsc_release_user_idx_mbox_in in;
+	struct xsc_release_user_idx_mbox_out out;
+	int ret;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_RELEASE_USER_IDX);
+	in.user_idx = user_idx;
+
+	ret = xsc_cmd_exec(xdev, (void *)&in, sizeof(in), (void *)&out, sizeof(out));
+	if (ret || out.hdr.status)
+		xsc_core_err(xdev, "failed to release user idx %d\n", user_idx);
+}
+
+static void xsc_free_user_idx_obj(void *obj)
+{
+	struct xsc_user_idx_obj *user_idx_obj = container_of(obj, struct xsc_user_idx_obj, obj);
+	struct xsc_bdf_file *file = user_idx_obj->obj.file;
+
+	xsc_send_cmd_del_user_idx(file->xdev, user_idx_obj->idx);
+	if (user_idx_obj->obj.datalen)
+		kfree(user_idx_obj->obj.data);
+	xsc_core_info(file->xdev, "free user idx obj: %d\n", user_idx_obj->idx);
+	kfree(user_idx_obj);
+}
+
+int xsc_alloc_user_idx_obj(struct xsc_bdf_file *file, unsigned int idx,
+			   char *data, unsigned int datalen)
+{
+	struct xsc_user_idx_obj *user_idx_obj;
+	unsigned long key;
+	int ret;
+
+	user_idx_obj = kzalloc(sizeof(*user_idx_obj), GFP_KERNEL);
+	if (!user_idx_obj)
+		return -ENOMEM;
+
+	user_idx_obj->idx = idx;
+	key = xsc_idx_to_key(RES_OBJ_USER_IDX, idx);
+	ret = xsc_alloc_obj(&user_idx_obj->obj, file, xsc_free_user_idx_obj, key, data, datalen);
+	if (ret) {
+		kfree(user_idx_obj);
+		return ret;
+	}
+	xsc_core_info(file->xdev, "alloc user_idx %d obj\n", idx);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(xsc_alloc_user_idx_obj);

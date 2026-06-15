@@ -43,6 +43,7 @@ static int xsc_set_cq_context(struct xsc_core_device *dev, struct xsc_cq_context
 	memset(&in, 0, sizeof(in));
 	memcpy(&in.ctx_ex, ctx_ex, sizeof(*ctx_ex));
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_SET_CQ_CONTEXT);
+	in.hdr.ver = cpu_to_be16(CMD_SET_CQ_CONTEXT_V1);
 	memset(&out, 0, sizeof(out));
 	ret = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 	if (ret || out.hdr.status) {
@@ -60,10 +61,10 @@ static int xsc_set_cq_buf_pa(struct xsc_core_device *dev, struct xsc_create_cq_e
 {
 	struct xsc_set_cq_buf_pa_mbox_in *in;
 	struct xsc_set_cq_buf_pa_mbox_out out;
-	u16 pa_num_total = be16_to_cpu(req->ctx_ex.ctx.pa_num);
-	u16 pa_num_for_each_max = (dev->caps.max_cmd_in_len - sizeof(*in)) / sizeof(__be64);
-	u16 pa_num_left = pa_num_total;
-	u16 pa_num = 0;
+	u32 pa_num_total = be32_to_cpu(req->ctx_ex.pa_num_ex);
+	u32 pa_num_for_each_max = (dev->caps.max_cmd_in_len - sizeof(*in)) / sizeof(__be64);
+	u32 pa_num_left = pa_num_total;
+	u32 pa_num = 0;
 	u32 copy_len = 0;
 	int ret = 0;
 	int in_len = 0;

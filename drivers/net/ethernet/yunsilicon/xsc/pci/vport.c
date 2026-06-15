@@ -37,7 +37,32 @@ u8 xsc_query_vport_state(struct xsc_core_device *dev, u16 opmod, u16 vport)
 }
 EXPORT_SYMBOL(xsc_query_vport_state);
 
-int xsc_modify_vport_admin_state(struct xsc_core_device *dev, u16 opmod,
+static int _xsc_query_port_present(struct xsc_core_device *dev, u16 opmod,
+				   u16 vport, void *out, int outlen)
+{
+	struct xsc_query_vport_state_in in;
+
+	memset(&in, 0, sizeof(in));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_QUERY_PORT_PRESENT);
+	in.vport_number = cpu_to_be16(vport);
+	if (vport)
+		in.other_vport = 1;
+
+	return xsc_cmd_exec(dev, &in, sizeof(in), out, outlen);
+}
+
+u8 xsc_query_port_present(struct xsc_core_device *dev, u16 opmod, u16 vport)
+{
+	struct xsc_query_port_present_out out;
+
+	memset(&out, 0, sizeof(out));
+	_xsc_query_port_present(dev, opmod, vport, &out, sizeof(out));
+
+	return out.state;
+}
+EXPORT_SYMBOL(xsc_query_port_present);
+
+int xsc_modify_vport_admin_state(struct xsc_core_device *dev,
 				 u16 vport, u8 other_vport, u8 state)
 {
 	struct xsc_modify_vport_state_in in;
@@ -52,6 +77,7 @@ int xsc_modify_vport_admin_state(struct xsc_core_device *dev, u16 opmod,
 
 	return xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
 }
+EXPORT_SYMBOL(xsc_modify_vport_admin_state);
 
 int __xsc_query_nic_vport_context(struct xsc_core_device *dev,
 				  u16 vport, void *out, int outlen,
@@ -80,12 +106,12 @@ static void xsc_nic_isolate_and_drop_modify(struct xsc_core_device *dev,
 	u16 caps = 0;
 	u16 caps_mask = 0;
 
-	if (xsc_get_pf_isolate_config(dev, true)) {
+	if (xsc_get_pf_isolate_config(dev, BOND_MODIFY_MAC)) {
 		caps = BIT(XSC_TBM_CAP_PF_ISOLATE_CONFIG);
 		caps_mask = BIT(XSC_TBM_CAP_PF_ISOLATE_CONFIG);
 	}
 
-	if (xsc_get_mac_drop_config(dev, true)) {
+	if (xsc_get_mac_drop_config(dev, BOND_MODIFY_MAC)) {
 		caps |= BIT(XSC_TBM_CAP_MAC_DROP_CONFIG);
 		caps_mask |= BIT(XSC_TBM_CAP_MAC_DROP_CONFIG);
 	}
@@ -110,7 +136,7 @@ int xsc_modify_nic_vport_context(struct xsc_core_device *dev, void *in,
 		xsc_core_err(dev, "fail to modify nic vport err=%d status=%d\n",
 			     err, out.hdr.status);
 	}
-	return err;
+	return out.hdr.status;
 }
 
 int xsc_modify_nic_vport_min_inline(struct xsc_core_device *dev,
@@ -479,8 +505,8 @@ int xsc_nic_vport_modify_mc_mac(struct xsc_core_device *xdev, u8 *mac, u8 action
 	err = xsc_cmd_exec(xdev, &in, sizeof(in), &out, sizeof(out));
 
 	if (err || (out.hdr.status && out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED)) {
-		xsc_core_err(xdev, "Failed to mod mc mac err=%d out.status=%u",
-			     err, out.hdr.status);
+		xsc_core_err(xdev, "Failed to mod mc mac, action=%d err=%d out.status=%u",
+			     action, err, out.hdr.status);
 		return -ENOEXEC;
 	}
 

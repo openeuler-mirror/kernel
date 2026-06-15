@@ -106,7 +106,6 @@ static long _prgrmmbl_cc_ctrl_ioctl(struct file *filp, unsigned int cmd, unsigne
 	struct xsc_bdf_file *bdf_file;
 	int err;
 
-	err = TRY_NEXT_CB;
 	file = filp->private_data;
 
 	bdf_file = file->root_bdf;
@@ -117,8 +116,10 @@ static long _prgrmmbl_cc_ctrl_ioctl(struct file *filp, unsigned int cmd, unsigne
 
 	if (!xsc_prgrmmble_cc_ctrl_is_supported(bdf_file->xdev)) {
 		xsc_core_err(bdf_file->xdev, "%s: programmable cc is not supported!\n", __func__);
-		return err;
+		return -EPERM;
 	}
+
+	err = -ENXIO;
 
 	list_for_each_entry(p, &g_prgrmmbl_cc_ctrl_cbs, node) {
 		if (p->cb) {
@@ -128,7 +129,7 @@ static long _prgrmmbl_cc_ctrl_ioctl(struct file *filp, unsigned int cmd, unsigne
 		}
 	}
 
-	return err;
+	return err != TRY_NEXT_CB ? err : -ENXIO;
 }
 
 static const struct file_operations g_prgrmmbl_cc_ctrl_fops = {

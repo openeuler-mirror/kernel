@@ -15,24 +15,24 @@
 
 static inline void xsc_iae_lock(struct xsc_core_device *dev, int grp)
 {
-	spin_lock_bh(&get_xsc_res(dev)->iae_lock[grp]);
+	spin_lock_bh(&get_xsc_res(dev)->iae_lock[dev->pcie_no][grp]);
 }
 
 static inline void xsc_iae_unlock(struct xsc_core_device *dev, int grp)
 {
-	spin_unlock_bh(&get_xsc_res(dev)->iae_lock[grp]);
+	spin_unlock_bh(&get_xsc_res(dev)->iae_lock[dev->pcie_no][grp]);
 }
 
 static inline int xsc_iae_idx_get(struct xsc_core_device *dev, int grp)
 {
-	return get_xsc_res(dev)->iae_idx[grp];
+	return get_xsc_res(dev)->iae_idx[dev->pcie_no][grp];
 }
 
 static inline int xsc_iae_grp_get(struct xsc_core_device *dev)
 {
 	struct xsc_resources *xres = get_xsc_res(dev);
 
-	return atomic_inc_return(&xres->iae_grp) & XSC_RES_IAE_GRP_MASK;
+	return atomic_inc_return(&xres->iae_grp[dev->pcie_no]) & xres->iae_grp_mask;
 }
 
 static int xsc_cmd_exec_create_mkey(struct xsc_core_device *xdev, void *in, void *out)
@@ -54,6 +54,11 @@ int xsc_create_mkey(struct xsc_core_device *xdev, void *in, void *out)
 	unsigned long flags;
 	struct xsc_resources *xres = get_xsc_res(xdev);
 	int ret = 0;
+
+	if (unlikely(xdev->state == XSC_DEVICE_STATE_INTERNAL_ERROR)) {
+		xsc_core_dbg(xdev, "Failed to create mkey.\n");
+		return -ENOLINK;
+	}
 
 	spin_lock_irqsave(&xres->lock, flags);
 	ret = xsc_cmd_exec_create_mkey(xdev, in, out);
@@ -81,6 +86,11 @@ int xsc_destroy_mkey(struct xsc_core_device *xdev, void *in, void *out)
 	struct xsc_resources *xres = get_xsc_res(xdev);
 	int ret = 0;
 
+	if (unlikely(xdev->state == XSC_DEVICE_STATE_INTERNAL_ERROR)) {
+		xsc_core_dbg(xdev, "Failed to destroy mkey.\n");
+		return 0;
+	}
+
 	spin_lock_irqsave(&xres->lock, flags);
 	ret = xsc_cmd_exec_destroy_mkey(xdev, in, out);
 	spin_unlock_irqrestore(&xres->lock, flags);
@@ -91,12 +101,13 @@ static int xsc_cmd_exec_reg_mr(struct xsc_core_device *dev, void *in, void *out)
 {
 	struct xsc_register_mr_mbox_in *req = in;
 	struct xsc_register_mr_mbox_out *resp = out;
-	u32 mtt_base;
+	u32 mtt_base = 0;
 	u64 va = be64_to_cpu(req->req.va_base);
 	u32 key = be32_to_cpu(req->req.mkey);
 	u32 mpt_idx = xsc_mkey_to_idx(dev, key);
 	int pa_num = be32_to_cpu(req->req.pa_num);
 	int iae_idx, iae_grp;
+	struct xsc_core_device *pf_dev;
 
 	if (pa_num && alloc_mtt_entry(dev, pa_num, &mtt_base))
 		return -EINVAL;
@@ -111,9 +122,13 @@ static int xsc_cmd_exec_reg_mr(struct xsc_core_device *dev, void *in, void *out)
 	iae_grp = xsc_iae_grp_get(dev);
 	iae_idx = xsc_iae_idx_get(dev, iae_grp);
 
+	if (!xsc_core_is_pf(dev) && dev->pdev->physfn)
+		pf_dev = pci_get_drvdata(dev->pdev->physfn);
+	else
+		pf_dev = dev;
 	xsc_iae_lock(dev, iae_grp);
-	xsc_set_mpt(dev, iae_idx, mtt_base, &req->req);
-	xsc_set_mtt(dev, iae_idx, mtt_base, &req->req);
+	xsc_set_mpt(pf_dev, iae_idx, mtt_base, &req->req);
+	xsc_set_mtt(pf_dev, iae_idx, mtt_base, &req->req);
 	xsc_iae_unlock(dev, iae_grp);
 
 	resp->hdr.status = 0;
@@ -128,6 +143,11 @@ void xsc_sync_mr_to_fw(struct xsc_core_device *dev)
 	int max_sync_mr_num;
 	int mr_num = 0;
 	struct xsc_resources *xres = get_xsc_res(dev);
+
+	if (unlikely(dev->state == XSC_DEVICE_STATE_INTERNAL_ERROR)) {
+		xsc_core_dbg(dev, "Failed to sync mr to fw.\n");
+		return;
+	}
 
 	max_sync_mr_num = (dev->caps.max_cmd_in_len - sizeof(*in)) / sizeof(struct xsc_mr_info);
 	in = kvzalloc(dev->caps.max_cmd_in_len, GFP_KERNEL);
@@ -171,6 +191,11 @@ void xsc_sync_mr_from_fw(struct xsc_core_device *dev)
 	struct xsc_resources *xres = get_xsc_res(dev);
 	u32 mpt_idx = 0;
 
+	if (unlikely(dev->state == XSC_DEVICE_STATE_INTERNAL_ERROR)) {
+		xsc_core_dbg(dev, "Failed to sync mr from fw.\n");
+		return;
+	}
+
 	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_SYNC_MR_FROM_FW);
 	out = kvzalloc(dev->caps.max_cmd_out_len, GFP_KERNEL);
 	if (!out)
@@ -209,6 +234,11 @@ out:
 
 int xsc_reg_mr(struct xsc_core_device *xdev, void *in, void *out)
 {
+	if (unlikely(xdev->state == XSC_DEVICE_STATE_INTERNAL_ERROR)) {
+		xsc_core_dbg(xdev, "Failed to reg mr.\n");
+		return -ENOLINK;
+	}
+
 	return xsc_cmd_exec_reg_mr(xdev, in, out);
 }
 
@@ -227,6 +257,11 @@ static int xsc_cmd_exec_dereg_mr(struct xsc_core_device *dev, void *in, void *ou
 	resp->hdr.status = -EINVAL;
 
 	mpt_idx = be32_to_cpu(req->mkey);
+	if (mpt_idx >= get_xsc_res(dev)->max_mpt_num) {
+		xsc_core_err(dev, "mpt idx is invalid, mpt_idx=%d\n", mpt_idx);
+		return -EFAULT;
+	}
+
 	xsc_core_info(dev, "mpt idx:%u\n", mpt_idx);
 
 	/*clear mpt entry*/
@@ -257,6 +292,11 @@ static int xsc_cmd_exec_dereg_mr(struct xsc_core_device *dev, void *in, void *ou
 
 int xsc_dereg_mr(struct xsc_core_device *xdev, void *in, void *out)
 {
+	if (unlikely(xdev->state == XSC_DEVICE_STATE_INTERNAL_ERROR)) {
+		xsc_core_dbg(xdev, "Failed to dereg mr.\n");
+		return 0;
+	}
+
 	return xsc_cmd_exec_dereg_mr(xdev, in, out);
 }
 
@@ -316,6 +356,11 @@ int xsc_cmd_write_reg_directly(struct xsc_core_device *dev, void *in, int in_siz
 	hdr = (struct xsc_inbox_hdr *)in;
 	opcode = be16_to_cpu(hdr->opcode);
 	xsc_core_dbg(dev, "opcode: %x\n", opcode);
+
+	if (unlikely(dev->state == XSC_DEVICE_STATE_INTERNAL_ERROR)) {
+		xsc_core_dbg(dev, "Failed to write reg directly.\n");
+		return 0;
+	}
 
 	spin_lock_irqsave(&dev->reg_access_lock, flags);
 	switch (opcode) {

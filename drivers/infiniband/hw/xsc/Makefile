@@ -4,8 +4,8 @@
 
 ccflags-y := -I$(srctree)/drivers/net/ethernet/yunsilicon/xsc
 ccflags-y += -Wno-implicit-fallthrough
-ifeq ($(USE_INTERNAL_IB_CORE), 1)
-	ccflags-y += -include /usr/src/ofa_kernel/include/rdma/ib_umem.h
+ifeq ($(USE_IB_CORE_EX), 1)
+	ccflags-y += -I$(IB_CORE_EX_BUILD_PATH)/include
 endif
 
 ifeq ($(HAVE_TO_USE_M_IB_CORE), 1)
@@ -16,8 +16,5 @@ endif
 obj-$(CONFIG_INFINIBAND_XSC) += xsc_ib.o
 
 xsc_ib-y := main.o xsc_rdma_ctrl.o xsc_rdma_prgrmmbl_cc_ctrl.o cq.o qp.o mem.o mr.o ah.o \
-		counters.o devx.o ib_umem_ex.o\
-		rtt.o xsc_ib_sysfs.o
-
-xsc_ib-$(CONFIG_XSC_PEER_SUPPORT) += peer_mem.o
-
+		counters.o devx.o dmabuf.o\
+		rtt.o xsc_ib_sysfs.o xsc_sample_ctrl.o srq.o

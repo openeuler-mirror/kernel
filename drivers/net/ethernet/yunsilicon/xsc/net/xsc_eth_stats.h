@@ -38,6 +38,7 @@ struct xsc_rq_stats {
 	u64 wqe_err;
 	u64 oversize_pkts_sw_drop;
 	u64 oversize_pkts_err;
+	u64 unknown_multicast;
 	u64 buff_alloc_err;
 	u64 cache_reuse;
 	u64 cache_full;
@@ -49,6 +50,10 @@ struct xsc_rq_stats {
 	u64 cache_rdc;
 	u64 dim_us;
 	u64 dim_pkts;
+	u64 strip_vlan_pkts;
+	/* arp filter */
+	u64 arp_request_smac_0;
+	u64 arp_reply_smac_0;
 };
 
 struct xsc_sq_stats {
@@ -64,6 +69,7 @@ struct xsc_sq_stats {
 	/* less likely accessed in data path */
 	u64 csum_none;
 	u64 stopped;
+	u64 room;
 	u64 dropped;
 	u64 xmit_more;
 	/* dirtied @completion */
@@ -76,6 +82,10 @@ struct xsc_sq_stats {
 	u64 skb_linear;
 	u64 dim_us;
 	u64 dim_pkts;
+	/* arp filter */
+	u64 arp_reply_err_drop;
+	u64 arp_request_smac_0;
+	u64 arp_reply_smac_0;
 };
 
 struct xsc_ch_stats {
@@ -123,6 +133,7 @@ struct xsc_sw_stats {
 	u64 tx_csum_partial;
 	u64 tx_csum_partial_inner;
 	u64 tx_queue_stopped;
+	u64 tx_queue_room;
 	u64 tx_queue_dropped;
 	u64 tx_xmit_more;
 	u64 tx_cqes;
@@ -133,13 +144,17 @@ struct xsc_sw_stats {
 	u64 tx_dim_pkts;
 	u64 txdone_skb_null;
 	u64 txdone_skb_refcnt_err;
-	u64 skb_linear;
+	u64 tx_skb_linear;
+	u64 tx_arp_reply_err_drop;
+	u64 tx_arp_request_smac_0;
+	u64 tx_arp_reply_smac_0;
 	u64 rx_cqes;
 	u64 rx_cqe_err;
 	u64 rx_wqes;
 	u64 rx_wqe_err;
 	u64 rx_oversize_pkts_sw_drop;
 	u64 rx_oversize_pkts_err;
+	u64 rx_unknown_multicast;
 	u64 rx_buff_alloc_err;
 	u64 rx_cache_reuse;
 	u64 rx_cache_full;
@@ -151,6 +166,9 @@ struct xsc_sw_stats {
 	u64 rx_cache_rdc;
 	u64 rx_dim_us;
 	u64 rx_dim_pkts;
+	u64 rx_strip_vlan_pkts;
+	u64 rx_arp_request_smac_0;
+	u64 rx_arp_reply_smac_0;
 	u64 ch_events;
 	u64 ch_poll;
 	u64 ch_poll_0;
@@ -178,10 +196,16 @@ struct xsc_stats {
 extern const struct xsc_stats_grp xsc_stats_grps[];
 extern const int xsc_num_stats_grps;
 
-int xsc_get_prs_chk_err_stats_count(struct xsc_adapter *adapter);
-void xsc_get_prs_chk_err_stats_strings(struct xsc_adapter *adapter, u8 *data);
-int xsc_fill_prs_chk_err_stats(struct xsc_adapter *adapter, u64 *data);
+extern const struct xsc_stats_grp xsc_rep_stats_grps[];
+extern const int xsc_rep_num_stats_grps;
 
-void xsc_fold_sw_stats64(struct xsc_adapter *adapter, struct rtnl_link_stats64 *s);
+extern const struct xsc_stats_grp xsc_sw_stats_grps[];
+extern const int xsc_num_sw_stats_grps;
+
+int xsc_get_phy_chk_err_stats_count(struct xsc_adapter *adapter);
+void xsc_get_phy_chk_err_stats_strings(struct xsc_adapter *adapter, u8 *data);
+int xsc_fill_phy_chk_err_stats(struct xsc_adapter *adapter, u64 *data);
+
+void xsc_get_stats(struct net_device *netdev, struct rtnl_link_stats64 *stats);
 
 #endif /* XSC_EN_STATS_H */

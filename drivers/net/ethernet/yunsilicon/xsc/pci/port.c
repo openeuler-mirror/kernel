@@ -248,17 +248,11 @@ int xsc_query_module_eeprom_by_page(struct xsc_core_device *dev,
 
 	switch (module_id) {
 	case XSC_MODULE_ID_SFP:
-		if (params->page > 0)
-			return -EINVAL;
-		break;
 	case XSC_MODULE_ID_QSFP:
 	case XSC_MODULE_ID_QSFP28:
 	case XSC_MODULE_ID_QSFP_PLUS:
 	case XSC_MODULE_ID_QSFP_DD:
 	case XSC_MODULE_ID_QSFP_PLUS_CMIS:
-		if (params->page > 3)
-			return -EINVAL;
-		break;
 	case XSC_MODULE_ID_DSFP:
 		break;
 	default:
@@ -276,3 +270,20 @@ int xsc_query_module_eeprom_by_page(struct xsc_core_device *dev,
 }
 EXPORT_SYMBOL_GPL(xsc_query_module_eeprom_by_page);
 
+/* for hongshan 4x25 special, set optical module power state */
+int xsc_set_optical_power_state(struct xsc_core_device *xdev, u32 power_state)
+{
+	union {
+		struct {
+			u16 power_state;
+			u16 func_id;
+		};
+		u32 raw;
+	} cmd;
+
+	cmd.func_id = xdev->glb_func_id;
+	cmd.power_state = power_state ? OPTICAL_POWER_ON : OPTICAL_POWER_OFF;
+	*(u32 *)(xdev->bar + OPTICAL_POWER_STATE_ADDR + xdev->pf_id * sizeof(cmd.raw)) = cmd.raw;
+
+	return 0;
+}

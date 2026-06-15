@@ -74,9 +74,7 @@ static void xsc_free_irq(struct xsc_core_device *xdev, unsigned int vector)
 
 	irqn = pci_irq_vector(xdev->pdev, vector);
 	disable_irq(irqn);
-
-	if (xsc_fw_is_available(xdev))
-		free_irq(irqn, xdev);
+	free_irq(irqn, xdev);
 }
 
 static void xsc_dma_read_msix_fini(struct xsc_core_device *xdev)
@@ -115,26 +113,58 @@ void mask_cpu_by_node(int node, struct cpumask *dstp)
 }
 EXPORT_SYMBOL(mask_cpu_by_node);
 
+unsigned int xsc_cpumask_local_loop(unsigned int i, int node)
+{
+	int cpu;
+	unsigned int local_cpu_cnt = 0;
+
+	if (node >= 0 && node <= num_online_nodes())
+		for_each_cpu_and(cpu, cpumask_of_node(node), cpu_online_mask)
+			local_cpu_cnt++;
+
+	if (node == -1 || local_cpu_cnt == 0) {
+		i %= num_online_cpus();
+		for_each_cpu(cpu, cpu_online_mask)
+			if (i-- == 0)
+				return cpu;
+	} else {
+		i %= local_cpu_cnt;
+		/* NUMA loop. */
+		for_each_cpu_and(cpu, cpumask_of_node(node), cpu_online_mask)
+			if (i-- == 0)
+				return cpu;
+	}
+
+	return 0xffffffff;
+}
+EXPORT_SYMBOL(xsc_cpumask_local_loop);
+
 static int set_comp_irq_affinity_hint(struct xsc_core_device *dev, int i)
 {
 	struct xsc_eq_table *table = &dev->dev_res->eq_table;
 	int vecidx = table->eq_vec_comp_base + i;
 	struct xsc_eq *eq = xsc_eq_get(dev, i);
-	unsigned int irqn;
+	unsigned int irqn, cpu;
 	int ret;
 
 	irqn = pci_irq_vector(dev->pdev, vecidx);
 	if (!zalloc_cpumask_var(&eq->mask, GFP_KERNEL)) {
-		xsc_core_err(dev, "zalloc_cpumask_var rx cpumask failed");
+		xsc_core_err(dev, "zalloc_cpumask_var rx cpumask failed\n");
 		return -ENOMEM;
 	}
 
 	if (!zalloc_cpumask_var(&dev->xps_cpumask, GFP_KERNEL)) {
-		xsc_core_err(dev, "zalloc_cpumask_var tx cpumask failed");
+		xsc_core_err(dev, "zalloc_cpumask_var tx cpumask failed\n");
 		return -ENOMEM;
 	}
 
-	mask_cpu_by_node(dev->priv.numa_node, eq->mask);
+	cpu = xsc_cpumask_local_loop(i, dev->priv.numa_node);
+	if (cpu == 0xffffffff) {
+		xsc_core_err(dev, "%s use irq %d getting cpu from node %d failed",
+			     __func__, i, dev->priv.numa_node);
+		return -EINVAL;
+	}
+	cpumask_set_cpu(cpu, eq->mask);
 	ret = irq_set_affinity_hint(irqn, eq->mask);
 
 	return ret;
@@ -198,14 +228,52 @@ xsc_comp_irq_get_affinity_mask(struct xsc_core_device *dev, int vector)
 }
 EXPORT_SYMBOL(xsc_comp_irq_get_affinity_mask);
 
+static int xsc_cmd_alloc_msix_res(struct xsc_core_device *dev)
+{
+	struct xsc_alloc_msix_res_mbox_in in;
+	struct xsc_alloc_msix_res_mbox_out out;
+	int err;
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_ALLOC_MSIX_RES);
+	in.cpu_num = cpu_to_be16(num_online_cpus());
+
+	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (err || out.hdr.status) {
+		if (out.hdr.status != XSC_CMD_STATUS_NOT_SUPPORTED) {
+			xsc_core_err(dev, "Failed to alloc msix res, err=%d, status=%d\n",
+				     err, out.hdr.status);
+			err = -ENOEXEC;
+		} else {
+			xsc_core_info(dev, "Not support alloc msix res cmd\n");
+			err = 0;
+		}
+		goto out;
+	}
+	dev->caps.msix_base = be16_to_cpu(out.msix_base);
+	dev->caps.msix_num = be16_to_cpu(out.msix_num);
+
+	xsc_core_info(dev, "cpu_num=%d, msix_base=%d, msix_num=%d\n",
+		      be16_to_cpu(in.cpu_num), dev->caps.msix_base, dev->caps.msix_num);
+
+out:
+	return err;
+}
+
 static int xsc_alloc_irq_vectors(struct xsc_core_device *dev)
 {
 	struct xsc_dev_resource *dev_res = dev->dev_res;
 	struct xsc_eq_table *table = &dev_res->eq_table;
-	int nvec = dev->caps.msix_num;
+	int nvec = 0;
 	int nvec_base;
 	int err;
 
+	err = xsc_cmd_alloc_msix_res(dev);
+	if (err)
+		return err;
+
+	nvec = dev->caps.msix_num;
 	if (xsc_core_is_pf(dev))
 		nvec_base = XSC_EQ_VEC_COMP_BASE;
 	else
@@ -245,9 +313,6 @@ err_free_irq_info:
 static void xsc_free_irq_vectors(struct xsc_core_device *dev)
 {
 	struct xsc_dev_resource *dev_res = dev->dev_res;
-
-	if (!xsc_fw_is_available(dev))
-		return;
 
 	pci_free_irq_vectors(dev->pdev);
 	kfree(dev_res->irq_info);
@@ -342,6 +407,9 @@ static irqreturn_t xsc_cmd_handler(int irq, void *arg)
 	struct xsc_core_device *dev = (struct xsc_core_device *)arg;
 	int err;
 
+#ifdef XSC_DEBUG
+	xsc_core_dbg(dev, "cmdq hint irq: %d\n", irq);
+#endif
 	disable_irq_nosync(dev->cmd.irqn);
 	err = xsc_cmd_err_handler(dev);
 	if (!err)
@@ -371,24 +439,24 @@ static void xsc_free_irq_for_cmdq(struct xsc_core_device *dev)
 
 static void xsc_change_to_share_mode(struct xsc_core_device *dev)
 {
-	write_lock(&dev->board_info->mr_sync_lock);
+	down_write(&dev->board_info->mr_sync_lock);
 	if (dev->board_info->resource_access_mode == EXCLUSIVE_MODE) {
 		xsc_sync_mr_to_fw(dev);
 		dev->board_info->resource_access_mode = SHARE_MODE;
 		xsc_destroy_res(dev);
 	}
-	write_unlock(&dev->board_info->mr_sync_lock);
+	up_write(&dev->board_info->mr_sync_lock);
 }
 
 static void xsc_change_to_exclusive_mode(struct xsc_core_device *dev)
 {
-	write_lock(&dev->board_info->mr_sync_lock);
+	down_write(&dev->board_info->mr_sync_lock);
 	if (dev->board_info->resource_access_mode == SHARE_MODE) {
 		xsc_create_res(dev);
 		xsc_sync_mr_from_fw(dev);
 		dev->board_info->resource_access_mode = EXCLUSIVE_MODE;
 	}
-	write_unlock(&dev->board_info->mr_sync_lock);
+	up_write(&dev->board_info->mr_sync_lock);
 }
 
 static void xsc_event_work(struct work_struct *work)
@@ -398,6 +466,8 @@ static void xsc_event_work(struct work_struct *work)
 	struct xsc_event_query_type_mbox_out out;
 	struct xsc_core_device *dev = container_of(work, struct xsc_core_device, event_work);
 	u8 event;
+	void (*handler)(void *xdev) = NULL;
+	int srcu_idx;
 
 	/*query cmd_type cmd*/
 	memset(&in, 0, sizeof(in));
@@ -412,9 +482,20 @@ static void xsc_event_work(struct work_struct *work)
 
 	event = out.ctx.resp_cmd_type;
 	while (event) {
-		if (event & XSC_CMD_EVENT_RESP_CHANGE_LINK) {
-			if (dev->link_event_handler)
-				dev->link_event_handler(dev);
+		if (event & XSC_CMD_EVENT_CHANGE_PORT_PRESENT) {
+			srcu_idx = srcu_read_lock(&dev->srcu);
+			handler = srcu_dereference(dev->port_present_event_handler, &dev->srcu);
+			if (handler)
+				handler(dev);
+			srcu_read_unlock(&dev->srcu, srcu_idx);
+			xsc_core_dbg(dev, "event cmdtype=%04x\n", out.ctx.resp_cmd_type);
+			event &= ~XSC_CMD_EVENT_CHANGE_PORT_PRESENT;
+		} else if (event & XSC_CMD_EVENT_RESP_CHANGE_LINK) {
+			srcu_idx = srcu_read_lock(&dev->srcu);
+			handler = srcu_dereference(dev->link_event_handler, &dev->srcu);
+			if (handler)
+				handler(dev);
+			srcu_read_unlock(&dev->srcu, srcu_idx);
 			xsc_core_dbg(dev, "event cmdtype=%04x\n", out.ctx.resp_cmd_type);
 			event &= ~XSC_CMD_EVENT_RESP_CHANGE_LINK;
 		} else if (event & XSC_CMD_EVENT_RESP_TEMP_WARN) {
@@ -448,7 +529,7 @@ static irqreturn_t xsc_event_handler(int irq, void *arg)
 
 	xsc_core_dbg(dev, "cmd event hint irq: %d\n", irq);
 
-	schedule_work(&dev->event_work);
+	queue_work(dev->event_wq, &dev->event_work);
 
 	return IRQ_HANDLED;
 }
@@ -518,12 +599,18 @@ int xsc_irq_eq_create(struct xsc_core_device *dev)
 		goto err_request_cmd_irq;
 	}
 
+	dev->event_wq = create_singlethread_workqueue("xsc_event");
+	if (!dev->event_wq) {
+		xsc_core_err(dev, "failed to create event wq\n");
+		goto err_create_event_wq;
+	}
+	INIT_WORK(&dev->event_work, xsc_event_work);
+
 	err = xsc_request_irq_for_event(dev);
 	if (err) {
 		xsc_core_err(dev, "failed to request irq for event, err=%d\n", err);
 		goto err_request_event_irq;
 	}
-	INIT_WORK(&dev->event_work, xsc_event_work);
 
 	if (dev->caps.msix_enable && xsc_core_is_pf(dev)) {
 		err = xsc_dma_read_msix_init(dev);
@@ -553,6 +640,8 @@ err_set_affinity:
 err_dma_read_msix:
 	xsc_free_irq_for_event(dev);
 err_request_event_irq:
+	destroy_workqueue(dev->event_wq);
+err_create_event_wq:
 	xsc_free_irq_for_cmdq(dev);
 err_request_cmd_irq:
 	free_comp_eqs(dev);
@@ -575,9 +664,62 @@ int xsc_irq_eq_destroy(struct xsc_core_device *dev)
 
 	xsc_dma_read_msix_fini(dev);
 	xsc_free_irq_for_event(dev);
+	destroy_workqueue(dev->event_wq);
 	xsc_free_irq_for_cmdq(dev);
 	xsc_free_irq_vectors(dev);
+	xsc_cmd_use_polling(dev);
 
 	return 0;
 }
 
+int xsc_set_msix_vec_count(struct xsc_core_device *dev, int vf_id, int msix_vec_count)
+{
+	struct xsc_set_msix_vec_count_mbox_in in;
+	struct xsc_set_msix_vec_count_mbox_out out;
+	struct xsc_caps *caps = &dev->caps;
+	int total_msix, min_msix, max_msix;
+	int err;
+
+	if (!xsc_core_is_pf(dev))
+		return -EOPNOTSUPP;
+
+	total_msix = caps->total_dynamic_vf_msix;
+	if (!total_msix)
+		return 0;
+
+	min_msix = caps->min_dynamic_vf_msix;
+	max_msix = caps->max_dynamic_vf_msix;
+
+	xsc_core_info(dev,
+		      "vf_id:%d, msix_vec_count:%d, total_msix:%d, min_msix:%d, max_msix:%d\n",
+		      vf_id, msix_vec_count, total_msix, min_msix, max_msix);
+	if (msix_vec_count < min_msix) {
+		xsc_core_err(dev, "vf_id:%d, msix count %d less than supported min_msix:%d",
+			     vf_id, msix_vec_count, min_msix);
+		return -EINVAL;
+	}
+
+	if (msix_vec_count > max_msix) {
+		xsc_core_err(dev, "vf_id:%d, msix count %d greater than supported max_msix:%d",
+			     vf_id, msix_vec_count, max_msix);
+		return -EOVERFLOW;
+	}
+
+	memset(&in, 0, sizeof(in));
+	memset(&out, 0, sizeof(out));
+	in.hdr.opcode = cpu_to_be16(XSC_CMD_OP_SET_MSIX_VEC_COUNT);
+	in.vf_id = cpu_to_be16(vf_id);
+	in.msix_count = cpu_to_be16(msix_vec_count);
+	in.other_func = 1;
+
+	err = xsc_cmd_exec(dev, &in, sizeof(in), &out, sizeof(out));
+	if (err || out.hdr.status) {
+		xsc_core_err(dev, "xsc_cmd_exec set msix vec count failed err:%d, status:%d\n",
+			     err, out.hdr.status);
+		if (out.hdr.status)
+			err = -EINVAL;
+		return err;
+	}
+
+	return 0;
+}
