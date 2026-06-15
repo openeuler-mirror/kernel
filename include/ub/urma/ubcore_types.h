@@ -160,6 +160,7 @@ struct ubcore_ueid_cfg {
 	guid_t guid;
 };
 
+
 struct ubcore_devid {
 	uint8_t raw[UBCORE_DEVID_SIZE];
 };
@@ -3352,10 +3353,12 @@ enum ubcore_hash_table_type {
 	UBCORE_HT_RM_TP_ID, /* key: seid + deid + tag */
 	UBCORE_HT_RC_TP_ID, /* seid + deid + sjettyid + djettyid + tag */
 	UBCORE_HT_UTP_ID, /* key: seid + deid + tag */
-	UBCORE_HT_TPID_LIST, /* key: seid + deid + trans_mode + tp_type + link_type */
+	UBCORE_HT_TPID_LIST, /* key: seid + deid + trans_mode + tp_type
+				 + link_type + local_cna + peer_cna */
 	UBCORE_HT_TPID_STATE, /* key: tpid */
-	UBCORE_HT_TPID_REUSE, /* key: seid + deid + trans_mode + tp_type + link_type +
-							 stag/sjettyid + dtag/djetty_id */
+	UBCORE_HT_TPID_REUSE, /* key: seid + deid + trans_mode + tp_type
+				 + link_type + local_cna + peer_cna
+				 + stag/sjettyid + dtag/djetty_id */
 	UBCORE_HT_NUM
 };
 
