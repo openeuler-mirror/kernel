@@ -9,13 +9,13 @@ Overview
 
 The ub_fwctl tool is primarily designed to provide functions including querying
 the configuration of UB common functions, the status and statistics of common modules,
-and information at the Die level. Ub_fwctl is integrated with the open-source fwtl framework,
+and information at the Die level. Ub_fwctl is integrated with the open-source fwctl framework,
 providing a custom user-mode command format for UB and supporting the common functionality of UB systems.
 
 The implemented driver is ub_fwctl, which includes the user-mode command line
 tool ubctl and kernel-mode driver ub_fwctl. After the ub_fwctl driver is loaded,
-a file such as ub_ctl is displayed in the /dev directory of the OS through the
-sysfs system. The user-mode program ubtl obtains file descriptors by calling
+a file such as ubctl is displayed in the /dev directory of the OS through the
+sysfs system. The user-mode program ubctl obtains file descriptors by calling
 open (/dev/fwctl/fwctlNN), and then communicates with the driver by calling ioctl.
 
 Function implementation scheme::
