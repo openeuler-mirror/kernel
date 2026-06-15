@@ -39,6 +39,43 @@ struct ubcore_route_list {
 	struct ubcore_route buf[UBCORE_MAX_ROUTE_NUM];
 };
 
+enum ubcore_topo_type_t {
+	UBCORE_TOPO_TYPE_FULLMESH_1D,
+	UBCORE_TOPO_TYPE_CLOS,
+};
+
+struct ubcore_node_id {
+	uint32_t super_node_id;
+	uint32_t node_id;
+};
+
+union ubcore_port_id {
+	struct {
+		uint8_t chip_id;
+		uint8_t die_id;
+		uint8_t port_idx;
+		uint8_t reserved;
+	};
+	uint64_t value;
+};
+
+struct ubcore_path {
+	union ubcore_port_id src_port;
+	union ubcore_port_id dst_port;
+	union ubcore_eid src_eid;
+	union ubcore_eid dst_eid;
+};
+
+struct ubcore_path_set {
+	enum ubcore_topo_type_t topo_type;
+	struct ubcore_node_id src_node;
+	struct ubcore_node_id dst_node;
+	uint32_t chip_count;
+	uint32_t die_count;
+	uint32_t path_count;
+	struct ubcore_path paths[MAX_PATH_NUM];
+};
+
 /**
  * Application specifies the device to allocate an context.
  * @param[in] dev: ubcore_device found by add ops in the client.
@@ -1129,6 +1166,21 @@ void ubcore_cgroup_uncharge(struct ubcore_cg_object *cg_obj,
  */
 int ubcore_get_route_list(struct ubcore_route *route_v,
 	struct ubcore_route_list *route_list);
+
+/**
+ * Get path set between two bonding eids.
+ * @param[in] src_bonding_eid: source bonding eid
+ * @param[in] dst_bonding_eid: dest bonding eid
+ * @param[in] tp_type: transport type
+ * @param[in] iodie_level: true for iodie level path
+ * @param[out] path_set: output path set
+ * @return: 0 on success, other value on error
+ */
+int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
+	union ubcore_eid *dst_bonding_eid,
+	enum ubcore_tp_type tp_type, bool iodie_level,
+	struct ubcore_path_set *path_set);
+
 int ubcore_get_topo_eid(uint32_t tp_type, union ubcore_eid *src_v_eid,
 	union ubcore_eid *dst_v_eid, union ubcore_eid *src_p_eid,
 	union ubcore_eid *dst_p_eid);
