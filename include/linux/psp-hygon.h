@@ -25,6 +25,8 @@
 #define CSV_EXT_CSV3_MULT_LUP_DATA	(1 << CSV_EXT_CSV3_MULT_LUP_DATA_BIT)
 #define CSV_EXT_CSV3_INJ_SECRET_BIT	1
 #define CSV_EXT_CSV3_INJ_SECRET		(1 << CSV_EXT_CSV3_INJ_SECRET_BIT)
+#define CSV_EXT_CSV3_LFINISH_EX_BIT	2
+#define CSV_EXT_CSV3_LFINISH_EX		(1 << CSV_EXT_CSV3_LFINISH_EX_BIT)
 
 /**
  * Guest/platform management commands for CSV
@@ -45,7 +47,7 @@ enum csv3_cmd {
 	CSV3_CMD_LAUNCH_ENCRYPT_VMCB		= 0x202,
 	/* Guest NPT(Nested Page Table) management commands */
 	CSV3_CMD_UPDATE_NPT			= 0x203,
-
+	CSV3_CMD_LAUNCH_FINISH_EX		= 0x204,
 	/* Guest migration commands */
 	CSV3_CMD_SEND_ENCRYPT_DATA		= 0x210,
 	CSV3_CMD_SEND_ENCRYPT_CONTEXT		= 0x211,
@@ -209,6 +211,21 @@ struct csv3_data_launch_encrypt_vmcb {
 } __packed;
 
 /**
+ * struct csv3_data_launch_finish_ex - CSV3_CMD_LAUNCH_FINISH_EX command
+ *
+ * @handle: handle assigned to the VM
+ * @reserved0: reserved field, for future use
+ * @host_data: the host supplied data
+ * @reserved1: reserved field, for future use
+ */
+struct csv3_data_launch_finish_ex {
+	u32 handle;			/* In */
+	u32 reserved0;			/* In */
+	u8  host_data[64];		/* In */
+	u8  reserved1[184];		/* In */
+} __packed;
+
+/**
  * struct csv3_data_update_npt - CSV3_CMD_UPDATE_NPT command
  *
  * @handle: handle assigned to the VM
@@ -262,11 +279,15 @@ struct csv3_data_set_guest_private_memory {
  * struct csv3_data_set_smr - CSV3_CMD_SET_SMR command parameters
  *
  * @smr_entry_size: size of SMR entry
+ * @smcr_flag: must be 0 for SMCR memory region
  * @nregions: number of memory regions
  * @regions_paddr: address of memory containing multiple memory regions
  */
 struct csv3_data_set_smr {
-	u32 smr_entry_size;		/* In */
+	union {
+		u32 smr_entry_size;	/* In */
+		u32 smcr_flag;		/* In */
+	};
 	u32 nregions;			/* In */
 	u64 regions_paddr;		/* In */
 } __packed;

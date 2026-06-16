@@ -1243,6 +1243,10 @@ struct kvm_ppc_resize_hpt {
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_MULT_LUP_DATA (1 << 1)
 /* support request to inject secret to CSV3 guest */
 #define KVM_CAP_HYGON_COCO_EXT_CSV3_INJ_SECRET    (1 << 2)
+/* support finish launch process by CSV3_CMD_LAUNCH_FINISH_EX firmware API */
+#define KVM_CAP_HYGON_COCO_EXT_CSV3_LFINISH_EX    (1 << 3)
+/* support userspace to request management of CSV3 shared pages */
+#define KVM_CAP_HYGON_COCO_EXT_CSV3_SP_MGR        (1 << 4)
 
 #define KVM_CAP_ARM_HW_DIRTY_STATE_TRACK 502
 
@@ -2437,6 +2441,7 @@ enum csv3_cmd_id {
 	KVM_CSV3_HANDLE_MEMORY,
 
 	KVM_CSV3_SET_GUEST_PRIVATE_MEMORY = 0xc8,
+	KVM_CSV3_LAUNCH_FINISH_EX = 0xc9,
 
 	KVM_CSV3_NR_MAX,
 };
@@ -2449,6 +2454,13 @@ struct kvm_csv3_launch_encrypt_data {
 	__u64 gpa;
 	__u64 uaddr;
 	__u32 len;
+};
+
+#define KVM_CSV3_HOST_DATA_SIZE 64
+
+struct kvm_csv3_launch_finish_ex {
+	__u8 host_data[KVM_CSV3_HOST_DATA_SIZE];
+	__u8 pad[16];
 };
 
 struct kvm_csv3_send_encrypt_data {
@@ -2483,12 +2495,72 @@ struct kvm_csv3_receive_encrypt_context {
 	__u32 trans_len;
 };
 
-#define KVM_CSV3_RELEASE_SHARED_MEMORY (0x0001)
-
+/**
+ * struct kvm_csv3_handle_memory - IOCTL data structure for CSV3 memory
+ *				   operations.
+ *
+ * This union is used to pass input and output parameters between userspace
+ * and kernel for KVM_CSV3 memory management commands.
+ *
+ * It supports two ioctl commands:
+ *   - KVM_CSV3_RELEASE_SHARED_MEMORY: Notify userspace VMM to madvise pages
+ *     as unused, releasing shared memory mappings.
+ *   - KVM_CSV3_GET_SHARED_MEMORY: Query how many pages are currently pinned
+ *     at a given GPA range.
+ *
+ * The union contains three nested structs:
+ *   - Input (for both commands)
+ *   - Output (for KVM_CSV3_RELEASE_SHARED_MEMORY)
+ *   - Output (for KVM_CSV3_GET_SHARED_MEMORY)
+ */
 struct kvm_csv3_handle_memory {
-	__u64 gpa;
-	__u32 num_pages;
-	__u32 opcode;
+	union {
+		/* Input of the ioctl command. */
+		/**
+		 * @gpa: The start guest physical address (GPA) to be handled.
+		 * @num_pages: The number of consecutive pages starting at
+		 *	       @gpa.
+		 * @opcode: The command ID to determine which operation to
+		 *	    perform.
+		 **/
+		struct {
+			__u64 gpa;
+			__u32 num_pages;
+#define KVM_CSV3_RELEASE_SHARED_MEMORY	0x0001
+#define KVM_CSV3_GET_SHARED_MEMORY	0x0002
+			__u32 opcode;
+		};
+		/* Output of ioctl command KVM_CSV3_RELEASE_SHARED_MEMORY. */
+		/**
+		 * @start_hva: The start host virtual address (HVA) that
+		 *	       userspace VMM should madvise as unused.
+		 * @unpinned: The number of pages that were successfully
+		 *	      unpinned and can now be madvised in userspace.
+		 * @unused0: Padding for alignment.
+		 * @handled0: The number of pages start from GPA are handled.
+		 *	      The userspace VMM need this information to move
+		 *	      forward.
+		 */
+		struct {
+			__u64 start_hva;
+			__u32 unpinned;
+			__u32 handled0;
+		};
+		/* Output of ioctl command KVM_CSV3_GET_SHARED_MEMORY. */
+		/**
+		 * @unused1: Padding for alignment.
+		 * @pinned: The number of pages currently pinned for the
+		 *	    specified GPA range.
+		 * @handled1: The number of pages start from GPA are handled.
+		 *	      The userspace VMM need this information to move
+		 *	      forward.
+		 */
+		struct {
+			__u64 unused1;
+			__u32 pinned;
+			__u32 handled1;
+		};
+	};
 };
 
 /* get tmi version */
