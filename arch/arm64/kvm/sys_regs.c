@@ -2401,7 +2401,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	DBG_BCR_BVR_WCR_WVR_EL1(0),
 	DBG_BCR_BVR_WCR_WVR_EL1(1),
 	{ SYS_DESC(SYS_MDCCINT_EL1), trap_debug_regs, reset_val, MDCCINT_EL1, 0 },
-	{ SYS_DESC(SYS_MDSCR_EL1), trap_debug_regs, reset_val, MDSCR_EL1, 0 },
+	{ SYS_DESC(SYS_MDSCR_EL1), trap_debug_regs, reset_val, MDSCR_EL1, 0,
+	  .pvm_access = trap_debug_regs },
 	DBG_BCR_BVR_WCR_WVR_EL1(2),
 	DBG_BCR_BVR_WCR_WVR_EL1(3),
 	DBG_BCR_BVR_WCR_WVR_EL1(4),
@@ -2418,14 +2419,21 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	DBG_BCR_BVR_WCR_WVR_EL1(15),
 
 	{ SYS_DESC(SYS_MDRAR_EL1), trap_raz_wi },
-	{ SYS_DESC(SYS_OSLAR_EL1), trap_oslar_el1 },
+	{ SYS_DESC(SYS_OSLAR_EL1), trap_oslar_el1,
+	  .pvm_access = trap_oslar_el1 },
 	{ SYS_DESC(SYS_OSLSR_EL1), trap_oslsr_el1, reset_val, OSLSR_EL1,
-		OSLSR_EL1_OSLM_IMPLEMENTED, .set_user = set_oslsr_el1, },
-	{ SYS_DESC(SYS_OSDLR_EL1), trap_raz_wi },
-	{ SYS_DESC(SYS_DBGPRCR_EL1), trap_raz_wi },
-	{ SYS_DESC(SYS_DBGCLAIMSET_EL1), trap_raz_wi },
-	{ SYS_DESC(SYS_DBGCLAIMCLR_EL1), trap_raz_wi },
-	{ SYS_DESC(SYS_DBGAUTHSTATUS_EL1), trap_dbgauthstatus_el1 },
+	  OSLSR_EL1_OSLM_IMPLEMENTED, .set_user = set_oslsr_el1,
+	  .pvm_access = trap_oslsr_el1, },
+	{ SYS_DESC(SYS_OSDLR_EL1), trap_raz_wi,
+	  .pvm_access = trap_raz_wi },
+	{ SYS_DESC(SYS_DBGPRCR_EL1), trap_raz_wi,
+	  .pvm_access = trap_raz_wi },
+	{ SYS_DESC(SYS_DBGCLAIMSET_EL1), trap_raz_wi,
+	  .pvm_access = trap_raz_wi },
+	{ SYS_DESC(SYS_DBGCLAIMCLR_EL1), trap_raz_wi,
+	  .pvm_access = trap_raz_wi },
+	{ SYS_DESC(SYS_DBGAUTHSTATUS_EL1), trap_dbgauthstatus_el1,
+	  .pvm_access = trap_dbgauthstatus_el1 },
 
 	/*
 	 * BRBE branch record sysreg address space is interleaved between
@@ -2738,8 +2746,10 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	{ SYS_DESC(SYS_ICC_HPPIR1_EL1), write_to_read_only },
 	{ SYS_DESC(SYS_ICC_SRE_EL1), access_gic_sre },
 
-	{ SYS_DESC(SYS_CONTEXTIDR_EL1), access_vm_reg, reset_val, CONTEXTIDR_EL1, 0 },
-	{ SYS_DESC(SYS_TPIDR_EL1), NULL, reset_unknown, TPIDR_EL1 },
+	{ SYS_DESC(SYS_CONTEXTIDR_EL1), access_vm_reg, reset_val, CONTEXTIDR_EL1,
+	  0, .pvm_access = access_rw },
+	{ SYS_DESC(SYS_TPIDR_EL1), NULL, reset_unknown, TPIDR_EL1,
+	  .pvm_access = access_rw },
 
 	{ SYS_DESC(SYS_ACCDATA_EL1), undef_access },
 
