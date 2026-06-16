@@ -39,7 +39,7 @@ MODULE_PARM_DESC(msg_retry, "support msg retry: 0(disable)");
 
 DECLARE_RWSEM(ub_bus_sem);
 
-#define UBUS_MOD_VERSION "2.0.0"
+#define UBUS_MOD_VERSION "2.0.1"
 #define UBC_GUID_VENDOR_SHIFT 48
 #define UBC_GUID_VENDOR_MASK GENMASK(15, 0)
 
@@ -368,7 +368,12 @@ static int ub_entity_probe(struct device *dev)
 	if (!ub_entity->is_mue) {
 		pue = ub_entity->pue;
 		entity_idx = ub_entity->entity_idx;
-		ub_virt_notify(pue, entity_idx, true);
+		ret = ub_virt_notify(pue, entity_idx, true);
+		if (ret) {
+			ub_add_retry_task(ub_entity, TASK_TYPE_ATTACH_RETRY);
+			ub_entity_put(ub_entity);
+			return -EAGAIN;
+		}
 	}
 
 	ret = __ub_entity_probe(drv, ub_entity);
