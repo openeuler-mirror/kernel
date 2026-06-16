@@ -560,9 +560,10 @@ static int ummu_def_domain_type(struct device *dev)
 	if (ret)
 		return ret;
 #endif
-	if (iommu_default_passthrough())
-		return IOMMU_DOMAIN_IDENTITY;
-	return 0;
+	if (!iommu_default_dma_strict())
+		return IOMMU_DOMAIN_DMA_FQ;
+
+	return IOMMU_DOMAIN_DMA;
 }
 
 static void ummu_remove_dev_pasid(struct device *dev,
