@@ -30,6 +30,8 @@
 #include <asm/perf_event.h>
 #include <asm/sysreg.h>
 
+#include <pvm/id_regs.h>
+
 #include <trace/events/kvm.h>
 
 #include "sys_regs.h"
@@ -178,6 +180,17 @@ static int set_ccsidr(struct kvm_vcpu *vcpu, u32 csselr, u32 val)
 	ccsidr[csselr] = val;
 
 	return 0;
+}
+
+static bool access_mpidr(struct kvm_vcpu *vcpu,
+			 struct sys_reg_params *p,
+			 const struct sys_reg_desc *r)
+{
+	if (p->is_write)
+		return write_to_read_only(vcpu, p, r);
+
+	p->regval = vcpu_read_sys_reg(vcpu, r->reg);
+	return true;
 }
 
 static bool access_rw(struct kvm_vcpu *vcpu,
@@ -1586,9 +1599,9 @@ static unsigned int aa32_id_visibility(const struct kvm_vcpu *vcpu,
 	/*
 	 * AArch32 ID registers are UNKNOWN if AArch32 isn't implemented at any
 	 * EL. Promote to RAZ/WI in order to guarantee consistency between
-	 * systems.
+	 * systems.  PVM does not support AArch32 at all.
 	 */
-	if (!kvm_supports_32bit_el0())
+	if (!kvm_supports_32bit_el0() || is_pvm_mode())
 		return REG_RAZ | REG_USER_WI;
 
 	return id_visibility(vcpu, r);
@@ -1613,6 +1626,29 @@ static bool access_id_reg(struct kvm_vcpu *vcpu,
 	if (vcpu_has_nv(vcpu))
 		access_nested_id_reg(vcpu, p, r);
 
+	return true;
+}
+
+static bool pvm_access_id_reg(struct kvm_vcpu *vcpu,
+			      struct sys_reg_params *p,
+			      const struct sys_reg_desc *r)
+{
+	if (p->is_write)
+		return write_to_read_only(vcpu, p, r);
+
+	p->regval = kvm_pvm_filter_id_reg(reg_to_encoding(r),
+					  read_id_reg(vcpu, r));
+	return true;
+}
+
+static bool pvm_access_raz_id_reg(struct kvm_vcpu *vcpu,
+				  struct sys_reg_params *p,
+				  const struct sys_reg_desc *r)
+{
+	if (p->is_write)
+		return write_to_read_only(vcpu, p, r);
+
+	p->regval = 0;
 	return true;
 }
 
@@ -2164,6 +2200,7 @@ static unsigned int elx2_visibility(const struct kvm_vcpu *vcpu,
 	.visibility = id_visibility,		\
 	.reset = kvm_read_sanitised_id_reg,	\
 	.val = 0,				\
+	.pvm_access = pvm_access_id_reg,	\
 }
 
 /* sys_reg_desc initialiser for known cpufeature ID registers */
@@ -2182,6 +2219,7 @@ static unsigned int elx2_visibility(const struct kvm_vcpu *vcpu,
 	.visibility = id_visibility,		\
 	.reset = kvm_read_sanitised_id_reg,	\
 	.val = mask,				\
+	.pvm_access = pvm_access_id_reg,	\
 }
 
 /*
@@ -2197,6 +2235,7 @@ static unsigned int elx2_visibility(const struct kvm_vcpu *vcpu,
 	.visibility = raz_visibility,			\
 	.reset = kvm_read_sanitised_id_reg,		\
 	.val = 0,					\
+	.pvm_access = pvm_access_raz_id_reg,		\
 }
 
 /*
@@ -2210,6 +2249,7 @@ static unsigned int elx2_visibility(const struct kvm_vcpu *vcpu,
 	.visibility = raz_visibility,		\
 	.reset = kvm_read_sanitised_id_reg,	\
 	.val = 0,				\
+	.pvm_access = pvm_access_raz_id_reg,	\
 }
 
 static bool access_sp_el1(struct kvm_vcpu *vcpu,
@@ -2441,6 +2481,7 @@ static int set_imp_id_reg(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r,
 	.set_user = set_imp_id_reg,			\
 	.reset = reset_imp_id_reg,			\
 	.val = mask,					\
+	.pvm_access = pvm_access_id_reg,		\
 }
 
 /*
@@ -2575,9 +2616,11 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	IMPLEMENTATION_ID(MIDR_EL1, GENMASK_ULL(31, 0)),
 #ifdef CONFIG_ARM64_HISI_IPIV
 	{ SYS_DESC(SYS_MPIDR_EL1),
-	  .reset = reset_mpidr, .reg = MPIDR_EL1, .set_user = set_mpidr},
+	  .reset = reset_mpidr, .reg = MPIDR_EL1,
+	  .set_user = set_mpidr, .pvm_access = access_mpidr },
 #else
-	{ SYS_DESC(SYS_MPIDR_EL1), NULL, reset_mpidr, MPIDR_EL1 },
+	{ SYS_DESC(SYS_MPIDR_EL1), NULL, reset_mpidr, MPIDR_EL1,
+	  .pvm_access = access_mpidr },
 #endif
 	IMPLEMENTATION_ID(REVIDR_EL1, GENMASK_ULL(63, 0)),
 
@@ -2637,13 +2680,15 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 		   ID_AA64PFR0_EL1_RAS |
 		   ID_AA64PFR0_EL1_GIC |
 		   ID_AA64PFR0_EL1_AdvSIMD |
-		   ID_AA64PFR0_EL1_FP), },
+		   ID_AA64PFR0_EL1_FP),
+	  .pvm_access = pvm_access_id_reg, },
 	{ SYS_DESC(SYS_ID_AA64PFR1_EL1),
 	  .access = access_id_reg,
 	  .get_user = get_id_reg,
 	  .set_user = set_id_aa64pfr1_el1,
 	  .reset = kvm_read_sanitised_id_reg,
-	  .val = ID_AA64PFR1_EL1_NMI},
+	  .val = ID_AA64PFR1_EL1_NMI,
+	  .pvm_access = pvm_access_id_reg, },
 	ID_WRITABLE(ID_AA64PFR2_EL1, ID_AA64PFR2_EL1_FPMR),
 	ID_UNALLOCATED(4,3),
 	ID_WRITABLE(ID_AA64ZFR0_EL1, ~ID_AA64ZFR0_EL1_RES0),
@@ -2672,7 +2717,8 @@ static const struct sys_reg_desc sys_reg_descs[] = {
 	  .val = ID_AA64DFR0_EL1_DoubleLock_MASK |
 		 ID_AA64DFR0_EL1_WRPs_MASK |
 		 ID_AA64DFR0_EL1_PMUVer_MASK |
-		 ID_AA64DFR0_EL1_DebugVer_MASK, },
+		 ID_AA64DFR0_EL1_DebugVer_MASK,
+	  .pvm_access = pvm_access_id_reg, },
 	ID_SANITISED(ID_AA64DFR1_EL1),
 	ID_UNALLOCATED(5,2),
 	ID_UNALLOCATED(5,3),
