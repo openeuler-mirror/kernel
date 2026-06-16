@@ -901,7 +901,7 @@ static const struct ubase_init_function ubase_init_func_map[] = {
 		ubase_ue_init, ubase_ue_uninit
 	},
 	{
-		"init usc", UBASE_SUP_URMA, 0,
+		"init usc", UBASE_SUP_NO_PMU, 0,
 		ubase_usc_init, ubase_usc_uninit
 	},
 	{
@@ -1207,6 +1207,11 @@ u32 ubase_get_hw_ver(struct auxiliary_device *adev)
 	case UBASE_DEV_ID_A_V2_UBOE_MUE:
 	case UBASE_DEV_ID_A_V2_UBOE_UE:
 		return UBASE_HW_VER_A_1;
+	case UBASE_DEV_ID_S_0_URMA_MUE:
+	case UBASE_DEV_ID_S_0_URMA_UE:
+	case UBASE_DEV_ID_S_0_PMU_MUE:
+	case UBASE_DEV_ID_S_0_CDMA_MUE:
+		return UBASE_HW_VER_S_0;
 	default:
 		return UBASE_HW_VER_UNKNOWN;
 	}
