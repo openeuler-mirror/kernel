@@ -1206,6 +1206,7 @@ struct ubcore_vtp_cfg {
 		struct ubcore_utp *utp; // idx of dip
 		struct ubcore_ctp *ctp; /* valid when clan is true */
 	};
+	uint32_t upi;
 };
 
 struct ubcore_vtp {
@@ -1875,7 +1876,8 @@ union ubcore_jfs_wr_flag {
 		 */
 		uint32_t inline_flag : 1;
 		uint32_t db_bypass : 1;
-		uint32_t reserved : 24;
+		uint32_t udf : 1;
+		uint32_t reserved : 23;
 	} bs;
 	uint32_t value;
 };
