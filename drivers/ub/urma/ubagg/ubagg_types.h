@@ -62,9 +62,7 @@ struct ubagg_seg_info {
 
 // must be consistent with urma_bond_seg_info_out_t
 struct ubagg_seg_exchange_info {
-	struct ubagg_seg_info base;
 	struct ubagg_seg_info slaves[UBAGG_DEV_MAX_NUM];
-	int dev_num;
 };
 
 struct ubagg_seg_hash_node {
@@ -84,7 +82,7 @@ struct ubagg_jetty_id {
 
 struct ubagg_jetty_exchange_info {
 	struct ubagg_jetty_id slaves[UBAGG_DEV_MAX_NUM];
-	bool is_multipath;
+	bool is_msn_enabled;
 	uint8_t enabled_indices[UBAGG_DEV_MAX_NUM];
 	uint32_t enabled_count;
 	bool is_health_check_enable;

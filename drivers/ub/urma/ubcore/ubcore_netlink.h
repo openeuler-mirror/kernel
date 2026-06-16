@@ -99,6 +99,7 @@ struct ubcore_nl_message {
 
 struct ubcore_add_sip_req {
 	struct ubcore_net_addr netaddr;
+	uint32_t prefix_len;
 	char dev_name[UBCORE_MAX_DEV_NAME];
 	uint8_t port_cnt;
 	uint8_t port_id[UBCORE_MAX_PORT_CNT];

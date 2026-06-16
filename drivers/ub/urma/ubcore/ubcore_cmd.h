@@ -18,7 +18,6 @@
 #include <ub/urma/ubcore_perf.h>
 
 #include "ubcore_log.h"
-#include "ubcore_topo_info.h"
 
 struct ubcore_cmd_hdr {
 	uint32_t command;
@@ -43,9 +42,9 @@ enum ubcore_cmd {
 	UBCORE_CMD_EXPOSE_DEV_NS,
 	UBCORE_CMD_UNEXPOSE_DEV_NS,
 	UBCORE_CMD_SET_DEV_EID_NS,
-	UBCORE_CMD_GET_TOPO_INFO,
-	UBCORE_CMD_SET_GENL_PID,
+	UBCORE_CMD_GET_TOPO_INFO_RESERVE,
 	UBCORE_CMD_SET_SL,
+	UBCORE_CMD_SET_GENL_PID,
 	UBCORE_CMD_UVS_INIT_RES,
 	/* alpha netlink ops begin: */
 	UBCORE_CMD_QUERY_TP_REQ,
@@ -76,12 +75,20 @@ enum ubcore_cmd {
 	UBCORE_CMD_PERF_START,
 	UBCORE_CMD_PERF_STOP,
 	UBCORE_CMD_PERF_SHOW,
-	UBCORE_CMD_GET_V2P_RES,
 	UBCORE_CMD_SET_EID_NS_MODE,
 	UBCORE_CMD_SHOW_TPID_LIST,
 	UBCORE_CMD_SHOW_TPID_REUSE,
 	UBCORE_CMD_SHOW_SYSTEM,
 	UBCORE_CMD_MAX
+};
+
+struct ubcore_stats {
+	uint64_t tx_pkt;
+	uint64_t rx_pkt;
+	uint64_t tx_bytes;
+	uint64_t rx_bytes;
+	uint64_t tx_pkt_err;
+	uint64_t rx_pkt_err;
 };
 
 struct ubcore_cmd_query_stats {
@@ -90,14 +97,7 @@ struct ubcore_cmd_query_stats {
 		uint32_t type;
 		uint32_t key;
 	} in;
-	struct {
-		uint64_t tx_pkt;
-		uint64_t rx_pkt;
-		uint64_t tx_bytes;
-		uint64_t rx_bytes;
-		uint64_t tx_pkt_err;
-		uint64_t rx_pkt_err;
-	} out;
+	struct ubcore_stats out;
 };
 
 struct ubcore_cmd_query_res {
@@ -154,16 +154,6 @@ struct ubcore_cmd_set_eid_mode {
 		char dev_name[UBCORE_MAX_DEV_NAME];
 		bool eid_mode;
 	} in;
-};
-
-struct ubcore_cmd_topo_info {
-	struct {
-		int node_idx;
-	} in;
-	struct {
-		uint32_t node_num;
-		struct ubcore_topo_node topo_info;
-	} out;
 };
 
 /* record types streamed back during a tpid show dumpit */
