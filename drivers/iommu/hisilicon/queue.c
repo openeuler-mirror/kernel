@@ -299,8 +299,6 @@ static int ummu_mcmdq_init(struct ummu_device *ummu)
 		log2size = ummu->cap.mcmdq_log2size;
 	} else {
 		ummu->nr_mcmdq = 1UL << ummu->cap.mcmdq_log2num;
-		if (ummu->cap.options & UMMU_OPT_MCMDQ_DECREASE)
-			ummu->nr_mcmdq -= 1;
 		log2size = MCMDQ_MAX_SZ_SHIFT + order_base_2(
 				num_possible_cpus() / ummu->nr_mcmdq);
 	}
