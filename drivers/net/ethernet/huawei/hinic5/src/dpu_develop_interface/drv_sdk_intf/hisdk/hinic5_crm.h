@@ -18,7 +18,7 @@
 
 #include "mag_mpu_cmd_defs.h"
 
-#define HINIC5_DRV_VERSION "100.0.1.100"   /* driver version information */
+#define HINIC5_DRV_VERSION "100.0.1.102"   /* driver version information */
 #define HINIC5_DRV_DESC "Intelligent Network Interface Card Driver"     /* driver description */
 
 #define ARRAY_LEN(arr) ((int)((int)sizeof(arr) / (int)sizeof((arr)[0])))    /* macro for calculating array length */
