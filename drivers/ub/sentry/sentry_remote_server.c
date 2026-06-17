@@ -17,6 +17,7 @@
 #include <linux/kthread.h>
 #include <linux/sched.h>
 #include <linux/delay.h>
+#include <linux/workqueue.h>
 #include <linux/kallsyms.h>
 #include <linux/string.h>
 
@@ -32,61 +33,6 @@ struct sentry_remote_context sentry_remote_ctx;
 DEFINE_SPINLOCK(sentry_buf_lock);
 
 static DEFINE_MUTEX(sentry_msg_info_mutex);
-
-/**
- * send_msg_to_userspace - Send message to userspace with proper tracking
- * @msg: Message to send
- * @comm_type: Communication type (URMA or UVB)
- * @random_id: Random identifier for message tracking
- *
- * Return: 0 on success, negative error code on failure
- *
- * This function sends a message to userspace and tracks it using node message
- * info for acknowledgment handling.
- */
-int send_msg_to_userspace(struct sentry_msg_helper_msg *msg, union ubcore_eid dst_eid,
-			  enum SENTRY_REMOTE_COMM_TYPE comm_type, uint32_t random_id)
-{
-	int ret;
-	int node_idx = -1;
-	int die_index = -1;
-
-	if (comm_type == COMM_TYPE_URMA) {
-		match_index_by_remote_ub_eid(dst_eid, &node_idx, &die_index);
-	} else if (comm_type == COMM_TYPE_UVB) {
-		int i;
-
-		for (i = 0; i < g_server_cna_valid_num; i++) {
-			if (msg->helper_msg_info.remote_info.cna == g_server_cna_array[i]) {
-				node_idx = i;
-				break;
-			}
-		}
-	}
-
-	if (node_idx < 0) {
-		pr_err("Invalid cna: %u or eid: %s of msg, stop to send to userspace\n",
-		       msg->helper_msg_info.remote_info.cna,
-		       msg->helper_msg_info.remote_info.eid);
-		return -EINVAL;
-	}
-
-	mutex_lock(&sentry_msg_info_mutex);
-	if (sentry_remote_ctx.node_msg_info_list[node_idx].random_id != random_id) {
-		pr_info("Get new message from cna: %u, eid: %s\n",
-			msg->helper_msg_info.remote_info.cna,
-			msg->helper_msg_info.remote_info.eid);
-		sentry_remote_ctx.node_msg_info_list[node_idx].start_send_time = ktime_get_ns();
-		sentry_remote_ctx.node_msg_info_list[node_idx].msgid = smh_get_new_msg_id();
-		sentry_remote_ctx.node_msg_info_list[node_idx].random_id = random_id;
-	}
-	msg->start_send_time = sentry_remote_ctx.node_msg_info_list[node_idx].start_send_time;
-	msg->msgid = sentry_remote_ctx.node_msg_info_list[node_idx].msgid;
-	mutex_unlock(&sentry_msg_info_mutex);
-
-	ret = smh_message_send(msg, true);
-	return ret;
-}
 
 /**
  * send_msg_to_userspace_and_ack - Send message to userspace and wait for acknowledgment
@@ -116,15 +62,27 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 		return -EINVAL;
 	}
 
-	ret = send_msg_to_userspace(msg, dst_ubcore_eid, comm_type, random_id);
-	if (ret) {
-		pr_err("Failed to send remote message to userspace\n");
-		return ret;
-	}
-
 	/* Wait for acknowledgment from userspace */
 	for (i = 0; i < times; i++) {
 		uint64_t cur_time = ktime_get_ns();
+
+		ret = smh_message_send(msg, true);
+		if (ret == -EINVAL) {
+			pr_err("%s: Failed to send remote msg to userspace, ret is %d\n",
+				__func__, ret);
+			return ret;
+		}
+
+		if (ret && (ret == -ENOMEM || ret == -EAGAIN)) {
+			pr_err("%s: Failed to send remote msg to userspace for the %d-th time, ret is %d\n",
+				__func__, i, ret);
+			/*
+			 * smh_message_send may fail transiently.
+			 * Retry after a delay instead of aborting.
+			 */
+			msleep_interruptible(MILLISECONDS_OF_EACH_MDELAY);
+			continue;
+		}
 
 		ret = smh_message_get_ack(msg);
 		if (!ret) {
@@ -143,14 +101,9 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 		binary_ack.eid = dst_ubcore_eid;
 		binary_ack.res = msg->res;
 
-		if (comm_type == COMM_TYPE_URMA)
+		if (comm_type == COMM_TYPE_URMA) {
 			pr_info("Start to send urma ack msg to %s\n",
 					msg->helper_msg_info.remote_info.eid);
-		else
-			pr_info("Start to send uvb ack msg to %u\n",
-					msg->helper_msg_info.remote_info.cna);
-
-		if (comm_type == COMM_TYPE_URMA) {
 			/* Retry URMA acknowledgment sending */
 			for (j = 0; j < URMA_ACK_RETRY_NUM; j++) {
 				ret = urma_send(&binary_ack,
@@ -165,6 +118,8 @@ int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg,
 				msleep_interruptible(MILLISECONDS_OF_EACH_MDELAY);
 			}
 		} else {
+			pr_info("Start to send uvb ack msg to %u\n",
+					msg->helper_msg_info.remote_info.cna);
 			/* UVB is a reliable protocol, no need to resend */
 			ret = uvb_send(&binary_ack,
 				msg->helper_msg_info.remote_info.cna, false);
@@ -214,35 +169,44 @@ enum sentry_msg_helper_msg_type get_ack_type(enum sentry_msg_helper_msg_type eve
 }
 
 /**
- * process_remote_event_msg - Process remote event message in kernel thread context
- * @data: Pointer to child_thread_process_data structure containing message info
+ * process_remote_event_msg - Process remote event message via workqueue
+ * @work: Pointer to work_struct embedded in child_thread_process_data
  *
- * Return: 0 on success, negative error code on failure
+ * This work handler processes incoming remote event messages, sends them to
+ * userspace, waits for acknowledgment, and sends acknowledgment back to the
+ * remote node. After processing, it clears the work_pending flag and frees
+ * the allocated data.
  */
-static int process_remote_event_msg(void *data)
+static void process_remote_event_msg(struct work_struct *work)
 {
-	int ret;
-	enum sentry_msg_helper_msg_type ack_type;
-	struct child_thread_process_data *child_data = data;
+	int ret = 0;
 
-	try_module_get(THIS_MODULE);
+	enum sentry_msg_helper_msg_type ack_type;
+	struct child_thread_process_data *child_data =
+		container_of(work, struct child_thread_process_data, work);
 
 	ack_type = get_ack_type(child_data->msg->type);
 	if (ack_type == SMH_MESSAGE_UNKNOWN) {
 		pr_err("%s: get unknown msg type, msg from %s\n",
 			__func__, child_data->msg->helper_msg_info.remote_info.eid);
-		ret = -EINVAL;
-		goto cleanup_child;
+		goto cleanup;
 	}
 
 	ret = send_msg_to_userspace_and_ack(child_data->msg, child_data->comm_type,
-					    child_data->random_id, ack_type);
+					child_data->random_id, ack_type);
 
-cleanup_child:
+cleanup:
+	/*
+	 * Clear work_pending so that future messages with a new random_id
+	 * from this node can be queued again. This must be done under the
+	 * mutex to maintain consistency with node_msg_info state.
+	 */
+	mutex_lock(&sentry_msg_info_mutex);
+	sentry_remote_ctx.node_msg_info[child_data->node_idx].work_pending = false;
+	mutex_unlock(&sentry_msg_info_mutex);
+
 	kfree(child_data->msg);
 	kfree(child_data);
-	module_put(THIS_MODULE);
-	return ret;
 }
 
 /**
@@ -316,24 +280,30 @@ int convert_binary_to_smh_msg(const struct sentry_binary_msg *binary_msg,
 	return 0;
 }
 
+
 /**
- * create_kthread_to_process_msg - Create kernel thread to process incoming message
+ * create_kworker_to_process_msg - Schedule work to process incoming message
  * @event_msg: Raw event message string
  * @comm_type: Communication type (URMA or UVB)
  *
  * Return: 0 on success, negative error code on failure
  *
- * This function creates a kernel thread to process incoming remote messages,
- * handling both panic/reboot events and acknowledgment messages.
+ * This function schedules a work item on the sentry-specific workqueue to
+ * process incoming remote messages. Duplicate messages from the same node
+ * with the same random_id are skipped — if a work item is already pending
+ * or executing for a given node's current random_id, the redundant message
+ * is discarded. This prevents accumulation of duplicate work items when the
+ * client retries messages while waiting for acknowledgment.
  */
-int create_kthread_to_process_msg(const struct sentry_binary_msg *event_msg,
+int create_kworker_to_process_msg(const struct sentry_binary_msg *event_msg,
 				  enum SENTRY_REMOTE_COMM_TYPE comm_type)
 {
 	int ret;
 	struct sentry_msg_helper_msg msg = {0};
 	uint32_t random_id;
 	struct child_thread_process_data *child_data;
-	struct task_struct *child_thread;
+	int i, node_idx = -1, die_idx = -1;
+	union ubcore_eid dst_eid;
 
 	ret = convert_binary_to_smh_msg(event_msg, &msg, &random_id);
 	if (ret) {
@@ -348,6 +318,75 @@ int create_kthread_to_process_msg(const struct sentry_binary_msg *event_msg,
 		return 0;
 	}
 
+	/* Resolve node index for dedup check */
+	if (str_to_eid(msg.helper_msg_info.remote_info.eid, &dst_eid) < 0) {
+		pr_err("%s: invalid dst eid [%s] for dedup lookup\n",
+		       __func__, msg.helper_msg_info.remote_info.eid);
+		return -EINVAL;
+	}
+
+	if (comm_type == COMM_TYPE_URMA) {
+		match_index_by_remote_ub_eid(dst_eid, &node_idx, &die_idx);
+	} else if (comm_type == COMM_TYPE_UVB) {
+		for (i = 0; i < g_server_cna_valid_num; i++) {
+			if (msg.helper_msg_info.remote_info.cna == g_server_cna_array[i]) {
+				node_idx = i;
+				break;
+			}
+		}
+	}
+	if (node_idx < 0) {
+		pr_err("Invalid cna: %u or eid: %s of msg, stop to send to userspace\n",
+		       msg.helper_msg_info.remote_info.cna,
+		       msg.helper_msg_info.remote_info.eid);
+		return -EINVAL;
+	}
+
+	/*
+	 * Dedup check: if a work item with the same random_id is already
+	 * pending or executing for this node, skip creating a new one.
+	 * The existing work will process the message; the client is just
+	 * retrying because it hasn't received the ack yet.
+	 */
+	mutex_lock(&sentry_msg_info_mutex);
+	if (sentry_remote_ctx.node_msg_info[node_idx].random_id == random_id &&
+	    sentry_remote_ctx.node_msg_info[node_idx].work_pending) {
+		pr_info("%s: duplicate msg from eid:%s, skip\n",
+			__func__, msg.helper_msg_info.remote_info.eid);
+		mutex_unlock(&sentry_msg_info_mutex);
+		return 0;
+	}
+
+	/*
+	 * Mark work_pending before queueing so that the dedup check sees it
+	 * immediately. If queue_work fails, roll back the flag.
+	 */
+	sentry_remote_ctx.node_msg_info[node_idx].work_pending = true;
+
+	if (sentry_remote_ctx.node_msg_info[node_idx].random_id != random_id) {
+		pr_info("Get new message from cna: %u, eid: %s\n",
+			msg.helper_msg_info.remote_info.cna,
+			msg.helper_msg_info.remote_info.eid);
+		sentry_remote_ctx.node_msg_info[node_idx].start_send_time = ktime_get_ns();
+		sentry_remote_ctx.node_msg_info[node_idx].msgid = smh_get_new_msg_id();
+		sentry_remote_ctx.node_msg_info[node_idx].random_id = random_id;
+	}
+	msg.start_send_time = sentry_remote_ctx.node_msg_info[node_idx].start_send_time;
+	msg.msgid = sentry_remote_ctx.node_msg_info[node_idx].msgid;
+
+	if (check_msg_is_timeout(&msg)) {
+		/*
+		 * msg timeout, userspace app read msg must failed,
+		 * so there's no need to send it out
+		 */
+		sentry_remote_ctx.node_msg_info[node_idx].work_pending = false;
+		mutex_unlock(&sentry_msg_info_mutex);
+		pr_warn("%s: %llu is timeout (from %s) and will no longer be sent to the userspace\n",
+				__func__, msg.msgid, msg.helper_msg_info.remote_info.eid);
+		return -ETIMEDOUT;
+	}
+	mutex_unlock(&sentry_msg_info_mutex);
+
 	child_data = kzalloc(sizeof(*child_data), GFP_KERNEL);
 	if (!child_data) {
 		pr_err("Failed to allocate memory for child_data\n");
@@ -361,23 +400,23 @@ int create_kthread_to_process_msg(const struct sentry_binary_msg *event_msg,
 		return -ENOMEM;
 	}
 
-	/* Update child thread data */
+	/* Update child data */
 	memcpy(child_data->msg, &msg, sizeof(*child_data->msg));
 	child_data->random_id = random_id;
 	child_data->comm_type = comm_type;
+	child_data->node_idx = node_idx;
+	INIT_WORK(&child_data->work, process_remote_event_msg);
 
-	child_thread = kthread_run(process_remote_event_msg, child_data,
-				   "sentry_msg_thread_%s_%u",
-				   comm_type == COMM_TYPE_URMA ? "urma" : "uvb",
-				   random_id);
-	if (IS_ERR(child_thread)) {
+	if (!queue_work(sentry_remote_ctx.sentry_msg_wq, &child_data->work)) {
+		mutex_lock(&sentry_msg_info_mutex);
+		sentry_remote_ctx.node_msg_info[node_idx].work_pending = false;
+		mutex_unlock(&sentry_msg_info_mutex);
 		kfree(child_data->msg);
 		kfree(child_data);
-		pr_err("Failed to create child thread to process msg from %s\n",
+		pr_err("Failed to queue work to process msg from %s\n",
 			msg.helper_msg_info.remote_info.eid);
-		return PTR_ERR(child_thread);
+		return -EBUSY;
 	}
-
 	return 0;
 }
 
@@ -388,7 +427,7 @@ int create_kthread_to_process_msg(const struct sentry_binary_msg *event_msg,
  * Return: 0 on success, negative error code on failure
  *
  * This function runs in a kernel thread to receive and process URMA messages,
- * creating separate threads for message processing.
+ * scheduling work items for message processing.
  */
 static int process_urma_data(void *data)
 {
@@ -418,7 +457,7 @@ static int process_urma_data(void *data)
 			recv_msg_nodes);
 
 		for (i = 0; i < recv_msg_nodes; i++) {
-			ret = create_kthread_to_process_msg(&binary_msg_array[i], COMM_TYPE_URMA);
+			ret = create_kworker_to_process_msg(&binary_msg_array[i], COMM_TYPE_URMA);
 			if (ret == -ENOMEM)
 				goto free_msg;
 		}
@@ -449,12 +488,13 @@ int cis_ubios_remote_msg_cb(struct cis_message *cis_msg)
 {
 	int ret;
 
+	pr_info("uvb get msg: [%s]\n", (char *)cis_msg->input);
 	if (cis_msg->input_size != sizeof(struct sentry_binary_msg)) {
 		pr_err("%s: invalid input size: %d, expect %lu\n",
 			__func__, cis_msg->input_size, sizeof(struct sentry_binary_msg));
 		return -EINVAL;
 	}
-	ret = create_kthread_to_process_msg((struct sentry_binary_msg *)cis_msg->input,
+	ret = create_kworker_to_process_msg((struct sentry_binary_msg *)cis_msg->input,
 			COMM_TYPE_UVB);
 	return ret;
 }
@@ -466,12 +506,35 @@ int cis_ubios_remote_msg_cb(struct cis_message *cis_msg)
  */
 int sentry_panic_reporter_init(void)
 {
+	int i;
+
 	atomic_set(&sentry_remote_ctx.remote_event_ack_received, 0);
 	atomic_set(&sentry_remote_ctx.remote_event_ack_done, 0);
+
+	for (i = 0; i < MAX_NODE_NUM; i++) {
+		sentry_remote_ctx.node_msg_info[i].work_pending = false;
+		sentry_remote_ctx.node_msg_info[i].random_id = 0;
+	}
+
+	/*
+	 * Create a dedicated unbound workqueue for sentry message processing.
+	 * WQ_UNBOUND allows work to run on any CPU (not pinned to the
+	 * submitting CPU), which is appropriate for long-running work items.
+	 * max_active = MAX_NODE_NUM limits concurrency to at most one work
+	 * per node, matching the dedup guarantee.
+	 */
+	sentry_remote_ctx.sentry_msg_wq = alloc_workqueue("sentry_msg",
+			WQ_UNBOUND, MAX_NODE_NUM);
+	if (!sentry_remote_ctx.sentry_msg_wq) {
+		pr_err("Failed to create sentry message workqueue\n");
+		return -ENOMEM;
+	}
 
 	sentry_remote_ctx.urma_receiver_thread = kthread_run(process_urma_data, NULL, "sentry_urma_kthread");
 	if (IS_ERR(sentry_remote_ctx.urma_receiver_thread)) {
 		pr_err("Failed to create kernel urma receiver thread.\n");
+		destroy_workqueue(sentry_remote_ctx.sentry_msg_wq);
+		sentry_remote_ctx.sentry_msg_wq = NULL;
 		return PTR_ERR(sentry_remote_ctx.urma_receiver_thread);
 	}
 
@@ -481,12 +544,41 @@ int sentry_panic_reporter_init(void)
 
 /**
  * sentry_panic_reporter_exit - Cleanup sentry panic reporter module
+ *
+ * This function stops the URMA receiver thread first to prevent new work
+ * items from being queued, then drains and destroys the sentry workqueue.
+ * destroy_workqueue waits for all pending and running work items to
+ * complete before returning, ensuring safe module unload.
  */
 void sentry_panic_reporter_exit(void)
 {
+	int i;
+
+	/* Stop URMA receiver first so no new work items are queued */
 	if (sentry_remote_ctx.urma_receiver_thread) {
 		kthread_stop(sentry_remote_ctx.urma_receiver_thread);
 		sentry_remote_ctx.urma_receiver_thread = NULL;
 		pr_info("Kernel urma receiver thread stopped\n");
+	}
+
+	/*
+	 * Drain and destroy the sentry workqueue. destroy_workqueue waits
+	 * for all currently pending and executing work items to complete
+	 * before freeing the workqueue. This guarantees safe module unload:
+	 * after this call returns, no work handler code is running, so the
+	 * module can be safely unloaded.
+	 */
+	if (sentry_remote_ctx.sentry_msg_wq) {
+		destroy_workqueue(sentry_remote_ctx.sentry_msg_wq);
+		sentry_remote_ctx.sentry_msg_wq = NULL;
+		pr_info("Sentry message workqueue destroyed\n");
+	}
+
+	/* Reset node_msg_info state for potential module re-loading */
+	for (i = 0; i < MAX_NODE_NUM; i++) {
+		sentry_remote_ctx.node_msg_info[i].work_pending = false;
+		sentry_remote_ctx.node_msg_info[i].random_id = 0;
+		sentry_remote_ctx.node_msg_info[i].start_send_time = 0;
+		sentry_remote_ctx.node_msg_info[i].msgid = 0;
 	}
 }
