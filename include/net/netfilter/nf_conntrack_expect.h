@@ -22,25 +22,16 @@ struct nf_conntrack_expect {
 	/* Hash member */
 	struct hlist_node hnode;
 
-	/* Network namespace */
-	possible_net_t net;
-
 	/* We expect this tuple, with the following mask */
 	struct nf_conntrack_tuple tuple;
 	struct nf_conntrack_tuple_mask mask;
 
-#ifdef CONFIG_NF_CONNTRACK_ZONES
-	struct nf_conntrack_zone zone;
-#endif
 	/* Function to call after setup and insertion */
 	void (*expectfn)(struct nf_conn *new,
 			 struct nf_conntrack_expect *this);
 
 	/* Helper that created this expectation */
 	struct nf_conntrack_helper __rcu *helper;
-
-	/* Helper to assign to new connection */
-	struct nf_conntrack_helper __rcu *assign_helper;
 
 	/* The conntrack of the master connection */
 	struct nf_conn *master;
@@ -67,6 +58,15 @@ struct nf_conntrack_expect {
 #endif
 
 	struct rcu_head rcu;
+#ifdef CONFIG_NF_CONNTRACK_ZONES
+	KABI_EXTEND(struct nf_conntrack_zone zone)
+#endif
+
+	/* Network namespace */
+	KABI_EXTEND(possible_net_t net)
+
+	/* Helper to assign to new connection */
+	KABI_EXTEND(struct nf_conntrack_helper __rcu *assign_helper)
 };
 
 static inline struct net *nf_ct_exp_net(struct nf_conntrack_expect *exp)
