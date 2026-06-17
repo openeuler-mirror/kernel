@@ -140,4 +140,7 @@ typedef enum {
 
 	BOARD_TYPE_MAX_INDEX                        = 0xFF,   /* Maximum card value */
 } board_type_define_e;
+
+#define IS_EVB_BOARD_TYPE(type)                                                         \
+	((type) < BOARD_TYPE_STRG_SMARTIO_4X32G_FC) /**< 4*25G SDI5.0.C Card */
 #endif
