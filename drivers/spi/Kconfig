@@ -637,6 +637,19 @@ config SPI_PHYTIUM_PCI
 
 	  If unsure, say N.
 
+config SPI_PHYTIUM_V2
+	tristate "spi phytium v2"
+	depends on (ARCH_PHYTIUM || COMPILE_TEST) && ARM64
+	help
+	  This config is similar to the "SPI_PHYTIUM" config.
+
+config SPI_PHYTIUM_PLAT_V2
+	tristate "Phytium SPI-V2 controller platform support"
+	select SPI_PHYTIUM_V2
+	depends on ARM64
+	help
+	  This config is similar to the "SPI_PHYTIUM_PLAT" config.
+
 config SPI_PIC32
 	tristate "Microchip PIC32 series SPI"
 	depends on MACH_PIC32 || COMPILE_TEST
