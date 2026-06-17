@@ -613,6 +613,7 @@ static int ubcore_query_select_tpid_list(struct ubcore_device *dev, struct ubcor
 			return 0;
 		}
 		mutex_unlock(&tpid_list->lock);
+		ubcore_tpid_list_kref_put(tpid_list);
 	}
 
 	ubcore_log_info_rl("tpid not in tpid list, query ops.\n");
