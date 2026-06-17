@@ -18,7 +18,7 @@
 #include "macsec_mpu_cmd_defs.h"
 #include "macsec_pub_cmd.h"
 
-#define HIMACSEC_DRV_VER "100.0.1.100"
+#define HIMACSEC_DRV_VER "100.0.1.102"
 
 #define macsec_err(dev, format, ...) dev_err(dev, "[MACsec]" format, ##__VA_ARGS__)
 #define macsec_warning(dev, format, ...) dev_warn(dev, "[MACsec]" format, ##__VA_ARGS__)
