@@ -880,6 +880,7 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 				 (char *)pdacl + le16_to_cpu(pdacl->size));
 #endif
 			if (mode_from_special_sid &&
+			    ppace[i]->sid.num_subauth >= 3 &&
 			    (compare_sids(&(ppace[i]->sid),
 					  &sid_unix_NFS_mode) == 0)) {
 				/*
