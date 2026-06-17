@@ -14,6 +14,7 @@
 #include <linux/spinlock.h>
 #include <linux/atomic.h>
 #include <linux/types.h>
+#include <linux/workqueue.h>
 
 #include "smh_common_type.h"
 
@@ -31,36 +32,40 @@ extern int ubcore_eid_to_str_full(const union ubcore_eid *eid, char *dst_eid_str
 extern int match_index_by_remote_ub_eid(union ubcore_eid remote_id, int *node_index, int *die_index);
 extern int sentry_create_urma_resource(union ubcore_eid eid[], int eid_num);
 extern int process_multi_eid_string(char *eid_buf, char eid_array[][EID_MAX_LEN],
-    union ubcore_eid eid_tmp[], const char *sepstr, int eid_max_num);
+		union ubcore_eid eid_tmp[], const char *sepstr, int eid_max_num);
 
 extern int convert_binary_to_smh_msg(const struct sentry_binary_msg *binary_msg,
 		struct sentry_msg_helper_msg *smh_msg,
 		uint32_t *random_id);
 
 enum SENTRY_REMOTE_COMM_TYPE {
-    COMM_TYPE_URMA,
-    COMM_TYPE_UVB,
-    COMM_TYPE_UNKNOWN
+	COMM_TYPE_URMA,
+	COMM_TYPE_UVB,
+	COMM_TYPE_UNKNOWN
 };
 
 struct child_thread_process_data {
-    struct sentry_msg_helper_msg *msg;
-    enum SENTRY_REMOTE_COMM_TYPE comm_type;
-    uint32_t random_id;
+	struct sentry_msg_helper_msg *msg;
+	enum SENTRY_REMOTE_COMM_TYPE comm_type;
+	uint32_t random_id;
+	int node_idx;
+	struct work_struct work;
 };
 
-struct node_msg_info {
+struct node_msg_private_data {
 	uint32_t random_id;
 	uint64_t start_send_time;
 	uint64_t msgid;
+	bool work_pending;
 };
 
 struct sentry_remote_context {
-	struct node_msg_info node_msg_info_list[MAX_NODE_NUM];
+	struct node_msg_private_data node_msg_info[MAX_NODE_NUM];
 	struct sentry_msg_helper_msg remote_event_ack_msg_buf;
 	atomic_t remote_event_ack_received;
 	atomic_t remote_event_ack_done;
 	struct task_struct *urma_receiver_thread;
+	struct workqueue_struct *sentry_msg_wq;
 };
 
 extern spinlock_t sentry_buf_lock;
@@ -70,7 +75,7 @@ int sentry_panic_reporter_init(void);
 void sentry_panic_reporter_exit(void);
 
 int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg, enum SENTRY_REMOTE_COMM_TYPE comm_type,
-    uint32_t random_id, enum sentry_msg_helper_msg_type ack_type);
+		uint32_t random_id, enum sentry_msg_helper_msg_type ack_type);
 
 void write_ack_msg_buf(const struct sentry_msg_helper_msg *msg, enum SENTRY_REMOTE_COMM_TYPE comm_type);
 int create_kthread_to_process_msg(const struct sentry_binary_msg *event_msg,
