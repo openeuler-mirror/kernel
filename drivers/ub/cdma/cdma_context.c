@@ -73,6 +73,7 @@ static int cdma_ctx_ksva_bind(struct cdma_dev *cdev, struct cdma_context *ctx)
 
 static int cdma_ctx_sva_bind(struct cdma_dev *cdev, struct cdma_context *ctx)
 {
+	struct tdev_opt opt = { current->mm, true };
 	int sva_mode;
 	int ret;
 
@@ -95,7 +96,7 @@ static int cdma_ctx_sva_bind(struct cdma_dev *cdev, struct cdma_context *ctx)
 		}
 	} else if (sva_mode == UMMU_SVA_SEPARATE_MODE) {
 		ctx->sva = NULL;
-		ctx->vdev = ummu_alloc_tdev_separated(&ctx->tid);
+		ctx->vdev = ummu_core_alloc_separate_tdev(&opt, &ctx->tid);
 		if (!ctx->vdev) {
 			dev_err(cdev->dev, "get vdev and tid failed\n");
 			return -EFAULT;
