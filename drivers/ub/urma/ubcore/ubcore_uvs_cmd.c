@@ -229,8 +229,8 @@ static int ubcore_insert_host_eid_batch(
 	uint32_t i;
 	int ret;
 
-	if (host_eid == NULL || eids == NULL || eid_num == 0 ||
-	    eid_num > UBCORE_HOST_EID_BATCH_EID_MAX) {
+	if (host_eid == NULL || eids == NULL || cnas == NULL ||
+	    eid_num == 0 || eid_num > UBCORE_HOST_EID_BATCH_EID_MAX) {
 		ubcore_log_err("invalid host eid batch.\n");
 		return -EINVAL;
 	}
