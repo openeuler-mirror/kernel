@@ -365,18 +365,16 @@ u32 hinic5_cqm_lb0_get_smf_id(const struct tag_hinic5_cqm_handle *hinic5_cqm_han
 	return smf_id;
 }
 
+/* MUST be used when LB is disabled OR in LB mode 0 */
 u32 hinic5_cqm_funcid2smfid(const struct tag_hinic5_cqm_handle *hinic5_cqm_handle)
 {
-	u32 smf_id;
-
 	/* When the LB mode is disabled, SMF0 is always returned. */
-	if (HINIC5_CQM_IS_LB_MODE_NORMAL(hinic5_cqm_handle)) {
-		smf_id = 0;
-	} else {
-		smf_id = hinic5_cqm_lb0_get_smf_id(hinic5_cqm_handle);
-	}
-
-	return smf_id;
+	if (HINIC5_CQM_IS_LB_MODE_NORMAL(hinic5_cqm_handle))
+		return 0;
+	if (HINIC5_CQM_IS_LB_MODE_0(hinic5_cqm_handle))
+		return hinic5_cqm_lb0_get_smf_id(hinic5_cqm_handle);
+	WARN_ON_ONCE(true);
+	return 0;
 }
 
 /* This function is used in LB mode 1/2. Some BAT entries
