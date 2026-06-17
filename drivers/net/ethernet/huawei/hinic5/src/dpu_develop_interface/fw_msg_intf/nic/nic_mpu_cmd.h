@@ -65,9 +65,6 @@ enum hinic5_nic_cmd {
 	HINIC5_NIC_CMD_SET_RX_VLAN_OFFLOAD = 27, /* Set func table rx_vlan_offload_en
 						  * @see hinic5_cmd_vlan_offload
 						  */
-	HINIC5_NIC_CMD_SMAC_CHECK_STATE = 28, /* IPSUTX source MAC check switch
-					       * @see hinic5_smac_check_state
-					       */
 	HINIC5_NIC_CMD_OUTBAND_SET_FUNC_VLAN = 29, /* Outband set func vlan (for computation, rsvd) */
 	HINIC5_NIC_CMD_CFG_VXLAN_PORT = 30, /** < Set vxlan_dprot (for computation, rsvd) */
 	HINIC5_NIC_CMD_RX_RATE_CFG = 31, /** < rx rate limit bios setting (for computation, rsvd) */

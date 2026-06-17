@@ -366,7 +366,7 @@ u64 mul_u64_u64_div_u64(u64 a, u64 b, u64 c)
 EXPORT_SYMBOL(mul_u64_u64_div_u64);
 #endif
 
-#if KERNEL_VERSION(5, 10, 0) > LINUX_VERSION_CODE
+#ifdef NEED_SYSFS_EMIT
 int sysfs_emit(char *buf, const char *fmt, ...)
 {
 	va_list args;
