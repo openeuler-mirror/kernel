@@ -64,7 +64,6 @@ static int ubagg_list_v2p_res(struct ubagg_device *ubagg_dev,
 	uint32_t *id_buf;
 	uint32_t count = 0;
 	uint32_t cap;
-	size_t buf_len;
 
 	ht = ubagg_get_res_ht(ubagg_dev, req->res_type);
 	if (ht == NULL || ht->head == NULL) {
@@ -84,7 +83,6 @@ static int ubagg_list_v2p_res(struct ubagg_device *ubagg_dev,
 	}
 
 	cap = count;
-	buf_len = cap * sizeof(*id_buf);
 	id_buf = kvmalloc_array(cap, sizeof(*id_buf), GFP_KERNEL);
 	if (id_buf == NULL)
 		return -ENOMEM;

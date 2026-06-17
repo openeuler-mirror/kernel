@@ -40,6 +40,9 @@ void ubagg_hash_table_free(struct ubagg_hash_table *ht)
 	uint32_t i;
 	void *obj;
 
+	if (ht == NULL || ht->head == NULL)
+		return;
+
 	spin_lock(&ht->lock);
 	if (!ht->head) {
 		spin_unlock(&ht->lock);
