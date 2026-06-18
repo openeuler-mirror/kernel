@@ -29,6 +29,7 @@
 #include "ubcore_genl_admin.h"
 #include "ubcore_tp.h"
 #include "ubcore_hash_table.h"
+#include "ubcore_connect_adapter.h"
 
 #define CB_ARGS_DEV_BUF 0
 #define CB_ARGS_CMD_TYPE 1
@@ -1107,7 +1108,11 @@ static int ubcore_tpid_emit_list_hdr(struct sk_buff *skb,
 			tl->lk.link_type) != 0 ||
 	    nla_put_u32(skb, UBCORE_TPID_SHOW_ATTR_TP_LIST_CNT, tl->cnt) != 0 ||
 	    nla_put_u32(skb, UBCORE_TPID_SHOW_ATTR_REF_CNT,
-			(uint32_t)kref_read(&tl->ref_cnt)) != 0) {
+			(uint32_t)kref_read(&tl->ref_cnt)) != 0 ||
+		nla_put(skb, UBCORE_TPID_SHOW_ATTR_LOCAL_CNA,
+			sizeof(tl->lk.local_cna), &tl->lk.local_cna) != 0 ||
+		nla_put(skb, UBCORE_TPID_SHOW_ATTR_PEER_CNA,
+			sizeof(tl->lk.peer_cna), &tl->lk.peer_cna) != 0) {
 		mutex_unlock(&tl->lock);
 		genlmsg_cancel(skb, hdr);
 		return -EMSGSIZE;
@@ -1213,6 +1218,7 @@ static int ubcore_tpid_emit_reuse(struct sk_buff *skb,
 	if (hdr == NULL)
 		return -EMSGSIZE;
 
+	mutex_lock(&reuse->lock);
 	if (nla_put(skb, UBCORE_TPID_SHOW_ATTR_LOCAL_EID,
 		    sizeof(reuse->rk.lk.local_eid),
 		    &reuse->rk.lk.local_eid) != 0 ||
@@ -1248,10 +1254,18 @@ static int ubcore_tpid_emit_reuse(struct sk_buff *skb,
 	    nla_put_u32(skb, UBCORE_TPID_SHOW_ATTR_TX_PSN,
 			reuse->tx_psn) != 0 ||
 	    nla_put_u8(skb, UBCORE_TPID_SHOW_ATTR_IS_REF,
-			reuse->is_ref ? 1 : 0) != 0) {
+			reuse->is_ref ? 1 : 0) != 0 ||
+	    nla_put(skb, UBCORE_TPID_SHOW_ATTR_LOCAL_CNA,
+			sizeof(reuse->rk.lk.local_cna), &reuse->rk.lk.local_cna) != 0 ||
+	    nla_put(skb, UBCORE_TPID_SHOW_ATTR_PEER_CNA,
+			sizeof(reuse->rk.lk.peer_cna), &reuse->rk.lk.peer_cna) != 0) {
+		mutex_unlock(&reuse->lock);
+		ubcore_tpid_reuse_kref_put(reuse);
 		genlmsg_cancel(skb, hdr);
 		return -EMSGSIZE;
 	}
+	mutex_unlock(&reuse->lock);
+	ubcore_tpid_reuse_kref_put(reuse);
 	genlmsg_end(skb, hdr);
 	return 0;
 }
@@ -1314,6 +1328,7 @@ static int ubcore_tpid_dump_reuse(struct sk_buff *skb,
 			hlist_for_each_entry(reuse, &ht->head[bucket], hnode) {
 				if (cnt == pos) {
 					found = reuse;
+					kref_get(&found->ref_cnt);
 					break;
 				}
 				cnt++;
@@ -1324,9 +1339,8 @@ static int ubcore_tpid_dump_reuse(struct sk_buff *skb,
 			pos = 0;
 		}
 	}
-
+	spin_unlock(&ht->lock);
 	if (found == NULL) {
-		spin_unlock(&ht->lock);
 		ctx->finished = true;
 		return 0;
 	}
@@ -1334,11 +1348,9 @@ static int ubcore_tpid_dump_reuse(struct sk_buff *skb,
 	/* Do not use reuse's lock here; other paths can
 	 * deadlock with ht->lock held. */
 	if (ubcore_tpid_emit_reuse(skb, cb, ctx->cmd, found) != 0) {
-		spin_unlock(&ht->lock);
 		/* skb full: keep cursor, retry this entry on next call */
 		return (int)skb->len;
 	}
-	spin_unlock(&ht->lock);
 	ctx->bucket = bucket;
 	ctx->lpos = pos + 1;
 	return (int)skb->len;
