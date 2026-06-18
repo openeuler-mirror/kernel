@@ -110,6 +110,7 @@ struct ubcore_tpid_reuse {
 	atomic_t use_cnt;
 	struct completion comp;
 	struct mutex lock;
+	bool tp_handle_valid;
 };
 
 #endif
