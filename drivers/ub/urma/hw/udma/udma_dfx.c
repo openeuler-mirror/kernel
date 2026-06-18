@@ -779,9 +779,6 @@ static void list_lock_init(struct udma_dfx_info *dfx)
 
 int udma_dfx_init(struct udma_dev *udma_dev)
 {
-	if (!dfx_switch)
-		return 0;
-
 	udma_dev->dfx_info = kzalloc(sizeof(struct udma_dfx_info), GFP_KERNEL);
 	if (!udma_dev->dfx_info)
 		return -ENOMEM;
@@ -811,13 +808,10 @@ static void udma_dfx_table_free(struct udma_dev *dev)
 
 void udma_dfx_uninit(struct udma_dev *udma_dev)
 {
-	if (!dfx_switch)
-		return;
-
 	udma_dfx_table_free(udma_dev);
 	kfree(udma_dev->dfx_info);
 	udma_dev->dfx_info = NULL;
 }
 
-module_param(dfx_switch, bool, 0444);
+module_param(dfx_switch, bool, 0644);
 MODULE_PARM_DESC(dfx_switch, "Set whether to enable the udma_dfx function, default: 0(0:off, 1:on)");

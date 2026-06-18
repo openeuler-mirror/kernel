@@ -731,7 +731,7 @@ static void udma_get_tpid_status(struct udma_dev *udev,
 
 	ret = ubcore_query_tpid(&udev->ub_dev, tp_id, &attr);
 	if (ret)
-		dev_err(udev->dev, "failed to query tpid(%d) in ubcore, ret = %d.\n", tp_id, ret);
+		dev_err(udev->dev, "failed to query tpid(%u) in ubcore, ret = %d.\n", tp_id, ret);
 	if (!ret && (attr.mask & UBCORE_TPID_STATE) && attr.state == UBCORE_TPID_STATE_RTS)
 		data->result = UDMA_CTRLQ_TPID_IN_USE;
 	else
