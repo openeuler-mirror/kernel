@@ -11,6 +11,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/string.h>
+#include <linux/uaccess.h>
 
 #include "ubagg_log.h"
 #include "ubagg_msg.h"
@@ -26,17 +27,18 @@
 struct fb_task {
 	uint32_t request_id;
 	uint32_t peer_node_id;
-	struct ubagg_jetty_id vjetty_id;
+	union ubcore_eid src_eid;
+	uint32_t vjetty_id;
 	uint32_t pjetty_idx;
-	struct ubagg_jetty_id new_pjetty_id;
+	uint32_t new_pjetty_id;
 };
 
 struct fb_result {
 	uint32_t request_id;
 	uint32_t peer_node_id;
-	struct ubagg_jetty_id vjetty_id;
+	uint32_t vjetty_id;
 	uint32_t pjetty_idx;
-	struct ubagg_jetty_id new_pjetty_id;
+	uint32_t new_pjetty_id;
 	int32_t result;
 };
 
@@ -76,17 +78,15 @@ static bool eid_equal(const union ubcore_eid *left,
 	return memcmp(left, right, sizeof(*left)) == 0;
 }
 
-#define jetty_id_equal(left, right) \
-	(eid_equal(&(left)->eid, &(right)->eid) && (left)->id == (right)->id)
-
 static bool fb_key_equal(const struct fb_task *left,
 			 const struct fb_task *right)
 {
 	return left->request_id == right->request_id &&
 	       left->peer_node_id == right->peer_node_id &&
+	       eid_equal(&left->src_eid, &right->src_eid) &&
+	       left->vjetty_id == right->vjetty_id &&
 	       left->pjetty_idx == right->pjetty_idx &&
-	       jetty_id_equal(&left->vjetty_id, &right->vjetty_id) &&
-	       jetty_id_equal(&left->new_pjetty_id, &right->new_pjetty_id);
+	       left->new_pjetty_id == right->new_pjetty_id;
 }
 
 static int fb_get_peer_first_eid(uint32_t peer_node_id,
@@ -151,9 +151,9 @@ static int fb_get_peer_first_eid(uint32_t peer_node_id,
 }
 
 static int fb_update_exchange_jetty_info(struct ubagg_device *bonding_dev,
-					 const struct ubagg_jetty_id *vjetty_id,
+					 uint32_t vjetty_id,
 					 uint32_t pjetty_idx,
-					 const struct ubagg_jetty_id *new_pjetty_id)
+					 uint32_t new_pjetty_id)
 {
 	struct ubagg_hash_table *ht;
 	struct ubagg_jetty_hash_node *jetty;
@@ -166,14 +166,13 @@ static int fb_update_exchange_jetty_info(struct ubagg_device *bonding_dev,
 
 	ht = &bonding_dev->ubagg_ht[UBAGG_HT_JETTY_HT];
 	spin_lock(&ht->lock);
-	jetty = ubagg_hash_table_lookup_nolock(ht, vjetty_id->id,
-					       &vjetty_id->id);
+	jetty = ubagg_hash_table_lookup_nolock(ht, vjetty_id, &vjetty_id);
 	if (jetty == NULL) {
 		ret = -ENOENT;
 		ubagg_log_err("Failed to find jetty for failback, vjetty_id:%u.\n",
-			      vjetty_id->id);
+			      vjetty_id);
 	} else {
-		jetty->ex_info.slaves[pjetty_idx] = *new_pjetty_id;
+		jetty->ex_info.slaves[pjetty_idx].id = new_pjetty_id;
 	}
 	spin_unlock(&ht->lock);
 	return ret;
@@ -201,6 +200,7 @@ static void fb_req_complete(struct ubagg_device *dev, const void *session_data)
 	const struct fb_req_ctx *data = session_data;
 	int ret;
 
+	(void)dev;
 	if (data != NULL && data->notify_user) {
 		ret = nl_send_done(&data->completion);
 		if (ret != 0)
@@ -208,7 +208,6 @@ static void fb_req_complete(struct ubagg_device *dev, const void *session_data)
 				"Failed to send failback done to user, ret:%d.\n",
 				ret);
 	}
-
 }
 
 static int fb_send_req(struct ubcore_device *dev, uint32_t session_id,
@@ -233,9 +232,17 @@ static int fb_send_req(struct ubcore_device *dev, uint32_t session_id,
 }
 
 static int fb_send_resp(struct ubcore_device *dev,
-			const struct fb_result *result, uint32_t session_id)
+			const struct fb_result *result,
+			const union ubcore_eid *src_eid,
+			uint32_t session_id)
 {
 	struct ubcore_comm_msg msg = { 0 };
+
+	if (src_eid == NULL) {
+		ubagg_log_err("Invalid failback resp src eid for session %u.\n",
+			      session_id);
+		return -EINVAL;
+	}
 
 	msg.protocol_id = UBAGG_COMM_PROTOCOL;
 	msg.type = UBAGG_COMM_MSG_FAILBACK_RESP;
@@ -243,7 +250,7 @@ static int fb_send_resp(struct ubcore_device *dev,
 	msg.len = sizeof(*result);
 	msg.session_id = session_id;
 	msg.data = (void *)result;
-	return ubcore_send_comm_msg_to(dev, &msg, result->new_pjetty_id.eid);
+	return ubcore_send_comm_msg_to(dev, &msg, *src_eid);
 }
 
 static void fb_complete(struct ubagg_device *dev, const void *session_data)
@@ -268,7 +275,8 @@ static void fb_complete(struct ubagg_device *dev, const void *session_data)
 	result.new_pjetty_id = data->task.new_pjetty_id;
 	result.result = data->done_cnt == data->need_cnt ? data->result :
 							   -ETIMEDOUT;
-	ret = fb_send_resp(&dev->ub_dev, &result, data->src_id);
+	ret = fb_send_resp(&dev->ub_dev, &result, &data->task.src_eid,
+			   data->src_id);
 	if (ret != 0)
 		ubagg_log_err("Failed to send failback resp, ret:%d.\n", ret);
 }
@@ -302,7 +310,7 @@ static struct ubagg_session *fb_create(struct ubagg_device *dev,
 	return session;
 }
 
-static int fb_handle_start(const struct fb_task *task)
+static int fb_handle_start(struct ubcore_device *dev, const struct fb_task *task)
 {
 	struct fb_req_ctx *ctx;
 	struct fb_task req;
@@ -315,25 +323,16 @@ static int fb_handle_start(const struct fb_task *task)
 		return -EINVAL;
 	}
 
-	bonding_dev = ubagg_get_device_by_eid(&task->vjetty_id.eid);
-	if (bonding_dev == NULL) {
-		ubagg_log_err("Failed to get bonding device for failback start.\n");
-		return -ENODEV;
-	}
-
-	ret = fb_update_exchange_jetty_info(bonding_dev, &task->vjetty_id,
+	bonding_dev = to_ubagg_dev(dev);
+	ret = fb_update_exchange_jetty_info(bonding_dev, task->vjetty_id,
 					    task->pjetty_idx,
-					    &task->new_pjetty_id);
-	if (ret != 0) {
-		ubagg_put_device(bonding_dev);
+					    task->new_pjetty_id);
+	if (ret != 0)
 		return ret;
-	}
 
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
-	if (ctx == NULL) {
-		ubagg_put_device(bonding_dev);
+	if (ctx == NULL)
 		return -ENOMEM;
-	}
 
 	ctx->completion.peer_node_id = task->peer_node_id;
 	ctx->completion.vjetty_id = task->vjetty_id;
@@ -346,11 +345,11 @@ static int fb_handle_start(const struct fb_task *task)
 				       fb_req_complete, NULL);
 	if (session == NULL) {
 		kfree(ctx);
-		ubagg_put_device(bonding_dev);
 		return -ENOMEM;
 	}
 
 	req = *task;
+	req.src_eid = bonding_dev->bonding_eid;
 	req.request_id = ubagg_session_get_id(session);
 	ctx->completion.request_id = req.request_id;
 
@@ -359,12 +358,10 @@ static int fb_handle_start(const struct fb_task *task)
 		ctx->notify_user = false;
 		ubagg_session_complete(session);
 		ubagg_session_ref_release(session);
-		ubagg_put_device(bonding_dev);
 		return ret;
 	}
 
 	ubagg_session_ref_release(session);
-	ubagg_put_device(bonding_dev);
 	return 0;
 }
 
@@ -392,7 +389,7 @@ static int fb_handle_result(const struct fb_result *result)
 		spin_unlock_irqrestore(&fb_lock, flags);
 		ubagg_log_warn(
 			"No active failback collection for vjetty_id:%u.\n",
-			result->vjetty_id.id);
+			result->vjetty_id);
 		return -ENOENT;
 	}
 
@@ -400,7 +397,7 @@ static int fb_handle_result(const struct fb_result *result)
 		spin_unlock_irqrestore(&fb_lock, flags);
 		ubagg_log_warn(
 			"Ignore stale failback result for vjetty_id:%u.\n",
-			result->vjetty_id.id);
+			result->vjetty_id);
 		return -EALREADY;
 	}
 
@@ -421,28 +418,65 @@ static int fb_handle_result(const struct fb_result *result)
 	return 0;
 }
 
-int ubagg_fb_nl_start(struct sk_buff *skb, struct genl_info *info)
+int ubagg_fb_user_ctl_start(struct ubcore_device *dev,
+			    struct ubcore_user_ctl *user_ctl)
 {
-	struct fb_task task = { 0 };
-	int ret;
+	struct fb_task task;
 
-	ret = ubagg_nl_parse_attr(info, UBAGG_ATTR_PAYLOAD, &task,
-				  sizeof(task));
-	if (ret != 0)
-		return ret;
+	if (user_ctl == NULL) {
+		ubagg_log_err("Invalid parameter.\n");
+		return -EINVAL;
+	}
 
-	return fb_handle_start(&task);
+	if (user_ctl->uctx == NULL || user_ctl->in.addr == 0 || user_ctl->in.len < sizeof(task)) {
+		ubagg_log_err("Invalid failback start input, addr:%llu, len:%u.\n",
+			      user_ctl->in.addr, user_ctl->in.len);
+		return -EINVAL;
+	}
+
+	if (!access_ok((void __user *)(uintptr_t)user_ctl->in.addr,
+		       sizeof(task))) {
+		ubagg_log_err("Failed to access failback start from user.\n");
+		return -EFAULT;
+	}
+
+	if (copy_from_user(&task, (void __user *)(uintptr_t)user_ctl->in.addr,
+			   sizeof(task)) != 0) {
+		ubagg_log_err("Failed to copy failback start from user.\n");
+		return -EFAULT;
+	}
+
+	return fb_handle_start(dev, &task);
 }
 
-int ubagg_fb_nl_result(struct sk_buff *skb, struct genl_info *info)
+int ubagg_fb_user_ctl_result(struct ubcore_device *dev,
+			     struct ubcore_user_ctl *user_ctl)
 {
-	struct fb_result result = { 0 };
-	int ret;
+	struct fb_result result;
 
-	ret = ubagg_nl_parse_attr(info, UBAGG_ATTR_PAYLOAD, &result,
-				  sizeof(result));
-	if (ret != 0)
-		return ret;
+	(void)dev;
+	if (user_ctl == NULL) {
+		ubagg_log_err("Invalid parameter.\n");
+		return -EINVAL;
+	}
+
+	if (user_ctl->uctx == NULL || user_ctl->in.addr == 0 || user_ctl->in.len < sizeof(result)) {
+		ubagg_log_err("Invalid failback result input, addr:%llu, len:%u.\n",
+			      user_ctl->in.addr, user_ctl->in.len);
+		return -EINVAL;
+	}
+
+	if (!access_ok((void __user *)(uintptr_t)user_ctl->in.addr,
+		       sizeof(result))) {
+		ubagg_log_err("Failed to access failback result from user.\n");
+		return -EFAULT;
+	}
+
+	if (copy_from_user(&result, (void __user *)(uintptr_t)user_ctl->in.addr,
+			   sizeof(result)) != 0) {
+		ubagg_log_err("Failed to copy failback result from user.\n");
+		return -EFAULT;
+	}
 
 	return fb_handle_result(&result);
 }
@@ -467,14 +501,15 @@ static void fb_req_msg(struct ubcore_device *dev, struct ubcore_comm_msg *msg,
 	bonding_dev = ubagg_get_first_device();
 	if (bonding_dev == NULL) {
 		result.result = 0;
-		(void)fb_send_resp(dev, &result, msg->session_id);
+		(void)fb_send_resp(dev, &result, &task->src_eid, msg->session_id);
 		return;
 	}
 
 	match_count = ubagg_get_ucontext_count();
 	if (match_count == 0) {
 		result.result = 0;
-		(void)fb_send_resp(&bonding_dev->ub_dev, &result, msg->session_id);
+		(void)fb_send_resp(&bonding_dev->ub_dev, &result, &task->src_eid,
+				   msg->session_id);
 		ubagg_put_device(bonding_dev);
 		return;
 	}
@@ -482,7 +517,8 @@ static void fb_req_msg(struct ubcore_device *dev, struct ubcore_comm_msg *msg,
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (ctx == NULL) {
 		result.result = -ENOMEM;
-		(void)fb_send_resp(&bonding_dev->ub_dev, &result, msg->session_id);
+		(void)fb_send_resp(&bonding_dev->ub_dev, &result, &task->src_eid,
+				   msg->session_id);
 		ubagg_put_device(bonding_dev);
 		return;
 	}
@@ -496,7 +532,8 @@ static void fb_req_msg(struct ubcore_device *dev, struct ubcore_comm_msg *msg,
 	if (IS_ERR(session)) {
 		result.result = PTR_ERR(session);
 		kfree(ctx);
-		(void)fb_send_resp(&bonding_dev->ub_dev, &result, msg->session_id);
+		(void)fb_send_resp(&bonding_dev->ub_dev, &result, &task->src_eid,
+				   msg->session_id);
 		ubagg_put_device(bonding_dev);
 		return;
 	}
