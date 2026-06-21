@@ -88,6 +88,28 @@ static inline long rsi_set_addr_range_state(phys_addr_t start,
 	return res.a0;
 }
 
+#ifdef CONFIG_HISI_CCA
+static inline unsigned long rsi_measurement_extend(unsigned long index,
+						    const u8 *measurement,
+						    unsigned long size)
+{
+	struct arm_smccc_1_2_regs regs = { 0 };
+
+	if (!measurement || size == 0 || size > 64)
+		return RSI_ERROR_INPUT;
+
+	regs.a0 = SMC_RSI_MEASUREMENT_EXTEND;
+	regs.a1 = index;
+	regs.a2 = size;
+	memcpy((u8 *)&regs + offsetof(struct arm_smccc_1_2_regs, a3),
+	       measurement, size);
+
+	arm_smccc_1_2_smc(&regs, &regs);
+
+	return regs.a0;
+}
+#endif
+
 /**
  * rsi_attestation_token_init - Initialise the operation to retrieve an
  * attestation token.

@@ -213,9 +213,26 @@ exit_free_granule_page:
 	return ret;
 }
 
+#ifdef CONFIG_HISI_CCA
+static int arm_cca_measurement_extend(struct tsm_measurement *measurement, void *data)
+{
+	unsigned long ret;
+
+	ret = rsi_measurement_extend(measurement->index, measurement->value,
+				     measurement->value_len);
+	if (ret != RSI_SUCCESS)
+		return -ENXIO;
+
+	return 0;
+}
+#endif
+
 static const struct tsm_ops arm_cca_tsm_ops = {
 	.name = KBUILD_MODNAME,
 	.report_new = arm_cca_report_new,
+#ifdef CONFIG_HISI_CCA
+	.measurement_extend = arm_cca_measurement_extend,
+#endif
 };
 
 /**
