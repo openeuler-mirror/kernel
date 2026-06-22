@@ -233,7 +233,7 @@ struct udma_jetty_grp_ctx {
 	uint32_t valid;
 };
 
-static inline uint32_t to_udma_type(uint32_t trans_mode)
+static inline uint32_t to_udma_type(uint32_t trans_mode, uint32_t order_type)
 {
 	switch (trans_mode) {
 	case UBCORE_TP_RM:
@@ -241,7 +241,7 @@ static inline uint32_t to_udma_type(uint32_t trans_mode)
 	case UBCORE_TP_RC:
 		return JETTY_RC;
 	case UBCORE_TP_UM:
-		return JETTY_UM;
+		return order_type == UBCORE_OL ? JETTY_RC : JETTY_UM;
 	default:
 		return JETTY_TYPE_RESERVED;
 	}
