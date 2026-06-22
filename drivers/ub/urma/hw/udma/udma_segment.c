@@ -442,26 +442,22 @@ static int udma_iommu_local_map(struct ubcore_device *ub_dev,
 	if (pageList.head->length == PAGE_ALIGN(seg->length)) {
 		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, prot,
 				      seg->addr, &(seg->umem->append.sgt));
-		if (unlikely(ret)) {
-			udma_range_list_destroy(&pageList);
-			mutex_unlock(&ctx->seg_tree->lock);
+		if (unlikely(ret))
 			dev_err(ctx->dev->dev, "IOMMU segment failed, ret = %d.\n", ret);
-			return ret;
-		}
 	} else {
 		ret = udma_iommu_partial_overlap_seg(ub_dev, ctx, seg, cfg,
 						     &pageList);
-		if (unlikely(ret)) {
-			udma_range_list_destroy(&pageList);
-			mutex_unlock(&ctx->seg_tree->lock);
+		if (unlikely(ret))
 			dev_err(ctx->dev->dev,
 				"IOMMU partial overlap segment failed, ret = %d.\n", ret);
-			return ret;
-		}
 	}
-
 	udma_range_list_destroy(&pageList);
+	if (ret) {
+		udma_seg_range_release(ctx, seg, &pageList);
+		udma_range_list_destroy(&pageList);
+	}
 	mutex_unlock(&ctx->seg_tree->lock);
+
 	return ret;
 }
 
@@ -700,17 +696,20 @@ int udma_unimport_seg(struct ubcore_target_seg *tseg)
 	return 0;
 }
 
-void udma_destroy_seg_tree_table(struct udma_dev *dev)
+void udma_destroy_seg_tree_table(void)
 {
 	struct udma_seg_tree *seg_tree = NULL;
 	unsigned long tid = 0;
 
-	mutex_lock(&dev->seg_tree_mutex);
-	xa_for_each(&dev->seg_tree_table, tid, seg_tree) {
-		__xa_erase(&dev->seg_tree_table, tid);
+	mutex_lock(&g_seg_tree_mutex);
+	if (!xa_empty(&g_seg_tree_table))
+		pr_warn("seg_tree_table is not empty.\n");
+
+	xa_for_each(&g_seg_tree_table, tid, seg_tree) {
+		__xa_erase(&g_seg_tree_table, tid);
 		udma_seg_tree_destroy(seg_tree);
 	}
-	mutex_unlock(&dev->seg_tree_mutex);
-	xa_destroy(&dev->seg_tree_table);
-	mutex_destroy(&dev->seg_tree_mutex);
+	mutex_unlock(&g_seg_tree_mutex);
+	xa_destroy(&g_seg_tree_table);
+	mutex_destroy(&g_seg_tree_mutex);
 }
