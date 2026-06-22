@@ -42,6 +42,18 @@ static long smh_dev_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		ret = smh_message_ack(&cmd_msg);
 		break;
 	}
+	case SMH_VERSION_CHECK: {
+		struct smh_version_info sentry_version = {
+			.major      = SMH_VERSION_MAJOR,
+			.minor      = SMH_VERSION_MINOR,
+		};
+
+		pr_info("sentry version is %d.%d\n", SMH_VERSION_MAJOR, SMH_VERSION_MINOR);
+
+		if (copy_to_user((void __user *)arg, &sentry_version, sizeof(sentry_version)))
+			return -EFAULT;
+		break;
+	}
 	default:
 		ret = -EINVAL;
 	}
