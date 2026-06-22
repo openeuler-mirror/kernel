@@ -19,6 +19,7 @@ int unic_config_vl_rate_limit(struct unic_dev *unic_dev, u64 *vl_maxrate,
 int unic_mac_pause_en_cfg(struct unic_dev *unic_dev, u32 tx_pause,
 			  u32 rx_pause);
 int unic_pfc_pause_cfg(struct unic_dev *unic_dev, u8 pfc_en);
+bool unic_dscp_tc_exists(struct unic_dev *unic_dev);
 int unic_set_vl_map(struct unic_dev *unic_dev, u8 *dscp_prio, u8 *prio_vl,
 		    u8 map_type);
 
