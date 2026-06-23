@@ -1274,6 +1274,9 @@ EXPORT_SYMBOL_GPL(rme_dev_msix_mask_all);
 static u64 rme_mmio_va_to_pa(const void *addr)
 {
 	uint64_t pa, par_el1;
+	unsigned long flags;
+
+	local_irq_save(flags);
 
 	asm volatile(
 		"AT S1E1W, %0\n"
@@ -1284,6 +1287,8 @@ static u64 rme_mmio_va_to_pa(const void *addr)
 		"mrs %0, par_el1\n"
 		: "=r"(par_el1)
 	);
+
+	local_irq_restore(flags);
 
 	pa = ((uint64_t)(addr) & (PAGE_SIZE - 1)) |
 		(par_el1 & ULL(0x000ffffffffff000));
