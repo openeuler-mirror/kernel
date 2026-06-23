@@ -394,11 +394,11 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 		       uint32_t *tp_cnt, struct ubcore_tp_info *tp_list,
 		       struct ubcore_udata *udata)
 {
-	int idx;
+	int idx, ret;
 	uint32_t req_total_tp_cnt = 0;
 	uint32_t actual_total_tp_cnt = 0;
 	struct ubcore_tpid_cfg tpid_cfg = { 0 };
-	struct ubcore_tpid *one_tpid = NULL;
+	union ubcore_tp_handle tp_handle;
 
 	if (validate_get_tp_cfg(cfg) != 0)
 		return -EINVAL;
@@ -421,8 +421,8 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 		UBCORE_LINK_ETHERNET;
 
 	for (idx = 0; idx < req_total_tp_cnt; idx++) {
-		one_tpid = ubcore_create_tpid_priv(dev, &tpid_cfg, udata);
-		if (one_tpid == NULL) {
+		ret = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, &tp_handle);
+		if (ret != 0) {
 			if (actual_total_tp_cnt > 0) {
 				ubcore_log_err(
 					"tpid num is insufficient, early end, actual_total_tp_cnt: %d.\n",
@@ -432,9 +432,8 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 			ubcore_log_err("Failed to create tpid for tp_list.\n");
 			return -ENOMEM;
 		}
-		tp_list[idx].tp_handle.value = one_tpid->tp_handle.value;
+		tp_list[idx].tp_handle.value = tp_handle.value;
 		actual_total_tp_cnt++;
-		kfree(one_tpid);
 	}
 
 success:
@@ -578,8 +577,7 @@ rollback:
 }
 
 static int ubcore_query_select_tpid_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
-	struct ubcore_tpid_list *tpid_list, struct ubcore_tp_info *selected_tpid,
-	struct ubcore_udata *udata)
+	struct ubcore_tp_info *selected_tpid, struct ubcore_udata *udata)
 {
 	int ret;
 	uint32_t fetch_cnt = 0;
@@ -591,6 +589,7 @@ static int ubcore_query_select_tpid_list(struct ubcore_device *dev, struct ubcor
 	struct ubcore_tpid_list_key tpid_list_key = {0};
 	struct ubcore_tp_info *tp_selected = NULL;
 	struct ubcore_tp_info *tp_list = NULL;
+	struct ubcore_tpid_list *tpid_list = NULL;
 
 	if (validate_get_tp_cfg(cfg) != 0)
 		return -EINVAL;
@@ -682,39 +681,16 @@ err_free_tp_list:
 	return ret;
 }
 
-static struct ubcore_tp_info *get_managed_tpid_list(struct ubcore_device *dev,
-	struct ubcore_get_tp_cfg *cfg, int tp_cnt, struct ubcore_udata *udata)
+int ubcore_create_tpid_priv(struct ubcore_device *dev, struct ubcore_tpid_cfg *cfg,
+	struct ubcore_udata *udata, union ubcore_tp_handle *tp_handle)
 {
-	int ret;
-	struct ubcore_tpid_list *tpid_list = NULL;
-	struct ubcore_tp_info selected = {0};
-	struct ubcore_tp_info *result = NULL;
-
-	ret = ubcore_query_select_tpid_list(dev, cfg, tpid_list, &selected, udata);
-	if (ret != 0) {
-		ubcore_log_err_rl("Failed to query/select tpid, ret = %d.\n", ret);
-		return NULL;
-	}
-
-	result = kzalloc(sizeof(struct ubcore_tp_info), GFP_KERNEL);
-	if (result == NULL)
-		return NULL;
-
-	ubcore_log_info_rl("create tpid handle value = %lld.\n", selected.tp_handle.value);
-	*result = selected;
-	return result;
-}
-
-struct ubcore_tpid *ubcore_create_tpid_priv(struct ubcore_device *dev,
-	struct ubcore_tpid_cfg *cfg, struct ubcore_udata *udata)
-{
-	struct ubcore_tpid *tpid;
-	struct ubcore_tp_info *selected_tp;
 	struct ubcore_get_tp_cfg get_cfg = {0};
+	struct ubcore_tp_info selected = {0};
+	int ret;
 
 	if (dev == NULL || cfg == NULL) {
 		ubcore_log_err("Invalid parameter.\n");
-		return NULL;
+		return -1;
 	}
 
 	ubcore_log_info_rl("Enter create tpid priv.\n");
@@ -728,30 +704,43 @@ struct ubcore_tpid *ubcore_create_tpid_priv(struct ubcore_device *dev,
 	get_cfg.flag.bs.uboe = (cfg->link_type != 0);
 
 	if (validate_get_tp_cfg(&get_cfg) != 0)
-		return NULL;
+		return -1;
 	if (ubcore_check_trans_mode_valid(get_cfg.trans_mode) != true) {
 		ubcore_log_err("Invalid parameter, tp_mode: %d.\n", (int)cfg->tp_mode);
-		return NULL;
+		return -1;
 	}
 
-	selected_tp = get_managed_tpid_list(dev, &get_cfg, 1, udata);
-	if (selected_tp == NULL) {
-		ubcore_log_err_rl("Failed to get managed tpid list.\n");
-		return NULL;
+	ret = ubcore_query_select_tpid_list(dev, &get_cfg, &selected, udata);
+	if (ret != 0) {
+		ubcore_log_err_rl("Failed to query/select tpid, ret = %d.\n", ret);
+		return -1;
 	}
 
-	tpid = kzalloc(sizeof(struct ubcore_tpid), GFP_KERNEL);
-	if (tpid == NULL)
-		return NULL;
-	tpid->tp_handle = selected_tp->tp_handle;
+	*tp_handle = selected.tp_handle;
+	ubcore_log_info_rl("create tpid handle value = %lld.\n", selected.tp_handle.value);
 
-	return tpid;
+	return 0;
 }
 
 struct ubcore_tpid *ubcore_create_tpid(struct ubcore_device *dev,
 	struct ubcore_tpid_cfg *cfg, struct ubcore_udata *udata)
 {
-	return ubcore_create_tpid_priv(dev, cfg, udata);
+	union ubcore_tp_handle tp_handle = { 0 };
+	struct ubcore_tpid *tpid = NULL;
+	int ret;
+
+	tpid = kzalloc(sizeof(*tpid), GFP_KERNEL);
+	if (tpid == NULL)
+		return NULL;
+
+	ret = ubcore_create_tpid_priv(dev, cfg, udata, &tp_handle);
+	if (ret != 0) {
+		ubcore_log_err("Failed to create tpid, ret = %d.\n", ret);
+		kfree(tpid);
+		return NULL;
+	}
+	tpid->tp_handle = tp_handle;
+	return tpid;
 }
 EXPORT_SYMBOL(ubcore_create_tpid);
 
@@ -801,6 +790,7 @@ int ubcore_delete_tpid(struct ubcore_device *dev, struct ubcore_tpid *tpid)
 	}
 
 	tpid_val = tpid->tp_handle.bs.tpid;
+	kfree(tpid);
 	return ubcore_delete_tpid_priv(dev, tpid_val);
 }
 EXPORT_SYMBOL(ubcore_delete_tpid);

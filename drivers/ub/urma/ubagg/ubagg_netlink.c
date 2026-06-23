@@ -16,6 +16,7 @@
 #include <net/genetlink.h>
 #include <ub/urma/ubcore_uapi.h>
 
+#include "ubagg_device.h"
 #include "ubagg_dfx.h"
 #include "ubagg_failback.h"
 #include "ubagg_log.h"
@@ -58,7 +59,7 @@ enum ubagg_genl_mcgrp {
 };
 
 static const struct genl_multicast_group ubagg_genl_mcgrps[] = {
-	[UBAGG_NL_MCGRP_USER_PAYLOAD] = { .name = "user_payload" },
+	[UBAGG_NL_MCGRP_USER_PAYLOAD] = { .name = "bonding" },
 };
 
 static const struct genl_ops ubagg_genl_ops[] = {
@@ -79,18 +80,6 @@ static const struct genl_ops ubagg_genl_ops[] = {
 		.policy = ubagg_genl_policy,
 		.maxattr = ARRAY_SIZE(ubagg_genl_policy) - 1,
 		.doit = ubagg_nl_get_v2p_res_ops,
-	},
-	{
-		.cmd = UBAGG_NL_CMD_FAILBACK_START,
-		.policy = ubagg_genl_policy,
-		.maxattr = ARRAY_SIZE(ubagg_genl_policy) - 1,
-		.doit = ubagg_fb_nl_start,
-	},
-	{
-		.cmd = UBAGG_NL_CMD_FAILBACK_RESULT,
-		.policy = ubagg_genl_policy,
-		.maxattr = ARRAY_SIZE(ubagg_genl_policy) - 1,
-		.doit = ubagg_fb_nl_result,
 	},
 };
 
@@ -223,7 +212,7 @@ static int ubagg_nl_get_physical_device_ops(struct sk_buff *skb,
 
 	ret = query_eid_idx(dev, &arg->in.bonding_eid,
 			    &arg->out.bonding_eid_idx);
-	ubagg_put_ubcore_device(dev);
+	ubcore_put_device(dev);
 	if (ret != 0) {
 		ubagg_log_err("Failed to query eid information\n");
 		kfree(arg);
@@ -291,16 +280,16 @@ static int ubagg_nl_get_v2p_res_ops(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	arg->in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
-	ubagg_dev = ubagg_find_dev_by_name(arg->in.dev_name);
+	ubagg_dev = ubagg_get_device_by_name(arg->in.dev_name);
 	if (ubagg_dev == NULL) {
-		ubagg_log_err("Failed to find ubagg dev %s\n",
+		ubagg_log_err("Failed to get ubagg dev %s\n",
 			      arg->in.dev_name);
 		ret = -ENOENT;
 		goto free_arg;
 	}
 
 	ret = ubagg_query_v2p_res(ubagg_dev, arg);
-	ubagg_dev_ref_put(ubagg_dev);
+	ubagg_put_device(ubagg_dev);
 	if (ret != 0) {
 		ubagg_log_err("Failed to query ubagg v2p res, ret:%d\n", ret);
 		goto free_arg;
