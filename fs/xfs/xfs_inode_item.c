@@ -727,6 +727,7 @@ xfs_inode_item_push(
 	struct xfs_inode_log_item *iip = INODE_ITEM(lip);
 	struct xfs_inode	*ip = iip->ili_inode;
 	struct xfs_buf		*bp = lip->li_buf;
+	struct xfs_ail		*ailp = lip->li_ailp;
 	uint			rval = XFS_ITEM_SUCCESS;
 	int			error;
 
@@ -747,15 +748,10 @@ xfs_inode_item_push(
 	if (xfs_iflags_test(ip, XFS_IFLUSHING))
 		return XFS_ITEM_FLUSHING;
 
-	if (!xfs_ilock_nowait(ip, XFS_ILOCK_SHARED))
+	if (!xfs_buf_trylock(bp))
 		return XFS_ITEM_LOCKED;
 
-	if (!xfs_buf_trylock(bp)) {
-		xfs_iunlock(ip, XFS_ILOCK_SHARED);
-		return XFS_ITEM_LOCKED;
-	}
-
-	spin_unlock(&lip->li_ailp->ail_lock);
+	spin_unlock(&ailp->ail_lock);
 
 	/*
 	 * We need to hold a reference for flushing the cluster buffer as it may
@@ -779,8 +775,11 @@ xfs_inode_item_push(
 		rval = XFS_ITEM_LOCKED;
 	}
 
-	spin_lock(&lip->li_ailp->ail_lock);
-	xfs_iunlock(ip, XFS_ILOCK_SHARED);
+	/*
+	 * The buffer no longer protects the log item from reclaim, so
+	 * do not reference lip after this point.
+	 */
+	spin_lock(&ailp->ail_lock);
 	return rval;
 }
 
