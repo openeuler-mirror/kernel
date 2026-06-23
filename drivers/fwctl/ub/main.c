@@ -16,8 +16,12 @@
 #define TIME_WINDOW_MS 3000
 #define TIME_WINDOW_JIFFIES msecs_to_jiffies(TIME_WINDOW_MS)
 #define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 3
+#define UBCTL_UNSUPPORTED_RPCCMD_CNT_A_1 1
 #define UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 12
+#define UBCTL_UNSUPPORTED_RPCCMD_CNT_K_1 18
 #define UBCTL_CMD_CNT_MAX 100
+
+static u32 g_env_type;
 
 static DEFINE_MUTEX(g_fifo_lock);
 
@@ -117,6 +121,8 @@ static int ubctl_check_rpc_cmd(struct ubctl_dev *ucdev, u32 rpc_cmd)
 		  { UTOOL_CMD_QUERY_SCC_VERSION, UTOOL_CMD_QUERY_SCC_LOG,
 		    UTOOL_CMD_QUERY_TA_WQE_TIME },
 		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 },
+		{ UBASE_HW_VER_A_1, { UTOOL_CMD_QUERY_TA_WQE_TIME },
+		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_1 },
 
 		{ UBASE_HW_VER_K_0,
 		  { UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT,
@@ -126,25 +132,35 @@ static int ubctl_check_rpc_cmd(struct ubctl_dev *ucdev, u32 rpc_cmd)
 		    UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
 		    UTOOL_CMD_QUERY_PORT_PKT_STATS },
 		  UBCTL_UNSUPPORTED_RPCCMD_CNT_K_0 },
+		{ UBASE_HW_VER_K_1,
+		  { UTOOL_CMD_CONF_NL_SSU_VL_PKT, UTOOL_CMD_QUERY_NL_SSU_VL_PKT,
+		    UTOOL_CMD_QUERY_DL_BIST, UTOOL_CMD_CONF_DL_BIST, UTOOL_CMD_QUERY_DL_BIST_ERR,
+		    UTOOL_CMD_QUERY_DL_RT_BANDWIDTH, UTOOL_CMD_QUERY_LOOPBACK,
+		    UTOOL_CMD_CONF_LOOPBACK, UTOOL_CMD_QUERY_PRBS_EN,
+		    UTOOL_CMD_CONF_PRBS_EN, UTOOL_CMD_QUERY_PRBS_RESULT,
+		    UTOOL_CMD_QUERY_PORT_PKT_STATS,
+		    UTOOL_CMD_QUERY_BA_MAR, UTOOL_CMD_QUERY_BA_MAR_TABLE,
+		    UTOOL_CMD_QUERY_BA_MAR_CYC_EN, UTOOL_CMD_CONF_BA_MAR_CYC_EN,
+		    UTOOL_CMD_CONFIG_BA_MAR_PEFR_STATS, UTOOL_CMD_QUERY_BA_MAR_PEFR_STATS },
+		  UBCTL_UNSUPPORTED_RPCCMD_CNT_K_1 }
 	};
 	int env_type_cnt = ARRAY_SIZE(ubctl_env_type_info_table);
-	u32 env_type;
 	int i, j;
 
-	env_type = ubase_get_hw_ver(ucdev->adev);
+	g_env_type = ubase_get_hw_ver(ucdev->adev);
 	for (i = 0; i < env_type_cnt; i++) {
-		if (ubctl_env_type_info_table[i].env_type != env_type)
+		if (ubctl_env_type_info_table[i].env_type != g_env_type)
 			continue;
 		for (j = 0; j < ubctl_env_type_info_table[i].rpc_cmd_count; j++) {
 			if (ubctl_env_type_info_table[i].unsupported_rpccmd[j] != rpc_cmd)
 				continue;
 			ubctl_err(ucdev, "rpc cmd(0x%x) cannot be used in current env type(%u)\n",
-				  rpc_cmd, env_type);
+				  rpc_cmd, g_env_type);
 			return -ENOTTY;
 		}
 		return 0;
 	}
-	ubctl_err(ucdev, "env type(%u) is not support.\n", env_type);
+	ubctl_err(ucdev, "env type(%u) is not support.\n", g_env_type);
 
 	return -ENOTTY;
 }
@@ -159,6 +175,41 @@ static int ub_cmd_do(struct ubctl_dev *ucdev,
 		ucdev, rpc_cmd);
 	int ret;
 
+	switch (rpc_cmd) {
+	case UTOOL_CMD_CONF_NL_SSU_VL_PKT:
+	case UTOOL_CMD_QUERY_NL_SSU_VL_PKT:
+		ret = ubctl_check_port_type(ucdev, query_cmd_param, UBCTL_PORT_TYPE_ETH);
+		if (ret)
+			return ret;
+		break;
+
+	case UTOOL_CMD_QUERY_DL:
+	case UTOOL_CMD_QUERY_DL_PKT_STATS:
+	case UTOOL_CMD_QUERY_DL_LINK_STATUS:
+	case UTOOL_CMD_QUERY_DL_LANE:
+	case UTOOL_CMD_QUERY_DL_BIT_ERR:
+	case UTOOL_CMD_QUERY_DL_LINK_TRACE:
+	case UTOOL_CMD_QUERY_DL_BIST:
+	case UTOOL_CMD_CONF_DL_BIST:
+	case UTOOL_CMD_QUERY_DL_BIST_ERR:
+		ret = ubctl_check_port_type(ucdev, query_cmd_param, UBCTL_PORT_TYPE_UB);
+		if (ret)
+			return ret;
+		break;
+	case UTOOL_CMD_QUERY_DL_PERFORMANCE:
+	case UTOOL_CMD_QUERY_DL_RT_BANDWIDTH:
+	case UTOOL_CMD_QUERY_DL_PERF_START:
+	case UTOOL_CMD_QUERY_DL_PERF:
+	case UTOOL_CMD_QUERY_DL_PERF_STOP:
+		ret = ubctl_check_port_type_from_bitmap(ucdev, query_cmd_param, UBCTL_PORT_TYPE_UB);
+		if (ret)
+			return ret;
+		break;
+
+	default:
+		break;
+	}
+
 	if (ubctl_query_func && ubctl_query_func->execute) {
 		ret = ubctl_query_func->execute(ucdev, query_cmd_param,
 						ubctl_query_func);
@@ -166,9 +217,11 @@ static int ub_cmd_do(struct ubctl_dev *ucdev,
 		ret = ubctl_query_reg->execute(ucdev, query_cmd_param,
 					       ubctl_query_reg);
 	} else {
-		ubctl_err(ucdev, "No corresponding query was found.\n");
+		ubctl_err(ucdev, "no corresponding query was found.\n");
 		return -EINVAL;
 	}
+
+	query_cmd_param->out->env_version = g_env_type;
 
 	return ubctl_cmd_err(ucdev, ret, query_cmd_param->out);
 }
