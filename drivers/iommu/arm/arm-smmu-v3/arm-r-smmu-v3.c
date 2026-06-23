@@ -73,7 +73,7 @@ static int realm_smmu_write_reg_sync(struct arm_smmu_device *smmu, u32 val,
 void realm_smmu_write_ste(struct arm_smmu_master *master, u32 sid,
 			  const struct arm_smmu_ste *target)
 {
-	u64 ns_vttbr;
+	u64 ns_vttbr, ste_0_cfg;
 	bool lvl_strtab;
 	struct arm_smmu_ste *rste;
 	struct arm_smmu_device *smmu = master->smmu;
@@ -82,6 +82,10 @@ void realm_smmu_write_ste(struct arm_smmu_master *master, u32 sid,
 		return;
 
 	if (!rme_is_pcipc_ns_dev(master->dev))
+		return;
+
+	ste_0_cfg = FIELD_GET(STRTAB_STE_0_CFG, le64_to_cpu(target->data[0]));
+	if (ste_0_cfg != STRTAB_STE_0_CFG_S2_TRANS && ste_0_cfg != 0)
 		return;
 
 	lvl_strtab = !!(smmu->features & ARM_SMMU_FEAT_2_LVL_STRTAB);
