@@ -916,9 +916,16 @@ void kvm_rme_unassign_device(struct pci_dev *pdev, struct kvm *kvm)
 	if (!pdev || !kvm || !is_support_rme())
 		return;
 
-	/* Rme dev undelegate will be processed in _kvm_destroy_realm */
-	if (kvm_is_realm(kvm))
+	if (kvm_is_realm(kvm)) {
 		rmi_dev_detach(pci_dev_id(pdev));
+		/*
+		 * Normally, dev_undelegate should be processed in realm_destroy_dev_list.
+		 * This handles exception exit flow that dev is delegated but
+		 * realm fails to create.
+		 */
+		if (!kvm_realm_is_created(kvm))
+			rmi_dev_undelegate(pci_dev_id(pdev));
+	}
 
 	rme_dev_unassign(pdev);
 }
@@ -932,6 +939,7 @@ void realm_destroy_dev_list(struct realm *realm)
 		WARN_ON(rmi_dev_undelegate(pos->dev_bdf));
 		list_del(&pos->list);
 		kfree(pos);
+		cond_resched();
 	}
 }
 
