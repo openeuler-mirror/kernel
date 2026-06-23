@@ -152,6 +152,8 @@ static void rme_dev_entry_set(struct realm_dev_entry *dev_entry,
 	dev_entry->realm = realm;
 	dev_entry->ns_vttbr = ns_vttbr;
 	dev_entry->pcipc_ns = pcipc_ns;
+	dev_entry->msi_iova = 0;
+	dev_entry->msi_page_index = 0;
 }
 
 void rme_add_dev_entry(struct device *dev, u64 vttbr, bool realm, u64 ns_vttbr,
