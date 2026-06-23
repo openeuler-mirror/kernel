@@ -541,28 +541,44 @@ static int svc_rdma_dma_map_buf(struct svcxprt_rdma *rdma,
 				     offset_in_page(base), len);
 }
 
+static unsigned int
+svc_rdma_inline_reply_len(const struct svc_rdma_recv_ctxt *rctxt,
+			  const struct xdr_buf *xdr)
+{
+	unsigned int len = xdr->len;
+
+	if (rctxt && rctxt->rc_write_list) {
+		len -= xdr->page_len;
+		if (xdr->tail[0].iov_len)
+			len -= xdr_pad_size(xdr->page_len);
+	}
+
+	return len;
+}
+
 /**
- * svc_rdma_pull_up_needed - Determine whether to use pull-up
+ * svc_rdma_check_pull_up - Determine whether to use pull-up
  * @rdma: controlling transport
  * @sctxt: send_ctxt for the Send WR
  * @rctxt: Write and Reply chunks provided by client
  * @xdr: xdr_buf containing RPC message to transmit
  *
  * Returns:
- *	%true if pull-up must be used
- *	%false otherwise
+ *   %1 if pull-up must be used
+ *   %0 if pull-up is not needed
+ *   %-E2BIG if the reply is too large to be pulled up
  */
-static bool svc_rdma_pull_up_needed(struct svcxprt_rdma *rdma,
-				    struct svc_rdma_send_ctxt *sctxt,
-				    const struct svc_rdma_recv_ctxt *rctxt,
-				    struct xdr_buf *xdr)
+static int svc_rdma_check_pull_up(const struct svcxprt_rdma *rdma,
+				  const struct svc_rdma_send_ctxt *sctxt,
+				  const struct svc_rdma_recv_ctxt *rctxt,
+				  const struct xdr_buf *xdr)
 {
 	int elements;
 
 	/* For small messages, copying bytes is cheaper than DMA mapping.
 	 */
 	if (sctxt->sc_hdrbuf.len + xdr->len < RPCRDMA_PULLUP_THRESH)
-		return true;
+		return 1;
 
 	/* Check whether the xdr_buf has more elements than can
 	 * fit in a single RDMA Send.
@@ -590,7 +606,19 @@ static bool svc_rdma_pull_up_needed(struct svcxprt_rdma *rdma,
 		++elements;
 
 	/* assume 1 SGE is needed for the transport header */
-	return elements >= rdma->sc_max_send_sges;
+	if (elements < rdma->sc_max_send_sges)
+		return 0;
+
+	/*
+	 * The reply has too many SGEs to Send inline, so it has to be
+	 * linearized into sc_xprt_buf. That buffer holds only
+	 * sc_max_req_size bytes, so a larger reply cannot be pulled up.
+	 * RFC 8166 Section 4.5.3 requires responding with ERR_CHUNK.
+	 */
+	if (sctxt->sc_hdrbuf.len + svc_rdma_inline_reply_len(rctxt, xdr) >
+	    rdma->sc_max_req_size)
+		return -E2BIG;
+	return 1;
 }
 
 /**
@@ -602,6 +630,9 @@ static bool svc_rdma_pull_up_needed(struct svcxprt_rdma *rdma,
  *
  * The device is not capable of sending the reply directly.
  * Assemble the elements of @xdr into the transport header buffer.
+ *
+ * Assumptions:
+ *  check_pull_up has determined that @xdr will fit in the buffer.
  *
  * Returns zero on success, or a negative errno on failure.
  */
@@ -649,7 +680,7 @@ static int svc_rdma_pull_up_reply_msg(struct svcxprt_rdma *rdma,
 	if (taillen)
 		memcpy(dst, tailbase, taillen);
 
-	sctxt->sc_sges[0].length += xdr->len;
+	sctxt->sc_sges[0].length += svc_rdma_inline_reply_len(rctxt, xdr);
 	trace_svcrdma_send_pullup(sctxt->sc_sges[0].length);
 	return 0;
 }
@@ -663,7 +694,10 @@ static int svc_rdma_pull_up_reply_msg(struct svcxprt_rdma *rdma,
  * Load the xdr_buf into the ctxt's sge array, and DMA map each
  * element as it is added. The Send WR's num_sge field is set.
  *
- * Returns zero on success, or a negative errno on failure.
+ * Returns:
+ *   %0 if DMA mapping was successful.
+ *   %-E2BIG if the reply is too large to be pulled up
+ *   %-EIO if DMA mapping failed
  */
 int svc_rdma_map_reply_msg(struct svcxprt_rdma *rdma,
 			   struct svc_rdma_send_ctxt *sctxt,
@@ -690,7 +724,10 @@ int svc_rdma_map_reply_msg(struct svcxprt_rdma *rdma,
 	/* For pull-up, svc_rdma_send() will sync the transport header.
 	 * No additional DMA mapping is necessary.
 	 */
-	if (svc_rdma_pull_up_needed(rdma, sctxt, rctxt, xdr))
+	ret = svc_rdma_check_pull_up(rdma, sctxt, rctxt, xdr);
+	if (ret < 0)
+		return ret;
+	if (ret)
 		return svc_rdma_pull_up_reply_msg(rdma, sctxt, rctxt, xdr);
 
 	++sctxt->sc_cur_sge_no;
@@ -955,6 +992,8 @@ int svc_rdma_sendto(struct svc_rqst *rqstp)
 	}
 
 	ret = svc_rdma_send_reply_msg(rdma, sctxt, rctxt, rqstp);
+	if (ret == -E2BIG)
+		goto err2;
 	if (ret < 0)
 		goto err1;
 	return 0;
