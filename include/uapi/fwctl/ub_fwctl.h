@@ -31,11 +31,13 @@ struct fwctl_rpc_ub_in {
 /**
  * struct fwctl_rpc_ub_out - ioctl(FWCTL_RPC) output
  * @retval: The value returned when querying data with an error message
+ * @env_version: Different environmental versions
  * @data_size: Length of @data
  * @data: data transmitted to users
  */
 struct fwctl_rpc_ub_out {
 	int retval;
+	__u32 env_version;
 	__u32 data_size;
 	__u32 data[];
 };
