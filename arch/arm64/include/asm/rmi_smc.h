@@ -235,14 +235,17 @@ struct rec_enter {
 		};
 		u8 padding2[0x100];
 	};
-	/* 0x400 */
-	u8 padding3[0x3f8];
+	union { /* 0x400 */
+		u64 clidr_el1;
+		u8 padding3[0x100];
+	};
+	u8 padding4[0x2f8];
 	union {
 		struct { /* 0x7f8 */
 			u16 dev_bdf;
 			u16 vfio_dev;
 		};
-		u8 padding4[0x8];
+		u8 padding5[0x8];
 	};
 };
 
