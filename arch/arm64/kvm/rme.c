@@ -1912,6 +1912,9 @@ int _kvm_rec_pre_enter(struct kvm_vcpu *vcpu)
 	struct realm_rec *rec = vcpu->arch.rec;
 	if (kvm_realm_state(vcpu->kvm) != REALM_STATE_ACTIVE)
 		return -EINVAL;
+
+	rec->run->enter.clidr_el1 = vcpu_read_sys_reg(vcpu, CLIDR_EL1);
+
 	switch (rec->run->exit.exit_reason) {
 	case RMI_EXIT_HOST_CALL:
 	case RMI_EXIT_PSCI:
