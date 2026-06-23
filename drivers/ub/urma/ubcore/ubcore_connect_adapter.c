@@ -1466,6 +1466,12 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 		return;
 	}
 
+	if (tpid_reuse->is_ref == false) {
+		mutex_unlock(&tpid_reuse->lock);
+		ubcore_tpid_reuse_kref_put(tpid_reuse);
+		return;
+	}
+
 	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR) {
 		mutex_unlock(&tpid_reuse->lock);
 		ubcore_tpid_reuse_kref_put(tpid_reuse);
