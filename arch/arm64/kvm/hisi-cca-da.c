@@ -650,6 +650,7 @@ static int _realm_unbind_drivers(struct pci_dev **pdevs, uint16_t nr)
 static int delegate_root_dev(struct pci_dev *root_dev)
 {
 	struct rmi_dev_delegate_params *params = NULL;
+	unsigned long flags;
 	int ret;
 
 	params = (struct rmi_dev_delegate_params *)get_zeroed_page(GFP_ATOMIC);
@@ -662,10 +663,10 @@ static int delegate_root_dev(struct pci_dev *root_dev)
 		return ret;
 	}
 
-	spin_lock(&g_dev_protected_lock);
+	spin_lock_irqsave(&g_dev_protected_lock, flags);
 	for (int i = 0; i < params->num_dev; i++)
 		bitmap_set(g_dev_protected, params->devs[i], 1);
-	spin_unlock(&g_dev_protected_lock);
+	spin_unlock_irqrestore(&g_dev_protected_lock, flags);
 
 	ret = rme_root_dev_delegate(virt_to_phys(params));
 	if (ret)
@@ -713,21 +714,22 @@ static int dev_assign_to_ns(struct dev_hash_entry *entry, struct pci_dev *root_d
 static int rme_dev_assign(struct pci_dev *root_dev, struct kvm *kvm)
 {
 	struct dev_hash_entry *entry;
+	unsigned long flags;
 	int ret;
 
-	spin_lock(&g_dev_htable_lock);
+	spin_lock_irqsave(&g_dev_htable_lock, flags);
 	entry = find_root_dev_entry(pci_dev_id(root_dev));
 	if (!entry) {
 		entry = add_root_dev_entry(pci_dev_id(root_dev));
 		if (!entry) {
-			spin_unlock(&g_dev_htable_lock);
+			spin_unlock_irqrestore(&g_dev_htable_lock, flags);
 			return -ENOMEM;
 		}
 	}
 
 	ret = kvm_is_realm(kvm) ? dev_assign_to_realm(entry, root_dev) :
 				  dev_assign_to_ns(entry, root_dev);
-	spin_unlock(&g_dev_htable_lock);
+	spin_unlock_irqrestore(&g_dev_htable_lock, flags);
 	return ret;
 }
 
@@ -735,15 +737,16 @@ static void rme_dev_unassign(struct pci_dev *pdev)
 {
 	struct dev_hash_entry *entry;
 	struct pci_dev *root_dev;
+	unsigned long flags;
 
 	root_dev = rme_get_root_dev(pdev);
 	if (!root_dev)
 		return;
 
-	spin_lock(&g_dev_htable_lock);
+	spin_lock_irqsave(&g_dev_htable_lock, flags);
 	entry = find_root_dev_entry(pci_dev_id(root_dev));
 	if (!entry) {
-		spin_unlock(&g_dev_htable_lock);
+		spin_unlock_irqrestore(&g_dev_htable_lock, flags);
 		return;
 	}
 
@@ -755,7 +758,7 @@ static void rme_dev_unassign(struct pci_dev *pdev)
 		kfree(entry);
 	}
 
-	spin_unlock(&g_dev_htable_lock);
+	spin_unlock_irqrestore(&g_dev_htable_lock, flags);
 }
 
 static int realm_add_dev_to_list(struct pci_dev *pdev, struct kvm *kvm)
