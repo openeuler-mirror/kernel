@@ -1732,7 +1732,6 @@ void ata_scsi_deferred_qc_work(struct work_struct *work)
 void ata_scsi_requeue_deferred_qc(struct ata_port *ap)
 {
 	struct ata_queued_cmd *qc = ap->deferred_qc;
-	struct scsi_cmnd *scmd;
 
 	lockdep_assert_held(ap->lock);
 
@@ -1744,11 +1743,9 @@ void ata_scsi_requeue_deferred_qc(struct ata_port *ap)
 	if (!qc)
 		return;
 
-	scmd = qc->scsicmd;
 	ap->deferred_qc = NULL;
-	ata_qc_free(qc);
-	scmd->result = (DID_SOFT_ERROR << 16);
-	scsi_done(scmd);
+	qc->scsicmd->result = (DID_SOFT_ERROR << 16);
+	ata_qc_done(qc);
 }
 
 static void ata_scsi_schedule_deferred_qc(struct ata_port *ap)
