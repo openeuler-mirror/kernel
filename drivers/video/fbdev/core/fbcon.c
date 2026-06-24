@@ -1223,6 +1223,7 @@ static void fbcon_deinit(struct vc_data *vc)
 finished:
 
 	fbcon_free_font(p, free_font);
+	p->mode = NULL;
 	if (free_font)
 		vc->vc_font.data = NULL;
 
@@ -1372,12 +1373,12 @@ static void fbcon_set_disp(struct fb_info *info, struct fb_var_screeninfo *var,
 
 	p = &fb_display[unit];
 
-	if (var_to_display(p, var, info))
-		return;
-
 	vc = vc_cons[unit].d;
 
 	if (!vc)
+		return;
+
+	if (var_to_display(p, var, info))
 		return;
 
 	default_mode = vc->vc_display_fg;
