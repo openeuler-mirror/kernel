@@ -685,7 +685,8 @@ static int ipourma_jetty_set_priority(struct ipourma_dev_priv *priv,
 	} else {
 		if (ipourma_utp_sl >= 0 &&
 		    ipourma_utp_sl < UBCORE_MAX_PRIORITY_CNT &&
-		    attr.dev_cap.priority_info[ipourma_utp_sl].tp_type.bs.utp == 1) {
+		    (attr.dev_cap.priority_info[ipourma_utp_sl].tp_type.bs.utp == 1 ||
+			    attr.dev_cap.priority_info[ipourma_utp_sl].tp_type.bs.rtp == 1)) {
 			jetty_cfg->priority = ipourma_utp_sl;
 			netdev_info(priv->dev,
 				"ipourma create jetty set priority : %d, ty_type : utp\n",

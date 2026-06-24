@@ -1867,7 +1867,6 @@ int ubcore_query_device_attr(struct ubcore_device *dev,
 			     struct ubcore_device_attr *attr)
 {
 	int ret;
-	uint32_t i;
 
 	if (dev == NULL || attr == NULL || dev->ops == NULL ||
 	    dev->ops->query_device_attr == NULL) {
@@ -1880,15 +1879,6 @@ int ubcore_query_device_attr(struct ubcore_device *dev,
 		ubcore_log_err("failed to query device attr, ret: %d.\n", ret);
 		return ret;
 	}
-
-	/* If rtp is set in priority_info, utp must also be set */
-	for (i = 0; i < UBCORE_MAX_PRIORITY_CNT; i++) {
-		if (attr->dev_cap.priority_info[i].tp_type.bs.rtp)
-			attr->dev_cap.priority_info[i].tp_type.bs.utp = 1;
-	}
-
-	dev->attr = *attr;
-
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_query_device_attr);
