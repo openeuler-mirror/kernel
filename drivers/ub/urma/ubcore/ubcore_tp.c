@@ -31,7 +31,8 @@ int ubcore_check_tp_type_valid(enum ubcore_transport_mode trans_mode, uint32_t t
 {
 	if ((trans_mode != UBCORE_TP_UM && tp_mode == UBCORE_UTP) ||
 		(trans_mode == UBCORE_TP_UM && tp_mode == UBCORE_RTP)) {
-		ubcore_log_err("setting of UTP or UM is conflit with anther setting");
+		ubcore_log_err("setting of UTP or UM is conflit with anther setting, transmode is %d, tpmode is %d",
+						trans_mode, tp_mode);
 		return -1;
 	}
 	return 0;
@@ -885,8 +886,18 @@ int ubcore_modify_tpid(struct ubcore_device *dev, enum ubcore_tpid_status state,
 		}
 		mutex_lock(&entry->lock);
 		old_state = entry->tpid_status;
+		if (old_state == UBCORE_TPID_STATE_RESET) {
+			ubcore_log_warn_rl(
+				"TPID %u state is already RESET, ignore flushdone event.\n",
+				tp_id);
+			mutex_unlock(&entry->lock);
+			ubcore_tpid_state_kref_put(entry);
+			return 0;
+		}
 		if (old_state != UBCORE_TPID_STATE_ERR) {
-			ubcore_log_err("Invalid state transition: %d -> RESET.\n", old_state);
+			ubcore_log_err_rl(
+				"Invalid state transition: %d -> RESET, tp_id: %u.\n",
+				old_state, tp_id);
 			mutex_unlock(&entry->lock);
 			ubcore_tpid_state_kref_put(entry);
 			return -EINVAL;
