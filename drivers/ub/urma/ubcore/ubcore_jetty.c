@@ -3428,23 +3428,6 @@ int ubcore_bind_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 }
 EXPORT_SYMBOL(ubcore_bind_jetty);
 
-static bool
-ubcore_check_tp_handle_available(struct ubcore_device *dev,
-				 struct ubcore_active_tp_cfg *active_tp_cfg)
-{
-	struct ubcore_vtpn *vtpn;
-
-	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
-	if (vtpn) {
-		ubcore_log_err(
-			"Invalid operation with tp_handle: %llu already used.\n",
-			active_tp_cfg->tp_handle.value);
-		ubcore_vtpn_kref_put(vtpn);
-		return false;
-	}
-	return true;
-}
-
 static int ubcore_inner_bind_ub_jetty_ctrlplane(
 	struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
 	struct ubcore_active_tp_cfg *active_tp_cfg, struct ubcore_udata *udata)
@@ -3459,12 +3442,6 @@ static int ubcore_inner_bind_ub_jetty_ctrlplane(
 	    !dev->ops->unbind_jetty) {
 		ubcore_log_err(
 			"Failed to bind jetty, no ops->bind_jetty_ex.\n");
-		return -EINVAL;
-	}
-
-	if (!ubcore_check_tp_handle_available(dev, active_tp_cfg)) {
-		ubcore_log_err("Invalid tp_handle: %llu.\n",
-			       active_tp_cfg->tp_handle.value);
 		return -EINVAL;
 	}
 

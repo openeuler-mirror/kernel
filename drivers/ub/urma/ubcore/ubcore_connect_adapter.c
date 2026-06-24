@@ -389,6 +389,20 @@ static bool ubcore_is_loopback(struct ubcore_device *dev,
 	return false;
 }
 
+static inline void ubcore_tpid_reuse_dec_usecnt(struct ubcore_tpid_reuse *tpid_reuse)
+{
+	mutex_lock(&tpid_reuse->lock);
+	atomic_dec(&tpid_reuse->use_cnt);
+	mutex_unlock(&tpid_reuse->lock);
+}
+
+static inline void ubcore_tpid_reuse_inc_usecnt(struct ubcore_tpid_reuse *tpid_reuse)
+{
+	mutex_lock(&tpid_reuse->lock);
+	atomic_inc(&tpid_reuse->use_cnt);
+	mutex_unlock(&tpid_reuse->lock);
+}
+
 static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpid_reuse)
 {
 	int i = 0;
@@ -1198,6 +1212,12 @@ int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 	dev = tpid_reuse->ub_dev;
 
 	mutex_lock(&tpid_reuse->lock);
+	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR) {
+		mutex_unlock(&tpid_reuse->lock);
+		ubcore_log_warn("tpid_reuse already in ERROR state, skip disconnect.\n");
+		return 0;
+	}
+
 	if (atomic_dec_return(&tpid_reuse->use_cnt) > 0) {
 		mutex_unlock(&tpid_reuse->lock);
 		return 0;
@@ -1208,6 +1228,8 @@ int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 		ret = send_destroy_req(tpid_reuse);
 		if (ret != 0) {
 			ubcore_log_err("Failed to send destroy req message");
+			/* Rollback use_cnt on failure */
+			atomic_inc(&tpid_reuse->use_cnt);
 			mutex_unlock(&tpid_reuse->lock);
 			return ret;
 		}
@@ -1234,7 +1256,8 @@ int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 	ubcore_log_info_rl("disconnect tpid_reuse:%u, ret:%d, tpid_reuse_state:%u",
 			   tpid_reuse->tp_handle.bs.tpid, ret, tpid_reuse->reuse_state);
 
-	(void)ubcore_free_tpid_reuse(tpid_reuse);
+	if (ret == 0)
+		(void)ubcore_free_tpid_reuse(tpid_reuse);
 
 	return ret;
 }
@@ -1498,8 +1521,8 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 	}
 
 	ubcore_tpid_reuse_kref_put(tpid_reuse);
-
-	(void)ubcore_free_tpid_reuse(tpid_reuse);
+	if (ret == 0)
+		(void)ubcore_free_tpid_reuse(tpid_reuse);
 }
 
 static void handle_isref_req(struct ubcore_device *dev,
@@ -1645,7 +1668,11 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 		active_tp_cfg.tp_handle = tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
-		return ubcore_import_jfr_ex(dev, cfg, &active_tp_cfg, udata);
+		tjfr = ubcore_import_jfr_ex(dev, cfg, &active_tp_cfg, udata);
+		if (IS_ERR_OR_NULL(tjfr))
+			/* Rollback use_cnt since import failed */
+			ubcore_tpid_reuse_dec_usecnt(tpid_reuse);
+		return tjfr;
 	}
 
 	tpid_reuse = ubcore_create_tpid_reuse(dev, &key);
@@ -1664,7 +1691,11 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 		active_tp_cfg.tp_handle = exist_tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = exist_tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = exist_tpid_reuse->tx_psn;
-		return ubcore_import_jfr_ex(dev, cfg, &active_tp_cfg, udata);
+		tjfr = ubcore_import_jfr_ex(dev, cfg, &active_tp_cfg, udata);
+		if (IS_ERR_OR_NULL(tjfr))
+			/* Rollback use_cnt since import failed */
+			ubcore_tpid_reuse_dec_usecnt(exist_tpid_reuse);
+		return tjfr;
 	} else if (ret != 0) {
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
 		return NULL;
@@ -1796,7 +1827,11 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 		active_tp_cfg.tp_handle = tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
-		return ubcore_import_jetty_ex(dev, cfg, &active_tp_cfg, udata);
+		tjetty = ubcore_import_jetty_ex(dev, cfg, &active_tp_cfg, udata);
+		if (IS_ERR_OR_NULL(tjetty))
+			/* Rollback use_cnt since import failed */
+			ubcore_tpid_reuse_dec_usecnt(tpid_reuse);
+		return tjetty;
 	}
 
 	tpid_reuse = ubcore_create_tpid_reuse(dev, &key);
@@ -1815,7 +1850,11 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 		active_tp_cfg.tp_handle = exist_tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = exist_tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = exist_tpid_reuse->tx_psn;
-		return ubcore_import_jetty_ex(dev, cfg, &active_tp_cfg, udata);
+		tjetty = ubcore_import_jetty_ex(dev, cfg, &active_tp_cfg, udata);
+		if (IS_ERR_OR_NULL(tjetty))
+			/* Rollback use_cnt since import failed */
+			ubcore_tpid_reuse_dec_usecnt(exist_tpid_reuse);
+		return tjetty;
 	} else if (ret != 0) {
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
 		return NULL;
@@ -2027,6 +2066,8 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 		ret = ubcore_bind_jetty_ex(jetty, tjetty, &active_tp_cfg, udata);
 		if (ret != 0) {
 			ubcore_log_err("Failed to bind jetty ex, ret: %d.\n", ret);
+			/* Rollback use_cnt since bind failed */
+			ubcore_tpid_reuse_dec_usecnt(exist_tpid_reuse);
 			return ret;
 		}
 		atomic_dec(&tjetty->use_cnt);
