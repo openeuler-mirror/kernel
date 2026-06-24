@@ -1061,6 +1061,13 @@ struct ib_mr *sxe2_krereg_user_mr(struct ib_mr *ib_mr, int flags, u64 start,
 		return ERR_PTR(-EOPNOTSUPP);
 	}
 
+	ret = ib_umem_check_rereg(vendor_mr->region, flags, new_access);
+	if (ret) {
+		DRV_RDMA_LOG_DEV_ERR("MR: rereg access incompatible with umem, ret %d.\n",
+				     ret);
+		return ERR_PTR(ret);
+	}
+
 	ret = sxe2_post_deregmr_mqinfo(ib_mr);
 	if (ret) {
 		DRV_RDMA_LOG_DEV_ERR("MR: post deregister mr failed, ret %d.\n",
