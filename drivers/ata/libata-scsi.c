@@ -1696,12 +1696,16 @@ nothing_to_do:
 	return 1;
 }
 
-static void ata_qc_done(struct ata_queued_cmd *qc)
+static void ata_scsi_qc_done(struct ata_queued_cmd *qc, bool set_result,
+			     u32 scmd_result)
 {
 	struct scsi_cmnd *cmd = qc->scsicmd;
 	void (*done)(struct scsi_cmnd *) = qc->scsidone;
 
 	ata_qc_free(qc);
+
+	if (set_result)
+		cmd->result = scmd_result;
 	done(cmd);
 }
 
@@ -1740,12 +1744,10 @@ void ata_scsi_requeue_deferred_qc(struct ata_port *ap)
 	 * do not try to be smart about what to do with this deferred command
 	 * and simply retry it by completing it with DID_SOFT_ERROR.
 	 */
-	if (!qc)
-		return;
-
-	ap->deferred_qc = NULL;
-	qc->scsicmd->result = (DID_SOFT_ERROR << 16);
-	ata_qc_done(qc);
+	if (qc) {
+		ap->deferred_qc = NULL;
+		ata_scsi_qc_done(qc, true, DID_SOFT_ERROR << 16);
+	}
 }
 
 static void ata_scsi_schedule_deferred_qc(struct ata_port *ap)
@@ -1798,8 +1800,7 @@ static void ata_scsi_qc_complete(struct ata_queued_cmd *qc)
 	} else if (is_error && !have_sense) {
 		ata_gen_ata_sense(qc);
 	}
-
-	ata_qc_done(qc);
+	ata_scsi_qc_done(qc, false, 0);
 
 	ata_scsi_schedule_deferred_qc(ap);
 }
@@ -2798,17 +2799,15 @@ static void atapi_qc_complete(struct ata_queued_cmd *qc)
 		if (qc->cdb[0] == ALLOW_MEDIUM_REMOVAL && qc->dev->sdev)
 			qc->dev->sdev->locked = 0;
 
-		qc->scsicmd->result = SAM_STAT_CHECK_CONDITION;
-		ata_qc_done(qc);
+		ata_scsi_qc_done(qc, true, SAM_STAT_CHECK_CONDITION);
 		return;
 	}
 
 	/* successful completion path */
 	if (cmd->cmnd[0] == INQUIRY && (cmd->cmnd[1] & 0x03) == 0)
 		atapi_fixup_inquiry(cmd);
-	cmd->result = SAM_STAT_GOOD;
 
-	ata_qc_done(qc);
+	ata_scsi_qc_done(qc, true, SAM_STAT_GOOD);
 }
 /**
  *	atapi_xlat - Initialize PACKET taskfile
