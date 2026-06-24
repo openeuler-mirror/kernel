@@ -932,11 +932,13 @@ static int ubcore_free_vtpn(struct ubcore_vtpn *vtpn)
 				vtpn->vtpn, atomic_read(&vtpn->use_cnt));
 		return 0;
 	}
+
 	ubcore_vtpn_kref_put(vtpn);
 	wait_for_completion(&vtpn->comp);
 	mutex_destroy(&vtpn->state_lock);
 
 	if (vtpn->tp_handle != 0) {
+		(void)ubcore_delete_tpid_priv(vtpn->ub_dev, vtpn->vtpn);
 		kfree(vtpn);
 		return 0;
 	}
@@ -950,12 +952,15 @@ static int ubcore_free_vtpn_ctrlplane(struct ubcore_vtpn *vtpn)
 				vtpn->vtpn, atomic_read(&vtpn->use_cnt));
 		return 0;
 	}
+
 	ubcore_vtpn_kref_put(vtpn);
 	wait_for_completion(&vtpn->comp);
 	mutex_destroy(&vtpn->state_lock);
 
 	if (vtpn->tp_handle == 0)
 		ubcore_log_err("Invalid tp_handle.\n");
+	else
+		(void)ubcore_delete_tpid_priv(vtpn->ub_dev, vtpn->vtpn);
 
 	kfree(vtpn);
 	return 0;
@@ -1645,7 +1650,6 @@ int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn)
 {
 	struct ubcore_device *dev;
 	uint64_t tp_handle;
-	union ubcore_tp_handle delete_tp_handle;
 	int ret = 0;
 
 	if (vtpn == NULL || vtpn->ub_dev == NULL)
@@ -1683,11 +1687,6 @@ int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn)
 	ubcore_log_info_rl("disconnect vtpn:%u, ret:%d, vtp_state:%u",
 			   vtpn->vtpn, ret, vtpn->state);
 	mutex_unlock(&vtpn->state_lock);
-
-	if (tp_handle != 0 && ret == 0) {
-		delete_tp_handle = (union ubcore_tp_handle) tp_handle;
-		(void)ubcore_delete_tpid_priv(dev, delete_tp_handle.bs.tpid);
-	}
 
 	if (atomic_read(&vtpn->use_cnt) == 0) {
 		if (ret == 0 || ret == -ENOENT ||
