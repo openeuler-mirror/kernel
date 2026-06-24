@@ -11,7 +11,7 @@
 
 #include "vs_dc_property.h"
 
-/* DONOT include vs_dc.h since it containes vs_crtc.h
+/* DONOT include vs_dc.h since it contains vs_crtc.h
  * and vs_crtc.h contains this file
  */
 struct vs_dc;
@@ -43,50 +43,50 @@ struct vs_drm_property_state {
 	bool is_changed;
 };
 
-struct drm_property *vs_dc_create_drm_property(struct drm_device *drm_dev,
+struct drm_property *vs_egt_dc_create_drm_property(struct drm_device *drm_dev,
 						   struct drm_mode_object *obj,
 						   const struct vs_dc_property_proto *proto);
 
-int vs_dc_create_drm_properties(struct drm_device *dev, struct drm_mode_object *obj,
+int vs_egt_dc_create_drm_properties(struct drm_device *dev, struct drm_mode_object *obj,
 				const struct vs_dc_property_state_group *dc_states,
 				struct vs_drm_property_group *properties);
 
-void vs_dc_duplicate_drm_properties(struct vs_drm_property_state *new_states,
+void vs_egt_dc_duplicate_drm_properties(struct vs_drm_property_state *new_states,
 					const struct vs_drm_property_state *old_states,
 					const struct vs_drm_property_group *properties);
 
-void vs_dc_destroy_drm_properties(struct vs_drm_property_state *states,
+void vs_egt_dc_destroy_drm_properties(struct vs_drm_property_state *states,
 				  const struct vs_drm_property_group *properties);
 
-int vs_dc_set_drm_property(struct drm_device *dev, struct vs_drm_property_state *states,
+int vs_egt_dc_set_drm_property(struct drm_device *dev, struct vs_drm_property_state *states,
 			   const struct vs_drm_property_group *properties,
 			   const struct drm_property *property, u64 val);
 
-int vs_dc_get_drm_property(const struct vs_drm_property_state *states,
+int vs_egt_dc_get_drm_property(const struct vs_drm_property_state *states,
 			   const struct vs_drm_property_group *properties,
 			   const struct drm_property *property, u64 *val);
 
-void vs_dc_update_drm_properties_to_dc(struct vs_dc *dc, u8 hw_id,
+void vs_egt_dc_update_drm_properties_to_dc(struct vs_dc *dc, u8 hw_id,
 					   const struct vs_drm_property_state *drm_states,
 					   u32 registered_drm_properties_num,
 					   struct vs_dc_property_state_group *dc_states,
 					   const void *obj_state);
 
-struct vs_drm_property_state *vs_dc_get_drm_property_state(struct vs_drm_property_state *states,
+struct vs_drm_property_state *vs_egt_dc_get_drm_property_state(struct vs_drm_property_state *states,
 							   u32 num, const char *name);
-bool vs_dc_check_crtc_std_property(struct vs_dc *dc, u8 hw_id, struct drm_crtc *crtc);
+bool vs_egt_dc_check_crtc_std_property(struct vs_dc *dc, u8 hw_id, struct drm_crtc *crtc);
 
-bool vs_dc_check_drm_property(struct vs_dc *dc, u8 hw_id,
+bool vs_egt_dc_check_drm_property(struct vs_dc *dc, u8 hw_id,
 				  const struct vs_drm_property_state *states, u32 num,
 				  const void *obj_state);
 
-const void *vs_dc_drm_plane_property_get(const struct vs_plane_state *plane, const char *name,
+const void *vs_egt_dc_drm_plane_property_get(const struct vs_plane_state *plane, const char *name,
 					 u32 *out_len);
 
-const void *vs_dc_drm_crtc_property_get(const struct vs_crtc_state *crtc, const char *name,
+const void *vs_egt_dc_drm_crtc_property_get(const struct vs_crtc_state *crtc, const char *name,
 					u32 *out_len);
-#ifdef CONFIG_VERISILICON_WRITEBACK
-const void *vs_dc_drm_connector_property_get(const struct vs_writeback_connector_state *wb,
+#ifdef CONFIG_ENGIANT_VS_WRITEBACK
+const void *vs_egt_dc_drm_connector_property_get(const struct vs_writeback_connector_state *wb,
 						 const char *name, u32 *out_len);
 #endif
 #endif

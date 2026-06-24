@@ -45,11 +45,11 @@ struct simple_encoder {
 	struct dss_data *dss_regdatas;
 };
 
-extern struct platform_driver simple_encoder_driver;
+extern struct platform_driver egt_simple_encoder_driver;
 
 struct drm_device;
 
-int vs_simple_encoder_pci_init(struct drm_device *drm_dev);
-void vs_simple_encoder_pci_deinit(struct drm_device *drm_dev);
+int vs_egt_simple_encoder_pci_init(struct drm_device *drm_dev);
+void vs_egt_simple_encoder_pci_deinit(struct drm_device *drm_dev);
 
 #endif /* __VS_SIMPLE_ENC_H_ */

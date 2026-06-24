@@ -8,14 +8,15 @@
 
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_fourcc.h>
-#include <drm/vs_drm.h>
 
+#include "vs_egt_drm.h"
 #include "vs_dc_hw.h"
-#include <drm/vs_drm_fourcc.h>
+#include "vs_egt_drm_fourcc.h"
 
-#define fourcc_mod_vs_get_type(val) (((val) & DRM_FORMAT_MOD_VS_TYPE_MASK) >> 53)
-#define fourcc_mod_vs_get_tile_mode(val) ((u8)((val) & DRM_FORMAT_MOD_VS_DEC_TILE_MODE_MASK))
-#define fourcc_mod_vs_get_dec_nano_mode(val) ((val) & ((__u64)0x07 << 10))
+#define fourcc_mod_vs_egt_get_type(val) (((val) & DRM_FORMAT_MOD_VS_EGT_TYPE_MASK) >> 53)
+#define fourcc_mod_vs_egt_get_tile_mode(val) \
+	((u8)((val) & DRM_FORMAT_MOD_VS_EGT_DEC_TILE_MODE_MASK))
+#define fourcc_mod_vs_egt_get_dec_nano_mode(val) ((val) & ((__u64)0x07 << 10))
 
 enum dc_dec_mode {
 	DEC_MODE_DISABLE = 0,
@@ -31,7 +32,7 @@ struct dc_dec {
 	bool dirty;
 };
 
-int dc_dec_config(struct dc_dec *dec_config, struct drm_framebuffer *drm_fb);
-int dc_dec_commit(struct dc_dec *dec_config, struct dc_hw *hw, u8 id);
+int egt_dc_dec_config(struct dc_dec *dec_config, struct drm_framebuffer *drm_fb);
+int egt_dc_dec_commit(struct dc_dec *dec_config, struct dc_hw *hw, u8 id);
 
 #endif /* _VS_DC_DEC_H_ */

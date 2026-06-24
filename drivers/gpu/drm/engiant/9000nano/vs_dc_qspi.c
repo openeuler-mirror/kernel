@@ -28,7 +28,7 @@ static u8 qspi_cmd_wire = DCREG_PANEL0_QSPI_CONFIG1_CMD_STANDARD_SPI;
 static u8 qspi_addr_wire = DCREG_PANEL0_QSPI_CONFIG1_ADDR_STANDARD_SPI;
 static u8 qspi_para_wire = DCREG_PANEL0_QSPI_CONFIG1_PARA_STANDARD_SPI;
 
-void qspi_set_intf_format(struct dc_hw *hw, struct dc_hw_display_mode *mode)
+void egt_qspi_set_intf_format(struct dc_hw *hw, struct dc_hw_display_mode *mode)
 {
 	u8 intf_pixel_format = 0;
 
@@ -46,13 +46,13 @@ void qspi_set_intf_format(struct dc_hw *hw, struct dc_hw_display_mode *mode)
 		break;
 	}
 
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG0_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG0_Address,
 		 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0_QSPI_CONFIG0, IDLE_SCLK, HIGH) |
 			 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0_QSPI_CONFIG0, SAMPLE_EDGE, EVEN) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG0, TRANS_TYPE, VS_SPI_TYPE) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG0, BAUD_DIV, 0x1));
 
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
 		 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, CMD_EN, true) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, CMD_BITS, VS_SPI_CMD_BIT) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, CMD_STANDARD, qspi_cmd_wire) |
@@ -63,14 +63,14 @@ void qspi_set_intf_format(struct dc_hw *hw, struct dc_hw_display_mode *mode)
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, PARA_STANDARD, qspi_para_wire) |
 			 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0_QSPI_CONFIG1, PARA_NUM, BIT8));
 
-	dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0x02);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x003A00);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, intf_pixel_format);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0x02);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x003A00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, intf_pixel_format);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
 }
 
-void qspi_start_trigger(struct dc_hw *hw, struct dc_hw_display_mode *mode)
+void egt_qspi_start_trigger(struct dc_hw *hw, struct dc_hw_display_mode *mode)
 {
 	u32 config, config1;
 
@@ -86,32 +86,32 @@ void qspi_start_trigger(struct dc_hw *hw, struct dc_hw_display_mode *mode)
 		config = VS_SET_FIELD_PREDEF(config, DCREG_PANEL0_QSPI_CONFIG0, FORMAT, R5G6B5);
 		break;
 	};
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG0_Address, config);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG0_Address, config);
 
 	config1 = dc_read(hw, DCREG_PANEL0_QSPI_CONFIG1_Address);
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
 		 VS_SET_FIELD(config1, DCREG_PANEL0_QSPI_CONFIG1, CMD_EN, true) |
 			 VS_SET_FIELD(config1, DCREG_PANEL0_QSPI_CONFIG1, ADDR_EN, true) |
 			 VS_SET_FIELD(config1, DCREG_PANEL0_QSPI_CONFIG1, PARA_EN, false) |
 			 VS_SET_FIELD_PREDEF(config1, DCREG_PANEL0_QSPI_CONFIG1, PARA_NUM, BIT8));
 
-	dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0x02);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002c00);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_CONTINUE_DATA_Address, 0x003c00);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x0);
-	dc_write(hw, DCREG_PANEL0_QSPI_DUMMY_CYCLE_Address, 0x0);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0x02);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002c00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_CONTINUE_DATA_Address, 0x003c00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x0);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_DUMMY_CYCLE_Address, 0x0);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 }
 
 static void qspi_panel_disable(struct dc_hw *hw)
 {
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG0_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG0_Address,
 		 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0_QSPI_CONFIG0, IDLE_SCLK, HIGH) |
 			 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0_QSPI_CONFIG0, SAMPLE_EDGE, EVEN) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG0, TRANS_TYPE, VS_SPI_TYPE) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG0, BAUD_DIV, 0x1));
 
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
 		 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, CMD_EN, true) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, CMD_BITS, VS_SPI_CMD_BIT) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, CMD_STANDARD, qspi_cmd_wire) |
@@ -122,9 +122,9 @@ static void qspi_panel_disable(struct dc_hw *hw)
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, PARA_STANDARD, qspi_para_wire) |
 			 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0_QSPI_CONFIG1, PARA_NUM, BIT8));
 
-	dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0x02);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002800);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0x02);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002800);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
 }
 
@@ -148,14 +148,14 @@ static void qspi_panel_enable(struct dc_hw *hw)
 	display_row = temp0 | temp1 | temp2 | temp3;
 
 	/* Init */
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG0_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG0_Address,
 		 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0_QSPI_CONFIG0, IDLE_SCLK, HIGH) |
 			 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0_QSPI_CONFIG0, SAMPLE_EDGE, EVEN) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG0, TRANS_TYPE, VS_SPI_TYPE) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG0, BAUD_DIV, 0x1));
 
 	/* send cmd to display for resetting SPI */
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
 		 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, CMD_EN, true) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, CMD_BITS, VS_SPI_CMD_BIT) |
 			 VS_SET_FIELD(0, DCREG_PANEL0_QSPI_CONFIG1, CMD_STANDARD, qspi_cmd_wire) |
@@ -167,110 +167,108 @@ static void qspi_panel_enable(struct dc_hw *hw)
 			 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0_QSPI_CONFIG1, PARA_NUM, BIT8));
 
 	/* cmd 0xFF is to reset the dual & quadSPI to singel SPI */
-	dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0xFF);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x0);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0xFF);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x0);
 	/* strat to send */
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
 
 	config = dc_read(hw, DCREG_PANEL0_QSPI_CONFIG1_Address);
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
 		 VS_SET_FIELD(config, DCREG_PANEL0_QSPI_CONFIG1, CMD_EN, true) |
 			 VS_SET_FIELD(config, DCREG_PANEL0_QSPI_CONFIG1, ADDR_EN, true) |
 			 VS_SET_FIELD(config, DCREG_PANEL0_QSPI_CONFIG1, PARA_EN, true) |
 			 VS_SET_FIELD_PREDEF(config, DCREG_PANEL0_QSPI_CONFIG1, PARA_NUM, BIT8));
 
 	/* send cmd */
-	dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0x02);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CMD_DATA_Address, 0x02);
 
 	/* password */
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00FE00);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x20);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00FE00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x20);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00F400);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x5A);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00F400);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x5A);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00F500);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x59);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00F500);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x59);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00FE00);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x00);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00FE00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x00);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00C400);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x80);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00C400);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x80);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00FE00);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x20);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00FE00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x20);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x001900);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x10);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x001900);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x10);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x001C00);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0xA0);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x001C00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0xA0);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00FE00);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x00);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x00FE00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x00);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x003500);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x00);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x003500);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x00);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x005300);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x20);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x005300);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0x20);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x005100);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0xFF);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x005100);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0xFF);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x006300);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0xFF);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x006300);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, 0xFF);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
 
 	/* para bit32*/
 	config = dc_read(hw, DCREG_PANEL0_QSPI_CONFIG1_Address);
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
 		 VS_SET_FIELD(config, DCREG_PANEL0_QSPI_CONFIG1, CMD_EN, true) |
 			 VS_SET_FIELD(config, DCREG_PANEL0_QSPI_CONFIG1, ADDR_EN, true) |
 			 VS_SET_FIELD(config, DCREG_PANEL0_QSPI_CONFIG1, PARA_EN, true) |
 			 VS_SET_FIELD_PREDEF(config, DCREG_PANEL0_QSPI_CONFIG1, PARA_NUM, BIT32));
 
 	/* show at (VS_SPI_DISPLAY_X,VS_SPI_DISPLAY_Y,VS_SPI_DISPLAY_W,VS_SPI_DISPLAY_H) */
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002A00);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, display_col);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002A00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, display_col);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002B00);
-	dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, display_row);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002B00);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_PARA_DATA_Address, display_row);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
 
 	/* stop send para */
 	config = dc_read(hw, DCREG_PANEL0_QSPI_CONFIG1_Address);
-	dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_CONFIG1_Address,
 		 VS_SET_FIELD(config, DCREG_PANEL0_QSPI_CONFIG1, CMD_EN, true) |
 			 VS_SET_FIELD(config, DCREG_PANEL0_QSPI_CONFIG1, ADDR_EN, true) |
 			 VS_SET_FIELD(config, DCREG_PANEL0_QSPI_CONFIG1, PARA_EN, false) |
 			 VS_SET_FIELD_PREDEF(config, DCREG_PANEL0_QSPI_CONFIG1, PARA_NUM, BIT8));
 
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x001100);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x001100);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-	dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002900);
-	dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
+	egt_dc_write(hw, DCREG_PANEL0_QSPI_ADDR_START_DATA_Address, 0x002900);
+	egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address, 0x2);
 	msleep(200);
-
-	/* TODO */
 }
 
 static void qspi_encoder_atomic_disable(struct drm_encoder *encoder, struct drm_atomic_state *state)
@@ -278,7 +276,6 @@ static void qspi_encoder_atomic_disable(struct drm_encoder *encoder, struct drm_
 	struct vs_qspi *qspi = to_qspi_with_encoder(encoder);
 	struct vs_dc *dc = dev_get_drvdata(qspi->dev);
 
-	/* TODO: using struct drm_panel_funcs->disable() instead */
 	qspi_panel_disable(&dc->hw);
 }
 
@@ -287,7 +284,6 @@ static void qspi_encoder_atomic_enable(struct drm_encoder *encoder, struct drm_a
 	struct vs_qspi *qspi = to_qspi_with_encoder(encoder);
 	struct vs_dc *dc = dev_get_drvdata(qspi->dev);
 
-	/* TODO: using struct drm_panel_funcs->enable() instead */
 	qspi_panel_enable(&dc->hw);
 }
 
@@ -369,9 +365,9 @@ static const struct drm_connector_funcs qspi_connector_funcs = {
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
-#ifdef CONFIG_VERISILICON_PCIE
+#ifdef CONFIG_ENGIANT_VS_PCIE
 /*pci*/
-int vs_qspi_pci_init(struct drm_device *drm_dev)
+int vs_egt_qspi_pci_init(struct drm_device *drm_dev)
 {
 	struct pci_dev *pdev = to_pci_dev(drm_dev->dev);
 	struct device *dev = &pdev->dev;
@@ -437,7 +433,7 @@ connector_reg_err:
 	return ret;
 }
 
-void vs_qspi_pci_deinit(struct drm_device *drm_dev)
+void vs_egt_qspi_pci_deinit(struct drm_device *drm_dev)
 {
 	struct pci_dev *pdev = to_pci_dev(drm_dev->dev);
 	struct device *dev = &pdev->dev;
@@ -555,46 +551,37 @@ static void vs_qspi_unbind(struct device *dev, struct device *master, void *data
 	}
 }
 
-const struct component_ops vs_qspi_component_ops = {
+const struct component_ops vs_egt_qspi_component_ops = {
 	.bind = vs_qspi_bind,
 	.unbind = vs_qspi_unbind,
 };
-
-static const struct of_device_id vs_qspi_dt_match[] = {
-	{
-		.compatible = "verisilicon,vs_qspi",
-	},
-	{},
-};
-MODULE_DEVICE_TABLE(of, vs_qspi_dt_match);
 
 static int vs_qspi_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
-	return component_add(dev, &vs_qspi_component_ops);
+	return component_add(dev, &vs_egt_qspi_component_ops);
 }
 
 static int vs_qspi_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
-	component_del(dev, &vs_qspi_component_ops);
+	component_del(dev, &vs_egt_qspi_component_ops);
 
 	dev_set_drvdata(dev, NULL);
 
 	return 0;
 }
 
-struct platform_driver vs_qspi_platform_driver = {
+struct platform_driver vs_egt_qspi_platform_driver = {
 	.probe = vs_qspi_probe,
 	.remove = vs_qspi_remove,
 	.driver = {
 		.name = "vs-qspi",
-		.of_match_table = of_match_ptr(vs_qspi_dt_match),
 	},
 };
 
 #endif
 MODULE_DESCRIPTION("VeriSilicon Qspi Controller Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

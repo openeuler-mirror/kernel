@@ -48,12 +48,12 @@ static irqreturn_t egt_dp_irq_handle(__maybe_unused int irq, void *data)
 	u32 pci_intr_sts = 0;
 	u32 intr_sts = 0;
 
-	pci_intr_sts = readl(dp->mem_base.pci_intr_base + EGT_PCI_INTRREG_OFFSET);
+	pci_intr_sts = readl(dp->mem_base.pci_base + EGT_PCI_INTRREG_OFFSET);
 
-	if (!(pci_intr_sts & 0x40000))
+	if (pci_intr_sts == 0xffffffff || !(pci_intr_sts & 0x40000))
 		return IRQ_NONE;
 
-	writel(0x40000, dp->mem_base.pci_intr_base + EGT_PCI_INTRREG_OFFSET);
+	writel(0x40000, dp->mem_base.pci_base + EGT_PCI_INTRREG_OFFSET);
 
 	/* clear irq */
 	intr_sts = egt_dp_read(DP_SOURCE_TX_STATUS, dp);
@@ -84,18 +84,20 @@ static int egt_dp_aux_wait_reply(struct egt_displayport *dp)
 	u32 reg = 0;
 	u32 reg1 = 0;
 	u32 timeout_flag = 0;
+	u32 time = 0;
 	s64 elapsed_us = 0;
 	unsigned int timeout_us = 100000;
 	ktime_t ktime_start = 0;
 
 	start_time = egt_dp_read(DP_SOURCE_TIMESTAMP, dp);
 	ktime_start = ktime_get();
+	time = EGT_DP_AUX_STD_TOUT / 100 * EGT_TX_100US_TICKS;
 
 	while (1) {
 		reg = egt_dp_read(DP_SOURCE_AUX_CONTROL, dp);
 		current_time = egt_dp_read(DP_SOURCE_TIMESTAMP, dp);
 
-		if (((current_time - start_time) & EGT_TX_TIME_MASK) >= (EGT_DP_AUX_STD_TOUT / 100 * EGT_TX_100US_TICKS))
+		if (((current_time - start_time) & EGT_TX_TIME_MASK) >= time)
 			timeout_flag = 1;
 
 		reg1 = egt_dp_read(DP_SOURCE_AUX_CONTROL, dp);
@@ -112,7 +114,7 @@ static int egt_dp_aux_wait_reply(struct egt_displayport *dp)
 
 		elapsed_us = ktime_to_us(ktime_sub(ktime_get(), ktime_start));
 		if (elapsed_us > timeout_us) {
-			pr_warn("AUX reply timeout, elapsed=%lld us\n", elapsed_us);
+			pr_warn("AUX reply timeout, elapsed=%lld us\n", (long long)elapsed_us);
 			return -ETIMEDOUT;
 		}
 	}
@@ -125,16 +127,18 @@ static int egt_dp_aux_wait_ok(struct egt_displayport *dp)
 	unsigned int count = 0;
 	u32 timeout_flag = 0;
 	u32 current_ts = 0;
+	u32 time = 0;
 	s64 elapsed_us = 0;
 	unsigned int timeout_us = 100000;
 	ktime_t ktime_start = 0;
 
 	start_time = egt_dp_read(DP_SOURCE_TIMESTAMP, dp);
 	ktime_start = ktime_get();
+	time = 400 / 100 * EGT_TX_100US_TICKS;
 
 	while (!(egt_dp_read(DP_SOURCE_AUX_CONTROL, dp) & EGT_TX_AUXREADY_MASK)) {
 		current_ts = egt_dp_read(DP_SOURCE_TIMESTAMP, dp);
-		if (((current_ts - start_time) & EGT_TX_TIME_MASK) >= (400 / 100 * EGT_TX_100US_TICKS))
+		if (((current_ts - start_time) & EGT_TX_TIME_MASK) >= time)
 			timeout_flag = 1;
 
 		if (timeout_flag) {
@@ -152,7 +156,7 @@ static int egt_dp_aux_wait_ok(struct egt_displayport *dp)
 
 		elapsed_us = ktime_to_us(ktime_sub(ktime_get(), ktime_start));
 		if (elapsed_us > timeout_us) {
-			pr_warn("wait AUX timeout, elapsed=%lld us\n", elapsed_us);
+			pr_warn("wait AUX timeout, elapsed=%lld us\n", (long long)elapsed_us);
 			return -ETIMEDOUT;
 		}
 	}
@@ -234,9 +238,10 @@ static int egt_dp_aux_before(struct egt_displayport *dp, u8 size, int *irq_en, i
 		}
 	}
 
-	if (aux_256b)
-		*aux_256b = dp->aux_256b_capab;
+	if (!aux_256b)
+		return -EIO;
 
+	*aux_256b = dp->aux_256b_capab;
 	if ((*aux_256b == 0) && (size > 16))
 		return -EIO;
 
@@ -280,7 +285,8 @@ retry:
 		if (!is_read) {
 			if (aux_256b) {
 				for (i = 0; i < msg->size; i++)
-					egt_dp_write((i << 16) | (1 << 8) | buffer[i], DP_SOURCE_AUX_PAYLOAD, dp);
+					egt_dp_write((i << 16) | (1 << 8) | buffer[i],
+								 DP_SOURCE_AUX_PAYLOAD, dp);
 			} else {
 				for (i = 0; i < msg->size; i++)
 					egt_dp_write(buffer[i], DP_SOURCE_AUX_BYTE3 + i * 4, dp);
@@ -366,8 +372,9 @@ exit:
 	return ret;
 }
 
-static int egt_dp_aux_i2c_inner_transfer(struct egt_displayport *dp, bool is_read, u32 op, u8 aux_256b,
-											 u8 address, size_t size, u8 *data, u8 *reply, size_t *len)
+static int egt_dp_aux_i2c_inner_transfer(struct egt_displayport *dp, bool is_read,
+				u32 op, u8 aux_256b, u8 address, size_t size,
+				u8 *data, u8 *reply, size_t *len)
 {
 	unsigned int cnt = 0;
 	unsigned int got_reply = 0;
@@ -397,7 +404,8 @@ static int egt_dp_aux_i2c_inner_transfer(struct egt_displayport *dp, bool is_rea
 		} else {
 			if (aux_256b) {
 				for (i = 0; i < size; i++)
-					egt_dp_write((i << 16) | (1 << 8) | data[i], DP_SOURCE_AUX_PAYLOAD, dp);
+					egt_dp_write((i << 16) | (1 << 8) | data[i],
+								 DP_SOURCE_AUX_PAYLOAD, dp);
 			} else {
 				for (i = 0; i < size; i++)
 					egt_dp_write(data[i], DP_SOURCE_AUX_BYTE3 + i * 4, dp);
@@ -434,19 +442,24 @@ out:
 	return ret;
 }
 
-static void egt_dp_check_aux_i2c_ack(struct egt_displayport *dp, u8 *buffer, size_t bytes, unsigned int aux_256b,
-			  struct drm_dp_aux_msg *msg, size_t size)
+static void egt_dp_check_aux_i2c_ack(struct egt_displayport *dp, u8 *buffer,
+						size_t bytes, unsigned int aux_256b,
+						struct drm_dp_aux_msg *msg, size_t size)
 {
 	int i = 0;
+	u8 data = 0;
 
 	if (aux_256b) {
 		for (i = 0; i < bytes; i++) {
 			egt_dp_write(i << 16, DP_SOURCE_AUX_PAYLOAD, dp);
-			buffer[msg->size - size + i] = (u8) (egt_dp_read(DP_SOURCE_AUX_PAYLOAD, dp) & 0xFF);
+			data = (u8) (egt_dp_read(DP_SOURCE_AUX_PAYLOAD, dp) & 0xFF);
+			buffer[msg->size - size + i] = data;
 		}
 	} else {
-		for (i = 0; i < bytes; i++)
-			buffer[msg->size - size + i] = (u8) (egt_dp_read(DP_SOURCE_AUX_BYTE0 + i * 4, dp) & 0xFF);
+		for (i = 0; i < bytes; i++) {
+			data = (u8) (egt_dp_read(DP_SOURCE_AUX_BYTE0 + i * 4, dp) & 0xFF);
+			buffer[msg->size - size + i] = data;
+		}
 	}
 }
 
@@ -459,19 +472,25 @@ static int egt_dp_check_aux_i2c(struct egt_displayport *dp, struct drm_dp_aux_ms
 	u8 val = 0;
 	u8 val_i2c = 0;
 	u32 op = 0;
+	u32 op_r = 0;
+	u32 op_w = 0;
 	size_t size = msg->size;
 	size_t bytes = 0;
 	int mot = (msg->request & DP_AUX_I2C_MOT) ? 1 : 0;
 	int bytes_written = 0;
 	int count = 0;
 	int ret = 0;
+	int status = 0;
 	unsigned int aux_256b = dp->aux_256b_capab;
 
-	op = (msg->request & EGT_DP_AUX_READ_BIT) ? (mot ? (EGT_DP_AUX_RD_I2C | EGT_DP_AUX_MOT_I2C) : EGT_DP_AUX_RD_I2C) : (mot ? (EGT_DP_AUX_WR_I2C | EGT_DP_AUX_MOT_I2C) : EGT_DP_AUX_WR_I2C);
+	op_r = mot ? (EGT_DP_AUX_RD_I2C | EGT_DP_AUX_MOT_I2C) : EGT_DP_AUX_RD_I2C;
+	op_w = mot ? (EGT_DP_AUX_WR_I2C | EGT_DP_AUX_MOT_I2C) : EGT_DP_AUX_WR_I2C;
+	op = (msg->request & EGT_DP_AUX_READ_BIT) ? op_r : op_w;
 
 	do {
 		ret = egt_dp_aux_i2c_inner_transfer(dp, is_read, op, aux_256b, msg->address, size,
-										   (is_read ? NULL : msg->buffer + msg->size - size), &reply_reg, &bytes);
+					(is_read ? NULL : msg->buffer + msg->size - size),
+					&reply_reg, &bytes);
 		if (reply)
 			*reply = (reply_reg >> 4) & DP_AUX_I2C_REPLY_MASK;
 
@@ -492,7 +511,8 @@ check_reply:
 			switch (val_i2c) {
 			case EGT_DP_AUX_ACK_I2C:
 				if (is_read) {
-					egt_dp_check_aux_i2c_ack(dp, buffer, bytes, aux_256b, msg, size);
+					egt_dp_check_aux_i2c_ack(dp, buffer, bytes,
+								aux_256b, msg, size);
 					size -= bytes;
 					count++;
 				}
@@ -523,7 +543,10 @@ check_reply:
 				if (!is_read) {
 					if (count++ >= 16)
 						break;
-					if (egt_dp_aux_i2c_update(dp, ((msg->request & DP_AUX_I2C_MOT) ? 1 : 0), 0, msg->address, &reply_reg, &bytes))
+					status = egt_dp_aux_i2c_update(dp,
+						((msg->request & DP_AUX_I2C_MOT) ? 1 : 0),
+						0, msg->address, &reply_reg, &bytes);
+					if (status)
 						return -ETIMEDOUT;
 
 					goto check_reply;
@@ -659,13 +682,15 @@ static struct egt_displayport *egt_dp_init(struct drm_device *drm_dev)
 		return NULL;
 
 	pr_debug("irq_num[2] | dp_base | irq_num[4] | mbox_base | phy_base | pcie_intr_base\n");
-	pr_debug("  %#x  |  %p  |  %#x  |  %d  |  %p  |  %p\n", priv->irq_num[2], priv->dp_base, priv->irq_num[4], dp->mem_base.mbox_iobase, priv->dp_phy_base, priv->intr_statu_base);
+	pr_debug("  %#x  |  %p  |  %#x  |  %d  |  %p  |  %p\n", priv->irq_num[2], priv->dp_base,
+			priv->irq_num[4], dp->mem_base.mbox_iobase,
+			priv->dp_phy_base, priv->pci_base);
 
 	dp->mem_base.dp_base = priv->dp_base;
 	dp->irq =  priv->irq_num[2];
 	dp->mem_base.pci_mbox_base = priv->mbox_base;
 	dp->mem_base.mbox_iobase = EGT_DP_SIO_IO_CH1;
-	dp->mem_base.pci_intr_base = priv->intr_statu_base;
+	dp->mem_base.pci_base = priv->pci_base;
 
 	dp->dev = dev;
 	dp->connector_sts = connector_status_disconnected;
@@ -691,7 +716,8 @@ static struct egt_displayport *egt_dp_init(struct drm_device *drm_dev)
 	return dp;
 }
 
-static int egt_dp_driver_init(struct drm_device *drm_dev, struct egt_displayport *dp, u32 crtc_mask)
+static int egt_dp_driver_init(struct drm_device *drm_dev,
+					struct egt_displayport *dp, u32 crtc_mask)
 {
 	struct drm_connector *connector = NULL;
 	struct drm_encoder *encoder = NULL;
@@ -704,7 +730,8 @@ static int egt_dp_driver_init(struct drm_device *drm_dev, struct egt_displayport
 	encoder->possible_crtcs = crtc_mask;
 
 	connector->polled = DRM_CONNECTOR_POLL_HPD;
-	ret = drm_connector_init(drm_dev, connector, &egt_dp_connector_funcs, DRM_MODE_CONNECTOR_DisplayPort);
+	ret = drm_connector_init(drm_dev, connector, &egt_dp_connector_funcs,
+							 DRM_MODE_CONNECTOR_DisplayPort);
 	if (ret)
 		return ret;
 
@@ -747,7 +774,8 @@ int egt_dp_device_init(struct drm_device *drm_dev)
 		crtc_mask |= drm_crtc_mask(crtc);
 
 	dp->drm = drm_dev;
-	ret = drm_encoder_init(drm_dev, &dp->encoder, &egt_dp_encoder_funcs, DRM_MODE_ENCODER_DPMST, NULL);
+	ret = drm_encoder_init(drm_dev, &dp->encoder, &egt_dp_encoder_funcs,
+							DRM_MODE_ENCODER_DPMST, NULL);
 	if (ret)
 		return -EIO;
 
@@ -834,4 +862,4 @@ void egt_dp_device_deinit(struct drm_device *drm_dev)
 }
 
 MODULE_DESCRIPTION("Engiant DP Initialization Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

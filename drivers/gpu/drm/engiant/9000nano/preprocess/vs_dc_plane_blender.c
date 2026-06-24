@@ -9,17 +9,17 @@
  */
 
 #include "vs_dc_plane_blender.h"
-
-#include "drm/vs_drm.h"
+#include "vs_egt_drm.h"
 #include "vs_dc_property.h"
 #include "vs_dc_hw.h"
 
-static bool blend_mode_check(__maybe_unused const struct dc_hw *hw, __maybe_unused u8 hw_id, const void *data, __maybe_unused u32 size,
-			     __maybe_unused const void *obj_state)
+static bool blend_mode_check(__maybe_unused const struct dc_hw *hw, __maybe_unused u8 hw_id,
+				const void *data, __maybe_unused u32 size,
+				__maybe_unused const void *obj_state)
 {
-	const struct drm_vs_blend *bld = data;
+	const struct drm_vs_egt_blend *bld = data;
 
-	if (bld->color_mode > VS_BLD_XOR) {
+	if (bld->color_mode > VS_EGT_BLD_XOR) {
 		pr_err("%s doesn't support this blend mode.\n", __func__);
 		return false;
 	}
@@ -28,7 +28,7 @@ static bool blend_mode_check(__maybe_unused const struct dc_hw *hw, __maybe_unus
 
 static bool blend_mode_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const void *data)
 {
-	const struct drm_vs_blend *bld = data;
+	const struct drm_vs_egt_blend *bld = data;
 	u32 config = 0;
 
 	config = dc_read(hw, VS_SET_FE_FIELD(DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG, hw_id, Address));
@@ -37,25 +37,25 @@ static bool blend_mode_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const 
 
 	if (enable) {
 		switch (bld->color_mode) {
-		case VS_BLD_CLR:
+		case VS_EGT_BLD_CLR:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 SRC_BLENDING_MODE, ZERO);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, ZERO);
 			break;
-		case VS_BLD_SRC:
+		case VS_EGT_BLD_SRC:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 SRC_BLENDING_MODE, ONE);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, ZERO);
 			break;
-		case VS_BLD_DST:
+		case VS_EGT_BLD_DST:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 SRC_BLENDING_MODE, ZERO);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, ONE);
 			break;
-		case VS_BLD_SRC_OVR:
+		case VS_EGT_BLD_SRC_OVR:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_ALPHA_FACTOR, DISABLE);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
@@ -63,7 +63,7 @@ static bool blend_mode_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const 
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, INVERSE);
 			break;
-		case VS_BLD_DST_OVR:
+		case VS_EGT_BLD_DST_OVR:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 SRC_ALPHA_FACTOR, ENABLE);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
@@ -71,7 +71,7 @@ static bool blend_mode_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const 
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, ONE);
 			break;
-		case VS_BLD_SRC_IN:
+		case VS_EGT_BLD_SRC_IN:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 SRC_ALPHA_FACTOR, DISABLE);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
@@ -79,7 +79,7 @@ static bool blend_mode_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const 
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, ZERO);
 			break;
-		case VS_BLD_DST_IN:
+		case VS_EGT_BLD_DST_IN:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_ALPHA_FACTOR, ENABLE);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
@@ -87,7 +87,7 @@ static bool blend_mode_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const 
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, NORMAL);
 			break;
-		case VS_BLD_SRC_OUT:
+		case VS_EGT_BLD_SRC_OUT:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 SRC_ALPHA_FACTOR, DISABLE);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
@@ -95,7 +95,7 @@ static bool blend_mode_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const 
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, ZERO);
 			break;
-		case VS_BLD_DST_OUT:
+		case VS_EGT_BLD_DST_OUT:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_ALPHA_FACTOR, ENABLE);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
@@ -103,19 +103,19 @@ static bool blend_mode_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const 
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, INVERSE);
 			break;
-		case VS_BLD_SRC_ATOP:
+		case VS_EGT_BLD_SRC_ATOP:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 SRC_BLENDING_MODE, ZERO);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, ONE);
 			break;
-		case VS_BLD_DST_ATOP:
+		case VS_EGT_BLD_DST_ATOP:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 SRC_BLENDING_MODE, ONE);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 DST_BLENDING_MODE, ZERO);
 			break;
-		case VS_BLD_XOR:
+		case VS_EGT_BLD_XOR:
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 							 SRC_ALPHA_FACTOR, DISABLE);
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
@@ -131,17 +131,18 @@ static bool blend_mode_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const 
 	}
 
 	/* src/dst blending mode configuration */
-	dc_write(hw, VS_SET_FE_FIELD(DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG, hw_id, Address), config);
+	egt_dc_write(hw,
+		VS_SET_FE_FIELD(DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG, hw_id, Address), config);
 
 	return true;
 }
 
-VS_DC_BLOB_PROPERTY_PROTO(blend_mode_proto, "BLEND_MODE", struct drm_vs_blend, blend_mode_check,
+VS_DC_BLOB_PROPERTY_PROTO(blend_mode_proto, "BLEND_MODE", struct drm_vs_egt_blend, blend_mode_check,
 			  NULL, blend_mode_config_hw);
 
 static bool blend_alpha_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const void *data)
 {
-	const struct drm_vs_blend_alpha *alpha = data;
+	const struct drm_vs_egt_blend_alpha *alpha = data;
 	const u32 reg_config = VS_SET_FE_FIELD(DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG, hw_id, Address);
 	const u32 reg_global = VS_SET_FE_FIELD(DCREG_SH_PANEL0_GLOBAL_ALPHA, hw_id, Address);
 	u32 config = 0;
@@ -161,33 +162,32 @@ static bool blend_alpha_config_hw(struct dc_hw *hw, u8 hw_id, bool enable, const
 		config = VS_SET_FIELD(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 					  DST_GLOBAL_ALPHA_MODE, alpha->dgam);
 
-		dc_write(hw, reg_config, config);
+		egt_dc_write(hw, reg_config, config);
 
 		global_config = dc_read(hw, reg_global);
 
 		/* src/dst global alpha value configuration */
-		if (alpha->sgam != VS_GALPHA_NORMAL)
+		if (alpha->sgam != VS_EGT_GALPHA_NORMAL)
 			global_config = VS_SET_FIELD(global_config, DCREG_SH_PANEL0_GLOBAL_ALPHA0,
 							 SRC_ALPHA, alpha->sga);
-		if (alpha->dgam != VS_GALPHA_NORMAL)
+		if (alpha->dgam != VS_EGT_GALPHA_NORMAL)
 			global_config = VS_SET_FIELD(global_config, DCREG_SH_PANEL0_GLOBAL_ALPHA0,
 							 DST_ALPHA, alpha->dga);
-		dc_write(hw, reg_global, global_config);
-		/* TBD: src/dst color alpha registers not ready yet */
+		egt_dc_write(hw, reg_global, global_config);
 	}
 	return true;
 }
 
-VS_DC_BLOB_PROPERTY_PROTO(blend_alpha_proto, "BLEND_ALPHA", struct drm_vs_blend_alpha, NULL, NULL,
-			  blend_alpha_config_hw);
+VS_DC_BLOB_PROPERTY_PROTO(blend_alpha_proto, "BLEND_ALPHA", struct drm_vs_egt_blend_alpha,
+			NULL, NULL, blend_alpha_config_hw);
 
-bool vs_dc_register_plane_blender_states(struct vs_dc_property_state_group *states,
+bool vs_egt_dc_register_plane_blender_states(struct vs_dc_property_state_group *states,
 					 const struct vs_plane_info *info)
 {
 	if (info->blend_config) {
-		if (!vs_dc_property_register_state(states, &blend_mode_proto))
+		if (!vs_egt_dc_property_register_state(states, &blend_mode_proto))
 			goto on_error;
-		if (!vs_dc_property_register_state(states, &blend_alpha_proto))
+		if (!vs_egt_dc_property_register_state(states, &blend_alpha_proto))
 			goto on_error;
 	}
 	return true;

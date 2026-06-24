@@ -4,19 +4,20 @@
 
 config DRM_ENGIANT
 	tristate "DRM Support for Engiant Display"
-	depends on DRM
+	depends on DRM && PCI
 	select DRM_KMS_HELPER
 	select DRM_VRAM_HELPER
 	select DRM_TTM
 	select DRM_TTM_HELPER
-	select DRM_VERISILICON
+	select DRM_ENGIANT_VS
 	select DRM_EGT_DP
+	select ENGIANT_VS_PCIE
 	help
 	  Choose this option if you have an Engiant soc chipset.
-	  This enables the DRM driver for the Engiant display subsystem, 
+	  This enables the DRM driver for the Engiant display subsystem,
 	  which includes VeriSilicon DC and Engiant DP interface.
 
-config DRM_VERISILICON
+config DRM_ENGIANT_VS
 	bool "DRM Support for VeriSilicon"
 	depends on DRM_ENGIANT
 	help
@@ -27,10 +28,9 @@ config DRM_VERISILICON
 
 source "drivers/gpu/drm/engiant/connector/Kconfig"
 
-config VERISILICON_PCIE
+config ENGIANT_VS_PCIE
 	bool "PCIE driver support for VeriSilicon display controller"
-	depends on DRM_VERISILICON && PCI
-	default y
+	depends on DRM_ENGIANT_VS
 	help
 	  Choose this option if you want to register pcie driver for verisilicon display
 	  controller, platform driver is used by default for veriSilicon display controller.

@@ -285,21 +285,13 @@ static void vd_unbind(struct device *dev, struct device *master, void *data)
 	}
 }
 
-const struct component_ops vd_component_ops = {
+const struct component_ops egt_vd_component_ops = {
 	.bind = vd_bind,
 	.unbind = vd_unbind,
 };
 
-static const struct of_device_id vd_driver_dt_match[] = {
-	{
-		.compatible = "verisilicon,virtual_display",
-	},
-	{},
-};
-MODULE_DEVICE_TABLE(of, vd_driver_dt_match);
-
-#ifdef CONFIG_VERISILICON_PCIE
-int vs_vd_pci_init(struct drm_device *drm_dev)
+#ifdef CONFIG_ENGIANT_VS_PCIE
+int vs_egt_vd_pci_init(struct drm_device *drm_dev)
 {
 	struct pci_dev *pdev = to_pci_dev(drm_dev->dev);
 	struct device *dev = &pdev->dev;
@@ -361,7 +353,7 @@ connector_init_err:
 	return ret;
 }
 
-void vs_vd_pci_deinit(struct drm_device *drm_dev)
+void vs_egt_vd_pci_deinit(struct drm_device *drm_dev)
 {
 	struct pci_dev *pdev = to_pci_dev(drm_dev->dev);
 	struct device *dev = &pdev->dev;
@@ -382,28 +374,27 @@ static int vd_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
-	return component_add(dev, &vd_component_ops);
+	return component_add(dev, &egt_vd_component_ops);
 }
 
 static int vd_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
-	component_del(dev, &vd_component_ops);
+	component_del(dev, &egt_vd_component_ops);
 
 	dev_set_drvdata(dev, NULL);
 
 	return 0;
 }
 
-struct platform_driver virtual_display_platform_driver = {
+struct platform_driver egt_virtual_display_platform_driver = {
 	.probe = vd_probe,
 	.remove = vd_remove,
 	.driver = {
 		.name = "vs-virtual-display",
-		.of_match_table = of_match_ptr(vd_driver_dt_match),
 	},
 };
 
 MODULE_DESCRIPTION("VeriSilicon Virtual Display Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

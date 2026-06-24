@@ -276,7 +276,7 @@ static int _setup_process_address_space(struct device *dev, struct _dc_mmu *mmu)
 }
 
 /* MMU Construct */
-int dc_mmu_construct(struct device *dev, struct _dc_mmu **mmu)
+int egt_dc_mmu_construct(struct device *dev, struct _dc_mmu **mmu)
 {
 	struct _dc_mmu *mmu_t = NULL;
 	void *mem = NULL;
@@ -343,7 +343,7 @@ int dc_mmu_construct(struct device *dev, struct _dc_mmu **mmu)
 }
 
 /* MMU Deconstruct */
-void dc_mmu_deconstruct(struct device *dev, struct _dc_mmu *mmu)
+void egt_dc_mmu_deconstruct(struct device *dev, struct _dc_mmu *mmu)
 {
 	if (!mmu_construct)
 		return;
@@ -409,6 +409,9 @@ static int _add_free(struct _dc_mmu *mmu, u32 index, u32 node, u32 count)
 {
 	u32 *map = mmu->map_logical;
 
+	if (!map)
+		return -EINVAL;
+
 	if (count == 1) {
 		/* Initialize a single page node */
 		_write_page_entry(map + node, DC_SINGLE_PAGE_NODE_INITIALIZE | DC_MMU_SINGLE);
@@ -428,6 +431,9 @@ static int _collect(struct _dc_mmu *mmu)
 	u32 count = 0, start = 0, i = 0;
 	u32 previous = ~0U;
 	int ret = 0;
+
+	if (!map)
+		return -EINVAL;
 
 	mmu->heap_list = ~0U;
 	mmu->free_nodes = false;
@@ -657,8 +663,9 @@ static int dc_mmu_set_page(struct _dc_mmu *mmu, u64 page_address, u32 *page_entr
 	return 0;
 }
 
-int dc_mmu_map_memory(struct _dc_mmu *mmu, u64 physical, u32 page_count, u32 *address, bool continuous,
-			  bool security)
+int egt_dc_mmu_map_memory(struct _dc_mmu *mmu, u64 physical, u32 page_count, u32 *address,
+			bool continuous,
+			bool security)
 {
 	u32 virutal_address, i = 0;
 	u32 mtlb_num, mtlb_entry, mtlb_offset;
@@ -725,7 +732,7 @@ OnError:
 	return ret;
 }
 
-int dc_mmu_unmap_memory(struct _dc_mmu *mmu, u32 gpu_address, u32 page_count)
+int egt_dc_mmu_unmap_memory(struct _dc_mmu *mmu, u32 gpu_address, u32 page_count)
 {
 	return dc_mmu_free_pages(mmu, gpu_address, page_count);
 }

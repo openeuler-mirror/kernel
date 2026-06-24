@@ -9,8 +9,8 @@
 #include <drm/drm_fourcc.h>
 #include <drm/drm_plane_helper.h>
 #include <drm/drm_framebuffer.h>
-#include <drm/vs_drm.h>
 
+#include "vs_egt_drm.h"
 #include "vs_fb.h"
 #include "vs_type.h"
 #include "vs_dc_hw.h"
@@ -46,14 +46,14 @@ struct vs_plane_pattern {
 	bool enable;
 	u8 mode;
 	u64 color;
-	struct drm_vs_rect rect;
+	struct drm_vs_egt_rect rect;
 };
 
 struct vs_plane_crc {
 	bool enable;
 	u8 pos;
-	struct drm_vs_color seed;
-	struct drm_vs_color result;
+	struct drm_vs_egt_color seed;
+	struct drm_vs_egt_color result;
 	/*8200*/
 	u8 init_mode;
 	__u32 init_value;
@@ -147,12 +147,12 @@ struct vs_ts_metadata {
 	u32 reserved[8];
 };
 
-void vs_plane_destroy(struct drm_plane *plane);
+void vs_egt_plane_destroy(struct drm_plane *plane);
 
-void vs_plane_get_dec_tile_status(struct drm_device *dev, struct vs_gem_object *vs_gem,
+void vs_egt_plane_get_dec_tile_status(struct drm_device *dev, struct vs_gem_object *vs_gem,
 				  u8 plane_id, dma_addr_t *ts_addr, void **ts_dma_buf);
 
-struct vs_plane *vs_plane_create(const struct dc_hw_plane *hw_plane, struct drm_device *drm_dev,
+struct vs_plane *vs_egt_plane_create(const struct dc_hw_plane *hw_plane, struct drm_device *drm_dev,
 				 const struct vs_dc_info *info, u8 index,
 				 unsigned int possible_crtcs,
 				 const struct vs_plane_funcs *dc_plane_funcs);
@@ -166,4 +166,5 @@ static inline struct vs_plane_state *to_vs_plane_state(struct drm_plane_state *s
 {
 	return container_of(state, struct vs_plane_state, base);
 }
+
 #endif /* __VS_PLANE_H__ */

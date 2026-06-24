@@ -5,10 +5,10 @@
  * Modified: 2026-03-30
  *   - Removed LINUX_VERSION_CODE macros for checkpatch.pl compliance
  * Modified: 2026-03-24
- *   - Added MODULE_DEVICE_TABLE(pci, vs_pci_table)
+ *   - Added MODULE_DEVICE_TABLE(pci, vs_egt_pci_table)
  * Modified: 2026-04-02
  *   - Added vs_fb_kick_off_efifb to release BIOS framebuffer
- *   - Added vs_fbdev_init for console initialization
+ *   - Added vs_egt_fbdev_init for console initialization
  * Modified: 2025-02-10
  *   - Added vs_pci_shutdown to reset DC on reboot
  * Modified: 2025-09-10
@@ -35,7 +35,7 @@
 #include <drm/drm_prime.h>
 #include <drm/drm_vblank.h>
 
-#ifdef CONFIG_VERISILICON_PCIE
+#ifdef CONFIG_ENGIANT_VS_PCIE
 #include <linux/pci.h>
 #endif
 
@@ -52,17 +52,17 @@
 #include "egt_dp.h"
 #endif /* end of CONFIG_DRM_EGT */
 
-#ifdef CONFIG_VERISILICON_QSPI
+#ifdef CONFIG_ENGIANT_VS_QSPI
 #include "vs_dc_qspi.h"
 #endif
 
-#define DRV_NAME "vs_drm"
+#define DRV_NAME "egt_drm"
 #define DRV_DESC "VeriSilicon DRM driver"
 #define DRV_DATE "20191101"
 #define DRV_MAJOR 1
 #define DRV_MINOR 0
 
-/* pcie driver and platfrom driver common */
+/* pcie driver and platform driver common */
 
 static bool has_iommu = true;
 static struct drm_device *dev_drm;
@@ -87,7 +87,7 @@ static const struct file_operations fops = {
 	.compat_ioctl = drm_compat_ioctl,
 	.poll = drm_poll,
 	.read = drm_read,
-	.mmap = vs_gem_mmap,
+	.mmap = vs_egt_gem_mmap,
 };
 
 #ifdef CONFIG_DEBUG_FS
@@ -129,30 +129,18 @@ static void vs_debugfs_init(struct drm_minor *minor)
 }
 #endif
 
-static const struct drm_ioctl_desc vs_ioctls[] = {
-	DRM_IOCTL_DEF_DRV(VS_GET_FBC_OFFSET, vs_get_fbc_offset_ioctl, DRM_MASTER),
-	DRM_IOCTL_DEF_DRV(VS_SW_RESET, vs_sw_reset_ioctl, DRM_MASTER),
-	DRM_IOCTL_DEF_DRV(VS_GEM_QUERY, vs_gem_query_ioctl, DRM_MASTER),
-	DRM_IOCTL_DEF_DRV(VS_GET_FEATURE_CAP, vs_get_feature_cap_ioctl, DRM_MASTER),
-#ifdef CONFIG_VERISILICON_HISTOGRAM
-	DRM_IOCTL_DEF_DRV(VS_GET_HIST_INFO, vs_get_hist_info_ioctl, DRM_MASTER),
-#endif
-};
-
 static struct drm_driver vs_drm_driver = {
 	.driver_features = DRIVER_MODESET | DRIVER_ATOMIC | DRIVER_GEM,
 	.lastclose = drm_fb_helper_lastclose,
 	.prime_handle_to_fd = drm_gem_prime_handle_to_fd,
 	.prime_fd_to_handle = drm_gem_prime_fd_to_handle,
 
-	.gem_prime_import = vs_gem_prime_import,
-	.gem_prime_import_sg_table = vs_gem_prime_import_sg_table,
-	.dumb_create = vs_gem_dumb_create,
+	.gem_prime_import = vs_egt_gem_prime_import,
+	.gem_prime_import_sg_table = vs_egt_gem_prime_import_sg_table,
+	.dumb_create = vs_egt_gem_dumb_create,
 #ifdef CONFIG_DEBUG_FS
 	.debugfs_init = vs_debugfs_init,
 #endif
-	.ioctls = vs_ioctls,
-	.num_ioctls = ARRAY_SIZE(vs_ioctls),
 	.fops = &fops,
 	.name = DRV_NAME,
 	.desc = DRV_DESC,
@@ -161,7 +149,7 @@ static struct drm_driver vs_drm_driver = {
 	.minor = DRV_MINOR,
 };
 
-int vs_drm_iommu_attach_device(struct drm_device *drm_dev, struct device *dev)
+int vs_egt_drm_iommu_attach_device(struct drm_device *drm_dev, struct device *dev)
 {
 	struct vs_drm_private *priv = drm_dev->dev_private;
 	int ret;
@@ -185,7 +173,7 @@ int vs_drm_iommu_attach_device(struct drm_device *drm_dev, struct device *dev)
 	return 0;
 }
 
-void vs_drm_iommu_detach_device(struct drm_device *drm_dev, struct device *dev)
+void vs_egt_drm_iommu_detach_device(struct drm_device *drm_dev, struct device *dev)
 {
 	struct vs_drm_private *priv = drm_dev->dev_private;
 
@@ -198,7 +186,7 @@ void vs_drm_iommu_detach_device(struct drm_device *drm_dev, struct device *dev)
 		priv->dma_dev = drm_dev->dev;
 }
 
-void vs_drm_update_alignment(struct drm_device *drm_dev, unsigned int pitch_align,
+void vs_egt_drm_update_alignment(struct drm_device *drm_dev, unsigned int pitch_align,
 				 unsigned int addr_align)
 {
 	struct vs_drm_private *priv = drm_dev->dev_private;
@@ -210,24 +198,10 @@ void vs_drm_update_alignment(struct drm_device *drm_dev, unsigned int pitch_alig
 		priv->addr_alignment = addr_align;
 }
 
-#ifdef CONFIG_VERISILICON_PCIE
+#ifdef CONFIG_ENGIANT_VS_PCIE
 
 /* pcie driver */
-static struct pci_device_id vs_pci_table[] = {
-	{
-#ifdef CONFIG_VERISILICON_PCIE_GEN7
-		PCI_DEVICE(0x10ee, 0x9014),
-#else
-		PCI_DEVICE(0x10ee, 0x7012),
-#endif
-		.class = 0,
-		.class_mask = 0,
-	},
-	{
-		PCI_DEVICE(0x10ee, 0x8011),
-		.class = 0,
-		.class_mask = 0,
-	},
+static struct pci_device_id vs_egt_pci_table[] = {
 	{
 		PCI_DEVICE(0x1556, 0x0001),
 		.class = 0,
@@ -236,28 +210,28 @@ static struct pci_device_id vs_pci_table[] = {
 	{}
 };
 
-MODULE_DEVICE_TABLE(pci, vs_pci_table);
+MODULE_DEVICE_TABLE(pci, vs_egt_pci_table);
 
 static int vs_drm_device_init(struct drm_device *dev)
 {
 	int ret;
 
-	ret = vs_dc_pci_init(dev);
+	ret = vs_egt_dc_pci_init(dev);
 	if (ret) {
 		DRM_ERROR("fail to init vs dc: %d\n", ret);
 		goto err_ret;
 	}
 
-#ifdef CONFIG_VERISILICON_VIRTUAL_DISPLAY
+#ifdef CONFIG_ENGIANT_VS_VIRTUAL_DISPLAY
 	/* encoder init. */
-	ret = vs_simple_encoder_pci_init(dev);
+	ret = vs_egt_simple_encoder_pci_init(dev);
 	if (ret) {
 		DRM_ERROR("fail to init encoder: %d\n", ret);
 		goto err_ret;
 	}
 
 	/* virtual display init. */
-	ret = vs_vd_pci_init(dev);
+	ret = vs_egt_vd_pci_init(dev);
 	if (ret) {
 		DRM_ERROR("fail to init vs virtual display: %d\n", ret);
 		goto err_ret;
@@ -274,9 +248,9 @@ static int vs_drm_device_init(struct drm_device *dev)
 	}
 #endif
 
-#ifdef CONFIG_VERISILICON_QSPI
+#ifdef CONFIG_ENGIANT_VS_QSPI
 	/* vs qspi init. */
-	ret = vs_qspi_pci_init(dev);
+	ret = vs_egt_qspi_pci_init(dev);
 	if (ret) {
 		DRM_ERROR("fail to init vs qspi controller: %d\n", ret);
 		goto err_ret;
@@ -289,9 +263,9 @@ err_ret:
 
 static void vs_drm_device_deinit(struct drm_device *dev)
 {
-#ifdef CONFIG_VERISILICON_VIRTUAL_DISPLAY
-	vs_simple_encoder_pci_deinit(dev);
-	vs_vd_pci_deinit(dev);
+#ifdef CONFIG_ENGIANT_VS_VIRTUAL_DISPLAY
+	vs_egt_simple_encoder_pci_deinit(dev);
+	vs_egt_vd_pci_deinit(dev);
 #endif
 
 #ifdef CONFIG_DRM_EGT_DP
@@ -299,18 +273,18 @@ static void vs_drm_device_deinit(struct drm_device *dev)
 	egt_dp_device_deinit(dev);
 #endif
 
-#ifdef CONFIG_VERISILICON_QSPI
-	vs_qspi_pci_deinit(dev);
+#ifdef CONFIG_ENGIANT_VS_QSPI
+	vs_egt_qspi_pci_deinit(dev);
 #endif
 
-	vs_dc_pci_deinit(dev);
+	vs_egt_dc_pci_deinit(dev);
 }
 
 static void vs_drm_device_deinit_aer(struct drm_device *dev)
 {
-#ifdef CONFIG_VERISILICON_VIRTUAL_DISPLAY
-	vs_simple_encoder_pci_deinit(dev);
-	vs_vd_pci_deinit(dev);
+#ifdef CONFIG_ENGIANT_VS_VIRTUAL_DISPLAY
+	vs_egt_simple_encoder_pci_deinit(dev);
+	vs_egt_vd_pci_deinit(dev);
 #endif
 
 #ifdef CONFIG_DRM_EGT_DP
@@ -318,16 +292,21 @@ static void vs_drm_device_deinit_aer(struct drm_device *dev)
 	egt_dp_device_deinit(dev);
 #endif
 
-#ifdef CONFIG_VERISILICON_QSPI
-	vs_qspi_pci_deinit(dev);
+#ifdef CONFIG_ENGIANT_VS_QSPI
+	vs_egt_qspi_pci_deinit(dev);
 #endif
-	vs_dc_pci_deinit_aer(dev);
+	vs_egt_dc_pci_deinit_aer(dev);
 }
 
-struct vs_gem_private *vs_gem_priv_init(struct drm_device *drm_dev)
+struct vs_gem_private *vs_egt_gem_priv_init(struct drm_device *drm_dev)
 {
 	struct vs_gem_private *gem_priv = kmalloc(sizeof(*gem_priv), GFP_KERNEL);
 	struct pci_dev *pdev = to_pci_dev(drm_dev->dev);
+
+	if (!gem_priv) {
+		DRM_ERROR("Failed to allocate gem_private\n");
+		return NULL;
+	}
 
 	mutex_init(&gem_priv->vram_lock);
 
@@ -335,14 +314,45 @@ struct vs_gem_private *vs_gem_priv_init(struct drm_device *drm_dev)
 
 	/*map pci bar2 resource*/
 	gem_priv->pci_addr = pci_resource_start(pdev, 2);
-	pr_debug("pci_bar2 phiscal address: %#llx, len: %#llx\n",
-		   pci_resource_start(pdev, 2), pci_resource_len(pdev, 2));
+	pr_debug("pci_bar2 phiscal address: %pa, len: %#llx\n",
+		   &gem_priv->pci_addr,
+		   (unsigned long long)pci_resource_len(pdev, 2));
 
 	/*initialize a drm-mm allocator to manager vram*/
 	drm_mm_init(&gem_priv->vram, (u64)pci_resource_start(pdev, 2), EGT_VIDMEM_SIZE_64M);
 
 	return gem_priv;
 }
+
+void vs_egt_gem_priv_deinit(struct drm_device *drm_dev)
+{
+	struct vs_drm_private *priv = NULL;
+	struct vs_gem_private *gem_priv = NULL;
+
+	if (!drm_dev) {
+		DRM_ERROR("drm_dev is NULL\n");
+		return;
+	}
+
+	priv = (struct vs_drm_private *)drm_dev->dev_private;
+	gem_priv = priv->gem_priv;
+	if (!gem_priv) {
+		DRM_ERROR("gem_private is NULL\n");
+		return;
+	}
+
+	gem_priv->pci_addr = 0;
+
+	mutex_lock(&gem_priv->vram_lock);
+	drm_mm_takedown(&gem_priv->vram);
+	mutex_unlock(&gem_priv->vram_lock);
+	mutex_destroy(&gem_priv->vram_lock);
+
+	kfree(gem_priv);
+	gem_priv = NULL;
+	pr_debug("GEM private deinitialized successfully\n");
+}
+
 static int vs_fb_kick_off_efifb(void)
 {
 	resource_size_t base = 0;
@@ -381,7 +391,7 @@ static int vs_pci_probe(struct pci_dev *pdev, __maybe_unused const struct pci_de
 	}
 
 	/*gem private create*/
-	priv->gem_priv = vs_gem_priv_init(drm_dev);
+	priv->gem_priv = vs_egt_gem_priv_init(drm_dev);
 	if (!priv->gem_priv) {
 		ret = -ENOMEM;
 		goto err_put;
@@ -397,7 +407,6 @@ static int vs_pci_probe(struct pci_dev *pdev, __maybe_unused const struct pci_de
 
 	drm_mode_config_init(drm_dev);
 
-	/* todo. */
 	has_iommu = false;
 
 	ret = vs_drm_device_init(drm_dev);
@@ -406,7 +415,7 @@ static int vs_pci_probe(struct pci_dev *pdev, __maybe_unused const struct pci_de
 		goto err_mode;
 	}
 
-	vs_mode_config_init(drm_dev);
+	vs_egt_mode_config_init(drm_dev);
 
 	ret = drm_vblank_init(drm_dev, drm_dev->mode_config.num_crtc);
 	if (ret) {
@@ -433,7 +442,7 @@ static int vs_pci_probe(struct pci_dev *pdev, __maybe_unused const struct pci_de
 	pr_debug("kick off uefi fb\n");
 
 	//register fbdev
-	ret = vs_fbdev_init(drm_dev);
+	ret = vs_egt_fbdev_init(drm_dev);
 	if (ret)
 		pr_err("fail to register framebuffer device: %d\n", ret);
 
@@ -449,6 +458,7 @@ err_deinit:
 
 err_mode:
 	drm_mode_config_cleanup(drm_dev);
+	vs_egt_gem_priv_deinit(drm_dev);
 err_put:
 	pci_disable_device(pdev);
 err_out:
@@ -466,9 +476,11 @@ static void vs_pci_remove(struct pci_dev *pdev)
 	drm_atomic_helper_shutdown(drm_dev);
 	vs_drm_device_deinit(drm_dev);
 	drm_dev_unregister(drm_dev);
-	vs_fbdev_fini(drm_dev);
+	vs_egt_fbdev_fini(drm_dev);
 	drm_kms_helper_poll_fini(drm_dev);
 	drm_mode_config_cleanup(drm_dev);
+	vs_egt_gem_priv_deinit(drm_dev);
+	drm_dev->dev_private = NULL;
 	drm_dev_put(drm_dev);
 	pci_set_drvdata(pdev, NULL);
 	pci_disable_device(pdev);
@@ -510,9 +522,11 @@ static void vs_pci_shutdown(__maybe_unused struct pci_dev *pdev)
 {
 	struct drm_device *drm_dev = dev_drm;
 
+#ifdef CONFIG_DRM_EGT_DP
 	egt_dp_send_stop_vdp(drm_dev);
+#endif
 	drm_atomic_helper_shutdown(drm_dev);
-	vs_fbdev_fini(drm_dev);
+	vs_egt_fbdev_fini(drm_dev);
 	drm_mode_config_reset(drm_dev);
 }
 
@@ -525,12 +539,13 @@ static u32 vs_drm_reg_read(struct drm_device *dev, u32 reg)
 {
 	u32 value;
 
-	value = vs_dc_reg_read(dev, reg);
+	value = vs_egt_dc_reg_read(dev, reg);
 
 	return value;
 }
 
-static pci_ers_result_t vs_pci_error_detected(struct pci_dev *pdev, __maybe_unused pci_channel_state_t state)
+static pci_ers_result_t vs_pci_error_detected(struct pci_dev *pdev,
+						__maybe_unused pci_channel_state_t state)
 {
 	u32 intr_status;
 	struct drm_device *drm_dev = dev_drm;
@@ -541,7 +556,7 @@ static pci_ers_result_t vs_pci_error_detected(struct pci_dev *pdev, __maybe_unus
 
 	intr_status = vs_drm_reg_read(drm_dev, DCREG_BE_INTR_STATUS_Address);
 	if (intr_status != 0xffffffff) {
-		pr_err("DC register can also be accessed, please try to uninstall the vs_drm and then reload it\n");
+		pr_err("DC register can also be accessed, please try to uninstall the egt_drm\n");
 		return PCI_ERS_RESULT_DISCONNECT;
 	}
 
@@ -579,8 +594,8 @@ static const struct pci_error_handlers vs_driver_aer_handlers = {
 };
 
 static struct pci_driver vs_drm_pci_driver = {
-	.name = "vs_drm",
-	.id_table = vs_pci_table,
+	.name = "egt_drm",
+	.id_table = vs_egt_pci_table,
 	.probe = vs_pci_probe,
 	.remove = vs_pci_remove,
 	.shutdown = vs_pci_shutdown,
@@ -601,7 +616,7 @@ static void __exit vs_drm_exit(void)
 }
 
 #else
-/* platfrom driver */
+/* platform driver */
 static int vs_drm_bind(struct device *dev)
 {
 	struct drm_device *drm_dev;
@@ -635,7 +650,7 @@ static int vs_drm_bind(struct device *dev)
 	if (ret)
 		goto err_mode;
 
-	vs_mode_config_init(drm_dev);
+	vs_egt_mode_config_init(drm_dev);
 
 	ret = drm_vblank_init(drm_dev, drm_dev->mode_config.num_crtc);
 	if (ret)
@@ -702,37 +717,31 @@ static const struct component_master_ops vs_drm_ops = {
 
 static struct platform_driver vs_drm_platform_driver;
 
-#ifdef CONFIG_DRM_EGT_DP
-extern struct platform_driver egt_dp_driver;
-#endif /* end of CONFIG_DRM_EGT_DP */
-
 static struct platform_driver *drm_sub_drivers[] = {
 	/* put display control driver at start */
-	&dc_platform_driver,
-	&dc_be_platform_driver,
-	&dc_fe0_platform_driver,
-	&dc_fe1_platform_driver,
-	&dc_wb_platform_driver,
+	&egt_dc_platform_driver,
+	&egt_dc_be_platform_driver,
+	&egt_dc_fe0_platform_driver,
+	&egt_dc_fe1_platform_driver,
+	&egt_dc_wb_platform_driver,
 
 /* bridge */
-#ifdef CONFIG_VERISILICON_DW_MIPI_DSI
-	&dw_mipi_dsi_driver,
+#ifdef CONFIG_ENGIANT_VS_DW_MIPI_DSI
+	&egt_dw_mipi_dsi_driver,
 #endif
 	/* encoder */
-	&simple_encoder_driver,
+	&egt_simple_encoder_driver,
 
-#ifdef CONFIG_VERISILICON_VIRTUAL_DISPLAY
-	&virtual_display_platform_driver,
-#elif CONFIG_DRM_EGT_DP
-	&egt_dp_driver,
+#ifdef CONFIG_ENGIANT_VS_VIRTUAL_DISPLAY
+	&egt_virtual_display_platform_driver,
 #endif
 
-#ifdef CONFIG_VERISILICON_QSPI
-	&vs_qspi_platform_driver,
+#ifdef CONFIG_ENGIANT_VS_QSPI
+	&vs_egt_qspi_platform_driver,
 #endif
 };
 
-#define NUM_DRM_DRIVERS (sizeof(drm_sub_drivers) / sizeof(struct platform_driver *))
+#define NUM_DRM_DRIVERS ARRAY_SIZE(drm_sub_drivers)
 
 static int compare_dev(struct device *dev, void *data)
 {
@@ -852,7 +861,7 @@ static int vs_drm_suspend(struct device *dev)
 		goto err_ret;
 	}
 
-	ret = vs_dc_suspend(dc_dev);
+	ret = vs_egt_dc_suspend(dc_dev);
 	if (ret < 0) {
 		DRM_ERROR("failed to vs dc suspend.\n");
 		goto err_ret;
@@ -869,7 +878,7 @@ static int vs_drm_resume(struct device *dev)
 	struct vs_drm_private *priv = drm->dev_private;
 	struct device *dc_dev = priv->dc_dev;
 
-	ret = vs_dc_resume(dc_dev);
+	ret = vs_egt_dc_resume(dc_dev);
 	if (ret < 0) {
 		DRM_ERROR("failed to vs dc resume.\n");
 		goto err_ret;
@@ -889,25 +898,12 @@ err_ret:
 
 static SIMPLE_DEV_PM_OPS(vs_drm_pm_ops, vs_drm_suspend, vs_drm_resume);
 
-static const struct of_device_id vs_drm_dt_ids[] = {
-
-	{
-		.compatible = "verisilicon,display-subsystem",
-	},
-
-	{ /* sentinel */ },
-
-};
-
-MODULE_DEVICE_TABLE(of, vs_drm_dt_ids);
-
 static struct platform_driver vs_drm_platform_driver = {
 	.probe = vs_drm_platform_probe,
 	.remove = vs_drm_platform_remove,
 
 	.driver = {
 		.name = DRV_NAME,
-		.of_match_table = vs_drm_dt_ids,
 		.pm = &vs_drm_pm_ops,
 	},
 };
@@ -937,5 +933,5 @@ module_init(vs_drm_init);
 module_exit(vs_drm_exit);
 
 MODULE_DESCRIPTION("VeriSilicon DRM Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_IMPORT_NS(DMA_BUF);

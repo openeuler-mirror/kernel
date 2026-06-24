@@ -13,7 +13,6 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 
-#include <drm/vs_drm_fourcc.h>
 #include <drm/drm_atomic.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
@@ -29,11 +28,11 @@
 #include "vs_drv.h"
 #include "vs_crtc.h"
 #include "vs_plane.h"
+#include "vs_egt_drm_fourcc.h"
 
-
-#define fourcc_mod_vs_get_type(val) (((val)&DRM_FORMAT_MOD_VS_TYPE_MASK) >> 53)
+#define fourcc_mod_vs_egt_get_type(val) (((val)&DRM_FORMAT_MOD_VS_EGT_TYPE_MASK) >> 53)
 #define _VS_WAIT_VBLANK_TIME_OUT 100000
-#define FBDEV_NAME "vsdrmfb"
+#define FBDEV_NAME "egtdrmfb"
 
 static void vs_drm_gem_fb_destroy(struct drm_framebuffer *fb)
 {
@@ -58,6 +57,7 @@ static struct drm_framebuffer *vs_fb_alloc(struct drm_device *dev,
 	struct vs_drm_private *priv = dev->dev_private;
 	int ret, i;
 	u64 addr;
+	u64 rem;
 
 	fb = kzalloc(sizeof(*fb), GFP_KERNEL);
 	if (!fb)
@@ -70,8 +70,9 @@ static struct drm_framebuffer *vs_fb_alloc(struct drm_device *dev,
 		fb->obj[i] = &obj[i]->base;
 		fb->pitches[i] = ALIGN(fb->pitches[i], priv->pitch_alignment);
 
-		if (addr % priv->addr_alignment) {
-			dev_err(dev->dev, "The framebuffer address should aligment with %d\n",
+		div64_u64_rem(addr, priv->addr_alignment, &rem);
+		if (rem) {
+			dev_err(dev->dev, "The framebuffer address should alignment with %d\n",
 				priv->addr_alignment);
 			return ERR_PTR(-EINVAL);
 		}
@@ -114,9 +115,9 @@ static struct drm_framebuffer *vs_fb_create(struct drm_device *dev, struct drm_f
 			goto err;
 		}
 
-		if (!((fourcc_mod_vs_get_type(mode_cmd->modifier[i]) ==
-			   DRM_FORMAT_MOD_VS_TYPE_PVRIC) &&
-			  (mode_cmd->modifier[i] & DRM_FORMAT_MOD_VS_DEC_LOSSY))) {
+		if (!((fourcc_mod_vs_egt_get_type(mode_cmd->modifier[i]) ==
+			   DRM_FORMAT_MOD_VS_EGT_TYPE_PVRIC) &&
+			  (mode_cmd->modifier[i] & DRM_FORMAT_MOD_VS_EGT_DEC_LOSSY))) {
 			height = drm_format_info_plane_height(info, mode_cmd->height, i);
 			size = height * mode_cmd->pitches[i] + mode_cmd->offsets[i];
 
@@ -145,7 +146,7 @@ err:
 	return ERR_PTR(ret);
 }
 
-struct vs_gem_object *vs_fb_get_gem_obj(struct drm_framebuffer *fb, unsigned char plane)
+struct vs_gem_object *vs_egt_fb_get_gem_obj(struct drm_framebuffer *fb, unsigned char plane)
 {
 	if (plane > MAX_NUM_PLANES)
 		return NULL;
@@ -232,7 +233,7 @@ static const struct drm_format_info *vs_lookup_format_info(const struct drm_form
 
 static const struct drm_format_info *vs_get_format_info(const struct drm_mode_fb_cmd2 *cmd)
 {
-	if (fourcc_mod_is_custom_format(cmd->modifier[0]))
+	if (fourcc_mod_vs_egt_is_custom_format(cmd->modifier[0]))
 		return vs_lookup_format_info(vs_formats_custom, ARRAY_SIZE(vs_formats_custom),
 						 cmd->pixel_format);
 	else
@@ -298,7 +299,7 @@ static struct drm_mode_config_helper_funcs vs_mode_config_helpers = {
 	.atomic_commit_tail = vs_atomic_commit_tail,
 };
 
-void vs_mode_config_init(struct drm_device *dev)
+void vs_egt_mode_config_init(struct drm_device *dev)
 {
 	if (dev->mode_config.max_width == 0 || dev->mode_config.max_height == 0) {
 		dev->mode_config.min_width = 0;
@@ -309,47 +310,6 @@ void vs_mode_config_init(struct drm_device *dev)
 
 	dev->mode_config.funcs = &vs_mode_config_funcs;
 	dev->mode_config.helper_private = &vs_mode_config_helpers;
-}
-
-int vs_get_fbc_offset_ioctl(struct drm_device *dev, void *data, struct drm_file *file_priv)
-{
-	struct drm_vs_pvric_offset *args = data;
-	const struct drm_format_info *info;
-	struct drm_gem_object *obj;
-	struct vs_gem_object *objs[MAX_NUM_PLANES];
-	u64 base_addr = 0;
-	u8 i, num_planes;
-	int ret = 0;
-
-	info = drm_format_info(args->format);
-	if (!info)
-		return -EINVAL;
-
-	num_planes = info->num_planes;
-	if (num_planes > MAX_NUM_PLANES)
-		return -EINVAL;
-
-	for (i = 0; i < num_planes; i++) {
-		obj = drm_gem_object_lookup(file_priv, args->handles[i]);
-		if (!obj) {
-			dev_err(dev->dev, "Failed to lookup GEM object.\n");
-			ret = -ENXIO;
-			goto err;
-		}
-
-		objs[i] = to_vs_gem_object(obj);
-
-		base_addr = ALIGN(objs[i]->iova + args->header_size[i], 256);
-		args->offsets[i] = base_addr - objs[i]->iova;
-	}
-
-	return 0;
-
-err:
-	for (; i > 0; i--)
-		drm_gem_object_put(&objs[i - 1]->base);
-
-	return ret;
 }
 
 static inline int vs_framebuffer_init(struct vs_drm_private *dev_priv,
@@ -438,10 +398,11 @@ static int vs_fbdev_probe(struct drm_fb_helper *helper,
 			sizes->surface_depth);
 	obj_size = PAGE_ALIGN(mode_cmd.height * mode_cmd.pitches[0]);
 
-	pr_debug("alloc fb obj_size=0x%lx(height=%d, width=%d pitches=%d)\n", obj_size, mode_cmd.height, mode_cmd.width, mode_cmd.pitches[0]);
+	pr_debug("alloc fb obj_size=%zu(height=%d, width=%d pitches=%d)\n",
+		obj_size, mode_cmd.height, mode_cmd.width, mode_cmd.pitches[0]);
 
 	/* 2. Create a vs_gem priv */
-	obj = vs_gem_create_with_handle(dev, obj_size, gem_priv);
+	obj = vs_egt_gem_create_with_handle(dev, obj_size, gem_priv);
 	if (IS_ERR(obj)) {
 		err = PTR_ERR(obj);
 		goto err_unlock_dev;
@@ -449,7 +410,8 @@ static int vs_fbdev_probe(struct drm_fb_helper *helper,
 
 	vs_obj = to_vs_gem_object(obj);
 
-	pr_debug("vs_gem_obj_create success addr = 0x%llx size = 0x%lx\n", vs_obj->dma_addr, obj->size);
+	pr_debug("vs_gem_obj_create success addr = %pad size = 0x%zx\n",
+			&vs_obj->dma_addr, obj->size);
 
 	/* Ioremap buffer to user */
 	vaddr = ioremap_wc(vs_obj->dma_addr, obj->size);
@@ -495,7 +457,7 @@ static int vs_fbdev_probe(struct drm_fb_helper *helper,
 err_gem_unmap:
 	iounmap(vaddr);
 err_gem_destroy:
-	vs_gem_free_object(obj);
+	vs_egt_gem_free_object(obj);
 err_unlock_dev:
 	if (locked)
 		mutex_unlock(&dev->struct_mutex);
@@ -508,7 +470,7 @@ static const struct drm_fb_helper_funcs s_vs_fbdev_helper_funcs = {
 	.fb_probe = vs_fbdev_probe,
 };
 
-void vs_fbdev_destroy(struct vs_fbdev *vs_fbdev)
+void vs_egt_fbdev_destroy(struct vs_fbdev *vs_fbdev)
 {
 	struct vs_framebuffer *vs_fb;
 	struct vs_gem_object *vs_obj;
@@ -540,7 +502,6 @@ void vs_fbdev_destroy(struct vs_fbdev *vs_fbdev)
 		drm_framebuffer_cleanup(fb);
 	}
 
-	kfree(vs_fbdev->priv->gem_priv);
 	kfree(vs_fbdev);
 }
 
@@ -587,7 +548,7 @@ err_free_fbdev:
 	return ERR_PTR(err);
 }
 
-int vs_fbdev_init(struct drm_device *drm_dev)
+int vs_egt_fbdev_init(struct drm_device *drm_dev)
 {
 	struct vs_drm_private *dev_priv = drm_dev->dev_private;
 	struct vs_fbdev *fbdev;
@@ -613,12 +574,12 @@ int vs_fbdev_init(struct drm_device *drm_dev)
 
 	return 0;
 }
-EXPORT_SYMBOL(vs_fbdev_init);
+EXPORT_SYMBOL(vs_egt_fbdev_init);
 
-void vs_fbdev_fini(struct drm_device *drm_dev)
+void vs_egt_fbdev_fini(struct drm_device *drm_dev)
 {
 	struct vs_drm_private *dev_priv = drm_dev->dev_private;
 
-	vs_fbdev_destroy(dev_priv->fbdev);
+	vs_egt_fbdev_destroy(dev_priv->fbdev);
 }
-EXPORT_SYMBOL(vs_fbdev_fini);
+EXPORT_SYMBOL(vs_egt_fbdev_fini);

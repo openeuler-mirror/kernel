@@ -50,36 +50,28 @@ static inline struct vs_gem_object *to_vs_gem_object(struct drm_gem_object *obj)
 	return container_of(obj, struct vs_gem_object, base);
 }
 
-struct vs_gem_object *vs_gem_create_object(struct drm_device *dev, size_t size);
+struct vs_gem_object *vs_egt_gem_create_object(struct drm_device *dev, size_t size);
 
-int vs_gem_prime_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma);
+int vs_egt_gem_prime_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma);
 
-int vs_gem_dumb_create(struct drm_file *file_priv, struct drm_device *drm,
+int vs_egt_gem_dumb_create(struct drm_file *file_priv, struct drm_device *drm,
 			   struct drm_mode_create_dumb *args);
 
-int vs_gem_mmap(struct file *filp, struct vm_area_struct *vma);
+int vs_egt_gem_mmap(struct file *filp, struct vm_area_struct *vma);
 
-struct sg_table *vs_gem_prime_get_sg_table(struct drm_gem_object *obj);
+struct sg_table *vs_egt_gem_prime_get_sg_table(struct drm_gem_object *obj);
 
-struct dma_buf *vs_gem_prime_export(struct drm_gem_object *obj, int flags);
-int vs_gem_dumb_create_priv(struct drm_file *file, struct drm_device *dev,
+int vs_egt_gem_dumb_create_priv(struct drm_file *file, struct drm_device *dev,
 			struct vs_gem_private *gem_priv, struct drm_mode_create_dumb *args);
-u64 vs_gem_get_dev_addr(struct drm_gem_object *obj);
-void vs_gem_free_object(struct drm_gem_object *obj);
+u64 vs_egt_gem_get_dev_addr(struct drm_gem_object *obj);
+void vs_egt_gem_free_object(struct drm_gem_object *obj);
 
-struct drm_gem_object *vs_gem_create_with_handle(struct drm_device *dev,
+struct drm_gem_object *vs_egt_gem_create_with_handle(struct drm_device *dev,
 			size_t size, struct vs_gem_private *gem_priv);
 
-int vs_gem_fbdev_buf(struct drm_gem_object *obj,
-		  struct vm_area_struct *vma);
-
-vm_fault_t vs_gem_object_vm_fault(struct vm_fault *vmf);
-
-struct drm_gem_object *vs_gem_prime_import(struct drm_device *dev, struct dma_buf *dma_buf);
-struct drm_gem_object *vs_gem_prime_import_sg_table(struct drm_device *dev,
+struct drm_gem_object *vs_egt_gem_prime_import(struct drm_device *dev, struct dma_buf *dma_buf);
+struct drm_gem_object *vs_egt_gem_prime_import_sg_table(struct drm_device *dev,
 							struct dma_buf_attachment *attach,
 							struct sg_table *sgt);
-int vs_gem_query_ioctl(struct drm_device *dev, void *data, struct drm_file *file);
 
-struct vs_gem_object *vs_gem_object_lookup(u32 fd, u32 handle);
 #endif /* __VS_GEM_H__ */

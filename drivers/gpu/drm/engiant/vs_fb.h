@@ -18,13 +18,12 @@ struct vs_fbdev {
 	u8 preferred_bpp;
 };
 
-void vs_fbdev_destroy(struct vs_fbdev *vs_fbdev);
-extern int vs_fbdev_init(struct drm_device *drm_dev);
-extern void vs_fbdev_fini(struct drm_device *drm_dev);
+void vs_egt_fbdev_destroy(struct vs_fbdev *vs_fbdev);
+extern int vs_egt_fbdev_init(struct drm_device *drm_dev);
+extern void vs_egt_fbdev_fini(struct drm_device *drm_dev);
 
-struct vs_gem_object *vs_fb_get_gem_obj(struct drm_framebuffer *fb, unsigned char plane);
+struct vs_gem_object *vs_egt_fb_get_gem_obj(struct drm_framebuffer *fb, unsigned char plane);
 
-void vs_mode_config_init(struct drm_device *dev);
+void vs_egt_mode_config_init(struct drm_device *dev);
 
-int vs_get_fbc_offset_ioctl(struct drm_device *dev, void *data, struct drm_file *file_priv);
 #endif /* __VS_FB_H__ */

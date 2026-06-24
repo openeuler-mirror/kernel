@@ -32,7 +32,9 @@ static int egt_dpcd_read(struct egt_displayport *dp)
 			pr_warn("drm dpcd read fail 2");
 	}
 
-	if (dp->dpcd[DP_MAX_LINK_RATE] != DP_LINK_BW_5_4 && dp->dpcd[DP_MAX_LINK_RATE] != DP_LINK_BW_2_7 && dp->dpcd[DP_MAX_LINK_RATE] != DP_LINK_BW_1_62)
+	if (dp->dpcd[DP_MAX_LINK_RATE] != DP_LINK_BW_5_4 &&
+		dp->dpcd[DP_MAX_LINK_RATE] != DP_LINK_BW_2_7 &&
+		dp->dpcd[DP_MAX_LINK_RATE] != DP_LINK_BW_1_62)
 		dp->dpcd[DP_MAX_LINK_RATE] = DP_LINK_BW_5_4;
 
 	return ret;
@@ -137,9 +139,11 @@ static int egt_dp_check_link_ready(struct egt_displayport *dp)
 			return ret;
 
 		pr_debug("training link status: [%#x] [%#x] [%#x] [%#x] [%#x] [%#x]\n",
-					link_sts[0], link_sts[1], link_sts[2], link_sts[3], link_sts[4], link_sts[5]);
+					link_sts[0], link_sts[1], link_sts[2],
+					link_sts[3], link_sts[4], link_sts[5]);
 
-		if (drm_dp_clock_recovery_ok(link_sts, dp->lane_cnt) && drm_dp_channel_eq_ok(link_sts, dp->lane_cnt))
+		if (drm_dp_clock_recovery_ok(link_sts, dp->lane_cnt) &&
+			drm_dp_channel_eq_ok(link_sts, dp->lane_cnt))
 			return 0;
 	}
 
@@ -197,7 +201,8 @@ static int egt_dp_dpcd_cap_config(struct egt_displayport *dp)
 	return ret;
 }
 
-static int egt_dp_check_cr_ready(struct egt_displayport *dp, u8 num_lanes, u8 link_sts[DP_LINK_STATUS_SIZE])
+static int egt_dp_check_cr_ready(struct egt_displayport *dp,
+					u8 num_lanes, u8 link_sts[DP_LINK_STATUS_SIZE])
 {
 	struct egt_displayport_link_config *link_config = &dp->train_cfg;
 
@@ -466,7 +471,7 @@ static int egt_dp_cr_training(struct egt_displayport *dp)
 	bool cr_done = 0;
 	int ret = 0;
 	int i = 0;
-	int max_tries = 0;
+	int cr_done_max_tries = 0;
 
 	pr_debug("link training rate is %d K\n", dp->bw_code * 270);
 	memset(dp->train_set, 0, 4);
@@ -483,9 +488,12 @@ static int egt_dp_cr_training(struct egt_displayport *dp)
 	cr_loop_time = egt_caclu_cr_time(dp, EGT_TX_CR_TIME);
 
 	/* check cr done status */
-	for (max_tries = 0; max_tries < 512; max_tries++) {
+	for (cr_done_max_tries = 0;
+		 cr_done_max_tries < EGT_TX_CR_DONE_TRIES_MAX;
+		 cr_done_max_tries++) {
 		egt_dp_ticks_wait_us(cr_loop_time, dp);
 		drm_dp_link_train_clock_recovery_delay(&dp->aux, dp->dpcd);
+
 		ret = drm_dp_dpcd_read_link_status(&dp->aux, link_status);
 		if (ret < 0)
 			return EGT_TX_TRAIN_FAILURE;
@@ -494,9 +502,10 @@ static int egt_dp_cr_training(struct egt_displayport *dp)
 		if (!cr_done)
 			return EGT_TX_TRAIN_CE;
 
-		for (i = 0; i < lane_cnt; i++)
+		for (i = 0; i < lane_cnt; i++) {
 			if (!(dp->train_set[i] & DP_TRAIN_MAX_SWING_REACHED))
 				break;
+		}
 		if (i == lane_cnt)
 			break;
 
@@ -519,7 +528,8 @@ static int egt_dp_cr_training(struct egt_displayport *dp)
 		if (get_p > pre)
 			pre = get_p;
 
-		pr_debug("tx-reg: 0x%08x, sink-val = 0x%08x\n", DP_SOURCE_PRE_VOLT0, pre >> 1 | get_v);
+		pr_debug("tx-reg: 0x%08x, sink-val = 0x%08x\n",
+					DP_SOURCE_PRE_VOLT0, pre >> 1 | get_v);
 		egt_dp_write(pre >> 1 | get_v, DP_SOURCE_PRE_VOLT0, dp);
 
 		egt_dp_reconfig_analog(dp);
@@ -544,9 +554,11 @@ static int egt_dp_select_ce_pattern(struct egt_displayport *dp)
 	u32 pattern = 0;
 
 	/* Check dp version and select ce training pattern */
-	if (dp->dpcd[DP_DPCD_REV] >= EGT_TX_V1_4 && (dp->dpcd[DP_MAX_LANE_COUNT] & DP_TPS4_SUPPORTED))
+	if (dp->dpcd[DP_DPCD_REV] >= EGT_TX_V1_4 &&
+		(dp->dpcd[DP_MAX_LANE_COUNT] & DP_TPS4_SUPPORTED))
 		pattern = DP_TRAINING_PATTERN_4;
-	else if (dp->dpcd[DP_DPCD_REV] >= EGT_TX_V1_2 && (dp->dpcd[DP_MAX_LANE_COUNT] & DP_TPS3_SUPPORTED))
+	else if (dp->dpcd[DP_DPCD_REV] >= EGT_TX_V1_2 &&
+		(dp->dpcd[DP_MAX_LANE_COUNT] & DP_TPS3_SUPPORTED))
 		pattern = DP_TRAINING_PATTERN_3;
 	else
 		pattern = DP_TRAINING_PATTERN_2;
@@ -609,7 +621,8 @@ static int egt_dp_ce_training(struct egt_displayport *dp)
 		if (get_p > pre)
 			pre = get_p;
 
-		pr_debug("vs_pre_reg: 0x%08x, sink-val = 0x%08x\n", DP_SOURCE_PRE_VOLT0, pre >> 1 | get_v);
+		pr_debug("vs_pre_reg: 0x%08x, sink-val = 0x%08x\n",
+					DP_SOURCE_PRE_VOLT0, pre >> 1 | get_v);
 		egt_dp_write(pre >> 1 | get_v, DP_SOURCE_PRE_VOLT0, dp);
 
 		egt_dp_reconfig_analog(dp);
@@ -693,12 +706,11 @@ static int egt_dp_start_training(struct egt_displayport *dp)
 
 		elapsed_us = ktime_to_us(ktime_sub(ktime_get(), start_time));
 		if (elapsed_us > timeout_us) {
-			pr_warn("training timeout: elapsed=%lld us\n", elapsed_us);
+			pr_warn("training timeout: elapsed=%lld us\n", (long long)elapsed_us);
 			goto err_out;
 		}
 	}
 
-	return 0;
 err_out:
 	dev_err(dp->dev, "dp training failed\n");
 	return -EIO;
@@ -856,8 +868,9 @@ static void egt_update_config(struct egt_displayport *dp)
 
 void egt_dptx_hpd_work(struct work_struct *work)
 {
-	struct egt_displayport *dp = container_of(work, struct egt_displayport, hot_plug_detect.work);
-	struct drm_connector *connector = &dp->connector;
+	struct egt_displayport *dp = container_of(work, struct egt_displayport,
+						hot_plug_detect.work);
+	struct drm_connector *connector = NULL;
 	enum drm_connector_status old_status = connector_status_disconnected;
 	u8 max_link_rate = 0;
 	u32 sts = 0;
@@ -868,6 +881,8 @@ void egt_dptx_hpd_work(struct work_struct *work)
 		pr_err("dp is NULL\n");
 		goto adjust_sts;
 	}
+
+	connector = &dp->connector;
 
 	mutex_lock(&dp->lock);
 
@@ -904,12 +919,9 @@ void egt_dptx_hpd_work(struct work_struct *work)
 
 	egt_update_config(dp);
 
-	ret = egt_dp_check_link_ready(dp);
-	if (ret != 0) {
-		dev_dbg(dp->dev, "connected dp rx. training\n");
-		if (egt_dp_training_begin(dp) != 0)
-			goto exit;
-	}
+	dev_dbg(dp->dev, "connected dp rx. training\n");
+	if (egt_dp_training_begin(dp) != 0)
+		goto exit;
 
 	dp->connected = true;
 
@@ -923,4 +935,4 @@ adjust_sts:
 }
 
 MODULE_DESCRIPTION("Engiant DP Training Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

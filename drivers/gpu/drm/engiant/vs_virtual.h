@@ -29,10 +29,10 @@ to_virtual_display_with_connector(struct drm_connector *connector)
  * }
  */
 
-#ifdef CONFIG_VERISILICON_PCIE
-int vs_vd_pci_init(struct drm_device *drm_dev);
-void vs_vd_pci_deinit(struct drm_device *drm_dev);
+#ifdef CONFIG_ENGIANT_VS_PCIE
+int vs_egt_vd_pci_init(struct drm_device *drm_dev);
+void vs_egt_vd_pci_deinit(struct drm_device *drm_dev);
 #endif
 
-extern struct platform_driver virtual_display_platform_driver;
+extern struct platform_driver egt_virtual_display_platform_driver;
 #endif /* __VS_VIRTUAL_H_ */

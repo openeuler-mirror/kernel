@@ -8,7 +8,7 @@
 #include <linux/printk.h>
 #include <linux/types.h>
 
-bool vs_dc_lut_check_xstep(const u32 *data, u32 size, u32 bit_width)
+bool vs_egt_dc_lut_check_xstep(const u32 *data, u32 size, u32 bit_width)
 {
 	u32 i;
 	/* check the effectiveness of x-step */
@@ -27,7 +27,7 @@ bool vs_dc_lut_check_xstep(const u32 *data, u32 size, u32 bit_width)
 	return true;
 }
 
-bool vs_dc_lut_check_data(const u32 *data, u32 size, u32 bit_width)
+bool vs_egt_dc_lut_check_data(const u32 *data, u32 size, u32 bit_width)
 {
 	u32 i;
 	/* check the effectiveness of LUT data */

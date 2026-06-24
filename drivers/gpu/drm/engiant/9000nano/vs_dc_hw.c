@@ -17,8 +17,8 @@
 #include <linux/media-bus-format.h>
 #include <linux/delay.h>
 
-#include <drm/vs_drm.h>
-#include <drm/vs_drm_fourcc.h>
+#include "vs_egt_drm.h"
+#include "vs_egt_drm_fourcc.h"
 #include "vs_dc_hw.h"
 #include "vs_dc_reg.h"
 #include "vs_type.h"
@@ -27,11 +27,11 @@
 #include "preprocess/vs_dc_preprocess.h"
 #include "vs_dc_reg.h"
 
-#ifdef CONFIG_VERISILICON_QSPI
+#ifdef CONFIG_ENGIANT_VS_QSPI
 #include "vs_dc_qspi.h"
 #endif
 
-#ifdef CONFIG_VERISILICON_DEBUG
+#ifdef CONFIG_ENGIANT_VS_DEBUG
 #include "vs_debug.h"
 #endif
 
@@ -42,22 +42,22 @@ static const struct dc_hw_funcs hw_func;
 #define HOT_X 0
 #define HOT_Y 0
 
-inline void dc_write(struct dc_hw *hw, u32 reg, u32 value)
+inline void egt_dc_write(struct dc_hw *hw, u32 reg, u32 value)
 {
 	//pr_err("%s: 0x%08x = 0x%08x\n", __func__, reg, value);
 	writel(value, hw->reg_base + reg);
-#ifdef CONFIG_VERISILICON_DEBUG
-	vs_debug_dump_capture(hw->dc_capture_fp, reg, value, false);
+#ifdef CONFIG_ENGIANT_VS_DEBUG
+	vs_egt_debug_dump_capture(hw->dc_capture_fp, reg, value, false);
 #endif
 }
 
-inline void pcie_write(struct dc_hw *hw, u32 reg, u32 value)
+inline void egt_pcie_write(struct dc_hw *hw, u32 reg, u32 value)
 {
 	//pr_err("%s: 0x%08x = 0x%08x\n", __func__, reg, value);
 	writel(value, hw->pcie_reg_base + reg);
 }
 
-u32 vs_dc_hw_read(struct dc_hw *hw, u32 reg)
+u32 vs_egt_dc_hw_read(struct dc_hw *hw, u32 reg)
 {
 	u32 value;
 
@@ -74,7 +74,7 @@ static void dc_coef_reverse(uint32_t *rgb2yuv_coef, u32 coefA, u32 coefB)
 		rgb2yuv_coef[coefB] = temp;
 }
 
-void dc_write_u32_blob(struct dc_hw *hw, u32 reg, const u32 *data, u32 size)
+void egt_dc_write_u32_blob(struct dc_hw *hw, u32 reg, const u32 *data, u32 size)
 {
 	const u32 u32_stride = sizeof(u32);
 	uint32_t rgb2yuv_coef[20];
@@ -90,10 +90,10 @@ void dc_write_u32_blob(struct dc_hw *hw, u32 reg, const u32 *data, u32 size)
 		dc_coef_reverse(rgb2yuv_coef, 12, 13);
 
 		for (i = 0; i < size; i++)
-			dc_write(hw, reg + u32_stride * i, rgb2yuv_coef[i]);
+			egt_dc_write(hw, reg + u32_stride * i, rgb2yuv_coef[i]);
 	} else {
 		for (i = 0; i < size; i++)
-			dc_write(hw, reg + u32_stride * i, data[i]);
+			egt_dc_write(hw, reg + u32_stride * i, data[i]);
 	}
 
 }
@@ -119,14 +119,9 @@ static u32 _get_plane_offset(u32 hw_id)
 
 /************************************************************************
  * Below are the main hw interfaces.
- *
- * TBD !!
- * Developers should add or modify the following interfaces
- * and corresponding implementations according to the actual
- * requirements during developing !
- *
  ************************************************************************/
-static void load_filter(__maybe_unused struct dc_hw *hw, __maybe_unused u8 hw_id, __maybe_unused u16 *coef)
+static void load_filter(__maybe_unused struct dc_hw *hw, __maybe_unused u8 hw_id,
+			__maybe_unused u16 *coef)
 {
 }
 
@@ -134,19 +129,19 @@ static void load_be_default_filter(__maybe_unused struct dc_hw *hw, __maybe_unus
 {
 }
 
-void dc_hw_reset(struct dc_hw *hw)
+void egt_dc_hw_reset(struct dc_hw *hw)
 {
-	dc_write(hw, DCREG_CURSOR_LAYER_CONFIG_Address, 0x2);
-	dc_write(hw, DCREG_SH_CURSOR_LAYER_CONFIG_Address, 0x0);
-	dc_write(hw, DCREG_LAYER0_CONFIG_Address, 0x1);
-	dc_write(hw, DCREG_PANEL0_CONFIG_Address, 0x1);
-	dc_write(hw, DCREG_PANEL0_OUTPUT_CONFIG_Address, 0x1);
-	dc_write(hw, DCREG_CURSOR_LAYER_CONFIG_Address, 0x1);
+	egt_dc_write(hw, DCREG_CURSOR_LAYER_CONFIG_Address, 0x2);
+	egt_dc_write(hw, DCREG_SH_CURSOR_LAYER_CONFIG_Address, 0x0);
+	egt_dc_write(hw, DCREG_LAYER0_CONFIG_Address, 0x1);
+	egt_dc_write(hw, DCREG_PANEL0_CONFIG_Address, 0x1);
+	egt_dc_write(hw, DCREG_PANEL0_OUTPUT_CONFIG_Address, 0x1);
+	egt_dc_write(hw, DCREG_CURSOR_LAYER_CONFIG_Address, 0x1);
 
-	dc_hw_do_reset(hw);
+	egt_dc_hw_do_reset(hw);
 }
 
-int dc_hw_init(struct dc_hw *hw)
+int egt_dc_hw_init(struct dc_hw *hw)
 {
 	int ret = 0;
 	u8 i, hw_id;
@@ -160,8 +155,8 @@ int dc_hw_init(struct dc_hw *hw)
 	pid = dc_read(hw, GCREG_DC_PRODUCT_ID_Address);
 	cid = dc_read(hw, GCREG_DC_CUSTOMER_ID_Address);
 
-	hw->info = vs_dc_get_chip_info();
-	hw->output_info = vs_dc_get_output_info();
+	hw->info = vs_egt_dc_get_chip_info();
+	hw->output_info = vs_egt_dc_get_output_info();
 
 	pr_debug("chip_id = %x\n", chip_id);
 	pr_debug("revision = %x\n", revision);
@@ -192,23 +187,23 @@ int dc_hw_init(struct dc_hw *hw)
 			load_filter(hw, hw_id, NULL);
 
 		/* Initialize property states */
-		if (!vs_dc_register_plane_blender_states(&hw->plane[i].states, plane_info)) {
+		if (!vs_egt_dc_register_plane_blender_states(&hw->plane[i].states, plane_info)) {
 			pr_err("%s: Failed to register plane blender states.\n", __func__);
 			ret = -ENOMEM;
 			goto err_cleanup;
 		}
-		if (!vs_dc_register_preprocess_states(&hw->plane[i].states, plane_info)) {
+		if (!vs_egt_dc_register_preprocess_states(&hw->plane[i].states, plane_info)) {
 			pr_err("%s: Failed to register preprocess.\n", __func__);
 			ret = -ENOMEM;
 			goto err_cleanup;
 		}
 
-		if (!vs_dc_initialize_property_states(&hw->plane[i].states)) {
+		if (!vs_egt_dc_initialize_property_states(&hw->plane[i].states)) {
 			pr_err("%s: Failed to initialize plane property states.\n", __func__);
 			ret = -ENOMEM;
 			goto err_cleanup;
 		}
-		pr_debug("%s: Alloc states mem %lu for plane %u\n", __func__,
+		pr_debug("%s: Alloc states mem %zu for plane %u\n", __func__,
 			 hw->plane[i].states.mem.total_size, i);
 	}
 
@@ -220,17 +215,17 @@ int dc_hw_init(struct dc_hw *hw)
 		if (display_info->min_scale != FRAC_16_16(1, 1) ||
 			display_info->max_scale != FRAC_16_16(1, 1))
 			load_be_default_filter(hw, hw_id);
-		if (!vs_dc_register_postprocess_states(&hw->display[i].states, display_info)) {
+		if (!vs_egt_dc_register_postprocess_states(&hw->display[i].states, display_info)) {
 			pr_err("%s: Failed to register postprocess.\n", __func__);
 			ret = -ENOMEM;
 			goto err_cleanup;
 		}
-		if (!vs_dc_initialize_property_states(&hw->display[i].states)) {
+		if (!vs_egt_dc_initialize_property_states(&hw->display[i].states)) {
 			pr_err("%s: Failed to initialize display property states.\n", __func__);
 			ret = -ENOMEM;
 			goto err_cleanup;
 		}
-		pr_debug("%s: Alloc states mem %lu for display %u\n", __func__,
+		pr_debug("%s: Alloc states mem %zu for display %u\n", __func__,
 			 hw->display[i].states.mem.total_size, i);
 	}
 
@@ -239,18 +234,18 @@ err_cleanup:
 	return ret;
 }
 
-void dc_hw_deinit(struct dc_hw *hw)
+void egt_dc_hw_deinit(struct dc_hw *hw)
 {
 	int i;
 
 	for (i = 0; i < hw->info->layer_num; i++)
-		vs_dc_deinitialize_property_states(&hw->plane[i].states);
+		vs_egt_dc_deinitialize_property_states(&hw->plane[i].states);
 
 	for (i = 0; i < hw->info->display_num; i++)
-		vs_dc_deinitialize_property_states(&hw->display[i].states);
+		vs_egt_dc_deinitialize_property_states(&hw->display[i].states);
 }
 
-void dc_hw_update_plane(struct dc_hw *hw, u8 id, struct dc_hw_fb *fb)
+void egt_dc_hw_update_plane(struct dc_hw *hw, u8 id, struct dc_hw_fb *fb)
 {
 	struct dc_hw_plane *plane = &hw->plane[id];
 
@@ -263,7 +258,7 @@ void dc_hw_update_plane(struct dc_hw *hw, u8 id, struct dc_hw_fb *fb)
 	}
 }
 
-void dc_hw_update_plane_position(struct dc_hw *hw, u8 id, struct dc_hw_position *pos)
+void egt_dc_hw_update_plane_position(struct dc_hw *hw, u8 id, struct dc_hw_position *pos)
 {
 	struct dc_hw_plane *plane = &hw->plane[id];
 
@@ -274,7 +269,7 @@ void dc_hw_update_plane_position(struct dc_hw *hw, u8 id, struct dc_hw_position 
 	}
 }
 
-void dc_hw_update_plane_y2r(struct dc_hw *hw, u8 id, struct dc_hw_y2r *y2r_conf)
+void egt_dc_hw_update_plane_y2r(struct dc_hw *hw, u8 id, struct dc_hw_y2r *y2r_conf)
 {
 	struct dc_hw_plane *plane = &hw->plane[id];
 
@@ -285,7 +280,7 @@ void dc_hw_update_plane_y2r(struct dc_hw *hw, u8 id, struct dc_hw_y2r *y2r_conf)
 	}
 }
 
-void dc_hw_update_plane_std_bld(struct dc_hw *hw, u8 zpos, struct dc_hw_std_bld *std_bld)
+void egt_dc_hw_update_plane_std_bld(struct dc_hw *hw, u8 zpos, struct dc_hw_std_bld *std_bld)
 {
 	struct dc_hw_std_bld *std_blend = &hw->std_bld[zpos];
 
@@ -296,13 +291,13 @@ void dc_hw_update_plane_std_bld(struct dc_hw *hw, u8 zpos, struct dc_hw_std_bld 
 	}
 }
 
-void dc_hw_update_cursor(struct dc_hw *hw, u8 id, struct dc_hw_cursor *cursor)
+void egt_dc_hw_update_cursor(struct dc_hw *hw, u8 id, struct dc_hw_cursor *cursor)
 {
 	memcpy(&hw->cursor[id], cursor, sizeof(*cursor) - sizeof(cursor->dirty));
 	hw->cursor[id].dirty = true;
 }
 
-void dc_hw_update_gamma(struct dc_hw *hw, u8 id, u16 index, u16 r, u16 g, u16 b)
+void egt_dc_hw_update_gamma(struct dc_hw *hw, u8 id, u16 index, u16 r, u16 g, u16 b)
 {
 	if (index >= hw->info->max_gamma_size)
 		return;
@@ -313,13 +308,13 @@ void dc_hw_update_gamma(struct dc_hw *hw, u8 id, u16 index, u16 r, u16 g, u16 b)
 	hw->display[id].gamma.dirty = true;
 }
 
-void dc_hw_enable_gamma(struct dc_hw *hw, u8 id, bool enable)
+void egt_dc_hw_enable_gamma(struct dc_hw *hw, u8 id, bool enable)
 {
 	hw->display[id].gamma.enable = enable;
 	hw->display[id].gamma.dirty = true;
 }
 
-void dc_hw_setup_display_mode(struct dc_hw *hw, u8 id, struct dc_hw_display_mode *mode)
+void egt_dc_hw_setup_display_mode(struct dc_hw *hw, u8 id, struct dc_hw_display_mode *mode)
 {
 	struct dc_hw_display *display = &hw->display[id];
 	u8 output_id = 0;
@@ -335,7 +330,7 @@ void dc_hw_setup_display_mode(struct dc_hw *hw, u8 id, struct dc_hw_display_mode
 	}
 }
 
-void dc_hw_config_plane_status(struct dc_hw *hw, u8 id, bool config)
+void egt_dc_hw_config_plane_status(struct dc_hw *hw, u8 id, bool config)
 {
 	struct dc_hw_plane *plane = &hw->plane[id];
 
@@ -343,7 +338,7 @@ void dc_hw_config_plane_status(struct dc_hw *hw, u8 id, bool config)
 		plane->config_status = !!config;
 }
 
-void dc_hw_config_display_status(struct dc_hw *hw, u8 id, bool config)
+void egt_dc_hw_config_display_status(struct dc_hw *hw, u8 id, bool config)
 {
 	struct dc_hw_display *display = &hw->display[id];
 
@@ -351,25 +346,25 @@ void dc_hw_config_display_status(struct dc_hw *hw, u8 id, bool config)
 		display->config_status = !!config;
 }
 
-void dc_hw_enable_vblank(struct dc_hw *hw, bool enable)
+void egt_dc_hw_enable_vblank(struct dc_hw *hw, bool enable)
 {
 	if (enable) {
-		dc_write(hw, DCREG_BE_INTR_ENABLE_Address, DCREG_BE_INTR_ENABLE_WriteMask);
-		dc_write(hw, DCREG_BE_INTR_ENABLE1_Address, DCREG_BE_INTR_ENABLE1_WriteMask);
+		egt_dc_write(hw, DCREG_BE_INTR_ENABLE_Address, DCREG_BE_INTR_ENABLE_WriteMask);
+		egt_dc_write(hw, DCREG_BE_INTR_ENABLE1_Address, DCREG_BE_INTR_ENABLE1_WriteMask);
 		/*Enable pcie mask of dc*/
-		pcie_write(hw, PCI_INTR_MASK_REG_OFFSET, hw->pcie_mask_value);
+		egt_pcie_write(hw, PCI_INTR_MASK_REG_OFFSET, hw->pcie_mask_value);
 	} else {
-		dc_write(hw, DCREG_BE_INTR_ENABLE_Address, DCREG_BE_INTR_ENABLE_ResetValue);
-		dc_write(hw, DCREG_BE_INTR_ENABLE1_Address, DCREG_BE_INTR_ENABLE1_ResetValue);
+		egt_dc_write(hw, DCREG_BE_INTR_ENABLE_Address, DCREG_BE_INTR_ENABLE_ResetValue);
+		egt_dc_write(hw, DCREG_BE_INTR_ENABLE1_Address, DCREG_BE_INTR_ENABLE1_ResetValue);
 	}
 }
 
-u32 dc_hw_get_vblank_count(struct dc_hw *hw, u8 id)
+u32 egt_dc_hw_get_vblank_count(struct dc_hw *hw, u8 id)
 {
 	return hw->display[id].vblank_count;
 }
 
-int dc_hw_get_interrupt(struct dc_hw *hw, struct dc_hw_interrupt_status *status)
+int egt_dc_hw_get_interrupt(struct dc_hw *hw, struct dc_hw_interrupt_status *status)
 {
 	u32 intr_status = 0, intr_status1 = 0, intr_status2 = 0;
 
@@ -379,8 +374,9 @@ int dc_hw_get_interrupt(struct dc_hw *hw, struct dc_hw_interrupt_status *status)
 	intr_status1 = dc_read(hw, DCREG_BE_INTR_STATUS1_Address);
 	intr_status2 = dc_read(hw, DCREG_FE0_INTR_STATUS_Address);
 
-	if (intr_status >= 0xffffffff || intr_status1 >= 0xffffffff || intr_status2 >= 0xffffffff) {
-		pr_err("intr_status = 0x%x intr_status1 = 0x%x intr_status2 = 0x%x\n", intr_status, intr_status1, intr_status2);
+	if (intr_status == 0xffffffff || intr_status1 == 0xffffffff || intr_status2 == 0xffffffff) {
+		pr_err("intr_status = 0x%x intr_status1 = 0x%x intr_status2 = 0x%x\n",
+				intr_status, intr_status1, intr_status2);
 		return 1;
 	}
 
@@ -404,27 +400,26 @@ int dc_hw_get_interrupt(struct dc_hw *hw, struct dc_hw_interrupt_status *status)
 			VS_INTR_EVENT_DEBUG();
 		}
 
-		dc_write(hw, DCREG_BE_INTR_STATUS_Address, intr_status);
-		dc_write(hw, DCREG_BE_INTR_STATUS1_Address, intr_status1);
+		egt_dc_write(hw, DCREG_BE_INTR_STATUS_Address, intr_status);
+		egt_dc_write(hw, DCREG_BE_INTR_STATUS1_Address, intr_status1);
 	}
 
 	return 0;
 }
 
-int vs_dpu_hw_enable_interrupt(struct dc_hw *hw)
+int vs_egt_dpu_hw_enable_interrupt(struct dc_hw *hw)
 {
-	dc_write(hw, DCREG_BE_INTR_ENABLE_Address, DCREG_BE_INTR_ENABLE_WriteMask);
+	egt_dc_write(hw, DCREG_BE_INTR_ENABLE_Address, DCREG_BE_INTR_ENABLE_WriteMask);
 	return 0;
 }
 
-bool dc_hw_check_underflow(__maybe_unused struct dc_hw *hw)
+bool egt_dc_hw_check_underflow(__maybe_unused struct dc_hw *hw)
 {
-	/* TBD */
 	return false;
 }
 
 #ifdef CONFIG_DEBUG_FS
-void dc_hw_set_plane_crc(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
+void egt_dc_hw_set_plane_crc(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
 {
 	struct dc_hw_plane *plane = &hw->plane[id];
 	u8 hw_id = hw->info->planes[id].id;
@@ -433,38 +428,42 @@ void dc_hw_set_plane_crc(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
 	memcpy(&plane->crc, crc, sizeof(*crc));
 
 	config = VS_SET_FIELD(0, DCREG_LAYER0_CRC_START, START, crc->enable);
-	dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, CRC_START_Address), config);
+	egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, CRC_START_Address), config);
 
 	if (!crc->enable)
 		return;
 
 	switch (crc->pos) {
 	case VS_PLANE_CRC_DMA:
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_ALPHA_CRC_SEED_Address),
+		egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_ALPHA_CRC_SEED_Address),
 			 crc->seed.a);
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_RED_CRC_SEED_Address),
+		egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_RED_CRC_SEED_Address),
 			 crc->seed.r);
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_GREEN_CRC_SEED_Address),
+		egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_GREEN_CRC_SEED_Address),
 			 crc->seed.g);
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_BLUE_CRC_SEED_Address),
+		egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_BLUE_CRC_SEED_Address),
 			 crc->seed.b);
 		break;
 	case VS_PLANE_CRC_PRE_BLEND:
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_ALPHA_CRC_SEED_Address),
-			 crc->seed.a);
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_RED_CRC_SEED_Address),
-			 crc->seed.r);
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_GREEN_CRC_SEED_Address),
-			 crc->seed.g);
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_BLUE_CRC_SEED_Address),
-			 crc->seed.b);
+		egt_dc_write(hw,
+			VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_ALPHA_CRC_SEED_Address),
+			crc->seed.a);
+		egt_dc_write(hw,
+			VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_RED_CRC_SEED_Address),
+			crc->seed.r);
+		egt_dc_write(hw,
+			VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_GREEN_CRC_SEED_Address),
+			crc->seed.g);
+		egt_dc_write(hw,
+			VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_BLUE_CRC_SEED_Address),
+			crc->seed.b);
 		break;
 	default:
 		break;
 	}
 }
 
-void dc_hw_get_plane_crc(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
+void egt_dc_hw_get_plane_crc(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
 {
 	struct dc_hw_plane *plane = &hw->plane[id];
 	u8 hw_id = hw->info->planes[id].id;
@@ -472,23 +471,23 @@ void dc_hw_get_plane_crc(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
 	switch (plane->crc.pos) {
 	case VS_PLANE_CRC_DMA:
 		plane->crc.result.a = dc_read(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id,
-								  DMA_ALPHA_CRC_VALUE_Address));
-		plane->crc.result.r =
-			dc_read(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_RED_CRC_VALUE_Address));
+							DMA_ALPHA_CRC_VALUE_Address));
+		plane->crc.result.r = dc_read(hw,
+				VS_SET_FE_FIELD(DCREG_LAYER, hw_id, DMA_RED_CRC_VALUE_Address));
 		plane->crc.result.g = dc_read(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id,
-								  DMA_GREEN_CRC_VALUE_Address));
+							DMA_GREEN_CRC_VALUE_Address));
 		plane->crc.result.b = dc_read(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id,
-								  DMA_BLUE_CRC_VALUE_Address));
+							DMA_BLUE_CRC_VALUE_Address));
 		break;
 	case VS_PLANE_CRC_PRE_BLEND:
-		plane->crc.result.a = dc_read(
-			hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_ALPHA_CRC_VALUE_Address));
+		plane->crc.result.a = dc_read(hw,
+			VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_ALPHA_CRC_VALUE_Address));
 		plane->crc.result.r = dc_read(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id,
-								  PRE_BLEND_RED_CRC_VALUE_Address));
-		plane->crc.result.g = dc_read(
-			hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_GREEN_CRC_VALUE_Address));
-		plane->crc.result.b = dc_read(
-			hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_BLUE_CRC_VALUE_Address));
+							PRE_BLEND_RED_CRC_VALUE_Address));
+		plane->crc.result.g = dc_read(hw,
+			VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_GREEN_CRC_VALUE_Address));
+		plane->crc.result.b = dc_read(hw,
+			VS_SET_FE_FIELD(DCREG_LAYER, hw_id, PRE_BLEND_BLUE_CRC_VALUE_Address));
 		break;
 	default:
 		break;
@@ -497,7 +496,7 @@ void dc_hw_get_plane_crc(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
 	memcpy(&crc->result, &plane->crc.result, sizeof(plane->crc.result));
 }
 
-void dc_hw_get_plane_crc_config(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
+void egt_dc_hw_get_plane_crc_config(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
 {
 	struct dc_hw_plane *plane = &hw->plane[id];
 
@@ -505,7 +504,7 @@ void dc_hw_get_plane_crc_config(struct dc_hw *hw, u8 id, struct dc_hw_crc *crc)
 		memcpy(crc, &plane->crc, sizeof(plane->crc));
 }
 
-void dc_hw_set_display_crc(struct dc_hw *hw, u8 hw_id, struct dc_hw_disp_crc *crc)
+void egt_dc_hw_set_display_crc(struct dc_hw *hw, u8 hw_id, struct dc_hw_disp_crc *crc)
 {
 	struct dc_hw_display *display = &hw->display[hw_id];
 
@@ -514,9 +513,9 @@ void dc_hw_set_display_crc(struct dc_hw *hw, u8 hw_id, struct dc_hw_disp_crc *cr
 	switch (hw_id) {
 	case HW_DISPLAY_0:
 		switch (crc->pos) {
-		case VS_DISP_CRC_BLD:
-		case VS_DISP_CRC_OFIFO_OUT:
-			dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, CRC_START_Address),
+		case VS_EGT_DISP_CRC_BLD:
+		case VS_EGT_DISP_CRC_OFIFO_OUT:
+			egt_dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, CRC_START_Address),
 				 crc->enable);
 			break;
 		default:
@@ -530,34 +529,42 @@ void dc_hw_set_display_crc(struct dc_hw *hw, u8 hw_id, struct dc_hw_disp_crc *cr
 		return;
 
 	switch (crc->pos) {
-	case VS_DISP_CRC_BLD:
+	case VS_EGT_DISP_CRC_BLD:
 		switch (hw_id) {
 		case HW_DISPLAY_0:
-			dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_ALPHA_CRC_SEED_Address),
-				 crc->seed[0].a);
-			dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_RED_CRC_SEED_Address),
-				 crc->seed[0].r);
-			dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_GREEN_CRC_SEED_Address),
-				 crc->seed[0].g);
-			dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_BLUE_CRC_SEED_Address),
-				 crc->seed[0].b);
+			egt_dc_write(hw,
+				VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_ALPHA_CRC_SEED_Address),
+				crc->seed[0].a);
+			egt_dc_write(hw,
+				VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_RED_CRC_SEED_Address),
+				crc->seed[0].r);
+			egt_dc_write(hw,
+				VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_GREEN_CRC_SEED_Address),
+				crc->seed[0].g);
+			egt_dc_write(hw,
+				VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_BLUE_CRC_SEED_Address),
+				crc->seed[0].b);
 			break;
 		default:
 			break;
 		}
 		break;
 
-	case VS_DISP_CRC_OFIFO_OUT:
+	case VS_EGT_DISP_CRC_OFIFO_OUT:
 		switch (hw_id) {
 		case HW_DISPLAY_0:
-			dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_ALPHA_CRC_SEED_Address),
-				 crc->seed[0].a);
-			dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_RED_CRC_SEED_Address),
-				 crc->seed[0].r);
-			dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_GREEN_CRC_SEED_Address),
-				 crc->seed[0].g);
-			dc_write(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_BLUE_CRC_SEED_Address),
-				 crc->seed[0].b);
+			egt_dc_write(hw,
+				VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_ALPHA_CRC_SEED_Address),
+				crc->seed[0].a);
+			egt_dc_write(hw,
+				VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_RED_CRC_SEED_Address),
+				crc->seed[0].r);
+			egt_dc_write(hw,
+				VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_GREEN_CRC_SEED_Address),
+				crc->seed[0].g);
+			egt_dc_write(hw,
+				VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_BLUE_CRC_SEED_Address),
+				crc->seed[0].b);
 			break;
 		default:
 			break;
@@ -569,41 +576,37 @@ void dc_hw_set_display_crc(struct dc_hw *hw, u8 hw_id, struct dc_hw_disp_crc *cr
 	}
 }
 
-void dc_hw_get_display_crc(struct dc_hw *hw, u8 hw_id, struct dc_hw_disp_crc *crc)
+void egt_dc_hw_get_display_crc(struct dc_hw *hw, u8 hw_id, struct dc_hw_disp_crc *crc)
 {
 	switch (crc->pos) {
-	case VS_DISP_CRC_BLD:
+	case VS_EGT_DISP_CRC_BLD:
 		switch (hw_id) {
 		case HW_DISPLAY_0:
-			crc->result[0].a =
-				dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
-								   BLEND_ALPHA_CRC_VALUE_Address));
-			crc->result[0].r = dc_read(
-				hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_RED_CRC_VALUE_Address));
-			crc->result[0].g =
-				dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
-								   BLEND_GREEN_CRC_VALUE_Address));
-			crc->result[0].b = dc_read(
-				hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, BLEND_BLUE_CRC_VALUE_Address));
+			crc->result[0].a = dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
+						BLEND_ALPHA_CRC_VALUE_Address));
+			crc->result[0].r = dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
+						BLEND_RED_CRC_VALUE_Address));
+			crc->result[0].g = dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
+						BLEND_GREEN_CRC_VALUE_Address));
+			crc->result[0].b = dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
+						BLEND_BLUE_CRC_VALUE_Address));
 			break;
 		default:
 			break;
 		}
 		break;
 
-	case VS_DISP_CRC_OFIFO_OUT:
+	case VS_EGT_DISP_CRC_OFIFO_OUT:
 		switch (hw_id) {
 		case HW_DISPLAY_0:
-			crc->result[1].a =
-				dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
-								   OFIFO_ALPHA_CRC_VALUE_Address));
-			crc->result[1].r = dc_read(
-				hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_RED_CRC_VALUE_Address));
-			crc->result[1].g =
-				dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
-								   OFIFO_GREEN_CRC_VALUE_Address));
-			crc->result[1].b = dc_read(
-				hw, VS_SET_PANEL_FIELD(DCREG_PANEL0, OFIFO_BLUE_CRC_VALUE_Address));
+			crc->result[1].a = dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
+						OFIFO_ALPHA_CRC_VALUE_Address));
+			crc->result[1].r = dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
+						OFIFO_RED_CRC_VALUE_Address));
+			crc->result[1].g = dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
+						OFIFO_GREEN_CRC_VALUE_Address));
+			crc->result[1].b = dc_read(hw, VS_SET_PANEL_FIELD(DCREG_PANEL0,
+						OFIFO_BLUE_CRC_VALUE_Address));
 			break;
 		default:
 			break;
@@ -615,7 +618,7 @@ void dc_hw_get_display_crc(struct dc_hw *hw, u8 hw_id, struct dc_hw_disp_crc *cr
 	}
 }
 
-void dc_hw_get_display_crc_config(struct dc_hw *hw, u8 id, struct dc_hw_disp_crc *crc)
+void egt_dc_hw_get_display_crc_config(struct dc_hw *hw, u8 id, struct dc_hw_disp_crc *crc)
 {
 	struct dc_hw_display *display = &hw->display[id];
 
@@ -625,7 +628,7 @@ void dc_hw_get_display_crc_config(struct dc_hw *hw, u8 id, struct dc_hw_disp_crc
 
 #endif /* CONFIG_DEBUG_FS */
 
-void dc_hw_enable_shadow_register(struct dc_hw *hw, u8 display_id, bool enable)
+void egt_dc_hw_enable_shadow_register(struct dc_hw *hw, u8 display_id, bool enable)
 {
 	u32 i, hw_id, config = 0;
 
@@ -636,7 +639,7 @@ void dc_hw_enable_shadow_register(struct dc_hw *hw, u8 display_id, bool enable)
 
 		hw_id = hw->info->planes[i].id;
 		config = dc_read(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, CONFIG_Address));
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, CONFIG_Address),
+		egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_LAYER, hw_id, CONFIG_Address),
 			 VS_SET_FIELD(config, DCREG_LAYER0_CONFIG, REG_SWITCH, enable));
 	}
 
@@ -648,12 +651,12 @@ void dc_hw_enable_shadow_register(struct dc_hw *hw, u8 display_id, bool enable)
 		hw_id = hw->info->displays[i].id;
 
 		config = dc_read(hw, DCREG_PANEL0_CONFIG_Address);
-		dc_write(hw, DCREG_PANEL0_CONFIG_Address,
+		egt_dc_write(hw, DCREG_PANEL0_CONFIG_Address,
 			 VS_SET_FIELD(config, DCREG_PANEL0_CONFIG, REG_SWITCH, enable));
 
 		/* for output */
 		config = dc_read(hw, DCREG_PANEL0_OUTPUT_CONFIG_Address);
-		dc_write(hw, DCREG_PANEL0_OUTPUT_CONFIG_Address,
+		egt_dc_write(hw, DCREG_PANEL0_OUTPUT_CONFIG_Address,
 			 VS_SET_FIELD(config, DCREG_PANEL0_OUTPUT_CONFIG, REG_SWITCH, enable));
 	}
 
@@ -663,12 +666,12 @@ void dc_hw_enable_shadow_register(struct dc_hw *hw, u8 display_id, bool enable)
 			continue;
 
 		config = dc_read(hw, DCREG_CURSOR_LAYER_CONFIG_Address);
-		dc_write(hw, DCREG_CURSOR_LAYER_CONFIG_Address,
+		egt_dc_write(hw, DCREG_CURSOR_LAYER_CONFIG_Address,
 			 VS_SET_FIELD(config, DCREG_CURSOR_LAYER_CONFIG, REG_SWITCH, enable));
 	}
 }
 
-void dc_hw_start_trigger(struct dc_hw *hw, u8 display_id)
+void egt_dc_hw_start_trigger(struct dc_hw *hw, u8 display_id)
 {
 	u32 i = 0;
 	bool is_cmd_mode = false;
@@ -679,9 +682,9 @@ void dc_hw_start_trigger(struct dc_hw *hw, u8 display_id)
 
 		is_cmd_mode = hw->display[i].mode.output_mode & VS_SIMPLE_ENC_OUTPUT_MODE_CMD;
 		if ((hw->display[i].mode.out == OUT_DPI || hw->display[i].mode.out == OUT_DP) &&
-			(is_cmd_mode || (!is_cmd_mode && !hw->display[i].running))) {
+			(is_cmd_mode || !hw->display[i].running)) {
 			if (hw->display[i].mode.enable) {
-				dc_write(hw, DCREG_PANEL0_TRIGGER_Address,
+				egt_dc_write(hw, DCREG_PANEL0_TRIGGER_Address,
 					 VS_SET_FIELD(0, DCREG_PANEL0_TRIGGER, MODE,
 							  hw->display[i].mode.out));
 			}
@@ -695,47 +698,47 @@ void dc_hw_start_trigger(struct dc_hw *hw, u8 display_id)
 				hw->display[i].running = false;
 		}
 
-#ifdef CONFIG_VERISILICON_QSPI
+#ifdef CONFIG_ENGIANT_VS_QSPI
 		else if (hw->display[i].mode.out == OUT_SPI)
-			qspi_start_trigger(hw, &hw->display[i].mode);
+			egt_qspi_start_trigger(hw, &hw->display[i].mode);
 #endif
 	}
 }
 
-void dc_hw_do_fe_reset(struct dc_hw *hw)
+void egt_dc_hw_do_fe_reset(struct dc_hw *hw)
 {
 	pr_debug("@@@@@@@@ FE reset\n");
-	dc_write(hw, DCREG_FE0_SW_RESET_Address,
+	egt_dc_write(hw, DCREG_FE0_SW_RESET_Address,
 		 VS_SET_FIELD_PREDEF(0, DCREG_FE0_SW_RESET, RESET, RESET));
 	msleep(1000);
-	dc_write(hw, DCREG_FE1_SW_RESET_Address,
+	egt_dc_write(hw, DCREG_FE1_SW_RESET_Address,
 		 VS_SET_FIELD_PREDEF(0, DCREG_FE1_SW_RESET, RESET, RESET));
 	msleep(1000);
 }
-void dc_hw_do_be_reset(struct dc_hw *hw)
+void egt_dc_hw_do_be_reset(struct dc_hw *hw)
 {
 	pr_debug("@@@@@@@@ BE reset\n");
-	dc_write(hw, DCREG_BE_SW_RESET_Address,
+	egt_dc_write(hw, DCREG_BE_SW_RESET_Address,
 		 VS_SET_FIELD_PREDEF(0, DCREG_BE_SW_RESET, RESET, RESET));
 	msleep(1000);
 }
 
-void dc_hw_do_reset(struct dc_hw *hw)
+void egt_dc_hw_do_reset(struct dc_hw *hw)
 {
 	/*enable be interrupt mask which closed by bios*/
-	dc_write(hw, DCREG_BE_INTR_MASK_Address, 0x0);
+	egt_dc_write(hw, DCREG_BE_INTR_MASK_Address, 0x0);
 
-	dc_hw_do_fe_reset(hw);
+	egt_dc_hw_do_fe_reset(hw);
 
-	dc_hw_do_be_reset(hw);
+	egt_dc_hw_do_be_reset(hw);
 
-#ifdef CONFIG_VERISILICON_PCIE_GEN7
-	vs_dpu_hw_enable_interrupt(hw);
+#ifdef CONFIG_ENGIANT_VS_PCIE_GEN7
+	vs_egt_dpu_hw_enable_interrupt(hw);
 #endif
 }
 
-#ifdef CONFIG_VERISILICON_DEC
-void dc_hw_set_plane_fbc_dec(struct dc_hw *hw, u8 id, bool enable, u8 dec_mod)
+#ifdef CONFIG_ENGIANT_VS_DEC
+void egt_dc_hw_set_plane_fbc_dec(struct dc_hw *hw, u8 id, bool enable, u8 dec_mod)
 {
 	u32 offset = _get_plane_offset((u32)id);
 	u32 config = 0;
@@ -743,11 +746,11 @@ void dc_hw_set_plane_fbc_dec(struct dc_hw *hw, u8 id, bool enable, u8 dec_mod)
 	if (enable) {
 		config = dc_read(hw, DCREG_SH_LAYER0_CONFIG_Address + offset);
 		config = VS_SET_FIELD(config, DCREG_SH_LAYER0_CONFIG, DEC_MODE, dec_mod);
-		dc_write(hw, DCREG_SH_LAYER0_CONFIG_Address + offset, config);
+		egt_dc_write(hw, DCREG_SH_LAYER0_CONFIG_Address + offset, config);
 	} else {
 		config = dc_read(hw, DCREG_SH_LAYER0_CONFIG_Address + offset);
 		config = VS_SET_FIELD_PREDEF(config, DCREG_SH_LAYER0_CONFIG, DEC_MODE, DISABLE);
-		dc_write(hw, DCREG_SH_LAYER0_CONFIG_Address + offset, config);
+		egt_dc_write(hw, DCREG_SH_LAYER0_CONFIG_Address + offset, config);
 	}
 }
 #endif
@@ -759,18 +762,18 @@ static void plane_set_fb(struct dc_hw *hw, u8 hw_id, struct dc_hw_fb *fb)
 
 	if (fb->enable) {
 		/* address configuration */
-		dc_write(hw, DCREG_SH_LAYER0_ADDRESS_Address + offset,
+		egt_dc_write(hw, DCREG_SH_LAYER0_ADDRESS_Address + offset,
 			 (u32)(fb->address & 0xFFFFFFFF));
-		dc_write(hw, DCREG_SH_LAYER0_UADDRESS_Address + offset,
+		egt_dc_write(hw, DCREG_SH_LAYER0_UADDRESS_Address + offset,
 			 (u32)(fb->u_address & 0xFFFFFFFF));
-		dc_write(hw, DCREG_SH_LAYER0_VADDRESS_Address + offset,
+		egt_dc_write(hw, DCREG_SH_LAYER0_VADDRESS_Address + offset,
 			 (u32)(fb->v_address & 0xFFFFFFFF));
 
 		/* stride/size configuration */
-		dc_write(hw, DCREG_SH_LAYER0_STRIDE_Address + offset, fb->stride);
-		dc_write(hw, DCREG_SH_LAYER0_USTRIDE_Address + offset, fb->u_stride);
-		dc_write(hw, DCREG_SH_LAYER0_VSTRIDE_Address + offset, fb->v_stride);
-		dc_write(hw, DCREG_SH_LAYER0_SIZE_Address + offset,
+		egt_dc_write(hw, DCREG_SH_LAYER0_STRIDE_Address + offset, fb->stride);
+		egt_dc_write(hw, DCREG_SH_LAYER0_USTRIDE_Address + offset, fb->u_stride);
+		egt_dc_write(hw, DCREG_SH_LAYER0_VSTRIDE_Address + offset, fb->v_stride);
+		egt_dc_write(hw, DCREG_SH_LAYER0_SIZE_Address + offset,
 			 VS_SET_FIELD(0, DCREG_SH_LAYER0_SIZE, WIDTH, fb->width) |
 				 VS_SET_FIELD(0, DCREG_SH_LAYER0_SIZE, HEIGHT, fb->height));
 	}
@@ -787,22 +790,22 @@ static void plane_set_fb(struct dc_hw *hw, u8 hw_id, struct dc_hw_fb *fb)
 	config = VS_SET_FIELD(config, DCREG_SH_LAYER0_CONFIG, ROT_ANGLE, fb->rotation);
 	config = VS_SET_FIELD(config, DCREG_SH_LAYER0_CONFIG, FORMAT, fb->format);
 
-	dc_write(hw, DCREG_SH_LAYER0_CONFIG_Address + offset, config);
+	egt_dc_write(hw, DCREG_SH_LAYER0_CONFIG_Address + offset, config);
 
 	/*Enable SWIZZLE feature set bit[3] and bit[6] 1'b1*/
 	if (hw->rgb_bgr)
-		dc_write(hw, DCREG_SH_PANEL0_CONFIG_Address, 0x48);
+		egt_dc_write(hw, DCREG_SH_PANEL0_CONFIG_Address, 0x48);
 
 	fb->dirty = false;
 }
 
 static void plane_set_pos(struct dc_hw *hw, u8 hw_id, struct dc_hw_position *pos)
 {
-	dc_write(hw, VS_SH_LAYER_FIELD(hw_id, OUT_ROI_ORIGIN_Address),
+	egt_dc_write(hw, VS_SH_LAYER_FIELD(hw_id, OUT_ROI_ORIGIN_Address),
 		 VS_SET_FIELD(0, DCREG_SH_LAYER0_OUT_ROI_ORIGIN, X, pos->rect[0].x) |
 			 VS_SET_FIELD(0, DCREG_SH_LAYER0_OUT_ROI_ORIGIN, Y, pos->rect[0].y));
 
-	dc_write(hw, VS_SH_LAYER_FIELD(hw_id, OUT_ROI_SIZE_Address),
+	egt_dc_write(hw, VS_SH_LAYER_FIELD(hw_id, OUT_ROI_SIZE_Address),
 		 VS_SET_FIELD(0, DCREG_SH_LAYER0_OUT_ROI_SIZE, WIDTH, pos->rect[0].w) |
 			 VS_SET_FIELD(0, DCREG_SH_LAYER0_OUT_ROI_SIZE, HEIGHT, pos->rect[0].h));
 
@@ -817,11 +820,11 @@ static void plane_set_y2r(struct dc_hw *hw, u8 hw_id, struct dc_hw_y2r *y2r_conf
 
 	switch (y2r_conf->gamut) {
 	case CSC_GAMUT_601:
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_SH_LAYER, hw_id, CONFIG_Address),
+		egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_SH_LAYER, hw_id, CONFIG_Address),
 			 VS_SET_FIELD_PREDEF(config, DCREG_SH_LAYER0_CONFIG, Y2R_MODE, BT601));
 		break;
 	case CSC_GAMUT_709:
-		dc_write(hw, VS_SET_FE_FIELD(DCREG_SH_LAYER, hw_id, CONFIG_Address),
+		egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_SH_LAYER, hw_id, CONFIG_Address),
 			 VS_SET_FIELD_PREDEF(config, DCREG_SH_LAYER0_CONFIG, Y2R_MODE, BT709));
 		break;
 	default:
@@ -850,7 +853,7 @@ static void plane_set_std_bld(struct dc_hw *hw, struct dc_hw_std_bld *std_bld)
 			bld->alpha == VS_BLEND_ALPHA_OPAQUE) {
 			config = VS_SET_FIELD(config, DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
 						  ALPHA_BLEND_ENABLE, 0);
-			dc_write(hw,
+			egt_dc_write(hw,
 				 VS_SET_FE_FIELD(DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG, bld_id,
 						 Address),
 				 config);
@@ -871,61 +874,63 @@ static void plane_set_std_bld(struct dc_hw *hw, struct dc_hw_std_bld *std_bld)
 			switch (bld->blend_mode) {
 			case DRM_MODE_BLEND_PREMULTI:
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 SRC_GLOBAL_ALPHA_MODE, SCALE);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							SRC_GLOBAL_ALPHA_MODE, SCALE);
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 DST_GLOBAL_ALPHA_MODE, GLOBAL);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							DST_GLOBAL_ALPHA_MODE, GLOBAL);
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 SRC_ALPHA_FACTOR, DISABLE);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							SRC_ALPHA_FACTOR, DISABLE);
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 DST_ALPHA_FACTOR, DISABLE);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							DST_ALPHA_FACTOR, DISABLE);
 				break;
 			case DRM_MODE_BLEND_COVERAGE:
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 SRC_GLOBAL_ALPHA_MODE, SCALE);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							SRC_GLOBAL_ALPHA_MODE, SCALE);
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 DST_GLOBAL_ALPHA_MODE, SCALE);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							DST_GLOBAL_ALPHA_MODE, SCALE);
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 SRC_ALPHA_FACTOR, ENABLE);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							SRC_ALPHA_FACTOR, ENABLE);
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 DST_ALPHA_FACTOR, DISABLE);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							DST_ALPHA_FACTOR, DISABLE);
 				break;
 			case DRM_MODE_BLEND_PIXEL_NONE:
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 SRC_GLOBAL_ALPHA_MODE, GLOBAL);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							SRC_GLOBAL_ALPHA_MODE, GLOBAL);
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 DST_GLOBAL_ALPHA_MODE, GLOBAL);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							DST_GLOBAL_ALPHA_MODE, GLOBAL);
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 SRC_ALPHA_FACTOR, ENABLE);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							SRC_ALPHA_FACTOR, ENABLE);
 				config = VS_SET_FIELD_PREDEF(config,
-								 DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
-								 DST_ALPHA_FACTOR, DISABLE);
+							DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG0,
+							DST_ALPHA_FACTOR, DISABLE);
 				break;
 			default:
 				break;
 			}
 
-			dc_write(hw, VS_SET_FE_FIELD(DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG, bld_id, Address),
-				 config);
+			egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_SH_PANEL0_ALPHA_BLEND_CONFIG,
+				bld_id, Address), config);
 
 			global_alpha_config = VS_SET_FIELD(global_alpha_config,
-							   DCREG_SH_PANEL0_GLOBAL_ALPHA0, SRC_ALPHA,
-							   bld->alpha);
+								DCREG_SH_PANEL0_GLOBAL_ALPHA0,
+								SRC_ALPHA,
+								bld->alpha);
 			global_alpha_config = VS_SET_FIELD(global_alpha_config,
-							   DCREG_SH_PANEL0_GLOBAL_ALPHA0, DST_ALPHA,
-							   bld->alpha);
-			dc_write(hw, VS_SET_FE_FIELD(DCREG_SH_PANEL0_GLOBAL_ALPHA, bld_id, Address),
-				 global_alpha_config);
+								DCREG_SH_PANEL0_GLOBAL_ALPHA0,
+								DST_ALPHA,
+								bld->alpha);
+			egt_dc_write(hw, VS_SET_FE_FIELD(DCREG_SH_PANEL0_GLOBAL_ALPHA,
+				bld_id, Address), global_alpha_config);
 		}
 
 		bld->dirty = false;
@@ -947,13 +952,13 @@ static void display_set_mode(struct dc_hw *hw, u8 output_id,
 	for (i = 0; i < hw->info->display_num; i++)
 		hw->display[i].running = 0;
 
-	dc_hw_do_reset(hw);
+	egt_dc_hw_do_reset(hw);
 
 	mode->is_yuv = false;
 	hw->coef_change = false;
 
 	/* set panel size */
-	dc_write(hw, VS_SET_PANEL_FIELD(DCREG_SH_PANEL0, DISPLAY_END_Address),
+	egt_dc_write(hw, VS_SET_PANEL_FIELD(DCREG_SH_PANEL0, DISPLAY_END_Address),
 		 VS_SET_FIELD(0, DCREG_SH_PANEL0_DISPLAY_END, HDISPLAY_END, mode->h_active) |
 			 VS_SET_FIELD(0, DCREG_SH_PANEL0_DISPLAY_END, VDISPLAY_END,
 					  mode->v_active));
@@ -990,7 +995,7 @@ static void display_set_mode(struct dc_hw *hw, u8 output_id,
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_DPI_CONFIG, MODE,
 							 STANDARD_DPI);
 			if (mode->output_mode & VS_SIMPLE_ENC_OUTPUT_MODE_CMD)
-				dc_write(hw,
+				egt_dc_write(hw,
 					 VS_SET_OUTPUT_FIELD(DCREG_PANEL, output_id,
 								 WORK_MODE_Address),
 					 VS_SET_FIELD_VALUE(0, DCREG_PANEL0, WORK_MODE_WORK_MODE,
@@ -1005,14 +1010,14 @@ static void display_set_mode(struct dc_hw *hw, u8 output_id,
 			config = VS_SET_FIELD_PREDEF(config, DCREG_SH_PANEL0_DPI_CONFIG, MODE,
 							 SW_TE_EDPI);
 
-		dc_write(hw, VS_SET_PANEL_FIELD(DCREG_SH_PANEL0, DPI_CONFIG_Address), config);
+		egt_dc_write(hw, VS_SET_PANEL_FIELD(DCREG_SH_PANEL0, DPI_CONFIG_Address), config);
 
 		/*display total*/
 		config = (VS_SET_FIELD(0, DCREG_SH_PANEL0, DPI_DISPLAY_TOTAL_HDISPLAY_TOTAL,
 					   mode->h_total) |
 			  VS_SET_FIELD(0, DCREG_SH_PANEL0, DPI_DISPLAY_TOTAL_VDISPLAY_TOTAL,
 					   mode->v_total));
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id, DPI_DISPLAY_TOTAL_Address),
 			 config);
 
@@ -1021,7 +1026,7 @@ static void display_set_mode(struct dc_hw *hw, u8 output_id,
 					  mode->h_sync_start) |
 			 VS_SET_FIELD(0, DCREG_SH_PANEL0, DPI_DISPLAY_HSYNC_HSYNC_END,
 					  mode->h_sync_end);
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id, DPI_DISPLAY_HSYNC_Address),
 			 config);
 
@@ -1030,7 +1035,7 @@ static void display_set_mode(struct dc_hw *hw, u8 output_id,
 					  mode->v_sync_start) |
 			 VS_SET_FIELD(0, DCREG_SH_PANEL0, DPI_DISPLAY_VSYNC_VSYNC_END,
 					  mode->v_sync_end);
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id, DPI_DISPLAY_VSYNC_Address),
 			 config);
 	}
@@ -1082,81 +1087,82 @@ static void display_set_mode(struct dc_hw *hw, u8 output_id,
 							 OUTPUT_FORMAT, RGB888);
 			break;
 		}
-		dc_write(hw, VS_SET_PANEL_FIELD(DCREG_SH_PANEL0, OUT_PUT_DP_FORMAT_Address),
+		egt_dc_write(hw, VS_SET_PANEL_FIELD(DCREG_SH_PANEL0, OUT_PUT_DP_FORMAT_Address),
 			 config);
 
 		/* horizontal sync pulse polarity & sync width configuration */
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_PANEL, output_id,
 						 OUT_PUT_DP_DISPLAY_HSYNC_POLARITY_Address),
 			 mode->h_sync_polarity);
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id,
 						 OUT_PUT_DP_TIMING_HS_WIDTH_Address),
 			 mode->h_sync_end - mode->h_sync_start);
 		/* horizontal back porch configuration */
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id,
 						 OUT_PUT_DP_TIMING_HBP_WIDTH_Address),
 			 mode->h_total - mode->h_sync_end);
 		/* horizontal active width configuration */
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id,
 						 OUT_PUT_DP_TIMING_HA_WIDTH_Address),
 			 mode->h_active);
 		/* horizontal front porch configuration */
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id,
 						 OUT_PUT_DP_TIMING_HFP_WIDTH_Address),
 			 mode->h_sync_start - mode->h_active);
 
 		/* vertical sync pulse polarity & sync width configuration */
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_PANEL, output_id,
 						 OUT_PUT_DP_DISPLAY_VSYNC_POLARITY_Address),
 			 mode->v_sync_polarity);
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id,
 						 OUT_PUT_DP_TIMING_VS_HEIGHT_Address),
 			 mode->v_sync_end - mode->v_sync_start);
 		/* vertical back porch configuration */
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id,
 						 OUT_PUT_DP_TIMING_VBP_HEIGHT_Address),
 			 mode->v_total - mode->v_sync_end);
 		/* vertical active height configuration */
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id,
 						 OUT_PUT_DP_TIMING_VA_HEIGHT_Address),
 			 mode->v_active);
 		/* vertical front porch configuration */
-		dc_write(hw,
+		egt_dc_write(hw,
 			 VS_SET_OUTPUT_FIELD(DCREG_SH_PANEL, output_id,
 						 OUT_PUT_DP_TIMING_VFP_HEIGHT_Address),
 			 vfp_height);
 		/* dp work mode configuration */
 		if (mode->output_mode & VS_SIMPLE_ENC_OUTPUT_MODE_CMD) {
-			dc_write(hw, VS_SET_OUTPUT_FIELD(DCREG_PANEL, output_id, WORK_MODE_Address),
-				 VS_SET_FIELD_VALUE(0, DCREG_PANEL0, WORK_MODE_WORK_MODE, COMMAND));
+			egt_dc_write(hw,
+				VS_SET_OUTPUT_FIELD(DCREG_PANEL, output_id, WORK_MODE_Address),
+				VS_SET_FIELD_VALUE(0, DCREG_PANEL0, WORK_MODE_WORK_MODE, COMMAND));
 
 			config = dc_read(hw,
 					 VS_SET_PANEL_FIELD(DCREG_PANEL0,
-								OUT_PUT_DP_CONFIG_COMMAND_OPT_Address));
+							OUT_PUT_DP_CONFIG_COMMAND_OPT_Address));
 			if (mode->output_mode & VS_SIMPLE_ENC_OUTPUT_MODE_CMD_AUTO)
 				config = VS_SET_FIELD_PREDEF(config, DCREG_PANEL0,
-								 OUT_PUT_DP_CONFIG_COMMAND_OPT_OPTION,
-								 AUTO_MODE);
+							OUT_PUT_DP_CONFIG_COMMAND_OPT_OPTION,
+							AUTO_MODE);
 			else
 				config = VS_SET_FIELD_PREDEF(config, DCREG_PANEL0,
-								 OUT_PUT_DP_CONFIG_COMMAND_OPT_OPTION,
-								 TRIGGER_MODE);
-			dc_write(hw,
+							OUT_PUT_DP_CONFIG_COMMAND_OPT_OPTION,
+							TRIGGER_MODE);
+			egt_dc_write(hw,
 				 VS_SET_PANEL_FIELD(DCREG_PANEL0,
 							OUT_PUT_DP_CONFIG_COMMAND_OPT_Address),
 				 config);
 
 			if (mode->output_mode & VS_SIMPLE_ENC_OUTPUT_MODE_CMD_DE_SYNC)
-				dc_write(hw,
+				egt_dc_write(hw,
 					 VS_SET_PANEL_FIELD(DCREG_PANEL0,
 								OUT_PUT_DP_DE_SYNC_MODE_Address),
 					 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0,
@@ -1164,25 +1170,26 @@ static void display_set_mode(struct dc_hw *hw, u8 output_id,
 								 ENABLED));
 
 			else
-				dc_write(hw,
+				egt_dc_write(hw,
 					 VS_SET_PANEL_FIELD(DCREG_PANEL0,
 								OUT_PUT_DP_DE_SYNC_MODE_Address),
 					 VS_SET_FIELD_PREDEF(0, DCREG_PANEL0,
 								 OUT_PUT_DP_DE_SYNC_MODE_ENABLE,
 								 DISABLED));
 		} else {
-			dc_write(hw, VS_SET_OUTPUT_FIELD(DCREG_PANEL, output_id, WORK_MODE_Address),
-				 VS_SET_FIELD_VALUE(0, DCREG_PANEL0, WORK_MODE_WORK_MODE, VIDEO));
+			egt_dc_write(hw,
+				VS_SET_OUTPUT_FIELD(DCREG_PANEL, output_id, WORK_MODE_Address),
+				VS_SET_FIELD_VALUE(0, DCREG_PANEL0, WORK_MODE_WORK_MODE, VIDEO));
 		}
 	}
 
-#ifdef CONFIG_VERISILICON_QSPI
+#ifdef CONFIG_ENGIANT_VS_QSPI
 	else if (mode->enable && mode->out == OUT_SPI)
-		qspi_set_intf_format(hw, mode);
+		egt_qspi_set_intf_format(hw, mode);
 #endif
 
 	else if (!mode->enable) {
-		dc_write(hw, VS_SET_OUTPUT_FIELD(DCREG_PANEL, output_id, WORK_MODE_Address),
+		egt_dc_write(hw, VS_SET_OUTPUT_FIELD(DCREG_PANEL, output_id, WORK_MODE_Address),
 			 VS_SET_FIELD_VALUE(0, DCREG_PANEL0, WORK_MODE_WORK_MODE, COMMAND));
 		display->running = false;
 	}
@@ -1251,15 +1258,25 @@ static int sort_gamma(struct dc_hw_gamma *gamma, int num_rows)
 
 
 	for (i = 0; i < num_rows; i++) {
-		gamma_u32[i] = combine_to_u32(gamma->gamma[i][0], gamma->gamma[i][1], gamma->gamma[i][2]);
+		gamma_u32[i] = combine_to_u32(gamma->gamma[i][0],
+					      gamma->gamma[i][1],
+					      gamma->gamma[i][2]);
 		//pr_err("Before sorting: %08x\n", gamma_u32[i]);
 	}
 
 	quick_sort(gamma_u32, 0, num_rows - 1);
 
 	for (i = 0; i < num_rows; i++) {
-		split_from_u32(gamma_u32[i], &gamma->gamma[i][0], &gamma->gamma[i][1], &gamma->gamma[i][2]);
-		//pr_err("After sorting: %04x %04x %04x\n", gamma->gamma[i][0]&0x3ff, gamma->gamma[i][1]&0x3ff, gamma->gamma[i][2]%0x3ff);
+		split_from_u32(gamma_u32[i],
+				&gamma->gamma[i][0],
+				&gamma->gamma[i][1],
+				&gamma->gamma[i][2]);
+		/*
+		 * pr_err("After sorting: %04x %04x %04x\n",
+		 *        gamma->gamma[i][0] & 0x3ff,
+		 *        gamma->gamma[i][1] & 0x3ff,
+		 *        gamma->gamma[i][2] & 0x3ff);
+		 */
 	}
 
 	kfree(gamma_u32);
@@ -1274,9 +1291,9 @@ static void display_set_gamma(struct dc_hw *hw, struct dc_hw_gamma *gamma)
 	value = dc_read(hw, DCREG_SH_PANEL0_CONFIG_Address);
 	if (gamma->enable) {
 		value = VS_SET_FIELD_PREDEF(value, DCREG_SH_PANEL0_CONFIG, GAMMA, ENABLE);
-		dc_write(hw, DCREG_SH_PANEL0_CONFIG_Address, value);
+		egt_dc_write(hw, DCREG_SH_PANEL0_CONFIG_Address, value);
 
-		dc_write(hw, DCREG_PANEL0_GAMMA_INDEX_Address, 0x00);
+		egt_dc_write(hw, DCREG_PANEL0_GAMMA_INDEX_Address, 0x00);
 
 		ret = sort_gamma(gamma, GAMMA_SIZE);
 		if (ret < 0)
@@ -1290,11 +1307,11 @@ static void display_set_gamma(struct dc_hw *hw, struct dc_hw_gamma *gamma)
 				VS_SET_FIELD(0, DCREG_SH_PANEL0_GAMMA_DATA, BLUE,
 						 gamma->gamma[i][2]);
 
-			dc_write(hw, DCREG_SH_PANEL0_GAMMA_DATA_Address, value);
+			egt_dc_write(hw, DCREG_SH_PANEL0_GAMMA_DATA_Address, value);
 		}
 	} else {
 		value = VS_SET_FIELD_PREDEF(value, DCREG_SH_PANEL0_CONFIG, GAMMA, DISABLE);
-		dc_write(hw, DCREG_SH_PANEL0_CONFIG_Address, value);
+		egt_dc_write(hw, DCREG_SH_PANEL0_CONFIG_Address, value);
 	}
 
 	gamma->dirty = false;
@@ -1328,9 +1345,8 @@ static void plane_commit(struct dc_hw *hw, u8 display_id)
 					   state->proto->name);
 				continue;
 			}
-			vs_dc_property_config_hw(hw, hw_id, state);
+			vs_egt_dc_property_config_hw(hw, hw_id, state);
 		}
-		/* TBD */
 	}
 
 	plane_set_std_bld(hw, hw->std_bld);
@@ -1362,10 +1378,8 @@ static void display_commit(struct dc_hw *hw, u8 display_id)
 					   state->proto->name);
 				continue;
 			}
-			vs_dc_property_config_hw(hw, hw_id, state);
+			vs_egt_dc_property_config_hw(hw, hw_id, state);
 		}
-
-		/* TBD */
 	}
 }
 
@@ -1375,7 +1389,7 @@ static const struct dc_hw_funcs hw_func = {
 	.display = display_commit,
 };
 
-void dc_hw_commit(struct dc_hw *hw, u8 display_id)
+void egt_dc_hw_commit(struct dc_hw *hw, u8 display_id)
 {
 	u8 i;
 	u32 cursor_location, cursor_config;
@@ -1389,13 +1403,13 @@ void dc_hw_commit(struct dc_hw *hw, u8 display_id)
 			cursor_config = dc_read(hw, DCREG_SH_CURSOR_LAYER_CONFIG_Address);
 			if (hw->cursor[i].enable) {
 				/* cursor layer address/location configuration*/
-				dc_write(hw, DCREG_SH_CURSOR_LAYER_ADDRESS_Address,
+				egt_dc_write(hw, DCREG_SH_CURSOR_LAYER_ADDRESS_Address,
 					 hw->cursor[i].address);
 				cursor_location = VS_SET_FIELD(0, DCREG_SH_LAYER_CURSOR_LOCATION, X,
 								   hw->cursor[i].x) |
 						  VS_SET_FIELD(0, DCREG_SH_LAYER_CURSOR_LOCATION, Y,
 								   hw->cursor[i].y);
-				dc_write(hw, DCREG_SH_LAYER_CURSOR_LOCATION_Address,
+				egt_dc_write(hw, DCREG_SH_LAYER_CURSOR_LOCATION_Address,
 					 cursor_location);
 
 				/* cursor layer hot spot configuration*/
@@ -1408,7 +1422,7 @@ void dc_hw_commit(struct dc_hw *hw, u8 display_id)
 			/* cursor layer enable configuration*/
 			cursor_config = VS_SET_FIELD(cursor_config, DCREG_SH_CURSOR_LAYER_CONFIG,
 							 LAYER_ENABLE, hw->cursor[i].enable);
-			dc_write(hw, DCREG_SH_CURSOR_LAYER_CONFIG_Address, cursor_config);
+			egt_dc_write(hw, DCREG_SH_CURSOR_LAYER_CONFIG_Address, cursor_config);
 			hw->cursor[i].dirty = false;
 		}
 	}
@@ -1418,7 +1432,7 @@ void dc_hw_commit(struct dc_hw *hw, u8 display_id)
 }
 
 /* Get the panel dither table address offset based on HW_DISPLAY_0 */
-u32 vs_dc_get_panel_dither_table_offset(__maybe_unused u32 hw_id)
+u32 vs_egt_dc_get_panel_dither_table_offset(__maybe_unused u32 hw_id)
 {
 	u32 offset = 0x0;
 	/*
@@ -1435,7 +1449,7 @@ u32 vs_dc_get_panel_dither_table_offset(__maybe_unused u32 hw_id)
 	return offset;
 }
 
-const struct dc_hw_plane *vs_dc_hw_get_plane(const struct dc_hw *hw, u32 hw_id)
+const struct dc_hw_plane *vs_egt_dc_hw_get_plane(const struct dc_hw *hw, u32 hw_id)
 {
 	u32 i;
 
@@ -1445,19 +1459,20 @@ const struct dc_hw_plane *vs_dc_hw_get_plane(const struct dc_hw *hw, u32 hw_id)
 	return NULL;
 }
 
-const void *vs_dc_hw_get_plane_property(const struct dc_hw *hw, u32 hw_id, const char *prop_name,
+const void *vs_egt_dc_hw_get_plane_property(const struct dc_hw *hw, u32 hw_id,
+					const char *prop_name,
 					bool *out_enabled)
 {
-	const struct dc_hw_plane *plane = vs_dc_hw_get_plane(hw, hw_id);
+	const struct dc_hw_plane *plane = vs_egt_dc_hw_get_plane(hw, hw_id);
 
 	if (!plane) {
 		pr_err("%s: not found plane %u\n", __func__, hw_id);
 		return NULL;
 	}
-	return vs_dc_property_get_by_name(&plane->states, prop_name, out_enabled);
+	return vs_egt_dc_property_get_by_name(&plane->states, prop_name, out_enabled);
 }
 
-const struct dc_hw_display *vs_dc_hw_get_display(const struct dc_hw *hw, u32 hw_id)
+const struct dc_hw_display *vs_egt_dc_hw_get_display(const struct dc_hw *hw, u32 hw_id)
 {
 	u32 i;
 
@@ -1467,14 +1482,15 @@ const struct dc_hw_display *vs_dc_hw_get_display(const struct dc_hw *hw, u32 hw_
 	return NULL;
 }
 
-const void *vs_dc_hw_get_display_property(const struct dc_hw *hw, u32 hw_id, const char *prop_name,
-					  bool *out_enabled)
+const void *vs_egt_dc_hw_get_display_property(const struct dc_hw *hw, u32 hw_id,
+						const char *prop_name,
+						bool *out_enabled)
 {
-	const struct dc_hw_display *display = vs_dc_hw_get_display(hw, hw_id);
+	const struct dc_hw_display *display = vs_egt_dc_hw_get_display(hw, hw_id);
 
 	if (!display) {
 		pr_err("%s: not found display %u\n", __func__, hw_id);
 		return NULL;
 	}
-	return vs_dc_property_get_by_name(&display->states, prop_name, out_enabled);
+	return vs_egt_dc_property_get_by_name(&display->states, prop_name, out_enabled);
 }

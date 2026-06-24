@@ -52,12 +52,12 @@ static inline struct vs_qspi *to_qspi_with_encoder(struct drm_encoder *encoder)
 	return container_of(encoder, struct vs_qspi, encoder);
 }
 
-int vs_qspi_pci_init(struct drm_device *drm_dev);
-void vs_qspi_pci_deinit(struct drm_device *drm_dev);
+int vs_egt_qspi_pci_init(struct drm_device *drm_dev);
+void vs_egt_qspi_pci_deinit(struct drm_device *drm_dev);
 
-extern struct platform_driver vs_qspi_platform_driver;
+extern struct platform_driver vs_egt_qspi_platform_driver;
 
-void qspi_set_intf_format(struct dc_hw *hw, struct dc_hw_display_mode *mode);
-void qspi_start_trigger(struct dc_hw *hw, struct dc_hw_display_mode *mode);
+void egt_qspi_set_intf_format(struct dc_hw *hw, struct dc_hw_display_mode *mode);
+void egt_qspi_start_trigger(struct dc_hw *hw, struct dc_hw_display_mode *mode);
 
 #endif /* __VS_DC_QSPI_H_ */

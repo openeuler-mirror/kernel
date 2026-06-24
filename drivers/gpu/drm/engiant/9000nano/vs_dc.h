@@ -16,12 +16,12 @@
 #include "vs_dc_hw.h"
 #include "vs_plane.h"
 #ifdef CONFIG_PCI
-#ifdef CONFIG_VERISILICON_VIRTUAL_DISPLAY
+#ifdef CONFIG_ENGIANT_VS_VIRTUAL_DISPLAY
 #include "vs_virtual.h"
 #endif
 #endif
 #include "vs_simple_enc.h"
-#ifdef CONFIG_VERISILICON_DEC
+#ifdef CONFIG_ENGIANT_VS_DEC
 #include "vs_dc_dec.h"
 #endif
 
@@ -84,16 +84,12 @@ static inline void to_vs_rotation(u32 rotation, struct dc_hw_fb *fb)
 struct vs_dc_plane {
 	enum dc_hw_plane_id id;
 	struct vs_plane *base;
-#ifdef CONFIG_VERISILICON_DEC
+#ifdef CONFIG_ENGIANT_VS_DEC
 	struct dc_dec dec;
 #endif
 };
 
 struct vs_dc {
-	/* TBD !
-	 * developer should modify this item according to
-	 * actual requirements during developing !
-	 */
 	struct vs_crtc *crtc[DC_DISPLAY_NUM];
 	struct dc_hw hw;
 
@@ -109,11 +105,11 @@ struct vs_dc {
 
 	struct simple_encoder *encoder[DC_OUTPUT_NUM];
 
-#ifdef CONFIG_VERISILICON_QSPI
+#ifdef CONFIG_ENGIANT_VS_QSPI
 	struct vs_qspi *qspi[DC_DISPLAY_NUM];
 #endif
 
-#ifdef CONFIG_VERISILICON_VIRTUAL_DISPLAY
+#ifdef CONFIG_ENGIANT_VS_VIRTUAL_DISPLAY
 	struct vs_virtual_display *vd[DC_OUTPUT_NUM];
 #endif
 
@@ -121,36 +117,29 @@ struct vs_dc {
 	struct egt_displayport *dp;
 #endif
 
-#ifdef CONFIG_VERISILICON_PCIE
-	void __iomem *intr_statu_base;
+#ifdef CONFIG_ENGIANT_VS_PCIE
+	void __iomem *pci_base;
 #endif
 };
 
-extern struct platform_driver dc_platform_driver;
-extern struct platform_driver dc_be_platform_driver;
-extern struct platform_driver dc_fe0_platform_driver;
-extern struct platform_driver dc_fe1_platform_driver;
-extern struct platform_driver dc_wb_platform_driver;
+extern struct platform_driver egt_dc_platform_driver;
+extern struct platform_driver egt_dc_be_platform_driver;
+extern struct platform_driver egt_dc_fe0_platform_driver;
+extern struct platform_driver egt_dc_fe1_platform_driver;
+extern struct platform_driver egt_dc_wb_platform_driver;
 
-int vs_get_dc_excep_ioctl(struct drm_device *dev, void *data, struct drm_file *file_priv);
-int vs_get_wb_frm_done_ioctl(struct drm_device *dev, void *data, struct drm_file *file_priv);
-int vs_sw_reset_ioctl(struct drm_device *dev, void *data, struct drm_file *file_priv);
-int vs_get_feature_cap_ioctl(struct drm_device *dev, void *data, struct drm_file *file_priv);
-#ifdef CONFIG_VERISILICON_HISTOGRAM
-int vs_get_hist_info_ioctl(struct drm_device *dev, void *data, struct drm_file *file_priv);
-#endif
-int vs_dc_pci_init(struct drm_device *drm_dev);
-void vs_dc_pci_deinit(struct drm_device *drm_dev);
-void vs_dc_pci_deinit_aer(struct drm_device *drm_dev);
-u32 vs_dc_reg_read(struct drm_device *drm_dev, u32 reg);
-bool vs_dc_is_yuv_format(u32 format);
+int vs_egt_dc_pci_init(struct drm_device *drm_dev);
+void vs_egt_dc_pci_deinit(struct drm_device *drm_dev);
+void vs_egt_dc_pci_deinit_aer(struct drm_device *drm_dev);
+u32 vs_egt_dc_reg_read(struct drm_device *drm_dev, u32 reg);
+bool vs_egt_dc_is_yuv_format(u32 format);
 #ifdef CONFIG_PM_SLEEP
-int vs_dc_suspend(struct device *dev);
-int vs_dc_resume(struct device *dev);
+int vs_egt_dc_suspend(struct device *dev);
+int vs_egt_dc_resume(struct device *dev);
 #endif
 
 #ifdef CONFIG_DEBUG_FS
-void vs_crtc_set_last_crc(u32 crtc_id, struct drm_vs_color vaule);
+void vs_egt_crtc_set_last_crc(u32 crtc_id, struct drm_vs_egt_color value);
 #endif
 
 #endif /* __VS_DC_H__ */

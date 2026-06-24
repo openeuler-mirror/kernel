@@ -6,11 +6,11 @@
 #ifndef __VS_DC_POSTPROCESS_H__
 #define __VS_DC_POSTPROCESS_H__
 
-#include "drm/vs_drm.h"
+#include "vs_egt_drm.h"
 #include "vs_type.h"
 #include "vs_dc_property.h"
 
-bool vs_dc_register_postprocess_states(struct vs_dc_property_state_group *states,
+bool vs_egt_dc_register_postprocess_states(struct vs_dc_property_state_group *states,
 					   const struct vs_display_info *display_info);
 
 #endif

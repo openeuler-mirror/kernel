@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 ccflags-y := -I $(src)
-ifeq ($(CONFIG_VERISILICON_CHIP_9x00),y)
+ifeq ($(CONFIG_ENGIANT_VS_CHIP_9x00),y)
 ccflags-y += -I $(src)/9x00
-else ifeq ($(CONFIG_VERISILICON_CHIP_8x00), y)
+else ifeq ($(CONFIG_ENGIANT_VS_CHIP_8x00), y)
 ccflags-y += -I $(src)/8x00
 else
 ifeq ($(KBUILD_EXTMOD),)
@@ -20,7 +20,7 @@ ccflags-y += -I $(src)/connector
 endif
 endif
 
-ifeq ($(CONFIG_DRM_VERISILICON),y)
+ifeq ($(CONFIG_DRM_ENGIANT_VS),y)
 egt_drm-objs := vs_crtc.o \
 		vs_drv.o \
 		vs_fb.o \
@@ -38,14 +38,14 @@ egt_drm-objs += 9000nano/vs_dc.o
 egt_drm-objs += 9000nano/preprocess/vs_dc_plane_blender.o
 egt_drm-objs += 9000nano/preprocess/vs_dc_preprocess.o
 egt_drm-objs += 9000nano/postprocess/vs_dc_postprocess.o
-egt_drm-$(CONFIG_VERISILICON_QSPI) += 9000nano/vs_dc_qspi.o
+egt_drm-$(CONFIG_ENGIANT_VS_QSPI) += 9000nano/vs_dc_qspi.o
 # 9000nano decompress module
-egt_drm-$(CONFIG_VERISILICON_DEC) += 9000nano/vs_dc_dec.o
+egt_drm-$(CONFIG_ENGIANT_VS_DEC) += 9000nano/vs_dc_dec.o
 
-egt_drm-$(CONFIG_VERISILICON_WRITEBACK) += vs_writeback.o
-egt_drm-$(CONFIG_VERISILICON_DEBUG) += vs_debug.o
-egt_drm-$(CONFIG_VERISILICON_MMU) += vs_dc_mmu.o
-egt_drm-$(CONFIG_VERISILICON_VIRTUAL_DISPLAY) += vs_virtual.o
+egt_drm-$(CONFIG_ENGIANT_VS_WRITEBACK) += vs_writeback.o
+egt_drm-$(CONFIG_ENGIANT_VS_DEBUG) += vs_debug.o
+egt_drm-$(CONFIG_ENGIANT_VS_MMU) += vs_dc_mmu.o
+egt_drm-$(CONFIG_ENGIANT_VS_VIRTUAL_DISPLAY) += vs_virtual.o
 endif
 
 ifeq ($(CONFIG_DRM_EGT_DP),y)

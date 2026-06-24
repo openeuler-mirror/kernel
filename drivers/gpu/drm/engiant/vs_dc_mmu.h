@@ -96,10 +96,10 @@ struct _dc_mmu {
 	void *static_stlb;
 };
 
-int dc_mmu_construct(struct device *dev, dc_mmu_pt *mmu);
-void dc_mmu_deconstruct(struct device *dev, dc_mmu_pt mmu);
-int dc_mmu_map_memory(dc_mmu_pt mmu, u64 physical, u32 page_count, u32 *address, bool continuous,
-			  bool security);
-int dc_mmu_unmap_memory(dc_mmu_pt mmu, u32 gpu_address, u32 page_count);
+int egt_dc_mmu_construct(struct device *dev, dc_mmu_pt *mmu);
+void egt_dc_mmu_deconstruct(struct device *dev, dc_mmu_pt mmu);
+int egt_dc_mmu_map_memory(dc_mmu_pt mmu, u64 physical, u32 page_count, u32 *address,
+		bool continuous, bool security);
+int egt_dc_mmu_unmap_memory(dc_mmu_pt mmu, u32 gpu_address, u32 page_count);
 
 #endif /* _VS_DC_MMU_H_ */

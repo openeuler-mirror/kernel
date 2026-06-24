@@ -7,8 +7,8 @@
  *  - Updated output interface info, added virtual output mode
  */
 
-#include "drm/vs_drm_fourcc.h"
-#include <drm/vs_drm.h>
+#include "vs_egt_drm_fourcc.h"
+#include "vs_egt_drm.h"
 #include "vs_dc_info.h"
 #include "vs_simple_enc.h" //new add
 static const u32 plane_format0[] = {
@@ -33,40 +33,40 @@ static const u32 cursor_formats[] = { DRM_FORMAT_ARGB8888, DRM_FORMAT_XRGB8888};
 static const u32 plane_custom_format[] = {};
 
 static const u64 format_modifier0[] = {
-	DRM_FORMAT_MOD_LINEAR, fourcc_mod_vs_norm_code(DRM_FORMAT_MOD_VS_LINEAR),
-	fourcc_mod_vs_norm_code(DRM_FORMAT_MOD_VS_TILE_MODE4X4),
-	fourcc_mod_vs_etc2_code(DRM_FORMAT_MOD_VS_DEC_TILE_4X4),
+	DRM_FORMAT_MOD_LINEAR, fourcc_mod_vs_egt_norm_code(DRM_FORMAT_MOD_VS_EGT_LINEAR),
+	fourcc_mod_vs_egt_norm_code(DRM_FORMAT_MOD_VS_EGT_TILE_MODE4X4),
+	fourcc_mod_vs_egt_etc2_code(DRM_FORMAT_MOD_VS_EGT_DEC_TILE_4X4),
 	/***
-	 * fourcc_mod_vs_decnano_code(DRM_FORMAT_MOD_VS_DEC_TILE_4X4,
-	 *			   DRM_FORMAT_MOD_VS_DECNANO_HV_SAMPLE),
-	 * fourcc_mod_vs_decnano_code(DRM_FORMAT_MOD_VS_DEC_TILE_4X4,
-	 *			   DRM_FORMAT_MOD_VS_DECNANO_H_SAMPLE),
-	 * fourcc_mod_vs_decnano_code(DRM_FORMAT_MOD_VS_DEC_TILE_4X4,
-	 *			   DRM_FORMAT_MOD_VS_DECNANO_NON_SAMPLE),
-	 * fourcc_mod_vs_decnano_code(DRM_FORMAT_MOD_VS_DEC_LINEAR,
-	 *			   DRM_FORMAT_MOD_VS_DECNANO_NON_SAMPLE),
-	 * fourcc_mod_vs_decnano_code(DRM_FORMAT_MOD_VS_DEC_LINEAR,
-	 *			   DRM_FORMAT_MOD_VS_DECNANO_H_SAMPLE),
+	 * fourcc_mod_vs_egt_decnano_code(DRM_FORMAT_MOD_VS_EGT_DEC_TILE_4X4,
+	 *			   DRM_FORMAT_MOD_VS_EGT_DECNANO_HV_SAMPLE),
+	 * fourcc_mod_vs_egt_decnano_code(DRM_FORMAT_MOD_VS_EGT_DEC_TILE_4X4,
+	 *			   DRM_FORMAT_MOD_VS_EGT_DECNANO_H_SAMPLE),
+	 * fourcc_mod_vs_egt_decnano_code(DRM_FORMAT_MOD_VS_EGT_DEC_TILE_4X4,
+	 *			   DRM_FORMAT_MOD_VS_EGT_DECNANO_NON_SAMPLE),
+	 * fourcc_mod_vs_egt_decnano_code(DRM_FORMAT_MOD_VS_EGT_DEC_LINEAR,
+	 *			   DRM_FORMAT_MOD_VS_EGT_DECNANO_NON_SAMPLE),
+	 * fourcc_mod_vs_egt_decnano_code(DRM_FORMAT_MOD_VS_EGT_DEC_LINEAR,
+	 *			   DRM_FORMAT_MOD_VS_EGT_DECNANO_H_SAMPLE),
 	 ***/
 	 DRM_FORMAT_MOD_INVALID,
 };
 
 static const u64 format_modifier1[] = {
-	DRM_FORMAT_MOD_LINEAR, fourcc_mod_vs_norm_code(DRM_FORMAT_MOD_VS_LINEAR),
+	DRM_FORMAT_MOD_LINEAR, fourcc_mod_vs_egt_norm_code(DRM_FORMAT_MOD_VS_EGT_LINEAR),
 	/***
-	 * fourcc_mod_vs_decnano_code(DRM_FORMAT_MOD_VS_DEC_TILE_4X4,
-	 *			   DRM_FORMAT_MOD_VS_DECNANO_HV_SAMPLE),
-	 * fourcc_mod_vs_decnano_code(DRM_FORMAT_MOD_VS_DEC_TILE_4X4,
-	 *			   DRM_FORMAT_MOD_VS_DECNANO_H_SAMPLE),
-	 * fourcc_mod_vs_decnano_code(DRM_FORMAT_MOD_VS_DEC_TILE_4X4,
-	 *			   DRM_FORMAT_MOD_VS_DECNANO_NON_SAMPLE),
+	 * fourcc_mod_vs_egt_decnano_code(DRM_FORMAT_MOD_VS_EGT_DEC_TILE_4X4,
+	 *			   DRM_FORMAT_MOD_VS_EGT_DECNANO_HV_SAMPLE),
+	 * fourcc_mod_vs_egt_decnano_code(DRM_FORMAT_MOD_VS_EGT_DEC_TILE_4X4,
+	 *			   DRM_FORMAT_MOD_VS_EGT_DECNANO_H_SAMPLE),
+	 * fourcc_mod_vs_egt_decnano_code(DRM_FORMAT_MOD_VS_EGT_DEC_TILE_4X4,
+	 *			   DRM_FORMAT_MOD_VS_EGT_DECNANO_NON_SAMPLE),
 	 ***/
 	 DRM_FORMAT_MOD_INVALID,
 };
 
 static const u64 cursor_modifier[] = {
 	DRM_FORMAT_MOD_LINEAR,
-	fourcc_mod_vs_norm_code(DRM_FORMAT_MOD_VS_LINEAR),
+	fourcc_mod_vs_egt_norm_code(DRM_FORMAT_MOD_VS_EGT_LINEAR),
 	DRM_FORMAT_MOD_INVALID,
 };
 
@@ -294,15 +294,16 @@ static const struct vs_dc_info dc_info = {
 	.pipe_sync = false,
 	.mmu_prefetch = false,
 	.panel_sync = false,
-	.cap_dec = (1 << DRM_FORMAT_MOD_VS_TYPE_DECNANO) | (1 << DRM_FORMAT_MOD_VS_TYPE_ETC2),
+	.cap_dec = (1 << DRM_FORMAT_MOD_VS_EGT_TYPE_DECNANO) |
+		(1 << DRM_FORMAT_MOD_VS_EGT_TYPE_ETC2),
 };
 
-const struct vs_dc_info *vs_dc_get_chip_info(void)
+const struct vs_dc_info *vs_egt_dc_get_chip_info(void)
 {
 	return &dc_info;
 }
 
-const struct vs_output_info *vs_dc_get_output_info(void)
+const struct vs_output_info *vs_egt_dc_get_output_info(void)
 {
 	return output_info;
 }

@@ -8,8 +8,8 @@
 
 #include <drm/drm_crtc.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/vs_drm.h>
 
+#include "vs_egt_drm.h"
 #include "vs_type.h"
 #include "vs_dc_hw.h"
 #include "vs_dc_property.h"
@@ -46,14 +46,14 @@ struct vs_crtc_pattern {
 	u8 pos;
 	u8 mode;
 	u64 color;
-	struct drm_vs_rect rect;
+	struct drm_vs_egt_rect rect;
 };
 
 struct vs_crtc_crc {
 	bool enable;
 	u8 pos;
-	struct drm_vs_color seed;
-	struct drm_vs_color result;
+	struct drm_vs_egt_color seed;
+	struct drm_vs_egt_color result;
 };
 
 struct vs_crtc_state {
@@ -64,7 +64,7 @@ struct vs_crtc_state {
 #endif
 	struct drm_framebuffer *blur_mask;
 	struct drm_framebuffer *brightness_mask;
-#ifdef CONFIG_VERISILICON_RCD
+#ifdef CONFIG_ENGIANT_VS_RCD
 	struct drm_framebuffer *rcd_mask;
 #endif
 	struct dc_hw_disp_crc crc; /* for crc debugfs */
@@ -80,17 +80,17 @@ struct vs_crtc_state {
 	struct drm_property_blob *prior_gamma;
 	struct drm_property_blob *roi0_gamma;
 	struct drm_property_blob *roi1_gamma;
-#ifdef CONFIG_VERISILICON_LTM
+#ifdef CONFIG_ENGIANT_VS_LTM
 	struct drm_property_blob *ltm_luma_get;
 	struct drm_property_blob *ltm_cd_get;
 	struct drm_property_blob *ltm_hist_get;
 #endif
-#ifdef CONFIG_VERISILICON_HISTOGRAM
+#ifdef CONFIG_ENGIANT_VS_HISTOGRAM
 	struct drm_property_blob *hist_get;
 	struct drm_property_blob *rgb_hist_get;
 #endif
 
-	enum drm_vs_data_extend_mode data_ext_mode;
+	enum drm_vs_egt_data_extend_mode data_ext_mode;
 
 	bool sync_enable;
 	bool underflow;
@@ -98,12 +98,12 @@ struct vs_crtc_state {
 	bool prior_gamma_changed;
 	bool roi0_gamma_changed;
 	bool roi1_gamma_changed;
-#ifdef CONFIG_VERISILICON_LTM
+#ifdef CONFIG_ENGIANT_VS_LTM
 	bool ltm_luma_get_changed;
 	bool ltm_cd_get_changed;
 	bool ltm_hist_get_changed;
 #endif
-#ifdef CONFIG_VERISILICON_HISTOGRAM
+#ifdef CONFIG_ENGIANT_VS_HISTOGRAM
 	bool hist_get_changed;
 	bool rgb_hist_get_changed;
 #endif
@@ -135,22 +135,22 @@ struct vs_crtc {
 	struct drm_property *prior_gamma_prop;
 	struct drm_property *roi0_gamma_prop;
 	struct drm_property *roi1_gamma_prop;
-#ifdef CONFIG_VERISILICON_LTM
+#ifdef CONFIG_ENGIANT_VS_LTM
 	struct drm_property *ltm_luma_get_prop;
 	struct drm_property *ltm_cd_get_prop;
 	struct drm_property *ltm_hist_get_prop;
 #endif
-#ifdef CONFIG_VERISILICON_HISTOGRAM
+#ifdef CONFIG_ENGIANT_VS_HISTOGRAM
 	struct drm_property *hist_get_prop;
 	struct drm_property *rgb_hist_get_prop;
 #endif
-#ifdef CONFIG_VERISILICON_RCD
+#ifdef CONFIG_ENGIANT_VS_RCD
 	struct drm_property *rcd_mask_fb;
 #endif
-#ifdef CONFIG_VERISILICON_BLUR
+#ifdef CONFIG_ENGIANT_VS_BLUR
 	struct drm_property *blur_mask_fb;
 #endif
-#ifdef CONFIG_VERISILICON_BRIGHTNESS
+#ifdef CONFIG_ENGIANT_VS_BRIGHTNESS
 	struct drm_property *brightness_mask_fb;
 #endif
 
@@ -159,22 +159,22 @@ struct vs_crtc {
 	const struct vs_crtc_funcs *funcs;
 };
 
-bool vs_display_get_crtc_scanoutpos(struct drm_device *dev, unsigned int crtc_id,
+bool vs_egt_display_get_crtc_scanoutpos(struct drm_device *dev, unsigned int crtc_id,
 					bool in_vblank_irq, int *vpos, int *hpos, ktime_t *stime,
 					ktime_t *etime, const struct drm_display_mode *mode);
 
-void vs_crtc_destroy(struct drm_crtc *crtc);
+void vs_egt_crtc_destroy(struct drm_crtc *crtc);
 
-struct vs_crtc *vs_crtc_create(const struct dc_hw_display *display, struct drm_device *drm_dev,
+struct vs_crtc *vs_egt_crtc_create(const struct dc_hw_display *display, struct drm_device *drm_dev,
 				   const struct vs_dc_info *info, u8 index);
 
-void vs_crtc_handle_vblank(struct drm_crtc *crtc);
+void vs_egt_crtc_handle_vblank(struct drm_crtc *crtc);
 
-void vs_crtc_handle_frame_done(struct drm_crtc *crtc);
+void vs_egt_crtc_handle_frame_done(struct drm_crtc *crtc);
 
-void vs_crtc_handle_flip_done(struct drm_crtc *crtc);
+void vs_egt_crtc_handle_flip_done(struct drm_crtc *crtc);
 
-void vs_crtc_handle_flip_done_while_hw_done(struct drm_crtc *crtc);
+void vs_egt_crtc_handle_flip_done_while_hw_done(struct drm_crtc *crtc);
 
 static inline struct vs_crtc *to_vs_crtc(struct drm_crtc *crtc)
 {

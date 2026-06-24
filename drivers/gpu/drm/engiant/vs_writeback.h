@@ -7,7 +7,8 @@
 #define __VS_WRITEBACK_H_
 
 #include <drm/drm_writeback.h>
-#include "drm/vs_drm.h"
+
+#include "vs_egt_drm.h"
 #include "vs_type.h"
 #include "vs_dc_property.h"
 
@@ -51,14 +52,14 @@ struct vs_writeback_connector {
 	u8 armed;
 };
 
-struct vs_writeback_connector *vs_writeback_create(const struct dc_hw_wb *hw_wb,
+struct vs_writeback_connector *vs_egt_writeback_create(const struct dc_hw_wb *hw_wb,
 						   struct drm_device *drm_dev,
 						   const struct vs_wb_info *info,
 						   unsigned int possible_crtcs);
 
-void vs_writeback_handle_vblank(struct vs_writeback_connector *vs_wb_connector);
+void vs_egt_writeback_handle_vblank(struct vs_writeback_connector *vs_wb_connector);
 
-struct drm_writeback_connector *find_wb_connector(struct drm_crtc *crtc);
+struct drm_writeback_connector *egt_find_wb_connector(struct drm_crtc *crtc);
 
 static inline struct vs_writeback_connector *
 to_vs_writeback_connector(struct drm_writeback_connector *wb_connector)

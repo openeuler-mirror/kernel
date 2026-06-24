@@ -27,12 +27,12 @@
 #define VS_DC_BLOB_PROPERTY_PROTO(protoname, strname, state_type, check_func, update_func,      \
 				  config_func)                                                  \
 	static const struct vs_dc_property_proto protoname = { .name = strname,                 \
-								   .type = VS_DC_PROPERTY_BLOB,     \
-								   .type_size = sizeof(state_type), \
-								   .init_val = 0,                   \
-								   .check = check_func,             \
-								   .update = update_func,           \
-								   .config_hw = config_func }
+								.type = VS_DC_PROPERTY_BLOB,    \
+								.type_size = sizeof(state_type),\
+								.init_val = 0,                  \
+								.check = check_func,            \
+								.update = update_func,          \
+								.config_hw = config_func }
 
 /**
  * VS_DC_ARRAY_PROPERTY_PROTO - Define an array type property protocol
@@ -111,14 +111,14 @@
  * bitmask property is removed
  */
 #define VS_DC_BITMASK_PROPERTY_PROTO(protoname, strname, _enum_list, supported_bits, check_func, \
-					 update_func, config_func)                                   \
+					 update_func, config_func)                               \
 	static struct vs_dc_property_proto protoname = {                                         \
 		.name = strname,                                                                 \
 		.type = VS_DC_PROPERTY_BITMASK,                                                  \
 		.type_size = sizeof(unsigned int),                                               \
 		.init_val = 0,                                                                   \
 		.sub_proto = { .enum_list = { _enum_list, ARRAY_SIZE(_enum_list),                \
-						  supported_bits } },                                \
+						  supported_bits } },                            \
 		.check = check_func,                                                             \
 		.update = update_func,                                                           \
 		.config_hw = config_func                                                         \
@@ -201,24 +201,25 @@ struct vs_dc_property_state_group {
 	struct vs_dc_property_state_mem mem;
 };
 
-bool vs_dc_property_register_state(struct vs_dc_property_state_group *states,
+bool vs_egt_dc_property_register_state(struct vs_dc_property_state_group *states,
 				   const struct vs_dc_property_proto *proto);
-bool vs_dc_blob_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_blob_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				const void *new_data, u32 size, const void *obj_state);
-bool vs_dc_bool_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_bool_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				bool enable, const void *obj_state);
-bool vs_dc_enum_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_enum_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				int val, const void *obj_state);
-bool vs_dc_bitmask_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
-				   u32 val, const void *obj_state);
-bool vs_dc_range_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_bitmask_property_update(struct dc_hw *hw, u8 hw_id,
+					struct vs_dc_property_state *state,
+					u32 val, const void *obj_state);
+bool vs_egt_dc_range_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				 u64 val, const void *obj_state);
-bool vs_dc_array_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_array_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				 const void *new_data, u32 size, const void *obj_state);
-bool vs_dc_property_config_hw(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state);
-const void *vs_dc_property_get_by_name(const struct vs_dc_property_state_group *states,
+bool vs_egt_dc_property_config_hw(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state);
+const void *vs_egt_dc_property_get_by_name(const struct vs_dc_property_state_group *states,
 					   const char *name, bool *out_enabled);
-bool vs_dc_initialize_property_states(struct vs_dc_property_state_group *states);
-void vs_dc_deinitialize_property_states(struct vs_dc_property_state_group *states);
+bool vs_egt_dc_initialize_property_states(struct vs_dc_property_state_group *states);
+void vs_egt_dc_deinitialize_property_states(struct vs_dc_property_state_group *states);
 
 #endif

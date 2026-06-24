@@ -3,10 +3,9 @@
  * Copyright (C) 2020 VeriSilicon Holdings Co., Ltd.
  */
 
-#include "vs_dc_property.h"
-
 #include <linux/kernel.h>
 #include "vs_dc_hw.h"
+#include "vs_dc_property.h"
 
 static void *get_buffer(struct vs_dc_property_state_mem *mem, u32 size)
 {
@@ -19,7 +18,7 @@ static void *get_buffer(struct vs_dc_property_state_mem *mem, u32 size)
 	return &mem->pool[used_size];
 }
 
-bool vs_dc_initialize_property_states(struct vs_dc_property_state_group *states)
+bool vs_egt_dc_initialize_property_states(struct vs_dc_property_state_group *states)
 {
 	const struct vs_dc_property_proto *proto = NULL;
 	struct vs_dc_property_state *item = NULL;
@@ -31,13 +30,14 @@ bool vs_dc_initialize_property_states(struct vs_dc_property_state_group *states)
 	for (i = 0; i < states->num; i++)
 		req_mem += ALIGN(states->items[i].proto->type_size, 4);
 	if (req_mem > VS_DC_MAX_PROPERTY_STATE_MEM_MAX_SIZE) {
-		pr_err("%s: Request mem over the max mem size, %#lx > %#x\n", __func__, req_mem,
-			   VS_DC_MAX_PROPERTY_STATE_MEM_MAX_SIZE);
+		pr_err("%s: Request mem over the max mem size, %#zx > %#x\n", __func__,
+			req_mem, VS_DC_MAX_PROPERTY_STATE_MEM_MAX_SIZE);
 		return false;
 	}
-	/* TODO: Fixme, use dynamic mem
-	 *states->mem.pool = kzalloc(req_mem, GFP_KERNEL);
-	 *if (!states->mem.pool)
+	/*
+	 * Fixme, use dynamic mem
+	 * states->mem.pool = kzalloc(req_mem, GFP_KERNEL);
+	 * if (!states->mem.pool)
 	 *	return false;
 	 */
 	states->mem.total_size = req_mem;
@@ -69,21 +69,22 @@ bool vs_dc_initialize_property_states(struct vs_dc_property_state_group *states)
 	}
 	return true;
 err_cleanup:
-	vs_dc_deinitialize_property_states(states);
+	vs_egt_dc_deinitialize_property_states(states);
 	return false;
 }
 
-void vs_dc_deinitialize_property_states(struct vs_dc_property_state_group *states)
+void vs_egt_dc_deinitialize_property_states(struct vs_dc_property_state_group *states)
 {
 	if (!states)
 		return;
-	/* TODO: Fixme
-	 *kfree(states->mem.pool);
+	/*
+	 * Fixme
+	 * kfree(states->mem.pool);
 	 */
 	memset(states, 0, sizeof(*states));
 }
 
-bool vs_dc_property_register_state(struct vs_dc_property_state_group *states,
+bool vs_egt_dc_property_register_state(struct vs_dc_property_state_group *states,
 				   const struct vs_dc_property_proto *proto)
 {
 	struct vs_dc_property_state *item;
@@ -101,7 +102,7 @@ bool vs_dc_property_register_state(struct vs_dc_property_state_group *states,
 	return true;
 }
 
-bool vs_dc_property_config_hw(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state)
+bool vs_egt_dc_property_config_hw(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state)
 {
 	bool ret;
 
@@ -115,7 +116,7 @@ bool vs_dc_property_config_hw(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_
 	return ret;
 }
 
-bool vs_dc_blob_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_blob_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				const void *new_data, u32 size, const void *obj_state)
 {
 	bool ret = true;
@@ -139,7 +140,7 @@ bool vs_dc_blob_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_propert
 	return ret;
 }
 
-bool vs_dc_bool_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_bool_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				bool enable, const void *obj_state)
 {
 	bool ret = true;
@@ -160,7 +161,7 @@ bool vs_dc_bool_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_propert
 	return ret;
 }
 
-bool vs_dc_enum_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_enum_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				int val, const void *obj_state)
 {
 	bool ret = true;
@@ -179,8 +180,9 @@ bool vs_dc_enum_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_propert
 	return ret;
 }
 
-bool vs_dc_bitmask_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
-				   u32 val, const void *obj_state)
+bool vs_egt_dc_bitmask_property_update(struct dc_hw *hw, u8 hw_id,
+					struct vs_dc_property_state *state,
+					u32 val, const void *obj_state)
 {
 	bool ret = true;
 
@@ -198,7 +200,7 @@ bool vs_dc_bitmask_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_prop
 	return ret;
 }
 
-bool vs_dc_range_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_range_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				 u64 val, const void *obj_state)
 {
 	bool ret = true;
@@ -217,7 +219,7 @@ bool vs_dc_range_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_proper
 	return ret;
 }
 
-bool vs_dc_array_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
+bool vs_egt_dc_array_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_property_state *state,
 				 const void *new_data, u32 size, const void *obj_state)
 {
 	bool ret = true;
@@ -240,7 +242,7 @@ bool vs_dc_array_property_update(struct dc_hw *hw, u8 hw_id, struct vs_dc_proper
 	return ret;
 }
 
-const void *vs_dc_property_get_by_name(const struct vs_dc_property_state_group *states,
+const void *vs_egt_dc_property_get_by_name(const struct vs_dc_property_state_group *states,
 					   const char *name, bool *out_enabled)
 {
 	u32 i;

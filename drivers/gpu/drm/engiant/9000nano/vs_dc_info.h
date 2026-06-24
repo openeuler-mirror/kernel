@@ -24,9 +24,10 @@
 #define DRM_COLOR_FORMAT_YCRCB420 DRM_COLOR_FORMAT_YCBCR420
 #endif
 
-/* TODO: Different chip have differnert DC_XXX_NUM.
- *       Need find way to separte.
- *       For now, use the greatest common divisor of all.
+/*
+ * Different chip have differnert DC_XXX_NUM.
+ * Need find way to separte.
+ * For now, use the greatest common divisor of all.
  */
 #define DC_PLANE_NUM 5
 /* new add*/
@@ -54,7 +55,7 @@ enum dc_hw_display_id {
 	HW_DISPLAY_NUM,
 };
 
-const struct vs_dc_info *vs_dc_get_chip_info(void);
-const struct vs_output_info *vs_dc_get_output_info(void);
+const struct vs_dc_info *vs_egt_dc_get_chip_info(void);
+const struct vs_output_info *vs_egt_dc_get_output_info(void);
 
 #endif

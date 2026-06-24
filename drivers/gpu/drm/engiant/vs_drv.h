@@ -12,7 +12,7 @@
 #include <drm/drm_gem.h>
 
 #include "vs_plane.h"
-#ifdef CONFIG_VERISILICON_MMU
+#ifdef CONFIG_ENGIANT_VS_MMU
 #include "vs_dc_mmu.h"
 #endif
 
@@ -47,21 +47,21 @@ struct vs_drm_private {
 	struct device *dc_dev;
 
 	struct iommu_domain *domain;
-#ifdef CONFIG_VERISILICON_MMU
+#ifdef CONFIG_ENGIANT_VS_MMU
 	dc_mmu * mmu;
 #endif
 
 	unsigned int pitch_alignment;
 	unsigned int addr_alignment;
 	u8 intr_dest;
-#ifdef CONFIG_VERISILICON_PCIE
+#ifdef CONFIG_ENGIANT_VS_PCIE
 	u32 irq_num[5];
 	void __iomem *pf_bar_base;
 	void __iomem *dc_base;
 	void __iomem *dp_base;
 	void __iomem *dp_phy_base;
 	void __iomem *mbox_base;
-	void __iomem *intr_statu_base;
+	void __iomem *pci_base;
 #endif
 	void __iomem *dp_phy0_base;
 	void __iomem *dp_phy1_base;
@@ -72,16 +72,23 @@ struct vs_drm_private {
 	struct drm_device *drm_dev;
 	struct drm_gem_object *fbdev_bo;
 	struct drm_fb_helper fbdev_helper;
+#ifdef CONFIG_ENGIANT_VS_DEBUG
+	struct file *dc_capture_fp;
+#endif
 };
 
 
-int vs_drm_iommu_attach_device(struct drm_device *drm_dev, struct device *dev);
+int vs_egt_drm_iommu_attach_device(struct drm_device *drm_dev, struct device *dev);
 
-void vs_drm_iommu_detach_device(struct drm_device *drm_dev, struct device *dev);
+void vs_egt_drm_iommu_detach_device(struct drm_device *drm_dev, struct device *dev);
 
-void vs_drm_update_alignment(struct drm_device *drm_dev, unsigned int pitch_align,
+void vs_egt_drm_update_alignment(struct drm_device *drm_dev, unsigned int pitch_align,
 				 unsigned int addr_align);
-struct vs_gem_private *vs_gem_priv_init(struct drm_device *drm_dev);
+
+struct vs_gem_private *vs_egt_gem_priv_init(struct drm_device *drm_dev);
+
+void vs_egt_gem_priv_deinit(struct drm_device *drm_dev);
+
 static inline struct device *to_dma_dev(struct drm_device *dev)
 {
 	struct vs_drm_private *priv = dev->dev_private;

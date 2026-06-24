@@ -13,13 +13,11 @@
 #include <drm/drm_fourcc.h>
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_print.h>
-
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_writeback.h>
 
-#include <drm/vs_drm.h>
-
+#include "vs_egt_drm.h"
 #include "vs_crtc.h"
 #include "vs_gem.h"
 #include "vs_type.h"
@@ -145,7 +143,7 @@ static void wb_connector_reset(struct drm_connector *connector)
 	struct vs_writeback_connector *vs_wb = to_vs_writeback_connector(drm_wb);
 	struct drm_mode_object *vs_wb_objs = &vs_wb->base.base.base;
 	u32 i;
-	u64 wb_point = VS_WB_DISP_OUT;
+	u64 wb_point = VS_EGT_WB_DISP_OUT;
 
 	if (connector->state) {
 		__drm_atomic_helper_connector_destroy_state(connector->state);
@@ -205,7 +203,7 @@ wb_connector_atomic_duplicate_state(struct drm_connector *connector)
 #endif
 
 	/* dc properties */
-	vs_dc_duplicate_drm_properties(state->drm_states, ori_state->drm_states,
+	vs_egt_dc_duplicate_drm_properties(state->drm_states, ori_state->drm_states,
 					   &vs_wb->properties);
 
 	return &state->base;
@@ -221,7 +219,7 @@ static void wb_connector_atomic_destroy_state(struct drm_connector *connector,
 	__drm_atomic_helper_connector_destroy_state(state);
 
 	/* dc properties */
-	vs_dc_destroy_drm_properties(vs_wb_state->drm_states, &vs_wb->properties);
+	vs_egt_dc_destroy_drm_properties(vs_wb_state->drm_states, &vs_wb->properties);
 
 	kfree(to_vs_writeback_connector_state(state));
 }
@@ -239,7 +237,7 @@ static int wb_connector_atomic_set_property(struct drm_connector *connector,
 		vs_wb_state->wb_point = val;
 	else {
 		/* dc property */
-		return vs_dc_set_drm_property(dev, vs_wb_state->drm_states,
+		return vs_egt_dc_set_drm_property(dev, vs_wb_state->drm_states,
 						  &vs_wb_connector->properties, property, val);
 	}
 
@@ -258,8 +256,8 @@ static int wb_connector_atomic_get_property(struct drm_connector *connector,
 	if (property == vs_wb_connector->point_prop)
 		*val = vs_wb_state->wb_point;
 	else
-		return vs_dc_get_drm_property(vs_wb_state->drm_states, &vs_wb_connector->properties,
-						  property, val);
+		return vs_egt_dc_get_drm_property(vs_wb_state->drm_states,
+				&vs_wb_connector->properties, property, val);
 
 	return 0;
 }
@@ -385,7 +383,7 @@ static const struct drm_encoder_helper_funcs wb_encoder_helper_funcs = {
 	.atomic_disable = wb_encoder_atomic_disable,
 };
 
-void vs_writeback_handle_vblank(struct vs_writeback_connector *vs_wb_connector)
+void vs_egt_writeback_handle_vblank(struct vs_writeback_connector *vs_wb_connector)
 {
 	struct drm_writeback_job *job;
 
@@ -412,12 +410,14 @@ void vs_writeback_handle_vblank(struct vs_writeback_connector *vs_wb_connector)
 }
 
 static const struct drm_prop_enum_list vs_wb_point_enum_list[] = {
-	{ VS_WB_DISP_IN, "post panel input" },	 { VS_WB_DISP_CC, "post color calibration out" },
-	{ VS_WB_DISP_OUT, "post panel output" }, { VS_WB_OFIFO_IN, "ofifo input" },
-	{ VS_WB_OFIFO_OUT, "ofifo output" },
+	{ VS_EGT_WB_DISP_IN, "post panel input" },
+	{ VS_EGT_WB_DISP_CC, "post color calibration out" },
+	{ VS_EGT_WB_DISP_OUT, "post panel output" },
+	{ VS_EGT_WB_OFIFO_IN, "ofifo input" },
+	{ VS_EGT_WB_OFIFO_OUT, "ofifo output" },
 };
 
-struct vs_writeback_connector *vs_writeback_create(const struct dc_hw_wb *hw_wb,
+struct vs_writeback_connector *vs_egt_writeback_create(const struct dc_hw_wb *hw_wb,
 						   struct drm_device *drm_dev,
 						   const struct vs_wb_info *info,
 						   unsigned int possible_crtcs)
@@ -452,13 +452,14 @@ struct vs_writeback_connector *vs_writeback_create(const struct dc_hw_wb *hw_wb,
 		if (!vs_writeback->point_prop)
 			goto err_free_wb_connector;
 
-		drm_object_attach_property(&vs_writeback->base.base.base, vs_writeback->point_prop,
-					info->init_wb_point ? info->init_wb_point : VS_WB_DISP_OUT);
+		drm_object_attach_property(&vs_writeback->base.base.base,
+				vs_writeback->point_prop,
+				info->init_wb_point ? info->init_wb_point : VS_EGT_WB_DISP_OUT);
 	}
 
 	if (hw_wb != NULL &&
-		vs_dc_create_drm_properties(drm_dev, &vs_writeback->base.base.base, &hw_wb->states,
-					&vs_writeback->properties)) {
+		vs_egt_dc_create_drm_properties(drm_dev, &vs_writeback->base.base.base,
+			&hw_wb->states, &vs_writeback->properties)) {
 		goto error_cleanup_wb_connector;
 	}
 
@@ -471,7 +472,7 @@ err_free_wb_connector:
 	return NULL;
 }
 
-struct drm_writeback_connector *find_wb_connector(struct drm_crtc *crtc)
+struct drm_writeback_connector *egt_find_wb_connector(struct drm_crtc *crtc)
 {
 	struct drm_connector_list_iter iter;
 	struct drm_connector *connector;

@@ -29,10 +29,10 @@
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_of.h>
-#include <drm/vs_drm.h>
-#include <drm/vs_drm_fourcc.h>
 #include <drm/drm_vblank.h>
 
+#include "vs_egt_drm.h"
+#include "vs_egt_drm_fourcc.h"
 #include "vs_crtc.h"
 #include "vs_dc.h"
 #include "vs_dc_hw.h"
@@ -40,7 +40,7 @@
 #include "vs_type.h"
 #include "vs_gem.h"
 #include "vs_dc_dec.h"
-#ifdef CONFIG_VERISILICON_DEBUG
+#ifdef CONFIG_ENGIANT_VS_DEBUG
 #include "vs_debug.h"
 #endif
 
@@ -48,7 +48,7 @@
 #include "egt_dp.h"
 #endif /* end of CONFIG_DRM_EGT */
 
-#ifdef CONFIG_VERISILICON_PCIE
+#ifdef CONFIG_ENGIANT_VS_PCIE
 #define PCI_INTR_REG_OFFSET         0x18c
 #define PCI_INTR_MASK_REG_OFFSET    0x188
 #define PCI_INTR_DC_MASK            17
@@ -112,7 +112,7 @@ static inline void update_format(u32 format, u64 mod, struct dc_hw_fb *fb)
 		break;
 	case DRM_FORMAT_RGB565_A8:
 	case DRM_FORMAT_BGR565_A8:
-		if (fourcc_mod_is_custom_format(mod))
+		if (fourcc_mod_vs_egt_is_custom_format(mod))
 			f = FORMAT_A8R5G6B5;
 		else
 			f = FORMAT_R5G6B5;
@@ -160,11 +160,11 @@ static inline void update_tile_mode(u64 modifier, struct dc_hw_fb *fb)
 	u8 norm_mode, tile = TILE_MODE_LINEAR;
 	u32 format = 0;
 
-	norm_mode = modifier & DRM_FORMAT_MOD_VS_NORM_MODE_MASK;
+	norm_mode = modifier & DRM_FORMAT_MOD_VS_EGT_NORM_MODE_MASK;
 	format = fb->format;
 
 	switch (norm_mode) {
-	case DRM_FORMAT_MOD_VS_TILE_MODE4X4:
+	case DRM_FORMAT_MOD_VS_EGT_TILE_MODE4X4:
 		/* if color format is NV12, need to change tile mode to 8x8_sub4x4*/
 
 		if (format == FORMAT_NV12)
@@ -179,7 +179,7 @@ static inline void update_tile_mode(u64 modifier, struct dc_hw_fb *fb)
 	fb->tile_mode = tile;
 }
 
-bool vs_dc_is_yuv_format(u32 format)
+bool vs_egt_dc_is_yuv_format(u32 format)
 {
 	bool is_yuv = false;
 
@@ -287,9 +287,9 @@ static void dc_deinit(struct device *dev)
 {
 	struct vs_dc *dc = dev_get_drvdata(dev);
 
-	dc_hw_enable_vblank(&dc->hw, false);
+	egt_dc_hw_enable_vblank(&dc->hw, false);
 
-	dc_hw_deinit(&dc->hw);
+	egt_dc_hw_deinit(&dc->hw);
 
 	vs_dc_disable_clock(dc);
 }
@@ -309,7 +309,7 @@ static int dc_init(struct device *dev)
 
 	dc->pix_clk_rate = clk_get_rate(dc->pix_clk);
 
-	ret = dc_hw_init(&dc->hw);
+	ret = egt_dc_hw_init(&dc->hw);
 	if (ret) {
 		dev_err(dev, "failed to init DC HW\n");
 		return ret;
@@ -320,10 +320,6 @@ static int dc_init(struct device *dev)
 
 static void vs_dc_enable(struct device *dev, struct drm_crtc *crtc)
 {
-	/* TBD !
-	 * developer should update the function implementation
-	 * according to actual requirements during developing !
-	 */
 	struct vs_dc *dc = dev_get_drvdata(dev);
 	struct egt_displayport *dp = dc->dp;
 	struct vs_crtc *vs_crtc = to_vs_crtc(crtc);
@@ -331,7 +327,7 @@ static void vs_dc_enable(struct device *dev, struct drm_crtc *crtc)
 	struct vs_crtc_state *crtc_state = to_vs_crtc_state(crtc->state);
 	struct drm_display_mode *mode = &crtc->state->adjusted_mode;
 	struct dc_hw_display_mode display = { 0 };
-	const struct drm_vs_r2y_config *r2y_config = NULL;
+	const struct drm_vs_egt_r2y_config *r2y_config = NULL;
 
 	/* get the output id info from encoder ID, if the ENCODER NONE, the output_id = hw_id */
 	if (crtc_state->encoder_type == DRM_MODE_ENCODER_NONE)
@@ -345,7 +341,7 @@ static void vs_dc_enable(struct device *dev, struct drm_crtc *crtc)
 	 */
 	if (display_info.color_formats &
 		(DRM_COLOR_FORMAT_YCBCR444 | DRM_COLOR_FORMAT_YCBCR422 | DRM_COLOR_FORMAT_YCBCR420))
-		r2y_config = vs_dc_drm_crtc_property_get(crtc_state, "R2Y", NULL);
+		r2y_config = vs_egt_dc_drm_crtc_property_get(crtc_state, "R2Y", NULL);
 	if (r2y_config)
 		crtc_state->output_fmt = r2y_config->output_bus_format;
 
@@ -390,41 +386,46 @@ static void vs_dc_enable(struct device *dev, struct drm_crtc *crtc)
 
 	display.enable = crtc_state->base.active;
 
-	dc_hw_setup_display_mode(&dc->hw, vs_crtc->id, &display);
+	egt_dc_hw_setup_display_mode(&dc->hw, vs_crtc->id, &display);
 
 	/* Send an mbox to BMC, DC has been reset done */
 	if (dp)
 		egt_dp_msg_send(dp, EGT_DC_RESET_DONE);
 
-	dc_hw_config_display_status(&dc->hw, vs_crtc->id, true);
+	egt_dc_hw_config_display_status(&dc->hw, vs_crtc->id, true);
 	pr_debug("[%s - %d]\n", __func__, __LINE__);
 }
 
 static void vs_dc_disable(struct device *dev, struct drm_crtc *crtc)
 {
-	/* TBD !
-	 * developer should update the function implementation
-	 * according to actual requirements during developing !
-	 */
 	struct vs_dc *dc = dev_get_drvdata(dev);
 	struct vs_crtc *vs_crtc = to_vs_crtc(crtc);
 	struct dc_hw_display_mode display;
 
 	display.enable = false;
 
-	dc_hw_setup_display_mode(&dc->hw, vs_crtc->id, &display);
+	egt_dc_hw_setup_display_mode(&dc->hw, vs_crtc->id, &display);
 
-	dc_hw_config_display_status(&dc->hw, vs_crtc->id, true);
+	egt_dc_hw_config_display_status(&dc->hw, vs_crtc->id, true);
 	pr_debug("[%s - %d]\n", __func__, __LINE__);
 }
 
-static bool vs_dc_mode_fixup(struct device *dev,  __maybe_unused const struct drm_display_mode *mode,
-				 struct drm_display_mode *adjusted_mode)
+static bool vs_dc_mode_fixup(struct device *dev,
+				__maybe_unused const struct drm_display_mode *mode,
+				struct drm_display_mode *adjusted_mode)
 {
 	struct vs_dc *dc = dev_get_drvdata(dev);
 	long clk_rate;
+	u32 bdf;
 
-	pr_debug("[%s - %d] adjusted_mode [%d x %d]\n", __func__, __LINE__, adjusted_mode->hdisplay, adjusted_mode->vdisplay);
+	bdf = readl(dc->pci_base + 0x144);
+	if ((bdf == 0xffffffff) || (bdf == 0)) {
+		DRM_ERROR("PCIe link is down before frame commit!\n");
+		return false;
+	}
+
+	pr_debug("[%s - %d] adjusted_mode [%d x %d]\n", __func__, __LINE__,
+			adjusted_mode->hdisplay, adjusted_mode->vdisplay);
 
 	if (dc->pix_clk) {
 		clk_rate = clk_round_rate(dc->pix_clk, adjusted_mode->clock * 1000);
@@ -454,13 +455,13 @@ static void update_display_gamma(struct vs_dc *dc, u8 id, struct drm_crtc *crtc)
 			}
 
 			for (i = 0; i < size; i++) {
-				dc_hw_update_gamma(&dc->hw, id, i, lut[i].red, lut[i].green,
+				egt_dc_hw_update_gamma(&dc->hw, id, i, lut[i].red, lut[i].green,
 						   lut[i].blue);
 			}
 
-			dc_hw_enable_gamma(&dc->hw, id, true);
+			egt_dc_hw_enable_gamma(&dc->hw, id, true);
 		} else
-			dc_hw_enable_gamma(&dc->hw, id, false);
+			egt_dc_hw_enable_gamma(&dc->hw, id, false);
 	}
 }
 
@@ -481,14 +482,10 @@ static void vs_dc_conf_display(struct device *dev, struct drm_crtc *crtc)
 	update_display_gamma(dc, vs_crtc->id, crtc);
 
 	/* dc porperty */
-	vs_dc_update_drm_properties_to_dc(dc, vs_crtc->id, crtc_state->drm_states,
+	vs_egt_dc_update_drm_properties_to_dc(dc, vs_crtc->id, crtc_state->drm_states,
 					  vs_crtc->properties.num, &display->states, crtc_state);
 
-	/* TBD !
-	 * developers should implement the configurations of display
-	 * modules in this function !
-	 */
-	dc_hw_config_display_status(&dc->hw, vs_crtc->id, true);
+	egt_dc_hw_config_display_status(&dc->hw, vs_crtc->id, true);
 }
 
 static int vs_dc_check_display(struct device *dev, struct drm_crtc *crtc,
@@ -504,7 +501,7 @@ static int vs_dc_check_display(struct device *dev, struct drm_crtc *crtc,
 	if (!display_info)
 		return -EINVAL;
 
-	if (!vs_dc_check_drm_property(dc, display_info->id, vs_crtc_state->drm_states,
+	if (!vs_egt_dc_check_drm_property(dc, display_info->id, vs_crtc_state->drm_states,
 					  vs_crtc->properties.num, vs_crtc_state))
 		return -EINVAL;
 
@@ -516,7 +513,7 @@ static void vs_dc_enable_vblank(struct vs_crtc *crtc, bool enable)
 	struct device *dev = crtc->dev;
 	struct vs_dc *dc = dev_get_drvdata(dev);
 
-	dc_hw_enable_vblank(&dc->hw, enable);
+	egt_dc_hw_enable_vblank(&dc->hw, enable);
 }
 
 static u32 vs_dc_get_vblank_count(struct vs_crtc *crtc)
@@ -524,7 +521,7 @@ static u32 vs_dc_get_vblank_count(struct vs_crtc *crtc)
 	struct device *dev = crtc->dev;
 	struct vs_dc *dc = dev_get_drvdata(dev);
 
-	return dc_hw_get_vblank_count(&dc->hw, crtc->id);
+	return egt_dc_hw_get_vblank_count(&dc->hw, crtc->id);
 }
 
 static void update_plane_fb(struct vs_plane *plane, u8 display_id, struct dc_hw_fb *fb)
@@ -535,10 +532,6 @@ static void update_plane_fb(struct vs_plane *plane, u8 display_id, struct dc_hw_
 	u32 stride = drm_fb->pitches[0];
 	struct drm_rect *src = &state->src;
 
-	/* TBD !
-	 * developer should update the function implementation
-	 * according to actual requirements during developing !
-	 */
 	fb->display_id = display_id;
 	fb->address = (u64)plane->dma_addr[0];
 	update_stride(stride, drm_fb->format->format, fb);
@@ -564,7 +557,7 @@ static void update_plane_y2r(struct vs_dc *dc, u8 id, struct vs_plane_state *pla
 
 	y2r_conf.gamut = to_vs_yuv_gamut(plane_state->base.color_encoding);
 
-	dc_hw_update_plane_y2r(&dc->hw, id, &y2r_conf);
+	egt_dc_hw_update_plane_y2r(&dc->hw, id, &y2r_conf);
 }
 
 static void update_plane_position(struct vs_dc *dc, u8 id, struct vs_plane_state *plane_state)
@@ -577,7 +570,7 @@ static void update_plane_position(struct vs_dc *dc, u8 id, struct vs_plane_state
 	pos.rect[0].w = drm_rect_width(dest);
 	pos.rect[0].h = drm_rect_height(dest);
 
-	dc_hw_update_plane_position(&dc->hw, id, &pos);
+	egt_dc_hw_update_plane_position(&dc->hw, id, &pos);
 }
 
 static void update_plane_blend(struct vs_dc *dc, u8 zpos, struct vs_plane_state *plane_state,
@@ -589,33 +582,34 @@ static void update_plane_blend(struct vs_dc *dc, u8 zpos, struct vs_plane_state 
 	if (!plane_info->blend_config && !plane_info->blend_mode)
 		return;
 
-	bld_mode = vs_dc_get_drm_property_state(plane_state->drm_states, VS_DC_MAX_PROPERTY_NUM,
+	bld_mode = vs_egt_dc_get_drm_property_state(plane_state->drm_states, VS_DC_MAX_PROPERTY_NUM,
 						"BLEND_MODE");
 	if (!bld_mode->is_changed && plane_info->blend_mode) {
 		std_bld.alpha = plane_state->base.alpha & VS_BLEND_ALPHA_OPAQUE;
 		std_bld.blend_mode = plane_state->base.pixel_blend_mode;
 
-		dc_hw_update_plane_std_bld(&dc->hw, zpos, &std_bld);
+		egt_dc_hw_update_plane_std_bld(&dc->hw, zpos, &std_bld);
 	}
 }
-#ifdef CONFIG_VERISILICON_DEC
+#ifdef CONFIG_ENGIANT_VS_DEC
 static void update_fbc_dec(struct vs_dc *dc, struct vs_plane *plane)
 {
 	struct drm_plane_state *state = plane->base.state;
 	struct drm_framebuffer *drm_fb = state->fb;
 	struct dc_dec *dec_config = &dc->planes[plane->id].dec;
 
-	u8 dec_type = fourcc_mod_vs_get_type(drm_fb->modifier);
+	u8 dec_type = fourcc_mod_vs_egt_get_type(drm_fb->modifier);
 
 	if (!dc->hw.info->cap_dec)
 		return;
 
-	if (dec_type == DRM_FORMAT_MOD_VS_TYPE_DECNANO || dec_type == DRM_FORMAT_MOD_VS_TYPE_ETC2)
+	if (dec_type == DRM_FORMAT_MOD_VS_EGT_TYPE_DECNANO ||
+			dec_type == DRM_FORMAT_MOD_VS_EGT_TYPE_ETC2)
 		dec_config->enable = true;
 	else
 		dec_config->enable = false;
 
-	dc_dec_config(dec_config, drm_fb);
+	egt_dc_dec_config(dec_config, drm_fb);
 }
 
 static void dc_fbc_dec_commit(struct vs_dc *dc)
@@ -626,7 +620,7 @@ static void dc_fbc_dec_commit(struct vs_dc *dc)
 		if (!dc->planes[i].dec.dirty)
 			continue;
 
-		dc_dec_commit(&dc->planes[i].dec, &dc->hw, i);
+		egt_dc_dec_commit(&dc->planes[i].dec, &dc->hw, i);
 	}
 }
 #endif
@@ -638,7 +632,6 @@ static void update_plane(struct vs_dc *dc, struct vs_plane *plane)
 	struct vs_plane_info *plane_info;
 	struct dc_hw_fb fb = { 0 };
 	struct dc_hw_plane *hw_plane = &dc->hw.plane[plane->id];
-	u64 fb_modifier = plane_state->base.fb->modifier;
 	u8 display_id = 0;
 
 	plane_info = (struct vs_plane_info *)&dc->hw.info->planes[plane->id];
@@ -647,26 +640,25 @@ static void update_plane(struct vs_dc *dc, struct vs_plane *plane)
 		return;
 	}
 
-#ifdef CONFIG_VERISILICON_DEC
+#ifdef CONFIG_ENGIANT_VS_DEC
 	update_fbc_dec(dc, plane);
 #endif
 
 	display_id = to_vs_display_id(dc, state->crtc);
 	update_plane_fb(plane, display_id, &fb);
-	plane_state->base.fb->modifier = fb_modifier;
 
-	if (vs_dc_is_yuv_format(fb.format))
+	if (vs_egt_dc_is_yuv_format(fb.format))
 		update_plane_y2r(dc, plane->id, plane_state);
 
 	update_plane_position(dc, plane->id, plane_state);
 
 	update_plane_blend(dc, fb.zpos, plane_state, plane_info);
 
-	dc_hw_update_plane(&dc->hw, plane->id, &fb);
+	egt_dc_hw_update_plane(&dc->hw, plane->id, &fb);
 
-	dc_hw_config_plane_status(&dc->hw, plane->id, true);
+	egt_dc_hw_config_plane_status(&dc->hw, plane->id, true);
 
-	vs_dc_update_drm_properties_to_dc(dc, plane_info->id, plane_state->drm_states,
+	vs_egt_dc_update_drm_properties_to_dc(dc, plane_info->id, plane_state->drm_states,
 					  plane->properties.num, &hw_plane->states, plane_state);
 }
 
@@ -701,7 +693,7 @@ static void update_cursor_plane(struct vs_dc *dc, struct vs_plane *plane)
 	update_cursor_size(state, &cursor);
 	cursor.enable = true;
 
-	dc_hw_update_cursor(&dc->hw, cursor.display_id, &cursor);
+	egt_dc_hw_update_cursor(&dc->hw, cursor.display_id, &cursor);
 }
 
 static void vs_dc_update_plane(struct device *dev, struct vs_plane *plane)
@@ -741,13 +733,13 @@ static void vs_dc_disable_plane(struct device *dev, struct vs_plane *plane,
 	case DRM_PLANE_TYPE_PRIMARY:
 	case DRM_PLANE_TYPE_OVERLAY:
 		fb.enable = false;
-		dc_hw_update_plane(&dc->hw, plane->id, &fb);
-		dc_hw_config_plane_status(&dc->hw, plane->id, true);
+		egt_dc_hw_update_plane(&dc->hw, plane->id, &fb);
+		egt_dc_hw_config_plane_status(&dc->hw, plane->id, true);
 		break;
 	case DRM_PLANE_TYPE_CURSOR:
 		cursor.enable = false;
 		cursor.display_id = find_cursor_display_id(dc, &plane->base);
-		dc_hw_update_cursor(&dc->hw, cursor.display_id, &cursor);
+		egt_dc_hw_update_cursor(&dc->hw, cursor.display_id, &cursor);
 		break;
 	default:
 		break;
@@ -764,13 +756,14 @@ static bool vs_dc_mod_supported(const struct vs_plane_info *plane_info, u64 modi
 
 	for (mods = plane_info->modifiers; *mods != DRM_FORMAT_MOD_INVALID; mods++) {
 		if ((*mods == modifier) ||
-			((*mods | DRM_FORMAT_MOD_VS_CUSTOM_FORMAT_ENABLE) == modifier)) {
+			((*mods | DRM_FORMAT_MOD_VS_EGT_CUSTOM_FORMAT_ENABLE) == modifier)) {
 			ret = true;
 			break;
 		}
 	}
 
-	if (plane_info->num_support_custom_formats && fourcc_mod_is_custom_format(modifier)) {
+	if (plane_info->num_support_custom_formats &&
+			fourcc_mod_vs_egt_is_custom_format(modifier)) {
 		for (i = 0; i < plane_info->num_support_custom_formats; i++) {
 			if (format == plane_info->support_custom_formats[i]) {
 				ret &= true;
@@ -802,7 +795,8 @@ static int vs_dc_check_plane(struct device *dev, struct vs_plane *plane,
 
 	if (fb->width < plane_info->min_width || fb->width > plane_info->max_width ||
 		fb->height < plane_info->min_height || fb->height > plane_info->max_height) {
-		dev_err_once(dev, "buffer size [%d x %d] may not support on plane%d.\n", fb->width, fb->height, plane->id);
+		dev_err_once(dev, "buffer size [%d x %d] may not support on plane%d.\n",
+				fb->width, fb->height, plane->id);
 		return -EINVAL;
 	}
 
@@ -824,30 +818,35 @@ static int vs_dc_check_plane(struct device *dev, struct vs_plane *plane,
 		return -EOPNOTSUPP;
 	}
 
-	if (!vs_dc_check_drm_property(dc, plane_info->id, vs_plane_state->drm_states,
+	if (!vs_egt_dc_check_drm_property(dc, plane_info->id, vs_plane_state->drm_states,
 					  plane->properties.num, vs_plane_state))
 		return -EINVAL;
 
 	return 0;
 }
 
-static bool vs_dc_plane_format_mode_support(__maybe_unused struct vs_plane *plane, __maybe_unused u32 format, u64 modifier)
+static bool vs_dc_plane_format_mode_support(__maybe_unused struct vs_plane *plane,
+						__maybe_unused u32 format, u64 modifier)
 {
 	if (modifier == DRM_FORMAT_MOD_LINEAR)
 		return true;
 
-	if ((modifier >> 56) != DRM_FORMAT_MOD_VENDOR_VS) {
-		pr_err("%s: Unknown modifier (not VSI).\n", __func__);
+	if ((modifier >> 56) != DRM_FORMAT_MOD_VENDOR_VS_EGT) {
+		pr_err("%s: Unknown modifier (not VS_EGT).\n", __func__);
 		return false;
 	}
 	return true;
 }
 
 #ifdef CONFIG_DEBUG_FS
-static struct drm_vs_color last_crtc_crc[DC_DISPLAY_NUM];
+static struct drm_vs_egt_color last_crtc_crc[DC_DISPLAY_NUM];
 
-void vs_crtc_set_last_crc(u32 crtc_id, struct drm_vs_color value)
+void vs_egt_crtc_set_last_crc(u32 crtc_id, struct drm_vs_egt_color value)
 {
+	/* Use crtc_id 0 as last_crtc_crc only supports single display */
+	if (crtc_id >= DC_DISPLAY_NUM)
+		crtc_id = 0;
+
 	last_crtc_crc[crtc_id].a = value.a;
 	last_crtc_crc[crtc_id].r = value.r;
 	last_crtc_crc[crtc_id].g = value.g;
@@ -872,19 +871,19 @@ static void vs_dc_set_plane_crc(struct device *dev, struct vs_plane *plane)
 		return;
 	}
 
-	if (plane_state->crc.pos > VS_PLANE_CRC_HDR) {
+	if (plane_state->crc.pos > VS_EGT_PLANE_CRC_HDR) {
 		pr_err("%s: Invalid crc pos.\n", __func__);
 		return;
 	}
 
 	crc.enable = plane_state->crc.enable;
 	if (!crc.enable)
-		dc_hw_set_plane_crc(&dc->hw, plane->id, &crc);
+		egt_dc_hw_set_plane_crc(&dc->hw, plane->id, &crc);
 
 	crc.pos = plane_state->crc.pos;
 	memcpy(&crc.seed, &plane_state->crc.seed, sizeof(plane_state->crc.seed));
 
-	dc_hw_set_plane_crc(&dc->hw, plane->id, &crc);
+	egt_dc_hw_set_plane_crc(&dc->hw, plane->id, &crc);
 }
 
 static void vs_dc_get_plane_crc(struct vs_dc *dc, struct vs_plane *plane)
@@ -893,7 +892,7 @@ static void vs_dc_get_plane_crc(struct vs_dc *dc, struct vs_plane *plane)
 	struct vs_plane_info *plane_info;
 	struct dc_hw_crc crc;
 
-	dc_hw_get_plane_crc_config(&dc->hw, plane->id, &crc);
+	egt_dc_hw_get_plane_crc_config(&dc->hw, plane->id, &crc);
 	plane_state->crc.enable = crc.enable;
 	if (!crc.enable)
 		return;
@@ -912,7 +911,7 @@ static void vs_dc_get_plane_crc(struct vs_dc *dc, struct vs_plane *plane)
 	plane_state->crc.pos = crc.pos;
 	memcpy(&plane_state->crc.seed, &crc.seed, sizeof(crc.seed));
 
-	dc_hw_get_plane_crc(&dc->hw, plane->id, &crc);
+	egt_dc_hw_get_plane_crc(&dc->hw, plane->id, &crc);
 	memcpy(&plane_state->crc.result, &crc.result, sizeof(crc.result));
 }
 
@@ -932,7 +931,7 @@ static int vs_dc_put_display_crc_result(struct seq_file *s)
 			"\t\tOFIFO_OUT\t3\n"
 			"\t\tWB\t\t4\n");
 	seq_printf(s, "\tpos-id = %d\n", crtc_state->crc.pos);
-	if (crtc_state->crc.pos == VS_DISP_CRC_OFIFO_OUT) {
+	if (crtc_state->crc.pos == VS_EGT_DISP_CRC_OFIFO_OUT) {
 		seq_printf(s, "\talpha-seed= [0x%x, 0x%x]\n", crtc_state->crc.seed[0].a,
 			   crtc_state->crc.seed[1].a);
 		seq_printf(s, "\tred-seed= [0x%x, 0x%x]\n", crtc_state->crc.seed[0].r,
@@ -962,15 +961,23 @@ static int vs_dc_put_display_crc_result(struct seq_file *s)
 		seq_printf(s, "\tblue-crc= [0x%x]\n", crtc_state->crc.result[0].b);
 	}
 
-	seq_printf(s, "\tlast-alpha-crc= [0x%x]\n", last_crtc_crc[crtc->base.id].a);
-	seq_printf(s, "\tlast-red-crc= [0x%x]\n", last_crtc_crc[crtc->base.id].r);
-	seq_printf(s, "\tlast-green-crc= [0x%x]\n", last_crtc_crc[crtc->base.id].g);
-	seq_printf(s, "\tlast-blue-crc= [0x%x]\n", last_crtc_crc[crtc->base.id].b);
+	/* Use crtc_id 0 as last_crtc_crc only supports single display */
+	if (crtc->base.id < DC_DISPLAY_NUM) {
+		seq_printf(s, "\tlast-alpha-crc= [0x%x]\n", last_crtc_crc[crtc->base.id].a);
+		seq_printf(s, "\tlast-red-crc= [0x%x]\n", last_crtc_crc[crtc->base.id].r);
+		seq_printf(s, "\tlast-green-crc= [0x%x]\n", last_crtc_crc[crtc->base.id].g);
+		seq_printf(s, "\tlast-blue-crc= [0x%x]\n", last_crtc_crc[crtc->base.id].b);
+	} else {
+		seq_printf(s, "\tlast-alpha-crc= [0x%x]\n", last_crtc_crc[0].a);
+		seq_printf(s, "\tlast-red-crc= [0x%x]\n", last_crtc_crc[0].r);
+		seq_printf(s, "\tlast-green-crc= [0x%x]\n", last_crtc_crc[0].g);
+		seq_printf(s, "\tlast-blue-crc= [0x%x]\n", last_crtc_crc[0].b);
+	}
 
 	return 0;
 }
 
-static void vs_extract_crc_substring(char *str, char *result)
+static void vs_extract_crc_substring(char *str, char *result, size_t result_size)
 {
 	int i;
 
@@ -978,8 +985,8 @@ static void vs_extract_crc_substring(char *str, char *result)
 		if (str[i] == ' ')
 			break;
 	}
-	strscpy(result, str, i);
-	result[i] = '\0';
+
+	strscpy(result, str, result_size);
 }
 
 static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __user *ubuf,
@@ -1006,7 +1013,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 
 	if (cur) {
 		cur += 7;
-		vs_extract_crc_substring(cur, cur1);
+		vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 		if (kstrtoul(cur1, 10, &value))
 			return -EINVAL;
 		crtc_state->crc.enable = value;
@@ -1016,18 +1023,18 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 	cur = strstr(buf, "pos:");
 	if (cur) {
 		cur += 4;
-		vs_extract_crc_substring(cur, cur1);
+		vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 		if (kstrtoul(cur1, 10, &value))
 			return -EINVAL;
 
 		crtc_state->crc.pos = value;
 	}
 
-	if (crtc_state->crc.pos == VS_DISP_CRC_OFIFO_OUT) {
+	if (crtc_state->crc.pos == VS_EGT_DISP_CRC_OFIFO_OUT) {
 		cur = strstr(buf, "a-seed0:");
 		if (cur) {
 			cur += 8;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1036,7 +1043,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "a-seed1:");
 		if (cur) {
 			cur += 8;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1045,7 +1052,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "r-seed0:");
 		if (cur) {
 			cur += 8;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1054,7 +1061,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "r-seed1:");
 		if (cur) {
 			cur += 8;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1063,7 +1070,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "g-seed0:");
 		if (cur) {
 			cur += 8;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1072,7 +1079,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "g-seed1:");
 		if (cur) {
 			cur += 8;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1081,7 +1088,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "b-seed0:");
 		if (cur) {
 			cur += 8;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1090,7 +1097,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "b-seed1:");
 		if (cur) {
 			cur += 8;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1100,7 +1107,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "a-seed:");
 		if (cur) {
 			cur += 7;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1110,7 +1117,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "r-seed:");
 		if (cur) {
 			cur += 7;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1120,7 +1127,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "g-seed:");
 		if (cur) {
 			cur += 7;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur1, 16, &value))
 				return -EINVAL;
 
@@ -1130,7 +1137,7 @@ static ssize_t vs_dc_set_display_crc_state(struct drm_crtc *crtc, const char __u
 		cur = strstr(buf, "b-seed:");
 		if (cur) {
 			cur += 7;
-			vs_extract_crc_substring(cur, cur1);
+			vs_extract_crc_substring(cur, cur1, sizeof(cur1));
 			if (kstrtoul(cur, 16, &value))
 				return -EINVAL;
 
@@ -1168,7 +1175,7 @@ static void vs_dc_set_display_crc(struct device *dev, struct drm_crtc *crtc,
 		return;
 	}
 
-	if (crtc_state->crc.pos > VS_DISP_CRC_OFIFO_OUT) {
+	if (crtc_state->crc.pos > VS_EGT_DISP_CRC_OFIFO_OUT) {
 		pr_err("%s: Invalid crc pos.\n", __func__);
 		return;
 	}
@@ -1178,12 +1185,12 @@ static void vs_dc_set_display_crc(struct device *dev, struct drm_crtc *crtc,
 	crc.enable = crtc_state->crc.enable;
 	crc.pos = crtc_state->crc.pos;
 	if (!crc.enable) {
-		dc_hw_set_display_crc(&dc->hw, hw_id, &crc);
+		egt_dc_hw_set_display_crc(&dc->hw, hw_id, &crc);
 		return;
 	}
 
 	memcpy(&crc.seed, &crtc_state->crc.seed, sizeof(crtc_state->crc.seed));
-	dc_hw_set_display_crc(&dc->hw, hw_id, &crc);
+	egt_dc_hw_set_display_crc(&dc->hw, hw_id, &crc);
 }
 
 static void vs_dc_get_display_crc(struct vs_dc *dc, struct drm_crtc *crtc)
@@ -1207,13 +1214,13 @@ static void vs_dc_get_display_crc(struct vs_dc *dc, struct drm_crtc *crtc)
 		return;
 	}
 
-	if (crtc_state->crc.pos > VS_DISP_CRC_OFIFO_OUT) {
+	if (crtc_state->crc.pos > VS_EGT_DISP_CRC_OFIFO_OUT) {
 		pr_err("%s: Invalid crc pos.\n", __func__);
 		return;
 	}
 
 	hw_id = display_info->id;
-	dc_hw_get_display_crc_config(&dc->hw, hw_id, &crc);
+	egt_dc_hw_get_display_crc_config(&dc->hw, hw_id, &crc);
 
 	crtc_state->crc.enable = crc.enable;
 	if (!crc.enable)
@@ -1222,29 +1229,27 @@ static void vs_dc_get_display_crc(struct vs_dc *dc, struct drm_crtc *crtc)
 	crtc_state->crc.pos = crc.pos;
 	memcpy(&crtc_state->crc.seed, &crc.seed, sizeof(crc.seed));
 
-	dc_hw_get_display_crc(&dc->hw, hw_id, &crc);
+	egt_dc_hw_get_display_crc(&dc->hw, hw_id, &crc);
 
 	memcpy(&crtc_state->crc.result, &crc.result, sizeof(crc.result));
 
-	if (crtc_state->crc.pos == VS_DISP_CRC_OFIFO_OUT)
-		vs_crtc_set_last_crc(crtc->base.id, crtc_state->crc.result[1]);
+	if (crtc_state->crc.pos == VS_EGT_DISP_CRC_OFIFO_OUT)
+		vs_egt_crtc_set_last_crc(crtc->base.id, crtc_state->crc.result[1]);
 	else
-		vs_crtc_set_last_crc(crtc->base.id, crtc_state->crc.result[0]);
+		vs_egt_crtc_set_last_crc(crtc->base.id, crtc_state->crc.result[0]);
 }
 #endif /* CONFIG_DEBUG_FS */
 
 #ifdef CONFIG_PM_SLEEP
-int vs_dc_suspend(__maybe_unused struct device *dev)
+int vs_egt_dc_suspend(__maybe_unused struct device *dev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 
-int vs_dc_resume(__maybe_unused struct device *dev)
+int vs_egt_dc_resume(__maybe_unused struct device *dev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 #endif
@@ -1261,24 +1266,20 @@ static irqreturn_t dc_isr(__maybe_unused int irq, void *data)
 	struct drm_vblank_crtc *vblank;
 	u64 cur_vblank;
 
-#ifdef CONFIG_VERISILICON_PCIE
-	pci_intr_status = readl(dc->intr_statu_base + PCI_INTR_REG_OFFSET);
+#ifdef CONFIG_ENGIANT_VS_PCIE
+	pci_intr_status = readl(dc->pci_base + PCI_INTR_REG_OFFSET);
 
-	if (!(pci_intr_status & 0x20000))
+	if (pci_intr_status == 0xffffffff || !(pci_intr_status & 0x20000))
 		return IRQ_NONE;
 
-	writel(0x20000, dc->intr_statu_base + PCI_INTR_REG_OFFSET);
+	writel(0x20000, dc->pci_base + PCI_INTR_REG_OFFSET);
 #endif
 
-	temp = dc_hw_get_interrupt(&dc->hw, &status);
-
+	temp = egt_dc_hw_get_interrupt(&dc->hw, &status);
 	if (temp) {
-		pr_err("aer happend!\n");
+		pr_err("aer happened!\n");
 		return IRQ_HANDLED;
 	}
-
-
-	dc_hw_get_interrupt(&dc->hw, &status);
 
 	//pr_debug("%s: frm_start=0x%x frm_done=0x%x ", __func__, status.display_frm_start,
 	//	 status.display_frm_done);
@@ -1293,7 +1294,8 @@ static irqreturn_t dc_isr(__maybe_unused int irq, void *data)
 		}
 
 		if (display_mask & status.display_axi_slow) {
-			pr_warn_ratelimited("%s: display[%d] axi frequency too slow\n", __func__, display_id);
+			pr_warn_ratelimited("%s: display[%d] axi frequency too slow\n",
+					__func__, display_id);
 			continue;
 		}
 
@@ -1306,9 +1308,9 @@ static irqreturn_t dc_isr(__maybe_unused int irq, void *data)
 
 			vblank->last = cur_vblank;
 			atomic64_set(&vblank->count, cur_vblank);
-			vs_crtc_handle_vblank(&dc->crtc[i]->base);
-			vs_crtc_handle_flip_done_while_hw_done(&dc->crtc[i]->base);
-			vs_crtc_handle_frame_done(&dc->crtc[i]->base);
+			vs_egt_crtc_handle_vblank(&dc->crtc[i]->base);
+			vs_egt_crtc_handle_flip_done_while_hw_done(&dc->crtc[i]->base);
+			vs_egt_crtc_handle_frame_done(&dc->crtc[i]->base);
 		}
 	}
 
@@ -1340,7 +1342,7 @@ static void vs_dc_hw_reset(struct vs_crtc *crtc)
 	struct device *dev = crtc->dev;
 	struct vs_dc *dc = dev_get_drvdata(dev);
 
-	dc_hw_reset(&dc->hw);
+	egt_dc_hw_reset(&dc->hw);
 }
 
 static void vs_dc_commit(struct device *dev, struct drm_crtc *crtc)
@@ -1350,26 +1352,20 @@ static void vs_dc_commit(struct device *dev, struct drm_crtc *crtc)
 	struct vs_crtc *vs_crtc = to_vs_crtc(crtc);
 	unsigned long flags;
 
-	/* TBD !
-	 * developer should update the function implementation
-	 * according to actual requirements during developing !
-	 */
-	spin_lock_init(&vs_crtc->slock);
-
 	spin_lock_irqsave(&vs_crtc->slock, flags);
 
-	dc_hw_enable_shadow_register(&dc->hw, display_id, false);
+	egt_dc_hw_enable_shadow_register(&dc->hw, display_id, false);
 
-#ifdef CONFIG_VERISILICON_DEC
+#ifdef CONFIG_ENGIANT_VS_DEC
 	if (dc->hw.info->cap_dec)
 		dc_fbc_dec_commit(dc);
 #endif
 
-	dc_hw_commit(&dc->hw, display_id);
+	egt_dc_hw_commit(&dc->hw, display_id);
 
-	dc_hw_enable_shadow_register(&dc->hw, display_id, true);
+	egt_dc_hw_enable_shadow_register(&dc->hw, display_id, true);
 
-	dc_hw_start_trigger(&dc->hw, display_id);
+	egt_dc_hw_start_trigger(&dc->hw, display_id);
 	spin_unlock_irqrestore(&vs_crtc->slock, flags);
 }
 
@@ -1399,112 +1395,6 @@ static const struct vs_plane_funcs dc_plane_funcs = {
 	.format_mod_support = vs_dc_plane_format_mode_support,
 };
 
-int vs_get_dc_excep_ioctl(__maybe_unused struct drm_device *dev,
-			  __maybe_unused void *data,
-			  __maybe_unused struct drm_file *file_priv)
-{
-	return 0;
-}
-
-int vs_get_wb_frm_done_ioctl(__maybe_unused struct drm_device *dev,
-			     __maybe_unused void *data,
-			     __maybe_unused struct drm_file *file_priv)
-{
-	return 0;
-}
-
-int vs_sw_reset_ioctl(struct drm_device *dev, void *data, __maybe_unused struct drm_file *file_priv)
-{
-	struct drm_vs_reset *args = data;
-	struct vs_drm_private *priv = dev->dev_private;
-	struct vs_dc *dc = NULL;
-
-	if (!priv->dc_dev)
-		return -EINVAL;
-
-	dc = dev_get_drvdata(priv->dc_dev);
-	if (!dc)
-		return -EINVAL;
-
-	switch (args->mode) {
-	case VS_RESET:
-		dc_hw_do_reset(&dc->hw);
-		break;
-	case VS_FE0_RESET:
-		dc_hw_do_fe_reset(&dc->hw);
-		break;
-	case VS_BE_RESET:
-		dc_hw_do_be_reset(&dc->hw);
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	/* reset the projects state. */
-	drm_mode_config_reset(dev);
-
-#ifdef CONFIG_VERISILICON_DEBUG
-	if (vs_debug_reset(&priv->dc_capture_fp))
-		return -1;
-
-	dc->hw.dc_capture_fp = priv->dc_capture_fp;
-#endif
-
-	return 0;
-}
-
-int vs_get_feature_cap_ioctl(struct drm_device *dev, void *data, __maybe_unused struct drm_file *file_priv)
-{
-	struct drm_vs_query_feature_cap *args = data;
-	struct vs_drm_private *priv = dev->dev_private;
-	struct vs_dc *dc = NULL;
-
-	if (!priv->dc_dev)
-		return -EINVAL;
-
-	dc = dev_get_drvdata(priv->dc_dev);
-	if (!dc)
-		return -EINVAL;
-	switch (args->type) {
-	case VS_FEATURE_CAP_FBC:
-		args->cap = !!(dc->hw.info->cap_dec);
-		break;
-	case VS_FEATURE_CAP_MAX_BLEND_LAYER:
-		args->cap = dc->hw.info->max_blend_layer;
-		break;
-	case VS_FEATURE_CAP_CURSOR_WIDTH:
-		args->cap = dev->mode_config.cursor_width;
-		break;
-	case VS_FEATURE_CAP_CURSOR_HEIGHT:
-		args->cap = dev->mode_config.cursor_height;
-		break;
-	case VS_FEATURE_CAP_LINEAR_YUV_ROTATION:
-		args->cap = dc->hw.info->linear_yuv_rotation;
-		break;
-	case VS_FEATURE_CAP_ANY_RESOLUTION:
-		args->cap = dc->hw.info->any_resolution;
-		break;
-	case VS_FEATURE_CAP_MAX_WIDTH:
-		args->cap = dc->hw.display[0].info->max_width;
-		break;
-	case VS_FEATURE_CAP_MAX_HEIGHT:
-		args->cap = dc->hw.display[0].info->max_height;
-		break;
-	default:
-		return -EINVAL;
-	}
-	return 0;
-}
-
-#ifdef CONFIG_VERISILICON_HISTOGRAM
-int vs_get_hist_info_ioctl(__maybe_unused struct drm_device *dev,
-			   __maybe_unused void *data,
-			   __maybe_unused struct drm_file *file_priv)
-{
-	return 0;
-}
-#endif
-
 static int dc_bind(struct device *dev, __maybe_unused struct device *master, void *data)
 {
 	struct drm_device *drm_dev = data;
@@ -1523,7 +1413,7 @@ static int dc_bind(struct device *dev, __maybe_unused struct device *master, voi
 	u32 crtc_mask = 0;
 	u32 max_width = 0, max_height = 0;
 	u32 min_width = 0xffff, min_heigth = 0xffff;
-#ifndef CONFIG_VERISILICON_PCIE
+#ifndef CONFIG_ENGIANT_VS_PCIE
 	struct device_node *port;
 #endif
 
@@ -1534,7 +1424,7 @@ static int dc_bind(struct device *dev, __maybe_unused struct device *master, voi
 
 	priv = drm_dev->dev_private;
 
-#ifdef CONFIG_VERISILICON_DEBUG
+#ifdef CONFIG_ENGIANT_VS_DEBUG
 	dc->hw.dc_capture_fp = priv->dc_capture_fp;
 #endif
 
@@ -1544,7 +1434,7 @@ static int dc_bind(struct device *dev, __maybe_unused struct device *master, voi
 		return ret;
 	}
 
-	ret = vs_drm_iommu_attach_device(drm_dev, dev);
+	ret = vs_egt_drm_iommu_attach_device(drm_dev, dev);
 	if (ret < 0) {
 		dev_err(dev, "Failed to attached iommu device.\n");
 		goto err_clean_dc;
@@ -1556,23 +1446,23 @@ static int dc_bind(struct device *dev, __maybe_unused struct device *master, voi
 		display_info = &dc_info->displays[i];
 		display = &dc->hw.display[i];
 
-#ifndef CONFIG_VERISILICON_PCIE
+#ifndef CONFIG_ENGIANT_VS_PCIE
 		port = of_graph_get_port_by_id(dev->of_node, display_info->id);
 		if (!port) {
 			dev_warn(dev, "port node not found for display #%d\n", display_info->id);
 			continue;
 		}
 #endif
-		crtc = vs_crtc_create(display, drm_dev, dc_info, i);
+		crtc = vs_egt_crtc_create(display, drm_dev, dc_info, i);
 		if (!crtc) {
 			dev_err(dev, "Failed to create CRTC.\n");
 			ret = -ENOMEM;
-#ifndef CONFIG_VERISILICON_PCIE
+#ifndef CONFIG_ENGIANT_VS_PCIE
 			of_node_put(port);
 #endif
 			goto err_detach_dev;
 		}
-#ifndef CONFIG_VERISILICON_PCIE
+#ifndef CONFIG_ENGIANT_VS_PCIE
 		crtc->base.port = port;
 #endif
 
@@ -1595,7 +1485,8 @@ static int dc_bind(struct device *dev, __maybe_unused struct device *master, voi
 	for (i = 0; i < dc_info->plane_num; i++) {
 		hw_plane = &dc->hw.plane[i];
 
-		plane = vs_plane_create(hw_plane, drm_dev, dc_info, i, crtc_mask, &dc_plane_funcs);
+		plane = vs_egt_plane_create(hw_plane, drm_dev, dc_info, i,
+				crtc_mask, &dc_plane_funcs);
 		if (!plane) {
 			dev_err(dev, "Failed to create plane.\n");
 			ret = -ENOMEM;
@@ -1638,18 +1529,18 @@ static int dc_bind(struct device *dev, __maybe_unused struct device *master, voi
 
 	priv->dc_dev = dev;
 
-	vs_drm_update_alignment(drm_dev, dc_info->pitch_alignment, dc_info->addr_alignment);
+	vs_egt_drm_update_alignment(drm_dev, dc_info->pitch_alignment, dc_info->addr_alignment);
 	return 0;
 
 err_cleanup_planes:
 	list_for_each_entry_safe(drm_plane, tmp, &drm_dev->mode_config.plane_list, head)
 		if (drm_plane->possible_crtcs & crtc_mask)
-			vs_plane_destroy(drm_plane);
+			vs_egt_plane_destroy(drm_plane);
 err_cleanup_crtcs:
 	drm_for_each_crtc(drm_crtc, drm_dev)
-		vs_crtc_destroy(drm_crtc);
+		vs_egt_crtc_destroy(drm_crtc);
 err_detach_dev:
-	vs_drm_iommu_detach_device(drm_dev, dev);
+	vs_egt_drm_iommu_detach_device(drm_dev, dev);
 err_clean_dc:
 	dc_deinit(dev);
 	return ret;
@@ -1659,7 +1550,7 @@ static void dc_unbind(struct device *dev, __maybe_unused struct device *master, 
 {
 	struct drm_device *drm_dev = data;
 
-#ifdef CONFIG_VERISILICON_DEBUG
+#ifdef CONFIG_ENGIANT_VS_DEBUG
 	struct vs_dc *dc = dev_get_drvdata(dev);
 
 	dc->hw.dc_capture_fp = NULL;
@@ -1667,21 +1558,13 @@ static void dc_unbind(struct device *dev, __maybe_unused struct device *master, 
 
 	dc_deinit(dev);
 
-	vs_drm_iommu_detach_device(drm_dev, dev);
+	vs_egt_drm_iommu_detach_device(drm_dev, dev);
 }
 
 static const struct component_ops dc_component_ops = {
 	.bind = dc_bind,
 	.unbind = dc_unbind,
 };
-
-static const struct of_device_id dc_driver_dt_match[] = {
-	{
-		.compatible = "verisilicon,dc9x00",
-	},
-	{},
-};
-MODULE_DEVICE_TABLE(of, dc_driver_dt_match);
 
 static int dc_construct(struct device *dev, int irq, struct vs_dc **vs_dc)
 {
@@ -1704,7 +1587,7 @@ static int dc_construct(struct device *dev, int irq, struct vs_dc **vs_dc)
 }
 
 
-#ifdef CONFIG_VERISILICON_PCIE
+#ifdef CONFIG_ENGIANT_VS_PCIE
 #define DISPLAY_MSI_IRQ_NUM 5
 
 #define PCI_DC_OFFSET             0x0
@@ -1716,7 +1599,7 @@ static int dc_construct(struct device *dev, int irq, struct vs_dc **vs_dc)
 #define PCI_DP_PLL_OFFSET         0x384000 //256+1024+1024+4+4+8+1024+256
 #define PCI_DP_HSIO_OFFSET        0x241000
 
-u32 vs_dc_reg_read(struct drm_device *drm_dev, u32 reg)
+u32 vs_egt_dc_reg_read(struct drm_device *drm_dev, u32 reg)
 {
 	u32 value;
 	struct vs_dc *dc;
@@ -1726,12 +1609,12 @@ u32 vs_dc_reg_read(struct drm_device *drm_dev, u32 reg)
 	pdev = to_pci_dev(drm_dev->dev);
 	dev = &pdev->dev;
 	dc = dev_get_drvdata(dev);
-	value = vs_dc_hw_read(&dc->hw, reg);
+	value = vs_egt_dc_hw_read(&dc->hw, reg);
 
 	return value;
 }
 
-int vs_dc_pci_init(struct drm_device *drm_dev)
+int vs_egt_dc_pci_init(struct drm_device *drm_dev)
 {
 	struct vs_dc *dc = NULL;
 	resource_size_t addr, size;
@@ -1774,18 +1657,19 @@ int vs_dc_pci_init(struct drm_device *drm_dev)
 	priv->crg_hsio_base = priv->pf_bar_base + PCI_DP_HSIO_OFFSET;
 	priv->mbox_base = priv->pf_bar_base + PCI_MBOX_OFFSET;
 
-	pr_debug("addr = %#llx, size = %#llx, bar base = %p\n", addr, size, priv->pf_bar_base);
+	pr_debug("addr = %pa, size = %pa, bar base = %p\n", &addr, &size, priv->pf_bar_base);
 	pr_debug("pdev->irq = %#x\n", pdev->irq);
 
 	addr = pci_resource_start(pdev, 4);
 	size = pci_resource_len(pdev, 4);
 
-	priv->intr_statu_base = devm_ioremap(dev, addr, size);
+	priv->pci_base = devm_ioremap(dev, addr, size);
 
-	if (IS_ERR(priv->intr_statu_base))
-		return PTR_ERR(priv->intr_statu_base);
+	if (IS_ERR(priv->pci_base))
+		return PTR_ERR(priv->pci_base);
 
-	ret = pci_alloc_irq_vectors_affinity(pdev, DISPLAY_MSI_IRQ_NUM, DISPLAY_MSI_IRQ_NUM, PCI_IRQ_MSI, NULL);
+	ret = pci_alloc_irq_vectors_affinity(pdev, DISPLAY_MSI_IRQ_NUM,
+			DISPLAY_MSI_IRQ_NUM, PCI_IRQ_MSI, NULL);
 	if (ret < 0) {
 		pr_err("Fail to alloc MSI interrupt: %d.\n", ret);
 		return -EIO;
@@ -1798,13 +1682,13 @@ int vs_dc_pci_init(struct drm_device *drm_dev)
 
 	pr_debug("priv->irq_num[1] = %#x, priv->dc_base = %p\n", priv->irq_num[1], priv->dc_base);
 
-#ifdef CONFIG_VERISILICON_PCIE
+#ifdef CONFIG_ENGIANT_VS_PCIE
 	/*Disable pcie intr of dc before irq request which may case NULL pointer*/
-	intr_mask_open = readl(priv->intr_statu_base + PCI_INTR_MASK_REG_OFFSET);
+	intr_mask_open = readl(priv->pci_base + PCI_INTR_MASK_REG_OFFSET);
 	intr_mask_open &= ~BIT(PCI_INTR_DC_MASK);
 	intr_mask_close = intr_mask_open | BIT(PCI_INTR_DC_MASK);
 
-	writel(intr_mask_open, priv->intr_statu_base + PCI_INTR_MASK_REG_OFFSET);
+	writel(intr_mask_open, priv->pci_base + PCI_INTR_MASK_REG_OFFSET);
 
 	pr_debug("Mask pcie interrupt of dc\n");
 #endif
@@ -1816,16 +1700,16 @@ int vs_dc_pci_init(struct drm_device *drm_dev)
 	}
 
 	dc->hw.reg_base = priv->dc_base;
-	dc->hw.pcie_reg_base = priv->intr_statu_base;
+	dc->hw.pcie_reg_base = priv->pci_base;
 	dc->hw.pcie_mask_value = intr_mask_close;
-	dc->intr_statu_base = priv->intr_statu_base;
+	dc->pci_base = priv->pci_base;
 
 	dev_set_drvdata(dev, dc);
 
 	return dc_bind(dev, NULL, drm_dev);
 }
 
-void vs_dc_pci_deinit(struct drm_device *drm_dev)
+void vs_egt_dc_pci_deinit(struct drm_device *drm_dev)
 {
 	struct vs_drm_private *priv;
 	struct vs_dc *dc;
@@ -1850,35 +1734,35 @@ void vs_dc_pci_deinit(struct drm_device *drm_dev)
 	pci_free_irq_vectors(pdev);
 
 	devm_iounmap(dev, priv->pf_bar_base);
-	devm_iounmap(dev, priv->intr_statu_base);
+	devm_iounmap(dev, priv->pci_base);
 }
 #endif
 
 static void dc_deinit_aer(struct device *dev)
 {
-		struct vs_dc *dc = dev_get_drvdata(dev);
+	struct vs_dc *dc = dev_get_drvdata(dev);
 
-		dc_hw_deinit(&dc->hw);
+	egt_dc_hw_deinit(&dc->hw);
 
-		vs_dc_disable_clock(dc);
+	vs_dc_disable_clock(dc);
 }
 
 static void dc_unbind_aer(struct device *dev, void *data)
 {
-		struct drm_device *drm_dev = data;
+	struct drm_device *drm_dev = data;
 
-#ifdef CONFIG_VERISILICON_DEBUG
+#ifdef CONFIG_ENGIANT_VS_DEBUG
 		struct vs_dc *dc = dev_get_drvdata(dev);
 
-		dc->hw.dc_capture_fp = NULL;
+	dc->hw.dc_capture_fp = NULL;
 #endif
 
-		dc_deinit_aer(dev);
+	dc_deinit_aer(dev);
 
-		vs_drm_iommu_detach_device(drm_dev, dev);
+	vs_egt_drm_iommu_detach_device(drm_dev, dev);
 }
 
-void vs_dc_pci_deinit_aer(struct drm_device *drm_dev)
+void vs_egt_dc_pci_deinit_aer(struct drm_device *drm_dev)
 {
 	struct vs_drm_private *priv;
 	struct vs_dc *dc;
@@ -1903,7 +1787,7 @@ void vs_dc_pci_deinit_aer(struct drm_device *drm_dev)
 	pci_free_irq_vectors(pdev);
 
 	devm_iounmap(dev, priv->pf_bar_base);
-	devm_iounmap(dev, priv->intr_statu_base);
+	devm_iounmap(dev, priv->pci_base);
 }
 
 static int dc_probe(struct platform_device *pdev)
@@ -1919,25 +1803,30 @@ static int dc_probe(struct platform_device *pdev)
 		return ret;
 
 	dc->hw.reg_base = devm_platform_ioremap_resource(pdev, 0);
-	if (IS_ERR(dc->hw.reg_base))
-		return PTR_ERR(dc->hw.reg_base);
+	if (IS_ERR(dc->hw.reg_base)) {
+		ret = PTR_ERR(dc->hw.reg_base);
+		goto err_deconstruct;
+	}
 
 	dc->core_clk = devm_clk_get_optional(dev, "core_clk");
 	if (IS_ERR(dc->core_clk)) {
 		dev_err(dev, "failed to get core_clk source\n");
-		return PTR_ERR(dc->core_clk);
+		ret = PTR_ERR(dc->core_clk);
+		goto err_deconstruct;
 	}
 
 	dc->pix_clk = devm_clk_get_optional(dev, "pix_clk");
 	if (IS_ERR(dc->pix_clk)) {
 		dev_err(dev, "failed to get pix_clk source\n");
-		return PTR_ERR(dc->core_clk);
+		ret = PTR_ERR(dc->pix_clk);
+		goto err_deconstruct;
 	}
 
 	dc->axi_clk = devm_clk_get_optional(dev, "axi_clk");
 	if (IS_ERR(dc->axi_clk)) {
 		dev_err(dev, "failed to get axi_clk source\n");
-		return PTR_ERR(dc->core_clk);
+		ret = PTR_ERR(dc->axi_clk);
+		goto err_deconstruct;
 	}
 
 	dc->irq_num = irq;
@@ -1945,13 +1834,20 @@ static int dc_probe(struct platform_device *pdev)
 	dev_set_drvdata(dev, dc);
 
 	return component_add(dev, &dc_component_ops);
+
+err_deconstruct:
+	free_irq(dc->irq_num, (void *)dc);
+	return ret;
 }
 
 static int dc_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
+	struct vs_dc *dc = dev_get_drvdata(dev);
 
 	component_del(dev, &dc_component_ops);
+
+	free_irq(dc->irq_num, (void *)dc);
 
 	dev_set_drvdata(dev, NULL);
 
@@ -1961,106 +1857,93 @@ static int dc_remove(struct platform_device *pdev)
 static int dc_be_probe(__maybe_unused struct platform_device *pdev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 
 static int dc_be_remove(__maybe_unused struct platform_device *pdev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 
 static int dc_fe0_probe(__maybe_unused struct platform_device *pdev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 
 static int dc_fe0_remove(__maybe_unused struct platform_device *pdev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 
 static int dc_fe1_probe(__maybe_unused struct platform_device *pdev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 
 static int dc_fe1_remove(__maybe_unused struct platform_device *pdev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 
 static int dc_wb_probe(__maybe_unused struct platform_device *pdev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 
 static int dc_wb_remove(__maybe_unused struct platform_device *pdev)
 {
 	int ret = 0;
-	/* TODO */
 	return ret;
 }
 
-struct platform_driver dc_platform_driver = {
+struct platform_driver egt_dc_platform_driver = {
 	.probe = dc_probe,
 	.remove = dc_remove,
 	.driver = {
 		.name = "vs-dc",
-		.of_match_table = of_match_ptr(dc_driver_dt_match),
 	},
 };
 
-struct platform_driver dc_be_platform_driver = {
+struct platform_driver egt_dc_be_platform_driver = {
 	.probe = dc_be_probe,
 	.remove = dc_be_remove,
 
 	.driver = {
 		.name = "vs-dc-be",
-		.of_match_table = NULL,
 	},
 };
 
-struct platform_driver dc_fe0_platform_driver = {
+struct platform_driver egt_dc_fe0_platform_driver = {
 	.probe = dc_fe0_probe,
 	.remove = dc_fe0_remove,
 	.driver = {
 		.name = "vs-dc-fe0",
-		.of_match_table = NULL,
 	},
 };
 
-struct platform_driver dc_fe1_platform_driver = {
+struct platform_driver egt_dc_fe1_platform_driver = {
 	.probe = dc_fe1_probe,
 	.remove = dc_fe1_remove,
 
 	.driver = {
 		.name = "vs-dc-fe1",
-		.of_match_table = NULL,
 	},
 };
 
-struct platform_driver dc_wb_platform_driver = {
+struct platform_driver egt_dc_wb_platform_driver = {
 	.probe = dc_wb_probe,
 	.remove = dc_wb_remove,
 
 	.driver = {
 		.name = "vs-dc-wb",
-		.of_match_table = NULL,
 	},
 };
 
 MODULE_DESCRIPTION("VeriSilicon DC Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

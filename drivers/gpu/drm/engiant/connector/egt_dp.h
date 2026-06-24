@@ -32,6 +32,7 @@
 #define EGT_TX_V1_2							0x12
 #define EGT_TX_V1_4							0x14
 #define EGT_TX_TRAINING_TRIES_MAX			5
+#define EGT_TX_CR_DONE_TRIES_MAX			10
 #define EGT_TX_MAX_LANES					4
 #define EGT_TX_CAPAB_FEC					0
 
@@ -107,6 +108,16 @@
 #define DP_SOURCE_AUX_PAYLOAD				(0x105 * 4)
 #define DP_SOURCE_AUX_RESET					(0x117 * 4)
 
+/* For kernel version below 6.2 compatibility */
+#ifndef abs_diff
+#define abs_diff(a, b) ({                       \
+	typeof(a) __a = (a);                    \
+	typeof(b) __b = (b);                    \
+	(void)(&__a == &__b);                   \
+	__a > __b ? (__a - __b) : (__b - __a);  \
+})
+#endif
+
 
 struct egt_dp_supported_mode {
 	int width;
@@ -159,7 +170,7 @@ struct egt_displayport_mode {
 struct egt_displayport_base {
 	void __iomem *dp_base;
 	void __iomem *pci_mbox_base;
-	void __iomem *pci_intr_base;
+	void __iomem *pci_base;
 	void __iomem *dp_phy0_base;
 	void __iomem *dp_phy1_base;
 	void __iomem *pixel_pll_base;
@@ -218,7 +229,8 @@ void egt_dptx_hpd_work(struct work_struct *work);
 
 int egt_dp_get_modes(struct drm_connector *connector);
 struct drm_encoder *egt_dp_best_encoder(struct drm_connector *connector);
-int egt_dp_mode_valid(__maybe_unused struct drm_connector *connector, struct drm_display_mode *mode);
+int egt_dp_mode_valid(__maybe_unused struct drm_connector *connector,
+							struct drm_display_mode *mode);
 enum drm_connector_status egt_dp_connected_detect
 			(__maybe_unused struct drm_connector *connector, __maybe_unused bool force);
 void egt_dp_destroy(struct drm_connector *connector);
@@ -233,7 +245,9 @@ void egt_dp_en_encoder(struct drm_encoder *encoder);
 void egt_dp_atomic_mode_set(struct drm_encoder *encoder,
 				struct drm_crtc_state *crtc_state,
 				__maybe_unused struct drm_connector_state *connector_state);
-int egt_dp_atomic_check(struct drm_encoder *encoder, struct drm_crtc_state *crtc_state, struct drm_connector_state *conn_state);
+int egt_dp_atomic_check(struct drm_encoder *encoder,
+					struct drm_crtc_state *crtc_state,
+					struct drm_connector_state *conn_state);
 
 #endif /* __EGT_DP_H__ */
 

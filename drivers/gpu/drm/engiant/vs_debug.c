@@ -28,7 +28,7 @@ MODULE_PARM_DESC(capture_path, "A string passed to the DC capture dump path");
 
 struct _vs_debug_reg {
 	u32 addr;
-	u32 vaule;
+	u32 value;
 	bool is_read;
 };
 
@@ -50,7 +50,7 @@ struct _vs_debug_info {
 static struct _vs_debug_info debug_cache[512];
 static u32 index;
 
-int vs_debug_file_create(struct file **fp)
+int vs_egt_debug_file_create(struct file **fp)
 {
 	struct timespec64 ts;
 	ktime_t kt;
@@ -86,16 +86,16 @@ int vs_debug_file_create(struct file **fp)
 	return 0;
 }
 
-void vs_debug_file_close(struct file **fp)
+void vs_egt_debug_file_close(struct file **fp)
 {
 	if (*fp)
 		filp_close(*fp, NULL);
 }
 
-int vs_debug_reset(struct file **fp)
+int vs_egt_debug_reset(struct file **fp)
 {
-	vs_debug_file_close(fp);
-	if (vs_debug_file_create(fp)) {
+	vs_egt_debug_file_close(fp);
+	if (vs_egt_debug_file_create(fp)) {
 		pr_err("Failed to reset the vs debug file: ret:%d\n", -1);
 		return -1;
 	}
@@ -114,7 +114,7 @@ static void _reverse_str(char *source, char target[], uint length)
 
 static void _to_hex(uint num, char hex_str[])
 {
-	uint n = num;
+	u32 n = num;
 	char hextable[] = "0123456789abcdef";
 	char temphex[16], hex[16];
 	uint i = 0;
@@ -218,7 +218,7 @@ static void _flush_intr_to_disk(struct file *fp, const char *event,
 	if (pos != NULL) {
 		strscpy(result + index, buffer, pos - buffer);
 		index += pos - buffer;
-		strscpy(result + index, "irq_dpu");
+		strscpy(result + index, "irq_dpu", MAX_DC_INTR_EVENT_SIZE - index);
 		index += strlen("irq_dpu");
 		temp = pos + strlen("dcreg");
 	}
@@ -277,7 +277,8 @@ static void _flush_intr_to_disk(struct file *fp, const char *event,
 				pos += strlen(part_name[part]);
 				strscpy(result + index, buffer, pos - buffer);
 				index += pos - buffer;
-				strscpy(result + index, dest_name[intr_dest], MAX_DC_INTR_EVENT_SIZE - index);
+				strscpy(result + index, dest_name[intr_dest],
+						MAX_DC_INTR_EVENT_SIZE - index);
 				index += strlen(dest_name[intr_dest]);
 				strscpy(result + index, "_", MAX_DC_INTR_EVENT_SIZE - index);
 				index += strlen("_");
@@ -319,23 +320,23 @@ static void _flush_to_disk(struct file *fp)
 						debug_cache[i].info.intr.intr_dest);
 		else
 			_flush_reg_to_disk(fp, debug_cache[i].info.reg.addr,
-					   debug_cache[i].info.reg.vaule,
+					   debug_cache[i].info.reg.value,
 					   debug_cache[i].info.reg.is_read);
 	}
 	index = 0;
 }
 
-void vs_debug_dump_capture(struct file *fp, u32 addr, u32 value, bool is_read)
+void vs_egt_debug_dump_capture(struct file *fp, u32 addr, u32 value, bool is_read)
 {
 	if (irqs_disabled()) {
 		if (index < 512) {
 			debug_cache[index].is_intr = false;
 			debug_cache[index].info.reg.addr = addr;
-			debug_cache[index].info.reg.vaule = value;
+			debug_cache[index].info.reg.value = value;
 			debug_cache[index].info.reg.is_read = is_read;
 			index++;
 		} else {
-			pr_err("Debug capture dump, out of cache: addr = %08x, vaule = %08x\n",
+			pr_err("Debug capture dump, out of cache: addr = %08x, value = %08x\n",
 				   addr, value);
 			return;
 		}
@@ -347,8 +348,9 @@ void vs_debug_dump_capture(struct file *fp, u32 addr, u32 value, bool is_read)
 	}
 }
 
-void vs_debug_dump_interrupt(struct file *fp, const char *event, enum vs_debug_intr_partition part,
-				 bool multi_dest, u8 intr_dest)
+void vs_egt_debug_dump_interrupt(struct file *fp, const char *event,
+				enum vs_debug_intr_partition part,
+				bool multi_dest, u8 intr_dest)
 {
 	size_t len = 0;
 

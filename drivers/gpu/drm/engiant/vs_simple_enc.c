@@ -20,19 +20,6 @@
 #include "vs_simple_enc.h"
 #include "vs_drv.h"
 
-static const struct simple_encoder_priv hdmi_priv = { .encoder_type = DRM_MODE_ENCODER_TMDS };
-
-static const struct simple_encoder_priv dp_priv = { .encoder_type = DRM_MODE_ENCODER_DPMST };
-
-static const struct simple_encoder_priv dsi_video_priv = { .encoder_type = DRM_MODE_ENCODER_DSI };
-
-static const struct simple_encoder_priv dsi_command_priv = {
-	.encoder_type = DRM_MODE_ENCODER_DSI,
-	.output_mode = VS_SIMPLE_ENC_OUTPUT_MODE_CMD | VS_SIMPLE_ENC_OUTPUT_MODE_CMD_DE_SYNC
-};
-
-static const struct simple_encoder_priv dpi_priv = { .encoder_type = DRM_MODE_ENCODER_DPI };
-
 static const struct drm_encoder_funcs encoder_funcs = { .destroy = drm_encoder_cleanup };
 
 static inline struct simple_encoder *to_simple_encoder(struct drm_encoder *enc)
@@ -48,7 +35,6 @@ static int encoder_parse_dt(struct device *dev)
 	u32 *vals;
 	u32 *masks;
 
-	/* TODO: dss-syscon not used now */
 	/*
 	 *simple->dss_regmap =
 	 *	syscon_regmap_lookup_by_phandle(dev->of_node, "verisilicon,dss-syscon");
@@ -114,7 +100,8 @@ err:
 	return ret;
 }
 
-static void encoder_atomic_enable(struct drm_encoder *encoder, __maybe_unused struct drm_atomic_state *state)
+static void encoder_atomic_enable(struct drm_encoder *encoder,
+					__maybe_unused struct drm_atomic_state *state)
 {
 	struct simple_encoder *simple = to_simple_encoder(encoder);
 	struct dss_data *data = simple->dss_regdatas;
@@ -123,7 +110,6 @@ static void encoder_atomic_enable(struct drm_encoder *encoder, __maybe_unused st
 	if (!simple->dss_regmap)
 		return;
 
-	/* TODO: dss not used now. */
 	crtc_id = drm_of_encoder_active_endpoint_id(simple->dev->of_node, encoder);
 
 	regmap_update_bits(simple->dss_regmap, 0, data[crtc_id].mask, data[crtc_id].value);
@@ -186,7 +172,7 @@ static int encoder_atomic_check(struct drm_encoder *encoder, struct drm_crtc_sta
 
 	if (max_width || max_height) {
 		if (mode->hdisplay > max_width || mode->vdisplay > max_height) {
-			pr_err("%s the encoder_type %d is not support the display size,max_w:%d, max_h:%d.\n",
+			pr_err("%s encoder_type %d is not support the display size, max:%dx%d.\n",
 				   __func__, encoder->encoder_type, max_width, max_height);
 			ret = -EINVAL;
 		}
@@ -220,7 +206,6 @@ static int encoder_bind(struct device *dev, __maybe_unused struct device *master
 	simple->dev = priv->dc_dev;
 	dc->encoder[VS_SIMPLE_ENC_ENCODER_ID(simple->mux_id)] = simple;
 
-	/* TODO: panel/bridge part connet to encoder */
 	/*
 	 *output port is port1
 	 *struct drm_bridge *bridge = NULL;
@@ -257,7 +242,8 @@ static int encoder_bind(struct device *dev, __maybe_unused struct device *master
 	return ret;
 }
 
-static void encoder_unbind(struct device *dev, __maybe_unused struct device *master, __maybe_unused void *data)
+static void encoder_unbind(struct device *dev, __maybe_unused struct device *master,
+				__maybe_unused void *data)
 {
 	struct simple_encoder *simple = dev_get_drvdata(dev);
 
@@ -298,7 +284,7 @@ static struct simple_encoder *_vs_simple_encoder_create(struct drm_device *drm_d
 	return simple;
 }
 
-int vs_simple_encoder_pci_init(struct drm_device *drm_dev)
+int vs_egt_simple_encoder_pci_init(struct drm_device *drm_dev)
 {
 	struct pci_dev *pdev = to_pci_dev(drm_dev->dev);
 	struct device *dev = &pdev->dev;
@@ -329,7 +315,7 @@ int vs_simple_encoder_pci_init(struct drm_device *drm_dev)
 	return 0;
 }
 
-void vs_simple_encoder_pci_deinit(struct drm_device *drm_dev)
+void vs_egt_simple_encoder_pci_deinit(struct drm_device *drm_dev)
 {
 	struct pci_dev *pdev = to_pci_dev(drm_dev->dev);
 	struct device *dev = &pdev->dev;
@@ -347,17 +333,6 @@ static const struct component_ops encoder_component_ops = {
 	.bind = encoder_bind,
 	.unbind = encoder_unbind,
 };
-
-static const struct of_device_id simple_encoder_dt_match[] = {
-	{ .compatible = "verisilicon,hdmi-encoder", .data = &hdmi_priv },
-	{ .compatible = "verisilicon,dp-encoder", .data = &dp_priv },
-	{ .compatible = "verisilicon,dsi-encoder", .data = &dsi_video_priv },
-	{ .compatible = "verisilicon,dsi-cmd-encoder", .data = &dsi_command_priv },
-	{ .compatible = "verisilicon,dpi-encoder", .data = &dpi_priv },
-	{},
-
-};
-MODULE_DEVICE_TABLE(of, simple_encoder_dt_match);
 
 static int encoder_probe(struct platform_device *pdev)
 {
@@ -393,14 +368,13 @@ static int encoder_remove(struct platform_device *pdev)
 	return 0;
 }
 
-struct platform_driver simple_encoder_driver = {
+struct platform_driver egt_simple_encoder_driver = {
 	.probe = encoder_probe,
 	.remove = encoder_remove,
 	.driver = {
 		.name = "vs-simple-encoder",
-		.of_match_table = of_match_ptr(simple_encoder_dt_match),
 	},
 };
 
 MODULE_DESCRIPTION("Simple Encoder Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

@@ -186,14 +186,14 @@
  * ~~~~~~~~~~~~~~~~~~~~~~~~
  */
 
-/* Chip infomation. READ ONLY. */
+/* Chip information. READ ONLY. */
 
 #define GCREG_DC_CHIP_INFO_Address 0x0201C
 #define GCREG_DC_CHIP_INFO_Count 1
 #define GCREG_DC_CHIP_INFO_WriteMask 0x00000000
 #define GCREG_DC_CHIP_INFO_ResetValue 0x00000000
 
-/* Chip infomation */
+/* Chip information */
 #define GCREG_DC_CHIP_INFO_CHIP_INFO_START_FIELD 0
 #define GCREG_DC_CHIP_INFO_CHIP_INFO_END_FIELD 31
 
@@ -240,11 +240,11 @@
 #define GCREG_FRAME_BUFFER_CONFIG_FORMAT_A1R5G5B5 0x2
 #define GCREG_FRAME_BUFFER_CONFIG_FORMAT_R5G6B5 0x3
 #define GCREG_FRAME_BUFFER_CONFIG_FORMAT_A8R8G8B8 0x4
-/* only avaliable for arch 0002 and up.  */
+/* only available for arch 0002 and up.  */
 #define GCREG_FRAME_BUFFER_CONFIG_FORMAT_R8G8B8 0x5
-/* only avaliable for arch 0002 and up.  */
+/* only available for arch 0002 and up.  */
 #define GCREG_FRAME_BUFFER_CONFIG_FORMAT_A8R5G6B5 0x6
-/* NV12 only avaliable for arch 0002 and up. */
+/* NV12 only available for arch 0002 and up. */
 #define GCREG_FRAME_BUFFER_CONFIG_FORMAT_NV12 0x7
 
 /*
@@ -912,11 +912,11 @@
 #define GCREG_OVERLAY_CONFIG_FORMAT_A1R5G5B5 0x2
 #define GCREG_OVERLAY_CONFIG_FORMAT_R5G6B5 0x3
 #define GCREG_OVERLAY_CONFIG_FORMAT_A8R8G8B8 0x4
-/* only avaliable for arch 0002 and up. */
+/* only available for arch 0002 and up. */
 #define GCREG_OVERLAY_CONFIG_FORMAT_R8G8B8 0x5
-/* only avaliable for arch 0002 and up. */
+/* only available for arch 0002 and up. */
 #define GCREG_OVERLAY_CONFIG_FORMAT_A8R5G6B5 0x6
-/* NV12 only avaliable for arch 0002 and up.  */
+/* NV12 only available for arch 0002 and up.  */
 #define GCREG_OVERLAY_CONFIG_FORMAT_NV12 0x7
 
 /* Enable this overlay layer.  NOTE: This field is double buffered.  */
@@ -1357,9 +1357,9 @@
 #define GCREG_OVERLAY_CONFIG1_FORMAT_A1R5G5B5 0x2
 #define GCREG_OVERLAY_CONFIG1_FORMAT_R5G6B5 0x3
 #define GCREG_OVERLAY_CONFIG1_FORMAT_A8R8G8B8 0x4
-/* only avaliable for arch 0002 and up. */
+/* only available for arch 0002 and up. */
 #define GCREG_OVERLAY_CONFIG1_FORMAT_R8G8B8 0x5
-/* only avaliable for arch 0002 and up. */
+/* only available for arch 0002 and up. */
 #define GCREG_OVERLAY_CONFIG1_FORMAT_A8R5G6B5 0x6
 
 /* Enable this overlay layer.  NOTE: This field is double buffered.  */
@@ -2810,7 +2810,7 @@
 /* //DBI_COMMAND_WORD will contain a parameter or data.  */
 #define GCREG_DBI_CMD_DBI_COMMANDFLAG_PARAMETER_OR_DATA 0x2
 /*
- * //Starts read. Contents of DBI_COMMAND_WORD are ignored. Only avaliable
+ * //Starts read. Contents of DBI_COMMAND_WORD are ignored. Only available
  * for arch 0002 and 0004
  */
 #define GCREG_DBI_CMD_DBI_COMMANDFLAG_READ_MEM_START 0x3
@@ -3698,10 +3698,10 @@
 #define GCREG_QSPI_CONFIG0_FORMAT_READ 0xF
 
 /*
- * RGB888, 0~10 are avaliable;  RGB666, 0~9  are avaliable;  RGB565, 0~6,8
- * are avaliable;  RGB565_swap, 0~5,8 are avaliable;  RGB332 0,1,8 are
- * avaliable;  RGB111 0~4,8,9 are avaliable;  GRAY256 0,1,8 are avaliable;
- * RGB444 0~3 are avaliable;
+ * RGB888, 0~10 are available;  RGB666, 0~9  are available;  RGB565, 0~6,8
+ * are available;  RGB565_swap, 0~5,8 are available;  RGB332 0,1,8 are
+ * available;  RGB111 0~4,8,9 are available;  GRAY256 0,1,8 are available;
+ * RGB444 0~3 are available;
  */
 #define GCREG_QSPI_CONFIG0_TRANS_TYPE_START_FIELD 7
 #define GCREG_QSPI_CONFIG0_TRANS_TYPE_END_FIELD 10
@@ -26483,8 +26483,8 @@
 #define DCREG_PANEL0_QSPI_CONFIG0_FORMAT_READ 0xF
 
 /*
- * 0, 1 avaliable for RGB332/RGB111/GRAY256; 0~5, 8 avaliable for
- * RGB565/RGB565-swap; 0~8 avaliable for RGB888/RGB666;
+ * 0, 1 available for RGB332/RGB111/GRAY256; 0~5, 8 available for
+ * RGB565/RGB565-swap; 0~8 available for RGB888/RGB666;
  */
 #define DCREG_PANEL0_QSPI_CONFIG0_TRANS_TYPE_START_FIELD 6
 #define DCREG_PANEL0_QSPI_CONFIG0_TRANS_TYPE_END_FIELD 9
@@ -26630,7 +26630,7 @@
 #define DCREG_PANEL0_QSPI_ADDR_START_DATA_WriteMask 0xFFFFFFFF
 #define DCREG_PANEL0_QSPI_ADDR_START_DATA_ResetValue 0x00000000
 
-/* addres.  */
+/* address.  */
 #define DCREG_PANEL0_QSPI_ADDR_START_DATA_ADDRESS_START_FIELD 0
 #define DCREG_PANEL0_QSPI_ADDR_START_DATA_ADDRESS_END_FIELD 31
 
@@ -26646,7 +26646,7 @@
 #define DCREG_PANEL0_QSPI_ADDR_CONTINUE_DATA_WriteMask 0xFFFFFFFF
 #define DCREG_PANEL0_QSPI_ADDR_CONTINUE_DATA_ResetValue 0x00000000
 
-/* addres.  */
+/* address.  */
 #define DCREG_PANEL0_QSPI_ADDR_CONTINUE_DATA_ADDRESS_START_FIELD 0
 #define DCREG_PANEL0_QSPI_ADDR_CONTINUE_DATA_ADDRESS_END_FIELD 31
 
@@ -27768,8 +27768,8 @@
 #define DCREG_PANEL1_QSPI_CONFIG0_FORMAT_READ 0xF
 
 /*
- * 0, 1 avaliable for RGB332/RGB111/GRAY256; 0~5, 8 avaliable for
- * RGB565/RGB565-swap; 0~8 avaliable for RGB888/RGB666;
+ * 0, 1 available for RGB332/RGB111/GRAY256; 0~5, 8 available for
+ * RGB565/RGB565-swap; 0~8 available for RGB888/RGB666;
  */
 #define DCREG_PANEL1_QSPI_CONFIG0_TRANS_TYPE_START_FIELD 6
 #define DCREG_PANEL1_QSPI_CONFIG0_TRANS_TYPE_END_FIELD 9
@@ -27915,7 +27915,7 @@
 #define DCREG_PANEL1_QSPI_ADDR_START_DATA_WriteMask 0xFFFFFFFF
 #define DCREG_PANEL1_QSPI_ADDR_START_DATA_ResetValue 0x00000000
 
-/* addres.  */
+/* address.  */
 #define DCREG_PANEL1_QSPI_ADDR_START_DATA_ADDRESS_START_FIELD 0
 #define DCREG_PANEL1_QSPI_ADDR_START_DATA_ADDRESS_END_FIELD 31
 
@@ -27931,7 +27931,7 @@
 #define DCREG_PANEL1_QSPI_ADDR_CONTINUE_DATA_WriteMask 0xFFFFFFFF
 #define DCREG_PANEL1_QSPI_ADDR_CONTINUE_DATA_ResetValue 0x00000000
 
-/* addres.  */
+/* address.  */
 #define DCREG_PANEL1_QSPI_ADDR_CONTINUE_DATA_ADDRESS_START_FIELD 0
 #define DCREG_PANEL1_QSPI_ADDR_CONTINUE_DATA_ADDRESS_END_FIELD 31
 
