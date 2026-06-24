@@ -18,6 +18,8 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <linux/overflow.h>
+#include <asm/unaligned.h>
 #include <net/netlink.h>
 #include <net/pkt_sched.h>
 #include <linux/tc_act/tc_pedit.h>
@@ -148,7 +150,7 @@ static int tcf_pedit_init(struct net *net, struct nlattr *nla,
 	struct nlattr *pattr;
 	struct tcf_pedit *p;
 	int ret = 0, err;
-	int ksize;
+	int i, ksize;
 	u32 index;
 
 	if (!nla) {
@@ -221,6 +223,12 @@ static int tcf_pedit_init(struct net *net, struct nlattr *nla,
 		p->tcfp_nkeys = parm->nkeys;
 	}
 	memcpy(p->tcfp_keys, parm->keys, ksize);
+	for (i = 0; i < p->tcfp_nkeys; ++i) {
+		/* sanitize the shift value for any later use */
+		p->tcfp_keys[i].shift = min_t(size_t, BITS_PER_TYPE(int) - 1,
+					      p->tcfp_keys[i].shift);
+
+	}
 
 	p->tcfp_flags = parm->flags;
 	p->tcf_action = parm->action;
@@ -250,15 +258,12 @@ static void tcf_pedit_cleanup(struct tc_action *a)
 	kfree(p->tcfp_keys_ex);
 }
 
-static bool offset_valid(struct sk_buff *skb, int offset)
+static bool offset_valid(struct sk_buff *skb, int offset, int len)
 {
-	if (offset > 0 && offset > skb->len)
+	if (offset < -(int)skb_headroom(skb))
 		return false;
 
-	if  (offset < 0 && -offset > skb_headroom(skb))
-		return false;
-
-	return true;
+	return offset <= (int)skb->len - len;
 }
 
 static int pedit_skb_hdr_offset(struct sk_buff *skb,
@@ -300,9 +305,6 @@ static int tcf_pedit_act(struct sk_buff *skb, const struct tc_action *a,
 	struct tcf_pedit *p = to_pedit(a);
 	int i;
 
-	if (skb_unclone(skb, GFP_ATOMIC))
-		return p->tcf_action;
-
 	spin_lock(&p->tcf_lock);
 
 	tcf_lastuse_update(&p->tcf_tm);
@@ -315,10 +317,11 @@ static int tcf_pedit_act(struct sk_buff *skb, const struct tc_action *a,
 		enum pedit_cmd cmd = TCA_PEDIT_KEY_EX_CMD_SET;
 
 		for (i = p->tcfp_nkeys; i > 0; i--, tkey++) {
-			u32 *ptr, hdata;
+			int write_offset, write_len;
 			int offset = tkey->off;
 			int hoffset;
-			u32 val;
+			u32 cur_val, val;
+			u32 *ptr;
 			int rc;
 
 			if (tkey_ex) {
@@ -337,13 +340,15 @@ static int tcf_pedit_act(struct sk_buff *skb, const struct tc_action *a,
 
 			if (tkey->offmask) {
 				u8 *d, _d;
+				int at_offset;
 
-				if (!offset_valid(skb, hoffset + tkey->at)) {
+				if (check_add_overflow(hoffset, (int)tkey->at, &at_offset) ||
+				    !offset_valid(skb, at_offset, sizeof(_d))) {
 					pr_info("tc action pedit 'at' offset %d out of bounds\n",
 						hoffset + tkey->at);
 					goto bad;
 				}
-				d = skb_header_pointer(skb, hoffset + tkey->at,
+				d = skb_header_pointer(skb, at_offset,
 						       sizeof(_d), &_d);
 				if (!d)
 					goto bad;
@@ -355,23 +360,43 @@ static int tcf_pedit_act(struct sk_buff *skb, const struct tc_action *a,
 				goto bad;
 			}
 
-			if (!offset_valid(skb, hoffset + offset)) {
+			if (check_add_overflow(hoffset, offset, &write_offset)) {
+				pr_info("tc action pedit offset overflow\n");
+				goto bad;
+			}
+			if (!offset_valid(skb, write_offset, sizeof(*ptr))) {
 				pr_info("tc action pedit offset %d out of bounds\n",
-					hoffset + offset);
+					write_offset);
 				goto bad;
 			}
 
-			ptr = skb_header_pointer(skb, hoffset + offset,
-						 sizeof(hdata), &hdata);
-			if (!ptr)
-				goto bad;
+			if (write_offset < 0) {
+				if (skb_cow(skb, -write_offset))
+					goto bad;
+				if (write_offset + (int)sizeof(*ptr) > 0) {
+					if (skb_ensure_writable(skb,
+								min_t(int, skb->len,
+								      write_offset + (int)sizeof(*ptr))))
+						goto bad;
+				}
+			} else {
+				if (check_add_overflow(write_offset, (int)sizeof(*ptr),
+						       &write_len))
+					goto bad;
+				if (skb_ensure_writable(skb, min_t(int, skb->len,
+								   write_len)))
+					goto bad;
+			}
+
+			ptr = (u32 *)(skb->data + write_offset);
+			cur_val = get_unaligned(ptr);
 			/* just do it, baby */
 			switch (cmd) {
 			case TCA_PEDIT_KEY_EX_CMD_SET:
 				val = tkey->val;
 				break;
 			case TCA_PEDIT_KEY_EX_CMD_ADD:
-				val = (*ptr + tkey->val) & ~tkey->mask;
+				val = (cur_val + tkey->val) & ~tkey->mask;
 				break;
 			default:
 				pr_info("tc action pedit bad command (%d)\n",
@@ -379,9 +404,7 @@ static int tcf_pedit_act(struct sk_buff *skb, const struct tc_action *a,
 				goto bad;
 			}
 
-			*ptr = ((*ptr & tkey->mask) ^ val);
-			if (ptr == &hdata)
-				skb_store_bits(skb, hoffset + offset, ptr, 4);
+			put_unaligned((cur_val & tkey->mask) ^ val, ptr);
 		}
 
 		goto done;
