@@ -164,6 +164,18 @@ static void udma_set_dev_caps(struct ubcore_device_attr *attr, struct udma_dev *
 	attr->dev_cap.feature.bs.ipourma_en = udma_dev->caps.ipourma_en;
 	attr->dev_cap.feature.bs.ctp_en = udma_dev->caps.ctp_en;
 	attr->dev_cap.feature.bs.uboe = !ubase_adev_ubl_supported(udma_dev->comdev.adev);
+	attr->dev_cap.rm_tp_cap.bs.rtp = (ubase_get_ub_feature() &
+					  UBASE_URMA_RTP_ROI) ? 1 : 0;
+	attr->dev_cap.rm_tp_cap.bs.ctp = (ubase_get_ub_feature() &
+					  UBASE_URMA_CTP_ROI) ? 1 : 0;
+	attr->dev_cap.rc_tp_cap.bs.ctp = (ubase_get_ub_feature() &
+					  UBASE_URMA_CTP_ROL) ? 1 : 0;
+	attr->dev_cap.rc_tp_cap.bs.rtp = (ubase_get_ub_feature() &
+					  UBASE_URMA_RTP_ROL) ? 1 : 0;
+	attr->dev_cap.um_tp_cap.bs.ctp = (ubase_get_ub_feature() &
+					  UBASE_URMA_CTP_UNO) ? 1 : 0;
+	attr->dev_cap.um_tp_cap.bs.utp = (ubase_get_ub_feature() &
+					  UBASE_URMA_UTP_UNO) ? 1 : 0;
 }
 
 static int udma_query_device_attr(struct ubcore_device *dev,
