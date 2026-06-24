@@ -1746,6 +1746,7 @@ void ata_scsi_requeue_deferred_qc(struct ata_port *ap)
 	 */
 	if (qc) {
 		ap->deferred_qc = NULL;
+		cancel_work(&ap->deferred_qc_work);
 		ata_scsi_qc_done(qc, true, DID_SOFT_ERROR << 16);
 	}
 }
