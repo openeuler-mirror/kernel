@@ -1510,10 +1510,9 @@ static bool ubcore_preprocess_event(struct ubcore_event *event)
 			event->element.tpid_info.tpid);
 
 		cfg.flushdone_cfg->tpid = event->element.tpid_info.tpid;
-		if (ubcore_modify_tpid(event->ub_dev, UBCORE_TPID_STATE_RESET, &cfg) != 0)
-			return false;
-		else
-			return true;
+		(void)ubcore_modify_tpid(event->ub_dev, UBCORE_TPID_STATE_RESET, &cfg);
+
+		return true;
 	}
 
 	return false;
