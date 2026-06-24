@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+
+config DRM_EGT_DP
+	bool "Egt display port driver"
+	depends on DRM_ENGIANT
+	select DRM_DISPLAY_HELPER
+	help
+	  Choose this option if you want to compile the Egt display driver,this driver is compile with verisilicon dc driver.

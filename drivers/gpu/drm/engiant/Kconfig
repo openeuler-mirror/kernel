@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-2.0
+# Modified: 2026-04-07
+#  - Disabled unused Kconfig options
+
+config DRM_ENGIANT
+	tristate "DRM Support for Engiant Display"
+	depends on DRM
+	select DRM_KMS_HELPER
+	select DRM_VRAM_HELPER
+	select DRM_TTM
+	select DRM_TTM_HELPER
+	select DRM_VERISILICON
+	select DRM_EGT_DP
+	help
+	  Choose this option if you have an Engiant soc chipset.
+	  This enables the DRM driver for the Engiant display subsystem, 
+	  which includes VeriSilicon DC and Engiant DP interface.
+
+config DRM_VERISILICON
+	bool "DRM Support for VeriSilicon"
+	depends on DRM_ENGIANT
+	help
+	  Choose this option if you have a VeriSilicon display controller.
+	  This driver provides VeriSilicon kernel mode
+	  setting and buffer management. It does not
+	  provide 2D or 3D acceleration.
+
+source "drivers/gpu/drm/engiant/connector/Kconfig"
+
+config VERISILICON_PCIE
+	bool "PCIE driver support for VeriSilicon display controller"
+	depends on DRM_VERISILICON && PCI
+	default y
+	help
+	  Choose this option if you want to register pcie driver for verisilicon display
+	  controller, platform driver is used by default for veriSilicon display controller.
