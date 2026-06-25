@@ -147,7 +147,9 @@ static int ubcore_fill_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 
 	key->lk.local_eid = get_tp_cfg->local_eid;
 	key->lk.peer_eid = get_tp_cfg->peer_eid;
-	if (ubcore_get_enable_shared_ctp()) {
+	if (ubcore_get_enable_shared_ctp() &&
+	    get_tp_cfg->flag.bs.ctp &&
+	    cfg->trans_mode == UBCORE_TP_RM) {
 		ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
 			&key->lk.local_eid, &get_tp_cfg->peer_eid, &key->lk.peer_eid,
 			local_cna, peer_cna);
@@ -183,7 +185,9 @@ static int ubcore_fill_bind_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 
 	key->lk.local_eid = get_tp_cfg->local_eid;
 	key->lk.peer_eid = get_tp_cfg->peer_eid;
-	if (ubcore_get_enable_shared_ctp()) {
+	if (ubcore_get_enable_shared_ctp() &&
+	    get_tp_cfg->flag.bs.ctp &&
+	    cfg->trans_mode == UBCORE_TP_RM) {
 		ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
 			&key->lk.local_eid, &get_tp_cfg->peer_eid, &key->lk.peer_eid,
 			local_cna, peer_cna);
@@ -215,7 +219,9 @@ static int ubcore_fill_tpid_cfg(struct ubcore_tpid_cfg *tpid_cfg,
 
 	tpid_cfg->local_eid = get_tp_cfg->local_eid;
 	tpid_cfg->peer_eid = get_tp_cfg->peer_eid;
-	if (ubcore_get_enable_shared_ctp()) {
+	if (ubcore_get_enable_shared_ctp() &&
+	    get_tp_cfg->flag.bs.ctp &&
+	    get_tp_cfg->trans_mode == UBCORE_TP_RM) {
 		ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
 			&tpid_cfg->local_eid, &get_tp_cfg->peer_eid, &tpid_cfg->peer_eid,
 			NULL, NULL);
@@ -988,7 +994,9 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	union ubcore_net_addr_union local_cna = {0};
 	union ubcore_net_addr_union peer_cna = {0};
 
-	if (ubcore_get_enable_shared_ctp()) {
+	if (ubcore_get_enable_shared_ctp() &&
+	    get_tp_cfg.flag.bs.ctp &&
+	    get_tp_cfg.trans_mode == UBCORE_TP_RM) {
 		ubcore_lookup_host_info_local_and_peer(&get_tp_cfg.local_eid,
 			&key.lk.local_eid, &get_tp_cfg.peer_eid, &key.lk.peer_eid,
 			&local_cna, &peer_cna);
@@ -1010,7 +1018,10 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	ubcore_log_info_rl("Enter handle create req tpid reuse");
 
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
-	if (tpid_reuse == NULL && ubcore_get_enable_shared_ctp() &&
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
 	    !ubcore_net_addr_is_zero(&local_cna) &&
 	    !ubcore_net_addr_is_zero(&peer_cna)) {
 		ubcore_fill_tpid_reuse_key_cna(&key, local_cna, peer_cna);
@@ -1415,7 +1426,9 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 	union ubcore_net_addr_union destroy_local_cna = {0};
 	union ubcore_net_addr_union destroy_peer_cna = {0};
 
-	if (ubcore_get_enable_shared_ctp()) {
+	if (ubcore_get_enable_shared_ctp() &&
+	    req->tp_type == UBCORE_CTP &&
+	    req->trans_mode == UBCORE_TP_RM) {
 		ubcore_lookup_host_info_local_and_peer(&req->peer_eid, &key.lk.local_eid,
 			&req->local_eid, &key.lk.peer_eid, &destroy_local_cna, &destroy_peer_cna);
 	}
@@ -1427,7 +1440,10 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 	key.dtag = req->stag;
 
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
-	if (tpid_reuse == NULL && ubcore_get_enable_shared_ctp() &&
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
 	    !ubcore_net_addr_is_zero(&destroy_local_cna) &&
 	    !ubcore_net_addr_is_zero(&destroy_peer_cna)) {
 		ubcore_fill_tpid_reuse_key_cna(&key, destroy_local_cna, destroy_peer_cna);
@@ -1488,7 +1504,9 @@ static void handle_isref_req(struct ubcore_device *dev,
 	union ubcore_net_addr_union isref_local_cna = {0};
 	union ubcore_net_addr_union isref_peer_cna = {0};
 
-	if (ubcore_get_enable_shared_ctp()) {
+	if (ubcore_get_enable_shared_ctp() &&
+	    req->tp_type == UBCORE_CTP &&
+	    req->trans_mode == UBCORE_TP_RM) {
 		ubcore_lookup_host_info_local_and_peer(&req->peer_eid,
 			&key.lk.local_eid, &req->local_eid, &key.lk.peer_eid,
 			&isref_local_cna, &isref_peer_cna);
@@ -1501,7 +1519,10 @@ static void handle_isref_req(struct ubcore_device *dev,
 	key.dtag = req->stag;
 
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
-	if (tpid_reuse == NULL && ubcore_get_enable_shared_ctp() &&
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
 	    !ubcore_net_addr_is_zero(&isref_local_cna) &&
 	    !ubcore_net_addr_is_zero(&isref_peer_cna)) {
 		ubcore_fill_tpid_reuse_key_cna(&key, isref_local_cna, isref_peer_cna);
@@ -1592,7 +1613,10 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 	}
 	ubcore_log_info_rl("try to get tpid reuse.\n");
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
-	if (tpid_reuse == NULL && ubcore_get_enable_shared_ctp() &&
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
 	    !ubcore_net_addr_is_zero(&jfr_local_cna) &&
 	    !ubcore_net_addr_is_zero(&jfr_peer_cna)) {
 		ubcore_fill_tpid_reuse_key_cna(&key, jfr_local_cna, jfr_peer_cna);
@@ -1740,7 +1764,10 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 	 * subsequent ubcore_find_get_tpid_reuse misses, the following
 	 * ubcore_create_tpid_reuse will naturally create a CNA-level entry.
 	 */
-	if (tpid_reuse == NULL && ubcore_get_enable_shared_ctp() &&
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
 	    !ubcore_net_addr_is_zero(&jetty_local_cna) &&
 	    !ubcore_net_addr_is_zero(&jetty_peer_cna)) {
 		ubcore_fill_tpid_reuse_key_cna(&key, jetty_local_cna, jetty_peer_cna);
@@ -1941,7 +1968,10 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 		return ret;
 	}
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
-	if (tpid_reuse == NULL && ubcore_get_enable_shared_ctp() &&
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
 	    !ubcore_net_addr_is_zero(&bind_local_cna) &&
 	    !ubcore_net_addr_is_zero(&bind_peer_cna)) {
 		ubcore_fill_tpid_reuse_key_cna(&key, bind_local_cna, bind_peer_cna);
