@@ -8,7 +8,9 @@
 #include <linux/phy.h>
 #include <linux/if_vlan.h>
 #include <linux/kfifo.h>
+
 #include <net/devlink.h>
+#include <net/ipv6.h>
 
 #include "hclge_cmd.h"
 #include "hclge_ptp.h"
@@ -657,6 +659,8 @@ struct key_info {
 #define HCLGE_FD_USER_DEF_OFFSET_UNMASK	GENMASK(15, 0)
 #define HCLGE_FD_VXLAN_VNI_UNMASK	GENMASK(31, 0)
 
+#define HCLGE_VNI_LENGTH		3
+
 /* assigned by firmware, the real filter number for each pf may be less */
 #define MAX_FD_FILTER_NUM	4096
 #define HCLGE_ARFS_EXPIRE_INTERVAL	5UL
@@ -731,15 +735,15 @@ struct hclge_fd_cfg {
 };
 
 #define IPV4_INDEX	3
-#define IPV6_SIZE	4
+
 struct hclge_fd_rule_tuples {
 	u8 src_mac[ETH_ALEN];
 	u8 dst_mac[ETH_ALEN];
 	/* Be compatible for ip address of both ipv4 and ipv6.
 	 * For ipv4 address, we store it in src/dst_ip[3].
 	 */
-	u32 src_ip[IPV6_SIZE];
-	u32 dst_ip[IPV6_SIZE];
+	u32 src_ip[IPV6_ADDR_WORDS];
+	u32 dst_ip[IPV6_ADDR_WORDS];
 	u16 src_port;
 	u16 dst_port;
 	u16 vlan_tag1;
@@ -1202,5 +1206,7 @@ void hclge_get_media_type(struct hnae3_handle *handle, u8 *media_type,
 			  u8 *module_type);
 int hclge_cfg_mac_mode(struct hclge_dev *hdev, bool enable);
 int hclge_query_scc_version(struct hclge_dev *hdev, u32 *scc_version);
+u32 hclge_get_port_number(enum HLCGE_PORT_TYPE port_type, u8 pf_id,
+			  u8 vf_id, u8 network_port_id);
 int hclge_mbx_event_notify(struct hclge_vport *vport, u64 event_bits);
 #endif

@@ -2134,65 +2134,56 @@ static int hclge_dbg_dump_fd_counter(struct seq_file *s, void *data)
 	return 0;
 }
 
-static void hclge_fd_dump_u32(struct seq_file *s,
-			      struct hclge_fd_rule *rule,
-			      u32 type, const char *name,
-			      const char *fmt, u32 key, u32 mask)
+__printf(4, 5)
+static void hclge_fd_dump_item(struct seq_file *s, const char *name,
+			       const char *suffix, const char *fmt, ...)
 {
-	if (rule->unused_tuple & BIT(type))
-		return;
+	va_list args;
 
-	seq_printf(s, "\t\t%s: ", name);
-	seq_printf(s, fmt, key);
-	seq_putc(s, '\n');
+	seq_printf(s, "\t\t%s%s: ", name, suffix);
 
-	seq_printf(s, "\t\t%s_mask: ", name);
-	seq_printf(s, fmt, mask);
+	va_start(args, fmt);
+	seq_vprintf(s, fmt, args);
+	va_end(args);
+
 	seq_putc(s, '\n');
 }
 
-static void hclge_fd_dump_ptr(struct seq_file *s,
-			      struct hclge_fd_rule *rule,
-			      u32 type, const char *name,
-			      const char *fmt,
-			      const void *key, const void *mask)
-{
-	if (rule->unused_tuple & BIT(type))
-		return;
-
-	seq_printf(s, "\t\t%s: ", name);
-	seq_printf(s, fmt, key);
-	seq_putc(s, '\n');
-
-	seq_printf(s, "\t\t%s_mask: ", name);
-	seq_printf(s, fmt, mask);
-	seq_putc(s, '\n');
-}
-
-#define HCLGE_IS_IPV4(ip) ({ \
-	typeof(ip) _ip = (ip); \
-	(!((_ip)[0]) && !((_ip)[1]) && !((_ip)[2]) && (_ip)[IPV4_INDEX]); })
+#define hclge_fd_dump_any(s, rule, type, name, fmt, key, mask)		\
+do {									\
+	typeof(s) _s = (s);						\
+	typeof(name) _name = (name);					\
+	typeof(fmt) _fmt = (fmt);					\
+									\
+	if (!((rule)->unused_tuple & BIT(type))) {			\
+		hclge_fd_dump_item(_s, _name, "", _fmt, key);		\
+		hclge_fd_dump_item(_s, _name, "_mask", _fmt, mask);	\
+	}								\
+} while (0)
+#define hclge_fd_dump_u32  hclge_fd_dump_any
+#define hclge_fd_dump_ptr  hclge_fd_dump_any
 
 static void hclge_fd_dump_ip(struct seq_file *s,
 			     struct hclge_fd_rule *rule,
 			     u32 type, const char *name,
 			     const u32 *ip, const u32 *mask)
 {
-	u32 be_mask[IPV6_SIZE];
-	u32 be_ip[IPV6_SIZE];
+	__be32 be_mask[IPV6_ADDR_WORDS];
+	__be32 be_ip[IPV6_ADDR_WORDS];
 
-	if (rule->unused_tuple & BIT(type))
+	if (rule->unused_tuple & BIT(type) ||
+	    rule->unused_tuple & BIT(INNER_ETH_TYPE))
 		return;
 
-	cpu_to_be32_array(be_ip, ip, IPV6_SIZE);
-	cpu_to_be32_array(be_mask, mask, IPV6_SIZE);
+	ipv6_addr_cpu_to_be32(be_ip, ip);
+	ipv6_addr_cpu_to_be32(be_mask, mask);
 
-	if (HCLGE_IS_IPV4(ip))
-		hclge_fd_dump_ptr(s, rule, type, name, "%pI4",
-				  &be_ip[IPV4_INDEX], &be_mask[IPV4_INDEX]);
-	else
+	if (rule->tuples.ether_proto == ETH_P_IPV6)
 		hclge_fd_dump_ptr(s, rule, type, name, "%pI6",
 				  be_ip, be_mask);
+	else
+		hclge_fd_dump_ptr(s, rule, type, name, "%pI4",
+				  &be_ip[IPV4_INDEX], &be_mask[IPV4_INDEX]);
 }
 
 static void hclge_dbg_dump_fd_tuples(struct seq_file *s,
@@ -2244,7 +2235,10 @@ static void hclge_dbg_dump_fd_action(struct seq_file *s,
 		[HCLGE_FD_ACTION_SELECT_TC]    = "select_tc",
 	};
 
-	seq_printf(s, "\taction: %s\n", action_str[rule->action]);
+	if (rule->action <= HCLGE_FD_ACTION_SELECT_TC)
+		seq_printf(s, "\taction: %s\n", action_str[rule->action]);
+	else
+		seq_printf(s, "\taction: %s\n", "unknown");
 
 	if (rule->action == HCLGE_FD_ACTION_SELECT_QUEUE)
 		seq_printf(s, "\tqueue_id: %u\n", rule->queue_id);
@@ -2254,14 +2248,17 @@ static void hclge_dbg_dump_fd_action(struct seq_file *s,
 
 static void hclge_dbg_dump_fd_type(struct hclge_dev *hdev, struct seq_file *s)
 {
-	static const char *const rule_type_str[] = {
+	static const char * const type_str[] = {
 		[HCLGE_FD_RULE_NONE]        = "none",
 		[HCLGE_FD_ARFS_ACTIVE]      = "arfs",
 		[HCLGE_FD_EP_ACTIVE]        = "ep",
 		[HCLGE_FD_TC_FLOWER_ACTIVE] = "tc_flow"
 	};
 
-	seq_printf(s, "fd type: %s\n", rule_type_str[hdev->fd_active_type]);
+	if (hdev->fd_active_type <= HCLGE_FD_TC_FLOWER_ACTIVE)
+		seq_printf(s, "fd type: %s\n", type_str[hdev->fd_active_type]);
+	else
+		seq_printf(s, "fd type: %s\n", "unknown");
 }
 
 static int hclge_dbg_dump_fd_rule(struct seq_file *s, void *data)
@@ -2269,9 +2266,11 @@ static int hclge_dbg_dump_fd_rule(struct seq_file *s, void *data)
 	struct hclge_dev *hdev = hclge_seq_file_to_hdev(s);
 	struct hclge_fd_rule *rule;
 
-	hclge_dbg_dump_fd_type(hdev, s);
+	if (!hnae3_ae_dev_fd_supported(hdev->ae_dev))
+		return -EOPNOTSUPP;
 
 	spin_lock_bh(&hdev->fd_rule_lock);
+	hclge_dbg_dump_fd_type(hdev, s);
 	hlist_for_each_entry(rule, &hdev->fd_rule_list, rule_node) {
 		if (rule->state != HCLGE_FD_ACTIVE)
 			continue;
