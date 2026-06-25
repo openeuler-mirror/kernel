@@ -1034,16 +1034,16 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 
 	ret = ubcore_find_add_tpid_reuse(dev, tpid_reuse, &exist_tpid_reuse, &key);
 	if (ret == -EEXIST && exist_tpid_reuse != NULL) {
-		exist_tpid_reuse =
-			ubcore_reuse_tpid(exist_tpid_reuse);
+		ubcore_log_info_rl("tpid_reuse exists.\n");
+		ret = target_reuse_tpid(dev, exist_tpid_reuse, req);
+		resp.tp_handle = exist_tpid_reuse->tp_handle.value;
+		resp.tx_psn = exist_tpid_reuse->tx_psn;
+		ubcore_tpid_reuse_kref_put(exist_tpid_reuse);
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
-		if (exist_tpid_reuse == NULL) {
-			ret = GET_TP_LIST_ERROR;
-			goto send_resp;
-		}
-		tp_handle = exist_tpid_reuse->tp_handle.value;
-		tx_psn = exist_tpid_reuse->tx_psn;
-		goto send_success_resp;
+		resp.result = ret;
+		if (send_create_resp(dev, conn, msg->session_id, &resp) != 0)
+			ubcore_log_err("Failed to send create resp message.\n");
+		return;
 	} else if (ret != 0) {
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
 		ret = GET_TP_LIST_ERROR;
@@ -1095,7 +1095,6 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	tpid_reuse->reuse_state = UBCORE_TPID_REUSE_READY;
 	mutex_unlock(&tpid_reuse->lock);
 
-send_success_resp:
 	resp.tp_handle = tp_handle;
 	resp.tx_psn = tx_psn;
 	ret = CREATE_CONN_SUCCESS;
