@@ -252,9 +252,9 @@ static void ubcore_compute_stat_for_type(const struct ub_perf_latency_record *cu
 	stat->min_ns = cur_record->min_ns;
 	stat->max_ns = cur_record->max_ns;
 	stat->avg_ns = cur_record->sum_ns / count;
-	stat->p90_ns = p90_ns_found ? p90_ns : 0U;
-	stat->p99_ns = p99_ns_found ? p99_ns : 0U;
-	stat->p9999_ns = p9999_ns_found ? p9999_ns : 0U;
+	stat->p90_ns = p90_ns_found ? (p90_ns < stat->max_ns ? p90_ns : stat->max_ns) : 0U;
+	stat->p99_ns = p99_ns_found ? (p99_ns < stat->max_ns ? p99_ns : stat->max_ns) : 0U;
+	stat->p9999_ns = p9999_ns_found ? (p9999_ns < stat->max_ns ? p9999_ns : stat->max_ns) : 0U;
 }
 
 void ubcore_perf_dump_info(struct ubcore_latency_stat *stat)

@@ -1982,13 +1982,18 @@ static int uburma_cmd_delete_jfc(struct ubcore_device *ubc_dev,
 	struct uburma_jfc_uobj *jfc_uobj;
 	int ret;
 
+	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_DELETE_JFC);
+
 	ret = uburma_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0)
+	if (ret != 0) {
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFC);
 		return ret;
+	}
 
 	uobj = uobj_get_del(UOBJ_CLASS_JFC, arg.in.handle, file);
 	if (IS_ERR_OR_NULL(uobj)) {
 		uburma_log_err("failed to find jfc.\n");
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFC);
 		return -EINVAL;
 	}
 
@@ -2002,6 +2007,7 @@ static int uburma_cmd_delete_jfc(struct ubcore_device *ubc_dev,
 		uburma_cleanup_jfce_references(jfc_uobj);
 		uobj_put(uobj);
 		uobj_put_del(uobj);
+		UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFC);
 		return ret;
 	}
 
@@ -2010,7 +2016,9 @@ static int uburma_cmd_delete_jfc(struct ubcore_device *ubc_dev,
 	uburma_cleanup_jfce_references(jfc_uobj);
 	uobj_put(uobj);
 	uobj_put_del(uobj);
-	return uburma_tlv_append(hdr, (void *)&arg);
+	ret = uburma_tlv_append(hdr, (void *)&arg);
+	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_DELETE_JFC);
+	return ret;
 }
 
 static int uburma_cmd_active_jfc(struct ubcore_device *ubc_dev,
