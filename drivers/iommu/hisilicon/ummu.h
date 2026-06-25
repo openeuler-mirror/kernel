@@ -29,7 +29,7 @@ extern const struct ummu_device_helper ummu_helper;
 #define UMMU_CTRL_PAGE_SIZE ((PAGE_SIZE == SZ_4K) ? SZ_4K : SZ_64K)
 
 #define UMMU_GFP(gfp) \
-	(IS_ENABLED(CONFIG_UB_HIGHUSER_MOVABLE) ? GFP_HIGHUSER_MOVABLE : gfp)
+	(IS_ENABLED(CONFIG_UB_UMMU_HIGHUSER_MOVABLE_ALLOC) ? GFP_HIGHUSER_MOVABLE : gfp)
 
 /* target context table structures */
 struct ummu_l1_tct_desc {
