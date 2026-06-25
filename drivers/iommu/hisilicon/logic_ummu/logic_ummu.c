@@ -70,8 +70,6 @@ struct support_cb {
 	struct list_head node;
 };
 
-static struct logic_ummu_identity_device *logic_identity_dev;
-
 static DEFINE_SPINLOCK(support_cb_list_lock);
 static LIST_HEAD(support_cb_list_head);
 static DEFINE_SPINLOCK(eid_list_lock);
@@ -86,7 +84,6 @@ static struct fwnode_handle *logic_ummu_fwnode;
 
 static void gen_iommu_domain_ops(const struct iommu_domain_ops *src, struct iommu_domain_ops *dst);
 static void gen_iommu_ops(const struct iommu_ops *src, struct iommu_ops *dst);
-static void logic_identity_dev_free(void);
 static int logic_domain_set_ops(struct logic_ummu_domain *logic_domain);
 
 static inline struct logic_ummu_domain *
@@ -137,66 +134,6 @@ static inline const struct ummu_device_helper *get_agent_helper(void)
 	return logic_ummu.agent_device->helper_ops;
 }
 
-static int logic_identity_dev_init(u32 min_pasids, u32 max_pasids)
-{
-	struct ummu_tid_param tid_para = { .mode = MAPT_MODE_END, .assign_tid = UMMU_INVALID_TID };
-	struct dev_iommu *param;
-	int ret;
-
-	logic_identity_dev = kzalloc(sizeof(*logic_identity_dev), GFP_KERNEL);
-	if (!logic_identity_dev)
-		return -ENOMEM;
-
-	logic_identity_dev->pdev =
-		platform_device_alloc("identity_dev", PLATFORM_DEVID_NONE);
-	if (!logic_identity_dev->pdev) {
-		ret = -ENODEV;
-		goto err_free;
-	}
-
-	param = kzalloc(sizeof(*param), GFP_KERNEL);
-	if (!param) {
-		ret = -ENOMEM;
-		goto err_out;
-	}
-
-	param->max_pasids = max_pasids;
-	param->min_pasids = min_pasids;
-	logic_identity_dev->pdev->dev.iommu = param;
-
-	tid_para.device = &logic_identity_dev->pdev->dev;
-	tid_para.domain_type = IOMMU_DOMAIN_IDENTITY;
-	tid_para.alloc_mode = TID_ALLOC_NORMAL;
-	ret = ummu_core_alloc_tid(&logic_ummu.agent_device->core_dev, &tid_para,
-				  &logic_identity_dev->tid);
-	if (ret)
-		goto err_tid_out;
-
-	refcount_set(&logic_identity_dev->refcount, 1);
-	return 0;
-
-err_tid_out:
-	kfree(param);
-err_out:
-	platform_device_put(logic_identity_dev->pdev);
-err_free:
-	kfree(logic_identity_dev);
-	logic_identity_dev = NULL;
-	return ret;
-}
-
-static void logic_identity_dev_get(struct logic_ummu_identity_device *i_dev)
-{
-	refcount_inc(&i_dev->refcount);
-}
-
-static void logic_identity_dev_put(struct logic_ummu_identity_device *i_dev)
-{
-	refcount_dec(&i_dev->refcount);
-	if (refcount_read(&i_dev->refcount) == 1)
-		logic_identity_dev_free();
-}
-
 static void logic_domain_update_attr(struct logic_ummu_domain *logic_domain)
 {
 	struct iommu_domain *agent = &logic_domain->agent_domain->domain;
@@ -245,8 +182,13 @@ static int logic_ummu_attach_dev(struct iommu_domain *domain,
 			continue;
 		if (helper && helper->sync_dom_cfg)
 			WARN_ON(helper->sync_dom_cfg(agent_domain, ummu_base_domain, sync_type));
-		if (core_ops && core_ops->cfg_sync)
-			core_ops->cfg_sync(ummu_base_domain);
+		if (domain->type != IOMMU_DOMAIN_NESTED) {
+			if (core_ops && core_ops->cfg_sync)
+				core_ops->cfg_sync(ummu_base_domain);
+		} else {
+			if (core_ops && core_ops->cfg_sync_all)
+				core_ops->cfg_sync_all(ummu_base_domain);
+		}
 	}
 
 	return ret;
@@ -1262,7 +1204,7 @@ static void logic_ummu_release_device(struct device *dev)
 {
 	const struct ummu_core_ops *core_ops = get_agent_core_ops();
 	const struct iommu_ops *ops = get_agent_iommu_ops();
-	struct ummu_base_domain *ummu_base_domain;
+	struct ummu_base_domain *base_domain;
 	struct logic_ummu_domain *logic_domain;
 	struct iommu_domain *domain;
 
@@ -1278,11 +1220,6 @@ static void logic_ummu_release_device(struct device *dev)
 		return;
 	}
 
-	if (domain->type == IOMMU_DOMAIN_IDENTITY && !iommu_default_passthrough() &&
-	    logic_identity_dev && !hw_bypass) {
-		logic_identity_dev_put(logic_identity_dev);
-		return;
-	}
 
 	logic_domain = iommu_to_logic_domain(domain);
 	if (!logic_domain->agent_domain || !core_ops || !core_ops->cfg_sync) {
@@ -1290,11 +1227,11 @@ static void logic_ummu_release_device(struct device *dev)
 		return;
 	}
 
-	list_for_each_entry(ummu_base_domain, &logic_domain->base_domain.list, list) {
-		if (ummu_base_domain == logic_domain->agent_domain)
+	list_for_each_entry(base_domain, &logic_domain->base_domain.list, list) {
+		if (base_domain == logic_domain->agent_domain)
 			continue;
 
-		core_ops->cfg_sync(ummu_base_domain);
+		core_ops->cfg_sync(base_domain);
 	}
 }
 
@@ -1493,149 +1430,6 @@ static int logic_ummu_get_group_qos_params(struct iommu_group *group, u16 *parti
 		return -ENODEV;
 	}
 	return ops->get_group_qos_params(group, partid, pmg);
-}
-
-static int logic_ummu_attach_dev_identity(struct iommu_domain *domain, struct device *dev)
-{
-	const struct ummu_device_helper *helper = get_agent_helper();
-	const struct ummu_core_ops *core_ops = get_agent_core_ops();
-	struct ummu_base_domain *base_domain, *agent_domain;
-	struct logic_ummu_domain *logic_domain;
-	const struct iommu_domain_ops *ops;
-	struct ummu_core_device *core_dev;
-	int ret;
-
-	logic_domain = iommu_to_logic_domain(domain);
-	agent_domain = logic_domain->agent_domain;
-	ops = agent_domain->domain.ops;
-	if (!ops || !ops->attach_dev) {
-		pr_err("get ops failed.\n");
-		return -ENODEV;
-	}
-
-	if (!hw_bypass && !logic_identity_dev) {
-		core_dev = agent_domain->core_dev;
-		ret = logic_identity_dev_init(core_dev->iommu.min_pasids,
-					      core_dev->iommu.max_pasids);
-		if (ret) {
-			pr_err("init identity device failed, ret = %d\n", ret);
-			return ret;
-		}
-		agent_domain->tid = logic_identity_dev->tid;
-	}
-
-	ret = ops->attach_dev(&agent_domain->domain, dev);
-	if (ret) {
-		pr_err("attach identity device failed.\n");
-		return ret;
-	}
-
-	logic_domain_update_attr(logic_domain);
-	if (!hw_bypass)
-		logic_identity_dev_get(logic_identity_dev);
-
-	list_for_each_entry(base_domain, &logic_domain->base_domain.list, list) {
-		if (base_domain == agent_domain)
-			continue;
-		if (helper && helper->sync_dom_cfg)
-			WARN_ON(helper->sync_dom_cfg(agent_domain, base_domain, SYNC_DOM_MUTI_CFG));
-		if (core_ops && core_ops->cfg_sync)
-			core_ops->cfg_sync(base_domain);
-	}
-	return 0;
-}
-
-static struct logic_ummu_domain *logic_ummu_identity_dom;
-
-static const struct iommu_domain_ops logic_iommu_identity_ops = {
-	.attach_dev = logic_ummu_attach_dev_identity,
-};
-
-static void logic_identity_dev_free(void)
-{
-	const struct ummu_core_ops *core_ops = get_agent_core_ops();
-	struct ummu_base_domain *base_domain;
-
-	if (logic_identity_dev && logic_identity_dev->pdev) {
-		WARN_ON(refcount_read(&logic_identity_dev->refcount) != 1);
-		kfree(logic_identity_dev->pdev->dev.iommu);
-		list_for_each_entry(base_domain,
-			&logic_ummu_identity_dom->base_domain.list, list) {
-			core_ops->cfg_sync(base_domain);
-			base_domain->domain.ops->flush_iotlb_all(&base_domain->domain);
-		}
-		ummu_core_free_tid(&logic_ummu.agent_device->core_dev, logic_identity_dev->tid);
-		platform_device_put(logic_identity_dev->pdev);
-		kfree(logic_identity_dev);
-		logic_identity_dev = NULL;
-	}
-}
-
-static struct iommu_domain *logic_ummu_domain_alloc_identity(void)
-{
-	const struct iommu_ops *ops = get_agent_iommu_ops();
-	struct ummu_base_domain *base_domain, *next;
-	struct iommu_domain *domain;
-	struct ummu_device *ummu;
-	int ret;
-
-	if (logic_ummu_identity_dom)
-		return &logic_ummu_identity_dom->base_domain.domain;
-
-	logic_ummu_identity_dom = kzalloc(sizeof(*logic_ummu_identity_dom), GFP_KERNEL);
-	if (!logic_ummu_identity_dom)
-		return (struct iommu_domain *)ERR_PTR(-ENOMEM);
-
-	INIT_LIST_HEAD(&logic_ummu_identity_dom->base_domain.list);
-
-	list_for_each_entry(ummu, &logic_ummu.dev_list, list) {
-		domain = ops->domain_alloc(IOMMU_DOMAIN_IDENTITY);
-		if (IS_ERR(domain)) {
-			ret = PTR_ERR(domain);
-			goto error_handle;
-		}
-
-		memcpy(domain, ops->identity_domain, sizeof(struct iommu_domain));
-
-		/* add ummu hw info to ummu_base_domain */
-		base_domain = to_ummu_base_domain(domain);
-		base_domain->core_dev = &ummu->core_dev;
-
-		list_add_tail(&base_domain->list, &logic_ummu_identity_dom->base_domain.list);
-		if (ummu == logic_ummu.agent_device)
-			logic_ummu_identity_dom->agent_domain = base_domain;
-	}
-	logic_ummu_identity_dom->base_domain.domain.ops = &logic_iommu_identity_ops;
-	logic_ummu_identity_dom->base_domain.domain.type = IOMMU_DOMAIN_IDENTITY;
-
-	return &logic_ummu_identity_dom->base_domain.domain;
-error_handle:
-	list_for_each_entry_safe(base_domain, next,
-				 &logic_ummu_identity_dom->base_domain.list,
-				 list) {
-		list_del(&base_domain->list);
-		base_domain->domain.ops->free(&base_domain->domain);
-	}
-	kfree(logic_ummu_identity_dom);
-	logic_ummu_identity_dom = NULL;
-	return (struct iommu_domain *)ERR_PTR(ret);
-}
-
-static void logic_ummu_domain_identity_free(void)
-{
-	struct ummu_base_domain *base_domain, *next;
-
-	if (!logic_ummu_identity_dom)
-		return;
-
-	list_for_each_entry_safe(base_domain, next,
-				 &logic_ummu_identity_dom->base_domain.list,
-				 list) {
-		list_del(&base_domain->list);
-		base_domain->domain.ops->free(&base_domain->domain);
-	}
-	kfree(logic_ummu_identity_dom);
-	logic_ummu_identity_dom = NULL;
 }
 
 static struct iommu_ops logic_iommu_ops = {
@@ -2187,19 +1981,9 @@ static int update_logic_ummu(struct ummu_device *ummu)
 			pr_err("register to ummu core failed, ret = %d.\n", ret);
 			goto out_deinit_logic_ummu;
 		}
-
-		logic_iommu_ops.identity_domain = logic_ummu_domain_alloc_identity();
-		if (IS_ERR(logic_iommu_ops.identity_domain)) {
-			pr_err("init identity domain failed:%ld.\n",
-				PTR_ERR(logic_iommu_ops.identity_domain));
-			ret = -EOPNOTSUPP;
-			goto out_unregister;
-		}
 	}
 	return 0;
 
-out_unregister:
-	ummu_core_device_unregister(&logic_ummu.core_dev);
 out_deinit_logic_ummu:
 	logic_ummu_core_device_deinit();
 out_del_agent:
@@ -2259,9 +2043,6 @@ void logic_remove_ummu_device(struct ummu_device *ummu)
 		pr_err("unexpected number of UMMUs\n");
 		return;
 	}
-
-	logic_identity_dev_free();
-	logic_ummu_domain_identity_free();
 
 	if (logic_ummu.ummu_cnt == global_ummu_cnt) {
 		ummu_core_device_unregister(&logic_ummu.core_dev);
