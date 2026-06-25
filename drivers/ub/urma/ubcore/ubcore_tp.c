@@ -772,7 +772,8 @@ int ubcore_modify_tpid(struct ubcore_device *dev, enum ubcore_tpid_status state,
 		mutex_lock(&entry->lock);
 		old_state = entry->tpid_status;
 		if (old_state != UBCORE_TPID_STATE_RESET) {
-			ubcore_log_err("Invalid state transition: %d -> RTS.\n", old_state);
+			if (old_state != UBCORE_TPID_STATE_RTS)
+				ubcore_log_err("Invalid state transition: %d -> RTS.\n", old_state);
 			mutex_unlock(&entry->lock);
 			ubcore_tpid_state_kref_put(entry);
 			return (old_state == UBCORE_TPID_STATE_RTS) ? 0 : -EINVAL;
