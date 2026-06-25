@@ -2094,9 +2094,6 @@ long ubagg_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -EFAULT;
 	}
 	switch (hdr.command) {
-	case UBAGG_CMD_ADD_DEV:
-	case UBAGG_CMD_RMV_DEV:
-		return 0;
 	case UBAGG_CMD_SET_TOPO_INFO:
 		return ubagg_cmd_set_topo_info(&hdr);
 	case UBAGG_CMD_GET_TOPO_INFO:

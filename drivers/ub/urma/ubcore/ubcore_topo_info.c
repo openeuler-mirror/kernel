@@ -529,14 +529,3 @@ int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_get_path_set);
-
-int ubcore_get_topo_eid(uint32_t tp_type, union ubcore_eid *src_v_eid,
-	union ubcore_eid *dst_v_eid, union ubcore_eid *src_p_eid, union ubcore_eid *dst_p_eid)
-{
-	if (src_v_eid != NULL && dst_v_eid != NULL && src_p_eid != NULL && dst_p_eid != NULL) {
-		ubcore_log_info("Query topo eid, tp_type: %u.\n", tp_type);
-		return 0;
-	}
-	return -1;
-}
-EXPORT_SYMBOL(ubcore_get_topo_eid);

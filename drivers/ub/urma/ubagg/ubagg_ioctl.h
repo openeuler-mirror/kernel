@@ -16,13 +16,11 @@
 #include "ubagg_types.h"
 
 enum ubagg_cmd {
-	UBAGG_CMD_ADD_DEV = 1,
-	UBAGG_CMD_RMV_DEV,
-	UBAGG_CMD_SET_TOPO_INFO,
+	UBAGG_CMD_SET_TOPO_INFO = 1,
+	UBAGG_CMD_GET_TOPO_INFO,
 	UBAGG_CMD_CREATE_DEV,
 	UBAGG_CMD_DELETE_DEV,
 	UBAGG_CMD_GET_DEV_NAME,
-	UBAGG_CMD_GET_TOPO_INFO,
 };
 
 struct ubagg_cmd_hdr {
@@ -175,6 +173,12 @@ struct ubagg_get_dev_name_arg {
 	} in;
 	struct {
 		char dev_name[UBAGG_MAX_DEV_NAME_LEN];
+	} out;
+};
+
+struct ubagg_cmd_get_topo {
+	struct {
+		void *topo_map;
 	} out;
 };
 

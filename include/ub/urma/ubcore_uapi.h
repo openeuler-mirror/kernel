@@ -1215,10 +1215,6 @@ int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
 	enum ubcore_tp_type tp_type, bool iodie_level,
 	struct ubcore_path_set *path_set);
 
-int ubcore_get_topo_eid(uint32_t tp_type, union ubcore_eid *src_v_eid,
-	union ubcore_eid *dst_v_eid, union ubcore_eid *src_p_eid,
-	union ubcore_eid *dst_p_eid);
-
 union ubcore_comm_msg_flag {
 	struct {
 		uint16_t reserved : 16;

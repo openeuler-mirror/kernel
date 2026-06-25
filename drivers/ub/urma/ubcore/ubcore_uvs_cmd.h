@@ -19,6 +19,7 @@
 #include "ubcore_cmd.h"
 #include "ubcore_log.h"
 #include "ubcore_priv.h"
+#include "ubcore_topo_info.h"
 
 #define UBCORE_UVS_CMD_MAGIC 'V'
 #define UBCORE_UVS_CMD _IOWR(UBCORE_UVS_CMD_MAGIC, 1, struct ubcore_cmd_hdr)
@@ -89,7 +90,7 @@ enum ubcore_uvs_global_cmd {
 	UBCORE_CMD_GLOBAL_SHOW_UPI,
 	UBCORE_CMD_LIST_MUE,
 	UBCORE_CMD_SET_TOPO,
-	UBCORE_CMD_GET_TOPO,
+	UBCORE_CMD_GET_TOPO_RESERVE,
 	UBCORE_CMD_GET_PATH_SET,
 	UBCORE_CMD_INSERT_MAIN_UE_EID,
 	UBCORE_CMD_DELETE_MAIN_UE_EID,
@@ -105,12 +106,6 @@ struct ubcore_cmd_set_topo {
 		void *topo_info;
 		uint32_t topo_num;
 	} in;
-};
-
-struct ubcore_cmd_get_topo {
-	struct {
-		void *topo_map;
-	} out;
 };
 
 struct ubcore_cmd_get_path_set {

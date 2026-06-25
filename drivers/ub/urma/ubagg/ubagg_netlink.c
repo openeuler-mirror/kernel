@@ -49,10 +49,27 @@ static const struct nla_policy ubagg_genl_policy[UBAGG_ATTR_MAX] = {
 					.len = sizeof(struct ubagg_bonding_physical_device) },
 };
 
+struct ubagg_nl_topo_info {
+	struct {
+		int node_idx;
+	} in;
+	struct {
+		uint32_t node_num;
+		struct ubagg_topo_node topo_info;
+	} out;
+};
+
+static int ubagg_nl_get_topo_ops(struct sk_buff *skb, struct genl_info *info);
 static int ubagg_nl_get_physical_device_ops(struct sk_buff *skb, struct genl_info *info);
 static int ubagg_nl_get_v2p_res_ops(struct sk_buff *skb, struct genl_info *info);
 
 static const struct genl_ops ubagg_genl_ops[] = {
+	{
+		.cmd = UBAGG_NL_CMD_GET_TOPO,
+		.policy = ubagg_genl_policy,
+		.maxattr = ARRAY_SIZE(ubagg_genl_policy) - 1,
+		.doit = ubagg_nl_get_topo_ops,
+	},
 	{
 		.cmd = UBAGG_NL_CMD_GET_PHYSICAL_DEVICE,
 		.policy = ubagg_genl_policy,
@@ -211,6 +228,68 @@ static int ubagg_nl_get_v2p_res_ops(struct sk_buff *skb, struct genl_info *info)
 free_arg:
 	kfree(arg);
 	return ret;
+}
+
+static int ubagg_nl_get_topo_node(uint64_t args_addr)
+{
+	struct ubagg_nl_topo_info *arg = NULL;
+	struct ubagg_topo_map *topo_map;
+	int node_num;
+	int ret;
+
+	arg = kzalloc(sizeof(*arg), GFP_KERNEL);
+	if (arg == NULL)
+		return -ENOMEM;
+
+	ret = (int)copy_from_user(arg, (void __user *)(uintptr_t)args_addr,
+				  sizeof(*arg));
+	if (ret != 0) {
+		ubagg_log_err("Failed to copy topo info from user, ret = %d\n", ret);
+		kfree(arg);
+		return -EFAULT;
+	}
+
+	topo_map = get_global_ubagg_map();
+	if (topo_map == NULL) {
+		ubagg_log_err("topo map is empty\n");
+		kfree(arg);
+		return -ENXIO;
+	}
+
+	node_num = (int)topo_map->node_num;
+	if (arg->in.node_idx < 0 || arg->in.node_idx >= node_num) {
+		ubagg_log_err("Invalid topo node index %d, node_num:%u\n",
+			      arg->in.node_idx, topo_map->node_num);
+		kfree(arg);
+		return -EINVAL;
+	}
+
+	arg->out.node_num = topo_map->node_num;
+	(void)memcpy(&arg->out.topo_info, &topo_map->topo_infos[arg->in.node_idx],
+		     sizeof(arg->out.topo_info));
+	ret = (int)copy_to_user((void __user *)(uintptr_t)args_addr, arg,
+				sizeof(*arg));
+	if (ret != 0) {
+		ubagg_log_err("Failed to copy topo info to user, ret = %d\n", ret);
+		kfree(arg);
+		return -EFAULT;
+	}
+
+	kfree(arg);
+	return 0;
+}
+
+static int ubagg_nl_get_topo_ops(struct sk_buff *skb, struct genl_info *info)
+{
+	uint64_t args_addr;
+
+	(void)skb;
+
+	if (info == NULL || info->attrs[UBAGG_HDR_ARGS_ADDR] == NULL)
+		return -EINVAL;
+
+	args_addr = nla_get_u64(info->attrs[UBAGG_HDR_ARGS_ADDR]);
+	return ubagg_nl_get_topo_node(args_addr);
 }
 
 int ubagg_genl_register_family(void)

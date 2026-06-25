@@ -197,40 +197,6 @@ static int ubcore_cmd_set_topo(struct ubcore_global_file *file,
 	return 0;
 }
 
-static int ubcore_cmd_get_topo(struct ubcore_global_file *file,
-			       struct ubcore_cmd_hdr *hdr)
-{
-	struct ubcore_cmd_get_topo arg = {0};
-	struct ubcore_topo_map *topo_map;
-	int ret = 0;
-
-	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0) {
-		ubcore_log_err("Failed to parse get_topo_info params\n");
-		return ret;
-	}
-
-	if (arg.out.topo_map == NULL) {
-		ubcore_log_err("Invalid get_topo_info param\n");
-		return -EINVAL;
-	}
-
-	topo_map = ubcore_get_global_topo_map();
-	if (topo_map == NULL) {
-		ubcore_log_err("Failed to get global topo map\n");
-		return -ENOMEM;
-	}
-	ret = copy_to_user((void __user *)arg.out.topo_map, topo_map,
-					sizeof(struct ubcore_topo_map)
-	);
-	if (ret != 0) {
-		ubcore_log_err("copy_to_user fail.");
-		return ret;
-	}
-
-	return 0;
-}
-
 static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 	struct ubcore_cmd_hdr *hdr)
 {
@@ -422,7 +388,6 @@ struct ubcore_uvs_global_cmd_func {
 static struct ubcore_uvs_global_cmd_func g_ubcore_uvs_global_cmd_funcs[] = {
 	[0] = { NULL, false },
 	[UBCORE_CMD_SET_TOPO] = { ubcore_cmd_set_topo, true },
-	[UBCORE_CMD_GET_TOPO] = { ubcore_cmd_get_topo, false },
 	[UBCORE_CMD_GET_PATH_SET] = { ubcore_cmd_get_path_set, false },
 	[UBCORE_CMD_INSERT_MAIN_UE_EID] = {
 		ubcore_cmd_insert_main_ue_eid, true },

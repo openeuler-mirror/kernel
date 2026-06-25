@@ -134,12 +134,7 @@ static const struct genl_ops ubcore_genl_ops[] = {
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.flags = GENL_ADMIN_PERM,
-		.doit = ubcore_set_dev_eid_ns_ops },
-	{
-		.cmd = UBCORE_CMD_GET_TOPO_INFO,
-		.policy = ubcore_policy,
-		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-		.doit = ubcore_get_topo_info,
+		.doit = ubcore_set_dev_eid_ns_ops,
 	},
 	{
 		.cmd = UBCORE_CMD_SET_SL,
