@@ -24,12 +24,6 @@ enum ubcore_tpid_share_mode {
 	UBCORE_TPID_SHARE_CUSTOM,        /* User-defined sharing granularity */
 };
 
-enum ubcore_tpid_owner_type {
-	UBCORE_TPID_OWNER_NONE = 0,
-	UBCORE_TPID_OWNER_USER_AWARE,
-	UBCORE_TPID_OWNER_USER_UNAWARE
-};
-
 enum ubcore_tpid_semantic {
 	UBCORE_TPID_QUERY = 0,
 	UBCORE_TPID_CREATE
@@ -71,11 +65,6 @@ struct ubcore_tpid_list {
 
 	struct list_head create_list;
 	uint32_t cnt;
-	struct list_head unaware_list;
-	struct list_head aware_list;
-	uint32_t acnt;
-	uint32_t ucnt;
-	uint32_t capacity;
 
 	struct kref ref_cnt;
 	struct completion comp;
@@ -95,7 +84,6 @@ struct ubcore_tpid_state {
 	enum ubcore_tpid_status tpid_status;
 	bool alloced;
 	uint32_t tx_psn;
-	enum ubcore_tpid_owner_type tp_id_owner_type;
 
 	struct kref ref_cnt;
 	struct completion comp;

@@ -58,7 +58,9 @@ static const struct nla_policy ubcore_policy[NUM_UBCORE_ATTR] = {
 	[UBCORE_ATTR_TOOL_QUERY_KEY_EXT] = { .type = NLA_U32 },
 	[UBCORE_ATTR_TOOL_QUERY_KEY_CNT] = { .type = NLA_U32 },
 	[UBCORE_ATTR_STATS] = { .type = NLA_BINARY,
-				     .len = sizeof(struct ubcore_stats) }
+				     .len = sizeof(struct ubcore_stats) },
+	[UBCORE_ATTR_TPID_QUERY_FLAG] = { .type = NLA_U8 },
+	[UBCORE_ATTR_TPID]            = { .type = NLA_U64 },
 };
 
 static const struct genl_ops ubcore_genl_ops[] = {

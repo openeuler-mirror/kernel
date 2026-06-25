@@ -232,11 +232,6 @@ static struct ubcore_tpid_list *ubcore_create_tpid_list(struct ubcore_device *de
 	new_tpid_list->lk.link_type  = key->link_type;
 	INIT_LIST_HEAD(&new_tpid_list->create_list);
 	new_tpid_list->cnt = 0;
-	INIT_LIST_HEAD(&new_tpid_list->aware_list);
-	INIT_LIST_HEAD(&new_tpid_list->unaware_list);
-	new_tpid_list->acnt = 0;
-	new_tpid_list->ucnt = 0;
-	new_tpid_list->capacity = 0;
 
 	return new_tpid_list;
 }
@@ -522,7 +517,6 @@ static struct ubcore_tpid_state
 	entry->ub_dev = dev;
 	entry->tp_id = tp_id;
 	entry->tpid_status = state;
-	entry->tp_id_owner_type = 0;
 	kref_init(&entry->ref_cnt);
 	init_completion(&entry->comp);
 	mutex_init(&entry->lock);
