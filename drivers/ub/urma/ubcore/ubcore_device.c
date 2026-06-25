@@ -491,6 +491,7 @@ void ubcore_put_device(struct ubcore_device *dev)
 	if (atomic_dec_and_test(&dev->use_cnt))
 		complete(&dev->comp);
 }
+EXPORT_SYMBOL(ubcore_put_device);
 
 struct ubcore_device *
 ubcore_find_mue_device_legacy(enum ubcore_transport_type type)

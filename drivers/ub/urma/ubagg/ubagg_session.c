@@ -12,10 +12,11 @@
 #include <linux/atomic.h>
 #include <linux/random.h>
 #include "ubagg_log.h"
+
 #include "ubagg_session.h"
 
 struct ubagg_session {
-	struct ubcore_device *dev;
+	struct ubagg_device *dev;
 	uint32_t session_id;
 	void *session_data;
 	struct kref ref;
@@ -65,8 +66,7 @@ static inline void ubagg_session_add_to_list(struct ubagg_session *session)
 	ubagg_log_info("Session %u add to list", session->session_id);
 }
 
-static inline void
-ubagg_session_remove_from_list(struct ubagg_session *session)
+static inline void ubagg_session_remove_from_list(struct ubagg_session *session)
 {
 	unsigned long flags;
 
@@ -93,10 +93,10 @@ static void ubagg_session_timeout(struct work_struct *work)
 	ubagg_session_remove_from_list(session);
 }
 
-struct ubagg_session *
-ubagg_session_create(struct ubcore_device *dev, void *session_data,
-		      uint32_t timeout, ubagg_session_callback complete_cb,
-		      ubagg_session_free_callback free_cb)
+struct ubagg_session *ubagg_session_create(struct ubagg_device *dev,
+					   void *session_data, uint32_t timeout,
+					   ubagg_session_callback complete_cb,
+					   ubagg_session_free_callback free_cb)
 {
 	struct ubagg_session *s;
 	uint32_t timeout_limited;
@@ -183,14 +183,31 @@ void ubagg_session_ref_release(struct ubagg_session *session)
 	kref_put(&session->ref, ubagg_session_free);
 }
 
+void ubagg_session_flush(struct ubagg_device *dev)
+{
+	struct ubagg_session *session = NULL;
+	unsigned long flags;
+
+	spin_lock_irqsave(&session_ctx.lock, flags);
+	list_for_each_entry(session, &session_ctx.list, list_entry) {
+		if (dev != NULL && session->dev != dev)
+			continue;
+		mod_delayed_work(session_ctx.wq, &session->delayed_work, 0);
+	}
+	spin_unlock_irqrestore(&session_ctx.lock, flags);
+
+	flush_workqueue(session_ctx.wq);
+}
+
 int ubagg_session_init(void)
 {
 	atomic_set(&session_ctx.next_id, 0);
 	INIT_LIST_HEAD(&session_ctx.list);
 	spin_lock_init(&session_ctx.lock);
 
-	session_ctx.wq = alloc_workqueue("%s",
-		WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 1, "ubagg-session");
+	session_ctx.wq =
+		alloc_workqueue("%s", WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM,
+				1, "ubagg-session");
 	if (!session_ctx.wq) {
 		ubagg_log_err("Fail to alloc session workqueue.");
 		return -EINVAL;
@@ -200,15 +217,7 @@ int ubagg_session_init(void)
 
 void ubagg_session_uninit(void)
 {
-	struct ubagg_session *session = NULL;
-	unsigned long flags;
-
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_for_each_entry(session, &session_ctx.list, list_entry) {
-		mod_delayed_work(session_ctx.wq, &session->delayed_work, 0);
-	}
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
-
+	ubagg_session_flush(NULL);
 	drain_workqueue(session_ctx.wq);
 	destroy_workqueue(session_ctx.wq);
 }

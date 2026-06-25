@@ -182,7 +182,7 @@ struct ubagg_topo_node *find_cur_topo_node(struct ubagg_topo_map *topo_map)
 
 struct ubagg_topo_agg_dev *
 find_cur_topo_agg_dev(struct ubagg_topo_map *topo_map,
-		      union ubcore_eid *bonding_eid)
+		      const union ubcore_eid *bonding_eid)
 {
 	struct ubagg_topo_node *cur_node = NULL;
 
