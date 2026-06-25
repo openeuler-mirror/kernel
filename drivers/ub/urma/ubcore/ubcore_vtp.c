@@ -1645,6 +1645,7 @@ int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn)
 {
 	struct ubcore_device *dev;
 	uint64_t tp_handle;
+	union ubcore_tp_handle delete_tp_handle;
 	int ret = 0;
 
 	if (vtpn == NULL || vtpn->ub_dev == NULL)
@@ -1682,6 +1683,11 @@ int ubcore_disconnect_vtp(struct ubcore_vtpn *vtpn)
 	ubcore_log_info_rl("disconnect vtpn:%u, ret:%d, vtp_state:%u",
 			   vtpn->vtpn, ret, vtpn->state);
 	mutex_unlock(&vtpn->state_lock);
+
+	if (tp_handle != 0 && ret == 0) {
+		delete_tp_handle = (union ubcore_tp_handle) tp_handle;
+		(void)ubcore_delete_tpid_priv(dev, delete_tp_handle.bs.tpid);
+	}
 
 	if (atomic_read(&vtpn->use_cnt) == 0) {
 		if (ret == 0 || ret == -ENOENT ||

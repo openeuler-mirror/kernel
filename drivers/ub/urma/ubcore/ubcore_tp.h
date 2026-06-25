@@ -104,7 +104,7 @@ void ubcore_remove_tp_id_state_entry(struct ubcore_device *dev,
 	struct ubcore_tpid_state *tp_state_entry);
 
 struct ubcore_tpid *ubcore_create_tpid_priv(struct ubcore_device *dev,
-	struct ubcore_tpid_cfg *cfg, struct ubcore_udata *udata, bool is_aware);
+	struct ubcore_tpid_cfg *cfg, struct ubcore_udata *udata);
 int ubcore_delete_tpid_priv(struct ubcore_device *dev, uint32_t tpid);
 int ubcore_modify_tpid(struct ubcore_device *dev, enum ubcore_tpid_status state,
 	union ubcore_modify_tpid_cfg *cfg);
