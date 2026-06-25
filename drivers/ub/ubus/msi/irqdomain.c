@@ -19,7 +19,6 @@ static void ub_msi_domain_set_desc(msi_alloc_info_t *arg, struct msi_desc *desc)
 {
 	arg->desc = desc;
 	arg->hwirq = ub_msi_domain_calc_hwirq(desc);
-	pr_info("%s, arg->hwirq: %lu.\n", __func__, arg->hwirq);
 }
 
 static struct msi_domain_ops ub_msi_domain_ops_default = {
