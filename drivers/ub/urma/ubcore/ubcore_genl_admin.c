@@ -1108,7 +1108,11 @@ static int ubcore_tpid_emit_list_hdr(struct sk_buff *skb,
 			tl->lk.link_type) != 0 ||
 	    nla_put_u32(skb, UBCORE_TPID_SHOW_ATTR_TP_LIST_CNT, tl->cnt) != 0 ||
 	    nla_put_u32(skb, UBCORE_TPID_SHOW_ATTR_REF_CNT,
-			(uint32_t)kref_read(&tl->ref_cnt)) != 0) {
+			(uint32_t)kref_read(&tl->ref_cnt)) != 0 ||
+		nla_put(skb, UBCORE_TPID_SHOW_ATTR_LOCAL_CNA,
+			sizeof(tl->lk.local_cna), &tl->lk.local_cna) != 0 ||
+		nla_put(skb, UBCORE_TPID_SHOW_ATTR_PEER_CNA,
+			sizeof(tl->lk.peer_cna), &tl->lk.peer_cna) != 0) {
 		mutex_unlock(&tl->lock);
 		genlmsg_cancel(skb, hdr);
 		return -EMSGSIZE;
@@ -1250,7 +1254,11 @@ static int ubcore_tpid_emit_reuse(struct sk_buff *skb,
 	    nla_put_u32(skb, UBCORE_TPID_SHOW_ATTR_TX_PSN,
 			reuse->tx_psn) != 0 ||
 	    nla_put_u8(skb, UBCORE_TPID_SHOW_ATTR_IS_REF,
-			reuse->is_ref ? 1 : 0) != 0) {
+			reuse->is_ref ? 1 : 0) != 0 ||
+	    nla_put(skb, UBCORE_TPID_SHOW_ATTR_LOCAL_CNA,
+			sizeof(reuse->rk.lk.local_cna), &reuse->rk.lk.local_cna) != 0 ||
+	    nla_put(skb, UBCORE_TPID_SHOW_ATTR_PEER_CNA,
+			sizeof(reuse->rk.lk.peer_cna), &reuse->rk.lk.peer_cna) != 0) {
 		mutex_unlock(&reuse->lock);
 		ubcore_tpid_reuse_kref_put(reuse);
 		genlmsg_cancel(skb, hdr);
