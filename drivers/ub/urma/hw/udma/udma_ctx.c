@@ -64,13 +64,15 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 
 static void udma_put_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 {
+	struct udma_seg_tree *to_destroy = NULL;
+
 	if (dev->caps.sva_sep_mode_en) {
-		mutex_lock(&dev->seg_tree_mutex);
-		if (refcount_dec_and_test(&ctx->seg_tree->ctx_refcnt)) {
-			udma_seg_tree_destroy(ctx->seg_tree);
-			__xa_erase(&dev->seg_tree_table, ctx->tid);
-		}
-		mutex_unlock(&dev->seg_tree_mutex);
+		mutex_lock(&g_seg_tree_mutex);
+		if (refcount_dec_and_test(&ctx->seg_tree->ctx_refcnt))
+			to_destroy = __xa_erase(&g_seg_tree_table, ctx->tid);
+		mutex_unlock(&g_seg_tree_mutex);
+		if (to_destroy)
+			udma_seg_tree_destroy(to_destroy);
 
 		ummu_core_free_tdev(ctx->ummu_dev);
 	} else {
@@ -80,25 +82,19 @@ static void udma_put_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 
 static int udma_get_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 {
-#ifdef CONFIG_UB_UMMU_SVA_SEPARATED_PAGES
 	struct tdev_opt opt = { current->mm, true };
-#endif
 	int ret = -ENOMEM;
 
 	if (dev->caps.sva_sep_mode_en) {
 		ctx->tid = UMMU_INVALID_TID;
-#ifdef CONFIG_UB_UMMU_SVA_SEPARATED_PAGES
 		ctx->ummu_dev = ummu_core_alloc_separate_tdev(&opt, &ctx->tid);
-#else
-		ctx->ummu_dev = ummu_alloc_tdev_separated(&ctx->tid);
-#endif
 		if (!ctx->ummu_dev) {
 			dev_err(dev->dev, "failed to alloc separate pages USVA device.\n");
 			goto err_alloc_tdev_separated;
 		}
 
-		mutex_lock(&dev->seg_tree_mutex);
-		ctx->seg_tree = xa_load(&dev->seg_tree_table, ctx->tid);
+		mutex_lock(&g_seg_tree_mutex);
+		ctx->seg_tree = xa_load(&g_seg_tree_table, ctx->tid);
 		if (ctx->seg_tree) {
 			refcount_inc(&ctx->seg_tree->ctx_refcnt);
 			ret = 0;
@@ -108,14 +104,14 @@ static int udma_get_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 				dev_err(dev->dev, "failed to init segment_range.\n");
 				goto err_segment_range_init;
 			}
-			ret = xa_err(__xa_store(&dev->seg_tree_table, ctx->tid,
+			ret = xa_err(__xa_store(&g_seg_tree_table, ctx->tid,
 						ctx->seg_tree, GFP_ATOMIC));
 			if (ret) {
 				dev_err(dev->dev, "failed to store segment_range, ret=%d.\n", ret);
 				goto err_segment_range_store;
 			}
 		}
-		mutex_unlock(&dev->seg_tree_mutex);
+		mutex_unlock(&g_seg_tree_mutex);
 	} else {
 		ctx->sva = iommu_sva_bind_device_isolated(dev->dev, current->mm, NULL);
 		if (IS_ERR(ctx->sva)) {
@@ -135,7 +131,7 @@ static int udma_get_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 err_segment_range_store:
 	udma_seg_tree_destroy(ctx->seg_tree);
 err_segment_range_init:
-	mutex_unlock(&dev->seg_tree_mutex);
+	mutex_unlock(&g_seg_tree_mutex);
 	ummu_core_free_tdev(ctx->ummu_dev);
 err_alloc_tdev_separated:
 
@@ -186,6 +182,7 @@ err_init_ctx_resp:
 	mutex_destroy(&ctx->page_lock);
 	mutex_destroy(&ctx->hugepage_lock);
 	mutex_destroy(&ctx->pgdir_mutex);
+	udma_unset_dtu_va_info(dev, ctx);
 	udma_put_usva_tid(dev, ctx);
 err_free_ctx:
 	kfree(ctx);

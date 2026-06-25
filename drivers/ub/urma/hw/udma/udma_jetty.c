@@ -140,7 +140,7 @@ static void udma_init_jettyc(struct udma_dev *dev, struct ubcore_jetty_cfg *cfg,
 
 	ctx->state = JETTY_READY;
 	ctx->jfs_mode = JETTY;
-	ctx->type = to_udma_type(cfg->trans_mode);
+	ctx->type = to_udma_type(cfg->trans_mode, cfg->flag.bs.order_type);
 	ctx->sl = dev->udma_sl[UDMA_DEFAULT_SL_NUM];
 	if (ctx->type == JETTY_RM || ctx->type == JETTY_RC) {
 		ctx->sl = dev->priority_info[cfg->priority].SL;

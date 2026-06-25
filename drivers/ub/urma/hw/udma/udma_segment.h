@@ -33,6 +33,6 @@ struct ubcore_target_seg *udma_import_seg(struct ubcore_device *dev,
 					  struct ubcore_target_seg_cfg *cfg,
 					  struct ubcore_udata *udata);
 int udma_unimport_seg(struct ubcore_target_seg *tseg);
-void udma_destroy_seg_tree_table(struct udma_dev *udma_dev);
+void udma_destroy_seg_tree_table(void);
 
 #endif /* __UDMA_SEGMENT_H__ */

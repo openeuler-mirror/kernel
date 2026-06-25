@@ -1866,26 +1866,27 @@ void udma_clean_jfc(struct ubcore_jfc *jfc, uint32_t jetty_id, struct udma_dev *
 int udma_bind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type type)
 {
 	struct udma_jfc *udma_jfc;
+	unsigned long flags;
 
 	if (jfc_share_enable || !dev->caps.no_share_jfc_en)
 		return 0;
 
-	xa_lock(&dev->jfc_table.xa);
+	xa_lock_irqsave(&dev->jfc_table.xa, flags);
 	udma_jfc = (struct udma_jfc *)xa_load(&dev->jfc_table.xa, jfc_id);
 	if (!udma_jfc) {
-		xa_unlock(&dev->jfc_table.xa);
+		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "JFC %u is invalid.\n", jfc_id);
 		return -EINVAL;
 	}
 
 	if ((udma_jfc->bind_type != type) && (udma_jfc->bind_type != UDMA_UNOCP_JFC)) {
-		xa_unlock(&dev->jfc_table.xa);
+		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "JFC %u is bound.\n", jfc_id);
 		return -EINVAL;
 	}
 
 	refcount_inc(&udma_jfc->bind_refcount);
-	xa_unlock(&dev->jfc_table.xa);
+	xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 
 	return 0;
 }
@@ -1893,32 +1894,34 @@ int udma_bind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type
 void udma_unbind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type type)
 {
 	struct udma_jfc *udma_jfc;
+	unsigned long flags;
 
 	if (jfc_share_enable || !dev->caps.no_share_jfc_en)
 		return;
 
-	xa_lock(&dev->jfc_table.xa);
+	xa_lock_irqsave(&dev->jfc_table.xa, flags);
 	udma_jfc = (struct udma_jfc *)xa_load(&dev->jfc_table.xa, jfc_id);
 	if (!udma_jfc) {
-		xa_unlock(&dev->jfc_table.xa);
+		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "JFC %u is invalid.\n", jfc_id);
 		return;
 	}
 
 	if ((udma_jfc->bind_type != type) && (udma_jfc->bind_type != UDMA_UNOCP_JFC)) {
-		xa_unlock(&dev->jfc_table.xa);
+		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "failed to unbind JFC:%u, JFC type:%u.\n",
 			jfc_id, (uint8_t)udma_jfc->bind_type);
 		return;
 	}
 
 	refcount_dec(&udma_jfc->bind_refcount);
-	xa_unlock(&dev->jfc_table.xa);
+	xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 }
 
 int udma_jetty_bind_jfc(struct udma_dev *dev, uint32_t send_jfc_id, uint32_t recv_jfc_id)
 {
 	struct udma_jfc *udma_send_jfc;
+	unsigned long flags;
 
 	if (jfc_share_enable || !dev->caps.no_share_jfc_en)
 		return 0;
@@ -1928,23 +1931,23 @@ int udma_jetty_bind_jfc(struct udma_dev *dev, uint32_t send_jfc_id, uint32_t rec
 		return -EINVAL;
 	}
 
-	xa_lock(&dev->jfc_table.xa);
+	xa_lock_irqsave(&dev->jfc_table.xa, flags);
 	udma_send_jfc = (struct udma_jfc *)xa_load(&dev->jfc_table.xa, send_jfc_id);
 	if (!udma_send_jfc) {
-		xa_unlock(&dev->jfc_table.xa);
+		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "JFC %u is invalid.\n", send_jfc_id);
 		return -EINVAL;
 	}
 
 	if ((udma_send_jfc->bind_type != UDMA_SEND_JFC) &&
 	    (udma_send_jfc->bind_type != UDMA_UNOCP_JFC)) {
-		xa_unlock(&dev->jfc_table.xa);
+		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "JFC %u is bound.\n", send_jfc_id);
 		return -EINVAL;
 	}
 
 	refcount_inc(&udma_send_jfc->bind_refcount);
-	xa_unlock(&dev->jfc_table.xa);
+	xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 
 	return 0;
 }
@@ -1952,26 +1955,27 @@ int udma_jetty_bind_jfc(struct udma_dev *dev, uint32_t send_jfc_id, uint32_t rec
 void udma_jetty_unbind_jfc(struct udma_dev *dev, uint32_t send_jfc_id)
 {
 	struct udma_jfc *udma_send_jfc;
+	unsigned long flags;
 
 	if (jfc_share_enable || !dev->caps.no_share_jfc_en)
 		return;
 
-	xa_lock(&dev->jfc_table.xa);
+	xa_lock_irqsave(&dev->jfc_table.xa, flags);
 	udma_send_jfc = (struct udma_jfc *)xa_load(&dev->jfc_table.xa, send_jfc_id);
 	if (!udma_send_jfc) {
-		xa_unlock(&dev->jfc_table.xa);
+		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev, "JFC id %u is invalid.\n", send_jfc_id);
 		return;
 	}
 
 	if ((udma_send_jfc->bind_type != UDMA_SEND_JFC) &&
 	    (udma_send_jfc->bind_type != UDMA_UNOCP_JFC)) {
-		xa_unlock(&dev->jfc_table.xa);
+		xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 		dev_err(dev->dev,
 			"failed to unbind JFC:%u, JFC type is not send JFC.\n", send_jfc_id);
 		return;
 	}
 
 	refcount_dec(&udma_send_jfc->bind_refcount);
-	xa_unlock(&dev->jfc_table.xa);
+	xa_unlock_irqrestore(&dev->jfc_table.xa, flags);
 }

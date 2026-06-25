@@ -10,8 +10,8 @@
 #define MAX_VADDR ((1ULL << MAX_ADDR_BITS) - 1)
 #define MAX_SEG_STACK_SIZE (MAX_ADDR_BITS - PAGE_SHIFT + 1)
 
-static int udma_add_to_range_list(struct udma_range_list *list, uint64_t start,
-				  uint64_t end)
+static int udma_add_to_range_list(struct udma_range_list *list,
+				  uint64_t start, uint64_t end)
 {
 	struct udma_range_list_node *node = NULL;
 
@@ -246,7 +246,7 @@ static int udma_seg_update_range(struct udma_context *ctx,
 					cur->ref_count -= val;
 					cur->lazy -= val;
 					dev_err(ctx->dev->dev,
-						"kzalloc memory failed in udma_seg_push_down_update while register VM.\n");
+						"add to range list failed.\n");
 					goto rollback;
 				}
 
@@ -259,8 +259,7 @@ static int udma_seg_update_range(struct udma_context *ctx,
 
 		ret = udma_seg_push_down_update(cur);
 		if (ret != 0) {
-			dev_err(ctx->dev->dev,
-				"kzalloc memory failed in udma_seg_push_down_update while register VM.\n");
+			dev_err(ctx->dev->dev, "push down update failed.\n");
 			goto rollback;
 		}
 
@@ -303,7 +302,7 @@ struct udma_seg_tree *udma_seg_tree_init(void)
 typedef int (*range_check)(struct udma_seg_tree_node *, struct udma_segment *);
 
 static int range_check_occupy(struct udma_seg_tree_node *node,
-	struct udma_segment *seg)
+			      struct udma_segment *seg)
 {
 	if (node->vm_start == ULONG_MAX || node->vm_end == ULONG_MAX)
 		return 0;
@@ -315,8 +314,8 @@ static int range_check_occupy(struct udma_seg_tree_node *node,
 }
 
 static int udma_seg_range_check(struct udma_context *ctx,
-	struct udma_segment *seg,
-	range_check check)
+				struct udma_segment *seg,
+				range_check check)
 {
 	struct udma_seg_tree_node *stack[MAX_SEG_STACK_SIZE];
 	struct udma_seg_tree_node *cur;
@@ -326,7 +325,6 @@ static int udma_seg_range_check(struct udma_context *ctx,
 
 	start = seg->addr;
 	end = seg->addr + PAGE_ALIGN(seg->length) - 1;
-
 	if (ctx->seg_tree->root->start < end &&
 	    ctx->seg_tree->root->end >= start)
 		stack[count++] = ctx->seg_tree->root;
@@ -360,7 +358,7 @@ int udma_seg_range_occupy(struct udma_context *ctx, struct udma_segment *seg,
 	list->head = list->tail = NULL;
 
 	if (udma_seg_range_check(ctx, seg, range_check_occupy) != 0)
-		dev_err(ctx->dev->dev,
+		dev_info_ratelimited(ctx->dev->dev,
 			"the mv_start and/or mv_end of VMA was modified.\n");
 
 	return udma_seg_update_range(ctx, seg, 1, list);
