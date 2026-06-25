@@ -75,40 +75,45 @@ extern uint32_t g_uburma_log_level;
 
 /* Rate Limited log to avoid soft lockup crash by quantities of printk */
 /* Current limit is 100 log every 5 seconds */
+/* Optimized: check log level before ratelimit to avoid unnecessary calls */
 #define uburma_log_err_rl(...)                                            \
 	do {                                                                  \
-		static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL,     \
-					      UBURMA_RATELIMIT_BURST);                        \
-		if ((__ratelimit(&_rs)) &&                                        \
-		    (g_uburma_log_level >= UBURMA_LOG_LEVEL_ERR))                 \
-			uburma_log(err, __VA_ARGS__);                                 \
+		if (g_uburma_log_level >= UBURMA_LOG_LEVEL_ERR) {                 \
+			static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL, \
+						      UBURMA_RATELIMIT_BURST);                    \
+			if (__ratelimit(&_rs))                                        \
+				uburma_log(err, __VA_ARGS__);                             \
+		}                                                                 \
 	} while (0)
 
 #define uburma_log_warn_rl(...)                                           \
 	do {                                                                  \
-		static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL,     \
-					      UBURMA_RATELIMIT_BURST);                        \
-		if ((__ratelimit(&_rs)) &&                                        \
-		    (g_uburma_log_level >= UBURMA_LOG_LEVEL_WARNING))             \
-			uburma_log(warn, __VA_ARGS__);                                \
+		if (g_uburma_log_level >= UBURMA_LOG_LEVEL_WARNING) {             \
+			static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL, \
+						      UBURMA_RATELIMIT_BURST);                    \
+			if (__ratelimit(&_rs))                                        \
+				uburma_log(warn, __VA_ARGS__);                            \
+		}                                                                 \
 	} while (0)
 
 #define uburma_log_notice_rl(...)                                         \
 	do {                                                                  \
-		static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL,     \
-					      UBURMA_RATELIMIT_BURST);                        \
-		if ((__ratelimit(&_rs)) &&                                        \
-		    (g_uburma_log_level >= UBURMA_LOG_LEVEL_NOTICE))              \
-			uburma_log(notice, __VA_ARGS__);                              \
+		if (g_uburma_log_level >= UBURMA_LOG_LEVEL_NOTICE) {              \
+			static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL, \
+						      UBURMA_RATELIMIT_BURST);                    \
+			if (__ratelimit(&_rs))                                        \
+				uburma_log(notice, __VA_ARGS__);                          \
+		}                                                                 \
 	} while (0)
 
 #define uburma_log_info_rl(...)                                           \
 	do {                                                                  \
-		static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL,     \
-					      UBURMA_RATELIMIT_BURST);                        \
-		if ((__ratelimit(&_rs)) &&                                        \
-		    (g_uburma_log_level >= UBURMA_LOG_LEVEL_INFO))                \
-			uburma_log(info, __VA_ARGS__);                                \
+		if (g_uburma_log_level >= UBURMA_LOG_LEVEL_INFO) {                \
+			static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL, \
+						      UBURMA_RATELIMIT_BURST);                    \
+			if (__ratelimit(&_rs))                                        \
+				uburma_log(info, __VA_ARGS__);                            \
+		}                                                                 \
 	} while (0)
 
 #endif /* UBURMA_LOG_H */
