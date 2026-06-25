@@ -1611,7 +1611,6 @@ int ubcore_delete_jfr_batch(struct ubcore_jfr **jfr_arr, int jfr_num,
 
 	for (i = 0; i < jfr_num; ++i) {
 		jfr = jfr_arr[i];
-		jfc[i] = jfr->jfr_cfg.jfc;
 		if (!jfr || !jfr->ub_dev ||
 			!jfr->ub_dev->ops ||
 			!jfr->ub_dev->ops->destroy_jfr_batch) {
@@ -1630,8 +1629,10 @@ int ubcore_delete_jfr_batch(struct ubcore_jfr **jfr_arr, int jfr_num,
 		}
 	}
 
+	/* Only set jfc after checking jfr is NULL */
 	for (i = 0; i < jfr_num; ++i) {
 		jfr = jfr_arr[i];
+		jfc[i] = jfr->jfr_cfg.jfc;
 		jfr_id = jfr->jfr_id.id;
 		dev = jfr->ub_dev;
 		(void)ubcore_hash_table_check_remove(&dev->ht[UBCORE_HT_JFR],
