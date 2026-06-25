@@ -15,6 +15,7 @@
 #include <net/genetlink.h>
 #include <ub/urma/ubcore_uapi.h>
 
+#include "ubagg_dfx.h"
 #include "ubagg_log.h"
 #include "ubagg_ioctl.h"
 #include "ubagg_netlink.h"
@@ -27,7 +28,8 @@ enum ubagg_genl_cmd {
 	UBAGG_NL_CMD_GET_TOPO = 1,
 	UBAGG_NL_CMD_GET_SLAVE_EID = 2,
 	UBAGG_NL_CMD_GET_PHYSICAL_DEVICE = 4,
-	UBAGG_NL_CMD_MAX = 5,
+	UBAGG_NL_CMD_GET_V2P_RES = 5,
+	UBAGG_NL_CMD_MAX,
 };
 
 enum ubagg_genl_attr {
@@ -106,12 +108,75 @@ int ubagg_nl_get_physical_device_ops(struct sk_buff *skb, struct genl_info *info
 	return 0;
 }
 
+static int ubagg_nl_get_v2p_res_ops(struct sk_buff *skb, struct genl_info *info)
+{
+	struct ubagg_cmd_v2p_res *arg = NULL;
+	struct ubagg_device *ubagg_dev = NULL;
+	uint64_t args_addr;
+	int ret;
+
+	(void)skb;
+
+	if (info == NULL || info->attrs[UBAGG_HDR_ARGS_ADDR] == NULL) {
+		ubagg_log_err("Invalid ubagg v2p res netlink msg\n");
+		return -EINVAL;
+	}
+
+	arg = kzalloc(sizeof(*arg), GFP_KERNEL);
+	if (arg == NULL)
+		return -ENOMEM;
+
+	args_addr = nla_get_u64(info->attrs[UBAGG_HDR_ARGS_ADDR]);
+	ret = (int)copy_from_user(arg, (void __user *)(uintptr_t)args_addr,
+				  sizeof(*arg));
+	if (ret != 0) {
+		ubagg_log_err("Failed to copy v2p res arg from user\n");
+		ret = -EFAULT;
+		goto free_arg;
+	}
+
+	arg->in.dev_name[UBCORE_MAX_DEV_NAME - 1] = '\0';
+	ubagg_dev = ubagg_find_dev_by_name(arg->in.dev_name);
+	if (ubagg_dev == NULL) {
+		ubagg_log_err("Failed to find ubagg dev %s\n", arg->in.dev_name);
+		ret = -ENOENT;
+		goto free_arg;
+	}
+
+	ret = ubagg_query_v2p_res(ubagg_dev, arg);
+	ubagg_dev_ref_put(ubagg_dev);
+	if (ret != 0) {
+		ubagg_log_err("Failed to query ubagg v2p res, ret:%d\n", ret);
+		goto free_arg;
+	}
+
+	ret = (int)copy_to_user((void __user *)(uintptr_t)args_addr, arg,
+				sizeof(*arg));
+	if (ret != 0) {
+		ubagg_log_err("Failed to copy v2p res arg to user\n");
+		ret = -EFAULT;
+		goto free_arg;
+	}
+
+	ret = 0;
+
+free_arg:
+	kfree(arg);
+	return ret;
+}
+
 static const struct genl_ops ubagg_genl_ops[] = {
 	{
 		.cmd = UBAGG_NL_CMD_GET_PHYSICAL_DEVICE,
 		.policy = ubagg_genl_policy,
 		.maxattr = ARRAY_SIZE(ubagg_genl_policy) - 1,
 		.doit = ubagg_nl_get_physical_device_ops,
+	},
+	{
+		.cmd = UBAGG_NL_CMD_GET_V2P_RES,
+		.policy = ubagg_genl_policy,
+		.maxattr = ARRAY_SIZE(ubagg_genl_policy) - 1,
+		.doit = ubagg_nl_get_v2p_res_ops,
 	}
 };
 

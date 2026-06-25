@@ -17,6 +17,7 @@
 #include <ub/urma/ubcore_api.h>
 #include <ub/urma/ubcore_uapi.h>
 #include <ub/urma/ubcore_types.h>
+
 #include "ubagg_log.h"
 #include "ubagg_ioctl.h"
 #include "ubagg_jetty.h"
@@ -35,18 +36,6 @@ struct seg_info_req {
 	struct ubcore_ubva ubva;
 	uint64_t len;
 	uint32_t token_id;
-};
-enum ubagg_show_res_type {
-	UBAGG_SHOW_RES_JETTY = 0,
-	UBAGG_SHOW_RES_JFS,
-	UBAGG_SHOW_RES_JFR,
-	UBAGG_SHOW_RES_JFC,
-	UBAGG_SHOW_RES_SEG,
-};
-
-struct ubagg_show_res {
-	struct ubcore_jetty_id jetty_id;
-	enum ubagg_show_res_type  res_type;
 };
 
 struct jetty_info_req {
@@ -122,7 +111,7 @@ static bool ubagg_dev_exists(const char *dev_name)
 	return found;
 }
 
-static struct ubagg_device *ubagg_find_dev_by_name(char *dev_name)
+struct ubagg_device *ubagg_find_dev_by_name(const char *dev_name)
 {
 	struct ubagg_device *dev;
 
@@ -377,228 +366,6 @@ static int ubagg_get_jetty_id(struct ubcore_device *dev,
 	return ret;
 }
 
-static int ubagg_get_list_res(struct ubcore_device *dev,
-				struct ubcore_user_ctl *user_ctl)
-{
-	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
-	struct ubagg_show_res *req = NULL;
-	struct ubagg_hash_table *ht = NULL;
-	struct hlist_node *pos = NULL;
-	struct hlist_node *n = NULL;
-	uint32_t *id_buf = NULL;
-	uint32_t count = 0;
-
-	if (ubagg_dev == NULL || user_ctl == NULL)
-		return -EINVAL;
-
-	if (user_ctl->in.addr == 0 ||
-	    user_ctl->in.len != sizeof(struct ubagg_show_res))
-		return -EINVAL;
-
-	req = (struct ubagg_show_res *)(uintptr_t)user_ctl->in.addr;
-
-	switch (req->res_type) {
-	case UBAGG_SHOW_RES_JETTY:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JETTY_HT];
-		break;
-	case UBAGG_SHOW_RES_JFR:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFR_HT];
-		break;
-	case UBAGG_SHOW_RES_JFS:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFS_HT];
-		break;
-	case UBAGG_SHOW_RES_JFC:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFC_HT];
-		break;
-	case UBAGG_SHOW_RES_SEG:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_SEGMENT_HT];
-		break;
-	default:
-		ubagg_log_err("unsupported res_type: %u\n", req->res_type);
-		return -EINVAL;
-	}
-
-	if (ht == NULL || ht->head == NULL)
-		return -EINVAL;
-
-	spin_lock(&ht->lock);
-	for (uint32_t i = 0; i < ht->p.size; i++)
-		hlist_for_each_safe(pos, n, &ht->head[i])
-			count++;
-	spin_unlock(&ht->lock);
-
-	if (count == 0) {
-		user_ctl->out.len = 0;
-		return 0;
-	}
-
-	id_buf = vzalloc(count * sizeof(uint32_t));
-	if (id_buf == NULL)
-		return -ENOMEM;
-
-	count = 0;
-	spin_lock(&ht->lock);
-	for (uint32_t i = 0; i < ht->p.size; i++) {
-		hlist_for_each_safe(pos, n, &ht->head[i]) {
-			void *key = ubagg_ht_key(ht, pos);
-
-			if (key != NULL) {
-				id_buf[count] = *(uint32_t *)key;
-				count++;
-			}
-		}
-	}
-	spin_unlock(&ht->lock);
-
-	if (user_ctl->out.addr != 0) {
-		if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
-				 id_buf, count * sizeof(uint32_t)) != 0) {
-			ubagg_log_err("copy to user fail");
-			vfree(id_buf);
-			return -EFAULT;
-		}
-	}
-
-	vfree(id_buf);
-	user_ctl->out.len = count * sizeof(uint32_t);
-	return 0;
-}
-
-static int ubagg_get_show_res(struct ubcore_device *dev,
-				struct ubcore_user_ctl *user_ctl)
-{
-	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
-	struct ubagg_show_res *res = NULL;
-	struct ubagg_hash_table *ht = NULL;
-	void *data_buf = NULL;
-	uint32_t id;
-	size_t out_size = 0;
-	int ret = 0;
-
-	if (ubagg_dev == NULL || user_ctl == NULL)
-		return -EINVAL;
-
-	if (user_ctl->in.addr == 0 ||
-	    user_ctl->in.len != sizeof(struct ubagg_show_res))
-		return -EINVAL;
-
-	res = (struct ubagg_show_res *)(uintptr_t)user_ctl->in.addr;
-	id = res->jetty_id.id;
-
-	switch (res->res_type) {
-	case UBAGG_SHOW_RES_JETTY:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JETTY_HT];
-		out_size = sizeof(struct ubagg_jetty_exchange_info);
-		break;
-	case UBAGG_SHOW_RES_JFR:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFR_HT];
-		out_size = sizeof(struct ubagg_jetty_exchange_info);
-		break;
-	case UBAGG_SHOW_RES_JFS:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFS_HT];
-		out_size = sizeof(struct ubagg_jetty_id) * UBAGG_DEV_MAX_NUM;
-		break;
-	case UBAGG_SHOW_RES_JFC:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JFC_HT];
-		out_size = sizeof(struct ubagg_jetty_id) * UBAGG_DEV_MAX_NUM;
-		break;
-	case UBAGG_SHOW_RES_SEG:
-		ht = &ubagg_dev->ubagg_ht[UBAGG_HT_SEGMENT_HT];
-		out_size = sizeof(struct ubagg_seg_exchange_info);
-		break;
-	default:
-		ubagg_log_err("unsupported res_type: %u\n", res->res_type);
-		return -EINVAL;
-	}
-
-	if (ht == NULL || ht->head == NULL)
-		return -EINVAL;
-
-	data_buf = kzalloc(out_size, GFP_KERNEL);
-	if (data_buf == NULL)
-		return -ENOMEM;
-
-	spin_lock(&ht->lock);
-	switch (res->res_type) {
-	case UBAGG_SHOW_RES_JETTY: {
-		struct ubagg_jetty_hash_node *node;
-
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jetty, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
-		}
-		memcpy(data_buf, &node->ex_info, out_size);
-		break;
-	}
-	case UBAGG_SHOW_RES_JFR: {
-		struct ubagg_jfr_hash_node *node;
-
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jfr, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
-		}
-		memcpy(data_buf, &node->ex_info, out_size);
-		break;
-	}
-	case UBAGG_SHOW_RES_JFS: {
-		struct ubagg_jfs *node;
-
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jfs, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
-		}
-		memcpy(data_buf, node->slaves, out_size);
-		break;
-	}
-	case UBAGG_SHOW_RES_JFC: {
-		struct ubagg_jfc *node;
-
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jfc, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
-		}
-		memcpy(data_buf, node->slaves, out_size);
-		break;
-	}
-	case UBAGG_SHOW_RES_SEG: {
-		struct ubagg_seg_hash_node *node;
-
-		node = ubagg_hash_table_lookup_nolock(ht, id, &id);
-		if (node == NULL) {
-			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find seg, id:%u.\n", id);
-			kfree(data_buf);
-			return -ENOENT;
-		}
-		memcpy(data_buf, &node->ex_info, out_size);
-		break;
-	}
-	}
-	spin_unlock(&ht->lock);
-
-	if (user_ctl->out.addr != 0) {
-		if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
-				 data_buf, out_size) != 0)
-			ret = -EFAULT;
-	}
-
-	kfree(data_buf);
-	user_ctl->out.len = (uint32_t)out_size;
-	return ret;
-}
-
 int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 {
 	int ret = 0;
@@ -620,12 +387,6 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 		break;
 	case GET_JETTY_ID:
 		ret = ubagg_get_jetty_id(dev, user_ctl);
-		break;
-	case GET_LIST_RES:
-		ret = ubagg_get_list_res(dev, user_ctl);
-		break;
-	case GET_SHOW_RES:
-		ret = ubagg_get_show_res(dev, user_ctl);
 		break;
 	default:
 		ubagg_log_err("unsupported ubagg userctl opcde:%u",
