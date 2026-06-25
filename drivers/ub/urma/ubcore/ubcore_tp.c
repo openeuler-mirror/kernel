@@ -307,8 +307,10 @@ static int ubcore_get_tp_list_from_ops(struct ubcore_device *dev,
 			UBCORE_MAX_GET_TP_GROUP_CNT;
 		actual_group_tp_cnt = req_group_tp_cnt;
 		cfg->flag.bs.group_id = group_idx;
+		UBCORE_PERF_TRACE_BEGIN(PERF_UB_GET_TP_LIST);
 		ret = dev->ops->get_tp_list(dev, cfg, &actual_group_tp_cnt,
 			temp_buf + actual_total_tp_cnt, udata);
+		UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
 		if (ret != 0) {
 			if (actual_total_tp_cnt > 0) {
 				ubcore_log_info_rl("actual cnt < request cnt, end early.\n");
@@ -405,7 +407,6 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 		return -EINVAL;
 	}
 
-	UBCORE_PERF_TRACE_BEGIN(PERF_UB_GET_TP_LIST);
 	req_total_tp_cnt = *tp_cnt;
 	tpid_cfg.local_eid = cfg->local_eid;
 	tpid_cfg.peer_eid = cfg->peer_eid;
@@ -438,7 +439,6 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 
 success:
 	*tp_cnt = actual_total_tp_cnt;
-	UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
 	return 0;
 }
 EXPORT_SYMBOL(ubcore_get_tp_list);
