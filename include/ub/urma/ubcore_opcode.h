@@ -73,6 +73,7 @@ enum ubcore_opcode {
 		0x42, // remote JFR/jetty ID and seg token id
 	UBCORE_OPC_NOP = 0x51,
 	UBCORE_OPC_WRITE_ATOMIC = 0x60,
+	UBCORE_OPC_FLUSH_DMA = 0x80,
 	UBCORE_OPC_LAST
 };
 
@@ -105,7 +106,8 @@ enum ubcore_cr_opcode {
 	UBCORE_CR_OPC_SEND = 0x00,
 	UBCORE_CR_OPC_SEND_WITH_IMM,
 	UBCORE_CR_OPC_SEND_WITH_INV,
-	UBCORE_CR_OPC_WRITE_WITH_IMM
+	UBCORE_CR_OPC_WRITE_WITH_IMM,
+	UBCORE_CR_OPC_FLUSH_WRITE
 };
 
 enum ubcore_slice {

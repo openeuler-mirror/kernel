@@ -793,6 +793,40 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
  * @return: 0 on success, other value on error
  */
 int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty);
+
+/**
+ * Advise jfr: construct the transport channel for jfs and remote jfr.
+ * @param[in] jfs: jfs to use to construct the transport channel;
+ * @param[in] tjfr: target jfr to reach;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_advise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr,
+		      struct ubcore_udata *udata);
+/**
+ * Unadvise jfr: Tear down the transport channel from jfs to remote jfr.
+ * @param[in] jfs: jfs to use to destruct the transport channel;
+ * @param[in] tjfr: target jfr advised before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unadvise_jfr(struct ubcore_jfs *jfs, struct ubcore_tjetty *tjfr);
+/**
+ * Advise jetty: construct the transport channel between local jetty and remote jetty.
+ * @param[in] jetty: local jetty to construct the transport channel;
+ * @param[in] tjetty: target jetty to reach imported before;
+ * @param[in] udata (optional): ucontext and user space driver data
+ * @return: 0 on success, other value on error
+ */
+int ubcore_advise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty,
+			struct ubcore_udata *udata);
+/**
+ * Unadvise jetty: deconstruct the transport channel between local jetty and remote jetty.
+ * @param[in] jetty: local jetty to destruct the transport channel;
+ * @param[in] tjetty: target jetty advised before;
+ * @return: 0 on success, other value on error
+ */
+int ubcore_unadvise_jetty(struct ubcore_jetty *jetty, struct ubcore_tjetty *tjetty);
+
 /**
  * Bind jetty: Bind local jetty with remote jetty, and construct a transport channel between them.
  * @param[in] jetty: local jetty to bind;
