@@ -1194,10 +1194,12 @@ int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 	}
 
 	tpid_reuse->reuse_state = UBCORE_TPID_REUSE_ERROR;
-	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
-
 	cfg.deactive_cfg->tp_handle.value = tpid_reuse->tp_handle.value;
 	cfg.deactive_cfg->udata = NULL;
+	mutex_unlock(&tpid_reuse->lock);
+
+	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
+
 	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_ERR, &cfg);
 	if (ret != 0) {
 		ubcore_log_err("Failed to modify tpid to ERROR, ret: %d, tphdl: %llu.\n",
@@ -1206,8 +1208,6 @@ int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 
 	ubcore_log_info_rl("disconnect tpid_reuse:%u, ret:%d, tpid_reuse_state:%u",
 			   tpid_reuse->tp_handle.bs.tpid, ret, tpid_reuse->reuse_state);
-
-	mutex_unlock(&tpid_reuse->lock);
 
 	(void)ubcore_delete_tpid_priv(dev, tpid_reuse->tp_handle.bs.tpid);
 	(void)ubcore_free_tpid_reuse(tpid_reuse);
@@ -1450,17 +1450,18 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 
 	tpid_reuse->is_ref = false;
 	tpid_reuse->reuse_state = UBCORE_TPID_REUSE_ERROR;
-	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
-
 	cfg.deactive_cfg->tp_handle.value = tpid_reuse->tp_handle.value;
 	cfg.deactive_cfg->udata = NULL;
+	mutex_unlock(&tpid_reuse->lock);
+
+	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
+
 	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_ERR, &cfg);
 	if (ret != 0) {
 		ubcore_log_err("Failed to modify tpid to ERROR, ret: %d, tphdl: %llu.\n",
 			ret, tpid_reuse->tp_handle.value);
 	}
 
-	mutex_unlock(&tpid_reuse->lock);
 	ubcore_tpid_reuse_kref_put(tpid_reuse);
 
 	(void)ubcore_delete_tpid_priv(dev, tpid_reuse->tp_handle.bs.tpid);
