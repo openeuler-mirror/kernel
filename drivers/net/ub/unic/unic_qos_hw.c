@@ -50,6 +50,20 @@ static inline void unic_get_hw_dscp_vl(struct ubase_caps *caps, u8 *hw_prio_vl,
 				caps->req_vl[0] : hw_prio_vl[dscp_prio[i]];
 }
 
+bool unic_dscp_tc_exists(struct unic_dev *unic_dev)
+{
+	struct auxiliary_device *adev = unic_dev->comdev.adev;
+	struct ubase_adev_qos *qos = ubase_get_adev_qos(adev);
+	u8 i;
+
+	for (i = 0; i < UBASE_MAX_DSCP; i++) {
+		if (qos->dscp_vl[i])
+			return true;
+	}
+
+	return false;
+}
+
 int unic_set_vl_map(struct unic_dev *unic_dev, u8 *dscp_prio, u8 *prio_vl,
 		    u8 map_type)
 {
