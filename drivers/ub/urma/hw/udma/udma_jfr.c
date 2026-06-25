@@ -324,7 +324,7 @@ static void udma_init_jfrc(struct udma_dev *dev, struct ubcore_jfr_cfg *cfg,
 	}
 	if (cfg->flag.bs.token_policy != UBCORE_TOKEN_NONE)
 		ctx->token_en = 1;
-	ctx->type = to_udma_type(cfg->trans_mode);
+	ctx->type = to_udma_type(cfg->trans_mode, cfg->flag.bs.order_type);
 	ctx->token_value = cfg->token_value.token;
 	ctx->user_data_l = jfr->jetty_addr;
 	ctx->user_data_h = jfr->jetty_addr >> UDMA_USER_DATA_H_OFFSET;
