@@ -76,24 +76,6 @@ static void ubcore_get_topo_fill_spec_in(void *arg_addr,
 	SPEC(s++, GET_TOPO_OUT_TOPO_MAP, arg->out.topo_map);
 }
 
-static void ubcore_get_route_list_fill_spec_in(void *arg_addr,
-	struct ubcore_cmd_spec *spec)
-{
-	struct ubcore_cmd_get_route_list *arg = arg_addr;
-	struct ubcore_cmd_spec *s = spec;
-
-	SPEC(s++, GET_ROUTE_LIST_IN_ROUTE_PAIR, arg->in);
-}
-
-static void ubcore_get_route_list_fill_spec_out(void *arg_addr,
-	struct ubcore_cmd_spec *spec)
-{
-	struct ubcore_cmd_get_route_list *arg = arg_addr;
-	struct ubcore_cmd_spec *s = spec;
-
-	SPEC(s++, GET_ROUTE_LIST_OUT_ROUTE_LIST, arg->out);
-}
-
 static void ubcore_get_path_set_fill_spec_in(void *arg_addr,
 	struct ubcore_cmd_spec *spec)
 {
@@ -112,7 +94,13 @@ static void ubcore_get_path_set_fill_spec_out(void *arg_addr,
 	struct ubcore_cmd_get_path_set *arg = arg_addr;
 	struct ubcore_cmd_spec *s = spec;
 
-	SPEC(s++, GET_PATH_SET_OUT_PATH_SET, arg->out);
+	SPEC(s++, GET_PATH_SET_OUT_PATH_SET_TOPO_TYPE, arg->out.path_set.topo_type);
+	SPEC(s++, GET_PATH_SET_OUT_PATH_SET_SRC_NODE, arg->out.path_set.src_node);
+	SPEC(s++, GET_PATH_SET_OUT_PATH_SET_DST_NODE, arg->out.path_set.dst_node);
+	SPEC(s++, GET_PATH_SET_OUT_PATH_SET_CHIP_COUNT, arg->out.path_set.chip_count);
+	SPEC(s++, GET_PATH_SET_OUT_PATH_SET_DIE_COUNT, arg->out.path_set.die_count);
+	SPEC(s++, GET_PATH_SET_OUT_PATH_SET_PATH_COUNT, arg->out.path_set.path_count);
+	SPEC(s++, GET_PATH_SET_OUT_PATH_SET_PATHS, arg->out.path_set.paths);
 }
 
 static void ubcore_insert_main_ue_eid_fill_spec_in(void *arg_addr,
@@ -121,7 +109,8 @@ static void ubcore_insert_main_ue_eid_fill_spec_in(void *arg_addr,
 	struct ubcore_cmd_main_ue_eid_entry *arg = arg_addr;
 	struct ubcore_cmd_spec *s = spec;
 
-	SPEC(s++, INSERT_MAIN_UE_EID_IN_ENTRY, arg->in);
+	SPEC(s++, INSERT_MAIN_UE_EID_IN_ENTRY_EID, arg->in.eid);
+	SPEC(s++, INSERT_MAIN_UE_EID_IN_ENTRY_MAIN_UE_EID, arg->in.main_ue_eid);
 }
 
 static void ubcore_delete_main_ue_eid_fill_spec_in(void *arg_addr,
@@ -167,7 +156,9 @@ static void ubcore_insert_main_ue_eid_batch_fill_spec_in(void *arg_addr,
 	struct ubcore_cmd_main_ue_eid_batch *arg = arg_addr;
 	struct ubcore_cmd_spec *s = spec;
 
-	SPEC(s++, INSERT_MAIN_UE_EID_BATCH_IN_ENTRY, arg->in);
+	SPEC(s++, INSERT_MAIN_UE_EID_BATCH_IN_ENTRY_MAIN_UE_EID, arg->in.main_ue_eid);
+	SPEC(s++, INSERT_MAIN_UE_EID_BATCH_IN_ENTRY_EID_NUM, arg->in.eid_num);
+	SPEC(s++, INSERT_MAIN_UE_EID_BATCH_IN_ENTRY_EIDS, arg->in.eids);
 }
 
 static void ubcore_insert_host_eid_batch_fill_spec_in(void *arg_addr,
@@ -187,12 +178,6 @@ static struct ubcore_tlv_handler
 			SET_TOPO_IN_NUM,
 			NULL,
 			0,
-		},
-		[UBCORE_CMD_GET_ROUTE_LIST] = {
-			ubcore_get_route_list_fill_spec_in,
-			GET_ROUTE_LIST_IN_NUM,
-			ubcore_get_route_list_fill_spec_out,
-			GET_ROUTE_LIST_OUT_NUM,
 		},
 		[UBCORE_CMD_GET_TOPO] = {
 			ubcore_get_topo_fill_spec_in,

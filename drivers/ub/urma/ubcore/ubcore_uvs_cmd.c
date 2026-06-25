@@ -231,29 +231,6 @@ static int ubcore_cmd_get_topo(struct ubcore_global_file *file,
 	return 0;
 }
 
-static int ubcore_cmd_get_route_list(struct ubcore_global_file *file,
-				     struct ubcore_cmd_hdr *hdr)
-{
-	struct ubcore_cmd_get_route_list arg;
-
-	int ret = 0;
-
-	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0) {
-		ubcore_log_err("Failed to parse ubcore cmd tlv.\n");
-		return ret;
-	}
-	ret = ubcore_get_route_list(&arg.in, &arg.out);
-	if (ret != 0) {
-		ubcore_log_err("Failed to get_route_list, ret: %d.\n", ret);
-		return ret;
-	}
-	if (ubcore_global_tlv_append(hdr, (void *)&arg) != 0)
-		ret = -EPERM;
-
-	return ret;
-}
-
 static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 	struct ubcore_cmd_hdr *hdr)
 {
@@ -267,7 +244,7 @@ static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 		return ret;
 	}
 	ret = ubcore_get_path_set(&arg.in.src_bonding_eid, &arg.in.dst_bonding_eid,
-		arg.in.tp_type, arg.in.iodie_level, &arg.out);
+		arg.in.tp_type, arg.in.iodie_level, &arg.out.path_set);
 	if (ret != 0) {
 		ubcore_log_err("Failed to get_path_set, ret: %d.\n", ret);
 		return ret;
@@ -445,7 +422,6 @@ struct ubcore_uvs_global_cmd_func {
 static struct ubcore_uvs_global_cmd_func g_ubcore_uvs_global_cmd_funcs[] = {
 	[0] = { NULL, false },
 	[UBCORE_CMD_SET_TOPO] = { ubcore_cmd_set_topo, true },
-	[UBCORE_CMD_GET_ROUTE_LIST] = { ubcore_cmd_get_route_list, false },
 	[UBCORE_CMD_GET_TOPO] = { ubcore_cmd_get_topo, false },
 	[UBCORE_CMD_GET_PATH_SET] = { ubcore_cmd_get_path_set, false },
 	[UBCORE_CMD_INSERT_MAIN_UE_EID] = {
