@@ -587,6 +587,8 @@ void uburma_release_comp_event(struct uburma_jfce_uobj *jfce,
 
 	spin_lock_irq(&jfe->lock);
 	list_for_each_entry_safe(event, tmp, event_list, obj_node) {
+		if (!list_empty(&event->obj_node))
+			list_del_init(&event->obj_node);
 		list_del(&event->node);
 		kfree(event);
 	}
@@ -602,6 +604,8 @@ void uburma_release_async_event(struct uburma_file *ufile,
 
 	spin_lock_irq(&jfe->lock);
 	list_for_each_entry_safe(event, tmp, event_list, obj_node) {
+		if (!list_empty(&event->obj_node))
+			list_del_init(&event->obj_node);
 		list_del(&event->node);
 		kfree(event);
 	}
