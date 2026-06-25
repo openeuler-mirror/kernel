@@ -366,6 +366,189 @@ static int ubagg_get_jetty_id(struct ubcore_device *dev,
 	return ret;
 }
 
+static int ubagg_get_rjetty(struct ubcore_device *dev,
+			    struct ubcore_user_ctl *user_ctl)
+{
+	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
+	struct ubagg_jetty_id jetty_id;
+	struct ubagg_hash_table *ht = NULL;
+	struct ubagg_jetty_hash_node *node = NULL;
+	struct ubagg_jetty_exchange_info *jetty_info = NULL;
+	bool (*connected)[UBAGG_DEV_MAX_NUM] = NULL;
+	char *out_buf = NULL;
+	size_t out_size;
+	int ret = 0;
+
+	if (ubagg_dev == NULL || user_ctl == NULL) {
+		ubagg_log_err("Invalid parameter.\n");
+		return -EINVAL;
+	}
+
+	if (user_ctl->in.addr != 0 &&
+	    user_ctl->in.len >= sizeof(struct ubagg_jetty_id)) {
+		if (!access_ok((void __user *)(uintptr_t)user_ctl->in.addr,
+			       sizeof(struct ubagg_jetty_id))) {
+			ubagg_log_err("Failed to access jetty id from user.\n");
+			return -EFAULT;
+		}
+		if (copy_from_user(&jetty_id, (void __user *)(uintptr_t)user_ctl->in.addr,
+				   sizeof(struct ubagg_jetty_id)) != 0) {
+			ubagg_log_err("Failed to copy jetty id from user.\n");
+			return -EFAULT;
+		}
+	} else {
+		ubagg_log_err("Invalid input addr or len, addr:%llu, len:%u.\n",
+			      user_ctl->in.addr, user_ctl->in.len);
+		return -EINVAL;
+	}
+
+	out_size = sizeof(struct ubagg_jetty_exchange_info) +
+		   sizeof(bool) * UBAGG_DEV_MAX_NUM * UBAGG_DEV_MAX_NUM;
+
+	ht = &ubagg_dev->ubagg_ht[UBAGG_HT_JETTY_HT];
+
+	out_buf = kzalloc(out_size, GFP_KERNEL);
+	if (out_buf == NULL) {
+		ubagg_log_err("Failed to alloc memory for rjetty out buf, size:%zu.\n",
+			      out_size);
+		return -ENOMEM;
+	}
+
+	jetty_info = (struct ubagg_jetty_exchange_info *)out_buf;
+	connected = (bool (*)[UBAGG_DEV_MAX_NUM])
+		(out_buf + sizeof(struct ubagg_jetty_exchange_info));
+
+	spin_lock(&ht->lock);
+	node = ubagg_hash_table_lookup_nolock(ht, jetty_id.id, &jetty_id.id);
+	if (node == NULL) {
+		spin_unlock(&ht->lock);
+		ubagg_log_err("Failed to find jetty, id:%u.\n", jetty_id.id);
+		kfree(out_buf);
+		return -ENOENT;
+	}
+	*jetty_info = node->ex_info;
+	spin_unlock(&ht->lock);
+
+	ret = find_linked_port(&jetty_id.eid, connected);
+	if (ret != 0) {
+		ubagg_log_err("Failed to find linked port for jetty, id:%u.\n", jetty_id.id);
+		kfree(out_buf);
+		return ret;
+	}
+
+	if (user_ctl->out.addr != 0) {
+		if (user_ctl->out.len < out_size) {
+			ubagg_log_err("ubagg user ctl has no enough space, buffer size:%u, needed size:%zu\n",
+				      user_ctl->out.len, out_size);
+			kfree(out_buf);
+			return -ENOSPC;
+		}
+		if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
+				 out_buf, out_size) != 0) {
+			ubagg_log_err("Failed to copy rjetty info to user.\n");
+			ret = -EFAULT;
+		}
+	}
+
+	kfree(out_buf);
+	user_ctl->out.len = (uint32_t)out_size;
+	return ret;
+}
+
+static int ubagg_get_seg_ctx(struct ubcore_device *dev,
+			     struct ubcore_user_ctl *user_ctl)
+{
+	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
+	struct ubagg_seg_info seg;
+	struct ubagg_hash_table *ht = NULL;
+	struct ubagg_seg_hash_node *node = NULL;
+	struct ubagg_seg_exchange_info *seg_info = NULL;
+	bool (*connected)[UBAGG_DEV_MAX_NUM] = NULL;
+	char *out_buf = NULL;
+	size_t out_size;
+	int ret = 0;
+	bool found = false;
+
+	if (ubagg_dev == NULL || user_ctl == NULL) {
+		ubagg_log_err("Invalid parameter.\n");
+		return -EINVAL;
+	}
+
+	if (user_ctl->in.addr != 0 &&
+	    user_ctl->in.len >= sizeof(struct ubagg_seg_info)) {
+		if (!access_ok((void __user *)(uintptr_t)user_ctl->in.addr,
+			       sizeof(struct ubagg_seg_info))) {
+			ubagg_log_err("Failed to access seg from user.\n");
+			return -EFAULT;
+		}
+		if (copy_from_user(&seg, (void __user *)(uintptr_t)user_ctl->in.addr,
+				   sizeof(struct ubagg_seg_info)) != 0) {
+			ubagg_log_err("Failed to copy seg from user.\n");
+			return -EFAULT;
+		}
+	} else {
+		ubagg_log_err("Invalid input addr or len, addr:%llu, len:%u.\n",
+			      user_ctl->in.addr, user_ctl->in.len);
+		return -EINVAL;
+	}
+
+	out_size = sizeof(struct ubagg_seg_exchange_info) +
+		   sizeof(bool) * UBAGG_DEV_MAX_NUM * UBAGG_DEV_MAX_NUM;
+
+	ht = &ubagg_dev->ubagg_ht[UBAGG_HT_SEGMENT_HT];
+
+	out_buf = kzalloc(out_size, GFP_KERNEL);
+	if (out_buf == NULL) {
+		ubagg_log_err("Failed to alloc memory for seg ctx out buf, size:%zu.\n",
+			      out_size);
+		return -ENOMEM;
+	}
+
+	seg_info = (struct ubagg_seg_exchange_info *)out_buf;
+	connected = (bool (*)[UBAGG_DEV_MAX_NUM])
+		(out_buf + sizeof(struct ubagg_seg_exchange_info));
+
+	spin_lock(&ht->lock);
+	node = ubagg_hash_table_lookup_nolock(ht, seg.token_id, &seg.token_id);
+	if (node != NULL) {
+		*seg_info = node->ex_info;
+		found = true;
+	}
+	spin_unlock(&ht->lock);
+
+	if (!found) {
+		ubagg_log_err("Failed to find seg, token:%u.\n", seg.token_id);
+		kfree(out_buf);
+		return -ENOENT;
+	}
+
+	ret = find_linked_port(&seg.ubva.eid, connected);
+	if (ret != 0) {
+		ubagg_log_err("Failed to find linked port for seg, token:%u.\n",
+			      seg.token_id);
+		kfree(out_buf);
+		return ret;
+	}
+
+	if (user_ctl->out.addr != 0) {
+		if (user_ctl->out.len < out_size) {
+			ubagg_log_err("ubagg user ctl has no enough space, buffer size:%u, needed size:%zu\n",
+				      user_ctl->out.len, out_size);
+			kfree(out_buf);
+			return -ENOSPC;
+		}
+		if (copy_to_user((void __user *)(uintptr_t)user_ctl->out.addr,
+				 out_buf, out_size) != 0) {
+			ubagg_log_err("Failed to copy seg ctx to user.\n");
+			ret = -EFAULT;
+		}
+	}
+
+	kfree(out_buf);
+	user_ctl->out.len = (uint32_t)out_size;
+	return ret;
+}
+
 int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 {
 	int ret = 0;
@@ -387,6 +570,12 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 		break;
 	case GET_JETTY_ID:
 		ret = ubagg_get_jetty_id(dev, user_ctl);
+		break;
+	case GET_RJETTY:
+		ret = ubagg_get_rjetty(dev, user_ctl);
+		break;
+	case GET_SEG_CTX:
+		ret = ubagg_get_seg_ctx(dev, user_ctl);
 		break;
 	default:
 		ubagg_log_err("unsupported ubagg userctl opcde:%u",

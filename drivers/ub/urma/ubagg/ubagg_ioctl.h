@@ -183,6 +183,8 @@ enum ubagg_userctl_opcode {
 	GET_TOPO_INFO = 2,
 	GET_JFR_ID = 3,
 	GET_JETTY_ID = 4,
+	GET_RJETTY = 9,
+	GET_SEG_CTX = 10,
 };
 
 struct ubagg_physical_device_out {
