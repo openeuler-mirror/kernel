@@ -13,6 +13,7 @@
 #define UB_CORE_PERF_H
 
 #include <linux/types.h>
+#include <linux/ktime.h>
 #include <linux/timekeeping.h>
 #include <linux/cache.h>
 
