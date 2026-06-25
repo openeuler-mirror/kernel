@@ -1048,6 +1048,8 @@ int unic_dev_init(struct auxiliary_device *adev)
 	}
 	unic_init_netdev_info(netdev);
 
+	netif_carrier_off(netdev);
+
 	ret = unic_register_event(adev);
 	if (ret)
 		goto err_uninit_netdev_priv;
