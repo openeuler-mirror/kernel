@@ -471,6 +471,7 @@ struct iommu_domain *ummu_domain_alloc_sva(struct device *dev,
 		u_domain->base_domain.domain.ops = &ummu_sva_domain_no_dvm_ops;
 	u_domain->base_domain.domain.type = IOMMU_DOMAIN_SVA;
 	u_domain->base_domain.domain.perm_ops = &ummu_sva_perm_ops;
+	u_domain->base_domain.domain.pgsize_bitmap = PAGE_SIZE;
 	return &u_domain->base_domain.domain;
 }
 

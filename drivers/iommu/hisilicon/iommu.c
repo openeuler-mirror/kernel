@@ -574,8 +574,8 @@ static void ummu_remove_dev_pasid(struct device *dev,
 
 	master = (struct ummu_master *)dev_iommu_priv_get(dev);
 	u_domain = to_ummu_domain(domain);
-	if (domain->type == IOMMU_DOMAIN_SVA)
-		ummu_sva_domain_remove_tid(u_domain, master, id);
+
+	ummu_sva_domain_remove_tid(u_domain, master, id);
 }
 
 const struct iommu_domain_ops default_domain_ops = {

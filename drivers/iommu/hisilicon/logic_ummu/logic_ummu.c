@@ -429,11 +429,12 @@ static void logic_domain_free(struct logic_ummu_domain *logic_domain,
 	}
 	list_for_each_entry_safe(base_domain, next, &logic_domain->base_domain.list, list) {
 		list_del(&base_domain->list);
-		if (base_domain != logic_domain->agent_domain) {
-			if (domain_ops->flush_iotlb_all)
-				domain_ops->flush_iotlb_all(&base_domain->domain);
-
-			helper->sync_dom_cfg(NULL, base_domain, SYNC_CLEAR_DOM_ALL_CFG);
+		if (base_domain->domain.type != IOMMU_DOMAIN_SVA) {
+			if (base_domain != logic_domain->agent_domain) {
+				if (domain_ops->flush_iotlb_all)
+					domain_ops->flush_iotlb_all(&base_domain->domain);
+				helper->sync_dom_cfg(NULL, base_domain, SYNC_CLEAR_DOM_ALL_CFG);
+			}
 		}
 		domain_ops->free(&base_domain->domain);
 	}
@@ -861,8 +862,7 @@ static void logic_ummu_mm_arch_invalidate_secondary_tlbs(struct mmu_notifier *mn
 	size = end - start;
 	logic_mn = container_of(mn, struct logic_ummu_mn, mmu_notifier);
 
-	if (!down_read_trylock(&logic_mn->rwsem))
-		return;
+	down_read(&logic_mn->rwsem);
 
 	if (list_empty(&logic_mn->list))
 		goto unlock;
@@ -1445,7 +1445,7 @@ static void logic_ummu_remove_dev_pasid(struct device *dev, ioasid_t pasid,
 			core_ops->cfg_sync(base_domain);
 	}
 
-	iommu_plb_sync_all(domain);
+	iommu_flush_iotlb_all(domain);
 	/* release the tid */
 	ummu_core_free_tid(&logic_ummu.core_dev, tid);
 }
