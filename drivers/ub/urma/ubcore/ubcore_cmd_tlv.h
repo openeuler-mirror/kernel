@@ -566,7 +566,7 @@ enum ubcore_cmd_set_vport_cfg_type {
 	SET_VPORT_CFG_IN_TP_CNT,
 	SET_VPORT_CFG_IN_SLICE,
 	SET_VPORT_CFG_IN_UVS_NAME,
-	SET_VPORT_CFG_IN_TA2TA,
+	SET_VPORT_CFG_IN_TA2TP,
 	SET_VPORT_CFG_IN_DSCP,
 	SET_VPORT_CFG_IN_FEATURE,
 	SET_VPORT_CFG_IN_NUM /* Only for calculating number of types */
