@@ -223,7 +223,7 @@ static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 
 static int ubcore_insert_host_eid_batch(
 	const union ubcore_eid *host_eid, uint32_t eid_num,
-	const union ubcore_eid *eids)
+	const union ubcore_eid *eids, const union ubcore_net_addr_union *cnas)
 {
 	struct ubcore_host_info host_info = {0};
 	uint32_t i;
@@ -237,6 +237,9 @@ static int ubcore_insert_host_eid_batch(
 
 	host_info.eid = *host_eid;
 	for (i = 0; i < eid_num; i++) {
+		host_info.cna = cnas[i];
+		ubcore_log_debug("insert host_eid=" EID_FMT " cna=" EID_FMT "\n",
+				 EID_ARGS(*host_eid), EID_RAW_ARGS(cnas[i].raw));
 		ret = ubcore_insert_host_info(&eids[i], &host_info);
 		if (ret != 0) {
 			ubcore_log_err("insert host eid batch failed, idx: %u, ret: %d\n",
@@ -372,7 +375,8 @@ static int ubcore_cmd_insert_host_eid_batch(
 	if (ret == 0)
 		ret = ubcore_insert_host_eid_batch(&arg->in.host_eid,
 						   arg->in.eid_num,
-						   arg->in.eids);
+						   arg->in.eids,
+						   arg->in.cnas);
 
 	kfree(arg);
 	return ret;

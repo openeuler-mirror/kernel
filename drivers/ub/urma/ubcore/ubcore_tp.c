@@ -129,6 +129,8 @@ static void ubcore_set_tpid_list_key(struct ubcore_device *dev,
 	tpid_list_key->local_eid = cfg->local_eid;
 	tpid_list_key->peer_eid = cfg->peer_eid;
 	tpid_list_key->trans_mode = cfg->trans_mode;
+	memset(&tpid_list_key->local_cna, 0, sizeof(tpid_list_key->local_cna));
+	memset(&tpid_list_key->peer_cna, 0, sizeof(tpid_list_key->peer_cna));
 
 	if (cfg->flag.bs.rtp)
 		tpid_list_key->tp_type = UBCORE_RTP;

@@ -53,6 +53,8 @@ struct ubcore_tpid_list_key {
 	enum ubcore_tpid_share_mode share_mode;
 	enum ubcore_tp_type tp_type;                          // CTP/RTP/UTP
 	enum ubcore_link_type link_type;                        // UBOE or Not
+	union ubcore_net_addr_union local_cna;     // source CNA, 0 = invalid
+	union ubcore_net_addr_union peer_cna;      // destination CNA, 0 = invalid
 };
 
 struct ubcore_tpid_reuse_key {
