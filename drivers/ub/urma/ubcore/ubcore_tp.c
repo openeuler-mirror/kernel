@@ -862,6 +862,7 @@ int ubcore_modify_tpid(struct ubcore_device *dev, enum ubcore_tpid_status state,
 		ret = ubcore_deactive_tp(dev, cfg->deactive_cfg->tp_handle,
 			cfg->deactive_cfg->udata);
 		if (ret != 0) {
+			entry->tpid_status = UBCORE_TPID_STATE_ERR;
 			mutex_unlock(&entry->lock);
 			ubcore_tpid_state_kref_put(entry);
 			return ret;
