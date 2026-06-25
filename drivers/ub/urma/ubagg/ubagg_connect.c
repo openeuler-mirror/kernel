@@ -44,7 +44,7 @@ struct msg_jetty_info_req {
 
 struct msg_seg_info_resp {
 	int result;
-	struct ubagg_seg_info seg_info[UBAGG_DEV_MAX_NUM];
+	struct ubagg_seg_exchange_info seg_info;
 };
 
 struct msg_jetty_info_resp {
@@ -301,7 +301,7 @@ static int send_jetty_resp(struct ubcore_device *dev, void *conn,
 
 int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
 			   struct ubcore_device *dev,
-			   struct ubagg_seg_info *seg_info)
+			   struct ubagg_seg_exchange_info *seg_info)
 {
 	struct ubcore_device *physical_dev;
 	struct msg_seg_info_req req = { 0 };
@@ -318,7 +318,7 @@ int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
 	}
 
 	session = alloc_xchg_session(physical_dev, &result, seg_info,
-				     sizeof(*seg_info) * UBAGG_DEV_MAX_NUM);
+				     sizeof(*seg_info));
 	if (!session) {
 		ret = -ENOMEM;
 		goto put_device;
@@ -444,8 +444,7 @@ static void handle_seg_req(struct ubcore_device *dev,
 		goto send_resp_and_put_device;
 	}
 
-	memcpy(resp.seg_info, tmp_seg->ex_info.slaves,
-	       sizeof(tmp_seg->ex_info.slaves));
+	resp.seg_info = tmp_seg->ex_info;
 	spin_unlock(&ubagg_seg_ht->lock);
 
 send_resp_and_put_device:
@@ -487,8 +486,7 @@ static void handle_jetty_req(struct ubcore_device *dev,
 			goto send_resp_and_put_device;
 		}
 
-		memcpy(&resp.jetty_info, &tmp_jfr->ex_info,
-		       sizeof(tmp_jfr->ex_info));
+		resp.jetty_info = tmp_jfr->ex_info;
 		spin_unlock(&ht->lock);
 	} else {
 		struct ubagg_jetty_hash_node *tmp_jetty = NULL;
@@ -505,8 +503,7 @@ static void handle_jetty_req(struct ubcore_device *dev,
 			goto send_resp_and_put_device;
 		}
 
-		memcpy(&resp.jetty_info, &tmp_jetty->ex_info,
-		       sizeof(tmp_jetty->ex_info));
+		resp.jetty_info = tmp_jetty->ex_info;
 		spin_unlock(&ht->lock);
 	}
 
@@ -555,7 +552,7 @@ static void handle_seg_resp(struct ubcore_device *dev,
 	struct msg_seg_info_resp *resp = (struct msg_seg_info_resp *)msg->data;
 
 	handle_xchg_resp(dev, conn, msg->session_id, resp->result,
-			 resp->seg_info);
+			 &resp->seg_info);
 }
 
 static void handle_jetty_resp(struct ubcore_device *dev,
