@@ -17,7 +17,7 @@ void ub_stop_entities(void);
 void ub_remove_entities(void);
 int ub_num_ue(struct ub_entity *uent);
 void ub_disable_ent(struct ub_entity *uent);
-void ub_virt_notify(struct ub_entity *pue, u16 entity_idx, bool is_en);
+int ub_virt_notify(struct ub_entity *pue, u16 entity_idx, bool is_en);
 int ub_entity_enable_force(struct ub_entity *uent, u8 enable);
 int ub_reinit_ent(struct ub_entity *uent);
 
