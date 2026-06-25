@@ -111,8 +111,9 @@ static inline void ipourma_build_tjetty_cfg(struct ubcore_tjetty_cfg *tjetty_cfg
 	tjetty_cfg->id.eid = *dst_eid;
 	tjetty_cfg->id.id = jetty_id;
 	tjetty_cfg->flag.bs.token_policy = UBCORE_TOKEN_NONE;
+	tjetty_cfg->flag.bs.order_type = ctp_en ? UBCORE_OL : UBCORE_DEF_ORDER;
 	tjetty_cfg->tp_type = ctp_en ? UBCORE_CTP : UBCORE_UTP;
-	tjetty_cfg->trans_mode = ctp_en ? UBCORE_TP_RM : UBCORE_TP_UM;
+	tjetty_cfg->trans_mode = UBCORE_TP_UM;
 	tjetty_cfg->type = UBCORE_JETTY;
 	tjetty_cfg->eid_index = eid_idx;
 }
@@ -125,8 +126,9 @@ static struct ubcore_tjetty *ipourma_import_jetty(struct net_device *dev,
 	struct ubcore_device *urma_dev = priv->urma_dev;
 	struct ubcore_tjetty_cfg tjetty_cfg = { 0 };
 	struct ubcore_tjetty *tjetty;
-	uint32_t ctp_en = 0;
+	uint32_t ctp_en;
 
+	ctp_en = priv->urma_dev->attr.dev_cap.feature.bs.ctp_en;
 	ipourma_build_tjetty_cfg(&tjetty_cfg, dst_eid, jetty_id, eid_index, ctp_en);
 	tjetty = ubcore_import_jetty(urma_dev, &tjetty_cfg, NULL);
 	if (IS_ERR_OR_NULL(tjetty)) {
@@ -455,10 +457,10 @@ int ipourma_check_skb(struct net_device *dev, struct sk_buff *skb)
 		/**
 		 *  the overall length of linear & nonlinear should not
 		 *  exceed the urma mtu when using send operation over CTP
-		 *  ubcore doesn't define a CTP mode, use UBCORE_TP_RM for now
+		 *  ubcore doesn't define a CTP mode, use UBCORE_TP_UM for now
 		 */
 		if ((priv->urma_op_mode == UBCORE_OPC_SEND) &&
-			(priv->urma_transport_mode == UBCORE_TP_RM)) {
+			(priv->urma_transport_mode == UBCORE_TP_UM)) {
 			priv->runtime_stats.tx_stats.packet_size_error++;
 			netdev_dbg(dev, "%s: skb len = %u\n",
 						ipourma_err_desc(IPOURMA_GIANT_PACKET),
