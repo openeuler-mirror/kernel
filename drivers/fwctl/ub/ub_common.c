@@ -70,6 +70,21 @@ int ubctl_fill_cmd(struct ubctl_cmd *cmd, void *cmd_in, void *cmd_out,
 	return 0;
 }
 
+int ubctl_fill_cmd_isread(struct ubctl_cmd *cmd, void *cmd_in, void *cmd_out,
+			  u32 out_len, u32 in_len)
+{
+	if (!cmd || !cmd_in || !cmd_out)
+		return -EINVAL;
+
+	cmd->is_read = true;
+	cmd->in_data = cmd_in;
+	cmd->out_data = cmd_out;
+	cmd->in_len = in_len;
+	cmd->out_len = out_len;
+
+	return 0;
+}
+
 static int ubctl_query_param_check(struct ubctl_dev *ucdev,
 				   struct ubctl_query_cmd_param *query_cmd_param,
 				   struct ubctl_func_dispatch *query_func,

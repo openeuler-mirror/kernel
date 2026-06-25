@@ -245,6 +245,7 @@ struct ubctl_link_status {
 
 struct ubctl_port_link_list {
 	u32 port;
+	u32 port_type;
 	u32 size;
 	u32 link_up_num;
 	u32 link_down_num;
@@ -1465,7 +1466,8 @@ static bool ubctl_get_port_link_status(struct auxiliary_device *adev, struct ubc
 	}
 
 	cmd.op_code = UBCTL_QUERY_PORT_INFO_DFX;
-	ret = ubctl_fill_cmd(&cmd, (void *)&pkt_in_data, (void *)&out_data, sizeof(out_data), true);
+	ret = ubctl_fill_cmd_isread(&cmd, (void *)&pkt_in_data, (void *)&out_data,
+				    sizeof(out_data), sizeof(pkt_in_data));
 	if (ret) {
 		ubctl_err(ucdev, "failed to fill the cmd params for query link status.\n");
 		return false;
@@ -1482,12 +1484,14 @@ static bool ubctl_get_port_link_status(struct auxiliary_device *adev, struct ubc
 }
 
 static bool ubctl_check_port_link_stats(struct auxiliary_device *adev,
-					struct ubctl_dev *ucdev, u32 port_id)
+					struct ubctl_dev *ucdev, u32 port_id,
+					struct ubctl_port_link_list *port_node)
 {
 	struct ubctl_port_link_stats_data in_data, out_data;
 	struct ubctl_cmd cmd = {};
 	int ret = 0;
 
+	port_node->port_type = UBCTL_PORT_TYPE_UB;
 	cmd.op_code = UBCTL_QUERY_DL_LINK_STATUS_DFX;
 	in_data.port_id = port_id;
 	ret = ubctl_fill_cmd(&cmd, (void *)&in_data, (void *)&out_data, sizeof(out_data), true);
@@ -1501,6 +1505,7 @@ static bool ubctl_check_port_link_stats(struct auxiliary_device *adev,
 		ubctl_err(ucdev, "ubctl ubase cmd send failed, retval = %d.\n", ret);
 		return false;
 	}
+	port_node->port_type = out_data.port_type;
 	return ubctl_get_port_link_status(adev, ucdev, port_id, out_data.port_type);
 }
 
@@ -1529,18 +1534,21 @@ static int ubctl_construct_first_link_data(struct auxiliary_device *adev,
 	for (port_id = 0; port_id < UBCTL_MAX_PORT_NUM; port_id++) {
 		if (!test_bit(port_id, (unsigned long *)&dev_node->port_bitmap))
 			continue;
-		if (!ubctl_check_port_link_stats(adev, ucdev, port_id))
-			continue;
 
 		new_port_node = ubctl_add_port_node(ucaps->die_id, port_id, dev_node);
 		if (!new_port_node)
 			return -ENOMEM;
 
+		if (!ubctl_check_port_link_stats(adev, ucdev, port_id, new_port_node))
+			continue;
+
 		link_info.time = ktime_get_real_seconds();
 		link_info.link_status = 0;
 		ret = ubctl_port_add_link_node(new_port_node, link_info, new_port_node->size);
-		if (ret)
+		if (ret) {
+			ubctl_warn(ucdev, "ubctl can't construct first link data.\n");
 			return ret;
+		}
 
 		new_port_node->size++;
 	}
@@ -1575,7 +1583,7 @@ int ubctl_port_link_status_init(struct auxiliary_device *adev, struct ubctl_dev 
 
 	ret = ubctl_construct_first_link_data(adev, ucdev, ucaps);
 	if (ret) {
-		ubctl_warn(ucdev, "ubctl construct first link data error, ret = %d.\n", ret);
+		ubctl_warn(ucdev, "ubctl can't construct first link data.\n");
 		return ret;
 	}
 
@@ -1861,4 +1869,87 @@ struct ubctl_func_dispatch *ubctl_get_query_func(struct ubctl_dev *ucdev, u32 rp
 	}
 
 	return NULL;
+}
+
+static void ubctl_get_port_type_from_port_id(struct ubctl_dev *ucdev, u32 port_id, u32 *port_type)
+{
+	struct ubctl_port_link_list *current_node;
+	struct ucdev_list_node *dev_node;
+	struct ubase_caps *ucaps;
+	u32 env_type;
+
+	*port_type = UBCTL_PORT_TYPE_UB;
+	env_type = ubase_get_hw_ver(ucdev->adev);
+	if (env_type != UBASE_HW_VER_A_0 && env_type != UBASE_HW_VER_A_1)
+		return;
+
+	ucaps = ubase_get_dev_caps(ucdev->adev);
+	if (!ucaps)
+		return;
+
+	mutex_lock(&g_ubctl_port_link_mutex);
+	dev_node = ubctl_find_ucdev_list_node(ucaps->die_id, ucaps->chip_id);
+	if (dev_node == NULL) {
+		mutex_unlock(&g_ubctl_port_link_mutex);
+		ubctl_err(ucdev, "failed to find ucdev list node.\n");
+		return;
+	}
+
+	list_for_each_entry(current_node, &dev_node->dev_list, port_link_list) {
+		if (current_node->port == port_id) {
+			*port_type = current_node->port_type;
+			mutex_unlock(&g_ubctl_port_link_mutex);
+			return;
+		}
+	}
+	mutex_unlock(&g_ubctl_port_link_mutex);
+}
+
+static int ubctl_check_single_port_type(struct ubctl_dev *ucdev, u32 port_id, u32 expect_port_type)
+{
+	const char *expected_type;
+	u32 port_type;
+
+	ubctl_get_port_type_from_port_id(ucdev, port_id, &port_type);
+	if (port_type != expect_port_type) {
+		expected_type = (expect_port_type == UBCTL_PORT_TYPE_ETH) ? "UBOE" : "UB";
+		ubctl_err(ucdev, "port type of port id(%u) is not %s, the cmd is not allowed.\n",
+			  port_id, expected_type);
+		return -EACCES;
+	}
+
+	return 0;
+}
+
+int ubctl_check_port_type(struct ubctl_dev *ucdev, struct ubctl_query_cmd_param *query_cmd_param,
+			  u32 expect_port_type)
+{
+	struct fwctl_pkt_in_port *pkt_in;
+
+	pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
+
+	return ubctl_check_single_port_type(ucdev, pkt_in->port_id, expect_port_type);
+}
+
+int ubctl_check_port_type_from_bitmap(struct ubctl_dev *ucdev,
+				      struct ubctl_query_cmd_param *query_cmd_param,
+				      u32 expect_port_type)
+{
+#define UBCTL_PORT_ID_BITMAP_BITS 32U
+	struct fwctl_pkt_in_port *pkt_in;
+	u32 bitmap;
+	int ret;
+	u32 i;
+
+	pkt_in = (struct fwctl_pkt_in_port *)query_cmd_param->in->data;
+	bitmap = pkt_in->port_id;
+
+	for (i = 0; i < UBCTL_PORT_ID_BITMAP_BITS; i++) {
+		if (!(bitmap & (1U << i)))
+			continue;
+		ret = ubctl_check_single_port_type(ucdev, i, expect_port_type);
+		if (ret)
+			return ret;
+	}
+	return 0;
 }
