@@ -954,7 +954,8 @@ static bool udma_destroy_jetty_precondition(struct udma_dev *dev, struct udma_je
 	if (dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE)
 		goto modify_to_err;
 
-	udma_modify_jetty_precondition(dev, sq);
+	if ((dev->hw_ver == UBASE_HW_VER_A_0) || (dev->hw_ver == UBASE_HW_VER_K_0))
+		udma_modify_jetty_precondition(dev, sq);
 
 modify_to_err:
 	if (udma_set_jetty_state(dev, sq->id, JETTY_ERROR)) {
@@ -1285,6 +1286,7 @@ static bool udma_batch_destroy_jetty_precondition(struct udma_dev *dev,
 						  uint32_t jetty_cnt, int *bad_jetty_index)
 {
 	if (!(dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE) &&
+		((dev->hw_ver == UBASE_HW_VER_A_0) || (dev->hw_ver == UBASE_HW_VER_K_0)) &&
 	    udma_batch_modify_jetty_precondition(dev, sq_list, jetty_cnt, bad_jetty_index))
 		return false;
 
@@ -1456,7 +1458,9 @@ static int udma_modify_jetty_state(struct udma_dev *udma_dev, struct udma_jetty 
 		if (ret)
 			break;
 
-		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE))
+		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE) &&
+		    ((udma_dev->hw_ver == UBASE_HW_VER_A_0) ||
+		     (udma_dev->hw_ver == UBASE_HW_VER_K_0)))
 			udma_modify_jetty_precondition(udma_dev, &udma_jetty->sq);
 
 		ret = udma_set_jetty_state(udma_dev, udma_jetty->sq.id,
@@ -2012,4 +2016,16 @@ int udma_free_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 	kfree(jetty);
 
 	return 0;
+}
+
+uint32_t udma_get_ta_timeout(uint8_t gear)
+{
+	static const uint32_t timeout_table[] = {
+		UDMA_TA_TIMEOUT_128MS,
+		UDMA_TA_TIMEOUT_1000MS,
+		UDMA_TA_TIMEOUT_8000MS,
+		UDMA_TA_TIMEOUT_64000MS
+	};
+
+	return (gear < ARRAY_SIZE(timeout_table)) ? timeout_table[gear] : UDMA_TA_TIMEOUT_64000MS;
 }

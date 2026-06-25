@@ -1089,6 +1089,9 @@ static int udma_destroy_and_flush_jfc(struct udma_dev *dev, uint32_t jfcn)
 		return ret;
 	}
 
+	if (!((dev->hw_ver == UBASE_HW_VER_A_0) || (dev->hw_ver == UBASE_HW_VER_K_0)))
+		return ret;
+
 	while (true) {
 		if (udma_query_jfc_destroy_done(dev, jfcn) == 0)
 			return 0;
