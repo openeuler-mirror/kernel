@@ -179,7 +179,7 @@ static int ubagg_nl_get_physical_device_ops(struct sk_buff *skb,
 	size_t arg_size = 0;
 	struct ubagg_cmd_physical_device *arg = NULL;
 	int ret = -EINVAL;
-	struct ubcore_device *dev = NULL;
+	struct ubagg_device *ubagg_dev = NULL;
 	struct ubagg_physical_device_out out = { 0 };
 	struct sk_buff *msg;
 	void *hdr;
@@ -201,23 +201,24 @@ static int ubagg_nl_get_physical_device_ops(struct sk_buff *skb,
 		     nla_data(info->attrs[UBAGG_ATTR_EID]),
 		     sizeof(union ubcore_eid));
 
-	dev = ubcore_get_device_by_eid(&arg->in.bonding_eid,
-				       UBCORE_TRANSPORT_UB);
-	if (IS_ERR_OR_NULL(dev)) {
-		ubagg_log_err("Failed to query primary dev\n");
+	ubagg_dev = ubagg_get_device_by_eid(&arg->in.bonding_eid);
+	if (ubagg_dev == NULL) {
+		ubagg_log_err("Failed to query bonding dev\n");
 		kfree(arg);
 		return -ENOENT;
 	}
-	(void)memcpy(arg->out.dev_name, dev->dev_name, UBAGG_MAX_DEV_NAME_LEN);
+	(void)strscpy(arg->out.dev_name, ubagg_dev->master_dev_name,
+		      UBAGG_MAX_DEV_NAME_LEN);
 
-	ret = query_eid_idx(dev, &arg->in.bonding_eid,
+	ret = query_eid_idx(&ubagg_dev->ub_dev, &arg->in.bonding_eid,
 			    &arg->out.bonding_eid_idx);
-	ubcore_put_device(dev);
 	if (ret != 0) {
 		ubagg_log_err("Failed to query eid information\n");
+		ubagg_put_device(ubagg_dev);
 		kfree(arg);
 		return ret;
 	}
+	ubagg_put_device(ubagg_dev);
 
 	ret = get_physical_device(NULL, &out, &arg->in.bonding_eid);
 	if (ret != 0) {
