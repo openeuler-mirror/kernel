@@ -34,7 +34,7 @@ static const struct nla_policy ubcore_policy[NUM_UBCORE_ATTR] = {
 	[UBCORE_ATTR_DEV_NAME] = { .type = NLA_STRING,
 				   .len = UBCORE_MAX_DEV_NAME - 1 },
 	[UBCORE_ATTR_NS_FD] = { .type = NLA_U32 },
-	[UBCORE_ATTR_EID_IDX] = { .type = NLA_U16},
+	[UBCORE_ATTR_EID_IDX] = { .type = NLA_U16 },
 	[UBCORE_MSG_SEQ] = { .type = NLA_U32 },
 	[UBCORE_MSG_TYPE] = { .type = NLA_U32 },
 	[UBCORE_TRANSPORT_TYPE] = { .type = NLA_U32 },
@@ -62,146 +62,149 @@ static const struct nla_policy ubcore_policy[NUM_UBCORE_ATTR] = {
 };
 
 static const struct genl_ops ubcore_genl_ops[] = {
-	{ .cmd = UBCORE_CMD_QUERY_STATS,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .doit = ubcore_query_stats_ops },
-	{ .cmd = UBCORE_CMD_QUERY_RES,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .start = ubcore_query_res_start,
-	  .dumpit = ubcore_query_res_dump,
-	  .done = ubcore_query_res_done },
-	{ .cmd = UBCORE_CMD_ADD_EID,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .flags = GENL_ADMIN_PERM,
-	  .start = ubcore_add_eid_start,
-	  .dumpit = ubcore_add_eid_dump,
-	  .done = ubcore_add_eid_done },
-	{ .cmd = UBCORE_CMD_DEL_EID,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .flags = GENL_ADMIN_PERM,
-	  .start = ubcore_delete_eid_start,
-	  .dumpit = ubcore_delete_eid_dump,
-	  .done = ubcore_delete_eid_done },
-	{ .cmd = UBCORE_CMD_SET_EID_MODE,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .flags = GENL_ADMIN_PERM,
-	  .doit = ubcore_set_eid_mode_ops },
-	{ .cmd = UBCORE_CMD_SET_DEV_NS_MODE,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .flags = GENL_ADMIN_PERM,
-	  .doit = ubcore_set_dev_ns_mode_ops },
-	{ .cmd = UBCORE_CMD_SET_DEV_NS,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .flags = GENL_ADMIN_PERM,
-	  .doit = ubcore_set_dev_ns_ops },
-	{ .cmd = UBCORE_CMD_EXPOSE_DEV_NS,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .flags = GENL_ADMIN_PERM,
-	  .doit = ubcore_expose_dev_ns_ops },
-	{ .cmd = UBCORE_CMD_UNEXPOSE_DEV_NS,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .flags = GENL_ADMIN_PERM,
-	  .doit = ubcore_unexpose_dev_ns_ops },
-	{ .cmd = UBCORE_CMD_SET_DEV_EID_NS,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .flags = GENL_ADMIN_PERM,
-	  .doit = ubcore_set_dev_eid_ns_ops },
-	{ .cmd = UBCORE_CMD_GET_TOPO_INFO,
-	  .policy = ubcore_policy,
-	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-
-	  .doit = ubcore_get_topo_info
+	{
+		.cmd = UBCORE_CMD_QUERY_STATS,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.doit = ubcore_query_stats_ops,
+	},
+	{
+		.cmd = UBCORE_CMD_QUERY_RES,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.start = ubcore_query_res_start,
+		.dumpit = ubcore_query_res_dump,
+		.done = ubcore_query_res_done,
+	},
+	{
+		.cmd = UBCORE_CMD_ADD_EID,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.start = ubcore_add_eid_start,
+		.dumpit = ubcore_add_eid_dump,
+		.done = ubcore_add_eid_done,
+	},
+	{
+		.cmd = UBCORE_CMD_DEL_EID,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.start = ubcore_delete_eid_start,
+		.dumpit = ubcore_delete_eid_dump,
+		.done = ubcore_delete_eid_done,
+	},
+	{
+		.cmd = UBCORE_CMD_SET_EID_MODE,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_set_eid_mode_ops,
+	},
+	{
+		.cmd = UBCORE_CMD_SET_DEV_NS_MODE,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_set_dev_ns_mode_ops,
+	},
+	{
+		.cmd = UBCORE_CMD_SET_DEV_NS,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_set_dev_ns_ops,
+	},
+	{
+		.cmd = UBCORE_CMD_EXPOSE_DEV_NS,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_expose_dev_ns_ops,
+	},
+	{
+		.cmd = UBCORE_CMD_UNEXPOSE_DEV_NS,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_unexpose_dev_ns_ops,
+	},
+	{
+		.cmd = UBCORE_CMD_SET_DEV_EID_NS,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.flags = GENL_ADMIN_PERM,
+		.doit = ubcore_set_dev_eid_ns_ops },
+	{
+		.cmd = UBCORE_CMD_GET_TOPO_INFO,
+		.policy = ubcore_policy,
+		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
+		.doit = ubcore_get_topo_info,
 	},
 	{
 		.cmd = UBCORE_CMD_SET_SL,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.flags = GENL_ADMIN_PERM,
-		.doit = ubcore_set_sl
+		.doit = ubcore_set_sl,
 	},
 	{
 		.cmd = UBCORE_CMD_ADMIN_INSERT_MAIN_UE_EID,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.flags = GENL_ADMIN_PERM,
-		.doit = ubcore_admin_insert_main_ue_eid
+		.doit = ubcore_admin_insert_main_ue_eid,
 	},
 	{
 		.cmd = UBCORE_CMD_ADMIN_DELETE_MAIN_UE_EID,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.flags = GENL_ADMIN_PERM,
-		.doit = ubcore_admin_delete_main_ue_eid
+		.doit = ubcore_admin_delete_main_ue_eid,
 	},
 	{
 		.cmd = UBCORE_CMD_ADMIN_LOOKUP_MAIN_UE_EID,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-		.doit = ubcore_admin_lookup_main_ue_eid
+		.doit = ubcore_admin_lookup_main_ue_eid,
 	},
 	{
 		.cmd = UBCORE_CMD_ADMIN_FLUSH_MAIN_UE_EID,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.flags = GENL_ADMIN_PERM,
-		.doit = ubcore_admin_flush_main_ue_eid
+		.doit = ubcore_admin_flush_main_ue_eid,
 	},
 	{
 		.cmd = UBCORE_CMD_ADMIN_INSERT_MAIN_UE_EID_BATCH,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.flags = GENL_ADMIN_PERM,
-		.doit = ubcore_admin_insert_main_ue_eid_batch
-	},
-	{
-		.cmd = UBCORE_CMD_GET_V2P_RES,
-		.policy = ubcore_policy,
-		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-		.doit = ubcore_get_v2p_res
+		.doit = ubcore_admin_insert_main_ue_eid_batch,
 	},
 	{
 		.cmd = UBCORE_CMD_PERF_START,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-		.doit = ubcore_perf_start_ops
+		.doit = ubcore_perf_start_ops,
 	},
 	{
 		.cmd = UBCORE_CMD_PERF_STOP,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-		.doit = ubcore_perf_stop_ops
+		.doit = ubcore_perf_stop_ops,
 	},
 	{
 		.cmd = UBCORE_CMD_PERF_SHOW,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
-		.doit = ubcore_perf_show_ops
+		.doit = ubcore_perf_show_ops,
 	},
 	{ .cmd = UBCORE_CMD_SET_EID_NS_MODE,
 	  .policy = ubcore_policy,
 	  .maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 	  .flags = GENL_ADMIN_PERM,
-	  .doit = ubcore_set_eid_ns_mode_ops
+	  .doit = ubcore_set_eid_ns_mode_ops,
 	},
 	{
 		.cmd = UBCORE_CMD_SHOW_TPID_LIST,
@@ -209,7 +212,7 @@ static const struct genl_ops ubcore_genl_ops[] = {
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.start = ubcore_show_tpid_list_start,
 		.dumpit = ubcore_show_tpid_list_dump,
-		.done = ubcore_show_tpid_list_done
+		.done = ubcore_show_tpid_list_done,
 	},
 	{
 		.cmd = UBCORE_CMD_SHOW_TPID_REUSE,
@@ -217,14 +220,14 @@ static const struct genl_ops ubcore_genl_ops[] = {
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.start = ubcore_show_tpid_reuse_start,
 		.dumpit = ubcore_show_tpid_reuse_dump,
-		.done = ubcore_show_tpid_reuse_done
+		.done = ubcore_show_tpid_reuse_done,
 	},
 	{
 		.cmd = UBCORE_CMD_SHOW_SYSTEM,
 		.policy = ubcore_policy,
 		.maxattr = ARRAY_SIZE(ubcore_policy) - 1,
 		.flags = GENL_ADMIN_PERM,
-		.doit = ubcore_show_system_ops
+		.doit = ubcore_show_system_ops,
 	},
 };
 

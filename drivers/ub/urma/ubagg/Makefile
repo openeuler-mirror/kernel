@@ -7,6 +7,7 @@ ccflags-y += -I$(src)
 
 ubagg-objs := ubagg_bitmap.o \
 ubagg_log.o \
+ubagg_dfx.o \
 ubagg_msg.o \
 ubagg_seg.o \
 ubagg_hash_table.o \
