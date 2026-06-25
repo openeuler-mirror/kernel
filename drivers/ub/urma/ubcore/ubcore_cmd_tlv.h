@@ -912,12 +912,6 @@ enum ubcore_cmd_set_topo_type {
 	SET_TOPO_IN_NUM /* Only for calculating number of types */
 };
 
-enum ubcore_cmd_get_topo_type {
-	/* Out type */
-	GET_TOPO_OUT_TOPO_MAP,
-	GET_TOPO_OUT_NUM /* Only for calculating number of types */
-};
-
 enum ubcore_get_path_set_type {
 	GET_PATH_SET_IN_SRC_BONDING_EID,
 	GET_PATH_SET_IN_DST_BONDING_EID,
