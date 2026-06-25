@@ -199,6 +199,11 @@ static inline bool cache_is_ready(struct mfs_sb_info *sbi)
 	return test_bit(MFS_CACHE_READY, &sbi->caches.flags);
 }
 
+static inline bool allowed_event(struct mfs_sb_info *sbi, unsigned int op)
+{
+	return (support_event(sbi) && allow_ev_type(sbi, op));
+}
+
 static inline void get_mfs_event(struct mfs_event *event)
 {
 	refcount_inc(&event->ref);

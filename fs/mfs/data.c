@@ -80,9 +80,7 @@ static int mfs_release(struct inode *inode, struct file *file)
 	if (!object)
 		goto out;
 	sbi = MFS_SB(object->mfs_inode->i_sb);
-	if (!support_event(sbi) || !allow_ev_type(sbi, MFS_OP_CLOSE))
-		goto out;
-	if (!cache_is_ready(sbi))
+	if (!allowed_event(sbi, MFS_OP_CLOSE) || !cache_is_ready(sbi))
 		goto out;
 	/* post close event to user-space daemon for closing fd handle */
 	mfs_post_event_close(object);
@@ -267,7 +265,7 @@ static int mfs_check_range(struct range_ctx *ctx)
 	struct mfs_syncer syncer;
 	int err = 0, err2 = 0;
 
-	if (!support_event(sbi) || !allow_ev_type(sbi, ctx->op))
+	if (!allowed_event(sbi, ctx->op))
 		return 0;
 	if (!cache_is_ready(sbi))
 		return ctx->sync ? -EIO : 0;
