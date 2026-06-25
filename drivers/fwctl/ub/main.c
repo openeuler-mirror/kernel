@@ -114,7 +114,8 @@ static int ubctl_check_rpc_cmd(struct ubctl_dev *ucdev, u32 rpc_cmd)
 {
 	static struct ubctl_env_type_info ubctl_env_type_info_table[] = {
 		{ UBASE_HW_VER_A_0,
-		  { UTOOL_CMD_QUERY_SCC_VERSION, UTOOL_CMD_QUERY_SCC_LOG },
+		  { UTOOL_CMD_QUERY_SCC_VERSION, UTOOL_CMD_QUERY_SCC_LOG,
+		    UTOOL_CMD_QUERY_TA_WQE_TIME },
 		  UBCTL_UNSUPPORTED_RPCCMD_CNT_A_0 },
 
 		{ UBASE_HW_VER_K_0,

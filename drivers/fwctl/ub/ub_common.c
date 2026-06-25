@@ -111,7 +111,7 @@ static int ubctl_cmd_send_deal(struct ubctl_dev *ucdev,
 
 	*retval = ubctl_ubase_cmd_send(ucdev->adev, &cmd);
 	if (*retval == UTOOL_EOPNOTSUPP) {
-		ubctl_warn(ucdev, "opcode is not support.\n");
+		ubctl_warn(ucdev, "this opcode is not supported.\n");
 		*retval = 0;
 	}
 

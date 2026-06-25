@@ -177,6 +177,10 @@ enum ub_fwctl_cmdrpc_type {
 	 * @UTOOL_CMD_QUERY_TA_ABN_STATS: Query TA layer ABN_STATS related registers
 	 */
 	UTOOL_CMD_QUERY_TA_ABN_STATS = 0x0033,
+	/**
+	 * @UTOOL_CMD_QUERY_TA_WQE_TIME: Query TA layer WQE_TIME related registers
+	 */
+	UTOOL_CMD_QUERY_TA_WQE_TIME = 0x0034,
 
 	/**
 	 * @UTOOL_CMD_QUERY_BA: Query all registers at the BA layer
