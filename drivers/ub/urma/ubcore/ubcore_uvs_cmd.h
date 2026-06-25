@@ -31,7 +31,6 @@
 
 enum ubcore_uvs_global_cmd {
 	UBCORE_CMD_SET_TOPO = 1,
-	UBCORE_CMD_GET_ROUTE_LIST = 2,
 	UBCORE_CMD_GET_TOPO = 3,
 	UBCORE_CMD_GET_PATH_SET = 4,
 	UBCORE_CMD_INSERT_MAIN_UE_EID = 5,
@@ -56,11 +55,6 @@ struct ubcore_cmd_get_topo {
 	} out;
 };
 
-struct ubcore_cmd_get_route_list {
-	struct ubcore_route in;
-	struct ubcore_route_list out;
-};
-
 struct ubcore_cmd_get_path_set {
 	struct {
 		union ubcore_eid src_bonding_eid;
@@ -68,7 +62,9 @@ struct ubcore_cmd_get_path_set {
 		enum ubcore_tp_type tp_type;
 		bool iodie_level;
 	} in;
-	struct ubcore_path_set out;
+	struct {
+		struct ubcore_path_set path_set;
+	} out;
 };
 
 struct ubcore_cmd_main_ue_eid_entry {
