@@ -225,23 +225,28 @@ static int ubase_ue_reset_done_check(struct ubase_dev *udev)
 	return -ETIMEDOUT;
 }
 
-static void ubase_reset_done(struct ubase_dev *udev)
+int ubase_reset_done(struct ubase_dev *udev)
 {
 	struct ubase_cmd_buf in;
 	int ret;
 
 	if (!dev_num_vf(udev->dev))
-		return;
+		return 0;
 
 	__ubase_fill_inout_buf(&in, UBASE_OPC_RESET_DONE, false, 0, NULL);
 
 	ret = __ubase_cmd_send_in(udev, &in);
-	if (ret)
+	if (ret) {
 		ubase_err(udev, "failed to send reset done cmd, ret = %d.\n",
 			  ret);
+		return ret;
+	}
 
 	/* Wait for entities to detect that its mue have reset done */
-	msleep(UBASE_RST_UE_WAIT_REG_TIME);
+	if (test_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits))
+		msleep(UBASE_RST_UE_WAIT_REG_TIME);
+
+	return 0;
 }
 
 void ubase_suspend(struct ubase_dev *udev)
@@ -343,7 +348,9 @@ void ubase_resume(struct ubase_dev *udev, int pret)
 			goto timeout_resume;
 		goto err_resume;
 	}
-	ubase_reset_done(udev);
+	ret = ubase_reset_done(udev);
+	if (ret)
+		goto err_resume;
 
 	udev->reset_stat.reset_done_cnt++;
 	udev->reset_stat.reset_retry_cnt = 0;
