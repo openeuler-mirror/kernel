@@ -822,7 +822,9 @@ static int udma_modify_jfs_state(struct udma_dev *udma_dev, struct udma_jfs *udm
 		if (ret)
 			break;
 
-		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE))
+		if (!(udma_dev->caps.feature & UDMA_CAP_FEATURE_UE_RX_CLOSE) &&
+		    ((udma_dev->hw_ver == UBASE_HW_VER_A_0) ||
+		     (udma_dev->hw_ver == UBASE_HW_VER_K_0)))
 			udma_modify_jetty_precondition(udma_dev, &udma_jfs->sq);
 
 		ret = udma_set_jetty_state(udma_dev, udma_jfs->sq.id, to_jetty_state(attr->state));
@@ -1515,7 +1517,7 @@ static int udma_post_one_wr(struct udma_jetty_queue *sq, struct ubcore_jfs_wr *w
 	if (wqebb_cnt == 1 && !!(udma_dev->caps.feature & UDMA_CAP_FEATURE_DIRECT_WQE))
 		*dwqe_enable = true;
 
-	if (to_check_sq_overflow(sq, wqebb_cnt)) {
+	if (sq->db_status == 0 && to_check_sq_overflow(sq, wqebb_cnt)) {
 		dev_err(udma_dev->dev, "JFS overflow, wqebb_cnt:%u.\n", wqebb_cnt);
 		return -ENOMEM;
 	}
