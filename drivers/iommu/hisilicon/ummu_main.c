@@ -168,9 +168,12 @@ static void ummu_device_hw_probe_iidr(struct ummu_device *ummu)
 			ummu->cap.options |= UMMU_OPT_DOUBLE_PLBI;
 			ummu->cap.options |= UMMU_OPT_KCMD_PLBI;
 			ummu->cap.options |= UMMU_OPT_CHK_MAPT_CONTINUITY;
-			ummu->cap.options |= UMMU_OPT_MCMDQ_DECREASE;
 			ummu->cap.options |= UMMU_OPT_SYNC_WITH_PLBI;
 			ummu->cap.options |= UMMU_OPT_KV_CAM_CONTINUITY;
+			ummu->cap.options |= UMMU_OPT_ONE_MCMDQ;
+			ummu->cap.options |= UMMU_OPT_DOUBLE_TLBI;
+			ummu->cap.options |= UMMU_OPT_TLBI_LIMIT_SCALE;
+			ummu->cap.features &= ~UMMU_FEAT_BTM;
 			ummu->cap.features &= ~UMMU_FEAT_STALLS;
 		} else {
 			ummu->cap.options |= UMMU_OPT_UMAU;
