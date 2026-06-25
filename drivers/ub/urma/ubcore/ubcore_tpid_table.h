@@ -51,8 +51,8 @@ struct ubcore_tpid_list_key {
 	union ubcore_eid peer_eid;
 	enum ubcore_transport_mode trans_mode;
 	enum ubcore_tpid_share_mode share_mode;
-	uint32_t tp_type;                          // CTP/RTP/UTP
-	uint32_t link_type;                        // UBOE or Not
+	enum ubcore_tp_type tp_type;                          // CTP/RTP/UTP
+	enum ubcore_link_type link_type;                        // UBOE or Not
 };
 
 struct ubcore_tpid_reuse_key {
@@ -67,6 +67,8 @@ struct ubcore_tpid_list {
 
 	struct ubcore_tpid_list_key lk;
 
+	struct list_head create_list;
+	uint32_t cnt;
 	struct list_head unaware_list;
 	struct list_head aware_list;
 	uint32_t acnt;
@@ -89,9 +91,9 @@ struct ubcore_tpid_state {
 	/* tp_id key end */
 
 	enum ubcore_tpid_status tpid_status;
-	enum ubcore_tpid_owner_type tp_id_owner_type;
 	bool alloced;
 	uint32_t tx_psn;
+	enum ubcore_tpid_owner_type tp_id_owner_type;
 
 	struct kref ref_cnt;
 	struct completion comp;
