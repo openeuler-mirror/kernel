@@ -713,13 +713,6 @@ int ubcore_get_jfc_opt(struct ubcore_jfc *jfc, uint64_t opt, void *buf, uint32_t
 		jfc->ub_dev->ops->get_jfc_opt == NULL || buf == NULL)
 		return -EINVAL;
 
-	ret = ubcore_check_opt_valid(&jfc->jfc_opt.jfc_opt_mask.value, g_ubcore_jfc_opt_table,
-		g_ubcore_jfc_opt_map_count, opt, len);
-	if (ret != 0) {
-		ubcore_log_err("invalid opt.\n");
-		return ret;
-	}
-
 	jfc_id = jfc->id;
 	dev = jfc->ub_dev;
 	ret = dev->ops->get_jfc_opt(jfc, opt, buf, len, udata);
@@ -1333,13 +1326,14 @@ EXPORT_SYMBOL(ubcore_get_jfs_opt_by_id);
 
 int ubcore_active_jfs(struct ubcore_jfs *jfs, struct ubcore_udata *udata)
 {
-	struct ubcore_device *dev = jfs->ub_dev;
+	struct ubcore_device *dev;
 	int ret;
 
 	if (jfs == NULL || jfs->ub_dev == NULL || jfs->ub_dev->ops == NULL ||
 		jfs->ub_dev->ops->active_jfs == NULL || jfs->jfs_cfg.jfc == NULL)
 		return -EINVAL;
 
+	dev = jfs->ub_dev;
 	if (((uint16_t)jfs->jfs_cfg.trans_mode & dev->attr.dev_cap.trans_mode) == 0) {
 		ubcore_log_err("jfs cfg is not supported.\n");
 		return -EINVAL;
@@ -1664,7 +1658,6 @@ int ubcore_delete_jfr_batch(struct ubcore_jfr **jfr_arr, int jfr_num,
 				*bad_jfr_index, jfr_num);
 			*bad_jfr_index = 0;
 			bad_index = jfr_num;
-			ret = -EFAULT;
 		}
 		for (i = bad_index; i < jfr_num; ++i)
 			kref_init(&jfr_arr[i]->ref_cnt);
@@ -2211,13 +2204,6 @@ int ubcore_get_jfr_opt(struct ubcore_jfr *jfr, uint64_t opt, void *buf, uint32_t
 		jfr->ub_dev->ops->get_jfr_opt == NULL || buf == NULL)
 		return -EINVAL;
 
-	ret = ubcore_check_opt_valid(&jfr->jfr_opt.jfr_opt_mask.value, g_ubcore_jfr_opt_table,
-		g_ubcore_jfr_opt_map_count, opt, len);
-	if (ret != 0) {
-		ubcore_log_err("invalid opt.\n");
-		return ret;
-	}
-
 	dev = jfr->ub_dev;
 	ret = dev->ops->get_jfr_opt(jfr, opt, buf, len, udata);
 	if (ret != 0) {
@@ -2252,13 +2238,14 @@ EXPORT_SYMBOL(ubcore_get_jfr_opt_by_id);
 
 int ubcore_active_jfr(struct ubcore_jfr *jfr, struct ubcore_udata *udata)
 {
-	struct ubcore_device *dev = jfr->ub_dev;
+	struct ubcore_device *dev;
 	int ret;
 
 	if (jfr == NULL || jfr->ub_dev == NULL || jfr->ub_dev->ops == NULL ||
 		jfr->ub_dev->ops->active_jfr == NULL || jfr->jfr_cfg.jfc == NULL)
 		return -EINVAL;
 
+	dev = jfr->ub_dev;
 	if (ubcore_check_jfr_cfg(&jfr->jfr_cfg) != 0)
 		return -EINVAL;
 
@@ -4320,13 +4307,6 @@ int ubcore_get_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf, ui
 		jetty->ub_dev->ops->get_jetty_opt == NULL || buf == NULL)
 		return -EINVAL;
 
-	ret = ubcore_check_opt_valid(&jetty->jetty_opt.jfs_opt.jfs_opt_mask.value,
-		g_ubcore_jetty_opt_table, g_ubcore_jetty_opt_map_count, opt, len);
-	if (ret != 0) {
-		ubcore_log_err("invalid opt.\n");
-		return ret;
-	}
-
 	dev = jetty->ub_dev;
 	ret = dev->ops->get_jetty_opt(jetty, opt, buf, len, udata);
 	if (ret != 0) {
@@ -4361,7 +4341,7 @@ EXPORT_SYMBOL(ubcore_get_jetty_opt_by_id);
 
 int ubcore_active_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 {
-	struct ubcore_device *dev = jetty->ub_dev;
+	struct ubcore_device *dev;
 	struct ubcore_jetty_cfg *cfg = &jetty->jetty_cfg;
 	int ret;
 
@@ -4370,6 +4350,7 @@ int ubcore_active_jetty(struct ubcore_jetty *jetty, struct ubcore_udata *udata)
 		jetty->ub_dev->ops->deactive_jetty == NULL)
 		return -EINVAL;
 
+	dev = jetty->ub_dev;
 	if (ubcore_jetty_pre_check(dev, cfg) != 0)
 		return -EINVAL;
 
