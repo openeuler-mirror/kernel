@@ -747,13 +747,8 @@ xfs_inode_item_push(
 	if (xfs_iflags_test(ip, XFS_IFLUSHING))
 		return XFS_ITEM_FLUSHING;
 
-	if (!xfs_ilock_nowait(ip, XFS_ILOCK_SHARED))
+	if (!xfs_buf_trylock(bp))
 		return XFS_ITEM_LOCKED;
-
-	if (!xfs_buf_trylock(bp)) {
-		xfs_iunlock(ip, XFS_ILOCK_SHARED);
-		return XFS_ITEM_LOCKED;
-	}
 
 	spin_unlock(&lip->li_ailp->ail_lock);
 
@@ -780,7 +775,6 @@ xfs_inode_item_push(
 	}
 
 	spin_lock(&lip->li_ailp->ail_lock);
-	xfs_iunlock(ip, XFS_ILOCK_SHARED);
 	return rval;
 }
 
