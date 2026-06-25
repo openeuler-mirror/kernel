@@ -226,10 +226,15 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg,
 		return -EINVAL;
 	}
 
-	seg->first_page = va_to_page(dev, vma->vm_start);
+	seg->first_page = va_to_page(dev, seg->addr);
 	if (!seg->first_page) {
 		dev_err(dev->dev, "failed to get first physical page.\n");
 		return -EINVAL;
+	}
+	if (!PageCompound(seg->first_page)) {
+		seg->first_page = va_to_page(dev, vma->vm_start);
+		if (!seg->first_page)
+			dev_warn(dev->dev, "failed to get first physical page of normal page.\n");
 	}
 
 	seg->umem = kzalloc(sizeof(*seg->umem), GFP_KERNEL);
@@ -261,7 +266,7 @@ static int udma_get_user_page(struct udma_dev *dev, struct udma_segment *seg,
 		}
 	}
 
-	if (!try_get_page(seg->first_page)) {
+	if (seg->first_page && !try_get_page(seg->first_page)) {
 		dev_err(dev->dev, "failed to get_page.\n");
 		ret = -EINVAL;
 		goto err_get_page;
@@ -285,7 +290,8 @@ err_alloc_pages:
 
 static void udma_put_user_page(struct udma_segment *seg)
 {
-	put_page(seg->first_page);
+	if (seg->first_page)
+		put_page(seg->first_page);
 	sg_free_append_table(&seg->umem->append);
 	kfree(seg->umem);
 	seg->umem = NULL;
