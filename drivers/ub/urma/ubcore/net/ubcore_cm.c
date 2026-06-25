@@ -202,14 +202,18 @@ static int ubcore_ubcm_service_gen_send_to(struct ubcore_comm_msg *msg,
 	const uint8_t ubagg_net_bonding_seg_info_resp = 1;
 	const uint8_t ubagg_net_bonding_jetty_info_req = 2;
 	const uint8_t ubagg_net_bonding_jetty_info_resp = 3;
+	const uint8_t ubagg_net_failback_req = 4;
+	const uint8_t ubagg_net_failback_resp = 5;
 
 	if (!msg || !send_buf)
 		return -EINVAL;
 	if (msg->type == ubagg_net_bonding_seg_info_req ||
-		msg->type == ubagg_net_bonding_jetty_info_req)
+		msg->type == ubagg_net_bonding_jetty_info_req ||
+		msg->type == ubagg_net_failback_req)
 		send_buf->msg_type = UBCORE_CM_GEN_DATA;
 	else if (msg->type == ubagg_net_bonding_seg_info_resp ||
-		msg->type == ubagg_net_bonding_jetty_info_resp)
+		msg->type == ubagg_net_bonding_jetty_info_resp ||
+		msg->type == ubagg_net_failback_resp)
 		send_buf->msg_type = UBCORE_CM_GEN_RESP;
 	else {
 		ubcore_log_err("Connect service, Unrecognized msg type %u\n", msg->type);

@@ -19,6 +19,7 @@
 #include "ubagg_log.h"
 #include "ubagg_msg.h"
 #include "ubagg_types.h"
+#include "ubagg_device.h"
 
 #include "ubagg_connect.h"
 
@@ -110,63 +111,6 @@ static struct ubcore_device *find_phys_dev(struct ubcore_device *bonding_dev,
 			      .primary_eid;
 
 	return ubcore_get_device_by_eid(primary_eid, UBCORE_TRANSPORT_UB);
-}
-
-static struct ubcore_device *find_bonding_dev(union ubcore_eid *eid)
-{
-	struct ubagg_topo_node *topo_info;
-	union ubcore_eid *bonding_eid;
-	int dev_id, ue_id, port_id;
-	bool is_found = false;
-
-	topo_info = get_current_topo_node();
-	if (!topo_info) {
-		ubagg_log_err("Failed get global topo info");
-		return NULL;
-	}
-
-	for (dev_id = 0; dev_id < DEV_NUM; dev_id++) {
-		if (!is_agg_dev_valid(&topo_info->agg_devs[dev_id]))
-			continue;
-
-		if (memcmp(eid,
-			   (union ubcore_eid *)topo_info->agg_devs[dev_id]
-				   .agg_eid,
-			   sizeof(union ubcore_eid)) == 0) {
-			is_found = true;
-			break;
-		}
-
-		for (ue_id = 0; ue_id < IODIE_NUM; ue_id++) {
-			if (memcmp(eid,
-				   (union ubcore_eid *)topo_info
-					   ->agg_devs[dev_id]
-					   .ues[ue_id]
-					   .primary_eid,
-				   sizeof(union ubcore_eid)) == 0) {
-				is_found = true;
-				break;
-			}
-			for (port_id = 0; port_id < PORT_NUM; port_id++) {
-				if (memcmp(eid,
-					   (union ubcore_eid *)topo_info
-						   ->agg_devs[dev_id]
-						   .ues[ue_id]
-						   .port_eid[port_id],
-					   sizeof(union ubcore_eid)) == 0) {
-					is_found = true;
-					break;
-				}
-			}
-		}
-	}
-	if (!is_found) {
-		ubagg_log_err("Failed to find bonding device.\n");
-		return NULL;
-	}
-
-	bonding_eid = (union ubcore_eid *)topo_info->agg_devs[dev_id].agg_eid;
-	return ubcore_get_device_by_eid(bonding_eid, UBCORE_TRANSPORT_UB);
 }
 
 static struct ubagg_session *alloc_xchg_session(struct ubcore_device *dev,
@@ -420,7 +364,8 @@ static void handle_seg_req(struct ubcore_device *dev,
 			   struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_seg_info_req *req = (struct msg_seg_info_req *)msg->data;
-	struct ubcore_device *bonding_dev = find_bonding_dev(&req->ubva.eid);
+	struct ubcore_device *bonding_dev =
+		ubagg_find_bonding_device(&req->ubva.eid);
 	struct ubagg_device *ubagg_dev = to_ubagg_dev(bonding_dev);
 	struct ubagg_hash_table *ubagg_seg_ht;
 	struct ubagg_seg_hash_node *tmp_seg = NULL;
@@ -459,7 +404,7 @@ static void handle_jetty_req(struct ubcore_device *dev,
 {
 	struct msg_jetty_info_req *req = (struct msg_jetty_info_req *)msg->data;
 	struct ubcore_device *bonding_dev =
-		find_bonding_dev(&req->jetty_id.eid);
+		ubagg_find_bonding_device(&req->jetty_id.eid);
 	struct ubagg_device *ubagg_dev = to_ubagg_dev(bonding_dev);
 	struct ubagg_hash_table *ht = NULL;
 	struct msg_jetty_info_resp resp = { 0 };

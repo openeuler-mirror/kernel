@@ -21,6 +21,7 @@
 #include "ubagg_bitmap.h"
 #include "ubagg_hash_table.h"
 #include "ubagg_connect.h"
+#include "ubagg_failback.h"
 #include "ubagg_msg.h"
 #include "ubagg_session.h"
 
@@ -162,6 +163,12 @@ static int __init ubagg_init(void)
 		goto err_connect_msg;
 	}
 
+	ret = ubagg_fb_init();
+	if (ret != 0) {
+		ubagg_log_err("register ubagg failback handlers fail.\n");
+		goto err_failback_msg;
+	}
+
 	ret = ubagg_msg_init();
 	if (ret != 0) {
 		ubagg_log_err("register ubagg message handler fail.\n");
@@ -171,6 +178,8 @@ static int __init ubagg_init(void)
 	return 0;
 
 err_msg:
+	ubagg_fb_exit();
+err_failback_msg:
 	ubagg_connect_uninit();
 err_connect_msg:
 	ubagg_session_uninit();
@@ -185,6 +194,7 @@ err:
 static void __exit ubagg_exit(void)
 {
 	ubagg_msg_uninit();
+	ubagg_fb_exit();
 	ubagg_connect_uninit();
 	ubagg_session_uninit();
 	ubagg_delete_topo_map();

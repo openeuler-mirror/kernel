@@ -19,11 +19,13 @@
 #include <ub/urma/ubcore_types.h>
 
 #include "ubagg_log.h"
-#include "ubagg_ioctl.h"
 #include "ubagg_jetty.h"
 #include "ubagg_seg.h"
 #include "ubagg_bitmap.h"
 #include "ubagg_hash_table.h"
+#include "ubagg_device.h"
+
+#include "ubagg_ioctl.h"
 
 #define UBAGG_DEVICE_MAX_EID_CNT 128
 #define UBAGG_MAX_BONDING_DEV_NUM 1024
@@ -591,22 +593,6 @@ int ubagg_config_device(struct ubcore_device *dev,
 {
 	(void)dev;
 	(void)cfg;
-	return 0;
-}
-
-static struct ubcore_ucontext *
-ubagg_alloc_ucontext(struct ubcore_device *dev, uint32_t eid_index,
-		     struct ubcore_udrv_priv *udrv_data)
-{
-	(void)dev;
-	(void)eid_index;
-	(void)udrv_data;
-	return kzalloc(sizeof(struct ubcore_ucontext), GFP_KERNEL);
-}
-
-static int ubagg_free_ucontext(struct ubcore_ucontext *uctx)
-{
-	kfree(uctx);
 	return 0;
 }
 
