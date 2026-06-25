@@ -24,6 +24,7 @@
 #include "ubagg_bitmap.h"
 #include "ubagg_hash_table.h"
 #include "ubagg_device.h"
+#include "ubagg_failback.h"
 #include "ubagg_session.h"
 
 #include "ubagg_ioctl.h"
@@ -498,6 +499,12 @@ int ubagg_user_ctl(struct ubcore_device *dev, struct ubcore_user_ctl *user_ctl)
 		break;
 	case GET_SEG_CTX:
 		ret = ubagg_get_seg_ctx(dev, user_ctl);
+		break;
+	case FAILBACK_START:
+		ret = ubagg_fb_user_ctl_start(dev, user_ctl);
+		break;
+	case FAILBACK_RESULT:
+		ret = ubagg_fb_user_ctl_result(dev, user_ctl);
 		break;
 	default:
 		ubagg_log_err("unsupported ubagg userctl opcde:%u",

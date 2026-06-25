@@ -189,6 +189,8 @@ enum ubagg_userctl_opcode {
 	GET_JETTY_ID = 4,
 	GET_RJETTY = 9,
 	GET_SEG_CTX = 10,
+	FAILBACK_START = 11,
+	FAILBACK_RESULT = 12,
 };
 
 struct ubagg_physical_device_out {

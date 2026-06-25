@@ -59,7 +59,7 @@ enum ubagg_genl_mcgrp {
 };
 
 static const struct genl_multicast_group ubagg_genl_mcgrps[] = {
-	[UBAGG_NL_MCGRP_USER_PAYLOAD] = { .name = "user_payload" },
+	[UBAGG_NL_MCGRP_USER_PAYLOAD] = { .name = "bonding" },
 };
 
 static const struct genl_ops ubagg_genl_ops[] = {
@@ -80,18 +80,6 @@ static const struct genl_ops ubagg_genl_ops[] = {
 		.policy = ubagg_genl_policy,
 		.maxattr = ARRAY_SIZE(ubagg_genl_policy) - 1,
 		.doit = ubagg_nl_get_v2p_res_ops,
-	},
-	{
-		.cmd = UBAGG_NL_CMD_FAILBACK_START,
-		.policy = ubagg_genl_policy,
-		.maxattr = ARRAY_SIZE(ubagg_genl_policy) - 1,
-		.doit = ubagg_fb_nl_start,
-	},
-	{
-		.cmd = UBAGG_NL_CMD_FAILBACK_RESULT,
-		.policy = ubagg_genl_policy,
-		.maxattr = ARRAY_SIZE(ubagg_genl_policy) - 1,
-		.doit = ubagg_fb_nl_result,
 	},
 };
 
