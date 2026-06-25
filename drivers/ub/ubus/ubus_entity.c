@@ -768,21 +768,29 @@ failed:
 	return ret;
 }
 
-void ub_virt_notify(struct ub_entity *pue, u16 entity_idx, bool is_en)
+int ub_virt_notify(struct ub_entity *pue, u16 entity_idx, bool is_en)
 {
 	const char *operate = is_en ? "enable" : "disable";
 	struct ub_driver *pdrv;
-	int ret;
+	int ret = 0;
 
-	if (pue) {
-		pdrv = pue->driver;
-		if (pdrv && pdrv->virt_notify) {
-			ret = pdrv->virt_notify(pue, entity_idx, is_en);
-			if (ret)
-				ub_warn(pue, "drv virt notify %s ue with entity_idx %u failed, ret=%d\n",
-					operate, entity_idx, ret);
-		}
+	if (!pue)
+		return -EINVAL;
+
+	pdrv = pue->driver;
+	if (!pdrv || !ub_entity_test_priv_flag(pue, UB_ENTITY_PROBED)) {
+		ub_warn(pue, "virt notify entity_idx %u, drv not ready\n", entity_idx);
+		return -EAGAIN;
 	}
+
+	if (pdrv->virt_notify) {
+		ret = pdrv->virt_notify(pue, entity_idx, is_en);
+		if (ret)
+			ub_warn(pue, "drv virt notify %s ue with entity_idx %u failed, ret=%d\n",
+				operate, entity_idx, ret);
+	}
+
+	return ret;
 }
 
 void ub_disable_ent(struct ub_entity *uent)
