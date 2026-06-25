@@ -6,6 +6,7 @@
 
 #include "udma_dev.h"
 #include "udma_ctx.h"
+#include "udma_common.h"
 
 #define UDMA_JFC_DEPTH_MIN 64
 #define UDMA_JFC_DEPTH_SHIFT_BASE 6
@@ -22,6 +23,9 @@
 #define UDMA_CQE_INV_TOKEN_ID GENMASK(19, 0)
 
 #define UDMA_INIT_JFC_ID -1
+
+#define UDMA_CCU_SWITCH 1
+#define UDMA_CCU_OTHER_DIE 1
 
 enum udma_jfc_state {
 	UDMA_JFC_STATE_INVALID,
@@ -46,6 +50,12 @@ enum udma_cq_cnt_mode {
 	UDMA_CQE_CNT_MODE_BY_CI_PI_GAP,
 };
 
+enum udma_jfc_bind_type {
+	UDMA_UNOCP_JFC,
+	UDMA_SEND_JFC,
+	UDMA_RECV_JFC,
+};
+
 struct udma_jfc {
 	struct ubcore_jfc base;
 	struct udma_context *ctx;
@@ -65,6 +75,12 @@ struct udma_jfc {
 	uint64_t stars_chnl_addr;
 	bool stars_en;
 	uint32_t cq_shift;
+	bool ccu_en;
+	uint32_t ccu_cqe_flag;
+	enum udma_jfc_bind_type bind_type;
+	refcount_t bind_refcount;
+	bool dtu_en;
+	struct udma_dtu_pg_info dtu_pg_info;
 	struct sg_table *sgt;
 };
 
@@ -81,10 +97,20 @@ struct udma_jfc_ctx {
 	/* DW1 */
 	uint32_t cqe_va_h;
 	/* DW2 */
-	uint32_t cqe_token_id : 20;
-	uint32_t cq_cnt_mode : 1;
-	uint32_t rsv0 : 3;
-	uint32_t ceqn : 8;
+	union {
+		struct {
+			uint32_t cqe_token_id : 20;
+			uint32_t cq_cnt_mode : 1;
+			uint32_t rsv0 : 2;
+			uint32_t ceqn : 9;
+		} hw_ver_1;
+		struct {
+			uint32_t cqe_token_id : 20;
+			uint32_t cq_cnt_mode : 1;
+			uint32_t rsv0 : 3;
+			uint32_t ceqn : 8;
+		} hw_ver_0;
+	};
 	/* DW3 */
 	uint32_t cqe_token_value : 24;
 	uint32_t rsv1 : 8;
@@ -117,7 +143,9 @@ struct udma_jfc_ctx {
 	/* DW15 */
 	uint32_t int_vector : 16;
 	uint32_t stars_en : 1;
-	uint32_t rsv6 : 15;
+	uint32_t ccu_en : 1;
+	uint32_t ccucqe_other_die : 1;
+	uint32_t rsv6 : 13;
 	/* DW16 */
 	uint32_t poll : 1;
 	uint32_t cqe_report_timer : 24;
@@ -207,5 +235,11 @@ int udma_get_jfc_opt(struct ubcore_jfc *jfc, uint64_t opt, void *buf, uint32_t l
 		     struct ubcore_udata *udata);
 int udma_deactive_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_udata *udata);
 int udma_free_jfc(struct ubcore_jfc *ubcore_jfc, struct ubcore_udata *udata);
+int udma_bind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type type);
+void udma_unbind_jfc(struct udma_dev *dev, uint32_t jfc_id, enum udma_jfc_bind_type type);
+int udma_jetty_bind_jfc(struct udma_dev *dev, uint32_t send_jfc_id, uint32_t recv_jfc_id);
+void udma_jetty_unbind_jfc(struct udma_dev *dev, uint32_t send_jfc_id);
+int udma_alloc_ccu_stars_id(struct udma_dev *dev, struct udma_ida *ida_table,
+			    struct udma_res *jfc_res, uint32_t *idx);
 
 #endif /* __UDMA_JFC_H__ */

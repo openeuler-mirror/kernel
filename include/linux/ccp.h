@@ -44,6 +44,20 @@ int ccp_present(void);
 unsigned int ccp_version(void);
 
 /**
+ * get_ccp_engine_version_reg_val - get the ccp engine version register of the CCP device
+ *
+ * Returns the ccp engine version register value of the first unit on the list;
+ */
+unsigned int get_ccp_engine_version_reg_val(void);
+
+/**
+ * get_ccp_version_reg_val - read PspCcpVersion register value of CCP
+ *
+ * Returns PspCcpVersion register value , or zero if no CCP
+ */
+unsigned int get_ccp_version_reg_val(void);
+
+/**
  * ccp_enqueue_cmd - queue an operation for processing by the CCP
  *
  * @cmd: ccp_cmd struct to be processed
@@ -76,6 +90,16 @@ static inline int ccp_present(void)
 }
 
 static inline unsigned int ccp_version(void)
+{
+	return 0;
+}
+
+static inline unsigned int get_ccp_engine_version_reg_val(void)
+{
+	return 0;
+}
+
+static inline unsigned int get_ccp_version_reg_val(void)
 {
 	return 0;
 }
@@ -688,6 +712,7 @@ struct ccp_sm3_engine {
  * @CCP_SM4_MODE_CBC: CBC mode
  * @CCP_SM4_MODE_OFB: OFB mode
  * @CCP_SM4_MODE_CFB: CFB mode
+ * @CCP_SM4_MODE_XTS: XTS mode
  * @CCP_SM4_MODE_CTR: CTR mode
  */
 enum ccp_sm4_mode {
@@ -695,8 +720,19 @@ enum ccp_sm4_mode {
 	CCP_SM4_MODE_CBC,
 	CCP_SM4_MODE_OFB,
 	CCP_SM4_MODE_CFB,
+	CCP_SM4_MODE_XTS,
 	CCP_SM4_MODE_CTR,
 	CCP_SM4_MODE__LAST,
+};
+
+/**
+ * ccp_sm4_aead_mode - SM4 AEAD operation mode
+ *
+ * @CCP_SM4_MODE_GCM: GCM mode
+ */
+enum ccp_sm4_aead_mode {
+	CCP_SM4_MODE_GCM = 0,
+	CCP_SM4_AEAD_MODE__LAST,
 };
 
 /**
@@ -785,6 +821,39 @@ struct ccp_sm4_ctr_engine {
 	u64 src_len;		/* In bytes */
 };
 
+
+/**
+ * struct ccp_sm4_gcm_engine - CCP SM4 GCM operation
+ * @action: SM4 GCM operation (decrypt/encrypt)
+ * @key: key to be used for this SM4 GCM operation
+ * @key_len: length in bytes of key
+ * @iv: IV to be used for this SM4 GCM operation
+ * @iv_len: length in bytes of iv
+ * @src: data to be used for this operation
+ * @dst: data produced by this operation
+ * @src_len: length in bytes of data used for this operation
+ * @aad_len: length in bytes of additional authenticated date used for this operation
+ *
+ * Variables required to be set when calling ccp_enqueue_cmd():
+ */
+struct  ccp_sm4_gcm_engine {
+	enum ccp_sm4_action action;
+	enum ccp_sm4_aead_mode mode;
+
+	u32 authsize;
+
+	struct scatterlist *key;
+	u32 key_len;		/* In bytes */
+
+	struct scatterlist *iv;
+	u32 iv_len;		/* In bytes */
+
+	struct scatterlist *src, *dst;
+	u64 src_len;		/* In bytes */
+
+	u32 aad_len;		/* In bytes */
+};
+
 /**
  * ccp_engine - CCP operation identifiers
  *
@@ -812,6 +881,7 @@ enum ccp_engine {
 	CCP_ENGINE_SM3,
 	CCP_ENGINE_SM4,
 	CCP_ENGINE_SM4_CTR,
+	CCP_ENGINE_SM4_GCM,
 	CCP_ENGINE__LAST,
 };
 
@@ -864,6 +934,7 @@ struct ccp_cmd {
 		struct ccp_sm3_engine sm3;
 		struct ccp_sm4_engine sm4;
 		struct ccp_sm4_ctr_engine sm4_ctr;
+		struct ccp_sm4_gcm_engine sm4_gcm;
 	} u;
 
 	/* Completion callback support */

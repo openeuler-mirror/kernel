@@ -14,10 +14,10 @@
 
 extern u32 jfc_arm_mode;
 extern bool cqe_mode;
-extern struct list_head g_client_list;
-extern struct rw_semaphore g_clients_rwsem;
-extern struct rw_semaphore g_device_rwsem;
-extern struct mutex g_cdma_reset_mutex;
+extern struct list_head cdma_client_list;
+extern struct rw_semaphore cdma_clients_rwsem;
+extern struct rw_semaphore cdma_device_rwsem;
+extern struct mutex cdma_reset_mutex;
 
 #define CDMA_HW_PAGE_SHIFT	12
 #define CDMA_HW_PAGE_SIZE	(1 << CDMA_HW_PAGE_SHIFT)
@@ -28,23 +28,23 @@ extern struct mutex g_cdma_reset_mutex;
 
 #define CDMA_UPI_MASK		0x7FFF
 
-#define DMA_MAX_DEV_NAME 64
+#define CDMA_CLIENT_NAME 64
 
 enum cdma_cqe_size {
 	CDMA_64_CQE_SIZE,
 	CDMA_128_CQE_SIZE,
 };
 
-enum cdma_status {
-	CDMA_NORMAL,
-	CDMA_SUSPEND,
-	CDMA_INVALID
+enum cdma_dev_status {
+	CDMA_STATUS_NORMAL,
+	CDMA_STATUS_SUSPENDED,
+	CDMA_STATUS_INVALID
 };
 
-enum cdma_client_ops {
-	CDMA_CLIENT_STOP,
-	CDMA_CLIENT_REMOVE,
-	CDMA_CLIENT_ADD,
+enum cdma_client_op {
+	CDMA_CLIENT_OP_STOP,
+	CDMA_CLIENT_OP_REMOVE,
+	CDMA_CLIENT_OP_ADD,
 };
 
 enum {
@@ -54,7 +54,7 @@ enum {
 	CDMA_CAP_FEATURE_CONG_CTRL	= BIT(16),
 };
 
-struct cdma_res {
+struct cdma_resource {
 	u32 max_cnt;
 	u32 start_idx;
 	u32 depth;
@@ -69,16 +69,16 @@ struct cdma_oor_caps {
 	u16 on_flight_size;
 };
 
-struct cdma_tbl {
+struct cdma_cap_table {
 	u32 max_cnt;
 	u32 size;
 };
 
 struct cdma_caps {
-	struct cdma_res jfs;
-	struct cdma_res jfce;
-	struct cdma_res jfc;
-	struct cdma_res queue;
+	struct cdma_resource jfs;
+	struct cdma_resource jfce;
+	struct cdma_resource jfc;
+	struct cdma_resource queue;
 	u32 jfs_sge;
 	u32 jfr_sge;
 	u32 jfs_rsge;
@@ -107,8 +107,8 @@ struct cdma_caps {
 	u8 cc_priority_cnt;
 	bool virtualization;
 	struct cdma_oor_caps oor_caps;
-	struct cdma_tbl src_addr;
-	struct cdma_tbl seid;
+	struct cdma_cap_table src_addr;
+	struct cdma_cap_table seid;
 };
 
 struct cdma_idr {
@@ -120,7 +120,7 @@ struct cdma_idr {
 
 struct cdma_table {
 	spinlock_t lock;
-	struct cdma_idr idr_tbl;
+	struct cdma_idr idr_pool;
 };
 
 struct cdma_chardev {
@@ -163,10 +163,10 @@ struct cdma_buf {
 		struct iova_slot *slot;
 		void *kva_or_slot;
 	};
-	void *aligned_va;
+	void *va_aligned;
 	struct cdma_umem *umem;
-	u32 entry_cnt_mask;
-	u32 entry_cnt_mask_ilog2;
+	u32 entry_mask;
+	u32 entry_shift;
 	u32 entry_size;
 	u32 entry_cnt;
 	u32 cnt_per_page_shift;
@@ -187,12 +187,13 @@ struct cdma_dev {
 	u32 tid;
 	int sva_mode;
 	u32 iopf_feature;
+	u32 hw_ver;
 	u32 status;
 	u8 sl_num;
 	u8 sl[CDMA_MAX_SL_NUM];
 
-	void __iomem *k_db_base;
-	resource_size_t db_base;
+	void __iomem *db_kva_base;
+	resource_size_t db_pa_base;
 	struct iommu_sva *ksva;
 	/* ctx manager */
 	struct list_head ctx_list;
@@ -224,7 +225,6 @@ struct cdma_jfs_event {
 };
 
 struct cdma_jfc_event {
-	struct cdma_base_jfc *jfc;
 	struct cdma_jfce *jfce;
 	struct list_head comp_event_list;
 	struct list_head async_event_list;

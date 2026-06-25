@@ -7,6 +7,7 @@
 #define dev_fmt(fmt) "unic: (pid %d) " fmt, current->pid
 
 #include <linux/etherdevice.h>
+#include <linux/jiffies.h>
 #include <linux/limits.h>
 #include <net/page_pool/helpers.h>
 #if IS_ENABLED(CONFIG_UB_UNIC_UBL)
@@ -371,7 +372,7 @@ static int unic_rq_alloc_resource(struct unic_dev *unic_dev, struct unic_rq *rq)
 
 	size = rqe_depth * sizeof(struct unic_rqe);
 	rq->rqe = dma_alloc_coherent(adev->dev.parent, size,
-				     &rq->rqe_base_dma_addr, GFP_KERNEL);
+				     &rq->rqe_base_dma_addr, unic_dev->gfp);
 	if (!rq->rqe) {
 		dev_err(adev->dev.parent, "failed to dma alloc unic rqe.\n");
 		ret = -ENOMEM;
@@ -381,7 +382,7 @@ static int unic_rq_alloc_resource(struct unic_dev *unic_dev, struct unic_rq *rq)
 	rq->sw_db.db_addr = dma_alloc_coherent(adev->dev.parent,
 					       UNIC_JFR_DB_SIZE,
 					       &rq->sw_db.db_dma_addr,
-					       GFP_KERNEL);
+					       unic_dev->gfp);
 	if (!rq->sw_db.db_addr) {
 		dev_err(adev->dev.parent,
 			"failed to dma alloc software db addr.\n");
@@ -1064,7 +1065,7 @@ static int unic_rx_construct_skb(struct unic_rq *rq, struct napi_struct *napi,
 	rq->pending_buf += rqe_num;
 	ret = unic_create_skb(rq, napi, pkt_len);
 	if (unlikely(ret))
-		return ret;
+		goto err_create_skb;
 
 	ret = unic_handle_cqe(rq, cqe);
 	if (unlikely(ret))
@@ -1077,6 +1078,7 @@ static int unic_rx_construct_skb(struct unic_rq *rq, struct napi_struct *napi,
 
 destroy_skb:
 	dev_kfree_skb_any(rq->skb);
+err_create_skb:
 	rq->skb = NULL;
 	unic_page_pool_put_frags(rq, rqe_num);
 	return ret;
@@ -1159,8 +1161,10 @@ int unic_poll_rx(struct unic_channel *c, int budget,
 			break;
 
 		trace_unic_rx_cqe(rq->netdev, cq, rq->pi, rq->ci, cq_mask);
-		if (unic_rx_construct_skb(rq, napi, cqe, &bytes))
+		if (unic_rx_construct_skb(rq, napi, cqe, &bytes)) {
+			failure = true;
 			break;
+		}
 
 		rx_fn(c, rq->skb);
 

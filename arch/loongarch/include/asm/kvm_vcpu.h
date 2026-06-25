@@ -15,6 +15,7 @@
 #define CPU_PMU				(_ULCAST_(1) << 10)
 #define CPU_TIMER			(_ULCAST_(1) << 11)
 #define CPU_IPI				(_ULCAST_(1) << 12)
+#define CPU_AVEC                        (_ULCAST_(1) << 14)
 
 /* Controlled by 0x52 guest exception VIP aligned to estat bit 5~12 */
 #define CPU_IP0				(_ULCAST_(1))
@@ -43,6 +44,7 @@ int  kvm_emu_mmio_read(struct kvm_vcpu *vcpu, larch_inst inst);
 int  kvm_emu_mmio_write(struct kvm_vcpu *vcpu, larch_inst inst);
 int  kvm_complete_mmio_read(struct kvm_vcpu *vcpu, struct kvm_run *run);
 int  kvm_complete_iocsr_read(struct kvm_vcpu *vcpu, struct kvm_run *run);
+int  kvm_complete_user_service(struct kvm_vcpu *vcpu, struct kvm_run *run);
 int  kvm_emu_idle(struct kvm_vcpu *vcpu);
 int  kvm_pending_timer(struct kvm_vcpu *vcpu);
 int  kvm_handle_fault(struct kvm_vcpu *vcpu, int fault);

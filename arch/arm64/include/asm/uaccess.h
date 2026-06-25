@@ -391,13 +391,39 @@ do {									\
 	} while (0);							\
 } while(0)
 
+#ifdef CONFIG_ARM64_COPY_FROM_USER_OPT
+
+#define COPY_OPT_THRESHOLD  4096
+
+static __always_inline bool use_copy_opt(unsigned long n)
+{
+	return (n) >= COPY_OPT_THRESHOLD &&
+		alternative_has_cap_unlikely(ARM64_HAS_COPY_OPT);
+}
+
+#else /* !CONFIG_ARM64_COPY_FROM_USER_OPT */
+
+static __always_inline bool use_copy_opt(unsigned long n)
+{
+	return false;
+}
+
+#endif /* CONFIG_ARM64_COPY_FROM_USER_OPT */
+
+extern unsigned long __must_check __arch_copy_from_user_opt(void *to,
+				const void __user *from, unsigned long n);
 extern unsigned long __must_check __arch_copy_from_user(void *to, const void __user *from, unsigned long n);
 #define raw_copy_from_user(to, from, n)					\
 ({									\
 	unsigned long __acfu_ret;					\
 	uaccess_ttbr0_enable();						\
-	__acfu_ret = __arch_copy_from_user((to),			\
-				      __uaccess_mask_ptr(from), (n));	\
+	if (use_copy_opt(n)) {	\
+		__acfu_ret = __arch_copy_from_user_opt((to),		\
+					__uaccess_mask_ptr(from), (n));	\
+	} else {							\
+		__acfu_ret = __arch_copy_from_user((to),		\
+					__uaccess_mask_ptr(from), (n));	\
+	}								\
 	uaccess_ttbr0_disable();					\
 	__acfu_ret;							\
 })

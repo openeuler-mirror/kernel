@@ -274,6 +274,17 @@ static unsigned long __read_pending(struct kvm_vcpu *vcpu,
 				err = irq_get_irqchip_state(irq->host_irq,
 						    IRQCHIP_STATE_PENDING,
 						    &val);
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+				struct vtimer_info *vtimer = irq->vtimer_info;
+				/* Guest assume it's level irq, so GICR's pending status
+				 * equal to mbigen's active status.
+				 * But if access from user, this is used for migration to
+				 * save and restore GICR's pending bit, so shouldn't report
+				 * mbigen's active status.
+				 */
+				if (vtimer && !is_user)
+					val |= vtimer->get_active_stat(vcpu, irq->intid);
+#endif
 				WARN_RATELIMIT(err, "IRQ %d", irq->host_irq);
 			}
 		} else if (!is_user && vgic_irq_is_mapped_level(irq)) {
@@ -519,7 +530,7 @@ static void vgic_access_active_finish(struct kvm_vcpu *vcpu, u32 intid)
 }
 
 static unsigned long __vgic_mmio_read_active(struct kvm_vcpu *vcpu,
-					     gpa_t addr, unsigned int len)
+					     gpa_t addr, unsigned int len, bool is_uaccess)
 {
 	u32 intid = VGIC_ADDR_TO_INTID(addr, 1);
 	u32 value = 0;
@@ -532,8 +543,14 @@ static unsigned long __vgic_mmio_read_active(struct kvm_vcpu *vcpu,
 		struct vtimer_info *vtimer = irq->vtimer_info;
 		bool state = irq->active;
 
-		if (vtimer)
-			state = vtimer->get_active_stat(vcpu, irq->intid);
+		if (vtimer) {
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+			if (!is_uaccess)
+				state = kvm_arm_pvtimer_status_get_active(vcpu);
+			else
+#endif
+				state = vtimer->get_active_stat(vcpu, irq->intid);
+		}
 #endif
 
 		/*
@@ -562,7 +579,7 @@ unsigned long vgic_mmio_read_active(struct kvm_vcpu *vcpu,
 	mutex_lock(&vcpu->kvm->arch.config_lock);
 	vgic_access_active_prepare(vcpu, intid);
 
-	val = __vgic_mmio_read_active(vcpu, addr, len);
+	val = __vgic_mmio_read_active(vcpu, addr, len, false);
 
 	vgic_access_active_finish(vcpu, intid);
 	mutex_unlock(&vcpu->kvm->arch.config_lock);
@@ -573,7 +590,7 @@ unsigned long vgic_mmio_read_active(struct kvm_vcpu *vcpu,
 unsigned long vgic_uaccess_read_active(struct kvm_vcpu *vcpu,
 				    gpa_t addr, unsigned int len)
 {
-	return __vgic_mmio_read_active(vcpu, addr, len);
+	return __vgic_mmio_read_active(vcpu, addr, len, true);
 }
 
 /* Must be called with irq->irq_lock held */
@@ -588,7 +605,7 @@ static void vgic_hw_irq_change_active(struct kvm_vcpu *vcpu, struct vgic_irq *ir
 }
 
 static void vgic_mmio_change_active(struct kvm_vcpu *vcpu, struct vgic_irq *irq,
-				    bool active)
+				    bool active, bool is_uaccess)
 {
 	unsigned long flags;
 	struct kvm_vcpu *requester_vcpu = kvm_get_running_vcpu();
@@ -606,8 +623,17 @@ static void vgic_mmio_change_active(struct kvm_vcpu *vcpu, struct vgic_irq *irq,
 		irq->active = false;
 #ifdef CONFIG_VIRT_VTIMER_IRQ_BYPASS
 	} else if (irq->vtimer_info) {
-		/* MMIO trap only */
-		irq->vtimer_info->set_active_stat(vcpu, irq->intid, active);
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+		/*
+		 * when migration, user space no need to sync this as
+		 * GICR's active is synced with VM's memory.
+		 */
+		if (!is_uaccess)
+			kvm_arm_pvtimer_status_set_active(vcpu, active);
+		else
+#endif
+			/* MMIO trap only */
+			irq->vtimer_info->set_active_stat(vcpu, irq->intid, active);
 #endif
 	} else {
 		u32 model = vcpu->kvm->arch.vgic.vgic_model;
@@ -641,14 +667,14 @@ static void vgic_mmio_change_active(struct kvm_vcpu *vcpu, struct vgic_irq *irq,
 
 static void __vgic_mmio_write_cactive(struct kvm_vcpu *vcpu,
 				      gpa_t addr, unsigned int len,
-				      unsigned long val)
+				      unsigned long val, bool is_uaccess)
 {
 	u32 intid = VGIC_ADDR_TO_INTID(addr, 1);
 	int i;
 
 	for_each_set_bit(i, &val, len * 8) {
 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
-		vgic_mmio_change_active(vcpu, irq, false);
+		vgic_mmio_change_active(vcpu, irq, false, is_uaccess);
 		vgic_put_irq(vcpu->kvm, irq);
 	}
 }
@@ -662,7 +688,7 @@ void vgic_mmio_write_cactive(struct kvm_vcpu *vcpu,
 	mutex_lock(&vcpu->kvm->arch.config_lock);
 	vgic_access_active_prepare(vcpu, intid);
 
-	__vgic_mmio_write_cactive(vcpu, addr, len, val);
+	__vgic_mmio_write_cactive(vcpu, addr, len, val, false);
 
 	vgic_access_active_finish(vcpu, intid);
 	mutex_unlock(&vcpu->kvm->arch.config_lock);
@@ -672,20 +698,20 @@ int vgic_mmio_uaccess_write_cactive(struct kvm_vcpu *vcpu,
 				     gpa_t addr, unsigned int len,
 				     unsigned long val)
 {
-	__vgic_mmio_write_cactive(vcpu, addr, len, val);
+	__vgic_mmio_write_cactive(vcpu, addr, len, val, true);
 	return 0;
 }
 
 static void __vgic_mmio_write_sactive(struct kvm_vcpu *vcpu,
 				      gpa_t addr, unsigned int len,
-				      unsigned long val)
+				      unsigned long val, bool is_uaccess)
 {
 	u32 intid = VGIC_ADDR_TO_INTID(addr, 1);
 	int i;
 
 	for_each_set_bit(i, &val, len * 8) {
 		struct vgic_irq *irq = vgic_get_irq(vcpu->kvm, vcpu, intid + i);
-		vgic_mmio_change_active(vcpu, irq, true);
+		vgic_mmio_change_active(vcpu, irq, true, is_uaccess);
 		vgic_put_irq(vcpu->kvm, irq);
 	}
 }
@@ -699,7 +725,7 @@ void vgic_mmio_write_sactive(struct kvm_vcpu *vcpu,
 	mutex_lock(&vcpu->kvm->arch.config_lock);
 	vgic_access_active_prepare(vcpu, intid);
 
-	__vgic_mmio_write_sactive(vcpu, addr, len, val);
+	__vgic_mmio_write_sactive(vcpu, addr, len, val, false);
 
 	vgic_access_active_finish(vcpu, intid);
 	mutex_unlock(&vcpu->kvm->arch.config_lock);
@@ -709,7 +735,7 @@ int vgic_mmio_uaccess_write_sactive(struct kvm_vcpu *vcpu,
 				     gpa_t addr, unsigned int len,
 				     unsigned long val)
 {
-	__vgic_mmio_write_sactive(vcpu, addr, len, val);
+	__vgic_mmio_write_sactive(vcpu, addr, len, val, true);
 	return 0;
 }
 

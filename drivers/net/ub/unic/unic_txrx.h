@@ -106,10 +106,20 @@ struct unic_jfc_ctx {
 	/* DW1 */
 	u32 cqe_base_addr_h;
 	/* DW2 */
-	u32 queue_token_id : 20;
-	u32 cq_cnt_mode : 1;
-	u32 rsv0 : 3;
-	u32 ceqn : 8;
+	union {
+		struct {
+			u32 queue_token_id : 20;
+			u32 cq_cnt_mode : 1;
+			u32 rsv0 : 3;
+			u32 ceqn : 8;
+		} dw2_ceqn8;
+		struct {
+			u32 queue_token_id : 20;
+			u32 cq_cnt_mode : 1;
+			u32 rsv0 : 2;
+			u32 ceqn : 9;
+		} dw2_ceqn9;
+	};
 	/* DW3 */
 	u32 ad : 24;
 	u32 rsv1 : 8;
@@ -250,6 +260,7 @@ static inline bool unic_cqe_owner_is_soft(u8 jfc_shift, u32 ci, u8 owner)
 	return owner != ((ci >> jfc_shift) & 1);
 }
 
+bool unic_jfc_support_ceqn9(struct unic_dev *unic_dev);
 int unic_create_cq(struct unic_dev *unic_dev, u32 idx, enum unic_cq_type type);
 void unic_destroy_cq(struct unic_dev *unic_dev, u32 num, enum unic_cq_type);
 int unic_napi_poll(struct napi_struct *napi, int budget);

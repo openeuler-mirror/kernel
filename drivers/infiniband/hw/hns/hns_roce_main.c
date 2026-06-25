@@ -607,10 +607,10 @@ static int hns_roce_alloc_ucontext(struct ib_ucontext *uctx,
 	return 0;
 
 error_fail_copy_to_udata:
-	hns_roce_unregister_udca(hr_dev, context);
 	hns_roce_dealloc_reset_entry(context);
 
 error_fail_reset_entry:
+	hns_roce_unregister_udca(hr_dev, context);
 	if (hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_CQ_RECORD_DB ||
 	    hr_dev->caps.flags & HNS_ROCE_CAP_FLAG_QP_RECORD_DB)
 		mutex_destroy(&context->page_mutex);

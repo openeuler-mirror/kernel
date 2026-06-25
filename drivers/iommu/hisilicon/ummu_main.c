@@ -12,6 +12,7 @@
 #include <ub/ubfi/ubfi.h>
 #include <linux/acpi.h>
 #include <linux/of.h>
+#include <linux/mmu_notifier.h>
 
 #include "logic_ummu/logic_ummu.h"
 #include "ummu_impl.h"
@@ -37,6 +38,7 @@ MODULE_PARM_DESC(sva_separated_mode,
 	"Enable user-mode SVA with an independent page table (no process page table sharing).");
 
 static u16 ummu_chip_identifier;
+bool hw_bypass;
 
 bool ummu_sva_separated_enabled(void)
 {
@@ -161,17 +163,19 @@ static void ummu_device_hw_probe_iidr(struct ummu_device *ummu)
 	 * ummu enables chip_identifier to perform some specialized operations.
 	 */
 	reg = readl_relaxed(ummu->base + UMMU_IIDR);
-	if ((ummu_chip_identifier == HISI_VENDOR_ID) &&
-	    !FIELD_GET(IIDR_PROD_ID, reg)) {
-		ummu->cap.options |= UMMU_OPT_DOUBLE_PLBI;
-		ummu->cap.options |= UMMU_OPT_KCMD_PLBI;
-		ummu->cap.options |= UMMU_OPT_CHK_MAPT_CONTINUITY;
-		ummu->cap.options |= UMMU_OPT_MCMDQ_DECREASE;
-		ummu->cap.options |= UMMU_OPT_SYNC_WITH_PLBI;
-		ummu->cap.options |= UMMU_OPT_KV_CAM_CONTINUITY;
-		ummu->cap.features &= ~UMMU_FEAT_STALLS;
+	if (ummu_chip_identifier == HISI_VENDOR_ID) {
+		if (!FIELD_GET(IIDR_PROD_ID, reg)) {
+			ummu->cap.options |= UMMU_OPT_DOUBLE_PLBI;
+			ummu->cap.options |= UMMU_OPT_KCMD_PLBI;
+			ummu->cap.options |= UMMU_OPT_CHK_MAPT_CONTINUITY;
+			ummu->cap.options |= UMMU_OPT_MCMDQ_DECREASE;
+			ummu->cap.options |= UMMU_OPT_SYNC_WITH_PLBI;
+			ummu->cap.options |= UMMU_OPT_KV_CAM_CONTINUITY;
+			ummu->cap.features &= ~UMMU_FEAT_STALLS;
+		} else {
+			ummu->cap.options |= UMMU_OPT_UMAU;
+		}
 	}
-
 	dev_notice(ummu->dev, "features 0x%08x, options 0x%08x.\n",
 		   ummu->cap.features, ummu->cap.options);
 }
@@ -343,6 +347,10 @@ static int ummu_device_hw_probe_cap2(struct ummu_device *ummu)
 		ummu->cap.features |= UMMU_FEAT_BTM;
 	else
 		dev_warn(ummu->dev, "don't support BTM!\n");
+
+	if (FIELD_GET(CAP2_HW_BYPASS, reg))
+		hw_bypass = true;
+
 	return 0;
 }
 
@@ -426,6 +434,9 @@ static int ummu_device_hw_probe_cap4(struct ummu_device *ummu)
 	u32 reg = readl_relaxed(ummu->base + UMMU_CAP4);
 	int hw_permq_ent;
 
+	if (reg & CAP4_PPLB_SUPPORT)
+		ummu->cap.features |= UMMU_FEAT_PPLBI;
+
 	hw_permq_ent = 1 << FIELD_GET(CAP4_UCMDQ_LOG2SIZE, reg);
 	ummu->cap.permq_ent_num.cmdq_num =
 		min_t(int, round_up(PAGE_SIZE / PCMDQ_ENT_BYTES, PCMDQ_ENT_BYTES),
@@ -446,6 +457,9 @@ static void ummu_device_hw_probe_cap5(struct ummu_device *ummu)
 	u32 reg;
 
 	reg = readl_relaxed(ummu->base + UMMU_CAP5);
+	if (reg & CAP5_FREE_BIT_SUPPORT)
+		ummu->cap.features |= UMMU_FEAT_FREE_BIT;
+
 	if (reg & CAP5_RANGE_PLBI_BIT)
 		ummu->cap.features |= UMMU_FEAT_RANGE_PLBI;
 
@@ -570,10 +584,18 @@ static int ummu_device_mapt_enable(struct ummu_device *ummu)
 	reg |= CR0_MAPT_EN;
 
 	ret = ummu_write_reg_sync(ummu, reg, UMMU_CR0, UMMU_CR0ACK);
-	if (ret)
+	if (ret) {
 		dev_err(ummu->dev, "enable ummu mapt func failed, ret = %d.\n", ret);
+		return ret;
+	}
 
-	return ret;
+	if (ummu->cap.features & UMMU_FEAT_PPLBI) {
+		reg = readl_relaxed(ummu->base + UMMU_CR2);
+		reg |= CR2_POSITIVE_PLB;
+		writel_relaxed(reg, ummu->base + UMMU_CR2);
+	}
+
+	return 0;
 }
 
 static int ummu_device_reset(struct ummu_device *ummu)
@@ -618,7 +640,8 @@ static int ummu_device_reset(struct ummu_device *ummu)
 static void release_ummu_dev_res(void *data)
 {
 	struct ummu_device *ummu = (struct ummu_device *)data;
-
+	ummu_device_free_mcmdq(ummu);
+	ummu_device_free_evtq(ummu);
 	ummu_iopf_queue_free(ummu);
 	ummu_device_uninit_permqs(ummu);
 }
@@ -731,7 +754,8 @@ static int ummu_device_probe(struct platform_device *pdev)
 		}
 	}
 
-	(void)ummu_global_identity_pgtbl_init(ummu);
+	if (!hw_bypass)
+		(void)ummu_global_identity_pgtbl_init(ummu);
 
 	return 0;
 
@@ -813,10 +837,13 @@ static int __init ummu_driver_register(struct platform_driver *drv)
 
 static void __exit ummu_driver_unregister(struct platform_driver *drv)
 {
+	mmu_notifier_synchronize();
 	platform_driver_unregister(drv);
 	ummu_release_partid_map();
 	ummu_free_global_meta();
-	ummu_global_identity_pgtbl_free();
+	if (!hw_bypass)
+		ummu_global_identity_pgtbl_free();
+
 	logic_ummu_device_exit();
 }
 

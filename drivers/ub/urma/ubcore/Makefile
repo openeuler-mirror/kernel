@@ -5,6 +5,7 @@
 ccflags-y += -I$(src)
 
 ubcore-objs := \
+ubcore_perf.o \
 ubcore_workqueue.o \
 ubcore_main.o \
 ubcore_hash_table.o \
@@ -36,6 +37,9 @@ ubcore_umem.o \
 ubmgr/ubmgr.o \
 ubmgr/ubmgr_ping.o \
 ubcore_dmac.o \
+ubcore_eid_trie.o \
+ubcore_host_trie.o \
+ubcore_host_info.o \
 ubcore_main_ue_eid.o
 
 obj-$(CONFIG_UB_URMA) += ubcore.o

@@ -312,10 +312,14 @@ static int mfs_fc_fill_super(struct super_block *sb, struct fs_context *fc)
 			return err;
 	}
 
+	err = mfs_fs_sysfs_init(sb);
+	if (err)
+		goto out_exit;
+
 	inode = mfs_iget(sb, d_inode(sbi->lower.dentry), &sbi->cache);
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);
-		goto out_exit;
+		goto out_sysfs;
 	}
 
 	sb->s_root = d_make_root(inode);
@@ -335,6 +339,8 @@ out_dput:
 	dput(sb->s_root);
 out_iput:
 	iput(inode);
+out_sysfs:
+	mfs_fs_sysfs_exit(sb);
 out_exit:
 	if (support_event(sbi))
 		mfs_fs_dev_exit(sb);
@@ -397,13 +403,17 @@ static void mfs_kill_sb(struct super_block *sb)
 	struct mfs_sb_info *sbi = MFS_SB(sb);
 	struct mfs_caches *caches = &sbi->caches;
 
+	smp_mb__before_atomic();
 	clear_bit(MFS_MOUNTED, &sbi->flags);
+	smp_mb__after_atomic();
+	mfs_fs_sysfs_exit(sb);
 	if (support_event(sbi)) {
 		/* The barrier pair to make sure flags is new */
 		smp_mb__before_atomic();
 		while (test_bit(MFS_CACHE_OPENED, &caches->flags)) {
 			static DEFINE_RATELIMIT_STATE(busy_open, 30 * HZ, 1);
 
+			wake_up_all(&caches->pollwq);
 			msleep(100);
 			if (!__ratelimit(&busy_open))
 				continue;
@@ -468,8 +478,15 @@ static int __init init_mfs_fs(void)
 	if (err)
 		goto err_dev;
 
+	err = mfs_sysfs_init();
+	if (err)
+		goto err_sysfs;
+
 	pr_info("MFS module loaded\n");
 	return 0;
+
+err_sysfs:
+	mfs_dev_exit();
 err_dev:
 	unregister_filesystem(&mfs_fs_type);
 err_register:
@@ -483,6 +500,7 @@ err_dentryp:
 
 static void __exit exit_mfs_fs(void)
 {
+	mfs_sysfs_exit();
 	mfs_dev_exit();
 	unregister_filesystem(&mfs_fs_type);
 

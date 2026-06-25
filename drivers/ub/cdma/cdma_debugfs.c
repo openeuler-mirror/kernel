@@ -19,6 +19,8 @@
 #define BUF_10_BASE 10
 #define BUF_SIZE 8
 #define CDMA_S_IRUSR 0400
+#define CDMA_DBG_CTX_SIZE_256 256
+#define CDMA_DBG_CTX_SIZE_128 128
 
 /* ctx debugfs start */
 static void cdma_get_ctx_info(struct cdma_dev *cdev,
@@ -26,8 +28,6 @@ static void cdma_get_ctx_info(struct cdma_dev *cdev,
 			      enum cdma_dbg_ctx_type ctx_type,
 			      struct cdma_ctx_info *ctx_info)
 {
-#define CDMA_DBG_CTX_SIZE_256 256
-#define UBASE_CTX_SIZE_128 128
 	switch (ctx_type) {
 	case CDMA_DBG_JFS_CTX:
 		ctx_info->start_idx = queue->jfs_id;
@@ -37,7 +37,7 @@ static void cdma_get_ctx_info(struct cdma_dev *cdev,
 		break;
 	case CDMA_DBG_SQ_JFC_CTX:
 		ctx_info->start_idx = queue->jfc_id;
-		ctx_info->ctx_size = UBASE_CTX_SIZE_128;
+		ctx_info->ctx_size = CDMA_DBG_CTX_SIZE_128;
 		ctx_info->op = UBASE_MB_QUERY_JFC_CONTEXT;
 		ctx_info->ctx_name = "sq_jfc";
 		break;
@@ -88,16 +88,16 @@ static int cdma_dbg_dump_ctx_hw(struct seq_file *s, enum cdma_dbg_ctx_type ctx_t
 	struct cdma_queue *queue;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
-		dev_err(&adev->dev, "find queue[%u] for dump context hw failed.\n", queue_id);
+		dev_err(&adev->dev, "find queue[%u] for dump context hw failed\n", queue_id);
 		return -EINVAL;
 	}
 
 	if (!queue->jfs_id) {
 		spin_unlock(&cdev->queue_table.lock);
-		dev_warn(&adev->dev, "queue resource is not initialized.\n");
+		dev_warn(&adev->dev, "queue resource is not initialized\n");
 		return -EINVAL;
 	}
 
@@ -107,7 +107,7 @@ static int cdma_dbg_dump_ctx_hw(struct seq_file *s, enum cdma_dbg_ctx_type ctx_t
 	cdma_fill_mbx_attr(&attr, ctx_info.start_idx, ctx_info.op, 0);
 	mailbox = cdma_mailbox_query_ctx(cdev, &attr);
 	if (!mailbox) {
-		dev_err(&adev->dev, "cdma dbg post query %s ctx mbx failed.\n",
+		dev_err(&adev->dev, "cdma dbg post query %s ctx mbx failed\n",
 			ctx_info.ctx_name);
 		return -ENOMEM;
 	}
@@ -220,10 +220,10 @@ static int cdma_dbg_dump_ctx(struct seq_file *s, enum cdma_dbg_ctx_type ctx_type
 	dbg_ctx[ctx_type].get_title(s);
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
-		dev_err(&cdev->adev->dev, "find queue[%u] for dump context failed.\n", queue_id);
+		dev_err(&cdev->adev->dev, "find queue[%u] for dump context failed\n", queue_id);
 		return -EINVAL;
 	}
 
@@ -306,10 +306,10 @@ static int cdma_dbg_dump_queue_info(struct seq_file *s, void *data)
 	struct cdma_queue *queue;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
-		dev_err(&cdev->adev->dev, "find queue[%u] for dump queue info failed.\n", queue_id);
+		dev_err(&cdev->adev->dev, "find queue[%u] for dump queue info failed\n", queue_id);
 		return -EINVAL;
 	}
 
@@ -377,10 +377,10 @@ static int cdma_dbg_dump_sqe(struct seq_file *s, void *data)
 	struct cdma_jfs *jfs;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
-		dev_err(&cdev->adev->dev, "find queue[%u] for dump sqe failed.\n", queue_id);
+		dev_err(&cdev->adev->dev, "find queue[%u] for dump sqe failed\n", queue_id);
 		return -EINVAL;
 	}
 
@@ -388,7 +388,7 @@ static int cdma_dbg_dump_sqe(struct seq_file *s, void *data)
 		jfs = to_cdma_jfs(queue->jfs);
 		if (entry_pi >= jfs->base_jfs.cfg.depth) {
 			spin_unlock(&cdev->queue_table.lock);
-			dev_err(&cdev->adev->dev, "pi [%u] overflow for dump sqe.\n", entry_pi);
+			dev_err(&cdev->adev->dev, "pi [%u] overflow for dump sqe\n", entry_pi);
 			return -EINVAL;
 		}
 
@@ -399,7 +399,7 @@ static int cdma_dbg_dump_sqe(struct seq_file *s, void *data)
 		cdma_dbg_dump_sqe_info(sqe_ctl, s);
 		spin_unlock(&jfs->sq.lock);
 	} else {
-		dev_warn(&cdev->adev->dev, "not support queue[%u] for dump sqe.\n", queue_id);
+		dev_warn(&cdev->adev->dev, "not support queue[%u] for dump sqe\n", queue_id);
 	}
 
 	spin_unlock(&cdev->queue_table.lock);
@@ -420,10 +420,10 @@ static int cdma_dbg_dump_cqe(struct seq_file *s, void *data)
 	struct cdma_jfc *jfc;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	if (!queue) {
 		spin_unlock(&cdev->queue_table.lock);
-		dev_err(&cdev->adev->dev, "find queue[%u] for dump cqe failed.\n", queue_id);
+		dev_err(&cdev->adev->dev, "find queue[%u] for dump cqe failed\n", queue_id);
 		return -EINVAL;
 	}
 
@@ -431,7 +431,7 @@ static int cdma_dbg_dump_cqe(struct seq_file *s, void *data)
 		jfc = to_cdma_jfc(queue->jfc);
 		if (entry_ci >= jfc->base.jfc_cfg.depth) {
 			spin_unlock(&cdev->queue_table.lock);
-			dev_err(&cdev->adev->dev, "ci [%u] overflow for dump cqe.\n", entry_ci);
+			dev_err(&cdev->adev->dev, "ci [%u] overflow for dump cqe\n", entry_ci);
 			return -EINVAL;
 		}
 
@@ -442,7 +442,7 @@ static int cdma_dbg_dump_cqe(struct seq_file *s, void *data)
 		cdma_dbg_dump_cqe_info(cqe, s);
 		spin_unlock(&jfc->lock);
 	} else {
-		dev_warn(&cdev->adev->dev, "not support queue[%u] for dump cqe.\n", queue_id);
+		dev_warn(&cdev->adev->dev, "not support queue[%u] for dump cqe\n", queue_id);
 	}
 
 	spin_unlock(&cdev->queue_table.lock);
@@ -739,7 +739,7 @@ int cdma_dbg_init(struct cdma_dev *cdev)
 
 	ubase_root_dentry = ubase_diag_debugfs_root(adev);
 	if (!ubase_root_dentry) {
-		dev_err(dev, "dbgfs root dentry does not exist.\n");
+		dev_err(dev, "debugfs root dentry does not exist\n");
 		return -ENOENT;
 	}
 
@@ -747,7 +747,7 @@ int cdma_dbg_init(struct cdma_dev *cdev)
 	cdev->cdbgfs.dbgfs.dentry = debugfs_create_dir(
 		dbg_dentry[ARRAY_SIZE(dbg_dentry) - 1].name, ubase_root_dentry);
 	if (IS_ERR(cdev->cdbgfs.dbgfs.dentry)) {
-		dev_err(dev, "create cdma debugfs root dir failed.\n");
+		dev_err(dev, "create cdma debugfs root dir failed\n");
 		return PTR_ERR(cdev->cdbgfs.dbgfs.dentry);
 	}
 
@@ -758,13 +758,13 @@ int cdma_dbg_init(struct cdma_dev *cdev)
 	ret = ubase_dbg_create_dentry(dev, &cdev->cdbgfs.dbgfs, dbg_dentry,
 				      ARRAY_SIZE(dbg_dentry) - 1);
 	if (ret) {
-		dev_err(dev, "create cdma debugfs dentry failed, ret = %d.\n", ret);
+		dev_err(dev, "create cdma debugfs dentry failed, ret = %d\n", ret);
 		goto create_dentry_err;
 	}
 
 	ret = cdma_dbg_create_cfg_file(cdev, dbg_dentry, ARRAY_SIZE(dbg_dentry));
 	if (ret) {
-		dev_err(dev, "create cdma debugfs cfg file failed, ret = %d.\n", ret);
+		dev_err(dev, "create cdma debugfs cfg file failed, ret = %d\n", ret);
 		goto create_dentry_err;
 	}
 

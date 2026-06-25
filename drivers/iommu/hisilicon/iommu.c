@@ -285,6 +285,10 @@ static void ummu_domain_attach_mapt(struct ummu_domain *u_domain)
 
 	mode = ummu_core_get_mapt_mode(&ummu->core_dev, tid);
 	if (mode != MAPT_MODE_END) {
+		if (ummu->cap.features & UMMU_FEAT_PPLBI)
+			u_domain->cfgs.s1_cfg.io_pt_cfg.positive_plbi = 1;
+		if (ummu->cap.features & UMMU_FEAT_FREE_BIT)
+			u_domain->cfgs.s1_cfg.io_pt_cfg.free_bit = 1;
 		u_domain->cfgs.sva_mode = UMMU_MODE_SVA_SEPARATE_PG;
 		u_domain->cfgs.s1_cfg.io_pt_cfg.mode = mode;
 		u_domain->base_domain.domain.perm_ops = &ummu_sva_perm_ops;
@@ -479,6 +483,10 @@ static void ummu_release_device(struct device *dev)
 	kfree(master);
 }
 
+static void ummu_probe_finalize(struct device *dev)
+{
+}
+
 static void ummu_get_resv_regions(struct device *device, struct list_head *head)
 {
 	struct iommu_resv_region *region;
@@ -579,12 +587,25 @@ const struct iommu_domain_ops default_domain_ops = {
 	.free = ummu_domain_free,
 };
 
+static int ummu_attach_dev_hw_bypass(struct ummu_domain *u_domain, struct ummu_master *master)
+{
+	int ret;
+
+	mutex_lock(&u_domain->init_mutex);
+	ret = ummu_domain_context_set(u_domain, master);
+	mutex_unlock(&u_domain->init_mutex);
+	return ret;
+}
+
 static int ummu_attach_dev_identity(struct iommu_domain *domain, struct device *dev)
 {
+	struct ummu_master *master = (struct ummu_master *)dev_iommu_priv_get(dev);
 	struct ummu_domain *identity_dom = ummu_get_global_identity_domain();
 	struct ummu_domain *u_domain = to_ummu_domain(domain);
-	struct ummu_master *master = dev_iommu_priv_get(dev);
 	int ret = 0;
+
+	if (hw_bypass)
+		return ummu_attach_dev_hw_bypass(u_domain, master);
 
 	guard(mutex)(&u_domain->init_mutex);
 	if (!u_domain->has_cfged) {
@@ -631,6 +652,7 @@ struct iommu_ops ummu_iommu_ops = {
 	.domain_alloc_sva = ummu_domain_alloc_sva,
 	.probe_device = ummu_probe_device,
 	.release_device = ummu_release_device,
+	.probe_finalize = ummu_probe_finalize,
 	.device_group = ummu_device_group,
 	.get_resv_regions = ummu_get_resv_regions,
 	.dev_enable_feat = ummu_dev_enable_feat,
@@ -764,6 +786,25 @@ static int ummu_sync_dom_cfg(struct ummu_base_domain *src,
 	return 0;
 }
 
+static void ummu_plbi_free_bit(struct iommu_domain *domain, u32 next_lvl_idx,
+			u32 next_lvl_offset)
+{
+	struct ummu_base_domain *base_domain = to_ummu_base_domain(domain);
+	struct ummu_device *ummu = core_to_ummu_device(base_domain->core_dev);
+	struct ummu_domain *u_domain = to_ummu_domain(domain);
+	struct ummu_mcmdq_ent cmd = {
+		.opcode = CMD_PLBI_OS_N,
+		.plbi_free_bit = {
+			.tid = base_domain->tid,
+			.tecte_tag = u_domain->cfgs.tecte_tag,
+			.next_lvl_idx = next_lvl_idx,
+			.next_lvl_offset = next_lvl_offset,
+		},
+	};
+
+	ummu_mcmdq_issue_cmd_with_sync(ummu, &cmd);
+}
+
 static int ummu_invalidate_cfg(struct ummu_base_domain *base_domain)
 {
 	ummu_sva_tcte_invalidate(to_ummu_domain(&base_domain->domain));
@@ -793,11 +834,15 @@ static int ummu_device_get_hw_cap(struct device *dev, u32 *hw_cap)
 		feature |= HW_CAP_DOUBLE_PLBI;
 	if (cap->options & UMMU_OPT_KCMD_PLBI)
 		feature |= HW_CAP_KCMD_PLBI;
+	if (cap->features & UMMU_FEAT_PPLBI)
+		feature |= HW_CAP_PPLBI;
 	if (ummu_get_mapt_blk_exp())
 		feature |= HW_CAP_EXPAN;
 	if (!ummu_sva_separated_enabled() ||
 		(iopf_enabled && (cap->features & UMMU_FEAT_STALLS)))
 		feature |= HW_CAP_IOPF;
+	if (cap->features & UMMU_FEAT_FREE_BIT)
+		feature |= HW_CAP_FREE_BIT;
 
 	*hw_cap = feature;
 
@@ -817,9 +862,12 @@ const struct ummu_core_ops ummu_ops = {
 };
 
 const struct ummu_device_helper ummu_helper = {
-	.sync_tlb = ummu_non_agent_iotlb_sync,
+	.sync_tlb = ummu_device_tlb_inv_walk,
 	.sync_dom_cfg = ummu_sync_dom_cfg,
 	.alloc_domain_nested = ummu_viommu_alloc_domain_nested,
 	.cache_invalidate_user = ummu_viommu_cache_invalidate_user,
+	.plbi_free_bit = ummu_plbi_free_bit,
 	.sync_iotlb_all = ummu_flush_iotlb_all,
+	.sync_iotlb_all_asid = ummu_flush_iotlb_all_asid,
+	.sync_iommu_domain = ummu_sync_iommu_domain,
 };

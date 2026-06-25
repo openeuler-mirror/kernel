@@ -42,4 +42,5 @@ $(obj)/ccp-crypto-sm2-hygon.o: $(obj)/ccp_sm2_sign.asn1.h
 ccp-crypto-$(CONFIG_HYGON_GM) += ccp-crypto-sm2-hygon.o \
 		   ccp-crypto-sm3-hygon.o \
 		   ccp-crypto-sm4-hygon.o \
+		   ccp-crypto-sm4-galois-hygon.o \
 		   ccp_sm2_sign.asn1.o

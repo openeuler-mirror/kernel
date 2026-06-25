@@ -83,7 +83,7 @@ static int vfio_ub_intr_set_vector_signal(struct vfio_ub_core_device *vdev,
 
 	irq_vec = ub_irq_vector(uent, vector);
 
-	/* if already assigned interrupts, just free it and reassigned it later. */
+	/* if already assigned interrupts, just free them and reassign them later. */
 	if (vdev->ctx[vector].trigger != NULL) {
 		irq_bypass_unregister_producer(&vdev->ctx[vector].producer);
 		free_irq(irq_vec, vdev->ctx[vector].trigger);
@@ -145,7 +145,7 @@ static int vfio_ub_intr_set_block(struct vfio_ub_core_device *vdev, unsigned int
 	if ((start >= vdev->num_ctx) || ((start + count) > vdev->num_ctx))
 		return -EINVAL;
 
-	for (i = 0, j = start; i < count; i++, j++) {
+	for (i = 0, j = (int)start; i < (int)count; i++, j++) {
 		int fd = fds ? fds[i] : -1;
 
 		ret = vfio_ub_intr_set_vector_signal(vdev, j, fd);
@@ -215,7 +215,7 @@ static int vfio_ub_intr_irq_trigger(struct vfio_ub_core_device *vdev,
 	if (flags & VFIO_IRQ_SET_DATA_EVENTFD) {
 		int32_t *fds = (int32_t *)data;
 
-		/* if ub device irq has setted, then update irq eventfd handler */
+		/* if ub device irq has been set, update irq eventfd handler */
 		if (irq_is(vdev, index))
 			return vfio_ub_intr_set_block(vdev, start, count, fds);
 
@@ -293,6 +293,17 @@ static int vfio_ub_set_req_trigger(struct vfio_ub_core_device *vdev,
 	return vfio_ub_set_ctx_trigger_single(&vdev->req_trigger, count, flags, data);
 }
 
+static int vfio_ub_set_reinit_trigger(struct vfio_ub_core_device *vdev,
+				      unsigned int index, unsigned int start,
+				      unsigned int count, uint32_t flags,
+				      void *data)
+{
+	if (index != VFIO_UB_REINIT_IRQ_INDEX || start != 0 || count > 1)
+		return -EINVAL;
+
+	return vfio_ub_set_ctx_trigger_single(&vdev->reinit_trigger, count, flags, data);
+}
+
 int vfio_ub_set_irqs_ioctl(struct vfio_ub_core_device *vdev, uint32_t flags,
 			   unsigned int index, unsigned int start,
 			   unsigned int count, void *data)
@@ -309,6 +320,11 @@ int vfio_ub_set_irqs_ioctl(struct vfio_ub_core_device *vdev, uint32_t flags,
 		if (flags & VFIO_IRQ_SET_ACTION_TRIGGER)
 			ret = vfio_ub_set_req_trigger(vdev, index, start,
 						      count, flags, data);
+		break;
+	case VFIO_UB_REINIT_IRQ_INDEX:
+		if (flags & VFIO_IRQ_SET_ACTION_TRIGGER)
+			ret = vfio_ub_set_reinit_trigger(vdev, index, start,
+							 count, flags, data);
 		break;
 	default:
 		ret = -ENOTTY;

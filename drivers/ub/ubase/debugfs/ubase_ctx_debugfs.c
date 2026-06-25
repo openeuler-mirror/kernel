@@ -9,6 +9,7 @@
 #include "ubase_debugfs.h"
 #include "ubase_hw.h"
 #include "ubase_mailbox.h"
+#include "ubase_proxy.h"
 #include "ubase_tp.h"
 #include "ubase_ctx_debugfs.h"
 
@@ -245,7 +246,10 @@ static int ubase_dbg_dump_ctx_hw(struct seq_file *s, void *data,
 	for (ctxn = 0; ctxn < ubase_get_ctx_num(udev, ctx_type); ctxn++) {
 		ubase_fill_mbx_attr(&attr, ctxn + ctx_info.start_idx,
 				    ctx_info.op, 0);
-		ret = __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox);
+
+		ret = ubase_dev_mbx_supported(udev) ?
+		      __ubase_hw_upgrade_ctx_ex(udev, &attr, mailbox) :
+		      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mailbox);
 		if (ret) {
 			ubase_err(udev,
 				  "failed to post query %s ctx mbx, ret = %d.\n",

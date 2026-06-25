@@ -620,7 +620,18 @@ static int hi_message_send(struct message_device *mdev, struct msg_info *info,
 int hi_message_sync_request_sched(struct message_device *mdev,
 				  struct msg_info *info, u8 code)
 {
-	return hi_message_sync(mdev, info, PROTOCOL_MSG, code, true);
+	int ret, i = 1;
+
+	while (1) {
+		ret = hi_message_sync(mdev, info, PROTOCOL_MSG, code, true);
+		if (ret != -ETIMEDOUT)
+			return ret;
+
+		i++;
+
+		if (!msg_retry || i > RETRY_COUNT)
+			return -ETIMEDOUT;
+	}
 }
 
 int hi_message_private(struct message_device *mdev, struct msg_info *info,
@@ -707,7 +718,7 @@ static bool hi_cqe_ageing(struct hi_message_device *hmd, int idx)
 			ub_msg_dump_cq(cqe, rq_entry(hmc, cqe->rq_pi));
 		}
 
-		dev_warn(hmc->dev, "interrupt dont up, process unhandled cqe, idx=%d type=%u msn=%#x opcode=%#x\n",
+		dev_warn(hmc->dev, "interrupt does not up, process unhandled cqe, idx=%d type=%u msn=%#x opcode=%#x\n",
 			 idx, cqe->task_type, cqe->msn, cqe->opcode);
 	} else {
 		dev_err(hmc->dev, "reset unhandled cqe, idx=%d type=%u msn=%#x\n",
@@ -832,7 +843,6 @@ int hi_msg_device_probe(struct ub_bus_controller *ubc)
 	hmc->irq_handler = hi_bus_drv_msg_irq_handler;
 	snprintf(hmc->queue_name, HI_MSG_INT_NAME_LEN, "hi_msgq%u-%d",
 		 ubc->ctl_no, MSGQ_USER_BUS_DRV);
-
 
 	ret = hi_msg_queue_init(hmd);
 	if (ret) {

@@ -75,7 +75,7 @@ static inline void unic_format_masked_ip_addr(char *format_masked_ip_addr,
 void unic_sync_ip_table(struct unic_dev *unic_dev);
 int unic_handle_notify_ip_event(struct auxiliary_device *adev, u8 service_ver,
 				void *data, u16 len, u16 seq);
-void unic_query_ip_addr(struct auxiliary_device *adev);
+int unic_query_ip_addr(struct auxiliary_device *adev);
 void unic_uninit_ip_table(struct unic_dev *unic_dev);
 int unic_add_ip_addr(struct unic_dev *unic_dev, struct sockaddr *addr,
 		     u16 ip_mask);

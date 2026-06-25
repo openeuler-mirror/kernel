@@ -8,6 +8,7 @@
 
 #include "ubase_cmd.h"
 #include "ubase_dev.h"
+#include "ubase_dtumem.h"
 #include "ubase_mailbox.h"
 #include "ubase_reset.h"
 #include "ubase_tp.h"
@@ -284,8 +285,9 @@ static bool ubase_is_udma_tp_event(struct ubase_dev *udev, u32 tpn)
 
 	spin_lock(&udev->tp_ctx.tpg_lock);
 	if (!tpg) {
-		ubase_warn(udev, "unexpected tp event, tpn = %u.\n", tpn);
 		spin_unlock(&udev->tp_ctx.tpg_lock);
+		dev_warn_ratelimited(udev->dev,
+				     "unexpected tp event, tpn = %u.\n", tpn);
 		return true;
 	}
 
@@ -330,7 +332,7 @@ static bool ubase_is_comm_event(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 	case UBASE_EVENT_TYPE_MB:
 		return true;
 	default:
-		return false;
+		break;
 	}
 
 	return false;
@@ -345,7 +347,7 @@ static void ubase_aeq_event_handler(struct ubase_dev *udev,
 	u8 idx;
 
 	if (event_type >= UBASE_EVENT_TYPE_MAX) {
-		ubase_err_rl(udev, udev->log_rs.aeq_event_type_exceed_max_cnt,
+		ubase_err_rl(udev, aeq_event_type_exceed_max,
 			     "event type wrong, event_type = %u.\n", event_type);
 		return;
 	}
@@ -402,9 +404,15 @@ static void ubase_init_aeq_work(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 static void ubase_mbx_complete(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 {
 	struct ubase_mbx_event_context *ctx = &udev->mb_cmd.ctx;
+	unsigned long flags;
 
-	if (aeqe->event.cmd.seq_num != ctx->seq_num)
+	raw_spin_lock_irqsave(&udev->mb_cmd.mbx_lock, flags);
+	udev->mbx_stats.ae_cnt++;
+	if (aeqe->event.cmd.seq_num != ctx->seq_num) {
+		udev->mbx_stats.seq_num_err_cnt++;
+		raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 		return;
+	}
 
 	ubase_mailbox_buff_free(udev);
 
@@ -412,6 +420,7 @@ static void ubase_mbx_complete(struct ubase_dev *udev, struct ubase_aeqe *aeqe)
 	ctx->out_param = aeqe->event.cmd.out_param;
 
 	complete(&ctx->done);
+	raw_spin_unlock_irqrestore(&udev->mb_cmd.mbx_lock, flags);
 }
 
 static int ubase_async_event_handler(struct ubase_dev *udev)
@@ -480,11 +489,29 @@ static void ubase_construct_eq_ctx(struct ubase_eq *eq,
 	ctx->state2 = eq->state;
 }
 
+static int ubase_alloc_eq_buf(struct ubase_dev *udev, struct ubase_eq *eq)
+{
+	eq->addr.addr = ubase_alloc_buf(udev, eq->addr.size, &eq->addr.dma_addr,
+					&eq->addr.page);
+	if (!eq->addr.addr)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static void ubase_free_eq_buf(struct ubase_dev *udev, struct ubase_eq *eq)
+{
+	ubase_free_buf(udev, eq->addr.size, eq->addr.addr, eq->addr.dma_addr,
+		       eq->addr.page);
+	eq->addr.addr = NULL;
+}
+
 static int ubase_fill_eq_attribute(struct ubase_dev *udev, struct ubase_eq *eq,
 				   u32 eqn, struct ubase_irq *irq,
 				   enum ubase_eq_type eq_type)
 {
 	struct ubase_eq_addr *eq_addr = &eq->addr;
+	int ret;
 
 	if (eq_type == UBASE_EQ_TYPE_AEQ) {
 		eq->eqe_size = udev->caps.dev_caps.aeqe_size;
@@ -508,14 +535,11 @@ static int ubase_fill_eq_attribute(struct ubase_dev *udev, struct ubase_eq *eq,
 	eq->irqn = irq->irqn;
 
 	eq_addr->size = eq->entries_num * eq->eqe_size;
-	eq_addr->addr = dma_alloc_coherent(udev->dev, eq_addr->size,
-					   &eq_addr->dma_addr, GFP_KERNEL);
-	if (!eq_addr->addr) {
+	ret = ubase_alloc_eq_buf(udev, eq);
+	if (ret)
 		ubase_err(udev, "failed to alloc eqe base addr.\n");
-		return -ENOMEM;
-	}
 
-	return 0;
+	return ret;
 }
 
 static int ubase_create_eq(struct ubase_dev *udev, struct ubase_eq *eq, u32 eqn,
@@ -543,7 +567,10 @@ static int ubase_create_eq(struct ubase_dev *udev, struct ubase_eq *eq, u32 eqn,
 	ubase_construct_eq_ctx(eq, (struct ubase_eq_ctx *)mbx->buf,
 			       udev->caps.dev_caps.tid);
 	ubase_fill_mbx_attr(&attr, eq->eqn, mbx_cmd, 0);
-	ret = ubase_hw_upgrade_ctx_poll(udev, &attr, mbx);
+
+	ret = ubase_dev_mbx_supported(udev) ?
+	      ubase_hw_upgrade_ctx_poll(udev, &attr, mbx) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mbx);
 	if (ret) {
 		ubase_err(udev, "failed to create EQC, ret = %d.\n", ret);
 		goto err_upgrade_ctx;
@@ -556,9 +583,7 @@ static int ubase_create_eq(struct ubase_dev *udev, struct ubase_eq *eq, u32 eqn,
 err_upgrade_ctx:
 	__ubase_free_cmd_mailbox(udev, mbx);
 err_alloc_mailbox:
-	dma_free_coherent(udev->dev, eq->addr.size, eq->addr.addr,
-			  eq->addr.dma_addr);
-	eq->addr.addr = NULL;
+	ubase_free_eq_buf(udev, eq);
 
 	return ret;
 }
@@ -581,14 +606,15 @@ static int ubase_destroy_eq(struct ubase_dev *udev, struct ubase_eq *eq,
 		return -ENOMEM;
 	}
 	ubase_fill_mbx_attr(&attr, eq->eqn, mbx_cmd, 0);
-	ret = ubase_hw_upgrade_ctx_poll(udev, &attr, mbx);
+
+	ret = ubase_dev_mbx_supported(udev) ?
+	      ubase_hw_upgrade_ctx_poll(udev, &attr, mbx) :
+	      ubase_hw_upgrade_ctx_over_cmdq(udev, &attr, mbx);
 	if (ret)
 		ubase_err(udev, "failed to destroy EQC, ret = %d.\n", ret);
 
 	__ubase_free_cmd_mailbox(udev, mbx);
-	dma_free_coherent(udev->dev, eq->addr.size, eq->addr.addr,
-			  eq->addr.dma_addr);
-	eq->addr.addr = NULL;
+	ubase_free_eq_buf(udev, eq);
 
 	return ret;
 }
@@ -653,8 +679,10 @@ static int ubase_ae_task_handle(void *data)
 
 	while (!kthread_should_stop()) {
 		if (wait_for_completion_timeout(&aeq->poll,
-						msecs_to_jiffies(UBASE_WAIT_COMPLETION_TIME)))
+						msecs_to_jiffies(UBASE_WAIT_COMPLETION_TIME))) {
 			ubase_poll_aeqe(udev, aeq);
+			cond_resched();
+		}
 	}
 
 	ubase_info(udev, "ubase ae task exit.\n");

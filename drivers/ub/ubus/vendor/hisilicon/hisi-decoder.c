@@ -362,7 +362,7 @@ static int rgtlb_unmap(struct ub_decoder *decoder, u32 table_idx,
 		*offset += size;
 		if (info->size >= *offset)
 			return rgtlb_unmap_to_range(decoder, desc, rgtlb_entry);
-		ub_err(decoder->uent, "can't unmap part of range\n!");
+		ub_err(decoder->uent, "can't unmap part of range!\n");
 		return -EINVAL;
 	}
 	sub_idx = get_rgtlb_page_idx(decoder, info->pa + *offset);
@@ -863,7 +863,7 @@ static void decoder_cmdq_issue_cmd(struct ub_decoder *decoder, phys_addr_t addr,
 	cmdq->prod.cmdq_wr_idx = queue_inc_prod_n(cmdq, 1);
 }
 
-#define NTF_DMA_ADDR_OFFSERT 2
+#define NTF_DMA_ADDR_OFFSET 2
 #define SYNC_0_OP GENMASK_ULL(7, 0)
 #define SYNC_0_CM GENMASK_ULL(13, 12)
 #define SYNC_0_NTF_ISH GENMASK_ULL(15, 14)
@@ -888,7 +888,7 @@ static void decoder_cmdq_issue_sync(struct ub_decoder *decoder)
 	entry.ntf_sh = NTF_SH_NSH;
 	entry.ntf_attr = NTF_ATTR_IR_NC | NTF_ATTR_OR_NC;
 	entry.notify_data = SYNC_NTF_DATA;
-	entry.notify_addr = sync_dma >> NTF_DMA_ADDR_OFFSERT;
+	entry.notify_addr = sync_dma >> NTF_DMA_ADDR_OFFSET;
 
 	cmd[0] |= FIELD_PREP(SYNC_0_OP, entry.op);
 	cmd[0] |= FIELD_PREP(SYNC_0_CM, entry.cm);

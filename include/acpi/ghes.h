@@ -21,6 +21,7 @@ struct ghes {
 		struct acpi_hest_generic_v2 *generic_v2;
 	};
 	struct acpi_hest_generic_status *estatus;
+	unsigned int estatus_length;
 	unsigned long flags;
 	union {
 		struct list_head list;
@@ -72,10 +73,13 @@ void ghes_unregister_vendor_record_notifier(struct notifier_block *nb);
 struct list_head *ghes_get_devices(void);
 
 void ghes_estatus_pool_region_free(unsigned long addr, u32 size);
+int apei_claim_sei(struct pt_regs *regs);
 #else
 static inline struct list_head *ghes_get_devices(void) { return NULL; }
 
 static inline void ghes_estatus_pool_region_free(unsigned long addr, u32 size) { return; }
+
+static inline int apei_claim_sei(struct pt_regs *regs) { return -ENOENT; }
 #endif
 
 int ghes_estatus_pool_init(unsigned int num_ghes);

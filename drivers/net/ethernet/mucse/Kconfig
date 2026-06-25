@@ -149,7 +149,7 @@ config MGBE
           To compile this driver as a module, choose M here. The module
           will be called rnp.
 
-config MGBE_OPTM_WITH_LARGE
+config MGBE_OPTM_WITH_LPAGE
 	bool "Reduce Memory Cost In Large PAGE_SIZE(>8192)"
 	default n
 	depends on MGBE
@@ -176,7 +176,7 @@ config MGBEVF
           To compile this driver as a module, choose M here. The module
           will be called rnp.
 
-config MGBEVF_OPTM_WITH_LARGE
+config MGBEVF_OPTM_WITH_LPAGE
 	bool "Reduce Memory Cost In Large PAGE_SIZE(>8192)"
 	default n
 	depends on MGBEVF

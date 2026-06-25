@@ -5,6 +5,7 @@
  */
 
 #include <linux/delay.h>
+#include <linux/limits.h>
 #include <ub/ubase/ubase_comm_cmd.h>
 
 #include "debugfs/ubase_debugfs.h"
@@ -16,27 +17,52 @@
 #include "ubase_ubus.h"
 #include "ubase_reset.h"
 
+static void __ubase_reset_task_schedule(struct ubase_dev *udev,
+					unsigned long delay)
+{
+	ubase_info(udev, "schedule reset task, delay = %ums.\n",
+		   jiffies_to_msecs(delay));
+
+	udev->last_reset_scheduled = jiffies;
+	mod_delayed_work(udev->ubase_reset_wq,
+			 &udev->reset_service_task.service_task, delay);
+}
+
 static void ubase_reset_task_schedule(struct ubase_dev *udev)
 {
-#define RESET_TASK_DELAY_TIME msecs_to_jiffies(10)
+#define RESET_TASK_DELAY_TIME		msecs_to_jiffies(10)
+#define RESET_TASK_DELAY_TIME_5S	msecs_to_jiffies(5000)
+
+	unsigned long delay =
+		test_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits) ?
+			 RESET_TASK_DELAY_TIME_5S : RESET_TASK_DELAY_TIME;
 
 	if (!test_and_set_bit(UBASE_SERVICE_STATE_RESET_SCHED,
-			      &udev->service_task.state)) {
-		udev->last_reset_scheduled = jiffies;
-		mod_delayed_work(udev->ubase_reset_wq,
-				 &udev->reset_service_task.service_task,
-				 RESET_TASK_DELAY_TIME);
-	}
+			      &udev->service_task.state))
+		__ubase_reset_task_schedule(udev, delay);
+}
+
+void ubase_reset_task_schedule_immediately(struct ubase_dev *udev)
+{
+#define RESET_TASK_DELAY_TIME_IM	msecs_to_jiffies(50)
+
+	set_bit(UBASE_SERVICE_STATE_RESET_SCHED, &udev->service_task.state);
+
+	__ubase_reset_task_schedule(udev, RESET_TASK_DELAY_TIME_IM);
 }
 
 static void ubase_reset_err_handle(struct ubase_dev *udev)
 {
-	udev->reset_stat.reset_fail_cnt++;
-	udev->reset_stat.reset_retry_cnt++;
+	if (test_bit(UBASE_STATE_REMOVING_B, &udev->state_bits))
+		return;
+
+	if (test_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits))
+		udev->reset_stat.reset_retry_cnt = 0;
+	else
+		udev->reset_stat.reset_retry_cnt++;
+
 	if (udev->reset_stat.reset_retry_cnt < UBASE_RST_MAX_RETRY_CNT) {
 		ubase_reset_task_schedule(udev);
-		ubase_info(udev, "re-schedule reset task(%u).\n",
-			   udev->reset_stat.reset_retry_cnt);
 		return;
 	}
 
@@ -71,7 +97,7 @@ void ubase_reset_service(struct ubase_delay_work *ubase_work)
 			   smp_processor_id());
 
 	ret = ubase_ubus_reset_entry(udev->dev);
-	if (ret)
+	if (ret == -EBUSY)
 		ubase_reset_err_handle(udev);
 }
 
@@ -139,8 +165,12 @@ static void ubase_notify_all_ue_reset(struct ubase_dev *udev)
 {
 	struct ubase_ue_node *ue_node;
 
-	list_for_each_entry(ue_node, &udev->ue_list, list)
+	list_for_each_entry(ue_node, &udev->ue_list, list) {
+		if (ue_node->isolated)
+			continue;
+
 		ubase_notify_ue_reset(udev, ue_node->bus_ue_id, 0);
+	}
 }
 
 static void ubase_wait_ue_reset_ready(struct ubase_dev *udev)
@@ -190,8 +220,9 @@ static int ubase_ue_reset_done_check(struct ubase_dev *udev)
 		msleep(UBASE_RST_WAIT_REG_TIME);
 	}
 
-	ubase_warn(udev, "wait reset done reg time out.\n");
-	return -EBUSY;
+	ubase_warn(udev, "wait reset done reg time out, reg = 0x%x.\n",
+		   reset_done_reg);
+	return -ETIMEDOUT;
 }
 
 static void ubase_reset_done(struct ubase_dev *udev)
@@ -231,10 +262,12 @@ void ubase_suspend(struct ubase_dev *udev)
 		return;
 	}
 
+	clear_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits);
+
 	ubase_notify_all_ue_reset(udev);
 
 	udev->reset_stage = UBASE_RESET_STAGE_DOWN;
-	ubase_suspend_aux_devices(udev);
+	ubase_suspend_aux_devices(udev, UBASE_RESET_STAGE_DOWN);
 	ubase_wait_ue_reset_ready(udev);
 	udev->reset_stage = UBASE_RESET_STAGE_UNINIT;
 
@@ -248,7 +281,7 @@ void ubase_suspend(struct ubase_dev *udev)
 	ubase_flush_workqueue(udev);
 }
 
-void ubase_resume(struct ubase_dev *udev)
+void ubase_resume(struct ubase_dev *udev, int pret)
 {
 	int ret;
 
@@ -260,7 +293,7 @@ void ubase_resume(struct ubase_dev *udev)
 	}
 
 	if (ubase_dev_pmu_supported(udev)) {
-		ubase_ubus_reinit(udev->dev);
+		ubase_ubus_reset_init(udev->dev);
 		__ubase_cmd_enable(udev);
 		udev->reset_stat.reset_done_cnt++;
 		udev->reset_stat.hw_reset_done_cnt++;
@@ -270,34 +303,64 @@ void ubase_resume(struct ubase_dev *udev)
 		return;
 	}
 
+	if (pret) {
+		/* Try to restore resource space. Otherwise, if a removing
+		 * is performed immediately after this ELR, issues may arise
+		 * because the CMDQ will be unavailable.
+		 */
+		ubase_ubus_reset_init(udev->dev);
+		if (pret == -ETIMEDOUT)
+			goto timeout_resume;
+		goto err_resume;
+	}
+
 	clear_bit(UBASE_STATE_RST_WAIT_DEACTIVE_B, &udev->state_bits);
 	udev->reset_stat.hw_reset_done_cnt++;
-	ubase_suspend_aux_devices(udev);
+	ubase_suspend_aux_devices(udev, UBASE_RESET_STAGE_UNINIT);
 	ubase_dev_reset_uninit(udev);
-	ubase_ubus_reinit(udev->dev);
+	ret = ubase_ubus_reset_init(udev->dev);
+	if (ret) {
+		if (ret == -ETIMEDOUT)
+			goto timeout_resume;
+		goto err_resume;
+	}
 
 	udev->reset_stage = UBASE_RESET_STAGE_NONE;
 	ret = ubase_ue_reset_done_check(udev);
 	if (ret)
-		goto err_resume;
+		goto timeout_resume;
 
 	ret = ubase_dev_reset_init(udev);
-	if (ret)
+	if (ret) {
+		if (test_and_clear_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits))
+			goto timeout_resume;
 		goto err_resume;
+	}
 
-	ubase_resume_aux_devices(udev);
+	ret = ubase_resume_aux_devices(udev, UBASE_RESET_STAGE_INIT);
+	if (ret) {
+		if (ret == -EAGAIN)
+			goto timeout_resume;
+		goto err_resume;
+	}
 	ubase_reset_done(udev);
 
 	udev->reset_stat.reset_done_cnt++;
 	udev->reset_stat.reset_retry_cnt = 0;
 	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
 	clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+	clear_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits);
 	return;
 
+timeout_resume:
+	set_bit(UBASE_STATE_RST_TIMEOUT_RETRY_B, &udev->state_bits);
 err_resume:
-	ubase_resume_aux_devices(udev);
+	udev->reset_stat.reset_fail_cnt++;
+	udev->reset_stage = UBASE_RESET_STAGE_NONE;
+	ubase_resume_aux_devices(udev, UBASE_RESET_STAGE_ABORT);
 	clear_bit(UBASE_STATE_RST_HANDLING_B, &udev->state_bits);
 	clear_bit(UBASE_STATE_DISABLED_B, &udev->state_bits);
+	set_bit(UBASE_STATE_RST_FAILED_B, &udev->state_bits);
 	ubase_reset_err_handle(udev);
 }
 
@@ -311,7 +374,8 @@ void ubase_errhandle_service_task(struct ubase_delay_work *ubase_work)
 		return;
 
 	if (!ubase_dev_err_handle_supported(udev)) {
-		ubase_err(udev, "not support err handle processing.\n");
+		dev_err_ratelimited(udev->dev,
+				    "not support err handle processing.\n");
 		return;
 	}
 

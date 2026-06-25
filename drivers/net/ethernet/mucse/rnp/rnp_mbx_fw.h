@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2023 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef RNP_MBX_FW_H
 #define RNP_MBX_FW_H
@@ -7,10 +7,6 @@
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/wait.h>
-
-#ifndef _PACKED_ALIGN4
-#define _PACKED_ALIGN4 __attribute__((packed, aligned(4)))
-#endif
 
 #define VF2PF_MBOX_VEC(mbx, vf) ((mbx)->vf2pf_mbox_vec_base + 4 * (vf))
 #define CPU2PF_MBOX_VEC(mbx) ((mbx)->cpu2pf_mbox_vec)
@@ -45,24 +41,19 @@
 #define mbx_pwr32(hw, reg, val) p_rnp_wr_reg((hw)->hw_addr + (reg), (val))
 #define mbx_wr32(hw, reg, val) rnp_wr_reg((hw)->hw_addr + (reg), (val))
 
-struct mbx_fw_cmd_reply;
-typedef void (*cookie_cb)(struct mbx_fw_cmd_reply *reply, void *priv);
-
 enum GENERIC_CMD {
 	/* generat */
 	GET_VERSION = 0x0001,
 	READ_REG = 0xFF03,
 	WRITE_REG = 0xFF04,
 	MODIFY_REG = 0xFF07,
-
 	/* virtualization */
 	IFUP_DOWN = 0x0800,
 	SEND_TO_PF = 0x0801,
 	SEND_TO_VF = 0x0802,
 	DRIVER_INSMOD = 0x0803,
 	SYSTEM_SUSPUSE = 0x0804,
-	SYSTEM_FORCE = 0x0805,
-
+	FORCE_LINK_ON_CLOSE = 0x0805,
 	/* link configuration admin commands */
 	GET_PHY_ABALITY = 0x0601,
 	GET_MAC_ADDRESS = 0x0602,
@@ -80,11 +71,9 @@ enum GENERIC_CMD {
 	PHY_LINK_SET = 0x0630,
 	GET_PHY_STATISTICS = 0x0631,
 	PHY_PAUSE_SET = 0x0632,
-
 	/*sfp-module*/
 	SFP_MODULE_READ = 0x0900,
 	SFP_MODULE_WRITE = 0x0901,
-
 	/* fw update */
 	FW_UPDATE = 0x0700,
 	FW_MAINTAIN = 0x0701,
@@ -141,7 +130,6 @@ enum pma_type {
 struct phy_abilities {
 	unsigned char link_stat;
 	unsigned char lane_mask;
-
 	int speed;
 	short phy_type;
 	short nic_mode;
@@ -184,7 +172,7 @@ struct phy_abilities {
 		} e;
 	};
 
-} _PACKED_ALIGN4;
+} __packed __aligned(4);
 
 enum LOOPBACK_LEVEL {
 	LOOPBACK_DISABLE = 0,
@@ -221,23 +209,18 @@ struct link_stat_data {
 #define LNK_STAT_SPEED_10000 4
 #define LNK_STAT_SPEED_25000 5
 #define LNK_STAT_SPEED_40000 6
-
 	/* 2 */
 	char link_stat : 1;
 #define LINK_UP 1
 #define LINK_DOWN 0
-
 	char link_fault : 4;
 #define LINK_LINK_FAULT BIT(0)
 #define LINK_TX_FAULT BIT(1)
 #define LINK_RX_FAULT BIT(2)
 #define LINK_REMOTE_FAULT BIT(3)
-
 	char extern_link_stat : 1;
 	char media_available : 1;
-
 	char rev1 : 1;
-
 	/* 3:ignore */
 	char an_completed : 1;
 	char lp_an_ability : 1;
@@ -246,7 +229,6 @@ struct link_stat_data {
 	char low_power_state : 1;
 	char link_pause_status : 2;
 	char qualified_odule : 1;
-
 	/* 4 */
 	char phy_temp_alarm : 1;
 	char excessive_link_errors : 1;
@@ -257,7 +239,6 @@ struct link_stat_data {
 #define EXTERNAL_25G_PHY_NVM_CRC_ERR 2
 #define EXTERNAL_25G_PHY_MDIO_ACCESS_FAILED 6
 #define EXTERNAL_25G_PHY_INIT_SUCCED 7
-
 	/* 5 */
 	char loopback_enabled_status : 4;
 #define LOOPBACK_DISABLE 0x0
@@ -280,11 +261,10 @@ struct link_stat_data {
 	/* 9 */
 	int link_type; /* same as Phy type */
 	char link_type_ext;
-} _PACKED_ALIGN4;
+} __packed __aligned(4);
 
 struct port_stat {
 	u8 phyid;
-
 	u8 duplex      : 1;
 	u8 autoneg     : 1;
 	u8 fec	       : 1;
@@ -293,7 +273,7 @@ struct port_stat {
 	u8 is_sgmii    : 1;
 	u8 lldp_status : 1;
 	u32 speed;
-} __attribute__((packed));
+} __packed;
 
 struct lane_stat_data {
 	u8 nr_lane;
@@ -301,7 +281,6 @@ struct lane_stat_data {
 	u8 pci_lanes : 4;
 	u8 pma_type;
 	u8 phy_type;
-
 	u16 linkup : 1;
 	u16 duplex : 1;
 	u16 autoneg : 1;
@@ -309,7 +288,7 @@ struct lane_stat_data {
 	u16 an : 1;
 	u16 link_traing : 1;
 	u16 media_available : 1;
-	u16 is_sgmii : 1;
+	u16 is_sgmii : 1; //
 	u16 link_fault : 4;
 #define LINK_LINK_FAULT BIT(0)
 #define LINK_TX_FAULT BIT(1)
@@ -317,7 +296,6 @@ struct lane_stat_data {
 #define LINK_REMOTE_FAULT BIT(3)
 	u16 is_backplane : 1;
 	u16 tp_mdx : 2;
-
 	union {
 		u8 phy_addr;
 		struct {
@@ -329,7 +307,6 @@ struct lane_stat_data {
 	};
 	u8 sfp_connector;
 	u32 speed;
-
 	u32 si_main;
 	u32 si_pre;
 	u32 si_post;
@@ -337,7 +314,47 @@ struct lane_stat_data {
 	u32 supported_link;
 	u32 phy_id;
 	u32 advertised_link;
-} __attribute__((packed));
+} __packed;
+
+struct info {
+	union {
+		struct {
+			u8 phy_type : 4;
+			u8 phy_addr : 4;
+		};
+		struct {
+			u8 phy_type : 4;
+			u8 mod_abs  : 1;
+			u8 fault    : 1;
+			u8 tx_dis   : 1;
+			u8 los	    : 1;
+		} sfp;
+	};
+
+	u32 si_main	: 6;
+	u32 si_pre	: 6;
+	u32 si_post	: 6;
+	u32 si_tx_boost : 4;
+	u32 fec		: 1;
+	u32 link_traing : 1;
+	u8 an		: 1; // 4 bytes:32
+	u8 link		: 1;
+	u8 speed	: 3;
+	u8 duplex	: 1;
+	u8 tp_mdx	: 2;
+	u8 rev;
+} __packed;
+
+struct lane_stat_v3 {
+	u32 magic : 7; //0-3
+	u32 pci_gen : 2;
+	u32 pci_lanes : 3;
+	u32 tempreture : 8; // 12
+	u32 voltage : 12;
+
+	u32 supported_link[4]; // should 4byte align
+	struct info info[4];
+} __attribute((packed, aligned(4)));
 
 struct yt_phy_statistics {
 	u32 pkg_ib_valid; /* rx crc good and length 64-1518 */
@@ -354,21 +371,21 @@ struct yt_phy_statistics {
 	u16 pkg_ob_os_bad; /* tx crc wrong and length >1518 */
 	u16 pkg_ob_frag; /* tx crc wrong and length <64 */
 	u16 pkg_ob_nosfd; /* tx sfd missed */
-} __attribute__((packed));
+} __packed;
 
 struct phy_statistics {
 	union {
 		struct yt_phy_statistics yt;
 	};
-} __attribute__((packed));
+} __packed;
+
 /* == flags == */
 #define FLAGS_DD BIT(0) /* driver clear 0, FW must set 1 */
 #define FLAGS_CMP BIT(1) /* driver clear 0, FW mucst set */
-/* driver clear 0, FW must set only if it reporting an error */
 #define FLAGS_ERR BIT(2)
+/* driver clear 0, FW must set only if it reporting an error */
 #define FLAGS_LB BIT(9)
-/* set if additional buffer has command parameters */
-#define FLAGS_RD BIT(10)
+#define FLAGS_RD BIT(10) /* set if additional buffer has command parameters */
 #define FLAGS_BUF BIT(12) /* set 1 on indirect command */
 #define FLAGS_SI BIT(13) /* not irq when command complete */
 #define FLAGS_EI BIT(14) /* interrupt on error */
@@ -441,7 +458,7 @@ struct mbx_fw_cmd_req {
 		} ifsuspuse;
 
 		struct {
-			int lane;
+			int nr_lane;
 			int status;
 		} ifforce;
 
@@ -515,14 +532,14 @@ struct mbx_fw_cmd_req {
 
 		struct {
 			unsigned int nr_lane;
-			unsigned int sfp_adr; /* 0xa0 or 0xa2 */
+			unsigned int sfp_adr;
 			unsigned int reg;
 			unsigned int cnt;
 		} sfp_read;
 
 		struct {
 			unsigned int nr_lane;
-			unsigned int sfp_adr; /* 0xa0 or 0xa2 */
+			unsigned int sfp_adr;
 			unsigned int reg;
 			unsigned int val;
 		} sfp_write;
@@ -530,7 +547,6 @@ struct mbx_fw_cmd_req {
 		struct {
 			unsigned int nr_lane; /* 0-3 */
 		} get_linkstat;
-
 		struct {
 			unsigned short changed_lanes;
 			unsigned short lane_status;
@@ -544,10 +560,11 @@ struct mbx_fw_cmd_req {
 			unsigned short event_mask;
 		} stat_event_mask;
 
-		struct {
+		struct { /* set loopback */
 			unsigned char loopback_level;
 			unsigned char loopback_type;
 			unsigned char loopback_force_speed;
+
 			char loopback_force_speed_enable : 1;
 		} loopback;
 
@@ -560,8 +577,7 @@ struct mbx_fw_cmd_req {
 			int ddr_hi;
 		} maintain;
 
-		struct {
-			/* set phy register */
+		struct { /* set phy register */
 			char phy_interface;
 			union {
 				char page_num;
@@ -579,16 +595,19 @@ struct mbx_fw_cmd_req {
 		} set_phy_reg;
 
 		struct {
-			int lane_mask;
-			int pfvf_num;
-		} get_mac_addr;
-
-		struct {
 			int enable;
 			int ddr_phy_hi;
 			int ddr_phy_lo;
 			int bytes;
 		} ddr_csl;
+
+		struct {
+		} get_phy_ability;
+
+		struct {
+			int lane_mask;
+			int pfvf_num;
+		} get_mac_addr;
 
 		struct {
 			char phy_interface;
@@ -611,7 +630,7 @@ struct mbx_fw_cmd_req {
 			unsigned int bin_phy_hi;
 		} fw_update;
 	};
-} _PACKED_ALIGN4;
+} __packed __aligned(4);
 
 /* firmware -> driver */
 struct mbx_fw_cmd_reply {
@@ -620,11 +639,12 @@ struct mbx_fw_cmd_reply {
 	/* from command: LB,RD,VFC,BUF,SI,EI,FE */
 	unsigned short opcode; /* 2-3: copy from req */
 	unsigned short error_code; /* 4-5: 0 if no error */
-	unsigned short datalen; /* 6-7 */
+	unsigned short datalen;
+	/* 6-7: */
 	union {
 		struct {
-			unsigned int cookie_lo; /* 8-11 */
-			unsigned int cookie_hi; /* 12-15 */
+			unsigned int cookie_lo; /* 8-11: */
+			unsigned int cookie_hi; /* 12-15: */
 		};
 		void *cookie;
 	};
@@ -664,7 +684,7 @@ struct mbx_fw_cmd_reply {
 			int lanes;
 			struct _addr {
 				/* for macaddr:01:02:03:04:05:06
-				 * mac-hi=0x01020304 mac-lo=0x05060000
+				 *  mac-hi=0x01020304 mac-lo=0x05060000
 				 */
 				unsigned char mac[8];
 			} addrs[4];
@@ -683,10 +703,10 @@ struct mbx_fw_cmd_reply {
 		struct phy_abilities phy_abilities;
 		struct phy_statistics phy_statistics;
 	};
-} _PACKED_ALIGN4;
+} __packed __aligned(4);
 
-static inline void build_lldp_ctrl_set(struct mbx_fw_cmd_req *req,
-				       int nr_lane, int enable)
+static inline void build_lldp_ctrl_set(struct mbx_fw_cmd_req *req, int nr_lane,
+				       int enable)
 {
 	req->flags = 0;
 	req->opcode = LLDP_TX_CTL;
@@ -694,14 +714,13 @@ static inline void build_lldp_ctrl_set(struct mbx_fw_cmd_req *req,
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-
 	req->lldp_tx.op = LLDP_TX_SET;
 	req->lldp_tx.nr_lane = nr_lane;
 	req->lldp_tx.enable = enable;
 }
 
-static inline void build_lldp_ctrl_get(struct mbx_fw_cmd_req *req,
-				       int nr_lane, void *cookie)
+static inline void build_lldp_ctrl_get(struct mbx_fw_cmd_req *req, int nr_lane,
+				       void *cookie)
 {
 	req->flags = 0;
 	req->opcode = LLDP_TX_CTL;
@@ -709,15 +728,14 @@ static inline void build_lldp_ctrl_get(struct mbx_fw_cmd_req *req,
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-
 	req->lldp_tx.op = LLDP_TX_GET;
 	req->lldp_tx.nr_lane = nr_lane;
 }
 
-static inline void build_maintain_req(struct mbx_fw_cmd_req *req,
-				      void *cookie, int cmd, int arg0,
-				      int req_bytes, int reply_bytes,
-				      u32 dma_phy_lo, u32 dma_phy_hi)
+static inline void build_maintain_req(struct mbx_fw_cmd_req *req, void *cookie,
+				      int cmd, int arg0, int req_bytes,
+				      int reply_bytes, u32 dma_phy_lo,
+				      u32 dma_phy_hi)
 {
 	req->flags = 0;
 	req->opcode = FW_MAINTAIN;
@@ -733,9 +751,8 @@ static inline void build_maintain_req(struct mbx_fw_cmd_req *req,
 	req->maintain.ddr_hi = dma_phy_hi;
 }
 
-static inline void build_fw_update_req(struct mbx_fw_cmd_req *req,
-				       void *cookie, int partition,
-				       u32 fw_bin_phy_lo,
+static inline void build_fw_update_req(struct mbx_fw_cmd_req *req, void *cookie,
+				       int partition, u32 fw_bin_phy_lo,
 				       u32 fw_bin_phy_hi, int fw_bytes)
 {
 	req->flags = 0;
@@ -750,8 +767,7 @@ static inline void build_fw_update_req(struct mbx_fw_cmd_req *req,
 	req->fw_update.bin_phy_hi = fw_bin_phy_hi;
 }
 
-static inline void build_reset_phy_req(struct mbx_fw_cmd_req *req,
-				       void *cookie)
+static inline void build_reset_phy_req(struct mbx_fw_cmd_req *req, void *cookie)
 {
 	req->flags = 0;
 	req->opcode = RESET_PHY;
@@ -786,8 +802,7 @@ static inline void build_get_macaddress_req(struct mbx_fw_cmd_req *req,
 	req->get_mac_addr.pfvf_num = pfvfnum;
 }
 
-static inline void build_version_req(struct mbx_fw_cmd_req *req,
-				     void *cookie)
+static inline void build_version_req(struct mbx_fw_cmd_req *req, void *cookie)
 {
 	req->flags = 0;
 	req->opcode = GET_VERSION;
@@ -798,8 +813,8 @@ static inline void build_version_req(struct mbx_fw_cmd_req *req,
 }
 
 /* 7.10.11.8 Read egister admin command */
-static inline void build_readreg_req(struct mbx_fw_cmd_req *req,
-				     int reg_addr, void *cookie)
+static inline void build_readreg_req(struct mbx_fw_cmd_req *req, int reg_addr,
+				     void *cookie)
 {
 	req->flags = 0;
 	req->opcode = READ_REG;
@@ -821,9 +836,8 @@ static inline void mbx_fw_req_set_reply(struct mbx_fw_cmd_req *req,
 }
 
 /* 7.10.11.9 Write egister admin command */
-static inline void build_writereg_req(struct mbx_fw_cmd_req *req,
-				      void *cookie, int reg_addr,
-				      int bytes, int value[4])
+static inline void build_writereg_req(struct mbx_fw_cmd_req *req, void *cookie,
+				      int reg_addr, int bytes, int value[4])
 {
 	int i;
 
@@ -840,9 +854,9 @@ static inline void build_writereg_req(struct mbx_fw_cmd_req *req,
 }
 
 /* 7.10.11.10 modify egister admin command */
-static inline void build_modifyreg_req(struct mbx_fw_cmd_req *req,
-				       void *cookie, int reg_addr,
-				       int value, unsigned int mask)
+static inline void build_modifyreg_req(struct mbx_fw_cmd_req *req, void *cookie,
+				       int reg_addr, int value,
+				       unsigned int mask)
 {
 	req->flags = 0;
 	req->opcode = MODIFY_REG;
@@ -889,10 +903,9 @@ static inline void build_get_temp(struct mbx_fw_cmd_req *req, void *cookie)
 	req->reply_hi = 0;
 }
 
-static inline void build_get_dump_req(struct mbx_fw_cmd_req *req,
-				      void *cookie, int nr_lane,
-				      u32 fw_bin_phy_lo, u32 fw_bin_phy_hi,
-				      int bytes)
+static inline void build_get_dump_req(struct mbx_fw_cmd_req *req, void *cookie,
+				      int nr_lane, u32 fw_bin_phy_lo,
+				      u32 fw_bin_phy_hi, int bytes)
 {
 	req->flags = 0;
 	req->opcode = GET_DUMP;
@@ -920,8 +933,7 @@ static inline void build_set_dump(struct mbx_fw_cmd_req *req, int nr_lane,
 }
 
 static inline void build_led_set(struct mbx_fw_cmd_req *req,
-				 unsigned int nr_lane, int value,
-				 void *cookie)
+				 unsigned int nr_lane, int value, void *cookie)
 {
 	req->flags = 0;
 	req->opcode = LED_SET;
@@ -933,9 +945,9 @@ static inline void build_led_set(struct mbx_fw_cmd_req *req,
 	req->led_set.value = value;
 }
 
-static inline void build_set_lane_fun(struct mbx_fw_cmd_req *req,
-				      int nr_lane, int fun, int value0,
-				      int value1, int value2, int value3)
+static inline void build_set_lane_fun(struct mbx_fw_cmd_req *req, int nr_lane,
+				      int fun, int value0, int value1,
+				      int value2, int value3)
 {
 	req->flags = 0;
 	req->opcode = SET_LANE_FUN;
@@ -951,11 +963,9 @@ static inline void build_set_lane_fun(struct mbx_fw_cmd_req *req,
 	req->set_lane_fun.value3 = value3;
 }
 
-static inline void build_set_phy_reg(struct mbx_fw_cmd_req *req,
-				     void *cookie,
-				     enum PHY_INTERFACE phy_inf,
-				     char nr_lane, int reg, int w_data,
-				     int recall_qsfp_page)
+static inline void build_set_phy_reg(struct mbx_fw_cmd_req *req, void *cookie,
+				     enum PHY_INTERFACE phy_inf, char nr_lane,
+				     int reg, int w_data, int recall_qsfp_page)
 {
 	req->flags = 0;
 	req->opcode = SET_PHY_REG;
@@ -963,6 +973,7 @@ static inline void build_set_phy_reg(struct mbx_fw_cmd_req *req,
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
+
 	req->set_phy_reg.phy_interface = phy_inf;
 	req->set_phy_reg.nr_lane = nr_lane;
 	req->set_phy_reg.phy_reg_addr = reg;
@@ -974,10 +985,9 @@ static inline void build_set_phy_reg(struct mbx_fw_cmd_req *req,
 		req->set_phy_reg.recall_qsfp_page = 0;
 }
 
-static inline void build_get_phy_reg(struct mbx_fw_cmd_req *req,
-				     void *cookie,
-				     enum PHY_INTERFACE phy_inf,
-				     char nr_lane, int reg)
+static inline void build_get_phy_reg(struct mbx_fw_cmd_req *req, void *cookie,
+				     enum PHY_INTERFACE phy_inf, char nr_lane,
+				     int reg)
 {
 	req->flags = 0;
 	req->opcode = GET_PHY_REG;
@@ -985,7 +995,9 @@ static inline void build_get_phy_reg(struct mbx_fw_cmd_req *req,
 	req->cookie = cookie;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
+
 	req->get_phy_reg.phy_interface = phy_inf;
+
 	req->get_phy_reg.nr_lane = nr_lane;
 	req->get_phy_reg.phy_reg_addr = reg;
 }
@@ -1003,10 +1015,11 @@ static inline void build_phy_pause_set(struct mbx_fw_cmd_req *req,
 	req->phy_pause_set.pause_mode = pause_mode;
 }
 
-static inline void
-build_phy_link_set(struct mbx_fw_cmd_req *req, unsigned int adv,
-		   int nr_lane, unsigned int autoneg, unsigned int speed,
-		   unsigned int duplex, unsigned int tp_mdix_ctrl)
+static inline void build_phy_link_set(struct mbx_fw_cmd_req *req,
+				      unsigned int adv, int nr_lane,
+				      unsigned int autoneg, unsigned int speed,
+				      unsigned int duplex,
+				      unsigned int tp_mdix_ctrl)
 {
 	req->flags = 0;
 	req->opcode = PHY_LINK_SET;
@@ -1065,12 +1078,12 @@ static inline void build_ifforce(struct mbx_fw_cmd_req *req,
 				 unsigned int nr_lane, int status)
 {
 	req->flags = 0;
-	req->opcode = SYSTEM_FORCE;
+	req->opcode = FORCE_LINK_ON_CLOSE;
 	req->datalen = sizeof(req->ifforce);
 	req->cookie = NULL;
 	req->reply_lo = 0;
 	req->reply_hi = 0;
-	req->ifforce.lane = nr_lane;
+	req->ifforce.nr_lane = nr_lane;
 	req->ifforce.status = status;
 }
 
@@ -1156,9 +1169,8 @@ build_link_set_loopback_req(struct mbx_fw_cmd_req *req, void *cookie,
 	}
 }
 
-static inline void build_ddr_csl(struct mbx_fw_cmd_req *req,
-				 void *cookie, bool enable,
-				 dma_addr_t dma_phy, int bytes)
+static inline void build_ddr_csl(struct mbx_fw_cmd_req *req, void *cookie,
+				 bool enable, dma_addr_t dma_phy, int bytes)
 {
 	u64 address = dma_phy;
 
@@ -1180,6 +1192,13 @@ static inline void build_ddr_csl(struct mbx_fw_cmd_req *req,
 	}
 }
 
+struct mbx_port_stat {
+	bool duplex;
+	int speed;
+	bool abs;
+	bool link;
+};
+
 /* =========== errcode======= */
 enum MBX_ERR {
 	MBX_OK = 0,
@@ -1196,54 +1215,50 @@ enum MBX_ERR {
 #define MBX_IFUP (1)
 #define MBX_PROBE (2)
 #define MBX_REMOVE (3)
-struct rnp_adapter;
-struct rnp_info;
-int wait_mbx_init_done(struct rnp_hw *hw);
-int rnp_mbx_get_lane_stat(struct rnp_hw *hw);
-int rnp_mbx_get_link_stat(struct rnp_hw *hw);
-int rnp_mbx_fw_reset_phy(struct rnp_hw *hw);
-int rnp_maintain_req(struct rnp_hw *hw, int cmd, int arg0,
-		     int req_data_bytes, int reply_bytes,
-		     dma_addr_t dma_phy_addr);
-int rnp_fw_get_macaddr(struct rnp_hw *hw, int pfvfnum, u8 *mac_addr,
-		       int lane);
-int rnp_mbx_sfp_module_eeprom_info(struct rnp_hw *hw, int sfp_addr,
-				   int reg, int data_len, u8 *buf);
-int rnp_mbx_sfp_write(struct rnp_hw *hw, int sfp_addr, int reg, short v);
-int rnp_mbx_fw_reg_read(struct rnp_hw *hw, int fw_reg);
-int rnp_mbx_reg_write(struct rnp_hw *hw, int fw_reg, int value);
-int rnp_mbx_reg_writev(struct rnp_hw *hw, int fw_reg, int value[4],
-		       int bytes);
-int rnp_mbx_wol_set(struct rnp_hw *hw, u32 mode);
-int rnp_mbx_set_dump(struct rnp_hw *hw, int flag);
-int rnp_mbx_force_speed(struct rnp_hw *hw, int speed);
-int rnp_mbx_get_dump(struct rnp_hw *hw, int flags, u8 *data_out,
-		     int buflen);
-int rnp_fw_update(struct rnp_hw *hw, int partition, const u8 *fw_bin,
-		  int bytes);
-int rnp_mbx_link_event_enable(struct rnp_hw *hw, int enable);
-int rnp_set_lane_fun(struct rnp_hw *hw, int fun, int value0, int value1,
-		     int value2, int value3);
-int rnp_mbx_ifinsmod(struct rnp_hw *hw, int status);
-int rnp_mbx_ifsuspuse(struct rnp_hw *hw, int status);
-int rnp_mbx_ifup_down(struct rnp_hw *hw, int up);
-int rnp_mbx_ifforce_control_mac(struct rnp_hw *hw, int status);
-int rnp_mbx_led_set(struct rnp_hw *hw, int value);
-int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info);
-int rnp_mbx_get_temp(struct rnp_hw *hw, int *voltage);
-void rnp_link_stat_mark(struct rnp_hw *hw, int up);
 void rnp_mbx_probe_stat_set(struct rnp_hw *hw, int stat);
-int rnp_fw_msg_handler(struct rnp_adapter *adapter);
+int rnp_fw_get_macaddr(struct rnp_hw *hw, int pfvfnum, u8 *mac_addr, int lane);
+int rnp_mbx_fw_reset_phy(struct rnp_hw *hw);
+struct rnp_info;
+int rnp_mbx_get_capability(struct rnp_hw *hw, struct rnp_info *info);
+int rnp_mbx_link_event_enable(struct rnp_hw *hw, int enable);
+int rnp_mbx_get_link_stat(struct rnp_hw *hw);
+int rnp_mbx_ifup_down(struct rnp_hw *hw, int up);
+int rnp_mbx_led_set(struct rnp_hw *hw, int value);
+int rnp_mbx_get_dump(struct rnp_hw *hw, int flags, u8 *data_out, int buflen);
+int rnp_mbx_set_dump(struct rnp_hw *hw, int flag);
+int rnp_mbx_sfp_write(struct rnp_hw *hw, int sfp_addr, int reg, short v);
+int rnp_mbx_sfp_module_eeprom_info(struct rnp_hw *hw, int sfp_addr, int reg,
+				   int data_len, u8 *buf);
+int rnp_mbx_get_temp(struct rnp_hw *hw, int *voltage);
+int rnp_mbx_phy_link_set(struct rnp_hw *hw, int adv, int autoneg, int speed,
+			 int duplex, int tp_mdix_ctrl);
+int rnp_mbx_phy_pause_set(struct rnp_hw *hw, int pause_mode);
 int rnp_mbx_phy_write(struct rnp_hw *hw, u32 reg, u32 val);
 int rnp_mbx_phy_read(struct rnp_hw *hw, u32 reg, u32 *val);
-int rnp_mbx_phy_link_set(struct rnp_hw *hw, int adv, int autoneg,
-			 int speed, int duplex, int tp_mdix_ctrl);
-int rnp_mbx_phy_pause_set(struct rnp_hw *hw, int pause_mode);
 
+int rnp_maintain_req(struct rnp_hw *hw, int cmd, int arg0, int req_data_bytes,
+		     int reply_bytes, dma_addr_t dma_phy_addr);
+int rnp_mbx_get_lane_stat(struct rnp_hw *hw);
+int rnp_mbx_wol_set(struct rnp_hw *hw, u32 mode);
+int rnp_mbx_ifsuspuse(struct rnp_hw *hw, int status);
+int rnp_mbx_ifinsmod(struct rnp_hw *hw, int status);
+int rnp_mbx_ifforce_control_mac(struct rnp_hw *hw, int status);
+int wait_mbx_init_done(struct rnp_hw *hw);
+int rnp_set_lane_fun(struct rnp_hw *hw, int fun, int value0, int value1,
+		     int value2, int value3);
+void rnp_link_stat_mark(struct rnp_hw *hw, int up);
+int rnp_mbx_reg_writev(struct rnp_hw *hw, int fw_reg, int value[4], int bytes);
+int rnp_mbx_reg_write(struct rnp_hw *hw, int fw_reg, int value);
+int rnp_mbx_fw_reg_read(struct rnp_hw *hw, int fw_reg);
+int rnp_mbx_force_speed(struct rnp_hw *hw, int speed);
+int rnp_fw_get_capability(struct rnp_hw *hw, struct phy_abilities *abil);
+int rnp_get_lane_stat_v3(struct rnp_hw *hw);
+int rnp_get_port_stats2(struct rnp_hw *hw, struct mbx_port_stat *stat);
+int rnp_get_temperature_v3(struct rnp_hw *hw, int *voltage, int *temp);
 #define cm3_reg_write32(hw, cm3_rpu_reg, v) \
 	rnp_mbx_reg_write((hw), (cm3_rpu_reg), (v))
 
 #define cm3_reg_read32(hw, cm3_rpu_reg) \
 	rnp_mbx_fw_reg_read((hw), (cm3_rpu_reg))
 
-#endif /* RNP_MBX_FW_H */
+#endif

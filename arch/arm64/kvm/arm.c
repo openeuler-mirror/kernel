@@ -372,6 +372,9 @@ int kvm_arch_init_vm(struct kvm *kvm, unsigned long type)
 
 	kvm_arm_init_hypercalls(kvm);
 
+	if (!kvm_is_realm(kvm))
+		kvm_arm_timer_early_inject_vm_init(kvm);
+
 	bitmap_zero(kvm->arch.vcpu_features, KVM_VCPU_MAX_FEATURES);
 
 	/* Initialise the realm bits after the generic bits are enabled */
@@ -452,6 +455,9 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 	case KVM_CAP_IRQFD_RESAMPLE:
 		r = 1;
 		break;
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	case KVM_CAP_ARM_TIMER_EARLY_INJECT:
+#endif
 	case KVM_CAP_COUNTER_OFFSET:
 	case KVM_CAP_READONLY_MEM:
 	case KVM_CAP_SET_GUEST_DEBUG:
@@ -559,6 +565,14 @@ int kvm_vm_ioctl_check_extension(struct kvm *kvm, long ext)
 			r = 0;
 		break;
 #endif
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	case KVM_CAP_ARM_HISI_PVTIMER_STATUS:
+		if (vtimer_is_irqbypass() && !kvm_is_realm(kvm))
+			r = 1;
+		else
+			r = 0;
+		break;
+#endif
 	case KVM_CAP_ARM_RME:
 		r = static_key_enabled(&kvm_rme_is_available);
 		break;
@@ -639,6 +653,11 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 
 	kvm_arm_pvsched_vcpu_init(&vcpu->arch);
 
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	if (!kvm_is_realm(vcpu->kvm))
+		kvm_arm_pvtimer_status_vcpu_init(&vcpu->arch);
+#endif
+
 	vcpu->arch.hw_mmu = &vcpu->kvm->arch.mmu;
 
 	err = kvm_vgic_vcpu_init(vcpu);
@@ -653,9 +672,11 @@ int kvm_arch_vcpu_create(struct kvm_vcpu *vcpu)
 	if (err)
 		goto sched_affinity_vcpu_destroy;
 
-	err = kvm_arch_rec_init(&vcpu->arch);
-	if (err)
-		goto unshare_hyp;
+	if (kvm_is_realm(vcpu->kvm)) {
+		err = kvm_arch_rec_init(&vcpu->arch);
+		if (err)
+			goto unshare_hyp;
+	}
 
 	return err;
 
@@ -872,6 +893,11 @@ int kvm_arch_vcpu_ioctl_set_mpstate(struct kvm_vcpu *vcpu,
 int kvm_arch_vcpu_runnable(struct kvm_vcpu *v)
 {
 	bool irq_lines = *vcpu_hcr(v) & (HCR_VI | HCR_VF);
+
+	irq_lines |= (!irqchip_in_kernel(v->kvm) &&
+		      (kvm_timer_should_notify_user(v) ||
+		       kvm_pmu_should_notify_user(v)));
+
 	return ((irq_lines || kvm_vgic_vcpu_pending_irq(v))
 		&& !kvm_arm_vcpu_stopped(v) && !v->arch.pause);
 }
@@ -1151,6 +1177,10 @@ static int check_vcpu_requests(struct kvm_vcpu *vcpu)
 			else
 				vcpu_set_wfx_traps(vcpu);
 		}
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+		if (kvm_check_request(KVM_REQ_RELOAD_TIMER_EARLY_INJECT, vcpu))
+			kvm_timer_early_inject_config(vcpu->kvm);
+#endif
 	}
 
 	return 1;
@@ -1755,6 +1785,11 @@ static int kvm_arch_vcpu_ioctl_vcpu_init(struct kvm_vcpu *vcpu,
 
 	kvm_arm_pvsched_vcpu_init(&vcpu->arch);
 
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	/* let's set active to false for vcpu reset */
+	kvm_arm_pvtimer_status_set_active(vcpu, false);
+#endif
+
 	return 0;
 }
 
@@ -2017,6 +2052,10 @@ static int kvm_vm_has_attr(struct kvm *kvm, struct kvm_device_attr *attr)
 	switch (attr->group) {
 	case KVM_ARM_VM_SMCCC_CTRL:
 		return kvm_vm_smccc_has_attr(kvm, attr);
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	case KVM_VM_TIMER_EARLY_INJECT_CTRL:
+		return kvm_arm_timer_early_inject_has_attr(kvm, attr);
+#endif
 	default:
 		return -ENXIO;
 	}
@@ -2027,6 +2066,10 @@ static int kvm_vm_set_attr(struct kvm *kvm, struct kvm_device_attr *attr)
 	switch (attr->group) {
 	case KVM_ARM_VM_SMCCC_CTRL:
 		return kvm_vm_smccc_set_attr(kvm, attr);
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	case KVM_VM_TIMER_EARLY_INJECT_CTRL:
+		return kvm_arm_timer_early_inject_set_attr(kvm, attr);
+#endif
 	default:
 		return -ENXIO;
 	}

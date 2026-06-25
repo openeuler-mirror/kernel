@@ -17,6 +17,7 @@
 
 #define LOCAL_TECT_TAG 0
 
+extern bool hw_bypass;
 extern struct platform_driver ummu_driver;
 extern const struct ummu_core_ops ummu_ops;
 extern const struct ummu_device_helper ummu_helper;
@@ -26,6 +27,9 @@ extern const struct ummu_device_helper ummu_helper;
 
 #define EID_HIGH_SZ_SHIFT 64
 #define UMMU_CTRL_PAGE_SIZE ((PAGE_SIZE == SZ_4K) ? SZ_4K : SZ_64K)
+
+#define UMMU_GFP(gfp) \
+	(IS_ENABLED(CONFIG_UB_HIGHUSER_MOVABLE) ? GFP_HIGHUSER_MOVABLE : gfp)
 
 /* target context table structures */
 struct ummu_l1_tct_desc {
@@ -170,6 +174,8 @@ struct ummu_capability {
 #define UMMU_FEAT_TOKEN_CHK		BIT(24)
 #define UMMU_FEAT_PERMQ			BIT(25)
 #define UMMU_FEAT_NESTING		BIT(26)
+#define UMMU_FEAT_FREE_BIT		BIT(27)
+#define UMMU_FEAT_PPLBI			BIT(28)
 	u32 features;
 	u32 deid_bits;
 	u32 tid_bits;
@@ -181,9 +187,13 @@ struct ummu_capability {
 #define UMMU_OPT_DOUBLE_PLBI		(1UL << 1)
 #define UMMU_OPT_KCMD_PLBI		(1UL << 2)
 #define UMMU_OPT_CHK_MAPT_CONTINUITY	(1UL << 3)
-#define UMMU_OPT_MCMDQ_DECREASE		(1UL << 4)
+#define UMMU_OPT_ONE_MCMDQ		(1UL << 4)
 #define UMMU_OPT_SYNC_WITH_PLBI		(1UL << 5)
 #define UMMU_OPT_KV_CAM_CONTINUITY	(1UL << 6)
+#define UMMU_OPT_UMAU			(1UL << 7)
+#define UMMU_OPT_DOUBLE_TLBI		(1UL << 8)
+#define UMMU_OPT_TLBI_LIMIT_SCALE	(1UL << 9)
+#define UMMU_OPT_MCMDQ_DECREASE		(1UL << 10)
 	u32 options;
 
 #define UMMU_MAX_ASIDS			(1UL << 16)
@@ -245,6 +255,26 @@ enum ummu_dom_cfg_sync_type {
 	SYNC_CLEAR_DOM_ALL_CFG,
 };
 
+#define UMMU_GATHER_MAX_CNT 12
+struct logic_ummu_plb {
+	u32 opcode;
+	union {
+		struct {
+			u64 va;
+			u64 size;
+		} plbi_va;
+		struct {
+			u64 lvl_idx;
+			u64 lvl_offset;
+		} plbi_f_bit;
+	};
+};
+struct ummu_plbi_gather {
+	void *cookie;
+	struct logic_ummu_plb plbis[UMMU_GATHER_MAX_CNT];
+	u32 data_cnt;
+};
+
 struct ummu_device_helper {
 	void (*sync_tlb)(struct iommu_domain *domain,
 			 struct iommu_iotlb_gather *iotlb_gather);
@@ -255,7 +285,12 @@ struct ummu_device_helper {
 		const struct iommu_user_data *user_data);
 	int (*cache_invalidate_user)(struct iommu_domain *domain,
 				     struct iommu_user_data_array *array);
+	void (*plbi_free_bit)(struct iommu_domain *domain, u32 next_lvl_idx,
+			      u32 next_lvl_offset);
 	void (*sync_iotlb_all)(struct iommu_domain *domain);
+	void (*sync_iotlb_all_asid)(struct iommu_domain *domain);
+	void (*sync_iommu_domain)(struct ummu_base_domain *base_domain,
+				  struct iommu_domain *domain);
 };
 
 struct ummu_device {
@@ -308,11 +343,14 @@ struct ummu_domain_cfgs {
 struct ummu_domain {
 	struct mutex init_mutex; /* protect domain resources */
 	struct ummu_base_domain base_domain;
+	/* belongs IOMMU framework, using for multi-instance traversal */
+	struct iommu_domain *domain;
 	u32 qid;
 	bool has_cfged;
 	bool dirty_tracking;
 	struct ummu_domain_cfgs cfgs;
 	struct kvm *kvm;
+	bool tlbi_asid;
 };
 
 /* UMMU private data for each master */
@@ -324,26 +362,6 @@ struct ummu_master {
 	bool			ksva_enabled;
 	refcount_t		sva_ref;
 	refcount_t		ksva_ref;
-};
-
-#define UMMU_GATHER_MAX_CNT 12
-struct logic_ummu_plb {
-	u32 opcode;
-	union {
-		struct {
-			u64 va;
-			u64 size;
-		} plbi_va;
-		struct {
-			u64 lvl_idx;
-			u64 lvl_offset;
-		} plbi_f_bit;
-	};
-};
-struct ummu_plbi_gather {
-	void *cookie;
-	struct logic_ummu_plb plbis[UMMU_GATHER_MAX_CNT];
-	u32 data_cnt;
 };
 
 static inline

@@ -108,9 +108,9 @@ unlock_and_exit:
 	return ret;
 }
 
-int unic_handle_stack_ip_feedback(struct unic_vport *vport,
-				  enum UNIC_COMM_ADDR_STATE state,
-				  struct sockaddr *addr, u16 ip_mask)
+static int unic_handle_stack_ip_feedback(struct unic_vport *vport,
+					 enum UNIC_COMM_ADDR_STATE state,
+					 struct sockaddr *addr, u16 ip_mask)
 {
 	struct auxiliary_device *adev = vport->back->comdev.adev;
 	struct unic_dev *unic_dev = dev_get_drvdata(&adev->dev);
@@ -674,7 +674,7 @@ static void unic_update_ip_list(struct unic_vport *vport,
 	spin_unlock_bh(&vport->addr_tbl.ip_list_lock);
 }
 
-void unic_query_ip_addr(struct auxiliary_device *adev)
+int unic_query_ip_addr(struct auxiliary_device *adev)
 {
 #define UNIC_LOOP_COUNT(total_size, size) ((total_size) / (size) + 1)
 
@@ -687,7 +687,7 @@ void unic_query_ip_addr(struct auxiliary_device *adev)
 	int ret;
 
 	if (!unic_dev_ubl_supported(priv))
-		return;
+		return 0;
 
 	set_bit(UNIC_VPORT_STATE_IP_QUERYING, &priv->vport.state);
 	INIT_LIST_HEAD(&tmp_list);
@@ -726,6 +726,8 @@ void unic_query_ip_addr(struct auxiliary_device *adev)
 		list_del(&ip_node->node);
 		kfree(ip_node);
 	}
+
+	return ret;
 }
 
 void unic_uninit_ip_table(struct unic_dev *unic_dev)

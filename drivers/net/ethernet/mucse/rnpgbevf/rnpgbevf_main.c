@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2025 Mucse Corporation. */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/types.h>
 #include <linux/bitops.h>
@@ -28,14 +30,15 @@
 
 #include <net/xdp_sock_drv.h>
 
+#define CONFIG_BAR4_PFVFNUM 0
 char rnpgbevf_driver_name[] = "rnpgbevf";
 static const char rnpgbevf_driver_string[] =
 	"Mucse(R) 1 Gigabit PCI Express Virtual Function Network Driver";
 
-#define DRV_VERSION "0.2.1-rc3"
+#define DRV_VERSION "1.0.1"
 const char rnpgbevf_driver_version[] = DRV_VERSION;
 static const char rnpgbevf_copyright[] =
-	"Copyright (c) 2020 - 2024 Mucse Corporation.";
+	"Copyright (c) 2020 - 2025 Mucse Corporation.";
 
 static const struct rnpgbevf_info *rnpgbevf_info_tbl[] = {
 	[board_n500] = &rnp_n500_vf_info,
@@ -45,6 +48,9 @@ static const struct rnpgbevf_info *rnpgbevf_info_tbl[] = {
 #define N500_BOARD board_n500
 #define N210_BOARD board_n210
 
+static unsigned int fix_eth_name;
+module_param(fix_eth_name, uint, 0000);
+MODULE_PARM_DESC(fix_eth_name, "set eth adapter name to rnpvfXX");
 static struct pci_device_id rnpgbevf_pci_tbl[] = {
 	{ PCI_DEVICE(0x8848, 0x8309), .driver_data = N500_BOARD },
 	{ PCI_DEVICE(0x8848, 0x8209), .driver_data = N210_BOARD },
@@ -65,10 +71,9 @@ static int debug = -1;
 module_param(debug, int, 0000);
 MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
 
-static int pci_using_hi_dma = 1;
+static int pci_using_hi_dma;
 
 /* forward decls */
-static void rnpgbevf_set_itr(struct rnpgbevf_q_vector *q_vector);
 static void rnpgbevf_free_all_rx_resources(struct rnpgbevf_adapter *adapter);
 
 #define RNPVF_XDP_PASS 0
@@ -81,7 +86,6 @@ static bool rnpgbevf_alloc_mapped_page(struct rnpgbevf_ring *rx_ring,
 				       struct rnpgbevf_rx_buffer *bi,
 				       union rnp_rx_desc *rx_desc, u16 bufsz,
 				       u64 fun_id);
-
 static void rnpgbevf_put_rx_buffer(struct rnpgbevf_ring *rx_ring,
 				   struct rnpgbevf_rx_buffer *rx_buffer);
 #else /* OPTM_WITH_LPAGE */
@@ -93,10 +97,11 @@ static void rnpgbevf_put_rx_buffer(struct rnpgbevf_ring *rx_ring,
 #endif /* OPTM_WITH_LPAGE */
 
 /**
- * rnpgbevf_set_ring_vector - maps interrupt causes to vectors
+ * rnpgbevf_set_ivar - set IVAR registers - maps interrupt causes to vectors
  * @adapter: pointer to adapter struct
- * @rnpgbevf_queue: queue to map the corresponding interrupt to
- * @rnpgbevf_msix_vector: the vector to map to the corresponding queue
+ * @direction: 0 for Rx, 1 for Tx, -1 for other causes
+ * @queue: queue to map the corresponding interrupt to
+ * @msix_vector: the vector to map to the corresponding queue
  */
 static void rnpgbevf_set_ring_vector(struct rnpgbevf_adapter *adapter,
 				     u8 rnpgbevf_queue, u8 rnpgbevf_msix_vector)
@@ -134,6 +139,8 @@ static void rnpgbevf_unmap_and_free_tx_resource(struct rnpgbevf_ring *ring,
 	dma_unmap_len_set(tx_buffer, len, 0);
 	/* tx_buffer must be completely set up in the transmit path */
 }
+
+static void rnpgbevf_tx_timeout(struct net_device *netdev);
 
 /**
  * rnpgbevf_clean_tx_irq - Reclaim resources after transmit completes
@@ -239,18 +246,23 @@ static bool rnpgbevf_clean_tx_irq(struct rnpgbevf_q_vector *q_vector,
 	netdev_tx_completed_queue(txring_txq(tx_ring), total_packets,
 				  total_bytes);
 
+	if (!(q_vector->vector_flags & RNPVF_QVECTOR_FLAG_REDUCE_TX_IRQ_MISS)) {
 #define TX_WAKE_THRESHOLD (DESC_NEEDED * 2)
-	if (unlikely(total_packets && netif_carrier_ok(tx_ring->netdev) &&
-		     (rnpgbevf_desc_unused(tx_ring) >= TX_WAKE_THRESHOLD))) {
-		/* Make sure that anybody stopping the queue after this
-		 * sees the new next_to_clean.
-		 */
-		smp_mb();
-		if (__netif_subqueue_stopped(tx_ring->netdev,
-					     tx_ring->queue_index) &&
-		    !test_bit(__RNPVF_DOWN, &adapter->state)) {
-			netif_wake_subqueue(tx_ring->netdev, tx_ring->queue_index);
-			++tx_ring->tx_stats.restart_queue;
+		if (unlikely(total_packets &&
+			     netif_carrier_ok(tx_ring->netdev) &&
+			     (rnpgbevf_desc_unused(tx_ring) >=
+			      TX_WAKE_THRESHOLD))) {
+			/* Make sure that anybody stopping the queue after this
+			 * sees the new next_to_clean.
+			 */
+			smp_mb();
+			if (__netif_subqueue_stopped(tx_ring->netdev,
+						     tx_ring->queue_index) &&
+			    !test_bit(__RNPVF_DOWN, &adapter->state)) {
+				netif_wake_subqueue(tx_ring->netdev,
+						    tx_ring->queue_index);
+				++tx_ring->tx_stats.restart_queue;
+			}
 		}
 	}
 
@@ -290,9 +302,19 @@ static inline void rnpgbevf_rx_checksum(struct rnpgbevf_ring *ring,
 	if (!(ring->netdev->features & NETIF_F_RXCSUM))
 		return;
 
+	/* vxlan packet handle ? */
+
+	if (!(ring->ring_flags & RNPVF_RING_NO_TUNNEL_SUPPORT)) {
+		if (rnpgbevf_get_stat(rx_desc, RNPGBE_RXD_STAT_TUNNEL_MASK) ==
+		    RNPGBE_RXD_STAT_TUNNEL_VXLAN) {
+			encap_pkt = true;
+			skb->encapsulation = 1;
+			skb->ip_summed = CHECKSUM_NONE;
+		}
+	}
+
 	/* if L3/L4  error:ignore errors from veb(other vf) */
-	if (unlikely(rnpgbevf_test_staterr(rx_desc,
-					   RNPGBE_RXD_STAT_ERR_MASK))) {
+	if (unlikely(rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_ERR_MASK))) {
 		ring->rx_stats.csum_err++;
 		return;
 	}
@@ -312,13 +334,153 @@ static inline void rnpgbevf_update_rx_tail(struct rnpgbevf_ring *rx_ring,
 
 	/* update next to alloc since we have filled the ring */
 	rx_ring->next_to_alloc = val;
-	/* Force memory writes to complete before letting h/w
+	/*
+	 * Force memory writes to complete before letting h/w
 	 * know there are new descriptors to fetch.  (Only
 	 * applicable for weak-ordered memory model archs,
 	 * such as IA-64).
 	 */
 	wmb();
 	rnpgbevf_wr_reg(rx_ring->tail, val);
+}
+
+#ifndef OPTM_WITH_LPAGE
+/**
+ * rnpgbevf_alloc_rx_buffers - Replace used receive buffers
+ * @rx_ring: ring to place buffers on
+ * @cleaned_count: number of buffers to replace
+ **/
+static void rnpgbevf_alloc_rx_buffers(struct rnpgbevf_ring *rx_ring,
+				      u16 cleaned_count)
+{
+	union rnp_rx_desc *rx_desc;
+	struct rnpgbevf_rx_buffer *bi;
+	u16 i = rx_ring->next_to_use;
+	u64 fun_id = ((u64)(rx_ring->vfnum) << (32 + 24));
+	u16 bufsz;
+	/* nothing to do */
+	if (!cleaned_count)
+		return;
+
+	rx_desc = RNPVF_RX_DESC(rx_ring, i);
+	BUG_ON(!rx_desc);
+	bi = &rx_ring->rx_buffer_info[i];
+	BUG_ON(!bi);
+
+	i -= rx_ring->count;
+	bufsz = rnpgbevf_rx_bufsz(rx_ring);
+
+	do {
+		if (!rnpgbevf_alloc_mapped_page(rx_ring, bi))
+			break;
+
+		dma_sync_single_range_for_device(rx_ring->dev, bi->dma,
+						 bi->page_offset, bufsz,
+						 DMA_FROM_DEVICE);
+
+		/*
+		 * Refresh the desc even if buffer_addrs didn't change
+		 * because each write-back erases this info.
+		 */
+		rx_desc->pkt_addr =
+			cpu_to_le64(bi->dma + bi->page_offset + fun_id);
+		/* clean dd */
+		rx_desc->cmd = 0;
+
+		rx_desc++;
+		bi++;
+		i++;
+		if (unlikely(!i)) {
+			rx_desc = RNPVF_RX_DESC(rx_ring, 0);
+			bi = rx_ring->rx_buffer_info;
+			i -= rx_ring->count;
+		}
+
+		/* clear the hdr_addr for the next_to_use descriptor */
+		cleaned_count--;
+	} while (cleaned_count);
+
+	i += rx_ring->count;
+
+	if (rx_ring->next_to_use != i)
+		rnpgbevf_update_rx_tail(rx_ring, i);
+}
+#endif
+
+/**
+ * rnpgbevf_reuse_rx_page - page flip buffer and store it back on the ring
+ * @rx_ring: rx descriptor ring to store buffers on
+ * @old_buff: donor buffer to have page reused
+ *
+ * Synchronizes page for reuse by the adapter
+ **/
+static void rnpgbevf_reuse_rx_page(struct rnpgbevf_ring *rx_ring,
+				   struct rnpgbevf_rx_buffer *old_buff)
+{
+	struct rnpgbevf_rx_buffer *new_buff;
+	u16 nta = rx_ring->next_to_alloc;
+
+	new_buff = &rx_ring->rx_buffer_info[nta];
+
+	/* update, and store next to alloc */
+	nta++;
+	rx_ring->next_to_alloc = (nta < rx_ring->count) ? nta : 0;
+
+	/*
+	 * Transfer page from old buffer to new buffer.
+	 * Move each member individually to avoid possible store
+	 * forwarding stalls and unnecessary copy of skb.
+	 */
+	new_buff->dma = old_buff->dma;
+	new_buff->page = old_buff->page;
+	new_buff->page_offset = old_buff->page_offset;
+	new_buff->pagecnt_bias = old_buff->pagecnt_bias;
+}
+
+static inline bool rnpgbevf_page_is_reserved(struct page *page)
+{
+	return (page_to_nid(page) != numa_mem_id()) || page_is_pfmemalloc(page);
+}
+
+static bool rnpgbevf_can_reuse_rx_page(struct rnpgbevf_rx_buffer *rx_buffer)
+{
+	unsigned int pagecnt_bias = rx_buffer->pagecnt_bias;
+	struct page *page = rx_buffer->page;
+
+#ifdef OPTM_WITH_LPAGE
+	return false;
+#endif
+	/* avoid re-using remote pages */
+	if (unlikely(rnpgbevf_page_is_reserved(page)))
+		return false;
+
+#if (PAGE_SIZE < 8192)
+		/* if we are only owner of page we can reuse it */
+	if (unlikely((page_ref_count(page) - pagecnt_bias) > 1))
+		return false;
+#else
+
+	/*
+	 * The last offset is a bit aggressive in that we assume the
+	 * worst case of FCoE being enabled and using a 3K buffer.
+	 * However this should have minimal impact as the 1K extra is
+	 * still less than one buffer in size.
+	 */
+#define RNPVF_LAST_OFFSET (SKB_WITH_OVERHEAD(PAGE_SIZE) - RNPVF_RXBUFFER_2K)
+	if (rx_buffer->page_offset > RNPVF_LAST_OFFSET)
+		return false;
+#endif
+
+	/* If we have drained the page fragment pool we need to update
+	 * the pagecnt_bias and page count so that we fully restock the
+	 * number of references the driver holds.
+	 */
+	if (unlikely(pagecnt_bias == 1)) {
+		page_ref_add(page, USHRT_MAX - 1);
+		rx_buffer->pagecnt_bias = USHRT_MAX;
+	}
+
+	return true;
 }
 
 #if (PAGE_SIZE < 8192)
@@ -363,16 +525,312 @@ static inline int rnpgbevf_skb_pad(void)
 #define RNPVF_SKB_PAD (NET_SKB_PAD + NET_IP_ALIGN)
 #endif
 
-static void rnpgbevf_rx_skb(struct rnpgbevf_q_vector *q_vector,
-			    struct sk_buff *skb)
+/**
+ * rnp_clean_rx_ring - Free Rx Buffers per Queue
+ * @rx_ring: ring to free buffers from
+ **/
+static void rnpgbevf_clean_rx_ring(struct rnpgbevf_ring *rx_ring)
 {
-	struct rnpgbevf_adapter *adapter = q_vector->adapter;
+	u16 i = rx_ring->next_to_clean;
+	struct rnpgbevf_rx_buffer *rx_buffer = &rx_ring->rx_buffer_info[i];
 
-	if (!(adapter->flags & RNPVF_FLAG_IN_NETPOLL))
-		napi_gro_receive(&q_vector->napi, skb);
-	else
-		netif_rx(skb);
+	/* Free all the Rx ring sk_buffs */
+	while (i != rx_ring->next_to_alloc) {
+		if (rx_buffer->skb) {
+			struct sk_buff *skb = rx_buffer->skb;
+
+			dev_kfree_skb(skb);
+			rx_buffer->skb = NULL;
+		}
+
+		/* Invalidate cache lines that may have been written to by
+		 * device so that we avoid corrupting memory.
+		 */
+		dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma,
+					      rx_buffer->page_offset,
+					      rnpgbevf_rx_bufsz(rx_ring),
+					      DMA_FROM_DEVICE);
+
+		/* free resources associated with mapping */
+		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
+				     rnpgbevf_rx_pg_size(rx_ring),
+				     DMA_FROM_DEVICE,
+				     RNPVF_RX_DMA_ATTR);
+
+		__page_frag_cache_drain(rx_buffer->page,
+					rx_buffer->pagecnt_bias);
+		/* now this page is not used */
+		rx_buffer->page = NULL;
+		i++;
+		rx_buffer++;
+		if (i == rx_ring->count) {
+			i = 0;
+			rx_buffer = rx_ring->rx_buffer_info;
+		}
+	}
+
+	rx_ring->next_to_alloc = 0;
+	rx_ring->next_to_clean = 0;
+	rx_ring->next_to_use = 0;
 }
+
+static inline unsigned int rnpgbevf_rx_offset(struct rnpgbevf_ring *rx_ring)
+{
+	return ring_uses_build_skb(rx_ring) ? RNPVF_SKB_PAD : 0;
+}
+
+#ifdef OPTM_WITH_LPAGE
+static bool rnpgbevf_alloc_mapped_page(struct rnpgbevf_ring *rx_ring,
+				       struct rnpgbevf_rx_buffer *bi,
+				       union rnp_rx_desc *rx_desc, u16 bufsz,
+				       u64 fun_id)
+{
+	struct page *page = bi->page;
+	dma_addr_t dma;
+
+	/* since we are recycling buffers we should seldom need to alloc */
+	if (likely(page))
+		return true;
+
+	page = dev_alloc_pages(RNPVF_ALLOC_PAGE_ORDER);
+	if (unlikely(!page)) {
+		rx_ring->rx_stats.alloc_rx_page_failed++;
+		return false;
+	}
+
+	bi->page_offset = rnpgbevf_rx_offset(rx_ring);
+
+	/* map page for use */
+	dma = dma_map_page_attrs(rx_ring->dev, page, bi->page_offset, bufsz,
+				 DMA_FROM_DEVICE,
+				 RNPVF_RX_DMA_ATTR);
+
+	/*
+	 * if mapping failed free memory back to system since
+	 * there isn't much point in holding memory we can't use
+	 */
+	if (dma_mapping_error(rx_ring->dev, dma)) {
+		__free_pages(page, RNPVF_ALLOC_PAGE_ORDER);
+		pr_debug("map failed\n");
+
+		rx_ring->rx_stats.alloc_rx_page_failed++;
+		return false;
+	}
+	bi->dma = dma;
+	bi->page = page;
+	bi->page_offset = rnpgbevf_rx_offset(rx_ring);
+	page_ref_add(page, USHRT_MAX - 1);
+	bi->pagecnt_bias = USHRT_MAX;
+	rx_ring->rx_stats.alloc_rx_page++;
+
+	/* sync the buffer for use by the device */
+	dma_sync_single_range_for_device(rx_ring->dev, bi->dma, 0, bufsz,
+					 DMA_FROM_DEVICE);
+
+	/*
+	 * Refresh the desc even if buffer_addrs didn't change
+	 * because each write-back erases this info.
+	 */
+	rx_desc->pkt_addr = cpu_to_le64(bi->dma + fun_id);
+
+	return true;
+}
+
+static void rnpgbevf_put_rx_buffer(struct rnpgbevf_ring *rx_ring,
+				   struct rnpgbevf_rx_buffer *rx_buffer)
+{
+	if (rnpgbevf_can_reuse_rx_page(rx_buffer)) {
+		/* hand second half of page back to the ring */
+		rnpgbevf_reuse_rx_page(rx_ring, rx_buffer);
+	} else {
+		/* we are not reusing the buffer so unmap it */
+		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
+				     rnpgbevf_rx_bufsz(rx_ring),
+				     DMA_FROM_DEVICE,
+				     RNPVF_RX_DMA_ATTR);
+		__page_frag_cache_drain(rx_buffer->page,
+					rx_buffer->pagecnt_bias);
+	}
+
+	/* clear contents of rx_buffer */
+	rx_buffer->page = NULL;
+}
+
+/**
+ * rnpgbevf_alloc_rx_buffers - Replace used receive buffers
+ * @rx_ring: ring to place buffers on
+ * @cleaned_count: number of buffers to replace
+ **/
+static void rnpgbevf_alloc_rx_buffers(struct rnpgbevf_ring *rx_ring,
+				      u16 cleaned_count)
+{
+	union rnp_rx_desc *rx_desc;
+	struct rnpgbevf_rx_buffer *bi;
+	u16 i = rx_ring->next_to_use;
+	u64 fun_id = ((u64)(rx_ring->vfnum) << (32 + 24));
+	u16 bufsz;
+	/* nothing to do */
+	if (!cleaned_count)
+		return;
+
+	rx_desc = RNPVF_RX_DESC(rx_ring, i);
+
+	BUG_ON(!rx_desc);
+
+	bi = &rx_ring->rx_buffer_info[i];
+
+	BUG_ON(!bi);
+
+	i -= rx_ring->count;
+	bufsz = rnpgbevf_rx_bufsz(rx_ring);
+
+	do {
+		int count = 1;
+		struct page *page;
+
+		if (!rnpgbevf_alloc_mapped_page(rx_ring, bi, rx_desc, bufsz,
+						fun_id))
+			break;
+		page = bi->page;
+
+		rx_desc->cmd = 0;
+
+		rx_desc++;
+		i++;
+		bi++;
+
+		if (unlikely(!i)) {
+			rx_desc = RNPVF_RX_DESC(rx_ring, 0);
+			bi = rx_ring->rx_buffer_info;
+			i -= rx_ring->count;
+		}
+
+		rx_desc->cmd = 0;
+
+		cleaned_count--;
+
+		while (count < rx_ring->rx_page_buf_nums && cleaned_count) {
+			dma_addr_t dma;
+
+			bi->page_offset = rx_ring->rx_per_buf_mem * count +
+					  rnpgbevf_rx_offset(rx_ring);
+			/* map page for use */
+			dma = dma_map_page_attrs(rx_ring->dev, page,
+						 bi->page_offset, bufsz,
+						 DMA_FROM_DEVICE,
+						 RNPVF_RX_DMA_ATTR);
+
+			if (dma_mapping_error(rx_ring->dev, dma)) {
+				pr_debug("map second error\n");
+				rx_ring->rx_stats.alloc_rx_page_failed++;
+				break;
+			}
+
+			bi->dma = dma;
+			bi->page = page;
+			page_ref_add(page, USHRT_MAX);
+			bi->pagecnt_bias = USHRT_MAX;
+
+			/* sync the buffer for use by the device */
+			dma_sync_single_range_for_device(rx_ring->dev, bi->dma,
+							 0, bufsz,
+							 DMA_FROM_DEVICE);
+
+			/*
+			 * Refresh the desc even if buffer_addrs didn't change
+			 * because each write-back erases this info.
+			 */
+			rx_desc->pkt_addr = cpu_to_le64(bi->dma + fun_id);
+			/* clean dd */
+			rx_desc->cmd = 0;
+
+			rx_desc++;
+			bi++;
+			i++;
+			if (unlikely(!i)) {
+				rx_desc = RNPVF_RX_DESC(rx_ring, 0);
+				bi = rx_ring->rx_buffer_info;
+				i -= rx_ring->count;
+			}
+			count++;
+			/* clear the hdr_addr for the next_to_use descriptor */
+			cleaned_count--;
+		}
+	} while (cleaned_count);
+
+	i += rx_ring->count;
+
+	if (rx_ring->next_to_use != i)
+		rnpgbevf_update_rx_tail(rx_ring, i);
+}
+
+#else
+
+static bool rnpgbevf_alloc_mapped_page(struct rnpgbevf_ring *rx_ring,
+				       struct rnpgbevf_rx_buffer *bi)
+{
+	struct page *page = bi->page;
+	dma_addr_t dma;
+
+	/* since we are recycling buffers we should seldom need to alloc */
+	if (likely(page))
+		return true;
+
+	page = dev_alloc_pages(rnpgbevf_rx_pg_order(rx_ring));
+	if (unlikely(!page)) {
+		rx_ring->rx_stats.alloc_rx_page_failed++;
+		return false;
+	}
+
+	/* map page for use */
+	dma = dma_map_page_attrs(rx_ring->dev, page, 0,
+				 rnpgbevf_rx_pg_size(rx_ring), DMA_FROM_DEVICE,
+				 RNPVF_RX_DMA_ATTR);
+
+	/*
+	 * if mapping failed free memory back to system since
+	 * there isn't much point in holding memory we can't use
+	 */
+	if (dma_mapping_error(rx_ring->dev, dma)) {
+		__free_pages(page, rnpgbevf_rx_pg_order(rx_ring));
+		pr_debug("map failed\n");
+
+		rx_ring->rx_stats.alloc_rx_page_failed++;
+		return false;
+	}
+	bi->dma = dma;
+	bi->page = page;
+	bi->page_offset = rnpgbevf_rx_offset(rx_ring);
+	page_ref_add(page, USHRT_MAX - 1);
+	bi->pagecnt_bias = USHRT_MAX;
+	rx_ring->rx_stats.alloc_rx_page++;
+
+	return true;
+}
+
+static void rnpgbevf_put_rx_buffer(struct rnpgbevf_ring *rx_ring,
+				   struct rnpgbevf_rx_buffer *rx_buffer,
+				   struct sk_buff *skb)
+{
+	if (rnpgbevf_can_reuse_rx_page(rx_buffer)) {
+		/* hand second half of page back to the ring */
+		rnpgbevf_reuse_rx_page(rx_ring, rx_buffer);
+	} else {
+		/* we are not reusing the buffer so unmap it */
+		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
+				     rnpgbevf_rx_pg_size(rx_ring),
+				     DMA_FROM_DEVICE,
+				     RNPVF_RX_DMA_ATTR);
+		__page_frag_cache_drain(rx_buffer->page,
+					rx_buffer->pagecnt_bias);
+	}
+
+	/* clear contents of rx_buffer */
+	rx_buffer->page = NULL;
+	rx_buffer->skb = NULL;
+}
+
+#endif /* OPTM_WITH_LPAGE */
 
 /* drop this packets if error */
 static bool rnpgbevf_check_csum_error(struct rnpgbevf_ring *rx_ring,
@@ -394,9 +852,31 @@ static bool rnpgbevf_check_csum_error(struct rnpgbevf_ring *rx_ring,
 
 			if ((!(netdev->flags & IFF_PROMISC) &&
 			     (!(netdev->features & NETIF_F_RXALL)))) {
-				err = true;
+				if (rx_ring->ring_flags &
+				    RNPVF_RING_CHKSM_FIX) {
+					err = true;
 
-				goto skip_fix;
+					goto skip_fix;
+				}
+				if (unlikely(rnpgbevf_test_staterr(rx_desc,
+								   RNPGBE_RXD_STAT_L4_MASK) &&
+								   (!(rx_desc->wb.rev1 &
+								   RNPGBE_RX_L3_TYPE_MASK)))) {
+					rx_ring->rx_stats.csum_err--;
+					goto skip_fix;
+				}
+
+				if (unlikely(rnpgbevf_test_staterr(rx_desc,
+								   RNPGBE_RXD_STAT_SCTP_MASK))) {
+					if (size > 60) {
+						err = true;
+					} else {
+						/* sctp less than 60 hw report err by mistake */
+						rx_ring->rx_stats.csum_err--;
+					}
+				} else {
+					err = true;
+				}
 			}
 		}
 	}
@@ -405,16 +885,7 @@ skip_fix:
 	if (err) {
 		u32 ntc = rx_ring->next_to_clean + 1;
 		struct rnpgbevf_rx_buffer *rx_buffer;
-#if (PAGE_SIZE < 8192)
-		unsigned int truesize = rnpgbevf_rx_pg_size(rx_ring) / 2;
-#else
-		unsigned int truesize =
-			ring_uses_build_skb(rx_ring) ?
-				SKB_DATA_ALIGN(RNPVF_SKB_PAD + size) :
-				SKB_DATA_ALIGN(size);
-#endif
 
-		/* if eop add drop_packets */
 		if (likely(rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_EOP)))
 			*driver_drop_packets = *driver_drop_packets + 1;
 
@@ -423,12 +894,9 @@ skip_fix:
 		dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma,
 					      rx_buffer->page_offset, size,
 					      DMA_FROM_DEVICE);
+		/* we should clean it since we used all info in it */
+		rx_desc->wb.cmd = 0;
 
-#if (PAGE_SIZE < 8192)
-		rx_buffer->page_offset ^= truesize;
-#else
-		rx_buffer->page_offset += truesize;
-#endif
 #ifdef OPTM_WITH_LPAGE
 		rnpgbevf_put_rx_buffer(rx_ring, rx_buffer);
 #else
@@ -437,13 +905,152 @@ skip_fix:
 		ntc = (ntc < rx_ring->count) ? ntc : 0;
 		rx_ring->next_to_clean = ntc;
 	}
-
 	return err;
 }
 
-static inline unsigned int rnpgbevf_rx_offset(struct rnpgbevf_ring *rx_ring)
+/* try to match adapter->vf_vlan with skb->data */
+static void rnpgbevf_match_vlan(struct sk_buff *skb, struct rnpgbevf_adapter *adapter)
 {
-	return ring_uses_build_skb(rx_ring) ? RNPVF_SKB_PAD : 0;
+	u16 vid_pf;
+	u8 header[ETH_ALEN + ETH_ALEN];
+	u8 *data = skb->data;
+
+	if (__vlan_get_tag(skb, &vid_pf))
+		return;
+
+	if ((vid_pf & 0xfff) == adapter->vf_vlan) {
+		memcpy(header, data, ETH_ALEN + ETH_ALEN);
+		memcpy(skb->data + 4, header, ETH_ALEN + ETH_ALEN);
+		skb->len -= 4;
+		skb->data += 4;
+	}
+}
+
+/* try to match desc vlan */
+static int rnpgbevf_match_desc(union rnp_rx_desc *rx_desc,
+			       struct rnpgbevf_ring *rx_ring,
+			       struct sk_buff *skb,
+			       struct rnpgbevf_adapter *adapter)
+{
+	if (rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_VLAN_VALID) &&
+	    !(cpu_to_le16(rx_desc->wb.rev1) & VEB_VF_IGNORE_VLAN)) {
+		u16 vid = le16_to_cpu(rx_desc->wb.vlan);
+
+		if (rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_STAG)) {
+			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021AD),
+					       vid);
+
+		} else {
+			if (adapter->vf_vlan &&
+			    (adapter->vf_vlan == (vid & 0xfff)))
+				__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vid);
+		}
+		rx_ring->rx_stats.vlan_remove++;
+		return 1;
+	}
+
+	return 0;
+}
+
+/**
+ * rnpgbevf_process_skb_fields - Populate skb header fields from Rx descriptor
+ * @rx_ring: rx descriptor ring packet is being transacted on
+ * @rx_desc: pointer to the EOP Rx descriptor
+ * @skb: pointer to current skb being populated
+ *
+ * This function checks the ring, descriptor, and packet information in
+ * order to populate the hash, checksum, VLAN, timestamp, protocol, and
+ * other fields within the skb.
+ **/
+static void rnpgbevf_process_skb_fields(struct rnpgbevf_ring *rx_ring,
+					union rnp_rx_desc *rx_desc,
+					struct sk_buff *skb)
+{
+	struct net_device *dev = rx_ring->netdev;
+	struct rnpgbevf_adapter *adapter = netdev_priv(dev);
+	struct rnpgbevf_hw *hw = &adapter->hw;
+
+	rnpgbevf_rx_hash(rx_ring, rx_desc, skb);
+	rnpgbevf_rx_checksum(rx_ring, rx_desc, skb);
+
+	if (hw->pf_feature & PF_NCSI_EN) {
+		/* if pf setup vf vlan, check it */
+		if (adapter->flags & RNPVF_FLAG_PF_SET_VLAN)
+			rnpgbevf_match_vlan(skb, adapter);
+
+		goto skip_vf_vlan;
+		/* if pf not setup vlan, nothing todo */
+		/* ncsi must tx-vlan off, rx-vlan off */
+	} else if (adapter->flags & RNPVF_FLAG_PF_SET_VLAN) {
+		/* if not ncsi, but pf set a vlan */
+		/* tx-vlan off, with rx-vlan off */
+		/* first try to match desc */
+		/* if desc has vlan, not need match skb->data */
+		/* packets from pf or other vf (not pf set vlan) */
+		if (rnpgbevf_match_desc(rx_desc, rx_ring, skb, adapter))
+			goto skip_vf_vlan;
+
+		/* packets from outer or other vf (pf set vlan) */
+		/* second try to match skb->data */
+		rnpgbevf_match_vlan(skb, adapter);
+
+		goto skip_vf_vlan;
+	}
+	/* if not ncsi, and pf not set a vlan */
+	/* tx-vlan on, with rx-vlan on */
+	/* remove vlan if pf set a vlan */
+	if (((dev->features & NETIF_F_HW_VLAN_CTAG_RX) ||
+	     (dev->features & NETIF_F_HW_VLAN_STAG_RX)) &&
+	    rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_VLAN_VALID) &&
+	    !(cpu_to_le16(rx_desc->wb.rev1) & VEB_VF_IGNORE_VLAN)) {
+		u16 vid = le16_to_cpu(rx_desc->wb.vlan);
+
+		if (rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_STAG))
+			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021AD), vid);
+		else
+			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), vid);
+
+		rx_ring->rx_stats.vlan_remove++;
+	}
+skip_vf_vlan:
+	skb_record_rx_queue(skb, rx_ring->queue_index);
+
+	skb->protocol = eth_type_trans(skb, dev);
+}
+
+static void rnpgbevf_rx_skb(struct rnpgbevf_q_vector *q_vector,
+			    struct sk_buff *skb)
+{
+	struct rnpgbevf_adapter *adapter = q_vector->adapter;
+
+	if (!(adapter->flags & RNPVF_FLAG_IN_NETPOLL))
+		napi_gro_receive(&q_vector->napi, skb);
+	else
+		netif_rx(skb);
+}
+
+static bool rnpgbevf_check_src_mac(struct sk_buff *skb,
+				   struct net_device *netdev)
+{
+	char *data = (char *)skb->data;
+	bool ret = false;
+	struct netdev_hw_addr *ha;
+
+	if (is_multicast_ether_addr(data)) {
+		if (memcmp(data + netdev->addr_len, netdev->dev_addr, netdev->addr_len) == 0) {
+			dev_kfree_skb_any(skb);
+			ret = true;
+			return ret;
+		}
+		/* if src mac equal own mac */
+		netdev_for_each_uc_addr(ha, netdev) {
+			if (memcmp(data + netdev->addr_len, ha->addr, netdev->addr_len) == 0) {
+				dev_kfree_skb_any(skb);
+				ret = true;
+			}
+		}
+	}
+	return ret;
 }
 
 /**
@@ -542,7 +1149,8 @@ static unsigned int rnpgbevf_get_headlen(unsigned char *data,
 		hdr.network += sizeof(struct udphdr);
 	}
 
-	/* If everything has gone correctly hdr.network should be the
+	/*
+	 * If everything has gone correctly hdr.network should be the
 	 * data section of the packet and will be the end of the header.
 	 * If not then it probably represents the end of the last recognized
 	 * header.
@@ -553,77 +1161,88 @@ static unsigned int rnpgbevf_get_headlen(unsigned char *data,
 		return max_len;
 }
 
-static inline bool rnpgbevf_page_is_reserved(struct page *page)
+/**
+ * rnpgbevf_pull_tail - rnp specific version of skb_pull_tail
+ * @rx_ring: rx descriptor ring packet is being transacted on
+ * @skb: pointer to current skb being adjusted
+ *
+ * This function is an rnp specific version of __pskb_pull_tail.  The
+ * main difference between this version and the original function is that
+ * this function can make several assumptions about the state of things
+ * that allow for significant optimizations versus the standard function.
+ * As a result we can do things like drop a frag and maintain an accurate
+ * truesize for the skb.
+ */
+static void rnpgbevf_pull_tail(struct sk_buff *skb)
 {
-	return (page_to_nid(page) != numa_mem_id()) || page_is_pfmemalloc(page);
-}
+	skb_frag_t *frag = &skb_shinfo(skb)->frags[0];
+	unsigned char *va;
+	unsigned int pull_len;
 
-static bool rnpgbevf_can_reuse_rx_page(struct rnpgbevf_rx_buffer *rx_buffer)
-{
-	unsigned int pagecnt_bias = rx_buffer->pagecnt_bias;
-	struct page *page = rx_buffer->page;
-
-#ifdef OPTM_WITH_LPAGE
-	return false;
-#endif
-	/* avoid re-using remote pages */
-	if (unlikely(rnpgbevf_page_is_reserved(page)))
-		return false;
-
-#if (PAGE_SIZE < 8192)
-	/* if we are only owner of page we can reuse it */
-	if (unlikely((page_ref_count(page) - pagecnt_bias) > 1))
-		return false;
-#else
-	/* The last offset is a bit aggressive in that we assume the
-	 * worst case of FCoE being enabled and using a 3K buffer.
-	 * However this should have minimal impact as the 1K extra is
-	 * still less than one buffer in size.
+	/*
+	 * it is valid to use page_address instead of kmap since we are
+	 * working with pages allocated out of the lomem pool per
+	 * alloc_page(GFP_ATOMIC)
 	 */
-#define RNPVF_LAST_OFFSET (SKB_WITH_OVERHEAD(PAGE_SIZE) - RNPVF_RXBUFFER_2K)
-	if (rx_buffer->page_offset > RNPVF_LAST_OFFSET)
-		return false;
-#endif
+	va = skb_frag_address(frag);
 
-	/* If we have drained the page fragment pool we need to update
-	 * the pagecnt_bias and page count so that we fully restock the
-	 * number of references the driver holds.
+	/*
+	 * we need the header to contain the greater of either ETH_HLEN or
+	 * 60 bytes if the skb->len is less than 60 for skb_pad.
 	 */
-	if (unlikely(pagecnt_bias == 1)) {
-		page_ref_add(page, USHRT_MAX - 1);
-		rx_buffer->pagecnt_bias = USHRT_MAX;
-	}
+	pull_len = rnpgbevf_get_headlen(va, RNPVF_RX_HDR_SIZE);
 
-	return true;
+	/* align pull length to size of long to optimize memcpy performance */
+	skb_copy_to_linear_data(skb, va, ALIGN(pull_len, sizeof(long)));
+
+	/* update all of the pointers */
+	skb_frag_size_sub(frag, pull_len);
+	skb_frag_off_add(frag, pull_len);
+	skb->data_len -= pull_len;
+	skb->tail += pull_len;
 }
 
 /**
- * rnpgbevf_reuse_rx_page - page flip buffer and store it back on the ring
- * @rx_ring: rx descriptor ring to store buffers on
- * @old_buff: donor buffer to have page reused
+ * rnpgbevf_cleanup_headers - Correct corrupted or empty headers
+ * @rx_ring: rx descriptor ring packet is being transacted on
+ * @rx_desc: pointer to the EOP Rx descriptor
+ * @skb: pointer to current skb being fixed
  *
- * Synchronizes page for reuse by the adapter
+ * Check for corrupted packet headers caused by senders on the local L2
+ * embedded NIC switch not setting up their Tx Descriptors right.  These
+ * should be very rare.
+ *
+ * Also address the case where we are pulling data in on pages only
+ * and as such no data is present in the skb header.
+ *
+ * In addition if skb is not at least 60 bytes we need to pad it so that
+ * it is large enough to qualify as a valid Ethernet frame.
+ *
+ * Returns true if an error was encountered and skb was freed.
  **/
-static void rnpgbevf_reuse_rx_page(struct rnpgbevf_ring *rx_ring,
-				   struct rnpgbevf_rx_buffer *old_buff)
+static bool rnpgbevf_cleanup_headers(struct rnpgbevf_ring *rx_ring,
+				     union rnp_rx_desc *rx_desc,
+				     struct sk_buff *skb)
 {
-	struct rnpgbevf_rx_buffer *new_buff;
-	u16 nta = rx_ring->next_to_alloc;
+#ifdef OPTM_WITH_LPAGE
+#else
+	/* XDP packets use error pointer so abort at this point */
+	if (IS_ERR(skb))
+		return true;
+#endif
 
-	new_buff = &rx_ring->rx_buffer_info[nta];
+	/* place header in linear portion of buffer */
+	if (!skb_headlen(skb))
+		rnpgbevf_pull_tail(skb);
 
-	/* update, and store next to alloc */
-	nta++;
-	rx_ring->next_to_alloc = (nta < rx_ring->count) ? nta : 0;
+	if (eth_skb_pad(skb))
+		return true;
+	if (!(rx_ring->ring_flags & RNPVF_RING_VEB_MULTI_FIX))
+		return rnpgbevf_check_src_mac(skb, rx_ring->netdev);
+	else
+		return false;
 
-	/* Transfer page from old buffer to new buffer.
-	 * Move each member individually to avoid possible store
-	 * forwarding stalls and unnecessary copy of skb.
-	 */
-	new_buff->dma = old_buff->dma;
-	new_buff->page = old_buff->page;
-	new_buff->page_offset = old_buff->page_offset;
-	new_buff->pagecnt_bias = old_buff->pagecnt_bias;
+	return false;
 }
 
 /**
@@ -663,223 +1282,62 @@ static void rnpgbevf_add_rx_frag(struct rnpgbevf_ring *rx_ring,
 #endif
 }
 
-/**
- * rnpgbevf_cleanup_headers - Correct corrupted or empty headers
- * @rx_ring: rx descriptor ring packet is being transacted on
- * @rx_desc: pointer to the EOP Rx descriptor
- * @skb: pointer to current skb being fixed
- *
- * Check for corrupted packet headers caused by senders on the local L2
- * embedded NIC switch not setting up their Tx Descriptors right.  These
- * should be very rare.
- *
- * Also address the case where we are pulling data in on pages only
- * and as such no data is present in the skb header.
- *
- * In addition if skb is not at least 60 bytes we need to pad it so that
- * it is large enough to qualify as a valid Ethernet frame.
- *
- * Returns true if an error was encountered and skb was freed.
- **/
-static bool rnpgbevf_cleanup_headers(struct rnpgbevf_ring *rx_ring,
-				     union rnp_rx_desc *rx_desc,
-				     struct sk_buff *skb)
-{
 #ifdef OPTM_WITH_LPAGE
-#else
-	/* XDP packets use error pointer so abort at this point */
-	if (IS_ERR(skb))
-		return true;
+static struct sk_buff *rnpgbevf_build_skb(struct rnpgbevf_ring *rx_ring,
+					  struct rnpgbevf_rx_buffer *rx_buffer,
+					  union rnp_rx_desc *rx_desc,
+					  unsigned int size)
+{
+	void *va = page_address(rx_buffer->page) + rx_buffer->page_offset;
+	unsigned int truesize = SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
+				SKB_DATA_ALIGN(size + RNPVF_SKB_PAD);
+	struct sk_buff *skb;
+
+	/* prefetch first cache line of first page */
+	prefetch(va);
+#if L1_CACHE_BYTES < 128
+	prefetch(va + L1_CACHE_BYTES);
 #endif
-	/* place header in linear portion of buffer */
-	if (!skb_headlen(skb))
-		rnpgbevf_pull_tail(skb);
 
-	if (eth_skb_pad(skb))
-		return true;
+	/* build an skb around the page buffer */
+	skb = build_skb(va - RNPVF_SKB_PAD, truesize);
+	if (unlikely(!skb))
+		return NULL;
 
-	return false;
+	/* update pointers within the skb to store the data */
+	skb_reserve(skb, RNPVF_SKB_PAD);
+	__skb_put(skb, size);
+
+	return skb;
 }
 
-/**
- * rnpgbevf_process_skb_fields - Populate skb header fields from Rx descriptor
- * @rx_ring: rx descriptor ring packet is being transacted on
- * @rx_desc: pointer to the EOP Rx descriptor
- * @skb: pointer to current skb being populated
- *
- * This function checks the ring, descriptor, and packet information in
- * order to populate the hash, checksum, VLAN, timestamp, protocol, and
- * other fields within the skb.
- **/
-static void rnpgbevf_process_skb_fields(struct rnpgbevf_ring *rx_ring,
-					union rnp_rx_desc *rx_desc,
-					struct sk_buff *skb)
+static struct rnpgbevf_rx_buffer *
+rnpgbevf_get_rx_buffer(struct rnpgbevf_ring *rx_ring,
+		       union rnp_rx_desc *rx_desc, const unsigned int size)
 {
-	struct net_device *dev = rx_ring->netdev;
-	struct rnpgbevf_adapter *adapter = netdev_priv(dev);
-	struct rnpgbevf_hw *hw = &adapter->hw;
+	struct rnpgbevf_rx_buffer *rx_buffer;
 
-	rnpgbevf_rx_hash(rx_ring, rx_desc, skb);
+	rx_buffer = &rx_ring->rx_buffer_info[rx_ring->next_to_clean];
+	prefetchw(rx_buffer->page);
 
-	rnpgbevf_rx_checksum(rx_ring, rx_desc, skb);
+	rx_buf_dump("rx buf",
+		    page_address(rx_buffer->page) + rx_buffer->page_offset,
+		    rx_desc->wb.len);
 
-	/* in this case rx vlan offload must off */
-	if ((hw->pf_feature & PF_NCSI_EN) &&
-	    (adapter->flags & RNPVF_FLAG_PF_SET_VLAN)) {
-		u16 vid_pf;
-		u8 header[ETH_ALEN + ETH_ALEN];
-		u8 *data = skb->data;
+	/* we are reusing so sync this buffer for CPU use */
+	dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma, 0, size,
+				      DMA_FROM_DEVICE);
+	/* skip_sync: */
+	rx_buffer->pagecnt_bias--;
 
-		if (__vlan_get_tag(skb, &vid_pf))
-			goto skip_vf_vlan;
-
-		if (vid_pf == adapter->vf_vlan) {
-			memcpy(header, data, ETH_ALEN + ETH_ALEN);
-			memcpy(skb->data + 4, header, ETH_ALEN + ETH_ALEN);
-			skb->len -= 4;
-			skb->data += 4;
-			goto skip_vf_vlan;
-		}
-	}
-	/* remove vlan if pf set a vlan */
-	if (((dev->features & NETIF_F_HW_VLAN_CTAG_RX) ||
-	     (dev->features & NETIF_F_HW_VLAN_STAG_RX)) &&
-	    rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_VLAN_VALID) &&
-	    !(cpu_to_le16(rx_desc->wb.rev1) & VEB_VF_IGNORE_VLAN)) {
-		u16 vid = le16_to_cpu(rx_desc->wb.vlan);
-
-		if (rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_STAG)) {
-			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021AD),
-					       vid);
-
-		} else {
-			/* should check vid */
-			if (adapter->vf_vlan && adapter->vf_vlan == vid)
-				goto skip_vf_vlan;
-			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
-					       vid);
-			}
-		rx_ring->rx_stats.vlan_remove++;
-	}
-skip_vf_vlan:
-	skb_record_rx_queue(skb, rx_ring->queue_index);
-
-	skb->protocol = eth_type_trans(skb, dev);
-}
-
-#ifdef OPTM_WITH_LPAGE
-/**
- * rnpgbevf_alloc_rx_buffers - Replace used receive buffers
- * @rx_ring: ring to place buffers on
- * @cleaned_count: number of buffers to replace
- **/
-static void rnpgbevf_alloc_rx_buffers(struct rnpgbevf_ring *rx_ring,
-				      u16 cleaned_count)
-{
-	union rnp_rx_desc *rx_desc;
-	struct rnpgbevf_rx_buffer *bi;
-	u16 i = rx_ring->next_to_use;
-	u64 fun_id = ((u64)(rx_ring->vfnum) << (32 + 24));
-	u16 bufsz;
-	/* nothing to do */
-	if (!cleaned_count)
-		return;
-
-	rx_desc = RNPVF_RX_DESC(rx_ring, i);
-
-	BUG_ON(!rx_desc);
-
-	bi = &rx_ring->rx_buffer_info[i];
-
-	BUG_ON(!bi);
-
-	i -= rx_ring->count;
-	bufsz = rnpgbevf_rx_bufsz(rx_ring);
-
-	do {
-		int count = 1;
-		struct page *page;
-
-		/* alloc page and init first rx_desc */
-		if (!rnpgbevf_alloc_mapped_page(rx_ring, bi, rx_desc, bufsz,
-						fun_id))
-			break;
-		page = bi->page;
-
-		rx_desc->cmd = 0;
-
-		rx_desc++;
-		i++;
-		bi++;
-
-		if (unlikely(!i)) {
-			rx_desc = RNPVF_RX_DESC(rx_ring, 0);
-			bi = rx_ring->rx_buffer_info;
-			i -= rx_ring->count;
-		}
-
-		rx_desc->cmd = 0;
-
-		cleaned_count--;
-
-		while (count < rx_ring->rx_page_buf_nums && cleaned_count) {
-			dma_addr_t dma;
-
-			bi->page_offset = rx_ring->rx_per_buf_mem * count +
-					  rnpgbevf_rx_offset(rx_ring);
-			/* map page for use */
-			dma = dma_map_page_attrs(rx_ring->dev, page,
-						 bi->page_offset, bufsz,
-						 DMA_FROM_DEVICE,
-						 RNPVF_RX_DMA_ATTR);
-
-			if (dma_mapping_error(rx_ring->dev, dma)) {
-				rx_ring->rx_stats.alloc_rx_page_failed++;
-				break;
-			}
-
-			bi->dma = dma;
-			bi->page = page;
-
-			page_ref_add(page, USHRT_MAX);
-			bi->pagecnt_bias = USHRT_MAX;
-
-			/* sync the buffer for use by the device */
-			dma_sync_single_range_for_device(rx_ring->dev, bi->dma,
-							 0, bufsz,
-							 DMA_FROM_DEVICE);
-
-			/* Refresh the desc even if buffer_addrs didn't change
-			 * because each write-back erases this info.
-			 */
-			rx_desc->pkt_addr = cpu_to_le64(bi->dma + fun_id);
-			/* clean dd */
-			rx_desc->cmd = 0;
-
-			rx_desc++;
-			bi++;
-			i++;
-			if (unlikely(!i)) {
-				rx_desc = RNPVF_RX_DESC(rx_ring, 0);
-				bi = rx_ring->rx_buffer_info;
-				i -= rx_ring->count;
-			}
-			count++;
-			/* clear the hdr_addr for the next_to_use descriptor */
-			cleaned_count--;
-		}
-	} while (cleaned_count);
-
-	i += rx_ring->count;
-
-	if (rx_ring->next_to_use != i)
-		rnpgbevf_update_rx_tail(rx_ring, i);
+	return rx_buffer;
 }
 
 /**
  * rnpgbevf_is_non_eop - process handling of non-EOP buffers
  * @rx_ring: Rx ring being processed
  * @rx_desc: Rx descriptor for current buffer
+ * @skb: Current socket buffer containing buffer in progress
  *
  * This function updates next to clean.  If the buffer is an EOP buffer
  * this function exits returning false, otherwise it will place the
@@ -900,109 +1358,16 @@ static bool rnpgbevf_is_non_eop(struct rnpgbevf_ring *rx_ring,
 	if (likely(rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_EOP)))
 		return false;
 	/* place skb in next buffer to be received */
+	/* we should clean it since we used all info in it */
+	rx_desc->wb.cmd = 0;
 
 	return true;
 }
 
-static bool rnpgbevf_alloc_mapped_page(struct rnpgbevf_ring *rx_ring,
-				       struct rnpgbevf_rx_buffer *bi,
-				       union rnp_rx_desc *rx_desc, u16 bufsz,
-				       u64 fun_id)
-{
-	struct page *page = bi->page;
-	dma_addr_t dma;
-
-	/* since we are recycling buffers we should seldom need to alloc */
-	if (likely(page))
-		return true;
-
-	page = dev_alloc_pages(RNPVF_ALLOC_PAGE_ORDER);
-	if (unlikely(!page)) {
-		rx_ring->rx_stats.alloc_rx_page_failed++;
-		return false;
-	}
-
-	bi->page_offset = rnpgbevf_rx_offset(rx_ring);
-
-	/* map page for use */
-	dma = dma_map_page_attrs(rx_ring->dev, page, bi->page_offset, bufsz,
-				 DMA_FROM_DEVICE,
-				 RNPVF_RX_DMA_ATTR);
-
-	/* if mapping failed free memory back to system since
-	 * there isn't much point in holding memory we can't use
-	 */
-	if (dma_mapping_error(rx_ring->dev, dma)) {
-		__free_pages(page, RNPVF_ALLOC_PAGE_ORDER);
-
-		rx_ring->rx_stats.alloc_rx_page_failed++;
-		return false;
-	}
-	bi->dma = dma;
-	bi->page = page;
-	bi->page_offset = rnpgbevf_rx_offset(rx_ring);
-	page_ref_add(page, USHRT_MAX - 1);
-	bi->pagecnt_bias = USHRT_MAX;
-	rx_ring->rx_stats.alloc_rx_page++;
-
-	/* sync the buffer for use by the device */
-	dma_sync_single_range_for_device(rx_ring->dev, bi->dma, 0, bufsz,
-					 DMA_FROM_DEVICE);
-
-	/* Refresh the desc even if buffer_addrs didn't change
-	 * because each write-back erases this info.
-	 */
-	rx_desc->pkt_addr = cpu_to_le64(bi->dma + fun_id);
-
-	return true;
-}
-
-static struct rnpgbevf_rx_buffer *rnpgbevf_get_rx_buffer(struct rnpgbevf_ring *rx_ring,
-							 union rnp_rx_desc *rx_desc,
-							 const unsigned int size)
-{
-	struct rnpgbevf_rx_buffer *rx_buffer;
-
-	rx_buffer = &rx_ring->rx_buffer_info[rx_ring->next_to_clean];
-	prefetchw(rx_buffer->page);
-
-	rx_buf_dump("rx buf",
-		    page_address(rx_buffer->page) + rx_buffer->page_offset,
-		    rx_desc->wb.len);
-
-	/* we are reusing so sync this buffer for CPU use */
-	dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma, 0, size,
-				      DMA_FROM_DEVICE);
-	/* skip_sync: */
-	rx_buffer->pagecnt_bias--;
-
-	return rx_buffer;
-}
-
-static void rnpgbevf_put_rx_buffer(struct rnpgbevf_ring *rx_ring,
-				   struct rnpgbevf_rx_buffer *rx_buffer)
-{
-	if (rnpgbevf_can_reuse_rx_page(rx_buffer)) {
-		/* hand second half of page back to the ring */
-		rnpgbevf_reuse_rx_page(rx_ring, rx_buffer);
-	} else {
-		/* we are not reusing the buffer so unmap it */
-		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
-				     rnpgbevf_rx_bufsz(rx_ring),
-				     DMA_FROM_DEVICE,
-				     RNPVF_RX_DMA_ATTR);
-		__page_frag_cache_drain(rx_buffer->page,
-					rx_buffer->pagecnt_bias);
-	}
-
-	/* clear contents of rx_buffer */
-	rx_buffer->page = NULL;
-}
-
-static struct sk_buff *rnpgbevf_construct_skb(struct rnpgbevf_ring *rx_ring,
-					      struct rnpgbevf_rx_buffer *rx_buffer,
-					      union rnp_rx_desc *rx_desc,
-					      unsigned int size)
+static struct sk_buff *
+rnpgbevf_construct_skb(struct rnpgbevf_ring *rx_ring,
+		       struct rnpgbevf_rx_buffer *rx_buffer,
+		       union rnp_rx_desc *rx_desc, unsigned int size)
 {
 	void *va = page_address(rx_buffer->page) + rx_buffer->page_offset;
 	unsigned int truesize = SKB_DATA_ALIGN(size);
@@ -1010,22 +1375,10 @@ static struct sk_buff *rnpgbevf_construct_skb(struct rnpgbevf_ring *rx_ring,
 	struct sk_buff *skb;
 
 	/* prefetch first cache line of first page */
-	net_prefetch(va);
-	/* Note, we get here by enabling legacy-rx via:
-	 *
-	 *    ethtool --set-priv-flags <dev> legacy-rx on
-	 *
-	 * In this mode, we currently get 0 extra XDP headroom as
-	 * opposed to having legacy-rx off, where we process XDP
-	 * packets going to stack via rnpgbevf_build_skb(). The latter
-	 * provides us currently with 192 bytes of headroom.
-	 *
-	 * For rnp_construct_skb() mode it means that the
-	 * xdp->data_meta will always point to xdp->data, since
-	 * the helper cannot expand the head. Should this ever
-	 * change in future for legacy-rx mode on, then lets also
-	 * add xdp->data_meta handling here.
-	 */
+	prefetch(va);
+#if L1_CACHE_BYTES < 128
+	prefetch(va + L1_CACHE_BYTES);
+#endif
 
 	/* allocate a skb to store the frags */
 	skb = napi_alloc_skb(&rx_ring->q_vector->napi, RNPVF_RX_HDR_SIZE);
@@ -1057,33 +1410,8 @@ static struct sk_buff *rnpgbevf_construct_skb(struct rnpgbevf_ring *rx_ring,
 	return skb;
 }
 
-static struct sk_buff *rnpgbevf_build_skb(struct rnpgbevf_ring *rx_ring,
-					  struct rnpgbevf_rx_buffer *rx_buffer,
-					  union rnp_rx_desc *rx_desc,
-					  unsigned int size)
-{
-	void *va = page_address(rx_buffer->page) + rx_buffer->page_offset;
-	unsigned int truesize = SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
-				SKB_DATA_ALIGN(size + RNPVF_SKB_PAD);
-	struct sk_buff *skb;
-
-	/* prefetch first cache line of first page */
-	net_prefetch(va);
-
-	/* build an skb around the page buffer */
-	skb = build_skb(va - RNPVF_SKB_PAD, truesize);
-	if (unlikely(!skb))
-		return NULL;
-
-	/* update pointers within the skb to store the data */
-	skb_reserve(skb, RNPVF_SKB_PAD);
-	__skb_put(skb, size);
-
-	return skb;
-}
-
 /**
- * rnpgbevf_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
+ * rnp_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
  * @q_vector: structure containing interrupt and ring information
  * @rx_ring: rx descriptor ring to transact packets on
  * @budget: Total limit on number of packets to process
@@ -1117,7 +1445,6 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 			cleaned_count = 0;
 		}
 		rx_desc = RNPVF_RX_DESC(rx_ring, rx_ring->next_to_clean);
-
 		rx_buf_dump("rx-desc:", rx_desc, sizeof(*rx_desc));
 		rx_debug_printk("  dd set: %s\n",
 				(rx_desc->wb.cmd & RNPGBE_RXD_STAT_DD) ? "Yes" :
@@ -1126,15 +1453,14 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 		if (!rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_DD))
 			break;
 
-		rx_debug_printk("queue:%d  rx-desc:%d has-data len:%d ntc %d\n",
+		rx_debug_printk("queue:%d  rx-desc:%d has-data len:%d next_to_clean %d\n",
 				rx_ring->rnp_queue_idx, rx_ring->next_to_clean,
 				rx_desc->wb.len, rx_ring->next_to_clean);
 
 		/* handle padding */
 		if ((adapter->priv_flags & RNPVF_PRIV_FLAG_FT_PADDING) &&
 		    (!(adapter->priv_flags & RNPVF_PRIV_FLAG_PADDING_DEBUG))) {
-			if (likely(rnpgbevf_test_staterr(rx_desc,
-							 RNPGBE_RXD_STAT_EOP))) {
+			if (likely(rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_EOP))) {
 				size = le16_to_cpu(rx_desc->wb.len) -
 				       le16_to_cpu(rx_desc->wb.padding_len);
 			} else {
@@ -1148,7 +1474,8 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 		if (!size)
 			break;
 
-		/* should check csum err
+		/*
+		 * should check csum err
 		 * maybe one packet use multiple descs
 		 * no problems hw set all csum_err in multiple descs
 		 * maybe BUG if the last sctp desc less than 60
@@ -1185,7 +1512,6 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 			rx_buffer->pagecnt_bias++;
 			break;
 		}
-
 		rnpgbevf_put_rx_buffer(rx_ring, rx_buffer);
 		cleaned_count++;
 
@@ -1195,6 +1521,8 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 
 		/* verify the packet layout is correct */
 		if (rnpgbevf_cleanup_headers(rx_ring, rx_desc, skb)) {
+			/* we should clean it since we used all info in it */
+			rx_desc->wb.cmd = 0;
 			skb = NULL;
 			continue;
 		}
@@ -1204,6 +1532,9 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 
 		/* populate checksum, timestamp, VLAN, and protocol */
 		rnpgbevf_process_skb_fields(rx_ring, rx_desc, skb);
+
+		/* we should clean it since we used all info in it */
+		rx_desc->wb.cmd = 0;
 		rnpgbevf_rx_skb(q_vector, skb);
 		skb = NULL;
 
@@ -1212,6 +1543,7 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 	}
 
 	rx_ring->skb = skb;
+
 	u64_stats_update_begin(&rx_ring->syncp);
 	rx_ring->stats.packets += total_rx_packets;
 	rx_ring->stats.bytes += total_rx_bytes;
@@ -1227,108 +1559,6 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 }
 
 #else
-/**
- * rnpgbevf_alloc_rx_buffers - Replace used receive buffers
- * @rx_ring: ring to place buffers on
- * @cleaned_count: number of buffers to replace
- **/
-void rnpgbevf_alloc_rx_buffers(struct rnpgbevf_ring *rx_ring, u16 cleaned_count)
-{
-	union rnp_rx_desc *rx_desc;
-	struct rnpgbevf_rx_buffer *bi;
-	u16 i = rx_ring->next_to_use;
-	u64 fun_id = ((u64)(rx_ring->vfnum) << (32 + 24));
-	u16 bufsz;
-	/* nothing to do */
-	if (!cleaned_count)
-		return;
-
-	rx_desc = RNPVF_RX_DESC(rx_ring, i);
-
-	BUG_ON(!rx_desc);
-
-	bi = &rx_ring->rx_buffer_info[i];
-
-	BUG_ON(!bi);
-
-	i -= rx_ring->count;
-	bufsz = rnpgbevf_rx_bufsz(rx_ring);
-
-	do {
-		if (!rnpgbevf_alloc_mapped_page(rx_ring, bi))
-			break;
-
-		dma_sync_single_range_for_device(rx_ring->dev, bi->dma,
-						 bi->page_offset, bufsz,
-						 DMA_FROM_DEVICE);
-
-		/* Refresh the desc even if buffer_addrs didn't change
-		 * because each write-back erases this info.
-		 */
-		rx_desc->pkt_addr =
-			cpu_to_le64(bi->dma + bi->page_offset + fun_id);
-
-		/* clean dd */
-		rx_desc->cmd = 0;
-
-		rx_desc++;
-		bi++;
-		i++;
-		if (unlikely(!i)) {
-			rx_desc = RNPVF_RX_DESC(rx_ring, 0);
-			bi = rx_ring->rx_buffer_info;
-			i -= rx_ring->count;
-		}
-
-		/* clear the hdr_addr for the next_to_use descriptor */
-		cleaned_count--;
-	} while (cleaned_count);
-
-	i += rx_ring->count;
-
-	if (rx_ring->next_to_use != i)
-		rnpgbevf_update_rx_tail(rx_ring, i);
-}
-
-static bool rnpgbevf_alloc_mapped_page(struct rnpgbevf_ring *rx_ring,
-				       struct rnpgbevf_rx_buffer *bi)
-{
-	struct page *page = bi->page;
-	dma_addr_t dma;
-
-	/* since we are recycling buffers we should seldom need to alloc */
-	if (likely(page))
-		return true;
-
-	page = dev_alloc_pages(rnpgbevf_rx_pg_order(rx_ring));
-	if (unlikely(!page)) {
-		rx_ring->rx_stats.alloc_rx_page_failed++;
-		return false;
-	}
-
-	/* map page for use */
-	dma = dma_map_page_attrs(rx_ring->dev, page, 0,
-				 rnpgbevf_rx_pg_size(rx_ring), DMA_FROM_DEVICE,
-				 RNPVF_RX_DMA_ATTR);
-
-	/* if mapping failed free memory back to system since
-	 * there isn't much point in holding memory we can't use
-	 */
-	if (dma_mapping_error(rx_ring->dev, dma)) {
-		__free_pages(page, rnpgbevf_rx_pg_order(rx_ring));
-
-		rx_ring->rx_stats.alloc_rx_page_failed++;
-		return false;
-	}
-	bi->dma = dma;
-	bi->page = page;
-	bi->page_offset = rnpgbevf_rx_offset(rx_ring);
-	page_ref_add(page, USHRT_MAX - 1);
-	bi->pagecnt_bias = USHRT_MAX;
-	rx_ring->rx_stats.alloc_rx_page++;
-
-	return true;
-}
 
 /**
  * rnpgbevf_is_non_eop - process handling of non-EOP buffers
@@ -1345,10 +1575,9 @@ static bool rnpgbevf_is_non_eop(struct rnpgbevf_ring *rx_ring,
 				union rnp_rx_desc *rx_desc, struct sk_buff *skb)
 {
 	u32 ntc = rx_ring->next_to_clean + 1;
-	/* fetch, update, and store next to clean */
+
 	ntc = (ntc < rx_ring->count) ? ntc : 0;
 	rx_ring->next_to_clean = ntc;
-
 	prefetch(RNPVF_RX_DESC(rx_ring, ntc));
 
 	/* if we are the last buffer then there is nothing else to do */
@@ -1356,9 +1585,70 @@ static bool rnpgbevf_is_non_eop(struct rnpgbevf_ring *rx_ring,
 		return false;
 	/* place skb in next buffer to be received */
 	rx_ring->rx_buffer_info[ntc].skb = skb;
+	/* we should clean it since we used all info in it */
+	rx_desc->wb.cmd = 0;
 	rx_ring->rx_stats.non_eop_descs++;
 
 	return true;
+}
+
+static struct sk_buff *rnpgbevf_build_skb(struct rnpgbevf_ring *rx_ring,
+					  struct rnpgbevf_rx_buffer *rx_buffer,
+					  struct xdp_buff *xdp,
+					  union rnp_rx_desc *rx_desc)
+{
+	unsigned int metasize = xdp->data - xdp->data_meta;
+	void *va = xdp->data_meta;
+#if (PAGE_SIZE < 8192)
+	unsigned int truesize = rnpgbevf_rx_pg_size(rx_ring) / 2;
+#else
+	unsigned int truesize =
+		SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
+		SKB_DATA_ALIGN(xdp->data_end - xdp->data_hard_start);
+#endif
+	struct sk_buff *skb;
+
+	/* prefetch first cache line of first page */
+	prefetch(va);
+#if L1_CACHE_BYTES < 128
+	prefetch(va + L1_CACHE_BYTES);
+#endif
+
+	/* build an skb around the page buffer */
+	skb = build_skb(xdp->data_hard_start, truesize);
+	if (unlikely(!skb))
+		return NULL;
+
+	/* update pointers within the skb to store the data */
+	skb_reserve(skb, xdp->data - xdp->data_hard_start);
+	__skb_put(skb, xdp->data_end - xdp->data);
+	if (metasize)
+		skb_metadata_set(skb, metasize);
+		/* update buffer offset */
+#if (PAGE_SIZE < 8192)
+	rx_buffer->page_offset ^= truesize;
+#else
+	rx_buffer->page_offset += truesize;
+#endif
+
+	return skb;
+}
+
+static void rnpgbevf_rx_buffer_flip(struct rnpgbevf_ring *rx_ring,
+				    struct rnpgbevf_rx_buffer *rx_buffer,
+				    unsigned int size)
+{
+#if (PAGE_SIZE < 8192)
+	unsigned int truesize = rnpgbevf_rx_pg_size(rx_ring) / 2;
+
+	rx_buffer->page_offset ^= truesize;
+#else
+	unsigned int truesize = ring_uses_build_skb(rx_ring) ?
+					SKB_DATA_ALIGN(RNPVF_SKB_PAD + size) :
+					SKB_DATA_ALIGN(size);
+
+	rx_buffer->page_offset += truesize;
+#endif
 }
 
 static struct rnpgbevf_rx_buffer *
@@ -1386,28 +1676,6 @@ rnpgbevf_get_rx_buffer(struct rnpgbevf_ring *rx_ring,
 	return rx_buffer;
 }
 
-static void rnpgbevf_put_rx_buffer(struct rnpgbevf_ring *rx_ring,
-				   struct rnpgbevf_rx_buffer *rx_buffer,
-				   struct sk_buff *skb)
-{
-	if (rnpgbevf_can_reuse_rx_page(rx_buffer)) {
-		/* hand second half of page back to the ring */
-		rnpgbevf_reuse_rx_page(rx_ring, rx_buffer);
-	} else {
-		/* we are not reusing the buffer so unmap it */
-		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
-				     rnpgbevf_rx_pg_size(rx_ring),
-				     DMA_FROM_DEVICE,
-				     RNPVF_RX_DMA_ATTR);
-		__page_frag_cache_drain(rx_buffer->page,
-					rx_buffer->pagecnt_bias);
-	}
-
-	/* clear contents of rx_buffer */
-	rx_buffer->page = NULL;
-	rx_buffer->skb = NULL;
-}
-
 static struct sk_buff *
 rnpgbevf_construct_skb(struct rnpgbevf_ring *rx_ring,
 		       struct rnpgbevf_rx_buffer *rx_buffer,
@@ -1423,7 +1691,10 @@ rnpgbevf_construct_skb(struct rnpgbevf_ring *rx_ring,
 	struct sk_buff *skb;
 
 	/* prefetch first cache line of first page */
-	net_prefetch(xdp->data);
+	prefetch(xdp->data);
+#if L1_CACHE_BYTES < 128
+	prefetch(xdp->data + L1_CACHE_BYTES);
+#endif
 
 	/* allocate a skb to store the frags */
 	skb = napi_alloc_skb(&rx_ring->q_vector->napi, RNPVF_RX_HDR_SIZE);
@@ -1442,71 +1713,16 @@ rnpgbevf_construct_skb(struct rnpgbevf_ring *rx_ring,
 		rx_buffer->page_offset += truesize;
 #endif
 	} else {
-		memcpy(__skb_put(skb, size), xdp->data, ALIGN(size, sizeof(long)));
+		memcpy(__skb_put(skb, size), xdp->data,
+		       ALIGN(size, sizeof(long)));
 		rx_buffer->pagecnt_bias++;
 	}
 
 	return skb;
 }
 
-static struct sk_buff *rnpgbevf_build_skb(struct rnpgbevf_ring *rx_ring,
-					  struct rnpgbevf_rx_buffer *rx_buffer,
-					  struct xdp_buff *xdp,
-					  union rnp_rx_desc *rx_desc)
-{
-	unsigned int metasize = xdp->data - xdp->data_meta;
-	void *va = xdp->data_meta;
-#if (PAGE_SIZE < 8192)
-	unsigned int truesize = rnpgbevf_rx_pg_size(rx_ring) / 2;
-#else
-	unsigned int truesize =
-		SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) +
-		SKB_DATA_ALIGN(xdp->data_end - xdp->data_hard_start);
-#endif
-	struct sk_buff *skb;
-
-	/* prefetch first cache line of first page */
-	net_prefetch(va);
-
-	/* build an skb around the page buffer */
-	skb = build_skb(xdp->data_hard_start, truesize);
-	if (unlikely(!skb))
-		return NULL;
-
-	/* update pointers within the skb to store the data */
-	skb_reserve(skb, xdp->data - xdp->data_hard_start);
-	__skb_put(skb, xdp->data_end - xdp->data);
-	if (metasize)
-		skb_metadata_set(skb, metasize);
-	/* update buffer offset */
-#if (PAGE_SIZE < 8192)
-	rx_buffer->page_offset ^= truesize;
-#else
-	rx_buffer->page_offset += truesize;
-#endif
-
-	return skb;
-}
-
-static void rnpgbevf_rx_buffer_flip(struct rnpgbevf_ring *rx_ring,
-				    struct rnpgbevf_rx_buffer *rx_buffer,
-				    unsigned int size)
-{
-#if (PAGE_SIZE < 8192)
-	unsigned int truesize = rnpgbevf_rx_pg_size(rx_ring) / 2;
-
-	rx_buffer->page_offset ^= truesize;
-#else
-	unsigned int truesize = ring_uses_build_skb(rx_ring) ?
-					SKB_DATA_ALIGN(RNPVF_SKB_PAD + size) :
-					SKB_DATA_ALIGN(size);
-
-	rx_buffer->page_offset += truesize;
-#endif
-}
-
 /**
- * rnpgbevf_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
+ * rnp_clean_rx_irq - Clean completed descriptors from Rx ring - bounce buf
  * @q_vector: structure containing interrupt and ring information
  * @rx_ring: rx descriptor ring to transact packets on
  * @budget: Total limit on number of packets to process
@@ -1553,15 +1769,14 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 		if (!rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_DD))
 			break;
 
-		rx_debug_printk("queue:%d  rx-desc:%d has-data len:%d ntc %d\n",
+		rx_debug_printk("queue:%d  rx-desc:%d has-data len:%d next_to_clean %d\n",
 				rx_ring->rnpgbevf_queue_idx, rx_ring->next_to_clean,
 				rx_desc->wb.len, rx_ring->next_to_clean);
 
 		/* handle padding */
 		if ((adapter->priv_flags & RNPVF_PRIV_FLAG_FT_PADDING) &&
 		    (!(adapter->priv_flags & RNPVF_PRIV_FLAG_PADDING_DEBUG))) {
-			if (likely(rnpgbevf_test_staterr(rx_desc,
-							 RNPGBE_RXD_STAT_EOP))) {
+			if (likely(rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_EOP))) {
 				size = le16_to_cpu(rx_desc->wb.len) -
 				       le16_to_cpu(rx_desc->wb.padding_len);
 			} else {
@@ -1575,9 +1790,10 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 		if (!size)
 			break;
 
-		/* should check csum err
+		/*
+		 * should check csum err
 		 * maybe one packet use multiple descs
-		 * no problems hw set all csum_err in multiple descs
+		 * no problems hw set all csum_err in mutliple descs
 		 * maybe BUG if the last sctp desc less than 60
 		 */
 		if (rnpgbevf_check_csum_error(rx_ring, rx_desc, size,
@@ -1604,7 +1820,6 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 			xdp.data_hard_start =
 				xdp.data - rnpgbevf_rx_offset(rx_ring);
 			xdp.data_end = xdp.data + size;
-			/* call  xdp hook  use this to support xdp hook */
 		}
 
 		if (IS_ERR(skb)) {
@@ -1642,14 +1857,20 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 			continue;
 
 		/* verify the packet layout is correct */
-		if (rnpgbevf_cleanup_headers(rx_ring, rx_desc, skb))
+		if (rnpgbevf_cleanup_headers(rx_ring, rx_desc, skb)) {
+			/* we should clean it since we used all info in it */
+			rx_desc->wb.cmd = 0;
 			continue;
+		}
 
 		/* probably a little skewed due to removing CRC */
 		total_rx_bytes += skb->len;
 
 		/* populate checksum, timestamp, VLAN, and protocol */
 		rnpgbevf_process_skb_fields(rx_ring, rx_desc, skb);
+
+		/* we should clean it since we used all info in it */
+		rx_desc->wb.cmd = 0;
 
 		rnpgbevf_rx_skb(q_vector, skb);
 
@@ -1667,97 +1888,9 @@ static int rnpgbevf_clean_rx_irq(struct rnpgbevf_q_vector *q_vector,
 
 	if (total_rx_packets >= budget)
 		rx_ring->rx_stats.poll_again_count++;
-
 	return total_rx_packets;
 }
-#endif /* OPTM_WITH_LPAGE */
-
-/**
- * rnpgbevf_clean_rx_ring - Free Rx Buffers per Queue
- * @rx_ring: ring to free buffers from
- **/
-static void rnpgbevf_clean_rx_ring(struct rnpgbevf_ring *rx_ring)
-{
-	u16 i = rx_ring->next_to_clean;
-	struct rnpgbevf_rx_buffer *rx_buffer = &rx_ring->rx_buffer_info[i];
-
-	/* Free all the Rx ring sk_buffs */
-	while (i != rx_ring->next_to_alloc) {
-		if (rx_buffer->skb) {
-			struct sk_buff *skb = rx_buffer->skb;
-
-			dev_kfree_skb(skb);
-			rx_buffer->skb = NULL;
-		}
-
-		/* Invalidate cache lines that may have been written to by
-		 * device so that we avoid corrupting memory.
-		 */
-		dma_sync_single_range_for_cpu(rx_ring->dev, rx_buffer->dma,
-					      rx_buffer->page_offset,
-					      rnpgbevf_rx_bufsz(rx_ring),
-					      DMA_FROM_DEVICE);
-
-		/* free resources associated with mapping */
-		dma_unmap_page_attrs(rx_ring->dev, rx_buffer->dma,
-				     rnpgbevf_rx_pg_size(rx_ring),
-				     DMA_FROM_DEVICE,
-				     RNPVF_RX_DMA_ATTR);
-
-		__page_frag_cache_drain(rx_buffer->page,
-					rx_buffer->pagecnt_bias);
-		/* now this page is not used */
-		rx_buffer->page = NULL;
-		i++;
-		rx_buffer++;
-		if (i == rx_ring->count) {
-			i = 0;
-			rx_buffer = rx_ring->rx_buffer_info;
-		}
-	}
-
-	rx_ring->next_to_alloc = 0;
-	rx_ring->next_to_clean = 0;
-	rx_ring->next_to_use = 0;
-}
-
-/**
- * rnpgbevf_pull_tail - rnp specific version of skb_pull_tail
- * @skb: pointer to current skb being adjusted
- *
- * This function is an rnp specific version of __pskb_pull_tail.  The
- * main difference between this version and the original function is that
- * this function can make several assumptions about the state of things
- * that allow for significant optimizations versus the standard function.
- * As a result we can do things like drop a frag and maintain an accurate
- * truesize for the skb.
- */
-static void rnpgbevf_pull_tail(struct sk_buff *skb)
-{
-	skb_frag_t *frag = &skb_shinfo(skb)->frags[0];
-	unsigned char *va;
-	unsigned int pull_len;
-
-	/* it is valid to use page_address instead of kmap since we are
-	 * working with pages allocated out of the lomem pool per
-	 * alloc_page(GFP_ATOMIC)
-	 */
-	va = skb_frag_address(frag);
-
-	/* we need the header to contain the greater of either ETH_HLEN or
-	 * 60 bytes if the skb->len is less than 60 for skb_pad.
-	 */
-	pull_len = rnpgbevf_get_headlen(va, RNPVF_RX_HDR_SIZE);
-
-	/* align pull length to size of long to optimize memcpy performance */
-	skb_copy_to_linear_data(skb, va, ALIGN(pull_len, sizeof(long)));
-
-	/* update all of the pointers */
-	skb_frag_size_sub(frag, pull_len);
-	skb_frag_off_add(frag, pull_len);
-	skb->data_len -= pull_len;
-	skb->tail += pull_len;
-}
+#endif
 
 /**
  * rnpgbevf_configure_msix - Configure MSI-X hardware
@@ -1769,10 +1902,15 @@ static void rnpgbevf_pull_tail(struct sk_buff *skb)
 static void rnpgbevf_configure_msix(struct rnpgbevf_adapter *adapter)
 {
 	struct rnpgbevf_q_vector *q_vector;
+	struct rnpgbevf_hw *hw = &adapter->hw;
 	int i;
 
-	/* configure ring-msix Registers table
+	/*
+	 * configure ring-msix Registers table
 	 */
+	if (hw->board_type == rnp_board_n500)
+		return;
+
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		struct rnpgbevf_ring *ring;
 
@@ -1802,8 +1940,10 @@ rnpgbevf_irq_enable_queues(struct rnpgbevf_q_vector *q_vector)
 		rnpgbevf_wr_reg(ring->dma_int_clr, RX_INT_MASK | TX_INT_MASK);
 		/* we need this */
 		wmb();
-		rnpgbevf_wr_reg(ring->dma_int_mask, ~(RX_INT_MASK));
-		ring_wr32(ring, RNPGBE_DMA_INT_TRIG, TX_INT_MASK | RX_INT_MASK);
+		ring_wr32(ring, RNPGBE_DMA_INT_TRIG,
+			  (0x3 << 16) | TX_INT_MASK | RX_INT_MASK);
+		rnpgbevf_wr_reg(ring->dma_int_mask,
+				~(RX_INT_MASK | TX_INT_MASK));
 	}
 }
 
@@ -1813,7 +1953,8 @@ rnpgbevf_irq_disable_queues(struct rnpgbevf_q_vector *q_vector)
 	struct rnpgbevf_ring *ring;
 
 	rnpgbevf_for_each_ring(ring, q_vector->tx) {
-		ring_wr32(ring, RNPGBE_DMA_INT_TRIG, ~(TX_INT_MASK | RX_INT_MASK));
+		ring_wr32(ring, RNPGBE_DMA_INT_TRIG,
+			  (0x3 << 16) | ~(TX_INT_MASK | RX_INT_MASK));
 		rnpgbevf_wr_reg(ring->dma_int_mask,
 				(RX_INT_MASK | TX_INT_MASK));
 	}
@@ -1836,17 +1977,31 @@ static irqreturn_t rnpgbevf_msix_other(int irq, void *data)
 	struct rnpgbevf_adapter *adapter = data;
 	struct rnpgbevf_hw *hw = &adapter->hw;
 
+	dbg("\n\n !!! %s irq-comming !!!\n", __func__);
+
 	/* link is down by pf */
 	if (test_bit(__RNPVF_MBX_POLLING, &adapter->state))
 		goto NO_WORK_DONE;
-
 	if (!hw->mbx.ops.check_for_rst(hw, false)) {
 		if (test_bit(__RNPVF_REMOVE, &adapter->state))
-			pr_info("rnpgbevf is removed\n");
+			pr_debug("rnpvf is removed\n");
 	}
 NO_WORK_DONE:
 
 	return IRQ_HANDLED;
+}
+
+static void rnpgbevf_htimer_start(struct rnpgbevf_q_vector *q_vector)
+{
+	unsigned long ns = q_vector->irq_check_usecs * NSEC_PER_USEC / 2;
+
+	hrtimer_start_range_ns(&q_vector->irq_miss_check_timer, ns_to_ktime(ns),
+			       ns, HRTIMER_MODE_REL);
+}
+
+static void rnpgbevf_htimer_stop(struct rnpgbevf_q_vector *q_vector)
+{
+	hrtimer_cancel(&q_vector->irq_miss_check_timer);
 }
 
 static irqreturn_t rnpgbevf_intr(int irq, void *data)
@@ -1854,7 +2009,10 @@ static irqreturn_t rnpgbevf_intr(int irq, void *data)
 	struct rnpgbevf_adapter *adapter = data;
 	struct rnpgbevf_q_vector *q_vector = adapter->q_vector[0];
 	struct rnpgbevf_hw *hw = &adapter->hw;
+
 	/* handle data */
+	if (q_vector->vector_flags & RNPVF_QVECTOR_FLAG_IRQ_MISS_CHECK)
+		rnpgbevf_htimer_stop(q_vector);
 
 	/*  disabled interrupts (on this vector) for us */
 	rnpgbevf_irq_disable_queues(q_vector);
@@ -1862,28 +2020,147 @@ static irqreturn_t rnpgbevf_intr(int irq, void *data)
 	if (q_vector->rx.ring || q_vector->tx.ring)
 		napi_schedule_irqoff(&q_vector->napi);
 
+	dbg("\n\n !!! %s irq-comming !!!\n", __func__);
+
 	/* link is down by pf */
 	if (test_bit(__RNPVF_MBX_POLLING, &adapter->state))
 		goto WORK_DONE;
 	if (!hw->mbx.ops.check_for_rst(hw, false)) {
 		if (test_bit(__RNPVF_REMOVE, &adapter->state))
-			pr_info("rnpvf is removed\n");
+			pr_debug("rnpvf is removed\n");
 	}
 WORK_DONE:
 	return IRQ_HANDLED;
+}
+
+static void rnpgbevf_write_eitr_rx(struct rnpgbevf_q_vector *q_vector)
+{
+	struct rnpgbevf_adapter *adapter = q_vector->adapter;
+	struct rnpgbevf_hw *hw = &adapter->hw;
+	u32 new_itr_rx = q_vector->rx.itr;
+	u32 old_itr_rx = q_vector->rx.itr;
+	struct rnpgbevf_ring *ring;
+
+	new_itr_rx = new_itr_rx * hw->usecstocount;
+	rnpgbevf_for_each_ring(ring, q_vector->rx) {
+		ring_wr32(ring, RNPGBE_DMA_REG_RX_INT_DELAY_TIMER, new_itr_rx);
+		if (ring->ring_flags & RNPVF_RING_LOWER_ITR) {
+			if (q_vector->itr_rx == RNP_LOWEREST_ITR)
+				continue;
+			ring_wr32(ring, RNPGBE_DMA_REG_RX_INT_DELAY_PKTCNT, 1);
+			ring_wr32(ring, RNPGBE_DMA_REG_RX_INT_DELAY_TIMER,
+				  RNP_LOWEREST_ITR);
+			q_vector->itr_rx = RNP_LOWEREST_ITR;
+		} else {
+			if (new_itr_rx == q_vector->itr_rx)
+				continue;
+			ring_wr32(ring, RNPGBE_DMA_REG_RX_INT_DELAY_TIMER,
+				  new_itr_rx);
+			ring_wr32(ring, RNPGBE_DMA_REG_RX_INT_DELAY_PKTCNT,
+				  adapter->rx_frames);
+			q_vector->itr_rx = old_itr_rx;
+		}
+	}
 }
 
 static irqreturn_t rnpgbevf_msix_clean_rings(int irq, void *data)
 {
 	struct rnpgbevf_q_vector *q_vector = data;
 
+	if (q_vector->vector_flags & RNPVF_QVECTOR_FLAG_IRQ_MISS_CHECK)
+		rnpgbevf_htimer_stop(q_vector);
 	/*  disabled interrupts (on this vector) for us */
 	rnpgbevf_irq_disable_queues(q_vector);
+
+	rnpgbevf_write_eitr_rx(q_vector);
 
 	if (q_vector->rx.ring || q_vector->tx.ring)
 		napi_schedule(&q_vector->napi);
 
 	return IRQ_HANDLED;
+}
+
+static void rnpgbevf_check_restart_tx(struct rnpgbevf_q_vector *q_vector,
+				      struct rnpgbevf_ring *tx_ring)
+{
+	struct rnpgbevf_adapter *adapter = q_vector->adapter;
+#define TX_WAKE_THRESHOLD (DESC_NEEDED * 2)
+	if (likely(netif_carrier_ok(tx_ring->netdev) &&
+		   (rnpgbevf_desc_unused(tx_ring) >= TX_WAKE_THRESHOLD))) {
+		/* Make sure that anybody stopping the queue after this
+		 * sees the new next_to_clean.
+		 */
+		smp_mb();
+		if (__netif_subqueue_stopped(tx_ring->netdev,
+					     tx_ring->queue_index) &&
+		    !test_bit(__RNPVF_DOWN, &adapter->state)) {
+			netif_wake_subqueue(tx_ring->netdev,
+					    tx_ring->queue_index);
+			++tx_ring->tx_stats.restart_queue;
+		}
+	}
+}
+
+__maybe_unused static void
+rnpgbevf_update_ring_itr_rx(struct rnpgbevf_q_vector *q_vector)
+{
+	int new_val = q_vector->itr_rx;
+	int avg_wire_size = 0;
+	struct rnpgbevf_adapter *adapter = q_vector->adapter;
+	unsigned int packets;
+
+	/* For non-gigabit speeds, just fix the interrupt rate at 4000
+	 * ints/sec - ITR timer value of 120 ticks.
+	 */
+	switch (adapter->link_speed) {
+	case RNPGBE_LINK_SPEED_10_FULL:
+	case RNPGBE_LINK_SPEED_100_FULL:
+		new_val = RNP_4K_ITR;
+		goto set_itr_val;
+	default:
+		break;
+	}
+
+	packets = q_vector->rx.total_packets;
+	if (packets)
+		avg_wire_size = max_t(u32, avg_wire_size,
+				      q_vector->rx.total_bytes / packets);
+
+	/* if avg_wire_size isn't set no work was done */
+	if (!avg_wire_size)
+		goto clear_counts;
+
+	/* Add 24 bytes to size to account for CRC, preamble, and gap */
+	avg_wire_size += 24;
+
+	/* Don't starve jumbo frames */
+	avg_wire_size = min(avg_wire_size, 3000);
+
+	/* Give a little boost to mid-size frames */
+	if (avg_wire_size > 300 && avg_wire_size < 1200)
+		new_val = avg_wire_size / 3;
+	else
+		new_val = avg_wire_size / 2;
+
+	new_val = new_val / 2;
+
+	if (new_val < RNP_LOWEREST_ITR)
+		new_val = RNP_LOWEREST_ITR;
+
+set_itr_val:
+	if (q_vector->rx.itr != new_val) {
+		q_vector->rx.update_count++;
+		if (q_vector->rx.update_count >= 2) {
+			q_vector->rx.itr = new_val;
+			q_vector->rx.update_count = 0;
+		}
+	} else {
+		q_vector->rx.update_count = 0;
+	}
+
+clear_counts:
+	q_vector->rx.total_bytes = 0;
+	q_vector->rx.total_packets = 0;
 }
 
 /**
@@ -1928,6 +2205,7 @@ static int rnpgbevf_poll(struct napi_struct *napi, int budget)
 			clean_complete = false;
 	}
 
+	/* force irq stop */
 	if (test_bit(__RNPVF_DOWN, &adapter->state))
 		clean_complete = true;
 
@@ -1938,15 +2216,35 @@ static int rnpgbevf_poll(struct napi_struct *napi, int budget)
 	/* all work done, exit the polling mode */
 	if (likely(napi_complete_done(napi, work_done))) {
 		/* try to do itr handle */
-		rnpgbevf_set_itr(q_vector);
+		if (q_vector->vector_flags & RNPVF_QVECTOR_FLAG_ITR_FEATURE)
+			rnpgbevf_update_ring_itr_rx(q_vector);
 
 		if (!test_bit(__RNPVF_DOWN, &adapter->state)) {
 			rnpgbevf_irq_enable_queues(q_vector);
 			/* we need this */
 			smp_mb();
+			/* we need this to ensure irq start before tx start */
+			if (q_vector->vector_flags &
+			    RNPVF_QVECTOR_FLAG_REDUCE_TX_IRQ_MISS) {
+				rnpgbevf_for_each_ring(ring, q_vector->tx) {
+					rnpgbevf_check_restart_tx(q_vector,
+								  ring);
+					if (q_vector->new_rx_count !=
+					    q_vector->old_rx_count) {
+						ring_wr32(ring, RNPGBE_DMA_REG_RX_INT_DELAY_PKTCNT,
+							  q_vector->new_rx_count);
+						q_vector->old_rx_count =
+							q_vector->new_rx_count;
+					}
+				}
+			}
 		}
 	}
 
+	if (!test_bit(__RNPVF_DOWN, &adapter->state)) {
+		if (q_vector->vector_flags & RNPVF_QVECTOR_FLAG_IRQ_MISS_CHECK)
+			rnpgbevf_htimer_start(q_vector);
+	}
 	return 0;
 }
 
@@ -1962,7 +2260,6 @@ static int rnpgbevf_request_msix_irqs(struct rnpgbevf_adapter *adapter)
 	struct net_device *netdev = adapter->netdev;
 	int err;
 	int i = 0;
-	int m;
 
 	DPRINTK(IFUP, INFO, "num_q_vectors:%d\n", adapter->num_q_vectors);
 
@@ -1972,8 +2269,9 @@ static int rnpgbevf_request_msix_irqs(struct rnpgbevf_adapter *adapter)
 			&adapter->msix_entries[i + adapter->vector_off];
 
 		if (q_vector->tx.ring && q_vector->rx.ring) {
-			snprintf(q_vector->name, sizeof(q_vector->name),
-				 "%s-%s-%u", netdev->name, "TxRx", i);
+			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
+				 "%s-%s-%d-%d", netdev->name, "TxRx", i,
+				 q_vector->v_idx);
 		} else {
 			WARN(!(q_vector->tx.ring && q_vector->rx.ring),
 			     "%s vector%d tx rx is null, v_idx:%d\n",
@@ -1996,10 +2294,8 @@ static int rnpgbevf_request_msix_irqs(struct rnpgbevf_adapter *adapter)
 free_queue_irqs:
 	while (i) {
 		i--;
-		m = i + adapter->vector_off;
-		irq_set_affinity_hint(adapter->msix_entries[m].vector,
-				      NULL);
-		free_irq(adapter->msix_entries[m].vector,
+		irq_set_affinity_hint(adapter->msix_entries[i + adapter->vector_off].vector, NULL);
+		free_irq(adapter->msix_entries[i + adapter->vector_off].vector,
 			 adapter->q_vector[i]);
 	}
 	return err;
@@ -2025,270 +2321,6 @@ static int rnpgbevf_free_msix_irqs(struct rnpgbevf_adapter *adapter)
 	}
 
 	return 0;
-}
-
-/**
- * rnpgbevf_update_itr - update the dynamic ITR value based on statistics
- * @q_vector: structure containing interrupt and ring information
- * @ring_container: structure containing ring performance data
- * @type: rx or tx ring
- *
- *      Stores a new ITR value based on packets and byte
- *      counts during the last interrupt.  The advantage of per interrupt
- *      computation is faster updates and more accurate ITR for the current
- *      traffic pattern.  Constants in this function were computed
- *      based on theoretical maximum wire speed and thresholds were set based
- *      on testing data as well as attempting to minimize response time
- *      while increasing bulk throughput.
- **/
-static void rnpgbevf_update_itr(struct rnpgbevf_q_vector *q_vector,
-				struct rnpgbevf_ring_container *ring_container,
-				int type)
-{
-	unsigned int itr =
-		RNPVF_ITR_ADAPTIVE_MIN_USECS | RNPVF_ITR_ADAPTIVE_LATENCY;
-	unsigned int avg_wire_size, packets, bytes;
-	unsigned int packets_old;
-	unsigned long next_update = jiffies;
-	u32 old_itr;
-	u16 add_itr, add = 0;
-	/* 0 is tx ;1 is rx */
-	if (type)
-		old_itr = q_vector->itr_rx;
-	else
-		old_itr = q_vector->itr_tx;
-
-	/* If we don't have any rings just leave ourselves set for maximum
-	 * possible latency so we take ourselves out of the equation.
-	 */
-	if (!ring_container->ring)
-		return;
-
-	packets_old = ring_container->total_packets_old;
-	packets = ring_container->total_packets;
-	bytes = ring_container->total_bytes;
-	add_itr = ring_container->add_itr;
-	/* If Rx and there are 1 to 23 packets and bytes are less than
-	 * 12112 assume insufficient data to use bulk rate limiting
-	 * approach. Instead we will focus on simply trying to target
-	 * receiving 8 times as much data in the next interrupt.
-	 */
-
-	if (!packets)
-		return;
-
-	if (packets && packets < 24 && bytes < 12112) {
-		itr = RNPVF_ITR_ADAPTIVE_LATENCY;
-
-		avg_wire_size = (bytes + packets * 24);
-		avg_wire_size =
-			clamp_t(unsigned int, avg_wire_size, 128, 12800);
-
-		goto adjust_for_speed;
-	}
-
-	/* Less than 48 packets we can assume that our current interrupt delay
-	 * is only slightly too low. As such we should increase it by a small
-	 * fixed amount.
-	 */
-	if (packets < 48) {
-		if (add_itr) {
-			if (packets_old < packets) {
-				itr = (old_itr >> 2) + RNPVF_ITR_ADAPTIVE_MIN_INC;
-				if (itr > RNPVF_ITR_ADAPTIVE_MAX_USECS)
-					itr = RNPVF_ITR_ADAPTIVE_MAX_USECS;
-				add = 1;
-
-				if (packets < 8)
-					itr += RNPVF_ITR_ADAPTIVE_LATENCY;
-				else
-					itr += ring_container->itr & RNPVF_ITR_ADAPTIVE_LATENCY;
-
-			} else {
-				itr = (old_itr >> 2) -
-				      RNPVF_ITR_ADAPTIVE_MIN_INC;
-				if (itr < RNPVF_ITR_ADAPTIVE_MIN_USECS)
-					itr = RNPVF_ITR_ADAPTIVE_MIN_USECS;
-			}
-
-		} else {
-			add = 1;
-			itr = (old_itr >> 2) + RNPVF_ITR_ADAPTIVE_MIN_INC;
-			if (itr > RNPVF_ITR_ADAPTIVE_MAX_USECS)
-				itr = RNPVF_ITR_ADAPTIVE_MAX_USECS;
-
-			/* If sample size is 0 - 7 we should probably switch
-			 * to latency mode instead of trying to control
-			 * things as though we are in bulk.
-			 *
-			 * Otherwise if the number of packets is less than 48
-			 * we should maintain whatever mode we are currently
-			 * in. The range between 8 and 48 is the cross-over
-			 * point between latency and bulk traffic.
-			 */
-			if (packets < 8)
-				itr += RNPVF_ITR_ADAPTIVE_LATENCY;
-			else
-				itr += ring_container->itr &
-					RNPVF_ITR_ADAPTIVE_LATENCY;
-		}
-		goto clear_counts;
-	}
-
-	/* Between 48 and 96 is our "goldilocks" zone where we are working
-	 * out "just right". Just report that our current ITR is good for us.
-	 */
-	if (packets < 96) {
-		itr = old_itr >> 2;
-		goto clear_counts;
-	}
-	/* If packet count is 96 or greater we are likely looking at a slight
-	 * overrun of the delay we want. Try halving our delay to see if that
-	 * will cut the number of packets in half per interrupt.
-	 */
-	if (packets < 256) {
-		itr = old_itr >> 3;
-		if (itr < RNPVF_ITR_ADAPTIVE_MIN_USECS)
-			itr = RNPVF_ITR_ADAPTIVE_MIN_USECS;
-		goto clear_counts;
-	}
-
-	/* The paths below assume we are dealing with a bulk ITR since number
-	 * of packets is 256 or greater. We are just going to have to compute
-	 * a value and try to bring the count under control, though for smaller
-	 * packet sizes there isn't much we can do as NAPI polling will likely
-	 * be kicking in sooner rather than later.
-	 */
-	itr = RNPVF_ITR_ADAPTIVE_BULK;
-
-	/* If packet counts are 256 or greater we can assume we have a gross
-	 * overestimation of what the rate should be. Instead of trying to fine
-	 * tune it just use the formula below to try and dial in an exact value
-	 * give the current packet size of the frame.
-	 */
-	avg_wire_size = bytes / packets;
-
-	/* The following is a crude approximation of:
-	 *  wmem_default / (size + overhead) = desired_pkts_per_int
-	 *  rate / bits_per_byte / (size + ethernet overhead) = pkt_rate
-	 *  (desired_pkt_rate / pkt_rate) * usecs_per_sec = ITR value
-	 *
-	 * Assuming wmem_default is 212992 and overhead is 640 bytes per
-	 * packet, (256 skb, 64 headroom, 320 shared info), we can reduce the
-	 * formula down to
-	 *
-	 *  (170 * (size + 24)) / (size + 640) = ITR
-	 *
-	 * We first do some math on the packet size and then finally bitshift
-	 * by 8 after rounding up. We also have to account for PCIe link speed
-	 * difference as ITR scales based on this.
-	 */
-	if (avg_wire_size <= 60) {
-		/* Start at 50k ints/sec */
-		avg_wire_size = 5120;
-	} else if (avg_wire_size <= 316) {
-		/* 50K ints/sec to 16K ints/sec */
-		avg_wire_size *= 40;
-		avg_wire_size += 2720;
-	} else if (avg_wire_size <= 1084) {
-		/* 16K ints/sec to 9.2K ints/sec */
-		avg_wire_size *= 15;
-		avg_wire_size += 11452;
-	} else if (avg_wire_size <= 1980) {
-		/* 9.2K ints/sec to 8K ints/sec */
-		avg_wire_size *= 5;
-		avg_wire_size += 22420;
-	} else {
-		/* plateau at a limit of 8K ints/sec */
-		avg_wire_size = 32256;
-	}
-
-adjust_for_speed:
-	/* Resultant value is 256 times larger than it needs to be. This
-	 * gives us room to adjust the value as needed to either increase
-	 * or decrease the value based on link speeds of 10G, 2.5G, 1G, etc.
-	 *
-	 * Use addition as we have already recorded the new latency flag
-	 * for the ITR value.
-	 */
-	switch (q_vector->adapter->link_speed) {
-	case RNPGBE_LINK_SPEED_10GB_FULL:
-	case RNPGBE_LINK_SPEED_100_FULL:
-	default:
-		itr += DIV_ROUND_UP(avg_wire_size,
-				    RNPVF_ITR_ADAPTIVE_MIN_INC * 256) *
-		       RNPVF_ITR_ADAPTIVE_MIN_INC;
-		break;
-	case RNPGBE_LINK_SPEED_1GB_FULL:
-	case RNPGBE_LINK_SPEED_10_FULL:
-		itr += DIV_ROUND_UP(avg_wire_size,
-				    RNPVF_ITR_ADAPTIVE_MIN_INC * 64) *
-		       RNPVF_ITR_ADAPTIVE_MIN_INC;
-		break;
-	}
-
-	/* In the case of a latency specific workload only allow us to
-	 * reduce the ITR by at most 2us. By doing this we should dial
-	 * in so that our number of interrupts is no more than 2x the number
-	 * of packets for the least busy workload. So for example in the case
-	 * of a TCP worload the ack packets being received would set the
-	 * interrupt rate as they are a latency specific workload.
-	 */
-	if ((itr & RNPVF_ITR_ADAPTIVE_LATENCY) && itr < ring_container->itr)
-		itr = ring_container->itr - RNPVF_ITR_ADAPTIVE_MIN_INC;
-
-clear_counts:
-	/* write back value */
-	ring_container->itr = itr;
-
-	/* next update should occur within next jiffy */
-	ring_container->next_update = next_update + 1;
-
-	ring_container->total_bytes = 0;
-	ring_container->total_packets_old = packets;
-	ring_container->add_itr = add;
-	ring_container->total_packets = 0;
-}
-
-/**
- * rnpgbevf_write_eitr_rx - write EITR register in hardware specific way
- * @q_vector: structure containing interrupt and ring information
- *
- * This function is made to be called by ethtool and by the driver
- * when it needs to update EITR registers at runtime.  Hardware
- * specific quirks/differences are taken care of here.
- */
-static void rnpgbevf_write_eitr_rx(struct rnpgbevf_q_vector *q_vector)
-{
-	struct rnpgbevf_adapter *adapter = q_vector->adapter;
-	struct rnpgbevf_hw *hw = &adapter->hw;
-	u32 itr_reg = q_vector->itr_rx >> 2;
-	struct rnpgbevf_ring *ring;
-
-	itr_reg = itr_reg * hw->usecstocount;
-
-	rnpgbevf_for_each_ring(ring, q_vector->rx)
-		ring_wr32(ring, RNPGBE_DMA_REG_RX_INT_DELAY_TIMER, itr_reg);
-}
-
-static void rnpgbevf_set_itr(struct rnpgbevf_q_vector *q_vector)
-{
-	u32 new_itr_rx;
-
-	rnpgbevf_update_itr(q_vector, &q_vector->rx, 1);
-
-	/* use the smallest value of new ITR delay calculations */
-	new_itr_rx = q_vector->rx.itr;
-	/* Clear latency flag if set, shift into correct position */
-	new_itr_rx &= RNPVF_ITR_ADAPTIVE_MASK_USECS;
-	/* in 2us unit */
-	new_itr_rx <<= 2;
-
-	if (new_itr_rx != q_vector->itr_rx) {
-		/* save the algorithm value here */
-		q_vector->itr_rx = new_itr_rx;
-		rnpgbevf_write_eitr_rx(q_vector);
-	}
 }
 
 /**
@@ -2336,16 +2368,14 @@ static void rnpgbevf_free_irq(struct rnpgbevf_adapter *adapter)
  **/
 static inline void rnpgbevf_irq_disable(struct rnpgbevf_adapter *adapter)
 {
-	int i, m;
+	int i;
 
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		rnpgbevf_irq_disable_queues(adapter->q_vector[i]);
-		if (adapter->flags & RNPVF_FLAG_MSIX_ENABLED) {
-			m = i + adapter->vector_off;
-			synchronize_irq(adapter->msix_entries[m].vector);
-		} else {
+		if (adapter->flags & RNPVF_FLAG_MSIX_ENABLED)
+			synchronize_irq(adapter->msix_entries[i + adapter->vector_off].vector);
+		else
 			synchronize_irq(adapter->pdev->irq);
-		}
 	}
 }
 
@@ -2362,7 +2392,8 @@ static void rnpgbevf_configure_tx_ring(struct rnpgbevf_adapter *adapter,
 	struct rnpgbevf_hw *hw = &adapter->hw;
 
 	/* disable queue to avoid issues while updating state */
-	ring_wr32(ring, RNPGBE_DMA_TX_START, 0);
+	if (!(ring->ring_flags & RNPVF_RING_SKIP_TX_START))
+		ring_wr32(ring, RNPGBE_DMA_TX_START, 0);
 
 	ring_wr32(ring, RNPGBE_DMA_REG_TX_DESC_BUF_BASE_ADDR_LO,
 		  (u32)ring->dma);
@@ -2377,7 +2408,7 @@ static void rnpgbevf_configure_tx_ring(struct rnpgbevf_adapter *adapter,
 	rnpgbevf_wr_reg(ring->tail, ring->next_to_use);
 
 	ring_wr32(ring, RNPGBE_DMA_REG_TX_DESC_FETCH_CTRL,
-		  (8 << 0) /* max_water_flow */
+		  (8 << 0) /*max_water_flow*/
 			  | (TSRN500_TX_DEFAULT_BURST
 			     << 16)); /* max-num_descs_peer_read */
 
@@ -2386,7 +2417,7 @@ static void rnpgbevf_configure_tx_ring(struct rnpgbevf_adapter *adapter,
 	ring_wr32(ring, RNPGBE_DMA_REG_TX_INT_DELAY_PKTCNT,
 		  adapter->tx_frames);
 
-	{
+	if (!(ring->ring_flags & RNPVF_RING_SKIP_TX_START)) {
 		/* n500 should wait tx_ready before open tx start */
 		int timeout = 0;
 		u32 status = 0;
@@ -2400,8 +2431,7 @@ static void rnpgbevf_configure_tx_ring(struct rnpgbevf_adapter *adapter,
 		} while ((status != 1) && (timeout < 100));
 
 		if (timeout >= 100)
-			rnpgbevf_dbg("wait tx ready timeout\n");
-
+			pr_debug("wait tx ready timeout\n");
 		ring_wr32(ring, RNPGBE_DMA_TX_START, 1);
 	}
 }
@@ -2420,6 +2450,8 @@ static void rnpgbevf_configure_tx(struct rnpgbevf_adapter *adapter)
 	for (i = 0; i < (adapter->num_tx_queues); i++)
 		rnpgbevf_configure_tx_ring(adapter, adapter->tx_ring[i]);
 }
+
+#define RNPGBE_SRRCTL_BSIZEHDRSIZE_SHIFT 2
 
 static void rnpgbevf_disable_rx_queue(struct rnpgbevf_adapter *adapter,
 				      struct rnpgbevf_ring *ring)
@@ -2441,6 +2473,7 @@ static void rnpgbevf_configure_rx_ring(struct rnpgbevf_adapter *adapter,
 
 	/* disable queue to avoid issues while updating state */
 	rnpgbevf_disable_rx_queue(adapter, ring);
+
 	/* set descripts registers*/
 	ring_wr32(ring, RNPGBE_DMA_REG_RX_DESC_BUF_BASE_ADDR_LO, (u32)desc_phy);
 	/* dma address high bits is used */
@@ -2453,19 +2486,19 @@ static void rnpgbevf_configure_rx_ring(struct rnpgbevf_adapter *adapter,
 	ring->next_to_use = ring->next_to_clean;
 
 #define SCATER_SIZE (96)
-	ring_wr32(ring, PCI_DMA_REG_RX_SCATTER_LENGH, SCATER_SIZE);
+	if (ring->ring_flags & RNPVF_RING_SCATER_SETUP) {
+		ring_wr32(ring,
+			  PCI_DMA_REG_RX_SCATTER_LENGH, SCATER_SIZE);
+	}
 
 	ring_wr32(ring, RNPGBE_DMA_REG_RX_DESC_FETCH_CTRL,
-		  0 | (TSRN500_RX_DEFAULT_LINE << 0) |
-		  (TSRN500_RX_DEFAULT_BURST << 16) /*max-read-desc-cnt*/
+		  0 | (TSRN500_RX_DEFAULT_LINE << 0) /*rx-desc-flow*/
+		  | (TSRN500_RX_DEFAULT_BURST << 16) /*max-read-desc-cnt*/
 	);
-
-	ring_wr32(ring, RNPGBE_DMA_INT_TRIG, TX_INT_MASK | RX_INT_MASK);
 
 	ring_wr32(ring, RNPGBE_DMA_REG_RX_INT_DELAY_TIMER,
 		  adapter->rx_usecs * hw->usecstocount);
 	ring_wr32(ring, RNPGBE_DMA_REG_RX_INT_DELAY_PKTCNT, adapter->rx_frames);
-
 	rnpgbevf_alloc_rx_buffers(ring, rnpgbevf_desc_unused(ring));
 }
 
@@ -2485,7 +2518,6 @@ static void rnpgbevf_set_rx_buffer_len(struct rnpgbevf_adapter *adapter)
 		clear_bit(__RNPVF_RX_BUILD_SKB_ENABLED, &rx_ring->state);
 
 		set_bit(__RNPVF_RX_BUILD_SKB_ENABLED, &rx_ring->state);
-
 #ifdef OPTM_WITH_LPAGE
 		rx_ring->rx_page_buf_nums = RNPVF_PAGE_BUFFER_NUMS(rx_ring);
 		rx_ring->rx_per_buf_mem = RNPVF_RXBUFFER_2K;
@@ -2506,7 +2538,8 @@ static void rnpgbevf_configure_rx(struct rnpgbevf_adapter *adapter)
 	/* set_rx_buffer_len must be called before ring initialization */
 	rnpgbevf_set_rx_buffer_len(adapter);
 
-	/* Setup the HW Rx Head and Tail Descriptor Pointers and
+	/*
+	 * Setup the HW Rx Head and Tail Descriptor Pointers and
 	 * the Base and Length of the Rx Descriptor Ring
 	 */
 	for (i = 0; i < adapter->num_rx_queues; i++)
@@ -2526,7 +2559,7 @@ static int rnpgbevf_vlan_rx_add_vid(struct net_device *netdev,
 			"only 1 vlan for vf or pf set vlan already\n");
 		return 0;
 	}
-	/* vid zero nothing todo, only do this if not setup vlan before */
+
 	if ((vid) && !adapter->vf_vlan) {
 		spin_lock_bh(&adapter->mbx_lock);
 		set_bit(__RNPVF_MBX_POLLING, &adapter->state);
@@ -2537,11 +2570,13 @@ static int rnpgbevf_vlan_rx_add_vid(struct net_device *netdev,
 	}
 
 	/* translate error return types so error makes sense */
-	if (err == RNPGBE_ERR_MBX)
+	if (err == RNPGBE_ERR_MBX) {
 		return -EIO;
+	}
 
-	if (err == RNPGBE_ERR_INVALID_ARGUMENT)
+	if (err == RNPGBE_ERR_INVALID_ARGUMENT) {
 		return -EACCES;
+	}
 	set_bit(vid, adapter->active_vlans);
 
 	if (vid)
@@ -2556,12 +2591,13 @@ static int rnpgbevf_vlan_rx_kill_vid(struct net_device *netdev,
 	struct rnpgbevf_adapter *adapter = netdev_priv(netdev);
 	struct rnpgbevf_hw *hw = &adapter->hw;
 	struct rnp_mbx_info *mbx = &hw->mbx;
+	int err = -EOPNOTSUPP;
 
 	if (vid) {
 		spin_lock_bh(&adapter->mbx_lock);
 		set_bit(__RNPVF_MBX_POLLING, &adapter->state);
 		/* remove VID from filter table */
-		hw->mac.ops.set_vfta(hw, vid, 0, false);
+		err = hw->mac.ops.set_vfta(hw, vid, 0, false);
 		clear_bit(__RNPVF_MBX_POLLING, &adapter->state);
 		spin_unlock_bh(&adapter->mbx_lock);
 		hw->ops.set_veb_vlan(hw, 0, VFNUM(mbx, hw->vfnum));
@@ -2576,7 +2612,7 @@ static int rnpgbevf_vlan_rx_kill_vid(struct net_device *netdev,
  * rnpgbevf_vlan_strip_disable - helper to disable hw vlan stripping
  * @adapter: driver data
  */
-static void
+__maybe_unused static void
 rnpgbevf_vlan_strip_disable(struct rnpgbevf_adapter *adapter)
 {
 	struct rnpgbevf_hw *hw = &adapter->hw;
@@ -2592,7 +2628,7 @@ rnpgbevf_vlan_strip_disable(struct rnpgbevf_adapter *adapter)
  * rnpgbevf_vlan_strip_enable - helper to enable hw vlan stripping
  * @adapter: driver data
  */
-static s32
+__maybe_unused static s32
 rnpgbevf_vlan_strip_enable(struct rnpgbevf_adapter *adapter)
 {
 	struct rnpgbevf_hw *hw = &adapter->hw;
@@ -2642,7 +2678,8 @@ static int rnpgbevf_write_uc_addr_list(struct net_device *netdev)
 			udelay(200);
 		}
 	} else {
-		/* If the list is empty then send message to PF driver to
+		/*
+		 * If the list is empty then send message to PF driver to
 		 * clear all macvlans on this VF.
 		 */
 		spin_lock_bh(&adapter->mbx_lock);
@@ -2685,9 +2722,8 @@ static void rnpgbevf_set_rx_mode(struct net_device *netdev)
 	else
 		rnpgbevf_vlan_strip_disable(adapter);
 
-	/* only do this if hw support stags */
-	if ((features & NETIF_F_HW_VLAN_STAG_RX) ||
-	    (adapter->flags & RNPVF_FLAG_PF_SET_VLAN))
+	/* stags */
+	if (features & NETIF_F_HW_VLAN_STAG_RX)
 		rnpgbevf_vlan_strip_enable(adapter);
 	else
 		rnpgbevf_vlan_strip_disable(adapter);
@@ -2733,9 +2769,12 @@ static void rnpgbevf_configure(struct rnpgbevf_adapter *adapter)
 	struct net_device *netdev = adapter->netdev;
 
 	rnpgbevf_set_rx_mode(netdev);
+
 	rnpgbevf_restore_vlan(adapter);
+
 	rnpgbevf_configure_tx(adapter);
 	rnpgbevf_configure_rx(adapter);
+
 	rnpgbevf_configure_veb(adapter);
 }
 
@@ -2778,7 +2817,7 @@ static void rnpgbevf_up_complete(struct rnpgbevf_adapter *adapter)
 
 	rnpgbevf_napi_enable_all(adapter);
 
-	/*clear any pending interrupts*/
+	/* clear any pending interrupts */
 	rnpgbevf_irq_enable(adapter);
 
 	/* enable transmits */
@@ -2797,7 +2836,7 @@ static void rnpgbevf_up_complete(struct rnpgbevf_adapter *adapter)
 void rnpgbevf_reinit_locked(struct rnpgbevf_adapter *adapter)
 {
 	WARN_ON(in_interrupt());
-	/* put off any impending NetWatchDogTimeout */
+
 	while (test_and_set_bit(__RNPVF_RESETTING, &adapter->state))
 		usleep_range(1000, 2000);
 
@@ -2831,7 +2870,6 @@ void rnpgbevf_reset(struct rnpgbevf_adapter *adapter)
 	clear_bit(__RNPVF_MBX_POLLING, &adapter->state);
 	if (is_valid_ether_addr(adapter->hw.mac.addr)) {
 		eth_hw_addr_set(netdev, adapter->hw.mac.addr);
-		//memcpy(netdev->dev_addr, adapter->hw.mac.addr, netdev->addr_len);
 		memcpy(netdev->perm_addr, adapter->hw.mac.addr,
 		       netdev->addr_len);
 	}
@@ -2926,24 +2964,26 @@ void rnpgbevf_down(struct rnpgbevf_adapter *adapter)
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct rnpgbevf_ring *tx_ring = adapter->tx_ring[i];
 
-		int head, tail;
-		int timeout = 0;
-
-		head = ring_rd32(tx_ring,
-				 RNPGBE_DMA_REG_TX_DESC_BUF_HEAD);
-		tail = ring_rd32(tx_ring,
-				 RNPGBE_DMA_REG_TX_DESC_BUF_TAIL);
-
-		while (head != tail) {
-			usleep_range(10000, 20000);
+		if (!(tx_ring->ring_flags & RNPVF_RING_SKIP_TX_START)) {
+			int head, tail;
+			int timeout = 0;
 
 			head = ring_rd32(tx_ring,
 					 RNPGBE_DMA_REG_TX_DESC_BUF_HEAD);
 			tail = ring_rd32(tx_ring,
 					 RNPGBE_DMA_REG_TX_DESC_BUF_TAIL);
-			timeout++;
-			if (timeout >= 100)
-				break;
+
+			while (head != tail) {
+				usleep_range(10000, 20000);
+
+				head = ring_rd32(tx_ring, RNPGBE_DMA_REG_TX_DESC_BUF_HEAD);
+				tail = ring_rd32(tx_ring, RNPGBE_DMA_REG_TX_DESC_BUF_TAIL);
+				timeout++;
+				if (timeout >= 100) {
+					pr_debug("vf wait tx done timeout\n");
+					break;
+				}
+			}
 		}
 	}
 
@@ -2951,7 +2991,8 @@ void rnpgbevf_down(struct rnpgbevf_adapter *adapter)
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		struct rnpgbevf_ring *tx_ring = adapter->tx_ring[i];
 
-		ring_wr32(tx_ring, RNPGBE_DMA_TX_START, 0);
+		if (!(tx_ring->ring_flags & RNPVF_RING_SKIP_TX_START))
+			ring_wr32(tx_ring, RNPGBE_DMA_TX_START, 0);
 	}
 
 	netif_carrier_off(netdev);
@@ -2973,7 +3014,7 @@ static netdev_features_t rnpgbevf_fix_features(struct net_device *netdev,
 		adapter->flags |= RNPVF_FLAG_RX_CHKSUM_ENABLED;
 	}
 
-	/* vf not support change vlan filter */
+		/* vf not support change vlan filter */
 	if ((netdev->features & NETIF_F_HW_VLAN_CTAG_FILTER) !=
 	    (features & NETIF_F_HW_VLAN_CTAG_FILTER)) {
 		if (netdev->features & NETIF_F_HW_VLAN_CTAG_FILTER)
@@ -2981,7 +3022,6 @@ static netdev_features_t rnpgbevf_fix_features(struct net_device *netdev,
 		else
 			features &= ~NETIF_F_HW_VLAN_CTAG_FILTER;
 	}
-
 	if ((netdev->features & NETIF_F_HW_VLAN_STAG_FILTER) !=
 	    (features & NETIF_F_HW_VLAN_STAG_FILTER)) {
 		if (netdev->features & NETIF_F_HW_VLAN_STAG_FILTER)
@@ -2997,8 +3037,9 @@ static netdev_features_t rnpgbevf_fix_features(struct net_device *netdev,
 		else
 			adapter->priv_flags &= ~RNPVF_FLAG_RX_CVLAN_OFFLOAD;
 
-		if (!(hw->pf_feature & PF_NCSI_EN))
-			features |= NETIF_F_HW_VLAN_CTAG_RX;
+		//if (!(hw->pf_feature & PF_NCSI_EN))
+		//	features |= NETIF_F_HW_VLAN_CTAG_RX;
+		features &= ~NETIF_F_HW_VLAN_CTAG_RX;
 
 		if (features & NETIF_F_HW_VLAN_CTAG_TX)
 			adapter->priv_flags |= RNPVF_FLAG_TX_CVLAN_OFFLOAD;
@@ -3012,9 +3053,9 @@ static netdev_features_t rnpgbevf_fix_features(struct net_device *netdev,
 		else
 			adapter->priv_flags &= ~RNPVF_FLAG_RX_SVLAN_OFFLOAD;
 
-		if (!(hw->pf_feature & PF_NCSI_EN))
-			features |= NETIF_F_HW_VLAN_STAG_RX;
-
+		//if (!(hw->pf_feature & PF_NCSI_EN))
+			//features |= NETIF_F_HW_VLAN_STAG_RX;
+		features &= ~NETIF_F_HW_VLAN_STAG_RX;
 		if (features & NETIF_F_HW_VLAN_STAG_TX)
 			adapter->priv_flags |= RNPVF_FLAG_TX_SVLAN_OFFLOAD;
 		else
@@ -3029,8 +3070,9 @@ static netdev_features_t rnpgbevf_fix_features(struct net_device *netdev,
 		}
 
 		if (hw->feature_flags & RNPVF_NET_FEATURE_STAG_OFFLOAD) {
-			if (!(features & NETIF_F_HW_VLAN_STAG_RX))
+			if (!(features & NETIF_F_HW_VLAN_STAG_RX)) {
 				features &= ~NETIF_F_HW_VLAN_CTAG_RX;
+			}
 		}
 
 		if (!(features & NETIF_F_HW_VLAN_CTAG_TX)) {
@@ -3039,11 +3081,11 @@ static netdev_features_t rnpgbevf_fix_features(struct net_device *netdev,
 		}
 
 		if (hw->feature_flags & RNPVF_NET_FEATURE_STAG_OFFLOAD) {
-			if (!(features & NETIF_F_HW_VLAN_STAG_TX))
+			if (!(features & NETIF_F_HW_VLAN_STAG_TX)) {
 				features &= ~NETIF_F_HW_VLAN_CTAG_TX;
+			}
 		}
 	}
-
 	return features;
 }
 
@@ -3074,6 +3116,15 @@ static int rnpgbevf_set_features(struct net_device *netdev,
 }
 
 /**
+ * rnpgbevf_tx_timeout - Respond to a Tx Hang
+ * @netdev: network interface device structure
+ **/
+__maybe_unused static void rnpgbevf_tx_timeout(struct net_device *netdev)
+{
+	/* Do the reset outside of interrupt context */
+}
+
+/**
  * rnpgbevf_sw_init - Initialize general software structures
  * (struct rnpgbevf_adapter)
  * @adapter: board private structure to initialize
@@ -3099,7 +3150,7 @@ static int rnpgbevf_sw_init(struct rnpgbevf_adapter *adapter)
 
 	hw->mbx.ops.init_params(hw);
 
-	/* initialization default pause flow */
+	/*initialization default pause flow */
 	hw->fc.requested_mode = rnp_fc_none;
 	hw->fc.current_mode = rnp_fc_none;
 
@@ -3135,8 +3186,7 @@ static int rnpgbevf_sw_init(struct rnpgbevf_adapter *adapter)
 	/* get info from pf */
 	err = hw->mac.ops.get_queues(hw);
 	if (err) {
-		dev_info(&pdev->dev,
-			 "Get queue info error, use default one\n");
+		dev_info(&pdev->dev, "Get queue info error, use default one\n");
 		hw->mac.max_tx_queues = MAX_TX_QUEUES;
 		hw->mac.max_rx_queues = MAX_RX_QUEUES;
 		hw->queue_ring_base = (hw->vfnum & VF_NUM_MASK) * MAX_RX_QUEUES;
@@ -3152,6 +3202,7 @@ static int rnpgbevf_sw_init(struct rnpgbevf_adapter *adapter)
 	/* lock to protect mailbox accesses */
 	spin_lock_init(&adapter->mbx_lock);
 
+	/* Enable dynamic interrupt throttling rates */
 	/* set default ring sizes */
 	adapter->tx_ring_item_count = hw->tx_items_count;
 	adapter->rx_ring_item_count = hw->rx_items_count;
@@ -3169,8 +3220,8 @@ static int rnpgbevf_sw_init(struct rnpgbevf_adapter *adapter)
 	adapter->rx_frames = RNPVF_RX_PKT_POLL_BUDGET;
 	adapter->tx_usecs = RNPVF_PKT_TIMEOUT_TX;
 	adapter->tx_frames = RNPVF_TX_PKT_POLL_BUDGET;
-	set_bit(__RNPVF_DOWN, &adapter->state);
 
+	set_bit(__RNPVF_DOWN, &adapter->state);
 	return 0;
 
 out:
@@ -3181,6 +3232,9 @@ static int rnpgbevf_acquire_msix_vectors(struct rnpgbevf_adapter *adapter,
 					 int vectors)
 {
 	int err = 0;
+	int vector_threshold;
+
+	vector_threshold = MIN_MSIX_COUNT;
 
 	/* The more we get, the more we will assign to Tx/Rx Cleanup
 	 * for the separate queues...where Rx Cleanup >= Tx Cleanup.
@@ -3200,7 +3254,8 @@ static int rnpgbevf_acquire_msix_vectors(struct rnpgbevf_adapter *adapter,
 		kfree(adapter->msix_entries);
 		adapter->msix_entries = NULL;
 	} else {
-		/* Adjust for only the vectors we'll use, which is minimum
+		/*
+		 * Adjust for only the vectors we'll use, which is minimum
 		 * of max_msix_q_vectors + NON_Q_VECTORS, or the number of
 		 * vectors we were allocated.
 		 */
@@ -3217,7 +3272,8 @@ static int rnpgbevf_acquire_msix_vectors(struct rnpgbevf_adapter *adapter,
  * This is the top level queue allocation routine.  The order here is very
  * important, starting with the "most" number of features turned on at once,
  * and ending with the smallest set of features.  This way large combinations
- * can be allocated if they're turned on.
+ * can be allocated if they're turned on, and smaller combinations are the
+ * fallthrough conditions.
  *
  **/
 static void rnpgbevf_set_num_queues(struct rnpgbevf_adapter *adapter)
@@ -3239,7 +3295,8 @@ static int rnpgbevf_set_interrupt_capability(struct rnpgbevf_adapter *adapter)
 	int err = 0;
 	int vector, v_budget;
 	int irq_mode_back = adapter->irq_mode;
-	/* It's easy to be greedy for MSI-X vectors, but it really
+	/*
+	 * It's easy to be greedy for MSI-X vectors, but it really
 	 * doesn't do us much good if we have a lot more vectors
 	 * than CPU's.  So let's be conservative and only ask for
 	 * (roughly) the same number of vectors as there are CPU's.
@@ -3254,9 +3311,7 @@ static int rnpgbevf_set_interrupt_capability(struct rnpgbevf_adapter *adapter)
 		/* A failure in MSI-X entry allocation isn't fatal, but it does
 		 * mean we disable MSI-X capabilities of the adapter.
 		 */
-		adapter->msix_entries = kcalloc(v_budget,
-						sizeof(struct msix_entry),
-						GFP_KERNEL);
+		adapter->msix_entries = kcalloc(v_budget, sizeof(struct msix_entry), GFP_KERNEL);
 		if (!adapter->msix_entries) {
 			err = -ENOMEM;
 			goto out;
@@ -3290,7 +3345,6 @@ static int rnpgbevf_set_interrupt_capability(struct rnpgbevf_adapter *adapter)
 		pr_info("adapter not in msix mode\n");
 	}
 
-	/* if has msi capability or set irq_mode */
 	if (adapter->irq_mode == irq_mode_msi) {
 		err = pci_enable_msi(adapter->pdev);
 		if (err) {
@@ -3317,6 +3371,88 @@ static void rnpgbevf_add_ring(struct rnpgbevf_ring *ring,
 	head->count++;
 }
 
+static enum hrtimer_restart irq_miss_check(struct hrtimer *hrtimer)
+{
+	struct rnpgbevf_q_vector *q_vector;
+	struct rnpgbevf_ring *ring;
+	struct rnp_tx_desc *eop_desc;
+	struct rnpgbevf_adapter *adapter;
+	struct rnpgbevf_hw *hw;
+
+	int tx_next_to_clean;
+	int tx_next_to_use;
+
+	struct rnpgbevf_tx_buffer *tx_buffer;
+	union rnp_rx_desc *rx_desc;
+
+	q_vector = container_of(hrtimer, struct rnpgbevf_q_vector,
+				irq_miss_check_timer);
+	adapter = q_vector->adapter;
+	hw = &adapter->hw;
+
+	/* If we're already down or resetting, just bail */
+	if (test_bit(__RNPVF_DOWN, &adapter->state) ||
+	    test_bit(__RNPVF_RESETTING, &adapter->state))
+		goto do_self_napi;
+
+	rnpgbevf_irq_disable_queues(q_vector);
+	rnpgbevf_for_each_ring(ring, q_vector->tx) {
+		tx_next_to_clean = ring->next_to_clean;
+		tx_next_to_use = ring->next_to_use;
+		if (tx_next_to_use == tx_next_to_clean)
+			continue;
+
+		tx_buffer = &ring->tx_buffer_info[tx_next_to_clean];
+		eop_desc = tx_buffer->next_to_watch;
+		if (eop_desc) {
+			if ((eop_desc->cmd & cpu_to_le16(RNPGBE_TXD_STAT_DD))) {
+				if (q_vector->new_rx_count !=
+				    q_vector->old_rx_count) {
+					ring_wr32(ring,
+						  RNPGBE_DMA_REG_RX_INT_DELAY_PKTCNT,
+						q_vector->new_rx_count);
+					q_vector->old_rx_count =
+						q_vector->new_rx_count;
+				}
+				napi_schedule_irqoff(&q_vector->napi);
+				goto do_self_napi;
+			}
+		}
+	}
+
+	/* check rx irq */
+	rnpgbevf_for_each_ring(ring, q_vector->rx) {
+		rx_desc = RNPVF_RX_DESC(ring, ring->next_to_clean);
+
+		if (!rx_desc)
+			continue;
+		if (rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_DD)) {
+			unsigned int size;
+
+			size = le16_to_cpu(rx_desc->wb.len) -
+			       le16_to_cpu(rx_desc->wb.padding_len);
+
+			if (size) {
+				if (q_vector->new_rx_count !=
+				    q_vector->old_rx_count) {
+					ring_wr32(ring,
+						  RNPGBE_DMA_REG_RX_INT_DELAY_PKTCNT,
+						q_vector->new_rx_count);
+					q_vector->old_rx_count =
+						q_vector->new_rx_count;
+				}
+				napi_schedule_irqoff(&q_vector->napi);
+			} else {
+				adapter->flags |= RNPVF_FLAG_PF_RESET_REQ;
+			}
+			goto do_self_napi;
+		}
+	}
+	rnpgbevf_irq_enable_queues(q_vector);
+do_self_napi:
+	return HRTIMER_NORESTART;
+}
+
 static int rnpgbevf_alloc_q_vector(struct rnpgbevf_adapter *adapter,
 				   int eth_queue_idx, int rnpgbevf_vector,
 				   int rnpgbevf_queue, int r_count, int step)
@@ -3331,14 +3467,12 @@ static int rnpgbevf_alloc_q_vector(struct rnpgbevf_adapter *adapter,
 	int rxr_idx = rnpgbevf_queue, txr_idx = rnpgbevf_queue;
 
 	DPRINTK(PROBE, INFO,
-		"eth_queue_idx:%d rnpgbevf_vector:%d(off:%d) ring:%d",
+		"eth_queue_idx:%d rnpgbevf_vector:%d(off:%d) ring:%d ring_cnt:%d, step:%d\n",
 		eth_queue_idx, rnpgbevf_vector, adapter->vector_off,
-		rnpgbevf_queue);
-	DPRINTK(PROBE, INFO, "ring_cnt:%d, step:%d\n",
-		r_count, step);
+		rnpgbevf_queue, r_count, step);
 
+	txr_count = r_count;
 	rxr_count = r_count;
-	txr_count = rxr_count;
 
 	ring_count = txr_count + rxr_count;
 	size = sizeof(struct rnpgbevf_q_vector) +
@@ -3388,22 +3522,35 @@ static int rnpgbevf_alloc_q_vector(struct rnpgbevf_adapter *adapter,
 		ring->queue_index = eth_queue_idx + idx;
 		ring->rnpgbevf_queue_idx = txr_idx;
 
-		if (hw->board_type == rnp_board_n500) {
+		if (hw->board_type == rnp_board_n10) {
+			ring->ring_flags |= RNPVF_RING_SKIP_TX_START;
+			ring->ring_addr = hw->hw_addr + RNPGBE_RING_BASE_N10 +
+					  RNPGBE_RING_OFFSET(txr_idx);
+			ring->rnpgbevf_msix_off = txr_idx;
+		} else if (hw->board_type == rnp_board_n500) {
+			/* n500 not support tunnel */
+			ring->ring_flags |= RNPVF_RING_NO_TUNNEL_SUPPORT;
+			/* n500 fixed ring size change from large to small */
+			ring->ring_flags |= RNPVF_RING_SIZE_CHANGE_FIX;
 			/* n500 vf use this */
 			ring->ring_addr = hw->hw_addr + RNPGBE_RING_BASE_N500;
+			ring->ring_flags |= RNPVF_RING_VEB_MULTI_FIX;
 			ring->rnpgbevf_msix_off = 0;
 		} else if (hw->board_type == rnp_board_n210) {
+			/* n210 not support tunnel */
+			ring->ring_flags |= RNPVF_RING_NO_TUNNEL_SUPPORT;
+			/* n210 fixed ring size change from large to small */
+			ring->ring_flags |= RNPVF_RING_SIZE_CHANGE_FIX;
 			/* n210 vf use this */
 			ring->ring_addr = hw->hw_addr + RNPGBE_RING_BASE_N500;
+			ring->ring_flags |= RNPVF_RING_VEB_MULTI_FIX;
 			ring->rnpgbevf_msix_off = 0;
 		}
 		ring->dma_int_stat = ring->ring_addr + RNPGBE_DMA_INT_STAT;
 		ring->dma_int_mask = ring->dma_int_stat + 4;
 		ring->dma_int_clr = ring->dma_int_stat + 8;
 		ring->device_id = adapter->pdev->device;
-
 		ring->vfnum = hw->vfnum;
-
 		/* assign ring to adapter */
 		adapter->tx_ring[ring->queue_index] = ring;
 		dbg("adapter->tx_ringp[%d] <= %p\n", ring->queue_index, ring);
@@ -3436,12 +3583,31 @@ static int rnpgbevf_alloc_q_vector(struct rnpgbevf_adapter *adapter,
 		ring->queue_index = eth_queue_idx + idx;
 		ring->rnpgbevf_queue_idx = rxr_idx;
 
-		if (hw->board_type == rnp_board_n500) {
+		if (hw->board_type == rnp_board_n10) {
+			ring->ring_addr = hw->hw_addr + RNPGBE_RING_BASE_N10 +
+					  RNPGBE_RING_OFFSET(rxr_idx);
+			ring->rnpgbevf_msix_off = rxr_idx;
+
+		} else if (hw->board_type == rnp_board_n500) {
 			/* n500 fixed ring size change from large to small */
+			ring->ring_flags |= RNPVF_RING_SIZE_CHANGE_FIX;
+			ring->ring_flags |= RNPVF_RING_SCATER_SETUP;
+			ring->ring_flags |= RNPVF_RING_NO_TUNNEL_SUPPORT;
+			ring->ring_flags |= RNPVF_RING_STAGS_SUPPORT;
+			ring->ring_flags |= RNPVF_RING_VEB_MULTI_FIX;
+			ring->ring_flags |= RNPVF_RING_IRQ_MISS_FIX;
+			ring->ring_flags |= RNPVF_RING_CHKSM_FIX;
 			ring->ring_addr = hw->hw_addr + RNPGBE_RING_BASE_N500;
 			ring->rnpgbevf_msix_off = 0;
 		} else if (hw->board_type == rnp_board_n210) {
 			/* n210 fixed ring size change from large to small */
+			ring->ring_flags |= RNPVF_RING_SIZE_CHANGE_FIX;
+			ring->ring_flags |= RNPVF_RING_SCATER_SETUP;
+			ring->ring_flags |= RNPVF_RING_NO_TUNNEL_SUPPORT;
+			ring->ring_flags |= RNPVF_RING_STAGS_SUPPORT;
+			ring->ring_flags |= RNPVF_RING_VEB_MULTI_FIX;
+			ring->ring_flags |= RNPVF_RING_IRQ_MISS_FIX;
+			ring->ring_flags |= RNPVF_RING_CHKSM_FIX;
 			ring->ring_addr = hw->hw_addr + RNPGBE_RING_BASE_N500;
 			ring->rnpgbevf_msix_off = 0;
 		}
@@ -3465,6 +3631,22 @@ static int rnpgbevf_alloc_q_vector(struct rnpgbevf_adapter *adapter,
 		ring++;
 	}
 
+	if (hw->board_type == rnp_board_n10) {
+		q_vector->vector_flags |= RNPVF_QVECTOR_FLAG_IRQ_MISS_CHECK;
+		q_vector->vector_flags |= RNPVF_QVECTOR_FLAG_REDUCE_TX_IRQ_MISS;
+		/* initialize timer */
+		q_vector->irq_check_usecs = 1000;
+		hrtimer_init(&q_vector->irq_miss_check_timer, CLOCK_MONOTONIC,
+			     HRTIMER_MODE_REL);
+		q_vector->irq_miss_check_timer.function =
+			irq_miss_check; /* initialize NAPI */
+	} else if (hw->board_type == rnp_board_n500) {
+		q_vector->vector_flags |= RNPVF_QVECTOR_FLAG_ITR_FEATURE;
+
+	} else if (hw->board_type == rnp_board_n210) {
+		q_vector->vector_flags |= RNPVF_QVECTOR_FLAG_ITR_FEATURE;
+	}
+
 	return 0;
 }
 
@@ -3472,6 +3654,8 @@ static void rnpgbevf_free_q_vector(struct rnpgbevf_adapter *adapter, int v_idx)
 {
 	struct rnpgbevf_q_vector *q_vector;
 	struct rnpgbevf_ring *ring;
+
+	dbg("v_idx:%d\n", v_idx);
 
 	q_vector = adapter->q_vector[v_idx];
 
@@ -3484,7 +3668,11 @@ static void rnpgbevf_free_q_vector(struct rnpgbevf_adapter *adapter, int v_idx)
 	adapter->q_vector[v_idx] = NULL;
 	netif_napi_del(&q_vector->napi);
 
-	/* rnpgbevf_get_stats64() might access the rings on this vector,
+	if (q_vector->vector_flags & RNPVF_QVECTOR_FLAG_IRQ_MISS_CHECK)
+		rnpgbevf_htimer_stop(q_vector);
+
+	/*
+	 * rnpgbevf_get_stats64() might access the rings on this vector,
 	 * we must wait a grace period before freeing it.
 	 */
 	kfree_rcu(q_vector, rcu);
@@ -3532,7 +3720,6 @@ err_out:
 	vector_idx -= adapter->vector_off;
 	while (vector_idx--)
 		rnpgbevf_free_q_vector(adapter, vector_idx);
-
 	return -ENOMEM;
 }
 
@@ -3599,12 +3786,9 @@ int rnpgbevf_init_interrupt_scheme(struct rnpgbevf_adapter *adapter)
 	}
 
 	hw_dbg(&adapter->hw,
-	       "Multiqueue %s: Rx Queue count = %u,",
+	       "Multiqueue %s: Rx Queue count = %u, Tx Queue count = %u\n",
 	       (adapter->num_rx_queues > 1) ? "Enabled" : "Disabled",
 	       adapter->num_rx_queues, adapter->num_tx_queues);
-	hw_dbg(&adapter->hw,
-	       "Tx Queue count = %u\n",
-	       adapter->num_tx_queues);
 
 	set_bit(__RNPVF_DOWN, &adapter->state);
 
@@ -3631,6 +3815,29 @@ void rnpgbevf_clear_interrupt_scheme(struct rnpgbevf_adapter *adapter)
 	rnpgbevf_reset_interrupt_capability(adapter);
 }
 
+#define UPDATE_VF_COUNTER_32bit(reg, last_counter, counter)                    \
+	{                                                                      \
+		u32 current_counter = RNPGBE_READ_REG(hw, reg);                \
+		if (current_counter < (last_counter))                            \
+			(counter) += 0x100000000LL;                              \
+		(last_counter) = current_counter;                                \
+		(counter) &= 0xFFFFFFFF00000000LL;                               \
+		(counter) |= current_counter;                                    \
+	}
+
+#define UPDATE_VF_COUNTER_36bit(reg_lsb, reg_msb, last_counter, counter)       \
+	{                                                                      \
+		u64 current_counter_lsb = RNPGBE_READ_REG(hw, reg_lsb);        \
+		u64 current_counter_msb = RNPGBE_READ_REG(hw, reg_msb);        \
+		u64 current_counter =                                          \
+			(current_counter_msb << 32) | current_counter_lsb;     \
+		if (current_counter < (last_counter))                            \
+			(counter) += 0x1000000000LL;                             \
+		(last_counter) = current_counter;                                \
+		(counter) &= 0xFFFFFFF000000000LL;                               \
+		(counter) |= current_counter;                                    \
+	}
+
 /**
  * rnpgbevf_update_stats - Update the board statistics counters.
  * @adapter: board private structure
@@ -3643,17 +3850,14 @@ void rnpgbevf_update_stats(struct rnpgbevf_adapter *adapter)
 
 	net_stats->tx_packets = 0;
 	net_stats->tx_bytes = 0;
-
 	net_stats->rx_packets = 0;
 	net_stats->rx_bytes = 0;
 	net_stats->rx_dropped = 0;
 	net_stats->rx_errors = 0;
-
 	hw_stats->vlan_add_cnt = 0;
 	hw_stats->vlan_strip_cnt = 0;
 	hw_stats->csum_err = 0;
 	hw_stats->csum_good = 0;
-
 	for (i = 0; i < adapter->num_q_vectors; i++) {
 		struct rnpgbevf_ring *ring;
 		struct rnpgbevf_q_vector *q_vector = adapter->q_vector[i];
@@ -3712,14 +3916,15 @@ static int rnpgbevf_reset_subtask(struct rnpgbevf_adapter *adapter)
 
 /**
  * rnpgbevf_watchdog - Timer Call-back
- * @t: timer_list pointer
+ * @data: pointer to adapter cast into an unsigned long
  **/
 static void rnpgbevf_watchdog(struct timer_list *t)
 {
 	struct rnpgbevf_adapter *adapter =
 		from_timer(adapter, t, watchdog_timer);
 
-	/* Do the watchdog outside of interrupt context due to the lovely
+	/*
+	 * Do the watchdog outside of interrupt context due to the lovely
 	 * delays that some of the newer hardware requires
 	 */
 
@@ -3729,6 +3934,22 @@ static void rnpgbevf_watchdog(struct timer_list *t)
 watchdog_short_circuit:
 	if (!test_bit(__RNPVF_REMOVE, &adapter->state))
 		schedule_work(&adapter->watchdog_task);
+}
+
+__maybe_unused static void rnpgbevf_reset_task(struct work_struct *work)
+{
+	struct rnpgbevf_adapter *adapter;
+
+	adapter = container_of(work, struct rnpgbevf_adapter, reset_task);
+
+	/* If we're already down or resetting, just bail */
+	if (test_bit(__RNPVF_DOWN, &adapter->state) ||
+	    test_bit(__RNPVF_RESETTING, &adapter->state))
+		return;
+
+	adapter->tx_timeout_count++;
+
+	rnpgbevf_reinit_locked(adapter);
 }
 
 static void rnpgbevf_check_hang_subtask(struct rnpgbevf_adapter *adapter)
@@ -3748,7 +3969,6 @@ static void rnpgbevf_check_hang_subtask(struct rnpgbevf_adapter *adapter)
 	    test_bit(__RNPVF_RESETTING, &adapter->state))
 		return;
 
-	/* check if we lost tx irq */
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 		tx_ring = adapter->tx_ring[i];
 		/* get the last next_to_clean */
@@ -3795,32 +4015,76 @@ static void rnpgbevf_check_hang_subtask(struct rnpgbevf_adapter *adapter)
 		if (rx_next_to_clean != rx_next_to_clean_old) {
 			rx_ring->rx_stats.rx_equal_count = 0;
 			rx_ring->rx_stats.rx_next_to_clean = rx_next_to_clean;
-
 			continue;
 		}
 		rx_ring->rx_stats.rx_equal_count++;
 
 		if (rx_ring->rx_stats.rx_equal_count > 2 &&
 		    rx_ring->rx_stats.rx_equal_count < 5) {
-			rx_desc = RNPVF_RX_DESC(rx_ring, rx_ring->next_to_clean);
-			if (rnpgbevf_test_staterr(rx_desc, RNPGBE_RXD_STAT_DD)) {
+			rx_desc =
+				RNPVF_RX_DESC(rx_ring, rx_ring->next_to_clean);
+			if (rnpgbevf_test_staterr(rx_desc,
+						  RNPGBE_RXD_STAT_DD)) {
 				struct rnpgbevf_q_vector *q_vector =
 					rx_ring->q_vector;
 				unsigned int size;
 
 				size = le16_to_cpu(rx_desc->wb.len) -
-					le16_to_cpu(rx_desc->wb.padding_len);
+				       le16_to_cpu(rx_desc->wb.padding_len);
 				if (size) {
 					rx_ring->rx_stats.rx_irq_miss++;
-					if (q_vector->rx.ring || q_vector->tx.ring)
+					if (q_vector->rx.ring ||
+					    q_vector->tx.ring)
 						napi_schedule_irqoff(&q_vector->napi);
 				}
 			}
 		}
 		if (rx_ring->rx_stats.rx_equal_count > 1000)
 			rx_ring->rx_stats.rx_equal_count = 0;
-
 		rx_ring->rx_stats.rx_next_to_clean = rx_next_to_clean;
+	}
+}
+
+/* just modify rx itr */
+__maybe_unused static void
+rnpgbevf_auto_itr_moderation(struct rnpgbevf_adapter *adapter)
+{
+	int i;
+	struct rnpgbevf_ring *rx_ring;
+	u64 period = (u64)(jiffies - adapter->last_moder_jiffies);
+
+	// update jiffies
+	adapter->last_moder_jiffies = jiffies;
+
+	if (!adapter->adaptive_rx_coal ||
+	    period < adapter->sample_interval * HZ) {
+		return;
+	}
+
+	/* it is time to check moderation */
+	for (i = 0; i < adapter->num_rx_queues; i++) {
+		u64 x, y, rate;
+		u64 rx_packets, packets, rx_pkt_diff;
+
+		rx_ring = adapter->rx_ring[i];
+		rx_packets = READ_ONCE(rx_ring->stats.packets);
+		rx_pkt_diff = rx_packets -
+			      adapter->last_moder_packets[rx_ring->queue_index];
+		packets = rx_pkt_diff;
+
+		x = packets * HZ;
+		y = do_div(x, period);
+		rate = x;
+
+		if (rate != 0) {
+			if (rate < 20000)
+				rx_ring->ring_flags |= RNPVF_RING_LOWER_ITR;
+			else
+				rx_ring->ring_flags &= (~RNPVF_RING_LOWER_ITR);
+		}
+
+		/* write back new count */
+		adapter->last_moder_packets[rx_ring->queue_index] = rx_packets;
 	}
 }
 
@@ -3874,20 +4138,17 @@ static void rnpgbevf_watchdog_task(struct work_struct *work)
 			char *link_speed_string;
 
 			switch (link_speed) {
-			case RNPGBE_LINK_SPEED_40GB_FULL:
-				link_speed_string = "40 Gbps";
-				break;
-			case RNPGBE_LINK_SPEED_25GB_FULL:
-				link_speed_string = "25 Gbps";
-				break;
-			case RNPGBE_LINK_SPEED_10GB_FULL:
-				link_speed_string = "10 Gbps";
-				break;
 			case RNPGBE_LINK_SPEED_1GB_FULL:
+			case RNPGBE_LINK_SPEED_1GB_HALF:
 				link_speed_string = "1 Gbps";
 				break;
 			case RNPGBE_LINK_SPEED_100_FULL:
+			case RNPGBE_LINK_SPEED_100_HALF:
 				link_speed_string = "100 Mbps";
+				break;
+			case RNPGBE_LINK_SPEED_10_FULL:
+			case RNPGBE_LINK_SPEED_10_HALF:
+				link_speed_string = "10 Mbps";
 				break;
 			default:
 				link_speed_string = "unknown speed";
@@ -3925,10 +4186,14 @@ skip_link_check:
 
 	rnpgbevf_check_hang_subtask(adapter);
 	rnpgbevf_update_stats(adapter);
+	rnpgbevf_auto_itr_moderation(adapter);
 
 pf_has_reset:
 	/* Reset the timer */
-	mod_timer(&adapter->watchdog_timer, round_jiffies(jiffies + (2 * HZ)));
+	if (!test_bit(__RNPVF_REMOVE, &adapter->state)) {
+		mod_timer(&adapter->watchdog_timer,
+			  round_jiffies(jiffies + (2 * HZ)));
+	}
 
 	adapter->flags &= ~RNPVF_FLAG_IN_WATCHDOG_TASK;
 }
@@ -3994,6 +4259,7 @@ int rnpgbevf_setup_tx_resources(struct rnpgbevf_adapter *adapter,
 	if (tx_ring->q_vector)
 		numa_node = tx_ring->q_vector->numa_node;
 
+	dbg("%s size:%d count:%d\n", __func__, size, tx_ring->count);
 	tx_ring->tx_buffer_info = vzalloc_node(size, numa_node);
 	if (!tx_ring->tx_buffer_info)
 		tx_ring->tx_buffer_info = vzalloc(size);
@@ -4019,12 +4285,10 @@ int rnpgbevf_setup_tx_resources(struct rnpgbevf_adapter *adapter,
 	tx_ring->next_to_clean = 0;
 
 	DPRINTK(IFUP, INFO,
-		"%d TxRing:%d, vector:%d ItemCounts:%d",
+		"%d TxRing:%d, vector:%d ItemCounts:%d desc:%p(0x%pad) node:%d\n",
 		tx_ring->queue_index, tx_ring->rnpgbevf_queue_idx,
-		tx_ring->q_vector->v_idx, tx_ring->count);
-	DPRINTK(IFUP, INFO,
-		"desc:%p(0x%llx) node:%d\n",
-		tx_ring->desc, (u64)tx_ring->dma, numa_node);
+		tx_ring->q_vector->v_idx, tx_ring->count, tx_ring->desc,
+		&tx_ring->dma, numa_node);
 	return 0;
 
 err:
@@ -4121,12 +4385,10 @@ int rnpgbevf_setup_rx_resources(struct rnpgbevf_adapter *adapter,
 	rx_ring->next_to_use = 0;
 
 	DPRINTK(IFUP, INFO,
-		"%d RxRing:%d, vector:%d ItemCounts:%d",
+		"%d RxRing:%d, vector:%d ItemCounts:%d desc:%p(0x%pad) node:%d\n",
 		rx_ring->queue_index, rx_ring->rnpgbevf_queue_idx,
-		rx_ring->q_vector->v_idx, rx_ring->count);
-	DPRINTK(IFUP, INFO,
-		"desc:%p(0x%llx) node:%d\n",
-		rx_ring->desc, (u64)rx_ring->dma, numa_node);
+		rx_ring->q_vector->v_idx, rx_ring->count, rx_ring->desc,
+		&rx_ring->dma, numa_node);
 
 	return 0;
 alloc_failed:
@@ -4287,7 +4549,7 @@ int rnpgbevf_open(struct net_device *netdev)
 		if (hw->adapter_stopped) {
 			err = RNPGBE_ERR_MBX;
 			dev_err(&hw->pdev->dev,
-				"%s(%s):error: perhaps the PF Driver isn't up yet\n",
+				"%s(%s):error: Unable to start - perhaps the PF Driver isn't up yet\n",
 				adapter->name, netdev->name);
 			goto err_setup_reset;
 		}
@@ -4402,6 +4664,7 @@ static void rnpgbevf_tx_ctxtdesc(struct rnpgbevf_ring *tx_ring,
 	context_desc->tunnel_hdr_len = tunnel_hdr_len;
 	context_desc->rev = 0;
 	context_desc->cmd = cpu_to_le16(type_tucmd);
+	buf_dump_line("ctx  ", __LINE__, context_desc, sizeof(*context_desc));
 }
 
 static int rnpgbevf_tso(struct rnpgbevf_ring *tx_ring,
@@ -4466,6 +4729,8 @@ static int rnpgbevf_tso(struct rnpgbevf_ring *tx_ring,
 		} else {
 			first->cmd_flags |= RNPGBE_TXD_TUNNEL_NVGRE;
 		}
+		dbg("set outer l4.udp to 0\n");
+
 		/* reset pointers to inner headers */
 		ip.hdr = skb_inner_network_header(skb);
 		l4.hdr = skb_inner_transport_header(skb);
@@ -4485,25 +4750,35 @@ static int rnpgbevf_tso(struct rnpgbevf_ring *tx_ring,
 
 	/* determine offset of inner transport header */
 	l4_offset = l4.hdr - skb->data;
+
 	paylen = skb->len - l4_offset;
+	dbg("before l4 checksum is %x\n", l4.tcp->check);
 
 	if (skb->csum_offset == offsetof(struct tcphdr, check)) {
+		dbg("tcp before l4 checksum is %x\n", l4.tcp->check);
 		first->cmd_flags |= RNPGBE_TXD_L4_TYPE_TCP;
 		/* compute length of segmentation header */
 		*hdr_len = (l4.tcp->doff * 4) + l4_offset;
 		csum_replace_by_diff(&l4.tcp->check,
 				     (__force __wsum)htonl(paylen));
+		dbg("tcp l4 checksum is %x\n", l4.tcp->check);
 		l4.tcp->psh = 0;
 	} else {
+		dbg("paylen is %x\n", paylen);
 		first->cmd_flags |= RNPGBE_TXD_L4_TYPE_UDP;
 		/* compute length of segmentation header */
+		dbg("udp before l4 checksum is %x\n", l4.udp->check);
 		*hdr_len = sizeof(*l4.udp) + l4_offset;
 		csum_replace_by_diff(&l4.udp->check,
 				     (__force __wsum)htonl(paylen));
+		dbg("udp l4 checksum is %x\n", l4.udp->check);
 	}
+
+	dbg("l4 checksum is %x\n", l4.tcp->check);
 
 	first->mac_ip_len = l4.hdr - ip.hdr;
 	first->mac_ip_len |= (ip.hdr - inner_mac) << 9;
+
 	/* compute header lengths */
 	/* pull values out of skb_shinfo */
 	gso_size = skb_shinfo(skb)->gso_size;
@@ -4524,11 +4799,9 @@ static int rnpgbevf_tso(struct rnpgbevf_ring *tx_ring,
 	first->gso_segs = gso_segs;
 	first->bytecount += (first->gso_segs - 1) * *hdr_len;
 	first->mss_len_vf_num |= (gso_size | ((l4.tcp->doff * 4) << 24));
-
 	first->cmd_flags |=
 		RNPGBE_TXD_FLAG_TSO | RNPGBE_TXD_IP_CSUM | RNPGBE_TXD_L4_CSUM;
 	first->ctx_flag = true;
-
 	return 1;
 }
 
@@ -4607,9 +4880,12 @@ static int rnpgbevf_tx_csum(struct rnpgbevf_ring *tx_ring,
 		inner_mac = skb_inner_mac_header(skb);
 		first->tunnel_hdr_len = inner_mac - skb->data;
 		first->ctx_flag = true;
+		dbg("tunnel length is %d\n", first->tunnel_hdr_len);
 	}
 
-	mac_len = (ip.hdr - inner_mac); // mac length
+	mac_len = (ip.hdr - inner_mac);
+	dbg("inner checksum needed %d", skb_checksum_start_offset(skb));
+	dbg("skb->encapsulation %d\n", skb->encapsulation);
 	ip_len = (l4.hdr - ip.hdr);
 	if (ip.v4->version == 4) {
 		l4_proto = ip.v4->protocol;
@@ -4637,19 +4913,18 @@ static int rnpgbevf_tx_csum(struct rnpgbevf_ring *tx_ring,
 		skb_checksum_help(skb);
 		return 0;
 	}
-
-	if (first->ctx_flag) {
+	if ((tx_ring->ring_flags & RNPVF_RING_NO_TUNNEL_SUPPORT) &&
+	    first->ctx_flag) {
 		/* if not support tunnel */
-		/* clean tunnel type */
 		first->cmd_flags &= (~RNPGBE_TXD_TUNNEL_MASK);
-		/* add tunnel_hdr_len to mac_len */
 		mac_len += first->tunnel_hdr_len;
 		first->tunnel_hdr_len = 0;
 		first->ctx_flag = false;
 	}
 
+	dbg("mac length is %d\n", mac_len);
+	dbg("ip length is %d\n", ip_len);
 	first->mac_ip_len = (mac_len << 9) | ip_len;
-
 	return 0;
 }
 
@@ -4659,7 +4934,6 @@ static void rnpgbevf_tx_map(struct rnpgbevf_ring *tx_ring,
 	struct sk_buff *skb = first->skb;
 	struct rnpgbevf_tx_buffer *tx_buffer;
 	struct rnp_tx_desc *tx_desc;
-
 	skb_frag_t *frag;
 	dma_addr_t dma;
 	unsigned int data_len, size;
@@ -4695,6 +4969,7 @@ static void rnpgbevf_tx_map(struct rnpgbevf_ring *tx_ring,
 		while (unlikely(size > RNPVF_MAX_DATA_PER_TXD)) {
 			tx_desc->cmd = cpu_to_le16(cmd);
 			tx_desc->blen = cpu_to_le16(RNPVF_MAX_DATA_PER_TXD);
+			/* ==== desc== */
 			buf_dump_line("tx0  ", __LINE__, tx_desc,
 				      sizeof(*tx_desc));
 			i++;
@@ -4717,6 +4992,7 @@ static void rnpgbevf_tx_map(struct rnpgbevf_ring *tx_ring,
 		tx_desc->blen = cpu_to_le16(size);
 		buf_dump_line("tx2  ", __LINE__, tx_desc, sizeof(*tx_desc));
 
+		/* ==== frag== */
 		i++;
 		tx_desc++;
 		if (i == tx_ring->count) {
@@ -4746,7 +5022,8 @@ static void rnpgbevf_tx_map(struct rnpgbevf_ring *tx_ring,
 	/* set the timestamp */
 	first->time_stamp = jiffies;
 
-	/* Force memory writes to complete before letting h/w know there
+	/*
+	 * Force memory writes to complete before letting h/w know there
 	 * are new descriptors to fetch.  (Only applicable for weak-ordered
 	 * memory model archs, such as IA-64).
 	 *
@@ -4790,6 +5067,7 @@ static int __rnpgbevf_maybe_stop_tx(struct rnpgbevf_ring *tx_ring, int size)
 {
 	struct rnpgbevf_adapter *adapter = netdev_priv(tx_ring->netdev);
 
+	dbg("stop subqueue\n");
 	netif_stop_subqueue(tx_ring->netdev, tx_ring->queue_index);
 	/* Herbert's original patch had:
 	 *  smp_mb__after_netif_stop_queue();
@@ -4806,7 +5084,6 @@ static int __rnpgbevf_maybe_stop_tx(struct rnpgbevf_ring *tx_ring, int size)
 	/* A reprieve! - use start_queue because it doesn't call schedule */
 	netif_start_subqueue(tx_ring->netdev, tx_ring->queue_index);
 	++adapter->restart_queue;
-
 	return 0;
 }
 
@@ -4828,6 +5105,36 @@ static int rnpgbevf_maybe_stop_tx(struct rnpgbevf_ring *tx_ring, int size)
 	return __rnpgbevf_maybe_stop_tx(tx_ring, size);
 }
 
+static void rnpgbevf_force_src_mac(struct sk_buff *skb,
+				   struct net_device *netdev)
+{
+	u8 *data = skb->data;
+	bool ret = false;
+	struct netdev_hw_addr *ha;
+
+	/* force all src mac to myself */
+	if (is_multicast_ether_addr(data)) {
+		if (memcmp(data + netdev->addr_len, netdev->dev_addr,
+			   netdev->addr_len) == 0) {
+			ret = true;
+			goto DONE;
+		}
+		netdev_for_each_uc_addr(ha, netdev) {
+			if (memcmp(data + netdev->addr_len, ha->addr,
+				   netdev->addr_len) == 0) {
+				ret = true;
+				goto DONE;
+			}
+		}
+		/* if not src mac, force to src mac */
+		if (!ret)
+			memcpy(data + netdev->addr_len, netdev->dev_addr,
+			       netdev->addr_len);
+	}
+DONE:
+	return;
+}
+
 static netdev_tx_t rnpgbevf_xmit_frame_ring(struct sk_buff *skb,
 					    struct rnpgbevf_adapter *adapter,
 					    struct rnpgbevf_ring *tx_ring,
@@ -4843,7 +5150,15 @@ static netdev_tx_t rnpgbevf_xmit_frame_ring(struct sk_buff *skb,
 	u8 hdr_len = 0;
 	int ignore_vlan = 0;
 
-	/* need: 1 descriptor per page * PAGE_SIZE/RNPVF_MAX_DATA_PER_TXD,
+	dbg("=== begin ====\n");
+
+	rnpgbevf_skb_dump(skb, true);
+
+	dbg("skb:%p, skb->len:%d  headlen:%d, data_len:%d, tx_ring->next_to_use:%d count:%d\n",
+	    skb, skb->len, skb_headlen(skb), skb->data_len,
+	    tx_ring->next_to_use, tx_ring->count);
+	/*
+	 * need: 1 descriptor per page * PAGE_SIZE/RNPVF_MAX_DATA_PER_TXD,
 	 *       + 1 desc for skb_headlen/RNPVF_MAX_DATA_PER_TXD,
 	 *       + 2 desc gap to keep tail from touching head,
 	 *       + 1 desc for context descriptor,
@@ -4853,19 +5168,24 @@ static netdev_tx_t rnpgbevf_xmit_frame_ring(struct sk_buff *skb,
 		skb_frag_t *frag_temp = &skb_shinfo(skb)->frags[f];
 
 		count += TXD_USE_COUNT(skb_frag_size(frag_temp));
+		dbg(" #%d frag: size:%d\n", f, skb_shinfo(skb)->frags[f].size);
 	}
 
 	if (rnpgbevf_maybe_stop_tx(tx_ring, count + 3)) {
 		tx_ring->tx_stats.tx_busy++;
 		return NETDEV_TX_BUSY;
 	}
+	dbg("xx %p\n", tx_ring->tx_buffer_info);
 
 	/* patch force send src mac to this netdev->mac */
+	if (!(tx_ring->ring_flags & RNPVF_RING_VEB_MULTI_FIX))
+		rnpgbevf_force_src_mac(skb, tx_ring->netdev);
 	/* record the location of the first descriptor for this packet */
 	first = &tx_ring->tx_buffer_info[tx_ring->next_to_use];
 	first->skb = skb;
 	first->bytecount = skb->len;
 	first->gso_segs = 1;
+
 	first->mss_len_vf_num = 0;
 	first->inner_vlan_tunnel_len = 0;
 
@@ -4875,12 +5195,16 @@ static netdev_tx_t rnpgbevf_xmit_frame_ring(struct sk_buff *skb,
 	}
 
 	/* if we have a HW VLAN tag being added default to the HW one */
-
 	if (adapter->flags & RNPVF_FLAG_PF_SET_VLAN) {
 		/* in this mode , driver insert vlan */
-		vlan |= adapter->vf_vlan;
-		cmd |= RNPGBE_TXD_VLAN_VALID | RNPGBE_TXD_VLAN_CTRL_INSERT_VLAN;
-
+		//vlan |= adapter->vf_vlan;
+		//cmd |= RNPGBE_TXD_VLAN_VALID | RNPGBE_TXD_VLAN_CTRL_INSERT_VLAN;
+		// add a vlan, and set ignore valid
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q), adapter->vf_vlan);
+		skb = __vlan_hwaccel_push_inside(skb);
+		vlan = adapter->vf_vlan;
+		cmd |= RNPGBE_TXD_VLAN_VALID | RNPGBE_TXD_VLAN_CTRL_NOP;
+		ignore_vlan = 1;
 	} else {
 		if (skb_vlan_tag_present(skb)) {
 			if (skb->vlan_proto != htons(ETH_P_8021Q)) {
@@ -4894,7 +5218,7 @@ static netdev_tx_t rnpgbevf_xmit_frame_ring(struct sk_buff *skb,
 				       RNPGBE_TXD_VLAN_CTRL_INSERT_VLAN;
 			}
 			tx_ring->tx_stats.vlan_add++;
-		/* else if it is a SW VLAN check the next protocol and store the tag */
+			/* else if it is a SW VLAN check the next protocol and store the tag */
 		} else if (protocol == htons(ETH_P_8021Q)) {
 			struct vlan_hdr *vhdr, _vhdr;
 
@@ -4923,13 +5247,14 @@ static netdev_tx_t rnpgbevf_xmit_frame_ring(struct sk_buff *skb,
 		goto out_drop;
 	else if (!tso)
 		rnpgbevf_tx_csum(tx_ring, first);
-	/* vf should always send ctx with vf_num */
+	/* vf should always send ctx with vf_num*/
 	first->ctx_flag = true;
 	/* add control desc */
 	rnpgbevf_maybe_tx_ctxtdesc(tx_ring, first, ignore_vlan, 0);
 	rnpgbevf_tx_map(tx_ring, first, hdr_len);
 	rnpgbevf_maybe_stop_tx(tx_ring, DESC_NEEDED);
 
+	dbg("=== end ====\n\n\n\n");
 	return NETDEV_TX_OK;
 
 out_drop:
@@ -4985,7 +5310,8 @@ static int rnpgbevf_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 	struct rnpgbevf_ring *tx_ring;
 	bool tx_padding = false;
 
-	/* The minimum packet size for olinfo paylen is 17 so pad the skb
+	/*
+	 * The minimum packet size for olinfo paylen is 17 so pad the skb
 	 * in order to meet this minimum size requirement.
 	 */
 	/* for sctp packet, padding 0 change the crc32c */
@@ -5003,18 +5329,16 @@ static int rnpgbevf_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 					return NETDEV_TX_OK;
 
 			} else {
-				/* if sctp smaller than 60, never padding */
 				tx_padding = true;
 			}
 		}
-
 	} else {
 		if (skb_put_padto(skb, 17))
 			return NETDEV_TX_OK;
 	}
 
 	tx_ring = adapter->tx_ring[skb->queue_mapping];
-
+	dbg("xmi:queue_mapping:%d ring:%p\n", skb->queue_mapping, tx_ring);
 	return rnpgbevf_xmit_frame_ring(skb, adapter, tx_ring, tx_padding);
 }
 
@@ -5067,9 +5391,11 @@ void remove_mbx_irq(struct rnpgbevf_adapter *adapter)
 
 	/* mbx */
 	if (adapter->flags & RNPVF_FLAG_MSIX_ENABLED) {
-		adapter->hw.mbx.ops.configure(&adapter->hw,
-					      adapter->msix_entries[0].entry,
-					      false);
+		if (hw->board_type != rnp_board_n500) {
+			adapter->hw.mbx.ops.configure(&adapter->hw,
+						      adapter->msix_entries[0].entry,
+						      false);
+		}
 		free_irq(adapter->msix_entries[0].vector, adapter);
 	}
 }
@@ -5095,6 +5421,8 @@ static void rnp_get_link_status(struct rnpgbevf_adapter *adapter)
 			hw->link = false;
 			hw->speed = 0;
 		}
+	} else {
+		pr_debug("[rpnvf] error! mbx GET_LINK failed!\n");
 	}
 	clear_bit(__RNPVF_MBX_POLLING, &adapter->state);
 	spin_unlock_bh(&adapter->mbx_lock);
@@ -5116,7 +5444,8 @@ int register_mbx_irq(struct rnpgbevf_adapter *adapter)
 				"request_irq for msix_other failed: %d\n", err);
 			goto err_mbx;
 		}
-		hw->mbx.ops.configure(hw, adapter->msix_entries[0].entry, true);
+		if (hw->board_type != rnp_board_n500)
+			hw->mbx.ops.configure(hw, adapter->msix_entries[0].entry, true);
 	}
 
 	rnp_get_link_status(adapter);
@@ -5128,7 +5457,9 @@ static int rnpgbevf_suspend(struct pci_dev *pdev, pm_message_t state)
 {
 	struct rnpgbevf_adapter *adapter = pci_get_drvdata(pdev);
 	struct net_device *netdev = adapter->netdev;
+#ifdef CONFIG_PM
 	int retval = 0;
+#endif
 
 	netif_device_detach(netdev);
 
@@ -5144,15 +5475,18 @@ static int rnpgbevf_suspend(struct pci_dev *pdev, pm_message_t state)
 	remove_mbx_irq(adapter);
 	rnpgbevf_clear_interrupt_scheme(adapter);
 
+#ifdef CONFIG_PM
 	retval = pci_save_state(pdev);
 	if (retval)
 		return retval;
 
+#endif
 	pci_disable_device(pdev);
 
 	return 0;
 }
 
+#ifdef CONFIG_PM
 static int rnpgbevf_resume(struct pci_dev *pdev)
 {
 	struct rnpgbevf_adapter *adapter = pci_get_drvdata(pdev);
@@ -5161,7 +5495,8 @@ static int rnpgbevf_resume(struct pci_dev *pdev)
 
 	pci_set_power_state(pdev, PCI_D0);
 	pci_restore_state(pdev);
-	/* pci_restore_state clears dev->state_saved so call
+	/*
+	 * pci_restore_state clears dev->state_saved so call
 	 * pci_save_state to restore it.
 	 */
 	pci_save_state(pdev);
@@ -5196,6 +5531,7 @@ static int rnpgbevf_resume(struct pci_dev *pdev)
 	return err;
 }
 
+#endif /* CONFIG_PM */
 static void rnpgbevf_shutdown(struct pci_dev *pdev)
 {
 	rnpgbevf_suspend(pdev, PMSG_SUSPEND);
@@ -5291,10 +5627,14 @@ static const struct net_device_ops rnpgbevf_netdev_ops = {
 	.ndo_get_stats64 = rnpgbevf_get_stats64,
 	.ndo_set_rx_mode = rnpgbevf_set_rx_mode,
 	.ndo_set_mac_address = rnpgbevf_set_mac,
+
 	.ndo_change_mtu = rnpgbevf_change_mtu,
+
 	.ndo_vlan_rx_add_vid = rnpgbevf_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = rnpgbevf_vlan_rx_kill_vid,
+
 	.ndo_features_check = rnpgbevf_features_check,
+
 	.ndo_set_features = rnpgbevf_set_features,
 	.ndo_fix_features = rnpgbevf_fix_features,
 };
@@ -5315,6 +5655,21 @@ static u8 rnpgbevf_vfnum_n500(struct rnpgbevf_hw *hw)
 #define VF_NUM_MASK_N500 (0xff)
 
 	return (vf_num & VF_NUM_MASK_N500);
+}
+
+static inline unsigned long rnpgbevf_tso_features(struct rnpgbevf_hw *hw)
+{
+	unsigned long features = 0;
+
+	if (hw->feature_flags & RNPVF_NET_FEATURE_TSO)
+		features |= NETIF_F_TSO;
+	if (hw->feature_flags & RNPVF_NET_FEATURE_TSO)
+		features |= NETIF_F_TSO6;
+	features |= NETIF_F_GSO_PARTIAL;
+	if (hw->feature_flags & RNPVF_NET_FEATURE_TX_UDP_TUNNEL)
+		features |= RNPVF_GSO_PARTIAL_FEATURES;
+
+	return features;
 }
 
 static int rnpgbevf_add_adpater(struct pci_dev *pdev,
@@ -5343,6 +5698,7 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 	adapter->netdev = netdev;
 	adapter->pdev = pdev;
 	/* setup some status */
+	adapter->status |= GET_VFNUM_FROM_BAR0;
 
 	if (padapter)
 		*padapter = adapter;
@@ -5352,7 +5708,7 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 	hw->back = adapter;
 	hw->pdev = pdev;
 	hw->board_type = ii->board_type;
-	adapter->msg_enable = netif_msg_init(debug, DEFAULT_MSG_ENABLE);
+	adapter->msg_enable = netif_msg_init(debug, NETIF_MSG_DRV);
 
 	switch (ii->mac) {
 	case rnp_mac_2port_10G:
@@ -5381,8 +5737,7 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 		}
 		dev_info(&pdev->dev, "[bar%d]:%p %llx len=%d kB\n",
 			 RNPGBE_N500_BAR, hw->hw_addr,
-			 (unsigned long long)pci_resource_start(pdev,
-			 RNPGBE_N500_BAR),
+			 (unsigned long long)pci_resource_start(pdev, RNPGBE_N500_BAR),
 			 (int)pci_resource_len(pdev, RNPGBE_N500_BAR) / 1024);
 		hw->vfnum = rnpgbevf_vfnum_n500(hw);
 		hw->ring_msix_base = hw->hw_addr + 0x24700;
@@ -5418,7 +5773,6 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 			 adapter->bd_number);
 
 		adapter->irq_mode = irq_mode_msix;
-
 		break;
 
 	case rnp_board_n210:
@@ -5430,10 +5784,8 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 		}
 		dev_info(&pdev->dev, "[bar%d]:%p %llx len=%d kB\n",
 			 RNPGBE_N210_BAR, hw->hw_addr,
-			 (unsigned long long)pci_resource_start(pdev,
-			 RNPGBE_N210_BAR),
+			 (unsigned long long)pci_resource_start(pdev, RNPGBE_N210_BAR),
 			 (int)pci_resource_len(pdev, RNPGBE_N210_BAR) / 1024);
-
 		hw->vfnum = rnpgbevf_vfnum_n500(hw);
 		hw->ring_msix_base = hw->hw_addr + 0x25000;
 
@@ -5470,9 +5822,10 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 		adapter->irq_mode = irq_mode_msix;
 		break;
 	default:
-		dev_info(&pdev->dev, "board type error\n");
-		err = -EIO;
+		pr_debug("card type error\n");
 		goto err_ioremap;
+
+		break;
 	}
 
 	pr_info("%s %s: vfnum:0x%x\n", adapter->name, pci_name(pdev),
@@ -5504,6 +5857,7 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 	/* MTU range: 68 - 9710 */
 	netdev->min_mtu = hw->min_length;
 	netdev->max_mtu = hw->max_length - (ETH_HLEN + 2 * ETH_FCS_LEN);
+
 	netdev->mtu = hw->mtu;
 
 	if (hw->feature_flags & RNPVF_NET_FEATURE_SG)
@@ -5520,8 +5874,8 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 		netdev->features |= NETIF_F_HW_CSUM | NETIF_F_SCTP_CRC;
 	if (hw->feature_flags & RNPVF_NET_FEATURE_USO)
 		netdev->features |= NETIF_F_GSO_UDP_L4;
-	if (pci_using_hi_dma)
-		netdev->features |= NETIF_F_HIGHDMA;
+
+	netdev->features |= NETIF_F_HIGHDMA;
 
 	if (hw->feature_flags & RNPVF_NET_FEATURE_TX_UDP_TUNNEL) {
 		netdev->gso_partial_features = RNPVF_GSO_PARTIAL_FEATURES;
@@ -5536,15 +5890,17 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 		netdev->hw_features |= NETIF_F_HW_VLAN_STAG_FILTER;
 	}
 	if (hw->feature_flags & RNPVF_NET_FEATURE_VLAN_OFFLOAD) {
-		netdev->hw_features |= NETIF_F_HW_VLAN_CTAG_TX;
-		if (!(hw->pf_feature & PF_NCSI_EN))
+		if (!(hw->pf_feature & PF_NCSI_EN)) {
 			netdev->hw_features |= NETIF_F_HW_VLAN_CTAG_RX;
+			netdev->hw_features |= NETIF_F_HW_VLAN_CTAG_TX;
+		}
 	}
 
 	if (hw->feature_flags & RNPVF_NET_FEATURE_STAG_OFFLOAD) {
-		netdev->hw_features |= NETIF_F_HW_VLAN_STAG_TX;
-		if (!(hw->pf_feature & PF_NCSI_EN))
+		if (!(hw->pf_feature & PF_NCSI_EN)) {
 			netdev->hw_features |= NETIF_F_HW_VLAN_STAG_RX;
+			netdev->hw_features |= NETIF_F_HW_VLAN_STAG_TX;
+		}
 	}
 	netdev->hw_features |= NETIF_F_RXALL;
 	if (hw->feature_flags & RNPVF_NET_FEATURE_RX_NTUPLE_FILTER)
@@ -5556,24 +5912,28 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 	netdev->hw_enc_features |= netdev->vlan_features;
 	netdev->mpls_features |= NETIF_F_HW_CSUM;
 
+	/* some fixed feature control by pf */
 	if (hw->pf_feature & PF_FEATURE_VLAN_FILTER) {
 		netdev->features |= NETIF_F_HW_VLAN_CTAG_FILTER;
 		netdev->features |= NETIF_F_HW_VLAN_STAG_FILTER;
 	}
 
 	if (hw->feature_flags & RNPVF_NET_FEATURE_VLAN_OFFLOAD) {
-		netdev->features |= NETIF_F_HW_VLAN_CTAG_TX;
-		if (!(hw->pf_feature & PF_NCSI_EN))
+		if (!(hw->pf_feature & PF_NCSI_EN)) {
 			netdev->features |= NETIF_F_HW_VLAN_CTAG_RX;
+			netdev->features |= NETIF_F_HW_VLAN_CTAG_TX;
+		}
 	}
 	if (hw->feature_flags & RNPVF_NET_FEATURE_STAG_OFFLOAD) {
-		netdev->features |= NETIF_F_HW_VLAN_STAG_TX;
-		if (!(hw->pf_feature & PF_NCSI_EN))
+		if (!(hw->pf_feature & PF_NCSI_EN)) {
 			netdev->features |= NETIF_F_HW_VLAN_STAG_RX;
+			netdev->features |= NETIF_F_HW_VLAN_STAG_TX;
+		}
 	}
 
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 	netdev->priv_flags |= IFF_SUPP_NOFCS;
+
 	netdev->priv_flags |= IFF_UNICAST_FLT;
 	netdev->priv_flags |= IFF_SUPP_NOFCS;
 
@@ -5587,8 +5947,12 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 	if (err)
 		goto err_register;
 
-	strscpy(netdev->name, pci_name(pdev), sizeof(netdev->name));
-	strscpy(netdev->name, "eth%d", sizeof(netdev->name));
+	if (fix_eth_name) {
+		strscpy(netdev->name, adapter->name, sizeof(netdev->name) - 1);
+	} else {
+		strscpy(netdev->name, pci_name(pdev), sizeof(netdev->name));
+		strscpy(netdev->name, "eth%d", sizeof(netdev->name));
+	}
 	err = register_netdev(netdev);
 	if (err) {
 		rnpgbevf_err("register_netdev failed!\n");
@@ -5605,6 +5969,7 @@ static int rnpgbevf_add_adpater(struct pci_dev *pdev,
 
 	/* print the MAC address */
 	hw_dbg(hw, "%pM\n", netdev->dev_addr);
+
 	hw_dbg(hw, "Mucse(R) n10 Virtual Function\n");
 
 	return 0;
@@ -5616,7 +5981,6 @@ err_ioremap:
 	free_netdev(netdev);
 
 	dev_err(&pdev->dev, "%s failed. err:%d\n", __func__, err);
-
 	return err;
 }
 
@@ -5636,9 +6000,14 @@ static int rnpgbevf_rm_adpater(struct rnpgbevf_adapter *adapter)
 	}
 
 	set_bit(__RNPVF_REMOVE, &adapter->state);
-	del_timer_sync(&adapter->watchdog_timer);
+	// wait watchdog out ?
+	do {
+		usleep_range(1000, 2000);
+
+	} while (adapter->flags & RNPVF_FLAG_IN_WATCHDOG_TASK);
 
 	cancel_work_sync(&adapter->watchdog_task);
+	del_timer_sync(&adapter->watchdog_timer);
 
 	if (netdev) {
 		if (netdev->reg_state == NETREG_REGISTERED)
@@ -5647,7 +6016,7 @@ static int rnpgbevf_rm_adpater(struct rnpgbevf_adapter *adapter)
 
 	remove_mbx_irq(adapter);
 	rnpgbevf_clear_interrupt_scheme(adapter);
-	rnpgbevf_reset_interrupt_capability(adapter);
+	//rnpgbevf_reset_interrupt_capability(adapter);
 
 	free_netdev(netdev);
 
@@ -5677,32 +6046,21 @@ static int rnpgbevf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (err)
 		return err;
 
-	if (pci_using_hi_dma) {
-		if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(56)) &&
-		    !dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(56))) {
-			pci_using_hi_dma = 1;
-		} else {
-			err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
-			if (err) {
-				err = dma_set_coherent_mask(&pdev->dev,
-							    DMA_BIT_MASK(32));
-				if (err) {
-					dev_err(&pdev->dev,
-						"No usable DMA configuration, aborting\n");
-					goto err_dma;
-				}
-			}
-			pci_using_hi_dma = 0;
-		}
+	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(56)) &&
+	    !dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(56))) {
+		pci_using_hi_dma = 1;
 	} else {
-		if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(32)) &&
-		    !dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32))) {
-			pci_using_hi_dma = 0;
-		} else {
-			dev_err(&pdev->dev,
-				"No usable DMA configuration, aborting\n");
-			goto err_dma;
+		err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
+		if (err) {
+			err = dma_set_coherent_mask(&pdev->dev,
+						    DMA_BIT_MASK(32));
+			if (err) {
+				dev_err(&pdev->dev,
+					"No usable DMA configuration, aborting\n");
+				goto err_dma;
+			}
 		}
+		pci_using_hi_dma = 0;
 	}
 
 	err = pci_request_mem_regions(pdev, rnpgbevf_driver_name);
@@ -5745,6 +6103,7 @@ static void rnpgbevf_remove(struct pci_dev *pdev)
 
 	rnpgbevf_rm_adpater(adapter);
 	pci_release_mem_regions(pdev);
+
 	pci_disable_device(pdev);
 }
 
@@ -5832,9 +6191,11 @@ static struct pci_driver rnpgbevf_driver = {
 	.id_table = rnpgbevf_pci_tbl,
 	.probe = rnpgbevf_probe,
 	.remove = rnpgbevf_remove,
+#ifdef CONFIG_PM
 	/* Power Management Hooks */
 	.suspend = rnpgbevf_suspend,
 	.resume = rnpgbevf_resume,
+#endif
 	.shutdown = rnpgbevf_shutdown,
 	.err_handler = &rnpgbevf_err_handler,
 };

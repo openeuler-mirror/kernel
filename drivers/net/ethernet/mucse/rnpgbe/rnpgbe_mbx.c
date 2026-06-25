@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/pci.h>
 #include <linux/errno.h>
@@ -60,14 +60,14 @@ s32 rnpgbe_write_mbx(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 
 static inline u16 rnpgbe_mbx_get_req(struct rnpgbe_hw *hw, int reg)
 {
-	/* force sync before read */
+	/* force sequence */
 	mb();
 	return ioread32(hw->hw_addr + reg) & 0xffff;
 }
 
 static inline u16 rnpgbe_mbx_get_ack(struct rnpgbe_hw *hw, int reg)
 {
-	/* force sync before read */
+	/* force sequence */
 	mb();
 	return (mbx_rd32(hw, reg) >> 16);
 }
@@ -75,20 +75,20 @@ static inline u16 rnpgbe_mbx_get_ack(struct rnpgbe_hw *hw, int reg)
 static inline void rnpgbe_mbx_inc_pf_req(struct rnpgbe_hw *hw,
 					 enum MBX_ID mbx_id)
 {
+	struct rnpgbe_mbx_info *mbx = &hw->mbx;
 	u16 req;
 	int reg;
-	struct rnpgbe_mbx_info *mbx = &hw->mbx;
 	u32 v;
 
 	reg = (mbx_id == MBX_CM3CPU) ? PF2CPU_COUNTER(mbx) :
-					     PF2VF_COUNTER(mbx, mbx_id);
+				       PF2VF_COUNTER(mbx, mbx_id);
 	v = mbx_rd32(hw, reg);
 
 	req = (v & 0xffff);
 	req++;
 	v &= ~(0x0000ffff);
 	v |= req;
-	/* force sync before read */
+	/* force sequence */
 	mb();
 	mbx_wr32(hw, reg, v);
 
@@ -99,17 +99,19 @@ static inline void rnpgbe_mbx_inc_pf_req(struct rnpgbe_hw *hw,
 static inline void rnpgbe_mbx_inc_pf_ack(struct rnpgbe_hw *hw,
 					 enum MBX_ID mbx_id)
 {
-	u16 ack;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
-	int reg = (mbx_id == MBX_CM3CPU) ? PF2CPU_COUNTER(mbx) :
-						 PF2VF_COUNTER(mbx, mbx_id);
-	u32 v = mbx_rd32(hw, reg);
+	int reg;
+	u16 ack;
+	u32 v;
 
+	reg  = (mbx_id == MBX_CM3CPU) ? PF2CPU_COUNTER(mbx) :
+					PF2VF_COUNTER(mbx, mbx_id);
+	v = mbx_rd32(hw, reg);
 	ack = (v >> 16) & 0xffff;
 	ack++;
 	v &= ~(0xffff0000);
 	v |= (ack << 16);
-	/* force sync before read */
+	/* force sequence */
 	mb();
 	mbx_wr32(hw, reg, v);
 
@@ -189,6 +191,7 @@ out:
 static s32 rnpgbe_poll_for_ack(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 {
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
+	struct device *dev = &hw->pdev->dev;
 	int countdown = mbx->timeout;
 
 	if (!countdown || !mbx->ops.check_for_ack)
@@ -196,8 +199,10 @@ static s32 rnpgbe_poll_for_ack(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 
 	while (countdown && mbx->ops.check_for_ack(hw, mbx_id)) {
 		countdown--;
-		if (!countdown)
+		if (!countdown) {
+			dev_info(dev, "wait ack timeout\n");
 			break;
+		}
 		udelay(mbx->usec_delay);
 	}
 
@@ -250,7 +255,7 @@ static s32 rnpgbe_write_posted_mbx(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 	s32 ret_val = RNP_ERR_MBX;
 
 	/* if pcie off, nothing todo */
-	if (pci_channel_offline(hw->pdev))
+	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
 
 	/* exit if either we can't write or there isn't a defined timeout */
@@ -271,27 +276,35 @@ out:
 /**
  *  rnpgbe_check_for_msg_pf - checks to see if the VF has sent mail
  *  @hw: pointer to the HW structure
- *  @mbx_id: the mbxidx
+ *  @mbx_id: vf idx or fw
  *
  *  returns SUCCESS if the VF has set the Status bit or else ERR_MBX
  **/
 static s32 rnpgbe_check_for_msg_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 {
+	struct rnpgbe_mbx_info *mbx = &hw->mbx;
 	s32 ret_val = RNP_ERR_MBX;
 	u16 hw_req_count = 0;
-	struct rnpgbe_mbx_info *mbx = &hw->mbx;
 
 	/* if pcie off, nothing todo */
-	if (pci_channel_offline(hw->pdev))
+	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
 
 	if (mbx_id == MBX_CM3CPU) {
 		hw_req_count = rnpgbe_mbx_get_req(hw, CPU2PF_COUNTER(mbx));
-		if (hw_req_count != 0 && hw_req_count != hw->mbx.cpu_req) {
-			ret_val = 0;
-			hw->mbx.stats.reqs++;
-		}
+		if (mbx->mbx_feature & MBX_FEATURE_NO_ZERO) {
+			if (hw_req_count != 0 &&
+			    hw_req_count != hw->mbx.cpu_req) {
+				ret_val = 0;
+				hw->mbx.stats.reqs++;
+			}
 
+		} else {
+			if (hw_req_count != hw->mbx.cpu_req) {
+				ret_val = 0;
+				hw->mbx.stats.reqs++;
+			}
+		}
 	} else {
 		if (rnpgbe_mbx_get_req(hw, VF2PF_COUNTER(mbx, mbx_id)) !=
 		    hw->mbx.vf_req[mbx_id]) {
@@ -306,7 +319,7 @@ static s32 rnpgbe_check_for_msg_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 /**
  *  rnpgbe_check_for_ack_pf - checks to see if the VF has ACKed
  *  @hw: pointer to the HW structure
- *  @mbx_id: the mbx idx
+ *  @mbx_id: vf idx or fw
  *
  *  returns SUCCESS if the VF has set the Status bit or else ERR_MBX
  **/
@@ -317,12 +330,11 @@ static s32 rnpgbe_check_for_ack_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 	u16 hw_cpu_ack = 0;
 
 	/* if pcie off, nothing todo */
-	if (pci_channel_offline(hw->pdev))
+	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
 
 	if (mbx_id == MBX_CM3CPU) {
 		hw_cpu_ack = rnpgbe_mbx_get_ack(hw, CPU2PF_COUNTER(mbx));
-
 		if (hw_cpu_ack != 0 &&
 		    hw_cpu_ack != hw->mbx.cpu_ack) {
 			ret_val = 0;
@@ -342,30 +354,31 @@ static s32 rnpgbe_check_for_ack_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 /**
  *  rnpgbe_obtain_mbx_lock_pf - obtain mailbox lock
  *  @hw: pointer to the HW structure
- *  @mbx_id: the VF index or CPU
+ *  @mbx_id: vf idx or fw
  *
  *  return SUCCESS if we obtained the mailbox lock
  **/
 static s32 rnpgbe_obtain_mbx_lock_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
 {
-	int try_cnt = 5000;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
-	u32 CTRL_REG = (mbx_id == MBX_CM3CPU) ? PF2CPU_MBOX_CTRL(mbx) :
-			PF2VF_MBOX_CTRL(mbx, mbx_id);
+	int try_cnt = 5000;
+	u32 CTRL_REG;
+
+	CTRL_REG = (mbx_id == MBX_CM3CPU) ? PF2CPU_MBOX_CTRL(mbx) :
+					    PF2VF_MBOX_CTRL(mbx, mbx_id);
 
 	while (try_cnt-- > 0) {
 		/* Take ownership of the buffer */
 		mbx_wr32(hw, CTRL_REG, MBOX_CTRL_PF_HOLD_SHM);
-		/* force sync before read */
+		/* force sequence */
 		wmb();
 		/* reserve mailbox for cm3 use */
 		if (mbx_rd32(hw, CTRL_REG) & MBOX_CTRL_PF_HOLD_SHM)
 			return 0;
-		usleep_range(100, 200);
+		udelay(100);
 	}
 
 	rnpgbe_err("%s: failed to get:%d lock\n", __func__, mbx_id);
-
 	return -EPERM;
 }
 
@@ -374,23 +387,26 @@ static s32 rnpgbe_obtain_mbx_lock_pf(struct rnpgbe_hw *hw, enum MBX_ID mbx_id)
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
- *  @mbx_id: the VF index
+ *  @mbx_id: vf idx or fw
  *
  *  returns SUCCESS if it successfully copied message into the buffer
  **/
 static s32 rnpgbe_write_mbx_pf(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 			       enum MBX_ID mbx_id)
 {
-	s32 ret_val = 0;
-	u16 i;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
-	u32 DATA_REG = (mbx_id == MBX_CM3CPU) ? CPU_PF_SHM_DATA(mbx) :
-						      PF_VF_SHM_DATA(mbx, mbx_id);
-	u32 CTRL_REG = (mbx_id == MBX_CM3CPU) ? PF2CPU_MBOX_CTRL(mbx) :
-						      PF2VF_MBOX_CTRL(mbx, mbx_id);
+	struct device *dev = &hw->pdev->dev;
+	s32 ret_val = 0;
+	u32 DATA_REG;
+	u32 CTRL_REG;
+	u16 i;
 
-	/* if pcie off, nothing todo */
-	if (pci_channel_offline(hw->pdev))
+	DATA_REG = (mbx_id == MBX_CM3CPU) ? CPU_PF_SHM_DATA(mbx) :
+					    PF_VF_SHM_DATA(mbx, mbx_id);
+	CTRL_REG = (mbx_id == MBX_CM3CPU) ? PF2CPU_MBOX_CTRL(mbx) :
+					    PF2VF_MBOX_CTRL(mbx, mbx_id);
+	/* if pcie is off, we cannot exchange with hw */
+	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
 
 	if (size > RNP_VFMAILBOX_SIZE)
@@ -398,8 +414,12 @@ static s32 rnpgbe_write_mbx_pf(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 
 	/* lock the mailbox to prevent pf/vf/cpu race condition */
 	ret_val = rnpgbe_obtain_mbx_lock_pf(hw, mbx_id);
-	if (ret_val)
+	if (ret_val) {
+		dev_info(dev,
+			 "%s: get mbx:%d wlock failed. ret:%d. req:0x%08x-0x%08x\n",
+			 __func__, mbx_id, ret_val, msg[0], msg[1]);
 		goto out_no_write;
+	}
 
 	/* copy the caller specified message to the mailbox memory buffer */
 	for (i = 0; i < size; i++) {
@@ -420,9 +440,12 @@ static s32 rnpgbe_write_mbx_pf(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 	/* Interrupt VF/CM3 to tell it a message
 	 * has been sent and release buffer
 	 */
+	if (mbx->mbx_feature & MBX_FEATURE_WRITE_DELAY)
+		udelay(300);
 	mbx_wr32(hw, CTRL_REG, MBOX_CTRL_REQ);
 
 out_no_write:
+	/* sometimes happen */
 
 	return ret_val;
 }
@@ -432,7 +455,7 @@ out_no_write:
  *  @hw: pointer to the HW structure
  *  @msg: The message buffer
  *  @size: Length of buffer
- *  @mbx_id: the mbx idx
+ *  @mbx_id: id of mailbox to write
  *
  *  This function copies a message from the mailbox buffer to the caller's
  *  memory buffer.  The presumption is that the caller knows that there was
@@ -441,18 +464,19 @@ out_no_write:
 static s32 rnpgbe_read_mbx_pf(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 			      enum MBX_ID mbx_id)
 {
-	s32 ret_val = -EIO;
-	u32 i;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
-	u32 BUF_REG = (mbx_id == MBX_CM3CPU) ? CPU_PF_SHM_DATA(mbx) :
-						     PF_VF_SHM_DATA(mbx, mbx_id);
-	u32 CTRL_REG = (mbx_id == MBX_CM3CPU) ? PF2CPU_MBOX_CTRL(mbx) :
-						      PF2VF_MBOX_CTRL(mbx, mbx_id);
+	s32 ret_val = -EIO;
+	u32 CTRL_REG;
+	u32 BUF_REG;
+	u32 i;
 
+	BUF_REG = (mbx_id == MBX_CM3CPU) ? CPU_PF_SHM_DATA(mbx) :
+					   PF_VF_SHM_DATA(mbx, mbx_id);
+	CTRL_REG = (mbx_id == MBX_CM3CPU) ? PF2CPU_MBOX_CTRL(mbx) :
+					    PF2VF_MBOX_CTRL(mbx, mbx_id);
 	/* if pcie off, nothing todo */
-	if (pci_channel_offline(hw->pdev))
+	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
-
 	if (size > RNP_VFMAILBOX_SIZE)
 		return -EINVAL;
 	/* lock the mailbox to prevent pf/vf race condition */
@@ -460,7 +484,7 @@ static s32 rnpgbe_read_mbx_pf(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 	if (ret_val)
 		goto out_no_read;
 
-	/* force sync before read */
+	/* we need this */
 	mb();
 	/* copy the message from the mailbox memory buffer */
 	for (i = 0; i < size; i++) {
@@ -477,7 +501,7 @@ static s32 rnpgbe_read_mbx_pf(struct rnpgbe_hw *hw, u32 *msg, u16 size,
 		hw->mbx.vf_req[mbx_id] =
 			rnpgbe_mbx_get_req(hw, VF2PF_COUNTER(mbx, mbx_id));
 	}
-	/* this ack maybe too earier? */
+	/* this ack maybe too earlier? */
 	/* Acknowledge receipt and release mailbox, then we're done */
 	rnpgbe_mbx_inc_pf_ack(hw, mbx_id);
 
@@ -491,8 +515,8 @@ out_no_read:
 
 static void rnpgbe_mbx_reset(struct rnpgbe_hw *hw)
 {
-	int idx, v;
 	struct rnpgbe_mbx_info *mbx = &hw->mbx;
+	int idx, v;
 
 	for (idx = 0; idx < hw->max_vfs; idx++) {
 		v = mbx_rd32(hw, VF2PF_COUNTER(mbx, idx));
@@ -500,32 +524,29 @@ static void rnpgbe_mbx_reset(struct rnpgbe_hw *hw)
 		hw->mbx.vf_ack[idx] = (v >> 16) & 0xffff;
 		mbx_wr32(hw, PF2VF_MBOX_CTRL(mbx, idx), 0);
 	}
-	/* reset pf->cm3 status */
 	v = mbx_rd32(hw, CPU2PF_COUNTER(mbx));
 	hw->mbx.cpu_req = v & 0xffff;
 	hw->mbx.cpu_ack = (v >> 16) & 0xffff;
-
 	mbx_wr32(hw, PF2CPU_MBOX_CTRL(mbx), 0);
 
 	if (PF_VF_MBOX_MASK_LO(mbx))
-		mbx_wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0);
+		hw_wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0);
 	if (PF_VF_MBOX_MASK_HI(mbx))
-		mbx_wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0);
+		hw_wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0);
 
-	mbx_wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xffff0000);
+	hw_wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xffff0000);
 }
 
 static int rnpgbe_mbx_configure_pf(struct rnpgbe_hw *hw, int nr_vec,
 				   bool enable)
 {
+	struct rnpgbe_mbx_info *mbx = &hw->mbx;
 	int idx = 0;
 	u32 v;
-	struct rnpgbe_mbx_info *mbx = &hw->mbx;
 
 	/* if pcie off, nothing todo */
-	if (pci_channel_offline(hw->pdev))
+	if (pci_device_check_offline(hw->pdev))
 		return -EIO;
-
 	if (enable) {
 		for (idx = 0; idx < hw->max_vfs; idx++) {
 			v = mbx_rd32(hw, VF2PF_COUNTER(mbx, idx));
@@ -534,52 +555,54 @@ static int rnpgbe_mbx_configure_pf(struct rnpgbe_hw *hw, int nr_vec,
 
 			mbx_wr32(hw, PF2VF_MBOX_CTRL(mbx, idx), 0);
 		}
-		/* reset pf->cm3 status */
 		v = mbx_rd32(hw, CPU2PF_COUNTER(mbx));
 		hw->mbx.cpu_req = v & 0xffff;
 		hw->mbx.cpu_ack = (v >> 16) & 0xffff;
-		/* release pf->cm3 buffer lock */
 		mbx_wr32(hw, PF2CPU_MBOX_CTRL(mbx), 0);
 
-		/* allow VF to PF MBX IRQ */
-		for (idx = 0; idx < hw->max_vfs; idx++)
-			mbx_wr32(hw, VF2PF_MBOX_VEC(mbx, idx), nr_vec);
+		for (idx = 0; idx < hw->max_vfs; idx++) {
+			mbx_wr32(hw, VF2PF_MBOX_VEC(mbx, idx),
+				 nr_vec);
+			/* vf to pf req interrupt */
+		}
 
 		if (PF_VF_MBOX_MASK_LO(mbx))
-			mbx_wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0);
+			hw_wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0);
+		/* allow vf to vectors */
 
 		if (PF_VF_MBOX_MASK_HI(mbx))
-			mbx_wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0);
+			hw_wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0);
+		/* enable irq */
 
 		/* bind cm3cpu mbx to irq */
-		mbx_wr32(hw, CPU2PF_MBOX_VEC(mbx), nr_vec);
-		mbx_wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xffff0000);
+		hw_wr32(hw, CPU2PF_MBOX_VEC(mbx), nr_vec);
+		/* cm3 and VF63 share #63 irq */
+		/* allow CM3CPU to PF MBX IRQ */
+		hw_wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xffff0000);
+
+		rnpgbe_dbg("[%s] mbx-vector:%d\n", __func__, nr_vec);
+
 	} else {
 		if (PF_VF_MBOX_MASK_LO(mbx))
-			mbx_wr32(hw, PF_VF_MBOX_MASK_LO(mbx), 0xffffffff);
+			hw_wr32(hw, PF_VF_MBOX_MASK_LO(mbx),
+				0xffffffff);
+		/* disable irq */
 		if (PF_VF_MBOX_MASK_HI(mbx))
-			mbx_wr32(hw, PF_VF_MBOX_MASK_HI(mbx), 0xffffffff);
+			hw_wr32(hw, PF_VF_MBOX_MASK_HI(mbx),
+				0xffffffff);
 
 		/* disable CM3CPU to PF MBX IRQ */
-		mbx_wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xfffffffe);
+		hw_wr32(hw, CPU_PF_MBOX_MASK(mbx), 0xfffffffe);
 
 		/* reset vf->pf status/ctrl */
 		for (idx = 0; idx < hw->max_vfs; idx++)
 			mbx_wr32(hw, PF2VF_MBOX_CTRL(mbx, idx), 0);
+		/* reset pf->cm3 ctrl */
 		mbx_wr32(hw, PF2CPU_MBOX_CTRL(mbx), 0);
-		mbx_wr32(hw, RNP_DMA_DUMY, 0);
+		/* used to sync link status */
+		hw_wr32(hw, RNP_DMA_DUMY, 0);
 	}
-
 	return 0;
-}
-
-unsigned int rnpgbe_mbx_change_timeout(struct rnpgbe_hw *hw, int timeout_ms)
-{
-	unsigned int old_timeout = hw->mbx.timeout;
-
-	hw->mbx.timeout = timeout_ms * 1000 / hw->mbx.usec_delay;
-
-	return old_timeout;
 }
 
 /**
@@ -594,13 +617,11 @@ s32 rnpgbe_init_mbx_params_pf(struct rnpgbe_hw *hw)
 
 	mbx->usec_delay = 100;
 	mbx->timeout = (4 * 1000 * 1000) / mbx->usec_delay;
-
 	mbx->stats.msgs_tx = 0;
 	mbx->stats.msgs_rx = 0;
 	mbx->stats.reqs = 0;
 	mbx->stats.acks = 0;
 	mbx->stats.rsts = 0;
-
 	mbx->size = RNP_VFMAILBOX_SIZE;
 
 	mutex_init(&mbx->lock);

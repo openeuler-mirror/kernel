@@ -27,6 +27,10 @@ enum ras_err_type {
 	MAR_TIMEOUT_ERR,
 	MAR_ILLEGAL_ACCESS_ERR,
 	REMOTE_READ_DATA_ERR_OR_WRITE_RESPONSE_ERR,
+#ifndef __GENKSYMS__
+	UB_MEM_PORT_WARNING,
+	UB_MEM_PORT_RECOVERY,
+#endif
 };
 
 typedef int (*ubmem_ras_handler)(u64, enum ras_err_type);

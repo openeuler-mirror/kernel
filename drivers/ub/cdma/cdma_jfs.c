@@ -16,6 +16,8 @@
 #include "cdma_context.h"
 #include "cdma_jfs.h"
 
+#define CDMA_DESTROY_JETTY_DELAY_TIME 100U
+
 static int cdma_get_user_jfs_cmd(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 				 struct cdma_udata *udata,
 				 struct cdma_create_jfs_ucmd *ucmd)
@@ -31,7 +33,7 @@ static int cdma_get_user_jfs_cmd(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 
 	if (!udata->udrv_data || !udata->udrv_data->in_addr ||
 		udata->udrv_data->in_len != (u32)sizeof(*ucmd)) {
-		dev_err(cdev->dev, "invalid parameter.\n");
+		dev_err(cdev->dev, "invalid parameter\n");
 		return -EINVAL;
 	}
 
@@ -39,17 +41,18 @@ static int cdma_get_user_jfs_cmd(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 				  (u32)sizeof(*ucmd));
 	if (ret) {
 		dev_err(cdev->dev,
-			"copy jfs udata failed, ret = %d.\n", ret);
+			"copy jfs udata failed, ret = %d\n", ret);
 		return -EFAULT;
 	}
 
 	if (!ucmd->jetty_addr || !ucmd->buf_len || !ucmd->buf_addr) {
-		dev_err(cdev->dev, "user cmd param is invalid.\n");
+		dev_err(cdev->dev, "user cmd param is invalid\n");
 		return -EINVAL;
 	}
 
 	ctx = udata->uctx;
 	jfs->base_jfs.ctx = ctx;
+	jfs->base_jfs.jfae = udata->jfae;
 	jfs->sq.tid = ctx->tid;
 	jfs->jfs_addr = ucmd->jetty_addr;
 	jfs->sq.id = ucmd->jfs_id;
@@ -61,21 +64,21 @@ static int cdma_get_user_jfs_cmd(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 
 static int cdma_alloc_jfs_id(struct cdma_dev *cdev, struct cdma_jfs *jfs)
 {
-	struct cdma_idr *idr_tbl = &cdev->jfs_table.idr_tbl;
-	u32 max = idr_tbl->max;
-	u32 min = idr_tbl->min;
+	struct cdma_idr *idr_pool = &cdev->jfs_table.idr_pool;
+	u32 max = idr_pool->max;
+	u32 min = idr_pool->min;
 	int id;
 
 	idr_preload(GFP_KERNEL);
 	spin_lock(&cdev->jfs_table.lock);
-	id = idr_alloc(&idr_tbl->idr, jfs, idr_tbl->next, max, GFP_NOWAIT);
+	id = idr_alloc(&idr_pool->idr, jfs, idr_pool->next, max, GFP_NOWAIT);
 	if (id < 0) {
-		id = idr_alloc(&idr_tbl->idr, jfs, min, max, GFP_NOWAIT);
+		id = idr_alloc(&idr_pool->idr, jfs, min, max, GFP_NOWAIT);
 		if (id < 0)
-			dev_err(cdev->dev, "alloc cdma jfs id failed.\n");
+			dev_err(cdev->dev, "alloc cdma jfs id failed\n");
 	}
 
-	idr_tbl->next = (id >= 0 && id + 1 <= max) ? id + 1 : min;
+	idr_pool->next = (id >= 0 && id + 1 <= max) ? id + 1 : min;
 	spin_unlock(&cdev->jfs_table.lock);
 	idr_preload_end();
 
@@ -91,7 +94,7 @@ static inline void cdma_set_kernel_db(struct cdma_dev *cdev,
 				      struct cdma_jetty_queue *queue)
 {
 	queue->dwqe_addr =
-		cdev->k_db_base + JETTY_DSQE_OFFSET + CDMA_HW_PAGE_SIZE * queue->id;
+		cdev->db_kva_base + JETTY_DSQE_OFFSET + CDMA_HW_PAGE_SIZE * queue->id;
 	queue->db_addr = queue->dwqe_addr + CDMA_DOORBELL_OFFSET;
 }
 
@@ -111,7 +114,7 @@ static int cdma_get_sq_buf(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 					     jfs->base_jfs.ctx);
 		if (IS_ERR(sq->buf.umem)) {
 			ret = PTR_ERR(sq->buf.umem);
-			dev_err(cdev->dev, "get jfs umem failed, ret = %d.\n",
+			dev_err(cdev->dev, "get jfs umem failed, ret = %d\n",
 				ret);
 			return ret;
 		}
@@ -140,7 +143,7 @@ static int cdma_get_sq_buf(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 		ret = cdma_k_alloc_buf(cdev, size, &sq->buf);
 		if (ret) {
 			dev_err(cdev->dev,
-				"alloc jfs (%u) sq buf failed, size = %u, ret = %d.\n",
+				"alloc jfs (%u) sq buf failed, size = %u, ret = %d\n",
 				sq->id, size, ret);
 			return ret;
 		}
@@ -208,7 +211,7 @@ static int cdma_create_hw_jfs_ctx(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 	cdma_fill_mbx_attr(&attr, jfs->sq.id, CDMA_CMD_CREATE_JFS_CONTEXT, 0);
 	ret = cdma_post_mailbox_ctx(cdev, &ctx, sizeof(ctx), &attr);
 	if (ret) {
-		dev_err(cdev->dev, "upgrade jfs ctx failed, ret = %d.\n", ret);
+		dev_err(cdev->dev, "upgrade jfs ctx failed, ret = %d\n", ret);
 		return ret;
 	}
 
@@ -219,11 +222,8 @@ static int cdma_create_hw_jfs_ctx(struct cdma_dev *cdev, struct cdma_jfs *jfs,
 
 static void cdma_free_sq_buf(struct cdma_dev *cdev, struct cdma_jetty_queue *sq)
 {
-	u32 size;
-
 	if (sq->buf.kva) {
-		size = sq->buf.entry_cnt * sq->buf.entry_size;
-		cdma_k_free_buf(cdev, size, &sq->buf);
+		cdma_k_free_buf(cdev, &sq->buf);
 	} else {
 		cdma_put_umem(sq->buf.umem, false);
 		sq->buf.umem = NULL;
@@ -250,7 +250,7 @@ static void cdma_set_query_flush_time(struct cdma_jetty_queue *sq,
 static inline void cdma_free_jfs_id(struct cdma_dev *cdev, u32 id)
 {
 	spin_lock(&cdev->jfs_table.lock);
-	idr_remove(&cdev->jfs_table.idr_tbl.idr, id);
+	idr_remove(&cdev->jfs_table.idr_pool.idr, id);
 	spin_unlock(&cdev->jfs_table.lock);
 }
 
@@ -258,7 +258,7 @@ static int cdma_verify_jfs_cfg(struct cdma_dev *cdev, struct cdma_jfs_cfg *cfg)
 {
 	if (!cfg->depth || cfg->depth > cdev->caps.jfs.depth) {
 		dev_err(cdev->dev,
-			"jfs param is invalid, depth = %u, max_depth = %u.\n",
+			"jfs param is invalid, depth = %u, max_depth = %u\n",
 			cfg->depth, cdev->caps.jfs.depth);
 		return -EINVAL;
 	}
@@ -301,7 +301,7 @@ struct cdma_base_jfs *cdma_create_jfs(struct cdma_dev *cdev,
 		goto err_get_jfs_buf;
 
 	if (udata) {
-		ret = cdma_get_jfae(jfs->base_jfs.ctx);
+		ret = cdma_get_jfae_ref(jfs->base_jfs.jfae);
 		if (ret)
 			goto err_get_jfae;
 	}
@@ -319,14 +319,14 @@ struct cdma_base_jfs *cdma_create_jfs(struct cdma_dev *cdev,
 
 	dev_info(
 		cdev->dev,
-		"create jfs, id = %u, queue id = %u, depth = %u, priority = %u, jfc id = %u.\n",
+		"create jfs, id = %u, queue id = %u, depth = %u, priority = %u, jfc id = %u\n",
 		jfs->id, jfs->queue_id, cfg->depth, cfg->priority, cfg->jfc_id);
 
 	return &jfs->base_jfs;
 
 err_create_hw_jfsc:
 	if (udata)
-		cdma_put_jfae(jfs->base_jfs.ctx);
+		cdma_put_jfae_ref(jfs->base_jfs.jfae);
 err_get_jfae:
 	cdma_free_sq_buf(cdev, &jfs->sq);
 err_get_jfs_buf:
@@ -380,7 +380,7 @@ static int cdma_destroy_hw_jfs_ctx(struct cdma_dev *cdev, u32 jfs_id)
 	ret = cdma_post_mailbox_ctx(cdev, NULL, 0, &attr);
 	if (ret)
 		dev_err(cdev->dev,
-			"post mailbox destroy jfs ctx failed, ret = %d.\n", ret);
+			"post mailbox destroy jfs ctx failed, ret = %d\n", ret);
 
 	return ret;
 }
@@ -416,7 +416,7 @@ static bool cdma_query_jfs_fd(struct cdma_dev *cdev,
 
 		if (cdma_wait_timeout(&sum_times, times, CDMA_TA_TIMEOUT_64000MS)) {
 			dev_warn(cdev->dev,
-				 "flush cqe timeout, id = %u. PI = %u, CI = %u, next_send_ssn = %u next_rcv_ssn = %u state = %u.\n",
+				 "flush cqe timeout, id = %u. PI = %u, CI = %u, next_send_ssn = %u next_rcv_ssn = %u state = %u\n",
 				 sq->id, ctx.pi, ctx.ci, ctx.next_send_ssn,
 				 ctx.next_rcv_ssn, ctx.state);
 			break;
@@ -445,7 +445,7 @@ static int cdma_modify_jfs_precondition(struct cdma_dev *cdev,
 
 	while (true) {
 		if (cdma_query_jfs_ctx(cdev, &ctx, sq->id)) {
-			dev_err(cdev->dev, "query jfs ctx failed, id = %u.\n",
+			dev_err(cdev->dev, "query jfs ctx failed, id = %u\n",
 				sq->id);
 			return -ENOMEM;
 		}
@@ -461,7 +461,7 @@ static int cdma_modify_jfs_precondition(struct cdma_dev *cdev,
 
 		if (cdma_wait_timeout(&sum_times, times, sq->ta_tmo)) {
 			dev_warn(cdev->dev,
-				 "modify jfs precondition timeout, id = %u. PI = %u, CI = %u, next_send_ssn = %u next_rcv_ssn = %u state = %u.\n",
+				 "modify jfs precondition timeout, id = %u. PI = %u, CI = %u, next_send_ssn = %u next_rcv_ssn = %u state = %u\n",
 				 sq->id, ctx.pi, ctx.ci, ctx.next_send_ssn,
 				 ctx.next_rcv_ssn, ctx.state);
 			break;
@@ -475,7 +475,6 @@ static int cdma_modify_jfs_precondition(struct cdma_dev *cdev,
 static bool cdma_destroy_jfs_precondition(struct cdma_dev *cdev,
 					  struct cdma_jetty_queue *sq)
 {
-#define CDMA_DESTROY_JETTY_DELAY_TIME 100U
 
 	if ((sq->state == CDMA_JETTY_READY) ||
 	    (sq->state == CDMA_JETTY_SUSPENDED)) {
@@ -483,13 +482,13 @@ static bool cdma_destroy_jfs_precondition(struct cdma_dev *cdev,
 			return false;
 
 		if (cdma_set_jfs_state(cdev, sq->id, CDMA_JETTY_ERROR)) {
-			dev_err(cdev->dev, "modify jfs state to error failed, id = %u.\n",
+			dev_err(cdev->dev, "modify jfs state to error failed, id = %u\n",
 				sq->id);
 			return false;
 		}
 
 		sq->state = CDMA_JETTY_ERROR;
-		dev_dbg(cdev->dev, "set jfs %u status finished.\n", sq->id);
+		dev_dbg(cdev->dev, "set jfs %u status finished\n", sq->id);
 	}
 
 	if (!cdma_query_jfs_fd(cdev, sq))
@@ -507,9 +506,9 @@ static int cdma_modify_and_destroy_jfs(struct cdma_dev *cdev,
 	struct cdma_jetty_queue *sq = &jfs->sq;
 	int ret = 0;
 
-	if (cdev->status == CDMA_INVALID || (ctx && ctx->invalid)) {
+	if (cdev->status == CDMA_STATUS_INVALID || (ctx && ctx->invalid)) {
 		dev_info(cdev->dev,
-			 "resetting Ignore jfs ctx, id = %u.\n", sq->id);
+			 "resetting ignore jfs ctx, id = %u\n", sq->id);
 		return 0;
 	}
 
@@ -524,7 +523,7 @@ static int cdma_modify_and_destroy_jfs(struct cdma_dev *cdev,
 
 static inline void cdma_release_jfs_event(struct cdma_jfs *jfs)
 {
-	cdma_release_async_event(jfs->base_jfs.ctx,
+	cdma_release_async_event(jfs->base_jfs.jfae,
 		&jfs->base_jfs.jfs_event.async_event_list);
 }
 
@@ -536,23 +535,25 @@ int cdma_delete_jfs(struct cdma_dev *cdev, u32 jfs_id)
 	if (jfs_id >= cdev->caps.jfs.start_idx + cdev->caps.jfs.max_cnt) {
 		dev_info(
 			cdev->dev,
-			"jfs id invalid, jfs_id = %u, start_idx = %u, max_cnt = %u.\n",
+			"jfs id invalid, jfs_id = %u, start_idx = %u, max_cnt = %u\n",
 			jfs_id, cdev->caps.jfs.start_idx,
 			cdev->caps.jfs.max_cnt);
 		return -EINVAL;
 	}
 
 	spin_lock(&cdev->jfs_table.lock);
-	jfs = idr_find(&cdev->jfs_table.idr_tbl.idr, jfs_id);
+	jfs = idr_find(&cdev->jfs_table.idr_pool.idr, jfs_id);
+	if (jfs)
+		idr_remove(&cdev->jfs_table.idr_pool.idr, jfs_id);
 	spin_unlock(&cdev->jfs_table.lock);
 	if (!jfs) {
-		dev_err(cdev->dev, "get jfs from table failed, id = %u.\n", jfs_id);
+		dev_err(cdev->dev, "get jfs from table failed, id = %u\n", jfs_id);
 		return -EINVAL;
 	}
 
 	ret = cdma_modify_and_destroy_jfs(cdev, jfs);
 	if (ret)
-		dev_err(cdev->dev, "jfs delete failed, id = %u, ret = %d.\n",
+		dev_err(cdev->dev, "jfs delete failed, id = %u, ret = %d\n",
 			jfs->id, ret);
 
 	if (refcount_dec_and_test(&jfs->ae_ref_cnt))
@@ -561,9 +562,7 @@ int cdma_delete_jfs(struct cdma_dev *cdev, u32 jfs_id)
 
 	cdma_free_sq_buf(cdev, &jfs->sq);
 
-	cdma_free_jfs_id(cdev, jfs_id);
-
-	dev_info(cdev->dev, "delete jfs, id = %u.\n", jfs_id);
+	dev_info(cdev->dev, "delete jfs, id = %u\n", jfs_id);
 
 	cdma_release_jfs_event(jfs);
 
@@ -601,7 +600,7 @@ static inline u32 cdma_get_normal_sge_num(u8 opcode, struct cdma_sqe_ctl *tmp_sq
 	}
 }
 
-static bool cdma_k_check_sge_num(u8 opcode, struct cdma_jetty_queue *sq,
+static bool cdma_k_sge_num_exceed(u8 opcode, struct cdma_jetty_queue *sq,
 				 struct cdma_jfs_wr *wr)
 {
 	switch (opcode) {
@@ -761,7 +760,7 @@ static int cdma_k_fill_cas_sqe(struct cdma_dev *cdev,
 
 	sge_info = wr->cas.src;
 	if (!cdma_check_atomic_len(sge_info->len, wr->opcode)) {
-		dev_err(cdev->dev, "cdma cas sge len invalid, len = %u.\n",
+		dev_err(cdev->dev, "cdma cas sge len invalid, len = %u\n",
 			sge_info->len);
 		return -EINVAL;
 	}
@@ -806,7 +805,7 @@ static int cdma_k_fill_faa_sqe(struct cdma_dev *cdev,
 
 	sge_info = wr->faa.src;
 	if (!cdma_check_atomic_len(sge_info->len, wr->opcode)) {
-		dev_err(cdev->dev, "cdma faa sge len invalid, len = %u.\n",
+		dev_err(cdev->dev, "cdma faa sge len invalid, len = %u\n",
 			sge_info->len);
 		return -EINVAL;
 	}
@@ -852,7 +851,7 @@ static int cdma_fill_normal_sge(struct cdma_dev *cdev,
 	case CDMA_WR_OPC_FADD:
 		return cdma_k_fill_faa_sqe(cdev, sqe_ctl, wr);
 	default:
-		dev_err(cdev->dev, "cdma wr opcode invalid, opcode = %u.\n",
+		dev_err(cdev->dev, "cdma wr opcode invalid, opcode = %u\n",
 			(u8)wr->opcode);
 		return -EINVAL;
 	}
@@ -878,7 +877,7 @@ static int cdma_set_sqe(struct cdma_dev *cdev, struct cdma_sqe_ctl *sqe_ctl,
 	ret = cdma_fill_normal_sge(cdev, sqe_ctl, wr);
 	if (ret)
 		dev_err(cdev->dev,
-			"cdma fill normal sge failed, wr opcode = %u, ret = %d.\n",
+			"cdma fill normal sge failed, wr opcode = %u, ret = %d\n",
 			(u8)wr->opcode, ret);
 
 	return ret;
@@ -950,12 +949,12 @@ static int cdma_post_one_wr(struct cdma_jetty_queue *sq, struct cdma_jfs_wr *wr,
 
 	opcode = cdma_get_jfs_opcode(wr->opcode);
 	if (opcode == CDMA_OPC_INVALID) {
-		dev_err(cdev->dev, "cdma invalid opcode = %u.\n", wr->opcode);
+		dev_err(cdev->dev, "cdma invalid opcode = %u\n", wr->opcode);
 		return -EINVAL;
 	}
 
-	if (cdma_k_check_sge_num(opcode, sq, wr)) {
-		dev_err(cdev->dev, "cdma sge num invalid, opcode = %u.\n",
+	if (cdma_k_sge_num_exceed(opcode, sq, wr)) {
+		dev_err(cdev->dev, "cdma sge num invalid, opcode = %u\n",
 			opcode);
 		return -EINVAL;
 	}
@@ -973,7 +972,7 @@ static int cdma_post_one_wr(struct cdma_jetty_queue *sq, struct cdma_jfs_wr *wr,
 	ret = cdma_copy_to_sq(sq, wqebb_cnt, tmp_sq);
 	if (ret) {
 		dev_err(cdev->dev,
-			"cdma jfs overflow, wqebb_cnt = %u, ret = %d.\n",
+			"cdma jfs overflow, wqebb_cnt = %u, ret = %d\n",
 			wqebb_cnt, ret);
 		return ret;
 	}
@@ -1022,7 +1021,7 @@ static int cdma_post_sq_wr(struct cdma_dev *cdev, struct cdma_jetty_queue *sq,
 		ret = cdma_post_one_wr(sq, it, cdev, &dwqe_addr, &dwqe_enable);
 		if (ret) {
 			dev_err(cdev->dev,
-				"cdma post one wr failed, ret = %d.\n", ret);
+				"cdma post one wr failed, ret = %d\n", ret);
 			*bad_wr = it;
 			goto post_wr;
 		}
@@ -1031,7 +1030,7 @@ static int cdma_post_sq_wr(struct cdma_dev *cdev, struct cdma_jetty_queue *sq,
 
 post_wr:
 	if (wr_cnt) {
-		if (cdev->status == CDMA_NORMAL) {
+		if (cdev->status == CDMA_STATUS_NORMAL) {
 			/* Ensure the order of write memory operations */
 			wmb();
 			if (wr_cnt == 1 && dwqe_enable && (sq->pi - sq->ci == 1))
@@ -1055,7 +1054,7 @@ int cdma_post_jfs_wr(struct cdma_jfs *jfs, struct cdma_jfs_wr *wr,
 	ret = cdma_post_sq_wr(cdev, &jfs->sq, wr, bad_wr);
 	if (ret)
 		dev_err(cdev->dev,
-			"cdma post jfs wr failed, sq_id = %u, ret = %d.\n",
+			"cdma post jfs wr failed, sq_id = %u, ret = %d\n",
 			jfs->sq.id, ret);
 
 	return ret;

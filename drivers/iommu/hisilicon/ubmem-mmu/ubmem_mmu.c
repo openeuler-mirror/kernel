@@ -7,6 +7,7 @@
 
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/iopoll.h>
 #include <linux/dma-map-ops.h>
 #include <linux/refcount.h>
 #include <linux/iommu.h>
@@ -19,6 +20,7 @@
 #include <ub/ubfi/ubfi.h>
 #include <linux/hisi_ummu.h>
 
+#include "../regs.h"
 #include "ubmem_mmu.h"
 
 #define UMMU_MEM_MAX_GRANULE 8
@@ -90,6 +92,21 @@ static unsigned long ummu_get_ubm_granule(void)
 #define RESERVED_MSI_ATTR_DEVICE_nGnRE 0x1
 #define RESERVED_MSI_ADDR_H_SHIFT 32
 
+#define UMAU_MEM_DTLB_INVLD 0x2030
+#define UMAU_MEM_START_ADDR 0x2000
+#define UMAU_MEM_LEN_GRANU 0x2004
+#define UMAU_MEM_BTE 0x2008
+#define UMAU_MEM_INDEX 0x200C
+
+#define UMAU_MEM_TAB_INIT_EN_TRANS 0x2020
+#define TTB_INTI_EN BIT(0)
+#define UMAU_MEM_TAB_INIT_EN_PROT 0x2024
+#define PTB_INIT_EN BIT(0)
+#define UMAU_MEM_TAB_INIT_DONE_TRANS 0x2010
+#define TTB_INIT_DONE BIT(0)
+#define UMAU_MEM_TAB_INIT_DONE_PROT 0x2014
+#define PTB_INIT_DONE BIT(0)
+
 enum ummu_ubif_reg_enum {
 	UBIF_MEM_CFG,
 	UBIF_MEM_DFX0,
@@ -105,6 +122,51 @@ static u32 ummu_ubif_reg[UMMU_UBIF_MEM_MAX] = {
 	[UBIF_MEM_DFX1] = 0x6438,
 	[UBIF_MEM_DFX2] = 0x643C,
 	[UBIF_MEM_DFX3] = 0x6444,
+};
+
+static u32 umau_ubif_reg[UMMU_UBIF_MEM_MAX] = {
+	[UBIF_MEM_CFG] = 0x1030,
+	[UBIF_MEM_DFX0] = 0x1034,
+	[UBIF_MEM_DFX1] = 0x1038,
+	[UBIF_MEM_DFX2] = 0x103C,
+	[UBIF_MEM_DFX3] = 0x1044,
+};
+
+struct ubmem_reg_offset {
+	u32 mem_dtlb_invld;
+	u32 mem_start_addr;
+	u32 mem_len_granu;
+	u32 mem_bte;
+	u32 mem_index;
+	const u32 *ubif_reg;
+};
+
+static const struct ubmem_reg_offset reg_v1 = {
+	.mem_dtlb_invld = UMMU_MEM_DTLB_INVLD,
+	.mem_start_addr = UMMU_MEM_START_ADDR,
+	.mem_len_granu = UMMU_MEM_LEN_GRANU,
+	.mem_bte = UMMU_MEM_BTE,
+	.mem_index = UMMU_MEM_INDEX,
+	.ubif_reg = ummu_ubif_reg
+};
+
+static const struct ubmem_reg_offset reg_umau_v2 = {
+	.mem_dtlb_invld = UMAU_MEM_DTLB_INVLD,
+	.mem_start_addr = UMAU_MEM_START_ADDR,
+	.mem_len_granu = UMAU_MEM_LEN_GRANU,
+	.mem_bte = UMAU_MEM_BTE,
+	.mem_index = UMAU_MEM_INDEX,
+	.ubif_reg = umau_ubif_reg
+};
+
+enum ubmem_err_type {
+	BAD_REQUEST = 1,
+	BAD_TOKENID,
+	PT_ECC_2BITS,
+	PT_INVALID,
+	PT_BAD_ADDR,
+	ATT_ECC_2BITS,
+	ATT_INVALID,
 };
 
 struct ubmem_mmu_info {
@@ -126,6 +188,7 @@ struct ubmem_mmu_device {
 	spinlock_t pte_lock;
 	u32 ate_bits;
 	u32 token_id_bits;
+	const struct ubmem_reg_offset *reg_offset;
 	struct ummu_core_device ummu_core;
 };
 
@@ -175,12 +238,13 @@ static irqreturn_t ubmem_error_handler(int irq, void *ummu)
 {
 	struct ubmem_mmu_device *mmu =
 				to_ubmem_mmu_dev((struct ummu_device *)ummu);
+	void __iomem *dfx_base = mmu->dfx_base == NULL ? mmu->base : mmu->dfx_base;
 	u32 regs[UMMU_UBIF_MEM_MAX];
 	u8 code;
 	int i;
 
 	for (i = 0; i < UMMU_UBIF_MEM_MAX; i++)
-		regs[i] = readl_relaxed(mmu->dfx_base + ummu_ubif_reg[i]);
+		regs[i] = readl_relaxed(dfx_base + mmu->reg_offset->ubif_reg[i]);
 
 	if (!(regs[UBIF_MEM_DFX2] & UBIF_MEM_CHK_FAULT_VLD)) {
 		dev_info_ratelimited(mmu->dev, "received a unknown fault.\n");
@@ -199,7 +263,7 @@ static irqreturn_t ubmem_error_handler(int irq, void *ummu)
 		 FIELD_GET(UBIF_MEM_CHK_FAULT_END_ADDR, regs[UBIF_MEM_DFX0]));
 
 	writel_relaxed(UBIF_MEM_CHK_FAULT_CLEAR,
-		       mmu->dfx_base + ummu_ubif_reg[UBIF_MEM_DFX2]);
+		       dfx_base + mmu->reg_offset->ubif_reg[UBIF_MEM_DFX2]);
 	return IRQ_HANDLED;
 }
 
@@ -347,11 +411,11 @@ static void write_ate_entries(struct ubmem_mmu_domain *dom,
 		cnt = info->size / granule_size;
 		for (i = 0; i < cnt; i++) {
 			reg = (start_addr & PHYS_ADDR_MASK) >> SZ_2M_SHIFT;
-			writel_relaxed(reg, mdev->base + UMMU_MEM_START_ADDR);
+			writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_start_addr);
 
 			reg = MEM_TYPE_MASK | MEM_WR_MASK | MEM_VLD_MASK;
 			reg |= (index++) & MEM_ATE_INDEX_MASK;
-			writel_relaxed(reg, mdev->base + UMMU_MEM_INDEX);
+			writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_index);
 			start_addr += granule_size;
 		}
 	}
@@ -363,18 +427,18 @@ static void write_pte_entry(struct ubmem_mmu_domain *dom,
 	u32 reg;
 
 	reg = (dom->iova_start & IOVA_MASK) >> SZ_2M_SHIFT;
-	writel_relaxed(reg, mdev->base + UMMU_MEM_START_ADDR);
+	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_start_addr);
 
 	reg = FIELD_PREP(MEM_GRANU_MASK, dom->granule);
 	reg |= FIELD_PREP(MEM_LEN_MASK, dom->ate_count - 1);
-	writel_relaxed(reg, mdev->base + UMMU_MEM_LEN_GRANU);
+	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_len_granu);
 
 	reg = FIELD_PREP(MEM_BTE_MASK, dom->ate_index_start);
-	writel_relaxed(reg, mdev->base + UMMU_MEM_BTE);
+	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_bte);
 
 	reg = MEM_WR_MASK | MEM_VLD_MASK;
 	reg |= FIELD_PREP(MEM_PTE_INDEX_MASK, dom->base_domain.tid);
-	writel_relaxed(reg, mdev->base + UMMU_MEM_INDEX);
+	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_index);
 }
 
 static void clear_pte_entry(struct ubmem_mmu_domain *dom,
@@ -383,14 +447,14 @@ static void clear_pte_entry(struct ubmem_mmu_domain *dom,
 	u32 reg = MEM_WR_MASK;
 
 	reg |= FIELD_PREP(MEM_PTE_INDEX_MASK, dom->base_domain.tid);
-	writel_relaxed(reg, mdev->base + UMMU_MEM_INDEX);
+	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_index);
 }
 
 static void ubmem_mmu_flush_dtlb(struct ubmem_mmu_device *mdev)
 {
 	u32 reg = MEM_DTLB_INVLD_MASK;
 
-	writel_relaxed(reg, mdev->base + UMMU_MEM_DTLB_INVLD);
+	writel_relaxed(reg, mdev->base + mdev->reg_offset->mem_dtlb_invld);
 }
 
 static int alloc_and_fill_entry(struct ubmem_mmu_domain *dom)
@@ -724,24 +788,55 @@ static struct iommu_ops ubmm_mmu_iommu_ops = {
 	.owner = THIS_MODULE,
 };
 
+static int umau_tab_init(struct ubmem_mmu_device *mmu)
+{
+	u32 reg_PTB, reg_TTB;
+	int ret;
+
+	writel_relaxed(PTB_INIT_EN, mmu->base + UMAU_MEM_TAB_INIT_EN_PROT);
+	writel_relaxed(TTB_INTI_EN, mmu->base + UMAU_MEM_TAB_INIT_EN_TRANS);
+
+	ret = readl_relaxed_poll_timeout(mmu->base + UMAU_MEM_TAB_INIT_DONE_PROT, reg_PTB,
+					 reg_PTB & PTB_INIT_DONE, 1, UMMU_QUE_POLL_TIMEOUT_US);
+	if (ret)
+		return -EBUSY;
+
+	ret = readl_relaxed_poll_timeout(mmu->base + UMAU_MEM_TAB_INIT_DONE_TRANS, reg_TTB,
+					 reg_TTB & TTB_INIT_DONE, 1, UMMU_QUE_POLL_TIMEOUT_US);
+	if (ret)
+		return -EBUSY;
+
+	return 0;
+}
+
 static int ubmem_mmu_init(struct platform_device *pdev,
 			  struct ubmem_mmu_info *info,
 			  struct ubmem_mmu_device *mmu)
 {
 	struct resource *res;
+	int ret;
 
 	mmu->base = devm_ioremap(&pdev->dev, info->reg_base, info->reg_size);
 	if (!mmu->base)
 		return -ENOMEM;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (res == NULL)
-		return -ENODEV;
+	if (mmu->ummu.cap.options & UMMU_OPT_UMAU) {
+		mmu->dfx_base = NULL;
+		mmu->reg_offset = &reg_umau_v2;
+		ret = umau_tab_init(mmu);
+		if (ret)
+			return ret;
+	} else {
+		res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+		if (res == NULL)
+			return -ENODEV;
 
-	mmu->dfx_base = devm_ioremap(&pdev->dev, res->start, UMMU_UBIF_MEM_SZ);
-	if (!mmu->dfx_base) {
-		dev_err(&pdev->dev, "dfx resources map failed.\n");
-		return -ENOMEM;
+		mmu->dfx_base = devm_ioremap(&pdev->dev, res->start, UMMU_UBIF_MEM_SZ);
+		if (!mmu->dfx_base) {
+			dev_err(&pdev->dev, "dfx resources map failed.\n");
+			return -ENOMEM;
+		}
+		mmu->reg_offset = &reg_v1;
 	}
 
 	mmu->ate_bits = info->cap1;

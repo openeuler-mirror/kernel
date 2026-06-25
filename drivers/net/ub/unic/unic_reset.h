@@ -9,6 +9,6 @@
 
 #include <ub/ubase/ubase_comm_dev.h>
 
-void unic_reset_handler(struct auxiliary_device *adev, enum ubase_reset_stage stage);
+int unic_reset_handler(struct auxiliary_device *adev, enum ubase_reset_stage stage);
 
 #endif /* __UNIC_RESET_H__ */

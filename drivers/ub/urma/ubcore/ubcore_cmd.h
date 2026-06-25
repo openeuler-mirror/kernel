@@ -15,6 +15,8 @@
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <ub/urma/ubcore_types.h>
+#include <ub/urma/ubcore_perf.h>
+
 #include "ubcore_log.h"
 #include "ubcore_topo_info.h"
 
@@ -36,13 +38,13 @@ enum ubcore_cmd {
 	UBCORE_CMD_ADD_EID,
 	UBCORE_CMD_DEL_EID,
 	UBCORE_CMD_SET_EID_MODE,
-	UBCORE_CMD_SET_NS_MODE,
+	UBCORE_CMD_SET_DEV_NS_MODE,
 	UBCORE_CMD_SET_DEV_NS,
 	UBCORE_CMD_EXPOSE_DEV_NS,
 	UBCORE_CMD_UNEXPOSE_DEV_NS,
 	UBCORE_CMD_SET_DEV_EID_NS,
 	UBCORE_CMD_GET_TOPO_INFO,
-	UBCORE_CMD_GET_V2P_RES,
+	UBCORE_CMD_SET_GENL_PID,
 	UBCORE_CMD_SET_SL,
 	UBCORE_CMD_UVS_INIT_RES,
 	/* alpha netlink ops begin: */
@@ -71,6 +73,14 @@ enum ubcore_cmd {
 	UBCORE_CMD_ADMIN_LOOKUP_MAIN_UE_EID,
 	UBCORE_CMD_ADMIN_FLUSH_MAIN_UE_EID,
 	UBCORE_CMD_ADMIN_INSERT_MAIN_UE_EID_BATCH,
+	UBCORE_CMD_PERF_START,
+	UBCORE_CMD_PERF_STOP,
+	UBCORE_CMD_PERF_SHOW,
+	UBCORE_CMD_GET_V2P_RES,
+	UBCORE_CMD_SET_EID_NS_MODE,
+	UBCORE_CMD_SHOW_TPID_LIST,
+	UBCORE_CMD_SHOW_TPID_REUSE,
+	UBCORE_CMD_SHOW_SYSTEM,
 	UBCORE_CMD_MAX
 };
 
@@ -156,6 +166,84 @@ struct ubcore_cmd_topo_info {
 	} out;
 };
 
+/* record types streamed back during a tpid show dumpit */
+enum ubcore_tpid_show_rec_type {
+	UBCORE_TPID_SHOW_REC_LIST_HDR = 0,
+	UBCORE_TPID_SHOW_REC_AWARE_NODE,
+	UBCORE_TPID_SHOW_REC_UNAWARE_NODE,
+	UBCORE_TPID_SHOW_REC_TPID_STATE,
+	UBCORE_TPID_SHOW_REC_REUSE_ENTRY,
+};
+
+/* netlink attributes used by the tpid show dumpit messages */
+enum {
+	UBCORE_TPID_SHOW_ATTR_UNSPEC = 0,
+	UBCORE_TPID_SHOW_ATTR_REC_TYPE,
+	UBCORE_TPID_SHOW_ATTR_REC_DATA,
+	UBCORE_TPID_SHOW_ATTR_MAX_PLUS,
+};
+#define UBCORE_TPID_SHOW_ATTR_MAX (UBCORE_TPID_SHOW_ATTR_MAX_PLUS - 1)
+
+/* one transport point id node, mirror of ubcore_tpid_list node + state */
+struct ubcore_show_tpid_node {
+	uint64_t tp_handle;
+};
+
+/* tpid_list header (no node arrays, nodes are streamed separately) */
+struct ubcore_show_tpid_list_hdr {
+	union ubcore_eid local_eid;
+	union ubcore_eid peer_eid;
+	uint32_t trans_mode;
+	uint32_t share_mode;
+	uint32_t tp_type;
+	uint32_t link_type;
+	uint32_t acnt;
+	uint32_t ucnt;
+	uint32_t capacity;
+	uint32_t ref_cnt;
+	uint32_t aware_node_cnt;
+	uint32_t unaware_node_cnt;
+};
+
+/* single tpid state query result */
+struct ubcore_show_tpid_state {
+	uint8_t found;
+	uint32_t status;
+	uint32_t owner_type;
+	uint8_t alloced;
+	uint32_t ref_cnt;
+};
+
+struct ubcore_cmd_show_tpid_list {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+		uint8_t query_tpid; /* 1: only query a single tpid state */
+		uint64_t tpid; /* valid when query_tpid is 1 */
+	} in;
+};
+
+/* one tpid_reuse entry, mirror of struct ubcore_tpid_reuse */
+struct ubcore_show_tpid_reuse_entry {
+	union ubcore_eid local_eid;
+	union ubcore_eid peer_eid;
+	uint32_t trans_mode;
+	uint32_t share_mode;
+	uint32_t tp_type;
+	uint32_t link_type;
+	uint64_t stag;
+	uint64_t dtag;
+	uint64_t tp_handle;
+	uint32_t reuse_state;
+	uint32_t ref_cnt;
+	int32_t use_cnt;
+};
+
+struct ubcore_cmd_show_tpid_reuse {
+	struct {
+		char dev_name[UBCORE_MAX_DEV_NAME];
+	} in;
+};
+
 struct ubcore_cmd_set_sl {
 	struct {
 		char dev_name[UBCORE_MAX_DEV_NAME];
@@ -163,6 +251,12 @@ struct ubcore_cmd_set_sl {
 
 		uint32_t priority;
 	} in;
+};
+
+struct ubcore_cmd_perf_show {
+	struct {
+		struct ubcore_latency_stat stat;
+	} out;
 };
 
 /* copy from user_space addr to kernel args */

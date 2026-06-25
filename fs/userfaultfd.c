@@ -1053,7 +1053,7 @@ static int resolve_userfault_fork(struct userfaultfd_ctx *new,
 {
 	int fd;
 
-	fd = anon_inode_getfd_secure("[userfaultfd]", &userfaultfd_fops, new,
+	fd = anon_inode_create_getfd("[userfaultfd]", &userfaultfd_fops, new,
 			O_RDONLY | (new->flags & UFFD_SHARED_FCNTL_FLAGS), inode);
 	if (fd < 0)
 		return fd;
@@ -1311,8 +1311,6 @@ static __always_inline int validate_unaligned_range(
 	if (len & ~PAGE_MASK)
 		return -EINVAL;
 	if (!len)
-		return -EINVAL;
-	if (start < mmap_min_addr)
 		return -EINVAL;
 	if (start >= task_size)
 		return -EINVAL;
@@ -2246,7 +2244,8 @@ static int new_userfaultfd(int flags)
 	/* prevent the mm struct to be freed */
 	mmgrab(ctx->mm);
 
-	fd = anon_inode_getfd_secure("[userfaultfd]", &userfaultfd_fops, ctx,
+	/* Create a new inode so that the LSM can block the creation.  */
+	fd = anon_inode_create_getfd("[userfaultfd]", &userfaultfd_fops, ctx,
 			O_RDONLY | (flags & UFFD_SHARED_FCNTL_FLAGS), NULL);
 	if (fd < 0) {
 		mmdrop(ctx->mm);

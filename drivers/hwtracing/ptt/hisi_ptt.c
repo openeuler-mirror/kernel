@@ -18,6 +18,7 @@
 #include <linux/module.h>
 #include <linux/sysfs.h>
 #include <linux/vmalloc.h>
+#include <linux/compiler.h>
 
 #include "hisi_ptt.h"
 
@@ -266,6 +267,10 @@ static int hisi_ptt_update_aux(struct hisi_ptt *hisi_ptt, int index, bool stop)
 
 		reg = readl(hisi_ptt->iobase + HISI_PTT_TRACE_WR_STS);
 		size = FIELD_GET(HISI_PTT_TRACE_WR_STS_WRITE, reg);
+		if (unlikely(size > HISI_PTT_TRACE_BUF_SIZE)) {
+			pci_err(hisi_ptt->pdev, "Failed to get the size of traced data from the device\n");
+			return -EFAULT;
+		}
 	} else {
 		size = HISI_PTT_TRACE_BUF_SIZE;
 	}
@@ -921,14 +926,14 @@ static int hisi_ptt_trace_valid_type(u32 val)
 
 static int hisi_ptt_trace_valid_format(u32 val)
 {
-	static const u32 hisi_ptt_trace_availble_format[] = {
+	static const u32 hisi_ptt_trace_available_format[] = {
 		0,	/* 4DW */
 		1,	/* 8DW */
 	};
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(hisi_ptt_trace_availble_format); i++) {
-		if (val == hisi_ptt_trace_availble_format[i])
+	for (i = 0; i < ARRAY_SIZE(hisi_ptt_trace_available_format); i++) {
+		if (val == hisi_ptt_trace_available_format[i])
 			return 0;
 	}
 
@@ -1296,6 +1301,7 @@ static int hisi_ptt_probe(struct pci_dev *pdev,
 			  const struct pci_device_id *id)
 {
 	struct hisi_ptt *hisi_ptt;
+	void __iomem * const *iomap_table;
 	int ret;
 
 	ret = hisi_ptt_check_iommu_mapping(pdev);
@@ -1323,7 +1329,12 @@ static int hisi_ptt_probe(struct pci_dev *pdev,
 		return ret;
 	}
 
-	hisi_ptt->iobase = pcim_iomap_table(pdev)[2];
+	iomap_table = pcim_iomap_table(pdev);
+	if (!iomap_table) {
+		pci_err(pdev, "failed to get iomap table\n");
+		return -EFAULT;
+	}
+	hisi_ptt->iobase = iomap_table[2];
 
 	ret = dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(64));
 	if (ret) {

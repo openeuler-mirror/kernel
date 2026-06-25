@@ -127,6 +127,11 @@ static __poll_t mfs_dev_poll(struct file *file,
 	poll_wait(file, &caches->pollwq, poll);
 	mask = 0;
 
+	if (!test_bit(MFS_MOUNTED, &sbi->flags)) {
+		mask |= EPOLLERR;
+		return mask;
+	}
+
 	if (!xa_empty(&caches->events)) {
 		xas_lock(&xas);
 		xas_for_each_marked(&xas, event, ULONG_MAX, MFS_EVENT_NEW) {

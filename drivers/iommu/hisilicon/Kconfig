@@ -68,3 +68,13 @@ config UB_UMMU_BYPASSDEV
 	  certain type of device while starting OS. Subsequently, the device
 	  will be bypassed, meaning IOVA = HPA(S1-only)/GPA(S1+S2).
 	  If you need them say Y here.
+
+config UB_UMMU_BYPASSEID
+	bool "Support UMMU to bypass in EID granularity"
+	depends on UB_UMMU
+	default n
+	help
+	  Support UMMU to bypass in EID granularity. When hardware
+	  support is available and the config is enabled, stage 2
+	  translation (GPA -> HPA) will be bypassed.
+	  If you need them say Y here.

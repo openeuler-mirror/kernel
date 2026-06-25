@@ -13,7 +13,7 @@ static int cdma_post_mailbox(struct cdma_dev *cdev, struct ubase_mbx_attr *attr,
 	ret = ubase_hw_upgrade_ctx_ex(cdev->adev, attr, mailbox);
 	if (ret)
 		dev_err(cdev->dev,
-			"send mailbox err, tag = 0x%x, op = %u, mbx_ue_id = %u, ret = %d.\n",
+			"send mailbox err, tag = 0x%x, op = %u, mbx_ue_id = %u, ret = %d\n",
 			attr->tag, attr->op, attr->mbx_ue_id, ret);
 
 	return ret;
@@ -27,7 +27,7 @@ int cdma_post_mailbox_ctx(struct cdma_dev *cdev, void *ctx, u32 size,
 
 	mailbox = cdma_alloc_cmd_mailbox(cdev);
 	if (!mailbox) {
-		dev_err(cdev->dev, "alloc mailbox failed, opcode = %u.\n",
+		dev_err(cdev->dev, "alloc mailbox failed, opcode = %u\n",
 			attr->op);
 		return -ENOMEM;
 	}
@@ -50,7 +50,7 @@ struct ubase_cmd_mailbox *cdma_mailbox_query_ctx(struct cdma_dev *cdev,
 
 	mailbox = cdma_alloc_cmd_mailbox(cdev);
 	if (!mailbox) {
-		dev_err(cdev->dev, "alloc mailbox failed, opcode = %u.\n",
+		dev_err(cdev->dev, "alloc mailbox failed, opcode = %u\n",
 			attr->op);
 		return NULL;
 	}

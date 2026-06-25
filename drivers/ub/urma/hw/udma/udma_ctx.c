@@ -10,17 +10,18 @@
 #include "udma_jfs.h"
 #include "udma_jetty.h"
 #include "udma_ctrlq_tp.h"
+#include "udma_cmd.h"
 #include "udma_ctx.h"
 
-static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data)
+static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udrv_data, bool dtu_en)
 {
-	struct udma_create_ctx_resp resp;
+	struct udma_create_ctx_resp resp = {};
 	unsigned long byte;
 
 	if (!udrv_data->out_addr ||
 	    udrv_data->out_len < sizeof(resp)) {
 		dev_err(dev->dev,
-			"Invalid ctx resp out: len %d or addr is invalid.\n",
+			"Invalid ctx resp out: len %u or address is invalid.\n",
 			udrv_data->out_len);
 		return -EINVAL;
 	}
@@ -36,10 +37,18 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 	resp.sq_reserved = dev->sq_reserved_info.sq_reserved;
 	resp.sq_reserved_va = dev->sq_reserved_info.va_start;
 	resp.sq_reserved_len = dev->sq_reserved_info.va_size;
+	resp.lock_buffer_en = dev->caps.lock_buffer_en;
+	resp.ccu_jfc_property_en = dev->caps.ccu_jfc_property_en;
+	resp.lock_buf_bb_shift = dev->caps.lock_buf_bb_shift;
+	resp.atomic_add_en = dev->caps.atomic_add_en;
+	resp.u_dtu_enable = dtu_en;
+	resp.dtu_va_base = dev->dtu_info.va_base;
+	resp.dtu_va_size = dev->dtu_info.pa_size;
 	resp.ccu_jetty_start_id = dev->caps.ccu_jetty.start_idx;
 	resp.ccu_jetty_max_cnt = dev->caps.ccu_jetty.max_cnt;
 	resp.hugepage_enable = ubase_adev_prealloc_supported(dev->comdev.adev) & hugepage_enable;
 	resp.sva_sep_mode_en = dev->caps.sva_sep_mode_en;
+	resp.st64b_en = dev->caps.st64b_en;
 
 	byte = copy_to_user((void *)(uintptr_t)udrv_data->out_addr, &resp,
 			   (uint32_t)sizeof(resp));
@@ -54,37 +63,80 @@ static int udma_init_ctx_resp(struct udma_dev *dev, struct ubcore_udrv_priv *udr
 
 static void udma_put_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 {
-	if (dev->caps.sva_sep_mode_en)
+	if (dev->caps.sva_sep_mode_en) {
+		mutex_lock(&dev->seg_tree_mutex);
+		if (refcount_dec_and_test(&ctx->seg_node->ctx_refcnt)) {
+			udma_seg_tree_destroy(ctx->seg_node);
+			__xa_erase(&dev->seg_tree_table, ctx->tid);
+		}
+		mutex_unlock(&dev->seg_tree_mutex);
+
 		ummu_core_free_tdev(ctx->ummu_dev);
-	else
-		ummu_sva_unbind_device(ctx->sva);
+	} else {
+		iommu_sva_unbind_device_isolated(ctx->sva);
+	}
 }
 
 static int udma_get_usva_tid(struct udma_dev *dev, struct udma_context *ctx)
 {
-	int ret = 0;
+#ifdef CONFIG_UB_UMMU_SVA_SEPARATED_PAGES
+	struct tdev_opt opt = { current->mm, true };
+#endif
+	int ret = -ENOMEM;
 
 	if (dev->caps.sva_sep_mode_en) {
 		ctx->tid = UMMU_INVALID_TID;
+#ifdef CONFIG_UB_UMMU_SVA_SEPARATED_PAGES
+		ctx->ummu_dev = ummu_core_alloc_separate_tdev(&opt, &ctx->tid);
+#else
 		ctx->ummu_dev = ummu_alloc_tdev_separated(&ctx->tid);
+#endif
 		if (!ctx->ummu_dev) {
-			dev_err(dev->dev, "Failed to alloc separate pages USVA device.\n");
-			ret = -ENOMEM;
+			dev_err(dev->dev, "failed to alloc separate pages USVA device.\n");
+			goto err_alloc_tdev_separated;
 		}
+
+		mutex_lock(&dev->seg_tree_mutex);
+		ctx->seg_node = xa_load(&dev->seg_tree_table, ctx->tid);
+		if (ctx->seg_node) {
+			refcount_inc(&ctx->seg_node->ctx_refcnt);
+			ret = 0;
+		} else {
+			ctx->seg_node = udma_seg_range_init();
+			if (!ctx->seg_node) {
+				dev_err(dev->dev, "failed to init segment_range.\n");
+				goto err_segment_range_init;
+			}
+			ret = xa_err(__xa_store(&dev->seg_tree_table, ctx->tid,
+						ctx->seg_node, GFP_ATOMIC));
+			if (ret) {
+				dev_err(dev->dev, "failed to store segment_range, ret=%d.\n", ret);
+				goto err_segment_range_store;
+			}
+		}
+		mutex_unlock(&dev->seg_tree_mutex);
 	} else {
-		ctx->sva = ummu_sva_bind_device(dev->dev, current->mm, NULL);
-		if (!ctx->sva) {
+		ctx->sva = iommu_sva_bind_device_isolated(dev->dev, current->mm, NULL);
+		if (IS_ERR(ctx->sva)) {
 			dev_err(dev->dev, "SVA failed to bind device.\n");
-			ret = -EINVAL;
-			return ret;
+			return -EINVAL;
 		}
 
 		ret = ummu_get_tid(dev->dev, ctx->sva, &ctx->tid);
 		if (ret) {
-			dev_err(dev->dev, "Failed to get tid, ret = %d.\n", ret);
-			ummu_sva_unbind_device(ctx->sva);
+			dev_err(dev->dev, "failed to get TID, ret = %d.\n", ret);
+			iommu_sva_unbind_device_isolated(ctx->sva);
 		}
 	}
+
+	return ret;
+
+err_segment_range_store:
+	udma_seg_tree_destroy(ctx->seg_node);
+err_segment_range_init:
+	mutex_unlock(&dev->seg_tree_mutex);
+	ummu_core_free_tdev(ctx->ummu_dev);
+err_alloc_tdev_separated:
 
 	return ret;
 }
@@ -103,10 +155,15 @@ struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *ub_dev,
 
 	ret = udma_get_usva_tid(dev, ctx);
 	if (ret) {
-		dev_err(dev->dev, "Failed to get usva tid, ret = %d.\n", ret);
+		dev_err(dev->dev, "failed to get USVA TID, ret = %d.\n", ret);
 		goto err_free_ctx;
 	}
-
+	ctx->dtu_en = dev->dtu_info.u_dtu_enable;
+	ret = udma_set_dtu_va_info(dev, ctx);
+	if (ret) {
+		dev_warn(dev->dev, "Could not set DTU, ret = %d.\n", ret);
+		ctx->dtu_en = false;
+	}
 	ctx->dev = dev;
 	ctx->mm = current->mm;
 	INIT_LIST_HEAD(&ctx->pgdir_list);
@@ -116,9 +173,9 @@ struct ubcore_ucontext *udma_alloc_ucontext(struct ubcore_device *ub_dev,
 	INIT_LIST_HEAD(&ctx->page_list);
 	mutex_init(&ctx->page_lock);
 
-	ret = udma_init_ctx_resp(dev, udrv_data);
+	ret = udma_init_ctx_resp(dev, udrv_data, ctx->dtu_en);
 	if (ret) {
-		dev_err(dev->dev, "Init ctx resp failed.\n");
+		dev_err(dev->dev, "init context response failed.\n");
 		goto err_init_ctx_resp;
 	}
 
@@ -138,28 +195,26 @@ err_free_ctx:
 int udma_free_ucontext(struct ubcore_ucontext *ucontext)
 {
 	struct udma_dev *udma_dev = to_udma_dev(ucontext->ub_dev);
-	struct ummu_invalid_cfg_param inva_param = {};
 	struct udma_hugepage_priv *priv;
 	struct udma_hugepage_priv *tmp;
 	struct vm_area_struct *vma;
 	struct udma_context *ctx;
-	int ret;
-	int i;
+	uint32_t i;
 
 	ctx = to_udma_context(ucontext);
 
-	inva_param.tid = ctx->tid;
-	inva_param.mm = ctx->mm;
-	ret = ummu_core_invalidate_cfg(&inva_param);
-	if (ret)
-		dev_err(udma_dev->dev, "invalidate cfg_table failed, ret=%d.\n", ret);
-
 	mutex_destroy(&ctx->pgdir_mutex);
+	udma_unset_dtu_va_info(udma_dev, ctx);
 	udma_put_usva_tid(udma_dev, ctx);
 
 	mutex_lock(&ctx->hugepage_lock);
 	list_for_each_entry_safe(priv, tmp, &ctx->hugepage_list, list) {
 		list_del(&priv->list);
+		if (ctx->dev->caps.sva_sep_mode_en) {
+			udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID,
+					  (uintptr_t)priv->va_base, priv->va_len);
+			sg_free_table(&priv->sgt);
+		}
 		if (current->mm) {
 			mmap_write_lock(current->mm);
 			vma = find_vma(current->mm, (unsigned long)priv->va_base);
@@ -171,7 +226,7 @@ int udma_free_ucontext(struct ubcore_ucontext *ucontext)
 
 		dev_info_ratelimited(udma_dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 		for (i = 0; i < priv->page_num; i++)
-			__free_pages(priv->pages[i], get_order(priv->page_size));
+			udma_free_pages(priv->pages[i], get_order(priv->page_size));
 		kfree(priv->pages);
 		kfree(priv);
 	}
@@ -253,8 +308,9 @@ static struct udma_page_priv *
 udma_alloc_page_priv(struct udma_context *ctx, struct vm_area_struct *vma, uint32_t page_num)
 {
 	struct udma_page_priv *priv;
+	uint32_t i;
+	gfp_t flag;
 	int ret;
-	int i;
 
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv)
@@ -265,10 +321,16 @@ udma_alloc_page_priv(struct udma_context *ctx, struct vm_area_struct *vma, uint3
 	if (!priv->pages)
 		goto err_alloc_arr;
 
+	if (debug_switch)
+		dev_info_ratelimited(ctx->dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
+				     vma->vm_flags, vma->vm_page_prot.pgprot);
+
 	vma->vm_page_prot = __pgprot(((~PTE_ATTRINDX_MASK) & vma->vm_page_prot.pgprot) |
 				     PTE_ATTRINDX(MT_NORMAL));
 	for (i = 0; i < priv->page_num; i++) {
-		priv->pages[i] = alloc_page(GFP_KERNEL | __GFP_ZERO | GFP_HIGHUSER_MOVABLE);
+		flag = ctx->dev->caps.non_mirror_en == true ? (GFP_HIGHUSER_MOVABLE | __GFP_ZERO) :
+			(GFP_KERNEL | __GFP_ZERO);
+		priv->pages[i] = udma_alloc_pages(flag, 0);
 		if (!priv->pages[i]) {
 			dev_err(ctx->dev->dev, "failed to alloc normal page.\n");
 			goto err_alloc_pages;
@@ -277,7 +339,7 @@ udma_alloc_page_priv(struct udma_context *ctx, struct vm_area_struct *vma, uint3
 				      page_to_pfn(priv->pages[i]), PAGE_SIZE,
 				      vma->vm_page_prot);
 		if (ret) {
-			dev_err(ctx->dev->dev, "failed to remap_pfn_range, ret=%d.\n", ret);
+			dev_err(ctx->dev->dev, "failed to remap PFN range, ret=%d.\n", ret);
 			goto err_remap_pfn_range;
 		}
 	}
@@ -285,22 +347,23 @@ udma_alloc_page_priv(struct udma_context *ctx, struct vm_area_struct *vma, uint3
 	ret = sg_alloc_table_from_pages(&priv->sgt, priv->pages, priv->page_num, 0,
 					priv->page_num << PAGE_SHIFT, GFP_KERNEL);
 	if (ret) {
-		dev_err(ctx->dev->dev, "failed to create sg table, ret=%d.\n", ret);
+		dev_err(ctx->dev->dev, "failed to create SG table, ret=%d.\n", ret);
 		goto err_remap_pfn_range;
 	}
 	priv->va_base = (void *)vma->vm_start;
 	priv->va_len = priv->page_num << PAGE_SHIFT;
 
-	if (dfx_switch)
+	if (debug_switch)
 		dev_info_ratelimited(ctx->dev->dev, "map normal page, page num=%u.\n",
 				     priv->page_num);
 	return priv;
 
 err_remap_pfn_range:
+	zap_vma_ptes(vma, vma->vm_start, i * PAGE_SIZE);
 err_alloc_pages:
 	for (i = 0; i < priv->page_num; i++) {
 		if (priv->pages[i])
-			__free_page(priv->pages[i]);
+			udma_free_pages(priv->pages[i], 0);
 		else
 			break;
 	}
@@ -327,9 +390,10 @@ int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 {
 #define JFC_DB_UNMAP_BOUND 1
 	struct udma_dev *udma_dev = to_udma_dev(uctx->ub_dev);
+	uint64_t vm_size = vma->vm_end - vma->vm_start;
 	uint32_t cmd;
 
-	if (((vma->vm_end - vma->vm_start) % PAGE_SIZE) != 0) {
+	if ((vm_size % PAGE_SIZE) != 0) {
 		dev_err(udma_dev->dev, "mmap failed, unexpected vm area size.\n");
 		return -EINVAL;
 	}
@@ -358,9 +422,13 @@ int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 					     | PTE_ATTRINDX(MT_NORMAL));
 		break;
 	case UDMA_MMAP_RESERVED_SQ:
-		if (vma->vm_start != udma_dev->sq_reserved_info.va_start || vma->vm_end !=
-		    udma_dev->sq_reserved_info.va_start + udma_dev->sq_reserved_info.va_size) {
-			dev_err(udma_dev->dev, "mmap failed, invalid vm area size.\n");
+		if (vma->vm_start != udma_dev->sq_reserved_info.va_start) {
+			dev_err(udma_dev->dev, "mmap failed, invalid vm_start.\n");
+			return -EINVAL;
+		}
+
+		if (vm_size != udma_dev->sq_reserved_info.va_size) {
+			dev_err(udma_dev->dev, "mmap failed, invalid vm_size=0x%llx.\n", vm_size);
 			return -EINVAL;
 		}
 
@@ -372,7 +440,7 @@ int udma_mmap(struct ubcore_ucontext *uctx, struct vm_area_struct *vma)
 	case UDMA_MMAP_KERNEL_BUF:
 		return udma_mmap_kernel_buf(udma_dev, uctx, vma);
 	default:
-		dev_err(udma_dev->dev, "mmap failed, cmd(%u) not support\n", cmd);
+		dev_err(udma_dev->dev, "mmap failed, command(%u) not support\n", cmd);
 		return -EINVAL;
 	}
 
@@ -383,7 +451,7 @@ int udma_create_sgt_from_pages(struct sg_table *sgt, struct page **pages,
 			       uint32_t page_num, uint32_t page_size)
 {
 	struct scatterlist *sg;
-	int i;
+	uint32_t i;
 
 	if (sg_alloc_table(sgt, page_num, GFP_KERNEL))
 		return -ENOMEM;
@@ -408,7 +476,7 @@ static inline bool udma_check_vma_flags(struct vm_area_struct *vma)
 static struct udma_page_priv *
 udma_get_page_priv(struct udma_context *ctx, uint64_t va, uint32_t len)
 {
-	uint32_t align_size = PAGE_ALIGN(len);
+	unsigned long align_size = PAGE_ALIGN(len);
 	struct udma_page_priv *priv;
 	struct vm_area_struct *vma;
 	int ret = 0;
@@ -417,7 +485,7 @@ udma_get_page_priv(struct udma_context *ctx, uint64_t va, uint32_t len)
 	vma = find_vma(current->mm, va);
 	if (vma == NULL || vma->vm_start != va || vma->vm_end < va + align_size ||
 	    va & ~PAGE_MASK || vma->vm_end & ~PAGE_MASK) {
-		dev_err(ctx->dev->dev, "failed to find vma.\n");
+		dev_err(ctx->dev->dev, "failed to find VMA.\n");
 		ret = -EINVAL;
 		goto err_unlock;
 	}
@@ -425,7 +493,7 @@ udma_get_page_priv(struct udma_context *ctx, uint64_t va, uint32_t len)
 	// zap vma ptes before remap to avoid existed page
 	zap_vma_ptes(vma, (unsigned long)va, align_size);
 	if (!udma_check_vma_flags(vma)) {
-		dev_err(ctx->dev->dev, "failed to check vma flags.\n");
+		dev_err(ctx->dev->dev, "failed to check VMA flags.\n");
 		ret = -EINVAL;
 		goto err_unlock;
 	}
@@ -459,7 +527,8 @@ static void udma_free_page_priv(struct udma_context *ctx, struct udma_page_priv 
 	}
 
 	for (i = 0; i < priv->page_num; i++)
-		__free_page(priv->pages[i]);
+		udma_free_pages(priv->pages[i], 0);
+
 	kfree(priv->pages);
 	priv->pages = NULL;
 	kfree(priv);
@@ -476,10 +545,10 @@ struct udma_page_priv *udma_get_map_page_priv(struct udma_context *ctx, uint64_t
 		return priv;
 
 	if (ctx->dev->caps.sva_sep_mode_en) {
-		ret = udma_ioummu_map(ctx, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
+		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
 				      (uint64_t)priv->va_base, &(priv->sgt));
 		if (ret) {
-			dev_err(ctx->dev->dev, "udma iommu map failed, ret = %d.\n", ret);
+			dev_err(ctx->dev->dev, "UDMA IOMMU map failed, ret = %d.\n", ret);
 			udma_free_page_priv(ctx, priv);
 			return NULL;
 		}
@@ -491,7 +560,8 @@ struct udma_page_priv *udma_get_map_page_priv(struct udma_context *ctx, uint64_t
 void udma_put_map_page_priv(struct udma_context *ctx, struct udma_page_priv *priv)
 {
 	if (ctx->dev->caps.sva_sep_mode_en)
-		udma_ioummu_unmap(ctx, UMMU_INVALID_TID, (uintptr_t)priv->va_base, priv->va_len);
+		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID,
+				  (uintptr_t)priv->va_base, priv->va_len);
 
 	udma_free_page_priv(ctx, priv);
 }
@@ -512,14 +582,14 @@ static struct udma_hugepage_priv *udma_list_find_before(struct udma_context *ctx
 static void udma_unremap_hugepage(struct vm_area_struct *vma, struct udma_hugepage_priv *priv,
 				  uint32_t remaped_num)
 {
-	int i;
+	uint32_t i;
 
 	if (remaped_num)
 		zap_vma_ptes(vma, vma->vm_start, remaped_num * priv->page_size);
 
 	for (i = 0; i < priv->page_num; i++) {
 		if (priv->pages[i])
-			__free_pages(priv->pages[i], get_order(priv->page_size));
+			udma_free_pages(priv->pages[i], get_order(priv->page_size));
 		else
 			break;
 	}
@@ -532,7 +602,8 @@ static int udma_remap_hugepage(struct udma_context *ctx, struct vm_area_struct *
 			       struct udma_hugepage_priv *priv, uint32_t page_shift)
 {
 	int ret = -ENOMEM;
-	int i;
+	uint32_t i;
+	gfp_t flag;
 
 	priv->page_size = 1 << page_shift;
 	priv->page_num = (vma->vm_end - vma->vm_start) >> page_shift;
@@ -540,11 +611,16 @@ static int udma_remap_hugepage(struct udma_context *ctx, struct vm_area_struct *
 	if (!priv->pages)
 		return ret;
 
+	if (debug_switch)
+		dev_info_ratelimited(ctx->dev->dev, "vm_flags=0x%lx, vm_page_prot=0x%llx.\n",
+				     vma->vm_flags, vma->vm_page_prot.pgprot);
+
 	zap_vma_ptes(vma, vma->vm_start, priv->page_num << page_shift);
 	for (i = 0; i < priv->page_num; i++) {
-		priv->pages[i] = alloc_pages(
-			GFP_KERNEL | __GFP_ZERO | __GFP_NOWARN | GFP_HIGHUSER_MOVABLE,
-			get_order(priv->page_size));
+		flag = ctx->dev->caps.non_mirror_en == true ?
+			(GFP_HIGHUSER_MOVABLE | __GFP_NOWARN | __GFP_ZERO) :
+			(GFP_KERNEL | __GFP_NOWARN | __GFP_ZERO);
+		priv->pages[i] = udma_alloc_pages(flag, get_order(priv->page_size));
 		if (!priv->pages[i]) {
 			dev_err(ctx->dev->dev, "failed to alloc pages.\n");
 			goto err_alloc_pages;
@@ -553,7 +629,7 @@ static int udma_remap_hugepage(struct udma_context *ctx, struct vm_area_struct *
 					   page_to_pfn(priv->pages[i]), priv->page_size,
 					   vma->vm_page_prot);
 		if (ret) {
-			dev_err(ctx->dev->dev, "failed to remap_pfn_range, ret=%d.\n", ret);
+			dev_err(ctx->dev->dev, "failed to remap PFN range, ret=%d.\n", ret);
 			goto err_remap_pfn_range;
 		}
 	}
@@ -594,21 +670,21 @@ udma_alloc_u_hugepage_priv(struct udma_context *ctx, struct vm_area_struct *vma)
 		ret = udma_create_sgt_from_pages(&priv->sgt, priv->pages, priv->page_num,
 						 priv->page_size);
 		if (ret) {
-			dev_err(ctx->dev->dev, "failed to create sg table, ret=%d.\n", ret);
+			dev_err(ctx->dev->dev, "failed to create SG table, ret=%d.\n", ret);
 			goto err_create_sgt_from_pages;
 		}
 
-		ret = udma_ioummu_map(ctx, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
+		ret = udma_ioummu_map(ctx->tid, UMMU_INVALID_TID, IOMMU_READ | IOMMU_WRITE,
 				      vma->vm_start, &priv->sgt);
 		if (ret) {
-			dev_err(ctx->dev->dev, "failed to map sgt, ret = %d.\n", ret);
+			dev_err(ctx->dev->dev, "failed to map SGT, ret = %d.\n", ret);
 			goto err_ioummu_map;
 		}
 	}
 
 	list_add(&priv->list, &ctx->hugepage_list);
 
-	if (dfx_switch)
+	if (debug_switch)
 		dev_info_ratelimited(ctx->dev->dev,
 			"alloc_hugepage, seq=%u, 2m_page_num=%u.\n",
 			priv->seq, priv->va_len >> UDMA_HUGEPAGE_SHIFT);
@@ -633,7 +709,7 @@ bool udma_alloc_u_hugepage(struct udma_context *ctx, uint64_t buf_addr, uint32_t
 	mutex_lock(&ctx->hugepage_lock);
 	priv = udma_list_find_before(ctx, buf_addr);
 	if (priv) {
-		if (dfx_switch)
+		if (debug_switch)
 			dev_info_ratelimited(ctx->dev->dev,
 				"occupy_hugepage, seq=%u, 4k_page_num=%u.\n",
 				priv->seq, buf_len >> UDMA_HW_PAGE_SHIFT);
@@ -651,7 +727,7 @@ bool udma_alloc_u_hugepage(struct udma_context *ctx, uint64_t buf_addr, uint32_t
 			goto unlock_mm;
 
 		if (!udma_check_vma_flags(vma)) {
-			dev_err(ctx->dev->dev, "failed to check vma flags.\n");
+			dev_err(ctx->dev->dev, "failed to check VMA flags.\n");
 			goto unlock_mm;
 		}
 
@@ -676,24 +752,25 @@ void udma_free_u_hugepage(struct udma_context *ctx, uint64_t buf_addr)
 	priv = udma_list_find_before(ctx, buf_addr);
 	if (!priv) {
 		mutex_unlock(&ctx->hugepage_lock);
-		dev_warn(ctx->dev->dev, "buf_addr is invalid addr.\n");
+		dev_warn(ctx->dev->dev, "buffer address is invalid address.\n");
 		return;
 	}
 
 	if (!refcount_dec_and_test(&priv->refcnt)) {
 		mutex_unlock(&ctx->hugepage_lock);
-		if (dfx_switch)
+		if (debug_switch)
 			dev_info_ratelimited(ctx->dev->dev,
 					     "return_hugepage, seq=%u.\n", priv->seq);
 		return;
 	} else {
 		list_del(&priv->list);
-		if (dfx_switch)
+		if (debug_switch)
 			dev_info_ratelimited(ctx->dev->dev, "free_hugepage, seq=%u.\n", priv->seq);
 	}
 
 	if (ctx->dev->caps.sva_sep_mode_en) {
-		udma_ioummu_unmap(ctx, UMMU_INVALID_TID, (uintptr_t)priv->va_base, priv->va_len);
+		udma_ioummu_unmap(ctx->tid, UMMU_INVALID_TID,
+				  (uintptr_t)priv->va_base, priv->va_len);
 		sg_free_table(&priv->sgt);
 	}
 	if (current->mm) {
@@ -709,7 +786,7 @@ void udma_free_u_hugepage(struct udma_context *ctx, uint64_t buf_addr)
 	mutex_unlock(&ctx->hugepage_lock);
 
 	for (i = 0; i < priv->page_num; i++)
-		__free_pages(priv->pages[i], get_order(priv->page_size));
+		udma_free_pages(priv->pages[i], get_order(priv->page_size));
 
 	kfree(priv->pages);
 	kfree(priv);

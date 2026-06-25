@@ -82,15 +82,6 @@ u32 xstate_required_size(u64 xstate_bv, bool compacted)
 	return ret;
 }
 
-#define F feature_bit
-
-/* Scattered Flag - For features that are scattered by cpufeatures.h. */
-#define SF(name)						\
-({								\
-	BUILD_BUG_ON(X86_FEATURE_##name >= MAX_CPU_FEATURES);	\
-	(boot_cpu_has(X86_FEATURE_##name) ? F(name) : 0);	\
-})
-
 /*
  * Magic value used by KVM when querying userspace-provided CPUID entries and
  * doesn't care about the CPIUD index because the index of the function in
@@ -602,107 +593,295 @@ int kvm_vcpu_ioctl_get_cpuid2(struct kvm_vcpu *vcpu,
 	return 0;
 }
 
-/* Mask kvm_cpu_caps for @leaf with the raw CPUID capabilities of this CPU. */
-static __always_inline void __kvm_cpu_cap_mask(unsigned int leaf)
+static __always_inline u32 raw_cpuid_get(struct cpuid_reg cpuid)
 {
-	const struct cpuid_reg cpuid = x86_feature_cpuid(leaf * 32);
 	struct kvm_cpuid_entry2 entry;
+	u32 base;
 
-	reverse_cpuid_check(leaf);
+	/*
+	 * KVM only supports features defined by Intel (0x0), AMD (0x80000000),
+	 * and Centaur (0xc0000000).  WARN if a feature for new vendor base is
+	 * defined, as this and other code would need to be updated.
+	 */
+	base = cpuid.function & 0xffff0000;
+	if (WARN_ON_ONCE(base && base != 0x80000000 && base != 0xc0000000 &&
+			 base != 0x8c860000))
+		return 0;
+
+	if (cpuid_eax(base) < cpuid.function)
+		return 0;
 
 	cpuid_count(cpuid.function, cpuid.index,
 		    &entry.eax, &entry.ebx, &entry.ecx, &entry.edx);
 
-	kvm_cpu_caps[leaf] &= *__cpuid_entry_get_reg(&entry, cpuid.reg);
+	return *__cpuid_entry_get_reg(&entry, cpuid.reg);
 }
 
-static __always_inline
-void kvm_cpu_cap_init_kvm_defined(enum kvm_only_cpuid_leafs leaf, u32 mask)
-{
-	/* Use kvm_cpu_cap_init for leafs that aren't KVM-only. */
-	BUILD_BUG_ON(leaf < NCAPINTS);
+/*
+ * For kernel-defined leafs, mask KVM's supported feature set with the kernel's
+ * capabilities as well as raw CPUID.  For KVM-defined leafs, consult only raw
+ * CPUID, as KVM is the one and only authority (in the kernel).
+ */
+#define kvm_cpu_cap_init(leaf, feature_initializers...)			\
+do {									\
+	const struct cpuid_reg cpuid = x86_feature_cpuid(leaf * 32);	\
+	const u32 __maybe_unused kvm_cpu_cap_init_in_progress = leaf;	\
+	const u32 *kernel_cpu_caps = boot_cpu_data.x86_capability;	\
+	u32 kvm_cpu_cap_passthrough = 0;				\
+	u32 kvm_cpu_cap_synthesized = 0;				\
+	u32 kvm_cpu_cap_emulated = 0;					\
+	u32 kvm_cpu_cap_features = 0;					\
+									\
+	feature_initializers						\
+									\
+	kvm_cpu_caps[leaf] = kvm_cpu_cap_features;			\
+									\
+	if (leaf < NCAPINTS)						\
+		kvm_cpu_caps[leaf] &= kernel_cpu_caps[leaf];		\
+									\
+	kvm_cpu_caps[leaf] |= kvm_cpu_cap_passthrough;			\
+	kvm_cpu_caps[leaf] &= (raw_cpuid_get(cpuid) |			\
+			       kvm_cpu_cap_synthesized);		\
+	kvm_cpu_caps[leaf] |= kvm_cpu_cap_emulated;			\
+} while (0)
 
-	kvm_cpu_caps[leaf] = mask;
+/*
+ * Assert that the feature bit being declared, e.g. via F(), is in the CPUID
+ * word that's being initialized.  Exempt 0x8000_0001.EDX usage of 0x1.EDX
+ * features, as AMD duplicated many 0x1.EDX features into 0x8000_0001.EDX.
+ */
+#define KVM_VALIDATE_CPU_CAP_USAGE(name)				\
+do {									\
+	u32 __leaf = __feature_leaf(X86_FEATURE_##name);		\
+									\
+	BUILD_BUG_ON(__leaf != kvm_cpu_cap_init_in_progress);		\
+} while (0)
 
-	__kvm_cpu_cap_mask(leaf);
-}
+#define F(name)							\
+({								\
+	KVM_VALIDATE_CPU_CAP_USAGE(name);			\
+	kvm_cpu_cap_features |= feature_bit(name);		\
+})
 
-static __always_inline void kvm_cpu_cap_init(enum cpuid_leafs leaf, u32 mask)
-{
-	/* Use kvm_cpu_cap_init_kvm_defined for KVM-only leafs. */
-	BUILD_BUG_ON(leaf >= NCAPINTS);
+/* Scattered Flag - For features that are scattered by cpufeatures.h. */
+#define SCATTERED_F(name)					\
+({								\
+	BUILD_BUG_ON(X86_FEATURE_##name >= MAX_CPU_FEATURES);	\
+	KVM_VALIDATE_CPU_CAP_USAGE(name);			\
+	if (boot_cpu_has(X86_FEATURE_##name))			\
+		F(name);					\
+})
 
-	kvm_cpu_caps[leaf] &= mask;
+/* Features that KVM supports only on 64-bit kernels. */
+#define X86_64_F(name)						\
+({								\
+	KVM_VALIDATE_CPU_CAP_USAGE(name);			\
+	if (IS_ENABLED(CONFIG_X86_64))				\
+		F(name);					\
+})
 
-	__kvm_cpu_cap_mask(leaf);
-}
+/*
+ * Emulated Feature - For features that KVM emulates in software irrespective
+ * of host CPU/kernel support.
+ */
+#define EMULATED_F(name)					\
+({								\
+	kvm_cpu_cap_emulated |= feature_bit(name);		\
+	F(name);						\
+})
+
+/*
+ * Synthesized Feature - For features that are synthesized into boot_cpu_data,
+ * i.e. may not be present in the raw CPUID, but can still be advertised to
+ * userspace.  Primarily used for mitigation related feature flags.
+ */
+#define SYNTHESIZED_F(name)					\
+({								\
+	kvm_cpu_cap_synthesized |= feature_bit(name);		\
+	F(name);						\
+})
+
+/*
+ * Passthrough Feature - For features that KVM supports based purely on raw
+ * hardware CPUID, i.e. that KVM virtualizes even if the host kernel doesn't
+ * use the feature.  Simply force set the feature in KVM's capabilities, raw
+ * CPUID support will be factored in by kvm_cpu_cap_mask().
+ */
+#define PASSTHROUGH_F(name)					\
+({								\
+	kvm_cpu_cap_passthrough |= feature_bit(name);		\
+	F(name);						\
+})
+
+/*
+ * Aliased Features - For features in 0x8000_0001.EDX that are duplicates of
+ * identical 0x1.EDX features, and thus are aliased from 0x1 to 0x8000_0001.
+ */
+#define ALIASED_1_EDX_F(name)							\
+({										\
+	BUILD_BUG_ON(__feature_leaf(X86_FEATURE_##name) != CPUID_1_EDX);	\
+	BUILD_BUG_ON(kvm_cpu_cap_init_in_progress != CPUID_8000_0001_EDX);	\
+	kvm_cpu_cap_features |= feature_bit(name);				\
+})
+
+/*
+ * Vendor Features - For features that KVM supports, but are added in later
+ * because they require additional vendor enabling.
+ */
+#define VENDOR_F(name)						\
+({								\
+	KVM_VALIDATE_CPU_CAP_USAGE(name);			\
+})
+
+/*
+ * Runtime Features - For features that KVM dynamically sets/clears at runtime,
+ * e.g. when CR4 changes, but which are never advertised to userspace.
+ */
+#define RUNTIME_F(name)						\
+({								\
+	KVM_VALIDATE_CPU_CAP_USAGE(name);			\
+})
+
+/*
+ * Undefine the MSR bit macro to avoid token concatenation issues when
+ * processing X86_FEATURE_SPEC_CTRL_SSBD.
+ */
+#undef SPEC_CTRL_SSBD
+
+/* DS is defined by ptrace-abi.h on 32-bit builds. */
+#undef DS
 
 void kvm_set_cpu_caps(void)
 {
-#ifdef CONFIG_X86_64
-	unsigned int f_gbpages = F(GBPAGES);
-	unsigned int f_lm = F(LM);
-	unsigned int f_xfd = F(XFD);
-#else
-	unsigned int f_gbpages = 0;
-	unsigned int f_lm = 0;
-	unsigned int f_xfd = 0;
-#endif
 	memset(kvm_cpu_caps, 0, sizeof(kvm_cpu_caps));
 
 	BUILD_BUG_ON(sizeof(kvm_cpu_caps) - (NKVMCAPINTS * sizeof(*kvm_cpu_caps)) >
 		     sizeof(boot_cpu_data.x86_capability));
 
-	memcpy(&kvm_cpu_caps, &boot_cpu_data.x86_capability,
-	       sizeof(kvm_cpu_caps) - (NKVMCAPINTS * sizeof(*kvm_cpu_caps)));
-
 	kvm_cpu_cap_init(CPUID_1_ECX,
+		F(XMM3),
+		F(PCLMULQDQ),
+		VENDOR_F(DTES64),
 		/*
 		 * NOTE: MONITOR (and MWAIT) are emulated as NOP, but *not*
-		 * advertised to guests via CPUID!
+		 * advertised to guests via CPUID!  MWAIT is also technically a
+		 * runtime flag thanks to IA32_MISC_ENABLES; mark it as such so
+		 * that KVM is aware that it's a known, unadvertised flag.
 		 */
-		F(XMM3) | F(PCLMULQDQ) | 0 /* DTES64, MONITOR */ |
-		0 /* DS-CPL, VMX, SMX, EST */ |
-		0 /* TM2 */ | F(SSSE3) | 0 /* CNXT-ID */ | 0 /* Reserved */ |
-		F(FMA) | F(CX16) | 0 /* xTPR Update */ | F(PDCM) |
-		F(PCID) | 0 /* Reserved, DCA */ | F(XMM4_1) |
-		F(XMM4_2) | F(X2APIC) | F(MOVBE) | F(POPCNT) |
-		0 /* Reserved*/ | F(AES) | F(XSAVE) | 0 /* OSXSAVE */ | F(AVX) |
-		F(F16C) | F(RDRAND)
+		RUNTIME_F(MWAIT),
+		/* DS-CPL */
+		VENDOR_F(VMX),
+		/* SMX, EST */
+		/* TM2 */
+		F(SSSE3),
+		/* CNXT-ID */
+		/* Reserved */
+		F(FMA),
+		F(CX16),
+		/* xTPR Update */
+		F(PDCM),
+		F(PCID),
+		/* Reserved, DCA */
+		F(XMM4_1),
+		F(XMM4_2),
+		EMULATED_F(X2APIC),
+		F(MOVBE),
+		F(POPCNT),
+		EMULATED_F(TSC_DEADLINE_TIMER),
+		F(AES),
+		F(XSAVE),
+		RUNTIME_F(OSXSAVE),
+		F(AVX),
+		F(F16C),
+		F(RDRAND),
+		EMULATED_F(HYPERVISOR),
 	);
-	/* KVM emulates x2apic in software irrespective of host support. */
-	kvm_cpu_cap_set(X86_FEATURE_X2APIC);
 
 	kvm_cpu_cap_init(CPUID_1_EDX,
-		F(FPU) | F(VME) | F(DE) | F(PSE) |
-		F(TSC) | F(MSR) | F(PAE) | F(MCE) |
-		F(CX8) | F(APIC) | 0 /* Reserved */ | F(SEP) |
-		F(MTRR) | F(PGE) | F(MCA) | F(CMOV) |
-		F(PAT) | F(PSE36) | 0 /* PSN */ | F(CLFLUSH) |
-		0 /* Reserved, DS, ACPI */ | F(MMX) |
-		F(FXSR) | F(XMM) | F(XMM2) | F(SELFSNOOP) |
-		0 /* HTT, TM, Reserved, PBE */
+		F(FPU),
+		F(VME),
+		F(DE),
+		F(PSE),
+		F(TSC),
+		F(MSR),
+		F(PAE),
+		F(MCE),
+		F(CX8),
+		F(APIC),
+		/* Reserved */
+		F(SEP),
+		F(MTRR),
+		F(PGE),
+		F(MCA),
+		F(CMOV),
+		F(PAT),
+		F(PSE36),
+		/* PSN */
+		F(CLFLUSH),
+		/* Reserved */
+		VENDOR_F(DS),
+		/* ACPI */
+		F(MMX),
+		F(FXSR),
+		F(XMM),
+		F(XMM2),
+		F(SELFSNOOP),
+		/* HTT, TM, Reserved, PBE */
 	);
 
 	kvm_cpu_cap_init(CPUID_7_0_EBX,
-		F(FSGSBASE) | F(SGX) | F(BMI1) | F(HLE) | F(AVX2) |
-		F(FDP_EXCPTN_ONLY) | F(SMEP) | F(BMI2) | F(ERMS) | F(INVPCID) |
-		F(RTM) | F(ZERO_FCS_FDS) | 0 /*MPX*/ | F(AVX512F) |
-		F(AVX512DQ) | F(RDSEED) | F(ADX) | F(SMAP) | F(AVX512IFMA) |
-		F(CLFLUSHOPT) | F(CLWB) | 0 /*INTEL_PT*/ | F(AVX512PF) |
-		F(AVX512ER) | F(AVX512CD) | F(SHA_NI) | F(AVX512BW) |
-		F(AVX512VL));
+		F(FSGSBASE),
+		EMULATED_F(TSC_ADJUST),
+		F(SGX),
+		F(BMI1),
+		F(HLE),
+		F(AVX2),
+		F(FDP_EXCPTN_ONLY),
+		F(SMEP),
+		F(BMI2),
+		F(ERMS),
+		F(INVPCID),
+		F(RTM),
+		F(ZERO_FCS_FDS),
+		VENDOR_F(MPX),
+		F(AVX512F),
+		F(AVX512DQ),
+		F(RDSEED),
+		F(ADX),
+		F(SMAP),
+		F(AVX512IFMA),
+		F(CLFLUSHOPT),
+		F(CLWB),
+		VENDOR_F(INTEL_PT),
+		F(AVX512PF),
+		F(AVX512ER),
+		F(AVX512CD),
+		F(SHA_NI),
+		F(AVX512BW),
+		F(AVX512VL),
+	);
 
 	kvm_cpu_cap_init(CPUID_7_ECX,
-		F(AVX512VBMI) | F(LA57) | F(PKU) | 0 /*OSPKE*/ | F(RDPID) |
-		F(AVX512_VPOPCNTDQ) | F(UMIP) | F(AVX512_VBMI2) | F(GFNI) |
-		F(VAES) | F(VPCLMULQDQ) | F(AVX512_VNNI) | F(AVX512_BITALG) |
-		F(CLDEMOTE) | F(MOVDIRI) | F(MOVDIR64B) | 0 /*WAITPKG*/ |
-		F(SGX_LC) | F(BUS_LOCK_DETECT)
+		F(AVX512VBMI),
+		PASSTHROUGH_F(LA57),
+		F(PKU),
+		RUNTIME_F(OSPKE),
+		F(RDPID),
+		F(AVX512_VPOPCNTDQ),
+		F(UMIP),
+		F(AVX512_VBMI2),
+		F(GFNI),
+		F(VAES),
+		F(VPCLMULQDQ),
+		F(AVX512_VNNI),
+		F(AVX512_BITALG),
+		F(CLDEMOTE),
+		F(MOVDIRI),
+		F(MOVDIR64B),
+		VENDOR_F(WAITPKG),
+		F(SGX_LC),
+		F(BUS_LOCK_DETECT),
 	);
-	/* Set LA57 based on hardware capability. */
-	if (cpuid_ecx(7) & F(LA57))
-		kvm_cpu_cap_set(X86_FEATURE_LA57);
 
 	/*
 	 * PKU not yet implemented for shadow paging and requires OSPKE
@@ -712,16 +891,23 @@ void kvm_set_cpu_caps(void)
 		kvm_cpu_cap_clear(X86_FEATURE_PKU);
 
 	kvm_cpu_cap_init(CPUID_7_EDX,
-		F(AVX512_4VNNIW) | F(AVX512_4FMAPS) | F(SPEC_CTRL) |
-		F(SPEC_CTRL_SSBD) | F(ARCH_CAPABILITIES) | F(INTEL_STIBP) |
-		F(MD_CLEAR) | F(AVX512_VP2INTERSECT) | F(FSRM) |
-		F(SERIALIZE) | F(TSXLDTRK) | F(AVX512_FP16) |
-		F(AMX_TILE) | F(AMX_INT8) | F(AMX_BF16) | F(FLUSH_L1D)
+		F(AVX512_4VNNIW),
+		F(AVX512_4FMAPS),
+		F(SPEC_CTRL),
+		F(SPEC_CTRL_SSBD),
+		EMULATED_F(ARCH_CAPABILITIES),
+		F(INTEL_STIBP),
+		F(MD_CLEAR),
+		F(AVX512_VP2INTERSECT),
+		F(FSRM),
+		F(SERIALIZE),
+		F(TSXLDTRK),
+		F(AVX512_FP16),
+		F(AMX_TILE),
+		F(AMX_INT8),
+		F(AMX_BF16),
+		F(FLUSH_L1D),
 	);
-
-	/* TSC_ADJUST and ARCH_CAPABILITIES are emulated in software. */
-	kvm_cpu_cap_set(X86_FEATURE_TSC_ADJUST);
-	kvm_cpu_cap_set(X86_FEATURE_ARCH_CAPABILITIES);
 
 	if (boot_cpu_has(X86_FEATURE_IBPB) && boot_cpu_has(X86_FEATURE_IBRS))
 		kvm_cpu_cap_set(X86_FEATURE_SPEC_CTRL);
@@ -731,64 +917,132 @@ void kvm_set_cpu_caps(void)
 		kvm_cpu_cap_set(X86_FEATURE_SPEC_CTRL_SSBD);
 
 	kvm_cpu_cap_init(CPUID_7_1_EAX,
-		F(SHA512) | F(SM3) | F(SM4) | F(AVX_VNNI) | F(AVX512_BF16) |
-		F(CMPCCXADD) | F(FZRM) | F(FSRS) | F(FSRC) | F(AMX_FP16) |
-		F(AVX_IFMA) | F(LAM)
+		F(SHA512),
+		F(SM3),
+		F(SM4),
+		F(AVX_VNNI),
+		F(AVX512_BF16),
+		F(CMPCCXADD),
+		F(FZRM),
+		F(FSRS),
+		F(FSRC),
+		F(AMX_FP16),
+		F(AVX_IFMA),
+		F(LAM),
 	);
 
-	kvm_cpu_cap_init_kvm_defined(CPUID_7_1_EDX,
-		F(AVX_VNNI_INT8) | F(AVX_NE_CONVERT) | F(AMX_COMPLEX) |
-		F(AVX_VNNI_INT16) | F(PREFETCHITI) | F(AVX10)
+	kvm_cpu_cap_init(CPUID_7_1_EDX,
+		F(AVX_VNNI_INT8),
+		F(AVX_NE_CONVERT),
+		F(AMX_COMPLEX),
+		F(AVX_VNNI_INT16),
+		F(PREFETCHITI),
+		F(AVX10),
 	);
 
-	kvm_cpu_cap_init_kvm_defined(CPUID_7_2_EDX,
-		F(INTEL_PSFD) | F(IPRED_CTRL) | F(RRSBA_CTRL) | F(DDPD_U) |
-		F(BHI_CTRL) | F(MCDT_NO)
+	kvm_cpu_cap_init(CPUID_7_2_EDX,
+		F(INTEL_PSFD),
+		F(IPRED_CTRL),
+		F(RRSBA_CTRL),
+		F(DDPD_U),
+		F(BHI_CTRL),
+		F(MCDT_NO),
 	);
 
 	kvm_cpu_cap_init(CPUID_D_1_EAX,
-		F(XSAVEOPT) | F(XSAVEC) | F(XGETBV1) | F(XSAVES) | f_xfd
+		F(XSAVEOPT),
+		F(XSAVEC),
+		F(XGETBV1),
+		F(XSAVES),
+		X86_64_F(XFD),
 	);
 
-	kvm_cpu_cap_init_kvm_defined(CPUID_12_EAX,
-		SF(SGX1) | SF(SGX2) | SF(SGX_EDECCSSA)
+	kvm_cpu_cap_init(CPUID_12_EAX,
+		SCATTERED_F(SGX1),
+		SCATTERED_F(SGX2),
+		SCATTERED_F(SGX_EDECCSSA),
 	);
 
-	kvm_cpu_cap_init_kvm_defined(CPUID_24_0_EBX,
-		F(AVX10_128) | F(AVX10_256) | F(AVX10_512)
+	kvm_cpu_cap_init(CPUID_24_0_EBX,
+		F(AVX10_128),
+		F(AVX10_256),
+		F(AVX10_512),
 	);
 
 	kvm_cpu_cap_init(CPUID_8000_0001_ECX,
-		F(LAHF_LM) | F(CMP_LEGACY) | 0 /*SVM*/ | 0 /* ExtApicSpace */ |
-		F(CR8_LEGACY) | F(ABM) | F(SSE4A) | F(MISALIGNSSE) |
-		F(3DNOWPREFETCH) | F(OSVW) | 0 /* IBS */ | F(XOP) |
-		0 /* SKINIT, WDT, LWP */ | F(FMA4) | F(TBM) |
-		F(TOPOEXT) | 0 /* PERFCTR_CORE */
+		F(LAHF_LM),
+		F(CMP_LEGACY),
+		VENDOR_F(SVM),
+		/* ExtApicSpace */
+		F(CR8_LEGACY),
+		F(ABM),
+		F(SSE4A),
+		F(MISALIGNSSE),
+		F(3DNOWPREFETCH),
+		F(OSVW),
+		/* IBS */
+		F(XOP),
+		/* SKINIT, WDT, LWP */
+		F(FMA4),
+		F(TBM),
+		F(TOPOEXT),
+		VENDOR_F(PERFCTR_CORE),
 	);
 
 	kvm_cpu_cap_init(CPUID_8000_0001_EDX,
-		F(FPU) | F(VME) | F(DE) | F(PSE) |
-		F(TSC) | F(MSR) | F(PAE) | F(MCE) |
-		F(CX8) | F(APIC) | 0 /* Reserved */ | F(SYSCALL) |
-		F(MTRR) | F(PGE) | F(MCA) | F(CMOV) |
-		F(PAT) | F(PSE36) | 0 /* Reserved */ |
-		F(NX) | 0 /* Reserved */ | F(MMXEXT) | F(MMX) |
-		F(FXSR) | F(FXSR_OPT) | f_gbpages | F(RDTSCP) |
-		0 /* Reserved */ | f_lm | F(3DNOWEXT) | F(3DNOW)
+		ALIASED_1_EDX_F(FPU),
+		ALIASED_1_EDX_F(VME),
+		ALIASED_1_EDX_F(DE),
+		ALIASED_1_EDX_F(PSE),
+		ALIASED_1_EDX_F(TSC),
+		ALIASED_1_EDX_F(MSR),
+		ALIASED_1_EDX_F(PAE),
+		ALIASED_1_EDX_F(MCE),
+		ALIASED_1_EDX_F(CX8),
+		ALIASED_1_EDX_F(APIC),
+		/* Reserved */
+		F(SYSCALL),
+		ALIASED_1_EDX_F(MTRR),
+		ALIASED_1_EDX_F(PGE),
+		ALIASED_1_EDX_F(MCA),
+		ALIASED_1_EDX_F(CMOV),
+		ALIASED_1_EDX_F(PAT),
+		ALIASED_1_EDX_F(PSE36),
+		/* Reserved */
+		F(NX),
+		/* Reserved */
+		F(MMXEXT),
+		ALIASED_1_EDX_F(MMX),
+		ALIASED_1_EDX_F(FXSR),
+		F(FXSR_OPT),
+		X86_64_F(GBPAGES),
+		F(RDTSCP),
+		/* Reserved */
+		X86_64_F(LM),
+		F(3DNOWEXT),
+		F(3DNOW),
 	);
 
 	if (!tdp_enabled && IS_ENABLED(CONFIG_X86_64))
 		kvm_cpu_cap_set(X86_FEATURE_GBPAGES);
 
-	kvm_cpu_cap_init_kvm_defined(CPUID_8000_0007_EDX,
-		SF(CONSTANT_TSC)
+	kvm_cpu_cap_init(CPUID_8000_0007_EDX,
+		SCATTERED_F(CONSTANT_TSC),
 	);
 
 	kvm_cpu_cap_init(CPUID_8000_0008_EBX,
-		F(CLZERO) | F(XSAVEERPTR) |
-		F(WBNOINVD) | F(AMD_IBPB) | F(AMD_IBRS) | F(AMD_SSBD) | F(VIRT_SSBD) |
-		F(AMD_SSB_NO) | F(AMD_STIBP) | F(AMD_STIBP_ALWAYS_ON) |
-		F(AMD_PSFD)
+		F(CLZERO),
+		F(XSAVEERPTR),
+		F(WBNOINVD),
+		F(AMD_IBPB),
+		F(AMD_IBRS),
+		F(AMD_SSBD),
+		F(VIRT_SSBD),
+		F(AMD_SSB_NO),
+		F(AMD_STIBP),
+		F(AMD_STIBP_ALWAYS_ON),
+		F(AMD_PSFD),
+		F(AMD_IBPB_RET),
 	);
 
 	/*
@@ -814,52 +1068,83 @@ void kvm_set_cpu_caps(void)
 	    !boot_cpu_has(X86_FEATURE_AMD_SSBD))
 		kvm_cpu_cap_set(X86_FEATURE_VIRT_SSBD);
 
-	/*
-	 * Hide all SVM features by default, SVM will set the cap bits for
-	 * features it emulates and/or exposes for L1.
-	 */
-	kvm_cpu_cap_init(CPUID_8000_000A_EDX, 0);
+	/* All SVM features required additional vendor module enabling. */
+	kvm_cpu_cap_init(CPUID_8000_000A_EDX,
+		VENDOR_F(NPT),
+		VENDOR_F(VMCBCLEAN),
+		VENDOR_F(FLUSHBYASID),
+		VENDOR_F(NRIPS),
+		VENDOR_F(TSCRATEMSR),
+		VENDOR_F(V_VMSAVE_VMLOAD),
+		VENDOR_F(LBRV),
+		VENDOR_F(PAUSEFILTER),
+		VENDOR_F(PFTHRESHOLD),
+		VENDOR_F(VGIF),
+		VENDOR_F(VNMI),
+		VENDOR_F(SVME_ADDR_CHK),
+	);
 
 	kvm_cpu_cap_init(CPUID_8000_001F_EAX,
-		0 /* SME */ | F(SEV) | 0 /* VM_PAGE_FLUSH */ | F(SEV_ES) |
-		F(SME_COHERENT));
+		VENDOR_F(SME),
+		VENDOR_F(SEV),
+		/* VM_PAGE_FLUSH */
+		VENDOR_F(SEV_ES),
+		F(SME_COHERENT),
+	);
 
 	kvm_cpu_cap_init(CPUID_8000_0021_EAX,
-		F(NO_NESTED_DATA_BP) | F(LFENCE_RDTSC) | 0 /* SmmPgCfgLock */ |
-		F(VERW_CLEAR) |
-		F(NULL_SEL_CLR_BASE) | F(AUTOIBRS) | 0 /* PrefetchCtlMsr */
+		F(VERW_CLEAR),
+		F(NO_NESTED_DATA_BP),
+		/*
+		 * Synthesize "LFENCE is serializing" into the AMD-defined entry
+		 * in KVM's supported CPUID, i.e. if the feature is reported as
+		 * supported by the kernel.  LFENCE_RDTSC was a Linux-defined
+		 * synthetic feature long before AMD joined the bandwagon, e.g.
+		 * LFENCE is serializing on most CPUs that support SSE2.  On
+		 * CPUs that don't support AMD's leaf, ANDing with the raw host
+		 * CPUID will drop the flags, and reporting support in AMD's
+		 * leaf can make it easier for userspace to detect the feature.
+		 */
+		SYNTHESIZED_F(LFENCE_RDTSC),
+		/* SmmPgCfgLock */
+		F(NULL_SEL_CLR_BASE),
+		F(AUTOIBRS),
+		F(PREFETCHI),
+		EMULATED_F(NO_SMM_CTL_MSR),
+		/* PrefetchCtlMsr */
+		F(WRMSR_XX_BASE_NS),
+		SYNTHESIZED_F(SBPB),
+		SYNTHESIZED_F(IBPB_BRTYPE),
+		SYNTHESIZED_F(SRSO_NO),
 	);
 
-	if (cpu_feature_enabled(X86_FEATURE_SRSO_NO))
-		kvm_cpu_cap_set(X86_FEATURE_SRSO_NO);
-
-	kvm_cpu_cap_init_kvm_defined(CPUID_8000_0022_EAX,
-		F(PERFMON_V2)
+	kvm_cpu_cap_init(CPUID_8000_0022_EAX,
+		F(PERFMON_V2),
 	);
-	kvm_cpu_cap_init_kvm_defined(CPUID_8000_0021_ECX,
-		F(TSA_SQ_NO) | F(TSA_L1_NO)
+	kvm_cpu_cap_init(CPUID_8000_0021_ECX,
+		SYNTHESIZED_F(TSA_SQ_NO),
+		SYNTHESIZED_F(TSA_L1_NO),
 	);
 
-	/*
-	 * Synthesize "LFENCE is serializing" into the AMD-defined entry in
-	 * KVM's supported CPUID if the feature is reported as supported by the
-	 * kernel.  LFENCE_RDTSC was a Linux-defined synthetic feature long
-	 * before AMD joined the bandwagon, e.g. LFENCE is serializing on most
-	 * CPUs that support SSE2.  On CPUs that don't support AMD's leaf,
-	 * kvm_cpu_cap_init() will unfortunately drop the flag due to ANDing
-	 * the mask with the raw host CPUID, and reporting support in AMD's
-	 * leaf can make it easier for userspace to detect the feature.
-	 */
-	if (cpu_feature_enabled(X86_FEATURE_LFENCE_RDTSC))
-		kvm_cpu_cap_set(X86_FEATURE_LFENCE_RDTSC);
 	if (!static_cpu_has_bug(X86_BUG_NULL_SEG))
 		kvm_cpu_cap_set(X86_FEATURE_NULL_SEL_CLR_BASE);
-	kvm_cpu_cap_set(X86_FEATURE_NO_SMM_CTL_MSR);
+
+	kvm_cpu_cap_init(CPUID_8C86_0000_EDX,
+		F(HYGON_SM3),
+		F(HYGON_SM4),
+	);
 
 	kvm_cpu_cap_init(CPUID_C000_0001_EDX,
-		F(XSTORE) | F(XSTORE_EN) | F(XCRYPT) | F(XCRYPT_EN) |
-		F(ACE2) | F(ACE2_EN) | F(PHE) | F(PHE_EN) |
-		F(PMM) | F(PMM_EN)
+		F(XSTORE),
+		F(XSTORE_EN),
+		F(XCRYPT),
+		F(XCRYPT_EN),
+		F(ACE2),
+		F(ACE2_EN),
+		F(PHE),
+		F(PHE_EN),
+		F(PMM),
+		F(PMM_EN),
 	);
 
 	/*
@@ -878,6 +1163,16 @@ void kvm_set_cpu_caps(void)
 	}
 }
 EXPORT_SYMBOL_GPL(kvm_set_cpu_caps);
+
+#undef F
+#undef SCATTERED_F
+#undef X86_64_F
+#undef EMULATED_F
+#undef SYNTHESIZED_F
+#undef PASSTHROUGH_F
+#undef ALIASED_1_EDX_F
+#undef VENDOR_F
+#undef RUNTIME_F
 
 struct kvm_cpuid_array {
 	struct kvm_cpuid_entry2 *entries;
@@ -954,14 +1249,14 @@ static int __do_cpuid_func_emulated(struct kvm_cpuid_array *array, u32 func)
 		++array->nent;
 		break;
 	case 1:
-		entry->ecx = F(MOVBE);
+		entry->ecx = feature_bit(MOVBE);
 		++array->nent;
 		break;
 	case 7:
 		entry->flags |= KVM_CPUID_FLAG_SIGNIFCANT_INDEX;
 		entry->eax = 0;
 		if (kvm_cpu_cap_has(X86_FEATURE_RDTSCP))
-			entry->ecx = F(RDPID);
+			entry->ecx = feature_bit(RDPID);
 		++array->nent;
 		break;
 	default:
@@ -1109,7 +1404,7 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 			goto out;
 
 		cpuid_entry_override(entry, CPUID_D_1_EAX);
-		if (entry->eax & (F(XSAVES)|F(XSAVEC)))
+		if (entry->eax & (feature_bit(XSAVES) | feature_bit(XSAVEC)))
 			entry->ebx = xstate_required_size(permitted_xcr0 | permitted_xss,
 							  true);
 		else {
@@ -1416,6 +1711,10 @@ static inline int __do_cpuid_func(struct kvm_cpuid_array *array, u32 function)
 		entry->ebx = ebx.full;
 		break;
 	}
+	case 0x8C860000:
+		entry->eax = 0x8C860000;
+		cpuid_entry_override(entry, CPUID_8C86_0000_EDX);
+		break;
 	/*Add support for Centaur's CPUID instruction*/
 	case 0xC0000000:
 		/*Just support up to 0xC0000004 now*/
@@ -1469,6 +1768,15 @@ static int get_cpuid_func(struct kvm_cpuid_array *array, u32 func,
 		return r;
 
 	limit = array->entries[array->nent - 1].eax;
+
+	if ((func == 0x80000000) &&
+	    (boot_cpu_has(X86_FEATURE_HYGON_SM3) ||
+	     boot_cpu_has(X86_FEATURE_HYGON_SM4))) {
+		r = do_cpuid_func(array, 0x8C860000, type);
+		if (r)
+			return r;
+	}
+
 	for (func = func + 1; func <= limit; ++func) {
 		r = do_cpuid_func(array, func, type);
 		if (r)
@@ -1656,10 +1964,10 @@ bool kvm_cpuid(struct kvm_vcpu *vcpu, u32 *eax, u32 *ebx,
 			u64 data;
 		        if (!__kvm_get_msr(vcpu, MSR_IA32_TSX_CTRL, &data, true) &&
 			    (data & TSX_CTRL_CPUID_CLEAR))
-				*ebx &= ~(F(RTM) | F(HLE));
+				*ebx &= ~(feature_bit(RTM) | feature_bit(HLE));
 		} else if (function == 0x80000007) {
 			if (kvm_hv_invtsc_suppressed(vcpu))
-				*edx &= ~SF(CONSTANT_TSC);
+				*edx &= ~feature_bit(CONSTANT_TSC);
 		}
 	} else {
 		*eax = *ebx = *ecx = *edx = 0;

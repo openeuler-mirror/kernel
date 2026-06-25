@@ -13,6 +13,7 @@
 #define UBCORE_CONNECT_ADAPTER_H
 
 #include <ub/urma/ubcore_types.h>
+#include "ubcore_tpid_table.h"
 
 struct ubcore_ex_tp_info {
 	struct hlist_node hnode; /* key: tp_handle */
@@ -69,6 +70,7 @@ struct ubcore_deactive_stp_work {
 };
 
 extern uint32_t ubcore_conn_timeout;
+extern bool ubcore_enable_shared_ctp;
 
 struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 					       struct ubcore_tjetty_cfg *cfg,
@@ -78,9 +80,8 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 						 struct ubcore_tjetty_cfg *cfg,
 						 struct ubcore_udata *udata);
 
-int ubcore_bind_jetty_compat(struct ubcore_jetty *jetty,
-			     struct ubcore_tjetty *tjetty,
-			     struct ubcore_udata *udata);
+int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
+	struct ubcore_tjetty *tjetty, struct ubcore_udata *udata);
 
 int ubcore_adapter_layer_disconnect(struct ubcore_vtpn *vtpn);
 
@@ -100,4 +101,16 @@ struct ubcore_tpid_ctx *ubcore_fget_tpid_ctx(
 
 uint32_t ubcore_get_conn_timeout(void);
 
+struct ubcore_tjetty *ubcore_get_tjetty(struct ubcore_device *dev,
+					struct ubcore_tjetty_cfg *cfg,
+					struct ubcore_active_tp_cfg *active_tp_cfg,
+					struct ubcore_udata *udata);
+
+void ubcore_tpid_reuse_kref_put(struct ubcore_tpid_reuse *entry);
+
+int ubcore_free_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse);
+void ubcore_hash_table_rmv_tpid_reuse(struct ubcore_device *dev,
+					     struct ubcore_tpid_reuse *entry);
+
+int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse);
 #endif

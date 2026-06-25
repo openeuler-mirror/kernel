@@ -20,11 +20,17 @@ enum vdm_fm2ub_sub_opcode {
 	VDM_SUB_OPCODE_UE_REG  = 0x3,
 	VDM_SUB_OPCODE_UE_RLS  = 0x4,
 	VDM_BI_CREATE_BYPASS_UMMU = 0x5,
+	VDM_FM2UB_SUB_PORT_MGMT = 0x7,
 };
 
 enum vdm_ub2fm_sub_opcode {
 	VDM_SUB_OPCODE_ENTITY_ENABLE = 0x1,
 	VDM_SUB_OPCODE_PORT_RESET = 0x2,
+};
+
+enum ub_task_src_vdm {
+	TASK_SRC_VPORT = 8,
+	TASK_SRC_VDM = 9,
 };
 
 struct msg_pkt_dw0 {
@@ -116,6 +122,18 @@ struct create_bi_bypass_pld {
 };
 #define VDM_BI_CREATE_BYPASS_UMMU_PLD_SIZE 48
 
+struct port_mgmt_pld {
+	/* DW1 */
+	u16 rsvd0;
+	u16 subcmd;
+	/* DW2 */
+	u32 en : 1;
+	u32 flag : 1;
+	u32 rsvd : 14;
+	u32 port_idx : 16;
+};
+#define VDM_PORT_MGMT_PLD_SIZE 20
+
 struct port_reset_pld {
 	/* DW1 */
 	u16 rsvd;
@@ -133,6 +151,8 @@ struct port_reset_pld {
 	(MSG_PKT_HEADER_SIZE + IDEV_UE_RLS_PLD_TOTAL_SIZE)
 #define VDM_BI_CREATE_BYPASS_SIZE \
 	(MSG_PKT_HEADER_SIZE + VDM_BI_CREATE_BYPASS_UMMU_PLD_SIZE)
+#define VDM_PORT_MGMT_SIZE \
+	(MSG_PKT_HEADER_SIZE + VDM_PORT_MGMT_PLD_SIZE)
 #define VDM_PORT_RESET_SIZE \
 	(MSG_PKT_HEADER_SIZE + VDM_PORT_RESET_PLD_SIZE)
 
@@ -149,6 +169,7 @@ struct vdm_msg_pkt {
 		struct idev_pue_rls_pld pd_rls_pld;
 		struct idev_ue_reg_pld vd_reg_pld;
 		struct idev_ue_rls_pld vd_rls_pld;
+		struct port_mgmt_pld mgmt_pld;
 		struct create_bi_bypass_pld bi_bypass_pld;
 	};
 };

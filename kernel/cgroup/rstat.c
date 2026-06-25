@@ -156,19 +156,16 @@ static struct cgroup *cgroup_rstat_cpu_pop_updated(struct cgroup *pos,
  * optimize away the callsite. Therefore, __weak is needed to ensure that the
  * call is still emitted, by telling the compiler that we don't know what the
  * function might eventually be.
- *
- * __diag_* below are needed to dismiss the missing prototype warning.
  */
-__diag_push();
-__diag_ignore_all("-Wmissing-prototypes",
-		  "kfuncs which will be used in BPF programs");
+
+__bpf_hook_start();
 
 __weak noinline void bpf_rstat_flush(struct cgroup *cgrp,
 				     struct cgroup *parent, int cpu)
 {
 }
 
-__diag_pop();
+__bpf_hook_end();
 
 /* see cgroup_rstat_flush() */
 static void cgroup_rstat_flush_locked(struct cgroup *cgrp)
@@ -537,13 +534,13 @@ void cgroup_base_stat_cputime_show(struct seq_file *seq)
 }
 
 /* Add bpf kfuncs for cgroup_rstat_updated() and cgroup_rstat_flush() */
-BTF_SET8_START(bpf_rstat_kfunc_ids)
+BTF_KFUNCS_START(bpf_rstat_kfunc_ids)
 BTF_ID_FLAGS(func, cgroup_rstat_updated)
 BTF_ID_FLAGS(func, cgroup_rstat_flush, KF_SLEEPABLE)
 #if defined(CONFIG_BPF_RVI) && !defined(CONFIG_PREEMPT_RT)
 BTF_ID_FLAGS(func, cgroup_rstat_flush_atomic)
 #endif
-BTF_SET8_END(bpf_rstat_kfunc_ids)
+BTF_KFUNCS_END(bpf_rstat_kfunc_ids)
 
 static const struct btf_kfunc_id_set bpf_rstat_kfunc_set = {
 	.owner          = THIS_MODULE,

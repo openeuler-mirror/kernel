@@ -12,10 +12,14 @@
 #include <ub/ubase/ubase_comm_ctrlq.h>
 #include "cdma_cmd.h"
 
+#define CDMA_QUERY_UE_RES 0x0004
+#define CDMA_MAX_WQEBB_IN_SQE 4
+#define CDMA_CTRLQ_QUERY_SEID_UPI 0x1
+#define CDMA_CTRLQ_CMD_SEID_UPI 0xB5
+
 static int cdma_cmd_query_fw_resource(struct cdma_dev *cdev,
 				      struct cdma_ue_info *out_addr)
 {
-#define CDMA_QUERY_UE_RES 0x0004
 	struct ubase_cmd_buf out = { 0 };
 	struct ubase_cmd_buf in = { 0 };
 
@@ -55,7 +59,6 @@ static int cdma_query_caps_from_firmware(struct cdma_dev *cdev)
 
 static int cdma_set_caps_from_adev_caps(struct cdma_dev *cdev)
 {
-#define MAX_WQEBB_IN_SQE 4
 	struct cdma_caps *caps = &cdev->caps;
 	struct ubase_adev_caps *adev_caps;
 
@@ -66,7 +69,7 @@ static int cdma_set_caps_from_adev_caps(struct cdma_dev *cdev)
 	}
 
 	caps->jfs.max_cnt = adev_caps->jfs.max_cnt;
-	caps->jfs.depth = adev_caps->jfs.depth / MAX_WQEBB_IN_SQE;
+	caps->jfs.depth = adev_caps->jfs.depth / CDMA_MAX_WQEBB_IN_SQE;
 	caps->jfs.start_idx = adev_caps->jfs.start_idx;
 	caps->jfc.max_cnt = adev_caps->jfc.max_cnt;
 	caps->jfc.depth = adev_caps->jfc.depth;
@@ -165,8 +168,6 @@ int cdma_init_dev_caps(struct cdma_dev *cdev)
 
 int cdma_ctrlq_query_eu(struct cdma_dev *cdev)
 {
-#define CDMA_CTRLQ_QUERY_SEID_UPI 0x1
-#define CDMA_CTRLQ_CMD_SEID_UPI 0xB5
 	struct cdma_device_attr *attr = &cdev->base.attr;
 	struct eu_query_out out_query = { 0 };
 	struct eu_query_in in_query = { 0 };
@@ -191,13 +192,13 @@ int cdma_ctrlq_query_eu(struct cdma_dev *cdev)
 	ret = ubase_ctrlq_send_msg(cdev->adev, &msg);
 	if (ret) {
 		dev_err(cdev->dev,
-			"query seid upi from ctrl cpu failed, ret = %d.\n", ret);
+			"query seid upi from ctrl cpu failed, ret = %d\n", ret);
 		return ret;
 	}
 
 	if (!out_query.seid_num || out_query.seid_num > CDMA_MAX_EU_NUM) {
 		dev_err(cdev->dev,
-			"query seid upi num is invalid, num = %u.\n",
+			"query seid upi num is invalid, num = %u\n",
 			out_query.seid_num);
 		return -EINVAL;
 	}
@@ -209,46 +210,24 @@ int cdma_ctrlq_query_eu(struct cdma_dev *cdev)
 	for (i = 0; i < attr->eu_num; i++)
 		dev_info(
 			cdev->dev,
-			"init eus[%u], upi = 0x%x, eid = 0x%x, eid_idx = 0x%x.\n",
+			"init eus[%u], upi = 0x%x, eid = 0x%x, eid_idx = 0x%x\n",
 			i, eus[i].upi, eus[i].eid.dw0, eus[i].eid_idx);
 	mutex_unlock(&cdev->eu_mutex);
 
 	return 0;
 }
 
-void cdma_cmd_inc(struct cdma_dev *cdev)
-{
-	atomic_inc(&cdev->cmdcnt);
-}
-
-void cdma_cmd_dec(struct cdma_dev *cdev)
-{
-	if (atomic_dec_and_test(&cdev->cmdcnt))
-		complete(&cdev->cmddone);
-}
-
 void cdma_cmd_flush(struct cdma_dev *cdev)
 {
-	cdma_cmd_dec(cdev);
+	cdma_ref_dec(&cdev->cmdcnt, &cdev->cmddone);
 	dev_info(cdev->dev, "cmd flush cmdcnt is %d\n",
 		 atomic_read(&cdev->cmdcnt));
 	wait_for_completion(&cdev->cmddone);
 }
 
-void cdma_kcmd_inc(struct cdma_dev *cdev)
-{
-	atomic_inc(&cdev->kcmdcnt);
-}
-
-void cdma_kcmd_dec(struct cdma_dev *cdev)
-{
-	if (atomic_dec_and_test(&cdev->kcmdcnt))
-		complete(&cdev->kcmddone);
-}
-
 void cdma_kcmd_flush(struct cdma_dev *cdev)
 {
-	cdma_kcmd_dec(cdev);
+	cdma_ref_dec(&cdev->kcmdcnt, &cdev->kcmddone);
 	dev_info(cdev->dev, "cmd flush kcmdcnt is %d\n",
 		 atomic_read(&cdev->kcmdcnt));
 	wait_for_completion(&cdev->kcmddone);

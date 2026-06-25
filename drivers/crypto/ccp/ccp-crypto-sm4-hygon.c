@@ -18,12 +18,14 @@
 #include <crypto/scatterwalk.h>
 
 #include "ccp-crypto.h"
+#include "ccp-dev.h"
 
 enum ccp_sm4_alg_mode {
 	CCP_SM4_ALG_MODE_ECB = CCP_SM4_MODE_ECB,
 	CCP_SM4_ALG_MODE_CBC = CCP_SM4_MODE_CBC,
 	CCP_SM4_ALG_MODE_OFB = CCP_SM4_MODE_OFB,
 	CCP_SM4_ALG_MODE_CFB = CCP_SM4_MODE_CFB,
+	CCP_SM4_ALG_MODE_XTS = CCP_SM4_MODE_XTS,
 	CCP_SM4_ALG_MODE_CTR = CCP_SM4_MODE_CTR,
 	CCP_SM4_ALG_MODE_ECB_HS = CCP_SM4_MODE_HS_SEL | CCP_SM4_MODE_ECB,
 	CCP_SM4_ALG_MODE_CBC_HS = CCP_SM4_MODE_HS_SEL | CCP_SM4_MODE_CBC,
@@ -58,10 +60,10 @@ static int ccp_sm4_setkey(struct crypto_skcipher *tfm, const u8 *key,
 	if (!key)
 		return -EINVAL;
 
-	memcpy(ctx->u.sm4.key, key, SM4_KEY_SIZE);
-	sg_init_one(&ctx->u.sm4.key_sg, ctx->u.sm4.key, SM4_KEY_SIZE);
+	memcpy(ctx->u.sm4.key, key, key_len);
+	sg_init_one(&ctx->u.sm4.key_sg, ctx->u.sm4.key, key_len);
 
-	ctx->u.sm4.key_len = SM4_KEY_SIZE;
+	ctx->u.sm4.key_len = key_len;
 
 	return 0;
 }
@@ -84,6 +86,7 @@ static int ccp_sm4_crypt(struct skcipher_request *req, bool encrypt)
 	if ((mode != CCP_SM4_ALG_MODE_CTR) &&
 			(mode != CCP_SM4_ALG_MODE_OFB) &&
 			(mode != CCP_SM4_ALG_MODE_CFB) &&
+			(mode != CCP_SM4_ALG_MODE_XTS) &&
 			(req->cryptlen & (SM4_BLOCK_SIZE - 1)))
 		return -EINVAL;
 
@@ -123,7 +126,7 @@ static int ccp_sm4_crypt(struct skcipher_request *req, bool encrypt)
 			cmd->u.sm4.select = 1;
 
 		cmd->u.sm4.key = &ctx->u.sm4.key_sg;
-		cmd->u.sm4.key_len = SM4_KEY_SIZE;
+		cmd->u.sm4.key_len = ctx->u.sm4.key_len;
 		cmd->u.sm4.iv = iv_sg;
 		cmd->u.sm4.iv_len = iv_sg ? SM4_BLOCK_SIZE : 0;
 
@@ -243,6 +246,15 @@ static struct ccp_sm4_def sm4_algs[] = {
 		.alg_defaults	= &ccp_sm4_defaults,
 	},
 	{
+		.mode		= CCP_SM4_ALG_MODE_XTS,
+		.version	= CCP_VERSION(5, 0),
+		.name		= "xts_ccp(sm4)",
+		.driver_name	= "xts-sm4-ccp",
+		.blocksize	= SM4_BLOCK_SIZE,
+		.ivsize		= SM4_BLOCK_SIZE,
+		.alg_defaults	= &ccp_sm4_defaults,
+	},
+	{
 		.mode		= CCP_SM4_ALG_MODE_CTR,
 		.version	= CCP_VERSION(5, 0),
 		.name		= "ctr(sm4)",
@@ -276,6 +288,10 @@ static int ccp_register_sm4_hygon_alg(struct list_head *head,
 			def->driver_name);
 	alg->base.cra_blocksize = def->blocksize;
 	alg->ivsize = def->ivsize;
+	if (def->mode == CCP_SM4_ALG_MODE_XTS) {
+		alg->min_keysize = SM4_KEY_SIZE * 2;
+		alg->max_keysize = SM4_KEY_SIZE * 2;
+	}
 
 	ret = crypto_register_skcipher(alg);
 	if (ret) {
@@ -294,10 +310,18 @@ int ccp_register_sm4_hygon_algs(struct list_head *head)
 {
 	int i, ret;
 	unsigned int ccpversion = ccp_version();
+	unsigned int ccp_engine_version_reg = 0;
 
 	for (i = 0; i < ARRAY_SIZE(sm4_algs); i++) {
 		if (sm4_algs[i].version > ccpversion)
 			continue;
+		if (sm4_algs[i].mode == CCP_SM4_ALG_MODE_XTS) {
+			ccp_engine_version_reg = get_ccp_engine_version_reg_val();
+			if (!(ccp_engine_version_reg & HYGON_RI_SM4VersionNum)) {
+				pr_warn("SM4 XTS CCP ENGINE NOT SUPPORTED!\n");
+				continue;
+			}
+		}
 		ret = ccp_register_sm4_hygon_alg(head, &sm4_algs[i]);
 		if (ret)
 			return ret;

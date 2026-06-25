@@ -16,9 +16,9 @@
 #include "cdma_handle.h"
 #include <ub/cdma/cdma_api.h>
 
-LIST_HEAD(g_client_list);
-DECLARE_RWSEM(g_clients_rwsem);
-DECLARE_RWSEM(g_device_rwsem);
+LIST_HEAD(cdma_client_list);
+DECLARE_RWSEM(cdma_clients_rwsem);
+DECLARE_RWSEM(cdma_device_rwsem);
 
 /**
  * dma_get_device_list - Get DMA device list
@@ -45,7 +45,7 @@ struct dma_device *dma_get_device_list(u32 *num_devices)
 
 	cdma_devs_tbl = get_cdma_dev_tbl(&devs_num);
 	if (!devs_num) {
-		pr_err("cdma device table is empty.\n");
+		pr_err("cdma device table is empty\n");
 		return NULL;
 	}
 
@@ -57,15 +57,15 @@ struct dma_device *dma_get_device_list(u32 *num_devices)
 
 	xa_for_each(cdma_devs_tbl, index, cdev) {
 		attr = &cdev->base.attr;
-		if (cdev->status >= CDMA_SUSPEND) {
-			pr_warn("not prepared to get device list, eid = 0x%x.\n",
+		if (cdev->status >= CDMA_STATUS_SUSPENDED) {
+			pr_warn("not prepared to get device list, eid = 0x%x\n",
 				attr->eid.dw0);
 			continue;
 		}
 
 		mutex_lock(&cdev->eu_mutex);
 		if (!attr->eu_num) {
-			pr_warn("no eu in cdma dev eid = 0x%x.\n", cdev->eid);
+			pr_warn("no eu in cdma dev eid = 0x%x\n", cdev->eid);
 			mutex_unlock(&cdev->eu_mutex);
 			continue;
 		}
@@ -107,7 +107,7 @@ void dma_free_device_list(struct dma_device *dev_list, u32 num_devices)
 	for (i = 0; i < num_devices; i++) {
 		ref_cnt = atomic_read(&dev_list[i].ref_cnt);
 		if (ref_cnt > 0) {
-			pr_warn("the device resourse is still in use, eid = 0x%x, cnt = %d.\n",
+			pr_warn("the device resource is still in use, eid = 0x%x, cnt = %d\n",
 				dev_list[i].attr.eid.dw0, ref_cnt);
 			return;
 		}
@@ -143,7 +143,7 @@ struct dma_device *dma_get_device_by_eid(struct dev_eid *eid)
 
 	cdma_devs_tbl = get_cdma_dev_tbl(&devs_num);
 	if (!devs_num) {
-		pr_err("cdma device table is empty.\n");
+		pr_err("cdma device table is empty\n");
 		return NULL;
 	}
 
@@ -153,8 +153,8 @@ struct dma_device *dma_get_device_by_eid(struct dev_eid *eid)
 
 	xa_for_each(cdma_devs_tbl, index, cdev) {
 		attr = &cdev->base.attr;
-		if (cdev->status >= CDMA_SUSPEND) {
-			pr_warn("not prepared to get device, eid = 0x%x.\n",
+		if (cdev->status >= CDMA_STATUS_SUSPENDED) {
+			pr_warn("not prepared to get device, eid = 0x%x\n",
 				attr->eid.dw0);
 			continue;
 		}
@@ -199,7 +199,7 @@ int dma_create_context(struct dma_device *dma_dev)
 	struct cdma_dev *cdev;
 
 	if (!dma_dev || !dma_dev->private_data) {
-		pr_err("the dma_dev does not exist.\n");
+		pr_err("the dma_dev does not exist\n");
 		return -EINVAL;
 	}
 
@@ -210,15 +210,15 @@ int dma_create_context(struct dma_device *dma_dev)
 		return -EINVAL;
 	}
 
-	if (cdev->status >= CDMA_SUSPEND) {
-		pr_warn("not prepared to create context, eid = 0x%x.\n",
+	if (cdev->status >= CDMA_STATUS_SUSPENDED) {
+		pr_warn("not prepared to create context, eid = 0x%x\n",
 			dma_dev->attr.eid.dw0);
 		return -EINVAL;
 	}
 
 	ctx_res = (struct cdma_ctx_res *)dma_dev->private_data;
 	if (ctx_res->ctx) {
-		pr_err("ctx has been created.\n");
+		pr_err("ctx has been created\n");
 		return -EEXIST;
 	}
 
@@ -237,7 +237,7 @@ EXPORT_SYMBOL_GPL(dma_create_context);
 
 /**
  * dma_delete_context - Delete DMA context
- * @dma_dev: DMA device pointe
+ * @dma_dev: DMA device pointer
  * @handle: DMA context ID value
  * Context: Process context, must NOT be called concurrently.
  * Return: NA
@@ -269,16 +269,16 @@ void dma_delete_context(struct dma_device *dma_dev, int handle)
 	ref_cnt = atomic_read(&ctx->ref_cnt);
 	if (ref_cnt > 0) {
 		dev_warn(cdev->dev,
-			 "context resourse is still in use, cnt = %d.\n",
+			 "context resource is still in use, cnt = %d\n",
 			 ref_cnt);
 		return;
 	}
 
-	cdma_kcmd_inc(cdev);
+	cdma_ref_inc(&cdev->kcmdcnt);
 	cdma_free_context(cdev, ctx);
 	ctx_res->ctx = NULL;
 	atomic_dec(&dma_dev->ref_cnt);
-	cdma_kcmd_dec(cdev);
+	cdma_ref_dec(&cdev->kcmdcnt, &cdev->kcmddone);
 }
 EXPORT_SYMBOL_GPL(dma_delete_context);
 
@@ -306,20 +306,20 @@ int dma_alloc_queue(struct dma_device *dma_dev, int ctx_id, struct queue_cfg *cf
 
 	cdev = get_cdma_dev_by_eid(dma_dev->attr.eid.dw0);
 	if (!cdev) {
-		pr_err("can't find cdev by eid, eid = 0x%x.\n",
+		pr_err("can't find cdev by eid, eid = 0x%x\n",
 		       dma_dev->attr.eid.dw0);
 		return -EINVAL;
 	}
 
-	if (cdev->status >= CDMA_SUSPEND) {
-		pr_warn("not prepared to alloc queue, eid = 0x%x.\n",
+	if (cdev->status >= CDMA_STATUS_SUSPENDED) {
+		pr_warn("not prepared to alloc queue, eid = 0x%x\n",
 			dma_dev->attr.eid.dw0);
 		return -EINVAL;
 	}
 
 	ctx = cdma_find_ctx_by_handle(cdev, ctx_id);
 	if (!ctx) {
-		dev_err(cdev->dev, "invalid ctx_id = %d.\n", ctx_id);
+		dev_err(cdev->dev, "invalid ctx_id = %d\n", ctx_id);
 		return -EINVAL;
 	}
 	atomic_inc(&ctx->ref_cnt);
@@ -327,7 +327,7 @@ int dma_alloc_queue(struct dma_device *dma_dev, int ctx_id, struct queue_cfg *cf
 	queue = cdma_create_queue(cdev, ctx, cfg, dma_dev->attr.eu.eid_idx,
 				  true);
 	if (!queue) {
-		dev_err(cdev->dev, "create queue failed.\n");
+		dev_err(cdev->dev, "create queue failed\n");
 		ret = -EINVAL;
 		goto decrease_cnt;
 	}
@@ -385,10 +385,10 @@ void dma_free_queue(struct dma_device *dma_dev, int queue_id)
 	xa_erase(&ctx_res->queue_xa, queue_id);
 	ctx = queue->ctx;
 
-	cdma_kcmd_inc(cdev);
+	cdma_ref_inc(&cdev->kcmdcnt);
 	cdma_delete_queue(cdev, queue_id);
 	atomic_dec(&ctx->ref_cnt);
-	cdma_kcmd_dec(cdev);
+	cdma_ref_dec(&cdev->kcmdcnt, &cdev->kcmddone);
 }
 EXPORT_SYMBOL_GPL(dma_free_queue);
 
@@ -424,15 +424,15 @@ struct dma_seg *dma_register_seg(struct dma_device *dma_dev, int ctx_id,
 		return NULL;
 	}
 
-	if (cdev->status >= CDMA_SUSPEND) {
-		pr_warn("not prepared to register segment, eid = 0x%x.\n",
+	if (cdev->status >= CDMA_STATUS_SUSPENDED) {
+		pr_warn("not prepared to register segment, eid = 0x%x\n",
 			dma_dev->attr.eid.dw0);
 		return NULL;
 	}
 
 	ctx = cdma_find_ctx_by_handle(cdev, ctx_id);
 	if (!ctx) {
-		dev_err(cdev->dev, "find ctx by handle failed, handle = %d.\n",
+		dev_err(cdev->dev, "find ctx by handle failed, handle = %d\n",
 			ctx_id);
 		return NULL;
 	}
@@ -511,12 +511,12 @@ void dma_unregister_seg(struct dma_device *dma_dev, struct dma_seg *dma_seg)
 	xa_erase(&ctx_res->seg_xa, dma_seg->handle);
 	ctx = seg->ctx;
 
-	cdma_kcmd_inc(cdev);
+	cdma_ref_inc(&cdev->kcmdcnt);
 	cdma_seg_ungrant(seg);
 	cdma_unregister_seg(cdev, seg);
 	kfree(dma_seg);
 	atomic_dec(&ctx->ref_cnt);
-	cdma_kcmd_dec(cdev);
+	cdma_ref_dec(&cdev->kcmdcnt, &cdev->kcmddone);
 }
 EXPORT_SYMBOL_GPL(dma_unregister_seg);
 
@@ -565,23 +565,23 @@ static int cdma_param_transfer(struct dma_device *dma_dev, int queue_id,
 	eid = dma_dev->attr.eid.dw0;
 	tmp_dev = get_cdma_dev_by_eid(eid);
 	if (!tmp_dev) {
-		pr_err("get cdma dev failed, eid = 0x%x.\n", eid);
+		pr_err("get cdma dev failed, eid = 0x%x\n", eid);
 		return -EINVAL;
 	}
 
-	if (tmp_dev->status >= CDMA_SUSPEND) {
-		pr_warn("not prepared to send packet, eid = 0x%x.\n", eid);
+	if (tmp_dev->status >= CDMA_STATUS_SUSPENDED) {
+		pr_warn("not prepared to send packet, eid = 0x%x\n", eid);
 		return -EINVAL;
 	}
 
 	tmp_q = cdma_find_queue(tmp_dev, queue_id);
 	if (!tmp_q) {
-		dev_err(tmp_dev->dev, "get resource failed.\n");
+		dev_err(tmp_dev->dev, "get resource failed\n");
 		return -EINVAL;
 	}
 
 	if (!tmp_q->tp || !tmp_q->jfs || !tmp_q->jfc) {
-		dev_err(tmp_dev->dev, "get jetty parameters failed.\n");
+		dev_err(tmp_dev->dev, "get jetty parameters failed\n");
 		return -EFAULT;
 	}
 
@@ -616,7 +616,7 @@ enum dma_status dma_write(struct dma_device *dma_dev, struct dma_seg *rmt_seg,
 	int ret;
 
 	if (!dma_dev || !rmt_seg || !local_seg) {
-		pr_err("write input parameters error.\n");
+		pr_err("write input parameters error\n");
 		return DMA_STATUS_INVAL;
 	}
 
@@ -627,7 +627,7 @@ enum dma_status dma_write(struct dma_device *dma_dev, struct dma_seg *rmt_seg,
 
 	ret = cdma_write(cdev, cdma_queue, local_seg, rmt_seg, NULL);
 	if (ret) {
-		dev_err(cdev->dev, "dma write failed, seid = %u, deid = %u.\n",
+		dev_err(cdev->dev, "dma write failed, seid = %u, deid = %u\n",
 			cfg->seid, cfg->deid);
 		return DMA_STATUS_INVAL;
 	}
@@ -664,7 +664,7 @@ enum dma_status dma_write_with_notify(struct dma_device *dma_dev,
 	int ret;
 
 	if (!dma_dev || !rmt_seg || !local_seg || !data || !data->notify_seg) {
-		pr_err("write with notify input parameters error.\n");
+		pr_err("write with notify input parameters error\n");
 		return DMA_STATUS_INVAL;
 	}
 
@@ -676,7 +676,7 @@ enum dma_status dma_write_with_notify(struct dma_device *dma_dev,
 	ret = cdma_write(cdev, cdma_queue, local_seg, rmt_seg, data);
 	if (ret) {
 		dev_err(cdev->dev,
-			"dma write with notify failed, seid = %u, deid = %u.\n",
+			"dma write with notify failed, seid = %u, deid = %u\n",
 			cfg->seid, cfg->deid);
 		return DMA_STATUS_INVAL;
 	}
@@ -710,7 +710,7 @@ enum dma_status dma_read(struct dma_device *dma_dev, struct dma_seg *rmt_seg,
 	int ret;
 
 	if (!dma_dev || !rmt_seg || !local_seg) {
-		pr_err("read input parameters error.\n");
+		pr_err("read input parameters error\n");
 		return DMA_STATUS_INVAL;
 	}
 
@@ -721,7 +721,7 @@ enum dma_status dma_read(struct dma_device *dma_dev, struct dma_seg *rmt_seg,
 
 	ret = cdma_read(cdev, cdma_queue, local_seg, rmt_seg);
 	if (ret) {
-		dev_err(cdev->dev, "dma read failed, seid = %u, deid = %u.\n",
+		dev_err(cdev->dev, "dma read failed, seid = %u, deid = %u\n",
 			cfg->seid, cfg->deid);
 		return DMA_STATUS_INVAL;
 	}
@@ -736,7 +736,7 @@ EXPORT_SYMBOL_GPL(dma_read);
  * @rmt_seg: the remote segment pointer
  * @local_seg: the local segment pointer
  * @queue_id: DMA queue ID
- * @data: compare data and swap data for cas operaion
+ * @data: compare data and swap data for cas operation
  *
  * Initiate a request for a unilateral atomic CAS operation. Once the operation
  * is successful, the application can poll the queue to obtain the completion
@@ -755,7 +755,7 @@ enum dma_status dma_cas(struct dma_device *dma_dev, struct dma_seg *rmt_seg,
 	int ret;
 
 	if (!dma_dev || !rmt_seg || !local_seg || !data) {
-		pr_err("cas input parameters error.\n");
+		pr_err("cas input parameters error\n");
 		return DMA_STATUS_INVAL;
 	}
 
@@ -766,7 +766,7 @@ enum dma_status dma_cas(struct dma_device *dma_dev, struct dma_seg *rmt_seg,
 
 	ret = cdma_cas(cdev, cdma_queue, local_seg, rmt_seg, data);
 	if (ret) {
-		dev_err(cdev->dev, "dma cas failed, seid = %u, deid = %u.\n",
+		dev_err(cdev->dev, "dma cas failed, seid = %u, deid = %u\n",
 			cfg->seid, cfg->deid);
 		return DMA_STATUS_INVAL;
 	}
@@ -799,7 +799,7 @@ enum dma_status dma_faa(struct dma_device *dma_dev, struct dma_seg *rmt_seg,
 	int ret;
 
 	if (!dma_dev || !rmt_seg || !local_seg) {
-		pr_err("faa input parameters error.\n");
+		pr_err("faa input parameters error\n");
 		return DMA_STATUS_INVAL;
 	}
 
@@ -810,7 +810,7 @@ enum dma_status dma_faa(struct dma_device *dma_dev, struct dma_seg *rmt_seg,
 
 	ret = cdma_faa(cdev, cdma_queue, local_seg, rmt_seg, add);
 	if (ret) {
-		dev_err(cdev->dev, "dma faa failed, seid = %u, deid = %u.\n",
+		dev_err(cdev->dev, "dma faa failed, seid = %u, deid = %u\n",
 			cfg->seid, cfg->deid);
 		return DMA_STATUS_INVAL;
 	}
@@ -834,7 +834,7 @@ EXPORT_SYMBOL_GPL(dma_faa);
  * of addresses specified by cr.
  *
  * Context: Process context.
- * Return: Polling operation results  >0 on success, others on failed
+ * Return: Polling operation results >0 on success, others on failed
  */
 int dma_poll_queue(struct dma_device *dma_dev, int queue_id, u32 cr_cnt,
 		   struct dma_cr *cr)
@@ -846,25 +846,25 @@ int dma_poll_queue(struct dma_device *dma_dev, int queue_id, u32 cr_cnt,
 	u32 eid;
 
 	if (!dma_dev || !cr_cnt || !cr) {
-		pr_err("the poll queue input parameter is invalid.\n");
+		pr_err("the poll queue input parameter is invalid\n");
 		return -EINVAL;
 	}
 
 	eid = dma_dev->attr.eid.dw0;
 	cdev = get_cdma_dev_by_eid(eid);
 	if (!cdev) {
-		pr_err("get cdma dev failed, eid = 0x%x.\n", eid);
+		pr_err("get cdma dev failed, eid = 0x%x\n", eid);
 		return -EINVAL;
 	}
 
-	if (cdev->status >= CDMA_SUSPEND) {
-		pr_warn("not prepared to poll queue, eid = 0x%x.\n", eid);
+	if (cdev->status >= CDMA_STATUS_SUSPENDED) {
+		pr_warn("not prepared to poll queue, eid = 0x%x\n", eid);
 		return -EINVAL;
 	}
 
 	cdma_queue = cdma_find_queue(cdev, queue_id);
 	if (!cdma_queue || !cdma_queue->jfc) {
-		dev_err(cdev->dev, "get cdma queue failed, queue_id = %d.\n",
+		dev_err(cdev->dev, "get cdma queue failed, queue_id = %d\n",
 			queue_id);
 		return -EINVAL;
 	}
@@ -872,7 +872,7 @@ int dma_poll_queue(struct dma_device *dma_dev, int queue_id, u32 cr_cnt,
 
 	npolled = cdma_poll_jfc(cdma_queue->jfc, cr_cnt, cr);
 	if (npolled > 0 && cr->status != DMA_CR_SUCCESS)
-		dev_err(cdev->dev, "poll jfc npolled = %d, seid = %u, deid = %u.\n",
+		dev_err(cdev->dev, "poll jfc npolled = %d, seid = %u, deid = %u\n",
 			npolled, cfg->seid, cfg->deid);
 
 	return npolled;
@@ -904,30 +904,30 @@ int dma_register_client(struct dma_client *client)
 	if (client == NULL || client->client_name == NULL ||
 		client->add == NULL || client->remove == NULL ||
 		client->stop == NULL) {
-		pr_err("invalid parameter.\n");
+		pr_err("invalid parameter\n");
 		return -EINVAL;
 	}
 
-	if (strnlen(client->client_name, DMA_MAX_DEV_NAME) >= DMA_MAX_DEV_NAME) {
-		pr_err("invalid parameter, client name.\n");
+	if (strnlen(client->client_name, CDMA_CLIENT_NAME) >= CDMA_CLIENT_NAME) {
+		pr_err("invalid parameter, client name\n");
 		return -EINVAL;
 	}
 
-	down_write(&g_device_rwsem);
+	down_write(&cdma_device_rwsem);
 
 	cdma_devs_tbl = get_cdma_dev_tbl(&devs_num);
 
 	xa_for_each(cdma_devs_tbl, index, cdev) {
 		if (client->add && client->add(cdev->eid))
-			pr_info("dma client: %s add failed.\n",
+			pr_err("dma client: %s add failed\n",
 				client->client_name);
 	}
-	down_write(&g_clients_rwsem);
-	list_add_tail(&client->list_node, &g_client_list);
-	up_write(&g_clients_rwsem);
-	up_write(&g_device_rwsem);
+	down_write(&cdma_clients_rwsem);
+	list_add_tail(&client->list_node, &cdma_client_list);
+	up_write(&cdma_clients_rwsem);
+	up_write(&cdma_device_rwsem);
 
-	pr_info("dma client: %s register success.\n", client->client_name);
+	pr_info("dma client: %s register success\n", client->client_name);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(dma_register_client);
@@ -951,16 +951,16 @@ void dma_unregister_client(struct dma_client *client)
 	if (client == NULL || client->client_name == NULL ||
 		client->add == NULL || client->remove == NULL ||
 		client->stop == NULL) {
-		pr_err("Invalid parameter.\n");
+		pr_err("Invalid parameter\n");
 		return;
 	}
 
-	if (strnlen(client->client_name, DMA_MAX_DEV_NAME) >= DMA_MAX_DEV_NAME) {
-		pr_err("invalid parameter, client name.\n");
+	if (strnlen(client->client_name, CDMA_CLIENT_NAME) >= CDMA_CLIENT_NAME) {
+		pr_err("invalid parameter, client name\n");
 		return;
 	}
 
-	down_write(&g_device_rwsem);
+	down_write(&cdma_device_rwsem);
 	cdma_devs_tbl = get_cdma_dev_tbl(&devs_num);
 
 	xa_for_each(cdma_devs_tbl, index, cdev) {
@@ -970,11 +970,11 @@ void dma_unregister_client(struct dma_client *client)
 		}
 	}
 
-	down_write(&g_clients_rwsem);
+	down_write(&cdma_clients_rwsem);
 	list_del(&client->list_node);
-	up_write(&g_clients_rwsem);
-	up_write(&g_device_rwsem);
+	up_write(&cdma_clients_rwsem);
+	up_write(&cdma_device_rwsem);
 
-	pr_info("dma client: %s unregister success.\n", client->client_name);
+	pr_info("dma client: %s unregister success\n", client->client_name);
 }
 EXPORT_SYMBOL_GPL(dma_unregister_client);

@@ -43,6 +43,7 @@ enum ubase_ctrlq_opc_type_tp {
 	UBASE_CTRLQ_OPC_TP_FLUSH_DONE	= 0x14,
 	UBASE_CTRLQ_OPC_CHECK_TP_ACTIVE	= 0x15,
 	UBASE_CTRLQ_OPC_NOTIFY_BOND_IP	= 0x19,
+	UBASE_CTRLQ_OPC_TPID_DEL_DONE	= 0x28,
 };
 
 enum ubase_ctrlq_opc_type_qos {
@@ -128,7 +129,7 @@ struct ubase_ctrlq_event_nb {
 };
 
 /**
- * ubase_ctrlq_ue_msg_nb - ubase ctrlq ue msg notification block structure
+ * struct ubase_ctrlq_ue_msg_nb - ubase ctrlq ue msg notification block structure
  * @service_type: ctrlq ue msg service type
  * @opcode: ctrlq ue msg opcode
  * @back: arbitrary registered pointer
@@ -148,7 +149,7 @@ struct ubase_ctrlq_ue_msg_nb {
 };
 
 /**
- * ubase_ctrlq_ue_msg_info - ubase ctrlq ue msg information structure
+ * struct ubase_ctrlq_ue_msg_info - ubase ctrlq ue msg information structure
  * @service_ver: ctrlq ue msg service version
  * @bus_ue_id: bus ub entity id
  * @mbx_ue_id: mailbox ub entity id
@@ -186,4 +187,4 @@ int ubase_ctrlq_send_ue_req(struct auxiliary_device *adev, void *data, u16 len);
 u16 ubase_ctrlq_ue_msg_header_len(void);
 void ubase_ctrlq_parse_ue_msg(struct auxiliary_device *adev, void *data, u16 len,
 			      struct ubase_ctrlq_ue_msg_info *info);
-#endif /* _UBASE_COMM_CTRLQ_H_ */
+#endif /* _UB_UBASE_COMM_CTRLQ_H_ */

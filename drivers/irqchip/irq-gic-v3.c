@@ -30,6 +30,9 @@
 
 #include <asm/cputype.h>
 #include <asm/exception.h>
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+#include <asm/paravirt.h>
+#endif
 #include <asm/smp_plat.h>
 #include <asm/virt.h>
 
@@ -694,11 +697,20 @@ static bool gic_arm64_erratum_2941627_needed(struct irq_data *d)
 				  irq_data_get_effective_affinity_mask(d));
 }
 
+
+/* As ABSA B_PPI_01 define, vtimer irq is 27 */
+#define ARMVTIMER_IRQ_NUM 27
 static void gic_eoi_irq(struct irq_data *d)
 {
-	write_gicreg(gic_irq(d), ICC_EOIR1_EL1);
+	unsigned long hwirq = gic_irq(d);
+
+	write_gicreg(hwirq, ICC_EOIR1_EL1);
 	isb();
 
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	if (hwirq == ARMVTIMER_IRQ_NUM)
+		paravirt_set_pvtimer_active(false);
+#endif
 	if (gic_arm64_erratum_2941627_needed(d)) {
 		/*
 		 * Make sure the GIC stream deactivate packet
@@ -909,6 +921,10 @@ static void __gic_handle_irq_from_irqson(struct pt_regs *regs)
 
 	irqnr = gic_read_iar();
 
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	if (irqnr == ARMVTIMER_IRQ_NUM)
+		paravirt_set_pvtimer_active(true);
+#endif
 	is_nmi = gic_rpr_is_nmi_prio();
 
 	if (is_nmi) {
@@ -920,11 +936,12 @@ static void __gic_handle_irq_from_irqson(struct pt_regs *regs)
 	if (gic_prio_masking_enabled()) {
 		gic_pmr_mask_irqs();
 		gic_arch_enable_irqs();
-	} else if (has_v3_3_nmi()) {
-#ifdef CONFIG_ARM64_NMI
+	}
+
+#ifdef CONFIG_ARM64
+	if (system_uses_nmi())
 		_allint_clear();
 #endif
-	}
 
 	if (!is_nmi)
 		__gic_handle_irq(irqnr, regs);
@@ -1003,6 +1020,45 @@ static asmlinkage void __exception_irq_entry gic_handle_irq(struct pt_regs *regs
 }
 
 #ifdef CONFIG_FAST_IRQ
+#include <asm/xint.h>
+
+/*
+ * Since the IRQ is taken from EL0 and IRQ Ack completed in entry code,
+ * So no need to read IAR here, Most of code comes from
+ * __gic_handle_irq_from_irqson().
+ */
+asmlinkage void __exception_irq_entry gic_handle_irq_noack(struct pt_regs *regs)
+{
+	bool is_nmi = gic_rpr_is_nmi_prio();
+	u32 irqnr = regs->orig_x0;
+
+	if (is_nmi) {
+		nmi_enter();
+		__gic_handle_nmi(irqnr, regs);
+		nmi_exit();
+	}
+
+	if (gic_prio_masking_enabled()) {
+		gic_pmr_mask_irqs();
+		gic_arch_enable_irqs();
+	}
+
+#ifdef CONFIG_ARM64
+	if (system_uses_nmi())
+		_allint_clear();
+#endif
+
+	if (!is_nmi)
+		__gic_handle_irq(irqnr, regs);
+}
+
+asmlinkage void __exception_irq_entry gic_handle_nmi_noack(struct pt_regs *regs)
+{
+	u32 irqnr = regs->orig_x0;
+
+	__gic_handle_nmi(irqnr, regs);
+}
+
 DECLARE_BITMAP(irqnr_xint_map, 1024);
 
 static bool can_set_xint(unsigned int hwirq)
@@ -2425,6 +2481,7 @@ static int __init gic_init_bases(phys_addr_t dist_phys_base,
 
 	gic_data.has_rss = !!(typer & GICD_TYPER_RSS);
 	gic_data.has_nmi = !!(typer & GICD_TYPER_NMI);
+	pr_info("GICD_TYPER NMI is%s supported.\n", gic_data.has_nmi ? "" : " not");
 
 	if (typer & GICD_TYPER_MBIS) {
 		err = mbi_init(handle, gic_data.domain);

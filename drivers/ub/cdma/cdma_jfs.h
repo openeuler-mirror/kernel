@@ -131,7 +131,7 @@ struct cdma_rw_wr {
 	struct cdma_sg src;
 	struct cdma_sg dst;
 	u8 target_hint; /* hint of jetty in a target jetty group */
-	u64 notify_data; /* notify data or immeditate data in host byte order */
+	u64 notify_data; /* notify data or immediate data in host byte order */
 	u64 notify_addr;
 	u32 notify_tokenid;
 	u32 notify_tokenvalue;
@@ -150,7 +150,7 @@ struct cdma_cas_wr {
 	};
 	union {
 		/* if destination value is the same as cmp_data,
-		 * destination value will be change to swap_data.
+		 * destination value will be changed to swap_data.
 		 */
 		u64 swap_data;
 		u64 swap_addr;

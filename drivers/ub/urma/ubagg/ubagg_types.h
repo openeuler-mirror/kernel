@@ -33,15 +33,6 @@ enum ubagg_ht_param_num {
 	UBAGG_HT_MAX,
 };
 
-enum ubagg_net_msg_type {
-	UBAGG_NET_BONDING_SEG_INFO_REQ,
-	UBAGG_NET_BONDING_SEG_INFO_RESP,
-	UBAGG_NET_BONDING_JETTY_INFO_REQ,
-	UBAGG_NET_BONDING_JETTY_INFO_RESP,
-	UBAGG_NET_USER_MSG,
-	UBAGG_NET_MSG_MAX,
-};
-
 struct ubagg_ht_param {
 	uint32_t size;
 	uint32_t node_offset; /* offset of hlist node in the hash table object */

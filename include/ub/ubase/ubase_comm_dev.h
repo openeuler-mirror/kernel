@@ -10,6 +10,7 @@
 #include <linux/auxiliary_bus.h>
 #include <linux/dcbnl.h>
 #include <linux/list.h>
+#include <ub/ubase/ubase_comm_mbx.h>
 
 struct iova_slot;
 
@@ -23,7 +24,7 @@ struct iova_slot;
 #error "UBASE_MAX_VL_NUM can't less than IEEE_8021QAZ_MAX_TCS"
 #endif
 
-#define UBASE_NIC_MAX_VL_NUM	(2)
+#define UBASE_NIC_MAX_VL_NUM	(2U)
 
 #define UBASE_SUP_UBL		BIT(0)
 #define UBASE_SUP_ETH		BIT(1)
@@ -39,7 +40,21 @@ struct iova_slot;
 
 #define UBASE_HW_VER_UNKNOWN	(0U)
 #define UBASE_HW_VER_A_0	(1000U)
+#define UBASE_HW_VER_A_1	(1001U)
 #define UBASE_HW_VER_K_0	(2000U)
+#define UBASE_HW_VER_K_1	(2001U)
+
+#define UBASE_URMA_RTP_ROI	BIT(16)
+#define UBASE_URMA_RTP_ROT	BIT(17)
+#define UBASE_URMA_RTP_ROL	BIT(18)
+#define UBASE_URMA_CTP_ROI	BIT(19)
+#define UBASE_URMA_CTP_ROT	BIT(20)
+#define UBASE_URMA_CTP_ROL	BIT(21)
+#define UBASE_URMA_CTP_UNO	BIT(22)
+#define UBASE_URMA_UTP_UNO	BIT(23)
+
+#define UBASE_DEV_NEED_TO_ACTIVATE	BIT(0)
+#define UBASE_ADEV_PROBE_FAIL		BIT(0)
 
 enum ubase_reset_type {
 	UBASE_NO_RESET,
@@ -54,12 +69,13 @@ enum ubase_reset_stage {
 	UBASE_RESET_STAGE_UNINIT,
 	UBASE_RESET_STAGE_INIT,
 	UBASE_RESET_STAGE_UP,
+	UBASE_RESET_STAGE_ABORT,
 };
 
 /**
  * struct ubase_caps - ubase capabilities
  * @num_ceq_vectors: completion event vectors number
- * @num_aeq_vectors: asynchronous event vectors umber
+ * @num_aeq_vectors: asynchronous event vectors number
  * @num_misc_vectors: misc event vectors number
  * @aeqe_depth: the depth of asynchronous event vector queue
  * @ceqe_depth: the depth of completion event vector queue
@@ -276,6 +292,15 @@ struct ubase_ctx_buf_cap {
 	KABI_RESERVE(4)
 };
 
+enum ubase_ctx_va_type {
+	UBASE_JFR_CTX_VA,
+	UBASE_JFS_CTX_VA,
+	UBASE_JFC_CTX_VA,
+	UBASE_JTG_CTX_VA,
+	UBASE_RC_CTX_VA,
+	UBASE_CTX_VA_TYPE_NUM,
+};
+
 struct net_device;
 
 /**
@@ -376,10 +401,17 @@ u32 ubase_get_hw_ver(struct auxiliary_device *adev);
 bool ubase_adev_ubl_supported(struct auxiliary_device *adev);
 bool ubase_adev_ctrlq_supported(struct auxiliary_device *adev);
 bool ubase_adev_eth_mac_supported(struct auxiliary_device *adev);
+bool ubase_adev_non_mirror_mem_supported(struct auxiliary_device *adev);
 bool ubase_adev_mac_stats_supported(struct auxiliary_device *aux_dev);
+bool ubase_adev_mbx_supported(struct auxiliary_device *adev);
 bool ubase_adev_prealloc_supported(struct auxiliary_device *aux_dev);
 bool ubase_adev_ip_over_urma_supported(struct auxiliary_device *adev);
 bool ubase_adev_ip_over_urma_utp_supported(struct auxiliary_device *adev);
+bool ubase_adev_dtu_supported(struct auxiliary_device *aux_dev);
+int ubase_adev_get_mem_node_id(struct auxiliary_device *aux_dev);
+int ubase_dtu_tbl_init(struct auxiliary_device *aux_dev, u32 tid, u16 *dtu_win_num);
+int ubase_dtu_tbl_uninit(struct auxiliary_device *aux_dev, u16 dtu_win_num);
+bool ubase_adev_ucp_supported(struct auxiliary_device *adev);
 bool ubase_adev_shutting_down(struct auxiliary_device *adev);
 
 struct ubase_resource_space *ubase_get_io_base(struct auxiliary_device *adev);
@@ -393,6 +425,13 @@ struct ubase_adev_qos *ubase_get_adev_qos(struct auxiliary_device *adev);
 void ubase_reset_event(struct auxiliary_device *adev,
 		       enum ubase_reset_type reset_type);
 enum ubase_reset_stage ubase_get_reset_stage(struct auxiliary_device *adev);
+
+void ubase_cmd_ctx_buf_free(struct auxiliary_device *aux_dev,
+			    struct ubase_ctx_buf_cap *ctx_buf);
+int ubase_cmd_ctx_buf_alloc(struct auxiliary_device *aux_dev,
+			    struct ubase_ctx_buf_cap *ctx_buf,
+			    struct ubase_mbx_attr *attr);
+
 void ubase_virt_register(struct auxiliary_device *adev,
 			 void (*virt_handler)(struct auxiliary_device *adev,
 					      u16 bus_ue_id, bool is_en));
@@ -402,8 +441,8 @@ void ubase_port_register(struct auxiliary_device *adev,
 					      bool link_up));
 void ubase_port_unregister(struct auxiliary_device *adev);
 void ubase_reset_register(struct auxiliary_device *adev,
-			  void (*reset_handler)(struct auxiliary_device *adev,
-						enum ubase_reset_stage stage));
+			  int (*reset_handler)(struct auxiliary_device *adev,
+					       enum ubase_reset_stage stage));
 void ubase_reset_unregister(struct auxiliary_device *adev);
 void ubase_activate_register(struct auxiliary_device *adev,
 			     void (*activate_handler)(struct auxiliary_device *adev,
@@ -424,5 +463,13 @@ int ubase_adev_query_rc_ctx(struct auxiliary_device *adev, u32 rc_queue_idx,
 			    void *ctx, u32 ctx_size);
 
 int ubase_himac_reset(struct auxiliary_device *adev);
+unsigned long long ubase_get_ub_feature(void);
 
-#endif /* _UBASE_COMM_DEV_H_ */
+void ubase_reinit_register(struct auxiliary_device *adev,
+			   int (*reinit_handler)(struct auxiliary_device *adev));
+void ubase_reinit_unregister(struct auxiliary_device *adev);
+
+void ubase_update_dev_status(struct auxiliary_device *adev, unsigned long status);
+void ubase_update_adev_status(struct auxiliary_device *adev, unsigned long status);
+
+#endif /* _UB_UBASE_COMM_DEV_H_ */

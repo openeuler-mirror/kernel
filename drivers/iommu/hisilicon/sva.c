@@ -326,6 +326,10 @@ static int ummu_sva_collect_domain_cfg(struct ummu_domain *domain, ioasid_t id)
 			if (ret)
 				goto out_cfg;
 		} else {
+			if (ummu->cap.features & UMMU_FEAT_PPLBI)
+				domain->cfgs.s1_cfg.io_pt_cfg.positive_plbi = 1;
+			if (ummu->cap.features & UMMU_FEAT_FREE_BIT)
+				domain->cfgs.s1_cfg.io_pt_cfg.free_bit = 1;
 			domain->cfgs.s1_cfg.io_pt_cfg.domain =
 						&domain->base_domain.domain;
 			ret = ummu_init_ksva_mapt(domain, mode);
@@ -446,17 +450,29 @@ static const struct iommu_domain_ops ummu_sva_domain_ops = {
 	.free = ummu_sva_domain_free,
 };
 
+static const struct iommu_domain_ops ummu_sva_domain_no_dvm_ops = {
+	.set_dev_pasid = ummu_sva_set_dev_pasid,
+	.flush_iotlb_all = ummu_flush_iotlb_all,
+	.iotlb_sync = ummu_device_tlb_inv_walk,
+	.free = ummu_sva_domain_free,
+};
+
 struct iommu_domain *ummu_domain_alloc_sva(struct device *dev,
 					   struct mm_struct *mm)
 {
 	struct ummu_domain *u_domain;
+	struct ummu_master *master;
 
 	u_domain = ummu_domain_alloc_helper();
 	if (!u_domain)
 		return ERR_PTR(-ENOMEM);
 
+	master = dev_iommu_priv_get(dev);
+	if (master->ummu->cap.features & UMMU_FEAT_BTM)
+		u_domain->base_domain.domain.ops = &ummu_sva_domain_ops;
+	else
+		u_domain->base_domain.domain.ops = &ummu_sva_domain_no_dvm_ops;
 	u_domain->base_domain.domain.type = IOMMU_DOMAIN_SVA;
-	u_domain->base_domain.domain.ops = &ummu_sva_domain_ops;
 	u_domain->base_domain.domain.perm_ops = &ummu_sva_perm_ops;
 	return &u_domain->base_domain.domain;
 }

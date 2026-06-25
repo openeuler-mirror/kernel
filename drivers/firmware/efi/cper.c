@@ -201,6 +201,7 @@ static const char * const proc_flag_strs[] = {
 	"corrected",
 };
 
+#ifdef CONFIG_X86
 static const char * const zdi_zpi_err_type_strs[] = {
 	"No Error",
 	"Training Error Status (PHY)",
@@ -221,36 +222,248 @@ static const char * const zdi_zpi_err_type_strs[] = {
 	"ZPI Gen2 Link Speed Unreliable Status",
 	"ZDI Gen3 Link Speed Unreliable Status",
 	"ZDI Gen4 Link Speed Unreliable Status",
+	"SL_NA_CYCLE Status",
+	"8.0GT/s Link Speed Unreliable Status",
+	"16.0GT/s Link Speed Unreliable Status",
+	"32.0GT/s Link Speed Unreliable Status",
+	"X2 Link Width Unreliable Status",
+	"X4 Link Width Unreliable Status",
+	"X8 Link Width Unreliable Status",
+	"X16X12 Link Width Unreliable Status",
+	"X32X24 Link Width Unreliable Status",
 };
 
-const char *cper_zdi_zpi_err_type_str(unsigned long etype)
+const char *cper_zdi_zpi_err_type_str(unsigned int etype)
 {
+	switch (boot_cpu_data.x86_model) {
+	case 0x5b:
+		if (etype >= 0x13)
+			return "unknown error";
+		break;
+	case 0x7b:
+		if (etype == 0x6 || (etype >= 0xb && etype <= 0x12))
+			return "unknown error";
+		break;
+	default:
+		return "unknown error";
+	}
 	return etype < ARRAY_SIZE(zdi_zpi_err_type_strs) ?
-		zdi_zpi_err_type_strs[etype] : "unknown error";
+			zdi_zpi_err_type_strs[etype] :
+			"unknown error";
 }
 EXPORT_SYMBOL_GPL(cper_zdi_zpi_err_type_str);
+
+static void cper_print_proc_generic_zdi_zpi_kh40000(const char *pfx,
+						    const struct cper_sec_proc_generic *zdi_zpi)
+{
+	if ((zdi_zpi->requestor_id & 0xff) == 7) {
+		pr_info("%s general processor error(zpi error)\n", pfx);
+	} else if ((zdi_zpi->requestor_id & 0xff) == 6) {
+		pr_info("%s general processor error(zdi error)\n", pfx);
+	} else {
+		pr_info("%s general processor error(unknown error)\n", pfx);
+		return;
+	}
+	pr_info("%s bus number %llx device number %llx function number 0\n",
+		pfx, ((zdi_zpi->requestor_id) >> 8) & 0xff, zdi_zpi->requestor_id & 0xff);
+	pr_info("%s apic id %lld error_type: %s\n",
+		pfx, zdi_zpi->proc_id, cper_zdi_zpi_err_type_str(zdi_zpi->responder_id));
+}
+
+static void cper_print_proc_generic_zdi_zpi_kh50000(const char *pfx,
+						    const struct cper_sec_proc_generic *zdi_zpi)
+{
+	u8 etype = (zdi_zpi->requestor_id & 0xff) >> 4;
+	const char *zdi_etype_str;
+
+	if (!(zdi_zpi->validation_bits & CPER_PROC_VALID_REQUESTOR_ID) ||
+	    !(zdi_zpi->validation_bits & CPER_PROC_VALID_RESPONDER_ID))
+		return;
+
+	if (etype == 0xf) {
+		pr_info("%s general processor error(zpi port 0x%llx error)\n",
+			pfx, zdi_zpi->requestor_id & 0xf);
+	} else if (etype >= 0x0 && etype <= 0xb) {
+		switch (zdi_zpi->requestor_id & 0xf) {
+		case 0x0:
+			zdi_etype_str = "ccdzdi";
+			break;
+		case 0x1:
+			zdi_etype_str = "iodzdi";
+			break;
+		default:
+			zdi_etype_str = "unknown";
+		}
+		pr_info("%s general processor error(zdi port 0x%x %s error)\n",
+			pfx, etype, zdi_etype_str);
+	} else {
+		pr_info("%s general processor error(unknown error)\n", pfx);
+		return;
+	}
+
+	pr_info("%s socket id %lld error_type: %s\n",
+		pfx,
+		(zdi_zpi->requestor_id & 0xfff) >> 8,
+		cper_zdi_zpi_err_type_str(zdi_zpi->responder_id));
+}
 
 static void cper_print_proc_generic_zdi_zpi(const char *pfx,
 					    const struct cper_sec_proc_generic *zdi_zpi)
 {
-#if IS_ENABLED(CONFIG_X86)
-	if (boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN ||
-	    boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR) {
-		if ((zdi_zpi->requestor_id & 0xff) == 7) {
-			pr_info("%s general processor error(zpi error)\n", pfx);
-		} else if ((zdi_zpi->requestor_id & 0xff) == 6) {
-			pr_info("%s general processor error(zdi error)\n", pfx);
-		} else {
-			pr_info("%s general processor error(unknown error)\n", pfx);
+	if (boot_cpu_data.x86 == 0x7) {
+		switch (boot_cpu_data.x86_model) {
+		case 0x5b:
+			cper_print_proc_generic_zdi_zpi_kh40000(pfx, zdi_zpi);
+			break;
+		case 0x7b:
+			cper_print_proc_generic_zdi_zpi_kh50000(pfx, zdi_zpi);
+			break;
+		default:
 			return;
 		}
-		pr_info("%s bus number %llx device number %llx function number 0\n", pfx,
-			((zdi_zpi->requestor_id)>>8) & 0xff, zdi_zpi->requestor_id & 0xff);
-		pr_info("%s apic id %lld error_type: %s\n", pfx, zdi_zpi->proc_id,
-			cper_zdi_zpi_err_type_str(zdi_zpi->responder_id));
 	}
-#endif
 }
+
+static const char * const zx_micro_arch_cpu_err_type_strs[] = {
+	"unknown error",
+	"unknown error",
+	"machine hang",
+	"undefined ucode address",
+};
+
+static const char * const zx_micro_arch_shutdown_err_type_strs[] = {
+	"unknown error",
+	"#PF happened again when handle #DF caused by #PF",
+	"MCE happened when handle #DF",
+	"#GP happened again when handle #DF caused by #GP",
+	"exit smm mode if already shutdown before enter smm mode",
+	"exit smm mode if CR0.CD bit is 0 and CR0.NW bit is 1 stored in SMRAM and in smm mode",
+	"exit smm mode if CR0.PE bit is 0 and CR0.PG bit is 1 stored in SMRAM and in smm mode",
+	"exit smm mode if the reserved bits in CR4 are writed to 1 in smm mode",
+	"exit smm mode if CR4.VMXE bit is writed to 1 in smm mode",
+	"exit smm mode if CR4.PCIDE bit is writed to 1 and EFER.LMA bit is writed to 0 in smm mode",
+	"software inject an UC error after MCE changed to SMI happened",
+	"reserved",
+	"MCE happened when CR4 MCE is 0",
+	"MCE happened again when didn't clear MCIP in the first MCE handler",
+	"using vmentry to enter guest mode",
+	"configuration for VM-exit MSR-store and load address is wrong when vmexit caused by VMX guest mode",
+	"TXT check fail",
+};
+
+static void cper_print_proc_generic_zx_micro_arch(const char *pfx,
+						  const struct cper_sec_proc_generic *arch)
+{
+	u8 etype = arch->responder_id;
+
+	if (!(arch->validation_bits & CPER_PROC_VALID_REQUESTOR_ID) ||
+	    !(arch->validation_bits & CPER_PROC_VALID_RESPONDER_ID))
+		return;
+
+	if (arch->requestor_id == 0x1)
+		pr_info("%s CPU Error, error type: %d, %s\n",
+			pfx,
+			etype,
+			etype < ARRAY_SIZE(zx_micro_arch_cpu_err_type_strs) ?
+				zx_micro_arch_cpu_err_type_strs[etype] :
+				"unknown error");
+	else if (arch->requestor_id == 0x2)
+		pr_info("%s Shutdown Error, error type: %d, %s\n",
+			pfx,
+			etype,
+			etype < ARRAY_SIZE(zx_micro_arch_shutdown_err_type_strs) ?
+				zx_micro_arch_shutdown_err_type_strs[etype] :
+				"unknown error");
+}
+
+static const char * const zx_cache_err_type_strs[] = {
+	"unknown error",
+	"single bit ECC for data part in the same line",
+	"single bit ECC for different line",
+	"multi bit ECC for data part",
+};
+
+static void cper_print_proc_generic_zx_cache(const char *pfx,
+					     const struct cper_sec_proc_generic *cache)
+{
+	u8 etype = cache->responder_id;
+	const char *etype_str = etype < ARRAY_SIZE(zx_cache_err_type_strs) ?
+				zx_cache_err_type_strs[etype] :
+				"unknown error";
+
+	if (!(cache->validation_bits & CPER_PROC_VALID_LEVEL) ||
+	    !(cache->validation_bits & CPER_PROC_VALID_RESPONDER_ID))
+		return;
+
+	if (cache->level == 0x2)
+		pr_info("%s PL2 Error, error type: %d, %s\n", pfx, etype, etype_str);
+	else if (cache->level == 0x3)
+		pr_info("%s LLC Error, error type: %d, %s\n", pfx, etype, etype_str);
+}
+
+static void cper_print_proc_generic_zx(const char *pfx,
+				       const struct cper_sec_proc_generic *proc)
+{
+	if (proc->validation_bits & CPER_PROC_VALID_ERROR_TYPE) {
+		switch (proc->proc_error_type) {
+		case 0x1:
+			cper_print_proc_generic_zx_cache(pfx, proc);
+			break;
+		case 0x4:
+			cper_print_proc_generic_zdi_zpi(pfx, proc);
+			break;
+		case 0x8:
+			cper_print_proc_generic_zx_micro_arch(pfx, proc);
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+static const char * const zx_mem_err_type_strs[] = {
+	"reserved",
+	"reserved",
+	"correctable write CRC error",
+	"uncorrectable write CRC error",
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"single device error",
+	"multi devices error",
+	"correctable read CRC error",
+	"uncorrectable read CRC error",
+	"rank counter overflow",
+	"UC occurred after mirror broken",
+	"sPPR done",
+};
+
+static void cper_print_mem_zx(const char *pfx, const struct cper_sec_mem_err *mem)
+{
+	u8 etype;
+
+	if (boot_cpu_data.x86 != 0x7 || boot_cpu_data.x86_model != 0x7b)
+		return;
+
+	if (!(mem->validation_bits & CPER_MEM_VALID_REQUESTOR_ID))
+		return;
+
+	etype = mem->requestor_id;
+	if (etype < 0x2 || (etype > 0x3 && etype < 0x10) || etype > 0x16)
+		return;
+
+	pr_info("%s Specific error type: %d, %s\n", pfx, etype, zx_mem_err_type_strs[etype]);
+}
+#endif
 
 static void cper_print_proc_generic(const char *pfx,
 				    const struct cper_sec_proc_generic *proc)
@@ -296,7 +509,11 @@ static void cper_print_proc_generic(const char *pfx,
 	if (proc->validation_bits & CPER_PROC_VALID_IP)
 		printk("%s""IP: 0x%016llx\n", pfx, proc->ip);
 
-	cper_print_proc_generic_zdi_zpi(pfx, proc);
+#ifdef CONFIG_X86
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN ||
+	    boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR)
+		cper_print_proc_generic_zx(pfx, proc);
+#endif
 }
 
 static const char * const mem_err_type_strs[] = {
@@ -496,6 +713,12 @@ static void cper_print_mem(const char *pfx, const struct cper_sec_mem_err *mem,
 	}
 	if (cper_dimm_err_location(&cmem, rcd_decode_str))
 		printk("%s%s\n", pfx, rcd_decode_str);
+
+#ifdef CONFIG_X86
+	if (boot_cpu_data.x86_vendor == X86_VENDOR_ZHAOXIN ||
+	    boot_cpu_data.x86_vendor == X86_VENDOR_CENTAUR)
+		cper_print_mem_zx(pfx, mem);
+#endif
 }
 
 static const char * const pcie_port_type_strs[] = {
@@ -547,12 +770,17 @@ static void cper_print_pcie(const char *pfx, const struct cper_sec_pcie *pcie,
 	"%s""bridge: secondary_status: 0x%04x, control: 0x%04x\n",
 	pfx, pcie->bridge.secondary_status, pcie->bridge.control);
 
-	/* Fatal errors call __ghes_panic() before AER handler prints this */
-	if ((pcie->validation_bits & CPER_PCIE_VALID_AER_INFO) &&
-	    (gdata->error_severity & CPER_SEV_FATAL)) {
+	/*
+	 * Print all valid AER info. Record may be from BERT (boot-time) or GHES (run-time).
+	 *
+	 * Fatal errors call __ghes_panic() before AER handler prints this.
+	 */
+	if (pcie->validation_bits & CPER_PCIE_VALID_AER_INFO) {
 		struct aer_capability_regs *aer;
 
 		aer = (struct aer_capability_regs *)pcie->aer_info;
+		printk("%saer_cor_status: 0x%08x, aer_cor_mask: 0x%08x\n",
+		       pfx, aer->cor_status, aer->cor_mask);
 		printk("%saer_uncor_status: 0x%08x, aer_uncor_mask: 0x%08x\n",
 		       pfx, aer->uncor_status, aer->uncor_mask);
 		printk("%saer_uncor_severity: 0x%08x\n",
@@ -608,11 +836,131 @@ static void cper_print_fw_err(const char *pfx,
 	} else {
 		offset = sizeof(*fw_err);
 	}
+	if (offset > length) {
+		printk("%s""error section length is too small: offset=%d, length=%d\n",
+		       pfx, offset, length);
+		return;
+	}
 
 	buf += offset;
 	length -= offset;
 
 	print_hex_dump(pfx, "", DUMP_PREFIX_OFFSET, 16, 4, buf, length, true);
+}
+
+static const char *const svid_error_type_strs[] = {
+	"reserved",
+	"SVID resend fail error",
+	"VRM over current error",
+	"VRM over temperature error",
+	"VRM parity error",
+};
+
+static void cper_print_svid_err(const char *pfx, const struct cper_sec_svid *svid)
+{
+	if (svid->validation_bits & CPER_SVID_VALID_SOCKET_ID)
+		pr_info("%s socket id : %d\n", pfx, svid->socket_id);
+	if (svid->validation_bits & CPER_SVID_VALID_SVID_ID)
+		pr_info("%s svid id : %d\n", pfx, svid->svid_id);
+	if (svid->validation_bits & CPER_SVID_VALID_VRM_NUM)
+		pr_info("%s vrm number : %d\n", pfx, svid->vrm_number);
+	if (svid->validation_bits & CPER_SVID_VALID_ERROR_TYPE)
+		pr_info("%s error type: %d, %s\n", pfx, svid->error_type,
+			svid->error_type < ARRAY_SIZE(svid_error_type_strs) ?
+			svid_error_type_strs[svid->error_type] : "unknown");
+}
+
+static const char *const cxl_error_type_strs[] = {
+	"reserved",
+	"reserved",
+	"reserved",
+	"reserved",
+	"decode poison UC error",
+	"decode poison CE error",
+	"parity error",
+	"reserved",
+	"timeout error",
+};
+
+static const char *const snt_error_type_strs[] = {
+	"no error",
+	"correctable error",
+	"uncorrectable error",
+	"multi correctable error",
+	"multi Uncorrectable error",
+	"uncorrectable + correctable error",
+};
+
+static void dump_cxl_error_type(const char *pfx, u8 port, u64 decode_addr, u8 type)
+{
+	pr_info("%s CXL Port%d Error Type: %d, %s\n",
+		pfx,
+		port,
+		type,
+		type < ARRAY_SIZE(cxl_error_type_strs) ?
+			cxl_error_type_strs[type] :
+			"unknown");
+	if (type == 0x4 || type == 0x5)
+		pr_info("%s CXL Decode Error Address: 0x%llx\n", pfx, decode_addr);
+}
+
+static void dump_hif_error_type(const char *pfx, const struct cper_sec_hif *hif)
+{
+	u64 data, addr;
+
+	data = (u64)hif->snt_error_data[0] |
+		(u64)hif->snt_error_data[1] << 8 |
+		(u64)hif->snt_error_data[2] << 16 |
+		(u64)hif->snt_error_data[3] << 24 |
+		(u64)hif->snt_error_data[4] << 32;
+	addr = (u64)hif->snt_error_addr[0] |
+		(u64)hif->snt_error_addr[1] << 8 |
+		(u64)hif->snt_error_addr[2] << 16 |
+		(u64)hif->snt_error_addr[3] << 24 |
+		(u64)hif->snt_error_addr[4] << 32;
+	pr_info("%s SNT Location, Way: %d Bank Number: %d Channel: %d\n",
+		pfx,
+		(hif->snt_location >> 4) & 0x7,
+		(hif->snt_location >> 2) & 0x3,
+		hif->snt_location & 0x3);
+	pr_info("%s SNT Error Type: %d, %s\n",
+		pfx,
+		hif->snt_error_type,
+		hif->snt_error_type < ARRAY_SIZE(snt_error_type_strs) ?
+			snt_error_type_strs[hif->snt_error_type] :
+			"unknown");
+	pr_info("%s SNT Error Data: 0x%llx, Error Address: 0x%llx\n", pfx, data, addr);
+}
+
+static void cper_print_hif_err(const char *pfx, const struct cper_sec_hif *hif)
+{
+	pr_info("%s Error occurred at Socket %d, Hnode %d\n", pfx, hif->socket_id, hif->hnod_id);
+
+	if (hif->validation_bits & CPER_HIF_VALID_DVAD_CHANNEL0)
+		pr_info("%s Sub channel 0 DVAD Error Address : %llx\n",
+			pfx, hif->dvad_error_addr[0]);
+	if (hif->validation_bits & CPER_HIF_VALID_DVAD_CHANNEL1)
+		pr_info("%s Sub channel 1 DVAD Error Address : %llx\n",
+			pfx, hif->dvad_error_addr[1]);
+	if (hif->validation_bits & CPER_HIF_VALID_DVAD_CHANNEL2)
+		pr_info("%s Sub channel 2 DVAD Error Address : %llx\n",
+			pfx, hif->dvad_error_addr[2]);
+	if (hif->validation_bits & CPER_HIF_VALID_DVAD_CHANNEL3)
+		pr_info("%s Sub channel 3 DVAD Error Address : %llx\n",
+			pfx, hif->dvad_error_addr[3]);
+	if (hif->validation_bits & CPER_HIF_VALID_DVAD_CHANNEL4)
+		pr_info("%s Sub channel 4 DVAD Error Address : %llx\n",
+			pfx, hif->dvad_error_addr[4]);
+	if (hif->validation_bits & CPER_HIF_VALID_DVAD_CHANNEL5)
+		pr_info("%s Sub channel 5 DVAD Error Address : %llx\n",
+			pfx, hif->dvad_error_addr[5]);
+	if (hif->validation_bits & CPER_HIF_VALID_SNT)
+		dump_hif_error_type(pfx, hif);
+
+	if (hif->validation_bits & CPER_HIF_VALID_CXL_PORT0)
+		dump_cxl_error_type(pfx, 0, hif->cxl_decode_error_addr[0], hif->cxl_error_type[0]);
+	if (hif->validation_bits & CPER_HIF_VALID_CXL_PORT1)
+		dump_cxl_error_type(pfx, 1, hif->cxl_decode_error_addr[1], hif->cxl_error_type[1]);
 }
 
 static void cper_print_tstamp(const char *pfx,
@@ -688,7 +1036,8 @@ cper_estatus_print_section(const char *pfx, struct acpi_hest_generic_data *gdata
 
 		printk("%ssection_type: ARM processor error\n", newpfx);
 		if (gdata->error_data_length >= sizeof(*arm_err))
-			cper_print_proc_arm(newpfx, arm_err);
+			cper_print_proc_arm(newpfx, arm_err,
+					    gdata->error_data_length);
 		else
 			goto err_section_too_small;
 #endif
@@ -718,6 +1067,22 @@ cper_estatus_print_section(const char *pfx, struct acpi_hest_generic_data *gdata
 		printk("%ssection_type: CXL Protocol Error\n", newpfx);
 		if (gdata->error_data_length >= sizeof(*prot_err))
 			cper_print_prot_err(newpfx, prot_err);
+		else
+			goto err_section_too_small;
+	} else if (guid_equal(sec_type, &CPER_SEC_SVID)) {
+		struct cper_sec_svid *svid_err = acpi_hest_get_payload(gdata);
+
+		printk("%ssection_type: SVID Error\n", newpfx);
+		if (gdata->error_data_length >= sizeof(*svid_err))
+			cper_print_svid_err(newpfx, svid_err);
+		else
+			goto err_section_too_small;
+	} else if (guid_equal(sec_type, &CPER_SEC_HIF)) {
+		struct cper_sec_hif *hif_err = acpi_hest_get_payload(gdata);
+
+		printk("%ssection_type: HIF Error\n", newpfx);
+		if (gdata->error_data_length >= sizeof(*hif_err))
+			cper_print_hif_err(newpfx, hif_err);
 		else
 			goto err_section_too_small;
 	} else {

@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# sxe2 network device configuration
+#
+
+config INFINIBAND_SXE2RDMA
+        tristate "sxe2 network adapters support"
+        depends on X86 && NETDEVICES && ETHERNET && PCI
+        default m
+        help
+          This driver supports sxe PCI Express family of adapters.
+
+          To compile this driver as a module, choose M here.

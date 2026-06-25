@@ -24,6 +24,7 @@
 #include "cap.h"
 #include "eu.h"
 #include "instance.h"
+#include "task.h"
 #include "ubus_entity.h"
 
 /*
@@ -226,13 +227,12 @@ static int ub_uent_cfg(struct ub_entity *uent, u32 uent_num)
 
 	dev_set_name(&uent->dev, "%05x", uent_num);
 	uent->uent_num = uent_num;
-
-	(void)ub_show_guid(guid, buf);
-	ub_info(uent, "guid=%s, uent_num=%#05x\n", buf, uent_num);
-
 	uent->dev.bus = &ub_bus_type;
 	/* Card driver set to 64bit if support */
 	uent->dma_mask = GENMASK(31, 0);
+
+	(void)ub_show_guid(guid, buf);
+	ub_info(uent, "guid=%s\n", buf);
 
 	if (is_primary(uent) || is_p_device(uent))
 		ret = ub_setup_ent_primary(uent);
@@ -447,7 +447,7 @@ void ub_start_ent(struct ub_entity *uent)
 		uent->match_driver = true;
 		ret = device_attach(&uent->dev);
 		if (ret < 0 && ret != -EPROBE_DEFER)
-			ub_err(uent, "device attach failed, ret=%d\n", ret);
+			ub_warn(uent, "device attach failed, ret=%d\n", ret);
 	}
 
 	if (is_primary(uent) && !is_p_device(uent)) {
@@ -742,6 +742,7 @@ static int ub_enable_ent(struct ub_entity *pue, int idx, u8 is_mue,
 
 	ub_entity_get(pue);
 	ub_entity_add(ue, pue);
+	ub_entity_assign_task_src(ue, TASK_SRC_SELF, true);
 	ub_start_ent(ue);
 
 	return 0;
@@ -923,50 +924,83 @@ int ub_num_ue(struct ub_entity *uent)
 }
 EXPORT_SYMBOL_GPL(ub_num_ue);
 
-void ub_entity_enable(struct ub_entity *uent, u8 enable)
+static int ub_entity_enable_base(struct ub_entity *uent, u8 enable, bool force)
 {
 	int ret;
 
 	if (!uent)
-		return;
+		return -EINVAL;
 
-	ub_cfg_write_byte(uent, UB_BUS_ACCESS_EN, enable);
-	ub_cfg_write_byte(uent, UB_ENTITY_RS_ACCESS_EN, enable);
+	ret = ub_cfg_write_byte(uent, UB_BUS_ACCESS_EN, enable);
+	if (ret) {
+		ub_err(uent, "write bus en failed, ret[%d]\n", ret);
+		return ret;
+	}
 
-	mutex_lock(&uent->active_mutex);
+	/* Failed branch does not roll back configuration access. */
+	ret = ub_cfg_write_byte(uent, UB_ENTITY_RS_ACCESS_EN, enable);
+	if (ret) {
+		ub_err(uent, "write rs en failed, ret[%d]\n", ret);
+		return ret;
+	}
 
-	if (!enable && !ub_entity_test_priv_flag(uent, UB_ENTITY_ACTIVE)) {
-		mutex_unlock(&uent->active_mutex);
-		return;
+	if (!force) {
+		mutex_lock(&uent->active_mutex);
+		if (!enable && !ub_entity_test_priv_flag(uent, UB_ENTITY_ACTIVE)) {
+			mutex_unlock(&uent->active_mutex);
+			return 0;
+		}
 	}
 
 	if (uent->ubc && uent->ubc->ops && uent->ubc->ops->entity_enable) {
 		ret = uent->ubc->ops->entity_enable(uent, enable);
 		if (ret) {
-			mutex_unlock(&uent->active_mutex);
+			if (!force)
+				mutex_unlock(&uent->active_mutex);
 			ub_err(uent, "entity enable, ret=%d, enable=%u\n",
 			       ret, enable);
-			return;
+			return ret;
 		}
 	}
 
-	ub_info(uent, "Change the entity status to %s\n", enable ?  "normal" : "disable");
+	ub_info(uent, "Change the entity status to %s\n", enable ? "normal" : "disable");
 
 	if (enable)
 		ub_entity_assign_priv_flag(uent, UB_ENTITY_ACTIVE, true);
 	else
 		ub_entity_assign_priv_flag(uent, UB_ENTITY_ACTIVE, false);
 
-	mutex_unlock(&uent->active_mutex);
+	if (!force)
+		mutex_unlock(&uent->active_mutex);
+
+	return 0;
+}
+
+int ub_entity_enable_force(struct ub_entity *uent, u8 enable)
+{
+	return ub_entity_enable_base(uent, enable, true);
+}
+
+int ub_entity_enable_return(struct ub_entity *uent, u8 enable)
+{
+	return ub_entity_enable_base(uent, enable, false);
+}
+EXPORT_SYMBOL_GPL(ub_entity_enable_return);
+
+void ub_entity_enable(struct ub_entity *uent, u8 enable)
+{
+	ub_entity_enable_return(uent, enable);
 }
 EXPORT_SYMBOL_GPL(ub_entity_enable);
 
 int ub_set_user_info(struct ub_entity *uent)
 {
+	u32 eid;
+
 	if (!uent || !uent->ubc || !uent->ubc->uent)
 		return -EINVAL;
 
-	u32 eid = uent->ubc->uent->eid;
+	eid = uent->ubc->uent->eid;
 
 	if (is_p_device(uent) ||
 	    (uent->ubc->cluster && is_ibus_controller(uent)))
@@ -1038,7 +1072,7 @@ int ub_activate_entity(struct ub_entity *uent, u32 entity_idx)
 
 	udrv = uent->driver;
 	if (!udrv || !udrv->activate) {
-		ub_err(uent, "udrv or activate is null\n");
+		ub_err(uent, "udrv or activate is NULL\n");
 		return -EINVAL;
 	}
 
@@ -1078,7 +1112,7 @@ int ub_deactivate_entity(struct ub_entity *uent, u32 entity_idx)
 
 	udrv = uent->driver;
 	if (!udrv || !udrv->deactivate) {
-		ub_err(uent, "udrv or deactivate is null\n");
+		ub_err(uent, "udrv or deactivate is NULL\n");
 		return -EINVAL;
 	}
 
@@ -1102,3 +1136,31 @@ int ub_deactivate_entity(struct ub_entity *uent, u32 entity_idx)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(ub_deactivate_entity);
+
+int ub_reinit_ent(struct ub_entity *uent)
+{
+	struct ub_driver *udrv;
+	int ret;
+
+	if (!uent)
+		return -EINVAL;
+
+	device_lock(&uent->dev);
+
+	udrv = uent->driver;
+	if (!udrv || !udrv->reinit) {
+		ub_info(uent, "udrv or reinit is null\n");
+		ret = 0;
+		goto out;
+	}
+
+	ret = udrv->reinit(uent);
+	if (ret) {
+		ub_err(uent, "reinit ret[%d]\n", ret);
+		if (ret == -EAGAIN)
+			ub_add_retry_task(uent, TASK_TYPE_REINIT_RETRY);
+	}
+out:
+	device_unlock(&uent->dev);
+	return ret;
+}

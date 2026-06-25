@@ -2,7 +2,7 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  *
- * Description: ubcore main ue EID trie
+ * Description: ubcore main ue EID map
  */
 
 #ifndef UBCORE_MAIN_UE_EID_H

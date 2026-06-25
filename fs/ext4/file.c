@@ -416,7 +416,12 @@ static int ext4_dio_write_end_io(struct kiocb *iocb, ssize_t size,
 	loff_t pos = iocb->ki_pos;
 	struct inode *inode = file_inode(iocb->ki_filp);
 
-	if (!error && size && flags & IOMAP_DIO_UNWRITTEN)
+
+	if (!error && size && (flags & IOMAP_DIO_UNWRITTEN) &&
+			(iocb->ki_flags & IOCB_ATOMIC))
+		error = ext4_convert_unwritten_extents_atomic(NULL, inode, pos,
+							      size);
+	else if (!error && size && flags & IOMAP_DIO_UNWRITTEN)
 		error = ext4_convert_unwritten_extents(NULL, inode, pos, size);
 	if (error)
 		return error;
@@ -639,6 +644,13 @@ out:
 		ssize_t err;
 		loff_t endbyte;
 
+		/*
+		 * There is no support for atomic writes on buffered-io yet,
+		 * we should never fallback to buffered-io for DIO atomic
+		 * writes.
+		 */
+		WARN_ON_ONCE(iocb->ki_flags & IOCB_ATOMIC);
+
 		offset = iocb->ki_pos;
 		err = ext4_buffered_write_iter(iocb, from);
 		if (err < 0)
@@ -732,6 +744,20 @@ ext4_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	if (IS_DAX(inode))
 		return ext4_dax_write_iter(iocb, from);
 #endif
+
+	if (iocb->ki_flags & IOCB_ATOMIC) {
+		size_t len = iov_iter_count(from);
+		int ret;
+
+		if (len < EXT4_SB(inode->i_sb)->s_awu_min ||
+		    len > EXT4_SB(inode->i_sb)->s_awu_max)
+			return -EINVAL;
+
+		ret = generic_atomic_write_valid(iocb, from);
+		if (ret)
+			return ret;
+	}
+
 	if (iocb->ki_flags & IOCB_DIRECT)
 		return ext4_dio_write_iter(iocb, from);
 	else
@@ -924,6 +950,9 @@ static int ext4_file_open(struct inode *inode, struct file *filp)
 		if (ret < 0)
 			return ret;
 	}
+
+	if (ext4_inode_can_atomic_write(inode))
+		filp->f_mode |= FMODE_CAN_ATOMIC_WRITE;
 
 	filp->f_mode |= FMODE_NOWAIT | FMODE_BUF_RASYNC |
 			FMODE_DIO_PARALLEL_WRITE;

@@ -10,7 +10,7 @@
 
 struct ubctl_func_dispatch *ubctl_get_query_func(struct ubctl_dev *ucdev,
 						 u32 rpc_cmd);
-int ubctl_port_link_status_init(struct auxiliary_device *adev);
+int ubctl_port_link_status_init(struct auxiliary_device *adev, struct ubctl_dev *ucdev);
 void ubctl_port_link_status_uninit(struct auxiliary_device *adev);
 int ubctl_handle_link_status_event(void *dev, void *data, u32 len);
 

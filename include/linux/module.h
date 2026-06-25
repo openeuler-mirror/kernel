@@ -517,6 +517,7 @@ struct module {
 #endif
 #ifdef CONFIG_DEBUG_INFO_BTF_MODULES
 	unsigned int btf_data_size;
+	KABI_FILL_HOLE(unsigned int btf_base_data_size)
 	void *btf_data;
 #else
 	KABI_DEPRECATE(unsigned int, btf_data_size)
@@ -607,7 +608,11 @@ struct module {
 #ifdef CONFIG_DYNAMIC_DEBUG_CORE
 	struct _ddebug_info dyndbg_info;
 #endif
+#ifdef CONFIG_DEBUG_INFO_BTF_MODULES
+	KABI_USE(1, void *btf_base_data)
+#else
 	KABI_RESERVE(1)
+#endif
 	KABI_RESERVE(2)
 	KABI_RESERVE(3)
 	KABI_RESERVE(4)
@@ -755,6 +760,15 @@ static inline void __module_get(struct module *module)
 	struct module *__mod = (mod);		\
 	__mod ? __mod->name : "kernel";		\
 })
+
+static inline const unsigned char *module_buildid(struct module *mod)
+{
+#ifdef CONFIG_STACKTRACE_BUILD_ID
+	return mod->build_id;
+#else
+	return NULL;
+#endif
+}
 
 /* Dereference module function descriptor */
 void *dereference_module_function_descriptor(struct module *mod, void *ptr);

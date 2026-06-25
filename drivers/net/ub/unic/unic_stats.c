@@ -91,7 +91,7 @@ static struct unic_dfx_regs_group unic_dfx_reg_arr[] = {
 		.regs_idx = UNIC_REG_NUM_IDX_NL,
 		.tag = UNIC_TAG_NL,
 		.opcode = UBASE_OPC_DFX_NL_REG,
-		.property = UBASE_SUP_UBL,
+		.property = UBASE_SUP_UBL_ETH,
 		.is_supported = unic_dfx_reg_support
 	},
 	{
@@ -111,36 +111,38 @@ static struct unic_dfx_regs_group unic_dfx_reg_arr[] = {
 };
 
 static const struct unic_stats_desc unic_sq_stats_str[] = {
-	{"pad_err", UNIC_SQ_STATS_FIELD_OFFSET(pad_err)},
-	{"packets", UNIC_SQ_STATS_FIELD_OFFSET(packets)},
-	{"bytes", UNIC_SQ_STATS_FIELD_OFFSET(bytes)},
-	{"busy", UNIC_SQ_STATS_FIELD_OFFSET(busy)},
-	{"more", UNIC_SQ_STATS_FIELD_OFFSET(more)},
-	{"restart_queue", UNIC_SQ_STATS_FIELD_OFFSET(restart_queue)},
-	{"over_max_sge_num", UNIC_SQ_STATS_FIELD_OFFSET(over_max_sge_num)},
-	{"csum_err", UNIC_SQ_STATS_FIELD_OFFSET(csum_err)},
-	{"ci_mismatch", UNIC_SQ_STATS_FIELD_OFFSET(ci_mismatch)},
-	{"vlan_err", UNIC_SQ_STATS_FIELD_OFFSET(vlan_err)},
-	{"fd_cnt", UNIC_SQ_STATS_FIELD_OFFSET(fd_cnt)},
-	{"drop_cnt", UNIC_SQ_STATS_FIELD_OFFSET(drop_cnt)},
-	{"cfg5_drop_cnt", UNIC_SQ_STATS_FIELD_OFFSET(cfg5_drop_cnt)},
-	{"polled_old_pi", UNIC_SQ_STATS_FIELD_OFFSET(polled_old_pi)},
-	{"polled_skb_null", UNIC_SQ_STATS_FIELD_OFFSET(polled_skb_null)},
-	{"pi_ci_over_depth", UNIC_SQ_STATS_FIELD_OFFSET(pi_ci_over_depth)}
+	{"pad_err", UNIC_SQ_STATS_FIELD_OFFSET(pad_err), NULL},
+	{"packets", UNIC_SQ_STATS_FIELD_OFFSET(packets), NULL},
+	{"bytes", UNIC_SQ_STATS_FIELD_OFFSET(bytes), NULL},
+	{"busy", UNIC_SQ_STATS_FIELD_OFFSET(busy), NULL},
+	{"more", UNIC_SQ_STATS_FIELD_OFFSET(more), NULL},
+	{"restart_queue", UNIC_SQ_STATS_FIELD_OFFSET(restart_queue), NULL},
+	{"over_max_sge_num", UNIC_SQ_STATS_FIELD_OFFSET(over_max_sge_num), NULL},
+	{"csum_err", UNIC_SQ_STATS_FIELD_OFFSET(csum_err), NULL},
+	{"ci_mismatch", UNIC_SQ_STATS_FIELD_OFFSET(ci_mismatch), NULL},
+	{"vlan_err", UNIC_SQ_STATS_FIELD_OFFSET(vlan_err), NULL},
+	{"fd_cnt", UNIC_SQ_STATS_FIELD_OFFSET(fd_cnt), NULL},
+	{"drop_cnt", UNIC_SQ_STATS_FIELD_OFFSET(drop_cnt), NULL},
+	{"cfg5_drop_cnt", UNIC_SQ_STATS_FIELD_OFFSET(cfg5_drop_cnt), NULL},
+	{"polled_old_pi", UNIC_SQ_STATS_FIELD_OFFSET(polled_old_pi), NULL},
+	{"polled_skb_null", UNIC_SQ_STATS_FIELD_OFFSET(polled_skb_null), NULL},
+	{"pi_ci_over_depth", UNIC_SQ_STATS_FIELD_OFFSET(pi_ci_over_depth), NULL},
+	{"abn_cqe_total_cnt", UNIC_SQ_STATS_FIELD_OFFSET(abn_cqe_total_cnt),
+	 unic_abn_cqe_count_support},
 };
 
 static const struct unic_stats_desc unic_rq_stats_str[] = {
-	{"alloc_skb_err", UNIC_RQ_STATS_FIELD_OFFSET(alloc_skb_err)},
-	{"packets", UNIC_RQ_STATS_FIELD_OFFSET(packets)},
-	{"bytes", UNIC_RQ_STATS_FIELD_OFFSET(bytes)},
-	{"err_pkt_len_cnt", UNIC_RQ_STATS_FIELD_OFFSET(err_pkt_len_cnt)},
-	{"doi_cnt", UNIC_RQ_STATS_FIELD_OFFSET(doi_cnt)},
-	{"trunc_cnt", UNIC_RQ_STATS_FIELD_OFFSET(trunc_cnt)},
-	{"multicast", UNIC_RQ_STATS_FIELD_OFFSET(multicast)},
-	{"l2_err", UNIC_RQ_STATS_FIELD_OFFSET(l2_err)},
-	{"l3_l4_csum_err", UNIC_RQ_STATS_FIELD_OFFSET(l3_l4_csum_err)},
-	{"alloc_frag_err", UNIC_RQ_STATS_FIELD_OFFSET(alloc_frag_err)},
-	{"csum_complete", UNIC_RQ_STATS_FIELD_OFFSET(csum_complete)},
+	{"alloc_skb_err", UNIC_RQ_STATS_FIELD_OFFSET(alloc_skb_err), NULL},
+	{"packets", UNIC_RQ_STATS_FIELD_OFFSET(packets), NULL},
+	{"bytes", UNIC_RQ_STATS_FIELD_OFFSET(bytes), NULL},
+	{"err_pkt_len_cnt", UNIC_RQ_STATS_FIELD_OFFSET(err_pkt_len_cnt), NULL},
+	{"doi_cnt", UNIC_RQ_STATS_FIELD_OFFSET(doi_cnt), NULL},
+	{"trunc_cnt", UNIC_RQ_STATS_FIELD_OFFSET(trunc_cnt), NULL},
+	{"multicast", UNIC_RQ_STATS_FIELD_OFFSET(multicast), NULL},
+	{"l2_err", UNIC_RQ_STATS_FIELD_OFFSET(l2_err), NULL},
+	{"l3_l4_csum_err", UNIC_RQ_STATS_FIELD_OFFSET(l3_l4_csum_err), NULL},
+	{"alloc_frag_err", UNIC_RQ_STATS_FIELD_OFFSET(alloc_frag_err), NULL},
+	{"csum_complete", UNIC_RQ_STATS_FIELD_OFFSET(csum_complete), NULL},
 };
 
 static const struct unic_mac_stats_desc unic_eth_stats_str[] = {
@@ -482,6 +484,9 @@ static u64 *unic_get_queues_stats(struct unic_dev *unic_dev,
 		c = &unic_dev->channels.c[i];
 		q = (type == UNIC_QUEUE_TYPE_SQ) ? (u8 *)c->sq : (u8 *)c->rq;
 		for (j = 0; j < stats_size; j++) {
+			if (stats[j].is_supported && !stats[j].is_supported(unic_dev))
+				continue;
+
 			*data = UNIC_STATS_READ(q, stats[j].offset);
 			data++;
 		}
@@ -542,13 +547,17 @@ void unic_get_stats(struct net_device *netdev,
 	unic_get_mac_stats(unic_dev, p);
 }
 
-static u8 *unic_get_strings(u8 *data, const char *prefix, u32 num,
+static u8 *unic_get_strings(struct unic_dev *unic_dev, u8 *data,
+			    const char *prefix, u32 num,
 			    const struct unic_stats_desc *strs, u32 stats_size)
 {
 	u32 i, j;
 
 	for (i = 0; i < num; i++) {
 		for (j = 0; j < stats_size; j++) {
+			if (strs[j].is_supported && !strs[j].is_supported(unic_dev))
+				continue;
+
 			data[ETH_GSTRING_LEN - 1] = '\0';
 
 			if (prefix)
@@ -570,12 +579,12 @@ static u8 *unic_get_queues_strings(struct unic_dev *unic_dev, u8 *data)
 	u32 channel_num = unic_dev->channels.num;
 
 	/* get desc for Tx */
-	data = unic_get_strings(data, "txq", channel_num, unic_sq_stats_str,
-				ARRAY_SIZE(unic_sq_stats_str));
+	data = unic_get_strings(unic_dev, data, "txq", channel_num,
+				unic_sq_stats_str, ARRAY_SIZE(unic_sq_stats_str));
 
 	/* get desc for Rx */
-	data = unic_get_strings(data, "rxq", channel_num, unic_rq_stats_str,
-				ARRAY_SIZE(unic_rq_stats_str));
+	data = unic_get_strings(unic_dev, data, "rxq", channel_num,
+				unic_rq_stats_str, ARRAY_SIZE(unic_rq_stats_str));
 
 	return data;
 }
@@ -653,12 +662,25 @@ int unic_get_sset_count(struct net_device *netdev, int stringset)
 {
 	struct unic_dev *unic_dev = netdev_priv(netdev);
 	u32 channel_num = unic_dev->channels.num;
+	u32 i, sq_count = 0, rq_count = 0;
 	int count;
 
 	switch (stringset) {
 	case ETH_SS_STATS:
-		count = ARRAY_SIZE(unic_sq_stats_str) * channel_num;
-		count += ARRAY_SIZE(unic_rq_stats_str) * channel_num;
+		for (i = 0; i < ARRAY_SIZE(unic_sq_stats_str); i++) {
+			if (unic_sq_stats_str[i].is_supported &&
+			    !unic_sq_stats_str[i].is_supported(unic_dev))
+				continue;
+			sq_count++;
+		}
+		for (i = 0; i < ARRAY_SIZE(unic_rq_stats_str); i++) {
+			if (unic_rq_stats_str[i].is_supported &&
+			    !unic_rq_stats_str[i].is_supported(unic_dev))
+				continue;
+			rq_count++;
+		}
+
+		count = sq_count * channel_num + rq_count * channel_num;
 		if (unic_dev_ubl_supported(unic_dev))
 			break;
 

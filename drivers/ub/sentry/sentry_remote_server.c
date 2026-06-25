@@ -26,6 +26,8 @@
 #undef pr_fmt
 #define pr_fmt(fmt) "[sentry][remote server]: " fmt
 
+#define RECV_THREAD_MILLISECONDS 10
+
 struct sentry_remote_context sentry_remote_ctx;
 DEFINE_SPINLOCK(sentry_buf_lock);
 
@@ -408,7 +410,7 @@ static int process_urma_data(void *data)
 			 * Prevent processes from entering the D state if reboot event
 			 * occurs on the current node
 			 */
-			msleep_interruptible(MILLISECONDS_OF_EACH_MDELAY);
+			msleep_interruptible(RECV_THREAD_MILLISECONDS);
 			continue;
 		}
 
@@ -425,7 +427,7 @@ static int process_urma_data(void *data)
 		 * Prevent processes from entering the D state if reboot event
 		 * occurs on the current node
 		 */
-		msleep_interruptible(MILLISECONDS_OF_EACH_MDELAY);
+		msleep_interruptible(RECV_THREAD_MILLISECONDS);
 	}
 
 free_msg:

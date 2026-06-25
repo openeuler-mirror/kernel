@@ -16,9 +16,9 @@
 #include <asm/spec-ctrl.h>
 #include <asm/delay.h>
 #include <asm/page.h>
+#include <asm/resctrl.h>
 #include <linux/module.h>
 #include <linux/init.h>
-#include <asm/resctrl.h>
 
 #include "cpu.h"
 
@@ -128,6 +128,7 @@ static void bsp_init_hygon(struct cpuinfo_x86 *c)
 			x86_amd_ls_cfg_ssbd_mask = 1ULL << 10;
 		}
 	}
+
 	resctrl_cpu_detect(c);
 }
 
@@ -257,8 +258,22 @@ static void early_init_hygon(struct cpuinfo_x86 *c)
 	early_detect_mem_encrypt(c);
 }
 
+/*
+ * Adjust the die_id and logical_die_id for Hygon model4h~8h.
+ */
+static void cpu_topology_fixup_hygon(struct cpuinfo_x86 *c)
+{
+	if (c->x86_model >= 0x4 && c->x86_model <= 0x8) {
+		c->topo.die_id = cpuid_ecx(0x8000001e) & 0xff;
+		c->topo.logical_die_id = (c->topo.die_id >> 4) * topology_amd_nodes_per_pkg() +
+					 (c->topo.die_id & 0xf);
+	}
+}
+
 static void init_hygon(struct cpuinfo_x86 *c)
 {
+	u64 vm_cr;
+
 	early_init_hygon(c);
 
 	/*
@@ -283,6 +298,16 @@ static void init_hygon(struct cpuinfo_x86 *c)
 	srat_detect_node(c);
 
 	init_hygon_cacheinfo(c);
+
+	cpu_topology_fixup_hygon(c);
+
+	if (cpu_has(c, X86_FEATURE_SVM)) {
+		rdmsrl(MSR_VM_CR, vm_cr);
+		if (vm_cr & SVM_VM_CR_SVM_DIS_MASK) {
+			pr_notice_once("SVM disabled (by BIOS) in MSR_VM_CR\n");
+			clear_cpu_cap(c, X86_FEATURE_SVM);
+		}
+	}
 
 	if (cpu_has(c, X86_FEATURE_XMM2)) {
 		/*

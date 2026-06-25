@@ -4,8 +4,8 @@
  *
  */
 
-#ifndef UNIC_MAC_H
-#define UNIC_MAC_H
+#ifndef __UNIC_MAC_H__
+#define __UNIC_MAC_H__
 
 enum unic_mac_addr_type {
 	UNIC_MAC_ADDR_UC,

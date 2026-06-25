@@ -121,6 +121,8 @@ static int ubase_create_tp_tpg(struct ubase_dev *udev, u32 vl)
 
 	ret = __ubase_ctrlq_send(udev, &msg, true, NULL);
 	if (ret && ret != -EEXIST) {
+		if (ret == -ETIMEDOUT || ret == -ENODATA)
+			set_bit(UBASE_STATE_INIT_AGAIN_B, &udev->state_bits);
 		ubase_err(udev, "failed to alloc tp tpg, ret = %d.\n", ret);
 		return ret;
 	}

@@ -241,6 +241,11 @@ extern struct mutex rdtgroup_mutex;
 extern struct rdtgroup rdtgroup_default;
 extern struct dentry *debugfs_resctrl;
 
+static inline const char *rdt_kn_name(const struct kernfs_node *kn)
+{
+	return rcu_dereference_check(kn->name, lockdep_is_held(&rdtgroup_mutex));
+}
+
 void rdt_last_cmd_clear(void);
 void rdt_last_cmd_puts(const char *s);
 __printf(1, 2)

@@ -12,10 +12,10 @@
 #include <linux/bits.h>
 #include <linux/ipmi.h>
 #include <linux/ipmi_smi.h>
-#include <linux/completion.h>
 #include <linux/notifier.h>
 #include <linux/reboot.h>
 #include <linux/acpi.h>
+#include <linux/workqueue.h>
 
 #ifdef CONFIG_ARM64
 #include <asm/cputype.h>
@@ -36,31 +36,23 @@ static struct ipmi_user *ipmi_pso_user;
 static int pso_ifnum = -1;
 
 /**
-* struct pso_txn - Per-request context for synchronous send
-* @done:  completion to wait on until BMC response arrives
-* @cc:    IPMI completion code from response (or negative errno)
-*/
-struct pso_txn {
-	struct completion done;
-	int cc;
-};
-
-/**
 * pso_recv - IPMI response callback
 * @msg:           response message from BMC
-* @user_msg_data: &pso_txn for this request (passed via ipmi_request_settime)
+* @user_msg_data: unused (we pass NULL when sending)
 *
-* Fills txn->cc from the first byte of response (completion code) and
-* wakes up the thread waiting in pso_send().
+* IPMI response callback function. Logs success or failure,
+* and frees the message memory.
 */
 static void pso_recv(struct ipmi_recv_msg *msg, void *user_msg_data)
 {
-	struct pso_txn *txn = msg->user_msg_data;
+	if (msg->msg.data_len >= 1) {
+		u8 cc = msg->msg.data[0];
 
-	if (txn) {
-		pr_debug(PSO_DRIVER_NAME "response received: msg_id=%ld\n", msg->msgid);
-		txn->cc = (msg->msg.data_len >= 1) ? msg->msg.data[0] : -EIO;
-		complete(&txn->done);
+		if (cc == 0)
+			pr_info(PSO_DRIVER_NAME "BMC command succeeded, msg_id=%ld\n", msg->msgid);
+		else
+			pr_warn(PSO_DRIVER_NAME "BMC command failed, msg_id=%ld, cc=0x%02x\n",
+					msg->msgid, cc);
 	}
 	ipmi_free_recv_msg(msg);
 }
@@ -70,18 +62,16 @@ static const struct ipmi_user_hndl pso_hndl = {
 };
 
 /**
-* pso_send - Send enable or disable command to BMC (blocking)
-* @enable: true = enable page soft offline, false = disable
+* pso_send_sync - Send command synchronously (blocks until queued to IPMI layer)
+* @enable: true = enable, false = disable
 *
-* Uses system interface address and OEM netfn/cmd. Payload: IANA + 0x42 + 0x05/0x04.
-* Waits up to 3s for response. Returns 0 on success (BMC completion code 0),
-* negative errno on failure.
+* Returns 0 if ipmi_request_settime succeeded (command queued to BMC),
+* negative errno otherwise. Does NOT wait for BMC response.
 */
-static int pso_send(bool enable)
+static int pso_send_sync(bool enable)
 {
 	struct ipmi_system_interface_addr addr;
 	struct kernel_ipmi_msg msg;
-	struct pso_txn txn;
 	u8 data[5];
 	int rv;
 
@@ -92,9 +82,6 @@ static int pso_send(bool enable)
 
 	pr_info(PSO_DRIVER_NAME "sending %s command (netfn=0x%02x cmd=0x%02x)\n",
 			enable ? "enable" : "disable", OEM_NETFN, OEM_CMD);
-
-	init_completion(&txn.done);
-	txn.cc = -ETIMEDOUT;
 
 	/* Target: local BMC system interface */
 	addr.addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
@@ -108,25 +95,50 @@ static int pso_send(bool enable)
 	memcpy(data, enable ? enable_data : disable_data, sizeof(data));
 
 	rv = ipmi_request_settime(ipmi_pso_user, (struct ipmi_addr *)&addr,
-				enable ? 1 : 2, &msg, &txn, 0, 0, 0);
+				enable ? 1 : 2, &msg, NULL, 0, 0, 0);
 	if (rv) {
 		pr_err(PSO_DRIVER_NAME "ipmi_request_settime failed: %d\n", rv);
 		return rv;
 	}
+	return 0;
+}
 
-	if (!wait_for_completion_timeout(&txn.done, msecs_to_jiffies(3000))) {
-		pr_err(PSO_DRIVER_NAME "wait for BMC response timeout\n");
-		return -ETIMEDOUT;
-	}
+static struct work_struct pso_work;
+static bool pso_target_state;
 
-	if (txn.cc == 0) {
-		pr_info(PSO_DRIVER_NAME "%s command completed successfully\n",
-			enable ? "enable" : "disable");
-		return 0;
-	}
-	pr_err(PSO_DRIVER_NAME "%s command failed: completion code 0x%02x\n",
-		enable ? "enable" : "disable", (unsigned int)(txn.cc & 0xff));
-	return (txn.cc < 0) ? txn.cc : -EIO;
+/**
+ * pso_work_handler - Workqueue callback
+ * @work: pointer to &pso_work
+ *
+ * Reads the current target state (pso_target_state) and sends the
+ * corresponding IPMI command. This runs in process context and can sleep.
+ */
+static void pso_work_handler(struct work_struct *work)
+{
+	bool enable = READ_ONCE(pso_target_state);
+
+	pso_send_sync(enable);
+}
+
+/**
+ * pso_send_async - Schedule a deferred send of the current policy state
+ * @enable: desired state (true = enable, false = disable)
+ *
+ * Stores @enable in pso_target_state and schedules pso_work on the
+ * system workqueue. If the IPMI user is not yet available, the work
+ * is simply dropped (it will be sent when the interface appears).
+ *
+ * Multiple rapid calls to this function are coalesced automatically
+ * because schedule_work() ignores duplicate submissions of the same
+ * work_struct; the work handler always sends the latest state.
+ */
+static void pso_send_async(bool enable)
+{
+	WRITE_ONCE(pso_target_state, enable);
+	if (ipmi_pso_user)
+		schedule_work(&pso_work);
+	else
+		pr_err(PSO_DRIVER_NAME "ipmi_pso_user is NULL, dropping command\n");
 }
 
 /**
@@ -162,9 +174,8 @@ static int ipmi_pso_notifier_call(struct notifier_block *nb, unsigned long actio
 	int policy = *policy_ptr;
 
 	pr_info(PSO_DRIVER_NAME "notifier policy val: %d\n", policy);
-	if (pso_send((policy & PSO_ENABLE) ? true : false)) {
-		pr_warn(PSO_DRIVER_NAME "notifier: pso_send failed \n");
-	}
+	pso_send_async((policy & PSO_ENABLE) ? true : false);
+
 	return NOTIFY_OK;
 }
 
@@ -198,10 +209,10 @@ static void ipmi_pso_new_smi(int if_num, struct device *dev)
 	}
 
 	pso_ifnum = if_num;
-	rv = pso_send(true);
-	if (rv) {
+	rv = pso_send_sync(true);
+	if (rv)
 		pr_warn(PSO_DRIVER_NAME "enable command failed on if%d: %d\n", if_num, rv);
-	} else {
+	else {
 		sysctl_apei_page_offline_policy |= PSO_ENABLE;
 		pr_info(PSO_DRIVER_NAME "enable command succeeded, set sysctl_apei_page_offline_policy=%d\n",
 			sysctl_apei_page_offline_policy);
@@ -228,15 +239,13 @@ static void ipmi_pso_smi_gone(int if_num)
 	}
 
 	if (if_num == -1) {
-		rv = pso_send(false);
-		if (rv) {
+		rv = pso_send_sync(false);
+		if (rv)
 			pr_warn(PSO_DRIVER_NAME "disable command failed: %d\n", rv);
-		} else {
+		else
 			sysctl_apei_page_offline_policy &= ~PSO_ENABLE;
-		}
-	} else {
+	} else
 		pr_info(PSO_DRIVER_NAME "interface if%d gone, unbinding\n", if_num);
-	}
 
 	ipmi_destroy_user(ipmi_pso_user);
 	ipmi_pso_user = NULL;
@@ -270,9 +279,10 @@ static int ipmi_pso_reboot_handler(struct notifier_block *nb, unsigned long code
 		return NOTIFY_OK;
 	}
 
-	if (pso_send(false) == 0) {
+	cancel_work_sync(&pso_work);
+	if (pso_send_sync(false) == 0)
 		sysctl_apei_page_offline_policy &= ~PSO_ENABLE;
-	}
+
 	return NOTIFY_OK;
 }
 
@@ -310,6 +320,7 @@ static int __init ipmi_pso_init(void)
 	}
 	pr_info(PSO_DRIVER_NAME "reboot notifier registered\n");
 
+	INIT_WORK(&pso_work, pso_work_handler);
 	rv = register_apei_page_offline_notifier(&ipmi_pso_nb);
 	if (rv) {
 		pr_err(PSO_DRIVER_NAME "register_apei_page_offline_notifier failed: %d\n", rv);
@@ -317,6 +328,7 @@ static int __init ipmi_pso_init(void)
 		ipmi_smi_watcher_unregister(&ipmi_pso_watcher);
 		return rv;
 	}
+
 	pr_info(PSO_DRIVER_NAME "notifier registered\n");
 	return 0;
 }
@@ -332,6 +344,7 @@ static void __exit ipmi_pso_exit(void)
 	}
 
 	unregister_apei_page_offline_notifier(&ipmi_pso_nb);
+	cancel_work_sync(&pso_work);
 	unregister_reboot_notifier(&ipmi_pso_reboot_nb);
 	ipmi_smi_watcher_unregister(&ipmi_pso_watcher);
 	ipmi_pso_smi_gone(-1);

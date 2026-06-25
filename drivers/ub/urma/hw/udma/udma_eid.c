@@ -35,6 +35,18 @@ int udma_add_one_eid(struct udma_dev *udma_dev, struct udma_ctrlq_eid_info *eid_
 	guid_t guid = {};
 	int ret;
 
+	eid_entry = (struct udma_ctrlq_eid_info *)
+		xa_load(&udma_dev->eid_table, eid_info->eid_idx);
+	if (eid_entry) {
+		if (memcmp(eid_entry->eid.raw, eid_info->eid.raw, sizeof(eid_entry->eid.raw))) {
+			dev_err(udma_dev->dev, "eid exist and does not match, index = %u.\n",
+				eid_info->eid_idx);
+			return -EINVAL;
+		}
+		dev_info(udma_dev->dev, "eid exist, index = %u.\n", eid_info->eid_idx);
+		return 0;
+	}
+
 	eid_entry = kzalloc(sizeof(struct udma_ctrlq_eid_info), GFP_KERNEL);
 	if (!eid_entry)
 		return -ENOMEM;
@@ -77,12 +89,12 @@ int udma_del_one_eid(struct udma_dev *udma_dev, struct udma_ctrlq_eid_info *eid_
 
 	eid_entry = (struct udma_ctrlq_eid_info *)xa_load(&udma_dev->eid_table, index);
 	if (!eid_entry) {
-		dev_err(udma_dev->dev, "get eid entry failed, eid index = %u.\n",
+		dev_err(udma_dev->dev, "get EID entry failed, EID index = %u.\n",
 			index);
 		return -EINVAL;
 	}
 	if (memcmp(eid_entry->eid.raw, eid_info->eid.raw, sizeof(eid_entry->eid.raw))) {
-		dev_err(udma_dev->dev, "eid is not match, index = %u.\n", index);
+		dev_err(udma_dev->dev, "EID is not match, index = %u.\n", index);
 		return -EINVAL;
 	}
 	xa_erase(&udma_dev->eid_table, index);
@@ -131,25 +143,26 @@ int udma_query_eid_from_ctrl_cpu(struct udma_dev *udma_dev)
 
 	ret = udma_send_query_eid_cmd(udma_dev, &eid_out_query);
 	if (ret) {
-		dev_err(udma_dev->dev, "query eid failed, ret = %d.\n", ret);
+		dev_err(udma_dev->dev, "query EID failed, ret = %d.\n", ret);
 		return ret;
 	}
 
 	if (eid_out_query.seid_num > UDMA_CTRLQ_SEID_NUM) {
-		dev_err(udma_dev->dev, "Invalid param: seid num is %u.\n", eid_out_query.seid_num);
+		dev_err(udma_dev->dev, "Invalid param: source EID num is %u.\n",
+			eid_out_query.seid_num);
 		return -EINVAL;
 	}
 
 	mutex_lock(&udma_dev->eid_mutex);
 	for (i = 0; i < (int)eid_out_query.seid_num; i++) {
 		if (eid_out_query.eids[i].eid_idx >= SEID_TABLE_SIZE) {
-			dev_err(udma_dev->dev, "invalid eid_idx = %u.\n",
+			dev_err(udma_dev->dev, "invalid EID index = %u.\n",
 				eid_out_query.eids[i].eid_idx);
 			goto err_add_ummu_eid;
 		}
 		ret = udma_add_one_eid(udma_dev, &(eid_out_query.eids[i]));
 		if (ret) {
-			dev_err(udma_dev->dev, "Add eid failed, ret = %d, eid_idx = %u.\n",
+			dev_err(udma_dev->dev, "Add EID failed, ret = %d, eid_idx = %u.\n",
 				ret, eid_out_query.eids[i].eid_idx);
 			goto err_add_ummu_eid;
 		}
@@ -161,7 +174,7 @@ err_add_ummu_eid:
 	for (i--; i >= 0; i--) {
 		ret_tmp = udma_del_one_eid(udma_dev, &eid_out_query.eids[i]);
 		if (ret_tmp)
-			dev_err(udma_dev->dev, "Del eid failed, ret = %d, idx = %u.\n",
+			dev_err(udma_dev->dev, "Delete EID failed, ret = %d, IDX = %u.\n",
 				ret_tmp, eid_out_query.eids[i].eid_idx);
 	}
 	mutex_unlock(&udma_dev->eid_mutex);
@@ -178,14 +191,24 @@ int udma_add_one_eid_guid(struct udma_dev *udma_dev,
 	guid_t guid = {};
 	int ret;
 
+	if (eid_guid_info->ue_id >= (1U << (UDMA_BITS_PER_INT - UDMA_EID_GUID_INDEX_OFFSET))) {
+		dev_err(udma_dev->dev, "ue id %u is too large.\n", eid_guid_info->ue_id);
+		return -EINVAL;
+	}
+
 	eid_guid_idx = eid_guid_info->ue_id << UDMA_EID_GUID_INDEX_OFFSET |
 		       eid_guid_info->eid_info.eid_idx;
 
 	eid_guid_entry = (struct udma_ctrlq_ue_eid_guid_out *)
 		xa_load(&udma_dev->eid_guid_table, eid_guid_idx);
 	if (eid_guid_entry) {
-		dev_err(udma_dev->dev, "eid-guid exist, index = %u.\n",
+		if (memcmp(eid_guid_entry->eid_info.eid.raw, eid_guid_info->eid_info.eid.raw,
+		    sizeof(eid_guid_entry->eid_info.eid.raw))) {
+			dev_err(udma_dev->dev, "eid-guid exist and does not match, index = %u.\n",
 				eid_guid_idx);
+			return -EINVAL;
+		}
+		dev_info(udma_dev->dev, "eid-guid exist, index = %u.\n", eid_guid_idx);
 		return 0;
 	}
 
@@ -222,6 +245,26 @@ store_err:
 	return ret;
 }
 
+void udma_del_eid_guid_by_ue_id(struct udma_dev *udma_dev, uint32_t ue_id)
+{
+	struct udma_ctrlq_ue_eid_guid_out *eid_guid_entry;
+	unsigned long index = 0;
+	eid_t ummu_eid = 0;
+	guid_t guid = {};
+
+	mutex_lock(&udma_dev->eid_guid_mutex);
+	xa_for_each(&udma_dev->eid_guid_table, index, eid_guid_entry) {
+		if (index >> UDMA_EID_GUID_INDEX_OFFSET == ue_id) {
+			__xa_erase(&udma_dev->eid_guid_table, index);
+			(void)memcpy(&guid, &eid_guid_entry->ue_guid, sizeof(guid));
+			(void)memcpy(&ummu_eid, eid_guid_entry->eid_info.eid.raw, sizeof(ummu_eid));
+			ummu_core_del_eid(&guid, ummu_eid, EID_NONE);
+			kfree(eid_guid_entry);
+		}
+	}
+	mutex_unlock(&udma_dev->eid_guid_mutex);
+}
+
 int udma_del_one_eid_guid(struct udma_dev *udma_dev,
 			  struct udma_ctrlq_ue_eid_guid_out *eid_guid_info)
 {
@@ -235,19 +278,19 @@ int udma_del_one_eid_guid(struct udma_dev *udma_dev,
 	eid_guid_entry = (struct udma_ctrlq_ue_eid_guid_out *)
 		xa_load(&udma_dev->eid_guid_table, eid_guid_idx);
 	if (!eid_guid_entry) {
-		dev_err(udma_dev->dev, "get ue eid-guid failed, index = %u.\n",
+		dev_err(udma_dev->dev, "get UE EID-guid failed, index = %u.\n",
 			eid_guid_idx);
 		return -EINVAL;
 	}
 	if (memcmp(eid_guid_entry->eid_info.eid.raw, eid_guid_info->eid_info.eid.raw,
 		   sizeof(eid_guid_entry->eid_info.eid.raw))) {
-		dev_err(udma_dev->dev, "ue eid is not match, index = %u.\n",
+		dev_err(udma_dev->dev, "UE EID is not match, index = %u.\n",
 			eid_guid_idx);
 		return -EINVAL;
 	}
 	if (memcmp(&eid_guid_entry->ue_guid, &eid_guid_info->ue_guid,
 		   sizeof(eid_guid_entry->ue_guid))) {
-		dev_err(udma_dev->dev, "ue guid is not match, index = %u.\n",
+		dev_err(udma_dev->dev, "UE guid is not match, index = %u.\n",
 			eid_guid_idx);
 		return -EINVAL;
 	}

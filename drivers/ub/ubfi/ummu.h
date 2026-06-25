@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
- * Descriptor: Parse and create ummu from UBRT
+ * Description: Parse and create ummu from UBRT
  */
 
 #ifndef __UBFI_UMMU_H__

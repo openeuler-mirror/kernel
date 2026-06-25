@@ -261,7 +261,7 @@ static int ub_sync_cfg(struct ub_entity *uent, u8 size, u64 pos, bool iswrite,
 	int ret;
 
 	if (ub_entity_is_disconnected(uent))
-		return -ETIMEDOUT;
+		return 0; /* Just silence */
 
 	if (!pos_size_valid(pos, size)) {
 		ub_err(uent, "pos or size invalid, pos=%#llx, size=%#x\n", pos,

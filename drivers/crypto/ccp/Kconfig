@@ -15,6 +15,8 @@ config CRYPTO_DEV_SP_CCP
 	select DMA_ENGINE
 	select CRYPTO_SHA1
 	select CRYPTO_SHA256
+	select CRYPTO_SM4
+	select CRYPTO_LIB_GF128MUL
 	help
 	  Provides the support for AMD Cryptographic Coprocessor (CCP) device
 	  which can be used to offload encryption operations such as SHA, AES

@@ -21,7 +21,7 @@
 #define UBASE_JTG_CTX_SIZE	8
 
 /**
- * struct ubase_cmd_mailbox - mailbox cmmand address
+ * struct ubase_cmd_mailbox - mailbox command address
  * @buf: virtual address
  * @dma: dma address
  * @count: reference count
@@ -132,4 +132,4 @@ static inline void ubase_fill_mbx_attr(struct ubase_mbx_attr *attr, u32 tag,
 	attr->mbx_ue_id = mbx_ue_id;
 }
 
-#endif /* _UBASE_COMM_MBX_H_ */
+#endif /* _UB_UBASE_COMM_MBX_H_ */

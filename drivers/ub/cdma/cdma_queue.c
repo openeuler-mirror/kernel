@@ -16,7 +16,7 @@ struct cdma_queue *cdma_find_queue(struct cdma_dev *cdev, u32 queue_id)
 	struct cdma_queue *queue;
 
 	spin_lock(&cdev->queue_table.lock);
-	queue = idr_find(&cdev->queue_table.idr_tbl.idr, queue_id);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
 	spin_unlock(&cdev->queue_table.lock);
 
 	return queue;
@@ -71,14 +71,14 @@ static int cdma_create_queue_res(struct cdma_dev *cdev, struct queue_cfg *cfg,
 
 	queue->jfc = cdma_create_jfc(cdev, &jfc_cfg, NULL);
 	if (!queue->jfc) {
-		dev_err(cdev->dev, "create jfc failed, seid = %u, deid = %u.\n",
+		dev_err(cdev->dev, "create jfc failed, seid = %u, deid = %u\n",
 			tp_cfg.seid, tp_cfg.deid);
 		return -EFAULT;
 	}
 
 	queue->tp = cdma_create_ctp(cdev, &tp_cfg);
 	if (!queue->tp) {
-		dev_err(cdev->dev, "create tp failed, seid = %u, deid = %u.\n",
+		dev_err(cdev->dev, "create tp failed, seid = %u, deid = %u\n",
 			tp_cfg.seid, tp_cfg.deid);
 		ret = -EFAULT;
 		goto delete_jfc;
@@ -88,7 +88,7 @@ static int cdma_create_queue_res(struct cdma_dev *cdev, struct queue_cfg *cfg,
 	jfs_cfg.jfc_id = queue->jfc->id;
 	queue->jfs = cdma_create_jfs(cdev, &jfs_cfg, NULL);
 	if (!queue->jfs) {
-		dev_err(cdev->dev, "create jfs failed, seid = %u, deid = %u.\n",
+		dev_err(cdev->dev, "create jfs failed, seid = %u, deid = %u\n",
 			tp_cfg.seid, tp_cfg.deid);
 		ret = -EFAULT;
 		goto delete_tp;
@@ -97,7 +97,7 @@ static int cdma_create_queue_res(struct cdma_dev *cdev, struct queue_cfg *cfg,
 	queue->jfs_id = queue->jfs->id;
 	queue->jfc_id = queue->jfc->id;
 
-	dev_dbg(cdev->dev, "set queue %u jfs id: %u, jfc id: %u.\n",
+	dev_dbg(cdev->dev, "set queue %u jfs id: %u, jfc id: %u\n",
 		queue->id, queue->jfs_id, queue->jfc_id);
 
 	return 0;
@@ -128,10 +128,10 @@ static int cdma_alloc_queue_id(struct cdma_dev *cdev, struct cdma_queue *queue)
 
 	idr_preload(GFP_KERNEL);
 	spin_lock(&queue_tbl->lock);
-	id = idr_alloc(&queue_tbl->idr_tbl.idr, queue, queue_tbl->idr_tbl.min,
-		       queue_tbl->idr_tbl.max, GFP_NOWAIT);
+	id = idr_alloc(&queue_tbl->idr_pool.idr, queue, queue_tbl->idr_pool.min,
+		       queue_tbl->idr_pool.max, GFP_NOWAIT);
 	if (id < 0)
-		dev_err(cdev->dev, "alloc queue id failed.\n");
+		dev_err(cdev->dev, "alloc queue id failed\n");
 	spin_unlock(&queue_tbl->lock);
 	idr_preload_end();
 
@@ -143,7 +143,7 @@ static void cdma_delete_queue_id(struct cdma_dev *cdev, int queue_id)
 	struct cdma_table *queue_tbl = &cdev->queue_table;
 
 	spin_lock(&queue_tbl->lock);
-	idr_remove(&queue_tbl->idr_tbl.idr, queue_id);
+	idr_remove(&queue_tbl->idr_pool.idr, queue_id);
 	spin_unlock(&queue_tbl->lock);
 }
 
@@ -174,7 +174,7 @@ struct cdma_queue *cdma_create_queue(struct cdma_dev *cdev,
 		ret = cdma_create_queue_res(cdev, cfg, queue, eid_index);
 		if (ret) {
 			dev_err(cdev->dev,
-				"create queue res failed, ret = %d.\n", ret);
+				"create queue res failed, ret = %d\n", ret);
 			cdma_delete_queue_id(cdev, id);
 			kfree(queue);
 			return NULL;
@@ -194,20 +194,22 @@ int cdma_delete_queue(struct cdma_dev *cdev, u32 queue_id)
 
 	if (queue_id >= cdev->caps.queue.start_idx + cdev->caps.queue.max_cnt) {
 		dev_err(cdev->dev,
-			"queue id invalid, queue_id = %u, start_idx = %u, max_cnt = %u.\n",
+			"queue id invalid, queue_id = %u, start_idx = %u, max_cnt = %u\n",
 			queue_id, cdev->caps.queue.start_idx,
 			cdev->caps.queue.max_cnt);
 		return -EINVAL;
 	}
 
-	queue = cdma_find_queue(cdev, queue_id);
+	spin_lock(&cdev->queue_table.lock);
+	queue = idr_find(&cdev->queue_table.idr_pool.idr, queue_id);
+	if (queue)
+		idr_remove(&cdev->queue_table.idr_pool.idr, queue_id);
+	spin_unlock(&cdev->queue_table.lock);
 	if (!queue) {
-		dev_err(cdev->dev, "get queue from table failed, id = %u.\n",
+		dev_err(cdev->dev, "get queue from table failed, id = %u\n",
 			queue_id);
 		return -EINVAL;
 	}
-
-	cdma_delete_queue_id(cdev, queue_id);
 
 	if (queue->is_kernel)
 		cdma_delete_queue_res(cdev, queue);
@@ -220,7 +222,7 @@ void cdma_set_queue_res(struct cdma_dev *cdev, struct cdma_queue *queue,
 			enum cdma_queue_res_type type, void *res)
 {
 	dev_dbg(cdev->dev,
-			"set queue %u resource type = %u, null flag = %u.\n",
+			"set queue %u resource type = %u, null flag = %u\n",
 			queue->id, type, res == NULL);
 
 	spin_lock(&cdev->queue_table.lock);

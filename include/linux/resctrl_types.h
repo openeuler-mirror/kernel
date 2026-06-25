@@ -7,6 +7,12 @@
 #ifndef __LINUX_RESCTRL_TYPES_H
 #define __LINUX_RESCTRL_TYPES_H
 
+#ifdef CONFIG_X86_CPU_RESCTRL
+
+#include <linux/resctrl_types_x86.h>
+
+#else
+
 #define CQM_LIMBOCHECK_INTERVAL	1000
 
 #define MBM_CNTR_WIDTH_BASE		24
@@ -115,5 +121,7 @@ enum resctrl_event_id {
 	QOS_L2_OCCUP_EVENT_ID,
 	QOS_L2_MBM_CORE_EVENT_ID,
 };
+
+#endif /* CONFIG_X86_CPU_RESCTRL */
 
 #endif /* __LINUX_RESCTRL_TYPES_H */

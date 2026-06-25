@@ -41,16 +41,25 @@
 
 void ummu_device_uninit_permqs(struct ummu_device *ummu)
 {
+	size_t ctxtbl_size;
+
 	if (!(ummu->cap.features & UMMU_FEAT_MAPT))
 		return;
 
 	xa_destroy(&ummu->permq_ctx_cfg.permq_xa);
 	mutex_destroy(&ummu->permq_ctx_cfg.permq_rel_mutex);
+	if (!ummu->permq_ctx_cfg.tbl_va)
+		return;
+
+	ctxtbl_size = (u32)PERMQ_CTXTBL_BYTES * ummu->cap.permq_num;
+	free_pages((unsigned long)ummu->permq_ctx_cfg.tbl_va, get_order(ctxtbl_size));
+	ummu->permq_ctx_cfg.tbl_va = NULL;
 }
 
 int ummu_device_init_permqs(struct ummu_device *ummu)
 {
 	u32 qnum = ummu->cap.permq_num;
+	struct page *pages;
 	size_t ctxtbl_size;
 
 	/* init qid container */
@@ -58,12 +67,15 @@ int ummu_device_init_permqs(struct ummu_device *ummu)
 
 	/* alloc permqs->ctxtbl, it should be physical coherent */
 	ctxtbl_size = (u32)PERMQ_CTXTBL_BYTES * qnum;
-	ummu->permq_ctx_cfg.tbl_va = (void *)devm_get_free_pages(
-		ummu->dev, GFP_KERNEL | __GFP_ZERO, get_order(ctxtbl_size));
-	if (!ummu->permq_ctx_cfg.tbl_va) {
+
+	pages = alloc_pages_node(dev_to_node(ummu->dev),
+				 UMMU_GFP(GFP_KERNEL) | __GFP_ZERO | __GFP_COMP,
+				 get_order(ctxtbl_size));
+	if (!pages) {
 		xa_destroy(&ummu->permq_ctx_cfg.permq_xa);
 		return -ENOMEM;
 	}
+	ummu->permq_ctx_cfg.tbl_va = page_address(pages);
 	ummu->permq_ctx_cfg.tbl_pa = virt_to_phys(ummu->permq_ctx_cfg.tbl_va);
 
 	ummu->permq_ctx_cfg.tbl_reg_addr = PERMQ_CTXT_ADDR_MASK &
@@ -259,6 +271,7 @@ int ummu_domain_config_permq(struct ummu_domain *domain)
 	struct ummu_device *ummu = core_to_ummu_device(
 					domain->base_domain.core_dev);
 	struct xa_limit limit = { .min = 0, .max = ummu->cap.permq_num - 1 };
+	struct page *pcmdq_pages, *pcplq_pages;
 	struct ummu_permq_desc *permq;
 	size_t pcmdq_size, pcplq_size;
 	u32 qid;
@@ -274,21 +287,25 @@ int ummu_domain_config_permq(struct ummu_domain *domain)
 		return -ENOMEM;
 
 	pcmdq_size = PCMDQ_ENT_BYTES * ummu->cap.permq_ent_num.cmdq_num;
-	permq->pcmdq.va = (void *)__get_free_pages(GFP_KERNEL | __GFP_COMP |
-					__GFP_ZERO, get_order(pcmdq_size));
-	if (!permq->pcmdq.va) {
+	pcmdq_pages = alloc_pages_node(dev_to_node(ummu->dev),
+				UMMU_GFP(GFP_KERNEL) | __GFP_ZERO | __GFP_COMP,
+				get_order(pcmdq_size));
+	if (!pcmdq_pages) {
 		ret = -ENOMEM;
 		goto e_free_permq;
 	}
+	permq->pcmdq.va = page_address(pcmdq_pages);
 	permq->pcmdq.pa = virt_to_phys(permq->pcmdq.va);
 
 	pcplq_size = PCPLQ_ENT_BYTES * ummu->cap.permq_ent_num.cplq_num;
-	permq->pcplq.va = (void *)__get_free_pages(GFP_KERNEL | __GFP_COMP |
-					__GFP_ZERO, get_order(pcplq_size));
-	if (!permq->pcplq.va) {
+	pcplq_pages = alloc_pages_node(dev_to_node(ummu->dev),
+				UMMU_GFP(GFP_KERNEL) | __GFP_ZERO | __GFP_COMP,
+				get_order(pcplq_size));
+	if (!pcplq_pages) {
 		ret = -ENOMEM;
 		goto e_free_pcmdq;
 	}
+	permq->pcplq.va = page_address(pcplq_pages);
 	permq->pcplq.pa = virt_to_phys(permq->pcplq.va);
 
 	ret = xa_alloc(&ummu->permq_ctx_cfg.permq_xa, &qid, permq, limit,

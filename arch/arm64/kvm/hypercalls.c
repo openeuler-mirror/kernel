@@ -128,6 +128,18 @@ static bool kvm_smccc_test_fw_bmap(struct kvm_vcpu *vcpu, u32 func_id)
 		return test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_IPIV,
 				&smccc_feat->vendor_hyp_bmap);
 #endif
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	case ARM_SMCCC_VENDOR_PVTIMER_STATUS_FEATURES:
+	case ARM_SMCCC_VENDOR_PVTIMER_STATUS_ENABLE:
+		return test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_PVTIMER_STATUS,
+				&smccc_feat->vendor_hyp_bmap);
+#endif
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	case ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_FEATURES:
+	case ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_ENABLE:
+		return test_bit(KVM_REG_ARM_VENDOR_HYP_BIT_TIMER_EARLY_INJECT,
+				&smccc_feat->vendor_hyp_bmap);
+#endif
 	default:
 		return false;
 	}
@@ -388,6 +400,32 @@ int kvm_smccc_call_handler(struct kvm_vcpu *vcpu)
 			val[0] = SMCCC_RET_SUCCESS;
 		} else {
 			val[0] = SMCCC_RET_NOT_SUPPORTED;
+		}
+		break;
+#endif
+#ifdef CONFIG_VIRT_VTIMER_PV_STATUS
+	case ARM_SMCCC_VENDOR_PVTIMER_STATUS_FEATURES:
+		if (vtimer_is_irqbypass())
+			val[0] = SMCCC_RET_SUCCESS;
+		break;
+	case ARM_SMCCC_VENDOR_PVTIMER_STATUS_ENABLE:
+		if (vtimer_is_irqbypass()) {
+			gpa = kvm_init_pvtimer_status(vcpu);
+			if (gpa != INVALID_GPA)
+				val[0] = gpa;
+		}
+		break;
+#endif
+#ifdef CONFIG_VIRT_TIMER_EARLY_INJECT
+	case ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_FEATURES:
+		if (kvm_arm_timer_early_inject_supported())
+			val[0] = SMCCC_RET_SUCCESS;
+		break;
+	case ARM_SMCCC_VENDOR_TIMER_EARLY_INJECT_ENABLE:
+		if (kvm_arm_timer_early_inject_supported()) {
+			gpa = kvm_init_timer_early_inject(vcpu->kvm);
+			if (gpa != INVALID_GPA)
+				val[0] = gpa;
 		}
 		break;
 #endif

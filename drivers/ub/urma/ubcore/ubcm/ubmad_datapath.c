@@ -155,7 +155,8 @@ static bool ubmad_check_recv_msn_duplicate(struct ubmad_msn_mgr *msn_mgr,
 
 	if (atomic_read(&msn_mgr->cnt) > UBMAD_RECV_MSN_MAX) {
 		spin_lock_irqsave(&msn_mgr->msn_hlist_lock, flag);
-		cur = list_first_entry(&msn_mgr->msn_lru_list, struct ubmad_msn_node, lru_node);
+		cur = list_first_entry_or_null(
+			&msn_mgr->msn_lru_list, struct ubmad_msn_node, lru_node);
 		if (!IS_ERR_OR_NULL(cur)) {
 			hlist_del(&cur->node);
 			list_del(&cur->lru_node);
@@ -492,6 +493,7 @@ static void ubmad_rt_work_handler(struct work_struct *work)
 	uint32_t hash = ubmad_reliable_hash(rt_work->msn, rt_work->msg_type,
 			UBMAD_MSN_HLIST_SIZE);
 	bool found = false;
+	struct ubmad_tjetty *tjetty;
 
 	spin_lock_irqsave(&msn_mgr->msn_hlist_lock, flag);
 	hlist_for_each_entry_safe(cur, next, &msn_mgr->msn_hlist[hash], node) {
@@ -535,11 +537,12 @@ clear_rt_work:
 	spin_unlock_irqrestore(&msn_mgr->msn_hlist_lock, flag);
 
 stop_retransmit:
+	tjetty = ubmad_get_tjetty(dst, rsrc);
 
-	struct ubmad_tjetty *tjetty = ubmad_get_tjetty(dst, rsrc);
-
-	if (!IS_ERR_OR_NULL(tjetty))
+	if (!IS_ERR_OR_NULL(tjetty)) {
 		ubmad_release_ini_rtbuffer(tjetty, rt_work->msn, rt_work->msg_type);
+		return;
+	}
 
 	ubcore_log_info_rl("Do not repost, found: %u, rt_work->rt_cnt: %u.\n",
 		      (uint32_t)found, rt_work->rt_cnt);
@@ -1127,15 +1130,11 @@ int ubmad_post_send(struct ubcore_device *device,
 
 	/* import well-known jetty */
 	// unimport in ubmad_uninit_jetty_rsrc()
-	ubcore_log_err("lookup primary eid for dst eid " EID_FMT "\n",
-		     EID_ARGS(send_buf->dst_eid));
 	ret = ubcore_lookup_main_ue_eid(&send_buf->dst_eid, &dst_primary_eid);
 	if (ret != 0) {
 		ubcore_log_err("get primary eid failed, ret = %d\n", ret);
 		goto put_device_priv;
 	}
-	ubcore_log_err("dst_primary_eid " EID_FMT "\n",
-		     EID_ARGS(dst_primary_eid));
 	hash = jhash(&dst_primary_eid, sizeof(union ubcore_eid), 0) %
 		UBMAD_MAX_TJETTY_NUM;
 	spin_lock_irqsave(&rsrc->tjetty_hlist_lock, flag);
@@ -1144,6 +1143,8 @@ int ubmad_post_send(struct ubcore_device *device,
 	if (!IS_ERR_OR_NULL(tjetty)) {
 		ubcore_log_info_rl("tjetty0 already imported. eid " EID_FMT "\n",
 			EID_ARGS(dst_primary_eid));
+
+		ubcore_log_info_rl("tjetty0 imported, vtpn: %u\n", tjetty->tjetty->vtpn->vtpn);
 		/* post send */
 		ret = ubmad_do_post_send(
 			rsrc, tjetty, send_buf,
@@ -1773,7 +1774,6 @@ static void ubmad_send_work_handler(struct ubmad_device_priv *dev_priv,
 	} while (cr_cnt > 0);
 
 	ret = ubcore_rearm_jfc(jfc, false);
-	ubcore_log_info_rl("Rearm send jfc, jfc_id: %u, ret: %d.\n", jfc->id, ret);
 }
 
 // polling here indicates if recv msg
@@ -1793,7 +1793,7 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 	if (IS_ERR_OR_NULL(rsrc)) {
 		ubcore_log_err("Failed to match jfc for recv.\n");
 		return;
-	}
+	};
 
 	do {
 		cr_cnt = ubcore_poll_jfc(jfc, 1, &cr);
@@ -1836,10 +1836,8 @@ static void ubmad_recv_work_handler(struct ubmad_device_priv *dev_priv,
 	} while (cr_cnt > 0);
 
 	ret = ubcore_rearm_jfc(jfc, false);
-	ubcore_log_info_rl("Rearm recv jfc, jfc_id: %u, ret: %d.\n", jfc->id, ret);
 }
 
-// continue from ubmad_jfce_handler()
 static void ubmad_jfce_work_handler(struct work_struct *work)
 {
 	struct ubmad_jfce_work *jfce_work =

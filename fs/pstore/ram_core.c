@@ -458,6 +458,13 @@ static void *persistent_ram_vmap(phys_addr_t start, size_t size,
 	kfree(pages);
 
 	/*
+	 * vmap() may fail and return NULL. Do not add the offset in this
+	 * case, otherwise a NULL mapping would appear successful.
+	 */
+	if (!vaddr)
+		return NULL;
+
+	/*
 	 * Since vmap() uses page granularity, we must add the offset
 	 * into the page here, to get the byte granularity address
 	 * into the mapping to represent the actual "start" location.
@@ -481,6 +488,10 @@ static void *persistent_ram_iomap(phys_addr_t start, size_t size,
 		va = ioremap(start, size);
 	else
 		va = ioremap_wc(start, size);
+
+	/* We must release the mem region if ioremap fails. */
+	if (!va)
+		release_mem_region(start, size);
 
 	/*
 	 * Since request_mem_region() and ioremap() are byte-granularity

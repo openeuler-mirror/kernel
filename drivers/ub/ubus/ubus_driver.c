@@ -20,6 +20,7 @@
 #include "ioctl.h"
 #include "sysfs.h"
 #include "ubus.h"
+#include "task.h"
 #include "ubus_config.h"
 #include "ubus_controller.h"
 #include "ubus_inner.h"
@@ -31,13 +32,14 @@ bool entity_flex_en;
 module_param(entity_flex_en, bool, 0444);
 MODULE_PARM_DESC(entity_flex_en, "Entity Flexible enable: default: 0");
 
-bool msg_retry;
+bool msg_retry = 1;
 EXPORT_SYMBOL_GPL(msg_retry);
 module_param(msg_retry, bool, 0444);
 MODULE_PARM_DESC(msg_retry, "support msg retry: 0(disable)");
 
 DECLARE_RWSEM(ub_bus_sem);
 
+#define UBUS_MOD_VERSION "2.0.0"
 #define UBC_GUID_VENDOR_SHIFT 48
 #define UBC_GUID_VENDOR_MASK GENMASK(15, 0)
 
@@ -235,6 +237,31 @@ struct ub_entity *ub_get_ent_by_uent_num(unsigned int uent_num)
 }
 EXPORT_SYMBOL_GPL(ub_get_ent_by_uent_num);
 
+/* Should call ub_entity_put after unused */
+struct ub_entity *ub_find_entity(struct ub_entity *parent, bool mue, int idx)
+{
+	struct list_head *head;
+	struct ub_entity *uent;
+	bool find = false;
+
+	if (!parent)
+		return NULL;
+
+	head = mue ? &parent->mue_list : &parent->ue_list;
+
+	down_read(&ub_bus_sem);
+	list_for_each_entry(uent, head, node)
+		if (uent->entity_idx == idx) {
+			find = true;
+			ub_entity_get(uent);
+			break;
+		}
+	up_read(&ub_bus_sem);
+
+	return find ? uent : NULL;
+}
+EXPORT_SYMBOL_GPL(ub_find_entity);
+
 static const struct ub_device_id *ub_match_device(struct ub_driver *drv,
 						  struct ub_entity *dev)
 {
@@ -345,8 +372,15 @@ static int ub_entity_probe(struct device *dev)
 	}
 
 	ret = __ub_entity_probe(drv, ub_entity);
-	if (ret)
+	if (ret) {
+		if (ret == -EAGAIN)
+			ub_add_retry_task(ub_entity, TASK_TYPE_ATTACH_RETRY);
+
 		ub_entity_put(ub_entity);
+	} else {
+		ub_entity_assign_priv_flag(ub_entity, UB_ENTITY_PROBED, true);
+	}
+
 	return ret;
 }
 
@@ -359,6 +393,7 @@ static void ub_entity_remove(struct device *dev)
 		drv->remove(ub_entity);
 
 	ub_entity->driver = NULL;
+	ub_entity_assign_priv_flag(ub_entity, UB_ENTITY_PROBED, false);
 
 	ub_entity_put(ub_entity);
 }
@@ -470,7 +505,7 @@ static int ub_check_id_exist(struct ub_driver *udrv, u32 vendor, u32 device,
 static int ub_check_driver_data_valid(const struct ub_device_id *ids,
 				      unsigned long driver_data)
 {
-	/* Only accept driver_data values that match an exiting id_table entry */
+	/* Only accept driver_data values that match an existing id_table entry */
 	while (ids->vendor || ids->mod_vendor || ids->class_mask) {
 		if (driver_data == ids->driver_data)
 			return 0;
@@ -487,15 +522,15 @@ static ssize_t new_id_store(struct device_driver *driver, const char *buf,
 	u32 mod_vendor = UB_ANY_ID, module = UB_ANY_ID;
 	struct ub_driver *udrv = to_ub_driver(driver);
 	unsigned long driver_data = 0;
-	int fileds, ret;
+	int fields, ret;
 
-	fileds = sscanf(buf, "%x %x %x %x %x %x %lx", &vendor, &device,
+	fields = sscanf(buf, "%x %x %x %x %x %x %lx", &vendor, &device,
 			&mod_vendor, &module,
 			&class_code, &class_mask, &driver_data);
-	if (fileds < 2) /* 2 parameter for vender & device id */
+	if (fields < 2) /* 2 parameter for vender & device id */
 		return -EINVAL;
 
-	if (fileds != 7) { /* 7 for driver_data input */
+	if (fields != 7) { /* 7 for driver_data input */
 		ret = ub_check_id_exist(udrv, vendor, device, mod_vendor,
 					module, class_code);
 		if (ret)
@@ -765,7 +800,8 @@ EXPORT_SYMBOL_GPL(unregister_ub_manage_subsystem_ops);
 
 static int __init ubus_driver_init(void)
 {
-	pr_info("Ubus driver init successfully.\n");
+	pr_info("Ubus driver init successfully, version: %s\n",
+		UBUS_MOD_VERSION);
 	return 0;
 }
 
@@ -779,3 +815,4 @@ MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("UB bus driver");
 MODULE_IMPORT_NS(UB_UBFI);
 MODULE_IMPORT_NS(UB_UBUS);
+MODULE_VERSION(UBUS_MOD_VERSION);

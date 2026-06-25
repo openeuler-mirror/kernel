@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #ifndef _RNPGBE_SRIOV_H_
 #define _RNPGBE_SRIOV_H_
@@ -28,10 +28,11 @@ int rnpgbe_disable_sriov(struct rnpgbe_adapter *adapter);
 #if IS_ENABLED(CONFIG_PCI_IOV)
 void rnpgbe_enable_sriov_true(struct rnpgbe_adapter *adapter);
 void rnpgbe_enable_sriov(struct rnpgbe_adapter *adapter);
-#endif
+#endif /* CONFIG_PCI_IOV */
 int rnpgbe_pci_sriov_configure(struct pci_dev *dev, int num_vfs);
 int rnpgbe_ndo_set_vf_vlan(struct net_device *netdev, int vf, u16 vlan, u8 qos,
 			   __be16 vlan_proto);
 int rnpgbe_ndo_set_vf_link_state(struct net_device *netdev, int vf, int state);
 int rnpgbe_ndo_set_vf_trust(struct net_device *netdev, int vf, bool setting);
+
 #endif /* _RNPGBE_SRIOV_H_ */

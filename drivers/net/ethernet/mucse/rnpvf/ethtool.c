@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include <linux/types.h>
 #include <linux/module.h>
@@ -57,6 +57,7 @@ static const struct rnpvf_stats rnp_gstrings_net_stats[] = {
 };
 
 #define RNPVF_GLOBAL_STATS_LEN ARRAY_SIZE(rnp_gstrings_net_stats)
+
 #define RNPVF_HW_STAT(_name, _stat)                                       \
 	{                                                                 \
 		.stat_string = _name,                                     \
@@ -69,6 +70,7 @@ static struct rnpvf_stats rnpvf_hwstrings_stats[] = {
 	RNPVF_HW_STAT("vlan_strip_cnt", hw_stats.vlan_strip_cnt),
 	RNPVF_HW_STAT("rx_csum_offload_errors", hw_stats.csum_err),
 	RNPVF_HW_STAT("rx_csum_offload_good", hw_stats.csum_good),
+	RNPVF_HW_STAT("tx_spoof_dropped", hw_stats.spoof_dropped),
 };
 
 #define RNPVF_HWSTRINGS_STATS_LEN ARRAY_SIZE(rnpvf_hwstrings_stats)
@@ -128,6 +130,7 @@ static int rnpvf_get_link_ksettings(struct net_device *netdev,
 
 	ethtool_convert_link_mode_to_legacy_u32(&supported,
 						cmd->link_modes.supported);
+
 	hw->mac.ops.check_link(hw, &link_speed, &link_up, false);
 
 	switch (link_speed) {
@@ -170,6 +173,7 @@ static int rnpvf_get_link_ksettings(struct net_device *netdev,
 		cmd->base.autoneg = AUTONEG_DISABLE;
 	}
 
+	/* set pause support */
 	supported |= SUPPORTED_Pause;
 
 	switch (hw->fc.current_mode) {
@@ -257,8 +261,11 @@ static void rnpvf_get_ringparam(struct net_device *netdev,
 static void rnpvf_get_strings(struct net_device *netdev, u32 stringset,
 			      u8 *data)
 {
+	struct rnpvf_adapter *adapter = netdev_priv(netdev);
 	char *p = (char *)data;
 	int i;
+	struct rnpvf_ring *ring;
+	u16 queue_idx;
 
 	switch (stringset) {
 	case ETH_SS_STATS:
@@ -278,6 +285,8 @@ static void rnpvf_get_strings(struct net_device *netdev, u32 stringset,
 
 		for (i = 0; i < RNPVF_NUM_TX_QUEUES; i++) {
 			/* ====  tx ======== */
+			ring = adapter->tx_ring[i];
+			queue_idx = ring->rnpvf_queue_idx;
 			sprintf(p, "\n     queue%u_tx_packets", i);
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_tx_bytes", i);
@@ -312,6 +321,8 @@ static void rnpvf_get_strings(struct net_device *netdev, u32 stringset,
 			p += ETH_GSTRING_LEN;
 
 			/* ====  rx ======== */
+			ring = adapter->rx_ring[i];
+			queue_idx = ring->rnpvf_queue_idx;
 			sprintf(p, "\n     queue%u_rx_packets", i);
 			p += ETH_GSTRING_LEN;
 			sprintf(p, "queue%u_rx_bytes", i);
@@ -633,6 +644,7 @@ static void rnpvf_get_ethtool_stats(struct net_device *netdev,
 		ring = adapter->rx_ring[j];
 
 		if (!ring) {
+			/* ===== rx-ring == */
 			data[i++] = 0;
 			data[i++] = 0;
 
@@ -751,6 +763,7 @@ static const struct ethtool_ops rnpvf_ethtool_ops = {
 	.get_coalesce = rnpvf_get_coalesce,
 	.set_coalesce = rnpvf_set_coalesce,
 	.supported_coalesce_params = ETHTOOL_COALESCE_USECS,
+
 	.get_channels = rnpvf_get_channels,
 };
 

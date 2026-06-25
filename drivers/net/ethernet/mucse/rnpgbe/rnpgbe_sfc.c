@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
-/* Copyright(c) 2022 - 2024 Mucse Corporation. */
+/* Copyright(c) 2022 - 2026 Mucse Corporation. */
 
 #include "rnpgbe_sfc.h"
 #include "rnpgbe.h"
@@ -78,8 +78,8 @@ int rsp_hal_sfc_write_protect(struct rnpgbe_hw *hw, u32 value)
 int rsp_hal_sfc_flash_erase(struct rnpgbe_hw *hw, u32 size)
 {
 	u32 addr = SFC_MEM_BASE;
-	u32 i = 0;
 	u32 page_size = 0x1000;
+	u32 i = 0;
 
 	size = ((size + (page_size - 1)) / page_size) * page_size;
 
@@ -96,6 +96,7 @@ int rsp_hal_sfc_flash_erase(struct rnpgbe_hw *hw, u32 size)
 
 	if (size % page_size)
 		return HAL_EINVAL;
+	// disable protect
 
 	for (i = 0; i < size; i += page_size) {
 		if (i >= 0x1f000 && i < 0x20000)
@@ -107,3 +108,4 @@ int rsp_hal_sfc_flash_erase(struct rnpgbe_hw *hw, u32 size)
 
 	return HAL_OK;
 }
+

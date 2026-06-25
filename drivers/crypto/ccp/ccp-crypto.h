@@ -345,7 +345,7 @@ struct ccp_sm3_exp_ctx {
 /***** SM4 related defines *****/
 struct ccp_sm4_ctx {
 	struct scatterlist key_sg;
-	u8 key[SM4_KEY_SIZE];
+	u8 key[SM4_KEY_SIZE * 2];
 	u32 key_len;
 	u32 mode;
 };
@@ -353,6 +353,9 @@ struct ccp_sm4_ctx {
 struct ccp_sm4_req_ctx {
 	struct scatterlist iv_sg;
 	u8 iv[SM4_BLOCK_SIZE];
+
+	struct scatterlist tag_sg;
+	u8 tag[SM4_BLOCK_SIZE];
 
 	struct ccp_cmd cmd;
 };
@@ -387,5 +390,6 @@ int ccp_register_rsa_algs(struct list_head *head);
 int ccp_register_sm2_hygon_algs(struct list_head *head);
 int ccp_register_sm3_hygon_algs(struct list_head *head);
 int ccp_register_sm4_hygon_algs(struct list_head *head);
+int ccp_register_sm4_hygon_aeads(struct list_head *head);
 
 #endif

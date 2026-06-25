@@ -136,9 +136,23 @@ static int unic_setets_preconditions(struct net_device *net_dev)
 	return 0;
 }
 
+static bool unic_dscp_tc_exists(struct auxiliary_device *adev)
+{
+	struct ubase_adev_qos *qos = ubase_get_adev_qos(adev);
+	u8 i;
+
+	for (i = 0; i < UBASE_MAX_DSCP; i++) {
+		if (qos->dscp_vl[i])
+			return true;
+	}
+
+	return false;
+}
+
 static int unic_handle_prio_vl_change(struct unic_dev *unic_dev,
 				      struct ieee_ets *ets, u8 changed)
 {
+	struct auxiliary_device *adev = unic_dev->comdev.adev;
 	struct unic_vl *vl = &unic_dev->channels.vl;
 	u8 map_type;
 	int ret;
@@ -146,9 +160,19 @@ static int unic_handle_prio_vl_change(struct unic_dev *unic_dev,
 	if (!(changed & UNIC_PRIO_VL_MAP_CHANGED))
 		return 0;
 
-	map_type = vl->dscp_app_cnt ? UNIC_DSCP_VL_MAP : UNIC_PRIO_VL_MAP;
-	ret = unic_set_vl_map(unic_dev, vl->dscp_prio, ets->prio_tc,
-			      map_type);
+	/* If the DSCP and VL configurations under UBASE is exists,
+	 * it indicates that other tools have already configured this area,
+	 * and reconfiguration is not allowed.
+	 */
+	if (unic_dscp_tc_exists(adev)) {
+		ret = unic_set_prio_tc(unic_dev, ets->prio_tc);
+	} else {
+		map_type = vl->dscp_app_cnt ? UNIC_DSCP_VL_MAP :
+					      UNIC_PRIO_VL_MAP;
+		ret = unic_set_vl_map(unic_dev, vl->dscp_prio, ets->prio_tc,
+				      map_type);
+	}
+
 	if (ret)
 		return ret;
 
@@ -223,8 +247,12 @@ static int unic_setets_config(struct net_device *ndev, struct ieee_ets *ets,
 		return ret;
 
 	ret = unic_handle_vl_tsa_bw_change(unic_dev, ets, changed);
-	if (ret)
-		return ret;
+	if (ret) {
+		if (ret != -EPERM)
+			return ret;
+		unic_warn(unic_dev,
+			  "ets tsa and bw configuration is not permitted.\n");
+	}
 
 	unic_dev->channels.vl.vl_num = vl_num;
 	if (unic_rss_vl_num_changed(unic_dev, vl_num))
@@ -559,6 +587,8 @@ static int unic_ieee_setmaxrate(struct net_device *ndev,
 	struct unic_dev *unic_dev = netdev_priv(ndev);
 	struct unic_vl *vl = &unic_dev->channels.vl;
 	u64 tc_maxrate[IEEE_8021QAZ_MAX_TCS];
+	struct auxiliary_device *adev;
+	struct ubase_caps *caps;
 	int ret;
 
 	if (!unic_dev_ets_supported(unic_dev) ||
@@ -577,7 +607,9 @@ static int unic_ieee_setmaxrate(struct net_device *ndev,
 	if (ret)
 		return ret;
 
-	memcpy(vl->vl_maxrate, tc_maxrate, sizeof(tc_maxrate));
+	adev = unic_dev->comdev.adev;
+	caps = ubase_get_dev_caps(adev);
+	memcpy(vl->vl_maxrate, tc_maxrate, caps->vl_num * sizeof(u64));
 
 	return 0;
 }

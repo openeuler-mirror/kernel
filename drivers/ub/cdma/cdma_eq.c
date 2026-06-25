@@ -21,9 +21,9 @@ static int cdma_ae_jfs_check_error(struct auxiliary_device *adev,
 	struct cdma_jfs *jfs;
 
 	spin_lock(&cdev->jfs_table.lock);
-	jfs = idr_find(&cdev->jfs_table.idr_tbl.idr, jetty_id);
+	jfs = idr_find(&cdev->jfs_table.idr_pool.idr, jetty_id);
 	if (!jfs) {
-		dev_err(cdev->dev, "ae get jfs from table failed, id = %u.\n",
+		dev_err(cdev->dev, "ae get jfs from table failed, id = %u\n",
 			jetty_id);
 		spin_unlock(&cdev->jfs_table.lock);
 		return -EINVAL;
@@ -31,16 +31,16 @@ static int cdma_ae_jfs_check_error(struct auxiliary_device *adev,
 
 	base_jfs = &jfs->base_jfs;
 
-	if (base_jfs->jfae_handler && base_jfs->ctx) {
+	if (base_jfs->jfae_handler && base_jfs->jfae) {
 		refcount_inc(&jfs->ae_ref_cnt);
 		spin_unlock(&cdev->jfs_table.lock);
 		ae.dev = base_jfs->dev;
 		ae.element.jfs = base_jfs;
 		ae.event_type = CDMA_EVENT_JFS_ERR;
-		base_jfs->jfae_handler(&ae, base_jfs->ctx);
+		base_jfs->jfae_handler(&ae, base_jfs->jfae);
 		if (refcount_dec_and_test(&jfs->ae_ref_cnt)) {
 			complete(&jfs->ae_comp);
-			dev_dbg(cdev->dev, "jfs ae handler done.\n");
+			dev_dbg(cdev->dev, "jfs ae handler done\n");
 		}
 	} else {
 		spin_unlock(&cdev->jfs_table.lock);
@@ -59,25 +59,25 @@ static int cdma_ae_jfc_check_error(struct auxiliary_device *adev,
 	unsigned long flags;
 
 	spin_lock_irqsave(&cdev->jfc_table.lock, flags);
-	jfc = idr_find(&cdev->jfc_table.idr_tbl.idr, jetty_id);
+	jfc = idr_find(&cdev->jfc_table.idr_pool.idr, jetty_id);
 	if (!jfc) {
-		dev_err(cdev->dev, "get jfc from table failed, id = %u.\n",
+		dev_err(cdev->dev, "get jfc from table failed, id = %u\n",
 			jetty_id);
 		spin_unlock_irqrestore(&cdev->jfc_table.lock, flags);
 		return -EINVAL;
 	}
 	base_jfc = &jfc->base;
 
-	if (base_jfc->jfae_handler && base_jfc->ctx) {
+	if (base_jfc->jfae_handler && base_jfc->jfae) {
 		refcount_inc(&jfc->event_refcount);
 		spin_unlock_irqrestore(&cdev->jfc_table.lock, flags);
 		ae.dev = base_jfc->dev;
 		ae.element.jfc = base_jfc;
 		ae.event_type = CDMA_EVENT_JFC_ERR;
-		base_jfc->jfae_handler(&ae, base_jfc->ctx);
+		base_jfc->jfae_handler(&ae, base_jfc->jfae);
 		if (refcount_dec_and_test(&jfc->event_refcount)) {
 			complete(&jfc->event_comp);
-			dev_dbg(cdev->dev, "jfc ae handler done.\n");
+			dev_dbg(cdev->dev, "jfc ae handler done\n");
 		}
 	} else {
 		spin_unlock_irqrestore(&cdev->jfc_table.lock, flags);
@@ -102,7 +102,7 @@ static int cdma_ae_jetty_level_error(struct notifier_block *nb,
 	case UBASE_SUBEVENT_TYPE_JFC_CHECK_ERROR:
 		return cdma_ae_jfc_check_error(adev, jetty_id);
 	default:
-		dev_warn(&adev->dev, "cdma get unsupported async event type %u.\n",
+		dev_warn(&adev->dev, "cdma get unsupported async event type %u\n",
 				info->sub_type);
 		return -EINVAL;
 	}
@@ -131,7 +131,7 @@ static int cdma_event_register(struct auxiliary_device *adev,
 	ret = ubase_event_register(adev, event_cb);
 	if (ret) {
 		dev_err(cdma_dev->dev,
-			"register async event failed, event type = %u, ret = %d.\n",
+			"register async event failed, event type = %u, ret = %d\n",
 			event_cb->event_type, ret);
 		kfree(event_cb);
 		return ret;
@@ -167,7 +167,7 @@ int cdma_reg_ae_event(struct auxiliary_device *adev)
 		}
 	}
 
-	dev_info(cdma_dev->dev, "cdma register ae event, ret = %d.\n", ret);
+	dev_info(cdma_dev->dev, "cdma register ae event, ret = %d\n", ret);
 
 	return ret;
 }
@@ -208,7 +208,7 @@ int cdma_reg_ce_event(struct auxiliary_device *adev)
 
 	ret = ubase_comp_register(adev, cdma_jfc_completion);
 	if (ret)
-		dev_err(cdma_dev->dev, "register ce event failed, ret = %d.\n",
+		dev_err(cdma_dev->dev, "register ce event failed, ret = %d\n",
 			ret);
 
 	return ret;

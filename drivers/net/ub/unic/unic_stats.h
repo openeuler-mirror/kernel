@@ -107,6 +107,7 @@ struct unic_dfx_regs_group {
 struct unic_stats_desc {
 	char desc[ETH_GSTRING_LEN];
 	u16 offset;
+	bool (*is_supported)(struct unic_dev *unic_dev);
 };
 
 struct unic_mac_stats_desc {
