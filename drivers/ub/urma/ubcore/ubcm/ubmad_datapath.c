@@ -197,24 +197,36 @@ static struct ubmad_ini_rtbuffer *ubmad_create_ini_rtbuffer(
 	return ini_rt_buffer;
 }
 
-static struct ubmad_ini_rtbuffer *ubmad_get_ini_rtbuffer(
-			struct ubmad_tjetty *tjetty, uint64_t msn, uint32_t msg_type)
+/*
+ * Safely copy out ini rtbuffer payload while holding ini_rt_spinlock.
+ * Unlike ubmad_get_ini_rtbuffer() (now removed), this function does not
+ * return a pointer that could be UAF'd after the lock is dropped.
+ * Return: payload length on success, 0 if not found or dst too small.
+ */
+static uint32_t ubmad_copy_ini_rtbuffer(struct ubmad_tjetty *tjetty,
+					uint64_t msn, uint32_t msg_type,
+					void *dst, uint32_t dst_len)
 {
 	struct ubmad_ini_rtbuffer *cur;
-	unsigned long flag;
 	struct hlist_node *next;
+	unsigned long flag;
+	uint32_t payload_len = 0;
 	uint32_t hash;
 
 	hash = ubmad_reliable_hash(msn, msg_type, UBMAD_INI_RTBUFFER_SIZE);
 	spin_lock_irqsave(&tjetty->ini_rt_spinlock, flag);
 	hlist_for_each_entry_safe(cur, next, &tjetty->ini_rt_hlist[hash], node) {
 		if (cur->msn == msn && cur->msg_type == msg_type) {
-			spin_unlock_irqrestore(&tjetty->ini_rt_spinlock, flag);
-			return cur;
+			payload_len = cur->payload_len;
+			if (payload_len > dst_len)
+				payload_len = 0;
+			else
+				memcpy(dst, cur->data, payload_len);
+			break;
 		}
 	}
 	spin_unlock_irqrestore(&tjetty->ini_rt_spinlock, flag);
-	return NULL;
+	return payload_len;
 }
 
 static void ubmad_release_ini_rtbuffer(
@@ -345,21 +357,21 @@ static int ubmad_repost_send_conn_data(struct ubmad_rt_work *rt_work)
 	}
 	sge_addr = rsrc->send_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
 
-	/* make message */
-	struct ubmad_ini_rtbuffer *rtbuffer = ubmad_get_ini_rtbuffer(tjetty, msn,
-								 rt_work->msg_type);
+	/* make message - copy under lock to avoid UAF race with release_ini_rtbuffer */
+	uint32_t payload_len = ubmad_copy_ini_rtbuffer(tjetty, msn,
+					rt_work->msg_type,
+					(void *)sge_addr, UBMAD_RTBUFFER_PKTSIZE);
 
-	if (IS_ERR_OR_NULL(rtbuffer)) {
+	if (payload_len == 0) {
 		ubcore_log_info_rl("Failed to get rtbuffer in repost, msn = %llu.\n", msn);
 		goto repost_put_id;
 	}
-	memcpy((void *)sge_addr, rtbuffer->data, rtbuffer->payload_len);
 
 	/* make work request */
 	jfs_wr.opcode = UBCORE_OPC_SEND;
 	jfs_wr.tjetty = tjetty->tjetty;
 	sge.addr = sge_addr;
-	sge.len = rtbuffer->payload_len;
+	sge.len = payload_len;
 	sge.tseg = rsrc->send_seg;
 	jfs_wr.send.src.sge = &sge;
 	jfs_wr.send.src.num_sge = 1;
@@ -380,6 +392,7 @@ static int ubmad_repost_send_conn_data(struct ubmad_rt_work *rt_work)
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		goto repost_put_id;
 	}
+	ubmad_put_tjetty(tjetty);
 	return 0;
 
 repost_put_id:
@@ -433,6 +446,7 @@ static int ubmad_try_repost_all_response(
 	sge_idx = ubmad_bitmap_get_id(rsrc->send_seg_bitmap);
 	if (sge_idx >= rsrc->send_seg_bitmap->size) {
 		ubcore_log_err("get sge_idx failed\n");
+		ubmad_put_tjetty(tjetty);
 		return -1;
 	}
 	sge_addr = rsrc->send_seg->seg.ubva.va + UBMAD_SGE_MAX_LEN * sge_idx;
@@ -466,10 +480,12 @@ static int ubmad_try_repost_all_response(
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		goto repost_resp_put_id;
 	}
+	ubmad_put_tjetty(tjetty);
 	return 0;
 
 repost_resp_put_id:
 	(void)ubmad_bitmap_put_id(rsrc->send_seg_bitmap, sge_idx);
+	ubmad_put_tjetty(tjetty);
 	return -1;
 }
 
@@ -503,9 +519,13 @@ static void ubmad_rt_work_handler(struct work_struct *work)
 	spin_unlock_irqrestore(&msn_mgr->msn_hlist_lock, flag);
 
 	if (!found) {
+		/*
+		 * ack path has already taken ownership of rt_work and rtbuffer;
+		 * we must NOT touch them.
+		 */
 		ubcore_log_info_rl("rt: ack already received, msn %llu, rt_cnt %u.\n",
 			      rt_work->msn, rt_work->rt_cnt);
-		goto stop_retransmit;
+		return;
 	}
 
 	rt_work->rt_cnt++;
@@ -525,27 +545,36 @@ static void ubmad_rt_work_handler(struct work_struct *work)
 		      rt_work->msn, rt_work->rt_cnt, ubcore_max_retry_cnt);
 
 clear_rt_work:
+	/*
+	 * Atomically detach rt_work from msn_node under hlist_lock.
+	 * Only when (cur->rt_work == rt_work) we own rt_work and rtbuffer.
+	 * Otherwise ack path has already taken ownership.
+	 */
+	found = false;
 	spin_lock_irqsave(&msn_mgr->msn_hlist_lock, flag);
 	hlist_for_each_entry_safe(cur, next, &msn_mgr->msn_hlist[hash], node) {
 		if (cur->msn == rt_work->msn && cur->msg_type == rt_work->msg_type) {
-			cur->rt_work = NULL;
+			if (cur->rt_work == rt_work) {
+				cur->rt_work = NULL;
+				found = true;
+			}
 			break;
 		}
 	}
 	spin_unlock_irqrestore(&msn_mgr->msn_hlist_lock, flag);
 
-stop_retransmit:
-	tjetty = ubmad_get_tjetty(dst, rsrc);
+	if (!found)
+		return;
 
+	tjetty = ubmad_get_tjetty(dst, rsrc);
 	if (!IS_ERR_OR_NULL(tjetty)) {
 		ubmad_release_ini_rtbuffer(tjetty, rt_work->msn, rt_work->msg_type);
-		return;
+		ubmad_put_tjetty(tjetty);
 	}
 
 	ubcore_log_info_rl("Do not repost, found: %u, rt_work->rt_cnt: %u.\n",
 		      (uint32_t)found, rt_work->rt_cnt);
 
-	ubmad_put_tjetty(tjetty);
 	kfree(rt_work);
 }
 
