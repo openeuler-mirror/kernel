@@ -31,7 +31,8 @@ int ubcore_check_tp_type_valid(enum ubcore_transport_mode trans_mode, uint32_t t
 {
 	if ((trans_mode != UBCORE_TP_UM && tp_mode == UBCORE_UTP) ||
 		(trans_mode == UBCORE_TP_UM && tp_mode == UBCORE_RTP)) {
-		ubcore_log_err("setting of UTP or UM is conflit with anther setting");
+		ubcore_log_err("setting of UTP or UM is conflit with anther setting, transmode is %d, tpmode is %d",
+						trans_mode, tp_mode);
 		return -1;
 	}
 	return 0;

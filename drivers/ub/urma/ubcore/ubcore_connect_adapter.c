@@ -370,6 +370,25 @@ static int send_is_ref_req(struct ubcore_tpid_reuse *tpid_reuse)
 	return 0;
 }
 
+static bool ubcore_is_loopback(struct ubcore_device *dev,
+			       union ubcore_eid *peer_eid)
+{
+	uint32_t eid_idx;
+
+	spin_lock(&dev->eid_table.lock);
+	for (eid_idx = 0; eid_idx < dev->eid_table.eid_cnt; eid_idx++) {
+		if (dev->eid_table.eid_entries[eid_idx].valid &&
+			memcmp(peer_eid, &dev->eid_table.eid_entries[eid_idx].eid,
+			sizeof(union ubcore_eid)) == 0) {
+			spin_unlock(&dev->eid_table.lock);
+			return true;
+		}
+	}
+	spin_unlock(&dev->eid_table.lock);
+
+	return false;
+}
+
 static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpid_reuse)
 {
 	int i = 0;
@@ -377,7 +396,9 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 
 	mutex_lock(&tpid_reuse->lock);
 	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
-		if (atomic_read(&tpid_reuse->use_cnt) == 0 && tpid_reuse->is_ref == true) {
+		if (!ubcore_is_loopback(tpid_reuse->ub_dev, &tpid_reuse->rk.lk.peer_eid) &&
+			atomic_read(&tpid_reuse->use_cnt) == 0 &&
+			tpid_reuse->is_ref == true) {
 			ret = send_is_ref_req(tpid_reuse);
 			if (ret != 0) {
 				ubcore_log_err(
@@ -396,7 +417,9 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 
 	for (i = 0; i < UBCORE_TPID_REUSE_MAX_WAIT_TIMES; i++) {
 		if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
-			if (atomic_read(&tpid_reuse->use_cnt) == 0 && tpid_reuse->is_ref == true) {
+			if (!ubcore_is_loopback(tpid_reuse->ub_dev, &tpid_reuse->rk.lk.peer_eid) &&
+				atomic_read(&tpid_reuse->use_cnt) == 0 &&
+				tpid_reuse->is_ref == true) {
 				ret = send_is_ref_req(tpid_reuse);
 				if (ret != 0) {
 					ubcore_log_err(
@@ -629,25 +652,6 @@ ubcore_find_remove_ex_tp_info(struct ubcore_device *dev, uint64_t tp_handle)
 	spin_unlock(&dev->ht[UBCORE_HT_EX_TP].lock);
 
 	return ex_tp_info;
-}
-
-static bool ubcore_is_loopback(struct ubcore_device *dev,
-			       union ubcore_eid *peer_eid)
-{
-	uint32_t eid_idx;
-
-	spin_lock(&dev->eid_table.lock);
-	for (eid_idx = 0; eid_idx < dev->eid_table.eid_cnt; eid_idx++) {
-		if (dev->eid_table.eid_entries[eid_idx].valid &&
-			memcmp(peer_eid, &dev->eid_table.eid_entries[eid_idx].eid,
-			sizeof(union ubcore_eid)) == 0) {
-			spin_unlock(&dev->eid_table.lock);
-			return true;
-		}
-	}
-	spin_unlock(&dev->eid_table.lock);
-
-	return false;
 }
 
 int ubcore_exchange_tp_info(struct ubcore_device *dev,
@@ -1199,7 +1203,8 @@ int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 		return 0;
 	}
 
-	if (tpid_reuse->tp_handle.bs.rtp) {
+	if (tpid_reuse->tp_handle.bs.rtp &&
+		!ubcore_is_loopback(tpid_reuse->ub_dev, &tpid_reuse->rk.lk.peer_eid)) {
 		ret = send_destroy_req(tpid_reuse);
 		if (ret != 0) {
 			ubcore_log_err("Failed to send destroy req message");
