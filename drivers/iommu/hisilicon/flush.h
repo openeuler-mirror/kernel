@@ -21,11 +21,11 @@ void ummu_sync_iommu_domain(struct ummu_base_domain *base_domain,
 void ummu_init_flush_iotlb(struct ummu_device *ummu);
 
 /* for default_domain_ops */
-void ummu_flush_iotlb_all(struct iommu_domain *iommu_domain);
-void ummu_flush_iotlb_all_asid(struct iommu_domain *iommu_domain);
-void ummu_iotlb_sync(struct iommu_domain *iommu_domain,
+void ummu_flush_iotlb_all(struct iommu_domain *domain);
+void ummu_flush_iotlb_all_asid(struct iommu_domain *domain);
+void ummu_iotlb_sync(struct iommu_domain *domain,
 		     struct iommu_iotlb_gather *gather);
-void ummu_device_tlb_inv_walk(struct iommu_domain *iommu_domain,
+void ummu_device_tlb_inv_walk(struct iommu_domain *domain,
 			      struct iommu_iotlb_gather *gather);
 /* for io_pgtable */
 void ummu_tlbi_context(void *cookie);
@@ -45,7 +45,7 @@ void ummu_sync_tct(struct ummu_device *ummu, u32 tecte_tag, u32 tid,
 void ummu_sync_tct_all(struct ummu_device *ummu, u32 tecte_tag);
 int ummu_device_flush_plb(struct ummu_device *ummu, u32 tag, u32 tid,
 			  u64 addr, size_t size);
-void ummu_device_flush_plb_all(struct iommu_domain *iommu_domain);
+void ummu_device_flush_plb_all(struct iommu_domain *domain);
 void ummu_device_flush_ioplb_all(struct ummu_device *ummu);
 int ummu_device_check_pa_continuity(struct ummu_device *ummu, u64 addr,
 				    u32 size_order, u32 id);

@@ -9,7 +9,7 @@
 
 #include "ummu.h"
 
-int ummu_domain_collect_pgtable(struct ummu_domain *ummu_domain);
+int ummu_domain_collect_pgtable(struct ummu_domain *u_domain);
 int ummu_global_identity_pgtbl_init(struct ummu_device *ummu);
 void ummu_global_identity_pgtbl_free(void);
 struct ummu_domain *ummu_get_global_identity_domain(void);

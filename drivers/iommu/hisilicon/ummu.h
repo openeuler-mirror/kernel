@@ -54,6 +54,7 @@ struct ummu_tct_desc {
 	u32	tcr0;
 	u32	tcr1;
 	u64	mair;
+	u8		matt_bypass;
 	u8		mapt_en;
 	u8		token_en;
 	u8		mapt_mode;

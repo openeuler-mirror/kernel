@@ -884,7 +884,6 @@ int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
 	struct ummu_domain *u_domain = container_of(cfgs, struct ummu_domain, cfgs);
 	struct ummu_tct_desc_cfg *tct_cfg = cfgs->s1_cfg.tct_cfg;
 	struct ummu_tct_desc *tct_desc = &cfgs->s1_cfg.tct;
-	u32 type = u_domain->base_domain.domain.type;
 	u32 tid = u_domain->base_domain.tid;
 	u32 tag = cfgs->tecte_tag;
 	bool is_valid;
@@ -930,6 +929,7 @@ int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
 		}
 		tcte[5] = cpu_to_le64(tct_desc->mair);
 		val = tct_desc->tcr0 |
+		      (tct_desc->matt_bypass ? TCT_ENT0_MATT_BYPASS : 0) |
 #ifdef __BIG_ENDIAN
 		      TCT_ENT0_ENDI |
 #endif
@@ -950,8 +950,7 @@ int ummu_write_tct_desc(struct ummu_device *ummu, struct ummu_domain_cfgs *cfgs,
 			val |= TCT_ENT0_HAF;
 		if (ummu->cap.features & UMMU_FEAT_HD)
 			val |= TCT_ENT0_HDF;
-		if (hw_bypass && type == IOMMU_DOMAIN_IDENTITY)
-			val |= TCT_ENT0_MATT_BYPASS;
+
 		WRITE_ONCE(tcte[0], cpu_to_le64(val));
 	}
 
