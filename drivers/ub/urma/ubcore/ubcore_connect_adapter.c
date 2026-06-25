@@ -85,8 +85,10 @@ struct msg_isref_conn_req {
 	enum ubcore_tpid_share_mode share_mode;
 };
 
-#define UBCORE_TPID_REUSE_MAX_WAIT_TIMES (30 * 1000 / 20)
-#define UBCORE_TPID_REUSE_WAIT_TIME 20
+#define UBCORE_TPID_REUSE_WAIT_MIN_US 100
+#define UBCORE_TPID_REUSE_WAIT_MAX_US 200
+#define UBCORE_TPID_REUSE_MAX_WAIT_TIMES \
+	(30 * 1000 * 1000 / UBCORE_TPID_REUSE_WAIT_MAX_US)
 #define UBCORE_ENABLE_SHARED_CTP_DEFAULT false
 
 /* Default as 30s */
@@ -449,7 +451,8 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 			return tpid_reuse;
 		} else if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_RESET) {
 			mutex_unlock(&tpid_reuse->lock);
-			msleep(UBCORE_TPID_REUSE_WAIT_TIME);
+			usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 			mutex_lock(&tpid_reuse->lock);
 		} else if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR) {
 			break;
@@ -971,7 +974,8 @@ static int target_reuse_tpid(struct ubcore_device *dev, struct ubcore_tpid_reuse
 				return CREATE_CONN_SUCCESS;
 			}
 			mutex_unlock(&tpid_reuse->lock);
-			msleep(UBCORE_TPID_REUSE_WAIT_TIME);
+			usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 			mutex_lock(&tpid_reuse->lock);
 		} else if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
 			tpid_reuse->is_ref = true;
