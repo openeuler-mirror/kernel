@@ -119,13 +119,18 @@ static int unic_update_vl_sl_map(struct unic_dev *unic_dev)
 static int unic_init_vl_map(struct unic_dev *unic_dev)
 {
 	struct unic_vl *vl = &unic_dev->channels.vl;
-	int i;
+	int i, ret;
 
 	for (i = 0; i < UBASE_MAX_DSCP; i++)
 		vl->dscp_prio[i] = UNIC_INVALID_PRIORITY;
 
-	return unic_set_vl_map(unic_dev, vl->dscp_prio,
-			       vl->prio_vl, UNIC_PRIO_VL_MAP);
+	if (unic_dscp_tc_exists(unic_dev))
+		ret = unic_set_prio_tc(unic_dev, vl->prio_vl);
+	else
+		ret = unic_set_vl_map(unic_dev, vl->dscp_prio,
+				      vl->prio_vl, UNIC_PRIO_VL_MAP);
+
+	return ret;
 }
 
 static void unic_vl_bitmap_init(struct unic_dev *unic_dev)
