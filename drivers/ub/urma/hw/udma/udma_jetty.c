@@ -140,7 +140,7 @@ static void udma_init_jettyc(struct udma_dev *dev, struct ubcore_jetty_cfg *cfg,
 
 	ctx->state = JETTY_READY;
 	ctx->jfs_mode = JETTY;
-	ctx->type = to_udma_type(cfg->trans_mode, cfg->flag.bs.order_type);
+	ctx->type = udma_get_type(cfg->trans_mode, cfg->flag.bs.order_type);
 	ctx->sl = dev->udma_sl[UDMA_DEFAULT_SL_NUM];
 	if (ctx->type == JETTY_RM || ctx->type == JETTY_RC) {
 		ctx->sl = dev->priority_info[cfg->priority].SL;
@@ -1595,6 +1595,10 @@ struct ubcore_tjetty *udma_import_jetty_ex(struct ubcore_device *ub_dev,
 		return ERR_PTR(-EINVAL);
 	}
 
+	ret = udma_get_tp_type_available(udma_dev, cfg);
+	if (ret)
+		return ERR_PTR(ret);
+
 	ret = udma_check_jetty_grp_info(cfg, udma_dev);
 	if (ret)
 		return ERR_PTR(ret);
@@ -2028,4 +2032,53 @@ uint32_t udma_get_ta_timeout(uint8_t gear)
 	};
 
 	return (gear < ARRAY_SIZE(timeout_table)) ? timeout_table[gear] : UDMA_TA_TIMEOUT_64000MS;
+}
+
+uint32_t udma_get_type(uint32_t trans_mode, uint32_t order_type)
+{
+	switch (trans_mode) {
+	case UBCORE_TP_RM:
+		return JETTY_RM;
+	case UBCORE_TP_RC:
+		return JETTY_RC;
+	case UBCORE_TP_UM:
+		if (order_type == UBCORE_OL)
+			return JETTY_RC;
+		return JETTY_UM;
+	default:
+		return JETTY_TYPE_RESERVED;
+	}
+}
+
+int udma_get_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg)
+
+{
+	uint32_t tp_ability_bit = 0;
+
+	if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_RTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_RTP_ROI);
+	} else if (cfg->flag.bs.order_type == UBCORE_OI && cfg->tp_type == UBCORE_CTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_ROI);
+	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_CTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_ROL);
+	} else if (cfg->flag.bs.order_type == UBCORE_OL && cfg->tp_type == UBCORE_RTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_RTP_ROL);
+	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_CTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_UNO);
+	} else if (cfg->flag.bs.order_type == UBCORE_NO && cfg->tp_type == UBCORE_UTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_UTP_UNO);
+	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_CTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_CTP_ROT);
+	} else if (cfg->flag.bs.order_type == UBCORE_OT && cfg->tp_type == UBCORE_RTP) {
+		tp_ability_bit = !!(ubase_get_ub_feature() & UBASE_URMA_RTP_ROT);
+	} else	{
+		dev_err(dev->dev, "tp mode is not recognized.\n");
+		return -EINVAL;
+	}
+
+	if (!tp_ability_bit) {
+		dev_err(dev->dev, "tp mode is not supported, tp type: %u .\n", cfg->tp_type);
+		return -EINVAL;
+	}
+	return 0;
 }
