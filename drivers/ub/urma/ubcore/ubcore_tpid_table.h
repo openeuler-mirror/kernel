@@ -69,7 +69,6 @@ struct ubcore_tpid_list {
 	struct kref ref_cnt;
 	struct completion comp;
 	struct mutex lock;
-	struct mutex fetch_lock;
 };
 
 struct ubcore_tpid_state {
@@ -84,6 +83,8 @@ struct ubcore_tpid_state {
 	enum ubcore_tpid_status tpid_status;
 	bool alloced;
 	uint32_t tx_psn;
+
+	struct ubcore_tpid_list_key lk;
 
 	struct kref ref_cnt;
 	struct completion comp;
