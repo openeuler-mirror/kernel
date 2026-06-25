@@ -324,7 +324,7 @@ static void udma_init_jfrc(struct udma_dev *dev, struct ubcore_jfr_cfg *cfg,
 	}
 	if (cfg->flag.bs.token_policy != UBCORE_TOKEN_NONE)
 		ctx->token_en = 1;
-	ctx->type = to_udma_type(cfg->trans_mode, cfg->flag.bs.order_type);
+	ctx->type = udma_get_type(cfg->trans_mode, cfg->flag.bs.order_type);
 	ctx->token_value = cfg->token_value.token;
 	ctx->user_data_l = jfr->jetty_addr;
 	ctx->user_data_h = jfr->jetty_addr >> UDMA_USER_DATA_H_OFFSET;
@@ -990,7 +990,13 @@ struct ubcore_tjetty *udma_import_jfr_ex(struct ubcore_device *dev,
 					 struct ubcore_active_tp_cfg *active_tp_cfg,
 					 struct ubcore_udata *udata)
 {
+	struct udma_dev *udma_dev = to_udma_dev(dev);
 	struct udma_target_jetty *udma_tjfr;
+	int ret;
+
+	ret = udma_get_tp_type_available(udma_dev, cfg);
+	if (ret)
+		return NULL;
 
 	udma_tjfr = kzalloc(sizeof(*udma_tjfr), GFP_KERNEL);
 	if (!udma_tjfr)
