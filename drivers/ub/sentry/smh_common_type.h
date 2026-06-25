@@ -37,12 +37,39 @@
 #define PROC_FILE_PERMISSION 0600
 #define PROC_DIR_PERMISSION 0550
 
+/* ---- version query response ---- */
+struct smh_version_info {
+	uint32_t major;
+	uint32_t minor;
+};
+
+/*
+ * The main version of the sentry driver.
+ * It increases by 1 whenever there is an interface change in the Sentry driver or sysSentry package
+ */
+#define SMH_VERSION_MAJOR  1
+/*
+ * Defined as the number of message types supported for reporting by the sentry driver.
+ * The current Sentry driver supports reporting the following types of abnormal event msg:
+ * (1) panic
+ * (2) reboot
+ * (3) poweroff
+ * (4) oom
+ * (5) ub mem err
+ * (6) ub link
+ */
+#define SMH_VERSION_MINOR  6
+
+/* ---- ioctl infrastructure ---- */
 enum {
-    SMH_CMD_MSG_ACK = 0x10,
+	SMH_CMD_MSG_ACK = 0x10,
+	SMH_CMD_VERSION_CHECK = 0x11,
 };
 
 #define SMH_MSG_ACK _IO(SMH_TYPE, SMH_CMD_MSG_ACK)
+#define SMH_VERSION_CHECK  _IOR(SMH_TYPE, SMH_CMD_VERSION_CHECK, struct smh_version_info)
 
+/* ---- message types (enum values are the ABI) ---- */
 enum sentry_msg_helper_msg_type {
 	SMH_MESSAGE_POWER_OFF,
 	SMH_MESSAGE_OOM,
@@ -67,8 +94,7 @@ struct sentry_binary_msg {
 	union ubcore_eid eid;
 };
 
-#define URMA_BINARY_MSG_MAX_LEN sizeof(struct sentry_binary_msg)
-
+/* ---- the primary kernel↔userspace data structure ---- */
 struct sentry_msg_helper_msg {
     enum sentry_msg_helper_msg_type type;
     uint64_t msgid;
