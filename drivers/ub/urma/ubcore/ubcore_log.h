@@ -80,40 +80,45 @@ extern uint32_t g_ubcore_log_level;
 
 /* Rate Limited log to avoid soft lockup crash by quantities of printk */
 /* Current limit is 100 log every 5 seconds */
+/* Optimized: check log level before ratelimit to avoid unnecessary calls */
 #define ubcore_log_err_rl(...)                                                \
 	do {                                                                      \
-		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,         \
-					      UBCORE_RATELIMIT_BURST);                            \
-		if ((__ratelimit(&_rs)) &&                                            \
-		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_ERR))                     \
-			ubcore_log(err, __VA_ARGS__);                                     \
+		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_ERR) {                     \
+			static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,     \
+				UBCORE_RATELIMIT_BURST);                                      \
+			if (__ratelimit(&_rs))                                            \
+				ubcore_log(err, __VA_ARGS__);                                 \
+		}                                                                     \
 	} while (0)
 
 #define ubcore_log_warn_rl(...)                                               \
 	do {                                                                      \
-		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,         \
-					      UBCORE_RATELIMIT_BURST);                            \
-		if ((__ratelimit(&_rs)) &&                                            \
-		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_WARNING))                 \
-			ubcore_log(warn, __VA_ARGS__);                                    \
+		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_WARNING) {                 \
+			static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,     \
+				UBCORE_RATELIMIT_BURST);                                      \
+			if (__ratelimit(&_rs))                                            \
+				ubcore_log(warn, __VA_ARGS__);                                \
+		}                                                                     \
 	} while (0)
 
 #define ubcore_log_notice_rl(...)                                             \
 	do {                                                                      \
-		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,         \
-					      UBCORE_RATELIMIT_BURST);                            \
-		if ((__ratelimit(&_rs)) &&                                            \
-		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_NOTICE))                  \
-			ubcore_log(notice, __VA_ARGS__);                                  \
+		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_NOTICE) {                  \
+			static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,     \
+				UBCORE_RATELIMIT_BURST);                                      \
+			if (__ratelimit(&_rs))                                            \
+				ubcore_log(notice, __VA_ARGS__);                              \
+		}                                                                     \
 	} while (0)
 
 #define ubcore_log_info_rl(...)                                               \
 	do {                                                                      \
-		static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,         \
-					      UBCORE_RATELIMIT_BURST);                            \
-		if ((__ratelimit(&_rs)) &&                                            \
-		    (g_ubcore_log_level >= UBCORE_LOG_LEVEL_INFO))                    \
-			ubcore_log(info, __VA_ARGS__);                                    \
+		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_INFO) {                    \
+			static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,     \
+				UBCORE_RATELIMIT_BURST);                                      \
+			if (__ratelimit(&_rs))                                            \
+				ubcore_log(info, __VA_ARGS__);                                \
+		}                                                                     \
 	} while (0)
 
 #endif
