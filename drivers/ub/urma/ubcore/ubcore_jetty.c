@@ -1681,6 +1681,23 @@ int ubcore_delete_jfr_batch(struct ubcore_jfr **jfr_arr, int jfr_num,
 }
 EXPORT_SYMBOL(ubcore_delete_jfr_batch);
 
+static bool ubcore_validate_order_type_for_um_ctp(
+	enum ubcore_transport_mode trans_mode,
+	enum ubcore_tp_type tp_type,
+	uint32_t order_type)
+{
+	/* Only validate for UM + CTP combination */
+	if (trans_mode == UBCORE_TP_UM && tp_type == UBCORE_CTP) {
+		/* order_type can only be 0(DEF) or 3(OL) */
+		if (order_type != UBCORE_DEF_ORDER && order_type != UBCORE_OL) {
+			ubcore_log_err("Invalid order_type %u for UM+CTP, only 0(DEF) or 3(OL) allowed.\n",
+				       order_type);
+			return false;
+		}
+	}
+	return true;
+}
+
 struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 					struct ubcore_tjetty_cfg *cfg,
 					struct ubcore_udata *udata)
@@ -1694,6 +1711,13 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 
 	if (!ubcore_have_ops(dev) || !dev->ops->unimport_jfr ||
 	    !cfg || dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
+		return ERR_PTR(-EINVAL);
+	}
+
+	if (!ubcore_validate_order_type_for_um_ctp(cfg->trans_mode,
+						   cfg->tp_type,
+						   cfg->flag.bs.order_type)) {
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return ERR_PTR(-EINVAL);
 	}
@@ -1876,6 +1900,11 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	if (!dev || !dev->ops || !dev->ops->import_jfr_ex ||
 		!dev->ops->unimport_jfr || !cfg || !active_tp_cfg ||
 		dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
+		return ERR_PTR(-EINVAL);
+
+	if (!ubcore_validate_order_type_for_um_ctp(cfg->trans_mode,
+						   cfg->tp_type,
+						   cfg->flag.bs.order_type))
 		return ERR_PTR(-EINVAL);
 
 	if (!active_tp_cfg->tpid_reuse) {
@@ -2848,6 +2877,13 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 		return ERR_PTR(-EINVAL);
 	}
 
+	if (!ubcore_validate_order_type_for_um_ctp(cfg->trans_mode,
+						   cfg->tp_type,
+						   cfg->flag.bs.order_type)) {
+		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
+		return ERR_PTR(-EINVAL);
+	}
+
 	if (ubcore_check_ctrlplane_compat(dev->ops->import_jetty)) {
 		ubcore_log_info_rl("Enter import jetty compat.\n");
 		UBCORE_PERF_TRACE_BEGIN(PERF_UB_IMPORT_JETTY_EX);
@@ -3032,6 +3068,11 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	if (!dev || !dev->ops || !dev->ops->import_jetty_ex ||
 	    !dev->ops->unimport_jetty || !cfg || !active_tp_cfg ||
 	    dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
+		return ERR_PTR(-EINVAL);
+
+	if (!ubcore_validate_order_type_for_um_ctp(cfg->trans_mode,
+						   cfg->tp_type,
+						   cfg->flag.bs.order_type))
 		return ERR_PTR(-EINVAL);
 
 	if (!active_tp_cfg->tpid_reuse) {
