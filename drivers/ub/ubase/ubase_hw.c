@@ -16,6 +16,7 @@
 #include "ubase_proxy.h"
 #include "ubase_stats.h"
 #include "ubase_tp.h"
+#include "ubase_reset.h"
 #include "ubase_usc.h"
 #include "ubase_hw.h"
 
@@ -962,7 +963,7 @@ int ubase_ue_init(struct ubase_dev *udev)
 	init_completion(&udev->act_ctx.other.activate_done);
 	ubase_init_ctx_buf_lock(&udev->ctx_buf);
 
-	return 0;
+	return ubase_init_ue_reset_reg(udev);
 }
 
 void ubase_ue_uninit(struct ubase_dev *udev)
