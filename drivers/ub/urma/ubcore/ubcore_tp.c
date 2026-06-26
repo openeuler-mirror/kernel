@@ -441,17 +441,7 @@ static struct ubcore_tp_info
 *select_tpid(struct ubcore_device *dev, struct ubcore_tpid_list *tpid_list)
 {
 	struct ubcore_tp_info *tp_handle = NULL;
-	struct list_head *head;
 
-	if (tpid_list == NULL) {
-		ubcore_log_err_rl("Invalid parameter, tpid list is null.\n");
-		return NULL;
-	}
-	head = &tpid_list->create_list;
-	if (list_empty(head)) {
-		ubcore_log_err_rl("Invalid parameter, list head is null.\n");
-		return NULL;
-	}
 	ubcore_tpid_list_get(tpid_list);
 	tp_handle = find_available_tp_id_nolock(dev, tpid_list);
 	ubcore_tpid_list_kref_put(tpid_list);
