@@ -519,9 +519,6 @@ int ub_decoder_unmap(struct ub_decoder *decoder, phys_addr_t addr, u64 size)
 	}
 
 	ubc = decoder->uent->ubc;
-	if (!decoder->create_matt)
-		return 0;
-
 	if (!ubc->ops->decoder_unmap) {
 		pr_err("decoder_unmap ops not exist\n");
 		return -EINVAL;
@@ -539,9 +536,6 @@ int ub_decoder_map(struct ub_decoder *decoder, struct decoder_map_info *info)
 	}
 
 	ubc = decoder->uent->ubc;
-	if (!decoder->create_matt)
-		return 0;
-
 	if (!ubc->ops->decoder_map || !ubc->ops->decoder_unmap) {
 		pr_err("decoder_map or decoder_unmap ops not exist\n");
 		return -EINVAL;
