@@ -16,13 +16,11 @@
 #include "ubagg_types.h"
 
 enum ubagg_cmd {
-	UBAGG_CMD_ADD_DEV = 1,
-	UBAGG_CMD_RMV_DEV,
-	UBAGG_CMD_SET_TOPO_INFO,
+	UBAGG_CMD_SET_TOPO_INFO = 1,
+	UBAGG_CMD_GET_TOPO_INFO,
 	UBAGG_CMD_CREATE_DEV,
 	UBAGG_CMD_DELETE_DEV,
 	UBAGG_CMD_GET_DEV_NAME,
-	UBAGG_CMD_GET_TOPO_INFO,
 };
 
 struct ubagg_cmd_hdr {
@@ -178,13 +176,21 @@ struct ubagg_get_dev_name_arg {
 	} out;
 };
 
+struct ubagg_cmd_get_topo {
+	struct {
+		void *topo_map;
+	} out;
+};
+
 enum ubagg_userctl_opcode {
 	GET_PHYSICAL_DEVICE = 1,
 	GET_TOPO_INFO = 2,
 	GET_JFR_ID = 3,
 	GET_JETTY_ID = 4,
-	GET_LIST_RES = 7,
-	GET_SHOW_RES = 8,
+	GET_RJETTY = 9,
+	GET_SEG_CTX = 10,
+	FAILBACK_START = 11,
+	FAILBACK_RESULT = 12,
 };
 
 struct ubagg_physical_device_out {
@@ -199,31 +205,21 @@ struct ubagg_topo_info_out {
 
 void ubagg_delete_topo_map(void);
 
-struct ubagg_primary_port_eid {
-	union ubcore_eid primary_eid;
-	union ubcore_eid port_eid[MAX_PORT_NUM];
-};
-
-struct ubagg_add_dev_by_uvs {
-	char master_dev_name[UBAGG_MAX_DEV_NAME_LEN];
-	union ubcore_eid agg_eid;
-	struct ubagg_primary_port_eid slave_eid[IODIE_NUM];
+struct ubagg_bonding_physical_device {
+	char dev_name[UBAGG_MAX_DEV_NAME_LEN];
+	uint32_t bonding_eid_idx;
+	struct ubagg_physical_device physical_devs[IODIE_NUM];
 };
 
 struct ubagg_cmd_physical_device {
 	struct {
 		union ubcore_eid bonding_eid;
 	} in;
-	struct {
-		char dev_name[UBAGG_MAX_DEV_NAME_LEN];
-		uint32_t bonding_eid_idx;
-		struct ubagg_physical_device physical_devs[IODIE_NUM];
-	} out;
+	struct ubagg_bonding_physical_device out;
 };
 
 long ubagg_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 bool is_agg_dev_valid(struct ubagg_topo_agg_dev *agg_dev);
-void ubagg_put_ubcore_device(struct ubcore_device *dev);
 void ubagg_clear_dev_list(void);
 int query_eid_idx(struct ubcore_device *dev, union ubcore_eid *eid, uint32_t *eid_idx);
 int get_physical_device(struct ubagg_device *ubagg_dev,

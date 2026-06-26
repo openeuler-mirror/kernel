@@ -932,11 +932,13 @@ static int ubcore_free_vtpn(struct ubcore_vtpn *vtpn)
 				vtpn->vtpn, atomic_read(&vtpn->use_cnt));
 		return 0;
 	}
+
 	ubcore_vtpn_kref_put(vtpn);
 	wait_for_completion(&vtpn->comp);
 	mutex_destroy(&vtpn->state_lock);
 
 	if (vtpn->tp_handle != 0) {
+		(void)ubcore_delete_tpid_priv(vtpn->ub_dev, vtpn->vtpn);
 		kfree(vtpn);
 		return 0;
 	}
@@ -950,12 +952,15 @@ static int ubcore_free_vtpn_ctrlplane(struct ubcore_vtpn *vtpn)
 				vtpn->vtpn, atomic_read(&vtpn->use_cnt));
 		return 0;
 	}
+
 	ubcore_vtpn_kref_put(vtpn);
 	wait_for_completion(&vtpn->comp);
 	mutex_destroy(&vtpn->state_lock);
 
 	if (vtpn->tp_handle == 0)
 		ubcore_log_err("Invalid tp_handle.\n");
+	else
+		(void)ubcore_delete_tpid_priv(vtpn->ub_dev, vtpn->vtpn);
 
 	kfree(vtpn);
 	return 0;

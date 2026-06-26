@@ -22,7 +22,6 @@
 #define IODIE_NUM_PER_CHIP (1)
 #define DEV_NUM (256)
 #define IODIE_NUM (IODIE_NUM_PER_CHIP * CHIP_NUM)
-#define MAX_PATH_NUM (16)
 
 struct ubcore_topo_ue {
 	uint32_t chip_id;
@@ -30,6 +29,7 @@ struct ubcore_topo_ue {
 	uint32_t entity_id;
 	char primary_eid[EID_LEN];
 	char port_eid[PORT_NUM][EID_LEN];
+	char cna[PORT_NUM][EID_LEN];
 };
 
 struct ubcore_topo_agg_dev {
@@ -56,43 +56,6 @@ struct ubcore_topo_node {
 	struct ubcore_topo_agg_dev agg_devs[DEV_NUM];
 };
 
-enum ubcore_topo_type_t {
-	UBCORE_TOPO_TYPE_FULLMESH_1D,
-	UBCORE_TOPO_TYPE_CLOS,
-};
-
-struct ubcore_node_id {
-	uint32_t super_node_id;
-	uint32_t node_id;
-};
-
-union ubcore_port_id {
-	struct {
-		uint8_t chip_id;
-		uint8_t die_id;
-		uint8_t port_idx;
-		uint8_t reserved;
-	};
-	uint64_t value;
-};
-
-struct ubcore_path {
-	union ubcore_port_id src_port;
-	union ubcore_port_id dst_port;
-	union ubcore_eid src_eid;
-	union ubcore_eid dst_eid;
-};
-
-struct ubcore_path_set {
-	enum ubcore_topo_type_t topo_type;
-	struct ubcore_node_id src_node;
-	struct ubcore_node_id dst_node;
-	uint32_t chip_count;
-	uint32_t die_count;
-	uint32_t path_count;
-	struct ubcore_path paths[MAX_PATH_NUM];
-};
-
 struct ubcore_topo_map {
 	struct ubcore_topo_node topo_infos[MAX_NODE_NUM];
 	uint32_t node_num;
@@ -111,9 +74,5 @@ bool is_eid_valid(const char *eid);
 int ubcore_update_topo_map(struct ubcore_topo_map *new_topo_map,
 			   struct ubcore_topo_map *old_topo_map);
 void ubcore_show_topo_map(struct ubcore_topo_map *topo_map);
-int ubcore_get_path_set(union ubcore_eid *src_bonding_eid,
-			union ubcore_eid *dst_bonding_eid,
-			enum ubcore_tp_type tp_type, bool iodie_level,
-			struct ubcore_path_set *path_set);
 
 #endif // UBCORE_TOPO_INFO_H

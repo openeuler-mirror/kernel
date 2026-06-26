@@ -85,8 +85,10 @@ struct msg_isref_conn_req {
 	enum ubcore_tpid_share_mode share_mode;
 };
 
-#define UBCORE_TPID_REUSE_MAX_WAIT_TIMES (30 * 1000 / 20)
-#define UBCORE_TPID_REUSE_WAIT_TIME 20
+#define UBCORE_TPID_REUSE_WAIT_MIN_US 100
+#define UBCORE_TPID_REUSE_WAIT_MAX_US 200
+#define UBCORE_TPID_REUSE_MAX_WAIT_TIMES \
+	(30 * 1000 * 1000 / UBCORE_TPID_REUSE_WAIT_MAX_US)
 #define UBCORE_ENABLE_SHARED_CTP_DEFAULT false
 
 /* Default as 30s */
@@ -105,9 +107,10 @@ bool ubcore_get_enable_shared_ctp(void)
 	return ubcore_enable_shared_ctp;
 }
 
-static int ubcore_lookup_host_info_local_and_peer(
+static void ubcore_lookup_host_info_local_and_peer(
 	const union ubcore_eid *local_src_eid, union ubcore_eid *local_dst_eid,
-	const union ubcore_eid *peer_src_eid, union ubcore_eid *peer_dst_eid)
+	const union ubcore_eid *peer_src_eid, union ubcore_eid *peer_dst_eid,
+	union ubcore_net_addr_union *local_cna,	union ubcore_net_addr_union *peer_cna)
 {
 	struct ubcore_host_info local_host_info;
 	struct ubcore_host_info peer_host_info;
@@ -118,34 +121,40 @@ static int ubcore_lookup_host_info_local_and_peer(
 	if (local_ret == 0 && peer_ret == 0) {
 		*local_dst_eid = local_host_info.eid;
 		*peer_dst_eid = peer_host_info.eid;
-		ubcore_log_debug("local_host_eid=" EID_FMT " , peer_host_eid=" EID_FMT "\n",
+		if (local_cna != NULL && peer_cna != NULL) {
+			*local_cna = local_host_info.cna;
+			*peer_cna = peer_host_info.cna;
+		}
+		ubcore_log_info("local_host_eid=" EID_FMT " , peer_host_eid=" EID_FMT "\n",
 			EID_ARGS(local_host_info.eid), EID_ARGS(peer_host_info.eid));
-		return 0;
 	}
 	if (local_ret != 0)
-		ubcore_log_err(
-			"Failed to lookup local host eid, ret=%d, local_port_eid=" EID_FMT "\n",
+		ubcore_log_warn_rl(
+			"No result for local host eid, ret=%d, local_port_eid=" EID_FMT "\n",
 			local_ret, EID_ARGS(*local_src_eid));
 	if (peer_ret != 0)
-		ubcore_log_err(
-			"Failed to lookup peer host eid, ret=%d, peer_port_eid=" EID_FMT "\n",
+		ubcore_log_warn_rl(
+			"No result for peer host eid, ret=%d, peer_port_eid=" EID_FMT "\n",
 			peer_ret, EID_ARGS(*peer_src_eid));
-	return -ENOENT;
 }
 
 static int ubcore_fill_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 				 struct ubcore_get_tp_cfg *get_tp_cfg,
-				 struct ubcore_tjetty_cfg *cfg)
+				 struct ubcore_tjetty_cfg *cfg,
+				 union ubcore_net_addr_union *local_cna,
+				 union ubcore_net_addr_union *peer_cna)
 {
 	if (key == NULL || get_tp_cfg == NULL || cfg == NULL)
 		return -EINVAL;
 
 	key->lk.local_eid = get_tp_cfg->local_eid;
 	key->lk.peer_eid = get_tp_cfg->peer_eid;
-	if (ubcore_get_enable_shared_ctp()) {
-		if (ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
-			&key->lk.local_eid, &get_tp_cfg->peer_eid, &key->lk.peer_eid) != 0)
-			return -ENOENT;
+	if (ubcore_get_enable_shared_ctp() &&
+	    get_tp_cfg->flag.bs.ctp &&
+	    cfg->trans_mode == UBCORE_TP_RM) {
+		ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
+			&key->lk.local_eid, &get_tp_cfg->peer_eid, &key->lk.peer_eid,
+			local_cna, peer_cna);
 	}
 	key->lk.trans_mode = cfg->trans_mode;
 	key->lk.share_mode = cfg->flag.bs.share_tp ?
@@ -161,23 +170,29 @@ static int ubcore_fill_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 		key->lk.tp_type = UBCORE_UTP;
 
 	key->lk.link_type = (get_tp_cfg->flag.bs.uboe) ? UBCORE_LINK_UBOE : UBCORE_LINK_ETHERNET;
+	memset(&key->lk.local_cna, 0, sizeof(key->lk.local_cna));
+	memset(&key->lk.peer_cna, 0, sizeof(key->lk.peer_cna));
 	return 0;
 }
 
 static int ubcore_fill_bind_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 				 struct ubcore_get_tp_cfg *get_tp_cfg,
 				 struct ubcore_tjetty_cfg *cfg,
-				 struct ubcore_jetty *sjetty)
+				 struct ubcore_jetty *sjetty,
+				 union ubcore_net_addr_union *local_cna,
+				 union ubcore_net_addr_union *peer_cna)
 {
 	if (key == NULL || get_tp_cfg == NULL || cfg == NULL)
 		return -EINVAL;
 
 	key->lk.local_eid = get_tp_cfg->local_eid;
 	key->lk.peer_eid = get_tp_cfg->peer_eid;
-	if (ubcore_get_enable_shared_ctp()) {
-		if (ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
-			&key->lk.local_eid, &get_tp_cfg->peer_eid, &key->lk.peer_eid) != 0)
-			return -ENOENT;
+	if (ubcore_get_enable_shared_ctp() &&
+	    get_tp_cfg->flag.bs.ctp &&
+	    cfg->trans_mode == UBCORE_TP_RM) {
+		ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
+			&key->lk.local_eid, &get_tp_cfg->peer_eid, &key->lk.peer_eid,
+			local_cna, peer_cna);
 	}
 	key->lk.trans_mode = cfg->trans_mode;
 	key->lk.share_mode = cfg->flag.bs.share_tp ?
@@ -193,6 +208,8 @@ static int ubcore_fill_bind_tpid_reuse_key(struct ubcore_tpid_reuse_key *key,
 		key->lk.tp_type = UBCORE_UTP;
 
 	key->lk.link_type = (get_tp_cfg->flag.bs.uboe) ? UBCORE_LINK_UBOE : UBCORE_LINK_ETHERNET;
+	memset(&key->lk.local_cna, 0, sizeof(key->lk.local_cna));
+	memset(&key->lk.peer_cna, 0, sizeof(key->lk.peer_cna));
 	return 0;
 }
 
@@ -204,10 +221,12 @@ static int ubcore_fill_tpid_cfg(struct ubcore_tpid_cfg *tpid_cfg,
 
 	tpid_cfg->local_eid = get_tp_cfg->local_eid;
 	tpid_cfg->peer_eid = get_tp_cfg->peer_eid;
-	if (ubcore_get_enable_shared_ctp()) {
-		if (ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
-			&tpid_cfg->local_eid, &get_tp_cfg->peer_eid, &tpid_cfg->peer_eid) != 0)
-			return -ENOENT;
+	if (ubcore_get_enable_shared_ctp() &&
+	    get_tp_cfg->flag.bs.ctp &&
+	    get_tp_cfg->trans_mode == UBCORE_TP_RM) {
+		ubcore_lookup_host_info_local_and_peer(&get_tp_cfg->local_eid,
+			&tpid_cfg->local_eid, &get_tp_cfg->peer_eid, &tpid_cfg->peer_eid,
+			NULL, NULL);
 	}
 	tpid_cfg->tp_mode = get_tp_cfg->trans_mode;
 	if (get_tp_cfg->flag.bs.ctp)
@@ -219,6 +238,21 @@ static int ubcore_fill_tpid_cfg(struct ubcore_tpid_cfg *tpid_cfg,
 	tpid_cfg->link_type = (get_tp_cfg->flag.bs.uboe == 1) ? UBCORE_LINK_UBOE :
 		UBCORE_LINK_ETHERNET;
 	return 0;
+}
+
+static bool ubcore_net_addr_is_zero(const union ubcore_net_addr_union *addr)
+{
+	return addr->in6.subnet_prefix == 0 && addr->in6.interface_id == 0;
+}
+
+static void ubcore_fill_tpid_reuse_key_cna(struct ubcore_tpid_reuse_key *key,
+					   union ubcore_net_addr_union local_cna,
+					   union ubcore_net_addr_union peer_cna)
+{
+	memset(&key->lk.local_eid, 0, sizeof(key->lk.local_eid));
+	memset(&key->lk.peer_eid, 0, sizeof(key->lk.peer_eid));
+	key->lk.local_cna = local_cna;
+	key->lk.peer_cna = peer_cna;
 }
 
 static void ubcore_tpid_reuse_kref_release(struct kref *ref_cnt)
@@ -338,6 +372,39 @@ static int send_is_ref_req(struct ubcore_tpid_reuse *tpid_reuse)
 	return 0;
 }
 
+static bool ubcore_is_loopback(struct ubcore_device *dev,
+			       union ubcore_eid *peer_eid)
+{
+	uint32_t eid_idx;
+
+	spin_lock(&dev->eid_table.lock);
+	for (eid_idx = 0; eid_idx < dev->eid_table.eid_cnt; eid_idx++) {
+		if (dev->eid_table.eid_entries[eid_idx].valid &&
+			memcmp(peer_eid, &dev->eid_table.eid_entries[eid_idx].eid,
+			sizeof(union ubcore_eid)) == 0) {
+			spin_unlock(&dev->eid_table.lock);
+			return true;
+		}
+	}
+	spin_unlock(&dev->eid_table.lock);
+
+	return false;
+}
+
+static inline void ubcore_tpid_reuse_dec_usecnt(struct ubcore_tpid_reuse *tpid_reuse)
+{
+	mutex_lock(&tpid_reuse->lock);
+	atomic_dec(&tpid_reuse->use_cnt);
+	mutex_unlock(&tpid_reuse->lock);
+}
+
+static inline void ubcore_tpid_reuse_inc_usecnt(struct ubcore_tpid_reuse *tpid_reuse)
+{
+	mutex_lock(&tpid_reuse->lock);
+	atomic_inc(&tpid_reuse->use_cnt);
+	mutex_unlock(&tpid_reuse->lock);
+}
+
 static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpid_reuse)
 {
 	int i = 0;
@@ -345,7 +412,9 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 
 	mutex_lock(&tpid_reuse->lock);
 	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
-		if (atomic_read(&tpid_reuse->use_cnt) == 0 && tpid_reuse->is_ref == true) {
+		if (!ubcore_is_loopback(tpid_reuse->ub_dev, &tpid_reuse->rk.lk.peer_eid) &&
+			atomic_read(&tpid_reuse->use_cnt) == 0 &&
+			tpid_reuse->is_ref == true) {
 			ret = send_is_ref_req(tpid_reuse);
 			if (ret != 0) {
 				ubcore_log_err(
@@ -364,7 +433,9 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 
 	for (i = 0; i < UBCORE_TPID_REUSE_MAX_WAIT_TIMES; i++) {
 		if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
-			if (atomic_read(&tpid_reuse->use_cnt) == 0 && tpid_reuse->is_ref == true) {
+			if (!ubcore_is_loopback(tpid_reuse->ub_dev, &tpid_reuse->rk.lk.peer_eid) &&
+				atomic_read(&tpid_reuse->use_cnt) == 0 &&
+				tpid_reuse->is_ref == true) {
 				ret = send_is_ref_req(tpid_reuse);
 				if (ret != 0) {
 					ubcore_log_err(
@@ -380,7 +451,8 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 			return tpid_reuse;
 		} else if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_RESET) {
 			mutex_unlock(&tpid_reuse->lock);
-			msleep(UBCORE_TPID_REUSE_WAIT_TIME);
+			usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 			mutex_lock(&tpid_reuse->lock);
 		} else if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR) {
 			break;
@@ -396,8 +468,6 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 int ubcore_free_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 {
 	int ret = 0;
-	uint32_t tpid = 0;
-	struct ubcore_device *dev = NULL;
 
 	if (tpid_reuse == NULL || tpid_reuse->ub_dev == NULL) {
 		ret = -EINVAL;
@@ -411,12 +481,11 @@ int ubcore_free_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 		return 0;
 	}
 
-	dev = tpid_reuse->ub_dev;
-	tpid = tpid_reuse->tp_handle.bs.tpid;
-	ret = ubcore_delete_tpid_priv(dev, tpid);
-	if (ret != 0) {
-		ubcore_log_info_rl("Failed to delete tpid, ret = %d.\n", ret);
-		return ret;
+	if (tpid_reuse->tp_handle_valid)	{
+		ret = ubcore_delete_tpid_priv(tpid_reuse->ub_dev, tpid_reuse->tp_handle.bs.tpid);
+		if (ret != 0)
+			ubcore_log_err("Failed to delete tpid, ret = %d.\n", ret);
+		tpid_reuse->tp_handle_valid = false;
 	}
 
 	ubcore_tpid_reuse_kref_put(tpid_reuse);
@@ -600,25 +669,6 @@ ubcore_find_remove_ex_tp_info(struct ubcore_device *dev, uint64_t tp_handle)
 	spin_unlock(&dev->ht[UBCORE_HT_EX_TP].lock);
 
 	return ex_tp_info;
-}
-
-static bool ubcore_is_loopback(struct ubcore_device *dev,
-			       union ubcore_eid *peer_eid)
-{
-	uint32_t eid_idx;
-
-	spin_lock(&dev->eid_table.lock);
-	for (eid_idx = 0; eid_idx < dev->eid_table.eid_cnt; eid_idx++) {
-		if (dev->eid_table.eid_entries[eid_idx].valid &&
-			memcmp(peer_eid, &dev->eid_table.eid_entries[eid_idx].eid,
-			sizeof(union ubcore_eid)) == 0) {
-			spin_unlock(&dev->eid_table.lock);
-			return true;
-		}
-	}
-	spin_unlock(&dev->eid_table.lock);
-
-	return false;
 }
 
 int ubcore_exchange_tp_info(struct ubcore_device *dev,
@@ -924,7 +974,8 @@ static int target_reuse_tpid(struct ubcore_device *dev, struct ubcore_tpid_reuse
 				return CREATE_CONN_SUCCESS;
 			}
 			mutex_unlock(&tpid_reuse->lock);
-			msleep(UBCORE_TPID_REUSE_WAIT_TIME);
+			usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US,
+				UBCORE_TPID_REUSE_WAIT_MAX_US);
 			mutex_lock(&tpid_reuse->lock);
 		} else if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
 			tpid_reuse->is_ref = true;
@@ -953,9 +1004,8 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	struct ubcore_tpid_reuse_key key = { 0 };
 	struct ubcore_tpid_reuse *tpid_reuse = NULL;
 	struct ubcore_tpid_reuse *exist_tpid_reuse = NULL;
-	struct ubcore_tpid *return_tpid = NULL;
+	union ubcore_tp_handle tp_handle;
 	struct msg_create_conn_resp resp = {0};
-	uint64_t tp_handle;
 	uint32_t tx_psn;
 	int ret;
 
@@ -963,14 +1013,15 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	get_tp_cfg.peer_eid = req->get_tp_cfg.local_eid;
 	key.lk.local_eid = get_tp_cfg.local_eid;
 	key.lk.peer_eid = get_tp_cfg.peer_eid;
-	if (ubcore_get_enable_shared_ctp()) {
-		ret = ubcore_lookup_host_info_local_and_peer(&get_tp_cfg.local_eid,
-			&key.lk.local_eid, &get_tp_cfg.peer_eid, &key.lk.peer_eid);
-		if (ret != 0) {
-			ubcore_log_err("Failed to lookup host info in create req.\n");
-			ret = GET_TP_LIST_ERROR;
-			goto send_resp;
-		}
+	union ubcore_net_addr_union local_cna = {0};
+	union ubcore_net_addr_union peer_cna = {0};
+
+	if (ubcore_get_enable_shared_ctp() &&
+	    get_tp_cfg.flag.bs.ctp &&
+	    get_tp_cfg.trans_mode == UBCORE_TP_RM) {
+		ubcore_lookup_host_info_local_and_peer(&get_tp_cfg.local_eid,
+			&key.lk.local_eid, &get_tp_cfg.peer_eid, &key.lk.peer_eid,
+			&local_cna, &peer_cna);
 	}
 	key.lk.trans_mode = get_tp_cfg.trans_mode;
 	key.stag = req->dtag;
@@ -989,6 +1040,19 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	ubcore_log_info_rl("Enter handle create req tpid reuse");
 
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
+	    !ubcore_net_addr_is_zero(&local_cna) &&
+	    !ubcore_net_addr_is_zero(&peer_cna)) {
+		ubcore_fill_tpid_reuse_key_cna(&key, local_cna, peer_cna);
+		tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+		if (tpid_reuse != NULL)
+			ubcore_log_debug("CNA reuse hit (create_req): local_eid=" EID_FMT
+				      " peer_eid=" EID_FMT "\n",
+				EID_ARGS(key.lk.local_eid), EID_ARGS(key.lk.peer_eid));
+	}
 	if (tpid_reuse != NULL) {
 		ret = target_reuse_tpid(dev, tpid_reuse, req);
 		resp.tp_handle = tpid_reuse->tp_handle.value;
@@ -1009,16 +1073,16 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 
 	ret = ubcore_find_add_tpid_reuse(dev, tpid_reuse, &exist_tpid_reuse, &key);
 	if (ret == -EEXIST && exist_tpid_reuse != NULL) {
-		exist_tpid_reuse =
-			ubcore_reuse_tpid(exist_tpid_reuse);
+		ubcore_log_info_rl("tpid_reuse exists.\n");
+		ret = target_reuse_tpid(dev, exist_tpid_reuse, req);
+		resp.tp_handle = exist_tpid_reuse->tp_handle.value;
+		resp.tx_psn = exist_tpid_reuse->tx_psn;
+		ubcore_tpid_reuse_kref_put(exist_tpid_reuse);
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
-		if (exist_tpid_reuse == NULL) {
-			ret = GET_TP_LIST_ERROR;
-			goto send_resp;
-		}
-		tp_handle = exist_tpid_reuse->tp_handle.value;
-		tx_psn = exist_tpid_reuse->tx_psn;
-		goto send_success_resp;
+		resp.result = ret;
+		if (send_create_resp(dev, conn, msg->session_id, &resp) != 0)
+			ubcore_log_err("Failed to send create resp message.\n");
+		return;
 	} else if (ret != 0) {
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
 		ret = GET_TP_LIST_ERROR;
@@ -1028,19 +1092,23 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	if (ret != 0) {
 		ubcore_log_err("Failed to fill tpid cfg, ret=%d", ret);
 		ret = GET_TP_LIST_ERROR;
+		ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
+		(void)ubcore_free_tpid_reuse(tpid_reuse);
 		goto send_resp;
 	}
-	return_tpid = ubcore_create_tpid_priv(dev, &tpid_cfg, NULL, false);
-	if (return_tpid == NULL) {
-		ubcore_log_err("Failed to create tpid for reuse, ret: %d.\n", ret);
+
+	ret = ubcore_create_tpid_priv(dev, &tpid_cfg, NULL, &tp_handle);
+	if (ret != 0) {
+		ubcore_log_err("Failed to create tpid, ret=%d", ret);
+		ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
+		(void)ubcore_free_tpid_reuse(tpid_reuse);
 		ret = GET_TP_LIST_ERROR;
 		goto send_resp;
 	}
-	ubcore_log_info_rl("return tpid value: %lld.\n", return_tpid->tp_handle.value);
+	ubcore_log_info_rl("return tpid value: %lld.\n", tp_handle.value);
 
 	tx_psn = tpid_reuse->tx_psn;
-	tp_handle = return_tpid->tp_handle.value;
-	active_cfg.tp_handle.value = tp_handle;
+	active_cfg.tp_handle.value = tp_handle.value;
 	active_cfg.peer_tp_handle.value = req->tp_handle;
 	active_cfg.tp_attr.rx_psn = req->tx_psn;
 	active_cfg.tp_attr.tx_psn = tx_psn;
@@ -1048,18 +1116,19 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	ubcore_log_info("Rcv req, local eid " EID_FMT ", peer eid " EID_FMT
 		", tphdl: %llu, p_tphdl: %llu, tx_psn: %u, rx_psn: %u.\n",
 		EID_ARGS(tpid_cfg.local_eid),
-		EID_ARGS(tpid_cfg.peer_eid), return_tpid->tp_handle.value,
+		EID_ARGS(tpid_cfg.peer_eid), tp_handle.value,
 		active_cfg.peer_tp_handle.value, tx_psn, req->tx_psn);
 
 	mutex_lock(&tpid_reuse->lock);
-	tpid_reuse->tp_handle.value = tp_handle;
-
+	tpid_reuse->tp_handle.value = tp_handle.value;
+	tpid_reuse->tp_handle_valid = true;
 	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &modify_tpid_cfg);
 	if (ret != 0) {
 		ubcore_log_err("Failed to modify tpid:%u to RTS, ret:%d.\n",
 				(uint32_t)active_cfg.tp_handle.bs.tpid, ret);
 		tpid_reuse->reuse_state = UBCORE_TPID_REUSE_ERROR;
 		mutex_unlock(&tpid_reuse->lock);
+		ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
 		ret = MODIFY_TPID_ERROR;
 		goto send_resp;
@@ -1069,8 +1138,7 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	tpid_reuse->reuse_state = UBCORE_TPID_REUSE_READY;
 	mutex_unlock(&tpid_reuse->lock);
 
-send_success_resp:
-	resp.tp_handle = tp_handle;
+	resp.tp_handle = tp_handle.value;
 	resp.tx_psn = tx_psn;
 	ret = CREATE_CONN_SUCCESS;
 
@@ -1148,15 +1216,24 @@ int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 	dev = tpid_reuse->ub_dev;
 
 	mutex_lock(&tpid_reuse->lock);
+	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR) {
+		mutex_unlock(&tpid_reuse->lock);
+		ubcore_log_warn("tpid_reuse already in ERROR state, skip disconnect.\n");
+		return 0;
+	}
+
 	if (atomic_dec_return(&tpid_reuse->use_cnt) > 0) {
 		mutex_unlock(&tpid_reuse->lock);
 		return 0;
 	}
 
-	if (tpid_reuse->tp_handle.bs.rtp) {
+	if (tpid_reuse->tp_handle.bs.rtp &&
+		!ubcore_is_loopback(tpid_reuse->ub_dev, &tpid_reuse->rk.lk.peer_eid)) {
 		ret = send_destroy_req(tpid_reuse);
 		if (ret != 0) {
 			ubcore_log_err("Failed to send destroy req message");
+			/* Rollback use_cnt on failure */
+			atomic_inc(&tpid_reuse->use_cnt);
 			mutex_unlock(&tpid_reuse->lock);
 			return ret;
 		}
@@ -1168,10 +1245,12 @@ int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 	}
 
 	tpid_reuse->reuse_state = UBCORE_TPID_REUSE_ERROR;
-	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
-
 	cfg.deactive_cfg->tp_handle.value = tpid_reuse->tp_handle.value;
 	cfg.deactive_cfg->udata = NULL;
+	mutex_unlock(&tpid_reuse->lock);
+
+	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
+
 	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_ERR, &cfg);
 	if (ret != 0) {
 		ubcore_log_err("Failed to modify tpid to ERROR, ret: %d, tphdl: %llu.\n",
@@ -1181,8 +1260,8 @@ int ubcore_disconnect_tpid_with_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse)
 	ubcore_log_info_rl("disconnect tpid_reuse:%u, ret:%d, tpid_reuse_state:%u",
 			   tpid_reuse->tp_handle.bs.tpid, ret, tpid_reuse->reuse_state);
 
-	mutex_unlock(&tpid_reuse->lock);
-	(void)ubcore_free_tpid_reuse(tpid_reuse);
+	if (ret == 0)
+		(void)ubcore_free_tpid_reuse(tpid_reuse);
 
 	return ret;
 }
@@ -1376,13 +1455,14 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 
 	key.lk.local_eid = req->peer_eid;
 	key.lk.peer_eid = req->local_eid;
-	if (ubcore_get_enable_shared_ctp()) {
-		ret = ubcore_lookup_host_info_local_and_peer(&req->peer_eid, &key.lk.local_eid,
-			&req->local_eid, &key.lk.peer_eid);
-		if (ret != 0) {
-			ubcore_log_err("Failed to lookup host info in destroy req, ret=%d\n", ret);
-			return;
-		}
+	union ubcore_net_addr_union destroy_local_cna = {0};
+	union ubcore_net_addr_union destroy_peer_cna = {0};
+
+	if (ubcore_get_enable_shared_ctp() &&
+	    req->tp_type == UBCORE_CTP &&
+	    req->trans_mode == UBCORE_TP_RM) {
+		ubcore_lookup_host_info_local_and_peer(&req->peer_eid, &key.lk.local_eid,
+			&req->local_eid, &key.lk.peer_eid, &destroy_local_cna, &destroy_peer_cna);
 	}
 	key.lk.trans_mode = req->trans_mode;
 	key.lk.tp_type = req->tp_type;
@@ -1392,6 +1472,19 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 	key.dtag = req->stag;
 
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
+	    !ubcore_net_addr_is_zero(&destroy_local_cna) &&
+	    !ubcore_net_addr_is_zero(&destroy_peer_cna)) {
+		ubcore_fill_tpid_reuse_key_cna(&key, destroy_local_cna, destroy_peer_cna);
+		tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+		if (tpid_reuse != NULL)
+			ubcore_log_debug("CNA reuse hit (destroy_req): local_eid=" EID_FMT
+				      " peer_eid=" EID_FMT "\n",
+				EID_ARGS(key.lk.local_eid), EID_ARGS(key.lk.peer_eid));
+	}
 	if (tpid_reuse == NULL) {
 		ubcore_log_err("tpid not found in tpid_reuse table in handle destroy req.\n");
 		return;
@@ -1405,6 +1498,12 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 		return;
 	}
 
+	if (tpid_reuse->is_ref == false) {
+		mutex_unlock(&tpid_reuse->lock);
+		ubcore_tpid_reuse_kref_put(tpid_reuse);
+		return;
+	}
+
 	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR) {
 		mutex_unlock(&tpid_reuse->lock);
 		ubcore_tpid_reuse_kref_put(tpid_reuse);
@@ -1413,19 +1512,21 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 
 	tpid_reuse->is_ref = false;
 	tpid_reuse->reuse_state = UBCORE_TPID_REUSE_ERROR;
-	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
-
 	cfg.deactive_cfg->tp_handle.value = tpid_reuse->tp_handle.value;
 	cfg.deactive_cfg->udata = NULL;
+	mutex_unlock(&tpid_reuse->lock);
+
+	ubcore_hash_table_rmv_tpid_reuse(dev, tpid_reuse);
+
 	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_ERR, &cfg);
 	if (ret != 0) {
 		ubcore_log_err("Failed to modify tpid to ERROR, ret: %d, tphdl: %llu.\n",
 			ret, tpid_reuse->tp_handle.value);
 	}
 
-	mutex_unlock(&tpid_reuse->lock);
 	ubcore_tpid_reuse_kref_put(tpid_reuse);
-	(void)ubcore_free_tpid_reuse(tpid_reuse);
+	if (ret == 0)
+		(void)ubcore_free_tpid_reuse(tpid_reuse);
 }
 
 static void handle_isref_req(struct ubcore_device *dev,
@@ -1435,18 +1536,18 @@ static void handle_isref_req(struct ubcore_device *dev,
 		(struct msg_isref_conn_req *)msg->data;
 	struct ubcore_tpid_reuse_key key = { 0 };
 	struct ubcore_tpid_reuse *tpid_reuse;
-	int ret;
 
 	key.lk.local_eid = req->peer_eid;
 	key.lk.peer_eid = req->local_eid;
-	if (ubcore_get_enable_shared_ctp()) {
-		ret = ubcore_lookup_host_info_local_and_peer(&req->peer_eid,
-			&key.lk.local_eid, &req->local_eid, &key.lk.peer_eid);
-		if (ret != 0) {
-			ubcore_log_err(
-				"Failed to lookup host info in isref_req, ret=%d\n", ret);
-			return;
-		}
+	union ubcore_net_addr_union isref_local_cna = {0};
+	union ubcore_net_addr_union isref_peer_cna = {0};
+
+	if (ubcore_get_enable_shared_ctp() &&
+	    req->tp_type == UBCORE_CTP &&
+	    req->trans_mode == UBCORE_TP_RM) {
+		ubcore_lookup_host_info_local_and_peer(&req->peer_eid,
+			&key.lk.local_eid, &req->local_eid, &key.lk.peer_eid,
+			&isref_local_cna, &isref_peer_cna);
 	}
 	key.lk.trans_mode = req->trans_mode;
 	key.lk.tp_type = req->tp_type;
@@ -1456,6 +1557,19 @@ static void handle_isref_req(struct ubcore_device *dev,
 	key.dtag = req->stag;
 
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
+	    !ubcore_net_addr_is_zero(&isref_local_cna) &&
+	    !ubcore_net_addr_is_zero(&isref_peer_cna)) {
+		ubcore_fill_tpid_reuse_key_cna(&key, isref_local_cna, isref_peer_cna);
+		tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+		if (tpid_reuse != NULL)
+			ubcore_log_debug("CNA reuse hit (isref_req): local_eid=" EID_FMT
+				      " peer_eid=" EID_FMT "\n",
+				EID_ARGS(key.lk.local_eid), EID_ARGS(key.lk.peer_eid));
+	}
 	if (tpid_reuse == NULL) {
 		ubcore_log_err("tpid not found in tpid_reuse table.\n");
 		return;
@@ -1513,7 +1627,7 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 	struct ubcore_tjetty *tjfr = NULL;
 	struct ubcore_tpid_reuse *tpid_reuse = NULL;
 	struct ubcore_tpid_reuse *exist_tpid_reuse = NULL;
-	struct ubcore_tpid *return_tpid = NULL;
+	union ubcore_tp_handle tp_handle = { 0 };
 	int ret;
 
 	if (cfg->trans_mode != UBCORE_TP_RM &&
@@ -1526,13 +1640,30 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 	if (ubcore_fill_get_tp_cfg(dev, &get_tp_cfg, cfg) != 0)
 		return NULL;
 
-	ret = ubcore_fill_tpid_reuse_key(&key, &get_tp_cfg, cfg);
+	union ubcore_net_addr_union jfr_local_cna = {0};
+	union ubcore_net_addr_union jfr_peer_cna = {0};
+
+	ret = ubcore_fill_tpid_reuse_key(&key, &get_tp_cfg, cfg,
+				 &jfr_local_cna, &jfr_peer_cna);
 	if (ret != 0) {
 		ubcore_log_err("Failed to fill tpid reuse key, ret=%d", ret);
 		return NULL;
 	}
 	ubcore_log_info_rl("try to get tpid reuse.\n");
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
+	    !ubcore_net_addr_is_zero(&jfr_local_cna) &&
+	    !ubcore_net_addr_is_zero(&jfr_peer_cna)) {
+		ubcore_fill_tpid_reuse_key_cna(&key, jfr_local_cna, jfr_peer_cna);
+		tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+		if (tpid_reuse != NULL)
+			ubcore_log_debug("CNA reuse hit (import_jfr): local_eid=" EID_FMT
+				      " peer_eid=" EID_FMT "\n",
+				EID_ARGS(key.lk.local_eid), EID_ARGS(key.lk.peer_eid));
+	}
 	if (tpid_reuse != NULL) {
 		ubcore_log_info_rl("tpid reuse get. reuse tpid.\n");
 		tpid_reuse = ubcore_reuse_tpid(tpid_reuse);
@@ -1541,7 +1672,11 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 		active_tp_cfg.tp_handle = tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
-		return ubcore_import_jfr_ex(dev, cfg, &active_tp_cfg, udata);
+		tjfr = ubcore_import_jfr_ex(dev, cfg, &active_tp_cfg, udata);
+		if (IS_ERR_OR_NULL(tjfr))
+			/* Rollback use_cnt since import failed */
+			ubcore_tpid_reuse_dec_usecnt(tpid_reuse);
+		return tjfr;
 	}
 
 	tpid_reuse = ubcore_create_tpid_reuse(dev, &key);
@@ -1560,7 +1695,11 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 		active_tp_cfg.tp_handle = exist_tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = exist_tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = exist_tpid_reuse->tx_psn;
-		return ubcore_import_jfr_ex(dev, cfg, &active_tp_cfg, udata);
+		tjfr = ubcore_import_jfr_ex(dev, cfg, &active_tp_cfg, udata);
+		if (IS_ERR_OR_NULL(tjfr))
+			/* Rollback use_cnt since import failed */
+			ubcore_tpid_reuse_dec_usecnt(exist_tpid_reuse);
+		return tjfr;
 	} else if (ret != 0) {
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
 		return NULL;
@@ -1572,28 +1711,28 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 		goto err_out;
 	}
 
-	return_tpid = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, false);
-	if (return_tpid == NULL) {
+	ret = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, &tp_handle);
+	if (ret != 0) {
 		ubcore_log_err("Failed to create tpid for reuse, ret: %d.\n", ret);
 		goto err_out;
 	}
 
 	mutex_lock(&tpid_reuse->lock);
-	tpid_reuse->tp_handle = return_tpid->tp_handle;
+	tpid_reuse->tp_handle = tp_handle;
+	tpid_reuse->tp_handle_valid = true;
 	mutex_unlock(&tpid_reuse->lock);
 
-	active_tp_cfg.tp_handle = return_tpid->tp_handle;
+	active_tp_cfg.tp_handle = tp_handle;
 	active_tp_cfg.tpid_reuse = tpid_reuse;
 	active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
 
 	if (cfg->trans_mode == UBCORE_TP_RM &&
 		cfg->tp_type == UBCORE_RTP) {
-		ubcore_log_err("rtp goto jfr exchange tp info");
 		ret = ubcore_exchange_tp_info(dev, &get_tp_cfg,
 				      &active_tp_cfg, cfg, udata);
 		if (ret != 0) {
 			ubcore_log_err("Exchange_tp_info Failed: dev_name is %s,local_tp_handle is %llu",
-				dev->dev_name, return_tpid->tp_handle.value);
+				dev->dev_name, tp_handle.value);
 			ubcore_log_err("  local eid " EID_FMT ", peer eid " EID_FMT,
 				EID_ARGS(tpid_cfg.local_eid),
 				EID_ARGS(tpid_cfg.peer_eid));
@@ -1640,7 +1779,7 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 	struct ubcore_tjetty *tjetty = NULL;
 	struct ubcore_tpid_reuse *tpid_reuse = NULL;
 	struct ubcore_tpid_reuse *exist_tpid_reuse = NULL;
-	struct ubcore_tpid *return_tpid = NULL;
+	union ubcore_tp_handle tp_handle = { 0 };
 	int ret;
 
 	if (cfg->trans_mode != UBCORE_TP_RM &&
@@ -1651,7 +1790,11 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 	if (ubcore_fill_get_tp_cfg(dev, &get_tp_cfg, cfg) != 0)
 		return NULL;
 
-	ret = ubcore_fill_tpid_reuse_key(&key, &get_tp_cfg, cfg);
+	union ubcore_net_addr_union jetty_local_cna = {0};
+	union ubcore_net_addr_union jetty_peer_cna = {0};
+
+	ret = ubcore_fill_tpid_reuse_key(&key, &get_tp_cfg, cfg,
+				 &jetty_local_cna, &jetty_peer_cna);
 	if (ret != 0) {
 		ubcore_log_err("Failed to fill tpid reuse key, ret=%d", ret);
 		return NULL;
@@ -1659,6 +1802,27 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 
 	ubcore_log_info_rl("try to get tpid reuse.\n");
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+
+	/*
+	 * EID-level reuse missed; try to CNA-level reuse if both
+	 * local and peer CNA are non-zero. The CNA key (peer_eid=0,
+	 * local_cna/peer_cna set) is filled here so that even if the
+	 * subsequent ubcore_find_get_tpid_reuse misses, the following
+	 * ubcore_create_tpid_reuse will naturally create a CNA-level entry.
+	 */
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
+	    !ubcore_net_addr_is_zero(&jetty_local_cna) &&
+	    !ubcore_net_addr_is_zero(&jetty_peer_cna)) {
+		ubcore_fill_tpid_reuse_key_cna(&key, jetty_local_cna, jetty_peer_cna);
+		tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+		if (tpid_reuse != NULL)
+			ubcore_log_debug("CNA reuse hit (import_jetty): local_eid=" EID_FMT
+				      " peer_eid=" EID_FMT "\n",
+				EID_ARGS(key.lk.local_eid), EID_ARGS(key.lk.peer_eid));
+	}
 	if (tpid_reuse != NULL) {
 		ubcore_log_info_rl("tpid reuse get. reuse tpid.\n");
 		tpid_reuse = ubcore_reuse_tpid(tpid_reuse);
@@ -1667,7 +1831,11 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 		active_tp_cfg.tp_handle = tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
-		return ubcore_import_jetty_ex(dev, cfg, &active_tp_cfg, udata);
+		tjetty = ubcore_import_jetty_ex(dev, cfg, &active_tp_cfg, udata);
+		if (IS_ERR_OR_NULL(tjetty))
+			/* Rollback use_cnt since import failed */
+			ubcore_tpid_reuse_dec_usecnt(tpid_reuse);
+		return tjetty;
 	}
 
 	tpid_reuse = ubcore_create_tpid_reuse(dev, &key);
@@ -1686,35 +1854,39 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 		active_tp_cfg.tp_handle = exist_tpid_reuse->tp_handle;
 		active_tp_cfg.tpid_reuse = exist_tpid_reuse;
 		active_tp_cfg.tp_attr.tx_psn = exist_tpid_reuse->tx_psn;
-		return ubcore_import_jetty_ex(dev, cfg, &active_tp_cfg, udata);
+		tjetty = ubcore_import_jetty_ex(dev, cfg, &active_tp_cfg, udata);
+		if (IS_ERR_OR_NULL(tjetty))
+			/* Rollback use_cnt since import failed */
+			ubcore_tpid_reuse_dec_usecnt(exist_tpid_reuse);
+		return tjetty;
 	} else if (ret != 0) {
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
 		return NULL;
 	}
 
 	ubcore_fill_tpid_cfg(&tpid_cfg, &get_tp_cfg);
-	return_tpid = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, false);
-	if (return_tpid == NULL) {
+	ret = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, &tp_handle);
+	if (ret != 0) {
 		ubcore_log_err("Failed to create tpid for reuse, ret: %d.\n", ret);
 		goto err_out;
 	}
 
 	mutex_lock(&tpid_reuse->lock);
-	tpid_reuse->tp_handle = return_tpid->tp_handle;
+	tpid_reuse->tp_handle = tp_handle;
+	tpid_reuse->tp_handle_valid = true;
 	mutex_unlock(&tpid_reuse->lock);
 
-	active_tp_cfg.tp_handle = return_tpid->tp_handle;
+	active_tp_cfg.tp_handle = tp_handle;
 	active_tp_cfg.tpid_reuse = tpid_reuse;
 	active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
 
 	if (cfg->trans_mode == UBCORE_TP_RM &&
 		cfg->tp_type == UBCORE_RTP) {
-	    ubcore_log_err("rtp goto jetty exchange tp info");
 		ret = ubcore_exchange_tp_info(dev, &get_tp_cfg,
 						&active_tp_cfg, cfg, udata);
 		if (ret != 0) {
 			ubcore_log_err("Exchange_tp_info Failed: dev_name is %s, local_tp_handle is %llu",
-				dev->dev_name, return_tpid->tp_handle.value);
+				dev->dev_name, tp_handle.value);
 			ubcore_log_err("localeid " EID_FMT ", peereid " EID_FMT,
 				EID_ARGS(tpid_cfg.local_eid),
 				EID_ARGS(tpid_cfg.peer_eid));
@@ -1833,20 +2005,36 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 	struct ubcore_tpid_reuse *tpid_reuse = NULL;
 	struct ubcore_tpid_reuse *exist_tpid_reuse = NULL;
 	struct ubcore_tpid_reuse_key key = { 0 };
-
-	struct ubcore_tpid *return_tpid = NULL;
+	union ubcore_tp_handle tp_handle = {0};
 	int ret;
 
 	ret = ubcore_fill_get_tp_cfg(dev, &get_tp_cfg, &tjetty->cfg);
 	if (ret != 0)
 		return ret;
 
-	ret = ubcore_fill_bind_tpid_reuse_key(&key, &get_tp_cfg, &tjetty->cfg, jetty);
+	union ubcore_net_addr_union bind_local_cna = {0};
+	union ubcore_net_addr_union bind_peer_cna = {0};
+
+	ret = ubcore_fill_bind_tpid_reuse_key(&key, &get_tp_cfg, &tjetty->cfg, jetty,
+				      &bind_local_cna, &bind_peer_cna);
 	if (ret != 0) {
 		ubcore_log_err("Failed to fill bind tpid reuse key, ret=%d\n", ret);
 		return ret;
 	}
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+	if (tpid_reuse == NULL &&
+	    ubcore_get_enable_shared_ctp() &&
+	    key.lk.tp_type == UBCORE_CTP &&
+	    key.lk.trans_mode == UBCORE_TP_RM &&
+	    !ubcore_net_addr_is_zero(&bind_local_cna) &&
+	    !ubcore_net_addr_is_zero(&bind_peer_cna)) {
+		ubcore_fill_tpid_reuse_key_cna(&key, bind_local_cna, bind_peer_cna);
+		tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
+		if (tpid_reuse != NULL)
+			ubcore_log_debug("CNA reuse hit (bind_jetty): local_eid=" EID_FMT
+				      " peer_eid=" EID_FMT "\n",
+				EID_ARGS(key.lk.local_eid), EID_ARGS(key.lk.peer_eid));
+	}
 	if (tpid_reuse != NULL) {
 		tpid_reuse = ubcore_reuse_tpid(tpid_reuse);
 		if (tpid_reuse == NULL)
@@ -1882,6 +2070,8 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 		ret = ubcore_bind_jetty_ex(jetty, tjetty, &active_tp_cfg, udata);
 		if (ret != 0) {
 			ubcore_log_err("Failed to bind jetty ex, ret: %d.\n", ret);
+			/* Rollback use_cnt since bind failed */
+			ubcore_tpid_reuse_dec_usecnt(exist_tpid_reuse);
 			return ret;
 		}
 		atomic_dec(&tjetty->use_cnt);
@@ -1897,17 +2087,18 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 		goto err_out;
 	}
 
-	return_tpid = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, false);
-	if (return_tpid == NULL) {
+	ret = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, &tp_handle);
+	if (ret != 0) {
 		ubcore_log_err("Failed to create tpid for reuse, ret: %d.\n", ret);
 		goto err_out;
 	}
 
 	mutex_lock(&tpid_reuse->lock);
-	tpid_reuse->tp_handle = return_tpid->tp_handle;
+	tpid_reuse->tp_handle = tp_handle;
+	tpid_reuse->tp_handle_valid = true;
 	mutex_unlock(&tpid_reuse->lock);
 
-	active_tp_cfg.tp_handle = return_tpid->tp_handle;
+	active_tp_cfg.tp_handle = tp_handle;
 	active_tp_cfg.tpid_reuse = tpid_reuse;
 	active_tp_cfg.tp_attr.tx_psn = tpid_reuse->tx_psn;
 

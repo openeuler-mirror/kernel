@@ -11,6 +11,7 @@
 #include <linux/page-isolation.h>
 #include <linux/memory.h>
 #include <linux/numa_remote.h>
+#include <linux/oom.h>
 #include "../../mm/hugetlb_vmemmap.h"
 #include "../../mm/internal.h"
 

@@ -233,20 +233,6 @@ struct udma_jetty_grp_ctx {
 	uint32_t valid;
 };
 
-static inline uint32_t to_udma_type(uint32_t trans_mode)
-{
-	switch (trans_mode) {
-	case UBCORE_TP_RM:
-		return JETTY_RM;
-	case UBCORE_TP_RC:
-		return JETTY_RC;
-	case UBCORE_TP_UM:
-		return JETTY_UM;
-	default:
-		return JETTY_TYPE_RESERVED;
-	}
-}
-
 static inline struct udma_jetty *to_udma_jetty(struct ubcore_jetty *jetty)
 {
 	return container_of(jetty, struct udma_jetty, ubcore_jetty);
@@ -262,36 +248,20 @@ static inline struct udma_jetty *to_udma_jetty_from_queue(struct udma_jetty_queu
 	return container_of(queue, struct udma_jetty, sq);
 }
 
-static inline uint32_t udma_get_ta_timeout(uint8_t gear)
-{
-#define GEAR_0	0
-#define GEAR_1	1
-#define GEAR_2	2
-#define GEAR_3	3
-
-	switch (gear) {
-	case GEAR_0: return UDMA_TA_TIMEOUT_128MS;
-	case GEAR_1: return UDMA_TA_TIMEOUT_1000MS;
-	case GEAR_2: return UDMA_TA_TIMEOUT_8000MS;
-	case GEAR_3: return UDMA_TA_TIMEOUT_64000MS;
-	default: return UDMA_TA_TIMEOUT_64000MS;
-	}
-}
-
 static inline uint8_t udma_get_ta_timeout_gear(struct udma_dev *udev, uint32_t err_timeout)
 {
 #define TA_TIMEOUT_DIVISOR 8
 #define UDMA_TA_TIMEOUT_MAX_INDEX 3
 
 	uint8_t ta_timeout_gear = err_timeout / TA_TIMEOUT_DIVISOR;
-	uint32_t hw_ver = ubase_get_hw_ver(udev->comdev.adev);
-
 	if ((ta_timeout_gear >= UDMA_TA_TIMEOUT_MAX_INDEX) &&
-	    ((hw_ver == UBASE_HW_VER_A_0) || (hw_ver == UBASE_HW_VER_K_0)))
+		((udev->hw_ver == UBASE_HW_VER_A_0) || (udev->hw_ver == UBASE_HW_VER_K_0)))
 		ta_timeout_gear = (UDMA_TA_TIMEOUT_MAX_INDEX - 1);
 
 	return ta_timeout_gear;
 }
+
+uint32_t udma_get_ta_timeout(uint8_t gear);
 
 static inline void udma_set_query_flush_time(struct udma_dev *udev, struct udma_jetty_queue *sq,
 					     uint8_t err_timeout)
@@ -367,4 +337,6 @@ int udma_get_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt, void *buf,
 int udma_set_jetty_opt(struct ubcore_jetty *jetty, uint64_t opt,
 		       void *buf, uint32_t len, struct ubcore_udata *udata);
 void udma_get_jfs_cfg_field(struct ubcore_jfs_cfg *jfs_cfg, uint64_t opt, void *buf);
+uint32_t udma_get_type(uint32_t trans_mode, uint32_t order_type);
+int udma_get_tp_type_available(struct udma_dev *dev, struct ubcore_tjetty_cfg *cfg);
 #endif /* __UDMA_JETTY_H__ */

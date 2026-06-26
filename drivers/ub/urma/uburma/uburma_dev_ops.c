@@ -22,6 +22,16 @@
 #include "uburma_cmd.h"
 #include "uburma_mmap.h"
 
+/*
+ * This function can be called by two paths:
+ * 1. Process exit -> exit_mmap -> mmu_notifier_release -> mn_hlist_release -> (ops->release)
+ * 2. mmu_notifier_unregister -> (ops->release)
+ *
+ * These paths may execute concurrently.
+ * If mmu_notifier_register is used to register a notifier,
+ * it must ensure mmu_notifier_unregister is called under concurrent
+ * scenarios to prevent mm_struct leaks
+ */
 static void uburma_mmu_release(struct mmu_notifier *mn, struct mm_struct *mm)
 {
 	struct uburma_mn *ub_mn = container_of(mn, struct uburma_mn, mn);
@@ -37,7 +47,7 @@ static void uburma_mmu_release(struct mmu_notifier *mn, struct mm_struct *mm)
 		uburma_log_debug("mm already released.\n");
 		return;
 	}
-	ub_mn->mm = NULL;
+	/* Don't set ub_mn->mm=NULL to ensure mmu_notifier_unregister gets called */
 
 	if (!ubu_dev) {
 		uburma_log_err("ubu dev is null.\n");
@@ -71,11 +81,8 @@ void uburma_unregister_mmu(struct uburma_file *file)
 	struct uburma_mn *ub_mn = &file->ub_mn;
 	struct mm_struct *mm = ub_mn->mm;
 
-	if (!mm)
-		return;
-
-	file->ub_mn.mm = NULL;
-	mmu_notifier_unregister(&file->ub_mn.mn, mm);
+	mmu_notifier_unregister(&ub_mn->mn, mm);
+	ub_mn->mm = NULL;
 }
 
 int uburma_register_mmu(struct uburma_file *file)

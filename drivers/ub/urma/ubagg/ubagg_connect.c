@@ -19,6 +19,7 @@
 #include "ubagg_log.h"
 #include "ubagg_msg.h"
 #include "ubagg_types.h"
+#include "ubagg_device.h"
 
 #include "ubagg_connect.h"
 
@@ -44,7 +45,7 @@ struct msg_jetty_info_req {
 
 struct msg_seg_info_resp {
 	int result;
-	struct ubagg_seg_info seg_info[UBAGG_DEV_MAX_NUM];
+	struct ubagg_seg_exchange_info seg_info;
 };
 
 struct msg_jetty_info_resp {
@@ -112,63 +113,6 @@ static struct ubcore_device *find_phys_dev(struct ubcore_device *bonding_dev,
 	return ubcore_get_device_by_eid(primary_eid, UBCORE_TRANSPORT_UB);
 }
 
-static struct ubcore_device *find_bonding_dev(union ubcore_eid *eid)
-{
-	struct ubagg_topo_node *topo_info;
-	union ubcore_eid *bonding_eid;
-	int dev_id, ue_id, port_id;
-	bool is_found = false;
-
-	topo_info = get_current_topo_node();
-	if (!topo_info) {
-		ubagg_log_err("Failed get global topo info");
-		return NULL;
-	}
-
-	for (dev_id = 0; dev_id < DEV_NUM; dev_id++) {
-		if (!is_agg_dev_valid(&topo_info->agg_devs[dev_id]))
-			continue;
-
-		if (memcmp(eid,
-			   (union ubcore_eid *)topo_info->agg_devs[dev_id]
-				   .agg_eid,
-			   sizeof(union ubcore_eid)) == 0) {
-			is_found = true;
-			break;
-		}
-
-		for (ue_id = 0; ue_id < IODIE_NUM; ue_id++) {
-			if (memcmp(eid,
-				   (union ubcore_eid *)topo_info
-					   ->agg_devs[dev_id]
-					   .ues[ue_id]
-					   .primary_eid,
-				   sizeof(union ubcore_eid)) == 0) {
-				is_found = true;
-				break;
-			}
-			for (port_id = 0; port_id < PORT_NUM; port_id++) {
-				if (memcmp(eid,
-					   (union ubcore_eid *)topo_info
-						   ->agg_devs[dev_id]
-						   .ues[ue_id]
-						   .port_eid[port_id],
-					   sizeof(union ubcore_eid)) == 0) {
-					is_found = true;
-					break;
-				}
-			}
-		}
-	}
-	if (!is_found) {
-		ubagg_log_err("Failed to find bonding device.\n");
-		return NULL;
-	}
-
-	bonding_eid = (union ubcore_eid *)topo_info->agg_devs[dev_id].agg_eid;
-	return ubcore_get_device_by_eid(bonding_eid, UBCORE_TRANSPORT_UB);
-}
-
 static struct ubagg_session *alloc_xchg_session(struct ubcore_device *dev,
 						int *result, void *udata_out,
 						uint32_t udata_out_size)
@@ -186,7 +130,7 @@ static struct ubagg_session *alloc_xchg_session(struct ubcore_device *dev,
 	session_data->udata_out = udata_out;
 	session_data->udata_out_size = udata_out_size;
 
-	session = ubagg_session_create(dev, session_data,
+	session = ubagg_session_create(NULL, session_data,
 				       UBAGG_CONN_MAX_TIMEOUT, NULL, NULL);
 	if (!session) {
 		ubagg_log_err("Failed to alloc session for exchange seg info");
@@ -301,7 +245,7 @@ static int send_jetty_resp(struct ubcore_device *dev, void *conn,
 
 int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
 			   struct ubcore_device *dev,
-			   struct ubagg_seg_info *seg_info)
+			   struct ubagg_seg_exchange_info *seg_info)
 {
 	struct ubcore_device *physical_dev;
 	struct msg_seg_info_req req = { 0 };
@@ -318,7 +262,7 @@ int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
 	}
 
 	session = alloc_xchg_session(physical_dev, &result, seg_info,
-				     sizeof(*seg_info) * UBAGG_DEV_MAX_NUM);
+				     sizeof(*seg_info));
 	if (!session) {
 		ret = -ENOMEM;
 		goto put_device;
@@ -348,13 +292,13 @@ int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
 			duration);
 
 	ubagg_session_ref_release(session);
-	ubagg_put_ubcore_device(physical_dev);
+	ubcore_put_device(physical_dev);
 	return 0;
 
 release_session:
 	ubagg_session_ref_release(session);
 put_device:
-	ubagg_put_ubcore_device(physical_dev);
+	ubcore_put_device(physical_dev);
 	return ret;
 }
 
@@ -406,13 +350,13 @@ int ubagg_connect_xchg_jetty(struct ubcore_tjetty_cfg *cfg, uint32_t ue_idx,
 			duration);
 
 	ubagg_session_ref_release(session);
-	ubagg_put_ubcore_device(physical_dev);
+	ubcore_put_device(physical_dev);
 	return 0;
 
 release_session:
 	ubagg_session_ref_release(session);
 put_device:
-	ubagg_put_ubcore_device(physical_dev);
+	ubcore_put_device(physical_dev);
 	return ret;
 }
 
@@ -420,8 +364,8 @@ static void handle_seg_req(struct ubcore_device *dev,
 			   struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_seg_info_req *req = (struct msg_seg_info_req *)msg->data;
-	struct ubcore_device *bonding_dev = find_bonding_dev(&req->ubva.eid);
-	struct ubagg_device *ubagg_dev = to_ubagg_dev(bonding_dev);
+	struct ubagg_device *ubagg_dev =
+		ubagg_get_device_by_eid(&req->ubva.eid);
 	struct ubagg_hash_table *ubagg_seg_ht;
 	struct ubagg_seg_hash_node *tmp_seg = NULL;
 	struct msg_seg_info_resp resp = { 0 };
@@ -444,24 +388,23 @@ static void handle_seg_req(struct ubcore_device *dev,
 		goto send_resp_and_put_device;
 	}
 
-	memcpy(resp.seg_info, tmp_seg->ex_info.slaves,
-	       sizeof(tmp_seg->ex_info.slaves));
+	resp.seg_info = tmp_seg->ex_info;
 	spin_unlock(&ubagg_seg_ht->lock);
 
 send_resp_and_put_device:
 	resp.result = ret;
 	if (send_seg_resp(dev, conn, msg->session_id, &resp) != 0)
 		ubagg_log_err("Failed to send seg info resp message.\n");
-	ubagg_put_ubcore_device(bonding_dev);
+	if (ubagg_dev != NULL)
+		ubagg_put_device(ubagg_dev);
 }
 
 static void handle_jetty_req(struct ubcore_device *dev,
 			     struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_jetty_info_req *req = (struct msg_jetty_info_req *)msg->data;
-	struct ubcore_device *bonding_dev =
-		find_bonding_dev(&req->jetty_id.eid);
-	struct ubagg_device *ubagg_dev = to_ubagg_dev(bonding_dev);
+	struct ubagg_device *ubagg_dev =
+		ubagg_get_device_by_eid(&req->jetty_id.eid);
 	struct ubagg_hash_table *ht = NULL;
 	struct msg_jetty_info_resp resp = { 0 };
 	int ret = 0;
@@ -487,8 +430,7 @@ static void handle_jetty_req(struct ubcore_device *dev,
 			goto send_resp_and_put_device;
 		}
 
-		memcpy(&resp.jetty_info, &tmp_jfr->ex_info,
-		       sizeof(tmp_jfr->ex_info));
+		resp.jetty_info = tmp_jfr->ex_info;
 		spin_unlock(&ht->lock);
 	} else {
 		struct ubagg_jetty_hash_node *tmp_jetty = NULL;
@@ -505,8 +447,7 @@ static void handle_jetty_req(struct ubcore_device *dev,
 			goto send_resp_and_put_device;
 		}
 
-		memcpy(&resp.jetty_info, &tmp_jetty->ex_info,
-		       sizeof(tmp_jetty->ex_info));
+		resp.jetty_info = tmp_jetty->ex_info;
 		spin_unlock(&ht->lock);
 	}
 
@@ -514,7 +455,8 @@ send_resp_and_put_device:
 	resp.result = ret;
 	if (send_jetty_resp(dev, conn, msg->session_id, &resp) != 0)
 		ubagg_log_err("Failed to send jetty info resp message.\n");
-	ubagg_put_ubcore_device(bonding_dev);
+	if (ubagg_dev != NULL)
+		ubagg_put_device(ubagg_dev);
 }
 
 static void handle_xchg_resp(struct ubcore_device *dev, void *conn,
@@ -555,7 +497,7 @@ static void handle_seg_resp(struct ubcore_device *dev,
 	struct msg_seg_info_resp *resp = (struct msg_seg_info_resp *)msg->data;
 
 	handle_xchg_resp(dev, conn, msg->session_id, resp->result,
-			 resp->seg_info);
+			 &resp->seg_info);
 }
 
 static void handle_jetty_resp(struct ubcore_device *dev,

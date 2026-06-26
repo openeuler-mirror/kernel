@@ -427,15 +427,12 @@ static void ummu_invalidate_plb(struct iommu_domain *domain,
 	u32 tid = u_domain->base_domain.tid;
 	u32 tag = u_domain->cfgs.tecte_tag;
 	u64 addr;
-	int ret;
 
 	if (plb_gather->size == 0)
 		return;
 
 	addr = (u64)(uintptr_t)plb_gather->va & GENMASK_ULL(ummu->cap.ias - 1, 0U);
-	ret = ummu_device_flush_plb(ummu, tag, tid, addr, plb_gather->size);
-	if (ret)
-		pr_warn("failed to plbi by va!\n");
+	ummu_device_flush_plb(ummu, tag, tid, addr, plb_gather->size);
 }
 
 const struct iommu_perm_ops ummu_sva_perm_ops = {
@@ -474,6 +471,7 @@ struct iommu_domain *ummu_domain_alloc_sva(struct device *dev,
 		u_domain->base_domain.domain.ops = &ummu_sva_domain_no_dvm_ops;
 	u_domain->base_domain.domain.type = IOMMU_DOMAIN_SVA;
 	u_domain->base_domain.domain.perm_ops = &ummu_sva_perm_ops;
+	u_domain->base_domain.domain.pgsize_bitmap = PAGE_SIZE;
 	return &u_domain->base_domain.domain;
 }
 

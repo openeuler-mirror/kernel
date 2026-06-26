@@ -54,7 +54,7 @@ static int parse_ue_idx_from_udata(struct ubcore_udata *udata, uint32_t *ue_idx)
 
 static int write_seg_udata(struct ubcore_target_seg_cfg *cfg,
 			   struct ubcore_udata *udata,
-			   struct ubagg_seg_info seg_info[UBAGG_DEV_MAX_NUM])
+			   const struct ubagg_seg_exchange_info *seg_ex_info)
 {
 	struct ubagg_import_seg_udata *udata_typed;
 	bool connected[UBAGG_DEV_MAX_NUM][UBAGG_DEV_MAX_NUM] = { 0 };
@@ -73,8 +73,8 @@ static int write_seg_udata(struct ubcore_target_seg_cfg *cfg,
 		return -EINVAL;
 	}
 
-	ret = copy_to_user((void __user *)udata_typed->peer_p_seg, seg_info,
-			   sizeof(struct ubagg_seg_info) * UBAGG_DEV_MAX_NUM);
+	ret = copy_to_user((void __user *)udata_typed->peer_p_seg,
+			   seg_ex_info->slaves, sizeof(seg_ex_info->slaves));
 	if (ret != 0) {
 		ubagg_log_err("Failed to copy seg info to user, ret:%d", ret);
 		return -EFAULT;
@@ -183,7 +183,7 @@ struct ubcore_target_seg *ubagg_import_seg(struct ubcore_device *dev,
 					   struct ubcore_udata *udata)
 {
 	struct ubagg_device *ubagg_dev = to_ubagg_dev(dev);
-	struct ubagg_seg_info seg_info[UBAGG_DEV_MAX_NUM] = { 0 };
+	struct ubagg_seg_exchange_info seg_ex_info = { 0 };
 	struct ubcore_target_seg *tseg;
 	uint32_t ue_idx;
 	int ret;
@@ -200,12 +200,12 @@ struct ubcore_target_seg *ubagg_import_seg(struct ubcore_device *dev,
 		return ERR_PTR(ret);
 	}
 
-	if (ubagg_connect_xchg_seg(&cfg->seg, ue_idx, dev, seg_info) != 0) {
+	if (ubagg_connect_xchg_seg(&cfg->seg, ue_idx, dev, &seg_ex_info) != 0) {
 		ubagg_log_err("failed to exchange udata when import seg\n");
 		return ERR_PTR(-ENOEXEC);
 	}
 
-	ret = write_seg_udata(cfg, udata, seg_info);
+	ret = write_seg_udata(cfg, udata, &seg_ex_info);
 	if (ret != 0) {
 		ubagg_log_err("Failed to fill udata, ret:%d\n", ret);
 		return ERR_PTR(ret);

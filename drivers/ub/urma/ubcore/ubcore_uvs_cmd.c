@@ -197,63 +197,6 @@ static int ubcore_cmd_set_topo(struct ubcore_global_file *file,
 	return 0;
 }
 
-static int ubcore_cmd_get_topo(struct ubcore_global_file *file,
-			       struct ubcore_cmd_hdr *hdr)
-{
-	struct ubcore_cmd_get_topo arg = {0};
-	struct ubcore_topo_map *topo_map;
-	int ret = 0;
-
-	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0) {
-		ubcore_log_err("Failed to parse get_topo_info params\n");
-		return ret;
-	}
-
-	if (arg.out.topo_map == NULL) {
-		ubcore_log_err("Invalid get_topo_info param\n");
-		return -EINVAL;
-	}
-
-	topo_map = ubcore_get_global_topo_map();
-	if (topo_map == NULL) {
-		ubcore_log_err("Failed to get global topo map\n");
-		return -ENOMEM;
-	}
-	ret = copy_to_user((void __user *)arg.out.topo_map, topo_map,
-					sizeof(struct ubcore_topo_map)
-	);
-	if (ret != 0) {
-		ubcore_log_err("copy_to_user fail.");
-		return ret;
-	}
-
-	return 0;
-}
-
-static int ubcore_cmd_get_route_list(struct ubcore_global_file *file,
-				     struct ubcore_cmd_hdr *hdr)
-{
-	struct ubcore_cmd_get_route_list arg;
-
-	int ret = 0;
-
-	ret = ubcore_global_tlv_parse(hdr, (void *)&arg);
-	if (ret != 0) {
-		ubcore_log_err("Failed to parse ubcore cmd tlv.\n");
-		return ret;
-	}
-	ret = ubcore_get_route_list(&arg.in, &arg.out);
-	if (ret != 0) {
-		ubcore_log_err("Failed to get_route_list, ret: %d.\n", ret);
-		return ret;
-	}
-	if (ubcore_global_tlv_append(hdr, (void *)&arg) != 0)
-		ret = -EPERM;
-
-	return ret;
-}
-
 static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 	struct ubcore_cmd_hdr *hdr)
 {
@@ -267,7 +210,7 @@ static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 		return ret;
 	}
 	ret = ubcore_get_path_set(&arg.in.src_bonding_eid, &arg.in.dst_bonding_eid,
-		arg.in.tp_type, arg.in.iodie_level, &arg.out);
+		arg.in.tp_type, arg.in.iodie_level, &arg.out.path_set);
 	if (ret != 0) {
 		ubcore_log_err("Failed to get_path_set, ret: %d.\n", ret);
 		return ret;
@@ -280,20 +223,23 @@ static int ubcore_cmd_get_path_set(struct ubcore_global_file *file,
 
 static int ubcore_insert_host_eid_batch(
 	const union ubcore_eid *host_eid, uint32_t eid_num,
-	const union ubcore_eid *eids)
+	const union ubcore_eid *eids, const union ubcore_net_addr_union *cnas)
 {
 	struct ubcore_host_info host_info = {0};
 	uint32_t i;
 	int ret;
 
-	if (host_eid == NULL || eids == NULL || eid_num == 0 ||
-	    eid_num > UBCORE_HOST_EID_BATCH_EID_MAX) {
+	if (host_eid == NULL || eids == NULL || cnas == NULL ||
+	    eid_num == 0 || eid_num > UBCORE_HOST_EID_BATCH_EID_MAX) {
 		ubcore_log_err("invalid host eid batch.\n");
 		return -EINVAL;
 	}
 
 	host_info.eid = *host_eid;
 	for (i = 0; i < eid_num; i++) {
+		host_info.cna = cnas[i];
+		ubcore_log_debug("insert host_eid=" EID_FMT " cna=" EID_FMT "\n",
+				 EID_ARGS(*host_eid), EID_RAW_ARGS(cnas[i].raw));
 		ret = ubcore_insert_host_info(&eids[i], &host_info);
 		if (ret != 0) {
 			ubcore_log_err("insert host eid batch failed, idx: %u, ret: %d\n",
@@ -429,7 +375,8 @@ static int ubcore_cmd_insert_host_eid_batch(
 	if (ret == 0)
 		ret = ubcore_insert_host_eid_batch(&arg->in.host_eid,
 						   arg->in.eid_num,
-						   arg->in.eids);
+						   arg->in.eids,
+						   arg->in.cnas);
 
 	kfree(arg);
 	return ret;
@@ -445,8 +392,6 @@ struct ubcore_uvs_global_cmd_func {
 static struct ubcore_uvs_global_cmd_func g_ubcore_uvs_global_cmd_funcs[] = {
 	[0] = { NULL, false },
 	[UBCORE_CMD_SET_TOPO] = { ubcore_cmd_set_topo, true },
-	[UBCORE_CMD_GET_ROUTE_LIST] = { ubcore_cmd_get_route_list, false },
-	[UBCORE_CMD_GET_TOPO] = { ubcore_cmd_get_topo, false },
 	[UBCORE_CMD_GET_PATH_SET] = { ubcore_cmd_get_path_set, false },
 	[UBCORE_CMD_INSERT_MAIN_UE_EID] = {
 		ubcore_cmd_insert_main_ue_eid, true },
