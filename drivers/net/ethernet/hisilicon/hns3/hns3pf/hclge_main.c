@@ -1539,11 +1539,8 @@ static int hclge_configure(struct hclge_dev *hdev)
 		return ret;
 	}
 	hdev->hw.mac.req_speed = hdev->hw.mac.speed;
+	hdev->hw.mac.req_autoneg = AUTONEG_ENABLE;
 	hdev->hw.mac.req_duplex = DUPLEX_FULL;
-	if (hdev->hw.mac.media_type == HNAE3_MEDIA_TYPE_COPPER)
-		hdev->hw.mac.req_autoneg = AUTONEG_ENABLE;
-	else
-		hdev->hw.mac.req_autoneg = AUTONEG_DISABLE;
 
 	hclge_parse_link_mode(hdev, cfg.speed_ability);
 
@@ -2674,7 +2671,6 @@ static int hclge_set_autoneg(struct hnae3_handle *handle, bool enable)
 {
 	struct hclge_vport *vport = hclge_get_vport(handle);
 	struct hclge_dev *hdev = vport->back;
-	int ret;
 
 	if (!hdev->hw.mac.support_autoneg) {
 		if (enable) {
@@ -2686,10 +2682,7 @@ static int hclge_set_autoneg(struct hnae3_handle *handle, bool enable)
 		}
 	}
 
-	ret = hclge_set_autoneg_en(hdev, enable);
-	if (!ret)
-		hdev->hw.mac.req_autoneg = enable;
-	return ret;
+	return hclge_set_autoneg_en(hdev, enable);
 }
 
 static int hclge_get_autoneg(struct hnae3_handle *handle)
@@ -2968,7 +2961,7 @@ static int hclge_mac_init(struct hclge_dev *hdev)
 		hdev->hw.mac.duplex = HCLGE_MAC_FULL;
 
 	if (hdev->hw.mac.support_autoneg) {
-		ret = hclge_set_autoneg_en(hdev, hdev->hw.mac.req_autoneg);
+		ret = hclge_set_autoneg_en(hdev, hdev->hw.mac.autoneg);
 		if (ret)
 			return ret;
 	}
@@ -3367,8 +3360,8 @@ static int hclge_get_phy_link_ksettings(struct hnae3_handle *handle,
 }
 
 static int
-hclge_ethtool_ksettings_set(struct hnae3_handle *handle,
-			    const struct ethtool_link_ksettings *cmd)
+hclge_set_phy_link_ksettings(struct hnae3_handle *handle,
+			     const struct ethtool_link_ksettings *cmd)
 {
 	struct hclge_desc desc[HCLGE_PHY_LINK_SETTING_BD_NUM];
 	struct hclge_vport *vport = hclge_get_vport(handle);
@@ -3377,6 +3370,12 @@ hclge_ethtool_ksettings_set(struct hnae3_handle *handle,
 	struct hclge_dev *hdev = vport->back;
 	u32 advertising;
 	int ret;
+
+	if (cmd->base.autoneg == AUTONEG_DISABLE &&
+	    ((cmd->base.speed != SPEED_100 && cmd->base.speed != SPEED_10) ||
+	     (cmd->base.duplex != DUPLEX_HALF &&
+	      cmd->base.duplex != DUPLEX_FULL)))
+		return -EINVAL;
 
 	hclge_cmd_setup_basic_desc(&desc[0], HCLGE_OPC_PHY_LINK_KSETTING,
 				   false);
@@ -3397,32 +3396,6 @@ hclge_ethtool_ksettings_set(struct hnae3_handle *handle,
 	req1->master_slave_cfg = cmd->base.master_slave_cfg;
 
 	ret = hclge_cmd_send(&hdev->hw, desc, HCLGE_PHY_LINK_SETTING_BD_NUM);
-
-	if (!ret)
-		linkmode_copy(hdev->hw.mac.advertising, cmd->link_modes.advertising);
-
-	return ret;
-}
-
-static int
-hclge_set_phy_link_ksettings(struct hnae3_handle *handle,
-			     const struct ethtool_link_ksettings *cmd)
-{
-	struct hclge_vport *vport = hclge_get_vport(handle);
-	struct hclge_dev *hdev = vport->back;
-	int ret;
-
-	if (cmd->base.autoneg == AUTONEG_DISABLE &&
-	    ((cmd->base.speed != SPEED_100 && cmd->base.speed != SPEED_10) ||
-	     (cmd->base.duplex != DUPLEX_HALF &&
-	      cmd->base.duplex != DUPLEX_FULL)))
-		return -EINVAL;
-
-	if (hnae3_dev_phy_imp_supported(hdev))
-		ret = hclge_ethtool_ksettings_set(handle, cmd);
-	else
-		ret = phy_ethtool_ksettings_set(handle->netdev->phydev, cmd);
-
 	if (ret) {
 		dev_err(&hdev->pdev->dev,
 			"failed to set phy link ksettings, ret = %d.\n", ret);
@@ -3430,10 +3403,9 @@ hclge_set_phy_link_ksettings(struct hnae3_handle *handle,
 	}
 
 	hdev->hw.mac.req_autoneg = cmd->base.autoneg;
-	if (cmd->base.speed != SPEED_UNKNOWN)
-		hdev->hw.mac.req_speed = cmd->base.speed;
-	if (cmd->base.duplex != DUPLEX_UNKNOWN)
-		hdev->hw.mac.req_duplex = cmd->base.duplex;
+	hdev->hw.mac.req_speed = cmd->base.speed;
+	hdev->hw.mac.req_duplex = cmd->base.duplex;
+	linkmode_copy(hdev->hw.mac.advertising, cmd->link_modes.advertising);
 
 	return 0;
 }
