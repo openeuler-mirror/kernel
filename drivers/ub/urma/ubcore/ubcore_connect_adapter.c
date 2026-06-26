@@ -31,7 +31,19 @@ enum msg_create_conn_result {
 	ESTABLISHED_TP_CHANNEL
 };
 
+enum msg_isref_conn_result {
+	ISREF_CONN_SUCCESS = 0,
+	WAIT_IMPORT_USE_CNT_TIMEOUT,
+	ISREF_CONN_FAIL
+};
+
 struct session_data_create_conn {
+	uint64_t peer_tp_handle;
+	uint32_t rx_psn;
+	int ret;
+};
+
+struct session_data_isref_conn {
 	uint64_t peer_tp_handle;
 	uint32_t rx_psn;
 	int ret;
@@ -83,6 +95,10 @@ struct msg_isref_conn_req {
 	uint32_t tp_type;
 	uint32_t link_type;
 	enum ubcore_tpid_share_mode share_mode;
+};
+
+struct msg_isref_conn_resp {
+	int result; /* Refer to enum msg_isref_conn_result */
 };
 
 #define UBCORE_TPID_REUSE_WAIT_MIN_US 100
@@ -343,35 +359,6 @@ void ubcore_hash_table_rmv_tpid_reuse(struct ubcore_device *dev,
 	ubcore_hash_table_remove(ht, &entry->hnode);
 }
 
-static int send_is_ref_req(struct ubcore_tpid_reuse *tpid_reuse)
-{
-	struct ubcore_comm_msg msg = { 0 };
-	struct msg_isref_conn_req req = { 0 };
-	int ret;
-
-	req.local_eid = tpid_reuse->rk.lk.local_eid;
-	req.peer_eid = tpid_reuse->rk.lk.peer_eid;
-	req.trans_mode = tpid_reuse->rk.lk.trans_mode;
-	req.stag = tpid_reuse->rk.stag;
-	req.dtag = tpid_reuse->rk.dtag;
-
-	req.tp_type = tpid_reuse->rk.lk.tp_type;
-	req.link_type = tpid_reuse->rk.lk.link_type;
-	req.share_mode = tpid_reuse->rk.lk.share_mode;
-
-	msg.type = UBCORE_NET_ISREF_REQ;
-	msg.len = (uint16_t)sizeof(struct msg_isref_conn_req);
-	msg.session_id = 0;
-	msg.data = &req;
-
-	ret = ubcore_send_comm_msg_to(tpid_reuse->ub_dev, &msg, tpid_reuse->rk.lk.peer_eid);
-	if (ret != 0) {
-		ubcore_log_err("Failed to send msg");
-		return ret;
-	}
-	return 0;
-}
-
 static bool ubcore_is_loopback(struct ubcore_device *dev,
 			       union ubcore_eid *peer_eid)
 {
@@ -405,6 +392,104 @@ static inline void ubcore_tpid_reuse_inc_usecnt(struct ubcore_tpid_reuse *tpid_r
 	mutex_unlock(&tpid_reuse->lock);
 }
 
+static struct ubcore_session *
+create_session_for_create_connection(struct ubcore_device *dev)
+{
+	struct ubcore_session *session;
+	struct session_data_create_conn *session_data;
+
+	session_data =
+		kzalloc(sizeof(struct session_data_create_conn), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(session_data)) {
+		ubcore_log_err("Failed to alloc create user arg");
+		return NULL;
+	}
+
+	session_data->ret = -1;
+
+	session = ubcore_session_create(dev, session_data,
+		ubcore_get_conn_timeout(), NULL, NULL);
+	if (!session) {
+		ubcore_log_err("Failed to alloc session for create connection");
+		kfree(session_data);
+		return NULL;
+	}
+
+	return session;
+}
+
+static int send_isref_req(struct ubcore_device *dev, uint32_t session_id,
+			   struct msg_isref_conn_req *req)
+{
+	struct ubcore_comm_msg msg = { 0 };
+	int ret;
+
+	msg.type = UBCORE_NET_ISREF_REQ;
+	msg.len = (uint16_t)sizeof(struct msg_isref_conn_req);
+	msg.session_id = session_id;
+	msg.data = req;
+
+	ret = ubcore_send_comm_msg_to(dev, &msg, req->peer_eid);
+	if (ret != 0) {
+		ubcore_log_err("Failed to send isref req, dev_name is %s, peer_eid is "EID_FMT"\n",
+			dev->dev_name, EID_ARGS(req->peer_eid));
+		return ret;
+	}
+	return 0;
+}
+
+static int ubcore_exchange_isref_msg(struct ubcore_tpid_reuse *tpid_reuse)
+{
+	struct session_data_isref_conn *session_data;
+	struct ubcore_session *session;
+	struct msg_isref_conn_req req = { 0 };
+	int ret;
+
+	if (tpid_reuse == NULL)
+		return -EINVAL;
+
+	if (ubcore_is_loopback(tpid_reuse->ub_dev, &tpid_reuse->rk.lk.peer_eid)) {
+		ubcore_log_info("loop back, do not send isref tphdl: %llu.\n",
+			tpid_reuse->tp_handle.value);
+		return 0;
+	}
+
+	session = create_session_for_create_connection(tpid_reuse->ub_dev);
+	if (!session)
+		return -ENOMEM;
+
+	// fill tpid reuse key
+	req.local_eid = tpid_reuse->rk.lk.local_eid;
+	req.peer_eid = tpid_reuse->rk.lk.peer_eid;
+	req.trans_mode = tpid_reuse->rk.lk.trans_mode;
+	req.stag = tpid_reuse->rk.stag;
+	req.dtag = tpid_reuse->rk.dtag;
+	req.tp_type = tpid_reuse->rk.lk.tp_type;
+	req.link_type = tpid_reuse->rk.lk.link_type;
+	req.share_mode = tpid_reuse->rk.lk.share_mode;
+
+	ret = send_isref_req(tpid_reuse->ub_dev, ubcore_session_get_id(session), &req);
+	if (ret != 0) {
+		ubcore_session_complete(session);
+		ubcore_session_ref_release(session);
+		return ret;
+	}
+
+	ubcore_session_wait(session);
+	session_data =
+		(struct session_data_isref_conn *)ubcore_session_get_data(
+			session);
+	ret = session_data->ret;
+	if (ret != ISREF_CONN_SUCCESS) {
+		ubcore_log_err("Failed to send isref req message, ret: %d.\n",
+			       ret);
+		ubcore_session_ref_release(session);
+		return ret;
+	}
+	ubcore_session_ref_release(session);
+	return 0;
+}
+
 static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpid_reuse)
 {
 	int i = 0;
@@ -412,19 +497,28 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 
 	mutex_lock(&tpid_reuse->lock);
 	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
-		if (!ubcore_is_loopback(tpid_reuse->ub_dev, &tpid_reuse->rk.lk.peer_eid) &&
-			atomic_read(&tpid_reuse->use_cnt) == 0 &&
+		if (atomic_read(&tpid_reuse->use_cnt) == 0 &&
 			tpid_reuse->is_ref == true) {
-			ret = send_is_ref_req(tpid_reuse);
+			atomic_inc(&tpid_reuse->use_cnt);
+			mutex_unlock(&tpid_reuse->lock);
+			ret = ubcore_exchange_isref_msg(tpid_reuse);
+			mutex_lock(&tpid_reuse->lock);
 			if (ret != 0) {
 				ubcore_log_err(
-					"Failed to send is_ref req, ret = %d.\n", ret);
+					"Exchange_isref_msg Failed: dev_name is %s, local_tp_handle is %llu",
+					tpid_reuse->ub_dev->dev_name,
+					tpid_reuse->tp_handle.value);
+				ubcore_log_err("localeid " EID_FMT ", peereid " EID_FMT,
+					EID_ARGS(tpid_reuse->rk.lk.local_eid),
+					EID_ARGS(tpid_reuse->rk.lk.peer_eid));
+				atomic_dec(&tpid_reuse->use_cnt);
 				mutex_unlock(&tpid_reuse->lock);
 				ubcore_tpid_reuse_kref_put(tpid_reuse);
 				return NULL;
 			}
+		} else {
+			atomic_inc(&tpid_reuse->use_cnt);
 		}
-		atomic_inc(&tpid_reuse->use_cnt);
 		mutex_unlock(&tpid_reuse->lock);
 		ubcore_log_info_rl("Success to reuse tpid_reuse:%u", tpid_reuse->tp_handle.bs.tpid);
 		ubcore_tpid_reuse_kref_put(tpid_reuse);
@@ -433,19 +527,28 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 
 	for (i = 0; i < UBCORE_TPID_REUSE_MAX_WAIT_TIMES; i++) {
 		if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_READY) {
-			if (!ubcore_is_loopback(tpid_reuse->ub_dev, &tpid_reuse->rk.lk.peer_eid) &&
-				atomic_read(&tpid_reuse->use_cnt) == 0 &&
+			if (atomic_read(&tpid_reuse->use_cnt) == 0 &&
 				tpid_reuse->is_ref == true) {
-				ret = send_is_ref_req(tpid_reuse);
+				atomic_inc(&tpid_reuse->use_cnt);
+				mutex_unlock(&tpid_reuse->lock);
+				ret = ubcore_exchange_isref_msg(tpid_reuse);
+				mutex_lock(&tpid_reuse->lock);
 				if (ret != 0) {
 					ubcore_log_err(
-						"Failed to send is_ref req, ret = %d.\n", ret);
+						"Exchange_isref_msg Failed: dev_name is %s, local_tp_handle is %llu",
+						tpid_reuse->ub_dev->dev_name,
+						tpid_reuse->tp_handle.value);
+					ubcore_log_err("localeid " EID_FMT ", peereid " EID_FMT,
+						EID_ARGS(tpid_reuse->rk.lk.local_eid),
+						EID_ARGS(tpid_reuse->rk.lk.peer_eid));
+					atomic_dec(&tpid_reuse->use_cnt);
 					mutex_unlock(&tpid_reuse->lock);
 					ubcore_tpid_reuse_kref_put(tpid_reuse);
 					return NULL;
 				}
+			} else {
+				atomic_inc(&tpid_reuse->use_cnt);
 			}
-			atomic_inc(&tpid_reuse->use_cnt);
 			mutex_unlock(&tpid_reuse->lock);
 			ubcore_tpid_reuse_kref_put(tpid_reuse);
 			return tpid_reuse;
@@ -553,30 +656,24 @@ int ubcore_deactive_tp(struct ubcore_device *dev,
 	return ret;
 }
 
-static struct ubcore_session *
-create_session_for_create_connection(struct ubcore_device *dev)
+static int send_isref_resp(struct ubcore_device *dev, void *conn,
+			    uint32_t session_id,
+			    struct msg_isref_conn_resp *resp)
 {
-	struct ubcore_session *session;
-	struct session_data_create_conn *session_data;
+	struct ubcore_comm_msg msg = { 0 };
+	int ret;
 
-	session_data =
-		kzalloc(sizeof(struct session_data_create_conn), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(session_data)) {
-		ubcore_log_err("Failed to alloc create user arg");
-		return NULL;
+	msg.type = UBCORE_NET_ISREF_RESP;
+	msg.len = (uint16_t)sizeof(struct msg_isref_conn_resp);
+	msg.session_id = session_id;
+	msg.data = resp;
+
+	ret = ubcore_send_comm_msg(dev, &msg, conn);
+	if (ret != 0) {
+		ubcore_log_err("Failed to send isref resp");
+		return ret;
 	}
-
-	session_data->ret = -1;
-
-	session = ubcore_session_create(dev, session_data,
-		ubcore_get_conn_timeout(), NULL, NULL);
-	if (!session) {
-		ubcore_log_err("Failed to alloc session for create connection");
-		kfree(session_data);
-		return NULL;
-	}
-
-	return session;
+	return 0;
 }
 
 static int send_create_req(struct ubcore_device *dev, uint32_t session_id,
@@ -1171,6 +1268,27 @@ static void handle_create_resp(struct ubcore_device *dev, struct ubcore_comm_msg
 	ubcore_session_ref_release(session);
 }
 
+static void handle_isref_resp(struct ubcore_device *dev, struct ubcore_comm_msg *msg, void *conn)
+{
+	struct msg_isref_conn_resp *resp = (struct msg_isref_conn_resp *)msg->data;
+	struct ubcore_session *session;
+	struct session_data_isref_conn *session_data;
+
+	session = ubcore_session_find(msg->session_id);
+	if (!session) {
+		ubcore_log_err(
+			"Failed to find session %u on handle isref-resp",
+			msg->session_id);
+		return;
+	}
+	session_data = (struct session_data_isref_conn *)ubcore_session_get_data(session);
+	session_data->ret = resp->result;
+	ubcore_log_info("Isref response result: %d.\n", resp->result);
+
+	ubcore_session_complete(session);
+	ubcore_session_ref_release(session);
+}
+
 static int send_destroy_req(struct ubcore_tpid_reuse *tpid_reuse)
 {
 	struct ubcore_comm_msg msg = { 0 };
@@ -1491,26 +1609,26 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 	}
 
 	mutex_lock(&tpid_reuse->lock);
-	if (atomic_read(&tpid_reuse->use_cnt) > 0) {
-		tpid_reuse->is_ref = false;
-		mutex_unlock(&tpid_reuse->lock);
-		ubcore_tpid_reuse_kref_put(tpid_reuse);
-		return;
-	}
-
 	if (tpid_reuse->is_ref == false) {
 		mutex_unlock(&tpid_reuse->lock);
 		ubcore_tpid_reuse_kref_put(tpid_reuse);
 		return;
 	}
 
-	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR) {
+	tpid_reuse->is_ref = false;
+	if (atomic_read(&tpid_reuse->use_cnt) > 0) {
 		mutex_unlock(&tpid_reuse->lock);
 		ubcore_tpid_reuse_kref_put(tpid_reuse);
 		return;
 	}
 
-	tpid_reuse->is_ref = false;
+	if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR ||
+		tpid_reuse->reuse_state == UBCORE_TPID_REUSE_RESET) {
+		mutex_unlock(&tpid_reuse->lock);
+		ubcore_tpid_reuse_kref_put(tpid_reuse);
+		return;
+	}
+
 	tpid_reuse->reuse_state = UBCORE_TPID_REUSE_ERROR;
 	cfg.deactive_cfg->tp_handle.value = tpid_reuse->tp_handle.value;
 	cfg.deactive_cfg->udata = NULL;
@@ -1529,13 +1647,39 @@ static void handle_destroy_req_with_tpid_reuse(struct ubcore_device *dev,
 		(void)ubcore_free_tpid_reuse(tpid_reuse);
 }
 
+static int isref_msg_wait_import_inc_use_cnt(struct ubcore_tpid_reuse *tpid_reuse)
+{
+	int i;
+
+	mutex_lock(&tpid_reuse->lock);
+	for (i = 0; i < UBCORE_TPID_REUSE_MAX_WAIT_TIMES; i++) {
+		if (atomic_read(&tpid_reuse->use_cnt) > 0) {
+			tpid_reuse->is_ref = true;
+			mutex_unlock(&tpid_reuse->lock);
+			return ISREF_CONN_SUCCESS;
+		}
+		if (tpid_reuse->reuse_state == UBCORE_TPID_REUSE_ERROR) {
+			tpid_reuse->is_ref = false;
+			mutex_unlock(&tpid_reuse->lock);
+			return ISREF_CONN_FAIL;
+		}
+		mutex_unlock(&tpid_reuse->lock);
+		usleep_range(UBCORE_TPID_REUSE_WAIT_MIN_US, UBCORE_TPID_REUSE_WAIT_MAX_US);
+		mutex_lock(&tpid_reuse->lock);
+	}
+	mutex_unlock(&tpid_reuse->lock);
+	return WAIT_IMPORT_USE_CNT_TIMEOUT;
+}
+
 static void handle_isref_req(struct ubcore_device *dev,
 			       struct ubcore_comm_msg *msg, void *conn)
 {
 	struct msg_isref_conn_req *req =
 		(struct msg_isref_conn_req *)msg->data;
+	struct msg_isref_conn_resp resp = {0};
 	struct ubcore_tpid_reuse_key key = { 0 };
 	struct ubcore_tpid_reuse *tpid_reuse;
+	int ret;
 
 	key.lk.local_eid = req->peer_eid;
 	key.lk.peer_eid = req->local_eid;
@@ -1572,13 +1716,22 @@ static void handle_isref_req(struct ubcore_device *dev,
 	}
 	if (tpid_reuse == NULL) {
 		ubcore_log_err("tpid not found in tpid_reuse table.\n");
-		return;
+		ret = ISREF_CONN_FAIL;
+		goto send_resp_isref;
 	}
 
-	mutex_lock(&tpid_reuse->lock);
-	tpid_reuse->is_ref = true;
-	mutex_unlock(&tpid_reuse->lock);
+	ret = isref_msg_wait_import_inc_use_cnt(tpid_reuse);
 
+send_resp_isref:
+	resp.result = ret;
+	if (send_isref_resp(dev, conn, msg->session_id, &resp) != 0) {
+		if (tpid_reuse != NULL) {
+			mutex_lock(&tpid_reuse->lock);
+			tpid_reuse->is_ref = false;
+			mutex_unlock(&tpid_reuse->lock);
+		}
+		ubcore_log_err("Failed to send isref resp message.\n");
+	}
 	ubcore_tpid_reuse_kref_put(tpid_reuse);
 }
 
@@ -2045,6 +2198,7 @@ int ubcore_bind_jetty_reuse_compat(struct ubcore_jetty *jetty,
 		ret = ubcore_bind_jetty_ex(jetty, tjetty, &active_tp_cfg, udata);
 		if (ret != 0) {
 			ubcore_log_err("Failed to bind jetty ex, ret: %d.\n", ret);
+			ubcore_tpid_reuse_dec_usecnt(tpid_reuse);
 			return ret;
 		}
 		atomic_dec(&tjetty->use_cnt);
@@ -2155,4 +2309,7 @@ void ubcore_exchange_init(void)
 	ubcore_net_register_msg_handler(UBCORE_NET_ISREF_REQ,
 					handle_isref_req,
 					sizeof(struct msg_isref_conn_req));
+	ubcore_net_register_msg_handler(UBCORE_NET_ISREF_RESP,
+					handle_isref_resp,
+					sizeof(struct msg_isref_conn_resp));
 }
