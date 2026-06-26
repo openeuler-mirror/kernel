@@ -248,7 +248,7 @@ int __nf_ct_try_assign_helper(struct nf_conn *ct, struct nf_conn *tmpl,
 	if (tmpl != NULL) {
 		help = nfct_help(tmpl);
 		if (help != NULL) {
-			helper = help->helper;
+			helper = rcu_dereference(help->helper);
 			set_bit(IPS_HELPER_BIT, &ct->status);
 		}
 	}
@@ -444,14 +444,15 @@ EXPORT_SYMBOL_GPL(nf_conntrack_helper_register);
 
 static bool expect_iter_me(struct nf_conntrack_expect *exp, void *data)
 {
-	struct nf_conn_help *help = nfct_help(exp->master);
 	const struct nf_conntrack_helper *me = data;
 	const struct nf_conntrack_helper *this;
 
-	if (exp->helper == me)
+	this = rcu_dereference_protected(exp->helper,
+					 lockdep_is_held(&nf_conntrack_expect_lock));
+	if (this == me)
 		return true;
 
-	this = rcu_dereference_protected(help->helper,
+	this = rcu_dereference_protected(exp->assign_helper,
 					 lockdep_is_held(&nf_conntrack_expect_lock));
 	return this == me;
 }
