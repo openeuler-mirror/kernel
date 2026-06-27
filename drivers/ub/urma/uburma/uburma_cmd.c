@@ -5238,7 +5238,8 @@ static inline bool is_cmd_ucontext_free(struct uburma_cmd_hdr *hdr)
 {
 	return (hdr->command == UBURMA_CMD_CREATE_CTX ||
 			hdr->command == UBURMA_CMD_GET_EID_LIST ||
-			hdr->command == UBURMA_CMD_QUERY_DEV_ATTR);
+			hdr->command == UBURMA_CMD_QUERY_DEV_ATTR ||
+			hdr->command == UBURMA_CMD_GET_JFCE_CNT);
 }
 
 long uburma_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
