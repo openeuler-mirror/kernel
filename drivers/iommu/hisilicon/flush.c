@@ -13,6 +13,7 @@
 #include "ummu.h"
 #include "queue.h"
 #include "flush.h"
+#include "nested.h"
 
 enum ummu_tlbi_scene {
 	UMMU_TLBI_SCENE_DMA = 0,
@@ -276,9 +277,16 @@ void ummu_flush_iotlb_all(struct iommu_domain *domain)
 void ummu_sync_iommu_domain(struct ummu_base_domain *base_domain,
 			    struct iommu_domain *domain)
 {
-	struct ummu_domain *u_domain = to_ummu_domain(&base_domain->domain);
+	struct ummu_nested_domain *nested_domain;
+	struct ummu_domain *u_domain;
 
-	u_domain->domain = domain;
+	if (base_domain->domain.type == IOMMU_DOMAIN_NESTED) {
+		nested_domain = to_nested_domain(&base_domain->domain);
+		nested_domain->domain = domain;
+	} else {
+		u_domain = to_ummu_domain(&base_domain->domain);
+		u_domain->domain = domain;
+	}
 }
 
 void ummu_init_flush_iotlb(struct ummu_device *ummu)
