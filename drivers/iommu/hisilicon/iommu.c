@@ -512,10 +512,6 @@ static void ummu_release_device(struct device *dev)
 	kfree(master);
 }
 
-static void ummu_probe_finalize(struct device *dev)
-{
-}
-
 static void ummu_get_resv_regions(struct device *device, struct list_head *head)
 {
 	struct iommu_resv_region *region;
@@ -626,7 +622,6 @@ struct iommu_ops ummu_iommu_ops = {
 	.domain_alloc_sva = ummu_domain_alloc_sva,
 	.probe_device = ummu_probe_device,
 	.release_device = ummu_release_device,
-	.probe_finalize = ummu_probe_finalize,
 	.device_group = ummu_device_group,
 	.get_resv_regions = ummu_get_resv_regions,
 	.dev_enable_feat = ummu_dev_enable_feat,
