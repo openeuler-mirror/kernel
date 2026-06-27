@@ -881,6 +881,24 @@ mn_error:
 	return ret;
 }
 
+static void logic_ummu_sync_iommu_domain(struct iommu_domain *domain)
+{
+	const struct ummu_device_helper *helper = get_agent_helper();
+	struct ummu_base_domain *base_domain, *next;
+	struct logic_ummu_domain *logic_domain;
+
+	if (!domain)
+		return;
+
+	logic_domain = iommu_to_logic_domain(domain);
+	if (!logic_domain)
+		return;
+
+	if (helper && helper->sync_iommu_domain)
+		list_for_each_entry_safe(base_domain, next, &logic_domain->base_domain.list, list)
+			helper->sync_iommu_domain(base_domain, domain);
+}
+
 static struct iommu_domain *logic_ummu_domain_alloc_sva(struct device *dev, struct mm_struct *mm)
 {
 	const struct iommu_ops *ops = get_agent_iommu_ops();
@@ -919,6 +937,7 @@ static struct iommu_domain *logic_ummu_domain_alloc_sva(struct device *dev, stru
 				goto error_handle;
 		}
 	}
+	logic_ummu_sync_iommu_domain(&logic_domain->base_domain.domain);
 
 	if (!(logic_ummu.agent_device->cap.features & UMMU_FEAT_BTM) && mm == current->mm) {
 		ret = logic_ummu_mmu_notifier_register(logic_domain, mm);
@@ -978,6 +997,8 @@ static struct iommu_domain *logic_ummu_domain_alloc(unsigned int iommu_domain_ty
 				goto error_handle;
 		}
 	}
+	logic_ummu_sync_iommu_domain(&logic_domain->base_domain.domain);
+
 	return &logic_domain->base_domain.domain;
 error_handle:
 	list_for_each_entry_safe(base_domain, next, &logic_domain->base_domain.list, list) {
@@ -1028,6 +1049,8 @@ logic_ummu_domain_alloc_user_v2(struct device *dev, u32 flags,
 				goto error_handle;
 		}
 	}
+	logic_ummu_sync_iommu_domain(&logic_domain->base_domain.domain);
+
 	return &logic_domain->base_domain.domain;
 error_handle:
 	list_for_each_entry_safe(base_domain, next, &logic_domain->base_domain.list, list) {
@@ -1088,6 +1111,8 @@ logic_ummu_viommu_alloc_domain_nested(struct iommufd_viommu *viommu,
 	}
 	logic_vummu->nested = &logic_domain->base_domain.domain;
 	logic_domain->logic_viommu = logic_vummu;
+	logic_ummu_sync_iommu_domain(&logic_domain->base_domain.domain);
+
 	return &logic_domain->base_domain.domain;
 error_handle:
 	list_for_each_entry_safe(nested_base_domain, iter, &logic_domain->base_domain.list, list) {
@@ -1237,21 +1262,14 @@ static void logic_ummu_release_device(struct device *dev)
 
 static void logic_ummu_probe_finalize(struct device *dev)
 {
-	const struct ummu_device_helper *helper = get_agent_helper();
-	struct iommu_domain *domain = iommu_get_domain_for_dev(dev);
-	struct ummu_base_domain *base_domain, *next;
-	struct logic_ummu_domain *logic_domain;
+	const struct iommu_ops *ops = get_agent_iommu_ops();
 
-	if (!domain)
+	if (!ops || !ops->probe_finalize) {
+		pr_err("invalid ops.\n");
 		return;
+	}
 
-	logic_domain = iommu_to_logic_domain(domain);
-	if (!logic_domain)
-		return;
-
-	if (helper && helper->sync_iommu_domain)
-		list_for_each_entry_safe(base_domain, next, &logic_domain->base_domain.list, list)
-			helper->sync_iommu_domain(base_domain, domain);
+	ops->probe_finalize(dev);
 }
 
 static struct iommu_group *logic_ummu_device_group(struct device *dev)
