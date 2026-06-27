@@ -9,8 +9,6 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/inet.h>
-#include <linux/init.h>
-#include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/device.h>
 #include <linux/cdev.h>
@@ -151,7 +149,6 @@ static struct sentry_ubcore_resource sentry_urma_dev[MAX_DIE_NUM];
 static struct sentry_urma_context sentry_urma_ctx;
 
 bool g_is_created_ubcore_resource;
-EXPORT_SYMBOL(g_is_created_ubcore_resource);
 
 /**
  * urma_mutex_lock_op - Lock or unlock the URMA mutex based on panic mode
@@ -552,7 +549,6 @@ int str_to_eid(const char *eid_str, union ubcore_eid *eid)
 	pr_err("parse eid string [%s] failed\n", eid_str);
 	return -EINVAL;
 }
-EXPORT_SYMBOL(str_to_eid);
 
 /**
  * is_full_zero_ubcore_eid - check whether the EID is 0
@@ -609,7 +605,6 @@ int ubcore_eid_to_str_full(const union ubcore_eid *eid, char *dst_eid_str, int l
 
 	return 0;
 }
-EXPORT_SYMBOL(ubcore_eid_to_str_full);
 
 /**
  * set_urma_panic_mode - Set URMA panic mode status
@@ -622,7 +617,6 @@ void set_urma_panic_mode(bool is_panic)
 {
 	sentry_urma_ctx.is_panic_mode = is_panic;
 }
-EXPORT_SYMBOL(set_urma_panic_mode);
 
 /**
  * sentry_register_seg - Register a segment for URMA operations
@@ -1204,7 +1198,6 @@ int match_index_by_remote_ub_eid(union ubcore_eid remote_eid, int *node_index, i
 
 	return -EINVAL;
 }
-EXPORT_SYMBOL(match_index_by_remote_ub_eid);
 
 /**
  * sentry_create_urma_resource - Create URMA resources for specified EIDs
@@ -1254,7 +1247,6 @@ int sentry_create_urma_resource(union ubcore_eid eid[], int eid_num)
 	sentry_urma_ctx.local_eid_num_configured = eid_num;
 	return 0;
 }
-EXPORT_SYMBOL(sentry_create_urma_resource);
 
 /**
  * format_client_info_show_str - Format client information for display
@@ -1352,7 +1344,6 @@ int process_multi_eid_string(char *eid_buf, char eid_array[][EID_MAX_LEN],
 
 	return eid_num;
 }
-EXPORT_SYMBOL(process_multi_eid_string);
 
 /**
  * process_server_eid_str - Process server EID string for multiple dies
@@ -2168,7 +2159,6 @@ int urma_send(const struct sentry_binary_msg *buf, const char *dst_eid, int die_
 
 	return cnt;
 }
-EXPORT_SYMBOL(urma_send);
 
 /**
  * urma_recv - Receive data from URMA nodes
@@ -2313,7 +2303,6 @@ int urma_recv(struct sentry_binary_msg *buf_arr, size_t array_size)
 
 	return valid_msg_num;
 }
-EXPORT_SYMBOL(urma_recv);
 
 /**
  * reboot_cleanup_notifier - System reboot notifier callback
@@ -2349,7 +2338,7 @@ static struct notifier_block reboot_cleanup_nb = {
  * This function initializes the URMA communication module, creating proc
  * files, allocating buffers, and registering reboot notifier.
  */
-static int __init sentry_urma_comm_init(void)
+int sentry_urma_comm_init(void)
 {
 	int ret = 0;
 
@@ -2392,7 +2381,7 @@ remove_proc_dir:
  * This function cleans up all URMA resources, stops threads, and removes
  * proc files during module unload.
  */
-static void __exit sentry_urma_comm_exit(void)
+void sentry_urma_comm_exit(void)
 {
 	unregister_reboot_notifier(&reboot_cleanup_nb);
 	pr_info("reboot_cleanup_nb unregistered\n");
@@ -2411,10 +2400,3 @@ static void __exit sentry_urma_comm_exit(void)
 	pr_info("ubcore release\n");
 	free_global_char();
 }
-
-module_init(sentry_urma_comm_init);
-module_exit(sentry_urma_comm_exit);
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("luckky");
-MODULE_DESCRIPTION("Kernel module to transport msg via URMA");
