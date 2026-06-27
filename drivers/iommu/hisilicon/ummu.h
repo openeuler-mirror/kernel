@@ -350,6 +350,7 @@ struct ummu_domain {
 	bool dirty_tracking;
 	struct ummu_domain_cfgs cfgs;
 	struct kvm *kvm;
+	u16 vmid;
 	bool tlbi_asid;
 };
 
