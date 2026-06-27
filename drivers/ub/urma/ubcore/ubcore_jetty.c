@@ -2024,9 +2024,24 @@ ubcore_import_jfr_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 }
 EXPORT_SYMBOL(ubcore_import_jfr_ex);
 
+static int ubcore_free_vtpn_after_tpid_reuse(struct ubcore_vtpn *vtpn)
+{
+	if (atomic_read(&vtpn->use_cnt) > 0) {
+		ubcore_log_info("vtpn in use, vtpn id = %u, vtpn use_cnt = %d",
+				vtpn->vtpn, atomic_read(&vtpn->use_cnt));
+		return 0;
+	}
+	ubcore_vtpn_kref_put(vtpn);
+	wait_for_completion(&vtpn->comp);
+	mutex_destroy(&vtpn->state_lock);
+	kfree(vtpn);
+	return 0;
+}
+
 int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 {
 	uint32_t tjfr_id = tjfr->cfg.id.id;
+	uint32_t eid_index = tjfr->cfg.eid_index;
 	struct ubcore_device *dev;
 	int ret;
 
@@ -2052,13 +2067,14 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 		} else {
 			ret = ubcore_disconnect_vtp(tjfr->vtpn);
 		}
-
 		if (ret != 0) {
 			ubcore_log_err("Failed to disconnect vtp.\n");
 			mutex_unlock(&tjfr->lock);
 			UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
 			return ret;
 		}
+		if (tjfr->vtpn->tpid_reuse)
+			(void)ubcore_free_vtpn_after_tpid_reuse(tjfr->vtpn);
 		tjfr->vtpn = NULL;
 		mutex_unlock(&tjfr->lock);
 	}
@@ -2070,12 +2086,12 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 	UBCORE_PERF_TRACE_END(PERF_UB_UNIMPORT_JFR);
 	if (ret != 0) {
 		ubcore_log_err("[DRV] Failed to unimport jfr, dev_name: %s, eid_idx: %u, tjfr_id: %u.\n",
-			dev->dev_name, tjfr->cfg.eid_index, tjfr_id);
+			dev->dev_name, eid_index, tjfr_id);
 		UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
 		return ret;
 	}
 	ubcore_log_info("[JFR UNIMPORT] Unimport TJFR EX: id: %u, dev_name: %s, eid_idx: %u.\n",
-		tjfr_id, dev->dev_name, tjfr->cfg.eid_index);
+		tjfr_id, dev->dev_name, eid_index);
 	UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
 	return ret;
 }
@@ -3148,8 +3164,6 @@ ubcore_import_jetty_ex(struct ubcore_device *dev, struct ubcore_tjetty_cfg *cfg,
 	int ret;
 	uint8_t order_type;
 
-	ubcore_log_info_rl("Enter import jetty ex.\n");
-
 	if (!dev || !dev->ops || !dev->ops->import_jetty_ex ||
 	    !dev->ops->unimport_jetty || !cfg || !active_tp_cfg ||
 	    dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
@@ -3250,13 +3264,16 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 		} else {
 			ret = ubcore_disconnect_vtp(tjetty->vtpn);
 		}
-
 		if (ret != 0) {
 			mutex_unlock(&tjetty->lock);
 			ubcore_log_err("Failed to disconnect vtp.\n");
 			UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
 			return ret;
 		}
+		/*if tpid_reuse, vtpn is not inc use_cnt in import_jetty
+		  just need kfree vtpn in last.*/
+		if (tjetty->vtpn->tpid_reuse)
+			(void)ubcore_free_vtpn_after_tpid_reuse(tjetty->vtpn);
 		tjetty->vtpn = NULL;
 		mutex_unlock(&tjetty->lock);
 	}
@@ -3586,12 +3603,13 @@ static int ubcore_inner_unbind_ub_jetty(struct ubcore_jetty *jetty,
 			} else {
 				ret = ubcore_disconnect_vtp(tjetty->vtpn);
 			}
-
 			if (ret != 0) {
 				mutex_unlock(&tjetty->lock);
 				ubcore_log_err("Failed to disconnect vtp.\n");
 				return ret;
 			}
+			if (tjetty->vtpn->tpid_reuse)
+				(void)ubcore_free_vtpn_after_tpid_reuse(tjetty->vtpn);
 			tjetty->vtpn = NULL;
 			mutex_unlock(&tjetty->lock);
 		}
