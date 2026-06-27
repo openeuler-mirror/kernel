@@ -107,6 +107,7 @@ static int ummu_domain_collect_pgtable_s2(struct ummu_domain *u_domain,
 		return vmid;
 
 	cfg->vmid = (u16)vmid;
+	u_domain->vmid = cfg->vmid;
 	cfg->vttbr = pgtbl_cfg->arm_lpae_s2_cfg.vttbr;
 	cfg->vtcr = FIELD_PREP(TECT_ENT2_NS_S2_TSZ, vtcr->tsz) |
 		    FIELD_PREP(TECT_ENT2_NS_S2_SL, vtcr->sl) |
