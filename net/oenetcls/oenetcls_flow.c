@@ -265,6 +265,9 @@ static void __oecls_set_cpu(struct sk_buff *skb, struct net_device *ndev,
 	if ((val ^ hash) & ~oecls_cpu_mask)
 		return;
 
+	if (last_recv_cpu >= nr_cpu_ids)
+		return;
+
 	if (mode == 2) {
 		if (!oecls_do_hash())
 			return;
@@ -327,6 +330,9 @@ static inline void do_loopback_rps(struct sk_buff *skb, int *rcpu)
 	if ((val ^ hash) & ~oecls_cpu_mask)
 		return;
 
+	if (last_recv_cpu >= nr_cpu_ids)
+		return;
+
 	newcpu = get_rps_cpu(last_recv_cpu, hash, lo_rps_policy);
 	*rcpu = newcpu;
 	oecls_debug("last:%u curcpu:%d newcpu:%d\n", last_recv_cpu, raw_smp_processor_id(), newcpu);
@@ -354,6 +360,9 @@ static inline void do_flow_rps(struct sk_buff *skb, int *rcpu)
 	rcu_read_unlock();
 
 	if ((val ^ hash) & ~oecls_cpu_mask)
+		return;
+
+	if (last_recv_cpu >= nr_cpu_ids)
 		return;
 
 	newcpu = get_rps_cpu(last_recv_cpu, hash, rps_policy);
