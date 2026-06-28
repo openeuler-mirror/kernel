@@ -180,11 +180,22 @@ static int uburma_delete_jfce(struct inode *inode, struct file *filp)
 	struct uburma_uobj *uobj = filp->private_data;
 	struct uburma_file *ufile;
 
-	if (!uobj || !uobj->ufile)
+	if (!uobj)
 		return 0;
 
 	ufile = uobj->ufile;
+	if (!ufile) {
+		/* cleanup done, only put fops ref paired with alloc_commit */
+		uobj_put(uobj);
+		return 0;
+	}
+
 	down_write(&ufile->ucontext_rwsem);
+	if (!uobj->ufile) {
+		up_write(&ufile->ucontext_rwsem);
+		uobj_put(uobj);
+		return 0;
+	}
 
 	uobj_get(uobj);
 	/* will call uburma_hot_unplug_jfce if clean up is not going on */
@@ -434,15 +445,27 @@ static int uburma_delete_jfae(struct inode *inode, struct file *filp)
 		container_of(uobj, struct uburma_jfae_uobj, uobj);
 	struct uburma_file *ufile;
 
-	if (!uobj || !jfae || !uobj->ufile)
+	if (!uobj || !jfae) {
+		uburma_log_err("jfae has been released.\n");
 		return 0;
+	}
 
 	ufile = uobj->ufile;
+	if (!ufile) {
+		/* cleanup done, only put fops ref paired with alloc_commit */
+		uobj_put(uobj);
+		return 0;
+	}
+
 	down_write(&ufile->ucontext_rwsem);
+	if (!uobj->ufile) {
+		up_write(&ufile->ucontext_rwsem);
+		uobj_put(uobj);
+		return 0;
+	}
 	uobj_get(uobj);
 	/* call uburma_hot_unplug_jfae when cleanup is not going on */
 	uburma_close_uobj_fd(filp);
-	uburma_uninit_jfe(&jfae->jfe);
 	uobj->ufile = NULL;
 	uobj_put(uobj);
 	up_write(&ufile->ucontext_rwsem);
@@ -698,14 +721,25 @@ static int uburma_delete_notifier(struct inode *inode, struct file *filp)
 	struct uburma_uobj *uobj = filp->private_data;
 	struct uburma_file *ufile;
 
-	if (!uobj || !uobj->ufile)
+	if (!uobj)
 		return 0;
 
-	uobj_get(uobj);
 	ufile = uobj->ufile;
-	uburma_flush_notifier(uobj, ufile);
+	if (!ufile) {
+		/* cleanup done, only put fops ref paired with alloc_commit */
+		uobj_put(uobj);
+		return 0;
+	}
 
 	down_write(&ufile->ucontext_rwsem);
+	if (!uobj->ufile) {
+		up_write(&ufile->ucontext_rwsem);
+		uobj_put(uobj);
+		return 0;
+	}
+	uobj_get(uobj);
+	uburma_flush_notifier(uobj, ufile);
+
 	/* call uburma_hot_unplug_notifier when cleanup is not going on */
 	uburma_close_uobj_fd(filp);
 	uobj->ufile = NULL;
