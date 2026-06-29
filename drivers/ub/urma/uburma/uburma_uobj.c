@@ -652,8 +652,12 @@ static inline void do_clean_uobj(struct uburma_uobj *obj,
 	list_del_init(&obj->list);
 
 	/* uburma_close_uobj_fd will also try lock the uobj for write */
-	if (uobj_type_is_fd(obj))
+	if (uobj_type_is_fd(obj)) {
+		/* paired with kref_get in uobj_fd_alloc_begin */
+		kref_put(&obj->ufile->ref, uburma_release_file);
+		obj->ufile = NULL; /* prevent double release in delete callback */
 		uobj_unlock(obj, true); /* match with uobj_try_lock */
+	}
 
 	/* put the ref we took when we created the object */
 	uobj_put(obj);
@@ -679,8 +683,12 @@ static void do_clean_uobj_batch(struct uburma_uobj **obj_arr, int arr_num,
 		obj = obj_arr[i];
 		list_del_init(&obj->list);
 		/* uburma_close_uobj_fd will also try lock the uobj for write */
-		if (uobj_type_is_fd(obj))
+		if (uobj_type_is_fd(obj)) {
+			/* paired with kref_get in uobj_fd_alloc_begin */
+			kref_put(&obj->ufile->ref, uburma_release_file);
+			obj->ufile = NULL; /* prevent double release in delete callback */
 			uobj_unlock(obj, true); /* match with uobj_try_lock */
+		}
 		/* put the ref we took when we created the object */
 		uobj_put(obj);
 	}
@@ -1295,6 +1303,7 @@ static int uburma_hot_unplug_jfae(struct uburma_uobj *uobj,
 	spin_unlock_irq(&jfe->lock);
 	ubcore_unregister_event_handler(jfae->dev, &jfae->event_handler);
 
+	uburma_uninit_jfe(jfe);
 	return 0;
 }
 
