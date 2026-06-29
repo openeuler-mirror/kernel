@@ -16,7 +16,7 @@ MODULE_PARM_DESC(msg_wait, "message wait timeout, default: 1024ms");
 
 #define HISI_VENDOR_ID 0xCC08
 #define HISI_UBUS_DRV_NAME "hisi_ubus"
-#define HISI_UBUS_MOD_VERSION "2.0.0"
+#define HISI_UBUS_MOD_VERSION "2.0.1"
 
 static const struct ub_manage_subsystem_ops hisi_ub_manage_subsystem_ops = {
 	.vendor = HISI_VENDOR_ID,

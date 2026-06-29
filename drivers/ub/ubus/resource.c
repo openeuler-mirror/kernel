@@ -311,7 +311,7 @@ static void fill_decoder_map_info(struct ub_entity *uent, int idx,
 {
 	info->pa = uent->zone[idx].res.start;
 	info->uba = uent->zone[idx].region.start;
-	info->size = uent->zone[idx].region.size;
+	info->size = ub_resource_len(uent, idx);
 	info->eid_low = uent->eid;
 	info->eid_high = 0;
 	info->tpg_num = is_primary(uent) ? uent->cna : uent->pue->cna;
@@ -351,23 +351,8 @@ static void ub_entity_decoder_unmap_mmio_idx(struct ub_entity *uent, int idx)
 	decoder = is_primary(uent) ? uent->ubc->decoder :
 				     uent->pue->ubc->decoder;
 	if (ub_decoder_unmap(decoder, uent->zone[idx].res.start,
-			     uent->zone[idx].region.size))
+			     ub_resource_len(uent, idx)))
 		ub_warn(uent, "resource%d decoder unmap failed.\n", idx);
-}
-
-static bool map_by_ubus(struct ub_entity *ent)
-{
-	struct ub_bus_controller *ubc = ent->ubc;
-	u32 feature;
-	int ret;
-
-	ret = ub_cfg_read_dword(ubc->uent, UB_CFG1_SUPPORT_FEATURE_L, &feature);
-	if (ret) {
-		ub_err(ubc->uent, "read ub cfg1 support feature failed, ret=%d\n",
-		       ret);
-		return false;
-	}
-	return !(feature & UB_DECODER_JURIS);
 }
 
 void ub_entity_decoder_unmap_mmio(struct ub_entity *dev)
@@ -387,9 +372,6 @@ void ub_entity_decoder_map_mmio(struct ub_entity *dev)
 	int i, ret;
 
 	if (is_ibus_controller(dev))
-		return;
-
-	if (!map_by_ubus(dev))
 		return;
 
 	for (i = 0; i < MAX_UB_RES_NUM; i++) {
