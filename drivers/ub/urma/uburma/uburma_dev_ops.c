@@ -227,11 +227,14 @@ int uburma_open(struct inode *inode, struct file *filp)
 	}
 
 	kobject_get(&ubu_dev->kobj); // Increase reference count for file.
-	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
 
+	/* uburma_file_list holds an independent reference,
+		released by close/remove after unlink. */
+	kref_get(&file->ref);
 	mutex_lock(&ubu_dev->uburma_file_list_mutex);
 	list_add_tail(&file->list, &ubu_dev->uburma_file_list);
 	mutex_unlock(&ubu_dev->uburma_file_list_mutex);
+	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
 
 	return nonseekable_open(inode, filp);
 
@@ -248,6 +251,7 @@ int uburma_close(struct inode *inode, struct file *filp)
 	struct uburma_device *ubu_dev = file->ubu_dev;
 	struct ubcore_ucontext *ucontext = NULL;
 	struct ubcore_device *ubc_dev;
+	bool put_list_ref = false;
 	int srcu_idx;
 
 	if (!ubu_dev) {
@@ -260,13 +264,16 @@ int uburma_close(struct inode *inode, struct file *filp)
 	if (!ubc_dev) {
 		uburma_log_info("ubcore device release in another proccess.\n");
 		srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
+		/* ubc_dev is gone, remove owns list cleanup; pair with kref_init(). */
 		kref_put(&file->ref, uburma_release_file);
 		return 0;
 	}
 
 	mutex_lock(&ubu_dev->uburma_file_list_mutex);
-	if (!list_empty_careful(&file->list))
+	if (!list_empty_careful(&file->list)) {
 		list_del_init(&file->list);
+		put_list_ref = true;
+	}
 	mutex_unlock(&ubu_dev->uburma_file_list_mutex);
 
 	down_write(&file->ucontext_rwsem);
@@ -282,6 +289,11 @@ int uburma_close(struct inode *inode, struct file *filp)
 	uburma_log_debug("device: %s close.\n", ubc_dev->dev_name);
 	srcu_read_unlock(&ubu_dev->ubc_dev_srcu, srcu_idx);
 
+	/* Release the list reference taken over by the current 'close'
+		after it is removed from 'uburma_file_list' */
+	if (put_list_ref)
+		kref_put(&file->ref, uburma_release_file);
+	/* Release the base reference held by the VFS open file. */
 	kref_put(&file->ref, uburma_release_file);
 
 	return 0;
