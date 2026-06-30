@@ -82,9 +82,6 @@ static int smh_message_retry_send(struct sentry_msg_helper_msg *msg, bool ack)
 	int i;
 	int times = msg->timeout_time / MILLISECONDS_OF_EACH_MDELAY;
 
-	msg->start_send_time = ktime_get_ns();
-	msg->msgid = smh_get_new_msg_id();
-
 	for (i = 0; i < times; i++) {
 		uint64_t cur_time = ktime_get_ns();
 
@@ -127,6 +124,8 @@ static int acpi_power_notifier_callback(struct notifier_block *nb,
 
 	msg.type = SMH_MESSAGE_POWER_OFF;
 	msg.timeout_time = reboot_timeout_ms + REPORT_COMM_TIME;
+	msg.msgid = smh_get_new_msg_id();
+	msg.start_send_time = ktime_get_ns();
 
 	pr_info("send sentry reboot message\n");
 	ret = smh_message_retry_send(&msg, true);
@@ -163,11 +162,6 @@ static int lowmem_notifier_callback(struct notifier_block *nb,
 	if (data->reason > RR_HUGEPAGE_RECLAIM)
 		return NOTIFY_OK;
 
-	if (__ratelimit(&oom_log_rs)) {
-		pr_info("got lowmem message. pid=%d sync=%d reason=%d\n",
-			current->pid, data->sync, data->reason);
-	}
-
 	for (i = 0; i < OOM_EVENT_MAX_NUMA_NODES; i++)
 		msg.helper_msg_info.oom_info.nid[i] = -1;
 
@@ -188,10 +182,17 @@ static int lowmem_notifier_callback(struct notifier_block *nb,
 	if (!should_report)
 		return NOTIFY_OK;
 
+	msg.msgid = smh_get_new_msg_id();
+	msg.start_send_time = ktime_get_ns();
 	msg.helper_msg_info.oom_info.sync = data->sync;
 	msg.helper_msg_info.oom_info.timeout = oom_timeout_ms;
 	msg.helper_msg_info.oom_info.reason = data->reason;
 	msg.timeout_time = oom_timeout_ms + REPORT_COMM_TIME;
+
+	if (__ratelimit(&oom_log_rs)) {
+		pr_info("got lowmem message. pid=%d sync=%d reason=%d msgid=%llu\n",
+			current->pid, data->sync, data->reason, msg.msgid);
+	}
 
 	ret = smh_message_retry_send(&msg, data->sync);
 	if (ret)
@@ -313,7 +314,7 @@ static ssize_t proc_power_off_enable_write(struct file *file,
 		return -EINVAL;
 	}
 
-	pr_info("%s powef off event report\n", g_power_off_enable ? "enable" : "disable");
+	pr_info("%s power off event report\n", g_power_off_enable ? "enable" : "disable");
 	return cnt;
 }
 
@@ -584,8 +585,6 @@ static int ub_mem_ras_handler(uint64_t phys_addr, enum ras_err_type err_type)
 	if (!g_ub_mem_fault_enable)
 		return 0;
 
-	pr_info("ub mem error: type=%d\n", err_type);
-
 	msg.helper_msg_info.ub_mem_info.pa = phys_addr;
 	msg.helper_msg_info.ub_mem_info.raw_ubus_mem_err_type = err_type;
 	msg.msgid = smh_get_new_msg_id();
@@ -609,17 +608,19 @@ static int ub_mem_ras_handler(uint64_t phys_addr, enum ras_err_type err_type)
 	if (!page) {
 		/* FD mode */
 		msg.helper_msg_info.ub_mem_info.mem_type = FD_MODE;
-		pr_info("ub mem error: mem mode is fd mode\n");
+		pr_info("ub mem error: type=%d and msgid=%llu, mem mode is fd mode\n",
+			err_type, msg.msgid);
 	} else {
 		/* NUMA mode */
 		pfn = PHYS_PFN(phys_addr);
 		msg.helper_msg_info.ub_mem_info.mem_type = NUMA_MODE;
-		pr_info("ub mem error: mem mode is numa mode\n");
+		pr_info("ub mem error: type=%d and msgid=%llu, mem mode is numa mode\n",
+				err_type, msg.msgid);
 		if (pfn != 0) {
 			if (msg.helper_msg_info.ub_mem_info.fault_with_kill)
 				memory_failure_queue(pfn, 0);
 		} else {
-			pr_warn("pfn is 0x0, skip memory_failure processing\n");
+			pr_warn("pfn is 0x0 for msgid %llu, skip memory_failure\n", msg.msgid);
 		}
 	}
 
