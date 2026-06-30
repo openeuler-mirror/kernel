@@ -71,8 +71,28 @@ struct sentry_remote_context {
 extern spinlock_t sentry_buf_lock;
 extern struct sentry_remote_context sentry_remote_ctx;
 
+// urma communication interface
+extern int urma_send(const struct sentry_binary_msg *buf, const char *dst_eid, int die_index);
+extern int urma_recv(struct sentry_binary_msg *buf_arr, size_t array_size);
+
+// UVB communication interface
+extern int uvb_send(const struct sentry_binary_msg *str, uint32_t dst_cna, bool is_sync);
+
+extern uint32_t g_local_cna;
+#define UVB_SENDER_ID_SYSSENTRY_INDEX (g_local_cna)
+#define UVB_SENDER_ID_SYSSENTRY (UBIOS_USER_ID_RICH_OS | UVB_SENDER_ID_SYSSENTRY_INDEX)
+#define UVB_RECEIVER_ID_SYSSENTRY(cna) (UBIOS_USER_ID_UB_DEVICE | (cna))
+
 int sentry_panic_reporter_init(void);
 void sentry_panic_reporter_exit(void);
+
+// sentry uvb comm init/exit
+int sentry_uvb_comm_init(void);
+void sentry_uvb_comm_exit(void);
+
+// sentry urma comm init/exit
+int sentry_urma_comm_init(void);
+void sentry_urma_comm_exit(void);
 
 int send_msg_to_userspace_and_ack(struct sentry_msg_helper_msg *msg, enum SENTRY_REMOTE_COMM_TYPE comm_type,
 		uint32_t random_id, enum sentry_msg_helper_msg_type ack_type);

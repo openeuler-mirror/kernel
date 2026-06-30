@@ -128,18 +128,6 @@ struct sentry_msg_helper_msg {
     unsigned long res;
 };
 
-// urma communication interface
-extern int urma_send(const struct sentry_binary_msg *buf, const char *dst_eid, int die_index);
-extern int urma_recv(struct sentry_binary_msg *buf_arr, size_t array_size);
-
-// UVB communication interface
-extern int uvb_send(const struct sentry_binary_msg *str, uint32_t dst_cna, bool is_sync);
-
-extern uint32_t g_local_cna;
-#define UVB_SENDER_ID_SYSSENTRY_INDEX (g_local_cna)
-#define UVB_SENDER_ID_SYSSENTRY (UBIOS_USER_ID_RICH_OS | UVB_SENDER_ID_SYSSENTRY_INDEX)
-#define UVB_RECEIVER_ID_SYSSENTRY(cna) (UBIOS_USER_ID_UB_DEVICE | (cna))
-
 /*
  * Return 1 when buf is valid ipv4 format, return 0 when buf is invalid ipv4 format
  * or any error occurs.

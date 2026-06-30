@@ -7,28 +7,23 @@
  */
 
 #include <linux/firmware/uvb/cis.h>
-#include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
-#include <linux/init.h>
 #include <linux/string.h>
 #include <linux/proc_fs.h>
 
-#include "smh_common_type.h"
 #include "smh_message.h"
+#include "sentry_remote_reporter.h"
 
 #undef pr_fmt
 #define pr_fmt(fmt) "[sentry][uvb]: " fmt
 
 uint32_t g_local_cna = -1;
-EXPORT_SYMBOL(g_local_cna);
 
 static struct proc_dir_entry *uvb_proc_dir;
 static char *g_kbuf_server_cna; // cna1;cna2;cna3...cnan
 uint32_t g_server_cna_array[MAX_NODE_NUM];
 int g_server_cna_valid_num;
-EXPORT_SYMBOL(g_server_cna_array);
-EXPORT_SYMBOL(g_server_cna_valid_num);
 
 /*
  * @brief send data to server by UVB
@@ -87,8 +82,6 @@ int uvb_send(const struct sentry_binary_msg *str, uint32_t dst_cna, bool is_sync
 	}
 	return cnt;
 }
-EXPORT_SYMBOL(uvb_send);
-
 static int convert_server_cna_str_to_u32_array(const char *server_cna)
 {
     int server_cna_valid_num = 0, ret = 0;
@@ -172,7 +165,7 @@ static const struct proc_ops proc_uvb_server_cna_file_operations = {
     .proc_write = proc_uvb_server_cna_write,
 };
 
-static int __init uvb_comm_init(void)
+int sentry_uvb_comm_init(void)
 {
     int ret = 0;
 
@@ -205,7 +198,7 @@ remove_uvb_proc_dir:
     return ret;
 }
 
-static void __exit uvb_comm_exit(void)
+void sentry_uvb_comm_exit(void)
 {
     if (uvb_proc_dir) {
 		proc_remove(uvb_proc_dir);
@@ -216,10 +209,3 @@ static void __exit uvb_comm_exit(void)
     }
     pr_info("uvb communication module unloaded\n");
 }
-
-module_init(uvb_comm_init);
-module_exit(uvb_comm_exit);
-
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("sxt1001");
-MODULE_DESCRIPTION("Kernel module to send msg via UVB");

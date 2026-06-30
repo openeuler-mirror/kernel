@@ -1019,9 +1019,17 @@ static int __init sentry_remote_reporter_init(void)
 
 	sentry_client_ctx.random_id = get_random_u32();
 
-	ret = sentry_panic_reporter_init();
+	ret = sentry_urma_comm_init();
 	if (ret)
 		return ret;
+
+	ret = sentry_uvb_comm_init();
+	if (ret)
+		goto urma_comm_exit;
+
+	ret = sentry_panic_reporter_init();
+	if (ret)
+		goto uvb_comm_exit;
 
 	sentry_client_ctx.msg_array = kmalloc_array(MAX_NODE_NUM * MAX_DIE_NUM,
 			sizeof(struct sentry_binary_msg),
@@ -1062,6 +1070,10 @@ free_msg_array:
 	kfree(sentry_client_ctx.msg_array);
 stop_kthread:
 	sentry_panic_reporter_exit();
+uvb_comm_exit:
+	sentry_uvb_comm_exit();
+urma_comm_exit:
+	sentry_urma_comm_exit();
 	return ret;
 }
 
@@ -1090,6 +1102,9 @@ static void __exit sentry_remote_reporter_exit(void)
 		unregister_local_cis_func(UBIOS_CALL_ID_PANIC_CALL, UBIOS_USER_ID_UB_DEVICE);
 		pr_info("UVB CIS function unregistered\n");
 	}
+
+	sentry_uvb_comm_exit();
+	sentry_urma_comm_exit();
 }
 
 module_init(sentry_remote_reporter_init);
