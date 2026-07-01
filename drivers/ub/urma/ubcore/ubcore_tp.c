@@ -207,32 +207,50 @@ static int ubcore_update_tpid_list(struct ubcore_device *dev,
 	int ret;
 	uint32_t idx;
 	uint32_t new_cnt = 0;
-	struct ubcore_tpid_list_node *node;
+	struct ubcore_tpid_list_node *node, *tmp;
+	LIST_HEAD(new_list);
 
 	new_cnt = actual_total_tp_cnt - tpid_list->cnt;
 
 	for (idx = tpid_list->cnt; idx < actual_total_tp_cnt; idx++) {
 		node = kcalloc(1, sizeof(struct ubcore_tpid_list_node), GFP_KERNEL);
 		if (node == NULL)
-			return -ENOMEM;
+			goto err_free_new_list;
 		node->tp_info = ops_tp_list[idx];
 		node->tp_info.tp_handle.bs.trans_mode = cfg->trans_mode;
 		node->tp_info.tp_handle.bs.ctp = cfg->flag.bs.ctp;
 		node->tp_info.tp_handle.bs.rtp = cfg->flag.bs.rtp;
 		node->tp_info.tp_handle.bs.utp = cfg->flag.bs.utp;
 		node->tp_info.tp_handle.bs.uboe = cfg->flag.bs.uboe;
-		list_add_tail(&node->node, &tpid_list->create_list);
+		list_add_tail(&node->node, &new_list);
 	}
 
+	list_splice_tail(&new_list, &tpid_list->create_list);
 	tpid_list->cnt += new_cnt;
 
 	ret = init_state_for_tpid(dev, tpid_list,
 				  tpid_list->cnt - new_cnt, tpid_list->cnt);
-	if (ret != 0)
+	if (ret != 0) {
+		tpid_list->cnt -= new_cnt;
+		while (new_cnt-- > 0) {
+			node = list_last_entry(&tpid_list->create_list,
+				struct ubcore_tpid_list_node, node);
+			list_del(&node->node);
+			kfree(node);
+		}
 		ubcore_log_err("Failed to init state for tpid list, ret = %d.\n", ret);
+		return ret;
+	}
 
 	ubcore_log_info("Update tpid list success, cnt = %d.\n", tpid_list->cnt);
 	return 0;
+
+err_free_new_list:
+	list_for_each_entry_safe(node, tmp, &new_list, node) {
+		list_del(&node->node);
+		kfree(node);
+	}
+	return -ENOMEM;
 }
 
 static int ubcore_get_tp_list_from_ops(struct ubcore_device *dev,
@@ -424,7 +442,7 @@ static struct ubcore_tp_info *find_available_tp_id_nolock(struct ubcore_device *
 			state->tpid_status, state->alloced);
 		mutex_lock(&state->lock);
 		if (state->tpid_status != UBCORE_TPID_STATE_ERR && !state->alloced) {
-			ubcore_log_info_rl("find available tp handle value: %lld.\n",
+			ubcore_log_info_rl("find available tp handle value: %llu.\n",
 				tp_info->tp_handle.value);
 			state->alloced = true;
 			mutex_unlock(&state->lock);
@@ -498,6 +516,10 @@ static int init_state_for_tpid(struct ubcore_device *dev,
 		if (ret != 0) {
 			ubcore_log_err("Failed to add tpid state, tpid=%u, ret=%d.\n",
 				tpid, ret);
+			ubcore_tpid_state_kref_put(state);
+			wait_for_completion(&state->comp);
+			mutex_destroy(&state->lock);
+			kfree(state);
 			goto rollback;
 		}
 		ubcore_log_info_rl("init tpid state success, i=%d, tpid=%u, ret=%d.\n",
@@ -508,7 +530,7 @@ static int init_state_for_tpid(struct ubcore_device *dev,
 	return 0;
 
 rollback:
-	rollback = begin;
+	rollback = 0;
 	list_for_each_entry(entry, &tpid_list->create_list, node) {
 		if (rollback < begin) {
 			rollback++;
@@ -522,6 +544,8 @@ rollback:
 			ubcore_log_err_rl("Failed to find state of tpid = %u.\n", tpid);
 			break;
 		}
+
+		ubcore_tpid_state_kref_put(state);
 		ubcore_remove_tp_id_state_entry(dev, state);
 		ubcore_log_info_rl("delete tp id state in init state rollback.\n");
 		rollback++;
@@ -646,7 +670,7 @@ int ubcore_create_tpid_priv(struct ubcore_device *dev, struct ubcore_tpid_cfg *c
 	}
 
 	*tp_handle = selected.tp_handle;
-	ubcore_log_info_rl("create tpid handle value = %lld.\n", selected.tp_handle.value);
+	ubcore_log_info_rl("create tpid handle value = %llu.\n", selected.tp_handle.value);
 
 	return 0;
 }
@@ -818,6 +842,10 @@ int ubcore_modify_tpid(struct ubcore_device *dev, enum ubcore_tpid_status state,
 	}
 
 	if (state == UBCORE_TPID_STATE_RESET) {
+		if (cfg->flushdone_cfg == NULL) {
+			ubcore_log_err("Invalid parameter for RESET state.\n");
+			return -EINVAL;
+		}
 		tp_id = cfg->flushdone_cfg->tpid;
 		entry = ubcore_find_get_tp_id_state_entry(dev, tp_id);
 		if (entry == NULL) {
@@ -926,6 +954,11 @@ void ubcore_remove_tp_id_state_entry(struct ubcore_device *dev,
 	ht = &dev->ht[UBCORE_HT_TPID_STATE];
 
 	ubcore_hash_table_remove(ht, &tp_state_entry->hnode);
+	/* Drop the hash-table and initial allocation references. */
+	ubcore_tpid_state_kref_put(tp_state_entry);
+	ubcore_tpid_state_kref_put(tp_state_entry);
+	wait_for_completion(&tp_state_entry->comp);
+	mutex_destroy(&tp_state_entry->lock);
 	kfree(tp_state_entry);
 }
 
