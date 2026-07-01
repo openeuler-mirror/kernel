@@ -1390,7 +1390,7 @@ declare_uobj_class(UOBJ_CLASS_JETTY,
 					   uburma_free_jetty,
 					   uburma_free_jetty_batch));
 declare_uobj_class(UOBJ_CLASS_JETTY_GRP,
-		   &uobj_type_alloc_idr(sizeof(struct uburma_jetty_grp_uobj), 1,
+		   &uobj_type_alloc_idr(sizeof(struct uburma_jetty_grp_uobj), 2,
 					uburma_free_jetty_grp));
 declare_uobj_class(UOBJ_CLASS_TARGET_JFR,
 		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,
