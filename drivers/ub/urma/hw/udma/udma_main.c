@@ -1669,12 +1669,12 @@ static int __init udma_init(void)
 {
 	int ret;
 
+	mutex_init(&g_seg_tree_mutex);
+	xa_init(&g_seg_tree_table);
+
 	ret = auxiliary_driver_register(&udma_drv);
 	if (ret)
 		pr_err("failed to register auxiliary driver\n");
-
-	mutex_init(&g_seg_tree_mutex);
-	xa_init(&g_seg_tree_table);
 
 	return ret;
 }
@@ -1682,8 +1682,8 @@ static int __init udma_init(void)
 static void __exit udma_exit(void)
 {
 	is_rmmod = true;
-	udma_destroy_seg_tree_table();
 	auxiliary_driver_unregister(&udma_drv);
+	udma_destroy_seg_tree_table();
 }
 
 module_init(udma_init);
