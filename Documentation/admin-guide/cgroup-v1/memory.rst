@@ -94,6 +94,7 @@ Brief summary of control files.
                                      This knob is deprecated and shouldn't be
                                      used.
  memory.oom_control		     set/show oom controls.
+ memory.qos_level		     set/show OOM priority level of the cgroup.
  memory.numa_stat		     show the number of memory usage per numa
 				     node
  memory.kmem.limit_in_bytes          Deprecated knob to set and read the kernel
@@ -886,6 +887,36 @@ At reading, current status of OOM is shown.
         - oom_kill         integer counter
           The number of processes belonging to this cgroup killed by any
           kind of OOM killer.
+
+memory.qos_level
+----------------
+
+A read-write single value file.  The default value is "0".
+
+Controls the OOM priority level of the cgroup.  When the system or a
+cgroup tree is under OOM, the kernel prefers to kill tasks from
+cgroups with the lower priority (that is, the cgroup whose
+``qos_level`` is set to -1) before killing tasks from cgroups at the
+default level.  Among tasks at the same priority level, the regular
+OOM badness score is used to pick the victim.
+
+The following values are defined:
+
+  -1  Low priority.  Tasks in this cgroup and its descendants are
+      preferred OOM victims.
+  0   Default/high priority.  Tasks are killed only after all
+      low-priority cgroups have been exhausted.
+
+When a value is written, it is applied to the cgroup and propagated to
+all its descendants.  A newly created cgroup inherits the
+``qos_level`` of its parent.
+
+This interface is gated by the ``memcg_qos_enable`` sysctl (see
+Documentation/admin-guide/sysctl/vm.rst).  When the sysctl is 0,
+reading this file returns 0 and writing to it returns -EACCES.
+Writing to the root cgroup, or writing a value other than 0 and -1,
+returns -EINVAL.  When the sysctl is switched from 1 to 0,
+``qos_level`` of all memory cgroups is reset to 0.
 
 11. Memory Pressure
 ===================

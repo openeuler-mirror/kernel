@@ -8349,6 +8349,18 @@ static struct cftype memory_files[] = {
 		.flags = CFTYPE_NS_DELEGATABLE,
 		.write = memory_reclaim,
 	},
+#ifdef CONFIG_MEMCG_OOM_PRIORITY
+	{
+		/*
+		 * This interface is used to control the oom priority
+		 * of the memcg. The interface name is for compatibility.
+		 */
+		.name = "qos_level",
+		.flags = CFTYPE_NOT_ON_ROOT | CFTYPE_NS_DELEGATABLE,
+		.read_s64 = memcg_oom_prio_read,
+		.write_s64 = memcg_oom_prio_write,
+	},
+#endif
 	{ }	/* terminate */
 };
 

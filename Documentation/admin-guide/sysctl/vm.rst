@@ -44,6 +44,7 @@ Currently, these files are in /proc/sys/vm:
 - legacy_va_layout
 - lowmem_reserve_ratio
 - max_map_count
+- memcg_qos_enable
 - memory_failure_early_kill
 - memory_failure_recovery
 - min_free_kbytes
@@ -438,6 +439,26 @@ programs, particularly malloc debuggers, may consume lots of them,
 e.g., up to one or two maps per allocation.
 
 The default value is 65530.
+
+
+memcg_qos_enable:
+=================
+
+Enables or disables the memory cgroup OOM priority feature.  When
+enabled, each non-root memory cgroup can be assigned an OOM priority
+level through its ``memory.qos_level`` file (see
+Documentation/admin-guide/cgroup-v2.rst and
+Documentation/admin-guide/cgroup-v1/memory.rst), so that the OOM
+killer prefers to kill tasks from low-priority cgroups before
+touching tasks from cgroups at the default priority.
+
+  0  Disable the feature.  Reading ``memory.qos_level`` returns 0
+     and writing to it returns -EACCES.  Writing 0 also resets the
+     ``oom_prio`` of all memory cgroups to 0.
+  1  Enable the feature.  ``memory.qos_level`` can be read and
+     written according to its documented rules.
+
+The default value is 0.
 
 
 memory_failure_early_kill:
