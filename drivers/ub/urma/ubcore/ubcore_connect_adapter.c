@@ -1534,7 +1534,7 @@ int ubcore_adapter_layer_rm_stp_disconnect(struct ubcore_tjetty *tjetty)
 		ret = ubcore_queue_work((int)UBCORE_DEACTIVE_SHARE_TP_WQ,
 					&deactive_work->work);
 		if (ret != 0) {
-			kfree(&deactive_work->work);
+			kfree(deactive_work);
 			ubcore_log_err("Failed to queue deactivate tp\n");
 			return ret;
 		}
