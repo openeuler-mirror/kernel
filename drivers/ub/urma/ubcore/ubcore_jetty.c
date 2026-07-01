@@ -2525,6 +2525,11 @@ ubcore_remove_jetty_from_jetty_grp(struct ubcore_jetty *jetty,
 
 	max_jetty_in_grp = jetty->ub_dev->attr.dev_cap.max_jetty_in_jetty_grp;
 	mutex_lock(&jetty_grp->lock);
+	if (jetty_grp->jetty == NULL) {
+		ubcore_log_err("jetty_grp->jetty is NULL.\n");
+		mutex_unlock(&jetty_grp->lock);
+		return -EINVAL;
+	}
 	for (i = 0; i < max_jetty_in_grp; i++) {
 		if (jetty_grp->jetty[i] == jetty) {
 			jetty_grp->jetty[i] = NULL;
