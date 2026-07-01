@@ -921,12 +921,14 @@ void udma_dfx_ctx_print(struct udma_dev *udev, const char *name, uint32_t id, ui
 {
 	uint32_t i;
 
-	pr_info("*************udma%u %s(%u) CONTEXT INFO *************\n",
-		udev->adev_id, name, id);
+	pr_info("*************%s %s(%u) CONTEXT INFO *************\n",
+		udev->dev_name, name, id);
 
 	for (i = 0; i < len; ++i)
-		pr_info("udma%u %s(%u) CONTEXT(byte%4lu): %08x\n",
-			udev->adev_id, name, id, (i + 1) * sizeof(uint32_t), ctx[i]);
+		pr_info("%s %s(%u) CONTEXT(byte%4u): %08x\n",
+			udev->dev_name, name, id,
+			(i + 1) * (uint32_t)sizeof(uint32_t),
+			ctx[i]);
 
 	pr_info("**************************************************\n");
 }
