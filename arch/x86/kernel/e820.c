@@ -28,24 +28,24 @@
  *   the first 128 E820 memory entries in boot_params.e820_table and the remaining
  *   (if any) entries of the SETUP_E820_EXT nodes. We use this to:
  *
- *       - inform the user about the firmware's notion of memory layout
- *         via /sys/firmware/memmap
- *
  *       - the hibernation code uses it to generate a kernel-independent CRC32
  *         checksum of the physical memory layout of a system.
  *
  * - 'e820_table_kexec': a slightly modified (by the kernel) firmware version
  *   passed to us by the bootloader - the major difference between
- *   e820_table_firmware[] and this one is that, the latter marks the setup_data
- *   list created by the EFI boot stub as reserved, so that kexec can reuse the
- *   setup_data information in the second kernel. Besides, e820_table_kexec[]
- *   might also be modified by the kexec itself to fake a mptable.
+ *   e820_table_firmware[] and this one is that e820_table_kexec[]
+ *   might be modified by the kexec itself to fake an mptable.
  *   We use this to:
  *
  *       - kexec, which is a bootloader in disguise, uses the original E820
  *         layout to pass to the kexec-ed kernel. This way the original kernel
  *         can have a restricted E820 map while the kexec()-ed kexec-kernel
  *         can have access to full memory - etc.
+ *
+ *         Export the memory layout via /sys/firmware/memmap. kexec-tools uses
+ *         the entries to create an E820 table for the kexec kernel.
+ *
+ *         kexec_file_load in-kernel code uses the table for the kexec kernel.
  *
  * - 'e820_table': this is the main E820 table that is massaged by the
  *   low level x86 platform code, or modified by boot parameters, before
@@ -532,9 +532,10 @@ u64 __init e820__range_update(u64 start, u64 size, enum e820_type old_type, enum
 	return __e820__range_update(e820_table, start, size, old_type, new_type);
 }
 
-static u64 __init e820__range_update_kexec(u64 start, u64 size, enum e820_type old_type, enum e820_type  new_type)
+u64 __init e820__range_update_table(struct e820_table *t, u64 start, u64 size,
+				    enum e820_type old_type, enum e820_type new_type)
 {
-	return __e820__range_update(e820_table_kexec, start, size, old_type, new_type);
+	return __e820__range_update(t, start, size, old_type, new_type);
 }
 
 /* Remove a range of memory from the E820 table: */
@@ -805,7 +806,7 @@ u64 __init e820__memblock_alloc_reserved(u64 size, u64 align)
 
 	addr = memblock_phys_alloc(size, align);
 	if (addr) {
-		e820__range_update_kexec(addr, size, E820_TYPE_RAM, E820_TYPE_RESERVED);
+		e820__range_update_table(e820_table_kexec, addr, size, E820_TYPE_RAM, E820_TYPE_RESERVED);
 		pr_info("update e820_table_kexec for e820__memblock_alloc_reserved()\n");
 		e820__update_table_kexec();
 	}
@@ -1015,17 +1016,6 @@ void __init e820__reserve_setup_data(void)
 
 		e820__range_update(pa_data, sizeof(*data)+data->len, E820_TYPE_RAM, E820_TYPE_RESERVED_KERN);
 
-		/*
-		 * SETUP_EFI, SETUP_IMA and SETUP_RNG_SEED are supplied by
-		 * kexec and do not need to be reserved.
-		 */
-		if (data->type != SETUP_EFI &&
-		    data->type != SETUP_IMA &&
-		    data->type != SETUP_RNG_SEED)
-			e820__range_update_kexec(pa_data,
-						 sizeof(*data) + data->len,
-						 E820_TYPE_RAM, E820_TYPE_RESERVED_KERN);
-
 		if (data->type == SETUP_INDIRECT) {
 			len += data->len;
 			early_memunmap(data, sizeof(*data));
@@ -1037,12 +1027,9 @@ void __init e820__reserve_setup_data(void)
 
 			indirect = (struct setup_indirect *)data->data;
 
-			if (indirect->type != SETUP_INDIRECT) {
+			if (indirect->type != SETUP_INDIRECT)
 				e820__range_update(indirect->addr, indirect->len,
 						   E820_TYPE_RAM, E820_TYPE_RESERVED_KERN);
-				e820__range_update_kexec(indirect->addr, indirect->len,
-							 E820_TYPE_RAM, E820_TYPE_RESERVED_KERN);
-			}
 		}
 
 		pa_data = pa_next;
@@ -1050,7 +1037,6 @@ void __init e820__reserve_setup_data(void)
 	}
 
 	e820__update_table(e820_table);
-	e820__update_table(e820_table_kexec);
 
 	pr_info("extended physical RAM map:\n");
 	e820__print_table("reserve setup_data");
@@ -1191,9 +1177,9 @@ void __init e820__reserve_resources(void)
 		res++;
 	}
 
-	/* Expose the bootloader-provided memory layout to the sysfs. */
-	for (i = 0; i < e820_table_firmware->nr_entries; i++) {
-		struct e820_entry *entry = e820_table_firmware->entries + i;
+	/* Expose the kexec e820 table to the sysfs. */
+	for (i = 0; i < e820_table_kexec->nr_entries; i++) {
+		struct e820_entry *entry = e820_table_kexec->entries + i;
 
 		firmware_map_add_early(entry->addr, entry->addr + entry->size, e820_type_to_string(entry));
 	}

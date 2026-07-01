@@ -54,8 +54,18 @@
 	(((unsigned long)fn) << 32))
 
 /* AP Reset Hold */
-#define GHCB_MSR_AP_RESET_HOLD_REQ	0x006
-#define GHCB_MSR_AP_RESET_HOLD_RESP	0x007
+#define GHCB_MSR_AP_RESET_HOLD_REQ		0x006
+#define GHCB_MSR_AP_RESET_HOLD_RESP		0x007
+#define GHCB_MSR_AP_RESET_HOLD_RESULT_POS	12
+#define GHCB_MSR_AP_RESET_HOLD_RESULT_MASK	GENMASK_ULL(51, 0)
+
+/* Preferred GHCB GPA Request */
+#define GHCB_MSR_PREF_GPA_REQ		0x010
+#define GHCB_MSR_GPA_VALUE_POS		12
+#define GHCB_MSR_GPA_VALUE_MASK		GENMASK_ULL(51, 0)
+
+#define GHCB_MSR_PREF_GPA_RESP		0x011
+#define GHCB_MSR_PREF_GPA_NONE		0xfffffffffffff
 
 /* GHCB GPA Register */
 #define GHCB_MSR_REG_GPA_REQ		0x012
@@ -91,14 +101,22 @@ enum psc_op {
 	/* GHCBData[11:0] */				\
 	GHCB_MSR_PSC_REQ)
 
+#define GHCB_MSR_PSC_REQ_TO_GFN(msr) (((msr) & GENMASK_ULL(51, 12)) >> 12)
+#define GHCB_MSR_PSC_REQ_TO_OP(msr) (((msr) & GENMASK_ULL(55, 52)) >> 52)
+
 #define GHCB_MSR_PSC_RESP		0x015
 #define GHCB_MSR_PSC_RESP_VAL(val)			\
 	/* GHCBData[63:32] */				\
 	(((u64)(val) & GENMASK_ULL(63, 32)) >> 32)
 
+/* Set highest bit as a generic error response */
+#define GHCB_MSR_PSC_RESP_ERROR (BIT_ULL(63) | GHCB_MSR_PSC_RESP)
+
 /* GHCB Hypervisor Feature Request/Response */
 #define GHCB_MSR_HV_FT_REQ		0x080
 #define GHCB_MSR_HV_FT_RESP		0x081
+#define GHCB_MSR_HV_FT_POS		12
+#define GHCB_MSR_HV_FT_MASK		GENMASK_ULL(51, 0)
 #define GHCB_MSR_HV_FT_RESP_VAL(v)			\
 	/* GHCBData[63:12] */				\
 	(((u64)(v) & GENMASK_ULL(63, 12)) >> 12)
@@ -111,8 +129,19 @@ enum psc_op {
  *   The VMGEXIT_PSC_MAX_ENTRY determines the size of the PSC structure, which
  *   is a local stack variable in set_pages_state(). Do not increase this value
  *   without evaluating the impact to stack usage.
+ *
+ *   Use VMGEXIT_PSC_MAX_COUNT in cases where the actual GHCB-defined max value
+ *   is needed, such as when processing GHCB requests on the hypervisor side.
  */
 #define VMGEXIT_PSC_MAX_ENTRY		64
+#define VMGEXIT_PSC_MAX_COUNT		253
+
+#define VMGEXIT_PSC_ERROR_GENERIC	(0x100UL << 32)
+#define VMGEXIT_PSC_ERROR_INVALID_HDR	((1UL << 32) | 1)
+#define VMGEXIT_PSC_ERROR_INVALID_ENTRY	((1UL << 32) | 2)
+
+#define VMGEXIT_PSC_OP_PRIVATE		1
+#define VMGEXIT_PSC_OP_SHARED		2
 
 struct psc_hdr {
 	u16 cur_entry;
@@ -163,8 +192,16 @@ struct snp_psc_desc {
 #define GHCB_RESP_CODE(v)		((v) & GHCB_MSR_INFO_MASK)
 
 /*
- * Error codes related to GHCB input that can be communicated back to the guest
- * by setting the lower 32-bits of the GHCB SW_EXITINFO1 field to 2.
+ * GHCB-defined return codes that are communicated back to the guest via
+ * SW_EXITINFO1.
+ */
+#define GHCB_HV_RESP_NO_ACTION		0
+#define GHCB_HV_RESP_ISSUE_EXCEPTION	1
+#define GHCB_HV_RESP_MALFORMED_INPUT	2
+
+/*
+ * GHCB-defined sub-error codes for malformed input (see above) that are
+ * communicated back to the guest via SW_EXITINFO2[31:0].
  */
 #define GHCB_ERR_NOT_REGISTERED		1
 #define GHCB_ERR_INVALID_USAGE		2

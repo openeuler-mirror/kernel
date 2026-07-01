@@ -54,9 +54,14 @@ struct sev_device {
 	u8 build;
 
 	void *cmd_buf;
+	void *cmd_buf_backup;
+	bool cmd_buf_active;
+	bool cmd_buf_backup_active;
 
 	/* Management of the Hygon RING BUFFER mode */
 	struct csv_ringbuffer_queue ring_buffer[CSV_COMMAND_PRIORITY_NUM];
+	
+	bool snp_initialized;
 };
 
 int sev_dev_init(struct psp_device *psp);

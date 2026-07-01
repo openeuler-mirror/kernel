@@ -173,7 +173,6 @@ struct dev_table_entry *amd_iommu_get_ivhd_dte_flags(u16 segid, u16 devid);
 void amd_iommu_domain_set_pgtable(struct protection_domain *domain,
 				  u64 *root, int mode);
 struct dev_table_entry *get_dev_table(struct amd_iommu *iommu);
-extern bool amd_iommu_snp_en;
 struct iommu_dev_data *search_dev_data(struct amd_iommu *iommu, u16 devid);
 
 #endif /* AMD_IOMMU_H */
