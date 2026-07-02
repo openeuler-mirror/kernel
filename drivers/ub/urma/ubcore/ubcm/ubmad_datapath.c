@@ -175,11 +175,15 @@ static bool ubmad_check_recv_msn_duplicate(struct ubmad_msn_mgr *msn_mgr,
 
 /* init retransmit buffer */
 static struct ubmad_ini_rtbuffer *ubmad_create_ini_rtbuffer(
-				struct ubmad_tjetty *tjetty, uint64_t msn, uint32_t msg_type)
+				struct ubmad_tjetty *tjetty, uint64_t msn, uint32_t msg_type,
+				void *data, uint32_t payload_len)
 {
 	struct ubmad_ini_rtbuffer *ini_rt_buffer;
 	unsigned long flag;
 	uint32_t hash;
+
+	if (payload_len > UBMAD_RTBUFFER_PKTSIZE)
+		return NULL;
 
 	ini_rt_buffer = kzalloc(sizeof(struct ubmad_ini_rtbuffer), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(ini_rt_buffer))
@@ -187,6 +191,8 @@ static struct ubmad_ini_rtbuffer *ubmad_create_ini_rtbuffer(
 
 	ini_rt_buffer->msn = msn;
 	ini_rt_buffer->msg_type = msg_type;
+	ini_rt_buffer->payload_len = payload_len;
+	memcpy(ini_rt_buffer->data, data, payload_len);
 	INIT_HLIST_NODE(&ini_rt_buffer->node);
 
 	hash = ubmad_reliable_hash(msn, msg_type, UBMAD_INI_RTBUFFER_SIZE);
@@ -643,11 +649,12 @@ static int ubmad_prepare_msg(uint64_t sge_addr, struct ubmad_send_buf *send_buf,
 	return 0;
 }
 
-static int ubmad_do_post_send_wk1_gen_data(struct ubcore_jetty *jetty,
-					struct ubmad_tjetty *tjetty,
-					struct ubcore_jfs_wr *jfs_wr,
-					struct workqueue_struct *rt_wq,
-					struct ubmad_jetty_resource *rsrc)
+static int ubmad_do_post_send_reliable_data(struct ubcore_jetty *jetty,
+					 struct ubmad_tjetty *tjetty,
+					 struct ubcore_jfs_wr *jfs_wr,
+					 struct workqueue_struct *rt_wq,
+					 struct ubmad_jetty_resource *rsrc,
+					 uint32_t msg_type)
 {
 	uint64_t sge_addr = jfs_wr->send.src.sge->addr;
 	uint32_t pld_len = jfs_wr->send.src.sge->len;
@@ -656,160 +663,124 @@ static int ubmad_do_post_send_wk1_gen_data(struct ubcore_jetty *jetty,
 	union ubcore_eid *dst_eid = &tjetty->tjetty->cfg.id.eid;
 
 	struct ubmad_msn_node *msn_node;
-	struct ubcore_jfs_wr *jfs_bad_wr = NULL;
-
-	int ret;
-
-	msn_node = ubmad_create_msn_node(msn, UBMAD_GEN_DATA, &tjetty->msn_mgr);
-	if (IS_ERR_OR_NULL(msn_node)) {
-		ubcore_log_err("create msn_node failed. msn %llu eid " EID_FMT
-			     "\n", msn, EID_ARGS(*dst_eid));
-		return -1;
-	}
-
-	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
-		atomic_fetch_sub(1, &rsrc->tx_in_queue);
-		ubcore_log_err_rl("Invalid threshold, tx_in_queue: %u.\n",
-			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
-		ret = -1;
-		goto destroy_msn_node;
-	}
-	ret = ubcore_post_jetty_send_wr(jetty, jfs_wr, &jfs_bad_wr);
-	if (ret != 0) {
-		ubcore_log_err("ubcore post send wk1 failed. msn %llu eid " EID_FMT
-			     "\n", msn, EID_ARGS(*dst_eid));
-		atomic_fetch_sub(1, &rsrc->tx_in_queue);
-		goto destroy_msn_node;
-	}
-
 	struct ubmad_rt_work *rt_work;
 	struct ubmad_ini_rtbuffer *rtbuffer;
-
-	rt_work = ubmad_create_rt_work(rt_wq,
-			&tjetty->msn_mgr, msn, UBMAD_GEN_DATA,
-			tjetty->tjetty->cfg.id.eid, rsrc);
-
-	if (IS_ERR_OR_NULL(rt_work)) {
-		ubcore_log_err("Failed to create rt_work for wk1. msn %llu.\n", msn);
-		ubmad_destroy_msn_node(msn_node, &tjetty->msn_mgr);
-		return 0;
-	}
-
-	msn_node->rt_work = rt_work;
-
-	if (pld_len <= UBMAD_RTBUFFER_PKTSIZE) {
-		rtbuffer = ubmad_create_ini_rtbuffer(tjetty, msn,
-									UBMAD_GEN_DATA);
-		if (IS_ERR_OR_NULL(rtbuffer)) {
-			ubcore_log_err("Failed to create rtbuffer for wk1.\n");
-			msn_node->rt_work = NULL;
-			ubmad_destroy_msn_node(msn_node, &tjetty->msn_mgr);
-			cancel_delayed_work_sync(&rt_work->delay_work);
-			kfree(rt_work);
-			return 0;
-		}
-		rtbuffer->payload_len = pld_len;
-		memcpy(rtbuffer->data, (void *)sge_addr, pld_len);
-	} else {
-		ubcore_log_err("Failed to create rtbuffer for wk1, packet size too large.\n");
-		msn_node->rt_work = NULL;
-		ubmad_destroy_msn_node(msn_node, &tjetty->msn_mgr);
-		cancel_delayed_work_sync(&rt_work->delay_work);
-		kfree(rt_work);
-		return 0;
-	}
-
-	ubcore_log_info_rl("Bind rt_work (wk1), msn %llu, max_retry %u, interval %ums.\n",
-			      msn, ubcore_max_retry_cnt, ubmad_retry_interval_ms);
-
-	ubcore_log_info_rl("send wk1 data successfully. msn %llu eid " EID_FMT "\n",
-		      msn, EID_ARGS(*dst_eid));
-	return 0;
-
-destroy_msn_node:
-	ubmad_destroy_msn_node(msn_node, &tjetty->msn_mgr);
-	return ret;
-}
-
-static int ubmad_do_post_send_wk0_conn_data(struct ubcore_jetty *jetty,
-					struct ubmad_tjetty *tjetty,
-					struct ubcore_jfs_wr *jfs_wr,
-					struct workqueue_struct *rt_wq,
-					struct ubmad_jetty_resource *rsrc)
-{
-	uint64_t sge_addr = jfs_wr->send.src.sge->addr;
-	uint32_t pld_len = jfs_wr->send.src.sge->len;
-	struct ubmad_msg *msg = (struct ubmad_msg *)sge_addr;
-	uint64_t msn = msg->msn;
-	union ubcore_eid *dst_eid = &tjetty->tjetty->cfg.id.eid;
-
-	struct ubmad_msn_node *msn_node;
 	struct ubcore_jfs_wr *jfs_bad_wr = NULL;
-
+	struct ubmad_msn_node *cur;
+	struct ubmad_msn_node *free_msn_node = NULL;
+	struct hlist_node *next;
+	unsigned long flag;
+	uint32_t hash = ubmad_reliable_hash(msn, msg_type, UBMAD_MSN_HLIST_SIZE);
+	bool rt_work_found = false;
+	bool rt_work_queued = false;
 	int ret;
 
-	/* create msn_node before post to avoid recv ack before msn_node created and wrongly trigger
-	 * fast retransmission.
-	 */
-	msn_node = ubmad_create_msn_node(msn, UBMAD_UBC_CONN_REQ, &tjetty->msn_mgr);
-	if (IS_ERR_OR_NULL(msn_node)) {
-		ubcore_log_err("create msn_node failed. msn %llu eid " EID_FMT
-			     "\n",
-			     msn, EID_ARGS(*dst_eid));
+	if (pld_len > UBMAD_RTBUFFER_PKTSIZE) {
+		ubcore_log_err("Failed to create rtbuffer, msg_type %u packet size too large.\n",
+			       msg_type);
+		return -EINVAL;
+	}
+
+	/* Initialize rtbuffer before publishing it to retry path. */
+	rtbuffer = ubmad_create_ini_rtbuffer(tjetty, msn, msg_type,
+					       (void *)sge_addr, pld_len);
+	if (IS_ERR_OR_NULL(rtbuffer)) {
+		ubcore_log_err("Failed to create rtbuffer, msg_type %u msn %llu.\n",
+			       msg_type, msn);
 		return -1;
 	}
+
+	msn_node = ubmad_create_msn_node(msn, msg_type, &tjetty->msn_mgr);
+	if (IS_ERR_OR_NULL(msn_node)) {
+		ubcore_log_err("create msn_node failed. msg_type %u msn %llu eid " EID_FMT
+			     "\n", msg_type, msn, EID_ARGS(*dst_eid));
+		ret = -1;
+		goto release_rtbuffer;
+	}
+
+	rt_work = kzalloc(sizeof(*rt_work), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(rt_work)) {
+		ubcore_log_err("Failed to alloc rt_work. msg_type %u msn %llu.\n",
+			       msg_type, msn);
+		ret = -ENOMEM;
+		goto destroy_msn_node;
+	}
+	rt_work->msn = msn;
+	rt_work->msg_type = msg_type;
+	rt_work->msn_mgr = &tjetty->msn_mgr;
+	rt_work->rsrc = rsrc;
+	rt_work->dst = tjetty->tjetty->cfg.id.eid;
+	rt_work->rt_wq = rt_wq;
+	rt_work->rt_cnt = 1;
+	INIT_DELAYED_WORK(&rt_work->delay_work, ubmad_rt_work_handler);
+
+	/* Pair with the ack path reading rt_work under msn_hlist_lock. */
+	spin_lock_irqsave(&tjetty->msn_mgr.msn_hlist_lock, flag);
+	msn_node->rt_work = rt_work;
+	spin_unlock_irqrestore(&tjetty->msn_mgr.msn_hlist_lock, flag);
 
 	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
 		ubcore_log_err_rl("Invalid threshold, tx_in_queue: %u.\n",
 			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
 		ret = -1;
-		goto destroy_msn_node;
+		goto destroy_rt_work;
 	}
+
+	/* After a successful post, ack may free msn_node/rt_work at any time. */
 	ret = ubcore_post_jetty_send_wr(jetty, jfs_wr, &jfs_bad_wr);
 	if (ret != 0) {
-		ubcore_log_err("ubcore post send failed. msn %llu eid " EID_FMT
-			     "\n",
-			     msn, EID_ARGS(*dst_eid));
+		ubcore_log_err("ubcore post send failed. msg_type %u msn %llu eid " EID_FMT
+			     "\n", msg_type, msn, EID_ARGS(*dst_eid));
 		atomic_fetch_sub(1, &rsrc->tx_in_queue);
-		goto destroy_msn_node;
+		goto destroy_rt_work;
 	}
 
-	struct ubmad_rt_work *rt_work = ubmad_create_rt_work(rt_wq,
-			&tjetty->msn_mgr, msn, UBMAD_UBC_CONN_REQ,
-			tjetty->tjetty->cfg.id.eid, rsrc);
-
-	if (IS_ERR_OR_NULL(rt_work)) {
-		ubcore_log_err("Failed to create the first rt_work. msn %llu.\n", msn);
-	} else {
-		msn_node->rt_work = rt_work;
-		if (pld_len <= UBMAD_RTBUFFER_PKTSIZE) {
-			struct ubmad_ini_rtbuffer *rtbuffer = ubmad_create_ini_rtbuffer(tjetty, msn,
-									      UBMAD_UBC_CONN_REQ);
-
-			if (IS_ERR_OR_NULL(rtbuffer)) {
-				ubcore_log_err("Failed to create rtbuffer.\n");
-				msn_node->rt_work = NULL;
-				cancel_delayed_work_sync(&rt_work->delay_work);
-				kfree(rt_work);
-			} else {
-				rtbuffer->payload_len = pld_len;
-				memcpy(rtbuffer->data, (void *)sge_addr, pld_len);
+	/*
+	 * Queue retry work only if ack has not already removed the msn_node.
+	 * Do not dereference msn_node/rt_work after dropping the lock unless
+	 * this path still owns rt_work.
+	 */
+	spin_lock_irqsave(&tjetty->msn_mgr.msn_hlist_lock, flag);
+	hlist_for_each_entry_safe(cur, next, &tjetty->msn_mgr.msn_hlist[hash], node) {
+		if (cur->msn == msn && cur->msg_type == msg_type &&
+		    cur->rt_work == rt_work) {
+			rt_work_found = true;
+			rt_work_queued = queue_delayed_work(rt_wq, &rt_work->delay_work,
+					msecs_to_jiffies(ubmad_retry_interval_ms));
+			if (!rt_work_queued) {
+				cur->rt_work = NULL;
+				hlist_del(&cur->node);
+				atomic_dec(&tjetty->msn_mgr.cnt);
+				free_msn_node = cur;
 			}
-		} else {
-			ubcore_log_err("Failed to create rtbuffer, packet size too large.\n");
-			msn_node->rt_work = NULL;
-			cancel_delayed_work_sync(&rt_work->delay_work);
-			kfree(rt_work);
+			break;
 		}
 	}
+	spin_unlock_irqrestore(&tjetty->msn_mgr.msn_hlist_lock, flag);
 
-	ubcore_log_info_rl("send conn data successfully. msn %llu eid " EID_FMT "\n",
-		      msn, EID_ARGS(*dst_eid));
+	if (rt_work_found && !rt_work_queued) {
+		ubcore_log_err("queue rt work failed\n");
+		ubmad_release_ini_rtbuffer(tjetty, msn, msg_type);
+		kfree(rt_work);
+		kfree(free_msn_node);
+	}
+
+	ubcore_log_info_rl("send data successfully. msg_type %u msn %llu eid " EID_FMT
+			  ", max_retry %u, interval %ums.\n",
+		      msg_type, msn, EID_ARGS(*dst_eid), ubcore_max_retry_cnt,
+		      ubmad_retry_interval_ms);
 	return 0;
 
+destroy_rt_work:
+	spin_lock_irqsave(&tjetty->msn_mgr.msn_hlist_lock, flag);
+	msn_node->rt_work = NULL;
+	spin_unlock_irqrestore(&tjetty->msn_mgr.msn_hlist_lock, flag);
+	kfree(rt_work);
 destroy_msn_node:
 	ubmad_destroy_msn_node(msn_node, &tjetty->msn_mgr);
+release_rtbuffer:
+	ubmad_release_ini_rtbuffer(tjetty, msn, msg_type);
 	return ret;
 }
 
@@ -866,83 +837,6 @@ static int ubmad_do_post_send_wk0_resp_data(struct ubcore_jetty *jetty,
 
 	ubcore_log_info_rl("send conn resp data successfully. msn %llu eid " EID_FMT "\n",
 		      msn, EID_ARGS(*dst_eid));
-	return 0;
-}
-
-static int ubmad_do_post_send_wk1_gen_resp(struct ubcore_jetty *jetty,
-					struct ubmad_tjetty *tjetty,
-					struct ubcore_jfs_wr *jfs_wr,
-					struct workqueue_struct *rt_wq,
-					struct ubmad_jetty_resource *rsrc)
-{
-	uint64_t sge_addr = jfs_wr->send.src.sge->addr;
-	uint32_t pld_len = jfs_wr->send.src.sge->len;
-	struct ubmad_msg *msg = (struct ubmad_msg *)sge_addr;
-	uint64_t msn = msg->msn;
-	union ubcore_eid *dst_eid = &tjetty->tjetty->cfg.id.eid;
-	struct ubcore_jfs_wr *jfs_bad_wr = NULL;
-	int ret;
-
-	if (atomic_fetch_add(1, &rsrc->tx_in_queue) >= UBMAD_TX_THREDSHOLD) {
-		atomic_fetch_sub(1, &rsrc->tx_in_queue);
-		ubcore_log_err("Invalid threshold, tx_in_queue: %u.\n",
-			     (uint32_t)atomic_read(&rsrc->tx_in_queue));
-		return -1;
-	}
-	ret = ubcore_post_jetty_send_wr(jetty, jfs_wr, &jfs_bad_wr);
-	if (ret != 0) {
-		ubcore_log_err("ubcore post send failed. msn %llu eid " EID_FMT
-			     "\n",
-			     msn, EID_ARGS(*dst_eid));
-		atomic_fetch_sub(1, &rsrc->tx_in_queue);
-		return -1;
-	}
-
-	if (msg->msg_type == UBMAD_GEN_RESP) {
-		struct ubmad_msn_node *msn_node;
-		struct ubmad_rt_work *rt_work;
-		struct ubmad_ini_rtbuffer *rtbuffer;
-
-		msn_node = ubmad_create_msn_node(msn, UBMAD_GEN_RESP, &tjetty->msn_mgr);
-		if (IS_ERR_OR_NULL(msn_node)) {
-			ubcore_log_err("create msn_node for gen resp failed. msn %llu\n", msn);
-			goto gen_resp_out;
-		}
-
-		rt_work = ubmad_create_rt_work(rt_wq,
-				&tjetty->msn_mgr, msn, UBMAD_GEN_RESP,
-				tjetty->tjetty->cfg.id.eid, rsrc);
-		if (IS_ERR_OR_NULL(rt_work)) {
-			ubcore_log_err("Failed to create rt_work for gen resp. msn %llu.\n", msn);
-			ubmad_destroy_msn_node(msn_node, &tjetty->msn_mgr);
-			goto gen_resp_out;
-		}
-
-		msn_node->rt_work = rt_work;
-
-		if (pld_len <= UBMAD_RTBUFFER_PKTSIZE) {
-			rtbuffer = ubmad_create_ini_rtbuffer(tjetty, msn,
-								      UBMAD_GEN_RESP);
-			if (IS_ERR_OR_NULL(rtbuffer)) {
-				ubcore_log_err("Failed to create rtbuffer for gen resp.\n");
-				msn_node->rt_work = NULL;
-				ubmad_destroy_msn_node(msn_node, &tjetty->msn_mgr);
-				cancel_delayed_work_sync(&rt_work->delay_work);
-				kfree(rt_work);
-				goto gen_resp_out;
-			}
-			rtbuffer->payload_len = pld_len;
-			memcpy(rtbuffer->data, (void *)sge_addr, pld_len);
-		}
-
-		ubcore_log_info_rl("Bind rt_work to msn_node(gen resp), msn %llu.\n", msn);
-	}
-
-	ubcore_log_info_rl("send conn resp data successfully. msn %llu eid " EID_FMT "\n",
-		      msn, EID_ARGS(*dst_eid));
-	return 0;
-
-gen_resp_out:
 	return 0;
 }
 
@@ -1030,8 +924,8 @@ static int ubmad_do_post_send(struct ubmad_jetty_resource *rsrc,
 	msg = (struct ubmad_msg *)sge_addr;
 	switch (msg->msg_type) {
 	case UBMAD_UBC_CONN_REQ:
-		ret = ubmad_do_post_send_wk0_conn_data(jetty, tjetty, &jfs_wr,
-						   rt_wq, rsrc);
+		ret = ubmad_do_post_send_reliable_data(jetty, tjetty, &jfs_wr,
+						      rt_wq, rsrc, UBMAD_UBC_CONN_REQ);
 		break;
 	case UBMAD_UBC_CONN_RESP:
 		ret = ubmad_do_post_send_wk0_resp_data(jetty, tjetty, &jfs_wr,
@@ -1042,12 +936,12 @@ static int ubmad_do_post_send(struct ubmad_jetty_resource *rsrc,
 						   rt_wq, rsrc);
 		break;
 	case UBMAD_GEN_DATA:
-		ret = ubmad_do_post_send_wk1_gen_data(jetty, tjetty, &jfs_wr,
-						   rt_wq, rsrc);
+		ret = ubmad_do_post_send_reliable_data(jetty, tjetty, &jfs_wr,
+						      rt_wq, rsrc, UBMAD_GEN_DATA);
 		break;
 	case UBMAD_GEN_RESP:
-		ret = ubmad_do_post_send_wk1_gen_resp(jetty, tjetty, &jfs_wr,
-						   rt_wq, rsrc);
+		ret = ubmad_do_post_send_reliable_data(jetty, tjetty, &jfs_wr,
+						      rt_wq, rsrc, UBMAD_GEN_RESP);
 		break;
 
 	default:
