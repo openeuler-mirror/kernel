@@ -3554,7 +3554,7 @@ static int uburma_cmd_import_jetty(struct ubcore_device *ubc_dev,
 
 	tjetty = ubcore_import_jetty(ubc_dev, &cfg, &udata);
 	if (IS_ERR_OR_NULL(tjetty)) {
-		uburma_log_err("Failed to import jetty.\n");
+		uburma_log_err_rl("Failed to import jetty.\n");
 		uobj_alloc_abort(uobj);
 		return IS_ERR(tjetty) ? PTR_ERR(tjetty) : -1;
 	}
