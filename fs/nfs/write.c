@@ -835,15 +835,16 @@ static void nfs_inode_remove_request(struct nfs_page *req)
 	nfs_page_group_lock(req);
 	if (nfs_page_group_sync_on_bit_locked(req, PG_REMOVE)) {
 		struct folio *folio = nfs_page_to_folio(req->wb_head);
-		struct address_space *mapping = folio_file_mapping(folio);
 
-		spin_lock(&mapping->private_lock);
 		if (likely(folio && !folio_test_swapcache(folio))) {
+			struct address_space *mapping = folio_file_mapping(folio);
+
+			spin_lock(&mapping->private_lock);
 			folio->private = NULL;
 			folio_clear_private(folio);
 			clear_bit(PG_MAPPED, &req->wb_head->wb_flags);
+			spin_unlock(&mapping->private_lock);
 		}
-		spin_unlock(&mapping->private_lock);
 	}
 	nfs_page_group_unlock(req);
 
