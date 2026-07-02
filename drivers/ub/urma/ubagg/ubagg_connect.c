@@ -160,11 +160,11 @@ static int send_seg_req(struct ubcore_device *dev, uint32_t session_id,
 	if (ret != 0)
 		return ret;
 
-	ubagg_log_info("Send seg info req to " EID_FMT "\n",
+	ubagg_log_info_rl("Send seg info req to " EID_FMT "\n",
 		       EID_ARGS(dest_eid));
 	ret = ubcore_send_comm_msg_to(dev, &msg, dest_eid);
 	if (ret != 0) {
-		ubagg_log_err("Failed to send msg.\n");
+		ubagg_log_err_rl("Failed to send msg.\n");
 		return ret;
 	}
 	return 0;
@@ -210,7 +210,7 @@ static int send_jetty_req(struct ubcore_device *dev, uint32_t session_id,
 	if (ret != 0)
 		return ret;
 
-	ubagg_log_info("Send jetty info req to " EID_FMT "\n",
+	ubagg_log_info_rl("Send jetty info req to " EID_FMT "\n",
 		       EID_ARGS(dest_eid));
 	ret = ubcore_send_comm_msg_to(dev, &msg, dest_eid);
 	if (ret != 0) {
@@ -280,7 +280,7 @@ int ubagg_connect_xchg_seg(struct ubcore_seg *seg, uint32_t ue_idx,
 	ubagg_session_wait(session);
 
 	if (result != 0) {
-		ubagg_log_err("Failed to exchange udata, ret: %d.\n", result);
+		ubagg_log_err_rl("Failed to exchange udata, ret: %d.\n", result);
 		ret = result;
 		goto release_session;
 	}
@@ -338,7 +338,7 @@ int ubagg_connect_xchg_jetty(struct ubcore_tjetty_cfg *cfg, uint32_t ue_idx,
 	ubagg_session_wait(session);
 
 	if (result != 0) {
-		ubagg_log_err("Failed to exchange udata, ret: %d.\n", result);
+		ubagg_log_err_rl("Failed to exchange udata, ret: %d.\n", result);
 		ret = result;
 		goto release_session;
 	}
