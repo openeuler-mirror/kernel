@@ -1012,12 +1012,12 @@ int ubmad_post_send(struct ubcore_device *device,
 
 	dev_priv = ubmad_get_device_priv(device); // put in ubmad_jetty_work_handler()
 	if (IS_ERR_OR_NULL(dev_priv)) {
-		ubcore_log_err("Failed to get dev_priv, dev_name: %s.\n",
+		ubcore_log_err_rl("Failed to get dev_priv, dev_name: %s.\n",
 			     device->dev_name);
 		return -1;
 	}
 	if (!dev_priv->valid) {
-		ubcore_log_err("dev_priv rsrc not inited. dev_name: %s.\n",
+		ubcore_log_err_rl("dev_priv rsrc not inited. dev_name: %s.\n",
 			     device->dev_name);
 		ret = -1;
 		goto put_device_priv;
@@ -1043,7 +1043,7 @@ int ubmad_post_send(struct ubcore_device *device,
 		rsrc = &dev_priv->jetty_rsrc[1];
 		break;
 	default:
-		ubcore_log_err("Invalid msg_type: %d.\n",
+		ubcore_log_err_rl("Invalid msg_type: %d.\n",
 			     (int)send_buf->msg_type);
 		ret = -EINVAL;
 		goto put_device_priv;
@@ -1053,7 +1053,7 @@ int ubmad_post_send(struct ubcore_device *device,
 	// unimport in ubmad_uninit_jetty_rsrc()
 	ret = ubcore_lookup_main_ue_eid(&send_buf->dst_eid, &dst_primary_eid);
 	if (ret != 0) {
-		ubcore_log_err("get primary eid failed, ret = %d\n", ret);
+		ubcore_log_err_rl("get primary eid failed, ret = %d\n", ret);
 		goto put_device_priv;
 	}
 	hash = jhash(&dst_primary_eid, sizeof(union ubcore_eid), 0) %
