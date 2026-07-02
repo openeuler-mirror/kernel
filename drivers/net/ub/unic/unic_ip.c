@@ -484,6 +484,10 @@ int unic_handle_notify_ip_event(struct auxiliary_device *adev, u8 service_ver,
 
 	unic_build_stack_ip_info(req, &st_ip);
 
+	unic_format_masked_ip_addr(format_ip, (u8 *)&st_ip.ip_addr);
+	unic_info(priv, "ip notify req: cmd=%u, ip=%s, ip_mask=%u\n",
+		  req->ip_cmd, format_ip, st_ip.ip_mask);
+
 	spin_lock_bh(&vport->addr_tbl.tmp_ip_lock);
 	if (test_bit(UNIC_VPORT_STATE_IP_QUERYING, &vport->state)) {
 		ret = unic_update_tmp_ip_list(priv, &vport->addr_tbl.tmp_ip_list,

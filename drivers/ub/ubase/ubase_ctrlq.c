@@ -1085,16 +1085,13 @@ static void ubase_ctrlq_crq_event_callback(struct ubase_dev *udev,
 	int ret = -ENOENT;
 	u32 i;
 
-	ubase_info(udev,
-		   "ctrlq recv notice req: seq=%u, ser_type=%u, ser_ver=%u, opc=0x%x.",
-		   seq, head->service_type, head->service_ver, head->opcode);
-
 	if (head->ret) {
 		/* according to the definition of the CTRLQ interface,
 		 * the 'ret' value of request should always be 0.
 		 */
-		ubase_err(udev, "ctrlq notice req ret is not 0, ret = -%u.",
-			  head->ret);
+		dev_err_ratelimited(udev->dev,
+				    "ctrlq notice req ret is not 0, ret = -%u, ser_type=%u, ser_ver=%u, opc=0x%x.\n",
+				    head->ret, head->service_type, head->service_ver, head->opcode);
 		return;
 	}
 
@@ -1119,19 +1116,22 @@ static void ubase_ctrlq_crq_event_callback(struct ubase_dev *udev,
 	mutex_unlock(&crq_tab->lock);
 
 	if (time_cost > TIME_COST_THRESHOLD)
-		ubase_warn(udev, "ctrlq crq callback executed in %lums.\n",
-			   time_cost);
+		ubase_warn(udev, "ctrlq crq callback executed in %lums. ser_type=%u, ser_ver=%u, opc=0x%x.\n",
+			   time_cost, head->service_type, head->service_ver, head->opcode);
 
 	if (ret == -ENOENT) {
-		dev_info_ratelimited(udev->dev, "this notice is not supported.");
+		dev_info_ratelimited(udev->dev, "this notice is not supported. ser_type=%u, ser_ver=%u, opc=0x%x.\n",
+				     head->service_type, head->service_ver, head->opcode);
 		ubase_ctrlq_send_unsupported_resp(udev, head, seq, EOPNOTSUPP);
 	} else if (ret == -EOPNOTSUPP) {
 		dev_info_ratelimited(udev->dev,
-				    "the notice processor return not support.");
+				     "the notice processor return not support. ser_type=%u, ser_ver=%u, opc=0x%x.\n",
+				     head->service_type, head->service_ver, head->opcode);
 		ubase_ctrlq_send_unsupported_resp(udev, head, seq, EOPNOTSUPP);
 	} else if (ret == -EDRVNOEXIST) {
 		dev_info_ratelimited(udev->dev,
-				    "the notice processor is unregistered.");
+				     "the notice processor is unregistered. ser_type=%u, ser_ver=%u, opc=0x%x.\n",
+				     head->service_type, head->service_ver, head->opcode);
 		ubase_ctrlq_send_unsupported_resp(udev, head, seq, EDRVNOEXIST);
 	}
 }
