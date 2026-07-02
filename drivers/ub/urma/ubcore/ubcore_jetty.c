@@ -3235,6 +3235,7 @@ EXPORT_SYMBOL(ubcore_import_jetty_ex);
 int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 {
 	struct ubcore_device *dev;
+	struct ubcore_tpid_reuse *tpid_reuse;
 	uint32_t jetty_id = tjetty->cfg.id.id;
 	uint32_t eid_idx = tjetty->cfg.eid_index;
 	int ret;
@@ -3259,12 +3260,14 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 				    tjetty->cfg.flag.bs.share_tp)) &&
 	    tjetty->vtpn != NULL) {
 		mutex_lock(&tjetty->lock);
-		if (tjetty->vtpn->tpid_reuse) {
-			ret = ubcore_disconnect_tpid_with_tpid_reuse(tjetty->vtpn->tpid_reuse);
+		/* ubcore_disconnect_vtp() may free vtpn, cache tpid_reuse first. */
+		tpid_reuse = tjetty->vtpn->tpid_reuse;
+		if (tpid_reuse) {
+			ret = ubcore_disconnect_tpid_with_tpid_reuse(tpid_reuse);
 		} else {
 			ret = ubcore_disconnect_vtp(tjetty->vtpn);
 		}
-		if (ret != 0) {
+		if (ret != 0 && (ret != -ENOENT || tpid_reuse)) {
 			mutex_unlock(&tjetty->lock);
 			ubcore_log_err("Failed to disconnect vtp.\n");
 			UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
@@ -3272,7 +3275,7 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 		}
 		/*if tpid_reuse, vtpn is not inc use_cnt in import_jetty
 		  just need kfree vtpn in last.*/
-		if (tjetty->vtpn->tpid_reuse)
+		if (tpid_reuse)
 			(void)ubcore_free_vtpn_after_tpid_reuse(tjetty->vtpn);
 		tjetty->vtpn = NULL;
 		mutex_unlock(&tjetty->lock);
