@@ -107,6 +107,7 @@ struct ubcore_tjetty *ubcore_get_tjetty(struct ubcore_device *dev,
 					struct ubcore_udata *udata);
 
 void ubcore_tpid_reuse_kref_put(struct ubcore_tpid_reuse *entry);
+void ubcore_tpid_reuse_get(void *obj);
 
 int ubcore_free_tpid_reuse(struct ubcore_tpid_reuse *tpid_reuse);
 void ubcore_hash_table_rmv_tpid_reuse(struct ubcore_device *dev,

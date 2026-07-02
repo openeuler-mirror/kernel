@@ -642,13 +642,6 @@ static inline void ubcore_free_tp_reuse_ht_obj(void *obj)
 	ubcore_free_driver_obj(obj, UBCORE_HT_TPID_REUSE);
 }
 
-static void ubcore_tpid_reuse_get(void *obj)
-{
-	struct ubcore_tpid_reuse *entry = obj;
-
-	kref_get(&entry->ref_cnt);
-}
-
 static struct ubcore_ht_param g_ht_params[] = {
 	[UBCORE_HT_JFS] = { UBCORE_HASH_TABLE_SIZE,
 			    offsetof(struct ubcore_jfs, hnode),
