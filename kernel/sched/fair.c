@@ -8126,6 +8126,56 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p,
 	return target;
 }
 
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+
+static inline bool sched_group_sf_preferred(struct task_struct *p, struct sched_group *sg)
+{
+	struct soft_domain_ctx *ctx = NULL;
+
+	if (!sched_feat(SOFT_DOMAIN))
+		return true;
+
+	ctx = task_group(p)->sf_ctx;
+	if (!ctx || ctx->policy == 0)
+		return true;
+
+	if (!cpumask_intersects(sched_group_span(sg), to_cpumask(ctx->span)))
+		return false;
+
+	return true;
+}
+
+static inline bool cpu_is_sf_preferred(struct task_struct *p, int cpu)
+{
+	struct soft_domain_ctx *ctx = NULL;
+
+	if (!sched_feat(SOFT_DOMAIN))
+		return true;
+
+	ctx = task_group(p)->sf_ctx;
+	if (!ctx || ctx->policy == 0)
+		return true;
+
+	if (!cpumask_test_cpu(cpu, to_cpumask(ctx->span)))
+		return false;
+
+	return true;
+}
+
+#else
+
+static inline bool sched_group_sf_preferred(struct task_struct *p, struct sched_group *sg)
+{
+	return true;
+}
+
+static inline bool cpu_is_sf_preferred(struct task_struct *p, int cpu)
+{
+	return true;
+}
+
+#endif
+
 static struct sched_group *
 find_idlest_group(struct sched_domain *sd, struct task_struct *p, int this_cpu);
 
@@ -8155,6 +8205,9 @@ find_idlest_group_cpu(struct sched_group *group, struct task_struct *p, int this
 		struct rq *rq = cpu_rq(i);
 
 		if (!sched_core_cookie_match(rq, p))
+			continue;
+
+		if (!cpu_is_sf_preferred(p, i))
 			continue;
 
 		if (sched_idle_cpu(i))
@@ -8474,6 +8527,9 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, bool 
 		if (tg->sf_ctx && tg->sf_ctx->policy != 0) {
 			struct cpumask *tmpmask = to_cpumask(tg->sf_ctx->span);
 
+			if (!cpumask_test_cpu(target, tmpmask))
+				goto skip_prefer;
+
 			for_each_cpu_wrap(cpu, tmpmask, target + 1) {
 				if (!cpumask_test_cpu(cpu, tmpmask))
 					continue;
@@ -8499,6 +8555,7 @@ static int select_idle_cpu(struct task_struct *p, struct sched_domain *sd, bool 
 		}
 
 	}
+skip_prefer:
 #endif
 
 	if (static_branch_unlikely(&sched_cluster_active)) {
@@ -9455,28 +9512,102 @@ static void set_task_select_cpus(struct task_struct *p, int *idlest_cpu,
 #endif
 
 #ifdef CONFIG_SCHED_SOFT_DOMAIN
-static int wake_soft_domain(struct task_struct *p, int target)
-{
-	struct cpumask *mask = this_cpu_cpumask_var_ptr(select_rq_mask);
-	struct soft_domain_ctx *ctx = NULL;
+/*
+ * Determine whether to migrate a task outside the soft domain.
+ * If src CPU is in the soft domain and its LLC is overutilized,
+ * do not restrict task migration.
+ * If util exceeds 85%, it is in overutilized state, adjustable
+ * via parameter @soft_domain_overutil_pct.
+ *
+ * Return 1 means task need not migrate, prefers to stay on src CPU.
+ * Return 0 means follow the generic load balancer.
+ */
 
-	ctx = task_group(p)->sf_ctx;
+int soft_domain_overutil_pct = 85;
+
+int soft_domain_cache_hot(struct task_struct *p, int src_cpu, int dst_cpu)
+{
+	struct soft_domain_ctx *ctx = task_group(p)->sf_ctx;
+	struct sched_domain_shared *sds;
+
+	/* soft domain disabled, just return. */
+	if (!soft_domain_enabled())
+		return 0;
+
+	if (!ctx)
+		return 0;
+
+	/*
+	 * If dst_cpu is in the domain or src_cpu is outside it,
+	 * these cases are not migrating a task outside the domain,
+	 * do not restrict them.
+	 */
+	if (cpumask_test_cpu(dst_cpu, to_cpumask(ctx->span)) ||
+	    !cpumask_test_cpu(src_cpu, to_cpumask(ctx->span)))
+		return 0;
+
+	sds = rcu_dereference(per_cpu(sd_llc_shared, src_cpu));
+	if (!sds)
+		return 0;
+
+	/*
+	 * Moving out of the soft domain:
+	 * if src CPU's llc isn't overutil, prefers to stay on src CPU.
+	 */
+	return !soft_domain_overutil(READ_ONCE(sds->util_avg),
+				    READ_ONCE(sds->capacity),
+				    soft_domain_overutil_pct);
+}
+
+static int can_prefer_soft_domain(struct task_struct *p, struct cpumask *mask)
+{
+	struct sched_domain_shared *sds;
+
+	sds = rcu_dereference(per_cpu(sd_llc_shared, cpumask_first(mask)));
+	if (!sds)
+		return 0;
+
+	/*
+	 * When soft domain's LLC is not overutilized, try preferred CPU
+	 * selection. Reserve a 20% margin here to avoid conflicts with
+	 * load balance behavior causing frequent task migrations.
+	 */
+	return !soft_domain_overutil(READ_ONCE(sds->util_avg),
+				     READ_ONCE(sds->capacity),
+				     max(0, soft_domain_overutil_pct - 20));
+}
+
+static __always_inline int wake_soft_domain(struct task_struct *p, int target)
+{
+	struct soft_domain_ctx *ctx = task_group(p)->sf_ctx;
+	struct cpumask *span;
+	const struct cpumask *allowed_cpus;
+
 	if (!ctx || ctx->policy == 0)
 		goto out;
 
+	span = to_cpumask(ctx->span);
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	cpumask_and(mask, to_cpumask(ctx->span), p->select_cpus);
+	allowed_cpus = p->select_cpus;
 #else
-	cpumask_and(mask, to_cpumask(ctx->span), p->cpus_ptr);
+	allowed_cpus = p->cpus_ptr;
 #endif
-	cpumask_and(mask, mask, cpu_active_mask);
-	if (cpumask_empty(mask) || cpumask_test_cpu(target, mask))
+
+	if (likely(cpumask_test_cpu(target, span) &&
+		   cpumask_test_cpu(target, allowed_cpus) &&
+		   cpu_active(target))) {
 		goto out;
-	else
-		target = cpumask_any_distribute(mask);
+	} else {
+		struct cpumask *mask = this_cpu_cpumask_var_ptr(select_rq_mask);
 
+		cpumask_and(mask, span, allowed_cpus);
+		cpumask_and(mask, mask, cpu_active_mask);
+		if (cpumask_empty(mask))
+			goto out;
+		if (can_prefer_soft_domain(p, mask))
+			target = cpumask_any_distribute(mask);
+	}
 out:
-
 	return target;
 }
 #endif
@@ -10993,6 +11124,9 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 		if (task_group(p)->sf_ctx && task_group(p)->sf_ctx->policy &&
 		(env->sd->flags & SD_NUMA) != 0)
 			return 0;
+
+		if (soft_domain_cache_hot(p, env->src_cpu, env->dst_cpu))
+			return 0;
 	}
 #endif
 
@@ -11867,6 +12001,56 @@ group_type group_classify(unsigned int imbalance_pct,
 	return group_has_spare;
 }
 
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+/*
+ * Record the statistics for this scheduler group for later
+ * use. These values guide load balancing on aggregating tasks
+ * to a LLC.
+ */
+static void record_sg_llc_stats(struct lb_env *env,
+				struct sg_lb_stats *sgs,
+				struct sched_group *group)
+{
+	/*
+	 * Find the child domain on env->dst_cpu. This domain
+	 * is either the domain that spans this group(if the
+	 * group is a local group), or the sibling domain of
+	 * this group.
+	 */
+	struct sched_domain *sd = env->sd->child;
+	struct sched_domain_shared *sd_share;
+
+	if (!soft_domain_enabled() || env->idle == CPU_NEWLY_IDLE)
+		return;
+
+	/* only care about sched domains spanning a LLC */
+	if (sd != rcu_dereference(per_cpu(sd_llc, env->dst_cpu)))
+		return;
+
+	/*
+	 * At this point we know this group spans a LLC domain.
+	 * Record the statistic of this group in its corresponding
+	 * shared LLC domain.
+	 */
+	sd_share = rcu_dereference(per_cpu(sd_llc_shared,
+					   cpumask_first(sched_group_span(group))));
+	if (!sd_share)
+		return;
+
+	if (READ_ONCE(sd_share->util_avg) != sgs->group_util)
+		WRITE_ONCE(sd_share->util_avg, sgs->group_util);
+
+	if (unlikely(READ_ONCE(sd_share->capacity) != sgs->group_capacity))
+		WRITE_ONCE(sd_share->capacity, sgs->group_capacity);
+}
+#else
+static inline void record_sg_llc_stats(struct lb_env *env, struct sg_lb_stats *sgs,
+				       struct sched_group *group)
+{
+}
+#endif
+
+
 /**
  * sched_use_asym_prio - Check whether asym_packing priority must be used
  * @sd:		The scheduling domain of the load balancing
@@ -12106,6 +12290,8 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 		sgs->group_smt_balance = 1;
 
 	sgs->group_type = group_classify(env->sd->imbalance_pct, group, sgs);
+
+	record_sg_llc_stats(env, sgs, group);
 
 	/* Computing avg_load makes sense only when group is overloaded */
 	if (sgs->group_type == group_overloaded)
@@ -12495,6 +12681,9 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p, int this_cpu)
 
 		/* Skip over this group if no cookie matched */
 		if (!sched_group_cookie_match(cpu_rq(this_cpu), p, group))
+			continue;
+
+		if (!sched_group_sf_preferred(p, group))
 			continue;
 
 		local_group = cpumask_test_cpu(this_cpu,
