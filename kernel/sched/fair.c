@@ -8126,56 +8126,6 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p,
 	return target;
 }
 
-#ifdef CONFIG_SCHED_SOFT_DOMAIN
-
-static inline bool sched_group_sf_preferred(struct task_struct *p, struct sched_group *sg)
-{
-	struct soft_domain_ctx *ctx = NULL;
-
-	if (!sched_feat(SOFT_DOMAIN))
-		return true;
-
-	ctx = task_group(p)->sf_ctx;
-	if (!ctx || ctx->policy == 0)
-		return true;
-
-	if (!cpumask_intersects(sched_group_span(sg), to_cpumask(ctx->span)))
-		return false;
-
-	return true;
-}
-
-static inline bool cpu_is_sf_preferred(struct task_struct *p, int cpu)
-{
-	struct soft_domain_ctx *ctx = NULL;
-
-	if (!sched_feat(SOFT_DOMAIN))
-		return true;
-
-	ctx = task_group(p)->sf_ctx;
-	if (!ctx || ctx->policy == 0)
-		return true;
-
-	if (!cpumask_test_cpu(cpu, to_cpumask(ctx->span)))
-		return false;
-
-	return true;
-}
-
-#else
-
-static inline bool sched_group_sf_preferred(struct task_struct *p, struct sched_group *sg)
-{
-	return true;
-}
-
-static inline bool cpu_is_sf_preferred(struct task_struct *p, int cpu)
-{
-	return true;
-}
-
-#endif
-
 static struct sched_group *
 find_idlest_group(struct sched_domain *sd, struct task_struct *p, int this_cpu);
 
@@ -8205,9 +8155,6 @@ find_idlest_group_cpu(struct sched_group *group, struct task_struct *p, int this
 		struct rq *rq = cpu_rq(i);
 
 		if (!sched_core_cookie_match(rq, p))
-			continue;
-
-		if (!cpu_is_sf_preferred(p, i))
 			continue;
 
 		if (sched_idle_cpu(i))
@@ -12681,9 +12628,6 @@ find_idlest_group(struct sched_domain *sd, struct task_struct *p, int this_cpu)
 
 		/* Skip over this group if no cookie matched */
 		if (!sched_group_cookie_match(cpu_rq(this_cpu), p, group))
-			continue;
-
-		if (!sched_group_sf_preferred(p, group))
 			continue;
 
 		local_group = cpumask_test_cpu(this_cpu,
