@@ -49,6 +49,6 @@ TRACE_EVENT(ummu_core_free_tid,
 /* This part must be outside protection */
 #undef TRACE_INCLUDE_PATH
 #undef TRACE_INCLUDE_FILE
-#define TRACE_INCLUDE_PATH ../drivers/iommu/hisilicon/ummu-core
+#define TRACE_INCLUDE_PATH .
 #define TRACE_INCLUDE_FILE ummu_trace
 #include <trace/define_trace.h>
