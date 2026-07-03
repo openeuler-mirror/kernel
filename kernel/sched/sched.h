@@ -4094,18 +4094,11 @@ int destroy_soft_domain(struct task_group *tg);
 void offline_soft_domain(struct task_group *tg);
 int sched_group_set_soft_domain(struct task_group *tg, long val);
 int sched_group_set_soft_domain_quota(struct task_group *tg, long val);
-bool soft_domain_enabled(void);
-
-extern int soft_domain_overutil_pct;
-
-#define soft_domain_overutil(util_avg, capacity, overutil_pct) \
-	((util_avg) * 100 > (capacity) * (overutil_pct))
 
 static inline struct cpumask *soft_domain_span(unsigned long span[])
 {
 	return to_cpumask(span);
 }
-int soft_domain_cache_hot(struct task_struct *p, int src_cpu, int dst_cpu);
 #else
 
 static inline void build_soft_domain(void) { }

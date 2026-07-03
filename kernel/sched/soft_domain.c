@@ -38,7 +38,7 @@ static int __init soft_domain_switch_setup(char *str)
 }
 __setup("sched_soft_domain=", soft_domain_switch_setup);
 
-bool soft_domain_enabled(void)
+static bool soft_domain_enabled(void)
 {
 	return static_branch_likely(&__soft_domain_switch);
 }
