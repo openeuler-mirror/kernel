@@ -415,6 +415,11 @@ static __init int sched_init_debug(void)
 	debugfs_create_u32("hot_threshold_ms", 0644, numa, &sysctl_numa_balancing_hot_threshold);
 #endif
 
+#ifdef CONFIG_SCHED_SOFT_DOMAIN
+	debugfs_create_u32("soft_domain_overutil_pct", 0644, debugfs_sched,
+			   &soft_domain_overutil_pct);
+#endif
+
 	debugfs_create_file("debug", 0444, debugfs_sched, NULL, &sched_debug_fops);
 
 	return 0;
