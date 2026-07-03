@@ -14,3 +14,6 @@ ummu-core-$(CONFIG_UB_UMMU_SVA_SEPARATED_PAGES) += core_matt.o
 obj-$(CONFIG_UB_UMMU_CORE) += ummu_core_builtin.o
 
 obj-$(CONFIG_UB_UMMU_CORE_DRIVER) += ummu-core.o
+
+# for tracing framework to find ummu_trace.h
+CFLAGS_core_tid.o := -I$(src)

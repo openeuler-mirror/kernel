@@ -1915,13 +1915,18 @@ static int init_ummu_device(struct ummu_device *ummu,
 static int logic_ummu_core_device_init(void)
 {
 	struct ummu_core_init_args args = { 0 };
+	const struct tid_ops *tid_ops;
 	struct ummu_device *entry;
 	int ret;
+
+	tid_ops = ummu_core_get_tid_ops(PASID_OPS);
+	if (!tid_ops)
+		return -EINVAL;
 
 	args.iommu_ops = &logic_iommu_ops;
 	args.core_ops = &logic_ummu_core_ops;
 	args.hwdev = &logic_ummu_dev->dev;
-	args.tid_args.tid_ops = ummu_core_tid_ops[PASID_OPS];
+	args.tid_args.tid_ops = tid_ops;
 	args.tid_args.max_tid = logic_ummu.core_dev.iommu.max_pasids;
 	args.tid_args.min_tid = logic_ummu.core_dev.iommu.min_pasids;
 	ret = ummu_core_device_init(&logic_ummu.core_dev, &args);

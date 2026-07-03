@@ -2,8 +2,7 @@
 
 config UB_UMMU_CORE
 	bool "UMMU Framework Builtin API"
-	default n
-	depends on UB_UBUS
+	depends on ARM64
 	help
 	  Enable the UMMU framework and configure this config, as the kernel
 	  provides the basic functionality for using UB features. This config
@@ -13,7 +12,7 @@ config UB_UMMU_CORE
 if UB_UMMU_CORE
 config UB_UMMU_CORE_DRIVER
 	tristate "UMMU Framework Modular API"
-	default n
+	depends on UB_UBUS
 	help
 	  The configuration is flexible and depends on how the ummu driver
 	  intends to utilize this feature. This configuration option
@@ -24,9 +23,8 @@ config UB_UMMU_CORE_DRIVER
 
 config UB_UMMU_SVA_SEPARATED_PAGES
 	bool "Support for UMMU SVA to establish separated page tables"
-	default n
 	help
-	  the hardware does not support IOPF capability, using SVA
+	  The hardware does not support IOPF capability, using SVA
 	  armed page tables can lead to page faults due to periodic
 	  memory tasks. By separating the process page table from the
 	  MMU page table, the goal of SVA programming is achieved.
