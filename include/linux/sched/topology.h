@@ -106,8 +106,6 @@ struct sched_domain_shared {
 #ifdef CONFIG_SCHED_STEAL
 	struct sparsemask *cfs_overload_cpus;
 #endif
-	unsigned long	util_avg;
-	unsigned long	capacity ____cacheline_aligned_in_smp;
 };
 
 struct sched_domain {
