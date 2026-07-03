@@ -9524,37 +9524,28 @@ static int can_prefer_soft_domain(struct task_struct *p, struct cpumask *mask)
 				     max(0, soft_domain_overutil_pct - 20));
 }
 
-static __always_inline int wake_soft_domain(struct task_struct *p, int target)
+static int wake_soft_domain(struct task_struct *p, int target)
 {
-	struct soft_domain_ctx *ctx = task_group(p)->sf_ctx;
-	struct cpumask *span;
-	const struct cpumask *allowed_cpus;
+	struct cpumask *mask = this_cpu_cpumask_var_ptr(select_rq_mask);
+	struct soft_domain_ctx *ctx = NULL;
 
+	ctx = task_group(p)->sf_ctx;
 	if (!ctx || ctx->policy == 0)
 		goto out;
 
-	span = to_cpumask(ctx->span);
 #ifdef CONFIG_QOS_SCHED_DYNAMIC_AFFINITY
-	allowed_cpus = p->select_cpus;
+	cpumask_and(mask, to_cpumask(ctx->span), p->select_cpus);
 #else
-	allowed_cpus = p->cpus_ptr;
+	cpumask_and(mask, to_cpumask(ctx->span), p->cpus_ptr);
 #endif
-
-	if (likely(cpumask_test_cpu(target, span) &&
-		   cpumask_test_cpu(target, allowed_cpus) &&
-		   cpu_active(target))) {
+	cpumask_and(mask, mask, cpu_active_mask);
+	if (cpumask_empty(mask) || cpumask_test_cpu(target, mask))
 		goto out;
-	} else {
-		struct cpumask *mask = this_cpu_cpumask_var_ptr(select_rq_mask);
+	else if (can_prefer_soft_domain(p, mask))
+		target = cpumask_any_distribute(mask);
 
-		cpumask_and(mask, span, allowed_cpus);
-		cpumask_and(mask, mask, cpu_active_mask);
-		if (cpumask_empty(mask))
-			goto out;
-		if (can_prefer_soft_domain(p, mask))
-			target = cpumask_any_distribute(mask);
-	}
 out:
+
 	return target;
 }
 #endif
