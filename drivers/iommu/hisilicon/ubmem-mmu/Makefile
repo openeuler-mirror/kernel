@@ -2,4 +2,4 @@
 
 ubmem_vmmu-$(CONFIG_UB_UBMEM_VMMU) := ubmem_vmmu_main.o
 
-obj-m += ubmem_vmmu.o
+obj-$(CONFIG_UB_UBMEM_VMMU) += ubmem_vmmu.o

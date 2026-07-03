@@ -9,7 +9,7 @@
 #include <linux/cleanup.h>
 #include <linux/random.h>
 
-#include "trace/trace.h"
+#include "trace.h"
 #include "ummu.h"
 #include "flush.h"
 #include "seg_mng.h"

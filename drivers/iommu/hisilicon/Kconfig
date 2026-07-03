@@ -7,9 +7,8 @@ source "drivers/iommu/hisilicon/ummu-core/Kconfig"
 source "drivers/iommu/hisilicon/ubmem-mmu/Kconfig"
 
 config UB_UMMU_BASE
-	bool "Hisilicon UB MMU Support Builtin"
-	depends on ARM64
-	default n
+	bool "Hisilicon UB MMU Builtin Support"
+	depends on ARM64 && ARCH_HISI
 	help
 	  Support for implementations of the hisilicon UMMU architecture.
 	  As the kernel provides the basic functionality for using UMMU features.
@@ -20,7 +19,6 @@ config UB_UMMU
 	tristate "Hisilicon UB MMU Support"
 	depends on ARM64 && ARCH_HISI
 	depends on UB_UBUS && UB_UBFI
-	default n
 	select IOMMU_API
 	select IOMMU_IO_PGTABLE_LPAE
 	select GENERIC_MSI_IRQ
@@ -37,21 +35,21 @@ config UB_UMMU
 
 config UB_UMMU_SVA
 	bool "Support for Shared Virtual Addressing with UMMU"
-	depends on UB_UMMU
+	depends on ARM64 && ARCH_HISI
 	select IOMMU_SVA
 	select IOMMU_KSVA
 	select IOMMU_IOPF
-	default n
+	select MMU_NOTIFIER
 	help
 	  Support for sharing process address spaces with devices using
 	  the UMMU. And ummu provides access permission verification for
 	  process address spaces.
 	  Say Y here if your system supports SVA.
 
+if UB_UMMU
+
 config UB_UBMEM_UMMU
 	bool "Support UB memory's UMMU"
-	depends on UB_UMMU
-	default n
 	help
 	  Support the special UMMU for the address resolution of UB memory.
 	  This is a private implementation. User must check the hardware
@@ -60,8 +58,6 @@ config UB_UBMEM_UMMU
 
 config UB_UMMU_BYPASSDEV
 	bool "Support UMMU to bypass device in S1"
-	depends on UB_UMMU_BASE
-	default n
 	help
 	  Support UMMU to bypass device. You need to add the parameter,
 	  e.g."ummu.bypassdev=xxx(vendor):xxx(device)", to bypass a
@@ -71,8 +67,6 @@ config UB_UMMU_BYPASSDEV
 
 config UB_UMMU_BYPASSEID
 	bool "Support UMMU to bypass in EID granularity"
-	depends on UB_UMMU
-	default n
 	help
 	  Support UMMU to bypass in EID granularity. When hardware
 	  support is available and the config is enabled, stage 2
@@ -82,7 +76,6 @@ config UB_UMMU_BYPASSEID
 config UB_UMMU_HIGHUSER_MOVABLE_ALLOC
 	depends on ARM64
 	bool "Support GFP_HIGHUSER_MOVABLE for UMMU memory allocations"
-	default n
 	help
 	  Support using GFP_HIGHUSER_MOVABLE for UMMU internal memory
 	  allocations. When enabled, the UMMU driver will use
@@ -92,3 +85,4 @@ config UB_UMMU_HIGHUSER_MOVABLE_ALLOC
 	  compaction and anti-fragmentation on systems without memory
 	  mirroring.
 	  Say Y here if your system does not use memory mirroring.
+endif # UB_UMMU

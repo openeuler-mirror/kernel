@@ -9,8 +9,6 @@
 #include <linux/sizes.h>
 #include <ub/ubus/ubus.h>
 
-#include "ummu.h"
-
 /* Indicates whether to allow permission table space expansion. */
 static bool ummu_mapt_blk_exp __read_mostly = true;
 

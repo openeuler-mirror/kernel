@@ -490,8 +490,14 @@ struct ummu_mpam {
 	KABI_RESERVE(4)
 };
 
+/**
+ * ummu_core_tid_ops - Obtaining the TID Allocation Policy Interface.
+ * @Deprecated: use ummu_core_get_tid_ops instead.
+ */
 #if IS_ENABLED(CONFIG_UB_UMMU_CORE_DRIVER)
 extern const struct tid_ops *ummu_core_tid_ops[TID_OPS_MAX];
+#else
+static __maybe_unused const struct tid_ops *ummu_core_tid_ops[TID_OPS_MAX] = { NULL };
 #endif /* CONFIG_UB_UMMU_CORE_DRIVER */
 
 static inline struct ummu_core_device *to_ummu_core(struct iommu_device *iommu)
@@ -605,16 +611,14 @@ int ummu_core_fill_pages(struct iova_slot *slot, dma_addr_t iova,
 int ummu_core_drain_pages(struct iova_slot *slot, dma_addr_t iova, unsigned long nr_pages);
 
 /**
- * ummu_core_tlb_inv_walk() - Synchronously invalidate all intermediate TLB state
- * (sometimes referred to as the "walk cache") for a virtual address range.
- * @domain: iommu domain
- * @iova: IOVA representing the start of the range to be flushed
- * @size: IOVA representing the end of the range to be flushed (inclusive)
- * @granule: The interval at which to perform the flush
+ * ummu_core_get_domain_by_tid() - Get iommu_domain by tid and dev.
+ * @dev: related device.
+ * @tid: tid
+ *
+ * Return: iommu_domain or NULL if failed.
  */
-void ummu_core_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
-			    size_t size, size_t granule);
-
+struct iommu_domain *ummu_core_get_domain_by_tid(struct device *dev,
+						 u32 tid);
 #else
 static inline int ummu_core_add_eid(guid_t *guid, eid_t eid, enum eid_type type)
 {
@@ -660,9 +664,10 @@ static inline int ummu_core_drain_pages(struct iova_slot *slot, dma_addr_t iova,
 	return -EOPNOTSUPP;
 }
 
-static inline void ummu_core_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
-					  size_t size, size_t granule)
+static inline struct iommu_domain *
+ummu_core_get_domain_by_tid(struct device *dev, u32 tid)
 {
+	return NULL;
 }
 
 #endif /* CONFIG_UB_UMMU_CORE */
@@ -725,16 +730,6 @@ int ummu_sva_ungrant_range(struct iommu_sva *sva, void *va, size_t size,
  * Return: 0 on success, or an error.
  */
 int ummu_get_tid(struct device *dev, struct iommu_sva *sva, u32 *tidp);
-
-/**
- * ummu_core_get_domain_by_tid() - Get iommu_domain by tid and dev.
- * @dev: related device.
- * @tid: tid
- *
- * Return: iommu_domain or NULL if failed.
- */
-struct iommu_domain *ummu_core_get_domain_by_tid(struct device *dev,
-						 u32 tid);
 
 /**
  * ummu_is_ksva() - Check whether the UMMU works in ksva mode.
@@ -961,6 +956,25 @@ int ummu_core_get_tid_type(struct ummu_core_device *dev, u32 tid,
  */
 int ummu_core_dev_config(struct device *dev, int type, int command, void *data);
 
+/**
+ * ummu_core_tlb_inv_walk() - Synchronously invalidate all intermediate TLB state
+ * (sometimes referred to as the "walk cache") for a virtual address range.
+ * @domain: iommu domain
+ * @iova: IOVA representing the start of the range to be flushed
+ * @size: IOVA representing the end of the range to be flushed (inclusive)
+ * @granule: The interval at which to perform the flush
+ */
+void ummu_core_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
+			    size_t size, size_t granule);
+
+/**
+ * ummu_core_get_tid_ops() - Obtaining the TID Allocation Policy Interface.
+ * The API is not thread-safe.
+ * @default_tid_ops_types: tid policy type
+ *
+ * Return: Policy Interface on success, or an error NULL pointer.
+ */
+const struct tid_ops *ummu_core_get_tid_ops(enum default_tid_ops_types type);
 #else
 static inline int ummu_sva_grant_range(struct iommu_sva *sva, void *va,
 				       size_t size, int perm, void *cookie)
@@ -978,12 +992,6 @@ static inline int ummu_get_tid(struct device *dev, struct iommu_sva *sva,
 			       u32 *tidp)
 {
 	return -EOPNOTSUPP;
-}
-
-static inline struct iommu_domain *
-ummu_core_get_domain_by_tid(struct device *dev, u32 tid)
-{
-	return NULL;
 }
 
 static inline bool ummu_is_ksva(struct iommu_domain *domain)
@@ -1104,6 +1112,17 @@ static inline int ummu_core_get_tid_type(struct ummu_core_device *dev, u32 tid,
 static inline int ummu_core_dev_config(struct device *dev, int type, int command, void *data)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline void ummu_core_tlb_inv_walk(struct iommu_domain *domain, unsigned long iova,
+					  size_t size, size_t granule)
+{
+}
+
+static inline
+const struct tid_ops *ummu_core_get_tid_ops(enum default_tid_ops_types type)
+{
+	return NULL;
 }
 
 #endif /* CONFIG_UB_UMMU_CORE_DRIVER */
