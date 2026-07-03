@@ -10,8 +10,13 @@
 #include <linux/spinlock.h>
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/ummu_core.h>
 
-#include "ummu_core_priv.h"
+struct ummu_core_device *global_core_device;
+EXPORT_SYMBOL_NS_GPL(global_core_device, UMMU_CORE_INTERNAL);
+
+DEFINE_MUTEX(global_device_lock);
+EXPORT_SYMBOL_NS_GPL(global_device_lock, UMMU_CORE_INTERNAL);
 
 static DEFINE_SPINLOCK(eid_func_lock);
 static LIST_HEAD(eid_pre_insmode);

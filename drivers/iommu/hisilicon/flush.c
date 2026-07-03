@@ -9,7 +9,7 @@
 #include <linux/bitops.h>
 #include <linux/ummu_core.h>
 
-#include "trace/trace.h"
+#include "trace.h"
 #include "ummu.h"
 #include "queue.h"
 #include "flush.h"

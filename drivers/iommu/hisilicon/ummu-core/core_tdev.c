@@ -14,7 +14,6 @@
 #include <linux/sysfs.h>
 #include <linux/slab.h>
 #include <linux/kref.h>
-#include <ub/ubus/ubus.h>
 
 #include "ummu_core_priv.h"
 

@@ -333,3 +333,12 @@ const struct tid_ops *ummu_core_tid_ops[] = {
 	[DEFAULT_OPS] = &ummu_default_ops,
 };
 EXPORT_SYMBOL_GPL(ummu_core_tid_ops);
+
+const struct tid_ops *ummu_core_get_tid_ops(enum default_tid_ops_types type)
+{
+	if (type >= TID_OPS_MAX || type < PASID_OPS)
+		return NULL;
+
+	return ummu_core_tid_ops[type];
+}
+EXPORT_SYMBOL_NS_GPL(ummu_core_get_tid_ops, UMMU_CORE_DRIVER);

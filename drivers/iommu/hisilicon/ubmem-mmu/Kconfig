@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0+
-
-menuconfig UB_UBMEM_VMMU
-	default n
+# Hisilicon UBMEM vIOMMU support
+config UB_UBMEM_VMMU
 	tristate "ubmem_vmmu driver"
-	depends on UB_UMMU_CORE && UB_UMMU
+	depends on UB_UMMU
 	help
 	   This option enables support for UBMEM_VMMU drivers. The
 	   UBMEM_VMMU driver provides VMU device registration,

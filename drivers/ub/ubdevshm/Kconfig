@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0+
-menuconfig UB_UBDEVSHM
-	default n
+# UB Device share memory support
+config UB_UBDEVSHM
 	tristate "ubdevshm driver"
 	help
 	   This option enables support for ubdevshm drivers. ubdev_shm serves
