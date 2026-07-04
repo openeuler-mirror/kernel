@@ -329,9 +329,11 @@ static inline uint32_t udma_adv_jetty_id_alloc(struct udma_dev *udma_dev, uint32
 					       uint32_t next_bit, uint32_t start_idx,
 					       struct udma_group_bitmap *bitmap_table)
 {
+	unsigned long tmp_bit;
 	uint32_t bit_idx;
 
-	bit_idx = find_next_bit((unsigned long *)bit, NUM_JETTY_PER_GROUP, next_bit);
+	tmp_bit = *bit;
+	bit_idx = find_next_bit(&tmp_bit, NUM_JETTY_PER_GROUP, next_bit);
 	*bit &= ~(1U << bit_idx);
 
 	return bitmap_table->min + start_idx + bit_idx;
