@@ -619,9 +619,10 @@ int ubcore_active_tp(struct ubcore_device *dev,
 		return -EINVAL;
 	}
 
-	ubcore_log_info("Active tp, local tp_hdl: %llu, peer tp_hdl: %llu.\n",
+	ubcore_log_info("Active tp, local tp_hdl: %llu, peer tp_hdl: %llu, dev_name: %s.\n",
 			active_cfg->tp_handle.value,
-			active_cfg->peer_tp_handle.value);
+			active_cfg->peer_tp_handle.value,
+			dev->dev_name);
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_UB_ACTIVE_TP);
 	start = ktime_get_ns();
