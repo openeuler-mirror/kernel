@@ -438,7 +438,7 @@ static int pppoe_rcv(struct sk_buff *skb, struct net_device *dev,
 	/* skb->data points to the PPP protocol header after skb_pull_rcsum.
 	 * Drop PFC frames.
 	 */
-	if (ppp_skb_is_compressed_proto(skb))
+	if (skb->data[0] & 0x01)
 		goto drop;
 
 	if (pskb_trim_rcsum(skb, len))
