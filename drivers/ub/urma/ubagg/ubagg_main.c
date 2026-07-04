@@ -196,9 +196,9 @@ static void __exit ubagg_exit(void)
 	ubagg_msg_uninit();
 	ubagg_fb_exit();
 	ubagg_connect_uninit();
-	ubagg_session_uninit();
 	ubagg_delete_topo_map();
 	ubagg_clear_dev_list();
+	ubagg_session_uninit();
 	ubagg_genl_unregister_family();
 	ubagg_cdev_destroy();
 }
