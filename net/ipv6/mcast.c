@@ -1032,8 +1032,10 @@ static void mld_gq_start_timer(struct inet6_dev *idev)
 	unsigned long tv = prandom_u32() % idev->mc_maxdelay;
 
 	idev->mc_gq_running = 1;
-	if (!mod_timer(&idev->mc_gq_timer, jiffies+tv+2))
-		in6_dev_hold(idev);
+	if (in6_dev_hold_safe(idev)) {
+		if (mod_timer(&idev->mc_gq_timer, jiffies + tv + 2))
+			in6_dev_put(idev);
+	}
 }
 
 static void mld_gq_stop_timer(struct inet6_dev *idev)
@@ -1047,8 +1049,10 @@ static void mld_ifc_start_timer(struct inet6_dev *idev, unsigned long delay)
 {
 	unsigned long tv = prandom_u32() % delay;
 
-	if (!mod_timer(&idev->mc_ifc_timer, jiffies+tv+2))
-		in6_dev_hold(idev);
+	if (in6_dev_hold_safe(idev)) {
+		if (mod_timer(&idev->mc_ifc_timer, jiffies + tv + 2))
+			in6_dev_put(idev);
+	}
 }
 
 static void mld_ifc_stop_timer(struct inet6_dev *idev)
@@ -1062,8 +1066,10 @@ static void mld_dad_start_timer(struct inet6_dev *idev, unsigned long delay)
 {
 	unsigned long tv = prandom_u32() % delay;
 
-	if (!mod_timer(&idev->mc_dad_timer, jiffies+tv+2))
-		in6_dev_hold(idev);
+	if (in6_dev_hold_safe(idev)) {
+		if (mod_timer(&idev->mc_dad_timer, jiffies + tv + 2))
+			in6_dev_put(idev);
+	}
 }
 
 static void mld_dad_stop_timer(struct inet6_dev *idev)
