@@ -194,63 +194,43 @@ static int init_state_for_tpid(struct ubcore_device *dev,
 			       int begin, int end);
 
 static int ubcore_update_tpid_list(struct ubcore_device *dev,
-					   struct ubcore_tp_info *ops_tp_list,
+					   struct ubcore_tp_info *find_tp,
 					   struct ubcore_tpid_list *tpid_list,
-					   uint32_t actual_total_tp_cnt,
 					   struct ubcore_get_tp_cfg *cfg)
 {
 	int ret;
-	uint32_t idx;
-	uint32_t new_cnt = 0;
-	struct ubcore_tpid_list_node *node, *tmp;
-	LIST_HEAD(new_list);
+	struct ubcore_tpid_list_node *node = NULL;
 
-	new_cnt = actual_total_tp_cnt - tpid_list->cnt;
+	node = kcalloc(1, sizeof(struct ubcore_tpid_list_node), GFP_KERNEL);
+	if (node == NULL)
+		return -ENOMEM;
 
-	for (idx = tpid_list->cnt; idx < actual_total_tp_cnt; idx++) {
-		node = kcalloc(1, sizeof(struct ubcore_tpid_list_node), GFP_KERNEL);
-		if (node == NULL)
-			goto err_free_new_list;
-		node->tp_info = ops_tp_list[idx];
-		node->tp_info.tp_handle.bs.trans_mode = cfg->trans_mode;
-		node->tp_info.tp_handle.bs.ctp = cfg->flag.bs.ctp;
-		node->tp_info.tp_handle.bs.rtp = cfg->flag.bs.rtp;
-		node->tp_info.tp_handle.bs.utp = cfg->flag.bs.utp;
-		node->tp_info.tp_handle.bs.uboe = cfg->flag.bs.uboe;
-		list_add_tail(&node->node, &new_list);
-	}
-
-	list_splice_tail(&new_list, &tpid_list->create_list);
-	tpid_list->cnt += new_cnt;
+	node->tp_info = *find_tp;
+	node->tp_info.tp_handle.bs.trans_mode = cfg->trans_mode;
+	node->tp_info.tp_handle.bs.ctp = cfg->flag.bs.ctp;
+	node->tp_info.tp_handle.bs.rtp = cfg->flag.bs.rtp;
+	node->tp_info.tp_handle.bs.utp = cfg->flag.bs.utp;
+	node->tp_info.tp_handle.bs.uboe = cfg->flag.bs.uboe;
+	list_add_tail(&node->node, &tpid_list->create_list);
+	tpid_list->cnt += 1;
 
 	ret = init_state_for_tpid(dev, tpid_list,
-				  tpid_list->cnt - new_cnt, tpid_list->cnt);
+				  tpid_list->cnt - 1, tpid_list->cnt);
 	if (ret != 0) {
-		tpid_list->cnt -= new_cnt;
-		while (new_cnt-- > 0) {
-			node = list_last_entry(&tpid_list->create_list,
-				struct ubcore_tpid_list_node, node);
-			list_del(&node->node);
-			kfree(node);
-		}
+		tpid_list->cnt -= 1;
+		list_del(&node->node);
+		kfree(node);
 		ubcore_log_err_rl("Failed to init state for tpid list, ret = %d.\n", ret);
 		return ret;
 	}
 
 	ubcore_log_info("Update tpid list success, cnt = %d.\n", tpid_list->cnt);
 	return 0;
-
-err_free_new_list:
-	list_for_each_entry_safe(node, tmp, &new_list, node) {
-		list_del(&node->node);
-		kfree(node);
-	}
-	return -ENOMEM;
 }
 
 static int ubcore_get_tp_list_from_ops(struct ubcore_device *dev,
 					struct ubcore_get_tp_cfg *cfg, uint32_t *tp_cnt,
-					struct ubcore_tp_info *temp_buf,
+					struct ubcore_tp_info *find_tp,
 					struct ubcore_udata *udata)
 {
 	int ret;
@@ -260,49 +240,66 @@ static int ubcore_get_tp_list_from_ops(struct ubcore_device *dev,
 	uint32_t actual_group_tp_cnt = 0;
 	uint32_t group_num = 1;
 	uint32_t group_idx;
+	struct ubcore_tp_info *temp_buf = NULL;
 
-	if (temp_buf == NULL) {
-		ubcore_log_err("tpid_list temp buf is null.\n");
+	if (find_tp == NULL) {
+		ubcore_log_err("tpid_list find_tp out param is null.\n");
 		return -EINVAL;
 	}
 
 	req_total_tp_cnt = *tp_cnt;
 
-	group_num = (req_total_tp_cnt + UBCORE_MAX_GET_TP_GROUP_CNT - 1) /
-		UBCORE_MAX_GET_TP_GROUP_CNT;
-	for (group_idx = 0; group_idx < group_num; group_idx++) {
-		req_group_tp_cnt = (group_idx == group_num - 1) ?
-			req_total_tp_cnt - group_idx * UBCORE_MAX_GET_TP_GROUP_CNT :
-			UBCORE_MAX_GET_TP_GROUP_CNT;
-		actual_group_tp_cnt = req_group_tp_cnt;
-		cfg->flag.bs.group_id = group_idx;
-		UBCORE_PERF_TRACE_BEGIN(PERF_UB_GET_TP_LIST);
-		ret = dev->ops->get_tp_list(dev, cfg, &actual_group_tp_cnt,
-			temp_buf + actual_total_tp_cnt, udata);
-		UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
-		if (ret != 0) {
-			if (actual_total_tp_cnt > 0) {
-				ubcore_log_info_rl("actual cnt < request cnt, end early.\n");
-				ret = 0;
-				break;
-			}
-			ubcore_log_err_rl("get tp list failed: total=%d idx=%d\n",
-				req_total_tp_cnt, group_idx);
-			ubcore_log_err_rl("req=%d actual=%d ret=%d.\n",
-				req_group_tp_cnt, actual_group_tp_cnt, ret);
-			return ret;
-		}
-		actual_total_tp_cnt += actual_group_tp_cnt;
-		if (actual_group_tp_cnt < req_group_tp_cnt) {
-			ubcore_log_info_rl("group_id = %d, actual %d < req %d, end early.\n",
-				group_idx, actual_group_tp_cnt, req_group_tp_cnt);
-			break;
-		}
+	/* In create semantics only one new tp is needed per call, and the prior
+	 * groups' data already lives in tpid_list->create_list.
+	 * Only the last group (one page) is queried,
+	 * so a single-group scratch buffer is enough.
+	 */
+	temp_buf = kcalloc(UBCORE_MAX_GET_TP_GROUP_CNT, sizeof(struct ubcore_tp_info),
+			   GFP_KERNEL);
+	if (temp_buf == NULL) {
+		ubcore_log_err_rl("Failed to alloc temp tpid_list buf.\n");
+		return -ENOMEM;
 	}
 
-	*tp_cnt = actual_total_tp_cnt;
+	group_num = (req_total_tp_cnt + UBCORE_MAX_GET_TP_GROUP_CNT - 1) /
+		UBCORE_MAX_GET_TP_GROUP_CNT;
+	group_idx = group_num - 1;
+	req_group_tp_cnt = req_total_tp_cnt - group_idx * UBCORE_MAX_GET_TP_GROUP_CNT;
+	actual_group_tp_cnt = req_group_tp_cnt;
+	cfg->flag.bs.group_id = group_idx;
 
-	return ret;
+	UBCORE_PERF_TRACE_BEGIN(PERF_UB_GET_TP_LIST);
+	ret = dev->ops->get_tp_list(dev, cfg, &actual_group_tp_cnt, temp_buf, udata);
+	UBCORE_PERF_TRACE_END(PERF_UB_GET_TP_LIST);
+	if (ret != 0) {
+		ubcore_log_err_rl("get tp list failed: total=%d idx=%d\n",
+			req_total_tp_cnt, group_idx);
+		ubcore_log_err_rl("req=%d actual=%d ret=%d.\n",
+			req_group_tp_cnt, actual_group_tp_cnt, ret);
+		kfree(temp_buf);
+		return ret;
+	}
+
+	if (actual_group_tp_cnt == 0) {
+		ubcore_log_err_rl("group_id = %d, no new tp returned, req=%d.\n",
+			group_idx, req_group_tp_cnt);
+		kfree(temp_buf);
+		return -ENOSPC;
+	}
+	if (actual_group_tp_cnt < req_group_tp_cnt) {
+		ubcore_log_info_rl("group_id = %d, actual %d < req %d, end early.\n",
+			group_idx, actual_group_tp_cnt, req_group_tp_cnt);
+	}
+
+	/* Only the last valid element of the queried group is the freshly created
+	 * tp; hand it back to the caller and drop the scratch buffer.
+	 */
+	actual_total_tp_cnt = group_idx * UBCORE_MAX_GET_TP_GROUP_CNT + actual_group_tp_cnt;
+	*find_tp = temp_buf[actual_group_tp_cnt - 1];
+	*tp_cnt = actual_total_tp_cnt;
+	kfree(temp_buf);
+
+	return 0;
 }
 
 static int ubcore_get_tp_list_helper(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
@@ -312,50 +309,40 @@ static int ubcore_get_tp_list_helper(struct ubcore_device *dev, struct ubcore_ge
 	int ret;
 	uint32_t req_cnt = 0;
 	uint32_t old_total_cnt;
-	struct ubcore_tp_info *temp_buf = NULL;
+	struct ubcore_tp_info find_tp = {0};
 	struct ubcore_tpid_list_node *new_node = NULL;
 
 	old_total_cnt = tpid_list->cnt;
 	req_cnt = old_total_cnt + 1;
-	temp_buf = kcalloc(req_cnt, sizeof(struct ubcore_tp_info), GFP_KERNEL);
-	if (temp_buf == NULL) {
-		ubcore_log_err("Failed to alloc temp tpid_list buf.\n");
-		return -ENOMEM;
-	}
 
-	ret = ubcore_get_tp_list_from_ops(dev, cfg, &req_cnt, temp_buf, udata);
+	ret = ubcore_get_tp_list_from_ops(dev, cfg, &req_cnt, &find_tp, udata);
 	if (ret != 0) {
 		ubcore_log_err_rl("Get tp list from ops failed, ret = %d.\n", ret);
-		kfree(temp_buf);
 		return -EINVAL;
 	}
 
 	ubcore_log_info_rl("Get tp list from ops success, cnt=%d, ret=%d.\n", req_cnt, ret);
-	if (req_cnt > old_total_cnt) {
-		ret = ubcore_update_tpid_list(dev, temp_buf, tpid_list, req_cnt, cfg);
-		if (ret != 0) {
-			ubcore_log_err_rl("Update tpid list failed, ret = %d.\n", ret);
-			kfree(temp_buf);
-			return -EINVAL;
-		}
-	} else {
+	if (req_cnt <= old_total_cnt) {
 		ubcore_log_err_rl("Tp_cnt is not increased, old_cnt: %u, new_cnt: %d.\n",
 			old_total_cnt, req_cnt);
-		kfree(temp_buf);
+		return -EINVAL;
+	}
+
+	ret = ubcore_update_tpid_list(dev, &find_tp, tpid_list, cfg);
+	if (ret != 0) {
+		ubcore_log_err_rl("Update tpid list failed, ret = %d.\n", ret);
 		return -EINVAL;
 	}
 
 	// get tp list from list last entry
 	if (list_empty(&tpid_list->create_list)) {
 		ubcore_log_err_rl("Tpid list head is empty after get tp list from ops.\n");
-		kfree(temp_buf);
 		return -EINVAL;
 	}
 
 	new_node = list_last_entry(&tpid_list->create_list, struct ubcore_tpid_list_node, node);
 	*new_tp_handle = new_node->tp_info;
-	kfree(temp_buf);
-	return ret;
+	return 0;
 }
 
 int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
