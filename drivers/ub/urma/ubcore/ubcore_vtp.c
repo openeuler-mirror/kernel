@@ -1063,7 +1063,7 @@ static struct ubcore_vtpn *ubcore_reuse_vtpn(struct ubcore_device *dev,
 			break;
 		}
 	}
-	ubcore_log_warn("failed to reuse vtpn:%u, use_cnt:%d", vtpn->vtpn,
+	ubcore_log_err_rl("failed to reuse vtpn:%u, use_cnt:%d", vtpn->vtpn,
 			atomic_read(&vtpn->use_cnt));
 	mutex_unlock(&vtpn->state_lock);
 	ubcore_vtpn_kref_put(vtpn);

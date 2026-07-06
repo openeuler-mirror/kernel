@@ -569,8 +569,8 @@ static struct ubcore_tpid_reuse *ubcore_reuse_tpid(struct ubcore_tpid_reuse *tpi
 			break;
 		}
 	}
-	ubcore_log_err("failed to reuse tpid_reuse:%u, use_cnt:%d", tpid_reuse->tp_handle.bs.tpid,
-			atomic_read(&tpid_reuse->use_cnt));
+	ubcore_log_err_rl("failed to reuse tpid_reuse:%u, use_cnt:%d",
+			  tpid_reuse->tp_handle.bs.tpid, atomic_read(&tpid_reuse->use_cnt));
 	mutex_unlock(&tpid_reuse->lock);
 	ubcore_tpid_reuse_kref_put(tpid_reuse);
 	return NULL;
@@ -1143,8 +1143,6 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 	key.lk.link_type = (get_tp_cfg.flag.bs.uboe) ? UBCORE_LINK_UBOE : UBCORE_LINK_ETHERNET;
 	key.lk.share_mode = (req->share_tp) ? UBCORE_TPID_SHARE_CONTAINER : UBCORE_TPID_SHARE_NONE;
 
-	ubcore_log_info_rl("Enter handle create req tpid reuse");
-
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
 	if (tpid_reuse == NULL &&
 	    ubcore_get_enable_shared_ctp() &&
@@ -1179,7 +1177,6 @@ static void handle_create_req_with_tpid_reuse(struct ubcore_device *dev,
 
 	ret = ubcore_find_add_tpid_reuse(dev, tpid_reuse, &exist_tpid_reuse, &key);
 	if (ret == -EEXIST && exist_tpid_reuse != NULL) {
-		ubcore_log_info_rl("tpid_reuse exists.\n");
 		ret = target_reuse_tpid(dev, exist_tpid_reuse, req);
 		resp.tp_handle = exist_tpid_reuse->tp_handle.value;
 		resp.tx_psn = exist_tpid_reuse->tx_psn;
@@ -1812,7 +1809,6 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 		ubcore_log_err("Failed to fill tpid reuse key, ret=%d", ret);
 		return NULL;
 	}
-	ubcore_log_info_rl("try to get tpid reuse.\n");
 	tpid_reuse = ubcore_find_get_tpid_reuse(dev, &key);
 	if (tpid_reuse == NULL &&
 	    ubcore_get_enable_shared_ctp() &&
@@ -1828,7 +1824,6 @@ struct ubcore_tjetty *ubcore_import_jfr_compat(struct ubcore_device *dev,
 				EID_ARGS(key.lk.local_eid), EID_ARGS(key.lk.peer_eid));
 	}
 	if (tpid_reuse != NULL) {
-		ubcore_log_info_rl("tpid reuse get. reuse tpid.\n");
 		tpid_reuse = ubcore_reuse_tpid(tpid_reuse);
 		if (tpid_reuse == NULL)
 			return ERR_PTR(-EIO);
@@ -2029,7 +2024,7 @@ struct ubcore_tjetty *ubcore_import_jetty_compat(struct ubcore_device *dev,
 	ubcore_fill_tpid_cfg(&tpid_cfg, &get_tp_cfg);
 	ret = ubcore_create_tpid_priv(dev, &tpid_cfg, udata, &tp_handle);
 	if (ret != 0) {
-		ubcore_log_err("Failed to create tpid for reuse, ret: %d.\n", ret);
+		/* Errors are printed in ubcore_create_tpid_priv(). */
 		goto err_out;
 	}
 
