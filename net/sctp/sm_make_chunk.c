@@ -1749,6 +1749,7 @@ struct sctp_association *sctp_unpack_cookie(
 	struct sctp_signed_cookie *cookie;
 	struct sk_buff *skb = chunk->skb;
 	struct sctp_cookie *bear_cookie;
+	struct sctp_chunkhdr *ch;
 	__u8 *digest = ep->digest;
 	enum sctp_scope scope;
 	unsigned int len;
@@ -1778,6 +1779,10 @@ struct sctp_association *sctp_unpack_cookie(
 	/* Process the cookie.  */
 	cookie = chunk->subh.cookie_hdr;
 	bear_cookie = &cookie->c;
+
+	ch = (struct sctp_chunkhdr *)(bear_cookie + 1);
+	if (ntohs(ch->length) > len - fixed_size)
+		goto malformed;
 
 	if (!sctp_sk(ep->base.sk)->hmac)
 		goto no_hmac;
