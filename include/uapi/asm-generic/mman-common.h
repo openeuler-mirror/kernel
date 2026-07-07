@@ -91,6 +91,8 @@
 #define MADV_SWAPFLAG		MADV_ETMEM_BASE /* for memory to be swap out */
 #define MADV_SWAPFLAG_REMOVE	(MADV_SWAPFLAG + 1)
 
+#define MADV_FCMA_ENABLE       0x1200      /* Enable CMA folio allocation for caller */
+
 /* compatibility flags */
 #define MAP_FILE	0
 
