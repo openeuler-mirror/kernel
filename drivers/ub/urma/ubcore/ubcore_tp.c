@@ -759,6 +759,18 @@ int ubcore_delete_tpid(struct ubcore_device *dev, struct ubcore_tpid *tpid)
 }
 EXPORT_SYMBOL(ubcore_delete_tpid);
 
+int ubcore_delete_tpid_for_uobj(struct ubcore_device *dev, uint64_t tp_handle)
+{
+	union ubcore_tp_handle handle;
+
+	if (dev == NULL || tp_handle == 0)
+		return -EINVAL;
+
+	handle.value = tp_handle;
+	return ubcore_delete_tpid_priv(dev, handle.bs.tpid);
+}
+EXPORT_SYMBOL(ubcore_delete_tpid_for_uobj);
+
 int ubcore_modify_tpid(struct ubcore_device *dev, enum ubcore_tpid_status state,
 	union ubcore_modify_tpid_cfg *cfg)
 {
