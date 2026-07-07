@@ -81,8 +81,10 @@ unwind_recover_return_address(struct unwind_state *state)
 		unsigned long orig_pc;
 		orig_pc = ftrace_graph_ret_addr(state->task, NULL, state->pc,
 						(void *)state->fp);
-		if (WARN_ON_ONCE(state->pc == orig_pc))
+		if (state->pc == orig_pc) {
+			WARN_ON_ONCE(state->task == current);
 			return -EINVAL;
+		}
 		state->pc = orig_pc;
 	}
 #endif /* CONFIG_FUNCTION_GRAPH_TRACER */
