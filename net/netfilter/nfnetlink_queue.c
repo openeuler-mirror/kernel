@@ -709,7 +709,10 @@ err_out:
 static struct nf_queue_entry *
 nf_queue_entry_dup(struct nf_queue_entry *e)
 {
-	struct nf_queue_entry *entry = kmemdup(e, e->size, GFP_ATOMIC);
+	size_t total_size = offsetof(struct nf_queue_entry_wrapper, entry) + e->size;
+	struct nf_queue_entry_wrapper *w = kmemdup(nf_queue_entry_wrapper(e),
+						   total_size, GFP_ATOMIC);
+	struct nf_queue_entry *entry = w ? &w->entry : NULL;
 
 	if (!entry)
 		return NULL;
@@ -717,7 +720,7 @@ nf_queue_entry_dup(struct nf_queue_entry *e)
 	if (nf_queue_entry_get_refs(entry))
 		return entry;
 
-	kfree(entry);
+	nf_queue_entry_kfree(entry);
 	return NULL;
 }
 
@@ -911,7 +914,8 @@ dev_cmp(struct nf_queue_entry *entry, unsigned long ifindex)
 	if (physinif == ifindex || physoutif == ifindex)
 		return 1;
 #endif
-	if (entry->skb_dev && entry->skb_dev->ifindex == ifindex)
+	if (nf_queue_entry_wrapper(entry)->skb_dev &&
+	    nf_queue_entry_wrapper(entry)->skb_dev->ifindex == ifindex)
 		return 1;
 	if (entry->state.in)
 		if (entry->state.in->ifindex == ifindex)

@@ -60,7 +60,7 @@ static void nf_queue_entry_release_refs(struct nf_queue_entry *entry)
 	struct nf_hook_state *state = &entry->state;
 
 	/* Release those devices we held, or Alexey will kill me. */
-	dev_put(entry->skb_dev);
+	dev_put(nf_queue_entry_wrapper(entry)->skb_dev);
 	if (state->in)
 		dev_put(state->in);
 	if (state->out)
@@ -79,7 +79,7 @@ static void nf_queue_entry_release_refs(struct nf_queue_entry *entry)
 void nf_queue_entry_free(struct nf_queue_entry *entry)
 {
 	nf_queue_entry_release_refs(entry);
-	kfree(entry);
+	nf_queue_entry_kfree(entry);
 }
 EXPORT_SYMBOL_GPL(nf_queue_entry_free);
 
@@ -108,7 +108,7 @@ bool nf_queue_entry_get_refs(struct nf_queue_entry *entry)
 	if (state->sk && !refcount_inc_not_zero(&state->sk->sk_refcnt))
 		return false;
 
-	dev_hold(entry->skb_dev);
+	dev_hold(nf_queue_entry_wrapper(entry)->skb_dev);
 	if (state->in)
 		dev_hold(state->in);
 	if (state->out)
@@ -203,26 +203,26 @@ static int __nf_queue(struct sk_buff *skb, const struct nf_hook_state *state,
 		}
 	}
 
-	entry = kmalloc(sizeof(*entry) + route_key_size, GFP_ATOMIC);
+	entry = nf_queue_entry_alloc(route_key_size, GFP_ATOMIC);
 	if (!entry)
 		return -ENOMEM;
 
 	if (skb_dst(skb) && !skb_dst_force(skb)) {
-		kfree(entry);
+		nf_queue_entry_kfree(entry);
 		return -ENETDOWN;
 	}
 
 	*entry = (struct nf_queue_entry) {
 		.skb	= skb,
-		.skb_dev = skb->dev,
 		.state	= *state,
 		.hook_index = index,
 		.size	= sizeof(*entry) + route_key_size,
 	};
+	nf_queue_entry_wrapper(entry)->skb_dev = skb->dev;
 	__nf_queue_entry_init_physdevs(entry);
 
 	if (!nf_queue_entry_get_refs(entry)) {
-		kfree(entry);
+		nf_queue_entry_kfree(entry);
 		return -ENOTCONN;
 	}
 
