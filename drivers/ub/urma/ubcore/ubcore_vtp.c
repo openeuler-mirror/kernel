@@ -1204,47 +1204,131 @@ static void ubcore_hash_table_rmv_vtpn_ctrlplane(struct ubcore_device *dev,
 	ubcore_hash_table_remove(ht, &vtpn->hnode);
 }
 
+/*
+ * Find an existing vtpn in the VTPN table by tp_handle and take a kref on
+ * it. Paired with ubcore_put_vtpn_for_tpid().
+ * Used by uburma at import_jetty_ex time to locate the vtpn created during
+ * uburma_cmd_get_tp_list.
+ */
+struct ubcore_vtpn *ubcore_find_get_vtpn_by_tp_handle(struct ubcore_device *dev,
+						      uint64_t tp_handle)
+{
+	struct ubcore_active_tp_cfg active_tp_cfg = { 0 };
+
+	active_tp_cfg.tp_handle.value = tp_handle;
+	return ubcore_find_get_vtpn_ctrlplane(dev, &active_tp_cfg);
+}
+EXPORT_SYMBOL(ubcore_find_get_vtpn_by_tp_handle);
+
+/* put a kref taken by ubcore_find_get_vtpn_by_tp_handle(). The vtpn itself
+   is not freed here; final release in ubcore_delete_vtpn_for_tpid(). */
+void ubcore_put_vtpn_for_tpid(struct ubcore_vtpn *vtpn)
+{
+	if (vtpn == NULL)
+		return;
+	ubcore_vtpn_kref_put(vtpn);
+}
+EXPORT_SYMBOL(ubcore_put_vtpn_for_tpid);
+
+// free_tpid_uobj to free vtpn.
+int ubcore_delete_vtpn_for_tpid(struct ubcore_vtpn *vtpn)
+{
+	if (vtpn == NULL)
+		return -EINVAL;
+
+	mutex_lock(&vtpn->state_lock);
+	if (atomic_dec_return(&vtpn->use_cnt) > 0) {
+		ubcore_log_info("[uobj_delete_vtpn] vtpn in use, vtpn id = %u, vtpn use_cnt = %d",
+				vtpn->vtpn, atomic_read(&vtpn->use_cnt));
+		mutex_unlock(&vtpn->state_lock);
+		return 0;
+	}
+
+	ubcore_hash_table_rmv_vtpn_ctrlplane(vtpn->ub_dev, vtpn);
+	mutex_unlock(&vtpn->state_lock);
+
+	(void)ubcore_free_vtpn_ctrlplane(vtpn);
+
+	return 0;
+}
+EXPORT_SYMBOL(ubcore_delete_vtpn_for_tpid);
+
+// Allocate a vtpn keyed by tp_handle, used by uburma_cmd_get_tp_list.
+struct ubcore_vtpn *ubcore_create_vtpn_for_tpid(struct ubcore_device *dev,
+						  uint64_t tp_handle)
+{
+	struct ubcore_active_tp_cfg active_tp_cfg = { 0 };
+	struct ubcore_vtp_param vtp_param = { 0 };
+	struct ubcore_vtpn *exist_vtpn = NULL;
+	struct ubcore_vtpn *vtpn;
+	int ret;
+
+	active_tp_cfg.tp_handle.value = tp_handle;
+
+	/* tp_handle is create from ubcore_get_tp_list, each process must be
+		a newly created tpid, and there is no concurrency.*/
+	vtpn = ubcore_create_vtpn(dev, &vtp_param, &active_tp_cfg, NULL);
+	if (vtpn == NULL) {
+		ubcore_log_err("failed to alloc vtpn for tpid.\n");
+		return NULL;
+	}
+	vtpn->vtpn = (uint32_t)active_tp_cfg.tp_handle.bs.tpid;
+
+	ret = ubcore_find_add_vtpn_ctrlplane(dev, vtpn, &exist_vtpn);
+	if (ret != 0) {
+		ubcore_log_err("VTPN is already exist in add ht table in add tpid_uobj.\n");
+		// each process must be a new tpid, if exist in VTPN table, is error.
+		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		ubcore_vtpn_kref_put(exist_vtpn);
+		return NULL;
+	}
+
+	atomic_inc(&vtpn->use_cnt);
+	return vtpn;
+}
+EXPORT_SYMBOL(ubcore_create_vtpn_for_tpid);
+
 struct ubcore_vtpn *
 	ubcore_connect_vtp_ctrlplane(struct ubcore_device *dev,
 	struct ubcore_vtp_param *param,
 	struct ubcore_active_tp_cfg *active_tp_cfg,
 	struct ubcore_udata *udata)
 {
-	struct ubcore_vtpn *exist_vtpn = NULL;
 	struct ubcore_vtpn *vtpn;
 	int ret;
 	union ubcore_modify_tpid_cfg cfg = {
 		.active_cfg = active_tp_cfg,
 	};
 
-	// 1. try to reuse vtpn
+	// 1. find get vtpn, must be created in uburma_cmd_get_tp_list.
 	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
-	if (vtpn != NULL)
-		return ubcore_reuse_vtpn(dev, vtpn);
-
-	// 2. alloc new vtpn
-	vtpn = ubcore_create_vtpn(dev, param, active_tp_cfg, udata);
-	if (IS_ERR_OR_NULL(vtpn)) {
-		ubcore_log_err("failed to alloc vtpn.\n");
-		return vtpn;
-	}
-
-	// 3. add vtpn to hashtable
-	ret = ubcore_find_add_vtpn_ctrlplane(dev, vtpn, &exist_vtpn);
-	if (ret == -EEXIST && exist_vtpn != NULL) {
-		exist_vtpn =
-			ubcore_reuse_vtpn(dev, exist_vtpn); // reuse immediately
-		(void)ubcore_free_vtpn_ctrlplane(vtpn);
-		return exist_vtpn;
-	} else if (ret != 0) {
-		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+	if (vtpn == NULL) {
+		ubcore_log_err_rl("VTPN not found in ht table.\n");
 		return NULL;
 	}
 
-	// 4. active tp
 	mutex_lock(&vtpn->state_lock);
-	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
 
+	// READY: an active vtpn, reuse directly.
+	if (vtpn->state == UBCORE_VTPS_READY) {
+		ubcore_log_info("Success to reuse vtpn:%u", vtpn->vtpn);
+		atomic_inc(&vtpn->use_cnt);
+		mutex_unlock(&vtpn->state_lock);
+		ubcore_vtpn_kref_put(vtpn);
+		return vtpn;
+	}
+
+	// WAIT_DESTROY
+	if (vtpn->state == UBCORE_VTPS_WAIT_DESTROY) {
+		ubcore_log_err_rl("vtpn:%u in WAIT_DESTROY state, cannot connect.\n",
+			       vtpn->vtpn);
+		mutex_unlock(&vtpn->state_lock);
+		ubcore_vtpn_kref_put(vtpn);
+		return ERR_PTR(-EAGAIN);
+	}
+
+	// 2. active tp (state == RESET here)
+	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
 	if (ret == 0) {
 		atomic_inc(&vtpn->use_cnt);
 		vtpn->state = UBCORE_VTPS_READY;
@@ -1253,13 +1337,14 @@ struct ubcore_vtpn *
 	}
 	mutex_unlock(&vtpn->state_lock);
 
-	// 5. failed roll back
+	// 3. failed roll back.
 	if (ret != 0) {
 		ubcore_log_err("failed to active tp, vtpn:%u", vtpn->vtpn);
-		ubcore_hash_table_rmv_vtpn_ctrlplane(dev, vtpn);
-		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		ubcore_vtpn_kref_put(vtpn);
 		return ERR_PTR(ret);
 	}
+
+	ubcore_vtpn_kref_put(vtpn);
 
 	ubcore_log_info("connect vtpn:%u, trans_mode:%u, l_eid " EID_FMT
 		", p_eid "EID_FMT", tphdl %llu, ptphdl %llu, tx_psn %u, rx_psn %u.\n",
@@ -1386,41 +1471,41 @@ struct ubcore_vtpn *
 	struct ubcore_active_tp_cfg *active_tp_cfg,
 	struct ubcore_udata *udata)
 {
-	struct ubcore_vtpn *exist_vtpn = NULL;
 	struct ubcore_vtpn *vtpn;
 	int ret;
 	union ubcore_modify_tpid_cfg cfg = {
 		.active_cfg = active_tp_cfg,
 	};
 
-	// 1. try to reuse vtpn
+	// 1. find get vtpn, must be created in uburma_cmd_get_tp_list.
 	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
-	if (vtpn != NULL)
-		return ubcore_reuse_vtpn(dev, vtpn);
-
-	// 2. alloc new vtpn
-	vtpn = ubcore_create_vtpn(dev, param, active_tp_cfg, udata);
-	if (IS_ERR_OR_NULL(vtpn)) {
-		ubcore_log_err("failed to alloc vtpn.\n");
-		return vtpn;
-	}
-
-	// 3. add vtpn to hashtable
-	ret = ubcore_find_add_vtpn_ctrlplane(dev, vtpn, &exist_vtpn);
-	if (ret == -EEXIST && exist_vtpn != NULL) {
-		exist_vtpn =
-			ubcore_reuse_vtpn(dev, exist_vtpn); // reuse immediately
-		(void)ubcore_free_vtpn_ctrlplane(vtpn);
-		return exist_vtpn;
-	} else if (ret != 0) {
-		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+	if (vtpn == NULL) {
+		ubcore_log_err("VTPN not found in ht table.\n");
 		return NULL;
 	}
 
-	// 4. active tp
 	mutex_lock(&vtpn->state_lock);
-	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
 
+	// READY: an active vtpn, reuse directly.
+	if (vtpn->state == UBCORE_VTPS_READY) {
+		ubcore_log_info("Success to reuse vtpn:%u", vtpn->vtpn);
+		atomic_inc(&vtpn->use_cnt);
+		mutex_unlock(&vtpn->state_lock);
+		ubcore_vtpn_kref_put(vtpn);
+		return vtpn;
+	}
+
+	// WAIT_DESTROY
+	if (vtpn->state == UBCORE_VTPS_WAIT_DESTROY) {
+		ubcore_log_err("vtpn:%u in WAIT_DESTROY state, cannot connect.\n",
+			       vtpn->vtpn);
+		mutex_unlock(&vtpn->state_lock);
+		ubcore_vtpn_kref_put(vtpn);
+		return ERR_PTR(-EAGAIN);
+	}
+
+	// 2. active tp (state == RESET here)
+	ret = ubcore_modify_tpid(dev, UBCORE_TPID_STATE_RTS, &cfg);
 	if (ret == 0) {
 		atomic_inc(&vtpn->use_cnt);
 		vtpn->vtpn = (uint32_t)active_tp_cfg->tp_handle.bs.tpid;
@@ -1430,13 +1515,14 @@ struct ubcore_vtpn *
 	}
 	mutex_unlock(&vtpn->state_lock);
 
-	// 5. failed roll back
+	// 3. failed roll back.
 	if (ret != 0) {
 		ubcore_log_err("failed to active tp, vtpn:%u", vtpn->vtpn);
-		ubcore_hash_table_rmv_vtpn_ctrlplane(dev, vtpn);
-		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		ubcore_vtpn_kref_put(vtpn);
 		return ERR_PTR(ret);
 	}
+
+	ubcore_vtpn_kref_put(vtpn);
 
 	ubcore_log_info("connect vtpn:%u, trans_mode:%u, l_eid " EID_FMT
 		", p_eid "EID_FMT", tphdl %llu, ptphdl %llu, tx_psn %u, rx_psn %u.\n",
