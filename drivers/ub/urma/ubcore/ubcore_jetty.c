@@ -1748,6 +1748,22 @@ static bool ubcore_validate_order_type_for_um_ctp(
 	return true;
 }
 
+static struct ubcore_tjetty *ubcore_import_jfr_compat_retry(
+	struct ubcore_device *dev,
+	struct ubcore_tjetty_cfg *cfg,
+	struct ubcore_udata *udata)
+{
+	struct ubcore_tjetty *tjfr;
+	int retry;
+
+	for (retry = 0; retry < UBCORE_CONN_RETRY_MAX; retry++) {
+		tjfr = ubcore_import_jfr_compat(dev, cfg, udata);
+		if (tjfr != ERR_PTR(-EIO))
+			return tjfr;
+	}
+	return ERR_PTR(-EIO);
+}
+
 struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 					struct ubcore_tjetty_cfg *cfg,
 					struct ubcore_udata *udata)
@@ -1783,7 +1799,7 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 
 	if (ubcore_check_ctrlplane_compat(dev->ops->import_jfr)) {
 		UBCORE_PERF_TRACE_BEGIN(PERF_UB_IMPORT_JFR);
-		result = ubcore_import_jfr_compat(dev, cfg, udata);
+		result = ubcore_import_jfr_compat_retry(dev, cfg, udata);
 		UBCORE_PERF_TRACE_END(PERF_UB_IMPORT_JFR);
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return result;
@@ -2956,6 +2972,22 @@ int ubcore_flush_jetty(struct ubcore_jetty *jetty, int cr_cnt,
 }
 EXPORT_SYMBOL(ubcore_flush_jetty);
 
+static struct ubcore_tjetty *ubcore_import_jetty_compat_retry(
+	struct ubcore_device *dev,
+	struct ubcore_tjetty_cfg *cfg,
+	struct ubcore_udata *udata)
+{
+	struct ubcore_tjetty *tjetty;
+	int retry;
+
+	for (retry = 0; retry < UBCORE_CONN_RETRY_MAX; retry++) {
+		tjetty = ubcore_import_jetty_compat(dev, cfg, udata);
+		if (tjetty != ERR_PTR(-EIO))
+			return tjetty;
+	}
+	return ERR_PTR(-EIO);
+}
+
 struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 					  struct ubcore_tjetty_cfg *cfg,
 					  struct ubcore_udata *udata)
@@ -2992,7 +3024,7 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	if (ubcore_check_ctrlplane_compat(dev->ops->import_jetty)) {
 		ubcore_log_info_rl("Enter import jetty compat.\n");
 		UBCORE_PERF_TRACE_BEGIN(PERF_UB_IMPORT_JETTY_EX);
-		result = ubcore_import_jetty_compat(dev, cfg, udata);
+		result = ubcore_import_jetty_compat_retry(dev, cfg, udata);
 		UBCORE_PERF_TRACE_END(PERF_UB_IMPORT_JETTY_EX);
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return result;
@@ -3310,6 +3342,23 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 }
 EXPORT_SYMBOL(ubcore_unimport_jetty);
 
+static int ubcore_bind_jetty_reuse_compat_retry(
+	struct ubcore_jetty *jetty,
+	struct ubcore_tjetty *tjetty,
+	struct ubcore_udata *udata)
+{
+	int retry;
+	int ret;
+
+	for (retry = 0; retry < UBCORE_CONN_RETRY_MAX; retry++) {
+		ret = ubcore_bind_jetty_reuse_compat(jetty, tjetty, udata);
+		if (ret != -EIO)
+			return ret;
+	}
+
+	return -EIO;
+}
+
 static int ubcore_inner_bind_ub_jetty(struct ubcore_jetty *jetty,
 				      struct ubcore_tjetty *tjetty,
 				      struct ubcore_udata *udata)
@@ -3327,7 +3376,7 @@ static int ubcore_inner_bind_ub_jetty(struct ubcore_jetty *jetty,
 	}
 
 	if (ubcore_check_ctrlplane_compat(dev->ops->bind_jetty))
-		return ubcore_bind_jetty_reuse_compat(jetty, tjetty, udata);
+		return ubcore_bind_jetty_reuse_compat_retry(jetty, tjetty, udata);
 
 	ret = dev->ops->bind_jetty(jetty, tjetty, udata);
 	if (ret != 0) {
