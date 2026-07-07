@@ -29,6 +29,7 @@ enum UOBJ_CLASS_ID {
 	UOBJ_CLASS_TARGET_JETTY,
 	UOBJ_CLASS_JETTY_GRP,
 	UOBJ_CLASS_NOTIFIER,
+	UOBJ_CLASS_TPID,
 };
 
 enum uobj_access {
@@ -289,6 +290,7 @@ extern const struct uobj_class_def uobj_class_UOBJ_CLASS_JETTY_GRP;
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_TARGET_JFR;
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_TARGET_SEG;
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_TARGET_JETTY;
+extern const struct uobj_class_def uobj_class_UOBJ_CLASS_TPID;
 extern const struct uobj_class_def uobj_class_UOBJ_CLASS_NOTIFIER;
 
 extern const struct file_operations uburma_jfce_fops;
