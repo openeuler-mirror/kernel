@@ -372,7 +372,7 @@ static void handle_seg_req(struct ubcore_device *dev,
 	int ret = 0;
 
 	if (ubagg_dev == NULL || ubagg_dev->segment_bitmap == NULL) {
-		ubagg_log_err("ubagg_dev->segment_bitmap NULL");
+		ubagg_log_err_rl("ubagg_dev->segment_bitmap NULL");
 		ret = -1;
 		goto send_resp_and_put_device;
 	}
@@ -383,7 +383,7 @@ static void handle_seg_req(struct ubcore_device *dev,
 						 &req->token_id);
 	if (tmp_seg == NULL) {
 		spin_unlock(&ubagg_seg_ht->lock);
-		ubagg_log_err("Failed to find seg.\n");
+		ubagg_log_err_rl("Failed to find seg.\n");
 		ret = -1;
 		goto send_resp_and_put_device;
 	}
@@ -394,7 +394,7 @@ static void handle_seg_req(struct ubcore_device *dev,
 send_resp_and_put_device:
 	resp.result = ret;
 	if (send_seg_resp(dev, conn, msg->session_id, &resp) != 0)
-		ubagg_log_err("Failed to send seg info resp message.\n");
+		ubagg_log_err_rl("Failed to send seg info resp message.\n");
 	if (ubagg_dev != NULL)
 		ubagg_put_device(ubagg_dev);
 }
@@ -410,7 +410,7 @@ static void handle_jetty_req(struct ubcore_device *dev,
 	int ret = 0;
 
 	if (ubagg_dev == NULL || ubagg_dev->segment_bitmap == NULL) {
-		ubagg_log_err("ubagg_dev->segment_bitmap NULL");
+		ubagg_log_err_rl("ubagg_dev->segment_bitmap NULL");
 		ret = -1;
 		goto send_resp_and_put_device;
 	}
@@ -424,8 +424,8 @@ static void handle_jetty_req(struct ubcore_device *dev,
 							 &req->jetty_id.id);
 		if (tmp_jfr == NULL) {
 			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jfr, jetty_id:%u.\n",
-				      req->jetty_id.id);
+			ubagg_log_err_rl("Failed to find jfr, jetty_id:%u.\n",
+					 req->jetty_id.id);
 			ret = -1;
 			goto send_resp_and_put_device;
 		}
@@ -441,8 +441,8 @@ static void handle_jetty_req(struct ubcore_device *dev,
 							   &req->jetty_id.id);
 		if (tmp_jetty == NULL) {
 			spin_unlock(&ht->lock);
-			ubagg_log_err("Failed to find jetty, jetty_id:%u.\n",
-				      req->jetty_id.id);
+			ubagg_log_err_rl("Failed to find jetty, jetty_id:%u.\n",
+					 req->jetty_id.id);
 			ret = -1;
 			goto send_resp_and_put_device;
 		}
@@ -454,7 +454,7 @@ static void handle_jetty_req(struct ubcore_device *dev,
 send_resp_and_put_device:
 	resp.result = ret;
 	if (send_jetty_resp(dev, conn, msg->session_id, &resp) != 0)
-		ubagg_log_err("Failed to send jetty info resp message.\n");
+		ubagg_log_err_rl("Failed to send jetty info resp message.\n");
 	if (ubagg_dev != NULL)
 		ubagg_put_device(ubagg_dev);
 }
@@ -467,9 +467,8 @@ static void handle_xchg_resp(struct ubcore_device *dev, void *conn,
 
 	session = ubagg_session_find(session_id);
 	if (!session) {
-		ubagg_log_err(
-			"Failed to find session %u on handle bonding-seg-info-req",
-			session_id);
+		ubagg_log_err_rl("Failed to find session %u on handle bonding-seg-info-req",
+				 session_id);
 		return;
 	}
 	session_data =
@@ -478,13 +477,13 @@ static void handle_xchg_resp(struct ubcore_device *dev, void *conn,
 
 	if (result != 0) {
 		*session_data->result = result;
-		ubagg_log_err("Failed to exchange udata, ret: %d.\n", result);
+		ubagg_log_err_rl("Failed to exchange udata, ret: %d.\n", result);
 		goto complete_session;
 	}
 
 	memcpy(session_data->udata_out, data, session_data->udata_out_size);
 	*session_data->result = 0;
-	ubagg_log_info("Create response result: %d.\n", result);
+	ubagg_log_info_rl("Create response result: %d.\n", result);
 
 complete_session:
 	ubagg_session_complete(session);
