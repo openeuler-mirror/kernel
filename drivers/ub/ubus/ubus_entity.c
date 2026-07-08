@@ -20,7 +20,6 @@
 #include "memory.h"
 #include "ubus_controller.h"
 #include "ubus_driver.h"
-#include "ubus_inner.h"
 #include "cap.h"
 #include "eu.h"
 #include "instance.h"

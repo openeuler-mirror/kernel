@@ -3,7 +3,7 @@
  * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
  */
 
-#include "ubus_inner.h"
+#include <ub/ubus/ubus.h>
 
 int ub_get_dst_eid(struct ub_entity *dev)
 {

@@ -3,7 +3,7 @@
  * Copyright (c) HiSilicon Technologies Co., Ltd. 2025. All rights reserved.
  */
 
-#include "ubus_inner.h"
+#include <ub/ubus/ubus.h>
 
 static const struct cfg_ops {
 	read_byte_f cfg_read_byte;
