@@ -14,6 +14,17 @@ Description:
 		the file can change the starting position of the output bus
 		instance.
 
+What:		/sys/bus/ub/ub_feature
+Date:		May 2026
+Contact:	Junlong Zheng <zhengjunlong@huawei.com>
+Description:
+		Displays the capabilities of current chip for UB. First line is
+		a 64-bit value displayed in hexadecimal format, where each bit
+		represents one capability: 1 for supported, 0 for unsupported.
+		Following lines show the details of each capability's name and
+		its support status, with the symbol + meaning supported and -
+		meaning unsupported.
+
 What:		/sys/bus/ub/drivers/.../bind
 Date:		Oct 2025
 Contact:	Junlong Zheng <zhengjunlong@huawei.com>
