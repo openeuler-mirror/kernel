@@ -14,7 +14,6 @@
 #include "port.h"
 #include "reset.h"
 #include "instance.h"
-#include "ubus_inner.h"
 #include "task.h"
 #include "pool.h"
 
