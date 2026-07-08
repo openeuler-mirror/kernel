@@ -311,15 +311,32 @@ struct ub_entity {
 	KABI_RESERVE(16)
 };
 
-/* UB bus error event callbacks */
+/**
+ * struct ub_error_handlers - UB device error handling callback functions
+ * @ub_reset_prepare:	Called before Entity Level Reset (ELR) to notify the
+ *			device driver to prepare for the reset. Deprecated, use
+ *			@ub_reset_prepare_return instead.
+ * @ub_reset_done:	Called after ELR to notify the device driver that the
+ *			reset has completed and services can be resumed.
+ *			Deprecated, use @ub_reset_done_with_pret instead.
+ * @ub_error_detected:	Called when the UB bus driver detects an error,
+ *			notifying the UB device driver of the error occurrence.
+ *			Returns ub_ers_result_t indicating the required recovery
+ *			action.
+ * @ub_resource_enabled: Called after the UB bus driver has completed error
+ *			handling, notifying the UB device driver that error
+ *			recovery has finished. Returns ub_ers_result_t.
+ * @ub_reset_prepare_return: Called before ELR to notify the device driver to
+ *			prepare for the reset. Returns 0 on success or a
+ *			negative error code on failure. Replaces the deprecated
+ *			@ub_reset_prepare.
+ * @ub_reset_done_with_pret: Called after ELR to notify the device driver that
+ *			the reset has completed. The @pret parameter carries the
+ *			result of the ELR operation. Returns 0 on success or a
+ *			negative error code on failure. Replaces the deprecated
+ *			@ub_reset_done.
+ */
 struct ub_error_handlers {
-	/* UB function reset prepare or completed */
-
-	/*
-	 * Deprecated: This function is going to be removed in future version.
-	 * Please use ub_reset_prepare_return() and ub_reset_done_with_pret()
-	 * instead, which provides more complete return value processing.
-	 */
 	void (*ub_reset_prepare)(struct ub_entity *uent);
 	void (*ub_reset_done)(struct ub_entity *uent);
 	ub_ers_result_t (*ub_error_detected)(struct ub_entity *uent, ub_channel_state_t state);

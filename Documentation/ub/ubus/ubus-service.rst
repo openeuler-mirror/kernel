@@ -21,26 +21,10 @@ complete the error handling process.
 
 The UBUS driver provides the ``struct ub_error_handlers`` structure, which
 includes multiple callback functions related to error handling. The UB device
-driver needs to implement these callback functions::
+driver needs to implement these callback functions:
 
-	struct ub_error_handlers {
-		void (*ub_reset_prepare)(struct ub_entity *uent);
-		void (*ub_reset_done)(struct ub_entity *uent);
-		ub_ers_result_t (*ub_error_detected)(struct ub_entity *uent, ub_channel_state_t state);
-		ub_ers_result_t (*ub_resource_enabled)(struct ub_entity *uent);
-	};
-
-For UB device driver:
-
-  - ub_reset_prepare is called before ELR, serving to notify the device driver to
-       prepare for the work before ELR
-  - ub_reset_done is called after ELR, serving to notify the device driver that
-       ELR has completed and services can be resumed
-  - ub_error_detected is called when the UB bus driver detects an error, serving
-       to notify the UB device driver of the occurrence of an error
-  - ub_resource_enabled is called after the UB bus driver has completed error
-       handling, serving to notify the UB device driver that error handling has
-       completed
+.. kernel-doc:: include/ub/ubus/ubus.h
+   :functions: ub_error_handlers
 
 Hot-Plug Service
 ================
