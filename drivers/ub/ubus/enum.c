@@ -8,7 +8,6 @@
 #include <linux/kfifo.h>
 
 #include "ubus.h"
-#include "ubus_inner.h"
 #include "ubus_entity.h"
 #include "msg.h"
 #include "port.h"

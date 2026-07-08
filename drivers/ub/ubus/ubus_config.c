@@ -8,7 +8,6 @@
 #include "ubus.h"
 #include "msg.h"
 #include "ubus_config.h"
-#include "ubus_inner.h"
 
 struct cfg_msg_pld_req {
 	/* DW0 */
