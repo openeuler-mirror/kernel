@@ -237,7 +237,7 @@ static void regulator_lock_two(struct regulator_dev *rdev1,
 	ret = regulator_lock_nested(rdev1, ww_ctx);
 	WARN_ON(ret);
 	ret = regulator_lock_nested(rdev2, ww_ctx);
-	if (ret != -EDEADLOCK) {
+	if (ret != -EDEADLK) {
 		WARN_ON(ret);
 		goto exit;
 	}
@@ -255,7 +255,7 @@ static void regulator_lock_two(struct regulator_dev *rdev1,
 		rdev2->mutex_owner = current;
 		ret = regulator_lock_nested(rdev1, ww_ctx);
 
-		if (ret == -EDEADLOCK) {
+		if (ret == -EDEADLK) {
 			/* More contention; swap which needs to be slow */
 			tmp = rdev1;
 			rdev1 = rdev2;
