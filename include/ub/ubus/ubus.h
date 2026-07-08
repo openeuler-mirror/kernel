@@ -562,6 +562,13 @@ struct ub_vdm_pld {
 #define UB_URMA_CTP_UNO BIT(22)
 #define UB_URMA_UTP_UNO BIT(23)
 
+typedef int (*read_byte_f)(struct ub_entity *uent, u64 pos, u8 *val);
+typedef int (*read_word_f)(struct ub_entity *uent, u64 pos, u16 *val);
+typedef int (*read_dword_f)(struct ub_entity *uent, u64 pos, u32 *val);
+typedef int (*write_byte_f)(struct ub_entity *uent, u64 pos, u8 val);
+typedef int (*write_word_f)(struct ub_entity *uent, u64 pos, u16 val);
+typedef int (*write_dword_f)(struct ub_entity *uent, u64 pos, u32 val);
+
 #ifdef CONFIG_UB_UBUS
 extern struct bus_type ub_bus_type;
 #define dev_is_ub(d) ((d)->bus == &ub_bus_type)
@@ -1077,6 +1084,12 @@ void ub_stop_ent(struct ub_entity *uent);
  */
 void ub_stop_and_remove_ent(struct ub_entity *uent);
 
+int register_ub_cfg_read_ops(read_byte_f rb, read_word_f rw, read_dword_f rdw);
+int register_ub_cfg_write_ops(write_byte_f wb, write_word_f ww, write_dword_f wdw);
+void unregister_ub_cfg_ops(void);
+struct ub_bus_controller *ub_ubc_get(struct ub_bus_controller *ubc);
+void ub_ubc_put(struct ub_bus_controller *ubc);
+
 #else /* CONFIG_UB_UBUS is not enabled */
 #define dev_is_ub(d) (false)
 static inline struct ub_entity *ub_get_ent_by_eid(unsigned int eid)
@@ -1188,6 +1201,16 @@ static inline int ub_register_driver(struct ub_driver *drv)
 static inline void ub_unregister_driver(struct ub_driver *drv) {}
 static inline void ub_stop_ent(struct ub_entity *uent) {}
 static inline void ub_stop_and_remove_ent(struct ub_entity *uent) {}
+static inline int
+register_ub_cfg_read_ops(read_byte_f rb, read_word_f rw, read_dword_f rdw)
+{ return -EINVAL; }
+static inline int
+register_ub_cfg_write_ops(write_byte_f wb, write_word_f ww, write_dword_f wdw)
+{ return -EINVAL; }
+static inline void unregister_ub_cfg_ops(void) {}
+static inline struct ub_bus_controller *
+ub_ubc_get(struct ub_bus_controller *ubc) { return NULL; }
+static inline void ub_ubc_put(struct ub_bus_controller *ubc) {}
 #endif /* CONFIG_UB_UBUS */
 
 #endif /* _UB_UBUS_UBUS_H_ */

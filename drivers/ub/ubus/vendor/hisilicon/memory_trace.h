@@ -42,7 +42,7 @@ TRACE_EVENT(mem_ras_event,
 
 /* This must be outside ifdef __HISI_MEMORY_TRACE_H__ */
 #undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH ../../drivers/ub/ubus/vendor/hisilicon
+#define TRACE_INCLUDE_PATH .
 #undef TRACE_INCLUDE_FILE
 #define TRACE_INCLUDE_FILE memory_trace
 #include <trace/define_trace.h>

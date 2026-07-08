@@ -7,8 +7,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/dma-map-ops.h>
 #include <linux/iommu.h>
-
-#include "ubus_inner.h"
+#include <ub/ubus/ubus.h>
 
 static const struct iommu_ops *ub_bus_type_iommu_ops;
 void ub_bus_type_iommu_ops_set(const struct iommu_ops *ops)
