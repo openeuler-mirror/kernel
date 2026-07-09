@@ -28,6 +28,7 @@ config KVM
 	select KVM_GENERIC_MMU_NOTIFIER
 	select INTERVAL_TREE
 	select KVM_GENERIC_HARDWARE_ENABLING
+	select HAVE_KVM_READONLY_MEM
 	help
 	  Support for hosting Guest kernels.
 
