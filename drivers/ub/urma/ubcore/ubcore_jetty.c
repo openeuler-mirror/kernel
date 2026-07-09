@@ -3026,9 +3026,7 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 
 	if (ubcore_check_ctrlplane_compat(dev->ops->import_jetty)) {
 		ubcore_log_info_rl("Enter import jetty compat.\n");
-		UBCORE_PERF_TRACE_BEGIN(PERF_UB_IMPORT_JETTY_EX);
 		result = ubcore_import_jetty_compat_retry(dev, cfg, udata);
-		UBCORE_PERF_TRACE_END(PERF_UB_IMPORT_JETTY_EX);
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return result;
 	}
@@ -3165,6 +3163,7 @@ struct ubcore_tjetty *ubcore_get_tjetty(struct ubcore_device *dev, struct ubcore
 			struct ubcore_udata *udata)
 {
 	struct ubcore_tjetty *tjetty;
+	uint32_t perf_import_jetty_type;
 
 	if (!dev || !dev->ops ||
 	    !dev->ops->import_jetty_ex ||
@@ -3172,7 +3171,14 @@ struct ubcore_tjetty *ubcore_get_tjetty(struct ubcore_device *dev, struct ubcore
 	    !active_tp_cfg || dev->attr.dev_cap.max_eid_cnt <= cfg->eid_index)
 		return ERR_PTR(-EINVAL);
 
+	if (ubcore_is_bonding_dev(dev))
+		perf_import_jetty_type = PERF_AGG_IMPORT_JETTY;
+	else
+		perf_import_jetty_type = PERF_UB_IMPORT_JETTY_EX;
+
+	UBCORE_PERF_TRACE_BEGIN(perf_import_jetty_type);
 	tjetty = dev->ops->import_jetty_ex(dev, cfg, active_tp_cfg, udata);
+	UBCORE_PERF_TRACE_END(perf_import_jetty_type);
 	if (IS_ERR_OR_NULL(tjetty)) {
 		ubcore_log_err("[DRV] failed to import jetty, dev_name: %s, eid_idx: %u, jetty_id:%u.\n",
 			dev->dev_name, cfg->eid_index, cfg->id.id);
