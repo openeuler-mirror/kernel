@@ -159,20 +159,24 @@ void uburma_jfce_handler(struct ubcore_jfc *jfc)
 
 void uburma_uninit_jfe(struct uburma_jfe *jfe)
 {
-	struct list_head *p, *next;
-	struct uburma_jfe_event *event;
+	struct uburma_jfe_event *event, *tmp;
+	unsigned long flags;
+	LIST_HEAD(free_list);
 
-	spin_lock_irq(&jfe->lock);
-	list_for_each_safe(p, next, &jfe->event_list) {
-		event = list_entry(p, struct uburma_jfe_event, node);
+	spin_lock_irqsave(&jfe->lock, flags);
+	list_for_each_entry_safe(event, tmp, &jfe->event_list, node) {
 		if (event->counter)
 			list_del(&event->obj_node);
+		list_move_tail(&event->node, &free_list);
+	}
+	spin_unlock_irqrestore(&jfe->lock, flags);
+
+	list_for_each_entry_safe(event, tmp, &free_list, node) {
 		if (event->event_data_free_fn)
 			(*(event->event_data_free_fn))(event->event_data);
 		list_del(&event->node);
 		kfree(event);
 	}
-	spin_unlock_irq(&jfe->lock);
 }
 
 static int uburma_delete_jfce(struct inode *inode, struct file *filp)
