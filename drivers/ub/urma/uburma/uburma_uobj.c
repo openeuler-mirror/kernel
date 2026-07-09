@@ -1234,6 +1234,18 @@ static int uburma_free_tseg(struct uburma_uobj *uobj,
 	return ubcore_unimport_seg((struct ubcore_target_seg *)uobj->object);
 }
 
+static int uburma_free_tpid_uobj(struct uburma_uobj *uobj,
+				   enum uburma_remove_reason why)
+{
+	struct ubcore_vtpn *vtpn = (struct ubcore_vtpn *)uobj->object;
+
+	if (vtpn == NULL)
+		return 0;
+
+	(void)ubcore_delete_vtpn_for_tpid(vtpn);
+	return 0;
+}
+
 void uburma_close_uobj_fd(struct file *f)
 {
 	struct uburma_uobj *uobj = f->private_data;
@@ -1401,3 +1413,6 @@ declare_uobj_class(UOBJ_CLASS_TARGET_JETTY,
 declare_uobj_class(UOBJ_CLASS_TARGET_SEG,
 		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,
 					uburma_free_tseg));
+declare_uobj_class(UOBJ_CLASS_TPID,
+		   &uobj_type_alloc_idr(sizeof(struct uburma_uobj), 0,
+					uburma_free_tpid_uobj));

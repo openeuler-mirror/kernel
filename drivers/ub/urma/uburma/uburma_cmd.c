@@ -3422,6 +3422,9 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 	struct ubcore_udata udata = { 0 };
 	struct ubcore_tjetty *tjfr;
 	struct uburma_uobj *uobj;
+	struct uburma_uobj *tpid_uobj;
+	struct ubcore_vtpn *vtpn;
+	bool need_free_tpid_uobj = false;
 	int ret;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_IMPORT_JFR_EX);
@@ -3456,10 +3459,12 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 	active_tp_cfg.tp_attr.rx_psn = arg.in.rx_psn;
 	fill_udata(&udata, file->ucontext, &arg.udata);
 
-	if (memcmp(&active_tp_cfg, &empty_cfg, sizeof(active_tp_cfg)) == 0)
+	if (memcmp(&active_tp_cfg, &empty_cfg, sizeof(active_tp_cfg)) == 0) {
 		tjfr = ubcore_import_jfr(ubc_dev, &cfg, &udata);
-	else
+	} else {
 		tjfr = ubcore_import_jfr_ex(ubc_dev, &cfg, &active_tp_cfg, &udata);
+		need_free_tpid_uobj = true;
+	}
 
 	if (IS_ERR_OR_NULL(tjfr)) {
 		uburma_log_err("Failed to import jfr in ex.\n");
@@ -3485,6 +3490,24 @@ static int uburma_cmd_import_jfr_ex(struct ubcore_device *ubc_dev,
 		return ret;
 	}
 	uobj_alloc_commit(uobj);
+
+	/* similar to import_jetty_ex.*/
+	if (need_free_tpid_uobj && tjfr->vtpn != NULL) {
+		vtpn = ubcore_find_get_vtpn_by_tp_handle(ubc_dev,
+							 active_tp_cfg.tp_handle.value);
+		if (vtpn != NULL) {
+			tpid_uobj = uobj_get_del(UOBJ_CLASS_TPID,
+						 vtpn->tpid_uobj_id, file);
+			/* pair with the kref taken by ubcore_find_get_vtpn_by_tp_handle */
+			ubcore_put_vtpn_for_tpid(vtpn);
+			if (!IS_ERR_OR_NULL(tpid_uobj)) {
+				if (uobj_remove_commit(tpid_uobj) != 0)
+					uburma_log_err_rl("Remove tpid uobj failed.\n");
+				uobj_put_del(tpid_uobj);
+			}
+		}
+	}
+
 	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JFR_EX);
 	return 0;
 }
@@ -3719,7 +3742,10 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 	struct ubcore_udata udata = { 0 };
 	struct uburma_uobj *tjetty_uobj;
 	struct uburma_uobj *jetty_uobj;
+	struct uburma_uobj *tpid_uobj;
+	struct ubcore_vtpn *vtpn;
 	struct ubcore_tjetty *tjetty;
+	bool need_free_tpid_uobj = false;
 	int ret;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_BIND_JETTY_EX);
@@ -3752,6 +3778,7 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 		uburma_log_info("tp_handle is null, exec ubcore_bind_jetty_ex");
 		ret = ubcore_bind_jetty_ex(jetty_uobj->object, tjetty, &active_tp_cfg,
 			   &udata);
+		need_free_tpid_uobj = true;
 	}
 	if (ret != 0) {
 		uburma_log_err_rl("bind jetty failed, ret: %d.\n", ret);
@@ -3766,6 +3793,26 @@ static int uburma_cmd_bind_jetty_ex(struct ubcore_device *ubc_dev,
 		arg.out.tpn = tjetty->tp->tpn;
 	else
 		arg.out.tpn = UBURMA_INVALID_TPN;
+
+	/* similar to import_jetty_ex.
+	   if transmode is RC and share_tp is 1, vtpn is null. Then
+	   the tpid_uobj is not consumed during bind_jetty_ex.
+	*/
+	if (need_free_tpid_uobj && tjetty->vtpn != NULL) {
+		vtpn = ubcore_find_get_vtpn_by_tp_handle(ubc_dev,
+							 active_tp_cfg.tp_handle.value);
+		if (vtpn != NULL) {
+			tpid_uobj = uobj_get_del(UOBJ_CLASS_TPID,
+						 vtpn->tpid_uobj_id, file);
+			/* pair with the kref taken by ubcore_find_get_vtpn_by_tp_handle */
+			ubcore_put_vtpn_for_tpid(vtpn);
+			if (!IS_ERR_OR_NULL(tpid_uobj)) {
+				if (uobj_remove_commit(tpid_uobj) != 0)
+					uburma_log_err_rl("Remove tpid uobj failed.\n");
+				uobj_put_del(tpid_uobj);
+			}
+		}
+	}
 
 	uburma_tjetty = (struct uburma_tjetty_uobj *)(tjetty_uobj);
 	uburma_tjetty->jetty_uobj = (struct uburma_jetty_uobj *)jetty_uobj;
@@ -4758,7 +4805,12 @@ static int uburma_cmd_get_tp_list(struct ubcore_device *ubc_dev,
 	struct ubcore_tp_info *tp_list = NULL;
 	struct ubcore_get_tp_cfg cfg = { 0 };
 	struct ubcore_udata udata = { 0 };
+	struct uburma_uobj *uobj;
+	struct uburma_uobj *tpid_uobj;
+	struct ubcore_vtpn *vtpn;
+	struct ubcore_vtpn *rb_vtpn;
 	uint32_t tp_cnt = 0;
+	uint32_t i, j, k;
 	int ret;
 
 	arg = kcalloc(1, sizeof(struct uburma_cmd_get_tp_list), GFP_KERNEL);
@@ -4792,11 +4844,61 @@ static int uburma_cmd_get_tp_list(struct ubcore_device *ubc_dev,
 		uburma_log_err_rl("Failed to get tp list, ret: %d.\n", ret);
 		goto free_tp_list;
 	}
+
+	/* For each tp_handle, create a vtpn and attach a tpid uobj to it.
+	   The uobj owns one use_cnt on the vtpn. Only after all uobjs are
+	   committed successfully, copy tp_list to userspace. */
+	for (i = 0; i < tp_cnt; i++) {
+		uobj = uobj_alloc(UOBJ_CLASS_TPID, file);
+		if (IS_ERR(uobj)) {
+			uburma_log_err("Failed to alloc tpid uobj.\n");
+			ret = PTR_ERR(uobj);
+			goto rollback_tp_uobjs;
+		}
+
+		vtpn = ubcore_create_vtpn_for_tpid(ubc_dev,
+						     tp_list[i].tp_handle.value);
+		if (vtpn == NULL) {
+			uburma_log_err("Failed to find/add vtpn for tp_handle.\n");
+			uobj_alloc_abort(uobj);
+			ret = -ENOMEM;
+			goto rollback_tp_uobjs;
+		}
+
+		uobj->object = vtpn;
+		vtpn->tpid_uobj_id = (uint64_t)uobj->id;
+		uobj_alloc_commit(uobj);
+	}
+
 	arg->out.tp_cnt = tp_cnt;
 	(void)memcpy(arg->out.tp_handle, tp_list,
 		     tp_cnt * sizeof(struct ubcore_tp_info));
-
 	ret = uburma_tlv_append(hdr, arg);
+	if (ret != 0)
+		goto rollback_tp_uobjs;
+	// success, free tp_list and arg
+	goto free_tp_list;
+
+rollback_tp_uobjs:
+	// free uobj for already committed uobj
+	for (j = 0; j < i; j++) {
+		rb_vtpn = ubcore_find_get_vtpn_by_tp_handle(ubc_dev,
+							    tp_list[j].tp_handle.value);
+		if (rb_vtpn == NULL)
+			continue;
+		tpid_uobj = uobj_get_del(UOBJ_CLASS_TPID,
+					 rb_vtpn->tpid_uobj_id, file);
+		ubcore_put_vtpn_for_tpid(rb_vtpn);
+		if (!IS_ERR_OR_NULL(tpid_uobj)) {
+			if (uobj_remove_commit(tpid_uobj) != 0)
+				uburma_log_err_rl("Remove tpid uobj failed.\n");
+			uobj_put_del(tpid_uobj);
+		}
+	}
+	// delete_tpid for uncommitted uobj
+	for (k = i; k < tp_cnt; k++)
+		(void)ubcore_delete_tpid_for_uobj(ubc_dev,
+						   tp_list[k].tp_handle.value);
 free_tp_list:
 	kfree(tp_list);
 free_arg:
@@ -5020,6 +5122,9 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	struct ubcore_udata udata = { 0 };
 	struct ubcore_tjetty *tjetty;
 	struct uburma_uobj *uobj;
+	struct uburma_uobj *tpid_uobj;
+	struct ubcore_vtpn *vtpn;
+	bool need_free_tpid_uobj = false;
 	int ret;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_URMA_CMD_IMPORT_JETTY_EX);
@@ -5058,10 +5163,12 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 	active_tp_cfg.tp_attr.rx_psn = arg.in.rx_psn;
 	fill_udata(&udata, file->ucontext, &arg.udata);
 
-	if (memcmp(&active_tp_cfg, &empty_cfg, sizeof(active_tp_cfg)) == 0)
+	if (memcmp(&active_tp_cfg, &empty_cfg, sizeof(active_tp_cfg)) == 0) {
 		tjetty = ubcore_import_jetty(ubc_dev, &cfg, &udata);
-	else
+	} else {
 		tjetty = ubcore_import_jetty_ex(ubc_dev, &cfg, &active_tp_cfg, &udata);
+		need_free_tpid_uobj = true;
+	}
 
 	if (IS_ERR_OR_NULL(tjetty)) {
 		uburma_log_err("ubcore_import_jetty failed.\n");
@@ -5087,6 +5194,29 @@ static int uburma_cmd_import_jetty_ex(struct ubcore_device *ubc_dev,
 		return ret;
 	}
 	uobj_alloc_commit(uobj);
+
+	/* The tpid_uobj created during get_tp_list.
+	   When exit abnormally, the vtpn management is transferred
+	   from tpid_uobj to tjetty_uobj.
+	   if trans_mode is RC and share_tp is 0, vtpn is null. Then
+	   the tpid_uobj is not consumed during import_jetty_ex, do not free tpid_uobj.
+	*/
+	if (need_free_tpid_uobj && tjetty->vtpn != NULL) {
+		vtpn = ubcore_find_get_vtpn_by_tp_handle(ubc_dev,
+							 active_tp_cfg.tp_handle.value);
+		if (vtpn != NULL) {
+			tpid_uobj = uobj_get_del(UOBJ_CLASS_TPID,
+						 vtpn->tpid_uobj_id, file);
+			/* pair with the kref taken by ubcore_find_get_vtpn_by_tp_handle */
+			ubcore_put_vtpn_for_tpid(vtpn);
+			if (!IS_ERR_OR_NULL(tpid_uobj)) {
+				if (uobj_remove_commit(tpid_uobj) != 0)
+					uburma_log_err_rl("Remove tpid uobj failed.\n");
+				uobj_put_del(tpid_uobj);
+			}
+		}
+	}
+
 	UBCORE_PERF_TRACE_END(PERF_URMA_CMD_IMPORT_JETTY_EX);
 	return 0;
 }
