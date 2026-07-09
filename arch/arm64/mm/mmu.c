@@ -25,6 +25,7 @@
 #include <linux/vmalloc.h>
 #include <linux/set_memory.h>
 #include <linux/kfence.h>
+#include <linux/numa_remote.h>
 #include "internal.h"
 
 #include <asm/barrier.h>
@@ -1408,7 +1409,7 @@ int arch_add_memory(int nid, u64 start, u64 size,
 
 	if (can_set_direct_map() || is_virtcca_cvm_world())
 		flags |= NO_BLOCK_MAPPINGS | NO_CONT_MAPPINGS;
-	else if (should_pmd_linear_mapping())
+	else if (should_pmd_linear_mapping() || numa_is_remote_node(nid))
 		flags |= NO_PUD_BLOCK_MAPPINGS | NO_CONT_MAPPINGS;
 
 	__create_pgd_mapping(swapper_pg_dir, start, __phys_to_virt(start),
