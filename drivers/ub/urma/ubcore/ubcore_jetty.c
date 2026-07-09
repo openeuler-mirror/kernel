@@ -539,7 +539,7 @@ int ubcore_delete_jfc(struct ubcore_jfc *jfc)
 		return ret;
 	}
 	ubcore_log_info("[JFC DELETE] Deleted JFC: id: %u, dev_name: %s.",
-			jfc->id, dev->dev_name);
+			jfc_id, dev->dev_name);
 	UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFC);
 	return ret;
 }
@@ -2060,6 +2060,7 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 	uint32_t eid_index = tjfr->cfg.eid_index;
 	struct ubcore_device *dev;
 	int ret;
+	bool is_tp_aware;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_UNIMPORT_JFR);
 
@@ -2077,19 +2078,21 @@ int ubcore_unimport_jfr(struct ubcore_tjetty *tjfr)
 		 tjfr->cfg.trans_mode == UBCORE_TP_UM) &&
 		 tjfr->vtpn != NULL) {
 		mutex_lock(&tjfr->lock);
+		is_tp_aware = tjfr->vtpn->tpid_reuse ? false : true;
 
-		if (tjfr->vtpn->tpid_reuse) {
-			ret = ubcore_disconnect_tpid_with_tpid_reuse(tjfr->vtpn->tpid_reuse);
+		if (is_tp_aware == false) {
+			ret = ubcore_disconnect_tpid_with_tpid_reuse(
+				tjfr->vtpn->tpid_reuse);
 		} else {
 			ret = ubcore_disconnect_vtp(tjfr->vtpn);
 		}
-		if (ret != 0) {
+		if (ret != 0 && (ret != -ENOENT || is_tp_aware == false)) {
 			ubcore_log_err("Failed to disconnect vtp.\n");
 			mutex_unlock(&tjfr->lock);
 			UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JFR);
 			return ret;
 		}
-		if (tjfr->vtpn->tpid_reuse)
+		if (is_tp_aware == false)
 			(void)ubcore_free_vtpn_after_tpid_reuse(tjfr->vtpn);
 		tjfr->vtpn = NULL;
 		mutex_unlock(&tjfr->lock);
@@ -3272,10 +3275,10 @@ EXPORT_SYMBOL(ubcore_import_jetty_ex);
 int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 {
 	struct ubcore_device *dev;
-	struct ubcore_tpid_reuse *tpid_reuse;
 	uint32_t jetty_id = tjetty->cfg.id.id;
 	uint32_t eid_idx = tjetty->cfg.eid_index;
 	int ret;
+	bool is_tp_aware;
 
 	UBCORE_PERF_TRACE_BEGIN(PERF_CORE_UNIMPORT_JETTY);
 
@@ -3298,13 +3301,15 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 	    tjetty->vtpn != NULL) {
 		mutex_lock(&tjetty->lock);
 		/* ubcore_disconnect_vtp() may free vtpn, cache tpid_reuse first. */
-		tpid_reuse = tjetty->vtpn->tpid_reuse;
-		if (tpid_reuse) {
-			ret = ubcore_disconnect_tpid_with_tpid_reuse(tpid_reuse);
+		is_tp_aware = tjetty->vtpn->tpid_reuse ? false : true;
+
+		if (is_tp_aware == false) {
+			ret = ubcore_disconnect_tpid_with_tpid_reuse(
+				tjetty->vtpn->tpid_reuse);
 		} else {
 			ret = ubcore_disconnect_vtp(tjetty->vtpn);
 		}
-		if (ret != 0 && (ret != -ENOENT || tpid_reuse)) {
+		if (ret != 0 && (ret != -ENOENT || is_tp_aware == false)) {
 			mutex_unlock(&tjetty->lock);
 			ubcore_log_err("Failed to disconnect vtp.\n");
 			UBCORE_PERF_TRACE_END(PERF_CORE_UNIMPORT_JETTY);
@@ -3312,7 +3317,7 @@ int ubcore_unimport_jetty(struct ubcore_tjetty *tjetty)
 		}
 		/*if tpid_reuse, vtpn is not inc use_cnt in import_jetty
 		  just need kfree vtpn in last.*/
-		if (tpid_reuse)
+		if (is_tp_aware == false)
 			(void)ubcore_free_vtpn_after_tpid_reuse(tjetty->vtpn);
 		tjetty->vtpn = NULL;
 		mutex_unlock(&tjetty->lock);
@@ -3648,24 +3653,27 @@ static int ubcore_inner_unbind_ub_jetty(struct ubcore_jetty *jetty,
 					struct ubcore_tjetty *tjetty)
 {
 	int ret;
+	bool is_tp_aware;
 
 	if (tjetty->vtpn) {
 		if (!is_create_rc_shared_tp(jetty->jetty_cfg.trans_mode,
 					    jetty->jetty_cfg.flag.bs.order_type,
 					    tjetty->cfg.flag.bs.share_tp)) {
 			mutex_lock(&tjetty->lock);
-			if (tjetty->vtpn->tpid_reuse) {
+			is_tp_aware = tjetty->vtpn->tpid_reuse ? false : true;
+
+			if (is_tp_aware == false) {
 				ret = ubcore_disconnect_tpid_with_tpid_reuse(
 					tjetty->vtpn->tpid_reuse);
 			} else {
 				ret = ubcore_disconnect_vtp(tjetty->vtpn);
 			}
-			if (ret != 0) {
+			if (ret != 0 && (ret != -ENOENT || is_tp_aware == false)) {
 				mutex_unlock(&tjetty->lock);
 				ubcore_log_err("Failed to disconnect vtp.\n");
 				return ret;
 			}
-			if (tjetty->vtpn->tpid_reuse)
+			if (is_tp_aware == false)
 				(void)ubcore_free_vtpn_after_tpid_reuse(tjetty->vtpn);
 			tjetty->vtpn = NULL;
 			mutex_unlock(&tjetty->lock);
