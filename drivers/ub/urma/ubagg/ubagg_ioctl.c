@@ -1186,17 +1186,15 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 		EID_RAW_ARGS(agg_dev->agg_eid));
 	for (i = 0; i < IODIE_NUM; i++) {
 		if (!is_eid_valid(agg_dev->ues[i].primary_eid)) {
-			ubagg_log_err("primary slave %d eid is invalid\n", i);
+			ubagg_log_info("primary slave %d eid is invalid\n", i);
 			continue;
 		}
 
 		(void)memcpy(eid.raw, agg_dev->ues[i].primary_eid, EID_LEN);
 		dev = ubcore_get_device_by_eid(&eid, UBCORE_TRANSPORT_UB);
 		if (dev == NULL) {
-			ubagg_log_err(
-				"primary slave %d dev not exist, eid: " EID_FMT
-				"\n",
-				i, EID_ARGS(eid));
+			ubagg_log_err_rl("primary slave %d dev not exist, eid: " EID_FMT
+					 "\n", i, EID_ARGS(eid));
 			return -1;
 		}
 		if (slave_dev_idx == 0)
@@ -1212,7 +1210,7 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 	for (j = 0; j < IODIE_NUM; j++) {
 		for (k = 0; k < MAX_PORT_NUM; k++) {
 			if (!is_eid_valid(agg_dev->ues[j].port_eid[k])) {
-				ubagg_log_err("port slave %d_%d eid is invalid\n", j, k);
+				ubagg_log_info("port slave %d_%d eid is invalid\n", j, k);
 				continue;
 			}
 
@@ -1220,10 +1218,8 @@ static int init_ubagg_dev(struct ubagg_device *ubagg_dev,
 				     EID_LEN);
 			dev = ubcore_get_device_by_eid(&eid, UBCORE_TRANSPORT_UB);
 			if (dev == NULL) {
-				ubagg_log_err(
-					"port slave %d_%d dev not exist, eid: " EID_FMT
-					"\n",
-					j, k, EID_ARGS(eid));
+				ubagg_log_err_rl("port slave %d_%d dev not exist, eid: " EID_FMT
+						 "\n", j, k, EID_ARGS(eid));
 				return -1;
 			}
 			if (slave_dev_idx == 0)
@@ -1254,7 +1250,6 @@ static int init_ubagg_res(struct ubagg_device *ubagg_dev)
 
 	ret = alloc_ubagg_dev_bitmap(ubagg_dev);
 	if (ret != 0) {
-		ubagg_log_err("ubagg alloc bitmap fail\n");
 		return ret;
 	}
 
@@ -1262,7 +1257,7 @@ static int init_ubagg_res(struct ubagg_device *ubagg_dev)
 		ret = ubagg_hash_table_alloc(&ubagg_dev->ubagg_ht[i],
 					     &g_ubagg_ht_params[i]);
 		if (ret != 0) {
-			ubagg_log_err("Fail to init hash map:%d.\n", i);
+			ubagg_log_err("Fail to init hash map:%d, ret: %d\n", i, ret);
 			goto FREE_HMAP;
 		}
 	}
