@@ -220,6 +220,9 @@ EXPORT_SYMBOL_GPL(host_efer);
 bool __read_mostly allow_smaller_maxphyaddr = 0;
 EXPORT_SYMBOL_GPL(allow_smaller_maxphyaddr);
 
+bool __read_mostly enable_ipiv = true;
+EXPORT_SYMBOL_GPL(enable_ipiv);
+
 u64 __read_mostly host_xss;
 EXPORT_SYMBOL_GPL(host_xss);
 u64 __read_mostly supported_xss;
