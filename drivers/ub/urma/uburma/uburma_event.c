@@ -30,6 +30,7 @@
 #include "uburma_event.h"
 
 #define UBURMA_JFCE_DELETE_EVENT 0
+#define UBURMA_RELEASE_EVENT_BATCH 1000
 
 uint32_t uburma_irq_handle_threshold = 50;
 uint32_t uburma_irq_handle_threshold_enable;
@@ -159,18 +160,25 @@ void uburma_jfce_handler(struct ubcore_jfc *jfc)
 
 void uburma_uninit_jfe(struct uburma_jfe *jfe)
 {
-	struct list_head *p, *next;
-	struct uburma_jfe_event *event;
+	struct uburma_jfe_event *event, *tmp;
 
 	spin_lock_irq(&jfe->lock);
-	list_for_each_safe(p, next, &jfe->event_list) {
-		event = list_entry(p, struct uburma_jfe_event, node);
-		if (event->counter)
-			list_del(&event->obj_node);
-		if (event->event_data_free_fn)
-			(*(event->event_data_free_fn))(event->event_data);
-		list_del(&event->node);
-		kfree(event);
+	while (!list_empty(&jfe->event_list)) {
+		uint32_t n = 0;
+
+		list_for_each_entry_safe(event, tmp, &jfe->event_list, node) {
+			if (event->counter)
+				list_del(&event->obj_node);
+			if (event->event_data_free_fn)
+				(*(event->event_data_free_fn))(event->event_data);
+			list_del(&event->node);
+			kfree(event);
+			if (++n >= UBURMA_RELEASE_EVENT_BATCH)
+				break;
+		}
+		spin_unlock_irq(&jfe->lock);
+		cond_resched();
+		spin_lock_irq(&jfe->lock);
 	}
 	spin_unlock_irq(&jfe->lock);
 }
@@ -609,11 +617,19 @@ void uburma_release_comp_event(struct uburma_jfce_uobj *jfce,
 	struct uburma_jfe_event *event, *tmp;
 
 	spin_lock_irq(&jfe->lock);
-	list_for_each_entry_safe(event, tmp, event_list, obj_node) {
-		if (!list_empty(&event->obj_node))
-			list_del_init(&event->obj_node);
-		list_del(&event->node);
-		kfree(event);
+	while (!list_empty(event_list)) {
+		uint32_t n = 0;
+
+		list_for_each_entry_safe(event, tmp, event_list, obj_node) {
+			list_del(&event->obj_node);
+			list_del(&event->node);
+			kfree(event);
+			if (++n >= UBURMA_RELEASE_EVENT_BATCH)
+				break;
+		}
+		spin_unlock_irq(&jfe->lock);
+		cond_resched();
+		spin_lock_irq(&jfe->lock);
 	}
 	spin_unlock_irq(&jfe->lock);
 }
@@ -626,11 +642,19 @@ void uburma_release_async_event(struct uburma_file *ufile,
 	struct uburma_jfe_event *event, *tmp;
 
 	spin_lock_irq(&jfe->lock);
-	list_for_each_entry_safe(event, tmp, event_list, obj_node) {
-		if (!list_empty(&event->obj_node))
-			list_del_init(&event->obj_node);
-		list_del(&event->node);
-		kfree(event);
+	while (!list_empty(event_list)) {
+		uint32_t n = 0;
+
+		list_for_each_entry_safe(event, tmp, event_list, obj_node) {
+			list_del(&event->obj_node);
+			list_del(&event->node);
+			kfree(event);
+			if (++n >= UBURMA_RELEASE_EVENT_BATCH)
+				break;
+		}
+		spin_unlock_irq(&jfe->lock);
+		cond_resched();
+		spin_lock_irq(&jfe->lock);
 	}
 	spin_unlock_irq(&jfe->lock);
 	uburma_put_jfae(ufile);
