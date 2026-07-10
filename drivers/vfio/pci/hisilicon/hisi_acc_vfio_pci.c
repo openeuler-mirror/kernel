@@ -411,7 +411,7 @@ static int vf_qm_check_match(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 	ret = vf_qm_version_check(vf_data, dev);
 	if (ret) {
 		dev_err(dev, "failed to match ACC_DEV_MAGIC\n");
-		return ret;
+		return -EINVAL;
 	}
 
 	if (vf_data->dev_id != hisi_acc_vdev->vf_dev->device) {
@@ -569,7 +569,7 @@ static int vf_qm_read_data(struct hisi_qm *vf_qm, struct acc_vf_data *vf_data)
 
 	ret = qm_get_regs(vf_qm, vf_data);
 	if (ret)
-		return ret;
+		return -EINVAL;
 
 	/* Every reg is 32 bit, the dma address is 64 bit. */
 	vf_data->eqe_dma = vf_data->qm_eqc_dw[QM_XQC_ADDR_HIGH];
@@ -583,13 +583,13 @@ static int vf_qm_read_data(struct hisi_qm *vf_qm, struct acc_vf_data *vf_data)
 	ret = qm_get_sqc(vf_qm, &vf_data->sqc_dma);
 	if (ret) {
 		dev_err(dev, "failed to read SQC addr!\n");
-		return ret;
+		return -EINVAL;
 	}
 
 	ret = qm_get_cqc(vf_qm, &vf_data->cqc_dma);
 	if (ret) {
 		dev_err(dev, "failed to read CQC addr!\n");
-		return ret;
+		return -EINVAL;
 	}
 
 	return 0;
@@ -615,7 +615,7 @@ static int vf_qm_state_save(struct hisi_acc_vf_core_device *hisi_acc_vdev,
 
 	ret = vf_qm_read_data(vf_qm, vf_data);
 	if (ret)
-		return ret;
+		return -EINVAL;
 
 	migf->total_length = sizeof(struct acc_vf_data);
 	/* Save eqc and aeqc interrupt information */
@@ -1467,7 +1467,7 @@ static int hisi_acc_vf_debug_check(struct seq_file *seq, struct vfio_device *vde
 	ret = qm_wait_dev_not_ready(vf_qm);
 	if (ret) {
 		seq_puts(seq, "VF device not ready!\n");
-		return ret;
+		return -EBUSY;
 	}
 
 	return 0;
