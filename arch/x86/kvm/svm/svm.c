@@ -1025,6 +1025,8 @@ static __init int svm_hardware_setup(void)
 			amd_iommu_register_ga_log_notifier(&avic_ga_log_notifier);
 		}
 	}
+	if (!avic)
+		enable_ipiv = false;
 
 	if (vls) {
 		if (!npt_enabled ||
