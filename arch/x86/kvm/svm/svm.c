@@ -1028,6 +1028,14 @@ static __init int svm_hardware_setup(void)
 	if (!avic)
 		enable_ipiv = false;
 
+	/*
+	 * Disable IPI virtualization for AMD Family 17h CPUs (Zen1 and Zen2)
+	 * due to erratum 1235, which results in missed VM-Exits on the sender
+	 * and thus missed wake events for blocking vCPUs due to the CPU
+	 * failing to see a software update to clear IsRunning.
+	 */
+	enable_ipiv = enable_ipiv && boot_cpu_data.x86 != 0x17;
+
 	if (vls) {
 		if (!npt_enabled ||
 		    !boot_cpu_has(X86_FEATURE_V_VMSAVE_VMLOAD) ||
