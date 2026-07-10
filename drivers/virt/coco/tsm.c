@@ -324,6 +324,135 @@ const struct config_item_type tsm_report_extra_type = {
 };
 EXPORT_SYMBOL_GPL(tsm_report_extra_type);
 
+#ifdef CONFIG_HISI_CCA
+struct tsm_measurement_state {
+	struct config_item cfg;
+};
+
+static struct tsm_measurement_state *to_tsm_measurement_state(struct config_item *cfg)
+{
+	return container_of(cfg, struct tsm_measurement_state, cfg);
+}
+
+static ssize_t tsm_measurement_rem_write(struct config_item *cfg,
+					 const void *buf, size_t count,
+					 unsigned int index)
+{
+	const struct tsm_ops *ops;
+	struct tsm_measurement measurement;
+	int rc;
+
+	if (!count || count > TSM_MEASUREMENT_MAX_SIZE)
+		return -EINVAL;
+
+	guard(rwsem_write)(&tsm_rwsem);
+	ops = provider.ops;
+	if (!ops)
+		return -ENXIO;
+	if (!ops->measurement_extend)
+		return -ENXIO;
+
+	measurement.index = index;
+	memcpy(measurement.value, buf, count);
+	measurement.value_len = count;
+
+	rc = ops->measurement_extend(&measurement, provider.data);
+	if (rc)
+		return rc;
+
+	return count;
+}
+
+static ssize_t tsm_measurement_rem0_write(struct config_item *cfg,
+					   const void *buf, size_t count)
+{
+	return tsm_measurement_rem_write(cfg, buf, count, 1);
+}
+
+static ssize_t tsm_measurement_rem1_write(struct config_item *cfg,
+					   const void *buf, size_t count)
+{
+	return tsm_measurement_rem_write(cfg, buf, count, 2);
+}
+
+static ssize_t tsm_measurement_rem2_write(struct config_item *cfg,
+					   const void *buf, size_t count)
+{
+	return tsm_measurement_rem_write(cfg, buf, count, 3);
+}
+
+static ssize_t tsm_measurement_rem3_write(struct config_item *cfg,
+					   const void *buf, size_t count)
+{
+	return tsm_measurement_rem_write(cfg, buf, count, 4);
+}
+
+CONFIGFS_BIN_ATTR_WO(tsm_measurement_, rem0, NULL, TSM_MEASUREMENT_MAX_SIZE);
+CONFIGFS_BIN_ATTR_WO(tsm_measurement_, rem1, NULL, TSM_MEASUREMENT_MAX_SIZE);
+CONFIGFS_BIN_ATTR_WO(tsm_measurement_, rem2, NULL, TSM_MEASUREMENT_MAX_SIZE);
+CONFIGFS_BIN_ATTR_WO(tsm_measurement_, rem3, NULL, TSM_MEASUREMENT_MAX_SIZE);
+
+static struct configfs_bin_attribute *tsm_measurement_bin_attrs[] = {
+	&tsm_measurement_attr_rem0,
+	&tsm_measurement_attr_rem1,
+	&tsm_measurement_attr_rem2,
+	&tsm_measurement_attr_rem3,
+	NULL,
+};
+
+static void tsm_measurement_item_release(struct config_item *cfg)
+{
+	struct tsm_measurement_state *state = to_tsm_measurement_state(cfg);
+
+	kfree(state);
+}
+
+static struct configfs_item_operations tsm_measurement_item_ops = {
+	.release = tsm_measurement_item_release,
+};
+
+static const struct config_item_type tsm_measurement_type = {
+	.ct_owner = THIS_MODULE,
+	.ct_bin_attrs = tsm_measurement_bin_attrs,
+	.ct_item_ops = &tsm_measurement_item_ops,
+};
+
+static struct config_item *tsm_measurement_make_item(struct config_group *group,
+						     const char *name)
+{
+	struct tsm_measurement_state *state;
+
+	guard(rwsem_read)(&tsm_rwsem);
+	if (!provider.ops)
+		return ERR_PTR(-ENXIO);
+
+	state = kzalloc(sizeof(*state), GFP_KERNEL);
+	if (!state)
+		return ERR_PTR(-ENOMEM);
+
+	atomic_inc(&provider.count);
+	config_item_init_type_name(&state->cfg, name, &tsm_measurement_type);
+	return &state->cfg;
+}
+
+static void tsm_measurement_drop_item(struct config_group *group,
+				      struct config_item *item)
+{
+	config_item_put(item);
+	atomic_dec(&provider.count);
+}
+
+static struct configfs_group_operations tsm_measurement_group_ops = {
+	.make_item = tsm_measurement_make_item,
+	.drop_item = tsm_measurement_drop_item,
+};
+
+static const struct config_item_type tsm_measurements_type = {
+	.ct_owner = THIS_MODULE,
+	.ct_group_ops = &tsm_measurement_group_ops,
+};
+#endif
+
 static struct config_item *tsm_report_make_item(struct config_group *group,
 						const char *name)
 {
@@ -417,6 +546,9 @@ int tsm_unregister(const struct tsm_ops *ops)
 EXPORT_SYMBOL_GPL(tsm_unregister);
 
 static struct config_group *tsm_report_group;
+#ifdef CONFIG_HISI_CCA
+static struct config_group *tsm_measurement_group;
+#endif
 
 static int __init tsm_init(void)
 {
@@ -437,12 +569,26 @@ static int __init tsm_init(void)
 	}
 	tsm_report_group = tsm;
 
+#ifdef CONFIG_HISI_CCA
+	tsm = configfs_register_default_group(root, "measurement",
+					      &tsm_measurements_type);
+	if (IS_ERR(tsm))
+		pr_err("Failed to register measurement configfs group: %ld\n",
+		       PTR_ERR(tsm));
+	else
+		tsm_measurement_group = tsm;
+#endif
+
 	return 0;
 }
 module_init(tsm_init);
 
 static void __exit tsm_exit(void)
 {
+#ifdef CONFIG_HISI_CCA
+	if (tsm_measurement_group)
+		configfs_unregister_default_group(tsm_measurement_group);
+#endif
 	configfs_unregister_default_group(tsm_report_group);
 	configfs_unregister_subsystem(&tsm_configfs);
 }

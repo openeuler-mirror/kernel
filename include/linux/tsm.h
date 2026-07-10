@@ -7,6 +7,9 @@
 
 #define TSM_INBLOB_MAX 64
 #define TSM_OUTBLOB_MAX SZ_32K
+#ifdef CONFIG_HISI_CCA
+#define TSM_MEASUREMENT_MAX_SIZE 64
+#endif
 
 /*
  * Privilege level is a nested permission concept to allow confidential
@@ -42,6 +45,14 @@ struct tsm_report {
 	u8 *auxblob;
 };
 
+#ifdef CONFIG_HISI_CCA
+struct tsm_measurement {
+	unsigned int index;
+	size_t value_len;
+	u8 value[TSM_MEASUREMENT_MAX_SIZE];
+};
+#endif
+
 /**
  * struct tsm_ops - attributes and operations for tsm instances
  * @name: tsm id reflected in /sys/kernel/config/tsm/report/$report/provider
@@ -56,6 +67,9 @@ struct tsm_ops {
 	const char *name;
 	const unsigned int privlevel_floor;
 	int (*report_new)(struct tsm_report *report, void *data);
+#ifdef CONFIG_HISI_CCA
+	int (*measurement_extend)(struct tsm_measurement *measurement, void *data);
+#endif
 };
 
 extern const struct config_item_type tsm_report_default_type;
