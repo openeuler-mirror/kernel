@@ -1,0 +1,338 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/* Copyright (c) 2023 - 2024 ZTE Corporation */
+
+#ifndef _DPP_PPU_API_H_
+#define _DPP_PPU_API_H_
+
+#if ZXIC_REAL("header file")
+#include "dpp_module.h"
+
+#endif
+
+#if ZXIC_REAL("data struct define")
+
+/** mcode version time */
+struct dpp_version_t {
+	u32 version_a; /**<  @brief expr_a*/
+	u32 version_b; /**<  @brief expr_b*/
+	u32 version_c; /**<  @brief xpr_c*/
+
+	u32 year;
+	u32 month;
+	u32 day;
+	u32 hour;
+};
+
+struct dpp_sdt_tbl_data_t {
+	u32 data_high32;
+	u32 data_low32;
+};
+
+#endif
+
+#if ZXIC_REAL("interrupt data struct define")
+
+struct dpp_ppu_ram_parity_err_t {
+	u32 instrmem2_bank3_parity_err;
+	u32 instrmem2_bank2_parity_err;
+	u32 instrmem2_bank1_parity_err;
+	u32 instrmem2_bank0_parity_err;
+	u32 instrmem1_bank3_parity_err;
+	u32 instrmem1_bank2_parity_err;
+	u32 instrmem1_bank1_parity_err;
+	u32 instrmem1_bank0_parity_err;
+	u32 instrmem0_bank3_parity_err;
+	u32 instrmem0_bank2_parity_err;
+	u32 instrmem0_bank1_parity_err;
+	u32 instrmem0_bank0_parity_err;
+};
+
+struct dpp_ppu_me_interrupt_t {
+	u32 me7_interrupt_mask;
+	u32 me6_interrupt_mask;
+	u32 me5_interrupt_mask;
+	u32 me4_interrupt_mask;
+	u32 me3_interrupt_mask;
+	u32 me2_interrupt_mask;
+	u32 me1_interrupt_mask;
+	u32 me0_interrupt_mask;
+};
+
+struct dpp_ppu_cluster_600m_mex_fifo_int_t {
+	u32 ppu_se_ikey_afifo_underflow;
+	u32 ppu_se_ekey_afifo_underflow;
+	u32 ppu_sta_key_afifo_underflow;
+	u32 ppu_cluster_mf_in_overflow;
+	u32 ppu_ese_rsp_afifo_overflow;
+	u32 ppu_ise_rsp_afifo_overflow;
+	u32 ppu_sta_rsp_afifo_overflow;
+};
+
+struct dpp_ppu_cluster_1200m_mex_fifo_int_t {
+	u32 ppu_se_key_afifo_32x54_wrapper_overflow_flag;
+	u32 ppu_se_key_afifo_32x665_wrapper_overflow_flag;
+	u32 ppu_sta_key_afifo_32x110_wrapper_overflow_flag;
+	u32 ppu_cluster_mf_in_afifo_16x2048_wrapper_underflow_flag;
+	u32 ppu_pbu_mcode_pf_rsp_fifo_32x13_wrapper_overflow_flag;
+	u32 ppu_pbu_mcode_pf_rsp_fifo_32x13_wrapper_underflow_flag;
+	u32 ppu_coprocess_rsp_fifo_32x77_wrapper_overflow_flag;
+	u32 ppu_coprocess_rsp_fifo_32x77_wrapper_underflow_flag;
+	u32 ppu_coprocess_rsp_fwft_fifo_128x78_wrapper_overflow_flag;
+	u32 ppu_coprocess_rsp_fwft_fifo_128x78_wrapper_underflow_flag;
+	u32 ppu_ese_rsp_afifo_64x271_wrapper_u0_underflow_flag;
+
+	u32 ese_rsp_ram_free_ptr_u0_overflow_flag;
+	u32 ese_rsp_ram_free_ptr_u0_underflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u0_overflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u0_underflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u1_overflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u1_underflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u2_overflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u2_underflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u3_overflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u3_underflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u4_overflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u4_underflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u5_overflow_flag;
+	u32 ppu_ese_rsp_ptr_fwft_fifo_128x7_wrapper_u5_underflow_flag;
+	u32 ppu_ise_rsp_afifo_64x143_wrapper_u0_underflow_flag;
+	u32 ise_rsp_ram_free_ptr_u0_overflow_flag;
+	u32 ise_rsp_ram_free_ptr_u0_underflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u0_overflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u0_underflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u1_overflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u1_underflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u2_overflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u2_underflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u3_overflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u3_underflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u4_overflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u4_underflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u5_overflow_flag;
+	u32 ppu_ise_rsp_ptr_fwft_fifo_128x7_wrapper_u5_underflow_flag;
+	u32 ppu_sta_rsp_afifo_64x79_wrapper_underflow_flag;
+	u32 ppu_sta_rsp_fwft_fifo_128x79_wrapper_overflow_flag;
+	u32 ppu_sta_rsp_fwft_fifo_128x79_wrapper_underflow_flag;
+};
+
+struct dpp_ppu_ppu_ram_err_t {
+	u32 dup_freeptr_fwft_fifo_128x7_wrapper_u0_parity_err_flag;
+	u32 free_global_num_fwft_fifo_8192x13_wrapper_u0_parity_err_flag;
+	u32 ppu_mccnt_fifo_32x15_wrapper_u0_parity_err_flag;
+	u32 ppu_reorder_link_table_ram_1r1w_8192x13_wrapper_u1_parity_err_flag;
+	u32 ppu_reorder_link_table_ram_1r1w_8192x13_wrapper_u0_parity_err_flag;
+};
+
+struct dpp_ppu_cls_ram_err_600m_t {
+	u32 ppu_sdt_table_ram_2rw_256x64_wrapper_parity_errb_flag;
+	u32 ppu_sdt_table_ram_2rw_256x64_wrapper_parity_erra_flag;
+};
+
+struct dpp_ppu_cluster_me_fifo_int_t {
+	u32 me_except_refetch_pc_overflow_flag;
+	u32 me_except_refetch_pc_underflow_flag;
+
+	u32 me_free_pkt_q_overflow_flag;
+	u32 me_free_pkt_q_underflow_flag;
+	u32 me_free_thread_q_overflow_flag;
+	u32 me_free_thread_q_underflow_flag;
+	u32 me_pkt_in_overflow_flag;
+	u32 me_pkt_in_underflow_flag;
+	u32 me_rdy_q_overflow_flag;
+	u32 me_rdy_q_underflow_flag;
+	u32 me_pkt_out_q_overflow_flag;
+	u32 me_pkt_out_q_underflow_flag;
+	u32 me_continue_q_overflow_flag;
+	u32 me_continue_q_underflow_flag;
+	u32 me_esrh_q_overflow_flag;
+	u32 me_esrh_q_underflow_flag;
+	u32 me_isrh_q_overflow_flag;
+	u32 me_isrh_q_underflow_flag;
+	u32 me_cache_miss_q_overflow_flag;
+	u32 me_cache_miss_q_underflow_flag;
+	u32 me_base_q_u0_overflow_flag;
+	u32 me_base_q_u0_underflow_flag;
+	u32 me_base_q_u1_overflow_flag;
+	u32 me_base_q_u1_underflow_flag;
+	u32 me_base_q_u2_overflow_flag;
+	u32 me_base_q_u2_underflow_flag;
+	u32 me_base_q_u3_overflow_flag;
+	u32 me_base_q_u3_underflow_flag;
+	u32 me_reg_pc_q_overflow_flag;
+	u32 me_reg_pc_q_underflow_flag;
+	u32 me_branch_q_overflow_flag;
+	u32 me_branch_q_underflow_flag;
+	u32 me_pkt_base_q_overflow_flag;
+	u32 me_pkt_base_q_underflow_flag;
+};
+
+struct dpp_ppu_ppu_isu_ppu_demux_fifo_int_t {
+	u32 isu_in_para_fwft_fifo_32x81_wrapper_u0_overflow_flag;
+	u32 isu_in_para_fwft_fifo_32x81_wrapper_u0_underflow_flag;
+	u32 isu_in_fifo_64x81_wrapper_u0_overflow_flag;
+	u32 isu_in_fifo_64x81_wrapper_u0_underflow_flag;
+};
+
+struct dpp_ppu_ppu_ppu_multicast_fifo_int_t {
+	u32 pf_req_fwft_fifo_16x36_wrapper_u0_overflow_flag;
+	u32 pf_req_fwft_fifo_16x36_wrapper_u0_underflow_flag;
+	u32 pf_rsp_fwft_fifo_32x34_wrapper_u0_overflow_flag;
+	u32 pf_rsp_fwft_fifo_32x34_wrapper_u0_underflow_flag;
+	u32 dup_para_fwft_fifo_16x35_wrapper_u0_overflow_flag;
+	u32 dup_para_fwft_fifo_16x35_wrapper_u0_underflow_flag;
+	u32 se_mc_rsp_fwft_fifo_32x17_wrapper_u0_overflow_flag;
+	u32 se_mc_rsp_fwft_fifo_32x17_wrapper_u0_underflow_flag;
+	u32 sa_para_fwft_fifo_64x17_wrapper_u0_overflow_flag;
+	u32 sa_para_fwft_fifo_64x17_wrapper_u0_underflow_flag;
+	u32 group_id_fifo_64x16_wrapper_u0_overflow_flag;
+	u32 group_id_fifo_64x16_wrapper_u0_underflow_flag;
+	u32 isu_mc_para_fwft_fifo_128x34_wrapper_u0_overflow_flag;
+	u32 isu_mc_para_fwft_fifo_128x34_wrapper_u0_underflow_flag;
+	u32 dup_freeptr_fwft_fifo_128x7_wrapper_u0_overflow_flag;
+	u32 dup_freeptr_fwft_fifo_128x7_wrapper_u0_underflow_flag;
+	u32 car_flag_fifo_32x1_wrapper_overflow_flag;
+	u32 car_flag_fifo_32x1_wrapper_underflow_flag;
+};
+
+struct dpp_ppu_ppu_ppu_in_schedule_fifo_int_t {
+	u32 free_global_num_fwft_fifo_8192x13_wrapper_u0_overflow_flag;
+	u32 free_global_num_fwft_fifo_8192x13_wrapper_u0_underflow_flag;
+	u32 mc_mf_fifo_16x2048_wrapper_u0_overflow_flag;
+	u32 mc_mf_fifo_16x2048_wrapper_u0_underflow_flag;
+	u32 uc_mf_fifo_96x2048_wrapper_u0_overflow_flag;
+	u32 uc_mf_fifo_96x2048_wrapper_u0_underflow_flag;
+};
+
+struct dpp_ppu_ppu_ppu_mf_out_fifo_int_t {
+	u32 ppu_cluster5_mf_out_afifo_16x2048_wrapper_overflow_flag;
+	u32 ppu_cluster5_mf_out_afifo_16x2048_wrapper_underflow_flag;
+	u32 ppu_cluster4_mf_out_afifo_16x2048_wrapper_overflow_flag;
+	u32 ppu_cluster4_mf_out_afifo_16x2048_wrapper_underflow_flag;
+	u32 ppu_cluster3_mf_out_afifo_16x2048_wrapper_overflow_flag;
+	u32 ppu_cluster3_mf_out_afifo_16x2048_wrapper_underflow_flag;
+	u32 ppu_cluster2_mf_out_afifo_16x2048_wrapper_overflow_flag;
+	u32 ppu_cluster2_mf_out_afifo_16x2048_wrapper_underflow_flag;
+	u32 ppu_cluster1_mf_out_afifo_16x2048_wrapper_overflow_flag;
+	u32 ppu_cluster1_mf_out_afifo_16x2048_wrapper_underflow_flag;
+	u32 ppu_cluster0_mf_out_afifo_16x2048_wrapper_overflow_flag;
+	u32 ppu_cluster0_mf_out_afifo_16x2048_wrapper_underflow_flag;
+};
+
+struct dpp_ppu_ppu_pbu_mcode_pf_req_schedule_fifo_int_t {
+	u32 ppu_cluster5_pbu_mcode_pf_req_afifo_32x15_wrapper_overflow_flag;
+	u32 ppu_cluster4_pbu_mcode_pf_req_afifo_32x15_wrapper_overflow_flag;
+	u32 ppu_cluster3_pbu_mcode_pf_req_afifo_32x15_wrapper_overflow_flag;
+	u32 ppu_cluster2_pbu_mcode_pf_req_afifo_32x15_wrapper_overflow_flag;
+	u32 ppu_cluster1_pbu_mcode_pf_req_afifo_32x15_wrapper_overflow_flag;
+	u32 ppu_cluster0_pbu_mcode_pf_req_afifo_32x15_wrapper_overflow_flag;
+	u32 ppu_cluster5_pbu_mcode_pf_req_afifo_32x15_wrapper_underflow_flag;
+	u32 ppu_cluster4_pbu_mcode_pf_req_afifo_32x15_wrapper_underflow_flag;
+	u32 ppu_cluster3_pbu_mcode_pf_req_afifo_32x15_wrapper_underflow_flag;
+	u32 ppu_cluster2_pbu_mcode_pf_req_afifo_32x15_wrapper_underflow_flag;
+	u32 ppu_cluster1_pbu_mcode_pf_req_afifo_32x15_wrapper_underflow_flag;
+	u32 ppu_cluster0_pbu_mcode_pf_req_afifo_32x15_wrapper_underflow_flag;
+};
+
+struct dpp_ppu_ppu_pbu_mcode_pf_rsp_schedule_fifo_int_t {
+	u32 ppu_pbu_mcode_pf_rsp_afifo_64x16_wrapper_u0r_underflow_flag;
+	u32 ppu_pbu_mcode_pf_rsp_afifo_64x16_wrapper_u0_overflow_flag;
+};
+
+struct dpp_ppu_ppu_ppu_mccnt_fifo_int_t {
+	u32 ppu_mccnt_fifo_32x15_wrapper_u0_overflow_flag;
+	u32 ppu_mccnt_fifo_32x15_wrapper_u0_underflow_flag;
+	u32 ppu_wb_data_fifo_32x2048_wrapper_u0_overflow_flag;
+	u32 ppu_wb_data_fifo_32x2048_wrapper_u0_underflow_flag;
+	u32 mccnt_rsp_fifo_32x1_wrapper_u0_overflow_flag;
+	u32 mccnt_rsp_fifo_32x1_wrapper_u0_underflow_flag;
+};
+
+struct dpp_ppu_ppu_coprocessor_fifo_int_t {
+	u32 ppu_cop_random_mod_para_delay_fifo_48x16_wrapper_overflow_flag;
+	u32 ppu_cop_random_mod_para_delay_fifo_48x16_wrapper_underflow_flag;
+
+	u32 ppu_cop_result_fwft_fifo_80x80_wrapper_overflow_flag;
+	u32 ppu_cop_result_fwft_fifo_80x80_wrapper_underflow_flag;
+	u32 ppu_cop_delay_fifo_48x16_wrapper_overflow_flag;
+	u32 ppu_cop_delay_fifo_48x16_wrapper_underflow_flag;
+	u32 ppu_cop_delay_fifo_16x48_wrapper_overflow_flag;
+	u32 ppu_cop_delay_fifo_16x48_wrapper_underflow_flag;
+	u32 ppu_cop_delay_fifo_16x32_wrapper_overflow_flag;
+	u32 ppu_cop_delay_fifo_16x32_wrapper_underflow_flag;
+	u32 ppu_cop_result_fwft_fifo_96x80_wrapper_overflow_flag;
+	u32 ppu_cop_result_fwft_fifo_96x80_wrapper_underflow_flag;
+	u32 ppu_cop_delay_fifo_16x16_wrapper_overflow_flag;
+	u32 ppu_cop_delay_fifo_16x16_wrapper_underflow_flag;
+	u32 ppu_cop_result_fwft_fifo_32x80_wrapper_overflow_flag;
+	u32 ppu_cop_result_fwft_fifo_32x80_wrapper_underflow_flag;
+	u32 ppu_cop_result_fwft_fifo_16x80_wrapper_overflow_flag;
+	u32 ppu_cop_result_fwft_fifo_16x80_wrapper_underflow_flag;
+	u32 mec5_cop_key_crc_fifo_32x625_wrapper_overflow_flag;
+	u32 mec5_cop_key_crc_fifo_32x625_wrapper_underflow_flag;
+	u32 mec5_cop_key_checksum_fifo_32x180_wrapper_overflow_flag;
+	u32 mec5_cop_key_checksum_fifo_32x180_wrapper_underflow_flag;
+	u32 mec5_cop_key_mul_fifo_32x52_wrapper_overflow_flag;
+	u32 mec5_cop_key_mul_fifo_32x52_wrapper_underflow_flag;
+	u32 mec5_cop_key_random_mod_fifo_32x44_wrapper_overflow_flag;
+	u32 mec5_cop_key_random_mod_fifo_32x44_wrapper_underflow_flag;
+	u32 mec4_cop_key_crc_fifo_32x625_wrapper_overflow_flag;
+	u32 mec4_cop_key_crc_fifo_32x625_wrapper_underflow_flag;
+	u32 mec4_cop_key_checksum_fifo_32x180_wrapper_overflow_flag;
+	u32 mec4_cop_key_checksum_fifo_32x180_wrapper_underflow_flag;
+	u32 mec4_cop_key_mul_fifo_32x52_wrapper_overflow_flag;
+	u32 mec4_cop_key_mul_fifo_32x52_wrapper_underflow_flag;
+	u32 mec4_cop_key_random_mod_fifo_32x44_wrapper_overflow_flag;
+	u32 mec4_cop_key_random_mod_fifo_32x44_wrapper_underflow_flag;
+
+	u32 mec3_cop_key_crc_fifo_32x625_wrapper_overflow_flag;
+	u32 mec3_cop_key_crc_fifo_32x625_wrapper_underflow_flag;
+	u32 mec3_cop_key_checksum_fifo_32x180_wrapper_overflow_flag;
+	u32 mec3_cop_key_checksum_fifo_32x180_wrapper_underflow_flag;
+	u32 mec3_cop_key_mul_fifo_32x52_wrapper_overflow_flag;
+	u32 mec3_cop_key_mul_fifo_32x52_wrapper_underflow_flag;
+	u32 mec3_cop_key_random_mod_fifo_32x44_wrapper_overflow_flag;
+	u32 mec3_cop_key_random_mod_fifo_32x44_wrapper_underflow_flag;
+	u32 mec2_cop_key_crc_fifo_32x625_wrapper_overflow_flag;
+	u32 mec2_cop_key_crc_fifo_32x625_wrapper_underflow_flag;
+	u32 mec2_cop_key_checksum_fifo_32x180_wrapper_overflow_flag;
+	u32 mec2_cop_key_checksum_fifo_32x180_wrapper_underflow_flag;
+	u32 mec2_cop_key_mul_fifo_32x52_wrapper_overflow_flag;
+	u32 mec2_cop_key_mul_fifo_32x52_wrapper_underflow_flag;
+	u32 mec2_cop_key_random_mod_fifo_32x44_wrapper_overflow_flag;
+	u32 mec2_cop_key_random_mod_fifo_32x44_wrapper_underflow_flag;
+	u32 mec1_cop_key_crc_fifo_32x625_wrapper_overflow_flag;
+	u32 mec1_cop_key_crc_fifo_32x625_wrapper_underflow_flag;
+	u32 mec1_cop_key_checksum_fifo_32x180_wrapper_overflow_flag;
+	u32 mec1_cop_key_checksum_fifo_32x180_wrapper_underflow_flag;
+	u32 mec1_cop_key_mul_fifo_32x52_wrapper_overflow_flag;
+	u32 mec1_cop_key_mul_fifo_32x52_wrapper_underflow_flag;
+	u32 mec1_cop_key_random_mod_fifo_32x44_wrapper_overflow_flag;
+	u32 mec1_cop_key_random_mod_fifo_32x44_wrapper_underflow_flag;
+	u32 mec0_cop_key_crc_fifo_32x625_wrapper_overflow_flag;
+	u32 mec0_cop_key_crc_fifo_32x625_wrapper_underflow_flag;
+	u32 mec0_cop_key_checksum_fifo_32x180_wrapper_overflow_flag;
+	u32 mec0_cop_key_checksum_fifo_32x180_wrapper_underflow_flag;
+	u32 mec0_cop_key_mul_fifo_32x52_wrapper_overflow_flag;
+	u32 mec0_cop_key_mul_fifo_32x52_wrapper_underflow_flag;
+	u32 mec0_cop_key_random_mod_fifo_32x44_wrapper_overflow_flag;
+	u32 mec0_cop_key_random_mod_fifo_32x44_wrapper_underflow_flag;
+};
+
+struct dpp_ppu_ppu_cos_meter_cfg_t {
+	u32 cbs;
+	u32 pbs;
+	u32 green_action;
+	u32 yellow_action;
+	u32 red_action;
+	u32 cir;
+	u32 pir;
+	u32 car_en;
+};
+
+#endif
+DPP_STATUS dpp_ppu_sdt_tbl_write(struct dpp_dev_t *dev, u32 cluster_id, u32 index,
+				 struct dpp_sdt_tbl_data_t *p_sdt_data);
+
+DPP_STATUS dpp_ppu_set_debug_mode(struct dpp_pf_info_t *pf_info, u32 *dbg_status);
+DPP_STATUS dpp_ppu_close_debug_mode(struct dpp_pf_info_t *pf_info);
+#endif /* dpp_ppu_api.h */
