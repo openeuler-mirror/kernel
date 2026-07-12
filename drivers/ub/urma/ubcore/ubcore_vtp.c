@@ -1254,7 +1254,7 @@ int ubcore_delete_vtpn_for_tpid(struct ubcore_vtpn *vtpn)
 EXPORT_SYMBOL(ubcore_delete_vtpn_for_tpid);
 
 // Allocate a vtpn keyed by tp_handle, used by uburma_cmd_get_tp_list.
-struct ubcore_vtpn *ubcore_create_vtpn_for_tpid(struct ubcore_device *dev,
+struct ubcore_vtpn *ubcore_create_add_vtpn_for_tpid(struct ubcore_device *dev,
 						  uint64_t tp_handle)
 {
 	struct ubcore_active_tp_cfg active_tp_cfg = { 0 };
@@ -1269,16 +1269,19 @@ struct ubcore_vtpn *ubcore_create_vtpn_for_tpid(struct ubcore_device *dev,
 		a newly created tpid, and there is no concurrency.*/
 	vtpn = ubcore_create_vtpn(dev, &vtp_param, &active_tp_cfg, NULL);
 	if (vtpn == NULL) {
-		ubcore_log_err("failed to alloc vtpn for tpid.\n");
+		ubcore_log_err_rl("failed to alloc vtpn for tpid.\n");
+		(void)ubcore_delete_tpid_priv(dev, active_tp_cfg.tp_handle.bs.tpid);
 		return NULL;
 	}
-	vtpn->vtpn = (uint32_t)active_tp_cfg.tp_handle.bs.tpid;
 
 	ret = ubcore_find_add_vtpn_ctrlplane(dev, vtpn, &exist_vtpn);
 	if (ret != 0) {
-		ubcore_log_err("VTPN is already exist in add ht table in add tpid_uobj.\n");
-		// each process must be a new tpid, if exist in VTPN table, is error.
+		/* Each tpid is unique; finding a duplicate is bug. */
+		ubcore_log_err_rl("VTPN already exists in HT for tp_handle: %llu.\n",
+				  tp_handle);
+		/* ubcore_free_vtpn_ctrlplane deletes the tpid and frees vtpn. */
 		(void)ubcore_free_vtpn_ctrlplane(vtpn);
+		// kref_put but exist_vtpn will not be free. leak.
 		ubcore_vtpn_kref_put(exist_vtpn);
 		return NULL;
 	}
@@ -1286,7 +1289,6 @@ struct ubcore_vtpn *ubcore_create_vtpn_for_tpid(struct ubcore_device *dev,
 	atomic_inc(&vtpn->use_cnt);
 	return vtpn;
 }
-EXPORT_SYMBOL(ubcore_create_vtpn_for_tpid);
 
 struct ubcore_vtpn *
 	ubcore_connect_vtp_ctrlplane(struct ubcore_device *dev,
@@ -1300,7 +1302,7 @@ struct ubcore_vtpn *
 		.active_cfg = active_tp_cfg,
 	};
 
-	// 1. find get vtpn, must be created in uburma_cmd_get_tp_list.
+	// 1. find get vtpn, must be created in ubcore_get_tp_list.
 	vtpn = ubcore_find_get_vtpn_ctrlplane(dev, active_tp_cfg);
 	if (vtpn == NULL) {
 		ubcore_log_err_rl("VTPN not found in ht table.\n");
