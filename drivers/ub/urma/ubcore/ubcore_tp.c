@@ -26,6 +26,7 @@
 #include "ubcore_log.h"
 #include "ubcore_dmac.h"
 #include "ubcore_hash_table.h"
+#include "ubcore_vtp.h"
 
 int ubcore_check_tp_type_valid(enum ubcore_transport_mode trans_mode, uint32_t tp_mode)
 {
@@ -389,6 +390,28 @@ int ubcore_get_tp_list(struct ubcore_device *dev, struct ubcore_get_tp_cfg *cfg,
 		}
 		tp_list[idx].tp_handle.value = tp_handle.value;
 		actual_total_tp_cnt++;
+
+		/* Create vtpn. Ownership of vtpn depends on lifecycle stage:
+		    - Before import: tpid_uobj destructor (uburma_free_tpid_uobj) calls
+		      ubcore_delete_vtpn_for_tpid() on abnormal exit, freeing both.
+		    - After import: tpid_uobj is released; tjetty_uobj takes over and
+		      free vtpn on abnormal exit.
+		    - Normal exit: unimport disconnects and frees the vtpn.
+		*/
+		if (ubcore_create_add_vtpn_for_tpid(dev, tp_handle.value) == NULL) {
+			ubcore_log_err_rl(
+				"Failed to create vtpn for tp_handle: %llu in get tp list.\n",
+				tp_handle.value);
+			/* delete_tpid is inside ubcore_create_add_vtpn_for_tpid */
+			actual_total_tp_cnt--;
+			if (actual_total_tp_cnt > 0) {
+				ubcore_log_err_rl(
+					"vtpn creation failed, early end, actual_total_tp_cnt: %d.\n",
+					actual_total_tp_cnt);
+				goto success;
+			}
+			return -ENOMEM;
+		}
 	}
 
 success:
