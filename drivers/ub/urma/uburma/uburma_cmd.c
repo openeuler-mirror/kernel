@@ -4845,9 +4845,11 @@ static int uburma_cmd_get_tp_list(struct ubcore_device *ubc_dev,
 		goto free_tp_list;
 	}
 
-	/* For each tp_handle, create a vtpn and attach a tpid uobj to it.
-	   The uobj owns one use_cnt on the vtpn. Only after all uobjs are
-	   committed successfully, copy tp_list to userspace. */
+	/*	For each tp_handle returned by ubcore_get_tp_list, look up the vtpn it
+		already created and bind a tpid_uobj to it for process-lifetime tracking.
+		The uobj owns one use_cnt on the vtpn. Only after all uobjs are
+		committed successfully, copy tp_list to userspace.
+	*/
 	for (i = 0; i < tp_cnt; i++) {
 		uobj = uobj_alloc(UOBJ_CLASS_TPID, file);
 		if (IS_ERR(uobj)) {
@@ -4856,18 +4858,20 @@ static int uburma_cmd_get_tp_list(struct ubcore_device *ubc_dev,
 			goto rollback_tp_uobjs;
 		}
 
-		vtpn = ubcore_create_vtpn_for_tpid(ubc_dev,
-						     tp_list[i].tp_handle.value);
+		vtpn = ubcore_find_get_vtpn_by_tp_handle(ubc_dev,
+							   tp_list[i].tp_handle.value);
 		if (vtpn == NULL) {
-			uburma_log_err("Failed to find/add vtpn for tp_handle.\n");
+			uburma_log_err("Failed to find vtpn for tp_handle, tphdl:%llu.\n",
+						tp_list[i].tp_handle.value);
 			uobj_alloc_abort(uobj);
-			ret = -ENOMEM;
+			ret = -ENOENT;
 			goto rollback_tp_uobjs;
 		}
 
 		uobj->object = vtpn;
 		vtpn->tpid_uobj_id = (uint64_t)uobj->id;
 		uobj_alloc_commit(uobj);
+		ubcore_put_vtpn_for_tpid(vtpn);
 	}
 
 	arg->out.tp_cnt = tp_cnt;
@@ -4884,8 +4888,11 @@ rollback_tp_uobjs:
 	for (j = 0; j < i; j++) {
 		rb_vtpn = ubcore_find_get_vtpn_by_tp_handle(ubc_dev,
 							    tp_list[j].tp_handle.value);
-		if (rb_vtpn == NULL)
+		if (rb_vtpn == NULL) {
+			uburma_log_err_rl("vtpn not found during rollback1, tphal:%llu.\n",
+							tp_list[j].tp_handle.value);
 			continue;
+		}
 		tpid_uobj = uobj_get_del(UOBJ_CLASS_TPID,
 					 rb_vtpn->tpid_uobj_id, file);
 		ubcore_put_vtpn_for_tpid(rb_vtpn);
@@ -4895,10 +4902,18 @@ rollback_tp_uobjs:
 			uobj_put_del(tpid_uobj);
 		}
 	}
-	// delete_tpid for uncommitted uobj
-	for (k = i; k < tp_cnt; k++)
-		(void)ubcore_delete_tpid_for_uobj(ubc_dev,
-						   tp_list[k].tp_handle.value);
+	// delete vtpn for uncommitted entries
+	for (k = i; k < tp_cnt; k++) {
+		rb_vtpn = ubcore_find_get_vtpn_by_tp_handle(ubc_dev,
+							    tp_list[k].tp_handle.value);
+		if (rb_vtpn == NULL) {
+			uburma_log_err_rl("vtpn not found during rollback2, tphal:%llu.\n",
+							tp_list[k].tp_handle.value);
+			continue;
+		}
+		ubcore_put_vtpn_for_tpid(rb_vtpn);
+		(void)ubcore_delete_vtpn_for_tpid(rb_vtpn);
+	}
 free_tp_list:
 	kfree(tp_list);
 free_arg:
