@@ -955,18 +955,6 @@ struct ubcore_tpid *ubcore_create_tpid(struct ubcore_device *dev,
 	struct ubcore_tpid_cfg *cfg, struct ubcore_udata *udata);
 
 /**
- * find or add a vtpn keyed by tp_handle in the control-plane vtpn table,
- * used by uburma_get_tp_list to create tpid uobj.
- * @param[in] dev: ubcore device pointer;
- * @param[in] tp_handle: tp_handle obtained from ubcore_get_tp_list;
- * @return: vtpn pointer (with a kref taken) on success, NULL on failure.
- *          If a vtpn with the same tp_handle already exists, it is returned
- *          (and kref-get) instead of creating a new one.
- */
-struct ubcore_vtpn *ubcore_create_vtpn_for_tpid(struct ubcore_device *dev,
-						  uint64_t tp_handle);
-
-/**
  * find an existing vtpn by tp_handle and take a kref on it. used by uburma.
  * @param[in] dev: ubcore device pointer;
  * @param[in] tp_handle: tp_handle obtained from ubcore_get_tp_list;
@@ -977,8 +965,8 @@ struct ubcore_vtpn *ubcore_find_get_vtpn_by_tp_handle(struct ubcore_device *dev,
 						      uint64_t tp_handle);
 
 /**
- * drop a kref taken by ubcore_find_get_vtpn_by_tp_handle() or
- * ubcore_create_vtpn_for_tpid(). The vtpn is not freed here.
+ * drop a kref taken by ubcore_find_get_vtpn_by_tp_handle().
+ * The vtpn is not freed here.
  * @param[in] vtpn: vtpn pointer returned by the find functions above;
  */
 void ubcore_put_vtpn_for_tpid(struct ubcore_vtpn *vtpn);
