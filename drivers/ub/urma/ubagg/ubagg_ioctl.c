@@ -1491,7 +1491,7 @@ static int ubagg_cmd_set_topo_info(struct ubagg_cmd_hdr *hdr)
 
 	print_topo_map(topo_map);
 
-	ubagg_log_notice("Finish to set topo info, node_num: %u.\n",
+	ubagg_log_notice_rl("Finish to set topo info, node_num: %u.\n",
 		topo_map->node_num);
 
 	return 0;
