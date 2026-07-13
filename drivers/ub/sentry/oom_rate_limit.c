@@ -11,9 +11,10 @@
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/jiffies.h>
+#include <uapi/ub/sentry/smh_common_type.h>
 
 #include "oom_rate_limit.h"
-#include "smh_common_type.h"
+
 
 #undef pr_fmt
 #define pr_fmt(fmt) "[sentry][oom_limit]: " fmt

@@ -7,6 +7,7 @@
  * Create: 2025-02-17
  */
 
+#include <ub/ubus/ub-mem-decoder.h>
 #include <ub/ubus/ubus.h>
 #include <acpi/button.h>
 #include <linux/module.h>
@@ -21,6 +22,7 @@
 
 #include "smh_message.h"
 #include "oom_rate_limit.h"
+#include "sentry_report_comm.h"
 
 #define REBOOT_RESULT_SUCCESS	0
 #define MAX_TIMEOUT		3600000

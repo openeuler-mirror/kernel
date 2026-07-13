@@ -22,8 +22,10 @@
 #include <linux/mutex.h>
 #include <ub/urma/ubcore_api.h>
 #include <ub/urma/ubcore_uapi.h>
+#include <uapi/ub/sentry/smh_common_type.h>
 
-#include "smh_common_type.h"
+#include "sentry_remote_reporter.h"
+#include "sentry_report_comm.h"
 
 static int heartbeat_thread(void *arg);
 static int rebuild_tjetty(int idx, int die_index);

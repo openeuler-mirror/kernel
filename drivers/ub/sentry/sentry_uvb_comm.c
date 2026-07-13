@@ -14,6 +14,7 @@
 
 #include "smh_message.h"
 #include "sentry_remote_reporter.h"
+#include "sentry_report_comm.h"
 
 #undef pr_fmt
 #define pr_fmt(fmt) "[sentry][uvb]: " fmt

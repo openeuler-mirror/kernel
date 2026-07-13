@@ -27,6 +27,7 @@
 
 #include "smh_message.h"
 #include "sentry_remote_reporter.h"
+#include "sentry_report_comm.h"
 
 #define PANIC_TIMEOUT_MS_MIN		0
 #define PANIC_TIMEOUT_MS_MAX		3600000

@@ -23,11 +23,13 @@
 
 #include "smh_message.h"
 #include "sentry_remote_reporter.h"
+#include "sentry_report_comm.h"
 
 #undef pr_fmt
 #define pr_fmt(fmt) "[sentry][remote server]: " fmt
 
 #define RECV_THREAD_MILLISECONDS 10
+#define URMA_ACK_RETRY_NUM     10
 
 struct sentry_remote_context sentry_remote_ctx;
 DEFINE_SPINLOCK(sentry_buf_lock);
