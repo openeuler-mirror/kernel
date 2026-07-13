@@ -1034,6 +1034,7 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 {
 	struct ubcore_device *dev;
 	struct ubcore_jfc *jfc;
+	uint32_t eid_index;
 	uint32_t jfs_id;
 	int ret;
 	uint32_t perf_delete_jfs_type;
@@ -1054,6 +1055,7 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 
 	jfc = jfs->jfs_cfg.jfc;
 	jfs_id = jfs->jfs_id.id;
+	eid_index = jfs->jfs_cfg.eid_index;
 	dev = jfs->ub_dev;
 
 	if (ubcore_is_bonding_dev(dev))
@@ -1073,13 +1075,13 @@ int ubcore_delete_jfs(struct ubcore_jfs *jfs)
 	UBCORE_PERF_TRACE_END(perf_delete_jfs_type);
 	if (ret != 0) {
 		ubcore_log_err("[DRV] Failed to destroy jfs, dev_name: %s, eid_idx: %u, jfs_id: %u.\n",
-			dev->dev_name, jfs->jfs_cfg.eid_index, jfs_id);
+			dev->dev_name, eid_index, jfs_id);
 		kref_init(&jfs->ref_cnt);
 		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFS);
 		return ret;
 	}
 	ubcore_log_info("[JFS DELETE] Delete jfs: dev_name: %s, eid_idx: %u, jfs_id: %u.\n",
-		dev->dev_name, jfs->jfs_cfg.eid_index, jfs_id);
+		dev->dev_name, eid_index, jfs_id);
 	atomic_dec(&jfc->use_cnt);
 	UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JFS);
 	return ret;
@@ -2764,6 +2766,7 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	struct ubcore_jfc *recv_jfc;
 	struct ubcore_device *dev;
 	struct ubcore_jfr *jfr;
+	uint32_t eid_index;
 	uint32_t jetty_id;
 	int ret;
 	uint32_t perf_delete_jetty_record_type;
@@ -2786,6 +2789,7 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	recv_jfc = jetty->jetty_cfg.recv_jfc;
 	jfr = jetty->jetty_cfg.jfr;
 	jetty_id = jetty->jetty_id.id;
+	eid_index = jetty->jetty_cfg.eid_index;
 	dev = jetty->ub_dev;
 
 	if (ubcore_is_bonding_dev(dev))
@@ -2822,7 +2826,7 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 	UBCORE_PERF_TRACE_END(perf_delete_jetty_record_type);
 	if (ret != 0) {
 		ubcore_log_err("[DRV]failed to destroy jetty, id: %u, dev_name: %s, eid_idx: %u, ret: %d.\n",
-			jetty_id, dev->dev_name, jetty->jetty_cfg.eid_index, ret);
+			jetty_id, dev->dev_name, eid_index, ret);
 		kref_init(&jetty->ref_cnt);
 		UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JETTY);
 		return ret;
@@ -2836,7 +2840,7 @@ int ubcore_delete_jetty(struct ubcore_jetty *jetty)
 		atomic_dec(&jfr->use_cnt);
 
 	ubcore_log_info("[JETTY DELETE] Delete JETTY: id: %u, dev_name: %s, eid_idx: %u.\n",
-		jetty_id, dev->dev_name, jetty->jetty_cfg.eid_index);
+		jetty_id, dev->dev_name, eid_index);
 
 	UBCORE_PERF_TRACE_END(PERF_CORE_DELETE_JETTY);
 	return ret;
