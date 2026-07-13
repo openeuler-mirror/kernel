@@ -1810,8 +1810,12 @@ struct ubcore_tjetty *ubcore_import_jfr(struct ubcore_device *dev,
 	UBCORE_PERF_TRACE_END(PERF_AGG_IMPORT_JFR);
 
 	if (IS_ERR_OR_NULL(tjfr)) {
-		ubcore_log_err("Failed to import jfr, dev_name is %s,jfr_id:%u.\n",
-			dev->dev_name, cfg->id.id);
+		if (ubcore_is_bonding_dev(dev))
+			ubcore_log_err_rl("Failed to import jfr, dev_name is %s,jfr_id:%u.\n",
+				dev->dev_name, cfg->id.id);
+		else
+			ubcore_log_err("[DRV]Failed to import jfr, dev_name is %s,jfr_id:%u.\n",
+				dev->dev_name, cfg->id.id);
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JFR);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjfr, UBCORE_DRV_ERRNO);
 	}
@@ -3038,8 +3042,12 @@ struct ubcore_tjetty *ubcore_import_jetty(struct ubcore_device *dev,
 	UBCORE_PERF_TRACE_END(PERF_AGG_IMPORT_JETTY);
 
 	if (IS_ERR_OR_NULL(tjetty)) {
-		ubcore_log_err("[DRV] failed to import jetty,dev_name: %s, eid_idx: %u, jetty_id: %u.\n",
-			       dev->dev_name, cfg->eid_index, cfg->id.id);
+		if (ubcore_is_bonding_dev(dev))
+			ubcore_log_err_rl("Failed to import jetty, dev: %s, eid_idx: %u, id: %u.\n",
+				dev->dev_name, cfg->eid_index, cfg->id.id);
+		else
+			ubcore_log_err("[DRV]Failed to import jetty, dev: %s, eid_idx: %u, id: %u.\n",
+				dev->dev_name, cfg->eid_index, cfg->id.id);
 		UBCORE_PERF_TRACE_END(PERF_CORE_IMPORT_JETTY);
 		return UBCORE_CHECK_RETURN_ERR_PTR(tjetty, UBCORE_DRV_ERRNO);
 	}
