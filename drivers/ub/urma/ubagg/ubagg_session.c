@@ -85,7 +85,7 @@ static void ubagg_session_timeout(struct work_struct *work)
 	if (atomic_cmpxchg(&session->cb_called, 0, 1) == 1)
 		return;
 
-	ubagg_log_err("Session %u timeout\n", session->session_id);
+	ubagg_log_err_rl("Session %u timeout\n", session->session_id);
 
 	if (session->complete_cb)
 		session->complete_cb(session->dev, session->session_data);

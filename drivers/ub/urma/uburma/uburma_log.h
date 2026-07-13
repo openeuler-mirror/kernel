@@ -38,7 +38,7 @@ enum uburma_log_level {
 		__func__, __LINE__, ##args)
 
 #define UBURMA_RATELIMIT_INTERVAL (5 * HZ)
-#define UBURMA_RATELIMIT_BURST 100
+#define UBURMA_RATELIMIT_BURST 50
 
 extern uint32_t g_uburma_log_level;
 

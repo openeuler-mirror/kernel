@@ -38,7 +38,7 @@ enum ubagg_log_level {
 		__func__, __LINE__, ##args)
 
 #define UBAGG_RATELIMIT_INTERVAL (5 * HZ)
-#define UBAGG_RATELIMIT_BURST 100
+#define UBAGG_RATELIMIT_BURST 50
 
 extern uint32_t g_ubagg_log_level;
 
