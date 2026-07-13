@@ -3388,7 +3388,7 @@ static int uburma_cmd_import_jfr(struct ubcore_device *ubc_dev,
 
 	tjfr = ubcore_import_jfr(ubc_dev, &cfg, &udata);
 	if (IS_ERR_OR_NULL(tjfr)) {
-		uburma_log_err("Failed to import jfr.\n");
+		uburma_log_err_rl("Failed to import jfr.\n");
 		uobj_alloc_abort(uobj);
 		return IS_ERR(tjfr) ? PTR_ERR(tjfr) : -1;
 	}
