@@ -9,8 +9,7 @@
 #ifndef SMH_MESSAGE_H
 #define SMH_MESSAGE_H
 
-#include <linux/types.h>
-#include "smh_common_type.h"
+#include <uapi/ub/sentry/smh_common_type.h>
 
 uint64_t smh_get_new_msg_id(void);
 int smh_message_send(struct sentry_msg_helper_msg *msg, bool ack);
@@ -20,5 +19,4 @@ int smh_message_get_ack(struct sentry_msg_helper_msg *msg);
 
 int smh_message_init(void);
 void smh_message_exit(void);
-
 #endif

@@ -14,6 +14,7 @@
 #include <linux/miscdevice.h>
 
 #include "smh_message.h"
+#include "sentry_report_comm.h"
 
 #define SMH_DEV_NAME "sentry_msg_helper"
 

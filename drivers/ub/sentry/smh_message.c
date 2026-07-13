@@ -15,6 +15,7 @@
 #include <linux/ratelimit.h>
 
 #include "smh_message.h"
+#include "sentry_report_comm.h"
 
 static DEFINE_RATELIMIT_STATE(msg_log_rs, HZ, 10);
 
