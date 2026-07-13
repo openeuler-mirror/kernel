@@ -311,15 +311,32 @@ struct ub_entity {
 	KABI_RESERVE(16)
 };
 
-/* UB bus error event callbacks */
+/**
+ * struct ub_error_handlers - UB device error handling callback functions
+ * @ub_reset_prepare:	Called before Entity Level Reset (ELR) to notify the
+ *			device driver to prepare for the reset. Deprecated, use
+ *			@ub_reset_prepare_return instead.
+ * @ub_reset_done:	Called after ELR to notify the device driver that the
+ *			reset has completed and services can be resumed.
+ *			Deprecated, use @ub_reset_done_with_pret instead.
+ * @ub_error_detected:	Called when the UB bus driver detects an error,
+ *			notifying the UB device driver of the error occurrence.
+ *			Returns ub_ers_result_t indicating the required recovery
+ *			action.
+ * @ub_resource_enabled: Called after the UB bus driver has completed error
+ *			handling, notifying the UB device driver that error
+ *			recovery has finished. Returns ub_ers_result_t.
+ * @ub_reset_prepare_return: Called before ELR to notify the device driver to
+ *			prepare for the reset. Returns 0 on success or a
+ *			negative error code on failure. Replaces the deprecated
+ *			@ub_reset_prepare.
+ * @ub_reset_done_with_pret: Called after ELR to notify the device driver that
+ *			the reset has completed. The @pret parameter carries the
+ *			result of the ELR operation. Returns 0 on success or a
+ *			negative error code on failure. Replaces the deprecated
+ *			@ub_reset_done.
+ */
 struct ub_error_handlers {
-	/* UB function reset prepare or completed */
-
-	/*
-	 * Deprecated: This function is going to be removed in future version.
-	 * Please use ub_reset_prepare_return() and ub_reset_done_with_pret()
-	 * instead, which provides more complete return value processing.
-	 */
 	void (*ub_reset_prepare)(struct ub_entity *uent);
 	void (*ub_reset_done)(struct ub_entity *uent);
 	ub_ers_result_t (*ub_error_detected)(struct ub_entity *uent, ub_channel_state_t state);
@@ -561,6 +578,13 @@ struct ub_vdm_pld {
 #define UB_URMA_CTP_ROL BIT(21)
 #define UB_URMA_CTP_UNO BIT(22)
 #define UB_URMA_UTP_UNO BIT(23)
+
+typedef int (*read_byte_f)(struct ub_entity *uent, u64 pos, u8 *val);
+typedef int (*read_word_f)(struct ub_entity *uent, u64 pos, u16 *val);
+typedef int (*read_dword_f)(struct ub_entity *uent, u64 pos, u32 *val);
+typedef int (*write_byte_f)(struct ub_entity *uent, u64 pos, u8 val);
+typedef int (*write_word_f)(struct ub_entity *uent, u64 pos, u16 val);
+typedef int (*write_dword_f)(struct ub_entity *uent, u64 pos, u32 val);
 
 #ifdef CONFIG_UB_UBUS
 extern struct bus_type ub_bus_type;
@@ -1077,6 +1101,12 @@ void ub_stop_ent(struct ub_entity *uent);
  */
 void ub_stop_and_remove_ent(struct ub_entity *uent);
 
+int register_ub_cfg_read_ops(read_byte_f rb, read_word_f rw, read_dword_f rdw);
+int register_ub_cfg_write_ops(write_byte_f wb, write_word_f ww, write_dword_f wdw);
+void unregister_ub_cfg_ops(void);
+struct ub_bus_controller *ub_ubc_get(struct ub_bus_controller *ubc);
+void ub_ubc_put(struct ub_bus_controller *ubc);
+
 #else /* CONFIG_UB_UBUS is not enabled */
 #define dev_is_ub(d) (false)
 static inline struct ub_entity *ub_get_ent_by_eid(unsigned int eid)
@@ -1188,6 +1218,16 @@ static inline int ub_register_driver(struct ub_driver *drv)
 static inline void ub_unregister_driver(struct ub_driver *drv) {}
 static inline void ub_stop_ent(struct ub_entity *uent) {}
 static inline void ub_stop_and_remove_ent(struct ub_entity *uent) {}
+static inline int
+register_ub_cfg_read_ops(read_byte_f rb, read_word_f rw, read_dword_f rdw)
+{ return -EINVAL; }
+static inline int
+register_ub_cfg_write_ops(write_byte_f wb, write_word_f ww, write_dword_f wdw)
+{ return -EINVAL; }
+static inline void unregister_ub_cfg_ops(void) {}
+static inline struct ub_bus_controller *
+ub_ubc_get(struct ub_bus_controller *ubc) { return NULL; }
+static inline void ub_ubc_put(struct ub_bus_controller *ubc) {}
 #endif /* CONFIG_UB_UBUS */
 
 #endif /* _UB_UBUS_UBUS_H_ */
