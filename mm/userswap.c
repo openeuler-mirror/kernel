@@ -162,7 +162,6 @@ static int uswap_unmap_anon_page(struct mm_struct *mm,
 			   SWP_USERSWAP_ENTRY, page_to_pfn(page))));
 
 	dec_mm_counter(mm, MM_ANONPAGES);
-	add_reliable_page_counter(page, mm, -1);
 	folio_remove_rmap_pte(page_folio(page), page, vma);
 	page->mapping = NULL;
 
@@ -193,7 +192,6 @@ static unsigned long vm_insert_anon_page(struct vm_area_struct *vma,
 	}
 
 	inc_mm_counter(mm, MM_ANONPAGES);
-	add_reliable_page_counter(page, mm, 1);
 	folio_add_new_anon_rmap(page_folio(page), vma, addr, RMAP_EXCLUSIVE);
 	dst_pte = mk_pte(page, vma->vm_page_prot);
 	if (vma->vm_flags & VM_WRITE)
@@ -219,7 +217,6 @@ static void uswap_map_anon_page(struct mm_struct *mm,
 	flush_cache_page(vma, addr, pte_pfn(*pte));
 	set_pte_at(mm, addr, pte, old_pte);
 	inc_mm_counter(mm, MM_ANONPAGES);
-	add_reliable_page_counter(page, mm, 1);
 	folio_add_new_anon_rmap(page_folio(page), vma, addr, RMAP_EXCLUSIVE);
 	pte_unmap_unlock(pte, ptl);
 }
@@ -531,7 +528,6 @@ int mfill_atomic_pte_nocopy(struct mm_struct *mm, pmd_t *dst_pmd,
 	}
 
 	inc_mm_counter(mm, MM_ANONPAGES);
-	add_reliable_page_counter(page, mm, 1);
 	folio_add_new_anon_rmap(page_folio(page), dst_vma, dst_addr, RMAP_EXCLUSIVE);
 	set_pte_at(mm, dst_addr, pte, dst_pte);
 
