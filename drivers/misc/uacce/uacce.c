@@ -43,26 +43,20 @@ static int uacce_start_queue(struct uacce_queue *q)
 	return 0;
 }
 
-static int uacce_stop_queue(struct uacce_queue *q)
+static int uacce_put_queue(struct uacce_queue *q)
 {
 	struct uacce_device *uacce = q->uacce;
 
 	if ((q->state == UACCE_Q_STARTED) && uacce->ops->stop_queue)
 		uacce->ops->stop_queue(q);
 
+	if ((q->state == UACCE_Q_INIT || q->state == UACCE_Q_STARTED) &&
+	     uacce->ops->put_queue)
+		uacce->ops->put_queue(q);
+
 	q->state = UACCE_Q_ZOMBIE;
 
 	return 0;
-}
-
-static void uacce_put_queue(struct uacce_queue *q)
-{
-	struct uacce_device *uacce = q->uacce;
-
-	uacce_stop_queue(q);
-
-	if (uacce->ops->put_queue)
-		uacce->ops->put_queue(q);
 }
 
 static long uacce_get_ss_dma(struct uacce_queue *q, void __user *arg)
@@ -180,7 +174,7 @@ static long uacce_fops_unl_ioctl(struct file *filep,
 		ret = uacce_start_queue(q);
 		break;
 	case UACCE_CMD_PUT_Q:
-		ret = uacce_stop_queue(q);
+		ret = uacce_put_queue(q);
 		break;
 	case UACCE_CMD_GET_SS_DMA:
 		ret = uacce_get_ss_dma(q, (void __user *)(uintptr_t)arg);
