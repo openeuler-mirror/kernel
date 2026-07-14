@@ -7,7 +7,7 @@
 #define pr_fmt(fmt) "UMMU: " fmt
 #include <linux/interrupt.h>
 
-#include "trace/trace.h"
+#include "trace.h"
 #include "ummu.h"
 #include "queue.h"
 #include "regs.h"

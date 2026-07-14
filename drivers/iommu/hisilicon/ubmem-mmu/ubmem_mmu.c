@@ -854,11 +854,16 @@ static int ubmem_mmu_init(struct platform_device *pdev,
 static int register_to_ummu_core(struct platform_device *pdev, struct ubmem_mmu_device *mmu)
 {
 	struct ummu_core_init_args args = {0};
+	const struct tid_ops *tid_ops;
 	int ret;
+
+	tid_ops = ummu_core_get_tid_ops(DEFAULT_OPS);
+	if (!tid_ops)
+		return -EINVAL;
 
 	args.iommu_ops = &ubmm_mmu_iommu_ops;
 	args.hwdev = &pdev->dev;
-	args.tid_args.tid_ops = ummu_core_tid_ops[DEFAULT_OPS];
+	args.tid_args.tid_ops = tid_ops;
 	args.tid_args.max_tid = (1 << (mmu->token_id_bits)) - 1;
 	args.tid_args.min_tid = 0;
 	args.core_ops = &ubmm_mmu_core_ops;

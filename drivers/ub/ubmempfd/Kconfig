@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0+
-menuconfig UB_UBMEMPFD
-	default n
+# UB Memory virtualization support
+config UB_UBMEMPFD
 	tristate "ubmempfd driver"
 	depends on UB_UBFI && UB_UMMU_CORE && UB_UMMU
 	help

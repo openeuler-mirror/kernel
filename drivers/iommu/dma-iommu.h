@@ -57,7 +57,7 @@ static inline int iova_reserve_domain_addr(struct iommu_domain *domain, dma_addr
 	return -EINVAL;
 }
 
-#ifndef CONFIG_UB_UMMU_CORE
+#ifdef CONFIG_UB_UMMU_CORE
 static inline struct iova_domain *iommu_get_iova_domain(struct iommu_domain *domain)
 {
 	return NULL;

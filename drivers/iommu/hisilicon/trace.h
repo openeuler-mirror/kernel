@@ -64,7 +64,7 @@ TRACE_EVENT(ummu_perm_grant,
 		__entry->perm = perm;
 		__entry->tkv_en = tkv_en;
 	),
-	    TP_printk("map: TID = %u, IOVA = 0x%llx, SIZE = 0x%llx, PERMISSION = 0x%x, TKV_EN = %d",
+	    TP_printk("map: TID = %u, IOVA = 0x%llx, SIZE = 0x%llx, PERMISSION = %d, TKV_EN = %d",
 		      __entry->tid, __entry->iova, __entry->size, __entry->perm, __entry->tkv_en
 	)
 );
@@ -180,6 +180,6 @@ TRACE_EVENT(ummu_event,
 /* This part must be outside protection */
 #undef TRACE_INCLUDE_PATH
 #undef TRACE_INCLUDE_FILE
-#define TRACE_INCLUDE_PATH ../../drivers/iommu/hisilicon/trace/
+#define TRACE_INCLUDE_PATH .
 #define TRACE_INCLUDE_FILE trace
 #include <trace/define_trace.h>
