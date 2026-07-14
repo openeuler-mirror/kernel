@@ -1200,7 +1200,8 @@ static void hisi_acc_vf_pci_aer_reset_done(struct pci_dev *pdev)
 {
 	struct hisi_acc_vf_core_device *hisi_acc_vdev = hisi_acc_drvdata(pdev);
 
-	if (!hisi_acc_vdev->core_device.vdev.mig_ops)
+	if (hisi_acc_vdev->core_device.vdev.migration_flags !=
+				VFIO_MIGRATION_STOP_COPY)
 		return;
 
 	mutex_lock(&hisi_acc_vdev->state_mutex);
