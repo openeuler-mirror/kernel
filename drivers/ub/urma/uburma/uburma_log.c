@@ -13,3 +13,4 @@
 #include "uburma_log.h"
 
 uint32_t g_uburma_log_level = UBURMA_LOG_LEVEL_NOTICE;
+uint32_t uburma_ratelimit_burst = UBURMA_RATELIMIT_BURST_DEF;

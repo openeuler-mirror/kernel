@@ -13,3 +13,4 @@
 #include "ubcore_log.h"
 
 uint32_t g_ubcore_log_level = UBCORE_LOG_LEVEL_NOTICE;
+uint32_t ubcore_ratelimit_burst = UBCORE_RATELIMIT_BURST_DEF;
