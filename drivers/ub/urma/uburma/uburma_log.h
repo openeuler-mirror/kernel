@@ -38,9 +38,10 @@ enum uburma_log_level {
 		__func__, __LINE__, ##args)
 
 #define UBURMA_RATELIMIT_INTERVAL (5 * HZ)
-#define UBURMA_RATELIMIT_BURST 50
+#define UBURMA_RATELIMIT_BURST_DEF 10
 
 extern uint32_t g_uburma_log_level;
+extern uint32_t uburma_ratelimit_burst;
 
 #define uburma_log_err(...)                                      \
 	do {                                                         \
@@ -74,13 +75,14 @@ extern uint32_t g_uburma_log_level;
 	} while (0)
 
 /* Rate Limited log to avoid soft lockup crash by quantities of printk */
-/* Current limit is 100 log every 5 seconds */
+/* Current limit is 10 log every 5 seconds as default */
 /* Optimized: check log level before ratelimit to avoid unnecessary calls */
 #define uburma_log_err_rl(...)                                            \
 	do {                                                                  \
 		if (g_uburma_log_level >= UBURMA_LOG_LEVEL_ERR) {                 \
 			static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL, \
-						      UBURMA_RATELIMIT_BURST);                    \
+					      UBURMA_RATELIMIT_BURST_DEF);                    \
+			WRITE_ONCE(_rs.burst, READ_ONCE(uburma_ratelimit_burst));     \
 			if (__ratelimit(&_rs))                                        \
 				uburma_log(err, __VA_ARGS__);                             \
 		}                                                                 \
@@ -90,7 +92,8 @@ extern uint32_t g_uburma_log_level;
 	do {                                                                  \
 		if (g_uburma_log_level >= UBURMA_LOG_LEVEL_WARNING) {             \
 			static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL, \
-						      UBURMA_RATELIMIT_BURST);                    \
+					      UBURMA_RATELIMIT_BURST_DEF);                    \
+			WRITE_ONCE(_rs.burst, READ_ONCE(uburma_ratelimit_burst));     \
 			if (__ratelimit(&_rs))                                        \
 				uburma_log(warn, __VA_ARGS__);                            \
 		}                                                                 \
@@ -100,7 +103,8 @@ extern uint32_t g_uburma_log_level;
 	do {                                                                  \
 		if (g_uburma_log_level >= UBURMA_LOG_LEVEL_NOTICE) {              \
 			static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL, \
-						      UBURMA_RATELIMIT_BURST);                    \
+					      UBURMA_RATELIMIT_BURST_DEF);                    \
+			WRITE_ONCE(_rs.burst, READ_ONCE(uburma_ratelimit_burst));     \
 			if (__ratelimit(&_rs))                                        \
 				uburma_log(notice, __VA_ARGS__);                          \
 		}                                                                 \
@@ -110,7 +114,8 @@ extern uint32_t g_uburma_log_level;
 	do {                                                                  \
 		if (g_uburma_log_level >= UBURMA_LOG_LEVEL_INFO) {                \
 			static DEFINE_RATELIMIT_STATE(_rs, UBURMA_RATELIMIT_INTERVAL, \
-						      UBURMA_RATELIMIT_BURST);                    \
+					      UBURMA_RATELIMIT_BURST_DEF);                    \
+			WRITE_ONCE(_rs.burst, READ_ONCE(uburma_ratelimit_burst));     \
 			if (__ratelimit(&_rs))                                        \
 				uburma_log(info, __VA_ARGS__);                            \
 		}                                                                 \
