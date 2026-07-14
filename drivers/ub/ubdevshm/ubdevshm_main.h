@@ -15,6 +15,9 @@
 #include <linux/idr.h>
 #include <ub/ubdevshm/ubdevshm.h>
 
+#define UBDEVSHM_IDR_MIN_ID	0
+#define UBDEVSHM_IDR_MAX_ID	INT_MAX
+
 extern struct rw_semaphore ubdevshm_rw_semlock;
 extern struct list_head provider_list;
 extern struct list_head container_list;
@@ -50,14 +53,15 @@ struct shm_area {
 };
 
 struct access_ctx_inner {
-	struct list_head node; // link to ctx_list
+	struct list_head node;
 	struct mem_provider *provider;
 	struct role_info user;
 	struct shm_area *sa;
 	struct shm_segment seg;
-	long id;
+	int id;
 	refcount_t refcnt;
 	refcount_t acquire_refcnt;
+	struct list_head uba_list;
 };
 
 enum use_mode {
@@ -80,4 +84,10 @@ struct shm_container {
 	refcount_t refcnt;
 };
 
-#endif /*__UBDEVSHM_MAIN_H__*/
+enum find_shm_area_mode {
+	EQUAL = 0,
+	OVERLAP,
+	CONTAIN,
+};
+
+#endif /*_UBDEVSHM_MAIN_H*/
