@@ -64,6 +64,9 @@ static inline bool folio_reliable(struct folio *folio)
 	if (!folio)
 		return false;
 
+	if (folio_test_pool(folio))
+		return false;
+
 	return folio_zonenum(folio) < ZONE_MOVABLE;
 }
 
