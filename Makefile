@@ -1112,41 +1112,6 @@ mod_sign_cmd = true
 endif
 export mod_sign_cmd
 
-HOST_LIBELF_LIBS = $(shell pkg-config libelf --libs 2>/dev/null || echo -lelf)
-
-has_libelf = $(call try-run,\
-               echo "int main() {}" | $(HOSTCC) $(KBUILD_HOSTLDFLAGS) -xc -o /dev/null $(HOST_LIBELF_LIBS) -,1,0)
-
-ifdef CONFIG_STACK_VALIDATION
-  ifeq ($(has_libelf),1)
-    objtool_target := tools/objtool FORCE
-  else
-    SKIP_STACK_VALIDATION := 1
-    export SKIP_STACK_VALIDATION
-  endif
-endif
-
-PHONY += resolve_btfids_clean
-
-resolve_btfids_O = $(abspath $(objtree))/tools/bpf/resolve_btfids
-
-# tools/bpf/resolve_btfids directory might not exist
-# in output directory, skip its clean in that case
-resolve_btfids_clean:
-ifneq ($(wildcard $(resolve_btfids_O)),)
-	$(Q)$(MAKE) -sC $(srctree)/tools/bpf/resolve_btfids O=$(resolve_btfids_O) clean
-endif
-
-ifdef CONFIG_BPF
-ifdef CONFIG_DEBUG_INFO_BTF
-  ifeq ($(has_libelf),1)
-    resolve_btfids_target := tools/bpf/resolve_btfids FORCE
-  else
-    ERROR_RESOLVE_BTFIDS := 1
-  endif
-endif # CONFIG_DEBUG_INFO_BTF
-endif # CONFIG_BPF
-
 PHONY += prepare0
 
 export MODORDER := $(extmod-prefix)modules.order
@@ -1255,7 +1220,7 @@ prepare0: archprepare
 	$(Q)$(MAKE) $(build)=.
 
 # All the preparing..
-prepare: prepare0 prepare-objtool prepare-resolve_btfids
+prepare: prepare0
 
 # Support for using generic headers in asm-generic
 asm-generic := -f $(srctree)/scripts/Makefile.asm-generic obj
@@ -1268,22 +1233,6 @@ uapi-asm-generic:
 	$(Q)$(MAKE) $(asm-generic)=arch/$(SRCARCH)/include/generated/uapi/asm \
 	generic=include/uapi/asm-generic
 
-PHONY += prepare-objtool prepare-resolve_btfids
-prepare-objtool: $(objtool_target)
-ifeq ($(SKIP_STACK_VALIDATION),1)
-ifdef CONFIG_UNWINDER_ORC
-	@echo "error: Cannot generate ORC metadata for CONFIG_UNWINDER_ORC=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
-	@false
-else
-	@echo "warning: Cannot use CONFIG_STACK_VALIDATION=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
-endif
-endif
-
-prepare-resolve_btfids: $(resolve_btfids_target)
-ifeq ($(ERROR_RESOLVE_BTFIDS),1)
-	@echo "error: Cannot resolve BTF IDs for CONFIG_DEBUG_INFO_BTF, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
-	@false
-endif
 # Generate some files
 # ---------------------------------------------------------------------------
 
@@ -1370,6 +1319,43 @@ endif
 PHONY += scripts_unifdef
 scripts_unifdef: scripts_basic
 	$(Q)$(MAKE) $(build)=scripts scripts/unifdef
+
+# ---------------------------------------------------------------------------
+# Tools
+
+ifdef CONFIG_STACK_VALIDATION
+prepare: tools/objtool
+endif
+
+ifdef CONFIG_BPF
+ifdef CONFIG_DEBUG_INFO_BTF
+prepare: tools/bpf/resolve_btfids
+endif
+endif
+
+PHONY += resolve_btfids_clean
+
+resolve_btfids_O = $(abspath $(objtree))/tools/bpf/resolve_btfids
+
+# tools/bpf/resolve_btfids directory might not exist
+# in output directory, skip its clean in that case
+resolve_btfids_clean:
+ifneq ($(wildcard $(resolve_btfids_O)),)
+	$(Q)$(MAKE) -sC $(srctree)/tools/bpf/resolve_btfids O=$(resolve_btfids_O) clean
+endif
+
+# Clear a bunch of variables before executing the submake
+ifeq ($(quiet),silent_)
+tools_silent=s
+endif
+
+tools/: FORCE
+	$(Q)mkdir -p $(objtree)/tools
+	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(tools_silent) $(filter --j% -j,$(MAKEFLAGS))" O=$(abspath $(objtree)) subdir=tools -C $(srctree)/tools/
+
+tools/%: FORCE
+	$(Q)mkdir -p $(objtree)/tools
+	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(tools_silent) $(filter --j% -j,$(MAKEFLAGS))" O=$(abspath $(objtree)) subdir=tools -C $(srctree)/tools/ $*
 
 # ---------------------------------------------------------------------------
 # Kernel selftest
@@ -1960,20 +1946,6 @@ kernelversion:
 
 image_name:
 	@echo $(KBUILD_IMAGE)
-
-# Clear a bunch of variables before executing the submake
-
-ifeq ($(quiet),silent_)
-tools_silent=s
-endif
-
-tools/: FORCE
-	$(Q)mkdir -p $(objtree)/tools
-	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(tools_silent) $(filter --j% -j,$(MAKEFLAGS))" O=$(abspath $(objtree)) subdir=tools -C $(srctree)/tools/
-
-tools/%: FORCE
-	$(Q)mkdir -p $(objtree)/tools
-	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(tools_silent) $(filter --j% -j,$(MAKEFLAGS))" O=$(abspath $(objtree)) subdir=tools -C $(srctree)/tools/ $*
 
 quiet_cmd_rmfiles = $(if $(wildcard $(rm-files)),CLEAN   $(wildcard $(rm-files)))
       cmd_rmfiles = rm -rf $(rm-files)
