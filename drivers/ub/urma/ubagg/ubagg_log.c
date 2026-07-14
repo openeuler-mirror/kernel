@@ -13,3 +13,4 @@
 #include "ubagg_log.h"
 
 uint32_t g_ubagg_log_level = UBAGG_LOG_LEVEL_NOTICE;
+uint32_t ubagg_ratelimit_burst = UBAGG_RATELIMIT_BURST_DEF;

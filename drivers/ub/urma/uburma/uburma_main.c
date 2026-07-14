@@ -10,6 +10,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/limits.h>
 #include <linux/fs.h>
 #include <linux/list.h>
 #include <linux/slab.h>
@@ -36,6 +37,20 @@
 
 module_param(g_uburma_log_level, uint, UBURMA_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(g_uburma_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
+static int uburma_ratelimit_burst_set(const char *val,
+				      const struct kernel_param *kp)
+{
+	return param_set_uint_minmax(val, kp, 0, S32_MAX);
+}
+
+static const struct kernel_param_ops uburma_ratelimit_burst_ops = {
+	.set = uburma_ratelimit_burst_set,
+	.get = param_get_uint,
+};
+
+module_param_cb(uburma_ratelimit_burst, &uburma_ratelimit_burst_ops,
+		&uburma_ratelimit_burst, UBURMA_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(uburma_ratelimit_burst, "ratelimit burst for _rl logs (default: 10)");
 module_param(uburma_irq_handle_threshold, uint, UBURMA_IRQ_HANDLE_THRESHOLD);
 MODULE_PARM_DESC(uburma_irq_handle_threshold, "IRQ handle threshold in ns");
 module_param(uburma_irq_handle_threshold_enable, uint, UBURMA_IRQ_HANDLE_THRESHOLD);
