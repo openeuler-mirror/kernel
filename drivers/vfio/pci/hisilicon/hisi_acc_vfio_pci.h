@@ -61,8 +61,6 @@
 #define ACC_DEV_MAGIC_V1	0XCDCDCDCDFEEDAACC
 #define ACC_DEV_MAGIC_V2	0xAACCFEEDDECADEDE
 
-#define QM_RESET_WAIT_TIMEOUT  400
-
 #define QM_MIG_REGION_OFFSET           0x180000
 #define QM_MIG_REGION_SIZE             0x2000
 
@@ -130,7 +128,6 @@ struct hisi_acc_vf_migration_file {
 struct hisi_acc_vf_core_device {
 	struct vfio_pci_core_device core_device;
 	u8 match_done;
-	bool set_reset_flag;
 	/*
 	 * io_base is only valid when dev_opened is true,
 	 * which is protected by open_mutex.
