@@ -23,9 +23,22 @@ static int ubaseproxy_probe(struct auxiliary_device *adev,
 	udev->comdev.adev = adev;
 	dev_set_drvdata(&adev->dev, udev);
 
+	ret = ubaseproxy_dev_init(udev);
+	if (ret) {
+		ubaseproxy_err(udev, "failed to init ubaseproxy device, ret = %d.\n",
+			       ret);
+		goto err_init;
+	}
+
 	set_bit(UBASEPROXY_STATE_INITED, &udev->state);
 
 	return 0;
+
+err_init:
+	dev_set_drvdata(&adev->dev, NULL);
+	kfree(udev);
+
+	return ret;
 }
 
 static void ubaseproxy_remove(struct auxiliary_device *adev)
@@ -38,6 +51,7 @@ static void ubaseproxy_remove(struct auxiliary_device *adev)
 		msleep(UBASEPROXY_RESET_WAIT_TIME);
 
 	set_bit(UBASEPROXY_STATE_REMOVING, &udev->state);
+	ubaseproxy_dev_uninit(udev);
 
 	dev_set_drvdata(&adev->dev, NULL);
 
