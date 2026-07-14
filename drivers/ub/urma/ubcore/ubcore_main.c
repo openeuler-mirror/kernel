@@ -10,6 +10,7 @@
  */
 
 #include <linux/module.h>
+#include <linux/limits.h>
 #include "ubcore_main.h"
 #include "ubcore_log.h"
 #include "ubcore_workqueue.h"
@@ -29,6 +30,20 @@
 
 module_param(g_ubcore_log_level, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(g_ubcore_log_level, " 3: ERR, 4: WARNING, 6: INFO, 7: DEBUG");
+static int ubcore_ratelimit_burst_set(const char *val,
+				      const struct kernel_param *kp)
+{
+	return param_set_uint_minmax(val, kp, 0, S32_MAX);
+}
+
+static const struct kernel_param_ops ubcore_ratelimit_burst_ops = {
+	.set = ubcore_ratelimit_burst_set,
+	.get = param_get_uint,
+};
+
+module_param_cb(ubcore_ratelimit_burst, &ubcore_ratelimit_burst_ops,
+		&ubcore_ratelimit_burst, UBCORE_LOG_FILE_PERMISSION);
+MODULE_PARM_DESC(ubcore_ratelimit_burst, "ratelimit burst for _rl logs (default: 10)");
 module_param(ubcore_conn_timeout, uint, UBCORE_LOG_FILE_PERMISSION);
 MODULE_PARM_DESC(ubcore_conn_timeout, "unit milliseconds");
 module_param(ubcore_enable_shared_ctp, bool, UBCORE_LOG_FILE_PERMISSION);
