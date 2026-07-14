@@ -20,7 +20,6 @@ struct ubagg_session {
 	uint32_t session_id;
 	void *session_data;
 	struct kref ref;
-	struct list_head list_entry;
 	struct delayed_work delayed_work;
 	struct completion completion;
 	atomic_t cb_called;
@@ -30,8 +29,7 @@ struct ubagg_session {
 
 struct ubagg_session_context {
 	atomic_t next_id;
-	struct list_head list;
-	spinlock_t lock;
+	struct xarray sessions;
 	struct workqueue_struct *wq;
 };
 
@@ -55,26 +53,27 @@ static void ubagg_session_free(struct kref *kref)
 	kfree(session);
 }
 
-static inline void ubagg_session_add_to_list(struct ubagg_session *session)
+static inline int ubagg_session_add(struct ubagg_session *session)
 {
-	unsigned long flags;
+	int ret;
 
 	ubagg_session_ref_acquire(session);
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_add_tail(&session->list_entry, &session_ctx.list);
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
-	ubagg_log_info("Session %u add to list", session->session_id);
+	ret = xa_insert_irq(&session_ctx.sessions, session->session_id,
+			    session, GFP_KERNEL);
+	if (ret) {
+		ubagg_log_err_rl("Failed to add session %u.\n", session->session_id);
+		ubagg_session_ref_release(session);
+		return ret;
+	}
+	ubagg_log_info_rl("Session %u add to xarray.\n", session->session_id);
+	return 0;
 }
 
-static inline void ubagg_session_remove_from_list(struct ubagg_session *session)
+static inline void ubagg_session_remove(struct ubagg_session *session)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_del(&session->list_entry);
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
+	xa_erase_irq(&session_ctx.sessions, session->session_id);
 	ubagg_session_ref_release(session);
-	ubagg_log_info("Session %u remove from list", session->session_id);
+	ubagg_log_info_rl("Session %u remove from xarray", session->session_id);
 }
 
 static void ubagg_session_timeout(struct work_struct *work)
@@ -90,7 +89,7 @@ static void ubagg_session_timeout(struct work_struct *work)
 	if (session->complete_cb)
 		session->complete_cb(session->dev, session->session_data);
 	complete(&session->completion);
-	ubagg_session_remove_from_list(session);
+	ubagg_session_remove(session);
 }
 
 struct ubagg_session *ubagg_session_create(struct ubagg_device *dev,
@@ -119,7 +118,8 @@ struct ubagg_session *ubagg_session_create(struct ubagg_device *dev,
 	atomic_set(&s->cb_called, 0);
 	s->complete_cb = complete_cb;
 	s->free_cb = free_cb;
-	ubagg_session_add_to_list(s);
+	if (ubagg_session_add(s))
+		goto free_session;
 
 	if (!queue_delayed_work(session_ctx.wq, &s->delayed_work,
 				msecs_to_jiffies(timeout_limited)))
@@ -127,25 +127,25 @@ struct ubagg_session *ubagg_session_create(struct ubagg_device *dev,
 
 	return s;
 
+free_session:
+	ubagg_session_ref_release(s);
+	return NULL;
+
 delete_session:
-	ubagg_session_remove_from_list(s);
+	ubagg_session_remove(s);
 	return NULL;
 }
 
 struct ubagg_session *ubagg_session_find(uint32_t session_id)
 {
-	struct ubagg_session *cur, *target = NULL;
+	struct ubagg_session *target;
 	unsigned long flags;
 
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_for_each_entry(cur, &session_ctx.list, list_entry) {
-		if (cur->session_id == session_id) {
-			target = cur;
-			ubagg_session_ref_acquire(target);
-			break;
-		}
-	}
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
+	xa_lock_irqsave(&session_ctx.sessions, flags);
+	target = xa_load(&session_ctx.sessions, session_id);
+	if (target)
+		ubagg_session_ref_acquire(target);
+	xa_unlock_irqrestore(&session_ctx.sessions, flags);
 	return target;
 }
 
@@ -170,7 +170,7 @@ void ubagg_session_complete(struct ubagg_session *session)
 	if (session->complete_cb)
 		session->complete_cb(session->dev, session->session_data);
 	complete(&session->completion);
-	ubagg_session_remove_from_list(session);
+	ubagg_session_remove(session);
 }
 
 void ubagg_session_wait(struct ubagg_session *session)
@@ -185,16 +185,17 @@ void ubagg_session_ref_release(struct ubagg_session *session)
 
 void ubagg_session_flush(struct ubagg_device *dev)
 {
-	struct ubagg_session *session = NULL;
+	struct ubagg_session *session;
 	unsigned long flags;
+	unsigned long index;
 
-	spin_lock_irqsave(&session_ctx.lock, flags);
-	list_for_each_entry(session, &session_ctx.list, list_entry) {
+	xa_lock_irqsave(&session_ctx.sessions, flags);
+	xa_for_each(&session_ctx.sessions, index, session) {
 		if (dev != NULL && session->dev != dev)
 			continue;
 		mod_delayed_work(session_ctx.wq, &session->delayed_work, 0);
 	}
-	spin_unlock_irqrestore(&session_ctx.lock, flags);
+	xa_unlock_irqrestore(&session_ctx.sessions, flags);
 
 	flush_workqueue(session_ctx.wq);
 }
@@ -202,8 +203,7 @@ void ubagg_session_flush(struct ubagg_device *dev)
 int ubagg_session_init(void)
 {
 	atomic_set(&session_ctx.next_id, 0);
-	INIT_LIST_HEAD(&session_ctx.list);
-	spin_lock_init(&session_ctx.lock);
+	xa_init_flags(&session_ctx.sessions, XA_FLAGS_LOCK_IRQ);
 
 	session_ctx.wq =
 		alloc_workqueue("%s", WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM,
@@ -220,4 +220,5 @@ void ubagg_session_uninit(void)
 	ubagg_session_flush(NULL);
 	drain_workqueue(session_ctx.wq);
 	destroy_workqueue(session_ctx.wq);
+	xa_destroy(&session_ctx.sessions);
 }
