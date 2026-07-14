@@ -533,16 +533,17 @@ static void ubmad_release_tjetty(struct kref *kref)
 	unsigned long flag;
 	uint32_t idx;
 
-
-	spin_lock_irqsave(&tjetty->ini_rt_spinlock, flag);
+	/*
+	 * kref is zero, no concurrent access to ini_rt_hlist.
+	 * vfree() may sleep, so do not hold spinlock across it.
+	 */
 	for (idx = 0; idx < UBMAD_INI_RTBUFFER_SIZE; idx++) {
 		hlist_for_each_entry_safe(ini_rtbuffer, next,
 					  &tjetty->ini_rt_hlist[idx], node) {
 			hlist_del(&ini_rtbuffer->node);
-			kfree(ini_rtbuffer);
+			vfree(ini_rtbuffer);
 		}
 	}
-	spin_unlock_irqrestore(&tjetty->ini_rt_spinlock, flag);
 
 	spin_lock_irqsave(&tjetty->tgt_hash_lock, flag);
 	for (idx = 0; idx < UBMAD_TGT_HASH_SIZE; idx++) {
@@ -560,7 +561,7 @@ static void ubmad_release_tjetty(struct kref *kref)
 	ret = ubcore_unimport_jetty(tjetty->tjetty);
 	if (ret != 0)
 		ubcore_log_err("Failed to unimport jetty, ret: %d.\n", ret);
-	kfree(tjetty);
+	vfree(tjetty);
 }
 
 void ubmad_put_tjetty(struct ubmad_tjetty *tjetty)
@@ -594,7 +595,7 @@ struct ubmad_tjetty *ubmad_import_jetty(struct ubcore_device *device,
 	}
 
 	/* not exist, import then */
-	new_tjetty = kzalloc(sizeof(struct ubmad_tjetty), GFP_KERNEL);
+	new_tjetty = vzalloc(sizeof(struct ubmad_tjetty));
 	if (IS_ERR_OR_NULL(new_tjetty))
 		return ERR_PTR(-ENOMEM);
 	kref_init(&new_tjetty->kref); // put in ubmad_unimport_jetty()
@@ -651,7 +652,7 @@ struct ubmad_tjetty *ubmad_import_jetty(struct ubcore_device *device,
 	hlist_add_head(&new_tjetty->node, &rsrc->tjetty_hlist[hash]);
 	spin_unlock_irqrestore(&rsrc->tjetty_hlist_lock, flag);
 
-	ubcore_log_info(
+	ubcore_log_info_rl(
 		"import tjetty0 and add to hlist succeeded. dev_name: %s, deid " EID_FMT
 		".\n",
 		device->dev_name, EID_ARGS(*dst_eid));
@@ -662,7 +663,7 @@ uninit_msn_mgr:
 	ubmad_uninit_msn_mgr(&new_tjetty->msn_mgr);
 	ubcore_unimport_jetty(new_target);
 free:
-	kfree(new_tjetty);
+	vfree(new_tjetty);
 	return tjetty;
 }
 
