@@ -591,6 +591,11 @@ static inline bool ubase_dev_non_mirror_mem_supported(struct ubase_dev *udev)
 	return ubase_get_cap_bit(udev, UBASE_SUPPORT_NON_MIRROR_MEM_B);
 }
 
+static inline bool ubase_dev_batch_query_pmu_supported(struct ubase_dev *udev)
+{
+	return ubase_get_cap_bit(udev, UBASE_SUPPORT_BATCH_QUERY_PMU_B);
+}
+
 static inline u32 ubase_jfs_num(struct ubase_dev *udev)
 {
 	struct ubase_adev_caps *unic_caps = &udev->caps.unic_caps;
