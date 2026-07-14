@@ -44,9 +44,10 @@ enum ubcore_log_level {
 		__func__, __LINE__, ##args))
 
 #define UBCORE_RATELIMIT_INTERVAL (5 * HZ)
-#define UBCORE_RATELIMIT_BURST 50
+#define UBCORE_RATELIMIT_BURST_DEF 10
 
 extern uint32_t g_ubcore_log_level;
+extern uint32_t ubcore_ratelimit_burst;
 
 #define ubcore_log_err(...)                                         \
 	do {                                                            \
@@ -79,13 +80,14 @@ extern uint32_t g_ubcore_log_level;
 	} while (0)
 
 /* Rate Limited log to avoid soft lockup crash by quantities of printk */
-/* Current limit is 100 log every 5 seconds */
+/* Current limit is 10 log every 5 seconds as default */
 /* Optimized: check log level before ratelimit to avoid unnecessary calls */
 #define ubcore_log_err_rl(...)                                                \
 	do {                                                                      \
 		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_ERR) {                     \
 			static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,     \
-				UBCORE_RATELIMIT_BURST);                                      \
+					      UBCORE_RATELIMIT_BURST_DEF);                        \
+			WRITE_ONCE(_rs.burst, READ_ONCE(ubcore_ratelimit_burst));         \
 			if (__ratelimit(&_rs))                                            \
 				ubcore_log(err, __VA_ARGS__);                                 \
 		}                                                                     \
@@ -95,7 +97,8 @@ extern uint32_t g_ubcore_log_level;
 	do {                                                                      \
 		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_WARNING) {                 \
 			static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,     \
-				UBCORE_RATELIMIT_BURST);                                      \
+					      UBCORE_RATELIMIT_BURST_DEF);                        \
+			WRITE_ONCE(_rs.burst, READ_ONCE(ubcore_ratelimit_burst));         \
 			if (__ratelimit(&_rs))                                            \
 				ubcore_log(warn, __VA_ARGS__);                                \
 		}                                                                     \
@@ -105,7 +108,8 @@ extern uint32_t g_ubcore_log_level;
 	do {                                                                      \
 		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_NOTICE) {                  \
 			static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,     \
-				UBCORE_RATELIMIT_BURST);                                      \
+					      UBCORE_RATELIMIT_BURST_DEF);                        \
+			WRITE_ONCE(_rs.burst, READ_ONCE(ubcore_ratelimit_burst));         \
 			if (__ratelimit(&_rs))                                            \
 				ubcore_log(notice, __VA_ARGS__);                              \
 		}                                                                     \
@@ -115,7 +119,8 @@ extern uint32_t g_ubcore_log_level;
 	do {                                                                      \
 		if (g_ubcore_log_level >= UBCORE_LOG_LEVEL_INFO) {                    \
 			static DEFINE_RATELIMIT_STATE(_rs, UBCORE_RATELIMIT_INTERVAL,     \
-				UBCORE_RATELIMIT_BURST);                                      \
+					      UBCORE_RATELIMIT_BURST_DEF);                        \
+			WRITE_ONCE(_rs.burst, READ_ONCE(ubcore_ratelimit_burst));         \
 			if (__ratelimit(&_rs))                                            \
 				ubcore_log(info, __VA_ARGS__);                                \
 		}                                                                     \
