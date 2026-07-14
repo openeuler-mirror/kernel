@@ -183,12 +183,9 @@ int unic_update_bond_ipaddr(struct unic_dev *unic_dev, struct sockaddr *sa,
 	struct in6_addr ip_addr;
 	int ret;
 
-	ret = unic_convert_ip_addr(sa, &ip_addr);
-	if (ret) {
-		unic_err(unic_dev,
-			 "invalid ip protocol type = %u.\n", sa->sa_family);
+	ret = unic_convert_ip_addr(unic_dev, sa, &ip_addr);
+	if (ret)
 		return ret;
-	}
 
 	ret = unic_update_bond_addr_list(&vport->addr_tbl.bond_ip_list,
 					 &vport->addr_tbl.bond_ip_list_lock,

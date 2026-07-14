@@ -78,6 +78,7 @@ void unic_comm_sync_from_addr_del_list(struct list_head *del_list,
 void unic_comm_sync_from_addr_add_list(struct list_head *add_list,
 				       struct list_head *addr_list,
 				       bool *all_added);
-int unic_convert_ip_addr(struct sockaddr *addr, struct in6_addr *ip_addr);
+int unic_convert_ip_addr(struct unic_dev *unic_dev, struct sockaddr *addr,
+			 struct in6_addr *ip_addr);
 
 #endif /* __UNIC_COMM_ADDR_H__ */
