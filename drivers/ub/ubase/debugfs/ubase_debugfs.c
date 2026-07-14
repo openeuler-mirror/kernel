@@ -67,11 +67,12 @@ static void ubase_dbg_dump_caps_bits(struct seq_file *s, struct ubase_dev *udev)
 		PRINT_CAP(ip_over_urma_utp, ubase_ip_over_urma_utp_supported);
 	PRINT_CAP(activate_proxy, ubase_activate_proxy_supported);
 	PRINT_CAP(utp, ubase_utp_supported);
+	PRINT_CAP(pmu_irq, ubase_pmu_irq_supported);
 	PRINT_CAP(dtu, ubase_dev_dtu_supported);
 	PRINT_CAP(usc, ubase_dev_usc_supported);
 	PRINT_CAP(ucp, ubase_ucp_supported);
 	PRINT_CAP(non_mirror_mem, ubase_dev_non_mirror_mem_supported);
-	PRINT_CAP(pmu_irq, ubase_pmu_irq_supported);
+	PRINT_CAP(batch_query_pmu, ubase_dev_batch_query_pmu_supported);
 }
 
 static void ubase_dbg_dump_caps_info(struct seq_file *s, struct ubase_dev *udev)

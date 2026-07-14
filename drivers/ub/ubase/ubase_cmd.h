@@ -172,6 +172,24 @@ struct ubase_query_dl_pkt_stats_cmd {
 	u8	rsvd1[4];
 };
 
+#define UBASE_MAX_BATCH_QUERY_PORTS	10
+struct ubase_batch_query_dl_stats_cmd {
+	__le32	query_port_bitmap_l;
+	__le32	query_port_bitmap_h;
+
+	__le32	port_valid_bitmap_l;
+	__le32	port_valid_bitmap_h;
+
+	struct {
+		__le32	tx_flit_num_l;
+		__le32	tx_flit_num_h;
+		__le32	rx_flit_num_l;
+		__le32	rx_flit_num_h;
+	} info[UBASE_MAX_BATCH_QUERY_PORTS];
+
+	u8	rsvd[8];
+};
+
 struct ubase_cfg_tm_vl_sch_cmd {
 	u8 rsvd0[2];
 	__le16 vl_bitmap;
