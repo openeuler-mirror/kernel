@@ -222,7 +222,7 @@ static int unic_dbg_dump_rss_cfg_hw(struct seq_file *s, void *data)
 	if (__unic_resetting(unic_dev))
 		return -EBUSY;
 
-	seq_puts(s, "TC_VAILD  TC_MODE  JFR_0  JFR_1  JFR_2  JFR_3\n");
+	seq_puts(s, "TC_VALID  TC_MODE  JFR_0  JFR_1  JFR_2  JFR_3\n");
 
 	ret = unic_query_rss_cfg(unic_dev, &resp);
 	if (ret)
@@ -385,9 +385,9 @@ static int unic_dbg_clear_bond_record(struct seq_file *s, void *data)
 	return 0;
 }
 
-static int unic_dbg_dump_abnormal_cqe_cnt(struct seq_file *s, void *data)
+static void unic_dbg_channel_abn_cqe_cnt(struct seq_file *s,
+					 struct unic_channel *c, int idx)
 {
-	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
 	static const char * const status_labels[] = {
 		"STATUS_0:   ",
 		"STATUS_1:   ",
@@ -398,8 +398,31 @@ static int unic_dbg_dump_abnormal_cqe_cnt(struct seq_file *s, void *data)
 		"STATUS_6:   ",
 		"OTHERS:     "
 	};
-	struct unic_channel *c;
-	int i, j, k, ret = 0;
+	struct unic_sq_stats *stats = &c->sq->stats;
+	int i, j;
+
+	seq_printf(s, "txq%d:\n", idx);
+	seq_printf(s, "TOTAL_ABN_CQE_COUNT:%-20llu\n", stats->abn_cqe_total_cnt);
+	seq_printf(s, "%-12s%20s%20s%20s%20s%20s%20s\n", "", "SUB_0", "SUB_1",
+		   "SUB_2", "SUB_3", "SUB_4", "OTHERS");
+
+	for (i = 0; i < UNIC_CQE_STATUS_MAX; i++) {
+		seq_printf(s, "%s", status_labels[i]);
+		for (j = 0; j < UNIC_CQE_SUB_STATUS_MAX; j++) {
+			if (i == 0 && j == 0)
+				seq_printf(s, "%20s", "--");
+			else
+				seq_printf(s, "%20llu", stats->abn_cqe_cnt[i][j]);
+		}
+		seq_puts(s, "\n");
+	}
+	seq_puts(s, "\n");
+}
+
+static int unic_dbg_dump_abn_cqe_cnt(struct seq_file *s, void *data)
+{
+	struct unic_dev *unic_dev = dev_get_drvdata(s->private);
+	int i, ret = 0;
 
 	if (!mutex_trylock(&unic_dev->channels.mutex))
 		return -EBUSY;
@@ -409,22 +432,8 @@ static int unic_dbg_dump_abnormal_cqe_cnt(struct seq_file *s, void *data)
 		goto out;
 	}
 
-	for (i = 0; i < unic_dev->channels.num; i++) {
-		c = &unic_dev->channels.c[i];
-		seq_printf(s, "txq%d:\n", i);
-		seq_printf(s, "TOTAL_ABN_CQE_COUNT:%-20llu\n", c->sq->stats.abn_cqe_total_cnt);
-		seq_printf(s, "%-12s%20s%20s%20s%20s%20s%20s\n", "", "SUB_0",
-			   "SUB_1", "SUB_2", "SUB_3", "SUB_4", "OTHERS");
-
-		for (j = 0; j < UNIC_CQE_STATUS_MAX; j++) {
-			seq_printf(s, "%s", status_labels[j]);
-			for (k = 0; k < UNIC_CQE_SUB_STATUS_MAX; k++)
-				seq_printf(s, "%20llu", c->sq->stats.abn_cqe_cnt[j][k]);
-
-			seq_puts(s, "\n");
-		}
-		seq_puts(s, "\n");
-	}
+	for (i = 0; i < unic_dev->channels.num; i++)
+		unic_dbg_channel_abn_cqe_cnt(s, &unic_dev->channels.c[i], i);
 
 out:
 	mutex_unlock(&unic_dev->channels.mutex);
@@ -728,7 +737,7 @@ static struct ubase_dbg_cmd_info unic_dbg_cmd[] = {
 		.property = UBASE_SUP_UNIC | UBASE_SUP_UBL_ETH,
 		.support = unic_dbg_abn_cqe_support,
 		.init = ubase_dbg_seq_file_init,
-		.read_func = unic_dbg_dump_abnormal_cqe_cnt,
+		.read_func = unic_dbg_dump_abn_cqe_cnt,
 	}
 };
 
