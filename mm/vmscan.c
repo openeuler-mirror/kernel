@@ -1674,6 +1674,18 @@ static unsigned long isolate_lru_folios(unsigned long nr_to_scan,
 		}
 
 		/*
+		 * Reclaim-side counterpart of skip_non_mirrored_zone():
+		 * allocations confined to ZONE_MOVABLE can only consume pages
+		 * freed there, so skip folios from mirrored zones.
+		 */
+		if (reliable_movable_only_alloc(sc->gfp_mask) &&
+		    folio_zonenum(folio) != ZONE_MOVABLE) {
+			nr_skipped[folio_zonenum(folio)] += nr_pages;
+			move_to = &folios_skipped;
+			goto move;
+		}
+
+		/*
 		 * Do not count skipped folios because that makes the function
 		 * return with no isolated folios if the LRU mostly contains
 		 * ineligible folios.  This causes the VM to not reclaim any
