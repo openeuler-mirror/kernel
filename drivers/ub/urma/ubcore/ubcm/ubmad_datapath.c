@@ -185,7 +185,7 @@ static struct ubmad_ini_rtbuffer *ubmad_create_ini_rtbuffer(
 	if (payload_len > UBMAD_RTBUFFER_PKTSIZE)
 		return NULL;
 
-	ini_rt_buffer = kzalloc(sizeof(struct ubmad_ini_rtbuffer), GFP_KERNEL);
+	ini_rt_buffer = vzalloc(sizeof(struct ubmad_ini_rtbuffer));
 	if (IS_ERR_OR_NULL(ini_rt_buffer))
 		return NULL;
 
@@ -248,13 +248,13 @@ static void ubmad_release_ini_rtbuffer(
 	hlist_for_each_entry_safe(cur, next, &tjetty->ini_rt_hlist[hash], node) {
 		if (cur->msn == msn && cur->msg_type == msg_type) {
 			hlist_del(&cur->node);
-			kfree(cur);
 			spin_unlock_irqrestore(&tjetty->ini_rt_spinlock, flag);
+			vfree(cur);
 			return;
 		}
 	}
 	spin_unlock_irqrestore(&tjetty->ini_rt_spinlock, flag);
-	ubcore_log_info("Failed to release ini rtbuffer: already releasd.\n");
+	ubcore_log_info_rl("Failed to release ini rtbuffer: already releasd.\n");
 }
 
 /* target retransmit buffer hash node */
