@@ -361,14 +361,8 @@ static void uacce_vma_close(struct vm_area_struct *vma)
 	}
 }
 
-static int uacce_vma_mremap(struct vm_area_struct *area)
-{
-	return -EPERM;
-}
-
 static const struct vm_operations_struct uacce_vm_ops = {
 	.close = uacce_vma_close,
-	.mremap = uacce_vma_mremap,
 };
 
 static int get_sort_base(struct uacce_dma_slice *list, int low, int high,
