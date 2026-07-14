@@ -58,7 +58,7 @@ static void unic_dump_jfr_ctx_info_sw(struct unic_rq *rq, struct seq_file *s,
 static inline void unic_jfc_ctx_titles_print(struct seq_file *s)
 {
 	seq_puts(s, "CQ_ID  ARM_ST  STATE  INLINE_EN  SHIFT  CQE_COAL_CNT  ");
-	seq_puts(s, "CEQN  RECORD_DB_EN  CQE_COAL_PEIRIOD\n");
+	seq_puts(s, "CEQN  RECORD_DB_EN  CQE_COAL_PERIOD\n");
 }
 
 static void unic_dump_jfc_ctx_info_sw(struct unic_cq *cq, struct seq_file *s,
