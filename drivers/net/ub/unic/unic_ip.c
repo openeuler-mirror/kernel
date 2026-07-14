@@ -118,10 +118,9 @@ static int unic_handle_stack_ip_feedback(struct unic_vport *vport,
 	struct in6_addr ip_addr;
 	int ret;
 
-	ret = unic_convert_ip_addr(addr, &ip_addr);
+	ret = unic_convert_ip_addr(unic_dev, addr, &ip_addr);
 	if (ret)
-		unic_info(unic_dev,
-			  "invalid IP protocol type, ret = %d.\n", ret);
+		return ret;
 
 	ret = unic_update_stack_ip_addr(vport, state,
 					(const unsigned char *)&ip_addr,
@@ -607,6 +606,13 @@ static int unic_ctrlq_query_ip(struct auxiliary_device *adev, u16 *ip_index,
 		unic_err(unic_dev,
 			 "failed to query ip by ctrlq, ret = %d.\n", ret);
 		return ret;
+	}
+
+	if (resp.get_count > UNIC_CTRLQ_IP_REQ_SIZE) {
+		unic_err(unic_dev,
+			 "invalid ip count info in query resp, count = %u.\n",
+			 resp.get_count);
+		return -EINVAL;
 	}
 
 	spin_lock_bh(&vport->addr_tbl.ip_list_lock);
