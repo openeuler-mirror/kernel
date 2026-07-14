@@ -47,13 +47,10 @@ static int uacce_stop_queue(struct uacce_queue *q)
 {
 	struct uacce_device *uacce = q->uacce;
 
-	if (q->state != UACCE_Q_STARTED)
-		return 0;
-
-	if (uacce->ops->stop_queue)
+	if ((q->state == UACCE_Q_STARTED) && uacce->ops->stop_queue)
 		uacce->ops->stop_queue(q);
 
-	q->state = UACCE_Q_INIT;
+	q->state = UACCE_Q_ZOMBIE;
 
 	return 0;
 }
@@ -64,13 +61,8 @@ static void uacce_put_queue(struct uacce_queue *q)
 
 	uacce_stop_queue(q);
 
-	if (q->state != UACCE_Q_INIT)
-		return;
-
 	if (uacce->ops->put_queue)
 		uacce->ops->put_queue(q);
-
-	q->state = UACCE_Q_ZOMBIE;
 }
 
 static long uacce_get_ss_dma(struct uacce_queue *q, void __user *arg)
