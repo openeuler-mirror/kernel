@@ -8414,6 +8414,9 @@ CONFIG_UB_CDMA=m
 # UB UDMA driver
 CONFIG_UB_UDMA=m
 
+# UB UBASEPROXY driver
+CONFIG_UB_UBASEPROXY=m
+
 # end of unified bus
 
 # UMMU

@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0+
+menuconfig UB_UBASEPROXY
+	default n
+	tristate "ubaseproxy driver"
+	depends on UB_UBASE
+	help
+	   This option enables support for ubaseproxy drivers. ubaseproxy
+           is a device driver proxy module responsible for functions such
+           as TA anti-attack protection; it can subsequently support
+           features like live migration, as well as anti-attack and live
+           migration capabilities for cdma and other device drivers.
