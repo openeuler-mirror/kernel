@@ -1012,7 +1012,7 @@ struct mm_struct {
 		struct sp_group_master *sp_group_master;
 #endif
 #ifdef CONFIG_MEMORY_RELIABLE
-		/* total used reliable pages */
+		/* reserved; the per-mm reliable page counter was removed */
 		atomic_long_t reliable_nr_page;
 #endif
 #if IS_ENABLED(CONFIG_KVM)
