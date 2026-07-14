@@ -78,7 +78,18 @@ static inline bool filemap_reliable_is_enabled(void)
 	return pagecache_reliable;
 }
 
-static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
+/*
+ * Is this an ordinary user allocation that memory-reliable routes to
+ * ZONE_MOVABLE (the non-mirrored region)? Such allocations can only
+ * consume pages from ZONE_MOVABLE. Shared by:
+ * - skip_non_mirrored_zone(): skip mirrored zones in the zonelist;
+ * - the reclaim-side filter in isolate_lru_folios(): restrict the LRU
+ *   scan to ZONE_MOVABLE so freed pages are usable by the caller.
+ *
+ * Conditions: reliable enabled, a user task (has mm, not kthread), and
+ * GFP_HIGHUSER_MOVABLE without __GFP_RELIABLE.
+ */
+static inline bool reliable_movable_only_alloc(gfp_t gfp)
 {
 	if (!mem_reliable_is_enabled())
 		return false;
@@ -86,12 +97,16 @@ static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
 	if (!current->mm || (current->flags & PF_KTHREAD))
 		return false;
 
+	return !(gfp & GFP_RELIABLE) && (gfp & __GFP_HIGHMEM) &&
+	       (gfp & __GFP_MOVABLE);
+}
+
+static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
+{
 	/* user tasks can only alloc memory from non-mirrored region */
-	if (!(gfp & GFP_RELIABLE) && (gfp & __GFP_HIGHMEM) &&
-	    (gfp & __GFP_MOVABLE)) {
-		if (zonelist_zone_idx(z) < ZONE_MOVABLE)
-			return true;
-	}
+	if (reliable_movable_only_alloc(gfp) &&
+	    zonelist_zone_idx(z) < ZONE_MOVABLE)
+		return true;
 
 	return false;
 }
@@ -238,6 +253,10 @@ static inline void mem_reliable_init(bool has_unmirrored_mem,
 static inline bool page_reliable(struct page *page) { return false; }
 static inline bool folio_reliable(struct folio *folio) { return false; }
 static inline bool skip_non_mirrored_zone(gfp_t gfp, struct zoneref *z)
+{
+	return false;
+}
+static inline bool reliable_movable_only_alloc(gfp_t gfp)
 {
 	return false;
 }
