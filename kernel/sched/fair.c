@@ -10380,7 +10380,9 @@ static void set_next_task_fair(struct rq *rq, struct task_struct *p, bool first)
 struct task_struct *
 pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
-	struct cfs_rq *cfs_rq = &rq->cfs;
+#ifdef CONFIG_QOS_SCHED
+	struct cfs_rq *qos_cfs_rq = &rq->cfs;
+#endif
 	struct sched_entity *se;
 	struct task_struct *p;
 	int new_tasks;
@@ -10411,7 +10413,7 @@ again:
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	if (prev->sched_class != &fair_sched_class) {
 #ifdef CONFIG_QOS_SCHED
-		if (qos_sched_enabled() && cfs_rq->idle_h_nr_running != 0 && rq->online)
+		if (qos_sched_enabled() && qos_cfs_rq->idle_h_nr_running != 0 && rq->online)
 			goto qos_simple;
 		else
 #endif
@@ -10461,16 +10463,16 @@ qos_simple:
 		put_prev_task(rq, prev);
 
 	do {
-		se = pick_next_entity(cfs_rq);
+		se = pick_next_entity(qos_cfs_rq);
 		if (check_qos_cfs_rq(group_cfs_rq(se))) {
-			cfs_rq = &rq->cfs;
-			if (!cfs_rq->nr_running)
+			qos_cfs_rq = &rq->cfs;
+			if (!qos_cfs_rq->nr_running)
 				goto idle;
 			continue;
 		}
 
-		cfs_rq = group_cfs_rq(se);
-	} while (cfs_rq);
+		qos_cfs_rq = group_cfs_rq(se);
+	} while (qos_cfs_rq);
 
 	p = task_of(se);
 
