@@ -44,7 +44,7 @@ enum ubcore_log_level {
 		__func__, __LINE__, ##args))
 
 #define UBCORE_RATELIMIT_INTERVAL (5 * HZ)
-#define UBCORE_RATELIMIT_BURST 100
+#define UBCORE_RATELIMIT_BURST 50
 
 extern uint32_t g_ubcore_log_level;
 
